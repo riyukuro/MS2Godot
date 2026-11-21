@@ -299,6 +299,12 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
             // these two fall through to "return 0" in the client (:945-951, :979-981)
             case "onclickitemremakeoption": case "onclickopenbank":
                 Button?.Invoke(name); return false;
+            // the movie raises these too; UIInventoryDialog::vfunc_28 (@0x141998680, :832-981) has no branch for them and UIDialog's
+            // does not either, so the client answers 0 and nothing happens: onClickMesoDrop (the meso drop button; the drop is the
+            // slot drag's, notifySlotDragEnd) and OnSelected (a pick in the search input's candidate list; the search itself runs
+            // from OnItemSearch, :952, and the candidates from OnSearchTextChanged, :1232).
+            case "onclickmesodrop": case "onselected":
+                return false;
         }
         return false;
     }

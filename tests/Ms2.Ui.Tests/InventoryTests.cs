@@ -180,7 +180,9 @@ public class InventoryTests
         Assert.That(c.OnCallback("onClickItemBreak", Array.Empty<object>()), Is.True);
         Assert.That(c.OnCallback("onClickItemRemakeOption", Array.Empty<object>()), Is.False, "the client returns 0");
         Assert.That(c.OnCallback("onClickOpenBank", Array.Empty<object>()), Is.False, "the client returns 0");
-        Assert.That(raised, Is.EqualTo(new[] { "onClickSlotExpand", "onClickItemRemakeOption", "onClickOpenBank" }));
+        Assert.That(c.OnCallback("onClickMesoDrop", Array.Empty<object>()), Is.False, "no branch in the client: 0");
+        Assert.That(c.OnCallback("OnSelected", new object[] { "Elixir" }), Is.False, "no branch in the client: 0");
+        Assert.That(raised, Is.EqualTo(new[] { "onClickSlotExpand", "onClickItemRemakeOption", "onClickOpenBank" }), "the two unhandled ones raise nothing");
         Assert.That(toggled, Is.EqualTo(0x4e8d));
 
         // an expired item: box 0x2a1, the answer sends (0 = stack)
