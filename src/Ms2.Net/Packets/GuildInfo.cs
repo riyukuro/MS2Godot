@@ -34,14 +34,22 @@ public sealed class GuildMember {
     public Dictionary<int, int> Raid = new();
     public int Offline = 1;
 
+    /// <summary>
+    /// Unk_GuildMemberData::ReadStream (@0x1404c9bd0, guilddef_1.cpp:620 ReadPacket): i64, i64, name, u8, i32, i32, i16, i32, i32,
+    /// u16, the code, i32 x3, i64, then the three i32 of the triple.
+    /// </summary>
+    public static void ReadData(ByteReader r, GuildMember m) {
+        m.FirstId = r.ReadLong(); m.CharId = r.ReadLong(); m.Name = r.ReadUnicodeString(); m.F10 = r.ReadByte();
+        m.F14 = r.ReadInt(); m.JobCode = r.ReadInt(); m.Level = r.ReadShort(); m.ItemLevel = r.ReadInt(); m.MapId = r.ReadInt();
+        m.Channel = (ushort)r.ReadShort(); m.Code = r.ReadUnicodeString(); m.F38 = r.ReadInt(); m.F3C = r.ReadInt();
+        m.F40 = r.ReadInt(); m.F48 = r.ReadLong(); m.Triple = (r.ReadInt(), r.ReadInt(), r.ReadInt());
+    }
+
     public static GuildMember Read(ByteReader r) {
         var m = new GuildMember { Mode = r.ReadByte(), Grade = r.ReadByte() };
         if (m.Mode == 3) {
             m.Id = r.ReadLong();
-            m.FirstId = r.ReadLong(); m.CharId = r.ReadLong(); m.Name = r.ReadUnicodeString(); m.F10 = r.ReadByte();
-            m.F14 = r.ReadInt(); m.JobCode = r.ReadInt(); m.Level = r.ReadShort(); m.ItemLevel = r.ReadInt(); m.MapId = r.ReadInt();
-            m.Channel = (ushort)r.ReadShort(); m.Code = r.ReadUnicodeString(); m.F38 = r.ReadInt(); m.F3C = r.ReadInt();
-            m.F40 = r.ReadInt(); m.F48 = r.ReadLong(); m.Triple = (r.ReadInt(), r.ReadInt(), r.ReadInt());
+            ReadData(r, m);
             m.Memo = r.ReadUnicodeString(); m.Fc8 = r.ReadLong(); m.LastSeen = r.ReadLong(); m.Fd8 = r.ReadLong();
             m.Fe0 = r.ReadInt(); m.Fe4 = r.ReadInt(); m.Contribution = r.ReadInt(); m.TotalContribution = r.ReadInt(); m.Ff0 = r.ReadInt();
             m.Ff8 = r.ReadLong();
@@ -71,6 +79,18 @@ public sealed class GuildInfo {
     public List<GuildMember> Members = new();
     public List<GuildGrade> Grades = new();
     public List<GuildSkillState> Skills = new();
+    /// <summary>CGuildCustomEvent (CGuildInfo::ReadCustomEvents @0x1404cef10): i32 id, i32 time.</summary>
+    public List<(int Id, int Time)> CustomEvents = new();
+    /// <summary>The two i32 of CGuildInfo::FUN_1404cf1e0 (@0x1404cf1e0) ahead of its string records.</summary>
+    public int Propensity0, Propensity1;
+    /// <summary>The string records of FUN_1404cf1e0: i32 key, unicode string, i64, unicode string (FUN_1404d4060).</summary>
+    public List<(int Key, string Text, long Value, string Text2)> Records = new();
+    /// <summary>CGuildNpc (ReadNpcs @0x1404cf490): i32 kind, i32 level.</summary>
+    public List<(int Kind, int Level)> Npcs = new();
+    /// <summary>CGuildNpcShopMgr::Read (@0x1404d8e80) shops: u16 id, i64 time, products (i32 item, u8 rank, i32 price, i32 count).</summary>
+    public List<(int Id, long Time, List<(int Item, int Rank, int Price, int Count)> Products)> Shops = new();
+    /// <summary>CGuildStorage::ReadPacket (@0x1404cc210) entries: ItemEntity (i32 id, u16 rank, i32 count, 4 bool).</summary>
+    public int StorageCount;
 
     public static GuildInfo Read(ByteReader r) {
         var g = new GuildInfo { Id = r.ReadLong(), Name = r.ReadUnicodeString(), Code = r.ReadUnicodeString(), MaxMembers = r.ReadByte() };
@@ -84,6 +104,30 @@ public sealed class GuildInfo {
         int n = r.ReadByte(); for (int i = 0; i < n; i++) g.Members.Add(GuildMember.Read(r));
         n = r.ReadByte(); for (int i = 0; i < n; i++) g.Grades.Add(GuildGrade.Read(r));
         n = r.ReadByte(); for (int i = 0; i < n; i++) g.Skills.Add(GuildSkillState.Read(r));
+        ReadTail(r, g);
         return g;
+    }
+
+    /// <summary>
+    /// The end of CGuildInfo::Read (@0x1404cdda0, guilddef_1.cpp:1232): ReadCustomEvents, FUN_1404cf1e0, ReadNpcs, ReadNpcShop
+    /// (a bool, then CGuildNpcShopMgr::Read) and the storage (i32 count of ItemEntity).
+    /// </summary>
+    static void ReadTail(ByteReader r, GuildInfo g) {
+        int n = r.ReadByte(); for (int i = 0; i < n; i++) g.CustomEvents.Add((r.ReadInt(), r.ReadInt()));
+        g.Propensity0 = r.ReadInt(); g.Propensity1 = r.ReadInt();
+        n = r.ReadInt(); for (int i = 0; i < n; i++) g.Records.Add((r.ReadInt(), r.ReadUnicodeString(), r.ReadLong(), r.ReadUnicodeString()));
+        n = r.ReadByte(); for (int i = 0; i < n; i++) g.Npcs.Add((r.ReadInt(), r.ReadInt()));
+        if (r.ReadBool()) {
+            n = (ushort) r.ReadShort();
+            for (int i = 0; i < n; i++) {
+                if (!r.ReadBool()) continue;
+                int id = (ushort) r.ReadShort(); long time = r.ReadLong(); var products = new List<(int, int, int, int)>();
+                int pc = (ushort) r.ReadShort();
+                for (int k = 0; k < pc; k++) if (r.ReadBool()) products.Add((r.ReadInt(), r.ReadByte(), r.ReadInt(), r.ReadInt()));
+                g.Shops.Add((id, time, products));
+            }
+        }
+        g.StorageCount = r.ReadInt();
+        for (int i = 0; i < g.StorageCount; i++) { r.ReadInt(); r.ReadShort(); r.ReadInt(); r.ReadByte(); r.ReadByte(); r.ReadByte(); r.ReadByte(); }
     }
 }

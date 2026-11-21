@@ -1119,7 +1119,7 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.Party))
             {
-                var m = PartyMessage.Read(p.Reader());   // CPartyManager::OnParty (partymanager.cpp:447); no ExpectEnd: the client ignores trailing bytes
+                var m = PartyMessage.Read(p.Reader());   // CPartyManager::OnParty (partymanager.cpp:447); the decoded modes end with ExpectEnd
                 Party.Apply(m, CharacterId, PartyWindowOpen());
                 if (m is PartyInvite invite)        // OnPartyInvite (partymanager.cpp:968); no PvP state yet, so no PvP point
                     Ms2.Ui.Hud.PartyInviteBox.OnInvite(invite, GameOptions.AccountCommunity.DisablePartyRequest, false, AnswerPartyInvite);

@@ -106,9 +106,22 @@ public abstract record PartyMessage(int Mode) {
     /// <summary>Unk_LockedIntMap::Read (unit_140268010_sharedstatemap.cpp:85): i32 count of { i32 key, u8 value }. Not kept.</summary>
     static void SkipCounters(ByteReader r) { int n = r.ReadInt(); for (int i = 0; i < n; i++) { r.ReadInt(); r.ReadByte(); } }
 
+    /// <summary>Reads one party packet. Every mode this reader decodes ends with ExpectEnd, so a layout the client reads differently
+    /// shows up as a PacketLayoutException; the modes it does not decode (PartyOtherMode) are returned without reading their body.</summary>
     public static PartyMessage Read(ByteReader r) {
+        var m = ReadBody(r);
+        if (m is not PartyOtherMode) r.ExpectEnd($"Party mode {m.Mode}");
+        return m;
+    }
+
+    static PartyMessage ReadBody(ByteReader r) {
         int mode = r.ReadByte();
         switch (mode) {
+            case 0: { int result = r.ReadByte(); return new PartyResult(result, r.ReadUnicodeString()); }   // OnPartyResultMessage @0x14162f030 (partymanager.cpp:1370)
+            case 0xe: { long id = r.ReadLong(); SkipCounters(r); return new PartyMemberCounters(id); }       // OnPartyMemberCounters @0x14162e240
+            case 0x12: { long id = r.ReadLong(); return new PartyMemberResult(id, r.ReadByte()); }          // FUN_14162e3d0 @0x14162e3d0
+            case 0x14: return new PartyNotice(r.ReadUnicodeString(), r.ReadUnicodeString(), r.ReadUnicodeString());   // OnPartyNotice @0x14162e5d0
+            case 0x19: { bool matching = r.ReadBool(); return new PartyMatchDungeonChange(matching, r.ReadInt()); }   // OnPartyMatchDungeonChange @0x14162e820
             case 2: { var u = PartyUser.Read(r); SkipCounters(r); return new PartyJoin(u); }            // OnPartyMemberJoin
             case 3: return new PartyLeave(r.ReadLong(), r.ReadBool());                                    // OnPartyMemberLeave
             case 4: return new PartyKick(r.ReadLong());                                                    // OnPartyMemberKick
@@ -118,7 +131,11 @@ public abstract record PartyMessage(int Mode) {
             case 8: return new PartyLeaderChange(r.ReadLong());                                            // OnPartyLeaderChange
             case 9: return PartyInfo.ReadBody(r);                                                          // OnPartyInfo
             case 0xb: return new PartyInvite(r.ReadUnicodeString(), r.ReadInt());                          // OnPartyInvite
-            case 0xc: case 0xd: { long id = r.ReadLong(); return new PartyMemberUpdate(mode, id, PartyUser.Read(r)); }   // OnPartyMemberInfoUpdate
+            case 0xc: case 0xd: {                                                                                  // OnPartyMemberInfoUpdate @0x14162e100
+                long id = r.ReadLong(); var u = PartyUser.Read(r);
+                if (r.Available > 0) SkipCounters(r);   // the KMS2 server appends the member's counters; the client stops after the user (:1221)
+                return new PartyMemberUpdate(mode, id, u);
+            }
             case 0xf: return new PartyGearScore(r.ReadLong(), r.ReadInt());                                // OnPartyMemberGearScore
             case 0x13: {                                                                                   // FUN_14162dfc0: DecodeFlags
                 long id = r.ReadLong();
@@ -217,6 +234,16 @@ public sealed class PartyVote {
 }
 
 /// <summary>A mode the party window does not use (search, dungeon matching, notices); its body is not read.</summary>
+/// <summary>Mode 0, OnPartyResultMessage @0x14162f030: u8 result, the name the notice formats.</summary>
+public sealed record PartyResult(int Result, string Name) : PartyMessage(0);
+/// <summary>Mode 0xe, OnPartyMemberCounters: i64 member, then the counter map (not kept).</summary>
+public sealed record PartyMemberCounters(long CharacterId) : PartyMessage(0xe);
+/// <summary>Mode 0x12, FUN_14162e3d0: i64 member, u8 result (non zero = string id 0x327, 0 = 0x326).</summary>
+public sealed record PartyMemberResult(long CharacterId, int Result) : PartyMessage(0x12);
+/// <summary>Mode 0x14, OnPartyNotice: three unicode strings (text key, sound, argument).</summary>
+public sealed record PartyNotice(string Key, string Sound, string Argument) : PartyMessage(0x14);
+/// <summary>Mode 0x19, OnPartyMatchDungeonChange: bool matchmaking, i32 dungeon id.</summary>
+public sealed record PartyMatchDungeonChange(bool Matchmaking, int DungeonId) : PartyMessage(0x19);
 public sealed record PartyOtherMode(int OtherMode) : PartyMessage(OtherMode);
 
 /// <summary>One member of mode 9: the offline flag, the record (its counters are read past).</summary>

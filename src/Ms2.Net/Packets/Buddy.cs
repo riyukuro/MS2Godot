@@ -94,7 +94,19 @@ public sealed record BuddyMessage(byte Protocol) {
     /// <summary>Protocol 13: the answers to our requests while we were away (name, "approved"/"declined"/"removed", id).</summary>
     public IReadOnlyList<(string Name, string Action, long Id)> Answers { get; init; } = Array.Empty<(string, string, long)>();
 
+    /// <summary>Reads one buddy packet (CBuddyManager::OnBuddy, buddymanager.cpp:95). Every protocol it decodes ends with ExpectEnd.
+    /// Protocol 0x13 has no handler and no body in the client (Unk_SPDB::ReadFrom reads the type and OnBuddy has no case for 0x13);
+    /// the KMS2 server sends an i32 after it, which is dropped here. Protocols it does not decode keep their body unread.</summary>
     public static BuddyMessage Read(ByteReader r) {
+        var m = ReadBody(r);
+        if (m.Protocol == 0x13) r.ReadBytes(r.Available);
+        else if (m.Decoded) r.ExpectEnd($"Buddy protocol {m.Protocol}");
+        return m;
+    }
+
+    bool Decoded => Protocol is (>= 1 and <= 0xe) or 0x11;
+
+    static BuddyMessage ReadBody(ByteReader r) {
         byte p = r.ReadByte();
         switch (p) {
             case 2: return new(p) { Result = r.ReadByte(), Name = r.ReadUnicodeString(), Memo = r.ReadUnicodeString() };

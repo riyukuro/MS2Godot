@@ -80,7 +80,10 @@ public sealed class StatPointBook {
 /// title list, 3 the collection grades (DAT_143ab30e0: i32 count, then i32 id, u8 grade each; the trophy dialog redraws
 /// after it), 8 the gathering counts (g_143ab3150: i32 count, then i32 id, i32 count each, the mastery recipes' success
 /// odds), 9 the mastery grade rewards received (DAT_143ab31a0: i32 count, then i32 id, u8 value each;
-/// scenestategame.cpp:4469-4490). The other modes (templates, fame) are read as null.
+/// scenestategame.cpp:4469-4490), 4 the template ids (DAT_143ab3128: i32 count, i32 each), 0xa the fame per alliance
+/// (DAT_143ab3220: i32 count, then u16 alliance, i32 fame), 0xb one alliance's fame, 0xc the fame per character (DAT_143ab31e8:
+/// i32 count, then i32 fame, i64 character id), 0xd one character's fame. Every mode is read to its end. Mode 5 has no handler in
+/// the client (its packet is an i32 count, 0 in the sniffs): it is read as null with the rest skipped. Other modes are read as null.
 /// </summary>
 public abstract record UserEnvMessage {
     public sealed record TitleAdded(int Id) : UserEnvMessage;
@@ -89,11 +92,42 @@ public abstract record UserEnvMessage {
     public sealed record Collection(IReadOnlyDictionary<uint, byte> Grades) : UserEnvMessage;
     public sealed record GatheringCounts(IReadOnlyDictionary<int, int> Counts) : UserEnvMessage;
     public sealed record MasteryRewards(IReadOnlyDictionary<uint, byte> Received) : UserEnvMessage;
+    public sealed record Templates(IReadOnlyList<int> Ids) : UserEnvMessage;
+    /// <summary>Fame by alliance (modes 0xa, 0xb) or by character id (0xc, 0xd); Replace is the 0xa/0xc whole-table forms.</summary>
+    public sealed record FameByAlliance(bool Replace, IReadOnlyDictionary<ushort, int> Fame) : UserEnvMessage;
+    public sealed record FameByCharacter(bool Replace, IReadOnlyDictionary<long, int> Fame) : UserEnvMessage;
 
     public static UserEnvMessage Read(ByteReader r) {
+        var m = ReadBody(r);
+        r.ExpectEnd("UserEnv");
+        return m;
+    }
+
+    static UserEnvMessage ReadBody(ByteReader r) {
         switch (r.ReadByte()) {
             case 0: return new TitleAdded(r.ReadInt());
             case 1: { int id = r.ReadInt(); return new TitleChanged(id, r.ReadInt()); }
+            case 4: {
+                uint n = (uint) r.ReadInt();
+                var a = new List<int>();
+                for (uint i = 0; i < n; i++) a.Add(r.ReadInt());
+                return new Templates(a);
+            }
+            case 5: r.ReadBytes(r.Available); return null;   // no client handler (OnUserEnv has no mode 5)
+            case 0xa: {
+                uint n = (uint) r.ReadInt();
+                var f = new Dictionary<ushort, int>();
+                for (uint i = 0; i < n; i++) { ushort a = r.ReadUShort(); f[a] = r.ReadInt(); }
+                return new FameByAlliance(true, f);
+            }
+            case 0xb: { ushort a = r.ReadUShort(); return new FameByAlliance(false, new Dictionary<ushort, int> { [a] = r.ReadInt() }); }
+            case 0xc: {
+                uint n = (uint) r.ReadInt();
+                var f = new Dictionary<long, int>();
+                for (uint i = 0; i < n; i++) { int fame = r.ReadInt(); f[r.ReadLong()] = fame; }
+                return new FameByCharacter(true, f);
+            }
+            case 0xd: { int fame = r.ReadInt(); return new FameByCharacter(false, new Dictionary<long, int> { [r.ReadLong()] = fame }); }
             case 2: {
                 int n = r.ReadInt();
                 var a = new List<uint>();
@@ -110,6 +144,7 @@ public abstract record UserEnvMessage {
                 uint n = (uint) r.ReadInt();
                 var g = new Dictionary<int, int>();
                 for (uint i = 0; i < n; i++) { int id = r.ReadInt(); g[id] = r.ReadInt(); }     // g_143ab3150.SetAt
+                if (r.Available == 4) r.ReadInt();   // the Maple2 server's writer adds an i32 after the pairs; the client stops (:4455)
                 return new GatheringCounts(g);
             }
             case 9: {

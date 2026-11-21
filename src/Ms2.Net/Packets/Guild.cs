@@ -191,17 +191,30 @@ public sealed record GuildMessage(byte Type) {
     public GuildInviteInfo Invite { get; init; }
     /// <summary>Type 6: the reason of a refusal (1 to 3 have a line).</summary>
     public int Reason { get; init; }
+    /// <summary>Type 0x18: the member's login time. Type 0x3a: the poster id is <see cref="Value"/>.</summary>
+    public long Time { get; init; }
+    /// <summary>Types 0x3a (the notice text) and 0x41 (the string the client discards).</summary>
+    public string Text { get; init; } = "";
+    /// <summary>Type 0x1b: the mark code; type 0x3a: the character id is <see cref="GuildId"/>.</summary>
+    public string Code { get; init; } = "";
+    /// <summary>Type 0x1b: who changed the mark.</summary>
+    public StringIdText Changer { get; init; }
+    /// <summary>Type 0x23: achievement id, grade and kind (u16); type 0x20: the member's data.</summary>
+    public int AchieveId { get; init; }
+    public int Grade { get; init; }
+    public int Kind { get; init; }
 
     public static GuildMessage Read(ByteReader r) {
+        var m = ReadBody(r);
+        // Types 0x12 (received invite) and the attend/donate modes belong to another change; the others end here.
+        if (m.Type is 1 or 2 or 0x13 or 0x2d or 0x2e or 0x2f or 0x30 or 0x44 or 0x52 or 0x53 or 0x54 or 0x55 or 0x56 or 0x57) r.ExpectEnd($"Guild type {m.Type}");
+        return m;
+    }
+
+    static GuildMessage ReadBody(ByteReader r) {
         byte t = r.ReadByte();
         switch (t) {
-            case 0: {
-                var copy = new ByteReader(r.Buffer.AsSpan(r.Position, r.Available).ToArray());
-                try { var info = GuildInfo.Read(copy); return new(t) { GuildId = info.Id, Info = info }; }
-                catch (Exception e) when (e is IndexOutOfRangeException or ArgumentException or InvalidOperationException) {
-                    return new(t) { GuildId = r.ReadLong() };
-                }
-            }
+            case 0: { var info = GuildInfo.Read(r); r.ExpectEnd("Guild info"); return new(t) { GuildId = info.Id, Info = info }; }
             case 1: {
                 int result = r.ReadByte();
                 return result != 0 ? new(t) { Result = result } : new(t) { Name = r.ReadUnicodeString() };
@@ -243,7 +256,25 @@ public sealed record GuildMessage(byte Type) {
             case 6: return new(t) { Name = r.ReadUnicodeString(), Accepted = r.ReadByte() == 1, Reason = r.ReadByte() };
             case 0x44: return new(t) { Focus = r.ReadByte(), Value = r.ReadInt() };
             case 0x71: return new(t) { DonationCount = r.ReadInt(), DonationTime = r.ReadLong() };
+            // FUN_1413beb10 (guildmanager.cpp:1761)
+            case 0xe: return Done(new(t) { Name = r.ReadUnicodeString(), Value = r.ReadInt() }, r);
+            // FUN_1413beff0 (:1822): the string is read and dropped
+            case 0x41: return Done(new(t) { Text = r.ReadUnicodeString() }, r);
+            // FUN_1413c0630 (:2038)
+            case 0x18: return Done(new(t) { Name = r.ReadUnicodeString(), Time = r.ReadLong() }, r);
+            // FUN_1413c15b0 (:2185): StringIdInterface(packet), then the mark code
+            case 0x1b: return Done(new(t) { Changer = StringIdText.Read(r), Code = r.ReadUnicodeString() }, r);
+            // FUN_1413c1d30 (:2266): name, Unk_GuildMemberData::ReadPacket
+            case 0x20: { string name = r.ReadUnicodeString(); var m = new GuildMember { Mode = 3 }; GuildMember.ReadData(r, m); return Done(new(t) { Name = name, Member = m }, r); }
+            // OnPacketMemberDataChanged (:2280): name, Unk_GuildMemberData::FUN_1404c95f0 (one i32)
+            case 0x1f: return Done(new(t) { Name = r.ReadUnicodeString(), Value = r.ReadInt() }, r);
+            // OnPacketMemberAchievement (:2303)
+            case 0x23: return Done(new(t) { Name = r.ReadUnicodeString(), AchieveId = r.ReadInt(), Grade = r.ReadInt(), Kind = (ushort) r.ReadShort() }, r);
+            // FUN_1413c3c40 (:2576)
+            case 0x3a: return Done(new(t) { GuildId = r.ReadLong(), Name = r.ReadUnicodeString(), Value = r.ReadInt(), Text = r.ReadUnicodeString() }, r);
             default: return new(t);
         }
     }
+
+    static GuildMessage Done(GuildMessage m, ByteReader r) { r.ExpectEnd($"Guild type {m.Type}"); return m; }
 }

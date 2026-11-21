@@ -117,7 +117,12 @@ public sealed record ExpUp(byte Mode, long Gained, int Type, long Total, long Re
 
 /// <summary>Inbound 0x38 (CSceneStateGame::OnLevelUp, scenestategame.cpp:9511): i32 object id, u16 the new level.</summary>
 public sealed record LevelUp(int ObjectId, int Level) {
-    public static LevelUp Read(ByteReader r) => new(r.ReadInt(), (ushort) r.ReadShort());
+    public static LevelUp Read(ByteReader r) {
+        var l = new LevelUp(r.ReadInt(), (ushort) r.ReadShort());
+        // The client stops after the i16 level (OnLevelUp, scenestategame.cpp:9511); the KMS2 server sends the level as an i32 (2 more bytes, high half 0).
+        if (r.Available == 2) r.ReadShort();
+        r.ExpectEnd("LevelUp"); return l;
+    }
 }
 
 /// <summary>Inbound 0x39 (CSceneStateGame::OnMeso, scenestategame.cpp:7006): i64 the meso balance (DAT_143ab2898), i32 the
@@ -126,13 +131,19 @@ public sealed record MesoUpdate(long Balance, int Kind) {
     public static MesoUpdate Read(ByteReader r) { var m = new MesoUpdate(r.ReadLong(), r.ReadInt()); r.ExpectEnd("Meso"); return m; }
 }
 
-/// <summary>Inbound 0x7E sub command 3 (AddPlayer proxy). Other sub commands are returned with only the command set.</summary>
+/// <summary>Inbound 0x7E (CSceneStateGame::FUN_14172f500 @0x14172f500, scenestategame.cpp:11335): 3 add player, 4 remove, 5 update
+/// player; 6 add template object, 7 remove, 8 update (kind and position); 9 add spawn-point object, 10 remove, 11 update.
+/// Every body is read to its end (the client reads the same fields, and the sniffs end there).</summary>
 public sealed class ProxyGameObj {
     public byte Command;
     public int ObjectId; public long CharacterId, AccountId; public string Name, Picture, Motto; public bool IsDead;
     public Vector3 Position; public short Level; public short JobCode; public int Job;
     public int HomePlotMapId, HomePlotNumber, HomeApartmentNumber; public string HomeName; public int GearScore; public short State;
     public int AchievementCombat, AchievementAdventure, AchievementLifestyle;
+
+    // Commands 6..11 (scenestategame.cpp:11392-11447). Kind = the u8 the client keeps in kind; TemplateId = the template (6) or the
+    // spawn-point object's table id (9); Extra = the i32 after the kind (6) or the one before the table id (9).
+    public byte Kind; public int TemplateId, Extra;
 
     // Command 4 (remove) and 5 (update, flag driven): CSceneStateGame::FUN_14172f500
     public int UpdateFlags; public byte UpdateKind; public Vector3? UpdatePosition; public short UpdateLevel;
@@ -153,7 +164,20 @@ public sealed class ProxyGameObj {
             if ((f & 0x40) != 0) p.UpdateState = r.ReadShort();
             r.ExpectEnd("ProxyGameObj.Update"); return p;
         }
-        if (p.Command != 3) return p;
+        if (p.Command == 6) {
+            p.ObjectId = r.ReadInt(); p.TemplateId = r.ReadInt(); p.Kind = r.ReadByte(); p.Extra = r.ReadInt(); p.Position = r.ReadVec3();
+            r.ExpectEnd("ProxyGameObj.AddTemplate"); return p;
+        }
+        if (p.Command == 9) {
+            p.ObjectId = r.ReadInt(); p.Extra = r.ReadInt(); p.TemplateId = r.ReadInt(); p.Kind = r.ReadByte(); p.Position = r.ReadVec3();
+            r.ExpectEnd("ProxyGameObj.AddSpawn"); return p;
+        }
+        if (p.Command == 8 || p.Command == 11) {
+            p.ObjectId = r.ReadInt(); p.Kind = r.ReadByte(); p.Position = r.ReadVec3();
+            r.ExpectEnd("ProxyGameObj.UpdateObject"); return p;
+        }
+        if (p.Command == 7 || p.Command == 10) { p.ObjectId = r.ReadInt(); r.ExpectEnd("ProxyGameObj.RemoveObject"); return p; }
+        if (p.Command != 3) return p;   // the client reads nothing for any other mode (FUN_14172f500 has no else branch)
         p.ObjectId = r.ReadInt(); p.CharacterId = r.ReadLong(); p.AccountId = r.ReadLong();
         p.Name = r.ReadUnicodeString(); p.Picture = r.ReadUnicodeString(); p.Motto = r.ReadUnicodeString();
         p.IsDead = r.ReadBool(); p.Position = r.ReadVec3(); p.Level = r.ReadShort();
