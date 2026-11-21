@@ -57,15 +57,74 @@ public class GameEventPacketTests
         Assert.That(m.Shutdowns, Is.Empty);
     }
 
-    [Test]
-    public void ReadingStopsAtTheFirstTypeNotPorted()
+    static void Item(ByteWriter w, int id)
     {
-        // only GameEventShutdownInteractObjectId's body is ported; the entries after another type are not read
+        // ItemEntity::Read (commonstruct_wa.cpp:94-102): i32 id, i16 rank, i32 count, 4 bools
+        w.WriteInt(id); w.WriteShort(1); w.WriteInt(1);
+        w.WriteBool(false); w.WriteBool(false); w.WriteBool(false); w.WriteBool(false);
+    }
+
+    [Test]
+    public void OtherTypesBeforeTheShutdownAreRead()
+    {
+        // the client reads every entry with its type's vfunc_4 (Packet1, gameeventmanagercli.cpp:131-170)
+        var m = GameEventMessage.Read(Reader(w =>
+        {
+            w.WriteByte(1); w.WriteInt(6);
+            Shutdown(w, 4, (2000003, 1));
+            // GameEventStringBoard (gameeventstringboard.cpp:70): id, i32, unicode
+            w.WriteUnicodeString("StringBoard"); w.WriteInt(3); w.WriteInt(1); w.WriteUnicodeString("x");
+            // GameEventSaleChat (gameevent.cpp:618): id, i32, i32
+            w.WriteUnicodeString("SaleChat"); w.WriteInt(9); w.WriteInt(2); w.WriteInt(3);
+            // GameEventStampEvent (gameevent.cpp:2733), StampEventContext::Read (gameeventcontext.cpp:658-683)
+            w.WriteUnicodeString("StampEvent"); w.WriteInt(10);
+            w.WriteUnicodeString("t"); w.WriteLong(5); w.WriteInt(2); w.WriteInt(0); w.WriteBool(true);
+            for (int i = 0; i < 2; i++) { w.WriteInt(i); w.WriteByte(0); w.WriteInt(0); w.WriteInt(0); }
+            w.WriteInt(1); w.WriteInt(1); w.WriteByte(0); Item(w, 20000001); Item(w, 20000002);
+            Item(w, 20000003);
+            // GameEventTreeWatering (gameevent.cpp:5651), TreeWateringContext::Read: ASCII strings (ReadString)
+            w.WriteUnicodeString("TreeWatering"); w.WriteInt(11); w.WriteInt(11);
+            w.WriteInt(1); w.WriteInt(1); w.WriteLong(0); w.WriteLong(0);
+            w.WriteInt(0);
+            w.WriteInt(0); w.WriteInt(0); w.WriteByte(0); w.WriteInt(0); w.WriteInt(0); w.WriteInt(0); w.WriteByte(0); w.WriteInt(0);
+            w.WriteInt(1); w.WriteInt(1); w.WriteString("res");
+            w.WriteInt(0); w.WriteString("a"); w.WriteInt(0); w.WriteString("b"); w.WriteString("c"); w.WriteString("d");
+            Shutdown(w, 5, (2000003, 2));
+        }));
+        Assert.That(m.Truncated, Is.False);
+        Assert.That(m.Shutdowns.Select(e => e.Id), Is.EqualTo(new[] { 4, 5 }));
+        Assert.That(m.Shutdowns[1].Objects, Is.EqualTo(new[] { (2000003u, 2) }));
+    }
+
+    [Test]
+    public void ContextTypeBeforeTheShutdownIsRead()
+    {
+        // GameEventBurningLevelup (gameevent.cpp:6042), BurningLevelupContext::Read: the jumping item block only when its
+        // bool is set
+        var m = GameEventMessage.Read(Reader(w =>
+        {
+            w.WriteByte(0); w.WriteInt(2);
+            w.WriteUnicodeString("BurningLevelup"); w.WriteInt(12);
+            w.WriteInt(12); w.WriteLong(0); w.WriteInt(1); w.WriteInt(50); w.WriteInt(0); w.WriteInt(0);
+            w.WriteUnicodeString("a"); w.WriteUnicodeString("b"); w.WriteUnicodeString("c"); w.WriteUnicodeString("d");
+            w.WriteShort(0); w.WriteShort(1); w.WriteInt(7); w.WriteInt(1); Item(w, 20000004);
+            w.WriteBool(true); Item(w, 20000005); w.WriteInt(1); w.WriteInt(2000001);
+            w.WriteUnicodeString("e"); w.WriteUnicodeString("f"); w.WriteUnicodeString("g");
+            Shutdown(w, 6, (2000004, 3));
+        }));
+        Assert.That(m.Truncated, Is.False);
+        Assert.That(m.Shutdowns.Select(e => e.Id), Is.EqualTo(new[] { 6 }));
+    }
+
+    [Test]
+    public void ReadingStopsAtANameNoClassIsRegisteredUnder()
+    {
+        // Create fails: the client asserts and returns, the rest unread (gameeventmanagercli.cpp:144-147)
         var m = GameEventMessage.Read(Reader(w =>
         {
             w.WriteByte(1); w.WriteInt(3);
             Shutdown(w, 4, (2000003, 1));
-            w.WriteUnicodeString("StringBoard"); w.WriteInt(3); w.WriteUnicodeString("x"); w.WriteInt(0);
+            w.WriteUnicodeString("NoSuchEvent"); w.WriteInt(3);
             Shutdown(w, 5, (2000003, 2));
         }));
         Assert.That(m.Truncated, Is.True);
