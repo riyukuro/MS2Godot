@@ -156,6 +156,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
             ProgressiveLoading = ProgressiveLoading.Value,
             SceneHidesEmoticons = () => MovieLayerHost.Layers.InTalk,     // the cut scene sub scenes are not ported
         };
+        if (HudScene.GateTickMs != null) controller.TickMs = HudScene.GateTickMs;
         try
         {
             movie = new MovieDialog(assets, controller, new UiModel(tables), new Vector2(1280, 720));
@@ -181,6 +182,7 @@ public sealed partial class NpcEmoticons : CanvasLayer
         }
         catch (Exception e) { GD.PushWarning("chat balloon movie: " + e.Message); balloons = null; balloonMovie = null; }
         if (balloons == null) return;
+        if (HudScene.GateTickMs != null) balloons.TickMs = HudScene.GateTickMs;
         speakers = new ChatSpeakerBalloon(balloons)
         {
             Distance = constants.Float("ChatBalloonDistance", 2000),

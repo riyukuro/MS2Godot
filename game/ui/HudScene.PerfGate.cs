@@ -31,6 +31,13 @@ public partial class HudScene
     /// </summary>
     static readonly DateTime GateClock = new(2026, 1, 1, 12, 0, 0);
 
+    /// <summary>
+    /// The HUD entity timers' clock in a gate session (null outside one): the frames run so far at the gate's fixed 60 fps.
+    /// The wall clock would end a chat balloon's 5 s (and its close animation, which rebuilds its text every frame) in
+    /// whichever window the session's load time puts it.
+    /// </summary>
+    public static readonly Func<long> GateTickMs = GatePath == null ? null : () => (long)(Engine.GetProcessFrames() * 1000 / 60);
+
     int gateFrame = -1;
     readonly JsonObject gateOut = new();
     readonly JsonArray gateOpens = new();
