@@ -807,6 +807,24 @@ public partial class As3View : Node2D
         }
     }
 
+    static readonly List<As3View> focusLosers = new();
+
+    /// <summary>
+    /// The one stage's one focus for a left press this view took: in the client the press moves main.gfx's focus to the
+    /// top-most entity, the old focus wherever it is getting the mouseFocusChange first (MovieImpl's mouse handling,
+    /// sfr_gfx_01i.cpp:3673; QueueSetFocusTo, :2672). The views under this one never see the press, so their focus goes
+    /// here (the views over it saw the press on nothing of theirs, which cleared theirs).
+    /// </summary>
+    void ClearOtherFocus()
+    {
+        foreach (var v in inTree)
+            if (v != this && v.Player?.Focus != null) focusLosers.Add(v);
+        // the change events may close a dialog (a view leaving the tree), so the list is walked after the set
+        foreach (var v in focusLosers)
+            if (IsInstanceValid(v) && v.Player != null) v.Player.SetFocus(null, "mouse");
+        focusLosers.Clear();
+    }
+
     void LeaveTree()
     {
         inTree.Remove(this);
@@ -949,6 +967,7 @@ public partial class As3View : Node2D
                 else if (mb.Pressed && mb.ButtonIndex == MouseButton.WheelUp) Player.Wheel(3);
                 else if (mb.Pressed && mb.ButtonIndex == MouseButton.WheelDown) Player.Wheel(-3);
                 if (!MouseOverUi) return;   // the click goes on to the game
+                if (mb.Pressed && mb.ButtonIndex == MouseButton.Left) ClearOtherFocus();
                 break;
             }
             case InputEventKey k:
