@@ -50,6 +50,9 @@ public class LoginReturnTests {
         await ReadFrame(s, srv);
         await s.WriteAsync(srv.Frame(Inbound.MoveResult, w => w.WriteByte(9)));
         var e = Assert.ThrowsAsync<MoveRefusedException>(async () => await ret.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.That(e.Error, Is.EqualTo(9));
+        // no ServerEnter follows the refusal
+        Assert.ThrowsAsync<TimeoutException>(async () => await ReadFrame(s, srv).WaitAsync(TimeSpan.FromMilliseconds(400)), "nothing is sent after a refused key");
         l.Stop();
     }
 

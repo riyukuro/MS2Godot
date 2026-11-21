@@ -94,7 +94,7 @@ public partial class GameFlow : Node
         if (Net.LiveSession.Instance is { } liveSession)
         {
             // GameToLogin's answer is the login server's character list (LiveSession.ReturnAsync): the flow returns to character select then
-            onGameToLogin = () => { if (Current == State.Game) Go(State.Lobby); };
+            onGameToLogin = () => { if (Ms2.Ui.Launch.CharacterSelectReturn.Applies(Current == State.Game)) Go(State.Lobby); };
             liveSession.ReturnedToCharacterSelect += onGameToLogin;
         }
         // The launcher is MS2Godot's own pre-login page. A live address in the environment skips it, as do the test and

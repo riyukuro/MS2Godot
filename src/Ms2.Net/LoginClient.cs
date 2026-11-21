@@ -118,8 +118,14 @@ public sealed class LoginClient {
     /// sends SendServerEnter (networkservice.cpp:899-901); the login server then lists the characters again (the same
     /// CharacterList messages as the login). A MoveResult error throws <see cref="MoveRefusedException"/>.
     /// </summary>
-    public async Task<LoginOutcome> ReturnAsync(string host, ushort port, ulong token, long accountId, byte[] machineId, CancellationToken ct = default, int timeoutMs = 15000) {
-        if (transport.Session == null) await transport.ConnectAsync(host, port, ct);
+    public async Task<LoginOutcome> ReturnAsync(string host, ushort port, ulong token, long accountId, byte[] machineId, CancellationToken ct = default, int timeoutMs = 15000, int connectTimeoutMs = 10000) {
+        if (transport.Session == null) {
+            // the client's ConnectTo bounds the connect at 10 s (CSceneStateGame's reconnect timer)
+            using var connect = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            connect.CancelAfter(connectTimeoutMs);
+            try { await transport.ConnectAsync(host, port, connect.Token); }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new TimeoutException("login connect timed out"); }
+        }
         var list = new List<CharacterEntry>();
         int limit = 0, rows = 0;
         var deadline = Environment.TickCount64 + timeoutMs;
