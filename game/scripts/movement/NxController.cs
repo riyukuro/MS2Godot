@@ -299,7 +299,7 @@ public sealed class NxController
     /// step frees the shape from all it overlaps at once, so a shape in a one-sided wall from behind is pushed out of it,
     /// and down into the floor box it rests on, and the floor's contact is the one at that freed point, not at
     /// <paramref name="at"/>. The same when the test frees the shape but reports no contact (a capsule 0.02 into a mesh
-    /// cube's top face, in SpawnCubeStands' bisection).</summary>
+    /// cube's top face, in SpawnCubeStands' bisection), or reports only contacts shallower than <see cref="CastMargin"/>.</summary>
     bool InsideSolid(Vector3 from, Vector3 at, Vector3 dir)
     {
         var probe = dir * ProbeMotion;
@@ -308,9 +308,12 @@ public sealed class NxController
         endMotion.Margin = CastMargin;
         endMotion.RecoveryAsCollision = true;
         if (!StartedInside(PhysicsServer3D.BodyTestMotion(body.GetRid(), endMotion, motionResult), probe)) return false;
-        int n = motionResult.GetCollisionCount();
+        int n = motionResult.GetCollisionCount(), deep = 0;
         for (int i = 0; i < n; i++)
         {
+            // a contact shallower than the cast's margin (a facing floor about 1e-6 deep under a shape freed from a wall
+            // behind it) is the test's touch, not an overlap: alone it does not make the end solid
+            if (motionResult.GetCollisionDepth(i) >= CastMargin) deep++;
             var rid = motionResult.GetColliderRid(i);
             int shapeIdx = motionResult.GetColliderShape(i);
             var shape = PhysicsServer3D.BodyGetShape(rid, shapeIdx);
@@ -318,7 +321,7 @@ public sealed class NxController
                 !(FaceNormal(rid, shapeIdx, motionResult.GetCollisionPoint(i), dir) is { } f && f.Dot(dir) < 0))
                 return EndSolid(from, at, dir, out _, out _);                   // a back face: the contacts are the freed point's
         }
-        return n > 0 || EndSolid(from, at, dir, out _, out _);
+        return deep > 0 || EndSolid(from, at, dir, out _, out _);
     }
 
     readonly System.Collections.Generic.Dictionary<Rid, bool> twoSided = new();
