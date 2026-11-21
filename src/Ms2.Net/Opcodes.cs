@@ -40,7 +40,7 @@ public enum Inbound : ushort {
     UserChat = 0x1D,
     UserChatItemLink = 0x1E,
     Notice = 0x71,
-    Emote = 0x1F,
+    Emote = 0x1F,           // RecvOp::Emote (commonfiles/opcodes.h:39): CSceneStateGame::OnEmote
     ItemPutOnOrOff = 0x20,
     ItemInventory = 0x21,
     ItemPutOn = 0x25,
@@ -128,6 +128,7 @@ public enum Outbound : ushort {
     Quest = 0x29,
     InteractObject = 0x31,  // SendOp::InteractObject (commonfiles/opcodes.h:354): CInteractObject::vfunc_8/vfunc_10, StateInteraction
     InteractNpc = 0x32,     // SendOp::InteractNpc (commonfiles/opcodes.h:355): CNpc::SendInteractNpc (@0x141094730), i32 object id
+    Emote = 0x13,           // SendOp::Emote (commonfiles/opcodes.h:325): learn (1), use (2), favorite (4)
     // SendOp (commonfiles/opcodes.h): Party, RoomDungeon, DungeonReward, Club
     Party = 0x2C,
     RoomDungeon = 0x2B,
