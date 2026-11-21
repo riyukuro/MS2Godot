@@ -293,6 +293,12 @@ public sealed class BanTextChecker
     public int CheckGuildName(string name, int min, int max, out string message) =>
         Check(name, (Checks)0xd9, new Limit(min, max, true, false, false, false, true), out message);
 
+    /// <summary>CBanTextChecker::FUN_1402259b0 (commonstringtable.cpp:843): CheckTextWithLimit with the options (0xd8, true) and
+    /// the limit (1, 300, no spaces, trim checked, the character check on, a wide character counting once, no punctuation),
+    /// which 0xd8 (no limit bit) leaves unscanned: only the tables. The guild notice's check before its send (CGuildManager::FUN_1413b7c70, kind 1).</summary>
+    public int CheckGuildNoticeText(string text, out string message) =>
+        Check(text, (Checks)0xd8, new Limit(1, 300, false, false, false, false, false), out message);
+
     /// <summary>CBanTextChecker::CheckMailTitleText (@0x140225c90, commonstringtable.cpp:869): CheckTextOption with the types 0xd8 and
     /// an error package of kind 3 = 0x8c1 (s_ban_check_title_err_any_word) and kind 4 = 0x8c2; a word hit shows the title text.</summary>
     public int CheckMailTitleText(string title, out string message) =>

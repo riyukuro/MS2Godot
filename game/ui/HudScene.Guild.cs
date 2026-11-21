@@ -39,7 +39,9 @@ public partial class HudScene
         var checker = CommunityChecker();
         book.CheckName = name => checker.CheckGuildName(name, t.GuildNameLengthMin, t.GuildNameLengthMax, out var msg) == 0 ? null : msg ?? "";
         book.CheckContent = text => checker.CheckContentText(text, out var msg) == 0 ? null : msg ?? "";
-        // BannedName (CBanTextChecker::FUN_140225210) and BannedWord (FUN_1402259b0) are STILL-OPEN: not ported, so null
+        // CheckName (uihelpers.cpp:873): FUN_140225210(name, message, 0), the long form
+        book.BannedName = name => checker.CheckCharacterName(name, out _, shortForm: false) != 0;
+        book.BannedWord = text => checker.CheckGuildNoticeText(text, out _) != 0;
         return book;
     }
 

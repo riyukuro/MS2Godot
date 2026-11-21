@@ -61,6 +61,13 @@ public class BanTextCheckerTests
         Assert.That(m, Is.EqualTo("This word cannot be used."));         // 0xd8 has not: all_word
     }
 
+    [TestCase("Hello", 0)]
+    [TestCase("", 0)]                                         // 0xd8 has no limit bit: the limit is not scanned
+    [TestCase("Hello there", 0)]
+    [TestCase("so bad", 8)]
+    [TestCase("Whole", 9)]
+    public void GuildNoticeCheck(string text, int expected) => Assert.That(Checker().CheckGuildNoticeText(text, out _), Is.EqualTo(expected));
+
     [Test]
     public void MailTitleAndContentUseTheirOwnWordHitStrings()
     {
