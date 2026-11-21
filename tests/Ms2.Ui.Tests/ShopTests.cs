@@ -967,7 +967,7 @@ public class ShopTests
     }
 
     [Test]
-    public void CanPayProductTruncatesTotalToSignedIntLikeClient()
+    public void CanPayProductTruncatesTotalToUnsigned32LikeClient()
     {
         Packs();
         var model = NewModel();
@@ -985,13 +985,16 @@ public class ShopTests
         Assert.That(c.CanPayProduct(prod, 1), Is.False);
         Assert.That(notices, Has.Count.EqualTo(1));
 
-        // Client FUN_140db8580 casts total to int: 3,000,000,000 wraps to -1,294,967,296, so 0 >= total passes and sends mode 4
+        // FUN_140db8580 truncates the total to 32 bits and CanPayCurrency takes it unsigned: 3,000,000,000 is refused
         notices.Clear();
         prod.Record.Price = 3_000_000_000L;
-        Assert.That(c.CanPayProduct(prod, 1), Is.True);
+        Assert.That(c.CanPayProduct(prod, 1), Is.False);
+        Assert.That(notices, Has.Count.EqualTo(1));
         c.BuyProduct(1, 0);
-        Assert.That(sent, Is.EqualTo(new[] { new ShopBuyRequest(1, 1, 106) }));
-        Assert.That(notices, Is.Empty);
+        Assert.That(sent, Is.Empty);
+        // 2^32 wraps to 0 in the client's 32-bit total
+        prod.Record.Price = 4_294_967_296L;
+        Assert.That(c.CanPayProduct(prod, 1), Is.True);
     }
 
     [Test]

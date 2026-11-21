@@ -1401,15 +1401,16 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     }
 
     /// <summary>
-    /// CNpcShopProductCli::FUN_140db8580 (npcshopproductbase.cpp:492-500): computes price * count and casts to 32-bit
-    /// signed int before CanPayCurrency / HasEnoughCurrency (matching the client's exact overflow behavior where e.g. an
-    /// unsigned price of 3,000,000,000 truncates to -1,294,967,296 and passes a >= balance check); on failure posts
+    /// CNpcShopProductCli::FUN_140db8580 (npcshopproductbase.cpp:492-500): computes price * count and truncates to 32 bits
+    /// before CanPayCurrency / HasEnoughCurrency (the client's 32-bit truncation, taken unsigned by CanPayCurrency's unsigned parameter); on failure posts
     /// FUN_14134a120 notice and returns false.
     /// </summary>
     public bool CanPayProduct(Product p, int count)
     {
         if (p == null) return false;
-        int total = unchecked((int)(p.Record.Price * count));
+        // The int total goes to CanPayCurrency(unsigned nAmount) (unit_141347b10.cpp:574), zero-extended for HasEnoughCurrency
+        // (uicommon.cpp:971): a price of 3,000,000,000 stays 3,000,000,000, and 2^32 wraps to 0.
+        long total = unchecked((uint)(p.Record.Price * count));
         if (!HasEnoughCurrency(CurrencyOf(p.Record.Currency), total, p.Record.CurrencyItemId))
         {
             ShowLackCurrency(p.Record.Currency, p.Record.CurrencyItemId, total);
