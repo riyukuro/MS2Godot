@@ -146,6 +146,7 @@ static class Gms2Opcodes {
         [Inbound.GuideRecord] = 0x8B,
         [Inbound.DynamicChannel] = 0xA9,
         [Inbound.ChatStamp] = 0x128,
+        [Inbound.ItemBox] = 0xAE,
     };
     public static readonly Dictionary<Outbound, ushort> OutboundNumbers = new() {
         [Outbound.ResponseVersion] = 0x01,
@@ -171,6 +172,7 @@ static class Gms2Opcodes {
         [Outbound.RequestItemLock] = 0x88,
         [Outbound.RequestItemStorage] = 0x18,
         [Outbound.RequestItemUse] = 0x19,
+        [Outbound.RequestItemBox] = 0x1A,
         [Outbound.RequestItemPickup] = 0x1C,
         [Outbound.RequestMesoPickup] = 0x1D,
         [Outbound.BadgeEquip] = 0x48,
