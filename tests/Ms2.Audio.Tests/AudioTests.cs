@@ -559,14 +559,16 @@ public class AudioTests
         xf.Step(0.001f);
         MusicCrossfade.LinkCrossfadeMs(endLink, 2000);
         long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 10_000; i++)
+        for (int i = 0; i < 100_000; i++)
         {
             if (!xf.IsFading) xf.BeginTransition(crossfadeMs: 2000, hasActiveAudio: true);
             xf.Step(0.016f);
             _ = MusicCrossfade.LinkCrossfadeMs(endLink, 2000);
         }
         long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.That(allocated, Is.EqualTo(0), "MusicCrossfade per-frame stepping must not allocate");
+        // Under 512 B over 100000 steps, the repo's bound: a Release run sees a one-off 24 B while the JIT tiers up, which
+        // a per-step allocation (at least 24 B each, 2.4 MB in all) could not hide under.
+        Assert.That(allocated, Is.LessThan(512), "MusicCrossfade per-frame stepping must not allocate");
     }
 
     [Test]
