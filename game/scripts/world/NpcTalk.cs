@@ -109,10 +109,15 @@ public sealed partial class NpcTalk : Node
         Ui.MessageBoxLayer.Ensure(this);    // the accept's unrequire-group box (CUIService::CreateAllDialogs has the one layer)
         if (live == null) return;
         live.NpcTalkReceived += OnLiveTalk;
+        live.IsTalking = () => liveTalking != null;
+        live.TalkEnded += OnTalkEndedByUi;
         live.Quests.NpcOffer += OnQuestOffer;
         live.Quests.Started += OnLiveQuestStarted;          // the popup's UIQuestEventListener slots 1 and 3
         live.Quests.ProgressUpdated += OnLiveQuestProgress;
     }
+
+    /// <summary>A talk ui's close sent NpcTalk 0 (SendNpcTalkMode0): the talk is over (m_nTalking = 0).</summary>
+    void OnTalkEndedByUi() { liveTalking = null; liveRequested = null; }
 
     public override void _ExitTree()
     {
@@ -120,6 +125,8 @@ public sealed partial class NpcTalk : Node
         ClosePopupMovie();
         if (live == null) return;
         live.NpcTalkReceived -= OnLiveTalk;
+        live.TalkEnded -= OnTalkEndedByUi;
+        live.IsTalking = () => false;
         live.Quests.NpcOffer -= OnQuestOffer;
         live.Quests.Started -= OnLiveQuestStarted;
         live.Quests.ProgressUpdated -= OnLiveQuestProgress;

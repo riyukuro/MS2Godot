@@ -317,6 +317,11 @@ public partial class LiveSession : Node
     public event Action<NpcTalkMessage> NpcTalkReceived;
     /// <summary>The talk window's NpcTalk (0x22) and Quest (0x29) sends.</summary>
     public void SendTalk(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
+    /// <summary>UITalkManager::GetTalking() != 0: a talk with an npc is open (set by the field's talk).</summary>
+    public Func<bool> IsTalking = () => false;
+    /// <summary>A dialog opened from the talk ends it: UITalkManager::SendNpcTalkMode0 (NpcTalk 0) and the talk's state clears.</summary>
+    public void EndTalk() { SendTalk(new NpcTalkEndRequest()); TalkEnded?.Invoke(); }
+    public event Action TalkEnded;
     /// <summary>The Shop packets (0x51, UIShopDialog::OnShopPacket) for the npc shop; live only.</summary>
     public event Action<ShopPacket> ShopReceived;
     /// <summary>The system shop open result (0xA1, CSceneStateGame::OnSystemShop); live only.</summary>

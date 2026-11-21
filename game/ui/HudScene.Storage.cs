@@ -38,6 +38,8 @@ public partial class HudScene
             FindInventoryItem = uid => live.Inventory?.FindByUid(uid),
             PlayerAlive = () => live.Me is { Dead: false },
             IsScoreItem = id => hudModel.Tables.Items.Get(id)?.IsScoreItem ?? false,
+            PlayingScoreUid = () => live.PlayingScoreUid,
+            SummonUid = () => live.Me?.Pet?.Uid ?? 0,
             IsPetItem = id => hudModel.Tables.Items.Get(id)?.IsPetItem ?? false,
             BindNotice = score => SystemNoticeText(hudModel.Tables.Common(score ? "s_item_err_binditem_by_playing_score" : "s_item_err_binditem_by_summon_pet") ?? ""),
             DepositMax = hudModel.Tables.StoreDepositMax,
@@ -95,6 +97,8 @@ public partial class HudScene
             ShiftHeld = () => Input.IsKeyPressed(Key.Shift),
             ExpandPrice = () => hudModel.Tables.StoreExpandPrice1Row,
             OpenInventory = () => inventory != null && !inventory.IsClosed ? inventory : null,
+            IsTalking = () => live.IsTalking(),
+            EndTalk = live.EndTalk,
         };
         c.InventoryWindowPos += _ =>
         {
