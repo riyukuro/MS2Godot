@@ -185,6 +185,12 @@ public class BattleRecordTests {
         void Calls() { for (int i = 0; i < 1000; i++) m.Record(d, yes, yes, yes); }
         Calls();
         Assert.That(LeastBytes(Calls), Is.Zero, "no group active");
+        int roomAsks = 0;
+        m.ChaosRoomMeter = () => { roomAsks++; return true; };
+        Calls();
+        Assert.That(LeastBytes(Calls), Is.Zero, "in a chaos dungeon room, no group running");
+        Assert.That(roomAsks, Is.Zero, "the room is asked only for a running chaos group");
+        Assert.That(m.HasRecord(2, 1000) && m.GetRecord(2, 1000).Amount(BattleRecord.Dealt) == 0, Is.True);
         m.StartGroup(1);
         Calls();
         Assert.That(LeastBytes(Calls), Is.Zero, "the party group active");

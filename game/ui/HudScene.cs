@@ -751,7 +751,9 @@ public partial class HudScene : Node, IUiStageHost
         {
             live.GuidePane = GuideEvent;
             live.FindDialogOf = FindGuideDialog;      // the guide's dialog conditions over the HUD's dialogs
-            live.DungeonRoomOf = id => (dungeonRooms ??= DungeonRooms.Load(assets.Packs, e => Ms2.Ui.FeatureElements.IsAvailable(assets.Packs, e))).GetRoom(id);
+            // the room table read here at the field's HUD build, on the main thread: no parse on the packet path
+            var rooms = dungeonRooms ??= DungeonRooms.Load(assets.Packs, e => Ms2.Ui.FeatureElements.IsAvailable(assets.Packs, e));
+            live.DungeonRoomOf = rooms.GetRoom;
         }
     }
 

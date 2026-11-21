@@ -46,8 +46,9 @@ public sealed class BattleRecordGroup {
     /// <summary>Stop (@0x140a03460): stopped, every record reset (the records stay).</summary>
     public void Stop() { Running = false; StartTick = 0; ResetAll(); }
     void ResetAll() { foreach (var r in records.Values) r.Reset(); }
-    /// <summary>IsActive (@0x140a03530): the chaos group also needs a current dungeon room with chaosDamageMeter.</summary>
-    public bool IsActive => (Type != Chaos || owner.ChaosRoomMeter()) && Running;
+    /// <summary>IsActive (@0x140a03530): running, and the chaos group also needs a current dungeon room with chaosDamageMeter;
+    /// the room is looked up only for a running chaos group.</summary>
+    public bool IsActive => Running && (Type != Chaos || owner.ChaosRoomMeter());
     /// <summary>AddRecord (@0x140a03620): a new zeroed record unless the id has one.</summary>
     public void AddRecord(long id) { if (!records.ContainsKey(id)) records[id] = new BattleRecord(id); }
     /// <summary>RemoveRecord (@0x140a036d0).</summary>

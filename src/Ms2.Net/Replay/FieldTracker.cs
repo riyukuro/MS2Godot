@@ -62,7 +62,9 @@ public sealed class FieldTracker {
 
     readonly object gate = new();
     readonly Dictionary<int, NpcState> npcs = new();
-    readonly Dictionary<int, int> petOwners = new();        // FieldAddPet: pet object id -> owner object id
+    // FieldAddPet: pet object id -> owner object id. STILL-OPEN: every FieldAddPet is kept; the client makes the pet only when
+    // CPet vfunc_124(npc id) and OnObjectCreated succeed (scenestategame.cpp:9699, :9710), and neither is modelled here.
+    readonly Dictionary<int, int> petOwners = new();
     /// <summary>The npc table's view of an npc id (boss layout, property tag). Without it every npc reads as a plain one.</summary>
     public Func<int, NpcLayout> NpcLayoutOf { get; set; } = _ => default;
     public IReadOnlyList<NpcState> NpcSnapshot() { lock (gate) return npcs.Values.Select(n => new NpcState { ObjectId = n.ObjectId, NpcId = n.NpcId, Moves = n.Moves, Position = n.Position, YawDegrees = n.YawDegrees }).ToList(); }
