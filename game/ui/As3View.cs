@@ -954,6 +954,10 @@ public partial class As3View : Node2D
             case InputEventKey k:
             {
                 if (TakesKeys?.Invoke() == false) return;
+                // the client's dialogs are clips of one movie (GFxManager's movie 2, which CUIService::IsTextFieldFocused asks,
+                // uiservice.cpp:1368) with one focus, so a key goes to the focused text field wherever it is: a view
+                // without one passes the key on while another view has one
+                if (!Ms2.Ui.WindowIme.TakesText(Player.Focus) && InputFieldFocused) return;
                 uint code = FlashKeyCode(k.Keycode);
                 if (code == 0 && k.Unicode == 0) return;
                 Player.Key(code, k.Pressed ? (uint)k.Unicode : 0, k.Pressed, k.ShiftPressed, k.CtrlPressed);
