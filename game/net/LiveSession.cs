@@ -707,7 +707,7 @@ public partial class LiveSession : Node
 
     void ApplyItems(Ms2.Net.Wire.RawPacket p) {
         if (System.Environment.GetEnvironmentVariable("MS2_LIVE_DUMP") == "1") GD.Print("live: item raw " + Convert.ToHexString(p.Body));
-        try { var r = p.Reader(); var m = ItemMessage.Read(r, Items.Get); Items.Apply(m); GD.Print("live: item " + Describe(m) + (r.Available != 0 ? $" !! {r.Available} bytes left" : "")); }
+        try { var r = p.Reader(); var m = ItemMessage.Read(r, Items.Get, game.Profile); Items.Apply(m); GD.Print("live: item " + Describe(m) + (r.Available != 0 ? $" !! {r.Available} bytes left" : "")); }
         catch (Exception e) { GD.PushWarning($"live: item packet: {e.Message}"); }
     }
 

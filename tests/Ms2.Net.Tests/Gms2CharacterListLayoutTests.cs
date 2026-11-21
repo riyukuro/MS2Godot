@@ -15,7 +15,7 @@ public class Gms2CharacterListLayoutTests {
     static ByteReader R(ByteWriter w) => new(w.ToArray());
 
     // upstream Item.WriteTo with every optional block at its default, except what the callers pass in
-    static void WriteBody(ByteWriter w, Action<ByteWriter> stats = null, Action<ByteWriter> enchantOptions = null, Action<ByteWriter> limitBreak = null,
+    internal static void WriteBody(ByteWriter w, Action<ByteWriter> stats = null, Action<ByteWriter> enchantOptions = null, Action<ByteWriter> limitBreak = null,
                           Action<ByteWriter> extra = null, Action<ByteWriter> appearance = null) {
         w.WriteInt(1); w.WriteInt(0); w.WriteInt(-1);                 // Amount, 0, -1
         w.WriteLong(111); w.WriteLong(222); w.WriteLong(0);           // CreationTime, ExpiryTime, 0

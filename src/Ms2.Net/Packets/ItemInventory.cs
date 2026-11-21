@@ -21,16 +21,26 @@ public abstract record ItemMessage {
     public sealed record Other(int Mode) : ItemMessage;
 
     /// <summary>Reads one message. <paramref name="find"/> tells the item of an uid (mode 0xe needs its id for the body layout).</summary>
-    public static ItemMessage Read(ByteReader r, Func<long, EquipItem> find) {
+    public static ItemMessage Read(ByteReader r, Func<long, EquipItem> find) => Read(r, find, ProtocolProfile.Kms2525);
+
+    /// <summary>
+    /// The GMS2 command numbers (upstream ItemInventoryPacket.Command) are mapped to the KMS2 mode each one stands for:
+    /// 7 Load (6), 8 NotifyNew (7), 10 LoadTab (8), 12 ExpandComplete (10), 13 Reset (11), 14 ExpandCount (12), 15 Error (13),
+    /// 16 UpdateItem (14); 0 to 3 are the same. Item bodies read through the GMS2 item layout, and Add carries a unicode
+    /// equip slot after the rarity. Any other GMS2 command is <see cref="Other"/>.
+    /// </summary>
+    public static ItemMessage Read(ByteReader r, Func<long, EquipItem> find, ProtocolProfile profile) {
         int mode = r.ReadByte();
+        bool gms2 = profile.IsGms2;
+        if (gms2) mode = mode switch { 7 => 6, 8 => 7, 10 => 8, 12 => 10, 13 => 11, 14 => 12, 15 => 13, 16 => 14, <= 3 => mode, _ => 100 + mode };
         switch (mode) {
-            case 0: return new Add(ItemReader.ReadInventory(r));
+            case 0: return new Add(ItemReader.ReadInventory(r, profile, true));
             case 1: return new Remove(r.ReadLong());
             case 2: return new Amount(r.ReadLong(), r.ReadInt());
             case 3: return new Move(r.ReadLong(), r.ReadShort(), r.ReadLong(), r.ReadShort());
-            case 6: return new Load(ItemList(r));
+            case 6: return new Load(ItemList(r, profile));
             case 7: { long uid = r.ReadLong(); int arg = r.ReadInt(); return new NotifyNew(uid, arg, r.ReadUnicodeString()); }
-            case 8: { int tab = r.ReadInt(); if (tab < 0) { r.ReadShort(); return new LoadTab(tab, new List<EquipItem>()); } return new LoadTab(tab, ItemList(r)); } // FUN_141715860 returns on a negative tab without reading records
+            case 8: { int tab = r.ReadInt(); if (tab < 0) { r.ReadShort(); return new LoadTab(tab, new List<EquipItem>()); } return new LoadTab(tab, ItemList(r, profile)); } // FUN_141715860 returns on a negative tab without reading records
             case 10: return new ExpandComplete();
             case 11: return new Reset(r.ReadInt());
             case 12: { int tab = r.ReadByte(); return new ExpandCount(tab, r.ReadInt()); }
@@ -45,18 +55,18 @@ public abstract record ItemMessage {
                 var it = find(uid);
                 if (it == null) return new Update(uid, null);       // the client skips an unknown uid; the rest of the packet is unread
                 var copy = new EquipItem { Id = it.Id, Uid = it.Uid, Rarity = it.Rarity, Slot = it.Slot, InventorySlot = it.InventorySlot };
-                ItemReader.ReadBodyInto(r, copy);
+                ItemReader.ReadBodyInto(r, copy, profile);
                 return new Update(uid, copy);
             }
-            default: return new Other(mode);
+            default: return new Other(gms2 && mode >= 100 ? mode - 100 : mode);
         }
     }
 
-    static List<EquipItem> ItemList(ByteReader r) {
+    static List<EquipItem> ItemList(ByteReader r, ProtocolProfile profile) {
         int n = (ushort) r.ReadShort();
         var l = new List<EquipItem>(n);
         for (int i = 0; i < n; i++) {
-            var it = ItemReader.ReadInventory(r);
+            var it = ItemReader.ReadInventory(r, profile, false);
             if (it == null) break;      // an unknown item id: the client's create fails and the rest of the list is not read
             l.Add(it);
         }

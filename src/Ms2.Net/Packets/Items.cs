@@ -216,17 +216,27 @@ public static class ItemReader {
     /// An inventory record (OnItemInventory modes 0, 6, 8): i32 id, i64 uid, i16 bag slot, i32 rarity, then the item body.
     /// Null for an id the item data does not know: no body is read (the client's item create fails there).
     /// </summary>
-    public static EquipItem ReadInventory(ByteReader r) {
+    public static EquipItem ReadInventory(ByteReader r) => ReadInventory(r, ProtocolProfile.Kms2525, false);
+
+    /// <summary>
+    /// GMS2 form (upstream ItemInventoryPacket.cs): the same id, uid, slot, rarity head, then (only for the Add command,
+    /// <paramref name="slotName"/>) one unicode equip slot string, then the GMS2 item body.
+    /// STILL-OPEN: the client's own read of the slot string is not recovered; it is skipped.
+    /// </summary>
+    public static EquipItem ReadInventory(ByteReader r, ProtocolProfile profile, bool slotName) {
         var it = new EquipItem { Id = r.ReadInt(), Uid = r.ReadLong(), InventorySlot = r.ReadShort(), Rarity = r.ReadInt() };
+        if (profile.IsGms2 && slotName) r.ReadUnicodeString();
         if (Known != null && !Known(it.Id)) return null;
         it.Slot = SlotOf?.Invoke(it.Id) ?? EquipSlot.Unknown;
-        ReadBody(r, it, it.Slot);
+        ReadBody(r, it, it.Slot, gms2: profile.IsGms2);
         return it;
     }
 
     /// <summary>The body alone of a known item (OnItemInventory mode 0xe re-reads it into the item found by uid).</summary>
-    public static void ReadBodyInto(ByteReader r, EquipItem it) {
-        ReadBody(r, it, it.Slot);
+    public static void ReadBodyInto(ByteReader r, EquipItem it) => ReadBodyInto(r, it, ProtocolProfile.Kms2525);
+
+    public static void ReadBodyInto(ByteReader r, EquipItem it, ProtocolProfile profile) {
+        ReadBody(r, it, it.Slot, gms2: profile.IsGms2);
     }
 
     /// <summary>
