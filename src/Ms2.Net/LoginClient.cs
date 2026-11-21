@@ -41,7 +41,7 @@ public sealed class LoginClient {
             }
             if (transport.Is(p, Inbound.CharacterCreate)) { var a = CharacterCreateAnswer.Read(p.Reader()); throw new CharacterCreateRefused(a.Kind, a.Message); }
             if (transport.Is(p, Inbound.CharacterList)) {
-                var m = CharacterListMessage.Read(p.Reader());
+                var m = CharacterListMessage.Read(p.Reader(), "KR", transport.Profile);
                 if (m.Command == CharacterListCommand.AppendEntry && m.Entries.Count > 0) return m.Entries[0];
             }
         }
@@ -61,7 +61,7 @@ public sealed class LoginClient {
                 continue;
             }
             if (!transport.Is(p, Inbound.CharacterList)) continue;
-            var m = CharacterListMessage.Read(p.Reader());
+            var m = CharacterListMessage.Read(p.Reader(), "KR", transport.Profile);
             if (m.Command is CharacterListCommand.DeleteEntry or CharacterListCommand.BeginDelete or CharacterListCommand.CancelDelete && m.CharacterId == characterId) return m;
         }
     }
@@ -104,7 +104,7 @@ public sealed class LoginClient {
                     var cr = p.Reader(); limit = cr.ReadInt(); rows = cr.ReadInt();
                     break;
                 case Inbound.CharacterList:
-                    var m = CharacterListMessage.Read(p.Reader());
+                    var m = CharacterListMessage.Read(p.Reader(), "KR", transport.Profile);
                     if (m.Command == CharacterListCommand.StartList) list.Clear();
                     else if (m.Command is CharacterListCommand.List or CharacterListCommand.AppendEntry) list.AddRange(m.Entries);
                     else if (m.Command == CharacterListCommand.EndList) return new LoginOutcome(result ?? throw new InvalidDataException("CharacterList before LoginResult"), list) { CharacterLimit = limit, CharacterRows = rows, Endpoint = endpoint };
@@ -151,7 +151,7 @@ public sealed class LoginClient {
                     var cr = p.Reader(); limit = cr.ReadInt(); rows = cr.ReadInt();
                     break;
                 case Inbound.CharacterList:
-                    var cl = CharacterListMessage.Read(p.Reader());
+                    var cl = CharacterListMessage.Read(p.Reader(), "KR", transport.Profile);
                     if (cl.Command == CharacterListCommand.StartList) list.Clear();
                     else if (cl.Command is CharacterListCommand.List or CharacterListCommand.AppendEntry) list.AddRange(cl.Entries);
                     else if (cl.Command == CharacterListCommand.EndList) return new LoginOutcome(new LoginResult(0, 0, "", 0, 0, 0, 0, 0, null), list) { CharacterLimit = limit, CharacterRows = rows };

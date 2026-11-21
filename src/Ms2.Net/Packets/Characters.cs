@@ -199,17 +199,21 @@ public sealed class CharacterEntry {
     public bool HasSkinTab; public long SkinTabStart, SkinTabEnd;
     public List<EquipItem> Outfit2 = new();
 
-    public static CharacterEntry Read(ByteReader r, string locale = "KR") {
-        var e = new CharacterEntry { User = UserBlock.Read(r, locale), Picture = r.ReadUnicodeString(), DeleteTime = r.ReadLong() };
+    public static CharacterEntry Read(ByteReader r, string locale = "KR") => Read(r, locale, ProtocolProfile.Kms2525);
+
+    /// <summary>The entry for a profile. GMS2 (upstream CharacterListPacket.WriteEntry): the user block with locale "NA", the equips and badges in the
+    /// GMS2 item layout, and the one Outfit2 byte (0), which reads as no skin tab.</summary>
+    public static CharacterEntry Read(ByteReader r, string locale, ProtocolProfile profile) {
+        var e = new CharacterEntry { User = UserBlock.Read(r, profile.IsGms2 ? "NA" : locale), Picture = r.ReadUnicodeString(), DeleteTime = r.ReadLong() };
         int n = r.ReadByte();
-        for (int i = 0; i < n; i++) e.Equips.Add(ItemReader.ReadEquip(r));
+        for (int i = 0; i < n; i++) e.Equips.Add(ItemReader.ReadEquip(r, profile));
         n = r.ReadByte();
-        for (int i = 0; i < n; i++) e.Badges.Add(ItemReader.ReadBadge(r));
+        for (int i = 0; i < n; i++) e.Badges.Add(ItemReader.ReadBadge(r, profile));
         e.HasSkinTab = r.ReadBool();
         if (e.HasSkinTab) {
             e.SkinTabStart = r.ReadLong(); e.SkinTabEnd = r.ReadLong();
             n = r.ReadByte();
-            for (int i = 0; i < n; i++) e.Outfit2.Add(ItemReader.ReadEquip(r));
+            for (int i = 0; i < n; i++) e.Outfit2.Add(ItemReader.ReadEquip(r, profile));
         }
         return e;
     }
@@ -236,15 +240,17 @@ public sealed class CharacterListMessage {
     public int Error;       // CharacterDeleteError, 0 = ok
     public long DeleteTime;
 
-    public static CharacterListMessage Read(ByteReader r, string locale = "KR") {
+    public static CharacterListMessage Read(ByteReader r, string locale = "KR") => Read(r, locale, ProtocolProfile.Kms2525);
+
+    public static CharacterListMessage Read(ByteReader r, string locale, ProtocolProfile profile) {
         var m = new CharacterListMessage { Command = (CharacterListCommand) r.ReadByte() };
         switch (m.Command) {
             case CharacterListCommand.List: {
                 int n = r.ReadByte();
-                for (int i = 0; i < n; i++) m.Entries.Add(CharacterEntry.Read(r, locale));
+                for (int i = 0; i < n; i++) m.Entries.Add(CharacterEntry.Read(r, locale, profile));
                 break;
             }
-            case CharacterListCommand.AppendEntry: m.Entries.Add(CharacterEntry.Read(r, locale)); break;
+            case CharacterListCommand.AppendEntry: m.Entries.Add(CharacterEntry.Read(r, locale, profile)); break;
             case CharacterListCommand.StartList: break;
             case CharacterListCommand.EndList: m.CheckNames = r.ReadBool(); break;
             case CharacterListCommand.DeleteEntry: m.Error = r.ReadInt(); m.CharacterId = r.ReadLong(); break;

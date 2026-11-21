@@ -71,6 +71,17 @@ public sealed class EquipItem {
 public sealed class ItemOptions {
     public readonly Dictionary<int, int>[] Stat = { new(), new(), new(), new(), new() };
     public readonly Dictionary<int, int>[] Special = { new(), new(), new(), new(), new() };
+    /// <summary>GMS2 only (upstream ItemStats.WriteTo; BasicOption and SpecialOption are two 4-byte fields): 9 sets instead of 5.
+    /// Stat holds BasicOption.Value, StatRate its Rate; Special holds SpecialOption.Value truncated to an int, SpecialRate its Rate.
+    /// STILL-OPEN: how the KMS2 client's single int per option maps to Rate and Value (no GMS2 client data here).</summary>
+    public Dictionary<int, float>[] StatRate = Array.Empty<Dictionary<int, float>>(), SpecialRate = Array.Empty<Dictionary<int, float>>();
+    public ItemOptions() { }
+    ItemOptions(int sets) {
+        Stat = new Dictionary<int, int>[sets]; Special = new Dictionary<int, int>[sets];
+        StatRate = new Dictionary<int, float>[sets]; SpecialRate = new Dictionary<int, float>[sets];
+        for (int i = 0; i < sets; i++) { Stat[i] = new(); Special[i] = new(); StatRate[i] = new(); SpecialRate[i] = new(); }
+    }
+    public static ItemOptions ForGms2() => new(9);
     /// <summary>m_n2f0 (CItemOption::GetMergeId, itemoptiondata_1.cpp:89).</summary>
     public int MergeId;
 }
@@ -82,12 +93,16 @@ public sealed class ItemEnchant {
     /// <summary>HistoryEnabled: the history ctor sets enabled to true (itemenchantinfo.cpp:18); a read replaces it.</summary>
     public long HistoryItemId; public int Attempts, Failures; public bool HistoryEnabled = true; public int FailStack;
     public readonly Dictionary<int, int> Options = new();
+    /// <summary>GMS2 only: each enchant option's BasicOption.Rate (upstream ItemEnchant.WriteTo).</summary>
+    public readonly Dictionary<int, float> OptionRates = new();
 }
 
 /// <summary>UnlimitedEnchantInfo::ReadFromStream (unlimitedenchantinfo.cpp:101): level, stat options, special options.</summary>
 public sealed class ItemLimitBreak {
     public int Level;
     public readonly Dictionary<int, int> Stat = new(), Special = new();
+    /// <summary>GMS2 only: BasicOption.Rate and SpecialOption.Rate per id (upstream ItemLimitBreak.WriteTo); Special holds SpecialOption.Value truncated.</summary>
+    public readonly Dictionary<int, float> StatRate = new(), SpecialRate = new();
 }
 
 /// <summary>CItemTransfer::vfunc_2: rule, m_b38, count, max, m_b3F, m_b42, then the binding when present.</summary>
@@ -236,6 +251,30 @@ public static class ItemReader {
         return it;
     }
 
+    /// <summary>The equip slot as the GMS2 server names it (upstream EquipPacketHelper.WriteEquip: the EquipSlot name, a unicode string).</summary>
+    public static EquipSlot ParseSlotName(string name) =>
+        Enum.TryParse<EquipSlot>(name, out var slot) && Enum.IsDefined(slot) ? slot : throw new InvalidDataException($"unknown equip slot name \"{name}\"");
+
+    /// <summary><see cref="ReadEquip(ByteReader)"/> for a profile. GMS2 (upstream EquipPacketHelper.WriteEquip, Item.WriteTo): the slot is a
+    /// unicode name and the body is the GMS2 body. KMS2 is the untouched original.</summary>
+    public static EquipItem ReadEquip(ByteReader r, ProtocolProfile profile) {
+        if (!profile.IsGms2) return ReadEquip(r);
+        var it = new EquipItem { Id = r.ReadInt(), Uid = r.ReadLong() };
+        it.Slot = ParseSlotName(r.ReadUnicodeString());
+        it.Rarity = r.ReadInt();
+        ReadBody(r, it, it.Slot, gms2: true);
+        return it;
+    }
+
+    /// <summary><see cref="ReadBadge(ByteReader)"/> for a profile. GMS2 (upstream WriteBadge): u8 BadgeType, i32 id, i64 uid, i32 rarity, then
+    /// the GMS2 body, whose badge block is upstream ItemBadge.WriteTo.</summary>
+    public static EquipItem ReadBadge(ByteReader r, ProtocolProfile profile) {
+        if (!profile.IsGms2) return ReadBadge(r);
+        var it = new EquipItem { IsBadge = true, BadgeSlot = r.ReadByte(), Id = r.ReadInt(), Uid = r.ReadLong(), Rarity = r.ReadInt() };
+        ReadBody(r, it, EquipSlot.Unknown, badge: true, gms2: true);
+        return it;
+    }
+
     /// <summary>ItemPutOn (CSceneStateGame::OnItemPutOn): i32 object id, i32 item id, i64 uid, u8 slot, i32 rarity, u8 kind, then the item body. Worn by another player, or the local one.</summary>
     public static (int ObjectId, byte Kind, EquipItem Item) ReadPutOn(ByteReader r) {
         int obj = r.ReadInt();
@@ -280,9 +319,10 @@ public static class ItemReader {
         return it;
     }
 
-    static void ReadBody(ByteReader r, EquipItem it, EquipSlot slot, bool badge = false, ItemExtra? forceExtra = null) {
+    static void ReadBody(ByteReader r, EquipItem it, EquipSlot slot, bool badge = false, ItemExtra? forceExtra = null, bool gms2 = false) {
         it.Amount = r.ReadInt();
         it.HeaderInt60 = r.ReadInt();
+        if (gms2) r.ReadInt();      // upstream Item.WriteTo: a second int (-1) after the first
         it.CreationTime = r.ReadLong();
         it.ExpiryTime = r.ReadLong();
         it.RetrievableUntil = r.ReadLong();
@@ -309,6 +349,7 @@ public static class ItemReader {
 
         // CItemStatus::ReadFromStream: the options, the enchant, the limit break
         // a re-read starts over as the client's do (ClearAll, Reset, the clears, RemoveAll)
+        if (gms2) { ReadGms2Status(r, it); goto afterStatus; }
         var o = it.Options = new ItemOptions();
         for (int i = 0; i < 5; i++) {
             int basic = (ushort) r.ReadShort();
@@ -331,6 +372,7 @@ public static class ItemReader {
         n = (uint) r.ReadInt();
         for (uint i = 0; i < n; i++) { int id = (ushort) r.ReadShort(); lb.Special[id] = r.ReadInt(); }
 
+        afterStatus:
         var extra = forceExtra ?? (badge ? ItemExtra.Gem : ExtraOf?.Invoke(it.Id)) ?? (LooksUgc(r) ? ItemExtra.Ugc : ItemExtra.None);
         it.HasUgc = (extra & ItemExtra.Ugc) != 0;
         if (it.HasUgc) {
@@ -338,7 +380,13 @@ public static class ItemReader {
             // ItemBlueprint: i64, 3 x i32, i64, i32 type, i64, i64, string
             r.ReadLong(); r.ReadInt(); r.ReadInt(); r.ReadInt(); r.ReadLong(); r.ReadInt(); r.ReadLong(); r.ReadLong(); r.ReadUnicodeString();
         }
-        if ((extra & ItemExtra.Gem) != 0) {
+        if (gms2 && badge) {
+            // upstream ItemBadge.WriteTo: u8 1, u8 BadgeType, the item id as a string; Transparency: 10 bools; PetSkin: i32 pet id
+            r.ReadByte(); it.GemType = r.ReadByte();
+            int.TryParse(r.ReadUnicodeString(), out it.GemId);
+            if (it.GemType == 1) { for (int i = 0; i < 10; i++) r.ReadBool(); }
+            else if (it.GemType == 11) it.GemPetId = r.ReadInt();
+        } else if ((extra & ItemExtra.Gem) != 0) {
             // CItemGem::vfunc_4 0x1405a7920: bool has; u8 type, i32 gem id, then the gem (type 1 transparency: 10 bytes, type 11 pet skin: i32)
             if (r.ReadBool()) {
                 byte type = r.ReadByte();
@@ -378,6 +426,32 @@ public static class ItemReader {
         // the couple's name and flag are only read for a partner (an earlier name stays otherwise)
         if ((it.CoupleId = r.ReadLong()) != 0) { it.CoupleName = r.ReadUnicodeString(); it.CoupleFlag = r.ReadBool(); }
         it.BindingId = r.ReadLong(); it.BindingName = r.ReadUnicodeString();
+    }
+
+    /// <summary>Upstream Item.WriteTo after the appearance, GMS2: ItemStats (u8, then 9 sets of u16 count + (u16 id, BasicOption: i32 Value + f32 Rate),
+    /// u16 count + (u16 id, SpecialOption: f32 Rate + f32 Value), i32), ItemEnchant (the KMS fields with 8-byte options) and ItemLimitBreak
+    /// (8-byte options).</summary>
+    static void ReadGms2Status(ByteReader r, EquipItem it) {
+        var o = it.Options = ItemOptions.ForGms2();
+        r.ReadByte();
+        for (int i = 0; i < 9; i++) {
+            int basic = (ushort) r.ReadShort();
+            for (int j = 0; j < basic; j++) { int id = (ushort) r.ReadShort(); o.Stat[i][id] = r.ReadInt(); o.StatRate[i][id] = r.ReadFloat(); }
+            int special = (ushort) r.ReadShort();
+            for (int j = 0; j < special; j++) { int id = (ushort) r.ReadShort(); float rate = r.ReadFloat(); o.SpecialRate[i][id] = rate; o.Special[i][id] = (int) r.ReadFloat(); }
+            o.MergeId = r.ReadInt();
+        }
+        var e = it.Enchant = new ItemEnchant();
+        e.Level = r.ReadInt(); e.Charge = r.ReadInt(); e.Version = r.ReadByte();
+        e.HistoryItemId = r.ReadLong(); e.Attempts = r.ReadInt(); e.Failures = r.ReadInt(); e.HistoryEnabled = r.ReadBool(); e.FailStack = r.ReadInt();
+        int ench = r.ReadByte();
+        for (int i = 0; i < ench; i++) { int id = r.ReadInt(); e.Options[id] = r.ReadInt(); e.OptionRates[id] = r.ReadFloat(); }
+        var lb = it.LimitBreak = new ItemLimitBreak();
+        lb.Level = r.ReadInt();
+        uint n = (uint) r.ReadInt();
+        for (uint i = 0; i < n; i++) { int id = (ushort) r.ReadShort(); lb.Stat[id] = r.ReadInt(); lb.StatRate[id] = r.ReadFloat(); }
+        n = (uint) r.ReadInt();
+        for (uint i = 0; i < n; i++) { int id = (ushort) r.ReadShort(); lb.SpecialRate[id] = r.ReadFloat(); lb.Special[id] = (int) r.ReadFloat(); }
     }
 
     static float[] ReadFloats(ByteReader r, int n) {
