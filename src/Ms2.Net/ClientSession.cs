@@ -23,6 +23,9 @@ public sealed class ClientSession {
     public int ReceivedCount { get; private set; }
 
     public MapleChannel Channel => channel;
+    /// <summary>Where the answers the client sends through SendPacket go (FUN_140710590): the transport's hold path, so they are held during a reconnect. Null = straight to the channel (Pong and ResponseVersion always are).</summary>
+    public Func<IOutPacket, CancellationToken, Task> Sender { get; set; }
+    Task Send(IOutPacket p, CancellationToken ct) => Sender != null ? Sender(p, ct) : channel.SendAsync(p, ct);
     /// <summary>The reconnection manager (TSingleton CReconnectionManagerCli) this connection reports to; null where no reconnect is wanted (login connections, tests).</summary>
     public ReconnectionManager Manager { get; set; }
     /// <summary>CMainSystem::GetElapsedTime: milliseconds since this client started (the second tick of UserSync).</summary>
@@ -98,13 +101,13 @@ public sealed class ClientSession {
                     if (Manager is { IsReconnecting: true }) { Manager.SendRequest(); answered = true; }
                     break;
                 case Inbound.RequestHeartbeat:
-                    await channel.SendAsync(new ResponseHeartbeat(TickRequest.Read(p.Reader()).Tick, ElapsedMs), ct);
+                    await Send(new ResponseHeartbeat(TickRequest.Read(p.Reader()).Tick, ElapsedMs), ct);
                     break;
                 case Inbound.RequestClientTickSync:
-                    await channel.SendAsync(new ResponseClientTickSync(TickRequest.Read(p.Reader()).Tick, ElapsedMs), ct);
+                    await Send(new ResponseClientTickSync(TickRequest.Read(p.Reader()).Tick, ElapsedMs), ct);
                     break;
                 case Inbound.ResponseTimeSync:
-                    if (ApplyTimeSync(p.Reader())) await channel.SendAsync(new RequestTimeSync(++timeSyncSeq), ct);
+                    if (ApplyTimeSync(p.Reader())) await Send(new RequestTimeSync(++timeSyncSeq), ct);
                     break;
             }
             if (!answered) PacketReceived?.Invoke(p);

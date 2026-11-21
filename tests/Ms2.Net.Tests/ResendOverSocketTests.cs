@@ -173,4 +173,57 @@ public class ResendOverSocketTests {
         Assert.That(quits.Where(q => q >= 20), Is.EqualTo(new byte[] { 20, 21, 22, 23 }), "each held packet once, in the order they were sent");
         Assert.That(t.IsClosed, Is.False);
     }
+
+    /// <summary>The heartbeat answer goes through SendPacket too (networkservice.cpp:746): between the reconnect request and its result it is held, so it does not flush the held packets ahead of the retransmit (a duplicate).</summary>
+    [Test] public async Task AHeartbeatAnsweredWhileReconnectingDoesNotFlushHeldPacketsAheadOfTheRetransmit() {
+        var l = new TcpListener(IPAddress.Loopback, 0); l.Start();
+        int port = ((IPEndPoint) l.LocalEndpoint).Port;
+        var srv = new FakeServer(5, 6);
+        var accept = l.AcceptTcpClientAsync();
+        var t = new TcpTransport { InGame = () => true };
+        using var _ = t;
+        await t.ConnectAsync("127.0.0.1", port);
+        var first = await accept;
+        var s = first.GetStream();
+        await s.WriteAsync(srv.HelloFrame);
+        await ReadFrame(s, srv);
+        await s.WriteAsync(srv.Frame(Inbound.Gvg, w => {
+            w.WriteInt(1); w.WriteInt(43);
+            var o = new int[ReconnectionOptions.Count];
+            o[ReconnectionOptions.Enabled] = 1; o[ReconnectionOptions.BufferLimit] = 100000; o[ReconnectionOptions.GiveUpSeconds] = 30;
+            o[ReconnectionOptions.MaxAttempts] = 5; o[ReconnectionOptions.RetryDelaySeconds] = 1;
+            foreach (var v in o) w.WriteInt(v);
+        }));
+        await s.WriteAsync(srv.Frame(Inbound.RequestKey));
+        await t.SendAsync(new ResponseKey(1, 2, new byte[16]));
+        await ReadFrame(s, srv);
+        await s.WriteAsync(srv.Frame(Inbound.Reconnect, w => { w.WriteByte(ReconnectNotice.KindContext); w.WriteInt(1); w.WriteString("127.0.0.1"); w.WriteInt(port); }));
+        await WaitFor(() => t.Reconnection.Context.Mode == 1 && t.Channel.Out.CaptureEnabled);
+        for (byte m = 10; m < 12; m++) { await t.SendAsync(new RequestQuit(m)); await ReadFrame(s, srv); }
+
+        var srv2 = new FakeServer(5, 6);
+        var accept2 = l.AcceptTcpClientAsync();
+        first.Close();
+        await WaitFor(() => t.Reconnection.IsReconnecting);
+        var s2 = (await accept2).GetStream();
+        await s2.WriteAsync(srv2.HelloFrame);
+        (ushort op, byte[] body) f;
+        while ((f = await ReadFrame(s2, srv2).WaitAsync(TimeSpan.FromSeconds(5))).op != (ushort) Outbound.ResponseVersion) { }
+        await s2.WriteAsync(srv2.Frame(Inbound.RequestKey));
+        while ((f = await ReadFrame(s2, srv2).WaitAsync(TimeSpan.FromSeconds(5))).op != (ushort) Outbound.Reconnect) { }
+        await t.SendAsync(new RequestQuit(20));   // held: the reconnect runs
+        await s2.WriteAsync(srv2.Frame(Inbound.RequestHeartbeat, w => w.WriteInt(77)));   // answered inside the window
+        await Task.Delay(300);
+        await s2.WriteAsync(srv2.Frame(Inbound.Reconnect, w => { w.WriteByte(ReconnectNotice.KindResult); w.WriteInt(1); }));
+        await s2.WriteAsync(srv2.Frame(Inbound.FinalizeReconnect, w => { w.WriteInt(0); w.WriteInt(2); }));   // the server got packets 1 and 2
+        var ops = new List<(ushort op, byte[] body)>();
+        await WaitFor(() => !t.Reconnection.IsReconnecting);
+        await t.SendAsync(new RequestQuit(23));
+        do { f = await ReadFrame(s2, srv2).WaitAsync(TimeSpan.FromSeconds(5)); ops.Add(f); } while (!(f.op == (ushort) Outbound.RequestQuit && f.body[0] == 23));
+        int unk = ops.FindIndex(o => o.op == (ushort) Outbound.ReconnectUnk);
+        int q20 = ops.FindIndex(o => o.op == (ushort) Outbound.RequestQuit && o.body[0] == 20);
+        Assert.That(unk, Is.GreaterThanOrEqualTo(0));
+        Assert.That(q20, Is.GreaterThan(unk), "the held packet is not flushed ahead of the retransmit");
+        Assert.That(ops.Count(o => o.op == (ushort) Outbound.RequestQuit && o.body[0] == 20), Is.EqualTo(1), "no duplicate");
+    }
 }

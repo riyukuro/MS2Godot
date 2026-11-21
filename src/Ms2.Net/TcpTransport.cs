@@ -61,6 +61,7 @@ public sealed class TcpTransport : IDisposable {
 
     void Attach(MapleChannel channel) {
         session = new ClientSession(channel) { Manager = Reconnection };
+        session.Sender = SendAsync;   // the heartbeat, tick sync and time sync answers go through SendPacket's hold path (networkservice.cpp:746/753/796)
         carry = channel.Out;
         connected = true;
         session.PacketReceived += Incoming.Enqueue;
