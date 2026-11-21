@@ -24,6 +24,8 @@ public sealed partial class DropLayer : Node3D
         public uint LastRequest;     // CDropItem m_nTick (FUN_141191030)
         public int PickerId;         // CDropItem m_n188
         public uint FadeUntil;       // CDropItem m_nFadeTime
+        public bool Held;            // state 6 kept until FadeUntil (vfunc_53, dropitem.cpp:1137-1150): not launched yet
+        public bool Hidden;          // vfunc_23(1) until FadeUntil
     }
 
     readonly PackSet packs;
@@ -104,9 +106,19 @@ public sealed partial class DropLayer : Node3D
         root.AddChild(visual);
         AddChild(root);
         var motion = new DropMotion(constants, look.Style, d.ObjectId, pet);
-        motion.Launch(DropMotion.Created70(d.Position), DropLaunch.Default, d.FixedThrow, d.IsMeso, ground);
-        root.Position = G(motion.Position);
-        drops[d.ObjectId] = new Drop { Root = root, Motion = motion, Packet = d, FadeUntil = DropPickup.FadeUntil(Clock(), d.DropKind, pet, d.PetTrap, constants.PetTrapVisibleDelayMs) };
+        uint fade = DropPickup.FadeUntil(Clock(), d.DropKind, pet, d.PetTrap, constants.PetTrapVisibleDelayMs);
+        var drop = new Drop { Root = root, Motion = motion, Packet = d, FadeUntil = fade, Held = fade != 0 && !pet, Hidden = fade != 0 };
+        root.Visible = !drop.Hidden;
+        if (drop.Held) root.Position = G(DropMotion.Created70(d.Position));
+        else LaunchDrop(drop);
+        drops[d.ObjectId] = drop;
+    }
+
+    /// <summary>SetState(1): the throw from the packet position raised by 70.</summary>
+    void LaunchDrop(Drop drop)
+    {
+        drop.Motion.Launch(DropMotion.Created70(drop.Packet.Position), DropLaunch.Default, drop.Packet.FixedThrow, drop.Packet.IsMeso, ground);
+        drop.Root.Position = G(drop.Motion.Position);
     }
 
     /// <summary>OnFieldRemoveItem (scenestategame.cpp:2402): a drop being picked up is kept, any other leaves.</summary>
@@ -198,6 +210,12 @@ public sealed partial class DropLayer : Node3D
         float dt = (float)delta;
         foreach (var d in drops.Values)
         {
+            if (d.Hidden)
+            {
+                // a pet trap's drop: hidden, and a non-pet one not even thrown, until its delay ends (vfunc_53)
+                if (DropPickup.StillHidden(Clock(), d.FadeUntil)) { if (d.Held) continue; }
+                else { d.Hidden = false; d.Root.Visible = true; if (d.Held) { d.Held = false; LaunchDrop(d); } }
+            }
             System.Numerics.Vector3? picker = d.PickerId != 0 && d.Motion.State is DropMotion.FlyToPicker or DropMotion.Hover or DropMotion.Sink
                 ? ActorPosition(d.PickerId) : null;
             d.Motion.Advance(dt, picker);
@@ -251,7 +269,8 @@ public sealed partial class DropLayer : Node3D
     void Request(Drop d, uint now)
     {
         d.LastRequest = now;
-        if (!d.Packet.IsMeso && !HasEmptyCell(TabOf(d.Packet.ItemId)) && !CanStack(d.Packet)) d.Motion.PickFailed();
+        // a meso id with no amount still takes the client's currency branch: no hop
+        if (!FieldAddItem.IsMesoId(d.Packet.ItemId) && !HasEmptyCell(TabOf(d.Packet.ItemId)) && !CanStack(d.Packet)) d.Motion.PickFailed();
         Send(new RequestItemPickup(d.Packet.ObjectId, 0));
     }
 }

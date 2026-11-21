@@ -45,6 +45,9 @@ public static class DropPickup
     public static uint FadeUntil(uint createdMs, ushort dropKind, bool petItem, bool petTrap, uint delayMs) =>
         petTrap && (petItem || dropKind == 0xc80) ? createdMs + delayMs : 0;
 
+    /// <summary>The drop is still hidden (vfunc_23(1)) and, for a 0xc80 non-pet drop, not yet thrown: before its fade time (dropitem.cpp:1137-1150).</summary>
+    public static bool StillHidden(uint nowMs, uint fadeUntilMs) => fadeUntilMs != 0 && nowMs < fadeUntilMs;
+
     /// <summary>
     /// MyPC::FUN_141530db0 (mypc.cpp:4712-4721) and UpdateAutoLoot (:4555): no pickup while dead, nor while riding a mount whose row
     /// has disablePickUp set.

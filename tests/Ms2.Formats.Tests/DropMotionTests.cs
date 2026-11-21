@@ -99,6 +99,34 @@ public class DropMotionTests {
         return m;
     }
 
+    [Test] public void AHeldTrapDropIsPickableOnlyAfterTheDelayPlusTheFlight() {
+        // a drop of kind 0xc80 with the trap flag stays unthrown until the delay ends, then flies, then rests
+        const uint delay = 3000, created = 1000;
+        uint fade = DropPickup.FadeUntil(created, 0xc80, false, true, delay);
+        var m = new DropMotion(K(), S(), 12345, false);
+        var p = new PickupPlanner();
+        bool PickableAt(uint now) {
+            p.Clear();
+            p.Candidates.Add(new PickupCandidate { ObjectId = 1, State = m.State, FadeUntil = fade, Distance = 10, Owner = true });
+            p.Plan(now, 0, 100, 300, 0x80);
+            return p.Nearest == 0;
+        }
+        Assert.That(DropPickup.StillHidden(created + delay - 1, fade), Is.True);
+        Assert.That(DropPickup.StillHidden(created + delay, fade), Is.False);
+        Assert.That(m.State, Is.EqualTo(DropMotion.Created));
+        Assert.That(PickableAt(created + delay - 1), Is.False, "held, hidden");
+        Assert.That(PickableAt(created + delay + 50), Is.False, "state still 6: the delay is over but nothing was thrown");
+        m.Launch(DropMotion.Created70(new Vector3(100, 200, 50)), DropLaunch.Default, false, false, _ => 0f);
+        uint now = created + delay;
+        for (int i = 0; i < 600 && m.State == DropMotion.FlyOut; i++) {
+            m.Advance(0.016f, null); now += 16;
+            if (m.State == DropMotion.FlyOut) Assert.That(PickableAt(now), Is.False, "in the flight the held key sends nothing");
+        }
+        Assert.That(m.State, Is.EqualTo(DropMotion.Rest));
+        Assert.That(now, Is.GreaterThan(created + delay + 100), "the flight takes time");
+        Assert.That(PickableAt(now), Is.True, "only the resting drop is requested");
+    }
+
     [Test] public void AFixedThrowLandsOneUnitOffOnEachAxis() {
         Launched(out var thrown, fixedThrow: true);
         Launched(out var sameSpot, fixedThrow: true);
