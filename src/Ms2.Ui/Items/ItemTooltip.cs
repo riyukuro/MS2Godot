@@ -875,6 +875,7 @@ public sealed partial class ItemTooltip
         {
             Data["tooltip"] = "export_common_tooltip_tooltipCompare";             // SetTooltipClass
             var l = Side(); var r = Side();
+            r.ShopGuideText = ShopGuideText;   // the shop text rides the item side (unit_141347b10.cpp:450-452)
             if (l.Fill(compare)) { Data["lhsTooltip"] = l.Data; lhs = l; }
             if (r.Fill(item)) { Data["rhsTooltip"] = r.Data; rhs = r; }
         }

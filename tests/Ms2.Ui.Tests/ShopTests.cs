@@ -788,7 +788,7 @@ public class ShopTests
         c.Products(0)[1].Record.Achieve = 1001;
         c.Products(0)[1].Record.AchieveGrade = 2;
         c.HasAchieve = (_, _) => false;
-        c.RequireAchieveText = (_, _) => "Test Trophy";
+        c.RequireAchieveTooltipText = (_, _) => "Test Trophy";
         c.Wearer = () => new PcInfo { Equips = new List<EquipItem> { new() { Id = 11300001, Uid = 999, Rarity = 1 } } };
 
         var row = h.Obj(("serialID", 1), ("productType", 0));
@@ -797,6 +797,21 @@ public class ShopTests
         Assert.That(tip.ContainsKey("itemGuideDescription"), Is.True);
         Assert.That(tip["itemGuideDescription"]?.ToString(), Does.Contain("Test Trophy"));
         Assert.That(c.GetTooltip(new object[] { "m_coinInfo" }), Is.Null, "non-gacha shop has no coin tooltip");
+    }
+
+    [Test]
+    public void CompareTooltipCarriesShopGuideTextOnItemSide()
+    {
+        Packs();
+        var model = NewModel();
+        var worn = Item.Create(model.Tables.Items, 20000028, 1);
+        var item = Item.Create(model.Tables.Items, 20000028, 1);
+        var tip = new ItemTooltip(model, 4) { ShopGuideText = "Need Trophy" };
+        Assert.That(tip.FillCompare(worn, item), Is.True);
+        var rhs = (IDictionary<string, object>)tip.Data["rhsTooltip"];
+        var lhs = (IDictionary<string, object>)tip.Data["lhsTooltip"];
+        Assert.That(rhs["itemGuideDescription"]?.ToString(), Does.Contain("Need Trophy"));
+        Assert.That(lhs.ContainsKey("itemGuideDescription") && lhs["itemGuideDescription"]?.ToString()?.Contains("Need Trophy") == true, Is.False);
     }
 
     [Test]

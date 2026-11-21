@@ -149,8 +149,10 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     /// <summary>CAchieveManager::IsBeforeStartGrade (uishopdialog.cpp:1295, :3599): true when player meets achieve
     /// (defaults false so absent state refuses as the client does).</summary>
     public Func<int, int, bool> HasAchieve = (_, _) => false;
-    /// <summary>GetRequireAchieveText / FUN_14093b9c0 (uishopdialog.cpp:1298, :3603): text of a missing achievement requirement.</summary>
+    /// <summary>FUN_14093b9c0 (uishopdialog.cpp:3603): the achievement grade title shown in the gate notice.</summary>
     public Func<int, int, string> RequireAchieveText = (_, _) => "";
+    /// <summary>GetRequireAchieveText (achievemanager.cpp:942, uishopdialog.cpp:1298): the formatted requirement line for the tooltip.</summary>
+    public Func<int, int, string> RequireAchieveTooltipText = (_, _) => "";
     /// <summary>CGuildManager::IsInGuild (uishopdialog.cpp:3568, :3644, :3683, :3703).</summary>
     public Func<bool> IsInGuild = () => false;
     /// <summary>CGuildManager::IsMaster(playerName) (uishopdialog.cpp:3703).</summary>
@@ -219,6 +221,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         PlayingScoreUid = playingScoreUid ?? (() => 0);
         HasAchieve = (id, grade) => achieves?.Invoke()?.Find(id) is { } a && a.StartGrade > grade;
         RequireAchieveText = (id, grade) => achieveTexts?.Invoke()?.GradeTitle(id, grade) ?? "";
+        RequireAchieveTooltipText = (id, grade) => achieveTexts?.Invoke()?.RequireText(id, grade) ?? "";
     }
 
     /// <summary>Wires the live session's Shop (0x28), SystemShop (0x65), and NpcTalk end sends
@@ -1967,7 +1970,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         };
         if (type == 0 && p.Record.Achieve != 0 && !HasAchieve(p.Record.Achieve, p.Record.AchieveGrade))
         {
-            string req = RequireAchieveText(p.Record.Achieve, p.Record.AchieveGrade);
+            string req = RequireAchieveTooltipText(p.Record.Achieve, p.Record.AchieveGrade);
             if (!string.IsNullOrEmpty(req))
                 t.ShopGuideText = Common("s_shop_tooltip_require_achieve", req);   // FUN_1409dbc30 (astooltip.cpp:506)
         }
