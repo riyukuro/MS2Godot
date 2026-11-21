@@ -17,6 +17,7 @@ public class SkillCooltimesTests
         + "<skill id=\"105\"><basic mainType=\"1\"/><level value=\"1\" cooldown=\"4000\"><motion sequenceSpeed=\"2\"/></level></skill>"
         + "<skill id=\"106\"><basic mainType=\"1\"><stateAttr cooldownGroupID=\"8\"/></basic></skill>"
         + "<skill id=\"113\"><basic mainType=\"1\"><stateAttr cooldownGroupID=\"8\" ignoreReduceCooldown=\"1\"/></basic></skill>"
+        + "<skill id=\"114\"><basic mainType=\"1\"><kinds groupIDs=\"9\"/></basic></skill>"
         // 107: no cooldown, a sequence (the combo window); 108: a combo row swapping to 109; 110: two charges 0.5 s apart;
         // 111: a continue skill; 112: a charging combo row swapping to itself
         + "<skill id=\"107\"><basic mainType=\"1\"/><level value=\"1\"><motion sequenceName=\"B\" sequenceSpeed=\"2\"/></level></skill>"
@@ -231,6 +232,13 @@ public class SkillCooltimesTests
         c.RateReduce = _ => 0.25f;
         c.Start(0, 113, 10f, 0f, false, 0);
         Assert.That(c.Get((8UL << 32) | 113).End, Is.EqualTo(7500u), "10 - 10 * 0.25");
+    }
+
+    [Test]
+    public void TheSkillsGroupIsItsKindsGroupIds()
+    {
+        // <kinds groupIDs> (m_nGroupIDs, skilloverlapcompare.cpp:850), the group an invoke effect's skillGroupID names
+        Assert.That((Table().GetSkillData(114).GroupIds, Table().GetSkillData(100).GroupIds), Is.EqualTo((9u, 0u)));
     }
 
     [Test]

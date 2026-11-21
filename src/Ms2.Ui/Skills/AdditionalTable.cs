@@ -33,6 +33,18 @@ public sealed class AdditionalLevelData
     public int SpecialEffectType;
     public float SpecialEffectProbability = 1f;
     public Dictionary<string, string> SpecialEffectValues;
+    /// <summary>&lt;InvokeEffect skillID skillGroupID effectID effectGroupID types values rates&gt; (m_invokeEffect, :1335-1344;
+    /// the lists split at ',' by XmlTokenList): the stat options the effect adds to a skill, a skill group, an effect or an
+    /// effect group; the lists are null when absent.</summary>
+    public uint InvokeSkillId, InvokeSkillGroupId, InvokeEffectId, InvokeEffectGroupId;
+    public int[] InvokeTypes, InvokeValues;
+    public float[] InvokeRates;
+
+    /// <summary>InvokeEffectProperty::FUN_140192ac0 @0x140192ac0 (additionalactionadditional.cpp:1924): a target and the three
+    /// lists not empty.</summary>
+    public bool HasInvokeEffect =>
+        (InvokeSkillId != 0 || InvokeEffectId != 0 || InvokeSkillGroupId != 0 || InvokeEffectGroupId != 0)
+        && InvokeTypes is { Length: > 0 } && InvokeValues is { Length: > 0 } && InvokeRates is { Length: > 0 };
     /// <summary>&lt;UI iconOnOff&gt; (m_eIconOnOff: 0 off, 1 on (the default), 2 only for one's own buffs), icon, priority,
     /// isHideCooltime.</summary>
     public int IconOnOff = 1;
@@ -70,6 +82,16 @@ public sealed class AdditionalLevelData
             lv.ForceApplyTarget = Xml.Int(basic, "forceApplyTarget");
         }
         if (e.Element("Motion") is { } motion) lv.Hide = Xml.Int(motion, "hide");
+        if (e.Element("InvokeEffect") is { } invoke)
+        {
+            lv.InvokeSkillId = Xml.UInt(invoke, "skillID");
+            lv.InvokeSkillGroupId = Xml.UInt(invoke, "skillGroupID");
+            lv.InvokeEffectId = Xml.UInt(invoke, "effectID");
+            lv.InvokeEffectGroupId = Xml.UInt(invoke, "effectGroupID");
+            lv.InvokeTypes = TokenInts((string)invoke.Attribute("types"));
+            lv.InvokeValues = TokenInts((string)invoke.Attribute("values"));
+            lv.InvokeRates = TokenFloats((string)invoke.Attribute("rates"));
+        }
         if (e.Element("SpecialEffect") is { } special)
         {
             lv.SpecialEffectType = Xml.Int(special, "type");
@@ -97,6 +119,25 @@ public sealed class AdditionalLevelData
         var d = new Dictionary<string, string>();
         foreach (var a in v.Attributes()) d[a.Name.LocalName] = a.Value;
         return d;
+    }
+
+    /// <summary>XmlTokenList (xmlattr.h:126): the attribute split at ','; null without the attribute.</summary>
+    static int[] TokenInts(string s)
+    {
+        if (s == null) return null;
+        var parts = s.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        var a = new int[parts.Length];
+        for (int i = 0; i < parts.Length; i++) int.TryParse(parts[i].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out a[i]);
+        return a;
+    }
+
+    static float[] TokenFloats(string s)
+    {
+        if (s == null) return null;
+        var parts = s.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        var a = new float[parts.Length];
+        for (int i = 0; i < parts.Length; i++) float.TryParse(parts[i].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out a[i]);
+        return a;
     }
 
     /// <summary>CXmlData::GetInt (cxmldata.h): the value as an int, <paramref name="def"/> when the name is not there.</summary>

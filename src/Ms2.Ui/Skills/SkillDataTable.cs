@@ -226,6 +226,9 @@ public sealed class SkillData
     public uint Jump;
     /// <summary>&lt;kinds continue&gt; (:842), m_bContinue.</summary>
     public bool Continue;
+    /// <summary>&lt;kinds groupIDs&gt; (m_nGroupIDs, skilloverlapcompare.cpp:850): the skill group the table indexes it under
+    /// (SkillDataTable::GetGroupSkills @0x1407ee3b0, :1313).</summary>
+    public uint GroupIds;
     /// <summary>
     /// &lt;basic&gt;&lt;combo inputSkill outputSkill comboSkill chargingSkill&gt; (Unk_SkillBlockA4::Load @0x140802ef0,
     /// skillleveldata.cpp:493), loaded from &lt;basic&gt; (skilloverlapcompare.cpp:874).
@@ -267,6 +270,7 @@ public sealed class SkillData
             s.Element = Xml.Int(kinds, "element");
             s.Jump = Xml.UInt(kinds, "jump");
             s.Continue = Xml.Bool(kinds, "continue");
+            s.GroupIds = Xml.UInt(kinds, "groupIDs");
         }
         if (basic.Element("combo") is { } combo)
         {

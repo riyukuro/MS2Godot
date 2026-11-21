@@ -124,6 +124,37 @@ public class BuffStripTests
     }
 
     [Test]
+    public void TheSkillStatOptionsSumTheOwnEnabledInvokeEffectsOfTheSkillOrItsGroup()
+    {
+        // <InvokeEffect> (additionalactionadditional.cpp:1335-1344) collected by AdditionalCliList::CollectInvokeEffectStats
+        // (additionalcli_2.cpp:851) and read by CEquipment::FUN_1411e13e0 / FUN_1411e1250 (equipment.cpp:751, :770)
+        var bySkill = AdditionalLevelData.Load(System.Xml.Linq.XElement.Parse(
+            "<level level=\"1\"><InvokeEffect skillID=\"100\" types=\"1002,1001\" values=\"2,0\" rates=\"0,0.1\"/></level>"), null);
+        var byGroup = AdditionalLevelData.Load(System.Xml.Linq.XElement.Parse(
+            "<level level=\"1\"><InvokeEffect skillGroupID=\"9\" types=\"1001\" values=\"0\" rates=\"0.05\"/></level>"), null);
+        var byEffect = AdditionalLevelData.Load(System.Xml.Linq.XElement.Parse(
+            "<level level=\"1\"><InvokeEffect effectID=\"5\" skillGroupID=\"9\" types=\"1001\" values=\"0\" rates=\"0.5\"/></level>"), null);
+        Assert.That((bySkill.InvokeSkillId, bySkill.InvokeTypes, bySkill.InvokeValues, bySkill.InvokeRates, bySkill.HasInvokeEffect),
+            Is.EqualTo((100u, new[] { 1002, 1001 }, new[] { 2, 0 }, new[] { 0f, 0.1f }, true)));
+        var list = new AdditionalBuffList((id, lv) => id == 7 ? bySkill : id == 8 ? byGroup : id == 9 ? byEffect : Level(id, lv));
+        list.Apply(new BuffPacket(BuffPacket.Add, 5, 11, 5, 0, new BuffState(0, 1000, 7, 1, 2, 1), 0));
+        list.Apply(new BuffPacket(BuffPacket.Add, 5, 12, 5, 0, new BuffState(0, 1000, 8, 1, 1, 1), 0));
+        list.Apply(new BuffPacket(BuffPacket.Add, 5, 13, 5, 0, new BuffState(0, 1000, 9, 1, 1, 1), 0));
+        Assert.That(list.SkillInvokeOption(0x3ea, 100, 9, out var a), Is.EqualTo(4), "2 x overlap 2");
+        Assert.That(a, Is.EqualTo(0f));
+        Assert.That(list.SkillInvokeOption(0x3e9, 100, 9, out a), Is.EqualTo(0));
+        Assert.That(a, Is.EqualTo(0.25f).Within(1e-6f), "0.1 x 2 + the group's 0.05; an effectID keeps its group out");
+        Assert.That(list.SkillInvokeOption(0x3e9, 101, 0, out a), Is.EqualTo(0));
+        Assert.That(a, Is.EqualTo(0f), "another skill outside the group");
+        Assert.That(list.SkillInvokeOption(0x3, 100, 9, out a), Is.EqualTo(0), "an effect option is no skill option");
+        list.Apply(new BuffPacket(BuffPacket.Modify, 5, 11, 5, BuffPacket.ModifyState, new BuffState(0, 1000, 7, 1, 2, 0), null));
+        Assert.That(list.SkillInvokeOption(0x3ea, 100, 9, out _), Is.EqualTo(0), "not enabled");
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1000; i++) list.SkillInvokeOption(0x3e9, 100, 9, out _);
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512));
+    }
+
+    [Test]
     public void SortOrderAndRemainTicks()
     {
         uint now = 400;

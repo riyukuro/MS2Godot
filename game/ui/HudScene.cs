@@ -2763,6 +2763,13 @@ public partial class HudScene : Node, IUiStageHost
         ownBuffs.OwnerIsMyPc = true;
         var buffs = ownBuffs;
         live.Cooltimes.GroupReduceRate = g => buffs.ReduceSkillGroupCooltime(g);   // FUN_1417664e0, skillslot.cpp:2279
+        // skillslot.cpp:2290-2291: the skill stat options 0x3ea (count, flat) and 0x3e9 (rate) of the own buffs
+        live.Cooltimes.FlatReduce = id => buffs.SkillInvokeOption(0x3ea, id, live.SkillRows?.Invoke(id)?.GroupIds ?? 0, out _);
+        live.Cooltimes.RateReduce = id =>
+        {
+            buffs.SkillInvokeOption(0x3e9, id, live.SkillRows?.Invoke(id)?.GroupIds ?? 0, out var rate);
+            return rate;
+        };
         Action<Ms2.Net.Packets.BuffPacket> onBuff = b =>
         {
             ownBuffs.UpperTargetId = live.UpperTargetId;

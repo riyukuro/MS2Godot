@@ -51,11 +51,14 @@ public sealed class SkillCooltimes
     /// <see cref="AdditionalBuffList.ReduceSkillGroupCooltime"/>; 0 until then.
     /// </summary>
     public Func<uint, float> GroupReduceRate = _ => 0f;
-    /// <summary>Unk_SsPc::FUN_1416628f0(0x3ea, id): the flat cooldown reduce of the special options. STILL-OPEN: 0.</summary>
+    /// <summary>PC::FUN_1416628f0(0x3ea, id) (pc.cpp:2176, CEquipment::FUN_1411e13e0): the count of the skill stat option 0x3ea,
+    /// the flat cooldown reduce; the HUD feeds the own buff list's <see cref="AdditionalBuffList.SkillInvokeOption"/>.</summary>
     public Func<uint, float> FlatReduce = _ => 0f;
     /// <summary>
-    /// DAT_143aea120 (the ability rate 0x23, skillslot.cpp:2350) plus Unk_SsPc::FUN_1416628b0(0x3e9, id): the cooldown reduce
-    /// rate. STILL-OPEN: 0.
+    /// DAT_143aea120 (the ability rate 0x23, skillslot.cpp:2350) plus PC::FUN_1416628b0(0x3e9, id) (pc.cpp:2173,
+    /// CEquipment::FUN_1411e1250): the cooldown reduce rate; the HUD feeds the rate of the own buff list's skill stat option
+    /// 0x3e9. STILL-OPEN: the ability rate 0x23 (CEquipment::GetAbilityRate, the equipment, buff, game rule and set item
+    /// abilities over 1000) is not summed, so 0.
     /// </summary>
     public Func<uint, float> RateReduce = _ => 0f;
 

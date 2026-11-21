@@ -159,6 +159,44 @@ public sealed class AdditionalBuffList
     }
 
     /// <summary>
+    /// The skill stat option <paramref name="type"/> of <paramref name="skillId"/> (in skill group <paramref name="skillGroupId"/>)
+    /// as CEquipment::FUN_1411e1250 / FUN_1411e13e0 (equipment.cpp:751, :770) read it from the stats
+    /// AdditionalCliList::CollectInvokeEffectStats @0x140971720 (additionalcli_2.cpp:851) builds: each enabled effect with a
+    /// level (FUN_14096d050) and an invoke effect (FUN_140192ac0) adds, for each listed type that is a skill option
+    /// (FUN_14081d8a0: 0x3e9-0x3ec), its value and rate times the overlap count, when its skillID is the skill or, without one
+    /// and without an effectID, its skillGroupID is the skill's group. The first adds set the option; later ones add only
+    /// when their count is over 0 or their rate over epsilon (InvokeEffectOption::Accumulate @0x140267220). Returns the count
+    /// (GetCount) and the rate (GetAmount) in <paramref name="amount"/>.
+    /// STILL-OPEN: the client collects only when the equipment refreshes (CEquipment::FUN_1411e7320, equipment.cpp:3054), so
+    /// its stats can lag the buffs; this reads the held effects at the call. The effect options (effectID / effectGroupID,
+    /// FUN_14081d8e0) have no reader here.
+    /// </summary>
+    public int SkillInvokeOption(int type, uint skillId, uint skillGroupId, out float amount)
+    {
+        amount = 0f;
+        if (type < 0x3e9 || type > 0x3ec) return 0;
+        int count = 0;
+        bool set = false;
+        foreach (var b in map.Values)
+        {
+            var lv = b.LevelData;
+            if (b.Enabled == 0 || lv == null || !lv.HasInvokeEffect) continue;
+            bool hit = lv.InvokeSkillId != 0 ? lv.InvokeSkillId == skillId
+                : lv.InvokeEffectId == 0 && lv.InvokeSkillGroupId != 0 && skillGroupId != 0 && lv.InvokeSkillGroupId == skillGroupId;
+            if (!hit) continue;
+            for (int i = 0; i < lv.InvokeTypes.Length; i++)
+            {
+                if (lv.InvokeTypes[i] != type) continue;
+                int c = (i < lv.InvokeValues.Length ? lv.InvokeValues[i] : 0) * b.OverlapCount;
+                float r = (i < lv.InvokeRates.Length ? lv.InvokeRates[i] : 0f) * b.OverlapCount;
+                if (!set) { count = c; amount = r; set = true; }
+                else if (c > 0 || r > float.Epsilon) { count += c; amount += r; }
+            }
+        }
+        return count;
+    }
+
+    /// <summary>
     /// GetForceApplyTarget @0x140970b10 (additionalcli_2.cpp:593), m_nForceApplyTarget as FUN_140972a00 (:1096) sums it: the OR
     /// of the levels' forceApplyTarget over the enabled, unsuspended effects.
     /// </summary>

@@ -15,7 +15,7 @@ namespace Ms2.Ui.Skills;
 public sealed class AdditionalCache
 {
     /// <summary>The format and parse version: bump it with any change to what the build writes or how the XML is read.</summary>
-    public const int Version = 5;     // 2: the levels' EventBuffType; 3: PvpOnOff; 4: ForceApplyTarget, Hide; 5: SpecialEffect
+    public const int Version = 6;     // 2: the levels' EventBuffType; 3: PvpOnOff; 4: ForceApplyTarget, Hide; 5: SpecialEffect; 6: InvokeEffect
     const uint Magic = 0x4441324D;     // "M2AD"
     const uint EndMagic = 0x444E4541;  // "AEND"
 
@@ -134,7 +134,35 @@ public sealed class AdditionalCache
             w.Write(l.SpecialEffectValues?.Count ?? -1);
             if (l.SpecialEffectValues != null)
                 foreach (var (k, v) in l.SpecialEffectValues) { w.Write(k); w.Write(v); }
+            w.Write(l.InvokeSkillId); w.Write(l.InvokeSkillGroupId); w.Write(l.InvokeEffectId); w.Write(l.InvokeEffectGroupId);
+            WriteInts(w, l.InvokeTypes); WriteInts(w, l.InvokeValues);
+            w.Write(l.InvokeRates?.Length ?? -1);
+            if (l.InvokeRates != null) foreach (var f in l.InvokeRates) w.Write(f);
         }
+    }
+
+    static void WriteInts(BinaryWriter w, int[] a)
+    {
+        w.Write(a?.Length ?? -1);
+        if (a != null) foreach (var n in a) w.Write(n);
+    }
+
+    static int[] ReadInts(BinaryReader r)
+    {
+        int n = r.ReadInt32();
+        if (n < 0) return null;
+        var a = new int[n];
+        for (int i = 0; i < n; i++) a[i] = r.ReadInt32();
+        return a;
+    }
+
+    static float[] ReadFloats(BinaryReader r)
+    {
+        int n = r.ReadInt32();
+        if (n < 0) return null;
+        var a = new float[n];
+        for (int i = 0; i < n; i++) a[i] = r.ReadSingle();
+        return a;
     }
 
     static Dictionary<string, string> ReadValues(BinaryReader r)
@@ -223,7 +251,9 @@ public sealed class AdditionalCache
                 IconOnOff = r.ReadInt32(), Icon = r.ReadString(), Priority = r.ReadInt32(), IsHideCooltime = r.ReadBoolean(),
                 EventBuffType = r.ReadUInt32(), PvpOnOff = r.ReadBoolean(),
                 ForceApplyTarget = r.ReadInt32(), Hide = r.ReadInt32(),
-                SpecialEffectType = r.ReadInt32(), SpecialEffectProbability = r.ReadSingle(), SpecialEffectValues = ReadValues(r), Parent = d,
+                SpecialEffectType = r.ReadInt32(), SpecialEffectProbability = r.ReadSingle(), SpecialEffectValues = ReadValues(r),
+                InvokeSkillId = r.ReadUInt32(), InvokeSkillGroupId = r.ReadUInt32(), InvokeEffectId = r.ReadUInt32(), InvokeEffectGroupId = r.ReadUInt32(),
+                InvokeTypes = ReadInts(r), InvokeValues = ReadInts(r), InvokeRates = ReadFloats(r), Parent = d,
             });
         return d;
     }
