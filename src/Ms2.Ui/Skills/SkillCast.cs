@@ -209,6 +209,22 @@ public static class SkillCast
         return new(rec, 0, null);
     }
 
+    /// <summary>
+    /// PCBase::vfunc_100 @0x141672910 (pcbase.cpp:2561-2603) on a record cast later than its press (StateSkill's m_spNext at
+    /// the end step, stateskill.cpp:2939, and at the chain, :3170): m_k50, the Skill packet's position (FUN_1417ebc00), is the
+    /// owner's position now (vfunc_18, :2602); m_k5c and m_k68 are aimed again (vfunc_105, :2593) as the press aims them, the
+    /// facing <paramref name="rotZ"/> (degrees) as the direction and the rotation (0, 0, <paramref name="rotZ"/>).
+    /// STILL-OPEN: the keep of the running record's aim in the skill state for the same skill (:2575-2591, SkillData +0x88
+    /// and +0x34) and the auto target (vfunc_101, :2598-2599) are not ported.
+    /// </summary>
+    public static void Aim(CastRecord r, Vector3 position, float rotZ)
+    {
+        float rad = rotZ * (MathF.PI / 180f);
+        r.Position = position;
+        r.Direction = new Vector3(MathF.Sin(rad), -MathF.Cos(rad), 0);
+        r.Rotation = new Vector3(0, 0, rotZ);
+    }
+
     /// <summary>FUN_14176b7c0 (skillslot.cpp:3343): the skill's highest level row at or below <paramref name="level"/>.</summary>
     static SkillLevelData HighestLevel(SlotWorld w, uint id, ushort level)
     {

@@ -92,6 +92,30 @@ public class SkillCastTests
     }
 
     [Test]
+    public void ANextCastIsAimedFromWhereTheOwnerIsWhenItGoes()
+    {
+        var w = World(Skills(Attack, JumpAttack));
+        var c = new CastWorld { Aim = r => { r.Position = new Vector3(1, 2, 3); r.Direction = new Vector3(0, -1, 0); } };
+        var r = SkillCast.Request(w, c, Req(100), _ => 100).Record;
+        SkillCast.Aim(r, new Vector3(40, 50, 60), 90);   // moved and turned after the press (PCBase::vfunc_100 at the end step)
+        var p = SkillCast.Send(r, 6000, 0, holdAttackFeature: false);
+        Assert.That(p.Position, Is.EqualTo(new Vector3(40, 50, 60)), "the position now (m_k50)");
+        Assert.That(p.Direction.X, Is.EqualTo(1f).Within(1e-6f), "facing rotZ 90");
+        Assert.That(p.Direction.Y, Is.EqualTo(0f).Within(1e-6f));
+        Assert.That(p.Rotation, Is.EqualTo(new Vector3(0, 0, 90)));
+    }
+
+    [Test]
+    public void TheEndStepRunsOnceAFrame()
+    {
+        var once = new FrameOnce();
+        Assert.That(once.Take(0), Is.True, "frame 0 is a frame");
+        Assert.That(once.Take(0), Is.False, "the sequence's end ran it, the HUD's frame does not");
+        Assert.That(once.Take(1), Is.True);
+        Assert.That(once.Take(1), Is.False);
+    }
+
+    [Test]
     public void AnUnaffordableSkillFallsBackToTheNormalAttack()
     {
         var w = World(Skills(Attack, Costly));

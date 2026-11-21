@@ -308,6 +308,7 @@ public partial class HudScene
         if (!SkillFollow.ChainsNow(running, ownNext.Skill, ownChainType, ownWindow, hudModel.IsFeatureEnabled(0xca))) return;
         var r = ownNext;
         ownNext = null;
+        AimOwn(r);                                 // :3170 vfunc_100(m_spNext, 0)
         r.HasSequence = r.Level.HasSequenceName;   // :3172-3174, m_bAD from its level
         UseOwnRecord(player, r);
     }
@@ -342,6 +343,7 @@ public partial class HudScene
     /// </summary>
     bool OwnEndStep()
     {
+        ownEndStepFrame.Take(Engine.GetProcessFrames());
         var running = ownCast;
         if (running == null || !SkillFollow.IsLastMotion(running)) { ownNext = null; return false; }
         var next = ownNext ?? OwnEndPoll();
@@ -349,10 +351,19 @@ public partial class HudScene
         if (next == null) return false;
         if (next == ownQueued) { player.HoldSkillSequence(); return true; }   // the same cooling press again: still queued
         if (!SkillFollow.CastsAtEnd(running, next.Skill, false)) return false;
+        AimOwn(next);                              // :2939 vfunc_100(m_spNext, 0)
         next.HasSequence = next.Level.HasSequenceName;
         if (!UseOwnRecord(player, next)) return false;
         if (ownCast == running) player.HoldSkillSequence();
         return true;
+    }
+
+    /// <summary>PCBase::vfunc_100 (pcbase.cpp:2561) on a next cast: <see cref="SkillCast.Aim"/> from where the player is and
+    /// faces now, not where it was at the press.</summary>
+    void AimOwn(CastRecord r)
+    {
+        var g = player.GlobalPosition;
+        SkillCast.Aim(r, new System.Numerics.Vector3(g.X, -g.Z, g.Y), player.FacingRotZ);
     }
 
     /// <summary>vfunc_104(1, 1, 1) at the end step: this frame's press, else the key held (<see cref="PollOwnKey"/>); the queued
@@ -377,10 +388,11 @@ public partial class HudScene
     }
 
     /// <summary>Each frame after the end while the state holds on: 5 s after EndOfSequence (stateskill.cpp:2985-2991) or a step
-    /// with nothing to cast goes to idle.</summary>
+    /// with nothing to cast goes to idle. Not in the frame the sequence ended: <see cref="OwnSequenceEnding"/> ran its step.</summary>
     void TickOwnEnded()
     {
         if (!player.SkillSequenceHeld) { EndOwnState(); return; }
+        if (!ownEndStepFrame.Take(Engine.GetProcessFrames())) return;   // the sequence's end ran this frame's step
         var running = ownCast;
         if (Time.GetTicksMsec() - ownEndMs > 5000 || (!OwnEndStep() && ownCast == running)) { player.CancelSkillSequence(); EndOwnState(); }
     }
@@ -392,6 +404,7 @@ public partial class HudScene
         ownEnded = false;
     }
 
+    FrameOnce ownEndStepFrame;                     // the end step runs once a frame (StateSkill::vfunc_8)
     bool ownEnded;                                 // StateSkill m_b48: EndOfSequence came, the state holds on
     ulong ownEndMs;                                // m_fStartTime from EndOfSequence (stateskill.cpp:1068)
     double ownSequenceLength;                      // the own sequence's kf duration
