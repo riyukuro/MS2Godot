@@ -38,6 +38,11 @@ fi
 t0=$SECONDS
 (cd "$root/game" && dotnet build -nologo -v q > "$scratch/build.log" 2>&1) || { echo "perfgate: game build failed ($scratch/build.log)" >&2; exit 2; }
 dotnet build -nologo -v q "$root/tools/PerfGate" > "$scratch/build-tool.log" 2>&1 || { echo "perfgate: tool build failed" >&2; exit 2; }
+gate="$root/tools/PerfGate/bin/Debug/net8.0/PerfGate.dll"
+# every library's image must be of the same build (MVID): the game runs one with a missing or stale image under the JIT,
+# silently, and every session logs how many it loaded precompiled, checked against this count below
+libs=$(dotnet "$gate" images "$root/game/.godot/mono/temp/bin/Debug") || exit 2
+echo "perfgate: $libs libraries, each with an image of its build"
 cd "$root/game"
 # setup: stops at its first "flow:" line (the launcher), as a player's first launch would go on to log in
 timeout 600 "$godot" --headless --audio-driver Dummy --path . res://setup.tscn > "$scratch/setup.log" 2>&1 & p=$!
@@ -51,8 +56,10 @@ for i in $(seq $n); do
   MS2_PERF_GATE=$scratch/s$i.json MS2_PERF_GATE_CASE=$c timeout 300 "$godot" --headless --audio-driver Dummy --fixed-fps 60 \
     --path . res://ui/hud.tscn > "$scratch/s$i.log" 2>&1
   [ -s "$scratch/s$i.json" ] || { echo "perfgate: session $i wrote no result ($scratch/s$i.log)" >&2; exit 2; }
+  got=$(grep -o -m1 'libraries: [0-9]* precompiled' "$scratch/s$i.log" | tr -dc 0-9)
+  [ "$got" = "$libs" ] || { echo "perfgate: session $i loaded ${got:-no} libraries precompiled, not $libs ($scratch/s$i.log: libraries:)" >&2; exit 2; }
   files+=("$scratch/s$i.json")
   echo "perfgate: session $i ($c) done, $((SECONDS - t0)) s"
 done
-dotnet "$root/tools/PerfGate/bin/Debug/net8.0/PerfGate.dll" summarize "$out" "${files[@]}" || exit 2
+dotnet "$gate" summarize "$out" "${files[@]}" || exit 2
 echo "perfgate: $out, $((SECONDS - t0)) s"

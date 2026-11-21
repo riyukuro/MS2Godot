@@ -57,7 +57,7 @@
   <ItemGroup Condition="'$(Ms2Precompile)' == 'true' And '$(PublishReadyToRun)' != 'true'">
     <PackageDownload Include="Microsoft.NETCore.App.Crossgen2.$(Crossgen2Rid)" Version="[$(BundledNETCoreAppPackageVersion)]" />
   </ItemGroup>
-  <Target Name="PrecompileLibraries" AfterTargets="Build" DependsOnTargets="_PrecompileInputs" Condition="'$(Ms2Precompile)' == 'true'"
+  <Target Name="PrecompileLibraries" AfterTargets="Build" DependsOnTargets="_SyncByMvid;_PrecompileInputs" Condition="'$(Ms2Precompile)' == 'true'"
           Inputs="@(_Precompile)" Outputs="@(_Precompile->'$(OutDir)r2r/%(Filename).dll')">
     <Warning Condition="!Exists('$(Crossgen2Exe)')" Text="No ReadyToRun compiler at $(Crossgen2Exe) (restore with the network, or build with Ms2Precompile=false): the libraries run under the JIT." />
     <Warning Condition="Exists('$(Crossgen2Exe)') And !Exists('$(Ms2SharedRuntime)')" Text="No shared runtime at $(Ms2SharedRuntime): the libraries are not precompiled and run under the JIT." />
@@ -71,6 +71,85 @@
     <Delete Files="$(OutDir)r2r/%(_Precompile.Filename).dll.tmp" ContinueOnError="true" />
     <!-- the runtime they were compiled against (Precompiled logs a mismatch with the one the game runs on) -->
     <WriteLinesToFile Condition="Exists('$(OutDir)r2r')" File="$(OutDir)r2r/runtime.txt" Lines="$(BundledNETCoreAppPackageVersion)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+  </Target>
+  <!--
+    The copies and images keyed on content, not dates: an interrupted build (a full disk) can leave a library's copy in
+    the output folder, or its image under r2r/, newer than its source but of another build, which a date check then
+    never replaces; the game skips an image whose MVID is not its library's, and those libraries run under the JIT.
+    Before the images are compiled, a copy whose MVID differs from its project's output is copied again, and an image
+    whose MVID differs from the library next to it is deleted, so PrecompileLibraries compiles it again.
+  -->
+  <UsingTask TaskName="Ms2SyncByMvid" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Sources ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="true" />
+      <OutDir ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.IO" />
+      <Code Type="Method" Language="cs"><![CDATA[
+        // the module's MVID: the first GUID of the metadata's #GUID heap (the task factory compiles against netstandard,
+        // without System.Reflection.Metadata); null when the file is missing or not a managed image
+        static Guid? Mvid(string path)
+        {
+            try
+            {
+                if (!File.Exists(path)) return null;
+                byte[] b = File.ReadAllBytes(path);
+                int pe = BitConverter.ToInt32(b, 0x3c), sections = BitConverter.ToUInt16(b, pe + 6), optSize = BitConverter.ToUInt16(b, pe + 20);
+                int opt = pe + 24, dirs = opt + (BitConverter.ToUInt16(b, opt) == 0x10b ? 96 : 112);
+                Func<int, int> at = rva =>
+                {
+                    for (int i = 0; i < sections; i++)
+                    {
+                        int h = opt + optSize + i * 40;
+                        int vsize = BitConverter.ToInt32(b, h + 8), va = BitConverter.ToInt32(b, h + 12), rsize = BitConverter.ToInt32(b, h + 16);
+                        if (rva >= va && rva < va + Math.Max(vsize, rsize)) return rva - va + BitConverter.ToInt32(b, h + 20);
+                    }
+                    throw new BadImageFormatException(path);
+                };
+                int cliRva = BitConverter.ToInt32(b, dirs + 14 * 8);
+                if (cliRva == 0) return null;
+                int md = at(BitConverter.ToInt32(b, at(cliRva) + 8));
+                int p = md + 16 + BitConverter.ToInt32(b, md + 12) + 2, streams = BitConverter.ToUInt16(b, p);
+                p += 2;
+                for (int i = 0; i < streams; i++)
+                {
+                    int offset = BitConverter.ToInt32(b, p), end = Array.IndexOf(b, (byte)0, p + 8);
+                    string name = System.Text.Encoding.ASCII.GetString(b, p + 8, end - p - 8);
+                    p = (end + 4) & ~3;
+                    if (name == "#GUID") { var g = new byte[16]; Array.Copy(b, md + offset, g, 0, 16); return new Guid(g); }
+                }
+                return null;
+            }
+            catch (Exception e) when (e is IOException || e is BadImageFormatException || e is ArgumentException || e is IndexOutOfRangeException) { return null; }
+        }
+
+        public override bool Execute()
+        {
+            foreach (var s in Sources)
+            {
+                string src = s.ItemSpec;
+                if (!src.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) || !string.IsNullOrEmpty(s.GetMetadata("DestinationSubDirectory"))) continue;
+                string dst = Path.Combine(OutDir, Path.GetFileName(src));
+                if (!File.Exists(dst) || Mvid(src) is not Guid a || Mvid(dst) == a) continue;
+                Log.LogMessage(MessageImportance.High, $"{dst}: not its project's build (MVID), copied again");
+                File.Copy(src, dst, true);
+            }
+            foreach (var il in Directory.GetFiles(OutDir, "*.dll"))
+            {
+                string image = Path.Combine(OutDir, "r2r", Path.GetFileName(il));
+                if (!File.Exists(image) || Mvid(il) is not Guid a || Mvid(image) == a) continue;
+                Log.LogMessage(MessageImportance.High, $"{image}: not of {Path.GetFileName(il)}'s build (MVID), compiled again");
+                File.Delete(image);
+            }
+            return !Log.HasLoggedErrors;
+        }
+      ]]></Code>
+    </Task>
+  </UsingTask>
+  <Target Name="_SyncByMvid">
+    <Ms2SyncByMvid Sources="@(ReferenceCopyLocalPaths)" OutDir="$(OutDir)" />
   </Target>
   <Target Name="_PrecompileInputs">
     <ItemGroup>

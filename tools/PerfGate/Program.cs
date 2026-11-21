@@ -5,6 +5,8 @@ using System.Text.Json.Nodes;
 //   PerfGate summarize OUT.json SESSION.json...   one run's metrics: every value per metric, over the sessions
 //   PerfGate baseline OUT.json RUN.json...        a baseline with limits from one or more summarized runs
 //   PerfGate compare BASELINE.json RUN.json       exit 1 when any count is past its limit (or missing), else 0
+//   PerfGate images DIR                           the game build's libraries in DIR whose r2r/ image is of the same
+//                                                 build (MVID): prints their count, exit 2 when any has none or another's
 // Every command exits 2 on an error: a missing or bad file, a session without the inputs' fingerprint, runs whose
 // inputs differ, or (compare) a run whose inputs are not the baseline's ("inputs differ, rebuild the baseline").
 // A metric whose name ends in "ms" is a time: recorded and printed (median and worst against the baseline's), never a
@@ -12,7 +14,7 @@ using System.Text.Json.Nodes;
 // metric is a count (bytes, objects, nodes, collections, main-thread JIT-compiled methods): its worst value is held
 // to a limit.
 var opt = new JsonSerializerOptions { WriteIndented = true };
-if (args.Length < 3) return Usage();
+if (args.Length < 3 && !(args.Length == 2 && args[0] == "images")) return Usage();
 try
 {
     switch (args[0])
@@ -20,6 +22,7 @@ try
         case "summarize": Write(args[1], Summarize(args.Skip(2).Select(Load).ToList())); return 0;
         case "baseline": Write(args[1], Baseline(args.Skip(2).Select(Load).ToList())); return 0;
         case "compare": return Compare(Load(args[1]), Load(args[2]));
+        case "images": Console.WriteLine(Images(args[1])); return 0;
         default: return Usage();
     }
 }
@@ -33,8 +36,46 @@ catch (Exception e) when (e is IOException or UnauthorizedAccessException or Jso
 
 static int Usage()
 {
-    Console.Error.WriteLine("PerfGate summarize OUT SESSION... | baseline OUT RUN... | compare BASELINE RUN");
+    Console.Error.WriteLine("PerfGate summarize OUT SESSION... | baseline OUT RUN... | compare BASELINE RUN | images DIR");
     return 2;
+}
+
+// The libraries the game loads precompiled (game/scripts/Precompiled.cs): every DIR/*.dll but the game's own and Godot's,
+// each with an r2r/ image of the same build. The game runs a library whose image is missing or of another build under
+// the JIT without failing, so its first-call costs would move every count; this names them before the sessions run.
+static int Images(string dir)
+{
+    if (!Directory.Exists(dir)) throw new GateError($"{dir}: no game build");
+    var bad = new List<string>();
+    int n = 0;
+    foreach (var il in Directory.GetFiles(dir, "*.dll").Order(StringComparer.Ordinal))
+    {
+        var name = Path.GetFileName(il);
+        if (name == "MS2Godot.dll" || name.StartsWith("Godot", StringComparison.Ordinal)) continue;
+        var image = Path.Combine(dir, "r2r", name);
+        var a = Mvid(il);
+        if (a == null) continue;
+        var b = File.Exists(image) ? Mvid(image) : null;
+        if (b == null) bad.Add($"{name} (no image)");
+        else if (a != b) bad.Add($"{name} (image of another build)");
+        else n++;
+    }
+    if (bad.Count > 0)
+        throw new GateError($"{bad.Count} of the libraries in {dir} would run under the JIT: {string.Join(", ", bad)}; delete those files and their r2r/ images, then build again");
+    if (n == 0) throw new GateError($"{dir}: no precompiled library");
+    return n;
+}
+
+static Guid? Mvid(string path)
+{
+    try
+    {
+        using var pe = new System.Reflection.PortableExecutable.PEReader(File.OpenRead(path));
+        if (!pe.HasMetadata) return null;
+        var md = System.Reflection.Metadata.PEReaderExtensions.GetMetadataReader(pe);
+        return md.GetGuid(md.GetModuleDefinition().Mvid);
+    }
+    catch (BadImageFormatException) { return null; }
 }
 
 static JsonObject Load(string path) => JsonNode.Parse(File.ReadAllText(path)) as JsonObject ?? throw new GateError($"{path}: not a JSON object");

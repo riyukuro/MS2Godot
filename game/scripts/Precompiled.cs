@@ -127,13 +127,19 @@ public static class Precompiled
         foreach (var a in ctx.Assemblies) loaded.Add(a.GetName().Name);
         int n = 0;
         var early = new List<string>();
+        var stale = new List<string>();
         foreach (var file in Directory.GetFiles(AssemblyDir, "*.dll"))
         {
             var name = Path.GetFileNameWithoutExtension(file);
             if (name == Self || name.StartsWith("Godot", StringComparison.Ordinal)) continue;
             if (Mvid(file) is not { } il) continue;
             var image = il.r2r ? file : Path.Combine(AssemblyDir, "r2r", name + ".dll");
-            if (!il.r2r && (Mvid(image) is not { } m || !m.r2r || m.id != il.id)) continue;
+            if (!il.r2r && (Mvid(image) is not { } m || !m.r2r || m.id != il.id))
+            {
+                // an image of another build of the library (its copy or the image left from an interrupted build)
+                if (File.Exists(image)) stale.Add(name);
+                continue;
+            }
             if (loaded.Contains(name)) { early.Add(name); continue; }
             try { ctx.LoadFromAssemblyPath(image); n++; }
             catch (Exception e) when (e is IOException or BadImageFormatException) { GD.PushWarning($"precompiled code: {image}: {e.Message}"); }
@@ -143,7 +149,8 @@ public static class Precompiled
         if (early.Count > 0) GD.PushWarning($"precompiled code: bound from memory before the images, their code runs under the JIT: {string.Join(", ", early)}");
         var runtime = PrecompiledImage.RuntimeMismatch(Path.Combine(AssemblyDir, "r2r"), PrecompiledImage.Runtime);
         summary = $"{n} precompiled from {AssemblyDir} in {sw.Elapsed.TotalMilliseconds:F0} ms" + (runtime != null ? "; " + runtime : "")
-            + (early.Count > 0 ? $"; already loaded from memory: {string.Join(", ", early)}" : "");
+            + (early.Count > 0 ? $"; already loaded from memory: {string.Join(", ", early)}" : "")
+            + (stale.Count > 0 ? $"; not of their library's build, run under the JIT: {string.Join(", ", stale)}" : "");
     }
 
     static (Guid id, bool r2r)? Mvid(string path) => PrecompiledImage.Mvid(path);
