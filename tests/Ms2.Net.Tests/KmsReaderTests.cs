@@ -104,4 +104,26 @@ public class KmsReaderTests {
         r = Reader(w => { w.WriteByte(0x41); w.WriteUnicodeString("s"); w.WriteByte(0); });
         Assert.That(() => GuildMessage.Read(r), Throws.TypeOf<PacketLayoutException>());
     }
+    [Test] public void GuildInviteAndDonationModesRejectLeftoverBytes() {
+        foreach (byte t in new byte[] { 3, 6, 7, 0xf, 0x71 }) {
+            var body = Reader(w => { w.WriteByte(t); });
+            var bytes = new ByteWriter();
+            bytes.WriteByte(t);
+            switch (t) {
+                case 3: bytes.WriteUnicodeString("g"); break;
+                case 6: bytes.WriteUnicodeString("n"); bytes.WriteByte(1); bytes.WriteByte(0); break;
+                case 0x71: bytes.WriteInt(1); bytes.WriteLong(2); break;
+            }
+            var ok = new ByteReader(bytes.Buffer.AsSpan(0, bytes.Length).ToArray());
+            Assert.DoesNotThrow(() => GuildMessage.Read(ok), $"type {t:x}");
+            bytes.WriteByte(9);
+            var extra = new ByteReader(bytes.Buffer.AsSpan(0, bytes.Length).ToArray());
+            Assert.Throws<PacketLayoutException>(() => GuildMessage.Read(extra), $"type {t:x}");
+        }
+    }
+
+    [Test] public void UserEnvEmptyListModeRejectsLeftoverBytes() {
+        Assert.DoesNotThrow(() => UserEnvMessage.Read(Reader(w => { w.WriteByte(5); w.WriteInt(0); })));
+        Assert.Throws<PacketLayoutException>(() => UserEnvMessage.Read(Reader(w => { w.WriteByte(5); w.WriteInt(0); w.WriteByte(1); })));
+    }
 }

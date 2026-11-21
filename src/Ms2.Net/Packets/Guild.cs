@@ -206,8 +206,8 @@ public sealed record GuildMessage(byte Type) {
 
     public static GuildMessage Read(ByteReader r) {
         var m = ReadBody(r);
-        // Types 0x12 (received invite) and the attend/donate modes belong to another change; the others end here.
-        if (m.Type is 1 or 2 or 0x13 or 0x2d or 0x2e or 0x2f or 0x30 or 0x44 or 0x52 or 0x53 or 0x54 or 0x55 or 0x56 or 0x57) r.ExpectEnd($"Guild type {m.Type}");
+        // Types 7 and 0xf have no body, the others end with their fields.
+        if (m.Type is 1 or 2 or 3 or 4 or 5 or 6 or 7 or 0xf or 0x12 or 0x13 or 0x71 or 0x2d or 0x2e or 0x2f or 0x30 or 0x44 or 0x52 or 0x53 or 0x54 or 0x55 or 0x56 or 0x57) r.ExpectEnd($"Guild type {m.Type}");
         return m;
     }
 

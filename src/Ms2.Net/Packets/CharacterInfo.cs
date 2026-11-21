@@ -113,7 +113,7 @@ public abstract record UserEnvMessage {
                 for (uint i = 0; i < n; i++) a.Add(r.ReadInt());
                 return new Templates(a);
             }
-            case 5: r.ReadBytes(r.Available); return null;   // no client handler (OnUserEnv has no mode 5)
+            case 5: { int n = r.ReadInt(); if (n != 0) r.ReadBytes(r.Available); return null; }  // STILL-OPEN: the entry layout of a non-empty list (every sniffed packet is count 0)   // no client handler (OnUserEnv has no mode 5)
             case 0xa: {
                 uint n = (uint) r.ReadInt();
                 var f = new Dictionary<ushort, int>();
