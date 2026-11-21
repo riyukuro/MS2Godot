@@ -1246,9 +1246,15 @@ public class ShopTests
         Assert.That(dir, Is.Not.Null);
         string srcText = File.ReadAllText(Path.Combine(dir.FullName, "game", "ui", "HudScene.cs"));
         int start = srcText.IndexOf("public override void _Process(", StringComparison.Ordinal);
-        int end = srcText.IndexOf("public override void _Input(", start, StringComparison.Ordinal);
-        if (end < 0) end = Math.Min(srcText.Length, start + 4000);
-        string body = srcText[start..end];
+        Assert.That(start, Is.GreaterThanOrEqualTo(0));
+        // the method's body: from its opening brace to the matching closing one
+        int open = srcText.IndexOf('{', start), depth = 0, end = open;
+        for (; end < srcText.Length; end++)
+        {
+            if (srcText[end] == '{') depth++;
+            else if (srcText[end] == '}' && --depth == 0) break;
+        }
+        string body = srcText[start..(end + 1)];
         int calls = System.Text.RegularExpressions.Regex.Matches(body, @"\b(shop\?\.Process|shop\.Process|ShopTick)\s*\(").Count;
         Assert.That(calls, Is.EqualTo(1), "UIShopDialog::vfunc_72 must run once per frame in HudScene._Process");
     }
