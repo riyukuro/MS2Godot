@@ -38,6 +38,7 @@ public partial class LiveSession
             return;
         }
         GD.Print($"live: GameToLogin to {m.Address}:{m.Port}");
+        StopCombatEffects();   // the game scene state goes, and its WorldService's time scale with it; the blink ends on the own PC first
         if (player != null && IsInstanceValid(player)) player.Live = false;
         player = null;
         selfObject = -1;
@@ -46,7 +47,6 @@ public partial class LiveSession
         var old = game;
         game = null;
         old?.Dispose();
-        StopCombatEffects();   // the game scene state goes, and its WorldService's time scale with it
         _ = ReturnAsync(m, exitCts.Token);
     }
 

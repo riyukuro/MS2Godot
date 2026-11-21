@@ -111,20 +111,28 @@ public partial class LiveSession
         if (!Invincible.Active || !Invincible.Tick(now, out float alpha, out bool ended)) return;
         if (ended)
         {
-            // FUN_141661370(0, 0, 0): the running timer's icon removed, then the effect; vfunc_42(1.0, true)
-            InvincibleBuffEnd = 0;
-            InvincibleBuffChanged?.Invoke(timer, 0, 0);
-            InvincibleChanged?.Invoke(false);
-            NodeFade.Set(player, 1f, true);
+            EndInvincible(timer);
             return;
         }
-        NodeFade.Set(player, alpha, false);
+        if (IsInstanceValid(player)) NodeFade.Set(player, alpha, false);
+    }
+
+    /// <summary>FUN_141661370(0, 0, 0): the running timer's icon removed, then the effect; vfunc_42(1.0, true).</summary>
+    void EndInvincible(int timer)
+    {
+        Invincible.Stop();
+        InvincibleBuffEnd = 0;
+        InvincibleBuffChanged?.Invoke(timer, 0, 0);
+        InvincibleChanged?.Invoke(false);
+        if (IsInstanceValid(player)) NodeFade.Set(player, 1f, true);
     }
 
     /// <summary>The game went (the link lost, back to the login server, the quit, the session's end): a running time scale
-    /// change ends with it, as the game scene state's WorldService does.</summary>
+    /// change ends with it, as the game scene state's WorldService does, and so does a running invincible with its blink (the
+    /// own PC goes with the field, so its icon and dimmed alpha must not outlive it).</summary>
     void StopCombatEffects()
     {
         if (TimeScaleRamp.Stop()) GameClock.SetScale(1);
+        if (Invincible.Active) EndInvincible(Invincible.TimerId);
     }
 }

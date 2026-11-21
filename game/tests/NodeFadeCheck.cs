@@ -126,6 +126,24 @@ public partial class NodeFadeCheck : Node
         OS.DelayMsec(5);
         tick.Invoke(ls, null);
         Check(!ls.Invincible.Active && Param(o) == 1f && o.MaterialOverride == null, $"the blink's end left node_alpha {Param(o)}");
+        // the game going ends a running invincible: the link lost (StopCombatEffects, as _Process calls it) and GameToLogin
+        int lastOld = -1, lastNew = -1, lastEnd = -1;
+        bool? lastOn = null;
+        ls.InvincibleBuffChanged += (a, b, c) => { lastOld = a; lastNew = b; lastEnd = c; };
+        ls.InvincibleChanged += on => lastOn = on;
+        ls.Invincible.Start(10000, InvincibleBlink.PortalTimer, (uint)Time.GetTicksMsec());
+        tick.Invoke(ls, null);
+        typeof(LiveSession).GetMethod("StopCombatEffects", Private).Invoke(ls, null);   // _Process's game.IsClosed branch
+        Check(!ls.Invincible.Active && lastOld == InvincibleBlink.PortalTimer && lastNew == 0 && lastEnd == 0 && lastOn == false && ls.InvincibleBuffEnd == 0,
+            $"the link lost left the invincible (active {ls.Invincible.Active}, icon {lastOld}->{lastNew}, effect {lastOn})");
+        Check(Param(o) == 1f && o.MaterialOverride == null, $"the link lost left node_alpha {Param(o)}");
+        lastOld = lastNew = lastEnd = -1; lastOn = null;
+        ls.Invincible.Start(10000, InvincibleBlink.PortalTimer, (uint)Time.GetTicksMsec());
+        tick.Invoke(ls, null);
+        typeof(LiveSession).GetMethod("OnGameToLogin", Private).Invoke(ls, [new Ms2.Net.Packets.GameToLogin(0, [127, 0, 0, 1], 1, 0, 0)]);
+        Check(!ls.Invincible.Active && lastOld == InvincibleBlink.PortalTimer && lastNew == 0 && lastEnd == 0 && lastOn == false,
+            $"GameToLogin left the invincible (active {ls.Invincible.Active}, icon {lastOld}->{lastNew}, effect {lastOn})");
+        Check(Param(o) == 1f && o.MaterialOverride == null, $"GameToLogin left node_alpha {Param(o)}");
         typeof(LiveSession).GetField("player", Private).SetValue(ls, null);
         player.Free();
 
