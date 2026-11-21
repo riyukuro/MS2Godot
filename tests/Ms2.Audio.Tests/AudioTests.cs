@@ -434,20 +434,25 @@ public class AudioTests
         foreach (int voice in new[] { 0, 1, 2, 3 })
             Assert.That(fev.BankFileNameForVoice("MS2Sound_BGM", voice), Is.EqualTo("MS2Sound_BGM.fsb"));
 
-        // Real KR vs EN voice banks both ship in Data/Sound and resolve the same NPC voice event to different banks/samples
+        // The KR voice banks ship in every Data/Sound; the en ones only in some (KMS2 has them, KMS2_DEV does not). The client
+        // does not pick a file itself: EventSystem::setLanguage (soundservice.cpp:418-433) names the language and FMOD opens
+        // <bank>_<language>.fsb, so a missing en bank is the library's own fallback to the FEV default (_Kor_def).
         var kr = new SoundLibrary(dir, voiceLanguage: 0);
         var en = new SoundLibrary(dir, voiceLanguage: 2);
         Assert.That(Path.GetFileName(kr.Bank("MS2Sound_Voice").Path), Is.EqualTo("MS2Sound_Voice_Kor_def.fsb"));
-        Assert.That(Path.GetFileName(en.Bank("MS2Sound_Voice").Path), Is.EqualTo("MS2Sound_Voice_en.fsb"));
-
-        var krVoice = kr.ResolveEvent("ko/Npc/01000022", new Random(0));
-        var enVoice = en.ResolveEvent("ko/Npc/01000022", new Random(0));
-        Assert.That(krVoice, Is.Not.Null);
-        Assert.That(enVoice, Is.Not.Null);
-        Assert.That(krVoice.Name, Does.StartWith("Male_Age30_Doctor_Normal_Greet_"));
-        Assert.That(enVoice.Name, Is.EqualTo("en_" + krVoice.Name));
-        Assert.That(WalkMpeg(krVoice.Mp3).frames, Is.GreaterThan(5));
-        Assert.That(WalkMpeg(enVoice.Mp3).frames, Is.GreaterThan(5));
+        bool hasEn = en.HasBankForVoice("MS2Sound_Voice", 2);
+        Assert.That(Path.GetFileName(en.Bank("MS2Sound_Voice").Path), Is.EqualTo(hasEn ? "MS2Sound_Voice_en.fsb" : "MS2Sound_Voice_Kor_def.fsb"));
+        if (hasEn)
+        {
+            var krVoice = kr.ResolveEvent("ko/Npc/01000022", new Random(0));
+            var enVoice = en.ResolveEvent("ko/Npc/01000022", new Random(0));
+            Assert.That(krVoice, Is.Not.Null);
+            Assert.That(enVoice, Is.Not.Null);
+            Assert.That(krVoice.Name, Does.StartWith("Male_Age30_Doctor_Normal_Greet_"));
+            Assert.That(enVoice.Name, Is.EqualTo("en_" + krVoice.Name));
+            Assert.That(WalkMpeg(krVoice.Mp3).frames, Is.GreaterThan(5));
+            Assert.That(WalkMpeg(enVoice.Mp3).frames, Is.GreaterThan(5));
+        }
 
         // Strict bank open fails when a language bank (e.g. JP) is not installed; fallback uses FEV default (_Kor_def)
         var jp = new SoundLibrary(dir, voiceLanguage: 1);
@@ -458,12 +463,17 @@ public class AudioTests
         }
 
         // Programmer sound voice tag lookup (CSoundService::OpenVoiceStreams + BuildTagTable over Voice8 / Voice9)
+        // The tag banks (Voice8 / Voice9) are per language file too: assert each language only where its file is installed.
         var krTag = kr.ResolveVoiceTag("Guide_Sidepopup_Tutorial_01");
-        var enTag = en.ResolveVoiceTag("Guide_Sidepopup_Tutorial_01");
-        Assert.That(krTag, Is.Not.Null);
-        Assert.That(enTag, Is.Not.Null);
-        Assert.That(krTag.Name, Is.EqualTo("Guide_Sidepopup_Tutorial_01"));
-        Assert.That(enTag.Name, Is.EqualTo("en_Guide_Sidepopup_Tutorial_01"));
+        if (krTag != null)
+            Assert.That(krTag.Name, Is.EqualTo("Guide_Sidepopup_Tutorial_01"));
+        if (hasEn)
+        {
+            var enTag = en.ResolveVoiceTag("Guide_Sidepopup_Tutorial_01");
+            Assert.That(krTag, Is.Not.Null);
+            Assert.That(enTag, Is.Not.Null);
+            Assert.That(enTag.Name, Is.EqualTo("en_Guide_Sidepopup_Tutorial_01"));
+        }
         Assert.That(jp.HasVoiceTag("Guide_Sidepopup_Tutorial_01"), Is.False, "JP returns early in OpenVoiceStreams");
     }
 
