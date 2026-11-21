@@ -168,6 +168,8 @@ public partial class LiveSession : Node
     /// reaches the HUD through <see cref="MyCharacter.Changed"/> (status event 8, :7020).
     /// </summary>
     public event Action<long, int> MesoChanged;
+    /// <summary>OnItemDropNotice: a drop notice for the chat log.</summary>
+    public event Action<ItemDropNotice> ItemDropNoticed;
     /// <summary>The adventure data the client keeps in globals (DAT_143ab2958..3318): session-lived, so a field change keeps
     /// the exp, the filled level, the claimed levels and the missions.</summary>
     public readonly Ms2.Ui.AdventureData Adventure = new();
@@ -903,6 +905,23 @@ public partial class LiveSession : Node
                 var e = ExpUp.Read(p.Reader());   // CSceneStateGame::OnExpUp (scenestategame.cpp:4129); no ExpectEnd: the client ignores trailing bytes
                 Me.Apply(e);
                 GD.Print($"live: exp up mode {e.Mode} +{e.Gained} exp {Me.Exp} rest {Me.RestExp}");
+            }
+            else if (game.Is(p, Inbound.ItemDrop)) { }   // CSceneStateGame::FUN_141717560 (scenestategame.cpp:3262) has an empty body: the client does nothing with it
+            else if (game.Is(p, Inbound.ItemUpdate))
+            {
+                var u = ItemUpdate.Read(p.Reader(), (obj, uid) =>
+                {
+                    if (obj == selfObject) return (true, true, Me.EquipByUid(uid));
+                    var (known, eq) = remote?.EquipOf(obj, uid) ?? (false, null);
+                    return (known, false, eq);
+                });
+                GD.Print($"live: item update object {u.ObjectId} uid {u.Uid}{(u.Updated ? " (read again)" : u.Own ? " (own, item event)" : "")}");
+            }
+            else if (game.Is(p, Inbound.ItemDropNotice))
+            {
+                var n = ItemDropNotice.Read(p.Reader());   // CSceneStateGame::OnItemDropNotice (scenestategame.cpp:8023)
+                ItemDropNoticed?.Invoke(n);
+                GD.Print($"live: item drop notice item {n.ItemId} uid {n.Uid}");
             }
             else if (game.Is(p, Inbound.Meso))
             {

@@ -219,6 +219,9 @@ public sealed class MyCharacter {
     /// <summary>The summoned pet from FieldAddUser (PC::ReadPetItem, scenestategame.cpp:11286; STILL-OPEN: post-enter
     /// pet summon/unsummon packets).</summary>
     public EquipItem Pet;
+
+    /// <summary>PC::GetEquipByUid (OnItemUpdate): the worn equip or outfit of the uid; null when none.</summary>
+    public EquipItem EquipByUid(long uid) => (Equips ?? Array.Empty<EquipItem>()).Concat(Outfit2 ?? Array.Empty<EquipItem>()).FirstOrDefault(e => e.Uid == uid);
     public readonly StatPointBook StatPoints = new();
     public event Action Changed;
     /// <summary>A put-on / put-off changed the equip lists (before <see cref="Changed"/>): the item event dispatcher's

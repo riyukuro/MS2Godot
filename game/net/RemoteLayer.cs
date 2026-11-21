@@ -32,6 +32,8 @@ public sealed partial class RemoteLayer : Node3D
         public Func<Vector3> Anchor;
         /// <summary>FieldAddUser's worn gem items (PCGemEquip::ReadFromStream of the packet).</summary>
         public IReadOnlyList<Ms2.Net.Packets.EquipItem> Gems = Array.Empty<Ms2.Net.Packets.EquipItem>();
+        /// <summary>FieldAddUser's worn equips (the items ItemUpdate reads again).</summary>
+        public IReadOnlyList<Ms2.Net.Packets.EquipItem> Equips = Array.Empty<Ms2.Net.Packets.EquipItem>();
         /// <summary>FieldAddUser's premium club time and wedding state (PC m_n1190 / m_n1220) and the user block's PC bang
         /// grade (m_nFF8, scenestategame.cpp:11151), the PC::CanUseItem inputs of the balloon gem.</summary>
         public long PremiumTime; public short WeddingState; public byte PcBangGrade;
@@ -69,6 +71,14 @@ public sealed partial class RemoteLayer : Node3D
     public System.Numerics.Vector3? PositionOf(int objectId) =>
         users.TryGetValue(objectId, out var r) && r.Root != null && GodotObject.IsInstanceValid(r.Root) && r.Root.IsInsideTree()
             ? new System.Numerics.Vector3(r.Root.GlobalPosition.X, -r.Root.GlobalPosition.Z, r.Root.GlobalPosition.Y) : null;
+
+    /// <summary>WorldService::FindPCById then GetEquipByUid (OnItemUpdate): whether the player is here, and its worn equip of the uid (null when none).</summary>
+    public (bool PcKnown, Ms2.Net.Packets.EquipItem Equip) EquipOf(int objectId, long uid)
+    {
+        if (!users.TryGetValue(objectId, out var r)) return (false, null);
+        for (int i = 0; i < r.Equips.Count; i++) if (r.Equips[i].Uid == uid) return (true, r.Equips[i]);
+        return (true, null);
+    }
 
     /// <summary>The other players shown now (the own PC is not among them).</summary>
     public IEnumerable<Pc> Pcs => users.Values.Select(r => new Pc(r.ObjectId, r.CharacterId, r.Name ?? "", r.Picture, r.Root, r.Anchor, r.Gems,
@@ -193,7 +203,7 @@ public sealed partial class RemoteLayer : Node3D
         FieldShadows.Character(root, visual, Ms2.Formats.Options.GraphicOptionTable.PC, 100f, 3f);
         tags.AddPc(root, visual.GetNodeOrNull<Node3D>("Model"), md.RootName, u, false);
         var r = new Remote { Pc = pc, Root = root, Visual = visual, Name = u.User.Name };
-        r.ObjectId = u.ObjectId; r.CharacterId = u.User.CharacterId; r.Picture = u.User.Picture ?? ""; r.Gems = u.Badges.ToList();
+        r.ObjectId = u.ObjectId; r.CharacterId = u.User.CharacterId; r.Picture = u.User.Picture ?? ""; r.Gems = u.Badges.ToList(); r.Equips = u.Equips;
         r.Gender = u.User.Gender;
         r.PremiumTime = u.PremiumTime; r.WeddingState = u.WeddingState; r.PcBangGrade = u.User.PcBangGrade;
         r.HpCur = u.Stats[2].Health; r.HpMax = u.Stats[0].Health; r.InBattle = u.InBattle;

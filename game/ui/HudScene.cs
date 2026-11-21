@@ -2021,7 +2021,9 @@ public partial class HudScene : Node, IUiStageHost
         if (live == null) return;
         Action<long, int> onMeso = (delta, kind) => MesoLine(delta, kind);
         live.MesoChanged += onMeso;
-        unwatchMeso = () => live.MesoChanged -= onMeso;
+        Action<Ms2.Net.Packets.ItemDropNotice> onDrop = n => ChatLog.AddItemDropNotice(n.Name, n.ItemId, n.Grade, n.Uid);
+        live.ItemDropNoticed += onDrop;
+        unwatchMeso = () => { live.MesoChanged -= onMeso; live.ItemDropNoticed -= onDrop; };
     }
 
     /// <summary>

@@ -1570,6 +1570,20 @@ public class HudTests
     }
 
     [Test]
+    public void MessengerShowsAnItemDropNoticeAsASystemLineWithTheItemLink()
+    {
+        var m = Model();
+        var log = new MessengerBrowser { Model = m };
+        string fmt = m.Tables.Common(0x342);
+        Assert.That(fmt, Is.Not.Empty);
+        log.AddItemDropNotice("Dropper", 15000001, 3, 7);
+        string link = log.ItemLink(15000001, 3, 7);
+        Assert.That(log.Logs.Last().Kind, Is.EqualTo(TalkKind.SystemNotice));
+        Assert.That(log.Logs.Last().Msg, Does.Contain("Dropper").And.Contain(link));
+        Assert.That(log.Logs.Last().Msg, Does.Contain("event:itemTooltip,7,3,7,15000001,3"));
+    }
+
+    [Test]
     public void MessengerShowsTheLinesLoggedBeforeItLoaded()
     {
         var m = Model();

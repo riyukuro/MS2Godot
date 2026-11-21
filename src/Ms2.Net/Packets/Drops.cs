@@ -109,3 +109,38 @@ public sealed class FieldPickupItem {
         return d;
     }
 }
+
+/// <summary>
+/// Inbound 0xBA, CSceneStateGame::OnItemDropNotice (scenestategame.cpp:8023): the dropper's name (u16 length + UTF-16), then the
+/// item's id, grade and uid (FUN_140d2e2b0's arguments, the item link). The client shows common string 0x342 of the name and the
+/// link as a system line of kind 0x14 (FUN_1412751b0).
+/// </summary>
+public sealed record ItemDropNotice(string Name, int ItemId, int Grade, long Uid) {
+    public const int MessageId = 0x342;
+    public static ItemDropNotice Read(ByteReader r) => new(r.ReadUnicodeString(), r.ReadInt(), r.ReadInt(), r.ReadLong());
+}
+
+/// <summary>
+/// Inbound 0x2A, CSceneStateGame::OnItemUpdate (scenestategame.cpp:3214): the player's object id and an item uid. A player the
+/// field does not have, or one that does not wear the uid, ends the handler. The local player's equip is left to the item event
+/// dispatcher (no more is read); another player's equip has its item read again from the rest of the packet.
+/// </summary>
+public sealed class ItemUpdate {
+    public int ObjectId; public long Uid;
+    public bool PcKnown, EquipKnown, Own, Updated;
+
+    /// <param name="find">The player's worn equip of the uid: whether the player is here, whether it is the local one, and the equip (null when not worn).</param>
+    public static ItemUpdate Read(ByteReader r, Func<int, long, (bool PcKnown, bool Own, EquipItem Equip)> find) {
+        var u = new ItemUpdate { ObjectId = r.ReadInt(), Uid = r.ReadLong() };
+        var (pc, own, equip) = find(u.ObjectId, u.Uid);
+        u.PcKnown = pc;
+        if (!pc) return u;
+        u.EquipKnown = equip != null;
+        if (equip == null) return u;
+        u.Own = own;
+        if (own) return u;
+        ItemReader.ReadBodyInto(r, equip);
+        u.Updated = true;
+        return u;
+    }
+}

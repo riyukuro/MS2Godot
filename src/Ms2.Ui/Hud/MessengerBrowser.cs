@@ -186,6 +186,13 @@ public sealed class MessengerBrowser
     }
 
     /// <summary>
+    /// OnItemDropNotice (scenestategame.cpp:8023): common string 0x342 of the dropper's name and the item's link
+    /// (FUN_140d2e2b0, <see cref="ItemLink"/>), as a system line of kind 0x14 (FUN_1412751b0).
+    /// </summary>
+    public void AddItemDropNotice(string name, int itemId, int grade, long uid) =>
+        AddSystemLine(ClientFormat.Format(Tables.Common(0x342), name, ItemLink(itemId, grade, uid)), TalkKind.SystemNotice);
+
+    /// <summary>
     /// UIMessengerBrowser::vfunc_5 (@0x141a25e10, :3526), the item event dispatcher's new item (ItemInventory mode 7,
     /// CSceneStateGame::OnItemInventory, scenestategame.cpp:2836): nothing for a UGC item (type 0x16), else
     /// FUN_1412750f0(item, count, 0x2ba, 0x2b9) -> FUN_141a24890 (:3258): the item's html (FUN_141841b40,
