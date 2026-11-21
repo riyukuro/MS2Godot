@@ -10,7 +10,6 @@ namespace Ms2Godot.Ui;
 /// The item boxes' dialogs: UISelectItemBoxDialog (0x4eff, <see cref="SelectItemBoxController"/>) that SelectItemBox opens
 /// (@0x140d22430), and UIItemMultiOpenBoxDialog (0x4f88, <see cref="ItemMultiOpenBoxController"/>) that OnOpenItemBoxMulti
 /// opens (@0x140d1dc60). Live only. The answers of RequestItemBox (ItemBox 0xAC) go to the multi open window.
-/// STILL-OPEN: the limit constant (Common::Constants multiOpenMax, default 1000 here).
 /// </summary>
 public partial class HudScene
 {
@@ -37,10 +36,8 @@ public partial class HudScene
             OpenContents = (box, indices) => inventory?.OpenItemBoxContents(box, indices),
             GetBoxItems = boxId =>
             {
-                var list = new List<ItemDropEntry>();
                 var me = inventory?.Wearer?.Invoke();
-                tables.IndividualDrops.GetBoxItems(tables.Items, boxId, me?.JobGroup ?? 0, me?.Gender ?? 2, true, list);
-                return list;
+                return SelectItemBoxController.BoxRewards(tables, boxId, me?.JobGroup ?? 0, me?.Gender ?? 2);
             },
         };
         c.NoticeKey += key => SystemNoticeText(tables.Common(key) ?? "");
@@ -56,8 +53,13 @@ public partial class HudScene
     {
         if (ItemMultiOpenOpen) return;
         var live = Ms2Godot.Net.LiveSession.Instance;
-        if (itemMultiOpenMovie != null) { itemMultiOpenMovie.Host.Unload(); itemMultiOpenMovie.QueueFree(); itemMultiOpenMovie = null; }
-        var c = new ItemMultiOpenBoxController(InventoryController.ItemBoxMultiOpenLimit)
+        if (itemMultiOpenMovie != null)
+        {
+            // the old movie is unloaded directly, so its Unloaded never fires: its answer handler goes here
+            if (live != null && itemBoxAnswer != null) live.ItemBoxResulted -= itemBoxAnswer;
+            itemMultiOpenMovie.Host.Unload(); itemMultiOpenMovie.QueueFree(); itemMultiOpenMovie = null;
+        }
+        var c = new ItemMultiOpenBoxController(hudModel.Tables.ItemBoxMultiOpenMaxCount)
         {
             NowMs = () => (long)Time.GetTicksMsec(),
             InBag = id => inventory?.BagCountOf(id) > 0,
@@ -65,11 +67,18 @@ public partial class HudScene
             ShowNotice = text => MessageBoxQueue.Show(MessageBoxQueue.Create(0, text, null, "")),
         };
         c.State.Open(itemId, (short)rarity, args, count);
-        itemBoxAnswer = c.OnItemBox;
-        if (live != null) live.ItemBoxResulted += itemBoxAnswer;
+        // CSceneStateGame::OnItemBox (scenestategame.cpp:8416) forwards to the dialog only for an OpenItemBox or SelectItemBox item
+        var tables = hudModel.Tables;
+        Action<ItemBoxResult> answer = n =>
+        {
+            if (tables.Items.Get(n.ItemId) is { FunctionName: "OpenItemBox" or "SelectItemBox" }) c.OnItemBox(n);
+        };
+        itemBoxAnswer = answer;
+        if (live != null) live.ItemBoxResulted += answer;
         c.Unloaded += () =>
         {
-            if (live != null) live.ItemBoxResulted -= itemBoxAnswer;
+            if (live != null) live.ItemBoxResulted -= answer;
+            if (itemBoxAnswer == answer) itemBoxAnswer = null;
             itemMultiOpenMovie?.Host.Unload(); itemMultiOpenMovie?.QueueFree(); itemMultiOpenMovie = null;
         };
         itemMultiOpen = c;
@@ -96,7 +105,7 @@ public partial class HudScene
         {
             if (tables.Items.Get(id) is not { FunctionName: "SelectItemBox" } d || d.FunctionArgInt(1, 0) == 0) continue;
             var list = new List<ItemDropEntry>();
-            tables.IndividualDrops.GetBoxItems(tables.Items, d.FunctionArgInt(1, 0), 1, 0, true, list);
+            tables.IndividualDrops.GetBoxItems(tables.Items, d.FunctionArgInt(1, 0), 1, 0, false, list);
             if (list.Count == 0) continue;
             var item = Item.Create(tables.Items, id, 1);
             item.Uid = 1;

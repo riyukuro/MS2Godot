@@ -81,6 +81,8 @@ public sealed class GameTables
         var k = FeatureElements.Constants(packs);
         AdventureLevelLvUpExp = (long)k.Float("AdventureLevelLvUpExp", AdventureLevelLvUpExp);
         AdventureLevelStartLevel = (int)k.Float("AdventureLevelStartLevel", AdventureLevelStartLevel);
+        ItemBoxMultiOpenMaxCount = (int)k.Float("ItemBoxMultiOpenMaxCount", ItemBoxMultiOpenMaxCount);
+        ItemBoxMultiOpenLimitCount = (int)k.Float("ItemBoxMultiOpenLimitCount", ItemBoxMultiOpenLimitCount);
         CharacterAbilityDefaultPoint = (uint)k.Float("CharacterAbilityDefaultPoint", CharacterAbilityDefaultPoint);
         CharacterAbilityResetCoolTimeMinute = (uint)k.Float("CharacterAbilityResetCoolTimeMinute", CharacterAbilityResetCoolTimeMinute);
         CharacterAbilityResetMeso = (long)k.Float("CharacterAbilityResetMeso", CharacterAbilityResetMeso);
@@ -359,6 +361,10 @@ public sealed class GameTables
     /// 15000 and 50, unit_1402ab440_constantsblocks.cpp:1155, :1157).</summary>
     public long AdventureLevelLvUpExp = 15000;
     public int AdventureLevelStartLevel = 50;
+    /// <summary>Client::Constants ItemBoxMultiOpenMaxCount (the batch one RequestItemBox carries, UIItemMultiOpenBoxDialog::vfunc_15
+    /// min(m_194, it)) and ItemBoxMultiOpenLimitCount (the clamp of the bag count in the use dispatch, +0xa340): the Define
+    /// defaults 20 and 1000, unit_1402ab440_constantsblocks.cpp:1220, :1221.</summary>
+    public int ItemBoxMultiOpenMaxCount = 20, ItemBoxMultiOpenLimitCount = 1000;
     /// <summary>Client::Constants CharacterAbilityDefaultPoint, CharacterAbilityResetCoolTimeMinute, CharacterAbilityResetMeso,
     /// CharacterAbilityResetMerat, CharacterAbilityOpenQuestID (table/constants.xml; the Define defaults 10, 120, 2500, 100 and
     /// 90000060, unit_1402ab440_constantsblocks.cpp:1045-1049).</summary>

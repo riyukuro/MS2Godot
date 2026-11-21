@@ -5,7 +5,7 @@ namespace Ms2.Ui.Hud;
 
 /// <summary>
 /// UIItemMultiOpenBoxDialog (uiitemmultiopenboxdialog.cpp, UI id 0x4f88): the window that opens a stack of boxes by sending
-/// RequestItemBox, up to the limit at a time, and counts them as the answers (ItemBox 0xAC) come back. The state is
+/// RequestItemBox, up to ItemBoxMultiOpenMaxCount (not the 1000 limit) at a time, and counts them as the answers (ItemBox 0xAC) come back. The state is
 /// <see cref="ItemMultiOpenBox"/>; the host calls <see cref="Tick"/> each frame (vfunc_15 @0x140c3f8a0) and
 /// <see cref="OnItemBox"/> for each answer (OnOpenResult @0x140c3fa80).
 /// STILL-OPEN: the item info slot (CreateItemInfoSlot / the movie's setItem, OnLoadComplete @0x140c3f600), the inventory

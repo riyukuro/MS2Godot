@@ -753,7 +753,7 @@ public class InventoryTests
             Assert.That((multi, sent.Count), Is.EqualTo((new[] { (20300327, 1, "", 3) }, 1)), "more than one: the multi open window, no send");
             boxes[1].ClickedTag = "x,5000";
             boxes[1].Callback(0, boxes[1]);
-            Assert.That(multi.Last().Item4, Is.EqualTo(InventoryController.ItemBoxMultiOpenLimit), "the count is clamped to the limit");
+            Assert.That(multi.Last().Item4, Is.EqualTo(model.Tables.ItemBoxMultiOpenLimitCount), "the count is clamped to the limit");
             boxes[1].ClickedTag = "3";
             boxes[1].Callback(0, boxes[1]);
             Assert.That(multi.Count, Is.EqualTo(2), "a tag of one field is ignored");

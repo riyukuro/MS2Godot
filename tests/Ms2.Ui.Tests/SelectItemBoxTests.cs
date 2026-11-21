@@ -66,9 +66,7 @@ public class SelectItemBoxTests
             C.HaveCount = _ => 1;
             C.GetBoxItems = b =>
             {
-                var l = new List<ItemDropEntry>();
-                Model.Tables.IndividualDrops.GetBoxItems(Model.Tables.Items, b, 1, 0, false, l);
-                return l;
+                return SelectItemBoxController.BoxRewards(Model.Tables, b, 1, 0);
             };
             C.OpenContents = (i, s) => Opened.Add((i, s));
             C.NoticeKey += Notices.Add;
@@ -104,6 +102,26 @@ public class SelectItemBoxTests
         int len = (int)Rt.ToUint32(r.Host.Get(dp, "length"));
         Assert.That(len, Is.GreaterThanOrEqualTo(SelectItemBoxState.MinRows));
         Assert.That(len, Is.GreaterThanOrEqualTo(r.C.State.Rewards.Count));
+    }
+
+    [Test]
+    public void AHiddenRowKeepsItsPlaceInTheList()
+    {
+        Packs();
+        var tables = new GameTables(packs, "en");
+        int box = tables.IndividualDrops.BoxIds.FirstOrDefault(id =>
+        {
+            var all = new List<ItemDropEntry>();
+            tables.IndividualDrops.GetBoxItems(tables.Items, id, 1, 0, false, all);
+            int hidden = all.FindIndex(e => e.Tooltip == 2);
+            return hidden >= 0 && hidden < all.Count - 1;
+        });
+        Assume.That(box, Is.Not.EqualTo(0), "no box with a hidden row before another row");
+        var rows = SelectItemBoxController.BoxRewards(tables, box, 1, 0);
+        var full = new List<ItemDropEntry>();
+        tables.IndividualDrops.GetBoxItems(tables.Items, box, 1, 0, false, full);
+        Assert.That(rows, Is.EqualTo(full), "bSkipHidden is false: no later row shifts up, the index sent picks the right reward");
+        Assert.That(rows.Any(e => e.Tooltip == 2));
     }
 
     [Test]

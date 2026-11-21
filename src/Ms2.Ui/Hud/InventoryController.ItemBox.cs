@@ -9,15 +9,12 @@ namespace Ms2.Ui.Hud;
 /// server answers: the plain use goes through <see cref="RequestUseItem"/>, the multi open to the window of
 /// <see cref="OpenMultiBox"/>.
 /// STILL-OPEN: the 7-day "do not ask again" timers (m_n10Time / m_n18Time, game option save; the boxes always ask),
-/// UseItemCheckCapacity (the capacity box of OpenItemBoxSingle is never shown), content flag 0x6e (shutdown, FUN_140d1d3f0),
+/// UseItemCheckCapacity (the capacity box is never shown: the confirm goes straight to OpenItemBoxContents), content flag 0x6e (shutdown, FUN_140d1d3f0),
 /// the xml "notifyBox" common string of the confirm (ItemData does not parse the xml function form; the default key is
-/// used), the item's m_dc (FUN_140529640, a count over 0 forces a single open: read as 0), the ShutdownDropBox list.
+/// used), the item's m_dc (FUN_140529640, a count over 0 forces a single open: read as 0), the ShutdownDropBox list, the multi-count box's spBox->FUN_141a024a0(0) call.
 /// </summary>
 public sealed partial class InventoryController
 {
-    /// <summary>ItemBoxMultiOpenLimitCount's default (FUN_140d1d3f0 clamps the bag count to 0..limit).</summary>
-    public const int ItemBoxMultiOpenLimit = 1000;
-
     /// <summary>The tags of the three confirm boxes (their callbacks are OnOpenItemBoxConfirm / Capacity / Multi).</summary>
     public const string OpenBoxKey = "s_msg_item_open_item_box", OpenBoxMultiKey = "s_msg_item_open_item_box_multi",
         OpenBoxMultiNoCountKey = "s_msg_item_open_item_box_multi_no_having_count", OpenBoxMultiOpenMsgKey = "s_msg_item_open_item_box_multiopen_msg",
@@ -95,7 +92,8 @@ public sealed partial class InventoryController
         ShowBox(box);
     }
 
-    /// <summary>OnOpenItemBoxConfirm @0x140d1da90: button 0 only; the item found by uid goes on (OpenItemBoxSingle).
+    /// <summary>OnOpenItemBoxConfirm @0x140d1da90: button 0 only; the item found by uid goes straight to
+    /// <see cref="OpenItemBoxContents"/> (the client's capacity check, UseItemCheckCapacity and its box, is STILL-OPEN).
     /// STILL-OPEN: the checked box saves the 7-day timer.</summary>
     bool OnOpenItemBoxConfirm(int button, MessageBoxData box)
     {
@@ -105,12 +103,12 @@ public sealed partial class InventoryController
     }
 
     /// <summary>OpenItemBoxContents @0x140d1d3f0: nMultiOpen = arg 4 (default 1); the count of the same id and rarity clamped
-    /// to 0..<see cref="ItemBoxMultiOpenLimit"/>; with nMultiOpen 1 and more than one, box 0x29 asks how many (OnOpenItemBoxMulti);
+    /// to 0..<see cref="GameTables.ItemBoxMultiOpenLimitCount"/>; with nMultiOpen 1 and more than one, box 0x29 asks how many (OnOpenItemBoxMulti);
     /// else the plain use with the arguments.</summary>
     public void OpenItemBoxContents(Item item, string strArgs)
     {
         int multi = item.Data.FunctionArgInt(4, 1);
-        int count = Math.Clamp(BagCountSameRarity(item), 0, ItemBoxMultiOpenLimit);
+        int count = Math.Clamp(BagCountSameRarity(item), 0, Model.Tables.ItemBoxMultiOpenLimitCount);
         if (multi == 1 && count > 1)
         {
             var box = MessageBoxQueue.Create(0x29, Model.Tables.Common(OpenBoxMultiOpenMsgKey) ?? "", null, "");
@@ -135,7 +133,7 @@ public sealed partial class InventoryController
         string strArgs = box.Args.Count > 0 ? box.Args[0] : "";
         var fields = box.ClickedTag.Split(',');
         if (fields.Length < 2) return true;
-        int count = Math.Clamp(MessageBoxData.WToI(fields[1]), 0, ItemBoxMultiOpenLimit);
+        int count = Math.Clamp(MessageBoxData.WToI(fields[1]), 0, Model.Tables.ItemBoxMultiOpenLimitCount);
         if (FindItem(box.ItemUid) is not { } item) return true;
         if (count > 1) OpenMultiBox?.Invoke(item.ItemId, item.Rarity, strArgs, count);
         else RequestUseItem(item, strArgs);

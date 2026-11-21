@@ -74,6 +74,15 @@ public sealed class SelectItemBoxController : UiController
     public Func<int, int> HaveCount = _ => 0;
     /// <summary>OpenItemBoxContents(item, indices) (@0x140d1d3f0).</summary>
     public Action<Item, string> OpenContents = (_, _) => { };
+    /// <summary>The list the dialog shows (UISelectItemBoxDialog::OnLoadComplete): GetBoxItems with bSkipHidden false, so a
+    /// showTooltip 2 row keeps its place and the index the dialog sends is the row's index in the server's list.</summary>
+    public static List<ItemDropEntry> BoxRewards(GameTables tables, int boxId, int job, int gender)
+    {
+        var list = new List<ItemDropEntry>();
+        tables.IndividualDrops.GetBoxItems(tables.Items, boxId, job, gender, false, list);
+        return list;
+    }
+
     /// <summary>ItemDropTable::GetBoxItems for the box, the player's job group and gender.</summary>
     public Func<int, List<ItemDropEntry>> GetBoxItems = _ => new();
     /// <summary>FUN_1412752d0: a system notice by common string key.</summary>

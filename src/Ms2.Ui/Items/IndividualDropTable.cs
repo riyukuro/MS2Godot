@@ -62,6 +62,9 @@ public sealed class IndividualDropTable
         return boxes;
     }
 
+    /// <summary>The ids of the loaded boxes.</summary>
+    public IEnumerable<int> BoxIds => Boxes().Keys;
+
     /// <summary>True when the table holds the box.</summary>
     public bool Has(int boxId) => Boxes().ContainsKey(boxId);
 

@@ -49,7 +49,7 @@ public class ItemMultiOpenBoxTests
         r.Now += 500; r.C.Tick();
         Assert.That(r.Sent, Is.Empty, "due 500 ms after the load, and strictly after");
         r.Now += 1; r.C.Tick(); r.C.Tick();
-        Assert.That(r.Sent, Is.EqualTo(new[] { new ItemBoxRequest(20300327, 1, 3, "k") }), "once, at most the limit");
+        Assert.That(r.Sent, Is.EqualTo(new[] { new ItemBoxRequest(20300327, 1, 3, "k") }), "once, at most the batch size");
         r.C.OnItemBox(new ItemBoxResult(20300327, 3, ItemBoxResult.ResultOpened));
         r.Now += 100; r.C.Tick();
         Assert.That(r.Sent, Has.Count.EqualTo(1), "100 ms after an answer, strictly after");
@@ -57,6 +57,20 @@ public class ItemMultiOpenBoxTests
         Assert.That(r.Sent.Last(), Is.EqualTo(new ItemBoxRequest(20300327, 1, 2, "k")), "what is left");
         r.C.OnItemBox(new ItemBoxResult(20300327, 2, ItemBoxResult.ResultOpened));
         Assert.That((r.Closes, r.C.State.Active), Is.EqualTo((1, false)), "all opened: closed");
+    }
+
+    [Test]
+    public void ABatchIsAtMostTheMultiOpenMaxCountNotTheLimit()
+    {
+        var d = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
+        var tables = new GameTables(new PackSet(d), "en");
+        Assert.That(tables.ItemBoxMultiOpenMaxCount, Is.LessThan(tables.ItemBoxMultiOpenLimitCount), "the batch is the smaller constant");
+        // the host builds the controller from ItemBoxMultiOpenMaxCount; 300 boxes go out in batches of it
+        var state = new ItemMultiOpenBox(tables.ItemBoxMultiOpenMaxCount);
+        state.Open(20300327, 1, "k", 300);
+        state.Loaded(0, true);
+        Assert.That(state.Tick(501), Is.EqualTo(new ItemBoxRequest(20300327, 1, tables.ItemBoxMultiOpenMaxCount, "k")));
     }
 
     [Test]
