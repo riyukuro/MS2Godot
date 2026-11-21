@@ -574,7 +574,7 @@ public sealed class RemotePcStates
         if (pc.OnWater) { ChangeState(StateSwim); return; }
         int delay = Ms(MathF.Sqrt(3f / MathF.Abs(pc.Gravity / 100f)));
         if (pc.InAirFor(delay)) { ChangeState(StateFall); return; }
-        if (subs[StateWalk] == 0x19) { walkRun = 0; NotifyWeaponKey(); }
+        if (subs[StateWalk] == 0x19 && walkRun != 0) { walkRun = 0; NotifyWeaponKey(); }
         int key = walkRun == 0 ? ActWalk : ActRun;
         bool changed = !(pc.MoveSpeedRate == walkSpeed1 && pc.ScaleAnimRate == walkSpeed2 && walkChanged == 0);
         if (!pc.IsAction(key) || changed)

@@ -320,6 +320,16 @@ public class RemotePcStatesTests {
         Assert.That(sm.WalkRun, Is.False);
         Assert.That(keys[^1], Is.EqualTo((2, 0x19, false)));
         Assert.That(keys.Count, Is.GreaterThan(n));
+
+        // nothing changed: frames at sub 0x19 (WalkFrame clears the flag every frame) and the same record pushed again
+        // (ChangeState's same-state branch) must not notify
+        n = keys.Count;
+        for (int i = 0; i < 5; i++) sm.Update(1 / 60f);
+        sm.Push(Rec(2, 0x19, b.Position, new Vector2(0, 1), 0f));
+        sm.Update(1 / 60f);
+        sm.Push(Rec(2, 0x19, b.Position, new Vector2(0, 1), 0f));
+        sm.Update(1 / 60f);
+        Assert.That(keys.Count, Is.EqualTo(n), "no notification without a key change");
     }
 
     [Test] public void StateWalkChangeTestUsesStatRates() {
