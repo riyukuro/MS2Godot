@@ -180,6 +180,9 @@ public partial class As3View : Node2D
             Sweep();
             UpdateMasks();
         }
+        // a parked holder whose object stopped waiting (removed under the hidden container, whose marks stop below the
+        // stage) is freed on the first sync after any mark in this movie, not only on one that marks the stage
+        else if (parked.Count > 0 && Player.RT.DisplayMarks != marksSeen) Sweep();
         marksSeen = Player.RT.DisplayMarks;
         SyncMs += System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
         var focus = Player.Focus as AsTextField;
@@ -1099,9 +1102,23 @@ public partial class GraphicsNode : Node2D
     public GraphicsNode(AsGraphics g) { this.g = g; }
     /// <summary>MS2_PERF_SYNCCHECK: what the last draw drew (the sync check scene compares a view's history with a fresh build).</summary>
     public string DrawnKey { get; private set; }
+    static readonly System.Text.StringBuilder keySb = new();
+    static string Key(List<(string Op, double[] V, uint Color, double Alpha)> ops)
+    {
+        keySb.Clear();
+        for (int i = 0; i < ops.Count; i++)
+        {
+            var (op, v, color, alpha) = ops[i];
+            if (i > 0) keySb.Append(';');
+            keySb.Append(op).Append(' ');
+            for (int j = 0; j < v.Length; j++) { if (j > 0) keySb.Append(','); keySb.Append(v[j]); }
+            keySb.Append(' ').Append(color.ToString("x")).Append(' ').Append(alpha);
+        }
+        return keySb.ToString();
+    }
     public override void _Draw()
     {
-        if (As3View.SyncCheck) DrawnKey = string.Join(";", g.Ops.Select(o => $"{o.Op} {string.Join(",", o.V)} {o.Color:x} {o.Alpha}"));
+        if (As3View.SyncCheck) DrawnKey = Key(g.Ops);
         foreach (var (op, v, color, alpha) in g.Ops)
         {
             if (alpha <= 0) continue;

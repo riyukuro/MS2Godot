@@ -163,6 +163,24 @@ public partial class As3ViewSyncCheck : Node
         var n = Box("pN", h, 40, 0, hrt);
         var nk = Box("pNk", n, 0, 10, hrt);
         Box("pU", h, 60, 0, hrt);   // untouched: only the walk on show gives it the ancestor's new blend
+        var n1 = Box("pN1", h, 80, 0, hrt);
+        var n2 = Box("pN2", n1, 0, 10, hrt);
+        var q = Box("pQ", a, 5, 45, hrt);
+        // a button: its states hang under it through MarkOwner, not Parent
+        var b = (AsSimpleButton)hrt.GetClass("flash.display.SimpleButton").Construct();
+        b.name = "pB"; b.x = 100;
+        var bu = Box("pBu", null, 0, 0, hrt);
+        b.upState = bu;
+        b.overState = Box("pBo", null, 0, 5, hrt);
+        h.addChild(b);
+        // a masked object and its mask, both in the hidden part
+        var mk = Box("pMk", h, 120, 0, hrt);
+        var mm = Box("pMm", h, 120, 0, hrt);
+        mk.mask = mm;
+        // a scale-9 sprite (the grid reaches only symbol shapes, but its holder walk runs through the grid case)
+        var nine = Box("pS", h, 140, 0, hrt);
+        nine.Symbol = Nine();
+        Box("pSk", nine, 1, 1, hrt);
         await Frames(hv);
         var xHolder = Holder(hv, "pX");
         var yHolder = Holder(hv, "pY");
@@ -177,6 +195,11 @@ public partial class As3ViewSyncCheck : Node
         n.alpha = 0.5;
         nk.visible = false;
         top.blendMode = "add";
+        bu.x = 3;
+        b.State = "over";
+        mm.x = 125;
+        mk.y = 4;
+        nine.scaleX = 2;
         h.addChild(x);
         h.addChild(y);
         await Frames(hv);
@@ -184,6 +207,15 @@ public partial class As3ViewSyncCheck : Node
         h.removeChild(y);
         await Frames(hv);
         Is(!IsInstanceValid(yHolder) || yHolder.IsQueuedForDeletion(), "a parked holder whose object left the stage was kept");
+        // moved two levels into the hidden part, then removed there: the removal's marks stop at the hidden part, and
+        // the parked holder still goes on the next sync
+        var qHolder = Holder(hv, "pQ");
+        n2.addChild(q);
+        await Frames(hv);
+        Is(IsInstanceValid(qHolder) && !qHolder.IsQueuedForDeletion(), "the holder of an object moved deep into a hidden sprite was freed");
+        n2.removeChild(q);
+        await Frames(hv);
+        Is(!IsInstanceValid(qHolder) || qHolder.IsQueuedForDeletion(), "a parked holder whose object left a nested hidden container was kept");
         h.visible = true;
         await Frames(hv);
         Is(Holder(hv, "pX") == xHolder, "an object moved into a hidden sprite was built again when shown");
@@ -215,7 +247,21 @@ public partial class As3ViewSyncCheck : Node
         fn.alpha = 0.5;
         Box("pNk", fn, 7, 10, frt);
         Box("pU", fh, 60, 0, frt);
-        Box("pAdded", fh, 0, 40, frt);
+        var fn1 = Box("pN1", fh, 80, 0, frt);
+        Box("pN2", fn1, 0, 10, frt);
+        var fb = (AsSimpleButton)frt.GetClass("flash.display.SimpleButton").Construct();
+        fb.name = "pB"; fb.x = 100;
+        fb.upState = Box("pBu", null, 3, 0, frt);
+        fb.overState = Box("pBo", null, 0, 5, frt);
+        fb.State = "over";
+        fh.addChild(fb);
+        var fmk = Box("pMk", fh, 120, 4, frt);
+        fmk.mask = Box("pMm", fh, 125, 0, frt);
+        var fnine = Box("pS", fh, 140, 0, frt);
+        fnine.Symbol = Nine();
+        fnine.scaleX = 2;
+        Box("pSk", fnine, 1, 1, frt);
+        Box("pAdded", fh, 0, 40, frt);   // added and moved in while hidden: after the rest
         Box("pX", fh, 5, 5, frt);
         await Frames(fv);
 
@@ -269,6 +315,12 @@ public partial class As3ViewSyncCheck : Node
         parent.addChild(tf);
         return tf;
     }
+
+    static JsonObject Nine() => new()
+    {
+        ["scale9"] = new JsonObject { ["x"] = 2.0, ["y"] = 2.0, ["w"] = 6.0, ["h"] = 6.0 },
+        ["bounds"] = new JsonObject { ["x"] = 0.0, ["y"] = 0.0, ["w"] = 10.0, ["h"] = 10.0 },
+    };
 
     static Node2D Holder(As3View v, string name) => v.FindChild(name, true, false) is Node2D n && !n.IsQueuedForDeletion() ? n : null;
 
