@@ -19,7 +19,8 @@ namespace Ms2Godot.Tests;
 /// portal, gather, taxi) does not read the space. Then the focus moves as a left press moves
 /// main.gfx's one focus (MovieImpl, sfr_gfx_01i.cpp:3673; QueueSetFocusTo, :2672): a press on the world clears it and Up
 /// moves the player again; a click on the chat's input focuses it and a and b go there, not to the dictionary; a press on
-/// the dictionary's surface (over the chat's view) takes the chat's focus away too. Quits with 0 when all of that holds
+/// the dictionary's surface (over the chat's view) takes the chat's focus away too. Ctrl + Left leaves the camera alone
+/// outside debug mode and turns it in debug mode (CTargetCameraMode::vfunc_9's keys are debug-only). Quits with 0 when all of that holds
 /// (the field holds "mplik1x", none of those dialogs opened, the player stayed, no cast key read as held, ...), else 1.
 /// </summary>
 public partial class HudTypingCheck : Node
@@ -48,6 +49,13 @@ public partial class HudTypingDriver : Node
     MovieDialog chatMovie;
     AsTextField chatField;
     ulong movedMs;
+    float yaw0;
+
+    static void CameraKeys(bool down)
+    {
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Ctrl, PhysicalKeycode = Key.Ctrl, Pressed = down });
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Left, PhysicalKeycode = Key.Left, Pressed = down });
+    }
 
     static object Get(object o, string name) => o?.GetType().GetField(name, Private)?.GetValue(o);
     Ms2.Avm2.Flash.Player DictionaryPlayer => ((MovieDialog)Get(hud, "gameDictionaryMovie")).Player;
@@ -257,8 +265,32 @@ public partial class HudTypingDriver : Node
             {
                 if (++wait < 10) return;
                 bool chatKept = chatMovie.Player.Focus != null, block = Ms2.Ui.InputBlock.TextFieldFocused();
-                bool ok = !chatKept && !block;
-                Finish(ok, $"{held}; press on the world: focus cleared, held Up: move {worldMove}; click on the chat input: typed \"{chatField.Text}\" there, dictionary \"{field.Text}\"; press on the dictionary at {dictPoint}: chat focus kept {chatKept}, text-field focus {block}");
+                held += $"; press on the world: focus cleared, held Up: move {worldMove}; click on the chat input: typed \"{chatField.Text}\" there, dictionary \"{field.Text}\"; press on the dictionary at {dictPoint}: chat focus kept {chatKept}, text-field focus {block}";
+                if (chatKept || block) { Finish(false, held); return; }
+                // Ctrl + Left turns the camera only in debug mode (CTargetCameraMode::vfunc_9 reads them debug-only)
+                yaw0 = (float)Get(Field.Active, "camYaw");
+                CameraKeys(true);
+                wait = 0; stage = 132;
+                return;
+            }
+            case 132:
+            case 133:
+            {
+                if (++wait < 20) return;
+                CameraKeys(false);
+                float yaw = (float)Get(Field.Active, "camYaw");
+                bool debug = stage == 133;
+                Ms2.Ui.InputKeyHandler.DebugMode = false;
+                if (!debug)
+                {
+                    if (yaw != yaw0) { Finish(false, $"{held}; Ctrl+Left outside debug mode turned the camera {yaw0} -> {yaw}"); return; }
+                    Ms2.Ui.InputKeyHandler.DebugMode = true;
+                    CameraKeys(true);
+                    wait = 0; stage = 133;
+                    return;
+                }
+                bool turned = yaw > yaw0;
+                Finish(turned, $"{held}; Ctrl+Left: no turn outside debug mode, in debug mode {yaw0} -> {yaw}");
                 return;
             }
         }
