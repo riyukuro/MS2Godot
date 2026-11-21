@@ -93,6 +93,18 @@ public partial class LiveSession
         }
     }
 
+    /// <summary>The field's reactor models (<see cref="ReactorLayer"/>): the ones there already, then each add and remove
+    /// until the field goes.</summary>
+    void AddReactorLayer(Field field, ModelBuilder builder)
+    {
+        var layer = new ReactorLayer(PackSet.Shared(Settings.DataDir), builder, () => CharacterId);
+        field.AddChild(layer);
+        layer.AddAll(reactors);
+        ReactorAdded += layer.Add;
+        ReactorRemoved += layer.Remove;
+        field.TreeExiting += () => { ReactorAdded -= layer.Add; ReactorRemoved -= layer.Remove; };
+    }
+
     /// <summary>The field's reactors go with the field (the world's objects are freed on its unload).</summary>
     void NewFieldReactors()
     {

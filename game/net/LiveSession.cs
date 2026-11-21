@@ -937,6 +937,7 @@ public partial class LiveSession : Node
         // the field is freed: its tracker stops filling Events (a newer field's layer is left alone); the guide stops and
         // updates on the map's unload (worldservice_1.cpp:10021)
         field.TreeExiting += () => { if (remote == layer) remote = null; guide?.StopAndUpdate(); };
+        AddReactorLayer(field, builder);
         // the field is whole: the entry's answer (the login's comes through the flow as well; only one goes out)
         field.Loaded += FieldLoaded;
         GD.Print("live: remote layer ready");
