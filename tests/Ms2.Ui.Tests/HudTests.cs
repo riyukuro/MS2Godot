@@ -1406,6 +1406,31 @@ public class HudTests
         Assert.That(h.RT.Errors, Is.Empty);
     }
 
+    [Test, NonParallelizable]   // raises the process-wide loading cover
+    public void ChatKeysWaitWhileInputIsBlocked()
+    {
+        // UIMessenger::FUN_141a12f30 (uimessenger.cpp:1604): an unfocused input takes no key while
+        // CInputKeyHandler::FUN_14116d7a0(0xf) is set (:1613), here the loading screen's flag; a focused input still does
+        var m = Model();
+        var c = new MessengerController(m.Tables.DefaultMessengers[0], "messengerdialog0.xml", true);
+        var h = Load(c, m);
+        var input = (AsObject)h.Child("m_textInput");
+        try
+        {
+            FieldMoveCover.Raise();
+            Assert.That(c.OnKey(MessengerController.DikReturn, false), Is.False, "Return under the loading screen");
+            Assert.That(Rt.ToNumber(h.Get(input, "focused")), Is.EqualTo(0));
+            FieldMoveCover.Lower();
+            Assert.That(c.OnKey(MessengerController.DikReturn, false), Is.True, "Return once the screen is down");
+            Assert.That(Rt.ToNumber(h.Get(input, "focused")), Is.EqualTo(1));
+            FieldMoveCover.Raise();
+            Assert.That(c.OnKey(MessengerController.DikReturn, false), Is.True, "Return with the input focused");
+            Assert.That(Rt.ToNumber(h.Get(input, "focused")), Is.EqualTo(0));
+        }
+        finally { FieldMoveCover.Lower(); }
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
     /// <summary>A loaded chat window with a local player "Me", its log's sends and notices collected.</summary>
     static (MessengerController c, UiHost h, UiModel m, List<UserChatRequest> sent, List<string> notices) ChatWindow()
     {

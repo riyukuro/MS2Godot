@@ -218,9 +218,8 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
     /// <summary>The AS object quick slot <paramref name="i"/> was bound with; null = not bound.</summary>
     public object SlotObject(int i) => i >= 0 && i < SlotCount ? slotObjects[i] : null;
 
-    /// <summary>CInputKeyHandler::FUN_14116d7a0(0xf) @0x14116d7a0: a text field has the focus (mask 2), an ensemble is played
-    /// (4), the loading screen is up (modifier 1, UILoadingProgress::StartProgress) or the typing game is on (modifier 2).</summary>
-    public Func<bool> InputBlocked = () => false;
+    /// <summary>CInputKeyHandler::FUN_14116d7a0(0xf), <see cref="InputBlock"/>.</summary>
+    public Func<bool> InputBlocked = () => InputBlock.Active;
 
     /// <summary>SkillSlot::FUN_14175f200 (skillslot.cpp:902): unless input is blocked (<see cref="InputBlocked"/>), the slot's
     /// startIconTween (BaseSlot: the icon's shrink and grow tween, unless it already runs).</summary>

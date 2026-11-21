@@ -37,7 +37,7 @@ public sealed class MessengerController : UiController
     /// <summary>IsTypeHidden (:3614): super chat needs feature 0x19.</summary>
     public const int SuperChatFeature = 0x19;
     /// <summary>DIK codes vfunc_13 (:810) reads.</summary>
-    public const int DikReturn = 0x1c, DikTab = 0xf;
+    public const int DikReturn = 0x1c;
 
     /// <summary>MessengerData::TalkTab: tabName, close, detach, additive and its panel setting (m_panel).</summary>
     public sealed class TalkTab
@@ -64,8 +64,8 @@ public sealed class MessengerController : UiController
     /// <summary>CGameRule's world / channel chat discount rates (m_2b0 / m_2d0 Get(0, 0), gamerule.cpp:757, :766), set by
     /// game events; 0 = none.</summary>
     public uint WorldChatRate, ChannelChatRate;
-    /// <summary>A key held now (Unk_MsgKeys::FUN_14116d7a0), by DIK code.</summary>
-    public Func<int, bool> IsKeyDown = _ => false;
+    /// <summary>CInputKeyHandler::FUN_14116d7a0(0xf) (uimessenger.cpp:1613), <see cref="InputBlock"/>.</summary>
+    public Func<bool> InputBlocked = () => InputBlock.Active;
 
     readonly List<int> subjects = new();                      // m_subjects
     readonly SortedDictionary<int, int> subjectIndex = new(); // m_subjectIndex: list row -> type
@@ -390,12 +390,13 @@ public sealed class MessengerController : UiController
     /// vfunc_13 (:810), a key pressed while the window is shown: Return (FUN_141a17700) and Escape (FUN_141a12260); true =
     /// used. FUN_141a12f30 (:1604) lets keys through only for the current window (Unk_MdNames' current name,
     /// <see cref="MessengerBrowser.GetCurrentName"/>; a focused group window takes it), and then when the input is
-    /// focused or Tab is not held.
+    /// focused or input is not blocked (<see cref="InputBlocked"/>; FUN_14116d7a0 with mask 0xf, a text field focused or the
+    /// loading screen up, not a key).
     /// </summary>
     public bool OnKey(int dik, bool escape)
     {
         if (Browser.GetCurrentName() != Name) return false;
-        if (!InputFocused && IsKeyDown(DikTab)) return false;
+        if (!InputFocused && InputBlocked()) return false;
         if (dik == DikReturn) { ReturnKey(); return true; }
         if (escape) return Release();
         return false;
@@ -717,7 +718,7 @@ public sealed class MessengerController : UiController
     /// the type's row selected, then vfunc_93.</summary>
     void SelectSubject(int type)
     {
-        if (!InputFocused && IsKeyDown(DikTab)) return;
+        if (!InputFocused && InputBlocked()) return;
         if (subject == null) return;
         Host.Set(subject, "selectedIndex", IndexOfType(type));
         SubjectChanged();

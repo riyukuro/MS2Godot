@@ -87,6 +87,7 @@ public partial class HudScene : Node, IUiStageHost
         PerfLog.ApplyFpsCap();
         toggleDynamicAction = ToggleDynamicAction;
         ChatLog.ToggleDynamicAction = toggleDynamicAction;   // the messenger's eventEmotion
+        Ms2.Ui.InputBlock.TextFieldFocused = () => UiFocus.IsTyping;   // FUN_14116d7a0's mask 2 (Godot text controls only)
         questFixture = args.Contains("--questlog-fixture");
         partyFixture = args.Contains("--party-fixture");
         groupChatFixture = args.Contains("--groupchat-fixture");
@@ -1278,7 +1279,7 @@ public partial class HudScene : Node, IUiStageHost
             var docs = hudModel.Tables.DefaultMessengers;
             for (int i = 0; i < docs.Count; i++)
             {
-                var c = new MessengerController(docs[i], $"messengerdialog{i}.xml", true, ChatLog) { IsKeyDown = DikHeld };
+                var c = new MessengerController(docs[i], $"messengerdialog{i}.xml", true, ChatLog);
                 messengers.Add((new MovieDialog(assets, c, hudModel, window), c));
             }
             groupBrowser = NewGroupBrowser();
@@ -1389,9 +1390,6 @@ public partial class HudScene : Node, IUiStageHost
     }
 
     Action unwatchNewItems;
-
-    /// <summary>Unk_MsgKeys::FUN_14116d7a0, a key held now, for the DIK codes the chat asks about (Tab).</summary>
-    static bool DikHeld(int dik) => dik == MessengerController.DikTab && Input.IsPhysicalKeyPressed(Key.Tab);
 
     const int PickupAction = 0x493e3;   // the "get" action (MyPC::FUN_141530db0's IsActionKeyDown)
 
@@ -2252,8 +2250,6 @@ public partial class HudScene : Node, IUiStageHost
             NoticeBox = id => MessageBoxQueue.ShowMessageBox(hudModel.Tables.Common(id), 0, null, ""),
             NoticeText = key => SystemNoticeText(hudModel.Tables.Common(key)),
             ShiftHeld = () => Input.IsKeyPressed(Key.Shift),
-            // FUN_14116d7a0(0xf): a focused text field or the loading screen; the ensemble and the typing game are not ported
-            InputBlocked = () => UiFocus.IsTyping || Ms2.Ui.FieldMoveCover.Up,
             PressKey = ClickedSlotKey,
             UseSkill = ClickedSlotSkill,
         };
