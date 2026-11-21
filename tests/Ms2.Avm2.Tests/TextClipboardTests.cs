@@ -133,6 +133,24 @@ public class TextClipboardTests
     }
 
     [Test]
+    public void PasteIntoATextAlreadyOverMaxCharsTakesItAll()
+    {
+        // DocView::EditCommand cuts the length to GetMaxLength() - dstLen in unsigned arithmetic; with the text (less the
+        // selection) already over the limit that wraps, and InsertString takes the whole text up to its NUL
+        var (p, tf, cb) = Field("abcdefgh");
+        tf.maxChars = 5;
+        tf.setSelection(8, 8);
+        cb.Text = "XYZ\0tail";
+        Press(p, V, ctrl: true);
+        Assert.That((tf.text, tf.caretIndex), Is.EqualTo(("abcdefghXYZ", 11)));
+        tf.text = "abcdef";
+        tf.setSelection(0, 1);
+        cb.Text = "12";
+        Press(p, V, ctrl: true);
+        Assert.That(tf.text, Is.EqualTo("bcdef"), "left exactly at maxChars once the selection goes: nothing fits, the selection still goes");
+    }
+
+    [Test]
     public void PasteIsFilteredByRestrictWithTheOtherCaseTried()
     {
         var (p, tf, cb) = Field("");

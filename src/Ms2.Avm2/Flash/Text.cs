@@ -694,7 +694,8 @@ public class AsTextField : AsInteractiveObject
     /// <summary>
     /// Ctrl+V / Shift+Insert (KeyAct_Paste, sfr_gfx_07.cpp:847; EditorKit::PasteFromClipboard @0x142619270). Only an input
     /// field takes a paste, and only a non-empty clipboard text. The text replaces the selection, cut first to what
-    /// maxChars leaves (DocView::EditCommand Cmd_InsertPlainText / Cmd_ReplaceTextByPlainText, sfr_render_03b.cpp:2668).
+    /// maxChars leaves (DocView::EditCommand Cmd_InsertPlainText / Cmd_ReplaceTextByPlainText, sfr_render_03b.cpp:2668);
+    /// a text already longer than maxChars takes the whole paste, as the client's unsigned subtraction wraps.
     /// Each CR LF is then one new line, and a CR or LF becomes the field's new line (StyledText::InsertString with
     /// NLP_CompressCRLF), also in a single-line field. Then the restrict set is applied to the whole text: a refused
     /// character is retried in the other case and otherwise removed. The caret goes to the selection start plus the
@@ -714,9 +715,11 @@ public class AsTextField : AsInteractiveObject
             int len = src.Length;
             if (maxChars > 0)
             {
-                // the client's unsigned Max - dstLen wraps when a script left the text longer than maxChars; nothing fits here
+                // the client cuts to GetMaxLength() - dstLen in unsigned arithmetic: when a script left the text without the
+                // selection longer than maxChars that wraps to a huge length, and InsertString takes the whole text (up to
+                // its NUL, already cut above)
                 int left = Text.Length - (e - b);
-                if (left + len > maxChars) len = Math.Max(0, maxChars - left);
+                if (left + len > maxChars && left <= maxChars) len = maxChars - left;
             }
             ins = NewLines(src[..len]);
             t = Text[..b] + ins + Text[e..];
