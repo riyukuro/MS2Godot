@@ -150,6 +150,24 @@ public class InventoryTests
     }
 
     [Test]
+    public void RevertDialogHeadAnswers17ForTheClickAndAcceptedHintsElseFallsThrough()
+    {
+        Packs();
+        var model = NewModel();
+        var (_, c, _) = Load(model);
+        var data = new[] { 11300001, 12000001, 11100001, 11200001 }.Select(i => model.Tables.Items.Get(i)).FirstOrDefault(d => d != null && d.Type == 1);
+        if (data == null) Assert.Ignore("no known equipment item");
+        var item = Item.Create(model.Tables.Items, data.Id, 3);
+        c.DialogHead = () => ItemMergeRevertDialogController.UiId;
+        int check = ItemMergeRevertDialogController.CheckRank;
+        c.RevertCheck = _ => check;
+        Assert.That(c.UseMode(item, false), Is.EqualTo(17), "the click");
+        Assert.That(c.UseMode(item, true), Is.EqualTo(6), "refused hint: the normal chain (equipment)");
+        check = ItemMergeRevertDialogController.CheckOk;
+        Assert.That(c.UseMode(item, true), Is.EqualTo(17), "accepted hint");
+    }
+
+    [Test]
     public void SortIsTheClientsAndTheOtherRequestsAreOnlyRaised()
     {
         Packs();

@@ -42,8 +42,6 @@ public sealed class ItemMergeRevertDialogController : UiController, IDragSlotOwn
     /// <summary>The common string of a key and the item's name (CItem::FUN_140528160 / FUN_140527b10).</summary>
     public Func<string, string> Text;
     public Func<Item, string> ItemName = _ => "";
-    /// <summary>The inventory slot of an item needs a redraw.</summary>
-    public event Action<long> InventorySlotRefresh;
     public event Action Closed;
 
     /// <summary>m_nItemUid: the scroll (SetItemUid).</summary>

@@ -1106,7 +1106,7 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
     /// (CItemData::FUN_14053cbc0), 7 a quick slot item (FUN_14053e460), 12 a gem, else 0.
     /// STILL-OPEN: the other dialogs of the list.
     /// </summary>
-    int UseMode(Item item, bool hint)
+    internal int UseMode(Item item, bool hint)
     {
         int head = DialogHead();
         if (head == TradeBook.DialogId)
@@ -1119,8 +1119,9 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
             return BreakCanBreak(item) ? 8 : hint ? 0 : 8;
         if (head == ItemLockDialogController.UiId)       // 0x4f08: CanBeItemLocked ? 10 : hint ? 0 : 10
             return ItemLockDialogController.CanBeItemLocked(item.Record, item.Data) ? 10 : hint ? 0 : 10;
-        if (head == ItemMergeRevertDialogController.UiId)    // 0x4f3d: CheckItem == 0 ? 17 : hint ? 0 : 17
-            return RevertCheck(item) == ItemMergeRevertDialogController.CheckOk ? 17 : hint ? 0 : 17;
+        // 0x4f3d (invenslot.cpp:2024): 17 for the click and for a hint the dialog accepts; a refused hint falls through
+        if (head == ItemMergeRevertDialogController.UiId && (!hint || RevertCheck(item) == ItemMergeRevertDialogController.CheckOk))
+            return 17;
         var d = item.Data;
         if (item.Record is { HasUgc: true, Ugc.State: 2 }) return 15;
         if (d.Type == 1) return 6;
