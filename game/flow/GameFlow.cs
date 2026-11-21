@@ -117,6 +117,12 @@ public partial class GameFlow : Node
     void QuitNow()
     {
         Net.LiveSession.Instance?.SendRequestQuitAndDisconnect();
+        QuitWithoutSend();
+    }
+
+    /// <summary>WM_DESTROY (windowservice.cpp:786-791): restore the display mode and post the quit message; no packet.</summary>
+    void QuitWithoutSend()
+    {
         DisplayNative.RestoreDisplayMode();
         GetTree().Quit(0);
     }
@@ -132,7 +138,7 @@ public partial class GameFlow : Node
                 CommonStrings(),
                 Ui.MessageBoxLayer.Instance != null,
                 DisplayNative.RestoreDisplayMode,
-                QuitNow);
+                QuitWithoutSend);
         }
         else if (what == NotificationPredelete)
         {

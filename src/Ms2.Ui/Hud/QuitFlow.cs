@@ -26,20 +26,21 @@ public static class QuitFlow
         MessageBoxQueue.ShowMessageBox(common?.Invoke(ExitMessageKey) ?? "", ExitBoxType, null, ExitTag);
 
     /// <summary>
-    /// WindowService WM_CLOSE handler (windowservice.cpp:772-784): always restores display mode; outside Login/Logo
-    /// opens the "gameexit" confirmation box and cancels immediate close (returns false). On Login/Logo or when no
-    /// message box layer is available, runs <paramref name="quitNow"/> and returns true.
+    /// WindowService WM_CLOSE handler (windowservice.cpp:772-791): always restores display mode. Outside Login/Logo it opens
+    /// the "gameexit" confirmation box when the message box layer exists and never quits here (returns false). On Login/Logo
+    /// the client falls through to DefWindowProc and WM_DESTROY only restores the display mode and posts the quit message:
+    /// <paramref name="quitWithoutSend"/> runs and nothing goes on the wire (returns true).
     /// </summary>
-    public static bool HandleWindowClose(int sceneId, Func<string, string> common, bool layerAvailable, Action restoreDisplay, Action quitNow)
+    public static bool HandleWindowClose(int sceneId, Func<string, string> common, bool layerAvailable, Action restoreDisplay, Action quitWithoutSend)
     {
         restoreDisplay?.Invoke();
-        if (ConfirmOnWindowClose(sceneId) && layerAvailable)
+        if (ConfirmOnWindowClose(sceneId))
         {
-            if (MessageBoxQueue.Current()?.Extra != ExitTag)
+            if (layerAvailable && MessageBoxQueue.Current()?.Extra != ExitTag)
                 ShowExitConfirm(common);
             return false;
         }
-        quitNow?.Invoke();
+        quitWithoutSend?.Invoke();
         return true;
     }
 }

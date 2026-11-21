@@ -156,6 +156,10 @@ public class MessageBoxTests
         bool loginClosed = QuitFlow.HandleWindowClose(QuitFlow.LoginSceneId, _ => "Quit now?", true, () => restores++, () => directQuits++);
         Assert.That(loginClosed, Is.True);
         Assert.That(directQuits, Is.EqualTo(1));
+
+        // Outside Login without a message box layer the client has no quit path: nothing runs
+        Assert.That(QuitFlow.HandleWindowClose(QuitFlow.LobbySceneId, _ => "Quit now?", false, () => restores++, () => directQuits++), Is.False);
+        Assert.That(directQuits, Is.EqualTo(1));
     }
 
     [Test]

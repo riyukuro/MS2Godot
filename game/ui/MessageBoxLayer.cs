@@ -18,7 +18,9 @@ public partial class MessageBoxLayer : CanvasLayer
     static MessageBoxLayer instance;
 
     /// <summary>The exit box's yes, UIMessageBox::HandleGameexitButton(0) @0x1419fb480: SendRequestQuitAndDisconnect, then
-    /// PostQuitMessage(0).</summary>
+    /// PostQuitMessage(0).
+    /// STILL-OPEN: when the game has not begun (DAT_143ab2942) the client first calls GetClientPlatform()->vfunc_22(0x3f2, "GameEnd")
+    /// (uimessagebox.cpp:1229-1230; UICharacterListDialog::QuitGame :1284-1285 does the same).</summary>
     public static event Action GameExit;
 
     MessageBoxController controller;

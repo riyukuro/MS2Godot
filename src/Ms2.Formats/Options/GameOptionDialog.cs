@@ -1004,13 +1004,15 @@ public sealed class InputOptionPage : OptionPage
     /// <summary>@0x141251510.</summary>
     public override void ReadControls() => RefreshKeyList(Type);
 
-    /// <summary>vfunc_9 (@0x141251db0, gameoptioninputdefault.cpp:378-385, 592-596): page 9 restores keys from backup on cancel.</summary>
+    /// <summary>vfunc_9 (@0x141251db0, gameoptioninputdefault.cpp:378-385, 592-596): page 9 restores keys from backup on cancel.
+    /// STILL-OPEN: the quick slots changed in the dialog are not put back (FUN_141252ae0, :625-638: FUN_14092f690 with mode 3, then RefreshQuickSlots).</summary>
     public override void DropChanges()
     {
         if (Id == 9) Host.Keys?.RestoreKeysFromBackup();
     }
 
-    /// <summary>vfunc_10 (@0x141251df0, gameoptioninputdefault.cpp:389-400): sends dirty keys to server and backs up on page 9.</summary>
+    /// <summary>vfunc_10 (@0x141251df0, gameoptioninputdefault.cpp:389-400): sends dirty keys to server and backs up on page 9.
+    /// STILL-OPEN: m_mapQuickSlots, UpdateModifiedKeys and FUN_1412532f0 (:394-398) are not ported.</summary>
     public override void Save()
     {
         base.Save();

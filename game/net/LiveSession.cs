@@ -1349,6 +1349,10 @@ public partial class LiveSession : Node
             Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(Ms2.Ui.FieldMoveError.Text(m.Error, Ms2.Ui.Hud.MessageBoxData.CommonByKey), 0, null, "");
             return;
         }
+        // STILL-OPEN: the client also (networkservice.cpp:936-938) stores the address, port and tokens, sets DAT_143ab2874 = 0 and
+        // DAT_1439f4a78 = 1, calls WorldService FUN_141bbc580(0, 2), MyPC::FUN_1415308d0() and FUN_140d86260()->vfunc_10(), and
+        // reconnects to the login server with the tokens. Here the game socket is dropped and the lobby shows the old list with no
+        // login connection.
         GD.Print($"live: GameToLogin to {m.Address}:{m.Port}");
         if (player != null && IsInstanceValid(player)) player.Live = false;
         player = null;
@@ -1372,15 +1376,19 @@ public partial class LiveSession : Node
     {
         SendGuideStates();
         var active = game ?? login;
-        if (active != null && !active.IsClosed)
-        {
-            try { active.SendAsync(new RequestQuit(RequestQuit.Disconnect)).Wait(250); }
-            catch (Exception ex) { GD.PushWarning("live: RequestQuit send failed: " + ex.Message); }
-        }
         if (player != null && IsInstanceValid(player)) player.Live = false;
         player = null;
-        var g = game; game = null; g?.Dispose();
-        var l = login; login = null; l?.Dispose();
+        var g = game; game = null;
+        var l = login; login = null;
+        // The client queues the packet and marks the socket to disconnect (networkservice.cpp:507-512): the send is not awaited here;
+        // the connection closes once the packet is written.
+        if (active != null && !active.IsClosed)
+        {
+            try { active.SendAsync(new RequestQuit(RequestQuit.Disconnect)).ContinueWith(_ => active.Dispose(), System.Threading.Tasks.TaskScheduler.Default); }
+            catch (Exception ex) { GD.PushWarning("live: RequestQuit send failed: " + ex.Message); active.Dispose(); }
+        }
+        if (g != null && g != active) g.Dispose();
+        if (l != null && l != active) l.Dispose();
     }
 
     /// <summary>Headless drive (MS2_LIVE_AUTO=1): the login button, then start with the first character.</summary>
