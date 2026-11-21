@@ -293,10 +293,10 @@ public class QuestNavigationTests
         ctx.LiftableIds.Add(55);
         var r = new TraceResult { Kind = TraceKind.Npc, DistanceText = "12", Context = ctx };
         for (int i = 0; i < 3; i++) c.Tick(r, ctx);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 100; i++) c.Tick(r, ctx);
-        long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.That(bytes, Is.EqualTo(0), "bytes over 100 frames");
+        // measured twice: the first round takes the measured loop's one-time cost in Release (24 B, not per frame)
+        long Round() { long x = GC.GetAllocatedBytesForCurrentThread(); for (int i = 0; i < 100; i++) c.Tick(r, ctx); return GC.GetAllocatedBytesForCurrentThread() - x; }
+        Round();
+        Assert.That(Round(), Is.EqualTo(0), "bytes over 100 frames");
         Assert.That(h.RT.Errors, Is.Empty);
     }
 
@@ -312,10 +312,10 @@ public class QuestNavigationTests
         var r = new TraceResult { Kind = TraceKind.Npc, DistanceText = "12" };
         c.Tick(r, null);
         Assert.That(pc.Shown, Is.True);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 100; i++) c.Tick(r, null);
-        long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.That(bytes, Is.EqualTo(0), "bytes over 100 frames");
+        // measured twice: the first round takes the measured loop's one-time cost in Release (24 B, not per frame)
+        long Round() { long x = GC.GetAllocatedBytesForCurrentThread(); for (int i = 0; i < 100; i++) c.Tick(r, null); return GC.GetAllocatedBytesForCurrentThread() - x; }
+        Round();
+        Assert.That(Round(), Is.EqualTo(0), "bytes over 100 frames");
         Assert.That(h.RT.Errors, Is.Empty);
     }
 }
