@@ -56,6 +56,7 @@ public enum Inbound : ushort {
     ItemPutOff = 0x26,
     Stat = 0x2E,
     UserBattle = 0x2F,
+    Beauty = 0x31,          // RecvOp Beauty (commonfiles/opcodes.h:57): UIBeautyShopDialog::OnBeautyShopPacket, by mode: see BeautyShopPacket
     RevivalConfirm = 0x33,   // OnRevivalConfirm
     Revival = 0x34,
     RevivalCount = 0x35,     // OnRevivalCount

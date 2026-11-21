@@ -766,6 +766,11 @@ public sealed class GameTables
     XDocument Xml(string path) => packs.Exists("Xml", path) ? GameStrings.Parse(packs.Read("Xml", path)) : null;
     /// <summary>CNametagSymbolTable (Table/nametagSymbol.xml), read on first use.</summary>
     public NametagSymbols NametagSymbols => nametagSymbols ??= packs == null ? NametagSymbols.Empty : new NametagSymbols(packs);
+    BeautyCouponTable beautyCoupons;
+    /// <summary>The beauty coupon table (Table/shop_beautyCoupon.xml), read on first use.</summary>
+    public BeautyCouponTable BeautyCoupons => beautyCoupons ??= packs == null || !packs.Exists("Xml", "table/shop_beautycoupon.xml")
+        ? BeautyCouponTable.Empty
+        : new BeautyCouponTable(Xml("table/shop_beautycoupon.xml"), e => FeatureElements.IsAvailable(packs, e), id => Items.Get(id) != null);
     BlackMarketTable blackMarket;
     /// <summary>CBlackMarketTable (Table/blackMarketTable.xml), read on first use.</summary>
     public BlackMarketTable BlackMarket => blackMarket ??= packs == null || !packs.Exists("Xml", "table/blackmarkettable.xml")
