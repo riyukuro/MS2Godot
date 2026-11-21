@@ -60,8 +60,8 @@ public class AdditionalCacheTests
                     Assert.That(lb == null, Is.EqualTo(la == null), $"effect {id} level {lv}");
                     if (la == null) break;
                     levels++;
-                    Assert.That((lb.Level, lb.StringParam, lb.DurationTick, lb.KeepCondition, lb.IconOnOff, lb.Icon, lb.Priority, lb.IsHideCooltime, lb.EventBuffType, lb.PvpOnOff, lb.ForceApplyTarget, lb.Hide, lb.Parent == b),
-                        Is.EqualTo((la.Level, la.StringParam, la.DurationTick, la.KeepCondition, la.IconOnOff, la.Icon, la.Priority, la.IsHideCooltime, la.EventBuffType, la.PvpOnOff, la.ForceApplyTarget, la.Hide, true)), $"effect {id} level {lv}");
+                    Assert.That((lb.Level, lb.StringParam, lb.DurationTick, lb.KeepCondition, lb.IconOnOff, lb.Icon, lb.Priority, lb.IsHideCooltime, lb.EventBuffType, lb.PvpOnOff, lb.DisableRevivalHere, lb.ForceApplyTarget, lb.Hide, lb.Parent == b),
+                        Is.EqualTo((la.Level, la.StringParam, la.DurationTick, la.KeepCondition, la.IconOnOff, la.Icon, la.Priority, la.IsHideCooltime, la.EventBuffType, la.PvpOnOff, la.DisableRevivalHere, la.ForceApplyTarget, la.Hide, true)), $"effect {id} level {lv}");
                     Assert.That((lb.SpecialEffectType, lb.SpecialEffectProbability, lb.SpecialEffectValues), Is.EqualTo((la.SpecialEffectType, la.SpecialEffectProbability, la.SpecialEffectValues)), $"effect {id} level {lv} special effect");
                     Assert.That((lb.InvokeSkillId, lb.InvokeSkillGroupId, lb.InvokeEffectId, lb.InvokeEffectGroupId, lb.InvokeTypes, lb.InvokeValues, lb.InvokeRates),
                         Is.EqualTo((la.InvokeSkillId, la.InvokeSkillGroupId, la.InvokeEffectId, la.InvokeEffectGroupId, la.InvokeTypes, la.InvokeValues, la.InvokeRates)), $"effect {id} level {lv} invoke effect");

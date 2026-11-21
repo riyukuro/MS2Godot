@@ -123,6 +123,15 @@ public sealed class AdditionalBuffList
         return false;
     }
 
+    /// <summary>AdditionalCliList::GetOverlapCount (additionalcli_2.cpp:669): the overlap count of the first effect of the id, at the
+    /// level unless it is 0, enabled or not; 0 when none.</summary>
+    public int OverlapCountOf(uint id, ushort level)
+    {
+        foreach (var b in map.Values)
+            if (b.Id == id && (level == 0 || b.Level == level)) return b.OverlapCount;
+        return 0;
+    }
+
     /// <summary>
     /// The overlap test @0x140975ed0 (additionalcli_2.cpp:142), the SkillCompareSign of the count against the effect's overlap:
     /// 1 equal, 2 count above it, 3 count at or above, 4 count below, 5 count at or below; any other sign fails.
@@ -173,6 +182,18 @@ public sealed class AdditionalBuffList
         {
             foreach (var b in map.Values)
                 if (b.Enabled != 0 && !b.Suspended && b.LevelData.PvpOnOff) return true;
+            return false;
+        }
+    }
+
+    /// <summary>IsDisableRevivalHere @0x140970ad0 (additionalcli_2.cpp:581), m_bDisableRevivalHere as FUN_140972a00 (:1100)
+    /// sums it, like <see cref="IsPvpOnOff"/>: an enabled, unsuspended effect whose level has disableRevivalHere.</summary>
+    public bool IsDisableRevivalHere
+    {
+        get
+        {
+            foreach (var b in map.Values)
+                if (b.Enabled != 0 && !b.Suspended && b.LevelData.DisableRevivalHere) return true;
             return false;
         }
     }

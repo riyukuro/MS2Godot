@@ -39,8 +39,8 @@ public sealed class RevivalEnvironment
     public Func<int> MesoRevivalRemaining = () => 0;
     /// <summary>CGameRule::FUN_140477d10(FUN_141658f30()) (RefreshMesoButton, uirevivaldialog.cpp:721): 1 = the meso revive is a flat rule.</summary>
     public Func<int> MesoRevivalRule = () => 0;
-    /// <summary>False when an input of a paid revive's send is not available (the buffs' disable check, the meso revivals left, the
-    /// platform's merat check): the paid buttons then send nothing. A host that wires all three sets it true; the default is true.</summary>
+    /// <summary>False when the inputs of a paid revive's send are not available (the buffs' disable check, the meso revivals left, the
+    /// platform's merat check): the paid buttons then send nothing. RevivalWiring sets it true with RevivalPaidInputs; the default is true.</summary>
     public Func<bool> PaidRevivalWired = () => true;
 
     // ---- the world, the field and the dungeon ----
@@ -329,8 +329,7 @@ public sealed class RevivalDialogController : UiController, IMessageBoxListener,
 
     /// <summary>FUN_141abcb90 (@0x141abcb90): the paid mode: 0 off by the world, 2 meso, 1 merat.
     /// Without the paid inputs wired (PaidRevivalWired false) the mode is 0, the client's own one-button state ("btn1",
-    /// s_msg_die_none; m_1b4 == 0, uirevivaldialog.cpp:385, :646-649): the client never shows a paid button that does nothing.
-    /// STILL-OPEN: the paid modes themselves, until the buff, meso-count and merat platform inputs are in the data.</summary>
+    /// s_msg_die_none; m_1b4 == 0, uirevivaldialog.cpp:385, :646-649): the client never shows a paid button that does nothing.</summary>
     public void PickMode()
     {
         if (Env.PaidRevivalOffByWorld() || !Env.PaidRevivalWired()) PaidMode = 0;

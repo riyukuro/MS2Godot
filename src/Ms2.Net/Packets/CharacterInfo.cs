@@ -370,8 +370,8 @@ public sealed class MyCharacter {
     /// <summary>The meso revivals used today (MyPC m_n1644, OnRevivalCount) and the revivals used in the dungeon room (DAT_143ab2950).</summary>
     public int MesoRevivalsUsed, DungeonRevivalsUsed;
 
-    /// <summary>PC::IsRevivalBlocked (pc.cpp:2009) without the buff test (STILL-OPEN: IsDisableRevivalHere): a revival count above 0
-    /// or the revival flag.</summary>
+    /// <summary>PC::IsRevivalBlocked (pc.cpp:2009) without the buff test: a revival count above 0 or the revival flag. The buffs'
+    /// IsDisableRevivalHere is ORed in by the revival dialog's wiring (RevivalWiring), which holds the buff list.</summary>
     public bool RevivalBlocked => RevivalConfirmCount > 0 || RevivalFlag;
 
     /// <summary>OnRevivalConfirm (scenestategame.cpp:7356) for the local player: the end tick, then the count. Returns the client's

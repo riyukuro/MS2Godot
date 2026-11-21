@@ -7,8 +7,9 @@ namespace Ms2Godot.Ui;
 /// <summary>
 /// The death state's dialog: UIRevivalDialog (0x4e38, movie uirevivaldialog) is up while the own player is dead and goes
 /// when the player is alive again. Its sends go through the session (Revival 0x1F, RequestMoveField). The environment reads
-/// what the Godot client has (level, meso, the dead flag); the rest keeps the controller's defaults (STILL-OPEN: the field
-/// flags, the dungeon room limits, the constants and the revival coupon are not in the Godot data yet).
+/// what the Godot client has (level, meso, the dead flag, the field's revival flags, the merat wallet, the own buffs and the
+/// constants, RevivalWiring); the rest keeps the controller's defaults (STILL-OPEN: the dungeon room limits, the meso revival
+/// rule, the equipment's cost reductions and the revival coupon).
 /// </summary>
 public partial class HudScene
 {
@@ -80,10 +81,25 @@ public partial class HudScene
         var e = c.Env;
         RevivalWiring.Connect(e, live.Me, () => live.FieldId, _ => RevivalFieldData(live),
             live.SendRevival, text => SystemNoticeText(text), id => hudModel.Tables.Common(id),
-            id => hudModel.Tables.MapName(id));
+            id => hudModel.Tables.MapName(id), PaidInputs());
         c.Unloaded += () => { revivalMovie?.Host.Unload(); revivalMovie?.QueueFree(); revivalMovie = null; };
         revival = c;
         revivalMovie = new MovieDialog(assets, revival, hudModel, ScreenMode.PixelSize(GetWindow()));
         uiRoot.AddChild(revivalMovie);
+    }
+
+    /// <summary>The paid revive's inputs: the merat wallet summed (DAT_143ab2978), the own buffs and the client constants; null
+    /// before the own buff list exists (the paid buttons then send nothing).</summary>
+    RevivalPaidInputs PaidInputs()
+    {
+        if (ownBuffs == null) return null;
+        slotConstants ??= Ms2.Ui.FeatureElements.Constants(assets.Packs);
+        var wallet = hudModel.Player;
+        return new RevivalPaidInputs(() =>
+        {
+            long sum = 0;
+            if (wallet.MeratWallet != null) foreach (var m in wallet.MeratWallet) sum += m;
+            return sum;
+        }, ownBuffs, slotConstants);
     }
 }

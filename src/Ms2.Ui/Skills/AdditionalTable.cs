@@ -26,6 +26,9 @@ public sealed class AdditionalLevelData
     /// <summary>&lt;Basic forceApplyTarget&gt; (m_nForceApplyTarget, :1074): the target filter bits FUN_140972a00
     /// (additionalcli_2.cpp:1096) ORs into the list's GetForceApplyTarget.</summary>
     public int ForceApplyTarget;
+    /// <summary>&lt;Basic disableRevivalHere&gt; (m_bDisableRevivalHere +0x6b, additionalactionadditional.cpp:1079):
+    /// FUN_140972a00 (additionalcli_2.cpp:1100) sets the list's IsDisableRevivalHere from any enabled, unsuspended effect with it.</summary>
+    public bool DisableRevivalHere;
     /// <summary>&lt;Motion hide&gt; (m_motion.m_nHide, :1100): FUN_140972a00 (additionalcli_2.cpp:1072) sets the list's
     /// IsHidden from any enabled, unsuspended effect with it.</summary>
     public int Hide;
@@ -93,6 +96,7 @@ public sealed class AdditionalLevelData
             lv.EventBuffType = Xml.UInt(basic, "eventBuffType");
             lv.PvpOnOff = Xml.Bool(basic, "pvpOnOff");
             lv.ForceApplyTarget = Xml.Int(basic, "forceApplyTarget");
+            lv.DisableRevivalHere = Xml.Bool(basic, "disableRevivalHere");
         }
         if (e.Element("Motion") is { } motion) lv.Hide = Xml.Int(motion, "hide");
         if (e.Element("InvokeEffect") is { } invoke)

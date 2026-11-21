@@ -12,6 +12,12 @@ public sealed class ClientConstants
 {
     readonly Dictionary<string, string> values = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Constants from key/value pairs (tests, tools).</summary>
+    public ClientConstants(IEnumerable<KeyValuePair<string, string>> pairs)
+    {
+        foreach (var (k, v) in pairs) values[k] = v;
+    }
+
     /// <summary>
     /// Common::Constants::LoadFiles (unit_1402ab440_constantsblocks.cpp:1354) reads each file's &lt;ms2&gt; through
     /// FUN_14028faa0(root, "v", "key"): one row per key, picked by locale and feature, and sets each picked row's value.
@@ -43,6 +49,12 @@ public sealed class ClientConstants
 
     public float Float(string key, float def) =>
         values.TryGetValue(key, out var s) && float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out float f) ? f : def;
+
+    /// <summary>A bool constant (Value&lt;bool&gt;, GetOr): FUN_140718390 (packetlogger.cpp:180), true when the text holds any of
+    /// "1oOtT"; <paramref name="def"/> when the tables do not set it.</summary>
+    public bool Bool(string key, bool def) =>
+        values.TryGetValue(key, out var s) && s != null ? s.IndexOfAny(BoolChars) >= 0 : def;
+    static readonly char[] BoolChars = { '1', 'o', 'O', 't', 'T' };
 
     /// <summary>A colour constant ("0xa2ff8c" or "8cafff") as r, g, b in 0..1.</summary>
     public (float r, float g, float b) Color(string key, (float, float, float) def)

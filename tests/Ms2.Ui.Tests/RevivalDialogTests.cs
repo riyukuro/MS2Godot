@@ -200,11 +200,11 @@ public class RevivalDialogTests
         Assert.That(sent, Is.EqualTo(new[] { "Revival:00" }));
         sent.Clear();
         c.OnRevival(2);
-        Assert.That(sent, Is.Empty, "the paid revive needs inputs the game does not have yet");
+        Assert.That(sent, Is.Empty, "the paid revive needs RevivalPaidInputs");
     }
 
-    /// <summary>The game wiring refuses the paid revive even when every other input would let it send (the meso revive here):
-    /// its send needs the buffs' disable check, the meso revivals left and the platform's merat check, which the game lacks.
+    /// <summary>The game wiring without RevivalPaidInputs refuses the paid revive even when every other input would let it send
+    /// (the meso revive here): its send needs the buffs' disable check, the meso revivals left and the platform's merat check.
     /// So the dialog takes the client's one-button state, mode 0 on the "btn1" frame, not a paid button that does nothing.</summary>
     [Test]
     public void TheGameWiringRefusesAPaidReviveTheOtherInputsWouldAllow()
@@ -220,6 +220,92 @@ public class RevivalDialogTests
         Assert.That(c.PaidMode, Is.EqualTo(0), "no paid button without the paid inputs");
         c.OnRevival(2);
         Assert.That(sent, Is.Empty);
+    }
+
+    sealed class PaidRig
+    {
+        public readonly Ms2.Net.Packets.MyCharacter Me = DeadPlayer();
+        public readonly List<string> Sent = new(), Notices = new();
+        public readonly List<MessageBoxData> Boxes = new();
+        public readonly Ms2.Ui.Skills.AdditionalBuffList Buffs;
+        public readonly RevivalDialogController C = new() { CommonById = id => $"#{id:x}", CommonByKey = k => k + "|{0}" };
+        public long Merat;
+        public int Short;
+        public static readonly Ms2.Ui.Skills.AdditionalLevelData Plain = new() { Level = 1 }, Disable = new() { Level = 1, DisableRevivalHere = true };
+
+        public PaidRig(params (string, string)[] constants)
+        {
+            Buffs = new Ms2.Ui.Skills.AdditionalBuffList((id, lv) => id == 7 ? Disable : Plain);
+            var k = new Ms2.Formats.World.ClientConstants(constants.Select(p => new KeyValuePair<string, string>(p.Item1, p.Item2)));
+            RevivalWiring.Connect(C.Env, Me, () => 100, id => new Ms2.Formats.World.FieldData { Id = id, RevivalReturnId = id, InfiniteMeratRevival = false },
+                p => Sent.Add($"{p.Op}:{Convert.ToHexString(Bytes(p))}"), Notices.Add, id => $"notice {id:x}", id => $"map {id}",
+                new RevivalPaidInputs(() => Merat, Buffs, k));
+            C.Env.ShowBox = Boxes.Add;
+            C.Env.PaymentShort = () => Short++;
+        }
+
+        public void Buff(int key, uint id, int overlap, byte enabled) =>
+            Buffs.Apply(new Ms2.Net.Packets.BuffPacket(Ms2.Net.Packets.BuffPacket.Add, 9, key, 9, 0, new Ms2.Net.Packets.BuffState(0, 1000, id, 1, overlap, enabled), 0));
+    }
+
+    /// <summary>With RevivalPaidInputs the meso revive sends while a daily count is left (max(3 - used, 0), mypc.cpp:2169), then
+    /// the merat revive takes over: its cost is CalcRevivalMerat at the debuff's overlap (Constants +0x51d8) scaled by the
+    /// reduction ceiling (+0x8cc0, default 0.5, against an ability rate of 0), checked against the wallet sum (vfunc_40).</summary>
+    [Test]
+    public void ThePaidInputsGiveTheMesoThenTheMeratRevive()
+    {
+        var r = new PaidRig();
+        r.Me.Meso = 1_000_000;
+        r.Me.MesoRevivalsUsed = 2;
+        r.C.Refresh();
+        Assert.That((r.C.PaidMode, r.C.Env.MesoRevivalRemaining()), Is.EqualTo((2, 1)));
+        r.C.OnRevival(2);
+        Assert.That(r.Sent, Has.Count.EqualTo(1));
+        Assert.That(r.Sent[0], Does.StartWith("Revival:02"));
+        r.Sent.Clear();
+
+        r.Me.MesoRevivalsUsed = 5;
+        r.Buff(20, 100000001, 3, 0);                    // GetOverlapCount does not test the enabled flag
+        r.C.Refresh();
+        Assert.That((r.C.PaidMode, r.C.Env.MesoRevivalRemaining(), r.C.Env.RevivalOverlapCount()), Is.EqualTo((1, 0, 3)));
+        r.C.OnRevival(2);
+        Assert.That((r.Short, r.Boxes.Count), Is.EqualTo((1, 0)), "an empty wallet is short");
+        Assert.That(r.C.MeratCost, Is.EqualTo(10 * 3 + 20), "min(0.5, ability rate 0): no reduction");
+        r.Merat = 50;
+        r.C.OnRevival(2);
+        Assert.That((r.Short, r.Boxes.Count), Is.EqualTo((1, 1)));
+        Assert.That(r.Sent, Is.Empty, "the merat revive asks first");
+    }
+
+    /// <summary>The paid inputs' buff checks: an enabled effect of the debuff code stops a paid revive (0x281, FUN_140970020 with
+    /// compare 1), an enabled effect whose level has disableRevivalHere refuses it and blocks the revive (PC::IsRevivalBlocked),
+    /// and LimitMeratRevival (Constants +0xa278, true when the text holds one of "1oOtT") switches the merat revive off.</summary>
+    [Test]
+    public void ThePaidInputsReadTheBuffsAndTheConstants()
+    {
+        var parsed = Ms2.Ui.Skills.AdditionalLevelData.Load(System.Xml.Linq.XElement.Parse("<level level=\"1\"><Basic disableRevivalHere=\"1\"/></level>"), null);
+        Assert.That(parsed.DisableRevivalHere, Is.True);
+        var r = new PaidRig();
+        r.Me.Meso = 1_000_000;
+        r.Buff(20, 100000001, 1, 1);
+        r.C.Refresh();
+        r.C.OnRevival(2);
+        Assert.That((r.Sent.Count, r.Notices.LastOrDefault()), Is.EqualTo((0, "notice 281")));
+        r.Buffs.Apply(new Ms2.Net.Packets.BuffPacket(Ms2.Net.Packets.BuffPacket.Remove, 9, 20, 9, 0, null, null));
+        Assert.That(r.C.Env.RevivalBlocked(), Is.False);
+        r.Buff(21, 7, 1, 1);
+        Assert.That((r.C.Env.RevivalBlocked(), r.C.Env.BuffsDisableRevival()), Is.EqualTo((true, true)));
+        r.C.OnRevival(2);
+        Assert.That((r.Sent.Count, r.Notices.LastOrDefault()), Is.EqualTo((0, "s_msg_revival_merat_cannot_here_debuff|{0}")));
+
+        var off = new PaidRig(("LimitMeratRevival", "TRUE"), ("RoomExitWaitSecond", "4"));
+        off.Me.MesoRevivalsUsed = 3;
+        off.C.Refresh();
+        Assert.That((off.C.PaidMode, off.C.Env.LeaveBoxSeconds()), Is.EqualTo((0, 4)));
+        var on = new PaidRig(("LimitMeratRevival", "false"));
+        on.Me.MesoRevivalsUsed = 3;
+        on.C.Refresh();
+        Assert.That((on.C.PaidMode, on.C.Env.LeaveBoxSeconds(), on.C.Env.MeratRateCap()), Is.EqualTo((1, 10, 0.5f)));
     }
 
     /// <summary>The game wiring names the return field by its map name (CStringTable table 3), in the death text's 0x27d line
