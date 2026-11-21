@@ -26,6 +26,11 @@ public partial class LiveSession
     public event Action<bool> InvincibleChanged;
     /// <summary>The own player's node was bound (<see cref="OwnPlayer"/> set).</summary>
     public event Action OwnPlayerBound;
+    /// <summary>FUN_141661370's custom buff icon of MyPC (pc.cpp:3388-3406): the running timer id to remove (0 = none), the new
+    /// timer id (0 on the end) and its end server tick (0 = no icon).</summary>
+    public event Action<int, int, int> InvincibleBuffChanged;
+    /// <summary>The running timer's icon end tick, for a HUD made after the start.</summary>
+    public int InvincibleBuffEnd { get; private set; }
     /// <summary>The own player's node, once the field is built.</summary>
     public Player OwnPlayer => player;
 
@@ -66,12 +71,15 @@ public partial class LiveSession
         return true;
     }
 
-    /// <summary>PC::FUN_141661370(1, the timer's constant, timerId) of the own player.
-    /// STILL-OPEN: MyPC's custom buff icon (UIMainPlayerInfo AddCustomBuffEffect / RemoveCustomBuffEffect, ending at
-    /// <see cref="InvincibleBlink.BuffEnd"/>) has no buff bar here.</summary>
+    /// <summary>PC::FUN_141661370(1, the timer's constant, timerId) of the own player: the old timer's icon removed and the new
+    /// one's added (ending at <see cref="InvincibleBlink.BuffEnd"/>), then the times and the effect.</summary>
     void StartInvincible(int timerId)
     {
-        Invincible.Start(InvincibleBlink.TickFor(timerId, Constants()), timerId, TickMs);
+        var c = Constants();
+        int old = Invincible.TimerId;
+        InvincibleBuffEnd = InvincibleBlink.BuffEnd(timerId, ServerTick, c);
+        InvincibleBuffChanged?.Invoke(old, timerId, InvincibleBuffEnd);
+        Invincible.Start(InvincibleBlink.TickFor(timerId, c), timerId, TickMs);
         InvincibleChanged?.Invoke(true);
     }
 
@@ -97,7 +105,14 @@ public partial class LiveSession
     void TickCombatEffects()
     {
         uint now = TickMs;
-        if (Invincible.Active && Invincible.Tick(now, out _, out bool ended) && ended) InvincibleChanged?.Invoke(false);
+        int timer = Invincible.TimerId;
+        if (Invincible.Active && Invincible.Tick(now, out _, out bool ended) && ended)
+        {
+            // FUN_141661370(0, 0, 0): the running timer's icon removed, then the effect
+            InvincibleBuffEnd = 0;
+            InvincibleBuffChanged?.Invoke(timer, 0, 0);
+            InvincibleChanged?.Invoke(false);
+        }
     }
 
     /// <summary>The game went (the link lost, back to the login server, the quit, the session's end): a running time scale

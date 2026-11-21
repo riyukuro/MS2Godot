@@ -129,6 +129,41 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         QueueSlotRefresh(RefreshGray | RefreshRecharge);
     }
 
+    /// <summary>The local player's buff list, which makes the custom effects (AdditionalCustomCli); null = none yet.</summary>
+    public Skills.AdditionalBuffList OwnBuffs;
+    /// <summary>The local player's object id (the custom effects' caster and owner).</summary>
+    public Func<int> LocalObjectId = () => 0;
+
+    /// <summary>GetBuffEffectId (uimainplayerinfo.cpp:1455): a custom effect's strip key, its id + 1000000000.</summary>
+    public static int GetBuffEffectId(int id) => id + 1000000000;
+
+    /// <summary>AddCustomBuffEffect @0x1419f1200: nothing without a local player; else the id's old custom effect removed, a
+    /// new AdditionalCustomCli (key GetBuffEffectId, level 1 of the id, ending at <paramref name="endTick"/>, count 1) added
+    /// when valid, then FUN_1419f37f0(5).</summary>
+    public void AddCustomBuffEffect(int id, int endTick)
+    {
+        if (!Model.HasLocalPlayer || OwnBuffs == null) return;
+        RemoveCustomBuffEffect(id);
+        var buff = OwnBuffs.Custom(GetBuffEffectId(id), (uint)id, (uint)endTick, 1, LocalObjectId());
+        if (buff.IsValid) AddBuffEffect(buff);
+        QueueSlotRefresh(RefreshGray | RefreshRecharge);
+    }
+
+    /// <summary>RemoveCustomBuffEffect @0x1419f1370: RemoveBuffEffect of the id's key, then FUN_1419f37f0(5).</summary>
+    public void RemoveCustomBuffEffect(int id)
+    {
+        RemoveBuffEffect(GetBuffEffectId(id));
+        QueueSlotRefresh(RefreshGray | RefreshRecharge);
+    }
+
+    /// <summary>The MyPC part of PC::FUN_141661370 (pc.cpp:3386-3406): the running timer's custom effect removed, then on a
+    /// start with an end tick (<see cref="InvincibleBlink.BuffEnd"/>, 0 for other timers) the new timer's added.</summary>
+    public void InvincibleBuff(int oldTimerId, int timerId, int endTick)
+    {
+        if (oldTimerId != 0) RemoveCustomBuffEffect(oldTimerId);
+        if (timerId != 0 && endTick != 0) AddCustomBuffEffect(timerId, endTick);
+    }
+
     /// <summary>The effect part of vfunc_15 @0x1419ef820, every frame with a local player: m_effectManager-&gt;Update().</summary>
     public void UpdateEffects()
     {

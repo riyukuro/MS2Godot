@@ -2990,9 +2990,16 @@ public partial class HudScene : Node, IUiStageHost
         };
         foreach (var b in live.TakeBuffs()) onBuff(b);
         live.BuffReceived += onBuff;
+        // PC::FUN_141661370's custom buff icon of the invincible time (pc.cpp:3388-3406); one started before the HUD shows now
+        playerInfo.OwnBuffs = ownBuffs;
+        playerInfo.LocalObjectId = () => live.SelfObjectId;
+        Action<int, int, int> onInvincibleBuff = playerInfo.InvincibleBuff;
+        if (live.Invincible.Active) playerInfo.InvincibleBuff(0, live.Invincible.TimerId, live.InvincibleBuffEnd);
+        live.InvincibleBuffChanged += onInvincibleBuff;
         unwatchBuffs = () =>
         {
             live.BuffReceived -= onBuff;
+            live.InvincibleBuffChanged -= onInvincibleBuff;
             live.Me.EquipChanged -= onEquip;
             live.Me.Changed -= onMe;
             live.Me.PutOnOrOff -= onPutOnOrOff;

@@ -14,6 +14,9 @@ public sealed class AdditionalLevelData
     /// <summary>&lt;Basic durationTick keepCondition&gt;.</summary>
     public uint DurationTick;
     public int KeepCondition;
+    /// <summary>&lt;Basic maxBuffCount&gt; (m_nMaxBuffCount, additionalactionadditional.cpp:1063; 1 without it, :854): the
+    /// overlap cap AdditionalCustomCli's ctor (additionalcli_1.cpp:710) clamps its count to.</summary>
+    public uint MaxBuffCount = 1;
     /// <summary>&lt;Basic eventBuffType&gt; (m_nEventBuffType, :1053): 3 marks the adventure level's current ability
     /// (CAdventureLevelTableHelper::FindCurrent).</summary>
     public uint EventBuffType;
@@ -86,6 +89,7 @@ public sealed class AdditionalLevelData
         {
             lv.DurationTick = Xml.UInt(basic, "durationTick");
             lv.KeepCondition = Xml.Int(basic, "keepCondition");
+            if (basic.Attribute("maxBuffCount") != null) lv.MaxBuffCount = Xml.UInt(basic, "maxBuffCount");
             lv.EventBuffType = Xml.UInt(basic, "eventBuffType");
             lv.PvpOnOff = Xml.Bool(basic, "pvpOnOff");
             lv.ForceApplyTarget = Xml.Int(basic, "forceApplyTarget");

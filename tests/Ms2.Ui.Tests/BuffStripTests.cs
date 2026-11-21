@@ -245,4 +245,71 @@ public class BuffStripTests
         Assert.That((string)tip["text"], Does.StartWith("<FONT color='#00AEFF'>"));
         Assert.That(tip["maxWidth"], Is.EqualTo(0x198));
     }
+
+    [Test]
+    public void CustomEffectIsTheClientsOwnAndCapsItsCountAtMaxBuffCount()
+    {
+        // <Basic maxBuffCount> (additionalactionadditional.cpp:1063, 1 without it at :854)
+        Assert.That(AdditionalLevelData.Load(System.Xml.Linq.XElement.Parse("<level level=\"1\"><Basic/></level>"), null).MaxBuffCount, Is.EqualTo(1u));
+        var lv = AdditionalLevelData.Load(System.Xml.Linq.XElement.Parse("<level level=\"1\"><Basic maxBuffCount=\"2\"/></level>"), null);
+        Assert.That(lv.MaxBuffCount, Is.EqualTo(2u));
+        var s = new Strip();
+        var list = new AdditionalBuffList((id, l) => id == 9 && l == 1 ? lv : null) { ServerTick = () => 500, Strip = s };
+        // AdditionalCustomCli's ctor (additionalcli_1.cpp:701): the key, the local player as caster, the start now, the end,
+        // the count capped by the level; the id and level stay 0, enabled; not held in the list
+        var b = list.Custom(1000000009, 9, 3000, 3, 7);
+        Assert.That((b.Key, b.CasterId, b.OwnerId, b.StartTick, b.EndTick, b.Id, b.Level, b.OverlapCount, b.Enabled),
+            Is.EqualTo((1000000009, 7, 7, 500u, 3000u, 0u, (ushort)0, 2, (byte)1)));
+        Assert.That(b.IsValid, Is.True);
+        Assert.That(b.SortOrder, Is.EqualTo(2), "the owner cast it");
+        Assert.That(list.Buffs, Is.Empty);
+        Assert.That(s.Calls, Is.Empty);
+        var none = list.Custom(1000000008, 8, 3000, 3, 7);
+        Assert.That((none.IsValid, none.OverlapCount), Is.EqualTo((false, 3)), "no level: not valid, the count as given");
+        Assert.That(MainPlayerInfoController.GetBuffEffectId(100000004), Is.EqualTo(1100000004));
+    }
+
+    [Test]
+    public void InvincibleTimeShowsItsCustomBuffIcon()
+    {
+        var d = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
+        var packs = new PackSet(d);
+        var src = new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
+        var tables = new GameTables(packs, "en");
+        var m = new UiModel(tables) { Keys = new KeyTable(packs, "en"), HasLocalPlayer = true };
+        UiFixture.Apply(m);
+        var c = new MainPlayerInfoController();
+        uint server = 1000;
+        var list = new AdditionalBuffList(tables.Additional.GetLevel) { UpperTargetId = 1, Strip = c, ServerTick = () => server };
+        c.IsUpperTargetId = list.IsUpperTargetId;
+        c.OwnBuffs = list;
+        c.LocalObjectId = () => 1;
+        var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
+        p.StageW = 1280; p.StageH = 720;
+        var h = new UiHost(p, c, m);
+        Assert.That(h.Load(), Is.True);
+        uint tick = 0;
+        c.TickMs = () => tick;
+        void Run() { for (int i = 0; i < 10; i++) { tick += 33; c.UpdateEffects(); p.Tick(); } }
+        var buffs = (h.Child("m_effectManager") as AsContainer).Children[^2] as AsContainer;
+        Assert.That(tables.Additional.GetLevel(InvincibleBlink.RevivalTimer, 1), Is.Not.Null, "the revival timer's effect");
+        Assert.That(tables.Additional.GetLevel(InvincibleBlink.PortalTimer, 1), Is.Not.Null, "the portal timer's effect");
+        // PC::FUN_141661370 (pc.cpp:3388-3406): a revival adds its icon; a portal start removes it and adds its own; the end
+        // removes the running one
+        c.InvincibleBuff(0, InvincibleBlink.RevivalTimer, InvincibleBlink.BuffEnd(InvincibleBlink.RevivalTimer, 1000, null));
+        Run();
+        Assert.That(buffs.Children, Has.Count.EqualTo(1));
+        c.InvincibleBuff(InvincibleBlink.RevivalTimer, InvincibleBlink.PortalTimer, 12000);
+        Run();
+        Assert.That(buffs.Children, Has.Count.EqualTo(1));
+        c.InvincibleBuff(InvincibleBlink.PortalTimer, 0, 0);
+        Run();
+        Assert.That(buffs.Children, Is.Empty);
+        // a timer without an end tick (BuffEnd 0) adds none
+        c.InvincibleBuff(0, InvincibleBlink.RevivalTimer, 0);
+        Run();
+        Assert.That(buffs.Children, Is.Empty);
+        Assert.That(rt.Errors, Is.Empty);
+    }
 }

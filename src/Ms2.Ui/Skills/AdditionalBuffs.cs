@@ -137,6 +137,24 @@ public sealed class AdditionalBuffList
         _ => false,
     };
 
+    /// <summary>
+    /// AdditionalCustomCli's ctor @0x14096dcb0 (additionalcli_1.cpp:701): an effect the client makes itself, not held in the
+    /// list (UIMainPlayerInfo::AddCustomBuffEffect hands it to the strip). The key; the caster (and owner) is the local
+    /// player; the start is the server tick now and the end <paramref name="endTick"/>; the level is the id's level 1, and with
+    /// one the overlap count is <paramref name="count"/> capped at its maxBuffCount. The id and level stay 0 and the effect
+    /// enabled (the base ctor, :90).
+    /// </summary>
+    public AdditionalBuff Custom(int key, uint id, uint endTick, uint count, int ownerObjectId)
+    {
+        var b = new AdditionalBuff(this)
+        {
+            Key = key, CasterId = ownerObjectId, OwnerId = ownerObjectId, StartTick = ServerTick(), EndTick = endTick,
+            OverlapCount = (int)count, Enabled = 1, LevelData = levelOf(id, 1),
+        };
+        if (b.LevelData != null) b.OverlapCount = (int)Math.Min(b.LevelData.MaxBuffCount, count);
+        return b;
+    }
+
     /// <summary>IsUpperTargetId @0x140930110 (unit_14092f420_accountsessionstate.cpp:523): <c>g_upperTargetId == nValue</c>.</summary>
     public bool IsUpperTargetId(int objectId) => UpperTargetId == objectId;
 
