@@ -199,7 +199,7 @@ public sealed class EquipApplier
                 if (string.IsNullOrEmpty((string)asset.Attribute("targetnode")) && (string)asset.Attribute("replace") != "1") NotAttached++;
                 else
                 {
-                    List<(BoneAttachment3D att, MeshInstance3D mesh, string sheathedBone, Transform3D sheathedTargetLocal, Transform3D baseLocal)> hooks = null;
+                    List<WeaponHook> hooks = null;
                     var made = isNif ? Attach(skel, body, md, asset, item, gender, subtype, out hooks) : AttachKfm(skel, body, asset, item, gender, -1);
                     if (made == null) { MissingIds.Add(item.Id); continue; }
                     if (hooks != null) AddWeaponBindings(weaponBindings, skel, body, asset, slotName, item, gender, subtype, hooks);
@@ -367,7 +367,7 @@ public sealed class EquipApplier
     }
 
     List<MeshInstance3D> Attach(Skeleton3D skel, ModelData body, ModelData md, XElement asset, EquipItem item, int gender,
-        int subtype, out List<(BoneAttachment3D att, MeshInstance3D mesh, string sheathedBone, Transform3D sheathedTargetLocal, Transform3D baseLocal)> weaponHooks)
+        int subtype, out List<WeaponHook> weaponHooks)
     {
         var made = new List<MeshInstance3D>();
         weaponHooks = item.Slot is EquipSlot.RH or EquipSlot.LH ? new() : null;
@@ -446,7 +446,7 @@ public sealed class EquipApplier
                 var baseLocal = rel is { } r ? r : (selfInv ?? selfFallback) * parentWorld * ModelBuilder.ToGodot(m.Local);
                 mi.Transform = targetLocal * dummy * baseLocal;
                 att.AddChild(mi);
-                weaponHooks?.Add((att, mi, bone, targetLocal, baseLocal));
+                weaponHooks?.Add(new WeaponHook(att, mi, bone, targetLocal, baseLocal));
             }
             ModelBuilder.Attached(mi, m, skel, b => skel.FindBone(md.Bones[b].FileName ?? md.Bones[b].Name));
             made.Add(mi);
@@ -458,7 +458,10 @@ public sealed class EquipApplier
     /// <summary>The weapon stance rig built for a character visual during <see cref="Apply"/>; null when it wears no weapon.</summary>
     public static WeaponRig RigOf(Node3D visual) => visual != null && rigs.TryGetValue(visual, out var r) ? r : null;
 
-    internal readonly record struct WeaponBinding(
+    /// <summary>One rigid weapon mesh attached during Attach; a class so the list shares the canonical generic code.</summary>
+    sealed record WeaponHook(BoneAttachment3D Att, MeshInstance3D Mesh, string SheathedBone, Transform3D SheathedTargetLocal, Transform3D BaseLocal);
+
+    internal sealed record WeaponBinding(
         BoneAttachment3D Attach,
         MeshInstance3D Mesh,
         EquipSlot EffectiveSlot,
@@ -490,7 +493,7 @@ public sealed class EquipApplier
         EquipItem item,
         int gender,
         int subtype,
-        List<(BoneAttachment3D att, MeshInstance3D mesh, string sheathedBone, Transform3D sheathedTargetLocal, Transform3D baseLocal)> hooks)
+        List<WeaponHook> hooks)
     {
         if (hooks.Count == 0) return;
         EquipSlot effectiveSlot = subtype is 31 or 34
@@ -513,15 +516,15 @@ public sealed class EquipApplier
         foreach (var h in hooks)
         {
             list.Add(new WeaponBinding(
-                h.att,
-                h.mesh,
+                h.Att,
+                h.Mesh,
                 effectiveSlot,
                 hasWorldDummy,
                 subtype,
-                h.sheathedBone,
+                h.SheathedBone,
                 heldBone,
-                h.mesh.Transform,
-                heldTargetLocal * heldDummy * h.baseLocal));
+                h.Mesh.Transform,
+                heldTargetLocal * heldDummy * h.BaseLocal));
         }
     }
 
@@ -591,7 +594,7 @@ public sealed class EquipApplier
             if (rhSubtype == 0) primary = false;
             for (int i = 0; i < bindings.Length; i++)
             {
-                ref readonly var b = ref bindings[i];
+                var b = bindings[i];
                 if (!GodotObject.IsInstanceValid(b.Attach) || !GodotObject.IsInstanceValid(b.Mesh)) continue;
                 bool toHand = Ms2.Ui.Items.WeaponStance.UsesHandNode(primary, b.EffectiveSlot == EquipSlot.LH, b.HasWorldDummy,
                     b.EffectiveSlot != EquipSlot.LH || table.IsAllowed(rhSubtype, b.Subtype));
