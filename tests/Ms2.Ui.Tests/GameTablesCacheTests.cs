@@ -5,6 +5,7 @@ using NUnit.Framework;
 namespace Ms2.Ui.Tests;
 
 /// <summary>The game tables loaded through their cache file are the parsed ones.</summary>
+[NonParallelizable]   // sets process-wide hooks the product reads
 public class GameTablesCacheTests
 {
     [Test]

@@ -7,30 +7,53 @@ using NUnit.Framework.Interfaces;
 
 namespace Ms2Godot.Tests;
 
-/// <summary>When the run moves on to another fixture, drops what the previous fixture's static fields hold (pack sets, movie
-/// sources, tables, generated code), so the next fixture does not run on top of it. Without this every fixture's data stays
-/// reachable until the process ends. (NUnit runs an assembly-level suite action only for the assembly, so the change of
-/// fixture is detected from the tests.)</summary>
+/// <summary>When the last test of a fixture has finished, drops what that fixture's static fields hold (pack sets, movie
+/// sources, tables, generated code), so the data of finished fixtures does not stay reachable until the process ends.
+/// Fixtures run side by side, so the release happens per fixture, when its own tests are all done, never when "the next
+/// fixture" starts. (NUnit runs an assembly-level suite action only for the assembly, so the end of a fixture is detected
+/// by counting its tests.)</summary>
 [AttributeUsage(AttributeTargets.Assembly)]
 public sealed class FixtureReleaseAttribute : Attribute, ITestAction
 {
     public ActionTargets Targets => ActionTargets.Test;
-    static Type last;
+    static readonly System.Collections.Generic.Dictionary<Type, int> left = new();
     static readonly object gate = new();
 
-    public void BeforeTest(ITest test)
+    public void BeforeTest(ITest test) { }
+
+    public void AfterTest(ITest test)
     {
         var t = test.TypeInfo?.Type;
         if (t == null) return;
-        Type done;
-        lock (gate) { done = last; last = t; }
-        if (done != null && done != t) Release(done);
+        bool last;
+        lock (gate)
+        {
+            if (!left.TryGetValue(t, out var n)) n = Runnable(Fixture(test));
+            left[t] = --n;
+            last = n <= 0;
+        }
+        if (last) Release(t);
     }
 
-    public void AfterTest(ITest test) { }
+    static ITest Fixture(ITest test)
+    {
+        for (var s = test.Parent; s != null; s = s.Parent)
+            if (s.TestType != null && s.TestType.EndsWith("Fixture", StringComparison.Ordinal) && s.TypeInfo?.Type == test.TypeInfo?.Type) return s;
+        return test;
+    }
+
+    static int Runnable(ITest t)
+    {
+        if (!t.IsSuite) return t.RunState == RunState.Runnable ? 1 : 0;
+        int n = 0;
+        foreach (var c in t.Tests) n += Runnable(c);
+        return n;
+    }
 
     /// <summary>Only nulls the fields; it never disposes. A handle nobody else holds is freed by its finalizer after the
     /// collection below, and one the product code hands out again (the session's shared pack set) stays alive through its owner.</summary>
+    const long CollectAbove = 3L << 30;
+
     internal static void Release(Type t)
     {
         const BindingFlags F = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
@@ -41,6 +64,8 @@ public sealed class FixtureReleaseAttribute : Attribute, ITestAction
             if (v == null) continue;
             f.SetValue(null, null);
         }
+        // a full collection stops every fixture running beside this one, so it is done only once the heap has grown large
+        if (GC.GetTotalMemory(false) < CollectAbove) return;
         GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
     }
 }

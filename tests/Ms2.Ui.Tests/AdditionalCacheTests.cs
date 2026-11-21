@@ -8,6 +8,7 @@ using NUnit.Framework;
 namespace Ms2.Ui.Tests;
 
 /// <summary>The per-install additional effect cache gives the same effects and descriptions as the XML.</summary>
+[NonParallelizable]   // sets process-wide hooks the product reads
 public class AdditionalCacheTests
 {
     static readonly string[] Tags = { "name", "uiDescription", "mainDescription", "functionDescription", "tooltipDescription", "guideDescription" };

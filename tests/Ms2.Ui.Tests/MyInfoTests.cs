@@ -10,6 +10,7 @@ using NUnit.Framework;
 namespace Ms2.Ui.Tests;
 
 /// <summary>The character window (uimyinfodialog) run by its own ActionScript with UIMyInfoDialog's C++ side (needs MS2_DATA).</summary>
+[NonParallelizable]   // sets process-wide hooks the product reads
 public class MyInfoTests
 {
     static PackSet packs;

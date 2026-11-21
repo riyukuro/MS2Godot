@@ -10,6 +10,7 @@ namespace Ms2.Formats.Tests;
 /// setup's table cache build and a session's open list them as empty, as the client does, instead of failing on the
 /// package reader's map of an empty file. And a cache file left empty or cut short is built again, never read.
 /// </summary>
+[NonParallelizable]   // sets process-wide hooks the product reads
 public class EmptyArchiveTests
 {
     static string NewDataDir()

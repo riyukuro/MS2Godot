@@ -4,6 +4,7 @@ using NUnit.Framework;
 
 namespace Ms2.Formats.Tests;
 
+[NonParallelizable]   // reads the process-wide PackSet counters and runs its own parallel loop
 public class PackReadTests
 {
     /// <summary>PackSet.Read takes its own cheaper route to an entry's bytes; they must equal the package reader's.</summary>
@@ -37,28 +38,37 @@ public class PackReadTests
         var data = Environment.GetEnvironmentVariable("MS2_DATA");
         if (string.IsNullOrEmpty(data)) Assert.Ignore("MS2_DATA not set");
         var packs = new PackSet(data);
-        var rnd = new Random(11);
         // the counters are static and other tests read through PackSet too: this test checks only what its own reads add
+        // (the fixture is NonParallelizable, so no other fixture reads meanwhile)
         long hits0 = PackSet.FastAesHits, misses0 = PackSet.FastAesMisses, fallbacks0 = PackSet.Fallbacks;
         int total = 0, skipped = 0;
         var files = Directory.GetFiles(data, "*.m2d", SearchOption.AllDirectories);
         Assert.That(files, Is.Not.Empty);
-        foreach (var path in files)
+        Array.Sort(files, StringComparer.Ordinal);
+        // one task per archive: each has its own reader and its own seeded shuffle, so the sample does not depend on the schedule
+        var failures = new System.Collections.Concurrent.ConcurrentBag<string>();
+        Parallel.For(0, files.Length, i =>
         {
+            var path = files[i];
             var archive = Path.ChangeExtension(Path.GetRelativePath(data, path), null).Replace('\\', '/');
+            var rnd = new Random(11 + i);
             using var reader = new M2dReader(path);
             var all = reader.Files.ToList();
             int take = Math.Min(all.Count, Math.Max(250, 12000 / files.Length));
+            int done = 0, skip = 0;
             foreach (var entry in all.OrderBy(_ => rnd.Next()).Take(take))
             {
                 var name = entry.Name.Replace('\\', '/');
                 byte[] want;
                 try { want = reader.GetBytes(entry); }
-                catch (Exception) { skipped++; continue; }   // the package cannot read it either (no baseline to compare)
-                Assert.That(packs.Read(archive, name), Is.EqualTo(want), $"{archive}: {name}");
-                total++;
+                catch (Exception) { skip++; continue; }   // the package cannot read it either (no baseline to compare)
+                if (!packs.Read(archive, name).AsSpan().SequenceEqual(want)) { failures.Add($"{archive}: {name}"); break; }
+                done++;
             }
-        }
+            Interlocked.Add(ref total, done);
+            Interlocked.Add(ref skipped, skip);
+        });
+        Assert.That(failures, Is.Empty, "entries whose bytes differ from the package reader's");
         TestContext.Out.WriteLine($"skipped {skipped}");
         long hits = PackSet.FastAesHits - hits0, misses = PackSet.FastAesMisses - misses0, fallbacks = PackSet.Fallbacks - fallbacks0;
         TestContext.Out.WriteLine($"entries {total}, fast {hits}, AES misses {misses}, package fallbacks {fallbacks}");

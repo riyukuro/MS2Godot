@@ -6,6 +6,7 @@ using NUnit.Framework;
 namespace Ms2.Formats.Tests;
 
 /// <summary>An archive opened from its index cache file lists and reads what the package reader's open does.</summary>
+[NonParallelizable]   // sets process-wide hooks the product reads
 public class PackIndexTests
 {
     [Test]

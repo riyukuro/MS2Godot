@@ -949,8 +949,8 @@ internal static class BoundsMemo
 {
     [ThreadStatic] internal static int Epoch;
     [ThreadStatic] static int last;
-    /// <summary>Tests only: no memo, for the reference answers.</summary>
-    internal static bool Off;
+    /// <summary>Tests only: no memo, for the reference answers (per thread, so a test that sets it does not affect fixtures running beside it).</summary>
+    [ThreadStatic] internal static bool Off;
 
     internal readonly struct Scope : IDisposable
     {

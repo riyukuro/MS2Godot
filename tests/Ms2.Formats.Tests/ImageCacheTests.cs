@@ -5,6 +5,7 @@ using NUnit.Framework;
 namespace Ms2.Formats.Tests;
 
 /// <summary>The per-install cache files' launch and setup checks, the atlas build's rebuild decision and the precompiled images.</summary>
+[NonParallelizable]   // sets process-wide hooks the product reads
 public class ImageCacheTests
 {
     string dir;
