@@ -203,7 +203,7 @@ public class WeaponStanceTests
         AssertVec(stance.Placements()[1].Rotation, 0, 0, 0, "shield in hand R");
 
         // 2. State gating: slow-walk, ladder, climb, water idle or riding returns 0 from State::vfunc_15 -> sheathes weapons while keeping InBattle = true
-        Assert.That(stance.SetState(WeaponStance.CanHoldInMoveState(onWater: false, walkMode: true, riding: false)), Is.True);
+        Assert.That(stance.SetState(WeaponStance.StateHoldsWeapons(WeaponStance.StateWalk, 0x18, running: false)), Is.True);
         Assert.That(stance.InBattle, Is.True, "battle stance emotion stays on during slow-walk");
         Assert.That(stance.WeaponsHeld, Is.False, "m_nD80 clears during slow-walk");
         Assert.That(stance.ActionPrefix, Is.EqualTo(""));
@@ -212,7 +212,7 @@ public class WeaponStanceTests
         AssertVec(stance.Placements()[1].Rotation, -10, -5, 0, "shield back on back R");
 
         // 3. Resume running / idle -> returns to hands while InBattle is still true
-        Assert.That(stance.SetState(WeaponStance.CanHoldInMoveState(onWater: false, walkMode: false, riding: false)), Is.True);
+        Assert.That(stance.SetState(WeaponStance.StateHoldsWeapons(WeaponStance.StateWalk, 0x18, running: true)), Is.True);
         Assert.That(stance.WeaponsHeld, Is.True);
         Assert.That(stance.ActionPrefix, Is.EqualTo("Sword_"));
         Assert.That(stance.Placements().Select(p => p.TargetNode), Is.EqualTo(new[] { "Weapon_Hand_R_Point", "Weapon_Hand_L_Point" }));
@@ -267,5 +267,38 @@ public class WeaponStanceTests
         Assert.That(assetLhWorld.HasWorldDummy(0), Is.True);
         Assert.That(assetLhWorld.HasWorldDummy(1), Is.True);
         Assert.That(assetRh.HasWorldDummy(0), Is.False);
+    }
+
+    [Test]
+    public void StateGateIsOneTableForEveryCharacter()
+    {
+        // State::vfunc_15 by (state id, sub state): idle (1) except sub 6 and 7; walk (2) only running and not sub 0x19;
+        // land, fall, jump (4, 5, 6) always; swim 27, ladder 8, rope 9, climb 29, dash 20 and unknown ids never
+        Assert.That(WeaponStance.StateHoldsWeapons(1, 1), Is.True);
+        Assert.That(WeaponStance.StateHoldsWeapons(1, 7), Is.False, "water idle");
+        Assert.That(WeaponStance.StateHoldsWeapons(1, 6), Is.False, "idle leave timer");
+        Assert.That(WeaponStance.StateHoldsWeapons(2, 0x18, running: true), Is.True);
+        Assert.That(WeaponStance.StateHoldsWeapons(2, 0x18, running: false), Is.False, "slow walk");
+        Assert.That(WeaponStance.StateHoldsWeapons(2, 0x19, running: true), Is.False);
+        foreach (int id in new[] { 4, 5, 6 }) Assert.That(WeaponStance.StateHoldsWeapons(id, 0), Is.True, "state " + id);
+        foreach (int id in new[] { 8, 9, 20, 27, 29, 0, 99 }) Assert.That(WeaponStance.StateHoldsWeapons(id, 0), Is.False, "state " + id);
+    }
+
+    [Test]
+    public void HeldRuleAndHandNodeRuleAreShared()
+    {
+        // pc.cpp:2491-2511: battle and state, cube clears, vfunc_16 forces, no right-hand weapon clears
+        Assert.That(WeaponStance.HoldsWeapons(true, true, 32), Is.True);
+        Assert.That(WeaponStance.HoldsWeapons(false, true, 32), Is.False);
+        Assert.That(WeaponStance.HoldsWeapons(true, false, 32), Is.False);
+        Assert.That(WeaponStance.HoldsWeapons(true, true, 0), Is.False);
+        Assert.That(WeaponStance.HoldsWeapons(true, true, 32, inCubeMode: true), Is.False);
+        Assert.That(WeaponStance.HoldsWeapons(false, false, 32, inCubeMode: true, stateForcesWeapons: true), Is.True);
+        // pc.cpp:3996-4019: right hand follows bPrimary; left hand also needs no world dummy and an allowed pair
+        Assert.That(WeaponStance.UsesHandNode(true, false, true, false), Is.True);
+        Assert.That(WeaponStance.UsesHandNode(false, false, false, true), Is.False);
+        Assert.That(WeaponStance.UsesHandNode(true, true, false, true), Is.True);
+        Assert.That(WeaponStance.UsesHandNode(true, true, true, true), Is.False);
+        Assert.That(WeaponStance.UsesHandNode(true, true, false, false), Is.False);
     }
 }

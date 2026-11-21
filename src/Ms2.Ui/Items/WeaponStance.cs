@@ -115,18 +115,56 @@ public sealed class WeaponStance
         return hasSequence == null || hasSequence(candidate) ? candidate : baseSequence;
     }
 
+    /// <summary>The wire ids of the states State::vfunc_15 answers 1 for among those a record carries (gostate.h): idle.</summary>
+    public const int StateIdle = 1, StateWalk = 2, StateLand = 4, StateFall = 5, StateJump = 6;
+
     /// <summary>
-    /// State::vfunc_15 (@0x1417b8150, client/ms2/state.cpp:684) across the player movement states:
+    /// State::vfunc_15 (@0x1417b8150, client/ms2/state.cpp:684, default 0) for the movement states a user sync record
+    /// carries, by the record's state id and sub state. The own character and every remote ask this one function:
     /// <list type="bullet">
-    /// <item>StateIdle::vfunc_15 (@0x1417cd740, stateidle.cpp:210-217): 1 unless water idle (substate 7) or leave timer (6);</item>
-    /// <item>StateWalk::vfunc_15 (@0x141800a90, statewalk.cpp:376-384): 1 when running (m_n48 != 0 &amp;&amp; m_n10 != 0x19), 0 when slow-walking;</item>
-    /// <item>StateJump::vfunc_15 (@0x1417d6ac0, statejump.cpp:413), StateFall::vfunc_15 (@0x1417c7aa0, statefall.cpp:225),
-    /// StateLand::vfunc_15 (@0x1417da780, stateland.cpp:190): 1;</item>
-    /// <item>StateSwim, StateLadder, StateRope, StateClimb, StateDash, riding: default State::vfunc_15 returns 0.</item>
+    /// <item>StateIdle::vfunc_15 (@0x1417cd740, stateidle.cpp:210-217): 0 for sub state 7 (water idle) and 6, else 1;</item>
+    /// <item>StateWalk::vfunc_15 (@0x141800a90, statewalk.cpp:376-384): 0 when slow-walking (m_n48 == 0, the gait of
+    /// PC::vfunc_115) or sub state 0x19, else 1; <paramref name="running"/> is m_n48;</item>
+    /// <item>StateJump (@0x1417d6ac0, statejump.cpp:413), StateFall (@0x1417c7aa0, statefall.cpp:225), StateLand
+    /// (@0x1417da780, stateland.cpp:190): 1;</item>
+    /// <item>swim, ladder, rope, climb, dash: the default State::vfunc_15, 0.</item>
     /// </list>
+    /// STILL-OPEN: the other states answer 1 too and are not modelled here: StateHit (statehit.cpp:346), StateSpawn
+    /// (statespawn.cpp:142), StateMoveSkill (state.cpp:1612), StatePvPWinLose (statepvpwinlose.cpp:73), StateDeadNPC and
+    /// StateRevival (statedead.cpp:341, :347), StateSkillMagicControl (stateskillmagiccontrol.cpp:67); StateHold answers 1
+    /// unless riding (stateholddata.cpp:383), StateWaitingSelect only for sub state 0x55 (statewaitingselect.cpp:227), and
+    /// StateSkill answers its motion's m_nHoldWeapon (1 without a motion, 0 without a record; stateskill.cpp:1095-1104,
+    /// see <see cref="OnSkill"/>). Their wire ids and the skill motion's flag are not read from a record here, so a
+    /// character in one of them is treated as not allowing weapons.
     /// </summary>
-    public static bool CanHoldInMoveState(bool onWater, bool walkMode, bool riding, bool nonCombatMoveState = false) =>
-        !onWater && !walkMode && !riding && !nonCombatMoveState;
+    public static bool StateHoldsWeapons(int stateId, int subState, bool running = true) => stateId switch
+    {
+        StateIdle => subState != 7 && subState != 6,
+        StateWalk => running && subState != 0x19,
+        StateLand or StateFall or StateJump => true,
+        _ => false,
+    };
+
+    /// <summary>
+    /// PC::FUN_141659000 (@0x141659000, client/ms2/pc.cpp:2491-2511): whether weapons sit in the hand nodes. Battle stance
+    /// and the state's vfunc_15, cleared in cube mode, forced on by vfunc_16, and cleared when the weapon action is null or
+    /// its m_nRightHand is 0. The one rule <see cref="Evaluate"/> and the game's weapon rig both use.
+    /// </summary>
+    public static bool HoldsWeapons(bool inBattle, bool stateAllowsWeapons, int rightHand, bool inCubeMode = false, bool stateForcesWeapons = false)
+    {
+        bool active = inBattle && stateAllowsWeapons;
+        if (inCubeMode) active = false;
+        if (stateForcesWeapons) active = true;
+        return active && rightHand != 0;
+    }
+
+    /// <summary>
+    /// PC::FUN_141658150 (@0x141658150, client/ms2/pc.cpp:3996-4019): whether a weapon model goes to its hand node. A
+    /// right-hand model follows bPrimary; a left-hand model also stays sheathed when a dummy for the gender has worldmode or
+    /// worldlerp, or when the weapon action table does not allow the pair.
+    /// </summary>
+    public static bool UsesHandNode(bool primary, bool leftHandModel, bool hasWorldDummy, bool pairAllowed) =>
+        primary && (!leftHandModel || (!hasWorldDummy && pairAllowed));
 
     /// <summary>
     /// PCBase::SetEmotion (@0x14166cee0, client/ms2/pcbase.cpp:1264-1281) -&gt; PC::vfunc_66 (@0x1416544f0, client/ms2/pc.cpp:1244-1261)
@@ -175,10 +213,7 @@ public sealed class WeaponStance
     /// </summary>
     bool Evaluate()
     {
-        bool active = InBattle && StateAllowsWeapons;
-        if (InCubeMode) active = false;
-        if (StateForcesWeapons) active = true;
-        if (active && (Action == null || Action.RightHand == 0)) active = false;
+        bool active = HoldsWeapons(InBattle, StateAllowsWeapons, Action?.RightHand ?? 0, InCubeMode, StateForcesWeapons);
         if (WeaponsHeld == active) return false;
         WeaponsHeld = active;
         return true;
