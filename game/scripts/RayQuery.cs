@@ -82,5 +82,8 @@ static class ColliderGroups
         return g;
     }
 
+    /// <summary>A collider whose group changes at runtime (FieldBuilder.TriggerCollider.SetGroup, the Trigger packet's show/hide) updates its entry.</summary>
+    public static void Set(ulong colliderId, int group) => byId[colliderId] = group;
+
     public static void Clear() => byId.Clear();
 }

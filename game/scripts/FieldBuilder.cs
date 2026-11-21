@@ -111,6 +111,7 @@ public sealed class FieldBuilder
         {
             Body.CollisionLayer = 1u << group;
             Body.SetMeta(GroupMeta, group);
+            ColliderGroups.Set(Body.GetInstanceId(), group);   // a ray may have cached the old group (RayQuery.Nearest)
             if (OverlapKey >= 0) Overlap.SetLayer(OverlapKey, 1u << group);
         }
     }
