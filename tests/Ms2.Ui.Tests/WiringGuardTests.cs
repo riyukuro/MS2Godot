@@ -119,5 +119,8 @@ public class WiringGuardTests
         Assert.That(r, Does.Contain("part.Type == \"light\" && part.Light != null"), "an effect xml's light part is played");
         Assert.That(r, Does.Contain("l.Light = FieldLights.Start(l.Param, l.Pos);"), "it starts at its delay as CombatLayer's lights");
         Assert.That(r, Does.Contain("FieldLights.End(l.Light);"), "its end frees the effect light slot");
+        var f = Source("game/scripts/Field.cs");
+        Assert.That(f, Does.Contain("FieldLights.Clear();"), "a field's build drops the previous field's light set (tests/field_lights_swap.tscn)");
+        Assert.That(f, Does.Contain("FieldLights.Clear(lightSet);"), "a leaving field drops its own light set");
     }
 }

@@ -37,7 +37,9 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     readonly Dictionary<int, List<Node3D>> kept = new();
 
     /// <summary>An effect xml's light part (CLightEffect, lighteffectparam.cpp:363-377): it adds its light at its start delay
-    /// and the effect's end destroys it (FieldLights.Start / End), as CombatLayer's lights.</summary>
+    /// and the effect's end destroys it (FieldLights.Start / End), as CombatLayer's lights. The light entity is added at Init
+    /// (lighteffectparam.cpp:382, AddEntity) and attached only after m_fStartDelay (:384, :401-411); whether the added but
+    /// unattached entity already lights is STILL-OPEN, so here the light starts at the delay.</summary>
     sealed class LiveLight
     {
         public EffectLightParam Param; public Vec3 Pos; public float Born, Start, End; public FieldLight Light; public int Handle;

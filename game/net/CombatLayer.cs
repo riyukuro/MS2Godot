@@ -147,7 +147,9 @@ void fragment() {
     }
 
     /// <summary>An effect light waiting for its start delay or running (CLightEffect: it adds its light when it starts and the
-    /// effect's end destroys it, FieldLightSet.StartEffect / EndEffect).</summary>
+    /// effect's end destroys it, FieldLightSet.StartEffect / EndEffect). The light entity is added at Init
+    /// (lighteffectparam.cpp:382, AddEntity) and attached only after m_fStartDelay (:384, :401-411); whether the added but
+    /// unattached entity already lights is STILL-OPEN, so here the light starts at the delay.</summary>
     sealed class LiveLight
     {
         public EffectLightParam Param; public Ms2.Formats.Model.Vec3 Pos; public float Born, Start, End; public FieldLight Light;

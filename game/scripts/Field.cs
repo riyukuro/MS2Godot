@@ -127,6 +127,8 @@ public partial class Field : Node3D
         fb.Lease = models;
         fb.Load = contents.Load = new World.LoadCount();   // the entity count the loading screen shows
         fb.Lights = FieldLightSet.Read(map.Entities);       // before the build: each draw takes the lights that reach it
+        FieldLights.Clear();   // the region skills replayed during the build and packets in the load wait for this field's Add
+        lightSet = fb.Lights;
         abandon = () =>   // what a stopped load holds off the tree
         {
             fb.Abandon();
@@ -317,6 +319,7 @@ public partial class Field : Node3D
     public override void _ExitTree()
     {
         if (Active == this) Active = null;
+        FieldLights.Clear(lightSet);
         if (began && !IsLoaded) World.FieldContents.AbandonLoad(this, loadMove);
         layers?.Stop();
         models.Dispose();   // the models stay cached for the next field until the sweep finds them unused (NifCache)
@@ -325,6 +328,7 @@ public partial class Field : Node3D
         if (rasterSource != null) { rasterSource.SizeChanged -= RasterOrigin; rasterSource = null; }
     }
 
+    FieldLightSet lightSet;         // this field's lights (FieldLights.Add), dropped when it leaves
     Viewport rasterSource;          // the viewport whose size_changed moves the projection window, while connected
     readonly NifCache.Lease models = new();   // the field's hold on the cached models it built from (NifCache)
 

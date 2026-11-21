@@ -53,6 +53,14 @@ public static class FieldLights
         return n;
     }
 
+    /// <summary>Drops the field's light set (a field change: the next field's Add comes only after its build). Effect lights
+    /// started until then get null and are tried again (CombatLayer, RegionSkills), so none lands in the old field's set.
+    /// <paramref name="set"/>: only when it is still the current one (a field leaving after the next one's Add keeps that).</summary>
+    public static void Clear(FieldLightSet set = null)
+    {
+        if (set == null || current == set) current = null;
+    }
+
     /// <summary>Starts an effect light at a client-space place (CLightEffect, FieldLightSet.StartEffect); null when the field has
     /// no free slot. One texture write, at the start.</summary>
     public static FieldLight Start(EffectLightParam p, Ms2.Formats.Model.Vec3 position)
