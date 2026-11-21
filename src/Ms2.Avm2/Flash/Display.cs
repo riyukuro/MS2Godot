@@ -92,6 +92,14 @@ public class AsDisplayObject : AsEventDispatcher
     internal uint AdvanceEpoch;
     public bool CacheAsBitmapFlag;
     public bool HitTestDisabled;
+    /// <summary>
+    /// DisplayObject::Mask_ExecutionAborted: one of this object's listeners threw during a dispatch (EventDispatcher::Dispatch,
+    /// sfr_as3_09.cpp, sets it on the phase's object when DispatchSingleEvent returns false). Never cleared; the movie's
+    /// advance skips this object's own timeline from then on (MovieImpl's advance loop, sfr_gfx_01i.cpp), its children
+    /// still advance. The client sets the same flag after an ignored exception of a frame script or a timer
+    /// (sfr_as3_17d.cpp, sfr_as3_18.cpp); those paths do not set it here.
+    /// </summary>
+    public bool ExecutionAborted;
     /// <summary>Free slot for the renderer (its node for this object).</summary>
     public object Tag;
     public int TopmostLevel;
@@ -507,8 +515,9 @@ public class AsMovieClip : AsSprite
     Timeline tl;
     bool playing = true;
     internal bool TrackedPlaying;
-    /// <summary>True when this clip's timeline advances each frame (MovieImpl::AdvanceFrame's optimized play list criterion).</summary>
-    internal bool CanAdvance => playing && tl != null && tl.Frames > 1;
+    /// <summary>True when this clip's timeline advances each frame (MovieImpl::AdvanceFrame's optimized play list criterion),
+    /// unless a listener of it threw (<see cref="AsDisplayObject.ExecutionAborted"/>: the advance loop skips it).</summary>
+    internal bool CanAdvance => playing && !ExecutionAborted && tl != null && tl.Frames > 1;
     void TrackPlaying() { if (CanAdvance) P?.RegisterPlaying(this); }
 
     public Timeline TL { get => tl; set { tl = value; TrackPlaying(); } }

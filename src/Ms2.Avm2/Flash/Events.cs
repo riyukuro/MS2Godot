@@ -81,22 +81,30 @@ public class AsEventDispatcher : AsObject
         if (n > 0) { int k = 0; for (var p = ((AsDisplayObject)this).Parent; p != null; p = p.Parent) path[k++] = p; }
         try
         {
-            // capture: from the top down; a listener that threw ends the dispatch (EventDispatcher::Dispatch,
-            // sfr_as3_09.cpp: each phase stops when DispatchSingleEvent returns false)
+            // capture: from the top down; a listener that threw ends the dispatch and marks the phase's display object
+            // (EventDispatcher::Dispatch, sfr_as3_09.cpp: each phase stops when DispatchSingleEvent returns false, and
+            // Mask_ExecutionAborted goes on chain[i]'s display object, or on dobj at the target)
             bool ok = true;
             e.Phase = 1;
-            for (int i = n - 1; i >= 0 && ok && !e.Stopped; i--) ok = path[i].Fire(e, true);
-            if (ok && !e.Stopped) { e.Phase = 2; ok = Fire(e, false); }
+            for (int i = n - 1; i >= 0 && ok && !e.Stopped; i--) ok = path[i].Fire(e, true) || Aborted(path[i]);
+            if (ok && !e.Stopped) { e.Phase = 2; ok = Fire(e, false) || Aborted(this); }
             if (ok && e.bubbles)
             {
                 e.Phase = 3;
-                for (int i = 0; i < n && ok; i++) { if (e.Stopped) break; ok = path[i].Fire(e, false); }
+                for (int i = 0; i < n && ok; i++) { if (e.Stopped) break; ok = path[i].Fire(e, false) || Aborted(path[i]); }
             }
         }
         finally { if (n > 0) { Array.Clear(path, 0, n); System.Buffers.ArrayPool<AsEventDispatcher>.Shared.Return(path); } }
         e.CurrentTarget = null;
         e.Phase = 0;
         return !e.Prevented;
+    }
+
+    /// <summary>A listener of <paramref name="o"/> threw: a display object is marked (the client's <c>if (dobj)</c>); false.</summary>
+    static bool Aborted(AsEventDispatcher o)
+    {
+        if (o is AsDisplayObject d) d.ExecutionAborted = true;
+        return false;
     }
 
     /// <summary>Calls this object's listeners of <paramref name="e"/>'s type. An AS3 exception from a listener is output and

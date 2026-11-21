@@ -204,6 +204,20 @@ public class SkillBookTreeTests
         Assert.That(errors, Has.Count.EqualTo(1));
         Assert.That(presses, Is.InRange(120, 128), "the recursion stops at the 128 frame limit");
 
+        // the skill slot whose MOUSE_DOWN listener threw is marked (Dispatch: Mask_ExecutionAborted on the bubble phase's
+        // object) and its own timeline no longer advances: the press's state tween stays on the label's first frame
+        var skillSlot = (AsMovieClip)h.Get(skill, "m_skillSlot");
+        Assert.That(skillSlot.ExecutionAborted, Is.True, "the skill slot's listener threw");
+        Assert.That(slot.ExecutionAborted, Is.False, "the press's own target ran its listeners");
+        for (int i = 0; i < 6; i++)
+        {
+            p.Tick();
+            TestContext.WriteLine($"tick {i}: skill slot frame {skillSlot.Frame + 1} label {Rt.ToString(h.Get(skillSlot, "currentLabel"))}");
+        }
+        string label = Rt.ToString(h.Get(skillSlot, "currentLabel"));
+        Assert.That(Rt.ToNumber(h.Get(skillSlot, "currentFrame")), Is.EqualTo(LabelFrame(h, skillSlot, label)),
+            "the skill slot stays on the first frame of the state it went to");
+
         // SkillSlot.handleMouseDown armed the stage's MOUSE_MOVE: a move off the slot dispatches DRAG_START on m_slot
         // (SkillSlot.handleMouseMove), which bubbles to the stage, where the host hears it (UiStage.OnDragStart)
         var drags = new List<object>();
@@ -214,5 +228,18 @@ public class SkillBookTreeTests
         p.MouseMove(b.X + b.W + 300, y);
         p.MouseButton(false);
         Assert.That(h.RT.Errors.Skip(before + 1), Is.Empty);
+    }
+
+    /// <summary>The frame (1-based) of <paramref name="label"/> on <paramref name="mc"/>'s timeline (currentLabels).</summary>
+    static double LabelFrame(UiHost h, AsObject mc, string label)
+    {
+        var labels = h.Get(mc, "currentLabels");
+        int n = (int)Rt.ToNumber(h.Get(labels, "length"));
+        for (int i = 0; i < n; i++)
+        {
+            var l = h.Get(labels, i.ToString());
+            if (Rt.ToString(h.Get(l, "name")) == label) return Rt.ToNumber(h.Get(l, "frame"));
+        }
+        return double.NaN;
     }
 }
