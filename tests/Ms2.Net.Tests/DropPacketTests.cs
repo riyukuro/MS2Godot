@@ -95,7 +95,7 @@ public class DropPacketTests {
         w.WriteInt(-999);
         var r = Reader(w);
         var d = FieldAddItem.Read(r);
-        Assert.That(d.IsMeso, Is.False, "CDropItem::IsMeso is m_n64Meso > 0 (dropitem.cpp:744)");
+        Assert.That(d.IsMeso, Is.False, "CDropItem::IsMeso needs the meso amount above 0 (dropitem.cpp:744)");
         Assert.That(r.ReadInt(), Is.EqualTo(-999), "the add packet still reads no item body for a meso id");
     }
 }

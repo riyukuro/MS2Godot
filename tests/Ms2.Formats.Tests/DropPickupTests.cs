@@ -84,7 +84,7 @@ public class DropPickupTests {
 
     [Test] public void APetTrapDropIsUnpickableUntilTheDelayEnds() {
         Assert.That(DropPickup.FadeUntil(1000, 5, true, true, 3000), Is.EqualTo(4000u), "a pet item with the trap flag (SetState 1)");
-        Assert.That(DropPickup.FadeUntil(1000, 0xc80, false, true, 3000), Is.EqualTo(4000u), "a 0xc80 drop that is no pet item (vfunc_53)");
+        Assert.That(DropPickup.FadeUntil(1000, 0xc80, false, true, 3000), Is.EqualTo(4000u), "a drop of kind 0xc80 that is no pet item (held until the delay ends)");
         Assert.That(DropPickup.FadeUntil(1000, 5, false, true, 3000), Is.EqualTo(0u), "any other drop");
         Assert.That(DropPickup.FadeUntil(1000, 0xc80, true, false, 3000), Is.EqualTo(0u), "no trap flag");
         var p = Planner(C(1, 10, fade: 4000));
