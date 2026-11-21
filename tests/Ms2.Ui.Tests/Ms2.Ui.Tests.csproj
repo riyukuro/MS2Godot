@@ -5,7 +5,12 @@
     <Nullable>disable</Nullable>
     <IsPackable>false</IsPackable>
     <RollForward>Major</RollForward>
-  </PropertyGroup>
+      </PropertyGroup>
+  <ItemGroup>
+    <!-- fixtures run side by side: a workstation GC stops every thread for each collection, a server GC with one heap per few threads does not -->
+    <RuntimeHostConfigurationOption Include="System.GC.Server" Value="true" />
+    <RuntimeHostConfigurationOption Include="System.GC.HeapCount" Value="8" />
+  </ItemGroup>
   <ItemGroup>
     <Compile Include="../Shared/ExclusiveFixtures.cs" Link="ExclusiveFixtures.cs" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
