@@ -20,7 +20,10 @@ public sealed class KeyTable : IKeyTable
 {
     sealed class Key { public string Name; public long Code; public int Type, Priority, Slot; }
 
+    // keys in key order for the walks; byId for the lookups: on .NET 8, SortedDictionary<int, T>.TryGetValue allocates 24 B a
+    // call where Dictionary allocates none, and the HUD looks keys up per frame (IsKeyOfSkill, GetKeySkillId).
     readonly SortedDictionary<int, Key> keys = new();
+    readonly Dictionary<int, Key> byId = new();
     readonly Dictionary<int, (int Type, long Code, int Slot, int Priority)> backup = new();
     readonly Dictionary<string, string> names = new();
     byte[] defaultKeys;
@@ -62,7 +65,7 @@ public sealed class KeyTable : IKeyTable
         LoadKeySettingTable(packs);
         for (int k = 1; k < 0xd0; k++)
             if (names.TryGetValue(k.ToString(CultureInfo.InvariantCulture), out var n) && !string.IsNullOrEmpty(n))
-                keys[k] = new Key { Name = n };
+                AddKey(k, new Key { Name = n });
         // InitKeys (keytable.cpp:632-652): 112 gamepad combine keys (4 modifiers 0x96..0x99 x 28 targets)
         for (int first = 0x96; first <= 0x99; first++)
         {
@@ -83,11 +86,13 @@ public sealed class KeyTable : IKeyTable
     public static int MakeCombineKey(int first, int second, int mode) =>
         ((mode & 0xff) << 16) | (((first - 0x91) & 0xff) << 8) | ((second - 0x91) & 0xff);
 
+    void AddKey(int id, Key key) { keys[id] = key; byId[id] = key; }
+
     /// <summary>CKeyTable::CreateCombineKeyString (@0x141430ee0, keytable.cpp:2352-2367) + InitKeys (:639-650).</summary>
     void AddCombineKey(int first, int second, int mode)
     {
-        if (!keys.TryGetValue(first, out var f) || !keys.TryGetValue(second, out var s)) return;
-        keys[MakeCombineKey(first, second, mode)] = new Key { Name = $"{f.Name},{s.Name}" };
+        if (!byId.TryGetValue(first, out var f) || !byId.TryGetValue(second, out var s)) return;
+        AddKey(MakeCombineKey(first, second, mode), new Key { Name = $"{f.Name},{s.Name}" });
     }
 
     /// <summary>FUN_1414297e0 (:429) on DefaultKey.xml: each row fills its key's type, code and priority (the last row of a key
@@ -156,7 +161,7 @@ public sealed class KeyTable : IKeyTable
 
     public bool TryGetBinding(int key, out KeyBinding binding)
     {
-        if (keys.TryGetValue(key, out var k))
+        if (byId.TryGetValue(key, out var k))
         {
             binding = new KeyBinding(key, k.Type, k.Code, k.Slot, k.Priority);
             return true;
@@ -178,7 +183,7 @@ public sealed class KeyTable : IKeyTable
     {
         if (backup.Count == 0) return;
         foreach (var (k, b) in backup)
-            if (keys.TryGetValue(k, out var v)) { v.Type = b.Type; v.Code = b.Code; v.Slot = b.Slot; v.Priority = b.Priority; }
+            if (byId.TryGetValue(k, out var v)) { v.Type = b.Type; v.Code = b.Code; v.Slot = b.Slot; v.Priority = b.Priority; }
     }
 
     /// <summary>CKeyTable::SetKeyBindingAndSync (@0x14142b250, keytable.cpp:703-714): updates key (and its pair key) and sends mode 1 for each.</summary>
@@ -205,11 +210,11 @@ public sealed class KeyTable : IKeyTable
     /// code with no name in string table 5 are refused, and the key's pair key (left/right) gets the same binding.</summary>
     public bool SetBinding(int key, int type, long code, int slot, int priority)
     {
-        if (!keys.TryGetValue(key, out var k)) return false;
+        if (!byId.TryGetValue(key, out var k)) return false;
         if (code >= FirstQuickSlotAction && code < FirstQuickSlotAction + QuickSlotActionCount) slot = 0;     // IsQuickSlotAction
         if (k.Type == type && k.Code == code && k.Slot == slot && k.Priority == priority) return false;    // stKeyData::FUN_1414287c0
         if (code != 0 && string.IsNullOrEmpty(names.GetValueOrDefault(code.ToString(CultureInfo.InvariantCulture)))) return false;
-        foreach (var t in PairKeys.TryGetValue(key, out var pair) && keys.TryGetValue(pair, out var pk) ? new[] { k, pk } : new[] { k })
+        foreach (var t in PairKeys.TryGetValue(key, out var pair) && byId.TryGetValue(pair, out var pk) ? new[] { k, pk } : new[] { k })
         {
             t.Type = type; t.Code = code; t.Priority = priority; t.Slot = slot;
         }
@@ -261,11 +266,11 @@ public sealed class KeyTable : IKeyTable
         names = new Dictionary<string, string>(keyNames);
         for (int k = 1; k < 0xd0; k++)
             if (names.TryGetValue(k.ToString(CultureInfo.InvariantCulture), out var n) && !string.IsNullOrEmpty(n))
-                keys[k] = new Key { Name = n };
+                AddKey(k, new Key { Name = n });
     }
 
     /// <summary>IsKeyBoundToAction @0x14142cd50 (:1254): the key's binding is <paramref name="action"/> and its type is not 0.</summary>
-    public bool IsKeyBoundToAction(int key, long action) => keys.TryGetValue(key, out var k) && k.Type != 0 && k.Code == action;
+    public bool IsKeyBoundToAction(int key, long action) => byId.TryGetValue(key, out var k) && k.Type != 0 && k.Code == action;
 
     /// <summary>IsQuickSlotAction @0x14142cf10 (:1285): one of m_quickSlotActions (500001..500025, InitKeys :653).</summary>
     public static bool IsQuickSlotAction(long code) => code >= FirstQuickSlotAction && code < FirstQuickSlotAction + QuickSlotActionCount;
@@ -298,7 +303,7 @@ public sealed class KeyTable : IKeyTable
     /// </summary>
     public int GetKeySkillId(int key, ServerKeyTable slots, Func<long, bool> dynamicActionListed = null)
     {
-        if (!keys.TryGetValue(key, out var k)) return 0;
+        if (!byId.TryGetValue(key, out var k)) return 0;
         if (IsQuickSlotAction(k.Code))
         {
             int index = FindQuickSlotActionIndex(k.Code);
@@ -317,7 +322,7 @@ public sealed class KeyTable : IKeyTable
     /// </summary>
     public bool IsKeyOfSkill(int key, int skillId, ServerKeyTable slots)
     {
-        if (!keys.TryGetValue(key, out var k) || k.Type == 0 || k.Code == 0) return false;
+        if (!byId.TryGetValue(key, out var k) || k.Type == 0 || k.Code == 0) return false;
         if (IsQuickSlotAction(k.Code))
         {
             int index = FindQuickSlotActionIndex(k.Code);
@@ -360,7 +365,7 @@ public sealed class KeyTable : IKeyTable
 
     /// <summary>GetKeyName (:1339): the key's name; "" for no key. (Game pad keys build an icon string with feature 0xb5;
     /// they never carry a DefaultKey binding here.)</summary>
-    public string GetKeyName(int key) => keys.TryGetValue(key, out var k) ? k.Name : "";
+    public string GetKeyName(int key) => byId.TryGetValue(key, out var k) ? k.Name : "";
 
     /// <summary>LoadKeySettingTable (:2148): table/keySetting.xml's &lt;key&gt; rows that pass IsElementAvailable and whose
     /// locale is in the list, appended to their category's list.</summary>
