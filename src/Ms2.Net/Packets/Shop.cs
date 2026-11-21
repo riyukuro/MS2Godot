@@ -272,8 +272,7 @@ public sealed record ShopError(int Error, byte Command, int Value);
 /// <summary>
 /// Inbound 0x51 (Shop): u8 command (UIShopDialog::OnShopPacket @0x141af8710, uishopdialog.cpp:1524).
 /// 0 header, 1 normal products, 2 product buy-count update, 4 purchase result, 6 repurchase start, 7 repurchase add,
-/// 8 repurchase removal, 9 reset result, 11 merat start, 13 new start, 14 new products, 15 shop error.
-/// STILL-OPEN: command 12 (merat items, CNpcShopMeratItemBase::vfunc_2 / premium market product block) leaves only Command set.
+/// 8 repurchase removal, 9 reset result, 11 merat start, 12 merat items, 13 new start, 14 new products, 15 shop error.
 /// </summary>
 public sealed class ShopPacket {
     public int Command { get; private init; }
@@ -285,6 +284,7 @@ public sealed class ShopPacket {
     public int RemoveSerial { get; private init; }
     public ShopResetResult ResetResult { get; private init; }
     public int MeratCount { get; private init; }
+    public IReadOnlyList<ShopMeratItem> MeratItems { get; private init; }
     public ShopNewStart NewStart { get; private init; }
     public IReadOnlyList<ShopNewProduct> NewProducts { get; private init; }
     public ShopError Error { get; private init; }
@@ -316,6 +316,12 @@ public sealed class ShopPacket {
                 return new ShopPacket { Command = cmd, ResetResult = new ShopResetResult(ok, itemId, count) };
             }
             case 11: return new ShopPacket { Command = cmd, MeratCount = (ushort) r.ReadShort() };
+            case 12: {   // ReadMeratItems (uishopdialog.cpp:1722): u8 count, each CNpcShopMeratItemCli::vfunc_2
+                int n = r.ReadByte();
+                var list = new List<ShopMeratItem>(n);
+                for (int i = 0; i < n; i++) list.Add(ShopMeratItem.Read(r));
+                return new ShopPacket { Command = cmd, MeratItems = list };
+            }
             case 13: return new ShopPacket { Command = cmd, NewStart = new ShopNewStart(r.ReadInt(), r.ReadInt(), r.ReadInt(), (ushort) r.ReadShort()) };
             case 14: {
                 int n = r.ReadByte();

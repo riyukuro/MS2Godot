@@ -217,9 +217,9 @@ public class ShopPacketTests {
     }
 
     [Test] public void OtherCommandsCarryOnlyTheCommand() {
-        var w = new ByteWriter(); w.WriteByte(12); w.WriteByte(3);
+        var w = new ByteWriter(); w.WriteByte(10); w.WriteByte(3);
         var p = ShopPacket.Read(Reader(w));
-        Assert.That((p.Command, p.Info, p.Products), Is.EqualTo((12, (ShopInfo) null, (IReadOnlyList<ShopProduct>) null)));
+        Assert.That((p.Command, p.Info, p.Products), Is.EqualTo((10, (ShopInfo) null, (IReadOnlyList<ShopProduct>) null)));
     }
 
     [Test] public void MyCharacterApplyStoresSummonedPetFromFieldAddUser() {
@@ -250,5 +250,74 @@ public class ShopPacketTests {
         // invenslot.cpp:862: u8 10, u8 1, i32 itemId
         var r = new SystemShopCoinRequest(0x01020304);
         Assert.That((r.Op, WriteOut(r)), Is.EqualTo((Outbound.SystemShop, new byte[] { 10, 1, 4, 3, 2, 1 })));
+    }
+
+    // The brief block of CDBPremiumProduct (meratmarketbasketinfo.cpp:635), written field by field.
+    static void WriteBrief(ByteWriter w, int id, int type, long price) {
+        w.WriteInt(id); w.WriteByte(8); w.WriteUnicodeString("Star"); w.WriteByte((byte) type);
+        w.WriteInt(1); w.WriteInt(3); w.WriteByte(1); w.WriteByte(2); w.WriteByte(13);
+        w.WriteLong(price); w.WriteLong(price - 50); w.WriteByte(4);
+        w.WriteInt(5); w.WriteInt(6); w.WriteByte(1); w.WriteInt(9); w.WriteByte(2);
+        w.WriteShort(7); w.WriteShort(8); w.WriteInt(0xfff); w.WriteInt(20000123); w.WriteByte(3);
+        w.WriteInt(11); w.WriteInt(12); w.WriteInt(13); w.WriteInt(14);
+        w.WriteInt(901); w.WriteInt(2); w.WriteByte(1); w.WriteBool(true); w.WriteInt(77);
+    }
+
+    [Test] public void MeratItemsReadTheBriefProductThenTheDisplayOrderAndTheTwoInts() {
+        // cmd 12: ReadMeratItems (uishopdialog.cpp:1722): u8 count, each CNpcShopMeratItemCli::vfunc_2 (npcshopproductbase.cpp:556)
+        var w = new ByteWriter(); w.WriteByte(12); w.WriteByte(2);
+        WriteBrief(w, 1001, 2, 500); w.WriteByte(4); w.WriteInt(31); w.WriteInt(32);
+        WriteBrief(w, 1002, 1, 900);    // type 1: the bundle children (ReadSubProducts), one absent, none present
+        w.WriteByte(2); w.WriteByte(0); w.WriteByte(0);
+        w.WriteByte(5); w.WriteInt(41); w.WriteInt(42);
+        var r = Reader(w);
+        var p = ShopPacket.Read(r);
+        Assert.That(r.Available, Is.EqualTo(0));
+        Assert.That(p.Command, Is.EqualTo(12));
+        Assert.That(p.MeratItems, Has.Count.EqualTo(2));
+        var a = p.MeratItems[0];
+        Assert.That((a.Product.Id, a.Product.Name, a.Product.Type, a.Product.Currency, a.Product.Price, a.Product.SalePrice, a.Product.ItemId),
+            Is.EqualTo((1001, "Star", 2, 13, 500L, 450L, 20000123)));
+        Assert.That((a.Product.AchieveId, a.Product.AchieveGrade, a.Product.PointPrice, a.Product.Point), Is.EqualTo((901, 2, true, 77)));
+        Assert.That((a.DisplayOrder, a.ExtraA, a.ExtraB), Is.EqualTo((4, 31, 32)));
+        Assert.That((p.MeratItems[1].Product.Id, p.MeratItems[1].DisplayOrder, p.MeratItems[1].ExtraB), Is.EqualTo((1002, 5, 42)));
+    }
+
+    [Test] public void MeratBundleChildrenAreFullProducts() {
+        // ReadSubProducts (meratmarketbasketinfo.cpp:1486): u8 count, per child u8 exists + CDBPremiumProduct::Read (:530)
+        var w = new ByteWriter(); w.WriteByte(12); w.WriteByte(1);
+        WriteBrief(w, 2001, 1, 100);
+        w.WriteByte(1); w.WriteByte(1);
+        w.WriteInt(3001); w.WriteByte(8); w.WriteUnicodeString("Child"); w.WriteByte(2);
+        w.WriteInt(1); w.WriteInt(21); w.WriteInt(3); w.WriteByte(1); w.WriteByte(2); w.WriteByte(13);
+        w.WriteLong(40); w.WriteLong(30); w.WriteByte(4); w.WriteLong(111); w.WriteLong(222);
+        w.WriteInt(5); w.WriteInt(6); w.WriteByte(1); w.WriteInt(9); w.WriteByte(2);
+        w.WriteShort(7); w.WriteShort(8); w.WriteInt(0xfff); w.WriteInt(20000456); w.WriteByte(3);
+        w.WriteInt(11); w.WriteInt(12); w.WriteInt(13); w.WriteInt(14); w.WriteInt(15); w.WriteByte(16); w.WriteInt(17);
+        w.WriteString("cat"); w.WriteString("icon"); w.WriteBool(false); w.WriteByte(1); w.WriteInt(104); w.WriteBool(true);
+        w.WriteInt(901); w.WriteInt(2); w.WriteInt(100); w.WriteByte(1); w.WriteBool(false); w.WriteInt(0);
+        w.WriteBool(true); w.WriteString("ev"); w.WriteLong(1); w.WriteLong(2);   // an event period
+        w.WriteByte(9); w.WriteUnicodeString("http://x"); w.WriteBool(true);
+        w.WriteByte(3); w.WriteInt(61); w.WriteInt(62);   // the parent's display order and the two ints
+        var r = Reader(w);
+        var m = ShopPacket.Read(r).MeratItems[0];
+        Assert.That(r.Available, Is.EqualTo(0));
+        Assert.That(m.Product.Sub, Has.Count.EqualTo(1));
+        var c = m.Product.Sub[0];
+        Assert.That((c.Id, c.Name, c.ChartOrder, c.StartDate, c.EndDate, c.ItemId, c.LimitCount, c.Category, c.Icon),
+            Is.EqualTo((3001, "Child", 21, 111L, 222L, 20000456, 15, "cat", "icon")));
+        Assert.That((c.EventCategory, c.EventStart, c.EventEnd, c.Url, c.Field168), Is.EqualTo(("ev", 1L, 2L, "http://x", true)));
+        Assert.That((m.DisplayOrder, m.ExtraA, m.ExtraB), Is.EqualTo((3, 61, 62)));
+    }
+
+    [Test] public void MeratLimitedChildrenReadIntoTheLimitList() {
+        // ReadLimitProducts (meratmarketbasketinfo.cpp:1524): type 3 reads the limit list, no sub list
+        var w = new ByteWriter(); w.WriteByte(12); w.WriteByte(1);
+        WriteBrief(w, 4001, 3, 100); w.WriteByte(0);
+        w.WriteByte(1); w.WriteInt(1); w.WriteInt(2);
+        var r = Reader(w);
+        var m = ShopPacket.Read(r).MeratItems[0];
+        Assert.That(r.Available, Is.EqualTo(0));
+        Assert.That((m.Product.Sub.Count, m.Product.Limit.Count, m.DisplayOrder), Is.EqualTo((0, 0, 1)));
     }
 }
