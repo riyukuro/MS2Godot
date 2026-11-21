@@ -331,6 +331,29 @@ public class MessageBoxTests
     }
 
     [Test]
+    public void GuildInviteShowsItsBoxAndAnswers()
+    {
+        var answers = new List<bool>();
+        var invite = new Ms2.Net.Packets.GuildInviteInfo { GuildId = 9, GuildName = "Guildy", Inviter = "Inviter", Invitee = "Me" };
+        var (h, c) = Load();
+        c.AnswerGuildInvite = answers.Add;
+        var box = GuildInviteBox.Show(invite);
+        h.Player.Tick();
+        Assert.That(c.CurrentBox, Is.SameAs(box));
+        Assert.That((box.Type, box.Extra, box.Listener), Is.EqualTo((1, "guildinvite", (IMessageBoxListener)null)));
+        Assert.That((box.Modaless, box.NoInputBlock, box.EnterAllowed), Is.EqualTo((true, true, false)));
+        Assert.That((box.HasTimer, box.Timer.Sec, box.Timer.ShowFormat), Is.EqualTo((true, 0x14, 1)));
+        Assert.That(box.Msg, Does.Contain("Inviter").And.Contain("Guildy"), "common 0x38c with the inviter and the guild");
+        TestContext.WriteLine("guild invite: " + box.Msg);
+        Click(h, "m_button1");
+        Assert.That(answers, Is.EqualTo(new[] { false }), "no declines");
+        Assert.That(c.IsIdle, Is.True);
+        GuildInviteBox.Show(invite);
+        Click(h, "m_button0");
+        Assert.That(answers, Is.EqualTo(new[] { false, true }), "yes accepts");
+    }
+
+    [Test]
     public void TheBoxCountdownKeepsItsSecondsLeft()
     {
         long now = 1000;

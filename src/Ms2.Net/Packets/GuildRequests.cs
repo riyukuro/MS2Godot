@@ -59,6 +59,12 @@ public sealed record GuildListRequestsRequest : IOutPacket {
     public void Write(ByteWriter w) => w.WriteByte(0x55);
 }
 
+/// <summary>SendGuildMode5 (@0x1413b74f0, :484): answer the invite received (u8 5, the invite as read, u8 accept).</summary>
+public sealed record GuildInviteAnswerRequest(GuildInviteInfo Invite, bool Accept) : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) { w.WriteByte(5); Invite.Write(w); w.WriteByte(Accept ? (byte)1 : (byte)0); }
+}
+
 /// <summary>SendGuildMode7 (@0x1413b75a0): leave the guild (u8 7, no body). The client sends it only from a member who
 /// is not the master.</summary>
 public sealed record GuildLeaveRequest : IOutPacket {

@@ -167,4 +167,22 @@ public class GuildPacketTests {
         var m = GuildMessage.Read(R(w => { w.WriteByte(0x44); w.WriteByte(1); w.WriteInt(0x204); }));
         Assert.That((m.Type, m.Focus, m.Value), Is.EqualTo(((byte)0x44, 1, 0x204)));
     }
+
+    [Test]
+    public void TheInviteTypesReadAndTheAnswerWritesTheInviteBack() {
+        // CGuildInviteInfo::ReadStream (@0x1404c9230): i64, the guild name, the mark (A), the inviter, the invitee
+        static void Invite(ByteWriter w) { w.WriteLong(5); w.WriteUnicodeString("Gd"); w.WriteUnicodeString("mk"); w.WriteUnicodeString("Ma"); w.WriteUnicodeString("Me"); }
+        var got = GuildMessage.Read(R(w => { w.WriteByte(4); Invite(w); }));
+        Assert.That((got.Type, got.Invite.GuildId, got.Invite.GuildName, got.Invite.Mark, got.Invite.Inviter, got.Invite.Invitee),
+            Is.EqualTo(((byte)4, 5L, "Gd", "mk", "Ma", "Me")));
+        var result = GuildMessage.Read(R(w => { w.WriteByte(5); Invite(w); w.WriteByte(1); }));
+        Assert.That((result.Invite.GuildName, result.Result), Is.EqualTo(("Gd", 1)));
+        var sent = GuildMessage.Read(R(w => { w.WriteByte(3); w.WriteUnicodeString("Gd"); }));
+        Assert.That((sent.Type, sent.Name), Is.EqualTo(((byte)3, "Gd")));
+        var refused = GuildMessage.Read(R(w => { w.WriteByte(6); w.WriteUnicodeString("Me"); w.WriteByte(0); w.WriteByte(2); }));
+        Assert.That((refused.Name, refused.Accepted, refused.Reason), Is.EqualTo(("Me", false, 2)));
+        // SendGuildMode5: u8 5, the invite as read, u8 accept
+        Assert.That(Bytes(new GuildInviteAnswerRequest(got.Invite, true)),
+            Is.EqualTo(Cat(new byte[] { 5 }, Id5, Str("Gd"), Str("mk"), Str("Ma"), Str("Me"), new byte[] { 1 })));
+    }
 }

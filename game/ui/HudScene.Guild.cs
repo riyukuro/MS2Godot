@@ -36,6 +36,7 @@ public partial class HudScene
         book.CreateMinLevel = t.GuildCreateMinLevel;
         book.Level = () => hudModel.HasLocalPlayer ? hudModel.Player.Level : null;
         book.PlayerName = () => hudModel.HasLocalPlayer ? hudModel.Player.Name : null;
+        book.RefuseInvite = () => GameOptions.AccountCommunity.DisableGuildRequest;    // m_refuseGuildInvite, flag 5
         var checker = CommunityChecker();
         book.CheckName = name => checker.CheckGuildName(name, t.GuildNameLengthMin, t.GuildNameLengthMax, out var msg) == 0 ? null : msg ?? "";
         book.CheckContent = text => checker.CheckContentText(text, out var msg) == 0 ? null : msg ?? "";
@@ -66,10 +67,13 @@ public partial class HudScene
         book.ChatLine += Chat;
         book.Box += Box;
         book.Sound += Sound;
+        void InviteBox(Ms2.Net.Packets.GuildInviteInfo invite) => GuildInviteBox.Show(invite);
         book.DialogClose += CloseDialog;
+        book.InviteBox += InviteBox;
         unwatchGuild = () =>
         {
             book.Notice -= Notice; book.ChatLine -= Chat; book.Box -= Box; book.Sound -= Sound; book.DialogClose -= CloseDialog;
+            book.InviteBox -= InviteBox;
             guildWatched = false;
         };
     }

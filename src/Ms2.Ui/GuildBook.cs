@@ -10,8 +10,8 @@ namespace Ms2.Ui;
 /// client's UI calls come out as events. The not-in-guild side: the guild id, this character's join requests
 /// (m_joinRequestsForChar), the search results and the search propensity (m_468). The in-guild side: the guild info, the
 /// join requests sent to the guild (m_joinRequestsForGuild), the members and the propensity (type 0x44); the member
-/// sends (invite, expel, grade, master, notice, memo, propensity). STILL-OPEN: the invite received (m_invite), the other
-/// sends (attend, donate, the grade edit, the PvP, the house) and the rest of the in-guild updates; the guild name tag (s2c 0x4d, FUN_1413c7700 guildmanager.cpp:3108: the name shown over
+/// sends (invite, expel, grade, master, notice, memo, propensity); the invite received (m_invite) and its answer. STILL-OPEN:
+/// the other sends (attend, donate, the grade edit, the PvP, the house) and the rest of the in-guild updates; the guild name tag (s2c 0x4d, FUN_1413c7700 guildmanager.cpp:3108: the name shown over
 /// a player), which the server also sends after a leave or disband to clear the own tag — not read, so the own tag keeps
 /// the guild name until a relogin; the game menu's guild badge (UIGameMenuDialog::FUN_1419381c0, the notify count of
 /// GetGuildNotificationCount: the check-in and the requests for the guild).
@@ -42,6 +42,12 @@ public sealed class GuildBook
     public Func<int?> Level = () => null;
     /// <summary>The local player's name (CGuildManager::GetMyName), or null without a local player.</summary>
     public Func<string> PlayerName = () => null;
+    /// <summary>Unk_GuildClientOptions::m_refuseGuildInvite (the community option disableGuildRequest): an invite received
+    /// is refused at once.</summary>
+    public Func<bool> RefuseInvite = () => false;
+    /// <summary>The local player's GetPvPInfo()->HasPoint(): an invite received is refused at once. STILL-OPEN: the HUD has
+    /// no PvP state yet, so false (as for the party invite).</summary>
+    public Func<bool> PvpPoint = () => false;
     /// <summary>Client::Constants GuildNameLengthMin and GuildCreateMinLevel.</summary>
     public int NameLengthMin = 2, CreateMinLevel;
 
@@ -53,6 +59,9 @@ public sealed class GuildBook
     public event Action<string> Sound;
     /// <summary>ShowMessageBox(text, 0, null, ""): a message box.</summary>
     public event Action<string> Box;
+    /// <summary>The invite box of type 4 (FUN_1413bdbb0): a yes / no box of FormatStringId(0x38c, inviter, guild name), tag
+    /// "guildinvite"; see GuildInviteBox.</summary>
+    public event Action<GuildInviteInfo> InviteBox;
     /// <summary>CloseDialog(0x4e4f): the guild dialog closes.</summary>
     public event Action DialogClose;
     /// <summary>The open guild dialog's FUN_14196d0c0(page): the search result page again (0 keeps the page).</summary>
@@ -121,9 +130,22 @@ public sealed class GuildBook
     /// <summary>IsInGuild (@0x1413b6160): the guild id above 0 (unsigned).</summary>
     public bool InGuild => GuildId != 0;
 
-    /// <summary>HasGuildInvite (@0x1413b61a0): not in a guild and m_invite set. STILL-OPEN: the invite (type 5,
-    /// OnPacketInviteResult) is not read, so never.</summary>
-    public bool HasInvite => false;
+    /// <summary>m_invite: the last invite received (type 4) to this character, until its result (type 5) clears it.</summary>
+    public GuildInviteInfo ReceivedInvite { get; private set; }
+
+    /// <summary>HasGuildInvite (@0x1413b61a0): not in a guild and m_invite set.</summary>
+    public bool HasInvite => !InGuild && ReceivedInvite != null;
+
+    /// <summary>ClearGuildInvite (@0x1413b6110).</summary>
+    public void ClearInvite() => ReceivedInvite = null;
+
+    /// <summary>SendGuildMode5 (@0x1413b74f0, :484): the answer to the invite, sent only outside a guild with an invite. The
+    /// invite stays until its result (type 5).</summary>
+    public void AnswerInvite(bool accept)
+    {
+        if (InGuild || !HasInvite) return;
+        Send(new GuildInviteAnswerRequest(ReceivedInvite, accept));
+    }
 
     /// <summary>GetSearchPropensity / SetSearchPropensity (guildmanager.h:116): m_468, 0 in the ctor.</summary>
     public int SearchPropensity { get; set; }
@@ -211,6 +233,42 @@ public sealed class GuildBook
                 ResetGuild();
                 Box?.Invoke(Common(0x38a));
                 DialogClose?.Invoke();
+                break;
+            case 3:
+                // FUN_1413bdaf0 (@0x1413bdaf0): the invite went out, the box FormatStringId(0x38b, guild name).
+                Box?.Invoke(ClientFormat.Format(Common(0x38b), m.Name));
+                break;
+            case 4:
+            {
+                // FUN_1413bdbb0 (:1587): in a guild, ignored; an invite to another name (IsEqualNoCase with GetMyName) is
+                // dropped; the refuse option or a PvP point answer no at once; else the box, then the sound.
+                if (InGuild) break;
+                ReceivedInvite = m.Invite;
+                if (!string.Equals(ReceivedInvite?.Invitee, PlayerName() ?? "", StringComparison.OrdinalIgnoreCase)) { ReceivedInvite = null; break; }
+                if (RefuseInvite() || PvpPoint()) { AnswerInvite(false); break; }
+                InviteBox?.Invoke(ReceivedInvite);
+                Sound?.Invoke("System_GuildInvitation");
+                break;
+            }
+            case 5:
+                // OnPacketInviteResult (@0x1413be020): a result of 1 is the line 0x38f and CloseDialog(0x4e4f), else the line
+                // 0x390, both of the invite's guild name; then ClearGuildInvite.
+                if (m.Result == 1)
+                {
+                    ChatLine?.Invoke(ClientFormat.Format(Common(0x38f), m.Invite.GuildName), 0xd);
+                    DialogClose?.Invoke();
+                }
+                else ChatLine?.Invoke(ClientFormat.Format(Common(0x390), m.Invite.GuildName), 0xd);
+                ClearInvite();
+                break;
+            case 6:
+                // FUN_1413be150 (@0x1413be150): the inviter's side; a refusal is the line 0x392 / 0x393 / 0x394 of the name by
+                // its reason, an empty line (none shown) for another reason.
+                if (!m.Accepted)
+                {
+                    int id = m.Reason switch { 1 => 0x392, 2 => 0x393, 3 => 0x394, _ => 0 };
+                    ChatLine?.Invoke(id == 0 ? "" : ClientFormat.Format(Common(id), m.Name), 0xd);
+                }
                 break;
             case 7:
                 // FUN_1413be350 (@0x1413be350): no body; the guild is gone, the dialog closes and the line 0x395 names the

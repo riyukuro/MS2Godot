@@ -96,6 +96,29 @@ public sealed class GuildJoinRequest {
 }
 
 /// <summary>
+/// A guild invite, CGuildInviteInfo (ReadStream @0x1404c9230, Write @0x1404c9160, commonfiles/guilddef_1.cpp:572): i64 the
+/// guild id (f18), the guild name (f20), the mark (f28, ReadUnicodeStringA; CGuildInfo::FUN_1404ccdb0 when the server
+/// fills it), the inviter's name (f30) and the invitee's name (f38).
+/// </summary>
+public sealed class GuildInviteInfo {
+    public long GuildId;            // f18
+    public string GuildName = "";   // f20
+    public string Mark = "";        // f28
+    public string Inviter = "";     // f30
+    public string Invitee = "";     // f38
+
+    public static GuildInviteInfo Read(ByteReader r) => new() {
+        GuildId = r.ReadLong(), GuildName = r.ReadUnicodeString(), Mark = r.ReadUnicodeString(),
+        Inviter = r.ReadUnicodeString(), Invitee = r.ReadUnicodeString(),
+    };
+
+    public void Write(ByteWriter w) {
+        w.WriteLong(GuildId); w.WriteUnicodeString(GuildName); w.WriteUnicodeString(Mark);
+        w.WriteUnicodeString(Inviter); w.WriteUnicodeString(Invitee);
+    }
+}
+
+/// <summary>
 /// Guild (0x8A): u8 type, then per type:
 /// <list type="bullet">
 /// <item>0 OnPacketGuildInfo (@0x1413bd680): CGuildInfo::Read (commonfiles/guilddef_1.cpp:1232), whose first field is the
@@ -116,6 +139,10 @@ public sealed class GuildJoinRequest {
 /// <see cref="GuildMember.Read"/> of the member (mode 3: the whole record).</item>
 /// <item>0x13 OnPacketMemberLeft (@0x1413bfe50): the name.</item>
 /// <item>2 FUN_1413bda00: u8 result (0 = disbanded).</item>
+/// <item>3 FUN_1413bdaf0: the guild name (the invite went out).</item>
+/// <item>4 FUN_1413bdbb0 (:1587): a <see cref="GuildInviteInfo"/> (the invite received).</item>
+/// <item>5 OnPacketInviteResult (@0x1413be020): a <see cref="GuildInviteInfo"/>, u8 the result (1 = joined).</item>
+/// <item>6 FUN_1413be150: the invitee's name, u8 accepted, u8 the reason of a refusal.</item>
 /// <item>7 FUN_1413be350: no body.</item>
 /// <item>0x44 FUN_1413bf2a0 (guildmanager.cpp:1855): u8 the propensity focus, i32 its value (CGuildInfo f154 / f158).</item>
 /// </list>
@@ -126,9 +153,9 @@ public sealed record GuildMessage(byte Type) {
     public long GuildId { get; init; }
     /// <summary>Type 0: the guild as far as it could be read (null when the packet holds only the id).</summary>
     public GuildInfo Info { get; init; }
-    /// <summary>Types 1 and 2: the result (0 = created / disbanded).</summary>
+    /// <summary>Types 1 and 2: the result (0 = created / disbanded); type 5: 1 when the invite was joined.</summary>
     public int Result { get; init; }
-    /// <summary>Types 1, 0x52, 0x53, 0x30, 0x2f (the requestor), 0x12 (the inviter), 0x13: the name.</summary>
+    /// <summary>Types 1, 3, 6 (the invitee), 0x52, 0x53, 0x30, 0x2f (the requestor), 0x12 (the inviter), 0x13: the name.</summary>
     public string Name { get; init; } = "";
     /// <summary>Types 0x30, 0x2e and 0x2f: the request id.</summary>
     public long RequestId { get; init; }
@@ -143,7 +170,7 @@ public sealed record GuildMessage(byte Type) {
     public IReadOnlyList<GuildJoinRequestForGuild> GuildRequests { get; init; } = Array.Empty<GuildJoinRequestForGuild>();
     /// <summary>Type 0x2d: the one request that arrived.</summary>
     public GuildJoinRequestForGuild NewRequest { get; init; }
-    /// <summary>Types 0x2f and 0x54: the answer.</summary>
+    /// <summary>Types 6, 0x2f and 0x54: the answer.</summary>
     public bool Accepted { get; init; }
     /// <summary>Types 0x2f, 0x54 and 0x12: the applicant's (the new member's) name.</summary>
     public string Applicant { get; init; } = "";
@@ -154,6 +181,10 @@ public sealed record GuildMessage(byte Type) {
     /// <summary>Type 0x44: the guild's propensity focus (f154) and value (f158).</summary>
     public int Focus { get; init; }
     public int Value { get; init; }
+    /// <summary>Types 4 and 5: the invite.</summary>
+    public GuildInviteInfo Invite { get; init; }
+    /// <summary>Type 6: the reason of a refusal (1 to 3 have a line).</summary>
+    public int Reason { get; init; }
 
     public static GuildMessage Read(ByteReader r) {
         byte t = r.ReadByte();
@@ -200,6 +231,10 @@ public sealed record GuildMessage(byte Type) {
             }
             case 0x13: return new(t) { Name = r.ReadUnicodeString() };
             case 2: return new(t) { Result = r.ReadByte() };
+            case 3: return new(t) { Name = r.ReadUnicodeString() };
+            case 4: return new(t) { Invite = GuildInviteInfo.Read(r) };
+            case 5: return new(t) { Invite = GuildInviteInfo.Read(r), Result = r.ReadByte() };
+            case 6: return new(t) { Name = r.ReadUnicodeString(), Accepted = r.ReadByte() == 1, Reason = r.ReadByte() };
             case 0x44: return new(t) { Focus = r.ReadByte(), Value = r.ReadInt() };
             default: return new(t);
         }

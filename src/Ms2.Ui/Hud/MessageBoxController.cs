@@ -237,6 +237,9 @@ public sealed class MessageBoxController : UiController
     /// <summary>CPartyManager::SendPartyMode2(answer): HandlePartyinviteButton's answer to the last invite.</summary>
     public Action<int> AnswerPartyInvite;
 
+    /// <summary>CGuildManager::SendGuildMode5(accept): HandleGuildinviteButton's answer to the invite received.</summary>
+    public Action<bool> AnswerGuildInvite;
+
     /// <summary>HandleRequestTradeExButton @0x1419fbc40 (uimessagebox.cpp:1503): the trade request box's answer, its argument 0
     /// (the requester's id, FUN_141a02f10(0, 0)) and yes (button 0) to FUN_14185b8e0.</summary>
     public Action<long, bool> RequestTradeAnswer;
@@ -461,6 +464,8 @@ public sealed class MessageBoxController : UiController
             return HandleUseBindGemEquipItemButton(button);
         if (tag.StartsWith(PartyInviteBox.Tag, StringComparison.Ordinal))   // strTag.Find("partyinvite") == 0
             return HandlePartyinviteButton(button);
+        if (tag == GuildInviteBox.Tag)
+            return HandleGuildinviteButton(button);
         if (tag == "requestTradeEx")
             return HandleRequestTradeExButton(button);
         if (tag == "sell")
@@ -493,6 +498,14 @@ public sealed class MessageBoxController : UiController
             else if (data != null && data.Timer.Button != 0) result = Ms2.Net.Packets.PartyInviteAnswer.TimedOut;
         }
         AnswerPartyInvite?.Invoke(result);
+        return true;
+    }
+
+    /// <summary>HandleGuildinviteButton @0x1419fba00 (uimessagebox.cpp:1342): button 0 accepts, any other (the countdown's
+    /// too) declines; 1.</summary>
+    bool HandleGuildinviteButton(int button)
+    {
+        AnswerGuildInvite?.Invoke(button == 0);
         return true;
     }
 

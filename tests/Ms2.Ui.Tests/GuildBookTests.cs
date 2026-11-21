@@ -304,4 +304,60 @@ public class GuildBookTests {
         b.SetPropensity(0, 0x204);
         Assert.That(sent.Single(), Is.EqualTo(new GuildPropensityRequest(0, 0x204)));
     }
+
+    [Test]
+    public void TheInviteReceivedShowsItsBoxOrIsRefusedAndItsResultClearsIt() {
+        var sent = new List<IOutPacket>(); var lines = new List<string>(); var boxes = new List<string>(); var sounds = new List<string>();
+        var b = Book(sent, new List<string>());
+        b.PlayerName = () => "Me";
+        b.ChatLine += (t, _) => lines.Add(t);
+        b.Box += boxes.Add;
+        b.Sound += sounds.Add;
+        var shown = new List<GuildInviteInfo>();
+        b.InviteBox += shown.Add;
+        int closed = 0;
+        b.DialogClose += () => closed++;
+        var other = new GuildInviteInfo { GuildId = 9, GuildName = "Gd", Inviter = "Ma", Invitee = "You" };
+        b.Apply(new GuildMessage(4) { Invite = other });          // another name: dropped
+        Assert.That((b.HasInvite, shown.Count), Is.EqualTo((false, 0)));
+        b.AnswerInvite(true);                                     // no invite: no send
+        Assert.That(sent, Is.Empty);
+        var mine = new GuildInviteInfo { GuildId = 9, GuildName = "Gd", Inviter = "Ma", Invitee = "ME" };
+        b.Apply(new GuildMessage(4) { Invite = mine });           // IsEqualNoCase
+        Assert.That((b.HasInvite, shown.Single(), sounds.Single()), Is.EqualTo((true, mine, "System_GuildInvitation")));
+        b.AnswerInvite(true);
+        Assert.That(sent.Single(), Is.EqualTo(new GuildInviteAnswerRequest(mine, true)));
+        Assert.That(b.HasInvite, Is.True, "kept until the result");
+        b.Apply(new GuildMessage(5) { Invite = mine, Result = 1 });
+        Assert.That((b.HasInvite, lines.Last(), closed), Is.EqualTo((false, "c38f", 1)));
+        b.Apply(new GuildMessage(5) { Invite = mine, Result = 0 });
+        Assert.That(lines.Last(), Is.EqualTo("c390"));
+
+        sent.Clear();
+        b.RefuseInvite = () => true;                              // the refuse option answers no at once
+        b.Apply(new GuildMessage(4) { Invite = mine });
+        Assert.That((sent.Single(), shown.Count), Is.EqualTo((new GuildInviteAnswerRequest(mine, false), 1)));
+        b.RefuseInvite = () => false;
+        b.PvpPoint = () => true;
+        b.Apply(new GuildMessage(4) { Invite = mine });
+        Assert.That((sent.Count, shown.Count), Is.EqualTo((2, 1)));
+
+        b.Apply(new GuildMessage(3) { Name = "Gd" });
+        Assert.That(boxes.Single(), Is.EqualTo("c38b"));
+        b.Apply(new GuildMessage(6) { Name = "Me", Accepted = false, Reason = 3 });
+        Assert.That(lines.Last(), Is.EqualTo("c394"));
+        int n = lines.Count;
+        b.Apply(new GuildMessage(6) { Name = "Me", Accepted = true, Reason = 3 });
+        Assert.That(lines.Count, Is.EqualTo(n), "an accept has no line");
+    }
+
+    [Test]
+    public void AnInviteReceivedInAGuildIsIgnored() {
+        var sent = new List<IOutPacket>();
+        var b = InGuild(sent, new List<string>());
+        var shown = 0;
+        b.InviteBox += _ => shown++;
+        b.Apply(new GuildMessage(4) { Invite = new GuildInviteInfo { Invitee = "Ma" } });
+        Assert.That((b.ReceivedInvite, shown, sent.Count), Is.EqualTo(((GuildInviteInfo)null, 0, 0)));
+    }
 }
