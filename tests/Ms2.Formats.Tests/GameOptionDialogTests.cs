@@ -621,7 +621,6 @@ public class GameOptionDialogTests
     public void AgreementAnswerIsSentOnSave()
     {
         var h = new FakeHost();
-        h.Agreement.SetFlagsAndRefresh(0);
         var p = ShowAgreement(h);
         Assert.That(h.T.Selected["m_sendLogDeny"], Is.True, "nothing agreed shows deny");
         h.T.Selected["m_sendLogAgree"] = true; h.T.Selected["m_sendLogDeny"] = false;
@@ -636,28 +635,28 @@ public class GameOptionDialogTests
     }
 
     [Test]
-    public void AgreementNeverReadFromTheServerSendsNothing()
+    public void AgreementSaveOnANeverFilledWordSendsTheAnswer()
     {
-        // the stored word is only 0 because nothing filled it: a denial would overwrite the player's answer
+        // nothing fills the stored word on this service (region 0): group 0 is never agreed, so every Save sends
         var h = new FakeHost();
         var p = ShowAgreement(h);
         h.T.Selected["m_sendLogDeny"] = true; h.T.Selected["m_sendLogAgree"] = false;
         p.ReadControls();
         p.Save();
-        Assert.That(h.Log.Any(l => l.StartsWith("agreement")), Is.False);
-        Assert.That(h.Agreement.Known, Is.False);
-        h.Agreement.SetFlagsAndRefresh(2);
-        h.T.Selected["m_sendLogDeny"] = true; h.T.Selected["m_sendLogAgree"] = false;
+        Assert.That(h.Log, Does.Contain("agreement 4 4"));
+        Assert.That(h.Agreement.Flags, Is.EqualTo(4u), "the stored word takes the page copy after the send");
+        h.Log.Clear();
+        h.T.Selected["m_sendLogAgree"] = true; h.T.Selected["m_sendLogDeny"] = false;
         p.ReadControls();
         p.Save();
-        Assert.That(h.Log, Does.Contain("agreement 4 4"), "once read, the change goes out");
+        Assert.That(h.Log, Does.Contain("agreement 2 2"));
+        Assert.That(h.Agreement.Flags, Is.EqualTo(2u));
     }
 
     [Test]
     public void AgreementDenySendsMode4AndAnUnchangedAnswerSendsNothing()
     {
         var h = new FakeHost();
-        h.Agreement.SetFlagsAndRefresh(0);
         var p = ShowAgreement(h);
         h.T.Selected["m_sendLogDeny"] = true; h.T.Selected["m_sendLogAgree"] = false;
         p.ReadControls();

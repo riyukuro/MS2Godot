@@ -1174,13 +1174,10 @@ public sealed class AgreementOptionPage : OptionPage
         Host.RefreshAgreementReminders();
     }
 
-    /// <summary>@0x140a461f0: when the answer or group 0's agreement differs from the stored one, the stored agreement takes
-    /// the page copy and the answer goes to the server. While the stored word was never read from the server
-    /// (<see cref="PersonalInfoAgreement.Known"/>) the comparison would be against 0 and could send a denial for a player who
-    /// agreed, so nothing is sent.
-    /// STILL-OPEN: the client fills the stored word at spawn (scenestategame.cpp:11161-11168: SetFlagsAndRefresh with the own
-    /// character's platform data, region 3 only); the Korean wire carries no such word (Party.cs reads m_330 as a string and a
-    /// long), so on this service nothing sets it and this page sends nothing.
+    /// <summary>@0x140a461f0 (no region gate): when the answer or group 0's agreement differs from the stored one, the stored
+    /// agreement takes the page copy and the answer goes to the server. The stored word is filled from the server only for
+    /// region 3 (scenestategame.cpp:11161-11168, SetFlagsAndRefresh); on the Korean service nothing fills it, so it stays 0,
+    /// group 0 is never agreed and every Save sends mode 2 (agree) or 4 (deny), as the client does.
     /// STILL-OPEN: CPersonalInfoAgreement::FUN_141262090 (@0x141262090, gameoptionstruct.cpp:3503-3518, the reminders) and
     /// OpenLink (:3597, the detail page) are not ported; the host members are empty. MyPC::SendHouseSetting (mypc.cpp:4385-4396)
     /// sends the same 0xC0 and is not ported either.</summary>
@@ -1188,7 +1185,6 @@ public sealed class AgreementOptionPage : OptionPage
     {
         base.Save();
         var stored = Host.Agreement;
-        if (!stored.Known) return;
         if (State.Agree != stored.Agree || !stored.HasGroupAgreement(0))
         {
             int mode = State.Agree ? 2 : 4;

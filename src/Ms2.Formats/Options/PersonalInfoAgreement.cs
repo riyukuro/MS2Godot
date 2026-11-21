@@ -9,10 +9,6 @@ public sealed class PersonalInfoAgreement
     public bool Agree;
     /// <summary>m_nFlags (+4).</summary>
     public uint Flags;
-    /// <summary>True once the server's flag word was taken (<see cref="SetFlagsAndRefresh"/>). The client fills the stored
-    /// agreement only from the own character's data when it spawns (scenestategame.cpp:11161-11168, region 3 only), so a
-    /// stored agreement that was never filled holds 0, not the player's answer.</summary>
-    public bool Known;
 
     public bool HasFlag(uint mask) => (Flags & mask) != 0;
 
@@ -38,7 +34,6 @@ public sealed class PersonalInfoAgreement
     public void SetFlagsAndRefresh(uint flags)
     {
         Flags = flags;
-        Known = true;
         RefreshAgree();
     }
 
