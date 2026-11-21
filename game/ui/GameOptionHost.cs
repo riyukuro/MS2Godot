@@ -159,7 +159,8 @@ public sealed class GameOptionHost : IGameOptionDialogHost
         AgreementReminder?.Invoke(show);
         Dialog?.SetAgreementRedCircle(show);
     }
-    public void OpenAgreementDetail() => GD.Print("options: the agreement detail page is not available");
+    /// <summary>CGameOptionPersonalInfoAgreement::vfunc_5 "OnDetail" (@0x140a45e50): OpenLink of the PersonalInfoAgreementURL constant.</summary>
+    public void OpenAgreementDetail() => WebBrowser.Navigate(Ms2.Ui.FeatureElements.Constants(packs).String("PersonalInfoAgreementURL", ""));
 
     public GameOption Options => GameOptions.Current;
     public ScreenModes Modes => ScreenMode.Modes;

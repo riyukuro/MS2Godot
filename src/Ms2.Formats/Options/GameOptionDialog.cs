@@ -1223,8 +1223,8 @@ public sealed class AgreementOptionPage : OptionPage
     /// FUN_141262090 (@0x141262090, gameoptionstruct.cpp:3503-3518) is the host's RefreshAgreementReminders (the menu icons'
     /// red circles included). The host's HasTutorial hook is its first check (WorldService::HasTutorial, the field's tutorialType).
     /// The call at scene entry (SetFlagsAndRefresh, scenestategame.cpp:11161-11168) needs DAT_143ab0248 == 3 (China) and is not made
-    /// on the Korean service. STILL-OPEN: OpenLink (:3597) navigates UIWebBrowserBase 0x4e6a, which this client has not got, so the host's
-    /// detail member is empty; MyPC::SendHouseSetting (mypc.cpp:4385-4396) sends the same 0xC0 after a RequestCube 0x18 packet that
+    /// on the Korean service. OpenLink (:3597) navigates UIWebBrowserBase 0x4e6a; the host opens
+    /// the PersonalInfoAgreementURL constant in the system browser (WebPage). STILL-OPEN: MyPC::SendHouseSetting (mypc.cpp:4385-4396) sends the same 0xC0 after a RequestCube 0x18 packet that
     /// Ms2.Net does not have yet (no layout guessed).</summary>
     public override void Save()
     {

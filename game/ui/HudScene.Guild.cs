@@ -125,7 +125,7 @@ public partial class HudScene
             };
             c.MemberPopupRequested += (x, y, member) => EnsurePopupMenu().OpenForGuildMember(x, y, member);   // PopUpMenuFromGuildMember
             c.RankingRequested += category => GD.Print($"guild: the ranking dialog (0x4f24, category {category}) is not in this HUD");
-            c.RankPageRequested += url => GD.Print($"guild: the web page (0x4e6a, {url}) is not in this HUD");
+            c.RankPageRequested += WebBrowser.Navigate;
             c.PopupRequested += (x, y, name) => GD.Print($"guild: master popup for {name} (0x4e39 is not in this HUD)");
             c.Unloaded += () => { guildMovie?.Host.Unload(); guildMovie?.QueueFree(); guildMovie = null; };
             guild = c;

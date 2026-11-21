@@ -139,7 +139,7 @@ public partial class HudScene
             c.QueryRequested += (a, b) => CommunityQuery().OnQuery(a, b);
             c.PopupRequested += (x, y, id, tab) => GD.Print($"community: popup for {id} on tab {tab} (0x4e39 is not in this HUD)");
             c.HomeVisitRequested += (id, kind, name) => GD.Print($"community: home visit {name} (not in this HUD)");
-            c.VipPageRequested += () => GD.Print("community: the VIP page (0x4e6a) is not in this HUD");
+            c.VipPageRequested += () => WebBrowser.Navigate(Ms2.Ui.FeatureElements.Constants(assets.Packs).String("TencentWebURL", ""));   // the constant at +0x8838
             c.HomeBlockMemoEdited += (id, memo) => GD.Print($"community: home block memo {id} (HomeBlockManager is not ported)");
             c.Unloaded += () => { communityMovie?.Host.Unload(); communityMovie?.QueueFree(); communityMovie = null; };
             community = c;
