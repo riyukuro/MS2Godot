@@ -99,20 +99,34 @@ public partial class LiveSession
         if (TimeScaleRamp.Running && TimeScaleRamp.Tick(TickMs)) GameClock.SetScale(TimeScaleRamp.Scale);
     }
 
-    /// <summary>PC::FUN_1416615f0's invincible end and blink, each frame of the game.
-    /// STILL-OPEN: the blink alpha (vfunc_42, GameObject SetNodeAlpha: 0.5 / 0.9, then 1.0 at the end) has no character alpha
-    /// path in the character shader, so it is not drawn.</summary>
+    Player fadedPlayer;      // the node the blink's last factor went to
+    float fadeAlpha = 1f;    // that factor
+
+    /// <summary>PC::FUN_1416615f0's invincible end and blink, each frame of the game: the blink's 0.5 / 0.9 through
+    /// vfunc_42 (SetNodeAlpha on the own player's tree, <see cref="NodeFade"/>), then 1.0 forced at the end. The tree is walked
+    /// only when the factor or the node changes.
+    /// STILL-OPEN: vfunc_42's tails and random target (pc.cpp:4545) take no factor; a mesh shown mid-blink takes it at the next
+    /// flip, where the client sets it on the next frame.</summary>
     void TickCombatEffects()
     {
         uint now = TickMs;
         int timer = Invincible.TimerId;
-        if (Invincible.Active && Invincible.Tick(now, out _, out bool ended) && ended)
+        if (!Invincible.Active || !Invincible.Tick(now, out float alpha, out bool ended)) return;
+        if (ended)
         {
-            // FUN_141661370(0, 0, 0): the running timer's icon removed, then the effect
+            // FUN_141661370(0, 0, 0): the running timer's icon removed, then the effect; vfunc_42(1.0, true)
             InvincibleBuffEnd = 0;
             InvincibleBuffChanged?.Invoke(timer, 0, 0);
             InvincibleChanged?.Invoke(false);
+            NodeFade.Set(player, 1f, true);
+            fadedPlayer = null;
+            fadeAlpha = 1f;
+            return;
         }
+        if (alpha == fadeAlpha && player == fadedPlayer) return;
+        NodeFade.Set(player, alpha, false);
+        fadeAlpha = alpha;
+        fadedPlayer = player;
     }
 
     /// <summary>The game went (the link lost, back to the login server, the quit, the session's end): a running time scale

@@ -14,7 +14,7 @@ namespace Ms2Godot.Tests;
 /// character path, with its glow twin and its Attached step) or GlowMaterial (the field glow), draws them in a SubViewport
 /// of its own over black, and compares the centre pixel with the value the client's opacity gives:
 /// the NiAlphaController alpha, the vertex alpha (EMISSIVE + LIGHTING_E, AMB_DIFF + E_A_D), the test on the opacity, ONE / ONE
-/// unweighted, the z write of a blended mesh, DRAW_BOTH, the glow pass's opacity, the closest-point alpha sort, and an
+/// unweighted, the z write of a blended mesh, DRAW_BOTH, the blink's node alpha (NodeFade), the glow pass's opacity, the closest-point alpha sort, and an
 /// effect mesh's unsaturated colour (EffectInstance).
 /// Quits with 0 when all hold, else 1.
 /// </summary>
@@ -184,6 +184,16 @@ public partial class AlphaRenderCheck : Node
         var both = Quad("q", 0, back: true);
         both.AlphaFlags = 0xED; both.DrawMode = 3;
         Model("draw_both", main, Grey(1, "DRAW_BOTH back face drawn"), both);
+
+        // the invincible blink (NodeFade, SetNodeAlpha alphaanimation.cpp:478-545): an opaque white quad at factor 0.5 blends
+        // half over black; 1 forced restores it opaque; the alpha test is left as it is, so GREATER 128 at 0.4 clips
+        NodeFade.Set(Model("blink_half", main, Grey(0.5f, "opaque mesh at node alpha 0.5"), Quad("q", 0)), 0.5f, false);
+        var restored = Model("blink_restored", main, Grey(1, "node alpha restored to 1"), Quad("q", 0));
+        NodeFade.Set(restored, 0.5f, false);
+        NodeFade.Set(restored, 1f, true);
+        var fcut = Quad("q", 0);
+        fcut.AlphaFlags = 0x200 | 4 << 10; fcut.AlphaThreshold = 128;
+        NodeFade.Set(Model("blink_test", main, Grey(0, "GREATER 128 on node alpha 0.4 clips"), fcut), 0.4f, false);
 
         // BLOCKER 1: the glow pass tests the colour pass's opacity: climbpc's 0x12ED (GREATER 0) at material alpha 0 is clipped
         var gcut = Quad("q", 0);

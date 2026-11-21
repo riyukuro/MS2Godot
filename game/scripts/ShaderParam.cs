@@ -10,6 +10,7 @@ static class ShaderParam
         AlphaTest = "alpha_test",
         AlphaClip = "alpha_clip",
         FadeAlpha = "fade_alpha",
+        NodeAlpha = "node_alpha",
         MatAlpha = "mat_alpha",
         AlphaAnimCount = "alpha_anim_count",
         AlphaAnimType = "alpha_anim_type",

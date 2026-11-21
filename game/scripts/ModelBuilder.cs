@@ -805,9 +805,10 @@ public sealed class ModelBuilder
     /// processor only re-sorts, it does not change them), as the effect meshes' (EffectInstance.RenderModes); a tested cut-out
     /// with the write bit writes depth in the blended pass as it did when it drew opaque. Every form culls by the mesh's
     /// NiStencilProperty draw mode (ModelMesh.Cull, NiDX9RenderState::ApplyStencil, NiDX9RenderState.cpp:592, mapping :380-389).</summary>
-    internal static (string Modes, string Defines) CharacterForm(ModelMesh m)
+    internal static (string Modes, string Defines) CharacterForm(ModelMesh m) => CharacterForm(m, m.Blend);
+
+    static (string Modes, string Defines) CharacterForm(ModelMesh m, BlendForm blend)
     {
-        var blend = m.Blend;
         if (blend == BlendForm.Opaque)
             return (CullMode(m), "");
         var op = blend switch { BlendForm.Mix => "blend_mix", BlendForm.Add => "blend_add", _ => "blend_premul_alpha" };
@@ -820,6 +821,8 @@ public sealed class ModelBuilder
         var (modes, defines) = CharacterForm(m);
         return CharacterShaderOf(modes, defines);
     }
+
+    static Shader CharacterShaderOf((string Modes, string Defines) form) => CharacterShaderOf(form.Modes, form.Defines);
 
     static Shader CharacterShaderOf(string modes, string defines)
     {
@@ -869,6 +872,14 @@ public sealed class ModelBuilder
             var t = new MeshInstance3D { Name = mi.Name + "_shadow", Mesh = mesh, MaterialOverride = caster, CastShadow = GeometryInstance3D.ShadowCastingSetting.ShadowsOnly };
             mi.AddChild(t);
             if (mi.Skin != null) { t.Skin = mi.Skin; t.Skeleton = "../.."; }
+        }
+        // SetNodeAlpha (NodeFade) turns blending on with the mesh's own NiAlphaProperty factors (SRCALPHA / INVSRCALPHA without
+        // one, alphaanimation.cpp:478-545) and skips a material with an NiAlphaController
+        if (m.AlphaAnim == null && mi.Mesh?.SurfaceGetMaterial(0) is ShaderMaterial own && IsCharacterShader(own.Shader))
+        {
+            var fade = m.Blend != BlendForm.Opaque ? own.Shader
+                : CharacterShaderOf(CharacterForm(m, m.BlendDst == 0 ? (m.BlendSrc == 0 ? BlendForm.AddUnweighted : BlendForm.Add) : BlendForm.Mix));
+            mi.SetMeta(NodeFade.Meta, fade);
         }
         CharacterAlphaSort.Register(mi, m, skel, skelBone);
     }

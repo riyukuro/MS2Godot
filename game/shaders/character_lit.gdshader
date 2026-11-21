@@ -40,6 +40,7 @@ global uniform vec3 ms2_hfog;          // height fog: upper height, lower height
 // An instance lit by its own light pair instead of the field's lights (the game menu portrait: UIPortrait::vfunc_14
 // attaches a directional and an ambient light to the copy it renders). With own_lights 0, the default, nothing changes.
 instance uniform float own_lights = 0.0;
+instance uniform float node_alpha = 1.0;   // SetNodeAlpha's factor on the material alpha (NodeFade)
 instance uniform vec3 own_ambient = vec3(0.0);
 instance uniform vec3 own_sun_color = vec3(0.0);
 instance uniform vec3 own_sun_ambient = vec3(0.0);
@@ -118,7 +119,8 @@ void fragment() {
 	// where the vertex colour is the term the opacity is split from (NiStandardMaterial.cpp:4436-4450), times the base map's
 	// alpha (HandleBaseMap, :4503-4525). The alpha test runs on it (HandleAlphaTest after HandleMS2FinalPixelOutputs,
 	// ms2standardmaterial.cpp:786), as field_lit's.
-	float a = t.a * (vc_opacity ? COLOR.a : (alpha_anim_count > 0 ? alpha_anim() : mat_alpha));
+	// SetNodeAlpha (NodeFade) scales the material alpha of the meshes without an alpha controller (alphaanimation.cpp:478-545).
+	float a = t.a * (vc_opacity ? COLOR.a : (alpha_anim_count > 0 ? alpha_anim() : mat_alpha * node_alpha));
 	if (alpha_test && (alpha_clip.x > 0.5 && a > alpha_ref || alpha_clip.y > 0.5 && a < alpha_ref || alpha_clip.z > 0.5 && a == alpha_ref)) {
 		discard;
 	}
