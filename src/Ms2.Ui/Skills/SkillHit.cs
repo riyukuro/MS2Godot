@@ -176,13 +176,34 @@ public struct SkillHitShape
     }
 }
 
-/// <summary>An object the area pick tests: its id, position, body box (vfunc_26) and whether it is the caster.</summary>
+/// <summary>What an object is to the target filter: a PC, an npc (CNpc) or a pet (CPet).</summary>
+public enum HitKind : byte { Pc, Npc, Pet }
+
+/// <summary>
+/// An object the area pick tests: its id, position, body box (vfunc_26) and whether it is the caster, with what the target
+/// filter (<see cref="SkillHit.FilterTarget"/>) reads of it.
+/// </summary>
 public struct HitCandidate
 {
     public int Id;
     public Vector3 Position;
     public HitBox Body;
     public bool IsOwner;
+    public HitKind Kind;
+    /// <summary>vfunc_116: an npc's friendly (CNpc::vfunc_116), 1 for a PC; 2 is never a target.</summary>
+    public int Team;
+    /// <summary>FUN_141670a00(4): the current hp.</summary>
+    public long Hp;
+    /// <summary>IsHidden, or the states 6 / 7 (FUN_14166cb00): skipped unless the target kind has flag 4.</summary>
+    public bool Hidden;
+    /// <summary>PC::HasPvPPoint.</summary>
+    public bool PvPPoint;
+    /// <summary>CNpc::GetNpcClass (CNpcData m_nClass).</summary>
+    public int NpcClass;
+    /// <summary>CNpc::FUN_1410930a0's state half: the dead state 0xc with &lt;corpse hitAble&gt;; the hp 0 is checked apart.</summary>
+    public bool CorpseHit;
+    /// <summary>A pet with an owner (CPet::GetOwner).</summary>
+    public bool PetOwned;
 }
 
 /// <summary>The area pick of a skill attack and the target records the damage send carries.</summary>
@@ -222,9 +243,53 @@ public static class SkillHit
 
     struct Entry { public int Id; public Vector3 Metric; public float Facing; }
 
+    [ThreadStatic] static List<Entry> hitScratch;
+    [ThreadStatic] static List<int> pickScratch;
+
+    /// <summary>
+    /// The world query's filter FilterTarget @0x1409ff8d0 (basecollision.cpp:784): can <paramref name="self"/> target
+    /// <paramref name="other"/>. Flags: 1 hostile, 2 friendly, 4 the hidden ones too, 8 owner-less pets; a set bit of
+    /// <paramref name="npcKinds"/> (applyTargetIgnoreNpcRanks) drops an npc of that class. Hostile means the caster's team is 2 or
+    /// the teams differ (PCBase::vfunc_122 @0x1416781c0, pcbase.cpp:2784); a hostile target needs hp, or for an npc hp 0 with a
+    /// hittable corpse; a friendly one needs hp.
+    /// STILL-OPEN: the caster's GetForceApplyTarget extra flags (a buff state) are not ported.
+    /// </summary>
+    public static bool FilterTarget(in HitCandidate self, in HitCandidate other, int flags, int npcKinds)
+    {
+        if (other.Team == 2) return false;
+        if ((flags & 4) == 0 && other.Hidden) return false;
+        if (other.Kind == HitKind.Pet) return (flags & 8) != 0 && !other.PetOwned;
+        if (self.Kind == HitKind.Pc && other.Kind == HitKind.Pc && self.PvPPoint != other.PvPPoint) return false;
+        if (npcKinds != 0 && other.Kind == HitKind.Npc && (npcKinds & (1 << other.NpcClass)) != 0) return false;
+        bool hostile = self.Team == 2 || self.Team != other.Team;
+        if ((flags & 1) != 0 && hostile)
+        {
+            if (other.Hp > 0) return true;
+            if (other.Kind == HitKind.Npc && other.Hp == 0 && other.CorpseHit) return true;
+        }
+        return (flags & 2) != 0 && (self.Team == 2 || !hostile) && other.Hp > 0;
+    }
+
+    /// <summary>
+    /// WorldService::FUN_141bd2ea0 (worldservice_1.cpp:6602) as CBaseCollision::Detect @0x1409fc6c0 (basecollision.cpp:221)
+    /// calls it: the objects the caster (the <see cref="HitCandidate.IsOwner"/> one; none, nothing) may target by
+    /// <see cref="FilterTarget"/>, the caster included when it passes. The objects here are PCs, npcs and pets only, so the
+    /// query's class 0x6200016 skip has nothing to drop.
+    /// </summary>
+    public static void Query(ReadOnlySpan<HitCandidate> objects, int kind, int npcKinds, List<HitCandidate> into)
+    {
+        into.Clear();
+        int owner = -1;
+        for (int i = 0; i < objects.Length; i++)
+            if (objects[i].IsOwner) { owner = i; break; }
+        if (owner < 0) return;
+        foreach (ref readonly var o in objects)
+            if (FilterTarget(objects[owner], o, kind, npcKinds)) into.Add(o);
+    }
+
     /// <summary>
     /// CBaseCollision::DetectWithEulerRotation @0x1409fc390 then Detect @0x1409fc6c0 (basecollision.cpp:213), over candidates the
-    /// caller has already queried by target kind (FUN_141bd2ea0) with the Ridee objects and the excluded ids left out.
+    /// caller has already queried by target kind (<see cref="Query"/>) with the Ridee objects and the excluded ids left out.
     /// The caster is skipped (before the test, or after a hit when feature 0xd7 is on) and put first when includeCaster is set;
     /// the hits are ordered by the sort mode: 0 shuffled, 1/2 side distance up/down, 3/4 front distance up/down (cylinder:
     /// squared distance), 5/6 facing down/up. <paramref name="rand"/> is the CRT rand().
@@ -242,7 +307,8 @@ public static class SkillHit
         bool facing = sortMode == 5 || sortMode == 6;
         int first = 0;
         bool hasFirst = false;
-        var hits = new List<Entry>();
+        var hits = hitScratch ??= new List<Entry>();
+        hits.Clear();
         foreach (ref readonly var o in objects)
         {
             if (!ownerAfterTest && o.IsOwner)
@@ -311,11 +377,12 @@ public static class SkillHit
     /// StateSkill::PickAttackTargets @0x1417f3180 (stateskill.cpp:2565) after the area pick: the first targetCount hits
     /// (CSkillSystem::FUN_141769410 @0x141769410), with arrow overlap the rest of the count filled by random repeats; each gets a
     /// record with a new serial (GameObject::GenerateSerialId @0x14123cec0) and the next hit index. Then target-less records:
-    /// up to the count when attackMethodType is 1 (CSkillRecord::FUN_141759f70), else one for a nonTarget 1 arrow.
+    /// up to the count when <paramref name="attackMethodType"/> is 1 (CSkillRecord::FUN_141759f70 @0x141759f70,
+    /// skillrecord.cpp:346: the type of the record's m_nAttackIndex attack), else one for a nonTarget 1 arrow.
     /// <paramref name="hits"/> is null when the arrow is nonTarget 1 (no area pick).
     /// STILL-OPEN: the bounce chains (FUN_1417f3e80, arrow bounceCount) are not picked; every record goes without links.
     /// </summary>
-    public static void PickTargets(SkillAttackData attack, IReadOnlyList<int> hits, Func<int> rand, Func<long> serial,
+    public static void PickTargets(SkillAttackData attack, int attackMethodType, IReadOnlyList<int> hits, Func<int> rand, Func<long> serial,
         List<SkillDamageTarget> tags)
     {
         tags.Clear();
@@ -323,14 +390,15 @@ public static class SkillHit
         int hitCount = hits?.Count ?? 0;
         int count = limit < hitCount ? limit : hitCount;
         int used = 0;
-        var picked = new List<int>();
+        var picked = pickScratch ??= new List<int>();
+        picked.Clear();
         for (int i = 0; i < count; i++) { used++; picked.Add(hits[i]); }
         int extra = limit - count;
         if (attack.Arrow.Overlap != 0 && extra > 0 && hitCount > 0)
             for (int i = 0; i < extra; i++) { used++; picked.Add(hits[rand() % hitCount]); }
         int hit = 0;
         foreach (int id in picked) tags.Add(new SkillDamageTarget(serial(), id, (byte)hit++, Array.Empty<SkillDamageLink>()));
-        if (attack.AttackMethodType == 1)
+        if (attackMethodType == 1)
         {
             int rest = limit - used < 0 ? 0 : limit - used;
             for (int i = 0; i < rest; i++) tags.Add(new SkillDamageTarget(serial(), 0, (byte)hit++, Array.Empty<SkillDamageLink>()));

@@ -205,20 +205,24 @@ public sealed class NpcLayer
     /// <summary>
     /// The live npcs' body boxes for an own attack's area pick, in client space (z up): CNpc::BuildCollision
     /// (unit_14108e1e0_npcactorandvibrate.cpp:1648) gives a box only to an npc whose collision shape is "box".
-    /// STILL-OPEN: the node collision boxes (m_arrE68 / m_arrE88) and the target kind query (FUN_141bd2ea0) are not ported.
+    /// Dead npcs stay in (hp 0, the corpse's hitAble) for <see cref="Ms2.Ui.Skills.SkillHit.FilterTarget"/>: team is the row's
+    /// friendly (CNpc::vfunc_116), the class its npc class.
+    /// STILL-OPEN: the node collision boxes (m_arrE68 / m_arrE88) and the corpse's dead state 0xc (Dead stands for it).
     /// </summary>
     public void HitCandidates(List<Ms2.Ui.Skills.HitCandidate> into)
     {
         foreach (var (id, i) in inst)
         {
             var row = i.Talk?.Row ?? i.Model?.Row;
-            if (row == null || i.Dead || row.CollisionShape != "box" || i.Root == null) continue;
+            if (row == null || row.CollisionShape != "box" || i.Root == null) continue;
             var g = i.Root.GlobalPosition;
             var p = new System.Numerics.Vector3(g.X, -g.Z, g.Y);
             into.Add(new Ms2.Ui.Skills.HitCandidate
             {
                 Id = id, Position = p,
                 Body = Ms2.Ui.Skills.SkillHit.NpcBody(row.CollisionWidth, row.CollisionDepth, row.CollisionHeight, p, i.TargetYaw),
+                Kind = Ms2.Ui.Skills.HitKind.Npc, Team = row.Friendly, Hp = i.Dead ? 0 : i.HpCur, NpcClass = row.Class,
+                CorpseHit = i.Dead && row.CorpseHitAble,
             });
         }
     }

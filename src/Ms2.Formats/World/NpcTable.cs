@@ -26,6 +26,11 @@ public sealed class NpcRow
     /// </summary>
     public string CollisionShape = "";
     public float CollisionWidth, CollisionDepth, CollisionHeight;
+    /// <summary>
+    /// &lt;corpse hitAble&gt; (CNpcData::LoadXml, npcdata.cpp:1717; read by npcdata.cpp:814): a dead npc's corpse a hostile
+    /// attack still hits (FilterTarget through FUN_1410930a0).
+    /// </summary>
+    public bool CorpseHitAble;
     public bool Nametag;                         // environment nametag: the npc shows a name tag
     public int Kind;                             // environment kind: function npcs (shop, storage, ...) are not 0
     public bool Minimap = true;                  // environment minimap: shown on the minimap
@@ -133,6 +138,7 @@ public sealed class NpcTable
             CollisionWidth = Flt(env.Element("collision"), "width", 0),
             CollisionDepth = Flt(env.Element("collision"), "depth", 0),
             CollisionHeight = Flt(env.Element("collision"), "height", 0),
+            CorpseHitAble = Int(env.Element("corpse"), "hitAble") != 0,
             Nametag = Int(env, "nametag") != 0,
             Kind = Int(env, "kind"),
             Illust = (string)env.Attribute("illust"),

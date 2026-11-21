@@ -118,7 +118,9 @@ public sealed partial class RemoteLayer : Node3D
     /// <summary>
     /// The other players' and the npcs' bodies for an own attack's area pick, in client space (z up): a player's body box is
     /// PC::SetDefaultBoundingBox's (<see cref="Ms2.Ui.Skills.SkillHit.PlayerBody"/>), the npcs' come from
-    /// <see cref="NpcLayer.HitCandidates"/>.
+    /// <see cref="NpcLayer.HitCandidates"/>. A player is a pc of team 1 with its stat pair's hp, for
+    /// <see cref="Ms2.Ui.Skills.SkillHit.FilterTarget"/>.
+    /// STILL-OPEN: the hidden / state 6-7 flag and HasPvPPoint (false here) are not fed.
     /// </summary>
     public void HitCandidates(List<Ms2.Ui.Skills.HitCandidate> into)
     {
@@ -127,7 +129,8 @@ public sealed partial class RemoteLayer : Node3D
             if (r.Root == null) continue;
             var g = r.Root.GlobalPosition;
             var p = new System.Numerics.Vector3(g.X, -g.Z, g.Y);
-            into.Add(new Ms2.Ui.Skills.HitCandidate { Id = id, Position = p, Body = Ms2.Ui.Skills.SkillHit.PlayerBody(p, r.TargetYaw) });
+            into.Add(new Ms2.Ui.Skills.HitCandidate { Id = id, Position = p, Body = Ms2.Ui.Skills.SkillHit.PlayerBody(p, r.TargetYaw),
+                Kind = Ms2.Ui.Skills.HitKind.Pc, Team = 1, Hp = r.HpCur });
         }
         npcs.HitCandidates(into);
     }

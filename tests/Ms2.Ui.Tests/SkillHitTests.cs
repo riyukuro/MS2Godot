@@ -136,7 +136,7 @@ public class SkillHitTests
         long serial = 0;
         var q = new Queue<int>(rolls);
         var tags = new List<SkillDamageTarget>();
-        SkillHit.PickTargets(a, hits, q.Dequeue, () => ++serial, tags);
+        SkillHit.PickTargets(a, a.AttackMethodType, hits, q.Dequeue, () => ++serial, tags);
         Assert.That(tags.Select(t => t.Serial), Is.EqualTo(Enumerable.Range(1, tags.Count).Select(i => (long)i)), "a new serial each");
         return tags.Select(t => (t.TargetId, t.Hit)).ToList();
     }

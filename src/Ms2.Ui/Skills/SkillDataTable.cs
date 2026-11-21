@@ -106,6 +106,8 @@ public sealed class SkillRange : SkillRangeShape
 {
     /// <summary>"includeCaster" (+0x40), "applyTarget" (+0x44), "castTarget" (+0x48).</summary>
     public int IncludeCaster, ApplyTarget, CastTarget;
+    /// <summary>"applyTargetIgnoreNpcRanks" (+0x70, :173): one bit per listed npc class, the target query's npc kinds.</summary>
+    public int IgnoreNpcRanks;
 
     internal void LoadElement(XElement attack)
     {
@@ -115,6 +117,8 @@ public sealed class SkillRange : SkillRangeShape
         IncludeCaster = Xml.Int(r, "includeCaster");
         ApplyTarget = Xml.Int(r, "applyTarget");
         CastTarget = Xml.Int(r, "castTarget");
+        foreach (var rank in ((string)r.Attribute("applyTargetIgnoreNpcRanks") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
+            if (int.TryParse(rank.Trim(), out int n)) IgnoreNpcRanks |= 1 << n;
     }
 }
 

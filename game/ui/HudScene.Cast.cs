@@ -20,6 +20,7 @@ public partial class HudScene
     static readonly Func<int> crtRand = () => crtRandom.Next(0x8000);
     Func<long> nextSerial;
     readonly System.Collections.Generic.List<HitCandidate> hitObjects = new();
+    readonly System.Collections.Generic.List<HitCandidate> hitQueried = new();
     readonly System.Collections.Generic.List<int> hitIds = new();
 
     /// <summary>
@@ -180,12 +181,13 @@ public partial class HudScene
             var g = me.GlobalPosition;
             var pos = new System.Numerics.Vector3(g.X, -g.Z, g.Y);
             float rotZ = me.FacingRotZ;
-            hitObjects.Add(new HitCandidate { Id = live?.SelfObjectId ?? 0, Position = pos, Body = SkillHit.PlayerBody(pos, rotZ), IsOwner = true });
+            hitObjects.Add(new HitCandidate { Id = live?.SelfObjectId ?? 0, Position = pos, Body = SkillHit.PlayerBody(pos, rotZ), IsOwner = true,
+                Kind = HitKind.Pc, Team = 1, Hp = 1 });
             nextSerial ??= () => serialIds.Next(Net.LiveSession.Instance?.SelfObjectId ?? 0);
             for (int i = 0; i < n; i++)
             {
                 var req = SkillAttackFire.Fire(ownCast, ownAttack, pos, rotZ, 0,
-                    System.Runtime.InteropServices.CollectionsMarshal.AsSpan(hitObjects), crtRand, nextSerial, hitIds);
+                    System.Runtime.InteropServices.CollectionsMarshal.AsSpan(hitObjects), crtRand, nextSerial, hitQueried, hitIds);
                 bool sent = req != null && (live?.SendDamage(req) ?? false);
                 GD.Print($"cast: skill {ownCast.Skill.Id} attack {ownAttack} targets {req?.Targets.Count ?? 0}{(sent ? " sent" : " (offline, not sent)")}");
                 ownAttack++;

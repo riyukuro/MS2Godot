@@ -53,27 +53,43 @@ public static class SkillAttackFire
     /// (StateSkill::PickAttackTargets @0x1417f3180 then FUN_1417e95a0, the caster at <paramref name="ownerPos"/> facing
     /// <paramref name="ownerRotZ"/>) and the mode 1 sub-mode 0 send with the record's cast id, position and send count.
     /// <paramref name="zOffset"/> is CSkillRecord::FUN_141759ad0. Null when the attack is past the motion's end.
+    /// The area pick first queries the objects the caster may target (<see cref="SkillHit.Query"/>, kind applyTarget, npc
+    /// kinds applyTargetIgnoreNpcRanks: FUN_1417e95a0, stateskill.cpp:1176-1185) into <paramref name="queried"/>; an attack
+    /// whose range is no shape 1-4 has no collision (CSkillCollisionManager::GetCached @0x141754580), so PickAttackTargets
+    /// returns before any record and the send goes without targets.
+    /// The record keeps the attack as its m_nAttackIndex (FireCurrentAttack, stateskill.cpp:2264).
+    /// STILL-OPEN: the castTarget kind (FUN_1417e95a0's m_n60, 0 here) and the context's extra kind flags.
     /// STILL-OPEN: class 10's direction (FUN_141489940: -UNIT_X through the record's full euler rotation), the magic models,
     /// SetTargetStartTicks and the record's attack ticks (m_mapC0) are not ported; the send is made whenever the caller is the
     /// own player (vfunc_108).
     /// </summary>
     public static SkillDamageRequest Fire(CastRecord r, int attack, Vector3 ownerPos, float ownerRotZ, float zOffset,
-        ReadOnlySpan<HitCandidate> objects, Func<int> rand, Func<long> serial, List<int> hits)
+        ReadOnlySpan<HitCandidate> objects, Func<int> rand, Func<long> serial, List<HitCandidate> queried, List<int> hits)
     {
         var a = AttackAt(r, attack);
         if (a == null) return null;
+        r.AttackIndex = attack;
         SkillHit.Axes(r.Rotation.Z, out var dir, out _);
+        // the request keeps its target list: a new one per send
+        var tags = new List<SkillDamageTarget>();
         List<int> picked = null;
+        bool collision = true;
         if (!a.Arrow.IsNonTargetOne)
         {
-            var rot = new Vector3(0, 0, ownerRotZ);
-            SkillHit.AreaPose(a, ownerPos, rot, out var pos, out var areaRot);
-            var shape = SkillHitShape.Pose(a.Range, zOffset, pos, areaRot);
-            SkillHit.Detect(shape, pos, areaRot, a.Direction, a.Range.IncludeCaster != 0, false, objects, rand, hits);
-            picked = hits;
+            collision = a.Range.Shape is >= 1 and <= 4;
+            if (collision)
+            {
+                var rot = new Vector3(0, 0, ownerRotZ);
+                SkillHit.AreaPose(a, ownerPos, rot, out var pos, out var areaRot);
+                var shape = SkillHitShape.Pose(a.Range, zOffset, pos, areaRot);
+                SkillHit.Query(objects, a.Range.ApplyTarget, a.Range.IgnoreNpcRanks, queried);
+                SkillHit.Detect(shape, pos, areaRot, a.Direction, a.Range.IncludeCaster != 0, false,
+                    System.Runtime.InteropServices.CollectionsMarshal.AsSpan(queried), rand, hits);
+                picked = hits;
+            }
         }
-        var tags = new List<SkillDamageTarget>();
-        SkillHit.PickTargets(a, picked, rand, serial, tags);
+        if (collision)
+            SkillHit.PickTargets(a, AttackAt(r, r.AttackIndex)?.AttackMethodType ?? 0, picked, rand, serial, tags);
         return new SkillDamageRequest(r.CastId, (byte)attack, r.Position, dir, r.SendCount, tags);
     }
 }
