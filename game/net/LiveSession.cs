@@ -231,6 +231,8 @@ public partial class LiveSession : Node
     public event Action<NewsNotification> NewsNotificationReceived;
     /// <summary>OnItemDropNotice: a drop notice for the chat log.</summary>
     public event Action<ItemDropNotice> ItemDropNoticed;
+    /// <summary>Raised after ItemUse mode 6 sent the Beauty request.</summary>
+    public event Action<BeautyReq> BeautyRequested;
     /// <summary>The adventure data the client keeps in globals (DAT_143ab2958..3318): session-lived, so a field change keeps
     /// the exp, the filled level, the claimed levels and the missions.</summary>
     public readonly Ms2.Ui.AdventureData Adventure = new();
@@ -1106,6 +1108,7 @@ public partial class LiveSession : Node
                 if (n.NoticeStringId != 0)
                     Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(Ms2.Ui.Hud.MessageBoxData.Common(n.NoticeStringId), 0, null, "");   // FUN_140d73bc0(id, 0, 0, "")
                 if (n.Codi is { } codi) ActiveCodiTab(codi);
+                if (n.Beauty is { Type: not 0 } bq) { Send(new BeautyOpenRequest(bq.Uid)); BeautyRequested?.Invoke(bq); }   // SendBeauty (:8692); the beauty dialog 0x4eee itself is STILL-OPEN
                 GD.Print($"live: item use mode {n.Mode}{(n.ItemId != 0 ? " item " + n.ItemId : "")}");
             }
             else if (game.Is(p, Inbound.ItemDropNotice))

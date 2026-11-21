@@ -74,4 +74,18 @@ public class BindItemUseTests {
         Assert.That(d, Is.EqualTo(3));
         Assert.That(new CodiTab(1, 0, 0, 3600, false).CompleteKey(out _), Is.Null, "under a day: no box");
     }
+
+    [Test] public void ModeSixReadsTheBeautyRequest() {
+        var w = new ByteWriter(); w.WriteByte(6); w.WriteInt(2); w.WriteLong(0x1122334455L);
+        var n = ItemUseNotice.Read(Reader(w));
+        Assert.That(n.Beauty, Is.EqualTo(new BeautyReq(2, 0x1122334455L)));
+        Assert.That(n.MarksDialogDirty, Is.False);
+    }
+
+    [Test] public void BeautyOpenRequestWritesTheOpenModeAndUid() {
+        var w = new ByteWriter(); new BeautyOpenRequest(77).Write(w);
+        var r = Reader(w);
+        Assert.That(new BeautyOpenRequest(77).Op, Is.EqualTo(Outbound.Beauty));
+        Assert.That((r.ReadByte(), r.ReadLong()), Is.EqualTo(((byte) 0x17, 77L)));
+    }
 }

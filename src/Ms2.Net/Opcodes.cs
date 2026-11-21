@@ -184,6 +184,7 @@ public enum Outbound : ushort {
     RequestSkillBookTree = 0xA2,
     SkillMacro = 0x7B,          // SendOp::SkillMacro (commonfiles/opcodes.h:428): UISkillCompactControlDialog's tab requests
     NpcTalk = 0x22,
+    Beauty = 0x23,          // SendOp::Beauty (commonfiles/opcodes.h:340): CSceneStateGame::SendBeauty
     Shop = 0x28,            // SendOp::Shop (commonfiles/opcodes.h:345): UIShopDialog / RequestSellItem
     MeretMarket = 0x39,     // SendOp::MeretMarket (commonfiles/opcodes.h:362): CMeratMarketMan::SendMeretMarketMode30 (sub-mode 0x1e)
     ItemMerge = 0x3F,       // SendOp::ItemMerge (commonfiles/opcodes.h:368): UIItemMergeOptionDialog::Request*

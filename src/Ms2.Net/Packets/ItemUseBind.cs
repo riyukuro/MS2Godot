@@ -1,5 +1,6 @@
 // Layouts from the restored client's readers (CSceneStateGame::OnBindItem @0x14173b420, OnItemUse @0x141739910), not the server.
 using Maple2.PacketLib.Tools;
+using Ms2.Net.Wire;
 
 namespace Ms2.Net.Packets;
 
@@ -26,11 +27,11 @@ public sealed class BindItem {
 /// Inbound 0xAB, CSceneStateGame::OnItemUse (scenestategame.cpp:8603): a mode byte. Modes 0-3 show the notice box
 /// of the common string 0x2a2..0x2a5 (FUN_140d73bc0(id, 0, 0, "")); mode 4 reads an item id and shows the item's notifyDlg dialog or
 /// notifyMsg box (string 0x5f6 with the item's name, a line break, the message) and marks dialog 0x4e28 dirty; mode 5 is
-/// OnActiveCodiTab, mode 6 SendBeauty, mode 7 only marks dialog 0x4e28 dirty.
+/// OnActiveCodiTab, mode 6 SendBeauty (<see cref="BeautyReq"/>), mode 7 only marks dialog 0x4e28 dirty.
 /// Mode 5 reads <see cref="CodiTab"/> (FUN_1407a8250 @0x1407a8250: actor int, start, end, expire i64, silent byte).
-/// STILL-OPEN: mode 4 (the item's function xml notify attributes) and mode 6 read nothing more here.
+/// STILL-OPEN: mode 4's function xml notify attributes, the beauty dialog 0x4eee open of mode 6.
 /// </summary>
-public sealed record ItemUseNotice(int Mode, int NoticeStringId, int ItemId, CodiTab Codi = null) {
+public sealed record ItemUseNotice(int Mode, int NoticeStringId, int ItemId, CodiTab Codi = null, BeautyReq Beauty = null) {
     public const int FirstNoticeId = 0x2a2;
 
     /// <summary>True for the modes that mark the game-menu dialog 0x4e28 dirty (4 and 7).</summary>
@@ -42,7 +43,20 @@ public sealed record ItemUseNotice(int Mode, int NoticeStringId, int ItemId, Cod
             >= 0 and <= 3 => new ItemUseNotice(mode, FirstNoticeId + mode, 0),
             4 => new ItemUseNotice(mode, 0, r.ReadInt()),
             5 => new ItemUseNotice(mode, 0, 0, CodiTab.Read(r)),   // OnActiveCodiTab: FUN_1407a8250 (0x1407a8250) reads int, i64, i64, i64, byte
+            6 => new ItemUseNotice(mode, 0, 0, null, BeautyReq.Read(r)),
             _ => new ItemUseNotice(mode, 0, 0),
         };
     }
+}
+
+/// <summary>Unk_SSGBeautyReq as FUN_1407a8340 @0x1407a8340 reads it (scenestategame.cpp:1121): m_nType (int), m_nUid (i64).</summary>
+public sealed record BeautyReq(int Type, long Uid) {
+    public static BeautyReq Read(ByteReader r) => new(r.ReadInt(), r.ReadLong());
+}
+
+/// <summary>Outbound SendOp::Beauty, CSceneStateGame::SendBeauty (scenestategame.cpp:8692 @0x14173c630): u8 0x17, i64 the request's uid
+/// (FUN_140710590 then only hands the packet to the client's send queue).</summary>
+public sealed record BeautyOpenRequest(long Uid) : IOutPacket {
+    public Outbound Op => Outbound.Beauty;
+    public void Write(ByteWriter w) { w.WriteByte(0x17); w.WriteLong(Uid); }
 }

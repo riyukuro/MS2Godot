@@ -186,6 +186,7 @@ static class Gms2Opcodes {
         [Outbound.ServerEnter] = 0xB2,
         [Outbound.RequestSkillBookTree] = 0xA3,
         [Outbound.NpcTalk] = 0x22,
+        [Outbound.Beauty] = 0x23,
         [Outbound.Shop] = 0x28,
         [Outbound.ItemMerge] = 0x40,
         [Outbound.ItemDismantle] = 0x5B,
