@@ -335,6 +335,27 @@ public sealed class MyCharacter {
         return (effect, !effect && c.Count != 0);
     }
 
+    /// <summary>
+    /// OnStateFallDamage (scenestategame.cpp:5815 @0x141723050) for the local player: vfunc_59(0x1f) when not dead, then the guide
+    /// trigger FallDamage (0xf) with value 1 when dead, else -1. Returns that value; other objects: 0 (nothing).
+    /// STILL-OPEN: the damage effect dialog (0x4e3c) and the rider's effect are not here.
+    /// </summary>
+    public int ApplyFallDamage(StateFallDamage f) {
+        if (f.ObjectId != ObjectId || User == null) return 0;
+        if (!Dead) EnterState(0x1f);
+        return Dead ? 1 : -1;
+    }
+
+    /// <summary>The last Tombstone update for the own player (OnTombstone): kind, value and hitter; <c>TombstoneHidden</c> after kind 0.
+    /// STILL-OPEN: the tombstone object in the field (PC m_spFC8) and the tombstone bar are not built.</summary>
+    public byte TombstoneKind, TombstoneValue; public int TombstoneHitter; public bool TombstoneHidden;
+
+    public bool Apply(TombstoneUpdate t) {
+        if (t.ObjectId != ObjectId || User == null) return false;
+        TombstoneKind = t.Kind; TombstoneValue = t.Value; TombstoneHitter = t.Hitter; TombstoneHidden = t.Kind == 0;
+        return true;
+    }
+
     /// <summary>PC::FUN_141661ac0 (pc.cpp:2043): once the server tick passes the end tick, both are cleared. Returns whether they were.</summary>
     public bool ExpireRevival(uint serverTick) {
         if (RevivalEndTick == 0 || serverTick < RevivalEndTick) return false;

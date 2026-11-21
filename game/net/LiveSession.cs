@@ -893,6 +893,7 @@ public partial class LiveSession : Node
             GD.Print($"live: UserSync sent, {records.Count} record(s), last state {l.State} pos ({l.Position.X},{l.Position.Y},{l.Position.Z}) sync {l.SyncNumber}");
         };
         player.HeldStateEntered += st => HeldItem.EnterState(st, Send);
+        player.FallDamageHeight += h => { if (game != null) Send(new StateFallDamageRequest(h)); };   // PCBase::SendFallDamage (pcbase.cpp:4350)
         player.StateChangeOut += (mode, arg, pos) =>
         {
             if (game == null) return;
@@ -1206,6 +1207,12 @@ public partial class LiveSession : Node
                 if (effect) GD.Print("live: own revival penalty ended");   // STILL-OPEN: the revival effect of the common resource
                 if (guideTrigger) guide?.AddTrigger(GuideTrigger.RevivalPanelty, 0, 0);
             }
+            else if (game.Is(p, Inbound.StateFallDamage))
+            {
+                int g = Me.ApplyFallDamage(StateFallDamage.Read(p.Reader()));    // OnStateFallDamage (scenestategame.cpp:5815)
+                if (g != 0) guide?.AddTrigger(GuideTrigger.FallDamage, g, 0);
+            }
+            else if (game.Is(p, Inbound.Tombstone)) Me.Apply(TombstoneUpdate.Read(p.Reader()));   // OnTombstone (scenestategame.cpp:9644)
             else if (game.Is(p, Inbound.RevivalCount)) Me.Apply(RevivalCount.Read(p.Reader()));   // OnRevivalCount (scenestategame.cpp:4092)
             else if (game.Is(p, Inbound.DungeonReviveCount)) Me.Apply(DungeonReviveCount.Read(p.Reader()));   // OnDungeonReviveCount (:5074)
             else if (game.Is(p, Inbound.AutoRevive)) AutoReviveStarted?.Invoke(AutoRevive.Read(p.Reader()).DurationMs);   // OnAutoRevive (:4332)

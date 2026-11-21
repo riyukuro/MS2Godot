@@ -92,6 +92,7 @@ public enum Inbound : ushort {
     Buff = 0x47,
     UserMoveByPortal = 0x5F,
     StateFallDamage = 0x65,
+    Tombstone = 0x5D,           // RecvOp::Tombstone (commonfiles/opcodes.h:101): OnTombstone
     KeyTable = 0x6F,
     Job = 0x49,
     SkillPoint = 0x44,
@@ -135,6 +136,8 @@ public enum Outbound : ushort {
     CharacterManagement = 0x09,
     ResponseHeartbeat = 0x0A,
     ItemEquip = 0x16,
+    Tombstone = 0x2A,           // SendOp::Tombstone (commonfiles/opcodes.h:347): WorldService::FUN_141bc3560
+    StateFallDamage = 0x34,     // SendOp::StateFallDamage (commonfiles/opcodes.h:357): PCBase::SendFallDamage
     Revival = 0x1F,             // SendOp::Revival (commonfiles/opcodes.h:336): the revive dialog's buttons
     RequestItemInventory = 0x17,
     RequestItemEnchant = 0x5E,   // SendOp::RequestItemEnchant (opcodes.h:399): UIItemEnchantDialog (uiitemenchantdialog.cpp)

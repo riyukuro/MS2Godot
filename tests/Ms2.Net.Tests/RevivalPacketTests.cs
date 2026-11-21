@@ -84,4 +84,31 @@ public class RevivalPacketTests {
     public void AutoReviveReadsTheDuration() {
         Assert.That(AutoRevive.Read(R(w => w.WriteInt(10000))), Is.EqualTo(new AutoRevive(10000)));
     }
+
+    [Test]
+    public void FallDamageIsSentAsAFloatAndTheReplyEntersState1f() {
+        Assert.That((ushort)Outbound.StateFallDamage, Is.EqualTo(0x34));
+        Assert.That(Bytes(new StateFallDamageRequest(2.5f)), Is.EqualTo(BitConverter.GetBytes(2.5f)));
+        var me = new MyCharacter();
+        var u = new FieldAddUser { ObjectId = 9, User = new UserBlock { Name = "a" } };
+        u.Stats[0].Health = 500; u.Stats[1].Health = 400; u.Stats[2].Health = 480;
+        me.Apply(u);
+        Assert.That(me.ApplyFallDamage(new StateFallDamage(8, 5)), Is.EqualTo(0), "another object");
+        Assert.That(me.ApplyFallDamage(new StateFallDamage(9, 5)), Is.EqualTo(-1), "alive: guide value -1");
+        Assert.That(me.State, Is.EqualTo(0x1f));
+    }
+
+    [Test]
+    public void TombstoneIsReadAndSentWithItsObjectAndHitter() {
+        Assert.That((ushort)Outbound.Tombstone, Is.EqualTo(0x2A));
+        Assert.That(Bytes(new TombstoneRequest(9)), Is.EqualTo(new byte[] { 9, 0, 0, 0, 1, 0, 0, 0 }));
+        var t = TombstoneUpdate.Read(R(w => { w.WriteInt(9); w.WriteByte(2); w.WriteByte(3); w.WriteInt(7); w.WriteByte(1); }));
+        Assert.That(t, Is.EqualTo(new TombstoneUpdate(9, 2, 3, 7, true)));
+        var me = Own();
+        Assert.That(me.Apply(new TombstoneUpdate(8, 2, 3, 7, false)), Is.False);
+        Assert.That(me.Apply(t), Is.True);
+        Assert.That((me.TombstoneKind, me.TombstoneValue, me.TombstoneHitter, me.TombstoneHidden), Is.EqualTo(((byte)2, (byte)3, 7, false)));
+        me.Apply(new TombstoneUpdate(9, 0, 0, 0, false));
+        Assert.That(me.TombstoneHidden, Is.True);
+    }
 }

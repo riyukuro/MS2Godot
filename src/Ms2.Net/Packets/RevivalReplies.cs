@@ -25,3 +25,12 @@ public sealed record AutoRevive(int DurationMs) {
 public sealed record DungeonReviveCount(int Used) {
     public static DungeonReviveCount Read(ByteReader r) => new(r.ReadInt());
 }
+
+/// <summary>
+/// Inbound Tombstone 0x5D (OnTombstone, scenestategame.cpp:9644 @0x1417215a0): i32 object id, u8 kind (nA), u8 value (nB),
+/// i32 hitter id (nC), bool pet. Kind 0 hits the player's tombstone object (PC::FUN_14165d300, pc.cpp:3464) and hides it
+/// (FUN_14165d550); otherwise it enters tombstone state 6 and sets the tombstone bar to (kind, value).
+/// </summary>
+public sealed record TombstoneUpdate(int ObjectId, byte Kind, byte Value, int Hitter, bool Pet) {
+    public static TombstoneUpdate Read(ByteReader r) => new(r.ReadInt(), r.ReadByte(), r.ReadByte(), r.ReadInt(), r.ReadByte() != 0);
+}
