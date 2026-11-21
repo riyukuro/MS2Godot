@@ -89,7 +89,9 @@ public partial class HudScene : Node, IUiStageHost
         toggleDynamicAction = ToggleDynamicAction;
         ChatLog.ToggleDynamicAction = toggleDynamicAction;   // the messenger's eventEmotion
         chatEmoticonFixture = args.Contains("--chatemoticon-fixture");
-        Ms2.Ui.InputBlock.TextFieldFocused = () => UiFocus.IsTyping;   // FUN_14116d7a0's mask 2 (Godot text controls only)
+        // FUN_14116d7a0's mask 2, CUIService::IsTextFieldFocused (@0x141adbb00, uiservice.cpp:1364): a field of the dialogs'
+        // stage (main.gfx) takes typing, or a Godot text control does
+        Ms2.Ui.InputBlock.TextFieldFocused = () => UiStage.TextFieldFocused || UiFocus.IsTyping;
         questFixture = args.Contains("--questlog-fixture");
         damageShot = args.Contains("--damageshot");
         partyFixture = args.Contains("--party-fixture");

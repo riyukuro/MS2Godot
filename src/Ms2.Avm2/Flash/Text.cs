@@ -573,6 +573,8 @@ public class AsTextField : AsInteractiveObject
     [As] public bool wordWrap { get => wordWrapFlag; set { if (wordWrapFlag != value) { wordWrapFlag = value; autoSizePending = true; MarkChanged(); } needGeom = true; } }
     [As] public bool selectable { get; set; } = true;
     [As] public bool displayAsPassword { get; set; }
+    /// <summary>TextField's Flags_IMEDisabled (gfx_textfield.h:281), set by TextFieldEx.setIMEEnabled (@0x1424cbab0, sfr_as3_15.cpp:585).</summary>
+    public bool ImeDisabled;
     [As] public int maxChars { get; set; }
     [As] public string restrict { get; set; }
     [As] public bool embedFonts { get; set; } = true;

@@ -35,6 +35,45 @@ public class UiStageTests
     }
 
     [Test]
+    public void AFocusedInputFieldOfAShownMovieIsTheTextFieldFocus()
+    {
+        // CUIService::IsTextFieldFocused -> IMEManager::IsTextFieldFocused (sfr_as3_20.cpp:335): the stage's focus is a
+        // TextField with IsIMEEnabled (gfx_textfield.h:275): an input field, no password, IME not disabled
+        var (a, _, _) = Movie();
+        var (b, _, _) = Movie();
+        bool bShown = true;
+        var stage = new UiStage();
+        stage.Add(a, () => (0, 0), () => 0);
+        stage.Add(b, () => (0, 0), () => 1, () => bShown);
+        var tf = (AsTextField)b.RT.GetClass("flash.text.TextField").Construct();
+        b.Stage.addChild(tf);
+        Assert.That(stage.TextFieldFocused, Is.False, "nothing focused");
+
+        b.Stage.focus = tf;
+        Assert.That(b.Focus, Is.SameAs(tf));
+        Assert.That(stage.TextFieldFocused, Is.False, "a dynamic field");
+        tf.type = "input";
+        Assert.That(stage.TextFieldFocused, Is.True, "an input field");
+        tf.displayAsPassword = true;
+        Assert.That(stage.TextFieldFocused, Is.False, "a password field");
+        tf.displayAsPassword = false;
+        var setIme = b.RT.Natives["scaleform.gfx.TextFieldEx/setIMEEnabled"];
+        setIme.Invoke(null, new object[] { tf, false });
+        Assert.That(stage.TextFieldFocused, Is.False, "TextFieldEx.setIMEEnabled(false)");
+        setIme.Invoke(null, new object[] { tf, true });
+        Assert.That(stage.TextFieldFocused, Is.True, "TextFieldEx.setIMEEnabled(true)");
+        bShown = false;
+        Assert.That(stage.TextFieldFocused, Is.False, "a hidden movie");
+        bShown = true;
+        b.Stage.removeChild(tf);
+        Assert.That(stage.TextFieldFocused, Is.False, "the field left the stage");
+        b.Stage.addChild(tf);
+        b.Stage.focus = tf;
+        stage.Remove(b);
+        Assert.That(stage.TextFieldFocused, Is.False, "the movie left the stage");
+    }
+
+    [Test]
     public void ADropOnAnotherMoviesSlotReachesItThroughAProxy()
     {
         var (a, aSlot, aDrops) = Movie();

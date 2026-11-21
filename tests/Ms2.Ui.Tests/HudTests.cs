@@ -1469,6 +1469,27 @@ public class HudTests
         Assert.That(h.RT.Errors, Is.Empty);
     }
 
+    [Test]
+    public void AFocusedChatInputIsTheStagesTextFieldFocus()
+    {
+        // CUIService::IsTextFieldFocused (uiservice.cpp:1364) asks main.gfx's IME manager, so the chat's focused TextInput
+        // is FUN_14116d7a0's mask 2; sending releases the focus (ASUIComponent::SetFocused 0, stage.focus = null)
+        var m = Model();
+        var c = new MessengerController(m.Tables.DefaultMessengers[0], "messengerdialog0.xml", true);
+        var h = Load(c, m);
+        var stage = new UiStage();
+        stage.Add(h.Player, () => (0, 0), () => 0);
+        var input = (AsObject)h.Child("m_textInput");
+        Assert.That(stage.TextFieldFocused, Is.False);
+        Assert.That(c.OnKey(MessengerController.DikReturn, false), Is.True);
+        Assert.That(h.Player.Focus, Is.SameAs(h.Get(input, "textField")));
+        Assert.That(stage.TextFieldFocused, Is.True, "Return focused the input");
+        h.Set(h.Get(input, "textField"), "text", "HelloWorld");
+        Assert.That(c.OnKey(MessengerController.DikReturn, false), Is.True);
+        Assert.That(stage.TextFieldFocused, Is.False, "Return with text released it");
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
     /// <summary>A loaded chat window with a local player "Me", its log's sends and notices collected.</summary>
     static (MessengerController c, UiHost h, UiModel m, List<UserChatRequest> sent, List<string> notices) ChatWindow()
     {

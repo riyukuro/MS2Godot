@@ -408,7 +408,11 @@ public static class ScaleformNatives
 
         // TextFieldEx
         N("scaleform.gfx.TextFieldEx/appendHtml", a => { if (a[0] is AsTextField t) { t.SetHtml((t.Html ?? System.Net.WebUtility.HtmlEncode(t.Text)) + Rt.ToString(a[1])); t.Version++; } return Rt.Undef; });
-        N("scaleform.gfx.TextFieldEx/setIMEEnabled", Undef);
+        N("scaleform.gfx.TextFieldEx/setIMEEnabled", a =>
+        {   // TextFieldEx::setIMEEnabled (@0x1424cbab0, sfr_as3_15.cpp:585)
+            if (a.Length > 0 && a[0] is AsTextField t) t.ImeDisabled = !(a.Length > 1 && Rt.ToBoolean(a[1]));
+            return Rt.Undef;
+        });
         N("scaleform.gfx.TextFieldEx/setVerticalAlign", a => { if (a[0] is AsTextField t) t.VerticalAlign = Rt.ToString(a[1]); return Rt.Undef; });
         N("scaleform.gfx.TextFieldEx/getVerticalAlign", a => (a[0] as AsTextField)?.VerticalAlign ?? "none");
         N("scaleform.gfx.TextFieldEx/setVerticalAutoSize", Undef);

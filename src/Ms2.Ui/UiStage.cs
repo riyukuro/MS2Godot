@@ -37,6 +37,26 @@ public sealed class UiStage : IDropStage
         ListenForDrags(player);
     }
 
+    /// <summary>
+    /// IMEManager::IsTextFieldFocused (@0x142544ef0, sfr_as3_20.cpp:347, and @0x142544e10, :335) for main.gfx, the movie
+    /// GFxManager::IsTextFieldFocused(2) asks (@0x1422af2d0, gfxmanager.cpp:531; LoadMainMovie keeps main.gfx as movie 2,
+    /// :1120): the stage's focus is a text field that takes the IME (TextField::IsIMEEnabled, gfx_textfield.h:275: input,
+    /// not a password, not IME-disabled). Here each movie keeps its own focus, so a shown movie's focus counts.
+    /// </summary>
+    public bool TextFieldFocused
+    {
+        get
+        {
+            foreach (var m in movies)
+                if (TakesIme(m.Player.Focus) && m.Shown?.Invoke() != false) return true;
+            return false;
+        }
+    }
+
+    /// <summary>TextField::IsIMEEnabled for a focused object still on its stage.</summary>
+    static bool TakesIme(object focus) =>
+        focus is AsTextField { type: "input", displayAsPassword: false, ImeDisabled: false } tf && tf.OnStage;
+
     public void Remove(Player player)
     {
         if (movies.RemoveAll(m => m.Player == player) > 0 && player.DropStage == this) player.DropStage = null;
