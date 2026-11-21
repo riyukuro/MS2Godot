@@ -9,9 +9,10 @@ namespace Ms2Godot.Movement;
 /// divided by 150 and truncated (FUN_1408a13d0 / FUN_1408a1430). A cube fills 150 x 150 around its position and 150
 /// up from it. StateClimb and PC::FUN_14165b500 only climb walls made of cubes.
 /// </summary>
-public sealed class CubeGrid
+public sealed class CubeGrid : global::Ms2.Ui.ICubeCells
 {
     readonly Dictionary<(int, int, int), Vector3> cubes = new();   // key -> entity position (MS2 axes)
+    readonly HashSet<int> keys = new();                              // the packed cell keys (MakeCellKey)
 
     public int Count => cubes.Count;
     public IEnumerable<KeyValuePair<(int, int, int), Vector3>> All => cubes;
@@ -24,7 +25,8 @@ public sealed class CubeGrid
             {
                 var p = new Vector3((float)e.Position.X, (float)e.Position.Y, (float)e.Position.Z);
                 // FUN_1410c1330: a cell that already holds a cube refuses the next one (the first cube placed is kept)
-                g.cubes.TryAdd(Key(p), p);
+                var k = Key(p);
+                if (g.cubes.TryAdd(k, p)) g.keys.Add(global::Ms2.Ui.CubeCell.Key(k.Item1, k.Item2, k.Item3));
             }
         return g;
     }
@@ -57,6 +59,10 @@ public sealed class CubeGrid
         var n = (key.Item1 + dx, key.Item2 + dy, key.Item3 + dz);
         return cubes.ContainsKey(n) ? n : null;
     }
+
+    /// <summary>HasCubeAtKey (@0x1410b7ed0, cubemapinformationservice_3.cpp:480-487): a cube is at the packed cell key.
+    /// STILL-OPEN: the cubes whose removal timer runs (f1f8) count as none there; cubes placed live are not added.</summary>
+    public bool HasCubeAtKey(int key) => keys.Contains(key);
 
     /// <summary>The cube's entity position (MS2 axes).</summary>
     public Vector3 Position((int, int, int) key) => cubes[key];

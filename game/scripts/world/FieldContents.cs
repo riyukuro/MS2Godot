@@ -585,12 +585,15 @@ public partial class FieldContents : Node3D
             // STILL-OPEN: a billboard or a lift keeps its highlight next to a talkable npc (the talk takes the key at the press).
             // In cube mode (PC::IsInCubeMode) the poll runs the cube-mode map instead (GetActiveActionMap,
             // actionkeyobject.cpp:707-717): put down liftable (0xc), portal (0x13), talk (0x14, at the press).
-            // STILL-OPEN: PutDownLiftableAction (0xc) is not polled yet.
             var playerMs2 = FieldPortals.ToMs2(player.GlobalPosition);
             bool cubeMode = Ms2Godot.Net.LiveSession.Instance is { } cs && cs.CubeCraft.InCubeMode;
             if (actionKeys.Due((uint)Time.GetTicksMsec()))
             {
-                if (cubeMode) actionKeys.Current = Ms2.Ui.ActionKeyPoll.PickCubeMode(false, LivePortalPoll(), false);
+                if (cubeMode)
+                {
+                    bool onPutDown = LivePutDownPoll(playerMs2);
+                    actionKeys.Current = Ms2.Ui.ActionKeyPoll.PickCubeMode(onPutDown, !onPutDown && LivePortalPoll(), false);
+                }
                 else
                 {
                     bool onInteract = LiveInteractPoll(playerMs2);
@@ -615,6 +618,9 @@ public partial class FieldContents : Node3D
                 case Ms2.Ui.ActionKeyTarget.BillBoard: LiveInteractUse(playerMs2); break;
                 case Ms2.Ui.ActionKeyTarget.Portal: LivePortalUse(); break;
                 case Ms2.Ui.ActionKeyTarget.Lift: if (Ms2Godot.Net.LiveSession.Instance is { } lls) lls.UseLift(); break;
+                // PutDownLiftableAction::vfunc_2 (@0x14095ad50) runs the craft's ConfirmPlacement.
+                // STILL-OPEN: ConfirmPlacement (cubecraft_2.cpp:936) is not ported; the key does nothing.
+                case Ms2.Ui.ActionKeyTarget.PutDownLiftable: break;
                 default: talk?.ActionKey(); break;
             }
             return;
@@ -655,6 +661,16 @@ public partial class FieldContents : Node3D
         if (offline || player == null || moving || Ms2Godot.Net.LiveSession.Instance is not { } ls) return false;
         var ridee = player.Mount?.Visual;
         return ls.PollLift(ridee != null && IsInstanceValid(ridee) ? FieldPortals.ToMs2(ridee.GlobalPosition) : at);
+    }
+
+    /// <summary>Live: the put-down poll (key 0xc) from the player's point and facing, the ridee's when riding
+    /// (PCBase::FUN_1416767d0, GetRideeAwareRotation), against the field's cubes.</summary>
+    public bool LivePutDownPoll(Ms2.Formats.Model.Vec3 at)
+    {
+        if (offline || player == null || moving || Ms2Godot.Net.LiveSession.Instance is not { } ls) return false;
+        var ridee = player.Mount?.Visual;
+        return ls.PollPutDown(ridee != null && IsInstanceValid(ridee) ? FieldPortals.ToMs2(ridee.GlobalPosition) : at, player.FacingRotZ,
+            player.Cubes);
     }
 
     public bool LiveInteractBillBoardPoll(Ms2.Formats.Model.Vec3 at) =>

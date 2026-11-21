@@ -419,7 +419,7 @@ public class FieldObjectStatesTests
         Assert.That((b.Holding, l.Holding, l.Count), Is.EqualTo((true, true, 0)));
     }
 
-    static FieldEntity TargetBox(string id, string target, string pos = "0, 0, 0", string rot = "0, 0, 0")
+    internal static FieldEntity TargetBox(string id, string target, string pos = "0, 0, 0", string rot = "0, 0, 0")
     {
         var raw = new XEntity { Id = id, ModelName = "MS2LiftableTargetBox", Name = id };
         if (pos != null) raw.Props["Position"] = pos;

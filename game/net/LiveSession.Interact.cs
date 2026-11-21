@@ -156,6 +156,10 @@ public partial class LiveSession
     /// <summary>The lift action's poll (LiftCubeAction key 0x15, after the portal; 0 B per poll), from the player's point or the
     /// ridee's when riding (PCBase::FUN_1416767d0, pcbase.cpp:3235).</summary>
     public bool PollLift(Vec3 at) => Liftables.Poll(at);
+    /// <summary>PutDownLiftableAction::vfunc_1 (@0x14095aa70) from the pc's (or ridee's) point and facing.</summary>
+    public bool PollPutDown(Vec3 at, float rotZDegrees, Ms2.Ui.ICubeCells cubes) =>
+        Ms2.Ui.PutDownLiftable.Poll(CubeCraft, InteractPlayerStateId(), new System.Numerics.Vector3((float)at.X, (float)at.Y, (float)at.Z),
+            rotZDegrees, cubes, LiftTargets);
 
     /// <summary>The action key on the polled lift (LiftCubeAction::vfunc_2): Liftable (0x3C), or nothing.</summary>
     public void UseLift()
