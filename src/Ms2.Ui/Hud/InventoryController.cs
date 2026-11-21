@@ -431,6 +431,7 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
         int mode = UseMode(item, false);
         if (mode == 1) { TryAddToTrade(item); return; }
         if (mode == 2) { TrySellItem(item); return; }
+        if (mode == 3 && BankDeposit != null) { BankDeposit(item); return; }
         if (mode != 6) { Button?.Invoke("notifySlotUse"); return; }
         int layer = !item.Data.HasSkinType ? 0 : !Feature(0x8e) ? 1 : ActionKeyDown(0x4940d) ? 1 : 2;
         RequestEquip(item, 0, layer);
@@ -615,6 +616,10 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
     /// with none. The host gives <see cref="TradeBook.DialogId"/> while the trade dialog is open, or
     /// <see cref="Shop.ShopController.UiId"/> while the shop is open.</summary>
     public Func<int> DialogHead = () => 0;
+    /// <summary>The bank at the head of the dialogs (0x4e47): its CStore::Allowed (FUN_14140d3e0's mode 3 test).</summary>
+    public Func<Item, bool> BankAllowed = _ => true;
+    /// <summary>InvenSlot::vfunc_14 case 3: the right-clicked item goes to the bank. Null: raised, not sent.</summary>
+    public Action<Item> BankDeposit;
     /// <summary>FUN_140c8dab0(GetInstrumentManager()): the uid of the score being played, 0 with none.</summary>
     public Func<long> PlayingScoreUid = () => 0;
     /// <summary>PlayItemSoundByUid: the item's sound.</summary>
@@ -1062,6 +1067,8 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
             return CanTradeItem(item, out _) ? 1 : hint ? 0 : 1;
         if (head == Ms2.Ui.Shop.ShopController.UiId)
             return ItemTradeRules.CanSellToShop(item, GemData, Now) ? 2 : hint ? 0 : 2;
+        if (head == StoreDialogController.UiId)
+            return BankAllowed(item) ? 3 : hint ? 0 : 3;
         var d = item.Data;
         if (item.Record is { HasUgc: true, Ugc.State: 2 }) return 15;
         if (d.Type == 1) return 6;

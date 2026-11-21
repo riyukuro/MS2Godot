@@ -166,4 +166,184 @@ public class StoreDialogTests
         long window = GC.GetAllocatedBytesForCurrentThread() - a;
         Assert.That(window, Is.LessThan(256), "Process allocates per call");
     }
+
+    // ---- the sends -------------------------------------------------------------------------------------------------
+
+    sealed class Wire
+    {
+        public readonly List<Ms2.Net.Wire.IOutPacket> Sent = new();
+        public readonly List<string> Notices = new();
+        public readonly List<MessageBoxData> Boxes = new();
+        public StoreDialogController C;
+        public StorageSender Sender;
+        public StorageBook Book;
+        public UiModel Model;
+        public long InvMeso = 1000;
+        public EquipItem InvItem;
+    }
+
+    static Wire Rig(long meso = 0, bool ready = true)
+    {
+        Packs();
+        var w = new Wire { Model = NewModel() };
+        w.Book = ready ? NewBook(meso) : new StorageBook();
+        w.Book.MaxStackOf = _ => 99;
+        w.Sender = new StorageSender(w.Book) { Send = w.Sent.Add, InventoryMeso = () => w.InvMeso, DepositMax = 100000, WithdrawMax = 100000,
+            FindInventoryItem = u => w.InvItem != null && w.InvItem.Uid == u ? w.InvItem : null };
+        w.C = new StoreDialogController { Book = w.Book, Sender = w.Sender, ShowData = w.Boxes.Add };
+        w.C.NoticeText += w.Notices.Add;
+        return w;
+    }
+
+    [Test]
+    public void LoadingASlowStoreAsksForItAndSortOnCloseAndTheSortButtonAreSent()
+    {
+        var w = Rig(ready: false);
+        Load(w.C, w.Model);
+        Assert.That(w.Sent.Select(p => p.GetType()), Is.EqualTo(new[] { typeof(StorageLoadRequest) }), "OnLoadInit: RequestLoad");
+        w.Sent.Clear();
+        w.C.OnCallback("onClickSort", new object[0]);
+        Assert.That(w.Sent.Single(), Is.InstanceOf<StorageCloseRequest>(), "the sort button is CStore::RequestClose");
+        w.Sent.Clear();
+        w.C.Close();
+        Assert.That(w.Sent.Single(), Is.InstanceOf<StorageSortRequest>(), "vfunc_67: RequestSort");
+    }
+
+    [Test]
+    public void ARealStoreIsNotAskedForAgain()
+    {
+        var w = Rig();
+        Load(w.C, w.Model);
+        Assert.That(w.Sent, Is.Empty);
+    }
+
+    [Test]
+    public void TheMesoButtonsAskInAnInputBoxAndItsAnswerIsChecked()
+    {
+        var w = Rig(meso: 500);
+        Load(w.C, w.Model);
+        w.C.OnCallback("onClickDeposit", new object[0]);
+        var box = w.Boxes.Single();
+        Assert.That(box.Callback(0, box), Is.True);       // no typed text: nothing, the box closes
+        Assert.That(w.Sent, Is.Empty);
+        box.ClickedTag = "deposit,300";
+        Assert.That(box.Callback(1, box), Is.True, "the no button");
+        Assert.That(w.Sent, Is.Empty);
+        Assert.That(box.Callback(0, box), Is.True);
+        var req = (StorageMesoRequest)w.Sent.Single();
+        Assert.That((req.Action, req.Amount), Is.EqualTo(((byte)1, 300L)));
+        w.Sent.Clear();
+        box.ClickedTag = "deposit,5000";                   // more than the bag holds: refused, the box stays
+        Assert.That(box.Callback(0, box), Is.False);
+        Assert.That(w.Sent, Is.Empty);
+        w.C.OnCallback("onClickWithDraw", new object[0]);
+        var box2 = w.Boxes[1];
+        box2.ClickedTag = "withdraw,200";
+        Assert.That(box2.Callback(0, box2), Is.True);
+        var out2 = (StorageMesoRequest)w.Sent.Single();
+        Assert.That((out2.Action, out2.Amount), Is.EqualTo(((byte)0, 200L)));
+        w.Sent.Clear();
+        box2.ClickedTag = "withdraw,501";
+        Assert.That(box2.Callback(0, box2), Is.False, "more than the bank holds");
+        Assert.That(w.Sent, Is.Empty);
+    }
+
+    [Test]
+    public void TheMesoButtonsAreRefusedWithADeadPlayer()
+    {
+        var w = Rig(meso: 500);
+        w.Sender.PlayerAlive = () => false;
+        Load(w.C, w.Model);
+        w.C.OnCallback("onClickDeposit", new object[0]);
+        w.C.OnCallback("onClickWithDraw", new object[0]);
+        Assert.That(w.Boxes, Is.Empty);
+    }
+
+    [Test]
+    public void TheExpandButtonConfirmsThenSendsOnYes()
+    {
+        var w = Rig();
+        w.Book.MaxExtended = 100;                          // room to grow: the confirm box is offered
+        w.C.ExpandPrice = () => 1000;
+        Load(w.C, w.Model);
+        w.C.OnCallback("onClickExpandSlot", new object[0]);
+        var box = w.Boxes.Single();
+        Assert.That(box.Callback(1, box), Is.True);
+        Assert.That(w.Sent, Is.Empty, "the no button");
+        Assert.That(box.Callback(0, box), Is.True);
+        Assert.That(w.Sent.Single(), Is.InstanceOf<StorageExtendRequest>());
+    }
+
+    [Test]
+    public void ADropBetweenBankSlotsMovesAndOntoItselfDoesNot()
+    {
+        var w = Rig();
+        w.Book.Apply(new StorageMessage.Add(0, Item(20000001, 7, 2)));
+        Load(w.C, w.Model);
+        var from = StoreDialogController.SlotName(2);
+        w.C.SlotDroppedOn(from, from, w.C);
+        Assert.That(w.Sent, Is.Empty);
+        w.C.SlotDroppedOn(StoreDialogController.SlotName(9), from, w.C);
+        var move = (StorageMoveRequest)w.Sent.Single();
+        Assert.That((move.Uid, move.ToSlot), Is.EqualTo((7L, (short)9)));
+    }
+
+    sealed class Bag : IInvenSlotOwner
+    {
+        public long? Uid; public Ms2.Ui.Items.Item Found;
+        public long? InvenSlotUid(string name) => Uid;
+        public Ms2.Ui.Items.Item FindItem(long uid) => Found;
+        public bool CanEquipItem(Ms2.Ui.Items.Item item, int slot, int layer) => false;
+        public void RequestEquipItem(Ms2.Ui.Items.Item item, int slot, int layer) { }
+        public bool IsDragSlot(string name) => true;
+        public void RefreshSlot(string name) { Refreshed++; }
+        public int Refreshed;
+        public void SlotDropUnresolved(string name) { }
+    }
+
+    static Ms2.Ui.Items.Item Bagged(UiModel model, long uid, int count, EquipItem record)
+    {
+        var item = Ms2.Ui.Items.Item.Create(model.Tables.Items, RealId(model), 1);
+        if (item == null) Assert.Ignore("no item data");
+        item.Uid = uid; item.Count = (uint)count; item.Record = record;
+        return item;
+    }
+
+    [Test]
+    public void ADropFromTheBagDepositsAndARefusedOneSendsNothing()
+    {
+        var w = Rig();
+        Load(w.C, w.Model);
+        var item = Bagged(w.Model, 11, 1, null);
+        w.InvItem = new EquipItem { Id = item.Data.Id, Uid = 11, Amount = 1 };
+        item.Record = w.InvItem;
+        var bag = new Bag { Uid = 11, Found = item };
+        w.C.SlotDroppedOn(StoreDialogController.SlotName(4), "InventoryDialog.0", bag);
+        var dep = (StorageDepositRequest)w.Sent.Single();
+        Assert.That((dep.Uid, dep.Slot, dep.Count), Is.EqualTo((11L, (short)4, 1)));
+        Assert.That(bag.Refreshed, Is.EqualTo(1), "the source is pushed again, nothing moves before the server answers");
+        w.Sent.Clear();
+        w.Book.Allowed = _ => false;
+        w.C.SlotDroppedOn(StoreDialogController.SlotName(4), "InventoryDialog.0", bag);
+        Assert.That(w.Sent, Is.Empty, "an item the bank refuses");
+        Assert.That(w.Notices.Count, Is.EqualTo(1));
+        w.Book.Allowed = null;
+        bag.Found = null;                                  // gone from the bag
+        w.C.SlotDroppedOn(StoreDialogController.SlotName(4), "InventoryDialog.0", bag);
+        Assert.That(w.Sent, Is.Empty);
+    }
+
+    [Test]
+    public void ARightClickInTheBagDepositsTheStackIntoTheFirstFreeSlot()
+    {
+        var w = Rig();
+        w.Book.Apply(new StorageMessage.Add(0, Item(20000001, 7, 0)));
+        Load(w.C, w.Model);
+        var item = Bagged(w.Model, 12, 1, null);
+        w.InvItem = new EquipItem { Id = item.Data.Id, Uid = 12, Amount = 1 };
+        item.Record = w.InvItem;
+        w.C.DepositFromInventory(item);
+        var dep = (StorageDepositRequest)w.Sent.Single();
+        Assert.That((dep.Uid, dep.Slot), Is.EqualTo((12L, (short)1)), "AvailableSlot: the first empty slot");
+    }
 }

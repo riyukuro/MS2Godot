@@ -2640,7 +2640,9 @@ public partial class HudScene : Node, IUiStageHost
         // the trade path (InvenSlot::TryAddToTrade): the open trade dialog heads the right-click dialogs (DAT_143af2258)
         c.Trade = () => TradeOpen ? trade.Book : null;
         c.Shop = () => ShopOpen ? shop : null;
-        c.DialogHead = () => TradeOpen ? Ms2.Ui.TradeBook.DialogId : ShopOpen ? Ms2.Ui.Shop.ShopController.UiId : 0;
+        c.DialogHead = () => TradeOpen ? Ms2.Ui.TradeBook.DialogId : ShopOpen ? Ms2.Ui.Shop.ShopController.UiId : StoreOpen ? Ms2.Ui.Hud.StoreDialogController.UiId : 0;
+        c.BankAllowed = item => store?.Storable(item) ?? true;       // the open bank heads the right-click dialogs (0x4e47)
+        c.BankDeposit = item => store?.DepositFromInventory(item);
         c.ItemSound += item => GD.Print($"inventory: item sound {item?.ItemId} (the material sounds are not ported)");
         c.NoticeText += SystemNoticeText;
         BindBoxAnswers();

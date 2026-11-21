@@ -11,9 +11,13 @@ namespace Ms2.Ui.Hud;
 /// <see cref="StorageBook"/> (CStore, store.cpp, global DAT_143ab2d80); this controller shows it and keeps the window in
 /// step with its events: the bag is rebuilt (FUN_141b110e0) and the "m_expand" text refreshed (UpdateExpandText) from
 /// <see cref="Process"/> by the pending bits m_198 (4 = bag, 2 = expand text), as vfunc_15 does.
-/// <para>This is the show-and-fill half. The sends (RequestLoad, RequestSort and SendNpcTalkMode0 on close, deposit,
-/// withdraw, expand, sort, and the slot drag / right-click paths) are not ported here: their callbacks raise
-/// <see cref="Button"/> and send nothing.</para>
+/// <para>The sends go through <see cref="Sender"/> (CStore's requests and the client's checks before them): RequestLoad
+/// when the window opens on a store not ready, RequestSort on close, the meso and expand buttons, and the drops and
+/// right-clicks. Nothing changes here before the server answers.</para>
+/// <para>STILL-OPEN: SendNpcTalkMode0 on close; the count boxes (ShowUseStoreCountInput / ShowSwapStoreCountInput) of a
+/// stack the client asks about: such an item is not sent; StoreSlot::vfunc_26's binding boxes and CItem::FUN_14052a580
+/// (the right-click withdraw and its bag slot search FUN_140a612b0): the withdraw path is not sent; FUN_141275260(0x42)
+/// when the meso buttons are refused.</para>
 /// <para>STILL-OPEN: vfunc_il13 (m_198 = 6) is mapped to the ready event; the platform dictionary check (vfunc_37) that
 /// gates the search is taken as 1; the open / close sounds; the search candidate list (UpdateSearchCandidates).</para>
 /// </summary>
@@ -32,6 +36,18 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
     public const int PendingText = 2, PendingBag = 4;
 
     public StorageBook Book;
+    /// <summary>CStore's requests with the client's checks (see <see cref="StorageSender"/>); null sends nothing.</summary>
+    public StorageSender Sender;
+    /// <summary>The expand price item's number as FUN_14028dee0(0x2a8, DAT_143ab2d80.Value4500(), 6) formats it.</summary>
+    public Func<long> ExpandPrice = () => 0;
+    /// <summary>FUN_141275260(id, 1, 1): a system notice of a resolved text.</summary>
+    public event Action<string> NoticeText;
+    /// <summary>The box is shown (FUN_140d73c60).</summary>
+    public Action<MessageBoxData> ShowData = d => MessageBoxQueue.Show(d);
+    /// <summary>The server time (the item lock's clock).</summary>
+    public Func<long> Now = () => 0;
+    /// <summary>The keys DIK 0x2a / 0x36: either Shift is down.</summary>
+    public Func<bool> ShiftHeld = () => false;
     /// <summary>A callback whose client path is not ported: raised by its name, nothing is sent.</summary>
     public event Action<string> Button;
     /// <summary>The dialog closed.</summary>
@@ -81,6 +97,7 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
         Book.Expanded += OnExpanded;
         Book.CloseReceived += OnCloseReceived;
         Host.Invoke("initData", new object[] { Bag, Group(Book.Meso) });
+        if (!Book.Ready) Sender?.RequestLoad();     // OnLoadInit (@0x141b0f430): a store not ready is asked for
     }
 
     void Unsubscribe()
@@ -163,12 +180,13 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
     }
 
     /// <summary>vfunc_67 (@0x141b0f0c0): the listeners dropped and UIDialog's close; m_198 = 0, the search text cleared.
-    /// STILL-OPEN: SendNpcTalkMode0 and RequestSort are sends (item 2).</summary>
+    /// CStore::RequestSort is sent (vfunc_67 :543). STILL-OPEN: SendNpcTalkMode0.</summary>
     public override void Close()
     {
         if (closing) return;
         closing = true;
         Unsubscribe();
+        Sender?.RequestSort();
         base.Close();
         pending = 0;
         searchText = "";
@@ -189,15 +207,81 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
                 ScrollToItem(args.Length > 0 ? Rt.ToString(args[0]) : "");
                 return true;
             case "onclickdeposit":
+                AskMesos(true);
+                return true;
             case "onclickwithdraw":
+                AskMesos(false);
+                return true;
             case "onclickexpandslot":
+                AskExpand();
+                return true;
             case "onclicksort":
+                Sender?.RequestClose();           // vfunc_28 :733, CStore::RequestClose (mode 8)
+                return true;
             case "notifyslotuse":
             case "notifyslotshiftclick":
                 Button?.Invoke(name);
                 return true;
         }
         return false;
+    }
+
+    // ---- the meso and expand buttons ---------------------------------------------------------------------------------
+
+    /// <summary>onClickDeposit / onClickWithDraw (vfunc_28 :675): with FUN_141b11490 true (store id 0, the player alive) an
+    /// input box (type 7; Common 0x2a9 / 0x2aa; tag "deposit" / "withdraw") of as many characters as the grouped maximum
+    /// has; its answer is <see cref="OnMesoAnswer"/>. Refused: FUN_141275260(0x42) is STILL-OPEN, nothing is shown.</summary>
+    void AskMesos(bool deposit)
+    {
+        if (Sender == null || Model == null || !Sender.CanStartMeso()) return;
+        var box = MessageBoxQueue.Create(7, Model.Tables.Common(deposit ? 0x2a9 : 0x2aa), null, deposit ? "deposit" : "withdraw");
+        long max = deposit ? Sender.DepositMax : Sender.WithdrawMax;
+        box.SetInput(1, "", Group(max).Length, 0, 0);
+        box.Callback = (button, b) => OnMesoAnswer(button, b.ClickedTag);
+        ShowData(box);
+    }
+
+    /// <summary>UIStoreDialog::OnMessage (@0x141b0f7c0) for a message box answered yes: the tag "cmd,amount"; an empty
+    /// amount does nothing; deposit / withdraw call DepositMesos / WithdrawMesos (_wtoi64: garbage is 0). True closes
+    /// the box, false keeps it (the refused amount's notice is shown).</summary>
+    public bool OnMesoAnswer(int button, string tag)
+    {
+        if (button != 0 || Sender == null) return true;
+        var parts = (tag ?? "").Split(',', 2);
+        if (parts.Length < 2 || parts[1].Length == 0) return true;
+        long amount = Atoi64(parts[1]);
+        return parts[0] switch
+        {
+            "deposit" => Sender.DepositMesos(amount),
+            "withdraw" => Sender.WithdrawMesos(amount),
+            _ => true,
+        };
+    }
+
+    /// <summary>_wtoi64: leading blanks, a sign and digits; anything else ends it (0 when none).</summary>
+    static long Atoi64(string s)
+    {
+        int i = 0;
+        while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
+        bool neg = false;
+        if (i < s.Length && (s[i] == '-' || s[i] == '+')) neg = s[i++] == '-';
+        long v = 0;
+        for (; i < s.Length && s[i] >= '0' && s[i] <= '9'; i++) v = unchecked(v * 10 + (s[i] - '0'));
+        return neg ? -v : v;
+    }
+
+    /// <summary>onClickExpandSlot (vfunc_28 :716): below the maximum a confirm box (Common 0x2a8 with the price) whose
+    /// yes is ExpandSlots; at it the box of Common 0x2b0 with the current maximum.</summary>
+    void AskExpand()
+    {
+        if (Book == null || Sender == null || Model == null) return;
+        if (!Book.WithinCapacity)
+        {
+            var box = MessageBoxQueue.CreateWithCallback(Ms2.Quest.ClientFormat.Format(Model.Tables.Common(0x2a8), Group(ExpandPrice())), 1,
+                (button, _) => { if (button == 0) Sender.ExpandSlots(); return true; });
+            ShowData(box);
+        }
+        else ShowBox(Ms2.Quest.ClientFormat.Format(Model.Tables.Common(0x2b0), Book.CurrentCapacity ?? 0), 0);
     }
 
     /// <summary>
@@ -284,8 +368,64 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
 
     public void SlotDragStarted(string name) { }
 
-    /// <summary>STILL-OPEN: StoreSlot::vfunc_18 (a drop onto the bank) is a send (item 2); the source slot is refreshed.</summary>
-    public void SlotDroppedOn(string name, string source, IDragSlotOwner sourceOwner) => sourceOwner?.RefreshSlot(source);
+    /// <summary>
+    /// StoreSlot::vfunc_18 (storeslot.cpp:314). An inventory slot dropped: its item (gone from the bag: the source is
+    /// pushed again); a held stack in this slot with a max stack of 1 needs room (AvailableSlot -1: notice 0xf2); an item
+    /// the bank refuses: notice 0xf1; a stack the client asks a count of is not sent (STILL-OPEN); else the deposit
+    /// (the store slot when this one is empty, 0 when it holds an item). A store slot dropped: onto itself nothing, else
+    /// the move (mode 2). The source is pushed again either way: nothing moves until the server answers.
+    /// </summary>
+    public void SlotDroppedOn(string name, string source, IDragSlotOwner sourceOwner)
+    {
+        if (ParseSlot(name, out int to) && Sender != null && Book != null)
+        {
+            if (sourceOwner is IInvenSlotOwner inv && inv.InvenSlotUid(source) is long uid)
+            {
+                var item = inv.FindItem(uid);
+                if (item?.Record != null)
+                {
+                    int slot = to;
+                    bool refused = false;
+                    if (Book.Slot(to) != null)
+                    {
+                        slot = 0;
+                        if (item.Data.SlotMax == 1 && Book.AvailableSlot(item.Record, (int)item.Count) == -1)
+                        {
+                            NoticeText?.Invoke(Model.Tables.Common(0xf2));
+                            refused = true;
+                        }
+                    }
+                    if (!refused && !Book.IsStorable(item.Record.Id))
+                    {
+                        NoticeText?.Invoke(Model.Tables.Common(0xf1));
+                        refused = true;
+                    }
+                    if (!refused && !ItemTradeRules.AsksCount(item, Now())) Sender.Deposit(item.Uid, slot, (int)item.Count);
+                }
+            }
+            else if (sourceOwner == this && ParseSlot(source, out int from)) Sender.MoveSlot(from, to);
+        }
+        sourceOwner?.RefreshSlot(source);
+    }
+
+    /// <summary>
+    /// InvenSlot::vfunc_14 case 3 (invenslot.cpp:923), the right-click with this window at the head of the dialogs: the
+    /// target slot is AvailableSlot(item, 1, or the whole stack with Shift); -1: notice 0xf2; an item the bank refuses:
+    /// notice 0xf1; a stack that asks a count without Shift is not sent (STILL-OPEN: the count box); else the whole
+    /// stack is deposited.
+    /// </summary>
+    public void DepositFromInventory(Item item)
+    {
+        if (item?.Record == null || Sender == null || Book == null || Model == null) return;
+        bool all = ShiftHeld();
+        int slot = Book.AvailableSlot(item.Record, all ? (int)item.Count : 1);
+        if (slot == -1) { NoticeText?.Invoke(Model.Tables.Common(0xf2)); return; }
+        if (!Book.IsStorable(item.Record.Id)) { NoticeText?.Invoke(Model.Tables.Common(0xf1)); return; }
+        if (!ItemTradeRules.AsksCount(item, Now()) || all) Sender.Deposit(item.Uid, slot, (int)item.Count);
+    }
+
+    /// <summary>CStore::Allowed (bank, type 0), for the inventory's use mode.</summary>
+    public bool Storable(Item item) => Book?.IsStorable(item.Data.Id) ?? true;
 
     public void SlotDropUnresolved(string name) => RefreshSlot(name);
 }

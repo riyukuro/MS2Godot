@@ -72,6 +72,11 @@ public partial class LiveSession : Node
     public readonly ItemBook Items = new();
     /// <summary>The bank (CStore, DAT_143ab2d80): the StorageInventory packets (0x22) applied as CStore::Dispatch does.</summary>
     public readonly StorageBook Storage = new();
+    /// <summary>The bank sends (RequestItemStorage 0x18).</summary>
+    public void SendStorage(Ms2.Net.Wire.IOutPacket packet)
+    {
+        if (game != null) Send(packet);
+    }
     /// <summary>The inventory dialog model over Items; a UI binds it. Only its Sort sends RequestItemInventory (the sort request, 0x14199c230); a tab switch sends nothing.</summary>
     public InventoryView Inventory { get; private set; }
     public readonly GlobalFactor Factors = new();   // CGloabalFactor: exp/meso rates of OnGlobalFactor
