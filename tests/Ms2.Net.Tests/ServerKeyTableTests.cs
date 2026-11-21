@@ -60,13 +60,24 @@ public class ServerKeyTableTests {
         // CKeyTable::OnKeyTable (keytable.cpp:293-303): useDefault 1 loads DefaultKey.xml and returns before SetQuickSlotPage
         var t = new ServerKeyTable();
         t.Apply(new ByteReader(ServerKeyTable.Write(0, false, Keys, 1, Pages)));
-        Assert.That(t.PagesRead, Is.True);
+        Assert.That(t.PageNotified, Is.True);
         t.Apply(new ByteReader(ServerKeyTable.Write(0, true, Keys, 0, Pages)));
-        Assert.That(t.PagesRead, Is.False);
+        Assert.That(t.PageNotified, Is.False);
         t.Apply(new ByteReader(ServerKeyTable.Write(7, false, null, 0, Pages)));
-        Assert.That(t.PagesRead, Is.True);
+        Assert.That(t.PageNotified, Is.True);
         t.Apply(new ByteReader(ServerKeyTable.Write(0, false, Array.Empty<KeyBinding>(), 0, Pages)));
-        Assert.That(t.PagesRead, Is.True, "a binding count of 0 still reads the pages");
+        Assert.That(t.PageNotified, Is.True, "a binding count of 0 still reads the pages");
+    }
+
+    [Test] public void APageOutOfRangeReadsThePagesButDoesNotNotify() {
+        // CKeyTable::SetQuickSlotPage (keytable.cpp:2547): a page out of range asserts and returns before NotifyShortkeyPage
+        var t = new ServerKeyTable();
+        t.Apply(new ByteReader(ServerKeyTable.Write(7, false, null, 1, Pages)));
+        Assert.That((t.PageNotified, t.CurrentPage), Is.EqualTo((true, 1)));
+        t.Apply(new ByteReader(ServerKeyTable.Write(7, false, null, 5, Pages)));
+        Assert.That((t.PageNotified, t.CurrentPage, t.PageCount), Is.EqualTo((false, 1, 2)));
+        t.Apply(new ByteReader(ServerKeyTable.Write(7, false, null, 0, Array.Empty<IReadOnlyList<(int, QuickSlotEntry)>>())));
+        Assert.That((t.PageNotified, t.PageCount), Is.EqualTo((false, 0)));
     }
 
     [Test] public void FindBySkillAndItemDoesNotAllocate() {

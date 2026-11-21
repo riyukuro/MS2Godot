@@ -33,9 +33,10 @@ public sealed class ServerKeyTable {
     public bool UsesDefaultKeys { get; private set; }
     /// <summary>The bindings of the last mode 0 packet (empty when <see cref="UsesDefaultKeys"/>).</summary>
     public IReadOnlyList<KeyBinding> Bindings { get; private set; } = Array.Empty<KeyBinding>();
-    /// <summary>The last packet read the pages and called SetQuickSlotPage (mode 0 with bindings or a count of 0, mode 7); a mode 0
-    /// with useDefault 1 (keytable.cpp:293-303) does not, so its NotifyShortkeyPage does not come.</summary>
-    public bool PagesRead { get; private set; }
+    /// <summary>The last packet read the pages and SetQuickSlotPage took its page, which posts NotifyShortkeyPage (mode 0 with
+    /// bindings or a count of 0, mode 7). A mode 0 with useDefault 1 (keytable.cpp:293-303) reads no pages, and SetQuickSlotPage
+    /// (keytable.cpp:2547) asserts and returns before the notify for a page out of range, so neither notifies.</summary>
+    public bool PageNotified { get; private set; }
     /// <summary>m_nQuickSlotPage (SetQuickSlotPage).</summary>
     public int CurrentPage { get; private set; }
     public int PageCount => pages.Count;
@@ -85,7 +86,7 @@ public sealed class ServerKeyTable {
     /// <summary>OnKeyTable: applies one packet; returns the mode.</summary>
     public int Apply(ByteReader r) {
         int mode = r.ReadByte();
-        PagesRead = false;
+        PageNotified = false;
         if (mode == 0) {
             int useDefault = r.ReadByte();
             if (useDefault == 1) {
@@ -112,7 +113,6 @@ public sealed class ServerKeyTable {
     }
 
     void ReadPages(ByteReader r) {
-        PagesRead = true;
         int page = r.ReadUShort();
         int count = r.ReadUShort();
         pages.Clear();
@@ -126,8 +126,8 @@ public sealed class ServerKeyTable {
                 p[slot] = new QuickSlotEntry(skill, item, uid);
             }
         }
-        // SetQuickSlotPage(page, 0) asserts and keeps the old page when it is out of range
-        if (page >= 0 && page < pages.Count) CurrentPage = page;
+        // SetQuickSlotPage(page, 0) asserts and keeps the old page, with no notify, when it is out of range
+        if (page >= 0 && page < pages.Count) { CurrentPage = page; PageNotified = true; }
     }
 
     /// <summary>Writes a packet body of this layout (tests and offline fixtures).</summary>

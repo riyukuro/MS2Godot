@@ -2756,15 +2756,15 @@ public partial class HudScene : Node, IUiStageHost
         Action<int> onBook = _ => playerInfo.RebindSlots();
         Action<long> onBag = _ => playerInfo.QueueSlotRefresh(Ms2.Ui.Hud.MainPlayerInfoController.RefreshGray | Ms2.Ui.Hud.MainPlayerInfoController.RefreshItemCount);
         // CKeyTable::OnKeyTable (keytable.cpp:285-375): mode 0 loads bindings + quick-slot pages; mode 7 updates pages.
-        // Only mode 0 / 7's SetQuickSlotPage posts NotifyShortkeyPage (keytable.cpp:2547): the slots reload their page and the
-        // page number follows; a mode 0 with useDefault 1 reads no pages and does not call it (:293-303)
+        // Only mode 0 / 7's SetQuickSlotPage posts NotifyShortkeyPage, for a page in range (keytable.cpp:2547): the slots reload
+        // their page and the page number follows; a mode 0 with useDefault 1 reads no pages and does not call it (:293-303)
         // Client OnKeyTable never calls UIGameOptionDialog::ReopenCurrentTab (its only caller is uikeysettingselectdialog.cpp:117).
         Action<int> onKeys = mode =>
         {
             hudModel.ServerKeys = live.KeyTable;
             hudModel.Keys.Locked = live.KeyTable.Locked;
             if (mode == 0) hudModel.Keys.Apply(live.KeyTable);
-            if ((mode == 0 || mode == 7) && live.KeyTable.PagesRead) playerInfo.OnShortkeyPageNotify(playerInfo.SlotFieldsPage, live.KeyTable.CurrentPage);
+            if (mode == 0 || mode == 7) playerInfo.OnKeyTable();
             playerInfo.RebindSlots();
         };
         Action<Ms2.Net.Packets.KeyBinding> onBind = live.SendKeyTableBind;

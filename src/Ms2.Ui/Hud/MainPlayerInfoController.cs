@@ -432,6 +432,14 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         }
     }
 
+    /// <summary>A KeyTable packet taken into <see cref="UiModel.ServerKeys"/>: when SetQuickSlotPage took its page
+    /// (<see cref="Ms2.Net.Packets.ServerKeyTable.PageNotified"/>), the NotifyShortkeyPage it posts
+    /// (<see cref="OnShortkeyPageNotify"/>); else the slots keep their own entries.</summary>
+    public void OnKeyTable()
+    {
+        if (Model.ServerKeys is { PageNotified: true } t) OnShortkeyPageNotify(SlotFieldsPage, t.CurrentPage);
+    }
+
     /// <summary>GetHotkey(0) (skillslot.cpp:1235); GetHotkeyText (:1229) is its key name.</summary>
     int Hotkey(int slot)
     {

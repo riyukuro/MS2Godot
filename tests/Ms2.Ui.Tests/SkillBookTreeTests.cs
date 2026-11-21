@@ -177,6 +177,49 @@ public class SkillBookTreeTests
         var slot3 = (AsObject)h.ToAs(bar.GetBinding(MainPlayerInfoController.SlotBag + ".3"));
         Assert.That(Rt.ToString(h.Get(slot3, "iconPath")), Is.EqualTo(m.Tables.Skills.GetSkillData((uint)skill).Icon));
     }
+
+    [Test]
+    public void ABookSkillDroppedWithNoKeyTablePageShowsOnItsSlotUntilTheServerPagesComeIn()
+    {
+        // A new character's key table (mode 0, useDefault 1) has no page. SkillSlot::vfunc_18 (skillslot.cpp:551) still sends
+        // mode 3 for the slot labelled 2 (index 9) and sets the slot's own skill, which its vfunc_8 shows. The server's mode 7
+        // posts NotifyShortkeyPage only for a page in range (SetQuickSlotPage, keytable.cpp:2547), and UpdateQuickSlots
+        // (uimainplayerinfo.cpp:1209) gives each slot its page entry: kept when the page holds it, emptied when not.
+        var (bh, book, _) = Load();
+        book.OnSkillBookTree(NoTabs());
+        var m = bh.Model;
+        string from = book.GetBagSlotBindings(SkillBookTreeController.BagName).First(n => m.Tables.Skills.GetSkillData(book.BookSkillId(n)) is { IsPassive: false });
+        int skill = (int)book.BookSkillId(from);
+        var t = new ServerKeyTable();
+        t.Apply(new ByteReader(ServerKeyTable.Write(0, true, null, 0, null)));
+        m.Keys = new KeyTable(Packs(), "en"); m.ServerKeys = t; m.Keys.Apply(t);
+        var bar = new MainPlayerInfoController();
+        var sent = new List<Ms2.Net.Wire.IOutPacket>();
+        bar.Send = sent.Add;
+        var (rt, p) = src.Open(bar.Movie, r => r.Budget = 20_000_000);
+        p.StageW = 1280; p.StageH = 720;
+        var h = new UiHost(p, bar, m);
+        Assert.That(h.Load(), Is.True, "load: " + string.Join("; ", rt.Errors));
+        string s9 = MainPlayerInfoController.SlotBag + ".9";
+        string Icon() => Rt.ToString(h.Get((AsObject)h.ToAs(bar.GetBinding(s9)), "iconPath"));
+        Assert.That((t.PageCount, Icon()), Is.EqualTo((0, "")));
+
+        bar.SlotDroppedOn(s9, from, book);
+        Assert.That(sent, Is.EqualTo(new[] { new KeyTableSetQuickSlotRequest(0, skill, 0, 0, 9) }));
+        string icon = m.Tables.Skills.GetSkillData((uint)skill).Icon;
+        Assert.That(icon, Is.Not.Empty);
+        Assert.That(Icon(), Is.EqualTo(icon));
+
+        void Server(byte[] packet) { t.Apply(new ByteReader(packet)); bar.OnKeyTable(); }
+        Server(ServerKeyTable.Write(0, true, null, 0, null));
+        Assert.That(Icon(), Is.EqualTo(icon), "a default-keys load takes no page");
+        Server(ServerKeyTable.Write(7, false, null, 0, Array.Empty<IReadOnlyList<(int, QuickSlotEntry)>>()));
+        Assert.That(Icon(), Is.EqualTo(icon), "no page in range: no notify");
+        Server(ServerKeyTable.Write(7, false, null, 0, new IReadOnlyList<(int, QuickSlotEntry)>[] { new[] { (9, new QuickSlotEntry(skill, 0, 0)) } }));
+        Assert.That(Icon(), Is.EqualTo(icon));
+        Server(ServerKeyTable.Write(7, false, null, 0, new IReadOnlyList<(int, QuickSlotEntry)>[] { Array.Empty<(int, QuickSlotEntry)>() }));
+        Assert.That(Icon(), Is.EqualTo(""));
+    }
     /// <summary>A press, move and release on a learnt skill's slot (the user's drag out of the book). SkillSlot.handleMousePress
     /// re-dispatches a bubbling MOUSE_DOWN on its own m_slot, which bubbles back to the skill slot's MOUSE_DOWN listeners and
     /// so runs handleMousePress again: the movie recurses until the VM refuses the 129th call frame (VM::AddFrame,
