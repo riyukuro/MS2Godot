@@ -63,7 +63,8 @@ public partial class LiveSession
         InteractObjects = new LiveInteractObjects(new InteractHost(this, mapId), tbl) { Held = HeldItem };
     }
 
-    /// <summary>Binds the loaded field's xblock MS2InteractObject entities and applies any held 0x63 messages.</summary>
+    /// <summary>Binds the loaded field's xblock MS2InteractObject and MS2Breakable entities and applies any held 0x63 and
+    /// Breakable messages.</summary>
     public void AttachInteractObjects(string xblock, IReadOnlyList<FieldEntity> entities)
     {
         if (InteractObjects == null || InteractObjects.Attached) return;
@@ -71,8 +72,10 @@ public partial class LiveSession
         try { want = FieldData.FindById(PackSet.Shared(Settings.DataDir), fieldEntry.Current?.MapId ?? 0)?.XBlock; } catch { }
         bool same = want != null && string.Equals(want, xblock, StringComparison.OrdinalIgnoreCase);
         InteractObjects.Attach(same ? entities : Array.Empty<FieldEntity>());
+        // the field load's breakables loop (worldservice_1.cpp:6757-6768); the Breakable updates held since the field enter follow
+        if (Breakables.Holding) Breakables.AttachField(same ? entities : null);
         TaxiAction.Attach(same ? entities : null);
-        GD.Print($"live: interact objects attached to xblock {xblock}{(same ? "" : $" (different xblock: no entities)")}: {InteractObjects.All.Count} registered");
+        GD.Print($"live: interact objects attached to xblock {xblock}{(same ? "" : $" (different xblock: no entities)")}: {InteractObjects.All.Count} registered, {Breakables.Count} breakables");
     }
 
     void OnInteractObject(InteractObjectMessage m)

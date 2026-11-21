@@ -1,4 +1,8 @@
+using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using Ms2.Formats.World;
 using Ms2.Net.Packets;
 using NUnit.Framework;
 
@@ -29,6 +33,86 @@ public class FieldObjectStatesTests
         b.Apply(new BreakableUpdate(0, new[] { new BreakableEntry("c", 2, 0, 0, 0), new BreakableEntry("c", 4, 0, 0, 0) }));
         Assert.That(b.CubeStates["c"], Is.EqualTo(4));
         Assert.That(b.Find("c"), Is.Null);
+    }
+
+    [Test]
+    public void BreakableLookupLowercasesTheNameAndTheCubeListKeepsIt()
+    {
+        // FindMarkerByName (worldservice_1.cpp:4321-4327) lowercases its copy; the cube list takes strName as read (:3691)
+        var b = new BreakableObjects();
+        b.AddMarker("abc");
+        b.Apply(new BreakableUpdate(0, new[] { new BreakableEntry("ABC", 3, 0, 0, 0), new BreakableEntry("Cube", 1, 0, 0, 0) }));
+        Assert.That(b.Find("abc").State, Is.EqualTo(3));
+        Assert.That(b.CubeStates.Keys, Is.EqualTo(new[] { "Cube" }));
+    }
+
+    static FieldMap Field(string xblock)
+    {
+        var d = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
+        var packs = new Ms2.Formats.Pack.PackSet(d);
+        return FieldMap.Load(packs, new Ms2.Formats.World.FlatLibrary(packs), xblock);
+    }
+
+    [Test]
+    public void TheFieldsBreakablesBecomeMarkersUnderTheirLowercasedIdsAtStateTwo()
+    {
+        // worldservice_1.cpp:6757-6768: every entity of model "MS2Breakable" (0xd3b04f05) through vfunc_1(entity, 2)
+        var map = Field("02000007_bf");
+        var want = map.Entities.Where(e => e.HasMixin("MS2Breakable")).ToList();
+        Assert.That(want, Is.Not.Empty);
+        var b = new BreakableObjects();
+        Assert.That(b.AttachField(map.Entities), Is.EqualTo(want.Count));
+        Assert.That(b.Count, Is.EqualTo(want.Select(e => e.Raw.Id.ToLowerInvariant()).Distinct().Count()));
+        foreach (var e in want)
+        {
+            var m = b.Find(e.Raw.Id);
+            Assert.That(m, Is.Not.Null);
+            Assert.That((m.Name, m.State, m.Shown), Is.EqualTo((e.Raw.Id.ToLowerInvariant(), 2, true)));
+            Assert.That(m.Entity, Is.SameAs(map.Entities.Last(x => string.Equals(x.Raw?.Id, e.Raw.Id, StringComparison.OrdinalIgnoreCase) && x.HasMixin("MS2Breakable"))));
+            // FUN_140adf9d0 (breakableobject.cpp:586-590): m_bHittable is "Enabled", false with a zero size
+            var size = e.Vector("ShapeDimensions");
+            Assert.That(m.Hittable, Is.EqualTo(e.Bool("Enabled") && (size.X != 0 || size.Y != 0 || size.Z != 0)));
+            Assert.That(m.Position, Is.EqualTo(e.Position));
+        }
+        Assert.That(b.Find(map.Entities.First(e => !e.HasMixin("MS2Breakable") && e.Raw?.Id != null).Raw.Id), Is.Null);
+    }
+
+    [Test]
+    public void ABreakableAtStateFourIsHiddenAndShownAgainByARegen()
+    {
+        // SetState (breakableobject.cpp:270-343): state 4 -> FUN_140ae07d0(0) (the fade out); 5 -> FUN_140ae07d0(1); 1 leaves it
+        var map = Field("02000007_bf");
+        var b = new BreakableObjects();
+        b.AttachField(map.Entities);
+        string name = map.Entities.First(e => e.HasMixin("MS2Breakable")).Raw.Id;
+        var set = new List<(string, int)>();
+        b.StateSet = (n, s) => set.Add((n, s));
+        b.Apply(new BreakableUpdate(1, new[] { new BreakableEntry(name.ToUpperInvariant(), 4, 0, 0, 0) }));
+        Assert.That(b.Find(name).Shown, Is.False);
+        Assert.That(b.CubeStates, Is.Empty);
+        b.Apply(new BreakableUpdate(1, new[] { new BreakableEntry(name, 1, 0, 0, 0) }));
+        Assert.That(b.Find(name).Shown, Is.False);
+        b.Apply(new BreakableUpdate(1, new[] { new BreakableEntry(name, 5, 0, 0, 0) }));
+        Assert.That(b.Find(name).Shown, Is.True);
+        Assert.That(set.Select(x => x.Item2), Is.EqualTo(new[] { 4, 1, 5 }));
+        Assert.That(set.Select(x => x.Item1).Distinct(), Is.EqualTo(new[] { name.ToLowerInvariant() }));
+    }
+
+    [Test]
+    public void UpdatesAfterAFieldEnterWaitForTheFieldsMarkers()
+    {
+        // the client reads OnBreakable after its field load (worldservice_1.cpp:6757-6768) made the markers; a held update
+        // that reached the cube list instead would lose the marker's state
+        var map = Field("02000007_bf");
+        var b = new BreakableObjects();
+        b.ClearMarkers();
+        string name = map.Entities.First(e => e.HasMixin("MS2Breakable")).Raw.Id;
+        b.Apply(new BreakableUpdate(1, new[] { new BreakableEntry(name, 4, 0, 0, 0) }));
+        Assert.That(b.CubeStates, Is.Empty);
+        b.AttachField(map.Entities);
+        Assert.That((b.Find(name).State, b.Find(name).Shown, b.Holding), Is.EqualTo((4, false, false)));
+        Assert.That(b.CubeStates, Is.Empty);
     }
 
     static LiftableUpdate List(params LiftableEntry[] e) => new(LiftableUpdate.ModeList, e);

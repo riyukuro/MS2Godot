@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using Ms2.Formats.Model;
+using Ms2.Formats.World;
 using Ms2.Net.Packets;
 
 namespace Ms2.Ui;
@@ -9,10 +11,14 @@ namespace Ms2.Ui;
 /// An entry whose name is a field marker (WorldService::FindMarkerByName) sets its state (CBreakableObject::SetState(state,
 /// 0)) and its sync values (FUN_140adeaa0); any other name keeps its state in the cube map's list
 /// (CubeMapInformationService::FUN_1410caa60, cubemapinformationservice_3.cpp:1298-1303: erased, then set).
-/// STILL-OPEN: the field's markers are not attached (WorldService m_4b0, worldservice_1.cpp:6760-6768, model 0xd3b04f05:
-/// its name is not proven); the host registers them with <see cref="AddMarker"/>.
-/// STILL-OPEN: SetState's effects and animations per state (breakableobject.cpp:270-343) have no port; the host gets
-/// <see cref="StateSet"/>. The reader of the cube map's list (+0x1a0) is not found.
+/// The lookup is FindMarkerByName (@0x141bc4e70, worldservice_1.cpp:4321-4327), which lowercases the name; the cube list
+/// keeps the packet's name as sent.
+/// <para>The field's markers (<see cref="AttachField"/>): WorldService's field load (worldservice_1.cpp:6757-6768) makes a
+/// CBreakableObject for every entity of model 0xd3b04f05 (net hash of "MS2Breakable") and adds it when vfunc_1(entity, 2)
+/// (@0x140ade120, breakableobject.cpp:244-266) returns 1, which it always does.</para>
+/// STILL-OPEN: SetState's effects, animations, physics actor and shadow per state (breakableobject.cpp:270-343) have no
+/// port; the host gets <see cref="StateSet"/> and <see cref="Marker.Shown"/>, which the game does not draw yet. The reader of the cube map's list (+0x1a0)
+/// is not found.
 /// </summary>
 public sealed class BreakableObjects
 {
@@ -23,7 +29,39 @@ public sealed class BreakableObjects
         public int SyncA { get; internal set; }
         public int SyncB { get; internal set; }
         public int SyncC { get; internal set; }
+        /// <summary>The field entity (m_spEntity); null for a marker added by name only.</summary>
+        public FieldEntity Entity { get; internal set; }
+        /// <summary>m_bHittable: property 0x2683e9ec ("Enabled"), false when the size is zero (FUN_140adf9d0,
+        /// breakableobject.cpp:586-590).</summary>
+        public bool Hittable { get; internal set; }
+        /// <summary>m_ptSize: property 0x9dc22aea ("ShapeDimensions"). The hit box is (x, y * 0.5, z) at offset
+        /// (0, y * 0.5, 0) from the position (:621-625).</summary>
+        public Vec3 Size { get; internal set; }
+        /// <summary>m_bC1: property 0x54adb2fd ("reactionArrow"); the tag pass sends only for such a marker
+        /// (worldservice_1.cpp:9169-9392).</summary>
+        public bool ReactionArrow { get; internal set; }
+        /// <summary>The hit box's m_b54: property 0xa34897b1 ("SkillPauseControllFeedback") (:630).</summary>
+        public bool SkillPauseFeedback { get; internal set; }
+        /// <summary>m_ptPos / m_ptRot: properties 0xfd95ca52 ("Position") and 0x68c7c29d ("Rotation") (:617-618).</summary>
+        public Vec3 Position { get; internal set; }
+        public Vec3 Rotation { get; internal set; }
+        /// <summary>Whether SetState last showed the model (FUN_140ae07d0(1): states 2, 3, 5 and 6) or hid it
+        /// (FUN_140ae07d0(0), state 4: a 500 ms alpha fade from 1 to 0, breakableobject.cpp:755-776); other states leave it.
+        /// A marker without an entity changes nothing (:277).</summary>
+        public bool Shown { get; internal set; } = true;
+
+        /// <summary>CBreakableObject::SetState (@0x140ade420, breakableobject.cpp:270-343), the visibility part.</summary>
+        internal void SetState(int state)
+        {
+            State = state;
+            if (Entity == null) return;
+            if (state is 2 or 3 or 5 or 6) Shown = true;
+            else if (state == 4) Shown = false;
+        }
     }
+
+    /// <summary>The model every field breakable has: net hash 0xd3b04f05 (worldservice_1.cpp:6760).</summary>
+    public const string Model = "MS2Breakable";
 
     readonly Dictionary<string, Marker> markers = new(StringComparer.Ordinal);
     readonly Dictionary<string, int> cubeStates = new(StringComparer.Ordinal);
@@ -36,15 +74,65 @@ public sealed class BreakableObjects
 
     public Marker AddMarker(string name, int state = 0)
     {
-        var m = new Marker { Name = name, State = state };
-        markers[name] = m;
+        // a marker's name is lowercase (vfunc_1's ToLower), as FindMarkerByName looks it up
+        var m = new Marker { Name = name.ToLowerInvariant(), State = state };
+        markers[m.Name] = m;
         return m;
     }
 
-    public Marker Find(string name) => name != null && markers.TryGetValue(name, out var m) ? m : null;
+    /// <summary>FindMarkerByName: the name lowercased.</summary>
+    public Marker Find(string name) => name != null && markers.TryGetValue(name.ToLowerInvariant(), out var m) ? m : null;
 
-    /// <summary>The field is left: its markers go.</summary>
-    public void ClearMarkers() => markers.Clear();
+    public int Count => markers.Count;
+
+    /// <summary>
+    /// The field load's breakables loop (worldservice_1.cpp:6757-6768): each entity of model "MS2Breakable" gets a marker
+    /// through vfunc_1(entity, 2). Its name is the entity's DataFileID lowercased (breakableobject.cpp:250-262; a field
+    /// marker is never a tomb stone: only FUN_140adf370 sets m_bTombStone, :470-485). AddMarker (@0x141bc4b10,
+    /// worldservice_1.cpp:4278-4284) is SetAt, so a later entity of the same name replaces the earlier. Then SetState(2, 0).
+    /// Returns the markers added; the updates held since <see cref="ClearMarkers"/> are applied after.
+    /// </summary>
+    public int AttachField(IReadOnlyList<FieldEntity> entities)
+    {
+        int n = 0;
+        for (int i = 0; entities != null && i < entities.Count; i++)
+        {
+            var e = entities[i];
+            if (!e.HasMixin(Model)) continue;
+            string id = e.Raw?.Id;
+            if (string.IsNullOrEmpty(id)) continue;
+            // FUN_140adf9d0 (breakableobject.cpp:584-635)
+            var size = e.Vector("ShapeDimensions");
+            var m = new Marker
+            {
+                Name = id.ToLowerInvariant(), Entity = e, Size = size,
+                Hittable = e.Bool("Enabled") && !(size.X == 0 && size.Y == 0 && size.Z == 0),
+                ReactionArrow = e.Bool("reactionArrow"), SkillPauseFeedback = e.Bool("SkillPauseControllFeedback"),
+                Position = e.Position, Rotation = e.Vector("Rotation"),
+            };
+            m.SetState(2);
+            markers[m.Name] = m;
+            n++;
+        }
+        Holding = false;
+        for (int i = 0; i < held.Count; i++) Apply(held[i]);
+        held.Clear();
+        return n;
+    }
+
+    readonly List<BreakableUpdate> held = new();
+
+    /// <summary>Whether updates wait for <see cref="AttachField"/>: from a field enter until its entities are attached.</summary>
+    public bool Holding { get; private set; }
+
+    /// <summary>The field is left: its markers go. The client loads the new field before it reads the next packet; here the
+    /// field loads later, so the updates that come first are held until <see cref="AttachField"/> and applied in order.</summary>
+    public void ClearMarkers()
+    {
+        markers.Clear();
+        held.Clear();
+        Holding = true;
+    }
 
     /// <summary>FUN_1410b76a0 (cubemapinformationservice_3.cpp:414-419) clears the cubes and FUN_1410d0310 the list (:5445).</summary>
     public void ClearCubeStates() => cubeStates.Clear();
@@ -52,15 +140,16 @@ public sealed class BreakableObjects
     public void Apply(BreakableUpdate u)
     {
         if (u == null) return;
+        if (Holding) { held.Add(u); return; }
         foreach (var e in u.Entries)
         {
-            if (markers.TryGetValue(e.Name, out var m))
+            if (e.Name != null && markers.TryGetValue(e.Name.ToLowerInvariant(), out var m))
             {
-                m.State = e.State;
+                m.SetState(e.State);
                 m.SyncA = e.SyncA;
                 m.SyncB = e.SyncB;
                 m.SyncC = e.SyncC;
-                StateSet?.Invoke(e.Name, e.State);
+                StateSet?.Invoke(m.Name, e.State);
             }
             else cubeStates[e.Name] = e.State;
         }
