@@ -157,7 +157,7 @@ public class RevivalPacketTests {
         ZeroHealth(me);
         me.Die(9);
         me.ExpireRevival(6000);
-        Assert.That(me.RevivalBlocked, Is.True, "PC::vfunc_137 sets the flag when the count is above 0 at death");
+        Assert.That(me.RevivalBlocked, Is.True, "the death sets the flag when the count is above 0 (pc.cpp:4598-4599)");
         var u = new FieldAddUser { ObjectId = 9, User = new UserBlock { Name = "a" }, RevivalEndTick = 9000, RevivalCount = 3, RevivalFlag = true };
         u.Stats[2].Health = 5;
         me.Apply(u);
