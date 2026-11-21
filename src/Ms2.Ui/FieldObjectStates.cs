@@ -130,8 +130,10 @@ public sealed class LiftableObjects
     /// <summary>A field lift: Init(entity, false, kind) with the entity's lowercased DataFileID as its name.</summary>
     public Lift AddFieldLift(string dataFileId, int kind)
     {
-        var l = new Lift { Name = dataFileId.ToLowerInvariant(), Kind = kind, HasEntity = true };
+        // Init (liftableobject.cpp:167-175): SetState(0) runs before BindEntity, so it finds no entity and leaves Active
+        var l = new Lift { Name = dataFileId.ToLowerInvariant(), Kind = kind };
         l.SetState(0);
+        l.HasEntity = true;
         lifts[l.Name] = l;
         return l;
     }

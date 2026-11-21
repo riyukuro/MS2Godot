@@ -48,6 +48,24 @@ public class FieldObjectPacketTests
     }
 
     [Test]
+    public void BreakableTrailingBytesStillRead()
+    {
+        // OnBreakable never checks the end: a trailing byte leaves the entries as read
+        var u = BreakableUpdate.Read(Reader(w => { w.WriteByte(1); Breakable(w, "x", 5, 2, 9, 10); w.WriteByte(0xEE); }));
+        Assert.That(u.Entries, Is.EqualTo(new[] { new BreakableEntry("x", 5, 2, 9, 10) }));
+    }
+
+    [Test]
+    public void LiftableTrailingBytesStillRead()
+    {
+        // OnLiftable never checks the end either
+        var u = LiftableUpdate.Read(Reader(w => { w.WriteByte(2); w.WriteString("l"); w.WriteByte(0); w.WriteInt(3); w.WriteByte(1); w.WriteByte(0xEE); }));
+        Assert.That(u.Entries, Is.EqualTo(new[] { new LiftableEntry("l", false, 3, 1) }));
+        var gone = LiftableUpdate.Read(Reader(w => { w.WriteByte(4); w.WriteString("gone"); w.WriteByte(0xEE); }));
+        Assert.That(gone.Name, Is.EqualTo("gone"));
+    }
+
+    [Test]
     public void BreakableOtherModeReadsNothingMore()
     {
         // :3670-3674: nCount stays 0 for another mode, the rest is left unread

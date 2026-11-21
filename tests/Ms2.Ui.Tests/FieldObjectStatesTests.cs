@@ -36,10 +36,11 @@ public class FieldObjectStatesTests
     [Test]
     public void FieldLiftIsDisabledAtStateZeroUnderItsLowercasedId()
     {
-        // Init(entity, false, kind) (liftableobject.cpp:167-175), BindEntity's ToLower (:186-191)
+        // Init(entity, false, kind) (liftableobject.cpp:167-175), BindEntity's ToLower (:186-191); SetState(0) runs before
+        // BindEntity, with no entity yet, so it does not SetActive (:295)
         var l = new LiftableObjects();
         var lift = l.AddFieldLift("ABCdef", 7);
-        Assert.That((lift.Name, lift.Kind, lift.Enabled, lift.State, lift.Active), Is.EqualTo(("abcdef", 7, false, 0, true)));
+        Assert.That((lift.Name, lift.Kind, lift.Enabled, lift.State, lift.Active), Is.EqualTo(("abcdef", 7, false, 0, false)));
     }
 
     [Test]

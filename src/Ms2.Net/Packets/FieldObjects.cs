@@ -21,8 +21,8 @@ public sealed record BreakableUpdate(byte Mode, IReadOnlyList<BreakableEntry> En
         var list = new List<BreakableEntry>(count > 0 && count < 4096 ? count : 0);
         for (int i = 0; i < count; i++)
             list.Add(new BreakableEntry(r.ReadString(), r.ReadByte(), r.ReadByte(), r.ReadInt(), r.ReadInt()));
-        // Another mode reads nothing past the mode (:3670-3674); the handler returns with the rest unread.
-        if (mode is 0 or 1) r.ExpectEnd("Breakable");
+        // Another mode reads nothing past the mode (:3670-3674). No ExpectEnd: OnBreakable never checks the end, trailing
+        // bytes are ignored.
         return new BreakableUpdate(mode, list);
     }
 }
@@ -96,7 +96,7 @@ public sealed record LiftableUpdate(byte Mode, IReadOnlyList<LiftableEntry> Entr
             default:
                 return new LiftableUpdate(mode, list);
         }
-        r.ExpectEnd("Liftable");
+        // no ExpectEnd: OnLiftable never checks the end, trailing bytes are ignored
         return new LiftableUpdate(mode, list, name);
     }
 }
