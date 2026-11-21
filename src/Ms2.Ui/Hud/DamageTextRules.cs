@@ -292,7 +292,28 @@ public sealed record DamageLook(string Glyphs, int SignSpacing, int NumberSpacin
 /// </summary>
 public sealed class DamageLookCache
 {
-    readonly Dictionary<(string Kind, string Target, string Grade, string Gem, bool Mine, bool Item), DamageLook> looks = new();
+    /// <summary>
+    /// The key, a class so the dictionary runs the shared reference-type code the ReadyToRun image holds (a value tuple
+    /// key's instantiation is not in it and would be compiled at the first hit). <see cref="probe"/> is the lookup's,
+    /// so a hit makes no key; a new look stores a copy.
+    /// </summary>
+    sealed class Key : IEquatable<Key>
+    {
+        public string Kind, Target, Grade, Gem;
+        public bool Mine, Item;
+        public bool Equals(Key o) => o != null && Mine == o.Mine && Item == o.Item && string.Equals(Kind, o.Kind) && string.Equals(Target, o.Target)
+            && string.Equals(Grade, o.Grade) && string.Equals(Gem, o.Gem);
+        public override bool Equals(object o) => Equals(o as Key);
+        public override int GetHashCode()
+        {
+            int h = (Kind?.GetHashCode() ?? 0) * 31 + (Target?.GetHashCode() ?? 0);
+            h = h * 31 + (Grade?.GetHashCode() ?? 0);
+            h = h * 31 + (Gem?.GetHashCode() ?? 0);
+            return h * 4 + (Mine ? 2 : 0) + (Item ? 1 : 0);
+        }
+    }
+    readonly Dictionary<Key, DamageLook> looks = new();
+    readonly Key probe = new();
 
     /// <summary>
     /// <see cref="DamageLook.For"/> (<see cref="DamageLook.ForItem"/> when <paramref name="item"/>) with
@@ -302,9 +323,9 @@ public sealed class DamageLookCache
     public DamageLook Get(string kind, string target, string grade, string gem, bool mine, bool item = false)
     {
         gem ??= "";
-        var key = (kind, target, grade, gem, mine, item);
-        if (!looks.TryGetValue(key, out var look))
-            looks[key] = look = item ? DamageLook.ForItem(kind, target, grade) : DamageLook.For(kind, target, grade, "", gem, mine, gem.Length > 0);
+        probe.Kind = kind; probe.Target = target; probe.Grade = grade; probe.Gem = gem; probe.Mine = mine; probe.Item = item;
+        if (!looks.TryGetValue(probe, out var look))
+            looks[new Key { Kind = kind, Target = target, Grade = grade, Gem = gem, Mine = mine, Item = item }] = look = item ? DamageLook.ForItem(kind, target, grade) : DamageLook.For(kind, target, grade, "", gem, mine, gem.Length > 0);
         return look;
     }
 

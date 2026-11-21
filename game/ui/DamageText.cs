@@ -78,7 +78,7 @@ public sealed partial class DamageText : CanvasLayer
     sealed class Num
     {
         public readonly Node2D Node = new() { Name = "DamageMovie" };
-        public readonly List<Part> Parts = new();
+        public readonly Parts Parts = new();
         public MovieClipNode Icon;     // the item icon: from pickups, not pooled
     }
 
@@ -87,6 +87,23 @@ public sealed partial class DamageText : CanvasLayer
         public readonly UiMovie Movie = m;
         public readonly string Class = cls;
         public readonly MovieClipNode Node = n;
+    }
+
+    /// <summary>
+    /// The parts of a number or clip: an array that only grows, not a List of the struct (the game assembly runs under the
+    /// JIT, and a List over a struct of its own is a new instantiation of every List method it calls at the first hit).
+    /// </summary>
+    sealed class Parts
+    {
+        Part[] items = new Part[4];
+        public int Count { get; private set; }
+        public ref readonly Part this[int i] => ref items[i];
+        public void Add(in Part p)
+        {
+            if (Count == items.Length) System.Array.Resize(ref items, Count * 2);
+            items[Count++] = p;
+        }
+        public void Clear() { System.Array.Clear(items, 0, Count); Count = 0; }
     }
 
     sealed class Clip
@@ -99,7 +116,7 @@ public sealed partial class DamageText : CanvasLayer
         public double Age;            // frames since creation: the looping clips added to its slots
         public MovieClipNode Loop1, Loop2, Loop3;
         public Num Number, Copy;
-        public readonly List<Part> Parts = new();    // the critical texts and the extra effect
+        public readonly Parts Parts = new();    // the critical texts and the extra effect
         public int Container = -1;
         public int Epoch;
         public int Gen;               // bumped on release: an entry holding an older generation sees its clip gone
@@ -140,8 +157,17 @@ public sealed partial class DamageText : CanvasLayer
     // per-hit cost: the looks, the nodes, the clips and the entries are reused, so a hit allocates nothing once warm
     readonly DamageLookCache looks = new();
     readonly char[] text = new char[24];
-    readonly Dictionary<(UiMovie, string), Stack<MovieClipNode>> nodePool = new();
-    readonly HashSet<(UiMovie, string)> missing = new();
+    /// <summary>
+    /// A movie's pooled glyph nodes by class, and the classes it does not have. Keyed by reference types only, so the
+    /// lookups run the shared code the ReadyToRun image holds (a (movie, class) tuple key is compiled at the first hit).
+    /// </summary>
+    sealed class MoviePool
+    {
+        public readonly Dictionary<string, Stack<MovieClipNode>> Nodes = new();
+        public readonly HashSet<string> Missing = new();
+        public void Free() { foreach (var st in Nodes.Values) while (st.TryPop(out var n)) n.Free(); }
+    }
+    readonly Dictionary<UiMovie, MoviePool> nodePool = new();
     readonly Dictionary<string, Stack<AniSet>> aniPool = new();
     readonly Stack<Num> numPool = new();
     readonly Stack<Clip> clipPool = new();
@@ -184,7 +210,7 @@ public sealed partial class DamageText : CanvasLayer
         u = nu;
         // the pooled nodes were built at the old scale: dropped, and the shown ones are freed when they are released
         epoch++;
-        foreach (var st in nodePool.Values) while (st.TryPop(out var n)) n.Free();
+        foreach (var mp in nodePool.Values) mp.Free();
         foreach (var st in aniPool.Values) while (st.TryPop(out var set)) set.Ani.Free();
     }
 
@@ -243,11 +269,7 @@ public sealed partial class DamageText : CanvasLayer
     void UnloadFont(string name)
     {
         if (!fontMovies.Remove(name, out var m)) return;
-        List<(UiMovie, string)> keys = null;
-        foreach (var k in nodePool.Keys) if (k.Item1 == m) (keys ??= new()).Add(k);
-        if (keys != null)
-            foreach (var k in keys) { foreach (var n in nodePool[k]) n.Free(); nodePool.Remove(k); }
-        missing.RemoveWhere(k => k.Item1 == m);
+        if (nodePool.Remove(m, out var mp)) mp.Free();
     }
 
     /// <summary>The numbers in the lists and the clips shown, for checks.</summary>
@@ -500,15 +522,15 @@ public sealed partial class DamageText : CanvasLayer
     /// <summary>A class of a movie at the current scale: one released before, else built. Null for a class not in it.</summary>
     MovieClipNode Take(UiMovie m, string cls)
     {
-        var key = (m, cls);
-        if (nodePool.TryGetValue(key, out var st) && st.TryPop(out var n))
+        if (!nodePool.TryGetValue(m, out var mp)) nodePool[m] = mp = new MoviePool();
+        if (mp.Nodes.TryGetValue(cls, out var st) && st.TryPop(out var n))
         {
             n.GotoFrame(0);
             return n;
         }
-        if (missing.Contains(key)) return null;
+        if (mp.Missing.Contains(cls)) return null;
         n = m.BuildClass(cls, u);
-        if (n == null) missing.Add(key);
+        if (n == null) mp.Missing.Add(cls);
         return n;
     }
 
@@ -518,8 +540,8 @@ public sealed partial class DamageText : CanvasLayer
         n.GetParent()?.RemoveChild(n);
         if (builtAt != epoch || (p.Movie != movie && !fontMovies.ContainsValue(p.Movie))) { n.Free(); return; }
         n.Position = Vector2.Zero;
-        var key = (p.Movie, p.Class);
-        if (!nodePool.TryGetValue(key, out var st)) nodePool[key] = st = new Stack<MovieClipNode>();
+        if (!nodePool.TryGetValue(p.Movie, out var mp)) nodePool[p.Movie] = mp = new MoviePool();
+        if (!mp.Nodes.TryGetValue(p.Class, out var st)) mp.Nodes[p.Class] = st = new Stack<MovieClipNode>();
         st.Push(n);
     }
 
@@ -546,7 +568,7 @@ public sealed partial class DamageText : CanvasLayer
     /// </summary>
     void Release(Clip c)
     {
-        foreach (var p in c.Parts) Give(p, c.Epoch);
+        for (int i = 0; i < c.Parts.Count; i++) Give(c.Parts[i], c.Epoch);
         c.Parts.Clear();
         if (c.Number != null) { FreeNum(c.Number, c.Epoch); c.Number = null; }
         if (c.Copy != null) { FreeNum(c.Copy, c.Epoch); c.Copy = null; }
@@ -571,7 +593,7 @@ public sealed partial class DamageText : CanvasLayer
 
     void FreeNum(Num n, int builtAt)
     {
-        foreach (var p in n.Parts) Give(p, builtAt);
+        for (int i = 0; i < n.Parts.Count; i++) Give(n.Parts[i], builtAt);
         n.Parts.Clear();
         if (n.Icon != null) { n.Icon.Free(); n.Icon = null; }
         n.Node.GetParent()?.RemoveChild(n.Node);
@@ -636,7 +658,7 @@ public sealed partial class DamageText : CanvasLayer
                 number.MoveChild(number.GetChild(0), Math.Min(value.Length - 1, number.GetChildCount() - 1));
         }
         float w = 0;
-        foreach (var p in num.Parts) { var g = p.Node; w = Math.Max(w, g.Position.X + g.Bounds.End.X * g.Scale.X); }
+        for (int i = 0; i < num.Parts.Count; i++) { var g = num.Parts[i].Node; w = Math.Max(w, g.Position.X + g.Bounds.End.X * g.Scale.X); }
         if (icon != null) w = Math.Max(w, icon.Position.X + icon.Bounds.End.X * icon.Scale.X);
         number.Position = new Vector2(-w / 2, -h / 2);
         return num;
