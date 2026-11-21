@@ -4,6 +4,7 @@ using System.Linq;
 using System.Xml.Linq;
 using Godot;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 using Ms2.Net.Packets;
 using Ms2Godot.Net;
 
@@ -33,7 +34,7 @@ public partial class EquipSwapCheck : Node
     static List<int> IdsOf(PackSet packs, int prefix, int n)
     {
         string entry = $"itemmodel/{prefix}.xml";
-        var x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('\uFEFF'));
+        var x = PackXml.Parse(packs.Read("Xml", entry));
         return x.Descendants("ItemModel").Select(e => (int)e.Attribute("id")).Take(n).ToList();
     }
 
