@@ -285,6 +285,6 @@ public class WorldMapTests
         o.Clear(); c.TaxiMembers(there, o);
         Assert.That(TaxiState(o), Is.EqualTo("active"));
         c.Close();
-        Assert.That(c.TaxiMode, Is.Zero, "vfunc_67 resets m_194");
+        Assert.That(c.TaxiMode, Is.Zero, "closing the map resets the taxi mode");
     }
 }
