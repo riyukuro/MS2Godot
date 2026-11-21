@@ -369,6 +369,8 @@ public partial class LiveSession : Node
     public event Action<ItemDismantlePacket> ItemDismantleReceived;
     /// <summary>The merge dialogs' sends (ItemMerge 0x3F, UIItemMergeOptionDialog / UIItemMergeRevertDialog); live only.</summary>
     public void SendItemMerge(Ms2.Net.Wire.IOutPacket packet) { if (game != null) Send(packet); }
+    /// <summary>SendOp ItemDismantle (0x5A): the CItemBreakManager sends (itembreakmanager.cpp:321-451).</summary>
+    public void SendItemDismantle(Ms2.Net.Wire.IOutPacket packet) { if (game != null) Send(packet); }
     /// <summary>The npc shop's sends (Shop 0x28).</summary>
     public void SendShop(Ms2.Net.Wire.IOutPacket packet) { if (game != null) Send(packet); }
     /// <summary>CInstrumentManager's currently playing score uid (FUN_140c8dab0, petmanager.cpp:141; STILL-OPEN:
