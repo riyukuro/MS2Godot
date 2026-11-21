@@ -1652,13 +1652,41 @@ namespace Ms2.Avm2.Flash
                 if (moved) MoveFocus(shift ? "up" : "down");
                 return;
             }
-            if (Focus is AsTextField tf && tf.type == "input")
+            if (Focus is AsTextField tf && (tf.type == "input" || tf.selectable))
                 RT.Guard("text input", () =>
                 {
+                    switch (EditKey(keyCode, shift, ctrl))
+                    {
+                        case EditAction.Copy: tf.Copy(Clipboard); return;
+                        case EditAction.Cut: tf.Cut(Clipboard); return;
+                        case EditAction.Paste: tf.Paste(Clipboard); return;
+                        case EditAction.SelectAll: tf.SelectAll(); return;
+                    }
+                    if (tf.type != "input") return;
                     if (keyCode == 8) { tf.Backspace(); return; }
                     if (charCode >= 32 && !ctrl) TypeInto(tf, ((char)charCode).ToString());
                 });
         }
+
+        public enum EditAction { None, Copy, Cut, Paste, SelectAll }
+
+        /// <summary>
+        /// The clipboard keys of the client's text key map (TextKeyMap::InitWindowsKeyMap @0x14258e0c0,
+        /// sfr_gfx_01c.cpp:191): Ctrl+C and Ctrl+Insert copy, Ctrl+X and Shift+Delete cut, Ctrl+V and Shift+Insert paste,
+        /// Ctrl+A selects all. An entry matches when the held modifiers include its own (TextKeyMap::Find @0x14258dae0),
+        /// and for one key the later entry wins, so Ctrl+Shift+Insert pastes.
+        /// </summary>
+        public static EditAction EditKey(uint keyCode, bool shift, bool ctrl) => keyCode switch
+        {
+            67 when ctrl => EditAction.Copy,                                   // C
+            88 when ctrl => EditAction.Cut,                                    // X
+            86 when ctrl => EditAction.Paste,                                  // V
+            65 when ctrl => EditAction.SelectAll,                              // A
+            45 when shift => EditAction.Paste,                                 // Insert
+            45 when ctrl => EditAction.Copy,
+            46 when shift => EditAction.Cut,                                   // Delete
+            _ => EditAction.None,
+        };
 
         /// <summary>Text typed into the focused field (IME output arrives here too): textInput first, then the edit.</summary>
         public void TypeInto(AsTextField tf, string s)

@@ -126,6 +126,47 @@ public class MovieTests
         Assert.That(rt.Errors, Is.Empty);
     }
 
+    /// <summary>
+    /// Ctrl+V and Shift+Insert paste the clipboard into the login fields (TextKeyMap::InitWindowsKeyMap, KeyAct_Paste,
+    /// sfr_gfx_07.cpp:847); the id field's maxChars 32 cuts a longer paste (DocView::EditCommand Cmd_ReplaceTextByPlainText).
+    /// </summary>
+    [Test]
+    public void LoginFieldsTakeAPaste()
+    {
+        var (rt, p) = Open("uilogindialog");
+        var dlg = p.FindOwner("onEnterKey");
+        string connected = null;
+        p.External = (n, a) =>
+        {
+            if (a.Length > 0 && Rt.ToString(a[0]) == "OnConnect")
+                connected = Rt.ToString(Get(p, Get(p, dlg, "m_inputID"), "text")) + "/" + Rt.ToString(Get(p, Get(p, dlg, "m_inputPW"), "text"));
+            return null;
+        };
+        var clip = new TextClipboard();
+        p.Clipboard = clip;
+        var id = (AsTextField)Get(p, Get(p, dlg, "m_inputID"), "textField");
+        var b = id.GetBounds(null);
+        p.Click(b.X + b.W / 2, b.Y + b.H / 2); p.Tick();
+        Assert.That(p.Focus, Is.SameAs(id));
+        id.setSelection(0, id.Text.Length);
+        clip.SetText(new string('a', 30) + "bcdef");
+        p.Key(86, 0, true, false, true); p.Key(86, 0, false, false, true);
+        p.Tick();
+        Assert.That(id.Text, Is.EqualTo(new string('a', 30) + "bc"), "maxChars 32");
+        id.setSelection(0, id.Text.Length);
+        clip.SetText("tester");
+        p.Key(86, 0, true, false, true); p.Key(86, 0, false, false, true);
+        p.Tick();
+        p.Call(dlg, "onTabKey"); p.Tick();
+        Assert.That(p.Focus, Is.SameAs(Get(p, Get(p, dlg, "m_inputPW"), "textField")));
+        clip.SetText("secret");
+        p.Key(45, 0, true, true, false); p.Key(45, 0, false, true, false);
+        p.Tick();
+        p.Call(dlg, "onEnterKey"); p.Tick();
+        Assert.That(connected, Is.EqualTo("tester/secret"));
+        Assert.That(rt.Errors, Is.Empty);
+    }
+
     [Test]
     public void MinimapEntityHidesItsHitArea()
     {

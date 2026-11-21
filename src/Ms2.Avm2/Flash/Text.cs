@@ -639,6 +639,113 @@ public class AsTextField : AsInteractiveObject
         Send("flash.events.Event", "change", true);
     }
 
+    /// <summary>Ctrl+A (KeyAct_SelectAll, EditorKit's key handler, sfr_gfx_07.cpp:821): the whole text is selected, nothing changes.</summary>
+    public void SelectAll() { SelBegin = 0; SelEnd = Text.Length; }
+
+    /// <summary>
+    /// Copies the selection to <paramref name="clipboard"/> (EditorKit::CopyToClipboard @0x142617440). A password field never
+    /// reaches the clipboard. An empty selection stores an empty text, as the client does.
+    /// </summary>
+    public void Copy(ITextClipboard clipboard)
+    {
+        if (clipboard == null || displayAsPassword) return;
+        var (b, e) = SelRange();
+        clipboard.SetText(Text[b..e]);
+    }
+
+    /// <summary>
+    /// Ctrl+X / Shift+Delete (KeyAct_Cut, sfr_gfx_07.cpp:829). A read-only field copies instead. An input field copies
+    /// (EditorKit::CutToClipboard @0x1426175b0, which calls CopyToClipboard, so a password field stores nothing) and
+    /// then removes the selection, and the field reports a change.
+    /// </summary>
+    public void Cut(ITextClipboard clipboard)
+    {
+        if (clipboard == null) return;
+        if (type != "input") { Copy(clipboard); return; }
+        Copy(clipboard);
+        var (b, e) = SelRange();
+        Text = Text[..b] + Text[e..]; Html = null;
+        SelBegin = SelEnd = b;
+        Changed();
+        Send("flash.events.Event", "change", true);
+    }
+
+    /// <summary>
+    /// Ctrl+V / Shift+Insert (KeyAct_Paste, sfr_gfx_07.cpp:847; EditorKit::PasteFromClipboard @0x142619270). Only an input
+    /// field takes a paste, and only a non-empty clipboard text. The text replaces the selection, cut first to what
+    /// maxChars leaves (DocView::EditCommand Cmd_InsertPlainText / Cmd_ReplaceTextByPlainText, sfr_render_03b.cpp:2668).
+    /// Each CR LF is then one new line, and a CR or LF becomes the field's new line (StyledText::InsertString with
+    /// NLP_CompressCRLF), also in a single-line field. Then the restrict set is applied to the whole text: a refused
+    /// character is retried in the other case and otherwise removed. The caret goes to the selection start plus the
+    /// characters inserted, not moved back for the ones removed.
+    /// </summary>
+    public bool Paste(ITextClipboard clipboard)
+    {
+        if (type != "input" || clipboard == null) return false;
+        var src = clipboard.GetText() ?? "";
+        int nul = src.IndexOf('\0');
+        if (nul >= 0) src = src[..nul];
+        var (b, e) = SelRange();
+        var t = Text;
+        string ins = "";
+        if (src.Length > 0)
+        {
+            int len = src.Length;
+            if (maxChars > 0)
+            {
+                // the client's unsigned Max - dstLen wraps when a script left the text longer than maxChars; nothing fits here
+                int left = Text.Length - (e - b);
+                if (left + len > maxChars) len = Math.Max(0, maxChars - left);
+            }
+            ins = NewLines(src[..len]);
+            t = Text[..b] + ins + Text[e..];
+        }
+        // the restrict pass runs on every paste, also one that inserted nothing
+        if (!string.IsNullOrEmpty(restrict))
+        {
+            var sb = new StringBuilder(t.Length);
+            foreach (var ch in t) if (Restricted(ch) is char c) sb.Append(c);
+            t = sb.ToString();
+        }
+        if (t == Text && src.Length == 0) return false;
+        Text = t; Html = null;
+        if (src.Length > 0) SelBegin = SelEnd = Math.Min(b + ins.Length, Text.Length);
+        else { SelBegin = Math.Min(SelBegin, Text.Length); SelEnd = Math.Min(SelEnd, Text.Length); }
+        Changed();
+        if (src.Length == 0) return false;
+        Send("flash.events.Event", "change", true);
+        return true;
+    }
+
+    (int B, int E) SelRange()
+    {
+        int b = Math.Clamp(Math.Min(SelBegin, SelEnd), 0, Text.Length), e = Math.Clamp(Math.Max(SelBegin, SelEnd), 0, Text.Length);
+        return (b, e);
+    }
+
+    // CR LF -> CR, LF -> CR: StyledText::InsertString with NLP_CompressCRLF (sfr_render_01c.cpp:905) stores NewLineChar for each
+    static string NewLines(string s)
+    {
+        if (s.IndexOf('\n') < 0) return s;
+        var sb = new StringBuilder(s.Length);
+        for (int i = 0; i < s.Length; i++)
+        {
+            if (s[i] == '\n' && i > 0 && s[i - 1] == '\r') continue;
+            sb.Append(s[i] == '\n' ? '\r' : s[i]);
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>The character the restrict set lets in for <paramref name="ch"/>: itself, else the other case, else null
+    /// (the paste filter, sfr_gfx_07.cpp:1100, and EditorKit::OnChar @0x142618120).</summary>
+    char? Restricted(char ch)
+    {
+        if (Allowed(ch)) return ch;
+        char up = char.ToUpperInvariant(ch);
+        char other = ch != up ? up : char.ToLowerInvariant(ch);
+        return Allowed(other) ? other : null;
+    }
+
     bool Allowed(char ch)
     {
         var r = restrict; bool neg = false, ok = false;
