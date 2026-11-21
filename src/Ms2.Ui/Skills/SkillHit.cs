@@ -208,6 +208,9 @@ public struct HitCandidate
     public long PartyId;
     /// <summary>PC::FUN_1416749a0()-&gt;IsPvpOnOff.</summary>
     public bool PvpOnOff;
+    /// <summary>The pvp on/off is not known (no feed): on a PK field the PC counts as having it set, so it is not hostile and
+    /// no target goes out the client would not send.</summary>
+    public bool PvpUnknown;
 }
 
 /// <summary>The area pick of a skill attack and the target records the damage send carries.</summary>
@@ -259,8 +262,9 @@ public static class SkillHit
     /// pvp on/off set; else (and for its HasPvPPoint xor, which this filter already checked) the teams differ (PCBase::vfunc_122
     /// @0x1416781c0, pcbase.cpp:2784). A hostile target needs hp, or for an npc hp 0 with a hittable corpse; a friendly one
     /// needs hp.
-    /// STILL-OPEN: the caster's GetForceApplyTarget extra flags (a buff state) are not ported; the candidates' party id and
-    /// pvp on/off (like Hidden and PvPPoint) have no feed.
+    /// STILL-OPEN: the caster's GetForceApplyTarget extra flags (a buff state) are not ported; pvp on/off
+    /// (AdditionalCliList m_bPvpOnOff, set by a buff level's pvpOnOff, additionalcli_2.cpp:1081) has no feed, so the field's PCs
+    /// come with <see cref="HitCandidate.PvpUnknown"/>; Hidden and PvPPoint have no feed either.
     /// </summary>
     public static bool FilterTarget(in HitCandidate self, in HitCandidate other, int flags, int npcKinds, bool pkMode = false)
     {
@@ -270,7 +274,8 @@ public static class SkillHit
         if (self.Kind == HitKind.Pc && other.Kind == HitKind.Pc && self.PvPPoint != other.PvPPoint) return false;
         if (npcKinds != 0 && other.Kind == HitKind.Npc && (npcKinds & (1 << other.NpcClass)) != 0) return false;
         bool hostile = self.Team == 2 || (pkMode && self.Kind == HitKind.Pc && other.Kind == HitKind.Pc
-            ? self.Id != other.Id && !(self.PartyId != 0 && self.PartyId == other.PartyId) && !self.PvpOnOff && !other.PvpOnOff
+            ? self.Id != other.Id && !(self.PartyId != 0 && self.PartyId == other.PartyId)
+                && !(self.PvpOnOff || self.PvpUnknown) && !(other.PvpOnOff || other.PvpUnknown)
             : self.Team != other.Team);
         if ((flags & 1) != 0 && hostile)
         {

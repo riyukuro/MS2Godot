@@ -134,16 +134,20 @@ public sealed partial class RemoteLayer : Node3D
     /// PC::SetDefaultBoundingBox's (<see cref="Ms2.Ui.Skills.SkillHit.PlayerBody"/>), the npcs' come from
     /// <see cref="NpcLayer.HitCandidates"/>. A player is a pc of team 1 with its stat pair's hp, for
     /// <see cref="Ms2.Ui.Skills.SkillHit.FilterTarget"/>.
-    /// STILL-OPEN: the hidden / state 6-7 flag and HasPvPPoint (false here) are not fed.
+    /// Its party id is the own party's when CPartyManager has it as a member (PC::FUN_141661bc0, pc.cpp:4438), else 0.
+    /// STILL-OPEN: the hidden / state 6-7 flag and HasPvPPoint (false here) are not fed; pvp on/off is unknown
+    /// (<see cref="Ms2.Ui.Skills.HitCandidate.PvpUnknown"/>).
     /// </summary>
     public void HitCandidates(List<Ms2.Ui.Skills.HitCandidate> into)
     {
+        var party = LiveSession.Instance?.Party;
         foreach (var (id, r) in users)
         {
             if (r.Pc == null) continue;
             var p = r.Pc.Position;
+            long partyId = party is { PartyId: not 0 } && party.Find(r.CharacterId) != null ? party.PartyId : 0;
             into.Add(new Ms2.Ui.Skills.HitCandidate { Id = id, Position = p, Body = Ms2.Ui.Skills.SkillHit.PlayerBody(p, r.Pc.RotationZ),
-                Kind = Ms2.Ui.Skills.HitKind.Pc, Team = 1, Hp = r.HpCur });
+                Kind = Ms2.Ui.Skills.HitKind.Pc, Team = 1, Hp = r.HpCur, PartyId = partyId, PvpUnknown = true });
         }
         npcs.HitCandidates(into);
     }
