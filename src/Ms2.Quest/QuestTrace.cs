@@ -15,6 +15,24 @@ public sealed class TraceResult
     public double X, Y, Z;              // the point the beam aims at (m_20)
     public double BeamYawDeg;           // the beam effect's Z rotation (m_2c.z; x and y are 0)
     public string DistanceText = "";    // m_38
+    /// <summary>m_40: the trace context the result was made with (null = none), set when CQuestNavigator::TraceQuestTarget (@0x140c9a4c0, questnavigator.cpp:407) finds a target.</summary>
+    public TraceContext Context;
+}
+
+/// <summary>
+/// QuestNavigation::TraceContext (cquestnavigationmap.h:24): what the tracked quests lead to on the field, rebuilt by
+/// CQuestNavigator::RebuildTraceContext (questnavigator.cpp:420). CQuestNavigator::Context() is its m_70.
+/// </summary>
+public sealed class TraceContext
+{
+    /// <summary>m_18: the map the sets below are for.</summary>
+    public int MapId;
+    /// <summary>m_20 (set&lt;unsigned&gt;): the npc ids.</summary>
+    public readonly HashSet<int> NpcIds = new();
+    /// <summary>m_30 (set&lt;int&gt;): the interact object row ids.</summary>
+    public readonly HashSet<int> InteractIds = new();
+    /// <summary>m_40 (set&lt;unsigned&gt;): the liftable ids.</summary>
+    public readonly HashSet<int> LiftableIds = new();
 }
 
 /// <summary>The strings the distance text uses (stringcommon s_quest_navigation_*).</summary>
