@@ -149,6 +149,7 @@ public abstract record PartyMessage(int Mode) {
             }
             case 0x30: { long id = r.ReadLong(); return new PartyVoteReply(id, r.ReadBool()); }           // OnPartyVoteReply
             case 0x31: return new PartyVoteEnd();                                                          // OnPartyVoteEnd
+            case 0x1a: return new PartyRecruitUpdate(r.ReadByte() != 0 ? PartyRecruit.Read(r) : new PartyRecruit());   // OnPartyRecruitUpdate
             default: return new PartyOtherMode(mode);
         }
     }
@@ -252,10 +253,14 @@ public sealed record PartyInfoMember(bool Offline, PartyUser User);
 /// <summary>
 /// Mode 9, OnPartyInfo (partymanager.cpp:1104): bool announce, i32 party id, i64 leader id, u8 count (at most 10 read) of
 /// { bool offline, record, counters }, bool matchmaking, i32 dungeon id, u8 search permissions, bool survival squad, u8 has
-/// recruit (then the recruit). The permissions, the survival squad flag and the recruit are read past.
+/// recruit (then the recruit). The permissions and the survival squad flag are read past; the recruit is kept
+/// (<see cref="Recruit"/>, null without one).
 /// </summary>
 public sealed record PartyInfo(bool Announce, int PartyId, long LeaderId, IReadOnlyList<PartyInfoMember> Members, bool Matchmaking, int DungeonId)
     : PartyMessage(9) {
+    /// <summary>The party's listing (CMatchPartyRecruit::Read, matchpartyrecruitschcond.cpp:228), null when has recruit is 0.</summary>
+    public PartyRecruit Recruit { get; init; }
+
     internal static PartyInfo ReadBody(ByteReader r) {
         bool announce = r.ReadBool();
         int id = r.ReadInt();
@@ -272,20 +277,17 @@ public sealed record PartyInfo(bool Announce, int PartyId, long LeaderId, IReadO
         int dungeon = r.ReadInt();
         r.ReadByte();                                  // >> permissions: Unk_PartyBits, one u8 (dungeonrecord.cpp:34)
         r.ReadBool();                                  // flag29 (IsSurvivalSquadRegistered)
-        if (r.ReadByte() != 0) {                       // the recruit (matchpartyrecruitschcond.cpp:228); not kept
-            r.ReadLong(); r.ReadInt(); r.ReadInt(); r.ReadInt(); r.ReadUnicodeString();   // id, field, category, kind, title
-            r.ReadByte(); r.ReadInt(); r.ReadInt();                                       // minimum level, maximum level, members
-            r.ReadLong(); r.ReadLong(); r.ReadUnicodeString(); r.ReadLong();              // owner, created, owner name, flags
-        }
-        return new PartyInfo(announce, id, leader, members, matchmaking, dungeon);
+        var recruit = r.ReadByte() != 0 ? PartyRecruit.Read(r) : null;   // the recruit (matchpartyrecruitschcond.cpp:228)
+        return new PartyInfo(announce, id, leader, members, matchmaking, dungeon) { Recruit = recruit };
     }
 
-    /// <summary>Writes a mode 9 body (tests and offline fixtures): no search permissions, no survival squad, no recruit.</summary>
+    /// <summary>Writes a mode 9 body (tests and offline fixtures): no search permissions, no survival squad, the recruit when set.</summary>
     public byte[] Write() {
         var w = new ByteWriter();
         w.WriteByte(9); w.WriteBool(Announce); w.WriteInt(PartyId); w.WriteLong(LeaderId); w.WriteByte((byte) Members.Count);
         foreach (var m in Members) { w.WriteBool(m.Offline); m.User.Write(w); WriteCounters(w); }
-        w.WriteBool(Matchmaking); w.WriteInt(DungeonId); w.WriteByte(0); w.WriteBool(false); w.WriteByte(0);
+        w.WriteBool(Matchmaking); w.WriteInt(DungeonId); w.WriteByte(0); w.WriteBool(false);
+        w.WriteByte((byte) (Recruit != null ? 1 : 0)); Recruit?.Write(w);
         return w.Buffer.AsSpan(0, w.Length).ToArray();
     }
 }
@@ -309,7 +311,7 @@ public sealed class PartyMember {
 /// CPartyManager (partymanager.cpp): the party the party packets build. The window's calls are raised as events, in the order the
 /// handlers make them (FindPartyDialog(0x4e45) then the dialog's method).
 /// </summary>
-public sealed class PartyBook {
+public sealed partial class PartyBook {
     public const int MaxMembers = 10;
     readonly List<PartyMember> members = new();
     public IReadOnlyList<PartyMember> Members => members;
@@ -402,15 +404,19 @@ public sealed class PartyBook {
     void ApplyMessage(PartyMessage message, long self, bool windowOpen) {
         switch (message) {
             case PartyInfo info: {                          // :1104
-                if (PartyId > 0) { Clear(); Closed?.Invoke(); }
+                if (PartyId > 0) { Clear(); ClearRecruitment(); Closed?.Invoke(); }
                 PartyId = info.PartyId; LeaderId = info.LeaderId;
                 members.Clear();
                 foreach (var m in info.Members)
                     members.Add(new PartyMember { User = m.User, Offline = m.Offline, Index = members.Count, Leader = m.User.CharacterId == info.LeaderId });
                 Matchmaking = info.Matchmaking; DungeonId = info.DungeonId;
                 if (IsInParty) Opened?.Invoke();
+                ApplyInfoRecruit(info.Recruit);
                 break;
             }
+            case PartyRecruitUpdate update:                 // :1306, FUN_141631f30 then CopyFrom
+                SetRecruitment(update.Recruit);
+                break;
             case PartyJoin join: {                          // :996
                 if (members.Count == MaxMembers) return;
                 var m = new PartyMember { User = join.User, Index = members.Count };
@@ -421,14 +427,14 @@ public sealed class PartyBook {
             case PartyLeave leave: {                        // :1020
                 var m = Find(leave.CharacterId);
                 if (m == null) return;
-                if (leave.Disband) { Clear(); Closed?.Invoke(); }
+                if (leave.Disband) { Clear(); ClearRecruitment(); Closed?.Invoke(); }
                 else RemoveAt(members.IndexOf(m));
                 break;
             }
             case PartyKick kick: {                          // :1043
                 var m = Find(kick.CharacterId);
                 if (m == null) return;
-                if (m.CharacterId == self) { Clear(); Closed?.Invoke(); }
+                if (m.CharacterId == self) { Clear(); ClearRecruitment(); Closed?.Invoke(); }
                 else RemoveAt(members.IndexOf(m));
                 break;
             }
@@ -437,7 +443,7 @@ public sealed class PartyBook {
                 Invited?.Invoke(invite);
                 break;
             case PartyDisband:                              // :1066
-                Clear(); Closed?.Invoke();
+                Clear(); ClearRecruitment(); Closed?.Invoke();
                 break;
             case PartyLeaderChange lc: {                    // :1076
                 if (lc.CharacterId == 0 || lc.CharacterId == LeaderId) return;

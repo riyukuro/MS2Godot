@@ -40,6 +40,7 @@ static class Gms2Opcodes {
         [Inbound.Trigger] = 0x4F,
         [Inbound.Quest] = 0x53,
         [Inbound.Party] = 0x54,
+        [Inbound.PartySearch] = 0xBD,     // RecvOp MatchParty
         [Inbound.Shop] = 0x52,
         [Inbound.ItemMerge] = 0x76,
         [Inbound.ItemDismantle] = 0x98,
@@ -189,6 +190,7 @@ static class Gms2Opcodes {
         [Outbound.InteractNpc] = 0x32,
         [Outbound.Emote] = 0x13,
         [Outbound.Party] = 0x2C,
+        [Outbound.PartySearch] = 0x6F,    // SendOp MatchParty
         [Outbound.RoomDungeon] = 0x2B,
         [Outbound.DungeonReward] = 0x9E,
         [Outbound.Club] = 0x96,

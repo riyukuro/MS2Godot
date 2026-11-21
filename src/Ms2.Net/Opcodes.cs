@@ -36,6 +36,7 @@ public enum Inbound : ushort {
     Trigger = 0x4E,             // RecvOp Trigger (commonfiles/opcodes.h:86): CSceneStateGame::OnTrigger
     Quest = 0x52,
     Party = 0x53,
+    PartySearch = 0xBB,     // RecvOp PartySearch (commonfiles/opcodes.h:194): CPartyManager::OnMatchParty (@0x1416310d0)
     Shop = 0x51,
     ItemMerge = 0x74,       // RecvOp ItemMerge (commonfiles/opcodes.h:124): CSceneStateGame::OnItemFusion
     ItemDismantle = 0x96,   // RecvOp ItemDismantle (commonfiles/opcodes.h:158): CItemBreakManager::OnItemDismantlePacket
@@ -190,6 +191,7 @@ public enum Outbound : ushort {
     Emote = 0x13,           // SendOp::Emote (commonfiles/opcodes.h:325): learn (1), use (2), favorite (4)
     // SendOp (commonfiles/opcodes.h): Party, RoomDungeon, DungeonReward, Club
     Party = 0x2C,
+    PartySearch = 0x6E,     // SendOp PartySearch (commonfiles/opcodes.h:415): CPartyManager::SendMatchPartyMode0/1/2
     RoomDungeon = 0x2B,
     DungeonReward = 0x9D,
     Club = 0x95,
