@@ -2249,6 +2249,8 @@ public partial class HudScene : Node, IUiStageHost
             NoticeBox = id => MessageBoxQueue.ShowMessageBox(hudModel.Tables.Common(id), 0, null, ""),
             NoticeText = key => SystemNoticeText(hudModel.Tables.Common(key)),
             ShiftHeld = () => Input.IsKeyPressed(Key.Shift),
+            // FUN_14116d7a0(0xf): a focused text field or the loading screen; the ensemble and the typing game are not ported
+            InputBlocked = () => UiFocus.IsTyping || Ms2.Ui.FieldMoveCover.Up,
             PressKey = ClickedSlotKey,
             UseSkill = ClickedSlotSkill,
         };

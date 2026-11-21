@@ -433,6 +433,57 @@ public class HudTests
     }
 
     [Test]
+    public void AClickedOrRightClickedSlotStartsItsIconTweenUnlessInputIsBlocked()
+    {
+        // SkillSlot::FUN_14175f200 (skillslot.cpp:902): vfunc_13 (the click, :401) and vfunc_14 (the right click, after the fixed
+        // or bound check, :458) call the slot's startIconTween (bound in vfunc_9, :676) unless FUN_14116d7a0(0xf) blocks input;
+        // BaseSlot.startIconTween runs m_iconTween, which shrinks the icon's contentCanvas to 0.8 in 100 ms, then m_iconTween2
+        // grows it back in 100 ms
+        var m = Model();
+        var t = new ServerKeyTable();
+        t.Apply(new Maple2.PacketLib.Tools.ByteReader(ServerKeyTable.Write(0, false, Array.Empty<KeyBinding>(), 0,
+            new IReadOnlyList<(int, QuickSlotEntry)>[] { new[] { (3, new QuickSlotEntry(10500001, 0, 0)) } })));
+        m.Keys = new KeyTable(packs, "en"); m.ServerKeys = t; m.Keys.Apply(t);
+        bool blocked = false;
+        var c = new MainPlayerInfoController { InputBlocked = () => blocked, Send = _ => { } };
+        var h = Load(c, m);
+        double Scale(int slot)
+        {
+            var o = c.SlotObject(slot);
+            Assert.That(o, Is.InstanceOf<AsObject>(), "slot " + slot + " bound");
+            return Rt.ToNumber(h.Get(h.Get(o, "contentCanvas"), "scaleX"));
+        }
+        void Frames(int n) { for (int i = 0; i < n; i++) h.Player.Tick(); }
+        bool Shrinks(int slot)
+        {
+            Frames(3);
+            bool shrunk = Scale(slot) < 0.99;
+            Frames(30);                                                      // both tweens done
+            Assert.That(Scale(slot), Is.EqualTo(1).Within(1e-6), "slot " + slot + " back to full size");
+            return shrunk;
+        }
+        Frames(30);
+        foreach (int slot in new[] { 1, 3, 22 }) Assert.That(Scale(slot), Is.EqualTo(1).Within(1e-6), "slot " + slot + " at rest");
+
+        blocked = true;
+        c.UseSlot(3);
+        Assert.That(Shrinks(3), Is.False, "input blocked: no tween on the click");
+        blocked = false;
+        c.UseSlot(3);
+        Assert.That(Shrinks(3), Is.True, "the click runs the tween");
+
+        blocked = true;
+        c.RemoveSlot(1);
+        Assert.That(Shrinks(1), Is.False, "input blocked: no tween on the right click");
+        blocked = false;
+        c.RemoveSlot(1);                                                     // an empty slot: the tween still runs
+        Assert.That(Shrinks(1), Is.True, "the right click runs the tween");
+        c.RemoveSlot(22);                                                    // key bound (FUN_141761990): returns first
+        Assert.That(Shrinks(22), Is.False, "a key bound slot has no tween");
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
     public void ASkillSetSwapWritesThePageAndThePageNotifyReloadsTheSlots()
     {
         // SkillSlot::vfunc_18 (skillslot.cpp:516-545): the swap writes the page (SetQuickSlotEntry) only with a skill set

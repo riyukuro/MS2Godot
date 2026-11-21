@@ -442,7 +442,7 @@ public sealed record SkillSlotState(SlotWorld W, uint SkillId, int ItemId, long 
     /// - no key: the effective skill's row and a PC are needed; without a skill set, the job's level data (JobSystemCli vfunc_1)
     ///   is needed and a level with a sequence gives s_err_invalid_shortkey_code; then FUN_14092f4e0 of the slot's own skill id
     ///   (<see cref="SlotClickKind.Cast"/>, <see cref="QuickSlotEdit.UseSkill"/>).
-    /// The slot is pushed again after (vfunc_10). STILL-OPEN: FUN_14175f200's tween first.
+    /// The slot is pushed again after (vfunc_10); the icon tween before it (FUN_14175f200) is MainPlayerInfoController.UseSlot's.
     /// </summary>
     public SlotClick Click(int hotkey)
     {

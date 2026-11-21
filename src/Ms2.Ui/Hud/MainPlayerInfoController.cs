@@ -204,6 +204,32 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
     Skills.SlotWorld World() => SlotWorld?.Invoke()
         ?? new Skills.SlotWorld { Tables = Model.Tables.Skills, ItemData = Model.Tables.Items.Get, Level = Model.Player.Level, HasPc = Model.HasLocalPlayer };
 
+    /// <summary>Each quick slot's own AS object, the data its binding was made with (SkillSlot::m_value18); null = not bound.</summary>
+    readonly object[] slotObjects = new object[SlotCount];
+
+    /// <summary>SkillSlot::vfunc_9 @0x14175dec0 (skillslot.cpp:668): the slot keeps its AS object, whose startIconTween
+    /// (m_spTween) <see cref="StartIconTween"/> calls.</summary>
+    public override void OnBindData(string name, object data)
+    {
+        int i = SlotIndex(name);
+        if (i >= 0) slotObjects[i] = data;
+    }
+
+    /// <summary>The AS object quick slot <paramref name="i"/> was bound with; null = not bound.</summary>
+    public object SlotObject(int i) => i >= 0 && i < SlotCount ? slotObjects[i] : null;
+
+    /// <summary>CInputKeyHandler::FUN_14116d7a0(0xf) @0x14116d7a0: a text field has the focus (mask 2), an ensemble is played
+    /// (4), the loading screen is up (modifier 1, UILoadingProgress::StartProgress) or the typing game is on (modifier 2).</summary>
+    public Func<bool> InputBlocked = () => false;
+
+    /// <summary>SkillSlot::FUN_14175f200 (skillslot.cpp:902): unless input is blocked (<see cref="InputBlocked"/>), the slot's
+    /// startIconTween (BaseSlot: the icon's shrink and grow tween, unless it already runs).</summary>
+    void StartIconTween(int i)
+    {
+        if (InputBlocked()) return;
+        if (slotObjects[i] is { } o) Host?.Invoke(o, "startIconTween");
+    }
+
     /// <summary>
     /// SkillSlot::vfunc_8 @0x14175e9e0 (skillslot.cpp:793): the slot object a bound quick slot holds, for the current page's
     /// entry (CKeyTable::GetQuickSlotEntry, keytable.cpp:1574; all zero = an empty slot). The state comes from
@@ -542,11 +568,13 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
     /// (vfunc_11) and is pushed. After the mode 5 send, CKeyTable::FUN_14142f470 (<see cref="Skills.QuickSlotEdit.PutBackJobItem"/>)
     /// may put the bag's job item of slot 8 or 9 back on the page (and on the slot when the page is the current one); it reads
     /// the shown slots before the slot empties, and vfunc_11 still empties the shown slot until the next page notify.
-    /// STILL-OPEN: FUN_14175f200's tween (InvokeSelf) before it.
+    /// vfunc_14 runs the icon tween (<see cref="StartIconTween"/>) after the fixed or bound check, before vfunc_17.
     /// </summary>
     public void RemoveSlot(int i)
     {
-        if (i < 0 || i >= SlotCount || IsFixedOrBound(i) || Model.ServerKeys is not { } t) return;
+        if (i < 0 || i >= SlotCount || IsFixedOrBound(i)) return;
+        StartIconTween(i);                                                      // skillslot.cpp:458
+        if (Model.ServerKeys is not { } t) return;
         int page = t.CurrentPage;
         var e = Shown(i);
         var w = World();
@@ -577,11 +605,13 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
 
     /// <summary>
     /// SkillSlot::vfunc_13 @0x14175cdd0 (skillslot.cpp:399), the click to use: <see cref="Skills.SkillSlotState.Click"/> of the
-    /// current page's entry with the slot's key (<see cref="Hotkey"/>), then the slot pushed again (vfunc_10).
+    /// current page's entry with the slot's key (<see cref="Hotkey"/>), then the slot pushed again (vfunc_10). The icon tween
+    /// (<see cref="StartIconTween"/>) comes first.
     /// </summary>
     public void UseSlot(int i)
     {
         if (i < 0 || i >= SlotCount) return;
+        StartIconTween(i);                                                      // skillslot.cpp:401
         var e = Shown(i);
         var click = new Skills.SkillSlotState(World(), (uint)e.SkillId, e.ItemId, e.ItemUid).Click(Hotkey(i));
         switch (click.Kind)
