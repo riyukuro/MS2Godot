@@ -165,7 +165,7 @@ public sealed class GameClient {
                         break;
                     }
                     case Inbound.ServerEnter:
-                        enter = ServerEnter.Read(p.Reader());
+                        enter = ServerEnter.Read(p.Reader(), game.Profile);
                         if (beforeEnter < 0) beforeEnter = early.Count;
                         if (requestGlobalFactor) await game.SendAsync(new GlobalFactorRequest(), ct);   // OnServerEnter sends it before SendServerEnter
                         break;

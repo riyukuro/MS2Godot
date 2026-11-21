@@ -66,7 +66,15 @@ public sealed class ServerEnter {
     public int[] UnlockedMaps, UnlockedTaxis;
     public long ChampionGuildId; public string ChampionGuildName, Url1, Url2, Url3;
 
-    public static ServerEnter Read(ByteReader r) {
+    public static ServerEnter Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    /// <summary>
+    /// GMS2 form (upstream ServerEnterPacket.cs): a second flag byte after the picture, and five trailing strings (empty, url, empty,
+    /// url pattern, empty) after the champion guild id instead of the KMS2 guild name plus three urls. STILL-OPEN: the client's use of
+    /// the extra byte and strings is not recovered; they are kept raw in <see cref="Gms2Flag"/> and <see cref="Gms2Strings"/>.
+    /// </summary>
+    public static ServerEnter Read(ByteReader r, ProtocolProfile profile) {
+        if (profile.IsGms2) return ReadGms2(r);
         var s = new ServerEnter { ObjectId = r.ReadInt(), CharacterId = r.ReadLong(), Channel = r.ReadShort(), Exp = r.ReadLong(), RestExp = r.ReadLong(), Meso = r.ReadLong() };
         s.Wallet = new long[5 + 9];
         for (int i = 0; i < s.Wallet.Length; i++) s.Wallet[i] = r.ReadLong();
@@ -74,6 +82,18 @@ public sealed class ServerEnter {
         s.UnlockedMaps = ReadInts(r); s.UnlockedTaxis = ReadInts(r);
         s.ChampionGuildId = r.ReadLong(); s.ChampionGuildName = r.ReadUnicodeString();
         s.Url1 = r.ReadUnicodeString(); s.Url2 = r.ReadUnicodeString(); s.Url3 = r.ReadUnicodeString();
+        r.ExpectEnd("ServerEnter"); return s;
+    }
+    public byte Gms2Flag; public string[] Gms2Strings;
+    static ServerEnter ReadGms2(ByteReader r) {
+        var s = new ServerEnter { ObjectId = r.ReadInt(), CharacterId = r.ReadLong(), Channel = r.ReadShort(), Exp = r.ReadLong(), RestExp = r.ReadLong(), Meso = r.ReadLong() };
+        s.Wallet = new long[5 + 9];
+        for (int i = 0; i < s.Wallet.Length; i++) s.Wallet[i] = r.ReadLong();
+        s.Picture = r.ReadUnicodeString(); s.Unknown = r.ReadByte(); s.Gms2Flag = r.ReadByte();
+        s.UnlockedMaps = ReadInts(r); s.UnlockedTaxis = ReadInts(r);
+        s.ChampionGuildId = r.ReadLong();
+        s.Gms2Strings = new string[5];
+        for (int i = 0; i < 5; i++) s.Gms2Strings[i] = r.ReadUnicodeString();
         r.ExpectEnd("ServerEnter"); return s;
     }
     static int[] ReadInts(ByteReader r) { int n = (ushort) r.ReadShort(); var a = new int[n]; for (int i = 0; i < n; i++) a[i] = r.ReadInt(); return a; }
