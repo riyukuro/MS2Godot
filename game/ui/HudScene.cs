@@ -192,6 +192,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchParty = null;
         unwatchPartySearch?.Invoke();
         unwatchPartySearch = null;
+        unwatchPartyDps?.Invoke();
+        unwatchPartyDps = null;
         unwatchAchieves?.Invoke();
         unwatchAchieves = null;
         unwatchMails?.Invoke();
@@ -1570,6 +1572,7 @@ public partial class HudScene : Node, IUiStageHost
     {
         if (e is not InputEventKey { Pressed: true, Echo: false } k || UiFocus.IsTyping) return false;
         if (SkillCompactKeys(k)) return true;
+        if (PartyDpsKeys(k)) return true;
         bool actions = !Ms2.Ui.InputBlock.Active;   // FUN_141431fc0 (m_nMode taken as on)
         if (actions && k.PhysicalKeycode == Key.L) { ToggleQuestLog(); return true; }   // a DirectInput key code is a physical key
         if (actions && k.PhysicalKeycode == Key.M) { ToggleWorldMap(); return true; }  // action 400006, DIK 50 (keytable.cpp:744)
@@ -3419,6 +3422,7 @@ public partial class HudScene : Node, IUiStageHost
         if (ChatEmoticonOpen) chatEmoticon.Process();          // UIChatEmoticonDialog::vfunc_15
         if (itemBreak is { IsClosed: false }) itemBreak.Tick();               // UIItemBreakDialog::vfunc_15
         TickPartySearch();                                                   // UIPartySearchDialog::vfunc_15
+        TickPartyDps();                                                      // UIPartyDPSDialog::vfunc_72
         if (inventory != null && !inventory.IsClosed) inventory.Process();     // UIInventoryDialog::vfunc_15
         if (myInfo != null && !myInfo.IsClosed) myInfo.Process((long)Time.GetTicksMsec());     // UIMyInfoDialog::vfunc_15
         (notice?.Host.Controller as NoticeDialogController)?.Update((uint)Time.GetTicksMsec());     // UINoticeDialog::vfunc_72
@@ -3496,6 +3500,7 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "community" && frames == 200) ToggleCommunity();
         if (openShot is "partysearch" or "partysearchregister" && frames == 200) OpenPartySearchShot();
         if (openShot == "partysearchregister" && frames == 230) OpenPartySearchRegister();
+        if (openShot == "partydps" && frames == 200) OpenPartyDpsShot();
         if (openShot == "guild" && frames == 200) ToggleGuild();
         if (openShot == "itemenchant" && frames == 200) OpenItemEnchantShot();
         if (guideShot != null && frames == 200)
