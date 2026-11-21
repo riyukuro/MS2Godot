@@ -110,8 +110,8 @@ public sealed class ChatEmoticonDialogController : UiController
     /// <summary>FUN_140bd2620: the model rebuilt, then the tabs and the items.</summary>
     public void Rebuild()
     {
+        BuildModel();                  // FUN_140bd1fc0 runs without the AS dialog too
         if (NoMovie) return;
-        BuildModel();
         BuildTab();
         BuildItem();
     }

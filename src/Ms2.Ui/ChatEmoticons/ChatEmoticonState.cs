@@ -39,6 +39,8 @@ public sealed class ChatEmoticonState
     /// <summary>Type 4: UIGroupMessenger::SendEmoticonImage(id) for the window of that name.</summary>
     public event Action<string, uint> SendImageInWindow;
 
+    readonly System.Collections.Generic.SortedSet<uint> added = new();   // FUN_140a39360's setAdded
+
     /// <summary>FindGroup (@0x140a3a640).</summary>
     public ChatEmoticonGroup? FindGroup(uint id)
     {
@@ -106,8 +108,9 @@ public sealed class ChatEmoticonState
                 MessageBox?.Invoke("s_msg_chat_emoticon_expired");
                 break;
             case ChatStampMessage.Added a:
-                foreach (var g in a.Groups) AddGroup(g.Id, g.Expire);
-                foreach (var g in a.Groups) NewGroup?.Invoke(g.Id);
+                added.Clear();
+                foreach (var g in a.Groups) { AddGroup(g.Id, g.Expire); added.Add(g.Id); }   // std::set setAdded
+                foreach (uint id in added) NewGroup?.Invoke(id);                              // ascending, once each
                 Refresh?.Invoke();
                 Added?.Invoke(a.ItemId);
                 break;

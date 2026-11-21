@@ -133,6 +133,38 @@ public class ChatEmoticonTests
     }
 
     [Test]
+    public void AddedTellsEachNewPackOnceInAscendingOrder()
+    {
+        // FUN_140a39360 collects the ids in a std::set first: ascending, no duplicates.
+        var s = State();
+        var news = new List<uint>();
+        s.NewGroup += news.Add;
+        s.Apply(new ChatStampMessage.Added(1, new[] { new ChatEmoticonGroup(9, 5000), new ChatEmoticonGroup(7, 5000), new ChatEmoticonGroup(9, 6000) }));
+        Assert.That(news, Is.EqualTo(new uint[] { 7, 9 }));
+    }
+
+    [Test]
+    public void LinkTakesTheSceneHandlersOffSoAReloadAddsNoSecondBox()
+    {
+        // The state outlives the HUD scene (a field change reloads it): hook, unhook, hook again = one box per packet.
+        var s = State();
+        int boxes = 0, typed = 0;
+        for (int scene = 0; scene < 3; scene++)
+        {
+            var link = new Ms2.Ui.ChatEmoticons.ChatEmoticonLink(s, _ => boxes++, (w, f, id) => typed++);
+            link.Hook();
+            link.Hook();                      // a repeated Hook does not add twice either
+            link.Unhook();
+            link.Hook();
+            if (scene < 2) link.Unhook();     // the last scene stays hooked
+        }
+        s.Apply(new ChatStampMessage.Result(0));
+        s.Apply(new ChatStampMessage.Typed(9, "win", 3));
+        Assert.That(boxes, Is.EqualTo(1));
+        Assert.That(typed, Is.EqualTo(1));
+    }
+
+    [Test]
     public void FavoritesMoveToTheEndAndAreRemoved()
     {
         var s = State();

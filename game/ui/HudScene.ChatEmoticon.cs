@@ -20,6 +20,7 @@ public partial class HudScene
     ChatEmoticonDialogController chatEmoticon;
     MovieDialog chatEmoticonMovie;
     Action toggleChatEmoticon;
+    ChatEmoticonLink chatEmoticonLink;
     ChatEmoticonState offlineChatEmoticons;
     bool chatEmoticonFixture;           // --chatemoticon-fixture: every pack owned, offline
 
@@ -45,17 +46,21 @@ public partial class HudScene
         ChatLog.ToggleEmoticonDialog = toggleChatEmoticon;
         ChatLog.ChatEmoticons = ChatEmoticonStateOf();
         ChatLog.IsEmoticonUsable = id => id > 0 && ChatLog.ChatEmoticons.IsEmoticonUsable((uint)id);   // CChatEmoticonCli::IsEmoticonUsable
-        var s = ChatLog.ChatEmoticons;
-        s.MessageBox += key => MessageBoxQueue.ShowMessageBox(hudModel.Tables.Common(key) ?? "", 0, null, "");
-        s.TypeInWindow += (window, flag, id) =>
-        {
-            foreach (var (_, c) in messengers) if (c.Name == window) c.TypeEmoticon(flag, id);
-        };
+        chatEmoticonLink?.Unhook();
+        chatEmoticonLink = new ChatEmoticonLink(ChatLog.ChatEmoticons,
+            key => MessageBoxQueue.ShowMessageBox(hudModel.Tables.Common(key) ?? "", 0, null, ""),
+            (window, flag, id) =>
+            {
+                foreach (var (_, c) in messengers) if (c.Name == window) c.TypeEmoticon(flag, id);
+            });
+        chatEmoticonLink.Hook();
     }
 
     void UnhookChatEmoticon()
     {
         if (ReferenceEquals(ChatLog.ToggleEmoticonDialog, toggleChatEmoticon)) ChatLog.ToggleEmoticonDialog = null;
+        chatEmoticonLink?.Unhook();   // the live state outlives this scene
+        chatEmoticonLink = null;
     }
 
     void ChatEmoticon()
@@ -65,7 +70,7 @@ public partial class HudScene
         var t = hudModel.Tables;
         var c = chatEmoticon = new ChatEmoticonDialogController(ChatEmoticonStateOf())
         {
-            CurrentMessenger = () => messengers.Count > 0 ? messengers[0].Side.Name : "",
+            CurrentMessenger = () => ChatLog.GetCurrentName(),   // PostEmoticonSelected: GetState()->GetCurrentName() (uichatemoticondialog.cpp:504)
             CommonText = id => MessageBoxData.Common(id),
             QueueOccurrence = (kind, arg) => Ms2.Ui.Guide.GuideManager.Current?.QueueOccurrence(kind, arg),
             Send = p =>
