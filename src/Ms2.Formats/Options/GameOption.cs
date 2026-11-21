@@ -703,6 +703,7 @@ public sealed class GameOption
     /// read at reset (clientconstants +0xe5b0), which the tables here do not carry.</summary>
     public sealed class GamePad
     {
+        /// <summary>STILL-OPEN: the client constant (clientconstants +0xe5b0) is not in the tables here, so the default is 0.</summary>
         public static int LStickDefault;
         public bool Use, ShowSkillName = true, Vibration;
         public float SensitivityH = 0.25f, SensitivityV = 0.25f;
