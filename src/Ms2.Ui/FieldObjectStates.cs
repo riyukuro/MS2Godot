@@ -444,19 +444,86 @@ public enum FieldEnterResult
 /// <summary>
 /// CSceneStateGame::OnRequestFieldEnter (@0x14170f930, scenestategame.cpp:2335) as far as the field's breakables and lifts
 /// go: only a taken entry starts a new field, and only a new field tears down the old field's markers and entity lifts
-/// (LoadMap; worldservice_1.cpp:3526-3533) and holds the updates until the new field's entities are attached.
+/// (LoadMap; worldservice_1.cpp:3526-3533) and its target boxes (the field teardown FUN_141bbc580 empties m_540,
+/// :10062), and holds the updates until the new field's entities are attached.
 /// </summary>
 public static class FieldEnter
 {
     /// <summary>Takes <paramref name="f"/> into <paramref name="entry"/>. <paramref name="loading"/>: a field load is still
     /// running (its entry is the current one).</summary>
-    public static FieldEnterResult Take(Ms2.Net.FieldEntry entry, RequestFieldEnter f, bool loading, BreakableObjects breakables, LiftableObjects lifts)
+    public static FieldEnterResult Take(Ms2.Net.FieldEntry entry, RequestFieldEnter f, bool loading, BreakableObjects breakables, LiftableObjects lifts, LiftableTargetBoxes targets)
     {
         int loadingMap = loading ? entry.Current?.MapId ?? 0 : 0;
         if (!entry.Enter(f)) return FieldEnterResult.Refused;
         if (loadingMap != 0 && loadingMap == f.MapId) return FieldEnterResult.LoadingAlready;
         breakables.ClearMarkers();
         lifts.FieldLeft();
+        targets.Clear();
         return FieldEnterResult.NewField;
     }
+}
+
+/// <summary>
+/// The field's liftable target boxes (WorldService m_540, a CRBMultiMap keyed by the box id), the places a lifted cube can
+/// be put down. The field load (worldservice_1.cpp:6788-6801) makes a CLiftableTargetBox for every entity of model
+/// 0x319a1ee4 (net hash of "MS2LiftableTargetBox") and inserts it under its id when Init succeeds. Init
+/// (CLiftableTarget::vfunc_1 @0x1414482a0, liftabletarget.cpp:84-96) needs the Point3 0xfd95ca52 ("Position"), the Point3
+/// 0x68c7c29d ("Rotation") and the int 0x79ec600a ("liftableTarget"); a box missing any of them is dropped.
+/// <para>GetLiftableTargetBoxes (@0x141bc5980, worldservice_1.cpp:889-896) returns every box in the map's order: ascending
+/// id, and among equal ids the last inserted first (CRBTree::InsertImpl sends an equal key left, atlcoll.h).</para>
+/// <para>The field reset (FUN_141bbc580, worldservice_1.cpp:10062) empties the map with the lifts.</para>
+/// STILL-OPEN: the box's quest-condition effect (CLiftableTarget FUN_1414483e0, effect type 0x9c) and the target guides
+/// (model 0x14e880f6, m_570) have no port.
+/// </summary>
+public sealed class LiftableTargetBoxes
+{
+    public sealed class Box
+    {
+        /// <summary>m_nId: property 0x79ec600a ("liftableTarget").</summary>
+        public int Id { get; internal set; }
+        /// <summary>m_vPos: property 0xfd95ca52 ("Position").</summary>
+        public Vec3 Position { get; internal set; }
+        /// <summary>m_vRot: property 0x68c7c29d ("Rotation").</summary>
+        public Vec3 Rotation { get; internal set; }
+        public FieldEntity Entity { get; internal set; }
+    }
+
+    public const string Model = "MS2LiftableTargetBox";
+    public const string IdProperty = "liftableTarget";
+
+    readonly List<Box> boxes = new();
+
+    /// <summary>GetLiftableTargetBoxes: the boxes in the map's order.</summary>
+    public IReadOnlyList<Box> All => boxes;
+    public int Count => boxes.Count;
+
+    /// <summary>The field load's boxes (worldservice_1.cpp:6788-6801). Returns the box count.</summary>
+    public int AttachField(IReadOnlyList<FieldEntity> entities)
+    {
+        boxes.Clear();
+        for (int i = 0; entities != null && i < entities.Count; i++)
+        {
+            var e = entities[i];
+            if (!e.HasMixin(Model)) continue;
+            // Init: each GetPropertyValue that fails returns 0 (liftabletarget.cpp:89-94)
+            if (!e.Has("Position") || !e.Has("Rotation") || !e.Has(IdProperty)) continue;
+            Insert(new Box { Id = (int)e.Number(IdProperty), Position = e.Position, Rotation = e.Vector("Rotation"), Entity = e });
+        }
+        return boxes.Count;
+    }
+
+    /// <summary>CRBMultiMap::Insert: before the first box whose id is not below the new one.</summary>
+    internal void Insert(Box b)
+    {
+        int lo = 0, hi = boxes.Count;
+        while (lo < hi)
+        {
+            int mid = (lo + hi) >> 1;
+            if (boxes[mid].Id < b.Id) lo = mid + 1; else hi = mid;
+        }
+        boxes.Insert(lo, b);
+    }
+
+    /// <summary>The field reset empties the map (worldservice_1.cpp:10062).</summary>
+    public void Clear() => boxes.Clear();
 }

@@ -78,8 +78,10 @@ public partial class LiveSession
         if (Breakables.Holding) Breakables.AttachField(same ? entities : null);
         // the liftables loop (worldservice_1.cpp:6771-6786); the Liftable updates held since the field enter follow
         if (Liftables.Holding) Liftables.AttachField(same ? entities : null);
+        // the liftable target boxes loop (worldservice_1.cpp:6788-6801)
+        LiftTargets.AttachField(same ? entities : null);
         TaxiAction.Attach(same ? entities : null);
-        GD.Print($"live: interact objects attached to xblock {xblock}{(same ? "" : $" (different xblock: no entities)")}: {InteractObjects.All.Count} registered, {Breakables.Count} breakables, {Liftables.Count} lifts");
+        GD.Print($"live: interact objects attached to xblock {xblock}{(same ? "" : $" (different xblock: no entities)")}: {InteractObjects.All.Count} registered, {Breakables.Count} breakables, {Liftables.Count} lifts, {LiftTargets.Count} lift targets");
     }
 
     void OnInteractObject(InteractObjectMessage m)

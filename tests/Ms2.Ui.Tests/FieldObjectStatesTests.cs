@@ -363,17 +363,19 @@ public class FieldObjectStatesTests
     }
 
     /// <summary>A field entered and loaded: its lift attached, a breakable marker, no hold.</summary>
-    static (Ms2.Net.FieldEntry, BreakableObjects, LiftableObjects) LoadedField(int map)
+    static (Ms2.Net.FieldEntry, BreakableObjects, LiftableObjects, LiftableTargetBoxes) LoadedField(int map)
     {
         var entry = new Ms2.Net.FieldEntry();
         var b = new BreakableObjects();
         var l = new LiftableObjects();
-        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(map), false, b, l), Is.EqualTo(FieldEnterResult.NewField));
+        var t = new LiftableTargetBoxes();
+        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(map), false, b, l, t), Is.EqualTo(FieldEnterResult.NewField));
         b.AttachField(new List<FieldEntity>());
         b.AddMarker("m");
         l.AttachField(new List<FieldEntity> { LiftEntity("lift1") });
-        Assert.That((b.Holding, l.Holding, l.Count), Is.EqualTo((false, false, 1)));
-        return (entry, b, l);
+        t.AttachField(new List<FieldEntity> { TargetBox("box1", "1") });
+        Assert.That((b.Holding, l.Holding, l.Count, t.Count), Is.EqualTo((false, false, 1, 1)));
+        return (entry, b, l, t);
     }
 
     [Test]
@@ -383,7 +385,7 @@ public class FieldObjectStatesTests
         // attaches its breakables and lifts, so the updates before it wait
         var b = new BreakableObjects();
         var l = new LiftableObjects();
-        Assert.That(FieldEnter.Take(new Ms2.Net.FieldEntry(), FieldEnterPacket(2000001), false, b, l), Is.EqualTo(FieldEnterResult.NewField));
+        Assert.That(FieldEnter.Take(new Ms2.Net.FieldEntry(), FieldEnterPacket(2000001), false, b, l, new LiftableTargetBoxes()), Is.EqualTo(FieldEnterResult.NewField));
         Assert.That((b.Holding, l.Holding), Is.EqualTo((true, true)));
     }
 
@@ -391,10 +393,10 @@ public class FieldObjectStatesTests
     public void ARefusedFieldEnterKeepsTheFieldsBreakablesAndLifts()
     {
         // a non-zero error only shows the message box; LoadMap does not run, so the field and its objects stay
-        var (entry, b, l) = LoadedField(2000001);
-        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000062, 5), false, b, l), Is.EqualTo(FieldEnterResult.Refused));
+        var (entry, b, l, t) = LoadedField(2000001);
+        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000062, 5), false, b, l, t), Is.EqualTo(FieldEnterResult.Refused));
         Assert.That(entry.Current.MapId, Is.EqualTo(2000001));
-        Assert.That((b.Holding, b.Find("m") != null, l.Holding, l.Find("lift1") != null), Is.EqualTo((false, true, false, true)));
+        Assert.That((b.Holding, b.Find("m") != null, l.Holding, l.Find("lift1") != null, t.Count), Is.EqualTo((false, true, false, true, 1)));
         // the next update applies to the field's lift at once
         l.Apply(List(new LiftableEntry("lift1", true, 3, 0)));
         Assert.That((l.Find("lift1").Enabled, l.Find("lift1").Kind), Is.EqualTo((true, 3)));
@@ -405,15 +407,67 @@ public class FieldObjectStatesTests
     {
         // LoadMap returns at once for the map that is still loading (worldservice_1.cpp:3295); another map tears the field
         // down: markers and entity lifts go (:3526-3533), and the updates wait for the new field
-        var (entry, b, l) = LoadedField(2000001);
-        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000001), true, b, l), Is.EqualTo(FieldEnterResult.LoadingAlready));
-        Assert.That((b.Holding, b.Find("m") != null, l.Holding, l.Count), Is.EqualTo((false, true, false, 1)));
-        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000062), true, b, l), Is.EqualTo(FieldEnterResult.NewField));
-        Assert.That((b.Holding, b.Find("m") != null, l.Holding, l.Count), Is.EqualTo((true, false, true, 0)));
+        var (entry, b, l, t) = LoadedField(2000001);
+        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000001), true, b, l, t), Is.EqualTo(FieldEnterResult.LoadingAlready));
+        Assert.That((b.Holding, b.Find("m") != null, l.Holding, l.Count, t.Count), Is.EqualTo((false, true, false, 1, 1)));
+        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000062), true, b, l, t), Is.EqualTo(FieldEnterResult.NewField));
+        Assert.That((b.Holding, b.Find("m") != null, l.Holding, l.Count, t.Count), Is.EqualTo((true, false, true, 0, 0)));
         // the same map entered again once its load is done is a new field load
         b.AttachField(new List<FieldEntity>());
         l.AttachField(new List<FieldEntity> { LiftEntity("lift1") });
-        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000062), false, b, l), Is.EqualTo(FieldEnterResult.NewField));
+        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000062), false, b, l, t), Is.EqualTo(FieldEnterResult.NewField));
         Assert.That((b.Holding, l.Holding, l.Count), Is.EqualTo((true, true, 0)));
+    }
+
+    static FieldEntity TargetBox(string id, string target, string pos = "0, 0, 0", string rot = "0, 0, 0")
+    {
+        var raw = new XEntity { Id = id, ModelName = "MS2LiftableTargetBox", Name = id };
+        if (pos != null) raw.Props["Position"] = pos;
+        if (rot != null) raw.Props["Rotation"] = rot;
+        if (target != null) raw.Props["liftableTarget"] = target;
+        return new FieldEntity { Raw = raw, Flat = new FlatModel { Name = "MS2LiftableTargetBox" } };
+    }
+
+    [Test]
+    public void TheFieldsTargetBoxesAreAttachedNewestFirstAmongEqualIds()
+    {
+        // worldservice_1.cpp:6788-6801: every "MS2LiftableTargetBox" entity goes into the CRBMultiMap m_540 by its id; ATL's
+        // InsertImpl walks left on <= 0, so a box goes before the boxes with its id. The field's boxes all share one id.
+        var map = Field("02000041_bf");
+        var want = map.Entities.Where(e => e.HasMixin("MS2LiftableTargetBox")).ToList();
+        Assert.That(want.Count, Is.GreaterThan(1));
+        Assert.That(want.Select(e => e.Number("liftableTarget")).Distinct().Count(), Is.EqualTo(1));
+        var t = new LiftableTargetBoxes();
+        Assert.That(t.AttachField(map.Entities), Is.EqualTo(want.Count));
+        want.Reverse();
+        Assert.That(t.All.Select(b => b.Entity), Is.EqualTo(want));
+        foreach (var b in t.All)
+        {
+            Assert.That(b.Id, Is.EqualTo((int)b.Entity.Number("liftableTarget")));
+            Assert.That(b.Position, Is.EqualTo(b.Entity.Position));
+            Assert.That(b.Rotation, Is.EqualTo(b.Entity.Vector("Rotation")));
+        }
+    }
+
+    [Test]
+    public void TargetBoxesAreOrderedByIdAndABoxWithoutAPropertyIsDropped()
+    {
+        // CLiftableTarget::Init (@0x1414482a0, liftabletarget.cpp:84-96) fails without Position, Rotation or liftableTarget,
+        // and the load deletes the box (worldservice_1.cpp:6796)
+        var t = new LiftableTargetBoxes();
+        var a = TargetBox("a", "5", "150, 300, 450", "0, 0, 90");
+        var b = TargetBox("b", "2");
+        var c = TargetBox("c", "5");
+        var d = TargetBox("d", "-1");
+        var other = new FieldEntity { Raw = new XEntity { Id = "o", ModelName = "MS2Liftable", Name = "o", Props = { ["liftableTarget"] = "0" } }, Flat = new FlatModel { Name = "MS2Liftable" } };
+        var list = new List<FieldEntity> { a, TargetBox("np", "1", pos: null), b, TargetBox("nr", "1", rot: null), c, TargetBox("ni", null), other, d };
+        Assert.That(t.AttachField(list), Is.EqualTo(4));
+        Assert.That(t.All.Select(x => x.Entity.Raw.Id), Is.EqualTo(new[] { "d", "b", "c", "a" }));
+        Assert.That((t.All[3].Id, t.All[3].Position, t.All[3].Rotation), Is.EqualTo((5, new Vec3(150, 300, 450), new Vec3(0, 0, 90))));
+        // a new field load replaces the boxes; the field reset empties them (worldservice_1.cpp:10062)
+        Assert.That(t.AttachField(new List<FieldEntity> { b }), Is.EqualTo(1));
+        t.Clear();
+        Assert.That(t.Count, Is.Zero);
+        Assert.That(t.AttachField(null), Is.Zero);
     }
 }

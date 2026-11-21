@@ -239,6 +239,8 @@ public partial class LiveSession : Node
     /// <summary>The breakable objects' and liftable cubes' server states (RecvOp Breakable 0x4F, Liftable 0x73).</summary>
     public readonly Ms2.Ui.BreakableObjects Breakables = new();
     public readonly Ms2.Ui.LiftableObjects Liftables = new();
+    /// <summary>The field's liftable target boxes (WorldService m_540).</summary>
+    public readonly Ms2.Ui.LiftableTargetBoxes LiftTargets = new();
     /// <summary>A Fishing packet that changed <see cref="FishingBook"/>, for the open fishing book (it fills its tab again).</summary>
     public event Action<FishingMessage> FishingReceived;
     public CharacterCreateRefused LastRefusal { get; private set; }
@@ -701,7 +703,7 @@ public partial class LiveSession : Node
             Me.Apply(entry.Enter);                 // the exp counters (OnServerEnter, scenestategame.cpp:2085-2086)
         });
         GD.Print($"live: {entry.Early.Count} packets before the field: {Quests.All.Count} quests, {Items.All.Count} items, adventure claimed {Adventure.Claimed.Count}, missions {Adventure.Missions.Count}");
-        Ms2.Ui.FieldEnter.Take(fieldEntry, entry.Field, false, Breakables, Liftables);   // the login's field: its breakables and lifts wait for its entities
+        Ms2.Ui.FieldEnter.Take(fieldEntry, entry.Field, false, Breakables, Liftables, LiftTargets);   // the login's field: its breakables and lifts wait for its entities
         NewFieldPortals(entry.Field.MapId);
         NewFieldInteractObjects(entry.Field.MapId);
         syncNumber = entry.Sync?.Number ?? 0;
@@ -816,7 +818,7 @@ public partial class LiveSession : Node
     void OnRequestFieldEnter(RequestFieldEnter f)
     {
         // a refused entry or the loading map again keeps the field's breakables and lifts; a new field resets them
-        var taken = Ms2.Ui.FieldEnter.Take(fieldEntry, f, moveClock.IsRunning, Breakables, Liftables); // perf-ok: FieldEnter.Take is a static method, not LINQ
+        var taken = Ms2.Ui.FieldEnter.Take(fieldEntry, f, moveClock.IsRunning, Breakables, Liftables, LiftTargets); // perf-ok: FieldEnter.Take is a static method, not LINQ
         if (taken == Ms2.Ui.FieldEnterResult.Refused)
         {
             string text = Ms2.Ui.FieldMoveError.Text(f.Error, Ms2.Ui.Hud.MessageBoxData.CommonByKey);
