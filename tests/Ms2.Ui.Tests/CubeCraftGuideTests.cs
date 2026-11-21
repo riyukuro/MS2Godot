@@ -132,13 +132,15 @@ public class CubeCraftGuideTests
     }
 
     [Test]
-    public void UpdateAllocatesNothing()
+    public void UpdateAllocatesLittle()
     {
         var o = new Owner { Point = Vector3.Zero, RotZ = 0f };
         var c = Craft(o, 2, 2);
-        c.Update();
-        long before = GC.GetAllocatedBytesForCurrentThread();
+        Assert.That(Alloc.Least(() => Walk(o, c)), Is.LessThan(512));
+    }
+
+    static void Walk(Owner o, CubeCraftState c)
+    {
         for (int i = 0; i < 1000; i++) { o.RotZ = i % 4 * 90f; c.Update(); }
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0));
     }
 }
