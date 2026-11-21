@@ -113,7 +113,11 @@ public sealed class AdditionalBuffList
     /// <summary>
     /// IsPvpOnOff @additionalcli_2.cpp:563, m_bPvpOnOff as AdditionalCliList::FUN_140972a00 (:1059-1082) sums it: set when an
     /// effect is enabled (m_bEnabled, the state's flag), not suspended and its level has pvpOnOff. The client sums on the
-    /// list's Update after any change (SetDirty); this reads the held effects at the call, the same set.
+    /// list's Update only when m_bDirty is set (additionalcli_2.cpp:450); this reads the held effects at the call. That gives
+    /// the same set only while every change goes through SetDirty. STILL-OPEN: the battle-riding suspension
+    /// (additionalcli_1.cpp:276-285) and FUN_14096db40 (additionalcli_2.cpp:687, :694) do not set it, so the client's sums
+    /// (this one, <see cref="ForceApplyTarget"/>, <see cref="IsHidden"/>) stay stale until the next buff packet; neither is
+    /// ported, so they agree today.
     /// </summary>
     public bool IsPvpOnOff
     {
