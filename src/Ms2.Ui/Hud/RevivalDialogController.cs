@@ -19,25 +19,25 @@ public sealed class RevivalEnvironment
 {
     // ---- the local player (MyPC) ----
     public Func<bool> HasPlayer = () => true;
-    /// <summary>MyPC::IsDead (SendRevivalMode1, :152).</summary>
+    /// <summary>MyPC::IsDead (SendRevivalMode1, uirevivaldialog.cpp:232).</summary>
     public Func<bool> IsDead = () => true;
-    /// <summary>GetJobSystem()->GetJobGroupID() == 1 (SetDeathMessage, :210).</summary>
+    /// <summary>GetJobSystem()->GetJobGroupID() == 1 (SetDeathMessage, uirevivaldialog.cpp:329).</summary>
     public Func<bool> IsFirstJobGroup = () => false;
     /// <summary>PC::IsRevivalBlocked @0x141661970: a revival end tick or the Revival flag is set, or the buffs disable it here.</summary>
     public Func<bool> RevivalBlocked = () => false;
     /// <summary>PC::vfunc_78: the player's level, the first argument of CLua::CalcRevivalMerat / CalcRevivalMeso.</summary>
     public Func<int> Level = () => 1;
-    /// <summary>FUN_1416749a0()->IsDisableRevivalHere (FUN_141abdab0, :1132).</summary>
+    /// <summary>FUN_1416749a0()->IsDisableRevivalHere (FUN_141abdab0, uirevivaldialog.cpp:813).</summary>
     public Func<bool> BuffsDisableRevival = () => false;
-    /// <summary>FUN_1416749a0()->GetOverlapCount(m_51d8 constant, 0) (RefreshMeratButton, :724): the stacked revival debuff.</summary>
+    /// <summary>FUN_1416749a0()->GetOverlapCount(m_51d8 constant, 0) (RefreshMeratButton, uirevivaldialog.cpp:686): the stacked revival debuff.</summary>
     public Func<int> RevivalOverlapCount = () => 0;
-    /// <summary>FUN_1416749a0()->FUN_140970020(m_51d8 constant, 0, 0, 1) (:540): the buff that stops a paid revive is on.</summary>
+    /// <summary>FUN_1416749a0()->FUN_140970020(m_51d8 constant, 0, 0, 1) (uirevivaldialog.cpp:460, :532): the buff that stops a paid revive is on.</summary>
     public Func<bool> PaidReviveStopped = () => false;
     /// <summary>CEquipment::GetAbilityRate(SAType 0x42) and (0xa4): the merat and meso cost reductions.</summary>
     public Func<float> MeratAbilityRate = () => 0f, MesoAbilityRate = () => 0f;
     /// <summary>MyPC::GetMesoRevivalRemainingCount @0x141528160: max(daily max - used, 0).</summary>
     public Func<int> MesoRevivalRemaining = () => 0;
-    /// <summary>CGameRule::FUN_140477d10(FUN_141658f30()) (RefreshMesoButton, :776): 1 = the meso revive is a flat rule.</summary>
+    /// <summary>CGameRule::FUN_140477d10(FUN_141658f30()) (RefreshMesoButton, uirevivaldialog.cpp:721): 1 = the meso revive is a flat rule.</summary>
     public Func<int> MesoRevivalRule = () => 0;
     /// <summary>False when an input of a paid revive's send is not available (the buffs' disable check, the meso revivals left, the
     /// platform's merat check): the paid buttons then send nothing. A host that wires all three sets it true; the default is true.</summary>
@@ -46,7 +46,7 @@ public sealed class RevivalEnvironment
     // ---- the world, the field and the dungeon ----
     public Func<int> FieldId = () => 0;
     public Func<RevivalField> Field = () => null;
-    /// <summary>WorldService::FUN_141bdb660(8) (FUN_141abcb90, :803): no paid revive at all.</summary>
+    /// <summary>WorldService::FUN_141bdb660(8) (FUN_141abcb90, uirevivaldialog.cpp:637): no paid revive at all.</summary>
     public Func<bool> PaidRevivalOffByWorld = () => false;
     /// <summary>CFieldData::FUN_140374410(field id): the field revives with meso at no cost.</summary>
     public Func<int, bool> FieldRevivesForFree = _ => false;
@@ -56,17 +56,17 @@ public sealed class RevivalEnvironment
     public Func<int> RoomRevivalsUsed = () => 0;
     /// <summary>GetDungeonName.</summary>
     public Func<string> DungeonName = () => "";
-    /// <summary>FeatureManager::IsFeatureEnabled(0x5d) (FUN_141abc7f0, :1017).</summary>
+    /// <summary>FeatureManager::IsFeatureEnabled(0x5d) (FUN_141abc7f0, uirevivaldialog.cpp:574).</summary>
     public Func<bool> RoomLimitFeature = () => false;
 
     // ---- constants, wallet, items ----
-    /// <summary>Constants +0xa278 (FUN_141abc930, :1060): merat revival switched off.</summary>
+    /// <summary>Constants +0xa278 (FUN_141abc930, uirevivaldialog.cpp:591): merat revival switched off.</summary>
     public Func<bool> MeratRevivalOff = () => false;
     /// <summary>Constants +0x8cc0 / +0x90f8: the ceilings of the merat and meso cost reductions.</summary>
     public Func<float> MeratRateCap = () => 0f, MesoRateCap = () => 0f;
     /// <summary>Constants +0xcfe0: the seconds the leave-in-dungeon box counts down.</summary>
     public Func<int> LeaveBoxSeconds = () => 0;
-    /// <summary>DAT_143ab2898: the meso the player holds (FUN_141abcad0, :1098).</summary>
+    /// <summary>DAT_143ab2898: the meso the player holds (FUN_141abcad0, uirevivaldialog.cpp:618).</summary>
     public Func<long> Meso = () => 0;
     /// <summary>The platform's merat check (IClientPlatform vfunc_40(cost)); vfunc_41 is the same check for the feature the CN build tests.</summary>
     public Func<long, bool> CanPayMerat = _ => true;
@@ -79,7 +79,7 @@ public sealed class RevivalEnvironment
     public Action<int> NoticeById = _ => { };
     /// <summary>ShowSystemNotice(text, 1, 1).</summary>
     public Action<string> Notice = _ => { };
-    /// <summary>CUIService FUN_141add1f0 (:512): the merat is short, the platform opens its payment.</summary>
+    /// <summary>CUIService FUN_141add1f0 (uirevivaldialog.cpp:455): the merat is short, the platform opens its payment.</summary>
     public Action PaymentShort = () => { };
     /// <summary>FUN_14151f200: show the next queued message box.</summary>
     public Action NextBox = () => { };
@@ -99,13 +99,20 @@ public sealed class RevivalEnvironment
 /// STILL-OPEN: ScaleValue's rounding (cut to a long here), the CN-build texts and platform checks, and the movie's own
 /// AS3 API (setData, setButtonLabel, the btn1 / btn2 labels), which is called as the client calls it.
 /// </summary>
-public sealed class RevivalDialogController : UiController, IMessageBoxListener
+public sealed class RevivalDialogController : UiController, IMessageBoxListener, IMessageBoxTimerListener
 {
     public override string Movie => "uirevivaldialog";
     protected override string EntityMethod => "alignment";                  // the movie's game entity, as UIRevivalDialog::vfunc_43 finds it
-    public override string TypeName => "RevivalDialog";                     // GetTypeName (:62)
+    public override string TypeName => "RevivalDialog";                     // GetTypeName (uirevivaldialog.cpp:172)
 
     public RevivalEnvironment Env { get; } = new();
+
+    /// <summary>vfunc_43 (@0x141abab30, uirevivaldialog.cpp:250-254): UIDialog's is not called; only the entity's vfunc_25
+    /// (the alignment call) runs, so a saved place never keeps the dialog where it was.</summary>
+    public override void Layout(double stageW, double stageH)
+    {
+        if (Host.Player.FindOwner("alignment") is { } al) Host.Invoke(al, "alignment");
+    }
 
     /// <summary>The string tables: the common table by id and by key (the model's tables unless a host sets them).</summary>
     public Func<int, string> CommonById;
@@ -198,8 +205,11 @@ public sealed class RevivalDialogController : UiController, IMessageBoxListener
         return false;
     }
 
-    /// <summary>The leave-the-dungeon answer (UI message 0x7d2, :100): RequestMoveField mode 1.</summary>
+    /// <summary>The leave-the-dungeon answer (UI message 0x7d2, uirevivaldialog.cpp:213-216): RequestMoveField mode 1.</summary>
     public void OnLeaveDungeon() => Env.Send(new RequestMoveFieldLeave());
+
+    /// <summary>OnMessage 0x7d2 (@0x141aba920): the leave box's countdown ended; any box of this listener leaves.</summary>
+    public void OnTimerComplete(MessageBoxController sender, string extra) => OnLeaveDungeon();
 
     /// <summary>SendRevivalMode0 (@0x141abadb0): the answer 0 of the return-point box sends mode 0 and shows the next box.</summary>
     bool SendMode0(int result, MessageBoxData box)
@@ -403,7 +413,7 @@ public sealed class RevivalDialogController : UiController, IMessageBoxListener
         FirstButtonLeaves = false;
         string label = Id(0x27e);
         if (!Env.HasPlayer() || Env.Room() is not { DefaultRevivalLimitCount: > 0 } room) return label;
-        int left = Math.Max(room.DefaultRevivalLimitCount - Env.RoomRevivalsUsed(), 0);
+        uint left = (uint)room.DefaultRevivalLimitCount - (uint)Env.RoomRevivalsUsed();     // nLeft is unsigned (uirevivaldialog.cpp:787): used above the limit wraps
         if (left == 0) { FirstButtonLeaves = true; return Key("s_room_exit_dungeon"); }
         return ClientFormat.Format(Key("s_msg_revival_count_btn"), left);
     }

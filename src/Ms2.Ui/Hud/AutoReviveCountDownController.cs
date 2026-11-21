@@ -24,7 +24,11 @@ public sealed class AutoReviveCountDownController : UiController
     }
 
     /// <summary>vfunc_43 (@0x141284c50): UIDialog's, then the entity at align (0, 0, 0x118).</summary>
-    public override void Layout(double stageW, double stageH) => Host.Align(Host.Entity, 0, 0, 0x118);
+    public override void Layout(double stageW, double stageH)
+    {
+        base.Layout(stageW, stageH);                    // UIDialog::vfunc_43 (uiautorevivecountdowndialog.cpp:57)
+        Host.Align(Host.Entity, 0, 0, 0x118);
+    }
 
     /// <summary>
     /// vfunc_72's decision (@0x141284b70): the deadline past closes (-1); else the remaining whole seconds when they changed

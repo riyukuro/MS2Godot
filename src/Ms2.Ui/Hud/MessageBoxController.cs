@@ -361,8 +361,8 @@ public sealed class MessageBoxController : UiController
 
     /// <summary>vfunc_28 @0x1419f7980: OnClick(button, sID, tag, box); OnTopMostLayer is the layer order (one layer here).
     /// OnChangeTime and OnPopupTimerComplete are the timed boxes' countdown (CMsgBoxData); onHyperLinkClick belongs to box
-    /// types not ported. STILL-OPEN: OnPopupTimerComplete's UIMsg 2002 (the extra text) to a box's listener: no listener
-    /// here takes UIMsgs.</summary>
+    /// types not ported. OnPopupTimerComplete's UIMsg 2002 (the extra text) goes to a listener that implements
+    /// IMessageBoxTimerListener; the other listeners here take no UIMsgs (STILL-OPEN).</summary>
     public override bool OnCallback(string name, object[] args)
     {
         if (string.Equals(name, "OnClick", StringComparison.OrdinalIgnoreCase))
@@ -389,6 +389,7 @@ public sealed class MessageBoxController : UiController
         {
             if (data == null) return false;
             data.OnPopupTimerComplete(HasRoot);
+            if (data.Listener is IMessageBoxTimerListener tl) tl.OnTimerComplete(this, data.Extra);
             return false;
         }
         return false;

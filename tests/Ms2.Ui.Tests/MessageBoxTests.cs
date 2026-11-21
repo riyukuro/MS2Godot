@@ -30,6 +30,25 @@ public class MessageBoxTests
         }
     }
 
+    sealed class TimerListener : IMessageBoxListener, IMessageBoxTimerListener
+    {
+        public readonly List<string> Timed = new();
+        public bool OnMessageBox(MessageBoxController sender, int button, string tag) => false;
+        public void OnTimerComplete(MessageBoxController sender, string extra) => Timed.Add(extra);
+    }
+
+    [Test]
+    public void ThePopupTimerCompleteGoesToATimerListenerWithTheExtraText()
+    {
+        var (h, c) = Load();
+        var l = new TimerListener();
+        var box = MessageBoxQueue.Create(0, "x", l, "leaveInField");
+        MessageBoxQueue.Show(box);
+        h.Player.Tick();
+        c.OnCallback("OnPopupTimerComplete", System.Array.Empty<object>());
+        Assert.That(l.Timed, Is.EqualTo(new[] { "leaveInField" }));
+    }
+
     static (UiHost, MessageBoxController) Load()
     {
         if (packs == null)

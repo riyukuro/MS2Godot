@@ -7,6 +7,13 @@ public interface IMessageBoxListener
     bool OnMessageBox(MessageBoxController sender, int button, string tag);
 }
 
+/// <summary>A listener that also takes UIMsg 2002 (0x7d2), which OnPopupTimerComplete (uimessagebox.cpp:521-531) sends
+/// to the box's listener with the box's extra text.</summary>
+public interface IMessageBoxTimerListener
+{
+    void OnTimerComplete(MessageBoxController sender, string extra);
+}
+
 /// <summary>
 /// CMsgBoxData (client/ms2/uimessageboxdata.h; ctor and setters unit_141a00db0.cpp, FillObj uimessageboxdata.cpp): the
 /// record of one message box: its type, texts, buttons, tag, listener or callback, arguments, item uid, first item entry,

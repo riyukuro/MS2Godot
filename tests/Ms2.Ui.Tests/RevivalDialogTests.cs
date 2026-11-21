@@ -147,6 +147,26 @@ public class RevivalDialogTests
     }
 
     [Test]
+    public void TheLeaveBoxCountdownSendsTheLeaveRequest()
+    {
+        var r = new Rig();
+        ((IMessageBoxTimerListener)r.C).OnTimerComplete(null, "leaveInField");
+        Assert.That(r.Sent, Is.EqualTo(new[] { "RequestMoveField:01" }));
+    }
+
+    [Test]
+    public void AnExhaustedRoomKeepsTheFreeReviveWhenTheCountPassesTheLimit()
+    {
+        var r = new Rig();
+        r.C.Env.Room = () => new RevivalRoom(false, false, 3);
+        r.C.Env.RoomRevivalsUsed = () => 5;
+        r.C.Refresh();
+        Assert.That(r.C.FirstButtonLeaves, Is.False, "the client's unsigned difference wraps, so it never reads as used up");
+        r.C.OnRevival(1);
+        Assert.That(r.Sent, Is.EqualTo(new[] { "Revival:00" }));
+    }
+
+    [Test]
     public void TheCallbackNameOnRevivalPicksTheButton()
     {
         var r = new Rig();
