@@ -262,6 +262,21 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
         return f;
     }
 
+    /// <summary>CContentShutdown::Get(0x39) == 1 (the item merge is shut down). Default: not shut down.</summary>
+    public Func<bool> MergeShutdown = () => false;
+    /// <summary>MyPC::vfunc_65 == 1 (the local player is in the state that refuses a forced talk).</summary>
+    public Func<bool> TalkRefused = () => false;
+
+    /// <summary>onClickItemMerge (uiinventorydialog.cpp:920-943): the shutdown notice 0x2f7, the battle-state notice, then the
+    /// merge smith's talk and the option dialog 0x4e68. STILL-OPEN: the talk script (MergeSmithScriptID, script 0xa7e618,
+    /// BeginTalkWithoutNpc) has no counterpart here; the dialog opens directly.</summary>
+    void OnClickItemMerge()
+    {
+        if (MergeShutdown()) { NoticeText?.Invoke(Model.Tables.Common(0x2f7) ?? ""); return; }
+        if (TalkRefused()) { NoticeText?.Invoke(Model.Tables.Common("s_error_talk_battle_state_force_talk") ?? ""); return; }
+        ToggleDialog?.Invoke(0x4e68);
+    }
+
     /// <summary>
     /// vfunc_28 @0x141998680 after UIDialog's. The sort is the client's; the buttons that open a dialog toggle it; the rest
     /// send a request (the slot expansion's box and request, the bank call) or open a part not here, and are only raised.
@@ -277,8 +292,9 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
             case "onclicksort": OnClickSort(); return true;
             case "notifyslotuse": return SlotUse(args);
             case "notifyslotshiftclick": return SlotShiftClick(args);
+            case "onclickitemmerge": OnClickItemMerge(); return true;
             case "onclickitemoption": case "onclickitemenchanttransform": case "onclickunlimitedenchant":
-            case "onclickitemmerge": case "onitemsearch": case "onclickslotexpand":
+            case "onitemsearch": case "onclickslotexpand":
                 Button?.Invoke(name); return true;
             // these two fall through to "return 0" in the client (:945-951, :979-981)
             case "onclickitemremakeoption": case "onclickopenbank":

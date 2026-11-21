@@ -129,6 +129,27 @@ public class InventoryTests
     }
 
     [Test]
+    public void ItemMergeButtonRefusesThenOpensTheOptionDialog()
+    {
+        Packs();
+        var (h, c, _) = Load();
+        var notices = new List<string>(); var toggled = new List<int>();
+        c.NoticeText += notices.Add; c.ToggleDialog += toggled.Add;
+        bool shut = true, refused = true;
+        c.MergeShutdown = () => shut; c.TalkRefused = () => refused;
+        Assert.That(c.OnCallback("onClickItemMerge", Array.Empty<object>()), Is.True);
+        Assert.That((notices.Count, toggled.Count), Is.EqualTo((1, 0)), "shutdown wins");
+        shut = false;
+        c.OnCallback("onClickItemMerge", Array.Empty<object>());
+        Assert.That((notices.Count, toggled.Count), Is.EqualTo((2, 0)), "battle state refuses");
+        Assert.That(notices[1], Is.Not.EqualTo(notices[0]));
+        refused = false;
+        c.OnCallback("onClickItemMerge", Array.Empty<object>());
+        Assert.That(toggled, Is.EqualTo(new[] { 0x4e68 }));
+        Assert.That(notices.Count, Is.EqualTo(2));
+    }
+
+    [Test]
     public void SortIsTheClientsAndTheOtherRequestsAreOnlyRaised()
     {
         Packs();
