@@ -183,6 +183,21 @@ public class HudTests
         Assert.That(sentAll, Has.Count.EqualTo(1));
         Assert.That(sentAll[0].Count, Is.GreaterThan(0));
         Assert.That(sentAll[0].Count, Is.EqualTo(kt.SnapshotBindings().Count));
+
+        // InitKeys (keytable.cpp:632-652): 112 gamepad combine keys are present in m_keys / mode 2 payload
+        int comboCount = sentAll[0].Count(b => b.Key >= 0xf00000);
+        Assert.That(comboCount, Is.EqualTo(112));
+        Assert.That(kt.GetKeyName(KeyTable.MakeCombineKey(0x96, 0x92, 0xf0)), Does.Contain(","));
+
+        // OnKeyTable mode 0 backs up bindings (keytable.cpp:349) so RestoreKeysFromBackup restores them
+        var st = new ServerKeyTable();
+        st.Apply(new Maple2.PacketLib.Tools.ByteReader(ServerKeyTable.Write(0, false, new[] { new KeyBinding(30, 1, 500001, 0, 0) }, 0, Array.Empty<IReadOnlyList<(int, QuickSlotEntry)>>())));
+        kt.Apply(st);
+        Assert.That(kt.FindKeyByActionAndPriority(500001, 0), Is.EqualTo(30));
+        kt.SetBinding(30, 1, 500002, 0, 0);
+        Assert.That(kt.FindKeyByActionAndPriority(500001, 0), Is.EqualTo(0));
+        kt.RestoreKeysFromBackup();
+        Assert.That(kt.FindKeyByActionAndPriority(500001, 0), Is.EqualTo(30));
     }
 
     [Test]
@@ -218,6 +233,24 @@ public class HudTests
         Assert.That(t.CurrentPage, Is.EqualTo(2));
         Assert.That(c.ShortkeyPage, Is.EqualTo(3));
 
+        Assert.That(sentPages, Is.EqualTo(new[] { 2, 0, 2 }));
+
+        // Skill-set guard (FUN_140930d70, uimainplayerinfo.cpp:1488-1505) blocks page switches
+        c.HasSkillSet = () => true;
+        c.OnCallback("onNextPage", Array.Empty<object>());
+        c.OnCallback("onPrevPage", Array.Empty<object>());
+        Assert.That(t.CurrentPage, Is.EqualTo(2));
+        Assert.That(sentPages, Is.EqualTo(new[] { 2, 0, 2 }));
+
+        // Loaded table with PageCount == 0 returns without altering ShortkeyPage (uimainplayerinfo.cpp:1491,1507)
+        c.HasSkillSet = null;
+        var emptyTable = new ServerKeyTable();
+        emptyTable.Apply(new Maple2.PacketLib.Tools.ByteReader(ServerKeyTable.Write(0, false, Array.Empty<KeyBinding>(), 0, Array.Empty<IReadOnlyList<(int, QuickSlotEntry)>>())));
+        m.ServerKeys = emptyTable;
+        int pageBefore = c.ShortkeyPage;
+        c.OnCallback("onNextPage", Array.Empty<object>());
+        c.OnCallback("onPrevPage", Array.Empty<object>());
+        Assert.That(c.ShortkeyPage, Is.EqualTo(pageBefore));
         Assert.That(sentPages, Is.EqualTo(new[] { 2, 0, 2 }));
     }
 

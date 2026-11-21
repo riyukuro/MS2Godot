@@ -59,6 +59,12 @@ public interface IKeyTable
     string GetKeyName(int key);
     /// <summary>CStringTable::FUN_1418125b0: the action's label.</summary>
     string ActionName(long action);
+    /// <summary>CKeyTable::SendKeysToServer (keytable.cpp:399; gameoptioninputdefault.cpp:392).</summary>
+    bool SendKeysToServer() => false;
+    /// <summary>CKeyTable::BackupKeys (@0x14142a510, keytable.cpp:568; gameoptioninputdefault.cpp:393,587).</summary>
+    void BackupKeys() { }
+    /// <summary>CKeyTable::RestoreKeysFromBackup (gameoptioninputdefault.cpp:595).</summary>
+    void RestoreKeysFromBackup() { }
 }
 
 /// <summary>One row of RefreshKeyList's list: keyGUID is the action as a string, or the int 0x49409.</summary>
@@ -997,6 +1003,20 @@ public sealed class InputOptionPage : OptionPage
     public override void FillControls() => RefreshKeyList(Type);
     /// <summary>@0x141251510.</summary>
     public override void ReadControls() => RefreshKeyList(Type);
+
+    /// <summary>vfunc_9 (@0x141251db0, gameoptioninputdefault.cpp:378-385, 592-596): page 9 restores keys from backup on cancel.</summary>
+    public override void DropChanges()
+    {
+        if (Id == 9) Host.Keys?.RestoreKeysFromBackup();
+    }
+
+    /// <summary>vfunc_10 (@0x141251df0, gameoptioninputdefault.cpp:389-400): sends dirty keys to server and backs up on page 9.</summary>
+    public override void Save()
+    {
+        base.Save();
+        Host.Keys?.SendKeysToServer();
+        if (Id == 9) Host.Keys?.BackupKeys();
+    }
 
     /// <summary>RefreshKeyList @0x141250cc0: a row per setting of the page id's category. Action 0x49409 shows key 1 as
     /// its second key and keeps an int keyGUID; the third key shows only with the game pad feature (0xb5).</summary>

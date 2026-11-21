@@ -472,4 +472,30 @@ public class GameOptionDialogTests
         Assert.That(GraphicOptionPage.Wtoi("-7"), Is.EqualTo(-7));
         Assert.That(GraphicOptionPage.Wtoi("abc"), Is.EqualTo(0));
     }
+
+    sealed class TrackingKeys : IKeyTable
+    {
+        public int Sends, Backups, Restores;
+        public IReadOnlyList<KeySetting> GetSettingList(int category) => null;
+        public int FindKeyByActionAndPriority(long action, int priority) => 0;
+        public string GetKeyName(int key) => "";
+        public string ActionName(long action) => "";
+        public bool SendKeysToServer() { Sends++; return true; }
+        public void BackupKeys() => Backups++;
+        public void RestoreKeysFromBackup() => Restores++;
+    }
+
+    [Test]
+    public void InputOptionPageSaveAndCancelSyncKeys()
+    {
+        // CGameOptionInputDefault::vfunc_10 (gameoptioninputdefault.cpp:392-393) and vfunc_9 (:378-385, 592-596)
+        var (d, h) = Open();
+        var keys = new TrackingKeys();
+        h.Keys = keys;
+        d.SaveAll();
+        Assert.That(keys.Sends, Is.GreaterThanOrEqualTo(1));
+        Assert.That(keys.Backups, Is.EqualTo(1), "only page 9 calls BackupKeys");
+        d.DropAllChanges();
+        Assert.That(keys.Restores, Is.EqualTo(1), "only page 9 calls RestoreKeysFromBackup");
+    }
 }

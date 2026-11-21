@@ -63,9 +63,31 @@ public sealed class KeyTable : IKeyTable
         for (int k = 1; k < 0xd0; k++)
             if (names.TryGetValue(k.ToString(CultureInfo.InvariantCulture), out var n) && !string.IsNullOrEmpty(n))
                 keys[k] = new Key { Name = n };
+        // InitKeys (keytable.cpp:632-652): 112 gamepad combine keys (4 modifiers 0x96..0x99 x 28 targets)
+        for (int first = 0x96; first <= 0x99; first++)
+        {
+            for (int second = 0x92; second < 0xa2; second++)
+            {
+                if (second >= 0x96 && second <= 0x99) continue;
+                AddCombineKey(first, second, 0xf0);
+            }
+            for (int second = 0xa3; second < 0xb3; second++)
+                AddCombineKey(first, second, 0xf1);
+        }
         if (packs.Exists("Xml", DefaultKeyPath)) defaultKeys = packs.Read("Xml", DefaultKeyPath);
         if (packs.Exists("Xml", DefaultMouseControlKeyPath)) defaultMouseKeys = packs.Read("Xml", DefaultMouseControlKeyPath);
         LoadDefaultKeys();
+    }
+
+    /// <summary>CKeyTable::MakeCombineKey (@0x141430e70, keytable.cpp:2339-2348).</summary>
+    public static int MakeCombineKey(int first, int second, int mode) =>
+        ((mode & 0xff) << 16) | (((first - 0x91) & 0xff) << 8) | ((second - 0x91) & 0xff);
+
+    /// <summary>CKeyTable::CreateCombineKeyString (@0x141430ee0, keytable.cpp:2352-2367) + InitKeys (:639-650).</summary>
+    void AddCombineKey(int first, int second, int mode)
+    {
+        if (!keys.TryGetValue(first, out var f) || !keys.TryGetValue(second, out var s)) return;
+        keys[MakeCombineKey(first, second, mode)] = new Key { Name = $"{f.Name},{s.Name}" };
     }
 
     /// <summary>FUN_1414297e0 (:429) on DefaultKey.xml: each row fills its key's type, code and priority (the last row of a key
@@ -111,7 +133,9 @@ public sealed class KeyTable : IKeyTable
         return true;
     }
 
-    /// <summary>CKeyTable::SendKeysToServer (@0x141429600, keytable.cpp:399-425): emits mode 2 with all m_keys entries when dirty and unlocked.</summary>
+    /// <summary>CKeyTable::SendKeysToServer (@0x141429600, keytable.cpp:399-425): emits mode 2 with all m_keys entries when
+    /// dirty and unlocked. Note: the client also guards on GetCurrentSceneId() == 0x620000c (game scene, :401); in this port
+    /// the only live callers run inside the field HUD.</summary>
     public bool SendKeysToServer()
     {
         if (!IsDirty || Locked) return false;
@@ -141,7 +165,7 @@ public sealed class KeyTable : IKeyTable
         return false;
     }
 
-    /// <summary>CKeyTable::BackupKeys (@0x14142a000, keytable.cpp:568).</summary>
+    /// <summary>CKeyTable::BackupKeys (@0x14142a510, keytable.cpp:568).</summary>
     public void BackupKeys()
     {
         backup.Clear();
@@ -192,14 +216,15 @@ public sealed class KeyTable : IKeyTable
         return true;
     }
 
-    /// <summary>OnKeyTable mode 0 (keytable.cpp:285): ClearAllBindings, then DefaultKey.xml (use-default flag or no bindings) or
-    /// each binding of the packet.</summary>
+    /// <summary>OnKeyTable mode 0 (keytable.cpp:285-350): ClearAllBindings, then DefaultKey.xml (use-default flag or no
+    /// bindings) or each binding of the packet, followed by BackupKeys (:349).</summary>
     public void Apply(ServerKeyTable t)
     {
         if (t == null || !t.Loaded) return;
         ClearAllBindings();
         if (t.UsesDefaultKeys) LoadDefaultKeys();
         else foreach (var b in t.Bindings) SetBinding(b.Key, b.Type, b.Code, b.Slot, b.Priority);
+        BackupKeys();
     }
 
     static int Atoi(string s) => int.TryParse(s, out var v) ? v : 0;
