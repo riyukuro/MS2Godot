@@ -90,6 +90,18 @@ public partial class LiveSession : Node
     public readonly ServerKeyTable KeyTable = new();
     /// <summary>Raised after a KeyTable packet was applied (its mode: 0 load, 7 pages).</summary>
     public event Action<int> KeyTableChanged;
+    /// <summary>Outbound KeyTable (0x3A) mode 1: bind a single key (CKeyTable::SendKeyTableMode1, keytable.cpp:378).</summary>
+    public void SendKeyTableBind(KeyBinding binding) { if (game != null) Send(new KeyTableBindRequest(binding)); }
+    /// <summary>Outbound KeyTable (0x3A) mode 2: save all key bindings (CKeyTable::SendKeysToServer, keytable.cpp:399).</summary>
+    public void SendKeyTableSaveAll(IReadOnlyList<KeyBinding> bindings) { if (game != null) Send(new KeyTableSaveAllRequest(bindings)); }
+    /// <summary>Outbound KeyTable (0x3A) mode 3: set a quick slot on a page (unit_14092f420_accountsessionstate.cpp:352).</summary>
+    public void SendKeyTableSetQuickSlot(int page, int slot, QuickSlotEntry entry) { if (game != null) Send(new KeyTableSetQuickSlotRequest((short)page, entry.SkillId, entry.ItemId, entry.ItemUid, slot)); }
+    /// <summary>Outbound KeyTable (0x3A) mode 4: add a quick slot on a page (unit_14092f420_accountsessionstate.cpp:418).</summary>
+    public void SendKeyTableAddQuickSlot(int page, QuickSlotEntry entry) { if (game != null) Send(new KeyTableAddQuickSlotRequest(page, entry)); }
+    /// <summary>Outbound KeyTable (0x3A) mode 5: remove a quick slot on a page (unit_14092f420_accountsessionstate.cpp:481).</summary>
+    public void SendKeyTableRemoveQuickSlot(int page, int skillId, long itemUid) { if (game != null) Send(new KeyTableRemoveQuickSlotRequest((short)page, skillId, itemUid)); }
+    /// <summary>Outbound KeyTable (0x3A) mode 8: set the active quick slot page (CKeyTable::SetQuickSlotPage, keytable.cpp:2547).</summary>
+    public void SendKeyTableSetPage(int page) { if (game != null) Send(new KeyTableSetPageRequest(page)); }
     /// <summary>OnBadgeEquip mode 4: the error code (shown as a system notice, <see cref="Ms2.Ui.Hud.MyInfoController.GemEquipErrorKey"/>).</summary>
     public event Action<short> GemEquipError;
     /// <summary>OnBadgeEquip modes 0 and 1, for any PC of the field (the own one included): a gem put on or taken off.</summary>

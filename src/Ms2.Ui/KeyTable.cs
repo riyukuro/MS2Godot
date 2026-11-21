@@ -21,11 +21,25 @@ public sealed class KeyTable : IKeyTable
     sealed class Key { public string Name; public long Code; public int Type, Priority, Slot; }
 
     readonly SortedDictionary<int, Key> keys = new();
+    readonly Dictionary<int, (int Type, long Code, int Slot, int Priority)> backup = new();
     readonly Dictionary<string, string> names = new();
     byte[] defaultKeys;
+    byte[] defaultMouseKeys;
     readonly Dictionary<int, List<KeySetting>> settings = new();
     readonly GameStrings strings;
     Dictionary<string, string> skillNames;
+
+    public const string DefaultKeyPath = "table/default/defaultkey.xml";
+    public const string DefaultMouseControlKeyPath = "table/default/defaultmousecontrolkey.xml";
+
+    /// <summary>CKeyTable::GetLocked (m_nLocked): when true, key sends and UIKeySettingSelectDialog buttons are disabled (keytable.cpp:380,405, uikeysettingselectdialog.cpp:87).</summary>
+    public bool Locked { get; set; }
+    /// <summary>m_bDirty: set when key bindings change; cleared by <see cref="SendKeysToServer"/> (keytable.cpp:403,424,492).</summary>
+    public bool IsDirty { get; private set; }
+    /// <summary>CKeyTable::SendKeyTableMode1 (@0x1414294e0, keytable.cpp:378): raised per changed key (and its pair key) in <see cref="SetKeyBindingAndSync"/>.</summary>
+    public event Action<KeyBinding> KeyBindingChanged;
+    /// <summary>CKeyTable::SendKeysToServer (@0x141429600, keytable.cpp:399): raised with the full m_keys table on mode 2 save.</summary>
+    public event Action<IReadOnlyList<KeyBinding>> KeysSentToServer;
 
     /// <summary>InitKeys (:679): keys that take each other's binding (Alt, Shift, Ctrl and 0x82/0x83 left and right).</summary>
     static readonly Dictionary<int, int> PairKeys = new()
@@ -49,26 +63,112 @@ public sealed class KeyTable : IKeyTable
         for (int k = 1; k < 0xd0; k++)
             if (names.TryGetValue(k.ToString(CultureInfo.InvariantCulture), out var n) && !string.IsNullOrEmpty(n))
                 keys[k] = new Key { Name = n };
-        const string path = "table/default/defaultkey.xml";
-        if (packs.Exists("Xml", path)) defaultKeys = packs.Read("Xml", path);
+        if (packs.Exists("Xml", DefaultKeyPath)) defaultKeys = packs.Read("Xml", DefaultKeyPath);
+        if (packs.Exists("Xml", DefaultMouseControlKeyPath)) defaultMouseKeys = packs.Read("Xml", DefaultMouseControlKeyPath);
         LoadDefaultKeys();
     }
 
     /// <summary>FUN_1414297e0 (:429) on DefaultKey.xml: each row fills its key's type, code and priority (the last row of a key
     /// code wins; game pad keys skipped; the slot is left as it is).</summary>
-    public void LoadDefaultKeys()
+    public void LoadDefaultKeys() => LoadDefaultXml(defaultKeys, sendToServer: false);
+
+    /// <summary>
+    /// CKeyTable::FUN_1414297e0 (@0x1414297e0, keytable.cpp:429-496): loads DefaultKey.xml or DefaultMouseControlKey.xml
+    /// (called by UIKeySettingSelectDialog @0x140c58690, uikeysettingselectdialog.cpp:106,111), marks dirty and sends
+    /// SendOp::KeyTable mode 2 when <paramref name="sendToServer"/> is true.
+    /// </summary>
+    public bool LoadDefaultKeys(string xmlPath, bool sendToServer = false)
     {
-        if (defaultKeys == null) return;
+        byte[] bytes = string.Equals(xmlPath, DefaultMouseControlKeyPath, StringComparison.OrdinalIgnoreCase)
+            ? defaultMouseKeys
+            : defaultKeys;
+        return LoadDefaultXml(bytes, sendToServer);
+    }
+
+    bool LoadDefaultXml(byte[] xmlBytes, bool sendToServer)
+    {
+        if (xmlBytes == null) return false;
         var rows = new Dictionary<int, XElement>();
-        foreach (var e in GameStrings.Parse(defaultKeys).Descendants("KeyConfig").Descendants("key"))
+        foreach (var e in GameStrings.Parse(xmlBytes).Descendants("KeyConfig").Descendants("key"))
             if (int.TryParse((string)e.Attribute("keyCode"), out var kc)) rows[kc] = e;     // byKey[nKeyCode] = pNode
         foreach (var (k, key) in keys)
         {
-            if (IsGamepadKey(k) || !rows.TryGetValue(k, out var e)) continue;
-            key.Type = Atoi((string)e.Attribute("type"));
-            key.Code = long.TryParse((string)e.Attribute("code"), out var c) ? c : 0;
-            key.Priority = Atoi((string)e.Attribute("priority"));
+            if (IsGamepadKey(k)) continue;
+            if (rows.TryGetValue(k, out var e))
+            {
+                key.Type = Atoi((string)e.Attribute("type"));
+                key.Code = long.TryParse((string)e.Attribute("code"), out var c) ? c : 0;
+                key.Priority = Atoi((string)e.Attribute("priority"));
+            }
+            else
+            {
+                // keytable.cpp:471-487: keys missing from the XML get empty attributes -> 0
+                key.Type = 0; key.Code = 0; key.Priority = 0;
+            }
         }
+        IsDirty = true;
+        if (sendToServer) SendKeysToServer();
+        return true;
+    }
+
+    /// <summary>CKeyTable::SendKeysToServer (@0x141429600, keytable.cpp:399-425): emits mode 2 with all m_keys entries when dirty and unlocked.</summary>
+    public bool SendKeysToServer()
+    {
+        if (!IsDirty || Locked) return false;
+        var snapshot = SnapshotBindings();
+        KeysSentToServer?.Invoke(snapshot);
+        IsDirty = false;
+        return true;
+    }
+
+    /// <summary>All key bindings in m_keys key-code order (the payload of SendKeysToServer mode 2, keytable.cpp:410-422).</summary>
+    public List<KeyBinding> SnapshotBindings()
+    {
+        var list = new List<KeyBinding>(keys.Count);
+        foreach (var (k, v) in keys)
+            list.Add(new KeyBinding(k, v.Type, v.Code, v.Slot, v.Priority));
+        return list;
+    }
+
+    public bool TryGetBinding(int key, out KeyBinding binding)
+    {
+        if (keys.TryGetValue(key, out var k))
+        {
+            binding = new KeyBinding(key, k.Type, k.Code, k.Slot, k.Priority);
+            return true;
+        }
+        binding = default;
+        return false;
+    }
+
+    /// <summary>CKeyTable::BackupKeys (@0x14142a000, keytable.cpp:568).</summary>
+    public void BackupKeys()
+    {
+        backup.Clear();
+        foreach (var (k, v) in keys)
+            backup[k] = (v.Type, v.Code, v.Slot, v.Priority);
+    }
+
+    /// <summary>CKeyTable::RestoreKeysFromBackup (keytable.cpp; gameoptioninputdefault.cpp:595).</summary>
+    public void RestoreKeysFromBackup()
+    {
+        if (backup.Count == 0) return;
+        foreach (var (k, b) in backup)
+            if (keys.TryGetValue(k, out var v)) { v.Type = b.Type; v.Code = b.Code; v.Slot = b.Slot; v.Priority = b.Priority; }
+    }
+
+    /// <summary>CKeyTable::SetKeyBindingAndSync (@0x14142b250, keytable.cpp:703-714): updates key (and its pair key) and sends mode 1 for each.</summary>
+    public bool SetKeyBindingAndSync(int key, int type, long code, int slot, int priority)
+    {
+        if (!SetBinding(key, type, code, slot, priority)) return false;
+        IsDirty = true;
+        if (!Locked && TryGetBinding(key, out var primary))
+        {
+            KeyBindingChanged?.Invoke(primary);
+            if (PairKeys.TryGetValue(key, out var pair) && TryGetBinding(pair, out var paired))
+                KeyBindingChanged?.Invoke(paired);
+        }
+        return true;
     }
 
     /// <summary>ClearAllBindings (:599): code, slot and type to 0 (the priority stays).</summary>

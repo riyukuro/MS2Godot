@@ -418,6 +418,13 @@ public sealed class GameOptionDialog
         GetPageByIndex(Tab)?.Open(1);
     }
 
+    /// <summary>UIGameOptionDialog::ReopenCurrentTab (@0x1419438b0, uigameoptiondialog.cpp:403-408): reopens the active tab when the dialog is open.</summary>
+    public void ReopenCurrentTab()
+    {
+        if (Host.IsClosed) return;
+        GetPageByIndex(Tab)?.Open(1);
+    }
+
     /// <summary>@0x141943790.</summary>
     public void OnCloseTab(int tab)
     {

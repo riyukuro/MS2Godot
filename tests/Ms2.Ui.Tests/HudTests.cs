@@ -158,6 +158,143 @@ public class HudTests
     }
 
     [Test]
+    public void KeyTableSyncsBindingsAndLoadsMousePreset()
+    {
+        var kt = new KeyTable(packs, "en");
+        var sentSingle = new List<KeyBinding>();
+        var sentAll = new List<IReadOnlyList<KeyBinding>>();
+        kt.KeyBindingChanged += b => sentSingle.Add(b);
+        kt.KeysSentToServer += list => sentAll.Add(list);
+
+        // SetKeyBindingAndSync updates pair key (LShift 42 <-> RShift 54) and emits mode 1 for both (keytable.cpp:703-714)
+        Assert.That(kt.SetKeyBindingAndSync(42, 1, 500001, 0, 0), Is.True);
+        Assert.That(kt.IsDirty, Is.True);
+        Assert.That(sentSingle.Select(b => b.Key), Is.EqualTo(new[] { 42, 54 }));
+
+        // Locked suppresses outbound mode 1 sends
+        sentSingle.Clear();
+        kt.Locked = true;
+        Assert.That(kt.SetKeyBindingAndSync(42, 1, 500002, 0, 0), Is.True);
+        Assert.That(sentSingle, Is.Empty);
+
+        // Unlock and load mouse preset with sendToServer: emits mode 2 with all bindings (keytable.cpp:429-496)
+        kt.Locked = false;
+        kt.LoadDefaultKeys(KeyTable.DefaultMouseControlKeyPath, sendToServer: true);
+        Assert.That(sentAll, Has.Count.EqualTo(1));
+        Assert.That(sentAll[0].Count, Is.GreaterThan(0));
+        Assert.That(sentAll[0].Count, Is.EqualTo(kt.SnapshotBindings().Count));
+    }
+
+    [Test]
+    public void MainPlayerInfoPageNavigationWrapsAndEmitsSetPage()
+    {
+        var m = Model();
+        var pages = new IReadOnlyList<(int, QuickSlotEntry)>[]
+        {
+            new[] { (0, new QuickSlotEntry(10000001, 0, 0)) },
+            Array.Empty<(int, QuickSlotEntry)>(),
+            Array.Empty<(int, QuickSlotEntry)>(),
+        };
+        var t = new ServerKeyTable();
+        t.Apply(new Maple2.PacketLib.Tools.ByteReader(ServerKeyTable.Write(0, false, Array.Empty<KeyBinding>(), 1, pages)));
+        m.Keys = new KeyTable(packs, "en"); m.ServerKeys = t; m.Keys.Apply(t);
+        var c = new MainPlayerInfoController();
+        var sentPages = new List<int>();
+        c.QuickSlotPageChanged += p => sentPages.Add(p);
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        Assert.That(c.ShortkeyPage, Is.EqualTo(2));
+
+        // OnNextPage wraps 1 -> 2 -> 0, OnPrevPage wraps 0 -> 2 (uimainplayerinfo.cpp:1486-1513)
+        c.OnCallback("onNextPage", Array.Empty<object>());
+        Assert.That(t.CurrentPage, Is.EqualTo(2));
+        Assert.That(c.ShortkeyPage, Is.EqualTo(3));
+
+        c.OnCallback("onNextPage", Array.Empty<object>());
+        Assert.That(t.CurrentPage, Is.EqualTo(0));
+        Assert.That(c.ShortkeyPage, Is.EqualTo(1));
+
+        c.OnCallback("onPrevPage", Array.Empty<object>());
+        Assert.That(t.CurrentPage, Is.EqualTo(2));
+        Assert.That(c.ShortkeyPage, Is.EqualTo(3));
+
+        Assert.That(sentPages, Is.EqualTo(new[] { 2, 0, 2 }));
+    }
+
+    [Test]
+    public void UpperHudInputModeButtonTogglesKeySettingSelect()
+    {
+        var m = Model();
+        m.Features.Add(Feature.InputMode);
+        var c = new UpperHudController { MouseMode = false };
+        int toggles = 0;
+        c.ToggleKeySettingSelect += () => toggles++;
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+
+        var kb = h.Child("m_keyboardMode");
+        var ms = h.Child("m_mouseMode");
+        Assert.That(kb, Is.Not.Null);
+        Assert.That(ms, Is.Not.Null);
+        Assert.That(Rt.ToBoolean(h.Get(kb, "visible")), Is.True);
+        Assert.That(Rt.ToBoolean(h.Get(ms, "visible")), Is.False);
+
+        var evCls = h.RT.GetClass("flash.events.Event");
+        h.Player.Call(kb, "dispatchEvent", new object[] { evCls.Construct("buttonClick", false, false) });
+        Assert.That(toggles, Is.EqualTo(1));
+
+        c.SetMouseMode(true);
+        Assert.That(Rt.ToBoolean(h.Get(kb, "visible")), Is.False);
+        Assert.That(Rt.ToBoolean(h.Get(ms, "visible")), Is.True);
+        h.Player.Call(ms, "dispatchEvent", new object[] { evCls.Construct("buttonClick", false, false) });
+        Assert.That(toggles, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void KeySettingSelectDialogSwitchesPresetsAndRespectsLock()
+    {
+        var m = Model();
+        m.Keys = new KeyTable(packs, "en");
+        var sentAll = new List<IReadOnlyList<KeyBinding>>();
+        m.Keys.KeysSentToServer += list => sentAll.Add(list);
+        var selectedModes = new List<bool>();
+        var c = new KeySettingSelectController();
+        c.ModeSelected += mouse => selectedModes.Add(mouse);
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+
+        var btn1 = h.Child("m_button1");
+        var btn2 = h.Child("m_button2");
+        Assert.That(btn1, Is.Not.Null);
+        Assert.That(btn2, Is.Not.Null);
+        Assert.That(Rt.ToBoolean(h.Get(btn1, "enabled")), Is.True);
+        Assert.That(Rt.ToBoolean(h.Get(btn2, "enabled")), Is.True);
+
+        // Clicking m_button2 selects mouse mode, loads defaultmousecontrolkey.xml and sends mode 2 (uikeysettingselectdialog.cpp:96-122)
+        h.Player.Call(btn2, "dispatchEvent", new object[] { h.RT.GetClass("flash.events.Event").Construct("buttonClick", false, false) });
+        Assert.That(selectedModes, Is.EqualTo(new[] { true }));
+        Assert.That(sentAll, Has.Count.EqualTo(1));
+        Assert.That(sentAll[0].Count, Is.GreaterThan(0));
+
+        // Reopen and click m_button1 -> keyboard mode
+        var c2 = new KeySettingSelectController();
+        c2.ModeSelected += mouse => selectedModes.Add(mouse);
+        var h2 = Load(c2, m);
+        Assert.That(h2.RT.Errors, Is.Empty);
+        h2.Player.Call(h2.Child("m_button1"), "dispatchEvent", new object[] { h2.RT.GetClass("flash.events.Event").Construct("buttonClick", false, false) });
+        Assert.That(selectedModes, Is.EqualTo(new[] { true, false }));
+        Assert.That(sentAll, Has.Count.EqualTo(2));
+
+        // Locked key table disables both buttons (uikeysettingselectdialog.cpp:68-74)
+        m.Keys.Locked = true;
+        var c3 = new KeySettingSelectController();
+        var h3 = Load(c3, m);
+        Assert.That(h3.RT.Errors, Is.Empty);
+        Assert.That(Rt.ToBoolean(h3.Get(h3.Child("m_button1"), "enabled")), Is.False);
+        Assert.That(Rt.ToBoolean(h3.Get(h3.Child("m_button2"), "enabled")), Is.False);
+    }
+
+    [Test]
     public void QuickSlotTooltipsFollowTheSlotKind()
     {
         // SkillSlot::vfunc_0 (skillslot.cpp:716): a skill slot's skill tooltip with the remove hint, a key-bound slot's action

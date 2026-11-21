@@ -507,7 +507,7 @@ public partial class HudScene : Node, IUiStageHost
     bool AnyClosableDialogOpen() => (questLog != null && questLogSide?.IsClosed == false) || WorldMapOpen || optionHost?.IsClosed == false
                                     || inventory?.IsClosed == false || myInfo?.IsClosed == false
                                     || AchieveOpen || MailOpen || PcInfoOpen
-                                    || CommunityOpen || CommunityQueryOpen;
+                                    || CommunityOpen || CommunityQueryOpen || KeySettingSelectOpen;
 
     /// <summary>CUIService::CloseAllDialogs: closes every closable dialog (vfunc_67).</summary>
     void CloseAllDialogs()
@@ -522,6 +522,7 @@ public partial class HudScene : Node, IUiStageHost
         if (PcInfoOpen) pcInfo.Close();
         if (CommunityQueryOpen) communityQuery.Close();
         if (CommunityOpen) community.Close();
+        if (KeySettingSelectOpen) keySettingSelect.Close();
     }
 
     Ms2.Formats.Options.GameOptionDialog optionDialog;      // UIGameOptionDialog (0x4ef3), its C++ side, kept between opens as the client keeps it
@@ -609,9 +610,10 @@ public partial class HudScene : Node, IUiStageHost
             int[] tokens = { 4, 5, 6, 7, 0xc, 0xd, 0xe, 0xf, 0x10 };
             for (int i = 0; i < tokens.Length; i++) model.Player.Tokens[tokens[i]] = w[5 + i];
         }
-        upperHudSide = new Ms2.Ui.Hud.UpperHudController();
+        upperHudSide = new Ms2.Ui.Hud.UpperHudController { MouseMode = GameOptions.MouseControl.Value };
         upperHudSide.ToggleDictionary += ToggleGameDictionary;
         upperHudSide.ToggleFishingBook += ToggleFishingBook;
+        upperHudSide.ToggleKeySettingSelect += ToggleKeySettingSelect;
         upperHud = new MovieDialog(assets, upperHudSide, model, ScreenMode.PixelSize(GetWindow()));
         ui.AddChild(upperHud);
         WatchLivePlayer(model);     // live, the mesos of ServerEnter and the Meso packets (status event 8)
@@ -2720,17 +2722,36 @@ public partial class HudScene : Node, IUiStageHost
         if (live == null) return;
         Action<int> onBook = _ => playerInfo.RebindSlots();
         Action<long> onBag = _ => playerInfo.QueueSlotRefresh(Ms2.Ui.Hud.MainPlayerInfoController.RefreshGray | Ms2.Ui.Hud.MainPlayerInfoController.RefreshItemCount);
-        // OnKeyTable mode 0 / 7's SetQuickSlotPage posts NotifyShortkeyPage (keytable.cpp:2547): the slots reload their page;
-        // a mode 0 with useDefault 1 reads no pages and does not call it (:293-303)
+        // CKeyTable::OnKeyTable (keytable.cpp:285-375): mode 0 loads bindings + quick-slot pages; mode 7 updates pages.
+        // Only mode 0 / 7's SetQuickSlotPage posts NotifyShortkeyPage (keytable.cpp:2547): the slots reload their page and the
+        // page number follows; a mode 0 with useDefault 1 reads no pages and does not call it (:293-303)
         Action<int> onKeys = mode =>
         {
-            if ((mode == 0 || mode == 7) && hudModel.ServerKeys is { PagesRead: true } t) playerInfo.OnShortkeyPageNotify(playerInfo.SlotFieldsPage, t.CurrentPage);
+            hudModel.ServerKeys = live.KeyTable;
+            hudModel.Keys.Locked = live.KeyTable.Locked;
+            if (mode == 0) hudModel.Keys.Apply(live.KeyTable);
+            if ((mode == 0 || mode == 7) && live.KeyTable.PagesRead) playerInfo.OnShortkeyPageNotify(playerInfo.SlotFieldsPage, live.KeyTable.CurrentPage);
             playerInfo.RebindSlots();
+            if (optionHost?.IsClosed == false) optionDialog?.ReopenCurrentTab();
         };
+        Action<Ms2.Net.Packets.KeyBinding> onBind = live.SendKeyTableBind;
+        Action<IReadOnlyList<Ms2.Net.Packets.KeyBinding>> onSaveAll = live.SendKeyTableSaveAll;
+        Action<int> onPageChanged = live.SendKeyTableSetPage;
         live.SkillBookChanged += onBook;
         live.Items.Changed += onBag;
         live.KeyTableChanged += onKeys;
-        unwatchQuickSlotState = () => { live.SkillBookChanged -= onBook; live.Items.Changed -= onBag; live.KeyTableChanged -= onKeys; };
+        hudModel.Keys.KeyBindingChanged += onBind;
+        hudModel.Keys.KeysSentToServer += onSaveAll;
+        playerInfo.QuickSlotPageChanged += onPageChanged;
+        unwatchQuickSlotState = () =>
+        {
+            live.SkillBookChanged -= onBook;
+            live.Items.Changed -= onBag;
+            live.KeyTableChanged -= onKeys;
+            hudModel.Keys.KeyBindingChanged -= onBind;
+            hudModel.Keys.KeysSentToServer -= onSaveAll;
+            playerInfo.QuickSlotPageChanged -= onPageChanged;
+        };
     }
     Ms2Godot.Net.ItemKinds slotKinds;
     Ms2.Ui.Skills.SlotField slotField;

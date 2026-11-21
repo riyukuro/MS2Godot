@@ -41,8 +41,17 @@ public sealed class UpperHudController : UiController
         }
         if (Model.IsFeatureEnabled(Feature.InputMode))
         {
-            Host.SetVisible(Host.Child("m_keyboardMode"), !MouseMode);
-            Host.SetVisible(Host.Child("m_mouseMode"), MouseMode);
+            // UIUpperHudDialog::OnLoadComplete (uiupperhuddialog.cpp:285-297) & OnInputModeClick (:519-522)
+            if (Host.Child("m_keyboardMode") is { } kb)
+            {
+                Listen(kb, "buttonClick", () => ToggleKeySettingSelect?.Invoke());
+                Host.SetVisible(kb, !MouseMode);
+            }
+            if (Host.Child("m_mouseMode") is { } ms)
+            {
+                Listen(ms, "buttonClick", () => ToggleKeySettingSelect?.Invoke());
+                Host.SetVisible(ms, MouseMode);
+            }
         }
         if (Model.IsFeatureEnabled(Feature.GamePad))
         {
@@ -73,6 +82,18 @@ public sealed class UpperHudController : UiController
 
     /// <summary>OnFishingBookClick (@uiupperhuddialog.cpp:507): CUIService::ToggleDialog(0x4ee6), the fishing book.</summary>
     public event Action ToggleFishingBook;
+
+    /// <summary>OnInputModeClick (@0x141356e20, uiupperhuddialog.cpp:519-522): CUIService::ToggleDialog(0x4f65), UIKeySettingSelectDialog.</summary>
+    public event Action ToggleKeySettingSelect;
+
+    /// <summary>Updates the visible keyboard/mouse mode indicator (uiupperhuddialog.cpp:287-296, FUN_14125bd20).</summary>
+    public void SetMouseMode(bool mouseMode)
+    {
+        MouseMode = mouseMode;
+        if (Host?.Entity == null || !Model.IsFeatureEnabled(Feature.InputMode)) return;
+        Host.SetVisible(Host.Child("m_keyboardMode"), !MouseMode);
+        Host.SetVisible(Host.Child("m_mouseMode"), MouseMode);
+    }
 
     void Listen(object target, string type, Action a)
     {

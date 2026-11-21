@@ -588,13 +588,46 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         return true;
     }
 
+    /// <summary>Raised when the player switches quick slot pages (onNextPage / onPrevPage -> CKeyTable::SetQuickSlotPage -> SendKeyTableMode8, keytable.cpp:2558).</summary>
+    public event Action<int> QuickSlotPageChanged;
+
+    /// <summary>Syncs the displayed 1-based page number from <see cref="UiModel.ServerKeys"/> (SetShortkeyPageNumber, uimainplayerinfo.cpp:1202).</summary>
+    public void SyncQuickSlotPage()
+    {
+        if (Model.ServerKeys is { Loaded: true } t) ShortkeyPage = t.CurrentPage + 1;
+        if (Host?.Entity != null) Host.Invoke("setShortkeyPageNumber", ShortkeyPage);
+    }
+
     public override bool OnCallback(string name, object[] args)
     {
         switch (name)
         {
             case "notifySlotUse": return SlotUse(args);
-            case "onNextPage": ShortkeyPage++; Host.Invoke("setShortkeyPageNumber", ShortkeyPage); return true;
-            case "onPrevPage": if (ShortkeyPage > 1) ShortkeyPage--; Host.Invoke("setShortkeyPageNumber", ShortkeyPage); return true;
+            case "onNextPage":
+                // UIMainPlayerInfo::OnNextPage (@0x1419f36c0, uimainplayerinfo.cpp:1502-1513)
+                if (Model.ServerKeys is { PageCount: > 0 } nextTable)
+                {
+                    int next = (nextTable.CurrentPage + 1) % nextTable.PageCount;
+                    nextTable.SetCurrentPage(next);
+                    SyncQuickSlotPage();
+                    RebindSlots();
+                    QuickSlotPageChanged?.Invoke(next);
+                }
+                else { ShortkeyPage++; Host.Invoke("setShortkeyPageNumber", ShortkeyPage); }
+                return true;
+            case "onPrevPage":
+                // UIMainPlayerInfo::OnPrevPage (@0x1419f3620, uimainplayerinfo.cpp:1486-1499)
+                if (Model.ServerKeys is { PageCount: > 0 } prevTable)
+                {
+                    int prev = prevTable.CurrentPage - 1;
+                    if (prev < 0) prev += prevTable.PageCount;
+                    prevTable.SetCurrentPage(prev);
+                    SyncQuickSlotPage();
+                    RebindSlots();
+                    QuickSlotPageChanged?.Invoke(prev);
+                }
+                else if (ShortkeyPage > 1) { ShortkeyPage--; Host.Invoke("setShortkeyPageNumber", ShortkeyPage); }
+                return true;
             case "onRideOff": return true;
             case "OnToggleSkillExpansionSlot": SkillMinimize = !SkillMinimize; return true;
             case "OnToggleCommonExpansionSlot": CommonMinimize = !CommonMinimize; return true;
