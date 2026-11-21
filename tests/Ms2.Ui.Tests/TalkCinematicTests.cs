@@ -193,6 +193,33 @@ public class TalkCinematicTests
         Assert.That(rt.Errors, Is.Empty);
     }
 
+    /// <summary>
+    /// Button set 14 is CTakeBoatCinematicComponent (uitalkcinematic.cpp:718): its button is 0x669 (:1170) and a next sends
+    /// NpcTalk mode 2 with 0, then TakeBoat with the talk npc (cinematiccomponent.cpp:1158-1161), once per page.
+    /// </summary>
+    [Test]
+    public void TheTakeBoatPageSendsTheNextPageAndTakeBoatOnce()
+    {
+        var (h, c, p, rt) = Load(new() { Script = "All aboard?" }, 14);
+        var boats = new List<int>(); int next = -1; bool ended = false;
+        c.SendTakeBoat += boats.Add;
+        c.SendNext += i => next = i;
+        c.SendEnd += () => ended = true;
+        Assert.That(c.Talking, Is.True, "set 14 is a component, not the unknown-set end");
+        string accept = new GameTables(Packs(), "en").Common(0x669);
+        Assert.That(accept, Is.Not.Empty, "0x669 has a text");
+        var buttons = h.Get(Script(h), "m_buttons");
+        var parts = accept.Split('|');                  // the movie splits "button" into its next and end labels
+        Assert.That(Rt.ToString(h.Get(h.Get(buttons, "m_next"), "label")), Is.EqualTo(parts[0]), "s_take_boat_accept (0x669)");
+        if (parts.Length > 1) Assert.That(Rt.ToString(h.Get(h.Get(buttons, "m_end"), "label")), Is.EqualTo(parts[1]));
+        c.Key(TalkCinematicController.TalkKey.Next);
+        c.Key(TalkCinematicController.TalkKey.Next);    // a second next on the same page (m_nStarted)
+        Assert.That(next, Is.EqualTo(0), "NpcTalk mode 2 with 0");
+        Assert.That(boats, Is.EqualTo(new[] { Guard }), "one TakeBoat with the talk npc");
+        Assert.That(ended, Is.False);
+        Assert.That(rt.Errors, Is.Empty);
+    }
+
     [Test]
     public void AnUnrequireGroupQuestAsksBeforeTheAccept()
     {

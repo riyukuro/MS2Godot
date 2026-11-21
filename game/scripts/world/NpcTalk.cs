@@ -401,6 +401,7 @@ public sealed partial class NpcTalk : Node
             side.SendQuestComplete += (q, _, choice) => { GD.Print($"talk: quest {q} complete sent"); live.SendTalk(new QuestCompleteRequest(q, obj, choice)); };
             side.SendQuestRedirect += (q, kind) => live.SendTalk(new NpcTalkQuestRedirectRequest(q, kind));
             side.SendQuestProgress += q => live.SendTalk(new QuestProgressRequest(q));
+            side.SendTakeBoat += _ => live.SendTalk(new TakeBoatRequest(obj));
         }
         else
         {
@@ -416,6 +417,7 @@ public sealed partial class NpcTalk : Node
             side.SendQuestRedirect += OnQuestRedirect;
             side.SendQuestProgress += q => GD.Print($"talk: quest {q} progress (Quest mode 0x12; the Maple2 server does not handle it)");
             side.SendEnd += () => { };                      // NpcTalk mode 0: nothing to tell offline
+            side.SendTakeBoat += _ => GD.Print("talk: TakeBoat not sent (offline)");
         }
         side.SendNext += _ => subMode = 0;              // SendNpcTalkMode2 (uitalkcinematic.cpp:1675)
         side.PageShown += () => { if (talking != null) TalkPageShown?.Invoke(talking, subMode); };

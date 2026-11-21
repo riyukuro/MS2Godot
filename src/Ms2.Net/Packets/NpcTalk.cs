@@ -201,6 +201,13 @@ public sealed record QuestProgressRequest(int QuestId) : IOutPacket {
     public void Write(ByteWriter w) { w.WriteByte(0x12); w.WriteInt(QuestId); }
 }
 
+/// <summary>Outbound 0x45 TakeBoat (CTakeBoatCinematicComponent::vfunc_2 @0x1410812c0, cinematiccomponent.cpp:1159-1161): i32 the talk
+/// npc's object id (UITalkManager::GetNpcId), no mode byte. Sent on the take-boat talk page's next, after NpcTalk mode 2.</summary>
+public sealed record TakeBoatRequest(int NpcObjectId) : IOutPacket {
+    public Outbound Op => Outbound.TakeBoat;
+    public void Write(ByteWriter w) { w.WriteInt(NpcObjectId); }
+}
+
 /// <summary>Outbound 0x29 mode 0x18 (UILevelUpGuideDialog::FUN_140f857e0 @0x140f857e0, uilevelupguidedialog.cpp:356, and its message box
 /// answer SendQuestMode24 @0x140f85290, :285): u8 0x18, i32 quest. The level-up guide's reward claim for a completed guide quest.</summary>
 public sealed record QuestGuideRewardRequest(int QuestId) : IOutPacket {

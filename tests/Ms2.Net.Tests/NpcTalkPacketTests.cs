@@ -99,4 +99,10 @@ public class NpcTalkPacketTests {
         Assert.That(new NpcTalkBeginRequest(1).Op, Is.EqualTo(Outbound.NpcTalk));
         Assert.That(new QuestAcceptRequest(1, 1).Op, Is.EqualTo(Outbound.Quest));
     }
+
+    /// <summary>cinematiccomponent.cpp:1159-1161: COutPacket(SendOp::TakeBoat = 0x45), Encode4(GetNpcId()).</summary>
+    [Test] public void TakeBoatIsTheOpcodeAndTheNpcObjectId() {
+        Assert.That(Bytes(new TakeBoatRequest(0x01020304)), Is.EqualTo(new byte[] { 4, 3, 2, 1 }));
+        Assert.That((ushort)new TakeBoatRequest(1).Op, Is.EqualTo(0x45));
+    }
 }

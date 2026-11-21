@@ -146,6 +146,11 @@ public sealed class TalkCinematicController : UiController
     public event Action<int> SendNext;
     /// <summary>SendNpcTalkMode0 (:1439): NpcTalk mode 0, the player ended the talk.</summary>
     public event Action SendEnd;
+    /// <summary>
+    /// CTakeBoatCinematicComponent::vfunc_2 (cinematiccomponent.cpp:1159-1161): the TakeBoat packet with the talk npc
+    /// (UITalkManager::GetNpcId), after the page's mode 2.
+    /// </summary>
+    public event Action<int> SendTakeBoat;
     /// <summary>ResetTalk (:1507): the talk ended; the npc's PlayEndSound and CloseTalkUi are the host's.</summary>
     public event Action TalkReset;
     /// <summary>ShowPage (:430): CEffectService::PlayVoiceAt(voice, the talk npc's position).</summary>
@@ -401,7 +406,7 @@ public sealed class TalkCinematicController : UiController
 
     /// <summary>
     /// CreateComponent (:700): 6 CQuestAccept, 7 CQuestComplete, 8 CQuestProgress, 4 CNext, 3 CClose, 9
-    /// CSelectableDistractor, 5 CSelectableTalk here; any other set (job, beauty, ugc sign, roulette ...) is not ported,
+    /// CSelectableDistractor, 5 CSelectableTalk, 14 CTakeBoat (uitalkcinematic.cpp:718) here; any other set (job, beauty, ugc sign, roulette ...) is not ported,
     /// and an unknown one ends the talk (SendNpcTalkMode0).
     /// </summary>
     Component CreateComponent(int set)
@@ -415,6 +420,7 @@ public sealed class TalkCinematicController : UiController
             case 3: return new Component(this, Component.Kind.Close);
             case 9: return new Component(this, Component.Kind.SelectableDistractor);
             case 5: return new Component(this, Component.Kind.SelectableTalk);
+            case 14: return new Component(this, Component.Kind.TakeBoat);
         }
         EndTalk();
         return null;
@@ -597,7 +603,7 @@ public sealed class TalkCinematicController : UiController
 
     sealed class Component
     {
-        public enum Kind { Next, Close, SelectableDistractor, SelectableTalk, QuestAccept, QuestComplete, QuestProgress }
+        public enum Kind { Next, Close, SelectableDistractor, SelectableTalk, QuestAccept, QuestComplete, QuestProgress, TakeBoat }
         readonly TalkCinematicController owner;
         readonly Kind kind;
         bool started;            // m_nStarted
@@ -632,6 +638,9 @@ public sealed class TalkCinematicController : UiController
                 case Kind.QuestProgress:
                     reward = owner.FillTalkReward(page);
                     h.Set(page, "button", owner.Button("s_quest_talk_end"));
+                    break;
+                case Kind.TakeBoat:             // :1170, 0x669 s_take_boat_accept
+                    h.Set(page, "button", owner.Button("s_take_boat_accept"));
                     break;
                 case Kind.QuestAccept:          // :557, 0x5d3
                     h.Set(page, "button", owner.Button("s_quest_talk_accept"));
@@ -701,6 +710,14 @@ public sealed class TalkCinematicController : UiController
                     break;
                 case Kind.QuestComplete:
                     owner.QuestComplete(owner.shown);
+                    break;
+                case Kind.TakeBoat:
+                    // CTakeBoatCinematicComponent::vfunc_2 (:1150-1164), after the base: no local player returns 0 (the talk
+                    // only runs with one). STILL-OPEN: SetSubScene(0x620001d) first (:1157), the field's sub scene while the
+                    // talk is still open; the talk window's scene leaves at its close here. Mode 2 waits for the answer
+                    // (m_nPending) but the TakeBoat packet goes either way, once per page (m_nStarted).
+                    owner.RequestNext(0);
+                    owner.SendTakeBoat?.Invoke(owner.TalkNpcId);
                     break;
                 default:
                     owner.RequestNext(0);                   // CNext (:437)
