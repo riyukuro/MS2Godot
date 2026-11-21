@@ -25,6 +25,7 @@ public partial class MessageBoxLayer : CanvasLayer
 
     MessageBoxController controller;
     MovieDialog movie;
+    As3View view;   // the box movie's view, found once when the movie is made
     Viewport sizeSource;
 
     public static MessageBoxLayer Instance => instance;
@@ -56,7 +57,8 @@ public partial class MessageBoxLayer : CanvasLayer
         // UIMessageBox::vfunc_13 @0x1419f7560 (uimessagebox.cpp:435) returns 0 with no box shown (FUN_1419f8270: m_count == 0),
         // and the typed characters (WM_CHAR, gfxmovieeventhandler.cpp:257) go to the focused field of the scene's dialog: the
         // idle layer, the root's last child, lets every key by
-        if (movie.GetChildren().OfType<As3View>().FirstOrDefault() is { } view) view.TakesKeys = () => Shown;
+        view = movie.GetChildren().OfType<As3View>().FirstOrDefault();
+        if (view != null) view.TakesKeys = () => Shown;
         MessageBoxQueue.Layer = controller;
     }
 
@@ -132,7 +134,7 @@ public partial class MessageBoxLayer : CanvasLayer
     /// </summary>
     void ForwardMouse(InputEvent e)
     {
-        if (movie.GetChildren().OfType<As3View>().FirstOrDefault() is not { } view) return;
+        if (view == null) return;
         var vp = GetViewport();
         view._UnhandledInput(e);
         if (IsInstanceValid(vp)) vp.SetInputAsHandled();
