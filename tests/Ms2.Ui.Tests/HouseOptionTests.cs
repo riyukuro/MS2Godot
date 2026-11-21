@@ -39,6 +39,7 @@ public class HouseOptionTests
         Assert.That(shown, Has.Count.EqualTo(1));
         Assert.That(shown[0].Type, Is.EqualTo(4));
         Assert.That(shown[0].EnterAllowed, Is.False);
+        Assert.That(shown[0].NoEscape, Is.True, "FUN_141a024c0: Esc does nothing");
     }
 
     [Test] public void NoQuestionWithoutTheChecks()

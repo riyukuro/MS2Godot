@@ -964,6 +964,7 @@ public partial class LiveSession : Node
         if (player != null && IsInstanceValid(player)) { player.Live = false; player.DeadFlag = false; }
         player = null;
         selfObject = -1;
+        Home.Clear();   // ~MyPC: m_sp1618 = 0 (mypc.cpp:897)
         bindPending = false;
     }
 

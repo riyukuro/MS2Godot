@@ -24,6 +24,9 @@ public sealed class OwnHome
     /// <summary>The nResult of the last applied info (the taxi refresh reads it).</summary>
     public byte Result { get; private set; }
 
+    /// <summary>~MyPC sets m_sp1618 = 0 (mypc.cpp:897): the next character starts with no home info. Called where the player object goes (field enter, GameToGame, GameToLogin).</summary>
+    public void Clear() { Info = null; Result = 0; }
+
     /// <summary>
     /// The 0x14 case (:10205-10224): another object's info changes nothing (false). For the local object the info is created when
     /// missing; otherwise it counts as changed when the player had a home and its +0x30 value differs (bChanged). Then CopyFrom.

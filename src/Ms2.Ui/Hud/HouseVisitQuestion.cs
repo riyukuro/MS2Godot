@@ -59,6 +59,7 @@ public sealed class HouseVisitQuestion
         var box = MessageBoxQueue.Create(4, host.Text("s_personal_infomaion_agreement_visit_myhome_content"), null, "");
         box.Title = host.CommonText("s_personal_infomaion_agreement_title");
         box.EnterAllowed = false;     // FUN_141a024a0(0)
+        box.NoEscape = true;          // FUN_141a024c0() (gameoptionstruct.cpp:3555 area): Esc does nothing
         box.Align = 0;
         box.SetButtonLabels(host.CommonText("s_personal_infomaion_agreement_visit_myhome_btn_public"),
                             host.CommonText("s_personal_infomaion_agreement_visit_myhome_btn_password"),

@@ -40,4 +40,17 @@ public class OwnHomeTests
         h.Apply(Info(7, 6), 7, out var moved);
         Assert.That(moved, Is.True);
     }
+
+    [Test]
+    public void ClearDropsTheInfoSoTheNextCharacterStartsWithNoHome()
+    {
+        var h = new OwnHome();
+        h.Apply(Info(7, 5), 7, out _);
+        h.Clear();
+        Assert.That(h.HasInfo, Is.False);
+        Assert.That(h.HasNoHome, Is.True);
+        h.Apply(Info(9, 6), 9, out var changed);
+        Assert.That(changed, Is.False, "computed against no home");
+        Assert.That(h.HasNoHome, Is.False);
+    }
 }
