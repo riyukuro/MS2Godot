@@ -972,12 +972,13 @@ public partial class LiveSession : Node
     public void FieldLoaded()
     {
         if (entry == null) return;
-        // MyPC::FUN_1415302e0's tables, loaded with the field rather than at the first placement; a failed load stays null
-        // (ConfirmPlacement stops at InventoryCheckOpen) and is tried again at the next field
-        CubeCraft.Locks ??= CubeLocks();
         var answer = fieldEntry.Answer();
         if (answer == null) return;
         Send(answer);
+        // MyPC::FUN_1415302e0's tables, loaded with the field rather than at the first placement, after the answer so the
+        // field entry does not wait on them; a failed load stays null (ConfirmPlacement stops at InventoryCheckOpen) and is
+        // tried again at the next field
+        CubeCraft.Locks ??= CubeLocks();
         long ms = moveClock.IsRunning ? moveClock.ElapsedMilliseconds : 0;
         moveClock.Reset();
         GD.Print($"live: ResponseFieldEnter sent, portal {answer.Portal}, map {fieldEntry.Current.MapId}{(ms > 0 ? $", {ms} ms after the move's RequestFieldEnter" : "")}");
