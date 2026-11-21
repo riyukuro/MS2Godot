@@ -26,6 +26,19 @@ namespace Ms2Godot.Ui;
 /// Death does not hide it (HP 0 is under the threshold). The client hides it (FUN_141910660, "onHide") and shows it
 /// again (FUN_141910700) only around spectating: StateObserver (state 0x3f, stateobserver.cpp:406, 426) and MyPC's
 /// StartObserving / StopObserving (mypc.cpp:3692, 3712, 3867). STILL-OPEN: spectating is not ported, so neither runs.
+/// The rest of uidamageeffect.cpp:
+/// <list type="bullet">
+/// <item>The ctor (@0x141910480): low 0, threshold 30 until the load reads the constant, layer 1 (m_2c), UI layer 0.</item>
+/// <item>The dtor (@0x141910550) is empty; GetTypeName (@0x1419105b0) is "DamageEffect", the node name.</item>
+/// <item>vfunc_3 (@0x141910600), the close: off the status listeners and low back to 0; the effect lives as long as the HUD,
+/// so nothing here closes it.</item>
+/// <item>FUN_141910700 (@0x141910700), the show after spectating: back on the status listeners, then the HP as at the load
+/// (STILL-OPEN with FUN_141910660 above).</item>
+/// <item>vfunc_43 (@0x1419108e0), the layout: the entity's vfunc_25, its "alignment", which is <see cref="Align"/>.</item>
+/// <item>FUN_141910ab0 (@0x141910ab0) reads the threshold (constants m_c818, DamageEffectMinHPPercent) and m_fOption80
+/// (m_c870). STILL-OPEN: m_fOption80 is read, but no function of this file uses it after the read.</item>
+/// <item>FUN_141910b10 (@0x141910b10) is empty.</item>
+/// </list>
 /// </summary>
 public sealed partial class DamageEffect : CanvasLayer
 {
