@@ -116,9 +116,10 @@ public sealed class LoginClient {
     /// The return to the login server after GameToLogin (CNetworkService::OnGameToLogin, DAT_1439f4a78 = 1): the connect, the
     /// key check with the GameToLogin tokens (OnRequestKey), OnMoveResult 0 for state 1 (character select, 0x620000d) which
     /// sends SendServerEnter (networkservice.cpp:899-901); the login server then lists the characters again (the same
-    /// CharacterList messages as the login). A MoveResult error throws <see cref="MoveRefusedException"/>.
+    /// CharacterList messages as the login). A MoveResult error throws <see cref="MoveRefusedException"/>. <paramref name="onMoveResult"/>
+    /// runs at the good MoveResult, the client's early scene switch.
     /// </summary>
-    public async Task<LoginOutcome> ReturnAsync(string host, ushort port, ulong token, long accountId, byte[] machineId, CancellationToken ct = default, int timeoutMs = 15000, int connectTimeoutMs = 10000) {
+    public async Task<LoginOutcome> ReturnAsync(string host, ushort port, ulong token, long accountId, byte[] machineId, CancellationToken ct = default, int timeoutMs = 15000, int connectTimeoutMs = 10000, Action onMoveResult = null) {
         if (transport.Session == null) {
             // the client's ConnectTo bounds the connect at 10 s (CSceneStateGame's reconnect timer)
             using var connect = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -144,6 +145,7 @@ public sealed class LoginClient {
                 case Inbound.MoveResult: {
                     var m = MoveResult.Read(p.Reader());
                     if (m.Error != 0) throw new MoveRefusedException(m.Error);
+                    onMoveResult?.Invoke();   // OnMoveResult 0 switches to the character select scene (FUN_1417e25a0(0x620000d)) before ServerEnter and the list
                     await transport.SendAsync(new ServerEnterRequest(), ct);
                     break;
                 }
@@ -159,9 +161,40 @@ public sealed class LoginClient {
             }
         }
     }
+    /// <summary>
+    /// CSceneStateGame::OnUpdate (@0x14170c0c0, scenestategame.cpp:1327-1357) for the GameToLogin target: a 10 s timer, and each time it runs out
+    /// with no connection ConnectTo is called again, five times (m_nRetry &lt; 5); after the fifth timer the client gives up. Each attempt here is
+    /// a new transport through <see cref="ReturnAsync"/>; one that fails for a reason other than a refused key (MoveRefusedException) waits out
+    /// what is left of <paramref name="waitMs"/>, then the next starts. All five failed: <see cref="ReconnectGaveUpException"/>.
+    /// </summary>
+    public static async Task<(LoginOutcome outcome, TcpTransport transport)> ReturnWithRetriesAsync(string host, ushort port, ulong token, long accountId, byte[] machineId,
+        Action onMoveResult = null, int attempts = 5, int waitMs = 10000, CancellationToken ct = default, Action<int> onAttempt = null) {
+        for (int attempt = 1; attempt <= attempts; attempt++) {
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var t = new TcpTransport();
+            onAttempt?.Invoke(attempt);
+            try {
+                var o = await new LoginClient(t).ReturnAsync(host, port, token, accountId, machineId, ct, onMoveResult: onMoveResult, connectTimeoutMs: waitMs);
+                return (o, t);
+            } catch (MoveRefusedException) { t.Dispose(); throw; }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { t.Dispose(); throw; }
+            catch (Exception) {
+                t.Dispose();
+                int left = waitMs - (int) clock.ElapsedMilliseconds;
+                if (left > 0) await Task.Delay(left, ct);
+            }
+        }
+        throw new ReconnectGaveUpException(attempts);
+    }
 }
 
 public sealed class CharacterCreateRefused : Exception {
     public byte Kind { get; }
     public CharacterCreateRefused(byte kind, string message) : base($"character create refused, kind {kind} {message}") { Kind = kind; }
+
+}
+
+/// <summary>The client's give-up after the last reconnect timer: BlockFormat(0x20f, 7) in a box, then TerminateProcess(2) (scenestategame.cpp:1348-1357).</summary>
+public sealed class ReconnectGaveUpException(int attempts) : Exception($"no connection after {attempts} attempt(s)") {
+    public int Attempts { get; } = attempts;
 }

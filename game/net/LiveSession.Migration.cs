@@ -74,8 +74,7 @@ public partial class LiveSession
     /// STILL-OPEN: the first attempt's chat line (Unk_SSGFormatMsg 0x2dd with the address and port) and the retry text on the
     /// loading screen (UILoadingProgress::SetMoveChannelMessage, "s_reconnect_to_server" with the attempt number); after the
     /// sixth attempt, RestoreServerAddress (kind 0x11 only: once more to the saved address, "s_reconnect_to_server_fail") and
-    /// else the 0x20f/7 message box and TerminateProcess. None of that is done here: a run out of attempts stays on the
-    /// loading screen, offline.
+    /// else the 0x20f/7 message box and TerminateProcess (<see cref="GiveUp"/>). The restore of kind 0x11 is not done here.
     /// </summary>
     async Task MigrateAsync(GameToGame m, System.Threading.CancellationToken exit)
     {
@@ -112,6 +111,13 @@ public partial class LiveSession
             }
             catch (OperationCanceledException) when (exit.IsCancellationRequested)
             {
+                return;
+            }
+            catch (System.Net.Sockets.SocketException e)
+            {
+                // the run out of attempts: the 0x20f / 7 box, then the process ends (scenestategame.cpp:1348-1357 and its CSceneStateMove twin)
+                GD.PushWarning($"live: GameToGame connect attempt {attempt + 1} failed: {e.Message}");
+                GiveUp();
                 return;
             }
             catch (Exception e)

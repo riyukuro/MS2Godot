@@ -56,6 +56,88 @@ public class LoginReturnTests {
         l.Stop();
     }
 
+    [Test] public async Task TheSceneSwitchesAtMoveResultBeforeServerEnterAndTheList() {
+        var l = new TcpListener(IPAddress.Loopback, 0); l.Start();
+        int port = ((IPEndPoint) l.LocalEndpoint).Port;
+        var srv = new FakeServer(5, 6);
+        var accept = l.AcceptTcpClientAsync();
+        var events = new List<string>();
+        using var t = new TcpTransport();
+        var ret = new LoginClient(t).ReturnAsync("127.0.0.1", (ushort) port, 1, 1, null, onMoveResult: () => events.Add("switch"));
+        var s = (await accept).GetStream();
+        await s.WriteAsync(srv.HelloFrame); await ReadFrame(s, srv);
+        await s.WriteAsync(srv.Frame(Inbound.RequestKey)); await ReadFrame(s, srv);
+        await s.WriteAsync(srv.Frame(Inbound.MoveResult, w => w.WriteByte(0)));
+        Assert.That((await ReadFrame(s, srv)).op, Is.EqualTo((ushort) Outbound.ServerEnter));
+        Assert.That(events, Is.EqualTo(new[] { "switch" }), "switched before any character list arrived");
+        await s.WriteAsync(srv.Frame((Inbound) 0x0C, w => w.WriteByte((byte) CharacterListCommand.StartList)));
+        await s.WriteAsync(srv.Frame((Inbound) 0x0C, w => { w.WriteByte((byte) CharacterListCommand.EndList); w.WriteByte(0); }));
+        await ret.WaitAsync(TimeSpan.FromSeconds(10));
+        l.Stop();
+    }
+
+    [Test] public async Task ARefusedKeySwitchesNothing() {
+        var l = new TcpListener(IPAddress.Loopback, 0); l.Start();
+        int port = ((IPEndPoint) l.LocalEndpoint).Port;
+        var srv = new FakeServer(5, 6);
+        var accept = l.AcceptTcpClientAsync();
+        int switched = 0;
+        using var t = new TcpTransport();
+        var ret = new LoginClient(t).ReturnAsync("127.0.0.1", (ushort) port, 1, 1, null, onMoveResult: () => switched++);
+        var s = (await accept).GetStream();
+        await s.WriteAsync(srv.HelloFrame); await ReadFrame(s, srv);
+        await s.WriteAsync(srv.Frame(Inbound.RequestKey)); await ReadFrame(s, srv);
+        await s.WriteAsync(srv.Frame(Inbound.MoveResult, w => w.WriteByte(9)));
+        Assert.ThrowsAsync<MoveRefusedException>(async () => await ret.WaitAsync(TimeSpan.FromSeconds(10)));
+        Assert.That(switched, Is.EqualTo(0));
+        l.Stop();
+    }
+
+    /// <summary>A server that takes <paramref name="dropFirst"/> connections and closes each at once, then serves the return.</summary>
+    static async Task<(TcpListener l, int port, Func<int> accepted, Task serve)> FlakyServer(int dropFirst) {
+        var l = new TcpListener(IPAddress.Loopback, 0); l.Start();
+        int port = ((IPEndPoint) l.LocalEndpoint).Port, count = 0;
+        var serve = Task.Run(async () => {
+            try {
+                while (true) {
+                    var c = await l.AcceptTcpClientAsync();
+                    if (Interlocked.Increment(ref count) <= dropFirst) { c.Close(); continue; }
+                    var srv = new FakeServer(5, 6); var s = c.GetStream();
+                    await s.WriteAsync(srv.HelloFrame); await ReadFrame(s, srv);
+                    await s.WriteAsync(srv.Frame(Inbound.RequestKey)); await ReadFrame(s, srv);
+                    await s.WriteAsync(srv.Frame(Inbound.MoveResult, w => w.WriteByte(0))); await ReadFrame(s, srv);
+                    await s.WriteAsync(srv.Frame((Inbound) 0x0C, w => w.WriteByte((byte) CharacterListCommand.StartList)));
+                    await s.WriteAsync(srv.Frame((Inbound) 0x0C, w => { w.WriteByte((byte) CharacterListCommand.EndList); w.WriteByte(0); }));
+                }
+            } catch (Exception) { }
+        });
+        await Task.CompletedTask;
+        return (l, port, () => Volatile.Read(ref count), serve);
+    }
+
+    [Test] public async Task AConnectThatFailsIsTriedAgainUpToFiveTimes() {
+        var (l, port, accepted, _) = await FlakyServer(dropFirst: 4);
+        int switched = 0; var attempts = new List<int>();
+        var (o, t) = await LoginClient.ReturnWithRetriesAsync("127.0.0.1", (ushort) port, 1, 1, null, () => switched++, waitMs: 100, onAttempt: attempts.Add);
+        using var _ = t;
+        Assert.That(attempts, Is.EqualTo(new[] { 1, 2, 3, 4, 5 }));
+        Assert.That(accepted(), Is.EqualTo(5));
+        Assert.That(switched, Is.EqualTo(1), "the scene switch comes once, at the good MoveResult");
+        Assert.That(o.Characters, Is.Empty);
+        l.Stop();
+    }
+
+    [Test] public async Task AFifthFailureGivesUpWithoutASixthAttempt() {
+        var (l, port, accepted, _) = await FlakyServer(dropFirst: 99);
+        int switched = 0;
+        var e = Assert.ThrowsAsync<ReconnectGaveUpException>(async () => await LoginClient.ReturnWithRetriesAsync("127.0.0.1", (ushort) port, 1, 1, null, () => switched++, waitMs: 100));
+        Assert.That(e.Attempts, Is.EqualTo(5));
+        await Task.Delay(300);
+        Assert.That(accepted(), Is.EqualTo(5), "ConnectTo five times, m_nRetry < 5 (scenestategame.cpp:1332)");
+        Assert.That(switched, Is.EqualTo(0));
+        l.Stop();
+    }
+
     static async Task<(ushort op, byte[] body)> ReadFrame(NetworkStream s, FakeServer srv) {
         var head = new byte[6]; await s.ReadExactlyAsync(head);
         var frame = new byte[6 + BitConverter.ToInt32(head, 2)]; head.CopyTo(frame, 0);

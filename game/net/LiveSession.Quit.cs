@@ -11,20 +11,22 @@ namespace Ms2Godot.Net;
 /// </summary>
 public partial class LiveSession
 {
-    /// <summary>The login server's character list came back after a GameToLogin: the flow returns to character select.</summary>
+    /// <summary>OnMoveResult 0 for the login target (networkservice.cpp:899-901): the client switches the scene to character select (FUN_1417e25a0(0x620000d))
+    /// at once, before ServerEnter and the list. The list is empty until <see cref="CharacterListReturned"/>.</summary>
     public event Action ReturnedToCharacterSelect;
+
+    /// <summary>The login server's character list arrived after the switch (the client's RefreshLobby on the list messages).</summary>
+    public event Action CharacterListReturned;
 
     /// <summary>
     /// CNetworkService::OnGameToLogin @0x14153bc00 (networkservice.cpp:928). An error shows GetFieldMoveErrorMessage's box and
     /// changes nothing. On 0 the client tears the field down at once (WorldService FUN_141bbc580(0, 2): every object and the own
     /// MyPC go), keeps the address, port and tokens (DAT_143ab2a48/2848/284c/2850), sets DAT_1439f4a78 to 1 (the login server is the
-    /// target) and connects there (CSceneStateGame vfunc_4 -> ConnectTo, 10 s timer). Here the own player stops being live and the
-    /// game connection goes; the key check, the ServerEnter and the character list follow (<see cref="LoginClient.ReturnAsync"/>).
-    /// STILL-OPEN: (1) the client switches to character select (FUN_1417e25a0(0x620000d)) on MoveResult 0 (networkservice.cpp:901),
-    /// before ServerEnter and the list; here the flow moves when the list has arrived (up to the 15 s deadline on the field). (2) The
-    /// field teardown (FUN_141bbc580(0, 2)): the field scene stays up, offline, until the flow moves; after a refused key or a failed
-    /// connect it stays. (3) The reconnect timer and retry count (CSceneStateGame m_nRetry, 5 tries) and the 0x20f / 7 block text and
-    /// process end after the last one: a failed connect shows a move error box once and stays offline. (4) The
+    /// target) and connects there (CSceneStateGame OnUpdate, scenestategame.cpp:1327: a 10 s timer, five ConnectTo calls; after the
+    /// fifth timer the 0x20f / 7 box and the process ends, <see cref="GiveUp"/>). The good MoveResult switches to character select at
+    /// once (<see cref="ReturnedToCharacterSelect"/>), then ServerEnter and the list follow (<see cref="LoginClient.ReturnWithRetriesAsync"/>).
+    /// STILL-OPEN: (1) the field teardown (FUN_141bbc580(0, 2)): the field scene stays up, offline, until the MoveResult switches the scene.
+    /// (2) The retry text on the loading screen (s_reconnect_to_server with the attempt number, SetMoveChannelMessage). (3) The
     /// MyPC::FUN_1415308d0 debug switch reset (none is ported).
     /// </summary>
     void OnGameToLogin(GameToLogin m)
@@ -49,32 +51,47 @@ public partial class LiveSession
 
     async System.Threading.Tasks.Task ReturnAsync(GameToLogin m, System.Threading.CancellationToken exit)
     {
-        var next = new TcpTransport();
         try
         {
-            var o = await new LoginClient(next).ReturnAsync(host ?? m.Address.ToString(), m.Port, m.Token, accountId, machine, exit);
+            var (o, next) = await LoginClient.ReturnWithRetriesAsync(host ?? m.Address.ToString(), m.Port, m.Token, accountId, machine,
+                onMoveResult: () => Callable.From(() => { if (!exit.IsCancellationRequested) { Session.Characters = new(); ReturnedToCharacterSelect?.Invoke(); } }).CallDeferred(),
+                ct: exit);
             if (exit.IsCancellationRequested) { next.Dispose(); return; }
             login?.Dispose();
             login = next;
             Session.Characters = System.Linq.Enumerable.ToList(o.Characters);
             if (o.CharacterLimit > 0) CharacterLimit = o.CharacterLimit;
             GD.Print($"live: back at character select, {o.Characters.Count} character(s)");
-            ReturnedToCharacterSelect?.Invoke();
+            CharacterListReturned?.Invoke();
         }
         catch (MoveRefusedException e)
         {
-            next.Dispose();
             Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(Ms2.Ui.FieldMoveError.Text(e.Error, Ms2.Ui.Hud.MessageBoxData.CommonByKey), 0, null, "");
         }
-        catch (System.Exception e)
+        catch (ReconnectGaveUpException)
         {
-            next.Dispose();
-            if (exit.IsCancellationRequested) return;
-            GD.PushWarning($"live: return to character select failed: {e.Message}");
-            // the client's failed return connect shows BlockFormat(0x20f, 7) (scenestategame.cpp:1357; FormatStringId = the common string
-            // of the id formatted with 7) and ends the process. STILL-OPEN: the key of common string 0x20f is not known here, so the box
-            // shows the move error text of the same code 7; the process end is not ported.
-            Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(Ms2.Ui.FieldMoveError.Text(7, Ms2.Ui.Hud.MessageBoxData.CommonByKey), 0, null, "");
+            if (!exit.IsCancellationRequested) GiveUp();
+        }
+        catch (System.OperationCanceledException) when (exit.IsCancellationRequested) { }
+    }
+
+    /// <summary>
+    /// The client's give-up after the last reconnect timer (CSceneStateGame::OnUpdate, scenestategame.cpp:1348-1357): BlockFormat(0x20f, 7)
+    /// in a box titled MS2, then TerminateProcess(GetCurrentProcess(), 2). The box here is the in-game one; its button ends the process with code 2.
+    /// </summary>
+    void GiveUp()
+    {
+        GD.PushWarning("live: no connection after the last attempt: the client ends here");
+        string text = Ms2.Quest.ClientFormat.Format(Ms2.Ui.Hud.MessageBoxData.Common(0x20f), 7);
+        Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(text, 0, new GiveUpListener(this), "");
+    }
+
+    sealed class GiveUpListener(LiveSession s) : Ms2.Ui.Hud.IMessageBoxListener
+    {
+        public bool OnMessageBox(Ms2.Ui.Hud.MessageBoxController sender, int button, string tag)
+        {
+            s.GetTree().Quit(2);
+            return true;
         }
     }
 }

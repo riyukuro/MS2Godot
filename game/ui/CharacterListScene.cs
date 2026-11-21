@@ -184,6 +184,22 @@ public partial class CharacterListScene : LobbyFieldScene
         if (!popupPlays) dialog.Step(PopupFrames);
     }
 
+    /// <summary>
+    /// The character list arrived after the scene was entered (GameToLogin switches at MoveResult, the list follows from the login server): the dialog is
+    /// built again over the new list, the preview of the selected character with it (RefreshLobby, uicharacterlistdialog.cpp).
+    /// </summary>
+    public void ReplaceList()
+    {
+        if (!IsInsideTree() || layer == null) return;
+        StubCharacterList.Dress(packs, Flow.Session.List());
+        Flow.Session.SelectedIndex = 0;
+        PreviewSelected();
+        if (controller == null) return;   // the first build is still to come: it reads the list as it is then
+        dialog?.QueueFree();
+        BuildList(false, true);
+        controller.FadeInComplete();
+    }
+
     /// <summary>Frames stepped to put a dialog that was already open at the end of its popup (the popup labels are shorter).</summary>
     public const int PopupFrames = 60;
 

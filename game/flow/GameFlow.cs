@@ -42,7 +42,7 @@ public partial class GameFlow : Node
     bool boxScript;
     Action onSelectCharacter;
     Action onGameExit;
-    Action onGameToLogin;
+    Action onGameToLogin, onListReturned;
 
     /// <summary>Returns the flow to the login scene (e.g. forced-quit notice, scenestategame.cpp:9268).</summary>
     public static void ReturnToLogin() => instance?.Go(State.Login);
@@ -93,9 +93,11 @@ public partial class GameFlow : Node
         Net.LiveSession.Attach(this);
         if (Net.LiveSession.Instance is { } liveSession)
         {
-            // GameToLogin's answer is the login server's character list (LiveSession.ReturnAsync): the flow returns to character select then
+            // GameToLogin: OnMoveResult 0 switches to character select at once (LiveSession.ReturnAsync); the login server's list fills it in when it arrives
             onGameToLogin = () => { if (Ms2.Ui.Launch.CharacterSelectReturn.Applies(Current == State.Game)) Go(State.Lobby); };
             liveSession.ReturnedToCharacterSelect += onGameToLogin;
+            onListReturned = () => { if (Current == State.Lobby && GetTree().CurrentScene is CharacterListScene list) list.ReplaceList(); };
+            liveSession.CharacterListReturned += onListReturned;
         }
         // The launcher is MS2Godot's own pre-login page. A live address in the environment skips it, as do the test and
         // perf scenes and a scripted flow run, so those start exactly as they did before it existed.
@@ -172,6 +174,7 @@ public partial class GameFlow : Node
         if (onSelectCharacter != null) { Ui.HudScene.SystemMenuSelectCharacter -= onSelectCharacter; onSelectCharacter = null; }
         if (onGameExit != null) { Ui.MessageBoxLayer.GameExit -= onGameExit; onGameExit = null; }
         if (onGameToLogin != null && Net.LiveSession.Instance is { } liveSession) { liveSession.ReturnedToCharacterSelect -= onGameToLogin; onGameToLogin = null; }
+        if (onListReturned != null && Net.LiveSession.Instance is { } liveSession2) { liveSession2.CharacterListReturned -= onListReturned; onListReturned = null; }
         Session.GameScene = null;
         if (instance == this) instance = null;
     }
