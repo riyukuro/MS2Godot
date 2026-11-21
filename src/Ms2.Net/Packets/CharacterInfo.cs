@@ -410,24 +410,15 @@ public sealed class MyCharacter {
     public bool Apply(ItemPutOn p, Func<int, int?> wornLayer, Func<int, bool> itemKnown = null) {
         if (User == null || p.ObjectId != ObjectId || p.Kind > 2) return false;
         if (itemKnown != null && !itemKnown(p.Item.Id)) return false;
-        bool changed = PutOn(p, wornLayer);
+        var equips = Equips; var outfit = Outfit2;
+        bool changed = WornEquips.PutOn(ref equips, ref outfit, p, wornLayer);
+        if (changed) {
+            Equips = equips; Outfit2 = outfit;
+            EquipChanged?.Invoke();
+            Changed?.Invoke();
+        }
         PutOnOrOff?.Invoke();
         return changed;
-    }
-
-    bool PutOn(ItemPutOn p, Func<int, int?> wornLayer) {
-        if (wornLayer(p.Item.Id) is not { } dataLayer) return false;
-        int layer = p.Kind == 2 ? 2 : dataLayer;
-        int? LayerOf(EquipItem e, bool outfit2) => outfit2 ? 2 : wornLayer(e.Id);
-        bool Keep(EquipItem e, bool outfit2) => !(e.Slot == p.Item.Slot && LayerOf(e, outfit2) == layer);
-        var equips = (Equips ?? Array.Empty<EquipItem>()).Where(e => Keep(e, false)).ToList();
-        var outfit = (Outfit2 ?? Array.Empty<EquipItem>()).Where(e => Keep(e, true)).ToList();
-        if (layer == 2) outfit.Add(p.Item);
-        else equips.Insert(equips.FindLastIndex(e => (wornLayer(e.Id) ?? 0) <= layer) + 1, p.Item);
-        Equips = equips; Outfit2 = outfit;
-        EquipChanged?.Invoke();
-        Changed?.Invoke();
-        return true;
     }
 
     /// <summary>
@@ -438,12 +429,11 @@ public sealed class MyCharacter {
     /// </summary>
     public bool Apply(ItemPutOff p, Func<int, int?> wornLayer) {
         if (User == null || p.ObjectId != ObjectId) return false;
-        var item = (Equips ?? Array.Empty<EquipItem>()).Concat(Outfit2 ?? Array.Empty<EquipItem>()).FirstOrDefault(e => e.Uid == p.ItemUid);
-        if (item == null) return false;
-        bool changed = wornLayer(item.Id) != null;
+        if (!WornEquips.IsWorn(Equips, Outfit2, p.ItemUid)) return false;
+        var equips = Equips; var outfit = Outfit2;
+        bool changed = WornEquips.PutOff(ref equips, ref outfit, p.ItemUid, wornLayer) != null;
         if (changed) {
-            Equips = (Equips ?? Array.Empty<EquipItem>()).Where(e => e.Uid != p.ItemUid).ToList();
-            Outfit2 = (Outfit2 ?? Array.Empty<EquipItem>()).Where(e => e.Uid != p.ItemUid).ToList();
+            Equips = equips; Outfit2 = outfit;
             EquipChanged?.Invoke();
             Changed?.Invoke();
         }
