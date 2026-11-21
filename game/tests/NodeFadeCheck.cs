@@ -13,8 +13,12 @@ namespace Ms2Godot.Tests;
 /// - ModelBuilder.Attached marks the character meshes without an alpha controller with their blended form;
 /// - a factor below 1 swaps an opaque mesh to the blended form (a material override) with a shadow-only twin in its place
 ///   and sets the node_alpha instance uniform; a blended mesh keeps its material and takes the factor;
-/// - hidden subtrees are skipped unless forced; 1 forced restores every mesh, hidden ones too;
-/// - the blink's 0.9 frame reaches the own player's meshes and its end restores them.
+/// - a mesh flagged 0x400 (IS_PARTICLE_SYSTEM) is not marked; a mesh without its own material takes the root's added one
+///   (-1 times the factor, clamped to 0);
+/// - a hidden mesh is skipped unless forced, a shown mesh under a hidden node is not; 1 forced restores every mesh, hidden ones
+///   too;
+/// - the blink's 0.9 frame reaches the own player's meshes, a mesh shown mid-blink takes it on the next frame, and the end
+///   restores them.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class NodeFadeCheck : Node
@@ -42,8 +46,11 @@ public partial class NodeFadeCheck : Node
         var anim = Quad("anim"); anim.AlphaFlags = 0xED;
         anim.AlphaAnim = new AlphaAnim { Start = 0, Stop = 1, KeyType = 1, Times = new[] { 0f, 1f }, Values = new[] { 0.5f, 0.5f } };
         var hidden = Quad("hidden");
+        var psys = Quad("psys"); psys.Flags = 0x400;
+        var bare = Quad("bare"); bare.Ambient = bare.Diffuse = bare.Emissive = null;
+        var under = Quad("under");
         var md = new ModelData { RootLocal = Xform.Identity };
-        md.Meshes.AddRange(new[] { opaque, blend, anim, hidden });
+        md.Meshes.AddRange(new[] { opaque, blend, anim, hidden, psys, bare, under });
         var root = mb.Build(md, "pc");
         AddChild(root);
         var skel = root.GetNode("Model/" + ModelBuilder.SkeletonName);
@@ -51,6 +58,11 @@ public partial class NodeFadeCheck : Node
         var b = skel.GetNode<MeshInstance3D>("blend");
         var a = skel.GetNode<MeshInstance3D>("anim");
         var h = skel.GetNode<MeshInstance3D>("hidden");
+        var bm = skel.GetNode<MeshInstance3D>("bare");
+        var u = skel.GetNode<MeshInstance3D>("under");
+        var group = new Node3D { Name = "group", Visible = false };
+        skel.AddChild(group);
+        u.Reparent(group);
         var oMat = (ShaderMaterial)o.Mesh.SurfaceGetMaterial(0);
         var oCast = o.CastShadow;
 
@@ -58,6 +70,8 @@ public partial class NodeFadeCheck : Node
             "the opaque mesh has no blend_mix form (no alpha property: SRCALPHA / INVSRCALPHA)");
         Check(b.HasMeta(NodeFade.Meta) && b.GetMeta(NodeFade.Meta).As<Shader>() == ((ShaderMaterial)b.Mesh.SurfaceGetMaterial(0)).Shader, "the blended mesh's form is not its own shader");
         Check(!a.HasMeta(NodeFade.Meta), "the alpha-controller mesh is marked (SetNodeAlpha skips its material)");
+        Check(!skel.GetNode("psys").HasMeta(NodeFade.Meta), "the 0x400 mesh is marked (SetNodeAlpha skips it)");
+        Check(bm.HasMeta(NodeFade.Inherit) && !o.HasMeta(NodeFade.Inherit), "the material-less mesh is not told from one with a material");
 
         h.Visible = false;
         NodeFade.Set(root, 0.5f, false);
@@ -68,13 +82,16 @@ public partial class NodeFadeCheck : Node
         Check(twin != null && twin.CastShadow == GeometryInstance3D.ShadowCastingSetting.ShadowsOnly && twin.MaterialOverride == oMat && twin.Mesh == o.Mesh
               && o.CastShadow == GeometryInstance3D.ShadowCastingSetting.Off, "no opaque shadow twin of the faded mesh");
         Check(Param(h) == 1f && h.MaterialOverride == null, "the hidden mesh was faded without force");
+        Check(Param(u) == 0.5f, $"the shown mesh under a hidden node has node_alpha {Param(u)}, want 0.5 (its children are walked)");
+        Check(Param(bm) == 0f, $"the material-less mesh has node_alpha {Param(bm)}, want 0 (the root's -1 times 0.5)");
         NodeFade.Set(root, 0.9f, false);
         Check(Param(o) == 0.9f && o.GetChildCount() == 1, "a second factor made another override or twin");
 
         NodeFade.Set(root, 0.5f, true);
         Check(Param(h) == 0.5f && h.MaterialOverride != null, "the forced factor skipped the hidden mesh");
         NodeFade.Set(root, 1f, true);
-        Check(o.MaterialOverride == null && h.MaterialOverride == null && Param(o) == 1f && Param(b) == 1f && Param(h) == 1f, "1 forced did not restore every mesh");
+        Check(o.MaterialOverride == null && h.MaterialOverride == null && Param(o) == 1f && Param(b) == 1f && Param(h) == 1f && Param(bm) == 1f && Param(u) == 1f,
+            "1 forced did not restore every mesh");
         Check(o.CastShadow == oCast && o.GetNodeOrNull("node_fade_shadow") == null, "the shadow twin outlived the restore");
 
         // the own player's blink: the first frame is 0.9 (not dimmed), the end restores
@@ -90,6 +107,21 @@ public partial class NodeFadeCheck : Node
         ls.Invincible.Start(10000, InvincibleBlink.PortalTimer, now);
         tick.Invoke(ls, null);
         Check(Param(o) == 0.9f && o.MaterialOverride != null, $"the blink frame left node_alpha {Param(o)}, want 0.9");
+        Check(Param(h) == 1f, "the hidden mesh took the blink");
+        h.Visible = true;
+        tick.Invoke(ls, null);
+        Check(Param(h) == 0.9f, $"the mesh shown mid-blink has node_alpha {Param(h)} on the next frame, want 0.9");
+        // the walk runs every frame of the blink: 0 B
+        var frame = tick.CreateDelegate<System.Action>(ls);
+        frame();
+        long before = System.GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 10; i++) frame();
+        long bytes = System.GC.GetAllocatedBytesForCurrentThread() - before;
+        Check(bytes == 0, $"10 blink frames allocated {bytes} B");
+        before = System.GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 10; i++) NodeFade.Set(player, 0.9f, false);
+        bytes = System.GC.GetAllocatedBytesForCurrentThread() - before;
+        Check(bytes == 0, $"10 walks allocated {bytes} B");
         ls.Invincible.Start(1, InvincibleBlink.PortalTimer, (uint)Time.GetTicksMsec());
         OS.DelayMsec(5);
         tick.Invoke(ls, null);

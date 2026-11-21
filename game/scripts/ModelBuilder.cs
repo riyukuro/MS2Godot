@@ -874,12 +874,16 @@ public sealed class ModelBuilder
             if (mi.Skin != null) { t.Skin = mi.Skin; t.Skeleton = "../.."; }
         }
         // SetNodeAlpha (NodeFade) turns blending on with the mesh's own NiAlphaProperty factors (SRCALPHA / INVSRCALPHA without
-        // one, alphaanimation.cpp:478-545) and skips a material with an NiAlphaController
-        if (m.AlphaAnim == null && mi.Mesh?.SurfaceGetMaterial(0) is ShaderMaterial own && IsCharacterShader(own.Shader))
+        // one, alphaanimation.cpp:478-545) and skips a material with an NiAlphaController and a node flagged 0x400
+        // (IS_PARTICLE_SYSTEM, FUN_14098dfc0 :392-395)
+        if (m.AlphaAnim == null && (m.Flags & 0x400) == 0 && mi.Mesh?.SurfaceGetMaterial(0) is ShaderMaterial own && IsCharacterShader(own.Shader))
         {
             var fade = m.Blend != BlendForm.Opaque ? own.Shader
                 : CharacterShaderOf(CharacterForm(m, m.BlendDst == 0 ? (m.BlendSrc == 0 ? BlendForm.AddUnweighted : BlendForm.Add) : BlendForm.Mix));
             mi.SetMeta(NodeFade.Meta, fade);
+            if (fade != own.Shader) mi.SetMeta(NodeFade.Swap, true);
+            // no NiMaterialProperty of its own: it draws with the root's added one (EnsureAlphaProperties :426-441)
+            if (m.Diffuse == null) mi.SetMeta(NodeFade.Inherit, true);
         }
         CharacterAlphaSort.Register(mi, m, skel, skelBone);
     }

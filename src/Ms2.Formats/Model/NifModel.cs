@@ -51,6 +51,8 @@ public sealed class ModelMesh
     public float[] Specular;              // NiMaterialProperty specular colour (rgb), or null
     public float Glossiness;              // NiMaterialProperty glossiness (the specular power)
     public float MaterialAlpha = 1f;      // NiMaterialProperty alpha (1 without a material)
+    /// <summary>The NiMesh's NiAVObject flags as streamed (NiAVObject::LoadBinary, NiAVObject.cpp:613).</summary>
+    public int Flags;
     public AlphaAnim AlphaAnim;           // an NiAlphaController on that material, which animates its alpha, or null
     /// <summary>The mesh or a node above it carries a "NoShadow" UserPropBuffer tag (NifModel.TaggedNoShadow): the client's
     /// caster walks skip that subtree, so the mesh never casts.</summary>
@@ -940,6 +942,7 @@ public sealed class ModelData
                     for (int j = 0; j < 4; j++)
                         mesh.Colors[c * 4 + j] = j < col.n ? (float)(col.v[c * col.n + j] * k) : 1f;
             }
+            mesh.Flags = (int)b.IntOr("Flags", 0);
             ReadMaterial(nif, b, mesh);
             ReadTextureControllers(nif, b, mesh);
             ReadMorph(nif, b, s, skinned, mesh);

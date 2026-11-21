@@ -99,14 +99,11 @@ public partial class LiveSession
         if (TimeScaleRamp.Running && TimeScaleRamp.Tick(TickMs)) GameClock.SetScale(TimeScaleRamp.Scale);
     }
 
-    Player fadedPlayer;      // the node the blink's last factor went to
-    float fadeAlpha = 1f;    // that factor
-
     /// <summary>PC::FUN_1416615f0's invincible end and blink, each frame of the game: the blink's 0.5 / 0.9 through
     /// vfunc_42 (SetNodeAlpha on the own player's tree, <see cref="NodeFade"/>), then 1.0 forced at the end. The tree is walked
-    /// only when the factor or the node changes.
-    /// STILL-OPEN: vfunc_42's tails and random target (pc.cpp:4545) take no factor; a mesh shown mid-blink takes it at the next
-    /// flip, where the client sets it on the next frame.</summary>
+    /// every frame of the blink as FUN_1416616a0 (pc.cpp:3609-3624) calls vfunc_42 every frame, so a mesh shown mid-blink takes
+    /// the factor on the next frame.
+    /// STILL-OPEN: vfunc_42's tails and random target (pc.cpp:4545) take no factor.</summary>
     void TickCombatEffects()
     {
         uint now = TickMs;
@@ -119,14 +116,9 @@ public partial class LiveSession
             InvincibleBuffChanged?.Invoke(timer, 0, 0);
             InvincibleChanged?.Invoke(false);
             NodeFade.Set(player, 1f, true);
-            fadedPlayer = null;
-            fadeAlpha = 1f;
             return;
         }
-        if (alpha == fadeAlpha && player == fadedPlayer) return;
         NodeFade.Set(player, alpha, false);
-        fadeAlpha = alpha;
-        fadedPlayer = player;
     }
 
     /// <summary>The game went (the link lost, back to the login server, the quit, the session's end): a running time scale
