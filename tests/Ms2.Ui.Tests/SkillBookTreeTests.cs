@@ -134,4 +134,40 @@ public class SkillBookTreeTests
         for (int i = 0; i < 60 && !c.IsClosed; i++) h.Player.Tick();
         Assert.That((c.IsClosed, c.Simulator), Is.EqualTo((true, (SkillPointSimulator)null)));
     }
+    [Test]
+    public void ABookSkillDroppedOnAQuickSlotIsSentAndKept()
+    {
+        // NotifyDragSlot::SlotDragEnd from a BookSlot to a SkillSlot: SkillSlot::vfunc_18 (skillslot.cpp:507) reads the book
+        // slot's skill (BookSlot::FUN_140a366a0, bookslot.cpp:54) and puts it on the slot through FUN_14092f690, KeyTable mode 3
+        var (bh, book, _) = Load();
+        book.OnSkillBookTree(NoTabs());
+        var m = bh.Model;
+        var names = book.GetBagSlotBindings(SkillBookTreeController.BagName).ToList();
+        Assert.That(book.IsDragSlot(names[0]), Is.True);
+        Assert.That(book.IsDragSlot("m_treeSkills"), Is.False);
+        Assert.That(book.BookSkillId("m_treeSkills"), Is.EqualTo(0u));
+        string from = names.First(n => m.Tables.Skills.GetSkillData(book.BookSkillId(n)) is { IsPassive: false });
+        int skill = (int)book.BookSkillId(from);
+
+        var t = new ServerKeyTable();
+        t.Apply(new ByteReader(ServerKeyTable.Write(0, false, Array.Empty<KeyBinding>(), 0,
+            new IReadOnlyList<(int, QuickSlotEntry)>[] { Array.Empty<(int, QuickSlotEntry)>() })));
+        m.Keys = new KeyTable(Packs(), "en"); m.ServerKeys = t; m.Keys.Apply(t);
+        var bar = new MainPlayerInfoController();
+        var sent = new List<Ms2.Net.Wire.IOutPacket>();
+        bar.Send = sent.Add;
+        var (rt, p) = src.Open(bar.Movie, r => r.Budget = 20_000_000);
+        p.StageW = 1280; p.StageH = 720;
+        var h = new UiHost(p, bar, m);
+        Assert.That(h.Load(), Is.True, "load: " + string.Join("; ", rt.Errors));
+
+        bar.SlotDroppedOn(MainPlayerInfoController.SlotBag + ".22", from, book);     // a key bound slot: nothing
+        Assert.That(sent, Is.Empty);
+        bar.SlotDroppedOn(MainPlayerInfoController.SlotBag + ".3", from, book);
+        Assert.That(sent.Select(s => s.Op), Is.EqualTo(new[] { Ms2.Net.Outbound.KeyTable }));
+        Assert.That(sent[0], Is.EqualTo(new KeyTableSetQuickSlotRequest(0, skill, 0, 0, 3)));
+        Assert.That(t.Entry(0, 3), Is.EqualTo(new QuickSlotEntry(skill, 0, 0)));
+        var slot3 = (AsObject)h.ToAs(bar.GetBinding(MainPlayerInfoController.SlotBag + ".3"));
+        Assert.That(Rt.ToString(h.Get(slot3, "iconPath")), Is.EqualTo(m.Tables.Skills.GetSkillData((uint)skill).Icon));
+    }
 }

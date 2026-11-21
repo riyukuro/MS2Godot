@@ -1,7 +1,7 @@
 namespace Ms2.Ui.Hud;
 
 /// <summary>UIMainPlayerInfo (ms2/client/ms2/uimainplayerinfo.cpp): the HP/SP orb, EP gauge, name tag and the quick slots.</summary>
-public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip
+public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, IDragSlotOwner
 {
     /// <summary>The ctor (@0x1419ee140) and UIBuiltInDialog's (uibuiltindialog.cpp:19) have no SetTweenEnabled: m_c4 stays 0,
     /// no open / close tween.</summary>
@@ -373,10 +373,101 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip
         return SlotKeys.TryGetValue(slot, out var action) ? keys.FindKeyByActionAndPriority(action, 0) : keys.FindKeyByQuickSlot(slot, 0);
     }
 
+    // ---- the quick slot edits ---------------------------------------------------------------------------------------------
+
+    /// <summary>The KeyTable sends of the quick slot edits (FUN_140710590).</summary>
+    public Action<Ms2.Net.Wire.IOutPacket> Send = _ => { };
+    /// <summary>FUN_141275260(id, 1, 1): a system notice of a common string id.</summary>
+    public Action<int> Notice = _ => { };
+
+    /// <summary>The quick slot index of a name ("&lt;bag&gt;.&lt;i&gt;", i below 0x19), else -1.</summary>
+    static int SlotIndex(string name) =>
+        name != null && name.StartsWith(SlotBag + ".", StringComparison.Ordinal)
+        && int.TryParse(name.AsSpan(SlotBag.Length + 1), System.Globalization.NumberStyles.None, null, out var i) && i < SlotCount ? i : -1;
+
+    /// <summary>SkillSlot::FUN_141761990 (skillslot.cpp:1433): IsFixed (0 on this bar) or a key bound slot (22..24).</summary>
+    static bool IsFixedOrBound(int slot) => SlotKeys.ContainsKey(slot);
+
+    /// <summary>A SkillSlot of the bar.</summary>
+    public bool IsDragSlot(string name) => SlotIndex(name) >= 0;
+
+    /// <summary>DragSlot::vfunc_10: the slot pushed again.</summary>
+    public void RefreshSlot(string name) { if (IsDragSlot(name)) Host.Push(name); }
+
+    /// <summary>
+    /// SkillSlot::vfunc_18 @0x14175d530 (skillslot.cpp:507). A fixed or key bound slot only pushes both again. Else by the source:
+    /// - another quick slot: <see cref="Skills.QuickSlotEdit.Add"/> of the source's entry on this slot; when taken the two
+    ///   entries swap (the skill set's SetQuickSlotEntry pair is the same page here);
+    /// - a book slot (<see cref="SkillBookTreeController.BookSkillId"/>, BookSlot::FUN_140a366a0): Add of the skill alone; when
+    ///   taken this slot holds it.
+    /// Then the source and this slot are pushed again (vfunc_10).
+    /// STILL-OPEN: an inventory slot (the ride, lapenshard and FUN_141769320 skill checks) and a lapenshard ItemSlot source.
+    /// </summary>
+    public void SlotDroppedOn(string name, string source, IDragSlotOwner sourceOwner)
+    {
+        int i = SlotIndex(name);
+        if (i >= 0 && !IsFixedOrBound(i) && Model.ServerKeys is { } t)
+        {
+            int page = t.CurrentPage;                                           // CKeyTable::FUN_140a700b0
+            if (sourceOwner == this && SlotIndex(source) is var j and >= 0)
+            {
+                var from = t.Entry(page, j);
+                var to = t.Entry(page, i);
+                if (Skills.QuickSlotEdit.Add(World(), Model.IsFeatureEnabled, Send, Notice, from.SkillId, from.ItemId, from.ItemUid, page, i))
+                {
+                    t.SetEntry(page, j, to);
+                    t.SetEntry(page, i, from);
+                }
+            }
+            else if (sourceOwner is SkillBookTreeController book)
+            {
+                int skill = (int)book.BookSkillId(source);
+                if (Skills.QuickSlotEdit.Add(World(), Model.IsFeatureEnabled, Send, Notice, skill, 0, 0, page, i))
+                    t.SetEntry(page, i, new Ms2.Net.Packets.QuickSlotEntry(skill, 0, 0));
+            }
+        }
+        sourceOwner?.RefreshSlot(source);
+        RefreshSlot(name);
+    }
+
+    /// <summary>The open FUN_1422aeed0(2) pick between vfunc_12 and vfunc_17 (<see cref="IDragSlotOwner.SlotDropUnresolved"/>):
+    /// vfunc_12, the slot pushed again. STILL-OPEN: the vfunc_17 branch (<see cref="RemoveSlot"/>) is not reached.</summary>
+    public void SlotDropUnresolved(string name) => RefreshSlot(name);
+
+    /// <summary>
+    /// SkillSlot::vfunc_14 @0x14175d260 (skillslot.cpp:454) then vfunc_17 @0x14175d2b0 (:463), the right click: a fixed or key
+    /// bound slot does nothing; else <see cref="Skills.QuickSlotEdit.Remove"/> of its entry; refused, the slot is pushed again
+    /// (vfunc_12); else it empties (vfunc_11) and is pushed. STILL-OPEN: FUN_14175f200's tween (InvokeSelf) before it.
+    /// </summary>
+    public void RemoveSlot(int i)
+    {
+        if (i < 0 || i >= SlotCount || IsFixedOrBound(i) || Model.ServerKeys is not { } t) return;
+        int page = t.CurrentPage;
+        var e = t.Entry(page, i);
+        if (Skills.QuickSlotEdit.Remove(World(), Send, e.SkillId, e.ItemId, e.ItemUid, page, i)) t.SetEntry(page, i, default);
+        Host.Push(SlotBag + "." + i);
+    }
+
+    /// <summary>
+    /// NotifyDragSlot::SlotUse @0x142302210 (notifydragslot.cpp:33) for a quick slot: button 1 (the right click) is vfunc_14,
+    /// SkillSlot keeping DragSlot's vfunc_19 (0). STILL-OPEN: button 0's vfunc_13 (the click to use) is not ported here and
+    /// stays unhandled.
+    /// </summary>
+    bool SlotUse(object[] args)
+    {
+        int i = SlotIndex(args.ElementAtOrDefault(0) as string);
+        if (i < 0) return false;
+        int button = args.Length < 2 ? 0 : Convert.ToInt32(args[1], System.Globalization.CultureInfo.InvariantCulture);
+        if (button != 1) return false;
+        RemoveSlot(i);
+        return true;
+    }
+
     public override bool OnCallback(string name, object[] args)
     {
         switch (name)
         {
+            case "notifySlotUse": return SlotUse(args);
             case "onNextPage": ShortkeyPage++; Host.Invoke("setShortkeyPageNumber", ShortkeyPage); return true;
             case "onPrevPage": if (ShortkeyPage > 1) ShortkeyPage--; Host.Invoke("setShortkeyPageNumber", ShortkeyPage); return true;
             case "onRideOff": return true;

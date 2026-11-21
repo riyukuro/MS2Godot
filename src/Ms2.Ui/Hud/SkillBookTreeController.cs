@@ -15,7 +15,7 @@ namespace Ms2.Ui.Hud;
 /// lapenshard button, the shortcut key registration) is raised as <see cref="Button"/> and left unsent. The close-time
 /// JobSystemCli::RequestReset (vfunc_67 :505) is not sent either.</para>
 /// </summary>
-public sealed class SkillBookTreeController : UiController
+public sealed class SkillBookTreeController : UiController, IDragSlotOwner
 {
     /// <summary>Feature 0xca (JobChange_01): the jobchange01 movie and its rank 1 / rank 2 trees.</summary>
     public bool JobChange01;
@@ -504,6 +504,32 @@ public sealed class SkillBookTreeController : UiController
         if (d.IsPassive) slot.Add(("disableDrag", 1));
         return Host.Obj(slot.ToArray());
     }
+
+    /// <summary>The book slot index of a name ("skillTreeSlot.&lt;i&gt;" inside the bag), else -1.</summary>
+    int BookSlotIndex(string name) =>
+        name != null && name.StartsWith(BagName + ".", StringComparison.Ordinal)
+        && int.TryParse(name.AsSpan(BagName.Length + 1), System.Globalization.NumberStyles.None, null, out int i) && i < bag.Count ? i : -1;
+
+    /// <summary>A BookSlot of the bag (DynamicCast&lt;DragSlot&gt; of its binding).</summary>
+    public bool IsDragSlot(string name) => BookSlotIndex(name) >= 0;
+
+    /// <summary>DragSlot::vfunc_10: the slot pushed again.</summary>
+    public void RefreshSlot(string name) { if (IsDragSlot(name)) Host.Push(name); }
+
+    /// <summary>BookSlot::vfunc_18 @0x140a36730 (bookslot.cpp:69): the source and the slot pushed again, nothing else.</summary>
+    public void SlotDroppedOn(string name, string source, IDragSlotOwner sourceOwner)
+    {
+        sourceOwner?.RefreshSlot(source);
+        RefreshSlot(name);
+    }
+
+    /// <summary>BookSlot keeps DragSlot's vfunc_12 and vfunc_17 (dragslot.cpp:51, :95: vfunc_17 is vfunc_12), so either branch
+    /// of the open FUN_1422aeed0(2) pick pushes the slot again.</summary>
+    public void SlotDropUnresolved(string name) => RefreshSlot(name);
+
+    /// <summary>BookSlot::FUN_140a366a0 @0x140a366a0 (bookslot.cpp:54): the slot's skill id (JobSkill::GetID), 0 for a name
+    /// that is not a book slot.</summary>
+    public uint BookSkillId(string name) => BookSlotIndex(name) is var i and >= 0 ? bag[i].Id : 0;
 
     public override IEnumerable<string> GetBagSlotBindings(string bag) =>
         bag == BagName ? Enumerable.Range(0, this.bag.Count).Select(SlotName) : Array.Empty<string>();

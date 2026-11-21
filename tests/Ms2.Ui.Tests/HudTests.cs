@@ -184,6 +184,39 @@ public class HudTests
     }
 
     [Test]
+    public void QuickSlotsSwapByDragAndEmptyByRightClick()
+    {
+        // SkillSlot::vfunc_18 (skillslot.cpp:507) from another SkillSlot: FUN_14092f690 of the source's entry on the target
+        // (KeyTable mode 3), then the two swap; the right click (NotifyDragSlot::SlotUse button 1, vfunc_14 -> vfunc_17 :463)
+        // sends mode 5 (SendKeyTableMode5) and empties the slot
+        var m = Model();
+        var pages = new IReadOnlyList<(int, QuickSlotEntry)>[] { new[] { (3, new QuickSlotEntry(10500001, 0, 0)), (5, new QuickSlotEntry(10500002, 0, 0)) } };
+        var t = new ServerKeyTable();
+        t.Apply(new Maple2.PacketLib.Tools.ByteReader(ServerKeyTable.Write(0, false, Array.Empty<KeyBinding>(), 0, pages)));
+        m.Keys = new KeyTable(packs, "en"); m.ServerKeys = t; m.Keys.Apply(t);
+        var c = new MainPlayerInfoController();
+        var sent = new List<Ms2.Net.Wire.IOutPacket>();
+        c.Send = sent.Add;
+        var h = Load(c, m);
+        string s3 = MainPlayerInfoController.SlotBag + ".3", s5 = MainPlayerInfoController.SlotBag + ".5";
+        Assert.That(c.IsDragSlot(s3), Is.True);
+        Assert.That(c.IsDragSlot("SlotInfo.other.1"), Is.False);
+
+        c.SlotDroppedOn(s5, s3, c);
+        Assert.That(sent, Is.EqualTo(new[] { new KeyTableSetQuickSlotRequest(0, 10500001, 0, 0, 5) }));
+        Assert.That((t.Entry(0, 3), t.Entry(0, 5)), Is.EqualTo((new QuickSlotEntry(10500002, 0, 0), new QuickSlotEntry(10500001, 0, 0))));
+
+        Assert.That(c.OnCallback("notifySlotUse", new object[] { s3, 0.0 }), Is.False);   // the click to use: not here
+        Assert.That(c.OnCallback("notifySlotUse", new object[] { s3, 1.0 }), Is.True);
+        Assert.That(sent[1], Is.EqualTo(new KeyTableRemoveQuickSlotRequest(0, 10500002, 0)));
+        Assert.That(t.Entry(0, 3), Is.EqualTo(default(QuickSlotEntry)));
+        Assert.That(Rt.ToString(h.Get((AsObject)h.ToAs(c.GetBinding(s3)), "iconPath")), Is.EqualTo(""));
+        c.OnCallback("notifySlotUse", new object[] { s3, 1.0 });                         // empty now: no send
+        c.OnCallback("notifySlotUse", new object[] { MainPlayerInfoController.SlotBag + ".22", 1.0 });   // key bound: no send
+        Assert.That(sent, Has.Count.EqualTo(2));
+    }
+
+    [Test]
     public void PartyWindowShowsTheFixtureParty()
     {
         // UIPartyDialog: RefreshAll's initMembers with each member's FillMemberObject, then the party packets' window calls

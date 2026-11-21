@@ -305,6 +305,9 @@ public partial class LiveSession : Node
     /// <summary>The party window's and the popup menu's sends (Party 0x2C, RoomDungeon, DungeonReward, Club).</summary>
     public void SendParty(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
 
+    /// <summary>The quick slot edits (KeyTable 0x3A, modes 3 and 5).</summary>
+    public void SendKeyTable(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
+
     /// <summary>CGroupChatManager's sends (GroupChat 0x4C).</summary>
     public void SendGroupChat(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
     int groupChatPackets;   // the scripted run's count of GroupChat packets read

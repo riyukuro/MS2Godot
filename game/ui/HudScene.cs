@@ -2102,6 +2102,12 @@ public partial class HudScene : Node, IUiStageHost
         {
             SlotWorld = QuickSlotWorld,
             TooltipPlayer = () => { QuickSlotWorld(); return SkillTooltipPlayer(slotJobs); },
+            Send = packet =>
+            {
+                if (Ms2Godot.Net.LiveSession.Instance is { } s) s.SendKeyTable(packet);
+                else GD.Print($"quick slot: offline, not sent: {packet}");
+            },
+            Notice = id => SystemNoticeText(hudModel.Tables.Common(id)),
         };
         OwnBuffs();
         ui.AddChild(playerInfoMovie = new MovieDialog(assets, playerInfo, hudModel, window));

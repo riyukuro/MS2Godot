@@ -36,6 +36,16 @@ public sealed class ServerKeyTable {
     public QuickSlotEntry Entry(int page, int slot) =>
         page >= 0 && page < pages.Count && pages[page].TryGetValue(slot, out var e) ? e : default;
 
+    /// <summary>
+    /// SkillSlot::SetSkillId / SetItemId / SetItemUid (skillslot.cpp:343, :367, :355) after a quick slot edit: the client keeps
+    /// the slot's own copy in the SkillSlot, which Godot keeps in the page the slots read. A page that does not exist takes none;
+    /// an all-zero entry empties the slot (SkillSlot::vfunc_11, :492).
+    /// </summary>
+    public void SetEntry(int page, int slot, QuickSlotEntry e) {
+        if (page < 0 || page >= pages.Count) return;
+        if (e.IsEmpty) pages[page].Remove(slot); else pages[page][slot] = e;
+    }
+
     /// <summary>CKeyTable::FindQuickSlotBySkillAndItemUid @0x14142e090 (client/ms2/keytable.cpp): the slot of the current page that
     /// holds the skill and item uid, -1 when none does, 0 when the page does not exist. The client walks a CAtlMap; with the
     /// same entry on two slots the one returned may differ.</summary>

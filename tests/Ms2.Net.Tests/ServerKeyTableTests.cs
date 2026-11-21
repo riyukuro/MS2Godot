@@ -44,4 +44,15 @@ public class ServerKeyTableTests {
         Assert.That(t.PageCount, Is.EqualTo(1)); Assert.That(t.CurrentPage, Is.EqualTo(1));
         Assert.That(t.Entry(0, 0).SkillId, Is.EqualTo(10000002)); Assert.That(t.Bindings, Is.EqualTo(Keys));
     }
+    [Test] public void SetEntryPutsAndEmptiesASlotOfAPage() {
+        // the SkillSlot setters (skillslot.cpp:343, :355, :367) and vfunc_11 (:492) on the CKeyTable page
+        var t = new ServerKeyTable(); t.Apply(new ByteReader(ServerKeyTable.Write(0, false, Keys, 1, Pages)));
+        t.SetEntry(1, 7, new QuickSlotEntry(10000003, 0, 0));
+        Assert.That(t.Entry(1, 7).SkillId, Is.EqualTo(10000003));
+        t.SetEntry(0, 4, default);
+        Assert.That(t.Entry(0, 4).IsEmpty, Is.True);
+        Assert.That(t.FindQuickSlotBySkillAndItemUid(10000003, 0), Is.EqualTo(7));
+        t.SetEntry(5, 0, new QuickSlotEntry(1, 0, 0));                   // no such page: ignored
+        Assert.That(t.PageCount, Is.EqualTo(2));
+    }
 }
