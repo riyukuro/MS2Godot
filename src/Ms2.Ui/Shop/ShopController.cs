@@ -9,9 +9,9 @@ namespace Ms2.Ui.Shop;
 /// UIShopDialog (client/ms2/uishopdialog.cpp; UI id 0x4e3b), the C++ side of the npc shop movie uishopdialog. Its root
 /// (ShopDialogProxy) makes the shop's own dialog by the shop type (initShop), which the movie's ShopDialog code then runs:
 /// the tab bar, the category list, the product list and the restock bar. This feeds it Inbound 0x51 (commands 0, 1, 2, 4,
-/// 6, 7, 8, 9, 13, 14, 15), the tabs and category tree (CShopCategoryTable), the product rows, tooltips (vfunc_49),
+/// 6, 7, 8, 9, 11, 12, 13, 14, 15), the tabs and category tree (CShopCategoryTable), the product rows, tooltips (vfunc_49),
 /// vfunc_28 callbacks, and the buy, buyback, sell, restock and new-items flows over Outbound 0x28 (<see cref="Send"/>).
-/// <para>STILL-OPEN: star / merat items (commands 11-12, UIMarketBillDialog 0x4f17), 3D preview avatar render target,
+/// <para>STILL-OPEN: buying a star / merat item (UIMarketBillDialog 0x4f17), 3D preview avatar render target,
 /// search ban-word check (vfunc_80), give-point event, and live state sources for fame grade, guild championship
 /// season rank table, and guild NPC levels (their buy gates refuse as the client does when state is absent).</para>
 /// </summary>
@@ -153,6 +153,8 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     public Func<int, int, string> RequireAchieveText = (_, _) => "";
     /// <summary>GetRequireAchieveText (achievemanager.cpp:942, uishopdialog.cpp:1298): the formatted requirement line for the tooltip.</summary>
     public Func<int, int, string> RequireAchieveTooltipText = (_, _) => "";
+    /// <summary>FUN_14093bad0 (achievemanager.cpp:918): the trophy's title in the given format, "" without its data.</summary>
+    public Func<int, int, string, string> TaggedAchieveTitle = (_, _, _) => "";
     /// <summary>CGuildManager::IsInGuild (uishopdialog.cpp:3568, :3644, :3683, :3703).</summary>
     public Func<bool> IsInGuild = () => false;
     /// <summary>CGuildManager::IsMaster(playerName) (uishopdialog.cpp:3703).</summary>
@@ -218,6 +220,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         HasAchieve = (id, grade) => achieves?.Invoke()?.Find(id) is { } a && a.StartGrade > grade;
         RequireAchieveText = (id, grade) => achieveTexts?.Invoke()?.GradeTitle(id, grade) ?? "";
         RequireAchieveTooltipText = (id, grade) => achieveTexts?.Invoke()?.RequireText(id, grade) ?? "";
+        TaggedAchieveTitle = (id, grade, format) => achieveTexts?.Invoke()?.TaggedTitle(id, grade, format) ?? "";
     }
 
     /// <summary>Wires the live session's Shop (0x28), SystemShop (0x65), and NpcTalk end sends
@@ -312,11 +315,56 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
             case 7: ReadRepurchaseAdd(p.Products); break;
             case 8: ReadRepurchaseRemoval(p.RemoveSerial); break;
             case 9: ReadResetResult(p.ResetResult); break;
+            case 11: ReadMeratStart(p.MeratCount); break;
+            case 12: ReadMeratItems(p.MeratItems); break;
             case 13: ReadNewStart(p.NewStart); break;
             case 14: ReadNewProducts(p.NewProducts); break;
             case 15: ReadShopError(p.Error); break;
         }
         selection.ResetIf(p.Command);
+    }
+
+    /// <summary>CNpcShopMeratItemCli (npcshopmeratitem): a star-shop product, its display order and the preview item it
+    /// builds once (FUN_141b05180).</summary>
+    public sealed class MeratItem
+    {
+        public PremiumProduct Product;
+        public int DisplayOrder;
+        public Item Preview;
+    }
+
+    readonly List<MeratItem> meratItems = new();   // m_meratItems
+
+    /// <summary>ReadMeratStart (@0x141af9700, uishopdialog.cpp:1710): with a shop, clears the star items and reserves the count.</summary>
+    public void ReadMeratStart(int count)
+    {
+        if (info.ShopId == 0) return;
+        meratItems.Clear();
+        if (count > 0) meratItems.Capacity = Math.Max(meratItems.Capacity, count);
+    }
+
+    /// <summary>ReadMeratItems (@0x141af9790, uishopdialog.cpp:1722): with a shop, appends each star item.</summary>
+    public void ReadMeratItems(IReadOnlyList<ShopMeratItem> list)
+    {
+        if (info.ShopId == 0 || list == null) return;
+        for (int i = 0; i < list.Count; i++)
+            if (list[i]?.Product != null)
+                meratItems.Add(new MeratItem { Product = list[i].Product, DisplayOrder = list[i].DisplayOrder });
+    }
+
+    /// <summary>FindMeratItem (@0x141affd40, uishopdialog.cpp:2797): the star item whose product id is the serial.</summary>
+    public MeratItem FindMeratItem(int serial)
+    {
+        for (int i = 0; i < meratItems.Count; i++)
+            if (meratItems[i].Product.Id == serial) return meratItems[i];
+        return null;
+    }
+
+    /// <summary>RefreshPremium (@0x141b037a0, uishopdialog.cpp:3297): with star items, group 0 lists again.</summary>
+    public void RefreshPremium()
+    {
+        if (meratItems.Count == 0) return;
+        if (group == 0) RefreshItems(search);
     }
 
     /// <summary>ReadRepurchaseStart (@0x141af9ce0, uishopdialog.cpp:1778): clears group 1 and records expected count.</summary>
@@ -659,6 +707,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         newTotal = 0;
         newComplete = false;
         selection.Reset();
+        meratItems.Clear();
         for (int i = 0; i < 3; i++) ResetProducts(i);
         search = "";
         info = new ShopInfo { ResetEnable = false, HideReset = true };
@@ -895,6 +944,11 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         if (group == 0 && category >= 0)
         {
             bool searching = text.Length > 0;
+            foreach (var m in meratItems)       // the star items come before the shop's own
+            {
+                if (searching && MeratName(m.Product).IndexOf(text, StringComparison.Ordinal) < 0) continue;
+                if (PopulateMerat(m) is { } row) rows.Add(row);
+            }
             if (category < list.Count)
             {
                 var items = list[category].Products;
@@ -1052,6 +1106,103 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         slot.Add(("productType", 0));                                                     // m_1c: 0 for CNpcShopProductCli
         slot.Add(("showRecipe", data.MaidId > 0));
         slot.Add(("showPreview", data.FunctionName == "UGCMapPackage"));
+        return Host.Obj(slot.ToArray());
+    }
+
+    /// <summary>CDBPremiumProduct::GetName (meratmarketbasketinfo.cpp:841): a limited product's own name, else the item's.</summary>
+    string MeratName(PremiumProduct p) => p.Type == 3 ? p.Name : Model.Tables.ItemName(p.ItemId) ?? "";
+
+    /// <summary>CMeratMarketPremiumProduct::HasLimit (meratmarketbasketinfo.cpp:966).</summary>
+    static bool MeratHasLimit(PremiumProduct p) => p.Type switch
+    {
+        1 or 7 or 8 => p.BuyLimit != 0,
+        3 or 6 => p.Field0C4 != 0 || p.BuyLimit != 0,
+        _ => false,
+    };
+
+    /// <summary>CMeratMarketPremiumProduct::IsBuyLimitReached (:983).</summary>
+    static bool MeratBuyLimitReached(PremiumProduct p) => MeratHasLimit(p) && p.BuyLimit != 0 && p.BuyCount >= p.BuyLimitMax;
+
+    /// <summary>CDBPremiumProduct::GetSalePrice (:685) without the running sale events (not ported): types 3, 6 and 7 are the
+    /// sale price, type 8 takes the percent in +0x1b0 off it, else the sale price.</summary>
+    static long MeratSalePrice(PremiumProduct p) => p.Type switch
+    {
+        8 => p.Field1B0 == 0 || p.SalePrice == 0 ? 0 : p.SalePrice * (100 - Math.Min((uint)p.Field1B0, 100u)) / 100,
+        _ => p.SalePrice,
+    };
+
+    /// <summary>CDBPremiumProduct::FUN_1406a0230 (:861): the product's currency as the ui currency (0 meso, 1 and 3 merat, 2
+    /// red merat), FUN_14069c3e0 (:217).</summary>
+    static int MeratUiCurrency(PremiumProduct p) => (p.Currency == 3 ? 1 : p.Currency) switch { 1 => 3, 2 => 9, _ => 1 };
+
+    /// <summary>FUN_1418fec90 (uicommon.cpp:912) for a ui currency: an item price s_common_payitem, else s_common_payment with the
+    /// currency's icon (9 is the red merat's only with feature 0x43, else the merat's).</summary>
+    string CurrencyPriceText(int currency, long amount)
+    {
+        if (currency == 2) return Common("s_common_payitem", Number(amount), 0u);
+        var (icon, vspace) = currency == 9 && !Model.IsFeatureEnabled(Feature.RedMerat) ? CurrencyIcon(3, 0) : currency == 9
+            ? ("export_common_icon_redmerat", -4) : CurrencyIcon(currency, 0);
+        return icon.Length > 0 ? Common("s_common_payment", Number(amount), icon, vspace) : "";
+    }
+
+    /// <summary>GetStarPointText (uimeratmarketcommon.cpp:1047): with the star point event and a point price, the product's
+    /// s_meratmarket_text_add_star_point.</summary>
+    string StarPointText(PremiumProduct p)
+    {
+        if (!Pc.StarPointEvent || !p.PointPrice || p.Point <= 0) return "";
+        return Ms2.Quest.ClientFormat.Format(Model.Tables.Common("s_meratmarket_text_add_star_point") ?? "", (long)p.Point);
+    }
+
+    /// <summary>
+    /// PopulateMerat (@0x141b01480, uishopdialog.cpp:2971): the row of a star item; null without the item data and (outside
+    /// buy back, with "usable items only" ticked) for an item the player cannot use or whose job is not recommended. The slot is
+    /// built from the preview item with the grade, then itemCount, the grade-coloured product name, the sale price and its text,
+    /// the price (and discount) when they differ, saleTag, soldOut, displayOrder, meratItem, serialID, itemID, productType,
+    /// showRecipe, showPreview, level, the star point text and the requirement of an achievement not yet reached.
+    /// </summary>
+    AsObject PopulateMerat(MeratItem m)
+    {
+        var prem = m?.Product;
+        if (prem == null) return null;
+        var preview = m.Preview ??= Item.Create(Model.Tables.Items, prem.ItemId, prem.Grade);   // FUN_141b05180
+        var data = preview?.Data;
+        if (data == null) return null;
+        if (group != 1 && checkEnableItems)
+        {
+            int use = ItemUseError?.Invoke(preview) ?? 0;
+            if (use != 0 && use != 1) return null;
+            if (Model.HasLocalPlayer && !data.IsJobRecommended(Pc.JobGroup)) return null;
+        }
+        var slot = new List<(string, object)>();
+        if (!ItemSlot.Build(slot, preview, Model.HasLocalPlayer, SlotFlags, Model, Model.ItemSlotSources)) return Host.Obj(slot.ToArray());
+        int count = data.IsStackable ? prem.FieldB0 : 0;                                  // GetB0(0)
+        int at = slot.FindIndex(x => x.Item1 == "itemCount");
+        if (at >= 0) slot[at] = ("itemCount", count); else slot.Add(("itemCount", count));
+        uint color = Model.Tables.Items.TextColor(prem.Grade);
+        slot.Add(("label", $"<FONT color='#{color:x}'>{MeratName(prem)}</FONT>"));
+        long sale = MeratSalePrice(prem), price = prem.Price;
+        slot.Add(("salePrice", sale));
+        slot.Add(("salePriceText", CurrencyPriceText(MeratUiCurrency(prem), sale)));
+        if (sale != price && price > 0)
+        {
+            slot.Add(("price", price));
+            slot.Add(("priceText", Number(price)));
+            slot.Add(("bgSaleText", Common("s_common_percent", (uint)(int)(100 - sale * 100 / price))));
+        }
+        slot.Add(("saleTag", prem.SaleTag));
+        slot.Add(("soldOut", MeratBuyLimitReached(prem)));
+        slot.Add(("displayOrder", m.DisplayOrder));
+        slot.Add(("meratItem", true));
+        slot.Add(("serialID", prem.Id));
+        slot.Add(("itemID", (uint)prem.ItemId));
+        slot.Add(("productType", 1));                                                     // GetProductType: m_40, 1 from the constructor
+        slot.Add(("showRecipe", data.MaidId > 0));
+        slot.Add(("showPreview", data.FunctionName == "UGCMapPackage"));
+        slot.Add(("level", (uint)data.LevelLimit));
+        string star = StarPointText(prem);
+        if (star.Length > 0) slot.Add(("starPoint", star));
+        if (prem.AchieveId != 0 && !HasAchieve(prem.AchieveId, prem.AchieveGrade))
+            slot.Add(("requireAchieve", TaggedAchieveTitle(prem.AchieveId, prem.AchieveGrade, Common(0x308))));
         return Host.Obj(slot.ToArray());
     }
 

@@ -133,6 +133,51 @@ public class ShopTests
         Assert.That(Rt.ToString(h.Get(weapon, "bgFrame")), Is.EqualTo("normal"));
     }
 
+    [Test]
+    public void StarShopItemsListBeforeTheShopsOwnAndAreFoundBySerial()
+    {
+        Packs();
+        var model = NewModel();
+        var (h, c) = Load(model);
+        var bundle = new PremiumProduct
+        {
+            Id = 7001, Type = 1, ItemId = 11300001, Grade = 2, Currency = 1, Price = 1000, SalePrice = 800, SaleTag = 3, FieldB0 = 5,
+            BuyLimit = 1, BuyLimitMax = 2, BuyCount = 2,
+        };
+        var plain = new PremiumProduct { Id = 7002, Type = 2, ItemId = 11400003, Grade = 1, Currency = 0, Price = 500, SalePrice = 500, SaleTag = 0 };
+        var items = new[] { new ShopMeratItem { Product = bundle, DisplayOrder = 4 }, new ShopMeratItem { Product = plain, DisplayOrder = 9 } };
+
+        // the start clears the list (ReadMeratStart), the items append, RefreshPremium lists group 0 again
+        c.ReadMeratStart(2);
+        c.ReadMeratItems(items);
+        Assert.That(c.FindMeratItem(7001)?.DisplayOrder, Is.EqualTo(4));
+        Assert.That(c.FindMeratItem(7003), Is.Null);
+        c.RefreshPremium();
+        var dp = h.Get(h.Get(c.ShopView, "m_list"), "dataProvider");
+        Assert.That(Rt.ToNumber(h.Get(dp, "length")), Is.EqualTo(5), "two star items, then the three products");
+        var first = h.Get(dp, "0");
+        Assert.That(Rt.ToNumber(h.Get(first, "serialID")), Is.EqualTo(7001));
+        Assert.That(h.Get(first, "meratItem"), Is.EqualTo(true));
+        Assert.That(Rt.ToNumber(h.Get(first, "productType")), Is.EqualTo(1));
+        Assert.That(Rt.ToNumber(h.Get(first, "displayOrder")), Is.EqualTo(4));
+        Assert.That(Rt.ToNumber(h.Get(first, "salePrice")), Is.EqualTo(800));
+        Assert.That(Rt.ToNumber(h.Get(first, "price")), Is.EqualTo(1000));
+        Assert.That(Rt.ToString(h.Get(first, "bgSaleText")), Does.Contain("20"));
+        Assert.That(Rt.ToString(h.Get(first, "salePriceText")), Does.Contain("export_common_icon_merat"));
+        Assert.That(h.Get(first, "soldOut"), Is.EqualTo(true), "the buy limit is reached");
+        Assert.That(Rt.ToNumber(h.Get(first, "saleTag")), Is.EqualTo(3));
+        var second = h.Get(dp, "1");
+        Assert.That(Rt.ToNumber(h.Get(second, "serialID")), Is.EqualTo(7002));
+        Assert.That(Rt.ToString(h.Get(second, "salePriceText")), Does.Contain("export_common_icon_meso_h21"));
+        Assert.That(h.Get(second, "soldOut"), Is.EqualTo(false));
+        Assert.That(Rt.ToNumber(h.Get(second, "price")), Is.NaN, "no price when the sale price is the price");
+        Assert.That(Rt.ToNumber(h.Get(second, "starPoint")), Is.NaN, "no star point event, no member");
+
+        // a new start clears them
+        c.ReadMeratStart(0);
+        Assert.That(c.FindMeratItem(7001), Is.Null);
+    }
+
     /// <summary>The product row's slot member for the serial (the list's data provider rows).</summary>
     static object RowMember(UiHost h, ShopController c, int serial, string name)
     {
