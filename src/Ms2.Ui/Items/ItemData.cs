@@ -29,6 +29,8 @@ public sealed class ItemData
     public string UccMesh = "";
     // <PCBang PCBang> (:371)
     public bool PCBang;
+    /// <summary>ItemFusion::LoadXml (itemdatastruct.cpp:1563): &lt;fusion fusionable&gt;, the item can be a merge base or material.</summary>
+    public int Fusionable;
     // ItemPeriod::Load (itemdatastruct.cpp:796), <life>
     /// <summary>"usePeriod": the use period in minutes.</summary>
     public int UsePeriod;
@@ -150,6 +152,7 @@ public sealed class ItemData
             Int(inst, "objCode", ref d.InstallObjCode);
             Int(inst, "space", ref d.InstallSpace);
         }
+        if (env.Element("fusion") is { } fu) Int(fu, "fusionable", ref d.Fusionable);
         if (env.Element("PCBang") is { } pc) Bool(pc, "PCBang", ref d.PCBang);
         if (env.Element("life") is { } life)
         {

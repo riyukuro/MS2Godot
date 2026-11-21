@@ -99,3 +99,16 @@ public sealed record ItemMergeRequest(byte Mode, long ItemUid = 0, long OtherUid
         }
     }
 }
+
+/// <summary>Outbound 0x22 (SendOp::NpcTalk) as UIItemMergeOptionDialog::RequestResultTalk (uiitemmergeoptiondialog.cpp:1028) sends it:
+/// with a talk open u8 6, i32 the talk npc id, i32 the client constant (m_talk), i16 0xca, i16 the talk id; without one u8 4,
+/// i16 0xca, i16 the talk id.</summary>
+public sealed record ItemMergeResultTalkRequest(bool InTalk, int TalkNpcId, int TalkConstant, short TalkId) : IOutPacket {
+    public Outbound Op => Outbound.NpcTalk;
+    public void Write(ByteWriter w) {
+        if (InTalk) { w.WriteByte(6); w.WriteInt(TalkNpcId); w.WriteInt(TalkConstant); }
+        else w.WriteByte(4);
+        w.WriteShort(0xca);
+        w.WriteShort(TalkId);
+    }
+}

@@ -123,4 +123,11 @@ public class ItemMergeDismantleTests {
         Assert.That(WriteOut(ItemDismantleRequest.Options(1, 0)), Is.EqualTo(new byte[] { 6, 1, 0 }));
         Assert.That(ItemDismantleRequest.Start().Op, Is.EqualTo(Outbound.ItemDismantle));
     }
+
+    [Test] public void ResultTalkRequestEncodesBothLayouts() {
+        var w = new ByteWriter(); w.WriteByte(6); w.WriteInt(1234); w.WriteInt(7); w.WriteShort(0xca); w.WriteShort(9);
+        Assert.That(WriteOut(new ItemMergeResultTalkRequest(true, 1234, 7, 9)), Is.EqualTo(w.Buffer.AsSpan(0, w.Length).ToArray()));
+        Assert.That(WriteOut(new ItemMergeResultTalkRequest(false, 0, 7, 9)), Is.EqualTo(new byte[] { 4, 0xca, 0, 9, 0 }));
+        Assert.That(new ItemMergeResultTalkRequest(false, 0, 0, 0).Op, Is.EqualTo(Outbound.NpcTalk));
+    }
 }
