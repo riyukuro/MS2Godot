@@ -120,6 +120,7 @@ public enum Inbound : ushort {
     UserEnv = 0xA8,
     Mastery = 0xCD,             // RecvOp Mastery (commonfiles/opcodes.h): CSceneStateGame::OnMastery
     HomeCommand = 0xB7,
+    ChatStamp = 0x126,      // RecvOp ChatStamp (commonfiles/opcodes.h:293): CSceneStateGame::OnChatStamp -> CChatEmoticonCli::DispatchPacket
     Ugc = 0x6B,
     MeretMarket = 0x6C,         // RecvOp MeretMarket (commonfiles/opcodes.h:116): CMeratMarketMan::OnBuySucceeded / OnBuyFailed (sub-modes 0x1e, 0x1f)
     CharacterInfo = 0x78,       // RecvOp::CharacterInfo (commonfiles/opcodes.h)
@@ -176,6 +177,7 @@ public enum Outbound : ushort {
     Quest = 0x29,
     InteractObject = 0x31,  // SendOp::InteractObject (commonfiles/opcodes.h:354): CInteractObject::vfunc_8/vfunc_10, StateInteraction
     InteractNpc = 0x32,     // SendOp::InteractNpc (commonfiles/opcodes.h:355): CNpc::SendInteractNpc (@0x141094730), i32 object id
+    ChatSticker = 0xB7,     // SendOp::ChatSticker (commonfiles/opcodes.h:485): the chat emoticon packs (CChatEmoticonCli, UIMessenger)
     Emote = 0x13,           // SendOp::Emote (commonfiles/opcodes.h:325): learn (1), use (2), favorite (4)
     // SendOp (commonfiles/opcodes.h): Party, RoomDungeon, DungeonReward, Club
     Party = 0x2C,
@@ -208,6 +210,5 @@ public enum Outbound : ushort {
     Tutorial = 0x8A,
     RequestTutorialItem = 0x9C,
     MinimapPing = 0xB1,     // SendOp MinimapPing (commonfiles/opcodes.h:480): UIMinimapDialog::SendMinimapPing
-    ChatSticker = 0xB7,     // SendOp ChatSticker (commonfiles/opcodes.h:485): UIMessenger::SendEmoticon / SetEmoticonFavorite
     Channel = 0x3B,         // SendOp::Channel (commonfiles/opcodes.h): WorldService::FUN_141bc80c0 (worldservice_1.cpp:4936) and its message box answer
 }
