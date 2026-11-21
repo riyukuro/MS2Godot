@@ -217,6 +217,9 @@ public sealed class SkillData
     public uint RechargeMaxCount, CooldownGroupId;
     /// <summary>&lt;stateAttr rechargeShareOrigin&gt; (skilloverlapcompare.cpp:870): the charges are kept under the origin skill.</summary>
     public bool RechargeShareOrigin;
+    /// <summary>&lt;stateAttr ignoreReduceCooldown&gt; (m_bIgnoreReduceCooldown +0x81, skilloverlapcompare.cpp:868): the own
+    /// cast's cooldown keeps out the cooldown-reduce stats (FUN_1417664e0, skillslot.cpp:2288).</summary>
+    public bool IgnoreReduceCooldown;
     /// <summary>&lt;stateAttr autoTargeting autoTargetingType moveType keyIsDown useDefaultSkill useDefaultSkillID&gt; (:858-864).</summary>
     public int AutoTargeting, MoveType;
     /// <summary>&lt;kinds jump&gt; (:841): the skill cast instead while jumping up or falling (GetCastSkillId).</summary>
@@ -277,6 +280,7 @@ public sealed class SkillData
             s.RechargeMaxCount = Xml.UInt(state, "rechargeMaxCount");
             s.CooldownGroupId = Xml.UInt(state, "cooldownGroupID");
             s.RechargeShareOrigin = Xml.Bool(state, "rechargeShareOrigin");
+            s.IgnoreReduceCooldown = Xml.Bool(state, "ignoreReduceCooldown");
             s.AutoTargeting = Xml.Int(state, "autoTargeting");
             s.AutoTargetingType = Xml.UInt(state, "autoTargetingType");
             s.MoveType = Xml.Int(state, "moveType");

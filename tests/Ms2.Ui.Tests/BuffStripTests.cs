@@ -92,6 +92,38 @@ public class BuffStripTests
     }
 
     [Test]
+    public void AGroupCooltimeReduceSumsTheOwnEnabledSpecialEffectsOfTheGroup()
+    {
+        // <SpecialEffect type probability values> (additionalactionadditional.cpp:1346-1353, CXmlData::ParseValues
+        // xmldata.cpp:112) run by AdditionalCliList::FUN_140972380 (additionalcli_2.cpp:956) with kind 4 and
+        // CSEReduceSkillGroupCooltime::vfunc_1 (specialeffectfunctionmanager.cpp:26)
+        var a = AdditionalLevelData.Load(System.Xml.Linq.XElement.Parse("<level level=\"1\"><SpecialEffect type=\"4\" "
+            + "values=\"&lt;v groupID=&quot;90000001&quot; reduceRate=&quot;0.20&quot; /&gt;\"/></level>"), null);
+        var b = AdditionalLevelData.Load(System.Xml.Linq.XElement.Parse("<level level=\"1\"><SpecialEffect type=\"4\" probability=\"0.5\" "
+            + "values=\"&lt;v groupID=&quot;90000001&quot; reduceRate=&quot;0.1&quot; /&gt;\"/></level>"), null);
+        var c = AdditionalLevelData.Load(System.Xml.Linq.XElement.Parse("<level level=\"1\"><SpecialEffect type=\"4\" values=\"&lt;v\"/></level>"), null);
+        Assert.That((a.SpecialEffectType, a.SpecialEffectProbability, a.SpecialEffectValues["reduceRate"]), Is.EqualTo((4, 1f, "0.20")));
+        Assert.That((b.SpecialEffectProbability, c.SpecialEffectValues), Is.EqualTo((0.5f, (Dictionary<string, string>)null)), "a values string that does not parse stores nothing");
+        float roll = 0.75f;
+        var list = new AdditionalBuffList((id, lv) => id == 7 ? a : id == 8 ? b : Level(id, lv)) { Roll = () => roll };
+        list.Apply(new BuffPacket(BuffPacket.Add, 5, 11, 5, 0, new BuffState(0, 1000, 7, 1, 1, 1), 0));
+        list.Apply(new BuffPacket(BuffPacket.Add, 5, 12, 5, 0, new BuffState(0, 1000, 8, 1, 1, 1), 0));
+        Assert.That(list.ReduceSkillGroupCooltime(90000001), Is.EqualTo(0f), "GetOwnerMyPC not set");
+        list.OwnerIsMyPc = true;
+        Assert.That(list.ReduceSkillGroupCooltime(90000001), Is.EqualTo(0.2f).Within(1e-6f), "0.5 under the roll 0.75: skipped");
+        Assert.That(list.ReduceSkillGroupCooltime(90000002), Is.EqualTo(0f), "another group");
+        roll = 0.25f;
+        Assert.That(list.ReduceSkillGroupCooltime(90000001), Is.EqualTo(0.3f).Within(1e-6f));
+        list.Buffs.Single(x => x.Key == 11).Suspended = true;
+        Assert.That(list.ReduceSkillGroupCooltime(90000001), Is.EqualTo(0.3f).Within(1e-6f), "suspension is not tested");
+        list.Apply(new BuffPacket(BuffPacket.Modify, 5, 12, 5, BuffPacket.ModifyState, new BuffState(0, 1000, 8, 1, 1, 0), null));
+        Assert.That(list.ReduceSkillGroupCooltime(90000001), Is.EqualTo(0.2f).Within(1e-6f), "not enabled");
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1000; i++) _ = list.ReduceSkillGroupCooltime(90000001);
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512));
+    }
+
+    [Test]
     public void SortOrderAndRemainTicks()
     {
         uint now = 400;

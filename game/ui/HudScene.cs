@@ -2726,6 +2726,9 @@ public partial class HudScene : Node, IUiStageHost
             return;
         }
         ownBuffs.ServerTick = () => live.GameSession is { } gs ? unchecked((uint)gs.ServerTick) : 0;
+        ownBuffs.OwnerIsMyPc = true;
+        var buffs = ownBuffs;
+        live.Cooltimes.GroupReduceRate = g => buffs.ReduceSkillGroupCooltime(g);   // FUN_1417664e0, skillslot.cpp:2279
         Action<Ms2.Net.Packets.BuffPacket> onBuff = b =>
         {
             ownBuffs.UpperTargetId = live.UpperTargetId;

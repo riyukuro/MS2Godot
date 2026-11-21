@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Xml.Linq;
 
 namespace Ms2.Ui.Skills;
@@ -25,6 +26,13 @@ public sealed class AdditionalLevelData
     /// <summary>&lt;Motion hide&gt; (m_motion.m_nHide, :1100): FUN_140972a00 (additionalcli_2.cpp:1072) sets the list's
     /// IsHidden from any enabled, unsuspended effect with it.</summary>
     public int Hide;
+    /// <summary>&lt;SpecialEffect type probability values&gt; (m_specialEffect, :1349-1353; Clear @0x140192c40 makes the
+    /// probability 1): the kind CSpecialEffectFunctionManager runs (4 CSEReduceSkillGroupCooltime), the chance against
+    /// FUN_140768090's roll and the values' attributes (SpecialEffectProperty::Parse @0x140192ce0, CXmlData::ParseValues
+    /// @0x14092c400: the attributes of the one element the string holds; null without values).</summary>
+    public int SpecialEffectType;
+    public float SpecialEffectProbability = 1f;
+    public Dictionary<string, string> SpecialEffectValues;
     /// <summary>&lt;UI iconOnOff&gt; (m_eIconOnOff: 0 off, 1 on (the default), 2 only for one's own buffs), icon, priority,
     /// isHideCooltime.</summary>
     public int IconOnOff = 1;
@@ -62,6 +70,12 @@ public sealed class AdditionalLevelData
             lv.ForceApplyTarget = Xml.Int(basic, "forceApplyTarget");
         }
         if (e.Element("Motion") is { } motion) lv.Hide = Xml.Int(motion, "hide");
+        if (e.Element("SpecialEffect") is { } special)
+        {
+            lv.SpecialEffectType = Xml.Int(special, "type");
+            if (special.Attribute("probability") != null) lv.SpecialEffectProbability = Xml.Float(special, "probability");
+            lv.SpecialEffectValues = ParseValues((string)special.Attribute("values"));
+        }
         if (e.Element("UI") is { } ui)
         {
             if (ui.Attribute("iconOnOff") != null) lv.IconOnOff = Xml.Int(ui, "iconOnOff");
@@ -71,6 +85,30 @@ public sealed class AdditionalLevelData
         }
         return lv;
     }
+
+    /// <summary>CXmlData::ParseValues @0x14092c400 (xmldata.cpp:112): the attributes of the element the string holds; null for
+    /// an empty string or one that does not parse.</summary>
+    internal static Dictionary<string, string> ParseValues(string values)
+    {
+        if (string.IsNullOrEmpty(values)) return null;
+        XElement v;
+        try { v = XElement.Parse(values); }
+        catch (System.Xml.XmlException) { return null; }
+        var d = new Dictionary<string, string>();
+        foreach (var a in v.Attributes()) d[a.Name.LocalName] = a.Value;
+        return d;
+    }
+
+    /// <summary>CXmlData::GetInt (cxmldata.h): the value as an int, <paramref name="def"/> when the name is not there.</summary>
+    public int ValueInt(string name, int def = 0) =>
+        SpecialEffectValues != null && SpecialEffectValues.TryGetValue(name, out var s)
+            ? int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : 0 : def;
+
+    /// <summary>CXmlData::GetFloat @0x1408276a0 (specialeffectfunctionmanager.cpp:66): ParseFloatW (_wtof) of the value,
+    /// <paramref name="def"/> when the name is not there.</summary>
+    public float ValueFloat(string name, float def = 0f) =>
+        SpecialEffectValues != null && SpecialEffectValues.TryGetValue(name, out var s)
+            ? float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var f) ? f : 0f : def;
 }
 
 /// <summary>One &lt;additional&gt; of additional/*.xml (AdditionalData::Load @0x140170c60, additionalactionadditional.cpp:707).</summary>

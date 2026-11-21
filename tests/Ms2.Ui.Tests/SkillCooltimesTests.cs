@@ -16,6 +16,7 @@ public class SkillCooltimesTests
         + "<level value=\"1\" cooldown=\"5000\"><motion sequenceName=\"A\" sequenceSpeed=\"2\"/></level></skill>"
         + "<skill id=\"105\"><basic mainType=\"1\"/><level value=\"1\" cooldown=\"4000\"><motion sequenceSpeed=\"2\"/></level></skill>"
         + "<skill id=\"106\"><basic mainType=\"1\"><stateAttr cooldownGroupID=\"8\"/></basic></skill>"
+        + "<skill id=\"113\"><basic mainType=\"1\"><stateAttr cooldownGroupID=\"8\" ignoreReduceCooldown=\"1\"/></basic></skill>"
         // 107: no cooldown, a sequence (the combo window); 108: a combo row swapping to 109; 110: two charges 0.5 s apart;
         // 111: a continue skill; 112: a charging combo row swapping to itself
         + "<skill id=\"107\"><basic mainType=\"1\"/><level value=\"1\"><motion sequenceName=\"B\" sequenceSpeed=\"2\"/></level></skill>"
@@ -218,6 +219,18 @@ public class SkillCooltimesTests
         Assert.That(c.Get((8UL << 32) | 106) is { End: 3000, Combo: 3f }, "the reduce leaves 0: the combo window");
         c.Start(0, 106, 1f, 0f, false, 0);
         Assert.That(c.Get((8UL << 32) | 106), Is.Null, "nothing left: the key is removed and none set");
+    }
+
+    [Test]
+    public void IgnoreReduceCooldownKeepsTheStatsOutButNotTheGroupReduce()
+    {
+        // m_bIgnoreReduceCooldown (<stateAttr ignoreReduceCooldown>, skilloverlapcompare.cpp:868) in FUN_1417664e0 (skillslot.cpp:2288)
+        var (c, _) = Make();
+        c.GroupReduceRate = g => g == 8 ? 0.25f : 0f;
+        c.FlatReduce = _ => 1f;
+        c.RateReduce = _ => 0.25f;
+        c.Start(0, 113, 10f, 0f, false, 0);
+        Assert.That(c.Get((8UL << 32) | 113).End, Is.EqualTo(7500u), "10 - 10 * 0.25");
     }
 
     [Test]

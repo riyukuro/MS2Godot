@@ -15,7 +15,7 @@ namespace Ms2.Ui.Skills;
 public sealed class AdditionalCache
 {
     /// <summary>The format and parse version: bump it with any change to what the build writes or how the XML is read.</summary>
-    public const int Version = 4;     // 2: the levels' EventBuffType; 3: PvpOnOff; 4: ForceApplyTarget, Hide
+    public const int Version = 5;     // 2: the levels' EventBuffType; 3: PvpOnOff; 4: ForceApplyTarget, Hide; 5: SpecialEffect
     const uint Magic = 0x4441324D;     // "M2AD"
     const uint EndMagic = 0x444E4541;  // "AEND"
 
@@ -129,7 +129,21 @@ public sealed class AdditionalCache
             w.Write(l.PvpOnOff);
             w.Write(l.ForceApplyTarget);
             w.Write(l.Hide);
+            w.Write(l.SpecialEffectType);
+            w.Write(l.SpecialEffectProbability);
+            w.Write(l.SpecialEffectValues?.Count ?? -1);
+            if (l.SpecialEffectValues != null)
+                foreach (var (k, v) in l.SpecialEffectValues) { w.Write(k); w.Write(v); }
         }
+    }
+
+    static Dictionary<string, string> ReadValues(BinaryReader r)
+    {
+        int n = r.ReadInt32();
+        if (n < 0) return null;
+        var d = new Dictionary<string, string>(n);
+        for (int i = 0; i < n; i++) d[r.ReadString()] = r.ReadString();
+        return d;
     }
 
     static void WriteDesc(BinaryWriter w, SortedDictionary<ushort, Dictionary<string, string>> levels)
@@ -208,7 +222,8 @@ public sealed class AdditionalCache
                 Level = r.ReadUInt16(), StringParam = r.ReadString(), DurationTick = r.ReadUInt32(), KeepCondition = r.ReadInt32(),
                 IconOnOff = r.ReadInt32(), Icon = r.ReadString(), Priority = r.ReadInt32(), IsHideCooltime = r.ReadBoolean(),
                 EventBuffType = r.ReadUInt32(), PvpOnOff = r.ReadBoolean(),
-                ForceApplyTarget = r.ReadInt32(), Hide = r.ReadInt32(), Parent = d,
+                ForceApplyTarget = r.ReadInt32(), Hide = r.ReadInt32(),
+                SpecialEffectType = r.ReadInt32(), SpecialEffectProbability = r.ReadSingle(), SpecialEffectValues = ReadValues(r), Parent = d,
             });
         return d;
     }

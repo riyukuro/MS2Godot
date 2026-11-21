@@ -125,6 +125,35 @@ public sealed class AdditionalBuffList
         }
     }
 
+    /// <summary>The list is the own player's (AdditionalCliList::GetOwnerMyPC is set): only then the special effects run
+    /// (<see cref="ReduceSkillGroupCooltime"/>).</summary>
+    public bool OwnerIsMyPc;
+    /// <summary>FUN_140768090 @0x140768090 (questmasktable.cpp:485): the roll in [0, 1) a special effect's probability is
+    /// tested against.</summary>
+    public Func<float> Roll = Random.Shared.NextSingle;
+
+    /// <summary>
+    /// The cooldown group reduce of FUN_1417664e0 (skillslot.cpp:2279-2284): a CSEReduceSkillGroupCooltimeCtx of
+    /// <paramref name="groupId"/> through AdditionalCliList::FUN_140972380 @0x140972380 (additionalcli_2.cpp:956). Only on the own
+    /// player's list; each enabled effect (FUN_14096d050: a level, enabled or ticks left; suspension is not tested) whose level's
+    /// special effect is kind 4 and whose probability is not under the roll runs CSEReduceSkillGroupCooltime::vfunc_1
+    /// @0x1408275a0 (specialeffectfunctionmanager.cpp:26): a matching "groupID" adds its "reduceRate".
+    /// </summary>
+    public float ReduceSkillGroupCooltime(uint groupId)
+    {
+        if (!OwnerIsMyPc) return 0f;
+        float rate = 0f;
+        foreach (var b in map.Values)
+        {
+            var lv = b.LevelData;
+            if (b.Enabled == 0 || lv == null || lv.SpecialEffectType != 4) continue;
+            if (lv.SpecialEffectProbability < Roll()) continue;
+            if ((uint)lv.ValueInt("groupID") != groupId) continue;
+            rate += lv.ValueFloat("reduceRate");
+        }
+        return rate;
+    }
+
     /// <summary>
     /// GetForceApplyTarget @0x140970b10 (additionalcli_2.cpp:593), m_nForceApplyTarget as FUN_140972a00 (:1096) sums it: the OR
     /// of the levels' forceApplyTarget over the enabled, unsuspended effects.

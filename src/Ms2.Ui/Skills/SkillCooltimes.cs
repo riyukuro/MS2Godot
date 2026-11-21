@@ -47,7 +47,8 @@ public sealed class SkillCooltimes
 
     /// <summary>
     /// The ReduceRate of the owner's buffs for a cooldown group: a CSEReduceSkillGroupCooltimeCtx of the group passed through
-    /// Unk_SsBuffs::FUN_140972380 (skillslot.cpp:2280-2283). STILL-OPEN: no buff state feeds it, so 0.
+    /// AdditionalCliList::FUN_140972380 (skillslot.cpp:2280-2283): the HUD feeds the own buff list's
+    /// <see cref="AdditionalBuffList.ReduceSkillGroupCooltime"/>; 0 until then.
     /// </summary>
     public Func<uint, float> GroupReduceRate = _ => 0f;
     /// <summary>Unk_SsPc::FUN_1416628f0(0x3ea, id): the flat cooldown reduce of the special options. STILL-OPEN: 0.</summary>
@@ -106,7 +107,7 @@ public sealed class SkillCooltimes
     /// with charges still cooling keeps its cooldown; else the key's cooldown is replaced. Without the combo flag the group
     /// reduce of the buffs and the cooldown-reduce stats come off; a cooldown that comes to 0 takes the combo window instead,
     /// and only a cooldown left is set (the Started event only without the combo flag).
-    /// STILL-OPEN: SkillData::m_bIgnoreReduceCooldown (:2288) has no loader here, so the stats always apply.
+    /// A skill with ignoreReduceCooldown (:2288) keeps the stats out; the group reduce still comes off.
     /// </summary>
     public void Start(uint start, uint skillId, float cool, float combo, bool comboFlag, uint now)
     {
@@ -119,8 +120,11 @@ public sealed class SkillCooltimes
             float reduce = 0f;
             if (s.CooldownGroupId != 0) reduce = GroupReduceRate(s.CooldownGroupId);
             float flat = 0f, rate = reduce;
-            flat += FlatReduce(skillId);
-            rate += RateReduce(skillId);
+            if (!s.IgnoreReduceCooldown)
+            {
+                flat += FlatReduce(skillId);
+                rate += RateReduce(skillId);
+            }
             cool = (cool - flat) - cool * rate < 0f ? 0f : (cool - flat) - cool * rate;
         }
         if (NearlyZero(cool)) extra = combo;
