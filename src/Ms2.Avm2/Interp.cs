@@ -6,6 +6,9 @@ namespace Ms2.Avm2;
 public static class Interp
 {
     [ThreadStatic] static int depth;
+    /// <summary>The most AS3 call frames the VM holds: VM::AddFrame (as3_callframe.h) throws Error #1023 (eStackOverflowError,
+    /// as3_vm.h) for the 129th, so a movie's runaway recursion ends in an AS3 error well inside the .NET stack.</summary>
+    public const int MaxFrames = 128;
     [ThreadStatic] static List<string> calls;
     /// <summary>Debug hook: called with each ABC method name as it starts.</summary>
     [ThreadStatic] public static Action<string> OnCall;
@@ -32,7 +35,7 @@ public static class Interp
         if (m.NativeOverride != null) return m.NativeOverride.Invoke(self, args);
         if (m.Compiled != null && !UseOracle)
         {
-            if (++depth > 400) { depth--; throw m.Ctx.Rt.MakeError("Error", "Error #1023: Stack overflow occurred.", 1023); }
+            if (++depth > MaxFrames) { depth--; throw m.Ctx.Rt.MakeError("Error", "Error #1023: Stack overflow occurred.", 1023); }
             (calls ??= new()).Add(m.Name); OnCall?.Invoke(m.Name); CompiledCalls++;
             try { return m.Compiled(m, self, args); }
             finally { depth--; calls.RemoveAt(calls.Count - 1); }
@@ -47,7 +50,7 @@ public static class Interp
             rt0.NoteMissing("native " + m.Name);
             return Rt.Undef;
         }
-        if (++depth > 400) { depth--; throw m.Ctx.Rt.MakeError("Error", "Error #1023: Stack overflow occurred.", 1023); }
+        if (++depth > MaxFrames) { depth--; throw m.Ctx.Rt.MakeError("Error", "Error #1023: Stack overflow occurred.", 1023); }
         (calls ??= new()).Add(m.Name); OnCall?.Invoke(m.Name); InterpretedCalls++;
         try { return Exec(m, self, args); }
         finally { depth--; calls.RemoveAt(calls.Count - 1); }
