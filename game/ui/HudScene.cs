@@ -2157,6 +2157,8 @@ public partial class HudScene : Node, IUiStageHost
         Sound = key => FieldAudio.Instance?.PlayUi(key),
         Line = (text, kind) => ChatLog.AddSystemLine(text, kind),
         Notice = SystemNoticeText,
+        MeratNotice = v => EnsureRewardNotify().ShowMeratNotice(v),
+        MeratRedNotice = v => EnsureRewardNotify().ShowMeratRedNotice(v),
     };
 
     /// <summary>--uigen-open currency: the Meret and token packets' effects once, as the live receives run them.</summary>
@@ -3390,6 +3392,7 @@ public partial class HudScene : Node, IUiStageHost
     public override void _Process(double delta)
     {
         PerfLog.Frame(perfState);
+        rewardNotify?.Update();                               // UIRewardNotify::vfunc_15: the held toasts
         TickOwnQueued();                                      // StateSkill::FUN_1417f11d0: the queued press
         TickOwnAttacks();                                     // StateSkill::TextKeyEvent: the own cast's attack points
         TickOwnSync();                                        // StateSkill::SendChargeState: the mode 2 sync
@@ -3456,6 +3459,11 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "fishingbook" && frames == 200) ToggleFishingBook();
         if (openShot == "tokenpocket" && frames == 200) ToggleTokenPocket();
         if (openShot == "currency" && frames == 200) CurrencyShot();
+        if (openShot == "currency" && frames is 215 or 235)
+        {
+            DirAccess.MakeDirRecursiveAbsolute(shotDir);
+            GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(shotDir, $"toast_{frames}.png"));
+        }
         if (openShot != null && openShot.StartsWith("gamedictionary") && frames == 200)
         {
             // gamedictionary:<tab>:<text>: as a dictionary text link opens it (OpenTabWithSearch, the first row selected)
