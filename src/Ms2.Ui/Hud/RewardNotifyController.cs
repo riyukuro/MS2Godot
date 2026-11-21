@@ -62,8 +62,11 @@ public sealed class RewardNotifyController : UiController
     /// <summary>ShowMeratRedNotice (@0x141ac0990): the same message, type "merat_red".</summary>
     public void ShowMeratRedNotice(long value) => Show(value, "merat_red");
 
+    /// <summary>FormatStringId(0x685, nValue) with the raw __int64: fmt prints it as plain decimal digits, no separators.</summary>
+    public string MeratMessage(long value) => ClientFormat.Format(Model.Tables.Common(0x685), value);
+
     void Show(long value, string type) =>
-        AppendReward(Host.Obj(("msg", ClientFormat.Format(Model.Tables.Common(0x685), AchieveTexts.Group(value))), ("type", type)));
+        AppendReward(Host.Obj(("msg", MeratMessage(value)), ("type", type)));
 
     string Fmt(int id, params object[] args) => ClientFormat.Format(Model.Tables.Common(id), args);
     string Res(string key) => Model.Tables.CommonResource(key);

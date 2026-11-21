@@ -152,4 +152,13 @@ public class RewardNotifyTests
         Assert.DoesNotThrow(() => c.NotifySkillBookDialog(true));
         Assert.DoesNotThrow(() => new RewardNotifyController().NotifySkillBookDialog(false));
     }
+
+    [Test]
+    public void MeratMessageIsTheRawNumberWithoutSeparators()
+    {
+        var (_, c, _) = Load();
+        string msg = c.MeratMessage(1234567);
+        Assert.That(msg, Does.Contain("1234567"));
+        Assert.That(msg, Does.Not.Contain("1,234,567"));
+    }
 }
