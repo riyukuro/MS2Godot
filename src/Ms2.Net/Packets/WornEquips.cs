@@ -107,4 +107,17 @@ public static class WornEquips
 public sealed record CodiTab(int ActorId, long Start, long End, long Expire, bool Silent)
 {
     public static CodiTab Read(ByteReader r) => new(r.ReadInt(), r.ReadLong(), r.ReadLong(), r.ReadLong(), r.ReadBool());
+
+    public const string LimitlessKey = "s_msg_item_active_codi_tab_complete_limitless", PeriodKey = "s_msg_item_active_codi_tab_complete_period";
+
+    /// <summary>The own player's completion box (scenestategame.cpp:8675-8685): none when silent; the limitless key when expire is 0;
+    /// else the period key with the days, SecondsToDays(int(expire)) = low 32 bits / 86400 (0x14086be70), none when that is 0.</summary>
+    public string CompleteKey(out int days)
+    {
+        days = 0;
+        if (Silent) return null;
+        if (Expire == 0) return LimitlessKey;
+        days = (int) ((int) Expire / 86400L);
+        return days > 0 ? PeriodKey : null;
+    }
 }

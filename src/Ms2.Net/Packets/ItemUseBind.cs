@@ -27,9 +27,10 @@ public sealed class BindItem {
 /// of the common string 0x2a2..0x2a5 (FUN_140d73bc0(id, 0, 0, "")); mode 4 reads an item id and shows the item's notifyDlg dialog or
 /// notifyMsg box (string 0x5f6 with the item's name, a line break, the message) and marks dialog 0x4e28 dirty; mode 5 is
 /// OnActiveCodiTab, mode 6 SendBeauty, mode 7 only marks dialog 0x4e28 dirty.
-/// STILL-OPEN: modes 4 (the item's function xml notify attributes), 5 and 6 read nothing more here (the packet ends with the mode).
+/// Mode 5 reads <see cref="CodiTab"/> (FUN_1407a8250 @0x1407a8250: actor int, start, end, expire i64, silent byte).
+/// STILL-OPEN: mode 4 (the item's function xml notify attributes) and mode 6 read nothing more here.
 /// </summary>
-public sealed record ItemUseNotice(int Mode, int NoticeStringId, int ItemId) {
+public sealed record ItemUseNotice(int Mode, int NoticeStringId, int ItemId, CodiTab Codi = null) {
     public const int FirstNoticeId = 0x2a2;
 
     /// <summary>True for the modes that mark the game-menu dialog 0x4e28 dirty (4 and 7).</summary>
@@ -40,6 +41,7 @@ public sealed record ItemUseNotice(int Mode, int NoticeStringId, int ItemId) {
         return mode switch {
             >= 0 and <= 3 => new ItemUseNotice(mode, FirstNoticeId + mode, 0),
             4 => new ItemUseNotice(mode, 0, r.ReadInt()),
+            5 => new ItemUseNotice(mode, 0, 0, CodiTab.Read(r)),   // OnActiveCodiTab: FUN_1407a8250 (0x1407a8250) reads int, i64, i64, i64, byte
             _ => new ItemUseNotice(mode, 0, 0),
         };
     }

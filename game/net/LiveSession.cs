@@ -497,6 +497,21 @@ public partial class LiveSession : Node
     public IEnumerable<RemoteLayer.Pc> FieldPcs => remote?.Pcs ?? Enumerable.Empty<RemoteLayer.Pc>();
     /// <summary>The own FieldAddUser object id, -1 before it.</summary>
     public int SelfObjectId => selfObject;
+
+    /// <summary>ItemUse mode 5, CSceneStateGame::OnActiveCodiTab (scenestategame.cpp:8662, 0x14173c2d0): the player's layer
+    /// period (SetLayerPeriod); for the own player the completion box (<see cref="CodiTab.CompleteKey"/>).
+    /// STILL-OPEN: the own player's look rebuild and the NotifyActiveMyCodiTab post (scenestategame.cpp:8686), which the equipment
+    /// window's avatar follows (UIMyInfoDialog::OnActiveMyCodiTabNotify, uimyinfodialog.cpp:1030); only the stored period and the box here.</summary>
+    void ActiveCodiTab(CodiTab t)
+    {
+        if (t.ActorId != selfObject) { remote?.ActiveCodiTab(t); return; }
+        Me.CodiStart = t.Start; Me.CodiEnd = t.End;
+        string key = t.CompleteKey(out int days);
+        if (key == null) return;
+        string text = Ms2.Ui.Hud.MessageBoxData.CommonByKey(key) ?? "";
+        if (key == CodiTab.PeriodKey) text = Ms2.Quest.ClientFormat.Format(text, days);
+        Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(text, 0, null, "");
+    }
     /// <summary>
     /// WorldService::FUN_141bd1530 (worldservice_1.cpp:6210): the field's user object with this character id, here whether
     /// the field's users (FieldAddUser, kept by the tracker) hold one. False before the field is built.
@@ -1086,6 +1101,7 @@ public partial class LiveSession : Node
                 var n = ItemUseNotice.Read(p.Reader());   // CSceneStateGame::OnItemUse (scenestategame.cpp:8603)
                 if (n.NoticeStringId != 0)
                     Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(Ms2.Ui.Hud.MessageBoxData.Common(n.NoticeStringId), 0, null, "");   // FUN_140d73bc0(id, 0, 0, "")
+                if (n.Codi is { } codi) ActiveCodiTab(codi);
                 GD.Print($"live: item use mode {n.Mode}{(n.ItemId != 0 ? " item " + n.ItemId : "")}");
             }
             else if (game.Is(p, Inbound.ItemDropNotice))

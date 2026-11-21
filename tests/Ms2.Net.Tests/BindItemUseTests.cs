@@ -58,4 +58,20 @@ public class BindItemUseTests {
         var n = ItemUseNotice.Read(Reader(w));
         Assert.That((n.NoticeStringId, n.ItemId, n.MarksDialogDirty), Is.EqualTo((0, 0, true)));
     }
+
+    [Test] public void ModeFiveReadsTheCodiTab() {
+        var w = new ByteWriter(); w.WriteByte(5); w.WriteInt(1234); w.WriteLong(100); w.WriteLong(200); w.WriteLong(86400 * 3); w.WriteBool(true);
+        var r = Reader(w);
+        var n = ItemUseNotice.Read(r);
+        Assert.That((n.Mode, n.NoticeStringId, n.MarksDialogDirty), Is.EqualTo((5, 0, false)));
+        Assert.That(n.Codi, Is.EqualTo(new CodiTab(1234, 100, 200, 86400 * 3, true)));
+    }
+
+    [Test] public void CodiTabCompleteBoxPicksTheKey() {
+        Assert.That(new CodiTab(1, 0, 0, 0, false).CompleteKey(out _), Is.EqualTo(CodiTab.LimitlessKey));
+        Assert.That(new CodiTab(1, 0, 0, 0, true).CompleteKey(out _), Is.Null);
+        Assert.That(new CodiTab(1, 0, 0, 86400 * 3 + 5, false).CompleteKey(out int d), Is.EqualTo(CodiTab.PeriodKey));
+        Assert.That(d, Is.EqualTo(3));
+        Assert.That(new CodiTab(1, 0, 0, 3600, false).CompleteKey(out _), Is.Null, "under a day: no box");
+    }
 }
