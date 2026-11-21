@@ -52,6 +52,7 @@ public sealed class GameTables
         GachaBoxes = new Items.GachaBoxTable(packs);
         Pets = new Items.PetDataTable(packs);
         ItemSockets = new Items.ItemSocketTable(packs);
+        IndividualDrops = new Items.IndividualDropTable(packs);
         ItemModels = new Items.ItemModelTable(packs);
         GemstoneUpgrades = new Items.GemstoneUpgradeTable(packs);
         Lapenshards = new Items.LapenshardTable(packs);
@@ -338,6 +339,8 @@ public sealed class GameTables
     public readonly Items.PetDataTable Pets = Ms2.Ui.Items.PetDataTable.Empty;
     /// <summary>table/itemSocket.xml (CItemSocketTable); empty without data.</summary>
     public readonly Items.ItemSocketTable ItemSockets = Ms2.Ui.Items.ItemSocketTable.Empty;
+    /// <summary>table/individualItemDrop_Final.xml (ItemDropTable's individual boxes), read on first use; empty without data.</summary>
+    public readonly Items.IndividualDropTable IndividualDrops = Ms2.Ui.Items.IndividualDropTable.Empty;
     /// <summary>The stat and special ability definitions, CItemOptionTable's random and variation rows and
     /// CItemEnchantLimitTable; empty without data.</summary>
     public readonly Items.ItemOptionTables ItemOptions = Ms2.Ui.Items.ItemOptionTables.Empty;
