@@ -129,12 +129,18 @@ public partial class MessageBoxLayer : CanvasLayer
     }
 
     /// <summary>
-    /// A shown box is modal for the mouse: the movie takes the mouse before the scene's Controls (a Godot-built page such as the
-    /// launcher, whose Stop controls would consume the click in the GUI stage and the box's buttons would never see it).
+    /// The movie takes the mouse where its shapes are, before the scene's Controls (a Godot-built page such as the launcher,
+    /// whose Stop controls would consume the click in the GUI stage and the box's buttons would never see it). The client hands
+    /// the mouse to the movies top first and stops at the movie whose shapes are hit (gfxmanager.cpp:954, gfxmovie.cpp:357): a
+    /// modal box's dim backdrop covers the screen, a modaless box (party invite, trade request) only its own area, and a
+    /// point it does not cover goes on to the scene and the HUD. A miss is not forwarded: the view still gets the event once
+    /// through its own _UnhandledInput.
     /// </summary>
     void ForwardMouse(InputEvent e)
     {
         if (view == null) return;
+        var at = e is InputEventMouseButton b ? b.Position : ((InputEventMouseMotion)e).Position;
+        if (!view.HitsShapesAt(at)) return;
         var vp = GetViewport();
         view._UnhandledInput(e);
         if (IsInstanceValid(vp)) vp.SetInputAsHandled();

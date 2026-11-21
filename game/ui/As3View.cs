@@ -816,6 +816,15 @@ public partial class As3View : Node2D
     }
 
     /// <summary>A viewport point in stage units (through the canvas layer the view is drawn in).</summary>
+    /// <summary>Whether a viewport point is over this movie's shapes (MovieImpl::HitTest, HitTest_ShapesNoInvisible), tested at the
+    /// point itself, not at the last 50 ms sample of <see cref="MouseOverUi"/>.</summary>
+    public bool HitsShapesAt(Vector2 viewport)
+    {
+        if (!IsInsideTree() || !IsVisibleInTree()) return false;
+        var p = StagePoint(viewport);
+        return Player.HitTestShapes(p.X, p.Y);
+    }
+
     Vector2 StagePoint(Vector2 viewport) => GetGlobalTransformWithCanvas().AffineInverse() * viewport;
 
     /// <summary>The mouse in stage units, (NaN, NaN) out of the tree.</summary>
