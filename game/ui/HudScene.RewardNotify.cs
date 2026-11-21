@@ -13,11 +13,14 @@ public partial class HudScene
 {
     MovieDialog rewardNotifyMovie;
     RewardNotifyController rewardNotify;
+    bool skillBookOpen;                 // the skill book is open: handed to the reward notify when it is created
+
 
     RewardNotifyController EnsureRewardNotify()
     {
         if (rewardNotify != null) return rewardNotify;
         var c = rewardNotify = new RewardNotifyController { Sound = key => FieldAudio.Instance?.PlayUi(key), SubSceneId = () => Ms2Godot.Net.LiveSession.Instance?.Guide?.World.SubSceneId ?? 0 };
+        c.NotifySkillBookDialog(skillBookOpen);        // kept by the controller, sent when its movie loads
         c.OpenDialog += id => GD.Print($"reward notify: dialog 0x{id:x} is not in this HUD");
         rewardNotifyMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
         uiRoot.AddChild(rewardNotifyMovie);

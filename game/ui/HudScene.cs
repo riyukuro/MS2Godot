@@ -3296,8 +3296,10 @@ public partial class HudScene : Node, IUiStageHost
         skillBook = c; skillBookMovie = m;
         uiRoot.AddChild(m);
         // UISkillBookTreeDialog::OnLoadInit (uiskillbookautodistributedialog.cpp:538) tells a loaded reward notify it opened, vfunc_67 (:514) that it closed
-        EnsureRewardNotify().NotifySkillBookDialog(true);
-        c.Unloaded += () => rewardNotify?.NotifySkillBookDialog(false);
+        // The movie is not loaded for the book: the HUD keeps the state and hands it over when the first toast creates the controller.
+        skillBookOpen = true;
+        rewardNotify?.NotifySkillBookDialog(true);
+        c.Unloaded += () => { skillBookOpen = false; rewardNotify?.NotifySkillBookDialog(false); };
     }
 
     // ---- MS2_PERF: the timing run (PerfLog) -------------------------------------------------------------------------

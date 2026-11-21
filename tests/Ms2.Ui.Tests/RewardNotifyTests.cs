@@ -149,7 +149,8 @@ public class RewardNotifyTests
     [Test]
     public void SkillBookOpenedBeforeTheMovieLoadsReachesItOnLoad()
     {
-        // the HUD builds this movie on its first use, so the book can open first (OnLoadInit, uiskillbookautodistributedialog.cpp:538)
+        // the HUD builds this movie on the first toast, so the book can be open first (OnLoadInit, uiskillbookautodistributedialog.cpp:538):
+        // the HUD hands its kept state to the new controller, which sends it when the movie loads
         var (h, _, _) = Load(bookOpenBeforeLoad: true);
         Assert.That(Rt.ToBoolean(h.Get(h.Entity, "m_openSkillBook")), Is.True);
         var (h2, _, _) = Load(bookOpenBeforeLoad: false);
