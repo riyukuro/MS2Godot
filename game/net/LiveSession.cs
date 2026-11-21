@@ -583,6 +583,7 @@ public partial class LiveSession : Node
             StubHudData.Instance.Wallet = entry.Enter?.Wallet;
             // the found-taxi list DAT_143ab3078: ServerEnter's second int list (OnServerEnter, scenestategame.cpp:2115-2122);
             // without the enter packet it starts empty, so the stub's offline value never reaches a live session
+            TaxiAction.ServerEnter();      // DAT_143ab3098.RemoveAll() (scenestategame.cpp:2115)
             StubHudData.Instance.FoundTaxis = entry.Enter?.UnlockedTaxis is { } taxis ? new HashSet<int>(taxis) : new HashSet<int>();
             Me.Apply(entry.Enter);                 // the exp counters (OnServerEnter, scenestategame.cpp:2085-2086)
         });

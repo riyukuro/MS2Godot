@@ -117,7 +117,20 @@ public sealed class WorldMapController : UiController
         visited.Clear();
         missionMode = false;
         missionAttack = false;
+        TaxiMode = 0;                 // m_194 = 0; vfunc_47(true)
     }
+
+    /// <summary>m_194: set by <see cref="SetTaxiMode"/>; a found station's tile then shows "default" here and "active"
+    /// elsewhere.</summary>
+    public int TaxiMode { get; private set; }
+
+    /// <summary>
+    /// SetTaxiMode (@0x141b5af80, uiworldmapdialog.cpp:1502): m_194 = n, then vfunc_47(m_194 == 0). Tiles built after the
+    /// call read it.
+    /// STILL-OPEN: vfunc_47 (FUN_141901420 with vfunc_48, the s_keyInput layer release FUN_141901070 / FUN_141900f70) is not
+    /// ported.
+    /// </summary>
+    public void SetTaxiMode(int n) => TaxiMode = n;
 
     // ---- the exploration panel (m_fieldMission) ----
 
@@ -462,9 +475,9 @@ public sealed class WorldMapController : UiController
 
     /// <summary>
     /// FUN_141b5ee80 (:2080): a taxi station's icon state: found ones "enabled" ("default" here, "active" elsewhere while
-    /// m_194 is set), the others "disabled". The fare (CTaxiManager GetTaxiFare) is not ported: no fare line.
+    /// m_194, <see cref="TaxiMode"/>, is set), the others "disabled". The fare (CTaxiManager GetTaxiFare) is not ported: no fare line.
     /// </summary>
-    void TaxiMembers(WorldMapTable.Tile t, Dictionary<string, object> o)
+    internal void TaxiMembers(WorldMapTable.Tile t, Dictionary<string, object> o)
     {
         if (Meta != null && Meta.TaxiStations.TryGetValue((int)t.FieldId, out bool homePrivilege) && !homePrivilege)
         {
@@ -473,7 +486,7 @@ public sealed class WorldMapController : UiController
             if (FoundTaxis.Contains(t.FieldId))
             {
                 here = t.FieldId == field;
-                state = "enabled";
+                state = TaxiMode != 0 ? (here ? "default" : "active") : "enabled";
             }
             string desc = here ? Common("s_worldmap_tooltip_taxi_current")                          // 0x727
                 : state == "disabled" ? Common("s_worldmap_tooltip_taxi_seal")                       // 0x726

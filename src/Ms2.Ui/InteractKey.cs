@@ -3,7 +3,8 @@ using Ms2.Formats.Model;
 namespace Ms2.Ui;
 
 /// <summary>
-/// The interact part of the action key: GatheringAction (4), InteractNpcAction (0x11) and InteractAction (0x12) polled in
+/// The interact part of the action key: GatheringAction (4), TaxiStationAction (8), InteractNpcAction (0x11) and
+/// InteractAction (0x12) polled in
 /// key order, and the client state the interaction gates read (MyPC::GetCurStateId) while one of their casts runs.
 /// </summary>
 public static class InteractKey
@@ -24,10 +25,19 @@ public static class InteractKey
     }
 
     /// <summary>The polls by ascending key; <paramref name="npc"/> tells whether the npc action took the key. 0 B.</summary>
-    public static bool Poll(LiveInteractObjects objects, LiveInteractNpc npcs, Vec3 at, Vec3 npcAt, out bool npc)
+    public static bool Poll(LiveInteractObjects objects, LiveInteractNpc npcs, Vec3 at, Vec3 npcAt, out bool npc) =>
+        Poll(objects, npcs, at, npcAt, null, out npc, out _);
+
+    /// <summary>As the other overload, with TaxiStationAction (key 8) polled between gathering (4) and the interact npc
+    /// (0x11); <paramref name="taxi"/> is its vfunc_1 and runs only when gathering doesn't apply. 0 B with a cached
+    /// delegate.</summary>
+    public static bool Poll(LiveInteractObjects objects, LiveInteractNpc npcs, Vec3 at, Vec3 npcAt, System.Func<bool> taxi,
+                            out bool npc, out bool onTaxi)
     {
         npc = false;
+        onTaxi = false;
         if (objects != null && objects.PollGatheringAction(at)) return true;
+        if (taxi != null && taxi()) { onTaxi = true; return true; }
         if (npcs != null && npcs.Poll(npcAt)) { npc = true; return true; }
         return objects != null && objects.PollInteractAction(at);
     }

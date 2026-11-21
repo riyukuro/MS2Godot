@@ -128,6 +128,7 @@ public partial class HudScene : Node, IUiStageHost
             livePortals.ItemRank = id => hudModel?.Tables?.Items?.Get(id)?.Rank ?? 0;
             livePortals.ItemExists = id => hudModel?.Tables?.Items is not { } items || items.Get(id) != null;
             livePortals.CommonBoxSink = id => MessageBoxQueue.ShowCommon(id, 0, null, "");
+            livePortals.TaxiKey = TaxiKey;
         }
         sizeSource = GetViewport();
         sizeSource.SizeChanged += QueueRelayout;
@@ -158,6 +159,7 @@ public partial class HudScene : Node, IUiStageHost
         {
             if (livePortals.SystemNoticeSink == (Action<string>)SystemNoticeText) livePortals.SystemNoticeSink = null;
             if (livePortals.CastingBar == CastingBar) livePortals.CastingBar = null;
+            if (livePortals.TaxiKey == (Action)TaxiKey) livePortals.TaxiKey = null;
         }
         unwatchDamage?.Invoke();
         unwatchDamage = null;
@@ -1615,6 +1617,15 @@ public partial class HudScene : Node, IUiStageHost
     bool WorldMapOpen => worldMap != null && worldMapSide?.IsClosed == false;
 
     /// <summary>CUIService::ToggleDialog(0x4e42): M (action 400006), the game menu's entry and the minimap's button.</summary>
+    /// <summary>TaxiStationAction::vfunc_2 (@0x14095bef0, actionkeyobject.cpp:811-821): the world map (0x4e42) opens when
+    /// closed, SetTaxiMode(1), then guide trigger 0x11.</summary>
+    void TaxiKey()
+    {
+        if (!WorldMapOpen) OpenWorldMap();
+        if (worldMap != null && worldMapSide != null) worldMapSide.SetTaxiMode(1);   // Unk_GetUI(0x4e42)
+        Ms2.Ui.Guide.GuideManager.Current?.AddTrigger(Ms2.Ui.Guide.GuideTrigger.TaxiAction, 0, 0);
+    }
+
     void ToggleWorldMap()
     {
         if (WorldMapOpen) worldMapSide.Close();
@@ -1659,6 +1670,8 @@ public partial class HudScene : Node, IUiStageHost
             };
             worldMapSide.Unloaded += () => { worldMap?.Host.Unload(); worldMap?.QueueFree(); worldMap = null; };
         }
+        // DAT_143ab3078, the found-taxi list the taxi tiles read (FUN_141b5ee80)
+        worldMapSide.FoundTaxis = data.FoundTaxis.Select(x => (uint)x).ToHashSet();
         worldMap = new MovieDialog(assets, worldMapSide, model, ScreenMode.PixelSize(GetWindow()));
         uiRoot.AddChild(worldMap);
     }

@@ -258,4 +258,33 @@ public class WorldMapTests
         }
         finally { UiHost.Tooltips = null; }
     }
+
+    static string TaxiState(Dictionary<string, object> o) =>
+        o.TryGetValue("taxi", out var a) && a is string sa && sa.Length > 0 ? sa : o.TryGetValue("goodtaxi", out var b) ? b as string : null;
+
+    // FUN_141b5ee80 (uiworldmapdialog.cpp:2096-2101): a found station is "enabled", or with m_194 set (SetTaxiMode, :1502)
+    // "default" on the current field and "active" elsewhere; the close (vfunc_67, :308) resets m_194.
+    [Test]
+    public void TaxiModeShowsTheFoundStationsAsDefaultHereAndActiveElsewhere()
+    {
+        Packs();
+        var other = meta.TaxiStations.Where(kv => !kv.Value && kv.Key != (int)Tria && table.FindTile((uint)kv.Key) != null)
+                        .Select(kv => (uint)kv.Key).FirstOrDefault();
+        if (other == 0 || !meta.TaxiStations.TryGetValue((int)Tria, out bool home) || home) Assert.Ignore("no two plain taxi stations with tiles");
+        var (h, c, rt) = Load();
+        c.FoundTaxis = new[] { Tria, other };
+        var here = table.FindTile(Tria);
+        var there = table.FindTile(other);
+        var o = new Dictionary<string, object>();
+        c.TaxiMembers(here, o);
+        Assert.That(TaxiState(o), Is.EqualTo("enabled"));
+        c.SetTaxiMode(1);
+        Assert.That(c.TaxiMode, Is.EqualTo(1));
+        o.Clear(); c.TaxiMembers(here, o);
+        Assert.That(TaxiState(o), Is.EqualTo("default"));
+        o.Clear(); c.TaxiMembers(there, o);
+        Assert.That(TaxiState(o), Is.EqualTo("active"));
+        c.Close();
+        Assert.That(c.TaxiMode, Is.Zero, "vfunc_67 resets m_194");
+    }
 }

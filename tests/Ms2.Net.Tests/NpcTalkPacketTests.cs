@@ -105,4 +105,10 @@ public class NpcTalkPacketTests {
         Assert.That(Bytes(new TakeBoatRequest(0x01020304)), Is.EqualTo(new byte[] { 4, 3, 2, 1 }));
         Assert.That((ushort)new TakeBoatRequest(1).Op, Is.EqualTo(0x45));
     }
+
+    // TaxiStationAction::vfunc_1 (actionkeyobject.cpp:800-802): COutPacket(RequestTaxi), Encode1(0)
+    [Test] public void RequestTaxiRegisterIsModeZeroAlone() {
+        Assert.That(Bytes(new RequestTaxiRegister()), Is.EqualTo(new byte[] { 0 }));
+        Assert.That((ushort)new RequestTaxiRegister().Op, Is.EqualTo(0x48));
+    }
 }

@@ -5,7 +5,7 @@ public enum ActionKeyTarget
 {
     /// <summary>m_nCur 0x1e: no action applies.</summary>
     None,
-    /// <summary>GatheringAction (4), InteractNpcAction (0x11) and InteractAction (0x12).</summary>
+    /// <summary>GatheringAction (4), TaxiStationAction (8), InteractNpcAction (0x11) and InteractAction (0x12).</summary>
     Interact,
     /// <summary>PortalAction (0x13).</summary>
     Portal,

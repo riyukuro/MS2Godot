@@ -142,6 +142,7 @@ public enum Outbound : ushort {
     RequestHome = 0x51,         // SendOp::RequestHome (commonfiles/opcodes.h)
     // SendOp: the trophy dialog's sends
     TakeBoat = 0x45,        // SendOp TakeBoat (commonfiles/opcodes.h:374): CTakeBoatCinematicComponent's send
+    RequestTaxi = 0x48,     // SendOp RequestTaxi (commonfiles/opcodes.h:377): TaxiStationAction's station register
     Achieve = 0x46,
     Mail = 0x2D,            // SendOp Mail (commonfiles/opcodes.h): the mail dialogs' sends
     BlackMarket = 0x5F,     // SendOp BlackMarket (commonfiles/opcodes.h): CBlackMarketMan::SendBlackMarketMode*

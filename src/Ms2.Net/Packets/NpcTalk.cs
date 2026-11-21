@@ -221,3 +221,10 @@ public sealed record QuestLearningRequest(int LearningId) : IOutPacket {
     public Outbound Op => Outbound.Quest;
     public void Write(ByteWriter w) { w.WriteByte(0x10); w.WriteInt(LearningId); }
 }
+
+/// <summary>Outbound 0x48 mode 0 (TaxiStationAction::vfunc_1 @0x14095bca0, actionkeyobject.cpp:800-802): u8 0. Sent once per field
+/// (the requested list) when the player stands by a station the found-taxi list does not hold.</summary>
+public sealed record RequestTaxiRegister : IOutPacket {
+    public Outbound Op => Outbound.RequestTaxi;
+    public void Write(ByteWriter w) => w.WriteByte(0);
+}

@@ -45,6 +45,8 @@ public partial class LiveSession
         InteractNpcs ??= new LiveInteractNpc(new InteractNpcHost(this)) { Held = HeldItem };
         InteractNpcs.Clear();
         npcPolled = false;
+        taxiPolled = false;
+        TaxiAction.Attach(null);
         var packs = PackSet.Shared(Settings.DataDir);
         InteractObjectTable tbl = null;
         try { tbl = InteractObjectTable.Shared(packs); }
@@ -60,6 +62,7 @@ public partial class LiveSession
         try { want = FieldData.FindById(PackSet.Shared(Settings.DataDir), fieldEntry.Current?.MapId ?? 0)?.XBlock; } catch { }
         bool same = want != null && string.Equals(want, xblock, StringComparison.OrdinalIgnoreCase);
         InteractObjects.Attach(same ? entities : Array.Empty<FieldEntity>());
+        TaxiAction.Attach(same ? entities : null);
         GD.Print($"live: interact objects attached to xblock {xblock}{(same ? "" : $" (different xblock: no entities)")}: {InteractObjects.All.Count} registered");
     }
 
@@ -98,14 +101,20 @@ public partial class LiveSession
     }
 
     /// <summary>
-    /// Per-frame action-key poll before the portal, by ascending action key: GatheringAction (4), InteractNpcAction
+    /// Per-frame action-key poll before the portal, by ascending action key: GatheringAction (4), TaxiStationAction (8,
+    /// <see cref="PollTaxi"/>), InteractNpcAction
     /// (0x11, <see cref="LiveInteractNpc.Poll"/>), InteractAction (0x12). 0 B/frame.
     /// </summary>
     public bool PollInteract(Vec3 at) => PollInteract(at, at);
 
     /// <summary>As <see cref="PollInteract(Vec3)"/>, with the npc search from <paramref name="npcAt"/> (the ridee's
     /// position when riding, WorldService::FindNearestNpc via worldservice_1.cpp:9679-9682).</summary>
-    public bool PollInteract(Vec3 at, Vec3 npcAt) => InteractKey.Poll(InteractObjects, InteractNpcs, at, npcAt, out npcPolled);
+    public bool PollInteract(Vec3 at, Vec3 npcAt)
+    {
+        taxiAt = at;
+        taxiPoll ??= PollTaxi;
+        return InteractKey.Poll(InteractObjects, InteractNpcs, at, npcAt, taxiPoll, out npcPolled, out taxiPolled);
+    }
 
     /// <summary>The billboard action's poll (key 0x18, after the portal; 0 B/frame).</summary>
     public bool PollInteractBillBoard(Vec3 at) => InteractObjects != null && InteractObjects.PollBillBoard(at);
@@ -119,7 +128,11 @@ public partial class LiveSession
 
     /// <summary>Action key press on the polled interact object: only the polled action runs, and its own state gate refuses it
     /// while the other interaction's cast runs (that cast is not cancelled).</summary>
-    public bool UseInteract(Vec3 at) => InteractKey.Use(InteractObjects, InteractNpcs, npcPolled, at);
+    public bool UseInteract(Vec3 at)
+    {
+        if (taxiPolled) { UseTaxi(); return true; }
+        return InteractKey.Use(InteractObjects, InteractNpcs, npcPolled, at);
+    }
 
     /// <summary>The client state id as far as it is known here (<see cref="InteractKey.StateId"/>): 0x19 / 0x1a while an
     /// interaction's cast runs; riding 0x21; on the spawn or idle state, 1 while the body stands and 2 while it walks; a
