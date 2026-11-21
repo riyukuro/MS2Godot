@@ -58,6 +58,12 @@ public partial class Player : CharacterBody3D
     public bool StateAllowsWeapons =>
         Mount == null && Ms2.Ui.Items.WeaponStance.StateHoldsWeapons(StateId(State), State == MoveState.Idle && OnWater ? 7 : SubOf(State), !WalkMode);
 
+    /// <summary>
+    /// STILL-OPEN, PC::FUN_141659000 and PlayAnimation steps not ported: the per-PlayAnimation re-apply of the sequence-filtered
+    /// dummies (FUN_141659790, pc.cpp:2520-2555); cube mode clearing the held flag (pc.cpp:2491-2511, WeaponStance has the
+    /// rule, the game never sets it); State::vfunc_16 forcing weapons on (state.cpp:690); StateIdle sub state 0xa calling
+    /// SetEmotion(0) (stateidle.cpp:387).
+    /// </summary>
     void UpdateWeaponStance() => Weapons?.SetState(InBattle, StateAllowsWeapons);
     public Climbables Climbs = new();
     public CubeGrid Cubes = new();

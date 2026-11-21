@@ -350,23 +350,12 @@ public sealed class EquipApplier
     /// </summary>
     static Transform3D DummyOf(XElement asset, int gender, string targetNode = null)
     {
-        string assetTarget = (string)asset.Attribute("targetnode") ?? "";
-        targetNode ??= assetTarget;
-        foreach (var d in asset.Elements("dummy"))
-        {
-            var g = (string)d.Attribute("gender");
-            if (g != null && g != "2" && g != gender.ToString()) continue;
-            if (!string.IsNullOrEmpty((string)d.Attribute("sequence"))) continue;
-            var node = (string)d.Attribute("targetnode");
-            if (string.IsNullOrEmpty(node)) node = assetTarget;
-            if (node.Length > 0 && !string.Equals(node, targetNode, StringComparison.Ordinal)) continue;
-            var t = Floats((string)d.Attribute("translation"));
-            var r = Floats((string)d.Attribute("rotation"));
-            // degrees to radians, then efd::Matrix3::FromEulerAnglesXYZ (equipmodel.cpp:589-591): Gamebryo's rotations
-            // turn clockwise about each axis
-            return ModelBuilder.ToGodot(new Xform(new Vec3(t[0], t[1], t[2]), DummyWorld.EulerXyz(r[0], r[1], r[2]), 1));
-        }
-        return Transform3D.Identity;
+        // The one copy of the client's rule: ItemModelTable.Asset.DummyFor (last matching entry wins, sequence entries need the
+        // character's sequence, which a static attach never has). degrees to radians, then efd::Matrix3::FromEulerAnglesXYZ
+        // (equipmodel.cpp:589-591): Gamebryo's rotations turn clockwise about each axis
+        var parsed = Ms2.Ui.Items.ItemModelTable.ParseAsset(0, "", asset);
+        var (t, r) = parsed.DummyFor(gender, targetNode ?? parsed.TargetNode, "");
+        return ModelBuilder.ToGodot(new Xform(new Vec3(t.X, t.Y, t.Z), DummyWorld.EulerXyz(r.X, r.Y, r.Z), 1));
     }
 
     static double[] Floats(string s)
@@ -521,17 +510,7 @@ public sealed class EquipApplier
             if (bodyMesh != null) heldTargetLocal = ModelBuilder.ToGodot(bodyMesh.Local);
         }
         var heldDummy = DummyOf(asset, gender, heldTarget);
-        bool hasWorldDummy = false;
-        foreach (var d in asset.Elements("dummy"))
-        {
-            var g = (string)d.Attribute("gender");
-            if (g != null && g != "2" && g != gender.ToString()) continue;
-            if ((string)d.Attribute("worldmode") is "1" or "true" || (string)d.Attribute("worldlerp") is "1" or "true")
-            {
-                hasWorldDummy = true;
-                break;
-            }
-        }
+        bool hasWorldDummy = Ms2.Ui.Items.ItemModelTable.ParseAsset(0, "", asset).HasWorldDummy(gender);
         foreach (var h in hooks)
         {
             list.Add(new WeaponBinding(
@@ -585,7 +564,11 @@ public sealed class EquipApplier
             RightHand = action?.RightHand ?? 0;
         }
 
-        /// <summary>PC::vfunc_60 (@0x141658a30, pc.cpp:1737-1749): the weapon animation prefix while weapons are held.</summary>
+        /// <summary>
+        /// PC::vfunc_60 (@0x141658a30, pc.cpp:1737-1749): the weapon animation prefix while weapons are held. STILL-OPEN: when
+        /// they are not held the client returns the worn equipment's set name (CEquipment::GetSetName) when it has one, and only
+        /// then ""; no set name is read here, so "" stands in.
+        /// </summary>
         public string ActivePrefix => WeaponsHeld ? Prefix : "";
 
         /// <summary>
@@ -596,7 +579,7 @@ public sealed class EquipApplier
         {
             InBattle = inBattle;
             StateAllowsWeapons = stateAllowsWeapons;
-            bool held = inBattle && stateAllowsWeapons && RightHand != 0;
+            bool held = Ms2.Ui.Items.WeaponStance.HoldsWeapons(inBattle, stateAllowsWeapons, RightHand);
             if (!force && held == WeaponsHeld) return false;
             WeaponsHeld = held;
             Apply(held);
@@ -611,9 +594,8 @@ public sealed class EquipApplier
             {
                 ref readonly var b = ref bindings[i];
                 if (!GodotObject.IsInstanceValid(b.Attach) || !GodotObject.IsInstanceValid(b.Mesh)) continue;
-                bool toHand = primary;
-                if (b.EffectiveSlot == EquipSlot.LH)
-                    toHand = primary && !b.HasWorldDummy && table.IsAllowed(rhSubtype, b.Subtype);
+                bool toHand = Ms2.Ui.Items.WeaponStance.UsesHandNode(primary, b.EffectiveSlot == EquipSlot.LH, b.HasWorldDummy,
+                    b.EffectiveSlot != EquipSlot.LH || table.IsAllowed(rhSubtype, b.Subtype));
                 string bone = toHand ? b.HeldBone : b.SheathedBone;
                 if (b.Attach.BoneName != bone) b.Attach.BoneName = bone;
                 b.Mesh.Transform = toHand ? b.HeldTransform : b.SheathedTransform;

@@ -301,4 +301,23 @@ public class WeaponStanceTests
         Assert.That(WeaponStance.UsesHandNode(true, true, true, true), Is.False);
         Assert.That(WeaponStance.UsesHandNode(true, true, false, false), Is.False);
     }
+
+    [Test]
+    public void DummyLastMatchWinsAndSequenceNeedsPrefix()
+    {
+        // FUN_141200390 (equipmodel.cpp:563-604) applies every matching entry in order, so the last one wins; the game's
+        // attach path calls this same DummyFor (DummyOf in EquipApplier is a thin wrapper), with an empty sequence
+        var asset = ItemModelTable.ParseAsset(5, "RH", XElement.Parse(@"
+<asset name=""w.nif"" selfnode=""Point01"" targetnode=""Weapon_Side_L_Point"">
+    <dummy gender=""2"" rotation=""1,0,0"" translation=""1,0,0"" />
+    <dummy gender=""2"" rotation=""2,0,0"" translation=""2,0,0"" />
+    <dummy gender=""2"" sequence=""Sword_Attack"" rotation=""3,0,0"" translation=""3,0,0"" />
+    <dummy gender=""1"" rotation=""4,0,0"" translation=""4,0,0"" targetnode=""Weapon_Hand_R_Point"" />
+</asset>"));
+        AssertVec(asset.DummyFor(0, "Weapon_Side_L_Point").Translation, 2, 0, 0, "last plain match, male");
+        AssertVec(asset.DummyFor(0, "Weapon_Side_L_Point", "").Translation, 2, 0, 0, "empty sequence skips sequence entries");
+        AssertVec(asset.DummyFor(0, "Weapon_Side_L_Point", "Sword_Attack_01").Translation, 3, 0, 0, "sequence prefix applies");
+        AssertVec(asset.DummyFor(1, "Weapon_Hand_R_Point").Translation, 4, 0, 0, "female entry on its own node");
+        AssertVec(asset.DummyFor(0, "Weapon_Hand_R_Point").Translation, 0, 0, 0, "male has no entry on the hand node");
+    }
 }

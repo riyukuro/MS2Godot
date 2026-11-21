@@ -206,7 +206,7 @@ dummy) with the dummy transform reset for the hand bone, and the stand/movement 
 prefix (`Sword_Attack_Idle_A`, `LargeSword_Attack_Idle_A`, etc.). States whose `State::vfunc_15()` returns 0 (slow walk,
 water idle, swim, ladder, rope, climb, dash, mount) return the weapons to their sheathed points.
 
-Not done: face decals (FD), world-space hovering weapon lerp (`worldmode` / `worldlerp` on Soul Binder orbs).
+Not done: face decals (FD). The KR itemmodel table has no `worldmode` or `worldlerp` dummy, so the world-space weapon lerp has no data to act on.
 
 Command line, for the field and the viewer:
 
