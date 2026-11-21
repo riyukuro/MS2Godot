@@ -78,7 +78,6 @@ public partial class GameFlow : Node
         // perf scenes and a scripted flow run, so those start exactly as they did before it existed.
         string liveLogin = Net.LiveSession.EnvironmentLogin;
         var start = LaunchRoute.Decide(GetTree().CurrentScene?.SceneFilePath, liveLogin, shotDir != null, null);
-        if (start.Mode == LaunchMode.Live) Net.LiveSession.Attach(this);
         Go(start.Mode == LaunchMode.Launcher ? State.Launcher : State.Login);
         if (Net.LiveSession.Enabled) _ = Net.LiveSession.AutoDrive(this);
         if (shotDir != null) { DirAccess.MakeDirRecursiveAbsolute(shotDir); _ = boxScript ? BoxScript() : Script(); }

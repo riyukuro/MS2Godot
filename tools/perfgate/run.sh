@@ -39,7 +39,7 @@ t0=$SECONDS
 (cd "$root/game" && dotnet build -nologo -v q > "$scratch/build.log" 2>&1) || { echo "perfgate: game build failed ($scratch/build.log)" >&2; exit 2; }
 dotnet build -nologo -v q "$root/tools/PerfGate" > "$scratch/build-tool.log" 2>&1 || { echo "perfgate: tool build failed" >&2; exit 2; }
 cd "$root/game"
-# setup: stops at its first "flow:" line (the login scene), as a player's first launch would go on to log in
+# setup: stops at its first "flow:" line (the launcher), as a player's first launch would go on to log in
 timeout 600 "$godot" --headless --audio-driver Dummy --path . res://setup.tscn > "$scratch/setup.log" 2>&1 & p=$!
 for _ in $(seq 600); do sleep 1; grep -q "^flow:" "$scratch/setup.log" && break; kill -0 $p 2>/dev/null || break; done
 kill $p 2>/dev/null; wait $p 2>/dev/null

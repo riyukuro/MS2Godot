@@ -384,14 +384,14 @@ public partial class LiveSession : Node
         if (Instance == this) Instance = null;
     }
 
+    /// <summary>The server's LoginResult when the last login was refused (null when it failed otherwise or succeeded).</summary>
+    public LoginResult LastLoginRefusal { get; private set; }
+
     /// <summary>
     /// Login and the character list; the list replaces the stub list. The id and password come from the client's login
     /// dialog (UILoginDialog::SendLoginRequest, uilogindialog.cpp:204-246) unless MS2_LIVE_ACCOUNT overrides them. False
     /// when the server refuses.
     /// </summary>
-    /// <summary>The server's LoginResult when the last login was refused (null when it failed otherwise or succeeded).</summary>
-    public LoginResult LastLoginRefusal { get; private set; }
-
     public async Task<bool> LoginAsync(string id = null, string password = null)
     {
         Busy = true;
