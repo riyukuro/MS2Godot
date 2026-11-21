@@ -718,7 +718,7 @@ public partial class LiveSession : Node
     public async Task<bool> EnterAsync(CharacterEntry chosen)
     {
         Busy = true;
-        regionSkills.Clear(); RegionSkillLog.Clear();   // a new field: no region skill object survives it
+        regionSkills.Clear(); RegionSkillLog.Clear(); ClearFieldEffects();   // a new field: no region skill object survives it
         try
         {
             var go = await GameClient.SelectAsync(login, chosen.User.CharacterId, BeginEnterGame());
@@ -1015,9 +1015,10 @@ public partial class LiveSession : Node
         CubeCraft.Owner ??= cubeCraftOwner ??= new CubeCraftOwner(this);
         CubeCraft.Update();          // MyPC::vfunc_53 (mypc.cpp:2969-2970): the craft's Update while in cube mode
         Portals?.Tick((uint)game.Session.ServerTick);
+        TickCombatEffects();
         inGame ??= () => player != null && player.Live;   // IReconnectHost.InGame: the field was entered
         if (game.InGame != inGame) game.InGame = inGame;
-        if (game.IsClosed) { GameLinkLost?.Invoke(); GD.PushWarning("live: game connection closed" + (game.Failure != null ? ": " + game.Failure.Message : "")); game.Dispose(); game = null; if (player != null) player.Live = false; }   // offline fall-return emulation comes back
+        if (game.IsClosed) { StopCombatEffects(); GameLinkLost?.Invoke(); GD.PushWarning("live: game connection closed" + (game.Failure != null ? ": " + game.Failure.Message : "")); game.Dispose(); game = null; if (player != null) player.Live = false; }   // offline fall-return emulation comes back
     }
 
     /// <summary>One game server packet: the read loop's, and at the entry the ones that came before the field enter
@@ -1026,7 +1027,7 @@ public partial class LiveSession : Node
     {
         try
         {
-            if (game.Is(p, Inbound.RequestFieldEnter)) { regionSkills.Clear(); RegionSkillLog.Clear(); pendingTriggers.Clear(); triggerField = null; }   // a new field: no region skill or trigger object survives it
+            if (game.Is(p, Inbound.RequestFieldEnter)) { regionSkills.Clear(); RegionSkillLog.Clear(); ClearFieldEffects(); pendingTriggers.Clear(); triggerField = null; }   // a new field: no region skill or trigger object survives it
             bool own = game.Is(p, Inbound.Stat) && p.Body.Length >= 4 && BitConverter.ToInt32(p.Body, 0) == selfObject;
             if (own) { var st = PlayerStat.Read(p.Reader()); ApplyStat(st); Me.Apply(st); }
             else remote?.Tracker.Inbound(p);     // others' users and npcs (FieldTracker keeps the rest)
@@ -1361,6 +1362,9 @@ public partial class LiveSession : Node
                     GD.Print("live: own player revived");
                     guide?.QueueOccurrence(GuideOccurrence.Dead, 0);   // OnRevival of the own player (scenestategame.cpp:7405)
                 }
+                // OnRevival (scenestategame.cpp:7413): any revived PC's FUN_141661370(1, UserRevivalInvincibleTick, 100000004)
+                // STILL-OPEN: the other players' invincible time and effect on their revival
+                if (v.ObjectId == selfObject && selfObject >= 0) StartInvincible(Ms2.Ui.Hud.InvincibleBlink.RevivalTimer);
             }
             else if (game.Is(p, Inbound.RevivalConfirm))
             {
@@ -1466,6 +1470,7 @@ public partial class LiveSession : Node
                 GD.Print($"live: character ability {m?.GetType().Name ?? "other mode"} ({CharacterAbility.Ids.Count} learned)");
             }
             else if (HandleOwnSkill(p)) { }
+            else if (HandleCombatEffect(p)) { }
             else if (game.Is(p, Inbound.RegionSkill))
             {
                 // OnRegionSkill (scenestategame.cpp:7718-7749): mode 0 adds the region skill object of the id, mode 1 removes

@@ -470,6 +470,28 @@ public static class SkillCast
         c.LastCastSkill = r.Skill.Id;
     }
 
+    /// <summary>
+    /// StateSkill::FUN_1417ea570 @0x1417ea570 (stateskill.cpp:1807-1816), the own cast's send: a skill whose action kind names a
+    /// player state (FUN_1407e9bd0, <see cref="SkillData.ActionKind"/>) and is no emotion goes through UseStateSkill
+    /// (<see cref="UseState"/>), any other the mode 0 send (<see cref="Send"/>).
+    /// STILL-OPEN: the emotion route (FUN_1417eaa50) is still the mode 0 send here, and the mode 0 send is not skipped for a
+    /// level with a sequence while riding (PCBase::FUN_141675ed0, :1813; rides have no port).
+    /// </summary>
+    public static Ms2.Net.Wire.IOutPacket Use(CastRecord r, int serverTick, int elapsed, bool holdAttackFeature) =>
+        !r.Skill.IsEmotion && r.Skill.ActionKind != 0 ? UseState(r, elapsed) : Send(r, serverTick, elapsed, holdAttackFeature);
+
+    /// <summary>
+    /// StateSkill::UseStateSkill @0x1417eb3a0 (stateskill.cpp:1999-2073)'s send, SendOp::StateSkill 0x21 mode 0: the record's
+    /// cast id and its tick as recorded (no fresh tick, unlike the mode 0 cast), the action kind as the state, the client's
+    /// elapsed time and the record's item uid.
+    /// STILL-OPEN: the checks and state entries before the send have no port: MyPC::FUN_141527650(state) (no send when it
+    /// fails), kind 0x26 of class 0x6200004 (UseRideeItem / the pet summon, no send), kind 0x1e's glide item lookup (no send
+    /// without it) and its glide-off toggle (same skill and glide item while gliding: FUN_1417df370, no send), and the
+    /// StateGlideData / StateSkillData entry (vfunc_59).
+    /// </summary>
+    public static StateSkillRequest UseState(CastRecord r, int elapsed) =>
+        new(r.CastId, r.Tick, (int)r.Skill.Id, (short)r.Level.Level, r.Skill.ActionKind, elapsed, r.ItemUid);
+
     /// <summary>The mode 0 send of a record (StateSkill::FUN_1417ebc00, stateskill.cpp:2079): a fresh tick, the elapsed time.
     /// STILL-OPEN: the attached target (m_nB0 / m_strB8, feature 174) is never set here.</summary>
     public static SkillCastRequest Send(CastRecord r, int serverTick, int elapsed, bool holdAttackFeature)

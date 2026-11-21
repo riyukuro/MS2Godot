@@ -113,6 +113,24 @@ public class SkillCastTests
         Assert.That(SkillCast.CreateRecord(w, c, Req(101)).Record, Is.Null, "falling casts the jump skill, and 101 has none (0)");
     }
 
+    // main type 11: action kind 0x1c, a state skill; main type 14: an emotion
+    const string StateKind = "<skill id=\"600\"><basic mainType=\"11\"/><level value=\"2\"/></skill>";
+    const string Emotion = "<skill id=\"601\"><basic mainType=\"14\"/><level value=\"1\"/></skill>";
+
+    [Test]
+    public void AStateSkillGoesAsTheStateSkillSendWithItsRecordedTick()
+    {
+        var t = Skills(Attack, StateKind, Emotion);
+        CastRecord Rec(uint id, ushort lv) => new()
+        {
+            Skill = t.Skills.GetSkillData(id), Level = t.Skills.GetSkillLevelData(id, lv), Tick = 4321, CastId = 88, ItemUid = 9,
+        };
+        Assert.That(SkillCast.Use(Rec(600, 2), 6000, 55, false),
+            Is.EqualTo(new StateSkillRequest(88, 4321, 600, 2, 0x1c, 55, 9)), "UseStateSkill: the record's tick, not the server tick");
+        Assert.That(SkillCast.Use(Rec(100, 1), 6000, 55, false), Is.InstanceOf<SkillCastRequest>(), "action kind 0: the mode 0 send");
+        Assert.That(SkillCast.Use(Rec(601, 1), 6000, 55, false), Is.InstanceOf<SkillCastRequest>(), "an emotion is no state skill");
+    }
+
     [Test]
     public void ANextCastIsAimedFromWhereTheOwnerIsWhenItGoes()
     {

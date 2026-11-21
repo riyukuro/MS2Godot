@@ -4,6 +4,8 @@ using Ms2.Formats.Nif;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
 using Ms2.Net.Packets;
+using Ms2.Ui;
+using Ms2.Ui.Hud;
 using Ms2Godot.Net;
 
 namespace Ms2Godot.World;
@@ -64,11 +66,22 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
         if (LiveSession.Instance is not { } ls) return;
         foreach (var m in ls.RegionSkillLog) Apply(m);
         ls.RegionSkillReceived += Apply;
+        foreach (var m in ls.OneTimeEffectLog) ApplyOneTime(m);
+        ls.OneTimeEffectReceived += ApplyOneTime;
+        ls.InvincibleChanged += OnInvincible;
+        if (ls.Invincible.Active) OnInvincible(true);   // an invincible time that began before the field was built
     }
 
     public override void _ExitTree()
     {
-        if (LiveSession.Instance is { } ls) ls.RegionSkillReceived -= Apply;
+        if (LiveSession.Instance is { } ls)
+        {
+            ls.RegionSkillReceived -= Apply;
+            ls.OneTimeEffectReceived -= ApplyOneTime;
+            ls.InvincibleChanged -= OnInvincible;
+        }
+        OneTime.Clear();
+        invincibleHandle = 0;
         foreach (var l in lights) FieldLights.End(l.Light);
         lights.Clear();
     }
@@ -86,6 +99,27 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     }
 
     static uint ServerTick => (uint)(LiveSession.Instance?.ServerTick ?? 0);
+
+    /// <summary>CTriggerService's one-time effects of the field (OnOneTimeEffect 0xF1).</summary>
+    public readonly OneTimeEffects OneTime = new();
+    int invincibleHandle;
+
+    void ApplyOneTime(OneTimeEffect m) => OneTime.Apply(m.Id, m.Add, m.Name, this);
+
+    /// <summary>PC::FUN_141661370 of the own player (pc.cpp:3409-3428): a start spawns the common resource's
+    /// Revival_Invincible on the player and keeps the handle in m_n1060 (a restart overwrites it, the old effect left to run);
+    /// the end removes the kept one (FUN_1411a6060).</summary>
+    void OnInvincible(bool start)
+    {
+        if (start)
+        {
+            string fx = GameTables.Shared(packs, GameOptions.StringLanguage).CommonResource("Revival_Invincible");
+            invincibleHandle = SpawnOn(fx, LiveSession.Instance?.OwnPlayer);
+            return;
+        }
+        if (invincibleHandle != 0) FadeOut(invincibleHandle, 0);
+        invincibleHandle = 0;
+    }
 
     /// <summary>One OnRegionSkill message.</summary>
     public void Apply(RegionSkillMessage m)
@@ -118,6 +152,22 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
 
     public void Insert(string effect, Xform at, bool always, int randomIndex) => Play(effect, at, false, 0);
 
+    /// <summary>FUN_1411a49c0 with an actor target (m_nKind 0, SetActor): a kept effect that follows the actor; its handle, or
+    /// 0 when it did not spawn.
+    /// STILL-OPEN: the light parts of such an effect stay where the actor was at the spawn.</summary>
+    public int SpawnOn(string effect, Node3D actor)
+    {
+        if (actor == null || !IsInstanceValid(actor)) return 0;
+        int h = nextHandle;
+        var nodes = Play(effect, Identity, true, h, actor);
+        if (nodes == null) return 0;
+        nextHandle++;
+        kept[h] = nodes;
+        return h;
+    }
+
+    static readonly Xform Identity = new(new Vec3(0, 0, 0), new double[] { 1, 0, 0, 0, 1, 0, 0, 0, 1 }, 1);
+
     public void FadeOut(int handle, float seconds)
     {
         foreach (var l in lights)
@@ -134,22 +184,30 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     /// <summary>The effect xml's parts at a Gamebryo world transform: nif parts through the effect scene runtime (startDelay,
     /// duration; a looping part stays until it is faded), light parts through FieldLights, sound events at the point. Null
     /// when the xml is missing.</summary>
-    List<Node3D> Play(string xml, Xform at, bool keep, int handle)
+    List<Node3D> Play(string xml, Xform at, bool keep, int handle, Node3D actor = null)
     {
         var parts = table.Get(xml);
         if (parts == null) return null;
         var nodes = new List<Node3D>();
+        // an effect on an actor: the nif parts are its children (they follow it), at in the actor's own space; sounds and
+        // lights take its place at the spawn
+        Xform world = at;
+        if (actor != null)
+        {
+            var g = actor.GlobalPosition;
+            world = new Xform(new Vec3(g.X, -g.Z, g.Y), at.R, at.S);
+        }
         foreach (var part in parts)
         {
             if (part.Type == "soundEvent" && part.SoundEvent != null)
             {
                 FieldAudio.Instance?.PlayEventAt(part.SoundGroup == null ? part.SoundEvent : part.SoundGroup + "/" + part.SoundEvent,
-                    FieldBuilder.ToGodotPoint(at.T), part.StartDelay);
+                    FieldBuilder.ToGodotPoint(world.T), part.StartDelay);
                 continue;
             }
             if (part.Type == "light" && part.Light != null)
             {
-                var pos = at.Apply(new Vec3(part.Translate[0], part.Translate[1], part.Translate[2]));   // the part's place in the effect's space
+                var pos = world.Apply(new Vec3(part.Translate[0], part.Translate[1], part.Translate[2]));   // the part's place in the effect's space
                 float dur = part.Loop ? 1e7f : part.Duration > 0 ? part.Duration : 0.6f;
                 lights.Add(new LiveLight { Param = part.Light, Pos = pos, Start = part.StartDelay, End = part.StartDelay + dur, Handle = keep ? handle : 0 });
                 continue;
@@ -160,7 +218,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
             float duration = part.Loop ? 1e7f : part.Duration;
             var fx = new EffectInstance(sc, builder, duration, seed++) { Name = "RegionSkill_" + seed, Delay = part.StartDelay };
             fx.FileSpace = ModelBuilder.ToGodot(at.Compose(local));
-            AddChild(fx);
+            (actor ?? (Node)this).AddChild(fx);
             if (keep) nodes.Add(fx);
             Spawned++;
         }

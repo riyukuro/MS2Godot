@@ -7,13 +7,24 @@ namespace Ms2Godot.Net;
 public partial class LiveSession
 {
     /// <summary>
-    /// The mode 0 send of an own cast (StateSkill::FUN_1417ebc00, stateskill.cpp:2079): the server tick taken at the send and the
+    /// The send of an own cast (StateSkill::FUN_1417ea570, stateskill.cpp:1807, <see cref="SkillCast.Use"/>): a state skill's
+    /// SendOp StateSkill 0x21, else the mode 0 send (FUN_1417ebc00, :2079) with the server tick taken at the send; both with the
     /// client's elapsed time (CMainSystem::GetElapsedTime); feature 174 (HoldAttack) adds the attached target. False offline.
     /// </summary>
     public bool SendCast(CastRecord r, bool holdAttackFeature)
     {
         if (game == null) return false;
-        Send(SkillCast.Send(r, game.Session.ServerTick, game.Session.ElapsedMs, holdAttackFeature));
+        Send(SkillCast.Use(r, game.Session.ServerTick, game.Session.ElapsedMs, holdAttackFeature));
+        return true;
+    }
+
+    /// <summary>SendOp RequestAdditionalEffect 0x5C of the GM additional-effect dialog (uiadditionalcontroldialog.cpp:139-160).
+    /// STILL-OPEN: the dialog (UIAdditionalControlDialog) and its AdditionalLevelData check have no port; nothing calls this yet.
+    /// False offline.</summary>
+    public bool SendAdditionalEffect(Ms2.Net.Packets.AdditionalEffectRequest req)
+    {
+        if (game == null) return false;
+        Send(req);
         return true;
     }
 

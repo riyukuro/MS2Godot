@@ -134,6 +134,9 @@ public enum Inbound : ushort {
     Ugc = 0x6B,
     MeretMarket = 0x6C,         // RecvOp MeretMarket (commonfiles/opcodes.h:116): CMeratMarketMan::OnBuySucceeded / OnBuyFailed (sub-modes 0x1e, 0x1f)
     CharacterInfo = 0x78,       // RecvOp::CharacterInfo (commonfiles/opcodes.h)
+    InvincibleEffect = 0x83,    // RecvOp::InvincibleEffect (commonfiles/opcodes.h:139): CSceneStateGame::OnInvincibleEffect @0x1417316d0
+    OneTimeEffect = 0xF1,       // RecvOp::OneTimeEffect (commonfiles/opcodes.h:244): CSceneStateGame::OnOneTimeEffect @0x14173a420
+    TimeScale = 0xF3,           // RecvOp::TimeScale (commonfiles/opcodes.h:246): CSceneStateGame::OnTimeScale @0x14173a5e0
     Trade = 0x82,           // RecvOp Trade (commonfiles/opcodes.h): CSceneStateGame -> CTradeManagerEx::OnTrade
     GuideRecord = 0x89,     // RecvOp GuideRecord (commonfiles/opcodes.h): CGuideManager::ReceiveStates
     DynamicChannel = 0xA7,  // RecvOp DynamicChannel (commonfiles/opcodes.h): CNetworkService::OnDynamicChannel @0x14153c4b0 (networkservice.cpp:977)
@@ -174,6 +177,8 @@ public enum Outbound : ushort {
     RequestServerList = 0x14,
     State = 0x80,
     Skill = 0x20,               // SendOp::Skill (commonfiles/opcodes.h:337): the own skill sends, a sub-mode byte first
+    StateSkill = 0x21,          // SendOp::StateSkill (commonfiles/opcodes.h:338): StateSkill::UseStateSkill @0x1417eb3a0
+    RequestAdditionalEffect = 0x5C, // SendOp::RequestAdditionalEffect (commonfiles/opcodes.h:397): UIAdditionalControlDialog::vfunc_28
     GlobalFactor = 0x82,
     ServerEnter = 0xB0,
     RequestSkillBookTree = 0xA2,
