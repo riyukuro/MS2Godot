@@ -52,7 +52,7 @@ public partial class Player : CharacterBody3D
     /// State::vfunc_15 (@0x1417b8150, state.cpp:684): whether the current movement state allows weapons to remain in
     /// the hand nodes during battle stance (StateIdle::vfunc_15 @0x1417cd740, stateidle.cpp:210: not in water idle;
     /// StateWalk::vfunc_15 @0x141800a90, statewalk.cpp:376: running only, slow walk returns 0; StateJump @0x1417d6ac0,
-    /// StateFall @0x1417c7aa0, StateLand @0x1417da780: 1; swim, ladder, rope, climb, dash, ride: 0). The table is WeaponStance.StateHoldsWeapons, shared
+    /// StateFall @0x1417c7aa0, StateLand @0x1417da780: 1; hit, spawn, revival, swim dash, climb, glide, pvp win/lose: 1; swim, ladder, rope, dash, ride: 0). The table is WeaponStance.StateHoldsWeapons, shared
     /// with the remote characters; its STILL-OPEN lists the client states that also answer 1 and are not modelled.
     /// </summary>
     public bool StateAllowsWeapons =>

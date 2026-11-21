@@ -202,10 +202,10 @@ public class WeaponStanceTests
         AssertVec(stance.Placements()[1].Translation, 0, 0, 0, "shield in hand T");
         AssertVec(stance.Placements()[1].Rotation, 0, 0, 0, "shield in hand R");
 
-        // 2. State gating: slow-walk, ladder, climb, water idle or riding returns 0 from State::vfunc_15 -> sheathes weapons while keeping InBattle = true
+        // 2. State gating: slow-walk, ladder, water idle or riding answers 0 in the state weapon-hold slot -> sheathes weapons while keeping InBattle = true
         Assert.That(stance.SetState(WeaponStance.StateHoldsWeapons(WeaponStance.StateWalk, 0x18, running: false)), Is.True);
         Assert.That(stance.InBattle, Is.True, "battle stance emotion stays on during slow-walk");
-        Assert.That(stance.WeaponsHeld, Is.False, "m_nD80 clears during slow-walk");
+        Assert.That(stance.WeaponsHeld, Is.False, "the slow-walk gait clears the held flag");
         Assert.That(stance.ActionPrefix, Is.EqualTo(""));
         Assert.That(stance.Placements().Select(p => p.TargetNode), Is.EqualTo(new[] { "Weapon_Side_L_Point", "Weapon_Back_B_Point" }));
         AssertVec(stance.Placements()[1].Translation, -2, 10, 0, "shield back on back T");
@@ -273,7 +273,7 @@ public class WeaponStanceTests
     public void StateGateIsOneTableForEveryCharacter()
     {
         // State::vfunc_15 by (state id, sub state): idle (1) except sub 6 and 7; walk (2) only running and not sub 0x19;
-        // land, fall, jump (4, 5, 6) always; swim 27, ladder 8, rope 9, climb 29, dash 20 and unknown ids never
+        // land, fall, jump (4, 5, 6) always; hit, spawn, revival, swim dash, climb, glide and pvp win/lose (0xd 0x11 0x18 0x1c 0x1d 0x1e 0x28) always (StateMoveSkill and the constant-1 states); swim 27, ladder 8, rope 9, dash 20 and unknown ids never
         Assert.That(WeaponStance.StateHoldsWeapons(1, 1), Is.True);
         Assert.That(WeaponStance.StateHoldsWeapons(1, 7), Is.False, "water idle");
         Assert.That(WeaponStance.StateHoldsWeapons(1, 6), Is.False, "idle leave timer");
@@ -281,7 +281,8 @@ public class WeaponStanceTests
         Assert.That(WeaponStance.StateHoldsWeapons(2, 0x18, running: false), Is.False, "slow walk");
         Assert.That(WeaponStance.StateHoldsWeapons(2, 0x19, running: true), Is.False);
         foreach (int id in new[] { 4, 5, 6 }) Assert.That(WeaponStance.StateHoldsWeapons(id, 0), Is.True, "state " + id);
-        foreach (int id in new[] { 8, 9, 20, 27, 29, 0, 99 }) Assert.That(WeaponStance.StateHoldsWeapons(id, 0), Is.False, "state " + id);
+        foreach (int id in new[] { 0xd, 0x11, 0x18, 0x1c, 0x1d, 0x1e, 0x28 }) Assert.That(WeaponStance.StateHoldsWeapons(id, 0), Is.True, "state " + id);
+        foreach (int id in new[] { 8, 9, 20, 27, 0, 99 }) Assert.That(WeaponStance.StateHoldsWeapons(id, 0), Is.False, "state " + id);
     }
 
     [Test]

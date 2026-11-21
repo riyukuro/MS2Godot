@@ -116,7 +116,9 @@ public sealed class WeaponStance
     }
 
     /// <summary>The wire ids of the states State::vfunc_15 answers 1 for among those a record carries (gostate.h): idle.</summary>
-    public const int StateIdle = 1, StateWalk = 2, StateLand = 4, StateFall = 5, StateJump = 6;
+    public const int StateIdle = 1, StateWalk = 2, StateLand = 4, StateFall = 5, StateJump = 6,
+        StateHit = 0xd, StateSpawn = 0x11, StateRevival = 0x18, StateSwimDash = 0x1c, StateClimb = 0x1d, StateGlide = 0x1e,
+        StatePvPWinLose = 0x28;
 
     /// <summary>
     /// State::vfunc_15 (@0x1417b8150, client/ms2/state.cpp:684, default 0) for the movement states a user sync record
@@ -127,11 +129,13 @@ public sealed class WeaponStance
     /// PC::vfunc_115) or sub state 0x19, else 1; <paramref name="running"/> is m_n48;</item>
     /// <item>StateJump (@0x1417d6ac0, statejump.cpp:413), StateFall (@0x1417c7aa0, statefall.cpp:225), StateLand
     /// (@0x1417da780, stateland.cpp:190): 1;</item>
-    /// <item>swim, ladder, rope, climb, dash: the default State::vfunc_15, 0.</item>
+    /// <item>StateHit 0xd (statehit.cpp:346), StateSpawn 0x11 (statespawn.cpp:142), StateRevival 0x18 (statedead.cpp:347),
+    /// StatePvPWinLose 0x28 (statepvpwinlose.cpp:73), and the states derived from StateMoveSkill (@0x1417bef20,
+    /// state.cpp:1611-1616, returns 1): StateSwimDash 0x1c, StateClimb 0x1d, StateGlide 0x1e: 1;</item>
+    /// <item>swim, ladder, rope, dash: the default State::vfunc_15, 0.</item>
     /// </list>
-    /// STILL-OPEN: the other states answer 1 too and are not modelled here: StateHit (statehit.cpp:346), StateSpawn
-    /// (statespawn.cpp:142), StateMoveSkill (state.cpp:1612), StatePvPWinLose (statepvpwinlose.cpp:73), StateDeadNPC and
-    /// StateRevival (statedead.cpp:341, :347), StateSkillMagicControl (stateskillmagiccontrol.cpp:67); StateHold answers 1
+    /// STILL-OPEN: the other states answer 1 too and are not modelled here: StateDeadNPC (statedead.cpp:341),
+    /// StateSkillMagicControl (stateskillmagiccontrol.cpp:67); StateHold answers 1
     /// unless riding (stateholddata.cpp:383), StateWaitingSelect only for sub state 0x55 (statewaitingselect.cpp:227), and
     /// StateSkill answers its motion's m_nHoldWeapon (1 without a motion, 0 without a record; stateskill.cpp:1095-1104,
     /// see <see cref="OnSkill"/>). Their wire ids and the skill motion's flag are not read from a record here, so a
@@ -142,6 +146,7 @@ public sealed class WeaponStance
         StateIdle => subState != 7 && subState != 6,
         StateWalk => running && subState != 0x19,
         StateLand or StateFall or StateJump => true,
+        StateHit or StateSpawn or StateRevival or StateSwimDash or StateClimb or StateGlide or StatePvPWinLose => true,
         _ => false,
     };
 

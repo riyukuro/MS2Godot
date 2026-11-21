@@ -203,8 +203,8 @@ offset. In battle stance (`--battle`, the offline attack key `X`, or the server'
 byte), weapons re-parent instantaneously to their hand points (`attachnode`, or `Weapon_Hand_R_Point` /
 `Weapon_Hand_L_Point` when `table/weaponaction.xml` `allowWeapon` permits the off-hand and the asset has no world-space
 dummy) with the dummy transform reset for the hand bone, and the stand/movement sequences take the weapon action's
-prefix (`Sword_Attack_Idle_A`, `LargeSword_Attack_Idle_A`, etc.). States whose `State::vfunc_15()` returns 0 (slow walk,
-water idle, swim, ladder, rope, climb, dash, mount) return the weapons to their sheathed points.
+prefix (`Sword_Attack_Idle_A`, `LargeSword_Attack_Idle_A`, etc.). States whose weapon-hold answer (the state's slot 15) is 0 (slow walk,
+water idle, swim, ladder, rope, dash, mount) return the weapons to their sheathed points.
 
 Not done: face decals (FD). The KR itemmodel table has no `worldmode` or `worldlerp` dummy, so the world-space weapon lerp has no data to act on.
 
