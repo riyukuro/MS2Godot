@@ -206,6 +206,12 @@ public sealed class LiftableObjects
         public Vec3 Position { get; internal set; }
         /// <summary>m_nA8: property 0x2e687f77 ("ItemID") for a field lift (:198-201).</summary>
         public int ItemId { get; internal set; }
+        /// <summary>The action key's highlight (SetHighlight @0x141447d50, liftableobject.cpp:348): set only on a lift with an
+        /// entity. STILL-OPEN: the entity highlight draw (SetEntityHighlight).</summary>
+        public bool Highlighted { get; internal set; }
+
+        /// <summary>CanLift (@0x141447340, liftableobject.cpp:155-164): enabled, a kind above 0, state 0.</summary>
+        public bool CanLift => Enabled && Kind > 0 && State == 0;
 
         internal void SetState(int state)
         {
@@ -219,6 +225,11 @@ public sealed class LiftableObjects
     readonly Dictionary<string, Lift> lifts = new(StringComparer.Ordinal);
     readonly HashSet<string> listed = new(StringComparer.Ordinal);
     readonly List<string> gone = new();
+    // GetLiftableObjects (worldservice_1.cpp:873) walks m_510, a CRBMap keyed by the name: ordinal name order. Rebuilt only
+    // after a lift is added or removed, so the poll allocates nothing.
+    readonly List<Lift> ordered = new();
+    bool orderStale;
+    static readonly Comparer<Lift> ByName = Comparer<Lift>.Create((a, b) => string.CompareOrdinal(a.Name, b.Name));
 
     /// <summary>A field lift's entity was removed: its name.</summary>
     public Action<string> Removed;
@@ -240,10 +251,80 @@ public sealed class LiftableObjects
         l.SetState(0);
         l.HasEntity = true;
         lifts[l.Name] = l;
+        orderStale = true;
         return l;
     }
 
-    public void Clear() => lifts.Clear();
+    public void Clear() { lifts.Clear(); orderStale = true; }
+
+    /// <summary>LiftCubeAction's m_str18: the name of the lift the last poll found, "" for none.</summary>
+    public string Polled { get; private set; } = "";
+
+    /// <summary>
+    /// LiftCubeAction::FUN_140957890 (@0x140957890, actionkeyobject.cpp:1318-1342): the first lift in name order that
+    /// CanLift and lies within its range (the 3D distance from <paramref name="at"/>, Vector3::Unitize) of the player's
+    /// point. The player's point is PCBase::FUN_1416767d0 (pcbase.cpp:3235): the ridee's position when riding.
+    /// </summary>
+    public Lift FindInReach(Vec3 at)
+    {
+        if (orderStale)
+        {
+            ordered.Clear();
+            foreach (var l in lifts.Values) ordered.Add(l);
+            ordered.Sort(ByName);
+            orderStale = false;
+        }
+        for (int i = 0; i < ordered.Count; i++)
+        {
+            var l = ordered[i];
+            if (!l.CanLift) continue;
+            // the client's float Vector3 (m_vC4 minus the NiPoint3 position)
+            float dx = (float)l.Position.X - (float)at.X, dy = (float)l.Position.Y - (float)at.Y, dz = (float)l.Position.Z - (float)at.Z;
+            float dist = MathF.Sqrt(dx * dx + dy * dy + dz * dz);
+            if (dist > l.Range) continue;
+            return l;
+        }
+        return null;
+    }
+
+    static void SetHighlight(Lift l, bool on)
+    {
+        if (!l.HasEntity) return;                            // liftableobject.cpp:350-351: no entity, nothing
+        l.Highlighted = on;
+    }
+
+    /// <summary>
+    /// LiftCubeAction::vfunc_1 (@0x1409572c0, actionkeyobject.cpp:1279-1294), the action key's poll: the lift the last poll
+    /// found loses its highlight when another (or none) is found now, the found lift gets it, and its name is kept. True
+    /// when a lift is in reach. 0 B per poll.
+    /// STILL-OPEN: the check that refuses while a lift is held (MyPC::FUN_141523c00, m_sp1608): its setter
+    /// (MyPC::FUN_14152a310, mypc.cpp:3196) has no caller in the client source, so it is taken as never set.
+    /// </summary>
+    public bool Poll(Vec3 at)
+    {
+        var old = Find(Polled);
+        var pick = FindInReach(at);
+        if (old != null && old != pick) SetHighlight(old, false);
+        if (pick != null) SetHighlight(pick, true);
+        Polled = pick != null ? pick.Name : "";
+        return pick != null;
+    }
+
+    /// <summary>
+    /// LiftCubeAction::vfunc_2 (@0x140957550, actionkeyobject.cpp:1297-1315), the action key on the polled lift: nothing
+    /// when the polled name finds no lift; when riding the client first sends the ride off (MyPC::SendRequestRideMode1,
+    /// mypc.cpp:3566) and goes on only when that is sent. Otherwise the lift loses its highlight and Liftable (0x3C) is sent.
+    /// STILL-OPEN: the ride off is not ported, so while riding nothing is sent and <paramref name="rideOffOpen"/> is true.
+    /// </summary>
+    public LiftableRequest Use(bool riding, out bool rideOffOpen)
+    {
+        rideOffOpen = false;
+        var l = Find(Polled);
+        if (l == null) return null;
+        if (riding) { rideOffOpen = true; return null; }
+        SetHighlight(l, false);
+        return new LiftableRequest(l.Name);
+    }
 
     /// <summary>The field load's lifts (worldservice_1.cpp:6771-6786): each MS2Liftable entity with a DataFileID becomes
     /// Init(entity, false, kind) (liftableobject.cpp:167-210) and SetAt replaces a lift of its name; then the held updates
@@ -282,6 +363,7 @@ public sealed class LiftableObjects
         foreach (var (name, l) in lifts)
             if (l.HasEntity) gone.Add(name);
         foreach (var name in gone) lifts.Remove(name);
+        orderStale = true;
     }
 
     public void Apply(LiftableUpdate u)
@@ -328,6 +410,7 @@ public sealed class LiftableObjects
                 };
                 l.SetState(0);
                 lifts[e.Name] = l;
+                orderStale = true;
                 break;
             }
             case LiftableUpdate.ModeRemove:
@@ -340,6 +423,7 @@ public sealed class LiftableObjects
     {
         if (name == null || !lifts.TryGetValue(name, out var l) || !l.HasEntity) return;
         lifts.Remove(name);
+        orderStale = true;
         Removed?.Invoke(name);
     }
 }

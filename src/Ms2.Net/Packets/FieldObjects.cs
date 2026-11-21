@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Maple2.PacketLib.Tools;
+using Ms2.Net.Wire;
 
 namespace Ms2.Net.Packets;
 
@@ -98,5 +99,17 @@ public sealed record LiftableUpdate(byte Mode, IReadOnlyList<LiftableEntry> Entr
         }
         // no ExpectEnd: OnLiftable never checks the end, trailing bytes are ignored
         return new LiftableUpdate(mode, list, name);
+    }
+}
+
+/// <summary>
+/// Outbound Liftable (SendOp 0x3C), LiftCubeAction::vfunc_2 (@0x140957550, actionkeyobject.cpp:1297-1315), the action key on the
+/// polled liftable cube: u8 1, str the lift's name.
+/// </summary>
+public sealed record LiftableRequest(string Name) : IOutPacket {
+    public Outbound Op => Outbound.Liftable;
+    public void Write(ByteWriter w) {
+        w.WriteByte(1);
+        w.WriteString(Name ?? "");
     }
 }

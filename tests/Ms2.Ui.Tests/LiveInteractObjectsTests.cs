@@ -846,12 +846,13 @@ public class ActionKeyPollTests
     public void FirstMatchingKeyWinsInClientKeyOrder()
     {
         // Unk_ActionKeyManager::Update (actionkeyobject.cpp:549-603): ascending key, interact 0x12 < portal 0x13 <
-        // talk 0x14 < billboard 0x18
-        Assert.That(ActionKeyPoll.Pick(true, true, true, true), Is.EqualTo(ActionKeyTarget.Interact));
-        Assert.That(ActionKeyPoll.Pick(false, true, true, true), Is.EqualTo(ActionKeyTarget.Portal));
-        Assert.That(ActionKeyPoll.Pick(false, false, true, true), Is.EqualTo(ActionKeyTarget.Talk));
-        Assert.That(ActionKeyPoll.Pick(false, false, false, true), Is.EqualTo(ActionKeyTarget.BillBoard));
-        Assert.That(ActionKeyPoll.Pick(false, false, false, false), Is.EqualTo(ActionKeyTarget.None));
+        // talk 0x14 < lift 0x15 < billboard 0x18
+        Assert.That(ActionKeyPoll.Pick(true, true, true, true, true), Is.EqualTo(ActionKeyTarget.Interact));
+        Assert.That(ActionKeyPoll.Pick(false, true, true, true, true), Is.EqualTo(ActionKeyTarget.Portal));
+        Assert.That(ActionKeyPoll.Pick(false, false, true, true, true), Is.EqualTo(ActionKeyTarget.Talk));
+        Assert.That(ActionKeyPoll.Pick(false, false, false, true, true), Is.EqualTo(ActionKeyTarget.Lift));
+        Assert.That(ActionKeyPoll.Pick(false, false, false, false, true), Is.EqualTo(ActionKeyTarget.BillBoard));
+        Assert.That(ActionKeyPoll.Pick(false, false, false, false, false), Is.EqualTo(ActionKeyTarget.None));
     }
 
     [Test]

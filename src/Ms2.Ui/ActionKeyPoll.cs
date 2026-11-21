@@ -11,6 +11,8 @@ public enum ActionKeyTarget
     Portal,
     /// <summary>TalkAction (0x14, actionkeyobject.cpp:511).</summary>
     Talk,
+    /// <summary>LiftCubeAction (0x15, actionkeyobject.cpp:510, vfunc_5 @0x140957720).</summary>
+    Lift,
     /// <summary>BillBoardInteractAction (0x18).</summary>
     BillBoard,
 }
@@ -41,12 +43,13 @@ public struct ActionKeyPoll
         return true;
     }
 
-    /// <summary>The first action that applies, by key: interact (4 / 0x11 / 0x12), portal (0x13), talk (0x14), billboard
-    /// (0x18).</summary>
-    public static ActionKeyTarget Pick(bool interact, bool portal, bool talk, bool billBoard) =>
+    /// <summary>The first action that applies, by key: interact (4 / 0x11 / 0x12), portal (0x13), talk (0x14), lift (0x15),
+    /// billboard (0x18).</summary>
+    public static ActionKeyTarget Pick(bool interact, bool portal, bool talk, bool lift, bool billBoard) =>
         interact ? ActionKeyTarget.Interact
         : portal ? ActionKeyTarget.Portal
         : talk ? ActionKeyTarget.Talk
+        : lift ? ActionKeyTarget.Lift
         : billBoard ? ActionKeyTarget.BillBoard
         : ActionKeyTarget.None;
 

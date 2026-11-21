@@ -125,4 +125,15 @@ public class FieldObjectPacketTests
         Assert.That(u.Entries, Is.Empty);
         Assert.That(u.Name, Is.Null);
     }
+
+    [Test]
+    public void LiftableIsSentAsMode1WithTheLiftsName()
+    {
+        // commonfiles/opcodes.h:365 SendOp::Liftable = 0x003C; LiftCubeAction::vfunc_2 writes Encode1(1) then WriteString (8-bit CString, commonfiles/packet.h:68)
+        var p = new LiftableRequest("ab");
+        Assert.That((p.Op, (ushort)Outbound.Liftable), Is.EqualTo((Outbound.Liftable, (ushort)0x3C)));
+        var w = new ByteWriter();
+        p.Write(w);
+        Assert.That(w.Buffer.AsSpan(0, w.Length).ToArray(), Is.EqualTo(new byte[] { 1, 2, 0, (byte)'a', (byte)'b' }));
+    }
 }

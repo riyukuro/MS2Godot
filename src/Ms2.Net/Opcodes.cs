@@ -139,6 +139,7 @@ public enum Outbound : ushort {
     ItemEquip = 0x16,
     Breakable = 0x27,           // SendOp::Breakable (commonfiles/opcodes.h:344): WorldService::FUN_141bc3560, WriteBreakableInfo
     Tombstone = 0x2A,           // SendOp::Tombstone (commonfiles/opcodes.h:347): WorldService::FUN_141bc3560
+    Liftable = 0x3C,            // SendOp::Liftable (commonfiles/opcodes.h:365): LiftCubeAction::vfunc_2, the action key on a liftable cube
     StateFallDamage = 0x34,     // SendOp::StateFallDamage (commonfiles/opcodes.h:357): PCBase::SendFallDamage
     Revival = 0x1F,             // SendOp::Revival (commonfiles/opcodes.h:336): the revive dialog's buttons
     RequestItemInventory = 0x17,

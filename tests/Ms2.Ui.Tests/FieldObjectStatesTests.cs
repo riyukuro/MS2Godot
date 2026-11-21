@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Ms2.Formats.Model;
 using Ms2.Formats.World;
 using Ms2.Net.Packets;
 using NUnit.Framework;
@@ -247,5 +248,106 @@ public class FieldObjectStatesTests
         l.Apply(new LiftableUpdate(LiftableUpdate.ModeRemove, new LiftableEntry[0], "x"));
         Assert.That(l.Find("f"), Is.Null);
         Assert.That(l.Find("x"), Is.Not.Null);
+    }
+
+    static LiftableObjects.Lift Liftable(LiftableObjects l, string name, double x, float range = 150f)
+    {
+        var lift = l.AddFieldLift(name, 1);
+        lift.Position = new Vec3(x, 0, 0);
+        lift.Range = range;
+        lift.Enabled = true;
+        return lift;
+    }
+
+    [Test]
+    public void CanLiftNeedsEnabledAKindAndStateZero()
+    {
+        // CanLift (liftableobject.cpp:155-164): m_bC0, m_nKind > 0, m_nState == 0
+        var l = new LiftableObjects();
+        var a = Liftable(l, "a", 0);
+        Assert.That(a.CanLift, Is.True);
+        a.Enabled = false;
+        Assert.That(a.CanLift, Is.False, "disabled (the field load leaves m_bC0 at 0)");
+        a.Enabled = true; a.Kind = 0;
+        Assert.That(a.CanLift, Is.False, "kind 0");
+        a.Kind = 1; a.SetState(1);
+        Assert.That(a.CanLift, Is.False, "state 1");
+        Assert.That(l.Poll(new Vec3(0, 0, 0)), Is.False, "a lift that can't be lifted is not found");
+    }
+
+    [Test]
+    public void ThePollFindsTheFirstLiftByNameWithinItsRange()
+    {
+        // FUN_140957890: the lifts in m_510's name order, the first that CanLift and whose 3D distance <= its range
+        var l = new LiftableObjects();
+        Liftable(l, "c", 100);
+        Liftable(l, "b", 100, range: 50);
+        Liftable(l, "a", 0, range: 10);
+        Assert.That(l.Poll(new Vec3(100, 0, 0)), Is.True);
+        Assert.That(l.Polled, Is.EqualTo("b"), "a is out of its range of 10; b comes before c");
+        Assert.That(l.Poll(new Vec3(100, 50, 0)), Is.True);
+        Assert.That(l.Polled, Is.EqualTo("b"), "exactly at the range is in reach");
+        Assert.That(l.Poll(new Vec3(100, 30, 40.5)), Is.True);
+        Assert.That(l.Polled, Is.EqualTo("c"), "the distance is 3D: b is past 50, c within 150");
+        Assert.That(l.Poll(new Vec3(1000, 0, 0)), Is.False);
+        Assert.That(l.Polled, Is.EqualTo(""));
+        Assert.That(l.Poll(new Vec3(0, 0, 0)), Is.True);
+        Assert.That(l.Polled, Is.EqualTo("a"));
+        l.Apply(new LiftableUpdate(LiftableUpdate.ModeAdd, new[] { new LiftableEntry("0", true, 1, 0) }));
+        l.Find("0").Enabled = true;
+        Assert.That(l.Poll(new Vec3(0, 0, 0)), Is.True);
+        Assert.That(l.Polled, Is.EqualTo("0"), "a lift added later takes its place in the name order");
+    }
+
+    [Test]
+    public void ThePollMovesTheHighlightAndOnlyOnLiftsWithAnEntity()
+    {
+        // vfunc_1 (actionkeyobject.cpp:1279-1294): the old lift loses the highlight when another or none is found;
+        // SetHighlight does nothing without an entity (liftableobject.cpp:350-351)
+        var l = new LiftableObjects();
+        var a = Liftable(l, "a", 0);
+        var b = Liftable(l, "b", 500);
+        l.Poll(new Vec3(0, 0, 0));
+        Assert.That((a.Highlighted, b.Highlighted), Is.EqualTo((true, false)));
+        l.Poll(new Vec3(0, 0, 0));
+        Assert.That(a.Highlighted, Is.True, "the same lift keeps it");
+        l.Poll(new Vec3(500, 0, 0));
+        Assert.That((a.Highlighted, b.Highlighted), Is.EqualTo((false, true)));
+        l.Poll(new Vec3(5000, 0, 0));
+        Assert.That(b.Highlighted, Is.False, "none in reach: the old one loses it");
+        l.Apply(new LiftableUpdate(LiftableUpdate.ModeAdd, new[] { new LiftableEntry("n", true, 1, 0) }));
+        var n = l.Find("n"); n.Enabled = true; n.Position = new Vec3(5000, 0, 0);
+        Assert.That(l.Poll(new Vec3(5000, 0, 0)), Is.True);
+        Assert.That(n.Highlighted, Is.False, "an added lift has no entity");
+    }
+
+    [Test]
+    public void TheKeySendsLiftableForThePolledLiftAndNothingWhileRidingOrWithoutOne()
+    {
+        // vfunc_2 (actionkeyobject.cpp:1297-1315): FindLiftByName(m_str18); riding first needs the ride off (not ported)
+        var l = new LiftableObjects();
+        var a = Liftable(l, "a", 0);
+        Assert.That(l.Use(false, out bool open), Is.Null, "nothing polled");
+        Assert.That(open, Is.False);
+        l.Poll(new Vec3(0, 0, 0));
+        Assert.That(l.Use(true, out open), Is.Null, "riding: the ride off is STILL-OPEN, nothing is sent");
+        Assert.That((open, a.Highlighted), Is.EqualTo((true, true)));
+        var req = l.Use(false, out open);
+        Assert.That(req, Is.EqualTo(new LiftableRequest("a")));
+        Assert.That((open, a.Highlighted), Is.EqualTo((false, false)), "SetHighlight(0) before the send");
+        l.Apply(new LiftableUpdate(LiftableUpdate.ModeRemove, new LiftableEntry[0], "a"));
+        Assert.That(l.Use(false, out open), Is.Null, "the polled lift is gone");
+    }
+
+    [Test]
+    public void ThePollAllocatesNothing()
+    {
+        var l = new LiftableObjects();
+        for (int i = 0; i < 20; i++) Liftable(l, "l" + i, i * 400);
+        var at = new Vec3(4000, 0, 0);
+        l.Poll(at); l.Poll(new Vec3(0, 0, 0));
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 100; i++) { l.Poll(at); l.Poll(new Vec3(0, 0, 0)); }
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0));
     }
 }

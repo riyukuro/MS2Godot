@@ -578,7 +578,8 @@ public partial class FieldContents : Node3D
             // live: at most every 100 ms the action key's poll runs its actions by ascending key and the first that applies
             // is the current one (Unk_ActionKeyManager::Update, a CRBMap): gathering (4), the interact npc (0x11) and
             // interact (0x12) objects, the server-listed portal the player stands in (0x13, PortalAction vfunc_1), the
-            // billboard (0x18). TalkAction (0x14) is polled at the press: its npc search allocates. The key runs only the
+            // liftable cube in reach (0x15, LiftCubeAction vfunc_1, from the ridee when riding), the billboard (0x18).
+            // TalkAction (0x14) is polled at the press: its npc search allocates. The key runs only the
             // current action (ActivateCurrentAction), so a refused interact does not reach the talk. Active
             // StateInteraction casts tick every frame (0 B/frame).
             // STILL-OPEN: a billboard keeps its highlight next to a talkable npc (the talk takes the key at the press).
@@ -587,8 +588,9 @@ public partial class FieldContents : Node3D
             {
                 bool onInteract = LiveInteractPoll(playerMs2);
                 bool onPortal = !onInteract && LivePortalPoll();
-                bool onBoard = !onInteract && !onPortal && LiveInteractBillBoardPoll(playerMs2);
-                actionKeys.Current = Ms2.Ui.ActionKeyPoll.Pick(onInteract, onPortal, false, onBoard);
+                bool onLift = !onInteract && !onPortal && LiveLiftPoll(playerMs2);
+                bool onBoard = !onInteract && !onPortal && !onLift && LiveInteractBillBoardPoll(playerMs2);
+                actionKeys.Current = Ms2.Ui.ActionKeyPoll.Pick(onInteract, onPortal, false, onLift, onBoard);
             }
             LiveInteractTick(playerMs2, player.State != Player.MoveState.Idle);
             if (!pressed) return;
@@ -597,12 +599,14 @@ public partial class FieldContents : Node3D
             bool held = Ms2Godot.Net.LiveSession.Instance is { } hs && hs.HeldItem.Held;
             var target = actionKeys.OnPress(heldItem: held);
             if (held) return;
-            if (target == Ms2.Ui.ActionKeyTarget.BillBoard && talk?.FindTalkable() != null) target = Ms2.Ui.ActionKeyTarget.Talk;
+            if (target is Ms2.Ui.ActionKeyTarget.Lift or Ms2.Ui.ActionKeyTarget.BillBoard && talk?.FindTalkable() != null)
+                target = Ms2.Ui.ActionKeyTarget.Talk;                  // talk 0x14 comes before lift 0x15 and billboard 0x18
             switch (target)
             {
                 case Ms2.Ui.ActionKeyTarget.Interact:
                 case Ms2.Ui.ActionKeyTarget.BillBoard: LiveInteractUse(playerMs2); break;
                 case Ms2.Ui.ActionKeyTarget.Portal: LivePortalUse(); break;
+                case Ms2.Ui.ActionKeyTarget.Lift: if (Ms2Godot.Net.LiveSession.Instance is { } lls) lls.UseLift(); break;
                 default: talk?.ActionKey(); break;
             }
             return;
@@ -634,6 +638,15 @@ public partial class FieldContents : Node3D
         var ridee = player.Mount?.Visual;
         var npcAt = ridee != null && IsInstanceValid(ridee) ? FieldPortals.ToMs2(ridee.GlobalPosition) : at;
         return ls.PollInteract(at, npcAt);
+    }
+
+    /// <summary>Live: the lift poll from the player's point, or the ridee's when riding (PCBase::FUN_1416767d0,
+    /// pcbase.cpp:3235).</summary>
+    public bool LiveLiftPoll(Ms2.Formats.Model.Vec3 at)
+    {
+        if (offline || player == null || moving || Ms2Godot.Net.LiveSession.Instance is not { } ls) return false;
+        var ridee = player.Mount?.Visual;
+        return ls.PollLift(ridee != null && IsInstanceValid(ridee) ? FieldPortals.ToMs2(ridee.GlobalPosition) : at);
     }
 
     public bool LiveInteractBillBoardPoll(Ms2.Formats.Model.Vec3 at) =>

@@ -135,6 +135,21 @@ public partial class LiveSession
     /// <summary>The billboard action's poll (key 0x18, after the portal; 0 B/frame).</summary>
     public bool PollInteractBillBoard(Vec3 at) => InteractObjects != null && InteractObjects.PollBillBoard(at);
 
+    /// <summary>The lift action's poll (LiftCubeAction key 0x15, after the portal; 0 B per poll), from the player's point or the
+    /// ridee's when riding (PCBase::FUN_1416767d0, pcbase.cpp:3235).</summary>
+    public bool PollLift(Vec3 at) => Liftables.Poll(at);
+
+    /// <summary>The action key on the polled lift (LiftCubeAction::vfunc_2): Liftable (0x3C), or nothing.</summary>
+    public void UseLift()
+    {
+        bool riding = player != null && IsInstanceValid(player) && player.Mount != null;
+        var req = Liftables.Use(riding, out bool rideOffOpen);
+        if (rideOffOpen) GD.Print("live: STILL-OPEN the ride off before a lift (MyPC::SendRequestRideMode1); nothing sent");
+        if (req == null) return;
+        GD.Print($"live: Liftable lift {req.Name}");
+        Send(req);
+    }
+
     /// <summary>Per-frame tick for gathering respawns and active StateInteraction cast (0 B/frame).</summary>
     public void TickInteract(Vec3 at, bool playerMoved)
     {
