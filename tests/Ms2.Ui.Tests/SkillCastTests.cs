@@ -99,7 +99,7 @@ public class SkillCastTests
         var r = SkillCast.Request(w, c, Req(100), _ => 100).Record;
         SkillCast.Aim(r, new Vector3(40, 50, 60), 90);   // moved and turned after the press (PCBase::vfunc_100 at the end step)
         var p = SkillCast.Send(r, 6000, 0, holdAttackFeature: false);
-        Assert.That(p.Position, Is.EqualTo(new Vector3(40, 50, 60)), "the position now (m_k50)");
+        Assert.That(p.Position, Is.EqualTo(new Vector3(40, 50, 60)), "the position now");   // m_k50
         Assert.That(p.Direction.X, Is.EqualTo(1f).Within(1e-6f), "facing rotZ 90");
         Assert.That(p.Direction.Y, Is.EqualTo(0f).Within(1e-6f));
         Assert.That(p.Rotation, Is.EqualTo(new Vector3(0, 0, 90)));
