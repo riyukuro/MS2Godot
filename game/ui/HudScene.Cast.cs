@@ -83,7 +83,7 @@ public partial class HudScene
         if (id == 0) id = keys.GetSkillIdByKey(dik, castKeyWorld.HasPc, CastAttackSkill, null, slots);
         if (id == 0) return 0;
         // mypc.cpp:1682-1685: the compact pick comes first, and with one the key pick is not asked (the request's key is 0)
-        if (CompactPick(false) is var cp && cp != 0) { r = RequestOwn(CompactWorld(), cp, compactHeld, 0); return 2; }
+        if (CompactPick(false, false) is var cp && cp != 0) { r = RequestOwn(CompactWorld(), cp, compactHeld, 0); return 2; }
         r = RequestOwn(castKeyWorld, (uint)id, castKeyHeld, dik);
         return 2;
     }
@@ -703,7 +703,7 @@ public partial class HudScene
         if (ownLoop.HoldCheckRuns(ownCast.Skill))
         {
             // :651-660 a key of the skill down, :662-667 else the compact pick with bAny (FUN_1417674a0(1)) is the origin id
-            bool held = OwnSkillKeyHeld((int)ownCast.Skill.OriginId) || CompactPick(true) == ownCast.Skill.OriginId, charging = ownCast.Skill.ChargingSkill;
+            bool held = OwnSkillKeyHeld((int)ownCast.Skill.OriginId) || CompactPick(true, true) == ownCast.Skill.OriginId, charging = ownCast.Skill.ChargingSkill;
             bool castable = held && !charging && CastGate.CanCast(OwnHoldWorld(), ownCast.Skill.Id);
             ownLoop.Hold(held, ownLoopStartKey >= 0 && ownLoopEndKey >= 0, charging, castable);
         }

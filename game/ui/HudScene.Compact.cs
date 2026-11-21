@@ -52,13 +52,14 @@ public partial class HudScene
     }
 
     /// <summary>FUN_1417674a0(<paramref name="any"/>) (skillslot.cpp:2446-2508): the compact tab's skill to cast now, 0 for none.
+    /// <paramref name="castAllowed"/> is m_nCastAllowed (1 inside the own skill state's poll and hold check, 0 outside).
     /// The refusal notice (FUN_141769440) is logged (STILL-OPEN: its text). 0 B.</summary>
-    uint CompactPick(bool any)
+    uint CompactPick(bool any, bool castAllowed)
     {
         if (compact.Tab == null || hudModel == null) return 0;
         compactActionDown ??= CompactActionDown;
         compactNotice ??= why => GD.Print($"compact: the held tab's skill refused, reason {why}");
-        return compact.Pick(any, CompactOn, compactActionDown, CompactWorld(), (uint)Time.GetTicksMsec(), compactNotice);
+        return compact.Pick(any, castAllowed, CompactOn, compactActionDown, CompactWorld(), (uint)Time.GetTicksMsec(), compactNotice);
     }
 
     /// <summary>
@@ -75,27 +76,29 @@ public partial class HudScene
     {
         if (hudModel == null) return;
         var live = Net.LiveSession.Instance;
-        if (live != null && (object)live.CompactConfigs != compactFed) FeedCompactConfigs(live.CompactConfigs);
+        if (live != null && (object)live.CompactConfigs != compactFed) FeedCompactConfigs(live.CompactConfigs, false);   // mode 2
         if (!CompactOn || compactFed == null || compactFed.Count == 0) return;
         compactActionDown ??= CompactActionDown;
         var w = CompactWorld();
         compact.Update(false, true, compactActionDown, w.Jobs?.JobGroupId ?? 0, w, hudModel.Tables.SkillCompactControl);
         if (OwnSkillStateRuns() || player == null) return;
         if (player.State is not (Player.MoveState.Idle or Player.MoveState.Walk or Player.MoveState.Jump or Player.MoveState.Fall)) return;
-        uint id = CompactPick(false);
+        uint id = CompactPick(false, false);
         if (id == 0 || id != compactRefused) compactRefused = 0;
         if (id == 0 || id == compactRefused) return;
         if (RequestOwn(w, id, compactHeld, 0) is { } r) RouteOwn(r);
         else compactRefused = id;
     }
 
-    /// <summary>SetCompactConfigs @0x141767d90 (skillslot.cpp:2551-2556): new tabs, then FUN_141766ec0 with force.</summary>
-    void FeedCompactConfigs(IReadOnlyList<SkillMacroTab> tabs)
+    /// <summary>New tabs: with <paramref name="force"/> SetCompactConfigs @0x141767d90 (skillslot.cpp:2551-2556, the window's
+    /// close: FUN_141766ec0 with force follows), without the SkillMacro mode 2 read (FUN_141767ae0, :2530-2547: only the
+    /// tabs change).</summary>
+    void FeedCompactConfigs(IReadOnlyList<SkillMacroTab> tabs, bool force)
     {
         compactFed = tabs;
         compactActionDown ??= CompactActionDown;
         var w = CompactWorld();
-        compact.SetConfigs(tabs, CompactOn, compactActionDown, w.Jobs?.JobGroupId ?? 0, w, hudModel.Tables.SkillCompactControl);
+        compact.SetConfigs(tabs, force, CompactOn, compactActionDown, w.Jobs?.JobGroupId ?? 0, w, hudModel.Tables.SkillCompactControl);
     }
 
     /// <summary>FUN_141767990 (skillslot.cpp:2512-2526) after a cast went: one chain entry of its origin id is used.</summary>
@@ -107,7 +110,7 @@ public partial class HudScene
     CastRecord CompactPress(in SkillFollow.Window window, out bool picked)
     {
         picked = false;
-        uint id = CompactPick(false);
+        uint id = CompactPick(false, true);
         if (id == 0) return null;
         picked = true;
         var w = CompactWorld();

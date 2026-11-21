@@ -57,12 +57,12 @@ public class CompactCastTests
     CompactCast Cast()
     {
         var c = new CompactCast();
-        c.SetConfigs(new[] { NoKey, TabA, TabB }, true, actionDown, 0, w, Table);
+        c.SetConfigs(new[] { NoKey, TabA, TabB }, true, true, actionDown, 0, w, Table);
         return c;
     }
 
     void Update(CompactCast c, int job = 0) => c.Update(false, true, actionDown, job, w, Table);
-    uint Pick(CompactCast c, bool any = false, uint now = 5000) => c.Pick(any, true, actionDown, w, now, notice);
+    uint Pick(CompactCast c, bool any = false, uint now = 5000, bool castAllowed = false) => c.Pick(any, castAllowed, true, actionDown, w, now, notice);
 
     [Test]
     public void TheTabWhoseKeyIsDownFillsTheListsFromTheJobsTicked()
@@ -157,7 +157,7 @@ public class CompactCastTests
         c.HotKeyCapture(false, 5000);
         Assert.That(Pick(c, now: 5999), Is.EqualTo(0u));
         Assert.That(Pick(c, now: 6000), Is.EqualTo(10u));
-        Assert.That(c.Pick(false, false, actionDown, w, 6000, notice), Is.EqualTo(0u), "feature 0x10 off");
+        Assert.That(c.Pick(false, false, false, actionDown, w, 6000, notice), Is.EqualTo(0u), "feature 0x10 off");
     }
 
     [Test]
@@ -167,8 +167,63 @@ public class CompactCastTests
         down.Add(ActionA);
         Update(c);
         c.Used(true, t.GetSkillData(11), 1);
-        c.SetConfigs(new[] { TabA }, true, actionDown, 0, w, Table);
+        c.SetConfigs(new[] { TabA }, true, true, actionDown, 0, w, Table);
         Assert.That(c.Chains, Is.EqualTo(new uint[] { 11, 11, 11 }), "emptied and refilled");
+    }
+
+    [Test]
+    public void SkillMacroMode2OnlyReplacesTheTabs()
+    {
+        // FUN_141767ae0 (skillslot.cpp:2530-2547): m_lstCompact only, no FUN_141766ec0(1)
+        var c = Cast();
+        down.Add(ActionA);
+        Update(c);
+        c.Used(true, t.GetSkillData(11), 1);
+        c.SetConfigs(new[] { TabA }, false, true, actionDown, 0, w, Table);
+        Assert.That(c.Chains, Is.EqualTo(new uint[] { 11, 11 }), "not emptied");
+        Assert.That(c.Tab, Is.SameAs(TabA));
+        down.Clear();
+        down.Add(ActionB);
+        Update(c);
+        Assert.That(c.Tab, Is.SameAs(TabA), "the next update reads the new tabs (B is gone)");
+    }
+
+    [Test]
+    public void InsideTheSkillStateACoolingChainSkillIsPicked()
+    {
+        // m_nCastAllowed 1 (StateSkill::vfunc_8 stateskill.cpp:639-697): a cooling skill without useCoolDownShowUI is not
+        // skipped (:2475-2483) and the cast check passes it (:3141-3143), so the chain order holds
+        var c = Cast();
+        down.Add(ActionA);
+        Update(c);
+        cooling.Add(10);
+        cooling.Add(11);
+        Assert.That(Pick(c, castAllowed: true), Is.EqualTo(11u), "the cooling chain skill, not skipped");
+        Assert.That(Pick(c), Is.EqualTo(0u), "outside the state it is skipped");
+        cooling.Remove(11);
+        cooling.Add(12);
+        down.Clear();
+        down.Add(ActionB);
+        Update(c);
+        Assert.That(Pick(c, castAllowed: true), Is.EqualTo(12u));
+        Assert.That(notices, Is.Empty);
+    }
+
+    [Test]
+    public void TheContinueHoldPicksTheCoolingSkillEachRound()
+    {
+        // stateskill.cpp:665: FUN_1417674a0(1) under m_nCastAllowed 1 each round; the skill cools after its first round
+        var c = Cast();
+        down.Add(ActionA);
+        Update(c);
+        cooling.Add(10);
+        for (int round = 0; round < 4; round++)
+        {
+            Assert.That(Pick(c, any: true, castAllowed: true), Is.EqualTo(11u), $"round {round}");
+            cooling.Add(11);
+            Update(c);
+        }
+        Assert.That(Pick(c, any: true), Is.EqualTo(0u), "outside the state the cast check refuses it (0x23)");
     }
 
     [Test]

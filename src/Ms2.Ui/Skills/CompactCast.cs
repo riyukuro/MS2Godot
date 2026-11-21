@@ -30,14 +30,15 @@ public sealed class CompactCast
     public IReadOnlyList<uint> Chains => chains;
 
     /// <summary>
-    /// SetCompactConfigs @0x141767d90 (:2551-2556): the tabs (SkillMacro mode 2, CSkillSystem::FUN_141767ae0, or the compact
-    /// control window's close) replace the old ones, then <see cref="Update"/> with force.
+    /// The tabs replace the old ones. With <paramref name="force"/> (SetCompactConfigs @0x141767d90, :2551-2556, the compact
+    /// control window's close) <see cref="Update"/> follows with force; without (SkillMacro mode 2, CSkillSystem::FUN_141767ae0
+    /// :2530-2547) only the tabs change and the next update reads them.
     /// </summary>
-    public void SetConfigs(IReadOnlyList<SkillMacroTab> tabs, bool featureOn, Func<long, bool> actionDown, int jobGroup,
-                           SlotWorld w, SkillCompactControlTable table)
+    public void SetConfigs(IReadOnlyList<SkillMacroTab> tabs, bool force, bool featureOn, Func<long, bool> actionDown,
+                           int jobGroup, SlotWorld w, SkillCompactControlTable table)
     {
         configs = tabs ?? Array.Empty<SkillMacroTab>();
-        Update(true, featureOn, actionDown, jobGroup, w, table);
+        if (force) Update(true, featureOn, actionDown, jobGroup, w, table);
     }
 
     /// <summary>
@@ -106,11 +107,14 @@ public sealed class CompactCast
     /// (stateskill.cpp:665): 0 with the feature off, before the capture's tick (<paramref name="now"/>, GetTickCountMs2) or
     /// without a tab; with the tab's key not down it marks the next refusal for a notice and gives 0. Else the first id of the
     /// skills list, then the chains list, whose level data (FUN_141764c80, <see cref="CastGate.LevelData"/>) is there, which
-    /// without <paramref name="any"/> is not cooling (FUN_141765fe0, or no charge left for a recharge skill; m_nCastAllowed is
-    /// 0 here, so any cooling skill is skipped) and whose cast check (FUN_14176a380, <see cref="CastGate.Why"/>) passes. The
-    /// first refusal after the key went down goes to <paramref name="notice"/> (FUN_141769440) once.
+    /// without <paramref name="any"/> is not cooling (FUN_141765fe0, or no charge left for a recharge skill; a cooling skill
+    /// is skipped with useCoolDownShowUI or without <paramref name="castAllowed"/>) and whose cast check (FUN_14176a380,
+    /// <see cref="CastGate.Why"/> with <paramref name="castAllowed"/>) passes. <paramref name="castAllowed"/> is
+    /// m_nCastAllowed: 1 inside the skill state (StateSkill::vfunc_8 stateskill.cpp:639-697 and the end step :2906-2928 set
+    /// it around the poll and the hold check), 0 for the idle poll and a key press. The first refusal after the key went
+    /// down goes to <paramref name="notice"/> (FUN_141769440) once.
     /// </summary>
-    public uint Pick(bool any, bool featureOn, Func<long, bool> actionDown, SlotWorld w, uint now, Action<int> notice)
+    public uint Pick(bool any, bool castAllowed, bool featureOn, Func<long, bool> actionDown, SlotWorld w, uint now, Action<int> notice)
     {
         if (!featureOn) return 0;
         if (lapenTick > now) return 0;
@@ -127,9 +131,10 @@ public sealed class CompactCast
             {
                 float cool = w.CooldownRemain(s.Id, 0);
                 bool recharge = s.RechargeMaxCount > 0;
-                if ((!recharge && cool > 0f) || (recharge && w.RechargeRemain(s) == 0)) continue;   // both branches skip (m_nCastAllowed 0)
+                if (((!recharge && cool > 0f) || (recharge && w.RechargeRemain(s) == 0)) && (s.Condition.UseCoolDownShowUI || !castAllowed))
+                    continue;
             }
-            int why = CastGate.Why(w, lv, castAllowed: false);
+            int why = CastGate.Why(w, lv, castAllowed);
             if (why != 0)
             {
                 if (dirty)
