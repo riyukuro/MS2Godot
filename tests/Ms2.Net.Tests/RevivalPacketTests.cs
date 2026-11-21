@@ -112,6 +112,18 @@ public class RevivalPacketTests {
         Assert.That(me.TombstoneHidden, Is.True);
     }
 
+    [Test]
+    public void BreakableIsSentWithTheNameTagAndSkill() {
+        var p = new BreakableRequest("ab", 0x0102030405060708, 0x0A0B0C0D, 0x0E0F, 3, 4);
+        Assert.That((p.Op, (ushort)Outbound.Breakable), Is.EqualTo((Outbound.Breakable, (ushort)0x27)));
+        Assert.That(Bytes(p), Is.EqualTo(new byte[] {
+            2, 0, (byte)'a', (byte)'b',
+            8, 7, 6, 5, 4, 3, 2, 1,
+            0x0D, 0x0C, 0x0B, 0x0A,
+            0x0F, 0x0E,
+            3, 4 }));
+    }
+
     static MyCharacter Living() {
         var me = new MyCharacter();
         var u = new FieldAddUser { ObjectId = 9, User = new UserBlock { Name = "a" } };
