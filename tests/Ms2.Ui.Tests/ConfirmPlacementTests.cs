@@ -449,4 +449,45 @@ public class ConfirmPlacementTests
         Assert.That(stop, Is.Not.EqualTo(CubeCraftState.PlacementStop.Locked));
         Assert.That(stop, Is.Not.EqualTo(CubeCraftState.PlacementStop.InventoryCheckOpen));
     }
+    static ResponseCubePlace Answer(byte mode, byte error, int character) => new(mode, error, character);
+
+    [Test]
+    public void APlaceAnswerForThePcHidesTheGuideAndPlaysThePlaceSound()
+    {
+        foreach (byte mode in new[] { ResponseCubePlace.ModePlace, ResponseCubePlace.ModeReplace })
+        {
+            var c = Craft(2, 0, new Owner());
+            Assert.That(c.Current.GuideVisible, Is.True);
+            Assert.That(c.OnPlaceAnswer(Answer(mode, 0, 9), 8, dead: false), Is.EqualTo(CubeCraftState.PlaceAnswer.None));
+            Assert.That(c.OnPlaceAnswer(Answer(mode, 0, 9), -1, dead: false), Is.EqualTo(CubeCraftState.PlaceAnswer.None));
+            Assert.That(c.Current.GuideVisible, Is.True);
+            Assert.That(c.OnPlaceAnswer(Answer(mode, 0, 9), 9, dead: false), Is.EqualTo(CubeCraftState.PlaceAnswer.Placed));
+            Assert.That(c.Current.GuideVisible, Is.False);
+        }
+        // only 0xa needs a character other than 0 (:9986 against :10107)
+        Assert.That(Craft(2, 0, new Owner()).OnPlaceAnswer(Answer(ResponseCubePlace.ModePlace, 0, 0), 0, false), Is.EqualTo(CubeCraftState.PlaceAnswer.None));
+        Assert.That(Craft(2, 0, new Owner()).OnPlaceAnswer(Answer(ResponseCubePlace.ModeReplace, 0, 0), 0, false), Is.EqualTo(CubeCraftState.PlaceAnswer.Placed));
+        // no active craft while dead: the sound only; craft mode 1 keeps its guide (SetGuideVisible, cubecraft_2.cpp:660)
+        var dead = Craft(2, 0, new Owner());
+        Assert.That(dead.OnPlaceAnswer(Answer(ResponseCubePlace.ModePlace, 0, 9), 9, dead: true), Is.EqualTo(CubeCraftState.PlaceAnswer.Placed));
+        Assert.That(dead.Current.GuideVisible, Is.True);
+        var modeOne = Craft(2, 1, new Owner());
+        modeOne.OnPlaceAnswer(Answer(ResponseCubePlace.ModePlace, 0, 9), 9, dead: false);
+        Assert.That(modeOne.Current.GuideVisible, Is.True);
+    }
+
+    [Test]
+    public void ARefusedPlaceAnswerGivesTheLiftNoticeOrTheBuildNotice()
+    {
+        foreach (byte mode in new[] { ResponseCubePlace.ModePlace, ResponseCubePlace.ModeReplace })
+        {
+            var lift = Craft(2, 2, new Owner());
+            Assert.That(lift.OnPlaceAnswer(Answer(mode, 0x35, 9), 9, false), Is.EqualTo(CubeCraftState.PlaceAnswer.SameItemHeld));
+            Assert.That(lift.Current.GuideVisible, Is.True);
+            Assert.That(Craft(2, 0, new Owner()).OnPlaceAnswer(Answer(mode, 0x35, 9), 9, false), Is.EqualTo(CubeCraftState.PlaceAnswer.BuildNotice));
+            Assert.That(Craft(2, 0, new Owner()).OnPlaceAnswer(Answer(mode, 0x35, 9), 8, false), Is.EqualTo(CubeCraftState.PlaceAnswer.None));
+            Assert.That(Craft(2, 2, new Owner()).OnPlaceAnswer(Answer(mode, 0x35, 9), -1, false), Is.EqualTo(CubeCraftState.PlaceAnswer.None));
+        }
+        Assert.That(new CubeCraftState().OnPlaceAnswer(Answer(ResponseCubePlace.ModeReplace, 0x35, 9), 9, false), Is.EqualTo(CubeCraftState.PlaceAnswer.BuildNotice));
+    }
 }

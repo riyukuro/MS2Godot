@@ -117,9 +117,9 @@ public partial class LiveSession
     /// and their errors' build notice for the local pc (<see cref="BuildNotice.OfHeldItemResponse"/>).
     /// The housing modes 0x27 / 0x35 / 0x37 fill <see cref="Housing"/>. The place answers 0xa / 0xf add their cube to the
     /// player's cube map (<see cref="Ms2.Ui.CubeCellMap.Apply"/>).
-    /// STILL-OPEN: the other modes; the cube map's weapon lookup for mode 0x11, so a 0x11 holds nothing yet; the place
-    /// answers' own-pc part (the guide hidden and the place sound, :9986-9992 and :10109-10115; an error's craft reset,
-    /// common notice 0x6c9 or build notice, :10012-10030 and :10123-10136).</summary>
+    /// The place answers' own-pc part (the guide, the place sound and an error's notice) is
+    /// <see cref="Ms2.Ui.CubeCraftState.OnPlaceAnswer"/>, before the cube goes into the map as in the client.
+    /// STILL-OPEN: the other modes; the cube map's weapon lookup for mode 0x11, so a 0x11 holds nothing yet.</summary>
     void OnResponseCube(Ms2.Net.Wire.RawPacket p)
     {
         var r = p.Reader();
@@ -132,6 +132,12 @@ public partial class LiveSession
             case ResponseCubePlace.ModeReplace:
             {
                 var placed = ResponseCubePlace.Read(p.Reader());
+                switch (CubeCraft.OnPlaceAnswer(placed, selfObject, Me.Dead))
+                {
+                    case Ms2.Ui.CubeCraftState.PlaceAnswer.Placed: FieldAudio.Instance?.PlayUi(Ms2.Ui.CubeCraftState.PlaceSound); break;
+                    case Ms2.Ui.CubeCraftState.PlaceAnswer.SameItemHeld: ShowSameItemHeld(); break;
+                    case Ms2.Ui.CubeCraftState.PlaceAnswer.BuildNotice: ShowBuildNotice(placed.Error); break;
+                }
                 bool added = player != null && IsInstanceValid(player) && player.Cubes.Cells.Apply(placed, id => ItemExists?.Invoke(id) ?? true);
                 GD.Print($"live: ResponseCube 0x{placed.Mode:x} error {placed.Error} cell 0x{placed.Cell:x} item {placed.Item?.ItemId ?? 0}{(added ? ", cube added" : "")}");
                 return;
@@ -206,14 +212,19 @@ public partial class LiveSession
         if (send != null) Send(send);
         int notice = Ms2.Ui.CubeCraftState.NoticeOf(stop);
         if (notice != 0) ShowBuildNotice(notice);
-        if (stop == Ms2.Ui.CubeCraftState.PlacementStop.SameItemHeld)
-        {
-            // FUN_141275260(0x6c9, 1, 1), then PlaySystemSound(DAT_143acf6b8, "") (cubecraft_2.cpp:1041-1042)
-            string text = MessageBoxData.Common(Ms2.Ui.CubeCraftState.SameItemHeldText);
-            if (!string.IsNullOrEmpty(text)) SystemNoticeSink?.Invoke(text);
-            FieldAudio.Instance?.PlayUi(BuildNotice.NoBuild);
-        }
+        // FUN_141275260(0x6c9, 1, 1), then PlaySystemSound(DAT_143acf6b8, "") (cubecraft_2.cpp:1041-1042)
+        if (stop == Ms2.Ui.CubeCraftState.PlacementStop.SameItemHeld) ShowSameItemHeld();
         return stop;
+    }
+
+    /// <summary>FUN_141275260(0x6c9, 1, 1) then the NoBuild system sound: ConfirmPlacement's same item in craft mode 2
+    /// (cubecraft_2.cpp:1041-1042) and a refused place answer while the craft holds a lift (scenestategame.cpp:10024-10025,
+    /// :10132-10133).</summary>
+    void ShowSameItemHeld()
+    {
+        string text = MessageBoxData.Common(Ms2.Ui.CubeCraftState.SameItemHeldText);
+        if (!string.IsNullOrEmpty(text)) SystemNoticeSink?.Invoke(text);
+        FieldAudio.Instance?.PlayUi(BuildNotice.NoBuild);
     }
 
     /// <summary>MyPC::vfunc_135's construction unlock on entering the cube mode (<see cref="CubeCraftState.ConstructionUnlock"/>):

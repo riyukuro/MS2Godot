@@ -40,7 +40,19 @@ public sealed class CubeCraftState
         /// <summary>The z of the rotation FUN_1410aa6f0 (:921-927) gives the guide, in degrees: the owner's target yaw
         /// snapped by <see cref="GuideYawOf"/>, plus m_fYaw (always 0: only the ctor and ReleaseGuide write it, :296, :537).</summary>
         public float GuideYaw { get; internal set; }
+        /// <summary>m_bVisible (true in the ctor, cubecraft_2.cpp:286): whether the guide is shown (CreateGuide hands it to
+        /// the guide, :461).</summary>
+        public bool GuideVisible { get; private set; } = true;
         public Craft(int mode, CubeItemInfo item) { Mode = mode; Item = item; }
+
+        /// <summary>SetGuideVisible (@0x1410aa380, cubecraft_2.cpp:658-665): nothing in craft mode 1, else sets
+        /// <see cref="GuideVisible"/>. STILL-OPEN: the guide model's own hide (m_spGuide-&gt;vfunc_6), as no guide model
+        /// is loaded.</summary>
+        public void SetGuideVisible(bool visible)
+        {
+            if (Mode == 1) return;
+            GuideVisible = visible;
+        }
     }
 
     /// <summary>The craft's owner as it reads the local pc. Null while there is no pc to read.</summary>
@@ -251,6 +263,44 @@ public sealed class CubeCraftState
     /// <summary>The common string of the same-item notice in craft mode 2 (FUN_141275260(0x6c9, 1, 1),
     /// cubecraft_2.cpp:1041).</summary>
     public const int SameItemHeldText = 0x6c9;
+    /// <summary>The system sound of a placed cube (PlaySystemSound(DAT_143ae79b8), scenestategame.cpp:1222).</summary>
+    public const string PlaceSound = "ugc_setblock";
+
+    /// <summary>What a place answer (ResponseCube 0xa / 0xf) does for the local pc (<see cref="OnPlaceAnswer"/>).</summary>
+    public enum PlaceAnswer
+    {
+        /// <summary>Not the local pc's answer: nothing.</summary>
+        None,
+        /// <summary>Error 0: the guide hidden and <see cref="PlaceSound"/> played.</summary>
+        Placed,
+        /// <summary>An error while the pc's craft holds a lift: common notice <see cref="SameItemHeldText"/>, then the
+        /// NoBuild sound.</summary>
+        SameItemHeld,
+        /// <summary>An error otherwise: ShowBuildNotice with the answer's error.</summary>
+        BuildNotice,
+    }
+
+    /// <summary>
+    /// CSceneStateGame::OnResponseCube 0xa / 0xf, the local pc's part (scenestategame.cpp:9984-9992, :10012-10030,
+    /// :10107-10115, :10122-10140). Only when there is a pc and the answer's character is its object id (0xa with error 0
+    /// also needs a character other than 0). Error 0: the active craft (MyPC::GetActiveCubeCraft, mypc.cpp:4516-4523: none
+    /// while dead or out of the cube mode) hides its guide (<see cref="Craft.SetGuideVisible"/>), then the place sound.
+    /// An error: when the pc's craft holds a lift (PC::FUN_141659690, pc.cpp:1854) the 0x6c9 notice and the NoBuild sound,
+    /// else the build notice of the error. <paramref name="selfObject"/> is -1 without a pc.
+    /// <para>Not ported (visual only): 0xa's error starts the active craft's 200 ms scale pulse (FUN_1410aa590,
+    /// cubecraft_2.cpp:701-704; :10021) before the notice.</para>
+    /// </summary>
+    public PlaceAnswer OnPlaceAnswer(ResponseCubePlace m, int selfObject, bool dead)
+    {
+        if (m == null || selfObject == -1 || m.CharacterId != selfObject) return PlaceAnswer.None;
+        if (m.Error == 0)
+        {
+            if (m.Mode == ResponseCubePlace.ModePlace && m.CharacterId == 0) return PlaceAnswer.None;
+            Active(dead)?.SetGuideVisible(false);
+            return PlaceAnswer.Placed;
+        }
+        return Current is { HoldsLift: true } ? PlaceAnswer.SameItemHeld : PlaceAnswer.BuildNotice;
+    }
 
     /// <summary>The build notice (<see cref="BuildNotice.Show"/>) ConfirmPlacement gives at a stop, 0 for none.</summary>
     public static int NoticeOf(PlacementStop stop) => stop switch
