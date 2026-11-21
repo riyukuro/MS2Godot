@@ -284,6 +284,13 @@ public partial class LiveSession : Node
     /// (0x8A); live only. Its sends (Guild 0x4B) go out while the game connection is up.</summary>
     public Ms2.Ui.GuildBook Guilds => guilds ??= new Ms2.Ui.GuildBook { Send = SendGuild };
     Ms2.Ui.GuildBook guilds;
+    /// <summary>OnMinimapPing @0x14173de10 (scenestategame.cpp:6806-6815): the ping for the minimap dialog's AddPing (set by the HUD).</summary>
+    public event Action<MinimapPingMessage> MinimapPinged;
+    /// <summary>The minimap dialog's ping send (MinimapPing 0xB1).</summary>
+    public void SendMinimapPing(Ms2.Net.Wire.IOutPacket packet)
+    {
+        if (game != null) Send(packet);
+    }
     /// <summary>The guild dialog's sends (Guild 0x4B).</summary>
     public void SendGuild(Ms2.Net.Wire.IOutPacket packet)
     {
@@ -1255,6 +1262,8 @@ public partial class LiveSession : Node
                 Breakables.Apply(BreakableUpdate.Read(p.Reader()));     // OnBreakable (scenestategame.cpp:3667)
             else if (game.Is(p, Inbound.Liftable))
                 Liftables.Apply(LiftableUpdate.Read(p.Reader()));       // OnLiftable (scenestategame.cpp:11941)
+            else if (game.Is(p, Inbound.MinimapPing))
+                MinimapPinged?.Invoke(MinimapPingMessage.Read(p.Reader()));     // OnMinimapPing (scenestategame.cpp:6806)
             else if (game.Is(p, Inbound.UserEnv))
             {
                 var m = UserEnvMessage.Read(p.Reader());          // OnUserEnv (scenestategame.cpp:4414); the other modes are not kept

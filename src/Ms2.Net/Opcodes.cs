@@ -105,6 +105,7 @@ public enum Inbound : ushort {
     Fishing = 0xC4,         // RecvOp Fishing (commonfiles/opcodes.h:203): CFishingManager::FUN_140cd9840 (scenestategame.cpp:1805)
     Breakable = 0x4F,       // RecvOp Breakable (commonfiles/opcodes.h:87): CSceneStateGame::OnBreakable
     Liftable = 0x73,        // RecvOp Liftable (commonfiles/opcodes.h:123): CSceneStateGame::OnLiftable
+    MinimapPing = 0x121,    // RecvOp MinimapPing (commonfiles/opcodes.h:288): CSceneStateGame::OnMinimapPing
     CharacterAbility = 0xDF,    // RecvOp CharacterAbility (commonfiles/opcodes.h): CCharacterAbilityManager::OnCharacterAbility
     UserEnv = 0xA8,
     Mastery = 0xCD,             // RecvOp Mastery (commonfiles/opcodes.h): CSceneStateGame::OnMastery
@@ -187,5 +188,6 @@ public enum Outbound : ushort {
     GuideRecord = 0x57,
     Tutorial = 0x8A,
     RequestTutorialItem = 0x9C,
+    MinimapPing = 0xB1,     // SendOp MinimapPing (commonfiles/opcodes.h:480): UIMinimapDialog::SendMinimapPing
     Channel = 0x3B,         // SendOp::Channel (commonfiles/opcodes.h): WorldService::FUN_141bc80c0 (worldservice_1.cpp:4936) and its message box answer
 }

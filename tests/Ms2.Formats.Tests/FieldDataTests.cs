@@ -49,6 +49,30 @@ public class FieldDataTests
         TestContext.WriteLine($"gemSystem on {checkedOn}, off {checkedOff}");
     }
 
+    /// <summary>minimapPing (fielddata.cpp:704) follows the property's attribute and is false when absent (:557).</summary>
+    [Test]
+    public void MinimapPingFollowsTheProperty()
+    {
+        var data = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(data)) Assert.Ignore("MS2_DATA not set");
+        var packs = new PackSet(data);
+        int on = 0, off = 0;
+        foreach (var fd in FieldData.Document(packs).Root.Elements("fieldData"))
+        {
+            var env = fd.Elements("environment").FirstOrDefault(e => e.Attribute("locale") == null);
+            if (env?.Element("xblock")?.Attribute("name") == null) continue;
+            var prop = env.Element("property") ?? fd.Element("property");
+            bool want = ((string)prop?.Attribute("minimapPing"))?.ToLowerInvariant() is "true" or "yes" or "1";
+            var f = FieldData.FindById(packs, (int)fd.Attribute("id"));
+            if (f == null || f.Id != (int)fd.Attribute("id")) continue;
+            Assert.That(f.MinimapPing, Is.EqualTo(want), "field " + f.Id);
+            if (want) on++; else off++;
+        }
+        Assert.That(on, Is.GreaterThan(0));
+        Assert.That(off, Is.GreaterThan(0));
+        TestContext.WriteLine($"minimapPing on {on}, off {off}");
+    }
+
     /// <summary>The index gives what a scan of the table gives: by id the last entry of an id that has a default xblock
     /// (CFieldData::LoadFieldData, fielddata.cpp:591 SetAt), by xblock the first entry of a name.</summary>
     [Test]

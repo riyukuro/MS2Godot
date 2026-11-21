@@ -171,6 +171,8 @@ public partial class HudScene : Node, IUiStageHost
         }
         unwatchDamage?.Invoke();
         unwatchDamage = null;
+        unwatchMinimapPing?.Invoke();
+        unwatchMinimapPing = null;
         if (Ms2Godot.Net.LiveSession.Instance is { } liveChannel && liveChannel.ChannelNoticeSink == (Action<int, int>)ChannelNotice) liveChannel.ChannelNoticeSink = null;
         unwatchQuickSlotState?.Invoke();
         unwatchBuffs?.Invoke();
@@ -332,6 +334,7 @@ public partial class HudScene : Node, IUiStageHost
         playerBar.Spawn(data.Player.HpCurrent, data.Player.HpMax);
         AddChild(damageText = new DamageText(assets, constants, window));                // UIDamageText
         WatchDamageNumbers();
+        WatchMinimapPings();
 
         HudModel();
         WatchOwnSkill();
@@ -956,10 +959,12 @@ public partial class HudScene : Node, IUiStageHost
         catch (Exception e) { GD.PushWarning("minimap: " + e.Message); }
         var model = NewModel();
         model.Field.Name = MapName();
+        bool pingAllowed = false;
         try
         {
             var fd = FieldData.FindByXBlock(assets.Packs, xblock);
             model.Field.MapLevel = fd?.MapLevel;
+            pingAllowed = fd?.MinimapPing ?? false;
             if (fd != null) model.Field.MapId = fd.Id;
         }
         catch (Exception e) { GD.PushWarning("minimap field data: " + e.Message); }
@@ -981,12 +986,41 @@ public partial class HudScene : Node, IUiStageHost
             PlayerImage = Ms2Godot.Net.ProfileImageService.Images.Path(selfId, live?.Me?.User?.Picture ?? "", true),
             LocalPlayer = LocalMinimapPlayer,
             ChangeChannel = ChangeChannel,
+            PingAllowed = pingAllowed,
+            Send = live != null ? live.SendMinimapPing : null,
+            CharacterName = MinimapPingName,
+            SystemSound = key => FieldAudio.Instance?.PlayUi(key),
         };
         c.WorldMap += ToggleWorldMap;       // OnWorldMap (uiminimapentity.cpp:1253): ToggleDialog(0x4e42)
         try { MinimapMarks(fc, c.Marks); }
         catch (Exception e) { GD.PushWarning("minimap marks: " + e.Message); }
         minimap = new MovieDialog(assets, c, model, ScreenMode.PixelSize(GetWindow()));
         minimapSlot.AddChild(minimap);
+    }
+
+    Action unwatchMinimapPing;
+
+    /// <summary>OnMinimapPing (scenestategame.cpp:6806-6815): FindMinimapDialog, then AddPing with the packet's uid, type and position.</summary>
+    void WatchMinimapPings()
+    {
+        unwatchMinimapPing?.Invoke();
+        if (Net.LiveSession.Instance is not { } live) return;
+        Action<Ms2.Net.Packets.MinimapPingMessage> on = m =>
+            minimapSide?.AddPing(m.Uid, m.Type, new Vec3(m.Position.X, m.Position.Y, m.Position.Z));
+        live.MinimapPinged += on;
+        unwatchMinimapPing = () => live.MinimapPinged -= on;
+    }
+
+    /// <summary>
+    /// GetCharacterName @0x141a45d50 (uiminimapentity.cpp:2620): the field pc's name by character id, else "".
+    /// STILL-OPEN: the client's second lookup (the minimap proxies' names) is not ported.
+    /// </summary>
+    static string MinimapPingName(long characterId)
+    {
+        if (Net.LiveSession.Instance is not { } live) return "";
+        foreach (var u in live.FieldUsers())
+            if (u.CharacterId == characterId) return u.Name ?? "";
+        return "";
     }
 
     /// <summary>

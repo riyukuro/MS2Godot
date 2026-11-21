@@ -79,6 +79,9 @@ public sealed class FieldData
     public bool GlobalSplit;
     /// <summary>m_nCheckPartyObserve: &lt;property checkPartyObserve&gt; (fielddata.cpp:693).</summary>
     public bool CheckPartyObserve;
+    /// <summary>m_bMinimapPing: &lt;property minimapPing&gt; (fielddata.cpp:704), false when absent (the ctor, :557);
+    /// UIMinimapDialog::IsPingAllowed (uiminimapentity.cpp:2521).</summary>
+    public bool MinimapPing;
     /// <summary>m_bPopupMenu: &lt;property popupMenu&gt; (fielddata.cpp:705), true when absent (the ctor, :557).</summary>
     public bool PopupMenu = true;
     /// <summary>m_bGemSystem: &lt;property gemSystem&gt; (fielddata.cpp:706), true when absent (the ctor, :557).</summary>
@@ -187,6 +190,7 @@ public sealed class FieldData
         o.RecallOtherUserProhibit = Flag(env.Element("cashCall"), "RecallOtherUserProhibit");
         o.GlobalSplit = Flag(env.Element("split"), "globalSplit");
         o.CheckPartyObserve = Flag(prop, "checkPartyObserve");
+        o.MinimapPing = BoolAttr(prop, "minimapPing", false);
         o.PopupMenu = BoolAttr(prop, "popupMenu", true);
         o.GemSystem = BoolAttr(prop, "gemSystem", true);
         if ((string)env.Element("drop")?.Attribute("maplevel") is { } ml && int.TryParse(ml, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mli)) o.MapLevel = mli;

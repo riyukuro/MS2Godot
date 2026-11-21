@@ -1,6 +1,8 @@
 using Ms2.Avm2;
 using Ms2.Formats.Model;
 using Ms2.Formats.World;
+using Ms2.Net.Packets;
+using Ms2.Net.Wire;
 
 namespace Ms2.Ui.Hud;
 
@@ -80,12 +82,125 @@ public sealed class MinimapController : UiController
     double centerX, centerY, scale = 1;                  // m_208, m_scale (OnUpdateCenter)
     ulong lastRefresh;                                   // m_timer474
 
-    /// <summary>OnLoadComplete (uiminimapentity.cpp:1104): UIDialog's, then BuildUIData and BuildField.</summary>
+    /// <summary>
+    /// OnLoadComplete (uiminimapentity.cpp:1104): UIDialog's, then BuildUIData and BuildField; last (:1127-1131), when the
+    /// field allows pings, the dialog root's "click" (FUN_1422c2a70, asmovieclip.cpp:236) sends a red ping and its
+    /// "rightClick" (FUN_1422c2c30, asmovieclip.cpp:268) a blue one.
+    /// </summary>
     public override void OnLoadComplete()
     {
         base.OnLoadComplete();
         BuildUIData();
         BuildField();
+        if (PingAllowed && Host.Entity != null)
+        {
+            Host.Invoke(Host.Entity, "addEventListener", "click", redPing ??= _ => { RedPing(); return null; }, false, 0, false);
+            Host.Invoke(Host.Entity, "addEventListener", "rightClick", bluePing ??= _ => { BluePing(); return null; }, false, 0, false);
+        }
+    }
+
+    Func<object[], object> redPing, bluePing;
+
+    // ---- pings ---------------------------------------------------------------------------------------------------------
+
+    /// <summary>IsPingAllowed @0x141a45ce0 (uiminimapentity.cpp:2521): the field data's m_bMinimapPing (&lt;property minimapPing&gt;).</summary>
+    public bool PingAllowed;
+    /// <summary>The ping send (MinimapPing 0xB1); null = not connected, nothing is sent.</summary>
+    public Action<IOutPacket> Send;
+    /// <summary>
+    /// GetCharacterName @0x141a45d50 (uiminimapentity.cpp:2620): the name of the field pc with that character id
+    /// (WorldService::FUN_141bd1530, vfunc_77), else "".
+    /// STILL-OPEN: the proxies' m_name fallback (:2625-2629); this minimap holds no player proxies.
+    /// </summary>
+    public Func<long, string> CharacterName = _ => "";
+    /// <summary>PlaySystemSound(key, ""); null = no sound player.</summary>
+    public Action<string> SystemSound;
+
+    /// <summary>A UIMinimapEntityPing: its clip and m_text / m_guideName.</summary>
+    sealed class Ping
+    {
+        public AsObject Clip;
+        public string Text = "";
+    }
+
+    /// <summary>m_pings: the pings by uid.</summary>
+    readonly Dictionary<long, Ping> pings = new();
+
+    /// <summary>The ping with that uid has a clip on the movie; its m_text (the sender's name) when it does.</summary>
+    public bool TryGetPing(long uid, out AsObject clip, out string text)
+    {
+        clip = null; text = null;
+        if (!pings.TryGetValue(uid, out var p)) return false;
+        clip = p.Clip; text = p.Text;
+        return true;
+    }
+
+    public const string RedPingSound = "System_RedPing_01", BluePingSound = "System_BluePing_01";   // :338, :337
+
+    /// <summary>FUN_141a456c0 (uiminimapentity.cpp:2471): GetCursorClientPos, then SendMinimapPing(0). The cursor point is
+    /// only read by GetPingPosition's world path, which SendMinimapPing does not take; a click on the movie has the cursor
+    /// in the client area.</summary>
+    public void RedPing() => SendMinimapPing(0);
+    /// <summary>FUN_141a45720 (uiminimapentity.cpp:2481): SendMinimapPing(1).</summary>
+    public void BluePing() => SendMinimapPing(1);
+
+    /// <summary>
+    /// SendMinimapPing @0x141a45020 (uiminimapentity.cpp:2545-2564): nothing without a local pc, the movie or IsPingAllowed;
+    /// then, when the movie's mouseContains() is true and GetPingPosition(true) has the point, MinimapPing 0xB1 with the
+    /// pc's character id, the kind and the point.
+    /// </summary>
+    public void SendMinimapPing(int kind)
+    {
+        if (LocalPlayer == null || Host?.Entity == null || !PingAllowed) return;
+        var contains = Host.Invoke("mouseContains");
+        if (contains is true && GetPingPosition(out var pos))
+            Send?.Invoke(new MinimapPingRequest(CharacterId, (byte)kind, pos));
+    }
+
+    /// <summary>GetPingPosition @0x141a451b0, bLocal true (uiminimapentity.cpp:2641-2653): the movie's getLocal(); when it is
+    /// an object, its x and y (z stays 0) and true.</summary>
+    bool GetPingPosition(out System.Numerics.Vector3 pos)
+    {
+        pos = default;
+        if (Host.Invoke("getLocal") is not AsObject local) return false;
+        if (Host.Get(local, "x") is { } x) pos.X = (float)Num(x);
+        if (Host.Get(local, "y") is { } y) pos.Y = (float)Num(y);
+        return true;
+    }
+
+    /// <summary>
+    /// AddPing @0x141a3b130 (uiminimapentity.cpp:2127-2143), from OnMinimapPing: only when IsPingAllowed. A known uid is
+    /// updated; a new one is a UIMinimapEntityPing (SetPing @0x141a34f40: icon "ping", layer player, frame red_flag, guide
+    /// and text shown, group type 10) made through FUN_141a3e7d0, and once its clip is in, the movie's onTabKeyDown and
+    /// onTabKeyUp, then it is kept and updated.
+    /// </summary>
+    public void AddPing(long uid, int color, Vec3 pos)
+    {
+        if (!PingAllowed) return;
+        if (pings.TryGetValue(uid, out var p)) { UpdatePing(uid, color, p, pos); return; }
+        if (Host?.Entity == null) return;
+        var clip = Create("ping", "red_flag", "player", "", true, true, false, pos, true, 10);
+        if (clip == null) return;
+        Host.Invoke("onTabKeyDown");
+        Host.Invoke("onTabKeyUp");
+        p = new Ping { Clip = clip };
+        pings[uid] = p;
+        UpdatePing(uid, color, p, pos);
+    }
+
+    /// <summary>UIMinimapEntityPing::UpdatePing @0x141a35000 (uiminimapentity.cpp): with a clip, color 0 is OnNotice, 1 is
+    /// OnAlert, each then SetPositionFloat(x, y) and its sound; m_guideName and m_text become GetCharacterName(uid).</summary>
+    void UpdatePing(long uid, int color, Ping p, Vec3 pos)
+    {
+        if (p.Clip == null) return;
+        if (color is 0 or 1)
+        {
+            Host.Invoke(p.Clip, color == 0 ? "OnNotice" : "OnAlert");
+            Host.Set(p.Clip, "x", (float)pos.X);
+            Host.Set(p.Clip, "y", (float)pos.Y);
+            SystemSound?.Invoke(color == 0 ? RedPingSound : BluePingSound);
+        }
+        p.Text = CharacterName(uid) ?? "";
     }
 
     /// <summary>BuildUIData (uiminimapentity.cpp:3456): initData(obj).</summary>
@@ -175,6 +290,9 @@ public sealed class MinimapController : UiController
         // RemoveAllEntities: removeEntity for each entity the dialog made
         if (playerClip != null) Host.Invoke("removeEntity", playerClip);
         foreach (var m in Marks) if (m.Clip != null) { Host.Invoke("removeEntity", m.Clip); m.Clip = null; }
+        // RemovePingEntities @0x141a47190 (FUN_141a3f730: removeEntity(clip, "")), then ClearEntityContainers' m_pings.RemoveAll
+        foreach (var p in pings.Values) if (p.Clip != null) Host.Invoke("removeEntity", p.Clip, "");
+        pings.Clear();
         playerClip = arrow = null;
         playerState = "idle";
         if (LocalPlayer != null)
@@ -197,12 +315,13 @@ public sealed class MinimapController : UiController
     /// FUN_141a3e7d0 (uiminimapentity.cpp:3590): createEntity with UIMinimapEntity::BuildData (uiminimapentity.cpp:373): the
     /// icon, frame, layer, label and guide, and x / y from WorldToMinimap, visible only when the point projects.
     /// </summary>
-    AsObject Create(string icon, string frame, string layer, string text, bool showText, bool showGuide, bool inFieldNpc, Vec3 pos, bool visible)
+    AsObject Create(string icon, string frame, string layer, string text, bool showText, bool showGuide, bool inFieldNpc, Vec3 pos, bool visible,
+        int groupType = 1)
     {
         if (string.IsNullOrEmpty(icon)) return null;
         bool inView = WorldToMinimap(pos, out var x, out var y);
         return Host.Invoke("createEntity", Host.Obj(("mcname", icon), ("frame", frame ?? ""), ("layer", layer ?? ""), ("showtext", showText),
-            ("showguide", showGuide), ("name", text), ("guideName", ""), ("inFieldNpc", inFieldNpc), ("groupType", 1),
+            ("showguide", showGuide), ("name", text), ("guideName", ""), ("inFieldNpc", inFieldNpc), ("groupType", groupType),
             ("x", (float)x), ("y", (float)y), ("visible", inView && visible))) as AsObject;
     }
 

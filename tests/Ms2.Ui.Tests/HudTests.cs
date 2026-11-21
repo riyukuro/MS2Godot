@@ -1106,6 +1106,85 @@ public class HudTests
         Assert.That(h.RT.Errors, Is.Empty);
     }
 
+    static (MinimapController c, UiHost h) PingMinimap(bool allowed, List<string> sounds)
+    {
+        var m = Model();
+        var c = new MinimapController
+        {
+            ImageName = "map/minimap/02000001.dds", LocalPlayer = () => (default, 90f, false), PingAllowed = allowed,
+            CharacterName = id => id == 7 ? "seven" : "", SystemSound = sounds.Add,
+        };
+        var h = Load(c, m);
+        Assert.That(c.OnCallback("onFieldLoadComplete", new object[] { c.FieldClip }), Is.True);
+        return (c, h);
+    }
+
+    [Test]
+    public void MinimapAddPingMakesOnePingPerUidAndUpdatesIt()
+    {
+        // AddPing (uiminimapentity.cpp:2127-2143): a new uid is a ping entity; the same uid again is UpdatePing on it
+        var sounds = new List<string>();
+        var (c, h) = PingMinimap(true, sounds);
+        c.AddPing(7, 0, new Ms2.Formats.Model.Vec3(10, 20, 0));
+        Assert.That(h.RT.Errors, Is.Empty);
+        Assert.That(c.TryGetPing(7, out var clip, out var text), Is.True);
+        Assert.That(clip, Is.Not.Null);
+        Assert.That(text, Is.EqualTo("seven"));
+        Assert.That(sounds, Is.EqualTo(new[] { MinimapController.RedPingSound }));
+        c.AddPing(7, 1, new Ms2.Formats.Model.Vec3(30, 40, 0));
+        Assert.That(c.TryGetPing(7, out var again, out _), Is.True);
+        Assert.That(again, Is.SameAs(clip), "the same uid keeps its entity");
+        Assert.That(sounds, Is.EqualTo(new[] { MinimapController.RedPingSound, MinimapController.BluePingSound }));
+        Assert.That(System.Convert.ToDouble(h.Get(clip, "x")), Is.EqualTo(30));
+        Assert.That(System.Convert.ToDouble(h.Get(clip, "y")), Is.EqualTo(40));
+        c.AddPing(8, 0, new Ms2.Formats.Model.Vec3(1, 2, 0));
+        Assert.That(c.TryGetPing(8, out var other, out var otherText), Is.True);
+        Assert.That(other, Is.Not.SameAs(clip));
+        Assert.That(otherText, Is.EqualTo(""), "no field pc with that id: an empty name");
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void MinimapPingNeedsTheFieldToAllowIt()
+    {
+        // IsPingAllowed (uiminimapentity.cpp:2521) gates AddPing and SendMinimapPing; the field data's minimapPing is off
+        var sounds = new List<string>();
+        var (c, h) = PingMinimap(false, sounds);
+        var sent = new List<Ms2.Net.Wire.IOutPacket>();
+        c.Send = sent.Add;
+        c.AddPing(7, 0, new Ms2.Formats.Model.Vec3(10, 20, 0));
+        Assert.That(c.TryGetPing(7, out _, out _), Is.False);
+        Assert.That(sounds, Is.Empty);
+        c.RedPing(); c.BluePing();
+        Assert.That(sent, Is.Empty);
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void MinimapPingSendNeedsTheLocalPlayer()
+    {
+        // SendMinimapPing (uiminimapentity.cpp:2545-2548): no local pc, nothing is sent
+        var (c, h) = PingMinimap(true, new List<string>());
+        var sent = new List<Ms2.Net.Wire.IOutPacket>();
+        c.Send = sent.Add;
+        c.LocalPlayer = null;
+        c.RedPing(); c.BluePing();
+        Assert.That(sent, Is.Empty);
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void MinimapRebuildRemovesThePings()
+    {
+        // RemoveAllEntities: RemovePingEntities (@0x141a47190) removes each ping's clip, ClearEntityContainers drops m_pings
+        var (c, h) = PingMinimap(true, new List<string>());
+        c.AddPing(7, 0, new Ms2.Formats.Model.Vec3(10, 20, 0));
+        Assert.That(c.TryGetPing(7, out _, out _), Is.True);
+        Assert.That(c.OnCallback("onFieldLoadComplete", new object[] { c.FieldClip }), Is.True);
+        Assert.That(c.TryGetPing(7, out _, out _), Is.False);
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
     [Test]
     public void UpperHudTokenAndMeratTooltips()
     {
