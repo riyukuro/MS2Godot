@@ -41,15 +41,21 @@ public sealed class SlotWorld
     public Func<uint, (float Total, bool ByItem)> CooldownTotal = _ => (0f, false);
     /// <summary>CSkillSystem::GetRechargeRemainCount.</summary>
     public Func<SkillData, int> RechargeRemain = _ => 0;
-    /// <summary>CSkillSystem::FUN_141764be0: the active cast's output skill for the id (no cast: the id).</summary>
-    public Func<uint, uint> OutputSkill = id => id;
+    /// <summary>PCBase::vfunc_103 @0x1416738c0 (pcbase.cpp:2703): the skill of the running cast's record, null when there is none
+    /// or it has ended.</summary>
+    public Func<SkillData> RunningSkill = () => null;
+    /// <summary>CSkillSystem::FUN_141764be0 (skillslot.cpp:2057): the running cast's output skill for the id (no cast: the id).</summary>
+    public uint OutputSkill(uint id) => RunningSkill() is { } s ? s.OutputSkill(id) : id;
+    /// <summary>CFeatureManager::IsFeatureEnabled.</summary>
+    public Func<int, bool> IsFeatureEnabled = _ => false;
     /// <summary>CSkillSystem::FUN_14176ba90: the level of an emotion the player has, null without it.</summary>
     public Func<uint, ushort?> EmotionLevel = _ => null;
     /// <summary>FUN_14176b960 with no sp rate: the sp cost of a skill.</summary>
     public Func<uint, long, long> SpCost = (_, sp) => sp;
 
-    /// <summary>Unk_SsBuffs::FUN_140970020(id, level, overlap, 1): an effect at that level and overlap is on.</summary>
-    public Func<uint, ushort, uint, bool> HasEffect = (_, _, _) => false;
+    /// <summary>Unk_SsBuffs::FUN_140970020(id, level, overlap, compare): an effect at that level whose overlap passes the compare
+    /// sign is on (<see cref="AdditionalBuffList.Has"/>).</summary>
+    public Func<uint, ushort, uint, int, bool> HasEffect = (_, _, _, _) => false;
     /// <summary>HasEnabledWithId / HasEnabledInGroup.</summary>
     public Func<uint, bool> HasEnabledEffect = _ => false;
     public Func<int, bool> HasEnabledEffectGroup = _ => false;
@@ -263,10 +269,8 @@ public sealed record SkillSlotState(SlotWorld W, uint SkillId, int ItemId, long 
         uint replace = 0;
         for (int i = 0; i < ch.CheckEffectId.Count; i++)
         {
-            ushort level = i < ch.CheckEffectLevel.Count ? ch.CheckEffectLevel[i] : (ushort)0;
-            uint overlap = i < ch.CheckEffectOverlapCount.Count ? ch.CheckEffectOverlapCount[i] : 0;
-            if (!W.HasEffect(ch.CheckEffectId[i], level, overlap)) continue;
-            replace = i < ch.ChangeSkillId.Count ? ch.ChangeSkillId[i] : 0;
+            if (!W.HasEffect(ch.CheckEffectId[i], ch.CheckEffectLevel[i], ch.CheckEffectOverlapCount[i], 1)) continue;
+            replace = ch.ChangeSkillAt(i);
             break;
         }
         if (replace == 0 || replace == SkillId) return null;

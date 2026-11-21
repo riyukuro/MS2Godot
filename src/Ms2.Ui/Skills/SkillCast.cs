@@ -139,6 +139,43 @@ public static class SkillCast
         return a.NormalAttack;
     }
 
+    /// <summary>
+    /// MyPC::FUN_141526c80 @0x141526c80 (mypc.cpp:2633): the skill the level data's changeSkill block swaps the request to, at
+    /// the same level. With a running cast (<see cref="SlotWorld.RunningSkill"/>; with feature 0xca only one that is not a
+    /// charging skill and has a combo output, Unk_SkillBlockA4::FUN_140803040) the first change skill the running skill's combo
+    /// turns into another (GetOutputSkill) is taken; else the first change skill whose effect check is on
+    /// (<see cref="SlotWorld.HasEffect"/> with the check's compare sign). True when the id or level was set.
+    /// </summary>
+    public static bool ChangeSkill(SlotWorld w, ref uint skillId, ref ushort level)
+    {
+        var lv = w.Tables.Skills.GetSkillLevelData(skillId, level);
+        if (lv == null) return false;
+        var ch = lv.Skill.Change;
+        int n = ch.CheckEffectId.Count;
+        if (n == 0) return false;
+        var cast = w.RunningSkill();
+        if (cast != null && (!w.IsFeatureEnabled(0xca) || (!cast.ChargingSkill && cast.ComboSwapSkill != 0)))
+        {
+            for (int i = 0; i < n; i++)
+            {
+                uint next = ch.ChangeSkillAt(i);
+                if (next == cast.OutputSkill(next)) continue;
+                skillId = next;
+                level = lv.Level;
+                return true;
+            }
+        }
+        for (int i = 0; i < n; i++)
+        {
+            if (!w.HasEffect(ch.CheckEffectId[i], ch.CheckEffectLevel[i], ch.CheckEffectOverlapCount[i], ch.CheckEffectCompareFunc[i]))
+                continue;
+            skillId = ch.ChangeSkillAt(i);
+            level = lv.Level;
+            return true;
+        }
+        return false;
+    }
+
     /// <summary>The result of a request: the record, or the reason (0 with no record: a refusal the client shows no code for).</summary>
     public readonly record struct Result(CastRecord Record, int Why, string Notice);
 

@@ -141,6 +141,9 @@ public partial class HudScene
         slotConstants ??= Ms2.Ui.FeatureElements.Constants(assets.Packs);
         if (lv != null && heldKeys.HeldTooLong(d, key, (uint)Net.LiveSession.CastTick(),
                 (uint)slotConstants.Int("KeyIsDownSkill_MaxDurationTick", 30000))) return null;
+        // mypc.cpp:1728: MyPC::FUN_141526c80, the changeSkill swap, before CSkillSystem::FUN_141764e30
+        if (SkillCast.ChangeSkill(w, ref skillId, ref level))
+            GD.Print($"cast: skill {d.Id} level {lv.Level} changed to skill {skillId} level {level}");
         var g = me.GlobalPosition;
         float rotZ = me.FacingRotZ, rad = Mathf.DegToRad(rotZ);
         var req = new CastRequest(skillId, level, Net.LiveSession.NewCastId(), Net.LiveSession.CastTick())
@@ -758,6 +761,14 @@ public partial class HudScene
 
     /// <summary>The hold check's world: the quick slots' one, taken once per state, with the player's level, hp, sp, ep and
     /// meso read again each call (the cost check, FUN_14176a380).</summary>
+    /// <summary>
+    /// PCBase::vfunc_103 @0x1416738c0 (pcbase.cpp:2703): the last used record unless CSkillRecord::FUN_141759e40 says it is
+    /// done (its motion is past the level's motions).
+    /// STILL-OPEN: the record's m_bEnd and m_nAttack are not kept, and the client keeps the record after the state ends
+    /// while here it goes with the state.
+    /// </summary>
+    CastRecord RunningOwnCast() => ownCast is { } r && r.Motion < r.Level.Motions.Count ? r : null;
+
     SlotWorld OwnHoldWorld()
     {
         if (ownHoldWorld == null) return ownHoldWorld = QuickSlotWorld();

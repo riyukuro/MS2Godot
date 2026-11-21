@@ -3036,6 +3036,9 @@ public partial class HudScene : Node, IUiStageHost
         world.SummonPetSkill = slotConstants.Int("SummonPetSkillID", world.SummonPetSkill);
         world.Weapon = weaponActions.HeldAction(Hand(5), Hand(4), hudModel.Tables.Items.Get, world.CanUse) is { } action
             ? (action.RightHand, action.LeftHand) : null;
+        world.IsFeatureEnabled = hudModel.IsFeatureEnabled;
+        world.RunningSkill = () => RunningOwnCast()?.Skill;
+        world.HasEffect = (id, level, count, compare) => ownBuffs?.Has(id, level, count, compare) == true;
         SlotCooldowns(world);
         return world;
     }

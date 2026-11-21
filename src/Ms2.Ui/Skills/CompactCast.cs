@@ -9,9 +9,8 @@ namespace Ms2.Ui.Skills;
 /// FUN_1417674a0 @0x1417674a0 (:2446-2508, <see cref="Pick"/>), FUN_141767990 @0x141767990 (:2512-2526, <see cref="Used"/>),
 /// SetCompactConfigs @0x141767d90 (:2551-2556, <see cref="SetConfigs"/>) and FUN_141767df0 @0x141767df0 (:2560-2567,
 /// <see cref="HotKeyCapture"/>). 0 B per call once the lists have grown.
-/// STILL-OPEN: MyPC::FUN_141526c80 (the skill a buff or combo changes the picked one to, :2484) is not ported, so the level
-/// data is the picked skill's own; the refusal notice (FUN_141769440) goes to the caller; CKeyTable's short keys are not
-/// loaded (IsShortKey, :2457, is always false here); the state flag 0x80 of the capture has no reader here.
+/// STILL-OPEN: the refusal notice (FUN_141769440) goes to the caller; IsShortKey (:2457) is always false here:
+/// the only adder of short keys is UICartoonDialog (uicameraeditdialog.cpp:621-640), which is not ported; the state flag 0x80 of the capture has no reader here.
 /// </summary>
 public sealed class CompactCast
 {
@@ -109,6 +108,7 @@ public sealed class CompactCast
     /// skills list, then the chains list, whose level data (FUN_141764c80, <see cref="CastGate.LevelData"/>) is there, which
     /// without <paramref name="any"/> is not cooling (FUN_141765fe0, or no charge left for a recharge skill; a cooling skill
     /// is skipped with useCoolDownShowUI or without <paramref name="castAllowed"/>) and whose cast check (FUN_14176a380,
+    /// on the level data of the skill MyPC::FUN_141526c80 swaps it to, <see cref="SkillCast.ChangeSkill"/>,
     /// <see cref="CastGate.Why"/> with <paramref name="castAllowed"/>) passes. <paramref name="castAllowed"/> is
     /// m_nCastAllowed: 1 inside the skill state (StateSkill::vfunc_8 stateskill.cpp:639-697 and the end step :2906-2928 set
     /// it around the poll and the hold check), 0 for the idle poll and a key press. The first refusal after the key went
@@ -120,7 +120,7 @@ public sealed class CompactCast
         if (lapenTick > now) return 0;
         if (tab == null) return 0;
         if (!actionDown(tab.KeyAction)) { dirty = true; return 0; }
-        // :2457: IsShortKey(FindKeyByActionAndPriority(m_30, 0)), always false here (no short keys are loaded)
+        // :2457: IsShortKey(FindKeyByActionAndPriority(m_30, 0)), always false here (short keys come only from the unported cartoon dialog)
         for (int i = 0; i < skills.Count + chains.Count; i++)
         {
             uint id = i < skills.Count ? skills[i] : chains[i - skills.Count];
@@ -134,6 +134,11 @@ public sealed class CompactCast
                 if (((!recharge && cool > 0f) || (recharge && w.RechargeRemain(s) == 0)) && (s.Condition.UseCoolDownShowUI || !castAllowed))
                     continue;
             }
+            // :2482-2490: the swap (MyPC::FUN_141526c80); a changed id or level takes its own level data
+            uint cid = s.Id;
+            ushort clv = lv.Level;
+            SkillCast.ChangeSkill(w, ref cid, ref clv);
+            if ((cid != s.Id || clv != lv.Level) && (lv = CastGate.LevelData(w, cid)) == null) continue;
             int why = CastGate.Why(w, lv, castAllowed);
             if (why != 0)
             {

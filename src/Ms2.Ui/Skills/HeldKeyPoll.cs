@@ -8,8 +8,10 @@ namespace Ms2.Ui.Skills;
 /// (mypc.cpp:1767-1859) with its map of since when each bound key is down (m_map17c0), and the key-down skill's first press
 /// (m_n15ec, m_n15f0) in MyPC::vfunc_104 (:1711-1726) and MyPC::vfunc_53 (:2998-3004). 0 B per call once the map holds the
 /// held keys.
-/// STILL-OPEN: CKeyTable's short keys (IsShortKey, AddShortKey) are not loaded (no key is short here), and the bound keys come
-/// in key order (the client's m_keys is a CAtlMap, hash order).
+/// CKeyTable's short keys (IsShortKey, keytable.cpp:1725) are skipped by the client; their only adder is UICartoonDialog
+/// (OnLoadComplete adds keys 0x7f and 0x7a, vfunc_67 removes them, uicameraeditdialog.cpp:621-640), which is not ported, so no
+/// key is short here.
+/// STILL-OPEN: the short keys come with the cartoon dialog; the bound keys come in key order (the client's m_keys is a CAtlMap, hash order).
 /// </summary>
 public sealed class HeldKeyPoll
 {

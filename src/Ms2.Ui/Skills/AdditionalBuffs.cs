@@ -107,6 +107,36 @@ public sealed class AdditionalBuffList
 
     public IReadOnlyCollection<AdditionalBuff> Buffs => map.Values;
 
+    /// <summary>
+    /// FUN_140970020 @0x140970020 (additionalcli_2.cpp:383) through FUN_14096fe60 with bAll clear: an enabled effect of the id,
+    /// at the level unless it is 0, whose overlap count passes <see cref="CompareOverlapCount"/> unless the count is 0.
+    /// </summary>
+    public bool Has(uint id, ushort level, uint count, int compare)
+    {
+        foreach (var b in map.Values)
+        {
+            if (b.Enabled == 0 || b.Id != id) continue;
+            if (level != 0 && b.Level != level) continue;
+            if (count != 0 && !CompareOverlapCount(compare, count, (uint)b.OverlapCount)) continue;
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// The overlap test @0x140975ed0 (additionalcli_2.cpp:142), the SkillCompareSign of the count against the effect's overlap:
+    /// 1 equal, 2 count above it, 3 count at or above, 4 count below, 5 count at or below; any other sign fails.
+    /// </summary>
+    public static bool CompareOverlapCount(int compare, uint count, uint overlap) => compare switch
+    {
+        1 => count == overlap,
+        2 => count > overlap,
+        3 => count >= overlap,
+        4 => count < overlap,
+        5 => count <= overlap,
+        _ => false,
+    };
+
     /// <summary>IsUpperTargetId @0x140930110 (unit_14092f420_accountsessionstate.cpp:523): <c>g_upperTargetId == nValue</c>.</summary>
     public bool IsUpperTargetId(int objectId) => UpperTargetId == objectId;
 

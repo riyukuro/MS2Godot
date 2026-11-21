@@ -194,11 +194,16 @@ public sealed class SkillCondition
 }
 
 /// <summary>&lt;basic&gt;&lt;changeSkill&gt; (Unk_SkillBlockB0::Load @0x1408034a0, skillleveldata.cpp:600): the effect checks and the skills
-/// they swap in, as comma lists.</summary>
+/// they swap in, as comma lists. changeSkillCheckEffectCompareFunc (SkillCompareSign) is padded with 1 (equals) up to the id count;
+/// when the levels, overlap counts or compare signs do not match the id count in number, all five lists are emptied.</summary>
 public sealed class SkillChange
 {
     public readonly List<uint> CheckEffectId = new(), CheckEffectOverlapCount = new(), ChangeSkillId = new();
     public readonly List<ushort> CheckEffectLevel = new();
+    public readonly List<int> CheckEffectCompareFunc = new();
+
+    /// <summary>The ChangeSkillId at <paramref name="i"/>, 0 past the list's end.</summary>
+    public uint ChangeSkillAt(int i) => i < ChangeSkillId.Count ? ChangeSkillId[i] : 0;
 }
 
 /// <summary>One &lt;skill&gt; of skilldata/*.xml (SkillData::Load @0x1407e9130, commonfiles/skilloverlapcompare.cpp:814): the basic
@@ -246,6 +251,9 @@ public sealed class SkillData
     public bool DisableChargingAttackSkipFrame;
     /// <summary>Unk_SkillBlockA4::FUN_140803040 @0x140803040 (skillleveldata.cpp:524): the output skill, 0 without an input skill.</summary>
     public uint ComboSwapSkill => ComboInputSkill == 0 ? 0 : ComboOutputSkill;
+    /// <summary>Unk_SkillBlockA4::GetOutputSkill @0x140802fc0 (skillleveldata.cpp:508): the output skill for the input skill, else
+    /// the id.</summary>
+    public uint OutputSkill(uint id) => id == ComboInputSkill ? ComboOutputSkill : id;
     public uint AutoTargetingType, UseDefaultSkillId;
     public bool KeyIsDown, UseDefaultSkill;
     /// <summary>&lt;basic&gt;&lt;autoTargeting&gt; (Unk_SkillBlock160::Load @0x140803140, skillleveldata.cpp:551), loaded from &lt;basic&gt; (:877).</summary>
@@ -317,6 +325,15 @@ public sealed class SkillData
             s.Change.CheckEffectLevel.AddRange(T(ch, "changeSkillCheckEffectLevel").Select(t => (ushort)Xml.Atoi(t)));
             s.Change.CheckEffectOverlapCount.AddRange(T(ch, "changeSkillCheckEffectOverlapCount").Select(t => (uint)Xml.Atoi(t)));
             s.Change.ChangeSkillId.AddRange(T(ch, "changeSkillID").Select(t => (uint)Xml.Atoi(t)));
+            s.Change.CheckEffectCompareFunc.AddRange(T(ch, "changeSkillCheckEffectCompareFunc").Select(Xml.Atoi));
+        }
+        var change = s.Change;
+        while (change.CheckEffectCompareFunc.Count < change.CheckEffectId.Count) change.CheckEffectCompareFunc.Add(1);
+        if (change.CheckEffectLevel.Count != change.CheckEffectId.Count || change.CheckEffectOverlapCount.Count != change.CheckEffectId.Count
+            || change.CheckEffectCompareFunc.Count != change.CheckEffectId.Count)
+        {
+            change.CheckEffectId.Clear(); change.CheckEffectLevel.Clear(); change.CheckEffectOverlapCount.Clear();
+            change.CheckEffectCompareFunc.Clear(); change.ChangeSkillId.Clear();
         }
         if (basic.Element("condition") is { } cond)
         {
