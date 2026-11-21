@@ -1664,6 +1664,7 @@ namespace Ms2.Avm2.Flash
                     }
                     if (tf.type != "input") return;
                     if (keyCode == 8) { tf.Backspace(); return; }
+                if (keyCode == 46 && !shift) { tf.Delete(); return; }
                     if (charCode >= 32 && !ctrl) TypeInto(tf, ((char)charCode).ToString());
                 });
         }

@@ -639,6 +639,20 @@ public class AsTextField : AsInteractiveObject
         Send("flash.events.Event", "change", true);
     }
 
+    /// <summary>
+    /// Delete (KeyAct_Delete, EditorKit's key handler, sfr_gfx_07.cpp:798), input fields only. The selection goes, or with
+    /// none the character after the caret, and the caret stays at the start. The field reports a change only when
+    /// something went: unlike Backspace, Delete at the end of the text sends no change event.
+    /// </summary>
+    public void Delete()
+    {
+        if (type != "input") return;
+        var (b, e) = SelRange();
+        if (b == e) { if (b >= Text.Length) return; e = b + 1; }
+        Text = Text[..b] + Text[e..]; SelBegin = SelEnd = b; Html = null; Changed();
+        Send("flash.events.Event", "change", true);
+    }
+
     /// <summary>Ctrl+A (KeyAct_SelectAll, EditorKit's key handler, sfr_gfx_07.cpp:821): the whole text is selected, nothing changes.</summary>
     public void SelectAll() { SelBegin = 0; SelEnd = Text.Length; }
 
