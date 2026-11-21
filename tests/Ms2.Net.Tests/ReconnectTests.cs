@@ -91,9 +91,26 @@ public class ReconnectTests {
         Assert.That(b.Capture(0x30, new byte[0]), Is.EqualTo(6));            // numbering is back on afterwards
     }
 
+    [Test] public void SizeCountsTheTwoTypeBytesOfEachPacket() {
+        var b = Capturing(limit: 24);
+        for (int i = 0; i < 5; i++) b.Capture(0x20, new byte[2]);   // 4 per packet: 20 < 24, nothing shrinks
+        b.Shrink(); Assert.That(b.CapturedCount, Is.EqualTo(5));
+        b.Capture(0x20, new byte[2]);                                 // 24 reaches the limit, down to 12 = 3 packets
+        b.Shrink(); Assert.That(b.CapturedCount, Is.EqualTo(3));
+        b.DiscardAcked(99); Assert.That(b.CapturedCount, Is.EqualTo(1));
+        b.Capture(0x20, new byte[2]); b.Capture(0x20, new byte[2]); b.Capture(0x20, new byte[2]); b.Capture(0x20, new byte[2]);
+        b.Capture(0x20, new byte[2]); b.Shrink();                      // 6 kept = 24: only right if DiscardAcked subtracted 4, not 2
+        Assert.That(b.CapturedCount, Is.EqualTo(3));
+    }
+
+    [Test] public void NoReconnectWithoutTheNetworkService() {
+        var (m, h) = Ready(); h.HasNetworkService = false; h.Log.Clear();
+        m.Begin(1); Assert.That(h.Log, Is.Empty); Assert.That(m.TryConnect(), Is.False); Assert.That(h.Log, Is.Empty);
+    }
+
     [Test] public void ShrinkDropsToHalfTheLimitOnceTheLimitIsReached() {
-        var b = Capturing(limit: 10);
-        for (int i = 0; i < 10; i++) b.Capture(0x20, new byte[] { 0 });
+        var b = Capturing(limit: 50);
+        for (int i = 0; i < 10; i++) b.Capture(0x20, new byte[3]);   // 5 each with the type
         b.Shrink();
         Assert.That(b.CapturedCount, Is.EqualTo(5));
         b.SetCaptureEnabled(false);
@@ -111,7 +128,7 @@ public class ReconnectTests {
     // ---- the manager ----
 
     sealed class Host : IReconnectHost {
-        public uint Now { get; set; } = 100_000; public bool InGame { get; set; } = true; public bool HasConnection { get; set; } = true;
+        public uint Now { get; set; } = 100_000; public bool InGame { get; set; } = true; public bool HasConnection { get; set; } = true; public bool HasNetworkService { get; set; } = true;
         public bool SocketDisconnected { get; set; } public bool Closing { get; set; }
         public string SocketHost { get; set; } = "game"; public int SocketPort { get; set; } = 9000; public int SocketSequence { get; set; } = 12;
         public bool IsConnected { get; set; } public bool ConnectResult = true;

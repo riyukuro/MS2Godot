@@ -6,7 +6,7 @@ namespace Ms2.Net.Packets;
 /// <summary>
 /// ReconnectionOptions (clientreconnectionstructs.cpp:Read/Write @0x140208500/0x1402084a0): eleven i32. The client reads the ones it
 /// uses by index (reconnectionmanagercli.cpp): 0 enabled, 1 resend buffer limit, 2 give-up seconds, 7 attempts, 8 retry delay seconds, 9 hold sends while offline.
-/// The server sends them in the Gvg packet, kind 43 (networkservice.cpp:821).
+/// The server sends them in the Gvg packet, kind 43 (networkservice.cpp:820).
 /// </summary>
 public sealed class ReconnectionOptions {
     public const int Count = 11;

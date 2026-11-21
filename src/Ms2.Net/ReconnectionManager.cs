@@ -9,6 +9,8 @@ public interface IReconnectHost {
     /// <summary>The scene is the game scene (state 0x620000c); reconnects only happen there.</summary>
     bool InGame { get; }
     bool HasConnection { get; }
+    /// <summary>GetNetworkService() != 0: BeginReconnect and AttemptReconnect return at once without it (reconnectionmanagercli.cpp).</summary>
+    bool HasNetworkService { get; }
     /// <summary>CGameSocket::GetDisconnect: the client closed the connection itself.</summary>
     bool SocketDisconnected { get; }
     /// <summary>DAT_143af7d44 == 1 (the client is shutting down) or g_socketClosing == 1.</summary>
@@ -104,6 +106,7 @@ public sealed class ReconnectionManager {
 
     /// <summary>BeginReconnect (@0x140aad340): starts the clock, remembers the socket sequence, posts the attempt message and shows the progress dialog.</summary>
     public void Begin(uint code) {
+        if (!host.HasNetworkService) return;
         startTick = host.Now; attempt = 0; maxAttempts = options[ReconnectionOptions.MaxAttempts];
         postParam = unchecked((int) code); session = host.SocketSequence;
         host.PostAttempt(postParam);
@@ -113,6 +116,7 @@ public sealed class ReconnectionManager {
 
     /// <summary>AttemptReconnect (@0x140aad450): counts the attempt and connects to the saved address, unless the delay from DisconnectAndDelay has not passed.</summary>
     public bool TryConnect() {
+        if (!host.HasNetworkService) return false;
         uint now = host.Now;
         attempt++; lastAttemptTick = now;
         host.Notice("[DEBUG] * Reconnecting...");

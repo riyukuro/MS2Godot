@@ -10,6 +10,9 @@ namespace Ms2.Net;
 /// counts its body only (the client counts COutPacket::GetLength).
 /// </summary>
 public sealed class OutPacketBuffer {
+    /// <summary>The client's captured length is COutPacket::GetLength of the clone: the u16 type is part of the buffer (packet.cpp:227-269, clientreconnectionstructs.cpp:235-237), so body + 2.</summary>
+    static int SizeOf(Captured c) => c.Body.Length + 2;
+
     sealed record Captured(ushort Type, byte[] Body) { public int Sequence; }
 
     readonly List<Captured> captured = new(), pending = new();
@@ -52,7 +55,7 @@ public sealed class OutPacketBuffer {
     int CaptureLocked(ushort type, byte[] body) {
         if (resending) return sequence;
         sequence++;
-        if (captureEnabled && !IsControl(type)) { captured.Add(new Captured(type, (byte[]) body.Clone()) { Sequence = sequence }); capturedSize += body.Length; }
+        if (captureEnabled && !IsControl(type)) { captured.Add(new Captured(type, (byte[]) body.Clone()) { Sequence = sequence }); capturedSize += body.Length + 2; }
         return sequence;
     }
 
@@ -79,7 +82,7 @@ public sealed class OutPacketBuffer {
                 if (captured[0].Sequence > ack) break;
                 if (captured.Count == 1) break;
                 if (captured[1].Sequence > ack) break;
-                capturedSize -= captured[0].Body.Length;
+                capturedSize -= SizeOf(captured[0]);
                 captured.RemoveAt(0);
             }
         }
@@ -91,7 +94,7 @@ public sealed class OutPacketBuffer {
             if (!captureEnabled) { if (capturedSize != 0) { captured.Clear(); capturedSize = 0; } return; }
             int shrink = limit / 2;
             if (capturedSize < limit) return;
-            while (capturedSize > shrink && captured.Count > 0) { capturedSize -= captured[0].Body.Length; captured.RemoveAt(0); }
+            while (capturedSize > shrink && captured.Count > 0) { capturedSize -= SizeOf(captured[0]); captured.RemoveAt(0); }
         }
     }
 
