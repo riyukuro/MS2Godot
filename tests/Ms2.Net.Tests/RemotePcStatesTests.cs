@@ -296,6 +296,32 @@ public class RemotePcStatesTests {
         Assert.That(evenSubs, Is.EqualTo(evenSubs[0] == 0x21 ? new[] { 0x21, 0x23, 0x21 } : new[] { 0x23, 0x21, 0x23 }));
     }
 
+    [Test] public void WeaponKeyChangedFiresOnStateSubAndGaitChangeOnly() {
+        // The weapon-hold key (state, sub state, StateWalk's run flag) is what State::vfunc_15 reads (@0x1417ff..., statewalk.cpp);
+        // a remote slowing from run to slow walk changes the key without changing the state.
+        var b = new Body();
+        var sm = new RemotePcStates(b);
+        var keys = new List<(int cur, int sub, bool run)>();
+        sm.WeaponKeyChanged = () => keys.Add((sm.Cur, sm.Sub, sm.WalkRun));
+        sm.Spawn(); Run(sm, 0.1f);
+        sm.SequenceEnded(RemotePcStates.ActJumpLand);
+        sm.Push(Rec(2, 0x18, b.Position, new Vector2(0, 1), 0f));
+        sm.Update(1 / 60f);
+        Assert.That(sm.Cur, Is.EqualTo(2));
+        Assert.That(sm.WalkRun, Is.True);
+        Assert.That(keys[^1], Is.EqualTo((2, 0x18, true)));
+        int n = keys.Count;
+        sm.Update(1 / 60f); sm.Update(1 / 60f);
+        Assert.That(keys.Count, Is.EqualTo(n), "no per-frame notification");
+
+        // slow walk: sub 0x19 clears the run flag
+        sm.Push(Rec(2, 0x19, b.Position, new Vector2(0, 1), 0f));
+        sm.Update(1 / 60f);
+        Assert.That(sm.WalkRun, Is.False);
+        Assert.That(keys[^1], Is.EqualTo((2, 0x19, false)));
+        Assert.That(keys.Count, Is.GreaterThan(n));
+    }
+
     [Test] public void StateWalkChangeTestUsesStatRates() {
         // StateWalk::vfunc_4 (@0x1417ff800, statewalk.cpp:103-104) stores vfunc_96/vfunc_97 (MoveSpeedRate/ScaleAnimRate);
         // StateWalk::vfunc_9 (@0x141800580, statewalk.cpp:356-371) compares those, not Speed/RunSpeed.

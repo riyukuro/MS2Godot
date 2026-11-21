@@ -134,6 +134,20 @@ public sealed class RemotePcStates
     public float Speed { get; private set; }
     /// <summary>Called with each state entered, before its vfunc_4 (which may enter another in the same frame).</summary>
     public Action<int> StateChanged;
+    /// <summary>m_n48 (StateWalk's run flag, set by vfunc_4 and vfunc_9).</summary>
+    public bool WalkRun => walkRun != 0;
+    /// <summary>Called when the state, its sub state or the walk's run flag changed: the three inputs of State::vfunc_15 (the
+    /// weapon-hold answer; WeaponStance.StateHoldsWeapons in Ms2.Ui). Not per frame.</summary>
+    public Action WeaponKeyChanged;
+    (int cur, int sub, bool run) weaponKey;
+
+    void NotifyWeaponKey()
+    {
+        var key = (Cur, Sub, WalkRun);
+        if (key == weaponKey) return;
+        weaponKey = key;
+        WeaponKeyChanged?.Invoke();
+    }
     /// <summary>The queued records (for tests).</summary>
     public int Queued => requests.Count;
 
@@ -324,6 +338,7 @@ public sealed class RemotePcStates
         if (state == Cur && !force)
         {
             if (sub != 0) subs[Cur] = sub;
+            NotifyWeaponKey();
             return;
         }
         if (state == StateSkill) FlushRequests();
@@ -333,6 +348,7 @@ public sealed class RemotePcStates
         Cur = state;
         StateChanged?.Invoke(state);
         Enter(state);
+        NotifyWeaponKey();
     }
 
     // ---- the states ------------------------------------------------------------------------------------------------
@@ -544,6 +560,7 @@ public sealed class RemotePcStates
     {
         pc.AnimSpeed = pc.Gait(EffectiveSpeed, pc.RunSpeed, pc.WalkSpeed, out bool run);
         walkRun = run ? 1 : 0;
+        NotifyWeaponKey();
     }
 
     /// <summary>
@@ -557,13 +574,14 @@ public sealed class RemotePcStates
         if (pc.OnWater) { ChangeState(StateSwim); return; }
         int delay = Ms(MathF.Sqrt(3f / MathF.Abs(pc.Gravity / 100f)));
         if (pc.InAirFor(delay)) { ChangeState(StateFall); return; }
-        if (subs[StateWalk] == 0x19) walkRun = 0;
+        if (subs[StateWalk] == 0x19) { walkRun = 0; NotifyWeaponKey(); }
         int key = walkRun == 0 ? ActWalk : ActRun;
         bool changed = !(pc.MoveSpeedRate == walkSpeed1 && pc.ScaleAnimRate == walkSpeed2 && walkChanged == 0);
         if (!pc.IsAction(key) || changed)
         {
             pc.AnimSpeed = pc.Gait(EffectiveSpeed, pc.RunSpeed, pc.WalkSpeed, out bool run);
             walkRun = run ? 1 : 0;
+            NotifyWeaponKey();
             walkSpeed1 = pc.MoveSpeedRate;
             walkSpeed2 = pc.ScaleAnimRate;
             pc.PlayAction(key, pc.AnimSpeed, changed);

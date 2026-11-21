@@ -186,6 +186,14 @@ public sealed partial class RemoteLayer : Node3D
 
     static string BodyDir(byte gender) => gender == 0 ? "male" : "female";
 
+
+    /// The remote's weapon hold, from its state machine: State::vfunc_15 of the current state, sub state and StateWalk's run flag.
+    /// Called on a key change (RemotePcStates.WeaponKeyChanged) and on a battle-stance change, not per frame.
+    static void RefreshWeapons(Remote r)
+    {
+        var st = r.Pc.States;
+        r.Weapons?.SetState(r.InBattle, Ms2.Ui.Items.WeaponStance.StateHoldsWeapons(st.Cur, st.Sub, st.WalkRun));
+    }
     Remote Spawn(FieldAddUser u)
     {
         byte gender = u.User.Gender;
@@ -225,7 +233,8 @@ public sealed partial class RemoteLayer : Node3D
         r.Buffs = new Ms2.Ui.Skills.AdditionalBuffList(levelOf);
         foreach (var b in u.Buffs) r.Buffs.Apply(BuffPacket.FromAdd(b));
         r.Weapons = EquipApplier.RigOf(visual);
-        r.Weapons?.SetState(r.InBattle, true);
+        r.Pc.States.WeaponKeyChanged = () => RefreshWeapons(r);
+        RefreshWeapons(r);
         var dummies = Ms2.Formats.World.EffectDummyTable.Load(packs).Pc(u.User.Gender);
         var model = visual.GetNodeOrNull<Node3D>("Model");
         r.Anchor = () => World.DummyAnchor.Point(dummies, "Eff_UI", model, md.RootName) ?? root.GlobalPosition;
@@ -327,7 +336,7 @@ public sealed partial class RemoteLayer : Node3D
                     if (sb.InBattle == (bat.Emotion != 0)) break;
                     sb.InBattle = bat.Emotion != 0;
                     sb.Pc.BattleStance = sb.InBattle;   // vfunc_65 (m_unk_160), PlayEffects' run test
-                    sb.Weapons?.SetState(sb.InBattle, true);
+                    RefreshWeapons(sb);
                     EnsureBar(sb)?.Stance(sb.InBattle, sb.HpCur, sb.HpMax);
                     break;
                 case SkillDamageEvent dmg:
