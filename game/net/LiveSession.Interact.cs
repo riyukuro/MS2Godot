@@ -179,8 +179,6 @@ public partial class LiveSession
     /// goes out when it gets that far.</summary>
     public Ms2.Ui.CubeCraftState.PlacementStop ConfirmPlacement()
     {
-        // the lock check only runs once the pc's construction unlock is known (STILL-OPEN until its setter is ported)
-        if (CubeCraft.ConstructionUnlocked != null) CubeCraft.Locks ??= CubeLocks();
         var stop = CubeCraft.ConfirmPlacement(Me.Dead, ItemDataOf, out var send);
         if (send != null) Send(send);
         int notice = Ms2.Ui.CubeCraftState.NoticeOf(stop);

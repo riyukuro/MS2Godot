@@ -972,6 +972,9 @@ public partial class LiveSession : Node
     public void FieldLoaded()
     {
         if (entry == null) return;
+        // MyPC::FUN_1415302e0's tables, loaded with the field rather than at the first placement; a failed load stays null
+        // (ConfirmPlacement stops at InventoryCheckOpen) and is tried again at the next field
+        CubeCraft.Locks ??= CubeLocks();
         var answer = fieldEntry.Answer();
         if (answer == null) return;
         Send(answer);
