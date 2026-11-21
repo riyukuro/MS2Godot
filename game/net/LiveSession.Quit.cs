@@ -46,6 +46,7 @@ public partial class LiveSession
         var old = game;
         game = null;
         old?.Dispose();
+        StopCombatEffects();   // the game scene state goes, and its WorldService's time scale with it
         _ = ReturnAsync(m, exitCts.Token);
     }
 

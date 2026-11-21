@@ -485,7 +485,7 @@ public partial class FieldContents : Node3D
         {
             if (!IsInstanceValid(this) || !IsInsideTree()) return;
             // a move to another server: the loading screen stays up until the new server's field entry came
-            if (moveReady != null && !moveReady()) { GetTree().CreateTimer(0.05).Timeout += Fire; return; }
+            if (moveReady != null && !moveReady()) { GetTree().CreateTimer(0.05, ignoreTimeScale: true).Timeout += Fire; return; }
             moveReady = null;
             if (shotDir != null) Shot("loading.png");
             Travel.Pending = nextMove?.Invoke();
@@ -544,7 +544,7 @@ public partial class FieldContents : Node3D
         }
         if (ready != null && !ready())
         {
-            tree.CreateTimer(0.05).Timeout += () => ServerMove(tree, map, ready);
+            tree.CreateTimer(0.05, ignoreTimeScale: true).Timeout += () => ServerMove(tree, map, ready);
             return;
         }
         Travel.LoadingImage = null;

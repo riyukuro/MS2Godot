@@ -24,6 +24,8 @@ public partial class LiveSession
     /// <summary>The own player's invincible time started (true: FUN_141661370(1, ..) spawns the effect again, the old handle
     /// overwritten) or ended (false: the effect removed).</summary>
     public event Action<bool> InvincibleChanged;
+    /// <summary>The own player's node was bound (<see cref="OwnPlayer"/> set).</summary>
+    public event Action OwnPlayerBound;
     /// <summary>The own player's node, once the field is built.</summary>
     public Player OwnPlayer => player;
 
@@ -50,7 +52,7 @@ public partial class LiveSession
             // OnOneTimeEffect @0x14173a420 (scenestategame.cpp:8453): CTriggerService::FUN_141863630; the field's RegionSkills
             // node keeps the handles
             var m = OneTimeEffect.Read(p.Reader());
-            OneTimeEffectLog.Add(m);
+            LogOneTime(m);
             OneTimeEffectReceived?.Invoke(m);
         }
         else if (game.Is(p, Inbound.TimeScale))
@@ -58,7 +60,7 @@ public partial class LiveSession
             // OnTimeScale @0x14173a5e0 (scenestategame.cpp:8465): StartTimeScale or FUN_141bd9380
             var t = TimeScale.Read(p.Reader());
             bool set = t.Start ? TimeScaleRamp.Start(t.From, t.To, t.DurationMs, t.Curve, TickMs) : TimeScaleRamp.Stop();
-            if (set) Engine.TimeScale = TimeScaleRamp.Scale;
+            if (set) GameClock.SetScale(TimeScaleRamp.Scale);
         }
         else return false;
         return true;
@@ -73,21 +75,35 @@ public partial class LiveSession
         InvincibleChanged?.Invoke(true);
     }
 
-    /// <summary>The per-frame parts: the world tick's time scale ramp (worldservice_1.cpp:9883) and PC::FUN_1416615f0's
-    /// invincible end and blink.
+    /// <summary>The field's one-time effect log keeps what a node made now has to replay: a remove leaves no effect of its id
+    /// (CTriggerService drops the handle), so it drops the id's logged adds and is not kept itself.</summary>
+    void LogOneTime(OneTimeEffect m)
+    {
+        if (m.Add) { OneTimeEffectLog.Add(m); return; }
+        for (int i = OneTimeEffectLog.Count - 1; i >= 0; i--)
+            if (OneTimeEffectLog[i].Id == m.Id) OneTimeEffectLog.RemoveAt(i);
+    }
+
+    /// <summary>The world tick's time scale ramp (worldservice_1.cpp:9883), each frame whether or not a game link is up, so a
+    /// ramp the game started still ends after the link went.</summary>
+    void TickTimeScale()
+    {
+        if (TimeScaleRamp.Running && TimeScaleRamp.Tick(TickMs)) GameClock.SetScale(TimeScaleRamp.Scale);
+    }
+
+    /// <summary>PC::FUN_1416615f0's invincible end and blink, each frame of the game.
     /// STILL-OPEN: the blink alpha (vfunc_42, GameObject SetNodeAlpha: 0.5 / 0.9, then 1.0 at the end) has no character alpha
-    /// path in the character shader, so it is not drawn. Engine.TimeScale also scales the UI's timers, which CMainSystem's
-    /// game clock does not.</summary>
+    /// path in the character shader, so it is not drawn.</summary>
     void TickCombatEffects()
     {
         uint now = TickMs;
-        if (TimeScaleRamp.Running && TimeScaleRamp.Tick(now)) Engine.TimeScale = TimeScaleRamp.Scale;
         if (Invincible.Active && Invincible.Tick(now, out _, out bool ended) && ended) InvincibleChanged?.Invoke(false);
     }
 
-    /// <summary>The game link went: a running time scale change ends with it.</summary>
+    /// <summary>The game went (the link lost, back to the login server, the quit, the session's end): a running time scale
+    /// change ends with it, as the game scene state's WorldService does.</summary>
     void StopCombatEffects()
     {
-        if (TimeScaleRamp.Stop()) Engine.TimeScale = 1;
+        if (TimeScaleRamp.Stop()) GameClock.SetScale(1);
     }
 }

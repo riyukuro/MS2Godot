@@ -56,6 +56,16 @@ public class CombatEffectsTests
     }
 
     [Test]
+    public void TheScaleIsHeldAtZeroOrAbove()
+    {
+        var t = new TimeScaleRamp();
+        t.Start(-0.5f, -1f, 1000f, 1, 0);
+        Assert.That(t.Scale, Is.EqualTo(0f), "a negative start scale");
+        Assert.That(t.Tick(500), Is.True);
+        Assert.That(t.Scale, Is.EqualTo(0f), "a negative end scale mid-ramp");
+    }
+
+    [Test]
     public void TheInvincibleLengthsComeFromTheConstants()
     {
         Assert.That(InvincibleBlink.TickFor(InvincibleBlink.RevivalTimer, null), Is.EqualTo(10000));

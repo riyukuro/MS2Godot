@@ -109,7 +109,7 @@ public sealed partial class ProfileImageService : Node
             if ((c == 5 || c == 6) && tries > 1)
             {
                 GD.Print($"profile images: upload answer {code} '{System.Text.Encoding.UTF8.GetString(reply ?? Array.Empty<byte>())}', trying again");
-                GetTree().CreateTimer(0.5).Timeout += () => Post(url, body, tries - 1, done);
+                GetTree().CreateTimer(0.5, ignoreTimeScale: true).Timeout += () => Post(url, body, tries - 1, done);
                 return;
             }
             done(c, text);

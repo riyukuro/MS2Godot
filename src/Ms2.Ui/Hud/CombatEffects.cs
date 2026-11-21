@@ -18,7 +18,9 @@ public sealed class TimeScaleRamp
     float from = 1f, to = 1f;
     int curve;
 
-    /// <summary>The game clock's scale the last call set (CMainSystem's m_fTimeScale after ResetTimeScale is 1).</summary>
+    /// <summary>The game clock's scale the last call set (CMainSystem's m_fTimeScale after ResetTimeScale is 1), held at 0 or
+    /// above here (StartTimeScale and CMainSystem::SetTimeScale pass the server's scale on unchecked, worldservice_1.cpp:8430,
+    /// mainsystem.cpp:218; GameTimeClock's handling of a negative one is not ported).</summary>
     public float Scale { get; private set; } = 1f;
     /// <summary>A change runs (m_9b8 &gt; 0).</summary>
     public bool Running => endTick != 0;
@@ -31,7 +33,7 @@ public sealed class TimeScaleRamp
         from = startScale; to = endScale; curve = easing;
         endTick = now + (uint)(int)durationMs;
         startTick = now;
-        Scale = startScale;
+        Scale = MathF.Max(0f, startScale);
         return true;
     }
 
@@ -53,7 +55,7 @@ public sealed class TimeScaleRamp
         float elapsed = now - startTick;
         float duration = endTick - startTick;
         float k = Ease(elapsed / duration, curve);
-        Scale = to * k + (1f - k) * from;
+        Scale = MathF.Max(0f, to * k + (1f - k) * from);
         return true;
     }
 

@@ -538,7 +538,7 @@ public partial class MovieClipNode : Node2D
     public override void _Process(double delta)
     {
         if (!playing) { SetProcess(false); return; }
-        rangeT += delta;
+        rangeT += Ms2Godot.GameClock.Real(delta);
         if (looping) { GotoFrame((int)(rangeT * Movie.Fps) % FrameCount); return; }
         int f = rangeFrom + (int)(rangeT * Movie.Fps);
         if (f >= rangeTo) { GotoFrame(rangeTo); playing = false; SetProcess(false); return; }

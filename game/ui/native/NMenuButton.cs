@@ -77,7 +77,7 @@ public partial class NMenuButton : Control
     public override void _Process(double delta)
     {
         if (frame >= target) return;
-        acc += delta;
+        acc += Ms2Godot.GameClock.Real(delta);
         while (acc >= 1 / fps && frame < target) { acc -= 1 / fps; frame++; }
         QueueRedraw(); effect.QueueRedraw();
     }

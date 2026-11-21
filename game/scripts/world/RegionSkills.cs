@@ -69,6 +69,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
         foreach (var m in ls.OneTimeEffectLog) ApplyOneTime(m);
         ls.OneTimeEffectReceived += ApplyOneTime;
         ls.InvincibleChanged += OnInvincible;
+        ls.OwnPlayerBound += OnOwnPlayerBound;
         if (ls.Invincible.Active) OnInvincible(true);   // an invincible time that began before the field was built
     }
 
@@ -79,6 +80,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
             ls.RegionSkillReceived -= Apply;
             ls.OneTimeEffectReceived -= ApplyOneTime;
             ls.InvincibleChanged -= OnInvincible;
+            ls.OwnPlayerBound -= OnOwnPlayerBound;
         }
         OneTime.Clear();
         invincibleHandle = 0;
@@ -114,11 +116,22 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
         if (start)
         {
             string fx = GameTables.Shared(packs, GameOptions.StringLanguage).CommonResource("Revival_Invincible");
+            // a restart overwrites the handle and leaves the old effect in kept, running (its loop too), as the client's
+            // m_n1060 store does (pc.cpp:3420); with no player node yet the handle stays 0 and the bind spawns it
             invincibleHandle = SpawnOn(fx, LiveSession.Instance?.OwnPlayer);
             return;
         }
         if (invincibleHandle != 0) FadeOut(invincibleHandle, 0);
         invincibleHandle = 0;
+    }
+
+    /// <summary>The own player's node came (the MyPC exists in the client whenever FUN_141661370 runs; here the start can come
+    /// before the node, between the own FieldAddUser and the bind): a running invincible time without a live effect spawns it.</summary>
+    void OnOwnPlayerBound()
+    {
+        if (LiveSession.Instance is not { Invincible.Active: true }) return;
+        if (invincibleHandle != 0 && kept.TryGetValue(invincibleHandle, out var nodes) && nodes.Exists(n => IsInstanceValid(n))) return;
+        OnInvincible(true);
     }
 
     /// <summary>One OnRegionSkill message.</summary>

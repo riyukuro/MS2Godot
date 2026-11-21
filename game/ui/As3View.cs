@@ -120,7 +120,7 @@ public partial class As3View : Node2D
     {
         long t0 = System.Diagnostics.Stopwatch.GetTimestamp();
         if (imeOwner == this) SyncIme();
-        Advance(delta);
+        Advance(Ms2Godot.GameClock.Real(delta));   // the UI runs on the real clock
         double ms = System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
         SpentMs += ms;
         if (NextProcessMs is { } report) { NextProcessMs = null; report(ms); }

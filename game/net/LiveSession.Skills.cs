@@ -14,7 +14,7 @@ public partial class LiveSession
     public bool SendCast(CastRecord r, bool holdAttackFeature)
     {
         if (game == null) return false;
-        Send(SkillCast.Use(r, game.Session.ServerTick, game.Session.ElapsedMs, holdAttackFeature));
+        if (SkillCast.Use(r, game.Session.ServerTick, game.Session.ElapsedMs, holdAttackFeature) is { } pk) Send(pk);
         return true;
     }
 

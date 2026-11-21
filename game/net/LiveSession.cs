@@ -553,6 +553,7 @@ public partial class LiveSession : Node
         exitCts.Cancel();
         StopGuide();
         Ms2.Ui.FieldMoveCover.Lower();        // no field move outlives the session
+        StopCombatEffects();                  // nor a time scale change
         game?.Dispose(); login?.Dispose();
         if (Instance == this) Instance = null;
     }
@@ -998,6 +999,7 @@ public partial class LiveSession : Node
             Send(new StateChange(mode, arg, game.Session.ServerTick, new System.Numerics.Vector3(pos.X, pos.Y, pos.Z)));   // mypc.cpp:3661: GetServerTick
             GD.Print($"live: State sent, mode {mode} arg {arg}");
         };
+        OwnPlayerBound?.Invoke();
     }
 
     /// <summary>MS2_LIVE_PACKETS=1: print each packet this session does not read itself, a debug switch; off by default (most
@@ -1006,6 +1008,7 @@ public partial class LiveSession : Node
 
     public override void _Process(double delta)
     {
+        TickTimeScale();   // before the game check: a ramp started in the game still ends when the link is gone
         if (game == null) { PumpLogin(); return; }
         while (game != null && game.Incoming.TryDequeue(out var p)) Handle(p);
         if (game == null) return;   // a GameToGame let the connection go: the next server's comes with the migration
@@ -1718,6 +1721,7 @@ public partial class LiveSession : Node
         player = null;
         var g = game; game = null;
         var l = login; login = null;
+        StopCombatEffects();
         // The client queues the packet and marks the socket to disconnect (networkservice.cpp:507-512): the send is not awaited here;
         // the connection closes once the packet is written.
         if (active != null && !active.IsClosed)

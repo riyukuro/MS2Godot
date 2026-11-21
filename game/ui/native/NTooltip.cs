@@ -22,7 +22,7 @@ public partial class NTooltip : Control
         owner.MouseEntered += () =>
         {
             int mine = ++pending;
-            owner.GetTree().CreateTimer(onDelay / 1000.0).Timeout += () => { if (mine == pending && owner.IsVisibleInTree()) Show(owner, text(), offDelay, offset); };
+            owner.GetTree().CreateTimer(onDelay / 1000.0, ignoreTimeScale: true).Timeout += () => { if (mine == pending && owner.IsVisibleInTree()) Show(owner, text(), offDelay, offset); };
         };
         owner.MouseExited += () => { pending++; shared?.Hide(); };
     }

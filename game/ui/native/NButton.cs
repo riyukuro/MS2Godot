@@ -111,7 +111,7 @@ public partial class NButton : Control
     public override void _Process(double delta)
     {
         if (frame >= endFrame) return;
-        clock += delta;
+        clock += Ms2Godot.GameClock.Real(delta);
         int f = Math.Min(endFrame, frame + (int)(clock * fps));
         if (f == frame) return;
         clock -= (f - frame) / fps;

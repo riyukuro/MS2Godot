@@ -116,6 +116,9 @@ public class SkillCastTests
     // main type 11: action kind 0x1c, a state skill; main type 14: an emotion
     const string StateKind = "<skill id=\"600\"><basic mainType=\"11\"/><level value=\"2\"/></skill>";
     const string Emotion = "<skill id=\"601\"><basic mainType=\"14\"/><level value=\"1\"/></skill>";
+    // main type 7: action kind 0x1e (glide); main type 10: 0x26 (ride / pet summon)
+    const string Glide = "<skill id=\"602\"><basic mainType=\"7\"/><level value=\"1\"/></skill>";
+    const string Ridee = "<skill id=\"603\"><basic mainType=\"10\"/><level value=\"1\"/></skill>";
 
     [Test]
     public void AStateSkillGoesAsTheStateSkillSendWithItsRecordedTick()
@@ -129,6 +132,19 @@ public class SkillCastTests
             Is.EqualTo(new StateSkillRequest(88, 4321, 600, 2, 0x1c, 55, 9)), "UseStateSkill: the record's tick, not the server tick");
         Assert.That(SkillCast.Use(Rec(100, 1), 6000, 55, false), Is.InstanceOf<SkillCastRequest>(), "action kind 0: the mode 0 send");
         Assert.That(SkillCast.Use(Rec(601, 1), 6000, 55, false), Is.InstanceOf<SkillCastRequest>(), "an emotion is no state skill");
+    }
+
+    [Test]
+    public void UseStateSendsNothingWhereTheClientsChecksEndWithoutASend()
+    {
+        var t = Skills(Attack, Glide, Ridee);
+        CastRecord Rec(uint id, long uid) => new()
+        {
+            Skill = t.Skills.GetSkillData(id), Level = t.Skills.GetSkillLevelData(id, 1), Tick = 4321, CastId = 88, ItemUid = uid,
+        };
+        Assert.That(SkillCast.Use(Rec(603, 9), 6000, 55, false), Is.Null, "kind 0x26: MyPC's ride / pet summon branch sends no 0x21");
+        Assert.That(SkillCast.Use(Rec(602, 0), 6000, 55, false), Is.Null, "kind 0x1e without a glide item: no send");
+        Assert.That(SkillCast.Use(Rec(602, 7), 6000, 55, false), Is.EqualTo(new StateSkillRequest(88, 4321, 602, 1, 0x1e, 55, 7)));
     }
 
     [Test]
