@@ -1419,7 +1419,7 @@ public partial class LiveSession : Node
                     guide?.QueueOccurrence(GuideOccurrence.Dead, 0);   // OnRevival of the own player (scenestategame.cpp:7405)
                 }
                 // OnRevival (scenestategame.cpp:7413): any revived PC's FUN_141661370(1, UserRevivalInvincibleTick, 100000004)
-                // STILL-OPEN: the other players' invincible time and effect on their revival
+                // (the other players' through the field tracker's UserRevivalEvent, RemoteLayer)
                 if (v.ObjectId == selfObject && selfObject >= 0) StartInvincible(Ms2.Ui.Hud.InvincibleBlink.RevivalTimer);
             }
             else if (game.Is(p, Inbound.RevivalConfirm))

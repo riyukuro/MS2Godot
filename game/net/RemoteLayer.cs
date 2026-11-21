@@ -28,6 +28,8 @@ public sealed partial class RemoteLayer : Node3D
         public EquipApplier.WeaponRig Weapons;
         public PcHpBar Bar;
         public byte Gender;
+        /// <summary>PC's invincible time (m_n1054/m_n1058/m_n105c, the effect m_n1060), from OnRevival.</summary>
+        public readonly RemoteInvincible Invincible = new();
         /// <summary>The actor's cast record and skill state (RemoteLayer.Casts.cs), and the seconds its motion still plays.</summary>
         public ActorCast Cast;
         public Func<Vector3> Anchor;
@@ -404,6 +406,23 @@ public sealed partial class RemoteLayer : Node3D
         GroundEffectsPlayed++;
     }
 
+    /// <summary>The field's RegionSkills node, the effect service the kept actor effects go through.</summary>
+    World.RegionSkills RegionFx => GetParent()?.GetNodeOrNull<World.RegionSkills>(RegionSkillsName);
+    static readonly NodePath RegionSkillsName = "RegionSkills";
+
+    /// <summary>FUN_141661370(1, UserRevivalInvincibleTick, 100000004) on a remote PC (OnRevival, scenestategame.cpp:7408):
+    /// the times, the common resource's Revival_Invincible effect at the actor (m_strInvincibleEffect), no buff icon.</summary>
+    void StartInvincible(Remote r)
+    {
+        const int timer = Ms2.Ui.Hud.InvincibleBlink.RevivalTimer;
+        var tables = Ms2.Ui.GameTables.Shared(packs, Ms2Godot.GameOptions.StringLanguage);
+        r.Invincible.Start(Ms2.Ui.Hud.InvincibleBlink.TickFor(timer, World.FieldContents.Constants(packs)), timer, (uint)Time.GetTicksMsec(),
+            r.Root, RegionFx, tables.CommonResource("Revival_Invincible"));
+    }
+
+    /// <summary>A remote PC's invincible time, by object id (tests and the debug endpoint).</summary>
+    public RemoteInvincible InvincibleOf(int objectId) => users.TryGetValue(objectId, out var r) ? r.Invincible : null;
+
     /// <summary>The ground effect actions the remote PCs played (steps and landings).</summary>
     public int GroundEffectsPlayed;
 
@@ -425,14 +444,14 @@ public sealed partial class RemoteLayer : Node3D
             {
                 case UserAddedEvent add:
                     if (add.User.User.CharacterId == selfCharacter) break;
-                    if (users.Remove(add.User.ObjectId, out var old)) { tags.Remove(old.Root); bars.Remove(old.Root); old.Pc.Free(); }
+                    if (users.Remove(add.User.ObjectId, out var old)) { old.Invincible.End(null, RegionFx); tags.Remove(old.Root); bars.Remove(old.Root); old.Pc.Free(); }
                     users[add.User.ObjectId] = Spawn(add.User); UsersSpawned++; ArmCodi();
                     GD.Print($"live: other player '{add.User.User.Name}' object {add.User.ObjectId} shown at {add.User.Position}");
                     break;
                 case UserRemovedEvent rem:
                     if (users.Remove(rem.ObjectId, out var gone))
                     {
-                        tags.Remove(gone.Root); bars.Remove(gone.Root); gone.Pc.Free();
+                        gone.Invincible.End(null, RegionFx); tags.Remove(gone.Root); bars.Remove(gone.Root); gone.Pc.Free();
                         GD.Print($"live: other player {gone.Name} (object {rem.ObjectId}) left");
                     }
                     break;
@@ -471,9 +490,13 @@ public sealed partial class RemoteLayer : Node3D
                     if (users.TryGetValue(ud.ObjectId, out var du)) du.Pc.States.Die(du.HpCur);
                     break;
                 case UserRevivalEvent rv:
-                    // OnRevival (scenestategame.cpp:7387-7398): FUN_14166ce50(0); the 0x18 state is the own player's only.
-                    // STILL-OPEN: FUN_141661ba0(flag) and the revival invincibility (FUN_141661370)
-                    if (users.TryGetValue(rv.ObjectId, out var vu)) vu.Pc.States.SetDead(false);
+                    // OnRevival (scenestategame.cpp:7387-7409): FUN_14166ce50(0); the 0x18 state is the own player's only; then
+                    // any revived PC's FUN_141661370(1, UserRevivalInvincibleTick, 100000004). STILL-OPEN: FUN_141661ba0(flag)
+                    if (users.TryGetValue(rv.ObjectId, out var vu))
+                    {
+                        vu.Pc.States.SetDead(false);
+                        StartInvincible(vu);
+                    }
                     break;
                 case SkillDamageEvent dmg:
                     // FUN_141671c20 (pcbase.cpp:3922) calls vfunc_112 whenever the target has an entry, a miss (type 2) too
@@ -530,6 +553,10 @@ public sealed partial class RemoteLayer : Node3D
         Drain();
         // PCBase::vfunc_53 for each PC, once per drawn frame with that frame's time (the local player's step)
         foreach (var a in users.Values) a.Pc.Tick(dt);
+        // PC's update runs FUN_1416615f0 for each PC (pc.cpp:4468): the invincible blink and end
+        uint now = (uint)Time.GetTicksMsec();
+        foreach (var a in users.Values)
+            if (a.Invincible.Blink.Active) a.Invincible.Tick(now, a.Visual, RegionFx);
         CodiTick(dt);
         npcs.Process(dt);
         combat.Process(dt);
