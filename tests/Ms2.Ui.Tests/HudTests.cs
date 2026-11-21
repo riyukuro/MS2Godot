@@ -1490,6 +1490,28 @@ public class HudTests
         Assert.That(h.RT.Errors, Is.Empty);
     }
 
+    [Test]
+    public void AClickAwayFromTheChatInputReleasesTheTextFieldFocus()
+    {
+        // a left press moves main.gfx's focus to the top-most entity (MovieImpl, sfr_gfx_01i.cpp:3673), NULL for the empty
+        // stage (QueueSetFocusTo, :2672), so the chat's TextInput loses it and FUN_14116d7a0's mask 2 clears
+        var m = Model();
+        var c = new MessengerController(m.Tables.DefaultMessengers[0], "messengerdialog0.xml", true);
+        var h = Load(c, m);
+        var stage = new UiStage();
+        stage.Add(h.Player, () => (0, 0), () => 0);
+        var input = (AsObject)h.Child("m_textInput");
+        Assert.That(c.OnKey(MessengerController.DikReturn, false), Is.True);
+        Assert.That(stage.TextFieldFocused, Is.True, "Return focused the input");
+        double w = Rt.ToNumber(h.Get(h.Player.Stage, "stageWidth")), hh = Rt.ToNumber(h.Get(h.Player.Stage, "stageHeight"));
+        h.Player.MouseMove(w - 2, 2);
+        h.Player.MouseButton(true);
+        h.Player.MouseButton(false);
+        Assert.That(stage.TextFieldFocused, Is.False, $"a press at ({w - 2}, 2) of {w}x{hh}");
+        Assert.That(Rt.ToNumber(h.Get(input, "focused")), Is.EqualTo(0), "the TextInput's focused");
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
     /// <summary>A loaded chat window with a local player "Me", its log's sends and notices collected.</summary>
     static (MessengerController c, UiHost h, UiModel m, List<UserChatRequest> sent, List<string> notices) ChatWindow()
     {

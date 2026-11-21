@@ -1536,7 +1536,14 @@ namespace Ms2.Avm2.Flash
                 if (button == LeftButton)
                     for (var o = (AsDisplayObject)t; o != null; o = o.Parent) if (o is AsInteractiveObject io && (io is AsTextField { type: "input" } || io.tabEnabled)) { f = io; break; }
                 MouseEv(t ?? (AsInteractiveObject)Stage, "mouseDown", button: button);     // activeEntitySafe, sfr_as3_17.cpp:7265
-                if (button == LeftButton && (f is AsTextField { type: "input" } || f?.tabEnabled == true)) SetFocus(f, "mouse");
+                // a left press moves the focus to the top-most entity (MovieImpl's mouse handling, sfr_gfx_01i.cpp:3673), and
+                // QueueSetFocusTo (:2672) takes NULL for one that is not focus enabled (IsFocusEnabled by mouse), so a press
+                // on nothing focusable, or on nothing, clears the focus; the change event names the entity pressed
+                if (button == LeftButton)
+                {
+                    if (f is AsTextField { type: "input" } || f?.tabEnabled == true) SetFocus(f, "mouse");
+                    else SetFocus(null, "mouse", t);
+                }
             }
             else
             {
@@ -1663,7 +1670,10 @@ namespace Ms2.Avm2.Flash
 
         public void ClearFocusSilently() => Focus = null;
 
-        public void SetFocus(AsInteractiveObject o, string how)
+        /// <summary>Moves the focus to <paramref name="o"/> (null for none). With <paramref name="how"/> the focused object (or
+        /// the stage) first gets the cancelable mouseFocusChange / keyFocusChange, its relatedObject <paramref name="related"/>
+        /// when given (the entity a press went to, QueueSetFocusTo's ch before IsFocusEnabled), else <paramref name="o"/>.</summary>
+        public void SetFocus(AsInteractiveObject o, string how, AsInteractiveObject related = null)
         {
             if (ReferenceEquals(o, Focus)) return;
             var old = Focus as AsInteractiveObject;
@@ -1676,7 +1686,7 @@ namespace Ms2.Avm2.Flash
                 RT.Guard(how == "mouse" ? "mouseFocusChange" : "keyFocusChange", () =>
                 {
                     var e = (AsFocusEvent)RT.GetClass("flash.events.FocusEvent").Construct(how == "mouse" ? "mouseFocusChange" : "keyFocusChange", Rt.True, Rt.True);
-                    e.relatedObject = o;
+                    e.relatedObject = related ?? o;
                     ok = from.Dispatch(e);
                 });
                 if (!ok) return;

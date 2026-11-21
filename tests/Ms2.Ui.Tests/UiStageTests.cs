@@ -74,6 +74,44 @@ public class UiStageTests
     }
 
     [Test]
+    public void ALeftPressOnNothingFocusableClearsTheTextFieldFocus()
+    {
+        // MovieImpl's mouse handling (sfr_gfx_01i.cpp:3673) queues the focus to the top-most entity on every left press;
+        // QueueSetFocusTo (:2672) takes NULL for one not focus enabled (a sprite without buttonMode or tabEnabled, the
+        // stage), so the field loses the focus and CUIService::IsTextFieldFocused turns false
+        var (p, slot, _) = Movie();
+        var stage = new UiStage();
+        stage.Add(p, () => (0, 0), () => 0);
+        var tf = (AsTextField)p.RT.GetClass("flash.text.TextField").Construct();
+        tf.type = "input";
+        p.Stage.addChild(tf);
+        var box = Box(p, slot, 300);
+        var changes = new List<object>();
+        p.Stage.addEventListener("mouseFocusChange", new AsPlainFunction(p.RT, new NativeMethod("f", (self, a) => { changes.Add(((AsFocusEvent)a[0]).relatedObject); return Rt.Undef; })));
+        void Press(double x, double y, int button = Player.LeftButton) { p.MouseMove(x, y); p.MouseButton(true, button); p.MouseButton(false, button); }
+
+        p.Stage.focus = tf;
+        Assert.That(stage.TextFieldFocused, Is.True);
+        Press(310, 10);
+        Assert.That(p.Focus, Is.Null, "a press on a plain sprite");
+        Assert.That(stage.TextFieldFocused, Is.False);
+        Assert.That(changes, Is.EqualTo(new object[] { box }), "mouseFocusChange names the sprite pressed");
+
+        p.Stage.focus = tf;
+        Press(700, 500);
+        Assert.That(p.Focus, Is.Null, "a press on the empty stage");
+
+        p.Stage.focus = tf;
+        Press(700, 500, Player.RightButton);
+        Assert.That(p.Focus, Is.SameAs(tf), "only the left button moves the focus");
+
+        box.tabEnabled = true;
+        Press(310, 10);
+        Assert.That(p.Focus, Is.SameAs(box), "a tab-enabled sprite takes it");
+        Assert.That(p.RT.Errors, Is.Empty);
+    }
+
+    [Test]
     public void ADropOnAnotherMoviesSlotReachesItThroughAProxy()
     {
         var (a, aSlot, aDrops) = Movie();
