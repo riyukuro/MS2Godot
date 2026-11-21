@@ -10,10 +10,11 @@ namespace Ms2.Ui.Hud;
 /// The state is <see cref="GuildBook"/> (CGuildManager). Outside a guild: the Join page (the search by propensity or by
 /// name, the join requests and their cancel, this character's requests) and the Create page (the create box). In a guild:
 /// the Info and Member pages, the accept page (the requests sent to the guild), the leave and disband boxes, the member
-/// management (the invite, expel, grade and master change, the notice, the own memo, the propensity and the search flag) and the grade edit (OnChangeGrade).
+/// management (the invite, expel, grade and master change, the notice, the own memo, the propensity and the search flag), the grade edit (OnChangeGrade) and the rank buttons (the ranking dialog 0x4f24 and the web browser 0x4e6a are
+/// events: neither is in this client).
 /// The pages are made on first use (EnsurePageCreated) and laid on the movie root.
 /// STILL-OPEN: the other in-guild pages (Skill, MemberSkill, Event, Manager, House, Storage, Raid, ChampionShip,
-/// ChampionShipHistroy) and their callbacks (ranks, PvP, mail, house and mark), the character card of the master and expel boxes
+/// ChampionShipHistroy) and their callbacks (PvP, mail, house and mark), the character card of the master and expel boxes
 /// (CMsgBoxData::SetCharacterInfo), the master popup
 /// (OnSearchGuildMasterPopupMenu, 0x4e39) as an event, the block check of OnClickCreateGuild (CBlockManager
 /// FindBlockedAction(7)), the web guide button (UIDialog::BindWebGuideButton, uidialog.cpp:997), the championship icon
@@ -87,6 +88,28 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     /// <summary>OnGuildMemberPopupMenu (:811): a member's right click, the popup 0x4e39 at (x, y) for the member found by
     /// name (UIPopUpMenu::PopUpMenuFromGuildMember, <see cref="PopupMenuController.OpenForGuildMember"/>).</summary>
     public event Action<float, float, GuildMember> MemberPopupRequested;
+    /// <summary>IsFeatureEnabled(0x3f): the rank buttons open the ranking dialog 0x4f24.</summary>
+    public const int RankingDialogFeature = 0x3f;
+    /// <summary>IsFeatureEnabled(0x3b): without the dialog, the rank buttons open a maview page.</summary>
+    public const int RankPageFeature = 0x3b;
+    /// <summary>The page urls of the constructor (:276-278): m_strRankUrl, m_strRealtimeRankUrl, m_strPvpRankUrl.</summary>
+    public const string RankUrl = "maview:/Rank/Guild", RealtimeRankUrl = "maview:/Rank/Guild?tp=realtime",
+        PvpRankUrl = "maview:/Rank/GuildPVP?tp=realtime";
+    /// <summary>The rank buttons with feature 0x3f: UIGameRankingDialog (FUN_140b2d030(0x4f24)) SelectCategory(category, 0)
+    /// and OpenDialog(0x4f24); category 1 the guild ranks, 5 the guild PvP ranks.</summary>
+    public event Action<int> RankingRequested;
+    /// <summary>The rank buttons with feature 0x3b only: OpenRankPage / OpenRealtimeRankPage / OpenPvpRankPage
+    /// (@0x141975500 / @0x1419754b0 / @0x141975550), Navigate(url, 1) on the web browser 0x4e6a.</summary>
+    public event Action<string> RankPageRequested;
+
+    /// <summary>OnClickOpenMayview (:718), OnOpenGuildRank (:786), OnViewPvpRank (:981): the ranking dialog with feature
+    /// 0x3f, else the page with feature 0x3b; each returns 1.</summary>
+    bool OpenRanks(int category, string url)
+    {
+        if (FeatureEnabled(RankingDialogFeature)) RankingRequested?.Invoke(category);
+        else if (FeatureEnabled(RankPageFeature)) RankPageRequested?.Invoke(url);
+        return true;
+    }
 
     public GuildDialogController(GuildBook book) => Book = book;
 
@@ -702,6 +725,9 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
                 ShowBox(MessageBoxQueue.Create(0x14, ClientFormat.Format(Common(0x3e3), expelTarget), this, "expelMember"));
                 return true;
             }
+            case "onclickopenmayview": return OpenRanks(1, RankUrl);
+            case "onopenguildrank": return OpenRanks(1, RealtimeRankUrl);
+            case "onviewpvprank": return OpenRanks(5, PvpRankUrl);
             case "onchangegrade":                       // (:931) the client falls through to return 0
             {
                 if (args.Length == 0 || args[0] is not AsArray grades || NoMovie) return false;

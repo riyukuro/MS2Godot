@@ -73,6 +73,27 @@ public class GuildDialogTests
     }
 
     [Test]
+    public void TheRankButtonsOpenTheRankingDialogOrThePage()
+    {
+        // OnClickOpenMayview / OnOpenGuildRank / OnViewPvpRank: feature 0x3f the dialog's category, else 0x3b the page
+        var c = new GuildDialogController(InGuild());
+        var seen = new List<string>();
+        c.RankingRequested += k => seen.Add($"dialog {k}");
+        c.RankPageRequested += u => seen.Add(u);
+        var on = new HashSet<int>();
+        c.FeatureEnabled = on.Contains;
+        string[] names = { "OnClickOpenMayview", "OnOpenGuildRank", "OnViewPvpRank" };
+        foreach (var n in names) Assert.That(c.OnCallback(n, Array.Empty<object>()), Is.True);
+        Assert.That(seen, Is.Empty);
+        on.Add(0x3b);
+        foreach (var n in names) c.OnCallback(n, Array.Empty<object>());
+        on.Add(0x3f);
+        foreach (var n in names) c.OnCallback(n, Array.Empty<object>());
+        Assert.That(seen, Is.EqualTo(new[] { "maview:/Rank/Guild", "maview:/Rank/Guild?tp=realtime", "maview:/Rank/GuildPVP?tp=realtime",
+            "dialog 1", "dialog 1", "dialog 5" }));
+    }
+
+    [Test]
     public void TheAttendBackgroundFollowsCanAttendAndTheDonateClickShowsThePopupOrTheMaxBox()
     {
         const long now = 1_795_262_400;
