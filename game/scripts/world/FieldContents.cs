@@ -618,9 +618,11 @@ public partial class FieldContents : Node3D
                 case Ms2.Ui.ActionKeyTarget.BillBoard: LiveInteractUse(playerMs2); break;
                 case Ms2.Ui.ActionKeyTarget.Portal: LivePortalUse(); break;
                 case Ms2.Ui.ActionKeyTarget.Lift: if (Ms2Godot.Net.LiveSession.Instance is { } lls) lls.UseLift(); break;
-                // PutDownLiftableAction::vfunc_2 (@0x14095ad50) runs the craft's ConfirmPlacement.
-                // STILL-OPEN: ConfirmPlacement (cubecraft_2.cpp:936) is not ported; the key does nothing.
-                case Ms2.Ui.ActionKeyTarget.PutDownLiftable: break;
+                // PutDownLiftableAction::vfunc_2 (@0x14095ad50): the active craft's ConfirmPlacement; it stops at a
+                // missing guide (see CubeCraftState.ConfirmPlacement for what stays open).
+                case Ms2.Ui.ActionKeyTarget.PutDownLiftable:
+                    if (Ms2Godot.Net.LiveSession.Instance is { } pls) pls.ConfirmPlacement();
+                    break;
                 default: talk?.ActionKey(); break;
             }
             return;

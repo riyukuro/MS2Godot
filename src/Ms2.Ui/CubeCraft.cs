@@ -73,6 +73,50 @@ public sealed class CubeCraftState
         else Current = new Craft(craftMode, item);
     }
 
+    /// <summary>MyPC::GetActiveCubeCraft (@0x141530290, mypc.cpp:4516): no craft for a dead pc or outside the cube mode;
+    /// else the craft.</summary>
+    public Craft Active(bool dead) => dead || !InCubeMode ? null : Current;
+
+    /// <summary>Where Unk_PCCubeCraft::ConfirmPlacement stopped.</summary>
+    public enum PlacementStop
+    {
+        /// <summary>No active craft (PutDownLiftableAction::vfunc_2 @0x14095ad50 does not call it).</summary>
+        NoCraft,
+        /// <summary>Cube mode 1 (PC::IsCubeMode1, pc.cpp:1848) without the pc's construction guide
+        /// (GetConstructionGuide, pc.cpp:2102).</summary>
+        NoConstructionGuide,
+        /// <summary>Craft mode 1: the housing service's build notice <see cref="ModeOneNotice"/>.</summary>
+        BuildNotice,
+        /// <summary>The craft has no guide cube (m_spGuide).</summary>
+        NoGuide,
+    }
+
+    /// <summary>The build notice ConfirmPlacement gives in craft mode 1 (ShowBuildNotice(0x39), cubecraft_2.cpp:945).</summary>
+    public const int ModeOneNotice = 0x39;
+
+    /// <summary>
+    /// PutDownLiftableAction::vfunc_2 (@0x14095ad50, actionkeyobject.cpp) through GetActiveCubeCraft, then
+    /// Unk_PCCubeCraft::ConfirmPlacement (@0x1410aad50, cubecraft_2.cpp:936-948), in its order: in cube mode 1 it returns
+    /// without the pc's construction guide; in craft mode 1 it shows build notice 0x39 and returns; it returns without
+    /// its guide cube.
+    /// <para>Neither guide exists here: the construction guide is the pc's guide slot 0 and the guide cube is the
+    /// CNifCubeGuide FUN_1410a8af0 loads (cubecraft_2.cpp:446-448), both not ported, so every press stops at one of
+    /// these returns.</para>
+    /// STILL-OPEN: ShowBuildNotice (@0x1410d6590, cubemapinformationservice_head.cpp:306: the notice sound and text) is
+    /// not ported, so the caller shows nothing. Everything after the guide check (cubecraft_2.cpp:950-1063: the item data,
+    /// the texture-mesh check, the attachable path FUN_1410aded0, the rotation from either guide snapped to 90 degrees,
+    /// and the RequestCube sends 10 and 0xf) needs a guide and is not ported.
+    /// </summary>
+    public PlacementStop ConfirmPlacement(bool dead)
+    {
+        var craft = Active(dead);
+        if (craft == null) return PlacementStop.NoCraft;
+        const bool hasConstructionGuide = false;
+        if (CubeMode == 1 && !hasConstructionGuide) return PlacementStop.NoConstructionGuide;
+        if (craft.Mode == 1) return PlacementStop.BuildNotice;
+        return PlacementStop.NoGuide;
+    }
+
     /// <summary>PC::vfunc_12 (@0x1416515a0, pc.cpp:844-852): the model is in the scene; a waiting craft is made and the
     /// wait cleared.</summary>
     public void ModelAttached()
