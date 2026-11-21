@@ -14,6 +14,9 @@ public partial class HudScene
 {
     RevivalDialogController revival;
     MovieDialog revivalMovie;
+    AutoReviveCountDownController autoRevive;
+    MovieDialog autoReviveMovie;
+    bool revivalWatched;
 
     bool RevivalOpen => revival != null && !revival.IsClosed;
 
@@ -21,10 +24,27 @@ public partial class HudScene
     void RevivalTick()
     {
         var live = Ms2Godot.Net.LiveSession.Instance;
+        if (live != null && !revivalWatched) { revivalWatched = true; live.AutoReviveStarted = OpenAutoRevive; }
         bool dead = live?.Me.Dead ?? false;
         if (dead && !RevivalOpen) OpenRevival(live);
         else if (!dead && RevivalOpen) revival.Close();
         if (RevivalOpen) revival.Update((uint)Time.GetTicksMsec());
+        if (autoRevive is { IsClosed: false }) autoRevive.Update((uint)Time.GetTicksMsec());     // UIAutoReviveCountDownDialog::vfunc_72
+    }
+
+    /// <summary>OnAutoRevive (scenestategame.cpp:4332): open 0x4ea2 when it is closed, then arm it (FUN_141284d70).</summary>
+    void OpenAutoRevive(int durationMs)
+    {
+        if (autoRevive == null || autoRevive.IsClosed)
+        {
+            if (autoReviveMovie != null) { autoReviveMovie.Host.Unload(); autoReviveMovie.QueueFree(); autoReviveMovie = null; }
+            var c = new AutoReviveCountDownController();
+            c.Unloaded += () => { autoReviveMovie?.Host.Unload(); autoReviveMovie?.QueueFree(); autoReviveMovie = null; };
+            autoRevive = c;
+            autoReviveMovie = new MovieDialog(assets, autoRevive, hudModel, ScreenMode.PixelSize(GetWindow()));
+            uiRoot.AddChild(autoReviveMovie);
+        }
+        autoRevive.Arm((uint)Time.GetTicksMsec(), durationMs);
     }
 
     void OpenRevival(Ms2Godot.Net.LiveSession live)
@@ -36,6 +56,8 @@ public partial class HudScene
         e.IsDead = () => live.Me.Dead;
         e.Level = () => live.Me.User?.Level ?? 1;
         e.Meso = () => live.Me.Meso;
+        e.RevivalBlocked = () => live.Me.RevivalBlocked;
+        e.RoomRevivalsUsed = () => live.Me.DungeonRevivalsUsed;
         e.Send = live.SendRevival;
         e.Notice = text => SystemNoticeText(text);
         c.Unloaded += () => { revivalMovie?.Host.Unload(); revivalMovie?.QueueFree(); revivalMovie = null; };

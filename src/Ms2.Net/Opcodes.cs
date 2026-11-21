@@ -55,7 +55,11 @@ public enum Inbound : ushort {
     ItemPutOff = 0x26,
     Stat = 0x2E,
     UserBattle = 0x2F,
+    RevivalConfirm = 0x33,   // OnRevivalConfirm
     Revival = 0x34,
+    RevivalCount = 0x35,     // OnRevivalCount
+    AutoRevive = 0xA2,       // OnAutoRevive
+    DungeonReviveCount = 0xFB,   // OnDungeonReviveCount
     UserState = 0x36,
     DeadUser = 0xA6,
     ExpUp = 0x37,

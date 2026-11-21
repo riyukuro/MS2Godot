@@ -303,8 +303,9 @@ public sealed class MyCharacter {
     /// Returns whether the dead flag changed. STILL-OPEN: the PvP time scale, the revive dialog 0x4e38 and the guide
     /// occurrence.
     /// </summary>
-    public bool Die(int objectId) {
+    public bool Die(int objectId, bool flag = false) {
         if (objectId != ObjectId || User == null) return false;
+        if (flag) RevivalFlag = true;      // OnDeadUser's flag: FUN_14028d780 -> PC::FUN_141661ba0(1)
         bool changed = false;
         if (State != 0xc && Stats2[PlayerStat.Health] == 0 && !Dead) { Dead = true; changed = true; }
         if (Dead) EnterState(0xc);
@@ -312,10 +313,47 @@ public sealed class MyCharacter {
         return changed;
     }
 
+    /// <summary>The revival end tick (PC m_n10e8, FUN_1416619d0) and the revival count (m_n10ec, FUN_141661a60) of RevivalConfirm,
+    /// and the revival flag (m_n10f0, FUN_141661ba0) of Revival and DeadUser.</summary>
+    public uint RevivalEndTick; public int RevivalConfirmCount; public bool RevivalFlag;
+    /// <summary>The meso revivals used today (MyPC m_n1644, OnRevivalCount) and the revivals used in the dungeon room (DAT_143ab2950).</summary>
+    public int MesoRevivalsUsed, DungeonRevivalsUsed;
+
+    /// <summary>PC::IsRevivalBlocked (pc.cpp:2009) without the buff test (STILL-OPEN: IsDisableRevivalHere): a revival count above 0
+    /// or the revival flag.</summary>
+    public bool RevivalBlocked => RevivalConfirmCount > 0 || RevivalFlag;
+
+    /// <summary>OnRevivalConfirm (scenestategame.cpp:7356) for the local player: the end tick, then the count. Returns the client's
+    /// follow-up: <c>Effect</c> when the count was set and falls to 0 (the revival effect of the common resource), <c>Guide</c> when
+    /// the new count is not 0 (guide trigger RevivalPanelty). Other objects: nothing.</summary>
+    public (bool Effect, bool Guide) ApplyRevivalConfirm(RevivalConfirm c) {
+        if (c.ObjectId != ObjectId || User == null) return (false, false);
+        bool effect = RevivalConfirmCount != 0 && c.Count == 0;
+        RevivalConfirmCount = c.Count;
+        RevivalEndTick = c.EndTick;
+        Changed?.Invoke();
+        return (effect, !effect && c.Count != 0);
+    }
+
+    /// <summary>PC::FUN_141661ac0 (pc.cpp:2043): once the server tick passes the end tick, both are cleared. Returns whether they were.</summary>
+    public bool ExpireRevival(uint serverTick) {
+        if (RevivalEndTick == 0 || serverTick < RevivalEndTick) return false;
+        RevivalConfirmCount = 0; RevivalEndTick = 0;
+        Changed?.Invoke();
+        return true;
+    }
+
+    /// <summary>OnRevivalCount (scenestategame.cpp:4092).</summary>
+    public void Apply(RevivalCount c) { MesoRevivalsUsed = c.Used; Changed?.Invoke(); }
+
+    /// <summary>OnDungeonReviveCount (scenestategame.cpp:5074).</summary>
+    public void Apply(DungeonReviveCount c) { DungeonRevivalsUsed = c.Used; Changed?.Invoke(); }
+
     /// <summary>OnRevival (scenestategame.cpp:7387) for the local player: FUN_14166ce50(0) and the revival state
     /// (vfunc_59(0x18)). Returns whether the dead flag changed.</summary>
-    public bool Revive(int objectId) {
+    public bool Revive(int objectId, byte flag = 0) {
         if (objectId != ObjectId || User == null) return false;
+        RevivalFlag = flag != 0;           // PC::FUN_141661ba0(flag), m_n10f0 (scenestategame.cpp:7399)
         bool changed = Dead;
         Dead = false;
         EnterState(0x18);

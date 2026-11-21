@@ -292,6 +292,10 @@ public partial class LiveSession : Node
     }
     /// <summary>IsDialogClosed(0x4e49) == 0: the mail list is open (set by the HUD).</summary>
     public Func<bool> MailListOpen = () => false;
+
+    /// <summary>OnAutoRevive (scenestategame.cpp:4332): the milliseconds until the automatic revive; the HUD opens
+    /// UIAutoReviveCountDownDialog (0x4ea2) and arms it.</summary>
+    public Action<int> AutoReviveStarted;
     /// <summary>The mail dialogs' sends (Mail 0x2D).</summary>
     public void SendMail(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
 
@@ -907,6 +911,7 @@ public partial class LiveSession : Node
         while (game != null && game.Incoming.TryDequeue(out var p)) Handle(p);
         if (game == null) return;   // a GameToGame let the connection go: the next server's comes with the migration
         guide?.Tick();
+        Me.ExpireRevival((uint)game.Session.ServerTick);   // PC::FUN_141661ac0 (pc.cpp:2043), in PC's per-frame update
         if (bindPending) TryBindPlayer();
         Portals?.Tick((uint)game.Session.ServerTick);
         if (game.IsClosed) { GD.PushWarning("live: game connection closed" + (game.Failure != null ? ": " + game.Failure.Message : "")); game.Dispose(); game = null; if (player != null) player.Live = false; }   // offline fall-return emulation comes back
@@ -1181,19 +1186,29 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.DeadUser))
             {
                 var d = DeadUser.Read(p.Reader());      // OnDeadUser (scenestategame.cpp:6532)
-                if (Me.Die(d.ObjectId)) GD.Print("live: own player dead");
+                if (Me.Die(d.ObjectId, d.Flag)) GD.Print("live: own player dead");
                 // MyPC::vfunc_137 (mypc.cpp:1346-1348): IsDead -> vfunc_59(0xc), StateDead::vfunc_4 (statedead.cpp:152)
                 if (d.ObjectId == selfObject && Me.Dead) HeldItem.EnterState(HeldItemState.Dead, Send);
             }
             else if (game.Is(p, Inbound.Revival))
             {
                 var v = Revival.Read(p.Reader());       // OnRevival (scenestategame.cpp:7387)
-                if (Me.Revive(v.ObjectId))
+                if (Me.Revive(v.ObjectId, v.Flag))
                 {
                     GD.Print("live: own player revived");
                     guide?.QueueOccurrence(GuideOccurrence.Dead, 0);   // OnRevival of the own player (scenestategame.cpp:7405)
                 }
             }
+            else if (game.Is(p, Inbound.RevivalConfirm))
+            {
+                var c = RevivalConfirm.Read(p.Reader());    // OnRevivalConfirm (scenestategame.cpp:7356)
+                var (effect, guideTrigger) = Me.ApplyRevivalConfirm(c);
+                if (effect) GD.Print("live: own revival penalty ended");   // STILL-OPEN: the revival effect of the common resource
+                if (guideTrigger) guide?.AddTrigger(GuideTrigger.RevivalPanelty, 0, 0);
+            }
+            else if (game.Is(p, Inbound.RevivalCount)) Me.Apply(RevivalCount.Read(p.Reader()));   // OnRevivalCount (scenestategame.cpp:4092)
+            else if (game.Is(p, Inbound.DungeonReviveCount)) Me.Apply(DungeonReviveCount.Read(p.Reader()));   // OnDungeonReviveCount (:5074)
+            else if (game.Is(p, Inbound.AutoRevive)) AutoReviveStarted?.Invoke(AutoRevive.Read(p.Reader()).DurationMs);   // OnAutoRevive (:4332)
             else if (game.Is(p, Inbound.ItemPutOnOrOff))
             {
                 var o = ItemPutOnOrOff.Read(p.Reader());   // CSceneStateGame::OnItemPutOnOrOff (scenestategame.cpp:2575); read only, no c2s answer
