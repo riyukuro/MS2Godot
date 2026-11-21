@@ -63,6 +63,14 @@ public sealed class MinimapController : UiController
 
     /// <summary>The local player: world position, GetPlayerHeading (degrees) and dead (GetCurStateId() == 12).</summary>
     public Func<(Vec3 Pos, float Heading, bool Dead)> LocalPlayer;
+    /// <summary>WorldService::FUN_141bc80c0(channel): asks to change channel; false keeps the current one selected.</summary>
+    public Func<int, bool> ChangeChannel = _ => false;
+
+    /// <summary>UIMinimapDialog::ApplySelectedChannel @0x141a44ed0: the movie's setSelectedChannel with m_channel.</summary>
+    public void ApplySelectedChannel()
+    {
+        if (Host?.Entity != null) Host.Invoke("setSelectedChannel", Model.Field.Channel);
+    }
 
     public AsObject FieldClip { get; private set; }      // m_clip228
     AsObject playerClip, arrow;                          // m_player's clip, m_clip238
@@ -302,7 +310,11 @@ public sealed class MinimapController : UiController
                 if (args.Length > 0) FullMap = args[0] is bool b && b;     // m_fullmap (m_212: the named refresh, none here)
                 return true;
             case "OnWorldMap": WorldMap?.Invoke(); return true;      // ToggleDialog(0x4e42) (uiminimapentity.cpp:1253)
-            case "OnToggleMode": case "OnChangeChannel": case "OnCheckIcon": case "OnWheelStepChange":
+            case "OnChangeChannel":
+                // PopInt; WorldService::FUN_141bc80c0(channel) false: ApplySelectedChannel (uiminimapentity.cpp:1274)
+                if (args.Length > 0 && !ChangeChannel(Rt.ToInt32(args[0]))) ApplySelectedChannel();
+                return true;
+            case "OnToggleMode": case "OnCheckIcon": case "OnWheelStepChange":
             case "OnMorePlayers": case "OnReport": case "OnPopupMenu":
                 return true;        // the other dialogs, server and options they reach are not here
         }

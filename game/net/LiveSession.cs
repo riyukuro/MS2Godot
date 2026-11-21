@@ -573,6 +573,7 @@ public partial class LiveSession : Node
     /// enter, in arrival order, through the read loop's handler, then its RequestFieldEnter becomes the current entry.</summary>
     void TakeEntry()
     {
+        if (entry.Enter != null) NoteServerEnter(entry.Enter.Channel);
         // the adventure level, quest, item, trophy, title and key table loads among them
         entry.Replay(Handle, () =>
         {
@@ -1145,6 +1146,7 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.FieldPortal)) OnFieldPortal(FieldPortalMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.GameToGame)) OnGameToGame(GameToGame.Read(p.Reader()));
+            else if (game.Is(p, Inbound.DynamicChannel)) OnDynamicChannel(DynamicChannelMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.EnterUgcMap))
             {
                 var m = EnterUgcMapMessage.Read(p.Reader());

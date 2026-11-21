@@ -118,7 +118,7 @@ public partial class HudScene : Node, IUiStageHost
         WatchParty();
         WatchPcInfo();
         // the portal action's notices (the required quest, a home that refused the visit): ShowSystemNotice(text, 1, 1)
-        if (Ms2Godot.Net.LiveSession.Instance is { } livePortals) livePortals.SystemNoticeSink = SystemNoticeText;
+        if (Ms2Godot.Net.LiveSession.Instance is { } livePortals) { livePortals.SystemNoticeSink = SystemNoticeText; livePortals.ChannelNoticeSink = ChannelNotice; }
         sizeSource = GetViewport();
         sizeSource.SizeChanged += QueueRelayout;
     }
@@ -147,6 +147,7 @@ public partial class HudScene : Node, IUiStageHost
         if (Ms2Godot.Net.LiveSession.Instance is { } livePortals && livePortals.SystemNoticeSink == (Action<string>)SystemNoticeText) livePortals.SystemNoticeSink = null;
         unwatchDamage?.Invoke();
         unwatchDamage = null;
+        if (Ms2Godot.Net.LiveSession.Instance is { } liveChannel && liveChannel.ChannelNoticeSink == (Action<int, int>)ChannelNotice) liveChannel.ChannelNoticeSink = null;
         unwatchQuickSlotState?.Invoke();
         unwatchBuffs?.Invoke();
         unwatchQuickSlotState = null;
@@ -399,6 +400,29 @@ public partial class HudScene : Node, IUiStageHost
     /// UISystemMenuDialog::vfunc_65 (OpenDialog, FUN_141924680): CloseAllDialogs, then the movie loads (LoadSwf) and the
     /// controller's OnLoadInit / OnLoadComplete fill it. Offline the server has one channel, the current one (1).
     /// </summary>
+    /// <summary>GetCurrentChannel: the live session's, else the offline server's one channel (1).</summary>
+    static int LiveChannel() => Ms2Godot.Net.LiveSession.Instance is { } l && l.CurrentChannel != 0 ? l.CurrentChannel : 1;
+
+    /// <summary>The current server's channels (DynamicChannel kind 1), else just the current one.</summary>
+    static ChannelRow[] LiveChannels() =>
+        Ms2Godot.Net.LiveSession.Instance is { } l && l.ChannelTabs.Count > 0
+            ? l.ChannelTabs.Select(t => new ChannelRow(t)).ToArray()
+            : new[] { new ChannelRow(LiveChannel()) };
+
+    /// <summary>WorldService::FUN_141bc80c0 for the dialogs' OnChangeChannel: false offline (there is no server to ask).</summary>
+    static bool ChangeChannel(int channel) => Ms2Godot.Net.LiveSession.Instance?.RequestChannel(channel) ?? false;
+
+    /// <summary>A notice by common string id: OnServerEnter's 0x2d7 is a chat line (FUN_1412751b0(text, 0x14)); the
+    /// refusals of FUN_141bc80c0 are system notices (FUN_141275260(id, 1, 1)).</summary>
+    void ChannelNotice(int id, int arg)
+    {
+        string text = hudModel.Tables.Common(Ms2.Formats.Text.CommonStringIds.Key(id));
+        if (string.IsNullOrEmpty(text)) return;
+        if (arg >= 0) text = text.Replace("{0}", arg.ToString());
+        if (id == 0x2d7) ChatLog.AddSystemLine(text, Ms2.Ui.Hud.TalkKind.SystemNotice);
+        else SystemNoticeText(text);
+    }
+
     void OpenSystemMenu()
     {
         CloseAllDialogs();
@@ -410,8 +434,9 @@ public partial class HudScene : Node, IUiStageHost
             LeaveText = menuMapType is int t ? SystemMenuController.LeaveButtonText(t, commonStrings) : null,
             ChannelWord = commonStrings("s_word_ch") ?? "",
             ChannelGroupName = menuGroup,
-            CurrentChannel = 1,
-            Channels = new[] { new ChannelRow(1) },
+            CurrentChannel = LiveChannel(),
+            Channels = LiveChannels(),
+            ChangeChannel = ChangeChannel,
         };
         c.SelectCharacter += () => SystemMenuSelectCharacter?.Invoke();
         c.GameExit += () => ShowGameExitBox(commonStrings);
@@ -907,8 +932,8 @@ public partial class HudScene : Node, IUiStageHost
         catch (Exception e) { GD.PushWarning("minimap field data: " + e.Message); }
         // PC::GetMastery(1): the user block's mastery list, index 1 = fishing
         if (data.Player.Mastery is { Length: > 1 } mastery) model.Player.FishingMastery = (uint)mastery[1];
-        model.Field.Channel = (int)data.Player.Channel;
-        model.Field.Channels = new[] { (int)data.Player.Channel };
+        model.Field.Channel = LiveChannel() is int and > 0 and var chNow ? chNow : (int)data.Player.Channel;
+        model.Field.Channels = LiveChannels().Select(r => r.Id).ToArray() is { Length: > 0 } chList ? chList : new[] { model.Field.Channel };
         var live = Ms2Godot.Net.LiveSession.Instance;
         long selfId = live?.CharacterId ?? 0;
         var c = minimapSide = new Ms2.Ui.Hud.MinimapController
@@ -919,6 +944,7 @@ public partial class HudScene : Node, IUiStageHost
             // FUN_141028be0(id, picture, 1): the downloaded picture, else (none, or not downloaded yet) the default image
             PlayerImage = Ms2Godot.Net.ProfileImageService.Images.Path(selfId, live?.Me?.User?.Picture ?? "", true),
             LocalPlayer = LocalMinimapPlayer,
+            ChangeChannel = ChangeChannel,
         };
         c.WorldMap += ToggleWorldMap;       // OnWorldMap (uiminimapentity.cpp:1253): ToggleDialog(0x4e42)
         try { MinimapMarks(fc, c.Marks); }

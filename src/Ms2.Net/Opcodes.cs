@@ -95,6 +95,7 @@ public enum Inbound : ushort {
     CharacterInfo = 0x78,       // RecvOp::CharacterInfo (commonfiles/opcodes.h)
     Trade = 0x82,           // RecvOp Trade (commonfiles/opcodes.h): CSceneStateGame -> CTradeManagerEx::OnTrade
     GuideRecord = 0x89,     // RecvOp GuideRecord (commonfiles/opcodes.h): CGuideManager::ReceiveStates
+    DynamicChannel = 0xA7,  // RecvOp DynamicChannel (commonfiles/opcodes.h): CNetworkService::OnDynamicChannel @0x14153c4b0 (networkservice.cpp:977)
 }
 
 public enum Outbound : ushort {
@@ -152,4 +153,5 @@ public enum Outbound : ushort {
     GuideRecord = 0x57,
     Tutorial = 0x8A,
     RequestTutorialItem = 0x9C,
+    Channel = 0x3B,         // SendOp::Channel (commonfiles/opcodes.h): WorldService::FUN_141bc80c0 (worldservice_1.cpp:4936) and its message box answer
 }

@@ -767,6 +767,21 @@ public class HudTests
     }
 
     [Test]
+    public void MinimapOnChangeChannelAsksTheWorldAndKeepsTheSelectionWhenRefused()
+    {
+        // OnChangeChannel (uiminimapentity.cpp:1274): PopInt, WorldService::FUN_141bc80c0(channel); false: ApplySelectedChannel
+        var m = Model();
+        m.Field.Channel = 1;
+        var c = new MinimapController { ImageName = "map/minimap/02000001.dds", LocalPlayer = () => (default, 90f, false) };
+        Load(c, m);
+        var asked = new List<int>();
+        c.ChangeChannel = ch => { asked.Add(ch); return ch == 2; };
+        Assert.That(c.OnCallback("OnChangeChannel", new object[] { 3 }), Is.True);
+        Assert.That(c.OnCallback("OnChangeChannel", new object[] { 2 }), Is.True);
+        Assert.That(asked, Is.EqualTo(new[] { 3, 2 }));
+    }
+
+    [Test]
     public void MinimapFieldNameTooltip()
     {
         var m = Model();
