@@ -774,4 +774,26 @@ public class GuideEventTests
         Open(countdown);
         Assert.That(Ms2.Ui.Hud.DialogGates.AnyDialogShown(new UiController[] { revival, countdown }), Is.True, "the countdown blocks");
     }
+    [Test]
+    public void TheGameWiredRevivalDialogShowsTheOneButtonFrame()
+    {
+        // FUN_141abcb90 with the paid inputs not wired: mode 0, so UpdateButtons (@0x141abb420) goes to the movie's "btn1"
+        // frame, the client's own no-paid-button state (uirevivaldialog.cpp:385, :646-649), not "btn2" with a dead button
+        Model();
+        var c = new RevivalDialogController { CommonById = id => $"#{id:x}", CommonByKey = k => k + "|{0}" };
+        RevivalWiring.Connect(c.Env, RevivalDialogTests.DeadPlayer(), () => 100,
+            id => new Ms2.Formats.World.FieldData { Id = id, RevivalReturnId = id }, _ => { }, _ => { }, id => "");
+        c.Env.MeratRateCap = () => 1f; c.Env.MesoRateCap = () => 1f;
+        c.Env.MesoRevivalRemaining = () => 2; c.Env.Meso = () => 1_000_000;
+        c.Env.ShowBox = _ => { }; c.Env.ReplaceBox = _ => { };
+        var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
+        p.StageW = 1280; p.StageH = 720;
+        var host = new UiHost(p, c, Model());
+        Assert.That(host.Load(), Is.True, c.Movie + " load: " + string.Join("; ", rt.Errors));
+        for (int i = 0; i < 10; i++) p.Tick();
+        c.Refresh();
+        for (int i = 0; i < 2; i++) p.Tick();
+        Assert.That(c.PaidMode, Is.EqualTo(0));
+        Assert.That(((AsMovieClip)host.Entity).currentLabel, Is.EqualTo("btn1"));
+    }
 }

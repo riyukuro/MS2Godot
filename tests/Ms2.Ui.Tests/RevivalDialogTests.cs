@@ -174,7 +174,7 @@ public class RevivalDialogTests
         Assert.That(r.Sent, Is.EqualTo(new[] { "Revival:00" }));
         Assert.That(r.C.OnCallback("other", Array.Empty<object>()), Is.False);
     }
-    static Ms2.Net.Packets.MyCharacter DeadPlayer()
+    internal static Ms2.Net.Packets.MyCharacter DeadPlayer()
     {
         var me = new Ms2.Net.Packets.MyCharacter();
         var u = new Ms2.Net.Packets.FieldAddUser { ObjectId = 9, User = new Ms2.Net.Packets.UserBlock { Name = "a" } };
@@ -204,7 +204,8 @@ public class RevivalDialogTests
     }
 
     /// <summary>The game wiring refuses the paid revive even when every other input would let it send (the meso revive here):
-    /// its send needs the buffs' disable check, the meso revivals left and the platform's merat check, which the game lacks.</summary>
+    /// its send needs the buffs' disable check, the meso revivals left and the platform's merat check, which the game lacks.
+    /// So the dialog takes the client's one-button state, mode 0 on the "btn1" frame, not a paid button that does nothing.</summary>
     [Test]
     public void TheGameWiringRefusesAPaidReviveTheOtherInputsWouldAllow()
     {
@@ -216,7 +217,7 @@ public class RevivalDialogTests
         c.Env.MeratRateCap = () => 1f; c.Env.MesoRateCap = () => 1f;
         c.Env.MesoRevivalRemaining = () => 2; c.Env.Meso = () => 1_000_000;
         c.Refresh();
-        Assert.That(c.PaidMode, Is.EqualTo(2), "the meso revive is the one offered");
+        Assert.That(c.PaidMode, Is.EqualTo(0), "no paid button without the paid inputs");
         c.OnRevival(2);
         Assert.That(sent, Is.Empty);
     }

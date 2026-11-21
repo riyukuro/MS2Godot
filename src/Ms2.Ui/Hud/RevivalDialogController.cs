@@ -326,10 +326,13 @@ public sealed class RevivalDialogController : UiController, IMessageBoxListener,
 
     // ---- the mode and the costs ----
 
-    /// <summary>FUN_141abcb90 (@0x141abcb90): the paid mode: 0 off by the world, 2 meso, 1 merat.</summary>
+    /// <summary>FUN_141abcb90 (@0x141abcb90): the paid mode: 0 off by the world, 2 meso, 1 merat.
+    /// Without the paid inputs wired (PaidRevivalWired false) the mode is 0, the client's own one-button state ("btn1",
+    /// s_msg_die_none; m_1b4 == 0, uirevivaldialog.cpp:385, :646-649): the client never shows a paid button that does nothing.
+    /// STILL-OPEN: the paid modes themselves, until the buff, meso-count and merat platform inputs are in the data.</summary>
     public void PickMode()
     {
-        if (Env.PaidRevivalOffByWorld()) PaidMode = 0;
+        if (Env.PaidRevivalOffByWorld() || !Env.PaidRevivalWired()) PaidMode = 0;
         else if (Env.FieldRevivesForFree(Env.FieldId())) PaidMode = 2;
         else if (MesoRevivalAllowed()) PaidMode = 2;
         else PaidMode = MeratRevivalAllowed() ? 1 : 0;
