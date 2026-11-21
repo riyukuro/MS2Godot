@@ -35,6 +35,8 @@ public enum Inbound : ushort {
     Quest = 0x52,
     Party = 0x53,
     Shop = 0x51,
+    ItemMerge = 0x74,       // RecvOp ItemMerge (commonfiles/opcodes.h:124): CSceneStateGame::OnItemFusion
+    ItemDismantle = 0x96,   // RecvOp ItemDismantle (commonfiles/opcodes.h:158): CItemBreakManager::OnItemDismantlePacket
     SystemShop = 0xA1,      // RecvOp SystemShop (commonfiles/opcodes.h:169): CSceneStateGame::OnSystemShop
     GlobalFactor = 0xD6,
     UserSync = 0x1C,
@@ -133,6 +135,8 @@ public enum Outbound : ushort {
     RequestSkillBookTree = 0xA2,
     NpcTalk = 0x22,
     Shop = 0x28,            // SendOp::Shop (commonfiles/opcodes.h:345): UIShopDialog / RequestSellItem
+    ItemMerge = 0x3F,       // SendOp::ItemMerge (commonfiles/opcodes.h:368): UIItemMergeOptionDialog::Request*
+    ItemDismantle = 0x5A,   // SendOp::ItemDismantle (commonfiles/opcodes.h:395): CItemBreakManager::SendItemDismantleMode*
     SystemShop = 0x65,      // SendOp::SystemShop (commonfiles/opcodes.h:406): CNetworkService::SendSystemShop / coin shop open
     Quest = 0x29,
     InteractObject = 0x31,  // SendOp::InteractObject (commonfiles/opcodes.h:354): CInteractObject::vfunc_8/vfunc_10, StateInteraction
