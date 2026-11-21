@@ -46,6 +46,17 @@ public sealed class QuestNavigator
     /// <summary>m_68: rebuild the context next frame.</summary>
     bool dirty;
     int tracked;
+    // TraceQuest's record and context, kept between quest events: the client re-traces each frame, but the trace reads only
+    // the record (changed by the quest events), the field and the map, so a frame between events gets the same context
+    bool traceStale = true;
+    int tracedQuest, tracedField;
+    QuestNavigationMap tracedMap;
+    QuestRecord tracedRecord;
+    TraceContext tracedContext;
+    // the last distance text by its value bucket, so an unchanged distance makes no new string
+    int distanceKey = int.MinValue;
+    string distanceText;
+    TraceStrings distanceStrings;
 
     public QuestNavigator(QuestTable table, IQuestState quests)
     {
@@ -63,6 +74,7 @@ public sealed class QuestNavigator
     /// <summary>SelectQuest (@0x140c9a420).</summary>
     public void SelectQuest(int questId)
     {
+        traceStale = true;
         Result.Clear();
         Result.QuestId = questId;
         if (tracked != questId) { tracked = questId; SaveTracked(questId); }
@@ -71,29 +83,31 @@ public sealed class QuestNavigator
     /// <summary>vfunc_o178_1 (@0x140c99c40): a quest was accepted or changed; with none selected, a tracked navi quest is.</summary>
     public void OnQuestAccepted(QuestRecord q)
     {
-        dirty = true;
+        dirty = traceStale = true;
         if (IsSelected(0) && TrackingState(q) != 0 && UseNavi(q.Id)) SelectQuest(q.Id);
     }
 
     /// <summary>vfunc_o178_2 (@0x140c99d20) and vfunc_o178_5 (@0x140c99da0): the quest is dropped from the beam.</summary>
     public void OnQuestDropped(int questId)
     {
-        dirty = true;
+        dirty = traceStale = true;
         if (IsSelected(questId)) SelectQuest(0);
     }
 
     /// <summary>vfunc_o178_3 (@0x140c99d80) and vfunc_o178_7 (@0x140c99e00): progress changed.</summary>
-    public void OnQuestProgress() => dirty = true;
+    public void OnQuestProgress() => dirty = traceStale = true;
 
     /// <summary>vfunc_o178_6 (@0x140c99be0): the selected quest is dropped when it is no longer tracked.</summary>
     public void OnQuestTracking(QuestRecord q)
     {
+        traceStale = true;
         if (IsSelected(q.Id) && TrackingState(q) == 0) SelectQuest(0);
     }
 
     /// <summary>OnCreateMyPC (@0x140c9a0e0): restore the tracked quest from the option when it is still tracked.</summary>
     public void OnCreateMyPc()
     {
+        traceStale = true;
         Result.Clear();
         Result.QuestId = 0;
         tracked = LoadTracked();
@@ -153,8 +167,15 @@ public sealed class QuestNavigator
         int questId = Result.QuestId;
         if (!UseNavi(questId)) return 1;
         int current = FieldId();
-        var record = quests.Get(questId);
-        var context = Map.TraceQuest(record, current);
+        if (traceStale || tracedQuest != questId || tracedField != current || tracedMap != Map)
+        {
+            traceStale = false;
+            (tracedQuest, tracedField, tracedMap) = (questId, current, Map);
+            tracedRecord = quests.Get(questId);
+            tracedContext = Map.TraceQuest(tracedRecord, current);
+        }
+        var record = tracedRecord;
+        var context = tracedContext;
         if (context == null) return 1;
         int failed = 1;
         if (context.MapId == current)
@@ -208,9 +229,22 @@ public sealed class QuestNavigator
         {
             var target = (Result.X, Result.Y, Result.Z);
             Result.BeamYawDeg = QuestTrace.BeamYaw(me, target);
-            Result.DistanceText = QuestTrace.DistanceText(QuestTrace.Distance(me, target), Strings);
+            Result.DistanceText = DistanceText(QuestTrace.Distance(me, target));
             Result.Context = context;
         }
         return failed;
+    }
+
+    /// <summary><see cref="QuestTrace.DistanceText"/>, the string made again only when its number or the strings change.</summary>
+    string DistanceText(double dist)
+    {
+        int n = (int)dist;
+        int key = n > 100000 ? -1 - n / 100000 : n >= 100 && n < 100000 ? n / 100 : 0;
+        if (key != distanceKey || !ReferenceEquals(Strings, distanceStrings))
+        {
+            (distanceKey, distanceStrings) = (key, Strings);
+            distanceText = QuestTrace.DistanceText(dist, Strings);
+        }
+        return distanceText;
     }
 }

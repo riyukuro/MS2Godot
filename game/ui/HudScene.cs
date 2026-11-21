@@ -187,6 +187,7 @@ public partial class HudScene : Node, IUiStageHost
         unwatchDamage = null;
         unwatchMinimapPing?.Invoke();
         unwatchMinimapPing = null;
+        CloseQuestNavigation();
         if (Ms2Godot.Net.LiveSession.Instance is { } liveChannel) { liveChannel.ChannelsChanged -= ChannelsChanged; if (liveChannel.ChannelNoticeSink == (Action<int, int>)ChannelNotice) liveChannel.ChannelNoticeSink = null; }
         RevivalUnwatch();
         unwatchQuickSlotState?.Invoke();
@@ -370,6 +371,7 @@ public partial class HudScene : Node, IUiStageHost
         WatchOwnSkill();
         ScreenMask();
         NoticeTab(uiRoot, constants);
+        QuestNavigationSlot(uiRoot);
         Minimap(uiRoot);
         UpperHud(uiRoot);
         TargetHpBar(uiRoot);
@@ -3535,6 +3537,8 @@ public partial class HudScene : Node, IUiStageHost
         if (!Field.LoadComplete) return;            // the field builds over several frames behind the loading screen
         if (worldLoadPending) WorldLoadComplete();
         if (minimap == null && minimapSlot != null && GetTree().GetFirstNodeInGroup(World.FieldContents.Group) is World.FieldContents { Portals: not null } mfc) OpenMinimap(mfc);
+        if (!questNavigationOpened && questNavigationSlot != null && GetTree().GetFirstNodeInGroup(World.FieldContents.Group) is World.FieldContents { Portals: not null } qfc) OpenQuestNavigation(qfc);
+        QuestNavigationTick();               // CQuestNavigator FUN_140c99ee0, then UIQuestNavigation::vfunc_15
         minimapSide?.Process(Time.GetTicksMsec());
         upperHudSide?.Process(Time.GetTicksMsec());
         TargetBar?.Process();

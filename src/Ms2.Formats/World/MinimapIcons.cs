@@ -117,7 +117,10 @@ public sealed class MinimapIcons
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Dictionary<int, (string icon, int type)>> interactRows = new();
 
     /// <summary>The interact object row (table/interactobject.xml): its display minimapIcon ("" when none) and type.</summary>
-    public (string icon, int type) InteractRow(PackSet packs, int interactId) =>
+    public (string icon, int type) InteractRow(PackSet packs, int interactId) => InteractRowOf(packs, interactId);
+
+    /// <summary><see cref="InteractRow"/> without a minimap: the same table, read once per pack set.</summary>
+    public static (string icon, int type) InteractRowOf(PackSet packs, int interactId) =>
         interactRows.GetValue(packs, InteractRows).GetValueOrDefault(interactId, ("", 0));
 
     /// <summary>

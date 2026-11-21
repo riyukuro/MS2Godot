@@ -13,10 +13,10 @@ namespace Ms2.Ui.Hud;
 /// (17, 0.75, 0.25, 2.25, 10) (ctor @0x140e79f20): the frame walks them in the map's own order (<see cref="Markers"/>).
 /// </para>
 /// <para>
-/// STILL-OPEN: CQuestNavigator (questnavigator.cpp) is not run live: no tracked-quest trace (TraceQuestTarget) or
-/// RebuildTraceContext feeds <see cref="Tick"/>, and the notifies that add the markers (NotifyAddNpc, NotifyRemoveNpc,
-/// NotifyAddInteract, NotifyAddLiftable, NotifyCompleteMyPC, NotifyAddPortal) have no sender here, so nothing hosts
-/// this controller yet. CanShowBeam's ride and hide tests are the host's (<see cref="CanShowBeam"/>).
+/// The HUD hosts it with CQuestNavigator (Ms2.Quest.QuestNavigator), whose trace and context feed <see cref="Tick"/>, and
+/// sends the field's npcs, interact objects and portals at field load. STILL-OPEN: no liftable is sent (AddLiftable has no
+/// caller), NotifyRemoveNpc has no sender (an npc that leaves keeps its marker), and CanShowBeam's ride and hide tests are
+/// the host's (<see cref="CanShowBeam"/>).
 /// </para>
 /// </summary>
 public sealed class QuestNavigationController : UiController
