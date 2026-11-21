@@ -1302,7 +1302,7 @@ public partial class HudScene : Node, IUiStageHost
         }
         if (ChatKeys(e)) { if (IsInstanceValid(vp)) vp.SetInputAsHandled(); return; }
         if (DialogKeys(e)) { if (IsInstanceValid(vp)) vp.SetInputAsHandled(); return; }
-        if (CastKeys(e) && IsInstanceValid(vp)) vp.SetInputAsHandled();   // the attack key (HudScene.Cast)
+        if (CastKeys(e) && IsInstanceValid(vp)) vp.SetInputAsHandled();   // the attack and quick slot keys (HudScene.Cast)
     }
 
     /// <summary>

@@ -4,7 +4,7 @@ using Ms2.Ui.Skills;
 
 namespace Ms2Godot.Ui;
 
-// The own player's casts from the keyboard: the attack key so far.
+// The own player's casts from the keyboard: the attack key and the quick slot keys.
 public partial class HudScene
 {
     readonly CastWorld castWorld = new();          // CSkillSystem's last cast time / skill, kept across casts
@@ -22,24 +22,35 @@ public partial class HudScene
     readonly System.Collections.Generic.List<int> hitIds = new();
 
     /// <summary>
-    /// A key press bound to the attack (action 0x49401): CKeyTable::GetSkillIdByKey (keytable.cpp:1452) gives the skill, then the
-    /// request (<see cref="CastOwn"/>). True when the key is the attack key.
-    /// STILL-OPEN: the quick slot keys (actions 500001..500025) and the skill expansion keys do not cast yet.
+    /// A key press that gives a skill: MyPC's cast request (mypc.cpp:1690-1704) asks the key's quick slot for an item first
+    /// (CKeyTable::GetQuickSlotItemUidByKey), else CKeyTable::GetSkillIdByKey (keytable.cpp:1452): the attack key's normal
+    /// attack, or the skill of the quick slot the key is bound to on the current page (GetKeySkillId). A non-zero skill goes to
+    /// the request (<see cref="CastOwn"/>). True when the key gave a skill.
+    /// STILL-OPEN: a quick slot holding an item (CanUseItem, HasFunction, the item's skill) does not cast; the held item key
+    /// (0x493e2) has no held item here; the skill expansion keys are not read.
     /// </summary>
     bool CastKeys(InputEvent e)
     {
-        if (e is not InputEventKey { Pressed: true, Echo: false } k || UiFocus.IsTyping || hudModel?.Keys == null) return false;
-        bool attack = false;
-        foreach (int dik in hudModel.Keys.KeysOfAction(SkillCast.AttackAction))
-            if (GodotKeyOfDik(dik) == k.PhysicalKeycode) { attack = true; break; }
-        if (!attack) return false;
-        var w = QuickSlotWorld();
-        var held = w.Weapon is { } h ? weaponActions.FindAction(h.Right, h.Left) : null;
-        // STILL-OPEN: the right-hand item's own skill (an action whose normalAttack is 0) is not read; 0 here
-        uint id = SkillCast.AttackKeySkill(w, castWorld, held, weaponActions, 0);
-        if (id != 0) CastOwn(w, id, held);
-        return true;
+        if (e is not InputEventKey { Pressed: true, Echo: false } k || UiFocus.IsTyping || hudModel?.Keys is not { } keys) return false;
+        var slots = hudModel.ServerKeys;
+        for (int dik = 1; dik < 0xd4; dik++)
+        {
+            if (GodotKeyOfDik(dik) != k.PhysicalKeycode) continue;
+            if (keys.GetQuickSlotItemUidByKey(dik, slots) != 0) return false;
+            castKeyWorld = QuickSlotWorld();
+            castKeyHeld = castKeyWorld.Weapon is { } h ? weaponActions.FindAction(h.Right, h.Left) : null;
+            // STILL-OPEN: the right-hand item's own skill (an action whose normalAttack is 0) is not read; 0 here
+            castAttackSkill ??= () => (int)SkillCast.AttackKeySkill(castKeyWorld, castWorld, castKeyHeld, weaponActions, 0);
+            int id = keys.GetSkillIdByKey(dik, castKeyWorld.HasPc, castAttackSkill, null, slots);
+            if (id == 0) continue;
+            CastOwn(castKeyWorld, (uint)id, castKeyHeld);
+            return true;
+        }
+        return false;
     }
+    SlotWorld castKeyWorld;
+    WeaponAction castKeyHeld;
+    Func<int> castAttackSkill;
 
     /// <summary>
     /// CSkillSystem::FUN_141764e30 for the own player (<see cref="SkillCast.Request"/>) at MyPC::GetSkillLevel, then the cast:

@@ -124,6 +124,91 @@ public sealed class KeyTable : IKeyTable
     public int FindKeyByQuickSlot(int index, int priority)
         => index < 0 || index >= QuickSlotActionCount ? 0 : FindKeyByActionAndPriority(FirstQuickSlotAction + index, priority);
 
+    /// <summary>A table of only the given keys and names (string table 5: key ids and action codes), no DefaultKey.xml.</summary>
+    internal KeyTable(IReadOnlyDictionary<string, string> keyNames)
+    {
+        names = new Dictionary<string, string>(keyNames);
+        for (int k = 1; k < 0xd0; k++)
+            if (names.TryGetValue(k.ToString(CultureInfo.InvariantCulture), out var n) && !string.IsNullOrEmpty(n))
+                keys[k] = new Key { Name = n };
+    }
+
+    /// <summary>IsKeyBoundToAction @0x14142cd50 (:1254): the key's binding is <paramref name="action"/> and its type is not 0.</summary>
+    public bool IsKeyBoundToAction(int key, long action) => keys.TryGetValue(key, out var k) && k.Type != 0 && k.Code == action;
+
+    /// <summary>IsQuickSlotAction @0x14142cf10 (:1285): one of m_quickSlotActions (500001..500025, InitKeys :653).</summary>
+    public static bool IsQuickSlotAction(long code) => code >= FirstQuickSlotAction && code < FirstQuickSlotAction + QuickSlotActionCount;
+
+    /// <summary>FindQuickSlotActionIndex @0x14142e220 (:1616): the action's index in m_quickSlotActions, -1 when none.</summary>
+    public static int FindQuickSlotActionIndex(long code) => IsQuickSlotAction(code) ? (int)(code - FirstQuickSlotAction) : -1;
+
+    /// <summary>
+    /// FindQuickSlotIndexByKey @0x14142dcb0 (:1488): the first quick slot whose priority 0, 1 or 2 key is <paramref name="key"/>
+    /// or that key's pair key (GetPairKey); -1 when none.
+    /// </summary>
+    public int FindQuickSlotIndexByKey(int key)
+    {
+        for (int i = 0; i < QuickSlotActionCount; i++)
+            for (int priority = 0; priority < 3; priority++)
+            {
+                int bound = FindKeyByActionAndPriority(FirstQuickSlotAction + i, priority);
+                if (bound == key) return i;
+                if (bound != 0 && PairKeys.TryGetValue(bound, out var pair) && pair == key) return i;
+            }
+        return -1;
+    }
+
+    /// <summary>
+    /// GetKeySkillId @0x14142d9b0 (:1418) on FindKeyData(key) (:1150): a quick slot action gives the skill of its slot on the
+    /// current page (GetQuickSlotEntry, :1574; 0 for an empty slot); type 1 the key's slot; type 2 the action code when
+    /// CDynamicActionData lists it (<paramref name="dynamicActionListed"/>, null = listed for none); else the key's slot.
+    /// STILL-OPEN: type 1's CGuideManager IsRestricted(8) refusal and its FUN_141275260(0x888, 1, 1) notice are not ported,
+    /// and CDynamicActionData is not loaded (the HUD passes null).
+    /// </summary>
+    public int GetKeySkillId(int key, ServerKeyTable slots, Func<long, bool> dynamicActionListed = null)
+    {
+        if (!keys.TryGetValue(key, out var k)) return 0;
+        if (IsQuickSlotAction(k.Code))
+        {
+            int index = FindQuickSlotActionIndex(k.Code);
+            if (index < 0 || slots == null) return 0;
+            return slots.Entry(slots.CurrentPage, index).SkillId;
+        }
+        if (k.Type == 1) return k.Slot;
+        if (k.Type == 2) return dynamicActionListed != null && dynamicActionListed(k.Code) ? (int)k.Code : 0;
+        return k.Slot;
+    }
+
+    /// <summary>The held item action (CKeyTable::GetSkillIdByKey, keytable.cpp:1466).</summary>
+    public const long HeldItemAction = 0x493e2;
+
+    /// <summary>
+    /// GetSkillIdByKey @0x14142dad0 (:1452): none without a local player; a key bound to the attack (0x49401) gives
+    /// <paramref name="attackSkill"/> (SkillCast.AttackKeySkill: riding, states 0x1b / 0x1c, GetNormalAttackSkillId); a key bound
+    /// to 0x493e2 gives the held item's skill when <paramref name="heldItemSkill"/> has one (FUN_14165f150 and GetHeldItem;
+    /// null = no held item, which falls through); else <see cref="GetKeySkillId"/>.
+    /// </summary>
+    public int GetSkillIdByKey(int key, bool hasPlayer, Func<int> attackSkill, Func<int?> heldItemSkill, ServerKeyTable slots,
+                               Func<long, bool> dynamicActionListed = null)
+    {
+        if (!hasPlayer) return 0;
+        if (IsKeyBoundToAction(key, 0x49401)) return attackSkill();
+        if (IsKeyBoundToAction(key, HeldItemAction) && heldItemSkill?.Invoke() is { } held) return held;
+        return GetKeySkillId(key, slots, dynamicActionListed);
+    }
+
+    /// <summary>
+    /// GetQuickSlotItemUidByKey @0x14142ded0 (:1546): the item uid of the quick slot the key is bound to (FindQuickSlotIndexByKey,
+    /// then the main player info's slot's item, SkillSlot::vfunc_25); 0 when the key is no quick slot key or the slot has none.
+    /// The slot's item is its current page entry's item uid here (the slot object finds the item by that uid).
+    /// </summary>
+    public long GetQuickSlotItemUidByKey(int key, ServerKeyTable slots)
+    {
+        int index = FindQuickSlotIndexByKey(key);
+        if (index < 0 || slots == null) return 0;
+        return slots.Entry(slots.CurrentPage, index).ItemUid;
+    }
+
     /// <summary>GetKeyName (:1339): the key's name; "" for no key. (Game pad keys build an icon string with feature 0xb5;
     /// they never carry a DefaultKey binding here.)</summary>
     public string GetKeyName(int key) => keys.TryGetValue(key, out var k) ? k.Name : "";
