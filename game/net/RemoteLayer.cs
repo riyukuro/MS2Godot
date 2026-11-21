@@ -229,6 +229,7 @@ public sealed partial class RemoteLayer : Node3D
         pc.JobGroup = u.User.JobCode;          // the user block's job group (CharacterInfo maps JobGroup from it)
         pc.BattleStance = u.InBattle;
         pc.Effects = PlayGroundEffects;
+        pc.HoldLookup = FindHoldTarget;
         var root = pc.Body;
         AddChild(root);
         // the other player's CObjectShadow, of the PC row (PC::vfunc_49, pc.cpp:3028-3035; the same size as the player's)

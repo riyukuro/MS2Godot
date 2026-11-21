@@ -19,12 +19,15 @@ public sealed partial class RemoteLayer
     /// <summary>
     /// OnSkillUse @0x141717b40 (scenestategame.cpp:3297): the actor's new record of the uid and motion (CSkillRecord::Init,
     /// FUN_141673b40 -> StateSkill::PlayCastStartEffect plays its motion at the record's speed).
-    /// STILL-OPEN: the pet effect (bEffect, :3343-3347), CEffectService::SetTick and the record's extra are not ported.
+    /// The record's extra (an actor id and its node) is StateSkill's m_nB0 / m_strB8: the cast's end holds that actor
+    /// (StateHold, 0x20) instead of going to StateIdle.
+    /// STILL-OPEN: the pet effect (bEffect, :3343-3347) and CEffectService::SetTick are not ported.
     /// </summary>
     void OnSkillUse(SkillUse u)
     {
         if (users.TryGetValue(u.ActorId, out var r)) r.Cast.Use(u.CastUid, u.Motion);
-        PlayCast(u.ActorId, u.SkillId, u.Level, u.Motion, u.Speed, new System.Numerics.Vector3(u.Position.X, u.Position.Y, u.Position.Z), u.Rotation.Z);
+        PlayCast(u.ActorId, u.SkillId, u.Level, u.Motion, u.Speed, new System.Numerics.Vector3(u.Position.X, u.Position.Y, u.Position.Z), u.Rotation.Z,
+            u.HasExtra ? u.Extra : 0, u.HasExtra ? u.ExtraText ?? "" : "");
     }
 
     /// <summary>
@@ -52,7 +55,7 @@ public sealed partial class RemoteLayer
         if (!users.TryGetValue(c.ActorId, out var r)) return;
         InSkill(r);
         if (!r.Cast.Cancel(c.CastUid)) return;
-        r.Pc.States.EndSkill();
+        r.Pc.States.CancelSkill();
         CastsCancelled++;
     }
 
@@ -63,7 +66,8 @@ public sealed partial class RemoteLayer
     /// FUN_141673b40 -> StateSkill::PlayCastStartEffect for a user: a motion with a sequence the body has enters StateSkill
     /// (RemotePc.PlaySkill) at the record's position <paramref name="pos"/> (MS2 axes) and rotation <paramref name="rotZ"/>.
     /// </summary>
-    void PlayCast(int actorId, int skillId, int level, int motionIndex, float speed, System.Numerics.Vector3 pos, float rotZ)
+    void PlayCast(int actorId, int skillId, int level, int motionIndex, float speed, System.Numerics.Vector3 pos, float rotZ,
+        int holdId = 0, string holdNode = "")
     {
         skillMotions ??= new Ms2.Formats.World.SkillTable(packs);
         var motion = skillMotions.Motion(skillId, level, motionIndex);
@@ -74,7 +78,7 @@ public sealed partial class RemoteLayer
             at = r.Root; yaw = r.Visual.Rotation.Y;
             if (!string.IsNullOrEmpty(motion.SequenceName) && SkillAnim(r.Gender, motion.SequenceName) is { an: not null } sk)
             {
-                r.Pc.PlaySkill(sk.name, Math.Max(speed, 0.1f), skillId, skillMotions.ChargingSkill(skillId), pos, rotZ);
+                r.Pc.PlaySkill(sk.name, Math.Max(speed, 0.1f), skillId, skillMotions.ChargingSkill(skillId), pos, rotZ, holdId, holdNode);
                 CastsPlayed++;
             }
         }

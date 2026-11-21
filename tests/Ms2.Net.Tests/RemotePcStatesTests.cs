@@ -78,17 +78,23 @@ public class RemotePcStatesTests {
         public float AirSpeedScale => 1f;
         public float TurnSpeed => 1800f;
         public bool BattleStance => false;
+        public HoldTarget Hold;
+        public (int id, string node) HoldAsked;
+        public HoldTarget FindHoldTarget(int id, string node) { HoldAsked = (id, node); return Hold; }
+        public readonly List<string> Sequences = new();
+        public bool PlaySequence(string name, float rate) { if (Sequences.Count == 0 || Sequences[^1] != name) Sequences.Add(name); Current = -1; return true; }
     }
 
     // the default field camera's Euler rotation (CameraMathTests: hangle 45, vangle 30), its flat view direction (1, 1)/sqrt 2
     static readonly Vector3 Cam = new(90, 45, -40);
 
-    static SyncRecord Rec(int state, int sub, Vector3 pos, Vector2 move, float timeS, float yaw = 0, Vector3? cam = null, int skill = 0) {
+    static SyncRecord Rec(int state, int sub, Vector3 pos, Vector2 move, float timeS, float yaw = 0, Vector3? cam = null, int skill = 0, int hold = 0, string holdNode = null) {
         var s = new StateSync {
             State = (byte) state, SubState = (byte) sub, Position = new Vector3S((short) pos.X, (short) pos.Y, (short) pos.Z),
             Rotation = (short) (yaw * 10), Rotation2 = (short) (yaw * 10), Unknown1 = 2, Unknown3 = (short) (timeS * 1000), SyncNumber = 0x7fffffff,
         };
         if (skill != 0) { s.Flags |= StateSync.Flag.Flag1; s.Flag1Value = skill; }   // m_n64, optional bit 0
+        if (hold != 0) { s.Flags |= StateSync.Flag.Flag6; s.Flag6Value = hold; s.Flag6Text = holdNode; }   // m_n90 / m_str98, optional bit 5
         var c = cam ?? Cam;
         s.Speed = new Vector3S((short) c.X, (short) c.Y, (short) c.Z);
         int ax = move.X == -1 ? 0 : move.X == 0 ? 1 : move.X == 1 ? 2 : -1, ay = move.Y == -1 ? 0 : move.Y == 0 ? 1 : move.Y == 1 ? 2 : -1;
@@ -516,6 +522,116 @@ public class RemotePcStatesTests {
         Run(sm, 0.3f);
         Assert.That(states, Is.EqualTo(new[] { RemotePcStates.StateSkill, RemotePcStates.StateSkill, RemotePcStates.StateIdle, RemotePcStates.StateFall }));
         Assert.That(b.Played, Does.Contain(RemotePcStates.ActJumpFall));
+    }
+
+    // an npc's node at (100, 200, 300), turned 30 degrees about MS2 Z: m[0] = (cos, -sin, 0) for R_z(30)
+    static HoldTarget NpcNode(int npcId = 0x5f5e101) {
+        float c = MathF.Cos(MathF.PI / 6), sn = MathF.Sin(MathF.PI / 6);
+        return new HoldTarget { Kind = HoldKind.Npc, NpcId = npcId, HasNode = true, NodePosition = new Vector3(100, 200, 300), NodeRow0 = new Vector3(c, -sn, 0) };
+    }
+
+    [Test] public void CastHoldingAnActorEndsInHoldOnItsNode() {
+        // FUN_1417f0070: a record with m_nB0 enters StateHold (0x20) with m_nB0 / m_strB8; StateHold::vfunc_3 puts the PC on
+        // the node turned by -z degrees of ToEulerAnglesXYZ, without gravity; vfunc_9 plays HOLD_IDLE (0x3e)
+        var b = new Body { Hold = NpcNode() };
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Cast(10200001, false, Vector3.Zero, 0f, 4242, "Bip01 Spine");
+        sm.EndSkill();
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateHold));
+        Assert.That(sm.HoldTargetId, Is.EqualTo(4242)); Assert.That(sm.HoldNode, Is.EqualTo("Bip01 Spine"));
+        Run(sm, 0.5f);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateHold));
+        Assert.That(b.HoldAsked, Is.EqualTo((4242, "Bip01 Spine")));
+        Assert.That(b.Position, Is.EqualTo(new Vector3(100, 200, 300)));
+        Assert.That(b.RotationZ, Is.EqualTo(30f).Within(1e-3));
+        Assert.That(b.Current, Is.EqualTo(RemotePcStates.ActHoldIdle));
+        // the node moves: the PC follows it
+        b.Hold.NodePosition = new Vector3(150, 200, 320);
+        Run(sm, 1 / 60f);
+        Assert.That(b.Position, Is.EqualTo(new Vector3(150, 200, 320)));
+    }
+
+    [Test] public void HoldOnAGimbalEdgeKeepsTheRotation() {
+        // ToEulerAnglesXYZ returns false at |y| >= pi/2 - 1e-3: vfunc_21 is not called, the position still follows
+        var b = new Body { Hold = NpcNode() };
+        b.Hold.NodeRow0 = new Vector3(0, 0, -1);
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        b.RotationZ = 12f;
+        sm.Cast(10200001, false, Vector3.Zero, 12f, 4242, "n");
+        sm.EndSkill();
+        Run(sm, 0.1f);
+        Assert.That(b.RotationZ, Is.EqualTo(12f).Within(1e-4));
+        Assert.That(b.Position, Is.EqualTo(new Vector3(100, 200, 300)));
+    }
+
+    [Test] public void HoldWithoutTheActorOrNodeFallsBackToTheJump() {
+        // StateHold::ChangeState: no actor, no node or a dead actor -> vfunc_59(6, 0, 0x22, 0)
+        foreach (var t in new[] { default, NpcNode() with { HasNode = false }, NpcNode() with { Dead = true } }) {
+            var b = new Body { Hold = t };
+            var sm = new RemotePcStates(b);
+            sm.Spawn(); Run(sm, 0.5f);
+            sm.Cast(10200001, false, Vector3.Zero, 0f, 4242, "n");
+            sm.EndSkill();
+            var seen = new List<(int, int)>();
+            sm.StateChanged = st => seen.Add((st, sm.Sub));
+            sm.Update(1 / 60f);
+            Assert.That(seen, Has.Member((RemotePcStates.StateJump, 0x22)), $"{t.Kind} node {t.HasNode} dead {t.Dead}");
+            Assert.That(sm.Cur, Is.Not.EqualTo(RemotePcStates.StateHold));
+        }
+    }
+
+    [Test] public void HoldRecordEntersHoldWithItsTarget() {
+        // StateSyncObject::vfunc_2's optional bit 5 (m_n90, m_str98) -> StateHoldData::vfunc_2
+        var b = new Body { Hold = NpcNode() };
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Push(Rec(RemotePcStates.StateHold, 0, Vector3.Zero, Vector2.Zero, 0.05f, hold: 777, holdNode: "Dummy01"));
+        sm.Update(1 / 60f);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateHold));
+        Assert.That(sm.HoldTargetId, Is.EqualTo(777)); Assert.That(sm.HoldNode, Is.EqualTo("Dummy01"));
+        Assert.That(b.Position, Is.EqualTo(new Vector3(100, 200, 300)));
+    }
+
+    [Test] public void HoldPlaysTheNpcsSequenceAndLeavesWithItsRotation() {
+        // vfunc_9: npc 0xa7e02a "Ride_Idle_U", 0xadf341 "Idle_A"; vfunc_5 turns back to the rotation kept on entry
+        foreach (var (npc, seq) in new[] { (0xa7e02a, "Ride_Idle_U"), (0xadf341, "Idle_A"), (0xadf342, "Idle_A") }) {
+            var b = new Body { Hold = NpcNode(npc) };
+            var sm = new RemotePcStates(b);
+            sm.Spawn(); Run(sm, 0.5f);
+            b.RotationZ = 45f;
+            sm.Cast(10200001, false, Vector3.Zero, 45f, 4242, "n");
+            sm.EndSkill();
+            Run(sm, 0.2f);
+            Assert.That(b.Sequences, Is.EqualTo(new[] { seq }));
+            Assert.That(b.RotationZ, Is.EqualTo(30f).Within(1e-3));
+            sm.Push(Rec(1, 0, b.Position, Vector2.Zero, 0.05f, yaw: 45f));
+            sm.Update(1 / 60f);
+            Assert.That(sm.Cur, Is.Not.EqualTo(RemotePcStates.StateHold));
+        }
+    }
+
+    [Test] public void CancelledCastHoldingAnActorGoesToIdle() {
+        // OnSkillCancel -> State::vfunc_7(1): StateIdle, not the hold
+        var b = new Body { Hold = NpcNode() };
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Cast(10200001, false, Vector3.Zero, 0f, 4242, "n");
+        sm.CancelSkill();
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateIdle));
+    }
+
+    [Test] public void HoldAllocatesNothingPerFrame() {
+        var b = new Body { Hold = NpcNode() };
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Cast(10200001, false, Vector3.Zero, 0f, 4242, "n");
+        sm.EndSkill();
+        for (int i = 0; i < 60; i++) sm.Update(1 / 60f);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 600; i++) sm.Update(1 / 60f);
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(256));
     }
 
     [Test] public void UpdateAllocatesNothingPerFrame() {

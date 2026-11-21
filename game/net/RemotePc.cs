@@ -317,9 +317,10 @@ public sealed class RemotePc : IRemotePc
     /// sequence at the record's speed. Its end (<see cref="OnAnimationFinished"/>) leaves the state; the next state plays its
     /// own action with the default transition from the cast.
     /// </summary>
-    public void PlaySkill(string name, float speed, int skillId, bool chargingSkill, System.Numerics.Vector3 pos, float rotZ)
+    public void PlaySkill(string name, float speed, int skillId, bool chargingSkill, System.Numerics.Vector3 pos, float rotZ,
+        int holdId = 0, string holdNode = "")
     {
-        States.Cast(skillId, chargingSkill, pos, rotZ);
+        States.Cast(skillId, chargingSkill, pos, rotZ, holdId, holdNode);
         bool again = name == currentName;
         Anim.Play(name, 0.05, speed);
         if (again) Anim.Seek(0, true);           // the same sequence again (a forced re-entry): Play alone would go on
@@ -339,6 +340,27 @@ public sealed class RemotePc : IRemotePc
         currentAct = action; currentName = name; lastPos = -1;
         return true;
     }
+
+    /// <summary>
+    /// A body sequence by name outside the action table (StateHold::vfunc_9's PlayAnimationByName, looping): the default
+    /// transition from the current sequence; nothing when it is already playing or the body has none.
+    /// </summary>
+    public bool PlaySequence(string name, float rate)
+    {
+        if (!ReferenceEquals(name, seqName)) { seqName = name; seqKey = Anims?.Sequence(name, true); }
+        if (seqKey == null) return false;
+        if (seqKey == currentName && Anim.IsPlaying()) { Anim.SpeedScale = rate; return true; }
+        var tr = currentName == null ? null : Anims.Transition(currentName, seqKey) ?? Anims.DefaultTransition;
+        Anim.Play(seqKey, tr?.Duration ?? 0);
+        Anim.SpeedScale = rate;
+        currentAct = -1; currentName = seqKey; lastPos = -1;
+        return true;
+    }
+    string seqName, seqKey;
+
+    /// <summary>The held actor's lookup (RemoteLayer: FUN_141bd1200 and FUN_1416757c0 over the field's users and npcs).</summary>
+    public Func<int, string, HoldTarget> HoldLookup;
+    public HoldTarget FindHoldTarget(int id, string node) => HoldLookup?.Invoke(id, node) ?? default;
 
     public float Gait(float speed, float run, float walk, out bool isRun) => ActionAnims.GaitRate(speed, run, walk, out isRun) * ScaleAnimRate;
 

@@ -21,7 +21,7 @@ public sealed class ActionAnims
         ClimbIdle = 17, ClimbLUp = 18, ClimbLCenter = 19, ClimbLDown = 20, ClimbRUp = 21, ClimbRCenter = 22,
         ClimbRDown = 23, ClimbUpLand = 24, ClimbUpTake = 25, ClimbDownLand = 26, ClimbDownTake = 27,
         Run = 28, Walk = 29, PoleUp = 34, PoleDown = 35, PoleIdle = 36, PoleTurn = 37, PoleTake = 38, SpecialJumpUp = 42, SpecialJumpDown = 43,
-        WaterIdle = 48, WaterSwim = 49, WaterDash = 50, FallDamage = 63,
+        WaterIdle = 48, WaterSwim = 49, WaterDash = 50, HoldIdle = 62, FallDamage = 63,
     }
 
     static readonly string[] TypeNames =
@@ -38,7 +38,7 @@ public sealed class ActionAnims
     };
 
     // sequences that cycle; the rest play once and hold their last frame
-    static readonly HashSet<Act> Looping = new() { Act.Idle, Act.BattleIdle, Act.Run, Act.Walk, Act.JumpFall, Act.WaterIdle, Act.WaterSwim, Act.WaterDash, Act.LadderIdle, Act.ClimbIdle, Act.PoleIdle };
+    static readonly HashSet<Act> Looping = new() { Act.Idle, Act.BattleIdle, Act.Run, Act.Walk, Act.JumpFall, Act.WaterIdle, Act.WaterSwim, Act.WaterDash, Act.LadderIdle, Act.ClimbIdle, Act.PoleIdle, Act.HoldIdle };
 
     readonly Dictionary<Act, string> names = new();
     readonly HashSet<string> missing = new(StringComparer.Ordinal);

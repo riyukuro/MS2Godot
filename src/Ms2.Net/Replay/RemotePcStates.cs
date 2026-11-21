@@ -71,6 +71,44 @@ public interface IRemotePc
     float TurnSpeed { get; }
     /// <summary>vfunc_65 (m_unk_160): the battle stance.</summary>
     bool BattleStance { get; }
+    /// <summary>What StateHold reads of the held actor: WorldService::FUN_141bd1200(<paramref name="id"/>) and, on it,
+    /// FUN_1416757c0(<paramref name="node"/>) (the node by name in its model).</summary>
+    HoldTarget FindHoldTarget(int id, string node);
+    /// <summary>PlayAnimation(name, rate, false, false): a sequence by its name; nothing when the sequence is playing or the
+    /// body has no such sequence (false).</summary>
+    bool PlaySequence(string name, float rate);
+}
+
+/// <summary>The held actor's class as StateHold tests it (GetClassID).</summary>
+public enum HoldKind
+{
+    /// <summary>No actor of the id.</summary>
+    None,
+    /// <summary>A PC (0x6200003 / 0x6200004): the hold is a seat on its mount.</summary>
+    Pc,
+    /// <summary>An npc (0x6200028).</summary>
+    Npc,
+    /// <summary>A ridee (0x6200045).</summary>
+    Ridee,
+    /// <summary>Any other actor.</summary>
+    Other,
+}
+
+/// <summary>The held actor and its node (<see cref="IRemotePc.FindHoldTarget"/>).</summary>
+public struct HoldTarget
+{
+    public HoldKind Kind;
+    /// <summary>CNpc::GetNpcId of an npc.</summary>
+    public int NpcId;
+    /// <summary>IsDead.</summary>
+    public bool Dead;
+    /// <summary>The actor has the node.</summary>
+    public bool HasNode;
+    /// <summary>The node's world translation, MS2 axes.</summary>
+    public Vector3 NodePosition;
+    /// <summary>The node's world rotation as rows 0 of its matrix (m[0][0], m[0][1], m[0][2]), MS2 axes: what
+    /// NiMatrix3::ToEulerAnglesXYZ reads for the y and z angles.</summary>
+    public Vector3 NodeRow0;
 }
 
 /// <summary>
@@ -80,10 +118,11 @@ public interface IRemotePc
 /// and the transitions the PC takes by itself: a fall, a landing, the end of the landing). The input states' vfunc_8
 /// runs for MyPC only (mypc.cpp:2966), so a remote PC changes state by its records and by its own vfunc_9 tests.
 /// Ported states: StateIdle (1), StateWalk (2), StateLand (4), StateFall (5), StateJump (6), StateSwim (0x1b), and StateSkill
-/// (0x10) as far as the queue and the next state go (<see cref="Cast"/>, <see cref="EndSkill"/>).
+/// (0x10) as far as the queue and the next state go (<see cref="Cast"/>, <see cref="EndSkill"/>), and StateHold (0x20, on
+/// the held actor's node: <see cref="Hold"/>).
 /// STILL-OPEN: every other registered state (pc.cpp:668-721: crawl, ladder, rope, emotion, dash, climb, glide, swim
 /// dash, ...) changes the id here and runs no update of its own; the records still place the PC (FUN_1417dbd00 snaps for
-/// those states at once). A record's StateData (FUN_1417dc9a0 / vfunc_27, read by its vfunc_2) is not read. The push
+/// those states at once). A record's StateData (FUN_1417dc9a0 / vfunc_27, read by its vfunc_2) is read for StateHold only. The push
 /// control (m_pushControl, statemanager.cpp:591), the marker the sender stood on (m_str88, FUN_1417dc4c0
 /// statemanager.cpp:606-620), the cube cell (FUN_141678300) and the fixed Z rotation of PCBase::vfunc_21
 /// (AdditionalCliList::TryGetFixedZRotation) are not ported. FUN_141676b70 (m_unk_b80, the ride/stunt idle and walk subs
@@ -94,12 +133,12 @@ public interface IRemotePc
 public sealed class RemotePcStates
 {
     public const int StateNone = 0, StateIdle = 1, StateWalk = 2, StateLand = 4, StateFall = 5, StateJump = 6,
-        StateSkill = 0x10, StateRide = 0x21, StateSwim = 0x1b;
+        StateSkill = 0x10, StateHold = 0x20, StateRide = 0x21, StateSwim = 0x1b;
 
     // action ids (ActionType, actioncontainer.cpp) the ported states play through vfunc_123
     public const int ActIdle = 0, ActBattleIdle = 1, ActJumpDown = 2, ActJumpLand = 3, ActJumpUp = 4, ActJumpFall = 5,
         ActRun = 0x1c, ActWalk = 0x1d, ActTalkIdle = 0x2e, ActSpecialJumpUp = 0x2a, ActSpecialJumpDown = 0x2b,
-        ActWaterIdle = 0x30, ActWaterSwim = 0x31;
+        ActWaterIdle = 0x30, ActWaterSwim = 0x31, ActHoldIdle = 0x3e;
 
     /// <summary>The ids PC::vfunc_10's RegisterState calls name (pc.cpp:668-721) and StateNone (statemanager.cpp:197):
     /// ChangeState returns on any other (statemanager.cpp:304).</summary>
@@ -156,6 +195,14 @@ public sealed class RemotePcStates
     public int SkillId { get; private set; }
     public bool ChargingSkill { get; private set; }
     Vector3 castPos; float castRotZ;
+    // the cast record's m_nB0 / m_strB8 (the SkillUse packet's extra): the actor it holds after the cast
+    int castHoldId; string castHoldNode = "";
+
+    /// <summary>StateHold's StateHoldData (m_spHold): m_nTargetId and m_strTargetName, the held actor and its node.</summary>
+    public int HoldTargetId { get; private set; }
+    public string HoldNode { get; private set; } = "";
+    // the data the next entry of StateHold takes (vfunc_59's pData), and StateHold::m_kDir (the rotation before the hold)
+    int pendingHoldId; string pendingHoldNode = ""; float holdDir;
 
     // StateWalk (statewalk.h:29-33: m_fSpeed1/m_fSpeed2 store vfunc_96/vfunc_97; m_n50 is only set by MyPC's vfunc_8)
     float walkSpeed1, walkSpeed2; int walkRun = 1; readonly int walkChanged = 0;
@@ -300,26 +347,47 @@ public sealed class RemotePcStates
     /// is already in StateSkill), and a cast in the state leaves and enters it again. <paramref name="pos"/> (MS2 axes)
     /// and <paramref name="rotZ"/> (degrees) are the record's m_ptPos and m_ptRot.z, which StateSkill::vfunc_4 takes.
     /// </summary>
-    public void Cast(int skillId, bool chargingSkill, Vector3 pos, float rotZ)
+    /// <paramref name="holdId"/> and <paramref name="holdNode"/> are the record's m_nB0 / m_strB8 (OnSkillUse,
+    /// scenestategame.cpp:3333-3340, from the packet's extra): the actor and node the cast's end holds.
+    public void Cast(int skillId, bool chargingSkill, Vector3 pos, float rotZ, int holdId = 0, string holdNode = "")
     {
         SkillId = skillId;
         ChargingSkill = chargingSkill;
         castPos = pos;
         castRotZ = rotZ;
+        castHoldId = holdId;
+        castHoldNode = holdNode ?? "";
         ChangeState(StateSkill, 0, true);
     }
 
     /// <summary>
-    /// StateSkill leaves for StateIdle: at the end of its sequence (StateSkill::EndOfSequence @0x1417e9130,
-    /// stateskill.cpp:1054-1072, marks it; for a PC that is neither MyPC nor an npc, FUN_1417f0070 @0x1417f0070,
-    /// stateskill.cpp:2810-2822, then enters StateIdle) and on OnSkillCancel (State::vfunc_7(1) -> StateSkill::vfunc_7,
-    /// stateskill.cpp:576-592: vfunc_59(1)). Nothing when the PC has left StateSkill already.
-    /// STILL-OPEN: FUN_1417f0070's StateHold (0x20) for a record holding a target (m_nB0), and EndOfSequence's waits for a
-    /// charging or repeating cast (m_bCharging, m_nRepeat), are not ported.
+    /// StateSkill's end at the end of its sequence (StateSkill::EndOfSequence @0x1417e9130, stateskill.cpp:1054-1072,
+    /// marks it; for a PC that is neither MyPC nor an npc, FUN_1417ee120 calls FUN_1417f0070 @0x1417f0070,
+    /// stateskill.cpp:2810-2822): a record holding an actor (m_nB0) enters StateHold (0x20) with a StateHoldData of
+    /// m_nB0 and m_strB8, any other StateIdle. Nothing when the PC has left StateSkill already.
+    /// STILL-OPEN: EndOfSequence's waits for a charging or repeating cast (m_bCharging, m_nRepeat) are not ported.
     /// </summary>
     public void EndSkill()
     {
+        if (Cur != StateSkill) return;
+        if (castHoldId != 0) Hold(castHoldId, castHoldNode);
+        else ChangeState(StateIdle);
+    }
+
+    /// <summary>OnSkillCancel (State::vfunc_7(1) -> StateSkill::vfunc_7, stateskill.cpp:576-592: vfunc_59(1)): StateSkill
+    /// leaves for StateIdle. Nothing when the PC has left StateSkill already.</summary>
+    public void CancelSkill()
+    {
         if (Cur == StateSkill) ChangeState(StateIdle);
+    }
+
+    /// <summary>vfunc_59(0x20, StateHoldData) unforced: StateHold holding <paramref name="targetId"/> by its node
+    /// <paramref name="node"/>.</summary>
+    public void Hold(int targetId, string node)
+    {
+        pendingHoldId = targetId;
+        pendingHoldNode = node ?? "";
+        ChangeState(StateHold);
     }
 
     /// <summary>
@@ -338,6 +406,8 @@ public sealed class RemotePcStates
         }
         if (r.State == 0xd || r.State == 0x12) return;
         bool force = Cur == r.State && StateForces(r);
+        // FUN_1417dc9a0 (vfunc_27) then StateData::vfunc_2: StateHoldData::vfunc_2 (@0x1417cbaf0) reads m_n90 / m_str98
+        if (r.State == StateHold) { pendingHoldId = r.HoldTargetId; pendingHoldNode = r.HoldNode; }
         // PCBase::vfunc_59 (pcbase.cpp:1098-1112): ready (m_unk_b4) and not riding (state 0x21 hands it to the ridee)
         ChangeState(r.State, r.Sub, force);
     }
@@ -394,6 +464,67 @@ public sealed class RemotePcStates
         NotifyWeaponKey();
     }
 
+    // ---- StateHold ---------------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// StateHold::vfunc_4 (@0x1417cbcb0, stateholddata.cpp:161-185): StateMoveSkill::vfunc_4 (State::vfunc_4 -> State::vfunc_10
+    /// sets m_f938 = 1f), StopJump, the StateHoldData taken, and the rotation kept (m_kDir) for vfunc_5.
+    /// STILL-OPEN: StateMoveSkill::vfunc_38's skill level row of the data's skill (StateHoldData's 0x1312d1f level 1, or
+    /// the record's m_n64 / m_n6c), whose absence falls back at once, is taken as present; FUN_1417ccd50's m_bRiding (read
+    /// by vfunc_15 / vfunc_16 only), the shadow (vfunc_31(false)) and the hit report reset are not ported.
+    /// </summary>
+    void HoldEnter()
+    {
+        pc.AnimSpeed = 1f;
+        pc.StopJump();
+        HoldTargetId = pendingHoldId;
+        HoldNode = pendingHoldNode;
+        holdDir = pc.RotationZ;
+    }
+
+    /// <summary>
+    /// StateHold::vfunc_3 (@0x1417cbfa0, stateholddata.cpp:204-248): with the held actor alive and its node found, an npc
+    /// or any actor but a PC or a ridee puts the PC on the node's world translation turned by its world rotation
+    /// (ToEulerAnglesXYZ times -57.2957764 through vfunc_21, only when the angles are unique); else the fallback state
+    /// (StateMoveSkill m_nFallbackState 6, m_nFallbackSub 0x22: StateJump). No vfunc_68 runs: no gravity, no turn.
+    /// STILL-OPEN: a PC target's mount seat (Ridee::FUN_1417083a0 with the ridee data's passenger model) and the x / y
+    /// angles of vfunc_21 (the body keeps only its Z rotation); efd::FastATan2 is taken as the exact atan2.
+    /// </summary>
+    void HoldMove()
+    {
+        var t = pc.FindHoldTarget(HoldTargetId, HoldNode);
+        if (!t.HasNode || t.Kind == HoldKind.None || t.Dead)
+        {
+            ChangeState(StateJump, 0x22);            // StateHold::ChangeState: vfunc_59(m_nFallbackState, 0, m_nFallbackSub, 0)
+            return;
+        }
+        if (t.Kind == HoldKind.Pc || t.Kind == HoldKind.Ridee) return;
+        // efd::Matrix3::ToEulerAnglesXYZ (Matrix3_Win32.cpp:938-951): y = -asin(m[0][2]), z = atan2(m[0][1], m[0][0])
+        float y = -MathF.Asin(Math.Clamp(t.NodeRow0.Z, -1f, 1f));
+        const float Edge = MathF.PI / 2 - 1e-3f;     // EE_HALF_PI - EE_RIGHT_ANGLE_EPSILON
+        if (y < Edge && y > -Edge) pc.RotationZ = MathF.Atan2(t.NodeRow0.Y, t.NodeRow0.X) * -57.2957764f;
+        pc.Position = t.NodePosition;
+    }
+
+    /// <summary>
+    /// StateHold::vfunc_9 (@0x1417cc5a0, stateholddata.cpp:277-374): the held npc 0xa7e02a plays "Ride_Idle_U", the npcs
+    /// 0xadf341 / 0xadf342 "Idle_A", a PC target its mount's passenger sequence, and any other actor HOLD_IDLE (0x3e,
+    /// PlayAnimationById); all at FUN_1416713c0() without a restart.
+    /// STILL-OPEN: a PC target's passenger sequences (CRideeData::GetPassenger's m_strAniPC* by the ridee's state).
+    /// </summary>
+    void HoldFrame()
+    {
+        var t = pc.FindHoldTarget(HoldTargetId, HoldNode);
+        if (t.Kind == HoldKind.None) return;
+        if (t.Kind == HoldKind.Npc)
+        {
+            if (t.NpcId == 0xa7e02a) { pc.PlaySequence("Ride_Idle_U", pc.AnimSpeed); return; }
+            if (t.NpcId == 0xadf341 || t.NpcId == 0xadf342) { pc.PlaySequence("Idle_A", pc.AnimSpeed); return; }
+        }
+        else if (t.Kind == HoldKind.Pc) return;
+        if (!pc.IsAction(ActHoldIdle)) pc.PlayAction(ActHoldIdle, pc.AnimSpeed, false);
+    }
+
     // ---- the states ------------------------------------------------------------------------------------------------
 
     void Enter(int s)
@@ -407,6 +538,9 @@ public sealed class RemotePcStates
                 pc.Position = castPos;
                 TargetYaw = castRotZ;
                 pc.RotationZ = castRotZ;
+                break;
+            case StateHold:
+                HoldEnter();
                 break;
             case StateIdle:
                 // StateIdle::vfunc_4 (stateidle.cpp:167-191): State::vfunc_4 -> State::vfunc_10 sets m_f938 = 1f;
@@ -471,6 +605,12 @@ public sealed class RemotePcStates
             case StateSwim:
                 Speed = pc.RunSpeed;                          // StateSwim::vfunc_5 (stateswim.cpp:132-138)
                 break;
+            case StateHold:
+                // StateHold::vfunc_5 (@0x1417cbe70, stateholddata.cpp:188-201): StopJump, the shadow back on
+                // (vfunc_31(true)), the rotation from before the hold (vfunc_21(m_kDir)); the rest is MyPC's
+                pc.StopJump();
+                pc.RotationZ = holdDir;
+                break;
         }
     }
 
@@ -514,6 +654,9 @@ public sealed class RemotePcStates
             case StateJump:
                 JumpMove(dt);
                 break;
+            case StateHold:
+                HoldMove();
+                break;
             case StateSkill:
                 // STILL-OPEN: StateSkill::vfunc_3's motion controller (FUN_1417edc20, CLinearMotionController and the
                 // others, stateskill.cpp:605-631); the PC keeps its place under vfunc_68 with a zero move
@@ -544,6 +687,7 @@ public sealed class RemotePcStates
                 if (pc.OnGround) ChangeState(StateLand);
                 break;
             case StateJump: JumpFrame(); break;
+            case StateHold: HoldFrame(); break;
             case StateSwim:
                 // StateSwim::vfunc_9 (@0x1417fac90, stateswim.cpp:228-263), no ridee: StateSwim::vfunc_10
                 // (@0x1417fafb0, stateswim.cpp:266-270) sets m_f938 and PlayAnimation passes FUN_1416713c0().

@@ -233,6 +233,14 @@ public sealed class NpcLayer
     public (Node3D root, float height, float yaw)? Info(int id) =>
         inst.TryGetValue(id, out var i) ? (i.Root, i.Height, i.Placeholder ? 0 : i.Visual.Rotation.Y) : null;
 
+    /// <summary>The npc of the object id as StateHold reads it: its npc id, whether it is dead and its visual.</summary>
+    public bool HoldInfo(int id, out int npcId, out bool dead, out Node3D visual)
+    {
+        if (!inst.TryGetValue(id, out var i)) { npcId = 0; dead = false; visual = null; return false; }
+        npcId = i.NpcId; dead = i.Dead; visual = i.Placeholder ? null : i.Visual;
+        return true;
+    }
+
     /// <summary>Plays a named kfm sequence (a skill's motion) on an npc.</summary>
     public void PlaySequence(int id, string name)
     {

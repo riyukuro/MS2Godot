@@ -39,6 +39,9 @@ public sealed class SyncRecord
     /// <summary>m_str88 (+0x88, optional bit 4) and m_pos78: the object the sender stood on and the offset from it.</summary>
     public string MarkerName = "";
     public Vector3 MarkerOffset;
+    /// <summary>m_n90 / m_str98 (+0x90 / +0x98, optional bit 5): the held actor's id and node (StateHoldData::vfunc_2).</summary>
+    public int HoldTargetId;
+    public string HoldNode = "";
     /// <summary>m_nA0 (+0xa0): the cube cell, 0x7fffffff when unset.</summary>
     public int CubeCell = 0x7fffffff;
     /// <summary>m_nA8 (+0xa8): set once the queue has played the record.</summary>
@@ -60,6 +63,7 @@ public sealed class SyncRecord
         };
         if (s.Flags.HasFlag(StateSync.Flag.Flag1)) r.SkillId = s.Flag1Value;
         if (s.Flags.HasFlag(StateSync.Flag.Flag5)) { r.MarkerName = s.Flag5Text ?? ""; r.MarkerOffset = s.Flag5Vec; }
+        if (s.Flags.HasFlag(StateSync.Flag.Flag6)) { r.HoldTargetId = s.Flag6Value; r.HoldNode = s.Flag6Text ?? ""; }
         r.Move = UnpackMove(s.Animation, s.Float1, s.Float2);
         return r;
     }
