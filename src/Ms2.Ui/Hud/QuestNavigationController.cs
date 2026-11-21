@@ -61,6 +61,7 @@ public sealed class QuestNavigationController : UiController
         internal bool Placed;
         internal float X, Y;
         internal object DistanceField;
+        internal bool DistanceLookedUp;
         internal string DistanceText;
     }
 
@@ -126,7 +127,13 @@ public sealed class QuestNavigationController : UiController
         return null;
     }
 
-    /// <summary>CStringElementTraits&lt;CStringA&gt;::Hash: nHash = nHash * 33 + ch, ch a signed char.</summary>
+    /// <summary>
+    /// CStringElementTraits&lt;CStringA&gt;::Hash: nHash = nHash * 33 + ch, ch a signed char of the key's CStringA bytes.
+    /// Each UTF-16 unit stands for one byte here, so keys are assumed ASCII: npc_{id}, portal_{id}, PcHud and
+    /// interact_{id} always are; liftable_{name} is when the map's entity name is (the client hashes the name's
+    /// code-page bytes, which a non-ASCII name would change, and with them the bin, the walk order and so the
+    /// addChild stacking order of markers turned on in one frame).
+    /// </summary>
     static uint Hash(string key)
     {
         uint h = 0;
@@ -256,6 +263,7 @@ public sealed class QuestNavigationController : UiController
         var v = Host.Invoke(Host.Entity, "create", m.Class, Host.Obj(("id", m.Key)));
         if (Ms2.Avm2.Rt.IsNullish(v)) return false;  // undefined (null here: no movie)
         m.Clip = v;
+        m.DistanceField = null; m.DistanceLookedUp = false;
         return true;
     }
 
@@ -436,7 +444,8 @@ public sealed class QuestNavigationController : UiController
             else SetVisible(m, false);
         }
         if (m.Kind != Kind.Pc || r == null || m.Clip == null) return;
-        m.DistanceField ??= Host.Child("m_distance", m.Clip);
+        // the client asks the clip for m_distance every frame (uiquestnavigation.cpp:218); the clip does not change, so once
+        if (!m.DistanceLookedUp) { m.DistanceField = Host.Child("m_distance", m.Clip); m.DistanceLookedUp = true; }
         if (m.DistanceField == null || string.Equals(m.DistanceText, r.DistanceText, StringComparison.Ordinal)) return;
         m.DistanceText = r.DistanceText;
         Host.Set(m.DistanceField, "text", r.DistanceText ?? "");

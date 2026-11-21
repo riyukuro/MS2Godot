@@ -299,4 +299,23 @@ public class QuestNavigationTests
         Assert.That(bytes, Is.EqualTo(0), "bytes over 100 frames");
         Assert.That(h.RT.Errors, Is.Empty);
     }
+
+    [Test]
+    public void APcClipWithoutTheDistanceFieldIsAskedOnce()
+    {
+        // PcHudNavigationEntity::vfunc_4 (uiquestnavigation.cpp:218) asks the clip for m_distance; the clip does not
+        // change, so a clip without it is asked once, and later frames allocate nothing
+        var c = World();
+        var h = Load(c);
+        var pc = c.CompleteMyPc();
+        h.Set(pc.Clip, "m_distance", null);
+        var r = new TraceResult { Kind = TraceKind.Npc, DistanceText = "12" };
+        c.Tick(r, null);
+        Assert.That(pc.Shown, Is.True);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 100; i++) c.Tick(r, null);
+        long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.That(bytes, Is.EqualTo(0), "bytes over 100 frames");
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
 }
