@@ -182,26 +182,53 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         UpdateButtonState();
     }
 
+    /// <summary>The item lock dialog (0x4f08) / the item break dialog (0x4e8d) / the donation dialog (0x4e8e) is open
+    /// (UIDialog::vfunc_55 == 0 of each in UpdateButtonState). Set by the host; closed when unset.</summary>
+    public Func<bool> LockDialogOpen = () => false, BreakDialogOpen = () => false, DonationDialogOpen = () => false;
+    /// <summary>m_1a4 (UpdateButtonState): 0 none, 1 break, 2 donation, 3 lock open (the last one found open wins, in that order).
+    /// STILL-OPEN: 4 and 5, the item and pet extraction scroll dialogs (0x4f49, 0x4f4a), are not in this HUD.</summary>
+    public int ButtonMode { get; private set; }
+
     /// <summary>
-    /// UpdateButtonState @0x141999f60. The item lock / break / donation / extraction dialogs are not here, so they count as
-    /// closed (m_1a4 0: break and lock on). bAutoPickup: level &gt;= 1. bOpenBank: PC bang or VIP (FUN_141658f30 || IsVip);
-    /// neither state is here, so 0.
+    /// UpdateButtonState @0x141999f60. bAutoPickup: level &gt;= 1. bOpenBank: PC bang or VIP (FUN_141658f30 || IsVip); neither
+    /// state is here, so 0. An open lock dialog turns bItemBreak off (m_1a4 3); an open break dialog (1) or donation dialog (2)
+    /// turns bItemLock off. The dialogs the client looks up first (the early return when none of them exists, the extraction
+    /// scrolls 0x4f49 / 0x4f4a) are not modelled: the call always goes out. Public: the break and lock dialogs call it after
+    /// their load and close (uiinventorydialog.cpp:2347, 2359).
     /// </summary>
-    void UpdateButtonState()
+    public void UpdateButtonState()
     {
         bool bank = false;
+        int itemBreak = 1, itemLock = 1;
+        ButtonMode = 0;
+        if (LockDialogOpen()) { ButtonMode = 3; itemBreak = 0; }
+        if (BreakDialogOpen()) { ButtonMode = 1; itemLock = 0; }
+        if (DonationDialogOpen()) { ButtonMode = 2; itemLock = 0; }
         Host.Invoke("updateButtonState", Host.Obj(
             ("bAutoPickup", Pc.Level >= 1 ? 1 : 0),
             ("bItemEchant", true),
-            ("bItemBreak", 1),
+            ("bItemBreak", itemBreak),
             ("itemBreakToolTip", GetItemBreakTooltip()),
-            ("bItemLock", 1),
+            ("bItemLock", itemLock),
             ("bRemakeOption", true),
             ("bUnlimitedEnchant", true),
             ("bGem", true),
             ("slotExpandToolTip", GetExpandTooltip()),
             ("bOpenBank", bank ? 1 : 0),
             ("openBankTooltip", GetOpenBankTooltip(bank))));
+    }
+
+    /// <summary>FUN_141999e00 (@0x141999e00): m_19c = 7, the new marks, the expand label and the tab rebuild pending again.</summary>
+    public void AddFlags() => View?.MarkAllPending();
+
+    /// <summary>RefreshItemSlot @0x14199a3f0: not while closed; the shown tab's slot holding the item is pushed again
+    /// (InventorySlotBag::RefreshSlotForItem).</summary>
+    public void RefreshItemSlot(long uid)
+    {
+        if (IsClosed || View == null || View.FindByUid(uid) == null) return;
+        var cells = View.Cells(View.Tab);
+        for (int i = 0; i < cells.Count; i++)
+            if (!cells[i].Empty && cells[i].Uid == uid) { Host.Push(SlotName(i)); return; }
     }
 
     /// <summary>GetItemBreakTooltip @0x14199d9c0: with m_itemBreak enabled or level &gt;= 20 the break tooltip (+ the skin line

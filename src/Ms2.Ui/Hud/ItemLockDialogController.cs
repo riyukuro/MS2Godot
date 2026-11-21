@@ -48,6 +48,11 @@ public sealed class ItemLockDialogController : UiController, IDragSlotOwner, IIt
     public Func<long, Item> FindItem = _ => null;
     /// <summary>An inventory slot needs a redraw (UIInventoryDialog::RefreshItemSlot).</summary>
     public event Action<long> InventorySlotRefresh;
+    /// <summary>Inventory UpdateButtonState + FUN_141999e00 (0x4e2d) after the load (OnLoadComplete @0x140f56b00) and the unload
+    /// (vfunc_26 @0x140f57160, uiitemlockdialog.cpp:160-185).</summary>
+    public event Action InventoryButtons;
+
+    public ItemLockDialogController() { Unloaded += () => InventoryButtons?.Invoke(); }
 
     bool closing;
     object bagChild;
@@ -76,6 +81,7 @@ public sealed class ItemLockDialogController : UiController, IDragSlotOwner, IIt
         Book.Notice += OnNotice;
         BindItemBag();
         Book.SendReset();
+        InventoryButtons?.Invoke();
         UpdateLockButtons();
     }
 

@@ -11,7 +11,8 @@ namespace Ms2Godot.Ui;
 /// The item dismantle: CItemBreakManager (the session's <see cref="ItemBreakManager"/>, the ItemDismantle packets 0x96) and its
 /// dialogs UIItemBreakDialog (0x4e8d) and UIItemBreakDonationDialog (0x4e8e) as <see cref="ItemBreakDialogController"/>.
 /// Live only: the inventory's break button opens the break dialog. STILL-OPEN: the donation dialog's opener (no caller in this
-/// HUD), the break ingredient table, the skin reward calculation, the lullu box opener, the dock beside the inventory.
+/// HUD), the break ingredient table, the skin reward calculation, the lullu box opener, the dock beside the inventory, the
+/// extraction scroll dialogs' states (0x4f49, 0x4f4a) in the inventory's button state.
 /// </summary>
 public partial class HudScene
 {
@@ -50,6 +51,9 @@ public partial class HudScene
         void OnPacket(ItemDismantlePacket p) => mgr.OnPacket(p);
         live.ItemDismantleReceived += OnPacket;
         c.Sound += key => FieldAudio.Instance?.PlayUi(key);
+        c.InventoryButtons += InventoryButtonsAndFlags;
+        c.InventoryReset += () => { if (inventory is { IsClosed: false }) inventory.AddFlags(); };
+        c.InventorySlotRefresh += uid => inventory?.RefreshItemSlot(uid);
         c.Unloaded += () =>
         {
             live.ItemDismantleReceived -= OnPacket;
@@ -60,6 +64,34 @@ public partial class HudScene
         itemBreakMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
         GD.Print($"item break: load={itemBreakMovie.Loaded}");
         uiRoot.AddChild(itemBreakMovie);
+    }
+
+    /// <summary>--uigen-open itembreak: the dialog on a local manager with one item in the bag, for the gallery (no server).</summary>
+    void OpenItemBreakShot()
+    {
+        int id = new[] { 11300001, 12000001, 20000001 }.FirstOrDefault(i => !string.IsNullOrEmpty(hudModel.Tables.ItemName(i)));
+        if (id == 0) { GD.Print("item break shot: no item"); return; }
+        var item = Item.Create(hudModel.Tables.Items, id, 3);
+        item.Uid = 1; item.Rarity = 3;
+        item.Record = new EquipItem { Id = id, Uid = 1 };
+        var mgr = new ItemBreakManager { Send = _ => { }, Find = u => u == 1 ? item : null, ShowBox = MessageBoxQueue.Show };
+        mgr.Text = key => hudModel.Tables.Common(key) ?? key;
+        mgr.ItemName = i => hudModel.Tables.ItemName(i.ItemId) ?? "";
+        var c = new ItemBreakDialogController(false) { Mgr = mgr };
+        c.Unloaded += () => { itemBreakMovie?.Host.Unload(); itemBreakMovie?.QueueFree(); itemBreakMovie = null; };
+        itemBreak = c;
+        itemBreakMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
+        uiRoot.AddChild(itemBreakMovie);
+        mgr.OnPacket(new ItemDismantlePacket(1) { Uid = 1, Slots = new[] { new DismantleSlot(0, 1, 1) } });
+    }
+
+    /// <summary>The item break and lock dialogs' load and unload (uiinventorydialog.cpp:2340-2362, uiitemlockdialog.cpp:160-185):
+    /// the inventory's UpdateButtonState, then FUN_141999e00 (m_19c = 7).</summary>
+    void InventoryButtonsAndFlags()
+    {
+        if (inventory is not { IsClosed: false }) return;
+        inventory.UpdateButtonState();
+        inventory.AddFlags();
     }
 
     /// <summary>UIItemBreakDialog's key handling, as UIDialog's: Escape closes it.</summary>

@@ -129,6 +129,42 @@ public class InventoryTests
     }
 
     [Test]
+    public void OpenLockOrBreakDialogSwitchesTheOtherButtonOff()
+    {
+        // UpdateButtonState (@0x141999f60): lock open: m_1a4 3, break off; break open: 1, lock off; donation open: 2, lock off
+        Packs();
+        var (h, c, _) = Load();
+        bool Enabled(string n) => Rt.ToBoolean(h.Get(h.Child(n), "enabled"));
+        c.UpdateButtonState();
+        Assert.That((c.ButtonMode, Enabled("m_itemBreak"), Enabled("m_itemLock")), Is.EqualTo((0, true, true)));
+        bool lockOpen = true;
+        c.LockDialogOpen = () => lockOpen;
+        c.UpdateButtonState();
+        Assert.That((c.ButtonMode, Enabled("m_itemBreak"), Enabled("m_itemLock")), Is.EqualTo((3, false, true)));
+        lockOpen = false;
+        c.BreakDialogOpen = () => true;
+        c.UpdateButtonState();
+        Assert.That((c.ButtonMode, Enabled("m_itemBreak"), Enabled("m_itemLock")), Is.EqualTo((1, true, false)));
+        c.BreakDialogOpen = () => false;
+        c.DonationDialogOpen = () => true;
+        c.UpdateButtonState();
+        Assert.That((c.ButtonMode, Enabled("m_itemBreak"), Enabled("m_itemLock")), Is.EqualTo((2, true, false)));
+        c.DonationDialogOpen = () => false;
+        c.UpdateButtonState();
+        Assert.That((c.ButtonMode, Enabled("m_itemBreak"), Enabled("m_itemLock")), Is.EqualTo((0, true, true)));
+    }
+
+    [Test]
+    public void AddFlagsMakesTheNewMarksExpandLabelAndTabRebuildPendingAgain()
+    {
+        Packs();
+        var (_, c, _) = Load();
+        Assert.That(c.View.Pending, Is.Zero);
+        c.AddFlags();
+        Assert.That(c.View.Pending, Is.EqualTo(7));
+    }
+
+    [Test]
     public void ItemMergeButtonRefusesThenOpensTheOptionDialog()
     {
         Packs();

@@ -60,6 +60,8 @@ public sealed class InventoryView {
     /// <summary>The use request (<see cref="ItemUseRequest"/>, Unk_Inventory::RequestUseItem): (item uid, argument).</summary>
     public Action<long, string> RequestUse { get; set; }
     public int Pending => pending;
+    /// <summary>FUN_141999e00: m_19c = 7 (new marks, expand label and tab rebuild).</summary>
+    public void MarkAllPending() { if (binding != null) pending = PendingNew | PendingExpand | PendingRebuild; }
     /// <summary>m_1a8: the tab button index of each tab (-1 = the tab has no button and is skipped); identity until the UI tells.</summary>
     public int[] TabButtons { get; set; } = Enumerable.Range(0, ItemBook.Tabs).ToArray();
 

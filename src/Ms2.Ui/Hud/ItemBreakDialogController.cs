@@ -18,13 +18,17 @@ public interface IItemBreakSlotOwner
 /// UIItemBreakBase with an ItemBreakSlotBag of ItemBreakSlots (itembreakslot.cpp), named "&lt;TypeName&gt;.%d". The state and
 /// every refusal and send are <see cref="ItemBreakManager"/> (CItemBreakManager); this controller shows it: the bag, the
 /// type and rank dropdowns, the break button's confirms, the progress calls, the preview (mode 5) and result (mode 3) rows.
-/// <para>STILL-OPEN: the inventory's own UpdateButtonState after a load, close and refresh, the dock beside the inventory
-/// (vfunc_43), the open guard against the item lock window (0x4f08), the movie's reward slot toggles.</para>
+/// <para>STILL-OPEN: the dock beside the inventory (vfunc_43), the movie's reward slot toggles, the rank dropdown's untranslated
+/// "$s_itembreak..." caption in the shot.</para>
 /// </summary>
 public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, IItemBreakSlotOwner
 {
     readonly bool donation;
-    public ItemBreakDialogController(bool donation = false) { this.donation = donation; }
+    public ItemBreakDialogController(bool donation = false)
+    {
+        this.donation = donation;
+        Unloaded += () => InventoryButtons?.Invoke();     // vfunc_26 (@0x1419a1830): the unload, once the close tween is done (IsClosed)
+    }
 
     public override string Movie => donation ? "uiitembreakdonationdialog" : "uiitembreakdialog";
     protected override string EntityMethod => "alignment";
@@ -51,7 +55,8 @@ public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, II
     public event Action<long> InventorySlotRefresh;
     /// <summary>The s_strExtractProgress / s_strExtractEnd sound of StartBreak / EndBreak.</summary>
     public event Action<string> Sound;
-    /// <summary>Inventory UpdateButtonState (0x4e2d) after the load and the close.</summary>
+    /// <summary>Inventory UpdateButtonState + FUN_141999e00 (0x4e2d) after the load (OnLoadComplete @0x1419a1770) and the unload
+    /// (vfunc_26 @0x1419a1830, uiinventorydialog.cpp:2340-2362).</summary>
     public event Action InventoryButtons;
     /// <summary>The inventory's AddFlags(7) after a reset (onResetBreak).</summary>
     public event Action InventoryReset;
@@ -123,7 +128,6 @@ public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, II
         }
         base.Close();
         bagChild = null;
-        InventoryButtons?.Invoke();
         Closed?.Invoke();
     }
 

@@ -36,6 +36,8 @@ public partial class HudScene
             FindItem = uid => live.Items.Get(uid) is { } e ? InventoryController.ToItem(e, hudModel.Tables.Items) : null,
         };
         c.NoticeText += SystemNoticeText;
+        c.InventoryButtons += InventoryButtonsAndFlags;
+        c.InventorySlotRefresh += uid => inventory?.RefreshItemSlot(uid);
         c.Unloaded += () =>
         {
             itemLockMovie?.Host.Unload(); itemLockMovie?.QueueFree(); itemLockMovie = null;

@@ -2988,6 +2988,9 @@ public partial class HudScene : Node, IUiStageHost
         c.SelectBoxOpen = () => SelectItemBoxOpen;
         c.OpenMultiBox = OpenItemMultiOpen;
         c.LockSlotDropped = (uid, mine) => itemLock?.DroppedOnInventory(uid, mine);
+        c.LockDialogOpen = () => ItemLockOpen;                       // UpdateButtonState: pLock->vfunc_55() == 0
+        c.BreakDialogOpen = () => ItemBreakOpen && itemBreak.Id == ItemBreakDialogController.UiId;
+        c.DonationDialogOpen = () => ItemBreakOpen && itemBreak.Id == ItemBreakDialogController.DonationUiId;
         c.BreakCanBreak = item => itemBreak?.Mgr?.CanBreakItem(item) ?? false;
         c.BreakAdd = item => itemBreak?.AddFromInventory(item);
         c.BreakSlotDropped = (uid, mine) => itemBreak?.DroppedOnInventory(uid, mine);
@@ -3594,6 +3597,7 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "partydps" && frames == 200) OpenPartyDpsShot();
         if (openShot == "guild" && frames == 200) ToggleGuild();
         if (openShot == "itemenchant" && frames == 200) OpenItemEnchantShot();
+        if (openShot == "itembreak" && frames == 200) OpenItemBreakShot();
         if (guideShot != null && frames == 200)
         {
             // --uigen-guide kind:textId: the pane shows the guide text as its summary, text tip or tutorial balloon

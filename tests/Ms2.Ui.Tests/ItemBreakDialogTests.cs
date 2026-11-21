@@ -95,6 +95,19 @@ public class ItemBreakDialogTests
     }
 
     [Test]
+    public void InventoryButtonsAreRefreshedWhenTheDialogIsUnloadedNotWhenTheCloseStarts()
+    {
+        // vfunc_26 (@0x1419a1830) is the unload, after the close tween: the inventory's open-dialog test (vfunc_55) then sees it closed
+        var r = new Rig();
+        var closedAtEvent = new List<bool>();
+        r.C.InventoryButtons += () => closedAtEvent.Add(r.C.IsClosed);
+        r.C.Close();
+        for (int i = 0; i < 300 && !r.C.IsClosed; i++) r.Host.Player.Tick();
+        Assert.That(r.C.IsClosed, Is.True);
+        Assert.That(closedAtEvent, Is.EqualTo(new[] { true }));
+    }
+
+    [Test]
     public void CloseSendsTheResetAndClosesTheManager()
     {
         var r = new Rig();
@@ -257,5 +270,14 @@ public class ItemBreakDialogTests
         r.Sent.Clear();
         r.C.DroppedOnInventory(5, null);
         Assert.That(r.Sent.Select(Hex).Single(), Is.EqualTo(Hex(ItemDismantleRequest.RemoveItem(5))));
+    }
+
+    [Test]
+    public void IdleProcessAllocatesLittle()
+    {
+        var r = new Rig();
+        r.Add(5); r.Put(5, 0);
+        for (int i = 0; i < 30; i++) r.Host.Player.Tick();
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 100; i++) r.Host.Player.Tick(); }), Is.LessThan(2_000_000));
     }
 }
