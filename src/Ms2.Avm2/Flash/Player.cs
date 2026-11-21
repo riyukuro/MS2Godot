@@ -61,6 +61,14 @@ namespace Ms2.Avm2.Flash
         public IDropStage DropStage;
         public bool MouseDown;
         public object Focus;
+        /// <summary>
+        /// The clipboard every movie's text fields share (the one TextClipboard state the client's loader installs,
+        /// gfxmanager.cpp:1063). The game puts the system clipboard here.
+        /// </summary>
+        public static ITextClipboard SharedClipboard { get; set; } = new TextClipboard();
+        ITextClipboard clipboard;
+        /// <summary>This movie's clipboard: <see cref="SharedClipboard"/> unless one is set.</summary>
+        public ITextClipboard Clipboard { get => clipboard ?? SharedClipboard; set => clipboard = value; }
         public AsDisplayObject ModalClip;
         public bool RenderInvalidated;
         public int FrameCount;
