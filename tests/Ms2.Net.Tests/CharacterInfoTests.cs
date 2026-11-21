@@ -27,7 +27,7 @@ public class CharacterInfoTests {
         Assert.That(UserEnvMessage.Read(R(w => { w.WriteByte(1); w.WriteInt(9); w.WriteInt(10000002); })), Is.EqualTo(new UserEnvMessage.TitleChanged(9, 10000002)));
         var list = (UserEnvMessage.Titles) UserEnvMessage.Read(R(w => { w.WriteByte(2); w.WriteInt(2); w.WriteInt(5); w.WriteInt(6); }));
         Assert.That(list.Ids, Is.EqualTo(new uint[] { 5, 6 }));
-        Assert.That(UserEnvMessage.Read(R(w => { w.WriteByte(4); w.WriteInt(0); })), Is.Null);
+        Assert.That(UserEnvMessage.Read(R(w => { w.WriteByte(4); w.WriteInt(0); })), Is.EqualTo(new UserEnvMessage.Templates(new List<int>())).Using<UserEnvMessage.Templates>((a, b) => a.Ids.SequenceEqual(b.Ids)));
         Assert.That(HomeCommend.Read(R(w => { w.WriteByte(1); w.WriteInt(9); w.WriteLong(1700000000); w.WriteInt(4); w.WriteInt(250); })),
             Is.EqualTo(new HomeCommend(9, 1700000000, 4, 250)));
         Assert.That(HomeCommend.Read(R(w => { w.WriteByte(0); w.WriteLong(1); w.WriteLong(2); })), Is.Null);

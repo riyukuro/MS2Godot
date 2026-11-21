@@ -31,7 +31,7 @@ public class GuildPacketTests {
 
     [Test]
     public void TheTypesReadTheirFields() {
-        Assert.That(GuildMessage.Read(R(w => { w.WriteByte(0); w.WriteLong(7); })).GuildId, Is.EqualTo(7));
+        Assert.That(GuildMessage.Read(InfoPacket()).GuildId, Is.EqualTo(7));
         var fail = GuildMessage.Read(R(w => { w.WriteByte(1); w.WriteByte(0x13); }));
         Assert.That((fail.Result, fail.Name), Is.EqualTo((0x13, "")));
         var ok = GuildMessage.Read(R(w => { w.WriteByte(1); w.WriteByte(0); w.WriteUnicodeString("Gd"); }));
@@ -129,6 +129,8 @@ public class GuildPacketTests {
         w.WriteUnicodeString("Bo"); w.WriteInt(0); w.WriteInt(200); w.WriteShort(20); w.WriteUnicodeString("img2");
         w.WriteByte(2); w.WriteByte(0); w.WriteUnicodeString("Master"); w.WriteInt(4095); w.WriteByte(1); w.WriteUnicodeString("Member"); w.WriteInt(8);
         w.WriteByte(1); w.WriteInt(3); w.WriteInt(2); w.WriteLong(0);
+        w.WriteByte(0); w.WriteInt(1); w.WriteInt(1); w.WriteInt(0);          // no custom events; the two i32 and no string records
+        w.WriteByte(0); w.WriteBool(false); w.WriteInt(0);                    // no npcs, no npc shop, empty storage
     });
 
     [Test]
