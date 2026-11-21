@@ -20,6 +20,10 @@ public sealed class FieldMeta
     public readonly Dictionary<int, List<int>> PortalTargets = new();
     /// <summary>npc id -> fields it stands in.</summary>
     public readonly Dictionary<int, List<int>> NpcFields = new();
+    /// <summary>m_interact (fieldmetatable.cpp:311, GetInteractFields): interact object id -> the fields it is in.</summary>
+    public readonly Dictionary<int, List<int>> InteractFields = new();
+    /// <summary>m_liftable (fieldmetatable.cpp:349, GetLiftableFields): liftable id -> the fields it is in.</summary>
+    public readonly Dictionary<int, List<int>> LiftableFields = new();
     /// <summary>m_fieldNpcs (fieldmetatable.cpp:205): field id -> the npcs standing in it, in file order.</summary>
     public readonly Dictionary<int, List<int>> FieldNpcs = new();
     /// <summary>m_portalType8 (fieldmetatable.cpp:262): field -> the ids of its portalType 8 (dungeon) portals, once each,
@@ -104,6 +108,18 @@ public sealed class FieldMeta
                         if (f.GetAttribute("startTime") is { } start && f.GetAttribute("endTime") is { } end
                             && ParseTimeString(start) && ParseTimeString(end))
                             m.TimedNpcFields.Add((id, field));
+                    });
+                    break;
+                }
+                case "interactObject":
+                case "liftable":
+                {
+                    var into = r.LocalName == "liftable" ? m.LiftableFields : m.InteractFields;
+                    int id = Int(r, "id");
+                    ForChildren(r, "field", f =>
+                    {
+                        if (!into.TryGetValue(id, out var l)) into[id] = l = new List<int>();
+                        l.Add(Int(f, "id"));
                     });
                     break;
                 }

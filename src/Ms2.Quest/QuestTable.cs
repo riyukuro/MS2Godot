@@ -98,9 +98,23 @@ public sealed class QuestData
     /// </summary>
     public int RemoteComplete, RemoteCompleteField, RemoteCompleteDungeonClear;
 
+    /// <summary>basic useNavi (m_flag, questdata.cpp:1294): the quest navigator may trace it.</summary>
+    public bool UseNavi;
+    /// <summary>
+    /// m_navigation (questdata.cpp:1385-1400): condition index -> its &lt;navi&gt; rows, for the conditions that have any
+    /// (GetNavigationData).
+    /// </summary>
+    public readonly Dictionary<int, List<QuestNaviTarget>> Navigation = new();
+
     /// <summary>HasProperty (questdata.cpp).</summary>
     public bool HasProperty(int bit) => (Properties & (1 << bit)) != 0;
 }
+
+/// <summary>
+/// CQuestData::NavigationTarget, a &lt;navi&gt; row of a condition: type (Parse_14021a1f0: npc 0, interact 1, liftable 2,
+/// else 3, 3 when absent), code (m_ids) and map (m_maps), both comma lists.
+/// </summary>
+public sealed record QuestNaviTarget(int Kind, uint[] Ids, uint[] Maps);
 
 /// <summary>CQuestData::Require (questdata.h; ctor 0x140747910): the &lt;require&gt; attributes.</summary>
 public sealed class QuestRequire
@@ -293,6 +307,7 @@ public sealed partial class QuestTable
         QueryBool(basic, "locking", ref d.Locking);
         QueryInt(basic, "tabIndex", ref d.TabIndex);
         QueryBool(basic, "forceRegistGuide", ref d.ForceRegist);
+        QueryBool(basic, "useNavi", ref d.UseNavi);
         QueryBool(basic, "disableGiveup", ref d.DisableGiveup);
         QueryBool(basic, "useReEntryHiddenMap", ref d.UseReEntryHiddenMap);
         foreach (var p in FieldMissions.Tokens((string)basic.Attribute("property"), ","))
@@ -345,7 +360,19 @@ public sealed partial class QuestTable
             QueryInt(summonPortal, "portalID", ref d.SummonPortalId);
         }
         foreach (var c in q.Elements("condition"))
-            if (QuestCondition.Load(c) is { } cond) d.Conditions.Add(cond);
+        {
+            if (QuestCondition.Load(c) is not { } cond) continue;
+            int index = d.Conditions.Count;
+            d.Conditions.Add(cond);
+            List<QuestNaviTarget> navi = null;
+            foreach (var n in c.Elements("navi"))
+            {
+                navi ??= new List<QuestNaviTarget>();
+                navi.Add(new QuestNaviTarget(NaviKind((string)n.Attribute("type")), Split((string)n.Attribute("code")),
+                    Split((string)n.Attribute("map"))));
+            }
+            if (navi != null) d.Navigation[index] = navi;
+        }
         if ((string)basic.Attribute("alliance") is { } alliance) d.Alliance = QuestRewards.ParseAlliance(alliance);
         if ((string)basic.Attribute("rank") is { } rank) d.Rank = QuestRewards.ParseRank(rank);
         var reward = q.Element("completeReward");
@@ -771,6 +798,12 @@ public sealed partial class QuestTable
         if (neg) v = -v;
         return true;
     }
+
+    /// <summary>Parse_14021a1f0 (commonenum.cpp:703): a navi row's type, any case; 3 when absent or unknown.</summary>
+    static int NaviKind(string s) =>
+        s == null ? 3 : s.Equals("npc", StringComparison.OrdinalIgnoreCase) ? 0
+        : s.Equals("interact", StringComparison.OrdinalIgnoreCase) ? 1
+        : s.Equals("liftable", StringComparison.OrdinalIgnoreCase) ? 2 : 3;
 
     /// <summary>XmlSplit over ",": each part's unsigned value.</summary>
     static uint[] Split(string s) =>

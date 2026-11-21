@@ -11,12 +11,25 @@ public readonly record struct TraceTarget(TraceKind Kind, double X, double Y, do
 /// <summary>QuestNavigation::TraceResult: what the guide shows.</summary>
 public sealed class TraceResult
 {
+    /// <summary>m_18: the quest the navigator traces (CQuestNavigator's selected quest), kept by <see cref="Clear"/>.</summary>
+    public int QuestId;
+    /// <summary>m_1c.</summary>
     public TraceKind Kind;
     public double X, Y, Z;              // the point the beam aims at (m_20)
     public double BeamYawDeg;           // the beam effect's Z rotation (m_2c.z; x and y are 0)
     public string DistanceText = "";    // m_38
     /// <summary>m_40: the trace context the result was made with (null = none), set when CQuestNavigator::TraceQuestTarget (@0x140c9a4c0, questnavigator.cpp:407) finds a target.</summary>
     public TraceContext Context;
+
+    /// <summary>Clear (@0x140c904b0, questnavigation.cpp:118): everything but the quest id.</summary>
+    public void Clear()
+    {
+        Kind = TraceKind.None;
+        X = Y = Z = 0;
+        BeamYawDeg = 0;
+        DistanceText = "";
+        Context = null;
+    }
 }
 
 /// <summary>
