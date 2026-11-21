@@ -945,6 +945,19 @@ public partial class LiveSession : Node
                 });
                 GD.Print($"live: item update object {u.ObjectId} uid {u.Uid}{(u.Updated ? " (read again)" : u.Own ? " (own, item event)" : "")}");
             }
+            else if (game.Is(p, Inbound.BindItem))
+            {
+                var b = BindItem.Read(p.Reader(), Items.Get, Me.EquipByUid);   // CSceneStateGame::OnBindItem (scenestategame.cpp:8542)
+                if (b.Found && !b.Worn) Items.Apply(new ItemMessage.Update(b.Uid, b.Item));   // the bag's item read again: the inventory redraws
+                GD.Print($"live: bind item uid {b.Uid}{(b.Found ? (b.Worn ? " (worn)" : " (bag)") : " (unknown)")}");
+            }
+            else if (game.Is(p, Inbound.ItemUse))
+            {
+                var n = ItemUseNotice.Read(p.Reader());   // CSceneStateGame::OnItemUse (scenestategame.cpp:8603)
+                if (n.NoticeStringId != 0)
+                    Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(Ms2.Ui.Hud.MessageBoxData.Common(n.NoticeStringId), 0, null, "");   // FUN_140d73bc0(id, 0, 0, "")
+                GD.Print($"live: item use mode {n.Mode}{(n.ItemId != 0 ? " item " + n.ItemId : "")}");
+            }
             else if (game.Is(p, Inbound.ItemDropNotice))
             {
                 var n = ItemDropNotice.Read(p.Reader());   // CSceneStateGame::OnItemDropNotice (scenestategame.cpp:8023)

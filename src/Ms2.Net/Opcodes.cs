@@ -70,6 +70,8 @@ public enum Inbound : ushort {
     SkillCooldown = 0x42,       // CSceneStateGame::OnSkillCooldown (scenestategame.cpp:7856)
     SkillResetCooldown = 0x43,  // CSceneStateGame::OnSkillResetCooldown (scenestategame.cpp:4231): no body read
     ItemDrop = 0x29,            // RecvOp ItemDrop (commonfiles/opcodes.h:49)
+    ItemUse = 0xAB,             // RecvOp ItemUse (commonfiles/opcodes.h:179): CSceneStateGame::OnItemUse
+    BindItem = 0x103,           // RecvOp BindItem (opcodes.h:260): CSceneStateGame::OnBindItem
     ItemUpdate = 0x2A,          // RecvOp ItemUpdate (opcodes.h:50)
     FieldAddItem = 0x2B,        // RecvOp FieldAddItem (opcodes.h:51): CSceneStateGame::OnFieldAddItem
     FieldRemoveItem = 0x2C,     // RecvOp FieldRemoveItem (opcodes.h:52): CSceneStateGame::OnFieldRemoveItem
