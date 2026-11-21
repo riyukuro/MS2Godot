@@ -195,6 +195,13 @@ public partial class LiveSession
         return stop;
     }
 
+    /// <summary>MyPC::vfunc_135's construction unlock on entering the cube mode (<see cref="CubeCraftState.ConstructionUnlock"/>):
+    /// (a) unknown, (b) the massive construction sets for the field (WorldService GetFieldId), the channel of the last
+    /// ServerEnter (DAT_1439f4a7c) and the own account (DAT_143ab2820), (c) the own account's ignored construction lock.</summary>
+    bool? ConstructionUnlockOnEnter() => CubeCraftState.ConstructionUnlock(null,
+        Construction.IsMassiveConstruction((uint)(fieldEntry.Current?.MapId ?? 0), serverChannel, accountId),
+        Construction.IsIgnoredConstructionLock(accountId));
+
     bool? housingLevelFeature;
     /// <summary>MyPC::FUN_1415302e0's inputs: the housing and interior tables, the housing state, feature 0xdb and the own
     /// trophies, and the game event list's ignored construction lock ids.</summary>

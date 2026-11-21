@@ -58,22 +58,53 @@ public sealed class CubeCraftState
     /// <summary>The pc's model is in the scene (FUN_141b6efc0 on the pc's entity gives a root).</summary>
     public bool ModelLoaded { get; private set; }
 
-    /// <summary>A new pc (PC ctor, pc.cpp:640: mode 0, no craft, nothing pending, no model yet).</summary>
+    /// <summary>A new pc (PC ctor, pc.cpp:640: mode 0, no craft, nothing pending, no model yet; MyPC ctor, mypc.cpp:879:
+    /// m_b15d4 0).</summary>
     public void NewPc()
     {
         CubeMode = 0;
+        ConstructionUnlocked = false;
         Current = null;
         Pending = null;
         ModelLoaded = false;
     }
 
-    /// <summary>PC::vfunc_135 (@0x141659450, pc.cpp:3068): nothing on a dead pc; else the mode, then FUN_141659250 with the
-    /// craft mode and the item.</summary>
+    /// <summary>MyPC::vfunc_135 (@0x1415238d0, mypc.cpp:1364-1397) around PC::vfunc_135 (@0x141659450, pc.cpp:3068):
+    /// PC's part does nothing on a dead pc, else sets the mode, then FUN_141659250 with the craft mode and the item. MyPC's
+    /// part, when IsInCubeMode changed and the craft mode is not 2: entering sets <see cref="ConstructionUnlocked"/> from
+    /// <see cref="ConstructionUnlockOnEnter"/>, leaving clears it.
+    /// <para>Not ported (visuals): the palette dialog switch FUN_140ef4330, dialog 0x4e85 and the enter / leave system
+    /// sounds.</para></summary>
     public void Set(int cubeMode, int craftMode, CubeItemInfo item, bool dead)
     {
-        if (dead) return;
-        CubeMode = cubeMode;
-        SetCraft(craftMode, item);
+        bool wasIn = InCubeMode;
+        if (!dead)
+        {
+            CubeMode = cubeMode;
+            SetCraft(craftMode, item);
+        }
+        if (wasIn != InCubeMode && craftMode != 2)
+            ConstructionUnlocked = InCubeMode ? ConstructionUnlockOnEnter?.Invoke() : false;
+    }
+
+    /// <summary>The value entering the cube mode gives <see cref="ConstructionUnlocked"/>; null (or no function) = unknown.
+    /// See <see cref="ConstructionUnlock"/>.</summary>
+    public Func<bool?> ConstructionUnlockOnEnter;
+
+    /// <summary>
+    /// MyPC::vfunc_135's test on entering the cube mode (mypc.cpp:1374-1384): m_b15d4 is 1 when the CubeMapInformationService
+    /// is there and (a) its FUN_1410d55d0(field id, block) is true, or (b) FUN_1408a07b0(field id, current channel, own
+    /// account) (<see cref="ConstructionEvents.IsMassiveConstruction"/>, ugcmapdata_1.cpp:158-161), or (c) the own account
+    /// is on the ignored construction lock list (<see cref="ConstructionEvents.IsIgnoredConstructionLock"/>); else 0.
+    /// <paramref name="adminOnlyMap"/> is (a), null while unknown: then only a true (b) or (c) gives an answer.
+    /// <para>STILL-OPEN: (a), FUN_1410d55d0 with FUN_1408a18d0's block: the UGCMap group's adminOnly
+    /// (FUN_1408a06a0, ugcmapdata_1.cpp:150-156) for the field and the block the entity search near the pc finds
+    /// (ugcmapdata_1.cpp:335-351), or the indoor house's ids; no UGCMap table is read.</para>
+    /// </summary>
+    public static bool? ConstructionUnlock(bool? adminOnlyMap, bool massiveConstruction, bool ignoredLock)
+    {
+        if (adminOnlyMap == true || massiveConstruction || ignoredLock) return true;
+        return adminOnlyMap == false ? false : null;
     }
 
     /// <summary>
@@ -204,8 +235,8 @@ public sealed class CubeCraftState
         Send,
     }
 
-    /// <summary>MyPC m_b15d4, the pc's construction unlock the lock check reads; null while unknown (its setter,
-    /// mypc.cpp:1365-1395, is not ported).</summary>
+    /// <summary>MyPC m_b15d4, the pc's construction unlock the lock check reads; null while unknown (set by
+    /// <see cref="Set"/> and <see cref="NewPc"/>).</summary>
     public bool? ConstructionUnlocked;
     /// <summary>MyPC::FUN_1415302e0 with its tables and housing state.</summary>
     public CubeLock Locks;

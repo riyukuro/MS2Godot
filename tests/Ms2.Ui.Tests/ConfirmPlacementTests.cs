@@ -313,4 +313,74 @@ public class ConfirmPlacementTests
     {
         Assert.That(CubeCraftState.NormalizeDegrees(d), Is.EqualTo(n));
     }
+
+    static CubeItemInfo Cube => new() { ItemId = ItemId, InstanceId = 77, Count = 1 };
+
+    [Test]
+    public void EnteringTheCubeModeSetsTheUnlockAndLeavingClearsIt()
+    {
+        // MyPC::vfunc_135 (mypc.cpp:1364-1397): on an IsInCubeMode change with craft mode != 2
+        bool? onEnter = true;
+        var c = new CubeCraftState { Owner = new Owner(), ConstructionUnlockOnEnter = () => onEnter };
+        c.NewPc();
+        Assert.That(c.ConstructionUnlocked, Is.False, "MyPC ctor: m_b15d4 0");
+        c.Set(1, 0, Cube, dead: false);
+        Assert.That(c.ConstructionUnlocked, Is.True);
+        onEnter = null;
+        c.Set(2, 0, Cube, dead: false);
+        Assert.That(c.ConstructionUnlocked, Is.True, "still in cube mode: no change");
+        c.Set(0, 0, null, dead: false);
+        Assert.That(c.ConstructionUnlocked, Is.False);
+        c.Set(1, 0, Cube, dead: false);
+        Assert.That(c.ConstructionUnlocked, Is.Null, "an unknown answer stays unknown");
+    }
+
+    [Test]
+    public void CraftModeTwoAndADeadPcLeaveTheUnlockAlone()
+    {
+        var c = new CubeCraftState { Owner = new Owner(), ConstructionUnlockOnEnter = () => true };
+        c.NewPc();
+        c.Set(2, 2, Cube, dead: false);
+        Assert.That(c.ConstructionUnlocked, Is.False, "b == 2");
+        c.Set(0, 2, null, dead: false);
+        c.Set(1, 0, Cube, dead: true);
+        Assert.That(c.InCubeMode, Is.False);
+        Assert.That(c.ConstructionUnlocked, Is.False, "PC::vfunc_135 does nothing on a dead pc: no mode change");
+    }
+
+    [Test]
+    public void TheUnlockIsTrueOnAnyKnownReasonElseUnknownWhileTheMapTestIs()
+    {
+        // mypc.cpp:1380-1383: (a) || (b) || (c); (a) is unported (null)
+        Assert.That(CubeCraftState.ConstructionUnlock(null, false, false), Is.Null);
+        Assert.That(CubeCraftState.ConstructionUnlock(null, true, false), Is.True);
+        Assert.That(CubeCraftState.ConstructionUnlock(null, false, true), Is.True);
+        Assert.That(CubeCraftState.ConstructionUnlock(false, false, false), Is.False);
+        Assert.That(CubeCraftState.ConstructionUnlock(true, false, false), Is.True);
+    }
+
+    [Test]
+    public void AnIgnoredLockOnEnterLetsCraftModeZeroPassTheLockCheck()
+    {
+        var events = new ConstructionEvents();
+        events.Apply(new GameEventMessage(0, System.Array.Empty<ShutdownInteractObjectEvent>(), System.Array.Empty<int>(), false)
+            { ConstructionEvents = new object[] { new IgnoreConstructionLockEvent(1, new[] { 42L }) } });
+        var c = new CubeCraftState
+        {
+            Owner = new Owner(),
+            ConstructionUnlockOnEnter = () => CubeCraftState.ConstructionUnlock(null, false, events.IsIgnoredConstructionLock(42)),
+            Locks = new CubeLock
+            {
+                Housing = new Ms2.Formats.World.HousingTable(System.Xml.Linq.XDocument.Parse($"<ms2><housing id=\"{ItemId}\" interiorLevel=\"3\"/></ms2>")),
+                IsFeatureEnabled = id => id == CubeLock.HousingLevelFeature,
+            },
+        };
+        c.NewPc();
+        c.ModelAttached();
+        c.Set(2, 0, Cube, dead: false);
+        Assert.That(c.ConstructionUnlocked, Is.True);
+        var stop = Confirm(c, out _);
+        Assert.That(stop, Is.Not.EqualTo(CubeCraftState.PlacementStop.Locked));
+        Assert.That(stop, Is.Not.EqualTo(CubeCraftState.PlacementStop.InventoryCheckOpen));
+    }
 }

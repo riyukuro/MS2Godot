@@ -1046,6 +1046,7 @@ public partial class LiveSession : Node
                 {
                     selfObject = u.ObjectId; SelfInBattle = u.InBattle; selfEmotion = u.InBattle ? 1 : 0; Me.Apply(u); player?.SetBattleStance(u.InBattle);
                     // a new MyPC, then its cube mode (PC::vfunc_135, scenestategame.cpp:11189-11192) before its model is in (vfunc_12)
+                    CubeCraft.ConstructionUnlockOnEnter ??= ConstructionUnlockOnEnter;
                     CubeCraft.NewPc(); CubeCraft.Set(u.CubeMode, u.CraftMode, u.CubeItem, Me.Dead);
                     bindPending = true; TryBindPlayer();   // OnAddUser builds the MyPC
                     // a new MyPC holds nothing; PC::vfunc_12 (pc.cpp:853-855) holds the AddUser i32 (scenestategame.cpp:11218)
