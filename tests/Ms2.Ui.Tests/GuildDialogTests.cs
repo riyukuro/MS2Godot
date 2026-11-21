@@ -60,6 +60,35 @@ public class GuildDialogTests
         return b;
     }
 
+    [Test]
+    public void TheAttendBackgroundFollowsCanAttendAndTheDonateClickShowsThePopupOrTheMaxBox()
+    {
+        const long now = 1_795_262_400;
+        var b = InGuild();
+        b.ServerTime = () => now;
+        var me = b.FindMemberByName("Ma");
+        me.Fd8 = now - 60;                              // attended today
+        var c = Load(b);
+        Assert.That(tables.GuildProperties.Values.Any(p => p.FundMax > 0 && p.DonationMax > 0), Is.True, "GuildProperty.xml fundMax / donationMax");
+        Assert.That(tables.GuildDonateMeso, Is.GreaterThan(0));
+        var h = c.Host;
+        var attend = h.Child("m_attendBG");
+        Assert.That(attend, Is.Not.Null);
+        Assert.That(Rt.ToBoolean(h.Get(attend, "visible")), Is.False);
+
+        var boxes = new List<string>();
+        c.ShowBox = d => boxes.Add(d.Msg);
+        b.LevelByExp = _ => 1;
+        b.Property = _ => new GuildProperty(1_000_000, 2);
+        Assert.That(c.OnCallback("onClickDonate", Array.Empty<object>()), Is.True);
+        Assert.That(boxes, Is.Empty);
+        me.Ff0 = 2; me.Ff8 = now - 60;
+        Assert.That(c.OnCallback("onClickDonate", Array.Empty<object>()), Is.True);
+        Assert.That(boxes.Single(), Is.EqualTo(c.CommonByKey("s_guild_err_donateMax")));
+        b.Property = _ => null;
+        Assert.That(c.OnCallback("onClickDonate", Array.Empty<object>()), Is.False, "no property is the client's return 0");
+    }
+
     static GuildJoinRequestForGuild Request(long id) => new() { Id = id, GuildId = 7, CharId = 13, Name = $"bo{id}", Job = 200, Level = 20 };
 
     [Test]

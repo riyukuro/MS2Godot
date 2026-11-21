@@ -75,6 +75,10 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     public Func<int> MaxLevel = () => 0;
     /// <summary>FUN_140763e10: a number with the thousands separators.</summary>
     public Func<long, string> GroupText = n => Ms2.Ui.NumberText.Group(n.ToString());
+    /// <summary>Client::Constants guildDonateMeso.</summary>
+    public int DonateMeso = 10000;
+    /// <summary>CReservedWordTable::ReplaceValueWords.</summary>
+    public Func<string, string> ReplaceValueWords = s => s;
     /// <summary>FUN_140d73c60: show a message box.</summary>
     public Action<MessageBoxData> ShowBox = MessageBoxQueue.Show;
 
@@ -168,7 +172,14 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         SetGradeInfo();
         BuildMembers();                                                     // FUN_141975620
         SetPlayer();                                                        // FUN_14196b3a0
-        if (Host.Child("m_attendBG") is { } attend) Host.SetVisible(attend, false);  // UpdateAttendBackground: CanAttend
+        UpdateAttendBackground();
+    }
+
+    /// <summary>UpdateAttendBackground (@0x141973a70, :2163): m_attendBG shown while CGuildManager::CanAttend.
+    /// STILL-OPEN: the client also calls it on a day change (FUN_1413b5e80) and on the own type 0x24, not read yet.</summary>
+    void UpdateAttendBackground()
+    {
+        if (Host.Child("m_attendBG") is { } attend) Host.SetVisible(attend, Book.CanAttend);
     }
 
     /// <summary>OpenCategoryPage (@0x141969040): HideAllPages, the page made, then ShowCategoryPage.</summary>
@@ -606,6 +617,26 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
                 return true;
             case "onchageregistsearch":                 // the movie's spelling (:1423)
                 if (args.Length > 0) Book.SetPropensity(Rt.ToBoolean(args[0]) ? 1 : 0, Book.Propensity);
+                return true;
+            case "onclickdonate":
+            {
+                // :680: the movie root (m_30) gets showDonatePopup(count, max, s_guild_ui_donate_popup of the meso text,
+                // count and max); at the property's donationMax the box s_guild_err_donateMax instead. No member or no
+                // property is the client's return 0.
+                if (NoMovie) return true;
+                if (PlayerName() is not { } me || Book.FindMemberByName(me) is not { } member) return false;
+                if (Book.Property(Book.GuildLevel) is not { } property) return false;
+                int count = Book.DonationToday(member), max = property.DonationMax;
+                if (count >= max) { ShowBox(MessageBoxQueue.Create(0, CommonByKey("s_guild_err_donateMax"), null, "")); return true; }
+                string text = ReplaceValueWords(ClientFormat.Format(CommonByKey("s_guild_ui_donate_popup"), GroupText(DonateMeso), count, max));
+                Host.Invoke(Host.Entity, "showDonatePopup", count, max, text);
+                return true;
+            }
+            case "ondonate":
+                if (args.Length > 0) Book.Donate(Int(0));      // :706: FUN_1413b8540(PopInt)
+                return true;
+            case "onclickattend":
+                Book.Attend();                                  // :714: SendGuildMode15
                 return true;
             case "onclickinvitemember":
             {

@@ -98,6 +98,7 @@ public sealed class GameTables
         ClubNameLengthMin = (int)k.Float("ClubNameLengthMin", ClubNameLengthMin);
         ClubNameLengthMax = (int)k.Float("ClubNameLengthMax", ClubNameLengthMax);
         GuildCreatePrice = (int)k.Float("GuildCreatePrice", GuildCreatePrice);
+        GuildDonateMeso = (int)k.Float("guildDonateMeso", GuildDonateMeso);
         ShopBuyConfirmPrice = (uint)k.Float("ShopBuyConfirmPrice", ShopBuyConfirmPrice);
         ShopSellConfirmPrice = (uint)k.Float("ShopSellConfirmPrice", ShopSellConfirmPrice);
         ExtendAutoFishMaxCount = (uint)k.Float("extendAutoFishMaxCount", ExtendAutoFishMaxCount);
@@ -137,6 +138,7 @@ public sealed class GameTables
         foreach (var key in ChatTextColors.Keys.ToList()) ChatTextColors[key] = Rgb(k.Color(key, Unpack(ChatTextColors[key])));
         MentoringShowIcon = r.MentoringShowIcon;
         foreach (var (level, accumExp) in r.GuildAccumExp) GuildAccumExp[level] = accumExp;
+        foreach (var (level, property) in r.GuildProperties) GuildProperties[level] = property;
         // UIMessengerBrowser::LoadDefaultWindows (uimessenger.cpp:3149): DefaultMessenger0..99.xml in the default option folder
         for (int i = 0; i < 100; i++)
         {
@@ -163,6 +165,7 @@ public sealed class GameTables
         /// <summary>MentoringConfig isShowIcon (default true) and the guild property map (accumExp by level).</summary>
         public bool MentoringShowIcon = true;
         public Dictionary<int, int> GuildAccumExp = new();
+        public Dictionary<int, GuildProperty> GuildProperties = new();
         public Skills.JobTable Jobs;
     }
 
@@ -235,13 +238,16 @@ public sealed class GameTables
             Ms2.Ui.Items.ItemData.Bool(mentoringConfig, "isShowIcon", ref r.MentoringShowIcon);
         // CGuildXmlData::LoadGuildProperty (@0x1404d5a50, guilddef_2.cpp:489): Table/GuildProperty.xml, <ms2>, the
         // <property> elements collected by level (FUN_14028faa0), each read by GuildProperty::FUN_1404d4990 ("level" f18,
-        // "accumExp" f1c) into a map by level
+        // "accumExp" f1c, "fundMax" f28, "donationMax" f30) into a map by level
         if (Xml("table/guildproperty.xml")?.Root is { Name.LocalName: "ms2" } guildRoot)
             foreach (var e in FeatureElements.Collect(packs, guildRoot, "property", "level"))
             {
                 int.TryParse((string)e.Attribute("level"), out int level);
                 int.TryParse((string)e.Attribute("accumExp"), out int accumExp);
+                long.TryParse((string)e.Attribute("fundMax"), out long fundMax);
+                int.TryParse((string)e.Attribute("donationMax"), out int donationMax);
                 r.GuildAccumExp[level] = accumExp;
+                r.GuildProperties[level] = new GuildProperty(fundMax, donationMax);
             }
         // JobTable::Load (jobtable.cpp:309): table/job.xml
         r.Jobs = new Skills.JobTable(Xml("table/job.xml"), (parent, child, key) => FeatureElements.Collect(packs, parent, child, key));
@@ -375,6 +381,9 @@ public sealed class GameTables
     /// the guild create box (UIGuildDialog::OnClickCreateGuild), the create send (CGuildManager::FUN_1413b6d10) and
     /// CBanTextChecker::CheckGuildName.</summary>
     public int GuildCreatePrice = 1000, GuildCreateMinLevel = 0, GuildNameLengthMin = 2, GuildNameLengthMax = 10;
+    /// <summary>Client::Constants guildDonateMeso (Define default 10000: unit_1402ab440_constantsblocks.cpp:951): the meso of
+    /// one guild donation (CGuildManager::FUN_1413b8540, UIGuildDialog's onClickDonate).</summary>
+    public int GuildDonateMeso = 10000;
     /// <summary>Client::Constants PropertyProtectionTime (+0x6aa8, Define default 0: unit_1402ab440_constantsblocks.cpp:1040),
     /// shown by the black market's result 37 (CBlackMarketMan::FUN_140a21ca0).</summary>
     public int PropertyProtectionTime = 0;
@@ -411,6 +420,8 @@ public sealed class GameTables
     public int BlackMarketSellEndDay = 7;
     /// <summary>CGuildXmlData's property map: the accumulated exp (accumExp) by guild level, in level order.</summary>
     public readonly SortedDictionary<int, int> GuildAccumExp = new();
+    /// <summary>CGuildXmlData::GetProperty (by guild level): the property's fundMax (f28) and donationMax (f30).</summary>
+    public readonly Dictionary<int, GuildProperty> GuildProperties = new();
 
     /// <summary>CGuildXmlData::GetLevelByExp (@0x1404d7130, guilddef_2.cpp:621): 0 without the table; the level of the first
     /// entry, in level order, whose accumExp is above <paramref name="exp"/>; else GetMaxLevel, the last level.</summary>

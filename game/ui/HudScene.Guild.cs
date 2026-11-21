@@ -17,6 +17,8 @@ public partial class HudScene
     bool guildWatched;
     Action unwatchGuild;
 
+    static long GuildServerTime() => Ms2Godot.Net.LiveSession.Instance?.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
     bool GuildOpen => guild != null && !guild.IsClosed;
 
     /// <summary>CUIService::ToggleDialog(0x4e4f): open when closed, else vfunc_67.</summary>
@@ -36,6 +38,11 @@ public partial class HudScene
         book.CreateMinLevel = t.GuildCreateMinLevel;
         book.Level = () => hudModel.HasLocalPlayer ? hudModel.Player.Level : null;
         book.PlayerName = () => hudModel.HasLocalPlayer ? hudModel.Player.Name : null;
+        book.ServerTime = GuildServerTime;
+        book.LevelByExp = t.GuildLevelByExp;
+        book.Property = level => t.GuildProperties.TryGetValue(level, out var p) ? p : null;
+        book.DonateMeso = t.GuildDonateMeso;
+        book.Mesos = () => hudModel.HasLocalPlayer ? hudModel.Player.Mesos : 0;
         book.RefuseInvite = () => GameOptions.AccountCommunity.DisableGuildRequest;    // m_refuseGuildInvite, flag 5
         var checker = CommunityChecker();
         book.CheckName = name => checker.CheckGuildName(name, t.GuildNameLengthMin, t.GuildNameLengthMax, out var msg) == 0 ? null : msg ?? "";
@@ -107,7 +114,9 @@ public partial class HudScene
                 FeatureEnabled = hudModel.IsFeatureEnabled,
                 JobName = t.JobName,
                 MapName = id => t.MapName(id) ?? id.ToString(),
-                ServerTime = () => Ms2Godot.Net.LiveSession.Instance?.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                ServerTime = GuildServerTime,
+                DonateMeso = t.GuildDonateMeso,
+                ReplaceValueWords = s => t.ReservedWords.ReplaceValueWords(s, hudModel.HasLocalPlayer ? hudModel.Player.Name : null),
                 PlayerCharId = () => hudModel.HasLocalPlayer ? Ms2Godot.Net.LiveSession.Instance?.CharacterId : null,
                 ImagePath = (id, code) => Ms2Godot.Net.ProfileImageService.Images.Path(id, code, true),
                 AccumExp = level => t.GuildAccumExp.TryGetValue(level, out var v) ? v : 0,

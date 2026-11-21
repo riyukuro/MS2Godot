@@ -144,6 +144,9 @@ public sealed class GuildInviteInfo {
 /// <item>5 OnPacketInviteResult (@0x1413be020): a <see cref="GuildInviteInfo"/>, u8 the result (1 = joined).</item>
 /// <item>6 FUN_1413be150: the invitee's name, u8 accepted, u8 the reason of a refusal.</item>
 /// <item>7 FUN_1413be350: no body.</item>
+/// <item>0xf OnPacketAttendComplete (@0x1413bebc0): no body.</item>
+/// <item>0x71 OnPacketMyDonation (@0x1413bece0): i32 the donations today, i64 the time of the last one (the member's
+/// ff0 / ff8).</item>
 /// <item>0x44 FUN_1413bf2a0 (guildmanager.cpp:1855): u8 the propensity focus, i32 its value (CGuildInfo f154 / f158).</item>
 /// </list>
 /// The other types are not read here (STILL-OPEN).
@@ -166,6 +169,9 @@ public sealed record GuildMessage(byte Type) {
     /// <summary>Type 0x57; <see cref="SearchCount"/> is the count as sent (0 shows the no-result box).</summary>
     public IReadOnlyList<GuildSearchEntry> Results { get; init; } = Array.Empty<GuildSearchEntry>();
     public int SearchCount { get; init; }
+    /// <summary>Type 0x71: the donation count and its time.</summary>
+    public int DonationCount { get; init; }
+    public long DonationTime { get; init; }
     /// <summary>Type 0x55: the join requests sent to the guild.</summary>
     public IReadOnlyList<GuildJoinRequestForGuild> GuildRequests { get; init; } = Array.Empty<GuildJoinRequestForGuild>();
     /// <summary>Type 0x2d: the one request that arrived.</summary>
@@ -236,6 +242,7 @@ public sealed record GuildMessage(byte Type) {
             case 5: return new(t) { Invite = GuildInviteInfo.Read(r), Result = r.ReadByte() };
             case 6: return new(t) { Name = r.ReadUnicodeString(), Accepted = r.ReadByte() == 1, Reason = r.ReadByte() };
             case 0x44: return new(t) { Focus = r.ReadByte(), Value = r.ReadInt() };
+            case 0x71: return new(t) { DonationCount = r.ReadInt(), DonationTime = r.ReadLong() };
             default: return new(t);
         }
     }

@@ -4,14 +4,18 @@ using Ms2.Quest;
 
 namespace Ms2.Ui;
 
+/// <summary>CGuildXmlData::GuildProperty's fundMax (f28) and donationMax (f30) of one guild level.</summary>
+public readonly record struct GuildProperty(long FundMax, int DonationMax);
+
 /// <summary>
 /// The guild state the guild dialog reads, CGuildManager (client/ms2/guildmanager.cpp), with what its type switch
 /// FUN_1413b6370 (:301) does on the Guild packets (0x8A) the port reads, and its checked sends (SendOp::Guild 0x4B). The
 /// client's UI calls come out as events. The not-in-guild side: the guild id, this character's join requests
 /// (m_joinRequestsForChar), the search results and the search propensity (m_468). The in-guild side: the guild info, the
 /// join requests sent to the guild (m_joinRequestsForGuild), the members and the propensity (type 0x44); the member
-/// sends (invite, expel, grade, master, notice, memo, propensity); the invite received (m_invite) and its answer. STILL-OPEN:
-/// the other sends (attend, donate, the grade edit, the PvP, the house) and the rest of the in-guild updates; the guild name tag (s2c 0x4d, FUN_1413c7700 guildmanager.cpp:3108: the name shown over
+/// sends (invite, expel, grade, master, notice, memo, propensity); the invite received (m_invite) and its answer; attend
+/// and donate. STILL-OPEN: SendPacketThrottled's delay on the attend and donate sends (its body is not in the source, so
+/// they go out at once); the other sends (the grade edit, the PvP, the house) and the rest of the in-guild updates; the guild name tag (s2c 0x4d, FUN_1413c7700 guildmanager.cpp:3108: the name shown over
 /// a player), which the server also sends after a leave or disband to clear the own tag — not read, so the own tag keeps
 /// the guild name until a relogin; the game menu's guild badge (UIGameMenuDialog::FUN_1419381c0, the notify count of
 /// GetGuildNotificationCount: the check-in and the requests for the guild).
@@ -48,6 +52,19 @@ public sealed class GuildBook
     /// <summary>The local player's GetPvPInfo()->HasPoint(): an invite received is refused at once. STILL-OPEN: the HUD has
     /// no PvP state yet, so false (as for the party invite).</summary>
     public Func<bool> PvpPoint = () => false;
+    /// <summary>GetServerTime (seconds).</summary>
+    public Func<long> ServerTime = () => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    /// <summary>CGuildXmlData::GetLevelByExp.</summary>
+    public Func<int, int> LevelByExp = _ => 0;
+    /// <summary>CGuildXmlData::GetProperty(level), or null without one.</summary>
+    public Func<int, GuildProperty?> Property = _ => null;
+    /// <summary>Client::Constants guildDonateMeso: the meso of one donation.</summary>
+    public int DonateMeso = 10000;
+    /// <summary>DAT_143ab2898: the local player's meso.</summary>
+    public Func<long> Mesos = () => 0;
+    /// <summary>CGameEventValueManager GuildFund()->GetRate(): the fund bonus of a donation (1/10000). STILL-OPEN: the game
+    /// events are read but not kept, so 0.</summary>
+    public Func<int> FundEventRate = () => 0;
     /// <summary>Client::Constants GuildNameLengthMin and GuildCreateMinLevel.</summary>
     public int NameLengthMin = 2, CreateMinLevel;
 
@@ -126,6 +143,71 @@ public sealed class GuildBook
     /// OnChageRegistSearch sets) and f158 (the propensity), read as b3 / v14 by CGuildInfo::Read and set by type 0x44.</summary>
     public int PropensityFocus => Info?.B3 ?? 0;
     public int Propensity => Info?.V14 ?? 0;
+
+    /// <summary>GetGuildLevel (CGuildInfo::GetGuildLevel, guilddef_1.cpp:1876): GetLevelByExp of the guild exp.</summary>
+    public int GuildLevel => LevelByExp(Info?.Exp ?? 0);
+
+    /// <summary>CGuildInfo::GetMaxFund (@0x1404d1e90): the property's fundMax cut to an int, 0 without a property.</summary>
+    public int MaxFund => Property(GuildLevel) is { } p ? (int)p.FundMax : 0;
+
+    /// <summary>IsNotRecentDayChange (@0x14086ace0, timeutil.cpp:344): 1 for no time; 0 for a time not before now; 0 for one
+    /// at most a day before now on the same calendar day (CMsTime, the server's zone); else 1.</summary>
+    public int IsNotRecentDayChange(long time)
+    {
+        if (time != 0)
+        {
+            long now = ServerTime();
+            long diff = now - time;
+            if (diff <= 0) return 0;
+            if (diff <= 86400)
+            {
+                DateTime a = Ms2.Net.MsTime.LocalTm(time), b = Ms2.Net.MsTime.LocalTm(now);
+                int dayA = a.Year * 10000 + a.Month * 100 + a.Day, dayB = b.Year * 10000 + b.Month * 100 + b.Day;
+                if (dayA == 0 || dayB == 0) return 0;
+                if (dayA == dayB) return 0;
+            }
+        }
+        return 1;
+    }
+
+    /// <summary>CGuildMember::FUN_1404cb3e0: today's donations, 0 when the last one (ff8) was on another day.</summary>
+    public int DonationToday(GuildMember m) => IsNotRecentDayChange(m.Ff8) == 1 ? 0 : m.Ff0;
+
+    GuildMember Me => PlayerName() is { } me ? FindMemberByName(me) : null;
+
+    /// <summary>CanAttend (@0x1413b8460): in a guild, a member, and the last attendance (fd8) on another day.</summary>
+    public bool CanAttend => InGuild && Me is { } m && IsNotRecentDayChange(m.Fd8) != 0;
+
+    /// <summary>SendGuildMode15 (@0x1413b8230, guildmanager.cpp:617): attend. Joined today (fc8) is the notice
+    /// s_guild_err_can_next_day; attended today is s_guild_err_attend_already.</summary>
+    public bool Attend()
+    {
+        if (!InGuild || Me is not { } m) return false;
+        if (IsNotRecentDayChange(m.Fc8) == 0) { Notice?.Invoke(CommonByKey("s_guild_err_can_next_day"), 1, true); return false; }
+        if (!CanAttend) { Notice?.Invoke(CommonByKey("s_guild_err_attend_already"), 1, true); return false; }
+        Send(new GuildAttendRequest());
+        return true;
+    }
+
+    /// <summary>FUN_1413b8540 (@0x1413b8540, guildmanager.cpp:650): donate <paramref name="amount"/> times guildDonateMeso.
+    /// Joined today is s_guild_err_can_next_day; past the property's donationMax s_guild_err_donateMax; the fund (the cost
+    /// plus the event bonus) past GetMaxFund s_guild_err_donate_guildFundMax; too little meso s_guild_err_no_money.</summary>
+    public bool Donate(int amount)
+    {
+        if (!InGuild || amount <= 0 || Me is not { } m) return false;
+        if (IsNotRecentDayChange(m.Fc8) == 0) { Notice?.Invoke(CommonByKey("s_guild_err_can_next_day"), 1, true); return false; }
+        if (Property(GuildLevel) is not { } property) return false;
+        if (DonationToday(m) + amount > property.DonationMax) { Notice?.Invoke(CommonByKey("s_guild_err_donateMax"), 1, true); return false; }
+        int bonusRate = FundEventRate();
+        long cost = (long)DonateMeso * amount;
+        long fund = cost;
+        fund = (long)(fund + fund * ((float)bonusRate / 10000.0f));     // the C++ compound add, in float
+        long guildFund = Info?.Fund ?? 0, guildFundMax = MaxFund;
+        if (guildFund + fund > guildFundMax) { Notice?.Invoke(CommonByKey("s_guild_err_donate_guildFundMax"), 1, true); return false; }
+        if (Mesos() < cost) { Notice?.Invoke(CommonByKey("s_guild_err_no_money"), 1, true); return false; }
+        Send(new GuildDonateRequest(amount));
+        return true;
+    }
 
     /// <summary>IsInGuild (@0x1413b6160): the guild id above 0 (unsigned).</summary>
     public bool InGuild => GuildId != 0;
@@ -333,6 +415,20 @@ public sealed class GuildBook
                 RequestsForGuildRefresh?.Invoke();
                 break;
             }
+            case 0xf:
+                // OnPacketAttendComplete (@0x1413bebc0, :1772): in a guild, the box and the line s_guild_attend_complete.
+                if (!InGuild) break;
+                Box?.Invoke(CommonByKey("s_guild_attend_complete"));
+                ChatLine?.Invoke(CommonByKey("s_guild_attend_complete"), 0xd);
+                break;
+            case 0x71:
+                // OnPacketMyDonation (@0x1413bece0, :1782): in a guild, the own member's donation count and time, then the
+                // line s_guild_donate_complete.
+                if (!InGuild || Me is not { } donor) break;
+                donor.Ff0 = m.DonationCount;
+                donor.Ff8 = m.DonationTime;
+                ChatLine?.Invoke(CommonByKey("s_guild_donate_complete"), 0xd);
+                break;
             case 0x44:
                 // FUN_1413bf2a0 (guildmanager.cpp:1855): in a guild, the propensity focus and value.
                 if (!InGuild || Info == null) break;

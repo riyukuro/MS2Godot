@@ -185,4 +185,13 @@ public class GuildPacketTests {
         Assert.That(Bytes(new GuildInviteAnswerRequest(got.Invite, true)),
             Is.EqualTo(Cat(new byte[] { 5 }, Id5, Str("Gd"), Str("mk"), Str("Ma"), Str("Me"), new byte[] { 1 })));
     }
+
+    [Test]
+    public void AttendAndDonateWriteTheirModesAndTheDonationReads() {
+        Assert.That(Bytes(new GuildAttendRequest()), Is.EqualTo(new byte[] { 0xf }));
+        Assert.That(Bytes(new GuildDonateRequest(3)), Is.EqualTo(new byte[] { 0x71, 3, 0, 0, 0 }));
+        Assert.That(GuildMessage.Read(R(w => w.WriteByte(0xf))).Type, Is.EqualTo((byte)0xf));
+        var d = GuildMessage.Read(R(w => { w.WriteByte(0x71); w.WriteInt(2); w.WriteLong(99); }));
+        Assert.That((d.DonationCount, d.DonationTime), Is.EqualTo((2, 99L)));
+    }
 }

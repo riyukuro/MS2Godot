@@ -65,6 +65,18 @@ public sealed record GuildInviteAnswerRequest(GuildInviteInfo Invite, bool Accep
     public void Write(ByteWriter w) { w.WriteByte(5); Invite.Write(w); w.WriteByte(Accept ? (byte)1 : (byte)0); }
 }
 
+/// <summary>SendGuildMode15 (@0x1413b8230): attend (u8 0xf, no body).</summary>
+public sealed record GuildAttendRequest : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) => w.WriteByte(0xf);
+}
+
+/// <summary>CGuildManager::FUN_1413b8540 (@0x1413b8540): donate (u8 0x71, i32 the donation count).</summary>
+public sealed record GuildDonateRequest(int Amount) : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) { w.WriteByte(0x71); w.WriteInt(Amount); }
+}
+
 /// <summary>SendGuildMode7 (@0x1413b75a0): leave the guild (u8 7, no body). The client sends it only from a member who
 /// is not the master.</summary>
 public sealed record GuildLeaveRequest : IOutPacket {

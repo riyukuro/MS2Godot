@@ -351,6 +351,71 @@ public class GuildBookTests {
         Assert.That(lines.Count, Is.EqualTo(n), "an accept has no line");
     }
 
+    const long Now = 1_795_262_400;      // a noon (UTC); a minute before is the same day, a day before is not
+
+    [Test]
+    public void AttendChecksTheJoinAndAttendDaysAndTheCompleteShowsTheBoxAndLine() {
+        var sent = new List<IOutPacket>(); var lines = new List<string>(); var notices = new List<string>(); var boxes = new List<string>();
+        var b = InGuild(sent, lines);
+        b.Notice += (t, _, _) => notices.Add(t);
+        b.Box += boxes.Add;
+        b.ServerTime = () => Now;
+        var me = b.FindMemberByName("Ma");
+        me.Fc8 = Now - 60;                              // joined today
+        Assert.That(b.Attend(), Is.False);
+        Assert.That(notices.Last(), Is.EqualTo("s_guild_err_can_next_day"));
+        me.Fc8 = Now - 3 * 86400;
+        me.Fd8 = Now - 60;                              // attended today
+        Assert.That((b.CanAttend, b.Attend()), Is.EqualTo((false, false)));
+        Assert.That(notices.Last(), Is.EqualTo("s_guild_err_attend_already"));
+        me.Fd8 = Now - 86400;
+        Assert.That((b.CanAttend, b.Attend()), Is.EqualTo((true, true)));
+        Assert.That(sent.Single(), Is.InstanceOf<GuildAttendRequest>());
+        b.Apply(new GuildMessage(0xf));
+        Assert.That((boxes.Single(), lines.Last()), Is.EqualTo(("s_guild_attend_complete", "s_guild_attend_complete")));
+        Assert.That(b.CanAttend, Is.True, "the complete does not set the attend time (type 0x24 does)");
+    }
+
+    [Test]
+    public void DonateChecksTheDailyMaxTheFundMaxAndTheMeso() {
+        var sent = new List<IOutPacket>(); var lines = new List<string>(); var notices = new List<string>();
+        var b = InGuild(sent, lines);
+        b.Notice += (t, _, _) => notices.Add(t);
+        b.ServerTime = () => Now;
+        b.LevelByExp = _ => 1;
+        b.Property = level => level == 1 ? new GuildProperty(100_000, 3) : null;
+        b.Mesos = () => 50_000;
+        var me = b.FindMemberByName("Ma");
+        me.Fc8 = Now - 3 * 86400;
+        me.Ff0 = 2; me.Ff8 = Now - 60;                  // two donations today
+        Assert.That(b.Donate(0), Is.False);
+        Assert.That(b.Donate(2), Is.False);
+        Assert.That(notices.Last(), Is.EqualTo("s_guild_err_donateMax"));
+        Assert.That(b.Donate(1), Is.True);
+        Assert.That(((GuildDonateRequest)sent.Last()).Amount, Is.EqualTo(1));
+        me.Ff8 = Now - 86400;                           // yesterday's count is 0 today
+        Assert.That(b.DonationToday(me), Is.EqualTo(0));
+        Assert.That(b.Donate(3), Is.True);
+        b.Info.Fund = 80_000;                           // 80000 + 30000 > 100000
+        Assert.That(b.Donate(3), Is.False);
+        Assert.That(notices.Last(), Is.EqualTo("s_guild_err_donate_guildFundMax"));
+        b.Info.Fund = 86_000;
+        Assert.That(b.Donate(1), Is.True);              // 96000
+        b.FundEventRate = () => 5000;                   // +50%: 86000 + 15000 > 100000
+        Assert.That(b.Donate(1), Is.False);
+        b.FundEventRate = () => 0;
+        b.Info.Fund = 0;
+        b.Mesos = () => 9_999;
+        Assert.That(b.Donate(1), Is.False);
+        Assert.That(notices.Last(), Is.EqualTo("s_guild_err_no_money"));
+        Assert.That(sent.Count, Is.EqualTo(3));
+
+        b.Apply(new GuildMessage(0x71) { DonationCount = 3, DonationTime = Now - 5 });
+        Assert.That((me.Ff0, me.Ff8, b.DonationToday(me), lines.Last()), Is.EqualTo((3, Now - 5, 3, "s_guild_donate_complete")));
+        b.Mesos = () => 50_000;
+        Assert.That(b.Donate(1), Is.False, "three today is the max");
+    }
+
     [Test]
     public void AnInviteReceivedInAGuildIsIgnored() {
         var sent = new List<IOutPacket>();
