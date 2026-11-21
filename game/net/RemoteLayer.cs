@@ -38,6 +38,9 @@ public sealed partial class RemoteLayer : Node3D
         /// <summary>FieldAddUser's premium club time and wedding state (PC m_n1190 / m_n1220) and the user block's PC bang
         /// grade (m_nFF8, scenestategame.cpp:11151), the PC::CanUseItem inputs of the balloon gem.</summary>
         public long PremiumTime; public short WeddingState; public byte PcBangGrade;
+        /// <summary>The PC's AdditionalCliList (FUN_1416749a0): FieldAddUser's list (DecodeListPacket, additionalcli_2.cpp:721,
+        /// each one an add) and its OnBuff packets. Only what the target filter reads of it is used.</summary>
+        public Ms2.Ui.Skills.AdditionalBuffList Buffs;
     }
 
     readonly ModelBuilder builder;
@@ -57,6 +60,8 @@ public sealed partial class RemoteLayer : Node3D
     World.GroundEffects groundFx;
     readonly Random groundRng = new();
     readonly long selfCharacter;
+    /// <summary>SkillDataTableCli::FUN_140aafef0, the remote PCs' buff levels.</summary>
+    Func<uint, ushort, Ms2.Ui.Skills.AdditionalLevelData> levelOf;
     public readonly FieldTracker Tracker = new();
     public int UsersSpawned, NpcsAdded;
     public int UserCount => users.Count;
@@ -153,8 +158,8 @@ public sealed partial class RemoteLayer : Node3D
     /// <see cref="NpcLayer.HitCandidates"/>. A player is a pc of team 1 with its stat pair's hp, for
     /// <see cref="Ms2.Ui.Skills.SkillHit.FilterTarget"/>.
     /// Its party id is the own party's when CPartyManager has it as a member (PC::FUN_141661bc0, pc.cpp:4438), else 0.
-    /// STILL-OPEN: the hidden / state 6-7 flag and HasPvPPoint (false here) are not fed; pvp on/off is unknown
-    /// (<see cref="Ms2.Ui.Skills.HitCandidate.PvpUnknown"/>).
+    /// Its pvp on/off is its buff list's (<see cref="Ms2.Ui.Skills.AdditionalBuffList.IsPvpOnOff"/>).
+    /// STILL-OPEN: the hidden / state 6-7 flag and HasPvPPoint (false here) are not fed.
     /// </summary>
     public void HitCandidates(List<Ms2.Ui.Skills.HitCandidate> into)
     {
@@ -165,7 +170,8 @@ public sealed partial class RemoteLayer : Node3D
             var p = r.Pc.Position;
             long partyId = party is { PartyId: not 0 } && party.Find(r.CharacterId) != null ? party.PartyId : 0;
             into.Add(new Ms2.Ui.Skills.HitCandidate { Id = id, Position = p, Body = Ms2.Ui.Skills.SkillHit.PlayerBody(p, r.Pc.RotationZ),
-                Kind = Ms2.Ui.Skills.HitKind.Pc, Team = 1, Hp = r.HpCur, PartyId = partyId, PvpUnknown = true });
+                Kind = Ms2.Ui.Skills.HitKind.Pc, Team = 1, Hp = r.HpCur, PartyId = partyId,
+                PvpOnOff = r.Buffs.IsPvpOnOff });
         }
         npcs.HitCandidates(into);
     }
@@ -210,6 +216,9 @@ public sealed partial class RemoteLayer : Node3D
         r.Gender = u.User.Gender;
         r.PremiumTime = u.PremiumTime; r.WeddingState = u.WeddingState; r.PcBangGrade = u.User.PcBangGrade;
         r.HpCur = u.Stats[2].Health; r.HpMax = u.Stats[0].Health; r.InBattle = u.InBattle;
+        levelOf ??= Ms2.Ui.GameTables.Shared(packs, Ms2Godot.GameOptions.StringLanguage).Additional.GetLevel;
+        r.Buffs = new Ms2.Ui.Skills.AdditionalBuffList(levelOf);
+        foreach (var b in u.Buffs) r.Buffs.Apply(BuffPacket.FromAdd(b));
         var dummies = Ms2.Formats.World.EffectDummyTable.Load(packs).Pc(u.User.Gender);
         var model = visual.GetNodeOrNull<Node3D>("Model");
         r.Anchor = () => World.DummyAnchor.Point(dummies, "Eff_UI", model, md.RootName) ?? root.GlobalPosition;
@@ -326,6 +335,9 @@ public sealed partial class RemoteLayer : Node3D
                         if (users.TryGetValue(t.TargetId, out var hit)) EnsureBar(hit)?.Hit(byLocal);
                     }
                     if (Numbered != null) ShowNumbers(dmg.Damage);
+                    break;
+                case UserBuffEvent ub:
+                    if (users.TryGetValue(ub.Buff.OwnerObjectId, out var rb)) rb.Buffs.Apply(ub.Buff);
                     break;
                 case SkillUsedEvent used: OnSkillUse(used.Use); break;
                 case SkillSyncedEvent ss: OnSkillSync(ss.Sync); break;

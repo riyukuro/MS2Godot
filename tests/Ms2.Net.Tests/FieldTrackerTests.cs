@@ -117,6 +117,19 @@ public class FieldTrackerTests {
     }
 
     [Test]
+    public void ABuffOfAPcInTheFieldRoutesToItsList() {
+        // OnBuff (scenestategame.cpp:7591): FUN_141bd1200 of the owner header's id, nothing when it is not in the field
+        static byte[] Remove(int owner) { var w = new ByteWriter(); w.WriteByte(1); w.WriteInt(owner); w.WriteInt(9); w.WriteInt(owner); return Bytes(w); }
+        var t = new FieldTracker();
+        t.Inbound(Packet(Inbound.Buff, Remove(77)));
+        Assert.That(t.Events, Is.Empty);
+        AddUser(t, 77, 2);
+        t.Events.Clear();
+        t.Inbound(Packet(Inbound.Buff, Remove(77)));
+        Assert.That(t.Events.Single(), Is.EqualTo(new UserBuffEvent(0, new BuffPacket(BuffPacket.Remove, 77, 9, 77, 0, null, null))));
+    }
+
+    [Test]
     public void UserBattleRoutesToTheStanceEvent() {
         var w = new ByteWriter();
         w.WriteInt(88); w.WriteByte(1);

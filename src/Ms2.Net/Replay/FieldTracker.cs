@@ -32,6 +32,9 @@ public sealed record NpcHpEvent(double Time, int ObjectId, long Current, long Ma
 public sealed record UserStatEvent(double Time, PcStat Stat) : ReplayEvent(Time);
 /// <summary>OnUserBattle (0x2F): a player's battle stance, SetEmotion's byte (1 in battle, 0 out).</summary>
 public sealed record UserBattleEvent(double Time, int ObjectId, byte Emotion) : ReplayEvent(Time);
+/// <summary>OnBuff (0x47, scenestategame.cpp:7591) for a PC in the field: the owner header names it (FUN_141bd1200; an owner
+/// that is not here returns). The packet goes to that PC's AdditionalCliList (FUN_1416749a0).</summary>
+public sealed record UserBuffEvent(double Time, BuffPacket Buff) : ReplayEvent(Time);
 /// <summary>An npc's emotion bit changed (CNpc::ApplySyncBlock @0x1410918e0 reads the block's flags bit 2 and calls
 /// SetEmotion, whose change guard is pcbase.cpp:1268): the battle stance, true in battle. CNpc::vfunc_66 activates the
 /// npc's hp bar on a change to true, only while it is alive.</summary>
@@ -148,6 +151,12 @@ public sealed class FieldTracker {
                 } else if (isPc) {
                     try { Events.Enqueue(new UserStatEvent(Time, PcStat.Read(p.Reader()))); } catch { StatDrops++; }
                 }
+                break;
+            }
+            case Ms2.Net.Inbound.Buff: {
+                // STILL-OPEN: an npc owner's list (FUN_141bd1200 finds npcs too); only the PCs' are kept
+                var b = BuffPacket.Read(p.Reader());
+                if (HasActor(b.OwnerObjectId)) Events.Enqueue(new UserBuffEvent(Time, b));
                 break;
             }
             case Ms2.Net.Inbound.UserBattle: {

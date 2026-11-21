@@ -16,6 +16,9 @@ public sealed class AdditionalLevelData
     /// <summary>&lt;Basic eventBuffType&gt; (m_nEventBuffType, :1053): 3 marks the adventure level's current ability
     /// (CAdventureLevelTableHelper::FindCurrent).</summary>
     public uint EventBuffType;
+    /// <summary>&lt;Basic pvpOnOff&gt; (m_bPvpOnOff +0x64, :1066): AdditionalCliList::FUN_140972a00 (additionalcli_2.cpp:1081)
+    /// sets the list's pvp on/off from any enabled, unsuspended effect with it.</summary>
+    public bool PvpOnOff;
     /// <summary>&lt;UI iconOnOff&gt; (m_eIconOnOff: 0 off, 1 on (the default), 2 only for one's own buffs), icon, priority,
     /// isHideCooltime.</summary>
     public int IconOnOff = 1;
@@ -49,6 +52,7 @@ public sealed class AdditionalLevelData
             lv.DurationTick = Xml.UInt(basic, "durationTick");
             lv.KeepCondition = Xml.Int(basic, "keepCondition");
             lv.EventBuffType = Xml.UInt(basic, "eventBuffType");
+            lv.PvpOnOff = Xml.Bool(basic, "pvpOnOff");
         }
         if (e.Element("UI") is { } ui)
         {

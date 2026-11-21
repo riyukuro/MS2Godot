@@ -42,6 +42,31 @@ public class BuffStripTests
     }
 
     [Test]
+    public void PvpOnOffIsSetByAnEnabledEffectWhoseLevelHasIt()
+    {
+        // <Basic pvpOnOff> (AdditionalLevelData::Load, additionalactionadditional.cpp:1066) summed by
+        // AdditionalCliList::FUN_140972a00 (additionalcli_2.cpp:1066-1082): enabled, not suspended, the level's flag
+        var pvp = AdditionalLevelData.Load(System.Xml.Linq.XElement.Parse("<level level=\"1\"><Basic pvpOnOff=\"1\"/></level>"), null);
+        Assert.That(pvp.PvpOnOff, Is.True);
+        Assert.That(AdditionalLevelData.Load(System.Xml.Linq.XElement.Parse("<level level=\"1\"><Basic/></level>"), null).PvpOnOff, Is.False);
+        var list = new AdditionalBuffList((id, lv) => id == 7 ? pvp : Level(id, lv));
+        list.Apply(Add(10, 1));
+        Assert.That(list.IsPvpOnOff, Is.False, "an effect without it");
+        list.Apply(new BuffPacket(BuffPacket.Add, 5, 11, 5, 0, new BuffState(0, 1000, 7, 1, 1, 0), 0));
+        Assert.That(list.IsPvpOnOff, Is.False, "not enabled");
+        list.Apply(new BuffPacket(BuffPacket.Modify, 5, 11, 5, BuffPacket.ModifyState, new BuffState(0, 1000, 7, 1, 1, 1), null));
+        Assert.That(list.IsPvpOnOff, Is.True);
+        list.Buffs.Single(b => b.Key == 11).Suspended = true;
+        Assert.That(list.IsPvpOnOff, Is.False, "suspended");
+        list.Buffs.Single(b => b.Key == 11).Suspended = false;
+        list.Apply(new BuffPacket(BuffPacket.Remove, 5, 11, 5, 0, null, null));
+        Assert.That(list.IsPvpOnOff, Is.False, "removed");
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1000; i++) _ = list.IsPvpOnOff;
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512));
+    }
+
+    [Test]
     public void SortOrderAndRemainTicks()
     {
         uint now = 400;

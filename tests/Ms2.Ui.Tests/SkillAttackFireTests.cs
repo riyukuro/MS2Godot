@@ -171,20 +171,19 @@ public class SkillAttackFireTests
     }
 
     [Test]
-    public void APkFieldKeepsPartyMembersAndUnknownPvpOutOfTheTargets()
+    public void APkFieldKeepsPartyMembersAndPvpOnOffOutOfTheTargets()
     {
-        // PC::vfunc_122 (pc.cpp:3112): the same nonzero party id is not hostile; a PC whose pvp on/off has no feed counts as
-        // having it set, so nothing goes out the client would not send
+        // PC::vfunc_122 (pc.cpp:3112): the same nonzero party id is not hostile, nor is a PC when either side has pvp on/off
         var me = Owner; me.PartyId = 7;
         var member = Mob(5, 0, 0); member.Kind = HitKind.Pc; member.Team = me.Team; member.PartyId = 7;
         var other = Mob(6, 0, 0); other.Kind = HitKind.Pc; other.Team = me.Team;
         var into = new List<HitCandidate>();
         SkillHit.Query(new[] { me, member, other }, 1, 0, into, pkMode: true);
         Assert.That(into.Select(o => o.Id), Is.EqualTo(new[] { other.Id }));
-        other.PvpUnknown = true;
-        Assert.That(SkillHit.FilterTarget(me, other, 1, 0, pkMode: true), Is.False, "the target's pvp state unknown");
-        other.PvpUnknown = false; me.PvpUnknown = true;
-        Assert.That(SkillHit.FilterTarget(me, other, 1, 0, pkMode: true), Is.False, "the caster's pvp state unknown");
+        other.PvpOnOff = true;
+        Assert.That(SkillHit.FilterTarget(me, other, 1, 0, pkMode: true), Is.False, "the target's pvp on/off");
+        other.PvpOnOff = false; me.PvpOnOff = true;
+        Assert.That(SkillHit.FilterTarget(me, other, 1, 0, pkMode: true), Is.False, "the caster's pvp on/off");
         Assert.That(SkillHit.FilterTarget(me, Mob(8, 0, 0), 1, 0, pkMode: true), Is.True, "an npc of another team stays hostile");
     }
 

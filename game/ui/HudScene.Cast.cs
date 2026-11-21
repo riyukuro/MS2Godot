@@ -212,7 +212,8 @@ public partial class HudScene
             var pos = new System.Numerics.Vector3(g.X, -g.Z, g.Y);
             float rotZ = me.FacingRotZ;
             hitObjects.Add(new HitCandidate { Id = live?.SelfObjectId ?? 0, Position = pos, Body = SkillHit.PlayerBody(pos, rotZ), IsOwner = true,
-                Kind = HitKind.Pc, Team = 1, Hp = 1, PartyId = live?.Party?.PartyId ?? 0, PvpUnknown = true });
+                Kind = HitKind.Pc, Team = 1, Hp = 1, PartyId = live?.Party?.PartyId ?? 0,
+                PvpOnOff = ownBuffs?.IsPvpOnOff ?? false });
             nextSerial ??= () => serialIds.Next(Net.LiveSession.Instance?.SelfObjectId ?? 0);
             for (int i = 0; i < n; i++)
             {

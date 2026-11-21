@@ -110,6 +110,21 @@ public sealed class AdditionalBuffList
     /// <summary>IsUpperTargetId @0x140930110 (unit_14092f420_accountsessionstate.cpp:523): <c>g_upperTargetId == nValue</c>.</summary>
     public bool IsUpperTargetId(int objectId) => UpperTargetId == objectId;
 
+    /// <summary>
+    /// IsPvpOnOff @additionalcli_2.cpp:563, m_bPvpOnOff as AdditionalCliList::FUN_140972a00 (:1059-1082) sums it: set when an
+    /// effect is enabled (m_bEnabled, the state's flag), not suspended and its level has pvpOnOff. The client sums on the
+    /// list's Update after any change (SetDirty); this reads the held effects at the call, the same set.
+    /// </summary>
+    public bool IsPvpOnOff
+    {
+        get
+        {
+            foreach (var b in map.Values)
+                if (b.Enabled != 0 && !b.Suspended && b.LevelData.PvpOnOff) return true;
+            return false;
+        }
+    }
+
     /// <summary>OnBuff's three modes for the local player.</summary>
     public void Apply(BuffPacket p)
     {
