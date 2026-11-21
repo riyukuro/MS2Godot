@@ -72,3 +72,47 @@ public sealed record GuildBreakRequest : IOutPacket {
     public Outbound Op => Outbound.Guild;
     public void Write(ByteWriter w) => w.WriteByte(2);
 }
+
+/// <summary>FUN_1413b71c0 (@0x1413b71c0, :454): invite a character to the guild (u8 3, the name).</summary>
+public sealed record GuildInviteRequest(string Name) : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) { w.WriteByte(3); w.WriteUnicodeString(Name); }
+}
+
+/// <summary>SendGuildMode8 (@0x1413b76c0): expel a member (u8 8, the name).</summary>
+public sealed record GuildExpelRequest(string Name) : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) { w.WriteByte(8); w.WriteUnicodeString(Name); }
+}
+
+/// <summary>SendGuildMode10 (@0x1413b78c0): set a member's grade (u8 10, the name, u8 the grade).</summary>
+public sealed record GuildMemberGradeRequest(string Name, int Grade) : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) { w.WriteByte(10); w.WriteUnicodeString(Name); w.WriteByte((byte)Grade); }
+}
+
+/// <summary>SendGuildMode63 (@0x1413b7ad0): hand the master over to a member (u8 0x3f, the name).</summary>
+public sealed record GuildChangeMasterRequest(string Name) : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) { w.WriteByte(0x3f); w.WriteUnicodeString(Name); }
+}
+
+/// <summary>FUN_1413b7c70 (@0x1413b7c70): a guild text (u8 0x40, u8 the kind, the text). The dialog's OnChangeNotify
+/// sends kind 1, the notice.</summary>
+public sealed record GuildTextRequest(int Kind, string Text) : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) { w.WriteByte(0x40); w.WriteByte((byte)Kind); w.WriteUnicodeString(Text); }
+}
+
+/// <summary>SendGuildMode13 (@0x1413b80d0): this member's memo (u8 0xd, the text).</summary>
+public sealed record GuildMemoRequest(string Text) : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) { w.WriteByte(0xd); w.WriteUnicodeString(Text); }
+}
+
+/// <summary>SendGuildMode68 (@0x1413b8e60): the guild's propensity (u8 0x44, u8 the focus, i32 the value). The client
+/// names the two CGuildManager f154 (the "listed in the search" flag of OnChageRegistSearch) and f158 (GetPropensity).</summary>
+public sealed record GuildPropensityRequest(int Focus, int Value) : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) { w.WriteByte(0x44); w.WriteByte((byte)Focus); w.WriteInt(Value); }
+}

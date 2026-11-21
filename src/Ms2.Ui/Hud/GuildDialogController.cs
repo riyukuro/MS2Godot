@@ -9,10 +9,13 @@ namespace Ms2.Ui.Hud;
 /// The C++ side of the guild dialog, UIGuildDialog (client/ms2/uiguilddialog.cpp; UI id 0x4e4f), for its movie uiguilddialog.
 /// The state is <see cref="GuildBook"/> (CGuildManager). Outside a guild: the Join page (the search by propensity or by
 /// name, the join requests and their cancel, this character's requests) and the Create page (the create box). In a guild:
-/// the Info and Member pages, the accept page (the requests sent to the guild), the leave and disband boxes. The pages are
-/// made on first use (EnsurePageCreated) and laid on the movie root.
+/// the Info and Member pages, the accept page (the requests sent to the guild), the leave and disband boxes, the member
+/// management (the invite, expel, grade and master change, the notice, the own memo, the propensity and the search flag).
+/// The pages are made on first use (EnsurePageCreated) and laid on the movie root.
 /// STILL-OPEN: the other in-guild pages (Skill, MemberSkill, Event, Manager, House, Storage, Raid, ChampionShip,
-/// ChampionShipHistroy) and their callbacks, the invite (onClickInviteMember), the master popup
+/// ChampionShipHistroy) and their callbacks (the attend, donate, grade edit OnChangeGrade, ranks, PvP, mail, house and
+/// mark), the member popup (OnGuildMemberPopupMenu, 0x4e39), the character card of the master and expel boxes
+/// (CMsgBoxData::SetCharacterInfo), the master popup
 /// (OnSearchGuildMasterPopupMenu, 0x4e39) as an event, the block check of OnClickCreateGuild (CBlockManager
 /// FindBlockedAction(7)), the web guide button (UIDialog::BindWebGuideButton, uidialog.cpp:997), the championship icon
 /// (CGameRule::IsGuildChampionshipOpen), the event buttons of the 0x8a handler FUN_141968140 (modes 0x76/0x77), the
@@ -44,6 +47,8 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     object memberPage;          // m_memberPage
     object acceptRequestPage;   // m_acceptRequestPage
     int memberSort;             // m_nMemberSort (0 in the ctor)
+    string masterTarget = "";   // m_strName: the member the changeMaster box names
+    string expelTarget = "";    // m_strDesc: the member the expelMember box names
 
     /// <summary>GetStringCommon.</summary>
     public Func<int, string> Common = _ => "";
@@ -196,7 +201,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         // m_championshipPage, m_pvpHistoryPage: STILL-OPEN
     }
 
-    /// <summary>CreateInfoPage (@0x14196a000): made now, UpdateGuildInfo, SetMasterInfo, UpdateGuildExp, the fund and the
+    /// <summary>CreateInfoPage (@0x141969f60): made now, UpdateGuildInfo, SetMasterInfo, UpdateGuildExp, the fund and the
     /// player's rights. STILL-OPEN: SetGuildMark of the guild's own mark.</summary>
     void CreateInfoPage()
     {
@@ -511,7 +516,16 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         Host.Invoke(joinPage, "buildSearchMy", rows);                        // InvokeWithArray
     }
 
-    /// <summary>vfunc_28 (@0x1419634e0, :652) and FUN_1419681b0 (:1261): the movie's calls outside a guild.</summary>
+    /// <summary>The master's name check of onChangeMaster, onChangeMemberGrade and onExpelMember: the master's own name
+    /// (CStringW ==, case-sensitive) is the notice BlockFormat(0x3e1).</summary>
+    bool IsMasterName(string name)
+    {
+        if (Book.MasterMember is not { } master || name != master.Name) return false;
+        Book.ShowNotice(Common(0x3e1));
+        return true;
+    }
+
+    /// <summary>vfunc_28 (@0x1419634e0, :652) and FUN_1419681b0 (:1261): the movie's calls.</summary>
     public override bool OnCallback(string name, object[] args)
     {
         if (base.OnCallback(name, args)) return true;
@@ -587,8 +601,78 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
                     Book.SearchPropensity = Int(1);
                     Book.Search(false);             // SendGuildMode87(false)
                 }
-                // type 2 is SendGuildMode68 (in a guild): STILL-OPEN
+                else if (args.Length > 0 && Int(0) == 2)
+                    Book.SetPropensity(Book.PropensityFocus, Int(1));       // SendGuildMode68(FUN_1404d1860(), value)
                 return true;
+            case "onchageregistsearch":                 // the movie's spelling (:1423)
+                if (args.Length > 0) Book.SetPropensity(Rt.ToBoolean(args[0]) ? 1 : 0, Book.Propensity);
+                return true;
+            case "onclickinvitemember":
+            {
+                // :666: CreateMessageBox(5, BlockFormat(0x3da), "addMember"), SetInput(2, "", 0, 0, 0)
+                var box = MessageBoxQueue.Create(5, Common(0x3da), this, "addMember");
+                box.SetInput(2, "", 0, 0, 0);
+                ShowBox(box);
+                return true;
+            }
+            case "onchangenotify":
+            {
+                // :766: CreateMessageBox(0xb, BlockFormat(0x3dc), "changeNotify"), SetInput(0, GetNotice(), 300, 1, 0x14)
+                var box = MessageBoxQueue.Create(0xb, Common(0x3dc), this, "changeNotify");
+                box.SetInput(0, Book.GuildNotice, 300, 1, 0x14);
+                ShowBox(box);
+                return true;
+            }
+            case "onchangepropensity":
+            {
+                // :776: showPropensity(GetPropensity(), 2, IsMaster(the local player)); nothing without a local player
+                if (PlayerName() is not { } me || NoMovie) return true;
+                Host.Invoke(Host.Entity, "showPropensity", Book.Propensity, 2, Book.IsMaster(me));
+                return true;
+            }
+            case "onclickmemobutton":
+            {
+                // :829: only the local player's own row (CStringW !=, case-sensitive) opens the memo box; the client then
+                // falls through to its return 0
+                if (args.Length == 0) return false;
+                if (PlayerName() is not { } me || me != Str(0)) return true;
+                var box = MessageBoxQueue.Create(5, CommonByKey("s_guild_ui_memo"), this, "changeMemo");
+                box.SetInput(0, "", 0x14, 0, 0);
+                ShowBox(box);
+                return false;
+            }
+            case "onchangemaster":
+            {
+                // :848: not the master; a member of the name; m_strName, then the box 0x14 FormatStringId(0x3e2, name)
+                if (args.Length == 0) return true;
+                string target = Str(0);
+                if (IsMasterName(target) || Book.FindMemberByName(target) == null) return true;
+                masterTarget = target;
+                ShowBox(MessageBoxQueue.Create(0x14, ClientFormat.Format(Common(0x3e2), masterTarget), this, "changeMaster"));
+                return true;
+            }
+            case "onchangemembergrade":
+                // :874: not the master, then SendGuildMode10(name, grade)
+                if (args.Length > 0 && !IsMasterName(Str(0))) Book.SetMemberGrade(Str(0), Int(1));
+                return true;
+            case "onexpelmember":
+            {
+                // :890: as onChangeMaster with m_strDesc, 0x3e3 and the tag expelMember
+                if (args.Length == 0) return true;
+                string target = Str(0);
+                if (IsMasterName(target) || Book.FindMemberByName(target) == null) return true;
+                expelTarget = target;
+                ShowBox(MessageBoxQueue.Create(0x14, ClientFormat.Format(Common(0x3e3), expelTarget), this, "expelMember"));
+                return true;
+            }
+            case "onchagegradeerror":                   // the movie's spelling (:916); the client falls through to return 0
+            {
+                if (args.Length == 0) return false;
+                int error = Int(0);
+                string text = error == 1 ? Common(999) : error == 2 ? Common(0x3e1) : "";
+                if (text.Length > 0) Book.ShowNotice(text);
+                return false;
+            }
         }
         return false;
     }
@@ -609,14 +693,19 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
                 close = false;                  // the client closes the box first and no handler closes it again
                 if (tag.StartsWith("breakGuild", StringComparison.Ordinal)) Book.Break();             // OnBreakGuild
                 else if (tag.StartsWith("leaveGuild", StringComparison.Ordinal)) Book.Leave();       // SendGuildMode7
-                // expelMember, changeMaster, sendMail, unregistPvP: in a guild, STILL-OPEN
+                else if (tag.StartsWith("expelMember", StringComparison.Ordinal)) { Book.Expel(expelTarget); expelTarget = ""; }      // SendGuildMode8(m_strDesc)
+                else if (tag.StartsWith("changeMaster", StringComparison.Ordinal)) { Book.ChangeMaster(masterTarget); masterTarget = ""; }   // SendGuildMode63(m_strName)
+                // sendMail (OnSendMail), unregistPvP (Pvp mode 2): STILL-OPEN
             }
             else
             {
                 string arg = parts[1];
                 if (tag.StartsWith("createGuild", StringComparison.Ordinal)) close = Book.Create(arg);           // OnCreateGuild
                 else if (tag.StartsWith("serachGuildName", StringComparison.Ordinal)) close = Book.SearchByName(arg);   // SendGuildMode88
-                // addMember, changeNotify, changeMemo, checkChampionGuild: in a guild, STILL-OPEN
+                else if (tag.StartsWith("addMember", StringComparison.Ordinal)) close = arg.Length > 0 && Book.Invite(arg);           // OnAddMember @0x1419755a0
+                else if (tag.StartsWith("changeNotify", StringComparison.Ordinal)) close = arg.Length > 0 && Book.SendText(1, arg);   // OnChangeNotify @0x141974df0
+                else if (tag.StartsWith("changeMemo", StringComparison.Ordinal)) close = Book.SetMemo(arg);                           // OnChangeMemo @0x141974e70
+                // checkChampionGuild (SendPVPMode4): STILL-OPEN
             }
         }
         if (close) MessageBoxQueue.Next();

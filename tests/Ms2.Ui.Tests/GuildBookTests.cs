@@ -227,4 +227,81 @@ public class GuildBookTests {
         failed.Apply(new GuildMessage(2) { Result = 1 });
         Assert.That((failed.InGuild, errorNotices.Single()), Is.EqualTo((true, "c403")));   // ShowGuildError(2, 1, 0)
     }
+
+    [Test]
+    public void TheInviteChecksTheNameTheRightAndTheRoom() {
+        // FUN_1413b71c0: the own name is common 0x38d, a banned one 0x38e, no invite right (2) 0x415, a full guild the box 0x40f
+        var sent = new List<IOutPacket>(); var notices = new List<string>(); var boxes = new List<string>(); var sounds = new List<string>();
+        var b = InGuild(sent, new List<string>());
+        b.Notice += (t, _, _) => notices.Add(t);
+        b.Box += boxes.Add;
+        b.Sound += sounds.Add;
+        Assert.That(b.Invite("ma"), Is.False);
+        b.BannedName = n => n == "Bad";
+        Assert.That(b.Invite("Bad"), Is.False);
+        b.PlayerName = () => "bo";                            // grade 1: no invite right
+        Assert.That(b.Invite("Cy"), Is.False);
+        Assert.That(notices, Is.EqualTo(new[] { "c38d", "c38e", "c415" }));
+        b.PlayerName = () => "Ma";
+        b.Info.MaxMembers = 2;
+        Assert.That(b.Invite("Cy"), Is.False);
+        Assert.That((boxes.Single(), sent.Count), Is.EqualTo(("c40f", 0)));
+        b.Info.MaxMembers = 50;
+        Assert.That(b.Invite("Cy"), Is.True);
+        Assert.That((sent.Single(), sounds.Single()), Is.EqualTo(((IOutPacket)new GuildInviteRequest("Cy"), "PC_InviteSuccess")));
+    }
+
+    [Test]
+    public void TheExpelGradeAndMasterSendsNeedTheirRights() {
+        var sent = new List<IOutPacket>();
+        var b = InGuild(sent, new List<string>());
+        b.PlayerName = () => "bo";                            // grade 1 holds only the notice right (8)
+        b.Expel("Ma"); b.SetMemberGrade("Ma", 1); b.ChangeMaster("Ma");
+        Assert.That(sent, Is.Empty);
+        b.PlayerName = () => "Ma";
+        b.Expel("ma");                                        // the own name
+        b.SetMemberGrade("bo", 0);                            // grade 0 is the master's
+        b.SetMemberGrade("bo", 2);                            // past GetMaxGradeIndex (2 grades: 1)
+        b.SetMemberGrade("b", 1);                             // a name shorter than 2
+        b.ChangeMaster("MA");
+        Assert.That(sent, Is.Empty);
+        b.Expel("bo"); b.SetMemberGrade("bo", 1); b.ChangeMaster("bo");
+        Assert.That(sent, Is.EqualTo(new IOutPacket[] { new GuildExpelRequest("bo"), new GuildMemberGradeRequest("bo", 1), new GuildChangeMasterRequest("bo") }));
+    }
+
+    [Test]
+    public void TheNoticeAndMemoCheckLengthRightAndContent() {
+        // FUN_1413b7c70 kind 1: at most 300 with the notice right (8) and no banned word; SendGuildMode13: at most 0x14
+        var sent = new List<IOutPacket>(); var notices = new List<string>();
+        var b = InGuild(sent, new List<string>());
+        b.Notice += (t, _, _) => notices.Add(t);
+        b.PlayerName = () => "bo";
+        Assert.That(b.SendText(1, new string('a', 301)), Is.False);
+        b.BannedWord = t => t == "no";
+        Assert.That(b.SendText(1, "no"), Is.False);
+        Assert.That(b.SendText(0, "hi"), Is.False);           // kind 0 is the master's
+        b.CheckContent = t => t == "rude" ? "refused" : null;
+        Assert.That(b.SendText(1, "rude"), Is.False);
+        Assert.That(b.SetMemo(new string('a', 0x15)), Is.False);
+        Assert.That(b.SetMemo("rude"), Is.False);
+        Assert.That((sent.Count, notices), Is.EqualTo((0, new[] { "refused", "refused" })));
+        Assert.That(b.SendText(1, new string('a', 300)), Is.True);
+        Assert.That(b.SetMemo(new string('a', 0x14)), Is.True);
+        Assert.That(sent, Is.EqualTo(new IOutPacket[] { new GuildTextRequest(1, new string('a', 300)), new GuildMemoRequest(new string('a', 0x14)) }));
+    }
+
+    [Test]
+    public void ThePropensityFollowsTypeX44AndSkipsTheSameValue() {
+        var sent = new List<IOutPacket>();
+        var b = InGuild(sent, new List<string>());
+        b.Apply(new GuildMessage(0x44) { Focus = 1, Value = 0x204 });
+        Assert.That((b.PropensityFocus, b.Propensity), Is.EqualTo((1, 0x204)));
+        b.SetPropensity(1, 0x204);                            // the one it has: no send
+        b.PlayerName = () => "bo";
+        b.SetPropensity(0, 0x204);                            // no invite right (2)
+        Assert.That(sent, Is.Empty);
+        b.PlayerName = () => "Ma";
+        b.SetPropensity(0, 0x204);
+        Assert.That(sent.Single(), Is.EqualTo(new GuildPropensityRequest(0, 0x204)));
+    }
 }

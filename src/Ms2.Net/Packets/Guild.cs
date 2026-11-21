@@ -117,6 +117,7 @@ public sealed class GuildJoinRequest {
 /// <item>0x13 OnPacketMemberLeft (@0x1413bfe50): the name.</item>
 /// <item>2 FUN_1413bda00: u8 result (0 = disbanded).</item>
 /// <item>7 FUN_1413be350: no body.</item>
+/// <item>0x44 FUN_1413bf2a0 (guildmanager.cpp:1855): u8 the propensity focus, i32 its value (CGuildInfo f154 / f158).</item>
 /// </list>
 /// The other types are not read here (STILL-OPEN).
 /// </summary>
@@ -150,6 +151,9 @@ public sealed record GuildMessage(byte Type) {
     public GuildMember Member { get; init; }
     /// <summary>Type 0x12: the notice line is wanted.</summary>
     public bool Notify { get; init; }
+    /// <summary>Type 0x44: the guild's propensity focus (f154) and value (f158).</summary>
+    public int Focus { get; init; }
+    public int Value { get; init; }
 
     public static GuildMessage Read(ByteReader r) {
         byte t = r.ReadByte();
@@ -196,6 +200,7 @@ public sealed record GuildMessage(byte Type) {
             }
             case 0x13: return new(t) { Name = r.ReadUnicodeString() };
             case 2: return new(t) { Result = r.ReadByte() };
+            case 0x44: return new(t) { Focus = r.ReadByte(), Value = r.ReadInt() };
             default: return new(t);
         }
     }

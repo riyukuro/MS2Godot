@@ -2,6 +2,8 @@ using Ms2.Avm2;
 using Ms2.Avm2.Flash;
 using Ms2.Formats.Pack;
 using Ms2.Net.Packets;
+using Ms2.Net.Wire;
+using Ms2.Quest;
 using Ms2.Ui;
 using Ms2.Ui.Hud;
 using NUnit.Framework;
@@ -93,5 +95,63 @@ public class GuildDialogTests
         Assert.That(Rt.ToNumber(h.Get(h.Child("m_pageText", page), "text")), Is.EqualTo(1));
         c.OnCallback("OnAcceptMemberPrevPage", Array.Empty<object>());
         Assert.That(Rt.ToNumber(h.Get(h.Get(list, "dataProvider"), "length")), Is.EqualTo(7));     // page 1 keeps its rows
+    }
+
+    [Test]
+    public void TheMemberCallsOpenTheirBoxesAndTheAnswersSend() {
+        var b = InGuild();
+        b.Info.Members.Add(new GuildMember { Mode = 3, Grade = 1, Name = "Bo", CharId = 13, Level = 20, Triple = (0, 0, 0) });
+        var sent = new List<IOutPacket>(); var notices = new List<string>();
+        b.Send = sent.Add;
+        b.Notice += (t, _, _) => notices.Add(t);
+        var c = Load(b);
+        var boxes = new List<MessageBoxData>();
+        c.ShowBox = boxes.Add;
+        var t = tables;
+
+        c.OnCallback("onExpelMember", new object[] { "Ma" });          // the master: the notice 0x3e1, no box
+        c.OnCallback("onChangeMemberGrade", new object[] { "Ma", 1 });
+        Assert.That((boxes.Count, sent.Count, notices.Count), Is.EqualTo((0, 0, 2)));
+        Assert.That(notices[0], Is.EqualTo(t.Common(0x3e1)));
+
+        c.OnCallback("onExpelMember", new object[] { "Bo" });          // m_strDesc, the box 0x14 of FormatStringId(0x3e3)
+        Assert.That((boxes[0].Type, boxes[0].Msg), Is.EqualTo((0x14, ClientFormat.Format(t.Common(0x3e3), "Bo"))));
+        c.OnMessageBox(null, 0, "expelMember");
+        Assert.That(sent.Single(), Is.EqualTo(new GuildExpelRequest("Bo")));
+
+        c.OnCallback("onChangeMaster", new object[] { "Bo" });
+        Assert.That(boxes[1].Msg, Is.EqualTo(ClientFormat.Format(t.Common(0x3e2), "Bo")));
+        c.OnMessageBox(null, 0, "changeMaster");
+        Assert.That(sent.Last(), Is.EqualTo(new GuildChangeMasterRequest("Bo")));
+
+        c.OnCallback("onChangeMemberGrade", new object[] { "Bo", 1 });
+        Assert.That(sent.Last(), Is.EqualTo(new GuildMemberGradeRequest("Bo", 1)));
+
+        c.OnCallback("onClickInviteMember", Array.Empty<object>());
+        Assert.That((boxes[2].Type, boxes[2].InputType, boxes[2].Msg), Is.EqualTo((5, 2, t.Common(0x3da))));
+        c.OnMessageBox(null, 0, "addMember,Cy");
+        Assert.That(sent.Last(), Is.EqualTo(new GuildInviteRequest("Cy")));
+
+        b.Info.Notice = "old";
+        c.OnCallback("OnChangeNotify", Array.Empty<object>());
+        Assert.That((boxes[3].Type, boxes[3].InputDefault, boxes[3].InputMaxChars), Is.EqualTo((0xb, "old", 300)));
+        c.OnMessageBox(null, 0, "changeNotify,new");
+        Assert.That(sent.Last(), Is.EqualTo(new GuildTextRequest(1, "new")));
+
+        Assert.That(c.OnCallback("OnClickMemoButton", new object[] { "Bo" }), Is.True);   // another member's row: no box
+        Assert.That(boxes.Count, Is.EqualTo(4));
+        c.OnCallback("OnClickMemoButton", new object[] { "Ma" });
+        Assert.That((boxes[4].InputMaxChars, boxes[4].Msg), Is.EqualTo((0x14, t.Common("s_guild_ui_memo") ?? "")));
+        c.OnMessageBox(null, 0, "changeMemo,memo");
+        Assert.That(sent.Last(), Is.EqualTo(new GuildMemoRequest("memo")));
+
+        b.Apply(new GuildMessage(0x44) { Focus = 1, Value = 0x204 });
+        c.OnCallback("onSetPropensity", new object[] { 2, 0x208 });   // type 2 keeps the focus
+        Assert.That(sent.Last(), Is.EqualTo(new GuildPropensityRequest(1, 0x208)));
+        c.OnCallback("OnChageRegistSearch", new object[] { false });   // the flag with the propensity it has
+        Assert.That(sent.Last(), Is.EqualTo(new GuildPropensityRequest(0, 0x204)));
+
+        c.OnCallback("onChageGradeError", new object[] { 1 });
+        Assert.That(notices.Last(), Is.EqualTo(t.Common(999)));
     }
 }

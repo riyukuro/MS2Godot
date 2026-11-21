@@ -38,6 +38,8 @@ public partial class HudScene
         book.PlayerName = () => hudModel.HasLocalPlayer ? hudModel.Player.Name : null;
         var checker = CommunityChecker();
         book.CheckName = name => checker.CheckGuildName(name, t.GuildNameLengthMin, t.GuildNameLengthMax, out var msg) == 0 ? null : msg ?? "";
+        book.CheckContent = text => checker.CheckContentText(text, out var msg) == 0 ? null : msg ?? "";
+        // BannedName (CBanTextChecker::FUN_140225210) and BannedWord (FUN_1402259b0) are STILL-OPEN: not ported, so null
         return book;
     }
 

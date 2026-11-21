@@ -9,8 +9,9 @@ namespace Ms2.Ui;
 /// FUN_1413b6370 (:301) does on the Guild packets (0x8A) the port reads, and its checked sends (SendOp::Guild 0x4B). The
 /// client's UI calls come out as events. The not-in-guild side: the guild id, this character's join requests
 /// (m_joinRequestsForChar), the search results and the search propensity (m_468). The in-guild side: the guild info, the
-/// join requests sent to the guild (m_joinRequestsForGuild) and the members. STILL-OPEN: the invite (m_invite) and the
-/// rest of the in-guild updates; the guild name tag (s2c 0x4d, FUN_1413c7700 guildmanager.cpp:3108: the name shown over
+/// join requests sent to the guild (m_joinRequestsForGuild), the members and the propensity (type 0x44); the member
+/// sends (invite, expel, grade, master, notice, memo, propensity). STILL-OPEN: the invite received (m_invite), the other
+/// sends (attend, donate, the grade edit, the PvP, the house) and the rest of the in-guild updates; the guild name tag (s2c 0x4d, FUN_1413c7700 guildmanager.cpp:3108: the name shown over
 /// a player), which the server also sends after a leave or disband to clear the own tag — not read, so the own tag keeps
 /// the guild name until a relogin; the game menu's guild badge (UIGameMenuDialog::FUN_1419381c0, the notify count of
 /// GetGuildNotificationCount: the check-in and the requests for the guild).
@@ -30,6 +31,13 @@ public sealed class GuildBook
     /// <summary>CBanTextChecker::CheckGuildName (CommonString GetChecker): null when the name passes, else the message. The
     /// client skips the check without a checker; so does a null here.</summary>
     public Func<string, string> CheckName;
+    /// <summary>CheckName's (@0x141276c80, uihelpers.cpp:859) CBanTextChecker::FUN_140225210: true when a character name
+    /// is refused. The client skips the check without a checker; so does a null here.</summary>
+    public Func<string, bool> BannedName;
+    /// <summary>CBanTextChecker::FUN_1402259b0: true when a text holds a banned word (the notice check of FUN_1413b7c70).</summary>
+    public Func<string, bool> BannedWord;
+    /// <summary>CBanTextChecker::CheckContentText: null when a text passes, else the message.</summary>
+    public Func<string, string> CheckContent;
     /// <summary>The local player's level (PCBase vfunc_78), or null without a local player.</summary>
     public Func<int?> Level = () => null;
     /// <summary>The local player's name (CGuildManager::GetMyName), or null without a local player.</summary>
@@ -98,6 +106,17 @@ public sealed class GuildBook
     public int TotalTrophy => Info?.Members.Sum(m => m.TrophyTotal) ?? 0;
     public int TotalItemLevel => Info?.Members.Sum(m => m.ItemLevel) ?? 0;
     public int TotalCharLevel => Info?.Members.Sum(m => (int)(ushort)m.Level) ?? 0;
+
+    /// <summary>GetMaxGradeIndex: the last grade's index (the grade count less one).</summary>
+    public int MaxGradeIndex => (Info?.Grades.Count ?? 0) - 1;
+
+    /// <summary>GetNotice: CGuildInfo's notice (s190).</summary>
+    public string GuildNotice => Info?.Notice ?? "";
+
+    /// <summary>FUN_1404d1860 / GetPropensity: CGuildInfo f154 (the "listed in the search" flag the dialog's
+    /// OnChageRegistSearch sets) and f158 (the propensity), read as b3 / v14 by CGuildInfo::Read and set by type 0x44.</summary>
+    public int PropensityFocus => Info?.B3 ?? 0;
+    public int Propensity => Info?.V14 ?? 0;
 
     /// <summary>IsInGuild (@0x1413b6160): the guild id above 0 (unsigned).</summary>
     public bool InGuild => GuildId != 0;
@@ -256,6 +275,12 @@ public sealed class GuildBook
                 RequestsForGuildRefresh?.Invoke();
                 break;
             }
+            case 0x44:
+                // FUN_1413bf2a0 (guildmanager.cpp:1855): in a guild, the propensity focus and value.
+                if (!InGuild || Info == null) break;
+                Info.B3 = m.Focus;
+                Info.V14 = m.Value;
+                break;
             case 0x2f:
             {
                 // FUN_1413c6180 (@0x1413c6180): the first request of the id is removed, the dialog draws the list again
@@ -341,6 +366,129 @@ public sealed class GuildBook
         if (!IsMaster(myName)) return false;
         Send(new GuildBreakRequest());
         return true;
+    }
+
+    /// <summary>ShowSystemNotice(text, 1, 1) for the guild dialog.</summary>
+    public void ShowNotice(string text) => Notice?.Invoke(text, 1, true);
+
+    /// <summary>FUN_141275260 (@0x141275260): the notice of a common string, none when the string is empty.</summary>
+    void NoticeId(int id)
+    {
+        string text = Common(id);
+        if (text.Length > 0) Notice?.Invoke(text, 1, true);
+    }
+
+    /// <summary>CheckContentText of the client's FUN_1413b7c70 and SendGuildMode13: a refused text is its notice.</summary>
+    bool ContentPasses(string text)
+    {
+        if (CheckContent?.Invoke(text) is not { } message) return true;
+        Notice?.Invoke(message, 1, true);
+        return false;
+    }
+
+    /// <summary>FUN_1413b71c0 (@0x1413b71c0, :454): invite a character. No local player is false; CheckName(name, true)
+    /// refuses the own name (10: the notice of common 0x38d) and a banned one (common 0x38e); outside a guild false;
+    /// without the invite right (2) the notice of common 0x415; a full guild the box of common 0x40f (FUN_140d73bc0);
+    /// else the sound PC_InviteSuccess and the send.</summary>
+    public bool Invite(string name)
+    {
+        name ??= "";
+        string myName = PlayerName();
+        if (string.IsNullOrEmpty(myName)) return false;
+        bool self = string.Equals(name, myName, StringComparison.OrdinalIgnoreCase);
+        if (self || BannedName?.Invoke(name) == true) { NoticeId(self ? 0x38d : 0x38e); return false; }
+        if (!InGuild) return false;
+        if (!HasMemberPermission(myName, 2)) { NoticeId(0x415); return false; }
+        if (MemberCount >= Capacity) { Box?.Invoke(Common(0x40f)); return false; }
+        Sound?.Invoke("PC_InviteSuccess");
+        Send(new GuildInviteRequest(name));
+        return true;
+    }
+
+    /// <summary>SendGuildMode8 (@0x1413b76c0): expel a member — not the own name, in a guild, with the expel right (4),
+    /// and not the master.</summary>
+    public void Expel(string name)
+    {
+        name ??= "";
+        string myName = PlayerName();
+        if (string.IsNullOrEmpty(myName)) return;
+        if (string.Equals(myName, name, StringComparison.OrdinalIgnoreCase)) return;
+        if (!InGuild) return;
+        if (!HasMemberPermission(myName, 4)) return;
+        if (IsMaster(name)) return;
+        Send(new GuildExpelRequest(name));
+    }
+
+    /// <summary>SendGuildMode10 (@0x1413b78c0): set a member's grade — a name of 2 to 0x18 characters (else the client
+    /// asserts), in a guild, a grade above 0 and not past GetMaxGradeIndex, with the grade right (0x20).</summary>
+    public void SetMemberGrade(string name, int grade)
+    {
+        name ??= "";
+        if (name.Length < 2 || name.Length > 0x18) return;
+        string myName = PlayerName();
+        if (string.IsNullOrEmpty(myName)) return;
+        if (!InGuild) return;
+        if (grade <= 0 || grade > MaxGradeIndex) return;
+        if (!HasMemberPermission(myName, 0x20)) return;
+        Send(new GuildMemberGradeRequest(name, grade));
+    }
+
+    /// <summary>SendGuildMode63 (@0x1413b7ad0): hand the master over — not the own name, in a guild, from the master.</summary>
+    public void ChangeMaster(string name)
+    {
+        name ??= "";
+        string myName = PlayerName();
+        if (string.IsNullOrEmpty(myName)) return;
+        if (string.Equals(myName, name, StringComparison.OrdinalIgnoreCase)) return;
+        if (!InGuild) return;
+        if (!IsMaster(myName)) return;
+        Send(new GuildChangeMasterRequest(name));
+    }
+
+    /// <summary>FUN_1413b7c70 (@0x1413b7c70): a guild text of a kind. In a guild; kind 0 at most 1000 characters from the
+    /// master; kind 1 (the notice) at most 300 from a member with the notice right (8) and no banned word; then
+    /// CheckContentText (a refusal is its notice) and the send.</summary>
+    public bool SendText(int kind, string text)
+    {
+        text ??= "";
+        string myName = PlayerName();
+        if (string.IsNullOrEmpty(myName)) return false;
+        if (!InGuild) return false;
+        if (kind == 0)
+        {
+            if (text.Length > 1000 || !IsMaster(myName)) return false;
+        }
+        else if (kind == 1)
+        {
+            if (text.Length > 300 || !HasMemberPermission(myName, 8)) return false;
+            if (BannedWord?.Invoke(text) == true) return false;
+        }
+        if (!ContentPasses(text)) return false;
+        Send(new GuildTextRequest(kind, text));
+        return true;
+    }
+
+    /// <summary>SendGuildMode13 (@0x1413b80d0): the own memo — in a guild, at most 0x14 characters, CheckContentText.</summary>
+    public bool SetMemo(string text)
+    {
+        text ??= "";
+        if (!InGuild) return false;
+        if (text.Length > 0x14) return false;
+        if (!ContentPasses(text)) return false;
+        Send(new GuildMemoRequest(text));
+        return true;
+    }
+
+    /// <summary>SendGuildMode68 (@0x1413b8e60): the guild's propensity — in a guild, not the one it has, with the invite
+    /// right (2).</summary>
+    public void SetPropensity(int focus, int value)
+    {
+        string myName = PlayerName();
+        if (string.IsNullOrEmpty(myName)) return;
+        if (!InGuild) return;
+        if (PropensityFocus == focus && Propensity == value) return;
+        if (!HasMemberPermission(myName, 2)) return;
+        Send(new GuildPropensityRequest(focus, value));
     }
 
     /// <summary>SendGuildMode86 (@0x1413bc6a0): not in a guild, ask for this character's join requests.</summary>

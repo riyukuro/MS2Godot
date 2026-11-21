@@ -146,4 +146,25 @@ public class GuildPacketTests {
         Assert.That(g.Grades.Select(x => (x.Grade, x.Name, x.Permissions)), Is.EqualTo(new[] { (0, "Master", 4095), (1, "Member", 8) }));
         Assert.That(g.Skills.Single(), Is.EqualTo(new GuildSkillState(3, 2, 0)));
     }
+
+    [Test]
+    public void TheMemberSendsWriteTheirModeAndFields() {
+        // guildmanager.cpp FUN_1413b71c0 (u8 3), SendGuildMode8 (8), SendGuildMode10 (10, u8 grade), SendGuildMode63 (0x3f),
+        // FUN_1413b7c70 (0x40, u8 kind), SendGuildMode13 (0xd), SendGuildMode68 (0x44, u8 focus, i32 value)
+        Assert.That(new GuildInviteRequest("Bo").Op, Is.EqualTo(Outbound.Guild));
+        Assert.That(Bytes(new GuildInviteRequest("Bo")), Is.EqualTo(Cat(new byte[] { 3 }, Str("Bo"))));
+        Assert.That(Bytes(new GuildExpelRequest("Bo")), Is.EqualTo(Cat(new byte[] { 8 }, Str("Bo"))));
+        Assert.That(Bytes(new GuildMemberGradeRequest("Bo", 2)), Is.EqualTo(Cat(new byte[] { 10 }, Str("Bo"), new byte[] { 2 })));
+        Assert.That(Bytes(new GuildChangeMasterRequest("Bo")), Is.EqualTo(Cat(new byte[] { 0x3f }, Str("Bo"))));
+        Assert.That(Bytes(new GuildTextRequest(1, "hi")), Is.EqualTo(Cat(new byte[] { 0x40, 1 }, Str("hi"))));
+        Assert.That(Bytes(new GuildMemoRequest("hi")), Is.EqualTo(Cat(new byte[] { 0xd }, Str("hi"))));
+        Assert.That(Bytes(new GuildPropensityRequest(1, 0x204)), Is.EqualTo(new byte[] { 0x44, 1, 4, 2, 0, 0 }));
+    }
+
+    [Test]
+    public void ThePropensityTypeReadsTheFocusAndValue() {
+        // FUN_1413bf2a0 (guildmanager.cpp:1855): u8 focus, i32 value
+        var m = GuildMessage.Read(R(w => { w.WriteByte(0x44); w.WriteByte(1); w.WriteInt(0x204); }));
+        Assert.That((m.Type, m.Focus, m.Value), Is.EqualTo(((byte)0x44, 1, 0x204)));
+    }
 }
