@@ -19,6 +19,7 @@ public enum StatusEvent
     Unknown10 = 10,
     Merat = 11,     // the merat balance
     RedMerat = 13,  // the red merat balance (OnMeretUse's NotifyStatusChanged(0xd), scenestategame.cpp:7089)
+    TokenMoney = 0x14,      // NotifyChangedTokenMoney (OnCurrencyToken, scenestategame.cpp:7114)
     AdventureLevel = 0x11,  // Prestige kind 2 for the player (listener vfunc_oa0_30)
     AdventureExp = 0x12,    // Prestige kind 1 (vfunc_oa0_31)
 }

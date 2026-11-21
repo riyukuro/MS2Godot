@@ -21,6 +21,8 @@ public sealed class CurrencyFeed(UiModel model)
     public Action<long> MeratRedNotice;
     /// <summary>NotifyChangedTokenMoney: the token pocket redraws its amounts.</summary>
     public Action TokenChanged;
+    /// <summary>Unk_SSGFormatMsg(0x2f6, 1, 1, ...): a centre notice.</summary>
+    public Action<string> Notice;
 
     PlayerState Pc => model.Player;
 
@@ -72,8 +74,8 @@ public sealed class CurrencyFeed(UiModel model)
     };
 
     /// <summary>The balance is stored for the types the client's switch knows, a positive delta adds the take line (kind 7),
-    /// then the token pocket is told (NotifyChangedTokenMoney). STILL-OPEN: a nonzero overflow amount shows string 0x2f6
-    /// with the currency item's name (GetCurrencyItemId has no body in the source).</summary>
+    /// then the token pocket is told (NotifyChangedTokenMoney); a nonzero overflow amount shows string 0x2f6 with the
+    /// currency item's name (GetCurrencyItemId(type, 99)).</summary>
     public void OnCurrencyToken(CurrencyTokenUpdate m)
     {
         int currency = CurrencyOf(m.Type);
@@ -84,6 +86,12 @@ public sealed class CurrencyFeed(UiModel model)
             string text = fmt == null ? "" : ClientFormat.Format(fmt, m.Delta.ToString());
             Line?.Invoke(text, TalkKind.Token);
         }
+        model.Notify(StatusEvent.TokenMoney);
         TokenChanged?.Invoke();
+        if (m.Overflow != 0)
+        {
+            string name = model.Tables.ItemName(TokenCurrency.ItemId(m.Type, 99)) ?? "";
+            Notice?.Invoke(ClientFormat.Format(model.Tables.Common(0x2f6), name, m.Overflow.ToString()));
+        }
     }
 }
