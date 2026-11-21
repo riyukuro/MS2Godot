@@ -153,4 +153,32 @@ public class SkillSlotStateTests
         expired.Level = 30;
         Assert.That(new SkillSlotState(expired, 0, 30000002, 9).IsDisabled(0), Is.True);
     }
+    [Test]
+    public void AClickedSlotPressesItsKeyElseCastsAsTheClientDoes()
+    {
+        // SkillSlot::vfunc_13 @0x14175cdd0 (skillslot.cpp:399): the item checks, then the key (FUN_141bc9fd0), else the skill
+        // (FUN_14092f4e0) after the job level data's sequence check
+        const string Plain = "<skill id=\"101\"><basic mainType=\"1\"/><level value=\"1\"/></skill>";
+        var t = Skills(Attack, Plain);
+        var w = World(t, new EquipItem { Id = 30000002, Uid = 9 });
+        w.HasPc = true;
+        Assert.That(new SkillSlotState(w, 100, 0, 0).Click(30), Is.EqualTo(new SlotClick(SlotClickKind.Press, 30)));
+        Assert.That(new SkillSlotState(w, 101, 0, 0).Click(0), Is.EqualTo(new SlotClick(SlotClickKind.Cast, 101)));
+        Assert.That(new SkillSlotState(w, 100, 0, 0).Click(0),
+            Is.EqualTo(new SlotClick(SlotClickKind.NoticeText, 0, SkillSlotState.InvalidShortkeyKey)), "a level with a sequence");
+        Assert.That(new SkillSlotState(w, 999, 0, 0).Click(0).Kind, Is.EqualTo(SlotClickKind.None), "no skill row");
+        w.SkillSetActive = true;
+        Assert.That(new SkillSlotState(w, 100, 0, 0).Click(0), Is.EqualTo(new SlotClick(SlotClickKind.Cast, 100)), "a skill set skips it");
+        w.SkillSetActive = false;
+        w.HasPc = false;
+        Assert.That(new SkillSlotState(w, 101, 0, 0).Click(0).Kind, Is.EqualTo(SlotClickKind.None), "no PC");
+        w.HasPc = true;
+
+        // an item slot: gone from the bag = notice 0xe6 (before the key); under its level limit = not enough level
+        Assert.That(new SkillSlotState(w, 0, 20000001, 77).Click(30), Is.EqualTo(new SlotClick(SlotClickKind.Notice, SkillSlotState.ItemGoneNotice)));
+        Assert.That(new SkillSlotState(w, 0, 30000002, 9).Click(30),
+            Is.EqualTo(new SlotClick(SlotClickKind.NoticeText, 0, SkillSlotState.NotEnoughLevelKey)));
+        w.Level = 30;
+        Assert.That(new SkillSlotState(w, 0, 30000002, 9).Click(30), Is.EqualTo(new SlotClick(SlotClickKind.Press, 30)));
+    }
 }

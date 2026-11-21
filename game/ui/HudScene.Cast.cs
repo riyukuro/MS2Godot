@@ -33,22 +33,46 @@ public partial class HudScene
     /// </summary>
     bool CastKeys(InputEvent e)
     {
-        if (e is not InputEventKey { Pressed: true, Echo: false } k || UiFocus.IsTyping || hudModel?.Keys is not { } keys) return false;
-        var slots = hudModel.ServerKeys;
+        if (e is not InputEventKey { Pressed: true, Echo: false } k || UiFocus.IsTyping || hudModel?.Keys == null) return false;
         for (int dik = 1; dik < 0xd4; dik++)
         {
             if (GodotKeyOfDik(dik) != k.PhysicalKeycode) continue;
-            if (keys.GetQuickSlotItemUidByKey(dik, slots) != 0) return false;
-            castKeyWorld = QuickSlotWorld();
-            castKeyHeld = castKeyWorld.Weapon is { } h ? weaponActions.FindAction(h.Right, h.Left) : null;
-            // STILL-OPEN: the right-hand item's own skill (an action whose normalAttack is 0) is not read; 0 here
-            castAttackSkill ??= () => (int)SkillCast.AttackKeySkill(castKeyWorld, castWorld, castKeyHeld, weaponActions, 0);
-            int id = keys.GetSkillIdByKey(dik, castKeyWorld.HasPc, castAttackSkill, null, slots);
-            if (id == 0) continue;
-            CastOwn(castKeyWorld, (uint)id, castKeyHeld);
-            return true;
+            if (CastKey(dik) is { } r) return r;
         }
         return false;
+    }
+
+    /// <summary>One key of <see cref="CastKeys"/>: false when its quick slot holds an item (the press stops), null when the key
+    /// gives no skill, true when it went to <see cref="CastOwn"/>.</summary>
+    bool? CastKey(int dik)
+    {
+        if (hudModel?.Keys is not { } keys) return null;
+        var slots = hudModel.ServerKeys;
+        if (keys.GetQuickSlotItemUidByKey(dik, slots) != 0) return false;
+        castKeyWorld = QuickSlotWorld();
+        castKeyHeld = castKeyWorld.Weapon is { } h ? weaponActions.FindAction(h.Right, h.Left) : null;
+        // STILL-OPEN: the right-hand item's own skill (an action whose normalAttack is 0) is not read; 0 here
+        castAttackSkill ??= () => (int)SkillCast.AttackKeySkill(castKeyWorld, castWorld, castKeyHeld, weaponActions, 0);
+        int id = keys.GetSkillIdByKey(dik, castKeyWorld.HasPc, castAttackSkill, null, slots);
+        if (id == 0) return null;
+        CastOwn(castKeyWorld, (uint)id, castKeyHeld);
+        return true;
+    }
+
+    /// <summary>
+    /// A clicked quick slot (SkillSlot::vfunc_13): its key, which WorldService::FUN_141bc9fd0 (worldservice_1.cpp:724) queues as
+    /// pressed, goes the key's way (<see cref="CastKey"/>); a slot without a key gives FUN_14092f4e0's skill
+    /// (<see cref="QuickSlotEdit.UseSkill"/>) to the cast request. STILL-OPEN: the queue itself (the press is read on the next
+    /// world tick there, at once here).
+    /// </summary>
+    void ClickedSlotKey(int dik) => CastKey(dik);
+
+    void ClickedSlotSkill(uint skillId)
+    {
+        var w = QuickSlotWorld();
+        if (!QuickSlotEdit.UseSkill(w, skillId)) return;
+        var held = w.Weapon is { } h ? weaponActions.FindAction(h.Right, h.Left) : null;
+        CastOwn(w, skillId, held);
     }
     SlotWorld castKeyWorld;
     WeaponAction castKeyHeld;

@@ -419,4 +419,45 @@ public sealed record SkillSlotState(SlotWorld W, uint SkillId, int ItemId, long 
     /// <summary>IsPcBangItem @0x141760590 / FUN_141760610 (VIP): of the found item.</summary>
     public bool IsPcBangItem => Item() is { } it && W.ItemData(it.Id) is { PCBang: true };
     public bool IsVipItem => Item() is { } it && W.ItemData(it.Id) is { Vip: true };
+
+    /// <summary>FUN_141275260(0xe6, 1, 1): the notice of a clicked item slot whose item is gone.</summary>
+    public const int ItemGoneNotice = 0xe6;
+    /// <summary>The ShowSystemNotice text keys of the click (GetStringCommonByKey).</summary>
+    public const string NotEnoughLevelKey = "s_err_not_enough_level", InvalidShortkeyKey = "s_err_invalid_shortkey_code";
+
+    /// <summary>
+    /// SkillSlot::vfunc_13 @0x14175cdd0 (skillslot.cpp:399), the click to use, with the slot's key (GetHotkey(0)):
+    /// - the slot's item (vfunc_25, <see cref="Item"/>): none while the slot holds an item id and uid: notice 0xe6, stop; an item
+    ///   the PC's level cannot use (CItem::CanUseAtLevel, <see cref="ItemData.IsLevelAllowed"/>): s_err_not_enough_level, stop;
+    /// - a key: WorldService::FUN_141bc9fd0(key) (worldservice_1.cpp:724) queues that key as pressed (<see cref="SlotClickKind.Press"/>);
+    /// - no key: the effective skill's row and a PC are needed; without a skill set, the job's level data (JobSystemCli vfunc_1)
+    ///   is needed and a level with a sequence gives s_err_invalid_shortkey_code; then FUN_14092f4e0 of the slot's own skill id
+    ///   (<see cref="SlotClickKind.Cast"/>, <see cref="QuickSlotEdit.UseSkill"/>).
+    /// The slot is pushed again after (vfunc_10). STILL-OPEN: FUN_14175f200's tween first.
+    /// </summary>
+    public SlotClick Click(int hotkey)
+    {
+        var item = Item();
+        if (item == null)
+        {
+            if (ItemId != 0 && ItemUid != 0) return new(SlotClickKind.Notice, ItemGoneNotice);
+        }
+        else if (W.HasPc && W.ItemData(item.Id) is { } d && !d.IsLevelAllowed(W.Level))
+            return new(SlotClickKind.NoticeText, 0, NotEnoughLevelKey);
+        if (hotkey != 0) return new(SlotClickKind.Press, hotkey);
+        uint skill = EffectiveSkillId;
+        if (Skill(skill) == null || !W.HasPc) return default;
+        if (!W.SkillSetActive)
+        {
+            if (W.Jobs?.LevelData(skill) is not { } lv) return default;
+            if (lv.HasSequenceName) return new(SlotClickKind.NoticeText, 0, InvalidShortkeyKey);
+        }
+        return new(SlotClickKind.Cast, (int)SkillId);
+    }
 }
+
+/// <summary>What a quick slot click does (<see cref="SkillSlotState.Click"/>).</summary>
+public enum SlotClickKind { None, Notice, NoticeText, Press, Cast }
+
+/// <summary>A quick slot click: a notice id, a notice text key, the key to press, or the skill to use.</summary>
+public readonly record struct SlotClick(SlotClickKind Kind, int Value = 0, string TextKey = null);

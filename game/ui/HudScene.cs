@@ -2172,6 +2172,10 @@ public partial class HudScene : Node, IUiStageHost
                 else GD.Print($"quick slot: offline, not sent: {packet}");
             },
             Notice = id => SystemNoticeText(hudModel.Tables.Common(id)),
+            NoticeText = key => SystemNoticeText(hudModel.Tables.Common(key)),
+            ShiftHeld = () => Input.IsKeyPressed(Key.Shift),
+            PressKey = ClickedSlotKey,
+            UseSkill = ClickedSlotSkill,
         };
         OwnBuffs();
         ui.AddChild(playerInfoMovie = new MovieDialog(assets, playerInfo, hudModel, window));

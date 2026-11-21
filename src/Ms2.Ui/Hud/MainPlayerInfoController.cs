@@ -448,18 +448,47 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         Host.Push(SlotBag + "." + i);
     }
 
+    /// <summary>A clicked slot's key press (WorldService::FUN_141bc9fd0: the key queued as pressed).</summary>
+    public Action<int> PressKey = _ => { };
+    /// <summary>A clicked slot's skill without a key (FUN_14092f4e0, <see cref="Skills.QuickSlotEdit.UseSkill"/>).</summary>
+    public Action<uint> UseSkill = _ => { };
+    /// <summary>GetKeyState(VK_SHIFT) &amp; 0x8000.</summary>
+    public Func<bool> ShiftHeld = () => false;
+    /// <summary>ShowSystemNotice(GetStringCommonByKey(key), 1, 1).</summary>
+    public Action<string> NoticeText = _ => { };
+
     /// <summary>
-    /// NotifyDragSlot::SlotUse @0x142302210 (notifydragslot.cpp:33) for a quick slot: button 1 (the right click) is vfunc_14,
-    /// SkillSlot keeping DragSlot's vfunc_19 (0). STILL-OPEN: button 0's vfunc_13 (the click to use) is not ported here and
-    /// stays unhandled.
+    /// SkillSlot::vfunc_13 @0x14175cdd0 (skillslot.cpp:399), the click to use: <see cref="Skills.SkillSlotState.Click"/> of the
+    /// current page's entry with the slot's key (<see cref="Hotkey"/>), then the slot pushed again (vfunc_10).
+    /// </summary>
+    public void UseSlot(int i)
+    {
+        if (i < 0 || i >= SlotCount) return;
+        var e = Model.ServerKeys is { } t ? t.Entry(t.CurrentPage, i) : default;
+        var click = new Skills.SkillSlotState(World(), (uint)e.SkillId, e.ItemId, e.ItemUid).Click(Hotkey(i));
+        switch (click.Kind)
+        {
+            case Skills.SlotClickKind.Notice: Notice(click.Value); break;
+            case Skills.SlotClickKind.NoticeText: NoticeText(click.TextKey); break;
+            case Skills.SlotClickKind.Press: PressKey(click.Value); break;
+            case Skills.SlotClickKind.Cast: UseSkill((uint)click.Value); break;
+        }
+        Host.Push(SlotBag + "." + i);
+    }
+
+    /// <summary>
+    /// NotifyDragSlot::SlotUse @0x142302210 (notifydragslot.cpp:33) for a quick slot: button 0 without shift (GetKeyState(VK_SHIFT),
+    /// <see cref="ShiftHeld"/>) is vfunc_13 (<see cref="UseSlot"/>),
+    /// button 1 (the right click) vfunc_14 (<see cref="RemoveSlot"/>), SkillSlot keeping DragSlot's vfunc_19 (0).
     /// </summary>
     bool SlotUse(object[] args)
     {
         int i = SlotIndex(args.ElementAtOrDefault(0) as string);
         if (i < 0) return false;
         int button = args.Length < 2 ? 0 : Convert.ToInt32(args[1], System.Globalization.CultureInfo.InvariantCulture);
-        if (button != 1) return false;
-        RemoveSlot(i);
+        if (button == 0) { if (!ShiftHeld()) UseSlot(i); }
+        else if (button == 1) RemoveSlot(i);
+        else return false;
         return true;
     }
 

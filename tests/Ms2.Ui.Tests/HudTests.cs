@@ -206,7 +206,20 @@ public class HudTests
         Assert.That(sent, Is.EqualTo(new[] { new KeyTableSetQuickSlotRequest(0, 10500001, 0, 0, 5) }));
         Assert.That((t.Entry(0, 3), t.Entry(0, 5)), Is.EqualTo((new QuickSlotEntry(10500002, 0, 0), new QuickSlotEntry(10500001, 0, 0))));
 
-        Assert.That(c.OnCallback("notifySlotUse", new object[] { s3, 0.0 }), Is.False);   // the click to use: not here
+        // button 0 (vfunc_13): the slot's key is pressed (FUN_141bc9fd0), else its skill used; with shift held, nothing
+        var pressed = new List<int>();
+        var used = new List<uint>();
+        c.PressKey = pressed.Add;
+        c.UseSkill = used.Add;
+        c.ShiftHeld = () => true;
+        Assert.That(c.OnCallback("notifySlotUse", new object[] { s3, 0.0 }), Is.True);
+        Assert.That(pressed.Count + used.Count, Is.Zero);
+        c.ShiftHeld = () => false;
+        Assert.That(c.OnCallback("notifySlotUse", new object[] { s3, 0.0 }), Is.True);
+        int key3 = m.Keys.FindKeyByQuickSlot(3, 0);
+        Assert.That(key3, Is.Not.Zero);
+        Assert.That(pressed, Is.EqualTo(new[] { key3 }));
+        Assert.That(sent, Has.Count.EqualTo(1), "a click sends no edit");
         Assert.That(c.OnCallback("notifySlotUse", new object[] { s3, 1.0 }), Is.True);
         Assert.That(sent[1], Is.EqualTo(new KeyTableRemoveQuickSlotRequest(0, 10500002, 0)));
         Assert.That(t.Entry(0, 3), Is.EqualTo(default(QuickSlotEntry)));

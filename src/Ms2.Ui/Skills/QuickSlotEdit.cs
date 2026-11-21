@@ -67,6 +67,15 @@ public static class QuickSlotEdit
         return true;
     }
 
+    /// <summary>
+    /// FUN_14092f4e0 @0x14092f4e0 (unit_14092f420_accountsessionstate.cpp:314), a clicked skill slot without a key: the bag's item
+    /// of the skill first (Unk_Inventory::FUN_140a62d30, inventory.cpp:1310), else a skill the job knows (JobSystemCli vfunc_2,
+    /// <see cref="JobSystem.IsLearned"/>) goes to the cast request (MyPC::FUN_141525480 with the level's sequence flag). True when
+    /// the skill goes to the cast request.
+    /// STILL-OPEN: the item skill path (FUN_140a62d30's skill record with the item uid) and the skill's m_bBlocked refusal.
+    /// </summary>
+    public static bool UseSkill(SlotWorld w, uint skillId) => w.Jobs != null && w.Jobs.IsLearned(skillId);
+
     /// <summary>The first bag item that matches (Unk_Inventory's lookups walk the bag; the first match is kept).</summary>
     static EquipItem FindItem(SlotWorld w, Func<EquipItem, bool> match)
     {
