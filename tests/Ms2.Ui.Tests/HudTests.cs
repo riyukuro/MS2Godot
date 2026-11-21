@@ -1174,6 +1174,41 @@ public class HudTests
     }
 
     [Test]
+    public void MinimapClickAndRightClickOnTheDialogSendPings()
+    {
+        // OnLoadComplete (uiminimapentity.cpp:1127-1131): m_90, the dialog root (uidialog.cpp:930-935), gets "click" ->
+        // FUN_141a456c0 -> SendMinimapPing(0) and "rightClick" -> FUN_141a45720 -> SendMinimapPing(1); SendMinimapPing
+        // (:2545-2564) sends 0xB1 with the movie's getLocal() x, y and z 0 when mouseContains() is true
+        var (c, h) = PingMinimap(true, new List<string>());
+        var sent = new List<Ms2.Net.Wire.IOutPacket>();
+        c.Send = sent.Add;
+        c.CharacterId = 77;
+        var root = h.Entity;
+        double N(string k) => System.Convert.ToDouble(h.Get(root, k));
+        var (x, y) = (N("x") + N("m_windowWidth") / 2, N("y") + N("m_windowHeight") / 2);
+        h.Player.Click(x, y);
+        Assert.That(h.RT.Errors, Is.Empty);
+        Assert.That(sent, Has.Count.EqualTo(1), "a left click on the dialog sends one ping");
+        var local = (AsObject)h.Invoke("getLocal");
+        var at = new System.Numerics.Vector3((float)System.Convert.ToDouble(h.Get(local, "x")), (float)System.Convert.ToDouble(h.Get(local, "y")), 0);
+        var red = (MinimapPingRequest)sent[0];
+        Assert.That((red.CharacterId, red.Kind, red.Position), Is.EqualTo((77L, (byte)0, at)));
+        h.Player.MouseButton(true, Player.RightButton);
+        h.Player.MouseButton(false, Player.RightButton);
+        Assert.That(sent, Has.Count.EqualTo(2), "a right click on the dialog sends one ping");
+        var blue = (MinimapPingRequest)sent[1];
+        Assert.That((blue.CharacterId, blue.Kind, blue.Position), Is.EqualTo((77L, (byte)1, at)));
+        // a second OnLoadComplete on the same movie does not add the listeners again
+        c.OnLoadComplete();
+        h.Player.Click(x, y);
+        Assert.That(sent, Has.Count.EqualTo(3), "one click, one ping after a second OnLoadComplete");
+        // outside the window mouseContains() is false: nothing
+        h.Player.Click(N("x") + N("m_windowWidth") + 50, N("y") + N("m_windowHeight") + 50);
+        Assert.That(sent, Has.Count.EqualTo(3));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
     public void MinimapRebuildRemovesThePings()
     {
         // RemoveAllEntities: RemovePingEntities (@0x141a47190) removes each ping's clip, ClearEntityContainers drops m_pings

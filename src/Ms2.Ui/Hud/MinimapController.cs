@@ -85,21 +85,26 @@ public sealed class MinimapController : UiController
     /// <summary>
     /// OnLoadComplete (uiminimapentity.cpp:1104): UIDialog's, then BuildUIData and BuildField; last (:1127-1131), when the
     /// field allows pings, the dialog root's "click" (FUN_1422c2a70, asmovieclip.cpp:236) sends a red ping and its
-    /// "rightClick" (FUN_1422c2c30, asmovieclip.cpp:268) a blue one.
+    /// "rightClick" (FUN_1422c2c30, asmovieclip.cpp:268) a blue one. The client adds them to m_90, which UIDialog::vfunc_41
+    /// (uidialog.cpp:930-935) makes from m_30's own value, so it is the same AS object as m_30: the dialog root, which is
+    /// Host.Entity. The client loads a movie once per OnLoadComplete; here the listeners are added once per root object,
+    /// because each Invoke wraps the delegates anew and AS3 would not see a second add as the same listener.
     /// </summary>
     public override void OnLoadComplete()
     {
         base.OnLoadComplete();
         BuildUIData();
         BuildField();
-        if (PingAllowed && Host.Entity != null)
+        if (PingAllowed && Host.Entity != null && !ReferenceEquals(pingListenersOn, Host.Entity))
         {
+            pingListenersOn = Host.Entity;
             Host.Invoke(Host.Entity, "addEventListener", "click", redPing ??= _ => { RedPing(); return null; }, false, 0, false);
             Host.Invoke(Host.Entity, "addEventListener", "rightClick", bluePing ??= _ => { BluePing(); return null; }, false, 0, false);
         }
     }
 
     Func<object[], object> redPing, bluePing;
+    object pingListenersOn;
 
     // ---- pings ---------------------------------------------------------------------------------------------------------
 
