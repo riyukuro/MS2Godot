@@ -58,30 +58,17 @@ public class GameEventPacketTests
     }
 
     [Test]
-    public void OtherTypeIsPassedOverToTheNextShutdown()
+    public void ReadingStopsAtTheFirstTypeNotPorted()
     {
+        // only GameEventShutdownInteractObjectId's body is ported; the entries after another type are not read
         var m = GameEventMessage.Read(Reader(w =>
         {
             w.WriteByte(1); w.WriteInt(3);
-            w.WriteUnicodeString("StringBoard"); w.WriteInt(3); w.WriteUnicodeString("x"); w.WriteInt(0);
             Shutdown(w, 4, (2000003, 1));
+            w.WriteUnicodeString("StringBoard"); w.WriteInt(3); w.WriteUnicodeString("x"); w.WriteInt(0);
             Shutdown(w, 5, (2000003, 2));
         }));
         Assert.That(m.Truncated, Is.True);
-        Assert.That(m.Shutdowns.Select(e => e.Id), Is.EqualTo(new[] { 4, 5 }));
-        Assert.That(m.Shutdowns[1].Objects, Is.EqualTo(new[] { (2000003u, 2) }));
-    }
-
-    [Test]
-    public void ShortLookAlikeDoesNotThrow()
-    {
-        var m = GameEventMessage.Read(Reader(w =>
-        {
-            w.WriteByte(0); w.WriteInt(2);
-            w.WriteUnicodeString("Other");
-            w.WriteUnicodeString(GameEventMessage.ShutdownInteractObjectName); w.WriteInt(1);
-        }));
-        Assert.That(m.Truncated, Is.True);
-        Assert.That(m.Shutdowns, Is.Empty);
+        Assert.That(m.Shutdowns.Select(e => e.Id), Is.EqualTo(new[] { 4 }));
     }
 }

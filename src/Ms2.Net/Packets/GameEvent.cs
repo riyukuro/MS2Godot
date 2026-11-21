@@ -15,25 +15,14 @@ public sealed record ShutdownInteractObjectEvent(int Id, IReadOnlyList<(uint Fie
 /// 3 (Packet3, replaced): as 0, each Updated (:236-242).
 /// Every body starts with GameEvent::vfunc_4's i32 id (gameeventbase.cpp:196-199).
 /// Only GameEventShutdownInteractObjectId is read (vfunc_4, gameevent.cpp:4306-4317: i32 count; each: u32 field id,
-/// i32 object id). The other types' bodies are not ported, so after one of them the reader cannot step to the next
-/// entry the way the client does; it looks for the next entry whose name is ShutdownInteractObjectId (a u16 length 24
-/// followed by that name in UTF-16) and reads on from there. Truncated is set when entries were passed over that way.
+/// i32 object id). The other types' bodies are not ported, so the reader stops at the first entry of another type and
+/// sets Truncated; the entries after it are not read.
+/// STILL-OPEN: the other GameEvent types' vfunc_4 bodies (gameevent.cpp).
 /// </summary>
 public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractObjectEvent> Shutdowns, IReadOnlyList<int> RemovedIds,
     bool Truncated)
 {
     public const string ShutdownInteractObjectName = "ShutdownInteractObjectId";
-
-    static readonly byte[] Marker = BuildMarker();
-
-    static byte[] BuildMarker()
-    {
-        var b = new byte[2 + ShutdownInteractObjectName.Length * 2];
-        b[0] = (byte)ShutdownInteractObjectName.Length;
-        for (int i = 0; i < ShutdownInteractObjectName.Length; i++)
-            b[2 + i * 2] = (byte)ShutdownInteractObjectName[i];
-        return b;
-    }
 
     public static GameEventMessage Read(ByteReader r)
     {
@@ -53,24 +42,10 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
                     string name = r.ReadUnicodeString();
                     if (name != ShutdownInteractObjectName)
                     {
-                        truncated = true;
+                        truncated = true;     // a type whose body is not ported: its length is unknown, stop here
                         break;
                     }
                     shutdowns.Add(ReadShutdown(r));
-                }
-                if (truncated)
-                {
-                    var rest = r.Buffer.AsSpan(r.Position, r.Available);
-                    int at;
-                    while ((at = rest.IndexOf(Marker)) >= 0)
-                    {
-                        var tail = new ByteReader(rest.Slice(at + Marker.Length).ToArray());
-                        ShutdownInteractObjectEvent e;
-                        try { e = ReadShutdown(tail); }
-                        catch (Exception) { break; }      // a look-alike that runs past the end
-                        shutdowns.Add(e);
-                        rest = rest.Slice(at + Marker.Length + tail.Position);
-                    }
                 }
                 break;
             }

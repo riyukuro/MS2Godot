@@ -84,11 +84,11 @@ public partial class LiveSession
     }
 
     /// <summary>GameEvent 0xB2 (GameEventManagerCli::Dispatch, gameeventmanagercli.cpp:77): the shutdown events are applied.
-    /// STILL-OPEN: the other event types are not read (the reader looks past them for the next shutdown entry).</summary>
+    /// STILL-OPEN: the other event types are not read; the reader stops at the first one (Truncated).</summary>
     void OnGameEvent(GameEventMessage m)
     {
         InteractShutdowns.Apply(m);
-        GD.Print($"live: GameEvent kind {m.Kind}: {m.Shutdowns.Count} shutdown events, {m.RemovedIds.Count} removed{(m.Truncated ? ", other types passed over" : "")}");
+        GD.Print($"live: GameEvent kind {m.Kind}: {m.Shutdowns.Count} shutdown events, {m.RemovedIds.Count} removed{(m.Truncated ? ", stopped at a type not ported" : "")}");
     }
 
     void OnInteractNpc(InteractNpcMessage m)
