@@ -22,8 +22,11 @@ public interface IInteractNpcHost
     /// from the states <see cref="LiveInteractObjects.StateAllowsInteraction"/> names (mypc.cpp:1873-1882).</summary>
     int PlayerStateId { get; }
     void Send(IOutPacket packet);
-    /// <summary>UICastingBar 0x4e72 StartCasting with Unk_CastingParam m_nDuration / m_b5 (gauge drawn).</summary>
-    void StartCasting(ICastingEventListener listener, int durationMs, bool showBar);
+    /// <summary>UICastingBar 0x4e72 StartCasting with Unk_CastingParam m_nDuration / m_b5 (gauge drawn). False when there
+    /// is no casting bar; the casting time then runs on <see cref="NowMs"/>.</summary>
+    bool StartCasting(ICastingEventListener listener, int durationMs, bool showBar);
+    /// <summary>The game's millisecond clock.</summary>
+    long NowMs { get; }
     /// <summary>UICastingBar 0x4e72 FUN_1418e1390 (cancel).</summary>
     void CancelCasting();
     void PlayPlayerAnim(string animName, bool loop);
@@ -58,6 +61,7 @@ public sealed class LiveInteractNpc : ICastingEventListener
     InteractNpcEntry polled;
     int castingNpc;
     bool castingActive, castingFinished;
+    long castEndMs;     // the cast's end on NowMs when no casting bar runs it; 0 otherwise
 
     public LiveInteractNpc(IInteractNpcHost host) { this.host = host; }
 
@@ -211,7 +215,9 @@ public sealed class LiveInteractNpc : ICastingEventListener
         string anim = string.IsNullOrEmpty(npc.Row.InteractCastingAnimation) ? DefaultCastingAnimation : npc.Row.InteractCastingAnimation;
         host.PlayPlayerAnim(anim, false);
         Held?.SendRequestCube(host.Send);     // GetHeldItem, then PC::SendRequestCube (stateinteractdata.cpp:604-605)
-        host.StartCasting(this, npc.Row.InteractCastingTime, npc.Row.InteractShowCastingBar);
+        castEndMs = 0;
+        if (!host.StartCasting(this, npc.Row.InteractCastingTime, npc.Row.InteractShowCastingBar))
+            castEndMs = host.NowMs + npc.Row.InteractCastingTime;     // no bar: the casting time still runs
         return true;
     }
 
@@ -233,6 +239,7 @@ public sealed class LiveInteractNpc : ICastingEventListener
     {
         if (!castingActive) return;
         if (!host.HasPlayer) return;
+        if (!castingFinished && castEndMs != 0 && host.NowMs >= castEndMs) castingFinished = true;
         int i = IndexOf(castingNpc);
         if (i >= 0)
         {
@@ -246,9 +253,7 @@ public sealed class LiveInteractNpc : ICastingEventListener
         }
         if (castingFinished)
         {
-            castingActive = false;
-            castingFinished = false;
-            host.StopPlayerInteractAnim();
+            EndState();
             return;
         }
         if (playerMoved) CancelCast();
@@ -266,6 +271,7 @@ public sealed class LiveInteractNpc : ICastingEventListener
     {
         castingActive = false;
         castingFinished = false;
+        castEndMs = 0;
         host.StopPlayerInteractAnim();
     }
 

@@ -184,13 +184,14 @@ public partial class LiveSession
             GD.Print($"live: interact npc send {packet}");
         }
 
-        public void StartCasting(ICastingEventListener listener, int durationMs, bool showBar)
+        public bool StartCasting(ICastingEventListener listener, int durationMs, bool showBar)
         {
-            if (s.CastingBar != null)
-                s.CastingBar.StartCastingText(listener, "", durationMs, showTime: false, activeBar: showBar, endText: "");
-            else
-                listener.OnCastingFinished();
+            if (s.CastingBar == null) return false;
+            s.CastingBar.StartCastingText(listener, "", durationMs, showTime: false, activeBar: showBar, endText: "");
+            return true;
         }
+
+        public long NowMs => (long)Time.GetTicksMsec();
 
         public void CancelCasting() => s.CastingBar?.Cancel();
 

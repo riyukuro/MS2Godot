@@ -626,8 +626,15 @@ public partial class FieldContents : Node3D
         ls.UsePortal();
     }
 
-    public bool LiveInteractPoll(Ms2.Formats.Model.Vec3 at) =>
-        !offline && player != null && !moving && Ms2Godot.Net.LiveSession.Instance is { } ls && ls.PollInteract(at);
+    /// <summary>Live: the interact poll at the player's point; the npc search measures from the ridee when riding
+    /// (WorldService::FindNearestNpc, worldservice_1.cpp:6443-6448).</summary>
+    public bool LiveInteractPoll(Ms2.Formats.Model.Vec3 at)
+    {
+        if (offline || player == null || moving || Ms2Godot.Net.LiveSession.Instance is not { } ls) return false;
+        var ridee = player.Mount?.Visual;
+        var npcAt = ridee != null && IsInstanceValid(ridee) ? FieldPortals.ToMs2(ridee.GlobalPosition) : at;
+        return ls.PollInteract(at, npcAt);
+    }
 
     public bool LiveInteractBillBoardPoll(Ms2.Formats.Model.Vec3 at) =>
         !offline && player != null && !moving && Ms2Godot.Net.LiveSession.Instance is { } ls && ls.PollInteractBillBoard(at);

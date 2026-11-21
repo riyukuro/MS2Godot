@@ -488,15 +488,16 @@ public class LiveInteractObjectsTests
 
     static void AssertNoAlloc(LiveInteractObjects live, Vec3 pos, string what)
     {
-        for (int i = 0; i < 20; i++) { live.Poll(pos); live.Tick(pos, false); }
+        for (int i = 0; i < 20; i++) { live.Poll(pos); live.PollBillBoard(pos); live.Tick(pos, false); }
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 600; i++)
         {
             live.Poll(pos);
+            live.PollBillBoard(pos);
             live.Tick(pos, false);
         }
         long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.That(allocated, Is.EqualTo(0), $"{what}: Poll+Tick allocated {allocated} B over 600 frames");
+        Assert.That(allocated, Is.EqualTo(0), $"{what}: Poll+PollBillBoard+Tick allocated {allocated} B over 600 frames");
     }
 
     internal static LiveInteractObjects LeverOn(Host host, uint reactMs)

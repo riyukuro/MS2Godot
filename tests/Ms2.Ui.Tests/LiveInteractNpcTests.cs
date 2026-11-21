@@ -29,8 +29,10 @@ public class LiveInteractNpcTests
 
         public Action OnSend;
         public void Send(IOutPacket packet) { OnSend?.Invoke(); Sent.Add(packet); }
-        public void StartCasting(ICastingEventListener listener, int durationMs, bool showBar)
-        { Casts++; Listener = listener; LastDuration = durationMs; LastShowBar = showBar; }
+        public bool NoBar;
+        public long NowMs { get; set; } = 1000;
+        public bool StartCasting(ICastingEventListener listener, int durationMs, bool showBar)
+        { Casts++; Listener = listener; LastDuration = durationMs; LastShowBar = showBar; return !NoBar; }
         public void CancelCasting() => Cancels++;
         public void PlayPlayerAnim(string animName, bool loop) => Anims.Add(animName);
         public void StopPlayerInteractAnim() => AnimStops++;
@@ -153,6 +155,25 @@ public class LiveInteractNpcTests
         Assert.That(live.IsCasting, Is.False);
         live.Tick(Origin, false);
         Assert.That(host.Sent.Count, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void WithoutACastingBarTheCastingTimeStillRuns()
+    {
+        // vfunc_8 sends only after OnCastingFinished (stateinteractdata.cpp:625-661); with no bar the cast time runs on the clock
+        var host = new Host { NoBar = true };
+        var live = new LiveInteractNpc(host);
+        live.Add(7, Row(castMs: 2500), talkable: true, new Vec3(100, 0, 0));
+        live.Poll(Origin);
+        Assert.That(live.Use(), Is.True);
+        host.NowMs += 2499;
+        live.Tick(Origin, false);
+        Assert.That(host.Sent, Is.Empty);
+        Assert.That(live.IsCasting, Is.True);
+        host.NowMs += 1;
+        live.Tick(Origin, false);
+        Assert.That(host.Sent, Is.EqualTo(new[] { new InteractNpcRequest(7) }));
+        Assert.That(live.IsCasting, Is.False);
     }
 
     [Test]
