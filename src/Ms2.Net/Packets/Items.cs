@@ -136,6 +136,9 @@ public sealed class UgcLook {
     /// <summary>m_str20 (the file name), m_str28 (the item name GetUgcItemName shows), m_n30 (GetLocalPath tests it) and m_strUrl
     /// (cleared at read in UGC mode 1, ugcdef.cpp:1565).</summary>
     public string FileName = "", ItemName = "", Url = ""; public byte Flag30;
+    /// <summary>The i32 and the two i64 after m_n30 (m_n34, m_n38 and m_n40, ugcdef.cpp:1558-1560): the account and the character
+    /// by the reader's doc; kept so <see cref="ItemReader.WriteUgcLook"/> writes them back.</summary>
+    public int Value34; public long AccountId, CharacterId;
     /// <summary>The look's state byte, the last one CUgcItemLook::Read (0x140893250) reads (m_n60); CUgcItemLook::FUN_140893520 tests it for 2.</summary>
     public byte State;
 }
@@ -164,11 +167,21 @@ public static class ItemReader {
     public static UgcLook ReadUgcLook(ByteReader r) {
         var look = new UgcLook { Uid = r.ReadLong() };
         look.FileName = r.ReadUnicodeString(); look.ItemName = r.ReadUnicodeString(); look.Flag30 = r.ReadByte();
-        r.ReadInt(); r.ReadLong(); r.ReadLong();
+        look.Value34 = r.ReadInt(); look.AccountId = r.ReadLong(); look.CharacterId = r.ReadLong();
         look.Author = r.ReadUnicodeString(); look.CreationTime = r.ReadLong();
         look.Url = r.ReadUnicodeString(); look.State = r.ReadByte();
         if (UgcMode?.Invoke() == 1) look.Url = "";      // TSingleton<CUgcManager>::GetMode() == 1
         return look;
+    }
+
+    /// <summary>CUgcItemLook::Write (@0x140893070, ugcdef.cpp:1522): the fields in <see cref="ReadUgcLook"/>'s order; with state 1 the
+    /// url goes out empty (:1532-1538).</summary>
+    public static void WriteUgcLook(ByteWriter w, UgcLook look) {
+        w.WriteLong(look.Uid);
+        w.WriteUnicodeString(look.FileName ?? ""); w.WriteUnicodeString(look.ItemName ?? ""); w.WriteByte(look.Flag30);
+        w.WriteInt(look.Value34); w.WriteLong(look.AccountId); w.WriteLong(look.CharacterId);
+        w.WriteUnicodeString(look.Author ?? ""); w.WriteLong(look.CreationTime);
+        w.WriteUnicodeString(look.State == 1 ? "" : look.Url ?? ""); w.WriteByte(look.State);
     }
 
     /// <summary>CUgcManager::GetMode (the UGC mode the server sets); null reads as mode 0.</summary>

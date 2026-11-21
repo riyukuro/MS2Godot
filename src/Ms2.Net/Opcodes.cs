@@ -88,6 +88,7 @@ public enum Inbound : ushort {
     InteractNpc = 0x59,
     InteractObject = 0x63,  // RecvOp::InteractObject (commonfiles/opcodes.h:107): CSceneStateGame::OnInteractObject
     GameEvent = 0xB2,       // RecvOp::GameEvent (commonfiles/opcodes.h:185): GameEventManagerCli::Dispatch
+    SetCraftMode = 0x68,    // RecvOp::SetCraftMode (commonfiles/opcodes.h:112): CSceneStateGame::OnSetCraftMode
     ResponseCube = 0x69,    // RecvOp::ResponseCube (commonfiles/opcodes.h:113): CSceneStateGame::OnResponseCube
     Buff = 0x47,
     UserMoveByPortal = 0x5F,

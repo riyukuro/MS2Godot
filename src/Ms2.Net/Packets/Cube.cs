@@ -39,3 +39,53 @@ public sealed record ResponseCubeHeldItem(byte Mode, byte Error, int Id, int Cub
         return new ResponseCubeHeldItem(mode, error, r.ReadInt());
     }
 }
+
+/// <summary>CubeItemInfo (ugcmapoptions.cpp): a cube's item id, instance id, count and its optional UGC look.</summary>
+public sealed class CubeItemInfo
+{
+    public int ItemId;
+    public long InstanceId;
+    public long Count;
+    /// <summary>The uploaded look (CUgcItemLook), null without one.</summary>
+    public UgcLook Look;
+
+    /// <summary>CubeItemInfo::FUN_1408b3aa0 (@0x1408b3aa0, ugcmapoptions.cpp:181): i32 item id, i64 instance id, i64 count,
+    /// u8 has look, then the look (CUgcItemLook::Read).</summary>
+    public static CubeItemInfo Read(ByteReader r)
+    {
+        var info = new CubeItemInfo { ItemId = r.ReadInt(), InstanceId = r.ReadLong(), Count = r.ReadLong() };
+        if (r.ReadByte() != 0) info.Look = ItemReader.ReadUgcLook(r);
+        return info;
+    }
+
+    /// <summary>CubeItemInfo::FUN_1408b39c0 (@0x1408b39c0, ugcmapoptions.cpp:170): the same fields, the flag 1 when a look
+    /// follows.</summary>
+    public void Write(ByteWriter w)
+    {
+        w.WriteInt(ItemId);
+        w.WriteLong(InstanceId);
+        w.WriteLong(Count);
+        w.WriteByte((byte)(Look != null ? 1 : 0));
+        if (Look != null) ItemReader.WriteUgcLook(w, Look);
+    }
+}
+
+/// <summary>
+/// Inbound SetCraftMode (RecvOp 0x68, commonfiles/opcodes.h:112), CSceneStateGame::OnSetCraftMode (@0x141723410,
+/// scenestategame.cpp:7827-7851): i32 pc id, u8 cube mode; a nonzero mode is followed by the CubeItemInfo and an i32, the
+/// craft mode PC::vfunc_135 hands to the cube craft (FUN_141659250, pc.cpp:3040; Unk_PCCubeCraft's m_nMode, 2 = a held
+/// lift, cubecraft_2.cpp:332).
+/// </summary>
+public sealed record SetCraftMode(int Id, byte CubeMode, CubeItemInfo Item, int CraftMode)
+{
+    public static SetCraftMode Read(ByteReader r)
+    {
+        int id = r.ReadInt();
+        byte mode = r.ReadByte();
+        if (mode == 0) { r.ExpectEnd("SetCraftMode"); return new SetCraftMode(id, 0, null, 0); }
+        var item = CubeItemInfo.Read(r);
+        int craft = r.ReadInt();
+        r.ExpectEnd("SetCraftMode");
+        return new SetCraftMode(id, mode, item, craft);
+    }
+}

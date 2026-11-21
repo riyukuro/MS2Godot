@@ -53,4 +53,85 @@ public class CubePacketTests
         var err = ResponseCubeHeldItem.Read(Reader(w => { w.WriteByte(0x11); w.WriteByte(4); w.WriteInt(77); }));
         Assert.That(err, Is.EqualTo(new ResponseCubeHeldItem(0x11, 4, 77)));
     }
+
+    static byte[] Bytes(Action<ByteWriter> write)
+    {
+        var w = new ByteWriter();
+        write(w);
+        return w.Buffer.AsSpan(0, w.Length).ToArray();
+    }
+
+    // CUgcItemLook::Read (ugcdef.cpp:1551): i64, str, str, u8, i32, i64, i64, str, i64, str, u8
+    static void WriteLook(ByteWriter w, string url, byte state)
+    {
+        w.WriteLong(900); w.WriteUnicodeString("f"); w.WriteUnicodeString("n"); w.WriteByte(3);
+        w.WriteInt(-7); w.WriteLong(11); w.WriteLong(12);
+        w.WriteUnicodeString("a"); w.WriteLong(13); w.WriteUnicodeString(url); w.WriteByte(state);
+    }
+
+    [Test]
+    public void SetCraftModeIsRecvOp68()
+    {
+        // commonfiles/opcodes.h:112 RecvOp::SetCraftMode = 0x0068
+        Assert.That((ushort)Inbound.SetCraftMode, Is.EqualTo(0x0068));
+    }
+
+    [Test]
+    public void SetCraftModeOffReadsOnlyTheIdAndTheMode()
+    {
+        // OnSetCraftMode (scenestategame.cpp:7829-7844): i32 id, u8 mode; mode 0 reads nothing more
+        var m = SetCraftMode.Read(Reader(w => { w.WriteInt(41); w.WriteByte(0); }));
+        Assert.That(m, Is.EqualTo(new SetCraftMode(41, 0, null, 0)));
+        Assert.Throws<PacketLayoutException>(() => SetCraftMode.Read(Reader(w => { w.WriteInt(41); w.WriteByte(0); w.WriteInt(2); })));
+    }
+
+    [Test]
+    public void SetCraftModeOnReadsTheCubeItemThenTheCraftMode()
+    {
+        // :7836-7840: CubeItemInfo(packet) (ugcmapoptions.cpp:181) then i32 the craft mode
+        var m = SetCraftMode.Read(Reader(w =>
+        {
+            w.WriteInt(41); w.WriteByte(2);
+            w.WriteInt(50400001); w.WriteLong(77); w.WriteLong(1); w.WriteByte(0);
+            w.WriteInt(2);
+        }));
+        Assert.That((m.Id, m.CubeMode, m.CraftMode), Is.EqualTo((41, (byte)2, 2)));
+        Assert.That((m.Item.ItemId, m.Item.InstanceId, m.Item.Count, m.Item.Look), Is.EqualTo((50400001, 77L, 1L, (UgcLook)null)));
+
+        var withLook = SetCraftMode.Read(Reader(w =>
+        {
+            w.WriteInt(41); w.WriteByte(1);
+            w.WriteInt(50400001); w.WriteLong(77); w.WriteLong(1); w.WriteByte(1); WriteLook(w, "u", 2);
+            w.WriteInt(3);
+        }));
+        Assert.That(withLook.CraftMode, Is.EqualTo(3));
+        Assert.That((withLook.Item.Look.Uid, withLook.Item.Look.Value34, withLook.Item.Look.AccountId, withLook.Item.Look.CharacterId, withLook.Item.Look.State),
+            Is.EqualTo((900L, -7, 11L, 12L, (byte)2)));
+    }
+
+    [Test]
+    public void CubeItemInfoWritesWhatItReads()
+    {
+        // CubeItemInfo::FUN_1408b39c0 (ugcmapoptions.cpp:170) and CUgcItemLook::Write (ugcdef.cpp:1522) mirror the readers
+        byte[] plain = Bytes(w => { w.WriteInt(50400001); w.WriteLong(77); w.WriteLong(1); w.WriteByte(0); });
+        Assert.That(Bytes(CubeItemInfo.Read(new ByteReader(plain)).Write), Is.EqualTo(plain));
+        byte[] looked = Bytes(w => { w.WriteInt(50400001); w.WriteLong(77); w.WriteLong(1); w.WriteByte(1); WriteLook(w, "u", 2); });
+        Assert.That(Bytes(CubeItemInfo.Read(new ByteReader(looked)).Write), Is.EqualTo(looked));
+    }
+
+    [Test]
+    public void ALookInState1WritesAnEmptyUrl()
+    {
+        // CUgcItemLook::Write (ugcdef.cpp:1532-1538): m_n60 == 1 writes "" for the url
+        var look = new CubeItemInfo { ItemId = 1, Look = new UgcLook { Url = "u", State = 1 } };
+        byte[] got = Bytes(look.Write);
+        byte[] want = Bytes(w =>
+        {
+            w.WriteInt(1); w.WriteLong(0); w.WriteLong(0); w.WriteByte(1);
+            w.WriteLong(0); w.WriteUnicodeString(""); w.WriteUnicodeString(""); w.WriteByte(0);
+            w.WriteInt(0); w.WriteLong(0); w.WriteLong(0);
+            w.WriteUnicodeString(""); w.WriteLong(0); w.WriteUnicodeString(""); w.WriteByte(1);
+        });
+        Assert.That(got, Is.EqualTo(want));
+    }
 }
