@@ -349,6 +349,9 @@ public sealed class GameOptionDialog
 {
     public readonly IGameOptionDialogHost Host;
     readonly SortedDictionary<int, OptionPage> pages = new();
+    // the per-frame Update walks a copy of the pages (a page may change the set); it is rebuilt only when the set changes,
+    // so a frame allocates nothing
+    OptionPage[] frameSnapshot;
     public int Tab { get; private set; } = 1;
     public bool Simple { get; private set; }
     int resetScope;   // m_nF1cc
@@ -361,7 +364,7 @@ public sealed class GameOptionDialog
         Host = host;
         int order = 1;
         void Add(int key, Func<int, int, OptionPage> make) => Add2(make(key, order++));
-        void Add2(OptionPage p) { p.Attach(this); pages[p.Id] = p; }
+        void Add2(OptionPage p) { p.Attach(this); pages[p.Id] = p; frameSnapshot = null; }
         OptionPage Plain(int k, int t) => new(k, t);
         Add(1, (k, t) => new CameraOptionPage(k, t));
         Add(2, (k, t) => new InterfaceOptionPage(k, t));
@@ -387,13 +390,14 @@ public sealed class GameOptionDialog
     public void Dispose() => RemoveAllPages();
 
     /// <summary>UIGameOptionDialog::RemoveAllPages (@0x141943a00, uigameoptiondialog.cpp:427): the map drops every page.</summary>
-    public void RemoveAllPages() => pages.Clear();
+    public void RemoveAllPages() { pages.Clear(); frameSnapshot = null; }
 
     /// <summary>vfunc_15 (@0x141942bf0), each frame: while the dialog is loaded and open, every page runs its frame step.</summary>
     public void Update()
     {
         if (Host.IsClosed) return;
-        foreach (var p in pages.Values.ToList()) p.Update();
+        var snap = frameSnapshot ??= pages.Values.ToArray();
+        for (int i = 0; i < snap.Length; i++) snap[i].Update();
     }
 
     /// <summary>UIGameOptionDialog::SetAgreementRedCircle (@0x141943900, uigameoptiondialog.cpp:410): the flag is stored and the
@@ -417,7 +421,7 @@ public sealed class GameOptionDialog
     /// <summary>@0x1419445c0 (FUN_141944590 @0x141944590 is the call from OnLoadComplete): the key goes only when n is 0.</summary>
     public void RemovePage(int key, int n)
     {
-        if (n == 0) pages.Remove(key);
+        if (n == 0) { pages.Remove(key); frameSnapshot = null; }
     }
 
     /// <summary>@0x1419428d0. initData goes through the root Invoke(string, int, int) helper (@0x141944620), setTabComponent through Invoke(int, bool, bool) (@0x141944710).</summary>

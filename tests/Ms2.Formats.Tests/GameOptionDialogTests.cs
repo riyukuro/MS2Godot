@@ -743,4 +743,15 @@ public class GameOptionDialogTests
         Assert.That(a.Flags, Is.EqualTo(10u));
         Assert.That(a.Agree, Is.True);
     }
+
+    [Test]
+    public void TheFrameUpdateAllocatesNothing()
+    {
+        var (d, _) = Open();
+        for (int i = 0; i < 300; i++) d.Update();   // warm-up (tiered JIT)
+        // a round that is measured twice: the first absorbs the loop's one-time JIT cost in Release (24 B, not per frame)
+        long Round() { long x = GC.GetAllocatedBytesForCurrentThread(); for (int i = 0; i < 100; i++) d.Update(); return GC.GetAllocatedBytesForCurrentThread() - x; }
+        Round();
+        Assert.That(Round(), Is.EqualTo(0));
+    }
 }
