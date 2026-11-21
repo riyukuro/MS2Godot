@@ -120,11 +120,20 @@ public sealed class MapleChannel {
     /// <summary>Encrypts and sends one packet. Callable from several threads: the iv advances per frame, so encrypt and write stay in order.</summary>
     public async Task SendAsync(Outbound op, Action<ByteWriter> body = null, CancellationToken ct = default) {
         var w = new ByteWriter();
-        w.WriteShort((short) Profile.Number(op));
+        ushort type = (ushort) Profile.Number(op);
+        w.WriteShort((short) type);
         body?.Invoke(w);
         await sendLock.WaitAsync(ct);
         try {
-            Out.Capture((ushort) Profile.Number(op), w.Buffer[2..w.Length]);   // FUN_140208960: numbered and copied as it is sent
+            foreach (var (pt, pb) in Out.TakePending()) {   // FUN_140208960: the packets held while the socket was down go first, each numbered and copied as it is sent
+                var pw = new ByteWriter();
+                pw.WriteShort((short) pt);
+                pw.WriteBytes(pb);
+                Out.Capture(pt, pb);
+                var pe = enc.Encrypt(pw);
+                await stream.WriteAsync(pe.Buffer.AsMemory(0, pe.Length), ct);
+            }
+            Out.Capture(type, w.Buffer.AsSpan(2, w.Length - 2));   // numbered and copied (only when kept) as it is sent
             var e = enc.Encrypt(w);
             await stream.WriteAsync(e.Buffer.AsMemory(0, e.Length), ct);
             await stream.FlushAsync(ct);
@@ -140,7 +149,7 @@ public sealed class MapleChannel {
         await sendLock.WaitAsync(ct);
         try {
             var frames = new List<(ushort Type, byte[] Body)>();
-            Out.Retransmit(sequence, (t, b) => frames.Add((t, b)));
+            Out.Retransmit(sequence, (t, b) => frames.Add((t, b)), Profile);
             foreach (var (t, b) in frames) {
                 var w = new ByteWriter();
                 w.WriteShort((short) t);

@@ -48,19 +48,29 @@ public sealed class OutPacketBuffer {
     public static bool IsControl(ushort type, bool control = false) => control ? type is >= 1 and <= 12 : type is >= 1 and <= 8;
 
     /// <summary>CapturePacket (@0x140209510): while not resending, the packet gets the next number; a copy is kept when capture is on and it is no control packet. Returns the number.</summary>
-    public int Capture(ushort type, byte[] body) {
+    public int Capture(ushort type, ReadOnlySpan<byte> body) {
         lock (gate) return CaptureLocked(type, body);
     }
 
-    int CaptureLocked(ushort type, byte[] body) {
+    int CaptureLocked(ushort type, ReadOnlySpan<byte> body) {
         if (resending) return sequence;
         sequence++;
-        if (captureEnabled && !IsControl(type)) { captured.Add(new Captured(type, (byte[]) body.Clone()) { Sequence = sequence }); capturedSize += body.Length + 2; }
+        if (captureEnabled && !IsControl(type)) { captured.Add(new Captured(type, body.ToArray()) { Sequence = sequence }); capturedSize += body.Length + 2; }
         return sequence;
     }
 
     /// <summary>PushPendingPacket (@0x1402091b0): holds a packet while the socket is down; <see cref="Submit"/> sends it ahead of the next one.</summary>
-    public void PushPending(ushort type, byte[] body) { lock (gate) pending.Add(new Captured(type, (byte[]) body.Clone())); }
+    public void PushPending(ushort type, ReadOnlySpan<byte> body) { var copy = body.ToArray(); lock (gate) pending.Add(new Captured(type, copy)); }
+
+    /// <summary>The pending packets in the order they were held, removed from the list: the sender numbers (<see cref="Capture"/>) and writes each one, then the packet that triggered the flush (FUN_140208960).</summary>
+    public (ushort Type, byte[] Body)[] TakePending() {
+        lock (gate) {
+            var all = new (ushort, byte[])[pending.Count];
+            for (int i = 0; i < all.Length; i++) all[i] = (pending[i].Type, pending[i].Body);
+            pending.Clear();
+            return all;
+        }
+    }
 
     /// <summary>FUN_140208960 (@0x140208960): sends the pending packets first (each numbered and captured), then this one.</summary>
     public void Submit(ushort type, byte[] body, Action<ushort, byte[]> send) {
@@ -102,18 +112,19 @@ public sealed class OutPacketBuffer {
     /// RetransmitClientPackets (@0x140208ab0): sends ReconnectUnk with the server's number, every kept packet after it renumbered from there on, then FinalizeReconnect
     /// with the current sequence. While it runs nothing is numbered again.
     /// </summary>
-    public void Retransmit(int lastSequence, Action<ushort, byte[]> send) {
+    public void Retransmit(int lastSequence, Action<ushort, byte[]> send, ProtocolProfile profile = null) {
+        profile ??= ProtocolProfile.Default;
         lock (gate) {
             resending = true;
             try {
-                send((ushort) Outbound.ReconnectUnk, Write(new Packets.ReconnectAck(lastSequence)));
+                send((ushort) profile.Number(Outbound.ReconnectUnk), Write(new Packets.ReconnectAck(lastSequence)));
                 int next = lastSequence;
                 foreach (var c in captured) {
                     if (c.Sequence <= lastSequence) continue;
                     c.Sequence = ++next;
                     send(c.Type, c.Body);
                 }
-                send((ushort) Outbound.FinalizeReconnect, Write(new Packets.FinalizeReconnect(sequence)));
+                send((ushort) profile.Number(Outbound.FinalizeReconnect), Write(new Packets.FinalizeReconnect(sequence)));
             } finally { resending = false; }
         }
     }

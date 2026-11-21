@@ -19,7 +19,7 @@ public sealed class TcpTransport : IDisposable {
     int closed, disposed;
     OutPacketBuffer carry;
     string lastHost = ""; int lastPort;
-    volatile bool wantAttempt, driving;
+    volatile bool wantAttempt, driving, connected;
 
     /// <summary>The reconnection manager this connection reports to (TSingleton CReconnectionManagerCli): the server's options and context land here, a dropped game connection is taken back through it.</summary>
     public ReconnectionManager Reconnection { get; }
@@ -62,6 +62,7 @@ public sealed class TcpTransport : IDisposable {
     void Attach(MapleChannel channel) {
         session = new ClientSession(channel) { Manager = Reconnection };
         carry = channel.Out;
+        connected = true;
         session.PacketReceived += Incoming.Enqueue;
         var mine = session;
         run = Task.Run(() => RunAsync(mine));
@@ -72,6 +73,7 @@ public sealed class TcpTransport : IDisposable {
         catch (OperationCanceledException) { }
         catch (Exception e) { if (!cts.IsCancellationRequested && Volatile.Read(ref disposed) == 0) Failure = e; }   // after Dispose the socket error is expected: swallowed here, so the task never faults
         if (mine != session) return;   // a connection a reconnect already replaced
+        connected = false;             // CGameSocket::m_state is no longer Connected: sends are held until the next connection
         if (Volatile.Read(ref disposed) == 0 && ReconnectAfterDrop()) return;
         Volatile.Write(ref closed, 1);
         try { Closed?.Invoke(); } catch { }
@@ -119,7 +121,7 @@ public sealed class TcpTransport : IDisposable {
         public bool HasConnection => t.session != null;
         public bool HasNetworkService => true;
         public bool SocketDisconnected => Volatile.Read(ref t.disposed) != 0;
-        public bool Closing => false;
+        public bool Closing => Volatile.Read(ref t.disposed) != 0;   // g_socketClosing: the owner is closing the socket (the client's shutdown flag)
         public string SocketHost => t.lastHost;
         public int SocketPort => t.lastPort;
         public int SocketSequence => t.carry?.Sequence ?? 0;
@@ -128,7 +130,8 @@ public sealed class TcpTransport : IDisposable {
             try {
                 var next = new TcpClient { NoDelay = true };
                 using var wait = new CancellationTokenSource(GameClient.MoveConnectWaitMs);
-                next.ConnectAsync(host, port, wait.Token).AsTask().GetAwaiter().GetResult();
+                try { next.ConnectAsync(host, port, wait.Token).AsTask().GetAwaiter().GetResult(); }
+                catch { next.Dispose(); throw; }
                 try { t.tcp.Dispose(); } catch { }
                 t.tcp = next;
                 t.Attach(new MapleChannel(next.GetStream(), t.carry));
@@ -136,7 +139,9 @@ public sealed class TcpTransport : IDisposable {
             } catch (Exception) { return false; }
         }
         public void Close() { try { t.tcp.Dispose(); } catch { } }
-        public void SendReconnectRequest(ReconnectRequest request) { _ = t.Channel.SendAsync(request); }
+        public void SendReconnectRequest(ReconnectRequest request) {
+            t.SendAsync(request).ContinueWith(x => { if (x.Exception != null) Console.Error.WriteLine($"net: ReconnectRequest not sent: {x.Exception.GetBaseException().Message}"); }, TaskScheduler.Default);
+        }
         public void ShowProgress(int attempt, int attempts) => t.ReconnectProgress?.Invoke(attempt, attempts);
         public void HideProgress() => t.ReconnectProgressHidden?.Invoke();
         public void Notice(string text) { }
@@ -145,7 +150,24 @@ public sealed class TcpTransport : IDisposable {
         public void EndSession() => t.SessionEnded?.Invoke();
     }
 
-    public Task SendAsync(IOutPacket packet, CancellationToken ct = default) => Channel.SendAsync(packet, ct);
+    /// <summary>
+    /// CGameSocket::SendPacket (gamesocket.cpp:279-290). Not connected: dropped when the server's HoldSends option is 1, else held (PushPendingPacket).
+    /// Connected during a reconnect: only types 1, 5, 6, 7 and 8 go out, everything else is held. Held packets are sent, numbered, ahead of the next
+    /// packet the channel writes (FUN_140208960), so a reconnect's retransmit and the held ones never overlap.
+    /// </summary>
+    public Task SendAsync(IOutPacket packet, CancellationToken ct = default) {
+        var ch = Channel;
+        if (ch == null) return Channel.SendAsync(packet, ct);   // never connected: the caller's error as before
+        bool defer = Reconnection.IsReconnecting;
+        if (connected && !defer) return ch.SendAsync(packet, ct);
+        ushort type = (ushort) Profile.Number(packet.Op);
+        if (connected && type is 1 or 5 or 6 or 7 or 8) return ch.SendAsync(packet, ct);
+        if (!connected && Reconnection.Options[ReconnectionOptions.HoldSends] == 1) return Task.CompletedTask;
+        var w = new Maple2.PacketLib.Tools.ByteWriter();
+        packet.Write(w);
+        carry.PushPending(type, w.Buffer.AsSpan(0, w.Length));
+        return Task.CompletedTask;
+    }
 
     /// <summary>Cancels the read loop and closes the socket without waiting for the read task (safe on the main thread). Safe to call twice.</summary>
     public void Dispose() {

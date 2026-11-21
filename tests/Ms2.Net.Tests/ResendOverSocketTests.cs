@@ -115,4 +115,62 @@ public class ResendOverSocketTests {
         Assert.That(t.Reconnection.IsReconnecting, Is.False, "the good result ended the reconnect");
         Assert.That(t.IsClosed, Is.False);
     }
+
+    /// <summary>CGameSocket::SendPacket (gamesocket.cpp:279-290): a packet sent while the socket is down or while a reconnect runs is held, and goes out once, in order, ahead of the next send.</summary>
+    [Test] public async Task PacketsSentDuringEveryReconnectPhaseGoOutOnceInTheClientsOrder() {
+        var l = new TcpListener(IPAddress.Loopback, 0); l.Start();
+        int port = ((IPEndPoint) l.LocalEndpoint).Port;
+        var srv = new FakeServer(5, 6);
+        var accept = l.AcceptTcpClientAsync();
+        var t = new TcpTransport { InGame = () => true };
+        using var _ = t;
+        await t.ConnectAsync("127.0.0.1", port);
+        var first = await accept;
+        var s = first.GetStream();
+        await s.WriteAsync(srv.HelloFrame);
+        await ReadFrame(s, srv);
+        await s.WriteAsync(srv.Frame(Inbound.Gvg, w => {
+            w.WriteInt(1); w.WriteInt(43);
+            var o = new int[ReconnectionOptions.Count];
+            o[ReconnectionOptions.Enabled] = 1; o[ReconnectionOptions.BufferLimit] = 100000; o[ReconnectionOptions.GiveUpSeconds] = 30;
+            o[ReconnectionOptions.MaxAttempts] = 5; o[ReconnectionOptions.RetryDelaySeconds] = 1;
+            foreach (var v in o) w.WriteInt(v);
+        }));
+        await s.WriteAsync(srv.Frame(Inbound.RequestKey));
+        await t.SendAsync(new ResponseKey(1, 2, new byte[16]));
+        await ReadFrame(s, srv);
+        await s.WriteAsync(srv.Frame(Inbound.Reconnect, w => { w.WriteByte(ReconnectNotice.KindContext); w.WriteInt(1); w.WriteString("127.0.0.1"); w.WriteInt(port); }));
+        await WaitFor(() => t.Reconnection.Context.Mode == 1 && t.Channel.Out.CaptureEnabled);
+        for (byte m = 10; m < 12; m++) { await t.SendAsync(new RequestQuit(m)); await ReadFrame(s, srv); }
+
+        var srv2 = new FakeServer(5, 6);
+        var accept2 = l.AcceptTcpClientAsync();
+        first.Close();
+        await WaitFor(() => t.Reconnection.IsReconnecting);
+        await t.SendAsync(new RequestQuit(20));   // phase 1: the socket is down
+        var s2 = (await accept2).GetStream();
+        await t.SendAsync(new RequestQuit(21));   // phase 2: connected, before the handshake
+        await s2.WriteAsync(srv2.HelloFrame);
+        var quits = new List<byte>();
+        (ushort op, byte[] body) f;
+        // ResponseVersion and the reconnect request are sends like any other: the packets held so far go out ahead of each (FUN_140208960)
+        async Task ReadUntil(Outbound stop) {
+            while ((f = await ReadFrame(s2, srv2).WaitAsync(TimeSpan.FromSeconds(5))).op != (ushort) stop) { Assert.That(f.op, Is.EqualTo((ushort) Outbound.RequestQuit)); quits.Add(f.body[0]); }
+        }
+        await ReadUntil(Outbound.ResponseVersion);
+        await s2.WriteAsync(srv2.Frame(Inbound.RequestKey));
+        await ReadUntil(Outbound.Reconnect);
+        await t.SendAsync(new RequestQuit(22));   // phase 3: after the handshake, before FinalizeReconnect
+        await s2.WriteAsync(srv2.Frame(Inbound.Reconnect, w => { w.WriteByte(ReconnectNotice.KindResult); w.WriteInt(1); }));
+        await s2.WriteAsync(srv2.Frame(Inbound.FinalizeReconnect, w => { w.WriteInt(0); w.WriteInt(2); }));
+        await WaitFor(() => !t.Reconnection.IsReconnecting);
+
+        await t.SendAsync(new RequestQuit(23));   // the reconnect is over: anything still held goes out ahead of this
+        do {
+            f = await ReadFrame(s2, srv2).WaitAsync(TimeSpan.FromSeconds(5));
+            if (f.op == (ushort) Outbound.RequestQuit) quits.Add(f.body[0]);
+        } while (!(f.op == (ushort) Outbound.RequestQuit && f.body[0] == 23));
+        Assert.That(quits.Where(q => q >= 20), Is.EqualTo(new byte[] { 20, 21, 22, 23 }), "each held packet once, in the order they were sent");
+        Assert.That(t.IsClosed, Is.False);
+    }
 }

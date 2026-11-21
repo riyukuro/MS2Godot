@@ -163,12 +163,12 @@ public sealed class LoginClient {
     }
     /// <summary>
     /// CSceneStateGame::OnUpdate (@0x14170c0c0, scenestategame.cpp:1327-1357) for the GameToLogin target: a 10 s timer, and each time it runs out
-    /// with no connection ConnectTo is called again, five times (m_nRetry &lt; 5); after the fifth timer the client gives up. Each attempt here is
+    /// with no connection ConnectTo is called again, six times (the loop runs while the counter is at most 5, as GameToGame's); after the sixth timer the client gives up. Each attempt here is
     /// a new transport through <see cref="ReturnAsync"/>; one that fails for a reason other than a refused key (MoveRefusedException) waits out
-    /// what is left of <paramref name="waitMs"/>, then the next starts. All five failed: <see cref="ReconnectGaveUpException"/>.
+    /// what is left of <paramref name="waitMs"/>, then the next starts. All six failed: <see cref="ReconnectGaveUpException"/>.
     /// </summary>
     public static async Task<(LoginOutcome outcome, TcpTransport transport)> ReturnWithRetriesAsync(string host, ushort port, ulong token, long accountId, byte[] machineId,
-        Action onMoveResult = null, int attempts = 5, int waitMs = 10000, CancellationToken ct = default, Action<int> onAttempt = null) {
+        Action onMoveResult = null, int attempts = 6, int waitMs = 10000, CancellationToken ct = default, Action<int> onAttempt = null) {
         for (int attempt = 1; attempt <= attempts; attempt++) {
             var clock = System.Diagnostics.Stopwatch.StartNew();
             var t = new TcpTransport();
@@ -178,7 +178,8 @@ public sealed class LoginClient {
                 return (o, t);
             } catch (MoveRefusedException) { t.Dispose(); throw; }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { t.Dispose(); throw; }
-            catch (Exception) {
+            catch (Exception) when (t.Session != null && t.Session.Channel.Ready) { t.Dispose(); throw; }
+            catch (Exception) when (t.Session == null || !t.Session.Channel.Ready) {   // the client retries only while !IsConnected() (scenestategame.cpp:1336)
                 t.Dispose();
                 int left = waitMs - (int) clock.ElapsedMilliseconds;
                 if (left > 0) await Task.Delay(left, ct);

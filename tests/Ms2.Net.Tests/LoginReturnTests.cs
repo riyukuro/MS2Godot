@@ -115,25 +115,25 @@ public class LoginReturnTests {
         return (l, port, () => Volatile.Read(ref count), serve);
     }
 
-    [Test] public async Task AConnectThatFailsIsTriedAgainUpToFiveTimes() {
-        var (l, port, accepted, _) = await FlakyServer(dropFirst: 4);
+    [Test] public async Task AConnectThatFailsIsTriedAgainUpToSixTimes() {
+        var (l, port, accepted, _) = await FlakyServer(dropFirst: 5);
         int switched = 0; var attempts = new List<int>();
         var (o, t) = await LoginClient.ReturnWithRetriesAsync("127.0.0.1", (ushort) port, 1, 1, null, () => switched++, waitMs: 100, onAttempt: attempts.Add);
         using var _ = t;
-        Assert.That(attempts, Is.EqualTo(new[] { 1, 2, 3, 4, 5 }));
-        Assert.That(accepted(), Is.EqualTo(5));
+        Assert.That(attempts, Is.EqualTo(new[] { 1, 2, 3, 4, 5, 6 }));
+        Assert.That(accepted(), Is.EqualTo(6));
         Assert.That(switched, Is.EqualTo(1), "the scene switch comes once, at the good MoveResult");
         Assert.That(o.Characters, Is.Empty);
         l.Stop();
     }
 
-    [Test] public async Task AFifthFailureGivesUpWithoutASixthAttempt() {
+    [Test] public async Task ASixthFailureGivesUpWithoutASeventhAttempt() {
         var (l, port, accepted, _) = await FlakyServer(dropFirst: 99);
         int switched = 0;
         var e = Assert.ThrowsAsync<ReconnectGaveUpException>(async () => await LoginClient.ReturnWithRetriesAsync("127.0.0.1", (ushort) port, 1, 1, null, () => switched++, waitMs: 100));
-        Assert.That(e.Attempts, Is.EqualTo(5));
+        Assert.That(e.Attempts, Is.EqualTo(6));
         await Task.Delay(300);
-        Assert.That(accepted(), Is.EqualTo(5), "ConnectTo five times, m_nRetry < 5 (scenestategame.cpp:1332)");
+        Assert.That(accepted(), Is.EqualTo(6), "ConnectTo six times, the retry counter is checked at most 5 (scenestategame.cpp:1332)");
         Assert.That(switched, Is.EqualTo(0));
         l.Stop();
     }

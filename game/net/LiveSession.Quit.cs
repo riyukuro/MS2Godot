@@ -59,10 +59,15 @@ public partial class LiveSession
             if (exit.IsCancellationRequested) { next.Dispose(); return; }
             login?.Dispose();
             login = next;
-            Session.Characters = System.Linq.Enumerable.ToList(o.Characters);
-            if (o.CharacterLimit > 0) CharacterLimit = o.CharacterLimit;
-            GD.Print($"live: back at character select, {o.Characters.Count} character(s)");
-            CharacterListReturned?.Invoke();
+            // deferred like the scene switch, so it runs after it: the switch empties the list, this fills it
+            Callable.From(() =>
+            {
+                if (exit.IsCancellationRequested) return;
+                Session.Characters = System.Linq.Enumerable.ToList(o.Characters);
+                if (o.CharacterLimit > 0) CharacterLimit = o.CharacterLimit;
+                GD.Print($"live: back at character select, {o.Characters.Count} character(s)");
+                CharacterListReturned?.Invoke();
+            }).CallDeferred();
         }
         catch (MoveRefusedException e)
         {
@@ -73,6 +78,7 @@ public partial class LiveSession
             if (!exit.IsCancellationRequested) GiveUp();
         }
         catch (System.OperationCanceledException) when (exit.IsCancellationRequested) { }
+        catch (System.Exception e) { GD.PushError($"live: return to character select failed: {e.Message}"); }
     }
 
     /// <summary>
