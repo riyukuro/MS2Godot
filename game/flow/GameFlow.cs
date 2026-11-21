@@ -114,9 +114,12 @@ public partial class GameFlow : Node
         _ => Ms2.Ui.Hud.QuitFlow.GameSceneId,
     };
 
-    void QuitNow()
+    async void QuitNow()
     {
-        Net.LiveSession.Instance?.SendRequestQuitAndDisconnect();
+        // the queued disconnect packet is written before the process ends, as the client's net thread does it; the frame loop keeps
+        // running while it is awaited, and a stuck socket only holds the quit for a second
+        if (Net.LiveSession.Instance?.SendRequestQuitAndDisconnect() is { } flushed)
+            await System.Threading.Tasks.Task.WhenAny(flushed, System.Threading.Tasks.Task.Delay(1000));
         QuitWithoutSend();
     }
 

@@ -1377,9 +1377,12 @@ public partial class LiveSession : Node
         if (game != null) Send(new RequestQuit(RequestQuit.SelectCharacter));
     }
 
-    /// <summary>CNetworkService::SendRequestQuitAndDisconnect (@0x1415388a0, networkservice.cpp:507-512): flushes guide state, sends RequestQuit(1), and closes the active connection.</summary>
-    public void SendRequestQuitAndDisconnect()
+    /// <summary>CNetworkService::SendRequestQuitAndDisconnect (@0x1415388a0, networkservice.cpp:507-512): flushes guide state, sends RequestQuit(1), and closes the active connection.
+    /// The returned task completes when the packet is written and the connection closed, so the caller lets the process quit only then
+    /// (the client's net thread writes the queued packet before the process ends).</summary>
+    public System.Threading.Tasks.Task SendRequestQuitAndDisconnect()
     {
+        System.Threading.Tasks.Task flushed = System.Threading.Tasks.Task.CompletedTask;
         SendGuideStates();
         var active = game ?? login;
         if (player != null && IsInstanceValid(player)) player.Live = false;
@@ -1390,11 +1393,12 @@ public partial class LiveSession : Node
         // the connection closes once the packet is written.
         if (active != null && !active.IsClosed)
         {
-            try { active.SendAsync(new RequestQuit(RequestQuit.Disconnect)).ContinueWith(_ => active.Dispose(), System.Threading.Tasks.TaskScheduler.Default); }
+            try { flushed = active.SendAsync(new RequestQuit(RequestQuit.Disconnect)).ContinueWith(_ => active.Dispose(), System.Threading.Tasks.TaskScheduler.Default); }
             catch (Exception ex) { GD.PushWarning("live: RequestQuit send failed: " + ex.Message); active.Dispose(); }
         }
         if (g != null && g != active) g.Dispose();
         if (l != null && l != active) l.Dispose();
+        return flushed;
     }
 
     /// <summary>Headless drive (MS2_LIVE_AUTO=1): the login button, then start with the first character.</summary>
