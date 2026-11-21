@@ -181,6 +181,12 @@ namespace Ms2.Avm2.Flash
                 // MS2DataModel.getUserData instead of installing its authoring stand-in
                 if (InGame && RT.GetClass("scaleform.ms2.manager.TooltipManager") is { } tm)
                     RT.CallProperty(tm, Name.Public("init"), new object[] { Stage });
+                // and the drag manager (Main.addedToStage: DragManager.init(stage), next): its drag canvas goes into the
+                // layer under the mouse cursor and it hears DRAG_START on the stage. A dialog movie loaded into main.gfx's
+                // VM resolves scaleform.clik.managers.DragManager to main's class, already started, so a slot built off the
+                // display list (whose own DragSlot ctor sees no stage) still drags its icon
+                if (InGame && RT.GetClass("scaleform.clik.managers.DragManager") is { } dm)
+                    RT.CallProperty(dm, Name.Public("init"), new object[] { Stage });
                 // and listens for the right button on the stage (Main.addedToStage, after TooltipManager.init)
                 if (InGame) ListenForRightButton();
                 var rootSym = new JsonObject { ["kind"] = "sprite", ["timeline"] = Layout["root"]?.DeepClone() };

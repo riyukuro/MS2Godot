@@ -49,6 +49,23 @@ public class SkillBookTreeTests
         return (h, c, requests);
     }
 
+    /// <summary>The quick slot bar (MainPlayerInfoController) on the same model, with an empty server key table.</summary>
+    static (UiHost, MainPlayerInfoController, List<Ms2.Net.Wire.IOutPacket> Sent, ServerKeyTable Keys) QuickSlotBar(UiModel m)
+    {
+        var t = new ServerKeyTable();
+        t.Apply(new ByteReader(ServerKeyTable.Write(0, false, Array.Empty<KeyBinding>(), 0,
+            new IReadOnlyList<(int, QuickSlotEntry)>[] { Array.Empty<(int, QuickSlotEntry)>() })));
+        m.Keys = new KeyTable(Packs(), "en"); m.ServerKeys = t; m.Keys.Apply(t);
+        var bar = new MainPlayerInfoController();
+        var sent = new List<Ms2.Net.Wire.IOutPacket>();
+        bar.Send = sent.Add;
+        var (rt, p) = src.Open(bar.Movie, r => r.Budget = 20_000_000);
+        p.StageW = 1280; p.StageH = 720;
+        var h = new UiHost(p, bar, m);
+        Assert.That(h.Load(), Is.True, "load: " + string.Join("; ", rt.Errors));
+        return (h, bar, sent, t);
+    }
+
     static SkillBookTreePacket NoTabs() => SkillBookTreePacket.Read(new ByteReader(SkillBookTreePacket.WriteTabs(1, 0, Array.Empty<SkillTreeTab>())));
 
     [Test]
@@ -148,18 +165,7 @@ public class SkillBookTreeTests
         Assert.That(book.BookSkillId("m_treeSkills"), Is.EqualTo(0u));
         string from = names.First(n => m.Tables.Skills.GetSkillData(book.BookSkillId(n)) is { IsPassive: false });
         int skill = (int)book.BookSkillId(from);
-
-        var t = new ServerKeyTable();
-        t.Apply(new ByteReader(ServerKeyTable.Write(0, false, Array.Empty<KeyBinding>(), 0,
-            new IReadOnlyList<(int, QuickSlotEntry)>[] { Array.Empty<(int, QuickSlotEntry)>() })));
-        m.Keys = new KeyTable(Packs(), "en"); m.ServerKeys = t; m.Keys.Apply(t);
-        var bar = new MainPlayerInfoController();
-        var sent = new List<Ms2.Net.Wire.IOutPacket>();
-        bar.Send = sent.Add;
-        var (rt, p) = src.Open(bar.Movie, r => r.Budget = 20_000_000);
-        p.StageW = 1280; p.StageH = 720;
-        var h = new UiHost(p, bar, m);
-        Assert.That(h.Load(), Is.True, "load: " + string.Join("; ", rt.Errors));
+        var (h, bar, sent, t) = QuickSlotBar(m);
 
         bar.SlotDroppedOn(MainPlayerInfoController.SlotBag + ".22", from, book);     // a key bound slot: nothing
         Assert.That(sent, Is.Empty);
@@ -242,5 +248,80 @@ public class SkillBookTreeTests
             if (Rt.ToString(h.Get(l, "name")) == label) return Rt.ToNumber(h.Get(l, "frame"));
         }
         return double.NaN;
+    }
+
+    /// <summary>
+    /// The user's drag of a learnt skill out of the book onto a quick slot, with both movies on one stage. The client starts
+    /// the drag manager once, on main.gfx's stage (Main.addedToStage: DragManager.init(stage)), and every dialog uses it,
+    /// so DRAG_START from the book's slot puts the skill's icon on the drag canvas and drags it (handleStartDragEvent); the
+    /// release over the bar finds the bar's slot (handleEndDragEvent), and Main's drag end sends the drop to the bar:
+    /// KeyTable mode 3.
+    /// </summary>
+    [Test]
+    public void ABookSkillDraggedOntoAQuickSlotShowsItsIconAndIsSent()
+    {
+        var (bh, book, _) = Load();
+        book.OnSkillBookTree(NoTabs());
+        var (h, bar, sent, keys) = QuickSlotBar(bh.Model);
+        var stage = new UiStage();
+        (double X, double Y) mouse = (0, 0);
+        stage.Add(h, () => mouse, () => 0);
+        stage.Add(bh, () => mouse, () => 1);
+        var p = bh.Player;
+        void Move(double x, double y) { mouse = (x, y); p.MouseMove(x, y); }
+        // the centred window covers the bar's skill slots: moved up out of the way first, as by its title bar
+        bh.Set(bh.Entity, "y", Rt.ToNumber(bh.Get(bh.Entity, "y")) - 300);
+
+        var tree = bh.Child("m_treeSkills");
+        int n = (int)Rt.ToNumber(bh.Get(tree, "numChildren"));
+        var skill = Enumerable.Range(0, n).Select(i => bh.Invoke(tree, "getChildAt", i)).Single(s => (uint)Rt.ToNumber(bh.Get(s, "m_skillID")) == 10500001);
+        var slot = (AsDisplayObject)bh.Get(bh.Get(skill, "m_skillSlot"), "m_slot");
+        var b = slot.GetBounds(null);
+        double x = b.X + b.W / 2, y = b.Y + b.H / 2;
+        var target = FindBound(h, h.Player.Stage, MainPlayerInfoController.SlotBag + ".3");
+        Assert.That(target, Is.Not.Null, "the bar's quick slot 3");
+        var tb = target.GetBounds(null);
+        Assert.That(p.GetTopMostEntity(tb.X + tb.W / 2, tb.Y + tb.H / 2, true, null), Is.Null, "slot 3 is clear of the book");
+        int before = bh.RT.Errors.Count;
+
+        var sprites = new List<AsDisplayObject>();
+        p.Call(p.Stage, "addEventListener", new object[] { "dragStart",
+            new AsPlainFunction(bh.RT, new NativeMethod("dragStart", (_, a) => { sprites.Add(bh.Get(a[0], "dragSprite") as AsDisplayObject); return Rt.Undef; })) });
+        Move(x, y);
+        p.MouseButton(true);
+        Move(x + 30, y + 10);
+        var dm = bh.RT.GetClass("scaleform.clik.managers.DragManager");
+        Assert.That(Rt.ToBoolean(bh.Invoke(dm, "inDrag")), Is.True, "DragManager is in a drag");
+        Assert.That(sprites, Has.Count.EqualTo(1).And.All.Not.Null, "one DRAG_START with the skill's icon");
+        var icon = sprites[0];
+        Assert.That(p.DrawnOnTop, Is.SameAs(icon), "the dragged icon, drawn over the other movies");
+        var up = icon;
+        while (up != null && up != p.Stage)
+        {
+            Assert.That(up.visible, Is.True);
+            Assert.That(up, Is.Not.SameAs(slot), "moved out of the slot onto the drag canvas");
+            up = up.Parent;
+        }
+        Assert.That(up, Is.SameAs(p.Stage), "the icon is on the stage");
+
+        Move(tb.X + tb.W / 2, tb.Y + tb.H / 2);
+        p.MouseButton(false);
+        Assert.That(Rt.ToBoolean(bh.Invoke(dm, "inDrag")), Is.False, "dropped");
+        Assert.That(p.DrawnOnTop, Is.Null);
+        Assert.That(sent, Is.EqualTo(new[] { new KeyTableSetQuickSlotRequest(0, 10500001, 0, 0, 3) }));
+        Assert.That(keys.Entry(0, 3), Is.EqualTo(new QuickSlotEntry(10500001, 0, 0)));
+        Assert.That(bh.RT.Errors.Skip(before).Count(e => !e.Contains("#1023")), Is.Zero, string.Join("; ", bh.RT.Errors.Skip(before)));
+    }
+
+    /// <summary>The display object under <paramref name="root"/> whose binding is <paramref name="binding"/>.</summary>
+    static AsDisplayObject FindBound(UiHost h, AsDisplayObject root, string binding)
+    {
+        object v = null;
+        try { v = h.RT.GetProperty(root, Name.Public("binding")); } catch (AsThrow) { }
+        if (v is string s && s == binding) return root;
+        if (root is AsContainer c)
+            foreach (var d in c.Children.ToList())
+                if (FindBound(h, d, binding) is { } f) return f;
+        return null;
     }
 }
