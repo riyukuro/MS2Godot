@@ -128,6 +128,7 @@ static class Gms2Opcodes {
         [Inbound.Trade] = 0x84,
         [Inbound.GuideRecord] = 0x8B,
         [Inbound.DynamicChannel] = 0xA9,
+        [Inbound.ChatStamp] = 0x128,
     };
     public static readonly Dictionary<Outbound, ushort> OutboundNumbers = new() {
         [Outbound.ResponseVersion] = 0x01,
