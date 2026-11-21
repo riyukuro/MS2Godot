@@ -3,47 +3,17 @@ using Ms2.Net.Wire;
 
 namespace Ms2.Ui.Items;
 
-/// <summary>CItemEnchantLimitTable (commonfiles/itemenchantlimittable.cpp): per equip slot, the item level band and the top grade
-/// (table/enchantLimitTable.xml, limit rows: slot, minLv, maxLv, maxGrade).</summary>
-public sealed class ItemEnchantLimitTable
-{
-    public readonly record struct Limit(int MinLv, int MaxLv, int MaxGrade);
-    readonly Dictionary<int, Limit> map = new();
-    public void Add(int slot, Limit l) => map[slot] = l;
-    public bool TryGet(int slot, out Limit l) => map.TryGetValue(slot, out l);
-
-    /// <summary>CanEnchant (@0x14058df90): an equip item (type 1) without a period, no limit break level, a limit row for its
-    /// slot with the item's required level inside the band, an enchant block below the top grade, not exceptEnchant.</summary>
-    public bool CanEnchant(Item item)
-    {
-        if (item?.Data == null || item.Data.Type != 1) return false;
-        if (ItemTradeRules.HasPeriod(item)) return false;
-        if (item.UnlimitedEnchantLevel > 0) return false;
-        if (!map.TryGetValue(item.Data.EquipSubtype, out var l)) return false;
-        if (item.Data.LevelLimit < l.MinLv || item.Data.LevelLimit > l.MaxLv) return false;
-        if (item.Record?.Enchant == null) return false;
-        if (item.EnchantLevel >= l.MaxGrade) return false;
-        return !item.Data.ExceptEnchant;
-    }
-
-    /// <summary>FUN_14058e230 (@0x14058e230): the band test alone (the dialog's list of items it may show).</summary>
-    public bool InBand(Item item)
-    {
-        if (item?.Data == null || !map.TryGetValue(item.Data.EquipSubtype, out var l)) return false;
-        return item.Data.LevelLimit >= l.MinLv && item.Data.LevelLimit <= l.MaxLv && !item.Data.ExceptEnchant;
-    }
-}
-
 /// <summary>What the dialog does about a request: <see cref="Sent"/> went out; an Ask needs the player's box answer (then the
 /// matching Confirm method); the rest are refusals that send nothing.</summary>
-public enum EnchantStep { Sent, NoItem, AskRefund, Reset, AskEnchantedIngredient, AskBindingCharacter, AskProtector, NotReady, OutOfRange }
+public enum EnchantStep { Sent, NoItem, AskRefund, Reset, AskEnchantedIngredient, AskBindingCharacter, AskProtector, AskPayback, NotReady }
 
 /// <summary>
 /// UIItemEnchantDialog's model and the client's checks before each send (client ms2/uiitemenchantdialog.cpp; UI id 0x4e92).
 /// The recv side is <see cref="ItemEnchantMessage"/> through <see cref="Apply"/>.
 /// <para>STILL-OPEN: the SWF fill (the dialog is not drawn), the over-enchanted ingredient box (FUN_1419c9490), the protector
 /// rank warnings (FUN_1419c4360 / FUN_1419c5890), the peachy binding rule's inputs (feature 0x87, FUN_1419c89b0), the
-/// MaxFailStackConst (client constant m_9828).</para>
+/// movie's own bound of the fail stack buttons (SetFailStackInfo @0x1419c7610), and the three wiring delegates of the
+/// ingredient test (CanUseItem, OriginOrItemId, HasStringTag).</para>
 /// </summary>
 public sealed class ItemEnchantBook
 {
@@ -65,7 +35,20 @@ public sealed class ItemEnchantBook
         if (name == "expMode") { ExpMode = ExpPeachy; Mode = 4; }
         else { ExpMode = ExpOphelia; Mode = 3; }
     }
-    public ItemEnchantLimitTable Limits { get; set; } = new();
+    /// <summary>CItemEnchantLimitTable::CanEnchant (@0x14058df90): <see cref="ItemOptionTables.CanEnchant"/> in the game; default none.</summary>
+    public Func<Item, bool> CanEnchantItem { get; set; } = _ => false;
+    /// <summary>The dialog is open (FUN_141924630, not closed): a result body is then kept in <see cref="Shown"/> and the
+    /// inventory item stays until <see cref="Restore"/>.</summary>
+    public bool IsOpen { get; set; }
+    /// <summary>The clone the open dialog shows (UpdateItemFromPacket's m_item); null when none.</summary>
+    public EquipItem Shown { get; private set; }
+    /// <summary>PC.CanUseItem of FUN_1419c9260; default true. STILL-OPEN: not wired to the player's use test.</summary>
+    public Func<Item, bool> CanUseItem { get; set; } = _ => true;
+    /// <summary>GetOriginOrItemId of FUN_1419c9260; default the item id. STILL-OPEN: the origin id is not in the item data.</summary>
+    public Func<Item, int> OriginOrItemId { get; set; } = i => i.ItemId;
+    /// <summary>HasStringTag(0xcb + rarity - 1) of FUN_1419c93a0 (the tag-material path); default none. STILL-OPEN: the
+    /// ItemTagKey ids 0xcb..0xd0 are not mapped to the item data's tag names.</summary>
+    public Func<Item, int, bool> HasStringTag { get; set; } = (_, _) => false;
     public Func<long, Item> Find { get; set; } = _ => null;
     public Action<IOutPacket> Send { get; set; }
     /// <summary>The talk the dialog opened from: (talking, npc id), and the client constant m_69a0.</summary>
@@ -73,8 +56,6 @@ public sealed class ItemEnchantBook
     public int TalkConstant { get; set; }
     /// <summary>The peachy path's binding box test (feature 0x87 and the item not owned by my character); default none.</summary>
     public Func<Item, bool> NeedsBindingBox { get; set; } = _ => false;
-    /// <summary>min(history fail count, the client constant m_9828): the fail stack's top (SetFailStackInfo @0x1419c7610).</summary>
-    public int MaxFailStackConst { get; set; } = int.MaxValue;
     public Action<EquipItem> StoreItem { get; set; }
 
     // The model (members at +0x1a0..+0x318 of the dialog).
@@ -88,7 +69,7 @@ public sealed class ItemEnchantBook
     public long Protector1 { get; private set; }
     public byte FailStackMode { get; private set; }
     public int FailStack { get; private set; }
-    public int N2BC { get; private set; }
+    public int FailStackCount { get; private set; }
     public IReadOnlyList<long> FailStackUids { get; private set; } = Array.Empty<long>();
     public int ResultItemId { get; private set; }
     public short ResultRank { get; private set; }
@@ -126,7 +107,7 @@ public sealed class ItemEnchantBook
         if (item.Record?.Enchant == null) return EnchantStep.NoItem;
         EnchantStep r;
         // CItem::FUN_140527030 -> CItemEnchantInfo::FUN_14058c8a0 always returns 0 (itemenchantinfo.cpp:138).
-        if (Limits.CanEnchant(item)) { Out(new ItemEnchantSelectRequest(ExpMode, item.Uid)); r = EnchantStep.Sent; }
+        if (CanEnchantItem(item)) { Out(new ItemEnchantSelectRequest(ExpMode, item.Uid)); r = EnchantStep.Sent; }
         else { SlotReset?.Invoke(); r = EnchantStep.Reset; }
         var (talking, npc) = Talk();
         Out(new ItemEnchantTalkRequest(talking, npc, TalkConstant, item.Uid));
@@ -139,11 +120,19 @@ public sealed class ItemEnchantBook
     /// <summary>FUN_1419c1d60: the answer is for this mode and a result item is set.</summary>
     public bool Ready => infoRead && ResultItemId != 0;
 
-    /// <summary>FUN_1419c9260: an item the equip ingredient bag lists: not locked (item and gems), not the selected item, the
-    /// result's id and rank.</summary>
+    /// <summary>FUN_1419c9260 (@0x1419c9260): the player may use the item, it is not locked (CItem::FUN_140528e20; gems too, as
+    /// CanUseItem's lock test), not the selected item, and either the result's id and rank or the tag material
+    /// (FUN_1419c93a0: the base item's rank 1..6 picks the tag 0xcb..0xd0, a stack of exactly 1).</summary>
     public bool IsIngredientCandidate(Item item, long now) =>
-        item != null && item.Uid != SelectedUid && ItemTradeRules.NotLocked(item, now, out _)
-        && item.ItemId == ResultItemId && item.Rarity == ResultRank;
+        item != null && CanUseItem(item) && ItemTradeRules.NotLocked(item, now, out _) && item.Uid != SelectedUid
+        && ((OriginOrItemId(item) == ResultItemId && item.Rarity == ResultRank) || IsTagMaterial(Find(SelectedUid), item));
+
+    /// <summary>FUN_1419c93a0 (@0x1419c93a0).</summary>
+    bool IsTagMaterial(Item baseItem, Item other)
+    {
+        if (baseItem == null || baseItem.Rarity < 1 || baseItem.Rarity > 6) return false;
+        return HasStringTag(other, 0xcb + baseItem.Rarity - 1) && other.Count == 1;
+    }
 
     /// <summary>OnSelectEquipIngredient (@0x1419c1220) with the mode 2 send (FUN_1419c16c0): an enchanted ingredient asks first.</summary>
     public EnchantStep SelectIngredient(long uid, byte flag)
@@ -159,18 +148,9 @@ public sealed class ItemEnchantBook
     /// <summary>The enchanted ingredient box's Yes: mode 2 with flag 1.</summary>
     public void ConfirmEnchantedIngredient() { if (pendingIngredient != 0) Out(new ItemEnchantIngredientRequest(pendingIngredient, 1)); pendingIngredient = 0; }
 
-    /// <summary>OnClickFailStackUp / Down: mode 3 with the stack +- 1. The client sends unconditionally and the movie's buttons
-    /// bound the stack by current and maximum (SetFailStackInfo); here the same bound refuses.</summary>
-    public EnchantStep ChangeFailStack(int delta)
-    {
-        var item = Find(SelectedUid);
-        if (item?.Record?.Enchant == null) return EnchantStep.NoItem;
-        int top = Math.Min(item.Record.Enchant.FailStack, MaxFailStackConst);
-        int next = FailStack + delta;
-        if (next < 0 || next > top) return EnchantStep.OutOfRange;
-        Out(new ItemEnchantFailStackRequest(next));
-        return EnchantStep.Sent;
-    }
+    /// <summary>OnClickFailStackUp / Down (@0x1419c15c0, @0x1419c1630): mode 3 with the stack +- 1, sent unconditionally; the
+    /// movie bounds its buttons (STILL-OPEN, see the class note).</summary>
+    public void ChangeFailStack(int delta) => Out(new ItemEnchantFailStackRequest(FailStack + delta));
 
     /// <summary>onEnchant (@0x1419c0440): the item must exist and need no refund; the peachy path sends mode 6 (after its binding
     /// box); the ophelia path with a protection rate asks which protector, without one sends mode 4 with none.</summary>
@@ -186,17 +166,32 @@ public sealed class ItemEnchantBook
             return EnchantStep.Sent;
         }
         if (Rates.Protect != 0) return EnchantStep.AskProtector;
-        ConfirmProtector(0);
+        var step = ConfirmProtector(0);
         State = 0;
+        return step;
+    }
+
+    /// <summary>The binding box's Yes: mode 6 (SendRequestItemEnchantMode6 @0x1419c0c70 sends only for an existing item).</summary>
+    public void ConfirmBinding() { if (Find(SelectedUid) != null) Out(new ItemEnchantExpRequest(SelectedUid)); }
+
+    long paybackProtector;
+    /// <summary>FUN_1419c7a30(uid, v) (@0x1419c7a30): no item, nothing; a charge above 0 asks the payback box first
+    /// (<see cref="ConfirmPayback"/>), else mode 4 (v 1 uses the first protector, 2 the second, 0 none).</summary>
+    public EnchantStep ConfirmProtector(int v)
+    {
+        var item = Find(SelectedUid);
+        if (item == null) return EnchantStep.NoItem;
+        paybackProtector = v == 1 ? Protector0 : v == 2 ? Protector1 : 0;
+        if (item.Record?.Enchant?.Charge > 0) return EnchantStep.AskPayback;
+        Out(new ItemEnchantRequest(item.Uid, paybackProtector));
         return EnchantStep.Sent;
     }
 
-    /// <summary>The binding box's Yes: mode 6.</summary>
-    public void ConfirmBinding() => Out(new ItemEnchantExpRequest(SelectedUid));
-
-    /// <summary>FUN_1419c7a30(uid, v): v 1 uses protector 1 (m_210), 2 protector 2 (m_220), 0 none: mode 4.</summary>
-    public void ConfirmProtector(int v) =>
-        Out(new ItemEnchantRequest(SelectedUid, v == 1 ? Protector0 : v == 2 ? Protector1 : 0));
+    /// <summary>The payback box's Yes (OnConfirmEnchantMode4MsgBox): SendRequestItemEnchantMode4 (@0x1419c7ce0).</summary>
+    public void ConfirmPayback()
+    {
+        if (Find(SelectedUid) is { } item) Out(new ItemEnchantRequest(item.Uid, paybackProtector));
+    }
 
     /// <summary>OnItemEnchant's modes (scenestategame.cpp:6101).</summary>
     public void Apply(ItemEnchantMessage m)
@@ -212,25 +207,26 @@ public sealed class ItemEnchantBook
                 infoRead = true; Changed?.Invoke();
                 break;
             case ItemEnchantMessage.ChargeChanged x:
-                FailStackUids = Array.Empty<long>(); N2BC = 0;
-                if (Find(x.Uid)?.Record?.Enchant is { } e) e.Charge = x.Charge;
+                if (Find(x.Uid)?.Record?.Enchant is not { } e) break;
+                FailStackUids = Array.Empty<long>(); FailStackCount = 0;
+                e.Charge = x.Charge;
                 Changed?.Invoke();
                 break;
             case ItemEnchantMessage.FailStackInfo x:
-                FailStack = x.FailStack; N2BC = x.N2BC; FailStackUids = x.Uids; Rates = x.Rates; Changed?.Invoke();
+                FailStack = x.FailStack; FailStackCount = x.FailStackCount; FailStackUids = x.Uids; Rates = x.Rates; Changed?.Invoke();
                 break;
             case ItemEnchantMessage.FailStackList x:
-                N2BC = x.N2BC; FailStackUids = x.Uids; Changed?.Invoke();
+                FailStackCount = x.FailStackCount; FailStackUids = x.Uids; Changed?.Invoke();
                 break;
             case ItemEnchantMessage.Refunded:
                 Notice?.Invoke(0, 0);
-                if (SelectedUid != 0 && Find(SelectedUid) != null) Out(new ItemEnchantSelectRequest(ExpMode, SelectedUid));
+                if (IsOpen) Out(new ItemEnchantSelectRequest(ExpMode, SelectedUid));
                 break;
             case ItemEnchantMessage.Success x:
                 if (x.Item == null) return;
                 {
                     int prev = Find(x.Uid)?.EnchantLevel ?? 0;
-                    StoreItem?.Invoke(x.Item);
+                    Keep(x.Item);
                     Options = x.Options; State = 1;
                     Result?.Invoke(true, x.Uid, prev, x.Item.Enchant?.Level ?? prev);
                 }
@@ -239,7 +235,7 @@ public sealed class ItemEnchantBook
                 if (x.Item == null) return;
                 {
                     int prev = Find(x.Uid)?.EnchantLevel ?? 0;
-                    StoreItem?.Invoke(x.Item);
+                    Keep(x.Item);
                     State = 2;
                     Result?.Invoke(false, x.Uid, prev, x.Item.Enchant?.Level ?? prev);
                     if (x.B > 0 || x.C != 0) Reward?.Invoke(x.A, x.B, x.C);
@@ -252,7 +248,7 @@ public sealed class ItemEnchantBook
                 else Notice?.Invoke(NoticeOther, x.Code);
                 break;
             case ItemEnchantMessage.ItemUpdate x:
-                if (x.Item != null) StoreItem?.Invoke(x.Item);
+                if (x.Item != null) Keep(x.Item);
                 Changed?.Invoke();
                 break;
             case ItemEnchantMessage.IngredientCounts:
@@ -261,10 +257,24 @@ public sealed class ItemEnchantBook
         }
     }
 
+    /// <summary>UpdateItemFromPacket (@0x1419c37f0): open, the body goes to the shown clone and the inventory item stays;
+    /// closed, it replaces the inventory item.</summary>
+    void Keep(EquipItem body)
+    {
+        if (IsOpen) Shown = body; else StoreItem?.Invoke(body);
+    }
+
+    /// <summary>RestoreItem (@0x1419c4050), on the dialog's completion or close: the clone replaces the inventory item.</summary>
+    public void Restore()
+    {
+        if (Shown != null) StoreItem?.Invoke(Shown);
+        Shown = null;
+    }
+
     void Reset()
     {
         SelectedUid = 0; State = 0; infoRead = false; Ingredients = Array.Empty<EnchantIngredient>();
-        Options = new Dictionary<int, int>(); Rates = default; Protector0 = Protector1 = 0; FailStack = 0; N2BC = 0;
+        Options = new Dictionary<int, int>(); Rates = default; Protector0 = Protector1 = 0; FailStack = 0; FailStackCount = 0;
         FailStackUids = Array.Empty<long>(); ResultItemId = 0; ResultRank = 0; ResultCount = 0;
     }
 }

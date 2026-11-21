@@ -16,7 +16,7 @@ public class ItemEnchantBookTests {
             B.Find = u => Inv.TryGetValue(u, out var i) ? i : null;
             B.Send = Sent.Add;
             B.Notice += (a, b) => Notices.Add((a, b));
-            B.Limits.Add(2, new ItemEnchantLimitTable.Limit(10, 60, 15));
+            B.CanEnchantItem = i => i.Data.Type == 1;
         }
         public Item Add(long uid, int type = 1, int sub = 2, int level = 30, int enchant = 0, int charge = 0, int version = 1) {
             var d = new ItemData { Id = (int) uid, Type = type, Subtype = sub, LevelLimit = level };
@@ -36,21 +36,12 @@ public class ItemEnchantBookTests {
         Assert.That(t.Sent[1], Is.EqualTo(new ItemEnchantTalkRequest(false, 0, 0, 5)));
     }
 
-    [Test] public void SelectRefusesWhatTheLimitTableRefuses() {
+    [Test] public void SelectResetsWhatTheLimitRuleRefuses() {
         var t = new Rig(); int resets = 0; t.B.SlotReset += () => resets++;
-        t.Add(1, type: 2);                      // not an equip
-        t.Add(2, sub: 9);                       // no limit row for its slot
-        t.Add(3, level: 5);                     // below the band
-        t.Add(4, level: 70);                    // above the band
-        t.Add(5, enchant: 15);                  // at the top grade
-        var p = t.Add(6); p.ExpiryTime = 100;   // has a period
-        var l = t.Add(7); l.UnlimitedEnchantLevel = 1;
-        var x = t.Add(8); x.Data.ExceptEnchant = true;
-        foreach (var u in new long[] { 1, 2, 3, 4, 5, 6, 7, 8 })
-            Assert.That(t.B.Select(u), Is.EqualTo(EnchantStep.Reset), $"item {u}");
-        Assert.That(resets, Is.EqualTo(8));
-        Assert.That(t.Sent.FindAll(s => s is ItemEnchantSelectRequest), Is.Empty);   // the talk companion still goes out
-        Assert.That(t.Sent, Has.Count.EqualTo(8));
+        t.Add(1, type: 2);                      // the rule says no
+        Assert.That(t.B.Select(1), Is.EqualTo(EnchantStep.Reset));
+        Assert.That(resets, Is.EqualTo(1));
+        Assert.That(t.Sent, Is.EqualTo(new Ms2.Net.Wire.IOutPacket[] { new ItemEnchantTalkRequest(false, 0, 0, 1) }));   // the talk companion still goes out
         Assert.That(t.B.Select(99), Is.EqualTo(EnchantStep.NoItem));
         var n = t.Add(9); n.Record = null;
         Assert.That(t.B.Select(9), Is.EqualTo(EnchantStep.NoItem));
@@ -86,10 +77,19 @@ public class ItemEnchantBookTests {
         t.Sent.Clear();
         t.B.Apply(new ItemEnchantMessage.FailStackInfo(0, 0, new long[0], new EnchantRates(40, 0, 25, 0, 0)));
         Assert.That(t.B.Enchant(), Is.EqualTo(EnchantStep.AskProtector)); Assert.That(t.Sent, Is.Empty);
-        t.B.ConfirmProtector(2);
+        Assert.That(t.B.ConfirmProtector(2), Is.EqualTo(EnchantStep.Sent));
         Assert.That(t.Sent[0], Is.EqualTo(new ItemEnchantRequest(5, 32)));
         t.B.ConfirmProtector(1);
         Assert.That(t.Sent[1], Is.EqualTo(new ItemEnchantRequest(5, 31)));
+        t.Inv.Remove(5); Assert.That(t.B.ConfirmProtector(1), Is.EqualTo(EnchantStep.NoItem)); Assert.That(t.Sent, Has.Count.EqualTo(2));
+    }
+
+    [Test] public void AChargeAsksThePaybackBoxBeforeMode4() {
+        var t = Selected(1, out var it); it.Record.Enchant.Charge = 50;
+        Assert.That(t.B.Enchant(), Is.EqualTo(EnchantStep.AskPayback));
+        Assert.That(t.Sent, Is.Empty);
+        t.B.ConfirmPayback();
+        Assert.That(t.Sent, Is.EqualTo(new Ms2.Net.Wire.IOutPacket[] { new ItemEnchantRequest(5, 0) }));
     }
 
     [Test] public void PeachyEnchantSendsModeSixAfterItsBindingBox() {
@@ -136,15 +136,38 @@ public class ItemEnchantBookTests {
         Assert.That(t.B.IsIngredientCandidate(sel, 0), Is.False);                                     // the selected item itself
     }
 
-    [Test] public void FailStackStaysInsideZeroAndTheItemsCount() {
-        var t = Selected(1, out var it); it.Record.Enchant.FailStack = 2; t.B.MaxFailStackConst = 5;
-        Assert.That(t.B.ChangeFailStack(-1), Is.EqualTo(EnchantStep.OutOfRange));
-        Assert.That(t.B.ChangeFailStack(1), Is.EqualTo(EnchantStep.Sent));
-        Assert.That(t.Sent[0], Is.EqualTo(new ItemEnchantFailStackRequest(1)));
-        t.B.Apply(new ItemEnchantMessage.FailStackInfo(2, 0, new long[0], default));
-        Assert.That(t.B.ChangeFailStack(1), Is.EqualTo(EnchantStep.OutOfRange));
-        t.B.MaxFailStackConst = 1; t.B.Apply(new ItemEnchantMessage.FailStackInfo(1, 0, new long[0], default));
-        Assert.That(t.B.ChangeFailStack(1), Is.EqualTo(EnchantStep.OutOfRange));
+    [Test] public void FailStackSendsThePlusOrMinusOneUnconditionally() {
+        var t = Selected(1, out _);
+        t.B.ChangeFailStack(-1); t.B.ChangeFailStack(1);
+        Assert.That(t.Sent, Is.EqualTo(new Ms2.Net.Wire.IOutPacket[] { new ItemEnchantFailStackRequest(-1), new ItemEnchantFailStackRequest(1) }));
+        t.B.Apply(new ItemEnchantMessage.FailStackInfo(4, 0, new long[0], default)); t.Sent.Clear();
+        t.B.ChangeFailStack(1);
+        Assert.That(t.Sent[0], Is.EqualTo(new ItemEnchantFailStackRequest(5)));
+    }
+
+    [Test] public void AnOpenDialogKeepsTheBodyInACloneUntilRestore() {
+        var t = Selected(1, out var it); it.EnchantLevel = 4;
+        var stored = new List<EquipItem>(); t.B.StoreItem = stored.Add; t.B.IsOpen = true;
+        var res = new List<(bool, long, int, int)>(); t.B.Result += (s, u, p, c) => res.Add((s, u, p, c));
+        var body = new EquipItem { Id = 5, Uid = 5 }; body.Enchant.Level = 5;
+        t.B.Apply(new ItemEnchantMessage.Success(5, body, new Dictionary<int, int>()));
+        t.B.Apply(new ItemEnchantMessage.ItemUpdate(5, body));
+        Assert.That(stored, Is.Empty); Assert.That(t.B.Shown, Is.SameAs(body));
+        t.B.Apply(new ItemEnchantMessage.Success(5, body, new Dictionary<int, int>()));
+        Assert.That(res[1].Item3, Is.EqualTo(4));         // the inventory item still has the old level
+        t.B.Restore();
+        Assert.That(stored, Is.EqualTo(new[] { body })); Assert.That(t.B.Shown, Is.Null);
+        t.B.Restore(); Assert.That(stored, Has.Count.EqualTo(1));
+    }
+
+    [Test] public void TheTagMaterialIsAnIngredientToo() {
+        var t = Selected(1, out var sel); sel.Rarity = 3;
+        var m = t.Add(80); m.Rarity = 1; m.Count = 1;
+        Assert.That(t.B.IsIngredientCandidate(m, 0), Is.False);
+        var asked = new List<int>(); t.B.HasStringTag = (_, k) => { asked.Add(k); return true; };
+        Assert.That(t.B.IsIngredientCandidate(m, 0), Is.True); Assert.That(asked, Is.EqualTo(new[] { 0xcd }));
+        m.Count = 2; Assert.That(t.B.IsIngredientCandidate(m, 0), Is.False);
+        m.Count = 1; t.B.CanUseItem = _ => false; Assert.That(t.B.IsIngredientCandidate(m, 0), Is.False);
     }
 
     [Test] public void ResultsRaiseTheMovieEventAndErrorsTheirNotices() {
@@ -167,15 +190,18 @@ public class ItemEnchantBookTests {
     [Test] public void RefundedReselectsTheSelectedItem() {
         var t = Selected(1, out _);
         t.B.Apply(new ItemEnchantMessage.Refunded());
+        Assert.That(t.Sent, Is.Empty);                      // the dialog is closed: nothing goes out
+        t.B.IsOpen = true; t.Inv.Remove(5);                 // open: mode 1 with no item lookup
+        t.B.Apply(new ItemEnchantMessage.Refunded());
         Assert.That(t.Sent, Is.EqualTo(new Ms2.Net.Wire.IOutPacket[] { new ItemEnchantSelectRequest(1, 5) }));
-        Assert.That(t.Notices, Is.EqualTo(new[] { (0, 0) }));
+        Assert.That(t.Notices, Is.EqualTo(new[] { (0, 0), (0, 0) }));
     }
 
     [Test] public void ChargeChangeClearsTheFailStackUids() {
         var t = Selected(1, out var it);
         t.B.Apply(new ItemEnchantMessage.FailStackList(3, new long[] { 1, 2 }));
         t.B.Apply(new ItemEnchantMessage.ChargeChanged(5, 777));
-        Assert.That(it.Record.Enchant.Charge, Is.EqualTo(777)); Assert.That(t.B.FailStackUids, Is.Empty); Assert.That(t.B.N2BC, Is.EqualTo(0));
+        Assert.That(it.Record.Enchant.Charge, Is.EqualTo(777)); Assert.That(t.B.FailStackUids, Is.Empty); Assert.That(t.B.FailStackCount, Is.EqualTo(0));
     }
 
     [Test] public void TheTalkArgumentPicksTheMode() {

@@ -10,22 +10,22 @@ public readonly record struct EnchantIngredient(int ItemId, int Tag, int Count);
 
 /// <summary>The fail-stack rates the ophelia (mode 1) answer and the mode 7 packet carry: m_228 (base rate), m_22c, m_230
 /// (protection rate), m_234, m_238 (floats).</summary>
-public readonly record struct EnchantRates(float Base, float R22C, float Protect, float R234, float R238);
+public readonly record struct EnchantRates(float Base, float RateSecond, float Protect, float RateFourth, float RateFifth);
 
 /// <summary>Inbound 0x97, CSceneStateGame::OnItemEnchant (scenestategame.cpp:6101, @0x141732B20), by the mode byte.</summary>
 public abstract record ItemEnchantMessage {
     /// <summary>Mode 5, UIItemEnchantDialog::OnEnchantInfoPacket (@0x1419c1f20). ExpMode is the i16 the packet carries (the
     /// dialog closes when it differs from its own m_expMode); the rest follows only when it matches. Rates, Protector0/1,
     /// FailStackMode apply to ExpMode 1 (ophelia); ExpMode 2 (peachy) has base and m_23c = 100.</summary>
-    public sealed record Info(short ExpMode, long Uid, IReadOnlyList<EnchantIngredient> Ingredients, ushort N2B0,
+    public sealed record Info(short ExpMode, long Uid, IReadOnlyList<EnchantIngredient> Ingredients, ushort InfoFlags,
         IReadOnlyDictionary<int, int> Options, EnchantRates Rates, long Protector0, long Protector1, byte FailStackMode,
         int ResultItemId, short ResultRank, int ResultCount) : ItemEnchantMessage;
     /// <summary>Mode 6 (FUN_1419c3950): the item's enchant charge changed.</summary>
     public sealed record ChargeChanged(long Uid, int Charge) : ItemEnchantMessage;
     /// <summary>Mode 7 (FUN_1419c3b90): fail stack, m_2bc, the stack item uids and the five rates.</summary>
-    public sealed record FailStackInfo(int FailStack, int N2BC, IReadOnlyList<long> Uids, EnchantRates Rates) : ItemEnchantMessage;
+    public sealed record FailStackInfo(int FailStack, int FailStackCount, IReadOnlyList<long> Uids, EnchantRates Rates) : ItemEnchantMessage;
     /// <summary>Mode 8 (OnFailStackPacket): m_2bc and the stack item uids.</summary>
-    public sealed record FailStackList(int N2BC, IReadOnlyList<long> Uids) : ItemEnchantMessage;
+    public sealed record FailStackList(int FailStackCount, IReadOnlyList<long> Uids) : ItemEnchantMessage;
     /// <summary>Mode 9: the charge was refunded (notice s_itemenchant_enchant_exp_refund_ok).</summary>
     public sealed record Refunded : ItemEnchantMessage;
     /// <summary>Mode 10: success. The item body is re-read and then its options. Item is null for an unknown uid (the rest is not parsed).</summary>

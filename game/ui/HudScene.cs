@@ -882,6 +882,9 @@ public partial class HudScene : Node, IUiStageHost
         live.MasteryTable = hudModel.Tables.MasteryRecipes;   // OnMastery's grade of an exp value
         // FUN_140d2e2b0's held containers: the bag (g_143ab2a90.FindItemByUid)
         ChatLog.FindHeldItem = uid => live.Inventory?.FindByUid(uid) is { } e ? Ms2.Ui.Hud.InventoryController.ToItem(e, hudModel.Tables.Items) : null;
+        // UIItemEnchantDialog's model: the UI item of a uid and the limit table's CanEnchant (needed by the 0x97 results).
+        live.EnchantBook.Find = uid => live.Items.Get(uid) is { } e ? Ms2.Ui.Hud.InventoryController.ToItem(e, hudModel.Tables.Items) : null;
+        live.EnchantBook.CanEnchantItem = hudModel.Tables.ItemOptions.CanEnchant;
         ChatLog.CommandHooks.ChatLine = ChatLog.AddSystemLine;
         ChatLog.CommandHooks.GmLevel = ChatLog.GmLevel;
         ChatLog.CommandHooks.Unported = (name, args) =>

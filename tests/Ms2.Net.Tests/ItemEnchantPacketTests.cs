@@ -64,7 +64,7 @@ public class ItemEnchantPacketTests {
         });
         Assert.That(m.ExpMode, Is.EqualTo(1)); Assert.That(m.Uid, Is.EqualTo(77));
         Assert.That(m.Ingredients, Is.EqualTo(new[] { new EnchantIngredient(100, 0, 3), new EnchantIngredient(101, 1, 4) }));
-        Assert.That(m.N2B0, Is.EqualTo(0x1234));
+        Assert.That(m.InfoFlags, Is.EqualTo(0x1234));
         Assert.That(m.Options, Is.EqualTo(new Dictionary<int, int> { [7] = 70, [9] = -5 }));
         Assert.That(m.Rates, Is.EqualTo(new EnchantRates(1, 2, 3, 4, 5)));
         Assert.That((m.Protector0, m.Protector1, m.FailStackMode), Is.EqualTo((8L, 9L, (byte) 1)));
@@ -88,10 +88,10 @@ public class ItemEnchantPacketTests {
             w.WriteByte(7); w.WriteInt(2); w.WriteInt(3); w.WriteInt(2); w.WriteLong(10); w.WriteLong(11);
             for (int i = 1; i <= 5; i++) w.WriteFloat(i * 2);
         });
-        Assert.That((f.FailStack, f.N2BC), Is.EqualTo((2, 3))); Assert.That(f.Uids, Is.EqualTo(new long[] { 10, 11 }));
+        Assert.That((f.FailStack, f.FailStackCount), Is.EqualTo((2, 3))); Assert.That(f.Uids, Is.EqualTo(new long[] { 10, 11 }));
         Assert.That(f.Rates, Is.EqualTo(new EnchantRates(2, 4, 6, 8, 10)));
         var s = (ItemEnchantMessage.FailStackList) Read(w => { w.WriteByte(8); w.WriteInt(5); w.WriteInt(1); w.WriteLong(12); });
-        Assert.That((s.N2BC, s.Uids), Is.EqualTo((5, new long[] { 12 })));
+        Assert.That((s.FailStackCount, s.Uids), Is.EqualTo((5, new long[] { 12 })));
         Assert.That(Read(w => w.WriteByte(9)), Is.InstanceOf<ItemEnchantMessage.Refunded>());
         Assert.That(Read(w => w.WriteByte(16)), Is.InstanceOf<ItemEnchantMessage.IngredientCounts>());
         Assert.That(((ItemEnchantMessage.Error) Read(w => { w.WriteByte(12); w.WriteShort(3); })).Code, Is.EqualTo(3));
