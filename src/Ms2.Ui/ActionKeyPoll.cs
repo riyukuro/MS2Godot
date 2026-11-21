@@ -15,6 +15,8 @@ public enum ActionKeyTarget
     Lift,
     /// <summary>BillBoardInteractAction (0x18).</summary>
     BillBoard,
+    /// <summary>PutDownLiftableAction (0xc), in the cube-mode map only (actionkeyobject.cpp:534).</summary>
+    PutDownLiftable,
 }
 
 /// <summary>
@@ -52,6 +54,23 @@ public struct ActionKeyPoll
         : lift ? ActionKeyTarget.Lift
         : billBoard ? ActionKeyTarget.BillBoard
         : ActionKeyTarget.None;
+
+    /// <summary>The cube-mode map (m_actionsCubeMode, actionkeyobject.cpp:531-534), used while the local pc is in cube mode
+    /// (GetActiveActionMap @0x140953770, :707-717): put down liftable (0xc), portal (0x13), talk (0x14). Its BuyCubeAction
+    /// (0x16) never applies (vfunc_1 @0x140956f50 returns 0, :1224).</summary>
+    public static ActionKeyTarget PickCubeMode(bool putDown, bool portal, bool talk) =>
+        putDown ? ActionKeyTarget.PutDownLiftable
+        : portal ? ActionKeyTarget.Portal
+        : talk ? ActionKeyTarget.Talk
+        : ActionKeyTarget.None;
+
+    /// <summary>ActivateCurrentAction (:612-614): the current action runs only if the active map has its key, so an action
+    /// picked before the cube mode changed (until the next poll) does nothing. Portal and talk are in both maps; put down
+    /// liftable only in the cube-mode one.</summary>
+    public readonly bool InActiveMap(bool cubeMode) =>
+        cubeMode
+            ? Current is ActionKeyTarget.None or ActionKeyTarget.PutDownLiftable or ActionKeyTarget.Portal or ActionKeyTarget.Talk
+            : Current != ActionKeyTarget.PutDownLiftable;
 
     /// <summary>ActivateCurrentAction: the action the key runs, none while an item is held (:620,
     /// MyPC::GetHeldItem).</summary>

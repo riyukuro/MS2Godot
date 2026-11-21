@@ -583,14 +583,22 @@ public partial class FieldContents : Node3D
             // current action (ActivateCurrentAction), so a refused interact does not reach the talk. Active
             // StateInteraction casts tick every frame (0 B/frame).
             // STILL-OPEN: a billboard or a lift keeps its highlight next to a talkable npc (the talk takes the key at the press).
+            // In cube mode (PC::IsInCubeMode) the poll runs the cube-mode map instead (GetActiveActionMap,
+            // actionkeyobject.cpp:707-717): put down liftable (0xc), portal (0x13), talk (0x14, at the press).
+            // STILL-OPEN: PutDownLiftableAction (0xc) is not polled yet.
             var playerMs2 = FieldPortals.ToMs2(player.GlobalPosition);
+            bool cubeMode = Ms2Godot.Net.LiveSession.Instance is { } cs && cs.CubeCraft.InCubeMode;
             if (actionKeys.Due((uint)Time.GetTicksMsec()))
             {
-                bool onInteract = LiveInteractPoll(playerMs2);
-                bool onPortal = !onInteract && LivePortalPoll();
-                bool onLift = !onInteract && !onPortal && LiveLiftPoll(playerMs2);
-                bool onBoard = !onInteract && !onPortal && !onLift && LiveInteractBillBoardPoll(playerMs2);
-                actionKeys.Current = Ms2.Ui.ActionKeyPoll.Pick(onInteract, onPortal, false, onLift, onBoard);
+                if (cubeMode) actionKeys.Current = Ms2.Ui.ActionKeyPoll.PickCubeMode(false, LivePortalPoll(), false);
+                else
+                {
+                    bool onInteract = LiveInteractPoll(playerMs2);
+                    bool onPortal = !onInteract && LivePortalPoll();
+                    bool onLift = !onInteract && !onPortal && LiveLiftPoll(playerMs2);
+                    bool onBoard = !onInteract && !onPortal && !onLift && LiveInteractBillBoardPoll(playerMs2);
+                    actionKeys.Current = Ms2.Ui.ActionKeyPoll.Pick(onInteract, onPortal, false, onLift, onBoard);
+                }
             }
             LiveInteractTick(playerMs2, player.State != Player.MoveState.Idle);
             if (!pressed) return;
@@ -598,7 +606,7 @@ public partial class FieldContents : Node3D
             // ActivateCurrentAction (actionkeyobject.cpp:619-620): with an item held (GetHeldItem) the key does nothing
             bool held = Ms2Godot.Net.LiveSession.Instance is { } hs && hs.HeldItem.Held;
             var target = actionKeys.OnPress(heldItem: held);
-            if (held) return;
+            if (held || !actionKeys.InActiveMap(cubeMode)) return;
             if (target is Ms2.Ui.ActionKeyTarget.Lift or Ms2.Ui.ActionKeyTarget.BillBoard && talk?.FindTalkable() != null)
                 target = Ms2.Ui.ActionKeyTarget.Talk;                  // talk 0x14 comes before lift 0x15 and billboard 0x18
             switch (target)

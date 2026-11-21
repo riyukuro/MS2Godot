@@ -200,7 +200,9 @@ public sealed class FieldAddUser {
     public RideOnAction Ride; public (int Key, byte Value)[] Passengers = Array.Empty<(int, byte)>();
     public List<Buff> Buffs = new();
     public EquipItem Pet;
-    public int HeldCubeItemId; public long HeldCubeId;
+    /// <summary>The cube block (scenestategame.cpp:11189-11192): u8 the cube mode, the CubeItemInfo, i32 the craft mode, handed
+    /// to PC::vfunc_135 (pc.cpp:3068).</summary>
+    public byte CubeMode; public CubeItemInfo CubeItem; public int CraftMode;
     public SkinColor Skin; public string Picture;
     public List<EquipItem> Equips = new(); public List<EquipItem> Outfit2 = new(); public List<EquipItem> Badges = new();
     public long SkinTabStart, SkinTabEnd;
@@ -231,11 +233,9 @@ public sealed class FieldAddUser {
         if (r.ReadByte() != 0x23) throw new PacketLayoutException("player stats count");
         for (int i = 0; i < 3; i++) f.Stats[i] = (r.ReadLong(), r.ReadInt(), r.ReadInt(), r.ReadInt(), r.ReadInt());
         f.InBattle = r.ReadBool();
-        r.ReadByte();
-        // HeldCube: i32 item id, i64 id, i64 expiry, bool template (+ ugc look)
-        f.HeldCubeItemId = r.ReadInt(); f.HeldCubeId = r.ReadLong(); r.ReadLong();
-        if (r.ReadBool()) ItemReader.ReadUgcLook(r);
-        r.ReadInt();
+        f.CubeMode = r.ReadByte();
+        f.CubeItem = CubeItemInfo.Read(r);
+        f.CraftMode = r.ReadInt();
         f.Skin = new SkinColor(r.ReadRgba(), r.ReadRgba());
         f.Picture = r.ReadUnicodeString();
         if (r.ReadBool()) {

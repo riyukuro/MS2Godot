@@ -168,7 +168,7 @@ public class SniffTests {
         TestContext.Out.WriteLine($"FieldAddUser: {ok} decoded, {unsupported} with a riding state or held ugc cube (not decoded)");
         Assert.That(ok, Is.GreaterThan(100));
         int rides = 0, buffs = 0, pets = 0;
-        foreach (var (_, p) in Packets(true, 0x17)) { var u = FieldAddUser.Read(new ByteReader(p.Data)); if (u.Ride != null) rides++; buffs += u.Buffs.Count; if (u.Pet != null) pets++; }
+        foreach (var (_, p) in Packets(true, 0x17)) { var u = FieldAddUser.Read(new ByteReader(p.Data)); Assert.That(u.CubeItem, Is.Not.Null); if (u.Ride != null) rides++; buffs += u.Buffs.Count; if (u.Pet != null) pets++; }
         TestContext.Out.WriteLine($"FieldAddUser: {rides} riding, {buffs} buffs, {pets} with a pet item");
         Assert.That(unsupported, Is.EqualTo(0));
     }

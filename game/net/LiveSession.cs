@@ -241,6 +241,8 @@ public partial class LiveSession : Node
     public readonly Ms2.Ui.LiftableObjects Liftables = new();
     /// <summary>The field's liftable target boxes (WorldService m_540).</summary>
     public readonly Ms2.Ui.LiftableTargetBoxes LiftTargets = new();
+    /// <summary>The own pc's cube mode and craft (PC::m_nCubeModeFFC, m_pCubeCraft).</summary>
+    public readonly Ms2.Ui.CubeCraftState CubeCraft = new();
     /// <summary>A Fishing packet that changed <see cref="FishingBook"/>, for the open fishing book (it fills its tab again).</summary>
     public event Action<FishingMessage> FishingReceived;
     public CharacterCreateRefused LastRefusal { get; private set; }
@@ -906,6 +908,7 @@ public partial class LiveSession : Node
         var found = GetTree().Root.FindChild("Player", true, false) as Player;
         if (found == null || found.IsQueuedForDeletion()) return;
         bindPending = false;
+        CubeCraft.ModelAttached();   // PC::vfunc_12 (pc.cpp:844-852): a craft that waited for the model is made
         if (found == player && player.Live) return;   // a repeat of the own FieldAddUser on the same field
         BindPlayer(found);
     }
@@ -967,7 +970,10 @@ public partial class LiveSession : Node
                 bool self = u.User.CharacterId == entry.Enter.CharacterId;
                 if (self)
                 {
-                    selfObject = u.ObjectId; SelfInBattle = u.InBattle; Me.Apply(u); player?.SetBattleStance(u.InBattle); bindPending = true; TryBindPlayer();   // OnAddUser builds the MyPC
+                    selfObject = u.ObjectId; SelfInBattle = u.InBattle; Me.Apply(u); player?.SetBattleStance(u.InBattle);
+                    // a new MyPC, then its cube mode (PC::vfunc_135, scenestategame.cpp:11189-11192) before its model is in (vfunc_12)
+                    CubeCraft.NewPc(); CubeCraft.Set(u.CubeMode, u.CraftMode, u.CubeItem, Me.Dead);
+                    bindPending = true; TryBindPlayer();   // OnAddUser builds the MyPC
                     // a new MyPC holds nothing; PC::vfunc_12 (pc.cpp:853-855) holds the AddUser i32 (scenestategame.cpp:11218)
                     HeldItem.Release();
                     HeldItem.AddUser(u.HeldObject, ItemExists?.Invoke(u.HeldObject) ?? true);
@@ -1457,6 +1463,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.InteractNpc)) OnInteractNpc(InteractNpcMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.GameEvent)) OnGameEvent(GameEventMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.ResponseCube)) OnResponseCube(ResponseCubeHeldItem.Read(p.Reader()));
+            else if (game.Is(p, Inbound.SetCraftMode)) OnSetCraftMode(SetCraftMode.Read(p.Reader()));
             else if (game.Is(p, Inbound.Emote)) OnEmote(EmoteMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.GameToLogin)) OnGameToLogin(GameToLogin.Read(p.Reader()));
             else if (game.Is(p, Inbound.GameToGame)) OnGameToGame(GameToGame.Read(p.Reader()));
