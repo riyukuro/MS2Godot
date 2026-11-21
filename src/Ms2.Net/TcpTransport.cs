@@ -12,11 +12,26 @@ namespace Ms2.Net;
 /// No engine types here. A new instance per connection (the login to game hop opens a second one).
 /// </summary>
 public sealed class TcpTransport : IDisposable {
-    readonly TcpClient tcp = new() { NoDelay = true };
+    TcpClient tcp = new() { NoDelay = true };
     readonly CancellationTokenSource cts = new();
     ClientSession session;
     Task run;
     int closed, disposed;
+    OutPacketBuffer carry;
+    string lastHost = ""; int lastPort;
+    volatile bool wantAttempt, driving;
+
+    /// <summary>The reconnection manager this connection reports to (TSingleton CReconnectionManagerCli): the server's options and context land here, a dropped game connection is taken back through it.</summary>
+    public ReconnectionManager Reconnection { get; }
+    /// <summary>The scene is the game scene (IReconnectHost.InGame): a reconnect only starts there. The owner sets it once the field was entered.</summary>
+    public Func<bool> InGame { get; set; } = () => false;
+    /// <summary>UIReconnectTopLayerNotify (0x4f78): attempt and attempts while a reconnect runs; <see cref="ReconnectProgressHidden"/> when it ends.</summary>
+    public event Action<int, int> ReconnectProgress;
+    public event Action ReconnectProgressHidden;
+    /// <summary>OnReconnectPacket kind 3 in game: the server ended the session (SendRequestQuitAndDisconnect, scene 0x6200009 and the 0x20f box in the client). STILL-OPEN in the owner.</summary>
+    public event Action SessionEnded;
+
+    public TcpTransport() { Reconnection = new ReconnectionManager(new ReconnectHost(this)); }
 
     /// <summary>Received packets in arrival order; TryDequeue from the consumer thread.</summary>
     public ConcurrentQueue<RawPacket> Incoming { get; } = new();
@@ -40,20 +55,94 @@ public sealed class TcpTransport : IDisposable {
     /// <summary>Connects and starts the read loop. The hello is answered by the session; after it, <see cref="Send"/> works.</summary>
     public async Task ConnectAsync(string host, int port, CancellationToken ct = default) {
         await tcp.ConnectAsync(host, port, ct);
-        var channel = new MapleChannel(tcp.GetStream());
-        session = new ClientSession(channel);
-        session.PacketReceived += Incoming.Enqueue;
-        run = Task.Run(() => RunAsync(channel));
+        lastHost = host; lastPort = port;
+        Attach(new MapleChannel(tcp.GetStream()));
     }
 
-    async Task RunAsync(MapleChannel channel) {
-        try { await session.RunAsync(cts.Token); }
+    void Attach(MapleChannel channel) {
+        session = new ClientSession(channel) { Manager = Reconnection };
+        carry = channel.Out;
+        session.PacketReceived += Incoming.Enqueue;
+        var mine = session;
+        run = Task.Run(() => RunAsync(mine));
+    }
+
+    async Task RunAsync(ClientSession mine) {
+        try { await mine.RunAsync(cts.Token); }
         catch (OperationCanceledException) { }
         catch (Exception e) { if (!cts.IsCancellationRequested && Volatile.Read(ref disposed) == 0) Failure = e; }   // after Dispose the socket error is expected: swallowed here, so the task never faults
-        finally {
-            Volatile.Write(ref closed, 1);
-            try { Closed?.Invoke(); } catch { }
+        if (mine != session) return;   // a connection a reconnect already replaced
+        if (Volatile.Read(ref disposed) == 0 && ReconnectAfterDrop()) return;
+        Volatile.Write(ref closed, 1);
+        try { Closed?.Invoke(); } catch { }
+    }
+
+    /// <summary>
+    /// The read loop ended on a connection the client did not close. While a reconnect runs it is a failed attempt (OnReconnectFailed with the socket-closed code);
+    /// else ShouldReconnect (reconnectionmanagercli.cpp @0x140aacf50) decides, and BeginReconnect starts the clock. True: the connection is not reported closed.
+    /// </summary>
+    bool ReconnectAfterDrop() {
+        var m = Reconnection;
+        if (m.IsReconnecting) { m.OnFailed(ReconnectionManager.ErrorSocketClosed); return m.IsReconnecting; }
+        if (!m.ShouldReconnect(ReconnectionManager.ErrorSocketClosed)) return false;
+        m.Begin(ReconnectionManager.ErrorSocketClosed);
+        if (!m.IsReconnecting) return false;
+        StartDriver();
+        return true;
+    }
+
+    /// <summary>The main loop's part: the once-a-second Tick and the 0x46b attempt message.</summary>
+    void StartDriver() {
+        if (driving) return;
+        driving = true;
+        _ = Task.Run(async () => {
+            try {
+                while (Volatile.Read(ref disposed) == 0 && Volatile.Read(ref closed) == 0 && Reconnection.IsReconnecting) {
+                    Reconnection.Tick();
+                    if (wantAttempt) { wantAttempt = false; if (!Reconnection.TryConnect() && Reconnection.IsReconnecting) Reconnection.OnFailed(ReconnectionManager.ErrorSocketClosed); }
+                    await Task.Delay(100);
+                }
+            } finally { driving = false; }
+        });
+    }
+
+    /// <summary>The reconnect gave up (window message 0x465): the connection is closed for the owner now.</summary>
+    void GaveUp(int code) {
+        Failure ??= new IOException($"reconnect gave up (code {code})");
+        Volatile.Write(ref closed, 1);
+        try { Closed?.Invoke(); } catch { }
+    }
+
+    sealed class ReconnectHost(TcpTransport t) : IReconnectHost {
+        public uint Now => unchecked((uint) Environment.TickCount64);
+        public bool InGame => t.InGame();
+        public bool HasConnection => t.session != null;
+        public bool HasNetworkService => true;
+        public bool SocketDisconnected => Volatile.Read(ref t.disposed) != 0;
+        public bool Closing => false;
+        public string SocketHost => t.lastHost;
+        public int SocketPort => t.lastPort;
+        public int SocketSequence => t.carry?.Sequence ?? 0;
+        public bool IsConnected => t.tcp.Connected;
+        public bool Connect(string host, int port) {
+            try {
+                var next = new TcpClient { NoDelay = true };
+                using var wait = new CancellationTokenSource(GameClient.MoveConnectWaitMs);
+                next.ConnectAsync(host, port, wait.Token).AsTask().GetAwaiter().GetResult();
+                try { t.tcp.Dispose(); } catch { }
+                t.tcp = next;
+                t.Attach(new MapleChannel(next.GetStream(), t.carry));
+                return true;
+            } catch (Exception) { return false; }
         }
+        public void Close() { try { t.tcp.Dispose(); } catch { } }
+        public void SendReconnectRequest(ReconnectRequest request) { _ = t.Channel.SendAsync(request); }
+        public void ShowProgress(int attempt, int attempts) => t.ReconnectProgress?.Invoke(attempt, attempts);
+        public void HideProgress() => t.ReconnectProgressHidden?.Invoke();
+        public void Notice(string text) { }
+        public void PostAttempt(int code) => t.wantAttempt = true;
+        public void PostGaveUp(int code) => t.GaveUp(code);
+        public void EndSession() => t.SessionEnded?.Invoke();
     }
 
     public Task SendAsync(IOutPacket packet, CancellationToken ct = default) => Channel.SendAsync(packet, ct);

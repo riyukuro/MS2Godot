@@ -41,6 +41,7 @@ public partial class LiveSession : Node
 
     readonly byte[] machine = new byte[16];
     TcpTransport login, game;
+    Func<bool> inGame;
     long accountId;
     GameEntry entry;
     string host;
@@ -950,6 +951,8 @@ public partial class LiveSession : Node
         Me.ExpireRevival((uint)game.Session.ServerTick);   // PC::FUN_141661ac0 (pc.cpp:2043), in PC's per-frame update
         if (bindPending) TryBindPlayer();
         Portals?.Tick((uint)game.Session.ServerTick);
+        inGame ??= () => player != null && player.Live;   // IReconnectHost.InGame: the field was entered
+        if (game.InGame != inGame) game.InGame = inGame;
         if (game.IsClosed) { GameLinkLost?.Invoke(); GD.PushWarning("live: game connection closed" + (game.Failure != null ? ": " + game.Failure.Message : "")); game.Dispose(); game = null; if (player != null) player.Live = false; }   // offline fall-return emulation comes back
     }
 

@@ -81,3 +81,27 @@ public sealed record FinalizeReconnect(int Sequence) : IOutPacket {
     public Outbound Op => Outbound.FinalizeReconnect;
     public void Write(ByteWriter w) => w.WriteInt(Sequence);
 }
+
+/// <summary>
+/// Inbound 0x6D (CNetworkService::OnGvg @0x14153a8f0, networkservice.cpp:811-832): i32 count, then per entry i32 kind and its body. Only kind 43
+/// (ReconnectionOptions) matters to the socket. The walk knows the bodies of kinds 1 (bool), 25 (four i32), 34 (i16, i32, i32) and 43; a kind whose body
+/// lives in another reader (7 shutdown input, 42 rates) ends it, so an options entry behind one is not seen. STILL-OPEN: those two bodies.
+/// </summary>
+public static class GvgOptions {
+    public const int KindReconnectionOptions = 43;
+
+    /// <summary>The options of the first kind 43 entry, or null when the packet has none (before an entry the walk cannot size).</summary>
+    public static ReconnectionOptions FindReconnection(ByteReader r) {
+        int count = r.ReadInt();
+        for (int i = 0; i < count; i++) {
+            switch (r.ReadInt()) {
+                case 1: r.ReadByte(); break;
+                case 25: for (int k = 0; k < 4; k++) r.ReadInt(); break;
+                case 34: r.ReadShort(); r.ReadInt(); r.ReadInt(); break;
+                case KindReconnectionOptions: return ReconnectionOptions.Read(r);
+                default: return null;
+            }
+        }
+        return null;
+    }
+}

@@ -95,6 +95,7 @@ public enum Inbound : ushort {
     StateFallDamage = 0x65,
     Tombstone = 0x5D,           // RecvOp::Tombstone (commonfiles/opcodes.h:101): OnTombstone
     KeyTable = 0x6F,
+    Gvg = 0x6D,                 // RecvOp::Gvg (commonfiles/opcodes.h:117): CNetworkService::OnGvg @0x14153a8f0 (networkservice.cpp:811)
     Job = 0x49,
     SkillPoint = 0x44,
     SkillBookTree = 0x10C,

@@ -1,6 +1,7 @@
 using System.Buffers;
 using Maple2.PacketLib.Crypto;
 using Maple2.PacketLib.Tools;
+using Ms2.Net.Packets;
 
 namespace Ms2.Net.Wire;
 
@@ -35,7 +36,22 @@ public sealed class MapleChannel {
     public Handshake Hello { get; private set; }
     public bool Ready => dec != null;
 
-    public MapleChannel(Stream stream) { this.stream = stream; }
+    public MapleChannel(Stream stream, OutPacketBuffer carry = null) { this.stream = stream; if (carry != null) Out = carry; }
+
+    /// <summary>CGameSocket::m_out: numbers what is sent and keeps the copies a reconnect resends (OutPacketBuffer).</summary>
+    public OutPacketBuffer Out { get; } = new();   // a reconnect's new socket carries the old one (CGameSocket keeps m_out across ConnectTo)
+    /// <summary>The server's ReconnectionOptions (the reconnection manager's GetOptions) as the next ResponseKey's reset reads them.</summary>
+    public ReconnectionOptions ReconnectOptions { get; } = new();
+
+    /// <summary>
+    /// CNetworkService::OnGvg kind 43 (networkservice.cpp:820-827): SetOptions, then the capture follows the enabled flag with the limit.
+    /// </summary>
+    public void SetReconnectOptions(ReconnectionOptions o) {
+        ReconnectOptions.Assign(o);
+        bool enabled = o[ReconnectionOptions.Enabled] == 1;
+        if (enabled) Out.SetLimit(o[ReconnectionOptions.BufferLimit]);
+        Out.SetCaptureEnabled(enabled);
+    }
 
     /// <summary>Reads the plain handshake frame and sets up both ciphers.</summary>
     public async Task<Handshake> ReadHandshakeAsync(CancellationToken ct = default) {
@@ -108,8 +124,30 @@ public sealed class MapleChannel {
         body?.Invoke(w);
         await sendLock.WaitAsync(ct);
         try {
+            Out.Capture((ushort) Profile.Number(op), w.Buffer[2..w.Length]);   // FUN_140208960: numbered and copied as it is sent
             var e = enc.Encrypt(w);
             await stream.WriteAsync(e.Buffer.AsMemory(0, e.Length), ct);
+            await stream.FlushAsync(ct);
+            if (op == Outbound.ResponseKey) { Out.Reset(); Out.Configure(ReconnectOptions); }   // FUN_1412672d0 runs after the ResponseKey is sent (networkservice.cpp:864)
+        } finally { sendLock.Release(); }
+    }
+
+    /// <summary>
+    /// CNetworkService::OnRetransmitRequest (networkservice.cpp:884-889): COutPacketBuffer::RetransmitClientPackets(socket, sequence): ReconnectUnk, the kept
+    /// packets after <paramref name="sequence"/> in order, FinalizeReconnect; all written under the send lock, so no new packet lands between them.
+    /// </summary>
+    public async Task RetransmitAsync(int sequence, CancellationToken ct = default) {
+        await sendLock.WaitAsync(ct);
+        try {
+            var frames = new List<(ushort Type, byte[] Body)>();
+            Out.Retransmit(sequence, (t, b) => frames.Add((t, b)));
+            foreach (var (t, b) in frames) {
+                var w = new ByteWriter();
+                w.WriteShort((short) t);
+                w.WriteBytes(b);
+                var e = enc.Encrypt(w);
+                await stream.WriteAsync(e.Buffer.AsMemory(0, e.Length), ct);
+            }
             await stream.FlushAsync(ct);
         } finally { sendLock.Release(); }
     }

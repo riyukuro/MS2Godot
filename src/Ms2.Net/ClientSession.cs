@@ -23,6 +23,8 @@ public sealed class ClientSession {
     public int ReceivedCount { get; private set; }
 
     public MapleChannel Channel => channel;
+    /// <summary>The reconnection manager (TSingleton CReconnectionManagerCli) this connection reports to; null where no reconnect is wanted (login connections, tests).</summary>
+    public ReconnectionManager Manager { get; set; }
     /// <summary>CMainSystem::GetElapsedTime: milliseconds since this client started (the second tick of UserSync).</summary>
     public int ElapsedMs => (int) clock.ElapsedMilliseconds;
 
@@ -72,11 +74,28 @@ public sealed class ClientSession {
         while (!ct.IsCancellationRequested) {
             var p = await channel.ReadPacketAsync(ct);
             ReceivedCount++;
+            bool answered = false;   // a RequestKey the reconnect request answered does not reach the owner
             lock (OpcodeCounts) OpcodeCounts[p.Opcode] = OpcodeCounts.GetValueOrDefault(p.Opcode) + 1;
             if (channel.Profile.TryInbound(p.Opcode, out var op)) switch (op) {
                 case Inbound.Ping:
-                    Ping.Read(p.Reader());
+                    channel.Out.DiscardAcked(Ping.Read(p.Reader()).Sequence);   // OnPingRequest (networkservice.cpp:876): the acked copies go
                     await channel.SendAsync(new Pong(ReceivedCount), ct);
+                    break;
+                case Inbound.ReconnectUnk:
+                    ReconnectUnk.Read(p.Reader());   // OnReconnectUnk (networkservice.cpp:882): read and dropped
+                    break;
+                case Inbound.FinalizeReconnect:
+                    await channel.RetransmitAsync(RetransmitRequest.Read(p.Reader()).Sequence, ct);   // OnRetransmitRequest (:884)
+                    break;
+                case Inbound.Gvg:
+                    if (GvgOptions.FindReconnection(p.Reader()) is { } ro) { Manager?.SetOptions(ro); channel.SetReconnectOptions(ro); }   // OnGvg kind 43 (:820)
+                    break;
+                case Inbound.Reconnect:
+                    if (Manager != null) Manager.OnPacket(ReconnectNotice.Read(p.Reader()));   // OnReconnect (networkservice.cpp:871) -> OnReconnectPacket
+                    break;
+                case Inbound.RequestKey:
+                    // OnRequestKey (networkservice.cpp:859): while reconnecting the answer is the reconnect request, not a ResponseKey
+                    if (Manager is { IsReconnecting: true }) { Manager.SendRequest(); answered = true; }
                     break;
                 case Inbound.RequestHeartbeat:
                     await channel.SendAsync(new ResponseHeartbeat(TickRequest.Read(p.Reader()).Tick, ElapsedMs), ct);
@@ -88,7 +107,7 @@ public sealed class ClientSession {
                     if (ApplyTimeSync(p.Reader())) await channel.SendAsync(new RequestTimeSync(++timeSyncSeq), ct);
                     break;
             }
-            PacketReceived?.Invoke(p);
+            if (!answered) PacketReceived?.Invoke(p);
         }
     }
 }
