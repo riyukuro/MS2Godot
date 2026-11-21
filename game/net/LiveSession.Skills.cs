@@ -33,6 +33,14 @@ public partial class LiveSession
         return true;
     }
 
+    /// <summary>A continue round's mode 3 (CSkillRecord::SendSkill, skillrecord.cpp:441) at the server tick. False offline.</summary>
+    public bool SendRound(CastRecord r)
+    {
+        if (game == null) return false;
+        Send(SkillCast.SendSkill(r, game.Session.ServerTick));
+        return true;
+    }
+
     /// <summary>The field's other players and npcs an own attack can hit (cleared first); empty before the field is built.</summary>
     public void HitCandidates(System.Collections.Generic.List<HitCandidate> into)
     {

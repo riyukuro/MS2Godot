@@ -56,6 +56,12 @@ public sealed class CastRecord
     public int SendCount;
     /// <summary>m_nAttackIndex: the attack StateSkill::FireCurrentAttack @0x1417f0d60 (stateskill.cpp:2264) fires last.</summary>
     public int AttackIndex;
+    /// <summary>m_n98: set by the loopend of a continue round (stateskill.cpp:911); the queued press of such a record plays
+    /// the loop again instead of a new cast (FUN_1417f11d0 :1589).</summary>
+    public bool Charged;
+    /// <summary>m_n9c: queued behind the running skill (StateSkill::SetChargeRecord :1494) until FUN_1417f11d0 lets it go
+    /// (:1588); while set the record's attacks do not fire (FireAttacksAtPoint :2276).</summary>
+    public bool QueuedCharge;
 
     /// <summary>GetCooldownKey: SkillLevelData::GetMotionKey of the record's motion.</summary>
     public ulong CooldownKey => Level.MotionKey(Motion);
@@ -291,6 +297,15 @@ public static class SkillCast
             r.Rotation, r.TargetDistance, elapsed, r.Flag, r.ItemUid, (long)r.CooldownKey, holdAttackFeature);
     }
 
+    /// <summary>CSkillRecord::SendSkill @0x14175a430 (skillrecord.cpp:441): a continue round's mode 3, the send tick taken
+    /// (m_nSendTick) and the send count up (m_nSendCount++). The record keeps no target map here (m_targets.RemoveAll).</summary>
+    public static SkillRoundRequest SendSkill(CastRecord r, int serverTick)
+    {
+        r.SendTick = serverTick;
+        r.SendCount++;
+        return new SkillRoundRequest(r.CastId, serverTick);
+    }
+
     /// <summary>
     /// StateSkill::SendChargeState @0x1417ec2f0 (stateskill.cpp:1271), from the skill state's update (vfunc_8 :724): the mode 2
     /// sync when the record's rotation, the owner's position, the charging or the loop flag differs from the last one sent
@@ -318,6 +333,9 @@ public sealed class ChargeSync
     /// off, so the first update sends unless the owner stands at the origin.
     /// </summary>
     public void Reset(Vector3 ownerRotation) { rot = ownerRotation; pos = Vector3.Zero; charging = false; loop = false; }
+
+    /// <summary>A continue round's loopend (stateskill.cpp:899): m_bSentCharging off, so the next charging sync goes.</summary>
+    public void ClearCharging() => charging = false;
 
     /// <summary>SendChargeState's test (:1275-1281): true when any value differs, and then the values are kept as sent.</summary>
     public bool Take(Vector3 recordRotation, Vector3 ownerPosition, bool charging, bool loop)

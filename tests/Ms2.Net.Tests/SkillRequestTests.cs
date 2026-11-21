@@ -104,4 +104,13 @@ public class SkillRequestTests
         })));
         Assert.That(Bytes(p).Length, Is.EqualTo(1 + 8 + 4 + 2 + 1 + 48 + 1 + 1 + 4));
     }
+
+    [Test]
+    public void AContinueRoundWritesModeThreeWithTheCastIdAndTheSendTick()
+    {
+        // CSkillRecord::SendSkill @0x14175a430 (skillrecord.cpp:443-447)
+        var p = new SkillRoundRequest(0x1122334455667788, 0x0a0b0c0d);
+        Assert.That(p.Op, Is.EqualTo(Outbound.Skill));
+        Assert.That(Bytes(p), Is.EqualTo(Expect(w => { w.WriteByte(3); w.WriteLong(0x1122334455667788); w.WriteInt(0x0a0b0c0d); })));
+    }
 }

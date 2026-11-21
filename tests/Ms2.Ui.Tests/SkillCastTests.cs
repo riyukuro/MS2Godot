@@ -154,4 +154,23 @@ public class SkillCastTests
         for (int i = 0; i < 100000; i++) SkillCast.SyncIfChanged(sent, r, Vector3.Zero, false, false);
         Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512), "100000 unchanged updates");
     }
+
+    [Test]
+    public void AContinueRoundSendsModeThreeCountsTheSendAndResendsTheCharging()
+    {
+        var w = World(Skills(Attack, JumpAttack));
+        var r = SkillCast.Request(w, new CastWorld(), Req(100), _ => 100).Record;
+        // CSkillRecord::SendSkill (skillrecord.cpp:443-449): m_nSendTick, the packet, m_nSendCount++
+        Assert.That(SkillCast.SendSkill(r, 5000), Is.EqualTo(new SkillRoundRequest(77, 5000)));
+        Assert.That((r.SendTick, r.SendCount), Is.EqualTo((5000, 1)));
+        SkillCast.SendSkill(r, 5100);
+        Assert.That((r.SendTick, r.SendCount), Is.EqualTo((5100, 2)));
+        // loopend (stateskill.cpp:899): m_bSentCharging = false, the same charging sync goes again
+        var sent = new ChargeSync();
+        sent.Reset(Vector3.Zero);
+        Assert.That(SkillCast.SyncIfChanged(sent, r, Vector3.UnitX, true, false), Is.Not.Null);
+        Assert.That(SkillCast.SyncIfChanged(sent, r, Vector3.UnitX, true, false), Is.Null);
+        sent.ClearCharging();
+        Assert.That(SkillCast.SyncIfChanged(sent, r, Vector3.UnitX, true, false)?.Charging, Is.True);
+    }
 }

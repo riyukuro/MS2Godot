@@ -310,6 +310,23 @@ public sealed class KeyTable : IKeyTable
         return k.Slot;
     }
 
+    /// <summary>
+    /// CKeyTable::FUN_14142c6c0 @0x14142c6c0 (keytable.cpp:1125) for one key: the key is listed for the skill when its entry is
+    /// valid (IsKeyEntryValid @0x14142cf60, :1292: a type and a code, a quick slot action's slot not empty, a type 1 key's slot
+    /// not 0) and GetKeySkillId gives the skill (no dynamic action list, the one-argument form). Lookups only, no allocation.
+    /// </summary>
+    public bool IsKeyOfSkill(int key, int skillId, ServerKeyTable slots)
+    {
+        if (!keys.TryGetValue(key, out var k) || k.Type == 0 || k.Code == 0) return false;
+        if (IsQuickSlotAction(k.Code))
+        {
+            int index = FindQuickSlotActionIndex(k.Code);
+            if (index < 0 || slots == null || slots.Entry(slots.CurrentPage, index).IsEmpty) return false;
+        }
+        else if (k.Type == 1 && k.Slot == 0) return false;
+        return GetKeySkillId(key, slots) == skillId;
+    }
+
     /// <summary>The held item action (CKeyTable::GetSkillIdByKey, keytable.cpp:1466).</summary>
     public const long HeldItemAction = 0x493e2;
 

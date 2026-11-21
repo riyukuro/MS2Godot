@@ -51,6 +51,30 @@ public class KeySkillTests
         Assert.That(Skill(t, Key1, Slots(0), player: false), Is.EqualTo(0), "no local player");
     }
 
+    [Test] public void TheKeysOfASkillNeedAValidEntryAndTheSkill()
+    {
+        // CKeyTable::FUN_14142c6c0 (keytable.cpp:1125-1138) over IsKeyEntryValid (:1292-1314)
+        var t = Keys(new KeyBinding(Key1, 1, Slot0, 0, 0), new KeyBinding(Key2, 1, Slot2, 0, 0), new KeyBinding(KeyQ, 1, 0x49401, 0, 0),
+                     new KeyBinding(KeyE, 3, 0x49401, 10200001, 0), new KeyBinding(KeyR, 0, 0x49401, 10200001, 0));
+        var s = Slots(0);
+        Assert.That(t.IsKeyOfSkill(Key1, 10200001, s), Is.True);
+        Assert.That(t.IsKeyOfSkill(Key1, 10200011, s), Is.False, "another skill");
+        Assert.That(t.IsKeyOfSkill(Key1, 10200011, Slots(1)), Is.True, "the current page");
+        Assert.That(t.IsKeyOfSkill(Key2, 0, s), Is.False, "an empty quick slot is not a valid entry");
+        Assert.That(t.IsKeyOfSkill(KeyQ, 0, s), Is.False, "a type 1 key with slot 0 is not a valid entry");
+        Assert.That(t.IsKeyOfSkill(KeyE, 10200001, s), Is.True, "another type: the slot");
+        Assert.That(t.IsKeyOfSkill(KeyR, 10200001, s), Is.False, "type 0");
+        Assert.That(t.IsKeyOfSkill(KeyZ, 0, s), Is.False, "an unbound key");
+        long Window()   // measured twice, the second asserted (the first can take one-time JIT allocations)
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 10000; i++) t.IsKeyOfSkill(1 + i % 0xd3, 10200001, s);
+            return GC.GetAllocatedBytesForCurrentThread() - before;
+        }
+        Window();
+        Assert.That(Window(), Is.LessThan(512));
+    }
+
     [Test] public void TheAttackKeyNeedsABindingTypeAndComesFirst()
     {
         var t = Keys(new KeyBinding(KeyZ, 1, 0x49401, 0, 0), new KeyBinding(KeyX, 0, 0x49401, 9, 0));

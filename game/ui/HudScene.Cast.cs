@@ -17,6 +17,12 @@ public partial class HudScene
     CastRecord ownQueued;                          // StateSkill's m_spCharge: the cooling press queued behind the running skill
     ulong ownStateStartMs;                         // when the own skill state began (StateSkill's m_nElapsed counts from it)
     double ownPointTime = -1;
+    readonly SkillLoop ownLoop = new();            // StateSkill's continue loop fields
+    // the sequence's "loopstart" / "loopend" times (FUN_141b6fe90 at speed 1), -1 without; the sequence time the text keys
+    // were read up to
+    float ownLoopStartKey = -1, ownLoopEndKey = -1;
+    double ownKeyPos = -1;
+    SlotWorld ownHoldWorld;                        // the hold check's cast test world, taken once per state
     static readonly SerialIds serialIds = new();   // GenerateSerialId's function static
     static readonly Random crtRandom = new();
     static readonly Func<int> crtRand = () => crtRandom.Next(0x8000);
@@ -140,7 +146,7 @@ public partial class HudScene
         if (live != null)
         {
             var gate = SkillCast.CooldownGate(live.Cooltimes, r, OwnSkillStateRuns(), now);
-            if (gate == CoolGate.Queued) ownQueued = r;
+            if (gate == CoolGate.Queued) { ownQueued = r; r.QueuedCharge = true; }
             if (gate != CoolGate.Cast)
             {
                 GD.Print($"cast: skill {r.Skill.Id} cooling, {(gate == CoolGate.Queued ? "queued" : "refused")}");
@@ -180,8 +186,10 @@ public partial class HudScene
     /// Each frame while the own skill state runs: StateSkill::FUN_1417f11d0 @0x1417f11d0 (stateskill.cpp:1578, from vfunc_3
     /// :623): the queued press, once <see cref="SkillCast.QueuedReady"/>, takes the player's position (:1611), its m_bAD from
     /// its level's sequence (:1612) and goes through MyPC::vfunc_102 (<see cref="UseOwnRecord"/>); the state's enter and exit
-    /// (the enter, vfunc_4 :416; the ctor :340) and the state's end here drop it. 0 B/frame until it goes.
-    /// STILL-OPEN: a queued charging release (m_n98, the charge path :1589-1607) is not ported; no record here is one.
+    /// (the enter, vfunc_4 :416; the ctor :340) and the state's end here drop it. A record a continue round queued (m_n98,
+    /// :1589-1607) plays the loop again instead: the round's sends (<see cref="SendOwnRound"/>) and the seek
+    /// (<see cref="SeekOwnLoop"/>). 0 B/frame until it goes.
+    /// STILL-OPEN: FUN_1417f1a90 (the loop's move0 / move2) is not ported.
     /// </summary>
     void TickOwnQueued()
     {
@@ -191,6 +199,13 @@ public partial class HudScene
         if (live == null || !SkillCast.QueuedReady(live.Cooltimes, ownQueued, (uint)Net.LiveSession.CastTick())) return;
         var r = ownQueued;
         ownQueued = null;
+        r.QueuedCharge = false;
+        if (r.Charged)
+        {
+            SendOwnRound(live, r, (uint)Net.LiveSession.CastTick());
+            SeekOwnLoop(player, (uint)Time.GetTicksMsec());
+            return;
+        }
         var g = player.GlobalPosition;
         r.Position = new System.Numerics.Vector3(g.X, -g.Z, g.Y);
         r.HasSequence = r.Level.HasSequenceName;
@@ -207,6 +222,13 @@ public partial class HudScene
         ownSequence = me.SkillSequence;
         ownStateStartMs = Time.GetTicksMsec();
         ownPointTime = OwnPointTime(me);
+        // vfunc_4 (stateskill.cpp:395-420) and the sequence start (FUN_1417f0940 :2226-2238): the loop fields, the repeats
+        ownLoop.Reset();
+        ownLoop.StartSequence(r.Motion < r.Level.Motions.Count ? r.Level.Motions[r.Motion].LoopCount : 0);
+        ownLoopStartKey = me.Anims?.TextKey(ownSequence, "loopstart") ?? -1;
+        ownLoopEndKey = me.Anims?.TextKey(ownSequence, "loopend") ?? -1;
+        ownKeyPos = -1;
+        ownHoldWorld = null;
     }
 
     /// <summary>The own skill state (0x10) runs: the own cast's sequence still plays.</summary>
@@ -220,33 +242,138 @@ public partial class HudScene
     }
 
     /// <summary>
-    /// Each frame: StateSkill::TextKeyEvent (stateskill.cpp:980) when the own sequence passes the current attack's point text
-    /// key, then FireAttacksAtPoint (<see cref="FireOwnPoint"/>). 0 B/frame until a point fires.
-    /// STILL-OPEN: the sequence's other text keys (move3, charging_attack, combo, inputcombo) are not read.
+    /// Each frame: StateSkill::TextKeyEvent (stateskill.cpp:844-980) for the text keys the own sequence passed since the last
+    /// frame (a key at a time after the last read one and not after now): "loopstart" (<see cref="SkillLoop.OnLoopStart"/>),
+    /// the current attack's point (FireAttacksAtPoint, <see cref="FireOwnPoint"/>), then "loopend" (<see cref="OwnLoopEnd"/>).
+    /// 0 B/frame until a point fires.
+    /// STILL-OPEN: the sequence's other text keys (move3, charging_attack, charging_combo, combo, inputcombo) are not read.
     /// </summary>
     void TickOwnAttacks()
     {
         if (ownCast == null) return;
         if (player == null || (object)player.SkillSequence != ownSequence) { ownCast = null; return; }
-        if (ownPointTime < 0 || player.SkillSequencePosition < ownPointTime) return;
-        FireOwnPoint(player);
+        double pos = player.SkillSequencePosition, prev = ownKeyPos;
+        if (pos < 0) return;
+        ownKeyPos = pos;
+        uint now = (uint)Time.GetTicksMsec();   // GetTickCountMs2
+        if (ownLoopStartKey >= 0 && prev < ownLoopStartKey && ownLoopStartKey <= pos) ownLoop.OnLoopStart(ownLoopStartKey, now);
+        while (ownPointTime >= 0 && prev < ownPointTime && ownPointTime <= pos)
+        {
+            double was = ownPointTime;
+            int attack = ownAttack;
+            FireOwnPoint(player);
+            if (ownPointTime == was && ownAttack == attack) break;
+        }
+        if (ownLoopEndKey >= 0 && prev < ownLoopEndKey && ownLoopEndKey <= pos) OwnLoopEnd(player, now);
+    }
+
+    /// <summary>
+    /// TextKeyEvent "loopend" (stateskill.cpp:869-944) for the own player: <see cref="SkillLoop.OnLoopEnd"/>; for a next round
+    /// m_nAttack 0 and m_bSentCharging off, the record marked (m_n98), then a skill still cooling without a charge use (and not a
+    /// charging skill) queues the running record (SetChargeRecord), else the round goes (<see cref="SendOwnRound"/>); an
+    /// unqueued round plays the loop again (<see cref="SeekOwnLoop"/>).
+    /// STILL-OPEN: the record's loop effect stop (m_n88), the re-aim (vfunc_100) and the turn to the record's rotation
+    /// (SetTargetYaw / vfunc_21, :883-896), and the weapon PC's sequence (FUN_141663be0).
+    /// </summary>
+    void OwnLoopEnd(Player me, uint now)
+    {
+        // fEventTime: the key's own time here (only its being non-zero is read, by the hold check)
+        if (!ownLoop.OnLoopEnd(ownLoopEndKey, ownLoopEndKey, SkillCast.MotionSpeedScale(ownCast), now)) return;
+        ownAttack = 0;
+        ownSync.ClearCharging();
+        ownCast.Charged = true;
+        if (Net.LiveSession.Instance is { } live)
+        {
+            uint tick = (uint)Net.LiveSession.CastTick();
+            bool ready = live.Cooltimes.CanUseRechargeSkill(ownCast.Skill, tick);
+            float cool = live.Cooltimes.Remain(ownCast.Skill.Id, false, tick);
+            if (!ready && cool > 0f && !ownCast.Skill.ChargingSkill) { ownQueued = ownCast; ownCast.QueuedCharge = true; }
+            else SendOwnRound(live, ownCast, tick);
+        }
+        if (!ownCast.QueuedCharge) SeekOwnLoop(me, now);
+        else ownPointTime = OwnPointTime(me);
+    }
+
+    /// <summary>
+    /// A continue round's sends (loopend :921-924, FUN_1417f11d0 :1591-1595): the mode 3 (CSkillRecord::SendSkill), the round's
+    /// cooldown (FUN_1417f16f0 @0x1417f16f0: a continue skill, not a charging skill's marked record; the loop's length at the
+    /// state's speed less the charge tick, FUN_1417664e0 from the send tick with the combo flag) and the charge use
+    /// (OnRechargeSkillUsed of the running record).
+    /// STILL-OPEN: FUN_141767990 (the skill's level use) is not ported.
+    /// </summary>
+    void SendOwnRound(Net.LiveSession live, CastRecord r, uint now)
+    {
+        live.SendRound(r);
+        if (r.Skill.Continue && !(r.Skill.ChargingSkill && r.Charged))
+            live.Cooltimes.Start((uint)r.SendTick, r.Skill.Id,
+                SkillLoop.RoundCooldown(ownLoopStartKey, ownLoopEndKey, ownLoop.Speed, ownLoop.ChargeTick), 0f, true, now);
+        live.Cooltimes.OnRechargeSkillUsed(r.Skill, now);
+        GD.Print($"cast: skill {r.Skill.Id} round {r.SendCount}");
+    }
+
+    /// <summary>
+    /// The next round's start (loopend :930-942, FUN_1417f11d0 :1596-1607): the loop sequence again at loopstart plus the charge
+    /// tick. The text keys read on from there; the loopstart key is taken as passed at the seek (an assumption: the client
+    /// restarts the sequence with SetTargetAnimation and sets its offset at or after the key; loopstart's m_fChargeTime = 0 is
+    /// what lets the hold check run for the next round).
+    /// STILL-OPEN: m_nStartTick (the combo ticks) and FUN_1417f1a90 (move0 / move2) are not ported.
+    /// </summary>
+    void SeekOwnLoop(Player me, uint now)
+    {
+        double t = ownLoop.LoopStart + ownLoop.ChargeTick * 0.001;
+        me.SeekSkillSequence(t);
+        ownKeyPos = t;
+        ownLoop.OnLoopStart(ownLoopStartKey, now);
+        ownPointTime = OwnPointTime(me);
     }
 
     /// <summary>
     /// Each frame while the own skill state runs: StateSkill::SendChargeState @0x1417ec2f0 (stateskill.cpp:1271, from vfunc_8
     /// :724), the mode 2 sync once the state starts and whenever the owner moves (<see cref="SkillCast.SyncIfChanged"/>).
-    /// 0 B/frame while nothing changed.
-    /// STILL-OPEN: charging and loop are always false (the continue skill's held key, vfunc_8 :648-694, and the charging
-    /// skill's loop are not ported), and the record's rotation does not turn during the state (FUN_1417edc20).
+    /// Before it the continue skill's hold check (vfunc_8 :649-694, <see cref="SkillLoop.Hold"/>): a key bound to the skill's
+    /// origin id held (<see cref="OwnSkillKeyHeld"/>), the loop keys, the charging skill flag (m_b111 = the skill's
+    /// chargingSkill, :766) and FUN_141765a70 (<see cref="CastGate.CanCast"/>, only asked while a key is held).
+    /// 0 B/frame while nothing changed and no key is held.
+    /// STILL-OPEN: the skill system's queued key (FUN_1417674a0(1), the Lapen input) does not count as held; mouse and pad
+    /// bindings are not read; the charging skill's key release branch (:697-722) is not ported; the record's rotation does
+    /// not turn during the state (FUN_1417edc20).
     /// </summary>
     void TickOwnSync()
     {
         if (!OwnSkillStateRuns()) return;
+        if (ownLoop.HoldCheckRuns(ownCast.Skill))
+        {
+            bool held = OwnSkillKeyHeld((int)ownCast.Skill.OriginId), charging = ownCast.Skill.ChargingSkill;
+            bool castable = held && !charging && CastGate.CanCast(OwnHoldWorld(), ownCast.Skill.Id);
+            ownLoop.Hold(held, ownLoopStartKey >= 0 && ownLoopEndKey >= 0, charging, castable);
+        }
         var live = Net.LiveSession.Instance;
         if (live == null) return;
         var g = player.GlobalPosition;
-        var req = SkillCast.SyncIfChanged(ownSync, ownCast, new System.Numerics.Vector3(g.X, -g.Z, g.Y), false, false);
+        var req = SkillCast.SyncIfChanged(ownSync, ownCast, new System.Numerics.Vector3(g.X, -g.Z, g.Y), ownLoop.Charging, ownLoop.Loop);
         if (req != null) live.SendSync(req);
+    }
+
+    /// <summary>vfunc_8 :651-660: a keyboard key CKeyTable::FUN_14142c6c0 lists for the skill (<see cref="KeyTable.IsKeyOfSkill"/>)
+    /// is down (IsKeyDown). Not while typing.</summary>
+    bool OwnSkillKeyHeld(int originId)
+    {
+        if (UiFocus.IsTyping || hudModel?.Keys is not { } keys) return false;
+        var slots = hudModel.ServerKeys;
+        for (int dik = 1; dik < 0xd4; dik++)
+            if (keys.IsKeyOfSkill(dik, originId, slots) && GodotKeyOfDik(dik) is { } g && Input.IsPhysicalKeyPressed(g)) return true;
+        return false;
+    }
+
+    /// <summary>The hold check's world: the quick slots' one, taken once per state, with the player's level, hp, sp, ep and
+    /// meso read again each call (the cost check, FUN_14176a380).</summary>
+    SlotWorld OwnHoldWorld()
+    {
+        if (ownHoldWorld == null) return ownHoldWorld = QuickSlotWorld();
+        var p = hudModel.Player;
+        ownHoldWorld.Level = p.Level; ownHoldWorld.Hp = p.HpCur; ownHoldWorld.Sp = p.SpCur; ownHoldWorld.Ep = p.EpCur;
+        ownHoldWorld.Meso = p.Mesos;
+        return ownHoldWorld;
     }
 
     /// <summary>
@@ -257,6 +384,7 @@ public partial class HudScene
     /// </summary>
     void FireOwnPoint(Player me)
     {
+        if (ownCast.QueuedCharge) return;   // FireAttacksAtPoint :2276: a queued record fires nothing
         var live = Net.LiveSession.Instance;
         int n = SkillAttackFire.AttacksAtPoint(ownCast, ownAttack);
         if (n > 0)

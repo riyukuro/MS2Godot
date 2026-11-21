@@ -29,6 +29,13 @@ public partial class Player
     public double SkillSequencePosition =>
         skillSequence != null && (object)CurrentAnim == skillSequence && Anim != null ? Anim.CurrentAnimationPosition : -1;
 
+    /// <summary>The own cast's sequence moved to <paramref name="time"/> seconds of the kf (a continue round's
+    /// m_pSequence->SetOffset, stateskill.cpp:937); nothing when it does not play.</summary>
+    public void SeekSkillSequence(double time)
+    {
+        if (SkillSequencePosition >= 0) Anim.Seek(time, true);
+    }
+
     /// <summary>True while the own cast's sequence plays (PlayAct leaves the body to it); clears itself when it ends.</summary>
     bool SkillSequencePlaying()
     {

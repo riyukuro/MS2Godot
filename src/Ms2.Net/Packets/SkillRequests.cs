@@ -84,6 +84,22 @@ public sealed record SkillSyncRequest(long CastId, int SkillId, short Level, byt
 }
 
 /// <summary>
+/// Skill mode 3, a continue skill's next round: CSkillRecord::SendSkill @0x14175a430 (skillrecord.cpp:441-450) writes u8 3,
+/// i64 the cast id and i32 the record's send tick (m_nSendTick, the server tick taken just before).
+/// </summary>
+public sealed record SkillRoundRequest(long CastId, int ServerTick) : IOutPacket
+{
+    public Outbound Op => Outbound.Skill;
+
+    public void Write(ByteWriter w)
+    {
+        w.WriteByte(3);
+        w.WriteLong(CastId);
+        w.WriteInt(ServerTick);
+    }
+}
+
+/// <summary>
 /// One link of a bounce chain in the damage send: the next SkillTargetRecord after a hit (the record's m_spLinked, made by
 /// StateSkill::FUN_1417f3e80 @0x1417f3e80, stateskill.cpp:2779): its serial (m_nTagSub, GenerateSerialId), the object it
 /// hits (m_nCasterId), the bounce number (m_n80, bounceCount - bounces left + 1) and the hit index (m_n84, 0 on a bounce).

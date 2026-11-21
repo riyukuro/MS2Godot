@@ -361,8 +361,14 @@ public class SkillCooltimesTests
         Assert.That(SkillCast.QueuedReady(c, r, 1400), Is.False, "defaultRechargingCooldownTime 0.5 s not passed");
         Assert.That(SkillCast.QueuedReady(c, r, 1500), Is.True, "a charge is ready while the cooldown remains");
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (uint i = 0; i < 100000; i++) SkillCast.QueuedReady(c, q, 1500 + (i & 1023));
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512), "100000 checks");
+        // measured twice, the second asserted: the first window can take the one-time JIT / tier-up allocations
+        long Window()
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (uint i = 0; i < 100000; i++) SkillCast.QueuedReady(c, q, 1500 + (i & 1023));
+            return GC.GetAllocatedBytesForCurrentThread() - before;
+        }
+        Window();
+        Assert.That(Window(), Is.LessThan(512), "100000 checks");
     }
 }
