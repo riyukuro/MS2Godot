@@ -7,10 +7,11 @@ namespace Ms2Godot.Net;
 /// <summary>
 /// The local player's emotions (CSkillSystem m_vEmotions) from the Emote packet (0x1F, CSceneStateGame::OnEmote,
 /// scenestategame.cpp:2533-2570).
-/// STILL-OPEN: the sends have no caller yet: learn (mode 1) comes from the learn-emotion message box
-/// (UIMessageBox::HandleLearnEmotionButton, uimessagebox.cpp:1451) on an emotion item, use (mode 2) from the emotion
-/// skill state (stateskill.cpp:1906), favorite (mode 4) from the dynamic action dialog (uidynamicactiondialog.cpp:369);
-/// NotifyLearnEmotion has no listener here.
+/// The favorite send (mode 4) comes from the dynamic action dialog's onFavorite (uidynamicactiondialog.cpp:369), which
+/// also refreshes on NotifyLearnEmotion (the Learned event).
+/// STILL-OPEN: learn (mode 1) from the learn-emotion message box (UIMessageBox::HandleLearnEmotionButton,
+/// uimessagebox.cpp:1451) on an emotion item and use (mode 2) from the emotion skill state (stateskill.cpp:1906) have no
+/// caller yet.
 /// </summary>
 public partial class LiveSession
 {

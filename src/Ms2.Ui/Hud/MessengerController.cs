@@ -834,6 +834,7 @@ public sealed class MessengerController : UiController
                 if (!IsTypeHidden(Super) && SelectedType() == Super) Browser.OpenSuperChatDialog?.Invoke();
                 return true;
             case "updatealigntypeandoffset": UpdateAlignAndOffset(); return true;
+            case "eventemotion": Browser.ToggleDynamicAction?.Invoke(); return false;     // :4052, falls to return 0
         }
         return false;
     }

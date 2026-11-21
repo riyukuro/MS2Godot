@@ -160,6 +160,20 @@ public class GroupMessengerTests
     }
 
     [Test]
+    public void TheEmotionButtonTogglesTheDynamicActionDialog()
+    {
+        // UIMessenger::vfunc_28 (uimessenger.cpp:4052-4055): eventEmotion is CUIService::ToggleDialog(0x4e7a), then return 0
+        var m = Model();
+        var log = new MessengerBrowser { Model = m };
+        var c = new MessengerController(m.Tables.DefaultMessengers[0], "messengerdialog0.xml", true, log);
+        Assert.That(c.OnCallback("eventEmotion", Array.Empty<object>()), Is.False);       // no hook: nothing
+        int toggles = 0;
+        log.ToggleDynamicAction = () => toggles++;
+        Assert.That(c.OnCallback("eventEmotion", Array.Empty<object>()), Is.False);
+        Assert.That(toggles, Is.EqualTo(1));
+    }
+
+    [Test]
     public void TheFrameProcessCopiesNoQueue()
     {
         // Process runs every frame: past each line's own colouring and window lookup it allocates nothing (no copy of the queue)

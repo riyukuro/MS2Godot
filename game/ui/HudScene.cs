@@ -85,6 +85,8 @@ public partial class HudScene : Node, IUiStageHost
         if (System.Array.IndexOf(args, "--oracle") >= 0) Ms2.Avm2.Interp.UseOracle = true;
         if (frameCase != null) DisplayServer.WindowSetVsyncMode(DisplayServer.VSyncMode.Disabled);
         PerfLog.ApplyFpsCap();
+        toggleDynamicAction = ToggleDynamicAction;
+        ChatLog.ToggleDynamicAction = toggleDynamicAction;   // the messenger's eventEmotion
         questFixture = args.Contains("--questlog-fixture");
         partyFixture = args.Contains("--party-fixture");
         groupChatFixture = args.Contains("--groupchat-fixture");
@@ -203,6 +205,7 @@ public partial class HudScene : Node, IUiStageHost
         unwatchMeso?.Invoke();
         unwatchMeso = null;
         foreach (var (_, c) in messengers) ChatLog.Windows.Remove(c);
+        if (ReferenceEquals(ChatLog.ToggleDynamicAction, toggleDynamicAction)) ChatLog.ToggleDynamicAction = null;
         if (groupBrowser != null)
         {
             if (ReferenceEquals(ChatLog.GroupLink, groupLink)) ChatLog.GroupLink = null;
@@ -2222,6 +2225,7 @@ public partial class HudScene : Node, IUiStageHost
         else if (id == 0x4f67) ToggleAdventureLevel();
         else if (id == GameMenuController.CharacterAbilityUiId) ToggleCharacterAbility();
         else if (id == 0x4f1e) ToggleMastery();
+        else if (id == 0x4e7a) ToggleDynamicAction();   // UIDynamicActionDialog
     }
 
     // ---- character window: uimyinfodialog run by its own ActionScript, UIMyInfoDialog's C++ side as MyInfoController --
