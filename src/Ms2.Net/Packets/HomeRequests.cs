@@ -26,3 +26,15 @@ public sealed record HouseSettingRequest(byte Kind, string Value, bool Flag) : I
     public Outbound Op => Outbound.RequestCube;
     public void Write(ByteWriter w) { w.WriteByte(0x18); w.WriteByte(Kind); w.WriteUnicodeString(Value ?? ""); w.WriteByte((byte) (Flag ? 1 : 0)); }
 }
+
+/// <summary>UIHomeOptionDialog::SendRequestCubeMode42 (@0x140fa9ad0, uihomeoptiondialog.cpp:254): RequestCube u8 0x2a, u8 row, bool on.</summary>
+public sealed record HomeOptionRowSwitchRequest(byte Row, bool On) : IOutPacket {
+    public Outbound Op => Outbound.RequestCube;
+    public void Write(ByteWriter w) { w.WriteByte(0x2a); w.WriteByte(Row); w.WriteByte((byte) (On ? 1 : 0)); }
+}
+
+/// <summary>UIHomeOptionDialog::SendRequestCubeMode43 (@0x140fa9b50, uihomeoptiondialog.cpp:265): RequestCube u8 0x2b, u8 row, u8 level.</summary>
+public sealed record HomeOptionRowLevelRequest(byte Row, byte Level) : IOutPacket {
+    public Outbound Op => Outbound.RequestCube;
+    public void Write(ByteWriter w) { w.WriteByte(0x2b); w.WriteByte(Row); w.WriteByte(Level); }
+}

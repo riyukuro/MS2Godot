@@ -1841,6 +1841,14 @@ public partial class LiveSession : Node
         if (game != null) Send(new HouseSettingRequest(kind, value, flag));
     }
 
+    /// <summary>UIHomeOptionDialog::SendRequestCubeMode42 / Mode43 (uihomeoptiondialog.cpp:254-275), the two packets of one permission row.</summary>
+    public void SendHomeOptionRow(int row, bool on, int level)
+    {
+        if (game == null) return;
+        Send(new HomeOptionRowSwitchRequest((byte) row, on));
+        Send(new HomeOptionRowLevelRequest((byte) row, (byte) level));
+    }
+
     /// <summary>CNetworkService::SendRequestQuit (@0x141538820, networkservice.cpp:501-505): flushes guide state (SendFunctionCube) and sends RequestQuit(0).</summary>
     public void SendRequestQuit()
     {

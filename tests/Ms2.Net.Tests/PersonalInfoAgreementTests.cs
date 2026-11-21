@@ -29,6 +29,12 @@ public class HouseSettingPacketTests {
         Assert.That(Bytes(p), Is.EqualTo(w.Buffer[..w.Length]));
     }
 
+    [Test] public void HomeOptionRowPacketsAreMode42AndMode43() {
+        Assert.That(Bytes(new HomeOptionRowSwitchRequest(3, true)), Is.EqualTo(new byte[] { 0x2a, 3, 1 }));
+        Assert.That(Bytes(new HomeOptionRowLevelRequest(8, 4)), Is.EqualTo(new byte[] { 0x2b, 8, 4 }));
+        Assert.That(new HomeOptionRowLevelRequest(0, 0).Op, Is.EqualTo(Outbound.RequestCube));
+    }
+
     [Test] public void PublicKindWritesAnEmptyStringAndAOneFlag() {
         var b = Bytes(new HouseSettingRequest(0, "", true));
         Assert.That(b, Is.EqualTo(new byte[] { 0x18, 0, 0, 0, 1 }));
