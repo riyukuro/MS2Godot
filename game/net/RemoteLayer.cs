@@ -103,6 +103,42 @@ public sealed partial class RemoteLayer : Node3D
         return (true, null);
     }
 
+    /// <summary>
+    /// CSceneStateGame::OnItemPutOn (scenestategame.cpp:3080) for another player (FindPCById then PC::vfunc_127, pc.cpp:1400):
+    /// the item goes into the player's lists and only its slot's model is rebuilt (EquipApplier.Reapply). False when the
+    /// player is not here, the item has no data or it is not worn (no preset, kind above 2).
+    /// </summary>
+    public bool PutOn(Ms2.Net.Packets.ItemPutOn p, Func<int, int?> wornLayer, Func<int, bool> itemKnown = null)
+    {
+        if (!users.TryGetValue(p.ObjectId, out var r)) return false;
+        if (itemKnown != null && !itemKnown(p.Item.Id)) return false;     // CItem::FUN_140523c40 (item.cpp:3096): an id without data is not put on
+        var equips = r.Equips; var outfit = r.Outfit2;
+        if (!Ms2.Net.Packets.WornEquips.PutOn(ref equips, ref outfit, p, wornLayer)) return false;
+        r.Equips = equips; r.Outfit2 = outfit;
+        equip.Reapply(r.Visual, Ms2.Net.Packets.WornEquips.Look(r.Equips, r.Outfit2));
+        return true;
+    }
+
+    /// <summary>CSceneStateGame::OnItemPutOff (scenestategame.cpp:3144) for another player (PC::vfunc_128, pc.cpp:1415): the
+    /// worn item of that uid leaves the lists and its slot's model is taken off. False when nothing changed.</summary>
+    public bool PutOff(Ms2.Net.Packets.ItemPutOff p, Func<int, int?> wornLayer)
+    {
+        if (!users.TryGetValue(p.ObjectId, out var r)) return false;
+        var equips = r.Equips; var outfit = r.Outfit2;
+        if (Ms2.Net.Packets.WornEquips.PutOff(ref equips, ref outfit, p.ItemUid, wornLayer) == null) return false;
+        r.Equips = equips; r.Outfit2 = outfit;
+        equip.Reapply(r.Visual, Ms2.Net.Packets.WornEquips.Look(r.Equips, r.Outfit2));
+        return true;
+    }
+
+    /// <summary>OnItemUpdate for another player's worn item (the packet read its body again, ItemUpdate.Updated):
+    /// CEquipItem's model update (FUN_1411dd1c0) rebuilds that item's model; here the item's slot is rebuilt.</summary>
+    public void ItemUpdated(int objectId, Ms2.Net.Packets.EquipItem item)
+    {
+        if (item == null || !users.TryGetValue(objectId, out var r)) return;
+        equip.Reapply(r.Visual, Ms2.Net.Packets.WornEquips.Look(r.Equips, r.Outfit2), item.Slot);
+    }
+
     /// <summary>The other players shown now (the own PC is not among them).</summary>
     public IEnumerable<Pc> Pcs => users.Values.Select(r => new Pc(r.ObjectId, r.CharacterId, r.Name ?? "", r.Picture, r.Root, r.Anchor, r.Gems,
         r.PremiumTime, r.PcBangGrade, r.WeddingState));
@@ -217,7 +253,7 @@ public sealed partial class RemoteLayer : Node3D
         bodies.TryGetValue(gender, out var body);
         var md = body.md ??= builder.LoadModel($"{dir}/{(gender == 0 ? "m_body.nif" : "f_body.nif")}");
         var visual = builder.Build(md, gender == 0 ? "Male" : "Female");
-        equip.Apply(visual, md, gender, u.Equips, u.Skin.Primary, u.Skin.Secondary);
+        equip.Apply(visual, md, gender, Ms2.Net.Packets.WornEquips.Look(u.Equips, u.Outfit2), u.Skin.Primary, u.Skin.Secondary);
         var anim = visual.GetNode<AnimationPlayer>("Model/AnimationPlayer");
         if (body.anims == null)
         {

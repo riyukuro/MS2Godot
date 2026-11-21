@@ -992,6 +992,7 @@ public partial class LiveSession : Node
                     var (known, eq) = remote?.EquipOf(obj, uid) ?? (false, null);
                     return (known, false, eq);
                 });
+                if (u.Updated && u.ObjectId != selfObject) remote?.ItemUpdated(u.ObjectId, remote.EquipOf(u.ObjectId, u.Uid).Equip);
                 GD.Print($"live: item update object {u.ObjectId} uid {u.Uid}{(u.Updated ? " (read again)" : u.Own ? " (own, item event)" : "")}");
             }
             else if (game.Is(p, Inbound.BindItem))
@@ -1140,12 +1141,14 @@ public partial class LiveSession : Node
             {
                 var o = ItemPutOn.Read(p.Reader());        // CSceneStateGame::OnItemPutOn (scenestategame.cpp:3080); display only, no c2s answer
                 bool ownEquipment = Me.Apply(o, WornLayer, ItemExists);
+                if (!ownEquipment && o.ObjectId != selfObject) remote?.PutOn(o, WornLayer, ItemExists);
                 GD.Print($"live: item put on {o.Item.Id} uid {o.Item.Uid} slot {o.Item.Slot} kind {o.Kind} by {o.ObjectId}{(ownEquipment ? " (own equipment)" : "")}");
             }
             else if (game.Is(p, Inbound.ItemPutOff))
             {
                 var o = ItemPutOff.Read(p.Reader());       // CSceneStateGame::OnItemPutOff (scenestategame.cpp:3144)
                 bool ownEquipment = Me.Apply(o, WornLayer);
+                if (!ownEquipment && o.ObjectId != selfObject) remote?.PutOff(o, WornLayer);
                 GD.Print($"live: item put off uid {o.ItemUid} by {o.ObjectId}{(ownEquipment ? " (own equipment)" : "")}");
             }
             else if (game.Is(p, Inbound.Notice))
