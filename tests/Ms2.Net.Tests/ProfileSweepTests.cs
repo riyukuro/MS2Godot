@@ -53,10 +53,12 @@ public class ProfileSweepTests {
         var outboundNames = new Dictionary<ushort, string>();
         foreach (var o in Enum.GetValues<Outbound>()) { try { outboundNames[profile.Number(o)] = o.ToString(); } catch (KeyNotFoundException) { } }
         var inT = new SortedDictionary<ushort, Tally>(); var outT = new SortedDictionary<ushort, int>(); int files = 0;
+        uint.TryParse(Environment.GetEnvironmentVariable("MS2_SWEEP_MAX_BUILD"), out uint maxBuild); if (maxBuild == 0) maxBuild = uint.MaxValue;
+        var builds = new SortedDictionary<uint, int>();
         foreach (var path in Recordings(set)) {
             var f = MsbFile.Read(path);
-            if (f.Build < minBuild) continue;
-            files++;
+            if (f.Build < minBuild || f.Build > maxBuild) continue;
+            files++; builds[f.Build] = builds.GetValueOrDefault(f.Build) + 1;
             foreach (var p in f.Packets) {
                 if (!p.ServerToClient) { outT[p.Opcode] = outT.GetValueOrDefault(p.Opcode) + 1; continue; }
                 if (!inT.TryGetValue(p.Opcode, out var t)) inT[p.Opcode] = t = new Tally();
@@ -77,6 +79,7 @@ public class ProfileSweepTests {
         }
         var sb = new StringBuilder();
         sb.AppendLine($"# {set} recordings ({files} files, build >= {minBuild}) with the {profile.Name} profile");
+        sb.AppendLine("# files per build: " + string.Join(", ", builds.Select(kv => $"{kv.Key}x{kv.Value}")));
         sb.AppendLine("dir | op | name | packets | ok | under | over | reader | sample");
         foreach (var (op, t) in inT) {
             string name = inboundNames.GetValueOrDefault(op, "?");
