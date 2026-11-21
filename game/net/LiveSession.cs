@@ -799,7 +799,7 @@ public partial class LiveSession : Node
     void OnRequestFieldEnter(RequestFieldEnter f)
     {
         // a refused entry or the loading map again keeps the field's breakables and lifts; a new field resets them
-        var taken = Ms2.Ui.FieldEnter.Take(fieldEntry, f, moveClock.IsRunning, Breakables, Liftables);
+        var taken = Ms2.Ui.FieldEnter.Take(fieldEntry, f, moveClock.IsRunning, Breakables, Liftables); // perf-ok: FieldEnter.Take is a static method, not LINQ
         if (taken == Ms2.Ui.FieldEnterResult.Refused)
         {
             string text = Ms2.Ui.FieldMoveError.Text(f.Error, Ms2.Ui.Hud.MessageBoxData.CommonByKey);
