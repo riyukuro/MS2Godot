@@ -203,9 +203,12 @@ public partial class LiveSession : Node
     /// <summary>A CharacterAbility packet that changed <see cref="CharacterAbility"/> (mode 0, or mode 2 of a known id),
     /// for the dialog and the game menu (OnCharacterAbility tells them only then).</summary>
     public event Action<CharacterAbilityMessage> CharacterAbilityReceived;
-    /// <summary>The fishing book's catch records (the Fishing packets, 0x73, modes 7 and 8; scenestategame.cpp, FUN_140cd9840);
+    /// <summary>The fishing book's catch records (the Fishing packets, 0xC4, modes 7 and 8; scenestategame.cpp, FUN_140cd9840);
     /// session-lived, so a field change keeps them.</summary>
     public readonly Ms2.Ui.FishingBookData FishingBook = new();
+    /// <summary>The breakable objects' and liftable cubes' server states (RecvOp Breakable 0x4F, Liftable 0x73).</summary>
+    public readonly Ms2.Ui.BreakableObjects Breakables = new();
+    public readonly Ms2.Ui.LiftableObjects Liftables = new();
     /// <summary>A Fishing packet that changed <see cref="FishingBook"/>, for the open fishing book (it fills its tab again).</summary>
     public event Action<FishingMessage> FishingReceived;
     public CharacterCreateRefused LastRefusal { get; private set; }
@@ -870,7 +873,7 @@ public partial class LiveSession : Node
     {
         try
         {
-            if (game.Is(p, Inbound.RequestFieldEnter)) { regionSkills.Clear(); RegionSkillLog.Clear(); pendingTriggers.Clear(); triggerField = null; }   // a new field: no region skill or trigger object survives it
+            if (game.Is(p, Inbound.RequestFieldEnter)) { regionSkills.Clear(); RegionSkillLog.Clear(); pendingTriggers.Clear(); triggerField = null; Breakables.ClearMarkers(); Liftables.FieldLeft(); }   // a new field: no region skill or trigger object survives it
             bool own = game.Is(p, Inbound.Stat) && p.Body.Length >= 4 && BitConverter.ToInt32(p.Body, 0) == selfObject;
             if (own) { var st = PlayerStat.Read(p.Reader()); ApplyStat(st); Me.Apply(st); }
             else remote?.Tracker.Inbound(p);     // others' users and npcs (FieldTracker keeps the rest)
@@ -1248,6 +1251,10 @@ public partial class LiveSession : Node
                     FishingReceived?.Invoke(m);
                 GD.Print($"live: fishing {m?.GetType().Name ?? "other mode"} ({FishingBook.Count} fish)");
             }
+            else if (game.Is(p, Inbound.Breakable))
+                Breakables.Apply(BreakableUpdate.Read(p.Reader()));     // OnBreakable (scenestategame.cpp:3667)
+            else if (game.Is(p, Inbound.Liftable))
+                Liftables.Apply(LiftableUpdate.Read(p.Reader()));       // OnLiftable (scenestategame.cpp:11941)
             else if (game.Is(p, Inbound.UserEnv))
             {
                 var m = UserEnvMessage.Read(p.Reader());          // OnUserEnv (scenestategame.cpp:4414); the other modes are not kept

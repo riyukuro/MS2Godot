@@ -102,7 +102,9 @@ public enum Inbound : ushort {
     GroupChat = 0x8B,       // RecvOp GroupChat (commonfiles/opcodes.h): CGroupChatManager::OnGroupChat (networkservice.cpp:687)
     Prestige = 0x11C,
     Buddy = 0x61,           // RecvOp Buddy (commonfiles/opcodes.h): CSceneStateGame::OnBuddy -> CBuddyManager::OnBuddy
-    Fishing = 0x73,         // RecvOp Fishing (commonfiles/opcodes.h): CFishingManager::FUN_140cd9840
+    Fishing = 0xC4,         // RecvOp Fishing (commonfiles/opcodes.h:203): CFishingManager::FUN_140cd9840 (scenestategame.cpp:1805)
+    Breakable = 0x4F,       // RecvOp Breakable (commonfiles/opcodes.h:87): CSceneStateGame::OnBreakable
+    Liftable = 0x73,        // RecvOp Liftable (commonfiles/opcodes.h:123): CSceneStateGame::OnLiftable
     CharacterAbility = 0xDF,    // RecvOp CharacterAbility (commonfiles/opcodes.h): CCharacterAbilityManager::OnCharacterAbility
     UserEnv = 0xA8,
     Mastery = 0xCD,             // RecvOp Mastery (commonfiles/opcodes.h): CSceneStateGame::OnMastery

@@ -4,7 +4,7 @@ using NUnit.Framework;
 
 namespace Ms2.Net.Tests;
 
-/// <summary>Fishing 0x73 modes 7 and 8, the part the fishing book reads (CFishingManager::FUN_140cd9840, fishingmanager.cpp:546).</summary>
+/// <summary>Fishing 0xC4 modes 7 and 8, the part the fishing book reads (CFishingManager::FUN_140cd9840, fishingmanager.cpp:546).</summary>
 public class FishingPacketTests {
     static ByteReader R(Action<ByteWriter> f) { var w = new ByteWriter(); f(w); return new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray()); }
 
@@ -35,6 +35,6 @@ public class FishingPacketTests {
 
     [Test] public void OtherModesAreNotTheBooks() {
         Assert.That(FishingMessage.Read(R(w => w.WriteByte(3))), Is.Null);
-        Assert.That((ushort) Inbound.Fishing, Is.EqualTo(0x73));
+        Assert.That((ushort) Inbound.Fishing, Is.EqualTo(0xC4));   // commonfiles/opcodes.h:203; 0x73 is Liftable (:123)
     }
 }

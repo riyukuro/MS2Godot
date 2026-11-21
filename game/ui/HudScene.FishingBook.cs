@@ -8,7 +8,7 @@ namespace Ms2Godot.Ui;
 
 /// <summary>
 /// The fishing book: UIFishingBookDialog (0x4ee6, movie uifishingbookdialog) over the fish tables and the session's catch
-/// records (the Fishing packets, 0x73). Opened by the upper HUD's fishing book button (OnFishingBookClick,
+/// records (the Fishing packets, 0xC4). Opened by the upper HUD's fishing book button (OnFishingBookClick,
 /// uiupperhuddialog.cpp:507). The book sends nothing. Offline, no fish is known.
 /// </summary>
 public partial class HudScene

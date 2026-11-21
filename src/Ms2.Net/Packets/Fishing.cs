@@ -4,7 +4,7 @@ using Ms2.Net.Wire;
 namespace Ms2.Net.Packets;
 
 /// <summary>
-/// Fishing (0x73; CFishingManager::FUN_140cd9840 @0x140cd9840, fishingmanager.cpp:546), the part the Fishing Book reads: a
+/// Fishing (0xC4; CFishingManager::FUN_140cd9840 @0x140cd9840, fishingmanager.cpp:546), the part the Fishing Book reads: a
 /// u8 mode, then 7 (the caught fish list): an i32 count of records; 8 (a catch result): i32 fish id, i32 size, u8 success,
 /// u8 auto fishing, then the record when it succeeded. A record (CFishCube::FUN_1403b0bf0 @0x1403b0bf0, fishcube.cpp:74) is
 /// four i32: the fish id, the total catch count (+0x1c), the big catch count (+0x20) and the best size (+0x24).
