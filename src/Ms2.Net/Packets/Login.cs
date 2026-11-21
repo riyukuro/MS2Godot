@@ -181,6 +181,11 @@ public sealed record ServerListChannelEntry(int ServerId, string Name, byte Char
 
 /// <summary>Inbound 0x0B (UIServerListDialog::ReceiveServerList): narrow string (server type name), u8 count, per server: i32 id, name, u8 characters, u16 n x (address, u16 port), i32 traffic percent, u16 n x u16 channel.</summary>
 public sealed record ServerList(string EnvName, List<ServerListChannelEntry> Servers) {
+    /// <summary>
+    /// CSceneStateLogin::OnPacket (scenestatelogin.cpp:117-130) reads the same packet as a string and a u8 result: above 0 (the count of servers) it moves on to server enter
+    /// (state 0x620000d); at 0 it logs and shows message box 0x20e. So an empty list is a refusal.
+    /// </summary>
+    public bool Usable => Servers.Count > 0;
     public static ServerList Read(ByteReader r) {
         string env = r.ReadString(); int n = r.ReadByte();
         var list = new List<ServerListChannelEntry>();

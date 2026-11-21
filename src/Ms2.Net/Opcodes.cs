@@ -7,8 +7,10 @@ namespace Ms2.Net;
 public enum Inbound : ushort {
     RequestVersion = 0x01,
     RequestKey = 0x04,
-    Reconnect = 0x05,
+    Reconnect = 0x05,           // RecvOp Reconnect: CNetworkService::OnReconnect @0x14153b1c0 (networkservice.cpp:871)
     Ping = 0x06,
+    ReconnectUnk = 0x07,        // RecvOp ReconnectUnk: OnReconnectUnk (networkservice.cpp:882), one i32 the client drops
+    FinalizeReconnect = 0x08,   // RecvOp FinalizeReconnect: OnRetransmitRequest (networkservice.cpp:884)
     RequestLogin = 0x09,
     LoginResult = 0x0A,
     ServerList = 0x0B,
@@ -116,6 +118,9 @@ public enum Outbound : ushort {
     ResponseVersion = 0x01,
     ResponseLogin = 0x03,
     ResponseKey = 0x04,
+    Reconnect = 0x05,           // SendOp Reconnect: CReconnectionManagerCli::SendReconnectRequest @0x140aad7f0
+    ReconnectUnk = 0x07,        // SendOp ReconnectUnk: COutPacketBuffer::RetransmitClientPackets (clientreconnectionstructs.cpp:92)
+    FinalizeReconnect = 0x08,   // SendOp FinalizeReconnect: the end of RetransmitClientPackets (:104)
     Pong = 0x06,
     CharacterManagement = 0x09,
     ResponseHeartbeat = 0x0A,
