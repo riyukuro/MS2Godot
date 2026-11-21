@@ -117,6 +117,7 @@ static class Gms2Opcodes {
         [Inbound.Breakable] = 0x50,
         [Inbound.Liftable] = 0x75,
         [Inbound.MeretMarket] = 0x6E,
+        [Inbound.SetCraftMode] = 0x6A,
         [Inbound.MinimapPing] = 0x123,
         [Inbound.CharacterAbility] = 0xE1,
         [Inbound.UserEnv] = 0xAA,
