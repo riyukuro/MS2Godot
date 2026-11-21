@@ -32,6 +32,8 @@ public partial class HudScene : Node, IUiStageHost
     /// <summary>UISceneGame::vfunc_48's s_bWelcomeShown (uiscenegame.cpp:192): the welcome line once per run.</summary>
     static bool welcomeShown;
     MovieDialog groupMessenger;
+    uint noticeOpenTicks;               // NoticeDialogOpenSeconds
+    readonly NewsNotificationRouter newsRouter = new();
     MovieDialog notice;                 // uinoticedialog (UINoticeDialog)
     /// <summary>FUN_1418dd0c0 + FUN_1418dd110 (uibuiltindialog.cpp): the two bottom bars' height, (DAT_1439f8ccc - 2) +
     /// (DAT_1439f8cd0 - 2) = 19 + 19 with feature 0xbd (the adventure level bar) on.</summary>
@@ -1183,7 +1185,13 @@ public partial class HudScene : Node, IUiStageHost
     void NoticeTab(Control ui, ClientConstants constants)
     {
         if (string.IsNullOrEmpty(constants.String("NoticeDialogUrl", ""))) return;
-        notice ??= new MovieDialog(assets, new NoticeDialogController(), hudModel, ScreenMode.PixelSize(GetWindow()));
+        noticeOpenTicks = (uint)constants.Int("NoticeDialogOpenSeconds", 0);     // added raw to the tick (SetHideAt @0x141009950)
+        if (notice == null)
+        {
+            var nc = new NoticeDialogController { NoticeUrl = constants.String("NoticeDialogUrl", "") };
+            nc.NewsRequested += (flag, id) => Ms2Godot.Net.LiveSession.Instance?.SendTalk(new Ms2.Net.Packets.NewsNotificationRequest(flag, id));
+            notice = new MovieDialog(assets, nc, hudModel, ScreenMode.PixelSize(GetWindow()));
+        }
         ui.AddChild(notice);
     }
 
@@ -2218,6 +2226,13 @@ public partial class HudScene : Node, IUiStageHost
         feed.OnCurrencyToken(new Ms2.Net.Packets.CurrencyTokenUpdate(5, 1990, 150, 0, 40));
     }
 
+    NewsNotificationRouter MakeNewsRouterFor()
+    {
+        var r = newsRouter;
+        r.Register(NewsNotificationRouter.Notice, url => (notice?.Host.Controller as NoticeDialogController)?.OpenUrl(url));
+        return r;
+    }
+
     SmartPushNotices smartPushNotices;
 
     SmartPushNotices SmartPushNotices => smartPushNotices ??= new SmartPushNotices(
@@ -2263,11 +2278,16 @@ public partial class HudScene : Node, IUiStageHost
         live.Emotions.Learned += onEmotion;
         live.MeretReceived += onMeret; live.MeretUseReceived += onMeretUse; live.CurrencyTokenReceived += onToken;
         live.SystemSoundReceived += onSound; live.SmartPushReceived += onPush;
+        var news = MakeNewsRouterFor();
+        Action<Ms2.Net.Packets.NewsNotification> onNews = news.Handle;
+        Action<Ms2.Net.Packets.NoticeDialogMessage> onNotice = m => (notice?.Host.Controller as NoticeDialogController)?.OnNoticeDialog(m.Flag, (uint)Time.GetTicksMsec(), noticeOpenTicks);
+        live.NewsNotificationReceived += onNews; live.NoticeDialogReceived += onNotice;
         unwatchMeso = () =>
         {
             live.MesoChanged -= onMeso; live.ItemDropNoticed -= onDrop; live.Emotions.Learned -= onEmotion;
             live.MeretReceived -= onMeret; live.MeretUseReceived -= onMeretUse; live.CurrencyTokenReceived -= onToken;
             live.SystemSoundReceived -= onSound; live.SmartPushReceived -= onPush;
+            live.NewsNotificationReceived -= onNews; live.NoticeDialogReceived -= onNotice;
         };
     }
 

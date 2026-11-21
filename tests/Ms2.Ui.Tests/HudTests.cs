@@ -2080,6 +2080,29 @@ public class HudTests
     }
 
     [Test]
+    public void NoticeDialogShowRequestsTheNewsOnlyWithAUrlAndOpenUrlKeepsTheAddress()
+    {
+        var m = Model();
+        var c = new NoticeDialogController { NoticeUrl = "http://n" };
+        var sent = new List<(bool, int)>();
+        c.NewsRequested += (f, id) => sent.Add((f, id));
+        var h = Load(c, m);
+        Assert.That(sent, Is.Empty);
+        c.ToggleShowHide();                                   // Show: NavigateToNoticeUrl (uinoticedialog.cpp:275)
+        Assert.That(sent, Is.EqualTo(new[] { (true, 2) }));
+        Assert.That(c.PendingUrl, Is.EqualTo("http://n"));
+        c.OpenUrl("http://x");                                // vfunc_89
+        Assert.That(c.Url, Is.EqualTo("http://x"));
+        Assert.That(c.PendingUrl, Is.Empty);
+        var c2 = new NoticeDialogController();                // NoticeDialogUrl empty: nothing is sent
+        var none = 0;
+        c2.NewsRequested += (_, _) => none++;
+        var h2 = Load(c2, Model());
+        c2.ToggleShowHide();
+        Assert.That(none, Is.EqualTo(0));
+    }
+
+    [Test]
     public void NoticeTabClosedLeftMiddleAndToggles()
     {
         var m = Model();

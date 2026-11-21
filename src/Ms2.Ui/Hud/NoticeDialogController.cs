@@ -27,6 +27,38 @@ public sealed class NoticeDialogController : UiController
     /// <summary>UIWebBrowserBase m_bVisible, set by vfunc_84 (uiupperhuddialog.cpp:2271), which shows the browser page.</summary>
     public bool BrowserVisible { get; private set; }
 
+    /// <summary>m_nBrowserId (uinoticedialog.cpp): the browser id the dialog's page has in the browser service.</summary>
+    public const int BrowserId = 2;
+
+    /// <summary>The NoticeDialogUrl constant NavigateToNoticeUrl reads (:271); empty means no navigation.</summary>
+    public string NoticeUrl = "";
+
+    /// <summary>m_strUrl, the address NavigateToNoticeUrl expands (ExpandUrlPrefix, not ported: kept as given).</summary>
+    public string PendingUrl { get; private set; } = "";
+
+    /// <summary>The address vfunc_89 last opened in the browser (OpenBrowser(m_nBrowserId, from, to)); null before the first.</summary>
+    public string Url { get; private set; }
+
+    /// <summary>CWebBrowserService::SendNewsNotification(flag, id) from NavigateToNoticeUrl (:278): flag 1, the browser id.</summary>
+    public event Action<bool, int> NewsRequested;
+
+    /// <summary>UIWebBrowserBase::vfunc_89 (uiupperhuddialog.cpp:2438): the page is opened at the address, m_strUrl is cleared and
+    /// the visibility the dialog has is applied again.</summary>
+    public void OpenUrl(string url)
+    {
+        Url = url;
+        PendingUrl = "";
+        ShowBrowser(BrowserVisible);
+    }
+
+    /// <summary>NavigateToNoticeUrl (@0x141009870): with a NoticeDialogUrl set, it becomes m_strUrl and the news request goes out.</summary>
+    void NavigateToNoticeUrl()
+    {
+        if (string.IsNullOrEmpty(NoticeUrl)) return;
+        PendingUrl = NoticeUrl;
+        NewsRequested?.Invoke(true, BrowserId);
+    }
+
     /// <summary>OnMaviewButtonClick (@0x1410097a0): CUIService::ToggleDialog(0x4e6a), the in-game web browser.</summary>
     public event Action ToggleWebBrowser;
 
@@ -95,12 +127,13 @@ public sealed class NoticeDialogController : UiController
     }
 
     /// <summary>
-    /// Show (@0x141009980): NavigateToNoticeUrl (the browser, not ported), gotoAndPlay("show"), the show button selected,
+    /// Show (@0x141009980): NavigateToNoticeUrl, gotoAndPlay("show"), the show button selected,
     /// the browser shown; SetTopMostLayer has one movie per window here.
     /// </summary>
     void Show()
     {
         if (Host.Entity == null) return;
+        NavigateToNoticeUrl();
         Host.Invoke(Host.Entity, "gotoAndPlay", "show");
         Host.Set(showButton, "selected", true);                    // ASButton::SetSelected
         ShowBrowser(true);
