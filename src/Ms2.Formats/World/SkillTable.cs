@@ -10,6 +10,12 @@ public sealed class SkillMotion
     public string SequenceName;          // e.g. Attack_01_A; the sequence of the actor's kfm / the player's kf
     public string MotionEffect;          // effect xml path (Xml pack effect/...), may be null
     public List<string> HitEffects = new();   // damage effectHit paths of its attack points
+    /// <summary>SkillMotionData::m_nLoopCount ("loopCount", skillleveldata.cpp:1196): the loops StateSkill repeats between
+    /// the sequence's "loopstart" and "loopend" keys (FUN_1417f0940 takes it as m_nRepeat).</summary>
+    public int LoopCount;
+    /// <summary>Each &lt;attack&gt;'s "point" in order (SkillAttackData::m_strPoint, skillattackdata.cpp:575; "" without one):
+    /// GetAttackDataAt(i)'s text key.</summary>
+    public List<string> AttackPoints = new();
     /// <summary>
     /// The motion's other effect files and flags, as SkillMotionData::Load (@0x140808350, skillleveldata.cpp:1163-1175)
     /// reads them; its launch-option gate (Unk_LaunchOptions::FUN_1406af020, launchoptions.cpp:78-81) is always true.
@@ -59,6 +65,8 @@ public sealed class SkillTable
                             SplashEndEffect = (string)m.Attribute("splashEndEffect"), SplashDurationCastEffect = (string)m.Attribute("splashDurationCastEffect"),
                             IgnoreOptimalHideCastEffect = Flag(m, "IgnoreOptimalHideCastEffect"), SplashCastEffectStartDelay = Flag(m, "splashCastEffectStartDelay"),
                         };
+                        if (int.TryParse((string)m.Attribute("loopCount"), out int loops)) mo.LoopCount = loops;
+                        foreach (var a in m.Elements("attack")) mo.AttackPoints.Add((string)a.Attribute("point") ?? "");
                         foreach (var d in m.Descendants("damage"))
                             if ((string)d.Attribute("effectHit") is { Length: > 0 } eh) mo.HitEffects.Add(eh);
                         row.Motions.Add(mo);

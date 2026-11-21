@@ -107,6 +107,20 @@ public sealed class ActionAnims
     }
 
     /// <summary>
+    /// A sequence played outside the action table (a cast's &lt;sequence&gt;.kf, added to the library as
+    /// <paramref name="name"/>): its text keys with the companion xml's keys of <paramref name="seq"/>, in time order as
+    /// NiControllerSequence throws them, so <see cref="TextKey"/> and the body's text key pass see them.
+    /// </summary>
+    public void AddSequenceKeys(string name, string seq, KfAnimation kf)
+    {
+        AppendXmlKeys(seq, kf);
+        var sorted = kf.TextKeys.OrderBy(k => k.time).ToList();   // stable: keys of one time keep their order
+        kf.TextKeys.Clear();
+        kf.TextKeys.AddRange(sorted);
+        Kf[name] = kf;
+    }
+
+    /// <summary>
     /// The KFM transition NiActorManager takes from one sequence to the next (NiKFMTool::GetTransition(cur, desired),
     /// NiActorManager.cpp:624), or null when either sequence is not in the body's KFM.
     /// </summary>

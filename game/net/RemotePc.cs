@@ -319,15 +319,38 @@ public sealed class RemotePc : IRemotePc
     /// leaves the state, an earlier one waits in it; the next state plays its own action with the default transition from the cast.
     /// </summary>
     public void PlaySkill(string name, float speed, int skillId, bool chargingSkill, System.Numerics.Vector3 pos, float rotZ,
-        int holdId = 0, string holdNode = "", int motion = 0, int motionCount = 1)
+        int holdId = 0, string holdNode = "", int motion = 0, int motionCount = 1, int loopCount = 0,
+        IReadOnlyList<string> attackPoints = null)
     {
-        States.Cast(skillId, chargingSkill, pos, rotZ, holdId, holdNode, motion, motionCount);
+        States.Cast(skillId, chargingSkill, pos, rotZ, holdId, holdNode, motion, motionCount, speed, loopCount, attackPoints);
         bool again = name == currentName;
         Anim.Play(name, 0.05, speed);
         if (again) Anim.Seek(0, true);           // the same sequence again (a forced re-entry): Play alone would go on
         Anim.SpeedScale = 1f;
-        currentAct = -1; currentName = name; lastPos = -1;
+        currentAct = -1; currentName = name; castSpeed = speed;
+        lastPos = FromStart;                     // an activated sequence throws its keys from 0 (m_bNeedFirstTextKey)
     }
+
+    // the cast's play speed (SeekCast plays it again at it) and the "from the sequence start" mark of lastPos: the next
+    // frame throws the keys in [0, pos] (NiControllerSequence::ThrowAllTextKeys after an activation)
+    float castSpeed = 1f;
+    const double FromStart = -1e-9;
+
+    public float CastKeyTime(string key) => Anims?.TextKey(currentAct < 0 ? currentName : null, key) ?? -1f;
+
+    /// <summary>
+    /// StateSkill's SetTargetAnimation(seq, m_fSpeed, true) + SetOffset(time): the cast's sequence again (played anew when
+    /// it already ended) from <paramref name="time"/>; the forced restart reactivates it, so the next frame throws the keys
+    /// from 0 to the new time ("loopstart" again).
+    /// </summary>
+    public void SeekCast(float time)
+    {
+        if (currentAct >= 0 || currentName == null) return;
+        if (!Anim.IsPlaying() || Anim.CurrentAnimation != currentName) Anim.Play(currentName, 0, castSpeed);
+        Anim.Seek(Math.Max(time, 0f), true);
+        seeked = true;
+    }
+    bool seeked;
 
     public bool PlayAction(int action, float rate, bool restart)
     {
@@ -394,14 +417,24 @@ public sealed class RemotePc : IRemotePc
     /// pcbase.cpp:997-1008): a "run*" or "walk*" key, not in StateNone and not class 0x6200028, plays that key's ground
     /// effects. A sequence without such keys plays no steps.
     /// </summary>
+    /// A cast's sequence (played outside the action table) also hands each key to StateSkill::TextKeyEvent
+    /// (<see cref="RemotePcStates.CastTextKey"/>); a key that takes the sequence back (<see cref="SeekCast"/>) lets the
+    /// frame's later keys go on (the throw's range is already taken) and the next frame throw from the sequence start.
     void TextKeys()
     {
         if (currentName == null || Anims == null || !Anims.Kf.TryGetValue(currentName, out var kf) || kf.TextKeys.Count == 0) return;
         double pos = Anim.CurrentAnimationPosition, len = Anim.CurrentAnimationLength;
-        if (lastPos < 0) { lastPos = pos; return; }
+        if (lastPos < 0 && lastPos != FromStart) { lastPos = pos; return; }
+        bool cast = currentAct < 0 && States.Cur == RemotePcStates.StateSkill;
+        seeked = false;
         foreach (var (t, key) in kf.TextKeys)
-            if (Crossed(lastPos, pos, t, len) && GroundEffectGate.StepKey(key, States.Cur, ClassPc)) PlayEffects(key);
-        lastPos = pos;
+        {
+            if (!Crossed(lastPos, pos, t, len)) continue;
+            if (GroundEffectGate.StepKey(key, States.Cur, ClassPc)) PlayEffects(key);
+            if (cast) States.CastTextKey(key, (float)t);
+        }
+        if (seeked) { lastPos = FromStart; seeked = false; }
+        else lastPos = pos;
     }
 
     /// <summary>PC's class id (efd::DynamicCast&lt;PC&gt;, class 0x6200003, worldservice_1.cpp:6149).</summary>

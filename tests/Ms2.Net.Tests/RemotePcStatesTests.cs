@@ -83,6 +83,10 @@ public class RemotePcStatesTests {
         public HoldTarget FindHoldTarget(int id, string node) { HoldAsked = (id, node); return Hold; }
         public readonly List<string> Sequences = new();
         public bool PlaySequence(string name, float rate) { if (Sequences.Count == 0 || Sequences[^1] != name) Sequences.Add(name); Current = -1; return true; }
+        public readonly Dictionary<string, float> CastKeys = new();
+        public float CastKeyTime(string key) => CastKeys.TryGetValue(key, out float t) ? t : -1f;
+        public readonly List<float> Seeks = new();
+        public void SeekCast(float time) => Seeks.Add(time);
     }
 
     // the default field camera's Euler rotation (CameraMathTests: hangle 45, vangle 30), its flat view direction (1, 1)/sqrt 2
@@ -547,6 +551,89 @@ public class RemotePcStatesTests {
         sm.Cast(10200001, false, Vector3.Zero, 0f, motion: 1, motionCount: 2);
         Run(sm, 2f);
         Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateSkill));
+        sm.CastSequenceEnded();
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateIdle));
+    }
+
+    [Test] public void RepeatedMotionLoopsBetweenItsKeysThenEnds() {
+        // FUN_1417f0940: m_nRepeat = loopCount (2); "loopend" with loops left takes one off and plays the sequence again
+        // from the loop start plus the overrun past the loop (ClampedElapsedAfter16ms: 0.5 s loop at speed 1, 0.6 s since
+        // "loopstart" -> 100 - 16, at most 50 ms); EndOfSequence waits while loops are left, the third pass ends the state
+        var b = new Body();
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Cast(10200001, false, Vector3.Zero, 30f, loopCount: 2);
+        Assert.That(sm.CastRepeat, Is.EqualTo(2));
+        sm.CastTextKey("loopstart", 0.25f);
+        Run(sm, 0.6f);
+        b.RotationZ = 0f;
+        sm.CastTextKey("loopend", 0.75f);
+        Assert.That(sm.CastRepeat, Is.EqualTo(1));
+        Assert.That(b.Seeks, Has.Count.EqualTo(1));
+        Assert.That(b.Seeks[0], Is.EqualTo(0.30f).Within(1e-5f));
+        Assert.That(b.RotationZ, Is.EqualTo(30f));
+        sm.CastSequenceEnded();
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateSkill));
+        // the restarted sequence throws "loopstart" again; a loop within 16 ms of its length seeks to the loop start
+        sm.CastTextKey("loopstart", 0.25f);
+        Run(sm, 0.5f);
+        sm.CastTextKey("loopend", 0.75f);
+        Assert.That((sm.CastRepeat, b.Seeks.Count), Is.EqualTo((0, 2)));
+        Assert.That(b.Seeks[1], Is.EqualTo(0.25f).Within(1e-5f));
+        sm.CastTextKey("loopstart", 0.25f);
+        sm.CastTextKey("loopend", 0.75f);
+        Assert.That(b.Seeks, Has.Count.EqualTo(2));
+        sm.CastSequenceEnded();
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateIdle));
+    }
+
+    [Test] public void RemoteChargingSkillLoopsUntilTheSyncReleasesItToTheChargingAttack() {
+        // another player's charging skill loops 20 more times (m_nRepeat += 0x14); the sync's release (A false, B true)
+        // plays the sequence from "charging_attack" and ends the loop (m_nRepeat 0, m_bLoop): "loopstart" no longer marks,
+        // "loopend" no longer repeats and the sequence end leaves the state
+        var b = new Body();
+        b.CastKeys["charging_attack"] = 1.2f;
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Cast(10200001, true, Vector3.Zero, 0f, attackPoints: new[] { "Attack_01" });
+        Assert.That(sm.CastRepeat, Is.EqualTo(20));
+        sm.CastTextKey("loopstart", 0.3f);
+        sm.CastTextKey("loopend", 0.9f);
+        Assert.That((sm.CastRepeat, b.Seeks.Count), Is.EqualTo((19, 1)));
+        sm.CastSequenceEnded();
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateSkill));
+        sm.SkillSync(45f, new Vector2(1, 0), false, true);
+        Assert.That(sm.CastRepeat, Is.EqualTo(0));
+        Assert.That(b.Seeks[^1], Is.EqualTo(1.2f));
+        Assert.That(sm.MoveInput, Is.EqualTo(new Vector2(1, 0)));
+        sm.CastTextKey("Attack_01", 1.3f);
+        sm.CastTextKey("loopend", 0.9f);
+        Assert.That(b.Seeks, Has.Count.EqualTo(2));
+        sm.CastSequenceEnded();
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateIdle));
+    }
+
+    [Test] public void SyncChargeRestartsTheLoopAfterItsEndAndHoldsTheSequenceEnd() {
+        // FUN_1417ec630(true, ..): m_bCharging; after a "loopend" (m_fChargeTime set) the PC turns to the record rotation
+        // and the sequence plays again from the loop start; before it, the charge makes "loopend" repeat and EndOfSequence wait
+        var b = new Body();
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Cast(10200001, false, Vector3.Zero, 0f);
+        sm.CastTextKey("loopstart", 0.4f);
+        sm.SkillSync(0f, Vector2.Zero, true, false);
+        Assert.That(b.Seeks, Is.Empty);
+        sm.CastSequenceEnded();
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateSkill));
+        sm.CastTextKey("loopend", 0.8f);
+        Assert.That(b.Seeks, Is.EqualTo(new[] { 0.4f }));
+        // the loop's end passed without a charge: a charge now restarts the loop at its start, turned to the new rotation
+        sm.CastTextKey("loopstart", 0.4f);
+        sm.CastTextKey("loopend", 0.8f);
+        Assert.That(b.Seeks, Has.Count.EqualTo(1));
+        sm.SkillSync(60f, Vector2.Zero, true, false);
+        Assert.That(b.Seeks, Is.EqualTo(new[] { 0.4f, 0.4f }));
+        Assert.That((b.RotationZ, sm.TargetYaw), Is.EqualTo((60f, 60f)));
         sm.CastSequenceEnded();
         Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateIdle));
     }

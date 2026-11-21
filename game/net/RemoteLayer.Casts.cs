@@ -32,9 +32,9 @@ public sealed partial class RemoteLayer
 
     /// <summary>
     /// OnSkillSync @0x141718150 (:3361): another cast than the actor's running one is started as OnSkillUse starts it (serial 0,
-    /// the packet's speed); the running one is updated.
-    /// STILL-OPEN: the update's record rotation (m_kRot), PCBase::vfunc_22(move) and StateSkill::FUN_1417ec630's charge
-    /// animation are not ported (only the flags are kept); an npc has no cast record here, so each of its syncs plays.
+    /// the packet's speed); the running one takes the record rotation (m_kRot), PCBase::vfunc_22(move) and, in StateSkill,
+    /// FUN_1417ec630(A, B) (<see cref="RemotePcStates.SkillSync"/>).
+    /// STILL-OPEN: an npc has no cast record here, so each of its syncs plays.
     /// </summary>
     void OnSkillSync(SkillSync s)
     {
@@ -42,7 +42,11 @@ public sealed partial class RemoteLayer
         if (users.TryGetValue(s.ActorId, out var r))
         {
             InSkill(r);
-            if (r.Cast.Sync(s) == CastSyncResult.Update) return;
+            if (r.Cast.Sync(s) == CastSyncResult.Update)
+            {
+                r.Pc.States.SkillSync(s.Rotation.Z, new System.Numerics.Vector2(s.Move.X, s.Move.Y), s.A, s.B);
+                return;
+            }
         }
         else if (npcs.Info(s.ActorId) == null) return;
         PlayCast(s.ActorId, s.SkillId, s.Level, s.Motion, s.Speed, new System.Numerics.Vector3(s.Position.X, s.Position.Y, s.Position.Z), s.Rotation.Z);
@@ -82,7 +86,7 @@ public sealed partial class RemoteLayer
             if (!string.IsNullOrEmpty(motion.SequenceName) && SkillAnim(r.Gender, motion.SequenceName) is { an: not null } sk)
             {
                 r.Pc.PlaySkill(sk.name, Math.Max(speed, 0.1f), skillId, skillMotions.ChargingSkill(skillId), pos, rotZ, holdId, holdNode,
-                    motionIndex, skillMotions.MotionCount(skillId, level));
+                    motionIndex, skillMotions.MotionCount(skillId, level), motion.LoopCount, motion.AttackPoints);
                 CastsPlayed++;
             }
         }
@@ -108,10 +112,12 @@ public sealed partial class RemoteLayer
         {
             if (bodies.TryGetValue(gender, out var body) && packs.Exists(ModelBuilder.ModelArchive, entry))
             {
-                var an = ModelBuilder.BuildAnimation(builder.LoadKf(entry), body.md);
+                var kf = builder.LoadKf(entry);
+                var an = ModelBuilder.BuildAnimation(kf, body.md);
                 an.LoopMode = Godot.Animation.LoopModeEnum.None;
                 string name = "cast_" + low;
                 if (!body.lib.HasAnimation(name)) body.lib.AddAnimation(name, an);
+                if (body.anims != null && !body.anims.Kf.ContainsKey(name)) body.anims.AddSequenceKeys(name, low, kf);
                 sk = (an, name);
             }
         }

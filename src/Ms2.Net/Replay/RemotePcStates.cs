@@ -77,6 +77,12 @@ public interface IRemotePc
     /// <summary>PlayAnimation(name, rate, false, false): a sequence by its name; nothing when the sequence is playing or the
     /// body has no such sequence (false).</summary>
     bool PlaySequence(string name, float rate);
+    /// <summary>FUN_141b6fe90(m_pSequence, key, 1f): the time (s) of a text key in the cast's sequence, or -1 without it.</summary>
+    float CastKeyTime(string key);
+    /// <summary>SetTargetAnimation(seq, speed, true) (a forced restart: NiActorManager::Reset first), Update and
+    /// SetOffset: the cast's sequence again from <paramref name="time"/> (s); the next frame throws its text keys from 0
+    /// to the new time.</summary>
+    void SeekCast(float time);
 }
 
 /// <summary>The held actor's class as StateHold tests it (GetClassID).</summary>
@@ -200,6 +206,13 @@ public sealed class RemotePcStates
     // the record's m_nMotion and its level's motion count (CSkillRecord::FUN_141759e40), and the time since
     // EndOfSequence marked an earlier motion's end (m_b48, m_fStartTime), -1 while it has not
     int castMotion, castMotionCount = 1; float castEndAge = -1f;
+    // the loop of a motion (StateSkill m_nRepeat, m_bCharging, m_bLoop, m_nAttack, m_fLoopStart, m_fChargeTime != 0,
+    // m_fSpeed) and the time since its "loopstart" (GetTickCountMs2() - m_n138, ms); the motion's loopCount and attack points
+    int castRepeat, castAttack, castLoopCount; bool castCharging, castLoop, castLoopEnded;
+    float castLoopStart, castSpeed = 1f; double castLoopMs;
+    IReadOnlyList<string> castPoints = System.Array.Empty<string>();
+    /// <summary>StateSkill::m_nRepeat (for tests): the loops left before the "loopend" key stops repeating.</summary>
+    public int CastRepeat => castRepeat;
 
     /// <summary>StateHold's StateHoldData (m_spHold): m_nTargetId and m_strTargetName, the held actor and its node.</summary>
     public int HoldTargetId { get; private set; }
@@ -354,9 +367,14 @@ public sealed class RemotePcStates
     /// scenestategame.cpp:3333-3340, from the packet's extra): the actor and node the cast's end holds.
     /// <paramref name="motion"/> and <paramref name="motionCount"/> are the record's m_nMotion and its level's
     /// GetMotionCount, which <see cref="CastSequenceEnded"/> compares.
+    /// <paramref name="speed"/> is GetMotionSpeedScale (the record's speed, StateSkill::m_fSpeed); <paramref name="loopCount"/>
+    /// and <paramref name="attackPoints"/> are the motion's SkillMotionData::m_nLoopCount and its attacks' m_strPoint.
     public void Cast(int skillId, bool chargingSkill, Vector3 pos, float rotZ, int holdId = 0, string holdNode = "",
-        int motion = 0, int motionCount = 1)
+        int motion = 0, int motionCount = 1, float speed = 1f, int loopCount = 0, IReadOnlyList<string> attackPoints = null)
     {
+        castSpeed = speed;
+        castLoopCount = loopCount;
+        castPoints = attackPoints ?? System.Array.Empty<string>();
         castMotion = motion;
         castMotionCount = motionCount;
         SkillId = skillId;
@@ -375,14 +393,120 @@ public sealed class RemotePcStates
     /// (skillrecord.cpp:315-323, m_nAttack 1) holds: the motion is the level's last (m_nMotion + 1 &gt;= GetMotionCount).
     /// After an earlier motion the PC stays in StateSkill, dropping the walk records (<see cref="Apply"/>), until the next
     /// motion's cast enters it again or, 5 s after the sequence end (m_fStartTime + 5 &lt; GetGameTime), EndSkill.
-    /// Nothing when the PC has left StateSkill already.
-    /// STILL-OPEN: EndOfSequence's waits for a charging or repeating cast (m_bCharging, m_nRepeat) are not ported.
+    /// Nothing when the PC has left StateSkill already. EndOfSequence returns first while the cast charges (m_bCharging)
+    /// or has loops left (m_nRepeat &gt; 0): the "loopend" key (<see cref="CastTextKey"/>) takes the sequence back.
     /// </summary>
     public void CastSequenceEnded()
     {
         if (Cur != StateSkill) return;
+        if (castCharging || castRepeat > 0) return;
+        castLoop = true;
+        castAttack = 0;
         if (castMotion + 1 >= castMotionCount) EndSkill();
         else castEndAge = 0f;
+    }
+
+    /// <summary>
+    /// StateSkill::TextKeyEvent (@0x1417e7660, stateskill.cpp:778-1051) for a key of the cast's sequence at
+    /// <paramref name="time"/> (s), what a PC that is neither MyPC nor an npc does of it (its record's m_n9c stays 0):
+    /// "loopstart" (:844-867, m_b117 set) outside the loop marks the loop's start (m_fLoopStart, m_fChargeTime = 0,
+    /// m_n138); "loopend" (:868-947) marks the charge time and, while the cast charges or has loops left, takes a loop
+    /// off, turns the PC to the record's rotation (SetTargetYaw, vfunc_21) and plays the sequence again from the loop
+    /// start plus the time it overran the loop by (ClampedElapsedAfter16ms of the time since "loopstart" past the loop's
+    /// length at m_fSpeed, at most the length - 5 ms); the current attack's point and "charging_attack" (:980-998) end a
+    /// charging skill's loop once no loop is left (m_bLoop), the point also takes the attacks of that point
+    /// (FireAttacksAtPoint, @0x1417f0f10, stateskill.cpp:2272-2292, m_nAttack). Nothing outside StateSkill.
+    /// STILL-OPEN: the loop effect (record m_n88, FUN_1417598e0), the tag effects (m_mapTagEffects), FireCurrentAttack's
+    /// hits and the weapon sync (FUN_141663be0, FUN_1417f1a90) are not ported.
+    /// </summary>
+    public void CastTextKey(string key, float time)
+    {
+        if (Cur != StateSkill) return;
+        if (key == "loopstart" && !castLoop)
+        {
+            castLoopStart = time;
+            castLoopEnded = false;
+            castLoopMs = 0;
+        }
+        if (key == "loopend")
+        {
+            castLoopEnded = true;
+            if (castCharging || castRepeat > 0)
+            {
+                if (castRepeat > 0) castRepeat--;
+                TargetYaw = castRotZ;
+                pc.RotationZ = castRotZ;
+                castAttack = 0;
+                castCharging = false;
+                // m_n134 = FUN_14028d260((m_fLoopEnd - m_fLoopStart) / m_fSpeed), m_nChargeTick (:907-912)
+                uint loopMs = (uint)(long)((time - castLoopStart) / castSpeed * 1000f);
+                uint tick = ClampedElapsedAfter16ms((uint)castLoopMs, loopMs);
+                if (loopMs - 5u < tick) tick = loopMs - 5u;
+                // m_n9c == 0: SetTargetAnimation(m_nLoopSequenceId, m_fSpeed, true), SetOffset(m_fLoopStart + tick * 0.001f)
+                pc.SeekCast(castLoopStart + tick * 0.001f);
+            }
+        }
+        // GetAttackDataAt(m_nAttack): null past the last attack
+        string point = castAttack < castPoints.Count ? castPoints[castAttack] : null;
+        if (point != null && key == point)
+        {
+            if (ChargingSkill && !castLoop && castRepeat == 0) castLoop = true;
+            // FireAttacksAtPoint: the attacks from m_nAttack on with that same non-empty point
+            string first = null;
+            while (castAttack < castPoints.Count && castPoints[castAttack].Length > 0
+                && (first == null || first == castPoints[castAttack]))
+            {
+                first = castPoints[castAttack];
+                castAttack++;
+            }
+            return;
+        }
+        if (key == "charging_attack" && ChargingSkill && !castLoop && castRepeat == 0) castLoop = true;
+    }
+
+    /// <summary>ClampedElapsedAfter16ms (stateskill.cpp): the time <paramref name="now"/> is past <paramref name="start"/>,
+    /// less 16 ms and at most 50 ms; 0 within 16 ms.</summary>
+    static uint ClampedElapsedAfter16ms(uint now, uint start)
+    {
+        uint e = now > start ? now - start : 0;
+        return e > 16 ? System.Math.Min(e - 16, 50u) : 0;
+    }
+
+    /// <summary>
+    /// OnSkillSync's update of the running cast (scenestategame.cpp:3395-3402): the record's rotation (m_kRot,
+    /// <paramref name="rotZ"/>), PCBase::vfunc_22(<paramref name="move"/>), then in StateSkill FUN_1417ec630
+    /// (@0x1417ec630, stateskill.cpp:1419-1488) with the packet's two flags: <paramref name="charge"/> is m_bCharging;
+    /// charging after a "loopend" (m_fChargeTime != 0) turns the PC to the rotation and plays the sequence again from the
+    /// loop start; not charging, <paramref name="start"/> outside the loop plays it from its "charging_attack" key and
+    /// ends the loop (m_bLoop, m_nRepeat = 0, m_fLoopStart at that key).
+    /// STILL-OPEN: the weapon sync (FUN_1417f1a90, FUN_141663be0) is not ported.
+    /// </summary>
+    public void SkillSync(float rotZ, Vector2 move, bool charge, bool start)
+    {
+        castRotZ = rotZ;
+        MoveInput = move;
+        if (Cur != StateSkill) return;
+        castCharging = charge;
+        if (castCharging)
+        {
+            if (!castLoopEnded) return;
+            TargetYaw = castRotZ;
+            pc.RotationZ = castRotZ;
+            castAttack = 0;
+            castLoopEnded = false;
+            castCharging = false;
+            pc.SeekCast(castLoopStart);
+        }
+        else if (!castLoop && start)
+        {
+            float at = pc.CastKeyTime("charging_attack");
+            if (at < 0) return;       // STILL-OPEN: FUN_141b6fe90 gives -FLT_MAX for a missing key, SetOffset far before 0
+            pc.SeekCast(at);
+            castLoop = true;
+            castCharging = false;
+            castRepeat = 0;
+            castLoopStart = at;
+        }
     }
 
     /// <summary>
@@ -559,6 +683,11 @@ public sealed class RemotePcStates
                 // FUN_141489940 is not 10, SetTargetYaw(m_ptRot.z) and vfunc_21(m_ptRot); the motion's start
                 // (FUN_1417f0940, stateskill.cpp:2206-2212) clears m_b48
                 castEndAge = -1f;
+                // vfunc_4 (stateskill.cpp:398-402): m_bCharging, m_fChargeTime, m_fLoopStart cleared; FUN_1417f0940:
+                // m_bLoop cleared, m_nRepeat = the motion's loop count, 20 more for another player's charging skill
+                castCharging = castLoop = castLoopEnded = false;
+                castLoopStart = 0f; castLoopMs = 0; castAttack = 0;
+                castRepeat = castLoopCount + (ChargingSkill ? 0x14 : 0);
                 MoveInput = Vector2.Zero;
                 pc.Position = castPos;
                 TargetYaw = castRotZ;
@@ -688,6 +817,7 @@ public sealed class RemotePcStates
                 // STILL-OPEN: vfunc_3's exit when FUN_141675ed0 reports the PC stopped (stateskill.cpp:610-614: SendSkillMode4,
                 // vfunc_7(0x1b)) and the npc-node follow of FUN_1417efbe0 (feature 0xae, m_nB0) are not ported.
                 MoveBy(Vector3.Zero, dt);
+                castLoopMs += dt * 1000.0;
                 // FUN_1417ee120's tail: 5 s after an earlier motion's sequence end the state ends
                 if (castEndAge >= 0f && (castEndAge += dt) > 5f) EndSkill();
                 break;
