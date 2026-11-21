@@ -12,6 +12,7 @@ static class Gms2Opcodes {
         [Inbound.RequestKey] = 0x04,
         [Inbound.Reconnect] = 0x05,
         [Inbound.Ping] = 0x06,
+        [Inbound.SkillMacro] = 0xD3,
         [Inbound.ReconnectUnk] = 0x07,
         [Inbound.FinalizeReconnect] = 0x08,
         [Inbound.RequestLogin] = 0x09,
@@ -128,6 +129,7 @@ static class Gms2Opcodes {
     };
     public static readonly Dictionary<Outbound, ushort> OutboundNumbers = new() {
         [Outbound.ResponseVersion] = 0x01,
+        [Outbound.SkillMacro] = 0x7C,
         [Outbound.ResponseLogin] = 0x03,
         [Outbound.ResponseKey] = 0x04,
         [Outbound.Reconnect] = 0x05,
