@@ -25,6 +25,9 @@ public sealed class CubeCellMap : ICubeCells
     static readonly CubeItemInfo MapCubeItem = new();
 
     readonly Dictionary<(int X, int Y, int Z), Vector3> entities = new();   // cell -> entity position (MS2 axes)
+    // key -> its entity's cell, beside f98: a map cube's cell can lie past the key's signed byte (a cube at x 200 has key
+    // 0xc8, which unpacks to -56), so the cube leaves with the entity it was added with, not one found from the key
+    readonly Dictionary<int, (int X, int Y, int Z)> entityCells = new();
 
     public int Count => cubes.Count;
 
@@ -40,7 +43,8 @@ public sealed class CubeCellMap : ICubeCells
     public bool AddMapCube((int X, int Y, int Z) cell, Vector3 position)
     {
         if (!entities.TryAdd(cell, position)) return false;
-        AddMapCube(CubeCell.Key(cell.X, cell.Y, cell.Z));
+        int key = CubeCell.Key(cell.X, cell.Y, cell.Z);
+        if (AddMapCube(key)) entityCells[key] = cell;
         return true;
     }
 
@@ -147,7 +151,7 @@ public sealed class CubeCellMap : ICubeCells
     void Remove(int key)
     {
         cubes.Remove(key);
-        entities.Remove(CubeCell.Unpack(key));
+        if (entityCells.Remove(key, out var cell)) entities.Remove(cell);
     }
 
     /// <summary>CreateCube's checks (:2604-2617), then the cube with its item (spCube->item->CopyFrom(pInfo)) and its entity
@@ -159,6 +163,7 @@ public sealed class CubeCellMap : ICubeCells
         cubes[key] = item;
         var cell = CubeCell.Unpack(key);
         entities[cell] = new Vector3(cell.X * CubeCell.Size, cell.Y * CubeCell.Size, cell.Z * CubeCell.Size);
+        entityCells[key] = cell;
         return true;
     }
 }

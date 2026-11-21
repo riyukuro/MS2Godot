@@ -188,4 +188,22 @@ public class CubeCellMapTests
         Assert.That(m.TryCubeItemAtKey(CubeCell.Key(-1, 3, 1), out var c) && c.ItemId == OtherKnown, Is.True);
         Assert.That(m.Load(null, Exists), Is.Zero);
     }
+
+    [Test]
+    public void AMapCubePastASignedByteCellLosesItsEntityOnAReplaceOrALoad()
+    {
+        // FUN_1410c1910 (:5190-5216) erases the cube with its own entity: a map cube at x 200 has key 0xc8, which unpacks to
+        // x -56, so the entity must leave by the cell it was added with
+        var m = new CubeCellMap();
+        m.AddMapCube((200, 0, 0), new Vector3(30000, 0, 0));
+        Assert.That(m.Replace(CubeCell.Key(200, 0, 0), Item(Unknown), Exists), Is.False);
+        Assert.That(m.CubeAt(new Vector3(30000, 0, 10)), Is.Null);
+        Assert.That(m.EntityCount, Is.Zero);
+
+        m.AddMapCube((0, -200, 0), new Vector3(0, -30000, 0));
+        var load = new LoadCubes(0, new[] { new ResponseCubePlace(ResponseCubePlace.ModePlace, 0, 0, CubeCell.Key(0, -200, 0), Item: Item(Unknown)) });
+        Assert.That(m.Load(load, Exists), Is.Zero);
+        Assert.That(m.CubeAt(new Vector3(0, -30000, 10)), Is.Null);
+        Assert.That(m.EntityCount, Is.Zero);
+    }
 }
