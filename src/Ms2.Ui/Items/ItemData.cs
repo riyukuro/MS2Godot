@@ -67,6 +67,19 @@ public sealed class ItemData
     /// <summary>ItemFunctionArgs words: the parameter split at ',' (FUN_1408d1e00 -> FUN_14025a680, CStringW::Tokenize, empty
     /// tokens dropped); not split when the parameter is "&lt;...&gt;" (parsed as xml values).</summary>
     public readonly List<string> FunctionArgs = new();
+    /// <summary>function.xml (the parameter as "&lt;v .../&gt;" xml values) GetString(L"notifyDlg") (CSceneStateGame::OnItemUse, scenestategame.cpp:8626): the
+    /// dialog the use notice opens; "" when the parameter is no xml or has no such attribute.</summary>
+    public string NotifyDlg => FunctionXmlString("notifyDlg");
+    /// <summary>function.xml FUN_14042cad0(L"notifyMsg", L"") (scenestategame.cpp:8627): the common string key of the use notice's message.</summary>
+    public string NotifyMsg => FunctionXmlString("notifyMsg");
+
+    string FunctionXmlString(string name)
+    {
+        string s = FunctionParameter;
+        if (s.Length < 2 || s[0] != '<' || s[^1] != '>') return "";
+        try { return (string)System.Xml.Linq.XElement.Parse(s).Attribute(name) ?? ""; }
+        catch (System.Xml.XmlException) { return ""; }
+    }
     /// <summary>CItemData::Load (itemdata.cpp:364): &lt;tool itemPreset&gt;, the item model id.</summary>
     public int ItemPreset;
     /// <summary>ItemProperty "sell price" (itemdatastruct.cpp:1136): the &lt;property&gt;&lt;sell price&gt; list, each token

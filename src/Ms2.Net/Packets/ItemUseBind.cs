@@ -29,7 +29,7 @@ public sealed class BindItem {
 /// notifyMsg box (string 0x5f6 with the item's name, a line break, the message) and marks dialog 0x4e28 dirty; mode 5 is
 /// OnActiveCodiTab, mode 6 SendBeauty (<see cref="BeautyReq"/>), mode 7 only marks dialog 0x4e28 dirty.
 /// Mode 5 reads <see cref="CodiTab"/> (FUN_1407a8250 @0x1407a8250: actor int, start, end, expire i64, silent byte).
-/// STILL-OPEN: mode 4's function xml notify attributes, the beauty dialog 0x4eee open of mode 6.
+/// STILL-OPEN: the notifyDlg dialogs' own show (FUN_141924680, UITimeRunEventDialog) and dialog 0x4e28's dirty mark of modes 4 and 7, the beauty dialog 0x4eee open of mode 6.
 /// </summary>
 public sealed record ItemUseNotice(int Mode, int NoticeStringId, int ItemId, CodiTab Codi = null, BeautyReq Beauty = null) {
     public const int FirstNoticeId = 0x2a2;

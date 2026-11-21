@@ -231,6 +231,24 @@ public partial class LiveSession : Node
     public event Action<NewsNotification> NewsNotificationReceived;
     /// <summary>OnItemDropNotice: a drop notice for the chat log.</summary>
     public event Action<ItemDropNotice> ItemDropNoticed;
+    /// <summary>ItemUse mode 4 named a dialog to open (the item function's notifyDlg, e.g. "TimeRunEventDialog"); the dialog's own
+    /// show (FUN_141924680) is the subscriber's. STILL-OPEN: no subscriber yet.</summary>
+    public event Action<string> ItemNotifyDialog;
+
+    /// <summary>CSceneStateGame::OnItemUse mode 4 (scenestategame.cpp:8627): the item's function notifyDlg names a dialog to open; else its notifyMsg
+    /// shows a box: string 0x5f6 with the item's name, a line break, the common string of the key.</summary>
+    void ItemUseNotify(int itemId)
+    {
+        var data = ItemDataOf(itemId);
+        if (data == null) return;
+        string dlg = data.NotifyDlg, msg = data.NotifyMsg;
+        if (dlg.Length != 0) { ItemNotifyDialog?.Invoke(dlg); return; }
+        if (msg.Length == 0) return;
+        string name = Ms2.Ui.GameTables.Shared(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), GameOptions.StringLanguage).ItemName(itemId);
+        string text = Ms2.Quest.ClientFormat.Format(Ms2.Ui.Hud.MessageBoxData.Common(0x5f6), name) + "\n" + (Ms2.Ui.Hud.MessageBoxData.CommonByKey(msg) ?? "");
+        Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(text, 0, null, "");
+    }
+
     /// <summary>Raised after ItemUse mode 6 sent the Beauty request.</summary>
     public event Action<BeautyReq> BeautyRequested;
     /// <summary>The adventure data the client keeps in globals (DAT_143ab2958..3318): session-lived, so a field change keeps
@@ -1107,6 +1125,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.ItemUse))
             {
                 var n = ItemUseNotice.Read(p.Reader());   // CSceneStateGame::OnItemUse (scenestategame.cpp:8603)
+                if (n.Mode == 4) ItemUseNotify(n.ItemId);
                 if (n.NoticeStringId != 0)
                     Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(Ms2.Ui.Hud.MessageBoxData.Common(n.NoticeStringId), 0, null, "");   // FUN_140d73bc0(id, 0, 0, "")
                 if (n.Codi is { } codi) ActiveCodiTab(codi);
