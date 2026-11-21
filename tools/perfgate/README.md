@@ -3,13 +3,13 @@
 One command measures the game's CPU-side cost, headless. A second compares the result with the stored baseline and exits 1 on a regression.
 
 ```sh
-export MS2_DATA="<the raw KR client>/Data" MS2_NIFXML="$PWD/external/nifxml/nif.xml"
+export MS2_DATA="<the KMS2_DEV client>/Data" MS2_NIFXML="$PWD/external/nifxml/nif.xml"
 tools/perfgate/run.sh SCRATCH            # the merge gate's run: setup + 2 sessions
 tools/perfgate/run.sh --full SCRATCH     # setup + 3 sessions, as the baseline runs use
 dotnet run --project tools/PerfGate -- compare tools/perfgate/baseline.json SCRATCH/run.json
 ```
 
-The inputs are the merge gate's, the same as every suite's: `MS2_DATA` is the raw KR client's `Data` folder (not a restored one), and `MS2_NIFXML` is the `external/nifxml` submodule's `nif.xml`. Other inputs give other counts: a restored Data folder and another nif.xml moved 13 metrics, for example worldmap's kept objects from 1,978 to 966. So each session records the inputs' fingerprint, and so does the baseline. The fingerprint covers the `nif.xml` and `Xml.m2d` hashes, plus one hash over the pack indexes (every `.m2h` under `Data`, by path and content, in C-locale order). `run.sh` checks it against the baseline's before it builds anything and exits 2 within a second when they differ ("inputs differ, rebuild the baseline"); `compare` checks it again and exits 2 the same way. `PERFGATE_BASELINE` names the baseline `run.sh` checks against (default `tools/perfgate/baseline.json`); the runs a new baseline is built from set it empty, which skips the check.
+The inputs are the merge gate's, the same as every suite's: `MS2_DATA` is the KMS2_DEV client's `Data` folder (not a restored one, not the raw KR Live client), and `MS2_NIFXML` is the `external/nifxml` submodule's `nif.xml`. Other inputs give other counts: a restored Data folder and another nif.xml moved 13 metrics, for example worldmap's kept objects from 1,978 to 966. So each session records the inputs' fingerprint, and so does the baseline. The fingerprint covers the `nif.xml` and `Xml.m2d` hashes, plus one hash over the pack indexes (every `.m2h` under `Data`, by path and content, in C-locale order). `run.sh` checks it against the baseline's before it builds anything and exits 2 within a second when they differ ("inputs differ, rebuild the baseline"); `compare` checks it again and exits 2 the same way. `PERFGATE_BASELINE` names the baseline `run.sh` checks against (default `tools/perfgate/baseline.json`); the runs a new baseline is built from set it empty, which skips the check.
 
 `SCRATCH` must be empty or must not exist. The run's temporary files go there too (`SCRATCH/tmp`, as `TMPDIR`). Run the gate in a heavy slot: it builds the game, then runs Godot three times (four with `--full`). It only records times (`PERFGATE_TIMES=1` lists them against the baseline).
 
