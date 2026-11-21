@@ -65,6 +65,12 @@ public interface IKeyTable
     void BackupKeys() { }
     /// <summary>CKeyTable::RestoreKeysFromBackup (gameoptioninputdefault.cpp:595).</summary>
     void RestoreKeysFromBackup() { }
+    /// <summary>CKeyTable::GetQuickSlotActionCount (@0x14142cbb0): the quick-slot actions m_quickSlotActions holds.</summary>
+    int GetQuickSlotActionCount() => 0;
+    /// <summary>CKeyTable::GetQuickSlotAction (@0x14142cbe0): the action of quick slot index, 0 past the end.</summary>
+    long GetQuickSlotAction(int index) => 0;
+    /// <summary>CKeyTable::FindKeyByQuickSlot (@0x14142cb40): the key bound to the slot's action at that priority, 0 for none.</summary>
+    int FindKeyByQuickSlot(int index, int priority) => 0;
 }
 
 /// <summary>One row of RefreshKeyList's list: keyGUID is the action as a string, or the int 0x49409.</summary>
@@ -108,8 +114,6 @@ public interface IGameOptionDialogHost
     int SceneId { get; }
     /// <summary>CGuideManager::IsRestricted(n).</summary>
     bool GuideRestricted(int n);
-    /// <summary>FUN_141944250's quick-slot test: true when every quick-slot action except 0x7a137..0x7a139 has a key.</summary>
-    bool QuickSlotsBound { get; }
     /// <summary>CGameOption::SaveGameSettings.</summary>
     void SaveGameSettings();
     /// <summary>CGameOption::SaveCharacterSettings.</summary>
@@ -118,8 +122,6 @@ public interface IGameOptionDialogHost
     void SendBuddyMode20();
     /// <summary>FUN_140d86260()->vfunc_24, the secondary password dialog.</summary>
     void OpenSecondaryPassword();
-    /// <summary>The page id of m_bF1d0, the agreement tab's red circle (FUN_141943940).</summary>
-    bool AgreementRedCircle { get; }
 
     /// <summary>CGameOption +0x1a0, the stored gamepad block (GetGamepadState @0x140a58500).</summary>
     GameOption.GamePad GamePad { get; }
@@ -350,6 +352,7 @@ public sealed class GameOptionDialog
     public int Tab { get; private set; } = 1;
     public bool Simple { get; private set; }
     int resetScope;   // m_nF1cc
+    bool agreementRedCircle;   // m_bF1d0
 
     /// <summary>The ctor (@0x141941b80): the pages by key, typed in creation order. Pages the dialog does not port yet
     /// are plain CBaseOption pages.</summary>
@@ -380,6 +383,27 @@ public sealed class GameOptionDialog
         if (host.IsFeatureEnabled(0x117)) Add(15, (k, t) => new AgreementOptionPage(k, t)); // CGameOptionPersonalInfoAgreement
     }
 
+    /// <summary>The dtor (@0x141942810): the page map is emptied (RemoveAllPages).</summary>
+    public void Dispose() => RemoveAllPages();
+
+    /// <summary>UIGameOptionDialog::RemoveAllPages (@0x141943a00, uigameoptiondialog.cpp:427): the map drops every page.</summary>
+    public void RemoveAllPages() => pages.Clear();
+
+    /// <summary>vfunc_15 (@0x141942bf0), each frame: while the dialog is loaded and open, every page runs its frame step.</summary>
+    public void Update()
+    {
+        if (Host.IsClosed) return;
+        foreach (var p in pages.Values.ToList()) p.Update();
+    }
+
+    /// <summary>UIGameOptionDialog::SetAgreementRedCircle (@0x141943900, uigameoptiondialog.cpp:410): the flag is stored and the
+    /// agreement tab button follows it (CPersonalInfoAgreement::FUN_141262090 @0x141262090 calls this while group 0 is not agreed).</summary>
+    public void SetAgreementRedCircle(bool show)
+    {
+        agreementRedCircle = show;
+        UpdateAgreementRedCircle();
+    }
+
     /// <summary>SetTab @0x141b15670 (inline in uisystemmenudialog.cpp): m_nTab, the page the next open shows.</summary>
     public void SetTab(int tab) => Tab = tab;
 
@@ -390,13 +414,13 @@ public sealed class GameOptionDialog
     /// is the key order.</summary>
     public OptionPage GetPageByIndex(int index) => index >= 1 && index <= pages.Count ? pages.Values.ElementAt(index - 1) : null;
 
-    /// <summary>@0x1419445c0.</summary>
+    /// <summary>@0x1419445c0 (FUN_141944590 @0x141944590 is the call from OnLoadComplete): the key goes only when n is 0.</summary>
     public void RemovePage(int key, int n)
     {
         if (n == 0) pages.Remove(key);
     }
 
-    /// <summary>@0x1419428d0.</summary>
+    /// <summary>@0x1419428d0. initData goes through the root Invoke(string, int, int) helper (@0x141944620), setTabComponent through Invoke(int, bool, bool) (@0x141944710).</summary>
     public void OnLoadComplete()
     {
         int newBuild = Host.BuildNumber >= 0x32 ? 1 : 0;
@@ -407,7 +431,7 @@ public sealed class GameOptionDialog
         OpenTab(Tab);
     }
 
-    /// <summary>UIGameOptionDialog::FUN_141943480: simple mode in scenes 0x620000d / 0x6200009 / 0x6200085 or under guide restriction 1, where
+    /// <summary>UIGameOptionDialog::FUN_141943480 (@0x141943480): simple mode in scenes 0x620000d / 0x6200009 / 0x6200085 or under guide restriction 1, where
     /// only the pages of type 6, 7 and 0xe are enabled and the graphics tab opens.</summary>
     public void ApplySimpleMode()
     {
@@ -423,11 +447,11 @@ public sealed class GameOptionDialog
         UpdateAgreementRedCircle();
     }
 
-    /// <summary>UIGameOptionDialog::FUN_141943940: the agreement tab button's red circle.</summary>
+    /// <summary>UIGameOptionDialog::FUN_141943940 (@0x141943940): the agreement tab button's red circle, when the page is there.</summary>
     public void UpdateAgreementRedCircle()
     {
         if (pages.ContainsKey(0xf))
-            Host.Invoke("enableAgreementTabButtonRedCircle", Host.AgreementRedCircle);
+            Host.Invoke("enableAgreementTabButtonRedCircle", agreementRedCircle);
     }
 
     /// <summary>@0x1419436e0.</summary>
@@ -497,7 +521,7 @@ public sealed class GameOptionDialog
         else SaveAll();
     }
 
-    /// <summary>UIGameOptionDialog::FUN_141943ec0: every page saves, the option file is written, then every page's vfunc_11.</summary>
+    /// <summary>UIGameOptionDialog::FUN_141943ec0 (@0x141943ec0): every page saves, the option file is written, then every page's vfunc_11.</summary>
     public void SaveAll()
     {
         foreach (var p in pages.Values.ToList()) p.Save();
@@ -506,13 +530,13 @@ public sealed class GameOptionDialog
         Host.SendBuddyMode20();
     }
 
-    /// <summary>UIGameOptionDialog::FUN_141943d80: every page drops its changes.</summary>
+    /// <summary>UIGameOptionDialog::FUN_141943d80 (@0x141943d80): every page drops its changes.</summary>
     public void DropAllChanges()
     {
         foreach (var p in pages.Values.ToList()) p.DropChanges();
     }
 
-    /// <summary>UIGameOptionDialog::FUN_141944030: reset this page (n != 0) or all pages.</summary>
+    /// <summary>UIGameOptionDialog::FUN_141944030 (@0x141944030): reset this page (n != 0) or all pages.</summary>
     public void ResetPages(int n)
     {
         resetScope = n;
@@ -528,8 +552,22 @@ public sealed class GameOptionDialog
         else Close();
     }
 
-    /// <summary>UIGameOptionDialog::FUN_141944250: simple mode skips the quick-slot test.</summary>
-    public bool CanSaveQuickSlots() => Simple || Host.QuickSlotsBound;
+    /// <summary>UIGameOptionDialog::FUN_141944250 (@0x141944250): simple mode skips the test; otherwise every quick-slot action
+    /// except the last three (0x7a137, 0x7a138, 0x7a139) needs a primary key.</summary>
+    public bool CanSaveQuickSlots()
+    {
+        if (Simple) return true;
+        var keys = Host.Keys;
+        if (keys == null) return true;
+        int n = keys.GetQuickSlotActionCount();
+        for (int i = 0; i < n; i++)
+        {
+            long a = keys.GetQuickSlotAction(i);
+            if (a == 0x7a137 || a == 0x7a138 || a == 0x7a139) continue;
+            if (keys.FindKeyByQuickSlot(i, 0) == 0) return false;
+        }
+        return true;
+    }
 
     /// <summary>@0x141944330: the open page reads its controls back, then any page that differs counts.</summary>
     public bool IsNoPageChanged()

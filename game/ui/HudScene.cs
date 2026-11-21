@@ -3173,6 +3173,7 @@ public partial class HudScene : Node, IUiStageHost
         if (myInfo != null && !myInfo.IsClosed) myInfo.Process((long)Time.GetTicksMsec());     // UIMyInfoDialog::vfunc_15
         (notice?.Host.Controller as NoticeDialogController)?.Update((uint)Time.GetTicksMsec());     // UINoticeDialog::vfunc_72
         popupMenu?.Update();       // UIPopUpMenu::vfunc_15
+        optionDialog?.Update();    // UIGameOptionDialog::vfunc_15 (@0x141942bf0)
         if (PartyWindowOpen) party.Process();      // UIPartyDialog::vfunc_15: the vote page's time, the ready marks' deadline
         ugc?.Update();             // CUgcManager::Update: the picked file's refresh
         if (uploadDialog is { IsClosed: false } upload) upload.Tick();     // UIUGCImageUploadDialog::vfunc_72

@@ -364,12 +364,72 @@ public class GameOptionDialogTests
     public void SaveWaitsForUnboundQuickSlots()
     {
         var (d, h) = Open();
-        h.Bound = false;
+        h.Keys = new SlotKeys(unbound: 3);
         d.Call("OnSave");
         Assert.That(h.Log.Last(), Is.EqualTo("box 84a OnSave"));
         Assert.That(h.Log, Does.Not.Contain("save"));
         d.OnMessage("OnSave", 0);
         Assert.That(h.Log.TakeLast(4), Is.EqualTo(new[] { "save", "uiscale 1", "buddy", "apply False" }));   // the Interface page's vfunc_11 after the save
+    }
+
+    /// <summary>25 quick-slot actions 0x7a121..0x7a139; the slots in <c>unbound</c> have no key.</summary>
+    sealed class SlotKeys : IKeyTable
+    {
+        readonly HashSet<int> unbound = new();
+        public SlotKeys(params int[] unbound) { foreach (var u in unbound) this.unbound.Add(u); }
+        public IReadOnlyList<KeySetting> GetSettingList(int c) => null;
+        public int FindKeyByActionAndPriority(long a, int p) => 0;
+        public string GetKeyName(int k) => "";
+        public string ActionName(long a) => "";
+        public int GetQuickSlotActionCount() => 25;
+        public long GetQuickSlotAction(int i) => 0x7a121 + i;
+        public int FindKeyByQuickSlot(int i, int p) => unbound.Contains(i) ? 0 : 0x30 + i;
+    }
+
+    [Test]
+    public void QuickSlotCheckSkipsTheLastThreeActionsAndSimpleMode()
+    {
+        var (d, h) = Open();
+        h.Keys = new SlotKeys(22, 23, 24);   // 0x7a137..0x7a139
+        Assert.That(d.CanSaveQuickSlots(), Is.True, "the last three may stay unbound");
+        h.Keys = new SlotKeys(21);           // 0x7a136
+        Assert.That(d.CanSaveQuickSlots(), Is.False);
+        h.Keys = new SlotKeys(0);
+        Assert.That(d.CanSaveQuickSlots(), Is.False);
+        h.Scene = 0x620000d;
+        (d, h) = Open(h);
+        h.Keys = new SlotKeys(0);
+        Assert.That(d.CanSaveQuickSlots(), Is.True, "simple mode skips the test");
+    }
+
+    [Test]
+    public void AgreementRedCircleFollowsItsFlagWhenThePageIsThere()
+    {
+        var (d, h) = Open();
+        h.Features.Add(0x117);
+        d = new GameOptionDialog(h);
+        h.Log.Clear();
+        d.SetAgreementRedCircle(true);
+        Assert.That(h.Log, Does.Contain("enableAgreementTabButtonRedCircle(True)"));
+        d.ApplySimpleMode();
+        Assert.That(h.Log.Last(), Is.EqualTo("enableAgreementTabButtonRedCircle(True)"), "the stored flag is re-sent on a refresh");
+        d.SetAgreementRedCircle(false);
+        Assert.That(h.Log.Last(), Is.EqualTo("enableAgreementTabButtonRedCircle(False)"));
+        var (d2, h2) = Open();
+        h2.Log.Clear();
+        d2.SetAgreementRedCircle(true);
+        Assert.That(h2.Log, Is.Empty, "no agreement page, no circle");
+    }
+
+    [Test]
+    public void RemoveAllPagesEmptiesTheMapAndUpdateNeedsAnOpenDialog()
+    {
+        var (d, h) = Open();
+        Assert.That(d.Pages, Is.Not.Empty);
+        d.RemoveAllPages();
+        Assert.That(d.Pages, Is.Empty);
+        Assert.That(d.GetPageByIndex(1), Is.Null);
+        d.Dispose();
     }
 
     [Test]

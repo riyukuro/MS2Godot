@@ -249,6 +249,12 @@ public sealed class KeyTable : IKeyTable
     public int FindKeyByQuickSlot(int index, int priority)
         => index < 0 || index >= QuickSlotActionCount ? 0 : FindKeyByActionAndPriority(FirstQuickSlotAction + index, priority);
 
+    /// <summary>GetQuickSlotActionCount (@0x14142cbb0).</summary>
+    public int GetQuickSlotActionCount() => QuickSlotActionCount;
+
+    /// <summary>GetQuickSlotAction (@0x14142cbe0): 0 past the end.</summary>
+    public long GetQuickSlotAction(int index) => index < 0 || index >= QuickSlotActionCount ? 0 : FirstQuickSlotAction + index;
+
     /// <summary>A table of only the given keys and names (string table 5: key ids and action codes), no DefaultKey.xml.</summary>
     internal KeyTable(IReadOnlyDictionary<string, string> keyNames)
     {

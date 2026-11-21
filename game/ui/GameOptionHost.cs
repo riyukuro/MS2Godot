@@ -128,15 +128,10 @@ public sealed class GameOptionHost : IGameOptionDialogHost
     public bool GuideRestricted(int n) => n >= 0 && n < Ms2.Ui.Guide.GuideManager.LimitCount
         && Ms2.Ui.Guide.GuideManager.Current?.IsRestricted((Ms2.Ui.Guide.GuideLimit)n) == true;
 
-    /// <summary>FUN_141944250's test: the key settings are not changed here, so the default key table's quick-slot keys
-    /// stand.</summary>
-    public bool QuickSlotsBound => true;
-
     public void SaveGameSettings() => GameOptions.Save();
     public void SaveCharacterSettings() => GameOptions.SaveCharacterSettings();
     public void SendBuddyMode20() { }                         // no server offline
     public void OpenSecondaryPassword() => GD.Print("options: the secondary password dialog is not available");
-    public bool AgreementRedCircle => false;
 
     public GameOption.GamePad GamePad => GameOptions.GamePad;
     public PersonalInfoAgreement Agreement => GameOptions.Agreement;
@@ -145,7 +140,13 @@ public sealed class GameOptionHost : IGameOptionDialogHost
     public void SetGamepadEnabled(GameOption.GamePad stored, bool use, bool notify) => GameOptions.SetGamepadEnabled(stored, use, notify);
 
     public void SendAgreement(int group) => Net.LiveSession.Instance?.SendPersonalInfoAgreement(group, (int)Agreement.Flags);
-    public void RefreshAgreementReminders() { }
+    /// <summary>CPersonalInfoAgreement::FUN_141262090 (@0x141262090): with feature 0x117 on, the options dialog's red circle
+    /// shows while group 0 is not agreed (the menu icons are not ported here).</summary>
+    public void RefreshAgreementReminders()
+    {
+        if (!IsFeatureEnabled(0x117)) return;
+        Dialog?.SetAgreementRedCircle(!Agreement.HasGroupAgreement(0));
+    }
     public void OpenAgreementDetail() => GD.Print("options: the agreement detail page is not available");
 
     public GameOption Options => GameOptions.Current;
