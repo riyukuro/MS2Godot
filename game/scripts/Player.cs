@@ -203,6 +203,10 @@ public partial class Player : CharacterBody3D
         targetYawDeg = Mathf.RadToDeg(Mathf.Atan2(dir.X, dir.Z));
     }
 
+    /// <summary>PCBase::GetTargetYaw (m_f934, pcbase.cpp:1469): the yaw <see cref="TurnTo"/> set, in the
+    /// <see cref="FacingRotZ"/> convention (MS2 Z rotation, degrees).</summary>
+    public float TargetRotZ => targetYawDeg;
+
     public void Face(Vector3 dir)
     {
         if (dir.LengthSquared() < 1e-6f) return;

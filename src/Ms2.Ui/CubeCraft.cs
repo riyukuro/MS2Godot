@@ -1,3 +1,4 @@
+using System.Numerics;
 using Ms2.Net.Packets;
 
 namespace Ms2.Ui;
@@ -12,9 +13,8 @@ namespace Ms2.Ui;
 /// STILL-OPEN: what the mode change does besides the craft: the stance change (vfunc_59 5 or 1, pc.cpp:3072-3077), the
 /// weapon effects (FUN_141659000, pc.cpp:2491), the housing service's state (FUN_1410cc160, pc.cpp:3083-3089), MyPC's
 /// build HUD dialog 0x4e85 with its sounds and FUN_140ef4330 (mypc.cpp:1364-1397), and the target refresh after
-/// SetCraftMode (scenestategame.cpp:7846-7851). What the craft does when it starts and ends (FUN_1410a8af0,
-/// cubecraft_2.cpp:340: the cell in front of the pc, the guides, the scale pulse, the god mode info) is not ported.
-/// Other pcs' cube modes are not kept.
+/// SetCraftMode (scenestategame.cpp:7846-7851). The craft's start (<see cref="Start"/>) keeps its cell and its guide's
+/// yaw, not the scale pulse, the effect items or the god mode info. Other pcs' cube modes are not kept.
 /// </summary>
 public sealed class CubeCraftState
 {
@@ -27,8 +27,22 @@ public sealed class CubeCraftState
         public CubeItemInfo Item { get; }
         /// <summary>FUN_1410a8ab0 (cubecraft_2.cpp:332): mode 2, the craft of a lifted cube.</summary>
         public bool HoldsLift => Mode == 2;
+        /// <summary>m_ptCell: the corner of the cell the craft points at (GetCellPosition).</summary>
+        public Vector3 Cell { get; internal set; }
+        /// <summary>m_fLift (ctor 0, cubecraft_2.cpp:291; 0 again at the start, :351): the height added to the cell in front.
+        /// STILL-OPEN: AdjustLift (@0x1410aa060, :590-596, +-150) has no caller ported, so it stays 0.</summary>
+        public float Lift { get; internal set; }
+        /// <summary>m_spGuide is set: the guide cube CreateGuide (@0x1410a92c0, :421-464) loads. Here it is the guide's state
+        /// only (no model is loaded).</summary>
+        public bool HasGuide { get; internal set; }
+        /// <summary>The z of the rotation FUN_1410aa6f0 (:921-927) gives the guide, in degrees: the owner's target yaw
+        /// snapped by <see cref="GuideYawOf"/>, plus m_fYaw (always 0: only the ctor and ReleaseGuide write it, :296, :537).</summary>
+        public float GuideYaw { get; internal set; }
         public Craft(int mode, CubeItemInfo item) { Mode = mode; Item = item; }
     }
+
+    /// <summary>The craft's owner as it reads the local pc. Null while there is no pc to read.</summary>
+    public ICubeCraftOwner Owner { get; set; }
 
     /// <summary>m_nCubeModeFFC (GetCubeMode, pc.cpp:1842).</summary>
     public int CubeMode { get; private set; }
@@ -70,7 +84,72 @@ public sealed class CubeCraftState
         Current = null;
         if (!InCubeMode) return;
         if (!ModelLoaded) Pending = new Craft(craftMode, item);
-        else Current = new Craft(craftMode, item);
+        else Start(Current = new Craft(craftMode, item));
+    }
+
+    /// <summary>
+    /// Unk_PCCubeCraft::FUN_1410a8af0(true) (@0x1410a8af0, cubecraft_2.cpp:340-392), as far as the cell and the guide go:
+    /// for the local owner the lift goes to 0 and, outside cube mode 1, the cell is the one in front of the pc
+    /// (GetCellInFrontOfActor with the lift and 1, then GetCellPosition). RebuildGuides (:398) then makes the guide through
+    /// CreateGuide (:421-464): only for the local owner and craft modes 0, 1 and 2, with the yaw FUN_1410aa6f0 gives it
+    /// (:463). The second FUN_1410aa6f0 when a cube is in the cell (:375-381) gives the same yaw.
+    /// STILL-OPEN: cube mode 1 takes the cell from the pc's construction guide (FUN_1410b7ba0 with -200, :355-359), which
+    /// is not ported, so its cell stays unset; CreateGuide's m_spItem-&gt;Clear() in craft mode 1 (:439); the build
+    /// validator FUN_1410ae380 (:398, CUGCBuildValidatorCli) that picks the guide asset in craft mode 0.
+    /// </summary>
+    void Start(Craft c)
+    {
+        var o = Owner;
+        bool local = o != null && o.IsLocal;
+        if (local)
+        {
+            c.Lift = 0f;
+            if (CubeMode != 1) c.Cell = CubeCell.Position(CubeCell.InFrontOf(o.Point, o.RotZ, c.Lift, 1));
+        }
+        c.HasGuide = local && c.Mode is 0 or 1 or 2;
+        if (c.HasGuide) c.GuideYaw = GuideYawOf(o.TargetYaw);
+    }
+
+    /// <summary>FUN_1410aa6f0 (:922-925): the target yaw (PCBase::GetTargetYaw, m_f934) snapped up to 90 degrees,
+    /// (float)(int)((z + 89) / 90) * 90 with no sign branch, so it truncates toward 0; then m_fYaw (0) added.</summary>
+    public static float GuideYawOf(float targetYaw) => (float)(int)((targetYaw + 89f) / 90f) * 90f + 0f;
+
+    /// <summary>
+    /// Unk_PCCubeCraft::Update (@0x1410ac9b0, cubecraft_2.cpp:1530-1590), from MyPC::vfunc_53 while in cube mode
+    /// (mypc.cpp:2969-2970): nothing without the guide, for another owner, or in state 0x10 (it hides the guides). Else the
+    /// cell in front of the pc, for a held lift moved to the first free cell of its column (<see cref="FreeCell"/>); when
+    /// that cell is not the craft's, the craft takes it and FUN_1410aa6f0 sets the guide's yaw again (:1579). No
+    /// allocation.
+    /// STILL-OPEN: cube mode 1's construction-guide cell (:1557-1561); the build validator's check and the CreateGuide it
+    /// triggers (:1567-1573) in craft mode 0 (mode 2's check is always 1); the slide, the sound and the rotate tween
+    /// (visual).
+    /// </summary>
+    public void Update()
+    {
+        if (!InCubeMode) return;
+        var c = Current;
+        var o = Owner;
+        if (c == null || !c.HasGuide || o == null || !o.IsLocal) return;
+        if (o.StateId == 0x10) return;
+        if (CubeMode == 1) return;
+        var front = CubeCell.InFrontOf(o.Point, o.RotZ, c.Lift, 1);
+        if (c.HoldsLift) front = FreeCell(front, o.Cubes);
+        var down = CubeCell.Position(front);
+        if (down == c.Cell) return;
+        c.Cell = down;
+        c.GuideYaw = GuideYawOf(o.TargetYaw);
+    }
+
+    /// <summary>FUN_1410aeec0 (@0x1410aeec0, cubecraft_2.cpp:1456-1480): the cell of the point one down, then the cell,
+    /// then one up; the first with no cube (GetCubeAtCell) gives the point, each axis the cell times 150 (FUN_1408a15b0,
+    /// ugcmapdata_1.cpp:293). With all three taken the point stays.</summary>
+    public static Vector3 FreeCell(Vector3 front, ICubeCells cubes)
+    {
+        var (x, y, z) = CubeCell.Of(front);
+        for (int dz = -1; dz <= 1; dz++)
+            if (cubes == null || !cubes.HasCubeAtKey(CubeCell.Key(x, y, z + dz)))
+                return new Vector3(x * CubeCell.Size, y * CubeCell.Size, (z + dz) * CubeCell.Size);
+        return front;
     }
 
     /// <summary>MyPC::GetActiveCubeCraft (@0x141530290, mypc.cpp:4516): no craft for a dead pc or outside the cube mode;
@@ -118,12 +197,30 @@ public sealed class CubeCraftState
     }
 
     /// <summary>PC::vfunc_12 (@0x1416515a0, pc.cpp:844-852): the model is in the scene; a waiting craft is made and the
-    /// wait cleared.</summary>
+    /// wait cleared, then it starts (FUN_1410a8af0(true), pc.cpp:848-850).</summary>
     public void ModelAttached()
     {
         ModelLoaded = true;
         if (Pending == null) return;
         Current = Pending;
         Pending = null;
+        Start(Current);
     }
+}
+
+/// <summary>The local pc as Unk_PCCubeCraft reads it.</summary>
+public interface ICubeCraftOwner
+{
+    /// <summary>WorldService::GetLocalPlayer() is the craft's owner.</summary>
+    bool IsLocal { get; }
+    /// <summary>PCBase::FUN_1416767d0: the pc's point, the ridee's when riding (MS2 axes).</summary>
+    Vector3 Point { get; }
+    /// <summary>GetRideeAwareRotation().z in degrees.</summary>
+    float RotZ { get; }
+    /// <summary>PCBase::GetTargetYaw (m_f934, pcbase.cpp:1469) in degrees.</summary>
+    float TargetYaw { get; }
+    /// <summary>GetCurStateId.</summary>
+    int StateId { get; }
+    /// <summary>The cube map's cubes.</summary>
+    ICubeCells Cubes { get; }
 }

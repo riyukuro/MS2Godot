@@ -264,6 +264,7 @@ public partial class LiveSession : Node
     public readonly Ms2.Ui.LiftableTargetBoxes LiftTargets = new();
     /// <summary>The own pc's cube mode and craft (PC::m_nCubeModeFFC, m_pCubeCraft).</summary>
     public readonly Ms2.Ui.CubeCraftState CubeCraft = new();
+    CubeCraftOwner cubeCraftOwner;
     /// <summary>A Fishing packet that changed <see cref="FishingBook"/>, for the open fishing book (it fills its tab again).</summary>
     public event Action<FishingMessage> FishingReceived;
     public CharacterCreateRefused LastRefusal { get; private set; }
@@ -971,6 +972,8 @@ public partial class LiveSession : Node
         guide?.Tick();
         Me.ExpireRevival((uint)game.Session.ServerTick);   // PC::FUN_141661ac0 (pc.cpp:2043), in PC's per-frame update
         if (bindPending) TryBindPlayer();
+        CubeCraft.Owner ??= cubeCraftOwner ??= new CubeCraftOwner(this);
+        CubeCraft.Update();          // MyPC::vfunc_53 (mypc.cpp:2969-2970): the craft's Update while in cube mode
         Portals?.Tick((uint)game.Session.ServerTick);
         inGame ??= () => player != null && player.Live;   // IReconnectHost.InGame: the field was entered
         if (game.InGame != inGame) game.InGame = inGame;

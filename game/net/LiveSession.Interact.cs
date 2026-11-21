@@ -213,6 +213,32 @@ public partial class LiveSession
         return InteractKey.StateId(InteractObjects, InteractNpcs, move);
     }
 
+    /// <summary>The local pc as the cube craft reads it (<see cref="Ms2.Ui.ICubeCraftOwner"/>): the player's point or the
+    /// ridee's when riding (PCBase::FUN_1416767d0), the facing (GetRideeAwareRotation), the target yaw, the state id as
+    /// <see cref="InteractPlayerStateId"/> knows it, and the field's cubes. No allocation.</summary>
+    sealed class CubeCraftOwner : Ms2.Ui.ICubeCraftOwner
+    {
+        readonly LiveSession s;
+        public CubeCraftOwner(LiveSession s) { this.s = s; }
+
+        public bool IsLocal => s.selfObject >= 0 && s.player != null && IsInstanceValid(s.player);
+
+        public System.Numerics.Vector3 Point
+        {
+            get
+            {
+                var ridee = s.player.Mount?.Visual;
+                var p = FieldPortals.ToMs2(ridee != null && IsInstanceValid(ridee) ? ridee.GlobalPosition : s.player.GlobalPosition);
+                return new System.Numerics.Vector3((float)p.X, (float)p.Y, (float)p.Z);
+            }
+        }
+
+        public float RotZ => s.player.FacingRotZ;
+        public float TargetYaw => s.player.TargetRotZ;
+        public int StateId => s.InteractPlayerStateId();
+        public Ms2.Ui.ICubeCells Cubes => s.player.Cubes;
+    }
+
     sealed class InteractNpcHost : IInteractNpcHost
     {
         readonly LiveSession s;
