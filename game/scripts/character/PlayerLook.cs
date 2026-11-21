@@ -79,4 +79,18 @@ public static class PlayerLook
         if (Flow.Session.Chosen is { User: { } c } chosen) return (chosen.Equips, c.Skin);
         return null;
     }
+
+    /// <summary>
+    /// The offline character's user block for the equipment window: the fixture's, with what the chosen list entry carries
+    /// (CCharacterInfo::Read's user block: ids, name, gender, level, job, skin, gear score, HP) taken from the entry, as the
+    /// worn items are. The fixture stays for what the entry does not carry (stats, bag, titles, ...).
+    /// </summary>
+    public static void TakeChosen(UserBlock into, UserBlock entry)
+    {
+        if (into == null || entry == null) return;
+        into.AccountId = entry.AccountId; into.CharacterId = entry.CharacterId; into.Name = entry.Name;
+        into.Gender = entry.Gender; into.Level = entry.Level; into.JobCode = entry.JobCode; into.Job = entry.Job;
+        into.Skin = entry.Skin; into.GearScore = entry.GearScore;
+        into.HpMax = entry.HpMax; into.HpCurrent = entry.HpCurrent;
+    }
 }

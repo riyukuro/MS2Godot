@@ -73,5 +73,13 @@ public partial class EquipIconCheck : Node
                     fails.Add($"{gender}/{job} {e.Slot} {e.Id}: icon {path} not in the Image pack");
             }
         }
+        // the equipment window's own character takes the chosen entry's name, level, job, gender and skin
+        var fixture = Ms2.Ui.UiFixture.Character();
+        var chosenUser = new UserBlock { CharacterId = 777, AccountId = 55, Name = "Madeinlobby", Gender = 1, Level = 1, JobCode = 30, Job = 3000,
+            Skin = new SkinColor(new Rgba(1, 2, 3, 255), new Rgba(4, 5, 6, 255)), GearScore = 12 };
+        Ms2Godot.Look.PlayerLook.TakeChosen(fixture.User, chosenUser);
+        var u = fixture.User;
+        if (u.Name != "Madeinlobby" || u.Level != 1 || u.JobCode != 30 || u.Job != 3000 || u.Gender != 1 || u.CharacterId != 777 || u.Skin != chosenUser.Skin)
+            fails.Add($"offline window: {u.Name} lv {u.Level} job {u.JobCode}/{u.Job} gender {u.Gender} id {u.CharacterId}, not the chosen entry's");
     }
 }

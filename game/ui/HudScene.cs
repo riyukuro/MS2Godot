@@ -2395,15 +2395,21 @@ public partial class HudScene : Node, IUiStageHost
     Ms2.Net.Packets.MyCharacter offlineMe;
     /// <summary>The offline own character: the HUD fixture's record, wearing what the field shows (the starter look, as the
     /// worn model's items) so the equipment window's icons match the model.</summary>
+    Ms2.Net.Packets.UserBlock offlineChosen;
     Ms2.Net.Packets.MyCharacter OfflineMe()
     {
-        if (offlineMe != null && (Ms2Godot.Look.PlayerLook.OfflineWorn == null || ReferenceEquals(offlineMe.Equips, Ms2Godot.Look.PlayerLook.OfflineWorn))) return offlineMe;
+        var chosen = Flow.Session.Chosen?.User;
+        if (offlineMe != null && ReferenceEquals(offlineChosen, chosen)
+            && (Ms2Godot.Look.PlayerLook.OfflineWorn == null || ReferenceEquals(offlineMe.Equips, Ms2Godot.Look.PlayerLook.OfflineWorn))) return offlineMe;
         var me = offlineMe ?? UiFixture.Character();
         if (Ms2Godot.Look.PlayerLook.OfflineWorn is { } worn)
         {
             me.Equips = worn;
             if (me.User != null) { me.User.Gender = (byte)Ms2Godot.Look.PlayerLook.OfflineGender; me.User.JobCode = Ms2Godot.Look.PlayerLook.OfflineJob; }
         }
+        // the chosen list entry's own name, level, job, gender and skin (the fixture's only when no character was chosen)
+        Ms2Godot.Look.PlayerLook.TakeChosen(me.User, chosen);
+        offlineChosen = chosen;
         return offlineMe = me;
     }
 
