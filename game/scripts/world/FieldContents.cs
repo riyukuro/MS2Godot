@@ -618,8 +618,8 @@ public partial class FieldContents : Node3D
                 case Ms2.Ui.ActionKeyTarget.BillBoard: LiveInteractUse(playerMs2); break;
                 case Ms2.Ui.ActionKeyTarget.Portal: LivePortalUse(); break;
                 case Ms2.Ui.ActionKeyTarget.Lift: if (Ms2Godot.Net.LiveSession.Instance is { } lls) lls.UseLift(); break;
-                // PutDownLiftableAction::vfunc_2 (@0x14095ad50): the active craft's ConfirmPlacement; it stops at a
-                // missing guide (see CubeCraftState.ConfirmPlacement for what stays open).
+                // PutDownLiftableAction::vfunc_2 (@0x14095ad50): the active craft's ConfirmPlacement, which sends
+                // RequestCube 10 for a free cell (see CubeCraftState.ConfirmPlacement for what stays open).
                 case Ms2.Ui.ActionKeyTarget.PutDownLiftable:
                     if (Ms2Godot.Net.LiveSession.Instance is { } pls) pls.ConfirmPlacement();
                     break;

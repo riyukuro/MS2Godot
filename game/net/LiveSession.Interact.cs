@@ -157,8 +157,14 @@ public partial class LiveSession
     /// ridee's when riding (PCBase::FUN_1416767d0, pcbase.cpp:3235).</summary>
     public bool PollLift(Vec3 at) => Liftables.Poll(at);
 
-    /// <summary>PutDownLiftableAction::vfunc_2 (@0x14095ad50): ConfirmPlacement on the active cube craft.</summary>
-    public Ms2.Ui.CubeCraftState.PlacementStop ConfirmPlacement() => CubeCraft.ConfirmPlacement(Me.Dead);
+    /// <summary>PutDownLiftableAction::vfunc_2 (@0x14095ad50): ConfirmPlacement on the active cube craft; RequestCube 10
+    /// goes out when it gets that far.</summary>
+    public Ms2.Ui.CubeCraftState.PlacementStop ConfirmPlacement()
+    {
+        var stop = CubeCraft.ConfirmPlacement(Me.Dead, ItemDataOf, out var send);
+        if (send != null) Send(send);
+        return stop;
+    }
 
     /// <summary>PutDownLiftableAction::vfunc_1 (@0x14095aa70) from the pc's (or ridee's) point and facing.</summary>
     public bool PollPutDown(Vec3 at, float rotZDegrees, Ms2.Ui.ICubeCells cubes) =>

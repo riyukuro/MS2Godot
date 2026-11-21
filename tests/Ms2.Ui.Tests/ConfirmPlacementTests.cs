@@ -1,48 +1,180 @@
+using System.Collections.Generic;
+using System.Numerics;
+using Maple2.PacketLib.Tools;
 using Ms2.Net.Packets;
+using Ms2.Ui.Items;
 using NUnit.Framework;
 
 namespace Ms2.Ui.Tests;
 
-/// <summary>MyPC::GetActiveCubeCraft (@0x141530290, mypc.cpp:4516) and the guards of Unk_PCCubeCraft::ConfirmPlacement
-/// (@0x1410aad50, cubecraft_2.cpp:936-948).</summary>
+/// <summary>MyPC::GetActiveCubeCraft (@0x141530290, mypc.cpp:4516) and Unk_PCCubeCraft::ConfirmPlacement (@0x1410aad50,
+/// cubecraft_2.cpp:936-1063).</summary>
 public class ConfirmPlacementTests
 {
-    static CubeCraftState Craft(int cubeMode, int craftMode)
+    const int ItemId = 50100001;
+
+    sealed class Cells : ICubeCells
     {
-        var c = new CubeCraftState();
+        public readonly HashSet<int> Keys = new();
+        public bool HasCubeAtKey(int key) => Keys.Contains(key);
+    }
+
+    sealed class Owner : ICubeCraftOwner
+    {
+        public bool IsLocal { get; set; } = true;
+        public Vector3 Point { get; set; } = new(1000f, 2000f, 300f);
+        public float RotZ { get; set; }
+        public float TargetYaw { get; set; }
+        public int StateId { get; set; } = 1;
+        public Cells Cells = new();
+        public bool NoMap;
+        public ICubeCells Cubes => NoMap ? null : Cells;
+    }
+
+    static CubeCraftState Craft(int cubeMode, int craftMode, Owner owner = null, CubeItemInfo item = null)
+    {
+        var c = new CubeCraftState { Owner = owner };
         c.NewPc();
         c.ModelAttached();
-        c.Set(cubeMode, craftMode, new CubeItemInfo { ItemId = 50100001 }, dead: false);
+        c.Set(cubeMode, craftMode, item ?? new CubeItemInfo { ItemId = ItemId, InstanceId = 77, Count = 1 }, dead: false);
         return c;
     }
+
+    static ItemData Plain = new();
+    static CubeCraftState.PlacementStop Confirm(CubeCraftState c, out CubePlaceRequest send, ItemData data = null) =>
+        c.ConfirmPlacement(false, id => id == ItemId ? data ?? Plain : null, out send);
 
     [Test]
     public void TheActiveCraftNeedsALivePcInCubeMode()
     {
-        var c = Craft(2, 2);
+        var c = Craft(2, 2, new Owner());
         Assert.That(c.Active(false), Is.SameAs(c.Current));
         Assert.That(c.Active(true), Is.Null);
-        Assert.That(c.ConfirmPlacement(true), Is.EqualTo(CubeCraftState.PlacementStop.NoCraft));
-        Assert.That(new CubeCraftState().ConfirmPlacement(false), Is.EqualTo(CubeCraftState.PlacementStop.NoCraft));
+        Assert.That(c.ConfirmPlacement(true, _ => Plain, out var s1), Is.EqualTo(CubeCraftState.PlacementStop.NoCraft));
+        Assert.That(new CubeCraftState().ConfirmPlacement(false, _ => Plain, out var s2), Is.EqualTo(CubeCraftState.PlacementStop.NoCraft));
+        Assert.That(s1, Is.Null);
+        Assert.That(s2, Is.Null);
     }
 
     [Test]
     public void CubeModeOneStopsAtTheConstructionGuideBeforeTheNotice()
     {
-        Assert.That(Craft(1, 1).ConfirmPlacement(false), Is.EqualTo(CubeCraftState.PlacementStop.NoConstructionGuide));
-        Assert.That(Craft(1, 2).ConfirmPlacement(false), Is.EqualTo(CubeCraftState.PlacementStop.NoConstructionGuide));
+        Assert.That(Confirm(Craft(1, 1, new Owner()), out var s1), Is.EqualTo(CubeCraftState.PlacementStop.NoConstructionGuide));
+        Assert.That(Confirm(Craft(1, 2, new Owner()), out var s2), Is.EqualTo(CubeCraftState.PlacementStop.NoConstructionGuide));
+        Assert.That(s1, Is.Null);
+        Assert.That(s2, Is.Null);
     }
 
     [Test]
     public void CraftModeOneGivesTheBuildNotice()
     {
-        Assert.That(Craft(2, 1).ConfirmPlacement(false), Is.EqualTo(CubeCraftState.PlacementStop.BuildNotice));
+        Assert.That(Confirm(Craft(2, 1, new Owner()), out var s), Is.EqualTo(CubeCraftState.PlacementStop.BuildNotice));
+        Assert.That(s, Is.Null);
         Assert.That(CubeCraftState.ModeOneNotice, Is.EqualTo(0x39));
     }
 
     [Test]
-    public void ALiftedCubeStopsAtTheMissingGuide()
+    public void WithoutALocalOwnerThereIsNoGuide()
     {
-        Assert.That(Craft(2, 2).ConfirmPlacement(false), Is.EqualTo(CubeCraftState.PlacementStop.NoGuide));
+        Assert.That(Confirm(Craft(2, 2), out var s), Is.EqualTo(CubeCraftState.PlacementStop.NoGuide));
+        Assert.That(Confirm(Craft(2, 2, new Owner { IsLocal = false }), out _), Is.EqualTo(CubeCraftState.PlacementStop.NoGuide));
+        Assert.That(s, Is.Null);
+    }
+
+    [Test]
+    public void AnUnknownItemStopsBeforeTheModeCheck()
+    {
+        var c = Craft(2, 0, new Owner(), new CubeItemInfo { ItemId = ItemId + 1 });
+        Assert.That(Confirm(c, out var s), Is.EqualTo(CubeCraftState.PlacementStop.NoItemData));
+        Assert.That(s, Is.Null);
+    }
+
+    [Test]
+    public void CraftModeZeroStopsAtTheOpenInventoryCheck()
+    {
+        Assert.That(Confirm(Craft(2, 0, new Owner()), out var s), Is.EqualTo(CubeCraftState.PlacementStop.InventoryCheckOpen));
+        Assert.That(s, Is.Null);
+    }
+
+    [Test]
+    public void ATextureCubeNeedsTheUploadedLook()
+    {
+        var mesh = new ItemData { UccMesh = "m" };
+        Assert.That(Confirm(Craft(2, 2, new Owner()), out var s, mesh), Is.EqualTo(CubeCraftState.PlacementStop.NoTextureLook));
+        Assert.That(s, Is.Null);
+        Assert.That(CubeCraftState.TextureNotice, Is.EqualTo(0x62));
+        var noUid = new CubeItemInfo { ItemId = ItemId, Look = new UgcLook() };
+        Assert.That(Confirm(Craft(2, 2, new Owner(), noUid), out _, mesh), Is.EqualTo(CubeCraftState.PlacementStop.NoTextureLook));
+        var looked = new CubeItemInfo { ItemId = ItemId, Look = new UgcLook { Uid = 9 } };
+        Assert.That(Confirm(Craft(2, 2, new Owner(), looked), out var sent, mesh), Is.EqualTo(CubeCraftState.PlacementStop.Send));
+        Assert.That(sent.Item.Look, Is.SameAs(looked.Look));
+    }
+
+    [Test]
+    public void AnAttachableItemTakesTheOpenAttachPath()
+    {
+        var attach = new ItemData { InstallAttachable = 1 };
+        Assert.That(Confirm(Craft(2, 2, new Owner()), out var s, attach), Is.EqualTo(CubeCraftState.PlacementStop.AttachableOpen));
+        Assert.That(s, Is.Null);
+    }
+
+    [Test]
+    public void ACubeInTheCellTakesTheOpenBranch()
+    {
+        var o = new Owner();
+        var c = Craft(2, 2, o);
+        o.Cells.Keys.Add(CubeCell.Key(c.Current.Cell));
+        Assert.That(Confirm(c, out var s), Is.EqualTo(CubeCraftState.PlacementStop.CubeInCellOpen));
+        Assert.That(s, Is.Null);
+        Assert.That(Confirm(Craft(2, 2, new Owner { NoMap = true }), out _), Is.EqualTo(CubeCraftState.PlacementStop.NoCubeMap));
+    }
+
+    [Test]
+    public void AFreeCellSendsRequestCubeTenWithTheCellItemAndYaw()
+    {
+        var o = new Owner { TargetYaw = 100f };
+        var item = new CubeItemInfo { ItemId = ItemId, InstanceId = 0x1122334455L, Count = 3 };
+        var c = Craft(2, 2, o, item);
+        Assert.That(c.Current.GuideYaw, Is.EqualTo(180f));
+        Assert.That(Confirm(c, out var send), Is.EqualTo(CubeCraftState.PlacementStop.Send));
+        Assert.That(send.CellKey, Is.EqualTo(CubeCell.Key(c.Current.Cell)));
+        Assert.That(send.Yaw, Is.EqualTo(180f));
+        Assert.That(send.Item, Is.Not.SameAs(item));
+        Assert.That((send.Item.ItemId, send.Item.InstanceId, send.Item.Count), Is.EqualTo((item.ItemId, item.InstanceId, item.Count)));
+
+        var w = new ByteWriter();
+        send.Write(w);
+        var r = new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray());
+        Assert.That(r.ReadByte(), Is.EqualTo(10));
+        Assert.That(r.ReadInt(), Is.EqualTo(send.CellKey));
+        Assert.That(r.ReadInt(), Is.EqualTo(ItemId));
+        Assert.That(r.ReadLong(), Is.EqualTo(0x1122334455L));
+        Assert.That(r.ReadLong(), Is.EqualTo(3L));
+        Assert.That(r.ReadByte(), Is.EqualTo(0));
+        Assert.That(r.ReadFloat(), Is.EqualTo(180f));
+        Assert.That(r.Available, Is.Zero);
+    }
+
+    [TestCase(0f, 0f)]
+    [TestCase(90f, 90f)]
+    [TestCase(180f, 180f)]
+    [TestCase(270f, 270f)]
+    [TestCase(360f, 0f)]
+    [TestCase(-90f, 270f)]
+    [TestCase(-180f, 180f)]
+    [TestCase(45f, 90f)]
+    [TestCase(-45f, 270f)]
+    public void ThePlacementYawSnapsAwayFromZeroThenNormalizes(float guide, float sent)
+    {
+        Assert.That(CubeCraftState.PlacementYaw(guide), Is.EqualTo(sent));
+    }
+
+    [TestCase(-90f, 270f)]
+    [TestCase(450.7f, 90f)]
+    [TestCase(-0.5f, 0f)]
+    [TestCase(-360f, 0f)]
+    public void NormalizeDegreesTruncatesThenWraps(float d, float n)
+    {
+        Assert.That(CubeCraftState.NormalizeDegrees(d), Is.EqualTo(n));
     }
 }

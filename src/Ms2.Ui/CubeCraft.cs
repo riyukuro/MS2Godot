@@ -1,5 +1,7 @@
+using System;
 using System.Numerics;
 using Ms2.Net.Packets;
+using Ms2.Ui.Items;
 
 namespace Ms2.Ui;
 
@@ -168,32 +170,93 @@ public sealed class CubeCraftState
         BuildNotice,
         /// <summary>The craft has no guide cube (m_spGuide).</summary>
         NoGuide,
+        /// <summary>FUN_14053f870 (the item data table) has no row for the craft's item.</summary>
+        NoItemData,
+        /// <summary>A craft mode other than 2: MyPC::FUN_1415302e0 (cubecraft_2.cpp:955-959) decides build notice 0x58
+        /// before the send. STILL-OPEN: it is not ported, so nothing is sent.</summary>
+        InventoryCheckOpen,
+        /// <summary>The item has a cube texture mesh and the craft's CubeItemInfo has no uploaded look: build notice
+        /// <see cref="TextureNotice"/> (:961-968).</summary>
+        NoTextureLook,
+        /// <summary>Craft mode 2 and an attachable item (install attachable, :971-974): FUN_1410aded0. STILL-OPEN: not
+        /// ported, nothing is sent.</summary>
+        AttachableOpen,
+        /// <summary>A cube is in the cell (GetCubeAtPoint, :970): RequestCube 0xf when its item differs (:1011-1038), else
+        /// the held-lift sound or build notice 0x35 (:1040-1055). STILL-OPEN: the cube map keeps no cube items, so
+        /// neither is decided and nothing is sent.</summary>
+        CubeInCellOpen,
+        /// <summary>The owner has no cube map to look the cell up in (ours: the client always has its service).</summary>
+        NoCubeMap,
+        /// <summary>RequestCube 10 (<see cref="CubePlaceRequest"/>) is to be sent.</summary>
+        Send,
     }
 
     /// <summary>The build notice ConfirmPlacement gives in craft mode 1 (ShowBuildNotice(0x39), cubecraft_2.cpp:945).</summary>
     public const int ModeOneNotice = 0x39;
+    /// <summary>The build notice for a texture cube without its look (ShowBuildNotice(0x62), cubecraft_2.cpp:966).</summary>
+    public const int TextureNotice = 0x62;
 
     /// <summary>
     /// PutDownLiftableAction::vfunc_2 (@0x14095ad50, actionkeyobject.cpp) through GetActiveCubeCraft, then
-    /// Unk_PCCubeCraft::ConfirmPlacement (@0x1410aad50, cubecraft_2.cpp:936-948), in its order: in cube mode 1 it returns
-    /// without the pc's construction guide; in craft mode 1 it shows build notice 0x39 and returns; it returns without
-    /// its guide cube.
-    /// <para>Neither guide exists here: the construction guide is the pc's guide slot 0 and the guide cube is the
-    /// CNifCubeGuide FUN_1410a8af0 loads (cubecraft_2.cpp:446-448), both not ported, so every press stops at one of
-    /// these returns.</para>
+    /// Unk_PCCubeCraft::ConfirmPlacement (@0x1410aad50, cubecraft_2.cpp:936-1063), in its order: in cube mode 1 it returns
+    /// without the pc's construction guide; in craft mode 1 it shows build notice 0x39; it returns without its guide cube
+    /// or the item's data; outside craft mode 2 the inventory check comes next (STILL-OPEN); a texture-mesh item needs
+    /// the craft's uploaded look (notice 0x62); craft mode 2 with an attachable item takes the attach path (STILL-OPEN);
+    /// a cube in the cell takes the 0xf / same-item branch (STILL-OPEN). With the cell free it gives RequestCube 10 with
+    /// the cell's key, a copy of the craft's item and <see cref="PlacementYaw"/> of the guide's yaw in
+    /// <paramref name="send"/>; every other stop leaves it null and sends nothing.
+    /// <para>Cube mode 1 never gets past the first check: its construction guide (the pc's guide slot 0) is not ported.
+    /// That guide's own yaw plus the item's staticAngle (:981-985) is the other source of the rotation.</para>
     /// STILL-OPEN: ShowBuildNotice (@0x1410d6590, cubemapinformationservice_head.cpp:306: the notice sound and text) is
-    /// not ported, so the caller shows nothing. Everything after the guide check (cubecraft_2.cpp:950-1063: the item data,
-    /// the texture-mesh check, the attachable path FUN_1410aded0, the rotation from either guide snapped to 90 degrees,
-    /// and the RequestCube sends 10 and 0xf) needs a guide and is not ported.
+    /// not ported, so the caller shows nothing for a notice stop.
     /// </summary>
-    public PlacementStop ConfirmPlacement(bool dead)
+    public PlacementStop ConfirmPlacement(bool dead, Func<int, ItemData> itemData, out CubePlaceRequest send)
     {
+        send = null;
         var craft = Active(dead);
         if (craft == null) return PlacementStop.NoCraft;
         const bool hasConstructionGuide = false;
         if (CubeMode == 1 && !hasConstructionGuide) return PlacementStop.NoConstructionGuide;
         if (craft.Mode == 1) return PlacementStop.BuildNotice;
-        return PlacementStop.NoGuide;
+        if (!craft.HasGuide) return PlacementStop.NoGuide;
+        var item = craft.Item;
+        var data = item == null ? null : itemData?.Invoke(item.ItemId);
+        if (data == null) return PlacementStop.NoItemData;
+        if (craft.Mode != 2) return PlacementStop.InventoryCheckOpen;
+        if (data.HasCubeTextureMesh && !item.HasUploadedLook) return PlacementStop.NoTextureLook;
+        if (data.InstallAttachable != 0) return PlacementStop.AttachableOpen;
+        var cubes = Owner?.Cubes;
+        if (cubes == null) return PlacementStop.NoCubeMap;
+        int key = CubeCell.Key(craft.Cell);
+        if (cubes.HasCubeAtKey(key)) return PlacementStop.CubeInCellOpen;
+        var copy = new CubeItemInfo { ItemId = item.ItemId, InstanceId = item.InstanceId, Count = item.Count, Look = item.Look };
+        send = new CubePlaceRequest(key, copy, PlacementYaw(craft.GuideYaw));
+        return PlacementStop.Send;
+    }
+
+    /// <summary>
+    /// The yaw ConfirmPlacement sends outside cube mode 1 (cubecraft_2.cpp:987-997): the guide's rotation (set by
+    /// EulerToMatrix @0x140b86230, statecoupleemotion.cpp:1033, from the owner's angles with z = the guide yaw) read back
+    /// with ToEulerAnglesXYZ (z = atan2(m[0][1], m[0][0])) times -57.295776; then snapped to 90 degrees away from 0 by its
+    /// sign (the compare in double) and NormalizeDegrees. The owner's x and y angles are taken as 0 (the pc only turns
+    /// about z), so the matrix is MakeZRotation(yaw * -0.017453292) alone; efd's atan2 is taken as the exact one.
+    /// </summary>
+    public static float PlacementYaw(float guideYaw)
+    {
+        float a = guideYaw * -0.017453292f;
+        float z = MathF.Atan2(MathF.Sin(a), MathF.Cos(a)) * -57.295776f;
+        if ((double)z < 0.0) z = (float)(int)((z - 89f) / 90f) * 90f;
+        else z = (float)(int)((z + 89f) / 90f) * 90f;
+        return NormalizeDegrees(z);
+    }
+
+    /// <summary>NormalizeDegrees (@0x140291b70, commonfiles/commonutil.cpp:1518-1525): truncated to an int, % 360, a
+    /// negative one plus 360.</summary>
+    public static float NormalizeDegrees(float d)
+    {
+        int n = (int)d % 360;
+        if (n < 0) n += 360;
+        return n;
     }
 
     /// <summary>PC::vfunc_12 (@0x1416515a0, pc.cpp:844-852): the model is in the scene; a waiting craft is made and the

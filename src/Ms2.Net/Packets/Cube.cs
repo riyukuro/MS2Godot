@@ -11,6 +11,21 @@ public sealed record HeldItemReleaseRequest : IOutPacket
     public void Write(ByteWriter w) => w.WriteByte(0x12);
 }
 
+/// <summary>Unk_PCCubeCraft::ConfirmPlacement (@0x1410aad50, cubecraft_2.cpp:1000-1007), no cube in the cell: RequestCube
+/// (0x37) with u8 10, the cell key (FUN_1408a13d0), the craft's CubeItemInfo (FUN_1408b39c0) and the yaw as a float.</summary>
+public sealed record CubePlaceRequest(int CellKey, CubeItemInfo Item, float Yaw) : IOutPacket
+{
+    public const byte Mode = 10;
+    public Outbound Op => Outbound.RequestCube;
+    public void Write(ByteWriter w)
+    {
+        w.WriteByte(Mode);
+        w.WriteInt(CellKey);
+        Item.Write(w);
+        w.WriteFloat(Yaw);
+    }
+}
+
 /// <summary>
 /// Inbound ResponseCube (RecvOp 0x69, commonfiles/opcodes.h:113), CSceneStateGame::OnResponseCube
 /// (scenestategame.cpp:9876): a u8 mode. Read are the two held-item modes; other modes are read as null.
@@ -48,6 +63,10 @@ public sealed class CubeItemInfo
     public long Count;
     /// <summary>The uploaded look (CUgcItemLook), null without one.</summary>
     public UgcLook Look;
+
+    /// <summary>CubeItemInfo::FUN_1408b3860 (@0x1408b3860, ugcmapoptions.cpp:132-137): an item id, a look and the look's
+    /// uid (CUgcItemLook m_n18) all nonzero.</summary>
+    public bool HasUploadedLook => ItemId != 0 && Look != null && Look.Uid != 0;
 
     /// <summary>CubeItemInfo::FUN_1408b3aa0 (@0x1408b3aa0, ugcmapoptions.cpp:181): i32 item id, i64 instance id, i64 count,
     /// u8 has look, then the look (CUgcItemLook::Read).</summary>

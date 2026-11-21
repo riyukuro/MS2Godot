@@ -661,6 +661,12 @@ public partial class LiveSession : Node
         catch (Exception e) { GD.Print($"live: item data unavailable ({e.Message})"); return null; }
     }
 
+    /// <summary>FUN_14053f870: the item's data; null when unknown or the item data is missing.</summary>
+    static Ms2.Ui.Items.ItemData ItemDataOf(int itemId) {
+        try { return (itemData ??= new Ms2.Ui.Items.ItemDataTable(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir))).Get(itemId); }
+        catch (Exception e) { GD.Print($"live: item data unavailable ({e.Message})"); return null; }
+    }
+
     static ItemKinds kinds;
     static ItemKinds Kinds() => kinds ??= new ItemKinds(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir));
 
