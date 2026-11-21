@@ -167,6 +167,45 @@ public class MovieTests
         Assert.That(rt.Errors, Is.Empty);
     }
 
+    /// <summary>
+    /// Delete in the login id field (KeyAct_Delete, sfr_gfx_07.cpp:798): the selection goes, then the char after the caret,
+    /// and at the end of the text nothing; the field's change listener sees only the deletions, and onEnterKey sends what
+    /// is left.
+    /// </summary>
+    [Test]
+    public void LoginIdFieldTakesDelete()
+    {
+        var (rt, p) = Open("uilogindialog");
+        var dlg = p.FindOwner("onEnterKey");
+        string connected = null;
+        p.External = (n, a) =>
+        {
+            if (a.Length > 0 && Rt.ToString(a[0]) == "OnConnect")
+                connected = Rt.ToString(Get(p, Get(p, dlg, "m_inputID"), "text"));
+            return null;
+        };
+        var id = (AsTextField)Get(p, Get(p, dlg, "m_inputID"), "textField");
+        var b = id.GetBounds(null);
+        p.Click(b.X + b.W / 2, b.Y + b.H / 2); p.Tick();
+        Assert.That(p.Focus, Is.SameAs(id));
+        int changes = 0;
+        id.addEventListener("change", new AsPlainFunction(p.RT, new NativeMethod("f", (t, a) => { changes++; return Rt.Undef; })));
+        foreach (var ch in "testerXY") p.Key(char.ToUpperInvariant(ch), ch, true);
+        p.Tick();
+        int typed = changes;
+        void Delete() { p.Key(46, 0, true); p.Key(46, 0, false); p.Tick(); }
+        id.setSelection(6, 7);
+        Delete();
+        Assert.That((id.Text, id.caretIndex, changes - typed), Is.EqualTo(("testerY", 6, 1)), "the selection");
+        Delete();
+        Assert.That((id.Text, id.caretIndex, changes - typed), Is.EqualTo(("tester", 6, 2)), "the char after the caret");
+        Delete();
+        Assert.That((id.Text, changes - typed), Is.EqualTo(("tester", 2)), "at the end: nothing, no change event");
+        p.Call(dlg, "onEnterKey"); p.Tick();
+        Assert.That(connected, Is.EqualTo("tester"));
+        Assert.That(rt.Errors, Is.Empty);
+    }
+
     [Test]
     public void MinimapEntityHidesItsHitArea()
     {
