@@ -785,21 +785,27 @@ public partial class HudScene
         ownKeyPos = Math.BitDecrement((double)t);
     }
 
-    /// <summary>IsKeyDown(m_nA4) (stateskill.cpp:701, :949): the cast's DIK key is down; false for 0 (a clicked slot) and while
-    /// typing.</summary>
-    bool CastKeyDown(int dik) =>
-        dik != 0 && !UiFocus.IsTyping && GodotKeyOfDik(dik) is { } g && Input.IsPhysicalKeyPressed(g);
+    /// <summary>IsKeyDown(m_nA4) (stateskill.cpp:701, :949): the cast's DIK key is down (<see cref="OwnKeyDown"/>); false
+    /// for 0 (a clicked slot).</summary>
+    bool CastKeyDown(int dik) => dik != 0 && GodotKeyOfDik(dik) is { } g && OwnKeyDown(g);
 
     /// <summary>vfunc_8 :651-660: a keyboard key CKeyTable::FUN_14142c6c0 lists for the skill (<see cref="KeyTable.IsKeyOfSkill"/>)
-    /// is down (IsKeyDown). Not while typing.</summary>
+    /// is down (IsKeyDown, <see cref="OwnKeyDown"/>).</summary>
     bool OwnSkillKeyHeld(int originId)
     {
-        if (UiFocus.IsTyping || hudModel?.Keys is not { } keys) return false;
+        if (Ms2.Ui.InputBlock.Active || hudModel?.Keys is not { } keys) return false;
         var slots = hudModel.ServerKeys;
         for (int dik = 1; dik < 0xd4; dik++)
-            if (keys.IsKeyOfSkill(dik, originId, slots) && GodotKeyOfDik(dik) is { } g && Input.IsPhysicalKeyPressed(g)) return true;
+            if (keys.IsKeyOfSkill(dik, originId, slots) && GodotKeyOfDik(dik) is { } g && OwnKeyDown(g)) return true;
         return false;
     }
+
+    /// <summary>
+    /// Unk_PCMove::IsKeyDown (@0x141682f80; StateSkill reads it through its Unk_SsMove view of the owner's move): the key is
+    /// held, but nothing is while FUN_141683ef0 (@0x141683ef0) finds CInputKeyHandler::FUN_14116d7a0(0xf) set, a focused
+    /// text field (a movie's or an engine control's) or the loading screen (<see cref="Ms2.Ui.InputBlock"/>).
+    /// </summary>
+    static bool OwnKeyDown(Key g) => !Ms2.Ui.InputBlock.Active && Input.IsPhysicalKeyPressed(g);
 
     /// <summary>The hold check's world: the quick slots' one, taken once per state, with the player's level, hp, sp, ep and
     /// meso read again each call (the cost check, FUN_14176a380).</summary>

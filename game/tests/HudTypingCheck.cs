@@ -14,9 +14,9 @@ namespace Ms2Godot.Tests;
 /// screen mask among them, must pass them on). It opens the HUD (res://ui/hud.tscn) offline, opens the game dictionary,
 /// clicks into its search field (m_inputSearch) and types
 /// m, p, l, i, k and 1 (the world map, my info, the quest log, the inventory, the skill book and the first quick slot) as
-/// the window's keys, then holds Up and X there: the own player neither moves nor takes the battle stance (Unk_PCMove
-/// reads no key while the mask holds). Quits with 0 when the field holds "mplik1x", none of those dialogs opened and
-/// the player stayed, else 1.
+/// the window's keys, then holds Up and X there: the own player neither moves nor takes the battle stance, and X does
+/// not read as a held cast key (Unk_PCMove reads no key while the mask holds). Quits with 0 when the field holds
+/// "mplik1x", none of those dialogs opened, the player stayed and no cast key read as held, else 1.
 /// </summary>
 public partial class HudTypingCheck : Node
 {
@@ -114,10 +114,12 @@ public partial class HudTypingDriver : Node
                 var move = Movement.MoveInput.Read().Move;
                 var me = GetTree().GetFirstNodeInGroup(Player.Group) as Player;
                 bool battle = me?.InBattle == true;
+                // the charging skill's release reads its cast key as StateSkill does (IsKeyDown(m_nA4)): X (DIK 0x2d) held
+                bool castKey = hud.GetType().GetMethod("CastKeyDown", Private)?.Invoke(hud, new object[] { 0x2d }) is true;
                 Input.ParseInputEvent(new InputEventKey { Keycode = Key.Up, PhysicalKeycode = Key.Up, Pressed = false });
                 Input.ParseInputEvent(new InputEventKey { Keycode = Key.X, PhysicalKeycode = Key.X, Pressed = false });
-                bool ok = me != null && move == Vector2.Zero && !battle && field.Text == Typed + "x";
-                Finish(ok, $"field \"{field.Text}\", none opened; held Up: move {move}; held X: battle stance {battle} (player {(me != null ? "found" : "missing")})");
+                bool ok = me != null && move == Vector2.Zero && !battle && !castKey && field.Text == Typed + "x";
+                Finish(ok, $"field \"{field.Text}\", none opened; held Up: move {move}; held X: battle stance {battle}, cast key down {castKey} (player {(me != null ? "found" : "missing")})");
                 return;
             }
         }
