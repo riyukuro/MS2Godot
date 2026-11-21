@@ -10,7 +10,7 @@ namespace Ms2Godot.Ui;
 /// <summary>
 /// The chat emoticon dialog: UIChatEmoticonDialog (0x4f80, movie uichatemoticondialog) over the live session's
 /// CChatEmoticonCli. The messenger's eventChatEmoticonOpen toggles it (uimessenger.cpp:4058); a pick is handed to the
-/// messenger windows (NotifyChatEmoticonSelected); the messenger sends ChatSticker modes 3, 5 and 6.
+/// messenger windows (NotifyChatEmoticonSelected); the messenger sends ChatSticker modes 3, 5 and 6 through the chat window's SendSticker (live session only; offline nothing is sent).
 /// Offline the state is empty (no packs owned) and nothing is sent.
 /// STILL-OPEN: the group messenger's SendEmoticonImage (ChatStamp type 4) and eventChatEmoticonOpen
 /// (uigroupmessenger.cpp:721) are not wired; the Merat shop button (0x4ec1).
@@ -42,14 +42,9 @@ public partial class HudScene
     void HookChatEmoticon()
     {
         toggleChatEmoticon = ToggleChatEmoticon;
-        ChatLog.ToggleChatEmoticon = toggleChatEmoticon;
+        ChatLog.ToggleEmoticonDialog = toggleChatEmoticon;
         ChatLog.ChatEmoticons = ChatEmoticonStateOf();
-        ChatLog.SendChatSticker = p =>
-        {
-            var live = Ms2Godot.Net.LiveSession.Instance;
-            if (live != null) live.SendTalk(p);
-            else GD.Print($"chat emoticon: {p.GetType().Name} not sent (offline)");
-        };
+        ChatLog.IsEmoticonUsable = id => id > 0 && ChatLog.ChatEmoticons.IsEmoticonUsable((uint)id);   // CChatEmoticonCli::IsEmoticonUsable
         var s = ChatLog.ChatEmoticons;
         s.MessageBox += key => MessageBoxQueue.ShowMessageBox(hudModel.Tables.Common(key) ?? "", 0, null, "");
         s.TypeInWindow += (window, flag, id) =>
@@ -60,7 +55,7 @@ public partial class HudScene
 
     void UnhookChatEmoticon()
     {
-        if (ReferenceEquals(ChatLog.ToggleChatEmoticon, toggleChatEmoticon)) ChatLog.ToggleChatEmoticon = null;
+        if (ReferenceEquals(ChatLog.ToggleEmoticonDialog, toggleChatEmoticon)) ChatLog.ToggleEmoticonDialog = null;
     }
 
     void ChatEmoticon()

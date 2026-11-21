@@ -1321,7 +1321,6 @@ public partial class HudScene : Node, IUiStageHost
             ChatLog.WindowCreated += OnMessengerCreated;
             ChatLog.WindowClosed += OnMessengerClosed;
             ChatLog.OpenNewTabDialog = () => GD.Print("chat: the tab name dialog (0x4e62) is not in this HUD");
-            ChatLog.ToggleEmoticonDialog = () => GD.Print("chat: the emoticon dialog (0x4f80) is not in this HUD");
             groupBrowser = NewGroupBrowser();
             groupMessenger = new MovieDialog(assets, groupBrowser, hudModel, window);   // its load opens the joined chats' windows
             if (!welcomeShown)
