@@ -1671,7 +1671,9 @@ public partial class HudScene : Node, IUiStageHost
             worldMapSide.Unloaded += () => { worldMap?.Host.Unload(); worldMap?.QueueFree(); worldMap = null; };
         }
         // DAT_143ab3078, the found-taxi list the taxi tiles read (FUN_141b5ee80)
-        worldMapSide.FoundTaxis = data.FoundTaxis.Select(x => (uint)x).ToHashSet();
+        var foundTaxis = new HashSet<uint>(data.FoundTaxis.Count);
+        foreach (int field in data.FoundTaxis) foundTaxis.Add((uint)field);
+        worldMapSide.FoundTaxis = foundTaxis;
         worldMap = new MovieDialog(assets, worldMapSide, model, ScreenMode.PixelSize(GetWindow()));
         uiRoot.AddChild(worldMap);
     }
