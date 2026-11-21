@@ -16,6 +16,9 @@ public sealed partial class RemoteLayer
     /// MS2 axes.
     /// STILL-OPEN: the local player and the ridees as targets are not looked up (HoldKind.None).
     /// </summary>
+    // StateHold asks every frame: the path made once (a string and a NodePath per call otherwise)
+    static readonly NodePath HoldSkeletonPath = "Model/" + ModelBuilder.SkeletonName;
+
     HoldTarget FindHoldTarget(int id, string node)
     {
         var t = default(HoldTarget);
@@ -23,7 +26,7 @@ public sealed partial class RemoteLayer
         if (users.TryGetValue(id, out var r)) { t.Kind = HoldKind.Pc; visual = r.Visual; }
         else if (npcs.HoldInfo(id, out int npcId, out bool dead, out visual)) { t.Kind = HoldKind.Npc; t.NpcId = npcId; t.Dead = dead; }
         else return t;
-        var sk = visual?.GetNodeOrNull<Skeleton3D>("Model/" + ModelBuilder.SkeletonName);
+        var sk = visual?.GetNodeOrNull<Skeleton3D>(HoldSkeletonPath);
         if (sk == null || string.IsNullOrEmpty(node)) return t;
         var key = (sk.GetInstanceId(), node);
         if (!holdBones.TryGetValue(key, out int bone)) holdBones[key] = bone = sk.FindBone(node);
