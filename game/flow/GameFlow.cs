@@ -76,7 +76,7 @@ public partial class GameFlow : Node
         Net.LiveSession.Attach(this);
         // The launcher is MS2Godot's own pre-login page. A live address in the environment skips it, as do the test and
         // perf scenes and a scripted flow run, so those start exactly as they did before it existed.
-        string liveLogin = System.Environment.GetEnvironmentVariable("MS2_LIVE_LOGIN");
+        string liveLogin = Net.LiveSession.EnvironmentLogin;
         var start = LaunchRoute.Decide(GetTree().CurrentScene?.SceneFilePath, liveLogin, shotDir != null, null);
         if (start.Mode == LaunchMode.Live) Net.LiveSession.Attach(this);
         Go(start.Mode == LaunchMode.Launcher ? State.Launcher : State.Login);

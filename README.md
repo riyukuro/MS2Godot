@@ -346,10 +346,10 @@ MS2Godot's, built from native Godot controls (no client movie and no client art)
 - Keys: Tab moves between controls, Enter activates the focused one, Esc closes the add/edit dialog (and quits on the
   launcher itself).
 
-The launcher is skipped, and the run starts as it did before it existed, when `MS2_LIVE_LOGIN` is set or the flow is
-scripted (`--flow-shots`); the test and perf scenes (`setup.tscn`, `hud.tscn`, `field.tscn`, `tests/*.tscn`) never show
-it. The environment overrides the launcher: `MS2_LIVE_LOGIN` (`host:port`) starts the live mode against that address
-without the launcher, and `MS2_LIVE_ACCOUNT` (`user:password`) overrides the id and password typed in the dialog.
+The launcher is skipped, and the run starts as it did before it existed, when `MS2_LIVE_LOGIN` (`host:port`) and
+`MS2_LIVE_ACCOUNT` (`user:password`) are both set, or the flow is scripted (`--flow-shots`); the test and perf scenes
+(`setup.tscn`, `hud.tscn`, `field.tscn`, `tests/*.tscn`) never show it. With both set the environment overrides the
+launcher and the dialog: the live mode runs against that address with that account. `MS2_LIVE_LOGIN` alone does nothing.
 
 ## Settings
 

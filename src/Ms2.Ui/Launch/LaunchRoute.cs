@@ -33,6 +33,13 @@ public static class LaunchRoute
     public const string FlowScene = "res://flow/flow.tscn";
 
     /// <summary>
+    /// The environment's live address: <c>MS2_LIVE_LOGIN</c> counts only together with <c>MS2_LIVE_ACCOUNT</c>, as it did
+    /// before the launcher (the account comes from the variable). Null when either is missing.
+    /// </summary>
+    public static string EnvironmentLive(string liveLogin, string liveAccount) =>
+        !string.IsNullOrEmpty(liveLogin) && !string.IsNullOrEmpty(liveAccount) ? liveLogin : null;
+
+    /// <summary>
     /// <paramref name="liveLogin"/> is <c>MS2_LIVE_LOGIN</c>; <paramref name="singlePlayer"/> is the launcher's Single
     /// player choice; <paramref name="server"/> is a saved entry whose Connect was pressed. With the variable set the
     /// live mode wins over the launcher and the list (the override the headless runs use), and the session reads the

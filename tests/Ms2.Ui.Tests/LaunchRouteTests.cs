@@ -46,4 +46,15 @@ public class LaunchRouteTests
         Assert.That(LaunchRoute.Decide("res://setup.tscn", null, false, null).Mode, Is.EqualTo(LaunchMode.Offline));
         Assert.That(LaunchRoute.Decide("res://game/tests/login_typing.tscn", null, false, null).Mode, Is.EqualTo(LaunchMode.Offline));
     }
+
+    [Test]
+    public void TheEnvironmentRouteNeedsTheAddressAndTheAccount()
+    {
+        Assert.That(LaunchRoute.EnvironmentLive("192.0.2.1:6553", "id:pw"), Is.EqualTo("192.0.2.1:6553"));
+        Assert.That(LaunchRoute.EnvironmentLive("192.0.2.1:6553", null), Is.Null);
+        Assert.That(LaunchRoute.EnvironmentLive(null, "id:pw"), Is.Null);
+        // an address alone leaves the launcher in place
+        Assert.That(LaunchRoute.Decide(LaunchRoute.FlowScene, LaunchRoute.EnvironmentLive("192.0.2.1:6553", null), false, null).Mode,
+            Is.EqualTo(LaunchMode.Launcher));
+    }
 }

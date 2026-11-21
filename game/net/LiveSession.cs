@@ -29,8 +29,11 @@ public partial class LiveSession : Node
     /// <summary>Drops the launcher's server, so a later start does not inherit it.</summary>
     public static void ClearServer() { launchHost = null; launchPort = 0; }
 
-    public static bool Enabled => !string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("MS2_LIVE_LOGIN"))
-                                  || (!string.IsNullOrEmpty(launchHost) && launchPort > 0);
+    /// <summary>MS2_LIVE_LOGIN, when MS2_LIVE_ACCOUNT is set with it (the environment route); null otherwise.</summary>
+    public static string EnvironmentLogin => Ms2.Ui.Launch.LaunchRoute.EnvironmentLive(
+        System.Environment.GetEnvironmentVariable("MS2_LIVE_LOGIN"), System.Environment.GetEnvironmentVariable("MS2_LIVE_ACCOUNT"));
+
+    public static bool Enabled => EnvironmentLogin != null || (!string.IsNullOrEmpty(launchHost) && launchPort > 0);
     public static LiveSession Instance { get; private set; }
     /// <summary>A live session is running: the field's offline npcs, mobs and portal walking stay off; the server's replace them.</summary>
     public static bool Active => Instance != null;
@@ -395,7 +398,7 @@ public partial class LiveSession : Node
         LastLoginRefusal = null;
         try
         {
-            string envLogin = System.Environment.GetEnvironmentVariable("MS2_LIVE_LOGIN");
+            string envLogin = EnvironmentLogin;
             int port;
             if (!string.IsNullOrEmpty(envLogin))
             {
