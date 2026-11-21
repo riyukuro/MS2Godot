@@ -591,6 +591,10 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
     /// <summary>Raised when the player switches quick slot pages (onNextPage / onPrevPage -> CKeyTable::SetQuickSlotPage -> SendKeyTableMode8, keytable.cpp:2558).</summary>
     public event Action<int> QuickSlotPageChanged;
 
+    /// <summary>FUN_140930d70 (uimainplayerinfo.cpp:1488-1489, 1504-1505; unit_14092f420_accountsessionstate.cpp:865-871):
+    /// true when the local PC is in skill-set mode, blocking quick-slot page changes. STILL-OPEN: skill-set state is not ported.</summary>
+    public Func<bool> HasSkillSet;
+
     /// <summary>Syncs the displayed 1-based page number from <see cref="UiModel.ServerKeys"/> (SetShortkeyPageNumber, uimainplayerinfo.cpp:1202).</summary>
     public void SyncQuickSlotPage()
     {
@@ -605,8 +609,10 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
             case "notifySlotUse": return SlotUse(args);
             case "onNextPage":
                 // UIMainPlayerInfo::OnNextPage (@0x1419f36c0, uimainplayerinfo.cpp:1502-1513)
-                if (Model.ServerKeys is { PageCount: > 0 } nextTable)
+                if (HasSkillSet?.Invoke() == true) return true;
+                if (Model.ServerKeys is { Loaded: true } nextTable)
                 {
+                    if (nextTable.PageCount == 0) return true;
                     int next = (nextTable.CurrentPage + 1) % nextTable.PageCount;
                     nextTable.SetCurrentPage(next);
                     SyncQuickSlotPage();
@@ -616,9 +622,11 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
                 else { ShortkeyPage++; Host.Invoke("setShortkeyPageNumber", ShortkeyPage); }
                 return true;
             case "onPrevPage":
-                // UIMainPlayerInfo::OnPrevPage (@0x1419f3620, uimainplayerinfo.cpp:1486-1499)
-                if (Model.ServerKeys is { PageCount: > 0 } prevTable)
+                // UIMainPlayerInfo::OnPrevPage (@0x1419f3630, uimainplayerinfo.cpp:1486-1499)
+                if (HasSkillSet?.Invoke() == true) return true;
+                if (Model.ServerKeys is { Loaded: true } prevTable)
                 {
+                    if (prevTable.PageCount == 0) return true;
                     int prev = prevTable.CurrentPage - 1;
                     if (prev < 0) prev += prevTable.PageCount;
                     prevTable.SetCurrentPage(prev);
