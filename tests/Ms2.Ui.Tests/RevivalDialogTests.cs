@@ -203,6 +203,24 @@ public class RevivalDialogTests
         Assert.That(sent, Is.Empty, "the paid revive needs inputs the game does not have yet");
     }
 
+    /// <summary>The game wiring refuses the paid revive even when every other input would let it send (the meso revive here):
+    /// its send needs the buffs' disable check, the meso revivals left and the platform's merat check, which the game lacks.</summary>
+    [Test]
+    public void TheGameWiringRefusesAPaidReviveTheOtherInputsWouldAllow()
+    {
+        var me = DeadPlayer();
+        var sent = new List<string>();
+        var c = new RevivalDialogController { CommonById = id => $"#{id:x}", CommonByKey = k => k + "|{0}" };
+        RevivalWiring.Connect(c.Env, me, () => 100, id => new Ms2.Formats.World.FieldData { Id = id, RevivalReturnId = id },
+            p => sent.Add($"{p.Op}:{Convert.ToHexString(Bytes(p))}"), _ => { }, id => "");
+        c.Env.MeratRateCap = () => 1f; c.Env.MesoRateCap = () => 1f;
+        c.Env.MesoRevivalRemaining = () => 2; c.Env.Meso = () => 1_000_000;
+        c.Refresh();
+        Assert.That(c.PaidMode, Is.EqualTo(2), "the meso revive is the one offered");
+        c.OnRevival(2);
+        Assert.That(sent, Is.Empty);
+    }
+
     [Test]
     public void TheGameWiringSendsNothingWithoutFieldData()
     {
