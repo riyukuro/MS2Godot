@@ -448,7 +448,14 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
     /// <summary>FUN_140d73bc0(id, 0, 0, ""): a notice box of a common string id.</summary>
     public Action<int> NoticeBox = _ => { };
 
-    /// <summary>The quick slot index of a name ("&lt;bag&gt;.&lt;i&gt;", i below 0x19), else -1.</summary>
+    /// <summary>
+    /// The quick slot index of a name ("&lt;bag&gt;.&lt;i&gt;", i below 0x19), else -1: SkillSlotBag names its slots
+    /// "SlotInfo.skill.0.&lt;i&gt;" (GetSlotName @0x1419f31f0, uimainplayerinfo.cpp:1424, with FUN_1417633f0(.., 0x19)) and
+    /// SkillSlot::GetIndex is that i, which FUN_14092f690 sends as mode 3's slot (skillslot.cpp:522, :552). Slot i's key is the
+    /// one bound to action 500001 + i (SkillSlot::FUN_141760a10 skillslot.cpp:1246; CKeyTable::InitKeys m_quickSlotActions,
+    /// keytable.cpp:653; FindKeyByQuickSlot :1202), so with DefaultKey.xml slots 0-7 are Q W E R A S D F, 8-15 the keys 1-8
+    /// (the slot labelled "2" is index 9), 16-21 Insert Home PageUp Delete End PageDown, and 22-24 have none.
+    /// </summary>
     static int SlotIndex(string name) =>
         name != null && name.StartsWith(SlotBag + ".", StringComparison.Ordinal)
         && int.TryParse(name.AsSpan(SlotBag.Length + 1), System.Globalization.NumberStyles.None, null, out var i) && i < SlotCount ? i : -1;
