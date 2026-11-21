@@ -228,6 +228,14 @@ public sealed class GameMenuController : UiController
         SetMenuNotifyUp(0x14, found);
     }
 
+    /// <summary>FUN_141939320 (uigamemenudialog.cpp:1417): m_bFlag259 (RefreshMenu sends it again) and the home entry's red circle
+    /// (SetNotifyRedCircle16, id 0x16; the house visit question's, CPersonalInfoAgreement::FUN_141262180). Before the movie is built only the flag is kept.</summary>
+    public void SetNotifyRedCircle16Flag(bool on)
+    {
+        redCircleHome = on;
+        if (Host?.Entity != null) SetNotifyRedCircle(0x16, on);
+    }
+
     /// <summary>SetNotifyRedCircle7Flag @0x1419394a0: m_bFlag25a (RefreshMenu sends it again) and the option entry's red circle
     /// (the agreement reminder, CPersonalInfoAgreement::FUN_141262090). Before the movie is built only the flag is kept.</summary>
     public void SetNotifyRedCircle7Flag(bool on)

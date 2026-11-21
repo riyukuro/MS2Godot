@@ -29,8 +29,8 @@ public interface IHouseVisitHost
 /// <summary>
 /// The question the client asks in the player's own house until the house visit group is agreed: who may visit (public, password,
 /// private). FUN_141262180 asks, FUN_141262830 takes the answer, FUN_141262b70 the six digit password, FUN_141262f10 asks again after the error box.
-/// STILL-OPEN: nothing calls <see cref="Ask"/> yet. The client calls it at field entry and after a house change; the live session does not
-/// carry the home state (HasNoHome, the map owner) the checks need, so HudScene has no <see cref="IHouseVisitHost"/> to give it.
+/// The live session calls <see cref="Ask"/> after ResponseCube 0x14 stored the home info and the player has a home (scenestategame.cpp:10231-10234, HudScene.OnHomeInfoApplied).
+/// STILL-OPEN: the other client callers (field entry, FUN_141262650's close of the 0x4f7c notice after an answer) are not ported.
 /// </summary>
 public sealed class HouseVisitQuestion
 {

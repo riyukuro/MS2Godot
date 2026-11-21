@@ -60,6 +60,8 @@ public partial class HudScene
             c.BindLiveState(
                 () => live.Guilds, () => live.Achieves, () => achieveTexts, () => live.Me,
                 () => live.Items.All, () => live.PlayingScoreUid, hudModel.Tables.Items, itemUse.Error);
+            // PlotIndoorSize stays null: the plot's indoor size (FUN_1408a0d30) is not ported
+            c.UgcHome = () => new ShopController.UgcHomeState(live.Home.HasInfo, live.Home.PlotId, null, live.Home.HasNoHome);
             c.BindLiveNetwork(live.SendShop, () => live.SendTalk(new NpcTalkEndRequest()));
             BindMeratQueue(live, c);
         }

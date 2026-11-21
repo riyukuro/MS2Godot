@@ -170,6 +170,28 @@ public class CubePacketTests
     }
 
     [Test]
+    public void HomeInfoReadsTheClientsNineFieldsInOrder()
+    {
+        // ugcmapoptions.cpp:291: i32 x4, string, i64 x2, u8 result, u8 open type
+        var m = ResponseCubeHomeInfo.Read(Reader(w =>
+        {
+            w.WriteInt(7); w.WriteInt(11); w.WriteInt(-2); w.WriteInt(5); w.WriteUnicodeString("Home");
+            w.WriteLong(0x123456789AL); w.WriteLong(-9); w.WriteByte(1); w.WriteByte(2);
+        }));
+        Assert.That(m, Is.EqualTo(new ResponseCubeHomeInfo(7, 11, -2, 5, "Home", 0x123456789AL, -9, 1, 2)));
+    }
+
+    [Test]
+    public void HomeInfoRefusesATrailingByte()
+    {
+        Assert.That(() => ResponseCubeHomeInfo.Read(Reader(w =>
+        {
+            w.WriteInt(1); w.WriteInt(1); w.WriteInt(1); w.WriteInt(1); w.WriteUnicodeString("");
+            w.WriteLong(1); w.WriteLong(1); w.WriteByte(0); w.WriteByte(0); w.WriteByte(0);
+        })), Throws.Exception);
+    }
+
+    [Test]
     public void HouseOwnerReadsFourLongs()
     {
         // :10590-10597: four i64, read before the account check

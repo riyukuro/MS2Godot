@@ -580,6 +580,9 @@ public partial class LiveSession : Node
     /// <summary>The own FieldAddUser object id, -1 before it.</summary>
     public int SelfObjectId => selfObject;
 
+    /// <summary>DAT_143ab2820, the account id of the login.</summary>
+    public long OwnAccountId => accountId;
+
     /// <summary>ItemUse mode 5, CSceneStateGame::OnActiveCodiTab (scenestategame.cpp:8662, 0x14173c2d0): the player's layer
     /// period (SetLayerPeriod); for the own player the completion box (<see cref="CodiTab.CompleteKey"/>).
     /// STILL-OPEN: the own player's look rebuild and the NotifyActiveMyCodiTab post (scenestategame.cpp:8686), which the equipment

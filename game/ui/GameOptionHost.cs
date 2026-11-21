@@ -140,14 +140,12 @@ public sealed class GameOptionHost : IGameOptionDialogHost
     /// <summary>SetGamepadEnabled (@0x14125f670): the block's switch, the HUD followers and the character file.</summary>
     public void SetGamepadEnabled(GameOption.GamePad stored, bool use, bool notify) => GameOptions.SetGamepadEnabled(stored, use, notify);
 
-    /// <summary>GetUGCMapInfo() != 0: the local home's map info is known. Unset, MyPC::SendHouseSetting returns at once, as the client does without it.
-    /// STILL-OPEN: the client sets it from ResponseCube mode 0x14 (scenestategame.cpp:10199-10244: UserUGCMapInfo::FUN_1408b4220 reads the
-    /// info, MyPC::SetUGCMapInfo stores it when its owner id is the local player's). The port's ResponseCube reader decodes only the held-item
-    /// modes, and the live session carries no home state (the same gap as ShopController's UgcHomeState), so nothing sets it.</summary>
-    public Func<bool> HasUgcMapInfo;
+    /// <summary>GetUGCMapInfo() != 0: the local home's map info is known (set by ResponseCube mode 0x14, <see cref="Net.LiveSession.Home"/>).
+    /// Without it MyPC::SendHouseSetting returns at once, as the client does.</summary>
+    public Func<bool> HasUgcMapInfo = () => Net.LiveSession.Instance?.Home.HasInfo == true;
 
     /// <summary>MyPC::SendHouseSetting (@0x141530720): the RequestCube 0x18 packet, then with feature 0x117 the agreement's group 1 takes the kind's flag and goes out as 0xC0.
-    /// The callers are Ms2.Ui.Hud.HouseVisitQuestion and HomeOptionController (their hosts are not wired yet).</summary>
+    /// The callers are Ms2.Ui.Hud.HouseVisitQuestion (wired) and HomeOptionController (its host is not wired).</summary>
     public void SendHouseSetting(int kind, string value, bool flag)
     {
         if (HasUgcMapInfo == null || !HasUgcMapInfo()) return;

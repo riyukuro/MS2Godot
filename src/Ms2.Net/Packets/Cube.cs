@@ -58,6 +58,28 @@ public sealed record ResponseCubeHeldItem(byte Mode, byte Error, int Id, int Cub
     }
 }
 
+/// <summary>
+/// ResponseCube 0x14 (CSceneStateGame::OnResponseCube, scenestategame.cpp:10199-10203), the home's map info:
+/// UserUGCMapInfo::FUN_1408b4220 (@0x1408b4220, ugcmapoptions.cpp:291) reads i32 the owner's object id (+0x18), i32 the plot id
+/// (+0x1c), i32 (+0x20), i32 (+0x24), the unicode string (+0x28), i64 (+0x30, 0 = no home), i64 (+0x38), u8 the result
+/// (the client's nResult, which the taxi refresh reads) and u8 the open type (+0x40: 0 public, 1 password, 2 private).
+/// STILL-OPEN: what +0x20, +0x24, +0x28 and +0x38 mean is not recovered, so they keep the client's offsets as names.
+/// </summary>
+public sealed record ResponseCubeHomeInfo(int OwnerObjectId, int PlotId, int Field20, int Field24, string Field28,
+                                          long HomeId, long Field38, byte Result, byte OpenType)
+{
+    public const byte Mode = 0x14;
+
+    /// <summary>The body after the mode byte.</summary>
+    public static ResponseCubeHomeInfo Read(ByteReader r)
+    {
+        var m = new ResponseCubeHomeInfo(r.ReadInt(), r.ReadInt(), r.ReadInt(), r.ReadInt(), r.ReadUnicodeString(),
+                                         r.ReadLong(), r.ReadLong(), r.ReadByte(), r.ReadByte());
+        r.ExpectEnd("ResponseCube 0x14");
+        return m;
+    }
+}
+
 /// <summary>ResponseCube 0x27 (CSceneStateGame::OnResponseCube, scenestategame.cpp:10560-10589): i64 account id; for the
 /// own account (DAT_143ab2820) i64 the day-change time (DAT_143ab2928), i64 the housing grade (kept as u16, DAT_143ab291c),
 /// i64 the housing exp (DAT_143ab2930), i32 n and n i32 the grades whose reward is taken (DAT_143ab32b8). Another account's

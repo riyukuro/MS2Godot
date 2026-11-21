@@ -222,6 +222,7 @@ public partial class HudScene : Node, IUiStageHost
         if (Ms2Godot.Net.LiveSession.Instance is { } liveSession) { liveSession.GuidePane = null; liveSession.FindDialogOf = null; liveSession.DungeonRoomOf = null; }
         unwatchNotices?.Invoke();
         unwatchNotices = null;
+        if (liveHome != null) { liveHome.HomeInfoApplied -= OnHomeInfoApplied; liveHome = null; }
         unwatchChat?.Invoke();
         unwatchChat = null;
         unwatchNewItems?.Invoke();
@@ -619,17 +620,36 @@ public partial class HudScene : Node, IUiStageHost
         if (systemMenu != null) systemMenu.RedCircle = show;
     }
 
+    /// <summary>The options host and its dialog model, made on first use (the house visit question needs the host's agreement before the dialog opens).</summary>
+    void EnsureOptionHost()
+    {
+        if (optionDialog != null) return;
+        optionHost = new GameOptionHost(this, assets.Packs, commonStrings) { DamageEffectAlpha = a => damageEffect?.SetAlpha(a) };
+        optionHost.AgreementReminder += SetAgreementReminder;
+        optionHost.HasTutorial = FieldHasTutorial;
+        if (hudModel?.Keys is { } k && k != KeyTable.Empty) optionHost.Keys = k;
+        optionDialog = optionHost.Dialog = new Ms2.Formats.Options.GameOptionDialog(optionHost);
+    }
+
+    Ms2.Ui.Hud.HouseVisitQuestion houseVisit;
+
+    /// <summary>The ResponseCube 0x14 tail (scenestategame.cpp:10231-10236): with a home, FUN_141262180 (the visit question) when the message box layer
+    /// is free. STILL-OPEN: FUN_141262650, the notice 0x4f7c's close after an answer, has no dialog here.</summary>
+    void OnHomeInfoApplied(bool _)
+    {
+        if (liveHome == null || liveHome.Home.HasNoHome || !Ms2.Ui.Hud.MessageBoxQueue.IsIdle) return;
+        if (commonStrings == null) SystemMenuFacts();
+        EnsureOptionHost();
+        houseVisit ??= new Ms2.Ui.Hud.HouseVisitQuestion(new HouseVisitHost(liveHome, optionHost, commonStrings, FieldHasTutorial,
+            show => gameMenu?.SetNotifyRedCircle16Flag(show)));
+        houseVisit.Ask();
+    }
+    Ms2Godot.Net.LiveSession liveHome;
+
     void OpenGameOption(int page)
     {
         if (GuideRefusesOpen("GameOptionDialog")) return;
-        if (optionDialog == null)
-        {
-            optionHost = new GameOptionHost(this, assets.Packs, commonStrings) { DamageEffectAlpha = a => damageEffect?.SetAlpha(a) };
-            optionHost.AgreementReminder += SetAgreementReminder;
-            optionHost.HasTutorial = FieldHasTutorial;
-            if (hudModel?.Keys is { } k && k != KeyTable.Empty) optionHost.Keys = k;
-            optionDialog = optionHost.Dialog = new Ms2.Formats.Options.GameOptionDialog(optionHost);
-        }
+        EnsureOptionHost();
         if (page != 0) optionDialog.SetTab(page);
         if (!optionHost.IsClosed) return;
         if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the options dialog runs interpreted");
@@ -919,6 +939,8 @@ public partial class HudScene : Node, IUiStageHost
             live.Notice += onNotice;
             unwatchNotices = () => live.Notice -= onNotice;
             WireUserChat(live);
+            liveHome = live;
+            live.HomeInfoApplied += OnHomeInfoApplied;
             Action<Ms2.Net.Packets.ChatMessage, Func<Ms2.Net.Packets.WeddingChatHall>> onChat = ChatLog.OnUserChat;
             live.UserChat += onChat;
             Action<Ms2.Net.Packets.ChatItemLinks> onLinks = ChatLog.OnItemLinks;
