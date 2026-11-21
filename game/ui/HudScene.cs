@@ -657,6 +657,7 @@ public partial class HudScene : Node, IUiStageHost
     // ---- top bar: uiupperhuddialog run by its own ActionScript, UIUpperHudDialog's C++ side as UpperHudController ------
 
     MovieDialog upperHud;
+    UiModel upperHudModel;
     Ms2.Ui.Hud.UpperHudController upperHudSide;
 
     /// <summary>
@@ -665,7 +666,7 @@ public partial class HudScene : Node, IUiStageHost
     /// </summary>
     void UpperHud(Control ui)
     {
-        var model = new UiModel(GameTables.Shared(assets.Packs, assets.Language));
+        var model = upperHudModel = new UiModel(GameTables.Shared(assets.Packs, assets.Language));
         if (GatePath != null) model.ServerTime = () => GateClock;   // the perf gate: no minute change mid-run
         model.Features.Clear();
         foreach (int id in new[] { Ms2.Ui.Feature.SearchTooltip, Ms2.Ui.Feature.InputMode, Ms2.Ui.Feature.GamePad, Ms2.Ui.Feature.VersionText, Ms2.Ui.Feature.Merat,
@@ -2182,11 +2183,24 @@ public partial class HudScene : Node, IUiStageHost
         MeratRedNotice = v => EnsureRewardNotify().ShowMeratRedNotice(v),
     };
 
+    /// <summary>The upper HUD runs on its own model: the balances the feed stored on the HUD player go to it and its status event follows
+    /// (NotifyStatusChanged 0xb / 0xd, scenestategame.cpp:7089), so its merat text updates.</summary>
+    void MirrorMerat(bool red)
+    {
+        if (upperHudModel == null || hudModel == null) return;
+        var from = hudModel.Player; var to = upperHudModel.Player;
+        to.Merats = from.Merats; to.RedMerat = from.RedMerat;
+        System.Array.Copy(from.MeratWallet, to.MeratWallet, 4);
+        upperHudModel.Notify(red ? Ms2.Ui.StatusEvent.RedMerat : Ms2.Ui.StatusEvent.Merat);
+    }
+
     /// <summary>--uigen-open currency: the Meret and token packets' effects once, as the live receives run them.</summary>
     void CurrencyShot()
     {
         var feed = currencyFeed ??= MakeCurrencyFeed();
-        feed.OnMeret(new Ms2.Net.Packets.MeretUpdate(1200, 0, 0, 0, 500));
+        var meret = new Ms2.Net.Packets.MeretUpdate(1200, 0, 0, 0, 500);
+        feed.OnMeret(meret);
+        MirrorMerat(false);
         feed.OnCurrencyToken(new Ms2.Net.Packets.CurrencyTokenUpdate(5, 1990, 150, 0, 40));
     }
 
@@ -2210,8 +2224,8 @@ public partial class HudScene : Node, IUiStageHost
         Action<Ms2.Net.Packets.ItemDropNotice> onDrop = n => ChatLog.AddItemDropNotice(n.Name, n.ItemId, n.Grade, n.Uid);
         live.ItemDropNoticed += onDrop;
         currencyFeed = MakeCurrencyFeed();
-        Action<Ms2.Net.Packets.MeretUpdate> onMeret = currencyFeed.OnMeret;
-        Action<Ms2.Net.Packets.MeretUseUpdate> onMeretUse = currencyFeed.OnMeretUse;
+        Action<Ms2.Net.Packets.MeretUpdate> onMeret = m => { currencyFeed.OnMeret(m); MirrorMerat(false); };
+        Action<Ms2.Net.Packets.MeretUseUpdate> onMeretUse = m => { currencyFeed.OnMeretUse(m); MirrorMerat(true); };
         Action<Ms2.Net.Packets.CurrencyTokenUpdate> onToken = currencyFeed.OnCurrencyToken;
         Action<Ms2.Net.Packets.SystemSound> onSound = m => { if (m.Key.Length > 0) FieldAudio.Instance?.PlayUi(m.Key); };
         Action<Ms2.Net.Packets.SmartPushMessage> onPush = OnSmartPush;
