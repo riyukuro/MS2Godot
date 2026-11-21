@@ -1,51 +1,90 @@
+using Ms2.Avm2;
+using Ms2.Avm2.Flash;
+using Ms2.Formats.Pack;
 using Ms2.Net.Packets;
 using Ms2.Ui.Hud;
 using NUnit.Framework;
 
 namespace Ms2.Ui.Tests;
 
-/// <summary>UIItemMultiOpenBoxDialog's send timing and OnOpenResult (uiitemmultiopenboxdialog.cpp:137,160).</summary>
+/// <summary>UIItemMultiOpenBoxDialog (0x4f88) over the real movie (needs MS2_DATA): the first RequestItemBox falls due 500 ms
+/// after the load, the next 100 ms after each opened answer, a failed answer shows its box and closes, OnCancel closes with
+/// nothing sent. No language's strings are compared.</summary>
 public class ItemMultiOpenBoxTests
 {
-    [Test] public void TheFirstSendIsDue500msAfterTheLoadAndCapsAtTheMaximum()
+    sealed class Rig
     {
-        var b = new ItemMultiOpenBox(10);
-        b.Open(77, 3, "k", 25); b.Loaded(1000, true);
-        Assert.That(b.Tick(1500), Is.Null, "not before the delay has passed");
-        var r = b.Tick(1501)!;
-        Assert.That((r.ItemId, r.Slot, r.Count, r.Key), Is.EqualTo((77, (short) 3, 10, "k")));
-        Assert.That(b.Tick(9999), Is.Null, "sent once");
+        public ItemMultiOpenBoxController C = new(3);
+        public long Now = 10_000;
+        public List<ItemBoxRequest> Sent = new();
+        public List<string> Notices = new();
+        public int Closes;
+
+        public Rig(bool inBag = true)
+        {
+            var d = Environment.GetEnvironmentVariable("MS2_DATA");
+            if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
+            var packs = new PackSet(d);
+            var src = new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
+            var model = new UiModel(new GameTables(packs, "en")) { HasLocalPlayer = true };
+            C.NowMs = () => Now;
+            C.InBag = _ => inBag;
+            C.Send = Sent.Add;
+            C.ShowNotice = Notices.Add;
+            C.Closing += () => Closes++;
+            C.State.Open(20300327, 1, "k", 5);
+            var (rt, p) = src.Open(C.Movie, r => r.Budget = 20_000_000);
+            p.StageW = 1280; p.StageH = 720;
+            p.Translate = k => k.TrimStart('$');
+            var host = new UiHost(p, C, model);
+            Assert.That(host.Load(), Is.True, "load: " + string.Join("; ", rt.Errors));
+            for (int i = 0; i < 10; i++) p.Tick();
+        }
     }
 
-    [Test] public void NothingIsSentWhenTheBoxIsNotInTheBag()
+    [Test]
+    public void TheSendsFallDueAndTheAnswersCountThemDown()
     {
-        var b = new ItemMultiOpenBox(10); b.Open(77, 3, "", 5); b.Loaded(0, false);
-        Assert.That(b.Tick(100000), Is.Null);
+        var r = new Rig();
+        r.Now += 500; r.C.Tick();
+        Assert.That(r.Sent, Is.Empty, "due 500 ms after the load, and strictly after");
+        r.Now += 1; r.C.Tick(); r.C.Tick();
+        Assert.That(r.Sent, Is.EqualTo(new[] { new ItemBoxRequest(20300327, 1, 3, "k") }), "once, at most the limit");
+        r.C.OnItemBox(new ItemBoxResult(20300327, 3, ItemBoxResult.ResultOpened));
+        r.Now += 100; r.C.Tick();
+        Assert.That(r.Sent, Has.Count.EqualTo(1), "100 ms after an answer, strictly after");
+        r.Now += 1; r.C.Tick();
+        Assert.That(r.Sent.Last(), Is.EqualTo(new ItemBoxRequest(20300327, 1, 2, "k")), "what is left");
+        r.C.OnItemBox(new ItemBoxResult(20300327, 2, ItemBoxResult.ResultOpened));
+        Assert.That((r.Closes, r.C.State.Active), Is.EqualTo((1, false)), "all opened: closed");
     }
 
-    [Test] public void AnOpenedAnswerCountsAndSchedulesTheNextBatch100msLater()
+    [Test]
+    public void AFailedAnswerShowsItsBoxAndCloses()
     {
-        var b = new ItemMultiOpenBox(10); b.Open(77, 3, "", 25); b.Loaded(0, true); b.Tick(600);
-        Assert.That(b.OnOpenResult(10, 2, 1000), Is.EqualTo(ItemMultiOpenBox.Outcome.Continue));
-        Assert.That((b.Left, b.CountText), Is.EqualTo((15, (10, 25))));
-        Assert.That(b.Tick(1100), Is.Null);
-        Assert.That(b.Tick(1101)!.Count, Is.EqualTo(10));
+        var r = new Rig();
+        r.C.OnItemBox(new ItemBoxResult(20300327, 0, ItemBoxResult.ResultInventoryFull));
+        Assert.That((r.Notices.Count, r.Closes, r.C.State.Active), Is.EqualTo((1, 1, false)));
+        var r2 = new Rig();
+        r2.C.OnItemBox(new ItemBoxResult(20300327, 0, ItemBoxResult.ResultFailed));
+        Assert.That((r2.Notices.Count, r2.Closes), Is.EqualTo((1, 1)));
+        Assert.That(r2.Notices[0], Is.Not.EqualTo(r.Notices[0]).Or.Empty, "result 3 and 4 are different boxes");
     }
 
-    [Test] public void TheLastOpenedAnswerClosesTheDialog()
+    [Test]
+    public void CancelClosesWithNothingSent()
     {
-        var b = new ItemMultiOpenBox(10); b.Open(77, 3, "", 4); b.Loaded(0, true); b.Tick(600);
-        Assert.That(b.OnOpenResult(4, 2, 1000), Is.EqualTo(ItemMultiOpenBox.Outcome.Close));
-        Assert.That(b.Active, Is.False);
+        var r = new Rig();
+        Assert.That(r.C.OnCallback("OnCancel", Array.Empty<object>()), Is.True);
+        r.Now += 5000; r.C.Tick();
+        Assert.That((r.Sent, r.Closes), Is.EqualTo((new List<ItemBoxRequest>(), 1)));
     }
 
-    [Test] public void AFailureShowsItsBoxAndClosesAndAClosedDialogIgnoresAnAnswer()
+    [Test]
+    public void ABoxNoLongerInTheBagIsNeverSent()
     {
-        var b = new ItemMultiOpenBox(10); b.Open(77, 3, "", 4); b.Loaded(0, true);
-        Assert.That(b.OnOpenResult(0, 3, 10), Is.EqualTo(ItemMultiOpenBox.Outcome.ShowInventoryFailBox));
-        Assert.That(b.Active, Is.False);
-        Assert.That(b.OnOpenResult(1, 2, 20), Is.EqualTo(ItemMultiOpenBox.Outcome.Ignored));
-        b.Open(77, 3, "", 4);
-        Assert.That(b.OnOpenResult(0, 4, 10), Is.EqualTo(ItemMultiOpenBox.Outcome.ShowInventoryBox));
+        var r = new Rig(inBag: false);
+        r.Now += 5000; r.C.Tick();
+        Assert.That(r.Sent, Is.Empty);
     }
 }
