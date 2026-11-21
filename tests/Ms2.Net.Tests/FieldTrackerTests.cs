@@ -143,7 +143,23 @@ public class FieldTrackerTests {
         t.Inbound(Packet(Inbound.UserState, IdByte(77, 12)));
         t.Inbound(Packet(Inbound.DeadUser, IdByte(77, 1)));
         t.Inbound(Packet(Inbound.Revival, IdByte(77, 0)));
-        Assert.That(t.Events, Is.EqualTo(new ReplayEvent[] { new UserStateEvent(0, 77, 12), new UserDeadEvent(0, 77), new UserRevivalEvent(0, 77) }));
+        Assert.That(t.Events, Is.EqualTo(new ReplayEvent[] { new UserStateEvent(0, 77, 12), new UserDeadEvent(0, 77, true), new UserRevivalEvent(0, 77, 0) }));
+    }
+
+    [Test]
+    public void TombstoneAndRevivalConfirmRouteForAPcInTheField() {
+        // OnTombstone / OnRevivalConfirm (FindPCById): an id that is not in the field returns; any PC in it takes them
+        static byte[] Tomb(int id) { var w = new ByteWriter(); w.WriteInt(id); w.WriteByte(1); w.WriteByte(3); w.WriteInt(55); w.WriteByte(0); return Bytes(w); }
+        static byte[] Confirm(int id) { var w = new ByteWriter(); w.WriteInt(id); w.WriteInt(9000); w.WriteInt(2); return Bytes(w); }
+        var t = new FieldTracker();
+        t.Inbound(Packet(Inbound.Tombstone, Tomb(77)));
+        t.Inbound(Packet(Inbound.RevivalConfirm, Confirm(77)));
+        Assert.That(t.Events, Is.Empty);
+        AddUser(t, 77, 2);
+        t.Events.Clear();
+        t.Inbound(Packet(Inbound.Tombstone, Tomb(77)));
+        t.Inbound(Packet(Inbound.RevivalConfirm, Confirm(77)));
+        Assert.That(t.Events, Is.EqualTo(new ReplayEvent[] { new UserTombstoneEvent(0, 77, 1, 3, 55), new UserRevivalConfirmEvent(0, 77, 9000, 2) }));
     }
 
     [Test]

@@ -154,7 +154,7 @@ public struct HoldTarget
 public sealed class RemotePcStates
 {
     public const int StateNone = 0, StateIdle = 1, StateWalk = 2, StateLand = 4, StateFall = 5, StateJump = 6,
-        StateSkill = 0x10, StateHold = 0x20, StateRide = 0x21, StateSwim = 0x1b;
+        StateSkill = 0x10, StateHold = 0x20, StateRide = 0x21, StateSwim = 0x1b, StateDead = 0xc;
 
     // action ids (ActionType, actioncontainer.cpp) the ported states play through vfunc_123
     public const int ActIdle = 0, ActBattleIdle = 1, ActJumpDown = 2, ActJumpLand = 3, ActJumpUp = 4, ActJumpFall = 5,
@@ -201,6 +201,16 @@ public sealed class RemotePcStates
     /// weapon-hold answer; WeaponStance.StateHoldsWeapons in Ms2.Ui). Not per frame.</summary>
     public Action WeaponKeyChanged;
     (int cur, int sub, bool run) weaponKey;
+
+    /// <summary>StateDead::vfunc_4 past State::vfunc_4 (statedead.cpp:107-146; FUN_1417b8370, DynamicCast&lt;PC&gt;, holds for
+    /// any PC): the branch test (a PvP point, or the field's HasAutoRevivalType1: the revive in place) and the body part:
+    /// the revive in place shows the body (vfunc_23(0)) and plays MODEPVP_DEAD's entry, the normal death hides it
+    /// (vfunc_23(1)), plays DEAD (0x34) and builds the tomb (PC::FUN_14165cac0). The own-player part (FUN_1417b84b0 is MyPC
+    /// only: the cube request, the push reset, the death or revive effect, the guide trigger) is not run for this PC.</summary>
+    public Action DeadEntered;
+    /// <summary>StateDead::vfunc_5 (@0x1417c29b0, statedead.cpp:177-186): the body shown again (vfunc_23(0)) and the shadow
+    /// back on (vfunc_31(true)).</summary>
+    public Action DeadLeft;
 
     void NotifyWeaponKey()
     {
@@ -306,7 +316,8 @@ public sealed class RemotePcStates
     /// <summary>
     /// PC::vfunc_137 (pc.cpp:4593-4607; OnUserState state 12 and OnDeadUser, scenestategame.cpp:6533-6544): not in the
     /// death state (0xc) and with no current health <paramref name="hp"/>: FUN_14166ce50(1). Returns whether it ran.
-    /// STILL-OPEN: m_nFF4 / m_n10f0 and the PvP time scale (IsMode1 / IsMode10).
+    /// m_n10f0 (set when a confirm count is kept) is the owner's (RemoteLayer). STILL-OPEN: m_nFF4 and the PvP time scale
+    /// (IsMode1 / IsMode10).
     /// </summary>
     public bool Die(long hp)
     {
@@ -873,6 +884,11 @@ public sealed class RemotePcStates
                 pc.AnimSpeed = 1f;                            // State::vfunc_4 -> State::vfunc_10
                 JumpEnter();
                 break;
+            case StateDead:
+                // StateDead::vfunc_4 (@0x1417c2530, statedead.cpp:104-171): State::vfunc_4 -> State::vfunc_10 sets m_f938
+                pc.AnimSpeed = 1f;
+                DeadEntered?.Invoke();
+                break;
             case StateSwim:
                 // StateSwim::vfunc_4 (stateswim.cpp:89-129): State::vfunc_4 -> StateSwim::vfunc_10 sets m_f938;
                 // with no ridee (FUN_1417fb370 is 0) sub 0x84 at the swim speed
@@ -898,6 +914,9 @@ public sealed class RemotePcStates
             case StateSwim:
                 Speed = pc.RunSpeed;                          // StateSwim::vfunc_5 (stateswim.cpp:132-138)
                 break;
+            case StateDead:
+                DeadLeft?.Invoke();                           // StateDead::vfunc_5
+                break;
             case StateHold:
                 // StateHold::vfunc_5 (@0x1417cbe70, stateholddata.cpp:188-201): StopJump, the shadow back on
                 // (vfunc_31(true)), the rotation from before the hold (vfunc_21(m_kDir)); the rest is MyPC's
@@ -914,7 +933,8 @@ public sealed class RemotePcStates
         {
             case StateIdle:
             case StateLand:
-                // StateIdle::vfunc_3 / StateLand::vfunc_3: vfunc_68 with a zero move
+            case StateDead:
+                // StateIdle::vfunc_3 / StateLand::vfunc_3 / StateDead::vfunc_3: vfunc_68 with a zero move
                 MoveBy(Vector3.Zero, dt);
                 break;
             case StateWalk:

@@ -353,7 +353,7 @@ public partial class HudScene : Node, IUiStageHost
         AddChild(nameTag);
         AddChild(playerBar = new PlayerHpBar(assets, constants, nameTag, window));                        // and its UIHpBar
         playerBar.Spawn(data.Player.HpCurrent, data.Player.HpMax);
-        AddChild(tombBar = new TombGaugeBar(assets, constants, nameTag, window)                          // UITombStoneBar (0x4e64)
+        AddChild(tombBar = new TombGaugeBar(assets, constants, () => nameTag.Anchor, window)                          // UITombStoneBar (0x4e64)
         {
             Tomb = () => Ms2Godot.Net.LiveSession.Instance?.Tomb,
             Dead = () => Ms2Godot.Net.LiveSession.Instance?.Me.Dead == true,

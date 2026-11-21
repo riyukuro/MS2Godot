@@ -8,7 +8,7 @@ using Ms2.Ui.Hud;
 namespace Ms2Godot.Movement;
 
 /// <summary>
-/// The own dead player's tombstone model: PC::FUN_14165cac0 (pc.cpp:4037), run by StateDead::vfunc_4's normal branch
+/// A dead player's tombstone model, the own player's or another's: PC::FUN_14165cac0 (pc.cpp:4037), run by StateDead::vfunc_4's normal branch
 /// (statedead.cpp:145). The flat model is MS2TombStoneDark while the revival is blocked (PC::IsRevivalBlocked), else
 /// MS2TombStone; its KfmAsset names the kfm, placed at the player's position with no rotation and scale 1
 /// (EntityWorldManager::FUN_1411ce7c0). The states and the packet's hits are <see cref="Ms2.Ui.Hud.Tombstone"/>; this node
@@ -18,7 +18,7 @@ namespace Ms2Godot.Movement;
 /// once finished, or while not breaking and the player left StateDead.
 /// STILL-OPEN: the position snap (CubeMapInformationService::FUN_1410b9150: a ray down 750 onto a cube whose field70 is set
 /// takes that cube's x,y) is not done, field70 is not known; the tomb gem's kfm and rotation (feature 0x67, gem slot 5) are
-/// not read; other players' tombs (PC side of the remote layer) are not built.
+/// not read.
 /// </summary>
 public sealed partial class PlayerTombstone : Node3D
 {
@@ -26,7 +26,8 @@ public sealed partial class PlayerTombstone : Node3D
 
     public Tombstone State { get; private set; }
     readonly Dictionary<string, Godot.Animation> anims = new(StringComparer.OrdinalIgnoreCase);
-    Player pc;
+    Node3D pc;
+    Func<bool> inDeath;
     AnimationPlayer player;
     PackSet packs;
     ModelBuilder builder;
@@ -34,8 +35,9 @@ public sealed partial class PlayerTombstone : Node3D
     ModelData md;
     string archive, folder;
 
-    /// <summary>The tomb for <paramref name="pc"/> under <paramref name="parent"/>, or null when the flat or its model is missing.</summary>
-    public static PlayerTombstone Build(Node3D parent, PackSet packs, ModelBuilder builder, Player pc, bool revivalBlocked)
+    /// <summary>The tomb for the PC body <paramref name="pc"/> (its feet position) under <paramref name="parent"/>, or null when the
+    /// flat or its model is missing. <paramref name="inDeath"/> tells whether the PC is in StateDead (GetCurStateId() == 0xc).</summary>
+    public static PlayerTombstone Build(Node3D parent, PackSet packs, ModelBuilder builder, Node3D pc, Func<bool> inDeath, bool revivalBlocked)
     {
         try
         {
@@ -52,7 +54,7 @@ public sealed partial class PlayerTombstone : Node3D
             string P(string k) => flat.Props.TryGetValue(k, out var v) ? v : null;
             var t = new PlayerTombstone
             {
-                Name = "Tombstone", pc = pc, packs = packs, builder = builder, kfm = kfm, md = md, archive = archive, folder = folder,
+                Name = "Tombstone", pc = pc, inDeath = inDeath, packs = packs, builder = builder, kfm = kfm, md = md, archive = archive, folder = folder,
                 State = new Tombstone(P("SpawnAnimation"), P("HitAnimation"), P("InitialSequence"), P("reactionSequenceName")),
             };
             var body = builder.Build(md, "Body");
@@ -112,7 +114,7 @@ public sealed partial class PlayerTombstone : Node3D
 
     public override void _Process(double delta)
     {
-        bool pcDead = pc != null && IsInstanceValid(pc) && pc.State == Player.MoveState.Dead;
+        bool pcDead = pc != null && IsInstanceValid(pc) && inDeath();
         State.Update((long)Time.GetTicksMsec());
         if (!State.KeepFor(pcDead) || pc == null || !IsInstanceValid(pc)) { QueueFree(); return; }
         GlobalPosition = pc.GlobalPosition;

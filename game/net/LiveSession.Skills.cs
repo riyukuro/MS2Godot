@@ -68,6 +68,27 @@ public partial class LiveSession
 
     /// <summary>A skill motion's effect in the field, through the combat layer the other players' casts use.</summary>
     public void PlayFieldEffect(string effect, Vector3 at, float yawRadians) => remote?.PlayEffect(effect, at, yawRadians);
+
+    /// <summary>
+    /// A CommonResource effect on the own PC (CEffectService::InsertEffect with the actor set and kind 1, the own PC):
+    /// <paramref name="key"/> is the commonResource.xml key. Played once at the body's place and facing.
+    /// STILL-OPEN: the effect is not attached to the actor (it stays where it started) and a kept one
+    /// (StateDead's m_nEffect) is not removed early by its owner.
+    /// </summary>
+    void PlayOwnCommonEffect(string key)
+    {
+        if (player == null || !IsInstanceValid(player)) return;
+        string path;
+        try { path = Ms2.Ui.GameTables.Shared(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), GameOptions.StringLanguage).CommonResource(key); }
+        catch (Exception ex) { GD.PushWarning($"common effect {key}: {ex.Message}"); return; }
+        if (string.IsNullOrEmpty(path)) return;
+        OwnEffectsPlayed?.Invoke(path);
+        remote?.PlayEffect(path, player.GlobalPosition, player.Visual?.Rotation.Y ?? 0, Ms2.Audio.SoundMusicEffectState.CasterMyPc);
+    }
+
+    /// <summary>The effect xml of each own CommonResource effect played (for the checks).</summary>
+    public Action<string> OwnEffectsPlayed;
+
     /// <summary>The skill rows the cooldowns look up (SkillDataTableCli); the HUD sets it once its tables are read.</summary>
     public System.Func<uint, SkillData> SkillRows;
     SkillCooltimes cooltimes;

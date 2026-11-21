@@ -48,6 +48,8 @@ public sealed partial class RemoteLayer : Node3D
         /// <summary>The PC's AdditionalCliList (FUN_1416749a0): FieldAddUser's list (DecodeListPacket, additionalcli_2.cpp:721,
         /// each one an add) and its OnBuff packets. Only what the target filter reads of it is used.</summary>
         public Ms2.Ui.Skills.AdditionalBuffList Buffs;
+        /// <summary>The revival flag and count, the tomb and its bar.</summary>
+        public readonly RemoteDeath Death = new();
     }
 
     readonly ModelBuilder builder;
@@ -256,7 +258,8 @@ public sealed partial class RemoteLayer : Node3D
     }
 
     /// <summary>An effect xml played at a point (CombatLayer.PlayEffect), the own cast's motion effect.</summary>
-    public void PlayEffect(string effect, Vector3 at, float yawRadians) => combat.PlayEffect(effect, at, yawRadians);
+    public void PlayEffect(string effect, Vector3 at, float yawRadians, int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
+        => combat.PlayEffect(effect, at, yawRadians, casterKind);
 
     /// <summary>Feature 0x8e and the server clock, which the layer switch (WornEquips.OutfitShown) reads.</summary>
     public Func<bool> Feature8e = () => false;
@@ -353,6 +356,7 @@ public sealed partial class RemoteLayer : Node3D
         if (r.HpCur == 0) pc.States.SetDead(true);
         levelOf ??= Ms2.Ui.GameTables.Shared(packs, Ms2Godot.GameOptions.StringLanguage).Additional.GetLevel;
         r.Buffs = new Ms2.Ui.Skills.AdditionalBuffList(levelOf);
+        r.Death.BuffsDisableRevival = () => r.Buffs.IsDisableRevivalHere;
         foreach (var b in u.Buffs) r.Buffs.Apply(BuffPacket.FromAdd(b));
         r.Weapons = EquipApplier.RigOf(visual);
         r.Pc.States.WeaponKeyChanged = () => RefreshWeapons(r);
@@ -361,11 +365,30 @@ public sealed partial class RemoteLayer : Node3D
         var model = visual.GetNodeOrNull<Node3D>("Model");
         r.Anchor = () => World.DummyAnchor.Point(dummies, "Eff_UI", model, md.RootName) ?? root.GlobalPosition;
         r.Damage = new Ui.DamageTarget(root, () => World.DummyAnchor.Point(dummies, "Eff_Damage", model, md.RootName) ?? root.GlobalPosition, true);
+        pc.States.DeadEntered = () => EnterDead(r);
+        pc.States.DeadLeft = () => r.Pc.SetBodyShown(true);
         pc.Spawn();
         // PC::vfunc_10 (a hurt spawn) and OnAddUser's SetEmotion of the packet's emotion byte (scenestategame.cpp:11188,
         // a change from the ctor's 0): either runs UpdateHpBar, so a member's bar is made active at once (not shown)
         if (r.HpCur != r.HpMax || r.InBattle) EnsureBar(r)?.Spawn(r.HpCur, r.HpMax, r.InBattle);
         return r;
+    }
+
+    /// <summary>
+    /// StateDead::vfunc_4 for another PC (<see cref="RemoteDeath.Enter"/>): the revive in place is the field's
+    /// HasAutoRevivalType1 with MODEPVP_DEAD entry ShadowWorldAutoReviveDeadAction. STILL-OPEN: the PvP point case (the team
+    /// as the entry).
+    /// </summary>
+    void EnterDead(Remote r)
+    {
+        bool inPlace = false; int anim = 1;
+        try
+        {
+            if (LiveSession.Instance?.FieldId is int id) inPlace = FieldData.FindById(packs, id)?.HasAutoRevivalType1 == true;
+            if (inPlace) anim = Ms2Godot.World.FieldContents.Constants(packs).Int("ShadowWorldAutoReviveDeadAction", 1);
+        }
+        catch (Exception ex) { GD.PushWarning($"remote death state: {ex.Message}"); }
+        r.Death.Enter(this, packs, builder, r.Pc, r.Anchor, inPlace, anim);
     }
 
     /// <summary>
@@ -444,14 +467,14 @@ public sealed partial class RemoteLayer : Node3D
             {
                 case UserAddedEvent add:
                     if (add.User.User.CharacterId == selfCharacter) break;
-                    if (users.Remove(add.User.ObjectId, out var old)) { old.Invincible.End(null, RegionFx); tags.Remove(old.Root); bars.Remove(old.Root); old.Pc.Free(); }
+                    if (users.Remove(add.User.ObjectId, out var old)) { old.Invincible.End(null, RegionFx); tags.Remove(old.Root); bars.Remove(old.Root); old.Death.Free(); old.Pc.Free(); }
                     users[add.User.ObjectId] = Spawn(add.User); UsersSpawned++; ArmCodi();
                     GD.Print($"live: other player '{add.User.User.Name}' object {add.User.ObjectId} shown at {add.User.Position}");
                     break;
                 case UserRemovedEvent rem:
                     if (users.Remove(rem.ObjectId, out var gone))
                     {
-                        gone.Invincible.End(null, RegionFx); tags.Remove(gone.Root); bars.Remove(gone.Root); gone.Pc.Free();
+                        gone.Invincible.End(null, RegionFx); tags.Remove(gone.Root); bars.Remove(gone.Root); gone.Death.Free(); gone.Pc.Free();
                         GD.Print($"live: other player {gone.Name} (object {rem.ObjectId}) left");
                     }
                     break;
@@ -486,17 +509,28 @@ public sealed partial class RemoteLayer : Node3D
                     if (users.TryGetValue(us.ObjectId, out var uu)) uu.Pc.States.UserState(us.State, uu.HpCur, uu.HpMax);
                     break;
                 case UserDeadEvent ud:
-                    // OnDeadUser (scenestategame.cpp:6533-6544): vfunc_137. STILL-OPEN: the flag's FUN_141661ba0(1)
-                    if (users.TryGetValue(ud.ObjectId, out var du)) du.Pc.States.Die(du.HpCur);
+                    // OnDeadUser (scenestategame.cpp:6533-6544): a set flag is FUN_141661ba0(1), then vfunc_137, which sets
+                    // m_n10f0 when it ran with a confirm count (pc.cpp:4598)
+                    if (!users.TryGetValue(ud.ObjectId, out var du)) break;
+                    if (ud.Flag) du.Death.RevivalFlag = true;
+                    if (du.Pc.States.Die(du.HpCur) && du.Death.RevivalCount > 0) du.Death.RevivalFlag = true;
                     break;
                 case UserRevivalEvent rv:
-                    // OnRevival (scenestategame.cpp:7387-7409): FUN_14166ce50(0); the 0x18 state is the own player's only; then
-                    // any revived PC's FUN_141661370(1, UserRevivalInvincibleTick, 100000004). STILL-OPEN: FUN_141661ba0(flag)
-                    if (users.TryGetValue(rv.ObjectId, out var vu))
-                    {
-                        vu.Pc.States.SetDead(false);
-                        StartInvincible(vu);
-                    }
+                    // OnRevival (scenestategame.cpp:7387-7409): FUN_141661ba0(flag), FUN_14166ce50(0); the 0x18 state is the own
+                    // player's only; then any revived PC's FUN_141661370(1, UserRevivalInvincibleTick, 100000004)
+                    if (!users.TryGetValue(rv.ObjectId, out var vu)) break;
+                    vu.Death.RevivalFlag = rv.Flag != 0;
+                    vu.Pc.States.SetDead(false);
+                    StartInvincible(vu);
+                    break;
+                case UserRevivalConfirmEvent rc:
+                    // OnRevivalConfirm (scenestategame.cpp:7356): m_n10ec for any PC; the effect is MyPC's. STILL-OPEN: m_n10e8 (FUN_141661ac0 clears both once the server tick passes it)
+                    if (users.TryGetValue(rc.ObjectId, out var cu)) cu.Death.RevivalCount = rc.Count;
+                    break;
+                case UserTombstoneEvent tb:
+                    // OnTombstone (scenestategame.cpp:9644) -> PC::FUN_14165d300 (pc.cpp:3464): the tomb's hit or break
+                    // and its bar's stage. STILL-OPEN: the hitter display of a break (kind 0) and the pet sound.
+                    if (users.TryGetValue(tb.ObjectId, out var tu)) tu.Death.Hit(tb.Kind, tb.Value);
                     break;
                 case SkillDamageEvent dmg:
                     // FUN_141671c20 (pcbase.cpp:3922) calls vfunc_112 whenever the target has an entry, a miss (type 2) too

@@ -5,7 +5,7 @@ using Ms2Godot.Movement;
 namespace Ms2Godot.Ui;
 
 /// <summary>
-/// The own dead PC's tomb hit counter: UITombStoneBar (ui id 0x4e64, movie uitombgaugebar, AS class TombGaugeBar), one
+/// A dead PC's tomb hit counter, the own PC's (the HUD's) or another player's (the remote layer's): UITombStoneBar (ui id 0x4e64, movie uitombgaugebar, AS class TombGaugeBar), one
 /// Entity per PC made from the cache linkage "tombGaugeBar" (UITombStoneBar ctor, uihpbar.cpp:555). PC::FUN_141657730
 /// (pc.cpp:1623) gets it, none while the revival is blocked.
 /// <list type="bullet">
@@ -15,18 +15,18 @@ namespace Ms2Godot.Ui;
 /// The break hides it (FUN_14165d550: vfunc_3, the keep-alive off).</item>
 /// <item>Hidden (vfunc_8, uihpbar.cpp:484) when the PC is not dead, the revival is blocked, there is no tomb, the
 /// keep-alive is off, or the camera eye is farther than HpBarDistance from the PC (m_54).</item>
-/// <item>Place (vfunc_10, vfunc_6): the tomb's x and y with the Eff_UI anchor's height (<see cref="PlayerNameTag.Anchor"/>),
+/// <item>Place (vfunc_10, vfunc_6): the tomb's x and y with the PC's Eff_UI anchor's height,
 /// moved down by OffsetPcHpbar and FUN_1412762d0's camera shift, 35 up, in stage units at the movie scale.</item>
 /// </list>
 /// STILL-OPEN: m_50 (vfunc_8's early show) is not known and taken as 0; PC::vfunc_122's PvP relation is not ported (no
-/// PvP state: 0); the end0-end4 labels are not played by any decompiled caller; other players' bars are not built.
+/// PvP state: 0); the end0-end4 labels are not played by any decompiled caller.
 /// </summary>
 public sealed partial class TombGaugeBar : CanvasLayer, IMovieLayer
 {
     public const string Movie = "uitombgaugebar", Linkage = "tombGaugeBar";
 
     readonly UiMovie movie;
-    readonly PlayerNameTag tag;
+    readonly Func<Vector3?> anchor;
     readonly float offset, distance;
     float u = 1;
     MovieClipNode clip;
@@ -39,13 +39,14 @@ public sealed partial class TombGaugeBar : CanvasLayer, IMovieLayer
     public Func<PlayerTombstone> Tomb = () => null;
     public Func<bool> Dead = () => false, RevivalBlocked = () => false;
 
-    public TombGaugeBar(UiAssets ui, ClientConstants constants, PlayerNameTag tag, Vector2 window)
+    /// <summary><paramref name="anchor"/>: the PC's Eff_UI point (null while it has none).</summary>
+    public TombGaugeBar(UiAssets ui, ClientConstants constants, Func<Vector3?> anchor, Vector2 window)
     {
         Name = "TombGaugeBar";
         Layer = 5;
         MovieLayerHost.Bind(this, Ms2.Ui.CommonDepth.HpBar);
         Offset = UiScale.MovieOrigin;
-        this.tag = tag;
+        this.anchor = anchor;
         offset = constants.Float("OffsetPcHpbar", 32);
         distance = constants.Float("HpBarDistance", 400);
         u = UiScale.For(window);
@@ -98,7 +99,7 @@ public sealed partial class TombGaugeBar : CanvasLayer, IMovieLayer
         if (!Dead()) return true;
         if (RevivalBlocked() || tomb == null || !IsInstanceValid(tomb)) return true;
         if (!keepAlive) return true;
-        if (tag?.Anchor == null) return true;
+        if (anchor?.Invoke() == null) return true;
         var eye = field?.CameraEye ?? camera.GlobalPosition;
         return eye.DistanceTo(tomb.GlobalPosition) > distance;      // FUN_140f48e20 > m_54 (the tomb stands at the PC)
     }
@@ -123,13 +124,13 @@ public sealed partial class TombGaugeBar : CanvasLayer, IMovieLayer
         camera ??= GetViewport().GetCamera3D();
         field ??= GetTree().GetFirstNodeInGroup(Field.Group) as Field;
         if (camera == null || Hidden()) { if (clip.Visible) { clip.Visible = false; needsOpen = true; } return; }
-        var anchor = tag.Anchor.Value;
-        var at = new Vector3(tomb.GlobalPosition.X, anchor.Y, tomb.GlobalPosition.Z);   // vfunc_10: the tomb's x,y, the anchor's z
+        var a = anchor().Value;
+        var at = new Vector3(tomb.GlobalPosition.X, a.Y, tomb.GlobalPosition.Z);   // vfunc_10: the tomb's x,y, the anchor's z
         if (camera.IsPositionBehind(at)) { clip.Visible = false; needsOpen = true; return; }
         clip.Visible = true;
         if (needsOpen) { needsOpen = false; Play("start"); }       // vfunc_5
         var p = camera.UnprojectPosition(at);
-        p.Y += (offset + tag.HeightAdjust(at) - 35f) * u;
+        p.Y += (offset + PlayerNameTag.PitchShift(field, at) - 35f) * u;
         clip.Position = UiScale.StagePoint(p, u);
     }
 }

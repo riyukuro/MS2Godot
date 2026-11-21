@@ -20,6 +20,10 @@ namespace Ms2Godot.Tests;
 ///   (StateSkill::vfunc_3: FUN_141675ed0, the hit report's entity is water).
 /// - The same cast on the stone PC after its jump plays the cast sequence; a walk record without a skill id is dropped
 ///   there (FUN_1417db550); at the sequence's end (EndOfSequence -> FUN_1417f0070) it goes to StateIdle.
+/// - A death record (state 0xc) on the stone PC (Net.RemoteDeath, as RemoteLayer wires it): the body hidden, DEAD playing, the
+///   tomb built at the body with the bar; a hit gives the bar's stage and plays "hit{stage}". The revive-in-place death on
+///   the water PC shows the body and plays MODEPVP_DEAD entry 1 with no tomb. An idle record leaves the death state:
+///   the body shown, the tomb gone.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class RemoteSyncCheck : Node3D
@@ -35,11 +39,15 @@ public partial class RemoteSyncCheck : Node3D
     string cast;
     int castStart, castEnd;
     const string CastSeq = "attack_01_a";
+    PackSet packs;
+    ModelBuilder builder;
+    readonly RemoteDeath stoneDeath = new(), wetDeath = new();
+    int? hitStage;
 
     public override void _Ready()
     {
-        var packs = PackSet.Shared(Settings.DataDir);
-        var builder = new ModelBuilder(ModelBuilder.SharedSpec(Settings.NifXml), packs);
+        packs = PackSet.Shared(Settings.DataDir);
+        builder = new ModelBuilder(ModelBuilder.SharedSpec(Settings.NifXml), packs);
         builder.TextureArchives = builder.TextureArchives.Prepend(ModelBuilder.ModelArchive).ToArray();
         Floor(new Vector3(0, -50, 0), new Vector3(2000, 100, 2000), 0, "stone");
         Floor(new Vector3(3000, -50, 0), new Vector3(2000, 100, 2000), MoveConfig.WaterGroup, "water");
@@ -154,6 +162,49 @@ public partial class RemoteSyncCheck : Node3D
                 bool pastEdge = stone.LedgeAhead(new System.Numerics.Vector3(0, 1, 0), 1500f, 100f, 50f);
                 if (overFloor || !pastEdge) fails.Add($"LedgeAhead over floor {overFloor} (want False), past the edge {pastEdge} (want True)");
                 GD.Print($"remote sync: LedgeAhead over floor {overFloor}, past edge {pastEdge}");
+                stone.States.StateChanged = null;
+                Vector3 Up(RemotePc p) => p.Body.GlobalPosition + new Vector3(0, 150, 0);
+                stone.States.DeadEntered = () => stoneDeath.Enter(this, packs, builder, stone, () => Up(stone), false, 1);
+                stone.States.DeadLeft = () => stone.SetBodyShown(true);
+                wet.States.DeadEntered = () => wetDeath.Enter(this, packs, builder, wet, () => Up(wet), true, 1);
+                wet.States.DeadLeft = () => wet.SetBodyShown(true);
+                stone.States.Die(0);
+                stone.States.Push(Rec(RemotePcStates.StateDead, 0, stone, default));
+                wet.States.Die(0);
+                wet.States.Push(Rec(RemotePcStates.StateDead, 0, wet, default));
+                break;
+            }
+            case 320:
+            {
+                if (stone.States.Cur != RemotePcStates.StateDead) fails.Add($"death: state {stone.States.Cur}");
+                if (stone.Visual.Visible) fails.Add("death: body shown");
+                if (stone.Anim.CurrentAnimation != stone.Anims.Name(ActionAnims.Act.Dead)) fails.Add($"death: sequence {stone.Anim.CurrentAnimation}");
+                var t = stoneDeath.Tomb;
+                if (t == null || !IsInstanceValid(t)) fails.Add("death: no tomb");
+                else if (t.GlobalPosition.DistanceTo(stone.Body.GlobalPosition) > 1f) fails.Add($"death: tomb at {t.GlobalPosition}, body at {stone.Body.GlobalPosition}");
+                if (stoneDeath.Bar == null) fails.Add("death: no tomb bar");
+                if (wet.States.Cur != RemotePcStates.StateDead) fails.Add($"revive in place: state {wet.States.Cur}");
+                if (!wet.Visual.Visible) fails.Add("revive in place: body hidden");
+                var pvp = wet.Anims.NameAt(ActionAnims.Act.ModePvpDead, 1);
+                if (pvp == null || wet.Anim.CurrentAnimation != pvp) fails.Add($"revive in place: sequence {wet.Anim.CurrentAnimation}, not {pvp}");
+                if (wetDeath.Tomb != null) fails.Add("revive in place: a tomb");
+                hitStage = stoneDeath.Hit(1, 5);         // hit 1 of 5: stage 1
+                GD.Print($"remote sync: death sequence {stone.Anim.CurrentAnimation}, tomb {(t != null && IsInstanceValid(t) ? t.State.Initial : "none")}, revive in place {wet.Anim.CurrentAnimation}, hit stage {hitStage?.ToString() ?? "none"}");
+                break;
+            }
+            case 330:
+                if (hitStage == null) fails.Add("death: the hit gave no stage");
+                else if (stoneDeath.Bar?.LastLabel != "hit" + hitStage) fails.Add($"death: bar label {stoneDeath.Bar?.LastLabel}, not hit{hitStage}");
+                stone.States.SetDead(false);
+                stone.States.Push(Rec(RemotePcStates.StateIdle, 0, stone, default));
+                break;
+            case 370:
+            {
+                if (stone.States.Cur == RemotePcStates.StateDead) fails.Add("revival: still dead");
+                if (!stone.Visual.Visible) fails.Add("revival: body hidden");
+                if (stoneDeath.Tomb != null && IsInstanceValid(stoneDeath.Tomb)) fails.Add("revival: tomb kept");
+                GD.Print($"remote sync: after the idle record state {stone.States.Cur}, body shown {stone.Visual.Visible}");
+                stoneDeath.Free(); wetDeath.Free();
                 bool ok = fails.Count == 0;
                 GD.Print($"remote sync: {(ok ? "ok" : "FAIL\n  " + string.Join("\n  ", fails))}");
                 GetTree().Quit(ok ? 0 : 1);

@@ -20,7 +20,8 @@ namespace Ms2Godot.Tests;
 /// - the body: hidden by the normal death (PC::vfunc_23(1)), shown by the revival and the revive-in-place death;
 /// - the tomb (PlayerTombstone): MS2TombStone and MS2TombStoneDark load with their kfm, play the initial sequence, a hit
 ///   plays the hit sequence and gives the bar's stage, it stays while the player is dead and is gone after the revival;
-/// - the bar's movie (uitombgaugebar): the class tombGaugeBar builds with the labels start and hit0-hit4.
+/// - the bar's movie (uitombgaugebar): the class tombGaugeBar builds with the labels start and hit0-hit4;
+/// - the own death effects: dead_Start_MyPC, dead_Start_MyPC_PvP and EFFECT_RESOLVE_PANELTY name effect xmls with parts.
 /// With MS2_SHOT_DIR set and a window, saves dead.png and revival.png. Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class PlayerDeathCheck : Node3D
@@ -95,7 +96,7 @@ public partial class PlayerDeathCheck : Node3D
             {
                 case 5: Dead(); break;
                 case 30: Shot("dead.png"); TombHeld(); Revival(); break;
-                case 60: Shot("revival.png"); TombGone(); AfterRevival(); InPlace(); FlagHold(); Bar(); Finish(); break;
+                case 60: Shot("revival.png"); TombGone(); AfterRevival(); InPlace(); FlagHold(); Bar(); Effects(); Finish(); break;
             }
         }
         catch (System.Exception e) { fails.Add($"{e.InnerException ?? e}"); Finish(); }
@@ -129,12 +130,14 @@ public partial class PlayerDeathCheck : Node3D
         Tomb();
     }
 
+    bool InDeath() => pc.State == Player.MoveState.Dead;
+
     void Tomb()
     {
-        var dark = PlayerTombstone.Build(this, packs, builder, pc, true);
+        var dark = PlayerTombstone.Build(this, packs, builder, pc, InDeath, true);
         Expect(dark != null && dark.Current == dark.State.Initial, $"dark tomb: {(dark == null ? "not built" : $"'{dark.Current}' (initial '{dark.State.Initial}')")}");
         dark?.QueueFree();
-        tomb = PlayerTombstone.Build(this, packs, builder, pc, false);
+        tomb = PlayerTombstone.Build(this, packs, builder, pc, InDeath, false);
         if (tomb == null) { fails.Add("tomb not built"); return; }
         string initial = tomb.Current;
         Expect(!string.IsNullOrEmpty(initial) && initial == tomb.State.Initial, $"tomb initial: '{initial}' (state '{tomb.State.Initial}')");
@@ -164,6 +167,23 @@ public partial class PlayerDeathCheck : Node3D
         Expect(missing.Count == 0, $"tombGaugeBar labels missing: {string.Join(",", missing)} (has {string.Join(",", clip.Labels.Keys)})");
         GD.Print($"player death: tombGaugeBar labels {string.Join(",", clip.Labels.Keys)}");
         clip.QueueFree();
+    }
+
+    /// <summary>The own death, revive-in-place and revival-penalty-end effects (LiveSession's CommonResource keys) name effect
+    /// xmls with parts.</summary>
+    void Effects()
+    {
+        var tables = Ms2.Ui.GameTables.Shared(packs, GameOptions.StringLanguage);
+        var fx = new Ms2.Formats.World.EffectTable(packs);
+        var got = new List<string>();
+        foreach (var key in new[] { Net.LiveSession.DeathEffectKey, Net.LiveSession.DeathEffectInPlaceKey, Net.LiveSession.RevivalPenaltyEndKey })
+        {
+            string path = tables.CommonResource(key);
+            int parts = fx.Get(path)?.Count ?? -1;
+            Expect(parts > 0, $"effect {key} '{path}': {(parts < 0 ? "no xml" : "no parts")}");
+            got.Add($"{key}={path}({parts})");
+        }
+        GD.Print($"player death: effects {string.Join(" ", got)}");
     }
 
     void Revival()

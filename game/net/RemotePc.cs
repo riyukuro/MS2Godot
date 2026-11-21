@@ -396,15 +396,41 @@ public sealed class RemotePc : IRemotePc
     public bool PlaySequence(string name, float rate)
     {
         if (!ReferenceEquals(name, seqName)) { seqName = name; seqKey = Anims?.Sequence(name, true); }
-        if (seqKey == null) return false;
-        if (seqKey == currentName && Anim.IsPlaying()) { Anim.SpeedScale = rate; return true; }
-        var tr = currentName == null ? null : Anims.Transition(currentName, seqKey) ?? Anims.DefaultTransition;
-        Anim.Play(seqKey, tr?.Duration ?? 0);
-        Anim.SpeedScale = rate;
-        currentAct = -1; currentName = seqKey; lastPos = -1;
-        return true;
+        return PlayKey(seqKey, rate);
     }
     string seqName, seqKey;
+
+    /// <summary>A loaded sequence by its AnimationPlayer key, outside the action table: the default transition from the
+    /// current sequence; nothing when it is already playing or the body lacks it.</summary>
+    bool PlayKey(string key, float rate)
+    {
+        if (key == null || !Anim.HasAnimation(key)) return false;
+        if (key == currentName && Anim.IsPlaying()) { Anim.SpeedScale = rate; return true; }
+        var tr = currentName == null ? null : Anims.Transition(currentName, key) ?? Anims.DefaultTransition;
+        Anim.Play(key, tr?.Duration ?? 0);
+        Anim.SpeedScale = rate;
+        currentAct = -1; currentName = key; lastPos = -1;
+        return true;
+    }
+
+    /// <summary>
+    /// StateDead::vfunc_4's body part (statedead.cpp:107-146) for another PC: the revive in place (<paramref name="inPlace"/>)
+    /// shows the body (vfunc_23(0)) and plays MODEPVP_DEAD (0x40) entry <paramref name="reviveAnim"/> once (PlayAnimation
+    /// with rate 1); the normal death hides the body (vfunc_23(1): the entity's IsVisible cleared) and plays DEAD (0x34,
+    /// vfunc_123). STILL-OPEN: vfunc_31(false) (the shadow off) and vfunc_23's tails are not ported.
+    /// </summary>
+    public void EnterDead(bool inPlace, int reviveAnim)
+    {
+        SetBodyShown(inPlace);
+        if (inPlace) PlayKey(Anims?.NameAt(Act.ModePvpDead, reviveAnim), 1f);
+        else PlayAction((int)Act.Dead, 1f, false);
+    }
+
+    /// <summary>PC::vfunc_23(!shown): the character root hidden or shown (StateDead::vfunc_5 shows it, statedead.cpp:181).</summary>
+    public void SetBodyShown(bool shown)
+    {
+        if (Visual.Visible != shown) Visual.Visible = shown;
+    }
 
     /// <summary>The held actor's lookup (RemoteLayer: FUN_141bd1200 and FUN_1416757c0 over the field's users and npcs).</summary>
     public Func<int, string, HoldTarget> HoldLookup;

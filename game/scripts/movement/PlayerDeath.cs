@@ -36,7 +36,8 @@ public partial class Player
     /// field camera keeps following the player's position (Field.UpdateCamera) with the body hidden, and zoom and rotation
     /// stay live.
     /// STILL-OPEN: vfunc_31 (the shadow) has no Godot counterpart on the player; vfunc_23's tails and random target
-    /// effect are not hidden; the death and revive effects of the common resource and the guide trigger 8 are not played here.
+    /// effect are not hidden; the guide trigger 8 is not played. The live session plays the MyPC death effect
+    /// (dead_Start_MyPC, or dead_Start_MyPC_PvP in place), not attached to the body and not removed early.
     /// </summary>
     public void EnterDead(bool reviveInPlace, int reviveAnim)
     {

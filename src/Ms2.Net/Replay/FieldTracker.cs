@@ -34,10 +34,18 @@ public sealed record UserStatEvent(double Time, PcStat Stat) : ReplayEvent(Time)
 public sealed record UserBattleEvent(double Time, int ObjectId, byte Emotion) : ReplayEvent(Time);
 /// <summary>OnUserState (0x36, scenestategame.cpp:5759): a PC's state from the server (<see cref="RemotePcStates.UserState"/>).</summary>
 public sealed record UserStateEvent(double Time, int ObjectId, byte State) : ReplayEvent(Time);
-/// <summary>OnDeadUser (0xA6, scenestategame.cpp:6533): PC::vfunc_137 (<see cref="RemotePcStates.Die"/>).</summary>
-public sealed record UserDeadEvent(double Time, int ObjectId) : ReplayEvent(Time);
-/// <summary>OnRevival (0x34, scenestategame.cpp:7387): FUN_14166ce50(0), the dead flag cleared.</summary>
-public sealed record UserRevivalEvent(double Time, int ObjectId) : ReplayEvent(Time);
+/// <summary>OnDeadUser (0xA6, scenestategame.cpp:6533): a set <paramref name="Flag"/> is PC::FUN_141661ba0(1) (the revival
+/// flag m_n10f0), then PC::vfunc_137 (<see cref="RemotePcStates.Die"/>).</summary>
+public sealed record UserDeadEvent(double Time, int ObjectId, bool Flag) : ReplayEvent(Time);
+/// <summary>OnRevival (0x34, scenestategame.cpp:7387): PC::FUN_141661ba0(<paramref name="Flag"/>) (the revival flag
+/// m_n10f0), then FUN_14166ce50(0), the dead flag cleared.</summary>
+public sealed record UserRevivalEvent(double Time, int ObjectId, byte Flag) : ReplayEvent(Time);
+/// <summary>OnRevivalConfirm (0x33, scenestategame.cpp:7356): FindPCById, then PC::FUN_141661a60(<paramref name="Count"/>)
+/// (m_n10ec) and FUN_1416619d0(<paramref name="EndTick"/>) (m_n10e8) for any PC; the effect and guide trigger are MyPC's.</summary>
+public sealed record UserRevivalConfirmEvent(double Time, int ObjectId, uint EndTick, int Count) : ReplayEvent(Time);
+/// <summary>OnTombstone (0x5D, scenestategame.cpp:9644): FindPCById, then PC::FUN_14165d300(<paramref name="Kind"/>,
+/// <paramref name="Value"/>, <paramref name="Hitter"/>) for any PC (the tomb's break or hit and its bar's stage).</summary>
+public sealed record UserTombstoneEvent(double Time, int ObjectId, byte Kind, byte Value, int Hitter) : ReplayEvent(Time);
 /// <summary>OnBuff (0x47, scenestategame.cpp:7591) for a PC in the field: the owner header names it (FUN_141bd1200; an owner
 /// that is not here returns). The packet goes to that PC's AdditionalCliList (FUN_1416749a0).</summary>
 public sealed record UserBuffEvent(double Time, BuffPacket Buff) : ReplayEvent(Time);
@@ -200,12 +208,22 @@ public sealed class FieldTracker {
             }
             case Ms2.Net.Inbound.DeadUser: {
                 var d = DeadUser.Read(p.Reader());
-                if (HasActor(d.ObjectId)) Events.Enqueue(new UserDeadEvent(Time, d.ObjectId));
+                if (HasActor(d.ObjectId)) Events.Enqueue(new UserDeadEvent(Time, d.ObjectId, d.Flag));
                 break;
             }
             case Ms2.Net.Inbound.Revival: {
                 var v = Revival.Read(p.Reader());
-                if (HasActor(v.ObjectId)) Events.Enqueue(new UserRevivalEvent(Time, v.ObjectId));
+                if (HasActor(v.ObjectId)) Events.Enqueue(new UserRevivalEvent(Time, v.ObjectId, v.Flag));
+                break;
+            }
+            case Ms2.Net.Inbound.RevivalConfirm: {
+                var c = RevivalConfirm.Read(p.Reader());
+                if (HasActor(c.ObjectId)) Events.Enqueue(new UserRevivalConfirmEvent(Time, c.ObjectId, c.EndTick, c.Count));
+                break;
+            }
+            case Ms2.Net.Inbound.Tombstone: {
+                var u = TombstoneUpdate.Read(p.Reader());
+                if (HasActor(u.ObjectId)) Events.Enqueue(new UserTombstoneEvent(Time, u.ObjectId, u.Kind, u.Value, u.Hitter));
                 break;
             }
             case Ms2.Net.Inbound.Prestige: {

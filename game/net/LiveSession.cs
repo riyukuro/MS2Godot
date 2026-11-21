@@ -69,13 +69,21 @@ public partial class LiveSession : Node
         catch (Exception ex) { GD.PushWarning($"death state: {ex.Message}"); }
         bool entering = player.State != Player.MoveState.Dead;
         player.EnterDead(inPlace, anim);
+        // the MyPC block (statedead.cpp:155-167): the revive in place plays dead_Start_MyPC_PvP (CommonResource +0x278,
+        // kept in m_nEffect), the normal death dead_Start_MyPC (+0x280)
+        if (entering) PlayOwnCommonEffect(inPlace ? DeathEffectInPlaceKey : DeathEffectKey);
         // StateDead::vfunc_4's normal branch (statedead.cpp:143-145): PC::FUN_14165cac0 builds the tomb on entering
         if (entering && !inPlace && triggerField != null && IsInstanceValid(triggerField) && fieldBuilder != null)
         {
             if (Tomb != null && IsInstanceValid(Tomb)) Tomb.QueueFree();
-            Tomb = Movement.PlayerTombstone.Build(triggerField, triggerField.Packs, fieldBuilder, player, OwnRevivalBlocked);
+            var body = player;
+            Tomb = Movement.PlayerTombstone.Build(triggerField, triggerField.Packs, fieldBuilder, body,
+                () => body.State == Player.MoveState.Dead, OwnRevivalBlocked);
         }
     }
+    /// <summary>CommonResource keys of StateDead's own effects (+0x278 m_strDeadStartMyPCPvP, +0x280 m_strDeadStartMyPC) and of
+    /// OnRevivalConfirm's (+0x358 m_strEffectResolvePanelty).</summary>
+    public const string DeathEffectInPlaceKey = "dead_Start_MyPC_PvP", DeathEffectKey = "dead_Start_MyPC", RevivalPenaltyEndKey = "EFFECT_RESOLVE_PANELTY";
     /// <summary>The own tombstone (PC m_spFC8) while it stands, else null or a freed node.</summary>
     public Movement.PlayerTombstone Tomb { get; private set; }
     ModelBuilder fieldBuilder;          // the field build's model builder, for the tomb
@@ -1461,7 +1469,7 @@ public partial class LiveSession : Node
             {
                 var c = RevivalConfirm.Read(p.Reader());    // OnRevivalConfirm (scenestategame.cpp:7356)
                 var (effect, guideTrigger) = Me.ApplyRevivalConfirm(c);
-                if (effect) GD.Print("live: own revival penalty ended");   // STILL-OPEN: the revival effect of the common resource
+                if (effect) PlayOwnCommonEffect(RevivalPenaltyEndKey);     // InsertEffect of CommonResource +0x358 at the own PC
                 if (guideTrigger) guide?.AddTrigger(GuideTrigger.RevivalPanelty, 0, 0);
             }
             else if (game.Is(p, Inbound.StateFallDamage))
