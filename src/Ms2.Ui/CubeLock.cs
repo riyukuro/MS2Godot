@@ -23,6 +23,28 @@ public sealed class CubeLock
     /// <summary>The money type that is never locked (ItemHousing priceCount == 3).</summary>
     public const int UnlockedMoneyType = 3;
 
+    /// <summary>
+    /// The lock with its housing and interior tables, or null when either does not load (throws or gives none). A lock
+    /// without its housing table finds no housing row and would call every item unlocked, letting a locked item out as
+    /// RequestCube 10; with no lock ConfirmPlacement stops at InventoryCheckOpen instead (CubeCraftState.Locks).
+    /// <paramref name="failed"/> gets the load's exception.
+    /// </summary>
+    public static CubeLock WithTables(Func<HousingTable> housing, Func<CubeInteriorTable> interiors, Action<Exception> failed = null)
+    {
+        try
+        {
+            var h = housing();
+            var i = interiors();
+            if (h == null || i == null) return null;
+            return new CubeLock { Housing = h, Interiors = i };
+        }
+        catch (Exception e)
+        {
+            failed?.Invoke(e);
+            return null;
+        }
+    }
+
     public HousingTable Housing;
     public CubeInteriorTable Interiors;
     public HousingState State = new();

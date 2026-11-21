@@ -121,6 +121,29 @@ public class ConfirmPlacementTests
     }
 
     [Test]
+    public void ALockWhoseTablesDidNotLoadIsNoneSoALockedItemIsNotSent()
+    {
+        var housing = new Ms2.Formats.World.HousingTable(System.Xml.Linq.XDocument.Parse($"<ms2><housing id=\"{ItemId}\" interiorLevel=\"3\"/></ms2>"));
+        var interiors = new Ms2.Formats.World.CubeInteriorTable(System.Xml.Linq.XDocument.Parse("<ms2/>"));
+        var c = Craft(2, 0, new Owner());
+        c.ConstructionUnlocked = false;
+        c.Locks = CubeLock.WithTables(() => housing, () => interiors);
+        Assert.That(c.Locks, Is.Not.Null);
+        c.Locks.IsFeatureEnabled = id => id == CubeLock.HousingLevelFeature;
+        Assert.That(Confirm(c, out _), Is.EqualTo(CubeCraftState.PlacementStop.Locked), "the tables loaded");
+
+        int failed = 0;
+        Assert.That(CubeLock.WithTables(() => throw new System.IO.IOException(), () => interiors, _ => failed++), Is.Null);
+        Assert.That(CubeLock.WithTables(() => housing, () => throw new System.IO.IOException(), _ => failed++), Is.Null);
+        Assert.That(CubeLock.WithTables(() => null, () => interiors), Is.Null);
+        Assert.That(failed, Is.EqualTo(2));
+
+        c.Locks = CubeLock.WithTables(() => throw new System.IO.IOException(), () => interiors);
+        Assert.That(Confirm(c, out var s), Is.EqualTo(CubeCraftState.PlacementStop.InventoryCheckOpen));
+        Assert.That(s, Is.Null);
+    }
+
+    [Test]
     public void CraftModeTwoSkipsTheLockCheck()
     {
         var c = Craft(2, 2, new Owner());

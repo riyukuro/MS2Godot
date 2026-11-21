@@ -204,14 +204,19 @@ public partial class LiveSession
 
     bool? housingLevelFeature;
     /// <summary>MyPC::FUN_1415302e0's inputs: the housing and interior tables, the housing state, feature 0xdb and the own
-    /// trophies, and the game event list's ignored construction lock ids.</summary>
+    /// trophies, and the game event list's ignored construction lock ids. Null when the tables do not load
+    /// (<see cref="Ms2.Ui.CubeLock.WithTables"/>): the placement then stops at InventoryCheckOpen.</summary>
     Ms2.Ui.CubeLock CubeLocks()
     {
-        var packs = Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir);
-        var l = new Ms2.Ui.CubeLock { State = Housing, IsGradeCleared = Achieves.IsGradeCleared, IsFeatureEnabled = HousingFeature,
-            IgnoredConstructionLock = Construction.IsIgnoredConstructionLock };
-        try { l.Housing = new Ms2.Formats.World.HousingTable(packs); l.Interiors = new Ms2.Formats.World.CubeInteriorTable(packs); }
-        catch (Exception e) { GD.Print($"live: housing tables unavailable ({e.Message})"); }
+        var l = Ms2.Ui.CubeLock.WithTables(
+            () => new Ms2.Formats.World.HousingTable(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir)),
+            () => new Ms2.Formats.World.CubeInteriorTable(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir)),
+            e => GD.Print($"live: housing tables unavailable ({e.Message}); cube placement stops at the inventory check"));
+        if (l == null) return null;
+        l.State = Housing;
+        l.IsGradeCleared = Achieves.IsGradeCleared;
+        l.IsFeatureEnabled = HousingFeature;
+        l.IgnoredConstructionLock = Construction.IsIgnoredConstructionLock;
         return l;
     }
 
