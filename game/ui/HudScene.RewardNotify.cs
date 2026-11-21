@@ -17,7 +17,7 @@ public partial class HudScene
     RewardNotifyController EnsureRewardNotify()
     {
         if (rewardNotify != null) return rewardNotify;
-        var c = rewardNotify = new RewardNotifyController { Sound = key => FieldAudio.Instance?.PlayUi(key) };
+        var c = rewardNotify = new RewardNotifyController { Sound = key => FieldAudio.Instance?.PlayUi(key), SubSceneId = () => Ms2Godot.Net.LiveSession.Instance?.Guide?.World.SubSceneId ?? 0 };
         c.OpenDialog += id => GD.Print($"reward notify: dialog 0x{id:x} is not in this HUD");
         rewardNotifyMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
         uiRoot.AddChild(rewardNotifyMovie);
