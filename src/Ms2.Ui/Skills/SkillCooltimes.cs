@@ -12,6 +12,8 @@ public sealed class SkillCooltime
     public ulong Key;
     /// <summary>m_fCombo: the combo window (FUN_1417664e0 only).</summary>
     public float Combo;
+    /// <summary>m_bCombo: set by FUN_1417664e0's combo flag (a cooldown started without the reduce and without the Started event).</summary>
+    public bool IsCombo;
     public uint Start, End;
     public int State;
 
@@ -29,8 +31,7 @@ public sealed class SkillCooltime
 /// CSkillSystem's cooldowns (m_mapCooltime, keyed by SkillData::GetCooldownKey) and charge uses (m_mapUses, keyed by
 /// SkillData::GetRechargeId), as the cooldown packets and the slot state read them (skillslot.cpp).
 /// <see cref="Started"/> / <see cref="Ended"/> stand for UIStatusEventDispatcher FUN_141b0e260 / FUN_141b0e2f0 with the key.
-/// STILL-OPEN: the own cast's cooldown (FUN_1417664e0 with its group reduce buffs and the cooldown-reduce stats) and the
-/// expiry's FUN_1417687e0 / FUN_141768a50 are not ported.
+/// STILL-OPEN: the expiry's FUN_1417687e0 / FUN_141768a50 are not ported.
 /// </summary>
 public sealed class SkillCooltimes
 {
@@ -41,6 +42,19 @@ public sealed class SkillCooltimes
     public event Action<ulong> Started, Ended;
 
     public SkillCooltimes(Func<uint, SkillData> skills) { this.skills = skills; }
+
+    /// <summary>
+    /// The ReduceRate of the owner's buffs for a cooldown group: a CSEReduceSkillGroupCooltimeCtx of the group passed through
+    /// Unk_SsBuffs::FUN_140972380 (skillslot.cpp:2280-2283). STILL-OPEN: no buff state feeds it, so 0.
+    /// </summary>
+    public Func<uint, float> GroupReduceRate = _ => 0f;
+    /// <summary>Unk_SsPc::FUN_1416628f0(0x3ea, id): the flat cooldown reduce of the special options. STILL-OPEN: 0.</summary>
+    public Func<uint, float> FlatReduce = _ => 0f;
+    /// <summary>
+    /// DAT_143aea120 (the ability rate 0x23, skillslot.cpp:2350) plus Unk_SsPc::FUN_1416628b0(0x3e9, id): the cooldown reduce
+    /// rate. STILL-OPEN: 0.
+    /// </summary>
+    public Func<uint, float> RateReduce = _ => 0f;
 
     public int Count => cooltimes.Count;
 
@@ -83,6 +97,65 @@ public sealed class SkillCooltimes
         c.Set(start, seconds);
         cooltimes[c.Key] = c;
         Started?.Invoke(c.Key);
+    }
+
+    /// <summary>
+    /// FUN_1417664e0 @0x1417664e0 (skillslot.cpp:2266): the own cast's cooldown of the skill's key from the start tick. A skill
+    /// with charges still cooling keeps its cooldown; else the key's cooldown is replaced. Without the combo flag the group
+    /// reduce of the buffs and the cooldown-reduce stats come off; a cooldown that comes to 0 takes the combo window instead,
+    /// and only a cooldown left is set (the Started event only without the combo flag).
+    /// STILL-OPEN: SkillData::m_bIgnoreReduceCooldown (:2288) has no loader here, so the stats always apply.
+    /// </summary>
+    public void Start(uint start, uint skillId, float cool, float combo, bool comboFlag, uint now)
+    {
+        if (skills(skillId) is not { } s) return;
+        if (s.RechargeMaxCount > 0 && Remain(skillId, false, now) > 0f) return;
+        cooltimes.Remove(s.CooldownKey);
+        float extra = 0f;
+        if (!comboFlag)
+        {
+            float reduce = 0f;
+            if (s.CooldownGroupId != 0) reduce = GroupReduceRate(s.CooldownGroupId);
+            float flat = 0f, rate = reduce;
+            flat += FlatReduce(skillId);
+            rate += RateReduce(skillId);
+            cool = (cool - flat) - cool * rate < 0f ? 0f : (cool - flat) - cool * rate;
+        }
+        if (NearlyZero(cool)) extra = combo;
+        cool += extra;
+        if (NearlyZero(cool)) return;
+        var c = new SkillCooltime { Key = s.CooldownKey, Combo = extra, IsCombo = comboFlag };
+        c.Set(start, cool);
+        cooltimes[c.Key] = c;
+        if (!comboFlag) Started?.Invoke(c.Key);
+    }
+
+    /// <summary>
+    /// MyPC::FUN_141525ff0 @0x141525ff0 (mypc.cpp:2539), called after the cast's send (MyPC::vfunc_102, :1232): the level's
+    /// cooldown, scaled by StateSkill::GetMotionSpeedScale with the combo flag when the row does not show it
+    /// (condition useCoolDownShowUI 0); a cooldown of 0 takes the combo window; less the time the running skill state had
+    /// already played; started from the record's send tick (<see cref="Start"/>).
+    /// STILL-OPEN: the record's m_n8c and DAT_143ae0fbc returns (both 0 here), and the shown cooldown's text-key path
+    /// (the sequence's combo / charging_combo / loopstart-loopend keys, the swap skill's FUN_1417664e0 and the continue
+    /// skill's loopend) are not ported, so the combo window is 0.
+    /// </summary>
+    public void StartCast(CastRecord r, float elapsed, uint now)
+    {
+        bool comboFlag = false;
+        float cool = r.Level.Cooldown;
+        float comboTime = 0f;
+        if (!NearlyZero(cool) && !r.Skill.Condition.UseCoolDownShowUI)
+        {
+            cool /= SkillCast.MotionSpeedScale(r);
+            comboFlag = true;
+        }
+        if (NearlyZero(cool) && comboTime > 0f)
+        {
+            cool = comboTime;
+            comboFlag = true;
+        }
+        cool = cool - elapsed < 0f ? 0f : cool - elapsed;
+        Start((uint)r.SendTick, r.Skill.Id, cool, comboTime, comboFlag, now);
     }
 
     /// <summary>

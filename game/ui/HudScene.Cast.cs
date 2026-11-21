@@ -72,8 +72,15 @@ public partial class HudScene
             return;
         }
         SkillCast.Casted(castWorld, r);
+        // MyPC::vfunc_102 (mypc.cpp:1197-1218): the running skill state's time, kept for a level with a sequence; the running
+        // cast's sequence time stands for StateSkill's m_nElapsed
+        float elapsed = 0f;
+        if (r.Level.HasSequenceName && ownCast != null && me.SkillSequencePosition > 0) elapsed = (float)me.SkillSequencePosition;
         var live = Net.LiveSession.Instance;
         bool sent = live?.SendCast(r, hudModel.IsFeatureEnabled(174)) ?? false;
+        // :1232: after the send, the cast's own cooldown (FUN_141525ff0), so the skill is not cast again before the server's
+        // cooldown packet
+        if (sent) live.Cooltimes.StartCast(r, elapsed, (uint)Net.LiveSession.CastTick());
         var motion = r.Motion < r.Level.Motions.Count ? r.Level.Motions[r.Motion] : null;
         if (motion != null && !string.IsNullOrEmpty(motion.SequenceName) && me.PlaySkillSequence(motion.SequenceName, motion.SequenceSpeed))
             StartOwnAttacks(me, r);

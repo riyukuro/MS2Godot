@@ -93,6 +93,17 @@ public sealed class CastWorld
 /// FUN_141769b70, then CastGate.Why (FUN_14176a380).</summary>
 public static class SkillCast
 {
+    /// <summary>
+    /// StateSkill::GetMotionSpeedScale @0x1417ec0d0 (stateskill.cpp:1241): the record's motion's sequence speed through the
+    /// owner's vfunc_98 (CLua::CalcPcAsiR of stat 0xd, pcbase.cpp:2278); 1 without a record or motion.
+    /// STILL-OPEN: CalcPcAsiR and SkillMotionData::FUN_140808000's bypass are not ported; the sequence speed is used as is.
+    /// </summary>
+    public static float MotionSpeedScale(CastRecord r)
+    {
+        if (r?.Level == null || r.Motion >= r.Level.Motions.Count) return 1f;
+        return r.Level.Motions[r.Motion].SequenceSpeed;
+    }
+
     /// <summary>The attack key's action (CKeyTable::GetSkillIdByKey, keytable.cpp:1457).</summary>
     public const int AttackAction = 0x49401;
 

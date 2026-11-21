@@ -4,14 +4,18 @@ using NUnit.Framework;
 
 namespace Ms2.Ui.Tests;
 
-/// <summary>CSkillSystem's cooldown table and charge uses (skillslot.cpp:1700-2040, 2645-2700).</summary>
+/// <summary>CSkillSystem's cooldown table and charge uses (skillslot.cpp:1700-2040, 2266-2307, 2645-2700).</summary>
 public class SkillCooltimesTests
 {
     static SkillDataTable Table() => new(() => new[] { XDocument.Parse("<ms2>"
         + "<skill id=\"100\"><basic mainType=\"1\"><stateAttr cooldownGroupID=\"7\" rechargeMaxCount=\"3\"/></basic></skill>"
         + "<skill id=\"101\"><basic mainType=\"1\"><stateAttr cooldownGroupID=\"7\"/></basic></skill>"
         + "<skill id=\"102\" originID=\"100\"><basic mainType=\"1\"><stateAttr rechargeShareOrigin=\"1\" rechargeMaxCount=\"3\"/></basic></skill>"
-        + "<skill id=\"103\"><basic mainType=\"1\"/></skill></ms2>") }, (e, n, _) => e.Elements(n).ToList());
+        + "<skill id=\"103\"><basic mainType=\"1\"/></skill>"
+        + "<skill id=\"104\"><basic mainType=\"1\"><condition useCoolDownShowUI=\"1\"/></basic>"
+        + "<level value=\"1\" cooldown=\"5000\"><motion sequenceName=\"A\" sequenceSpeed=\"2\"/></level></skill>"
+        + "<skill id=\"105\"><basic mainType=\"1\"/><level value=\"1\" cooldown=\"4000\"><motion sequenceSpeed=\"2\"/></level></skill>"
+        + "<skill id=\"106\"><basic mainType=\"1\"><stateAttr cooldownGroupID=\"8\"/></basic></skill></ms2>") }, (e, n, _) => e.Elements(n).ToList());
 
     static (SkillCooltimes C, List<string> Log) Make()
     {
@@ -150,5 +154,67 @@ public class SkillCooltimesTests
         // a Release run takes a one-off 24 B while the loop tiers up; per call nothing
         Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512), "100000 updates");
         Assert.That(ended, Is.EqualTo(1), "103 ended inside the loop");
+    }
+
+    static CastRecord Record(SkillDataTable t, uint id, int sendTick)
+    {
+        var d = t.GetSkillData(id);
+        return new CastRecord { Skill = d, Level = d.GetLevelData(1), Motion = 0, Tick = sendTick, SendTick = sendTick };
+    }
+
+    static SlotWorld Gate(SkillCooltimes c, Func<uint> now) => new() { CooldownRemain = (id, mode) => c.Remain(id, mode != 0, now()) };
+
+    [Test]
+    public void AnOwnCastCoolsFromItsSendTickAndRefusesARecast()
+    {
+        var (c, log) = Make();
+        var t = Table();
+        uint now = 2000;
+        var lv = t.GetSkillData(104).GetLevelData(1);
+        Assert.That(CastGate.Cost(Gate(c, () => now), lv, false), Is.EqualTo(0), "not cooling yet");
+        // FUN_141525ff0: a shown cooldown is not scaled by the motion speed; the state's elapsed 0.5 s comes off
+        c.StartCast(Record(t, 104, 1000), 0.5f, now);
+        Assert.That(c.Get(104) is { Start: 1000, End: 5500, IsCombo: false, Combo: 0f });
+        Assert.That(log, Is.EqualTo(new[] { "+68" }), "FUN_141b0e260 without the combo flag");
+        Assert.That(CastGate.Cost(Gate(c, () => now), lv, false), Is.EqualTo(2), "FUN_14176a530: still cooling");
+        now = 5500;
+        Assert.That(CastGate.Cost(Gate(c, () => now), lv, false), Is.EqualTo(0));
+    }
+
+    [Test]
+    public void AHiddenCooldownIsScaledByTheMotionSpeedWithoutTheReduce()
+    {
+        var (c, log) = Make();
+        var t = Table();
+        c.RateReduce = _ => 0.5f;
+        c.StartCast(Record(t, 105, 1000), 0f, 1000);
+        Assert.That(c.Get(105) is { Start: 1000, End: 3000, IsCombo: true }, "4 s / GetMotionSpeedScale 2, the combo flag skips the reduce");
+        Assert.That(log, Is.Empty, "no Started event with the combo flag");
+        uint now = 2000;
+        Assert.That(CastGate.Cost(Gate(c, () => now), t.GetSkillData(105).GetLevelData(1), false), Is.EqualTo(0x23));
+    }
+
+    [Test]
+    public void TheReduceComesOffAndANothingLeftTakesTheComboWindow()
+    {
+        var (c, _) = Make();
+        c.GroupReduceRate = g => g == 8 ? 0.25f : 0f;
+        c.FlatReduce = _ => 1f;
+        c.RateReduce = _ => 0.25f;
+        c.Start(0, 106, 10f, 0f, false, 0);
+        Assert.That(c.Get((8UL << 32) | 106).End, Is.EqualTo(4000u), "(10 - 1) - 10 * (0.25 + 0.25)");
+        c.Start(0, 106, 1f, 3f, false, 0);
+        Assert.That(c.Get((8UL << 32) | 106) is { End: 3000, Combo: 3f }, "the reduce leaves 0: the combo window");
+        c.Start(0, 106, 1f, 0f, false, 0);
+        Assert.That(c.Get((8UL << 32) | 106), Is.Null, "nothing left: the key is removed and none set");
+    }
+
+    [Test]
+    public void ACoolingChargeSkillKeepsItsCooldown()
+    {
+        var (c, _) = Make();
+        c.SetDuration(0, 100, 10f);
+        c.Start(1000, 100, 2f, 0f, false, 1000);
+        Assert.That(c.Get((7UL << 32) | 100).End, Is.EqualTo(10000u), "rechargeMaxCount 3 and still cooling");
     }
 }
