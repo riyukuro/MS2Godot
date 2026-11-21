@@ -26,7 +26,7 @@ public partial class HudScene
     void RevivalTick()
     {
         var live = Ms2Godot.Net.LiveSession.Instance;
-        if (live != revivalLive) { RevivalUnwatch(); if (live != null) { revivalLive = live; live.AutoReviveStarted = OpenAutoRevive; live.Me.Died += OnOwnDied; } }
+        if (live != revivalLive) { RevivalUnwatch(); if (live != null) { revivalLive = live; live.AutoReviveStarted = OpenAutoRevive; live.Me.Died += OnOwnDied; live.BuffsDisableRevival = () => ownBuffs?.IsDisableRevivalHere == true; } }
         if (RevivalOpen && !(live?.Me.Dead ?? false)) revival.Close();
         if (RevivalOpen) revival.Update((uint)Time.GetTicksMsec());
         if (autoRevive is { IsClosed: false }) autoRevive.Update((uint)Time.GetTicksMsec());     // UIAutoReviveCountDownDialog::vfunc_72

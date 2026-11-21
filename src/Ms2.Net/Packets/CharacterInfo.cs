@@ -400,7 +400,7 @@ public sealed class MyCharacter {
     }
 
     /// <summary>The last Tombstone update for the own player (OnTombstone): kind, value and hitter; <c>TombstoneHidden</c> after kind 0.
-    /// STILL-OPEN: the tombstone object in the field (PC m_spFC8) and the tombstone bar are not built.</summary>
+    /// The game's tombstone object (PC m_spFC8) and bar are built and hit outside this model.</summary>
     public byte TombstoneKind, TombstoneValue; public int TombstoneHitter; public bool TombstoneHidden;
 
     public bool Apply(TombstoneUpdate t) {

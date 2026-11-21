@@ -17,6 +17,10 @@ namespace Ms2Godot.Tests;
 ///   the list's end plays nothing (PCActionList::Name gives ""); another user state then leaves the death state for idle;
 /// - the dead flag alone (a player added dead): the body stays idle, the keys neither walk nor jump it, the death state still
 ///   enters (PC::vfunc_124); with the flag cleared the revival goes on to idle.
+/// - the body: hidden by the normal death (PC::vfunc_23(1)), shown by the revival and the revive-in-place death;
+/// - the tomb (PlayerTombstone): MS2TombStone and MS2TombStoneDark load with their kfm, play the initial sequence, a hit
+///   plays the hit sequence and gives the bar's stage, it stays while the player is dead and is gone after the revival;
+/// - the bar's movie (uitombgaugebar): the class tombGaugeBar builds with the labels start and hit0-hit4.
 /// With MS2_SHOT_DIR set and a window, saves dead.png and revival.png. Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class PlayerDeathCheck : Node3D
@@ -25,6 +29,9 @@ public partial class PlayerDeathCheck : Node3D
     readonly List<string> fails = new();
     readonly List<Ms2.Net.Packets.StateSync> sent = new();
     Player pc;
+    PlayerTombstone tomb;
+    PackSet packs;
+    ModelBuilder builder;
     MethodInfo step;
     int frames;
     const float Dt = 1f / 60;
@@ -32,8 +39,8 @@ public partial class PlayerDeathCheck : Node3D
 
     public override void _Ready()
     {
-        var packs = PackSet.Shared(Settings.DataDir);
-        var builder = new ModelBuilder(ModelBuilder.SharedSpec(Settings.NifXml), packs);
+        packs = PackSet.Shared(Settings.DataDir);
+        builder = new ModelBuilder(ModelBuilder.SharedSpec(Settings.NifXml), packs);
         builder.TextureArchives = builder.TextureArchives.Prepend(ModelBuilder.ModelArchive).ToArray();
         var sb = new StaticBody3D { Position = new Vector3(0, -50, 0) };
         sb.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(4000, 100, 4000) } });
@@ -87,8 +94,8 @@ public partial class PlayerDeathCheck : Node3D
             switch (frames)
             {
                 case 5: Dead(); break;
-                case 30: Shot("dead.png"); Revival(); break;
-                case 60: Shot("revival.png"); AfterRevival(); InPlace(); FlagHold(); Finish(); break;
+                case 30: Shot("dead.png"); TombHeld(); Revival(); break;
+                case 60: Shot("revival.png"); TombGone(); AfterRevival(); InPlace(); FlagHold(); Bar(); Finish(); break;
             }
         }
         catch (System.Exception e) { fails.Add($"{e.InnerException ?? e}"); Finish(); }
@@ -117,7 +124,46 @@ public partial class PlayerDeathCheck : Node3D
         double t = pc.Anim.CurrentAnimationPosition;
         pc.EnterDead(false, 1);
         Expect(pc.Anim.CurrentAnimationPosition == t, "a repeat death restarted the sequence");
+        Expect(!pc.Visual.Visible, "the body is shown while dead");
         GD.Print($"player death: dead '{dead}' held at {t:0.##} s, {sent.Count} sync records");
+        Tomb();
+    }
+
+    void Tomb()
+    {
+        var dark = PlayerTombstone.Build(this, packs, builder, pc, true);
+        Expect(dark != null && dark.Current == dark.State.Initial, $"dark tomb: {(dark == null ? "not built" : $"'{dark.Current}' (initial '{dark.State.Initial}')")}");
+        dark?.QueueFree();
+        tomb = PlayerTombstone.Build(this, packs, builder, pc, false);
+        if (tomb == null) { fails.Add("tomb not built"); return; }
+        string initial = tomb.Current;
+        Expect(!string.IsNullOrEmpty(initial) && initial == tomb.State.Initial, $"tomb initial: '{initial}' (state '{tomb.State.Initial}')");
+        int? stage = tomb.Hit(1, 5);
+        Expect(stage == 1 && tomb.State.State == Ms2.Ui.Hud.Tombstone.Hit, $"tomb hit 1 of 5: stage {stage}, state {tomb.State.State}");
+        GD.Print($"player death: tomb initial '{initial}', dark '{dark?.Current}'");
+    }
+
+    void TombHeld()
+    {
+        Expect(tomb != null && IsInstanceValid(tomb) && !tomb.IsQueuedForDeletion(), "the tomb went while the player is dead");
+        if (tomb == null || !IsInstanceValid(tomb)) return;
+        Expect(!string.IsNullOrEmpty(tomb.Current), "the tomb plays nothing after the hit");
+        GD.Print($"player death: tomb after the hit '{tomb.Current}', state {tomb.State.State}");
+    }
+
+    void TombGone() => Expect(tomb == null || !IsInstanceValid(tomb) || tomb.IsQueuedForDeletion(), "the tomb stayed after the revival");
+
+    void Bar()
+    {
+        var movie = new Ms2Godot.Ui.UiMovie(Ms2Godot.World.FieldContents.Ui(packs), Ms2Godot.Ui.TombGaugeBar.Movie);
+        var clip = movie.BuildClass(Ms2Godot.Ui.TombGaugeBar.Linkage, 1);
+        if (clip == null) { fails.Add("tombGaugeBar not built"); return; }
+        AddChild(clip);
+        var missing = new List<string>();
+        foreach (var l in new[] { "start", "hit0", "hit1", "hit2", "hit3", "hit4" }) if (!clip.HasLabel(l)) missing.Add(l);
+        Expect(missing.Count == 0, $"tombGaugeBar labels missing: {string.Join(",", missing)} (has {string.Join(",", clip.Labels.Keys)})");
+        GD.Print($"player death: tombGaugeBar labels {string.Join(",", clip.Labels.Keys)}");
+        clip.QueueFree();
     }
 
     void Revival()
@@ -126,6 +172,7 @@ public partial class PlayerDeathCheck : Node3D
         Expect(rev != null, "the body has no REVIVAL sequence");
         pc.EnterRevival();
         Expect(pc.State == Player.MoveState.Revival && pc.CurrentAnim == rev, $"revival: {pc.State} '{pc.CurrentAnim}' (REVIVAL '{rev}')");
+        Expect(pc.Visual.Visible, "the body is hidden while reviving");
         var at = pc.GlobalPosition;
         Steps(10);
         Expect(Flat(pc.GlobalPosition, at) < 0.01f, $"reviving body moved {Flat(pc.GlobalPosition, at):0.##}");
@@ -152,6 +199,7 @@ public partial class PlayerDeathCheck : Node3D
         string entry = pc.Anims.NameAt(Act.ModePvpDead, 1);
         pc.EnterDead(true, 1);
         Expect(entry == null || pc.CurrentAnim == entry, $"revive-in-place death: '{pc.CurrentAnim}' (MODEPVP_DEAD 1 '{entry}')");
+        Expect(pc.Visual.Visible, "the body is hidden by the revive-in-place death");
         Expect(pc.Anims.NameAt(Act.ModePvpDead, 99) == null, "MODEPVP_DEAD entry 99 resolved");
         pc.LeaveDeath();        // another user state let in (OnUserState's vfunc_59)
         Expect(pc.State == Player.MoveState.Idle, $"user state after death: {pc.State}");

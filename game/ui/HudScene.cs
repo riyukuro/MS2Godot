@@ -56,6 +56,7 @@ public partial class HudScene : Node, IUiStageHost
     public Ms2.Ui.Hud.GuideEventController GuideEvent { get; private set; }
     DamageText damageText;
     PlayerHpBar playerBar;
+    TombGaugeBar tombBar;
     DamageEffect damageEffect;              // UIDamageEffect, the low-HP screen effect
     int[] questShot;                        // --questlog TAB,SUBTAB[,QUEST]: the shot opens the quest log on these tabs, selecting the quest
     string questState;                      // --questlog-state LEVEL:ID,ID,..[:TRACKING]: the shot's quest state is these quests in progress at that level
@@ -352,6 +353,12 @@ public partial class HudScene : Node, IUiStageHost
         AddChild(nameTag);
         AddChild(playerBar = new PlayerHpBar(assets, constants, nameTag, window));                        // and its UIHpBar
         playerBar.Spawn(data.Player.HpCurrent, data.Player.HpMax);
+        AddChild(tombBar = new TombGaugeBar(assets, constants, nameTag, window)                          // UITombStoneBar (0x4e64)
+        {
+            Tomb = () => Ms2Godot.Net.LiveSession.Instance?.Tomb,
+            Dead = () => Ms2Godot.Net.LiveSession.Instance?.Me.Dead == true,
+            RevivalBlocked = () => Ms2Godot.Net.LiveSession.Instance?.OwnRevivalBlocked == true,
+        });
         AddChild(damageText = new DamageText(assets, constants, window));                // UIDamageText
         WatchDamageNumbers();
         WatchMinimapPings();
@@ -1241,6 +1248,7 @@ public partial class HudScene : Node, IUiStageHost
         player = null; field = null;
         playerNameTag?.FieldChanged();
         playerBar?.FieldChanged();
+        tombBar?.FieldChanged();
         if (minimap != null) { minimap.Host.Unload(); minimap.GetParent()?.RemoveChild(minimap); minimap.QueueFree(); }
         minimap = null; minimapSide = null;
         slotField = null; slotFieldId = null;       // the quick slots' field facts (FieldData of the field)

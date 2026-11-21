@@ -27,11 +27,16 @@ public partial class Player
     /// MyPC::vfunc_137's vfunc_59(0xc) (mypc.cpp:1346-1348) -> StateDead::vfunc_4 (@0x1417c2530, statedead.cpp:104-171).
     /// <paramref name="reviveInPlace"/>: a PvP point or a field with HasAutoRevivalType1 plays MODEPVP_DEAD (0x40) entry
     /// <paramref name="reviveAnim"/> (the PvP team, or the constant ShadowWorldAutoReviveDeadAction) instead of DEAD (0x34);
-    /// the normal case's tombstone (PC::FUN_14165cac0) is not built here. The state has no vfunc_8 and no exit of its own:
+    /// the normal case hides the body (vfunc_23(1): PC::vfunc_23 clears the entity's IsVisible 0xa0b6b179 and hides the
+    /// equipment) and the live session builds the tombstone (PC::FUN_14165cac0, <see cref="Movement.PlayerTombstone"/>); the
+    /// revive-in-place case shows it (vfunc_23(0)). The state has no vfunc_8 and no exit of its own:
     /// it lasts until the server's Revival (<see cref="EnterRevival"/>). Entering it again (each DeadUser) does nothing:
     /// CStateManager::ChangeState (statemanager.cpp:297) returns for the current state, State::vfunc_25 answering true.
-    /// STILL-OPEN: vfunc_23 (the fade flag 0xa0b6b179) and vfunc_31 (the shadow) have no Godot counterpart on the player;
-    /// the death and revive effects of the common resource and the guide trigger 8 are not played here.
+    /// The camera is not touched: neither the state (vfunc_4, vfunc_3, vfunc_5) nor the camera modes test the death, so the
+    /// field camera keeps following the player's position (Field.UpdateCamera) with the body hidden, and zoom and rotation
+    /// stay live.
+    /// STILL-OPEN: vfunc_31 (the shadow) has no Godot counterpart on the player; vfunc_23's tails and random target
+    /// effect are not hidden; the death and revive effects of the common resource and the guide trigger 8 are not played here.
     /// </summary>
     public void EnterDead(bool reviveInPlace, int reviveAnim)
     {
@@ -41,6 +46,7 @@ public partial class Player
         deadSequence = reviveInPlace ? Anims?.NameAt(Act.ModePvpDead, reviveAnim) : Anims?.Name(Act.Dead, WeaponPrefix);
         Enter(MoveState.Dead);
         kVel = Vector3.Zero;
+        SetBodyShown(reviveInPlace);
         if (deadSequence != null && Anim != null && Anim.HasAnimation(deadSequence)) PlaySequence(deadSequence, 1f, true);
     }
 
@@ -52,6 +58,7 @@ public partial class Player
     public void EnterRevival()
     {
         deadSequence = null;
+        SetBodyShown(true);
         CancelSkillSequence();
         Enter(MoveState.Revival);
         kVel = Vector3.Zero;
@@ -69,7 +76,15 @@ public partial class Player
     {
         if (State is not (MoveState.Dead or MoveState.Revival)) return;
         deadSequence = null;
+        SetBodyShown(true);
         Enter(MoveState.Idle);
+    }
+
+    /// <summary>PC::vfunc_23(!shown) on the body: the character root hidden or shown. Leaving StateDead shows it again
+    /// (StateDead::vfunc_5, statedead.cpp:181: vfunc_23(0)), for the revival and any other next state.</summary>
+    void SetBodyShown(bool shown)
+    {
+        if (Visual != null && Visual.Visible != shown) Visual.Visible = shown;
     }
 
     /// <summary>StateDead::vfunc_3 (statedead.cpp): vfunc_68(zero, t), gravity only; StateRevival: the sequence's end.</summary>

@@ -344,7 +344,7 @@ public sealed class KfAnimation
     {
         var B = kf.Blocks;
         var seq = B.First(b => b.Type == "NiSequenceData");
-        var anim = new KfAnimation { Name = kf.StrField(seq, "Name"), Duration = seq.Float("Duration") };
+        var anim = new KfAnimation { Name = kf.StrField(seq, "Name"), Duration = seq.Float("Duration"), Cycle = (int)seq.IntOr("Cycle Type", 0) };
         foreach (var ei in seq.Ints("Evaluators"))
         {
             if (ei < 0) continue;
@@ -360,7 +360,8 @@ public sealed class KfAnimation
         return anim;
     }
 
-    /// <summary>Cycle type of the controllers an animation came from (NiTimeController flags bits 1-2).</summary>
+    /// <summary>Cycle type: a KF sequence's own (NiSequenceData "Cycle Type", NiAnimationConstants::CycleType), or for
+    /// <see cref="FromControllers"/> that of the controllers (NiTimeController flags bits 1-2).</summary>
     public int Cycle;          // 0 loop, 1 reverse (back and forth), 2 clamp
 
     /// <summary>Block names of transform controller targets that are not NiNodes (rigid meshes).</summary>

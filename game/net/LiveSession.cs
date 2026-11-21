@@ -67,8 +67,22 @@ public partial class LiveSession : Node
             if (inPlace) anim = FieldContents.Constants(packs).Int("ShadowWorldAutoReviveDeadAction", 1);
         }
         catch (Exception ex) { GD.PushWarning($"death state: {ex.Message}"); }
+        bool entering = player.State != Player.MoveState.Dead;
         player.EnterDead(inPlace, anim);
+        // StateDead::vfunc_4's normal branch (statedead.cpp:143-145): PC::FUN_14165cac0 builds the tomb on entering
+        if (entering && !inPlace && triggerField != null && IsInstanceValid(triggerField) && fieldBuilder != null)
+        {
+            if (Tomb != null && IsInstanceValid(Tomb)) Tomb.QueueFree();
+            Tomb = Movement.PlayerTombstone.Build(triggerField, triggerField.Packs, fieldBuilder, player, OwnRevivalBlocked);
+        }
     }
+    /// <summary>The own tombstone (PC m_spFC8) while it stands, else null or a freed node.</summary>
+    public Movement.PlayerTombstone Tomb { get; private set; }
+    ModelBuilder fieldBuilder;          // the field build's model builder, for the tomb
+    /// <summary>The own buffs' IsDisableRevivalHere, set by the HUD that holds the buff list; false without one.</summary>
+    public Func<bool> BuffsDisableRevival = () => false;
+    /// <summary>PC::IsRevivalBlocked (pc.cpp:2009) for the own player.</summary>
+    public bool OwnRevivalBlocked => Me.RevivalBlocked || BuffsDisableRevival();
     /// <summary>The own body's <see cref="Player.DeadFlag"/> follows MyCharacter.DeathOnlyStates (PC::vfunc_124, pc.cpp:1199)
     /// after each packet: the own FieldAddUser with no health, DeadUser, Revival and the health stat move it.</summary>
     void SyncDeadFlag()
@@ -875,6 +889,7 @@ public partial class LiveSession : Node
     {
         if (entry == null) return;
         triggerField = field;
+        fieldBuilder = builder;
         foreach (var body in pendingTriggers) ApplyTrigger(field, body);
         pendingTriggers.Clear();
         regionSkills.Clear(); RegionSkillLog.Clear();
@@ -1454,7 +1469,11 @@ public partial class LiveSession : Node
                 int g = Me.ApplyFallDamage(StateFallDamage.Read(p.Reader()));    // OnStateFallDamage (scenestategame.cpp:5815)
                 if (g != 0) guide?.AddTrigger(GuideTrigger.FallDamage, g, 0);
             }
-            else if (game.Is(p, Inbound.Tombstone)) Me.Apply(TombstoneUpdate.Read(p.Reader()));   // OnTombstone (scenestategame.cpp:9644)
+            else if (game.Is(p, Inbound.Tombstone))
+            {
+                var t = TombstoneUpdate.Read(p.Reader());      // OnTombstone (scenestategame.cpp:9644) -> PC::FUN_14165d300
+                if (Me.Apply(t) && Tomb != null && IsInstanceValid(Tomb)) Tomb.Hit(t.Kind, t.Value);
+            }
             else if (game.Is(p, Inbound.RevivalCount)) Me.Apply(RevivalCount.Read(p.Reader()));   // OnRevivalCount (scenestategame.cpp:4092)
             else if (game.Is(p, Inbound.DungeonReviveCount)) Me.Apply(DungeonReviveCount.Read(p.Reader()));   // OnDungeonReviveCount (:5074)
             else if (game.Is(p, Inbound.AutoRevive)) AutoReviveStarted?.Invoke(AutoRevive.Read(p.Reader()).DurationMs);   // OnAutoRevive (:4332)
