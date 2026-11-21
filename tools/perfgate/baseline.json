@@ -343,14 +343,14 @@
       "limit": 43117
     },
     "idle_3_open.install.nodes": {
-      "min": -220,
-      "max": -220,
-      "limit": -204
+      "min": -16,
+      "max": -16,
+      "limit": 0
     },
     "idle_3_open.install.objects": {
-      "min": -220,
-      "max": -220,
-      "limit": -204
+      "min": -16,
+      "max": -16,
+      "limit": 0
     },
     "idle_3_open.install.total_bytes_per_frame": {
       "median": 31255.75,
@@ -428,14 +428,14 @@
       "limit": 44104
     },
     "idle_3_open.session.nodes": {
-      "min": -220,
-      "max": -220,
-      "limit": -204
+      "min": -16,
+      "max": -16,
+      "limit": 0
     },
     "idle_3_open.session.objects": {
-      "min": -220,
-      "max": -220,
-      "limit": -204
+      "min": -16,
+      "max": -16,
+      "limit": 0
     },
     "idle_3_open.session.total_bytes_per_frame": {
       "median": 31832,
