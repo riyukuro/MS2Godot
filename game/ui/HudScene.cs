@@ -3298,6 +3298,7 @@ public partial class HudScene : Node, IUiStageHost
         TickOwnAttacks();                                     // StateSkill::TextKeyEvent: the own cast's attack points
         TickOwnSync();                                        // StateSkill::SendChargeState: the mode 2 sync
         TickCooltimes();                                      // CSkillSystem::Update: the cooldowns
+        TickCompact();                                        // CSkillSystem::Update's compact lists, State::vfunc_8's pick
         ChatLog.Process();                                    // UIMessengerBrowser::vfunc_15
         foreach (var (_, c) in messengers) c.Process();      // UIMessenger::vfunc_15
         groupBrowser?.Process();                              // UIGroupMessengerBrowser::vfunc_15

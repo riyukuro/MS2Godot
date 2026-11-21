@@ -176,6 +176,14 @@ public static class CastGate
         return 0;
     }
 
+    // A loop, not a lambda: a closure over the field would be allocated at each call's start (the per-frame pick asks this).
+    static bool InMapCodes(List<uint> codes, int mapId)
+    {
+        for (int i = 0; i < codes.Count; i++)
+            if (codes[i] != 0 && mapId == codes[i]) return true;
+        return false;
+    }
+
     /// <summary>
     /// FUN_14176a8c0 (:3150): the skill's conditions. <paramref name="requestSkill"/> is the request's skill (m_nSkillId), whose
     /// learnt rank is checked; <paramref name="itemUid"/> its item (m_n40), 0 from a quick slot.
@@ -198,7 +206,7 @@ public static class CastGate
             if (!w.HasEnabledEffect(e)) return 0x14;
         if (c.OnlyShadowWorld && map.ShadowContinent == 0) return 0x15;
         if (c.OnlyFlyableMap && !map.CheckFly) return 0x16;
-        if (c.RequireMapCodes.Count != 0 && !c.RequireMapCodes.Any(code => code != 0 && map.Id == code)) return 0x17;
+        if (c.RequireMapCodes.Count != 0 && !InMapCodes(c.RequireMapCodes, map.Id)) return 0x17;
         foreach (var g in c.HasNotAdditionalEffectGroup)
             if (w.HasEnabledEffectGroup(g)) return 0x18;
         if (w.IsBattleRiding && !c.AllowBattleRidingState) return 0x19;

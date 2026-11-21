@@ -349,15 +349,32 @@ public sealed class KeyTable : IKeyTable
     public void GetBoundKeys(List<int> into, ServerKeyTable slots)
     {
         into.Clear();
-        if (boundIds.Length != keys.Count)
-        {
-            boundIds = new int[keys.Count];
-            boundKeys = new Key[keys.Count];
-            keys.Keys.CopyTo(boundIds, 0);
-            keys.Values.CopyTo(boundKeys, 0);
-        }
+        EnsureBound();
         for (int i = 0; i < boundIds.Length; i++)
             if (IsKeyEntryValid(boundKeys[i], slots)) into.Add(boundIds[i]);
+    }
+
+    void EnsureBound()
+    {
+        if (boundIds.Length == keys.Count) return;
+        boundIds = new int[keys.Count];
+        boundKeys = new Key[keys.Count];
+        keys.Keys.CopyTo(boundIds, 0);
+        keys.Values.CopyTo(boundKeys, 0);
+    }
+
+    /// <summary>
+    /// CKeyTable::IsActionKeyDown @0x14142c270 (keytable.cpp:1037-1048): a key m_actionKeys holds for <paramref name="action"/>
+    /// (a key bound to it, any priority) is down (<paramref name="isDown"/>, IsKeyDownGated). 0 B (the keys' entries are read
+    /// in place, so a rebind is seen).
+    /// </summary>
+    public bool IsActionKeyDown(long action, Func<int, bool> isDown)
+    {
+        if (action == 0) return false;   // RebuildActionKeyMaps (:2663) leaves code 0 out
+        EnsureBound();
+        for (int i = 0; i < boundKeys.Length; i++)
+            if (boundKeys[i].Code == action && isDown(boundIds[i])) return true;
+        return false;
     }
 
     /// <summary>The held item action (CKeyTable::GetSkillIdByKey, keytable.cpp:1466).</summary>

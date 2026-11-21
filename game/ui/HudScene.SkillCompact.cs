@@ -59,7 +59,9 @@ public partial class HudScene
             c.RequestTabs += () => Callable.From(() => c.OnSkillMacro(Ms2.Net.Packets.SkillMacroPacket.Read(
                 new Maple2.PacketLib.Tools.ByteReader(Ms2.Net.Packets.SkillMacroPacket.Write(0, Array.Empty<Ms2.Net.Packets.SkillMacroTab>()))))).CallDeferred();
             c.Save += tabs => GD.Print($"skill compact: {tabs.Count} tabs are not sent (no live session)");
+            c.ConfigsChanged += FeedCompactConfigs;   // SetCompactConfigs (FUN_140fa1400)
         }
+        c.HotKeyCapture += on => compact.HotKeyCapture(on, (uint)Time.GetTicksMsec());   // FUN_141767df0
         var m = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
         c.Unloaded += () =>
         {

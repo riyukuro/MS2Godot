@@ -9,11 +9,12 @@ namespace Ms2.Ui.Hud;
 /// of the compact skill control movie uiskillcompactcontrol (GetTypeName @0x140f9e330). Up to three named tabs, each with a
 /// set of ticked skills of the job (CSkillCompactControlTable) and a hot key bound to the tab's key action 0xaae61..0xaae63.
 /// The tabs come from the server (0xD1 mode 0, asked for at load) and go back on close (0x7B mode 1).
-/// <para>STILL-OPEN: the skill system side. FUN_141767df0 (the hot key capture flag of CSkillSystem) is raised as
-/// <see cref="HotKeyCapture"/>, FUN_140fa1400 (CSkillSystem::SetCompactConfigs) as <see cref="ConfigsChanged"/>; what the skill
-/// system does with them (the compact auto cast) is not ported. The capture's combo prefix keys (DAT_143acbd08), the
+/// <para>The skill system side: FUN_141767df0 (the hot key capture flag of CSkillSystem) is raised as
+/// <see cref="HotKeyCapture"/>, FUN_140fa1400 (CSkillSystem::SetCompactConfigs) as <see cref="ConfigsChanged"/>; the compact
+/// auto cast that takes them is <see cref="Skills.CompactCast"/>.</para>
+/// <para>STILL-OPEN: the capture's combo prefix keys (DAT_143acbd08), the
 /// platform check of a typed tab name (IClientPlatform::vfunc_37, taken as accepted), the gamepad key set (FUN_1414319f0,
-/// taken as off) and the hot key's text colour (FUN_140d01340) are not either.</para>
+/// taken as off) and the hot key's text colour (FUN_140d01340) are not ported.</para>
 /// </summary>
 public sealed class SkillCompactControlController : UiController, IMessageBoxListener
 {

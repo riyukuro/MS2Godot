@@ -82,6 +82,8 @@ public partial class HudScene
         castKeyHeld = castKeyWorld.Weapon is { } h ? weaponActions.FindAction(h.Right, h.Left) : null;
         if (id == 0) id = keys.GetSkillIdByKey(dik, castKeyWorld.HasPc, CastAttackSkill, null, slots);
         if (id == 0) return 0;
+        // mypc.cpp:1682-1685: the compact pick comes first, and with one the key pick is not asked (the request's key is 0)
+        if (CompactPick(false) is var cp && cp != 0) { r = RequestOwn(CompactWorld(), cp, compactHeld, 0); return 2; }
         r = RequestOwn(castKeyWorld, (uint)id, castKeyHeld, dik);
         return 2;
     }
@@ -119,7 +121,7 @@ public partial class HudScene
     /// STILL-OPEN, not fired here: FUN_141525580's refusals (states 0x2b / 0x2f, FUN_141527960, mypc.cpp:2436-2443) and its
     /// IsUnrideOnUse ride-off (:2447-2470); the item kind and quick slot item checks with the binding confirm (:1167-1193);
     /// NotifyUseSKill and the DPS meter (:1206, :1210); a level with a sequence while riding, and a level without one
-    /// (the ridee FUN_141706650 / FUN_141524a80 and StateSkill::FireFirstAttack, :1219-1226); FUN_141767990 (:1228).
+    /// (the ridee FUN_141706650 / FUN_141524a80 and StateSkill::FireFirstAttack, :1219-1226).
     /// <paramref name="key"/>: the DIK key of the press (kReq.m_n34, mypc.cpp:1690-1729), 0 for a clicked slot without a key;
     /// the record keeps it (m_nA4, skillrecord.cpp:192) for the charging skill's release (<see cref="TickOwnSync"/>).
     /// </summary>
@@ -221,6 +223,17 @@ public partial class HudScene
     /// </summary>
     void PollOwnPress()
     {
+        if (framePressFrame != Engine.GetProcessFrames())
+        {
+            // mypc.cpp:1682: the compact pick first; with one the key pick is not asked
+            var cw = OwnPressWindow();
+            var cr = CompactPress(cw, out bool picked);
+            if (picked)
+            {
+                if (cr != null && cr != ownQueued && (!OwnSkillStateRuns() || !OwnPress(cr))) RefusePoll(0, cr.Skill, cw);
+                return;
+            }
+        }
         int dik = PollOwnKey(out bool pressed);
         if (dik == 0 || pressed) return;
         var s = OwnKeySkill(dik);
@@ -346,6 +359,11 @@ public partial class HudScene
     /// cooling record for its own key and skill; null for none or a key refused before in this state.</summary>
     CastRecord OwnEndPoll()
     {
+        if (framePressFrame != Engine.GetProcessFrames())
+        {
+            var cr = CompactPress(ownWindow, out bool picked);   // mypc.cpp:1682: the compact pick first
+            if (picked) return cr;
+        }
         int dik = PollOwnKey(out bool pressed);
         if (pressed) return framePress;
         if (dik == 0) return null;
@@ -427,6 +445,7 @@ public partial class HudScene
                 StartOwnAttacks(me, r);
             delay = elapsed;
         }
+        CompactUsed(r);   // :1228 FUN_141767990, whether or not it was sent
         // :1230: after the send, the cast's own cooldown (FUN_141525ff0) from the sequence's text keys
         if (sent) live.Cooltimes.StartCast(r, seq, delay, now);
         // :1232: PCBase::FUN_141675ed0 is 0 without a ridee (STILL-OPEN: rides), so the charge use counts
@@ -622,8 +641,7 @@ public partial class HudScene
     /// A continue round's sends (loopend :921-924, FUN_1417f11d0 :1591-1595): the mode 3 (CSkillRecord::SendSkill), the round's
     /// cooldown (FUN_1417f16f0 @0x1417f16f0: a continue skill, not a charging skill's marked record; the loop's length at the
     /// state's speed less the charge tick, FUN_1417664e0 from the send tick with the combo flag) and the charge use
-    /// (OnRechargeSkillUsed of the running record).
-    /// STILL-OPEN: FUN_141767990 (the skill's level use) is not ported.
+    /// (OnRechargeSkillUsed of the running record), with FUN_141767990's compact chain use (:926, :1594) before it.
     /// </summary>
     void SendOwnRound(Net.LiveSession live, CastRecord r, uint now)
     {
@@ -631,6 +649,7 @@ public partial class HudScene
         if (r.Skill.Continue && !(r.Skill.ChargingSkill && r.Charged))
             live.Cooltimes.Start((uint)r.SendTick, r.Skill.Id,
                 SkillLoop.RoundCooldown(ownLoopStartKey, ownLoopEndKey, ownLoop.Speed, ownLoop.ChargeTick), 0f, true, now);
+        CompactUsed(r);
         live.Cooltimes.OnRechargeSkillUsed(r.Skill, now);
         GD.Print($"cast: skill {r.Skill.Id} round {r.SendCount}");
     }
@@ -662,7 +681,7 @@ public partial class HudScene
     /// Then the charging skill's release (:698-722, <see cref="SkillLoop.Release"/>): its cast key (the record's m_nA4,
     /// <see cref="CastKeyDown"/>) up outside m_bLoop skips the sequence to "charging_attack" (at 1/frequency, the kf's time
     /// here) and returns before the sync that frame.
-    /// STILL-OPEN: the skill system's queued key (FUN_1417674a0(1), the Lapen input) does not count as held; mouse and pad
+    /// STILL-OPEN: mouse and pad
     /// bindings are not read; the record's rotation does not turn during the state (FUN_1417edc20).
     /// </summary>
     void TickOwnSync()
@@ -670,7 +689,8 @@ public partial class HudScene
         if (!OwnSkillStateRuns()) return;
         if (ownLoop.HoldCheckRuns(ownCast.Skill))
         {
-            bool held = OwnSkillKeyHeld((int)ownCast.Skill.OriginId), charging = ownCast.Skill.ChargingSkill;
+            // :651-660 a key of the skill down, :662-667 else the compact pick with bAny (FUN_1417674a0(1)) is the origin id
+            bool held = OwnSkillKeyHeld((int)ownCast.Skill.OriginId) || CompactPick(true) == ownCast.Skill.OriginId, charging = ownCast.Skill.ChargingSkill;
             bool castable = held && !charging && CastGate.CanCast(OwnHoldWorld(), ownCast.Skill.Id);
             ownLoop.Hold(held, ownLoopStartKey >= 0 && ownLoopEndKey >= 0, charging, castable);
         }

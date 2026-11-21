@@ -65,6 +65,26 @@ public class KeySkillTests
         Assert.That(Alloc.Least(() => { for (int i = 0; i < 1000; i++) t.GetBoundKeys(into, s); }), Is.LessThan(512));
     }
 
+    [Test] public void AnActionKeyIsDownWhenAnyKeyBoundToItIs()
+    {
+        // CKeyTable::IsActionKeyDown (keytable.cpp:1037-1048) over m_actionKeys (RebuildActionKeyMaps :2654-2668: code 0 left out)
+        var t = Keys(new KeyBinding(KeyQ, 1, 777, 0, 0), new KeyBinding(KeyE, 1, 777, 0, 1), new KeyBinding(KeyR, 1, 0x49401, 0, 0));
+        var down = new HashSet<int>();
+        Func<int, bool> isDown = down.Contains;
+        Assert.That(t.IsActionKeyDown(777, isDown), Is.False);
+        down.Add(KeyR);
+        Assert.That(t.IsActionKeyDown(777, isDown), Is.False, "a key of another action");
+        down.Add(KeyE);
+        Assert.That(t.IsActionKeyDown(777, isDown), Is.True, "any priority");
+        down.Clear(); down.Add(KeyQ);
+        Assert.That(t.IsActionKeyDown(777, isDown), Is.True);
+        Assert.That(t.SetBinding(KeyQ, 1, 0x49401, 0, 0), Is.True);
+        Assert.That(t.IsActionKeyDown(777, isDown), Is.False, "the rebind is seen");
+        down.Add(KeyZ);
+        Assert.That(t.IsActionKeyDown(0, isDown), Is.False, "action 0 has no keys");
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 1000; i++) t.IsActionKeyDown(777, isDown); }), Is.LessThan(512));
+    }
+
     [Test] public void TheKeysOfASkillNeedAValidEntryAndTheSkill()
     {
         // CKeyTable::FUN_14142c6c0 (keytable.cpp:1125-1138) over IsKeyEntryValid (:1292-1314)

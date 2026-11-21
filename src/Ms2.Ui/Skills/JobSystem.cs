@@ -52,6 +52,7 @@ public sealed class JobSystem
 {
     readonly SkillTables t;
     readonly SortedDictionary<uint, JobSkill> skills = new();     // m_skills: std::map by id
+    readonly Dictionary<uint, JobSkill> byId = new();              // the same skills for FindSkill (a SortedDictionary lookup allocates)
     readonly Dictionary<int, int> usedPoints = new();
 
     public int Rank { get; private set; }
@@ -74,11 +75,12 @@ public sealed class JobSystem
         Rank = rank;
         Job = t.Jobs.GetJobData(jobGroup);
         skills.Clear();
+        byId.Clear();
         foreach (var b in list)
         {
             var s = new JobSkill((uint)b.SkillId) { Level = (ushort)b.Level, Changed = b.Changed, Learned = b.Learned, Extra = b.Extra };
             if (!s.Init(Job, t)) continue;
-            skills.TryAdd(s.Id, s);
+            if (skills.TryAdd(s.Id, s)) byId[s.Id] = s;
         }
         RecalcPoints();
     }
@@ -91,7 +93,7 @@ public sealed class JobSystem
     public int SubJob => Job?.GetSubJob(Rank) ?? 0;
 
     /// <summary>FindSkill @0x1406394d0 (:341).</summary>
-    public JobSkill FindSkill(uint id) => skills.TryGetValue(id, out var s) ? s : null;
+    public JobSkill FindSkill(uint id) => byId.TryGetValue(id, out var s) ? s : null;
 
     /// <summary>GetSkills @0x1406395c0 (:351): in id order, learnt ones only or all, sub skills left out or not.</summary>
     public List<JobSkill> GetSkills(bool learnedOnly, bool noSubSkills) =>
