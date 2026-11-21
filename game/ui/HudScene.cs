@@ -225,6 +225,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchMeso?.Invoke();
         unwatchMeso = null;
         foreach (var (_, c) in messengers) ChatLog.Windows.Remove(c);
+        ChatLog.WindowCreated -= OnMessengerCreated;
+        ChatLog.WindowClosed -= OnMessengerClosed;
         if (ReferenceEquals(ChatLog.ToggleDynamicAction, toggleDynamicAction)) ChatLog.ToggleDynamicAction = null;
         if (groupBrowser != null)
         {
@@ -852,7 +854,7 @@ public partial class HudScene : Node, IUiStageHost
             live.UserChat += onChat;
             Action<Ms2.Net.Packets.ChatItemLinks> onLinks = ChatLog.OnItemLinks;
             live.UserChatItemLink += onLinks;
-            unwatchChat = () => { live.UserChat -= onChat; live.UserChatItemLink -= onLinks; ChatLog.SendPacket = null; ChatLog.ChatBalloon = null; };
+            unwatchChat = () => { live.UserChat -= onChat; live.UserChatItemLink -= onLinks; ChatLog.SendPacket = null; ChatLog.SendSticker = null; ChatLog.ChatBalloon = null; };
         }
     }
     Action unwatchGemErrors, unwatchNotices, unwatchChat;
@@ -887,6 +889,11 @@ public partial class HudScene : Node, IUiStageHost
         {
             GD.Print($"chat: send kind {chat.Kind} ({chat.Message.Length} chars)");
             live.SendChat(chat);
+        };
+        ChatLog.SendSticker = sticker =>       // the chat window's emoticon sends (ChatSticker 0xB7)
+        {
+            GD.Print($"chat: sticker mode {sticker.Mode} id {sticker.EmoticonId}");
+            live.SendChat(sticker);
         };
         ChatLog.IsInParty = () => live.Party.IsInParty;
         live.MasteryTable = hudModel.Tables.MasteryRecipes;   // OnMastery's grade of an exp value
@@ -1288,6 +1295,10 @@ public partial class HudScene : Node, IUiStageHost
                 var c = new MessengerController(docs[i], $"messengerdialog{i}.xml", true, ChatLog);
                 messengers.Add((new MovieDialog(assets, c, hudModel, window), c));
             }
+            ChatLog.WindowCreated += OnMessengerCreated;
+            ChatLog.WindowClosed += OnMessengerClosed;
+            ChatLog.OpenNewTabDialog = () => GD.Print("chat: the tab name dialog (0x4e62) is not in this HUD");
+            ChatLog.ToggleEmoticonDialog = () => GD.Print("chat: the emoticon dialog (0x4f80) is not in this HUD");
             groupBrowser = NewGroupBrowser();
             groupMessenger = new MovieDialog(assets, groupBrowser, hudModel, window);   // its load opens the joined chats' windows
             if (!welcomeShown)
@@ -1309,6 +1320,26 @@ public partial class HudScene : Node, IUiStageHost
         foreach (var (m, _) in messengers) ui.AddChild(m);
         ui.AddChild(groupMessenger);
         foreach (var (m, _) in groupWindows) if (m.GetParent() == null) ui.AddChild(m);
+    }
+
+    /// <summary>A window the browser made for a detached tab (CreateWindowWithTabs): its movie joins the chat layer.</summary>
+    void OnMessengerCreated(Ms2.Ui.Hud.MessengerController c)
+    {
+        var m = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
+        messengers.Add((m, c));
+        GD.Print($"chat: window {c.Name} load={m.Loaded} with {c.Tabs.Count} tab(s)");
+        if (messengers.Count > 0 && messengers[0].Movie.GetParent() is { } layer) layer.AddChild(m);
+    }
+
+    /// <summary>A window CloseEmptyWindow closed: its movie goes.</summary>
+    void OnMessengerClosed(Ms2.Ui.Hud.MessengerController c)
+    {
+        int i = messengers.FindIndex(x => x.Side == c);
+        if (i < 0) return;
+        var m = messengers[i].Movie;
+        messengers.RemoveAt(i);
+        m.Host.Unload();
+        m.QueueFree();
     }
 
     GroupMessengerBrowserController groupBrowser;

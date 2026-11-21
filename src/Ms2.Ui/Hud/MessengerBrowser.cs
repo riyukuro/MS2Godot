@@ -115,6 +115,47 @@ public sealed class PanelSetting
         if ((string)e?.Attribute(name) is { } s && int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var i)) v = i;
     }
 
+    /// <summary>
+    /// FUN_141482340 (:647), the tab's &lt;PanelSetting&gt; written under <paramref name="tab"/> (XmlChild(.., true): found or
+    /// added): "global" from s_nGlobal, then Notice, System, Screen, Require and Subject with every switch ("club" only with
+    /// feature 0x56, "dungeonHelp" only with 0x93, FUN_141481cf0), and while s_nGlobal is set the shared screen setting over
+    /// the Screen element (DAT_143adda48.FUN_141481540).
+    /// </summary>
+    public void Write(XElement tab, MessengerBrowser shared, Func<int, bool> featureEnabled)
+    {
+        var panel = Child(tab, "PanelSetting");
+        panel.SetAttributeValue("global", shared.Global ? 1 : 0);
+        foreach (var (element, keys) in Settings)
+        {
+            if (element == "Require") WriteScreen(Screen, panel);
+            var e = Child(panel, element);
+            foreach (var key in keys)
+            {
+                if (key == "club" && element == "Subject" && !featureEnabled(ClubFeature)) continue;
+                if (key == "dungeonHelp" && !featureEnabled(DungeonHelpFeature)) continue;
+                e.SetAttributeValue(key, switches[element][key]);
+            }
+        }
+        if (shared.Global) WriteScreen(shared.GlobalScreen, panel);
+    }
+
+    /// <summary>ScreenSetting::FUN_141481540 (:398).</summary>
+    static void WriteScreen(ScreenSetting s, XElement panel)
+    {
+        var e = Child(panel, "Screen");
+        e.SetAttributeValue("fontSize", s.FontSize);
+        e.SetAttributeValue("backgroundAlpha", s.BackgroundAlpha);
+        e.SetAttributeValue("showDamage", s.ShowDamage);
+    }
+
+    /// <summary>XmlChild(e, name, true) (tinyxmlhelper.cpp:101): the first child of that name, added when missing.</summary>
+    internal static XElement Child(XElement e, string name)
+    {
+        var c = e.Element(name);
+        if (c == null) e.Add(c = new XElement(name));
+        return c;
+    }
+
     /// <summary>FUN_141482460 (:665): a kind one of the settings hides (kind 0x1d never is).</summary>
     public bool Hidden(int kind)
     {
@@ -790,6 +831,91 @@ public sealed class MessengerBrowser
     }
 
     static readonly Regex FontSizes = new("size='(1[2-8])'", RegexOptions.CultureInvariant);
+
+    // ---- the windows: lookup, new names, closing an empty one, a window for detached tabs
+
+    /// <summary>FUN_141a23d70 (:3137): a window of this name is open.</summary>
+    public bool HasWindow(string name) => Windows.Any(w => w.Name == name);
+
+    /// <summary>FindMessengerByName (@0x141a184c0, :2529): the UI entity of that name as a chat window (the entities the
+    /// chat windows are, <see cref="Windows"/>); null for none.</summary>
+    public MessengerController FindMessengerByName(string name) => Windows.FirstOrDefault(w => w.Name == name);
+
+    /// <summary>FUN_141a26cd0 (@0x141a26cd0, :3717): the first "messengerdialog&lt;i&gt;.xml", i below 100, no window has
+    /// ("MessengerDialog" lowered by FUN_140841420, as the default windows' names); "" when all are taken.</summary>
+    public string NewWindowName()
+    {
+        for (int i = 0; i < 100; i++)
+        {
+            string name = "messengerdialog" + i.ToString(CultureInfo.InvariantCulture) + ".xml";
+            if (!HasWindow(name)) return name;
+        }
+        return "";
+    }
+
+    /// <summary>FUN_141a25410 (@0x141a25410, :3389): no window has a tab of that name other than <paramref name="except"/>
+    /// (UIMessenger::vfunc_86 each).</summary>
+    public bool TabNameFree(MessengerController.TalkTab except, string name) => Windows.All(w => w.HasNoTabNamed(except, name));
+
+    /// <summary>A window this browser made (CreateWindowWithTabs) that its host is to show; the default windows are the host's own.</summary>
+    public event Action<MessengerController> WindowCreated;
+    /// <summary>A window CloseEmptyWindow took away (vfunc_84 and RemoveEntity): its host frees its movie.</summary>
+    public event Action<MessengerController> WindowClosed;
+
+    /// <summary>
+    /// CloseEmptyWindow (@0x141a245d0, :3227): the window of that name, when it has no tab left, leaves the focus names
+    /// (Unk_MdNames::RemoveName), closes (vfunc_84) and leaves m_windows and the entity manager.
+    /// </summary>
+    public void CloseEmptyWindow(string name)
+    {
+        for (int i = 0; i < Windows.Count; i++)
+        {
+            var w = Windows[i];
+            if (w.Name != name || w.Tabs.Count != 0) continue;
+            RemoveName(w.Name);
+            Windows.RemoveAt(i);
+            WindowClosed?.Invoke(w);
+            return;
+        }
+    }
+
+    /// <summary>
+    /// CreateWindowWithTabs (@0x141a24160, :3176): a &lt;MessengerDialog&gt; document with width, height, offsetX, offsetY,
+    /// alignType 5, additive 0, targetSelectedIndex and a &lt;Tab&gt; per tab (TalkTab::FUN_141482880), loaded as a new
+    /// window (not a first load) under the next free name (<see cref="NewWindowName"/>), shown and kept.
+    /// </summary>
+    public MessengerController CreateWindowWithTabs(IReadOnlyList<MessengerController.TalkTab> tabs, int x, int y, int width, int height, int target)
+    {
+        var root = new XElement("MessengerDialog",
+            new XAttribute("width", width), new XAttribute("height", height),
+            new XAttribute("offsetX", x), new XAttribute("offsetY", y),
+            new XAttribute("alignType", 5), new XAttribute("additive", 0), new XAttribute("targetSelectedIndex", target));
+        Func<int, bool> feature = Model != null ? Model.IsFeatureEnabled : _ => false;
+        foreach (var tab in tabs)
+            if (tab != null) tab.Write(PanelSetting.Child(root, "Tab"), this, feature);
+        var window = new MessengerController(new XDocument(root), NewWindowName(), false, this);
+        WindowCreated?.Invoke(window);
+        return window;
+    }
+
+    /// <summary>The messenger state's m_nNewTabMode and m_pNewTabWindow, read by the tab name dialog (0x4e62): 1 = a new tab
+    /// (the tab menu), 2 = rename the additive one just made.</summary>
+    public int NewTabMode;
+    public MessengerController NewTabWindow;
+    /// <summary>CUIService::IsDialogClosed(0x4e62), the tab name dialog; it is not ported, so it reads closed.</summary>
+    public Func<bool> IsNewTabDialogClosed = () => true;
+    /// <summary>CUIService::OpenDialog(0x4e62), the tab name dialog (STILL-OPEN: not ported; the HUD logs it).</summary>
+    public Action OpenNewTabDialog;
+    /// <summary>CUIService::ToggleDialog(0x4f80), the chat emoticon dialog (STILL-OPEN: not ported; the HUD logs it).</summary>
+    public Action ToggleEmoticonDialog;
+    /// <summary>
+    /// The checks of SendEmoticon / SetEmoticonFavorite: the emoticon is in CChatEmoticonTable and the local character's
+    /// CChatEmoticonCli IsEmoticonUsable. STILL-OPEN: neither the table nor the character's sticker sets are ported, so
+    /// none is usable unless the host says so.
+    /// </summary>
+    public Func<int, bool> IsEmoticonUsable = _ => false;
+    /// <summary>The ChatSticker sends (SendOp 0xB7, FUN_140710590).</summary>
+    public Action<Ms2.Net.Packets.ChatStickerRequest> SendSticker;
 
     /// <summary>UIMessenger::ReplaceFontSize (:1143): each size='12' .. size='18' becomes the given size.</summary>
     public static string ReplaceFontSize(uint size, string html) =>

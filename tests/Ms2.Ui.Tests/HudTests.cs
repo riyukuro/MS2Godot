@@ -1759,6 +1759,161 @@ public class HudTests
         Assert.That(h.RT.Errors, Is.Empty);
     }
 
+    static List<string> BarLabels(UiHost h)
+    {
+        var dp = h.Get(h.Child("m_buttonBar"), "dataProvider");
+        int n = (int)Rt.ToNumber(h.Get(dp, "length"));
+        var r = new List<string>();
+        for (int i = 0; i < n; i++) r.Add(Rt.ToString(h.Get(h.Get(dp, i.ToString(System.Globalization.CultureInfo.InvariantCulture)), "label")));
+        return r;
+    }
+
+    [Test]
+    public void MessengerTabMenuRemovesTheSelectedTabAndClosesTheEmptyWindow()
+    {
+        var (c, h, _, _, _) = ChatWindow();
+        var closed = new List<MessengerController>();
+        c.Browser.WindowClosed += closed.Add;
+        Assert.That(c.CreateTab("t1", 1, 1, 0), Is.True);
+        Assert.That(c.CreateTab("t1", 1, 1, 0), Is.False, "a name the window has");
+        c.SelectTabByName("t1");
+        Assert.That(BarLabels(h), Does.Contain("t1"));
+        // vfunc_96(1): RemoveTabByName(GetSelectedTabName())
+        Assert.That(c.OnCallback("eventTabMenu", new object[] { 1.0 }), Is.True);
+        Assert.That(c.Tabs.Select(t => t.Name), Does.Not.Contain("t1"));
+        Assert.That(BarLabels(h), Is.EqualTo(c.Tabs.Select(t => t.Name).ToList()));
+        Assert.That(closed, Is.Empty, "the window still has tabs");
+        // removing every tab closes the window (CloseEmptyWindow)
+        while (c.Tabs.Count > 0) { c.SelectTabByName(c.Tabs[0].Name); c.OnCallback("eventTabMenu", new object[] { 1.0 }); }
+        Assert.That(closed, Is.EqualTo(new[] { c }));
+        Assert.That(c.Browser.Windows, Does.Not.Contain(c));
+        // menu 0 asks for the tab name dialog in new tab mode
+        int opened = 0;
+        c.Browser.OpenNewTabDialog = () => opened++;
+        c.OnCallback("eventTabMenu", new object[] { 0.0 });
+        Assert.That((opened, c.Browser.NewTabMode, c.Browser.NewTabWindow), Is.EqualTo((1, 1, c)));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void MessengerAdditiveTabTakesTheNextFreeNameAndAsksForTheTabNameDialog()
+    {
+        var (c, h, m, _, _) = ChatWindow();
+        int opened = 0;
+        c.Browser.OpenNewTabDialog = () => opened++;
+        string first = Ms2.Quest.ClientFormat.Format(m.Tables.Common(0x57d), 1), second = Ms2.Quest.ClientFormat.Format(m.Tables.Common(0x57d), 2);
+        Assert.That(first, Is.Not.EqualTo(second));
+        Assert.That(c.OnCallback("eventAdditiveTab", Array.Empty<object>()), Is.True);
+        Assert.That(c.Tabs.Select(t => t.Name), Does.Contain(first));
+        Assert.That((opened, c.Browser.NewTabMode, c.Browser.NewTabWindow), Is.EqualTo((1, 2, c)));
+        Assert.That(BarLabels(h)[(int)Rt.ToNumber(h.Get(h.Child("m_buttonBar"), "selectedIndex"))], Is.EqualTo(first));
+        c.OnCallback("eventAdditiveTab", Array.Empty<object>());
+        Assert.That(c.Tabs.Select(t => t.Name), Does.Contain(second), "the first name is taken");
+        // the dialog open: nothing
+        c.Browser.IsNewTabDialogClosed = () => false;
+        int n = c.Tabs.Count;
+        c.OnCallback("eventAdditiveTab", Array.Empty<object>());
+        Assert.That(c.Tabs.Count, Is.EqualTo(n));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void MessengerDetachedTabGetsItsOwnWindowAndAttachesBack()
+    {
+        var (c, h, m, _, _) = ChatWindow();
+        c.CreateTab("t1", 1, 1, 0);
+        c.CreateTab("t2", 1, 1, 0);
+        c.Browser.Global = false; // s_nGlobal writes the shared screen over the tab's
+        c.Tabs.First(t => t.Name == "t1").Panel.Screen.FontSize = 14;
+        var created = new List<MessengerController>();
+        c.Browser.WindowCreated += created.Add;
+        // FUN_141a16730: name, x, y, width, height (floats), target
+        Assert.That(c.OnCallback("eventDetachTab", new object[] { "t1", 100.7, 50.0, 400.0, 300.0, 2.0 }), Is.True);
+        Assert.That(created.Count, Is.EqualTo(1));
+        var w = created[0];
+        Assert.That(w.Name, Is.EqualTo("messengerdialog1.xml"), "messengerdialog0.xml is taken");
+        Assert.That(c.Browser.Windows, Does.Contain(w));
+        Assert.That(c.Tabs.Select(t => t.Name), Does.Not.Contain("t1"));
+        var wh = Load(w, m);
+        Assert.That(w.Tabs.Select(t => t.Name), Is.EqualTo(new[] { "t1" }));
+        Assert.That(w.Tabs[0].Panel.Screen.FontSize, Is.EqualTo(14), "the panel goes with the tab");
+        Assert.That(BarLabels(wh), Is.EqualTo(new[] { "t1" }));
+        // the last tab never detaches
+        w.OnCallback("eventDetachTab", new object[] { "t1", 0.0, 0.0, 400.0, 300.0, 0.0 });
+        Assert.That(created.Count, Is.EqualTo(1));
+        // vfunc_98: back to the first window, which selects it; the emptied window closes
+        var closed = new List<MessengerController>();
+        c.Browser.WindowClosed += closed.Add;
+        Assert.That(w.OnCallback("eventAttachTab", new object[] { "t1", c.Name }), Is.True);
+        Assert.That(c.Tabs.Select(t => t.Name), Does.Contain("t1"));
+        Assert.That(BarLabels(h)[(int)Rt.ToNumber(h.Get(h.Child("m_buttonBar"), "selectedIndex"))], Is.EqualTo("t1"));
+        Assert.That(closed, Is.EqualTo(new[] { w }));
+        Assert.That(h.RT.Errors, Is.Empty);
+        Assert.That(wh.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void MessengerTabPanelWritesWhatItReads()
+    {
+        var m = Model();
+        var browser = new MessengerBrowser { Model = m };
+        var panel = new System.Xml.Linq.XElement("PanelSetting",
+            new System.Xml.Linq.XElement("Notice", new System.Xml.Linq.XAttribute("trade", 0)),
+            new System.Xml.Linq.XElement("Subject", new System.Xml.Linq.XAttribute("world", 0), new System.Xml.Linq.XAttribute("whisper", 0)),
+            new System.Xml.Linq.XElement("Screen", new System.Xml.Linq.XAttribute("fontSize", 13), new System.Xml.Linq.XAttribute("backgroundAlpha", 70)));
+        var a = new PanelSetting();
+        a.Read(panel, browser, m.IsFeatureEnabled);
+        var tab = new System.Xml.Linq.XElement("Tab");
+        a.Write(tab, browser, m.IsFeatureEnabled);
+        var b = new PanelSetting();
+        b.Read(tab.Element("PanelSetting"), browser, m.IsFeatureEnabled);
+        for (int kind = 0; kind < 0x1e; kind++) Assert.That(b.Hidden(kind), Is.EqualTo(a.Hidden(kind)), "kind " + kind);
+        Assert.That((b.Screen.FontSize, b.Screen.BackgroundAlpha), Is.EqualTo((13, 70)));
+        Assert.That(b.Hidden(0x12) && b.Hidden(0x15) && b.Hidden(4), Is.True);
+        Assert.That(tab.Element("PanelSetting").Elements().Select(e => e.Name.LocalName),
+            Is.EqualTo(new[] { "Notice", "System", "Screen", "Require", "Subject" }));
+    }
+
+    [Test]
+    public void MessengerEmoticonSendsAUsableEmoticonWithTheWindowAndTarget()
+    {
+        var (c, h, _, _, _) = ChatWindow();
+        var sent = new List<Ms2.Net.Packets.ChatStickerRequest>();
+        c.Browser.SendSticker = sent.Add;
+        c.Browser.IsEmoticonUsable = id => id == 7;
+        Assert.That(c.OnCallback("eventChatEmoticonPush", new object[] { 7.0 }), Is.False, "vfunc_28 returns 0 after it");
+        c.OnCallback("eventChatEmoticonPush", new object[] { 8.0 });
+        c.OnCallback("eventChatEmoticonFavorite", new object[] { 7.0, true });
+        c.OnCallback("eventChatEmoticonFavorite", new object[] { 7.0, false });
+        c.OnCallback("eventChatEmoticonFavorite", new object[] { 8.0, true });
+        int type = (int)Rt.ToNumber(h.Get(h.Child("m_subject"), "selectedIndex")) >= 0 ? sent[0].ChatType : -1;
+        Assert.That(sent.Select(s => (s.Mode, s.EmoticonId)), Is.EqualTo(new[] { ((byte)3, 7), ((byte)5, 7), ((byte)6, 7) }));
+        Assert.That(sent[0].Window, Is.EqualTo(c.Name));
+        Assert.That(type, Is.EqualTo(MessengerController.Social), "the default selected target");
+        int toggled = 0;
+        c.Browser.ToggleEmoticonDialog = () => toggled++;
+        c.OnCallback("eventChatEmoticonOpen", Array.Empty<object>());
+        Assert.That(toggled, Is.EqualTo(1));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void MessengerWhisperTargetStartsAWhisperToAnotherPlayer()
+    {
+        var (c, h, m, _, _) = ChatWindow();
+        var input = (AsObject)h.Child("m_textInput");
+        Assert.That(c.OnCallback("eventWhisperTarget", new object[] { "Me" }), Is.True);
+        Assert.That(Rt.ToString(h.Get(input, "text")), Is.Empty, "not to the local player");
+        c.OnCallback("eventWhisperTarget", new object[] { "Bob" });
+        Assert.That(Rt.ToString(h.Get(input, "text")), Is.EqualTo(m.Tables.Common(0xaa5) + " Bob "));
+        h.Set(input, "text", "");
+        Assert.That(c.GetUserData("whisper", new object[] { "Ann" }), Is.Null);
+        Assert.That(Rt.ToString(h.Get(input, "text")), Is.EqualTo(m.Tables.Common(0xaa5) + " Ann "));
+        foreach (var n in new[] { "eventChangeText", "eventShowWhisperList", "eventHideWhisperList" })
+            Assert.That(c.OnCallback(n, new object[] { "x" }), Is.True, n);
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
     [Test]
     public void MessengerShowsAnItemDropNoticeAsASystemLineWithTheItemLink()
     {

@@ -17,7 +17,8 @@ namespace Ms2.Ui.Hud;
 /// (<see cref="UserCommands"/>), else packet 0x11 to the selected target (<see cref="SendChat"/>, which only sends; the
 /// line shows when the server sends it back).
 /// Not ported yet: the character folder's saved windows (LoadWindows :3689, FUN_141a27570) and saving them (vfunc_4 :638);
-/// the input history; whisper list, emoticon, tab menu, attach/detach and the extra components (m_2e0 / m_2f0).
+/// the input history; the tab name (0x4e62) and emoticon (0x4f80) dialogs the window opens, the emoticon table and the
+/// character's sticker sets its sends check; the extra components (m_2e0 / m_2f0).
 /// </summary>
 public sealed class MessengerController : UiController
 {
@@ -47,6 +48,19 @@ public sealed class MessengerController : UiController
         public readonly PanelSetting Panel = new();
         public ScreenSetting Screen => Panel.Screen;
         public bool Global;                                   // s_nGlobal after this tab was read
+
+        /// <summary>TalkTab::FUN_141482880 (messengerdata.cpp:730): tabName, close, detach and additive on the element, then
+        /// its panel (<see cref="PanelSetting.Write"/>); false for a tab without a name.</summary>
+        public bool Write(XElement e, MessengerBrowser shared, Func<int, bool> featureEnabled)
+        {
+            e.SetAttributeValue("tabName", Name);
+            e.SetAttributeValue("close", Close);
+            e.SetAttributeValue("detach", Detach);
+            e.SetAttributeValue("additive", Additive);
+            if (Name.Length == 0) return false;
+            Panel.Write(e, shared, featureEnabled);
+            return true;
+        }
     }
 
     readonly XDocument doc;                                   // m_doc
@@ -186,6 +200,142 @@ public sealed class MessengerController : UiController
         Tabs.Add(tab);
         if (buttonBar != null && Host.Get(buttonBar, "dataProvider") is AsObject dp)       // ASButtonBar::AddItem (asbuttonbar.cpp:171)
             Host.Invoke(dp, "push", Host.Obj(("label", tab.Name), ("close", tab.Close), ("detach", tab.Detach)));
+        return true;
+    }
+
+    /// <summary>vfunc_86 (@0x141a0f040, :1200): no tab but <paramref name="except"/> has that name.</summary>
+    public bool HasNoTabNamed(TalkTab except, string name) => !Tabs.Any(t => t != except && t.Name == name);
+
+    /// <summary>The bar's data provider row whose label is <paramref name="label"/> (ASButtonBar::FUN_1422e3590 /
+    /// RemoveItemByLabel, asbuttonbar.cpp:192, :255), -1 for none.</summary>
+    int BarIndexOf(string label)
+    {
+        if (Host.Get(buttonBar, "dataProvider") is not AsObject dp) return -1;
+        int n = (int)Rt.ToNumber(Host.Get(dp, "length"));
+        for (int i = 0; i < n; i++)
+            if (Host.Get(dp, i.ToString(CultureInfo.InvariantCulture)) is AsObject row && Host.Get(row, "label") is string l && l == label)
+                return i;
+        return -1;
+    }
+
+    /// <summary>SelectTabByName (@0x141a0e2a0, :1016): the bar takes the focus, selects the row of that label
+    /// (FUN_1422e3590: SetSelectedIndex) and validates.</summary>
+    public void SelectTabByName(string name)
+    {
+        if (buttonBar == null) return;
+        SetFocused(buttonBar, 1);
+        int i = BarIndexOf(name);
+        if (i >= 0) Host.Set(buttonBar, "selectedIndex", i);
+        Validate(buttonBar);
+    }
+
+    /// <summary>RemoveTabByName (@0x141a0e350, :1028): the tab leaves m_tabs and the bar (RemoveItemByLabel: the data
+    /// provider's splice), which validates and updates the additive button; false for no such tab.</summary>
+    public bool RemoveTabByName(string name)
+    {
+        var tab = FindTab(name);
+        if (tab == null) return false;
+        Tabs.Remove(tab);
+        if (buttonBar != null)
+        {
+            int i = BarIndexOf(name);
+            if (i >= 0 && Host.Get(buttonBar, "dataProvider") is AsObject dp) Host.Invoke(dp, "splice", i, 1);
+            Validate(buttonBar);
+            UpdateAdditiveButton();
+        }
+        return true;
+    }
+
+    /// <summary>InsertTab (@0x141a0e650, :1072): <see cref="AddTab"/>, then the bar validates and the additive button updates.</summary>
+    public bool InsertTab(TalkTab tab)
+    {
+        if (tab == null || !AddTab(tab)) return false;
+        if (buttonBar != null) { Validate(buttonBar); UpdateAdditiveButton(); }
+        return true;
+    }
+
+    /// <summary>CreateTab (@0x141a0e810, :1095): a new tab with those flags, inserted.</summary>
+    public bool CreateTab(string name, int close, int detach, int additive) =>
+        InsertTab(new TalkTab { Name = name, Close = close, Detach = detach, Additive = additive });
+
+    /// <summary>FUN_141a13d20 (@0x141a13d20, :1792): the first common 0x57d formatted with 1..99 no window's tab has, else
+    /// common 0x57d itself.</summary>
+    string NewTabName()
+    {
+        for (int i = 1; i < 100; i++)
+        {
+            string name = Ms2.Quest.ClientFormat.Format(Model.Tables.Common(0x57d), i);
+            if (Browser.TabNameFree(null, name)) return name;
+        }
+        return Model.Tables.Common(0x57d);
+    }
+
+    /// <summary>vfunc_92 (@0x141a15f60, :2154), eventAdditiveTab: while the tab name dialog is closed, a new tab of the next
+    /// free name (closable, detachable), selected; the state's new tab mode is 2 for this window and the dialog opens.
+    /// The window's save (vfunc_4) is not ported.</summary>
+    public void AddAdditiveTab()
+    {
+        if (!Browser.IsNewTabDialogClosed()) return;
+        string name = NewTabName();
+        if (!CreateTab(name, 1, 1, 0)) return;
+        SelectTabByName(name);
+        Browser.NewTabMode = 2;
+        Browser.NewTabWindow = this;
+        Browser.OpenNewTabDialog?.Invoke();
+    }
+
+    /// <summary>vfunc_96 (@0x141a16310, :2217), eventTabMenu: 0 = the tab name dialog for a new tab (mode 1, this window);
+    /// 1 = the selected tab is removed and the window closes when that was its last (CloseEmptyWindow).</summary>
+    public void TabMenu(int menu)
+    {
+        if (menu == 0)
+        {
+            Browser.NewTabMode = 1;
+            Browser.NewTabWindow = this;
+            Browser.OpenNewTabDialog?.Invoke();
+        }
+        else if (menu == 1 && RemoveTabByName(SelectedTabName))
+            Browser.CloseEmptyWindow(Name);
+    }
+
+    /// <summary>vfunc_98 (@0x141a165c0, :2261), eventAttachTab: the tab moves to the window of that name, which selects it;
+    /// this window closes when it was its last tab.</summary>
+    public void AttachTab(string name, string window)
+    {
+        var tab = FindTab(name);
+        if (tab == null) return;
+        var target = Browser.FindMessengerByName(window);
+        if (target == null) return;
+        if (!RemoveTabByName(tab.Name)) return;
+        if (target.InsertTab(tab)) target.SelectTabByName(tab.Name);
+        Browser.CloseEmptyWindow(Name);
+    }
+
+    /// <summary>FUN_141a16730 (@0x141a16730, :2283), eventDetachTab: with two tabs or more, the tab leaves this window for a
+    /// new one at that place and size with that target selected (CreateWindowWithTabs); this window reselects its tab.</summary>
+    public void DetachTab(string name, int x, int y, int width, int height, int target)
+    {
+        var tab = FindTab(name);
+        if (tab == null || Tabs.Count < 2) return;
+        if (!RemoveTabByName(tab.Name)) return;
+        Browser.CreateWindowWithTabs(new[] { tab }, x, y, width, height, target);
+        ReselectCurrentTab();
+    }
+
+    /// <summary>SendEmoticon (@0x141a0fe20, :1416): a usable emoticon goes out as ChatSticker 3 with this window's name and
+    /// the selected type; false when it is not usable (<see cref="MessengerBrowser.IsEmoticonUsable"/>).</summary>
+    public bool SendEmoticon(int id)
+    {
+        if (!Browser.IsEmoticonUsable(id)) return false;
+        Browser.SendSticker?.Invoke(Ms2.Net.Packets.ChatStickerRequest.Send(id, Name, SelectedType()));
+        return true;
+    }
+
+    /// <summary>SetEmoticonFavorite (@0x141a10490, :1477): ChatSticker 5 (favorite) or 6 for a usable emoticon.</summary>
+    public bool SetEmoticonFavorite(int id, bool favorite)
+    {
+        if (!Browser.IsEmoticonUsable(id)) return false;
+        Browser.SendSticker?.Invoke(Ms2.Net.Packets.ChatStickerRequest.SetFavorite(id, favorite));
         return true;
     }
 
@@ -798,13 +948,15 @@ public sealed class MessengerController : UiController
     /// the linked item of the argument's uid (_atoi64, <see cref="MessengerBrowser.LinkedItem"/>) in an ASTooltip of the
     /// local player with flags 2 (FUN_1409e0d40 / <see cref="ItemTooltip.Fill"/>), its close button (ShowCloseButton,
     /// astooltip.cpp:159: "closeButton" true) and SetEnablePreview; nothing when the uid links none or the fill fails.
-    /// STILL-OPEN: "itemPreview" (ItemPreviewMgr's OpenPreview while IsHudOn), "getAchieve", "whisper", "menu",
+    /// "whisper": a whisper to the argument's name (FUN_141a14bb0, <see cref="WhisperTo"/>), nothing returned.
+    /// STILL-OPEN: "itemPreview" (ItemPreviewMgr's OpenPreview while IsHudOn), "getAchieve", "menu",
     /// "moveToHome", "billDialog", "searchFromMeratmarket", "itemSelect", "hyperLinkLeft" and the rest are not ported and
     /// answer nothing.
     /// </summary>
     public override IDictionary<string, object> GetUserData(string name, object[] args)
     {
         if (Model?.HasLocalPlayer != true) return null;
+        if (name == "whisper") { WhisperTo(args.Length > 0 ? Rt.ToString(args[0]) : ""); return null; }
         if (name != "getTooltip") return null;
         var item = Browser.LinkedItem(NumberText.ParseInt64W(args.Length > 0 ? Rt.ToString(args[0]) : ""));
         if (item == null) return null;
@@ -836,9 +988,34 @@ public sealed class MessengerController : UiController
                 return true;
             case "updatealigntypeandoffset": UpdateAlignAndOffset(); return true;
             case "eventemotion": Browser.ToggleDynamicAction?.Invoke(); return false;     // :4052, falls to return 0
+            // vfunc_94 (@0x141a162a0): FUN_141a131f0 or FUN_141a13200 by the input's chat type, both empty; and the whisper
+            // list's show / hide call those two directly
+            case "eventchangetext": case "eventshowwhisperlist": case "eventhidewhisperlist": return true;
+            case "eventwhispertarget": if (args.Length > 0) WhisperTo(Rt.ToString(args[0])); return true;   // vfunc_95 (@0x141a162e0)
+            case "eventadditivetab": AddAdditiveTab(); return true;
+            case "eventtabmenu": if (args.Length > 0) TabMenu((int)Rt.ToNumber(args[0])); return true;
+            case "eventattachtab":
+                if (args.Length > 0) AttachTab(Rt.ToString(args[0]), args.Length > 1 ? Rt.ToString(args[1]) : "");
+                return true;
+            case "eventdetachtab":
+                if (args.Length > 0)
+                    DetachTab(Rt.ToString(args[0]), ArgInt(args, 1), ArgInt(args, 2), ArgInt(args, 3), ArgInt(args, 4), ArgInt(args, 5));
+                return true;
+            case "eventchatemoticonopen": Browser.ToggleEmoticonDialog?.Invoke(); return false;   // :4056, return 0
+            case "eventchatemoticonpush":
+                if (args.Length == 0) return false;
+                SendEmoticon(ArgInt(args, 0));
+                return false;                                  // :4063, return 0
+            case "eventchatemoticonfavorite":
+                if (args.Length == 0) return false;
+                SetEmoticonFavorite(ArgInt(args, 0), args.Length > 1 && Rt.ToBoolean(args[1]));
+                return false;
         }
         return false;
     }
+
+    /// <summary>ASData::PopFloat / PopInt of the argument at that place, truncated; 0 when missing.</summary>
+    static int ArgInt(object[] args, int i) => i < args.Length ? (int)Rt.ToNumber(args[i]) : 0;
 
     /// <summary>FUN_141a0f180 (:1217) -> UIDialog::FUN_141926620 (uidialog.cpp:1056): the align type and offsets from the
     /// window's quarter of the stage.</summary>

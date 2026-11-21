@@ -203,5 +203,6 @@ public enum Outbound : ushort {
     Tutorial = 0x8A,
     RequestTutorialItem = 0x9C,
     MinimapPing = 0xB1,     // SendOp MinimapPing (commonfiles/opcodes.h:480): UIMinimapDialog::SendMinimapPing
+    ChatSticker = 0xB7,     // SendOp ChatSticker (commonfiles/opcodes.h:485): UIMessenger::SendEmoticon / SetEmoticonFavorite
     Channel = 0x3B,         // SendOp::Channel (commonfiles/opcodes.h): WorldService::FUN_141bc80c0 (worldservice_1.cpp:4936) and its message box answer
 }
