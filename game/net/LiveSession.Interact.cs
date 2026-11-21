@@ -115,8 +115,11 @@ public partial class LiveSession
 
     /// <summary>CSceneStateGame::OnResponseCube (scenestategame.cpp:9876), the held-item modes (<see cref="HeldItem.ResponseCube"/>)
     /// and their errors' build notice for the local pc (<see cref="BuildNotice.OfHeldItemResponse"/>).
-    /// The housing modes 0x27 / 0x35 / 0x37 fill <see cref="Housing"/>.
-    /// STILL-OPEN: the other modes; the cube map's weapon lookup for mode 0x11, so a 0x11 holds nothing yet.</summary>
+    /// The housing modes 0x27 / 0x35 / 0x37 fill <see cref="Housing"/>. The place answers 0xa / 0xf add their cube to the
+    /// player's cube map (<see cref="Ms2.Ui.CubeCellMap.Apply"/>).
+    /// STILL-OPEN: the other modes; the cube map's weapon lookup for mode 0x11, so a 0x11 holds nothing yet; the place
+    /// answers' own-pc part (the guide hidden and the place sound, :9986-9992 and :10109-10115; an error's craft reset,
+    /// common notice 0x6c9 or build notice, :10012-10030 and :10123-10136).</summary>
     void OnResponseCube(Ms2.Net.Wire.RawPacket p)
     {
         var r = p.Reader();
@@ -125,6 +128,14 @@ public partial class LiveSession
             case ResponseCubeHousingGrade.Mode: Housing.Apply(ResponseCubeHousingGrade.Read(r, accountId)); return;
             case ResponseCubeHouseOwner.Mode: Housing.Apply(ResponseCubeHouseOwner.Read(r), accountId); return;
             case ResponseCubeOwnerTrophies.Mode: Housing.Apply(ResponseCubeOwnerTrophies.Read(r)); return;
+            case ResponseCubePlace.ModePlace:
+            case ResponseCubePlace.ModeReplace:
+            {
+                var placed = ResponseCubePlace.Read(p.Reader());
+                bool added = player != null && IsInstanceValid(player) && player.Cubes.Cells.Apply(placed, id => ItemExists?.Invoke(id) ?? true);
+                GD.Print($"live: ResponseCube 0x{placed.Mode:x} error {placed.Error} cell 0x{placed.Cell:x} item {placed.Item?.ItemId ?? 0}{(added ? ", cube added" : "")}");
+                return;
+            }
         }
         var m = ResponseCubeHeldItem.Read(p.Reader());
         if (m == null) return;

@@ -15,6 +15,10 @@ public static class CubeCell
     /// <summary>MakeCellKey (ugcmapdata_1.cpp:113): the low byte of each axis, x | y &lt;&lt; 8 | z &lt;&lt; 16.</summary>
     public static int Key(int x, int y, int z) => (x & 0xff) + ((y & 0xff) << 8) + ((z & 0xff) << 16);
 
+    /// <summary>FUN_1408a0400 (@0x1408a0400, ugcmapdata_1.cpp:119-123): the cell of a packed key, each of the low three
+    /// bytes as a signed byte.</summary>
+    public static (int X, int Y, int Z) Unpack(int packed) => ((sbyte)packed, (sbyte)(packed >> 8), (sbyte)(packed >> 16));
+
     /// <summary>FUN_1408a13d0 (@0x1408a13d0, ugcmapdata_1.cpp:272): the cell key of a point.</summary>
     public static int Key(Vector3 p)
     {

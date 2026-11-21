@@ -30,7 +30,8 @@ public class ConfirmPlacementTests
         public int StateId { get; set; } = 1;
         public Cells Cells = new();
         public bool NoMap;
-        public ICubeCells Cubes => NoMap ? null : Cells;
+        public ICubeCells Map;
+        public ICubeCells Cubes => NoMap ? null : Map ?? Cells;
     }
 
     static CubeCraftState Craft(int cubeMode, int craftMode, Owner owner = null, CubeItemInfo item = null)
@@ -209,6 +210,31 @@ public class ConfirmPlacementTests
         o.Cells.Keys.Add(key);
         o.Cells.Items[key] = inCell;
         return (c, key);
+    }
+
+    [Test]
+    public void ACubeFromAPlaceAnswerTakesTheReplaceAndSameItemBranches()
+    {
+        // OnResponseCube 0xa (scenestategame.cpp:9984-10011) through FUN_1410c4850 into the cell map; ConfirmPlacement's
+        // cell checks (cubecraft_2.cpp:990-1031) then see the cube: another item is a 0xf, the same one the held stop
+        var map = new CubeCellMap();
+        var o = new Owner { Map = map };
+        var c = Craft(2, 2, o, new CubeItemInfo { ItemId = ItemId, InstanceId = 5, Count = 1 });
+        c.ConstructionUnlocked = true;
+        c.Locks = new CubeLock();
+        int key = CubeCell.Key(c.Current.Cell);
+        Assert.That(Confirm(c, out var before), Is.EqualTo(CubeCraftState.PlacementStop.Send));
+        Assert.That(before.Mode, Is.EqualTo(CubePlaceRequest.PlaceMode));
+
+        var placed = new ResponseCubePlace(ResponseCubePlace.ModePlace, 0, 1, key, Item: new CubeItemInfo { ItemId = 50100002, Count = 1 });
+        Assert.That(map.Apply(placed, _ => true), Is.True);
+        Assert.That(Confirm(c, out var replace), Is.EqualTo(CubeCraftState.PlacementStop.Send));
+        Assert.That((replace.Mode, replace.CellKey), Is.EqualTo((CubePlaceRequest.ReplaceMode, key)));
+
+        var replaced = placed with { Mode = ResponseCubePlace.ModeReplace, Item = new CubeItemInfo { ItemId = ItemId, Count = 1 } };
+        Assert.That(map.Apply(replaced, _ => true), Is.True);
+        Assert.That(Confirm(c, out var same), Is.EqualTo(CubeCraftState.PlacementStop.SameItemHeld));
+        Assert.That(same, Is.Null);
     }
 
     [Test]
