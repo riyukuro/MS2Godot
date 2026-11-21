@@ -42,7 +42,7 @@ public partial class GameFlow : Node
     bool boxScript;
     Action onSelectCharacter;
     Action onGameExit;
-    Action<GameToLogin> onGameToLogin;
+    Action onGameToLogin;
 
     /// <summary>Returns the flow to the login scene (e.g. forced-quit notice, scenestategame.cpp:9268).</summary>
     public static void ReturnToLogin() => instance?.Go(State.Login);
@@ -76,7 +76,7 @@ public partial class GameFlow : Node
         GetTree().AutoAcceptQuit = false;
 
         // UISystemMenuDialog::OnSelectCharacter (@0x141b14600, uisystemmenudialog.cpp:461-464): sends RequestQuit(0)
-        // when live (OnGameToLogin returns to Lobby); offline returns to Lobby immediately.
+        // when live (GameToLogin, then the login server's list, returns to Lobby); offline returns to Lobby immediately.
         onSelectCharacter = () =>
         {
             if (Current != State.Game) return;
@@ -93,8 +93,9 @@ public partial class GameFlow : Node
         Net.LiveSession.Attach(this);
         if (Net.LiveSession.Instance is { } liveSession)
         {
-            onGameToLogin = m => { if (m.Ok && Current == State.Game) Go(State.Lobby); };
-            liveSession.GameToLoginReceived += onGameToLogin;
+            // GameToLogin's answer is the login server's character list (LiveSession.ReturnAsync): the flow returns to character select then
+            onGameToLogin = () => { if (Current == State.Game) Go(State.Lobby); };
+            liveSession.ReturnedToCharacterSelect += onGameToLogin;
         }
         // The launcher is MS2Godot's own pre-login page. A live address in the environment skips it, as do the test and
         // perf scenes and a scripted flow run, so those start exactly as they did before it existed.
@@ -168,7 +169,7 @@ public partial class GameFlow : Node
         Net.LiveSession.ClearServer();
         if (onSelectCharacter != null) { Ui.HudScene.SystemMenuSelectCharacter -= onSelectCharacter; onSelectCharacter = null; }
         if (onGameExit != null) { Ui.MessageBoxLayer.GameExit -= onGameExit; onGameExit = null; }
-        if (onGameToLogin != null && Net.LiveSession.Instance is { } liveSession) { liveSession.GameToLoginReceived -= onGameToLogin; onGameToLogin = null; }
+        if (onGameToLogin != null && Net.LiveSession.Instance is { } liveSession) { liveSession.ReturnedToCharacterSelect -= onGameToLogin; onGameToLogin = null; }
         Session.GameScene = null;
         if (instance == this) instance = null;
     }

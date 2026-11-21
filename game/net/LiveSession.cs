@@ -1444,33 +1444,6 @@ public partial class LiveSession : Node
         if (game != null) Send(packet);
     }
 
-    /// <summary>Raised when Inbound GameToLogin (0x0F, networkservice.cpp:928) succeeds and the game socket is torn down.</summary>
-    public event Action<GameToLogin> GameToLoginReceived;
-
-    /// <summary>CNetworkService::OnGameToLogin (@0x14153bc00, networkservice.cpp:928-940): error shows FieldMoveError; ok tears down the field session.</summary>
-    void OnGameToLogin(GameToLogin m)
-    {
-        if (!m.Ok)
-        {
-            GD.Print($"live: GameToLogin error {m.Error}");
-            Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(Ms2.Ui.FieldMoveError.Text(m.Error, Ms2.Ui.Hud.MessageBoxData.CommonByKey), 0, null, "");
-            return;
-        }
-        // STILL-OPEN: the client also (networkservice.cpp:936-938) stores the address, port and tokens, sets DAT_143ab2874 = 0 and
-        // DAT_1439f4a78 = 1, calls WorldService FUN_141bbc580(0, 2), MyPC::FUN_1415308d0() and FUN_140d86260()->vfunc_10(), and
-        // reconnects to the login server with the tokens. Here the game socket is dropped and the lobby shows the old list with no
-        // login connection.
-        GD.Print($"live: GameToLogin to {m.Address}:{m.Port}");
-        if (player != null && IsInstanceValid(player)) player.Live = false;
-        player = null;
-        selfObject = -1;
-        bindPending = false;
-        var old = game;
-        game = null;
-        old?.Dispose();
-        GameToLoginReceived?.Invoke(m);
-    }
-
     /// <summary>CPersonalInfoAgreement::SendAgreement (@0x141261dd0, gameoptionstruct.cpp:3445-3452).</summary>
     public void SendPersonalInfoAgreement(int group, int flags)
     {

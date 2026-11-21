@@ -112,6 +112,47 @@ public sealed class LoginClient {
             }
         }
     }
+    /// <summary>
+    /// The return to the login server after GameToLogin (CNetworkService::OnGameToLogin, DAT_1439f4a78 = 1): the connect, the
+    /// key check with the GameToLogin tokens (OnRequestKey), OnMoveResult 0 for state 1 (character select, 0x620000d) which
+    /// sends SendServerEnter (networkservice.cpp:899-901); the login server then lists the characters again (the same
+    /// CharacterList messages as the login). A MoveResult error throws <see cref="MoveRefusedException"/>.
+    /// </summary>
+    public async Task<LoginOutcome> ReturnAsync(string host, ushort port, ulong token, long accountId, byte[] machineId, CancellationToken ct = default, int timeoutMs = 15000) {
+        if (transport.Session == null) await transport.ConnectAsync(host, port, ct);
+        var list = new List<CharacterEntry>();
+        int limit = 0, rows = 0;
+        var deadline = Environment.TickCount64 + timeoutMs;
+        while (true) {
+            ct.ThrowIfCancellationRequested();
+            if (!transport.Incoming.TryDequeue(out var p)) {
+                if (transport.IsClosed) throw new IOException("login connection closed", transport.Failure);
+                if (Environment.TickCount64 > deadline) throw new TimeoutException("login return timed out");
+                await Task.Delay(5, ct);
+                continue;
+            }
+            if (transport.OpOf(p) is Inbound lop) switch (lop) {
+                case Inbound.RequestKey:
+                    await transport.SendAsync(new ResponseKey(accountId, token, machineId ?? new byte[16]), ct);
+                    break;
+                case Inbound.MoveResult: {
+                    var m = MoveResult.Read(p.Reader());
+                    if (m.Error != 0) throw new MoveRefusedException(m.Error);
+                    await transport.SendAsync(new ServerEnterRequest(), ct);
+                    break;
+                }
+                case Inbound.CharMaxCount:
+                    var cr = p.Reader(); limit = cr.ReadInt(); rows = cr.ReadInt();
+                    break;
+                case Inbound.CharacterList:
+                    var cl = CharacterListMessage.Read(p.Reader());
+                    if (cl.Command == CharacterListCommand.StartList) list.Clear();
+                    else if (cl.Command is CharacterListCommand.List or CharacterListCommand.AppendEntry) list.AddRange(cl.Entries);
+                    else if (cl.Command == CharacterListCommand.EndList) return new LoginOutcome(new LoginResult(0, 0, "", 0, 0, 0, 0, 0, null), list) { CharacterLimit = limit, CharacterRows = rows };
+                    break;
+            }
+        }
+    }
 }
 
 public sealed class CharacterCreateRefused : Exception {

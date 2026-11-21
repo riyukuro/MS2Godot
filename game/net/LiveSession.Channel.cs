@@ -28,7 +28,6 @@ public partial class LiveSession
     /// STILL-OPEN: nothing here reads it.</summary>
     public IReadOnlyList<ushort> ClassTable => classTable;
 
-    /// <summary>The channel list or the table changed (UIServerEventDispatcher vfunc_1 after a DynamicChannel).</summary>
     /// <summary>Raised after each DynamicChannel. STILL-OPEN: the client refreshes the open dialogs after it
     /// (UIServerEventDispatcher vfunc_1); the system menu and minimap read the list when they open, nothing here refreshes an open one,
     /// and UIServerListDialog's own set at EnterGame (uiserverlistdialog.cpp:618/633) is not ported.</summary>
