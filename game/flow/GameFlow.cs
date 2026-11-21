@@ -273,9 +273,11 @@ public partial class GameFlow : Node
         }
         else if (GetTree().CurrentScene is Ui.LoginScene shown && shown.Controller != null)
         {
-            // the connect failed or timed out: the dialog's own failure state (UILoginDialog::ShowConnectFailure, uilogindialog.cpp:500-507)
+            // Catches only a login attempt that failed without a server answer (connection refused or timed out), which is what the
+            // client sends through UISceneLogin::vfunc_64. STILL-OPEN: a connection that drops after the connect is the client's
+            // disconnect path, which this flow does not have yet.
             GD.Print("login: connect failed, the dialog shows its failure state");
-            shown.Controller.ShowConnectFailure();
+            Ms2.Ui.LoginConnectFailure.Run(shown.Controller.ShowConnectFailure, shown.Scene.FailConnect);
         }
     }
 

@@ -30,7 +30,7 @@ public class LoginClientTests {
         w.WriteByte(state); w.WriteInt(0); w.WriteUnicodeString(state == 0 ? "" : "bad"); w.WriteLong(42); w.WriteLong(0); w.WriteInt(0); w.WriteByte(0); w.WriteByte(0);
     });
 
-    [Test] public async Task AnEmptyIdIsSentAsTyped() {
+    [Test] public async Task LoginClientSendsAnEmptyIdAsTyped() {
         var (s, l, srv, t, login) = await Start("");
         using (t) {
             Assert.That((await ReadFrame(s, srv)).op, Is.EqualTo((ushort) Outbound.ResponseVersion));
