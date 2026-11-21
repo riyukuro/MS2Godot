@@ -61,10 +61,16 @@ public class EffectCurveTests
         double sum = 0;
         void Frame(double x) { foreach (var f in curves) sum += f(x); }
         for (int i = 0; i < 100; i++) Frame(i / 60.0);      // warm up (JIT, lazy curve state)
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 600; i++) Frame(i / 60.0);
-        long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
-        TestContext.Progress.WriteLine($"{files} files, {curves.Count} curves ({t} T, {r} R, {s} S, {col} colour, {alpha} alpha, {uv} uv, {flip} flip, {rate} rate, {on} on, {force} force), {bytes} B over 600 frames ({sum:F1})");
+        // The least of up to 5 windows of 600 frames (a window of 0 ends early): the runtime's tiering (call counting, the tier-1
+        // rejit, OSR) can land a one-time allocation in any single window, but a real per-frame allocation shows up in every one.
+        long bytes = long.MaxValue;
+        for (int w = 0; w < 5 && bytes > 0; w++)
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 600; i++) Frame(i / 60.0);
+            bytes = Math.Min(bytes, GC.GetAllocatedBytesForCurrentThread() - before);
+        }
+        TestContext.Progress.WriteLine($"{files} files, {curves.Count} curves ({t} T, {r} R, {s} S, {col} colour, {alpha} alpha, {uv} uv, {flip} flip, {rate} rate, {on} on, {force} force), {bytes} B in the least 600-frame window ({sum:F1})");
         Assert.That(bytes, Is.EqualTo(0));
     }
 }
