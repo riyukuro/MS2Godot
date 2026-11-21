@@ -208,4 +208,31 @@ public class GameEventPacketTests
         Assert.That((e.Id, e.Rate, e.Currency), Is.EqualTo((21, 1500, 100000)));
         Assert.That(e.Ids, Is.EqualTo(new[] { 0, 10 }));
     }
+
+    [Test]
+    public void ConstructionEventsKeepTheirListsInPacketOrder()
+    {
+        // GameEventMassiveConstructionEvent::vfunc_4 (gameevent.cpp:2926-2944): id, n x u32 field id, i32 channel,
+        // n x i64 account id; GameEventIgnoreConstructionLockEvent::vfunc_4 (:4939-4948): id, n x i64 account id
+        var m = GameEventMessage.Read(Reader(w =>
+        {
+            w.WriteByte(1); w.WriteInt(3);
+            w.WriteUnicodeString("IgnoreConstructionLockEvent"); w.WriteInt(4); w.WriteInt(2); w.WriteLong(70); w.WriteLong(-1);
+            w.WriteUnicodeString("MassiveConstructionEvent"); w.WriteInt(5);
+            w.WriteInt(2); w.WriteInt(unchecked((int)0x80000001u)); w.WriteInt(2000002);
+            w.WriteInt(3);
+            w.WriteInt(1); w.WriteLong(1L << 40);
+            Shutdown(w, 6, (2000001, 10));
+        }));
+        Assert.That(m.Truncated, Is.False);
+        Assert.That(m.ConstructionEvents.Count, Is.EqualTo(2));
+        var ignore = (IgnoreConstructionLockEvent)m.ConstructionEvents[0];
+        Assert.That(ignore.Id, Is.EqualTo(4));
+        Assert.That(ignore.AccountIds, Is.EqualTo(new[] { 70L, -1L }));
+        var massive = (MassiveConstructionEvent)m.ConstructionEvents[1];
+        Assert.That((massive.Id, massive.Channel), Is.EqualTo((5, 3)));
+        Assert.That(massive.FieldIds, Is.EqualTo(new[] { 0x80000001u, 2000002u }));
+        Assert.That(massive.AccountIds, Is.EqualTo(new[] { 1L << 40 }));
+        Assert.That(m.Shutdowns.Count, Is.EqualTo(1), "the entry after them is read in place");
+    }
 }

@@ -15,6 +15,14 @@ public sealed record SpecialAbilityHotTimeEvent(int Id, bool PcBang, string Ids,
 /// (m_d0), the covered ids (m_d8; 0 covers everything) and the currency item id (m_e8) the context holds (OnStart :1439).</summary>
 public sealed record PremiumMarketSaleEvent(int Id, int Rate, IReadOnlyList<int> Ids, int Currency);
 
+/// <summary>One GameEventMassiveConstructionEvent (commonfiles/gameevent.cpp:2926-2944): the event id, the field ids (m_d0),
+/// the channel (m_f0) and the account ids (m_f8) OnStart (:2946-2958) puts in the game rule.</summary>
+public sealed record MassiveConstructionEvent(int Id, IReadOnlyList<uint> FieldIds, int Channel, IReadOnlyList<long> AccountIds);
+
+/// <summary>One GameEventIgnoreConstructionLockEvent (commonfiles/gameevent.cpp:4939-4948): the event id and the account ids
+/// (m_d0) OnStart (:4952-4958) adds to the game rule's ignored construction lock ids.</summary>
+public sealed record IgnoreConstructionLockEvent(int Id, IReadOnlyList<long> AccountIds);
+
 /// <summary>
 /// Inbound GameEvent (RecvOp 0xB2, commonfiles/opcodes.h:185), GameEventManagerCli::Dispatch (@0x140ceab50,
 /// gameeventmanagercli.cpp:77): a u8 kind, then
@@ -22,9 +30,9 @@ public sealed record PremiumMarketSaleEvent(int Id, int Rate, IReadOnlyList<int>
 ///   GameEvent{name}Cli or GameEvent{name}, :248-255), then that type's vfunc_4 body; each is Added (:211-220);
 /// 2 (Packet2, removed): i32 count; each: i32 event id (:171-185);
 /// 3 (Packet3, replaced): as 0, each Updated (:236-242).
-/// Every entry is read in packet order with its type's vfunc_4 layout (<see cref="ReadBody"/>); only
-/// GameEventShutdownInteractObjectId's content is kept (vfunc_4, gameevent.cpp:4306-4317: i32 count; each: u32 field id,
-/// i32 object id). A name no class is registered under makes Create fail: the client asserts and returns with the rest of
+/// Every entry is read in packet order with its type's vfunc_4 layout (<see cref="ReadBody"/>); kept are
+/// GameEventShutdownInteractObjectId's content (vfunc_4, gameevent.cpp:4306-4317: i32 count; each: u32 field id,
+/// i32 object id) and the types listed on the init properties. A name no class is registered under makes Create fail: the client asserts and returns with the rest of
 /// the packet unread (:144-147); the reader stops there too and sets Truncated.
 /// </summary>
 public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractObjectEvent> Shutdowns, IReadOnlyList<int> RemovedIds,
@@ -38,6 +46,10 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
     /// <summary>The PremiumMarketSale events of a kind 0, 1 or 3 message, in packet order.</summary>
     public IReadOnlyList<PremiumMarketSaleEvent> SaleEvents { get; init; } = Array.Empty<PremiumMarketSaleEvent>();
 
+    /// <summary>The MassiveConstructionEvent and IgnoreConstructionLockEvent events of a kind 0, 1 or 3 message, in packet
+    /// order (the two types share the list so their order against each other is kept).</summary>
+    public IReadOnlyList<object> ConstructionEvents { get; init; } = Array.Empty<object>();
+
     public static GameEventMessage Read(ByteReader r)
     {
         byte kind = r.ReadByte();
@@ -45,6 +57,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
         var removed = new List<int>();
         var hotTimes = new List<SpecialAbilityHotTimeEvent>();
         var saleEvents = new List<PremiumMarketSaleEvent>();
+        var construction = new List<object>();
         bool truncated = false;
         switch (kind)
         {
@@ -56,7 +69,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
                 for (int i = 0; i < n; i++)
                 {
                     string name = r.ReadUnicodeString();
-                    if (!ReadBody(name, r, shutdowns, hotTimes, saleEvents))
+                    if (!ReadBody(name, r, shutdowns, hotTimes, saleEvents, construction))
                     {
                         truncated = true;     // Create failed (:144-147): the client returns here
                         break;
@@ -72,7 +85,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
             }
         }
         if (!truncated) r.ExpectEnd("GameEvent");
-        return new GameEventMessage(kind, shutdowns, removed, truncated) { HotTimes = hotTimes, SaleEvents = saleEvents };
+        return new GameEventMessage(kind, shutdowns, removed, truncated) { HotTimes = hotTimes, SaleEvents = saleEvents, ConstructionEvents = construction };
     }
 
     /// <summary>
@@ -82,7 +95,8 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
     /// Returns false for a name no class is registered under.
     /// </summary>
     internal static bool ReadBody(string name, ByteReader r, List<ShutdownInteractObjectEvent> shutdowns,
-                                  List<SpecialAbilityHotTimeEvent> hotTimes = null, List<PremiumMarketSaleEvent> saleEvents = null)
+                                  List<SpecialAbilityHotTimeEvent> hotTimes = null, List<PremiumMarketSaleEvent> saleEvents = null,
+                                  List<object> construction = null)
     {
         switch (name)
         {
@@ -269,11 +283,17 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
                 for (uint i = 0; i < n; i++) { r.ReadInt(); Item(r); }
                 return true;
             }
-            case "MassiveConstructionEvent":  // :2926: id, i32 n x I, I, i32 n x L
+            case "MassiveConstructionEvent":  // :2926: id, i32 n x I, I, i32 n x L; all kept
             {
-                r.ReadInt(); Ints(r); r.ReadInt();
+                int id = r.ReadInt();
                 uint n = (uint)r.ReadInt();
-                for (uint i = 0; i < n; i++) r.ReadLong();
+                var fields = new List<uint>((int)Math.Min(n, 4096u));
+                for (uint i = 0; i < n; i++) fields.Add((uint)r.ReadInt());
+                int channel = r.ReadInt();
+                n = (uint)r.ReadInt();
+                var accounts = new List<long>((int)Math.Min(n, 4096u));
+                for (uint i = 0; i < n; i++) accounts.Add(r.ReadLong());
+                construction?.Add(new MassiveConstructionEvent(id, fields, channel, accounts));
                 return true;
             }
             case "QuestAdditionalReward":     // :3170: id, i16, i16, QuestAdditionalRewardContext::Read
@@ -324,11 +344,13 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
                 r.ReadInt(); W(r); r.ReadLong();
                 return true;
             }
-            case "IgnoreConstructionLockEvent":   // :4939: id, i32 n x L
+            case "IgnoreConstructionLockEvent":   // :4939: id, i32 n x L; all kept
             {
-                r.ReadInt();
+                int id = r.ReadInt();
                 uint n = (uint)r.ReadInt();
-                for (uint i = 0; i < n; i++) r.ReadLong();
+                var accounts = new List<long>((int)Math.Min(n, 4096u));
+                for (uint i = 0; i < n; i++) accounts.Add(r.ReadLong());
+                construction?.Add(new IgnoreConstructionLockEvent(id, accounts));
                 return true;
             }
             case "Snowman":             // :5072, SnowmanContext::Read

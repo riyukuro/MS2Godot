@@ -756,6 +756,7 @@ public partial class LiveSession : Node
         if (entry.Enter != null) { NoteServerEnter(entry.Enter.Channel); Housing.ServerEnter(); }
         // a new game scene: the old one's OnLeave ran GameEventManagerCli::Clear (scenestategame.cpp:1314)
         InteractShutdowns.Clear();
+        Construction.Clear();
         HotTimes.Clear();
         SaleEvents.Clear();
         // the adventure level, quest, item, trophy, title and key table loads among them

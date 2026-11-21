@@ -40,6 +40,9 @@ public partial class LiveSession
     /// <summary>The game event list's interact object shutdowns (GameEvent 0xB2, CGameEventValueManager
     /// ShutdownInteractObjectId); kept across fields, cleared with a new game scene.</summary>
     public readonly InteractObjectShutdowns InteractShutdowns = new();
+    /// <summary>The game event list's construction sets (GameEventMassiveConstructionEvent / IgnoreConstructionLockEvent into
+    /// CGameRule); kept across fields, cleared with a new game scene.</summary>
+    public readonly ConstructionEvents Construction = new();
     /// <summary>The game event list's special ability hot times (GameEventSAHotTime / PCBangSAHotTime into CGameRule's
     /// sums); kept across fields, cleared with a new game scene.</summary>
     /// <summary>The running premium market sale events (CShopEventManager), for the shop's prices.</summary>
@@ -137,6 +140,7 @@ public partial class LiveSession
     void OnGameEvent(GameEventMessage m)
     {
         InteractShutdowns.Apply(m);
+        Construction.Apply(m);
         HotTimes.Apply(m);
         SaleEvents.Apply(m);
         GD.Print($"live: GameEvent kind {m.Kind}: {m.Shutdowns.Count} shutdown events, {m.HotTimes.Count} hot times, {m.RemovedIds.Count} removed{(m.Truncated ? ", stopped at an unregistered type" : "")}");
@@ -193,11 +197,12 @@ public partial class LiveSession
 
     bool? housingLevelFeature;
     /// <summary>MyPC::FUN_1415302e0's inputs: the housing and interior tables, the housing state, feature 0xdb and the own
-    /// trophies. The ignored construction lock list stays empty (STILL-OPEN: the event's ids are not kept).</summary>
+    /// trophies, and the game event list's ignored construction lock ids.</summary>
     Ms2.Ui.CubeLock CubeLocks()
     {
         var packs = Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir);
-        var l = new Ms2.Ui.CubeLock { State = Housing, IsGradeCleared = Achieves.IsGradeCleared, IsFeatureEnabled = HousingFeature };
+        var l = new Ms2.Ui.CubeLock { State = Housing, IsGradeCleared = Achieves.IsGradeCleared, IsFeatureEnabled = HousingFeature,
+            IgnoredConstructionLock = Construction.IsIgnoredConstructionLock };
         try { l.Housing = new Ms2.Formats.World.HousingTable(packs); l.Interiors = new Ms2.Formats.World.CubeInteriorTable(packs); }
         catch (Exception e) { GD.Print($"live: housing tables unavailable ({e.Message})"); }
         return l;

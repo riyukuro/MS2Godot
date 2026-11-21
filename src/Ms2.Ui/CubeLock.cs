@@ -27,8 +27,8 @@ public sealed class CubeLock
     public CubeInteriorTable Interiors;
     public HousingState State = new();
     /// <summary>CGameRule::FUN_14047e150: the id is on the ignored construction lock list
-    /// (GameEventIgnoreConstructionLockEvent::OnStart, gameevent.cpp:4952-4958); null is the empty list.
-    /// STILL-OPEN: the event's ids are read and dropped (GameEvent.cs), so live has no list yet.</summary>
+    /// (GameEventIgnoreConstructionLockEvent::OnStart, gameevent.cpp:4952-4958; <see cref="ConstructionEvents"/>); null is
+    /// the empty list.</summary>
     public Func<long, bool> IgnoredConstructionLock;
     public Func<int, bool> IsFeatureEnabled;
     /// <summary>CAchieveManager::IsGradeCleared (<see cref="AchieveBook.IsGradeCleared"/>); null clears nothing.</summary>
