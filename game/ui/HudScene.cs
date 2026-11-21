@@ -2720,10 +2720,11 @@ public partial class HudScene : Node, IUiStageHost
         if (live == null) return;
         Action<int> onBook = _ => playerInfo.RebindSlots();
         Action<long> onBag = _ => playerInfo.QueueSlotRefresh(Ms2.Ui.Hud.MainPlayerInfoController.RefreshGray | Ms2.Ui.Hud.MainPlayerInfoController.RefreshItemCount);
-        // OnKeyTable mode 0 / 7's SetQuickSlotPage posts NotifyShortkeyPage (keytable.cpp:2547): the slots reload their page
+        // OnKeyTable mode 0 / 7's SetQuickSlotPage posts NotifyShortkeyPage (keytable.cpp:2547): the slots reload their page;
+        // a mode 0 with useDefault 1 reads no pages and does not call it (:293-303)
         Action<int> onKeys = mode =>
         {
-            if ((mode == 0 || mode == 7) && hudModel.ServerKeys is { } t) playerInfo.OnShortkeyPageNotify(playerInfo.SlotFieldsPage, t.CurrentPage);
+            if ((mode == 0 || mode == 7) && hudModel.ServerKeys is { PagesRead: true } t) playerInfo.OnShortkeyPageNotify(playerInfo.SlotFieldsPage, t.CurrentPage);
             playerInfo.RebindSlots();
         };
         live.SkillBookChanged += onBook;

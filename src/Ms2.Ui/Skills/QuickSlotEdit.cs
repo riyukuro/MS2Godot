@@ -162,6 +162,8 @@ public static class QuickSlotEdit
             itemUid = 0;
             if (w.HasPc)
             {
+                // STILL-OPEN: no feed for MyPC's equipped lapenshard map (m_map16f8) nor the CItemLapenshardTable mask, so
+                // every lapenshard drop is refused (sends less, never more)
                 if (!w.LapenshardEquipped(item.Id)) usable = false;
                 if (w.LapenshardEquipMask(item.Id) != 1) usable = false;
             }
@@ -179,10 +181,12 @@ public static class QuickSlotEdit
     /// FUN_14092f4e0 @0x14092f4e0 (unit_14092f420_accountsessionstate.cpp:314), a clicked skill slot without a key: the bag's item
     /// of the skill first (Unk_Inventory::FUN_140a62d30, inventory.cpp:1310), else a skill the job knows (JobSystemCli vfunc_2,
     /// <see cref="JobSystem.IsLearned"/>) goes to the cast request (MyPC::FUN_141525480 with the level's sequence flag). True when
-    /// the skill goes to the cast request.
-    /// STILL-OPEN: the item skill path (FUN_140a62d30's skill record with the item uid) and the skill's m_bBlocked refusal.
+    /// the skill goes to the cast request. The level data's skill (JobSystemCli vfunc_1, <see cref="JobSystem.LevelData"/>) refuses
+    /// when it is a charging skill (:327, SkillData +0xad = m_blockA4.m_bChargingSkill); no level data still casts (:332).
+    /// STILL-OPEN: the item skill path (FUN_140a62d30's skill record with the item uid).
     /// </summary>
-    public static bool UseSkill(SlotWorld w, uint skillId) => w.Jobs != null && w.Jobs.IsLearned(skillId);
+    public static bool UseSkill(SlotWorld w, uint skillId) =>
+        w.Jobs != null && w.Jobs.IsLearned(skillId) && w.Jobs.LevelData(skillId)?.Skill is not { ChargingSkill: true };
 
     /// <summary>
     /// MyPC::vfunc_104 @0x1415219d0 (client/ms2/mypc.cpp:1687-1700), a key's quick slot item: a non-zero

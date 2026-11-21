@@ -28,6 +28,9 @@ public sealed class ServerKeyTable {
     public bool UsesDefaultKeys { get; private set; }
     /// <summary>The bindings of the last mode 0 packet (empty when <see cref="UsesDefaultKeys"/>).</summary>
     public IReadOnlyList<KeyBinding> Bindings { get; private set; } = Array.Empty<KeyBinding>();
+    /// <summary>The last packet read the pages and called SetQuickSlotPage (mode 0 with bindings or a count of 0, mode 7); a mode 0
+    /// with useDefault 1 (keytable.cpp:293-303) does not, so its NotifyShortkeyPage does not come.</summary>
+    public bool PagesRead { get; private set; }
     /// <summary>m_nQuickSlotPage (SetQuickSlotPage).</summary>
     public int CurrentPage { get; private set; }
     public int PageCount => pages.Count;
@@ -51,23 +54,26 @@ public sealed class ServerKeyTable {
     /// same entry on two slots the one returned may differ.</summary>
     public int FindQuickSlotBySkillAndItemUid(int skillId, long itemUid) {
         if (CurrentPage < 0 || CurrentPage >= pages.Count) return 0;
-        foreach (var (slot, e) in pages[CurrentPage].OrderBy(kv => kv.Key))
-            if (e.SkillId == skillId && e.ItemUid == itemUid) return slot;
-        return -1;
+        int found = -1;     // the lowest matching slot (no sort, no allocation)
+        foreach (var (slot, e) in pages[CurrentPage])
+            if (e.SkillId == skillId && e.ItemUid == itemUid && (found < 0 || slot < found)) found = slot;
+        return found;
     }
 
     /// <summary>CKeyTable::FindQuickSlotBySkillAndItem @0x14142e150 (client/ms2/keytable.cpp:1600): the slot of the current page
     /// that holds the skill, item id and item uid, -1 when none does, 0 when the page does not exist.</summary>
     public int FindQuickSlotBySkillAndItem(int skillId, int itemId, long itemUid) {
         if (CurrentPage < 0 || CurrentPage >= pages.Count) return 0;
-        foreach (var (slot, e) in pages[CurrentPage].OrderBy(kv => kv.Key))
-            if (e.SkillId == skillId && e.ItemId == itemId && e.ItemUid == itemUid) return slot;
-        return -1;
+        int found = -1;     // the lowest matching slot (the client walks a CAtlMap; no sort, no allocation)
+        foreach (var (slot, e) in pages[CurrentPage])
+            if (e.SkillId == skillId && e.ItemId == itemId && e.ItemUid == itemUid && (found < 0 || slot < found)) found = slot;
+        return found;
     }
 
     /// <summary>OnKeyTable: applies one packet; returns the mode.</summary>
     public int Apply(ByteReader r) {
         int mode = r.ReadByte();
+        PagesRead = false;
         if (mode == 0) {
             int useDefault = r.ReadByte();
             if (useDefault == 1) {
@@ -93,6 +99,7 @@ public sealed class ServerKeyTable {
     }
 
     void ReadPages(ByteReader r) {
+        PagesRead = true;
         int page = r.ReadUShort();
         int count = r.ReadUShort();
         pages.Clear();

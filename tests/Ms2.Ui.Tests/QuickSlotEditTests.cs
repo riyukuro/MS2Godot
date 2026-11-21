@@ -191,4 +191,16 @@ public class QuickSlotEditTests
         Assert.That(Drop(), Is.EqualTo(new QuickSlotEntry(100, 0, 0)));
         Assert.That(sent, Is.EqualTo(new IOutPacket[] { new KeyTableSetQuickSlotRequest(0, 100, 0, 0, 1) }));
     }
+
+    [Test]
+    public void AKeylessClickRefusesAChargingSkill()
+    {
+        // FUN_14092f4e0 (unit_14092f420_accountsessionstate.cpp:327): the level data's skill with SkillData +0xad
+        // (m_blockA4.m_bChargingSkill) set refuses the click; a learnt skill without it goes to the cast request
+        var doc = XDocument.Parse("<ms2>" + Active + "<skill id=\"101\"><basic mainType=\"1\"><combo chargingSkill=\"1\"/></basic><level value=\"1\"/></skill></ms2>");
+        var t = new SkillTables(JobTable.Empty, new SkillDataTable(() => new[] { doc }, Levels));
+        var w = new SlotWorld { Tables = t, Jobs = new JobSystem(t), Inventory = Array.Empty<EquipItem>() };
+        Assert.That(w.Jobs.IsLearned(101), Is.True);
+        Assert.That((QuickSlotEdit.UseSkill(w, 100), QuickSlotEdit.UseSkill(w, 101), QuickSlotEdit.UseSkill(w, 999)), Is.EqualTo((true, false, false)));
+    }
 }

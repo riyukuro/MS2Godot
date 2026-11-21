@@ -56,6 +56,29 @@ public class ServerKeyTableTests {
         Assert.That(t.PageCount, Is.EqualTo(2));
     }
 
+    [Test] public void ADefaultKeysMode0ReadsNoPagesSoTheSlotsDoNotReload() {
+        // CKeyTable::OnKeyTable (keytable.cpp:293-303): useDefault 1 loads DefaultKey.xml and returns before SetQuickSlotPage
+        var t = new ServerKeyTable();
+        t.Apply(new ByteReader(ServerKeyTable.Write(0, false, Keys, 1, Pages)));
+        Assert.That(t.PagesRead, Is.True);
+        t.Apply(new ByteReader(ServerKeyTable.Write(0, true, Keys, 0, Pages)));
+        Assert.That(t.PagesRead, Is.False);
+        t.Apply(new ByteReader(ServerKeyTable.Write(7, false, null, 0, Pages)));
+        Assert.That(t.PagesRead, Is.True);
+        t.Apply(new ByteReader(ServerKeyTable.Write(0, false, Array.Empty<KeyBinding>(), 0, Pages)));
+        Assert.That(t.PagesRead, Is.True, "a binding count of 0 still reads the pages");
+    }
+
+    [Test] public void FindBySkillAndItemDoesNotAllocate() {
+        var t = new ServerKeyTable(); t.Apply(new ByteReader(ServerKeyTable.Write(0, false, Keys, 1, Pages)));
+        t.SetEntry(1, 9, new QuickSlotEntry(0, 20000001, 55)); t.SetEntry(1, 3, new QuickSlotEntry(0, 20000001, 55));
+        Assert.That(t.FindQuickSlotBySkillAndItem(0, 20000001, 55), Is.EqualTo(3), "the lowest slot");
+        Assert.That(t.FindQuickSlotBySkillAndItemUid(0, 55), Is.EqualTo(3));
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1000; i++) { t.FindQuickSlotBySkillAndItem(0, 20000001, 55); t.FindQuickSlotBySkillAndItemUid(0, 55); }
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512));
+    }
+
     [Test] public void FindBySkillAndItemMatchesAllThreeOfTheCurrentPage() {
         // CKeyTable::FindQuickSlotBySkillAndItem @0x14142e150 (keytable.cpp:1600): skill, item id and item uid of the current
         // page; -1 when none matches
