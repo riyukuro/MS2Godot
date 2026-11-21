@@ -29,13 +29,21 @@ public sealed class RemoteInvincible
     /// (the effect goes) and vfunc_42(1.0, true).</summary>
     public void Tick(uint now, Node tree, World.RegionSkills fx)
     {
-        if (!Blink.Active || !Blink.Tick(now, out float alpha, out bool ended)) return;
-        if (ended) { End(tree, fx); return; }
-        if (GodotObject.IsInstanceValid(tree)) NodeFade.Set(tree, alpha, false);
+        if (Tick(now, tree)) End(tree, fx);
     }
 
-    /// <summary>FUN_141661370(0, 0, 0) and vfunc_42(1.0, true). Also called when the PC leaves while invincible: a port
-    /// choice, so the kept effect does not outlive the body it follows (the client's path for that is not traced).</summary>
+    /// <summary>The blink frame alone: true past the end, where the caller runs <see cref="End"/> (so the effect layer is
+    /// looked up only on that frame).</summary>
+    public bool Tick(uint now, Node tree)
+    {
+        if (!Blink.Active || !Blink.Tick(now, out float alpha, out bool ended)) return false;
+        if (ended) return true;
+        if (GodotObject.IsInstanceValid(tree)) NodeFade.Set(tree, alpha, false);
+        return false;
+    }
+
+    /// <summary>FUN_141661370(0, 0, 0) and vfunc_42(1.0, true). Also called when the PC leaves while invincible: ~PC frees
+    /// the kept effect m_n1060 (pc.cpp:764-768), so it does not outlive the body it follows.</summary>
     public void End(Node tree, World.RegionSkills fx)
     {
         Blink.Stop();

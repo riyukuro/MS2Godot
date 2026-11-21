@@ -468,6 +468,7 @@ public sealed partial class RemoteLayer : Node3D
             {
                 case UserAddedEvent add:
                     if (add.User.User.CharacterId == selfCharacter) break;
+                    // a replaced or leaving PC: ~PC frees its kept invincible effect m_n1060 (pc.cpp:764-768)
                     if (users.Remove(add.User.ObjectId, out var old)) { old.Invincible.End(null, RegionFx); tags.Remove(old.Root); bars.Remove(old.Root); old.Death.Free(); old.Pc.Free(); }
                     users[add.User.ObjectId] = Spawn(add.User); UsersSpawned++; ArmCodi();
                     GD.Print($"live: other player '{add.User.User.Name}' object {add.User.ObjectId} shown at {add.User.Position}");
@@ -475,7 +476,8 @@ public sealed partial class RemoteLayer : Node3D
                 case UserRemovedEvent rem:
                     if (users.Remove(rem.ObjectId, out var gone))
                     {
-                        gone.Invincible.End(null, RegionFx); tags.Remove(gone.Root); bars.Remove(gone.Root); gone.Death.Free(); gone.Pc.Free();
+                        gone.Invincible.End(null, RegionFx);   // ~PC, pc.cpp:764-768
+                        tags.Remove(gone.Root); bars.Remove(gone.Root); gone.Death.Free(); gone.Pc.Free();
                         GD.Print($"live: other player {gone.Name} (object {rem.ObjectId}) left");
                     }
                     break;
@@ -634,7 +636,7 @@ public sealed partial class RemoteLayer : Node3D
         foreach (var a in users.Values)
         {
             a.Pc.Tick(dt);
-            if (a.Invincible.Blink.Active) a.Invincible.Tick(now, a.Visual, RegionFx);
+            if (a.Invincible.Blink.Active && a.Invincible.Tick(now, a.Visual)) a.Invincible.End(a.Visual, RegionFx);
             a.Death.Revival.Expire(tick);
         }
         if (TombTags.Count > 0) RunTombTags();

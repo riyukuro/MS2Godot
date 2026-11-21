@@ -129,7 +129,8 @@ public partial class LiveSession
 
     /// <summary>The own PC goes with its field (SetMyPC(0) on a field change or GameToGame, <see cref="DropOwnPc"/>): ~PC
     /// removes the kept effect and the new field's MyPC starts with m_n105c 0, so a running invincible ends here without its
-    /// blink carrying over to the new PC. The custom buff icon is not removed: ~PC leaves it, and it goes at its own end tick.</summary>
+    /// blink carrying over to the new PC. The custom buff icon is not removed: ~PC leaves it, and it goes at its own end tick.
+    /// <see cref="InvincibleBuffEnd"/> keeps its value: its only reader (a HUD made later) checks Invincible.Active first.</summary>
     void DropOwnPcInvincible()
     {
         if (!Invincible.Active) return;

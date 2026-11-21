@@ -100,9 +100,12 @@ public partial class RemoteInvincibleCheck : Node3D
         direct.Start(10000, InvincibleBlink.RevivalTimer, (uint)Time.GetTicksMsec(), actor, fx, Xml);
         int h = direct.Effect;
         Check(h != 0 && kept.Contains(h), $"the start kept no effect (handle {h})");
+        Check(!direct.Tick((uint)Time.GetTicksMsec(), actor), "a blink frame asked for the end");
         direct.Blink.Start(1, InvincibleBlink.RevivalTimer, (uint)Time.GetTicksMsec());
         OS.DelayMsec(5);
-        direct.Tick((uint)Time.GetTicksMsec(), actor, fx);
+        Check(direct.Tick((uint)Time.GetTicksMsec(), actor) && direct.Effect == h && kept.Contains(h),
+            "the frame past the end did not ask for the end, or ended without the effect layer");
+        direct.End(actor, fx);
         Check(!direct.Blink.Active && direct.Effect == 0 && !kept.Contains(h), $"the end left the effect {h}");
         var inv6 = layer.InvincibleOf(6);
         inv6?.Start(10000, InvincibleBlink.RevivalTimer, (uint)Time.GetTicksMsec(), FindVisual(layer, inv6), fx, Xml);
