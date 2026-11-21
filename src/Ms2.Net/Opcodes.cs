@@ -43,6 +43,7 @@ public enum Inbound : ushort {
     Emote = 0x1F,           // RecvOp::Emote (commonfiles/opcodes.h:39): CSceneStateGame::OnEmote
     ItemPutOnOrOff = 0x20,
     ItemInventory = 0x21,
+    ItemLock = 0xDB,   // RecvOp::ItemLock: CItemLockManager::OnItemLockPacket (scenestategame.cpp:3724)
     StorageInventory = 0x22,   // RecvOp::StorageInventory (commonfiles/opcodes.h:42): CStore::Dispatch (store.cpp, 0x140de3480)
     ItemPutOn = 0x25,
     ItemPutOff = 0x26,
@@ -111,6 +112,7 @@ public enum Outbound : ushort {
     ResponseHeartbeat = 0x0A,
     ItemEquip = 0x16,
     RequestItemInventory = 0x17,
+    RequestItemLock = 0x87,   // SendOp::RequestItemLock: CItemLockManager (unnamed/unit_1406125d0_itemlockmanager.cpp)
     RequestItemStorage = 0x18,   // SendOp::RequestItemStorage (commonfiles/opcodes.h): CStore::Request*, FUN_140de2dc0, FUN_140de31f0, StoreSlot::vfunc_18
     RequestItemUse = 0x19,
     BadgeEquip = 0x47,
