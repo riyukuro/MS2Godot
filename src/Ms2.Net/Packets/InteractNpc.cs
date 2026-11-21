@@ -5,7 +5,7 @@ namespace Ms2.Net.Packets;
 
 /// <summary>
 /// Outbound InteractNpc (SendOp 0x32, commonfiles/opcodes.h:355): CNpc::SendInteractNpc (@0x141094730,
-/// unit_14108e1e0_npcactorandvibrate.cpp:1439), sent by StateInteractionNpc::vfunc_8 (stateinteractdata.cpp:620)
+/// unit_14108e1e0_npcactorandvibrate.cpp:1439), sent by StateInteractionNpc::vfunc_8 (stateinteractdata.cpp:637)
 /// once the interaction cast finishes. Wire: i32 npc object id.
 /// </summary>
 public sealed record InteractNpcRequest(int ObjectId) : IOutPacket

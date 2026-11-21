@@ -12,7 +12,7 @@ namespace Ms2.Ui.Tests;
 
 public class LiveInteractObjectsTests
 {
-    sealed class Host : IInteractHost
+    internal sealed class Host : IInteractHost
     {
         public bool HasPlayer { get; set; } = true;
         public bool Restricted;
@@ -20,7 +20,10 @@ public class LiveInteractObjectsTests
         public int FieldId { get; set; } = 20000062;
         public ushort Channel { get; set; } = 2;
         public long NowMs { get; set; } = 1000;
-        public int PlayerStateId { get; set; } = 1;
+        int state = 1;
+        /// <summary>When set, the state id is read from it (the session's <see cref="InteractKey.StateId"/>).</summary>
+        public Func<int> StateFn;
+        public int PlayerStateId { get => StateFn != null ? StateFn() : state; set => state = value; }
         public readonly HashSet<(int, int)> Shutdown = new();
         public bool IsInteractObjectShutdown(int fieldId, int rowId) => Shutdown.Contains((fieldId, rowId));
         public int FlushCalls;
@@ -493,6 +496,15 @@ public class LiveInteractObjectsTests
         Assert.That(allocated, Is.EqualTo(0), $"{what}: Poll+Tick allocated {allocated} B over 600 frames");
     }
 
+    internal static LiveInteractObjects LeverOn(Host host, uint reactMs)
+    {
+        var live = new LiveInteractObjects(host, MakeTable(new InteractObjectRow { Id = 700, Type = 1, InteractionDistance = 200, ReactTimeMs = reactMs }));
+        live.Attach(new[] { XblockEntity("lv-1", 700, new Vec3(0, 0, 0)) });
+        live.Apply(new InteractObjectMessage { Mode = InteractObjectMessage.ModeState, Name = "lv-1", State = 1, Kind = 1 });
+        live.Poll(new Vec3(10, 0, 0));
+        return live;
+    }
+
     static (Host host, LiveInteractObjects live) Lever(int reactMs)
     {
         var host = new Host();
@@ -573,6 +585,82 @@ public class LiveInteractObjectsTests
     }
 }
 
+public class InteractKeyTests
+{
+    // The session's two interactions with InteractKey.StateId as the state both read (MyPC::GetCurStateId): 0x19 while the
+    // StateInteraction cast runs, 0x1a while the StateInteractionNpc cast runs.
+    static (LiveInteractObjects objs, LiveInteractNpc npcs, LiveInteractObjectsTests.Host oh, LiveInteractNpcTests.Host nh) Session(uint reactMs)
+    {
+        LiveInteractObjects objs = null;
+        LiveInteractNpc npcs = null;
+        var oh = new LiveInteractObjectsTests.Host();
+        var nh = new LiveInteractNpcTests.Host();
+        oh.StateFn = () => InteractKey.StateId(objs, npcs, 1);
+        nh.StateFn = () => InteractKey.StateId(objs, npcs, 1);
+        objs = LiveInteractObjectsTests.LeverOn(oh, reactMs);
+        npcs = new LiveInteractNpc(nh);
+        npcs.Add(7, LiveInteractNpcTests.Row(), talkable: true, new Vec3(100, 0, 0));
+        return (objs, npcs, oh, nh);
+    }
+
+    static readonly Vec3 At = new(10, 0, 0);
+
+    [Test]
+    public void StateIdIsTheCastingInteractionsState()
+    {
+        var (objs, npcs, _, _) = Session(1500);
+        Assert.That(InteractKey.StateId(objs, npcs, 2), Is.EqualTo(2));
+        Assert.That(InteractKey.StateId(null, null, 1), Is.EqualTo(1));
+        Assert.That(InteractKey.Use(objs, npcs, false, At), Is.True);
+        Assert.That(InteractKey.StateId(objs, npcs, 1), Is.EqualTo(InteractKey.StateInteraction));
+        objs.CancelCast();
+        npcs.Poll(new Vec3(0, 0, 0));
+        Assert.That(InteractKey.Use(objs, npcs, true, At), Is.True);
+        Assert.That(InteractKey.StateId(objs, npcs, 1), Is.EqualTo(InteractKey.StateInteractionNpc));
+    }
+
+    [Test]
+    public void ObjectCastRunningRefusesASecondTimedPress()
+    {
+        // InteractAction::vfunc_2 (actionkeyobject.cpp:1574): FUN_141527160(0x19) refuses from state 0x19; the cast goes on
+        var (objs, npcs, oh, _) = Session(1500);
+        Assert.That(InteractKey.Use(objs, npcs, false, At), Is.True);
+        Assert.That(oh.Sent, Has.Count.EqualTo(1));
+        Assert.That(InteractKey.Use(objs, npcs, false, At), Is.False);
+        Assert.That(oh.Sent, Has.Count.EqualTo(1));
+        Assert.That(oh.CastCancels, Is.EqualTo(0));
+        Assert.That(objs.IsCasting, Is.True);
+    }
+
+    [Test]
+    public void NpcCastRunningRefusesATimedObjectWithoutCancelling()
+    {
+        // the object's gate (:1574) refuses from state 0x1a: no cancel of the npc cast and no 0x0b
+        var (objs, npcs, oh, nh) = Session(1500);
+        npcs.Poll(new Vec3(0, 0, 0));
+        Assert.That(InteractKey.Use(objs, npcs, true, At), Is.True);
+        objs.Poll(At);
+        Assert.That(InteractKey.Use(objs, npcs, false, At), Is.False);
+        Assert.That(oh.Sent, Is.Empty);
+        Assert.That(nh.Cancels, Is.EqualTo(0));
+        Assert.That(npcs.IsCasting, Is.True);
+    }
+
+    [Test]
+    public void ObjectCastRunningRefusesTheNpc()
+    {
+        // InteractNpcAction::vfunc_2 (:1644) refuses from state 0x19: no npc cast, the object cast goes on
+        var (objs, npcs, oh, nh) = Session(1500);
+        Assert.That(InteractKey.Use(objs, npcs, false, At), Is.True);
+        npcs.Poll(new Vec3(0, 0, 0));
+        Assert.That(InteractKey.Use(objs, npcs, true, At), Is.False);
+        Assert.That(nh.Casts, Is.EqualTo(0));
+        Assert.That(oh.CastCancels, Is.EqualTo(0));
+        Assert.That(objs.IsCasting, Is.True);
+        Assert.That(nh.Sent, Is.Empty);
+    }
+}
+
 public class ActionKeyPollTests
 {
     [Test]
@@ -580,11 +668,11 @@ public class ActionKeyPollTests
     {
         // Unk_ActionKeyManager::Update (actionkeyobject.cpp:549-603): ascending key, interact 0x12 < portal 0x13 <
         // talk 0x14 < billboard 0x18
-        Assert.That(ActionKeyPoll.First(true, true, true, true), Is.EqualTo(ActionKeyTarget.Interact));
-        Assert.That(ActionKeyPoll.First(false, true, true, true), Is.EqualTo(ActionKeyTarget.Portal));
-        Assert.That(ActionKeyPoll.First(false, false, true, true), Is.EqualTo(ActionKeyTarget.Talk));
-        Assert.That(ActionKeyPoll.First(false, false, false, true), Is.EqualTo(ActionKeyTarget.BillBoard));
-        Assert.That(ActionKeyPoll.First(false, false, false, false), Is.EqualTo(ActionKeyTarget.None));
+        Assert.That(ActionKeyPoll.Pick(true, true, true, true), Is.EqualTo(ActionKeyTarget.Interact));
+        Assert.That(ActionKeyPoll.Pick(false, true, true, true), Is.EqualTo(ActionKeyTarget.Portal));
+        Assert.That(ActionKeyPoll.Pick(false, false, true, true), Is.EqualTo(ActionKeyTarget.Talk));
+        Assert.That(ActionKeyPoll.Pick(false, false, false, true), Is.EqualTo(ActionKeyTarget.BillBoard));
+        Assert.That(ActionKeyPoll.Pick(false, false, false, false), Is.EqualTo(ActionKeyTarget.None));
     }
 
     [Test]

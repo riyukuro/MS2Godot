@@ -10,15 +10,17 @@ namespace Ms2.Ui;
 public interface IInteractNpcHost
 {
     bool HasPlayer { get; }
-    /// <summary>Client::Constants::InteractionDistance (actionkeyobject.cpp:1664, stateinteractdata.cpp:625).</summary>
+    /// <summary>Client::Constants::InteractionDistance (actionkeyobject.cpp:1664, stateinteractdata.cpp:641).</summary>
     float InteractionDistance { get; }
     /// <summary>The local player's forward direction (the ridee's when riding), WorldService::FindNearestNpc's front
     /// plane (worldservice_1.cpp:6443-6452).</summary>
     Vec3 PlayerForward { get; }
     /// <summary>The PvP point of the player's PvPInfo when it has one (actionkeyobject.cpp:1667-1670), else null.</summary>
     int? PvPPoint { get; }
-    /// <summary>MyPC::FUN_141527160(0x1a): whether the player may enter StateInteractionNpc (actionkeyobject.cpp:1644).</summary>
-    bool CanEnterInteractNpcState { get; }
+    /// <summary>MyPC::GetCurStateId as far as the host knows it (<see cref="InteractKey.StateId"/>: 0x19 / 0x1a while an
+    /// interaction's cast runs). MyPC::FUN_141527160(0x1a) (actionkeyobject.cpp:1644) lets StateInteractionNpc start only
+    /// from the states <see cref="LiveInteractObjects.StateAllowsInteraction"/> names (mypc.cpp:1873-1882).</summary>
+    int PlayerStateId { get; }
     void Send(IOutPacket packet);
     /// <summary>UICastingBar 0x4e72 StartCasting with Unk_CastingParam m_nDuration / m_b5 (gauge drawn).</summary>
     void StartCasting(ICastingEventListener listener, int durationMs, bool showBar);
@@ -49,7 +51,7 @@ public sealed class InteractNpcEntry
 /// </summary>
 public sealed class LiveInteractNpc : ICastingEventListener
 {
-    public const string DefaultCastingAnimation = "Object_React_A";   // StateInteractionNpc::vfunc_4 (stateinteractdata.cpp:579)
+    public const string DefaultCastingAnimation = "Object_React_A";   // StateInteractionNpc::vfunc_4 (stateinteractdata.cpp:580)
 
     readonly IInteractNpcHost host;
     readonly List<InteractNpcEntry> npcs = new();    // ascending object id, the CRBTree's order (worldservice_1.cpp:6455)
@@ -198,7 +200,7 @@ public sealed class LiveInteractNpc : ICastingEventListener
     {
         var npc = polled;
         if (npc == null || !host.HasPlayer) return false;
-        if (!host.CanEnterInteractNpcState) return false;
+        if (!LiveInteractObjects.StateAllowsInteraction(host.PlayerStateId)) return false;   // FUN_141527160(0x1a) (:1644)
         if (string.IsNullOrEmpty(npc.Row.InteractFunction)) return false;    // m_n20 = 1 (:1653), nothing else
         if (castingActive) CancelCast();
         castingNpc = npc.ObjectId;
@@ -221,7 +223,7 @@ public sealed class LiveInteractNpc : ICastingEventListener
     }
 
     /// <summary>
-    /// StateInteractionNpc::vfunc_8 (@0x1417d2ed0, stateinteractdata.cpp:616-650): with the npc found, a finished cast
+    /// StateInteractionNpc::vfunc_8 (@0x1417d2ed0, stateinteractdata.cpp:625-661): with the npc found, a finished cast
     /// sends InteractNpc (0x32), else leaving InteractionDistance ends the state (state 1); a finished cast ends it (state 2)
     /// whether the npc was found or not; moving ends it too. Zero allocations unless the cast finishes.
     /// </summary>

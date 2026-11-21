@@ -73,13 +73,11 @@ public partial class LiveSession
     /// Per-frame action-key poll before the portal, by ascending action key: GatheringAction (4), InteractNpcAction
     /// (0x11, <see cref="LiveInteractNpc.Poll"/>), InteractAction (0x12). 0 B/frame.
     /// </summary>
-    public bool PollInteract(Vec3 at)
-    {
-        npcPolled = false;
-        if (InteractObjects != null && InteractObjects.PollGatheringAction(at)) return true;
-        if (InteractNpcs != null && InteractNpcs.Poll(at)) { npcPolled = true; return true; }
-        return InteractObjects != null && InteractObjects.PollInteractAction(at);
-    }
+    public bool PollInteract(Vec3 at) => PollInteract(at, at);
+
+    /// <summary>As <see cref="PollInteract(Vec3)"/>, with the npc search from <paramref name="npcAt"/> (the ridee's
+    /// position when riding, WorldService::FindNearestNpc via worldservice_1.cpp:9679-9682).</summary>
+    public bool PollInteract(Vec3 at, Vec3 npcAt) => InteractKey.Poll(InteractObjects, InteractNpcs, at, npcAt, out npcPolled);
 
     /// <summary>The billboard action's poll (key 0x18, after the portal; 0 B/frame).</summary>
     public bool PollInteractBillBoard(Vec3 at) => InteractObjects != null && InteractObjects.PollBillBoard(at);
@@ -91,18 +89,30 @@ public partial class LiveSession
         InteractNpcs?.Tick(at, playerMoved);
     }
 
-    /// <summary>Action key press on the polled interact object.</summary>
-    public bool UseInteract(Vec3 at)
+    /// <summary>Action key press on the polled interact object: only the polled action runs, and its own state gate refuses it
+    /// while the other interaction's cast runs (that cast is not cancelled).</summary>
+    public bool UseInteract(Vec3 at) => InteractKey.Use(InteractObjects, InteractNpcs, npcPolled, at);
+
+    /// <summary>The client state id as far as it is known here (<see cref="InteractKey.StateId"/>): 0x19 / 0x1a while an
+    /// interaction's cast runs; riding 0x21; on the spawn or idle state, 1 while the body stands and 2 while it walks; a
+    /// state the server set otherwise. A move the client makes on its own that is not idle or walk (jump, fall, swim, climb,
+    /// ...) is -1, which the interactions refuse.</summary>
+    int InteractPlayerStateId()
     {
-        if (npcPolled)
+        if (selfObject < 0 || player == null || !IsInstanceValid(player)) return -1;
+        int move;
+        if (player.Mount != null) move = 0x21;
+        else
         {
-            if (InteractNpcs == null) return false;
-            InteractObjects?.CancelCast();
-            return InteractNpcs.Use();
+            int st = Me.State;
+            move = st is not (0 or 1 or 2) ? st : player.State switch
+            {
+                Player.MoveState.Idle => 1,
+                Player.MoveState.Walk => 2,
+                _ => -1,
+            };
         }
-        if (InteractObjects == null) return false;
-        InteractNpcs?.CancelCast();
-        return InteractObjects.Use(at);
+        return InteractKey.StateId(InteractObjects, InteractNpcs, move);
     }
 
     sealed class InteractNpcHost : IInteractNpcHost
@@ -137,8 +147,7 @@ public partial class LiveSession
 
         // STILL-OPEN: PvPInfo point (CPvPInfo::HasPoint / GetPoint, actionkeyobject.cpp:1667) is not tracked
         public int? PvPPoint => null;
-        // STILL-OPEN: MyPC::FUN_141527160(0x1a), the state-change gate, is not ported
-        public bool CanEnterInteractNpcState => true;
+        public int PlayerStateId => s.InteractPlayerStateId();
 
         public void Send(Ms2.Net.Wire.IOutPacket packet)
         {
@@ -188,25 +197,7 @@ public partial class LiveSession
         public long NowMs => (long)Time.GetTicksMsec();
         public bool PlayerRiding => s.player != null && IsInstanceValid(s.player) && s.player.Mount != null;
 
-        /// <summary>The client state id as far as it is known here: riding 0x21; on the spawn or idle state, 1 while the body
-        /// stands and 2 while it walks; a state the server set otherwise. A move the client makes on its own that is not
-        /// idle or walk (jump, fall, swim, climb, ...) is -1, which the interact refuses.</summary>
-        public int PlayerStateId
-        {
-            get
-            {
-                if (!HasPlayer) return -1;
-                if (s.player.Mount != null) return 0x21;
-                int st = s.Me.State;
-                if (st is not (0 or 1 or 2)) return st;
-                return s.player.State switch
-                {
-                    Player.MoveState.Idle => 1,
-                    Player.MoveState.Walk => 2,
-                    _ => -1,
-                };
-            }
-        }
+        public int PlayerStateId => s.InteractPlayerStateId();
 
         // STILL-OPEN: the game event list (GameEvent 0xB2, GameEventShutdownInteractObjectId) is not read, so no object is
         // known to be shut down

@@ -11,13 +11,16 @@ namespace Ms2.Ui.Tests;
 
 public class LiveInteractNpcTests
 {
-    sealed class Host : IInteractNpcHost
+    internal sealed class Host : IInteractNpcHost
     {
         public bool HasPlayer { get; set; } = true;
         public float InteractionDistance { get; set; } = 200f;
         public Vec3 PlayerForward { get; set; } = new(1, 0, 0);
         public int? PvPPoint { get; set; }
-        public bool CanEnterInteractNpcState { get; set; } = true;
+        int state = 1;
+        /// <summary>When set, the state id is read from it (the session's <see cref="InteractKey.StateId"/>).</summary>
+        public Func<int> StateFn;
+        public int PlayerStateId { get => StateFn != null ? StateFn() : state; set => state = value; }
         public readonly List<IOutPacket> Sent = new();
         public readonly List<string> Anims = new();
         public int Casts, Cancels, AnimStops, LastDuration;
@@ -32,7 +35,7 @@ public class LiveInteractNpcTests
         public void StopPlayerInteractAnim() => AnimStops++;
     }
 
-    static NpcRow Row(int friendly = 2, string function = "Fn", string anim = "", int castMs = 1500, bool showBar = true, params string[] tags) =>
+    internal static NpcRow Row(int friendly = 2, string function = "Fn", string anim = "", int castMs = 1500, bool showBar = true, params string[] tags) =>
         new() { Id = 11000001, Friendly = friendly, InteractFunction = function, InteractCastingAnimation = anim,
                 InteractCastingTime = castMs, InteractShowCastingBar = showBar, PropertyTags = tags };
 
@@ -198,12 +201,25 @@ public class LiveInteractNpcTests
     [Test]
     public void StateGateBlocksUse()
     {
-        var host = new Host { CanEnterInteractNpcState = false };
-        var live = new LiveInteractNpc(host);
-        live.Add(7, Row(), talkable: true, new Vec3(100, 0, 0));
-        live.Poll(Origin);
-        Assert.That(live.Use(), Is.False);
-        Assert.That(host.Casts, Is.EqualTo(0));
+        // InteractNpcAction::vfunc_2 (actionkeyobject.cpp:1644): FUN_141527160(0x1a) allows only states 1, 0xb, 0xf, 0x21
+        // and 0x3a (mypc.cpp:1873-1882); jumping, walking or another interaction's cast (0x19 / 0x1a) refuse it
+        foreach (int st in new[] { -1, 2, 0x10, 0x19, 0x1a })
+        {
+            var host = new Host { PlayerStateId = st };
+            var live = new LiveInteractNpc(host);
+            live.Add(7, Row(), talkable: true, new Vec3(100, 0, 0));
+            live.Poll(Origin);
+            Assert.That(live.Use(), Is.False, $"state {st:x}");
+            Assert.That(host.Casts, Is.EqualTo(0));
+        }
+        foreach (int st in new[] { 1, 0xb, 0xf, 0x21, 0x3a })
+        {
+            var host = new Host { PlayerStateId = st };
+            var live = new LiveInteractNpc(host);
+            live.Add(7, Row(), talkable: true, new Vec3(100, 0, 0));
+            live.Poll(Origin);
+            Assert.That(live.Use(), Is.True, $"state {st:x}");
+        }
     }
 
     [Test]

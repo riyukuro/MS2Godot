@@ -588,7 +588,7 @@ public partial class FieldContents : Node3D
                 bool onInteract = LiveInteractPoll(playerMs2);
                 bool onPortal = !onInteract && LivePortalPoll();
                 bool onBoard = !onInteract && !onPortal && LiveInteractBillBoardPoll(playerMs2);
-                actionKeys.Current = Ms2.Ui.ActionKeyPoll.First(onInteract, onPortal, false, onBoard);
+                actionKeys.Current = Ms2.Ui.ActionKeyPoll.Pick(onInteract, onPortal, false, onBoard);
             }
             LiveInteractTick(playerMs2, player.State != Player.MoveState.Idle);
             if (!pressed) return;

@@ -43,7 +43,7 @@ public struct ActionKeyPoll
 
     /// <summary>The first action that applies, by key: interact (4 / 0x11 / 0x12), portal (0x13), talk (0x14), billboard
     /// (0x18).</summary>
-    public static ActionKeyTarget First(bool interact, bool portal, bool talk, bool billBoard) =>
+    public static ActionKeyTarget Pick(bool interact, bool portal, bool talk, bool billBoard) =>
         interact ? ActionKeyTarget.Interact
         : portal ? ActionKeyTarget.Portal
         : talk ? ActionKeyTarget.Talk
