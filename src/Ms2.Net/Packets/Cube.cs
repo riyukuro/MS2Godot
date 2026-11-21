@@ -55,6 +55,62 @@ public sealed record ResponseCubeHeldItem(byte Mode, byte Error, int Id, int Cub
     }
 }
 
+/// <summary>ResponseCube 0x27 (CSceneStateGame::OnResponseCube, scenestategame.cpp:10560-10589): i64 account id; for the
+/// own account (DAT_143ab2820) i64 the day-change time (DAT_143ab2928), i64 the housing grade (kept as u16, DAT_143ab291c),
+/// i64 the housing exp (DAT_143ab2930), i32 n and n i32 the grades whose reward is taken (DAT_143ab32b8). Another account's
+/// packet stops after the id (<see cref="Mine"/> false), as the client returns there.</summary>
+public sealed record ResponseCubeHousingGrade(bool Mine, long DayChangeTime, ushort Grade, long Exp, int[] RewardedGrades)
+{
+    public const byte Mode = 0x27;
+
+    /// <summary>The body after the mode byte.</summary>
+    public static ResponseCubeHousingGrade Read(ByteReader r, long ownAccount)
+    {
+        if (r.ReadLong() != ownAccount) return new ResponseCubeHousingGrade(false, 0, 0, 0, Array.Empty<int>());
+        long time = r.ReadLong();
+        ushort grade = (ushort)r.ReadLong();
+        long exp = r.ReadLong();
+        int n = r.ReadInt();
+        var grades = new int[Math.Max(n, 0)];
+        for (int i = 0; i < n; i++) grades[i] = r.ReadInt();
+        r.ExpectEnd("ResponseCube 0x27");
+        return new ResponseCubeHousingGrade(true, time, grade, exp, grades);
+    }
+}
+
+/// <summary>ResponseCube 0x35 (scenestategame.cpp:10590-10606): i64 account id, i64 the house owner's id, i64, i64; for the
+/// own account the pc is in a house (DAT_143ab2857) of that owner (DAT_143ab2938).
+/// STILL-OPEN: the two last values go to the cube map service (CubeMapInformationService f420 / f428 through FUN_1410d5700 /
+/// FUN_1410d5750) for the home info dialog's UpdateBalance; their meaning is not recovered and nothing ported reads them.</summary>
+public sealed record ResponseCubeHouseOwner(long AccountId, long OwnerId, long Value1, long Value2)
+{
+    public const byte Mode = 0x35;
+
+    public static ResponseCubeHouseOwner Read(ByteReader r)
+    {
+        var m = new ResponseCubeHouseOwner(r.ReadLong(), r.ReadLong(), r.ReadLong(), r.ReadLong());
+        r.ExpectEnd("ResponseCube 0x35");
+        return m;
+    }
+}
+
+/// <summary>ResponseCube 0x37 (scenestategame.cpp:10746-10759): i16 the house owner's housing grade (DAT_143ab2940), i32 n,
+/// n (i32 trophy id, i32 grade): the owner's trophy set (DAT_143ab32d8), a set, so a repeated pair counts once.</summary>
+public sealed record ResponseCubeOwnerTrophies(ushort OwnerGrade, (int Id, int Level)[] Trophies)
+{
+    public const byte Mode = 0x37;
+
+    public static ResponseCubeOwnerTrophies Read(ByteReader r)
+    {
+        ushort grade = (ushort)r.ReadShort();
+        int n = r.ReadInt();
+        var list = new List<(int, int)>();
+        for (uint i = 0; i < (uint)n; i++) list.Add((r.ReadInt(), r.ReadInt()));
+        r.ExpectEnd("ResponseCube 0x37");
+        return new ResponseCubeOwnerTrophies(grade, list.ToArray());
+    }
+}
+
 /// <summary>CubeItemInfo (ugcmapoptions.cpp): a cube's item id, instance id, count and its optional UGC look.</summary>
 public sealed class CubeItemInfo
 {

@@ -753,7 +753,7 @@ public partial class LiveSession : Node
     /// enter, in arrival order, through the read loop's handler, then its RequestFieldEnter becomes the current entry.</summary>
     void TakeEntry()
     {
-        if (entry.Enter != null) NoteServerEnter(entry.Enter.Channel);
+        if (entry.Enter != null) { NoteServerEnter(entry.Enter.Channel); Housing.ServerEnter(); }
         // a new game scene: the old one's OnLeave ran GameEventManagerCli::Clear (scenestategame.cpp:1314)
         InteractShutdowns.Clear();
         HotTimes.Clear();
@@ -1578,7 +1578,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.InteractObject)) OnInteractObject(InteractObjectMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.InteractNpc)) OnInteractNpc(InteractNpcMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.GameEvent)) OnGameEvent(GameEventMessage.Read(p.Reader()));
-            else if (game.Is(p, Inbound.ResponseCube)) OnResponseCube(ResponseCubeHeldItem.Read(p.Reader()));
+            else if (game.Is(p, Inbound.ResponseCube)) OnResponseCube(p);
             else if (game.Is(p, Inbound.SetCraftMode)) OnSetCraftMode(SetCraftMode.Read(p.Reader()));
             else if (game.Is(p, Inbound.Emote)) OnEmote(EmoteMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.ChatStamp)) OnChatStamp(ChatStampMessage.Read(p.Reader()));

@@ -134,4 +134,42 @@ public class CubePacketTests
         });
         Assert.That(got, Is.EqualTo(want));
     }
+
+    [Test]
+    public void HousingGradeIsReadForTheOwnAccountOnly()
+    {
+        // scenestategame.cpp:10560-10574: i64 account; own: i64 time, i64 grade (u16), i64 exp, i32 n, n i32
+        var mine = ResponseCubeHousingGrade.Read(Reader(w =>
+        {
+            w.WriteLong(42); w.WriteLong(1700000000); w.WriteLong(0x10005); w.WriteLong(900);
+            w.WriteInt(3); w.WriteInt(2); w.WriteInt(4); w.WriteInt(2);
+        }), 42);
+        Assert.That((mine.Mine, mine.DayChangeTime, mine.Grade, mine.Exp), Is.EqualTo((true, 1700000000L, (ushort)5, 900L)));
+        Assert.That(mine.RewardedGrades, Is.EqualTo(new[] { 2, 4, 2 }));
+        // another account: the client returns after the id, so the rest is left unread
+        var other = ResponseCubeHousingGrade.Read(Reader(w => { w.WriteLong(41); w.WriteLong(1); w.WriteLong(2); }), 42);
+        Assert.That(other.Mine, Is.False);
+        Assert.That(other.RewardedGrades, Is.Empty);
+    }
+
+    [Test]
+    public void HouseOwnerReadsFourLongs()
+    {
+        // :10590-10597: four i64, read before the account check
+        var m = ResponseCubeHouseOwner.Read(Reader(w => { w.WriteLong(42); w.WriteLong(77); w.WriteLong(-3); w.WriteLong(9); }));
+        Assert.That(m, Is.EqualTo(new ResponseCubeHouseOwner(42, 77, -3, 9)));
+    }
+
+    [Test]
+    public void OwnerTrophiesReadAShortGradeAndPairs()
+    {
+        // :10746-10757: i16 grade, i32 n, n (i32 id, i32 level)
+        var m = ResponseCubeOwnerTrophies.Read(Reader(w =>
+        {
+            w.WriteShort(6); w.WriteInt(2); w.WriteInt(2300); w.WriteInt(1); w.WriteInt(2301); w.WriteInt(3);
+        }));
+        Assert.That(m.OwnerGrade, Is.EqualTo(6));
+        Assert.That(m.Trophies, Is.EqualTo(new[] { (2300, 1), (2301, 3) }));
+        Assert.That(ResponseCubeOwnerTrophies.Read(Reader(w => { w.WriteShort(1); w.WriteInt(0); })).Trophies, Is.Empty);
+    }
 }

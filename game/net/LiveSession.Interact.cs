@@ -34,6 +34,9 @@ public partial class LiveSession
     /// <summary>The local pc's held item (PC::m_spItem1040): set by InteractObject mode 15, let go by SendRequestCube and
     /// ResponseCube 0x12. A new field makes a new pc, so it starts empty.</summary>
     public readonly HeldItem HeldItem = new();
+    /// <summary>The housing globals ResponseCube 0x27 / 0x35 / 0x37 set; the owner part is cleared at each ServerEnter
+    /// (FUN_14092f420, scenestategame.cpp:2070).</summary>
+    public readonly HousingState Housing = new();
     /// <summary>The game event list's interact object shutdowns (GameEvent 0xB2, CGameEventValueManager
     /// ShutdownInteractObjectId); kept across fields, cleared with a new game scene.</summary>
     public readonly InteractObjectShutdowns InteractShutdowns = new();
@@ -109,9 +112,18 @@ public partial class LiveSession
 
     /// <summary>CSceneStateGame::OnResponseCube (scenestategame.cpp:9876), the held-item modes (<see cref="HeldItem.ResponseCube"/>)
     /// and their errors' build notice for the local pc (<see cref="BuildNotice.OfHeldItemResponse"/>).
+    /// The housing modes 0x27 / 0x35 / 0x37 fill <see cref="Housing"/>.
     /// STILL-OPEN: the other modes; the cube map's weapon lookup for mode 0x11, so a 0x11 holds nothing yet.</summary>
-    void OnResponseCube(ResponseCubeHeldItem m)
+    void OnResponseCube(Ms2.Net.Wire.RawPacket p)
     {
+        var r = p.Reader();
+        switch (r.ReadByte())
+        {
+            case ResponseCubeHousingGrade.Mode: Housing.Apply(ResponseCubeHousingGrade.Read(r, accountId)); return;
+            case ResponseCubeHouseOwner.Mode: Housing.Apply(ResponseCubeHouseOwner.Read(r), accountId); return;
+            case ResponseCubeOwnerTrophies.Mode: Housing.Apply(ResponseCubeOwnerTrophies.Read(r)); return;
+        }
+        var m = ResponseCubeHeldItem.Read(p.Reader());
         if (m == null) return;
         HeldItem.ResponseCube(m, selfObject, null, ItemExists?.Invoke(m.ItemId) ?? true);
         int notice = BuildNotice.OfHeldItemResponse(m, selfObject);
