@@ -109,6 +109,7 @@ public partial class MessageBoxLayer : CanvasLayer
     public override void _Input(InputEvent e)
     {
         if (controller == null || controller.IsIdle) return;
+        if (e is InputEventMouseButton or InputEventMouseMotion) { ForwardMouse(e); return; }
         if (e is not InputEventKey { Pressed: true, Echo: false } k) return;
         string key = k.Keycode switch
         {
@@ -123,6 +124,18 @@ public partial class MessageBoxLayer : CanvasLayer
         };
         var vp = GetViewport();   // taken before the dispatch, which can change the scene
         if (key != null && controller.ProcessKey(key)) if (IsInstanceValid(vp)) vp.SetInputAsHandled();
+    }
+
+    /// <summary>
+    /// A shown box is modal for the mouse: the movie takes the mouse before the scene's Controls (a Godot-built page such as the
+    /// launcher, whose Stop controls would consume the click in the GUI stage and the box's buttons would never see it).
+    /// </summary>
+    void ForwardMouse(InputEvent e)
+    {
+        if (movie.GetChildren().OfType<As3View>().FirstOrDefault() is not { } view) return;
+        var vp = GetViewport();
+        view._UnhandledInput(e);
+        if (IsInstanceValid(vp)) vp.SetInputAsHandled();
     }
 
     /// <summary>Scripted runs: text into the shown box's m_textInput, as typed.</summary>

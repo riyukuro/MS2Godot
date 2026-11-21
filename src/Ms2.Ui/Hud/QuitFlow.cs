@@ -9,6 +9,8 @@ public static class QuitFlow
 {
     public const int LoginSceneId = 0x6200009;
     public const int LogoSceneId = 0x620000b;
+    /// <summary>MS2Godot's own launcher page stands before the client's Logo state: a window close there quits at once, as on Logo.</summary>
+    public const int LauncherSceneId = LogoSceneId;
     public const int GameSceneId = 0x620000c;
     public const int LobbySceneId = 0x620000d;
     public const int LoadingSceneId = 0x620003b;

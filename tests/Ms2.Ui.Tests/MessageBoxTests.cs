@@ -136,6 +136,16 @@ public class MessageBoxTests
     }
 
     [Test]
+    public void WindowCloseOnTheLauncherQuitsAtOnce()
+    {
+        // the launcher is MS2Godot's own page before Logo: no confirm box there
+        Assert.That(QuitFlow.ConfirmOnWindowClose(QuitFlow.LauncherSceneId), Is.False);
+        int directQuits = 0;
+        Assert.That(QuitFlow.HandleWindowClose(QuitFlow.LauncherSceneId, _ => "Quit now?", true, () => { }, () => directQuits++), Is.True);
+        Assert.That(directQuits, Is.EqualTo(1));
+    }
+
+    [Test]
     public void WindowCloseConfirmsOutsideLoginAndQuitsOnYes()
     {
         // WindowService WM_CLOSE (windowservice.cpp:772-784): Login and Logo quit directly; Lobby/Create/Game confirm

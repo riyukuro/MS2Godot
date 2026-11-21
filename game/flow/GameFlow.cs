@@ -108,11 +108,13 @@ public partial class GameFlow : Node
 
     static int SceneIdFor(State state) => state switch
     {
+        State.Launcher => Ms2.Ui.Hud.QuitFlow.LauncherSceneId,
         State.Login => Ms2.Ui.Hud.QuitFlow.LoginSceneId,
         State.Lobby => Ms2.Ui.Hud.QuitFlow.LobbySceneId,
         State.Create => Ms2.Ui.Hud.QuitFlow.CreateSceneId,
         State.Loading => Ms2.Ui.Hud.QuitFlow.LoadingSceneId,
-        _ => Ms2.Ui.Hud.QuitFlow.GameSceneId,
+        State.Game => Ms2.Ui.Hud.QuitFlow.GameSceneId,
+        _ => throw new System.ArgumentOutOfRangeException(nameof(state)),
     };
 
     bool quitting;
