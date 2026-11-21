@@ -32,6 +32,8 @@ public sealed class UpperHudController : UiController
                 Host.Invoke(search, "changeTooltipText", Model.Tables.Common("s_gamedictionary_tooltip_search") ?? "");
             Listen(search, "buttonClick", OnSearchClick);                          // AddClickHandler(OnSearchClick)
         }
+        if (Host.Child("m_tokenPocketButton") is { } tokenPocket)
+            Listen(tokenPocket, "buttonClick", () => ToggleTokenPocket?.Invoke());     // AddClickHandler(OnTokenPocketClick)
         if (Host.Child("m_fishingBookButton") is { } fishingBook)
             Listen(fishingBook, "buttonClick", () => ToggleFishingBook?.Invoke());   // AddClickHandler(OnFishingBookClick)
         if (Host.Child("m_searchInput") is { } searchInput)
@@ -81,6 +83,9 @@ public sealed class UpperHudController : UiController
 
     /// <summary>CUIService::ToggleDialog(0x4f0b), the dictionary, from the search button.</summary>
     public event Action ToggleDictionary;
+
+    /// <summary>OnTokenPocketClick (@0x141356cd0, uiupperhuddialog.cpp:479): CUIService::ToggleDialog(0x4ece), the token pocket.</summary>
+    public event Action ToggleTokenPocket;
 
     /// <summary>OnFishingBookClick (@uiupperhuddialog.cpp:507): CUIService::ToggleDialog(0x4ee6), the fishing book.</summary>
     public event Action ToggleFishingBook;
@@ -252,17 +257,9 @@ public sealed class UpperHudController : UiController
     /// the amount and cap from GetCurrencyAmountAndCap (uicommon.cpp), the icon from FUN_1418fe870.</summary>
     string CurrencyLine(int currency)
     {
-        if (!Model.Tables.TokenCaps.TryGetValue(currency, out long cap)) return "";
-        Pc.Tokens.TryGetValue(currency, out long amount);
-        var (icon, vspace) = currency switch
-        {
-            4 => ("export_common_icon_honor", -6), 5 => ("export_common_icon_treva", -6), 6 => ("export_common_icon_lu", -6),
-            7 => ("export_common_icon_habi", -6), 0xc => ("export_common_icon_reverse_coin", -7),
-            0xd => ("export_common_icon_mentor_token", -4), 0xe => ("export_common_icon_mentee_token", -4),
-            0xf => ("export_common_icon_star_point", -6), _ => ("export_common_icon_meso_market_token", -4),
-        };
-        var line = $"\n<img src='{icon}' vspace='{vspace}'/> {Thousands(amount)}";
-        return cap == 0 ? line : line + " / " + Thousands(cap);
+        if (!Model.Tables.TokenCaps.ContainsKey(currency)) return "";
+        var (icon, vspace) = TokenCurrency.Icon(currency);
+        return $"\n<img src='{icon}' vspace='{vspace}'/> " + TokenCurrency.AmountText(Model, currency);
     }
 
     /// <summary>GetHotTimeTooltip @0x141358b20 (uiupperhuddialog.cpp:877): the game rule's hot time event texts joined by

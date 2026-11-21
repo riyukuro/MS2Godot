@@ -66,7 +66,11 @@ public partial class HudScene
         {
             c.Request += (name, _) => GD.Print($"shop: {name} is not sent (display only)");
         }
-        c.OpenDialog += id => GD.Print($"shop: dialog 0x{id:x} is not in this HUD");
+        c.OpenDialog += id =>
+        {
+            if (id == TokenPocketController.UiId) { if (!TokenPocketOpen) OpenTokenPocket(); }
+            else GD.Print($"shop: dialog 0x{id:x} is not in this HUD");
+        };
         c.InventoryWindowPos += _ =>
         {
             if (inventory == null || inventory.IsClosed) OpenInventory();

@@ -684,6 +684,7 @@ public partial class HudScene : Node, IUiStageHost
         GameOptions.GamepadEnabledChanged += OnGamepadEnabled;
         upperHudSide.ToggleDictionary += ToggleGameDictionary;
         upperHudSide.ToggleFishingBook += ToggleFishingBook;
+        upperHudSide.ToggleTokenPocket += ToggleTokenPocket;
         upperHudSide.ToggleKeySettingSelect += ToggleKeySettingSelect;
         upperHud = new MovieDialog(assets, upperHudSide, model, ScreenMode.PixelSize(GetWindow()));
         ui.AddChild(upperHud);
@@ -2151,6 +2152,21 @@ public partial class HudScene : Node, IUiStageHost
     Action unwatchMeso;
     Ms2.Ui.Hud.CurrencyFeed currencyFeed;
 
+    Ms2.Ui.Hud.CurrencyFeed MakeCurrencyFeed() => new(hudModel)
+    {
+        Sound = key => FieldAudio.Instance?.PlayUi(key),
+        Line = (text, kind) => ChatLog.AddSystemLine(text, kind),
+        Notice = SystemNoticeText,
+    };
+
+    /// <summary>--uigen-open currency: the Meret and token packets' effects once, as the live receives run them.</summary>
+    void CurrencyShot()
+    {
+        var feed = currencyFeed ??= MakeCurrencyFeed();
+        feed.OnMeret(new Ms2.Net.Packets.MeretUpdate(1200, 0, 0, 0, 500));
+        feed.OnCurrencyToken(new Ms2.Net.Packets.CurrencyTokenUpdate(5, 1990, 150, 0, 40));
+    }
+
     /// <summary>OnSmartPush (:7335): a mode other than 1 without a position shows its string as a centre notice (FUN_141275260);
     /// the marker and list modes need the smart push UI, which is not ported.</summary>
     void OnSmartPush(Ms2.Net.Packets.SmartPushMessage m)
@@ -2170,11 +2186,7 @@ public partial class HudScene : Node, IUiStageHost
         live.MesoChanged += onMeso;
         Action<Ms2.Net.Packets.ItemDropNotice> onDrop = n => ChatLog.AddItemDropNotice(n.Name, n.ItemId, n.Grade, n.Uid);
         live.ItemDropNoticed += onDrop;
-        currencyFeed = new Ms2.Ui.Hud.CurrencyFeed(hudModel)
-        {
-            Sound = key => FieldAudio.Instance?.PlayUi(key),
-            Line = (text, kind) => ChatLog.AddSystemLine(text, kind),
-        };
+        currencyFeed = MakeCurrencyFeed();
         Action<Ms2.Net.Packets.MeretUpdate> onMeret = currencyFeed.OnMeret;
         Action<Ms2.Net.Packets.MeretUseUpdate> onMeretUse = currencyFeed.OnMeretUse;
         Action<Ms2.Net.Packets.CurrencyTokenUpdate> onToken = currencyFeed.OnCurrencyToken;
@@ -3442,6 +3454,8 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "characterability" && frames == 200) ToggleCharacterAbility();
         if (openShot == "mastery" && frames == 200) ToggleMastery();
         if (openShot == "fishingbook" && frames == 200) ToggleFishingBook();
+        if (openShot == "tokenpocket" && frames == 200) ToggleTokenPocket();
+        if (openShot == "currency" && frames == 200) CurrencyShot();
         if (openShot != null && openShot.StartsWith("gamedictionary") && frames == 200)
         {
             // gamedictionary:<tab>:<text>: as a dictionary text link opens it (OpenTabWithSearch, the first row selected)
