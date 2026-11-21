@@ -616,11 +616,18 @@ public class AsTextField : AsInteractiveObject
     [As] public int bottomScrollV { get { int vis = Math.Max(1, (int)((Box.H - 4) / TextMeasure.LineHeight(FontName, Size, Leading))); return Math.Min(numLines, scrollV + vis - 1); } }
     [As] public AsObject getImageReference(string id) => null;
 
-    /// <summary>Typed input from the player: inserts at the caret, honours maxChars and restrict.</summary>
+    /// <summary>Typed input from the player: inserts at the caret, honours maxChars and restrict. A character the
+    /// restrict set refuses is retried in the other case and dropped only if that is refused too (EditorKit::OnChar
+    /// @0x142618120: SFtowupper, else SFtowlower, before the restrict ranges are asked).</summary>
     public void TypeText(string s)
     {
         if (type != "input") return;
-        if (!string.IsNullOrEmpty(restrict)) s = new string(s.Where(ch => Allowed(ch)).ToArray());
+        if (!string.IsNullOrEmpty(restrict))
+        {
+            var sb = new StringBuilder(s.Length);
+            foreach (var ch in s) if (Restricted(ch) is char c) sb.Append(c);
+            s = sb.ToString();
+        }
         if (maxChars > 0) s = s[..Math.Min(s.Length, Math.Max(0, maxChars - (Text.Length - (SelEnd - SelBegin))))];
         if (s.Length == 0) return;
         var b = Math.Min(SelBegin, Text.Length); var e = Math.Min(SelEnd, Text.Length);

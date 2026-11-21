@@ -39,6 +39,11 @@ public class TextEditKeyTests
         p.Key(key, ch, false, shift);
     }
 
+    static void Type(Player p, string s)
+    {
+        foreach (var c in s) Press(p, char.ToUpperInvariant(c), c);
+    }
+
     [Test]
     public void DeleteRemovesTheCharAfterTheCaret()
     {
@@ -79,5 +84,18 @@ public class TextEditKeyTests
         tf.setSelection(0, 2);
         Press(p, Delete);
         Assert.That(tf.text, Is.EqualTo("hello"));
+    }
+
+    [Test]
+    public void ARefusedTypedCharIsRetriedInTheOtherCase()
+    {
+        var (p, tf) = Field("");
+        tf.restrict = "A-Z0-9";
+        Type(p, "ab1");
+        Assert.That(tf.text, Is.EqualTo("AB1"), "lower case typed into an upper case only field goes in upper case (OnChar)");
+        tf.text = "";
+        tf.restrict = "a-z";
+        Type(p, "Hi!");
+        Assert.That(tf.text, Is.EqualTo("hi"), "an upper case char is retried in lower case, a char refused in both cases is dropped");
     }
 }
