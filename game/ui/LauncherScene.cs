@@ -99,7 +99,9 @@ public partial class LauncherScene : Control
 
     void Build()
     {
-        AddChild(new ColorRect { Color = Background, MouseFilter = MouseFilterEnum.Ignore });
+        var backdrop = new ColorRect { Color = Background, MouseFilter = MouseFilterEnum.Ignore };
+        backdrop.SetAnchorsPreset(LayoutPreset.FullRect);
+        AddChild(backdrop);
 
         var center = new CenterContainer();
         center.SetAnchorsPreset(LayoutPreset.FullRect);
