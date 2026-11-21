@@ -169,6 +169,19 @@ public class GuildPacketTests {
     }
 
     [Test]
+    public void TheInviteMarkIsAUtf16StringOnTheWire() {
+        // ReadUnicodeStringA (stream.cpp:166) is DecodeStr, u16 count + UTF-16, then narrowed in memory; WriteUnicodeStringA
+        // (:112) widens and stores a unicode string. So the mark (f28) has the same wire as the names around it.
+        byte[] wire = Cat(BitConverter.GetBytes(5L), Str("Gd"), new byte[] { 4, 0, (byte)'1', 0, (byte)'a', 0, (byte)'2', 0, (byte)'b', 0 },
+            Str("Ma"), Str("Me"));
+        var invite = GuildInviteInfo.Read(new ByteReader(wire));
+        Assert.That((invite.Mark, invite.Inviter, invite.Invitee), Is.EqualTo(("1a2b", "Ma", "Me")));
+        var w = new ByteWriter();
+        invite.Write(w);
+        Assert.That(w.Buffer.AsSpan(0, w.Length).ToArray(), Is.EqualTo(wire));
+    }
+
+    [Test]
     public void TheInviteTypesReadAndTheAnswerWritesTheInviteBack() {
         // CGuildInviteInfo::ReadStream (@0x1404c9230): i64, the guild name, the mark (A), the inviter, the invitee
         static void Invite(ByteWriter w) { w.WriteLong(5); w.WriteUnicodeString("Gd"); w.WriteUnicodeString("mk"); w.WriteUnicodeString("Ma"); w.WriteUnicodeString("Me"); }
