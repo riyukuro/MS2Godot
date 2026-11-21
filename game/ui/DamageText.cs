@@ -40,7 +40,10 @@ public sealed class DamageTarget(Node3D root, Func<Vector3> point, bool pc, Func
 /// text (loadDamageFont). The loads come from <see cref="NpcEmoticons.DamageFontAsked"/>; a field move (ClearAll) unloads
 /// the fonts not asked for in the last 60 s (UnloadExpiredFonts, :249).</item>
 /// <item>Pooling: the ani sets, glyph nodes, numbers, clips and entries are reused (no per-hit allocation); a clip's
-/// generation keeps a stale entry from touching its next use.</item>
+/// generation keeps a stale entry from touching its next use. The client has no pool (Scaleform makes the AS objects per
+/// hit), so the pools are the port's own: they are filled at load with one clip of each common look (<see cref="Warm"/>),
+/// grow to the most clips shown at once and never shrink, a field move (ClearAll) keeps them, and the HUD's end frees
+/// them (Predelete), the pooled nodes being outside the tree.</item>
 /// <item>Text: glyphs left to right, each advancing by its right edge plus the grade's movie spacing, a leading "+" on
 /// top; Miss and Block are one image glyph. The number is centred on its own bounds.</item>
 /// <item>Spawn: the target's Eff_Damage point, stored once (a hit point is not sent here). A number is not created when
@@ -194,6 +197,61 @@ public sealed partial class DamageText : CanvasLayer
         string[] names = ["m_listNormal", "m_listCritical", "m_myDamageNormal", "m_myDamageCritical"];
         for (int i = 0; i < containers.Length; i++) AddChild(containers[i] = new Node2D { Name = names[i] });
         try { movie = new UiMovie(ui, "uidamagetext"); } catch (Exception e) { GD.PushWarning("damage text movie: " + e.Message); }
+        Warm();
+    }
+
+    /// <summary>
+    /// One clip of each common look built and released at load: a monster's normal and critical number dealt by the own PC
+    /// and a normal number on the own PC. The port's pools and the code they run are then ready before the first hit,
+    /// which the client does not need (it has no pool). Public for the checks.
+    /// </summary>
+    public void Warm()
+    {
+        if (movie == null) return;
+        WarmLook(false, 0);
+        WarmLook(false, 1);
+        WarmLook(true, 0);
+    }
+
+    void WarmLook(bool pc, int grade)
+    {
+        string target = DamageTextNames.TargetKindName(DamageTextNames.TargetKind(pc), true);
+        int len = DamageTextNames.ValueChars(12345, grade, text);
+        string kind = DamageTextNames.ValueKind(grade);
+        var look = looks.Get(kind, target, DamageTextNames.GradeName(grade), null, true);
+        var clip = Build(look, text.AsSpan(0, len), DamageLook.IsNumber(kind), "", null, 1, -1);
+        if (clip == null) return;
+        clips.Remove(clip);
+        Kill(clip);
+        Release(clip);
+    }
+
+    /// <summary>The nodes the pools hold, for the checks: they are outside the tree.</summary>
+    public int PooledNodes
+    {
+        get
+        {
+            int n = numPool.Count + clipPool.Count;
+            foreach (var mp in nodePool.Values) foreach (var st in mp.Nodes.Values) n += st.Count;
+            foreach (var st in aniPool.Values) n += st.Count;
+            return n;
+        }
+    }
+
+    public override void _Notification(int what)
+    {
+        if (what == NotificationPredelete) FreePools();
+    }
+
+    /// <summary>The HUD goes: the pooled nodes are outside the tree, so the tree's free does not reach them.</summary>
+    void FreePools()
+    {
+        foreach (var mp in nodePool.Values) mp.Free();
+        nodePool.Clear();
+        foreach (var st in aniPool.Values) while (st.TryPop(out var set)) set.Ani.Free();
+        aniPool.Clear();
+        while (numPool.TryPop(out var n)) n.Node.Free();
+        while (clipPool.TryPop(out var c)) c.Wrap.Free();
     }
 
     public DamageText() { }
