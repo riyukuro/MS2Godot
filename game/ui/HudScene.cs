@@ -1417,6 +1417,7 @@ public partial class HudScene : Node, IUiStageHost
         if (AchieveKeys(k)) return true;
         if (MailKeys(k)) return true;
         if (TradeKeys(k)) return true;
+        if (StoreKeys(k)) return true;
         if (BlackMarketKeys(k)) return true;
         if (ShopKeys(k)) return true;
         if (GroupInviteKeys(k)) return true;
@@ -2205,6 +2206,7 @@ public partial class HudScene : Node, IUiStageHost
         WatchAchieves();
         WatchMails();
         WatchTrades();
+        WatchStorage();
         WatchBlackMarket();
         WatchShop();
         c.MenuAction += def =>
@@ -3070,6 +3072,7 @@ public partial class HudScene : Node, IUiStageHost
         GuideEvent?.Process();                // UIGuideEvent::vfunc_15: the arrows, the summary's expiry
         worldMapSide?.Process();             // UIWorldMapDialog::vfunc_72: FlushQueuedTiles
         if (AchieveOpen) achieve.Process();  // UIAchieveDialog::vfunc_15: the trophies a packet named
+        StoreTick();                         // UIStoreDialog::vfunc_15
         MailTick();                          // FUN_1408e48f0 and UIMailListDialog::vfunc_15
         BlackMarketTick();                   // UIBlackMarketDialog::vfunc_15
         ShopTick();                          // UIShopDialog::vfunc_72

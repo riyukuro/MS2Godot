@@ -43,6 +43,7 @@ public enum Inbound : ushort {
     Emote = 0x1F,           // RecvOp::Emote (commonfiles/opcodes.h:39): CSceneStateGame::OnEmote
     ItemPutOnOrOff = 0x20,
     ItemInventory = 0x21,
+    StorageInventory = 0x22,   // RecvOp::StorageInventory (commonfiles/opcodes.h:42): CStore::Dispatch (store.cpp, 0x140de3480)
     ItemPutOn = 0x25,
     ItemPutOff = 0x26,
     Stat = 0x2E,

@@ -70,6 +70,8 @@ public partial class LiveSession : Node
     public int? FieldId => entry?.Field?.MapId;
     /// <summary>The item inventory from the ItemInventory packets (OnItemInventory); live only.</summary>
     public readonly ItemBook Items = new();
+    /// <summary>The bank (CStore, DAT_143ab2d80): the StorageInventory packets (0x22) applied as CStore::Dispatch does.</summary>
+    public readonly StorageBook Storage = new();
     /// <summary>The inventory dialog model over Items; a UI binds it. Only its Sort sends RequestItemInventory (the sort request, 0x14199c230); a tab switch sends nothing.</summary>
     public InventoryView Inventory { get; private set; }
     public readonly GlobalFactor Factors = new();   // CGloabalFactor: exp/meso rates of OnGlobalFactor
@@ -911,6 +913,16 @@ public partial class LiveSession : Node
             {
                 ApplyItems(p);
                 GD.Print($"live: item packet ({Items.All.Count} items)");
+            }
+            else if (game.Is(p, Inbound.StorageInventory))
+            {
+                try
+                {
+                    var m = StorageMessage.Read(p.Reader(), Storage.Id);   // CStore::Dispatch (store.cpp, 0x140de3480)
+                    Storage.Apply(m);
+                    GD.Print($"live: storage {m.GetType().Name} ({Storage.Count} items)");
+                }
+                catch (Exception e) { GD.PushWarning($"live: storage packet: {e.Message}"); }
             }
             else if (game.Is(p, Inbound.ItemPutOn))
             {

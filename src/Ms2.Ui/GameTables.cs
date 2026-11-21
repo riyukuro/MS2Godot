@@ -120,6 +120,11 @@ public sealed class GameTables
         TradeMinMeso = whole("TradeMinMeso", TradeMinMeso);
         TradeMaxMeso = whole("TradeMaxMeso", TradeMaxMeso);
         TradeFeePercent = (int)whole("TradeFeePercent", TradeFeePercent);
+        // Value<int> StoreExpandMaxSlotCount / StoreExpandPrice1Row / StoreDepositMax / StoreWithdrawMax (constantsblocks.cpp:929-932)
+        StoreExpandMaxSlotCount = (int)whole("StoreExpandMaxSlotCount", StoreExpandMaxSlotCount);
+        StoreExpandPrice1Row = (int)whole("StoreExpandPrice1Row", StoreExpandPrice1Row);
+        StoreDepositMax = (int)whole("StoreDepositMax", StoreDepositMax);
+        StoreWithdrawMax = (int)whole("StoreWithdrawMax", StoreWithdrawMax);
         // SkillDataTable::LoadSkillData (skilloverlapcompare.cpp:1195): every ./Data/Xml/SkillData/*.xml (FindSkillFiles
         // :1352, not recursive), read on first use
         List<XElement> collect(XElement parent, string child, string key) => FeatureElements.Collect(packs, parent, child, key);
@@ -429,6 +434,10 @@ public sealed class GameTables
     /// <summary>Client::Constants TradeFeePercent (Define default 10: unit_1402ab440_constantsblocks.cpp:1009):
     /// GetTradeFeePercent (+0x5fc0).</summary>
     public int TradeFeePercent = 10;
+    /// <summary>Client::Constants StoreExpandMaxSlotCount (+0x44a8), StoreExpandPrice1Row (+0x4500), StoreDepositMax (+0x4558) and
+    /// StoreWithdrawMax (+0x45b0), all Define default 0 (unit_1402ab440_constantsblocks.cpp:929-932): the bank's most extra slots,
+    /// the price of an expansion and the most mesos one deposit / withdrawal moves.</summary>
+    public int StoreExpandMaxSlotCount, StoreExpandPrice1Row, StoreDepositMax, StoreWithdrawMax;
     /// <summary>table/job.xml and skilldata/*.xml (JobTable, SkillDataTable); empty without data.</summary>
     public readonly Skills.SkillTables Skills = Ms2.Ui.Skills.SkillTables.Empty;
     /// <summary>additional/*.xml (SkillDataTableCli GetAdditional / FUN_140aafef0); empty without data.</summary>
