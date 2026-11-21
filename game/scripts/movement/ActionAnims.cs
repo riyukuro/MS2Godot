@@ -53,6 +53,24 @@ public sealed class ActionAnims
     /// </summary>
     public string Name(Act a, string prefix)
     {
+        // the resolved key per (action, prefix), made once: a loaded sequence stays loaded and a sequence the body lacks
+        // stays missing (both are remembered in `missing`), so a repeat call costs no allocation (the prefixed key, its
+        // lower-casing and HasAnimation's StringName were made on every call, 0.2-0.4 MB/s)
+        prefix ??= "";
+        if (!resolved.TryGetValue(prefix, out var byAct)) resolved[prefix] = byAct = new string[ActCount];
+        int slot = (int)a;
+        var hit = byAct[slot];
+        if (hit == null) byAct[slot] = hit = Resolve(a, prefix) ?? NoSequence;
+        return ReferenceEquals(hit, NoSequence) ? null : hit;
+    }
+
+    static readonly string NoSequence = new string('\0', 1);
+
+    static readonly int ActCount = Enum.GetValues<Act>().Max(x => (int)x) + 1;
+    readonly Dictionary<string, string[]> resolved = new(StringComparer.Ordinal);
+
+    string Resolve(Act a, string prefix)
+    {
         if (!names.TryGetValue(a, out var baseKey)) return null;
         bool loop = Looping.Contains(a);
         if (!string.IsNullOrEmpty(prefix))
