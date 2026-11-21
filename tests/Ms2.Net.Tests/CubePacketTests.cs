@@ -317,4 +317,24 @@ public class CubePacketTests
         Assert.That(LoadCubesPlots.Read(Reader(w => { w.WriteByte(0); w.WriteByte(0); w.WriteInt(0); })), Is.Null);
         Assert.That(LoadCubesPlots.Read(Reader(w => { w.WriteByte(4); w.WriteInt(0); })), Is.Null);
     }
+
+    [Test]
+    public void RowSwitchAndLevelReadTheClientsTwoBytes()
+    {
+        // scenestategame.cpp:10619-10633: u8 row, u8 value; the switch is on only for exactly 1
+        Assert.That(ResponseCubeRowSwitch.Read(Reader(w => { w.WriteByte(4); w.WriteByte(1); })), Is.EqualTo(new ResponseCubeRowSwitch(4, true)));
+        Assert.That(ResponseCubeRowSwitch.Read(Reader(w => { w.WriteByte(4); w.WriteByte(2); })).On, Is.False);
+        Assert.That(ResponseCubeRowLevel.Read(Reader(w => { w.WriteByte(8); w.WriteByte(3); })), Is.EqualTo(new ResponseCubeRowLevel(8, 3)));
+        Assert.That(() => ResponseCubeRowLevel.Read(Reader(w => { w.WriteByte(8); w.WriteByte(3); w.WriteByte(0); })), Throws.Exception);
+    }
+
+    [Test]
+    public void CraftModeOffIsRequestSetCraftModeZeroZero()
+    {
+        // mypc.cpp:4507-4510; SendOp::RequestSetCraftMode = 0x0036 (opcodes.h:359)
+        var req = new CraftModeOffRequest();
+        Assert.That((ushort)req.Op, Is.EqualTo(0x0036));
+        var w = new ByteWriter(); req.Write(w);
+        Assert.That(w.Buffer.AsSpan(0, w.Length).ToArray(), Is.EqualTo(new byte[] { 0, 0 }));
+    }
 }

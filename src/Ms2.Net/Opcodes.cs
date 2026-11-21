@@ -212,6 +212,7 @@ public enum Outbound : ushort {
     Club = 0x95,
     Ugc = 0x38,
     KeyTable = 0x3A,            // SendOp::KeyTable (commonfiles/opcodes.h:363): CKeyTable and quick slot sends
+    RequestSetCraftMode = 0x36, // SendOp::RequestSetCraftMode (commonfiles/opcodes.h:359): MyPC::SendCraftModeOff
     RequestCube = 0x37,         // SendOp::RequestCube (commonfiles/opcodes.h)
     RequestHome = 0x51,         // SendOp::RequestHome (commonfiles/opcodes.h)
     // SendOp: the trophy dialog's sends

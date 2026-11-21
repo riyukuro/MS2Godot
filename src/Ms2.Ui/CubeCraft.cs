@@ -62,6 +62,10 @@ public sealed class CubeCraftState
     public int CubeMode { get; private set; }
     /// <summary>IsInCubeMode (pc.cpp:1845).</summary>
     public bool InCubeMode => CubeMode != 0;
+    /// <summary>MyPC::SendCraftModeOff's gate (@0x141530200, mypc.cpp:4501): GetActiveCubeCraft (@0x141530290: not dead, in cube mode, the craft set)
+    /// and the craft is not the lift's mode 2 (FUN_1410aa1f0).</summary>
+    public bool CanSendCraftModeOff(bool dead) => !dead && InCubeMode && Current is { HoldsLift: false };
+
     /// <summary>m_pCubeCraft (GetCubeCraft, pc.cpp:1867).</summary>
     public Craft Current { get; private set; }
     /// <summary>The craft waiting for the model (FUN_141661880 with 1, pc.cpp:2627): m_n1000 set, m_n1018 and

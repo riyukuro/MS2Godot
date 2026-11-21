@@ -38,3 +38,9 @@ public sealed record HomeOptionRowLevelRequest(byte Row, byte Level) : IOutPacke
     public Outbound Op => Outbound.RequestCube;
     public void Write(ByteWriter w) { w.WriteByte(0x2b); w.WriteByte(Row); w.WriteByte(Level); }
 }
+
+/// <summary>MyPC::SendCraftModeOff (@0x141530200, mypc.cpp:4501): RequestSetCraftMode u8 0, u8 0.</summary>
+public sealed record CraftModeOffRequest() : IOutPacket {
+    public Outbound Op => Outbound.RequestSetCraftMode;
+    public void Write(ByteWriter w) { w.WriteByte(0); w.WriteByte(0); }
+}

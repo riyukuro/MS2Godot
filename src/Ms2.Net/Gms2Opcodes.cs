@@ -213,6 +213,7 @@ static class Gms2Opcodes {
         [Outbound.Club] = 0x96,
         [Outbound.Ugc] = 0x39,
         [Outbound.KeyTable] = 0x3B,
+        [Outbound.RequestSetCraftMode] = 0x36,   // SendOp::RequestSetCraftMode: unchanged below 0x37
         [Outbound.RequestCube] = 0x37,
         [Outbound.RequestHome] = 0x52,
         [Outbound.ResolvePenalty] = 0x45,

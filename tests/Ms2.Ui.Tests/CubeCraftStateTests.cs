@@ -112,4 +112,17 @@ public class CubeCraftStateTests
         Assert.That(k.InActiveMap(cubeMode: true), Is.True);
         Assert.That(k.InActiveMap(cubeMode: false), Is.False);
     }
+
+    [Test]
+    public void CraftModeOffIsSentOnlyForALiveCraftThatIsNotTheLift()
+    {
+        // MyPC::SendCraftModeOff (mypc.cpp:4501): GetActiveCubeCraft (not dead, cube mode, craft) and FUN_1410aa1f0 (mode != 2)
+        var c = Loaded();
+        Assert.That(c.CanSendCraftModeOff(false), Is.False, "not in cube mode");
+        c.Set(1, 1, Item, dead: false);
+        Assert.That(c.CanSendCraftModeOff(false), Is.True);
+        Assert.That(c.CanSendCraftModeOff(true), Is.False, "dead");
+        c.Set(1, 2, Item, dead: false);
+        Assert.That(c.CanSendCraftModeOff(false), Is.False, "the lift's craft");
+    }
 }

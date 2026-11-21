@@ -333,3 +333,30 @@ public sealed record LoadCubesPlots(byte Mode, IReadOnlyList<(int Plot, byte Sta
         return new LoadCubesPlots(mode, states, owners, sales);
     }
 }
+
+/// <summary>ResponseCube 0x2a (scenestategame.cpp:10619-10625): u8 row, u8 on (1 is on, anything else off): the home option row's switch
+/// (CubeMapInformationService FUN_1410c3e40 into the row map at +0x368). The packet is read whether or not the service exists.</summary>
+public sealed record ResponseCubeRowSwitch(byte Row, bool On)
+{
+    public const byte Mode = 0x2a;
+
+    public static ResponseCubeRowSwitch Read(ByteReader r)
+    {
+        var m = new ResponseCubeRowSwitch(r.ReadByte(), r.ReadByte() == 1);
+        r.ExpectEnd("ResponseCube 0x2a");
+        return m;
+    }
+}
+
+/// <summary>ResponseCube 0x2b (scenestategame.cpp:10626-10633): u8 row, u8 level: the home option row's level (FUN_1410c3f10 into the map at +0x378).</summary>
+public sealed record ResponseCubeRowLevel(byte Row, byte Level)
+{
+    public const byte Mode = 0x2b;
+
+    public static ResponseCubeRowLevel Read(ByteReader r)
+    {
+        var m = new ResponseCubeRowLevel(r.ReadByte(), r.ReadByte());
+        r.ExpectEnd("ResponseCube 0x2b");
+        return m;
+    }
+}

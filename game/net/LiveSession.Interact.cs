@@ -41,6 +41,9 @@ public partial class LiveSession
     /// <summary>MyPC's UserUGCMapInfo (GetUGCMapInfo / SetUGCMapInfo / HasNoHome), filled by ResponseCube mode 0x14.</summary>
     public readonly Ms2.Ui.OwnHome Home = new();
 
+    /// <summary>CubeMapInformationService's home option rows (ResponseCube 0x2a / 0x2b); read by the home option dialog's host.</summary>
+    public readonly Ms2.Ui.HomeOptionRows HomeRows = new();
+
     /// <summary>After ResponseCube 0x14 stored the local player's home info (the changed flag UIUGCEventDispatcher::vfunc_7 gets).
     /// The client then asks the house visit question when the player has a home (scenestategame.cpp:10231-10236).</summary>
     public event Action<bool> HomeInfoApplied;
@@ -128,7 +131,7 @@ public partial class LiveSession
     /// player's cube map (<see cref="Ms2.Ui.CubeCellMap.Apply"/>).
     /// The place answers' own-pc part (the guide, the place sound and an error's notice) is
     /// <see cref="Ms2.Ui.CubeCraftState.OnPlaceAnswer"/>, before the cube goes into the map as in the client.
-    /// The home info mode 0x14 fills <see cref="Home"/>.
+    /// The home info mode 0x14 fills <see cref="Home"/>; the row modes 0x2a / 0x2b fill <see cref="HomeRows"/>.
     /// STILL-OPEN: the other modes; the cube map's weapon lookup for mode 0x11, so a 0x11 holds nothing yet.</summary>
     void OnResponseCube(Ms2.Net.Wire.RawPacket p)
     {
@@ -153,6 +156,8 @@ public partial class LiveSession
                 return;
             }
             case ResponseCubeHomeInfo.Mode: OnHomeInfo(ResponseCubeHomeInfo.Read(r)); return;
+            case ResponseCubeRowSwitch.Mode: HomeRows.Apply(ResponseCubeRowSwitch.Read(r)); return;
+            case ResponseCubeRowLevel.Mode: HomeRows.Apply(ResponseCubeRowLevel.Read(r)); return;
         }
         var m = ResponseCubeHeldItem.Read(p.Reader());
         if (m == null) return;
@@ -181,13 +186,24 @@ public partial class LiveSession
 
     /// <summary>ResponseCube 0x14 (scenestategame.cpp:10199-10244): the info is the local player's when its owner id is the local object's
     /// (<see cref="Ms2.Ui.OwnHome.Apply"/>); then <see cref="HomeInfoApplied"/> for the callers.
-    /// STILL-OPEN: CubeMapInformationService FUN_1410d5ae0(1), UIUGCEventDispatcher::vfunc_7, MyPC::SendCraftModeOff when the player has no home and
-    /// is in cube mode (no sender is ported), and the taxi refresh (CTaxiManager FUN_14085f730 / FUN_141739450) are not ported.</summary>
+    /// With no home and in cube mode the client sends SendCraftModeOff (:10238-10239, <see cref="SendCraftModeOff"/>).
+    /// STILL-OPEN: CubeMapInformationService FUN_1410d5ae0(1), UIUGCEventDispatcher::vfunc_7, and the taxi refresh
+    /// (CTaxiManager FUN_14085f730 / FUN_141739450) are not ported.</summary>
     void OnHomeInfo(ResponseCubeHomeInfo m)
     {
         if (!Home.Apply(m, selfObject, out bool changed)) return;
         GD.Print($"live: home info plot {m.PlotId} home {m.HomeId} open type {m.OpenType} changed {changed}");
         HomeInfoApplied?.Invoke(changed);
+        if (Home.HasNoHome && CubeCraft.InCubeMode) SendCraftModeOff();
+    }
+
+    /// <summary>MyPC::SendCraftModeOff (@0x141530200, mypc.cpp:4501): nothing without an active cube craft (GetActiveCubeCraft @0x141530290: not dead,
+    /// in cube mode, then the craft) or when the craft is the lift's mode 2 (FUN_1410aa1f0); else RequestSetCraftMode 0, 0. Returns whether it sent.</summary>
+    public bool SendCraftModeOff()
+    {
+        if (!CubeCraft.CanSendCraftModeOff(Me.Dead)) return false;
+        Send(new CraftModeOffRequest());
+        return true;
     }
 
     /// <summary>GameEvent 0xB2 (GameEventManagerCli::Dispatch, gameeventmanagercli.cpp:77): the shutdown events are applied.
