@@ -122,6 +122,7 @@ public partial class HudScene
                 AccumExp = level => t.GuildAccumExp.TryGetValue(level, out var v) ? v : 0,
                 MaxLevel = () => t.GuildAccumExp.Count == 0 ? 0 : t.GuildAccumExp.Keys.Last(),
             };
+            c.MemberPopupRequested += (x, y, member) => EnsurePopupMenu().OpenForGuildMember(x, y, member);   // PopUpMenuFromGuildMember
             c.PopupRequested += (x, y, name) => GD.Print($"guild: master popup for {name} (0x4e39 is not in this HUD)");
             c.Unloaded += () => { guildMovie?.Host.Unload(); guildMovie?.QueueFree(); guildMovie = null; };
             guild = c;

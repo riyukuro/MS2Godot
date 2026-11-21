@@ -164,6 +164,14 @@ public partial class HudScene
     /// <summary>A party slot's right click (UIPartyDialog::FUN_141a77760): the popup menu, its movie loaded on first use.</summary>
     void OpenPartySlotMenu(float x, float y, long characterId)
     {
+        EnsurePopupMenu();
+        popupMenu.OpenForPartySlot(x, y, characterId, hudModel.Player);
+    }
+
+    /// <summary>The popup menu (UIPopUpMenu, 0x4e39), its movie loaded on first use and kept, with the books it reads set
+    /// for this open (the field, the trade and buddy managers, the own guild).</summary>
+    PopupMenuController EnsurePopupMenu()
+    {
         if (popupMenu == null)
         {
             var live = Ms2Godot.Net.LiveSession.Instance;
@@ -196,6 +204,7 @@ public partial class HudScene
         popupMenu.Field = SlotFieldData();
         popupMenu.TradeBook = Trades;                               // Trade (500): UIPopUpMenu::SendTradeRequest; live only
         popupMenu.Buddies = CommunityBook();                        // CBuddyManager: live, or the offline book
-        popupMenu.OpenForPartySlot(x, y, characterId, hudModel.Player);
+        popupMenu.Guild = GuildState();                             // CGuildManager: the guild invite item and its send
+        return popupMenu;
     }
 }

@@ -27,7 +27,7 @@ public sealed class PopupMenuTarget
 /// Of the items' handlers (RegisterMenuHandlers, :2417) the party ones are ported (leave, invite, kick and leader change
 /// with their confirm boxes, vote kick, ready check), Whisper (the chat window's whisper start), Invite to My Home, View
 /// Own Character, View Character (the other player's window, UIPCInfoDialog 0x4ec8), the furnishing rights grant
-/// (listed only in the own home, see InOwnHome) and the buddy and block items (FUN_141a83ed0 to the community query dialog
+/// (listed only in the own home, see InOwnHome), the guild invite (<see cref="Guild"/>) and the buddy and block items (FUN_141a83ed0 to the community query dialog
 /// 0x4e4e, <see cref="BuddyQuery"/>); the others raise <see cref="ItemClicked"/>.
 /// 500 Trade is SendTradeRequest (<see cref="TradeBook.RequestTrade"/>; its block list check is STILL-OPEN there).
 /// STILL-OPEN, by handler: EditBuddyMemo's
@@ -36,7 +36,8 @@ public sealed class PopupMenuTarget
 /// group chat CGroupChatManager::Create sends GroupChat u8 1 + name, with any a choice box (type 0x16, common 0x81a) of
 /// the chats; the chat count comes from the GroupChat packets, not decoded); 0x1f7 Visit House (FUN_141a86970 :3378: the checks
 /// of FUN_1418fd330, uicommon.cpp:384, read the cube map service and PC states not ported, then the 0x879 box whose yes,
-/// FUN_1418fd740, uicommon.cpp:539, moves by the party member's account, RequestMoveField mode 2); 0x2bd guild invite.
+/// FUN_1418fd740, uicommon.cpp:539, moves by the party member's account, RequestMoveField mode 2).
+/// Also opened for the guild dialog's members (<see cref="OpenForGuildMember"/>).
 /// </summary>
 public sealed class PopupMenuController : UiController, IMessageBoxListener
 {
@@ -56,6 +57,13 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
     /// (TYPE_WITHCHARINFO, the header with the character) and the info string.</summary>
     public const int PartySlotMode = 3, PartySlotFlags = 0x63fe, PartySlotType = 1;
     public const string PartySlotInfo = "partySlot";
+    /// <summary>OnGuildMemberPopupMenu's Unk_PopupMenuInfo (uiguilddialog.cpp:823): mode 3, flags 0x63de (the party slot's
+    /// without trade), type 1, an empty info string.</summary>
+    public const int GuildMemberFlags = 0x63de;
+
+    /// <summary>CGuildManager: the own guild (IsInGuild, FindMemberByName) for the guild invite item (FUN_141a84b40) and its
+    /// handler (InviteToGuild, FUN_1413b71c0). Null = no guild.</summary>
+    public GuildBook Guild;
 
     /// <summary>CPartyManager's party.</summary>
     public PartyBook Party = new();
@@ -161,7 +169,7 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
         if (mode == PartySlotMode && entityKey == SelfCharacterId && SelfCharacterId != 0) return;
         ClosePopup();
         if (string.IsNullOrEmpty(self.Name)) return;                    // GetTargetName gave nothing: "Empty Menu"
-        ApplyMenuInfo();
+        ApplyMenuInfo(PartySlotMode, PartySlotType, PartySlotInfo);
         entityKey = SelfCharacterId;
         var own = Party.Find(SelfCharacterId)?.User;
         var t = new PopupMenuTarget
@@ -180,7 +188,7 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
         ClosePopup();
         var u = m.User;
         if (string.IsNullOrEmpty(u.Name)) return;
-        ApplyMenuInfo();
+        ApplyMenuInfo(PartySlotMode, PartySlotType, PartySlotInfo);
         var t = new PopupMenuTarget
         {
             X = x, Y = y, Name = u.Name, CharacterId = u.CharacterId, Level = (ushort)u.Level,
@@ -190,12 +198,32 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
         if (!Open(t, PartySlotFlags, 2)) ResetState();
     }
 
-    /// <summary>ApplyMenuInfo (:2403) for the party slot's info.</summary>
-    void ApplyMenuInfo()
+    /// <summary>
+    /// PopUpMenuFromGuildMember (:2150), the guild dialog's member right click at the movie position (x, y): the target from
+    /// the member's data (its level, character id, profile picture, name, alive, online when f158 is 0, the trophy sum, the
+    /// job group and job code), then Open with the guild member's flags, kind 1 for the own character and 2 for another.
+    /// </summary>
+    public void OpenForGuildMember(float x, float y, GuildMember m)
     {
-        mode = PartySlotMode;
-        menuType = PartySlotType;
-        info = PartySlotInfo;
+        ClosePopup();
+        if (string.IsNullOrEmpty(m.Name)) return;                       // "UIPopUpMenu::PopUpMenuFromGuildMember Empty Menu"
+        ApplyMenuInfo(PartySlotMode, PartySlotType, "");
+        var t = new PopupMenuTarget
+        {
+            X = x, Y = y, Name = m.Name, CharacterId = m.CharId, Level = (ushort)m.Level,
+            Image = ProfileImagePath(m.CharId, m.Code), Alive = true, Online = m.Offline == 0,
+            Trophy = m.TrophyTotal, JobGroup = m.F14, JobCode = m.JobCode,
+        };
+        int kind = m.CharId != 0 && m.CharId == SelfCharacterId ? 1 : 2;
+        if (!Open(t, GuildMemberFlags, kind)) ResetState();
+    }
+
+    /// <summary>ApplyMenuInfo (:2403): the info's mode (m_80), type (m_84) and string (m_88).</summary>
+    void ApplyMenuInfo(int infoMode, int type, string infoString)
+    {
+        mode = infoMode;
+        menuType = type;
+        info = infoString;
         entityKey = 0;
     }
 
@@ -229,12 +257,10 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
     }
 
     /// <summary>
-    /// FUN_141a83810 (:2723) for the party slot's flags (0x63fe): trade, the character items, the group chat, the house
+    /// FUN_141a83810 (:2723) for the party slot's (0x63fe) or guild member's (0x63de) flags: trade, the character items, the group chat, the house
     /// visit, the home invite, the buddy item, the party items, the guild invite, the furnishing rights, the block items
     /// and the report, in that order. The buddy and block items read the buddy list by the target's character id
-    /// (CBuddyManager::FindByAccount, :2748 and :2759). STILL-OPEN, a feed not decoded: the own guild
-    /// (CGuildManager::IsInGuild, the guild id of RecvOp Guild 0x8A; the ServerEnter guild is SetTargetGuild, not the own
-    /// one) for FUN_141a84b40, so the own character counts as in no guild.
+    /// (CBuddyManager::FindByAccount, :2748 and :2759). The guild invite item reads <see cref="Guild"/> (CGuildManager).
     /// </summary>
     void BuildItems(int flags, int kind, PopupMenuTarget t)
     {
@@ -256,7 +282,8 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
         if ((flags & 0x200) != 0 && kind == 2 && OtherCharacter(id)) Add(InviteToMyHome);                 // AddRequestHomeMenu: FUN_1418fd5d0
         if ((flags & 8) != 0 && kind != 1 && id != 0) AddBuddyItem(Buddies.FindByAccount(id));             // FUN_141a847c0 (:2963)
         if ((flags & 4) != 0) AddPartyItems(kind, t.Name, online);
-        // 0x4000 FUN_141a84b40 (:3074): InviteToGuild needs the own guild (CGuildManager::IsInGuild): none
+        if ((flags & 0x4000) != 0 && kind != 1 && Guild is { InGuild: true } g && g.FindMemberByName(t.Name) == null)
+            Add(InviteToGuild);                                                                            // FUN_141a84b40 (:3075)
         if ((flags & 0x2000) != 0 && kind == 2 && OtherCharacter(id) && InOwnHome() && Registered(GrantFurnishingRights))
             Add(GrantFurnishingRights);                                                                    // AddRequestCubeMenu: FUN_1418fd670
         if ((flags & 0x10) != 0 && kind != 1 && id != 0) AddBlockItems(Buddies.FindByAccount(id));         // FUN_141a84860 (:2984)
@@ -449,6 +476,9 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
                 break;
             case EditBlockReason:                                       // EditBuddyMemo (:3238): the 0x4e4d branch needs m_d0
                 if (name.Length != 0) QueryBuddy(0, 4, name, charId);
+                break;
+            case InviteToGuild:                                         // InviteToGuild (:3482): FUN_1413b71c0(m_90)
+                if (name.Length != 0) Guild?.Invite(name);
                 break;
             default:
                 ItemClicked?.Invoke(id, target);

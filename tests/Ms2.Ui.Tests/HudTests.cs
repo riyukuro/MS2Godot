@@ -1,3 +1,4 @@
+using Ms2.Net.Wire;
 using Ms2.Net.Packets;
 using Ms2.Avm2;
 using Ms2.Avm2.Flash;
@@ -745,6 +746,43 @@ public class HudTests
         // a disband closes it (FUN_141a80a50 mode 7)
         c.OnPartyMessage(new PartyDisband());
         Assert.That(c.IsClosed, Is.True);
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void GuildMemberMenuListsTheClientItemsAndThePartyMenuGetsTheGuildInvite()
+    {
+        // PopUpMenuFromGuildMember (FUN_141a83810 with 0x63de): no trade, no guild invite for a member; the party slot's 0x63fe
+        // lists the guild invite (FUN_141a84b40) for a character outside the own guild, and its click is FUN_1413b71c0
+        var m = Model();
+        var guild = GuildDialogTests.InGuild();
+        var sent = new List<IOutPacket>();
+        guild.Send = sent.Add;
+        var bo = new GuildMember { Mode = 3, Grade = 1, Name = "Bo", CharId = 13, Level = 20, Triple = (1, 2, 3), F14 = 10, JobCode = 100, Offline = 0 };
+        guild.Info.Members.Add(bo);
+        var c = new PopupMenuController { SelfCharacterId = 12, ProfileImagePath = (id, code) => $"{id}:{code}", Guild = guild };
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        c.OpenForGuildMember(100, 200, bo);
+        Assert.That(c.Items, Is.EqualTo(new[] { 0x66, 0x65, 0x1f6, 0x1f7, 0x1f8, 0x12d, 0xc9, 400, 0x1f5 }));
+        Assert.That((c.InfoString, c.Target.Name, c.Target.Trophy, c.Target.JobCode, c.Target.Online), Is.EqualTo(("", "Bo", 6, 100, true)));
+        c.ClosePopup();
+        bo.Offline = 1;
+        c.OpenForGuildMember(100, 200, bo);
+        Assert.That(c.Items, Is.EqualTo(new[] { 0x66, 0x1f7, 0x1f8, 0x12d, 400 }));
+        c.ClosePopup();
+        c.OpenForGuildMember(100, 200, guild.FindMemberByName("Ma"));                 // the own character: kind 1
+        Assert.That(c.Items, Is.EqualTo(new[] { PopupMenuController.ViewOwnCharacter }));
+        c.ClosePopup();
+        // the party slot as the leader: the guild invite after the party items for a character outside the guild
+        c.Party = PartyFixture.Book(2000062, m.Player);
+        c.SelfCharacterId = PartyFixture.SelfCharacterId;
+        c.OpenForPartySlot(100, 200, 3, m.Player);
+        Assert.That(c.Items, Does.Contain(PopupMenuController.InviteToGuild));
+        var listed = c.Items.ToList();
+        Assert.That(listed.IndexOf(PopupMenuController.InviteToGuild), Is.EqualTo(listed.IndexOf(400) - 1));
+        c.OnCallback("MenuItemClick", new object[] { (uint)PopupMenuController.InviteToGuild });
+        Assert.That(sent, Is.EqualTo(new IOutPacket[] { new GuildInviteRequest("FixtureArcher") }));
         Assert.That(h.RT.Errors, Is.Empty);
     }
 

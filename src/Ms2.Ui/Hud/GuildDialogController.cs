@@ -13,8 +13,7 @@ namespace Ms2.Ui.Hud;
 /// management (the invite, expel, grade and master change, the notice, the own memo, the propensity and the search flag).
 /// The pages are made on first use (EnsurePageCreated) and laid on the movie root.
 /// STILL-OPEN: the other in-guild pages (Skill, MemberSkill, Event, Manager, House, Storage, Raid, ChampionShip,
-/// ChampionShipHistroy) and their callbacks (the attend, donate, grade edit OnChangeGrade, ranks, PvP, mail, house and
-/// mark), the member popup (OnGuildMemberPopupMenu, 0x4e39), the character card of the master and expel boxes
+/// ChampionShipHistroy) and their callbacks (the grade edit OnChangeGrade, ranks, PvP, mail, house and mark), the character card of the master and expel boxes
 /// (CMsgBoxData::SetCharacterInfo), the master popup
 /// (OnSearchGuildMasterPopupMenu, 0x4e39) as an event, the block check of OnClickCreateGuild (CBlockManager
 /// FindBlockedAction(7)), the web guide button (UIDialog::BindWebGuideButton, uidialog.cpp:997), the championship icon
@@ -85,6 +84,9 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     /// <summary>OnSearchGuildMasterPopupMenu: the popup 0x4e39 at (x, y) for the master's name (Unk_PopupMenuInfo(x, y, 3,
     /// 0x3f3fe), SetGuildInfo from FindSearchResultByName). STILL-OPEN.</summary>
     public event Action<float, float, string> PopupRequested;
+    /// <summary>OnGuildMemberPopupMenu (:811): a member's right click, the popup 0x4e39 at (x, y) for the member found by
+    /// name (UIPopUpMenu::PopUpMenuFromGuildMember, <see cref="PopupMenuController.OpenForGuildMember"/>).</summary>
+    public event Action<float, float, GuildMember> MemberPopupRequested;
 
     public GuildDialogController(GuildBook book) => Book = book;
 
@@ -596,6 +598,10 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
             case "onacceptmembernextpage":
                 acceptPage++;
                 OnRequestsForGuild();
+                return true;
+            case "onguildmemberpopupmenu":
+                // :811: x, y, the name; FindMemberByName, then PopUpMenuFromGuildMember on the 0x4e39 menu
+                if (args.Length > 2 && Book.FindMemberByName(Str(2)) is { } clicked) MemberPopupRequested?.Invoke(Float(0), Float(1), clicked);
                 return true;
             case "onsearchguildmasterpopupmenu":
                 if (args.Length > 0) PopupRequested?.Invoke(Float(0), Float(1), Str(2));

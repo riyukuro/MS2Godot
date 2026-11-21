@@ -61,6 +61,18 @@ public class GuildDialogTests
     }
 
     [Test]
+    public void TheMemberPopupCallbackRaisesTheMemberFoundByName()
+    {
+        // OnGuildMemberPopupMenu (uiguilddialog.cpp:811): x, y, the name; a name not in the guild opens nothing
+        var c = new GuildDialogController(InGuild());
+        var seen = new List<(float, float, string)>();
+        c.MemberPopupRequested += (x, y, m) => seen.Add((x, y, m.Name));
+        Assert.That(c.OnCallback("OnGuildMemberPopupMenu", new object[] { 10.0, 20.0, "Ma" }), Is.True);
+        c.OnCallback("OnGuildMemberPopupMenu", new object[] { 10.0, 20.0, "Nobody" });
+        Assert.That(seen, Is.EqualTo(new[] { (10f, 20f, "Ma") }));
+    }
+
+    [Test]
     public void TheAttendBackgroundFollowsCanAttendAndTheDonateClickShowsThePopupOrTheMaxBox()
     {
         const long now = 1_795_262_400;
