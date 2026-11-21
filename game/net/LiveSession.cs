@@ -339,6 +339,11 @@ public partial class LiveSession : Node
     /// <summary>The system shop open result (0xA1, CSceneStateGame::OnSystemShop); live only.</summary>
     public event Action<SystemShopPacket> SystemShopReceived;
     /// <summary>The npc shop's sends (Shop 0x28).</summary>
+    /// <summary>An item merge packet (0x74, CSceneStateGame::OnItemFusion); the item body of modes 5/6 is left in the reader.</summary>
+    public event Action<ItemMergePacket, Maple2.PacketLib.Tools.ByteReader> ItemMergeReceived;
+    /// <summary>An item dismantle packet (0x96, CItemBreakManager::OnItemDismantlePacket).</summary>
+    public event Action<ItemDismantlePacket> ItemDismantleReceived;
+    public void SendItemMerge(Ms2.Net.Wire.IOutPacket packet) { if (game != null) Send(packet); }
     public void SendShop(Ms2.Net.Wire.IOutPacket packet) { if (game != null) Send(packet); }
     /// <summary>CInstrumentManager's currently playing score uid (FUN_140c8dab0, petmanager.cpp:141; STILL-OPEN:
     /// instrument play packets are not ported yet, so 0).</summary>
@@ -907,6 +912,19 @@ public partial class LiveSession : Node
                 var sp = ShopPacket.Read(p.Reader());   // UIShopDialog::OnShopPacket (uishopdialog.cpp:1524)
                 GD.Print($"live: shop cmd {sp.Command}");
                 ShopReceived?.Invoke(sp);
+            }
+            else if (game.Is(p, Inbound.ItemMerge))
+            {
+                var mr = p.Reader();
+                var im = ItemMergePacket.Read(mr);   // CSceneStateGame::OnItemFusion (scenestategame.cpp:5906)
+                GD.Print($"live: item merge mode {im.Mode}");
+                ItemMergeReceived?.Invoke(im, mr);
+            }
+            else if (game.Is(p, Inbound.ItemDismantle))
+            {
+                var idp = ItemDismantlePacket.Read(p.Reader());   // CItemBreakManager::OnItemDismantlePacket (itembreakmanager.cpp:373)
+                GD.Print($"live: item dismantle mode {idp.Mode}");
+                ItemDismantleReceived?.Invoke(idp);
             }
             else if (game.Is(p, Inbound.SystemShop))
             {
