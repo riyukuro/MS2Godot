@@ -750,6 +750,10 @@ public sealed class GameTables
     NametagSymbols nametagSymbols;
     FishTable fish;
     TitleTags titleTags;
+    Ms2.Ui.Skills.MagicPathTable magicPaths;
+    /// <summary>The magic paths (LoadMagicPath, Table/magicPath.xml, no feature filter), read on first use.</summary>
+    public Ms2.Ui.Skills.MagicPathTable MagicPaths => magicPaths ??= packs == null ? Ms2.Ui.Skills.MagicPathTable.Empty
+        : new Ms2.Ui.Skills.MagicPathTable(Xml("table/magicpath.xml"));
     /// <summary>CFishingTable's fish and habitat maps (Table/fish.xml, fishHabitat.xml), read on first use.</summary>
     public FishTable Fish => fish ??= packs == null ? FishTable.Empty
         : new FishTable(Xml("table/fish.xml"), Xml("table/fishhabitat.xml"), e => FeatureElements.IsAvailable(packs, e));

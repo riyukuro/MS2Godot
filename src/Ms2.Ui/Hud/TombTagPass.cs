@@ -40,8 +40,9 @@ public readonly record struct TombHit(TombstoneRequest Request, int HitSound, Ve
 /// (0x2A: object id, hitter) goes out, then the record's FUN_1417591b0.</item>
 /// </list>
 /// m_3f0 is a tree keyed by the record pointer, so its order is the heap's; here it is the registration order.
-/// STILL-OPEN: the registrations: CMagic and CMagicModel (made by the 0x3d mode 0 cast records, scenestategame.cpp:5509) are
-/// not ported, so nothing registers an area in the game yet; PlayHitSound and the movers' part (m_738) are not ported.
+/// The registrations come from the own cast's magics (<see cref="OwnTagMagics"/>); the magics of the 0x3d mode 0 cast records
+/// (scenestategame.cpp:5509) are not the local player's (FUN_141464410), so they register nothing.
+/// STILL-OPEN: the arrow magics' registrations (see <see cref="OwnTagMagics"/>), PlayHitSound and the movers' part (m_738).
 /// </summary>
 public sealed class TombTagPass
 {

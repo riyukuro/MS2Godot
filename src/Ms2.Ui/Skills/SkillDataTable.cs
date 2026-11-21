@@ -166,12 +166,14 @@ public sealed class SkillAttackData
     /// <summary>"brokenOffence" (m_nBrokenOffence, +0x40, skillattackdata.cpp:584): non-zero lets the attack's tag area hit
     /// tombs (WorldService::FUN_141bc3470).</summary>
     public int BrokenOffence;
+    /// <summary>"magicPathID" (m_nMagicId): the magicPath.xml type its magics take (CMagicModel::Init, magicdata.cpp:2614).</summary>
+    public uint MagicPathId;
     public readonly SkillRange Range = new();
     public readonly SkillArrow Arrow = new();
 
     internal static SkillAttackData Load(XElement e)
     {
-        var a = new SkillAttackData { Point = (string)e.Attribute("point") ?? "", TargetCount = Xml.Int(e, "targetCount"), AttackMethodType = Xml.Int(e, "attackMethodType"), BrokenOffence = Xml.Int(e, "brokenOffence") };
+        var a = new SkillAttackData { Point = (string)e.Attribute("point") ?? "", TargetCount = Xml.Int(e, "targetCount"), AttackMethodType = Xml.Int(e, "attackMethodType"), BrokenOffence = Xml.Int(e, "brokenOffence"), MagicPathId = Xml.UInt(e, "magicPathID") };
         if (e.Attribute("direction") != null) a.Direction = Xml.Int(e, "direction");
         a.Range.LoadElement(e);
         a.Arrow.Load(e);
@@ -262,6 +264,9 @@ public sealed class SkillData
     /// <summary>&lt;basic&gt;&lt;autoTargeting&gt; (Unk_SkillBlock160::Load @0x140803140, skillleveldata.cpp:551), loaded from &lt;basic&gt; (:877).</summary>
     public float AutoTargetingMaxDegree, AutoTargetingMaxDistance, AutoTargetingMaxHeight;
     public int AutoTargetUseMove;
+    /// <summary>&lt;basic&gt;&lt;magicControl enable&gt; (Unk_SkillBlock150::Load @0x140803860, skillleveldata.cpp:653, read as a number):
+    /// a magic of a skill with 2 makes no region fill (CMagic::FUN_141461bd0 reads it as m_n538).</summary>
+    public int MagicControlEnable;
     readonly Dictionary<ushort, SkillLevelData> levels = new();
 
     /// <summary>
@@ -321,6 +326,7 @@ public sealed class SkillData
             s.AutoTargetingMaxHeight = Xml.Float(at, "autoTargetingMaxHeight");
             s.AutoTargetUseMove = Xml.Int(at, "autoTargetUseMove");
         }
+        if (basic.Element("magicControl") is { } mc) s.MagicControlEnable = Xml.Int(mc, "enable");
         if (basic.Element("changeSkill") is { } ch)
         {
             static List<string> T(XElement e, string n) => Xml.Tokens((string)e.Attribute(n));

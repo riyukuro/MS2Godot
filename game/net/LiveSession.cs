@@ -564,6 +564,8 @@ public partial class LiveSession : Node
     public IEnumerable<FieldNpcs.Placed> TalkNpcs => remote?.TalkNpcs ?? Enumerable.Empty<FieldNpcs.Placed>();
     /// <summary>The field's other players (the remote layer's), none before the field is built.</summary>
     public IEnumerable<RemoteLayer.Pc> FieldPcs => remote?.Pcs ?? Enumerable.Empty<RemoteLayer.Pc>();
+    /// <summary>The remote layer's tomb tag pass (the own magics register their areas into it), null before the field is built.</summary>
+    public Ms2.Ui.Hud.TombTagPass TombTags => remote?.TombTags;
     /// <summary>The own FieldAddUser object id, -1 before it.</summary>
     public int SelfObjectId => selfObject;
 

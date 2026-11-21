@@ -1,5 +1,6 @@
 using System;
 using Godot;
+using Ms2.Ui.Hud;
 using Ms2.Ui.Skills;
 
 namespace Ms2Godot.Ui;
@@ -847,13 +848,36 @@ public partial class HudScene
                 var req = SkillAttackFire.Fire(ownCast, ownAttack, pos, rotZ, 0,
                     System.Runtime.InteropServices.CollectionsMarshal.AsSpan(hitObjects), crtRand, nextSerial, hitQueried, hitIds,
                     (slotField?.PkMode ?? 0) != 0);
+                // FUN_1417ecce0 (stateskill.cpp:1347): a magic model per target record, started at the attack's tick, the send,
+                // then the models run once
+                if (req != null && live?.TombTags != null)
+                    ownTagMagics.Add(ownCast.Skill, SkillAttackFire.AttackAt(ownCast, ownAttack), req.Targets, (int)Time.GetTicksMsec(),
+                        hudModel.Tables.MagicPaths);
                 bool sent = req != null && (live?.SendDamage(req) ?? false);
+                TickOwnTagMagics();
                 GD.Print($"cast: skill {ownCast.Skill.Id} attack {ownAttack} targets {req?.Targets.Count ?? 0}{(sent ? " sent" : " (offline, not sent)")}");
                 ownAttack++;
             }
         }
         ownPointTime = OwnPointTime(me);
     }
+    readonly OwnTagMagics ownTagMagics = new();
+
+    /// <summary>
+    /// CMagic::FUN_14145de80 for the own cast's magics (<see cref="OwnTagMagics"/>): their area registrations into the live
+    /// session's tomb tag pass, posed from the player now. The latency lead is 0 (STILL-OPEN in <see cref="OwnTagMagics"/>); no
+    /// stun state is kept, so the owner is never stunned.
+    /// </summary>
+    void TickOwnTagMagics()
+    {
+        if (ownTagMagics.Count == 0) return;
+        var live = Net.LiveSession.Instance;
+        if (player == null || live?.TombTags is not { } pass) { ownTagMagics.Clear(); return; }
+        var g = player.GlobalPosition;
+        var owner = new MagicOwner(new System.Numerics.Vector3(g.X, -g.Z, g.Y), player.FacingRotZ, true, live.Me.Dead, false);
+        ownTagMagics.Tick((int)Time.GetTicksMsec(), 0, owner, pass);
+    }
+
     Action unwatchOwnSkill;
     Func<uint, int, float> slotCooldownRemain;
     Func<uint, (float, bool)> slotCooldownTotal;
