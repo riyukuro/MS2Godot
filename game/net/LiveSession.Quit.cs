@@ -71,9 +71,10 @@ public partial class LiveSession
             next.Dispose();
             if (exit.IsCancellationRequested) return;
             GD.PushWarning($"live: return to character select failed: {e.Message}");
-            // the client's failed connect ends in a message box (0x20f / 7, then it ends the process): here the box shows the
-            // move error text with the failure's code, and the session stays offline
-            Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(Ms2.Ui.FieldMoveError.Text(e is System.Net.Sockets.SocketException se ? se.ErrorCode : 7, Ms2.Ui.Hud.MessageBoxData.CommonByKey), 0, null, "");
+            // the client's failed return connect shows BlockFormat(0x20f, 7) (scenestategame.cpp:1357; FormatStringId = the common string
+            // of the id formatted with 7) and ends the process. STILL-OPEN: the key of common string 0x20f is not known here, so the box
+            // shows the move error text of the same code 7; the process end is not ported.
+            Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(Ms2.Ui.FieldMoveError.Text(7, Ms2.Ui.Hud.MessageBoxData.CommonByKey), 0, null, "");
         }
     }
 }
