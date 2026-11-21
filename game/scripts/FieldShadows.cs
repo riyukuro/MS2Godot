@@ -2,6 +2,7 @@ using System.Xml.Linq;
 using Godot;
 using Ms2.Formats.Options;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 
 namespace Ms2Godot;
 
@@ -22,7 +23,7 @@ public static class FieldShadows
     public static void Begin(PackSet packs, int fieldHighLevel)
     {
         table ??= packs.Exists("Xml", "table/graphicoption.xml")
-            ? GraphicOptionTable.Parse(XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/graphicoption.xml")).TrimStart('﻿')))
+            ? GraphicOptionTable.Parse(PackXml.Parse(packs.Read("Xml", "table/graphicoption.xml")))
             : new GraphicOptionTable();
         Level = Math.Max(GameOptions.Current.GraphicOption.ShadowLevel, fieldHighLevel);
     }

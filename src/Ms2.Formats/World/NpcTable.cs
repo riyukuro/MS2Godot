@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 
 namespace Ms2.Formats.World;
 
@@ -107,7 +108,7 @@ public sealed class NpcTable
         foreach (var entry in packs.List("Xml").Where(n => n.StartsWith("npcdata/", StringComparison.OrdinalIgnoreCase) && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)))
         {
             XDocument x;
-            try { x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('﻿')); } catch { continue; }
+            try { x = PackXml.Parse(packs.Read("Xml", entry)); } catch { continue; }
             foreach (var n in x.Descendants("npc"))
                 if (ParseRow(n, dummies) is { } row) rows[row.Id] = row;
         }
@@ -197,12 +198,12 @@ public sealed class NpcTable
         {
             string entry = $"string/{lang}/npcname.xml";
             if (!packs.Exists("Xml", entry)) continue;
-            var x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('\uFEFF'));
+            var x = PackXml.Parse(packs.Read("Xml", entry));
             foreach (var k in x.Descendants("key"))
                 if (int.TryParse((string)k.Attribute("id"), out int id) && rows.TryGetValue(id, out var row) && row.Name == null) row.Name = (string)k.Attribute("name");
             entry = $"string/{lang}/npctitle.xml";
             if (!packs.Exists("Xml", entry)) continue;
-            x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('\uFEFF'));
+            x = PackXml.Parse(packs.Read("Xml", entry));
             foreach (var k in x.Descendants("key"))
                 if (int.TryParse((string)k.Attribute("id"), out int id) && rows.TryGetValue(id, out var row) && row.Title == null) row.Title = (string)k.Attribute("name");
         }

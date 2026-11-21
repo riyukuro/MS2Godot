@@ -4,6 +4,7 @@ using Ms2.Formats.Pack;
 using Ms2.Formats.World;
 using Ms2.Net.Packets;
 using Ms2.Ui;
+using Ms2.Formats.Text;
 
 namespace Ms2Godot.Ui;
 
@@ -40,7 +41,7 @@ public sealed class LobbyCharacterData
     }
 
     static XDocument Xml(PackSet packs, string entry) => packs.Exists("Xml", entry)
-        ? XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('﻿'))
+        ? PackXml.Parse(packs.Read("Xml", entry))
         : null;
 
     /// <summary>CStringTable::FUN_141811980: the text of an id, empty when the table has none (the map table keys are 8 digits).</summary>

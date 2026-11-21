@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 
 namespace Ms2.Ui.Shop;
 
@@ -44,7 +45,7 @@ public sealed class ShopCategoryTable
         foreach (var path in new[] { "table/shopcategory.xml", "table/meratmarketcategory.xml" })
         {
             if (!packs.Exists("Xml", path)) continue;
-            var root = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", path)).TrimStart('\uFEFF')).Root;
+            var root = PackXml.Parse(packs.Read("Xml", path)).Root;
             if (root == null || root.Name != "ms2") continue;
             LoadCategories(root);
             if (FeatureElements.SelectEnvironment(packs, root) is { } env) LoadCategories(env);

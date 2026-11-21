@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 
 namespace Ms2.Formats.World;
 
@@ -39,7 +40,7 @@ public sealed class SkillTable
         foreach (var entry in packs.List("Xml").Where(n => n.StartsWith("skilldata/", StringComparison.OrdinalIgnoreCase) && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)))
         {
             XDocument x;
-            try { x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('﻿')); } catch { continue; }
+            try { x = PackXml.Parse(packs.Read("Xml", entry)); } catch { continue; }
             foreach (var s in x.Descendants("skill"))
             {
                 if (!int.TryParse((string)s.Attribute("id"), out int id)) continue;

@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 
 namespace Ms2.Quest;
 
@@ -41,7 +42,7 @@ public sealed class DungeonRooms
 
     /// <param name="available">IsElementAvailable (QuestTable.Available): FUN_14028faa0 skips the rows that fail it.</param>
     public static DungeonRooms Load(PackSet packs, Func<XElement, bool> available) =>
-        Parse(XDocument.Parse(Encoding.UTF8.GetString(packs.Read(Archive, Entry)).TrimStart('﻿')), available);
+        Parse(PackXml.Parse(packs.Read(Archive, Entry)), available);
 
     /// <summary>A later row of the same id replaces an earlier one (m_rooms[id] = room, :1068).</summary>
     public static DungeonRooms Parse(XDocument doc, Func<XElement, bool> available)

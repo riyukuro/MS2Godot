@@ -1,6 +1,7 @@
 using System.Text;
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 
 namespace Ms2.Quest;
 
@@ -47,7 +48,7 @@ public sealed class QuestRewards
             // the locale's table folder first (as the field metadata table), then the shared one
             foreach (var entry in new[] { $"table/{locale.ToLowerInvariant()}/{file}", $"table/{file}" })
                 if (packs.Exists("Xml", entry))
-                    return XDocument.Parse(Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('﻿'));
+                    return PackXml.Parse(packs.Read("Xml", entry));
             return null;
         }
         r.LoadNextExp(Doc("nextexp.xml"), available);

@@ -1,6 +1,7 @@
 using System.Xml.Linq;
 using Ms2.Formats.Model;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 
 namespace Ms2.Formats.World;
 
@@ -158,7 +159,7 @@ public sealed class RegionSkillObjects
     public static float FadeOutDuration(PackSet packs)
     {
         if (!packs.Exists("Xml", "table/constants.xml")) return DefaultFadeOutDuration;
-        var doc = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/constants.xml")).TrimStart('\ufeff'));
+        var doc = PackXml.Parse(packs.Read("Xml", "table/constants.xml"));
         foreach (var v in doc.Descendants("v"))
             if ((string)v.Attribute("key") == "RegionSkillFadeOutDuration"
                 && float.TryParse((string)v.Attribute("value"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float f))

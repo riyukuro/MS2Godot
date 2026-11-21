@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 
 namespace Ms2.Quest;
 
@@ -11,7 +12,7 @@ public static class QuestStrings
         var s = new TraceStrings();
         string entry = $"string/{locale}/stringcommon.xml";
         if (!packs.Exists("Xml", entry)) return s;
-        var doc = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('﻿'));
+        var doc = PackXml.Parse(packs.Read("Xml", entry));
         foreach (var k in doc.Descendants("key"))
         {
             string v = (string)k.Attribute("value");

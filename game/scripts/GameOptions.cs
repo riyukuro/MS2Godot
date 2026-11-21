@@ -3,6 +3,7 @@ using System.Xml.Linq;
 using Godot;
 using Ms2.Formats.Options;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 
 namespace Ms2Godot;
 
@@ -299,5 +300,5 @@ public static class GameOptions
         catch (XmlException) { return null; }
     }
 
-    static XDocument Parse(byte[] bytes) => XDocument.Parse(System.Text.Encoding.UTF8.GetString(bytes).TrimStart('﻿'));
+    static XDocument Parse(byte[] bytes) => PackXml.Parse(bytes);
 }

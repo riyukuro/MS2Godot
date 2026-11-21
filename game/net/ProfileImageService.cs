@@ -2,6 +2,7 @@ using Godot;
 using Ms2.Ui;
 using FileAccess = Godot.FileAccess;
 using HttpClient = Godot.HttpClient;
+using Ms2.Formats.Text;
 
 namespace Ms2Godot.Net;
 
@@ -31,7 +32,7 @@ public sealed partial class ProfileImageService : Node
             var packs = Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir);
             if (packs.Exists("Xml", "table/commonresource.xml"))
             {
-                var doc = System.Xml.Linq.XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/commonresource.xml")).TrimStart('﻿'));
+                var doc = PackXml.Parse(packs.Read("Xml", "table/commonresource.xml"));
                 im.NoProfile = (string)doc.Root?.Element("DEFAULT_PROFILE_IMAGE_PATH")?.Attribute("value") ?? "";
             }
         }

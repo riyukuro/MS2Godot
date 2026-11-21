@@ -72,8 +72,23 @@ public partial class Field : Node3D
             GD.PushError("field load: " + ex);
             // a loading screen this load carried but never adopted would stay over the field, and its move would be taken by the next load
             World.FieldContents.AbandonLoad(this, loadMove);
+            DropUnbuiltPlayer();
             if (IsInstanceValid(this) && !IsLoaded) EndLoad();   // what was built is shown, as when the build ran in one frame
         }
+    }
+
+    /// <summary>
+    /// A load that threw between Player.Create and AddChild(player) (SpawnPlayer: the look, the action animations) leaves
+    /// `player` set but outside the tree, and the camera never made. The field then ticks on it every frame: UpdateCamera
+    /// reads its GlobalPosition ("!is_inside_tree") and aims the camera at it (Basis.LookingAt "the vector cannot be zero"),
+    /// thousands of errors over the one that matters. A player that never entered the tree is freed and the field goes on
+    /// as one without a local player (the replay field's case), which every per-frame site already handles.
+    /// </summary>
+    void DropUnbuiltPlayer()
+    {
+        if (player == null || player.IsInsideTree()) return;
+        if (IsInstanceValid(player)) player.Free();
+        player = null;
     }
 
     async System.Threading.Tasks.Task LoadField()
@@ -663,6 +678,7 @@ public partial class Field : Node3D
     /// </summary>
     void UpdateCamera(double dt = 0)
     {
+        if (player == null || !player.IsInsideTree()) return;   // a player that failed to build never entered the tree
         var ms2yaw = Mathf.DegToRad(cam.HAngleDeg + 180f) + camYaw;
         CameraYaw = ms2yaw;
         Vector3 eye, look, offset;

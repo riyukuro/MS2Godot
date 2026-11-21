@@ -1,3 +1,4 @@
+using Ms2.Formats.Text;
 using System.Globalization;
 using System.Text;
 using System.Xml.Linq;
@@ -65,7 +66,7 @@ public sealed class FieldMissions
                                                 && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).OrderBy(n => n, StringComparer.Ordinal))
             {
                 XDocument doc;
-                try { doc = Parse(Encoding.UTF8.GetString(packs.Read("Xml", entry))); } catch (System.Xml.XmlException) { continue; }
+                try { doc = Parse(PackXml.Text(packs.Read("Xml", entry))); } catch (System.Xml.XmlException) { continue; }
                 m.AddDescriptions(doc, rows, wanted);
             }
             foreach (var (id, d) in rows) if (!m.descriptions.ContainsKey(id)) m.descriptions[id] = d;

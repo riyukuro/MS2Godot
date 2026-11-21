@@ -4,6 +4,7 @@ using Ms2.Formats.Options;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
 using Ms2.Ui.Hud;
+using Ms2.Formats.Text;
 
 namespace Ms2Godot.Ui;
 
@@ -28,7 +29,7 @@ public sealed class GameOptionHost : IGameOptionDialogHost
         this.packs = packs;
         this.common = common;
         table = packs.Exists("Xml", "table/graphicoption.xml")
-            ? GraphicOptionTable.Parse(XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/graphicoption.xml")).TrimStart('﻿')))
+            ? GraphicOptionTable.Parse(PackXml.Parse(packs.Read("Xml", "table/graphicoption.xml")))
             : new GraphicOptionTable();
     }
 
@@ -168,7 +169,7 @@ public sealed class GameOptionHost : IGameOptionDialogHost
             defaultsRead = true;
             const string entry = "table/default/defaultgameoption.xml";
             if (packs.Exists("Xml", entry))
-                defaults = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('﻿'));
+                defaults = PackXml.Parse(packs.Read("Xml", entry));
             return defaults;
         }
     }
@@ -223,7 +224,7 @@ public sealed class GameOptionHost : IGameOptionDialogHost
             defaultAccountRead = true;
             const string entry = "table/default/defaultaccountoption.xml";
             if (packs.Exists("Xml", entry))
-                defaultAccount = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('\ufeff'));
+                defaultAccount = PackXml.Parse(packs.Read("Xml", entry));
             return defaultAccount;
         }
     }
@@ -271,7 +272,7 @@ public sealed class GameOptionHost : IGameOptionDialogHost
             {
                 const string entry = "table/gameoptionlocale.xml";
                 locale = packs.Exists("Xml", entry)
-                    ? GameOptionLocale.Parse(XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('\ufeff')))
+                    ? GameOptionLocale.Parse(PackXml.Parse(packs.Read("Xml", entry)))
                     : new GameOptionLocale();
             }
             return locale.GetLocaleData(Region, false);

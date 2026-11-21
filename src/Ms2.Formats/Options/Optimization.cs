@@ -1,4 +1,5 @@
 using System.Xml.Linq;
+using Ms2.Formats.Text;
 
 namespace Ms2.Formats.Options;
 
@@ -28,7 +29,7 @@ public static class Optimization
             if (!File.Exists(path)) return true;
             // TiXmlDocument::LoadFile(TIXML_ENCODING_UNKNOWN, optimizer.cpp:380) takes the bytes as they are, whatever
             // encoding the declaration names, so the declaration is not followed here either.
-            doc = XDocument.Parse(System.Text.Encoding.UTF8.GetString(File.ReadAllBytes(path)).TrimStart('\uFEFF'));
+            doc = PackXml.Parse(File.ReadAllBytes(path));
         }
         catch (Exception) { return true; }
         int value = 0;

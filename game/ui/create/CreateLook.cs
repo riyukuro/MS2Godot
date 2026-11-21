@@ -4,6 +4,7 @@ using Ms2.Formats.Pack;
 using Ms2.Net.Packets;
 using Ms2Godot.Look;
 using Ms2Godot.Net;
+using Ms2.Formats.Text;
 
 namespace Ms2Godot.Ui.Create;
 
@@ -77,7 +78,7 @@ public sealed class CreateLook
     }
 
     XDocument Load(string entry) => packs.Exists("Xml", entry)
-        ? XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('﻿')) : null;
+        ? PackXml.Parse(packs.Read("Xml", entry)) : null;
 
     XElement Find(Dictionary<int, XElement> cache, string dir, int id, string element)
     {

@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 
 namespace Ms2.Formats.World;
 
@@ -16,7 +17,7 @@ public static class MapXBlock
     public static string Entry(string xblock) => $"mapxblock/{xblock}.xml";
 
     /// <summary>The parsed block; the BOM, if any, is skipped as TinyXML does.</summary>
-    public static XDocument Parse(byte[] data) => XDocument.Parse(System.Text.Encoding.UTF8.GetString(data).TrimStart('\uFEFF'));
+    public static XDocument Parse(byte[] data) => PackXml.Parse(data);
 
     public static XDocument Load(PackSet packs, string xblock) => Parse(packs.Read(Archive, Entry(xblock)));
 }

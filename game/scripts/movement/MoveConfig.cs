@@ -1,6 +1,7 @@
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
+using Ms2.Formats.Text;
 
 namespace Ms2Godot.Movement;
 
@@ -51,7 +52,7 @@ public static class MoveConfig
     {
         try
         {
-            var x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/constants.xml")));
+            var x = PackXml.Parse(packs.Read("Xml", "table/constants.xml"));
             foreach (var v in x.Root?.Elements("v") ?? Enumerable.Empty<XElement>())
             {
                 string k = (string)v.Attribute("key"), val = (string)v.Attribute("value");

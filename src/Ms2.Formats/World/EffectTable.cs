@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 
 namespace Ms2.Formats.World;
 
@@ -61,7 +62,7 @@ public sealed class EffectTable
         {
             try
             {
-                var x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('﻿'));
+                var x = PackXml.Parse(packs.Read("Xml", entry));
                 parts = new List<EffectPart>();
                 foreach (var e in x.Descendants("effect"))
                 {

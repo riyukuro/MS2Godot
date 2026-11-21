@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 
 namespace Ms2.Formats.World;
 
@@ -24,7 +25,7 @@ public sealed class LoadingImageTable
     {
         const string entry = "table/loadingimage.xml";
         if (!packs.Exists("Xml", entry)) return;
-        Load(XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('\uFEFF')));
+        Load(PackXml.Parse(packs.Read("Xml", entry)));
     }
 
     /// <summary>The table from the xml itself (tests).</summary>

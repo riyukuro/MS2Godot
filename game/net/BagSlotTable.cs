@@ -3,6 +3,7 @@ using System.Xml.Linq;
 using Ms2.Formats.Pack;
 using Ms2Godot.Ui;
 using LobbyFeatures = Ms2.Ui.LobbyFeatures;
+using Ms2.Formats.Text;
 
 namespace Ms2Godot.Net;
 
@@ -30,7 +31,7 @@ public static class BagSlotTable {
     static Entries Parse(PackSet packs) {
         var values = new Dictionary<string, int[]>();
         if (packs.Exists("Xml", "table/constants.xml")) {
-            var doc = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/constants.xml")).TrimStart('\ufeff'));
+            var doc = PackXml.Parse(packs.Read("Xml", "table/constants.xml"));
             foreach (var v in doc.Descendants("v")) {
                 var key = (string) v.Attribute("key");
                 if (key == null || !key.StartsWith("bagSlotTab") || !LobbyFeatures.IsEnabledByName(packs, (string) v.Attribute("feature"))) continue;

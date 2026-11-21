@@ -2,6 +2,7 @@ using System.Text;
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
 using Ms2.Net.Packets;
+using Ms2.Formats.Text;
 namespace Ms2Godot.Net;
 
 /// <summary>
@@ -17,7 +18,7 @@ public sealed class ItemKinds
     HashSet<int> customNotes;
     public ItemKinds(PackSet packs) { this.packs = packs; }
 
-    static XDocument Doc(PackSet p, string entry) => XDocument.Parse(Encoding.UTF8.GetString(p.Read("Xml", entry)).TrimStart('﻿'));
+    static XDocument Doc(PackSet p, string entry) => PackXml.Parse(p.Read("Xml", entry));
 
     (int Type, bool Skin, bool Ucc, uint SlotMax, string SlotIcon)? Row(int id)
     {

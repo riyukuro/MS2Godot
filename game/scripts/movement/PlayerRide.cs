@@ -4,6 +4,7 @@ using Ms2.Formats.Model;
 using Ms2.Formats.Nif;
 using Ms2.Formats.Pack;
 using Ms2Godot.Movement;
+using Ms2.Formats.Text;
 
 namespace Ms2Godot;
 
@@ -46,7 +47,7 @@ public sealed class Mount
         m.Skeleton = m.Visual.GetNode<Skeleton3D>($"Model/{ModelBuilder.SkeletonName}");
         m.SeatBone = string.IsNullOrEmpty(d.RideBone) ? -1 : m.Skeleton.FindBone(d.RideBone);
 
-        var x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/pcactiondata.xml")));
+        var x = PackXml.Parse(packs.Read("Xml", "table/pcactiondata.xml"));
         foreach (var gid in new[] { "0", "1001" })
             foreach (var v in x.Root?.Elements("group").FirstOrDefault(g => (string)g.Attribute("groupID") == gid)?.Elements("v") ?? Enumerable.Empty<XElement>())
                 m.actions[(string)v.Attribute("type")] = ((string)v.Attribute("names") ?? "").Split(',')[0].Trim();

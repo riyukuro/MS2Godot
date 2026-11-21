@@ -1,6 +1,7 @@
 using System.Text;
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 namespace Ms2.Quest;
 
 /// <summary>
@@ -15,7 +16,7 @@ public static class QuestKinds
         foreach (var entry in packs.List("Xml").Where(n => n.StartsWith("quest/", StringComparison.OrdinalIgnoreCase) && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)))
         {
             XDocument doc;
-            try { doc = XDocument.Parse(Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('﻿')); } catch (System.Xml.XmlException) { continue; }
+            try { doc = PackXml.Parse(packs.Read("Xml", entry)); } catch (System.Xml.XmlException) { continue; }
             foreach (var q in doc.Descendants("quest"))
             {
                 var basic = q.Element("basic");

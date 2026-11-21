@@ -4,6 +4,7 @@ using Godot;
 using Ms2.Formats.Model;
 using Ms2.Formats.Nif;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 
 namespace Ms2Godot.Ui;
 
@@ -54,7 +55,7 @@ public sealed class SelectPose
     }
 
     static XDocument Xml(PackSet packs, string entry) => packs.Exists("Xml", entry)
-        ? XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('﻿'))
+        ? PackXml.Parse(packs.Read("Xml", entry))
         : null;
 }
 

@@ -1,3 +1,4 @@
+using Ms2.Formats.Text;
 using System.Text;
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
@@ -188,10 +189,10 @@ public sealed partial class QuestTable
         var t = new QuestTable(locale, featureOn);
         var entries = packs.List("Xml").ToList();
         if (packs.Exists("Xml", QuestDataFile))
-            try { t.AddQuests(Parse(Encoding.UTF8.GetString(packs.Read("Xml", QuestDataFile)))); } catch (System.Xml.XmlException) { }
+            try { t.AddQuests(Parse(PackXml.Text(packs.Read("Xml", QuestDataFile)))); } catch (System.Xml.XmlException) { }
         t.BuildIndexes();
         if (packs.Exists("Xml", "table/questgrouptable.xml"))
-            try { t.AddGroups(Parse(Encoding.UTF8.GetString(packs.Read("Xml", "table/questgrouptable.xml")))); } catch (System.Xml.XmlException) { }
+            try { t.AddGroups(Parse(PackXml.Text(packs.Read("Xml", "table/questgrouptable.xml")))); } catch (System.Xml.XmlException) { }
         t.Rewards = QuestRewards.Load(packs, locale, t.Available);
 
         foreach (var (table, file) in ReservedWords.Tables)
@@ -209,7 +210,7 @@ public sealed partial class QuestTable
         {
             string entry = $"string/{lang}/stringcommon.xml";
             if (!packs.Exists("Xml", entry)) continue;
-            foreach (var k in Parse(Encoding.UTF8.GetString(packs.Read("Xml", entry))).Descendants("key"))
+            foreach (var k in Parse(PackXml.Text(packs.Read("Xml", entry))).Descendants("key"))
                 common.TryAdd((string)k.Attribute("id") ?? "", ((string)k.Attribute("value") ?? "").Replace("\\n", "\n"));
         }
         t.Common = t.CommonString;
@@ -227,12 +228,12 @@ public sealed partial class QuestTable
                 XDocument doc;
                 if (file.Contains("chapterdescription", StringComparison.Ordinal))
                 {
-                    try { doc = Parse(Encoding.UTF8.GetString(packs.Read("Xml", entry))); } catch (System.Xml.XmlException) { continue; }
+                    try { doc = Parse(PackXml.Text(packs.Read("Xml", entry))); } catch (System.Xml.XmlException) { continue; }
                     t.AddChapters(doc, chapterRows);
                 }
                 else if (file.StartsWith("questdescription", StringComparison.Ordinal))
                 {
-                    try { doc = Parse(Encoding.UTF8.GetString(packs.Read("Xml", entry))); } catch (System.Xml.XmlException) { continue; }
+                    try { doc = Parse(PackXml.Text(packs.Read("Xml", entry))); } catch (System.Xml.XmlException) { continue; }
                     t.AddDescriptions(doc, nameRows);
                 }
             }

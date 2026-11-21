@@ -94,7 +94,7 @@ public static class LobbyFeatures
     static XDocument Xml(PackSet packs, string entry)
     {
         var text = Loose(packs.DataDir, "Xml/" + entry) ?? Loose(packs.DataDir, "Xml/" + LocalePath(entry));
-        if (text == null && packs.Exists("Xml", entry)) text = System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry));
+        if (text == null && packs.Exists("Xml", entry)) text = Ms2.Formats.Text.PackXml.Text(packs.Read("Xml", entry));
         return text == null ? null : XDocument.Parse(text.TrimStart('\ufeff'));
     }
 

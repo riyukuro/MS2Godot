@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
 using Ms2.Net.Packets;
+using Ms2.Formats.Text;
 
 namespace Ms2Godot.Look;
 
@@ -19,7 +20,7 @@ public sealed class ColorPalettes
     public ColorPalettes(PackSet packs)
     {
         if (!packs.Exists("Xml", "table/colorpalette.xml")) return;
-        var doc = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/colorpalette.xml")).TrimStart('﻿'));
+        var doc = PackXml.Parse(packs.Read("Xml", "table/colorpalette.xml"));
         foreach (var p in doc.Root.Elements("colorPalette"))
         {
             if (!int.TryParse((string)p.Attribute("id"), out int id)) continue;
@@ -74,7 +75,7 @@ public static class StarterLook
     {
         var items = new List<EquipItem>();
         if (!packs.Exists("Xml", "table/defaultitems.xml")) return (items, palettes.Skin(0));
-        var doc = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/defaultitems.xml")).TrimStart('﻿'));
+        var doc = PackXml.Parse(packs.Read("Xml", "table/defaultitems.xml"));
         var genders = ItemFiles(packs, "itemdata");      // itemdata file prefix -> root
         var models = ItemFiles(packs, "itemmodel");
 
@@ -121,7 +122,7 @@ public static class StarterLook
         // daggers, Assassin stars) fills RH first and then LH
         if (packs.Exists("Xml", "table/job.xml"))
         {
-            var jobs = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/job.xml")).TrimStart('\uFEFF'));
+            var jobs = PackXml.Parse(packs.Read("Xml", "table/job.xml"));
             var job = jobs.Root.Descendants("job").FirstOrDefault(j => (string)j.Attribute("jobGroupID") == jobCode.ToString());
             foreach (var part in ((string)job?.Attribute("startItems") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
             {
@@ -158,7 +159,7 @@ public static class StarterLook
         {
             string entry = $"{dir}/{prefix}.xml";
             root = packs.Exists("Xml", entry)
-                ? XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('﻿')).Root
+                ? PackXml.Parse(packs.Read("Xml", entry)).Root
                 : null;
             cache[prefix] = root;
         }

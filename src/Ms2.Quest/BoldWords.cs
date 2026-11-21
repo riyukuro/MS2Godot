@@ -1,6 +1,7 @@
 using System.Text;
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 
 namespace Ms2.Quest;
 
@@ -154,7 +155,7 @@ public sealed partial class ReservedWords
         XElement Pick(XElement e) => e.Elements("environment").Where(available).LastOrDefault();
         XDocument Doc(string entry)
         {
-            try { return XDocument.Parse(Encoding.UTF8.GetString(packs.Read(A, entry)).TrimStart('\ufeff')); }
+            try { return PackXml.Parse(packs.Read(A, entry)); }
             catch (System.Xml.XmlException) { return null; }
         }
         var entries = packs.List(A).ToList();

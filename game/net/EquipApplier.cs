@@ -3,6 +3,7 @@ using Godot;
 using Ms2.Formats.Model;
 using Ms2.Formats.Pack;
 using Ms2.Net.Packets;
+using Ms2.Formats.Text;
 
 namespace Ms2Godot.Net;
 
@@ -71,7 +72,7 @@ public sealed class EquipApplier
             string entry = $"itemdata/{prefix}.xml";
             if (packs.Exists("Xml", entry))
             {
-                var x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('\uFEFF'));
+                var x = PackXml.Parse(packs.Read("Xml", entry));
                 foreach (var e in x.Root.Elements("item"))
                 {
                     if (!int.TryParse((string)e.Attribute("id"), out int i)) continue;
@@ -107,7 +108,7 @@ public sealed class EquipApplier
             string entry = $"itemmodel/{prefix}.xml";
             if (packs.Exists("Xml", entry))
             {
-                var x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('﻿'));
+                var x = PackXml.Parse(packs.Read("Xml", entry));
                 foreach (var e in x.Descendants("ItemModel"))
                     if (int.TryParse((string)e.Attribute("id"), out int i)) byId[i] = e;
             }

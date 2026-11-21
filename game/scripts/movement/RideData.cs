@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 
 namespace Ms2Godot.Movement;
 
@@ -25,7 +26,7 @@ public sealed class RideData
 
     public static RideData Load(PackSet packs, int id)
     {
-        var x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", $"riding/{id:D8}.xml")));
+        var x = PackXml.Parse(packs.Read("Xml", $"riding/{id:D8}.xml"));
         var riding = x.Root?.Element("riding") ?? throw new InvalidDataException($"riding {id}: no <riding>");
         var b = riding.Element("basic") ?? throw new InvalidDataException($"riding {id}: no <basic>");
         var d = new RideData

@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Numerics;
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 
 namespace Ms2.Formats.World;
 
@@ -115,7 +116,7 @@ public sealed class EffectDummyTable
     public static EffectDummyTable Load(PackSet packs)
     {
         XElement Root(string entry) =>
-            packs.Exists("Xml", entry) ? XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('﻿')).Root : null;
+            packs.Exists("Xml", entry) ? PackXml.Parse(packs.Read("Xml", entry)).Root : null;
         return new EffectDummyTable(ParseDefault(Root("table/defaulteffectdummy.xml")), ParsePc(Root("table/pceffectdummy.xml")));
     }
 

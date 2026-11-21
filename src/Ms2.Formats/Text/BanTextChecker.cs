@@ -60,7 +60,7 @@ public sealed class BanTextChecker
         string Read(string entry)
         {
             entry = entry.ToLowerInvariant();
-            return packs.Exists("Xml", entry) ? Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('\uFEFF') : null;
+            return packs.Exists("Xml", entry) ? PackXml.Text(packs.Read("Xml", entry)) : null;
         }
         Dictionary<string, string> strings = null;
         string Common(string key)

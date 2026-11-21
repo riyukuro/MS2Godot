@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 
 namespace Ms2.Formats.World;
 
@@ -106,7 +107,7 @@ public sealed class FieldData
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, XDocument> docs = new();
 
     /// <summary>The parsed table, once per pack set: a pack entry never changes, the callers only read the tree, and FieldData results are built fresh from it.</summary>
-    static XDocument Doc(PackSet packs) => docs.GetValue(packs, p => XDocument.Parse(System.Text.Encoding.UTF8.GetString(p.Read(Archive, Entry))));
+    static XDocument Doc(PackSet packs) => docs.GetValue(packs, p => PackXml.Parse(p.Read(Archive, Entry)));
 
     /// <summary>The parsed table shared per pack set (read once; callers must not change it).</summary>
     public static XDocument Document(PackSet packs) => Doc(packs);

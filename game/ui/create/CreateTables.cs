@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 
 namespace Ms2Godot.Ui.Create;
 
@@ -23,7 +24,7 @@ public sealed class CreateTables
     }
 
     XDocument Xml(string entry) => packs.Exists("Xml", entry)
-        ? XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('﻿'))
+        ? PackXml.Parse(packs.Read("Xml", entry))
         : null;
 
     void LoadLobbyField()

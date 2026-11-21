@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 
 namespace Ms2.Formats.World;
 
@@ -33,7 +34,7 @@ public sealed class RegionSpawnTable
     static IEnumerable<XElement> Rows(PackSet packs, string entry, string name)
     {
         if (!packs.Exists("Xml", entry)) return Array.Empty<XElement>();
-        return XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('﻿')).Descendants(name);
+        return PackXml.Parse(packs.Read("Xml", entry)).Descendants(name);
     }
 
     static int I(XElement e, string a) => int.TryParse((string)e.Attribute(a), NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) ? v : 0;

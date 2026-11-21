@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 
 namespace Ms2.Formats.World;
 
@@ -80,5 +81,5 @@ public sealed class GameStrings
         return s;
     }
 
-    public static XDocument Parse(byte[] data) => XDocument.Parse(System.Text.Encoding.UTF8.GetString(data).TrimStart('﻿'));
+    public static XDocument Parse(byte[] data) => PackXml.Parse(data);
 }

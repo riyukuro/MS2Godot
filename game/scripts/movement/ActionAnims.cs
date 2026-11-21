@@ -3,6 +3,7 @@ using System.Xml.Linq;
 using Godot;
 using Ms2.Formats.Model;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Text;
 
 namespace Ms2Godot.Movement;
 
@@ -132,7 +133,7 @@ public sealed class ActionAnims
         string xmlEntry = $"{bodyDir}/{bodyDir}.xml";
         if (packs.Exists(ModelBuilder.ModelArchive, xmlEntry))
         {
-            var kx = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read(ModelBuilder.ModelArchive, xmlEntry)));
+            var kx = PackXml.Parse(packs.Read(ModelBuilder.ModelArchive, xmlEntry));
             foreach (var el in kx.Root?.Elements() ?? Enumerable.Empty<XElement>())
             {
                 if (aa.xmlKeys.ContainsKey(el.Name.LocalName)) continue;   // FirstChild (ms2animationservice.cpp:395)
@@ -148,7 +149,7 @@ public sealed class ActionAnims
             }
         }
         var table = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/pcactiondata.xml")));
+        var x = PackXml.Parse(packs.Read("Xml", "table/pcactiondata.xml"));
         var group = x.Root?.Elements("group").FirstOrDefault(g => (string)g.Attribute("groupID") == "0");
         foreach (var v in group?.Elements("v") ?? Enumerable.Empty<XElement>())
             table[(string)v.Attribute("type")] = ((string)v.Attribute("names") ?? "").Split(',')[0].Trim();
