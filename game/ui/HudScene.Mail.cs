@@ -151,8 +151,8 @@ public partial class HudScene
                 },
             };
             c.SystemNotice += text => SystemNoticeText(text);
-            c.SendRequested += () => { if (!MailSendOpen) OpenMailSend(null); };
-            c.ReplyRequested += m => ToggleMailSend(m);
+            c.SendRequested += () => OpenMailSend(null);
+            c.ReplyRequested += m => OpenMailSend(m);
             c.SenderMenuRequested += (name, x, y) => GD.Print($"mail: sender menu for {name} (0x4e39 is not in this HUD)");
             c.BuyAdRequested += m => GD.Print($"mail: buy ad {m.Id} (the bill 0x4f17 is not in this HUD)");
             c.Unloaded += () => { mailMovie?.Host.Unload(); mailMovie?.QueueFree(); mailMovie = null; };

@@ -26,8 +26,10 @@ public partial class HudScene
         OpenMailSend(reply);
     }
 
+    /// <summary>OpenDialog(0x4e4a): a window that is already up comes to the front (vfunc_65, uimaillistdialog.cpp:841).</summary>
     void OpenMailSend(MailInfo reply)
     {
+        if (MailSendOpen) { mailSend.SetReplyMail(reply); mailSend.BringToFront(); return; }
         if (GuideRefusesOpen("MailSendDialog")) return;
         if (mailSendMovie != null) { mailSendMovie.Host.Unload(); mailSendMovie.QueueFree(); mailSendMovie = null; }
         var live = Ms2Godot.Net.LiveSession.Instance;
@@ -43,7 +45,7 @@ public partial class HudScene
             CheckTitle = t => checker.CheckMailTitleText(t, out var msg) != 0 ? msg : null,
             CheckContent = t => checker.CheckContentText(t, out var msg) != 0 ? msg : null,
             DateText = t => Ms2.Ui.MailTexts.DateString(t, ClientLanguageIndex()),
-            FormatId = (id, args) => texts.CommonF(id, args),
+            FormatId = (id, args) => texts.CommonF(id, args),   // ids 0x805/0x806 are in MailTexts.CommonKeys
             Names = () => MailReceiverNames(live),
         };
         c.NoticeText += text => SystemNoticeText(text);
@@ -65,7 +67,7 @@ public partial class HudScene
         return names.Values;
     }
 
-    /// <summary>UIMailSendDialog::vfunc_13: Escape closes (UIDialog), Enter and Tab go to the movie; any other key marks the
+    /// <summary>UIMailSendDialog::vfunc_13: Escape closes (UIDialog), Enter and Tab go to the movie; a typed character marks the
     /// receiver's candidates to be rebuilt (vfunc_74).</summary>
     bool MailSendKeys(InputEventKey k)
     {
@@ -76,7 +78,7 @@ public partial class HudScene
             case Key.Enter or Key.KpEnter: return mailSend.OnKeyCode(MailSendDialogController.EnterKey);
             case Key.Tab: return mailSend.OnKeyCode(MailSendDialogController.TabKey);
         }
-        mailSendTyped = true;
+        if (k.Unicode >= 0x20) mailSendTyped = true;   // a typed character (vfunc_74)
         return false;
     }
 

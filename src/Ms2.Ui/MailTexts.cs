@@ -303,6 +303,7 @@ public sealed class MailTexts
         [0x24f] = "s_mail_error_admin_character", [0x250] = "s_mail_error_from_admin_to_user",
         [0x251] = "s_mail_error_bancheck", [0x252] = "s_mail_error_admin_block",
         [0x257] = "s_mail_period_item_include", [0x258] = "s_mail_period_item_include_chat",
+        [0x805] = "s_notify_mail_reply", [0x806] = "s_notify_mail_reply_content",
         [0x807] = "s_notify_mail_remainDay", [0x808] = "s_notify_mail_remainDay_tooltip",
         [0x809] = "s_notify_mail_remainDay_today", [0x80a] = "s_notify_mail_remainDay_tooltip_today",
         [0x80b] = "s_notify_mail_remainDay_expire",

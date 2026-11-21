@@ -138,7 +138,7 @@ public sealed class MailSendDialogController : UiController
 
     string ContentText() => FilterText(Convert.ToString(Host.Invoke("getContent")) ?? "");
 
-    /// <summary>OnSend (@0x1419ed1c0): the checks in the client's order, then the send. Returns the packet sent (null when refused).</summary>
+    /// <summary>OnSend (@0x1419ed1c0, uimaillistdialog.cpp:1583): the checks in the client's order, then the send. Returns the packet sent (null when refused).</summary>
     public MailSendRequest OnSend()
     {
         if (Host?.Entity == null) return null;
@@ -153,12 +153,15 @@ public sealed class MailSendDialogController : UiController
         return p;
     }
 
-    /// <summary>vfunc_74 (a key typed): with the receiver focused, the names that contain its lower-cased trimmed text are the
+    bool ReceiverFocused(object input) => Rt.ToNumber(Host.Get(input, "focused")) > 0;
+
+    /// <summary>vfunc_74 (a character typed, uimaillistdialog.cpp:1480): with the receiver focused, the names that contain its lower-cased text (trailing blanks trimmed) are the
     /// candidates ({label: name} in an ASDataProvider); an empty text gives an empty list.</summary>
     public void UpdateCandidates()
     {
         if (Host?.Entity == null || Host.Child("m_receiver") is not { } input) return;
-        string typed = ReceiverText().Trim().ToLowerInvariant();
+        if (!ReceiverFocused(input)) return;
+        string typed = ReceiverText().TrimEnd().ToLowerInvariant();
         var dp = Host.RT.Construct(Host.RT.GetClass("scaleform.clik.data.DataProvider"), Array.Empty<object>());
         if (typed.Length > 0)
             foreach (var n in Names())

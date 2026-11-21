@@ -242,7 +242,7 @@ public sealed class BanTextChecker
     }
 
     /// <summary>CheckTextWithLimit: the limit scan (when the checks include it), then the tables; the message is the client's text.</summary>
-    public int Check(string s, Checks checks, Limit limit, out string message)
+    public int Check(string s, Checks checks, Limit limit, out string message, string anyWordKey = "s_ban_check_err_any_word")
     {
         message = null;
         if (checks.HasFlag(Checks.Limit))
@@ -270,7 +270,7 @@ public sealed class BanTextChecker
                 ? (((uint)checks & 1) != 0
                     ? Format("s_ban_check_err_all_name", "This name cannot be used.", matched)
                     : Format("s_ban_check_err_all_word", "This word cannot be used.", matched))
-                : Format("s_ban_check_err_any_word", "Contains a forbidden word ({0}).", matched);
+                : Format(anyWordKey, "Contains a forbidden word ({0}).", matched);
         return t;
     }
 
@@ -293,10 +293,15 @@ public sealed class BanTextChecker
     public int CheckGuildName(string name, int min, int max, out string message) =>
         Check(name, (Checks)0xd9, new Limit(min, max, true, false, false, false, true), out message);
 
-    /// <summary>CBanTextChecker::CheckMailTitleText (@0x140225c90) and CheckContentText (@0x140225de0): CheckTypes(0xd8, true),
-    /// the same tables as the club name; the mail send dialog's checks.</summary>
-    public int CheckMailTitleText(string title, out string message) => Check(title, (Checks)0xd8, default, out message);
-    public int CheckContentText(string content, out string message) => Check(content, (Checks)0xd8, default, out message);
+    /// <summary>CBanTextChecker::CheckMailTitleText (@0x140225c90, commonstringtable.cpp:869): CheckTextOption with the types 0xd8 and
+    /// an error package of kind 3 = 0x8c1 (s_ban_check_title_err_any_word) and kind 4 = 0x8c2; a word hit shows the title text.</summary>
+    public int CheckMailTitleText(string title, out string message) =>
+        Check(title, (Checks)0xd8, default, out message, "s_ban_check_title_err_any_word");
+
+    /// <summary>CBanTextChecker::CheckContentText (@0x140225de0, commonstringtable.cpp:880): the same with kind 3 = 0x8c3
+    /// (s_ban_check_comment_err_any_word) and kind 4 = 0x8c4; a word hit shows the content text.</summary>
+    public int CheckContentText(string content, out string message) =>
+        Check(content, (Checks)0xd8, default, out message, "s_ban_check_comment_err_any_word");
 
     /// <summary>CBanTextChecker::CheckBuddyMemo (@0x140226220, commonstringtable.cpp:964): CheckTypes(0xd8, true), the same
     /// tables as the club name; the friend dialogs' block memo.</summary>

@@ -178,6 +178,23 @@ public class MailSendDialogTests
     }
 
     [Test]
+    public void AReplyReadsTheClientsReplyStringsThroughTheRealFormatPath()
+    {
+        Packs();
+        var texts = MailTexts.Empty();
+        var tables = new GameTables(packs, "en");
+        texts.CommonByKey = k => tables.Common(k);
+        var mail = new MailInfo { Sender = "Ann", Title = "Hi", Content = "Body", SentTime = 7 };
+        var r = new Rig(mail, c => c.FormatId = texts.CommonF);
+        var title = Rt.ToString(r.Host.Get(r.Host.Child("m_title"), "text"));
+        var body = Rt.ToString(r.Host.Invoke("getContent"));
+        Assert.That(title, Does.Contain("Hi"));
+        Assert.That(texts.Common(0x805), Is.Not.Empty);
+        Assert.That(texts.Common(0x806), Is.Not.Empty);
+        Assert.That(body, Does.Contain("Ann").And.Contain("Body"));
+    }
+
+    [Test]
     public void ClosingDropsTheReplyAndANullReplyIsIgnored()
     {
         var mail = new MailInfo { Sender = "Ann", Title = "Hi", Content = "Body" };
@@ -208,7 +225,14 @@ public class MailSendDialogTests
     public void OnlyTheNoReceiverAndToSelfErrorsSelectTheReceiver()
     {
         var r = new Rig();
-        foreach (var code in new[] { 1, 0x19, 2, 0x1d, 0 }) Assert.DoesNotThrow(() => r.C.OnMailError(code));
+        var input = r.Host.Child("m_receiver");
+        foreach (var code in new[] { 1, 0x19, 2, 0x1d, 0 })
+        {
+            r.Host.Set(input, "focused", 0);
+            r.C.OnMailError(code);
+            bool focused = Rt.ToNumber(r.Host.Get(input, "focused")) > 0;
+            Assert.That(focused, Is.EqualTo(code is 1 or 0x19), "code " + code);
+        }
         Assert.That(r.Notices, Is.Empty, "the dialog adds no notice of its own");
     }
 
@@ -216,10 +240,13 @@ public class MailSendDialogTests
     public void TheCandidatesAreTheNamesThatContainTheTypedTextLowerCased()
     {
         var r = new Rig(setup: c => c.Names = () => new[] { "Ann", "Joanna", "Bob", "ANNIE" });
-        r.Host.Set(r.Host.Child("m_receiver"), "text", " aNN ");
+        var input = r.Host.Child("m_receiver");
+        r.Host.Set(input, "text", "aNN ");
+        r.Host.Set(input, "focused", 0);
         r.C.UpdateCandidates();
-        var dp = r.Host.Get(r.Host.Child("m_receiver"), "m_candidate");
-        // the receiver keeps what setCandidates gave it; read it back through the movie
+        Assert.That(Candidates(r), Is.Empty, "an unfocused receiver is left alone");
+        r.Host.Set(input, "focused", 1);
+        r.C.UpdateCandidates();
         var labels = Candidates(r);
         Assert.That(labels, Is.EqualTo(new[] { "Ann", "Joanna", "ANNIE" }));
         r.Host.Set(r.Host.Child("m_receiver"), "text", "  ");

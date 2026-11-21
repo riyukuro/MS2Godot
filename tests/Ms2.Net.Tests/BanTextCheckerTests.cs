@@ -62,6 +62,16 @@ public class BanTextCheckerTests
     }
 
     [Test]
+    public void MailTitleAndContentUseTheirOwnWordHitStrings()
+    {
+        var c = new BanTextChecker(file => file == "banWord.xml" ? Table("bad") : null, key => "<" + key + ">{0}");
+        Assert.That(c.CheckMailTitleText("verybad", out var m), Is.EqualTo(8));
+        Assert.That(m, Does.StartWith("<s_ban_check_title_err_any_word>"));
+        Assert.That(c.CheckContentText("verybad", out m), Is.EqualTo(8));
+        Assert.That(m, Does.StartWith("<s_ban_check_comment_err_any_word>"));
+    }
+
+    [Test]
     public void GermanUmlauts()
     {
         var c = Checker();
