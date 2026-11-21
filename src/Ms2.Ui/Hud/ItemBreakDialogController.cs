@@ -419,6 +419,7 @@ public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, II
     Item ItemOf(int slot) => Mgr.Uid(slot) is long uid and not 0 ? Mgr.Find(uid) : null;
 
     public long? BreakSlotUid(string name) => ParseSlot(name, out int i) && Mgr != null ? Mgr.Uid(i) : null;
+    public bool IsBreakSlot(string name) => ParseSlot(name, out _);
 
     // ---- IDragSlotOwner ----------------------------------------------------------------------------------------------
 
@@ -452,10 +453,10 @@ public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, II
     /// <summary>InvenSlot::vfunc_18's ItemBreakSlot branch (invenslot.cpp:1241-1246): a listed item dragged onto an inventory
     /// slot: when it can be broken, the slot's item replaces it if that can be broken too (TryAddItem at the old slot), else the
     /// listed item is removed.</summary>
-    public void DroppedOnInventory(long oldUid, int oldSlot, Item mine)
+    public void DroppedOnInventory(long oldUid, Item mine)
     {
         if (Mgr == null || Mgr.Find(oldUid) is not { } old || !Mgr.CanBreakItem(old)) return;
-        if (mine != null && Mgr.CanBreakItem(mine)) Mgr.TryAddItem(mine, oldSlot);
+        if (mine != null && Mgr.CanBreakItem(mine)) Mgr.TryAddItem(mine, old.Slot);
         else Mgr.RequestRemoveItem(old);
     }
 

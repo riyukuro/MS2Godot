@@ -249,13 +249,13 @@ public class ItemBreakDialogTests
     public void DroppedOnInventoryReplacesOrRemoves()
     {
         var r = new Rig();
-        var a = r.Add(5); r.Put(5, 2);
+        var a = r.Add(5); a.Slot = 7; r.Put(5, 2);
         var b = r.Add(6);
         r.Sent.Clear();
-        r.C.DroppedOnInventory(5, 2, b);
-        Assert.That(r.Sent.Select(Hex).Single(), Is.EqualTo(Hex(ItemDismantleRequest.AddItem(6, 1, 2))));
+        r.C.DroppedOnInventory(5, b);
+        Assert.That(r.Sent.Select(Hex).Single(), Is.EqualTo(Hex(ItemDismantleRequest.AddItem(6, 1, 7))));
         r.Sent.Clear();
-        r.C.DroppedOnInventory(5, 2, null);
+        r.C.DroppedOnInventory(5, null);
         Assert.That(r.Sent.Select(Hex).Single(), Is.EqualTo(Hex(ItemDismantleRequest.RemoveItem(5))));
     }
 }

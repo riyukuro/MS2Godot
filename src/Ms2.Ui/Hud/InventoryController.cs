@@ -349,6 +349,12 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
             LockSlotDropped(old, mine);
             sourceOwner.RefreshSlot(source);
         }
+        else if (sourceOwner is IItemBreakSlotOwner bk && bk.BreakSlotUid(source) is long oldB and not 0 && BreakSlotDropped != null)
+        {
+            Item mine = View?.ItemAt(View.Tab, to) is { } e && Model != null ? ToItem(e, Model.Tables.Items) : null;
+            BreakSlotDropped(oldB, mine);
+            sourceOwner.RefreshSlot(source);
+        }
         else Button?.Invoke("notifySlotDragEnd");
     }
 
@@ -438,6 +444,7 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
         if (mode == 1) { TryAddToTrade(item); return; }
         if (mode == 2) { TrySellItem(item); return; }
         if (mode == 3 && BankDeposit != null) { BankDeposit(item); return; }
+        if (mode is 8 or 9 && BreakAdd != null) { BreakAdd(item); return; }              // cases 8, 9: the open break dialog lists it
         if (mode == 10 && LockSelect != null) { LockSelect(item); return; }       // case 10: the open lock dialog selects it
         if (mode != 6) { Button?.Invoke("notifySlotUse"); return; }
         int layer = !item.Data.HasSkinType ? 0 : !Feature(0x8e) ? 1 : ActionKeyDown(0x4940d) ? 1 : 2;
@@ -631,6 +638,12 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
     public Action<Item> LockSelect;
     /// <summary>InvenSlot::vfunc_18 with an ItemLockSlot as the source (invenslot.cpp:1245): the slot's item uid and this slot's item (null for an empty cell).</summary>
     public Action<long, Item> LockSlotDropped;
+    /// <summary>CItemBreakManager::CanBreakItem (the use mode of the break dialogs, invenslot.cpp:1986).</summary>
+    public Func<Item, bool> BreakCanBreak = _ => false;
+    /// <summary>InvenSlot::vfunc_14 cases 8 and 9: TryAddItem(item, -1) while the break dialog is open and idle. Null: raised, not sent.</summary>
+    public Action<Item> BreakAdd;
+    /// <summary>InvenSlot::vfunc_18 with an ItemBreakSlot as the source (invenslot.cpp:1238): the slot's item uid and this slot's item (null for an empty cell).</summary>
+    public Action<long, Item> BreakSlotDropped;
     /// <summary>FUN_140c8dab0(GetInstrumentManager()): the uid of the score being played, 0 with none.</summary>
     public Func<long> PlayingScoreUid = () => 0;
     /// <summary>PlayItemSoundByUid: the item's sound.</summary>
@@ -1081,6 +1094,8 @@ public sealed class InventoryController : UiController, IInventoryBinding, IInve
             return ItemTradeRules.CanSellToShop(item, GemData, Now) ? 2 : hint ? 0 : 2;
         if (head == StoreDialogController.UiId)
             return BankAllowed(item) ? 3 : hint ? 0 : 3;
+        if (head == ItemBreakDialogController.UiId || head == ItemBreakDialogController.DonationUiId)
+            return BreakCanBreak(item) ? 8 : hint ? 0 : 8;
         if (head == ItemLockDialogController.UiId)       // 0x4f08: CanBeItemLocked ? 10 : hint ? 0 : 10
             return ItemLockDialogController.CanBeItemLocked(item.Record, item.Data) ? 10 : hint ? 0 : 10;
         var d = item.Data;
