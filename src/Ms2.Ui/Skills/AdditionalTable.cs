@@ -19,6 +19,12 @@ public sealed class AdditionalLevelData
     /// <summary>&lt;Basic pvpOnOff&gt; (m_bPvpOnOff +0x64, :1066): AdditionalCliList::FUN_140972a00 (additionalcli_2.cpp:1081)
     /// sets the list's pvp on/off from any enabled, unsuspended effect with it.</summary>
     public bool PvpOnOff;
+    /// <summary>&lt;Basic forceApplyTarget&gt; (m_nForceApplyTarget, :1074): the target filter bits FUN_140972a00
+    /// (additionalcli_2.cpp:1096) ORs into the list's GetForceApplyTarget.</summary>
+    public int ForceApplyTarget;
+    /// <summary>&lt;Motion hide&gt; (m_motion.m_nHide, :1100): FUN_140972a00 (additionalcli_2.cpp:1072) sets the list's
+    /// IsHidden from any enabled, unsuspended effect with it.</summary>
+    public int Hide;
     /// <summary>&lt;UI iconOnOff&gt; (m_eIconOnOff: 0 off, 1 on (the default), 2 only for one's own buffs), icon, priority,
     /// isHideCooltime.</summary>
     public int IconOnOff = 1;
@@ -53,7 +59,9 @@ public sealed class AdditionalLevelData
             lv.KeepCondition = Xml.Int(basic, "keepCondition");
             lv.EventBuffType = Xml.UInt(basic, "eventBuffType");
             lv.PvpOnOff = Xml.Bool(basic, "pvpOnOff");
+            lv.ForceApplyTarget = Xml.Int(basic, "forceApplyTarget");
         }
+        if (e.Element("Motion") is { } motion) lv.Hide = Xml.Int(motion, "hide");
         if (e.Element("UI") is { } ui)
         {
             if (ui.Attribute("iconOnOff") != null) lv.IconOnOff = Xml.Int(ui, "iconOnOff");

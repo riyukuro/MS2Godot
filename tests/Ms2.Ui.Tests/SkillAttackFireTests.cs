@@ -188,6 +188,23 @@ public class SkillAttackFireTests
     }
 
     [Test]
+    public void TheCastersForceApplyTargetJoinsTheFlagsAndHiddenTargetsNeedFlag4()
+    {
+        // FilterTarget (basecollision.cpp:792-797): the caster's GetForceApplyTarget bits are OR'd into the flags, then a
+        // target whose list IsHidden is skipped unless flag 4 is set
+        var me = Owner;
+        var hidden = Mob(5, 0, 0); hidden.Hidden = true;
+        Assert.That(SkillHit.FilterTarget(me, hidden, 1, 0), Is.False);
+        me.ForceApplyTarget = 4;
+        Assert.That(SkillHit.FilterTarget(me, hidden, 1, 0), Is.True, "flag 4 from the caster's buffs");
+        var friend = Mob(6, 0, 0); friend.Team = me.Team;
+        Assert.That(SkillHit.FilterTarget(me, friend, 1, 0), Is.False);
+        me.ForceApplyTarget = 2;
+        Assert.That(SkillHit.FilterTarget(me, friend, 1, 0), Is.True, "flag 2 (friendly) from the caster's buffs");
+        Assert.That(SkillHit.FilterTarget(friend, me, 1, 0), Is.False, "the target's bits are not read");
+    }
+
+    [Test]
     public void SerialIdsShareOneCounterAcrossObjects()
     {
         var ids = new SerialIds();

@@ -125,6 +125,35 @@ public sealed class AdditionalBuffList
         }
     }
 
+    /// <summary>
+    /// GetForceApplyTarget @0x140970b10 (additionalcli_2.cpp:593), m_nForceApplyTarget as FUN_140972a00 (:1096) sums it: the OR
+    /// of the levels' forceApplyTarget over the enabled, unsuspended effects.
+    /// </summary>
+    public int ForceApplyTarget
+    {
+        get
+        {
+            int bits = 0;
+            foreach (var b in map.Values)
+                if (b.Enabled != 0 && !b.Suspended) bits |= b.LevelData.ForceApplyTarget;
+            return bits;
+        }
+    }
+
+    /// <summary>
+    /// IsHidden @0x140970990 (additionalcli_2.cpp:537), m_motion.m_nHide as FUN_140972a00 (:1072) sums it: set when an enabled,
+    /// unsuspended effect's level has a nonzero &lt;Motion hide&gt;.
+    /// </summary>
+    public bool IsHidden
+    {
+        get
+        {
+            foreach (var b in map.Values)
+                if (b.Enabled != 0 && !b.Suspended && b.LevelData.Hide != 0) return true;
+            return false;
+        }
+    }
+
     /// <summary>OnBuff's three modes for the local player.</summary>
     public void Apply(BuffPacket p)
     {

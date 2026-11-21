@@ -208,6 +208,9 @@ public struct HitCandidate
     public long PartyId;
     /// <summary>PC::FUN_1416749a0()-&gt;IsPvpOnOff (<see cref="AdditionalBuffList.IsPvpOnOff"/>).</summary>
     public bool PvpOnOff;
+    /// <summary>PCBase::FUN_1416749a0()-&gt;GetForceApplyTarget (<see cref="AdditionalBuffList.ForceApplyTarget"/>): read off the
+    /// caster, its bits join the filter flags.</summary>
+    public int ForceApplyTarget;
 }
 
 /// <summary>The area pick of a skill attack and the target records the damage send carries.</summary>
@@ -258,12 +261,13 @@ public static class SkillHit
     /// <paramref name="pkMode"/> is hostile unless it is the caster itself, shares the caster's nonzero party id, or either has
     /// pvp on/off set; else (and for its HasPvPPoint xor, which this filter already checked) the teams differ (PCBase::vfunc_122
     /// @0x1416781c0, pcbase.cpp:2784). A hostile target needs hp, or for an npc hp 0 with a hittable corpse; a friendly one
-    /// needs hp.
-    /// STILL-OPEN: the caster's GetForceApplyTarget extra flags (a buff state) are not ported; Hidden and PvPPoint have no
-    /// feed.
+    /// needs hp. The caster's buff-summed GetForceApplyTarget bits are OR'd into <paramref name="flags"/> first (:792).
+    /// STILL-OPEN: Hidden has the PCs' buff-summed IsHidden only, not the states 6 / 7 (FUN_14166cb00) nor npcs' lists;
+    /// PvPPoint has no feed.
     /// </summary>
     public static bool FilterTarget(in HitCandidate self, in HitCandidate other, int flags, int npcKinds, bool pkMode = false)
     {
+        flags |= self.ForceApplyTarget;
         if (other.Team == 2) return false;
         if ((flags & 4) == 0 && other.Hidden) return false;
         if (other.Kind == HitKind.Pet) return (flags & 8) != 0 && !other.PetOwned;

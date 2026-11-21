@@ -15,7 +15,7 @@ namespace Ms2.Ui.Skills;
 public sealed class AdditionalCache
 {
     /// <summary>The format and parse version: bump it with any change to what the build writes or how the XML is read.</summary>
-    public const int Version = 3;     // 2: the levels' EventBuffType; 3: PvpOnOff
+    public const int Version = 4;     // 2: the levels' EventBuffType; 3: PvpOnOff; 4: ForceApplyTarget, Hide
     const uint Magic = 0x4441324D;     // "M2AD"
     const uint EndMagic = 0x444E4541;  // "AEND"
 
@@ -127,6 +127,8 @@ public sealed class AdditionalCache
             w.Write(l.IsHideCooltime);
             w.Write(l.EventBuffType);
             w.Write(l.PvpOnOff);
+            w.Write(l.ForceApplyTarget);
+            w.Write(l.Hide);
         }
     }
 
@@ -205,7 +207,8 @@ public sealed class AdditionalCache
             {
                 Level = r.ReadUInt16(), StringParam = r.ReadString(), DurationTick = r.ReadUInt32(), KeepCondition = r.ReadInt32(),
                 IconOnOff = r.ReadInt32(), Icon = r.ReadString(), Priority = r.ReadInt32(), IsHideCooltime = r.ReadBoolean(),
-                EventBuffType = r.ReadUInt32(), PvpOnOff = r.ReadBoolean(), Parent = d,
+                EventBuffType = r.ReadUInt32(), PvpOnOff = r.ReadBoolean(),
+                ForceApplyTarget = r.ReadInt32(), Hide = r.ReadInt32(), Parent = d,
             });
         return d;
     }

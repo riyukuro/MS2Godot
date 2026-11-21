@@ -67,6 +67,31 @@ public class BuffStripTests
     }
 
     [Test]
+    public void ForceApplyTargetAndHideAreSummedOverTheEnabledEffects()
+    {
+        // <Basic forceApplyTarget> and <Motion hide> (AdditionalLevelData::Load, additionalactionadditional.cpp:1074, :1100)
+        // summed by AdditionalCliList::FUN_140972a00 (additionalcli_2.cpp:1072, :1096): enabled, not suspended; the bits OR'd
+        var a = AdditionalLevelData.Load(System.Xml.Linq.XElement.Parse("<level level=\"1\"><Basic forceApplyTarget=\"4\"/><Motion hide=\"1\"/></level>"), null);
+        var b = AdditionalLevelData.Load(System.Xml.Linq.XElement.Parse("<level level=\"1\"><Basic forceApplyTarget=\"2\"/></level>"), null);
+        Assert.That((a.ForceApplyTarget, a.Hide, b.ForceApplyTarget, b.Hide), Is.EqualTo((4, 1, 2, 0)));
+        var list = new AdditionalBuffList((id, lv) => id == 7 ? a : id == 8 ? b : Level(id, lv));
+        list.Apply(Add(10, 1));
+        Assert.That((list.ForceApplyTarget, list.IsHidden), Is.EqualTo((0, false)), "effects without them");
+        list.Apply(new BuffPacket(BuffPacket.Add, 5, 11, 5, 0, new BuffState(0, 1000, 7, 1, 1, 0), 0));
+        Assert.That((list.ForceApplyTarget, list.IsHidden), Is.EqualTo((0, false)), "not enabled");
+        list.Apply(new BuffPacket(BuffPacket.Modify, 5, 11, 5, BuffPacket.ModifyState, new BuffState(0, 1000, 7, 1, 1, 1), null));
+        list.Apply(new BuffPacket(BuffPacket.Add, 5, 12, 5, 0, new BuffState(0, 1000, 8, 1, 1, 1), 0));
+        Assert.That((list.ForceApplyTarget, list.IsHidden), Is.EqualTo((6, true)));
+        list.Buffs.Single(x => x.Key == 11).Suspended = true;
+        Assert.That((list.ForceApplyTarget, list.IsHidden), Is.EqualTo((2, false)), "suspended");
+        list.Apply(new BuffPacket(BuffPacket.Remove, 5, 12, 5, 0, null, null));
+        Assert.That(list.ForceApplyTarget, Is.EqualTo(0), "removed");
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1000; i++) { _ = list.ForceApplyTarget; _ = list.IsHidden; }
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512));
+    }
+
+    [Test]
     public void SortOrderAndRemainTicks()
     {
         uint now = 400;
