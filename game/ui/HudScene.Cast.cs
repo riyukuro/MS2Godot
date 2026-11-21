@@ -13,6 +13,7 @@ public partial class HudScene
     CastRecord ownCast;
     int ownAttack;
     string ownSequence;
+    ulong ownStateStartMs;                         // when the own skill state began (StateSkill's m_nElapsed counts from it)
     double ownPointTime = -1;
     static readonly SerialIds serialIds = new();   // GenerateSerialId's function static
     static readonly Random crtRandom = new();
@@ -53,8 +54,14 @@ public partial class HudScene
     Func<int> castAttackSkill;
 
     /// <summary>
-    /// CSkillSystem::FUN_141764e30 for the own player (<see cref="SkillCast.Request"/>) at MyPC::GetSkillLevel, then the cast:
-    /// FUN_141766cc0's reuse record, the mode 0 send, and the record's motion on the own body with its motion effect.
+    /// CSkillSystem::FUN_141764e30 for the own player (<see cref="SkillCast.Request"/>) at MyPC::GetSkillLevel, then
+    /// MyPC::vfunc_102 @0x141521fc0 (mypc.cpp:1146-1234): the cooldown gate (<see cref="SkillCast.CooldownGate"/>), the mode 0
+    /// send, FUN_141766cc0's reuse record, the record's motion on the own body, the cast's cooldown (FUN_141525ff0) and the
+    /// charge use (OnRechargeSkillUsed), then the motion effect.
+    /// STILL-OPEN, not fired here: FUN_141525580's refusals (states 0x2b / 0x2f, FUN_141527960, mypc.cpp:2436-2443) and its
+    /// IsUnrideOnUse ride-off (:2447-2470); the item kind and quick slot item checks with the binding confirm (:1167-1193);
+    /// NotifyUseSKill and the DPS meter (:1206, :1210); a level with a sequence while riding, and a level without one
+    /// (the ridee FUN_141706650 / FUN_141524a80 and StateSkill::FireFirstAttack, :1219-1226); FUN_141767990 (:1228).
     /// </summary>
     void CastOwn(SlotWorld w, uint skillId, WeaponAction held)
     {
@@ -82,19 +89,42 @@ public partial class HudScene
             GD.Print($"cast: skill {skillId} refused, reason {res.Why}{(res.Notice != null ? " " + res.Notice : "")}");
             return;
         }
-        SkillCast.Casted(castWorld, r);
-        // MyPC::vfunc_102 (mypc.cpp:1197-1218): the running skill state's time, kept for a level with a sequence; the running
-        // cast's sequence time stands for StateSkill's m_nElapsed
-        float elapsed = 0f;
-        if (r.Level.HasSequenceName && ownCast != null && me.SkillSequencePosition > 0) elapsed = (float)me.SkillSequencePosition;
         var live = Net.LiveSession.Instance;
+        uint now = (uint)Net.LiveSession.CastTick();
+        // MyPC::vfunc_102 (mypc.cpp:1152-1166): a skill still cooling is queued in the skill state or dropped, never sent.
+        // STILL-OPEN: StateSkill::SetChargeRecord (the queued press cast when the running one ends) and the running record's
+        // m_n90 = 0 are not ported, so a queued press is dropped as well.
+        if (live != null)
+        {
+            var gate = SkillCast.CooldownGate(live.Cooltimes, r, OwnSkillStateRuns(), now);
+            if (gate != CoolGate.Cast)
+            {
+                GD.Print($"cast: skill {skillId} cooling, {(gate == CoolGate.Queued ? "queued" : "refused")}");
+                return;
+            }
+        }
+        // :1197-1203: the running skill state's elapsed time (StateSkill m_nElapsed, FUN_14028d280: ms to seconds)
+        float elapsed = OwnSkillStateRuns() ? (Time.GetTicksMsec() - ownStateStartMs) * 0.001f : 0f;
+        // StateSkill::FUN_1417ea570: the skill state and the mode 0 send
         bool sent = live?.SendCast(r, hudModel.IsFeatureEnabled(174)) ?? false;
-        // :1232: after the send, the cast's own cooldown (FUN_141525ff0), so the skill is not cast again before the server's
-        // cooldown packet
-        if (sent) live.Cooltimes.StartCast(r, elapsed, (uint)Net.LiveSession.CastTick());
+        SkillCast.Casted(castWorld, r);
+        float delay = 0f;
+        Ms2.Formats.Model.KfAnimation seq = null;
         var motion = r.Motion < r.Level.Motions.Count ? r.Level.Motions[r.Motion] : null;
-        if (motion != null && !string.IsNullOrEmpty(motion.SequenceName) && me.PlaySkillSequence(motion.SequenceName, motion.SequenceSpeed))
-            StartOwnAttacks(me, r);
+        if (r.Level.HasSequenceName)
+        {
+            // :1213-1216: a level with a sequence enters the skill state; the cooldown counts the old state's time off
+            if (motion != null && !string.IsNullOrEmpty(motion.SequenceName) && me.PlaySkillSequence(motion.SequenceName, motion.SequenceSpeed))
+            {
+                StartOwnAttacks(me, r);
+                me.Anims.Kf.TryGetValue(me.SkillSequence, out seq);
+            }
+            delay = elapsed;
+        }
+        // :1230: after the send, the cast's own cooldown (FUN_141525ff0) from the sequence's text keys
+        if (sent) live.Cooltimes.StartCast(r, seq, delay, now);
+        // :1232: PCBase::FUN_141675ed0 is 0 without a ridee (STILL-OPEN: rides), so the charge use counts
+        live?.Cooltimes.OnRechargeSkillUsed(r.Skill, now);
         castMotions ??= new Ms2.Formats.World.SkillTable(assets.Packs);
         if (castMotions.Motion((int)r.Skill.Id, r.Level.Level, r.Motion)?.MotionEffect is { } fx) live?.PlayFieldEffect(fx, g, me.Visual?.Rotation.Y ?? 0);
         GD.Print($"cast: skill {r.Skill.Id} level {r.Level.Level} motion {r.Motion}{(sent ? " sent" : " (offline, not sent)")}");
@@ -106,8 +136,12 @@ public partial class HudScene
         ownCast = r;
         ownAttack = 0;
         ownSequence = me.SkillSequence;
+        ownStateStartMs = Time.GetTicksMsec();
         ownPointTime = OwnPointTime(me);
     }
+
+    /// <summary>The own skill state (0x10) runs: the own cast's sequence still plays.</summary>
+    bool OwnSkillStateRuns() => ownCast != null && player != null && (object)player.SkillSequence == ownSequence;
 
     double OwnPointTime(Player me)
     {

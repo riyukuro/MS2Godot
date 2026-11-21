@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Ms2.Formats.Model;
 
 namespace Ms2.Ui.Skills;
 
@@ -38,6 +39,7 @@ public sealed class SkillCooltimes
     readonly Func<uint, SkillData> skills;
     readonly Dictionary<ulong, SkillCooltime> cooltimes = new();
     readonly Dictionary<uint, int> uses = new();
+    readonly Dictionary<uint, uint> rechargeTicks = new();
 
     public event Action<ulong> Started, Ended;
 
@@ -131,23 +133,60 @@ public sealed class SkillCooltimes
     }
 
     /// <summary>
-    /// MyPC::FUN_141525ff0 @0x141525ff0 (mypc.cpp:2539), called after the cast's send (MyPC::vfunc_102, :1232): the level's
-    /// cooldown, scaled by StateSkill::GetMotionSpeedScale with the combo flag when the row does not show it
-    /// (condition useCoolDownShowUI 0); a cooldown of 0 takes the combo window; less the time the running skill state had
-    /// already played; started from the record's send tick (<see cref="Start"/>).
-    /// STILL-OPEN: the record's m_n8c and DAT_143ae0fbc returns (both 0 here), and the shown cooldown's text-key path
-    /// (the sequence's combo / charging_combo / loopstart-loopend keys, the swap skill's FUN_1417664e0 and the continue
-    /// skill's loopend) are not ported, so the combo window is 0.
+    /// MyPC::FUN_141525ff0 @0x141525ff0 (mypc.cpp:2539), called after the cast's send (MyPC::vfunc_102, :1232) with the
+    /// sequence <paramref name="seq"/> the record's motion plays (null: no motion, no actor or no such sequence, :2556-2562).
+    /// - A cooldown the row does not show (condition useCoolDownShowUI 0) is scaled by StateSkill::GetMotionSpeedScale and
+    ///   takes the combo flag.
+    /// - Else the sequence's "combo" text key (FUN_141b6fee0: the sequence's length when it has no such key) over the speed is
+    ///   the combo window. A combo row (an output skill, or comboSkill) cools the swap skill instead for the "combo" time
+    ///   ("charging_combo" for a charging skill; loopstart to loopend times the motion's loopCount for a charging continue
+    ///   skill), less the elapsed time, with the combo flag, and stops there when the swap skill is the cast's own; a continue
+    ///   skill without a cooldown cools to its "loopend" key with the combo flag.
+    /// - A cooldown of 0 takes the combo window; less the time the running skill state had already played; started from the
+    ///   record's send tick (<see cref="Start"/>).
+    /// STILL-OPEN: the record's m_n8c and DAT_143ae0fbc returns, and the charging continue skill's m_n98 return (:2588), are not
+    /// kept: nothing here sets them (the record's ctor leaves m_n98 0, skillrecord.cpp:165).
     /// </summary>
-    public void StartCast(CastRecord r, float elapsed, uint now)
+    public void StartCast(CastRecord r, KfAnimation seq, float elapsed, uint now)
     {
         bool comboFlag = false;
         float cool = r.Level.Cooldown;
         float comboTime = 0f;
-        if (!NearlyZero(cool) && !r.Skill.Condition.UseCoolDownShowUI)
+        var d = r.Skill;
+        if (!NearlyZero(cool) && !d.Condition.UseCoolDownShowUI)
         {
             cool /= SkillCast.MotionSpeedScale(r);
             comboFlag = true;
+        }
+        else if (seq != null && r.Motion < r.Level.Motions.Count)
+        {
+            var motion = r.Level.Motions[r.Motion];
+            float speed = SkillCast.MotionSpeedScale(r);
+            comboTime = KeyTime(seq, "combo") / speed;
+            uint swapTo = d.ComboSwapSkill;
+            if (swapTo != 0 || d.ComboSkill)
+            {
+                float swapCool = KeyTime(seq, "combo") / speed;
+                if (d.ChargingSkill && !d.Continue)
+                {
+                    swapCool = KeyTime(seq, "charging_combo") / speed;
+                }
+                else if (d.ChargingSkill && d.Continue)
+                {
+                    float start = KeyTime(seq, "loopstart") / speed;
+                    float end = KeyTime(seq, "loopend") / speed;
+                    swapCool = end - start;
+                    swapCool *= motion.LoopCount;
+                }
+                swapCool = swapCool - elapsed < 0f ? 0f : swapCool - elapsed;
+                Start((uint)r.SendTick, swapTo, swapCool, 0f, true, now);
+                if (swapTo == r.Level.Skill.Id) return;
+            }
+            else if (d.Continue && NearlyZero(cool))
+            {
+                cool = KeyTime(seq, "loopend") / speed;
+                comboFlag = true;
+            }
         }
         if (NearlyZero(cool) && comboTime > 0f)
         {
@@ -155,7 +194,19 @@ public sealed class SkillCooltimes
             comboFlag = true;
         }
         cool = cool - elapsed < 0f ? 0f : cool - elapsed;
-        Start((uint)r.SendTick, r.Skill.Id, cool, comboTime, comboFlag, now);
+        Start((uint)r.SendTick, d.Id, cool, comboTime, comboFlag, now);
+    }
+
+    /// <summary>
+    /// FUN_141b6fee0 @0x141b6fee0 (util.cpp:802) with a divisor of 1: the text key's time (NiSequenceData::GetKeyTimeAt, the
+    /// first key of that name), else the sequence's length.
+    /// </summary>
+    public static float KeyTime(KfAnimation seq, string key)
+    {
+        if (seq == null) return -float.MaxValue;
+        foreach (var (t, text) in seq.TextKeys)
+            if (string.Equals(text, key, StringComparison.Ordinal)) return (float)t;
+        return (float)seq.Duration;
     }
 
     /// <summary>
@@ -258,6 +309,34 @@ public sealed class SkillCooltimes
     public void SetRechargeUses(uint skillId, int count)
     {
         if (skills(skillId) is { } s) uses[s.RechargeId] = count;
+    }
+
+    /// <summary>
+    /// CSkillSystem::OnRechargeSkillUsed @0x141768900 (skillslot.cpp:2722), the end of an own cast (MyPC::vfunc_102, :1233): a
+    /// charge skill counts one more use and keeps the tick of the use (FUN_141768d40 @0x141768d40, :2772).
+    /// STILL-OPEN: the closing FUN_1419f37f0(5) UI refresh.
+    /// </summary>
+    public void OnRechargeSkillUsed(SkillData s, uint now)
+    {
+        if (s == null || s.RechargeMaxCount == 0) return;
+        uses[s.RechargeId] = RechargeUses(s) + 1;
+        rechargeTicks[s.RechargeId] = now;
+    }
+
+    /// <summary>GetRechargeTick @0x141768dd0 (:2780): the last use's tick under the recharge id, 0 without one.</summary>
+    public uint RechargeTick(SkillData s) => s != null && rechargeTicks.TryGetValue(s.RechargeId, out var t) ? t : 0;
+
+    /// <summary>
+    /// CanUseRechargeSkill @0x141768bd0 (:2757): a charge skill with uses left, once defaultRechargingCooldownTime has passed
+    /// since the last use (FUN_14028d260, truncated ms).
+    /// </summary>
+    public bool CanUseRechargeSkill(SkillData s, uint now)
+    {
+        if (s.RechargeMaxCount == 0) return false;
+        if (RechargeRemain(s) == 0) return false;
+        int last = (int)RechargeTick(s);
+        int gap = (int)(long)(s.Condition.DefaultRechargingCooldownTime * 1000.0f);
+        return now >= (uint)(last + gap);
     }
 
     /// <summary>GetRechargeUses @0x141768680 (:2669).</summary>

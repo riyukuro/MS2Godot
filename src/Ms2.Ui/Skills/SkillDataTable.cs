@@ -48,6 +48,8 @@ public sealed class SkillMotionData
     public float SequenceSpeed = 1f;
     /// <summary>"movetype" (:1190), an enum read as a number (XmlValue).</summary>
     public int MoveType;
+    /// <summary>"loopCount" (:1196), m_nLoopCount (+0xc8); the ctor (:1011) leaves it 0.</summary>
+    public int LoopCount;
 
     /// <summary>GetMoveKey @0x140808040 (:1124): (u64)((float)(u64)(movetype &lt;&lt; 10) + sequenceSpeed * 100).</summary>
     public ulong MoveKey => (ulong)((float)(ulong)((long)MoveType << 10) + SequenceSpeed * 100f);
@@ -178,6 +180,8 @@ public sealed class SkillCondition
 {
     public bool UseCoolDownShowUI, OnlyShadowWorld, OnlyFlyableMap, AllowBattleRidingState, OnlyBattleRidingState;
     public int Sp;
+    /// <summary>"defaultRechargingCooldownTime" (:528): the seconds between two uses of a charge skill (CanUseRechargeSkill).</summary>
+    public float DefaultRechargingCooldownTime;
     public readonly List<uint> RequireEffect = new(), RequireMapCodes = new();
     public readonly List<int> HasNotAdditionalEffectGroup = new();
 }
@@ -213,6 +217,16 @@ public sealed class SkillData
     public int AutoTargeting, MoveType;
     /// <summary>&lt;kinds jump&gt; (:841): the skill cast instead while jumping up or falling (GetCastSkillId).</summary>
     public uint Jump;
+    /// <summary>&lt;kinds continue&gt; (:842), m_bContinue.</summary>
+    public bool Continue;
+    /// <summary>
+    /// &lt;basic&gt;&lt;combo inputSkill outputSkill comboSkill chargingSkill&gt; (Unk_SkillBlockA4::Load @0x140802ef0,
+    /// skillleveldata.cpp:493), loaded from &lt;basic&gt; (skilloverlapcompare.cpp:874).
+    /// </summary>
+    public uint ComboInputSkill, ComboOutputSkill;
+    public bool ComboSkill, ChargingSkill;
+    /// <summary>Unk_SkillBlockA4::FUN_140803040 @0x140803040 (skillleveldata.cpp:524): the output skill, 0 without an input skill.</summary>
+    public uint ComboSwapSkill => ComboInputSkill == 0 ? 0 : ComboOutputSkill;
     public uint AutoTargetingType, UseDefaultSkillId;
     public bool KeyIsDown, UseDefaultSkill;
     /// <summary>&lt;basic&gt;&lt;autoTargeting&gt; (Unk_SkillBlock160::Load @0x140803140, skillleveldata.cpp:551), loaded from &lt;basic&gt; (:877).</summary>
@@ -245,6 +259,14 @@ public sealed class SkillData
             s.RangeType = Xml.Int(kinds, "rangeType");
             s.Element = Xml.Int(kinds, "element");
             s.Jump = Xml.UInt(kinds, "jump");
+            s.Continue = Xml.Bool(kinds, "continue");
+        }
+        if (basic.Element("combo") is { } combo)
+        {
+            s.ComboInputSkill = Xml.UInt(combo, "inputSkill");
+            s.ComboOutputSkill = Xml.UInt(combo, "outputSkill");
+            s.ComboSkill = Xml.Bool(combo, "comboSkill");
+            s.ChargingSkill = Xml.Bool(combo, "chargingSkill");
         }
         if (basic.Element("stateAttr") is { } state)
         {
@@ -282,6 +304,7 @@ public sealed class SkillData
             c.AllowBattleRidingState = Xml.Bool(cond, "allowBattleRidingState");
             c.OnlyBattleRidingState = Xml.Bool(cond, "onlyBattleRidingState");
             c.Sp = Xml.Int(cond, "sp");
+            c.DefaultRechargingCooldownTime = Xml.Float(cond, "defaultRechargingCooldownTime");
             foreach (var r in cond.Elements("requireEffect")) c.RequireEffect.Add(Xml.UInt(r, "code"));
             foreach (var r in cond.Elements("requireMapCodes")) c.RequireMapCodes.Add(Xml.UInt(r, "code"));
             foreach (var r in cond.Elements("hasNotAdditionalEffectGroup")) c.HasNotAdditionalEffectGroup.Add(Xml.Int(r, "id"));
@@ -302,7 +325,7 @@ public sealed class SkillData
             };
             foreach (var m in l.Elements("motion"))
             {
-                var md = new SkillMotionData { SequenceName = (string)m.Attribute("sequenceName") ?? "", MoveType = Xml.Int(m, "movetype") };
+                var md = new SkillMotionData { SequenceName = (string)m.Attribute("sequenceName") ?? "", MoveType = Xml.Int(m, "movetype"), LoopCount = Xml.Int(m, "loopCount") };
                 if (m.Attribute("sequenceSpeed") != null) md.SequenceSpeed = Xml.Float(m, "sequenceSpeed");
                 foreach (var a in m.Elements("attack")) md.Attacks.Add(SkillAttackData.Load(a));
                 lv.Motions.Add(md);

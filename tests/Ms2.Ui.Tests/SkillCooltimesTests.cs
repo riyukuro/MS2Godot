@@ -15,7 +15,18 @@ public class SkillCooltimesTests
         + "<skill id=\"104\"><basic mainType=\"1\"><condition useCoolDownShowUI=\"1\"/></basic>"
         + "<level value=\"1\" cooldown=\"5000\"><motion sequenceName=\"A\" sequenceSpeed=\"2\"/></level></skill>"
         + "<skill id=\"105\"><basic mainType=\"1\"/><level value=\"1\" cooldown=\"4000\"><motion sequenceSpeed=\"2\"/></level></skill>"
-        + "<skill id=\"106\"><basic mainType=\"1\"><stateAttr cooldownGroupID=\"8\"/></basic></skill></ms2>") }, (e, n, _) => e.Elements(n).ToList());
+        + "<skill id=\"106\"><basic mainType=\"1\"><stateAttr cooldownGroupID=\"8\"/></basic></skill>"
+        // 107: no cooldown, a sequence (the combo window); 108: a combo row swapping to 109; 110: two charges 0.5 s apart;
+        // 111: a continue skill; 112: a charging combo row swapping to itself
+        + "<skill id=\"107\"><basic mainType=\"1\"/><level value=\"1\"><motion sequenceName=\"B\" sequenceSpeed=\"2\"/></level></skill>"
+        + "<skill id=\"108\"><basic mainType=\"1\"><combo inputSkill=\"108\" outputSkill=\"109\"/></basic>"
+        + "<level value=\"1\"><motion sequenceName=\"B\"/></level></skill>"
+        + "<skill id=\"109\"><basic mainType=\"1\"/><level value=\"1\"><motion sequenceName=\"C\"/></level></skill>"
+        + "<skill id=\"110\"><basic mainType=\"1\"><stateAttr rechargeMaxCount=\"2\"/><condition defaultRechargingCooldownTime=\"0.5\"/></basic>"
+        + "<level value=\"1\" cooldown=\"3000\"><motion sequenceName=\"B\"/></level></skill>"
+        + "<skill id=\"111\"><basic mainType=\"1\"><kinds continue=\"1\"/></basic><level value=\"1\"><motion sequenceName=\"B\"/></level></skill>"
+        + "<skill id=\"112\"><basic mainType=\"1\"><combo inputSkill=\"1\" outputSkill=\"112\" chargingSkill=\"1\"/></basic>"
+        + "<level value=\"1\"><motion sequenceName=\"B\"/></level></skill></ms2>") }, (e, n, _) => e.Elements(n).ToList());
 
     static (SkillCooltimes C, List<string> Log) Make()
     {
@@ -173,7 +184,7 @@ public class SkillCooltimesTests
         var lv = t.GetSkillData(104).GetLevelData(1);
         Assert.That(CastGate.Cost(Gate(c, () => now), lv, false), Is.EqualTo(0), "not cooling yet");
         // FUN_141525ff0: a shown cooldown is not scaled by the motion speed; the state's elapsed 0.5 s comes off
-        c.StartCast(Record(t, 104, 1000), 0.5f, now);
+        c.StartCast(Record(t, 104, 1000), null, 0.5f, now);
         Assert.That(c.Get(104) is { Start: 1000, End: 5500, IsCombo: false, Combo: 0f });
         Assert.That(log, Is.EqualTo(new[] { "+68" }), "FUN_141b0e260 without the combo flag");
         Assert.That(CastGate.Cost(Gate(c, () => now), lv, false), Is.EqualTo(2), "FUN_14176a530: still cooling");
@@ -187,7 +198,7 @@ public class SkillCooltimesTests
         var (c, log) = Make();
         var t = Table();
         c.RateReduce = _ => 0.5f;
-        c.StartCast(Record(t, 105, 1000), 0f, 1000);
+        c.StartCast(Record(t, 105, 1000), null, 0f, 1000);
         Assert.That(c.Get(105) is { Start: 1000, End: 3000, IsCombo: true }, "4 s / GetMotionSpeedScale 2, the combo flag skips the reduce");
         Assert.That(log, Is.Empty, "no Started event with the combo flag");
         uint now = 2000;
@@ -216,5 +227,83 @@ public class SkillCooltimesTests
         c.SetDuration(0, 100, 10f);
         c.Start(1000, 100, 2f, 0f, false, 1000);
         Assert.That(c.Get((7UL << 32) | 100).End, Is.EqualTo(10000u), "rechargeMaxCount 3 and still cooling");
+    }
+
+    /// <summary>A sequence of 2 s with the given text keys.</summary>
+    static Ms2.Formats.Model.KfAnimation Seq(params (double, string)[] keys)
+    {
+        var k = new Ms2.Formats.Model.KfAnimation { Duration = 2.0 };
+        k.TextKeys.AddRange(keys);
+        return k;
+    }
+
+    [Test]
+    public void ASecondPressInsideTheCooldownSendsNothing()
+    {
+        var (c, _) = Make();
+        var t = Table();
+        // MyPC::vfunc_102 (mypc.cpp:1152-1166): FUN_141765fe0 > 0 refuses whether the row shows the cooldown (104) or not (105)
+        foreach (uint id in new uint[] { 104, 105 })
+        {
+            var r = Record(t, id, 1000);
+            Assert.That(SkillCast.CooldownGate(c, r, false, 1000), Is.EqualTo(CoolGate.Cast), $"{id}: not cooling yet");
+            c.StartCast(r, Seq(), 0f, 1000);
+            Assert.That(SkillCast.CooldownGate(c, Record(t, id, 1500), false, 1500), Is.EqualTo(CoolGate.Refused), $"{id}");
+            Assert.That(SkillCast.CooldownGate(c, Record(t, id, 1500), true, 1500), Is.EqualTo(CoolGate.Queued), $"{id}: the skill state queues it");
+        }
+    }
+
+    [Test]
+    public void ASkillWithoutACooldownCoolsForItsComboWindow()
+    {
+        var (c, log) = Make();
+        var t = Table();
+        // FUN_141525ff0: the "combo" key over the motion speed 2; no cooldown takes it with the combo flag
+        c.StartCast(Record(t, 107, 1000), Seq((0.3, "begin"), (1.2, "combo")), 0.1f, 1000);
+        Assert.That(c.Get(107) is { Start: 1000, End: 1500, IsCombo: true, Combo: 0f }, "1.2 / 2 - 0.1 elapsed; FUN_1417664e0 keeps the window only for a 0 cooldown");
+        Assert.That(log, Is.Empty);
+        Assert.That(SkillCast.CooldownGate(c, Record(t, 107, 1400), false, 1400), Is.EqualTo(CoolGate.Refused), "inside the combo window");
+        Assert.That(SkillCast.CooldownGate(c, Record(t, 107, 1500), false, 1500), Is.EqualTo(CoolGate.Cast));
+        // FUN_141b6fee0: no "combo" key gives the sequence's length; text keys match by case
+        c.StartCast(Record(t, 107, 2000), Seq((0.5, "COMBO")), 0f, 2000);
+        Assert.That(c.Get(107).End, Is.EqualTo(3000u), "2 s / 2");
+        Assert.That(SkillCooltimes.KeyTime(null, "combo"), Is.EqualTo(-float.MaxValue));
+    }
+
+    [Test]
+    public void AComboRowCoolsItsSwapSkill()
+    {
+        var (c, _) = Make();
+        var t = Table();
+        c.StartCast(Record(t, 108, 1000), Seq((0.4, "combo")), 0f, 1000);
+        Assert.That(c.Get(109) is { Start: 1000, End: 1400, IsCombo: true, Combo: 0f }, "FUN_1417664e0(swap, combo, 0, 1)");
+        Assert.That(c.Get(108) is { End: 1400 }, "then its own combo window");
+        // a charging row: "charging_combo"; the swap skill is the cast's own, so nothing more
+        c.StartCast(Record(t, 112, 5000), Seq((0.4, "combo"), (0.9, "charging_combo")), 0f, 5000);
+        Assert.That(c.Get(112) is { Start: 5000, End: 5900, Combo: 0f });
+        // a continue skill without a cooldown cools to "loopend"
+        c.StartCast(Record(t, 111, 1000), Seq((0.7, "loopend"), (1.5, "combo")), 0f, 1000);
+        Assert.That(c.Get(111) is { End: 1700, IsCombo: true }, "loopend, not the combo window");
+    }
+
+    [Test]
+    public void AChargeSkillCastsUntilItsUsesAreSpent()
+    {
+        var (c, _) = Make();
+        var t = Table();
+        var s = t.GetSkillData(110);
+        // first use: the cooldown starts, the use counts (OnRechargeSkillUsed)
+        c.StartCast(Record(t, 110, 1000), Seq(), 0f, 1000);
+        c.OnRechargeSkillUsed(s, 1000);
+        Assert.That((c.RechargeUses(s), c.RechargeTick(s)), Is.EqualTo((1, 1000u)));
+        Assert.That(SkillCast.CooldownGate(c, Record(t, 110, 1400), false, 1400), Is.EqualTo(CoolGate.Refused),
+            "CanUseRechargeSkill: defaultRechargingCooldownTime 0.5 s not passed");
+        Assert.That(SkillCast.CooldownGate(c, Record(t, 110, 1500), false, 1500), Is.EqualTo(CoolGate.Cast), "a charge left");
+        c.OnRechargeSkillUsed(s, 1500);
+        Assert.That(c.RechargeRemain(s), Is.EqualTo(0));
+        Assert.That(SkillCast.CooldownGate(c, Record(t, 110, 2500), false, 2500), Is.EqualTo(CoolGate.Refused), "past the uses");
+        Assert.That(SkillCast.CooldownGate(c, Record(t, 110, 4000), false, 4000), Is.EqualTo(CoolGate.Cast), "the cooldown is over");
+        c.OnRechargeSkillUsed(t.GetSkillData(103), 1000);
+        Assert.That(c.RechargeUses(t.GetSkillData(103)), Is.EqualTo(0), "no charges: nothing counted");
     }
 }

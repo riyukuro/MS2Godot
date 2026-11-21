@@ -34,7 +34,7 @@ public sealed class CastRequest
     }
 }
 
-/// <summary>CSkillRecord after Init @0x141759700 (skillrecord.cpp:175): the request's fields, the rotation (0, 0, rotZ).</summary>
+/// <summary>CSkillRecord after Init @0x1417595d0 (skillrecord.cpp:175): the request's fields, the rotation (0, 0, rotZ).</summary>
 public sealed class CastRecord
 {
     public SkillData Skill;
@@ -248,6 +248,20 @@ public static class SkillCast
         return CastGate.Why(w, level, castAllowed: true);
     }
 
+    /// <summary>
+    /// MyPC::vfunc_102 @0x141521fc0 (mypc.cpp:1152-1166), the first check of an own cast after FUN_141525580: the seconds left
+    /// on the skill (FUN_141765fe0 with combo windows counted) refuse it unless the charges allow a use now
+    /// (CanUseRechargeSkill); in the skill state (0x10) the press is queued behind the running cast instead
+    /// (StateSkill::SetChargeRecord), else it is dropped. Either way nothing is sent.
+    /// </summary>
+    public static CoolGate CooldownGate(SkillCooltimes c, CastRecord r, bool inSkillState, uint now)
+    {
+        float cool = c.Remain(r.Skill.Id, false, now);
+        bool anyTime = c.CanUseRechargeSkill(r.Skill, now);
+        if (anyTime || !(cool > 0.0f)) return CoolGate.Cast;
+        return inSkillState ? CoolGate.Queued : CoolGate.Refused;
+    }
+
     /// <summary>CSkillSystem::FUN_141766cc0 (skillslot.cpp:2343), after a cast: a skill without a sequence records the game time
     /// (as a float) and its id for the cast reuse check.</summary>
     public static void Casted(CastWorld c, CastRecord r)
@@ -267,3 +281,6 @@ public static class SkillCast
             r.Rotation, r.TargetDistance, elapsed, r.Flag, r.ItemUid, (long)r.CooldownKey, holdAttackFeature);
     }
 }
+
+/// <summary>The outcome of <see cref="SkillCast.CooldownGate"/>: cast, queued in the skill state (vfunc_102 returns true), refused.</summary>
+public enum CoolGate { Cast, Queued, Refused }
