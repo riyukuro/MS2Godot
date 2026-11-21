@@ -640,28 +640,40 @@ public sealed class NxController
         Vector3 s0 = from + local.Origin - axis, s1 = from + local.Origin + axis;
         var lo = e0.Min(e1) - Vector3.One * r;
         var hi = e0.Max(e1) + Vector3.One * r;
-        var faces = WorldFaces(rid, shapeIdx);
-        for (int f = 0; f + 2 < faces.Length; f += 3)
-        {
-            Vector3 a = faces[f], b = faces[f + 1], c = faces[f + 2];
-            if (Mathf.Max(a.X, Mathf.Max(b.X, c.X)) < lo.X || Mathf.Min(a.X, Mathf.Min(b.X, c.X)) > hi.X ||
-                Mathf.Max(a.Y, Mathf.Max(b.Y, c.Y)) < lo.Y || Mathf.Min(a.Y, Mathf.Min(b.Y, c.Y)) > hi.Y ||
-                Mathf.Max(a.Z, Mathf.Max(b.Z, c.Z)) < lo.Z || Mathf.Min(a.Z, Mathf.Min(b.Z, c.Z)) > hi.Z)
-                continue;
-            var n = (c - a).Cross(b - a);                                       // the shape holds (v0, v2, v1)
-            if (n.LengthSquared() < 1e-12f) continue;
-            n = n.Normalized();
-            if (n.Dot(dir) >= 0)
-            {
-                if (!twoSided) continue;
-                n = -n;
-            }
-            if (SegmentTriangleDistanceSq(e0, e1, a, b, c, n) >= r * r) continue;
-            if (SegmentTriangleDistanceSq(s0, s1, a, b, c, n) < r * r) continue;
-            face = n;
-            return true;
-        }
-        return false;
+        // the first such triangle in the shape's order: the cells' lists are in that order, a cell stops at the best so far
+        var g = Faces(rid, shapeIdx);
+        var faces = g.Faces;
+        int bestT = int.MaxValue;
+        g.Range(lo, hi, out int x0, out int y0, out int z0, out int x1, out int y1, out int z1);
+        for (int z = z0; z <= z1; z++)
+            for (int y = y0; y <= y1; y++)
+                for (int x = x0; x <= x1; x++)
+                {
+                    int cell = g.CellIndex(x, y, z);
+                    for (int k = g.CellStart[cell], end = g.CellStart[cell + 1]; k < end; k++)
+                    {
+                        int t = g.Tris[k], f = t * 3;
+                        if (t >= bestT) break;
+                        Vector3 a = faces[f], b = faces[f + 1], c = faces[f + 2];
+                        if (Mathf.Max(a.X, Mathf.Max(b.X, c.X)) < lo.X || Mathf.Min(a.X, Mathf.Min(b.X, c.X)) > hi.X ||
+                            Mathf.Max(a.Y, Mathf.Max(b.Y, c.Y)) < lo.Y || Mathf.Min(a.Y, Mathf.Min(b.Y, c.Y)) > hi.Y ||
+                            Mathf.Max(a.Z, Mathf.Max(b.Z, c.Z)) < lo.Z || Mathf.Min(a.Z, Mathf.Min(b.Z, c.Z)) > hi.Z)
+                            continue;
+                        var n = g.Normals[t];                                   // the shape holds (v0, v2, v1)
+                        if (n == Vector3.Zero) continue;
+                        if (n.Dot(dir) >= 0)
+                        {
+                            if (!twoSided) continue;
+                            n = -n;
+                        }
+                        if (SegmentTriangleDistanceSq(e0, e1, a, b, c, n) >= r * r) continue;
+                        if (SegmentTriangleDistanceSq(s0, s1, a, b, c, n) < r * r) continue;
+                        bestT = t;
+                        face = n;
+                        break;
+                    }
+                }
+        return bestT != int.MaxValue;
     }
 
     /// <summary>The face normal of a box shape on the side of <paramref name="p"/>; the reversed move for another shape.</summary>
@@ -723,47 +735,149 @@ public sealed class NxController
 
     /// <summary>
     /// mTouched.normal(): the touched triangle's own normal, (v1 - v0) x (v2 - v0). Where the contact is shared by several
-    /// triangles (an edge or a vertex) the one most opposed to the sweep is taken.
+    /// triangles (an edge or a vertex) the one most opposed to the sweep is taken. The candidates are the triangles of the
+    /// point's cell in the shape's <see cref="FaceGrid"/>, in the shape's order, so the pick is the full scan's.
     /// </summary>
     Vector3? FaceNormal(Rid rid, int shapeIdx, Vector3 point, Vector3 dir)
     {
-        var faces = WorldFaces(rid, shapeIdx);
-        const float eps = 0.01f;
+        var g = Faces(rid, shapeIdx);
+        int cell = g.Cell(point);
+        if (cell < 0) return null;
+        var faces = g.Faces;
         Vector3? best = null;
         float bestDot = float.MaxValue;
-        for (int f = 0; f + 2 < faces.Length; f += 3)
+        for (int k = g.CellStart[cell], end = g.CellStart[cell + 1]; k < end; k++)
         {
+            int t = g.Tris[k], f = t * 3;
             Vector3 a = faces[f], b = faces[f + 1], c = faces[f + 2];
-            if (point.X < Mathf.Min(a.X, Mathf.Min(b.X, c.X)) - eps || point.X > Mathf.Max(a.X, Mathf.Max(b.X, c.X)) + eps ||
-                point.Y < Mathf.Min(a.Y, Mathf.Min(b.Y, c.Y)) - eps || point.Y > Mathf.Max(a.Y, Mathf.Max(b.Y, c.Y)) + eps ||
-                point.Z < Mathf.Min(a.Z, Mathf.Min(b.Z, c.Z)) - eps || point.Z > Mathf.Max(a.Z, Mathf.Max(b.Z, c.Z)) + eps)
+            if (point.X < Mathf.Min(a.X, Mathf.Min(b.X, c.X)) - FaceEps || point.X > Mathf.Max(a.X, Mathf.Max(b.X, c.X)) + FaceEps ||
+                point.Y < Mathf.Min(a.Y, Mathf.Min(b.Y, c.Y)) - FaceEps || point.Y > Mathf.Max(a.Y, Mathf.Max(b.Y, c.Y)) + FaceEps ||
+                point.Z < Mathf.Min(a.Z, Mathf.Min(b.Z, c.Z)) - FaceEps || point.Z > Mathf.Max(a.Z, Mathf.Max(b.Z, c.Z)) + FaceEps)
                 continue;
-            var n = (c - a).Cross(b - a);                                       // the shape holds (v0, v2, v1)
-            if (n.LengthSquared() < 1e-12f) continue;
-            n = n.Normalized();
-            if (ClosestOnTriangle(point, a, b, c).DistanceTo(point) > eps) continue;
+            var n = g.Normals[t];
+            if (n == Vector3.Zero) continue;
+            if (ClosestOnTriangle(point, a, b, c).DistanceTo(point) > FaceEps) continue;
             float d = n.Dot(dir);
             if (d < bestDot) { bestDot = d; best = n; }
         }
         return best;
     }
 
+    const float FaceEps = 0.01f;                // a contact point's distance to its triangle
+
+    /// <summary>
+    /// A mesh shape's triangles in world space with a uniform grid over them: each cell lists, in the shape's order, the
+    /// triangles whose box grown by <see cref="FaceEps"/> meets it, so a contact point reads one cell and a capsule box the
+    /// cells it meets instead of every face.
+    /// </summary>
+    sealed class FaceGrid
+    {
+        public Vector3[] Faces, Normals;        // three corners per triangle as the shape holds them (v0, v2, v1); its unit normal or zero
+        public int[] CellStart, Tris;
+        Vector3 min;
+        float inv;
+        int nx, ny, nz;
+
+        public FaceGrid(Vector3[] faces)
+        {
+            Faces = faces;
+            int tris = faces.Length / 3;
+            Normals = new Vector3[tris];
+            var lo = new Vector3(float.MaxValue, float.MaxValue, float.MaxValue);
+            var hi = -lo;
+            float size = 0;
+            for (int t = 0; t < tris; t++)
+            {
+                Vector3 a = faces[t * 3], b = faces[t * 3 + 1], c = faces[t * 3 + 2];
+                var n = (c - a).Cross(b - a);
+                Normals[t] = n.LengthSquared() < 1e-12f ? Vector3.Zero : n.Normalized();
+                var tl = a.Min(b).Min(c); var th = a.Max(b).Max(c);
+                lo = lo.Min(tl); hi = hi.Max(th);
+                var e = th - tl;
+                size += Mathf.Max(e.X, Mathf.Max(e.Y, e.Z));
+            }
+            if (tris == 0) { lo = hi = Vector3.Zero; }
+            min = lo - Vector3.One * FaceEps;
+            var ext = hi + Vector3.One * FaceEps - min;
+            // cells about twice a mean triangle's size, at most 4 cells per triangle
+            float cell = Mathf.Max(2f * size / Mathf.Max(tris, 1), 1f);
+            while (true)
+            {
+                nx = Math.Max(1, (int)Mathf.Ceil(ext.X / cell)); ny = Math.Max(1, (int)Mathf.Ceil(ext.Y / cell)); nz = Math.Max(1, (int)Mathf.Ceil(ext.Z / cell));
+                if ((long)nx * ny * nz <= 4L * tris + 64) break;
+                cell *= 1.25f;
+            }
+            inv = 1f / cell;
+            CellStart = new int[nx * ny * nz + 1];
+            for (int pass = 0; pass < 2; pass++)
+            {
+                if (pass == 1)
+                {
+                    for (int i = 1; i < CellStart.Length; i++) CellStart[i] += CellStart[i - 1];
+                    Tris = new int[CellStart[^1]];
+                    for (int i = CellStart.Length - 1; i > 0; i--) CellStart[i] = CellStart[i - 1];
+                    CellStart[0] = 0;
+                }
+                for (int t = 0; t < tris; t++)
+                {
+                    Vector3 a = faces[t * 3], b = faces[t * 3 + 1], c = faces[t * 3 + 2];
+                    Index(a.Min(b).Min(c) - Vector3.One * FaceEps, out int x0, out int y0, out int z0);
+                    Index(a.Max(b).Max(c) + Vector3.One * FaceEps, out int x1, out int y1, out int z1);
+                    for (int z = z0; z <= z1; z++)
+                        for (int y = y0; y <= y1; y++)
+                            for (int x = x0; x <= x1; x++)
+                            {
+                                int i = (z * ny + y) * nx + x;
+                                if (pass == 0) CellStart[i + 1]++;
+                                else Tris[CellStart[i + 1]++] = t;
+                            }
+                }
+            }
+        }
+
+        /// <summary>The cells a box meets, clamped to the grid (a triangle box meeting it is listed in one of them).</summary>
+        public void Range(Vector3 lo, Vector3 hi, out int x0, out int y0, out int z0, out int x1, out int y1, out int z1)
+        {
+            Index(lo, out x0, out y0, out z0);
+            Index(hi, out x1, out y1, out z1);
+        }
+
+        public int CellIndex(int x, int y, int z) => (z * ny + y) * nx + x;
+
+        void Index(Vector3 p, out int x, out int y, out int z)
+        {
+            var q = (p - min) * inv;
+            x = Math.Clamp((int)q.X, 0, nx - 1); y = Math.Clamp((int)q.Y, 0, ny - 1); z = Math.Clamp((int)q.Z, 0, nz - 1);
+        }
+
+        /// <summary>The point's cell, -1 outside the grid (no triangle within <see cref="FaceEps"/>).</summary>
+        public int Cell(Vector3 p)
+        {
+            var q = (p - min) * inv;
+            if (q.X < 0 || q.Y < 0 || q.Z < 0) return -1;
+            int x = (int)q.X, y = (int)q.Y, z = (int)q.Z;
+            if (x > nx || y > ny || z > nz) return -1;
+            return (Math.Min(z, nz - 1) * ny + Math.Min(y, ny - 1)) * nx + Math.Min(x, nx - 1);
+        }
+    }
+
     // Per controller, and a controller is per field (Player.Create in Field.SpawnPlayer, a new scene per field).
     // STILL-OPEN: the faces are cached in world space at the first touch, so they would go stale on a mesh body that
     // moves; no field mesh body moves (FieldBuilder's are static, the ride box is a box).
-    readonly System.Collections.Generic.Dictionary<(Rid, int), Vector3[]> faceCache = new();
+    readonly System.Collections.Generic.Dictionary<(Rid, int), FaceGrid> faceCache = new();
 
-    Vector3[] WorldFaces(Rid rid, int shapeIdx)
+    FaceGrid Faces(Rid rid, int shapeIdx)
     {
-        if (faceCache.TryGetValue((rid, shapeIdx), out var w)) return w;
+        if (faceCache.TryGetValue((rid, shapeIdx), out var g)) return g;
         var shape = PhysicsServer3D.BodyGetShape(rid, shapeIdx);
         // GodotConcavePolygonShape3D::get_data: { faces, backface_collision }
         var faces = (Vector3[])((Godot.Collections.Dictionary)PhysicsServer3D.ShapeGetData(shape))["faces"];   // perf-ok: once per shape, cached in faceCache
         var xf = ((Transform3D)PhysicsServer3D.BodyGetState(rid, PhysicsServer3D.BodyState.Transform)) * PhysicsServer3D.BodyGetShapeTransform(rid, shapeIdx);
-        w = new Vector3[faces.Length];
+        var w = new Vector3[faces.Length];
         for (int i = 0; i < faces.Length; i++) w[i] = xf * faces[i];
-        faceCache[(rid, shapeIdx)] = w;
-        return w;
+        g = new FaceGrid(w);
+        faceCache[(rid, shapeIdx)] = g;
+        return g;
     }
 
     static Vector3 ClosestOnTriangle(Vector3 p, Vector3 a, Vector3 b, Vector3 c)
