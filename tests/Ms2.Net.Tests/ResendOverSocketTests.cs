@@ -213,7 +213,9 @@ public class ResendOverSocketTests {
         while ((f = await ReadFrame(s2, srv2).WaitAsync(TimeSpan.FromSeconds(5))).op != (ushort) Outbound.Reconnect) { }
         await t.SendAsync(new RequestQuit(20));   // held: the reconnect runs
         await s2.WriteAsync(srv2.Frame(Inbound.RequestHeartbeat, w => w.WriteInt(77)));   // answered inside the window
-        await Task.Delay(300);
+        // the real condition, not a fixed delay: the client took the heartbeat answer into the hold path (RequestQuit 20 and the answer are both pending)
+        await WaitFor(() => t.Channel.Out.PendingCount >= 2);
+        Assert.That(t.Channel.Out.PendingCount, Is.EqualTo(2), "the heartbeat answer is held with the quit, not sent ahead");
         await s2.WriteAsync(srv2.Frame(Inbound.Reconnect, w => { w.WriteByte(ReconnectNotice.KindResult); w.WriteInt(1); }));
         await s2.WriteAsync(srv2.Frame(Inbound.FinalizeReconnect, w => { w.WriteInt(0); w.WriteInt(2); }));   // the server got packets 1 and 2
         var ops = new List<(ushort op, byte[] body)>();
