@@ -638,6 +638,10 @@ public sealed class GameTables
         return dynamicActions.TryGetValue(skillId, out var r) ? r : null;
     }
     Dictionary<uint, string[]> dynamicActions;
+
+    /// <summary>The chat emoticon tables (ChatEmoticonCachedData, chatemoticontable.cpp), loaded on first use.</summary>
+    public Ms2.Ui.ChatEmoticons.ChatEmoticonTable ChatEmoticonData => chatEmoticons ??= Ms2.Ui.ChatEmoticons.ChatEmoticonTable.Load(packs, strings?.Languages);
+    Ms2.Ui.ChatEmoticons.ChatEmoticonTable chatEmoticons;
     /// <summary>CStringTable::FUN_141811980(7, id): string table 7 "popupMenu" (a popup menu item's label); "" when unknown.</summary>
     /// <summary>CStringTable::FUN_141811980(0x2f, id): stringMasteryReceipeName, empty when none.</summary>
     public string MasteryRecipeName(int id) => Lazy(ref masteryRecipeNames, "stringmasteryreceipename", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
