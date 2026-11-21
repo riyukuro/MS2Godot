@@ -586,7 +586,10 @@ public sealed class NxController
         var q = Query(body.CollisionMask, true);
         q.Transform = new Transform3D(Basis.Identity, at) * shapeNode.Transform;
         // a new Array of Dictionaries per call: only on the start-overlap path (EndInside) and in InsideSolid when a probe
-        // contact is a one-sided triangle's back face, or the probe frees the shape without a contact
+        // contact is a one-sided triangle's back face, or the probe frees the shape without a contact. The probe's own
+        // contacts (16, recovery as collision) are not this set: they miss shapes the query finds and add shapes only
+        // within the margin, and EndSolid decided on them differs from this in a third of its calls inside a wall on a
+        // 53,248-triangle mesh and a fifth of movement_sync's
         var found = body.GetWorld3D().DirectSpaceState.IntersectShape(q, OverlapResults);   // perf-ok: see above
         using var tracked = (Godot.Collections.Array)found;                    // the underlying Array is tracked
         int n = System.Math.Min(found.Count, OverlapResults);
