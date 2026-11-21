@@ -37,6 +37,15 @@ public partial class LiveSession
     /// <summary>The game event list's interact object shutdowns (GameEvent 0xB2, CGameEventValueManager
     /// ShutdownInteractObjectId); kept across fields, cleared with a new game scene.</summary>
     public readonly InteractObjectShutdowns InteractShutdowns = new();
+    /// <summary>The game event list's special ability hot times (GameEventSAHotTime / PCBangSAHotTime into CGameRule's
+    /// sums); kept across fields, cleared with a new game scene.</summary>
+    public readonly SpecialAbilityHotTimes HotTimes = new(PerMilleAbility);
+    static Func<int, bool> perMilleAbility;
+    static bool PerMilleAbility(int type)
+    {
+        try { return (perMilleAbility ??= GameTables.SpecialAbilityPerMille(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir)))(type); }
+        catch (Exception e) { GD.PushWarning($"live: special ability table: {e.Message}"); return false; }
+    }
 
     void NewFieldInteractObjects(int mapId)
     {
@@ -92,7 +101,8 @@ public partial class LiveSession
     void OnGameEvent(GameEventMessage m)
     {
         InteractShutdowns.Apply(m);
-        GD.Print($"live: GameEvent kind {m.Kind}: {m.Shutdowns.Count} shutdown events, {m.RemovedIds.Count} removed{(m.Truncated ? ", stopped at an unregistered type" : "")}");
+        HotTimes.Apply(m);
+        GD.Print($"live: GameEvent kind {m.Kind}: {m.Shutdowns.Count} shutdown events, {m.HotTimes.Count} hot times, {m.RemovedIds.Count} removed{(m.Truncated ? ", stopped at an unregistered type" : "")}");
     }
 
     void OnInteractNpc(InteractNpcMessage m)

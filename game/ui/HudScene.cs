@@ -2787,9 +2787,16 @@ public partial class HudScene : Node, IUiStageHost
             buffs.SkillInvokeOption(0x3e9, id, live.SkillRows?.Invoke(id)?.GroupIds ?? 0, out var rate);
             return rate;
         };
-        // DAT_143aea120 on equip and unequip (MyPC::vfunc_127 / vfunc_128, mypc.cpp:4892, :4905); the cast sample is in Cast
-        Action onEquip = SampleAbilityRate;
+        // the worn part kept like m_abilities (rebuilt when FUN_1411e76c0 finds the equipment dirty, equipment.cpp:2922):
+        // on an equipment list or level change; DAT_143aea120 on each own put-on / put-off call (MyPC::vfunc_127 /
+        // vfunc_128, mypc.cpp:4892, :4905); the cast sample is in Cast
+        Action onEquip = RefreshOwnWorn;
+        Action onMe = () => { if (live.Me.Equips != ownWornEquips || (live.Me.User?.Level ?? 0) != ownWornLevel) RefreshOwnWorn(); };
+        Action onPutOnOrOff = SampleAbilityRate;
         live.Me.EquipChanged += onEquip;
+        live.Me.Changed += onMe;
+        live.Me.PutOnOrOff += onPutOnOrOff;
+        RefreshOwnWorn();
         SampleAbilityRate();
         Action<Ms2.Net.Packets.BuffPacket> onBuff = b =>
         {
@@ -2799,21 +2806,47 @@ public partial class HudScene : Node, IUiStageHost
         };
         foreach (var b in live.TakeBuffs()) onBuff(b);
         live.BuffReceived += onBuff;
-        unwatchBuffs = () => { live.BuffReceived -= onBuff; live.Me.EquipChanged -= onEquip; };
+        unwatchBuffs = () =>
+        {
+            live.BuffReceived -= onBuff;
+            live.Me.EquipChanged -= onEquip;
+            live.Me.Changed -= onMe;
+            live.Me.PutOnOrOff -= onPutOnOrOff;
+        };
     }
 
+    int ownWornCooldown, ownWornLevel;
+    object ownWornEquips;
+
     /// <summary>
-    /// DAT_143aea120 = CEquipment::GetAbilityRate(0x23) (skillslot.cpp:2350, mypc.cpp:4892, :4905): the own "skillCooldown"
-    /// ability total over 1000 into the cooldowns' <see cref="Ms2.Ui.Skills.SkillCooltimes.AbilityRate"/>.
+    /// The worn items' "skillCooldown" (0x23) part of m_abilities (CEquipment::FUN_1411e76c0, equipment.cpp:2922), taken
+    /// again only when the equipment lists or the level change. STILL-OPEN: FUN_1411e76c0 also rebuilds when a worn item
+    /// expires; an item expiring while worn keeps its part here until the next change.
     /// </summary>
-    void SampleAbilityRate()
+    void RefreshOwnWorn()
     {
         var live = Ms2Godot.Net.LiveSession.Instance;
         if (live == null) return;
         long now = live.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var t = hudModel.Tables;
-        live.Cooltimes.AbilityRate = Ms2.Ui.Items.WornEquipment.AbilityRate(Ms2.Ui.Items.WornEquipment.AbilityTotal(0x23,
-            live.Me.ToPcInfo(now), t.Items, t.ItemModels, it => Ms2.Ui.Items.ItemLevels.Usable(it, now), ownBuffs));
+        ownWornEquips = live.Me.Equips;
+        ownWornLevel = live.Me.User?.Level ?? 0;
+        ownWornCooldown = Ms2.Ui.Items.WornEquipment.Abilities(live.Me.ToPcInfo(now), t.Items, t.ItemModels,
+            it => Ms2.Ui.Items.ItemLevels.Usable(it, now)) is { } worn && worn.TryGetValue(0x23, out int v) ? v : 0;
+    }
+
+    /// <summary>
+    /// DAT_143aea120 = CEquipment::GetAbilityRate(0x23) (skillslot.cpp:2350, mypc.cpp:4892, :4905): the own "skillCooldown"
+    /// ability total over 1000 into the cooldowns' <see cref="Ms2.Ui.Skills.SkillCooltimes.AbilityRate"/>: the kept worn
+    /// part, the own buffs and the hot time sum, with the PC bang events for a PC bang grade above 0 (PC::FUN_141658f30;
+    /// the grade from the field entry: STILL-OPEN the SetPcBang packet, OnSetPcbang scenestategame.cpp:7951). No allocation.
+    /// </summary>
+    void SampleAbilityRate()
+    {
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        if (live == null) return;
+        live.Cooltimes.AbilityRate = Ms2.Ui.Items.WornEquipment.AbilityRate(Ms2.Ui.Items.WornEquipment.AbilityTotal(
+            ownWornCooldown, 0x23, ownBuffs, live.HotTimes, (live.Me.User?.PcBangGrade ?? 0) > 0));
     }
     Action unwatchQuickSlotState;
     Ms2.Ui.Skills.WeaponActionTable weaponActions;

@@ -155,4 +155,37 @@ public class CharacterInfoTests {
         u.Equips.Clear(); me.Apply(u);
         Assert.That(me.ToPcInfo(0).Equips, Is.Empty, "a later FieldAddUser replaces the lists");
     }
+
+    [Test]
+    public void EachOwnPutOnOrOffCallSignalsWithOrWithoutAListChange()
+    {
+        // MyPC::vfunc_127 / vfunc_128 (mypc.cpp:4882-4905) take DAT_143aea120 again on every call, the preset branch or not;
+        // OnItemPutOn (scenestategame.cpp:3080-3100) returns first for another pc, kind 6 and an item id without data
+        // (CItem::FUN_140523c40); OnItemPutOff (:3144) for an uid the pc does not wear (FUN_141655b80)
+        var me = new MyCharacter();
+        var u = new FieldAddUser { ObjectId = 1, User = new UserBlock { Name = "a" } };
+        u.Equips.Add(new EquipItem { Id = 15000001, Uid = 11, Slot = EquipSlot.RH });
+        u.Equips.Add(new EquipItem { Id = 50000001, Uid = 12, Slot = EquipSlot.CL });
+        me.Apply(u);
+        int calls = 0, lists = 0;
+        me.PutOnOrOff += () => calls++;
+        me.EquipChanged += () => lists++;
+        Func<int, int?> layer = id => id == 15000001 || id == 15000002 ? 0 : null;
+        Func<int, bool> known = id => id != 1;
+        Assert.That(me.Apply(new ItemPutOn(1, 0, new EquipItem { Id = 15000002, Uid = 13, Slot = EquipSlot.RH }), layer, known), Is.True);
+        Assert.That((calls, lists), Is.EqualTo((1, 1)), "a worn item");
+        Assert.That(me.Apply(new ItemPutOn(1, 0, new EquipItem { Id = 50000002, Uid = 14, Slot = EquipSlot.CL }), layer, known), Is.False);
+        Assert.That((calls, lists), Is.EqualTo((2, 1)), "an item without a model preset: the lists stay, the rate is taken again");
+        me.Apply(new ItemPutOn(7, 0, new EquipItem { Id = 15000002, Uid = 15 }), layer, known);
+        me.Apply(new ItemPutOn(1, 3, new EquipItem { Id = 15000002, Uid = 15 }), layer, known);
+        me.Apply(new ItemPutOn(1, 0, new EquipItem { Id = 1, Uid = 15 }), layer, known);
+        Assert.That(calls, Is.EqualTo(2), "another pc, a kind above 2, an unknown item id");
+        Assert.That(me.Apply(new ItemPutOff(1, 12), layer), Is.False);
+        Assert.That((calls, lists), Is.EqualTo((3, 1)), "a worn uid without a preset");
+        Assert.That(me.Apply(new ItemPutOff(1, 13), layer), Is.True);
+        Assert.That((calls, lists), Is.EqualTo((4, 2)));
+        me.Apply(new ItemPutOff(1, 99), layer);
+        me.Apply(new ItemPutOff(7, 12), layer);
+        Assert.That(calls, Is.EqualTo(4), "an uid not worn, another pc");
+    }
 }

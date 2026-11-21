@@ -166,4 +166,29 @@ public class GameEventPacketTests
         Assert.That(m.Truncated, Is.True);
         Assert.That(m.Shutdowns.Select(e => e.Id), Is.EqualTo(new[] { 4 }));
     }
+
+    [Test]
+    public void SpecialAbilityHotTimesKeepTheirIdsAndValues()
+    {
+        // GameEventSAHotTime::vfunc_4 (gameevent.cpp:701-710): id, then 4 unicode strings, the ids and values first;
+        // GameEventPCBangSAHotTime the same with m_e8 = 1; DTReward (gameeventdtreward.cpp:82) is read past
+        var m = GameEventMessage.Read(Reader(w =>
+        {
+            w.WriteByte(1); w.WriteInt(4);
+            w.WriteUnicodeString("SAHotTime"); w.WriteInt(7);
+            w.WriteUnicodeString("35,4"); w.WriteUnicodeString("0.1,3"); w.WriteUnicodeString("a"); w.WriteUnicodeString("b");
+            w.WriteUnicodeString("DTReward"); w.WriteInt(8);
+            for (int i = 0; i < 4; i++) w.WriteUnicodeString("x");
+            w.WriteUnicodeString("PCBangSAHotTime"); w.WriteInt(9);
+            w.WriteUnicodeString("35"); w.WriteUnicodeString("0.2"); w.WriteUnicodeString(""); w.WriteUnicodeString("");
+            Shutdown(w, 4, (2000003, 1));
+        }));
+        Assert.That(m.Truncated, Is.False);
+        Assert.That(m.HotTimes, Is.EqualTo(new[]
+        {
+            new SpecialAbilityHotTimeEvent(7, false, "35,4", "0.1,3"),
+            new SpecialAbilityHotTimeEvent(9, true, "35", "0.2"),
+        }));
+        Assert.That(m.Shutdowns.Select(e => e.Id), Is.EqualTo(new[] { 4 }));
+    }
 }

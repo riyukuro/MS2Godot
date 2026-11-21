@@ -488,6 +488,24 @@ public sealed class GameTables
         return name => byName.TryGetValue(name, out int t) && rows.TryGetValue(t, out var r) && r.ValueType != 0 ? t : 0;
     }
 
+    /// <summary>FUN_14081dcd0 (specialability.cpp:467): whether the special ability's row (DAT_143ab1a40[id], filled by
+    /// LoadSpecialAbilityStringTable at the row's id, :185-195) has valueType 2; false for an id without a row.</summary>
+    public static Func<int, bool> SpecialAbilityPerMille(PackSet packs)
+    {
+        const string table = "table/specialabilitystringtable.xml";
+        return SpecialAbilityPerMille(packs.Exists("Xml", table) ? GameStrings.Parse(packs.Read("Xml", table)) : null);
+    }
+
+    public static Func<int, bool> SpecialAbilityPerMille(XDocument doc)
+    {
+        var rows = new Dictionary<int, int>();
+        if (doc?.Root != null)
+            foreach (var e in doc.Root.Elements("key"))
+                if (int.TryParse((string)e.Attribute("id"), out int id))
+                    rows[id] = Ms2.Ui.Skills.Xml.Int(e, "valueType");
+        return id => rows.TryGetValue(id, out int t) && t == 2;
+    }
+
     /// <summary>One language's stringAdditionalDescription.xml as LoadLevelDescFiles reads it (see
     /// <see cref="AdditionalDescription"/>): per id, per level, the ParseSkillDesc tags; null without the file.</summary>
     internal static Dictionary<uint, SortedDictionary<ushort, Dictionary<string, string>>> LevelDescFile(PackSet packs, string lang)

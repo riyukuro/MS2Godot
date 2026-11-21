@@ -227,6 +227,10 @@ public sealed class MyCharacter {
     /// <summary>A put-on / put-off changed the equip lists (before <see cref="Changed"/>): the item event dispatcher's
     /// put-on / put-off (Unk_SSGItemHub vfunc_20 / vfunc_21, scenestategame.cpp:3117 / 3162).</summary>
     public event Action EquipChanged;
+    /// <summary>Every own put-on or put-off with an item, after the lists changed or not: MyPC::vfunc_127 / vfunc_128
+    /// (mypc.cpp:4882-4905) re-sample DAT_143aea120 (GetAbilityRate(0x23)) on each call, whether or not the item has a model
+    /// preset and was worn or taken off.</summary>
+    public event Action PutOnOrOff;
 
     /// <summary>The own FieldAddUser: object id, user block, the title (PC::FUN_141661c00 = m_n10f4) and the architect score
     /// values after the ride block (scenestategame.cpp:11220-11224).</summary>
@@ -328,10 +332,19 @@ public sealed class MyCharacter {
     /// groups of a model are not modelled). The item goes after the last one of its layer or a lower one, so the list keeps
     /// FieldAddUser's order (gear, then outfits) and a look built from it in order shows each slot's top layer
     /// (CEquipment::GetTopLayerItem @0x1411e1a50, equipment.cpp:835: layer 2, then 1, then 0). Returns whether the lists
-    /// changed.
+    /// changed. <paramref name="itemKnown"/> is CItem::FUN_140523c40 (:3096): an item id without data makes the client
+    /// return before vfunc_127; null takes every id as known. Each call that reaches vfunc_127 raises
+    /// <see cref="PutOnOrOff"/> after the lists.
     /// </summary>
-    public bool Apply(ItemPutOn p, Func<int, int?> wornLayer) {
+    public bool Apply(ItemPutOn p, Func<int, int?> wornLayer, Func<int, bool> itemKnown = null) {
         if (User == null || p.ObjectId != ObjectId || p.Kind > 2) return false;
+        if (itemKnown != null && !itemKnown(p.Item.Id)) return false;
+        bool changed = PutOn(p, wornLayer);
+        PutOnOrOff?.Invoke();
+        return changed;
+    }
+
+    bool PutOn(ItemPutOn p, Func<int, int?> wornLayer) {
         if (wornLayer(p.Item.Id) is not { } dataLayer) return false;
         int layer = p.Kind == 2 ? 2 : dataLayer;
         int? LayerOf(EquipItem e, bool outfit2) => outfit2 ? 2 : wornLayer(e.Id);
@@ -349,17 +362,22 @@ public sealed class MyCharacter {
     /// <summary>
     /// CSceneStateGame::OnItemPutOff (scenestategame.cpp:3144) for the own object: the worn item of that uid
     /// (PC::FUN_141655b80) is taken off when it has a model preset (PC::vfunc_128, pc.cpp:1415; CEquipment::FUN_1411e3960
-    /// finds it by uid). Returns whether the lists changed.
+    /// finds it by uid). Returns whether the lists changed. A worn uid raises <see cref="PutOnOrOff"/> after the lists, with
+    /// or without a preset (vfunc_128 runs for any item FUN_141655b80 finds).
     /// </summary>
     public bool Apply(ItemPutOff p, Func<int, int?> wornLayer) {
         if (User == null || p.ObjectId != ObjectId) return false;
         var item = (Equips ?? Array.Empty<EquipItem>()).Concat(Outfit2 ?? Array.Empty<EquipItem>()).FirstOrDefault(e => e.Uid == p.ItemUid);
-        if (item == null || wornLayer(item.Id) == null) return false;
-        Equips = (Equips ?? Array.Empty<EquipItem>()).Where(e => e.Uid != p.ItemUid).ToList();
-        Outfit2 = (Outfit2 ?? Array.Empty<EquipItem>()).Where(e => e.Uid != p.ItemUid).ToList();
-        EquipChanged?.Invoke();
-        Changed?.Invoke();
-        return true;
+        if (item == null) return false;
+        bool changed = wornLayer(item.Id) != null;
+        if (changed) {
+            Equips = (Equips ?? Array.Empty<EquipItem>()).Where(e => e.Uid != p.ItemUid).ToList();
+            Outfit2 = (Outfit2 ?? Array.Empty<EquipItem>()).Where(e => e.Uid != p.ItemUid).ToList();
+            EquipChanged?.Invoke();
+            Changed?.Invoke();
+        }
+        PutOnOrOff?.Invoke();
+        return changed;
     }
 
     /// <summary>

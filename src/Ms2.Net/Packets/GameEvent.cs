@@ -6,6 +6,11 @@ namespace Ms2.Net.Packets;
 /// (field id, interact object id) pairs it shuts down.</summary>
 public sealed record ShutdownInteractObjectEvent(int Id, IReadOnlyList<(uint FieldId, int ObjectId)> Objects);
 
+/// <summary>One GameEventSAHotTime or GameEventPCBangSAHotTime (commonfiles/gameevent.cpp:653-726): the event id, whether it
+/// is the PC bang one (its m_e8 = 1), and vfunc_4's first two strings (:705-706), the "," lists of special ability ids
+/// (m_68) and values (m_70) vfunc_2 parses.</summary>
+public sealed record SpecialAbilityHotTimeEvent(int Id, bool PcBang, string Ids, string Values);
+
 /// <summary>
 /// Inbound GameEvent (RecvOp 0xB2, commonfiles/opcodes.h:185), GameEventManagerCli::Dispatch (@0x140ceab50,
 /// gameeventmanagercli.cpp:77): a u8 kind, then
@@ -23,11 +28,15 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
 {
     public const string ShutdownInteractObjectName = "ShutdownInteractObjectId";
 
+    /// <summary>The SAHotTime and PCBangSAHotTime events of a kind 0, 1 or 3 message, in packet order.</summary>
+    public IReadOnlyList<SpecialAbilityHotTimeEvent> HotTimes { get; init; } = Array.Empty<SpecialAbilityHotTimeEvent>();
+
     public static GameEventMessage Read(ByteReader r)
     {
         byte kind = r.ReadByte();
         var shutdowns = new List<ShutdownInteractObjectEvent>();
         var removed = new List<int>();
+        var hotTimes = new List<SpecialAbilityHotTimeEvent>();
         bool truncated = false;
         switch (kind)
         {
@@ -39,7 +48,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
                 for (int i = 0; i < n; i++)
                 {
                     string name = r.ReadUnicodeString();
-                    if (!ReadBody(name, r, shutdowns))
+                    if (!ReadBody(name, r, shutdowns, hotTimes))
                     {
                         truncated = true;     // Create failed (:144-147): the client returns here
                         break;
@@ -55,7 +64,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
             }
         }
         if (!truncated) r.ExpectEnd("GameEvent");
-        return new GameEventMessage(kind, shutdowns, removed, truncated);
+        return new GameEventMessage(kind, shutdowns, removed, truncated) { HotTimes = hotTimes };
     }
 
     /// <summary>
@@ -64,7 +73,8 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
     /// an ASCII string. Every body but MeratMarketNotice's starts with GameEvent::vfunc_4's i32 id (gameeventbase.cpp:196).
     /// Returns false for a name no class is registered under.
     /// </summary>
-    internal static bool ReadBody(string name, ByteReader r, List<ShutdownInteractObjectEvent> shutdowns)
+    internal static bool ReadBody(string name, ByteReader r, List<ShutdownInteractObjectEvent> shutdowns,
+                                  List<SpecialAbilityHotTimeEvent> hotTimes = null)
     {
         switch (name)
         {
@@ -86,10 +96,19 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
                 for (int i = 0; i < 7; i++) r.ReadInt();
                 return true;
 
-            // id, 4 x W: DTReward (gameeventdtreward.cpp:82), SAHotTime and PCBangSAHotTime (gameevent.cpp:704)
-            case "DTReward": case "SAHotTime": case "PCBangSAHotTime":
+            // id, 4 x W: DTReward (gameeventdtreward.cpp:82)
+            case "DTReward":
                 r.ReadInt(); W(r); W(r); W(r); W(r);
                 return true;
+            // id, 4 x W: SAHotTime and PCBangSAHotTime (gameevent.cpp:701-710): the ids and values kept
+            case "SAHotTime": case "PCBangSAHotTime":
+            {
+                int id = r.ReadInt();
+                string ids = r.ReadUnicodeString(), values = r.ReadUnicodeString();
+                W(r); W(r);
+                hotTimes?.Add(new SpecialAbilityHotTimeEvent(id, name == "PCBangSAHotTime", ids, values));
+                return true;
+            }
 
             // AttendGift (gameeventcontext.cpp:424, the context read at :352)
             case "AttendGift":

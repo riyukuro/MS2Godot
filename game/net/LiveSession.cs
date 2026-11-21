@@ -653,6 +653,7 @@ public partial class LiveSession : Node
         if (entry.Enter != null) NoteServerEnter(entry.Enter.Channel);
         // a new game scene: the old one's OnLeave ran GameEventManagerCli::Clear (scenestategame.cpp:1314)
         InteractShutdowns.Clear();
+        HotTimes.Clear();
         // the adventure level, quest, item, trophy, title and key table loads among them
         entry.Replay(Handle, () =>
         {
@@ -1115,7 +1116,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.ItemPutOn))
             {
                 var o = ItemPutOn.Read(p.Reader());        // CSceneStateGame::OnItemPutOn (scenestategame.cpp:3080); display only, no c2s answer
-                bool ownEquipment = Me.Apply(o, WornLayer);
+                bool ownEquipment = Me.Apply(o, WornLayer, ItemExists);
                 GD.Print($"live: item put on {o.Item.Id} uid {o.Item.Uid} slot {o.Item.Slot} kind {o.Kind} by {o.ObjectId}{(ownEquipment ? " (own equipment)" : "")}");
             }
             else if (game.Is(p, Inbound.ItemPutOff))

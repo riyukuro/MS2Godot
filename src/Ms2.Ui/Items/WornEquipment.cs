@@ -159,8 +159,8 @@ public sealed class WornEquipment
     /// <see cref="ItemData.IsLevelAllowed"/>), except a suit (subtype 0x16) in PA and a two-handed weapon in LH: per special
     /// ability below 0xcf, CItemStatus::GetSpecialValue(k, 3, 5) (itemsocketsystemutil.cpp:1955), the five option groups
     /// (CItemOption::SumSpecialValue, itemoptiondata_1.cpp:104) plus the limit break's special option. STILL-OPEN: the PvP
-    /// field values (FUN_14062ff70), slots a buff disables (IsItemSlotDisabled), the pet item, and GetAbilityTotal's buff,
-    /// game rule (hot time) and set item terms. Null when the record has no equipment lists.
+    /// field values (FUN_14062ff70), slots a buff disables (IsItemSlotDisabled), the pet item; GetAbilityTotal's buff and
+    /// game rule (hot time) terms are in <see cref="AbilityTotal(int, int, AdditionalBuffList, SpecialAbilityHotTimes, bool)"/>. Null when the record has no equipment lists.
     /// </summary>
     public static Dictionary<int, int> Abilities(PcInfo record, ItemDataTable items, ItemModelTable models, Func<Item, bool> canUse)
     {
@@ -185,9 +185,9 @@ public sealed class WornEquipment
 
     /// <summary>
     /// CEquipment::GetAbilityTotal @0x1411e1160 (equipment.cpp:740): the worn items' <see cref="Abilities"/> of
-    /// <paramref name="type"/> plus the own buffs' <see cref="AdditionalBuffList.SpecialAbility"/>. STILL-OPEN: the game rule
-    /// term (CGameRule::FUN_1404774a0, by the premium flag PC::FUN_141658f30) and the set items' term
-    /// (GetSetItems()->GetSpecialAbility) are not ported, so 0.
+    /// <paramref name="type"/> plus the own buffs' <see cref="AdditionalBuffList.SpecialAbility"/>, without the game rule
+    /// term (the overload over a kept worn total adds it). STILL-OPEN: the set items' term (GetSetItems()->GetSpecialAbility),
+    /// 0 without the set item table.
     /// </summary>
     public static int AbilityTotal(int type, PcInfo record, ItemDataTable items, ItemModelTable models, Func<Item, bool> canUse,
                                    AdditionalBuffList buffs)
@@ -195,6 +195,16 @@ public sealed class WornEquipment
         int n = Abilities(record, items, models, canUse) is { } worn && worn.TryGetValue(type, out int v) ? v : 0;
         return n + (buffs?.SpecialAbility(type) ?? 0);
     }
+
+    /// <summary>
+    /// CEquipment::GetAbilityTotal @0x1411e1160 (equipment.cpp:740-746) over a worn total kept like m_abilities
+    /// (<paramref name="worn"/>, taken from <see cref="Abilities"/> when the equipment changes): plus the own buffs'
+    /// <see cref="AdditionalBuffList.SpecialAbility"/> and the game rule's hot time sum (CGameRule::FUN_1404774a0, with
+    /// the PC bang events when PC::FUN_141658f30, <paramref name="pcBang"/>). STILL-OPEN: the set items' term
+    /// (GetSetItems()->GetSpecialAbility): the set item table is not loaded, so 0. No allocation.
+    /// </summary>
+    public static int AbilityTotal(int worn, int type, AdditionalBuffList buffs, SpecialAbilityHotTimes rule, bool pcBang) =>
+        worn + (buffs?.SpecialAbility(type) ?? 0) + (rule?.Total(type, pcBang) ?? 0);
 
     /// <summary>CEquipment::GetAbilityRate @0x1411e1110 (equipment.cpp:731): the ability total over 1000.</summary>
     public static float AbilityRate(int total) => total / 1000.0f;

@@ -130,6 +130,18 @@ public class BuffStripTests
         // GetAbilityTotal / GetAbilityRate (equipment.cpp:731, :740): no worn items here, the buffs' part over 1000
         Assert.That(Ms2.Ui.Items.WornEquipment.AbilityRate(Ms2.Ui.Items.WornEquipment.AbilityTotal(35, null, null, null, _ => true, list)),
             Is.EqualTo(0.007f));
+        // GetAbilityTotal's game rule term (CGameRule::FUN_1404774a0, gamerule.cpp:805) over a kept worn total, the PC bang
+        // events only for a PC bang wearer (PC::FUN_141658f30); no allocation per sample
+        var rule = new SpecialAbilityHotTimes(_ => false);
+        rule.Apply(new Ms2.Net.Packets.GameEventMessage(0, Array.Empty<Ms2.Net.Packets.ShutdownInteractObjectEvent>(), Array.Empty<int>(), false)
+        {
+            HotTimes = new[] { new Ms2.Net.Packets.SpecialAbilityHotTimeEvent(1, false, "35", "20"), new Ms2.Net.Packets.SpecialAbilityHotTimeEvent(2, true, "35", "100") },
+        });
+        Assert.That((Ms2.Ui.Items.WornEquipment.AbilityTotal(50, 35, list, rule, false), Ms2.Ui.Items.WornEquipment.AbilityTotal(50, 35, list, rule, true)),
+            Is.EqualTo((50 + 7 + 20, 50 + 7 + 20 + 100)));
+        before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1000; i++) _ = Ms2.Ui.Items.WornEquipment.AbilityTotal(50, 35, list, rule, true);
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512));
     }
 
     [Test]
