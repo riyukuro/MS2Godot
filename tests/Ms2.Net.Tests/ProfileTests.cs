@@ -54,6 +54,8 @@ public class ProfileTests {
         Assert.That(p.Number(Outbound.SkillMacro), Is.EqualTo((ushort) 0x7C));
         Assert.That(p.Number(Outbound.ChatSticker), Is.EqualTo((ushort) 0xB9));
         Assert.That(p.Number(Outbound.RequestMoveField), Is.EqualTo((ushort) 0x6D));
+        Assert.That(p.Number(Inbound.MeretMarket), Is.EqualTo((ushort) 0x6E));
+        Assert.That(p.Number(Outbound.MeretMarket), Is.EqualTo((ushort) 0x3A));
         Assert.That(p.TryInbound(0x60, out var op) && op == Inbound.UserMoveByPortal);
         // rows upstream lacks stay unmapped
         Assert.Throws<KeyNotFoundException>(() => p.Number(Inbound.UserChatItemLink));
