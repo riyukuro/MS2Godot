@@ -782,7 +782,7 @@ public class GuideEventTests
         Model();
         var c = new RevivalDialogController { CommonById = id => $"#{id:x}", CommonByKey = k => k + "|{0}" };
         RevivalWiring.Connect(c.Env, RevivalDialogTests.DeadPlayer(), () => 100,
-            id => new Ms2.Formats.World.FieldData { Id = id, RevivalReturnId = id }, _ => { }, _ => { }, id => "");
+            id => new Ms2.Formats.World.FieldData { Id = id, RevivalReturnId = id }, _ => { }, _ => { }, id => "", id => $"map {id}");
         c.Env.MeratRateCap = () => 1f; c.Env.MesoRateCap = () => 1f;
         c.Env.MesoRevivalRemaining = () => 2; c.Env.Meso = () => 1_000_000;
         c.Env.ShowBox = _ => { }; c.Env.ReplaceBox = _ => { };

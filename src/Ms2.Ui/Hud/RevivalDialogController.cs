@@ -45,6 +45,9 @@ public sealed class RevivalEnvironment
 
     // ---- the world, the field and the dungeon ----
     public Func<int> FieldId = () => 0;
+    /// <summary>CStringTable::FUN_141811980(3, id): the map name of a field, for the 0x27d line and the 0x287 box
+    /// (uirevivaldialog.cpp:363, :418).</summary>
+    public Func<int, string> FieldName = id => id.ToString();
     public Func<RevivalField> Field = () => null;
     /// <summary>WorldService::FUN_141bdb660(8) (FUN_141abcb90, uirevivaldialog.cpp:637): no paid revive at all.</summary>
     public Func<bool> PaidRevivalOffByWorld = () => false;
@@ -268,9 +271,7 @@ public sealed class RevivalDialogController : UiController, IMessageBoxListener,
         else Env.Send(new RevivalRequest(0));
     }
 
-    /// <summary>The name of the return field (CStringTable table 3, id); set by the host.</summary>
-    public Func<int, string> FieldName = id => id.ToString();
-    string ReturnFieldName(int id) => FieldName(id);
+    string ReturnFieldName(int id) => Env.FieldName(id) ?? "";
 
     /// <summary>FUN_141abbb20 (@0x141abbb20): the merat button.</summary>
     void MeratRevive()

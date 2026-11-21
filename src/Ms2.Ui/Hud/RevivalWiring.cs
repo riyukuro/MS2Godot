@@ -17,7 +17,7 @@ namespace Ms2.Ui.Hud;
 public static class RevivalWiring
 {
     public static void Connect(RevivalEnvironment e, MyCharacter me, Func<int?> fieldId, Func<int, FieldData> fieldOf,
-        Action<IOutPacket> send, Action<string> notice, Func<int, string> common)
+        Action<IOutPacket> send, Action<string> notice, Func<int, string> common, Func<int, string> mapName)
     {
         e.HasPlayer = () => me.ObjectId >= 0;
         e.IsDead = () => me.Dead;
@@ -28,6 +28,7 @@ public static class RevivalWiring
         e.FieldId = () => fieldId() ?? 0;
         e.Field = () => fieldId() is int id && fieldOf(id) is { } f
             ? new RevivalField(f.RevivalReturnId, f.DeathPenalty, f.DoNotRevivalHere, f.InfiniteMeratRevival) : null;
+        e.FieldName = mapName;                          // CStringTable table 3 (uirevivaldialog.cpp:363, :418)
         e.PaidRevivalWired = () => false;
         e.Send = send;
         e.Notice = notice;

@@ -79,7 +79,8 @@ public partial class HudScene
         var c = new RevivalDialogController();
         var e = c.Env;
         RevivalWiring.Connect(e, live.Me, () => live.FieldId, _ => RevivalFieldData(live),
-            live.SendRevival, text => SystemNoticeText(text), id => hudModel.Tables.Common(id));
+            live.SendRevival, text => SystemNoticeText(text), id => hudModel.Tables.Common(id),
+            id => hudModel.Tables.MapName(id));
         c.Unloaded += () => { revivalMovie?.Host.Unload(); revivalMovie?.QueueFree(); revivalMovie = null; };
         revival = c;
         revivalMovie = new MovieDialog(assets, revival, hudModel, ScreenMode.PixelSize(GetWindow()));

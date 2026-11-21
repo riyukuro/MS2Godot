@@ -194,7 +194,7 @@ public class RevivalDialogTests
         var c = new RevivalDialogController { CommonById = id => $"#{id:x}", CommonByKey = k => k + "|{0}" };
         c.Env.MeratRateCap = () => 1f; c.Env.MesoRateCap = () => 1f;
         RevivalWiring.Connect(c.Env, me, () => 100, id => new Ms2.Formats.World.FieldData { Id = id, RevivalReturnId = id },
-            p => sent.Add($"{p.Op}:{Convert.ToHexString(Bytes(p))}"), notices.Add, id => $"notice {id:x}");
+            p => sent.Add($"{p.Op}:{Convert.ToHexString(Bytes(p))}"), notices.Add, id => $"notice {id:x}", id => $"map {id}");
         c.Refresh();
         c.OnRevival(1);
         Assert.That(sent, Is.EqualTo(new[] { "Revival:00" }));
@@ -213,7 +213,7 @@ public class RevivalDialogTests
         var sent = new List<string>();
         var c = new RevivalDialogController { CommonById = id => $"#{id:x}", CommonByKey = k => k + "|{0}" };
         RevivalWiring.Connect(c.Env, me, () => 100, id => new Ms2.Formats.World.FieldData { Id = id, RevivalReturnId = id },
-            p => sent.Add($"{p.Op}:{Convert.ToHexString(Bytes(p))}"), _ => { }, id => "");
+            p => sent.Add($"{p.Op}:{Convert.ToHexString(Bytes(p))}"), _ => { }, id => "", id => $"map {id}");
         c.Env.MeratRateCap = () => 1f; c.Env.MesoRateCap = () => 1f;
         c.Env.MesoRevivalRemaining = () => 2; c.Env.Meso = () => 1_000_000;
         c.Refresh();
@@ -222,13 +222,31 @@ public class RevivalDialogTests
         Assert.That(sent, Is.Empty);
     }
 
+    /// <summary>The game wiring names the return field by its map name (CStringTable table 3), in the death text's 0x27d line
+    /// and in the 0x287 box (uirevivaldialog.cpp:363, :418), not by its id.</summary>
+    [Test]
+    public void TheGameWiringNamesTheReturnFieldByItsMapName()
+    {
+        var me = DeadPlayer();
+        var boxes = new List<MessageBoxData>();
+        var c = new RevivalDialogController { CommonById = id => $"#{id:x}<{{0}}>", CommonByKey = k => k + "|{0}" };
+        RevivalWiring.Connect(c.Env, me, () => 100, id => new Ms2.Formats.World.FieldData { Id = id, RevivalReturnId = 200 },
+            _ => { }, _ => { }, id => "", id => $"map {id}");
+        c.Env.ShowBox = boxes.Add;
+        c.Refresh();
+        Assert.That(c.DeathMessage, Does.EndWith("\n#27d<map 200>"));
+        c.OnRevival(1);
+        Assert.That(boxes, Has.Count.EqualTo(1));
+        Assert.That(boxes[0].Msg, Is.EqualTo("#287<map 200>"));
+    }
+
     [Test]
     public void TheGameWiringSendsNothingWithoutFieldData()
     {
         var me = DeadPlayer();
         var sent = new List<string>();
         var c = new RevivalDialogController { CommonById = id => $"#{id:x}", CommonByKey = k => k + "|{0}" };
-        RevivalWiring.Connect(c.Env, me, () => 100, _ => null, p => sent.Add(p.Op.ToString()), _ => { }, id => "");
+        RevivalWiring.Connect(c.Env, me, () => 100, _ => null, p => sent.Add(p.Op.ToString()), _ => { }, id => "", id => $"map {id}");
         c.Refresh();
         c.OnRevival(1);
         Assert.That(sent, Is.Empty);
@@ -240,7 +258,7 @@ public class RevivalDialogTests
         var me = DeadPlayer();
         var notices = new List<string>();
         var c = new RevivalDialogController();
-        RevivalWiring.Connect(c.Env, me, () => 100, _ => null, _ => { }, notices.Add, id => $"notice {id:x}");
+        RevivalWiring.Connect(c.Env, me, () => 100, _ => null, _ => { }, notices.Add, id => $"notice {id:x}", id => $"map {id}");
         c.Env.NoticeById(0x281);
         Assert.That(notices, Is.EqualTo(new[] { "notice 281" }));
     }
