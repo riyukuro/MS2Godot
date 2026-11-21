@@ -95,4 +95,61 @@ public class RewardNotifyTests
         c.OnCallback("onSkillLevelUp", Array.Empty<object>());
         Assert.That(opened, Is.EqualTo(new[] { 0x4f2d }));
     }
+
+    [Test]
+    public void ToastStringsAndIconKeysResolveInTheData()
+    {
+        var t = new GameTables(Packs(), "en");
+        foreach (int id in new[] { 0x681, 0x683, 0x687, 0x689, 0x68c, 0x68d, 0x68e, 0x68f, 0x804, 0x85b, 0xbd8, 0xbd9 })
+            Assert.That(t.Common(id), Is.Not.Empty, "string 0x" + id.ToString("x"));
+        foreach (var k in new[] { "s_system_achieve_reward_reverse_coin", "s_system_achieve_reward_star_point", "s_reward_notify_skill_point", "s_reward_notify_stat_point" })
+            Assert.That(t.Common(k), Is.Not.Empty, k);
+        foreach (var k in new[] { "meso_icon_path", "title_icon_path", "honor_token_icon_path", "karma_token_icon_path", "skill_point_icon_path", "stat_point_icon_path" })
+            Assert.That(t.CommonResource(k), Is.Not.Empty, k);
+    }
+
+    [Test]
+    public void ExpMoneyAndStampToastsReachTheMovieWithTheirTypes()
+    {
+        var (h, c, p) = Load();
+        c.ShowExp(1200, 0);
+        for (int i = 0; i < 5; i++) p.Tick();
+        Assert.That(NotifyType(h), Is.EqualTo("exp"));
+        c.RewardComplete();
+        for (int i = 0; i < 40; i++) p.Tick();
+        c.ShowStamp("m", 1, "tag");
+        for (int i = 0; i < 5; i++) p.Tick();
+        Assert.That(NotifyType(h), Is.EqualTo("stamp"));
+    }
+
+    [Test]
+    public void SkillLevelUpAndFishingToastsAreQueuedByType()
+    {
+        var (h, c, p) = Load();
+        c.ShowSkillLevelUp();
+        for (int i = 0; i < 5; i++) p.Tick();
+        Assert.That(NotifyType(h), Is.EqualTo("skillLevelUp"));
+        c.ShowFishingSuccess(1, "Carp", "icon.png", 30, 3, 1);
+        Assert.That(c.Pending, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void ChangedTokenMoneyIsIgnoredWithoutACountAndForUnknownKinds()
+    {
+        var (h, c, p) = Load();
+        c.Block = true;
+        c.NotifyChangedTokenMoney(3, 0);
+        c.NotifyChangedTokenMoney(7, 5);
+        Assert.That(c.Pending, Is.EqualTo(0));
+        foreach (int kind in new[] { 3, 4, 5, 6, 9, 10, 11, 12, 13 }) c.NotifyChangedTokenMoney(kind, 12);
+        Assert.That(c.Pending, Is.EqualTo(9));
+    }
+
+    [Test]
+    public void SkillBookDialogCallDoesNotThrowBeforeAndAfterLoad()
+    {
+        var (_, c, _) = Load();
+        Assert.DoesNotThrow(() => c.NotifySkillBookDialog(true));
+        Assert.DoesNotThrow(() => new RewardNotifyController().NotifySkillBookDialog(false));
+    }
 }

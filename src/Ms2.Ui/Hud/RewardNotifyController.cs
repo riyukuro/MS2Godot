@@ -65,6 +65,109 @@ public sealed class RewardNotifyController : UiController
     void Show(long value, string type) =>
         AppendReward(Host.Obj(("msg", ClientFormat.Format(Model.Tables.Common(0x685), AchieveTexts.Group(value))), ("type", type)));
 
+    string Fmt(int id, params object[] args) => ClientFormat.Format(Model.Tables.Common(id), args);
+    string Res(string key) => Model.Tables.CommonResource(key);
+
+    /// <summary>FUN_141abf230 (@0x141abf230): msg 0x681 (exp), or 0x682 with the bonus; type "exp".</summary>
+    public void ShowExp(long exp, long bonus) =>
+        AppendReward(Host.Obj(("msg", bonus > 0 ? Fmt(0x682, AchieveTexts.Group(exp), bonus) : Fmt(0x681, AchieveTexts.Group(exp))), ("type", "exp")));
+
+    /// <summary>FUN_141abf450 (@0x141abf450): msg 0x683, or 0x684 with the bonus; type "icon", the meso icon.</summary>
+    public void ShowMoney(long money, long bonus) =>
+        AppendReward(Host.Obj(("msg", bonus > 0 ? Fmt(0x684, AchieveTexts.Group(money), bonus) : Fmt(0x683, AchieveTexts.Group(money))),
+            ("type", "icon"), ("icon", Res("meso_icon_path"))));
+
+    /// <summary>FUN_141abf6e0 / FUN_141abfa10: an item toast (msg 0x687 with the grade's text colour and the item name).</summary>
+    public void ShowItem(int itemId, int grade, uint textColor, string name, string icon, bool piece) =>
+        AppendReward(Host.Obj(("type", "icon"), ("msg", Fmt(0x687, textColor, name)), ("icon", icon), ("grade", grade),
+            ("itemPiece", piece), ("key", (uint)itemId)));
+
+    /// <summary>FUN_141abfdc0 (@0x141abfdc0): the achievement toast; emblem when the achievement's type is 9.</summary>
+    public void ShowAchieve(string name, string icon, int achieveType) =>
+        AppendReward(Host.Obj(("type", "achieve"), ("msg", name), ("icon", icon), ("emblem", achieveType == 9)));
+
+    /// <summary>FUN_141abffa0 (@0x141abffa0): OnNotifyLearnEmotion; msg 0x85b, icon grade 1.</summary>
+    public void ShowLearnEmotion(string emotionName, string icon) =>
+        AppendReward(Host.Obj(("type", "icon"), ("msg", Fmt(0x85b, emotionName)), ("icon", icon), ("grade", 1)));
+
+    /// <summary>FUN_141ac0210 (@0x141ac0210), one learned skill: msg 0x804, skillType, skillIconPath; the caller plays PC_SkillGet once.</summary>
+    public void ShowLearnSkill(string skillName, bool skillType, string icon) =>
+        AppendReward(Host.Obj(("type", "learn_skill"), ("msg", Fmt(0x804, skillName)), ("skillType", skillType ? 1 : 0), ("skillIconPath", icon)));
+
+    /// <summary>FUN_141ac0ac0 (@0x141ac0ac0): the title toast; plays PC_TitleGet, msg 0x689, the title icon.</summary>
+    public void ShowTitle(string titleName)
+    {
+        Sound?.Invoke("PC_TitleGet");
+        AppendReward(Host.Obj(("msg", Fmt(0x689, titleName)), ("type", "icon"), ("icon", Res("title_icon_path"))));
+    }
+
+    /// <summary>ShowIconNotice (@0x141ac0cd0).</summary>
+    public void ShowIconNotice(string msg, string icon) =>
+        AppendReward(Host.Obj(("msg", msg), ("type", "icon"), ("icon", icon)));
+
+    /// <summary>FUN_141ac1580 (@0x141ac1580): an icon notice with an effect id.</summary>
+    public void ShowIconNotice(string icon, string msg, int effect) =>
+        AppendReward(Host.Obj(("msg", msg), ("type", "icon"), ("icon", icon), ("effect", effect)));
+
+    /// <summary>FUN_141ac0e50 (@0x141ac0e50): a caught fish, msg 0xbd8; bigFish when the size class is 3.</summary>
+    public void ShowFishingSuccess(int fishId, string name, string icon, uint length, int sizeClass, int medal) =>
+        AppendReward(Host.Obj(("msg", Fmt(0xbd8, name)), ("type", "fishing_success"), ("icon", icon), ("size", length + "cm"),
+            ("success", 1), ("bigFish", sizeClass == 3), ("medal", medal), ("key", (uint)fishId)));
+
+    /// <summary>FUN_141ac11b0 (@0x141ac11b0): a fish that got away, msg 0xbd9.</summary>
+    public void ShowFishingFail(int fishId, string name, string icon, uint length, int medal) =>
+        AppendReward(Host.Obj(("msg", Fmt(0xbd9, name)), ("type", "fishing_fail"), ("icon", icon), ("size", length + "cm"),
+            ("success", 0), ("medal", medal), ("key", (uint)fishId)));
+
+    /// <summary>ShowSkillLevelUpNotice (@0x141ac14b0).</summary>
+    public void ShowSkillLevelUp() => AppendReward(Host.Obj(("type", "skillLevelUp")));
+
+    /// <summary>ShowStampNotice (@0x141ac1730).</summary>
+    public void ShowStamp(string msg, int special, string tag) =>
+        AppendReward(Host.Obj(("msg", msg), ("type", "stamp"), ("isSpecial", special), ("eventTag", tag)));
+
+    /// <summary>NotifySkillBookDialog (@0x141ac18e0): OnSkillBookDialog(open) on the entity when it is loaded.</summary>
+    public void NotifySkillBookDialog(bool open) { if (Host?.Entity != null) Host.Invoke("OnSkillBookDialog", open); }
+
+    /// <summary>FUN_141ac1950 (@0x141ac1950): skill points; kind 2 uses the sub-1 text and the second icon.</summary>
+    public void ShowSkillPoint(int points, int kind) =>
+        AppendReward(Host.Obj(("type", "icon"),
+            ("msg", ClientFormat.Format(Model.Tables.Common(kind == 2 ? "s_reward_notify_skill_point_sub_1" : "s_reward_notify_skill_point"), points)),
+            ("icon", Res(kind == 2 ? "skill_point2_icon_path" : "skill_point_icon_path"))));
+
+    /// <summary>FUN_141ac1b50 (@0x141ac1b50): stat points.</summary>
+    public void ShowStatPoint(int points) =>
+        AppendReward(Host.Obj(("type", "icon"), ("msg", ClientFormat.Format(Model.Tables.Common("s_reward_notify_stat_point"), points)),
+            ("icon", Res("stat_point_icon_path"))));
+
+    /// <summary>FUN_141ac1d10 (@0x141ac1d10): a box opening that continues as a cash coupon toast.</summary>
+    public void ShowBoxOpen(string itemName, string icon) =>
+        AppendReward(Host.Obj(("type", "boxOpen"), ("nextType", "cashCoupon"), ("icon", icon), ("msg", itemName)));
+
+    /// <summary>OnNotifyChangedTokenMoney (@uirewardnotify.cpp:253): nothing unless count &gt; 0. Kinds 3-6 use strings 0x68c-0x68f
+    /// with their token icons, kinds 9-13 the s_system_achieve_reward_* keys.</summary>
+    public void NotifyChangedTokenMoney(int kind, long count)
+    {
+        if (count <= 0) return;
+        string msg, icon;
+        switch (kind)
+        {
+            case 3: msg = Fmt(0x68c, count); icon = Res("honor_token_icon_path"); break;
+            case 4: msg = Fmt(0x68d, count); icon = Res("karma_token_icon_path"); break;
+            case 5: msg = Fmt(0x68e, count); icon = Res("lu_token_icon_path"); break;
+            case 6: msg = Fmt(0x68f, count); icon = Res("habi_token_icon_path"); break;
+            case 9: msg = Key("s_system_achieve_reward_reverse_coin", count); icon = Res("reverse_coin_icon_path"); break;
+            case 10: msg = Key("s_system_achieve_reward_mentor_token", count); icon = Res("mentor_token_icon_path"); break;
+            case 11: msg = Key("s_system_achieve_reward_mentee_token", count); icon = Res("mentee_token_icon_path"); break;
+            case 12: msg = Key("s_system_achieve_reward_star_point", count); icon = Res("star_point_icon_path"); break;
+            case 13: msg = Key("s_system_achieve_reward_meso_market_token", count); icon = Res("meso_market_token_icon_path"); break;
+            default: return;
+        }
+        ShowIconNotice(msg, icon);
+    }
+
+    string Key(string key, long count) => ClientFormat.Format(Model.Tables.Common(key), count);
+
     /// <summary>vfunc_28: "onReward" with type "achieve" plays system_Trophy_Hero; "onSkillLevelUp" opens 0x4f2d.</summary>
     public override bool OnCallback(string name, object[] args)
     {
