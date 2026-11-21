@@ -37,7 +37,7 @@ public partial class HudScene
             EmptySlotCount = tab => live?.Inventory?.Cells(tab).Count(cell => cell.Empty) ?? 0,
             FindInventorySlotItem = key => inventory?.FindSlotItem(key),
             SellInventoryItem = item => inventory?.TrySellItem(item),
-            Wearer = () => live != null ? live.Me.ToPcInfo(Now()) : (offlineMe ??= UiFixture.Character()).ToPcInfo(Now()),
+            Wearer = () => live != null ? live.Me.ToPcInfo(Now()) : OfflineMe().ToPcInfo(Now()),
             ShiftHeld = () => Input.IsKeyPressed(Key.Shift),
             LinkShopItem = (itemId, rarity, _, _) =>
             {

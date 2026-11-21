@@ -1918,7 +1918,7 @@ public partial class HudScene : Node, IUiStageHost
             gameDictionary.Owner = () =>
             {
                 var live = Ms2Godot.Net.LiveSession.Instance;
-                var me = live != null ? live.Me : (offlineMe ??= UiFixture.Character());
+                var me = live != null ? live.Me : OfflineMe();
                 return me?.ToPcInfo(live?.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds()) is { } r ? (r.CharacterId, r.Name) : null;
             };
             gameDictionary.Unloaded += () =>
@@ -2393,6 +2393,19 @@ public partial class HudScene : Node, IUiStageHost
     MovieDialog myInfoMovie;                    // from open until OnEndClose
     Ms2.Ui.Hud.MyInfoController myInfo;
     Ms2.Net.Packets.MyCharacter offlineMe;
+    /// <summary>The offline own character: the HUD fixture's record, wearing what the field shows (the starter look, as the
+    /// worn model's items) so the equipment window's icons match the model.</summary>
+    Ms2.Net.Packets.MyCharacter OfflineMe()
+    {
+        if (offlineMe != null && (Ms2Godot.Look.PlayerLook.OfflineWorn == null || ReferenceEquals(offlineMe.Equips, Ms2Godot.Look.PlayerLook.OfflineWorn))) return offlineMe;
+        var me = offlineMe ?? UiFixture.Character();
+        if (Ms2Godot.Look.PlayerLook.OfflineWorn is { } worn)
+        {
+            me.Equips = worn;
+            if (me.User != null) { me.User.Gender = (byte)Ms2Godot.Look.PlayerLook.OfflineGender; me.User.JobCode = Ms2Godot.Look.PlayerLook.OfflineJob; }
+        }
+        return offlineMe = me;
+    }
 
     /// <summary>CUIService::ToggleDialog(0x2711): open when closed, else vfunc_67.</summary>
     void ToggleMyInfo()
@@ -2412,7 +2425,7 @@ public partial class HudScene : Node, IUiStageHost
         if (GuideRefusesOpen("MyInfoDialog")) return;
         if (myInfoMovie != null) { myInfoMovie.Host.Unload(); myInfoMovie.QueueFree(); myInfoMovie = null; }
         var live = Ms2Godot.Net.LiveSession.Instance;
-        var me = live != null ? live.Me : (offlineMe ??= UiFixture.Character());
+        var me = live != null ? live.Me : OfflineMe();
         Func<long> now = () => live?.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         if (me.ToPcInfo(now()) == null) { GD.Print("character: the live session has no own character yet"); return; }
         var c = new Ms2.Ui.Hud.MyInfoController
@@ -2763,7 +2776,7 @@ public partial class HudScene : Node, IUiStageHost
         var view = live != null ? live.Inventory : OfflineInventory();
         if (view == null) { GD.Print("inventory: the live session has no bag yet"); return; }
         // the hover compares with the own character's equipment (MyPC); Shift is CUIService m_n128 (either Shift key)
-        var me = live != null ? live.Me : (offlineMe ??= UiFixture.Character());
+        var me = live != null ? live.Me : OfflineMe();
         Func<long> now = () => live?.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var c = new Ms2.Ui.Hud.InventoryController
         {
@@ -3002,7 +3015,7 @@ public partial class HudScene : Node, IUiStageHost
         // STILL-OPEN: no layer 5 hands, and the equips are FieldAddUser's (no ItemPutOn / ItemPutOff yet), so a weapon
         // change does not reach the slots.
         weaponActions ??= assets.Table("table/weaponaction.xml") is { } wa ? Ms2.Ui.Skills.WeaponActionTable.Load(wa) : Ms2.Ui.Skills.WeaponActionTable.Empty;
-        var me = live != null ? live.Me : (offlineMe ??= UiFixture.Character());
+        var me = live != null ? live.Me : OfflineMe();
         Ms2.Net.Packets.EquipItem Hand(int slot) => me.Equips?.FirstOrDefault(e => (int)e.Slot == slot);
         var world = new Ms2.Ui.Skills.SlotWorld
         {

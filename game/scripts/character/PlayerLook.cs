@@ -13,6 +13,12 @@ namespace Ms2Godot.Look;
 /// </summary>
 public static class PlayerLook
 {
+    /// <summary>The starter look the offline player wears (null before the body is built or with a live session), with its
+    /// gender and job: the equipment window reads the same items, so the icons and the model agree.</summary>
+    public static IReadOnlyList<EquipItem> OfflineWorn { get; private set; }
+    public static int OfflineGender { get; private set; } = 1;
+    public static int OfflineJob { get; private set; } = 10;
+
     public static (Node3D visual, AnimationPlayer anim, ModelData body, string bodyDir) Build(ModelBuilder builder, PackSet packs)
     {
         int gender = 1, job = 10, skinRow = 0;
@@ -41,7 +47,14 @@ public static class PlayerLook
             try
             {
                 var palettes = new ColorPalettes(packs);
-                var (items, skin) = Live() ?? StarterLook.Build(packs, palettes, gender, job, rows, skinRow);
+                var live = Live();
+                var (items, skin) = live ?? StarterLook.Build(packs, palettes, gender, job, rows, skinRow);
+                if (live == null)
+                {
+                    // the offline character's worn items, which the equipment window shows too (HudScene.OfflineMe)
+                    for (int i = 0; i < items.Count; i++) items[i].Uid = 2001 + i;
+                    OfflineWorn = items; OfflineGender = gender; OfflineJob = job;
+                }
                 var equip = new EquipApplier(packs, builder) { Palettes = palettes };
                 equip.Apply(visual, md, gender, items, skin?.Primary, skin?.Secondary);
                 if (Array.IndexOf(args, "--battle") >= 0) EquipApplier.RigOf(visual)?.SetState(true, true);
