@@ -248,4 +248,24 @@ public class GameEventPacketTests
         Assert.That(massive.AccountIds, Is.EqualTo(new[] { 1L << 40 }));
         Assert.That(m.Shutdowns.Count, Is.EqualTo(1), "the entry after them is read in place");
     }
+
+    [Test]
+    public void ReactorEventKeepsItsContext()
+    {
+        // GameEventReactor::vfunc_4 (gameevent.cpp:5498): id, then ReactorContext::Read (gameeventcontext.cpp:1602-1613):
+        // i32 m_eventId, i32 m_28, i64 m_endTime, i32 n x u32 field id
+        var m = GameEventMessage.Read(Reader(w =>
+        {
+            w.WriteByte(0); w.WriteInt(2);
+            w.WriteUnicodeString("Reactor"); w.WriteInt(31); w.WriteInt(900051); w.WriteInt(3); w.WriteLong(1700000000);
+            w.WriteInt(2); w.WriteInt(2000062); w.WriteInt(unchecked((int)0x80000002u));
+            Shutdown(w, 6, (2000001, 10));
+        }));
+        Assert.That(m.Truncated, Is.False);
+        Assert.That(m.ReactorEvents.Count, Is.EqualTo(1));
+        var e = m.ReactorEvents[0];
+        Assert.That((e.Id, e.EventId, e.MaxCount, e.EndTime), Is.EqualTo((31, 900051, 3, 1700000000L)));
+        Assert.That(e.FieldIds, Is.EqualTo(new[] { 2000062u, 0x80000002u }));
+        Assert.That(m.Shutdowns.Count, Is.EqualTo(1), "the entry after it is read in place");
+    }
 }

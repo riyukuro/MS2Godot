@@ -28,6 +28,11 @@ public sealed record MassiveConstructionEvent(int Id, IReadOnlyList<uint> FieldI
 /// (m_d0) OnStart (:4952-4958) adds to the game rule's ignored construction lock ids.</summary>
 public sealed record IgnoreConstructionLockEvent(int Id, IReadOnlyList<long> AccountIds);
 
+/// <summary>One GameEventReactor (vfunc_4 @0x1403cff10, commonfiles/gameevent.cpp:5498): the event id, then its ReactorContext
+/// (Read @0x140402640, gameeventcontext.cpp:1602-1613): m_eventId (the reactor.xml gameEventId it serves), m_28 (the reward
+/// count limit), m_endTime, and the field ids it runs in (m_30).</summary>
+public sealed record ReactorEvent(int Id, int EventId, int MaxCount, long EndTime, IReadOnlyList<uint> FieldIds);
+
 /// <summary>
 /// Inbound GameEvent (RecvOp 0xB2, commonfiles/opcodes.h:185), GameEventManagerCli::Dispatch (@0x140ceab50,
 /// gameeventmanagercli.cpp:77): a u8 kind, then
@@ -58,6 +63,9 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
     /// <summary>The SaleBeautyShop events of a kind 0, 1 or 3 message, in packet order.</summary>
     public IReadOnlyList<BeautyShopSaleEvent> BeautySaleEvents { get; init; } = Array.Empty<BeautyShopSaleEvent>();
 
+    /// <summary>The Reactor events of a kind 0, 1 or 3 message, in packet order.</summary>
+    public IReadOnlyList<ReactorEvent> ReactorEvents { get; init; } = Array.Empty<ReactorEvent>();
+
     public static GameEventMessage Read(ByteReader r)
     {
         byte kind = r.ReadByte();
@@ -67,6 +75,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
         var saleEvents = new List<PremiumMarketSaleEvent>();
         var construction = new List<object>();
         var beautySales = new List<BeautyShopSaleEvent>();
+        var reactors = new List<ReactorEvent>();
         bool truncated = false;
         switch (kind)
         {
@@ -78,7 +87,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
                 for (int i = 0; i < n; i++)
                 {
                     string name = r.ReadUnicodeString();
-                    if (!ReadBody(name, r, shutdowns, hotTimes, saleEvents, construction, beautySales))
+                    if (!ReadBody(name, r, shutdowns, hotTimes, saleEvents, construction, beautySales, reactors))
                     {
                         truncated = true;     // Create failed (:144-147): the client returns here
                         break;
@@ -94,7 +103,8 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
             }
         }
         if (!truncated) r.ExpectEnd("GameEvent");
-        return new GameEventMessage(kind, shutdowns, removed, truncated) { HotTimes = hotTimes, SaleEvents = saleEvents, ConstructionEvents = construction, BeautySaleEvents = beautySales };
+        return new GameEventMessage(kind, shutdowns, removed, truncated) { HotTimes = hotTimes, SaleEvents = saleEvents, ConstructionEvents = construction, BeautySaleEvents = beautySales,
+            ReactorEvents = reactors };
     }
 
     /// <summary>
@@ -105,7 +115,8 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
     /// </summary>
     internal static bool ReadBody(string name, ByteReader r, List<ShutdownInteractObjectEvent> shutdowns,
                                   List<SpecialAbilityHotTimeEvent> hotTimes = null, List<PremiumMarketSaleEvent> saleEvents = null,
-                                  List<object> construction = null, List<BeautyShopSaleEvent> beautySales = null)
+                                  List<object> construction = null, List<BeautyShopSaleEvent> beautySales = null,
+                                  List<ReactorEvent> reactors = null)
     {
         switch (name)
         {
@@ -397,11 +408,16 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
             case "NpcShopGivePoint":    // :5380: id, I, B, W
                 r.ReadInt(); r.ReadInt(); r.ReadByte(); W(r);
                 return true;
-            case "Reactor":             // :5498, ReactorContext::Read: id, I, I, L, i32 n x I
+            case "Reactor":             // :5498, ReactorContext::Read: id, I, I, L, i32 n x I; all kept
             {
-                r.ReadInt(); r.ReadInt(); r.ReadInt(); r.ReadLong();
+                int id = r.ReadInt();
+                int eventId = r.ReadInt();
+                int max = r.ReadInt();
+                long end = r.ReadLong();
                 int n = r.ReadInt();
-                for (int i = 0; i < n; i++) r.ReadInt();
+                var fields = new List<uint>(n > 0 && n < 4096 ? n : 0);
+                for (int i = 0; i < n; i++) fields.Add((uint)r.ReadInt());
+                reactors?.Add(new ReactorEvent(id, eventId, max, end, fields));
                 return true;
             }
             case "CustomTriggerString":  // :5577: id, CRBMap i32 n x (W, W)
