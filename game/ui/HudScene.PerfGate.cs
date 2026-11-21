@@ -176,7 +176,12 @@ public partial class HudScene
         t -= GateDialogs.Length * GatePer;
         if (t == 0) { ToggleInventory(); ToggleMyInfo(); ToggleSkillBook(); }
         else if (t == 100 - GateQuiet) GateCollect();
-        else if (t == 100) GateIdleStart("idle_3_open");
+        else if (t == 100)
+        {
+            GateIdleStart("idle_3_open");
+            // the window's own attrib numbers: Install resets them (the idle window before it, and each dialog open, added theirs)
+            if (System.Environment.GetEnvironmentVariable("MS2_PERF_GATE_ATTRIB") == "1") WrapperAttrib.Install(GetTree().Root);
+        }
         else if (t == 100 + GateIdle) { GateIdleEnd(); CloseAllDialogs(); skillBook?.Close(); }
         // the live field: the per-frame HUD parts a connected field runs (damage numbers, npc HP bars, chat lines), standing
         // (idle_live) and then walking a fixed loop (move). Each window starts GateQuiet frames after a collection.
