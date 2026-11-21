@@ -65,6 +65,12 @@ public static class WornEquips
     public static bool OutfitShown(bool feature8e, long start, long end, long serverTime) =>
         !(feature8e && (start == 0 || (end > 0 && serverTime >= end)));
 
+    /// <summary>The server time the layer switch next flips from shown to hidden by itself: the period's end while it is
+    /// running (started, end above <paramref name="serverTime"/>), else <see cref="long.MaxValue"/> (the client re-checks on a
+    /// timer, FUN_1411ebde0 / FUN_1411df910; a coarse one is enough here).</summary>
+    public static long NextFlip(long start, long end, long serverTime) =>
+        start != 0 && end > serverTime ? end : long.MaxValue;
+
     /// <summary>What a slot's model was built from: a change in any of these rebuilds the slot (an item update that
     /// reads the body again goes through the forced path, the same object being edited in place).</summary>
     public readonly record struct SlotKey(int Id, long Uid, EquipColor Color);

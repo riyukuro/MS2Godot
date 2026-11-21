@@ -15,6 +15,17 @@ public class OutfitLayerTests {
     public void OutfitShownFollowsThePeriod(bool feature, long start, long end, long now, bool shown) =>
         Assert.That(WornEquips.OutfitShown(feature, start, end, now), Is.EqualTo(shown));
 
+    [Test] public void ARunningPeriodFlipsAtItsEnd() {
+        long start = 5, end = 130, now = 100;
+        Assert.That(WornEquips.NextFlip(start, end, now), Is.EqualTo(end));
+        Assert.That(WornEquips.OutfitShown(true, start, end, end - 1), Is.True);
+        Assert.That(WornEquips.OutfitShown(true, start, end, WornEquips.NextFlip(start, end, now)), Is.False);
+    }
+
+    [TestCase(0L, 130L, 100L)] [TestCase(5L, 0L, 100L)] [TestCase(5L, 90L, 100L)]
+    public void NoFlipWhenNeverStartedNoEndOrEnded(long start, long end, long now) =>
+        Assert.That(WornEquips.NextFlip(start, end, now), Is.EqualTo(long.MaxValue));
+
     [Test] public void LookLeavesOutLayerTwoWhenOff() {
         var gear = new[] { new EquipItem { Id = 1, Uid = 1 } };
         var outfit = new[] { new EquipItem { Id = 2, Uid = 2 } };

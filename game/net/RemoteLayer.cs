@@ -39,7 +39,7 @@ public sealed partial class RemoteLayer : Node3D
         public IReadOnlyList<Ms2.Net.Packets.EquipItem> Equips = Array.Empty<Ms2.Net.Packets.EquipItem>();
         public IReadOnlyList<Ms2.Net.Packets.EquipItem> Outfit2 = Array.Empty<Ms2.Net.Packets.EquipItem>();
         /// <summary>The equipment's layer period (SetLayerPeriod: FieldAddUser's, then ItemUse mode 5's).</summary>
-        public long CodiStart, CodiEnd;
+        public long CodiStart, CodiEnd; public bool CodiShown = true;
         /// <summary>FieldAddUser's premium club time and wedding state (PC m_n1190 / m_n1220) and the user block's PC bang
         /// grade (m_nFF8, scenestategame.cpp:11151), the PC::CanUseItem inputs of the balloon gem.</summary>
         public long PremiumTime; public short WeddingState; public byte PcBangGrade;
@@ -239,8 +239,32 @@ public sealed partial class RemoteLayer : Node3D
     public Func<bool> Feature8e = () => false;
     public Func<long> ServerNow = () => 0;
     bool OutfitShown(long start, long end) => Ms2.Net.Packets.WornEquips.OutfitShown(Feature8e(), start, end, ServerNow());
-    System.Collections.Generic.IEnumerable<Ms2.Net.Packets.EquipItem> LookOf(Remote r) =>
-        Ms2.Net.Packets.WornEquips.Look(r.Equips, r.Outfit2, OutfitShown(r.CodiStart, r.CodiEnd));
+    System.Collections.Generic.IEnumerable<Ms2.Net.Packets.EquipItem> LookOf(Remote r)
+    {
+        r.CodiShown = OutfitShown(r.CodiStart, r.CodiEnd);
+        return Ms2.Net.Packets.WornEquips.Look(r.Equips, r.Outfit2, r.CodiShown);
+    }
+
+    // The client re-checks the layer period on a timer (CEquipment::FUN_1411ebde0 -> FUN_1411df910) and rebuilds the model
+    // when the answer flips. One coarse timer here: armed at the earliest end among the players, tested once a second.
+    long codiNext = long.MaxValue;
+    float codiClock;
+    void ArmCodi()
+    {
+        long now = ServerNow(), next = long.MaxValue;
+        foreach (var r in users.Values) next = Math.Min(next, Ms2.Net.Packets.WornEquips.NextFlip(r.CodiStart, r.CodiEnd, now));
+        codiNext = next;
+    }
+    void CodiTick(float dt)
+    {
+        codiClock += dt;
+        if (codiClock < 1f) return;
+        codiClock = 0;
+        if (codiNext == long.MaxValue || ServerNow() < codiNext) return;
+        foreach (var r in users.Values)
+            if (OutfitShown(r.CodiStart, r.CodiEnd) != r.CodiShown) equip.Reapply(r.Visual, LookOf(r));
+        ArmCodi();
+    }
 
     /// <summary>ItemUse mode 5, OnActiveCodiTab (scenestategame.cpp:8663) for another player: SetLayerPeriod, then the
     /// model follows the layer switch. False when the player is not here.</summary>
@@ -249,6 +273,7 @@ public sealed partial class RemoteLayer : Node3D
         if (!users.TryGetValue(t.ActorId, out var r)) return false;
         r.CodiStart = t.Start; r.CodiEnd = t.End;
         equip.Reapply(r.Visual, LookOf(r));
+        ArmCodi();
         return true;
     }
 
@@ -380,7 +405,7 @@ public sealed partial class RemoteLayer : Node3D
                 case UserAddedEvent add:
                     if (add.User.User.CharacterId == selfCharacter) break;
                     if (users.Remove(add.User.ObjectId, out var old)) { tags.Remove(old.Root); bars.Remove(old.Root); old.Pc.Free(); }
-                    users[add.User.ObjectId] = Spawn(add.User); UsersSpawned++;
+                    users[add.User.ObjectId] = Spawn(add.User); UsersSpawned++; ArmCodi();
                     GD.Print($"live: other player '{add.User.User.Name}' object {add.User.ObjectId} shown at {add.User.Position}");
                     break;
                 case UserRemovedEvent rem:
@@ -482,6 +507,7 @@ public sealed partial class RemoteLayer : Node3D
         Drain();
         // PCBase::vfunc_53 for each PC, once per drawn frame with that frame's time (the local player's step)
         foreach (var a in users.Values) a.Pc.Tick(dt);
+        CodiTick(dt);
         npcs.Process(dt);
         combat.Process(dt);
     }
