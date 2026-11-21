@@ -150,7 +150,14 @@ static JsonObject Summarize(List<JsonObject> sessions)
             int rep = first ? 0 : repeats[d] = repeats.GetValueOrDefault(d) + 1;
             // the first repeat's kept objects are their own metric: they move by hundreds (skill: -4 to 506, a field
             // balloon that falls in its window), the later repeats' are tight, so a small per-open leak fails there
-            AddAll(prefix, o, rep == 1 ? new[] { "kept_objects" } : Array.Empty<string>());
+            // wrappers, finalized_godot and finalized_other of an open split the same garbage by when a collection ran (in the
+            // window: already gone from the end mark, so in neither; at its closing collection: finalized), so each moves by
+            // hundreds between runs (a worldmap first open: finalized_other 10 or 207). Their difference does not: the
+            // wrappers the open left registered after a full collection (the tracker's count after minus before the window)
+            var skip = new List<string> { "wrappers", "finalized_godot", "finalized_other" };
+            if (rep == 1) skip.Add("kept_objects");
+            AddAll(prefix, o, skip.ToArray());
+            Add(prefix + ".wrappers_kept", o["wrappers"].GetValue<double>() - o["finalized_godot"].GetValue<double>() - o["finalized_other"].GetValue<double>());
             if (rep == 1 && o["kept_objects"] is { } kept) Add($"open.{d}.repeat1.kept_objects", kept);
             if (first) firstMs += o["ms"].GetValue<double>(); else repeatMs += o["ms"].GetValue<double>();
         }
@@ -171,12 +178,12 @@ static double Median(IEnumerable<double> v) { var a = v.OrderBy(x => x).ToArray(
 
 // The slack a count gets over the worst value the baseline runs saw: the spread they showed plus a floor per kind, so
 // a limit is never closer to the max than its floor. tools/perfgate/README.md has the run-to-run noise the floors come from.
-static bool IsWrapperCount(string name) => name.EndsWith("wrappers_per_frame") || name.Contains("finalized_") && name.EndsWith("_per_frame") || name.EndsWith(".wrappers") || name.EndsWith(".finalized_godot") || name.EndsWith(".finalized_other");
+static bool IsWrapperCount(string name) => name.EndsWith("wrappers_per_frame") || name.Contains("finalized_") && name.EndsWith("_per_frame") || name.EndsWith(".wrappers_kept");
 
 static (double Rel, double Abs) CountTolerance(string name) =>
     name.EndsWith("bytes_per_frame") ? (0.05, 8192)   // the idle windows: ±10 KB a frame run to run
     : name.EndsWith("wrappers_per_frame") || name.Contains("finalized_") && name.EndsWith("_per_frame") ? (0.05, 0.1)   // wrappers a frame: one more a frame on top of the rest must fail (a leak per call is that size)
-    : name.EndsWith("wrappers") || name.EndsWith("finalized_godot") || name.EndsWith("finalized_other") ? (0.05, 16)   // an open's
+    : name.EndsWith(".wrappers_kept") ? (0.05, 16)   // an open's
     : name.EndsWith("bytes") ? (0.02, 16384)
     : name.EndsWith("bytes_per_effect_frame") ? (0.05, 8)
     // a repeat's kept objects (after the first repeat, its own metric): a leak of a few dozen per open fails
