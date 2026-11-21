@@ -274,6 +274,62 @@ public class HudTests
     }
 
     [Test]
+    public void RemovingASlotPutsTheBagJobItemOfThatSlotBack()
+    {
+        // SkillSlot::vfunc_17 (skillslot.cpp:463): SendKeyTableMode5, whose CKeyTable::FUN_14142f470 (keytable.cpp:1976)
+        // puts the category 10 job item of slot 8 (FUN_141432650: 20000028) back unless a shown slot holds it
+        var m = Model();
+        var job = ItemData.Load(20000028, System.Xml.Linq.XElement.Parse("<e><property type=\"2\" slotMax=\"1\"/></e>"));
+        var potion = ItemData.Load(20000001, System.Xml.Linq.XElement.Parse("<e><property type=\"2\" slotMax=\"100\"/></e>"));
+        bool skillSet = false;
+        var c = new MainPlayerInfoController
+        {
+            SlotWorld = () => new Ms2.Ui.Skills.SlotWorld
+            {
+                Tables = m.Tables.Skills, HasPc = true, SkillSetActive = skillSet,
+                ItemData = id => id == 20000028 ? job : id == 20000001 ? potion : null,
+                TabOf = id => id == 20000028 ? 10 : 2,
+                Inventory = new[] { new EquipItem { Id = 20000001, Uid = 55 }, new EquipItem { Id = 20000028, Uid = 77, InventorySlot = 3 } },
+            },
+        };
+        var sent = new List<Ms2.Net.Wire.IOutPacket>();
+        c.Send = sent.Add;
+        ServerKeyTable Table(params (int, QuickSlotEntry)[] slots)
+        {
+            var t = new ServerKeyTable();
+            t.Apply(new Maple2.PacketLib.Tools.ByteReader(ServerKeyTable.Write(0, false, Array.Empty<KeyBinding>(), 0,
+                new IReadOnlyList<(int, QuickSlotEntry)>[] { slots })));
+            m.Keys = new KeyTable(packs, "en"); m.ServerKeys = t; m.Keys.Apply(t);
+            return t;
+        }
+
+        var t = Table((8, new QuickSlotEntry(0, 20000001, 55)));
+        Load(c, m);
+        c.RemoveSlot(8);
+        Assert.That(sent, Is.EqualTo(new Ms2.Net.Wire.IOutPacket[] { new KeyTableRemoveQuickSlotRequest(0, 0, 55),
+            new KeyTableSetQuickSlotRequest(0, 0, 20000028, 77, 8) }));
+        Assert.That(t.Entry(0, 8), Is.EqualTo(new QuickSlotEntry(0, 20000028, 77)), "the page keeps the job item");
+
+        sent.Clear();                                                         // the job item itself: the shown slot still holds it
+        c.RemoveSlot(8);
+        Assert.That(sent, Is.EqualTo(new[] { new KeyTableRemoveQuickSlotRequest(0, 0, 77) }));
+        Assert.That(t.Entry(0, 8), Is.EqualTo(default(QuickSlotEntry)));
+
+        sent.Clear();                                                         // another slot than the job slot: none
+        t = Table((5, new QuickSlotEntry(0, 20000001, 55)));
+        c.RemoveSlot(5);
+        Assert.That(sent, Is.EqualTo(new[] { new KeyTableRemoveQuickSlotRequest(0, 0, 55) }));
+        Assert.That(t.Entry(0, 5), Is.EqualTo(default(QuickSlotEntry)));
+
+        sent.Clear();                                                         // a skill set: no send, so no put back
+        skillSet = true;
+        t = Table((8, new QuickSlotEntry(0, 20000001, 55)));
+        c.RemoveSlot(8);
+        Assert.That(sent, Is.Empty);
+        Assert.That(t.Entry(0, 8), Is.EqualTo(default(QuickSlotEntry)));
+    }
+
+    [Test]
     public void PartyWindowShowsTheFixtureParty()
     {
         // UIPartyDialog: RefreshAll's initMembers with each member's FillMemberObject, then the party packets' window calls

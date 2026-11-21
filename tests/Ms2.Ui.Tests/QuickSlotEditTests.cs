@@ -107,6 +107,24 @@ public class QuickSlotEditTests
     }
 
     [Test]
+    public void TheJobItemSlotsAndTheShownSlotMatchAreTheClients()
+    {
+        // CKeyTable::FUN_141432650 (keytable.cpp:2719) and HasSkillSlotMatch (:1755)
+        Assert.That(new[] { 20000028, 20000982, 20000022, 20000692, 20000001 }.Select(QuickSlotEdit.JobItemSlot),
+            Is.EqualTo(new[] { 8, 8, 9, 9, -1 }));
+        var bar = new QuickSlotEntry[25];
+        bar[24] = new QuickSlotEntry(100, 0, 0);
+        bar[3] = new QuickSlotEntry(0, 20000001, 55);
+        QuickSlotEntry Shown(int i) => bar[i];
+        Assert.That(QuickSlotEdit.HasSlotMatch(Shown, 100, 0, 0, 25), Is.True);
+        Assert.That(QuickSlotEdit.HasSlotMatch(Shown, 100, 0, 0, 24), Is.False, "slot 24 is the 25th walked");
+        Assert.That(QuickSlotEdit.HasSlotMatch(Shown, 0, 0, 55, 8), Is.True, "slot 3 is the 8th walked");
+        Assert.That(QuickSlotEdit.HasSlotMatch(Shown, 0, 0, 55, 7), Is.False);
+        Assert.That(QuickSlotEdit.HasSlotMatch(Shown, 0, 0, 0, 25), Is.False, "0 matches nothing");
+        Assert.That(QuickSlotEdit.HasSlotMatch(Shown, 0, 20000001, 0, 99), Is.True, "the count stops at 25");
+    }
+
+    [Test]
     public void RemoveSendsMode5UnlessTheSlotIsEmpty()
     {
         var sent = new List<IOutPacket>();

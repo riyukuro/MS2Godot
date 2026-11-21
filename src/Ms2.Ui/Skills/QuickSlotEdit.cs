@@ -56,15 +56,75 @@ public static class QuickSlotEdit
 
     /// <summary>
     /// SendKeyTableMode5 @0x14092fef0 (:481) with (skill, item, uid, page, slot index): an empty slot (all three 0) is 0;
-    /// else mode 5 (<see cref="KeyTableRemoveQuickSlotRequest"/>) unless a skill set is held. Returns true (1).
-    /// STILL-OPEN: after the send, CKeyTable::FUN_14142f470(page, slot) (client/ms2/keytable.cpp:1976) puts the bag's
-    /// category 10 item of that job slot back on the page; the job slot table (FUN_141432650) is not ported.
+    /// else mode 5 (<see cref="KeyTableRemoveQuickSlotRequest"/>) unless a skill set is held, and after that send
+    /// CKeyTable::FUN_14142f470(page, slot) (<paramref name="afterSend"/>, <see cref="PutBackJobItem"/>). Returns true (1).
     /// </summary>
-    public static bool Remove(SlotWorld w, Action<IOutPacket> send, int skillId, int itemId, long itemUid, int page, int slot)
+    public static bool Remove(SlotWorld w, Action<IOutPacket> send, int skillId, int itemId, long itemUid, int page, int slot,
+        Action afterSend = null)
     {
         if (skillId == 0 && itemUid == 0 && itemId == 0) return false;
-        if (!w.SkillSetActive) send(new KeyTableRemoveQuickSlotRequest((short)page, skillId, itemUid));
+        if (!w.SkillSetActive)
+        {
+            send(new KeyTableRemoveQuickSlotRequest((short)page, skillId, itemUid));
+            afterSend?.Invoke();
+        }
         return true;
+    }
+
+    /// <summary>The shown quick slot count HasSkillSlotMatch walks (0x19).</summary>
+    public const int ShownSlotCount = 25;
+    static readonly int[] MatchOrder = { 4, 5, 6, 7, 0, 1, 2, 3, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24 };
+
+    /// <summary>CKeyTable::FUN_141432650 @0x141432650 (client/ms2/keytable.cpp:2719): the fixed quick slot of a job item
+    /// (20000028 or 20000982: 8; 20000022 or 20000692: 9), else -1.</summary>
+    public static int JobItemSlot(int itemId) => itemId switch
+    {
+        0x1312d1c or 0x13130d6 => 8,
+        0x1312d16 or 0x1312fb4 => 9,
+        _ => -1,
+    };
+
+    /// <summary>CKeyTable::HasSkillSlotMatch @0x14142e7c0 (keytable.cpp:1755): one of the first <paramref name="count"/> shown
+    /// slots (in the order 4-7, 0-3, 8-24) holds the item id, the skill or the uid (each only when not 0).</summary>
+    public static bool HasSlotMatch(Func<int, QuickSlotEntry> shown, int skillId, int itemId, long itemUid, int count)
+    {
+        if (count > ShownSlotCount) count = ShownSlotCount;
+        for (int i = 0; i < count; i++)
+        {
+            var e = shown(MatchOrder[i]);
+            if (itemId != 0 && e.ItemId == itemId) return true;
+            if (skillId != 0 && e.SkillId == skillId) return true;
+            if (itemUid != 0 && e.ItemUid == itemUid) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// CKeyTable::FUN_14142f470 @0x14142f470 (keytable.cpp:1976) with (page, slot): for each bag item of category 10
+    /// (GetItemsInCategory, in slot order) whose job slot (<see cref="JobItemSlot"/>) is <paramref name="slot"/> and that no
+    /// shown slot holds (<see cref="HasSlotMatch"/> over 25), the page's slot takes it (<paramref name="put"/>: SetAt, and on the
+    /// current page the shown slot with SetFixed(0) and vfunc_10), then <see cref="Add"/> sends it. <paramref name="shown"/>
+    /// reads the shown slots as they are: the removed slot still holds its old entry (SkillSlot::vfunc_17 empties it with
+    /// vfunc_11 only after SendKeyTableMode5), so removing the job item itself does not put it back. True when one was put back.
+    /// STILL-OPEN: RebuildActionKeyMaps between the put and the send.
+    /// </summary>
+    public static bool PutBackJobItem(SlotWorld w, Func<int, bool> feature, Action<IOutPacket> send, Action<int> notice,
+        Func<int, QuickSlotEntry> shown, Action<int, QuickSlotEntry> put, int page, int slot)
+    {
+        bool any = false;
+        foreach (var item in w.Inventory.Where(i => w.TabOf(i.Id) == 10).OrderBy(i => i.InventorySlot))
+        {
+            if (w.ItemData(item.Id) is not { } d) continue;
+            int skillId = d.SkillId, itemId = item.Id;
+            long itemUid = item.Uid;
+            int jobSlot = JobItemSlot(itemId);
+            if (jobSlot == -1 || slot != jobSlot) continue;
+            if (HasSlotMatch(shown, skillId, itemId, itemUid, ShownSlotCount)) continue;
+            put(slot, new QuickSlotEntry(skillId, itemId, itemUid));
+            any = true;
+            Add(w, feature, send, notice, skillId, itemId, itemUid, page, slot);
+        }
+        return any;
     }
 
     /// <summary>FUN_140d73bc0(0x2e8, 0, 0, ""): the notice box of a ride item with a UGC mesh but no UGC id dropped on a slot.</summary>

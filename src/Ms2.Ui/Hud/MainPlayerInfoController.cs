@@ -447,14 +447,24 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
     /// <summary>
     /// SkillSlot::vfunc_14 @0x14175d260 (skillslot.cpp:454) then vfunc_17 @0x14175d2b0 (:463), the right click: a fixed or key
     /// bound slot does nothing; else <see cref="Skills.QuickSlotEdit.Remove"/> of its entry; refused, the slot is pushed again
-    /// (vfunc_12); else it empties (vfunc_11) and is pushed. STILL-OPEN: FUN_14175f200's tween (InvokeSelf) before it.
+    /// (vfunc_12); else it empties (vfunc_11) and is pushed. After the mode 5 send, CKeyTable::FUN_14142f470
+    /// (<see cref="Skills.QuickSlotEdit.PutBackJobItem"/>) may put the bag's job item of slot 8 or 9 back on the page; it reads
+    /// the shown slots before the slot empties. The client's page keeps that item while vfunc_11 still empties the shown slot
+    /// until the next refresh; here the slot shows the page, so it shows the item.
+    /// STILL-OPEN: FUN_14175f200's tween (InvokeSelf) before it.
     /// </summary>
     public void RemoveSlot(int i)
     {
         if (i < 0 || i >= SlotCount || IsFixedOrBound(i) || Model.ServerKeys is not { } t) return;
         int page = t.CurrentPage;
         var e = t.Entry(page, i);
-        if (Skills.QuickSlotEdit.Remove(World(), Send, e.SkillId, e.ItemId, e.ItemUid, page, i)) t.SetEntry(page, i, default);
+        var w = World();
+        bool putBack = false;
+        if (Skills.QuickSlotEdit.Remove(w, Send, e.SkillId, e.ItemId, e.ItemUid, page, i,
+                () => putBack = Skills.QuickSlotEdit.PutBackJobItem(w, Model.IsFeatureEnabled, Send, Notice,
+                    k => t.Entry(t.CurrentPage, k), (slot, entry) => t.SetEntry(page, slot, entry), page, i))
+            && !putBack)
+            t.SetEntry(page, i, default);
         Host.Push(SlotBag + "." + i);
     }
 
