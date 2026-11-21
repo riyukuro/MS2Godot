@@ -1006,6 +1006,10 @@ public partial class Field : Node3D
         {
             if (Ms2.Ui.FieldMoveCover.TakesInput && Input.IsKeyPressed(Key.Ctrl))        // CTargetCameraMode::vfunc_8: about one radian a second
             {
+                // CTargetCameraMode::vfunc_9 (targetcameramode.cpp) reads Ctrl and the arrows with CInputKeyHandler::IsKeyDown,
+                // which does not test the text-field mask (@0x14116d950: IsKeyDownGated only), so a focused text field
+                // does not stop it there either. STILL-OPEN: it passes bDebugOnly, so the client turns the camera so only
+                // in its debug mode (IsDebugMode); here it is always on.
                 float step = (float)Math.Min(delta, 1.0 / 15);
                 if (Input.IsKeyPressed(Key.Left)) camYaw += step;
                 if (Input.IsKeyPressed(Key.Right)) camYaw -= step;

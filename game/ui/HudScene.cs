@@ -2775,7 +2775,9 @@ public partial class HudScene : Node, IUiStageHost
 
     /// <summary>
     /// CKeyTable::IsActionKeyDown (keytable.cpp:1037): any key bound to the action is held. The bound keys are DirectInput codes
-    /// (<see cref="GodotKeyOfDik"/>). The input gate (IsKeyDownGated) is not modelled.
+    /// (<see cref="GodotKeyOfDik"/>). MS2InputService::IsKeyDownGated's combo-key and key-group test is not modelled. Like the
+    /// client's it does not test the text-field mask (a caller that must yield goes through Unk_PCMove::FUN_141683ef0, here
+    /// InputBlock.Active). No caller at present.
     /// </summary>
     bool ActionKeyDown(int action) =>
         hudModel.Keys.KeysOfAction(action).Any(k => GodotKeyOfDik(k) is { } g && Input.IsPhysicalKeyPressed(g));
