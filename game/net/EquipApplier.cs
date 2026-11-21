@@ -588,11 +588,11 @@ public sealed class EquipApplier
         /// PC::FUN_141659000 (@0x141659000, pc.cpp:2491-2511): recomputes m_nD80 = vfunc_65() &amp;&amp; GetState()-&gt;vfunc_15()
         /// (cleared when m_spWeaponActionD70-&gt;m_nRightHand == 0) and runs FUN_141657c80(bActive) on a change.
         /// </summary>
-        public bool SetState(bool inBattle, bool stateAllowsWeapons, bool force = false)
+        public bool SetState(bool inBattle, bool stateAllowsWeapons, bool force = false, bool stateForces = false)
         {
             InBattle = inBattle;
             StateAllowsWeapons = stateAllowsWeapons;
-            bool held = Ms2.Ui.Items.WeaponStance.HoldsWeapons(inBattle, stateAllowsWeapons, RightHand);
+            bool held = Ms2.Ui.Items.WeaponStance.HoldsWeapons(inBattle, stateAllowsWeapons, RightHand, false, stateForces);
             if (!force && held == WeaponsHeld) return false;
             WeaponsHeld = held;
             Apply(held);

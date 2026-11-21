@@ -270,6 +270,25 @@ public class WeaponStanceTests
     }
 
     [Test]
+    public void WaitingSelectHoldsOnlyAtSub55AndHoldForcesUnlessRiding()
+    {
+        // StateWaitingSelect::vfunc_15 (statewaitingselect.cpp:225-229): 1 only for m_n10 == 0x55
+        Assert.That(WeaponStance.StateHoldsWeapons(0xe, 0x55), Is.True);
+        Assert.That(WeaponStance.StateHoldsWeapons(0xe, 0x54), Is.False);
+        Assert.That(WeaponStance.StateHoldsWeapons(0xe, 0), Is.False);
+        // StateHold vfunc_15 and vfunc_16 (stateholddata.cpp:383-396): both 1 unless riding
+        Assert.That(WeaponStance.StateHoldsWeapons(0x20, 0), Is.True);
+        Assert.That(WeaponStance.StateHoldsWeapons(0x20, 0, riding: true), Is.False);
+        Assert.That(WeaponStance.StateForces(0x20), Is.True);
+        Assert.That(WeaponStance.StateForces(0x20, riding: true), Is.False);
+        foreach (int id in new[] { 0, 1, 2, 4, 5, 6, 0xe, 0x1c }) Assert.That(WeaponStance.StateForces(id), Is.False, "state " + id);
+        // forced hands outside battle (PC::FUN_141659000, pc.cpp:2491-2511), still needing a right-hand weapon
+        Assert.That(WeaponStance.HoldsWeapons(false, true, 1, false, WeaponStance.StateForces(0x20)), Is.True);
+        Assert.That(WeaponStance.HoldsWeapons(false, true, 0, false, WeaponStance.StateForces(0x20)), Is.False);
+        Assert.That(WeaponStance.HoldsWeapons(false, true, 1, false, WeaponStance.StateForces(1)), Is.False);
+    }
+
+    [Test]
     public void StateGateIsOneTableForEveryCharacter()
     {
         // State::vfunc_15 by (state id, sub state): idle (1) except sub 6 and 7; walk (2) only running and not sub 0x19;

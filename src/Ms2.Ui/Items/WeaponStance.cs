@@ -117,8 +117,8 @@ public sealed class WeaponStance
 
     /// <summary>The wire ids of the states State::vfunc_15 answers 1 for among those a record carries (gostate.h): idle.</summary>
     public const int StateIdle = 1, StateWalk = 2, StateLand = 4, StateFall = 5, StateJump = 6,
-        StateHit = 0xd, StateSpawn = 0x11, StateRevival = 0x18, StateSwimDash = 0x1c, StateClimb = 0x1d, StateGlide = 0x1e,
-        StatePvPWinLose = 0x28;
+        StateHit = 0xd, StateWaitingSelect = 0xe, StateSpawn = 0x11, StateRevival = 0x18, StateSwimDash = 0x1c, StateClimb = 0x1d, StateGlide = 0x1e,
+        StatePvPWinLose = 0x28, StateHold = 0x20;
 
     /// <summary>
     /// State::vfunc_15 (@0x1417b8150, client/ms2/state.cpp:684, default 0) for the movement states a user sync record
@@ -134,21 +134,26 @@ public sealed class WeaponStance
     /// state.cpp:1611-1616, returns 1): StateSwimDash 0x1c, StateClimb 0x1d, StateGlide 0x1e: 1;</item>
     /// <item>swim, ladder, rope, dash: the default State::vfunc_15, 0.</item>
     /// </list>
-    /// STILL-OPEN: the other states answer 1 too and are not modelled here: StateDeadNPC (statedead.cpp:341),
-    /// StateSkillMagicControl (stateskillmagiccontrol.cpp:67); StateHold answers 1
-    /// unless riding (stateholddata.cpp:383), StateWaitingSelect only for sub state 0x55 (statewaitingselect.cpp:227), and
-    /// StateSkill answers its motion's m_nHoldWeapon (1 without a motion, 0 without a record; stateskill.cpp:1095-1104,
-    /// see <see cref="OnSkill"/>). Their wire ids and the skill motion's flag are not read from a record here, so a
-    /// character in one of them is treated as not allowing weapons.
+    /// StateWaitingSelect 0xe (@0x1417ff6c0, statewaitingselect.cpp:225-229): 1 only for sub state 0x55. StateHold 0x20
+    /// (@0x1417cccf0, stateholddata.cpp:383-388): 1 unless riding (<paramref name="riding"/>, m_bRiding).
+    /// STILL-OPEN: StateDeadNPC (statedead.cpp:341) and StateSkillMagicControl (stateskillmagiccontrol.cpp:67) answer 1 too and
+    /// are not modelled here; StateSkill answers its motion's m_nHoldWeapon (1 without a motion, 0 without a record;
+    /// stateskill.cpp:1095-1104, see <see cref="OnSkill"/>). A character in one of those is treated as not allowing weapons.
     /// </summary>
-    public static bool StateHoldsWeapons(int stateId, int subState, bool running = true) => stateId switch
+    public static bool StateHoldsWeapons(int stateId, int subState, bool running = true, bool riding = false) => stateId switch
     {
         StateIdle => subState != 7 && subState != 6,
         StateWalk => running && subState != 0x19,
         StateLand or StateFall or StateJump => true,
+        StateWaitingSelect => subState == 0x55,
+        StateHold => !riding,
         StateHit or StateSpawn or StateRevival or StateSwimDash or StateClimb or StateGlide or StatePvPWinLose => true,
         _ => false,
     };
+
+    /// <summary>State::vfunc_16 (@0x1417b8160, state.cpp:690, default 0) of the states a record carries: StateHold
+    /// (@0x1417ccd20, stateholddata.cpp:391-396) answers 1 unless riding, forcing the weapons into the hands even out of battle.</summary>
+    public static bool StateForces(int stateId, bool riding = false) => stateId == StateHold && !riding;
 
     /// <summary>
     /// PC::FUN_141659000 (@0x141659000, client/ms2/pc.cpp:2491-2511): whether weapons sit in the hand nodes. Battle stance
