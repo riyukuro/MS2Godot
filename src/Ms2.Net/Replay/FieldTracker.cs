@@ -62,6 +62,7 @@ public sealed class FieldTracker {
 
     readonly object gate = new();
     readonly Dictionary<int, NpcState> npcs = new();
+    readonly Dictionary<int, int> petOwners = new();        // FieldAddPet: pet object id -> owner object id
     /// <summary>The npc table's view of an npc id (boss layout, property tag). Without it every npc reads as a plain one.</summary>
     public Func<int, NpcLayout> NpcLayoutOf { get; set; } = _ => default;
     public IReadOnlyList<NpcState> NpcSnapshot() { lock (gate) return npcs.Values.Select(n => new NpcState { ObjectId = n.ObjectId, NpcId = n.NpcId, Moves = n.Moves, Position = n.Position, YawDegrees = n.YawDegrees }).ToList(); }
@@ -83,6 +84,9 @@ public sealed class FieldTracker {
     /// <summary>FindNpcById's npc id for the object, 0 without an npc.</summary>
     public int NpcIdOf(int objectId) { lock (gate) return npcs.TryGetValue(objectId, out var n) ? n.NpcId : 0; }
 
+    /// <summary>CPet::GetOwnerId of a pet in the field (FindPetById), 0 for any other object.</summary>
+    public int PetOwnerOf(int objectId) { lock (gate) return petOwners.TryGetValue(objectId, out var o) ? o : 0; }
+
     public IReadOnlyList<Actor> Snapshot() { lock (gate) return actors.Values.Select(a => new Actor { ObjectId = a.ObjectId, Name = a.Name, Gender = a.Gender, IsSelf = a.IsSelf, Position = a.Position, YawDegrees = a.YawDegrees, Moves = a.Moves, Add = a.Add }).ToList(); }
 
     /// <summary>Stat packets the reader could not take (a body shorter than the count's branch reads).</summary>
@@ -98,7 +102,7 @@ public sealed class FieldTracker {
             case Ms2.Net.Inbound.RequestFieldEnter: {
                 var e = RequestFieldEnter.Read(p.Reader());
                 if (e.Error != 0) break;
-                lock (gate) { Field = e; actors.Clear(); npcs.Clear(); }
+                lock (gate) { Field = e; actors.Clear(); npcs.Clear(); petOwners.Clear(); }
                 Events.Enqueue(new FieldEnterEvent(Time, e));
                 break;
             }
@@ -127,6 +131,16 @@ public sealed class FieldTracker {
                 bool dead = op == Ms2.Net.Inbound.FieldDeadNpc;
                 if (!dead) lock (gate) npcs.Remove(id);
                 Events.Enqueue(new NpcRemovedEvent(Time, id, dead));
+                break;
+            }
+            case Ms2.Net.Inbound.FieldAddPet: {
+                var pet = FieldAddPet.Read(p.Reader());
+                lock (gate) petOwners[pet.ObjectId] = pet.OwnerId;
+                break;
+            }
+            case Ms2.Net.Inbound.FieldRemovePet: {
+                int id = PetObjectId.Read(p.Reader()).ObjectId;
+                lock (gate) petOwners.Remove(id);
                 break;
             }
             case Ms2.Net.Inbound.NpcControl: {

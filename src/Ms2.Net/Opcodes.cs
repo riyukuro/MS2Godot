@@ -95,6 +95,8 @@ public enum Inbound : ushort {
     FieldDeadNpc = 0x57,
     NpcControl = 0x58,
     InteractNpc = 0x59,
+    FieldAddPet = 0x5A,     // RecvOp::FieldAddPet (commonfiles/opcodes.h:98): CSceneStateGame::OnFieldAddPet
+    FieldRemovePet = 0x5B,  // RecvOp::FieldRemovePet (commonfiles/opcodes.h:99): CSceneStateGame::OnFieldRemovePet
     InteractObject = 0x63,  // RecvOp::InteractObject (commonfiles/opcodes.h:107): CSceneStateGame::OnInteractObject
     GameEvent = 0xB2,       // RecvOp::GameEvent (commonfiles/opcodes.h:185): GameEventManagerCli::Dispatch
     SetCraftMode = 0x68,    // RecvOp::SetCraftMode (commonfiles/opcodes.h:112): CSceneStateGame::OnSetCraftMode

@@ -65,7 +65,7 @@ public sealed class BattleRecordGroup {
 /// (PCBase::vfunc_113 @0x141674ec0, the end of PC's and CNpc's vfunc_33/34/35 on the object hit), the exp packet and the
 /// meso packet. CPartyManager adds and removes the party members' records (groups 1 and 2).
 /// The world lookups are delegates: <see cref="CharacterIdOf"/> is FUN_141bd1980 (a player object's character id, else 0),
-/// <see cref="PetOwnerOf"/> FindPetById(id)->GetOwnerId (0 without a pet; field pets are not tracked yet, STILL-OPEN),
+/// <see cref="PetOwnerOf"/> FindPetById(id)->GetOwnerId (0 without a pet; the field tracker keeps the FieldAddPet owners),
 /// <see cref="NpcClassOf"/> FindNpcById(id)->GetNpcClass (CNpcData m_nClass, 0 without an npc).
 /// </summary>
 public sealed class BattleRecordManager {

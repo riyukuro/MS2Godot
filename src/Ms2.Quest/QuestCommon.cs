@@ -19,7 +19,7 @@ namespace Ms2.Quest;
 /// <param name="IsTimeUp">isTimeUp (m_isTimeUp, :418).</param>
 /// <param name="IsUseBossIcon">isUseBossIcon (m_isUseBossIcon, :419).</param>
 public sealed record DungeonRoom(int Id, int GroupType, int MaxUserCount, int[] FieldIds, int DungeonLevel = 0,
-    int LimitPlayerLevel = 0, int IsTimeUp = 0, bool IsUseBossIcon = false);
+    int LimitPlayerLevel = 0, int IsTimeUp = 0, bool IsUseBossIcon = false, bool ChaosDamageMeter = false);
 
 /// <summary>DungeonRoomTable::LoadRooms (dungeonroom.cpp:1055-1072): the rows of table/dungeonroom.xml by room id.</summary>
 public sealed class DungeonRooms
@@ -52,7 +52,7 @@ public sealed class DungeonRooms
         {
             if (!available(e)) continue;
             int id = 0, group = 0, max = 0, level = 0, limitLevel = 0, timeUp = 0;
-            bool bossIcon = false;
+            bool bossIcon = false, chaosMeter = false;
             QuestTable.QueryUInt(e, "dungeonRoomID", ref id);
             QuestTable.QueryInt(e, "groupType", ref group);
             QuestTable.QueryUInt(e, "maxUserCount", ref max);
@@ -60,10 +60,11 @@ public sealed class DungeonRooms
             QuestTable.QueryUInt(e, "limitPlayerLevel", ref limitLevel);
             QuestTable.QueryInt(e, "isTimeUp", ref timeUp);
             QuestTable.QueryBool(e, "isUseBossIcon", ref bossIcon);
+            QuestTable.QueryBool(e, "chaosDamageMeter", ref chaosMeter);   // m_chaosDamageMeter (dungeonroom.cpp:429)
             var fields = new List<int>();
             foreach (var tok in ((string)e.Attribute("fieldIDs") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
                 if (int.TryParse(tok.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out int f)) fields.Add(f);
-            t.rooms[id] = new DungeonRoom(id, group, max, fields.ToArray(), level, limitLevel, timeUp, bossIcon);
+            t.rooms[id] = new DungeonRoom(id, group, max, fields.ToArray(), level, limitLevel, timeUp, bossIcon, chaosMeter);
         }
         return t;
     }

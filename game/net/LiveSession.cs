@@ -83,18 +83,25 @@ public partial class LiveSession : Node
     /// <summary>CPartyManager's party from the party packets (0x53); live only.</summary>
     public readonly PartyBook Party = new();
     /// <summary>TSingleton&lt;CBattleRecordManager&gt; (ms2.cpp:2031): the DPS meters' tallies, fed by the damage records, the exp and
-    /// meso packets, with the party's member records. STILL-OPEN: the chaos group's room test (the current dungeon room's
-    /// chaosDamageMeter) and pets (FindPetById) are not tracked, so the chaos group stays inactive and a pet's damage is lost.</summary>
+    /// meso packets, with the party's member records. A field pet's damage goes to its owner (the tracker's FieldAddPet owners);
+    /// the chaos group runs in a dungeon room whose row has chaosDamageMeter.</summary>
     public readonly BattleRecordManager BattleRecords = new();
     // the battle records' lookups, made once rather than per SkillDamage packet
     Func<int, bool> objectInField, isRegionSkill;
     bool ObjectInField(int id) => remote?.Tracker.HasObject(id) ?? (id == selfObject);
+    /// <summary>DAT_143ab2884: the dungeon room id of the last field entry (FUN_140930ba0 of RequestFieldEnter's fifth int).</summary>
+    int dungeonRoomId;
+    /// <summary>DungeonRoomTable::GetRoom over the HUD's room table; null before the HUD sets it or without the row.</summary>
+    public Func<int, Ms2.Quest.DungeonRoom> DungeonRoomOf;
 
     public LiveSession()
     {
         Party.BattleRecords = BattleRecords;
         BattleRecords.CharacterIdOf = id => remote?.Tracker.CharacterIdOf(id) ?? (id == selfObject ? CharacterId : 0);
         BattleRecords.NpcClassOf = id => remote?.NpcClassOf(id) ?? 0;
+        BattleRecords.PetOwnerOf = id => remote?.Tracker.PetOwnerOf(id) ?? 0;
+        // battlerecordmanager.cpp:188: the room id set, its row found, and the row's chaosDamageMeter
+        BattleRecords.ChaosRoomMeter = () => dungeonRoomId != 0 && DungeonRoomOf?.Invoke(dungeonRoomId) is { ChaosDamageMeter: true };
     }
     /// <summary>CGroupChatManager's chats from the group chat packets (0x8B); live only. The HUD sets its texts and its browser.</summary>
     public readonly Ms2.Ui.GroupChatBook GroupChats = new();
@@ -910,7 +917,7 @@ public partial class LiveSession : Node
     /// LoadMap returns at once when the field is still loading the same map (worldservice_1.cpp:3295, m_state 2 and the
     /// same map id): a repeat entry for the map in load changes the entry's values only; the load goes on.
     /// STILL-OPEN: DAT_143ab2890 = 0 (the free-roam test field flag),
-    /// FUN_140930ba0 (the dungeon room id and its group type), CUIService FUN_141adc400 (uiservice.cpp:1574: each
+    /// FUN_140930ba0's group type (DAT_143ab2888; the room id is kept for the battle records' chaos test), CUIService FUN_141adc400 (uiservice.cpp:1574: each
     /// registered dialog with m_158 set and m_15c clear is opened again, vfunc_61(0) then vfunc_65; this HUD is rebuilt with
     /// the field scene, so its dialogs come back with it, but no dialog registry with those flags exists), and, after either
     /// outcome, GFxSceneService FUN_1422ba0d0 and SetSubScene(0x6200086) when the instance type (DAT_143ab287c, the entry's
@@ -928,6 +935,7 @@ public partial class LiveSession : Node
             return;
         }
         entry = entry with { Field = f };
+        dungeonRoomId = f.DungeonId;                    // FUN_140930ba0: DAT_143ab2884
         if (chosen != null) chosen.User.MapA = f.MapId;
         if (taken == Ms2.Ui.FieldEnterResult.LoadingAlready)
         {

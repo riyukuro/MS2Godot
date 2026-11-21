@@ -49,6 +49,21 @@ public sealed class FieldAddNpc {
     }
 }
 
+/// <summary>
+/// Inbound FieldAddPet (RecvOp 0x5a), the prefix CSceneStateGame::OnFieldAddPet (scenestategame.cpp:9682) reads before the
+/// pet's stats: i32 object id, i32 npc id, i32 level, position, rotation, f32 scale, i32 owner (SetOwnerId: the owner's object
+/// id). The rest (the npc stats, maid uid, grade, name, ...) is left unread.
+/// </summary>
+public sealed record FieldAddPet(int ObjectId, int NpcId, int Level, System.Numerics.Vector3 Position, System.Numerics.Vector3 Rotation, float Scale, int OwnerId) {
+    public static FieldAddPet Read(ByteReader r) =>
+        new(r.ReadInt(), r.ReadInt(), r.ReadInt(), r.ReadVec3(), r.ReadVec3(), r.ReadFloat(), r.ReadInt());
+}
+
+/// <summary>Inbound FieldRemovePet (RecvOp 0x5b): CSceneStateGame::OnFieldRemovePet reads the i32 object id first.</summary>
+public sealed record PetObjectId(int ObjectId) {
+    public static PetObjectId Read(ByteReader r) => new(r.ReadInt());
+}
+
 /// <summary>Inbound 0x56 and 0x57 (remove, dead): i32 object id.</summary>
 public sealed record NpcObjectId(int ObjectId) {
     public static NpcObjectId Read(ByteReader r) { var p = new NpcObjectId(r.ReadInt()); r.ExpectEnd("npc id"); return p; }

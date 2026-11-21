@@ -16,6 +16,14 @@ public class QuestCommonTests
         QuestCommon.Buttons(d, r, live, FieldMeta.Parse("<ms2/>"), st ?? new NoQuestState(1), Rooms());
 
     [Test]
+    public void TheRoomRowKeepsChaosDamageMeter()
+    {
+        var t = DungeonRooms.Parse(System.Xml.Linq.XDocument.Parse(
+            @"<ms2><dungeonRoom dungeonRoomID=""7"" groupType=""2"" chaosDamageMeter=""1"" /><dungeonRoom dungeonRoomID=""8"" /></ms2>"), _ => true);
+        Assert.That((t.GetRoom(7).ChaosDamageMeter, t.GetRoom(8).ChaosDamageMeter), Is.EqualTo((true, false)), "default false (dungeonroom.cpp:429)");
+    }
+
+    [Test]
     public void GiveupNeedsActiveAndNoDisable()
     {
         var d = new QuestData();

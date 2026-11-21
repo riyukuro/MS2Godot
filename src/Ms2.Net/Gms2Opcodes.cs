@@ -98,6 +98,8 @@ static class Gms2Opcodes {
         [Inbound.FieldDeadNpc] = 0x58,
         [Inbound.NpcControl] = 0x59,
         [Inbound.InteractNpc] = 0x5A,
+        [Inbound.FieldAddPet] = 0x5B,
+        [Inbound.FieldRemovePet] = 0x5C,
         [Inbound.InteractObject] = 0x65,
         [Inbound.GameEvent] = 0xB4,
         [Inbound.ResponseCube] = 0x6B,

@@ -194,4 +194,36 @@ public class FieldTrackerTests {
         Assert.That(t.Events.OfType<NpcStanceEvent>().Last(), Is.EqualTo(new NpcStanceEvent(0, 5, false)));
         Assert.That(t.Events.Count(e => e is NpcStanceEvent), Is.EqualTo(2));
     }
+
+    static byte[] AddPet(int objectId, int ownerId) {
+        var w = new ByteWriter();
+        w.WriteInt(objectId); w.WriteInt(61000001); w.WriteInt(3);         // object id, npc id, level
+        for (int i = 0; i < 6; i++) w.WriteFloat(i);                       // position, rotation
+        w.WriteFloat(1); w.WriteInt(ownerId);                              // scale, owner
+        w.WriteByte(0); w.WriteLong(0);                                    // the start of the rest, left unread
+        return Bytes(w);
+    }
+
+    [Test]
+    public void APetsDamageGoesToItsOwnersRecordUntilThePetIsRemoved() {
+        var t = new FieldTracker();
+        AddUser(t, 77, 2000);
+        t.Inbound(Packet(Inbound.FieldAddPet, AddPet(500, 77)));
+        Assert.That((t.PetOwnerOf(500), t.PetOwnerOf(77)), Is.EqualTo((77, 0)), "FieldAddPet: SetOwnerId");
+        var m = new BattleRecordManager { Tick = () => 1000, CharacterIdOf = id => t.CharacterIdOf(id), PetOwnerOf = t.PetOwnerOf };
+        m.AddPartyMemberRecord(2000);
+        m.StartGroup(1);
+        m.RecordDamage(500, 9, new[] { new Hit(0, -40) });
+        Assert.That(m.GetRecord(1, 2000).Amount(BattleRecord.Dealt), Is.EqualTo(40), "the pet's hit on the owner's record");
+        var w = new ByteWriter(); w.WriteInt(500);
+        t.Inbound(Packet(Inbound.FieldRemovePet, Bytes(w)));
+        Assert.That(t.PetOwnerOf(500), Is.Zero, "FieldRemovePet");
+        m.RecordDamage(500, 9, new[] { new Hit(0, -40) });
+        Assert.That(m.GetRecord(1, 2000).Amount(BattleRecord.Dealt), Is.EqualTo(40), "a removed pet credits no one");
+    }
+
+    [Test]
+    public void ThePetOpcodesFollowTheRecvOpTable() {
+        Assert.That(((int) Inbound.FieldAddPet, (int) Inbound.FieldRemovePet), Is.EqualTo((0x5A, 0x5B)));
+    }
 }
