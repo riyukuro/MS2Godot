@@ -1735,7 +1735,9 @@ namespace Ms2.Avm2.Flash
         /// when given (the entity a press went to, QueueSetFocusTo's ch before IsFocusEnabled), else <paramref name="o"/>.</summary>
         public void SetFocus(AsInteractiveObject o, string how, AsInteractiveObject related = null)
         {
-            if (ReferenceEquals(o, Focus)) return;
+            // QueueSetFocusTo (sfr_gfx_01i.cpp:2688) compares the entity it was given, before IsFocusEnabled, with the
+            // focus: a press on something not focusable while nothing has the focus still sends the change event
+            if (ReferenceEquals(related ?? o, Focus)) return;
             var old = Focus as AsInteractiveObject;
             if (how != null)
             {
@@ -1751,6 +1753,7 @@ namespace Ms2.Avm2.Flash
                 });
                 if (!ok) return;
             }
+            if (ReferenceEquals(o, Focus)) return;
             Focus = o;
             if (o is AsTextField tf) { tf.SelBegin = 0; tf.SelEnd = tf.Text.Length; }
             if (old != null) RT.Guard("focusOut", () => { var e = (AsFocusEvent)RT.GetClass("flash.events.FocusEvent").Construct("focusOut", Rt.True); e.relatedObject = o; old.Dispatch(e); });

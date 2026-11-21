@@ -132,6 +132,27 @@ public class UiStageTests
     }
 
     [Test]
+    public void ALeftPressOnNothingFocusableWithNoFocusStillSendsMouseFocusChange()
+    {
+        // QueueSetFocusTo (sfr_gfx_01i.cpp:2688) compares the entity pressed, before IsFocusEnabled, with the focus, so a
+        // plain sprite pressed while nothing has the focus still gets the stage its mouseFocusChange; the focus stays NULL
+        var (p, slot, _) = Movie();
+        var box = Box(p, slot, 300);
+        var changes = new List<object>();
+        int focusIns = 0;
+        p.Stage.addEventListener("mouseFocusChange", new AsPlainFunction(p.RT, new NativeMethod("f", (self, a) => { changes.Add(((AsFocusEvent)a[0]).relatedObject); return Rt.Undef; })));
+        p.Stage.addEventListener("focusIn", new AsPlainFunction(p.RT, new NativeMethod("f", (self, a) => { focusIns++; return Rt.Undef; })), true);
+        void Press(double x, double y) { p.MouseMove(x, y); p.MouseButton(true); p.MouseButton(false); }
+
+        Assert.That(p.Focus, Is.Null);
+        Press(310, 10);
+        Press(310, 10);
+        Assert.That(changes, Is.EqualTo(new object[] { box, box }), "one per press, naming the sprite");
+        Assert.That((p.Focus, focusIns), Is.EqualTo(((object)null, 0)), "no focus moved, so no focusIn");
+        Assert.That(p.RT.Errors, Is.Empty);
+    }
+
+    [Test]
     public void ALeftPressOnAButtonModeSpriteFocusesItWithTabEnabledOff()
     {
         // AvmSprite::IsFocusEnabled by mouse (@0x1425142a0) is true for Flag_ButtonMode before it asks IsTabable, so a CLIK
