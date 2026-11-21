@@ -267,7 +267,7 @@ public class FieldObjectStatesTests
         var a = Liftable(l, "a", 0);
         Assert.That(a.CanLift, Is.True);
         a.Enabled = false;
-        Assert.That(a.CanLift, Is.False, "disabled (the field load leaves m_bC0 at 0)");
+        Assert.That(a.CanLift, Is.False, "disabled (the field load leaves the lift disabled)");
         a.Enabled = true; a.Kind = 0;
         Assert.That(a.CanLift, Is.False, "kind 0");
         a.Kind = 1; a.SetState(1);

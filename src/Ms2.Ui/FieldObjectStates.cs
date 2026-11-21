@@ -297,8 +297,10 @@ public sealed class LiftableObjects
     /// LiftCubeAction::vfunc_1 (@0x1409572c0, actionkeyobject.cpp:1279-1294), the action key's poll: the lift the last poll
     /// found loses its highlight when another (or none) is found now, the found lift gets it, and its name is kept. True
     /// when a lift is in reach. 0 B per poll.
-    /// STILL-OPEN: the check that refuses while a lift is held (MyPC::FUN_141523c00, m_sp1608): its setter
-    /// (MyPC::FUN_14152a310, mypc.cpp:3196) has no caller in the client source, so it is taken as never set.
+    /// STILL-OPEN: the poll returns false while the pending ride item cast is set (MyPC::FUN_141523c00, mypc.cpp:1635,
+    /// m_sp1608). MyPC::vfunc_121's ride off sets it (FUN_14152a310, mypc.cpp:3369) and the ride-on request clears it
+    /// (:4595, :4606). No ride-off or ride-on send is ported, so the cast is never pending here; it must be ported together
+    /// with MyPC::SendRequestRideMode1 (mypc.cpp:3566).
     /// </summary>
     public bool Poll(Vec3 at)
     {

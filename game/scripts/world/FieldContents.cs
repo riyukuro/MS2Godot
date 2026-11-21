@@ -582,7 +582,7 @@ public partial class FieldContents : Node3D
             // TalkAction (0x14) is polled at the press: its npc search allocates. The key runs only the
             // current action (ActivateCurrentAction), so a refused interact does not reach the talk. Active
             // StateInteraction casts tick every frame (0 B/frame).
-            // STILL-OPEN: a billboard keeps its highlight next to a talkable npc (the talk takes the key at the press).
+            // STILL-OPEN: a billboard or a lift keeps its highlight next to a talkable npc (the talk takes the key at the press).
             var playerMs2 = FieldPortals.ToMs2(player.GlobalPosition);
             if (actionKeys.Due((uint)Time.GetTicksMsec()))
             {
