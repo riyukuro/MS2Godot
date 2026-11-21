@@ -149,7 +149,7 @@ public sealed class UgcLook {
 /// music, pet) come from <see cref="ExtraOf"/> when the item data is loaded; without it a ugc block is recognised from its bytes.
 /// </summary>
 public static class ItemReader {
-    
+
     /// <summary>
     /// Optional override: tells which extra block an item carries, from the player's item table (the client decides by item data).
     /// When null, a UGC block is recognised from its bytes: it starts with an i64 id followed by that id as text, which no

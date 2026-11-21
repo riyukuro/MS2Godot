@@ -1,0 +1,19 @@
+# The basics every editor follows. Brace placement and spacing are left alone: the code mixes the two styles
+# (the packet code adapted from the Maple2 server puts braces on the same line, the game code on their own),
+# and dotnet format is not enforced, so nothing here rewrites existing code.
+root = true
+
+[*.cs]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{csproj,props,targets}]
+end_of_line = lf
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+trim_trailing_whitespace = true

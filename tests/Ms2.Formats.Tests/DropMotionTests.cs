@@ -164,7 +164,7 @@ public class DropMotionTests {
         float lo = float.MaxValue, hi = float.MinValue;
         for (int i = 0; i < 200; i++) { m.Advance(0.01f, null); lo = Math.Min(lo, m.Position.Z); hi = Math.Max(hi, m.Position.Z); }
         Assert.That(hi - lo, Is.GreaterThan(10f).And.LessThanOrEqualTo(30f + 0.01f), "bounceheight 30 x 0.5 each way");
-        Assert.That(m.Position.X, Is.EqualTo(rest.X)); 
+        Assert.That(m.Position.X, Is.EqualTo(rest.X));
     }
 
     [Test] public void APickupFliesToThePickerHoversAndSinks() {
