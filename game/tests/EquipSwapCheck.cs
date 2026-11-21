@@ -33,9 +33,11 @@ public partial class EquipSwapCheck : Node
     static List<int> IdsOf(PackSet packs, int prefix, int n)
     {
         string entry = $"itemmodel/{prefix}.xml";
-        var x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('﻿'));
+        var x = XDocument.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", entry)).TrimStart('\uFEFF'));
         return x.Descendants("ItemModel").Select(e => (int)e.Attribute("id")).Take(n).ToList();
     }
+
+    static readonly Rgba Skin1 = new(40, 90, 200, 255), Skin2 = new(20, 60, 150, 255);   // a skin colour pair that is no material default
 
     static EquipItem It(int id, long uid, EquipSlot slot) => new() { Id = id, Uid = uid, Slot = slot };
 
@@ -55,15 +57,16 @@ public partial class EquipSwapCheck : Node
         var hat = It(cap[0], 9, EquipSlot.CP);
 
         var v = mb.Build(md, "Male"); AddChild(v);
-        applier.Apply(v, md, 0, new[] { A(), hat });
+        applier.Apply(v, md, 0, new[] { A(), hat }, Skin1, Skin2);
         await Settle();
+        if (!SkinReached(v)) fails.Add("no skin-material mesh of the body has the skin colour after Apply");
         int hung0 = applier.HungNodes(v);
         if (hung0 == 0) fails.Add("the first look hung no nodes (item data missing?)");
 
         void SameAsFresh(string what, params EquipItem[] look)
         {
             var f = mb.Build(md, "Male"); AddChild(f);
-            fresh.Apply(f, md, 0, look);
+            fresh.Apply(f, md, 0, look, Skin1, Skin2);
             string want = Describe(f), got = Describe(v);
             if (want != got) fails.Add($"{what}: differs from a fresh Apply\n    fresh: {want}\n    got:   {got}");
             f.Free();
@@ -108,12 +111,29 @@ public partial class EquipSwapCheck : Node
     static int Count(Node n) { int c = 1; foreach (var ch in n.GetChildren()) c += Count(ch); return c; }
 
     /// <summary>The model nodes under the skeleton (without the unique-name suffix Godot adds) and their visibility, sorted.</summary>
+    /// <summary>The shader parameters a mesh's colouring sets: whether it is a skin material and its three colours.</summary>
+    static string Material(MeshInstance3D m)
+    {
+        if (m.GetActiveMaterial(0) is not ShaderMaterial sm) return "";
+        return $"[skin={sm.GetShaderParameter(ShaderParam.Skin).AsBool()} {sm.GetShaderParameter(ShaderParam.Color0)} {sm.GetShaderParameter(ShaderParam.Color1)} {sm.GetShaderParameter(ShaderParam.Color2)}]";
+    }
+
+    /// <summary>A body mesh drawn with the skin material shows Skin1 (the colour Apply was given).</summary>
+    static bool SkinReached(Node3D v)
+    {
+        var want = new Vector3(Skin1.R / 255f, Skin1.G / 255f, Skin1.B / 255f);
+        var skel = v.GetNode<Skeleton3D>("Model/" + ModelBuilder.SkeletonName);
+        return skel.FindChildren("*", "MeshInstance3D", true, false).Cast<MeshInstance3D>()
+            .Any(m => m.GetActiveMaterial(0) is ShaderMaterial sm && sm.GetShaderParameter(ShaderParam.Skin).AsBool()
+                      && sm.GetShaderParameter(ShaderParam.Color0).AsVector3().IsEqualApprox(want));
+    }
+
     static string Describe(Node3D v)
     {
         var skel = v.GetNode<Skeleton3D>("Model/" + ModelBuilder.SkeletonName);
         var l = skel.FindChildren("*", "MeshInstance3D", true, false).Cast<MeshInstance3D>()
             .Where(m => !m.IsQueuedForDeletion())
-            .Select(m => $"{System.Text.RegularExpressions.Regex.Replace(m.Name.ToString(), "@.*", "")}:{(m.Visible ? 1 : 0)}").OrderBy(s => s, StringComparer.Ordinal);
+            .Select(m => $"{System.Text.RegularExpressions.Regex.Replace(m.Name.ToString(), "@.*", "")}:{(m.Visible ? 1 : 0)}{Material(m)}").OrderBy(s => s, StringComparer.Ordinal);
         return string.Join(",", l);
     }
 }

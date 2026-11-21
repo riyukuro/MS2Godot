@@ -34,7 +34,8 @@ public static class WornEquips
     /// <summary>
     /// CSceneStateGame::OnItemPutOff (scenestategame.cpp:3144): the worn item of that uid (PC::FUN_141655b80) is taken off
     /// when it has a model preset (PC::vfunc_128, pc.cpp:1415; CEquipment::FUN_1411e3960 finds it by uid). The slot it
-    /// leaves is returned (null when nothing changed).
+    /// leaves is returned (null when nothing changed). FUN_1411e3960 (equipment.cpp:1022-1034) takes off by
+    /// GetItemAt(slot, 3) instead of by uid when FUN_14052a170() == 3; that layer-3 case is not modelled here.
     /// </summary>
     public static EquipSlot? PutOff(ref IReadOnlyList<EquipItem> equips, ref IReadOnlyList<EquipItem> outfit2, long uid, Func<int, int?> wornLayer)
     {
@@ -49,7 +50,10 @@ public static class WornEquips
     public static bool IsWorn(IReadOnlyList<EquipItem> equips, IReadOnlyList<EquipItem> outfit2, long uid) =>
         (equips ?? Array.Empty<EquipItem>()).Concat(outfit2 ?? Array.Empty<EquipItem>()).Any(e => e.Uid == uid);
 
-    /// <summary>The look's items in order: gear, then outfits, so the last one of a slot is the one shown.</summary>
+    /// <summary>The look's items in order: gear, then outfits, so the last one of a slot is the one shown.
+    /// STILL-OPEN: the client shows layer 2 only while the layer switch is on (FUN_1411ef780, equipment.cpp:1655 returns 0
+    /// for layer 2 when m_spLayerInfo exists and is not active, GetTopLayerItem then falls back to layers 1 and 0); the
+    /// switch is not read from FieldAddUser here, so a player's outfit2 always shows.</summary>
     public static IEnumerable<EquipItem> Look(IReadOnlyList<EquipItem> equips, IReadOnlyList<EquipItem> outfit2) =>
         (equips ?? Array.Empty<EquipItem>()).Concat(outfit2 ?? Array.Empty<EquipItem>());
 
