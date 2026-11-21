@@ -88,6 +88,7 @@ public partial class HudScene : Node, IUiStageHost
         PerfLog.ApplyFpsCap();
         toggleDynamicAction = ToggleDynamicAction;
         ChatLog.ToggleDynamicAction = toggleDynamicAction;   // the messenger's eventEmotion
+        chatEmoticonFixture = args.Contains("--chatemoticon-fixture");
         Ms2.Ui.InputBlock.TextFieldFocused = () => UiFocus.IsTyping;   // FUN_14116d7a0's mask 2 (Godot text controls only)
         questFixture = args.Contains("--questlog-fixture");
         damageShot = args.Contains("--damageshot");
@@ -228,6 +229,7 @@ public partial class HudScene : Node, IUiStageHost
         ChatLog.WindowCreated -= OnMessengerCreated;
         ChatLog.WindowClosed -= OnMessengerClosed;
         if (ReferenceEquals(ChatLog.ToggleDynamicAction, toggleDynamicAction)) ChatLog.ToggleDynamicAction = null;
+        UnhookChatEmoticon();
         if (groupBrowser != null)
         {
             if (ReferenceEquals(ChatLog.GroupLink, groupLink)) ChatLog.GroupLink = null;
@@ -1309,6 +1311,7 @@ public partial class HudScene : Node, IUiStageHost
         if (messengers.Count == 0)
         {
             ChatLog.Model = hudModel;
+            HookChatEmoticon();
             var docs = hudModel.Tables.DefaultMessengers;
             for (int i = 0; i < docs.Count; i++)
             {
@@ -2387,6 +2390,7 @@ public partial class HudScene : Node, IUiStageHost
         else if (id == GameMenuController.CharacterAbilityUiId) ToggleCharacterAbility();
         else if (id == 0x4f1e) ToggleMastery();
         else if (id == 0x4e7a) ToggleDynamicAction();   // UIDynamicActionDialog
+        else if (id == 0x4f80) ToggleChatEmoticon();    // UIChatEmoticonDialog
     }
 
     // ---- character window: uimyinfodialog run by its own ActionScript, UIMyInfoDialog's C++ side as MyInfoController --
@@ -3325,6 +3329,7 @@ public partial class HudScene : Node, IUiStageHost
         ChatLog.Process();                                    // UIMessengerBrowser::vfunc_15
         foreach (var (_, c) in messengers) c.Process();      // UIMessenger::vfunc_15
         groupBrowser?.Process();                              // UIGroupMessengerBrowser::vfunc_15
+        if (ChatEmoticonOpen) chatEmoticon.Process();          // UIChatEmoticonDialog::vfunc_15
         if (itemBreak is { IsClosed: false }) itemBreak.Tick();               // UIItemBreakDialog::vfunc_15
         if (inventory != null && !inventory.IsClosed) inventory.Process();     // UIInventoryDialog::vfunc_15
         if (myInfo != null && !myInfo.IsClosed) myInfo.Process((long)Time.GetTicksMsec());     // UIMyInfoDialog::vfunc_15
