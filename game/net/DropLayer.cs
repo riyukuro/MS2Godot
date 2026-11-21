@@ -23,6 +23,7 @@ public sealed partial class DropLayer : Node3D
         public FieldAddItem Packet;
         public uint LastRequest;     // CDropItem m_nTick (FUN_141191030)
         public int PickerId;         // CDropItem m_n188
+        public uint FadeUntil;       // CDropItem m_nFadeTime
     }
 
     readonly PackSet packs;
@@ -38,6 +39,8 @@ public sealed partial class DropLayer : Node3D
     readonly Func<System.Numerics.Vector3, float?> ground;
     readonly List<Drop> gone = new();
     PhysicsRayQueryParameters3D ray;
+    readonly PickupPlanner planner = new();
+    readonly List<Drop> planned = new();
     readonly List<int> mesoIds = new();
     uint globalUntil;                 // s_kPickTimer: the 10 ms it starts with, 150 ms after each pickup
     bool keyWasDown;
@@ -52,6 +55,8 @@ public sealed partial class DropLayer : Node3D
     public Func<int, int> TabOf = _ => 7;
     public Func<int, bool> HasEmptyCell = _ => true;
     public Func<FieldAddItem, bool> CanStack = _ => false;
+    /// <summary>The player cannot pick up (dead, or riding a mount that disables it): MyPC::FUN_141530db0's first tests.</summary>
+    public Func<bool> PickupBlocked = () => false;
     public Func<uint> Clock = () => (uint)Time.GetTicksMsec();
     public int Count => drops.Count;
     /// <summary>FieldAddItems the client would not make a drop of (not the owner, no item data, no style, no model).</summary>
@@ -83,6 +88,7 @@ public sealed partial class DropLayer : Node3D
     /// <summary>CSceneStateGame::OnFieldAddItem: InitDrop's tests, then the object at the packet position raised by 70.</summary>
     public void Add(FieldAddItem d)
     {
+        globalUntil = Clock() + DropPickup.AfterCreateMs;   // the CDropItem ctor: s_kPickTimer.Start(10), whether or not the drop is made
         Remove(d.ObjectId);
         if (!d.IsPickupAllowed(ownCharacterId) || !known(d.ItemId)) { Skipped++; return; }
         bool pet = !d.IsMeso && isPet(d.ItemId);
@@ -100,7 +106,7 @@ public sealed partial class DropLayer : Node3D
         var motion = new DropMotion(constants, look.Style, d.ObjectId, pet);
         motion.Launch(DropMotion.Created70(d.Position), DropLaunch.Default, d.FixedThrow, d.IsMeso, ground);
         root.Position = G(motion.Position);
-        drops[d.ObjectId] = new Drop { Root = root, Motion = motion, Packet = d };
+        drops[d.ObjectId] = new Drop { Root = root, Motion = motion, Packet = d, FadeUntil = DropPickup.FadeUntil(Clock(), d.DropKind, pet, d.PetTrap, constants.PetTrapVisibleDelayMs) };
     }
 
     /// <summary>OnFieldRemoveItem (scenestategame.cpp:2402): a drop being picked up is kept, any other leaves.</summary>
@@ -151,7 +157,7 @@ public sealed partial class DropLayer : Node3D
         return models[asset] = md;
     }
 
-    /// <summary>CDropItem::SetIconTexture (dropitem.cpp:1011): the item's icon on the model's "Item_Icon:0" mesh.</summary>
+    /// <summary>CDropItem::SetIconTexture (dropitem.cpp:386): the item's icon on the model's "Item_Icon:0" mesh.</summary>
     void ApplyIcon(Node3D visual, string path)
     {
         var mesh = Find(visual);
@@ -214,27 +220,31 @@ public sealed partial class DropLayer : Node3D
     /// </summary>
     void TryPickup(bool pressed)
     {
-        if (PlayerPosition() is not { } me) return;
+        if (PlayerPosition() is not { } me || PickupBlocked()) return;
         uint now = Clock();
-        mesoIds.Clear();
-        Drop nearest = null;
-        float best = float.MaxValue;
+        planner.Clear(); planned.Clear();
         foreach (var d in drops.Values)
         {
-            float dist = (me - d.Motion.Position).Length();
-            bool owner = d.Packet.IsPickupAllowed(ownCharacterId);
-            if (d.Packet.IsMeso && mesoIds.Count < RequestMesoPickup.MaxCount
-                && DropPickup.Eligible(d.Motion.State, now, globalUntil, d.LastRequest, 0, dist, constants.MoneyMaxLength, owner))
-                mesoIds.Add(d.Packet.ObjectId);
-            if (dist < best && DropPickup.Eligible(d.Motion.State, now, globalUntil, d.LastRequest, 0, dist, constants.MaxLength, owner))
-            { best = dist; nearest = d; }
+            planner.Candidates.Add(new PickupCandidate
+            {
+                ObjectId = d.Packet.ObjectId, State = d.Motion.State, LastRequest = d.LastRequest, FadeUntil = d.FadeUntil,
+                Distance = (me - d.Motion.Position).Length(), Meso = d.Packet.IsMeso, Owner = d.Packet.IsPickupAllowed(ownCharacterId),
+            });
+            planned.Add(d);
         }
-        if (mesoIds.Count > 0)
+        planner.Plan(now, globalUntil, constants.MaxLength, constants.MoneyMaxLength, RequestMesoPickup.MaxCount);
+        if (planner.Mesos.Count > 0)
         {
-            foreach (int id in mesoIds) drops[id].LastRequest = now;
+            mesoIds.Clear();
+            foreach (int i in planner.Mesos) { planned[i].LastRequest = now; mesoIds.Add(planned[i].Packet.ObjectId); }
             Send(new RequestMesoPickup(mesoIds.ToArray()));
         }
-        if (nearest != null && DropPickup.BagAllows(HasEmptyCell(0), CanStack(nearest.Packet), pressed)) Request(nearest, now);
+        if (planner.Nearest >= 0)
+        {
+            var nearest = planned[planner.Nearest];
+            if (DropPickup.BagAllows(HasEmptyCell(0), CanStack(nearest.Packet), pressed)) Request(nearest, now);
+        }
+        else if (planner.Hop >= 0) planned[planner.Hop].Motion.PickFailed();   // FUN_1411911a0 (the 0x45 notice is not ported)
     }
 
     /// <summary>CDropItem::FUN_141190900 (dropitem.cpp:950): the request, the drop hopping back when the bag cannot take it.</summary>

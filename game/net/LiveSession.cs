@@ -1,5 +1,6 @@
 using Godot;
 using Ms2.Formats.Model;
+using Ms2.Formats.World;
 using Ms2.Net;
 using Ms2.Net.Packets;
 using Ms2.Ui;
@@ -698,6 +699,7 @@ public partial class LiveSession : Node
             id => kinds.ExtraOf(id) is { } x && x.HasFlag(ItemExtra.Pet), kinds.IconPath);
         dropLayer.Send = Send;
         dropLayer.GetKeyDown = () => PickupKeyHeld;
+        dropLayer.PickupBlocked = () => !DropPickup.PickupAllowed(Me.Dead, player != null && IsInstanceValid(player) && player.Mount is { } ride && ride.Data.DisablePickUp);
         dropLayer.PlayerPosition = () => ClientPositionOf(player);
         dropLayer.ActorPosition = id => id == selfObject ? ClientPositionOf(player) : remote?.PositionOf(id);
         dropLayer.TabOf = id => Inventory?.TabOfItem(id) ?? 7;

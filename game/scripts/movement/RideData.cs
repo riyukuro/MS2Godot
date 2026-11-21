@@ -14,6 +14,8 @@ public sealed class RideData
     public string Kfm, Kfm2, Nif, RideBone, IdleXMotion, RunXMotion;
     public float Scale = 1, WalkSpeed = 1, RunSpeed, RunXSpeed, SwimSpeed;
     public bool EnableSwim;
+    /// <summary>basic disablePickUp (CRideeData m_basic.m_nDisablePickUp): a rider cannot pick up drops (mypc.cpp:4716-4721).</summary>
+    public bool DisablePickUp;
     public float[] RideTranslation = new float[3], RideRotation = new float[3];
     public string AniPC = "Ride_Idle_A", AniPCIdle, AniPCRun, AniPCJump;
     /// <summary>RideeData::Collision (@0x140783800): the box size, 100 each when absent (ctor @0x1407836e0), and whether the
@@ -41,6 +43,7 @@ public sealed class RideData
             RunXSpeed = F(b, "runXSpeed", 0),
             SwimSpeed = F(b, "swimSpeed", 0),
             EnableSwim = F(b, "enableSwim", 0) != 0,
+            DisablePickUp = F(b, "disablePickUp", 0) != 0,
             RideTranslation = V(b, "rideTranslation"),
             RideRotation = V(b, "rideRotation"),
         };

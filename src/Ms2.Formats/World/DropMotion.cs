@@ -15,6 +15,8 @@ public sealed class DropConstants
     public float RotateTime, RotateVel;
     /// <summary>DropItemPickFailTime / DropItemPickFailHeight: the hop of a refused pickup.</summary>
     public float FailTime, FailHeight;
+    /// <summary>PetTrapDropVisibleDelay: how long a pet trap's drop stays hidden and unpickable (ms).</summary>
+    public uint PetTrapVisibleDelayMs;
 
     public static DropConstants From(ClientConstants c) => new()
     {
@@ -22,6 +24,7 @@ public sealed class DropConstants
         PickUpVel = c.Float("DropItemPickUpVel", 0f), PickUpGravity = c.Float("DropItemPickUpGravity", 0f),
         RotateTime = c.Float("DropItemPickUpCompleteRotateTime", 0f), RotateVel = c.Float("DropItemPickUpCompleteRotateVel", 0f),
         FailTime = c.Float("DropItemPickFailTime", 0f), FailHeight = c.Float("DropItemPickFailHeight", 0f),
+        PetTrapVisibleDelayMs = (uint)Math.Max(0f, c.Float("PetTrapDropVisibleDelay", 0f)),
     };
 }
 
@@ -140,7 +143,7 @@ public sealed class DropMotion
         var kBase = new Vector3(self.X, self.Y, self.Z + 85f);
         var rand = new DropRandom((uint)objectId, (uint)(objectId + 0x7fff), (uint)(objectId * 0x7fff));
         Vector3 target;
-        if (fixedThrow) target = self + new Vector3(0f, 0f, 0f);   // m_n28c: the constant offset DAT_143a08d08, zero without a recorded value
+        if (fixedThrow) target = self + Vector3.One;   // m_n28c: NiPoint3::ALL_ONES (dropitem.cpp:143), one unit on each axis
         else if (meso && launch.SourceForward is { } fwd)
         {
             var f = new Vector3(fwd.X, fwd.Y, 0f);

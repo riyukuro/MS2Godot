@@ -20,8 +20,8 @@ public sealed class FieldAddItem {
     public byte OwnerType;
     /// <summary>The item's rarity (the grade key of the drop model, GetGradeNif).</summary>
     public int Rarity;
-    /// <summary>CDropItem m_nDropKind (the ctor's second argument).</summary>
-    public short DropKind;
+    /// <summary>CDropItem m_nDropKind (the ctor's second argument): an unsigned 16-bit value (scenestategame.cpp:9588).</summary>
+    public ushort DropKind;
     /// <summary>CDropItem m_n28c (FUN_14118fe60): the drop is thrown at a fixed offset instead of a random direction.</summary>
     public bool FixedThrow;
     /// <summary>CDropItem m_n298 (FUN_14118fe80): a pet trap's drop, hidden for a delay.</summary>
@@ -32,7 +32,8 @@ public sealed class FieldAddItem {
     /// <summary>FUN_14053f8c0: the three meso item ids, 90000001 to 90000003.</summary>
     public static bool IsMesoId(int itemId) => itemId is 0x55d4a81 or 0x55d4a82 or 0x55d4a83;
 
-    public bool IsMeso => IsMesoId(ItemId);
+    /// <summary>CDropItem::IsMeso (dropitem.cpp:744): the meso amount is above 0. The add packet's item body is read by id alone (<see cref="IsMesoId"/>).</summary>
+    public bool IsMeso => IsMesoId(ItemId) && Amount > 0;
 
     /// <summary>
     /// CDropItem::IsPickupAllowedForLocalPlayer (dropitem.cpp:887): owner type 2 is anyone's; 0 and 1 are the owner list's, which holds
@@ -43,7 +44,7 @@ public sealed class FieldAddItem {
     public static FieldAddItem Read(ByteReader r) {
         var d = new FieldAddItem {
             ObjectId = r.ReadInt(), ItemId = r.ReadInt(), Amount = r.ReadInt(), OwnerUid = r.ReadLong(), Position = r.ReadVec3(),
-            SourceObjectId = r.ReadInt(), OwnerType = r.ReadByte(), Rarity = r.ReadInt(), DropKind = r.ReadShort(),
+            SourceObjectId = r.ReadInt(), OwnerType = r.ReadByte(), Rarity = r.ReadInt(), DropKind = (ushort)r.ReadShort(),
             FixedThrow = r.ReadBool(), PetTrap = r.ReadBool(),
         };
         if (!IsMesoId(d.ItemId)) d.Item = ItemReader.ReadItem(r, d.ItemId, d.Rarity);
@@ -70,7 +71,7 @@ public sealed record RequestItemPickup(int ObjectId, int PickerId) : Ms2.Net.Wir
 }
 
 /// <summary>
-/// Outbound 0x1D, MyPC::FUN_1415310e0 (mypc.cpp:4796): u8 count, then that many i32 object ids of the meso drops; at most
+/// Outbound 0x1D, MyPC::FUN_1415310e0 (mypc.cpp:4797): u8 count, then that many i32 object ids of the meso drops; at most
 /// <see cref="MaxCount"/> (0x80) go in one packet, the client stops adding at that count.
 /// </summary>
 public sealed record RequestMesoPickup(IReadOnlyList<int> ObjectIds) : Ms2.Net.Wire.IOutPacket {

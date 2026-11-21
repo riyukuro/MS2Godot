@@ -99,6 +99,14 @@ public class DropMotionTests {
         return m;
     }
 
+    [Test] public void AFixedThrowLandsOneUnitOffOnEachAxis() {
+        Launched(out var thrown, fixedThrow: true);
+        Launched(out var sameSpot, fixedThrow: true);
+        Assert.That(thrown, Is.EqualTo(sameSpot));
+        Assert.That(thrown.X, Is.EqualTo(101f).Within(0.01f), "NiPoint3::ALL_ONES is the offset (dropitem.cpp:143)");
+        Assert.That(thrown.Y, Is.EqualTo(201f).Within(0.01f));
+    }
+
     [Test] public void ADropFliesOutThenRestsAtTheGroundPlusItsHeight() {
         var m = Launched(out var rest);
         Assert.That(m.State, Is.EqualTo(DropMotion.FlyOut));

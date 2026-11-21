@@ -24,7 +24,7 @@ public class DropPacketTests {
         var r = Reader(w);
         var d = FieldAddItem.Read(r);
         Assert.That((d.ObjectId, d.ItemId, d.Amount, d.OwnerUid, d.SourceObjectId, d.OwnerType, d.Rarity, d.DropKind, d.FixedThrow, d.PetTrap),
-            Is.EqualTo((41, 20000001, 4, 0x1122334455L, 777, (byte) 2, 3, (short) 5, true, false)));
+            Is.EqualTo((41, 20000001, 4, 0x1122334455L, 777, (byte) 2, 3, (ushort) 5, true, false)));
         Assert.That((d.Position.X, d.Position.Y, d.Position.Z), Is.EqualTo((10f, -20f, 30f)));
         Assert.That(d.IsMeso, Is.False);
         Assert.That(d.Item, Is.Not.Null);
@@ -75,5 +75,27 @@ public class DropPacketTests {
         Assert.That((int) Inbound.FieldAddItem, Is.EqualTo(0x2B));
         Assert.That((int) Inbound.FieldRemoveItem, Is.EqualTo(0x2C));
         Assert.That((int) Inbound.FieldPickupItem, Is.EqualTo(0x2D));
+    }
+
+    [Test] public void TheDropKindIsUnsigned() {
+        var w = new ByteWriter();
+        w.WriteInt(1); w.WriteInt(90000001); w.WriteInt(5); w.WriteLong(0);
+        w.WriteFloat(0); w.WriteFloat(0); w.WriteFloat(0);
+        w.WriteInt(0); w.WriteByte(2); w.WriteInt(0); w.WriteShort(unchecked((short) 0xc80)); w.WriteBool(false); w.WriteBool(false);
+        Assert.That(FieldAddItem.Read(Reader(w)).DropKind, Is.EqualTo((ushort) 0xc80));
+        w = new ByteWriter();
+        w.WriteInt(1); w.WriteInt(90000001); w.WriteInt(5); w.WriteLong(0);
+        w.WriteFloat(0); w.WriteFloat(0); w.WriteFloat(0);
+        w.WriteInt(0); w.WriteByte(2); w.WriteInt(0); w.WriteShort(unchecked((short) 0xfff0)); w.WriteBool(false); w.WriteBool(false);
+        Assert.That(FieldAddItem.Read(Reader(w)).DropKind, Is.EqualTo((ushort) 0xfff0), "not a negative value");
+    }
+
+    [Test] public void AMesoIdWithNoAmountIsNotAMesoDrop() {
+        var w = Head(9, 90000001, 0, 2);
+        w.WriteInt(-999);
+        var r = Reader(w);
+        var d = FieldAddItem.Read(r);
+        Assert.That(d.IsMeso, Is.False, "CDropItem::IsMeso is m_n64Meso > 0 (dropitem.cpp:744)");
+        Assert.That(r.ReadInt(), Is.EqualTo(-999), "the add packet still reads no item body for a meso id");
     }
 }
