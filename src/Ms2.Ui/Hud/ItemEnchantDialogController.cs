@@ -13,7 +13,7 @@ namespace Ms2.Ui.Hud;
 /// confirm box chain (refund, enchanted ingredient, binding, protector, payback).
 /// <para>STILL-OPEN: GetEnchantableItemUids' limit and lock tests (FUN_14058e230, FUN_140525c60), the sale-rate text (saleDesc),
 /// the event bonus of the rate text, GetEnchantRatio (the "before" stat is the unscaled base), the exp divisor and the fail stack limit,
-/// failDesc (the failure type is not in the Result event), the failure reward page (inventory 0x4e40), sounds, the protector
+/// the failure reward page (inventory 0x4e40), sounds, the protector
 /// rank warning, the EnchantScroll table behind ProtectorCount, the over-enchanted ingredient test (FUN_1419c9490), the debug buttons (onForceEnchant).</para>
 /// </summary>
 public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
@@ -433,9 +433,13 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
             foreach (var kv in Book.Options) parts.Add(StatValueText(kv.Key, Scaled(BaseStat(sel, kv.Key), kv.Value / 1000f)));
             m.Add(("enchantStat", string.Join(",", parts)));
         }
-        else m.Add(("protect", Book.Protector0 != 0 || Book.Protector1 != 0 ? 1 : 0));
+        else m.Add(("failDesc", FailStackText(item, Book.FailType)));
+        if (!success) m.Add(("protect", Book.Protector0 != 0 || Book.Protector1 != 0 ? 1 : 0));
         Host.Invoke(Ani, "setEnchantResult", Host.Obj(m.ToArray()));
     }
+
+    /// <summary>FormatFailStackText (@0x1419c7f50, uiitemenchantdialog.cpp:1771): empty without an item or a positive count.</summary>
+    public string FailStackText(Item item, int count) => item == null || count <= 0 ? "" : Fmt("s_itemenchant_fail_get_fail_stack_count", count);
 
     /// <summary>FormatLevelText: the level in the item's rank colour.</summary>
     string Level(int n, int rank) => $"<font color='#{Model.Tables.Items.TextColor(rank):x}'>+{n}</font>";

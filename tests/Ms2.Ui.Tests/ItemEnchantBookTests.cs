@@ -180,6 +180,16 @@ public class ItemEnchantBookTests {
         t.B.Restore(); Assert.That(stored, Has.Count.EqualTo(1));
     }
 
+    [Test] public void TheFailureTypeIsKeptForTheResultTextAndClearedBySuccess() {
+        var t = Selected(1, out var it); it.EnchantLevel = 4;
+        var body = new EquipItem { Id = 5, Uid = 5 }; body.Enchant.Level = 4;
+        int seen = -1; t.B.Result += (s, u, p, c) => seen = t.B.FailType;
+        t.B.Apply(new ItemEnchantMessage.Failure(5, body, 0, 0, 0, 7));
+        Assert.That(seen, Is.EqualTo(7));
+        t.B.Apply(new ItemEnchantMessage.Success(5, body, new Dictionary<int, int>()));
+        Assert.That(t.B.FailType, Is.EqualTo(0));
+    }
+
     [Test] public void TheTagMaterialIsAnIngredientToo() {
         var t = Selected(1, out var sel); sel.Rarity = 3;
         var m = t.Add(80); m.Rarity = 1; m.Count = 1;

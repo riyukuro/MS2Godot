@@ -74,6 +74,8 @@ public sealed class ItemEnchantBook
     public int ResultItemId { get; private set; }
     public short ResultRank { get; private set; }
     public int ResultCount { get; private set; }
+    /// <summary>The failure type of the last mode 11 packet (FUN_1419c2e30 reads it for failDesc); 0 after a success.</summary>
+    public int FailType { get; private set; }
     bool infoRead;
     long refundUid;
 
@@ -254,7 +256,7 @@ public sealed class ItemEnchantBook
                 {
                     int prev = Find(x.Uid)?.EnchantLevel ?? 0;
                     Keep(x.Item);
-                    Options = x.Options; State = 1;
+                    Options = x.Options; State = 1; FailType = 0;
                     Result?.Invoke(true, x.Uid, prev, x.Item.Enchant?.Level ?? prev);
                 }
                 break;
@@ -263,7 +265,7 @@ public sealed class ItemEnchantBook
                 {
                     int prev = Find(x.Uid)?.EnchantLevel ?? 0;
                     Keep(x.Item);
-                    State = 2;
+                    State = 2; FailType = x.FailType;
                     Result?.Invoke(false, x.Uid, prev, x.Item.Enchant?.Level ?? prev);
                     if (x.B > 0 || x.C != 0) Reward?.Invoke(x.A, x.B, x.C);
                 }
