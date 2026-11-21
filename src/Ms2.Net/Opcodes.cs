@@ -111,6 +111,7 @@ public enum Outbound : ushort {
     ResponseHeartbeat = 0x0A,
     ItemEquip = 0x16,
     RequestItemInventory = 0x17,
+    RequestItemStorage = 0x18,   // SendOp::RequestItemStorage (commonfiles/opcodes.h): CStore::Request*, FUN_140de2dc0, FUN_140de31f0, StoreSlot::vfunc_18
     RequestItemUse = 0x19,
     BadgeEquip = 0x47,
     RequestTimeSync = 0x0B,

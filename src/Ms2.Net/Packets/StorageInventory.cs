@@ -95,7 +95,7 @@ public abstract record StorageMessage {
 }
 
 /// <summary>What CStore::OnError (@0x140de4360) shows for a code: a string-table id and the way to show it.</summary>
-public readonly record struct StorageErrorText(StorageErrorKind Kind, int StringId, int? Number);
+public readonly record struct StorageErrorText(StorageErrorKind Kind, int StringId, long? Number);
 
 public enum StorageErrorKind {
     /// <summary>FUN_140d73bc0(id): the message-box table entry.</summary>
