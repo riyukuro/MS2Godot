@@ -37,4 +37,29 @@ public class ProfileTests {
         var all = io.ToArray().AsSpan((int) start).ToArray();
         Assert.That(srv.Read(all).op, Is.EqualTo((ushort) 0x77));
     }
+
+    [Test]
+    public void Gms2ProfileCarriesVersion12AndTheUpstreamNumbers() {
+        var p = ProtocolProfile.Gms2;
+        Assert.That(p.Version, Is.EqualTo(12u));
+        // upstream SendOp / RecvOp rows
+        Assert.That(p.Number(Inbound.RequestVersion), Is.EqualTo((ushort) 0x01));
+        Assert.That(p.Number(Inbound.LoginResult), Is.EqualTo((ushort) 0x0A));
+        Assert.That(p.Number(Inbound.UserMoveByPortal), Is.EqualTo((ushort) 0x60));
+        Assert.That(p.Number(Inbound.FieldAddUser), Is.EqualTo((ushort) 0x17));
+        Assert.That(p.Number(Outbound.ResponseLogin), Is.EqualTo((ushort) 0x03));
+        Assert.That(p.Number(Outbound.UserSync), Is.EqualTo((ushort) 0x12));
+        Assert.That(p.Number(Outbound.KeyTable), Is.EqualTo((ushort) 0x3B));
+        Assert.That(p.Number(Outbound.RequestMoveField), Is.EqualTo((ushort) 0x6D));
+        Assert.That(p.TryInbound(0x60, out var op) && op == Inbound.UserMoveByPortal);
+        // rows upstream lacks stay unmapped
+        Assert.Throws<KeyNotFoundException>(() => p.Number(Inbound.UserChatItemLink));
+        Assert.Throws<KeyNotFoundException>(() => p.Number(Outbound.PersonalInfoAgreement));
+        // every other member is mapped, and the numbers stay unique per direction
+        Assert.That(Enum.GetValues<Inbound>().Count(o => o != Inbound.UserChatItemLink && !TryNumber(p, o)), Is.Zero);
+        Assert.That(Enum.GetValues<Outbound>().Count(o => o != Outbound.PersonalInfoAgreement && !TryNumber(p, o)), Is.Zero);
+    }
+
+    static bool TryNumber(ProtocolProfile p, Inbound o) { try { p.Number(o); return true; } catch (KeyNotFoundException) { return false; } }
+    static bool TryNumber(ProtocolProfile p, Outbound o) { try { p.Number(o); return true; } catch (KeyNotFoundException) { return false; } }
 }
