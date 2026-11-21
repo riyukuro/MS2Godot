@@ -59,9 +59,10 @@ public class ProfileTests {
         Assert.That(p.TryInbound(0x60, out var op) && op == Inbound.UserMoveByPortal);
         // rows upstream lacks stay unmapped
         Assert.Throws<KeyNotFoundException>(() => p.Number(Inbound.UserChatItemLink));
+        Assert.Throws<KeyNotFoundException>(() => p.Number(Inbound.ChatStamp));
         Assert.Throws<KeyNotFoundException>(() => p.Number(Outbound.PersonalInfoAgreement));
         // every other member is mapped, and the numbers stay unique per direction
-        Assert.That(Enum.GetValues<Inbound>().Count(o => o != Inbound.UserChatItemLink && !TryNumber(p, o)), Is.Zero);
+        Assert.That(Enum.GetValues<Inbound>().Count(o => o != Inbound.UserChatItemLink && o != Inbound.ChatStamp && !TryNumber(p, o)), Is.Zero);
         Assert.That(Enum.GetValues<Outbound>().Count(o => o != Outbound.PersonalInfoAgreement && !TryNumber(p, o)), Is.Zero);
     }
 
