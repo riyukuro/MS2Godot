@@ -131,6 +131,8 @@ static class Gms2Opcodes {
         [Outbound.ResponseVersion] = 0x01,
         [Outbound.SkillMacro] = 0x7C,
         [Outbound.ChatSticker] = 0xB9,
+        [Outbound.Breakable] = 0x27,
+        [Outbound.Liftable] = 0x3D,
         [Outbound.ResponseLogin] = 0x03,
         [Outbound.ResponseKey] = 0x04,
         [Outbound.Reconnect] = 0x05,
