@@ -1808,6 +1808,25 @@ public class HudTests
     }
 
     [Test]
+    public void MeratLinesAreHiddenInTheEntireTabAndShownInTheItemTab()
+    {
+        // The shipped default tabs: "entire" has Require all=0 merat=0 (the client hides kind 6 there, FUN_1414818b0),
+        // the item tab has every Require switch on.
+        var m = Model();
+        var c = new MessengerController(m.Tables.DefaultMessengers[0], "messengerdialog0.xml", true);
+        var h = Load(c, m);
+        var feed = new CurrencyFeed(m) { Line = c.Browser.AddSystemLine };
+        feed.OnMeret(new Ms2.Net.Packets.MeretUpdate(1200, 0, 0, 0, 500));
+        Assert.That(c.Browser.Logs.Any(l => l.Kind == TalkKind.Merat), Is.True, "a merat line was logged");
+        c.Browser.Process();
+        var output = (AsObject)h.Child("m_textOutput");
+        string Html() => Rt.ToString(h.Get(output, "htmlText"));
+        Assert.That(Html(), Does.Not.Contain("500"), "entire tab");
+        c.OnCallback("eventChangeTab", new object[] { "$messenger_tab_name_item" });
+        Assert.That(Html(), Does.Contain("500"), "item tab");
+    }
+
+    [Test]
     public void MessengerShowsTheSystemAndItemLinesOfItsTab()
     {
         var m = Model();
