@@ -1174,7 +1174,8 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.UserState))
             {
                 var u = UserState.Read(p.Reader());     // OnUserState (scenestategame.cpp:5758): the state, then state 12 runs PC::vfunc_137
-                bool died = Me.ApplyUserState(u.ObjectId, u.State);
+                Me.ApplyUserState(u.ObjectId, u.State);
+                bool died = u.ObjectId == selfObject && u.State == 12 && Me.Dead;  // the dead branch runs each time, not only on the flip
                 // state 12 runs MyPC::vfunc_137 (mypc.cpp:1346-1348): IsDead -> vfunc_59(0xc), StateDead::vfunc_4 (statedead.cpp:152)
                 // every state goes through vfunc_59, so ride, rope, climb and ladder from the server let go of the held item too
                 if (u.ObjectId == selfObject) HeldItem.UserState(u.State, Me.Dead, Send);
@@ -1187,7 +1188,8 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.DeadUser))
             {
                 var d = DeadUser.Read(p.Reader());      // OnDeadUser (scenestategame.cpp:6532)
-                if (Me.Die(d.ObjectId, d.Flag))
+                Me.Die(d.ObjectId, d.Flag);
+                if (d.ObjectId == selfObject && Me.Dead)        // the dead branch runs each time, not only on the flip
                 {
                     GD.Print("live: own player dead");
                     guide?.QueueOccurrence(GuideOccurrence.Dead, 0);   // MyPC::vfunc_137 when dead (mypc.cpp:1349)

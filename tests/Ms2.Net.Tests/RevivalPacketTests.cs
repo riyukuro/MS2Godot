@@ -122,17 +122,32 @@ public class RevivalPacketTests {
     static void ZeroHealth(MyCharacter me) =>
         me.Apply(new PlayerStat(9, new Dictionary<byte, long[]> { [PlayerStat.Health] = new long[] { 500, 400, 0 } }));
 
+    /// <summary>MyPC::vfunc_137's dead branch (mypc.cpp:1346-1355) runs on every DeadUser that leaves the player dead, not only on
+    /// the flip; a FieldAddUser does not run it.</summary>
     [Test]
-    public void DiedIsRaisedOncePerDeathAndNotForADeadFieldAddUser() {
+    public void DiedIsRaisedForEveryDeadUserWhileDeadAndNotForADeadFieldAddUser() {
         var me = Living();
         int died = 0; me.Died += () => died++;
         ZeroHealth(me);
         Assert.That(me.Die(9), Is.True);
-        Assert.That(me.Die(9), Is.False, "already dead");
         Assert.That(died, Is.EqualTo(1));
+        Assert.That(me.Die(9), Is.False, "already dead: the flag does not change");
+        Assert.That(died, Is.EqualTo(2), "the dead branch runs again");
         var again = new FieldAddUser { ObjectId = 9, User = new UserBlock { Name = "a" } };   // no health: dead on arrival
         me.Apply(again);
-        Assert.That((me.Dead, died), Is.EqualTo((true, 1)), "a dead FieldAddUser raises nothing");
+        Assert.That((me.Dead, died), Is.EqualTo((true, 2)), "a dead FieldAddUser raises nothing");
+    }
+
+    /// <summary>A player who entered the field dead (FieldAddUser with no health) and then gets DeadUser runs the dead branch,
+    /// so the revive dialog opens and the player can revive.</summary>
+    [Test]
+    public void APlayerWhoEnteredDeadGetsDiedFromALaterDeadUser() {
+        var me = new MyCharacter();
+        int died = 0; me.Died += () => died++;
+        me.Apply(new FieldAddUser { ObjectId = 9, User = new UserBlock { Name = "a" } });   // no health: dead on arrival
+        Assert.That((me.Dead, died), Is.EqualTo((true, 0)));
+        me.Die(9);
+        Assert.That(died, Is.EqualTo(1));
     }
 
     [Test]

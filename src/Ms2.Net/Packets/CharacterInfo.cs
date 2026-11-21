@@ -301,8 +301,9 @@ public sealed class MyCharacter {
     /// vfunc_137 for the local player (OnUserState state 12; OnDeadUser, scenestategame.cpp:6532): PC::vfunc_137 (pc.cpp:4593)
     /// not in the death state and with no current health (FUN_141670a00(4) = m_unk_1c0[2][4]): FUN_14166ce50(1); then
     /// MyPC::vfunc_137 (mypc.cpp:1343) with the dead flag set enters the death state (vfunc_59(0xc)). Other objects: nothing.
-    /// Returns whether the dead flag changed. STILL-OPEN: the PvP time scale, the revive dialog 0x4e38 and the guide
-    /// occurrence.
+    /// MyPC::vfunc_137's dead branch (mypc.cpp:1346-1355) runs whenever the player is dead at the end, not only when the flag
+    /// flips, so <see cref="Died"/> is raised each time (a player who entered dead gets the dialog from a later DeadUser).
+    /// Returns whether the dead flag changed. STILL-OPEN: the PvP time scale.
     /// </summary>
     public bool Die(int objectId, bool flag = false) {
         if (objectId != ObjectId || User == null) return false;
@@ -313,13 +314,13 @@ public sealed class MyCharacter {
             Dead = true; changed = true;
             if (RevivalConfirmCount > 0) RevivalFlag = true;      // PC::vfunc_137 (pc.cpp:4598-4599): m_n10f0 = 1 when m_n10ec > 0
         }
-        if (Dead) EnterState(0xc);
-        if (changed) { Died?.Invoke(); Changed?.Invoke(); }
+        if (Dead) { EnterState(0xc); Died?.Invoke(); }
+        if (changed) Changed?.Invoke();
         return changed;
     }
 
-    /// <summary>Raised when the own player enters the death state (MyPC::vfunc_137's dead branch, mypc.cpp:1347): once per death,
-    /// from DeadUser and from user state 12, not from a FieldAddUser of a dead player.</summary>
+    /// <summary>Raised when MyPC::vfunc_137's dead branch runs (mypc.cpp:1346): each DeadUser or user state 12 that leaves the own
+    /// player dead, also when already dead; not from a FieldAddUser of a dead player, which does not run it.</summary>
     public Action Died;
 
     /// <summary>The revival end tick (PC m_n10e8, FUN_1416619d0) and the revival count (m_n10ec, FUN_141661a60) of RevivalConfirm,

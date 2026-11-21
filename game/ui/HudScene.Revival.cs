@@ -21,7 +21,7 @@ public partial class HudScene
     bool RevivalOpen => revival != null && !revival.IsClosed;
 
     /// <summary>Each frame: bind to the current session, close the dialog on the revive; the open dialog runs its 1 s refresh.
-    /// The dialog is opened once per death by <see cref="OnOwnDied"/>, never from here.</summary>
+    /// The dialog is opened by <see cref="OnOwnDied"/>, never from here.</summary>
     void RevivalTick()
     {
         var live = Ms2Godot.Net.LiveSession.Instance;
@@ -39,7 +39,7 @@ public partial class HudScene
         revivalLive = null;
     }
 
-    /// <summary>MyPC::vfunc_137's dead branch (mypc.cpp:1347-1355): once, at the death, ClosePopupMenu and open 0x4e38 only when
+    /// <summary>MyPC::vfunc_137's dead branch (mypc.cpp:1347-1355), each time it runs: ClosePopupMenu and open 0x4e38 only when
     /// the field has neither auto-revival type 1 nor 2 (CFieldData::HasAutoRevivalType1 / 2, fielddata.cpp:827, 830). A field
     /// without data opens it (the client always has the data; ours has none only on a failed table read).</summary>
     void OnOwnDied()
