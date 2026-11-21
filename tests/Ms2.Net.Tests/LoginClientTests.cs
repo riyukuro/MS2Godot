@@ -30,6 +30,20 @@ public class LoginClientTests {
         w.WriteByte(state); w.WriteInt(0); w.WriteUnicodeString(state == 0 ? "" : "bad"); w.WriteLong(42); w.WriteLong(0); w.WriteInt(0); w.WriteByte(0); w.WriteByte(0);
     });
 
+    [Test] public async Task AnEmptyIdIsSentAsTyped() {
+        var (s, l, srv, t, login) = await Start("");
+        using (t) {
+            Assert.That((await ReadFrame(s, srv)).op, Is.EqualTo((ushort) Outbound.ResponseVersion));
+            await s.WriteAsync(srv.Frame(Inbound.RequestLogin));
+            var (op, body) = await ReadFrame(s, srv);
+            Assert.That(op, Is.EqualTo((ushort) Outbound.ResponseLogin));
+            Assert.That(ResponseLogin.Read(new ByteReader(body)).User, Is.EqualTo(""));
+            await s.WriteAsync(LoginResultFrame(srv, 1));
+            Assert.That((await login).Success, Is.False);
+            l.Stop();
+        }
+    }
+
     [Test] public async Task LoginToEmptyCharacterList() {
         var (s, l, srv, t, login) = await Start();
         using (t) {

@@ -420,7 +420,8 @@ public partial class LiveSession : Node
                 user = up[0];
                 pass = up.Length > 1 ? up[1] : "";
             }
-            if (string.IsNullOrEmpty(user)) { GD.PushWarning("live: no account id"); return false; }
+            // no empty-id check: the client sends the request as typed (SendLoginRequest, uilogindialog.cpp:204-246) and the server answers
+            user ??= "";
             login?.Dispose();
             login = new TcpTransport();
             // the real client appends its region code to the id

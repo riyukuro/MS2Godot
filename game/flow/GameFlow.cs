@@ -272,6 +272,12 @@ public partial class GameFlow : Node
             Ui.MessageBoxLayer.Ensure(this);
             FrontEndBoxes.LoginRefused(r.State, r.Const1);
         }
+        else if (GetTree().CurrentScene is Ui.LoginScene shown && shown.Controller != null)
+        {
+            // the connect failed or timed out: the dialog's own failure state (UILoginDialog::ShowConnectFailure, uilogindialog.cpp:500-507)
+            GD.Print("login: connect failed, the dialog shows its failure state");
+            shown.Controller.ShowConnectFailure();
+        }
     }
 
     (int Level, uint Wait)? deleteConstants;
