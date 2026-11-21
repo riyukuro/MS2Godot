@@ -20,7 +20,11 @@ public class LiveInteractObjectsTests
         public int FieldId { get; set; } = 20000062;
         public ushort Channel { get; set; } = 2;
         public long NowMs { get; set; } = 1000;
-        public bool PlayerInSkillState { get; set; }
+        public int PlayerStateId { get; set; } = 1;
+        public readonly HashSet<(int, int)> Shutdown = new();
+        public bool IsInteractObjectShutdown(int fieldId, int rowId) => Shutdown.Contains((fieldId, rowId));
+        public int FlushCalls;
+        public void FlushPlayerState() => FlushCalls++;
         public bool PlayerRiding { get; set; }
         public float MasteryInteractionDistance { get; set; } = 300f;
 
@@ -61,11 +65,14 @@ public class LiveInteractObjectsTests
         public string CastCaption;
         public int CastDurationMs;
         public int CastCancels;
-        public void StartCasting(ICastingEventListener listener, string text, int durationMs)
+        public bool HasBar = true;
+        public bool StartCasting(ICastingEventListener listener, string text, int durationMs)
         {
+            if (!HasBar) return false;
             ActiveListener = listener;
             CastCaption = text;
             CastDurationMs = durationMs;
+            return true;
         }
         public void CancelCasting()
         {
@@ -206,7 +213,8 @@ public class LiveInteractObjectsTests
         Assert.That(live.IsCasting, Is.True);
         Assert.That(host.CastCaption, Is.EqualTo("action:300"));
         Assert.That(host.CastDurationMs, Is.EqualTo(1500));
-        Assert.That(host.Anims, Is.EqualTo(new[] { ("Object_React_B", true) }));
+        // StateInteraction plays the react animation once (loop false)
+        Assert.That(host.Anims, Is.EqualTo(new[] { ("Object_React_B", false) }));
         Assert.That(host.Sent.Single(), Is.InstanceOf<InteractObjectStartRequest>());
         Assert.That(((InteractObjectStartRequest)host.Sent[0]).Names, Is.EqualTo(new[] { "lever-1" }));
 
@@ -457,9 +465,24 @@ public class LiveInteractObjectsTests
         live.Apply(new InteractObjectMessage { Mode = InteractObjectMessage.ModeAllState, State = 1 });
 
         var pos = new Vec3(0, 0, 0);
-        // warm up
-        for (int i = 0; i < 20; i++) { live.Poll(pos); live.Tick(pos, false); }
+        var far = new Vec3(5000, 0, 0);
+        AssertNoAlloc(live, pos, "both in reach");
+        AssertNoAlloc(live, far, "nothing in reach");
 
+        // a cast running: a timed object in reach, used, then ticked without finishing
+        var host2 = new Host();
+        var live2 = new LiveInteractObjects(host2, MakeTable(new InteractObjectRow { Id = 3, Type = 1, InteractionDistance = 200, ReactTimeMs = 100000 }));
+        live2.Attach(new[] { XblockEntity("t1", 3, new Vec3(20, 0, 0)) });
+        live2.Apply(new InteractObjectMessage { Mode = InteractObjectMessage.ModeAllState, State = 1 });
+        live2.Poll(pos);
+        Assert.That(live2.Use(pos), Is.True);
+        AssertNoAlloc(live2, pos, "cast running");
+        Assert.That(live2.IsCasting, Is.True);
+    }
+
+    static void AssertNoAlloc(LiveInteractObjects live, Vec3 pos, string what)
+    {
+        for (int i = 0; i < 20; i++) { live.Poll(pos); live.Tick(pos, false); }
         long before = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 600; i++)
         {
@@ -467,6 +490,122 @@ public class LiveInteractObjectsTests
             live.Tick(pos, false);
         }
         long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        Assert.That(allocated, Is.EqualTo(0), $"Poll+Tick allocated {allocated} B over 600 frames");
+        Assert.That(allocated, Is.EqualTo(0), $"{what}: Poll+Tick allocated {allocated} B over 600 frames");
+    }
+
+    static (Host host, LiveInteractObjects live) Lever(int reactMs)
+    {
+        var host = new Host();
+        var live = new LiveInteractObjects(host, MakeTable(new InteractObjectRow { Id = 700, Type = 1, InteractionDistance = 200, ReactTimeMs = (uint)reactMs }));
+        live.Attach(new[] { XblockEntity("lv-1", 700, new Vec3(0, 0, 0)) });
+        live.Apply(new InteractObjectMessage { Mode = InteractObjectMessage.ModeState, Name = "lv-1", State = 1, Kind = 1 });
+        live.Poll(new Vec3(10, 0, 0));
+        return (host, live);
+    }
+
+    [Test]
+    public void TimedInteractRunsOnlyFromTheStatesTheClientAllows()
+    {
+        // InteractAction::vfunc_2 (actionkeyobject.cpp:1585): FUN_141527160(0x19) == 0 returns; the state change to 0x19
+        // is allowed only from states 1, 0xb, 0xf, 0x21 and 0x3a
+        foreach (int st in new[] { 1, 0xb, 0xf, 0x21, 0x3a })
+            Assert.That(LiveInteractObjects.StateAllowsInteraction(st), Is.True, $"state {st:x}");
+        foreach (int st in new[] { -1, 0, 2, 0x10, 0x19 })
+            Assert.That(LiveInteractObjects.StateAllowsInteraction(st), Is.False, $"state {st:x}");
+
+        foreach (int st in new[] { 2, -1 })
+        {
+            var (host, live) = Lever(1500);
+            host.PlayerStateId = st;
+            Assert.That(live.Use(new Vec3(10, 0, 0)), Is.False, $"state {st}");
+            Assert.That(host.Sent, Is.Empty);
+            Assert.That(live.IsCasting, Is.False);
+        }
+        var (h1, l1) = Lever(1500);
+        Assert.That(l1.Use(new Vec3(10, 0, 0)), Is.True);
+        Assert.That(h1.Sent.Single(), Is.InstanceOf<InteractObjectStartRequest>());
+    }
+
+    [Test]
+    public void InstantInteractStopsInState10AndFlushesTheStateFirst()
+    {
+        // reactTime 0 (:1594-1600): state 0x10 returns; else MyPC::FUN_14152e0c0 runs before the object's use
+        var (host, live) = Lever(0);
+        host.PlayerStateId = 0x10;
+        Assert.That(live.Use(new Vec3(10, 0, 0)), Is.False);
+        Assert.That(host.Sent, Is.Empty);
+        Assert.That(host.FlushCalls, Is.EqualTo(0));
+        host.PlayerStateId = 2;
+        Assert.That(live.Use(new Vec3(10, 0, 0)), Is.True);
+        Assert.That(host.FlushCalls, Is.EqualTo(1));
+        Assert.That(host.Sent.Single(), Is.InstanceOf<InteractObjectCompleteRequest>());
+    }
+
+    [Test]
+    public void ShutDownObjectShowsNoticeAndSendsNothing()
+    {
+        // CInteractObject::vfunc_4 (interactobject.cpp:399-403): a shut-down (field, row) shows common 0x2f7 and refuses
+        var (host, live) = Lever(0);
+        host.Shutdown.Add((host.FieldId, 700));
+        Assert.That(live.Use(new Vec3(10, 0, 0)), Is.False);
+        Assert.That(host.Sent, Is.Empty);
+        Assert.That(host.Notices, Is.EqualTo(new[] { ("common:2f7", 1) }));
+        host.Shutdown.Clear();
+        Assert.That(live.Use(new Vec3(10, 0, 0)), Is.True);
+    }
+
+    [Test]
+    public void WithoutCastingBarTheCastStillRunsItsTime()
+    {
+        var (host, live) = Lever(1500);
+        host.HasBar = false;
+        Assert.That(live.Use(new Vec3(10, 0, 0)), Is.True);
+        live.Tick(new Vec3(10, 0, 0), false);
+        Assert.That(live.IsCasting, Is.True);
+        Assert.That(host.Sent, Has.Count.EqualTo(1));
+        host.NowMs += 1499;
+        live.Tick(new Vec3(10, 0, 0), false);
+        Assert.That(host.Sent, Has.Count.EqualTo(1));
+        host.NowMs += 1;
+        live.Tick(new Vec3(10, 0, 0), false);
+        Assert.That(live.IsCasting, Is.False);
+        Assert.That(host.Sent[1], Is.InstanceOf<InteractObjectCompleteRequest>());
+    }
+}
+
+public class ActionKeyPollTests
+{
+    [Test]
+    public void FirstMatchingKeyWinsInClientKeyOrder()
+    {
+        // Unk_ActionKeyManager::Update (actionkeyobject.cpp:549-603): ascending key, interact 0x12 < portal 0x13 <
+        // talk 0x14 < billboard 0x18
+        Assert.That(ActionKeyPoll.First(true, true, true, true), Is.EqualTo(ActionKeyTarget.Interact));
+        Assert.That(ActionKeyPoll.First(false, true, true, true), Is.EqualTo(ActionKeyTarget.Portal));
+        Assert.That(ActionKeyPoll.First(false, false, true, true), Is.EqualTo(ActionKeyTarget.Talk));
+        Assert.That(ActionKeyPoll.First(false, false, false, true), Is.EqualTo(ActionKeyTarget.BillBoard));
+        Assert.That(ActionKeyPoll.First(false, false, false, false), Is.EqualTo(ActionKeyTarget.None));
+    }
+
+    [Test]
+    public void PollRunsAtMostEvery100MsAcrossTheTickWrap()
+    {
+        var p = new ActionKeyPoll();
+        Assert.That(p.Due(5), Is.True);
+        Assert.That(p.Due(104), Is.False);
+        Assert.That(p.Due(105), Is.True);
+        var w = new ActionKeyPoll();
+        Assert.That(w.Due(uint.MaxValue - 10), Is.True);
+        Assert.That(w.Due(50), Is.False);
+        Assert.That(w.Due(89), Is.True);
+    }
+
+    [Test]
+    public void PressRunsOnlyTheCurrentActionAndNothingWithAHeldItem()
+    {
+        // ActivateCurrentAction (:608-624): a held item returns; else only m_nCur runs, a refused one does not fall through
+        var p = new ActionKeyPoll { Current = ActionKeyTarget.Interact };
+        Assert.That(p.OnPress(false), Is.EqualTo(ActionKeyTarget.Interact));
+        Assert.That(p.OnPress(true), Is.EqualTo(ActionKeyTarget.None));
     }
 }

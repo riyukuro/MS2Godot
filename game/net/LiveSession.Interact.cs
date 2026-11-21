@@ -25,6 +25,8 @@ public partial class LiveSession
     public CastingBarController CastingBar;
     /// <summary>Cross-channel/field interact notices (FUN_1412751b0); the HUD sets it when chat is up.</summary>
     public Action<string> ChatNoticeSink;
+    /// <summary>GetItemRank: an item's own rank from the item table; the HUD sets it with its tables.</summary>
+    public Func<int, int> ItemRank;
     public int InteractSends { get; private set; }
 
     void NewFieldInteractObjects(int mapId)
@@ -178,12 +180,40 @@ public partial class LiveSession
         static GameStrings Strings => new(Packs, GameOptions.StringLanguage);
 
         public bool HasPlayer => s.selfObject >= 0 && s.player != null && IsInstanceValid(s.player);
-        public bool IsRestricted(int kind) => false;
+        /// <summary>CGuideManager::IsRestricted(ActionInteraction); no limit before the guide is made.</summary>
+        public bool IsRestricted(int kind) => s.guide != null && s.guide.IsRestricted((Ms2.Ui.Guide.GuideLimit)kind);
         public int FieldId => fieldId;
-        public ushort Channel => 0;
+        /// <summary>The ServerEnter channel.</summary>
+        public ushort Channel => (ushort)(s.entry?.Enter?.Channel ?? 0);
         public long NowMs => (long)Time.GetTicksMsec();
-        public bool PlayerInSkillState => s.Me.State == 0x10;
         public bool PlayerRiding => s.player != null && IsInstanceValid(s.player) && s.player.Mount != null;
+
+        /// <summary>The client state id as far as it is known here: riding 0x21; on the spawn or idle state, 1 while the body
+        /// stands and 2 while it walks; a state the server set otherwise. A move the client makes on its own that is not
+        /// idle or walk (jump, fall, swim, climb, ...) is -1, which the interact refuses.</summary>
+        public int PlayerStateId
+        {
+            get
+            {
+                if (!HasPlayer) return -1;
+                if (s.player.Mount != null) return 0x21;
+                int st = s.Me.State;
+                if (st is not (0 or 1 or 2)) return st;
+                return s.player.State switch
+                {
+                    Player.MoveState.Idle => 1,
+                    Player.MoveState.Walk => 2,
+                    _ => -1,
+                };
+            }
+        }
+
+        // STILL-OPEN: the game event list (GameEvent 0xB2, GameEventShutdownInteractObjectId) is not read, so no object is
+        // known to be shut down
+        public bool IsInteractObjectShutdown(int fieldId, int rowId) => false;
+
+        // STILL-OPEN: MyPC::FUN_14152e0c0's state controller update has no counterpart; the move sync runs on its own
+        public void FlushPlayerState() { }
 
         public float MasteryInteractionDistance
         {
@@ -199,14 +229,17 @@ public partial class LiveSession
 
         public QuestMaskTable.QuestStatus QuestStatusOf(int questId) => s.QuestStatusOf(questId);
 
+        /// <summary>CInteractObject::CheckItemRequirement (interactobject.cpp:515-533): rank 0 is the item's own rank
+        /// (GetItemRank); the first bag item of that code and rarity (Unk_Inventory::FUN_140a5e5c0, inventory.cpp:671) must
+        /// hold the consume count. STILL-OPEN: PC::CanUseItem on that item.</summary>
         public bool HasRequiredItem(uint code, int rank, uint consume)
         {
             if (code == 0) return true;
+            int rarity = rank != 0 ? rank : s.ItemRank?.Invoke((int)code) ?? 0;
             foreach (var it in s.Items.All)
             {
-                if ((uint)it.Id != code) continue;
-                if (rank != 0 && it.Rarity != rank) continue;
-                if ((uint)it.Amount >= consume) return true;
+                if ((uint)it.Id != code || it.Rarity != rarity) continue;
+                return (uint)it.Amount >= consume;
             }
             return false;
         }
@@ -220,7 +253,8 @@ public partial class LiveSession
         }
 
         public bool IsPartyLeader => s.Me.User != null && s.Party.IsLeader(s.Me.User.CharacterId);
-        // STILL-OPEN: mastery grade & recipe checks from MasteryData
+        // STILL-OPEN: the mastery grade and the recipe's mastery and limit checks (CInteractGatheringObject::vfunc_7) are
+        // not read; a mastery-gated object is refused, and a gathering recipe sends more once MasteryGrade is wired
         public int MasteryGrade(int masteryType) => 0;
         public bool CanGatherRecipe(int recipeId) => true;
 
@@ -270,12 +304,11 @@ public partial class LiveSession
             else s.SystemNoticeSink?.Invoke(text);
         }
 
-        public void StartCasting(ICastingEventListener listener, string text, int durationMs)
+        public bool StartCasting(ICastingEventListener listener, string text, int durationMs)
         {
-            if (s.CastingBar != null)
-                s.CastingBar.StartCastingText(listener, text ?? "", durationMs, showTime: false, activeBar: true, endText: "");
-            else
-                listener.OnCastingFinished();
+            if (s.CastingBar == null) return false;
+            s.CastingBar.StartCastingText(listener, text ?? "", durationMs, showTime: false, activeBar: true, endText: "");
+            return true;
         }
 
         public void CancelCasting() => s.CastingBar?.Cancel();

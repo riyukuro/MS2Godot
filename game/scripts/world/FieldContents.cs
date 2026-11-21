@@ -41,6 +41,8 @@ public partial class FieldContents : Node3D
     bool moving;
 
     NpcTalk talk;
+    /// <summary>The live action key's current action and its 100 ms poll clock.</summary>
+    Ms2.Ui.ActionKeyPoll actionKeys;
     NpcEmoticons emoticons;
     List<FieldNpcs.Placed> spawned = new();
     int shotNpc;
@@ -573,21 +575,34 @@ public partial class FieldContents : Node3D
         actionHeld = action;
         if (!offline)
         {
-            // live: each frame the action key's poll runs its actions by ascending key, the first that applies taking the
-            // key (Unk_ActionKeyManager::Update, a CRBMap): gathering (4), the interact npc (0x11) and interact (0x12) objects, the server-listed
-            // portal the player stands in (0x13, PortalAction vfunc_1), the billboard (0x18); the key on it runs that
-            // action. Active StateInteraction casts tick here too (0 B/frame). Elsewhere the talk.
+            // live: at most every 100 ms the action key's poll runs its actions by ascending key and the first that applies
+            // is the current one (Unk_ActionKeyManager::Update, a CRBMap): gathering (4), the interact npc (0x11) and
+            // interact (0x12) objects, the server-listed portal the player stands in (0x13, PortalAction vfunc_1), the
+            // billboard (0x18). TalkAction (0x14) is polled at the press: its npc search allocates. The key runs only the
+            // current action (ActivateCurrentAction), so a refused interact does not reach the talk. Active
+            // StateInteraction casts tick every frame (0 B/frame).
+            // STILL-OPEN: a billboard keeps its highlight next to a talkable npc (the talk takes the key at the press).
             var playerMs2 = FieldPortals.ToMs2(player.GlobalPosition);
-            bool onInteract = LiveInteractPoll(playerMs2);
-            bool onPortal = !onInteract && LivePortalPoll();
-            if (!onInteract && !onPortal) onInteract = LiveInteractBillBoardPoll(playerMs2);
-            LiveInteractTick(playerMs2, player.State != Player.MoveState.Idle);
-            if (pressed && !(talk != null && talk.Open))
+            if (actionKeys.Due((uint)Time.GetTicksMsec()))
             {
-                if (onPortal) { LivePortalUse(); return; }
-                if (onInteract && LiveInteractUse(playerMs2)) return;
+                bool onInteract = LiveInteractPoll(playerMs2);
+                bool onPortal = !onInteract && LivePortalPoll();
+                bool onBoard = !onInteract && !onPortal && LiveInteractBillBoardPoll(playerMs2);
+                actionKeys.Current = Ms2.Ui.ActionKeyPoll.First(onInteract, onPortal, false, onBoard);
             }
-            if (pressed) talk?.ActionKey();
+            LiveInteractTick(playerMs2, player.State != Player.MoveState.Idle);
+            if (!pressed) return;
+            if (talk != null && talk.Open) { talk.ActionKey(); return; }
+            // STILL-OPEN: the held item (MyPC::GetHeldItem) is not modelled, so no press is dropped for it
+            var target = actionKeys.OnPress(heldItem: false);
+            if (target == Ms2.Ui.ActionKeyTarget.BillBoard && talk?.FindTalkable() != null) target = Ms2.Ui.ActionKeyTarget.Talk;
+            switch (target)
+            {
+                case Ms2.Ui.ActionKeyTarget.Interact:
+                case Ms2.Ui.ActionKeyTarget.BillBoard: LiveInteractUse(playerMs2); break;
+                case Ms2.Ui.ActionKeyTarget.Portal: LivePortalUse(); break;
+                default: talk?.ActionKey(); break;
+            }
             return;
         }
         if (talk != null && talk.Open) { if (pressed) talk.ActionKey(); return; }

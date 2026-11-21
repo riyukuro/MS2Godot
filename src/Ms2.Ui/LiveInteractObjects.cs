@@ -20,10 +20,16 @@ public interface IInteractHost
     ushort Channel { get; }
     /// <summary>GetTickCountMs2 (ms clock for gathering respawn ticks).</summary>
     long NowMs { get; }
-    /// <summary>MyPC::GetCurStateId() == 0x10 (StateSkill, actionkeyobject.cpp:1593).</summary>
-    bool PlayerInSkillState { get; }
+    /// <summary>MyPC::GetCurStateId(): the local player's client state id (1 idle, 2 walk, 0x10 skill, 0x21 riding, ...),
+    /// or -1 for a state the host cannot name (refused by <see cref="LiveInteractObjects.StateAllowsInteraction"/>).</summary>
+    int PlayerStateId { get; }
     /// <summary>MyPC::GetRidee() != null (actionkeyobject.cpp:1576).</summary>
     bool PlayerRiding { get; }
+    /// <summary>CGameEventValueManager::ShutdownInteractObjectId()->IsShutdown(fieldId, rowId) (interactobject.cpp:401).</summary>
+    bool IsInteractObjectShutdown(int fieldId, int rowId);
+    /// <summary>MyPC::FUN_14152e0c0 (mypc.cpp:3641): the ride's or the state controller's update before an instant interact
+    /// (actionkeyobject.cpp:1597).</summary>
+    void FlushPlayerState();
     /// <summary>Client::Constants::MasteryObjectInteractionDistance (actionkeyobject.cpp:2483, stateinteractdata.cpp:283).</summary>
     float MasteryInteractionDistance { get; }
 
@@ -58,8 +64,9 @@ public interface IInteractHost
     /// <summary>FUN_1412751b0(text, 0x14): chat system message for cross-channel/field interact notices.</summary>
     void ChatNotice(string text);
 
-    /// <summary>UICastingBar::StartCasting (stateinteractdata.cpp:294-296).</summary>
-    void StartCasting(ICastingEventListener listener, string text, int durationMs);
+    /// <summary>UICastingBar::StartCasting (stateinteractdata.cpp:294-296). False when there is no casting bar; the cast
+    /// time then runs on <see cref="NowMs"/>.</summary>
+    bool StartCasting(ICastingEventListener listener, string text, int durationMs);
     /// <summary>UICastingBar::FUN_1418e1390 (stateinteractdata.cpp:346-348).</summary>
     void CancelCasting();
 
@@ -140,6 +147,8 @@ public sealed class LiveInteractObjects : ICastingEventListener
     // StateInteraction (0x19) active cast state
     LiveInteractObject castingTarget;
     bool castingFinished;
+    /// <summary>The cast's end on <see cref="IInteractHost.NowMs"/> when no casting bar runs it; 0 otherwise.</summary>
+    long castEndMs;
     bool castingActive;
 
     public LiveInteractObjects(IInteractHost host, InteractObjectTable table, int seed = 0)
@@ -256,7 +265,7 @@ public sealed class LiveInteractObjects : ICastingEventListener
                 ApplyNotice(m);
                 break;
             case InteractObjectMessage.ModeWeapon:
-                host.StillOpen($"InteractObject mode 15 (weapon {m.WeaponId} for pc {m.PcId}): PC::FUN_14165f1f0 not ported");
+                host.StillOpen($"InteractObject mode 15 (weapon {m.WeaponId} for pc {m.PcId}): the weapon hold is not ported");
                 break;
         }
     }
@@ -426,6 +435,13 @@ public sealed class LiveInteractObjects : ICastingEventListener
 
     // ---- Queries & Gates ---------------------------------------------------------------------------------------------
 
+    /// <summary>FUN_141275260(0x2f7, 1, 1): the notice for a shut-down interact object (interactobject.cpp:403).</summary>
+    public const int ShutdownNotice = 0x2f7;
+
+    /// <summary>MyPC::FUN_141527160(0x19) (mypc.cpp:1873): StateInteraction may be entered only from idle (1), the emotion
+    /// states (0xb, 0xf), riding (0x21) and 0x3a.</summary>
+    public static bool StateAllowsInteraction(int stateId) => stateId is 1 or 0xb or 0xf or 0x21 or 0x3a;
+
     /// <summary>CInteractObject::vfunc_7 (@0x141404070; WatchTower @0x1414034c0 = 0; Gathering @0x141402940).</summary>
     public bool IsReactable(LiveInteractObject obj)
     {
@@ -466,11 +482,17 @@ public sealed class LiveInteractObjects : ICastingEventListener
     bool HasRequiredMastery(LiveInteractObject obj) =>
         obj.Row != null && (obj.Row.MasteryType == 0 || host.MasteryGrade(obj.Row.MasteryType) >= obj.Row.MasteryValue);
 
-    /// <summary>CInteractObject::vfunc_4 (@0x1413fd740, interactobject.cpp:391-419): all gates to send interact packets.</summary>
+    /// <summary>CInteractObject::vfunc_4 (@0x1413fd740, interactobject.cpp:391-419): all gates to send interact packets. A
+    /// shut-down object (the game event list, :401) shows common string 0x2f7 and is refused.</summary>
     public bool CanUse(LiveInteractObject obj)
     {
         if (obj == null || obj.Row == null || obj.State != 1 || !host.HasPlayer) return false;
         if (obj.Kind == InteractObjectMessage.KindWatchTower) return false;
+        if (host.IsInteractObjectShutdown(host.FieldId, obj.Row.Id))
+        {
+            host.SystemNotice(host.Common(ShutdownNotice));
+            return false;
+        }
         return CheckHomePrivilege(obj) && CheckArenaTeam(obj) && HasAnyRequiredEffect(obj)
             && CheckQuestMask(obj) && CheckItemRequirement(obj) && HasRequiredMastery(obj);
     }
@@ -649,18 +671,20 @@ public sealed class LiveInteractObjects : ICastingEventListener
         if (row.ReactTimeMs == 0)
         {
             // instant interact: actionkeyobject.cpp:1591-1600 -> CInteractObject::vfunc_10 (mode 0x0c)
-            if (host.PlayerInSkillState) return false;
+            if (host.PlayerStateId == 0x10) return false;
             if (obj.Kind == InteractObjectMessage.KindGuildPoster)
             {
                 host.StillOpen($"InteractObject guild poster '{obj.Name}': upload dialog not ported");
                 return false;
             }
+            host.FlushPlayerState();
             if (!CanUse(obj)) return false;
             host.Send(new InteractObjectCompleteRequest(obj.Name));
             return true;
         }
 
-        // timed interact (:1574-1590). STILL-OPEN: MyPC::FUN_141527160(0x19), the state change check, is not ported.
+        // timed interact (:1574-1590): only from a state StateInteraction can follow
+        if (!StateAllowsInteraction(host.PlayerStateId)) return false;
         if (host.PlayerRiding)
         {
             host.StillOpen($"InteractObject '{obj.Name}': RideOffActionInteract dismount-before-interact not ported");
@@ -682,7 +706,7 @@ public sealed class LiveInteractObjects : ICastingEventListener
     {
         CancelCast();
         var row = obj.Row;
-        if (row.ReactAnis.Length > 0) host.PlayPlayerAnim(row.ReactAnis[rng.Next(row.ReactAnis.Length)], loop: true);
+        if (row.ReactAnis.Length > 0) host.PlayPlayerAnim(row.ReactAnis[rng.Next(row.ReactAnis.Length)], loop: false);
 
         var target = FindNearest(playerPos, skipDisabled: true);
         if (target == null)
@@ -722,7 +746,10 @@ public sealed class LiveInteractObjects : ICastingEventListener
         string caption = target.Kind == InteractObjectMessage.KindGathering
             ? host.CommonByKey("s_action_gathering")
             : host.InteractActionName(target.RowId);
-        host.StartCasting(this, caption, (int)target.Row.ReactTimeMs);
+        castEndMs = 0;
+        if (!host.StartCasting(this, caption, (int)target.Row.ReactTimeMs))
+            castEndMs = host.NowMs + target.Row.ReactTimeMs;      // no bar: the cast time still runs
+
     }
 
     /// <summary>ICastingEventListener::OnCastingFinished (@0x1417d2210, stateinteractdata.cpp:467).</summary>
@@ -734,6 +761,7 @@ public sealed class LiveInteractObjects : ICastingEventListener
         if (!castingActive) return;
         castingActive = false;
         castingFinished = false;
+        castEndMs = 0;
         castingTarget = null;
         activeGatherTargets.Clear();
         host.StopPlayerInteractAnim();
@@ -760,6 +788,7 @@ public sealed class LiveInteractObjects : ICastingEventListener
         var obj = castingTarget;
         if (obj == null || obj.Row == null) { CancelCast(); return; }
 
+        if (!castingFinished && castEndMs != 0 && now >= castEndMs) castingFinished = true;
         if (castingFinished)
         {
             // StateInteraction::FUN_1417d2230 (@0x1417d2230, stateinteractdata.cpp:470-485)
@@ -774,6 +803,7 @@ public sealed class LiveInteractObjects : ICastingEventListener
     {
         castingActive = false;
         castingFinished = false;
+        castEndMs = 0;
         castingTarget = null;
         host.StopPlayerInteractAnim();
 
@@ -809,6 +839,7 @@ public sealed class LiveInteractObjects : ICastingEventListener
         if (!castingActive) return;
         castingActive = false;
         castingFinished = false;
+        castEndMs = 0;
         castingTarget = null;
         activeGatherTargets.Clear();
         host.CancelCasting();

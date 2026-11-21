@@ -123,6 +123,7 @@ public partial class HudScene : Node, IUiStageHost
             livePortals.SystemNoticeSink = SystemNoticeText;
             livePortals.ChannelNoticeSink = ChannelNotice;
             livePortals.CastingBar = CastingBar;
+            livePortals.ItemRank = id => hudModel?.Tables?.Items?.Get(id)?.Rank ?? 0;
         }
         sizeSource = GetViewport();
         sizeSource.SizeChanged += QueueRelayout;
