@@ -296,7 +296,20 @@ public sealed class RemotePc : IRemotePc
     public bool IsAction(int action) => currentAct == action && Anim.IsPlaying();
     /// <summary>ActionAnims names an action only once its sequence is in the (shared) library, so no per-call name lookup
     /// on the player (a string to StringName conversion each call).</summary>
-    public bool HasAction(int action) => Anims?.Name((Act)action) != null;
+    public bool HasAction(int action) => Anims?.Name((Act)action, WeaponPrefix) != null;
+
+    /// <summary>PC::vfunc_60 (@0x141658a30, pc.cpp:1737-1749): the weapon action's prefix while weapons are held, "" otherwise.
+    /// Every action resolves through it (CAnimationManager::PlayAnimation, animationmanager.cpp:248-265).</summary>
+    public string WeaponPrefix { get; private set; } = "";
+
+    /// <summary>The prefix changed (weapons drawn or sheathed): the running action switches to its prefixed or plain sequence.</summary>
+    public void SetWeaponPrefix(string prefix)
+    {
+        prefix ??= "";
+        if (prefix == WeaponPrefix) return;
+        WeaponPrefix = prefix;
+        if (!held && currentAct >= 0) PlayAction(currentAct, (float)Anim.SpeedScale, false);
+    }
 
     bool held;
 
@@ -317,7 +330,7 @@ public sealed class RemotePc : IRemotePc
     public bool PlayAction(int action, float rate, bool restart)
     {
         if (held) return true;
-        var name = Anims?.Name((Act)action);
+        var name = Anims?.Name((Act)action, WeaponPrefix);
         if (name == null) return false;
         if (name == currentName && !restart && Anim.IsPlaying()) { Anim.SpeedScale = rate; currentAct = action; return true; }
         // NiActorManager's KFM transition from the current sequence (the local player's PlaySequence), as a blend time

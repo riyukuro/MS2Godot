@@ -195,6 +195,7 @@ public sealed partial class RemoteLayer : Node3D
         // vfunc_15 allows the hands, vfunc_16 forces them (StateHold not riding; ridees are not modelled, so never riding)
         r.Weapons?.SetState(r.InBattle, Ms2.Ui.Items.WeaponStance.StateHoldsWeapons(st.Cur, st.Sub, st.WalkRun),
             stateForces: Ms2.Ui.Items.WeaponStance.StateForces(st.Cur));
+        r.Pc.SetWeaponPrefix(r.Weapons?.ActivePrefix);
     }
     Remote Spawn(FieldAddUser u)
     {
