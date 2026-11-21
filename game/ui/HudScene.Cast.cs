@@ -13,6 +13,7 @@ public partial class HudScene
     CastRecord ownCast;
     int ownAttack;
     string ownSequence;
+    CastRecord ownQueued;                          // StateSkill's m_spCharge: the cooling press queued behind the running skill
     ulong ownStateStartMs;                         // when the own skill state began (StateSkill's m_nElapsed counts from it)
     double ownPointTime = -1;
     static readonly SerialIds serialIds = new();   // GenerateSerialId's function static
@@ -119,17 +120,29 @@ public partial class HudScene
             GD.Print($"cast: skill {skillId} refused, reason {res.Why}{(res.Notice != null ? " " + res.Notice : "")}");
             return;
         }
+        UseOwnRecord(me, r);
+    }
+
+    /// <summary>
+    /// MyPC::vfunc_102 @0x141521fc0 (mypc.cpp:1146) from the cooldown gate on, for a new request or the press queued behind the
+    /// running skill (<see cref="TickOwnQueued"/>).
+    /// </summary>
+    void UseOwnRecord(Player me, CastRecord r)
+    {
+        var g = me.GlobalPosition;
         var live = Net.LiveSession.Instance;
         uint now = (uint)Net.LiveSession.CastTick();
-        // MyPC::vfunc_102 (mypc.cpp:1152-1166): a skill still cooling is queued in the skill state or dropped, never sent.
-        // STILL-OPEN: StateSkill::SetChargeRecord (the queued press cast when the running one ends) and the running record's
-        // m_n90 = 0 are not ported, so a queued press is dropped as well.
+        // MyPC::vfunc_102 (mypc.cpp:1152-1166): a skill still cooling is never sent; in the skill state it becomes the state's
+        // queued press (StateSkill::SetChargeRecord @0x1417ed740, stateskill.cpp:1491, a later press replacing it), else dropped.
+        // STILL-OPEN: the running record's +0x90 (= 0 here, mypc.cpp:1165; CSkillRecord::FUN_141759fc0 sets it to 1) has no
+        // reader in this port.
         if (live != null)
         {
             var gate = SkillCast.CooldownGate(live.Cooltimes, r, OwnSkillStateRuns(), now);
+            if (gate == CoolGate.Queued) ownQueued = r;
             if (gate != CoolGate.Cast)
             {
-                GD.Print($"cast: skill {skillId} cooling, {(gate == CoolGate.Queued ? "queued" : "refused")}");
+                GD.Print($"cast: skill {r.Skill.Id} cooling, {(gate == CoolGate.Queued ? "queued" : "refused")}");
                 return;
             }
         }
@@ -162,10 +175,32 @@ public partial class HudScene
         GD.Print($"cast: skill {r.Skill.Id} level {r.Level.Level} motion {r.Motion}{(sent ? " sent" : " (offline, not sent)")}");
     }
 
+    /// <summary>
+    /// Each frame while the own skill state runs: StateSkill::FUN_1417f11d0 @0x1417f11d0 (stateskill.cpp:1578, from vfunc_3
+    /// :623): the queued press, once <see cref="SkillCast.QueuedReady"/>, takes the player's position (:1611), its m_bAD from
+    /// its level's sequence (:1612) and goes through MyPC::vfunc_102 (<see cref="UseOwnRecord"/>); the state's enter and exit
+    /// (vfunc_4 :340, vfunc_5 :416) drop it. 0 B/frame until it goes.
+    /// STILL-OPEN: a queued charging release (m_n98, the charge path :1589-1607) is not ported; no record here is one.
+    /// </summary>
+    void TickOwnQueued()
+    {
+        if (ownQueued == null) return;
+        if (!OwnSkillStateRuns()) { ownQueued = null; return; }
+        var live = Net.LiveSession.Instance;
+        if (live == null || !SkillCast.QueuedReady(live.Cooltimes, ownQueued, (uint)Net.LiveSession.CastTick())) return;
+        var r = ownQueued;
+        ownQueued = null;
+        var g = player.GlobalPosition;
+        r.Position = new System.Numerics.Vector3(g.X, -g.Z, g.Y);
+        r.HasSequence = r.Level.HasSequenceName;
+        UseOwnRecord(player, r);
+    }
+
     /// <summary>StateSkill's attack count at the start of the own cast's motion: attack 0, its point's text key.</summary>
     void StartOwnAttacks(Player me, CastRecord r)
     {
         ownCast = r;
+        ownQueued = null;                          // StateSkill::vfunc_4 (stateskill.cpp:340)
         ownAttack = 0;
         ownSequence = me.SkillSequence;
         ownStateStartMs = Time.GetTicksMsec();

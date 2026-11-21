@@ -3182,6 +3182,7 @@ public partial class HudScene : Node, IUiStageHost
     public override void _Process(double delta)
     {
         PerfLog.Frame(perfState);
+        TickOwnQueued();                                      // StateSkill::FUN_1417f11d0: the queued press
         TickOwnAttacks();                                     // StateSkill::TextKeyEvent: the own cast's attack points
         TickCooltimes();                                      // CSkillSystem::Update: the cooldowns
         ChatLog.Process();                                    // UIMessengerBrowser::vfunc_15

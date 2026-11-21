@@ -264,6 +264,14 @@ public static class SkillCast
         return inSkillState ? CoolGate.Queued : CoolGate.Refused;
     }
 
+    /// <summary>
+    /// StateSkill::FUN_1417f11d0 @0x1417f11d0 (stateskill.cpp:1578), run by the skill state's update (vfunc_3, :623): the
+    /// press queued behind the running skill (SetChargeRecord, mypc.cpp:1162) goes when its charge use is ready
+    /// (CanUseRechargeSkill) or its cooldown has come to 0 (IsNearlyEqual).
+    /// </summary>
+    public static bool QueuedReady(SkillCooltimes c, CastRecord queued, uint now) =>
+        c.CanUseRechargeSkill(queued.Skill, now) || SkillCooltimes.NearlyZero(c.Remain(queued.Skill.Id, false, now));
+
     /// <summary>CSkillSystem::FUN_141766cc0 (skillslot.cpp:2343), after a cast: a skill without a sequence records the game time
     /// (as a float) and its id for the cast reuse check.</summary>
     public static void Casted(CastWorld c, CastRecord r)

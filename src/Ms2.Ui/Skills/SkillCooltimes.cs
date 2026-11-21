@@ -260,7 +260,7 @@ public sealed class SkillCooltimes
     }
 
     /// <summary>IsNearlyEqual @0x14028d470 (commonutil.cpp:669) against 0: closer than 1e-6.</summary>
-    static bool NearlyZero(float f) => MathF.Abs(f) < 1e-06f;
+    internal static bool NearlyZero(float f) => MathF.Abs(f) < 1e-06f;
 
     /// <summary>
     /// CSkillSystem::Update @0x141766af0 (:2311), the cooldown part: an announced cooldown is dropped 10 s past its end, one that

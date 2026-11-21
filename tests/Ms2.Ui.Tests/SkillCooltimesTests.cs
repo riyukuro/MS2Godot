@@ -340,4 +340,29 @@ public class SkillCooltimesTests
         c.OnRechargeSkillUsed(t.GetSkillData(103), 1000);
         Assert.That(c.RechargeUses(t.GetSkillData(103)), Is.EqualTo(0), "no charges: nothing counted");
     }
+
+    [Test]
+    public void AQueuedPressCastsWhenItsCooldownEndsOrAChargeIsReady()
+    {
+        var (c, _) = Make();
+        var t = Table();
+        // StateSkill::FUN_1417f11d0 (stateskill.cpp:1583): CanUseRechargeSkill || IsNearlyEqual(FUN_141765fe0(id, 0), 0)
+        var q = Record(t, 104, 1500);
+        c.StartCast(Record(t, 104, 1000), Seq(), 0f, 1000);
+        Assert.That(SkillCast.QueuedReady(c, q, 1500), Is.False, "cooling: the press stays queued");
+        Assert.That(SkillCast.QueuedReady(c, q, 5999), Is.False, "1 ms left");
+        Assert.That(SkillCast.QueuedReady(c, q, 6000), Is.True, "the cooldown is over");
+        Assert.That(SkillCast.QueuedReady(c, Record(t, 105, 1500), 1500), Is.True, "not cooling at all");
+
+        var s = t.GetSkillData(110);
+        c.StartCast(Record(t, 110, 1000), Seq(), 0f, 1000);
+        c.OnRechargeSkillUsed(s, 1000);
+        var r = Record(t, 110, 1400);
+        Assert.That(SkillCast.QueuedReady(c, r, 1400), Is.False, "defaultRechargingCooldownTime 0.5 s not passed");
+        Assert.That(SkillCast.QueuedReady(c, r, 1500), Is.True, "a charge is ready while the cooldown remains");
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (uint i = 0; i < 100000; i++) SkillCast.QueuedReady(c, q, 1500 + (i & 1023));
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512), "100000 checks");
+    }
 }
