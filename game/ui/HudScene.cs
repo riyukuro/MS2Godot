@@ -3289,6 +3289,9 @@ public partial class HudScene : Node, IUiStageHost
         live.OwnPushResistLevel = () => Ms2.Ui.Items.WornEquipment.AbilityTotal(ownWornPushResist, 0x27, buffs, live.HotTimes,
             (live.Me.User?.PcBangGrade ?? 0) > 0);
         live.OwnBuffSuperArmor = buffs.SuperArmor;
+        // the mount's RunX speed (Ridee::GetRideSpeed, ridee.cpp:1021-1024): GetAbilityRate(0xae) or (0xa5) on each call
+        live.OwnAbilityRate = type => Ms2.Ui.Items.WornEquipment.AbilityRate(Ms2.Ui.Items.WornEquipment.AbilityTotal(
+            OwnWorn(type), type, buffs, live.HotTimes, (live.Me.User?.PcBangGrade ?? 0) > 0));
         Action<Ms2.Net.Packets.BuffPacket> onBuff = b =>
         {
             ownBuffs.UpperTargetId = live.UpperTargetId;
@@ -3312,14 +3315,23 @@ public partial class HudScene : Node, IUiStageHost
             live.Me.PutOnOrOff -= onPutOnOrOff;
             live.OwnPushResistLevel = () => 0;
             live.OwnBuffSuperArmor = _ => 0;
+            live.OwnAbilityRate = _ => 0f;
         };
     }
 
-    int ownWornCooldown, ownWornPushResist, ownWornLevel, ownWeaponMaterial;
+    int ownWornCooldown, ownWornPushResist, ownWornRideSameSpeed, ownWornRideSpeed, ownWornLevel, ownWeaponMaterial;
+
+    /// <summary>The kept worn part of the abilities <see cref="Ms2Godot.Net.LiveSession.OwnAbilityRate"/> reads, 0 for any other.</summary>
+    int OwnWorn(int type) => type switch
+    {
+        Ms2Godot.Player.RunXSameSpeedAbility => ownWornRideSameSpeed,
+        Ms2Godot.Player.RunXSpeedAbility => ownWornRideSpeed,
+        _ => 0,
+    };
     object ownWornEquips;
 
     /// <summary>
-    /// The worn RH weapon's attackMaterial (the own magics' hit sounds) and the worn items' "skillCooldown" (0x23) and push resistance (0x27) parts of m_abilities (CEquipment::FUN_1411e76c0, equipment.cpp:2922), taken
+    /// The worn RH weapon's attackMaterial (the own magics' hit sounds) and the worn items' "skillCooldown" (0x23), push resistance (0x27) and ride speed (0xae, 0xa5) parts of m_abilities (CEquipment::FUN_1411e76c0, equipment.cpp:2922), taken
     /// again only when the equipment lists or the level change. STILL-OPEN: FUN_1411e76c0 also rebuilds when a worn item
     /// expires; an item expiring while worn keeps its part here until the next change.
     /// </summary>
@@ -3337,6 +3349,8 @@ public partial class HudScene : Node, IUiStageHost
         ownWeaponMaterial = Ms2.Ui.Items.WornEquipment.Of(info, t.Items)?.WeaponMaterial(canUse) ?? 0;
         ownWornCooldown = worn != null && worn.TryGetValue(0x23, out int v) ? v : 0;
         ownWornPushResist = worn != null && worn.TryGetValue(0x27, out int r) ? r : 0;
+        ownWornRideSameSpeed = worn != null && worn.TryGetValue(Ms2Godot.Player.RunXSameSpeedAbility, out int rs) ? rs : 0;
+        ownWornRideSpeed = worn != null && worn.TryGetValue(Ms2Godot.Player.RunXSpeedAbility, out int rx) ? rx : 0;
     }
 
     /// <summary>

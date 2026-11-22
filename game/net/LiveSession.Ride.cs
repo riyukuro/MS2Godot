@@ -38,6 +38,9 @@ public partial class LiveSession
     /// <summary>The attack key (action 0x49401) as held state, which the HUD's key events set (Unk_PCMove::IsActionKeyDown).</summary>
     public bool AttackKeyHeld;
 
+    /// <summary>The own CEquipment::GetAbilityRate (the HUD keeps the worn part and the buffs); 0 without the HUD.</summary>
+    public Func<int, float> OwnAbilityRate = _ => 0f;
+
     /// <summary>String 0x48 and s_strNoticeEp (ridee.cpp:347): Ridee::UpdateRunEffects' RunX without the EP.</summary>
     public const int RunXNoEpNoticeId = 0x48;
     public const string RunXNoEpSound = "system_notice_error_ep";
@@ -50,6 +53,7 @@ public partial class LiveSession
         p.AttackKeyDown = () => AttackKeyHeld && !Ms2.Ui.InputBlock.Active;
         p.CurrentEp = () => Ms2Godot.Ui.StubHudData.Instance.EpCurrent;
         p.FieldUsesEp = FieldUsesEp;
+        p.RideAbilityRate = type => OwnAbilityRate(type);
         p.PlayRideEffect = path =>
         {
             if (remote == null || player == null || !IsInstanceValid(player)) return 0;

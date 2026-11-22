@@ -318,13 +318,30 @@ public partial class Player
             GlobalPosition + Vector3.Up * (Mount.Data.Height / 2 + 20f));
     }
 
-    /// <summary>StateWalk / StateSwim::vfunc_3's speed: Ridee::GetRideSpeed (ridee.cpp:1014) for the RunX subs 0x17 / 0x85,
-    /// the row's runXSpeed; else the row's run (walk in walk mode) or swim speed. STILL-OPEN: GetRideSpeed's equipment rate
-    /// (stat 0xae when runSpeed equals runXSpeed, else 0xa5) is left out.</summary>
+    /// <summary>StateWalk / StateSwim::vfunc_3's speed: <see cref="RunXRideSpeed"/> for the RunX subs 0x17 / 0x85; else the
+    /// row's run (walk in walk mode) or swim speed.</summary>
     float RideSpeed() => Mount == null ? MoveConfig.RunSpeed
-        : (OnWater ? SwimRunX : walkRunX) ? Mount.Data.RunXSpeed * 100f
+        : (OnWater ? SwimRunX : walkRunX) ? RunXRideSpeed() * 100f
         : OnWater ? Mount.Data.SwimSpeed * 100f
         : (WalkMode ? Mount.Data.WalkSpeed : Mount.Data.RunSpeed) * 100f;
+
+    /// <summary>Ridee::GetRideSpeed @0x1417070a0 (ridee.cpp:1014-1025): the row's runXSpeed times 1 + the rider's
+    /// CEquipment::GetAbilityRate, of special ability 0xae when runSpeed is nearly runXSpeed (IsNearlyEqual, 1e-6), else
+    /// of 0xa5 (FUN_1411f0e30: in double, plus 1e-6). The own rider is always a PC; without
+    /// <see cref="RideAbilityRate"/> the rate is 0.</summary>
+    float RunXRideSpeed()
+    {
+        var d = Mount.Data;
+        int type = MathF.Abs(d.RunSpeed - d.RunXSpeed) < 1e-6f ? RunXSameSpeedAbility : RunXSpeedAbility;
+        float rate = RideAbilityRate?.Invoke(type) ?? 0f;
+        return (float)((double)d.RunXSpeed * (double)(1.0f + rate) + 0.000001);
+    }
+
+    /// <summary>The special abilities GetRideSpeed reads: 0xae when the row's runSpeed equals runXSpeed, else 0xa5.</summary>
+    public const int RunXSameSpeedAbility = 0xae, RunXSpeedAbility = 0xa5;
+
+    /// <summary>The own CEquipment::GetAbilityRate of a special ability type (the total over 1000).</summary>
+    public Func<int, float> RideAbilityRate;
 
     /// <summary>The ridee's m_unk_b80 (FUN_141676b70 / FUN_141676b50): the RunX sprint flag Ridee::UpdateRunEffects keeps.</summary>
     public bool RunX { get; private set; }

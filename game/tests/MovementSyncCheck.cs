@@ -92,6 +92,7 @@ public partial class MovementSyncCheck : Node3D
         runner.FieldUsesEp = () => true;
         runner.PlayRideEffect = path => { played.Add(path); return 0.5f; };
         runner.RunXNoEp += () => notices++;
+        runner.RideAbilityRate = t => t == Player.RunXSpeedAbility ? 0.1f : 0.5f;   // runSpeed != runXSpeed: 0xa5's rate
         runner.RideOn(new Mount
         {
             Data = new Movement.RideData
@@ -109,7 +110,7 @@ public partial class MovementSyncCheck : Node3D
         Frames(25);
         var vel = (Vector3)typeof(Player).GetField("kVel", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(runner);
         float speed = new Vector2(vel.X, vel.Z).Length();
-        bool run = runner.RunX && subs.Count > 0 && subs[^1] == (2, 0x17) && Mathf.Abs(speed - 800f) < 1f
+        bool run = runner.RunX && subs.Count > 0 && subs[^1] == (2, 0x17) && Mathf.Abs(speed - 880f) < 1f
             && played.Count(p => p == "run") == 0 && played.Count(p => p == "runLoop") == 1;   // the flag stays set from the idle: no pressXEffectRun
         ep = 0;
         Frames(120);   // the last EP check was at the walk's first frame: clear after 1 s, one notice
@@ -119,7 +120,7 @@ public partial class MovementSyncCheck : Node3D
         Frames(10);
         bool up = !runner.RunX && subs[^1].Sub == 1;
         runner.RideOff();
-        runner.AttackKeyDown = null; runner.CurrentEp = null; runner.FieldUsesEp = null; runner.PlayRideEffect = null;
+        runner.AttackKeyDown = null; runner.CurrentEp = null; runner.FieldUsesEp = null; runner.PlayRideEffect = null; runner.RideAbilityRate = null;
         bool ok = idle && run && noEp && up;
         GD.Print($"movement sync check: RunX standing {idle}, running at {speed:0.#} {run}, without the EP {noEp} ({notices} notice(s)), key up {up}: {(ok ? "OK" : "FAIL")}");
         return ok;
