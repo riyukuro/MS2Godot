@@ -604,7 +604,9 @@ public partial class FieldContents : Node3D
                     bool onLift = !onInteract && !onPortal && LiveLiftPoll(playerMs2);
                     bool onBoard = !onInteract && !onPortal && !onLift && LiveInteractBillBoardPoll(playerMs2);
                     bool onReactor = !onInteract && !onPortal && !onLift && !onBoard && LiveReactorPoll(playerMs2);
-                    actionKeys.Current = Ms2.Ui.ActionKeyPoll.Pick(onInteract, onPortal, false, onLift, onBoard, onReactor);
+                    bool onHoldPc = !onInteract && !onPortal && !onLift && !onBoard && !onReactor
+                        && Ms2Godot.Net.LiveSession.Instance is { } hls && hls.PollHoldPc();
+                    actionKeys.Current = Ms2.Ui.ActionKeyPoll.Pick(onInteract, onPortal, false, onLift, onBoard, onReactor, onHoldPc);
                 }
             }
             LiveInteractTick(playerMs2, player.State != Player.MoveState.Idle);
@@ -615,8 +617,9 @@ public partial class FieldContents : Node3D
             var target = actionKeys.OnPress(heldItem: held);
             if (held || !actionKeys.InActiveMap(cubeMode)) return;
             if (target is Ms2.Ui.ActionKeyTarget.Lift or Ms2.Ui.ActionKeyTarget.BillBoard or Ms2.Ui.ActionKeyTarget.Reactor
+                    or Ms2.Ui.ActionKeyTarget.HoldPc
                 && talk?.FindTalkable() != null)
-                target = Ms2.Ui.ActionKeyTarget.Talk;                  // talk 0x14 comes before lift 0x15, billboard 0x18, reactor 0x1a
+                target = Ms2.Ui.ActionKeyTarget.Talk;                  // talk 0x14 comes before lift 0x15, billboard 0x18, reactor 0x1a, hold pc 0x1b
             switch (target)
             {
                 case Ms2.Ui.ActionKeyTarget.Interact:
@@ -624,6 +627,7 @@ public partial class FieldContents : Node3D
                 case Ms2.Ui.ActionKeyTarget.Portal: LivePortalUse(); break;
                 case Ms2.Ui.ActionKeyTarget.Lift: if (Ms2Godot.Net.LiveSession.Instance is { } lls) lls.UseLift(); break;
                 case Ms2.Ui.ActionKeyTarget.Reactor: if (!moving && Ms2Godot.Net.LiveSession.Instance is { } rls) rls.UseReactor(); break;
+                case Ms2.Ui.ActionKeyTarget.HoldPc: if (Ms2Godot.Net.LiveSession.Instance is { } hps) hps.UseHoldPc(); break;
                 // PutDownLiftableAction::vfunc_2 (@0x14095ad50): the active craft's ConfirmPlacement, which sends
                 // RequestCube 10 for a free cell (see CubeCraftState.ConfirmPlacement for what stays open).
                 case Ms2.Ui.ActionKeyTarget.PutDownLiftable:

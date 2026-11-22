@@ -57,6 +57,99 @@ public sealed partial class RemoteLayer
         return t;
     }
 
+    /// <summary>
+    /// WorldService::FindNearestActor (@0x141bc9830, worldservice_1.cpp:5143) over the field's other players: each one not
+    /// dead whose nearest hold node (PC::vfunc_118, the distance from <paramref name="from"/> to each node of m_unk_b88) lies
+    /// within <paramref name="maxDist"/> and below <paramref name="best"/> replaces the pick. 0 when none is nearer.
+    /// </summary>
+    public int NearestHold(Vector3 from, float maxDist, ref float best, out string node)
+    {
+        node = null;
+        int id = 0;
+        foreach (var r in users.Values)
+        {
+            if (r.Pc == null || r.Pc.States.Dead || r.Visual == null || !IsInstanceValid(r.Visual)) continue;
+            float d = NearestHoldNode(r.Visual.GetNodeOrNull<Skeleton3D>(HoldSkeletonPath), r.Ridee?.Mount, from, out string n);
+            if (d > maxDist || d >= best) continue;
+            best = d;
+            id = r.ObjectId;
+            node = n;
+        }
+        return id;
+    }
+
+    /// <summary>
+    /// PC::vfunc_118 (@0x141655a30, pc.cpp:1307) over a PC's m_unk_b88: PCBase::vfunc_119's "Hold_Point00".."Hold_Point49"
+    /// nodes of the body (the optimizer's DAT_143ae5ce0 names are STILL-OPEN) and Ridee::vfunc_119's passenger rideBone
+    /// nodes of its mount (ridee.cpp:638; the list stops at the first seat without a rideBone). float.MaxValue when the map
+    /// is empty.
+    /// </summary>
+    public static float NearestHoldNode(Skeleton3D body, Mount mount, Vector3 from, out string node)
+    {
+        node = null;
+        float best = float.MaxValue;
+        if (body != null && IsInstanceValid(body))
+        {
+            foreach (var (bone, name) in HoldPoints(body))
+            {
+                float d = (body.GlobalTransform * body.GetBoneGlobalPose(bone)).Origin.DistanceTo(from);
+                if (d < best) { best = d; node = name; }
+            }
+        }
+        if (mount?.Data != null && mount.Skeleton != null && IsInstanceValid(mount.Skeleton))
+        {
+            foreach (var seat in mount.Data.Seats.Values)
+            {
+                if (string.IsNullOrEmpty(seat.RideBone)) break;
+                int b = mount.Bone(seat.RideBone);
+                if (b < 0) continue;
+                float d = mount.BoneWorld(b).Origin.DistanceTo(from);
+                if (d < best) { best = d; node = seat.RideBone; }
+            }
+        }
+        return best;
+    }
+
+    static readonly string[] HoldPointNames = MakeHoldPointNames();
+    static string[] MakeHoldPointNames()
+    {
+        var n = new string[50];
+        for (int i = 0; i < n.Length; i++) n[i] = "Hold_Point" + i.ToString("D2", System.Globalization.CultureInfo.InvariantCulture);
+        return n;
+    }
+
+    /// <summary>The Hold_PointNN bones of a skeleton, found once per skeleton.</summary>
+    static readonly Dictionary<ulong, (int Bone, string Name)[]> holdPoints = new();
+    static (int Bone, string Name)[] HoldPoints(Skeleton3D sk)
+    {
+        ulong key = sk.GetInstanceId();
+        if (holdPoints.TryGetValue(key, out var list)) return list;
+        var found = new List<(int, string)>();
+        foreach (var name in HoldPointNames)
+        {
+            int b = sk.FindBone(name);
+            if (b >= 0) found.Add((b, name));
+        }
+        return holdPoints[key] = found.ToArray();
+    }
+
+    /// <summary>What MyPC::FUN_1415279d0 reads of another player: its ridee, m_mapB28's count, the ridee's passenger count
+    /// (CRideeData m_passengers), its character id, guild name, feet and m_b1224. False when it is not here.</summary>
+    public bool HoldPcInfo(int id, out bool hasRidee, out int passengers, out int seats, out long characterId, out string guild,
+        out Vector3 feet, out bool noBoarding)
+    {
+        hasRidee = false; passengers = seats = 0; characterId = 0; guild = ""; feet = default; noBoarding = false;
+        if (!users.TryGetValue(id, out var r)) return false;
+        hasRidee = r.Ridee != null;
+        passengers = r.Passengers.Count;
+        seats = r.Ridee?.Mount?.Data.Seats.Count ?? 0;
+        characterId = r.CharacterId;
+        guild = r.GuildName;
+        noBoarding = r.NoBoarding;
+        if (r.Root != null && IsInstanceValid(r.Root) && r.Root.IsInsideTree()) feet = r.Root.GlobalPosition;
+        return true;
+    }
+
     /// <summary>The node's world translation and rotation row 0 in MS2 axes, and with a seat model Ridee::FUN_1417083a0's
     /// seat on the node (the passenger's translation and rotation).</summary>
     static void SetNode(ref HoldTarget t, in Transform3D godotWorld, RideSeat model)

@@ -63,14 +63,16 @@ public partial class LiveSession
                 break;
             case OwnRide.Step.RideOff when own:
                 // MyPC::vfunc_121: RemoveSkillSet of the ridee's skillSetId, PC::vfunc_121, NotifyStatusChanged(0xc, 0), then
-                // the action's switch. STILL-OPEN: the skill set, the status event and the switch (UseSkill's cast, Interact's
-                // state 0x19, Taxi 0x25, CashCall 0x2a, TakeLR's chair, Hold 7, Recall ...); a react ride-off reads null
-                // (no case 20 in ReadRideOffAction, rideonaction.cpp:159), so it is a plain ride off.
+                // the action's switch: Hold 7 boards the nearest mount (HoldAfterRideOff). STILL-OPEN: the skill set, the
+                // status event and the other cases (UseSkill's cast, Interact's state 0x19, Taxi 0x25, CashCall 0x2a, TakeLR's
+                // chair, Recall ...); a react ride-off reads null (no case 20 in ReadRideOffAction, rideonaction.cpp:159), so
+                // it is a plain ride off.
                 bool wasRiding = player.Mount != null;
                 player.RideOff();
                 // PCBase::vfunc_121: the ride-off effect only when a ridee was released (the body returns before it
                 // otherwise). STILL-OPEN: the vfunc_25 test before both effects, rideOffBySkillEffect for type 0x18.
                 if (wasRiding) { PlayOwnCommonEffect(RideOffEffectKey); OwnPassengers.Clear(); }   // and ClearPassengers
+                if (r.RideOff?.Type == RideOffHoldRequest.ActionType) HoldAfterRideOff();
                 if (OwnRide.SummonsAfterRideOff(r, selfObject))
                     GD.Print($"live: ride off for summon {r.RideeId} item {r.ItemUid}");   // STILL-OPEN: state 0x26, StateSummonData
                 break;

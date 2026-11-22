@@ -186,6 +186,7 @@ public class RidePacketTests
         Assert.That(look.Length, Is.EqualTo(8 + 2 + 2 + 1 + 4 + 8 + 8 + 2 + 8 + 2 + 1), "the cleared look: empty strings");
 
         Assert.That(Bytes(new RideOffRequest()), Is.EqualTo(new byte[] { 1, 0, 0 }));
+        Assert.That(Bytes(new RideOffHoldRequest()), Is.EqualTo(new byte[] { 1, 7, 0 }), "RideOffActionHold(0): type 7, argument 0");
         Assert.That(Bytes(new RideAlongRequest(2, 3)), Is.EqualTo(new byte[] { 2, 2, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0 }));
         Assert.That(Bytes(new RideBoardRequest(0x10)), Is.EqualTo(new byte[] { 3, 0x10, 0, 0, 0 }));
         Assert.That(Bytes(new RideLeaveRequest()), Is.EqualTo(new byte[] { 4 }));

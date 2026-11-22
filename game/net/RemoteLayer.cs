@@ -26,6 +26,8 @@ public sealed partial class RemoteLayer : Node3D
         /// <summary>The minimap's view of it, made once.</summary>
         public ShownPc Shown;
         public int ObjectId; public long CharacterId; public string Picture = "";
+        /// <summary>FieldAddUser's guild name (PC::GetGuildName). STILL-OPEN: the guild packets that change it later.</summary>
+        public string GuildName = "";
         public long HpCur, HpMax; public bool InBattle; public int Emotion;         // PCBase's stat pair and battle stance (m_unk_160)
         public EquipApplier.WeaponRig Weapons;
         public PcHpBar Bar;
@@ -432,7 +434,7 @@ public sealed partial class RemoteLayer : Node3D
         FieldShadows.Character(root, visual, Ms2.Formats.Options.GraphicOptionTable.PC, 100f, 3f);
         tags.AddPc(root, visual.GetNodeOrNull<Node3D>("Model"), md.RootName, u, false);
         var r = new Remote { Pc = pc, Root = root, Visual = visual, Name = u.User.Name, Motto = u.User.Motto };
-        r.ObjectId = u.ObjectId; r.CharacterId = u.User.CharacterId; r.Picture = u.User.Picture ?? ""; r.Gems = u.Badges; r.Equips = u.Equips; r.Outfit2 = u.Outfit2; r.CodiStart = u.SkinTabStart; r.CodiEnd = u.SkinTabEnd;
+        r.ObjectId = u.ObjectId; r.CharacterId = u.User.CharacterId; r.GuildName = u.User.GuildName ?? ""; r.Picture = u.User.Picture ?? ""; r.Gems = u.Badges; r.Equips = u.Equips; r.Outfit2 = u.Outfit2; r.CodiStart = u.SkinTabStart; r.CodiEnd = u.SkinTabEnd;
         r.Gender = u.User.Gender;
         r.PremiumTime = u.PremiumTime; r.WeddingState = u.WeddingState; r.PcBangGrade = u.User.PcBangGrade;
         r.HpCur = u.Stats[2].Health; r.HpMax = u.Stats[0].Health; r.InBattle = u.InBattle; r.Emotion = u.InBattle ? 1 : 0;

@@ -179,6 +179,23 @@ public sealed record RideOffRequest : IOutPacket
     }
 }
 
+/// <summary>Outbound RequestRide mode 1 with a RideOffActionHold (rideonaction.cpp:445-466): u8 1, u8 type 7, u8 argument 0
+/// (its vfunc_1 writes the base fields only). HoldPCAction::vfunc_2 (actionkeyobject.cpp:2357-2373) sends it when the own pc
+/// rides; the answer's type 7 makes MyPC::vfunc_121 board the nearest mount (mypc.cpp:3446-3466).</summary>
+public sealed record RideOffHoldRequest : IOutPacket
+{
+    public const byte ActionType = 7;
+
+    public Outbound Op => Outbound.RequestRide;
+
+    public void Write(ByteWriter w)
+    {
+        w.WriteByte(1);
+        w.WriteByte(ActionType);
+        w.WriteByte(0);
+    }
+}
+
 /// <summary>Outbound RequestRide mode 2, ride along (MyPC, mypc.cpp:4684-4692): u8 2, then WriteRideRequest (@0x1401fcc90):
 /// i32 ridee id, i64 item uid.</summary>
 public sealed record RideAlongRequest(int RideeId, long ItemUid) : IOutPacket
