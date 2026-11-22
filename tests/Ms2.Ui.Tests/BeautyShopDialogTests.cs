@@ -374,6 +374,37 @@ public class BeautyShopDialogTests
         }
     }
 
+    /// <summary>The bill is modal (UIModalDialog vfunc_8 @0x141a55380, uimodaldialog.cpp:32): behind it the shop takes no callback.</summary>
+    [Test]
+    public void BehindAnOpenBillTheShopTakesNoCallback()
+    {
+        var r = new Rig();
+        var opened = new List<BillData>();
+        r.C.OpenBill = opened.Add;
+        bool open = true;
+        r.C.BillIsOpen = () => open;
+        r.C.OnPacket(Rig.Open(2));
+        r.Cu.IsEditItemColorChanged = true;
+        Assert.That(r.C.OnCallback("OnClickSave", System.Array.Empty<object>()), Is.False);
+        Assert.That(opened, Is.Empty, "the save does nothing behind the bill");
+        Assert.That(r.C.OnCallback("OnClickClose", System.Array.Empty<object>()), Is.False);
+        Assert.That(r.C.IsClosed, Is.False);
+        open = false;
+        Assert.That(r.C.OnCallback("OnClickSave", System.Array.Empty<object>()), Is.True);
+        Assert.That(opened, Has.Count.EqualTo(1), "with the bill gone the shop takes it again");
+    }
+
+    [Test]
+    public void TheBillClosesWhenTheShopCloses()
+    {
+        var r = new Rig();
+        int closed = 0;
+        r.C.CloseBill = () => closed++;
+        r.C.OnPacket(Rig.Open(2));
+        r.C.Close();
+        Assert.That(closed, Is.EqualTo(1));
+    }
+
     [Test]
     public void ASaleEventUpdatesTheOpenBill()
     {

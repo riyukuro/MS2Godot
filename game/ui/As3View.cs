@@ -986,8 +986,17 @@ public partial class As3View : Node2D
     /// <see cref="MessageBoxLayer"/>); null takes them always.</summary>
     public Func<bool> TakesKeys;
 
+    /// <summary>When set and true, a modal dialog stands over this movie (UIModalDialog, uimodaldialog.cpp:32): it takes no mouse or key,
+    /// and the mouse does not go on to the game either.</summary>
+    public Func<bool> Blocked;
+
     public override void _UnhandledInput(InputEvent ev)
     {
+        if (Blocked?.Invoke() == true)
+        {
+            if (ev is InputEventMouse && GetViewport() is { } bv) bv.SetInputAsHandled();
+            return;
+        }
         // under a field move's loading screen the scene's movies (the HUD, the field's) take no mouse (Ms2.Ui.FieldMoveCover);
         // the layers under the root (the message box, the tooltip) still do
         if (Ms2.Ui.FieldMoveCover.Up && GetTree().CurrentScene is { } scene && scene.IsAncestorOf(this)) return;

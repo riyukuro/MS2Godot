@@ -66,6 +66,11 @@ public sealed class BeautyShopDialogController : UiController
     /// <summary>OnClickSave's UIBillDialog (0x4e7b: FUN_140f0a350's dialog, SetData, OpenDialog; <see cref="BillDialogController"/>): the bill
     /// is handed over and its answer comes back through <see cref="OnBillAnswer"/>. Unset = the dialog does not exist, nothing opens.</summary>
     public Action<BillData> OpenBill;
+    /// <summary>The bill dialog is open. It is modal (UIModalDialog vfunc_8 @0x141a55380, uimodaldialog.cpp:32, SetModalDialogId): while it
+    /// is, the shop takes no movie callback. Unset = no bill is open.</summary>
+    public Func<bool> BillIsOpen;
+    /// <summary>Closes the open bill without an answer; the shop's close calls it, so the bill never outlives the shop.</summary>
+    public Action CloseBill;
     /// <summary>The open bill's total is shown again (OnGameEventChanged @0x1418c9780: IsDialogOpen(0x4e7b), FUN_1418cda70).</summary>
     public Action<uint> UpdateBill;
     /// <summary>The notice of an item id of mode 9 (FUN_141811980(1, id): the item's name in the common string 0x996).</summary>
@@ -117,6 +122,7 @@ public sealed class BeautyShopDialogController : UiController
         if (Closing) return;
         Closing = true;
         Loaded = false; PageBuilt = false; Waiting = false; StyleSelectOpen = false; Items.Clear();
+        CloseBill?.Invoke();
         base.Close();
         Closed?.Invoke();
     }
@@ -452,6 +458,7 @@ public sealed class BeautyShopDialogController : UiController
 
     public override bool OnCallback(string name, object[] args)
     {
+        if (BillIsOpen?.Invoke() == true) return false;   // behind the modal bill the shop takes no input
         switch (name.ToLowerInvariant())
         {
             case "onclickclose": RequestClose(); return true;

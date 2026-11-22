@@ -35,8 +35,9 @@ public sealed class BillData
 /// the player confirms. OnLoadComplete (@0x1418cd2a0) fills the movie; the movie's "OnSubmit" answers the owner and closes it
 /// (vfunc_28 @0x1418cd7a0), its "OnSetSumPrice" asks for the total (<see cref="UpdatePrice"/>, FUN_1418cda70 @0x1418cda70).
 /// The dialog's vfunc_13(mode) is ASMovieClip::vfunc_13 @0x1422c2220 (asmovieclip.cpp:111), gotoAndPlay(label); the check box's
-/// vfunc_24(true) is invalidate + validateNow @0x1422c80c0 (asuicomponent.h:71). STILL-OPEN: the dialog's vfunc_8(1) is the modal open
-/// (UIModalDialog @0x141a55380, uimodaldialog.cpp:32, SetModalDialogId), left to the host that shows it; the wedding hall's price
+/// vfunc_24(true) is invalidate + validateNow @0x1422c80c0 (asuicomponent.h:71). The dialog's vfunc_8(1) is the modal open
+/// (UIModalDialog @0x141a55380, uimodaldialog.cpp:32, SetModalDialogId): the host that shows it blocks the shop's input behind it
+/// (<see cref="BeautyShopDialogController.BillIsOpen"/>) and closes it with the shop. STILL-OPEN: the wedding hall's price
 /// (shop kind 3) needs the hall dialog and is the unchanged price.
 /// </summary>
 public sealed class BillDialogController : UiController

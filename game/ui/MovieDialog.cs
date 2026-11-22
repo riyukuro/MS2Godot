@@ -21,6 +21,7 @@ public partial class MovieDialog : Node2D
     public FlashPlayer Player { get; }
     public bool Loaded { get; }
     readonly As3View view;
+    public As3View View => view;
 
     /// <summary>
     /// The live movies' controllers (CUIService's dialog registry, m_mapDlg): a movie joins while the tree holds it
