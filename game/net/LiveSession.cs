@@ -304,6 +304,8 @@ public partial class LiveSession : Node
     public event Action<BeautyReq> BeautyRequested;
     /// <summary>CSceneStateGame::OnItemBox (@0x141739e40): the box result; the consumer checks the item's function (OpenItemBox / SelectItemBox) as the client does.</summary>
     public event Action<ItemBoxResult> ItemBoxResulted;
+    /// <summary>Inbound 0x31, UIBeautyShopDialog::OnBeautyShopPacket (uibeautyshopdialog.cpp:1510).</summary>
+    public event Action<BeautyShopPacket> BeautyShopReceived;
     /// <summary>The adventure data the client keeps in globals (DAT_143ab2958..3318): session-lived, so a field change keeps
     /// the exp, the filled level, the claimed levels and the missions.</summary>
     public readonly Ms2.Ui.AdventureData Adventure = new();
@@ -543,6 +545,7 @@ public partial class LiveSession : Node
     public void SendItemDismantle(Ms2.Net.Wire.IOutPacket packet) { if (game != null) Send(packet); }
     /// <summary>The npc shop's sends (Shop 0x28).</summary>
     public void SendShop(Ms2.Net.Wire.IOutPacket packet) { if (game != null) Send(packet); }
+    public void SendBeauty(Ms2.Net.Wire.IOutPacket packet) { if (game != null) Send(packet); }
     /// <summary>CInstrumentManager's currently playing score uid (FUN_140c8dab0, petmanager.cpp:141; STILL-OPEN:
     /// instrument play packets are not ported yet, so 0).</summary>
     public long PlayingScoreUid { get; private set; }
@@ -1233,7 +1236,7 @@ public partial class LiveSession : Node
                 if (n.NoticeStringId != 0)
                     Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(Ms2.Ui.Hud.MessageBoxData.Common(n.NoticeStringId), 0, null, "");   // FUN_140d73bc0(id, 0, 0, "")
                 if (n.Codi is { } codi) ActiveCodiTab(codi);
-                if (n.Beauty is { Type: not 0 } bq) { Send(new BeautyOpenRequest(bq.Uid)); BeautyRequested?.Invoke(bq); }   // SendBeauty (:8692); the beauty dialog 0x4eee itself is STILL-OPEN
+                if (n.Beauty is { Type: not 0 } bq) { Send(new BeautyOpenRequest(bq.Uid)); BeautyRequested?.Invoke(bq); }   // SendBeauty (:8692); the beauty dialog 0x4eee opens from this event (HudScene.Beauty)
                 GD.Print($"live: item use mode {n.Mode}{(n.ItemId != 0 ? " item " + n.ItemId : "")}");
             }
             else if (game.Is(p, Inbound.ItemBox))
@@ -1301,6 +1304,12 @@ public partial class LiveSession : Node
                 var t = NpcTalkMessage.Read(p.Reader());   // UITalkManager::OnTalkPacket (uitalkcinematic.cpp:971)
                 GD.Print($"live: npc talk {t}");
                 NpcTalkReceived?.Invoke(t);
+            }
+            else if (game.Is(p, Inbound.Beauty))
+            {
+                var bp = BeautyShopPacket.Read(p.Reader());
+                GD.Print($"live: beauty shop mode {bp.Mode}");
+                BeautyShopReceived?.Invoke(bp);
             }
             else if (game.Is(p, Inbound.Shop))
             {

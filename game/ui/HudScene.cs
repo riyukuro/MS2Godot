@@ -2540,6 +2540,7 @@ public partial class HudScene : Node, IUiStageHost
         WatchStorage();
         WatchBlackMarket();
         WatchShop();
+        WatchBeauty();
         c.MenuAction += def =>
         {
             if (def.Action == GameMenuActions.OpenLearningQuest) OpenLearningQuest();
