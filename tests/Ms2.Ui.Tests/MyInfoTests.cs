@@ -1186,6 +1186,33 @@ public class MyInfoTests
     }
 
     [Test]
+    public void ARecordedGms2OwnStatPacketGivesAFiniteDefenseScore()
+    {
+        Packs();
+        var (h, c, me, errors) = Load();
+        if (!c.Model.IsFeatureEnabled(0xdf)) Assert.Ignore("feature 0xdf off in this data");
+        string Shown() => Rt.ToString(h.Get(h.FindNamed("value", (AsDisplayObject)h.Child("m_defenseInfo")), "text"));
+        // the recorded GMS2 own Stat packet (438 bytes, count 35: 0x14 = 122, 0x13 = 50)
+        const string hex =
+            "7fc006000023a00000009b000000a00000001b0000001b0000001b0000000c0000000c0000000c000000180000000c00" +
+            "0000180000000d04000000000000f60300000000000000000000000000000a0000000a0000000a000000b80b0000b80b" +
+            "0000b80b0000640000006400000000000000010000000100000001000000e8030000e8030000e8030000780000007800" +
+            "0000000000000a0000000a0000000a000000f4010000f4010000f4010000640000006400000064000000640000006400" +
+            "0000640000005200000052000000520000004d0000004d0000004d000000360000002e00000036000000fa000000fa00" +
+            "0000fa0000003200000032000000320000007a000000160000007a000000000000000000000000000000640000006400" +
+            "000064000000690000006600000069000000060000000600000006000000160000001500000016000000020000000200" +
+            "0000020000005f000000000000005f0000009e000000000000009e000000000000000000000000000000000000000000" +
+            "000000000000000000000000000000000000640000006400000064000000000000000000000000000000000000000000" +
+            "000000000000";
+        var st = Ms2.Net.Packets.PlayerStat.Read(new Maple2.PacketLib.Tools.ByteReader(Convert.FromHexString(hex)));
+        me.Apply(st);
+        c.ShowRecord();
+        TestContext.WriteLine("defense score: " + Shown());
+        Assert.That(long.Parse(Shown()), Is.GreaterThan(10).And.LessThan(int.MaxValue), "a finite score, not int.MinValue");
+        Assert.That(errors, Is.Empty);
+    }
+
+    [Test]
     public void ScoreTooltipsAreDrawnAsTheClients()
     {
         Packs();
