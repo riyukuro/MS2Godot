@@ -88,6 +88,10 @@ public sealed class ItemColoringOwnCustomize : IItemColoringCustomize
         // The extra data is CItem::GetProxy()->vfunc_5 (uiitemcoloringdialog.cpp:1038), typed by CreateExtraData
         // (itemdata.cpp:1430): the colour, then the slot's floats: hair 14 (itemextradata.cpp:646), face decal 4 (:513), cap 13 (:784).
         // An item whose floats are not the slot's count cannot be written as the client would; it is not sent (no padding).
+        // STILL-OPEN: the client always writes the full struct, so such an item should send the slot's default appearance (the
+        // CItemExtraData default of the slot, not recovered) instead of staying in the basket; and CHairExtraData::vfunc_6
+        // (@0x14059af30, itemextradata.cpp:663) keeps a read value only when FUN_14059d190 / FUN_14059d150 and the m_bUse* flags of
+        // the item data allow it, then ClampScales (@0x14059aa20): the read side (ItemReader) takes the floats as they come.
         if (appearance.Length != CreateItem.AppearanceLength(modified.Slot)) return null;
         return new BeautyColorItem(false, false, modified.Uid, modified.Id, w =>
         {
