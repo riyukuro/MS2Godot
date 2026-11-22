@@ -34,7 +34,7 @@ public partial class TriggerSoundCheck : Node
     readonly Dictionary<int, FieldEntity> ambObjects = new();
     readonly List<string> fails = new();
     readonly List<string> notes = new();
-    int frame, step;
+    int frame, step, quitWait;
     bool done;
 
     public override void _Ready()
@@ -96,7 +96,12 @@ public partial class TriggerSoundCheck : Node
 
     public override void _Process(double delta)
     {
-        if (done) return;
+        if (done)
+        {
+            // the music decodes run on worker threads and land deferred: quitting under one crashes the engine's exit
+            if (++quitWait == 120) GetTree().Quit(fails.Count == 0 ? 0 : 1);
+            return;
+        }
         if (amb == null || fails.Count > 0) { Done(); return; }
         frame++;
         try
@@ -162,6 +167,5 @@ public partial class TriggerSoundCheck : Node
         done = true;
         GD.Print($"trigger sound check: {string.Join("; ", notes)}");
         GD.Print($"trigger sound check: {(fails.Count == 0 ? "OK" : "FAIL\n  " + string.Join("\n  ", fails))}");
-        GetTree().Quit(fails.Count == 0 ? 0 : 1);
     }
 }
