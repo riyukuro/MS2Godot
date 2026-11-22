@@ -80,6 +80,7 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
     /// merat balance.</summary>
     public Func<uint, bool> CanPayTab = _ => false;
     /// <summary>CUIService FUN_141add1f0: the platform's payment box when the merat is short.</summary>
+    /// <summary>The platform merat payment box (FUN_141add1f0) for a short balance. STILL-OPEN: no listener is wired in the host, so a short balance closes the box without feedback.</summary>
     public event Action PaymentShort;
     /// <summary>PlaySystemSound(key).</summary>
     public event Action<string> Sound;
@@ -732,7 +733,7 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
             PromptAddTab();
             return true;
         }
-        var box = MessageBoxQueue.CreateWithCallback(Common("s_skillbook_tree_config_payment_add_tab", TabPrice(), "<img src='export_common_icon_merat' vspace='-4'/>"), 0x19, OnAddTabPayConfirm);
+        var box = MessageBoxQueue.CreateWithCallback(Common("s_skillbook_tree_config_payment_add_tab", TabPrice(), "export_common_icon_merat"), 0x19, OnAddTabPayConfirm);
         box.SetButtonPreset(1);
         bool coupon = HasTabCoupon();
         box.SetCheckbox0(Common("s_skillbook_tree_config_payment_add_tab_coupon"), coupon);

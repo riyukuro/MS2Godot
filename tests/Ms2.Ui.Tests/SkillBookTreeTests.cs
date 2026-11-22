@@ -928,6 +928,7 @@ public class SkillBookTreeTests
         c.CheckboxChecked = (b, n) => false;
         c.OnCallback("onAddTab", Array.Empty<object>());
         Assert.That(boxes.Single().Msg, Does.Contain("1234"));
+        Assert.That(boxes[0].Msg, Does.Contain("Src='export_common_icon_merat'").IgnoreCase.And.Not.Contain("<img"));
         boxes[0].Callback(0, boxes[0]);
         Assert.That(shorts, Is.EqualTo(1));
         Assert.That(sent, Is.Empty);
