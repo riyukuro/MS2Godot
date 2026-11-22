@@ -24,14 +24,18 @@ public sealed partial class ItemTooltip
     /// item has no object id): <see cref="OwnerEquipment"/> and <see cref="OwnerGender"/>, else the model's
     /// <see cref="UiModel.LocalPlayer"/> (the port keeps no item object id; <see cref="Owner"/> is only the binding owner's
     /// name, so it does not stop the fallback).
-    /// STILL-OPEN: an item no set lists goes to the housing set block FUN_1409c8df0 (UGC map set items); another player's
+    /// An item no set lists goes to the housing set block (<see cref="SetHousingSetItem"/>). STILL-OPEN: another player's
     /// item (FindPCById of its object id).
     /// </summary>
     void SetItemStatusSet(Item item)
     {
         var sets = Tables.SetItems;
         int origin = item.Data.OriginOrItemId;
-        if (!sets.HasSetItem(origin)) return;
+        if (!sets.HasSetItem(origin))
+        {
+            SetHousingSetItem(item.ItemId);
+            return;
+        }
         int itemGender = 2;
         if (!HasClassGroup(item.Data)) itemGender = item.Data.GenderLimit;     // CItem::HasAnyEquipSlotOf
         if (itemGender == 3) itemGender = 2;
@@ -87,6 +91,27 @@ public sealed partial class ItemTooltip
             if (text.Length != 0) arr.Add(text.ToString());
         }
         Data["itemStatusSet"] = arr;
+    }
+
+    /// <summary>
+    /// FUN_1409c8df0 (astooltip.cpp:1071), "itemStatusSet" for an install item: the item's housing row
+    /// (CItemDataTable::GetHousing) names a set (setItemID) that CUGCMapSetItemTable has, then two texts: the
+    /// s_tooltip_itemoption_ugcmap_setitem_name title with the set's name (GetUGCMapSetItemName(id, "name")), and a
+    /// s_tooltip_itemoption_ugcmap_setitem_row per piece in piece id order, white, with the piece's item name.
+    /// </summary>
+    void SetHousingSetItem(int itemId)
+    {
+        var row = Tables.Housing?.Get(itemId);
+        if (row == null || row.SetItemId == 0) return;
+        var set = Tables.UgcMapSetItems.Get(row.SetItemId);
+        if (set == null) return;
+        var body = new StringBuilder();
+        foreach (uint id in set.Pieces.Keys)
+            body.Append(CommonF("s_tooltip_itemoption_ugcmap_setitem_row", 0xffffffu, Tables.ItemName((int)id)));
+        Data["itemStatusSet"] = new List<object>
+        {
+            CommonF("s_tooltip_itemoption_ugcmap_setitem_name", Tables.UgcMapSetItemName((int)row.SetItemId)), body.ToString(),
+        };
     }
 
     /// <summary>CItem::FUN_140528980 (item.cpp:1717) for a worn item: not expired (CItem::IsExpired, item.cpp:1303), unless a

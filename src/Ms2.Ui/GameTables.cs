@@ -716,6 +716,9 @@ public sealed class GameTables
     Dictionary<string, string> setItemNames;
     /// <summary>CStringTable::GetSetItemName(id, "name") (stringtable.cpp:827): SetItemName.xml.</summary>
     public string SetItemName(int id) => Lazy(ref setItemNames, "setitemname", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
+    Dictionary<string, string> ugcMapSetItemNames;
+    /// <summary>CStringTable::GetUGCMapSetItemName(id, "name") (stringtable.cpp:840): UGCMapSetItemName.xml.</summary>
+    public string UgcMapSetItemName(int id) => Lazy(ref ugcMapSetItemNames, "ugcmapsetitemname", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
     public string SlotName(int id) => Lazy(ref slotNames, "slotname", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
     /// <summary>The "name" text of the skill's row in stringSkillDescription.xml (CStringTable::GetSkillDescription
     /// @stringtable.cpp:750 reads the tag "name"); null when the skill has no row.</summary>
@@ -837,6 +840,14 @@ public sealed class GameTables
     public Ms2.Ui.Items.SetItemTable SetItems => setItems ??= packs == null ? Ms2.Ui.Items.SetItemTable.Empty
         : new Ms2.Ui.Items.SetItemTable(Xml(TablePath.Resolve(packs, "setiteminfo.xml") ?? "table/setiteminfo.xml"),
             (p, c, k) => FeatureElements.Collect(packs, p, c, k), e => FeatureElements.IsAvailable(packs, e), StatOption, k => ItemOptions.SpecialOption(k));
+    HousingTable housing;
+    /// <summary>CItemDataTable::GetHousing: the install items' housing rows (<see cref="HousingTable"/>), read on first use;
+    /// null without packs.</summary>
+    public HousingTable Housing => housing ??= packs == null ? null : new HousingTable(packs);
+    Ms2.Ui.Items.UgcMapSetItemTable ugcMapSetItems;
+    /// <summary>CUGCMapSetItemTable (GetXmlPath("Table", "UGCMapSetItem.xml"), the locale folder first), read on first use.</summary>
+    public Ms2.Ui.Items.UgcMapSetItemTable UgcMapSetItems => ugcMapSetItems ??= packs == null ? Ms2.Ui.Items.UgcMapSetItemTable.Empty
+        : new Ms2.Ui.Items.UgcMapSetItemTable(Xml(TablePath.Resolve(packs, "ugcmapsetitem.xml") ?? "table/ugcmapsetitem.xml"));
     Ms2.Ui.Items.ItemMergeOptionTable mergeOptions;
     /// <summary>CItemMergeOptionTable (GetXmlPath("Table", "itemMergeOptionBase.xml"), the locale folder first), read on
     /// first use.</summary>

@@ -67,6 +67,8 @@ public sealed class HousingTable
     public HousingTable(XDocument housing, params XDocument[] priceFiles) => Load(housing, priceFiles);
 
     public int Count => rows.Count;
+    /// <summary>Every row, in no set order.</summary>
+    public IEnumerable<Row> Rows => rows.Values;
 
     /// <summary>CItemDataTable::GetHousing: the item's row, null when it has none.</summary>
     public Row Get(int itemId) => rows.TryGetValue(itemId, out var r) ? r : null;

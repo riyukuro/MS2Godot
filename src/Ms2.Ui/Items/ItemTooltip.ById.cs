@@ -34,7 +34,7 @@ public sealed partial class ItemTooltip
         Data["itemGrade"] = rank != 0 ? rank : 1;                                 // FUN_1409d55a0
         Data["itemKinds"] = Kinds(d.IconCode);                                    // FUN_1409d5610
         if ((Flags & 0x40) == 0) Data["itemMovie"] = d.Movie;                     // SetItemMovie(int) (:2855)
-        // FUN_1409c8df0, the housing set block: STILL-OPEN
+        SetHousingSetItem(itemId);                                                // FUN_1409c8df0
         Data["iconPath"] = d.IconPath;                                            // FUN_1409d5770
         if (Item.Create(d, rank) is { } priced) SetSellPrice(priced);             // FUN_1409d5860: a new CItem at the rank
         SetItemBox(itemId);                                                       // FUN_1409d5920

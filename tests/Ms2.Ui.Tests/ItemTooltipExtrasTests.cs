@@ -85,6 +85,40 @@ public class ItemTooltipExtrasTests
     }
 
     [Test]
+    public void ItemStatusSetOfAnInstallItemListsItsUgcMapSet()
+    {
+        var m = NewModel();
+        var t = m.Tables;
+        // the first install item (by id) whose housing row names a set UGCMapSetItem.xml has
+        var row = t.Housing.Rows.Where(r => t.UgcMapSetItems.Get(r.SetItemId) != null && !t.SetItems.HasSetItem(r.ItemId))
+            .OrderBy(r => r.ItemId).FirstOrDefault();
+        if (row == null) Assert.Ignore("no install item names a UGC map set");
+        var set = t.UgcMapSetItems.Get(row.SetItemId);
+        var tip = new ItemTooltip(m, 0);
+        Assert.That(tip.FillById(row.ItemId, 1), Is.True);
+        var arr = (List<object>)tip.Data["itemStatusSet"];
+        Assert.That(arr, Has.Count.EqualTo(2));
+        Assert.That((string)arr[0], Does.Contain(t.UgcMapSetItemName((int)row.SetItemId)));
+        string body = (string)arr[1];
+        int at = -1;
+        foreach (uint id in set.Pieces.Keys)                                    // one row per piece, in piece id order
+        {
+            int next = body.IndexOf(t.ItemName((int)id), at + 1, StringComparison.Ordinal);
+            Assert.That(next, Is.GreaterThan(at), id.ToString());
+            at = next;
+        }
+        // the same block from the item tooltip's set block, as no set lists the item
+        var data = t.Items.Get(row.ItemId);
+        var tip2 = new ItemTooltip(m, 0x200);
+        tip2.Fill(Item.Create(data, 1));
+        Assert.That(tip2.Data["itemStatusSet"], Is.EqualTo(arr));
+        // an item with neither a set nor a housing row has none
+        var plain = new ItemTooltip(m, 0);
+        Assert.That(plain.FillById(IntroMagicianCoat, 1), Is.True);
+        Assert.That(plain.Data.ContainsKey("itemStatusSet"), Is.False);
+    }
+
+    [Test]
     public void ItemStatusSetWithNoOwnerUsesTheLocalPlayersEquipment()
     {
         var m = NewModel();
