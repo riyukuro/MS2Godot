@@ -14,7 +14,9 @@ namespace Ms2Godot.Ui;
 /// the beauty item's use (ItemUse mode 6, <see cref="Ms2Godot.Net.LiveSession.BeautyRequested"/>) opens it and the shop packets
 /// (inbound 0x31) go to it while it is open, as the client's handler does. STILL-OPEN: the open from the NPC talk (the enter
 /// request's reader side), the own-avatar Customize and the style dialog (step 3). The price text is GetFeePriceText @0x14134a220;
-/// CanPayFee @0x14134a1d0 (CanPayCurrency, then HasEnoughCurrency) is wired, so a buy sends once the bill is answered; the bill is modal over the shop.
+/// CanPayFee @0x14134a1d0 is wired and the bill is modal over the shop. STILL-OPEN: no buy is made yet. The items, colour and skin pages commit through the
+/// Customize's sends (SendColors, SendAdded, SendModified), and the special hair page's mode-7 buy needs the 0xb answer (the keep-old or keep-new choice);
+/// none is ported, so <see cref="BeautyShopDialogController.CommitSendsPorted"/> and <see cref="BeautyShopDialogController.StyleSelectPorted"/> stay false and a bill's OK does nothing.
 /// </summary>
 public partial class HudScene
 {
@@ -80,7 +82,7 @@ public partial class HudScene
             FeePriceText = (fee, amount) => ColoringShop(live).PriceText(fee.Type, fee.ItemId, (uint)amount, fee.IconTag),   // GetFeePriceText @0x14134a220
             NotEnough = fee => ColoringShop(live).ShowLackCurrency(fee.Type, fee.ItemId, 0),                          // FUN_14134a2e0 @0x14134a2e0
             // CanPayFee @0x14134a1d0 (unit_141347b10.cpp:574-620): the wallet of the fee's currency against the unsigned price
-            CanPay = (fee, amount) => ColoringShop(live).HasEnoughCurrency(ShopController.CurrencyOf(fee.Type), (uint)amount, fee.ItemId),
+            CanPay = (fee, amount) => ColoringShop(live).CanPayFee(fee.Type, fee.ItemId, amount),
             OpenBill = data => ShowBill(live, data),
             BillIsOpen = () => BillOpen,
             CloseBill = () => { if (BillOpen) billDialog.Close(); },
@@ -135,7 +137,7 @@ public partial class HudScene
     {
         if (beautyMovie != null) { beautyMovie.Host.Unload(); beautyMovie.QueueFree(); beautyMovie = null; }
         var m = beautyMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
-        m.View.Blocked = () => BillOpen;   // the bill is modal (UIModalDialog vfunc_8 @0x141a55380): no mouse or key reaches the shop
+        m.View.Blocked = () => BillOpen || c.InputOff;   // the bill is modal (UIModalDialog vfunc_8 @0x141a55380): no mouse or key reaches the shop; after a buy the root's input stays off until the answer (:1860)
         c.Unloaded += () => { m.Host.Unload(); m.QueueFree(); if (beautyMovie == m) beautyMovie = null; };
         GD.Print($"beauty shop: load={m.Loaded}");
         uiRoot.AddChild(m);

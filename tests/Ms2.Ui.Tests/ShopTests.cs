@@ -461,6 +461,19 @@ public class ShopTests
         Serial = 200, ItemId = 20000028, Rarity = 1, Price = 100, OriginalPrice = 100, Count = 1, Bundle = 1, Categories = "CP",
     };
 
+    /// <summary>CanPayFee (@0x14134a1d0, unit_141347b10.cpp:597-614): the wallet of the fee's kind against the price as an unsigned amount.</summary>
+    [Test]
+    public void CanPayFeeComparesTheWalletOfTheKindWithTheUnsignedPrice()
+    {
+        Packs();
+        var model = NewModel();
+        model.Player.Mesos = 1000;
+        var (_, c) = Load(model);
+        Assert.That(c.CanPayFee(0, 0, 1000), Is.True);
+        Assert.That(c.CanPayFee(0, 0, 1001), Is.False);
+        Assert.That(c.CanPayFee(0, 0, -1), Is.False, "the price is unsigned: -1 is 4294967295");
+    }
+
     [Test]
     public void BuySingleItemBelowConfirmPriceSendsImmediatelyWithoutLocalMutation()
     {

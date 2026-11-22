@@ -53,7 +53,7 @@ public class BeautyShopDialogTests
         public List<string> Notices = new();
         public List<string> Setfee = new();
         public int Left, Closed, NotEnoughCalls;
-        public bool Rich = true;
+        public long Wallet = 6000;
         public UiHost Host;
 
         public Rig(bool load = true)
@@ -66,7 +66,8 @@ public class BeautyShopDialogTests
             C.NoticeText += Notices.Add;
             C.Left += () => Left++;
             C.Closed += () => Closed++;
-            C.CanPay = (_, amount) => Rich;
+            C.CanPay = (_, amount) => amount <= Wallet;   // the amount decides: a wrong price passed on shows
+            C.CommitSendsPorted = true; C.StyleSelectPorted = true;
             C.NotEnough = _ => NotEnoughCalls++;
             C.FeePriceText = (f, a) => "p" + a;
             C.SlotOfKind = k => 40 + k;
@@ -212,7 +213,7 @@ public class BeautyShopDialogTests
     {
         var r = new Rig();
         r.C.OnPacket(Rig.Open(BeautyShopDialogController.PageSpecial));
-        r.Rich = false;
+        r.Wallet = 0;
         Assert.That(r.C.Buy(), Is.False);
         Assert.That(r.NotEnoughCalls, Is.EqualTo(1));
         Assert.That(r.Sent, Is.Empty);
@@ -240,6 +241,62 @@ public class BeautyShopDialogTests
         Assert.That(r.C.Buy(), Is.True);
         Assert.That(r.Sent, Is.Empty);
         Assert.That(r.Cu.Calls, Is.EqualTo(new[] { "commit41" }));
+    }
+
+    /// <summary>The fee is checked at the price after the sale (uibeautyshopdialog.cpp:1835): 5000 is over the wallet of 4000, half of it is not.</summary>
+    [Test]
+    public void TheWalletIsCheckedAgainstThePriceAfterTheSale()
+    {
+        var r = new Rig();
+        r.C.OnPacket(Rig.Open(BeautyShopDialogController.PageSpecial));
+        r.Wallet = 4000;
+        Assert.That(r.C.Buy(), Is.False, "the full price is over the wallet");
+        r.C.Sales.Apply(new GameEventMessage(0, System.Array.Empty<ShutdownInteractObjectEvent>(), System.Array.Empty<int>(), false)
+            { BeautySaleEvents = new[] { new BeautyShopSaleEvent(1, 7, 5000, 0) } });
+        r.Sent.Clear();
+        Assert.That(r.C.Buy(), Is.True, "half the price is within it");
+        Assert.That(r.Sent, Has.Count.EqualTo(1));
+    }
+
+    /// <summary>After the send the shop root's input is off (FUN_1412761e0(m_30, 0), uibeautyshopdialog.cpp:1860) until the answer
+    /// (:1885): a Save and OK before it send no second buy.</summary>
+    [Test]
+    public void AfterABuyTheShopTakesNoInputUntilTheAnswer()
+    {
+        var r = new Rig();
+        var opened = new List<BillData>();
+        r.C.OpenBill = opened.Add;
+        r.C.OnPacket(Rig.Open(BeautyShopDialogController.PageSpecial));
+        Assert.That(r.C.OnCallback("OnClickSave", System.Array.Empty<object>()), Is.True);
+        opened.Single().Answer(0, false);
+        Assert.That(r.Sent, Has.Count.EqualTo(1));
+        Assert.That(r.C.InputOff, Is.True);
+        Assert.That(r.C.OnCallback("OnClickSave", System.Array.Empty<object>()), Is.False, "no callback reaches the shop");
+        r.Cu.IsEditItemColorChanged = true;
+        Assert.That(r.C.OnCallback("OnClickSave", System.Array.Empty<object>()), Is.False);
+        Assert.That(opened, Has.Count.EqualTo(1), "no second bill opens");
+        Assert.That(r.Sent, Has.Count.EqualTo(1), "no second buy goes out");
+        r.C.OnPacket(new BeautyShopPacket(8) { Result = 0 });
+        Assert.That(r.C.InputOff, Is.True, "a result of 0 keeps it off");
+        r.C.OnPacket(new BeautyShopPacket(8) { Result = 0x33 });
+        Assert.That(r.C.InputOff, Is.False, "an answer other than 0 turns it on");
+    }
+
+    [Test]
+    public void UnportedCommitSendsAndTheUnportedStyleAnswerDoNothing()
+    {
+        var r = new Rig();
+        r.C.CommitSendsPorted = false;
+        r.C.OnPacket(Rig.Open(1));
+        r.Cu.IsEditItemColorChanged = true;
+        Assert.That(r.C.Buy(), Is.False);
+        Assert.That(r.Cu.Calls, Is.Empty, "no local commit without its send");
+        Assert.That(r.C.InputOff, Is.False);
+        r.C.StyleSelectPorted = false;
+        r.C.OnPacket(Rig.Open(BeautyShopDialogController.PageSpecial));
+        Assert.That(r.C.Buy(), Is.False);
+        Assert.That(r.Sent, Is.Empty, "no mode-7 send without the 0xb answer");
+        Assert.That(r.Cu.Calls, Is.Empty);
     }
 
     [Test]

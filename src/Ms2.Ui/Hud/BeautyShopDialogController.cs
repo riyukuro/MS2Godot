@@ -61,7 +61,7 @@ public sealed class BeautyShopDialogController : UiController
     public Func<BeautyPayment, long, string> FeePriceText;
     /// <summary>CanPayFee @0x14134a1d0 (unit_141347b10.cpp:614: CanPayCurrency, then HasEnoughCurrency), set by the host.</summary>
     public Func<BeautyPayment, long, bool> CanPay;
-    /// <summary>FUN_14134a2e0 (not recovered): the "not enough" message of a payment.</summary>
+    /// <summary>FUN_14134a2e0 (@0x14134a2e0, unit_141347b10.cpp:630): ShowLackCurrency(kind, item, 0), the "not enough" box of a payment.</summary>
     public Action<BeautyPayment> NotEnough;
     /// <summary>OnClickSave's UIBillDialog (0x4e7b: FUN_140f0a350's dialog, SetData, OpenDialog; <see cref="BillDialogController"/>): the bill
     /// is handed over and its answer comes back through <see cref="OnBillAnswer"/>. Unset = the dialog does not exist, nothing opens.</summary>
@@ -94,6 +94,15 @@ public sealed class BeautyShopDialogController : UiController
     public bool Loaded;                               // m_2a8
     /// <summary>m_2d8: a buy / preview answer is awaited.</summary>
     public bool Waiting;
+    /// <summary>The shop root's input is off (FUN_1412761e0(m_30, 0) at uibeautyshopdialog.cpp:1860, after the send): the shop takes no
+    /// callback and the host blocks its view until the answer turns it on (FUN_1418ca380 :1885, on a result other than 0).</summary>
+    public bool InputOff;
+    /// <summary>The Customize's commit sends (SendColors, SendAdded, SendModified) behind CommitSlot on the items, colour and skin pages are
+    /// ported. STILL-OPEN: they are not, so without this the buy on those pages does nothing (no local commit, no send).</summary>
+    public bool CommitSendsPorted;
+    /// <summary>The answer of the special hair buy (mode 0xb: m_2b8 kept before the send, OpenStyleSelectDialog @0x1418cb000) is ported.
+    /// STILL-OPEN: it is not, so without this the mode-7 send is not made.</summary>
+    public bool StyleSelectPorted;
     /// <summary>m_2b5: the style select dialog is open.</summary>
     public bool StyleSelectOpen;
     /// <summary>m_2ac: "preview with cap".</summary>
@@ -121,7 +130,7 @@ public sealed class BeautyShopDialogController : UiController
     {
         if (Closing) return;
         Closing = true;
-        Loaded = false; PageBuilt = false; Waiting = false; StyleSelectOpen = false; Items.Clear();
+        Loaded = false; PageBuilt = false; Waiting = false; InputOff = false; StyleSelectOpen = false; Items.Clear();
         CloseBill?.Invoke();
         base.Close();
         Closed?.Invoke();
@@ -202,7 +211,7 @@ public sealed class BeautyShopDialogController : UiController
                 ShowData(MessageBoxQueue.CreateWithCallback(ClientFormat.Format(Model.Tables.Common(0x272), result), 0, LeaveOnOk));
                 break;
         }
-        if (result != 0) Waiting = false;
+        if (result != 0) { Waiting = false; InputOff = false; }   // FUN_1418ca380 (:1885): input back on
     }
 
     bool LeaveOnOk(int button, MessageBoxData _)
@@ -437,9 +446,12 @@ public sealed class BeautyShopDialogController : UiController
     {
         var c = Customize;
         if (c == null || CanPay == null) return false;
+        // an unported path does nothing: not the commit without its send, not the send without its answer
+        if (!(Page == PageSpecial ? StyleSelectPorted : CommitSendsPorted)) return false;
         if (PreviewWithCap) PreviewWithCap = false;
         int ev = SaleEventId;
         var fee = GetFee(out uint price);
+        if (fee == null) return false;
         uint pay = Sales.DiscountedPrice(ev, price, PlayerLevel());
         bool coupon = IsCouponSaleActive(couponChecked);
         if (!CanPay(fee, pay) && !coupon) { NotEnough?.Invoke(fee); return false; }
@@ -450,6 +462,7 @@ public sealed class BeautyShopDialogController : UiController
             Send(new BeautyBuyRequest(ev, couponChecked, Context));
         }
         else c.CommitSlot(slot);
+        InputOff = true;   // FUN_1412761e0(m_30, 0) (:1860)
         Waiting = true;
         return true;
     }
@@ -458,7 +471,7 @@ public sealed class BeautyShopDialogController : UiController
 
     public override bool OnCallback(string name, object[] args)
     {
-        if (BillIsOpen?.Invoke() == true) return false;   // behind the modal bill the shop takes no input
+        if (BillIsOpen?.Invoke() == true || InputOff) return false;   // behind the modal bill, and after a buy until its answer, the shop takes no input
         switch (name.ToLowerInvariant())
         {
             case "onclickclose": RequestClose(); return true;

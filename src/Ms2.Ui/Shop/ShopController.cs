@@ -1643,6 +1643,10 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         }
     }
 
+    /// <summary>CanPayFee (@0x14134a1d0, unit_141347b10.cpp:597-614): CanPayCurrency over the shop's currency kind
+    /// (<see cref="CurrencyOf"/>, FUN_1403baee0), then <see cref="HasEnoughCurrency"/> with the price as an unsigned amount.</summary>
+    public bool CanPayFee(int kind, int itemId, long amount) => HasEnoughCurrency(CurrencyOf(kind), (uint)amount, itemId);
+
     /// <summary>GetCurrencyAmount (@0x1418ff5a0, uicommon.cpp:1020).</summary>
     public long GetCurrencyAmount(int currency, long amount, int itemId) =>
         Model == null ? 0 : CurrencyWallet.Amount(Pc, currency, amount, () => ItemCount(itemId, 0), GuildFund);
