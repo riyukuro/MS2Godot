@@ -36,7 +36,7 @@ public partial class LiveSession
         }
         void Check(string what, bool ok) => GD.Print($"live: combat {(ok ? "PASS" : "FAIL")}: {what}");
         string Env(string k, string d) => System.Environment.GetEnvironmentVariable(k) is { Length: > 0 } v ? v : d;
-        int numbers = 0, kills = 0, npcs = 0;
+        int numbers = 0, kills = 0, npcs = 0, storeItem = int.Parse(Env("MS2_LIVE_STORE_ITEM", "0").Split(';')[0]);
         long mesoDelta = 0;
         live.DamageNumbered += (n, npc, pc) => { if (npc != null) numbers++; };
         live.NpcExpShown += (npc, exp) => kills++;
@@ -68,6 +68,94 @@ public partial class LiveSession
                 GD.Print($"live: combat {step}: {(hud.SubmitChatLine("/player level " + level) ? "sent" : "no chat window")}");
                 await until(() => live.Me.User.Level == level, 60 * 20); await frames(60);
                 Check($"the character is level {level}", live.Me.User.Level == level);
+                continue;
+            }
+            if (step.StartsWith("store"))      // the bank steps: storeopen, storegive:N, storedeposit:N, storewithdraw:N, storemove, storemeso{deposit|withdraw}:N, storesort, storeclose
+            {
+                int sid = storeItem;
+                long Bank() { long n = 0; foreach (var e in live.Storage.All) if (e.Id == sid) n += e.Amount; return n; }
+                long Bag() { long n = 0; foreach (var e in live.Items.All) if (e.Id == sid) n += e.Amount; return n; }
+                string arg = step.Contains(':') ? step[(step.IndexOf(':') + 1)..] : "";
+                string name = step.Contains(':') ? step[..step.IndexOf(':')] : step;
+                long bag0 = Bag(), bank0 = Bank(), meso0 = live.Storage.Meso;
+                int slots0 = live.Storage.Count;
+                switch (name)
+                {
+                    case "storeopen":
+                    {
+                        GD.Print("live: combat store: opener not exercised (the play opener does not exist on the scratch server)");
+                        GD.Print($"live: combat store open: {(hud.StoreOpenScripted() ? "open" : "not open")}");
+                        await until(() => live.Storage.Ready, 60 * 10); await frames(60);
+                        Check($"the bank is loaded ({live.Storage.Count} item(s), {live.Storage.Meso} meso)", live.Storage.Ready);
+                        Shot("store_open.png");
+                        break;
+                    }
+                    case "storegive":
+                    {
+                        foreach (var cand in Env("MS2_LIVE_STORE_ITEM", "0").Split(';'))      // the first id the GM item command gives
+                        {
+                            storeItem = sid = int.Parse(cand); bag0 = Bag();
+                            hud.SubmitChatLine($"/item {sid} --amount {arg}");
+                            await until(() => Bag() != bag0, 60 * 3); await frames(30);
+                            if (Bag() != bag0) break;
+                        }
+                        Check($"the bag holds the item ({bag0} -> {Bag()})", Bag() == bag0 + long.Parse(arg));
+                        break;
+                    }
+                    case "storedeposit":
+                    {
+                        int n = int.Parse(arg);
+                        var held = live.Items.All.FirstOrDefault(e => e.Id == sid);
+                        GD.Print($"live: combat store deposit {n}: {(held != null && hud.StoreDepositScripted(held.Uid, n) ? "sent" : "not sent")}");
+                        await until(() => Bank() != bank0, 60 * 10); await frames(60);
+                        Check($"the bank holds the deposit ({bank0} -> {Bank()}), the bag lost it ({bag0} -> {Bag()})", Bank() == bank0 + n && Bag() == bag0 - n);
+                        Shot("store_deposit.png");
+                        break;
+                    }
+                    case "storewithdraw":
+                    {
+                        int n = int.Parse(arg);
+                        int slot = -1; foreach (var e in live.Storage.All) if (e.Id == sid) { slot = e.InventorySlot; break; }
+                        GD.Print($"live: combat store withdraw {n} from slot {slot}: {(slot >= 0 && hud.StoreWithdrawScripted(slot, n) ? "sent" : "not sent")}");
+                        await until(() => Bank() != bank0, 60 * 10); await frames(60);
+                        Check($"the bank lost the withdrawal ({bank0} -> {Bank()}), the bag has it ({bag0} -> {Bag()})", Bank() == bank0 - n && Bag() == bag0 + n);
+                        Shot("store_withdraw.png");
+                        break;
+                    }
+                    case "storemove":      // a bank slot dragged onto the first free one (the merge/split of the bank's own slots)
+                    {
+                        int from = -1; foreach (var e in live.Storage.All) if (e.Id == sid) { from = e.InventorySlot; break; }
+                        int to = live.Storage.EmptySlot();
+                        GD.Print($"live: combat store move {from} -> {to}: {(from >= 0 && hud.StoreMoveScripted(from, to) ? "sent" : "not sent")}");
+                        await until(() => live.Storage.Slot(to) != null, 60 * 10); await frames(60);
+                        Check($"the item moved to bank slot {to}", live.Storage.Slot(to) != null && live.Storage.Slot(from) == null);
+                        Shot("store_move.png");
+                        break;
+                    }
+                    case "storemesodeposit":
+                    case "storemesowithdraw":
+                    {
+                        long n = long.Parse(arg); bool dep = name == "storemesodeposit";
+                        long wallet0 = hud.WalletMeso;
+                        GD.Print($"live: combat store meso {name} {n}: {(hud.StoreMesoScripted(dep, n) ? "sent" : "not sent")}");
+                        await until(() => live.Storage.Meso != meso0, 60 * 10); await frames(60);
+                        long wantBank = dep ? meso0 + n : meso0 - n;
+                        Check($"the bank meso is {live.Storage.Meso} (wanted {wantBank})", live.Storage.Meso == wantBank);
+                        Check($"the wallet is {hud.WalletMeso} (was {wallet0})", hud.WalletMeso == (dep ? wallet0 - n : wallet0 + n));
+                        Shot("store_" + name + ".png");
+                        break;
+                    }
+                    case "storesort":
+                        GD.Print($"live: combat store sort: {(hud.StoreSortScripted() ? "sent" : "not sent")}");
+                        await frames(240); Shot("store_sort.png");
+                        Check($"the bank still has {live.Storage.Count} item(s) (was {slots0})", live.Storage.Count == slots0);
+                        break;
+                    case "storeclose":
+                        GD.Print($"live: combat store close: {(hud.StoreCloseScripted() ? "sent" : "not open")}");
+                        await frames(120); Shot("store_close.png");
+                        break;
+                    default: GD.Print($"live: combat: unknown step {step}"); break;
+                }
                 continue;
             }
             switch (step)
