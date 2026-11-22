@@ -14,14 +14,15 @@ namespace Ms2Godot.Tests;
 /// screen mask among them, must pass them on). It opens the HUD (res://ui/hud.tscn) offline, opens the game dictionary,
 /// clicks into its search field (m_inputSearch) and types
 /// m, p, l, i, k and 1 (the world map, my info, the quest log, the inventory, the skill book and the first quick slot) as
-/// the window's keys, then holds Up, X and the space there: the own player neither moves nor takes the battle stance, X
+/// the window's keys, then holds Up, X and the space there (Up takes the one-line field's caret to its start, as EditorKit's
+/// Up on the first line does, so x and the space go in front): the own player neither moves nor takes the battle stance, X
 /// does not read as a held cast key (Unk_PCMove reads no key while the mask holds) and the field's action key (npc talk,
 /// portal, gather, taxi) does not read the space. Then the focus moves as a left press moves
 /// main.gfx's one focus (MovieImpl, sfr_gfx_01i.cpp:3673; QueueSetFocusTo, :2672): a press on the world clears it and Up
 /// moves the player again; a click on the chat's input focuses it and a and b go there, not to the dictionary; a press on
 /// the dictionary's surface (over the chat's view) takes the chat's focus away too. Ctrl + Left leaves the camera alone
 /// outside debug mode and turns it in debug mode (CTargetCameraMode::vfunc_9's keys are debug-only). Quits with 0 when all of that holds
-/// (the field holds "mplik1x", none of those dialogs opened, the player stayed, no cast key read as held, ...), else 1.
+/// (the field holds "x mplik1", none of those dialogs opened, the player stayed, no cast key read as held, ...), else 1.
 /// </summary>
 public partial class HudTypingCheck : Node
 {
@@ -38,6 +39,8 @@ public partial class HudTypingDriver : Node
 {
     const BindingFlags Private = BindingFlags.Instance | BindingFlags.NonPublic;
     const string Typed = "mplik1";
+    // the field after the held Up, X and space: Up moved the caret to 0 first
+    const string Held = "x " + Typed;
     static readonly Key[] Keys = { Key.M, Key.P, Key.L, Key.I, Key.K, Key.Key1 };
     HudScene hud;
     AsTextField field;
@@ -172,7 +175,7 @@ public partial class HudTypingDriver : Node
                 Input.ParseInputEvent(new InputEventKey { Keycode = Key.Up, PhysicalKeycode = Key.Up, Pressed = false });
                 Input.ParseInputEvent(new InputEventKey { Keycode = Key.X, PhysicalKeycode = Key.X, Pressed = false });
                 Input.ParseInputEvent(new InputEventKey { Keycode = Key.Space, PhysicalKeycode = Key.Space, Pressed = false });
-                bool ok = me != null && move == Vector2.Zero && !battle && !castKey && pollKey == 0 && contents != null && !actionKey && field.Text == Typed + "x ";
+                bool ok = me != null && move == Vector2.Zero && !battle && !castKey && pollKey == 0 && contents != null && !actionKey && field.Text == Held;
                 held = $"field \"{field.Text}\", none opened; held Up: move {move}; held X: battle stance {battle}, cast key down {castKey}, poll key {pollKey} (player {(me != null ? "found" : "missing")}); held space: action key {actionKey} (field contents {(contents != null ? "found" : "missing")})";
                 if (!ok) { Finish(false, held); return; }
                 // a left press on the world: no movie takes it, each one's press on nothing clears its focus
@@ -234,7 +237,7 @@ public partial class HudTypingDriver : Node
             case 122:
             {
                 if (++wait < 10) return;
-                if (chatField.Text != "ab" || field.Text != Typed + "x ") { Finish(false, $"{held}; typed ab with the chat focused: chat \"{chatField.Text}\", dictionary \"{field.Text}\""); return; }
+                if (chatField.Text != "ab" || field.Text != Held) { Finish(false, $"{held}; typed ab with the chat focused: chat \"{chatField.Text}\", dictionary \"{field.Text}\""); return; }
                 // a press on the dictionary's own surface (not its field) with the chat's field focused: one stage, one focus
                 var m = (MovieDialog)Get(hud, "gameDictionaryMovie");
                 var b = field.GetBounds(null);
