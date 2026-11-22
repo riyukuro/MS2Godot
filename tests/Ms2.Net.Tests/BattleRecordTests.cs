@@ -196,4 +196,21 @@ public class BattleRecordTests {
         Assert.That(LeastBytes(Calls), Is.Zero, "the party group active");
         Assert.That(m.GetRecord(1, 1000).Amount(BattleRecord.Dealt), Is.GreaterThan(0));
     }
+
+    [Test]
+    public void ModesFourSevenAndEightReadTheClientsFields() {
+        // FUN_14171d820 (scenestategame.cpp:5685): target, owner, buff, three u32 values, the show byte
+        var h = Read(w => { w.WriteByte(4); w.WriteInt(31); w.WriteInt(10); w.WriteInt(777); w.WriteInt(-1); w.WriteInt(0); w.WriteInt(55); w.WriteByte(1); });
+        Assert.That((h.Raw, h.TargetId, h.OwnerId, h.BuffId, h.Value1, h.Value2, h.Value3, h.ShowValues),
+            Is.EqualTo(((byte[]) null, 31, 10, 777, 4294967295L, 0L, 55L, true)), "the values are unsigned");
+        Assert.That(h.Targets, Is.Empty);
+        // FUN_14171e860 (:7128): the grabbed actor, then a counted list of PC ids
+        var g = Read(w => { w.WriteByte(7); w.WriteInt(40); w.WriteInt(2); w.WriteInt(41); w.WriteInt(42); });
+        Assert.That((g.Raw, g.TargetId, g.Released), Is.EqualTo(((byte[]) null, 40, new List<int> { 41, 42 })));
+        // FUN_14171e9a0 (:7149): the tag and the create byte; skill, level, owner and caster only when creating
+        var c = Read(w => { w.WriteByte(8); w.WriteLong(9001); w.WriteByte(1); w.WriteInt(10200001); w.WriteShort(3); w.WriteInt(10); w.WriteInt(11); });
+        Assert.That((c.Raw, c.CastUid, c.Create, c.SkillId, c.Level, c.OwnerId, c.CasterId), Is.EqualTo(((byte[]) null, 9001L, true, 10200001, (short) 3, 10, 11)));
+        var x = Read(w => { w.WriteByte(8); w.WriteLong(9001); w.WriteByte(0); });
+        Assert.That((x.Raw, x.CastUid, x.Create, x.SkillId), Is.EqualTo(((byte[]) null, 9001L, false, 0)));
+    }
 }

@@ -57,4 +57,21 @@ public class DamageNumbersTests
         Assert.That(DamageNumbers.Shows(o, 7, 20, 30, 1, Pc), Is.True, "party recovery");
         Assert.That(DamageNumbers.Shows(o, 7, 30, 30, 1, Pc), Is.False);
     }
+
+    [Test]
+    public void RecoveryValuesAreNumbersOnTheOwnerWithTheTargetAsCaster()
+    {
+        // FUN_14171d820: pOwner->vfunc_111(value, 5/6/7, nTargetId) for each nonzero value, only with the show byte and
+        // an owner in the field
+        var d = new SkillDamage { Mode = 4, TargetId = 31, OwnerId = 10, Value1 = 120, Value2 = 0, Value3 = 4294967295L, ShowValues = true };
+        var list = new List<DamageNumber>();
+        DamageNumbers.Records(d, list, id => id == 10);
+        Assert.That(list, Is.EqualTo(new[] { new DamageNumber(10, 120, 5, 31), new DamageNumber(10, 4294967295L, 7, 31) }));
+        list.Clear();
+        DamageNumbers.Records(d, list, id => id == 31);
+        Assert.That(list, Is.Empty, "no owner object: the client returns");
+        d.ShowValues = false;
+        DamageNumbers.Records(d, list, id => id == 10);
+        Assert.That(list, Is.Empty, "no show byte");
+    }
 }

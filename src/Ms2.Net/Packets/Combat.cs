@@ -11,7 +11,8 @@ public sealed record HitTarget(int TargetId, Hit[] Hits, Vector3S Origin, Vector
 /// <summary>
 /// Inbound 0x3D (OnSkillDamage): u8 mode.
 /// 0 projectile records, 1 hits of a cast (cast uids, owner, skill, level, motion, attack point, position, direction, then per target id + hits),
-/// 3 damage over time, 5 region skill, 6 splash. Modes 4, 7 and 8 are not decoded (Raw).
+/// 3 damage over time, 4 recovery values, 5 region skill, 6 splash, 7 grab release, 8 a tag's magic model. Other modes are
+/// not decoded (Raw).
 /// </summary>
 public sealed class SkillDamage {
     public byte Mode;
@@ -25,6 +26,18 @@ public sealed class SkillDamage {
     public int RegionId;
     // mode 0
     public int ProjectileCount;
+    // mode 4 (FUN_14171d820 @0x14171d820, scenestategame.cpp:5685): TargetId and OwnerId in the client's names and read
+    // order, the buff (BuffId), three values read as u32 and whether they show; the numbers go on OwnerId's object
+    // (vfunc_111 on pOwner with TargetId as its other id)
+    public long Value1, Value2, Value3; public bool ShowValues;
+    // mode 7 (FUN_14171e860 @0x14171e860, :7128): the grabbed actor (TargetId) and the PCs to release from it.
+    // STILL-OPEN: the release itself (a PC in state 0x2b whose StateGrabTarget holds TargetId, FUN_141024a30,
+    // statedatagrabtarget.cpp:169, goes to state 1); there is no grab state here, so nothing is done
+    public List<int> Released;
+    // mode 8 (FUN_14171e9a0 @0x14171e9a0, :7149): the tag (CastUid), create or destroy, and when created the skill, level,
+    // owner and caster. STILL-OPEN: the CMagicModel create by the tag (SkillTargetRecord::Init, start tick by the owner's
+    // object kind, FindModel / new CMagicModel) and DestroyModel(tag, 0) (:7161-7177) belong to the cast side; decoded only
+    public bool Create; public int CasterId;
     public byte[] Raw;
 
     public static SkillDamage Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
@@ -56,6 +69,11 @@ public sealed class SkillDamage {
                 d.OwnerId = r.ReadInt(); d.TargetId = r.ReadInt(); d.BuffId = r.ReadInt(); d.DotHit = new Hit(r.ReadByte(), gms ? r.ReadInt() : r.ReadLong());
                 d.Targets.Add(new HitTarget(d.TargetId, new[] { d.DotHit }, default, default));
                 break;
+            case 4:
+                d.TargetId = r.ReadInt(); d.OwnerId = r.ReadInt(); d.BuffId = r.ReadInt();
+                d.Value1 = r.ReadUInt(); d.Value2 = r.ReadUInt(); d.Value3 = r.ReadUInt();
+                d.ShowValues = r.ReadByte() != 0;
+                break;
             case 5: {
                 d.CastUid = r.ReadLong(); d.OwnerId = r.ReadInt(); d.RegionId = r.ReadInt(); d.AttackPoint = r.ReadByte();
                 int n = r.ReadByte();
@@ -76,6 +94,17 @@ public sealed class SkillDamage {
                 }
                 break;
             }
+            case 7: {
+                d.TargetId = r.ReadInt();
+                int n = r.ReadInt();
+                d.Released = new List<int>(n < 0 ? 0 : n);
+                for (int i = 0; i < n; i++) d.Released.Add(r.ReadInt());
+                break;
+            }
+            case 8:
+                d.CastUid = r.ReadLong(); d.Create = r.ReadByte() != 0;
+                if (d.Create) { d.SkillId = r.ReadInt(); d.Level = (short) r.ReadUShort(); d.OwnerId = r.ReadInt(); d.CasterId = r.ReadInt(); }
+                break;
             default:
                 d.Raw = r.ReadBytes(r.Available);
                 return d;

@@ -260,6 +260,7 @@ public sealed partial class RemoteLayer : Node3D
     public bool InBattle(int objectId) => users.TryGetValue(objectId, out var r) && r.InBattle;
     readonly List<Ms2.Ui.Hud.DamageNumber> numbers = new();
     Func<int, int> pcMask;
+    Func<int, bool> isObject;
     static readonly Ms2.Formats.Options.GameOption.Battle defaultBattle = new();
 
     /// <summary>
@@ -270,7 +271,8 @@ public sealed partial class RemoteLayer : Node3D
     {
         numbers.Clear();
         pcMask ??= PcMask;
-        Ms2.Ui.Hud.DamageNumbers.Records(d, numbers);
+        isObject ??= Tracker.HasObject;
+        Ms2.Ui.Hud.DamageNumbers.Records(d, numbers, isObject);
         var o = GameOptions.Current?.BattleOption ?? defaultBattle;
         foreach (var n in numbers)
             if (Ms2.Ui.Hud.DamageNumbers.Shows(o, n.Grade, n.TargetId, n.CasterId, Tracker.SelfObjectId, pcMask))

@@ -176,7 +176,7 @@ public sealed class FieldTracker {
             case Ms2.Net.Inbound.SkillCancel: { var c = SkillCancel.Read(p.Reader()); Events.Enqueue(new SkillCancelledEvent(Time, c.ActorId, c.CastUid)); break; }
             case Ms2.Net.Inbound.SkillDamage: {
                 var d = SkillDamage.Read(p.Reader(), Profile);
-                if (d.Raw == null && d.Targets.Count > 0) Events.Enqueue(new SkillDamageEvent(Time, d));
+                if (d.Raw == null && (d.Targets.Count > 0 || d.Mode == 4)) Events.Enqueue(new SkillDamageEvent(Time, d));
                 break;
             }
             case Ms2.Net.Inbound.Stat: {

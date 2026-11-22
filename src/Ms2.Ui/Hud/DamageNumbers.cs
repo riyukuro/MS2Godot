@@ -26,9 +26,23 @@ public static class DamageNumbers
     /// STILL-OPEN: the skill's HasDamage gate (only main type 0x12's miss effect otherwise), the sight-range test, the tag
     /// 0x11 hit point, and the delay of the magic service's hit (the numbers are made when the packet comes); modes 0, 3,
     /// 5 and 6 are not listed here.
+    /// <para>Mode 4 (CSceneStateGame::FUN_14171d820 @0x14171d820, scenestategame.cpp:5685-5726): nothing when the owner is
+    /// no object of the field (FUN_141bd1200, <paramref name="isObject"/>; a null test means none is); with the show byte,
+    /// each nonzero value of the three in order is one number of type 5, 6 and 7 (FUN_1417403b0 @0x1417403b0, :9005) on the
+    /// owner, with the packet's target as the caster (pOwner->vfunc_111(value, type, nTargetId, ZERO)). STILL-OPEN: the
+    /// buff's invoke effect on the owner (FUN_14096fc00, additionalcli_2.cpp:325), the DPS meter's AddStat / AddHealTarget
+    /// and CNpc::vfunc_111's skip of a dead npc whose data has CorpseHitAble (@0x141090620).</para>
     /// </summary>
-    public static void Records(SkillDamage d, List<DamageNumber> into)
+    public static void Records(SkillDamage d, List<DamageNumber> into, System.Func<int, bool> isObject = null)
     {
+        if (d.Mode == 4)
+        {
+            if (isObject == null || !isObject(d.OwnerId) || !d.ShowValues) return;
+            if (d.Value1 != 0) into.Add(new DamageNumber(d.OwnerId, d.Value1, 5, d.TargetId));
+            if (d.Value2 != 0) into.Add(new DamageNumber(d.OwnerId, d.Value2, 6, d.TargetId));
+            if (d.Value3 != 0) into.Add(new DamageNumber(d.OwnerId, d.Value3, 7, d.TargetId));
+            return;
+        }
         if (d.Mode != 1) return;
         foreach (var t in d.Targets)
             foreach (var h in t.Hits)

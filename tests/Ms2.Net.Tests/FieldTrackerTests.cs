@@ -252,4 +252,15 @@ public class FieldTrackerTests {
     public void ThePetOpcodesFollowTheRecvOpTable() {
         Assert.That(((int) Inbound.FieldAddPet, (int) Inbound.FieldRemovePet), Is.EqualTo((0x5A, 0x5B)));
     }
+
+    [Test]
+    public void ARecoveryDamagePacketWithNoTargetsIsQueued() {
+        // mode 4 (FUN_14171d820) names no hit targets, only the owner its numbers go on
+        var w = new ByteWriter();
+        w.WriteByte(4); w.WriteInt(31); w.WriteInt(77); w.WriteInt(0); w.WriteInt(120); w.WriteInt(0); w.WriteInt(0); w.WriteByte(1);
+        var t = new FieldTracker();
+        t.Inbound(Packet(Inbound.SkillDamage, Bytes(w)));
+        var e = t.Events.Single() as SkillDamageEvent;
+        Assert.That((e?.Damage.Mode, e?.Damage.OwnerId, e?.Damage.Value1), Is.EqualTo(((byte?) 4, (int?) 77, (long?) 120)));
+    }
 }
