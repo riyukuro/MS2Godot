@@ -423,6 +423,47 @@ public sealed record SkillSlotState(SlotWorld W, uint SkillId, int ItemId, long 
         return byItem ? total : lv.Cooldown;
     }
 
+    /// <summary>The level data NotifyCooldownStart / NotifyCooldownEnd read (invenslot.cpp:505-513, :553-561): riding, the skill's
+    /// level 1; else the job system's level data.</summary>
+    SkillLevelData NotifyLevel(SkillData skill) => W.IsRiding ? skill.GetLevelData(1) : W.Jobs?.LevelData(skill.Id);
+
+    /// <summary>GetCooldownGroupFromKey: the group in the key's high word.</summary>
+    static uint GroupOfKey(ulong key) => (uint)(key >> 32);
+
+    /// <summary>The key is this skill's cooldown key, or in its cooldown group (invenslot.cpp:517-520, :564-567).</summary>
+    static bool KeyMatches(SkillData skill, ulong key) =>
+        (GroupOfKey(key) != 0 && GroupOfKey(key) == skill.CooldownGroupId) || (key != 0 && key == skill.CooldownKey);
+
+    /// <summary>
+    /// NotifyCooldownStart @0x141404ce0 (invenslot.cpp:493): a cooldown started on <paramref name="key"/>. True when the slot's skill
+    /// shows it (the row's useCoolDownShowUI, the key the skill's or its group's, time left): the slot's onCooldownStart(remain,
+    /// total) then runs with <paramref name="remain"/> and <paramref name="total"/> (an item cooldown's total, else the level's).
+    /// </summary>
+    public bool NotifyCooldownStart(ulong key, out float remain, out float total)
+    {
+        remain = total = 0;
+        uint id = EffectiveSkillId;
+        if (id == 0 || !W.HasPc || Skill(id) is not { } skill || NotifyLevel(skill) is not { } lv) return false;
+        if (!skill.Condition.UseCoolDownShowUI || !KeyMatches(skill, key)) return false;
+        remain = W.CooldownRemain(id, 1);
+        if (!(0f < remain)) return false;
+        var (t, byItem) = W.CooldownTotal(id);
+        total = byItem ? t : lv.Cooldown;
+        return true;
+    }
+
+    /// <summary>
+    /// NotifyCooldownEnd @0x1414050c0 (invenslot.cpp:541): a cooldown ended on <paramref name="key"/>. True when the slot's skill
+    /// has no time left on it (feature 0xca on lets a skill without useCoolDownShowUI through): the slot's onCooldownEnd runs.
+    /// </summary>
+    public bool NotifyCooldownEnd(ulong key)
+    {
+        uint id = EffectiveSkillId;
+        if (id == 0 || !W.HasPc || Skill(id) is not { } skill || NotifyLevel(skill) == null) return false;
+        if (!W.IsFeatureEnabled(0xca) && !skill.Condition.UseCoolDownShowUI) return false;
+        return KeyMatches(skill, key) && W.CooldownRemain(id, 1) <= 0f;
+    }
+
     /// <summary>FUN_141760b90: the cooldown left.</summary>
     public float CooldownRemain()
     {

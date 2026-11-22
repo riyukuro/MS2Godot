@@ -32,7 +32,7 @@ public sealed class SkillCooltime
 /// CSkillSystem's cooldowns (m_mapCooltime, keyed by SkillData::GetCooldownKey) and charge uses (m_mapUses, keyed by
 /// SkillData::GetRechargeId), as the cooldown packets and the slot state read them (skillslot.cpp).
 /// <see cref="Started"/> / <see cref="Ended"/> stand for UIStatusEventDispatcher FUN_141b0e260 / FUN_141b0e2f0 with the key.
-/// STILL-OPEN: the expiry's FUN_1417687e0 / FUN_141768a50 are not ported.
+/// The expiry's charge restore (FUN_1417687e0) and restart (FUN_141768a50) run in <see cref="Update"/>.
 /// </summary>
 public sealed class SkillCooltimes
 {
@@ -67,7 +67,17 @@ public sealed class SkillCooltimes
     /// </summary>
     public float AbilityRate;
 
+    /// <summary>The cooldown seconds of the own job system's level data for a skill (Unk_SsSkillBook::vfunc_1(id)->GetCooldown(),
+    /// skillslot.cpp:2712-2716, :2731-2735); null when the skill has no level data there. The HUD feeds the quick slots' job system.</summary>
+    public Func<uint, float?> LevelCooldown = _ => null;
+
     public int Count => cooltimes.Count;
+
+    /// <summary>Seconds left on the skill's cooldown or its group's (FUN_141765fe0 with the combo kept, :1918); 0 when none.</summary>
+    public float Remaining(uint skillId, uint now) => Remain(skillId, false, now);
+
+    /// <summary>Whether the key's own cooldown still has time left (an unannounced end counts as over once its tick passed).</summary>
+    public bool IsCooling(ulong key, uint now) => cooltimes.TryGetValue(key, out var c) && !c.IsOver(now);
 
     public SkillCooltime Get(ulong key) => cooltimes.TryGetValue(key, out var c) ? c : null;
 
@@ -262,24 +272,56 @@ public sealed class SkillCooltimes
     /// <summary>IsNearlyEqual @0x14028d470 (commonutil.cpp:669) against 0: closer than 1e-6.</summary>
     internal static bool NearlyZero(float f) => MathF.Abs(f) < 1e-06f;
 
+    readonly List<SkillCooltime> over = new();
+    readonly List<ulong> dropKeys = new();
+    readonly List<uint> useIds = new();
+
     /// <summary>
     /// CSkillSystem::Update @0x141766af0 (:2311), the cooldown part: an announced cooldown is dropped 10 s past its end, one that
-    /// is over is announced and marked.
+    /// is over is announced and marked; then each of those restores a charge (FUN_1417687e0) and the charges restart the
+    /// cooldown of a skill with uses left and none running (FUN_141768a50). No allocation once the lists have grown.
     /// </summary>
     public void Update(uint now)
     {
+        over.Clear(); dropKeys.Clear();
         foreach (var (key, c) in cooltimes)
         {
             if (c.State != 0)
             {
-                if (c.End + 10000 < now) cooltimes.Remove(key);
+                if (c.End + 10000 < now) dropKeys.Add(key);
             }
             else if (c.IsOver(now))
             {
                 Ended?.Invoke(c.Key);
                 c.State = 1;
+                over.Add(c);
             }
         }
+        foreach (var k in dropKeys) cooltimes.Remove(k);
+        foreach (var c in over) RestoreUse(c, now);
+        RestartCharges(now);
+    }
+
+    /// <summary>FUN_1417687e0 @0x1417687e0 (:2701): a charge skill's cooldown that ran out gives one use back (under the key's low
+    /// word); with uses left the cooldown starts again from now with the combo window kept. A combo cooldown does nothing.</summary>
+    void RestoreUse(SkillCooltime c, uint now)
+    {
+        if (c.IsCombo) return;
+        uint id = (uint)c.Key;
+        if (skills(id) is not { } s || !uses.TryGetValue(s.RechargeId, out int n) || n <= 0) return;
+        uses[s.RechargeId] = --n;
+        if (n > 0 && LevelCooldown(id) is { } cool) Start(now, id, cool, c.Combo, false, now);
+    }
+
+    /// <summary>FUN_141768a50 @0x141768a50 (:2737): every recharge id with uses left and no cooldown running starts its level's
+    /// cooldown with a 0.1 s combo window.</summary>
+    void RestartCharges(uint now)
+    {
+        if (uses.Count == 0) return;
+        useIds.Clear();
+        foreach (var (id, n) in uses) if (n > 0) useIds.Add(id);
+        foreach (var id in useIds)
+            if (NearlyZero(Remain(id, false, now)) && LevelCooldown(id) is { } cool) Start(now, id, cool, 0.1f, false, now);
     }
 
     /// <summary>

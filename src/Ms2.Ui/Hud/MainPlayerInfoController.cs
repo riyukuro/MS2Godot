@@ -267,8 +267,8 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
     /// <summary>
     /// SkillSlot::vfunc_8 @0x14175e9e0 (skillslot.cpp:793): the slot object a bound quick slot holds, for the current page's
     /// entry (CKeyTable::GetQuickSlotEntry, keytable.cpp:1574; all zero = an empty slot). The state comes from
-    /// <see cref="Skills.SkillSlotState"/>; the cooldown and recharge parts read the skill system, which Godot does not run yet,
-    /// so they stay 0.
+    /// <see cref="Skills.SkillSlotState"/>; the cooldown and recharge parts read the live session's cooldown table (<see cref="Skills.SkillCooltimes"/>),
+    /// 0 offline.
     /// </summary>
     public override object GetBinding(string name)
     {
@@ -419,6 +419,43 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
                 || ((flags & RefreshItemCount) != 0 && s.ItemCount(false) != was.ItemCount)
                 || ((flags & RefreshRecharge) != 0 && s.RechargeRemaining != was.Recharge);
             if (changed) Host.Push(SlotBag + "." + i);
+        }
+    }
+
+    /// <summary>
+    /// UIMainPlayerInfo::vfunc_oa0_25 @0x1419f0280 (uimainplayerinfo.cpp:774) with SkillSlot::vfunc_23 @0x14175f0c0 (skillslot.cpp:880)
+    /// on every quick slot: a cooldown started on <paramref name="key"/> (<see cref="Skills.SkillCooltimes.Started"/>). A slot whose
+    /// skill shows it runs the slot's onCooldownStart(remain, total) and queues the gray and recharge refresh (FUN_1419f37f0(5)).
+    /// STILL-OPEN: the ChromaSDK SetCooldown call.
+    /// </summary>
+    public void OnCooldownStarted(ulong key)
+    {
+        var w = World();
+        for (int i = 0; i < SlotCount; i++)
+        {
+            if (slotObjects[i] is not { } o) continue;
+            var e = Shown(i);
+            if (!new Skills.SkillSlotState(w, (uint)e.SkillId, e.ItemId, e.ItemUid).NotifyCooldownStart(key, out float remain, out float total)) continue;
+            Host?.Invoke(o, "onCooldownStart", (double)remain, (double)total);
+            QueueSlotRefresh(RefreshGray | RefreshRecharge);
+        }
+    }
+
+    /// <summary>
+    /// UIMainPlayerInfo::vfunc_oa0_26 @0x1419f0320 (:781) with SkillSlot::vfunc_24 @0x14175f180 (skillslot.cpp:892): a cooldown ended on
+    /// <paramref name="key"/> (<see cref="Skills.SkillCooltimes.Ended"/>). A slot whose skill has no time left runs the slot's
+    /// onCooldownEnd (the ready flash) and queues the gray and recharge refresh. STILL-OPEN: the ChromaSDK ResetCooldown call.
+    /// </summary>
+    public void OnCooldownEnded(ulong key)
+    {
+        var w = World();
+        for (int i = 0; i < SlotCount; i++)
+        {
+            if (slotObjects[i] is not { } o) continue;
+            var e = Shown(i);
+            if (!new Skills.SkillSlotState(w, (uint)e.SkillId, e.ItemId, e.ItemUid).NotifyCooldownEnd(key)) continue;
+            Host?.Invoke(o, "onCooldownEnd");
+            QueueSlotRefresh(RefreshGray | RefreshRecharge);
         }
     }
 

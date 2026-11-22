@@ -984,9 +984,29 @@ public partial class HudScene
     }
 
     /// <summary>Each frame: CSkillSystem::Update's cooldown part at the server tick (0 B/frame).</summary>
-    static void TickCooltimes()
+    void TickCooltimes()
     {
-        if (Net.LiveSession.Instance is { } live) live.Cooltimes.Update((uint)Net.LiveSession.CastTick());
+        if (Net.LiveSession.Instance is not { } live) return;
+        var cool = live.Cooltimes;
+        if (playerInfo != null && !ReferenceEquals(cool, cooltimesWired)) WireCooltimes(cool);
+        cool.Update((uint)Net.LiveSession.CastTick());
+    }
+
+    Ms2.Ui.Skills.SkillCooltimes cooltimesWired;
+
+    /// <summary>The cooldown start and end events (UIStatusEventDispatcher FUN_141b0e260 / FUN_141b0e2f0) reach the quick slots
+    /// (UIMainPlayerInfo vfunc_oa0_25 / 26). Wired once per session's table.</summary>
+    void WireCooltimes(Ms2.Ui.Skills.SkillCooltimes cool)
+    {
+        if (cooltimesWired != null)
+        {
+            cooltimesWired.Started -= playerInfo.OnCooldownStarted;
+            cooltimesWired.Ended -= playerInfo.OnCooldownEnded;
+        }
+        cooltimesWired = cool;
+        cool.LevelCooldown = id => slotJobs?.LevelData(id)?.Cooldown;
+        cool.Started += playerInfo.OnCooldownStarted;
+        cool.Ended += playerInfo.OnCooldownEnded;
     }
 
     /// <summary>The quick slots' cooldown reads: the live session's CSkillSystem table at the server tick, idle offline.</summary>

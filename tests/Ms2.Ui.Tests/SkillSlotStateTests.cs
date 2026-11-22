@@ -70,6 +70,32 @@ public class SkillSlotStateTests
         Assert.That(CastGate.Why(w, lv, true), Is.EqualTo(2), "cooling down, shown in the UI");
     }
 
+    /// <summary>NotifyCooldownStart / NotifyCooldownEnd (invenslot.cpp:493, :541): the slot of a skill shows a cooldown of its own key
+    /// or its group, only while the row shows cooldowns and time is left; the end only when none is left.</summary>
+    [Test]
+    public void ASlotTakesTheCooldownEventsOfItsKeyAndGroup()
+    {
+        var t = Skills(Attack.Replace("<ui icon", "<stateAttr cooldownGroupID=\"7\"/><ui icon"));
+        var w = World(t);
+        w.HasPc = true;
+        var s = new SkillSlotState(w, 100, 0, 0);
+        ulong own = t.Skills.GetSkillData(100).CooldownKey;
+        w.CooldownRemain = (_, _) => 3f;
+        Assert.That(s.NotifyCooldownStart(own, out float remain, out float total), Is.True);
+        Assert.That((remain, total), Is.EqualTo((3f, 8f)));
+        Assert.That(s.NotifyCooldownStart(((ulong)t.Skills.GetSkillData(100).CooldownGroupId << 32) | 555, out _, out _), Is.True, "the group's other key");
+        Assert.That(s.NotifyCooldownStart(((ulong)99 << 32) | 555, out _, out _), Is.False, "another group");
+        Assert.That(s.NotifyCooldownStart(0, out _, out _), Is.False, "no key");
+        Assert.That(s.NotifyCooldownEnd(own), Is.False, "time is left");
+        w.CooldownRemain = (_, _) => 0f;
+        Assert.That(s.NotifyCooldownStart(own, out _, out _), Is.False, "nothing left to show");
+        Assert.That(s.NotifyCooldownEnd(own), Is.True);
+        Assert.That(s.NotifyCooldownEnd(((ulong)99 << 32) | 555), Is.False);
+        Assert.That(new SkillSlotState(w, 0, 0, 0).NotifyCooldownEnd(own), Is.False, "an empty slot");
+        w.HasPc = false;
+        Assert.That(s.NotifyCooldownEnd(own), Is.False, "no player");
+    }
+
     [Test]
     public void ASkillSlotGraysAsTheClientDoes()
     {

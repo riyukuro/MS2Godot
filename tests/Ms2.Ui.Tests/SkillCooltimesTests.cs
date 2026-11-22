@@ -370,4 +370,56 @@ public class SkillCooltimesTests
         }
         Assert.That(Alloc.Least(Window), Is.LessThan(512), "100000 checks");
     }
+
+    [Test]
+    public void ACooldownThatRunsOutGivesAChargeBackAndRestartsWhileUsesAreLeft()
+    {
+        var (c, log) = Make();
+        c.LevelCooldown = id => id == 110 ? 3f : null;
+        c.SetDuration(0, 110, 3f);
+        c.SetRechargeUses(110, 2);
+        c.Update(2999);
+        Assert.That(c.RechargeUses(Table().GetSkillData(110)), Is.EqualTo(2), "nothing before the end");
+        c.Update(3000);                                       // FUN_1417687e0: one use back, the cooldown starts again
+        var sk = Table().GetSkillData(110);
+        Assert.That(c.RechargeUses(sk), Is.EqualTo(1));
+        Assert.That(c.Get(110) is { Start: 3000, End: 6000, State: 0 }, "restarted from now");
+        Assert.That(c.IsCooling(110, 3500), Is.True);
+        Assert.That(c.Remaining(110, 4000), Is.EqualTo(2f).Within(1e-5f));
+        Assert.That(log, Is.EqualTo(new[] { "+6e", "-6e", "+6e" }));
+        c.Update(6000);                                       // the last use back: no restart
+        Assert.That(c.RechargeUses(sk), Is.EqualTo(0));
+        Assert.That(c.IsCooling(110, 6000), Is.False);
+        Assert.That(log, Is.EqualTo(new[] { "+6e", "-6e", "+6e", "-6e" }));
+    }
+
+    [Test]
+    public void ChargesWithNoCooldownRunningStartOneAndACombosEndRestoresNothing()
+    {
+        var (c, log) = Make();
+        c.LevelCooldown = id => id == 110 ? 3f : null;
+        c.SetRechargeUses(110, 1);
+        c.Update(1000);                                       // FUN_141768a50: uses left, no cooldown: the level's cooldown starts
+        Assert.That(c.Get(110) is { Start: 1000, End: 4000 }, Is.True);
+        Assert.That(log, Is.EqualTo(new[] { "+6e" }));
+        var (d, _) = Make();
+        d.LevelCooldown = _ => 3f;
+        d.SetRechargeUses(110, 2);
+        d.Start(0, 110, 0f, 0.5f, true, 0);                   // a combo cooldown (no Started event)
+        d.Update(600);
+        Assert.That(d.RechargeUses(Table().GetSkillData(110)), Is.EqualTo(2), "m_bCombo: FUN_1417687e0 returns");
+    }
+
+    [Test]
+    public void UpdateAllocatesNothingOnceTheListsHaveGrown()
+    {
+        var (c, _) = Make();
+        c.LevelCooldown = _ => 3f;
+        c.SetDuration(0, 110, 3f); c.SetRechargeUses(110, 2); c.SetDuration(0, 103, 50f);
+        for (uint t = 0; t < 20000; t += 500) c.Update(t);    // warm: the lists and tables grow once
+        c.SetDuration(20000, 110, 3f); c.SetRechargeUses(110, 2);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (uint t = 20000; t < 40000; t += 16) c.Update(t);
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThanOrEqualTo(2048), "0 B per frame bar the restarted cooldown objects");
+    }
 }

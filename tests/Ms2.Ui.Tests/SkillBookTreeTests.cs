@@ -178,6 +178,43 @@ public class SkillBookTreeTests
         Assert.That(Rt.ToString(h.Get(slot3, "iconPath")), Is.EqualTo(m.Tables.Skills.GetSkillData((uint)skill).Icon));
     }
 
+    /// <summary>The cooldown events reach the quick slot's movie: UIMainPlayerInfo vfunc_oa0_25 / 26 give each SkillSlot
+    /// vfunc_23 / 24, which call NotifyCooldownStart / NotifyCooldownEnd (invenslot.cpp:493, :541) and the slot's AS onCooldownStart /
+    /// onCooldownEnd, then queue the gray and recharge refresh.</summary>
+    [Test]
+    public void TheCooldownEventsRunTheSlotsOnCooldownStartAndEnd()
+    {
+        var (bh, book, _) = Load();
+        book.OnSkillBookTree(NoTabs());
+        var m = bh.Model;
+        var names = book.GetBagSlotBindings(SkillBookTreeController.BagName);
+        string from = names.First(n => m.Tables.Skills.GetSkillData(book.BookSkillId(n)) is { IsPassive: false, Condition.UseCoolDownShowUI: true });
+        uint skill = book.BookSkillId(from);
+        var (h, bar, _, _) = QuickSlotBar(m);
+        float left = 3f;
+        bar.SlotWorld = () => new SlotWorld
+        {
+            Tables = m.Tables.Skills, ItemData = m.Tables.Items.Get, Level = 99, HasPc = true, IsRiding = true,   // riding: the level 1 row (invenslot.cpp:505)
+            CooldownRemain = (_, _) => left,
+        };
+        bar.SlotDroppedOn(MainPlayerInfoController.SlotBag + ".3", from, book);
+        var calls = new List<string>();
+        void Count(string n) { if (n.Contains("onCooldown")) calls.Add(n); }
+        Interp.OnCall += Count;
+        try
+        {
+            ulong key = m.Tables.Skills.GetSkillData(skill).CooldownKey;
+            bar.OnCooldownStarted(key);
+            Assert.That(calls.Count(c => c.EndsWith("onCooldownStart", StringComparison.Ordinal)), Is.EqualTo(1), string.Join(",", calls));
+            bar.OnCooldownStarted(key + (3ul << 40));
+            Assert.That(calls.Count, Is.EqualTo(1), "another key: no slot takes it");
+            left = 0;
+            bar.OnCooldownEnded(key);
+            Assert.That(calls.Count(c => c.EndsWith("onCooldownEnd", StringComparison.Ordinal)), Is.EqualTo(1), string.Join(",", calls));
+        }
+        finally { Interp.OnCall -= Count; }
+    }
+
     [Test]
     public void ABookSkillDroppedWithNoKeyTablePageShowsOnItsSlotUntilTheServerPagesComeIn()
     {
