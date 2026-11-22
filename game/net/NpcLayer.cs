@@ -57,6 +57,14 @@ public sealed class NpcLayer
     /// </summary>
     public Action<World.FieldNpcs.Placed, long> ExpShown;
 
+    /// <summary>OnFieldAddNpc's CQuestNavigator::NotifyAddNpc (the npc made) and OnFieldRemoveNpc's NotifyRemoveNpc (its
+    /// object id, before the npc is freed).</summary>
+    public Action<World.FieldNpcs.Placed> Added;
+    public Action<int> Removed;
+
+    /// <summary>The npcs of the field as the talk finds them, dead or not.</summary>
+    public IEnumerable<World.FieldNpcs.Placed> All => inst.Values.Where(x => x.Talk != null).Select(x => x.Talk);
+
     /// <summary>OnExpUp with this npc's object id: CNpc::FUN_141094df0 (@0x141094df0) adds the gain to the npc, dead or
     /// not; false when there is no npc of the id (WorldService::FindNpcById null), and the own PC shows it.</summary>
     public bool AddExp(int id, long exp)
@@ -184,6 +192,7 @@ public sealed class NpcLayer
         i.Life = lives[n.ObjectId] = lives.GetValueOrDefault(n.ObjectId, -1) + 1;
         inst[n.ObjectId] = i;
         Spawned++;
+        Added?.Invoke(i.Talk);
         if (n.Hidden) Die(n.ObjectId, false);      // OnFieldAddNpc (scenestategame.cpp:3556-3558): vfunc_125(0)
     }
 
@@ -195,6 +204,7 @@ public sealed class NpcLayer
     {
         if (dead) { Die(id, true); return; }
         if (!inst.Remove(id, out var i)) return;
+        Removed?.Invoke(id);
         Tags?.Remove(i.Root);
         Bars?.Remove(i.Root);
         i.Root.QueueFree();

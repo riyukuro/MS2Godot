@@ -100,6 +100,12 @@ public sealed partial class RemoteLayer : Node3D
 
     /// <summary>An npc's exp shown at the end of its death sequence (<see cref="NpcLayer.ExpShown"/>).</summary>
     public Action<World.FieldNpcs.Placed, long> NpcExpShown { set => npcs.ExpShown = value; }
+    /// <summary>An npc made and an npc removed (<see cref="NpcLayer.Added"/>, <see cref="NpcLayer.Removed"/>).</summary>
+    public Action<World.FieldNpcs.Placed> NpcAdded { set => npcs.Added = value; }
+    public Action<int> NpcRemoved { set => npcs.Removed = value; }
+    /// <summary>The field's npcs, dead or not.</summary>
+    public IEnumerable<World.FieldNpcs.Placed> Npcs => npcs.All;
+    public bool NpcDead(int objectId) => npcs.IsDead(objectId);
 
     /// <summary>WorldService::FindPCById then GetEquipByUid (OnItemUpdate): whether the player is here, and its worn equip of the uid (null when none).</summary>
     public (bool PcKnown, Ms2.Net.Packets.EquipItem Equip) EquipOf(int objectId, long uid)

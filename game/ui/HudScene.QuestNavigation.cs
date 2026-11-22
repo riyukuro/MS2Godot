@@ -32,6 +32,8 @@ public partial class HudScene
     readonly Dictionary<string, (int RowId, Vec3 Position)> questNavigationProps = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<int, World.FieldPortals.Portal> questNavigationPortalById = new();
     readonly List<TracePortal> questNavigationPortals = new();
+    readonly List<World.FieldPortals.Portal> questNavigationPortalSources = new();     // questNavigationPortals' portals, same order
+    MovieDialog questNavigationMovie;
 
     void QuestNavigationSlot(Control ui) =>
         ui.AddChild(questNavigationSlot = new Control { Name = "uiquestnavigation", MouseFilter = Control.MouseFilterEnum.Ignore });
@@ -66,7 +68,7 @@ public partial class HudScene
             FieldId = FieldNow,
             CanShowBeam = () => player != null,
             PlayerPosition = () => QuestNavigationPlayer() is { } p ? new QuestNavigationController.Point((float)p.X, (float)p.Y, (float)p.Z) : null,
-            NpcDead = id => questNavigationNpcs.TryGetValue(id, out var n) ? !n.Root.Visible : null,
+            NpcDead = id => questNavigationNpcs.TryGetValue(id, out var n) ? QuestNavigationNpcDead(id, n) : null,
             NpcAnchor = id => questNavigationNpcs.TryGetValue(id, out var n) ? NpcAnchorOf(n) : null,
             PropActive = name => questNavigationProps.ContainsKey(name) ? true : null,
             PropPosition = name => questNavigationProps.TryGetValue(name, out var e) ? new QuestNavigationController.Point((float)e.Position.X, (float)e.Position.Y, (float)e.Position.Z) : null,
@@ -78,13 +80,14 @@ public partial class HudScene
         // NotifyCreateMyPC: the tracked quest back
         nav.OnCreateMyPc();
         // the object notifies: OnAddNpc, OnAddInteract, OnAddPortal
+        // offline the field's own spawns; live the npcs of FieldAddNpc, those made before the field was up and then each add
+        // and remove as it comes (OnFieldAddNpc / OnFieldRemoveNpc)
         int offlineId = 0;
         foreach (var n in fc.SpawnedNpcs)
-        {
-            int id = n.ObjectId != 0 ? n.ObjectId : --offlineId;      // offline npcs have no object id: a negative key of their own
-            questNavigationNpcs[id] = n;
-            c.AddNpc(id, n.Row.Id);
-        }
+            AddQuestNavigationNpc(n.ObjectId != 0 ? n.ObjectId : --offlineId, n);      // offline npcs have no object id: a negative key
+        if (live != null)
+            foreach (var n in live.LiveNpcs)
+                AddQuestNavigationNpc(n.ObjectId, n);
         foreach (var e in fc.Map?.Entities ?? Enumerable.Empty<FieldEntity>())
         {
             if (!e.HasMixin("MS2InteractObject") || string.IsNullOrEmpty(e.Name)) continue;
@@ -96,15 +99,19 @@ public partial class HudScene
         foreach (var p in fc.Portals.All)
         {
             questNavigationPortalById[p.Id] = p;
-            if (p.TargetField != 0) questNavigationPortals.Add(new TracePortal(p.TargetField, p.Position.X, p.Position.Y, p.Position.Z, p.Visible));
+            if (p.TargetField != 0)
+            {
+                questNavigationPortals.Add(new TracePortal(p.TargetField, p.Position.X, p.Position.Y, p.Position.Z, p.Visible));
+                questNavigationPortalSources.Add(p);
+            }
             c.AddPortal(p.Id);
         }
         // NotifyCompleteMyPC: the player's marker, the beam and the context
         c.CompleteMyPc();
         nav.OnCompleteMyPc();
 
-        var movie = new MovieDialog(assets, c, NewModel(), ScreenMode.PixelSize(GetWindow()));
-        questNavigationSlot.AddChild(movie);
+        questNavigationMovie = new MovieDialog(assets, c, NewModel(), ScreenMode.PixelSize(GetWindow()));
+        questNavigationSlot.AddChild(questNavigationMovie);
 
         if (live != null)
         {
@@ -120,11 +127,21 @@ public partial class HudScene
             live.Quests.Started += onStarted;
             live.Quests.ProgressUpdated += onProgress;
             live.Quests.Changed += onChanged;
+            Action<World.FieldNpcs.Placed> onNpcAdded = n => AddQuestNavigationNpc(n.ObjectId, n);
+            Action<int> onNpcRemoved = id =>
+            {
+                // NotifyRemoveNpc: the marker goes before the npc is freed
+                if (questNavigationNpcs.Remove(id)) questNavigation?.RemoveNpc(id);
+            };
+            live.NpcAdded += onNpcAdded;
+            live.NpcRemoved += onNpcRemoved;
             unwatchQuestNavigation = () =>
             {
                 live.Quests.Started -= onStarted;
                 live.Quests.ProgressUpdated -= onProgress;
                 live.Quests.Changed -= onChanged;
+                live.NpcAdded -= onNpcAdded;
+                live.NpcRemoved -= onNpcRemoved;
             };
         }
     }
@@ -133,6 +150,10 @@ public partial class HudScene
     void QuestNavigationTick()
     {
         if (questNavigator == null) return;
+        // IsShown each frame: a portal the server shows or hides after the field is up
+        for (int k = 0; k < questNavigationPortals.Count; k++)
+            if (questNavigationPortals[k].Shown != questNavigationPortalSources[k].Visible)
+                questNavigationPortals[k] = questNavigationPortals[k] with { Shown = questNavigationPortalSources[k].Visible };
         questNavigator.Frame();
         questNavigation.Tick(questNavigator.Result, questNavigator.Context);
     }
@@ -144,6 +165,49 @@ public partial class HudScene
         questNavigation?.Unload();
         questNavigator = null;
         questNavigation = null;
+        if (questNavigationMovie != null && IsInstanceValid(questNavigationMovie)) questNavigationMovie.QueueFree();
+        questNavigationMovie = null;
+    }
+
+    /// <summary>
+    /// A field move keeps the HUD: the navigator, the movie and the old field's npcs, interact objects and portals go, and
+    /// the next field's load opens them again (the client's field leave and NotifyCreateMyPC / NotifyCompleteMyPC).
+    /// </summary>
+    void ResetQuestNavigation()
+    {
+        CloseQuestNavigation();
+        questNavigationNpcs.Clear();
+        questNavigationProps.Clear();
+        questNavigationPortalById.Clear();
+        questNavigationPortals.Clear();
+        questNavigationPortalSources.Clear();
+        questNavigationOpened = false;
+    }
+
+    /// <summary>For the field move check: open, the movie, the portal entries and the npc entries whose node is freed.</summary>
+    internal (bool Opened, MovieDialog Movie, int Portals, int FreedNpcs) QuestNavigationState
+    {
+        get
+        {
+            int freed = 0;
+            foreach (var n in questNavigationNpcs.Values) if (n.Root == null || !IsInstanceValid(n.Root) || n.Root.IsQueuedForDeletion()) freed++;
+            return (questNavigationOpened, questNavigationMovie, questNavigationPortalById.Count, freed);
+        }
+    }
+
+    /// <summary>OnAddNpc: the npc's marker (NotifyAddNpc) by its object id.</summary>
+    void AddQuestNavigationNpc(int id, World.FieldNpcs.Placed n)
+    {
+        if (questNavigation == null || n?.Row == null) return;
+        questNavigationNpcs[id] = n;
+        questNavigation.AddNpc(id, n.Row.Id);
+    }
+
+    /// <summary>CNpc IsDead: a live npc by its object id, an offline one hidden; a freed npc counts as dead.</summary>
+    static bool QuestNavigationNpcDead(int id, World.FieldNpcs.Placed n)
+    {
+        if (n.Root == null || !IsInstanceValid(n.Root)) return true;
+        return id > 0 && Ms2Godot.Net.LiveSession.Instance is { } live ? live.NpcDead(id) : !n.Root.Visible;
     }
 
     (double X, double Y, double Z)? QuestNavigationPlayer()
@@ -168,7 +232,7 @@ public partial class HudScene
         float bestDist = float.MaxValue;
         foreach (var n in questNavigationNpcs.Values)
         {
-            if (!n.Root.Visible || !ids.Contains(n.Row.Id)) continue;
+            if (!ids.Contains(n.Row.Id) || QuestNavigationNpcDead(n.ObjectId != 0 ? n.ObjectId : -1, n)) continue;
             var p = World.FieldPortals.ToMs2(n.Position);
             float d = (float)QuestTrace.Distance(me, (p.X, p.Y, p.Z));
             if (d < bestDist) { bestDist = d; best = (p.X, p.Y, p.Z, d); }

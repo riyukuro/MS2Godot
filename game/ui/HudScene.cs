@@ -1260,6 +1260,7 @@ public partial class HudScene : Node, IUiStageHost
         playerNameTag?.FieldChanged();
         playerBar?.FieldChanged();
         tombBar?.FieldChanged();
+        ResetQuestNavigation();
         if (minimap != null) { minimap.Host.Unload(); minimap.GetParent()?.RemoveChild(minimap); minimap.QueueFree(); }
         minimap = null; minimapSide = null;
         slotField = null; slotFieldId = null;       // the quick slots' field facts (FieldData of the field)

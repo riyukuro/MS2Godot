@@ -15,6 +15,8 @@ namespace Ms2Godot.Tests;
 /// <item>the HUD node is the same and has one field scene child;</item>
 /// <item>the dialogs the client keeps are the same instances (the target bar, top bar, quest tracker and their controllers,
 /// the system text's controller);</item>
+/// <item>the quest navigation is opened again for the new field: a new movie, the old one freed, no freed npc and the
+/// new field's portals only;</item>
 /// <item>what the client's move resets is reset: the damage numbers are cleared (UIDamageText::ClearAll), the screen mask
 /// and system text movies are loaded again (UISceneGame vfunc_56 / vfunc_55), a system line shown during the load is
 /// shown at its end, and one parked when the next move unloads the movie is forgotten (UISystemText::vfunc_3);</item>
@@ -136,7 +138,10 @@ public partial class HudMoveDriver : Node
         damage?.OnPlayer(100, 0);           // a number over the own PC, which the move clears
         if (DamageCount(damage) == 0) Fail("no damage number was shown before the move");
         movesAtSwapCheck = Moves;
+        questNavigationMovie = hud.QuestNavigationState.Movie;
     }
+
+    Node questNavigationMovie;
 
     void StartMove()
     {
@@ -161,6 +166,15 @@ public partial class HudMoveDriver : Node
         if (mask == null || ReferenceEquals(mask, screenMask)) Fail($"move {n}: the screen mask was not loaded again");
         if (DamageCount(Get(hud, "damageText")) != 0) Fail($"move {n}: the damage numbers were not cleared");
         if (hud.SystemText.Parked.Type != 0) Fail($"move {n}: a parked system line was not shown at the load's end");
+        // the quest navigation is made again for the new field, with none of the old field's npcs or portals
+        var qn = hud.QuestNavigationState;
+        int portals = GetTree().GetFirstNodeInGroup(FieldContents.Group) is FieldContents { Portals: { } fp } ? fp.All.Select(p => p.Id).Distinct().Count() : -1;
+        if (!qn.Opened || qn.Movie == null || ReferenceEquals(qn.Movie, questNavigationMovie))
+            Fail($"move {n}: the quest navigation was not opened again");
+        if (questNavigationMovie != null && IsInstanceValid(questNavigationMovie) && !questNavigationMovie.IsQueuedForDeletion())
+            Fail($"move {n}: the old field's quest navigation movie was kept");
+        if (qn.FreedNpcs != 0) Fail($"move {n}: the quest navigation holds {qn.FreedNpcs} freed npcs");
+        if (qn.Portals != portals) Fail($"move {n}: the quest navigation holds {qn.Portals} portals, the field {portals}");
         GD.Print($"hud move: move {n} checked, field {Get(hud, "xblock")}");
     }
 

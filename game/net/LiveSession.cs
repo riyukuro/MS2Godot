@@ -377,6 +377,13 @@ public partial class LiveSession : Node
     public event Action<long, int> ExpGained;
     /// <summary>An npc's exp gain shown when its death sequence ended (<see cref="NpcLayer.ExpShown"/>): the npc and the exp.</summary>
     public event Action<FieldNpcs.Placed, long> NpcExpShown;
+    /// <summary>A live npc made (FieldAddNpc) and removed (FieldRemoveNpc, its object id), the quest navigator's notifies.</summary>
+    public event Action<FieldNpcs.Placed> NpcAdded;
+    public event Action<int> NpcRemoved;
+    /// <summary>The live field's npcs, dead or not; none before the field is entered.</summary>
+    public IEnumerable<FieldNpcs.Placed> LiveNpcs => remote?.Npcs ?? Enumerable.Empty<FieldNpcs.Placed>();
+    /// <summary>The live npc of the object id is dead (CNpc IsDead); false when there is none.</summary>
+    public bool NpcDead(int objectId) => remote?.NpcDead(objectId) ?? false;
     /// <summary>A drop reached a player who picked it (CDropItem::SetState(3), dropitem.cpp:671-695): the player (null for the
     /// own PC), then the meso, or the count and icon path of a type 3 item; nothing for another picker or item.</summary>
     public event Action<Ui.DamageTarget, long> MesoGained;
@@ -913,6 +920,8 @@ public partial class LiveSession : Node
         remote.Tracker.Profile = game.Profile;
         remote.Numbered = (n, npc, pc) => DamageNumbered?.Invoke(n, npc, pc);
         remote.NpcExpShown = (npc, exp) => NpcExpShown?.Invoke(npc, exp);
+        remote.NpcAdded = npc => NpcAdded?.Invoke(npc);
+        remote.NpcRemoved = id => NpcRemoved?.Invoke(id);
         remote.BattleStanceChanged = (id, on) => BattleStanceChanged?.Invoke(id, on);
         var kinds = Kinds();
         var dropLayer = drops = new DropLayer(field, builder, entry.Enter.CharacterId, kinds.Known,

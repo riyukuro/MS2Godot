@@ -14,9 +14,8 @@ namespace Ms2.Ui.Hud;
 /// </para>
 /// <para>
 /// The HUD hosts it with CQuestNavigator (Ms2.Quest.QuestNavigator), whose trace and context feed <see cref="Tick"/>, and
-/// sends the field's npcs, interact objects and portals at field load. STILL-OPEN: no liftable is sent (AddLiftable has no
-/// caller), NotifyRemoveNpc has no sender (an npc that leaves keeps its marker), and CanShowBeam's ride and hide tests are
-/// the host's (<see cref="CanShowBeam"/>).
+/// sends the field's npcs, interact objects and portals at field load, then each live npc's add and remove. STILL-OPEN: no
+/// liftable is sent (AddLiftable has no caller), and CanShowBeam's ride and hide tests are the host's (<see cref="CanShowBeam"/>).
 /// </para>
 /// </summary>
 public sealed class QuestNavigationController : UiController
