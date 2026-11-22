@@ -787,6 +787,40 @@ public class HudTests
     }
 
     [Test]
+    public void PartySearchChiefMenuListsTheClientItems()
+    {
+        // UIPartySearchDialog::FUN_140f8e790 (flags 0x40da, "partySearchSlot"): the own character opens PopUpMenu (kind 1), a
+        // character outside the field OpenFromCharName by name (view, whisper, group chat, friend by name, block by name, report;
+        // no party, trade or house items), a character in the field the proxy variant (not ported: nothing opens)
+        var m = Model();
+        var buddies = new BuddyBook();
+        buddies.Add(new BuddyInfo { Id = 1, CharacterId = 0, Name = "Chief" });
+        var inField = new HashSet<long>();
+        var c = new PopupMenuController
+        {
+            Buddies = buddies, SelfCharacterId = 12, ProfileImagePath = (_, _) => "", PlayerInField = inField.Contains,
+        };
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        c.OpenForPartySearch(100, 200, 1, 12, m.Player.Name, m.Player);                   // the own character
+        Assert.That(c.Items, Is.EqualTo(new[] { PopupMenuController.ViewOwnCharacter }));
+        Assert.That(c.InfoString, Is.EqualTo("partySearchSlot"));
+        c.ClosePopup();
+        c.OpenForPartySearch(100, 200, 2, 77, "Stranger", m.Player);                       // by name, no buddy entry
+        Assert.That(c.Items, Is.EqualTo(new[] { 0x66, 0x65, 0x1f6, 0x12d, 400, 0x1f5 }));
+        Assert.That((c.InfoString, c.Target.Name, c.Target.CharacterId, c.Target.Online), Is.EqualTo(("partySearchSlot", "Stranger", 77L, true)));
+        c.ClosePopup();
+        c.OpenForPartySearch(100, 200, 2, 0, "Chief", m.Player);                           // no character id (no 0x66); a buddy by name
+        Assert.That(c.Items.Contains(PopupMenuController.ViewCharacter), Is.False);
+        Assert.That(c.Items.Contains(PopupMenuController.AddFriend) != c.Items.Contains(PopupMenuController.Unfriend), Is.True);
+        c.ClosePopup();
+        inField.Add(78);
+        c.OpenForPartySearch(100, 200, 2, 78, "Nearby", m.Player);                         // a proxy in the field: STILL-OPEN
+        Assert.That(c.IsClosed, Is.True);
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
     public void PartySlotBuddyItemsFollowTheBuddyList()
     {
         // FUN_141a847c0 / FUN_141a84860 by FindByAccount: a friend gets 300 for 0x12d, a blocked entry 0x191 + 0x192 for 400 and

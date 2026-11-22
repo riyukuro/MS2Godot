@@ -67,6 +67,7 @@ public partial class HudScene
             Notice = id => SystemNoticeText(t.Common(id)),
             Whisper = ChatLog.Whisper,
             OpenRegister = OpenPartySearchRegister,
+            ChiefMenu = (x, y, account, charId, name) => { EnsurePopupMenu().OpenForPartySearch(x, y, account, charId, name, hudModel.HasLocalPlayer ? hudModel.Player : null); },
             CloseRegister = () => { if (PartySearchRegisterOpen) partySearchRegister.Close(); },
         };
         var m = new MovieDialog(assets, c, menuModel, ScreenMode.PixelSize(GetWindow()));

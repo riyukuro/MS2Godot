@@ -195,6 +195,35 @@ public class PartySearchDialogTests
         Assert.That(e.Boxes.Last().Msg, Is.EqualTo("cb36"));
     }
 
+    [Test]
+    public void ChiefNameRightClickGoesToTheMenuWithTheListingsIds()
+    {
+        // onRightClickChiefName (uipartysearchdialog.cpp:641): the listing by its sn, the account and character ids and the
+        // chief's name to FUN_140f8e790 with the click's position; no id, an unknown listing or a character id of 0 do nothing
+        var e = new Env();
+        var asked = new List<(float, float, long, long, string)>();
+        var c = Search(e, c => c.ChiefMenu = (x, y, a, ch, n) => asked.Add((x, y, a, ch, n)));
+        c.Tick();
+        var noChar = Recruit(7, "Nobody", 0);
+        e.Book.Apply(new PartySearchResults(new[] { Recruit(5), noChar }));
+        c.OnCallback("onRightClickChiefName", new object[] { 30, 40, "5" });
+        c.OnCallback("onRightClickChiefName", new object[] { 30, 40, "0" });
+        c.OnCallback("onRightClickChiefName", new object[] { 30, 40, "99" });
+        c.OnCallback("onRightClickChiefName", new object[] { 30, 40, "7" });
+        Assert.That(asked, Is.EqualTo(new[] { (30f, 40f, Recruit(5).LeaderAccountId, 11L, "Lead") }));
+    }
+
+    [Test]
+    public void IdleTickAllocatesNothing()
+    {
+        // vfunc_15 with no search queued, and with one queued but the delay not elapsed: the per-frame check allocates nothing
+        var e = new Env();
+        var c = Search(e);
+        c.Tick();
+        e.Book.Apply(new PartySearchResults(new[] { Recruit(5) }));
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 100000; i++) c.Tick(); }), Is.LessThan(512), "100000 idle ticks");
+    }
+
     static PartySearchRegisterDialogController Register(Env e, Action<PartySearchRegisterDialogController> before = null)
     {
         var c = new PartySearchRegisterDialogController(e.Book)

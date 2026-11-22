@@ -3620,7 +3620,8 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "achieve" && frames == 200) ToggleAchieve();
         if (openShot == "mail" && frames == 200) ToggleMail();
         if (openShot == "community" && frames == 200) ToggleCommunity();
-        if (openShot is "partysearch" or "partysearchregister" && frames == 200) OpenPartySearchShot();
+        if (openShot is "partysearch" or "partysearchregister" or "partysearchmenu" && frames == 200) OpenPartySearchShot();
+        if (openShot == "partysearchmenu" && frames == 260) partySearch?.RightClickChiefShot(102);
         if (openShot == "partysearchregister" && frames == 230) OpenPartySearchRegister();
         if (openShot == "partydps" && frames == 200) OpenPartyDpsShot();
         if (openShot == "guild" && frames == 200) ToggleGuild();

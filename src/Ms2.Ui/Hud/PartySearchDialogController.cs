@@ -10,8 +10,10 @@ namespace Ms2.Ui.Hud;
 /// CMatchPartyRecruitSchCond), queues a search (m_178) that the tick sends no sooner than 500 ms after the last one (m_17c),
 /// lists the received listings 12 a page and handles the rows' join, whisper and invite calls and the register buttons
 /// (the register dialog, <see cref="PartySearchRegisterDialogController"/>, is UI id 0x4edb).
-/// STILL-OPEN: the chief name's right-click menu (FUN_140f8e790, the 0x4e39 popup "partySearchSlot") and the key event
-/// 0x53's refresh (vfunc_79) are not ported.
+/// STILL-OPEN: vfunc_79 (@0x140f8c6b0, uipartysearchdialog.cpp:344) takes a packet event, not a key: with the dialog loaded, a
+/// packet of opcode 0x53 (RecvOp Party in KMS2) whose vfunc_1 is 0 runs ForceClickRefresh. What vfunc_1 of Unk_PsdKeyEvent
+/// answers is not recovered, so no Party packet refreshes the list here. The chief menu's proxy variant (FUN_141a7eb60: the
+/// chief is a character in the field) is not ported either (see PopupMenuController.OpenForPartySearch).
 /// </summary>
 public sealed class PartySearchDialogController : UiController, IMessageBoxListener
 {
@@ -266,7 +268,7 @@ public sealed class PartySearchDialogController : UiController, IMessageBoxListe
             else Whisper(who);
             return true;
         }
-        if (Is(name, "onRightClickChiefName")) return true;
+        if (Is(name, "onRightClickChiefName")) { OnRightClickChiefName(Arg(0), Arg(1), Arg(2)); return true; }
         return false;
     }
 
@@ -274,6 +276,25 @@ public sealed class PartySearchDialogController : UiController, IMessageBoxListe
     {
         if (ret is AsObject o) Host.Set(o, "result", ok);
     }
+
+    /// <summary>
+    /// onRightClickChiefName (uipartysearchdialog.cpp:641): the click's x and y, the row's sn as a listing id; an id of 0 or an
+    /// unknown listing does nothing; a listing whose character id (the second id, "created") is above 0 goes to FUN_140f8e790
+    /// (@0x140f8e790) with its owner account, that id and the chief's name.
+    /// </summary>
+    void OnRightClickChiefName(object x, object y, object sn)
+    {
+        long id = ParseId(sn);
+        if (id == 0 || book.FindRecruit(id) is not { } recruit) return;
+        if (recruit.LeaderCharacterId > 0)
+            ChiefMenu(Rt.ToInt32(x), Rt.ToInt32(y), recruit.LeaderAccountId, recruit.LeaderCharacterId, recruit.LeaderName);
+    }
+
+    /// <summary>The shot fixture's right click on a listing's chief name (the row's sn as the movie sends it).</summary>
+    public void RightClickChiefShot(long id) => OnRightClickChiefName(640, 260, id.ToString());
+
+    /// <summary>FUN_140f8e790: the chief-name popup menu (see PopupMenuController.OpenForPartySearch).</summary>
+    public Action<float, float, long, long, string> ChiefMenu = (_, _, _, _, _) => { };
 
     /// <summary>FUN_140718350: the row's sn text as a listing id (0 when it does not parse).</summary>
     static long ParseId(object v) => long.TryParse(Rt.ToString(v), out var id) ? id : 0;

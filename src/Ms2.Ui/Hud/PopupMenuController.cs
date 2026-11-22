@@ -18,6 +18,7 @@ public sealed class PopupMenuTarget
     public int Trophy;              // m_nTrophy: the trophy triple's sum
     public int JobGroup;            // m_n20
     public int JobCode;             // m_nJobCode: the header's job icon frame ("_" + code)
+    public bool ByName;             // OpenFromCharName: the buddy items read the list by the name
 }
 
 /// <summary>
@@ -57,6 +58,10 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
     /// (TYPE_WITHCHARINFO, the header with the character) and the info string.</summary>
     public const int PartySlotMode = 3, PartySlotFlags = 0x63fe, PartySlotType = 1;
     public const string PartySlotInfo = "partySlot";
+    /// <summary>UIPartySearchDialog::FUN_140f8e790's Unk_PopupMenuInfo: flags 0x40da (view, group chat, friend, guild invite, block,
+    /// report; no party, trade or house items) and the info string.</summary>
+    public const int PartySearchFlags = 0x40da;
+    public const string PartySearchInfo = "partySearchSlot";
     /// <summary>OnGuildMemberPopupMenu's Unk_PopupMenuInfo (uiguilddialog.cpp:823): mode 3, flags 0x63de (the party slot's
     /// without trade), type 1, an empty info string.</summary>
     public const int GuildMemberFlags = 0x63de;
@@ -164,12 +169,12 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
     /// PopUpMenu (:1973) for the own PC from a party slot: nothing when it is already open on that PC in the same mode; else
     /// the target from the PC (online, the profile image of its picture, the proxy's tally) and Open with kind 1.
     /// </summary>
-    void OpenForSelf(float x, float y, PlayerState self)
+    void OpenForSelf(float x, float y, PlayerState self, int flags = PartySlotFlags, string infoString = PartySlotInfo)
     {
         if (mode == PartySlotMode && entityKey == SelfCharacterId && SelfCharacterId != 0) return;
         ClosePopup();
         if (string.IsNullOrEmpty(self.Name)) return;                    // GetTargetName gave nothing: "Empty Menu"
-        ApplyMenuInfo(PartySlotMode, PartySlotType, PartySlotInfo);
+        ApplyMenuInfo(PartySlotMode, PartySlotType, infoString);
         entityKey = SelfCharacterId;
         var own = Party.Find(SelfCharacterId)?.User;
         var t = new PopupMenuTarget
@@ -179,7 +184,52 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
             Alive = !(LocalPlayerDead() ?? self.HpCur <= 0),           // IsDead == 0; no live state (offline): the HP stands in
             Online = true, JobGroup = self.JobGroup, JobCode = self.SubJob, Trophy = OwnTrophy(),
         };
-        if (!Open(t, PartySlotFlags, 1)) ResetState();
+        if (!Open(t, flags, 1)) ResetState();
+    }
+
+    /// <summary>
+    /// UIPartySearchDialog::FUN_140f8e790 (@0x140f8e790, uipartysearchdialog.cpp:791), the right click on a listing's chief name at
+    /// the movie position (x, y), the info (mode 3, <see cref="PartySearchFlags"/>, "partySearchSlot"). The chief is the local
+    /// character: PopUpMenu on the own PC (kind 1, type 1). Another character: FindProxyObjectByOwner gives a proxy in the field
+    /// (FUN_141a7eb60, STILL-OPEN: the field's proxy objects are not in this HUD, so a character in the field opens nothing);
+    /// none: FUN_141a7f090 (:2102), OpenFromCharName (:2537) with type 0 for the chief's name, the account and the character id
+    /// (kind 2). No local player (the world's), nothing.
+    /// </summary>
+    public void OpenForPartySearch(float x, float y, long accountId, long characterId, string name, PlayerState self)
+    {
+        if (self == null || SelfCharacterId == 0) return;
+        if (characterId == SelfCharacterId) { OpenForSelf(x, y, self, PartySearchFlags, PartySearchInfo); return; }
+        if (PlayerInField(characterId)) return;                         // the proxy variant, FUN_141a7eb60: STILL-OPEN
+        ClosePopup();
+        ApplyMenuInfo(PartySlotMode, 0, PartySearchInfo);
+        if (!OpenFromCharName(x, y, accountId, characterId, name, PartySearchFlags)) ResetState();
+    }
+
+    /// <summary>OpenFromCharName (:2537) through FUN_141a834e0 (:2686) with nMode 2 and nDir 1: the header is the name only (no
+    /// level, picture, trophy or job), the character counts as online, the buddy items read the list by the name.</summary>
+    bool OpenFromCharName(float x, float y, long accountId, long characterId, string name, int flags)
+    {
+        if (Host?.Entity == null) return false;                         // m_30
+        if (string.IsNullOrEmpty(name)) return false;
+        entityKey = 0;
+        var t = new PopupMenuTarget { X = x, Y = y, Name = name, CharacterId = characterId, Alive = true, Online = true, ByName = true };
+        items.Clear();
+        BuildItems(flags, 2, t);
+        if (items.Count == 0) return false;
+        var menu = new List<object>();
+        foreach (int id in items)
+            menu.Add(new Dictionary<string, object> { ["id"] = (uint)id, ["label"] = Model.Tables.PopupMenuName(id) });
+        var obj = new Dictionary<string, object>
+        {
+            ["type"] = menuType, ["menu"] = menu, ["posx"] = x, ["posy"] = y, ["name"] = name, ["dirx"] = 1.0f, ["diry"] = 1,
+        };
+        var result = Host.Invoke(Host.Entity, "open", obj);
+        if (result is not Avm2.AsObject) return false;
+        closed = false;
+        target = t;
+        list = result;
+        Host.SetVisible(Host.Entity, true);
+        return true;
     }
 
     /// <summary>PopUpMenuFromPartyMember (:2118): the target from the member's user record, Open with kind 2.</summary>
@@ -280,13 +330,13 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
         if ((flags & 0x80) != 0 && kind == 2 && online) Add(InviteToGroupChat);                           // FUN_141a84980 (:3018)
         if ((flags & 0x100) != 0 && kind == 2 && OtherCharacter(id)) Add(VisitHouse);                     // FUN_141a849c0 (:3025)
         if ((flags & 0x200) != 0 && kind == 2 && OtherCharacter(id)) Add(InviteToMyHome);                 // AddRequestHomeMenu: FUN_1418fd5d0
-        if ((flags & 8) != 0 && kind != 1 && id != 0) AddBuddyItem(Buddies.FindByAccount(id));             // FUN_141a847c0 (:2963)
+        if ((flags & 8) != 0 && kind != 1 && (id != 0 || t.ByName)) AddBuddyItem(t.ByName ? Buddies.FindByName(t.Name) : Buddies.FindByAccount(id));             // FUN_141a847c0 (:2963)
         if ((flags & 4) != 0) AddPartyItems(kind, t.Name, online);
         if ((flags & 0x4000) != 0 && kind != 1 && Guild is { InGuild: true } g && g.FindMemberByName(t.Name) == null)
             Add(InviteToGuild);                                                                            // FUN_141a84b40 (:3075)
         if ((flags & 0x2000) != 0 && kind == 2 && OtherCharacter(id) && InOwnHome() && Registered(GrantFurnishingRights))
             Add(GrantFurnishingRights);                                                                    // AddRequestCubeMenu: FUN_1418fd670
-        if ((flags & 0x10) != 0 && kind != 1 && id != 0) AddBlockItems(Buddies.FindByAccount(id));         // FUN_141a84860 (:2984)
+        if ((flags & 0x10) != 0 && kind != 1 && (id != 0 || t.ByName)) AddBlockItems(t.ByName ? Buddies.FindByName(t.Name) : Buddies.FindByAccount(id));         // FUN_141a84860 (:2984)
         if ((flags & 0x40) != 0 && kind != 1 && online) Add(Report);                                       // AddReportMenu (:3011)
     }
 
