@@ -97,6 +97,7 @@ public sealed partial class ItemTooltip
         if ((Flags & 0x80) != 0 || (Flags & 4) != 0) SetUseHints(item);              // FUN_1409cd750
         if ((Flags & (0x80 | 4 | 0x200 | 0x20 | 0x400 | 0x1000 | 0x100 | 2)) != 0)
             if (SetCustomizeColor(item)) SetCustomizeColorData(item);             // FUN_1409d2cb0, then FUN_1409d3010
+        if ((Flags & (0x80 | 0x400 | 0x1000)) != 0) SetItemQuestInfo(item);         // FUN_1409d3a40
         Data.SetTooltipAlign((Flags & 0x40) != 0 || (Flags & 2) != 0 ? 9 : 5);
         return true;
     }

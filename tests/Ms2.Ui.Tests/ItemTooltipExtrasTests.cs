@@ -597,4 +597,53 @@ public class ItemTooltipExtrasTests
         tip.Fill(it);
         Assert.That(tip.Data["unlimited"], Is.EqualTo(3));
     }
+
+    [Test]
+    public void QuestItemTooltipNamesItsQuests()
+    {
+        var m = NewModel();
+        m.Quests = Ms2.Quest.QuestTable.Load(Packs(), new[] { "en" }, "KR", m.FeatureEnabledByName);
+        var named = m.Quests.Quests.Where(q => m.Quests.QuestName(q.Id).Length != 0).Take(2).ToArray();
+        Assert.That(named, Has.Length.EqualTo(2));
+        var links = new List<QuestItemLink>();
+        m.QuestItemLinks = _ => links;
+        m.HasLocalPlayer = true;
+        var it = Item.Create(m.Tables.Items, 20800001, 0);
+        ItemTooltip Fill(int flags)
+        {
+            var tip = new ItemTooltip(m, flags);
+            tip.Fill(it);
+            return tip;
+        }
+        string With(string key, Ms2.Quest.QuestData q) =>
+            Ms2.Quest.ClientFormat.Format(m.Tables.Common(key) ?? "", m.Quests.QuestName(q.Id), q.Level);
+        string Info(string quests) => Ms2.Quest.ClientFormat.Format(m.Tables.Common("s_msg_tooltip_quest_info") ?? "", quests);
+
+        links.Add(new QuestItemLink(named[0].Id, 1, 0));
+        links.Add(new QuestItemLink(named[1].Id, 2, 0));
+        var t = Fill(0x80);
+        Assert.That(t.Data["itemQuestInfo"], Is.EqualTo(Info(With("s_msg_tooltip_quest_name_progress", named[0]) + ", "
+            + With("s_msg_tooltip_quest_name_complete", named[1]))));
+        Assert.That(t.Data["questProgress"], Is.EqualTo(1));
+        Assert.That(t.Data.ContainsKey("questBeginAble"), Is.False);
+
+        links.Clear();
+        links.Add(new QuestItemLink(named[0].Id, 0, 0));
+        links.Add(new QuestItemLink(named[1].Id, 0, 1));                // an equip quest adds its line
+        t = Fill(0x400);
+        Assert.That(t.Data["itemQuestInfo"], Is.EqualTo(Info(With("s_msg_tooltip_quest_name", named[0])) + "\n"
+            + m.Tables.Common("s_msg_tooltip_equip_quest_info")));
+        Assert.That(t.Data["questBeginAble"], Is.EqualTo(1));
+
+        links.RemoveAt(0);                                              // equip quest only: its line alone, state 2 = no flag
+        links[0] = new QuestItemLink(named[1].Id, 2, 1);
+        t = Fill(0x1000);
+        Assert.That(t.Data["itemQuestInfo"], Is.EqualTo(m.Tables.Common("s_msg_tooltip_equip_quest_info")));
+        Assert.That(t.Data.ContainsKey("questBeginAble") || t.Data.ContainsKey("questProgress"), Is.False);
+
+        Assert.That(Fill(0x200).Data.ContainsKey("itemQuestInfo"), Is.False);           // not a bag / quest tooltip flag
+        m.HasLocalPlayer = false;
+        Assert.That(Fill(0x80).Data.ContainsKey("itemQuestInfo"), Is.False);            // no local player
+        Assert.That(ItemTooltip.QuestItemState(Array.Empty<QuestItemLink>()), Is.EqualTo(4));
+    }
 }

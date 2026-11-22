@@ -150,6 +150,12 @@ public sealed class UiModel
     public Func<Ms2.Net.Packets.PcInfo> LocalPlayer;
     /// <summary>CItemBreakManager::CanBreakItem (@0x140531270) for an item tooltip's break ingredients; null = none can.</summary>
     public Func<Items.Item, bool> CanBreakItem;
+    /// <summary>CQuestManager::GetQuestItemLinks (questmanager_2.cpp:1304) for an item tooltip's quest line: the quests the
+    /// item starts or advances (Kind 0) or is equipped for (Kind 1), with the link State (0 can start, 1 in progress,
+    /// 2 complete). Null = no links.</summary>
+    public Func<Items.Item, IReadOnlyList<Items.QuestItemLink>> QuestItemLinks;
+    /// <summary>The quest table an item tooltip's quest line names its quests from (GetQuestName, GetQuestData).</summary>
+    public Ms2.Quest.QuestTable Quests;
 
     /// <summary>The align widgets (UIAlignWidgetManager) of the movies sharing this model; null lays every movie out by
     /// itself.</summary>
