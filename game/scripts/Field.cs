@@ -935,17 +935,6 @@ public partial class Field : Node3D, World.ITargetCamera
         Rotation = player?.CameraEuler ?? default,
     };
 
-    /// <summary>The follow mode's eye for the current distance and yaw, in MS2 axes.</summary>
-    Vector3 World.ITargetCamera.FlyToPosition
-    {
-        get
-        {
-            if (player == null) return default;
-            Place(camDist, Mathf.DegToRad(cam.HAngleDeg + 180f) + camYaw, out var eye, out _, out _);
-            return new Vector3(eye.X, -eye.Z, eye.Y);
-        }
-    }
-
     /// <summary>CTargetCameraMode m_6c: the camera's angle from the up axis in radians, as last placed.</summary>
     public float CameraPitch { get; private set; } = Mathf.Pi / 2;
     /// <summary>The camera mode's position (m_setting.m_c = m_c0.m_pos): the placed eye before the shown camera's easing.</summary>

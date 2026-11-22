@@ -18,7 +18,7 @@ namespace Ms2Godot.Tests;
 ///   follow mode at once; an off event of a type 2 packet is skipped while one of type 3 ends the step. Object 8014
 ///   (StartInterpolationTime 0.1, EndInterpolationTime 0.5) flies linearly into the lock mode, which starts on the next
 ///   frame from the fly-by's previous frame (FUN_14121f9f0 keeps the mode's last applied setting), and its end flies back
-///   to the follow mode's fov and position. A type 5 packet queues the steps: they wait while a fly-by runs and the next
+///   to the follow mode's fov and stored position (camera.cpp:2068). A type 5 packet queues the steps: they wait while a fly-by runs and the next
 ///   one runs when its pending mode is set; the single id 0 goes back to the follow mode.
 /// - 52000067: objects 8010 (StartInterpolator 2) and 8006 (StartInterpolator 3) ease by the log and exp curves
 ///   (FUN_141b6fdb0), while the rotation goes by the linear ratio (FUN_140afdec0).
@@ -35,7 +35,6 @@ public partial class TriggerCameraCheck : Node
         {
             Fov = 40, DofNear = 250, DofFar = 18000, Position = new Vector3(0, 0, 1000), Rotation = new Vector3(90, 45, 0),
         };
-        public Vector3 FlyToPosition => new(100, 200, 1500);
     }
 
     PackSet packs;
@@ -146,7 +145,7 @@ public partial class TriggerCameraCheck : Node
         Mode("8014 off", c, TriggerCamera.FlyBy);
         c.Update(0.25f);
         Near("8014 back at 0.25 s: fov", c.Shown?.Fov ?? -1, (landed.Fov + follow.Setting.Fov) / 2);
-        Near("8014 back at 0.25 s: position", c.Shown?.Position ?? default, (landed.Position + follow.FlyToPosition) / 2, 0.1f);
+        Near("8014 back at 0.25 s: position", c.Shown?.Position ?? default, (landed.Position + follow.Setting.Position) / 2, 0.1f);
         c.Update(0.3f);
         c.Update(0.01f);
         Mode("8014 back", c, TriggerCamera.Target);

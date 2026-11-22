@@ -52,9 +52,6 @@ public interface ITargetCamera
 {
     /// <summary>The mode's setting (its fov, near, far, rotation, position and ortho getters).</summary>
     CameraSetting Setting { get; }
-    /// <summary>Where a fly-by toward the mode ends (CameraMgr::SetMode with bKeep, camera.cpp:2064-2081): the target's
-    /// position, raised by the mode's height, plus the mode's eye offset.</summary>
-    Vector3 FlyToPosition { get; }
 }
 
 /// <summary>
@@ -121,8 +118,10 @@ public sealed class TriggerCamera
     /// <summary>
     /// SetMode (camera.cpp:1997-2185) for modes 2 and 4 (3 and the others are ignored). With a fly-by set, a fly-by
     /// toward the mode starts from the current setting (m_setting takes it); with <paramref name="keep"/> its end takes
-    /// the mode's fov, near, far, ortho and position (the follow mode's <see cref="ITargetCamera.FlyToPosition"/>), but not
-    /// its rotation. Without one the mode starts at once: the follow mode with its own setting (m_setting takes it), the
+    /// the mode's fov, near, far, ortho and position, but not its rotation. The position is the mode's stored one
+    /// (camera.cpp:2068): the follow mode's raised target plus eye offset (:2076-2083) is taken only when the current mode
+    /// is already the follow mode, and this is called from the lock mode (GetModeType, camera.h:248, gives 4); the
+    /// recomputed eye of :2086 is taken only without a camera target, which a field always has (its player). Without one the mode starts at once: the follow mode with its own setting (m_setting takes it), the
     /// lock mode with m_setting.
     /// </summary>
     public void SetMode(int nMode, bool keep)
@@ -139,7 +138,7 @@ public sealed class TriggerCamera
                 fly.To.Fov = next.Fov;
                 fly.To.DofNear = next.DofNear;
                 fly.To.DofFar = next.DofFar;
-                fly.To.Position = nMode == Target ? target.FlyToPosition : next.Position;
+                fly.To.Position = next.Position;
                 fly.To.Ortho = next.Ortho;
             }
             modeSetting = Current;
