@@ -3323,7 +3323,9 @@ public partial class HudScene : Node, IUiStageHost
     /// HUD's xblock); the cooldowns the live session's (idle offline). The skill set has no feed yet and keeps its idle value; the buffs only feed the buff strip.
     /// </summary>
     ClientConstants slotConstants;
-    Ms2.Ui.Skills.SlotWorld QuickSlotWorld()
+
+    /// <summary>The job system the quick slots and the cooldown table read, rebuilt when the book changes.</summary>
+    Ms2.Ui.Skills.JobSystem EnsureSlotJobs()
     {
         var live = Ms2Godot.Net.LiveSession.Instance;
         var tables = hudModel.Tables.Skills;
@@ -3334,6 +3336,13 @@ public partial class HudScene : Node, IUiStageHost
             slotJobs.Read(live != null ? live.SkillBook : UiFixture.NewCharacterSkillBook(tables.Jobs, hudModel.Player.SubJob / 10));
             slotJobsBook = book;
         }
+        return slotJobs;
+    }
+    Ms2.Ui.Skills.SlotWorld QuickSlotWorld()
+    {
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        var tables = hudModel.Tables.Skills;
+        EnsureSlotJobs();
         slotKinds ??= new Ms2Godot.Net.ItemKinds(assets.Packs);
         int? fieldId = live?.FieldId;
         if (slotField == null || slotFieldId != fieldId)

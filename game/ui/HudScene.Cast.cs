@@ -1150,14 +1150,15 @@ public partial class HudScene
     {
         if (Net.LiveSession.Instance is not { } live) return;
         var cool = live.Cooltimes;
+        if (!ReferenceEquals(cool, cooltimesLevelWired)) { cooltimesLevelWired = cool; cool.UseJobSystem(EnsureSlotJobs); }
         if (playerInfo != null && !ReferenceEquals(cool, cooltimesWired)) WireCooltimes(cool);
         cool.Update((uint)Net.LiveSession.CastTick());
     }
 
-    Ms2.Ui.Skills.SkillCooltimes cooltimesWired;
+    Ms2.Ui.Skills.SkillCooltimes cooltimesWired, cooltimesLevelWired;
 
     /// <summary>The cooldown start and end events (UIStatusEventDispatcher FUN_141b0e260 / FUN_141b0e2f0) reach the quick slots
-    /// (UIMainPlayerInfo vfunc_oa0_25 / 26). Wired once per session's table.</summary>
+    /// (UIMainPlayerInfo vfunc_oa0_25 / 26). Wired once per session's table (the level cooldowns, which the table's own restarts read, are wired in TickCooltimes without the window).</summary>
     void WireCooltimes(Ms2.Ui.Skills.SkillCooltimes cool)
     {
         if (cooltimesWired != null)
@@ -1166,7 +1167,6 @@ public partial class HudScene
             cooltimesWired.Ended -= playerInfo.OnCooldownEnded;
         }
         cooltimesWired = cool;
-        cool.LevelCooldown = id => slotJobs?.LevelData(id)?.Cooldown;
         cool.Started += playerInfo.OnCooldownStarted;
         cool.Ended += playerInfo.OnCooldownEnded;
     }

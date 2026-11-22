@@ -213,6 +213,22 @@ public class SkillBookTreeTests
     }
 
     [Test]
+    public void TheJobSystemFeedsTheCooldownTablesLevelCooldownEvenWhenItArrivesLate()
+    {
+        var model = new UiModel(new GameTables(Packs(), "en"));
+        var t = model.Tables.Skills;
+        JobSystem jobs = null;
+        var cool = new SkillCooltimes(t.GetSkillData);
+        cool.UseJobSystem(() => jobs);                        // wired with the table, before any window and before the book
+        uint id = t.Jobs.GetJobData(50).Skills.First(r => !r.IsLearn).SkillId;
+        Assert.That(cool.LevelCooldown(id), Is.Null);
+        jobs = new JobSystem(t);
+        jobs.Read(1, 50, t.Jobs.GetJobData(50).Skills.Select(r => new BookSkill((int)r.SkillId, 1, false, true, false)));
+        Assert.That(cool.LevelCooldown(id), Is.EqualTo(jobs.LevelData(id)?.Cooldown));
+        Assert.That(jobs.LevelData(id), Is.Not.Null);
+    }
+
+    [Test]
     public void ApplyWritesTheClientsPacketLayouts()
     {
         var w = new Maple2.PacketLib.Tools.ByteWriter();

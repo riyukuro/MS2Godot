@@ -71,6 +71,10 @@ public sealed class SkillCooltimes
     /// skillslot.cpp:2712-2716, :2731-2735); null when the skill has no level data there. The HUD feeds the quick slots' job system.</summary>
     public Func<uint, float?> LevelCooldown = _ => null;
 
+    /// <summary>Feeds <see cref="LevelCooldown"/> from the own job system (read at each use, so a book that arrives later is
+    /// used); a charge that runs out before the HUD has any window still restarts.</summary>
+    public void UseJobSystem(Func<JobSystem> jobs) => LevelCooldown = id => jobs()?.LevelData(id)?.Cooldown;
+
     public int Count => cooltimes.Count;
 
     /// <summary>Seconds left on the skill's cooldown or its group's (FUN_141765fe0 with the combo kept, :1918); 0 when none.</summary>
