@@ -102,6 +102,23 @@ public class SkillDamageTableTests
     }
 
     [Test]
+    public void TheAttackElementsOwnAttributesAreReadWithItsDamage()
+    {
+        // SkillAttackData::Load :582-595: attackMethodType, hitImmuneBreak and grabTargetType on <attack> itself; an attack
+        // with one of them and no <damage> keeps the damage ctor's values, one with none of them and no <damage> is None
+        var t = Table(@"<ms2><skill id=""5""><basic/><level value=""1""><motion>
+            <attack attackMethodType=""1"" hitImmuneBreak=""2"" grabTargetType=""3""><damage value=""4"" attackMaterial=""6"" invokeEffectDisable=""1""/></attack>
+            <attack hitImmuneBreak=""7""/><attack point=""1""/></motion></level></skill></ms2>");
+        var a = t.Get(5, 1, 0, 0);
+        Assert.That((a.AttackMethodType, a.HitImmuneBreak, a.GrabTargetType, a.Value, a.AttackMaterial, a.InvokeEffectDisable),
+            Is.EqualTo((1, 2, 3, 4L, 6, 1)));
+        var b = t.Get(5, 1, 0, 1);
+        Assert.That(b, Is.Not.SameAs(SkillAttackDamage.None));
+        Assert.That((b.HitImmuneBreak, b.Count, b.PushProb, b.HasDamage), Is.EqualTo((7, 1, 1f, false)));
+        Assert.That(t.Get(5, 1, 0, 2), Is.SameAs(SkillAttackDamage.None));
+    }
+
+    [Test]
     public void TheReadKeepsNoDocument()
     {
         // the field entry reads every skilldata file: the elements and attributes outside <damage> cost no objects
