@@ -244,6 +244,10 @@ public struct HitCandidate
     /// <summary>An npc's CNpcData m_nDefenceMaterial (+0x70, "defenceMaterial", npcdata.cpp:1455): the hit sound's defence
     /// material (CMagic::PlayHitEffects); the other objects use 1.</summary>
     public int DefenceMaterial;
+    /// <summary>An npc's CNpcData::IsBoss (CNpc::vfunc_58 is then 6, else 5).</summary>
+    public bool Boss;
+    /// <summary>An npc's collision widthOffset, depthOffset and heightOffset (CNpc::vfunc_51), unturned.</summary>
+    public Vector3 CollisionOffset;
 }
 
 /// <summary>The area pick of a skill attack and the target records the damage send carries.</summary>

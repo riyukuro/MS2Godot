@@ -27,6 +27,9 @@ public sealed class NpcRow
     /// </summary>
     public string CollisionShape = "";
     public float CollisionWidth, CollisionDepth, CollisionHeight;
+    /// <summary>The collision's widthOffset, depthOffset and heightOffset (npcdata.cpp:1611-1613, ints; 0 when absent): CNpc::vfunc_51's
+    /// offset (unit_14108e1e0_npcactorandvibrate.cpp:2215).</summary>
+    public int CollisionWidthOffset, CollisionDepthOffset, CollisionHeightOffset;
     /// <summary>
     /// &lt;corpse hitAble&gt; (CNpcData::LoadXml, npcdata.cpp:1717; read by npcdata.cpp:814): a dead npc's corpse a hostile
     /// attack still hits (FilterTarget through FUN_1410930a0).
@@ -183,6 +186,9 @@ public sealed class NpcTable
             CollisionWidth = Flt(env.Element("collision"), "width", 0),
             CollisionDepth = Flt(env.Element("collision"), "depth", 0),
             CollisionHeight = Flt(env.Element("collision"), "height", 0),
+            CollisionWidthOffset = Int(env.Element("collision"), "widthOffset"),
+            CollisionDepthOffset = Int(env.Element("collision"), "depthOffset"),
+            CollisionHeightOffset = Int(env.Element("collision"), "heightOffset"),
             CorpseHitAble = Int(env.Element("corpse"), "hitAble") != 0,
             DefenceMaterial = Int(env, "defenceMaterial"),
             Nametag = Int(env, "nametag") != 0,

@@ -275,7 +275,7 @@ public partial class ReplayField : Field
     /// Effect target kind for an actor id per WorldService::GetObjectKind (@0x141bd1a10, worldservice_1.cpp:6304-6309):
     /// StateSkill (stateskill.cpp:541,757,824,856,1834,2367,2383) and CMagic hit effects (magicdata.cpp:2797,2805) pass
     /// MyPC::vfunc_58 = 1 (@0x141522cc0, mypc.cpp:1247) for the local player and PCBase::vfunc_58 = 3 (pcbase.cpp:1092)
-    /// for remote PCs and NPCs.
+    /// for remote PCs. STILL-OPEN: a replay actor that is an npc takes 3 here, where CNpc::vfunc_58 gives 5 (6 for a boss).
     /// </summary>
     int CasterKindOf(int actorId) =>
         Ms2.Audio.SoundMusicEffectState.CasterKindForActor(actors.TryGetValue(actorId, out var a) && a.IsSelf);

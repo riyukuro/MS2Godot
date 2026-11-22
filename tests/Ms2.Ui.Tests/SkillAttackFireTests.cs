@@ -223,6 +223,10 @@ public class SkillAttackFireTests
         var corpse = NpcTable.ParseRow(XElement.Parse("<npc id=\"3\"><environment><corpse hitAble=\"1\"/></environment></npc>"),
             Array.Empty<EffectDummy>());
         Assert.That(corpse.CorpseHitAble, Is.True);
+        var off = NpcTable.ParseRow(XElement.Parse("<npc id=\"4\"><environment><collision shape=\"box\" widthOffset=\"10\""
+            + " depthOffset=\"-20\" heightOffset=\"30\"/></environment></npc>"), Array.Empty<EffectDummy>());
+        Assert.That((off.CollisionWidthOffset, off.CollisionDepthOffset, off.CollisionHeightOffset), Is.EqualTo((10, -20, 30)));
+        Assert.That((row.CollisionWidthOffset, row.CollisionDepthOffset, row.CollisionHeightOffset), Is.EqualTo((0, 0, 0)));
     }
 
     [Test]

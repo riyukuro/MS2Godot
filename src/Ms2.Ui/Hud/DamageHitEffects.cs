@@ -6,11 +6,11 @@ namespace Ms2.Ui.Hud;
 
 /// <summary>
 /// An object of the field as the damage's hit effect reads it, in client space: its position (vf18), its rotation z in degrees
-/// (vf20, GameObject::GetForwardDirection), its extent z (PCBase::vfunc_37 @0x14166bcc0, pcbase.cpp:958: vfunc_43's height,
-/// 0 here, plus half its box collision's height, CBoxCollision::vfunc_6 m_ptBox.z) and its kind (FUN_14146c990's nType: 1 the
-/// local player, 3 another PC, 0 anything else).
+/// (vf20, GameObject::GetForwardDirection), its extent (PCBase::vfunc_37 @0x14166bcc0, pcbase.cpp:958: vfunc_51's offset plus
+/// half its box collision's height in z, CBoxCollision::vfunc_6 m_ptBox.z; see <see cref="DamageHitEffects.NpcExtent"/>) and
+/// its kind (WorldService::GetObjectKind, vfunc_58; <see cref="DamageHitEffects.KindOf"/>).
 /// </summary>
-public readonly record struct DamageHitObject(Vector3 Position, float RotZ, float ExtentZ, int Kind);
+public readonly record struct DamageHitObject(Vector3 Position, float RotZ, Vector3 Extent, int Kind);
 
 /// <summary>
 /// One effect the damage's hit inserts (CEffectService::InsertEffect from CMagicService::FUN_14146b440): the file at
@@ -119,9 +119,9 @@ public static class DamageHitEffects
     internal static void Aim(in DamageHitObject target, bool hasOwner, in DamageHitObject owner, int direction, float moveDistance,
         Func<int> rand, ref Vector3 pos, ref Vector3 dir)
     {
-        pos = target.Position + new Vector3(0, 0, target.ExtentZ);
+        pos = target.Position + target.Extent;
         if (!hasOwner) return;
-        float height = MathF.Min(target.ExtentZ, owner.ExtentZ);
+        float height = MathF.Min(target.Extent.Z, owner.Extent.Z);
         height *= 1f + (-1f + 2f * rand() / 32767f) * 0.2f;
         pos = target.Position + new Vector3(0, 0, height);
         SkillHit.Axes(owner.RotZ, out var forward, out _);
@@ -143,6 +143,29 @@ public static class DamageHitEffects
                 dir = SkillHit.Unitize(forward);
                 break;
         }
+    }
+
+    /// <summary>
+    /// WorldService::GetObjectKind (FUN_141bd19d0, vfunc_58) of a field object: MyPC::vfunc_58 1 (mypc.cpp:1247), PCBase::vfunc_58 3
+    /// for another PC (pcbase.cpp:1092), CNpc::vfunc_58 6 for a boss (CNpcData::IsBoss) else 5
+    /// (unit_14108e1e0_npcactorandvibrate.cpp:654), CPet::vfunc_58 4 (unit_140b0f4c0_petactor.cpp:375). No object is 0.
+    /// STILL-OPEN: a pet whose owner is the local player is 2 there; the pet's owner is not known here.
+    /// </summary>
+    public static int KindOf(bool self, HitKind kind, bool boss) =>
+        self ? 1 : kind switch { HitKind.Pc => 3, HitKind.Npc => boss ? 6 : 5, _ => 4 };
+
+    /// <summary>
+    /// An npc's vfunc_37 (PCBase's, pcbase.cpp:958, CNpc keeps it): CNpc::vfunc_51 (unit_14108e1e0_npcactorandvibrate.cpp:2215),
+    /// with all three collision offsets 0 GameObject::vfunc_51's (0, 0, vfunc_43's height, 0 here), else (width, depth,
+    /// height offset) turned by MakeZRotation(DirectionToNegYawRadians(forward) + pi), counter-clockwise by rotZ - 180 degrees;
+    /// then plus <paramref name="halfBox"/> (half the box's height) in z.
+    /// STILL-OPEN: the npc bound to an owner (m_nF20: the offset is the owner's position minus its own) and vfunc_43's height.
+    /// </summary>
+    public static Vector3 NpcExtent(Vector3 offset, float rotZ, float halfBox)
+    {
+        if (offset == Vector3.Zero) return new Vector3(0, 0, halfBox);
+        float a = (rotZ - 180f) * 3.1415927f / 180f, s = MathF.Sin(a), c = MathF.Cos(a);
+        return new Vector3(c * offset.X - s * offset.Y, s * offset.X + c * offset.Y, offset.Z + halfBox);
     }
 
     /// <summary>efd::Point3::UnitCross: the cross product, unit (zero stays zero).</summary>

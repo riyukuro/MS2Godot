@@ -1007,12 +1007,20 @@ public class AudioTests
         var fx = new SoundMusicEffectState();
         var cue15 = new SoundMusicEffectParam(CueId: 15, Priority: 0x80);
 
-        // Remote PC / NPC (PCBase::vfunc_58 = 3, pcbase.cpp:1092): CasterKindForActor(false) = 3 (> 1) does NOT change the cue.
+        // Remote PC (PCBase::vfunc_58 = 3, pcbase.cpp:1092): CasterKindForActor(false) = 3 (> 1) does NOT change the cue.
         int remoteKind = SoundMusicEffectState.CasterKindForActor(isMyPc: false);
         Assert.That(remoteKind, Is.EqualTo(SoundMusicEffectState.CasterOtherPc));
         var remoteRes = fx.Apply(mc, cue15, nowSeconds: 0.0, currentMusicVolume: 1f, categoryMusicVolume: 1f, casterKind: remoteKind);
         Assert.That(remoteRes, Is.EqualTo((false, false, false)));
         Assert.That(mc.CurrentCueId, Is.EqualTo(35), "effect cast by remote PC must not change local cue");
+
+        // NPC / boss (CNpc::vfunc_58 = 5 / 6, unit_14108e1e0_npcactorandvibrate.cpp:654): an npc-owned hit's soundMusic part is ignored.
+        foreach (int npcKind in new[] { SoundMusicEffectState.CasterNpc, SoundMusicEffectState.CasterBoss })
+        {
+            var npcRes = fx.Apply(mc, cue15, nowSeconds: 0.0, currentMusicVolume: 1f, categoryMusicVolume: 1f, casterKind: npcKind);
+            Assert.That(npcRes, Is.EqualTo((false, false, false)), $"kind {npcKind}");
+            Assert.That(mc.CurrentCueId, Is.EqualTo(35), "effect from an npc must not change the field music");
+        }
 
         // Local player (MyPC::vfunc_58 = 1, mypc.cpp:1247): CasterKindForActor(true) = 1 (<= 1) changes the cue.
         int myPcKind = SoundMusicEffectState.CasterKindForActor(isMyPc: true);

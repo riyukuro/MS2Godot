@@ -18,6 +18,7 @@ public sealed partial class RemoteLayer
     // CMagic::FUN_141464d00's RayCastFromPoint mask (magicdata.cpp:1786): groups 0 and 9
     readonly RayQuery remoteMagicRay = RayQuery.CastRay(0x201);
     MagicRayCast remoteMagicRayCast;
+    // STILL-OPEN: the client's CRT rand (FUN_14109a9e0); Random.Shared gives the same range (0..32767) from another generator
     static readonly Func<int> magicRand = () => Random.Shared.Next(0x8000);
     static readonly StringName PlayerGroup = Player.Group;
     Player magicPlayer;
@@ -152,7 +153,8 @@ public sealed partial class RemoteLayer
     }
 
     /// <summary>WorldService::FindObjectById over <see cref="magicObjects"/>: the position, the facing (the local player's or
-    /// <see cref="PoseOf"/>), half the body box's height (vfunc_37's extent z) and FUN_14146c990's kind.
+    /// <see cref="PoseOf"/>), vfunc_37's extent (half the body box's height, an npc's collision offset turned,
+    /// <see cref="DamageHitEffects.NpcExtent"/>) and the object kind (<see cref="DamageHitEffects.KindOf"/>).
     /// STILL-OPEN: vfunc_43's height and a riding PC's ridee box are not added.</summary>
     bool FindHitObject(int id, out DamageHitObject o)
     {
@@ -161,8 +163,10 @@ public sealed partial class RemoteLayer
             if (c.Id != id) continue;
             bool self = id == Tracker.SelfObjectId;
             float rot = self ? magicPlayer.FacingRotZ : PoseOf(id)?.RotZ ?? 0f;
-            int kind = self ? 1 : c.Kind == HitKind.Pc ? 3 : 0;
-            o = new DamageHitObject(c.Position, rot, (c.Body.MaxZ - c.Body.MinZ) * 0.5f, kind);
+            float half = (c.Body.MaxZ - c.Body.MinZ) * 0.5f;
+            var extent = c.Kind == HitKind.Npc ? DamageHitEffects.NpcExtent(c.CollisionOffset, rot, half)
+                : new System.Numerics.Vector3(0, 0, half);
+            o = new DamageHitObject(c.Position, rot, extent, DamageHitEffects.KindOf(self, c.Kind, c.Boss));
             return true;
         }
         o = default;

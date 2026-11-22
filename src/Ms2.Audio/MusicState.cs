@@ -632,16 +632,20 @@ public sealed class SoundMusicEffectState
     /// <summary>
     /// Unk_EffectTarget::m_nKind values (effectservice.cpp:255,304,360,2169; soundmusiceffectparam.cpp:139-140;
     /// WorldService::GetObjectKind @0x141bd1a10, worldservice_1.cpp:6304-6309: MyPC::vfunc_58 @0x141522cc0,
-    /// mypc.cpp:1247 returns 1; PCBase::vfunc_58, pcbase.cpp:1092 returns 3 for other PCs/NPCs).
+    /// mypc.cpp:1247 returns 1; PCBase::vfunc_58, pcbase.cpp:1092 returns 3 for other PCs; CNpc::vfunc_58,
+    /// unit_14108e1e0_npcactorandvibrate.cpp:654 returns 6 for a boss, else 5).
     /// </summary>
     public const int CasterSystem = 0;
     public const int CasterMyPc = 1;
     public const int CasterOther = 2;
     public const int CasterOtherPc = 3;
+    public const int CasterNpc = 5;
+    public const int CasterBoss = 6;
 
     /// <summary>
     /// Maps a combat actor to Unk_EffectTarget::m_nKind per WorldService::GetObjectKind (worldservice_1.cpp:6304-6309):
-    /// 1 for the local player (MyPC::vfunc_58, mypc.cpp:1247), 3 for remote PCs and NPCs (PCBase::vfunc_58, pcbase.cpp:1092).
+    /// 1 for the local player (MyPC::vfunc_58, mypc.cpp:1247), 3 for remote PCs (PCBase::vfunc_58, pcbase.cpp:1092); an npc is
+    /// 5 or 6 (CNpc::vfunc_58), not mapped here.
     /// </summary>
     public static int CasterKindForActor(bool isMyPc) => isMyPc ? CasterMyPc : CasterOtherPc;
 

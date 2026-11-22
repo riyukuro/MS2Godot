@@ -277,7 +277,8 @@ public sealed class NpcLayer
                 Id = id, Position = p,
                 Body = Ms2.Ui.Skills.SkillHit.NpcBody(row.CollisionWidth, row.CollisionDepth, row.CollisionHeight, p, i.TargetYaw),
                 Kind = Ms2.Ui.Skills.HitKind.Npc, Team = row.Friendly, Hp = i.Dead ? 0 : i.HpCur, NpcClass = row.Class,
-                CorpseHit = i.Dead && row.CorpseHitAble, DefenceMaterial = row.DefenceMaterial,
+                CorpseHit = i.Dead && row.CorpseHitAble, DefenceMaterial = row.DefenceMaterial, Boss = row.IsBoss,
+                CollisionOffset = new System.Numerics.Vector3(row.CollisionWidthOffset, row.CollisionDepthOffset, row.CollisionHeightOffset),
             });
         }
     }

@@ -786,7 +786,7 @@ public sealed partial class RemoteLayer : Node3D
                     break;
                 case NpcRemovedEvent nr:
                     npcs.Remove(nr.ObjectId, nr.Dead);
-                    // the corpse stays an object (and keeps its throttle) until the field goes
+                    // the corpse stays an object (and keeps its throttle) until a later FieldRemoveNpc removes the body, or the field goes
                     if (!nr.Dead) hitEffects.Remove(nr.ObjectId);
                     if (nr.Dead) LiveSession.Instance?.InteractNpcs?.SetDead(nr.ObjectId, true);
                     else LiveSession.Instance?.InteractNpcs?.Remove(nr.ObjectId);

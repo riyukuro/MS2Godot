@@ -34,9 +34,9 @@ public class DamageHitEffectTests
     // the owner (another PC) at the origin facing rot 0 (forward (0, -1, 0)), its box 150 high; the npc target at x 100, 100 high
     static readonly Dictionary<int, DamageHitObject> Field = new()
     {
-        [OwnerId] = new DamageHitObject(Vector3.Zero, 0f, 75f, 3),
-        [TargetId] = new DamageHitObject(new Vector3(100, 0, 0), 0f, 50f, 0),
-        [Self] = new DamageHitObject(new Vector3(0, 300, 0), 0f, 75f, 1),
+        [OwnerId] = new DamageHitObject(Vector3.Zero, 0f, new Vector3(0, 0, 75), 3),
+        [TargetId] = new DamageHitObject(new Vector3(100, 0, 0), 0f, new Vector3(0, 0, 50), 5),
+        [Self] = new DamageHitObject(new Vector3(0, 300, 0), 0f, new Vector3(0, 0, 75), 1),
     };
     static bool Find(int id, out DamageHitObject o) => Field.TryGetValue(id, out o);
 
@@ -68,14 +68,42 @@ public class DamageHitEffectTests
     }
 
     [Test]
-    public void TheLocalOwnerIsKind1AndAnNpcOwnerKind0()
+    public void TheLocalOwnerIsKind1AndAnNpcOwnerKind5()
     {
         var d = Damage();
         d.OwnerId = Self;
         Assert.That(Run(d, Attack(), new HitEffectThrottle())[0].CasterKind, Is.EqualTo(1));
         d.OwnerId = TargetId;
         d.Targets[0] = new HitTarget(OwnerId, d.Targets[0].Hits, d.Position, default);
-        Assert.That(Run(d, Attack(), new HitEffectThrottle())[0].CasterKind, Is.EqualTo(0));
+        Assert.That(Run(d, Attack(), new HitEffectThrottle())[0].CasterKind, Is.EqualTo(5),
+            "CNpc::vfunc_58: an npc-owned hit is kind 5, which SoundMusicEffectState rejects");
+    }
+
+    [Test]
+    public void TheObjectKindIsVfunc58s()
+    {
+        Assert.That(DamageHitEffects.KindOf(true, HitKind.Pc, false), Is.EqualTo(1), "MyPC");
+        Assert.That(DamageHitEffects.KindOf(false, HitKind.Pc, false), Is.EqualTo(3), "another PC");
+        Assert.That(DamageHitEffects.KindOf(false, HitKind.Npc, false), Is.EqualTo(5), "an npc");
+        Assert.That(DamageHitEffects.KindOf(false, HitKind.Npc, true), Is.EqualTo(6), "a boss");
+    }
+
+    [Test]
+    public void AnNpcsExtentTurnsItsCollisionOffset()
+    {
+        Assert.That(DamageHitEffects.NpcExtent(Vector3.Zero, 90f, 40f), Is.EqualTo(new Vector3(0, 0, 40)), "no offset: GameObject's");
+        var e = DamageHitEffects.NpcExtent(new Vector3(10, 0, 30), 0f, 40f);
+        Assert.That(e.X, Is.EqualTo(-10f).Within(1e-3f), "rotZ 0: turned by -180");
+        Assert.That(e.Y, Is.EqualTo(0f).Within(1e-3f));
+        Assert.That(e.Z, Is.EqualTo(70f), "the height offset plus half the box");
+        e = DamageHitEffects.NpcExtent(new Vector3(10, 0, 0), 270f, 0f);
+        Assert.That(e.X, Is.EqualTo(0f).Within(1e-3f));
+        Assert.That(e.Y, Is.EqualTo(10f).Within(1e-3f), "rotZ 270: counter-clockwise by 90");
+        var target = new DamageHitObject(new Vector3(100, 0, 0), 0f, new Vector3(-10, 5, 70), 5);
+        var pos = Vector3.Zero;
+        var dir = Vector3.Zero;
+        DamageHitEffects.Aim(target, false, Field[OwnerId], 3, 0f, RandMax, ref pos, ref dir);
+        Assert.That(pos, Is.EqualTo(new Vector3(90, 5, 70)), "no owner: the whole vf37 vector");
     }
 
     [Test]
