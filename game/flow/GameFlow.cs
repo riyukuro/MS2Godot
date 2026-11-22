@@ -227,6 +227,13 @@ public partial class GameFlow : Node
                 loginBgBgm.SelectCurrent(month, pick);
                 SelectedLoginBgDay = loginBgBgm.GetBgDay();
             }
+            if (string.IsNullOrEmpty(SelectedLoginBgDay))
+            {
+                // No table value (GMS2 data has no loginbgbgm.xml): the login field's own xblock names the backdrop.
+                var xblock = Ms2.Formats.World.FieldData.XBlockOf(packs, 1);
+                if (xblock != null && packs.Exists(Ms2.Formats.World.MapXBlock.Archive, Ms2.Formats.World.MapXBlock.Entry(xblock)))
+                    SelectedLoginBgDay = Ms2.Formats.World.MapXBlock.BgDay(Ms2.Formats.World.MapXBlock.Load(packs, xblock), pick);
+            }
             if (loginAudio == null || !IsInstanceValid(loginAudio))
             {
                 loginAudio = new FieldAudio { Name = "LoginAudio" };

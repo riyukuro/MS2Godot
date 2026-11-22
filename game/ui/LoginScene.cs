@@ -90,7 +90,7 @@ public partial class LoginScene : Control
     void AddBackground(Vector2 window, bool forShots)
     {
         var url = Flow.GameFlow.SelectedLoginBgDay;
-        if (string.IsNullOrEmpty(url))
+        if (string.IsNullOrEmpty(url) && assets.Packs.Exists("Xml", "table/loginbgbgm.xml"))
             url = LoginBackground.Select(assets.Table("table/loginbgbgm.xml"), DateTime.Now.Month, n => forShots ? 0 : (int)(GD.Randi() % (uint)n));
         if (string.IsNullOrEmpty(url)) return;
         MovieClipNode bg;
