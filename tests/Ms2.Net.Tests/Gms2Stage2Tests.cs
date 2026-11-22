@@ -210,4 +210,25 @@ public class Gms2Stage2Tests {
         Assert.That((m.Results[0].GuildId, m.Results[0].MemberCount, m.Results[0].MasterName), Is.EqualTo((7L, 5, "Boss")));
         Assert.That(r.Available, Is.EqualTo(0));
     }
+
+    [Test]
+    public void EveryRecordedGms2FieldAddPetIsReadWhole() {
+        var all = Gms2Sniffs.Inbound("gms2", Gms.Number(Inbound.FieldAddPet));
+        Assert.That(all, Is.Not.Empty);
+        foreach (var (file, data) in all) {
+            var p = FieldAddPet.Read(new ByteReader(data), Gms);
+            Assert.That(p.ObjectId, Is.Not.EqualTo(0), file);
+        }
+    }
+
+    [Test]
+    public void Gms2FieldAddPetHasASkinIdBeforeTheNpcIdAndAName() {
+        var w = new ByteWriter();
+        w.WriteInt(7); w.WriteInt(11); w.WriteInt(22);
+        w.WriteFloat(1); w.WriteFloat(2); w.WriteFloat(3); w.WriteFloat(0); w.WriteFloat(0); w.WriteFloat(90); w.WriteFloat(1.5f); w.WriteInt(99);
+        w.WriteByte(35); for (int i = 0; i < 3; i++) { w.WriteLong(100); w.WriteInt(100); }
+        w.WriteLong(5); w.WriteByte(0); w.WriteShort(4); w.WriteShort(3); w.WriteInt(0); w.WriteUnicodeString("Mimi");
+        var p = FieldAddPet.Read(Reader(w), Gms);
+        Assert.That((p.ObjectId, p.SkinId, p.NpcId, p.OwnerId, p.Level, p.TamingRank, p.PetUid, p.Name), Is.EqualTo((7, 11, 22, 99, 4, (short) 3, 5L, "Mimi")));
+    }
 }

@@ -57,6 +57,29 @@ public sealed class FieldAddNpc {
 public sealed record FieldAddPet(int ObjectId, int NpcId, int Level, System.Numerics.Vector3 Position, System.Numerics.Vector3 Rotation, float Scale, int OwnerId) {
     public static FieldAddPet Read(ByteReader r) =>
         new(r.ReadInt(), r.ReadInt(), r.ReadInt(), r.ReadVec3(), r.ReadVec3(), r.ReadFloat(), r.ReadInt());
+
+    /// <summary>The pet's skin id (GMS2 only: the second field), 0 on KMS2.</summary>
+    public int SkinId { get; init; }
+    /// <summary>The pet item's uid, taming rank and name (GMS2 only; the whole packet is read there).</summary>
+    public long PetUid { get; init; }
+    public short TamingRank { get; init; }
+    public string Name { get; init; } = "";
+
+    /// <summary>
+    /// GMS2 (0x5B): i32 object id, i32 skin id, i32 npc id, position, rotation, f32 scale, i32 owner, the npc stats (u8 type, 3 x (i64, i32)),
+    /// i64 pet uid, u8, i16 level, i16 taming rank, i32, unicode name.
+    /// </summary>
+    public static FieldAddPet Read(ByteReader r, ProtocolProfile profile) {
+        if (!profile.IsGms2) return Read(r);
+        int id = r.ReadInt(), skin = r.ReadInt(), npc = r.ReadInt();
+        var pos = r.ReadVec3(); var rot = r.ReadVec3(); float scale = r.ReadFloat(); int owner = r.ReadInt();
+        r.ReadByte(); for (int i = 0; i < 3; i++) { r.ReadLong(); r.ReadInt(); }
+        long uid = r.ReadLong(); r.ReadByte();
+        short level = r.ReadShort(), rank = r.ReadShort(); r.ReadInt();
+        string name = r.ReadUnicodeString();
+        r.ExpectEnd("FieldAddPet");
+        return new(id, npc, level, pos, rot, scale, owner) { SkinId = skin, PetUid = uid, TamingRank = rank, Name = name };
+    }
 }
 
 /// <summary>Inbound FieldRemovePet (RecvOp 0x5b): CSceneStateGame::OnFieldRemovePet reads the i32 object id first.</summary>

@@ -144,7 +144,7 @@ public sealed class FieldTracker {
                 break;
             }
             case Ms2.Net.Inbound.FieldAddPet: {
-                var pet = FieldAddPet.Read(p.Reader());
+                var pet = FieldAddPet.Read(p.Reader(), Profile);
                 lock (gate) petOwners[pet.ObjectId] = pet.OwnerId;
                 break;
             }
