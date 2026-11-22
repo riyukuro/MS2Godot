@@ -488,11 +488,13 @@ public sealed class ActionInputCondition : GuideCondition
 // ---- dialogs -----------------------------------------------------------------------------------------------------------------
 
 /// <summary>Dialog (unit_1413a6010.cpp): a dialog (by id, else by name) is open or closed as isOpen says, the listed
-/// controls are visible and, when subIndex ≥ 0, its sub index matches. Indexed by the interned dialog name while isOpen.</summary>
+/// controls are visible and, when subIndex ≥ 0, its sub index matches. Indexed by the interned dialog name while isOpen.
+/// The constructor (CGuideConditionDialog::CGuideConditionDialog @0x1413a60c0) sets isOpen 1 and subIndex -1: a condition
+/// without those attributes asks for an open dialog of any sub index.</summary>
 public sealed class DialogCondition : GuideCondition
 {
     public string DialogName = "";
-    public int DialogId, IsOpen, SubIndex;
+    public int DialogId, IsOpen = 1, SubIndex = -1;
     public List<string> Controls = new();
     public override void Load(XElement e)
     {

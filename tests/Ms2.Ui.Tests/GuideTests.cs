@@ -285,4 +285,51 @@ public class GuideTests
         Assert.That(g.FindEntity(100), Is.Not.Null);
         Assert.That(g.FindEntity(100).Force, Is.EqualTo(1));
     }
+
+    sealed class DialogWorld : GuideWorld
+    {
+        sealed class Dlg : GuideDialog { public override bool Hidden => false; public override int SubIndex => 3; }
+        readonly Pane pane = new();
+        public uint Time = 1000;
+        public bool BagOpen;
+        public override uint Now => Time;
+        public override IGuideEventPane Pane => pane;
+        public override int GuideMode => 1;
+        public override void GuideLog(string text) { }
+        public override GuideDialog FindDialog(string name) => BagOpen && name == "InventoryDialog" ? new Dlg() : null;
+    }
+
+    /// <summary>CGuideConditionDialog's constructor (@0x1413a60c0) sets isOpen 1 and subIndex -1: the tutorial's "open the
+    /// bag" close (dialogName only) is met by an open bag of any sub index and holds while it is shut.</summary>
+    [Test]
+    public void DialogConditionWithoutAttributesMeansOpenAnySubIndex()
+    {
+        var w = new DialogWorld();
+        var g = new GuideManager(w);
+        var table = new GuideTable();
+        table.Files.Add(new GuideTableFile("table/test.xml", XElement.Parse("""
+            <ms2>
+              <event id="170" saveId="110" saveStep="70">
+                <open><condition type="trigger" trigger="ShopOpen" value="7" /></open>
+                <close><condition type="dialog" dialogName="InventoryDialog" /></close>
+                <openAction><action type="limit" limit="ItemPutOn" /></openAction>
+              </event>
+            </ms2>
+            """).Elements("event").ToList()));
+        g.Load(table);
+        Assert.That(g.LoadErrors, Is.Empty);
+        w.Time = 1300; g.Tick();
+        g.AddTrigger(GuideTrigger.ShopOpen, 7);
+        w.Time = 1600; g.Tick();
+        Assert.That(g.FindEntity(170).State, Is.EqualTo(2));
+        Assert.That(g.IsRestricted(GuideLimit.ItemPutOn), Is.True);
+        w.Time = 1900; g.Tick();
+        Assert.That(g.FindEntity(170).State, Is.EqualTo(2), "the bag is shut");
+        w.BagOpen = true;
+        g.QueueOccurrence(GuideOccurrence.Dialog, 0);
+        w.Time = 2200; g.Tick();
+        w.Time = 2500; g.Tick();
+        Assert.That(g.FindEntity(170).State, Is.EqualTo(0), "the open bag closes it");
+        Assert.That(g.IsRestricted(GuideLimit.ItemPutOn), Is.False);
+    }
 }
