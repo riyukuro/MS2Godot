@@ -46,9 +46,11 @@ public sealed class ItemEnchantBook
     public Func<Item, bool> CanUseItem { get; set; } = _ => true;
     /// <summary>GetOriginOrItemId of FUN_1419c9260; default the item id. STILL-OPEN: the origin id is not in the item data.</summary>
     public Func<Item, int> OriginOrItemId { get; set; } = i => i.ItemId;
-    /// <summary>HasStringTag(0xcb + rarity - 1) of FUN_1419c93a0 (the tag-material path); default none. STILL-OPEN: the
-    /// ItemTagKey ids 0xcb..0xd0 are not mapped to the item data's tag names.</summary>
-    public Func<Item, int, bool> HasStringTag { get; set; } = (_, _) => false;
+    /// <summary>CItem::HasStringTag (@0x1405277E0) -> CItemData::HasStringTag (@0x14053c6b0, itemdata.cpp:535): the item data's
+    /// stringTag attribute (&lt;basic stringTag&gt;, CItemData Load itemdata.cpp:338) read through CItemDataTable::GetTagByName
+    /// (itemdatatable.cpp:578) equals the key. The keys FUN_1419c93a0 asks for, 0xcb..0xd0 (203..208), are the AddItemTag names
+    /// EnchantJockerItemNormal..Epic (itemdatatable.cpp:1446-1451); see <see cref="ItemTags"/>.</summary>
+    public Func<Item, int, bool> HasStringTag { get; set; } = (item, key) => item?.Data != null && key != 0 && ItemTags.ByName(item.Data.StringTag) == key;
     public Func<long, Item> Find { get; set; } = _ => null;
     public Action<IOutPacket> Send { get; set; }
     /// <summary>The talk the dialog opened from: (talking, npc id), and the client constant m_69a0.</summary>

@@ -200,6 +200,24 @@ public class ItemEnchantBookTests {
         m.Count = 1; t.B.CanUseItem = _ => false; Assert.That(t.B.IsIngredientCandidate(m, 0), Is.False);
     }
 
+    // FUN_1419c93a0 with the item data's own stringTag (CItemData::HasStringTag), no override: the EnchantJockerItem* names of the
+    // AddItemTag list (itemdatatable.cpp:1446-1451) are the keys 0xcb..0xd0 of the base item's rank 1..6.
+    [Test] public void ATaggedMaterialIsACandidateByRankAndAnUntaggedOneIsNot() {
+        var t = Selected(1, out var sel); sel.Rarity = 3;           // rank 3 asks for 0xcd, EnchantJockerItemElite
+        var m = t.Add(80); m.Rarity = 1; m.Count = 1;
+        Assert.That(t.B.IsIngredientCandidate(m, 0), Is.False, "no tag");
+        m.Data.StringTag = "EnchantJockerItemElite";
+        Assert.That(t.B.IsIngredientCandidate(m, 0), Is.True, "the rank 3 tag");
+        m.Data.StringTag = "enchantjockeritemelite";
+        Assert.That(t.B.IsIngredientCandidate(m, 0), Is.True, "GetTagByName compares without case");
+        m.Data.StringTag = "EnchantJockerItemNormal";
+        Assert.That(t.B.IsIngredientCandidate(m, 0), Is.False, "the rank 1 tag is not the rank 3 material");
+        m.Data.StringTag = "SomethingElse";
+        Assert.That(t.B.IsIngredientCandidate(m, 0), Is.False, "a name outside the tag list is tag 0");
+        sel.Rarity = 6; m.Data.StringTag = "EnchantJockerItemEpic";
+        Assert.That(t.B.IsIngredientCandidate(m, 0), Is.True, "rank 6 is 0xd0, Epic");
+    }
+
     [Test] public void ResultsRaiseTheMovieEventAndErrorsTheirNotices() {
         var t = Selected(1, out var it); it.EnchantLevel = 4;
         var res = new List<(bool, long, int, int)>(); var rew = new List<(int, int, long)>();
