@@ -52,23 +52,24 @@ public class ItemColoringDialogTests
         public List<IOutPacket> Sent = new();
         public List<MessageBoxData> Boxes = new();
         public int NotEnoughCalls, Closed;
-        public long Money = 100_000;
+        public readonly UiModel Model;
+        public long Money { get => Model.Player.Mesos; set => Model.Player.Mesos = value; }
 
         public Rig(bool load = true)
         {
             Packs();
-            var model = new UiModel(new GameTables(packs, "en")) { HasLocalPlayer = true };
+            var model = Model = new UiModel(new GameTables(packs, "en")) { HasLocalPlayer = true };
             C.Customize = Cu;
             C.Send = Sent.Add;
             C.ShowData = Boxes.Add;
             C.NotEnough = _ => NotEnoughCalls++;
             C.FeePriceText = (f, a) => "p" + a;
-            C.MoneyLeft = (f, price) => Money - price;
             C.ItemName = id => "item" + id;
             C.Closed += () => Closed++;
             var (rt, p) = src.Open(C.Movie, r => r.Budget = 20_000_000);
             p.StageW = 1280; p.StageH = 720;
             p.Translate = k => k.TrimStart('$');
+            Money = 100_000;
             var host = new UiHost(p, C, model);
             if (load) { Assert.That(host.Load(), Is.True, "load: " + string.Join("; ", rt.Errors)); for (int i = 0; i < 10; i++) p.Tick(); }
         }
@@ -76,7 +77,7 @@ public class ItemColoringDialogTests
         public static BeautyColoringPacket Open(int category = 5, int kind = 3, int shopId = 7) => new(1)
         {
             Kind = kind,
-            Shop = new BeautyShopData(shopId, category, 0, false, 0, 0, false, new BeautyPayment(1, 0, 5000, ""), new BeautyPayment(1, 0, 700, "")),
+            Shop = new BeautyShopData(shopId, category, 0, false, 0, 0, false, new BeautyPayment(0, 0, 5000, ""), new BeautyPayment(0, 0, 700, "")),
         };
     }
 
@@ -145,6 +146,33 @@ public class ItemColoringDialogTests
         r.C.AddCurrentItemToBasket(11100000);
         Assert.That(r.C.TryPay(), Is.False);
         Assert.That((r.Sent.Count, r.NotEnoughCalls), Is.EqualTo((0, 1)));
+    }
+
+    // FUN_141349ef0 (uiitemcoloringdialog.cpp:1166) is the money held, not the money left: a purse that covers the basket exactly pays.
+    [Test] public void APurseThatCoversTheBasketExactlyPays() {
+        var r = new Rig { Money = 700 };
+        r.C.OnPacket(Rig.Open());
+        r.C.AddCurrentItemToBasket(11100000);
+        Assert.That(r.C.CanPayBasket(out _), Is.True);
+        Assert.That(r.C.TryPay(), Is.True);
+        Assert.That((r.Sent.Count, r.NotEnoughCalls), Is.EqualTo((1, 0)));
+    }
+
+    [Test] public void APurseOneShortOfTheBasketDoesNotPay() {
+        var r = new Rig { Money = 699 };
+        r.C.OnPacket(Rig.Open());
+        r.C.AddCurrentItemToBasket(11100000);
+        Assert.That(r.C.CanPayBasket(out _), Is.False);
+    }
+
+    [Test] public void TheHeldAmountFollowsThePaymentsCurrency() {
+        var r = new Rig { Money = 5 };
+        r.Model.Player.Tokens[4] = 11;
+        r.C.ItemCount = id => id == 0 ? 22 : 99;
+        r.C.GuildFund = () => 33;
+        // shop currency kinds 0 mesos, 1 item (the item id is 0), 2 token 4, 10 red merat (FUN_1403baee0 -> 1, 2, 4, 9)
+        Assert.That(new[] { 0, 1, 2 }.Select(k => r.C.CurrencyHeld(new BeautyPayment(k, 77, 1, ""), 1)), Is.EqualTo(new long[] { 5, 22, 11 }));
+        Assert.That(r.C.CurrencyHeld(new BeautyPayment(99, 0, 1, ""), 1), Is.EqualTo(0), "an unknown kind holds nothing");
     }
 
     [Test] public void APaidBasketSendsMode0x16WithItsItems() {

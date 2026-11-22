@@ -1,4 +1,5 @@
 using Ms2.Quest;
+using Ms2.Ui.Shop;
 using Ms2.Avm2;
 using Ms2.Net.Packets;
 using Ms2.Net.Wire;
@@ -78,8 +79,10 @@ public sealed class ItemColoringDialogController : UiController
     public Func<int, int> CouponCountOfTag = _ => 0;
     /// <summary>GetFeePriceText (not recovered): the price text of a payment and an amount.</summary>
     public Func<BeautyPayment, long, string> FeePriceText;
-    /// <summary>FUN_141349ef0(paymentType, 0, price): what is left of the payment's money after paying the price.</summary>
-    public Func<BeautyPayment, long, long> MoneyLeft;
+    /// <summary>g_143ab2a90.FUN_140a5f180(id, 0): the bag's count of an item, read by FUN_141349ef0 for an item payment.</summary>
+    public Func<int, long> ItemCount = _ => 0;
+    /// <summary>The guild fund (CGuildManager's info), read by FUN_141349ef0 for a guild fund payment.</summary>
+    public Func<long> GuildFund = () => 0;
     /// <summary>FUN_14134a2e0 (not recovered): the "not enough" message of a payment.</summary>
     public Action<BeautyPayment> NotEnough;
     /// <summary>OpenBill's UIBillDialog (not ported): the answer comes back through <see cref="OnBillAnswer"/>.</summary>
@@ -276,14 +279,21 @@ public sealed class ItemColoringDialogController : UiController
     /// <summary>GetCouponName (@0x1419b19c0): the shop's display coupon, else common string 0x995.</summary>
     public string GetCouponName() => Shop is { DisplayCouponId: not 0 } s ? ItemName(s.DisplayCouponId) : Model.Tables.Common(0x995);
 
+    /// <summary>
+    /// FUN_141349ef0 (unit_141347b10.cpp:554) as the dialog calls it (uiitemcoloringdialog.cpp:1166): the amount the player holds of
+    /// the payment's currency (GetCurrencyType, then GetCurrencyAmount). The price only picks the red or plain merat balance, and
+    /// the item id is 0, so it is not the money left after paying; CanPayBasket takes each item's price off it.
+    /// </summary>
+    public long CurrencyHeld(BeautyPayment fee, uint price) =>
+        CurrencyWallet.Amount(Pc, Ms2.Ui.Shop.ShopController.CurrencyOf(fee.Type), price, () => ItemCount(0), GuildFund);
+
     /// <summary>FUN_1419b1760 (@0x1419b1760): the basket can be paid, counting the coupons first; the coupons it uses.</summary>
     public bool CanPayBasket(out int coupons)
     {
         coupons = 0;
-        if (MoneyLeft == null) return false;
         int have = GetCouponCount(UseCoupon);
         var fee = GetFee();
-        long left = MoneyLeft(fee, GetSalePrice((uint)GetTotalPrice()));
+        long left = CurrencyHeld(fee, GetSalePrice((uint)GetTotalPrice()));
         foreach (var _ in Basket)
         {
             uint price = GetSalePrice(GetPricePerItem());

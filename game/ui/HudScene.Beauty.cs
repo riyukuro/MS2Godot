@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Godot;
 using Ms2.Net.Packets;
 using Ms2.Ui;
@@ -156,6 +157,8 @@ public partial class HudScene
             Sales = live.BeautySales,
             PlayerLevel = () => live.Me.User?.Level ?? 0,
             Send = live.SendBeauty,
+            ItemCount = id => live.Items.All.Where(e => e.Id == id).Sum(e => (long)e.Amount),   // same sum as the shop's BindLiveState
+            GuildFund = () => live.Guilds?.Info?.Fund ?? 0,
         };
         c.NoticeText += SystemNoticeText;
         return c;

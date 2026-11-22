@@ -1650,30 +1650,10 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     }
 
     /// <summary>GetCurrencyAmount (@0x1418ff5a0, uicommon.cpp:1020).</summary>
-    public long GetCurrencyAmount(int currency, long amount, int itemId)
-    {
-        if (Model == null) return 0;
-        switch (currency)
-        {
-            case 1: return Pc.Mesos;
-            case 2: return ItemCount(itemId, 0);
-            case 3: return MeratTotal();
-            case 4: case 5: case 6: case 7:
-            case 0xc: case 0xd: case 0xe: case 0xf: case 0x10:
-                return Pc.Tokens.TryGetValue(currency, out long tok) ? tok : 0;
-            case 9: return Pc.RedMerat;
-            case 10: return Pc.RedMerat < amount ? MeratTotal() : Pc.RedMerat;
-            case 0xb: return GuildFund();
-            default: return 0;
-        }
-    }
+    public long GetCurrencyAmount(int currency, long amount, int itemId) =>
+        Model == null ? 0 : CurrencyWallet.Amount(Pc, currency, amount, () => ItemCount(itemId, 0), GuildFund);
 
-    long MeratTotal()
-    {
-        long sum = 0;
-        if (Pc.MeratWallet != null) foreach (var m in Pc.MeratWallet) sum += m;
-        return sum > 0 ? sum : Pc.Merats;
-    }
+    long MeratTotal() => CurrencyWallet.Merat(Pc);
 
     /// <summary>ShowLackCurrencyMessage (@0x1418ff710, uicommon.cpp:1068) via FUN_14134a120 (unit_141347b10.cpp:594).</summary>
     public void ShowLackCurrency(int shopKind, int itemId, long amount)
