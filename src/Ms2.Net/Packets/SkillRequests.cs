@@ -105,6 +105,22 @@ public sealed record SkillRoundRequest(long CastId, int ServerTick) : IOutPacket
 }
 
 /// <summary>
+/// Skill mode 4, a skill that stops: StateSkill::SendSkillMode4 @0x1417f4e10 (stateskill.cpp:1691) writes u8 4 and i64 the record's cast
+/// id, when the owner is pushed to a stop (vfunc_3, :613) or the held key lets go while moving (:1553, :1558). All 7547 recorded
+/// GMS2 packets are these 9 bytes.
+/// </summary>
+public sealed record SkillStopRequest(long CastId) : IOutPacket
+{
+    public Outbound Op => Outbound.Skill;
+
+    public void Write(ByteWriter w)
+    {
+        w.WriteByte(4);
+        w.WriteLong(CastId);
+    }
+}
+
+/// <summary>
 /// One link of a bounce chain in the damage send: the next SkillTargetRecord after a hit (the record's m_spLinked, made by
 /// StateSkill::FUN_1417f3e80 @0x1417f3e80, stateskill.cpp:2779): its serial (m_nTagSub, GenerateSerialId), the object it
 /// hits (m_nCasterId), the bounce number (m_n80, bounceCount - bounces left + 1) and the hit index (m_n84, 0 on a bounce).

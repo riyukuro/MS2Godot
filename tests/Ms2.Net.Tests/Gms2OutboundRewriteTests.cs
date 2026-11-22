@@ -69,4 +69,9 @@ public class Gms2OutboundRewriteTests {
         (t, s, f) = Rewrite(0x20, r => { r.ReadByte(); r.ReadByte(); long c = r.ReadLong(); byte a = r.ReadByte(); int sc = r.ReadInt(), h = r.ReadInt(); return new SkillSplashRequest(c, a, sc, h, V(r), V(r)); }, d => d[0] == 1 && d[1] == 2);
         Assert.That(t, Is.GreaterThan(0)); Assert.That(s, Is.EqualTo(t), f);
     }
+
+    [Test] public void SkillStopsRewriteByteForByte() {
+        var (t, s, f) = Rewrite(0x20, r => { r.ReadByte(); return new SkillStopRequest(r.ReadLong()); }, d => d[0] == 4);
+        Assert.That(t, Is.GreaterThan(0)); Assert.That(s, Is.EqualTo(t), f);
+    }
 }

@@ -36,6 +36,12 @@ public class SkillRequestTests
     }
 
     [Test]
+    public void TheStopWritesModeFourAndTheCastId()
+    {
+        Assert.That(Bytes(new SkillStopRequest(0x1122334455667788)), Is.EqualTo(Expect(w => { w.WriteByte(4); w.WriteLong(0x1122334455667788); })));
+    }
+
+    [Test]
     public void TheGms2CastHasNoCooldownKeyAndAlwaysTheAttachedBool()
     {
         byte[] G(SkillCastRequest c) { var w = new ByteWriter(); c.Write(w, ProtocolProfile.Gms2); return w.Buffer.AsSpan(0, w.Length).ToArray(); }
