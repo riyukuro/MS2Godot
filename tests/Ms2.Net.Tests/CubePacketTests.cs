@@ -182,6 +182,38 @@ public class CubePacketTests
     }
 
     [Test]
+    public void Gms2HomeInfoHasAnIntAfterField24AndNoOpenType()
+    {
+        // GMS2: i32 x4, i32, string, i64 x2, u8 result
+        var m = ResponseCubeHomeInfo.Read(Reader(w =>
+        {
+            w.WriteInt(7); w.WriteInt(62000000); w.WriteInt(2010002); w.WriteInt(5); w.WriteInt(0); w.WriteUnicodeString("Home");
+            w.WriteLong(0x5EE54964L); w.WriteLong(-9); w.WriteByte(1);
+        }), ProtocolProfile.Gms2);
+        Assert.That(m, Is.EqualTo(new ResponseCubeHomeInfo(7, 62000000, 2010002, 5, "Home", 0x5EE54964L, -9, 1, 0)));
+    }
+
+    [TestCase("gms2")]
+    [TestCase("kms2")]
+    public void EveryRecordedHomeInfoReadsToTheEnd(string set)
+    {
+        // the field entry's 0x14 in every live-server recording reads in its profile's layout with nothing left over; the
+        // debug client recording (owner object 10000001, the home named "Unknown") is no live server's and has a third layout
+        var profile = set == "gms2" ? ProtocolProfile.Gms2 : ProtocolProfile.Kms2525;
+        int seen = 0;
+        foreach (var (file, data) in Gms2Sniffs.Inbound(set, profile.Number(Inbound.ResponseCube)))
+        {
+            if (data.Length == 0 || data[0] != ResponseCubeHomeInfo.Mode || file == "kmsdebug client.msb") continue;
+            seen++;
+            var r = new ByteReader(data);
+            r.ReadByte();
+            var m = ResponseCubeHomeInfo.Read(r, profile);
+            Assert.That(m.PlotId, Is.EqualTo(62000000), file);
+        }
+        Assert.That(seen, Is.GreaterThan(0));
+    }
+
+    [Test]
     public void HomeInfoRefusesATrailingByte()
     {
         Assert.That(() => ResponseCubeHomeInfo.Read(Reader(w =>

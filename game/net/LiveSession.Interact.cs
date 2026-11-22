@@ -163,7 +163,7 @@ public partial class LiveSession
                 FieldCubesMade(added ? 1 : 0);   // CreateCube's cube waits for its entity too (f78, :2699)
                 return;
             }
-            case ResponseCubeHomeInfo.Mode: OnHomeInfo(ResponseCubeHomeInfo.Read(r)); return;
+            case ResponseCubeHomeInfo.Mode: OnHomeInfo(ResponseCubeHomeInfo.Read(r, game.Profile)); return;
             case ResponseCubeRowSwitch.Mode: HomeRows.Apply(ResponseCubeRowSwitch.Read(r)); return;
             case ResponseCubeRowLevel.Mode: HomeRows.Apply(ResponseCubeRowLevel.Read(r)); return;
         }

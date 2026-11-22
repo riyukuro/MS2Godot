@@ -63,6 +63,8 @@ public sealed record ResponseCubeHeldItem(byte Mode, byte Error, int Id, int Cub
 /// UserUGCMapInfo::FUN_1408b4220 (@0x1408b4220, ugcmapoptions.cpp:291) reads i32 the owner's object id (+0x18), i32 the plot id
 /// (+0x1c), i32 (+0x20), i32 (+0x24), the unicode string (+0x28), i64 (+0x30, 0 = no home), i64 (+0x38), u8 the result
 /// (the client's nResult, which the taxi refresh reads) and u8 the open type (+0x40: 0 public, 1 password, 2 private).
+/// GMS2 (every recorded 0x14) has one more i32 after +0x24 (0 in all of them) and one byte after +0x38, which this reads as
+/// the result (1 as in the KMS2 recordings); it has no open type byte, so OpenType stays 0.
 /// STILL-OPEN: what +0x20, +0x24, +0x28 and +0x38 mean is not recovered, so they keep the client's offsets as names.
 /// </summary>
 public sealed record ResponseCubeHomeInfo(int OwnerObjectId, int PlotId, int Field20, int Field24, string Field28,
@@ -71,10 +73,15 @@ public sealed record ResponseCubeHomeInfo(int OwnerObjectId, int PlotId, int Fie
     public const byte Mode = 0x14;
 
     /// <summary>The body after the mode byte.</summary>
-    public static ResponseCubeHomeInfo Read(ByteReader r)
+    public static ResponseCubeHomeInfo Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    /// <summary>The body after the mode byte, in the profile's layout.</summary>
+    public static ResponseCubeHomeInfo Read(ByteReader r, ProtocolProfile profile)
     {
-        var m = new ResponseCubeHomeInfo(r.ReadInt(), r.ReadInt(), r.ReadInt(), r.ReadInt(), r.ReadUnicodeString(),
-                                         r.ReadLong(), r.ReadLong(), r.ReadByte(), r.ReadByte());
+        int owner = r.ReadInt(), plot = r.ReadInt(), f20 = r.ReadInt(), f24 = r.ReadInt();
+        if (profile.IsGms2) r.ReadInt();
+        var m = new ResponseCubeHomeInfo(owner, plot, f20, f24, r.ReadUnicodeString(), r.ReadLong(), r.ReadLong(), r.ReadByte(),
+                                         profile.IsGms2 ? (byte)0 : r.ReadByte());
         r.ExpectEnd("ResponseCube 0x14");
         return m;
     }
