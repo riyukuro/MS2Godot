@@ -190,7 +190,10 @@ namespace Ms2.Avm2.Flash
                 // in addedToStage (GFxMovieMain::vfunc_4 @0x1422ef3c0, gfxmoviemain.cpp:106-114): initRestrictString reads ""
                 // for "$s_common_text_restrict" and leaves both sets null, so a name field takes any character. The host here
                 // has set the function already, so it is held back for the call. Not run, getCommonRestrictString hands out
-                // its initial "" and a name field given it takes none (an empty restrict lets no char in)
+                // its initial "" and a name field given it takes none (an empty restrict lets no char in).
+                // STILL-OPEN: of CommonInit.init, Start runs only CommonDepth.init and CommonTextField.init; it still skips
+                // Common.init, CommonFinder, CommonAlign, CommonClass, CommonColor, CommonDef, CommonMath, CommonPath.init,
+                // CommonSlot, CommonShop, Align, EventString and IncludeFiles
                 if (InGame && RT.GetClass("scaleform.ms2.common.CommonTextField") is { } ctf)
                 {
                     var common = RT.GetClass("scaleform.ms2.common.Common");
