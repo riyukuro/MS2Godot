@@ -18,7 +18,8 @@ public sealed class ColorPaletteTable
     /// show2color), StringKey (m_n2c, the stringColorPalette id), ColorSN (m_nColor) and PaletteId (m_nId). Colours are the
     /// ARGB words as written.
     /// </summary>
-    public sealed record Color(uint Ch0, uint Ch1, uint Ch2, uint Visible, bool Show2Color, int StringKey, int ColorSN, int PaletteId)
+    public sealed record Color(uint Ch0, uint Ch1, uint Ch2, uint Visible, bool Show2Color, int StringKey, int ColorSN, int PaletteId,
+        uint Eye0 = 0, uint Eye2 = 0)
     {
         public uint Channel(int i) => i switch { 0 => Ch0, 1 => Ch1, _ => Ch2 };
     }
@@ -58,7 +59,8 @@ public sealed class ColorPaletteTable
                 string pal = (string)c.Attribute("palette") ?? "";
                 var color = new Color(ch0, Hex((string)c.Attribute("ch1")), Hex((string)c.Attribute("ch2")),
                     pal.Length > 0 ? Hex(pal) : ch0, Flag((string)c.Attribute("show2color")),
-                    ItemData.Atoi((string)c.Attribute("stringKey") ?? "0"), ItemData.Atoi((string)c.Attribute("colorSN") ?? "0"), id);
+                    ItemData.Atoi((string)c.Attribute("stringKey") ?? "0"), ItemData.Atoi((string)c.Attribute("colorSN") ?? "0"), id,
+                    Hex((string)c.Attribute("ch0_eye")), Hex((string)c.Attribute("ch2_eye")));
                 map[color.ColorSN] = color;
             }
         }

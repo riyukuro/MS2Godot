@@ -25,6 +25,11 @@ public static class ReaderExt {
     public static Vector3S ReadVec3S(this ByteReader r) => new(r.ReadShort(), r.ReadShort(), r.ReadShort());
     public static Rgba ReadRgba(this ByteReader r) => new(r.ReadByte(), r.ReadByte(), r.ReadByte(), r.ReadByte());
     public static EquipColor ReadEquipColor(this ByteReader r) => new(r.ReadRgba(), r.ReadRgba(), r.ReadRgba(), r.ReadInt(), r.ReadInt());
+    /// <summary>EquipColorInfo::WriteToStream (@0x1405991a0 area): three colours (B, G, R, A each), the colour id and the palette id.</summary>
+    public static void WriteEquipColor(this ByteWriter w, EquipColor c) {
+        foreach (var g in new[] { c.Primary, c.Secondary, c.Tertiary }) { w.WriteByte(g.B); w.WriteByte(g.G); w.WriteByte(g.R); w.WriteByte(g.A); }
+        w.WriteInt(c.Index); w.WriteInt(c.PaletteId);
+    }
     public static ushort ReadUShort(this ByteReader r) => (ushort) r.ReadShort();
     public static uint ReadUInt(this ByteReader r) => (uint) r.ReadInt();
     public static ulong ReadULong(this ByteReader r) => (ulong) r.ReadLong();

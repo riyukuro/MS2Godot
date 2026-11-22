@@ -47,9 +47,7 @@ public partial class HudScene
         itemColoringFlow.CreateController = () => CreateItemColoring(live);
         itemColoringFlow.Show = ShowItemColoring;
         itemColoringFlow.Log = m => GD.Print(m);
-        // STILL-OPEN: the own-avatar item colour edit (the item controllers behind FUN_140f32290) is not ported, so there is no
-        // Customize and the dialog stays shut.
-        itemColoringFlow.CreateCustomize = () => null;
+        itemColoringFlow.CreateCustomize = () => CreateItemColoringCustomize(live);
         void OnBeautyPacket(byte[] body) => BeautyPacketRouter.Route(body, beautyFlow, beautyStyleFlow, m => GD.Print(m), itemColoringFlow);
         void OnOwnItem(int itemId) => itemColoringFlow.Current?.OnItemDyed(itemId);   // vfunc_24 of the item event listeners
         live.BeautyRequested += OnRequested;
@@ -104,6 +102,22 @@ public partial class HudScene
             HasItemData = i => tables.Items.Get(i) != null,
             NextUid = () => --beautyPreviewUid,   // GenerateUniqueId is not recovered: a preview uid never meets a real one
         };
+    }
+
+    /// <summary>
+    /// The item colour dialog's Customize (<see cref="ItemColoringOwnCustomize"/>) over the same own-avatar Customize as the shop; null
+    /// without a worn item. STILL-OPEN: see <see cref="ItemColoringOwnCustomize"/>.
+    /// </summary>
+    IItemColoringCustomize CreateItemColoringCustomize(Ms2Godot.Net.LiveSession live)
+    {
+        var cust = CreateBeautyCustomize(live);
+        if (cust == null) return null;
+        var tables = hudModel.Tables;
+        return new ItemColoringOwnCustomize(cust, tables.ColorPalettes, id =>
+        {
+            var d = tables.Items.Get(id);
+            return d != null && d.ItemPreset != 0 && tables.ItemModels.Get(d.ItemPreset)?.FirstSlotType == 2;   // FUN_14053d020
+        });
     }
 
     void ShowBeauty(BeautyShopDialogController c)

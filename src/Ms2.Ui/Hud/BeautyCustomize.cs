@@ -379,6 +379,28 @@ public sealed class BeautyCustomize : IBeautyCustomize
         SelectSlot((int)SlotOfId(itemId));
     }
 
+    /// <summary>
+    /// The worn item of the uid with its colour replaced (FUN_141423cf0's SetSlotColor / EditItems::SetColors' SetSlotRgbComponent
+    /// on the PC's worn item, then the redraw): the worn item is copied, dyed and put on, which replaces the one in its slot. False
+    /// when nothing of the uid is worn. STILL-OPEN: the multi-slot colours of a CItemExtraData with m_bMulti (only slot 0 exists
+    /// on the record).
+    /// </summary>
+    public bool DyeWorn(long uid, Func<EquipColor, EquipColor> dye)
+    {
+        var cur = WornByUid(uid);
+        if (cur == null) return false;
+        var c = pc.Clone(cur);
+        c.Color = dye(c.Color);
+        pc.Equip(c);
+        return true;
+    }
+
+    /// <summary>The worn item of the uid when it differs from its copy (Equipment::GetModified(uid), customize.cpp:1253), else null.</summary>
+    public EquipItem GetModifiedByUid(long uid) => GetModified().TryGetValue(uid, out var i) ? i : null;
+
+    /// <summary>The edit item's worn colour (the edit item is a copy; the worn item of the uid has the live colour), null without one.</summary>
+    public EquipItem WornEditItem() => WornByUid(EditItemUid);
+
     /// <summary>Customize::ResetEdit @0x140cd27a0: a fresh EditItems, nothing selected.</summary>
     public void ResetEdit() { editItem = null; editDataId = 0; }
 
@@ -425,6 +447,9 @@ public sealed class BeautyCustomize : IBeautyCustomize
         pc.SetSlotHidden(slot, false);
         hidden.Remove(slot);
     }
+
+    /// <summary>Customize::ReapplyHiddenSlots: the hidden slots go back on after an edit.</summary>
+    public void ReapplyHidden() => ReapplyHiddenSlots();
 
     void ReapplyHiddenSlots() { foreach (var s in hidden) pc.SetSlotHidden(s, true); }
 
