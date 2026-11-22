@@ -249,6 +249,8 @@ public sealed class SkillData
     public uint Jump;
     /// <summary>&lt;kinds continue&gt; (:842), m_bContinue.</summary>
     public bool Continue;
+    /// <summary>&lt;kinds unrideOnUse disableWater&gt; (skilloverlapcompare.cpp:846, :848): m_bUnrideOnUse, m_bDisableWater.</summary>
+    public bool UnrideOnUseRaw, DisableWater;
     /// <summary>&lt;kinds immediateActive&gt; (:845), m_eImmediateActive read as a number (XmlValue): the chain type a press
     /// of this skill takes in a running skill state (<see cref="SkillFollow.MayFollow"/>).</summary>
     public int ImmediateActive;
@@ -305,6 +307,8 @@ public sealed class SkillData
             s.Element = Xml.Int(kinds, "element");
             s.Jump = Xml.UInt(kinds, "jump");
             s.Continue = Xml.Bool(kinds, "continue");
+            s.UnrideOnUseRaw = Xml.Bool(kinds, "unrideOnUse");
+            s.DisableWater = Xml.Bool(kinds, "disableWater");
             s.ImmediateActive = Xml.Int(kinds, "immediateActive");
             s.GroupIds = Xml.UInt(kinds, "groupIDs");
         }
@@ -408,6 +412,10 @@ public sealed class SkillData
     public bool IsEmotion => MainType is 14 or 15;
     /// <summary>FUN_1407e9d70 (:1035): main types 3, 5, 7, 10, 17, 18, 19 (the item / ride / pet / glide kinds).</summary>
     public bool IsItemKind => MainType is 3 or 5 or 7 or 10 or 17 or 18 or 19;
+    /// <summary>IsUnrideOnUse @0x1407e9e20 (:1060): main types 1, 4, 7, 11-15, 17-19, else unrideOnUse.</summary>
+    public bool IsUnrideOnUse => MainType is 1 or 4 or 7 or 11 or 12 or 13 or 14 or 15 or 17 or 18 or 19 || UnrideOnUseRaw;
+    /// <summary>FUN_1407e9ef0 (:1097): main types 17, 18, 19.</summary>
+    public bool IsShutdownKind => MainType is 17 or 18 or 19;
     /// <summary>FUN_1407e9ea0 (:1082): main types 3, 5, 17, 18.</summary>
     public bool IsItemCountKind => MainType is 3 or 5 or 17 or 18;
     /// <summary>FUN_1407e9bd0 (:965): the action of main types 7, 10, 11, 12, 13 (0x1e glide, 0x26, 0x1c, 0x20, 0x1d climb), else 0.</summary>

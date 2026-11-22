@@ -27,6 +27,28 @@ public sealed record RideOffReactRequest(int ReactorId, string Name) : IOutPacke
 }
 
 /// <summary>
+/// Outbound RequestRide mode 1 for a skill use (MyPC::FUN_141525580, mypc.cpp:2447-2470, through SendRequestRideMode1): u8 1,
+/// then the action's vfunc_1: RideOffAction (@0x14077e520: u8 type, u8 argument), RideOffActionUseSkill (@0x14077f2f0: i32
+/// skill id, bool, i32 key) or RideOffActionUseGlideItem (@0x14077f470: i64 item uid, bool, i32 key).
+/// </summary>
+public sealed record RideOffSkillRequest(RideOffAction Action) : IOutPacket
+{
+    public Outbound Op => Outbound.RequestRide;
+
+    public void Write(ByteWriter w)
+    {
+        w.WriteByte(1);
+        w.WriteByte(Action.Type);
+        w.WriteByte(Action.Arg);
+        switch (Action)
+        {
+            case RideOffUseSkill u: w.WriteInt(u.Value28); w.WriteBool(u.Flag2C); w.WriteInt(u.Value30); break;
+            case RideOffUseGlideItem g: w.WriteLong(g.Value28); w.WriteBool(g.Flag30); w.WriteInt(g.Value34); break;
+        }
+    }
+}
+
+/// <summary>
 /// A ride-off action as ReadRideOffAction (@0x14077e5b0, commonfiles/rideonaction.cpp:159) reads it: u8 type, then
 /// RideOffAction::vfunc_2 (@0x14077e570) u8 argument, then the subclass fields. The reader has no case for type 20
 /// (RideOffActionReact, :759): that type, like any type it has no case for, reads as null and nothing after the type byte

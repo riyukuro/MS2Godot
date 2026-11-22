@@ -3,6 +3,7 @@ using Godot;
 using Ms2.Formats.Pack;
 using Ms2.Net.Packets;
 using Ms2.Ui;
+using Ms2.Ui.Hud;
 
 namespace Ms2Godot.Net;
 
@@ -10,13 +11,28 @@ namespace Ms2Godot.Net;
 /// CSceneStateGame::OnResponseRide (0x79, @0x14172a8f0, scenestategame.cpp:12026) for the own pc: modes 0, 1 and 2
 /// (<see cref="OwnRide"/>). STILL-OPEN: other pcs' rides (modes 0/1 and the RideSync records), the passenger modes 3-5,
 /// mode 6 (PC::FUN_1416642c0 and RideOnAction m_b28); RecvOp NpcRide 0xE7 (CSceneStateGame::OnNpcRide,
-/// scenestategame.cpp:4871: i32 npc id, then CNpc::FUN_141092c50); the own pc's ride-off-first cast when mounted
-/// (IsUnrideOnUse, mypc.cpp:2447-2470) and the ridee skill set (mypc.cpp:1219-1226).
+/// scenestategame.cpp:4871: i32 npc id, then CNpc::FUN_141092c50) and the ridee skill set (mypc.cpp:1219-1226).
+/// The own pc's ride-off-first cast (IsUnrideOnUse, mypc.cpp:2447-2470) is <see cref="RideOffForSkill"/>.
 /// </summary>
 public partial class LiveSession
 {
     /// <summary>CommonResource +0x2b0 and +0x2b8 (commonresource.cpp:164-165): PCBase::vfunc_120 and vfunc_121's effects.</summary>
     public const string RideOnEffectKey = "item_Ride_Use", RideOffEffectKey = "item_Ride_UnUse";
+
+    /// <summary>
+    /// MyPC::FUN_141525580's ride off before a skill (mypc.cpp:2447-2470): MyPC::SendRequestRideMode1 with the action
+    /// (<see cref="Ms2.Ui.Skills.SkillUseCheck"/>), the battle mount check off (a skill action); a ride that refuses shows notice
+    /// 0x655 (FUN_141275260(0x655, 1, 1)). False without the own pc on a ride.
+    /// </summary>
+    public bool RideOffForSkill(RideOffAction action)
+    {
+        if (game == null || player == null || !IsInstanceValid(player) || player.Mount == null) return false;
+        var ride = player.Mount.Data;
+        if (RideOff.Request(true, ride != null, ride?.Type ?? 0, ride?.EnableRideOffUI ?? false, action.Type, false,
+                new RideOffSkillRequest(action), Send) == RideOff.Outcome.CantRide)
+            SystemNoticeSink?.Invoke(MessageBoxData.Common(RideOff.CantRideNoticeId));
+        return true;
+    }
 
     void OnResponseRide(ResponseRide r)
     {

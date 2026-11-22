@@ -190,5 +190,12 @@ public class RidePacketTests
         Assert.That(Bytes(new RideBoardRequest(0x10)), Is.EqualTo(new byte[] { 3, 0x10, 0, 0, 0 }));
         Assert.That(Bytes(new RideLeaveRequest()), Is.EqualTo(new byte[] { 4 }));
         Assert.That(Bytes(new RideOptionRequest(1)), Is.EqualTo(new byte[] { 6, 1 }));
+
+        // MyPC::SendRequestRideMode1 (mypc.cpp:2447-2470): u8 1, the action's type and arg, then its vfunc_1 body
+        Assert.That(Bytes(new RideOffSkillRequest(new RideOffUseSkill(0, 0x01020304, true, 0x2c))),
+            Is.EqualTo(new byte[] { 1, 1, 0, 4, 3, 2, 1, 1, 0x2c, 0, 0, 0 }));
+        Assert.That(Bytes(new RideOffSkillRequest(new RideOffUseGlideItem(0, 0x0102030405060708L, false, 7))),
+            Is.EqualTo(new byte[] { 1, 25, 0, 8, 7, 6, 5, 4, 3, 2, 1, 0, 7, 0, 0, 0 }));
+        Assert.That(Bytes(new RideOffSkillRequest(new RideOffAction(0, 0))), Is.EqualTo(new byte[] { 1, 0, 0 }));
     }
 }

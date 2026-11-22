@@ -132,11 +132,11 @@ public partial class HudScene
 
     /// <summary>
     /// CSkillSystem::FUN_141764e30 for the own player (<see cref="SkillCast.Request"/>) at MyPC::GetSkillLevel, then
-    /// MyPC::vfunc_102 @0x141521fc0 (mypc.cpp:1146-1234): the cooldown gate (<see cref="SkillCast.CooldownGate"/>), the mode 0
-    /// send, FUN_141766cc0's reuse record, the record's motion on the own body, the cast's cooldown (FUN_141525ff0) and the
-    /// charge use (OnRechargeSkillUsed), then the motion effect.
-    /// STILL-OPEN, not fired here: FUN_141525580's refusals (states 0x2b / 0x2f, FUN_141527960, mypc.cpp:2436-2443) and its
-    /// IsUnrideOnUse ride-off (:2447-2470); the item kind and quick slot item checks with the binding confirm (:1167-1193);
+    /// MyPC::vfunc_102 @0x141521fc0 (mypc.cpp:1146-1234): FUN_141525580's refusals and ride off (<see cref="OwnUseAllowed"/>),
+    /// the cooldown gate (<see cref="SkillCast.CooldownGate"/>), the mode 0 send, FUN_141766cc0's reuse record, the record's
+    /// motion on the own body, the cast's cooldown (FUN_141525ff0) and the charge use (OnRechargeSkillUsed), then the motion
+    /// effect.
+    /// STILL-OPEN, not fired here: the item kind and quick slot item checks with the binding confirm (:1167-1193);
     /// NotifyUseSKill and the DPS meter (:1206, :1210); a level with a sequence while riding, and a level without one's
     /// ridee FUN_141706650 / FUN_141524a80 (:1220-1224); its StateSkill::FireFirstAttack (:1225) is
     /// <see cref="FireOwnAttack"/>.
@@ -492,6 +492,41 @@ public partial class HudScene
     SkillFollow.Window ownWindow;                  // the combo flags the sequence's text keys set (m_b4a, m_b49, m_b114-m_b116)
     readonly SkillFollow.ComboKeys ownComboKeys = new();
 
+    // MyPC::FUN_141525580's view of the own pc, made once; its delegates read the live session and the buff list
+    UseCheckWorld ownUseCheck;
+
+    /// <summary>
+    /// MyPC::FUN_141525580 @0x141525580 (mypc.cpp:2434), vfunc_102's first check (:1150): false refuses the use, and a mounted
+    /// IsUnrideOnUse skill sends its ride off first (<see cref="Net.LiveSession.RideOffForSkill"/>) and is refused too.
+    /// The own pc is in none of the states the check refuses (0x2b, 0x2f, the busy hold 0x20). STILL-OPEN: the buffs' no-fly
+    /// (AdditionalCliList::FUN_140970a00) is not kept, and PC::FUN_14165f150 (m_n1050) is taken as set.
+    /// </summary>
+    bool OwnUseAllowed(Player me, Net.LiveSession live, CastRecord r)
+    {
+        ownUseCheck ??= new UseCheckWorld
+        {
+            EmotionLearned = (id, lv) => Net.LiveSession.Instance is { } s && s.Emotions.IsLearned((int)id, lv, s.ServerTime),
+            HasEnabledEffect = id => ownBuffs?.Has(id, 0, 0, 0) == true,
+        };
+        var w = ownUseCheck;
+        w.Riding = me.Mount != null;
+        w.OnWater = me.OnWater;
+        var held = live?.HeldItem;
+        w.HasHeldItem = held is { Held: true } && held.ItemId != 0;
+        w.HeldItemSkill = w.HasHeldItem ? hudModel.Tables.Items.Get(held.ItemId)?.SkillId ?? 0 : 0;
+        switch (SkillUseCheck.Check(r, w, out var rideOff))
+        {
+            case SkillUseCheck.Result.Refused:
+                GD.Print($"cast: skill {r.Skill.Id} refused");
+                return false;
+            case SkillUseCheck.Result.RideOff:
+                live?.RideOffForSkill(rideOff);
+                GD.Print($"cast: skill {r.Skill.Id} rides off first");
+                return false;
+        }
+        return true;
+    }
+
     /// <summary>
     /// MyPC::vfunc_102 @0x141521fc0 (mypc.cpp:1146) from the cooldown gate on, for a new request or the press queued behind the
     /// running skill (<see cref="TickOwnQueued"/>). True when it went (cast or queued), as vfunc_102's return.
@@ -500,6 +535,7 @@ public partial class HudScene
     {
         var g = me.GlobalPosition;
         var live = Net.LiveSession.Instance;
+        if (!OwnUseAllowed(me, live, r)) return false;
         uint now = (uint)Net.LiveSession.CastTick();
         // StateTaxiCall::vfunc_8 (statetaxicalldata.cpp:302-304): no skill fires in the taxi call's phases 0x66-0x6a
         if (live != null && live.TaxiHoldsSkill) return false;
