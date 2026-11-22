@@ -374,6 +374,7 @@ public partial class HudScene : Node, IUiStageHost
         ScreenMask();
         NoticeTab(uiRoot, constants);
         QuestNavigationSlot(uiRoot);
+        SmartPushStrip(uiRoot);
         Minimap(uiRoot);
         UpperHud(uiRoot);
         TargetHpBar(uiRoot);
@@ -1220,6 +1221,32 @@ public partial class HudScene : Node, IUiStageHost
             notice = new MovieDialog(assets, nc, hudModel, ScreenMode.PixelSize(GetWindow()));
         }
         ui.AddChild(notice);
+    }
+
+    MovieDialog smartPushMovie;         // uismartpush (UISmartPush, 0x4ef7)
+    SmartPushManager smartPushManager;
+
+    /// <summary>
+    /// UISmartPush (0x4ef7), the strip of smart push buttons, and the CSmartPushManager that adds and removes them
+    /// (uismartpush.cpp, smartpushmanager.cpp). The field answers none of the pushes' questions yet (riding, event buffs,
+    /// fishing, instrument, nearby gathering objects: STILL-OPEN), so no button shows; the hide option and the click
+    /// are wired. Loaded once and kept across relayouts.
+    /// </summary>
+    void SmartPushStrip(Control ui)
+    {
+        if (smartPushMovie == null)
+        {
+            var strip = new SmartPushStripController();
+            smartPushManager = new SmartPushManager(hudModel.Tables.SmartPush, SmartPushNotices, key => hudModel.Tables.Common(key) ?? "", new SmartPushField { HasPlayer = () => true })
+            {
+                Strip = strip,
+                Suppressed = () => GameOptions.Current.StatusOption.DisplayHideSmartPush,
+            };
+            strip.PushClicked += smartPushManager.OnPushClicked;
+            strip.Hidden += smartPushManager.ResetPushStates;
+            smartPushMovie = new MovieDialog(assets, strip, hudModel, ScreenMode.PixelSize(GetWindow()));
+        }
+        ui.AddChild(smartPushMovie);
     }
 
     /// <summary>The xblock of the field this scene runs: the first field's, then each move's target (<see cref="SwapField"/>), else --field.</summary>
@@ -3572,6 +3599,7 @@ public partial class HudScene : Node, IUiStageHost
         if (inventory != null && !inventory.IsClosed) inventory.Process();     // UIInventoryDialog::vfunc_15
         if (myInfo != null && !myInfo.IsClosed) myInfo.Process((long)Time.GetTicksMsec());     // UIMyInfoDialog::vfunc_15
         (notice?.Host.Controller as NoticeDialogController)?.Update((uint)Time.GetTicksMsec());     // UINoticeDialog::vfunc_72
+        smartPushManager?.Update((uint)Time.GetTicksMsec());     // CSmartPushManager::UpdatePushes (mypc.cpp:2979)
         popupMenu?.Update();       // UIPopUpMenu::vfunc_15
         optionDialog?.Update();    // UIGameOptionDialog::vfunc_15 (@0x141942bf0)
         if (PartyWindowOpen) party.Process();      // UIPartyDialog::vfunc_15: the vote page's time, the ready marks' deadline

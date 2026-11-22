@@ -129,4 +129,154 @@ public class SmartPushTests
         Assert.That(w.ToArray(), Is.EqualTo(new byte[] { 7, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0, 1 }));
         Assert.That(new Ms2.Net.Packets.SmartPushAnswer(7, 3, true).Op, Is.EqualTo(Ms2.Net.Outbound.SmartPush));
     }
+
+    // ---- the manager (smartpushmanager.cpp) ----
+
+    sealed class Fake
+    {
+        public bool Player = true, Riding, Reached, Fishing, Hide;
+        public int Ridee, Instrument;
+        public HashSet<int> Buffs = new();
+        public List<string> Log = new();
+    }
+
+    sealed class FakeStrip : ISmartPushStrip
+    {
+        public bool Ready { get; set; } = true;
+        public bool CanAdd = true;
+        public List<string> Log = new();
+        public bool AddPush(SmartPushView v) { Log.Add($"add {v.Id} '{v.Text}' toggle={v.IsToggle} active={v.Active} movie={v.ActiveMovie}"); return CanAdd; }
+        public bool RemovePush(int id) { Log.Add("remove " + id); return true; }
+    }
+
+    static (SmartPushManager, FakeStrip, Fake, List<(int, int, bool)>, List<MessageBoxData>) Mgr()
+    {
+        var f = new Fake();
+        var strings = new Dictionary<string, string>
+        {
+            ["s_smartpush_saferiding"] = "ride", ["s_smartpush_saferiding_active"] = "ride on",
+            ["s_smartpush_saferiding_desc"] = "ride {0}", ["s_smartpush_saferiding_rbmerat_desc"] = "red ride {0}",
+            ["s_smartpush_autofishing"] = "fish", ["s_smartpush_autofishing_active"] = "fish on",
+            ["s_smartpush_saferiding_water"] = "water", ["s_smartpush_saferiding_water_active"] = "water on",
+            ["s_mastery_automining_button"] = "mine",
+        };
+        var n = Make(out _, out var boxes, out var sent);
+        var field = new SmartPushField
+        {
+            HasPlayer = () => f.Player, IsRiding = () => f.Riding, RideeType = () => f.Ridee,
+            EventBuff = t => f.Buffs.Contains(t), AdventureReached = () => f.Reached, FishingAllowed = () => f.Fishing,
+            Instrument = () => f.Instrument,
+        };
+        var m = new SmartPushManager(Table(), n, k => strings.TryGetValue(k, out var v) ? v : "", field) { Suppressed = () => f.Hide, Strip = new FakeStrip() };
+        return (m, m.Strip as FakeStrip, f, sent, boxes);
+    }
+
+    [Test]
+    public void ManagerMakesOnlyThePushesThatHaveAClass()
+    {
+        var (m, _, _, _, _) = Mgr();
+        // CreatePushes (smartpushmanager.cpp:79): rows 1 PlayInstrument, 2 AutoMining, 5 Toggle, 6 AutoFishing; 7-11 have no class
+        Assert.That(m.Count, Is.EqualTo(4));
+        Assert.That(m.Get(7), Is.Null);
+        Assert.That(m.Get(8), Is.Null);
+    }
+
+    [Test]
+    public void WantedFollowsEachClassesVfunc6()
+    {
+        var (m, _, f, _, _) = Mgr();
+        Assert.That(m.Wanted(m.Get(6)), Is.EqualTo(0), "AutoFishing: FUN_140954150 is 0");
+        f.Fishing = true;
+        Assert.That(m.Wanted(m.Get(6)), Is.EqualTo(1));
+        f.Buffs.Add(1);
+        Assert.That(m.Wanted(m.Get(6)), Is.EqualTo(2), "an enabled event buff of type 1");
+        f.Player = false;
+        Assert.That(m.Wanted(m.Get(6)), Is.EqualTo(0), "no local player");
+        f.Player = true;
+        Assert.That(m.Wanted(m.Get(5)), Is.EqualTo(0), "Toggle: not riding");
+        f.Riding = true; f.Ridee = 1;
+        Assert.That(m.Wanted(m.Get(5)), Is.EqualTo(0), "ridee type 1 and 2 are not wanted");
+        f.Ridee = 3;
+        Assert.That(m.Wanted(m.Get(5)), Is.EqualTo(0), "the toggle needs the adventure level reached");
+        f.Reached = true;
+        Assert.That(m.Wanted(m.Get(5)), Is.EqualTo(1));
+        f.Buffs.Add(3);
+        Assert.That(m.Wanted(m.Get(5)), Is.EqualTo(2));
+        f.Instrument = 2;
+        Assert.That(m.Wanted(m.Get(1)), Is.EqualTo(2), "PlayInstrument takes the instrument manager's answer");
+        Assert.That(m.Wanted(m.Get(2)), Is.EqualTo(0), "AutoInteraction: STILL-OPEN, nothing nearby is asked");
+    }
+
+    [Test]
+    public void ClickAnswersAFreePushAndAsksForAPricedOne()
+    {
+        var (m, _, _, sent, boxes) = Mgr();
+        m.Get(6).N1c = 4;
+        m.OnPushClicked(6);                      // RequireMerat 0: vfunc_5(false) (smartpush.cpp:290)
+        Assert.That(sent, Is.EqualTo(new[] { (6, 4, false) }));
+        m.OnPushClicked(5);                      // the toggle (:2a80) answers whatever it costs
+        Assert.That(sent.Count, Is.EqualTo(2));
+        m.OnPushClicked(2);                      // AutoMining row costs 300 merat: STILL-OPEN class box, base path used
+        Assert.That(sent.Count, Is.EqualTo(2));
+        Assert.That(boxes.Count, Is.EqualTo(1));
+        Assert.That(boxes[0].Type, Is.EqualTo(0x20));
+        boxes[0].Callback(1, boxes[0]);          // no
+        Assert.That(sent.Count, Is.EqualTo(2));
+        boxes[0].Callback(0, boxes[0]);          // yes: FUN_140dcf800
+        Assert.That(sent[2], Is.EqualTo((2, 0, false)));
+        m.OnPushClicked(99);                     // no such push
+        Assert.That(sent.Count, Is.EqualTo(3));
+    }
+
+    [Test]
+    public void UpdateAddsRemovesAndRetriesLikeUpdatePushes()
+    {
+        var (m, strip, f, _, _) = Mgr();
+        f.Fishing = true;
+        m.Update(1000);                       // smartpushmanager.cpp:92-121
+        Assert.That(strip.Log, Is.EqualTo(new[] { "add 6 'fish' toggle=False active=False movie=UISmartPush_autofish" }));
+        m.Update(1050);                       // under 100 ms since the last poll: nothing
+        f.Buffs.Add(1);
+        m.Update(1099);
+        Assert.That(strip.Log.Count, Is.EqualTo(1));
+        m.Update(1100);                       // state 1 -> 2: added again with the active text
+        Assert.That(strip.Log[1], Is.EqualTo("add 6 'fish on' toggle=False active=True movie=UISmartPush_autofish"));
+        f.Fishing = false;
+        m.Update(1200);
+        Assert.That(strip.Log[2], Is.EqualTo("remove 6"));
+        m.Update(1300);
+        Assert.That(strip.Log.Count, Is.EqualTo(3), "state 0 and wanted 0: nothing");
+        strip.CanAdd = false;
+        f.Fishing = true;
+        m.Update(1400);                       // AddPush fails: the old state (0) is kept ...
+        m.Update(1500);                       // ... so it is tried again
+        Assert.That(strip.Log.Count, Is.EqualTo(5));
+        Assert.That(m.Get(6).State, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void SuppressionRemovesEveryPushAndResetReAddsThem()
+    {
+        var (m, strip, f, _, _) = Mgr();
+        f.Fishing = true; f.Player = true; f.Riding = true; f.Ridee = 3; f.Reached = true;
+        m.Update(1000);
+        Assert.That(strip.Log, Is.EqualTo(new[]
+        {
+            "add 5 'water' toggle=True active=False movie=",
+            "add 6 'fish' toggle=False active=False movie=UISmartPush_autofish",
+        }));
+        f.Hide = true;                        // DisplayHideSmartPush: nWanted = 0 (:103)
+        m.Update(1100);
+        Assert.That(strip.Log.GetRange(2, 2), Is.EqualTo(new[] { "remove 5", "remove 6" }));
+        f.Hide = false;
+        m.Update(1200);
+        Assert.That(strip.Log.Count, Is.EqualTo(6));
+        m.ResetPushStates();                  // UISmartPush::vfunc_3: every state forgotten, the next poll adds them again
+        m.Update(1300);
+        Assert.That(strip.Log.Count, Is.EqualTo(8));
+        strip.Ready = false;
+        m.ResetPushStates();
+        m.Update(1400);                       // FindStripUI is null: return
+        Assert.That(strip.Log.Count, Is.EqualTo(8));
+    }
 }
