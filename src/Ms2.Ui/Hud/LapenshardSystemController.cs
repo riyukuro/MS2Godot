@@ -34,6 +34,13 @@ public abstract class LapenshardTabPage
     public virtual IDictionary<string, object> GetSlotTooltip(string name) => null;
     /// <summary>vfunc_9: an inbound lapenshard packet reaches the current page.</summary>
     public virtual void OnPacket(LapenshardMessage m) { }
+
+    // ---- the page's drag slots (the controller answers IDragSlotOwner for them) ----
+    public virtual bool IsDragSlot(string name) => false;
+    public virtual void RefreshSlot(string name) { }
+    public virtual void SlotDragStarted(string name) { }
+    public virtual void SlotDragDone(string name) { }
+    public virtual void SlotDroppedOn(string name, string source, IDragSlotOwner sourceOwner) { }
 }
 
 /// <summary>
@@ -45,7 +52,7 @@ public abstract class LapenshardTabPage
 /// <para>STILL-OPEN: the pages (equip, upgrade) are added by later slices; the item events listener
 /// (FUN_1419cae20) and vfunc_3's inventory notification; the tab menu (OnTabMenu) has no client handler.</para>
 /// </summary>
-public sealed class LapenshardSystemController : UiController
+public sealed class LapenshardSystemController : UiController, IDragSlotOwner
 {
     public override string Movie => "uilapenshardsystemdialog";
     protected override string EntityMethod => "alignment";
@@ -101,11 +108,67 @@ public sealed class LapenshardSystemController : UiController
         return true;
     }
 
+    /// <summary>FUN_140c60920's source: the local inventory's items of a category (0xd holds the lapenshards), the bag's own
+    /// copies. Unset: none.</summary>
+    public Func<int, IEnumerable<Item>> InventoryItems = _ => Array.Empty<Item>();
+    /// <summary>PC::CanUseItem of a bag item (FUN_140c60920 with bCheckUse). Unset: usable.</summary>
+    public Func<Item, bool> CanUseItem = _ => true;
+    /// <summary>ShowSystemNotice: a common-string key's text.</summary>
+    public event Action<string> NoticeText;
+    /// <summary>FUN_140d73bc0(id, ...): a numbered notice (0xd3, the kind mismatch of a drop). STILL-OPEN: its text.</summary>
+    public event Action<int> NoticeCode;
+    public void ShowSystemNotice(string key) => NoticeText?.Invoke(T(key));
+    public void ShowNoticeCode(int id) => NoticeCode?.Invoke(id);
+
+    /// <summary>MyPC::HasEquippedLapenshardOfSameGroup (mypc.cpp): a worn lapenshard has the group of the item.</summary>
+    public bool HasEquippedLapenshardOfSameGroup(int itemId)
+    {
+        int g = Model.Tables.Lapenshards.Group(itemId);
+        for (int slot = 1; slot <= LapenshardEquipTabPage.Slots; slot++)
+            if (WornItemId(slot) is int w and not 0 && Model.Tables.Lapenshards.Group(w) == g) return true;
+        return false;
+    }
+
+    /// <summary>MyPC::FindLapenSlotForItem(kind): the lowest empty slot of the kind, else the lowest slot of the kind; 0 for none.</summary>
+    public int FindLapenSlotForItem(int kind)
+    {
+        int first = 0;
+        for (int slot = 1; slot <= LapenshardEquipTabPage.Slots; slot++)
+        {
+            if (LapenshardEquipTabPage.KindOfSlot(slot) != kind) continue;
+            if (first == 0) first = slot;
+            if (WornItemId(slot) == 0) return slot;
+        }
+        return first;
+    }
+
+    /// <summary>SendLapenshard (LapenshardSlot, @FUN_140c62520 then mode 1): the use check, then the equip request.</summary>
+    public bool SendLapenshard(int slot, long uid)
+    {
+        if (!CanUse()) return false;
+        return Send?.Invoke(new LapenshardEquip(slot, uid)) == true;
+    }
+
+    // ---- IDragSlotOwner: the page's slots ----
+    public bool IsDragSlot(string name) => page?.IsDragSlot(name) == true;
+    public void RefreshSlot(string name) => page?.RefreshSlot(name);
+    public void SlotDropUnresolved(string name) => page?.RefreshSlot(name);
+    public void SlotDragStarted(string name) => page?.SlotDragStarted(name);
+    public void SlotDragDone(string name) => page?.SlotDragDone(name);
+    public void SlotDroppedOn(string name, string source, IDragSlotOwner sourceOwner) => page?.SlotDroppedOn(name, source, sourceOwner);
+
     /// <summary>SelectSlot(kind): the kind is kept and the pages light that kind's slots (event 10).</summary>
     public void SelectSlot(int kind)
     {
         SelectedKind = kind;
         NotifyPage(10);
+    }
+
+    /// <summary>The slot released (LapenshardSlot::vfunc_21): the highlight goes off (event 11).</summary>
+    public void ReleaseSlot()
+    {
+        SelectedKind = 0;
+        NotifyPage(11);
     }
 
     /// <summary>vfunc_79: an inbound lapenshard packet goes to the current page.</summary>

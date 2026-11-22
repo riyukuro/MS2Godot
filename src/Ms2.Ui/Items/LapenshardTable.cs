@@ -13,6 +13,7 @@ public sealed class LapenshardTable
 {
     readonly PackSet packs;
     Dictionary<int, uint> masks;
+    Dictionary<int, int> groups;
 
     public static readonly LapenshardTable Empty = new(null);
 
@@ -21,9 +22,23 @@ public sealed class LapenshardTable
     /// <summary>Get (:339)'s m_nMask: 1 red, 2 blue, 4 green; null without a row.</summary>
     public uint? Mask(int itemId)
     {
+        Load();
+        return masks.TryGetValue(itemId, out var m) ? m : null;
+    }
+
+    /// <summary>GetGroup: the row's LapenGroupID, 0 without a row.</summary>
+    public int Group(int itemId)
+    {
+        Load();
+        return groups.TryGetValue(itemId, out var g) ? g : 0;
+    }
+
+    void Load()
+    {
         if (masks == null)
         {
             masks = new();
+            groups = new();
             foreach (var p in packs != null && TablePath.Resolve(packs, "itemlapenshardupgrade.xml") is { } lp ? new[] { lp } : Array.Empty<string>())   // GetXmlPath("Table", ...)
             {
                 var root = GameStrings.Parse(packs.Read("Xml", p)).Root;
@@ -34,10 +49,10 @@ public sealed class LapenshardTable
                     int id = ItemData.Atoi((string)e.Attribute("ItemId") ?? "0");
                     if (id == 0) continue;
                     masks[id] = GemstoneUpgradeTable.EquipPartMask(e, 0);
+                    groups[id] = ItemData.Atoi((string)e.Attribute("LapenGroupID") ?? "0");
                 }
                 break;
             }
         }
-        return masks.TryGetValue(itemId, out var m) ? m : null;
     }
 }
