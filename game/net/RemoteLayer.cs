@@ -289,6 +289,62 @@ public sealed partial class RemoteLayer : Node3D
     public Ms2.Ui.Skills.SkillAttackDamage AttackDamage(int skillId, int level, int motion, int attack) =>
         SkillDamage.Get(skillId, level, motion, attack);
 
+    readonly Ms2.Ui.Skills.StateHitData remoteHitData = new();
+    int hitMapId = -1, hitMapType;
+
+    /// <summary>The current field's map type (CFieldData), read once per field.</summary>
+    int HitMapType()
+    {
+        int id = LiveSession.Instance?.FieldId ?? 0;
+        if (id != hitMapId)
+        {
+            hitMapId = id;
+            hitMapType = FieldData.FindById(packs, id)?.MapType ?? 0;
+        }
+        return hitMapType;
+    }
+
+    /// <summary>
+    /// OnSkillDamage mode 1 (FUN_14171cdf0, scenestategame.cpp:5607) for the records on the other PCs shown here: PC::vfunc_33
+    /// (@0x141652080, pc.cpp:885) runs for every PC, so each record on one goes through
+    /// <see cref="Ms2.Ui.Skills.HitReaction.OnSkillHit"/> on its body as LiveSession's does on the own PC (the record's
+    /// position and direction, the hit facing, the owner's pose, the ground of a map type of 9 or 3), then StateHit with the
+    /// data (vfunc_59(0xd, data, 0, duration > 0), pc.cpp:943) or StateIdle (pc.cpp:946-950). The record needs the attack
+    /// (CDamageRecord::Init); the hits' count and HasDamage do not gate it.
+    /// STILL-OPEN: the PC's buffs' super armor (AdditionalCliList::GetSuperArmor), its invincible buff and its equipment's
+    /// push resistance (CEquipment::FUN_1411e0f90, ability 0x27) are not known for another PC and count as none; the
+    /// magic service's delivery time (FUN_14146b440) is taken as at once; the record's invoke effects, colour boost and
+    /// hit sound (pc.cpp:891-893, :951-955) are not played.
+    /// </summary>
+    void ReactToHits(SkillDamage d)
+    {
+        Ms2.Ui.Skills.SkillAttackDamage attack = null;
+        bool looked = false;
+        foreach (var t in d.Targets)
+        {
+            if (!users.TryGetValue(t.TargetId, out var r) || r.Pc == null) continue;
+            if (!looked) { attack = AttackDamage(d.SkillId, d.Level, d.Motion, d.AttackPoint); looked = true; }
+            if (attack == null) return;
+            long total = 0;
+            foreach (var h in t.Hits) total += h.Damage;
+            int mapType = HitMapType();
+            bool ground = mapType is 9 or 3;
+            uint armor = Ms2.Ui.Skills.HitReaction.SuperArmor(r.Pc.ClientStateId, 0, 0);
+            var recordDir = attack.AttackMethodType == 1 ? d.DirectionShort.ToVector3() : System.Numerics.Vector3.Zero;
+            (System.Numerics.Vector3, System.Numerics.Vector3)? attacker = null;
+            if (PoseOf(d.OwnerId) is { } pose)
+            {
+                Ms2.Ui.Skills.SkillHit.Axes(pose.RotZ, out var forward, out _);
+                attacker = (pose.Pos, forward);
+            }
+            remoteHitData.Clear();
+            var change = Ms2.Ui.Skills.HitReaction.OnSkillHit(r.Pc, attack, total, armor, false, ground, 0,
+                d.Position.ToVector3(), recordDir, d.DirectionShort.Z, attacker, remoteHitData);
+            if (change == Ms2.Ui.Skills.HitReaction.Change.Hit) r.Pc.EnterHit(remoteHitData, remoteHitData.Duration > 0f);
+            else if (change == Ms2.Ui.Skills.HitReaction.Change.Idle) r.Pc.ReactIdle();
+        }
+    }
+
     /// <summary>
     /// PCBase::FUN_141671c20's vfunc_111 per hit (<see cref="Ms2.Ui.Hud.DamageNumbers.Records"/>) through UIDamageText's
     /// show test (FUN_141913bd0) with the battle options; the party mask is IsMemberByCharId on a player's character.
@@ -679,6 +735,7 @@ public sealed partial class RemoteLayer : Node3D
                     // material, its own object kind) counts as nothing here
                     var owner = byLocal || users.ContainsKey(dmg.Damage.OwnerId) ? Ms2.Ui.Skills.HitOwner.Pc
                         : npcs.Contains(dmg.Damage.OwnerId) ? Ms2.Ui.Skills.HitOwner.Npc : Ms2.Ui.Skills.HitOwner.None;
+                    if (dmg.Damage.Mode == 1) ReactToHits(dmg.Damage);
                     if (dmg.Damage.Mode != 1 || Ms2.Ui.Hud.DamageNumbers.HasDamage(dmg.Damage, SkillDamage))
                     {
                         foreach (var t in dmg.Damage.Targets)
