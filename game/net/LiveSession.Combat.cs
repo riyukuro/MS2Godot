@@ -40,7 +40,8 @@ public partial class LiveSession
         int numbers = 0, kills = 0, npcs = 0, storeItem = int.Parse(Env("MS2_LIVE_STORE_ITEM", "0").Split(';')[0]);
         long mesoDelta = 0, lockUid = 0;
         int lockId = 0;
-        live.DamageNumbered += (n, npc, pc) => { if (npc != null) numbers++; };
+        var hitCount = new System.Collections.Generic.Dictionary<FieldNpcs.Placed, int>();
+        live.DamageNumbered += (n, npc, pc) => { if (npc != null) { numbers++; hitCount[npc] = hitCount.GetValueOrDefault(npc) + 1; } };
         live.NpcExpShown += (npc, exp) => kills++;
         FieldNpcs.Placed lastNpc = null;
         live.NpcAdded += npc => { npcs++; lastNpc = npc; };
@@ -266,20 +267,28 @@ public partial class LiveSession
                     hud.SubmitChatLine("/npc " + mob);
                     await until(() => npcs > added, 60 * 5); await frames(120);
                     Check("the mob is in the field", npcs > added && lastNpc != null);
-                    int deadBefore = kills, hitPresses = 0, press = 0;
-                    for (; press < 12 && kills == deadBefore; press++)
+                    int deadBefore = kills, hitPresses = 0, press = 0, need = int.Parse(Env("MS2_LIVE_COMBAT_PRESSES", "3"));
+                    for (; press < 12 && press < need; press++)
                     {
+                        if (kills > deadBefore)      // the mob died: a fresh one takes the next press, so the count is of presses at a live mob
+                        {
+                            deadBefore = kills; int again = npcs;
+                            hud.SubmitChatLine("/npc " + mob);
+                            await until(() => npcs > again, 60 * 5); await frames(120);
+                        }
                         float dist = lastNpc?.Root != null && GodotObject.IsInstanceValid(lastNpc.Root) ? hud.FaceScripted(lastNpc.Position) : -1;
                         await frames(20);
-                        int before = numbers;
+                        var target = lastNpc;      // the number counts only when it lands on the mob the press aimed at
+                        int before = hitCount.GetValueOrDefault(target);
                         hud.AttackScripted();
-                        await until(() => numbers > before, 60 * 2);
-                        bool hit = numbers > before;
+                        await until(() => hitCount.GetValueOrDefault(target) > before, 60 * 2);
+                        bool hit = hitCount.GetValueOrDefault(target) > before;
                         if (hit) { hitPresses++; await frames(6); Shot($"aim_dmg_in{press}.png"); }
-                        GD.Print($"live: combat aim press {press}: distance {dist:F0}, numbers {numbers - before}");
+                        GD.Print($"live: combat aim press {press}: distance {dist:F0}, numbers on the mob {hitCount.GetValueOrDefault(target) - before}");
                         await frames(60);
                     }
-                    Check($"hits per press: {hitPresses} of {press}", hitPresses == press);
+                    Check($"enough presses to judge ({press}, need {need})", press >= need);
+                    Check($"hits per press: {hitPresses} of {press}", press >= need && hitPresses == press);
                     break;
                 }
                 case "death":
