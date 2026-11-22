@@ -546,8 +546,8 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     /// (always 1), FUN_14140dea0 (:2082) on the record: CItem::FUN_140528980 false (item.cpp:1717: expired, not a pet, no maid
     /// id): box 225 (0xe1) when expired; the level: ShowMessageBox(s_err_not_enough_level) (:2106, a box here: CanUseItem's
     /// notice comes after it); the job: s_item_err_disable_job; the gender: box 45. Then TryUseItem (:532) and
-    /// <see cref="UseItem"/>. The other kinds (a shop id, a pet, an emotion, an equipment item, FUN_14053c8b0) are not
-    /// ported: raised.
+    /// <see cref="UseItem"/>. An item without a function: a shop id, a pet, an emotion and an equipment item (type 1) are
+    /// not ported (raised); type 0x13 does nothing; others pass FUN_14140dea0 and go to <see cref="UseItemSkill"/>.
     /// STILL-OPEN: the cube craft placement (MyPC FUN_141659690), the PC bang (0xe2), VIP, wedding and owner-bind (0xfe)
     /// checks, TryUseItem's use cooldown (FUN_141409060, box 0x55). Without the wearer's record the requirement checks are
     /// skipped.
@@ -558,15 +558,35 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         var item = ToItem(e, Model.Tables.Items);
         if (item == null) return;
         var d = item.Data;
-        if (d.HasCubeTextureMesh || d.IsScoreItem || !d.HasFunction) { Button?.Invoke("notifySlotUse"); return; }
+        if (d.HasCubeTextureMesh || d.IsScoreItem) { Button?.Invoke("notifySlotUse"); return; }
+        if (!d.HasFunction)
+        {
+            // :853-893: a shop id, a pet, an emotion (type 0x18) and a type 1 item have their own handlers (raised); type 0x13 none
+            if (d.ShopId > 0 || d.IsPetItem || d.Type is 0x18 or 1 or 0x13 || UseItemSkill == null) { Button?.Invoke("notifySlotUse"); return; }
+            if (UseChecks(item)) UseItemSkill(item);    // :894-897, FUN_14053c8b0
+            return;
+        }
+        if (UseChecks(item)) UseItem(item, false);
+    }
+
+    /// <summary>FUN_14140dea0 (invenslot.cpp:2082) on the record: box 225 for an expired item that is not a pet and has no maid
+    /// id; the level, job and gender boxes. Without the wearer's record only the expiry is checked.</summary>
+    bool UseChecks(Item item)
+    {
+        var d = item.Data;
         var record = Wearer?.Invoke();
         bool expired = item.ExpiryTime > 0 && item.ExpiryTime <= View.ServerTime();
-        if (expired && !d.IsPetItem && !d.HasMaidId) { ShowCommonBox(ExpiredKey); return; }
-        if (record != null && !d.IsLevelAllowed(record.Level)) { ShowCommonBox(UseLevelKey); return; }
-        if (record != null && !d.IsJobAllowed(record.JobGroup)) { ShowCommonBox(DisabledJobKey); return; }
-        if (record != null && !d.IsGenderAllowed(record.Gender)) { ShowCommonBox(GenderKey); return; }
-        UseItem(item, false);
+        if (expired && !d.IsPetItem && !d.HasMaidId) { ShowCommonBox(ExpiredKey); return false; }
+        if (record != null && !d.IsLevelAllowed(record.Level)) { ShowCommonBox(UseLevelKey); return false; }
+        if (record != null && !d.IsJobAllowed(record.JobGroup)) { ShowCommonBox(DisabledJobKey); return false; }
+        if (record != null && !d.IsGenderAllowed(record.Gender)) { ShowCommonBox(GenderKey); return false; }
+        return true;
     }
+
+    /// <summary>Unk_Inventory::FUN_140a635f0 (inventory.cpp:1379), the double click of an item without a function that is
+    /// not type 0x13: a type 2, skill (5) or ride (9) item casts its item skill (FUN_141769320) at level 1 with the item uid on
+    /// the record; other types do nothing there. Unset: raised (notifySlotUse).</summary>
+    public Action<Item> UseItemSkill;
 
     /// <summary>The common string GetStringCommon(0xea) (commonstringtable.cpp:1851): CanUseItem's box for an item
     /// FUN_140528980 refuses that has not expired.</summary>

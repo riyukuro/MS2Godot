@@ -118,6 +118,22 @@ public partial class HudScene
     /// </summary>
     void ClickedSlotKey(int dik) => CastKey(dik);
 
+    /// <summary>
+    /// Unk_Inventory::FUN_140a635f0 (inventory.cpp:1379), a double-clicked bag item without a function: a type 2, skill or ride
+    /// item casts FUN_141769320's skill (<see cref="QuickSlotEdit.ItemSkillId"/>) at level 1, after MyPC::FUN_141526c80's swap,
+    /// with the item uid on the record (request.item), through MyPC::vfunc_102; a ride item's record reaches the ride item use.
+    /// STILL-OPEN: the guide restriction 8 (notice 2184).
+    /// </summary>
+    void CastItemSkill(Ms2.Ui.Items.Item item)
+    {
+        if (item?.Data is not { Type: 2 or 5 or 9 } data || item.Uid == 0) return;
+        var w = QuickSlotWorld();
+        int skill = QuickSlotEdit.ItemSkillId(w, data);
+        if (skill == 0) return;
+        var held = w.Weapon is { } h ? weaponActions.FindAction(h.Right, h.Left) : null;
+        if (RequestOwn(w, (uint)skill, held, 0, item.Uid) is { } r) RouteOwn(r);
+    }
+
     void ClickedSlotSkill(uint skillId)
     {
         var w = QuickSlotWorld();
@@ -151,13 +167,14 @@ public partial class HudScene
 
     /// <summary>The request part of <see cref="CastOwn"/>: the key-down skill's hold limit (<see cref="HeldKeyPoll.HeldTooLong"/>,
     /// mypc.cpp:1711-1726, a silent refusal), then CSkillSystem::FUN_141764e30; the record, or null when refused.</summary>
-    CastRecord RequestOwn(SlotWorld w, uint skillId, WeaponAction held, int key)
+    CastRecord RequestOwn(SlotWorld w, uint skillId, WeaponAction held, int key, long itemUid = 0)
     {
         if (Net.LiveSession.Instance is { TaxiHoldsSkill: true }) return null;   // the client never calls vfunc_104 in 0x66-0x6a (statetaxicalldata.cpp:304)
         if (GetTree().GetFirstNodeInGroup(Player.Group) is not Player me) return null;
-        var level = w.Jobs?.SkillLevel(skillId) ?? 1;
+        var level = itemUid != 0 ? (ushort)1 : w.Jobs?.SkillLevel(skillId) ?? 1;   // an item skill is level 1 (inventory.cpp:1387)
         var d = w.Tables.GetSkillData(skillId);
         var lv = d?.GetLevelData(level);
+        if (itemUid != 0 && lv == null) return null;                                 // inventory.cpp:1389
         slotConstants ??= Ms2.Ui.FeatureElements.Constants(assets.Packs);
         if (lv != null && heldKeys.HeldTooLong(d, key, (uint)Net.LiveSession.CastTick(),
                 (uint)slotConstants.Int("KeyIsDownSkill_MaxDurationTick", 30000))) return null;
@@ -173,6 +190,7 @@ public partial class HudScene
             Direction = new System.Numerics.Vector3(MathF.Sin(rad), -MathF.Cos(rad), 0),
             RotZ = rotZ,
             Key = key,
+            ItemUid = itemUid,
         };
         FillCastWorld(w, me);
         castSlotItemUid ??= i => playerInfo?.SlotItemUid(i) ?? 0;

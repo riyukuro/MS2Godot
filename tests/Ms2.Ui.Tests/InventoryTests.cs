@@ -572,6 +572,46 @@ public class InventoryTests
     }
 
     [Test]
+    public void ARideItemDoubleClickGoesToItsItemSkill()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var t = model.Tables;
+        int ride = new[] { 50600000, 50200000, 50000000, 50100000, 50300000, 50400000, 50500000 }
+            .SelectMany(b => Enumerable.Range(b, 1500))
+            .FirstOrDefault(id => t.Items.Get(id) is { IsRideItem: true, HasFunction: false, LevelLimit: <= 1, GenderLimit: 2, JobLimit.Count: 0 });
+        Assert.That(ride, Is.Not.Zero, "a ride item without a function");
+        TestContext.WriteLine($"ride item {ride}: ridee {t.Items.Get(ride).RideeId}");
+        int tab = ride / 10000000;
+        var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
+        book.Apply(new ItemMessage.LoadTab(tab, new[]
+        {
+            new EquipItem { Id = ride, Uid = 30, InventorySlot = 0, Amount = 1, Rarity = 1 },
+            new EquipItem { Id = ride, Uid = 31, InventorySlot = 1, Amount = 1, Rarity = 1, ExpiryTime = 500 },
+        }));
+        var (h, c, _) = Load(model, book);
+        c.View.ServerTime = () => 1000;
+        c.Wearer = () => new PcInfo { Level = 50, JobGroup = 10, Equips = Array.Empty<EquipItem>() };
+        int shown = c.Tabs.Select((x, i) => (x, i)).First(x => x.x.Tab == tab).i;
+        h.Set(h.Child("m_tab"), "selectedIndex", shown);
+        for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
+        var used = new List<long>(); var sent = new List<long>(); var raised = new List<string>(); var boxes = new List<string>();
+        c.View.RequestUse = (u, _) => sent.Add(u);
+        c.Button += raised.Add;
+        c.ShowBox = b => boxes.Add(b.Msg);
+
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.0" });
+        Assert.That((raised.Count, sent.Count), Is.EqualTo((1, 0)), "unset: raised, no use request");
+        c.UseItemSkill = i => used.Add(i.Uid);
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.0" });
+        Assert.That((used, raised.Count, sent.Count), Is.EqualTo((new List<long> { 30 }, 1, 0)),
+            "FUN_140a635f0 with the item, not the use request (invenslot.cpp:894-897)");
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1" });
+        Assert.That((used.Count, boxes.Last()), Is.EqualTo((1, t.Common(InventoryController.ExpiredKey))), "FUN_14140dea0 first: box 225");
+    }
+
+    [Test]
     public void ADoubleClickSendsTheUseOnly()
     {
         Packs();

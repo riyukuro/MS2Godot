@@ -3191,6 +3191,7 @@ public partial class HudScene : Node, IUiStageHost
         c.RevertCheck = item => itemRevert?.CheckItem(item) ?? 0;
         c.RevertSelect = item => itemRevert?.UseFromInventory(item);
         c.RevertOpen = OpenItemRevert;
+        c.UseItemSkill = CastItemSkill;
         c.OpenSelectBox = OpenSelectItemBox;
         c.SelectBoxOpen = () => SelectItemBoxOpen;
         c.OpenMultiBox = OpenItemMultiOpen;
