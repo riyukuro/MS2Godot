@@ -12,11 +12,14 @@ namespace Ms2.Ui;
 public static class FeatureElements
 {
     /// <summary>IsElementAvailable (commonutil.cpp:1047): the client's locale (or none) and an enabled feature (or none).</summary>
-    public static bool IsAvailable(PackSet packs, XElement e)
-    {
-        string locale = (string)e.Attribute("locale") ?? "", feature = (string)e.Attribute("feature") ?? "";
-        return (locale == "" || locale == LobbyFeatures.LocaleName) && LobbyFeatures.IsEnabledByName(packs, feature);
-    }
+    public static bool IsAvailable(PackSet packs, XElement e) => IsAvailable(packs, Locale(e), Feature(e));
+
+    /// <summary>IsElementAvailable on an element's locale and feature attributes ("" when missing).</summary>
+    public static bool IsAvailable(PackSet packs, string locale, string feature) =>
+        (locale == "" || locale == LobbyFeatures.LocaleName) && LobbyFeatures.IsEnabledByName(packs, feature);
+
+    static string Locale(XElement e) => (string)e.Attribute("locale") ?? "";
+    static string Feature(XElement e) => (string)e.Attribute("feature") ?? "";
 
     /// <summary>FUN_14028f8d0 (commonutil.cpp:1064): the &lt;environment&gt; of an item (or any data element) the client uses; null when none is
     /// available.</summary>
@@ -44,18 +47,24 @@ public static class FeatureElements
     public static List<XElement> Collect(PackSet packs, XElement parent, string child, string keyAttr1, string keyAttr2) =>
         Collect(packs, parent, child, e => ((string)e.Attribute(keyAttr1) ?? "") + "_" + ((string)e.Attribute(keyAttr2) ?? ""));
 
-    static List<XElement> Collect(PackSet packs, XElement parent, string child, Func<XElement, string> keyOf)
+    static List<XElement> Collect(PackSet packs, XElement parent, string child, Func<XElement, string> keyOf) =>
+        Collect(packs, parent.Elements(child), keyOf, Feature, Locale);
+
+    /// <summary><see cref="Collect(PackSet, XElement, string, string)"/> over rows a reader took from the elements: each
+    /// row's key, feature and locale attributes ("" when missing), in the elements' order.</summary>
+    public static List<T> Collect<T>(PackSet packs, IEnumerable<T> rows, Func<T, string> keyOf, Func<T, string> featureOf,
+        Func<T, string> localeOf) where T : class
     {
-        var byKey = new Dictionary<string, (int Index, XElement Elem)>();
+        var byKey = new Dictionary<string, (int Index, T Elem)>();
         int index = 0;
-        foreach (var e in parent.Elements(child))
+        foreach (var e in rows)
         {
-            if (!IsAvailable(packs, e)) continue;
+            if (!IsAvailable(packs, localeOf(e), featureOf(e))) continue;
             ++index;
             string key = keyOf(e);
             if (byKey.TryGetValue(key, out var kept))
             {
-                if (Fold(packs, kept.Elem, e) == e) byKey[key] = (index, e);
+                if (Fold(packs, kept.Elem, e, featureOf, localeOf) == e) byKey[key] = (index, e);
             }
             else byKey[key] = (index, e);
         }
@@ -67,16 +76,18 @@ public static class FeatureElements
         new(packs, root => Collect(packs, root, "v", "key"));
 
     /// <summary>CFeatureManager::SelectFeatureElement: <paramref name="a"/> or <paramref name="b"/>.</summary>
-    static XElement Fold(PackSet packs, XElement a, XElement b)
+    static XElement Fold(PackSet packs, XElement a, XElement b) => Fold(packs, a, b, Feature, Locale);
+
+    static T Fold<T>(PackSet packs, T a, T b, Func<T, string> featureOf, Func<T, string> localeOf)
     {
-        string fa = (string)a.Attribute("feature") ?? "", fb = (string)b.Attribute("feature") ?? "";
+        string fa = featureOf(a), fb = featureOf(b);
         if (fa != fb)
         {
             int la = LobbyFeatures.LevelOf(packs, fa), lb = LobbyFeatures.LevelOf(packs, fb);
             bool aWins = la > lb || (la == lb && string.CompareOrdinal(fa, fb) > 0);   // SelectHigherLevelFeatureName
             return aWins ? a : b;
         }
-        string xa = (string)a.Attribute("locale") ?? "", xb = (string)b.Attribute("locale") ?? "";
+        string xa = localeOf(a), xb = localeOf(b);
         if (xa != xb)
         {
             // FUN_14036dfa0: the client's locale, else the empty one, else A
