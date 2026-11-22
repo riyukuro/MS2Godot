@@ -13,6 +13,8 @@ public partial class HudScene
 {
     SkillBookAutoDistributeController skillAutoDistribute;
     MovieDialog skillAutoDistributeMovie;
+    SkillBookTreeController skillAutoDistributeTree;
+    Action skillAutoDistributeTreeClosed;
 
     void OpenSkillAutoDistribute(SkillBookTreeController tree, IReadOnlyList<AutoDistributePreset> presets)
     {
@@ -21,16 +23,26 @@ public partial class HudScene
             skillAutoDistribute?.Close();
             skillAutoDistributeMovie.Host.Unload(); skillAutoDistributeMovie.QueueFree(); skillAutoDistributeMovie = null;
         }
+        UnhookSkillAutoDistributeTree();
         var c = new SkillBookAutoDistributeController { Presets = presets, ApplyDistribute = tree.ApplyDistribute };
         var m = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
         c.Unloaded += () =>
         {
             m.Host.Unload();
             m.QueueFree();
-            if (skillAutoDistributeMovie == m) skillAutoDistributeMovie = null;
+            if (skillAutoDistributeMovie == m) { skillAutoDistributeMovie = null; UnhookSkillAutoDistributeTree(); }
         };
-        tree.Unloaded += () => { if (skillAutoDistribute == c && !c.IsClosed) c.Close(); };
+        skillAutoDistributeTree = tree;
+        skillAutoDistributeTreeClosed = () => { if (skillAutoDistribute == c && !c.IsClosed) c.Close(); };
+        tree.Unloaded += skillAutoDistributeTreeClosed;
         skillAutoDistribute = c; skillAutoDistributeMovie = m;
         uiRoot.AddChild(m);
+    }
+
+    /// <summary>The tree's Unloaded hook of the open dialog comes off with the dialog, so reopening never stacks them.</summary>
+    void UnhookSkillAutoDistributeTree()
+    {
+        if (skillAutoDistributeTree != null && skillAutoDistributeTreeClosed != null) skillAutoDistributeTree.Unloaded -= skillAutoDistributeTreeClosed;
+        skillAutoDistributeTree = null; skillAutoDistributeTreeClosed = null;
     }
 }

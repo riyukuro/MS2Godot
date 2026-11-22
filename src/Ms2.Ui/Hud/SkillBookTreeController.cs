@@ -44,7 +44,14 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
     public event Action<string> Button;
 
     /// <summary>FUN_140710590(packet): the connection's send. Without one (no live session) a request goes nowhere.</summary>
-    public Action<IOutPacket> Send;
+    /// <summary>Returns false when the packet went nowhere (offline, or an op the connection cannot number): the caller must not
+    /// wait for the server then.</summary>
+    public Func<IOutPacket, bool> Send;
+    bool TrySend(IOutPacket pk)
+    {
+        if (Send == null) return false;
+        try { return Send(pk); } catch (Exception) { return false; }
+    }
     /// <summary>PC::vfunc_65 of the local player (CanApply :612): in battle, the skill set cannot be applied.</summary>
     public Func<bool> InBattle = () => false;
     /// <summary>CFieldDataCli::HasLimitContent(0x10) (CanApply :612). STILL-OPEN: the field's limit contents are not read, so false.</summary>
@@ -666,7 +673,11 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
                 if (WaitServer) return false;
                 ApplyAutoDistribute();
                 return true;
-            case "onUseTab": case "OnRegisterShortcutkey":
+            case "onUseTab":
+                if (WaitServer) return false;   // vfunc_28 m_nWaitServer guard
+                Button?.Invoke(name);
+                return true;
+            case "OnRegisterShortcutkey":
             case "onRenameTab": case "onAddTab": case "onChangeSubJob": case "onRemoveTab": case "onLapenshardBtn":
                 Button?.Invoke(name);
                 return true;
@@ -686,9 +697,8 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
     void ApplyAutoDistribute()
     {
         if (!CanApply() || Jobs == null) return;
-        var presets = AutoTable.For(Jobs.JobGroupId, Jobs.SubJob);
-        if (presets == null || presets.Count == 0) return;
-        OpenAutoDistribute?.Invoke(presets);
+        if (!AutoTable.HasPresets(Jobs.JobGroupId)) return;   // the client returns only on an empty list for the job group
+        OpenAutoDistribute?.Invoke(AutoTable.For(Jobs.JobGroupId, Jobs.SubJob) ?? new List<AutoDistributePreset>());
     }
 
     /// <summary>ApplyDistribute @0x140ec8280 (:1272): the chosen preset of the job group's list the sub job can use; the preview is
@@ -705,7 +715,7 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
         if (shownTabId == tabId)
         {
             SaveTree(shownTabId, 0, 0);
-            RequestJob(true, false, 0);
+            if (!RequestJob(true, false, 0)) return;
         }
         else
         {
@@ -746,8 +756,7 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
             }
         }
         SaveTree(shownTabId, 0, 0);
-        RequestJob(false, false, 0);
-        ChatLine?.Invoke(Common("s_msg_skillbook_apply_skill"), 0x14);
+        if (RequestJob(false, false, 0)) ChatLine?.Invoke(Common("s_msg_skillbook_apply_skill"), 0x14);
     }
 
     /// <summary>OnApplyConfirm @0x140eca690 (:992): button 0 reads the rank from the two checkboxes (both: 0, the first: 1, the
@@ -765,8 +774,7 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
             else if (second) rank = 2;
         }
         SaveTree(shownTabId, 0, rank);
-        RequestJob(false, false, rank);
-        ChatLine?.Invoke(Common("s_msg_skillbook_apply_skill"), 0x14);
+        if (RequestJob(false, false, rank)) ChatLine?.Invoke(Common("s_msg_skillbook_apply_skill"), 0x14);
         return true;
     }
 
@@ -815,7 +823,7 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
         SaveTree(shownTabId, 0, rank);
         if (shownTabId == tabId)
         {
-            Send?.Invoke(new JobResetRequest(rank));
+            if (!TrySend(new JobResetRequest(rank))) return true;   // nothing went out: no wait, no notice
             WaitServer = true;
         }
         else RefreshSlots(true);
@@ -837,24 +845,25 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
                 foreach (var (skill, pts) in s.GetUsedPoints(rank)) t.Slots[skill] = (uint)pts;
             }
         }
-        Send?.Invoke(new SkillBookTreeSave(tabId, id, rank, tabs.Select(t =>
+        TrySend(new SkillBookTreeSave(tabId, id, rank, tabs.Select(t =>
             new SkillTreeTab(t.Id, t.Name, t.Slots.Select(kv => ((int)kv.Key, (int)kv.Value)).ToList())).ToList()));
     }
 
     /// <summary>RequestJob @0x140ec9200 (:1180): the preview must validate; a tab not in use is only saved (RequestTree with the
     /// arguments as the client passes them); otherwise Job mode 9 (0xb confirmed) carries the merged (all: the snapshot) skills,
     /// the wait starts, the changed skills play their effect, the preview commits and the fixed sound plays.</summary>
-    void RequestJob(bool confirm, bool all, int rank)
+    /// <returns>False when the Job packet went nowhere: nothing waits, plays or commits then, and the caller shows no notice.</returns>
+    bool RequestJob(bool confirm, bool all, int rank)
     {
-        if (sim == null || !CanApply()) return;
-        if (!sim.Validate(out _)) return;
+        if (sim == null || !CanApply()) return true;
+        if (!sim.Validate(out _)) return true;
         if (shownTabId != tabId)
         {
             SaveTree(shownTabId, rank, 0);
-            return;
+            return true;
         }
         var skills = all ? sim.GetSnapshot(0) : sim.GetMerged(rank);
-        Send?.Invoke(new JobSkillsRequest(confirm ? 0xb : 9, skills.Select(k => ((int)k.Id, (int)k.Level, k.Learned)).ToList()));
+        if (!TrySend(new JobSkillsRequest(confirm ? 0xb : 9, skills.Select(k => ((int)k.Id, (int)k.Level, k.Learned)).ToList()))) return false;   // nothing went out: keep the preview, no wait, no effect, no sound
         WaitServer = true;
         var applied = new List<JobSkill>();
         if (!all)
@@ -864,6 +873,7 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
         }
         foreach (var k in applied) Host.Invoke("playChangeEffect", k.Id);
         Sound?.Invoke("System_Skillbook_Skill_Fixed_01");
+        return true;
     }
 
     /// <summary>RefreshSlotsIfShown @0x140ec8220 (:699), called by OnJob modes 9, 10 and 11 of the local player

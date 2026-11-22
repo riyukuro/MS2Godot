@@ -16,6 +16,8 @@ public class SkillBookTreeTests
     static PackSet packs;
     static MovieSource src;
 
+    static Func<Ms2.Net.Wire.IOutPacket, bool> Sink(List<Ms2.Net.Wire.IOutPacket> sent) => pk => { sent.Add(pk); return true; };
+
     static PackSet Packs()
     {
         if (packs == null)
@@ -159,7 +161,7 @@ public class SkillBookTreeTests
         var sent = new List<Ms2.Net.Wire.IOutPacket>();
         var sounds = new List<string>();
         var lines = new List<(string, int)>();
-        c.Send = sent.Add;
+        c.Send = Sink(sent);
         c.Sound += sounds.Add;
         c.ChatLine += (t, k) => lines.Add((t, k));
         c.OnSkillBookTree(NoTabs());
@@ -196,7 +198,7 @@ public class SkillBookTreeTests
         h.Model.Player.Level = 20;
         var sent = new List<Ms2.Net.Wire.IOutPacket>();
         var boxes = new List<MessageBoxData>();
-        c.Send = sent.Add;
+        c.Send = Sink(sent);
         c.ShowBox = boxes.Add;
         c.OnSkillBookTree(NoTabs());
         c.OnLevelChanged(20);
@@ -236,7 +238,7 @@ public class SkillBookTreeTests
         var sent = new List<Ms2.Net.Wire.IOutPacket>();
         var boxes = new List<MessageBoxData>();
         var lines = new List<(string, int)>();
-        c.Send = sent.Add;
+        c.Send = Sink(sent);
         c.ShowBox = boxes.Add;
         c.ChatLine += (t, k) => lines.Add((t, k));
         c.OnSkillBookTree(NoTabs());
@@ -288,7 +290,7 @@ public class SkillBookTreeTests
     {
         var (h, c, _) = Load();
         h.Model.Player.Level = 20;
-        c.Send = _ => { };
+        c.Send = _ => true;
         c.AutoTable = PresetTable(c.Jobs.JobGroupId);
         IReadOnlyList<AutoDistributePreset> opened = null;
         c.OpenAutoDistribute = p => opened = p;
@@ -317,7 +319,7 @@ public class SkillBookTreeTests
         h.Model.Player.Level = 20;
         var sent = new List<Ms2.Net.Wire.IOutPacket>();
         var lines = new List<(string, int)>();
-        c.Send = sent.Add;
+        c.Send = Sink(sent);
         c.ChatLine += (t, k) => lines.Add((t, k));
         c.AutoTable = PresetTable(c.Jobs.JobGroupId);
         c.OnSkillBookTree(NoTabs());
@@ -379,7 +381,7 @@ public class SkillBookTreeTests
         var (h, c, _) = Load();
         h.Model.Player.Level = 20;
         var boxes = new List<MessageBoxData>();
-        c.Send = _ => { };
+        c.Send = _ => true;
         c.ShowBox = boxes.Add;
         c.OnSkillBookTree(NoTabs());
         c.OnLevelChanged(20);
@@ -669,5 +671,57 @@ public class SkillBookTreeTests
             foreach (var d in c.Children.ToList())
                 if (FindBound(h, d, binding) is { } f) return f;
         return null;
+    }
+
+    /// <summary>A send that went nowhere (offline, or an op the connection cannot number) leaves the window usable: no wait, no
+    /// notice, no sound, and the preview is still pending.</summary>
+    [TestCase(0)]
+    [TestCase(1)]
+    [TestCase(2)]
+    public void AFailedSendDoesNotLockTheWindow(int how)
+    {
+        var (h, c, _) = Load();
+        h.Model.Player.Level = 20;
+        var boxes = new List<MessageBoxData>();
+        var lines = new List<(string, int)>();
+        var sounds = new List<string>();
+        var sentTry = new List<Ms2.Net.Wire.IOutPacket>();
+        c.Send = how == 0 ? null : how == 1 ? (pk => { sentTry.Add(pk); return false; }) : (pk => throw new KeyNotFoundException("no number"));
+        c.ShowBox = boxes.Add;
+        c.ChatLine += (t, k) => lines.Add((t, k));
+        c.Sound += sounds.Add;
+        c.OnSkillBookTree(NoTabs());
+        c.OnLevelChanged(20);
+        c.OnCallback("onSkillPointUp", new object[] { 10500041u });
+        c.OnCallback("onApplySkill", Array.Empty<object>());
+        if (boxes.Count > 0) boxes[0].Callback(0, boxes[0]);
+        Assert.That(c.WaitServer, Is.False);
+        Assert.That(sounds, Is.Empty);
+        c.OnCallback("onResetSkill", Array.Empty<object>());
+        var reset = boxes.Last();
+        reset.Callback(0, reset);
+        Assert.That(c.WaitServer, Is.False);
+        Assert.That(sounds, Is.Empty);
+        Assert.That(lines, Is.Empty);                     // no notice for a request that never left
+        Assert.That(c.OnCallback("onSkillPointUp", new object[] { 10500041u }), Is.True);
+    }
+
+    [Test]
+    public void UseTabWaitsForTheServerLikeTheOtherCallbacks()
+    {
+        var (_, c, _) = Load();
+        var names = new List<string>();
+        c.Button += names.Add;
+        c.OnSkillBookTree(NoTabs());
+        c.OnCallback("onUseTab", new object[] { "1" });
+        Assert.That(names, Is.EqualTo(new[] { "onUseTab" }));
+        c.OnLevelChanged(20);
+        c.OnCallback("onSkillPointUp", new object[] { 10500041u });
+        c.Send = _ => true;
+        c.ShowBox = b => b.Callback(0, b);
+        c.OnCallback("onApplySkill", Array.Empty<object>());
+        Assert.That(c.WaitServer, Is.True);
+        c.OnCallback("onUseTab", new object[] { "1" });
+        Assert.That(names.Count, Is.EqualTo(1));
     }
 }

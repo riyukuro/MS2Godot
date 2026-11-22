@@ -194,6 +194,7 @@ static class Gms2Opcodes {
         [Outbound.UserChat] = 0x11,
         [Outbound.RequestServerList] = 0x14,
         [Outbound.State] = 0x81,
+        [Outbound.Job] = 0x25,                // upstream RecvOp Job
         [Outbound.Skill] = 0x20,
         [Outbound.StateSkill] = 0x21,
         [Outbound.RequestAdditionalEffect] = 0x5D,

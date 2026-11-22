@@ -69,6 +69,9 @@ public class ProfileTests {
         Assert.That(p.Number(Inbound.SmartPush), Is.EqualTo((ushort) 0xD9));
         Assert.That(p.Number(Outbound.NewsNotification), Is.EqualTo((ushort) 0x64));
         Assert.That(p.Number(Outbound.SmartPush), Is.EqualTo((ushort) 0x84));
+        Assert.That(p.Number(Outbound.Job), Is.EqualTo((ushort) 0x25));
+        Assert.That(p.Has(Outbound.Job), Is.True);
+        Assert.That(p.Has(Outbound.PersonalInfoAgreement), Is.False);
         // rows upstream lacks stay unmapped
         Assert.Throws<KeyNotFoundException>(() => p.Number(Inbound.UserChatItemLink));
         Assert.Throws<KeyNotFoundException>(() => p.Number(Outbound.PersonalInfoAgreement));

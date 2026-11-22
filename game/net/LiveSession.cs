@@ -246,7 +246,16 @@ public partial class LiveSession : Node
     /// <summary>RequestSkillBookTree mode 0 (UISkillBookTreeDialog::OnLoadComplete): a read request for the saved tabs.</summary>
     public void RequestSkillBookTree() => Send(new SkillBookTreeRequest());
     /// <summary>The skill window's own requests (FUN_140710590): the tab save (RequestSkillBookTree mode 1) and Job.</summary>
-    public void SendSkillBook(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
+    /// <summary>False when the packet went nowhere (no game connection, or the profile has no number for it): the window must not
+    /// wait for an answer then.</summary>
+    public bool SendSkillBook(Ms2.Net.Wire.IOutPacket packet)
+    {
+        var g = game;
+        if (g == null) return false;
+        if (!g.Profile.Has(packet.Op)) { GD.PushWarning($"live: send {packet.GetType().Name} failed: no {g.Profile.Name} number for {packet.Op}"); return false; }
+        Send(packet);
+        return true;
+    }
     /// <summary>A SkillMacro (0xD1) mode 0 packet, the compact skill control window's vfunc_79 (@0x140f9fee0).</summary>
     public event Action<SkillMacroPacket> SkillMacro;
     /// <summary>The compact tabs of the last SkillMacro mode 2 (CSkillSystem::FUN_141767ae0 @0x141767ae0, m_lstCompact), or of

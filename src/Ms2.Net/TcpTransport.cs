@@ -165,6 +165,7 @@ public sealed class TcpTransport : IDisposable {
         if (ch == null) return Channel.SendAsync(packet, ct);   // never connected: the caller's error as before
         bool defer = Reconnection.IsReconnecting;
         if (connected && !defer) return ch.SendAsync(packet, ct);
+        if (!Profile.Has(packet.Op)) return Task.FromException(new KeyNotFoundException($"{Profile.Name}: no outbound number for {packet.Op}"));   // a faulted task, never a throw into the caller
         ushort type = (ushort) Profile.Number(packet.Op);
         if (connected && type is 1 or 5 or 6 or 7 or 8) return ch.SendAsync(packet, ct);
         if (!connected && Reconnection.Options[ReconnectionOptions.HoldSends] == 1) return Task.CompletedTask;

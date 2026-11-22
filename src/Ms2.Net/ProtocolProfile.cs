@@ -45,6 +45,8 @@ public sealed class ProtocolProfile {
 
     public ushort Number(Inbound op) => inbound.TryGetValue(op, out var n) ? n : throw new KeyNotFoundException($"{Name}: no inbound number for {op}");
     public ushort Number(Outbound op) => outbound.TryGetValue(op, out var n) ? n : throw new KeyNotFoundException($"{Name}: no outbound number for {op}");
+    /// <summary>True when the profile has a number for the outbound op (Number throws otherwise).</summary>
+    public bool Has(Outbound op) => outbound.ContainsKey(op);
     public bool TryInbound(ushort number, out Inbound op) => inboundByNumber.TryGetValue(number, out op);
     public bool Is(ushort number, Inbound op) => inbound.TryGetValue(op, out var n) && n == number;
 }
