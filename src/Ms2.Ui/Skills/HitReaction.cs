@@ -139,6 +139,38 @@ public sealed class PushControl
         SetCurve(attack.PushEaseType);
         return true;
     }
+
+    /// <summary>
+    /// CPushControl::vfunc_1 @0x1413fcb30 (hitcontrol.cpp:58-96), run every frame by PCBase::vfunc_53 (pcbase.cpp:3737):
+    /// nothing without a direction; a tick distance of about 0 ends the push. A lifting push measures from 1 above the
+    /// ground under the feet (RayCastFixedDirection, unlimited). The ledge probe (<see cref="PushTick.LedgeAhead"/>) looks
+    /// the tick's distance ahead; with no ledge, a push out of the hold state or pushFall the body moves by the direction
+    /// times the distance (the client's metres, field units here), else the push ends. Returns whether a push ran.
+    /// </summary>
+    public bool Tick(double dt, IPushBody body)
+    {
+        if (Dir == Vector3.Zero) return false;
+        float dist = Update(dt);
+        if (HitReaction.NearlyZero(dist))
+        {
+            Reset();
+            return false;
+        }
+        float up = 0f;
+        if (Lift)
+        {
+            var pos = body.FieldPosition;
+            if (body.GroundBelow(pos, 0f, out float hitZ))
+            {
+                hitZ += 1f;
+                if (pos.Z > hitZ) up = -(pos.Z - hitZ);
+            }
+        }
+        bool ledge = PushTick.LedgeAhead(body, Dir, dist * 100f, PushTick.LedgeHeight, up);
+        if (!ledge || body.PrevStateId == HitReaction.StateHold || Fall != 0) body.PushMove(Dir * (dist * 100f), dt);
+        else Reset();
+        return true;
+    }
 }
 
 /// <summary>StateHitData (pc.cpp:934-942): what PC::vfunc_33 hands StateHit (0xd) on entering it.</summary>

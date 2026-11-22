@@ -236,6 +236,7 @@ public partial class Field : Node3D
             looseFinal = k.Float("CameraFinalLoose", looseFinal);
             looseNow = k.Float("CameraCurrentLoose", looseNow);
             looseUpdate = k.Float("CameraUpdateLoose", looseUpdate);
+            Player.EscapeHit = Ms2.Ui.Skills.EscapeHitMethods.From(k);   // StateHit::vfunc_8's constants (statehit.cpp:184-187)
         }
         catch (Exception ex) { GD.PushWarning("constants: " + ex.Message); }
         // Gamebryo's camera FOV is vertical, as Godot's (keep height); near / far are the CCameraMode defaults

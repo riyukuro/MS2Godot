@@ -255,6 +255,7 @@ public partial class Player : CharacterBody3D
         // WorldService::OnTick (worldservice_1.cpp:9679-9703) passes the scheduler's game-time delta with no clamp in the
         // client source; only a frame longer than a quarter second (a field load) is cut to it
         float dt = (float)Math.Min(delta, MaxStepDt);
+        gameTime += dt;
         if (!ScriptDriven)
         {
             var k = MoveInput.Read();
@@ -288,6 +289,8 @@ public partial class Player : CharacterBody3D
         var input = DiagonalHold(rawInput, dt);
         bool jumpPressed = JumpHeld && !prevJump;
         bool upPressed = input.Y > 0 && prevInput.Y <= 0, downPressed = input.Y < 0 && prevInput.Y >= 0;
+        // Unk_PCMove::GetPressedMoveDirection: only the axes whose key went down this frame
+        var pressedInput = new Vector2(input.X != prevInput.X ? input.X : 0, input.Y != prevInput.Y ? input.Y : 0);
         prevJump = JumpHeld;
         prevInput = input;
         var dir = WorldDir(input);
@@ -400,7 +403,7 @@ public partial class Player : CharacterBody3D
                 break;
 
             case MoveState.Hit:
-                HitUpdate();
+                HitUpdate(input, pressedInput, jumpPressed);
                 break;
         }
         prevRawInput = rawInput;
@@ -411,8 +414,13 @@ public partial class Player : CharacterBody3D
             var before = GlobalPosition;
             Integrate(dt, skill ? SkillMotionMove(skillInput, dt) : Vector3.Zero);
             if (State == MoveState.Dash) DashAfterMove(before, dt);
+            // PCBase::vfunc_53 (pcbase.cpp:3737): the push moves the body after the state's update
+            Push.Tick(dt, this);
         }
         else wallHit = false;
+        // MyPC::vfunc_53 (mypc.cpp:2949-2951) sends the fall damage each frame once on the ground; StateHit holds it
+        // until a lifting hit's arrive time (pcbase.cpp:4360)
+        if (State == MoveState.Hit && Grounded && !FallDamageHeld) SendFallDamage();
         // PC::vfunc_53 (pc.cpp:4436-4445) runs PCBase::vfunc_53 first, whose state update (pcbase.cpp:3732) moves the
         // controller; only then does it test m_timer970 and call vfunc_93(bExpired), whose down ray (pcbase.cpp:2466-2474)
         // runs every frame. So the 200 ms refresh reads the hit report and the ground left by this frame's move.
@@ -455,6 +463,8 @@ public partial class Player : CharacterBody3D
         if (old == MoveState.Rope) rope = null;
         if (old == MoveState.Dash && s != MoveState.Dash) DashExit();
         if (old is MoveState.Ladder or MoveState.Climb) StopJump();                // StateLadder / StateClimb::vfunc_5
+        if (old == MoveState.Hit) LeaveHit();
+        prevState = old;
         State = s;
         stateTime = 0;
         // StateIdle::vfunc_4 (stateidle.cpp:187-189) and StateDead::vfunc_4 (statedead.cpp:150-153) reset the own PC's push
@@ -470,6 +480,7 @@ public partial class Player : CharacterBody3D
         if (s == MoveState.Swim) swimRideTick = syncClock;                   // StateSwim::vfunc_4: m_nMode = the server tick
         if (s == MoveState.Fall) fallStartY = float.IsNaN(fallStartY) ? GlobalPosition.Y : fallStartY;
         if (s == MoveState.Land || (s == MoveState.Idle && old is MoveState.Fall or MoveState.Jump)) SendFallDamage();
+        else if (s == MoveState.Idle && old == MoveState.Hit && Grounded) SendFallDamage();
         if (s == MoveState.Land)
         {
             // StateLand::vfunc_4 (stateland.cpp:76-104): the entity under the feet goes into the hit report, the ground
@@ -595,8 +606,9 @@ public partial class Player : CharacterBody3D
     void Integrate(float dt, Vector3 skillMove)
     {
         var v = new Vector3(kVel.X, 0, kVel.Z);
-        if (State is MoveState.Idle or MoveState.Land or MoveState.Dead) v = Vector3.Zero;
-        if (jumping)
+        if (State is MoveState.Idle or MoveState.Land or MoveState.Dead or MoveState.Hit) v = Vector3.Zero;
+        if (!jumping && lift.Active) v.Y = LiftStep(dt) / dt;   // FUN_1412407f0's lift branch: the step only
+        else if (jumping)
         {
             jumpTime += dt;
             float h = jumpV0 * jumpTime + 0.5f * Gravity * jumpTime * jumpTime;
@@ -657,10 +669,18 @@ public partial class Player : CharacterBody3D
     /// it the next frame. The climb's moves (vfunc_68 with no gravity) pass <paramref name="dt"/> 0: they do not advance
     /// the fall time.
     /// </summary>
-    void ControllerMove(Vector3 delta, float dt = 0)
+    /// <param name="exclude">Move's nExcludeGroups (:220): groups left out of this move only.</param>
+    void ControllerMove(Vector3 delta, float dt = 0, uint exclude = 0)
     {
         moveShapeHit = false;                                                       // m_hitReport.ClearHit()
-        nxHit = nx.Move(delta);
+        if (exclude != 0 && (exclude & ~nx.IgnoreGroups) != 0)
+        {
+            uint keep = nx.IgnoreGroups;
+            nx.IgnoreGroups = keep | exclude;
+            nxHit = nx.Move(delta);
+            nx.IgnoreGroups = keep;
+        }
+        else nxHit = nx.Move(delta);
         bool other = nx.HitController;
         if (nxHit == NxController.Hit.Up) nx.IgnoreGroups = MoveConfig.ControllerHitIgnore;                    // :231
         if (nxHit == NxController.Hit.Down && other) nx.IgnoreGroups = MoveConfig.ControllerHitIgnore;         // :233
@@ -686,6 +706,7 @@ public partial class Player : CharacterBody3D
             // StopJump (@0x141240730): the jump ends and the fall timer is reset (StateJump then goes to StateLand)
             airTime = 0;
             fallTimerRunning = false;
+            if (lift.Falling) EndLift();                                            // :245-246, 269-270, 281-282
             // (the climb's moves leave the jump and the state to the climb states)
             if (dt > 0 && jumping && jumpTime > dt) { jumping = false; Enter(MoveState.Land); }   // StateJump::vfunc_3: vfunc_59(4)
         }
