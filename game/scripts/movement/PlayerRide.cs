@@ -235,6 +235,7 @@ public partial class Player
         if (m.Data.Physic) MakeRideBox(m.Data);
         baseSpeed = RideSpeed();
         Enter(MoveState.Idle);
+        if (m.Data.HideRider) SetHideReason(HideReasonRide, true);   // PCBase::vfunc_120 (pcbase.cpp:3331-3333)
     }
 
     public void RideOff()
@@ -244,6 +245,7 @@ public partial class Player
         // no mount of its own, so it is its controller's IsOnGround (pcbase.cpp:2532-2540): the last move touched down,
         // and no jump or lift (gameobjectcontrollerphysxhelpers.cpp:487-490). Our mount moves the rider's one body.
         bool mountOnGround = Grounded && !jumping;
+        if (Mount.Data.HideRider) SetHideReason(HideReasonRide, false);   // PCBase::vfunc_121 (pcbase.cpp:3402-3404)
         RemoveChild(Mount.Visual);
         Mount.Visual.QueueFree();
         Mount = null;

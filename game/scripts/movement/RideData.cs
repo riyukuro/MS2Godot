@@ -25,6 +25,9 @@ public sealed class RideData
     /// <summary>rideOffBySkillEffect: the effect PCBase::vfunc_121 plays at the rider after an UnRideSkill (type 24)
     /// ride off (pcbase.cpp:3397-3401, :3423-3429); null when the row has none.</summary>
     public string RideOffBySkillEffect;
+    /// <summary>basic hideRider (m_basic.m_nHideRider): the rider is hidden while it rides, AddHideReason(2) in PCBase::vfunc_120
+    /// and RemoveHideReason(2) in vfunc_121 (pcbase.cpp:3331-3333, :3402-3404).</summary>
+    public bool HideRider;
     /// <summary>rideSummonCastTime in seconds, null without it (RideeData::Basic, ridingtable.cpp:360-361).</summary>
     public float? SummonCastTime;
     public float[] RideTranslation = new float[3], RideRotation = new float[3];
@@ -64,6 +67,7 @@ public sealed class RideData
             Type = Ms2.Ui.RideOff.TypeOf((string)b.Attribute("type")),
             EnableRideOffUI = QueryBool((string)b.Attribute("enableRideOffUI"), false),
             RideOffBySkillEffect = (string)b.Attribute("rideOffBySkillEffect"),
+            HideRider = QueryBool((string)b.Attribute("hideRider"), false),
             RideTranslation = V(b, "rideTranslation"),
             RideRotation = V(b, "rideRotation"),
         };

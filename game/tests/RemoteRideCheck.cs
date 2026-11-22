@@ -208,6 +208,7 @@ public partial class RemoteRideCheck : Node3D
         RideeIdNoTarget(layer, m.Data.Id, bone);
         RideEffects(layer, m.Data.Id);
         NpcBeforePlayer(layer, pc);
+        HideRider(layer, pc);
         pc.QueueFree();
         field.QueueFree();
         layer.Free();
@@ -260,6 +261,41 @@ public partial class RemoteRideCheck : Node3D
         if (played.Count != 2 || played[0] != $"{User}:{off}" || played[1] != $"{User}:{on}") fails.Add($"UnRideSkill ride off effects: {string.Join(", ", played)}");
         layer.RideEffectsPlayed = null;
         GD.Print($"remote ride: ride effects on '{on}', off '{off}', UnRideSkill adds the row's effect ({played.Count} played)");
+    }
+
+    /// <summary>hideRider: PCBase::vfunc_120 hides the rider of such a row (AddHideReason(2), the body's vfunc_23(1)) and
+    /// vfunc_121 shows it again; a row without it leaves the rider shown. Both for another player and the own pc.</summary>
+    void HideRider(RemoteLayer layer, Player pc)
+    {
+        const int User = 35;
+        var hide = FirstMount(x => x.Data.HideRider);
+        var plain = FirstMount(x => !x.Data.HideRider);
+        if (hide == null || plain == null) { fails.Add($"hideRider: rows hide {hide?.Data.Id} plain {plain?.Data.Id}"); return; }
+        var u = new FieldAddUser { ObjectId = User, User = new UserBlock { Name = "h", CharacterId = 135, Gender = 1 } };
+        u.Stats[0].Health = 100; u.Stats[2].Health = 100;
+        layer.Tracker.Events.Enqueue(new UserAddedEvent(0, u, false));
+        layer._Process(0);
+        var body = layer.HoldVisual(User);
+        bool Ride(int id)
+        {
+            layer.OnRide(new ResponseRide(0, User, new RideOnAction(0, id, 5035, false, 0, 0, 0, 0), null, 0, 0, 0, 0, false));
+            return body.Visible;
+        }
+        bool Off()
+        {
+            layer.OnRide(new ResponseRide(1, User, null, new RideOffAction(0, 0), 0, 0, 0, 0, false));
+            return body.Visible;
+        }
+        bool rOn = Ride(hide.Data.Id), rOff = Off(), pOn = Ride(plain.Data.Id), pOff = Off();
+        if (rOn || !rOff || !pOn || !pOff) fails.Add($"remote hideRider {hide.Data.Id}: shown riding {rOn}, after {rOff}; plain {plain.Data.Id} riding {pOn}, after {pOff}");
+        pc.RideOn(hide);
+        bool oOn = pc.Visual.Visible, mountShown = hide.Visual.Visible;
+        pc.RideOn(plain);                     // RideOn rides the old mount off first
+        bool oSwap = pc.Visual.Visible;
+        pc.RideOff();
+        bool oOff = pc.Visual.Visible;
+        if (oOn || !mountShown || !oSwap || !oOff) fails.Add($"own hideRider: shown riding {oOn} (mount {mountShown}), plain after swap {oSwap}, after {oOff}");
+        GD.Print($"remote ride: hideRider {hide.Data.Id} hides the rider ({!rOn}, own {!oOn}), shown after ride off ({rOff}, own {oOff}); plain {plain.Data.Id} shown");
     }
 
     /// <summary>The hold key end to end: with the npc away the player is the pick and the poll keeps it; an npc's

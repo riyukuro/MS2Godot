@@ -91,7 +91,7 @@ public partial class LiveSession
         player.RideOn(m);
         PlayOwnCommonEffect(RideOnEffectKey);
         OwnNoBoarding = a.Flag;           // PC::FUN_1416642c0(m_b28), pcbase.cpp:3341-3343
-        // STILL-OPEN: hideRider (AddHideReason 2), the RideeItemInfo of a type 1 action, the camera target; MyPC:
+        // Player.RideOn hides the rider of a hideRider row. STILL-OPEN: the RideeItemInfo of a type 1 action, the camera target; MyPC:
         // ClearRecords, AddSkillSet of skillSetId, the dialog closes for hidePCInfo above 1 (0x4e2d, 0x4f2d,
         // 0x4ec8, 0x2711, 0x4f76, 0x4ec3), NotifyStatusChanged(0xc, 1)
     }

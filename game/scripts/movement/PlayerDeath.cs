@@ -88,6 +88,25 @@ public partial class Player
         if (Visual != null && Visual.Visible != shown) Visual.Visible = shown;
     }
 
+    /// <summary>PCBase m_unk_c08, the hide reasons (bit 2: a hideRider mount).</summary>
+    int hideReasons;
+    public bool IsHidden => hideReasons != 0;
+
+    /// <summary>PCBase::AddHideReason (@0x14166ca20) / RemoveHideReason (@0x14166ca80): nothing when the bit already has that
+    /// value, else ApplyHideReasons (@0x14166cb30): vfunc_23(1) while any reason is set, vfunc_23(0) when none is. Its
+    /// re-show of the ridee for reason 2 alone is the port's already: the rider's visual does not carry the mount.
+    /// STILL-OPEN: SetShadowVisible, reason 1 (the ridee's AddHideReason(1) in vfunc_120).</summary>
+    public void SetHideReason(int reason, bool on)
+    {
+        int bit = 1 << reason;
+        if (((hideReasons & bit) != 0) == on) return;
+        hideReasons = on ? hideReasons | bit : hideReasons & ~bit;
+        SetBodyShown(hideReasons == 0);
+    }
+
+    /// <summary>The hide reason of a hideRider mount (pcbase.cpp:3331-3333).</summary>
+    public const int HideReasonRide = 2;
+
     /// <summary>StateDead::vfunc_3 (statedead.cpp): vfunc_68(zero, t), gravity only; StateRevival: the sequence's end.</summary>
     void DeathUpdate()
     {

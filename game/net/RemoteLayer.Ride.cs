@@ -10,8 +10,8 @@ namespace Ms2Godot.Net;
 /// scenestategame.cpp:2472: the PC's ridee, nothing without one) through its own states; the rider sits in StateRide on its
 /// seat and plays StateRide::vfunc_9's sequence by the mount's state (<see cref="StateRideAnim"/>).
 /// The ride-on and ride-off effects (CommonResource +0x2b0 / +0x2b8) and an UnRideSkill ride off's rideOffBySkillEffect play
-/// at the PC (<see cref="PlayRideEffect"/>). STILL-OPEN: hideRider
-/// (AddHideReason(2)), StateRide's shadow off, the rider's stats copied to the ridee, the breakable anchor of a ride-off,
+/// at the PC (<see cref="PlayRideEffect"/>); a hideRider row hides the rider (<see cref="RemotePc.SetHideReason"/>).
+/// STILL-OPEN: StateRide's shadow off, the rider's stats copied to the ridee, the breakable anchor of a ride-off,
 /// the fall start the ridee had (StateFallData), the ridee's m_unk_b80 SP idle, the mount's step keys. Mode 6 also writes the
 /// kept ride-on action's m_b28, which only a later PCBase::vfunc_120 of that action reads; a remote PC's ride is re-sent with it.
 /// </summary>
@@ -54,8 +54,9 @@ public sealed partial class RemoteLayer
         ridee.Spawn();
         r.Ridee = ridee;
         r.Pc.States.RideOn(ridee.States, r.HpCur, r.HpMax);
-        r.NoBoarding = a.Flag;            // PC::FUN_1416642c0(m_b28), pcbase.cpp:3341-3343
         PlayRideEffect(r, CommonPath(ref rideOnPath, LiveSession.RideOnEffectKey));   // pcbase.cpp:3324-3330
+        if (m.Data.HideRider) r.Pc.SetHideReason(RemotePc.HideReasonRide, true);       // :3331-3333
+        r.NoBoarding = a.Flag;            // PC::FUN_1416642c0(m_b28), pcbase.cpp:3341-3343
     }
 
     /// <summary>
@@ -68,6 +69,7 @@ public sealed partial class RemoteLayer
         var ridee = r.Ridee;
         if (ridee == null) return;
         string skillEffect = action?.Type == UnRideSkillType ? ridee.Mount?.Data?.RideOffBySkillEffect : null;
+        if (ridee.Mount?.Data?.HideRider == true) r.Pc.SetHideReason(RemotePc.HideReasonRide, false);   // pcbase.cpp:3402-3404
         Dismount(r.Pc, r.Visual, ridee, r.HpCur, r.HpMax);
         FreeRidee(r);
         PlayRideEffect(r, CommonPath(ref rideOffPath, LiveSession.RideOffEffectKey));   // pcbase.cpp:3416-3422
