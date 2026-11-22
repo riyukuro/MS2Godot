@@ -7,6 +7,15 @@ using Ms2Godot.Movement;
 
 namespace Ms2Godot.World;
 
+/// <summary>The field's sound, which the sound trigger objects play their music and ambient sounds through (CSoundEventMgr).</summary>
+public interface ITriggerSounds
+{
+    /// <summary>CSoundEventMgr::PlayMusic(cue, 0, 0x80, 0); cue 0 goes back to the previous cue.</summary>
+    bool PlayTriggerMusic(int cue);
+    /// <summary>CSoundEventMgr::FUN_14177ce30(entity, on): the entity's ambient sound on or off.</summary>
+    void SetTriggerAmbient(FieldEntity e, bool on);
+}
+
 /// <summary>
 /// The field's trigger objects as CTriggerService holds them: every entity with the MS2TriggerObject mixin, keyed by its
 /// TriggerObjectID (property 0x6c37a861; CTriggerService::FUN_141861620, triggerservice.cpp:324), with the kind
@@ -36,6 +45,8 @@ namespace Ms2Godot.World;
 /// A cube event (TriggerObjectCube::vfunc_2 @0x140de7cd0, triggeractioncli.cpp:818-822) sets the entity's IsVisible flag
 /// (FUN_140b60e10, :821) to the event's bool and nothing else: the cube's draws show or hide at once (the engine's scene graph
 /// culls a Renderable entity whose IsVisible is cleared) and its colliders stay where they are.
+/// A sound event plays the BGM object's music or turns the AMB object's ambient sound on or off (<see cref="ApplySound"/>),
+/// through the field's sound, bound with <see cref="Bind(ITriggerSounds)"/>.
 /// An effect event starts or removes the entity's effect through the field's effect service (<see cref="ApplyEffect"/>),
 /// bound with <see cref="Bind(IRegionSkillEffects)"/>; the effects go with the field, as the object's dtor removes its handle.
 /// The fade (FadeEntity, Fade tenths of a second) runs in <see cref="TriggerFade"/>; a mesh without drawn instances to
@@ -48,7 +59,7 @@ namespace Ms2Godot.World;
 /// 0x6454a3bb) of a type 3 event, those of a rope / ladder event (picked by its flag, :750-753), and an actor event's
 /// minimap mark (:724-726); the actor sequence's blend (PlayAnimation's 1.0f and false go to the client's own
 /// NiActorManager::SetTargetAnimation, whose body is not in the recomp); a hidden cube's object weapon (IsObjectWeapon; PullObjectWeaponAction::FUN_140959eb0 takes only a cube whose IsVisible is set,
-/// actionkeyobject.cpp:1873-1875; not ported here); the sound and camera events (read, not applied); a trigger mesh drawn as an animated prop (FieldProps); a hidden
+/// actionkeyobject.cpp:1873-1875; not ported here); the sound Effect kind (<see cref="ApplySound"/>); the camera events (read, not applied); a trigger mesh drawn as an animated prop (FieldProps); a hidden
 /// mesh that BGTransparencyMgr fades back in (FieldFade restores its transform).
 /// </summary>
 public sealed class FieldTriggers
@@ -61,6 +72,8 @@ public sealed class FieldTriggers
     readonly Dictionary<int, int> effectHandles = new();
     readonly Dictionary<int, IActor> actors = new();
     IRegionSkillEffects effects;
+    readonly Dictionary<int, int> soundHandles = new();
+    ITriggerSounds sounds;
 
     /// <summary>A drawn trigger actor: its entity, whether it is drawn (IsVisible) and the sequence it plays.</summary>
     public interface IActor
@@ -114,6 +127,12 @@ public sealed class FieldTriggers
     /// <summary>Binds the field's effect service (CEffectService), which the effect objects start and remove their effects with.</summary>
     public void Bind(IRegionSkillEffects service) => effects = service;
 
+    /// <summary>Binds the field's sound (CSoundEventMgr), which the sound objects play their music and ambient sounds through.</summary>
+    public void Bind(ITriggerSounds service) => sounds = service;
+
+    /// <summary>The music cue the BGM sound object last played (m_nHandle; 0: none).</summary>
+    public int SoundHandle(int id) => soundHandles.TryGetValue(id, out int h) ? h : 0;
+
     /// <summary>Binds the drawn trigger actors: each to the actor object of its entity.</summary>
     public void Bind(IEnumerable<IActor> drawn)
     {
@@ -144,6 +163,7 @@ public sealed class FieldTriggers
         {
             if (!ev.Known) { GD.PushWarning($"Trigger Object Sync Error. ObjectID:{ev.Id}"); continue; }
             if (ev.Kind == TriggerObjectKind.Effect) { if (ApplyEffect(ev)) n++; continue; }
+            if (ev.Kind == TriggerObjectKind.Sound) { if (ApplySound(ev)) n++; continue; }
             if (ev.Kind == TriggerObjectKind.Actor)
             {
                 if (!actors.TryGetValue(ev.Id, out var a)) continue;
@@ -189,6 +209,59 @@ public sealed class FieldTriggers
         if (effectHandles.TryGetValue(ev.Id, out int h) && h != 0) effects.FadeOut(h, 0);
         if (ev.Show) effectHandles[ev.Id] = effects.Spawn(e.Get("XmlFilePath") ?? "", EffectAt(e), false, 0);
         return true;
+    }
+
+    /// <summary>
+    /// TriggerObjectSound::vfunc_2 (@0x140de68f0, triggeractioncli.cpp:555-613), by the kind vfunc_1 read from the entity's
+    /// SoundType (0xf83bad53, :541-552: "BGM" 1, "AMB" 2, "Effect" 3, else 0), on when the event's byte is not 0:
+    /// BGM on plays atoi(soundEventID) (0xed530c5f) when it is above 0 and keeps it as the handle (:562-573); BGM off with a
+    /// handle plays cue 0, back to the previous music, and clears it (:575-581; the soundEndXml it reads is not used);
+    /// AMB turns the entity's ambient sound on or off when its soundEventID is not empty (:583-589).
+    /// STILL-OPEN: the Effect kind (:590-611, soundStartXml / soundEndXml through CEffectService with no target object);
+    /// no field's sound object has it.
+    /// Not applied (false) when the field has no sound bound or the object's kind does nothing.
+    /// </summary>
+    bool ApplySound(TriggerObjectEvent ev)
+    {
+        if (sounds == null || !entities.TryGetValue(ev.Id, out var e)) return false;
+        bool on = ev.Flag != 0;
+        string kind = e.Get("SoundType") ?? "";
+        string id = e.Get("soundEventID") ?? "";
+        if (kind == "BGM")
+        {
+            if (on)
+            {
+                int cue = id.Length == 0 ? 0 : Atoi(id);
+                if (cue <= 0) return true;
+                sounds.PlayTriggerMusic(cue);
+                soundHandles[ev.Id] = cue;
+            }
+            else if (SoundHandle(ev.Id) != 0)
+            {
+                sounds.PlayTriggerMusic(0);
+                soundHandles[ev.Id] = 0;
+            }
+            return true;
+        }
+        if (kind == "AMB")
+        {
+            if (id.Length != 0) sounds.SetTriggerAmbient(e, on);
+            return true;
+        }
+        return false;
+    }
+
+    /// <summary>The CRT's atoi: leading white space, an optional sign, then decimal digits up to the first other character.</summary>
+    public static int Atoi(string s)
+    {
+        int i = 0;
+        while (i < s.Length && (s[i] == ' ' || (s[i] >= '\t' && s[i] <= '\r'))) i++;
+        bool neg = false;
+        if (i < s.Length && (s[i] == '+' || s[i] == '-')) neg = s[i++] == '-';
+        long v = 0;
+        for (; i < s.Length && s[i] >= '0' && s[i] <= '9'; i++) v = Math.Min(v * 10 + (s[i] - '0'), (long)int.MaxValue + 1);
+        v = neg ? -v : v;
+        return (int)Math.Clamp(v, int.MinValue, int.MaxValue);
     }
 
     /// <summary>

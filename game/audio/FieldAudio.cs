@@ -12,7 +12,7 @@ namespace Ms2Godot;
 /// MusicController drives the cue's segment graph (intro, loop, bridge/intermission transitions via parameter 5, one-shots)
 /// and boss combat BGM switching. Voice banks follow GameOptions.Voice (CSoundService @0x1417aea70, soundservice.cpp:418-433).
 /// </summary>
-public partial class FieldAudio : Node
+public partial class FieldAudio : Node, World.ITriggerSounds
 {
     public const string UiClickWave = "System_Button_click_01";   // MS2Sound_System.fsb, the client's button click
 
@@ -235,6 +235,23 @@ public partial class FieldAudio : Node
             MusicState.SetMusicParameter(paramId, paramValue, priority, force);
         return StartCurrentCue();
     }
+
+    /// <summary>
+    /// A trigger sound's BGM event: CSoundEventMgr::PlayMusic(cue, 0, 0x80, 0) (@0x14177c100, soundeventmgr.cpp:1151-1203,
+    /// from TriggerObjectSound::vfunc_2, triggeractioncli.cpp:568 and :577). A cue goes on the music history at the default
+    /// priority; cue 0 goes back to the cue before the current one. Playback follows when the current cue changed.
+    /// </summary>
+    public bool PlayTriggerMusic(int cue)
+    {
+        if (MusicState == null) return false;
+        int before = MusicState.CurrentCueId;
+        if (!MusicState.PlayMusic(cue, 0f, MusicController.DefaultPriority, false)) return false;
+        if (MusicState.CurrentCueId != before) StartCurrentCue();
+        return true;
+    }
+
+    /// <summary>A trigger sound's AMB event (<see cref="AmbientSounds.SetTriggerSound"/>); nothing without the field's sounds.</summary>
+    public void SetTriggerAmbient(FieldEntity e, bool on) => Ambient?.SetTriggerSound(e, on);
 
     /// <summary>Starts a field's BGM spec and initializes its boss combat BGM tracker.</summary>
     public bool PlayFieldBgm(FieldBgmSpec spec, bool force = false)

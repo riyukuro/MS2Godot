@@ -267,6 +267,7 @@ public partial class Field : Node3D
         OnFieldBuilt(builder, map, fieldName);
         Built?.Invoke(this, builder);
         Audio = FieldAudio.Start(this, data, packs, fieldName, map, player, player?.Anim);   // sound: game/audio
+        if (Audio != null) Triggers.Bind(Audio);   // the sound trigger objects' music and ambient sounds
         if (player != null && Audio?.Footsteps is { } steps)
         {
             // the ground's effect files of a step or a landing: the sound parts play in FootstepSounds, the nif parts here
