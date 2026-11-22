@@ -385,7 +385,7 @@ public sealed record ResponseCubeBill(byte Mode, int Arg, IReadOnlyList<KeyValue
         var map = new SortedDictionary<int, long>();
         for (int i = 0; i < count; i++) { int type = r.ReadByte(); map[type] = r.ReadLong(); }
         bool preview = mode == ModeBlueprint && r.ReadBool();
-        r.ExpectEnd("ResponseCube 0x" + mode.ToString("x"));
+        // no ExpectEnd: the client's reader of these modes never checks the end, trailing bytes are ignored
         return new ResponseCubeBill(mode, arg, map.ToArray(), preview) { Count = count };
     }
 

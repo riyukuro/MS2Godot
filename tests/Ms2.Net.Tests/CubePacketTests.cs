@@ -391,7 +391,8 @@ public class ResponseCubeBillTests
     [Test] public void BlueprintBillHasThePreviewFlagAndTheCubeBillDoesNot()
     {
         Assert.That(ResponseCubeBill.Read(Reader(w => { w.WriteByte(0); w.WriteInt(1); w.WriteBool(true); }), ResponseCubeBill.ModeBlueprint).Preview, Is.True);
-        Assert.That(() => ResponseCubeBill.Read(Reader(w => { w.WriteByte(0); w.WriteInt(1); w.WriteBool(true); }), ResponseCubeBill.ModeCube), Throws.Exception);
+        // trailing bytes are ignored, as the client does
+        Assert.That(ResponseCubeBill.Read(Reader(w => { w.WriteByte(0); w.WriteInt(1); w.WriteBool(true); }), ResponseCubeBill.ModeCube).Preview, Is.False);
     }
 
     [Test] public void BuyRequests()
