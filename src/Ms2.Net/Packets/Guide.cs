@@ -43,11 +43,18 @@ public sealed record GuideServerTriggerEvent(int EventId) : IProfileOutPacket {
     public void Write(ByteWriter w, ProtocolProfile profile) { w.WriteByte(profile.IsGms2 ? (byte) 8 : (byte) 9); w.WriteByte(1); w.WriteInt(EventId); }
 }
 
-/// <summary>UICutSceneMovie::Exit (uicutscenemovie.cpp:425): Trigger (0x2F) with u8 9 (GMS2 8), u8 5 and i32 the cut scene id, when a cut scene movie ends.</summary>
+/// <summary>UICutSceneMovie::Exit (@0x141910220, uicutscenemovie.cpp:420): Trigger (0x2F) with u8 9 (GMS2 8), u8 5 and i32 the cut scene id, when a cut scene movie ends.</summary>
 public sealed record CutSceneExitTrigger(int CutSceneId) : IProfileOutPacket {
     public Outbound Op => Outbound.Trigger;
     public void Write(ByteWriter w) => Write(w, ProtocolProfile.Kms2525);
     public void Write(ByteWriter w, ProtocolProfile profile) { w.WriteByte(profile.IsGms2 ? (byte) 8 : (byte) 9); w.WriteByte(5); w.WriteInt(CutSceneId); }
+}
+
+/// <summary>UICutSceneCinematic::SendTrigger (@0x141909230): Trigger (0x2F) with the single byte 8 (GMS2 7) when a cinematic is skipped.</summary>
+public sealed record CinematicSkipTrigger : IProfileOutPacket {
+    public Outbound Op => Outbound.Trigger;
+    public void Write(ByteWriter w) => Write(w, ProtocolProfile.Kms2525);
+    public void Write(ByteWriter w, ProtocolProfile profile) => w.WriteByte(profile.IsGms2 ? (byte) 7 : (byte) 8);
 }
 
 /// <summary>CGuideActionRequestTutorialItem::Start (@0x141386150): RequestTutorialItem (0x9C), no body.</summary>

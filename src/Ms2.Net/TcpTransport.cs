@@ -168,10 +168,15 @@ public sealed class TcpTransport : IDisposable {
         ushort type = (ushort) Profile.Number(packet.Op);
         if (connected && type is 1 or 5 or 6 or 7 or 8) return ch.SendAsync(packet, ct);
         if (!connected && Reconnection.Options[ReconnectionOptions.HoldSends] == 1) return Task.CompletedTask;
-        var w = new Maple2.PacketLib.Tools.ByteWriter();
-        packet.Write(w);
-        carry.PushPending(type, w.Buffer.AsSpan(0, w.Length));
+        carry.PushPending(type, HeldBody(packet, Profile));
         return Task.CompletedTask;
+    }
+
+    /// <summary>The body a held packet is queued with: written in the connection's profile form, as the channel writes it, so a packet held during a reconnect goes out as it would have live.</summary>
+    public static byte[] HeldBody(IOutPacket packet, ProtocolProfile profile) {
+        var w = new Maple2.PacketLib.Tools.ByteWriter();
+        if (packet is IProfileOutPacket pp) pp.Write(w, profile); else packet.Write(w);
+        return w.Buffer.AsSpan(0, w.Length).ToArray();
     }
 
     /// <summary>Cancels the read loop and closes the socket without waiting for the read task (safe on the main thread). Safe to call twice.</summary>

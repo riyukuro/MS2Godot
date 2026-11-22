@@ -15,27 +15,32 @@ public class Gms2TriggerRequestTests {
         Assert.That(Bytes(new GuideServerTriggerEvent(251), ProtocolProfile.Kms2525), Is.EqualTo(new byte[] { 9, 1, 0xFB, 0, 0, 0 }));
         Assert.That(Bytes(new CutSceneExitTrigger(1), ProtocolProfile.Gms2), Is.EqualTo(new byte[] { 8, 5, 1, 0, 0, 0 }));
         Assert.That(Bytes(new CutSceneExitTrigger(1), ProtocolProfile.Kms2525), Is.EqualTo(new byte[] { 9, 5, 1, 0, 0, 0 }));
+        Assert.That(Bytes(new CinematicSkipTrigger(), ProtocolProfile.Gms2), Is.EqualTo(new byte[] { 7 }));
+        Assert.That(Bytes(new CinematicSkipTrigger(), ProtocolProfile.Kms2525), Is.EqualTo(new byte[] { 8 }));
+    }
+
+    [Test] public void APacketHeldDuringAReconnectIsQueuedInTheConnectionsProfileForm() {
+        Assert.That(TcpTransport.HeldBody(new GuideServerTriggerEvent(251), ProtocolProfile.Gms2), Is.EqualTo(new byte[] { 8, 1, 0xFB, 0, 0, 0 }));
+        Assert.That(TcpTransport.HeldBody(new GuideServerTriggerEvent(251), ProtocolProfile.Kms2525), Is.EqualTo(new byte[] { 9, 1, 0xFB, 0, 0, 0 }));
+        var b = new OutPacketBuffer();
+        b.PushPending(0x2F, TcpTransport.HeldBody(new CutSceneExitTrigger(7), ProtocolProfile.Gms2));
+        Assert.That(b.TakePending()[0].Body, Is.EqualTo(new byte[] { 8, 5, 7, 0, 0, 0 }));
     }
 
     [Test] public void EveryRecordedGms2TriggerRequestIsOurLayout() {
-        string root = Environment.GetEnvironmentVariable("MS2_SNIFFS");
-        if (string.IsNullOrEmpty(root)) Assert.Ignore("MS2_SNIFFS needed");
-        string dir = Path.Combine(root, "gms2-sniffs");
-        if (!Directory.Exists(dir)) Assert.Ignore("MS2_SNIFFS has no gms2-sniffs folder");
-        int total = 0, guide = 0, cut = 0;
-        foreach (var path in Directory.GetFiles(dir, "*.msb").OrderBy(x => x))
-            foreach (var p in MsbFile.Read(path).Packets) {
-                if (p.ServerToClient || p.Opcode != 0x2F) continue;
-                if (p.Data.Length != 6 || p.Data[0] != 8) continue; // other Trigger modes are not ours
-                total++;
-                int id = BitConverter.ToInt32(p.Data, 2);
-                IProfileOutPacket ours = p.Data[1] == 1 ? new GuideServerTriggerEvent(id) : p.Data[1] == 5 ? new CutSceneExitTrigger(id) : null;
-                Assert.That(ours, Is.Not.Null, $"{Path.GetFileName(path)}: Trigger request sub {p.Data[1]}");
-                Assert.That(Bytes(ours, ProtocolProfile.Gms2), Is.EqualTo(p.Data), Path.GetFileName(path));
-                if (p.Data[1] == 1) guide++; else cut++;
-            }
-        TestContext.Out.WriteLine($"{total} Trigger requests: {guide} guide, {cut} cut scene exit");
-        Assert.That(total, Is.GreaterThan(30));
+        int total = 0, guide = 0, cut = 0, skip = 0; var odd = new List<string>();
+        foreach (var (file, data) in Gms2Sniffs.Outbound("gms2", 0x2F)) {
+            if (data.Length == 1 && data[0] == 7) { Assert.That(Bytes(new CinematicSkipTrigger(), ProtocolProfile.Gms2), Is.EqualTo(data)); skip++; continue; }
+            if (!(data.Length == 6 && data[0] == 8 && data[1] is 1 or 5)) { odd.Add(Convert.ToHexString(data)); continue; }
+            total++;
+            int id = BitConverter.ToInt32(data, 2);
+            IProfileOutPacket ours = data[1] == 1 ? new GuideServerTriggerEvent(id) : new CutSceneExitTrigger(id);
+            Assert.That(Bytes(ours, ProtocolProfile.Gms2), Is.EqualTo(data), file);
+            if (data[1] == 1) guide++; else cut++;
+        }
+        Assert.That(odd, Is.Empty, "Trigger requests of another layout");
+        TestContext.Out.WriteLine($"{total} Trigger requests: {guide} guide, {cut} cut scene exit, {skip} cinematic skip");
+        Assert.That(total + skip, Is.GreaterThan(30));
         Assert.That(guide, Is.GreaterThan(0));
     }
 }
