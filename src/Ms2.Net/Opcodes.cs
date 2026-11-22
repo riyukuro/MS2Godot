@@ -117,6 +117,7 @@ public enum Inbound : ushort {
     ProxyGameObj = 0x7E,
     BadgeEquip = 0x7F,
     Taxi = 0x80,            // RecvOp Taxi (commonfiles/opcodes.h): CSceneStateGame::OnTaxi
+    ResponseRide = 0x79,        // RecvOp::ResponseRide (commonfiles/opcodes.h:129): CSceneStateGame::OnResponseRide @0x14172a8f0
     RideSync = 0x7A,
     LoadUgcMap = 0x7D,          // RecvOp::LoadUgcMap (commonfiles/opcodes.h:133): CSceneStateGame::OnLoadUgcMap @0x14170e800
     World = 0xB9,

@@ -281,11 +281,22 @@ public sealed record RideOnAction(byte Type, int RideId, int ObjectId, bool Flag
     public static RideOnAction Read(ByteReader r, ProtocolProfile profile) {
         byte type = r.ReadByte();
         if (type > 3) throw new PacketLayoutException($"ride action type {type}");
+        return ReadBody(r, type, profile);
+    }
+
+    static RideOnAction ReadBody(ByteReader r, byte type, ProtocolProfile profile) {
         int rideId = r.ReadInt(), obj = r.ReadInt(); bool flag = !profile.IsGms2 && r.ReadBool();
         int itemId = 0; long uid = 0; int extra = 0; short es = 0;
         if (type == 1) { itemId = r.ReadInt(); uid = r.ReadLong(); ItemReader.ReadUgcLook(r); }
         else if (type == 2) { extra = r.ReadInt(); es = r.ReadShort(); }
         return new RideOnAction(type, rideId, obj, flag, itemId, uid, extra, es);
+    }
+
+    /// <summary>ReadRideOnAction (@0x14077deb0, rideonaction.cpp:46) as OnResponseRide uses it (KMS2 layout): a type above 3
+    /// has no case, reads as null and nothing after the type byte is read.</summary>
+    public static RideOnAction TryRead(ByteReader r) {
+        byte type = r.ReadByte();
+        return type > 3 ? null : ReadBody(r, type, ProtocolProfile.Kms2525);
     }
 }
 

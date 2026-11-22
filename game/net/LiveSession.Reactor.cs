@@ -177,10 +177,9 @@ public partial class LiveSession
                 break;
             case FieldReactors.UseOutcome.RideOff:
                 // never reached live, here as in the client: the poll's CanReact and FUN_140b7a5e0 need state 1, a rider is 0x21
-                // RideOffActionReact(0) with the reactor's id and name, MyPC::SendRequestRideMode1. STILL-OPEN: the ResponseRide
-                // answer (OnResponseRide mode 1, MyPC::vfunc_121 case 0x14) is not ported; there the client enters state 0x19
-                // with the StateReactData and kind 0x8a, StateInteraction's dynamic_cast of it fails and it takes the nearest
-                // interact object, so the react never starts after the ride-off (exe bug).
+                // RideOffActionReact(0) with the reactor's id and name, MyPC::SendRequestRideMode1. The ResponseRide answer
+                // (OnResponseRide mode 1) is a plain ride off: ReadRideOffAction (rideonaction.cpp:159) has no case 20, so the
+                // action reads as null and MyPC::vfunc_121's case 0x14 never runs; the react does not start (exe bug).
                 var ride = player.Mount.Data;
                 if (RideOff.Request(true, ride != null, ride?.Type ?? 0, ride?.EnableRideOffUI ?? false, RideOffReactRequest.ActionType,
                         false, new RideOffReactRequest(r.Data?.Id ?? 0, r.Name), Send) == RideOff.Outcome.CantRide)

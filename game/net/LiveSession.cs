@@ -1531,6 +1531,7 @@ public partial class LiveSession : Node
                 var t = TombstoneUpdate.Read(p.Reader());      // OnTombstone (scenestategame.cpp:9644) -> PC::FUN_14165d300
                 if (Me.Apply(t) && Tomb != null && IsInstanceValid(Tomb)) Tomb.Hit(t.Kind, t.Value);
             }
+            else if (game.Is(p, Inbound.ResponseRide)) OnResponseRide(ResponseRide.Read(p.Reader(), selfObject));   // OnResponseRide (:12026)
             else if (game.Is(p, Inbound.RevivalCount)) Me.Apply(RevivalCount.Read(p.Reader()));   // OnRevivalCount (scenestategame.cpp:4092)
             else if (game.Is(p, Inbound.DungeonReviveCount)) Me.Apply(DungeonReviveCount.Read(p.Reader()));   // OnDungeonReviveCount (:5074)
             else if (game.Is(p, Inbound.AutoRevive)) AutoReviveStarted?.Invoke(AutoRevive.Read(p.Reader()).DurationMs);   // OnAutoRevive (:4332)

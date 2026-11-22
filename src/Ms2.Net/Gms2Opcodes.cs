@@ -116,6 +116,7 @@ static class Gms2Opcodes {
         [Inbound.ProxyGameObj] = 0x80,
         [Inbound.BadgeEquip] = 0x81,
         [Inbound.Taxi] = 0x82,
+        [Inbound.ResponseRide] = 0x7B,
         [Inbound.RideSync] = 0x7C,
         [Inbound.LoadUgcMap] = 0x7F,
         [Inbound.World] = 0xBB,
