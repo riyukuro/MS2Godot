@@ -24,6 +24,8 @@ public partial class FieldContents : Node3D
     readonly ModelBuilder builder;
     readonly AssetIndex assets;
     public readonly FieldProps Props;
+    /// <summary>The trigger actors <see cref="Start"/> drew, for the field's triggers.</summary>
+    public IReadOnlyList<FieldNpcs.TriggerActor> TriggerActors { get; private set; } = Array.Empty<FieldNpcs.TriggerActor>();
     FieldMap map;
     FieldPortals portals;
     Player player;
@@ -107,6 +109,7 @@ public partial class FieldContents : Node3D
         var people = new Node3D { Name = "Characters" };
         AddChild(people);
         fnpcs.PlaceActors(people, map);
+        TriggerActors = fnpcs.TriggerActors;
         if (offline && npcs)
         {
             try { fnpcs.SpawnNpcs(people, map, Npcs(packs), fieldId, offline ? Masks(packs) : null); }

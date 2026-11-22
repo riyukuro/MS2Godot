@@ -225,6 +225,7 @@ public partial class Field : Node3D
         AddChild(contents);
         abandon = null;
         contents.Start(map, fieldName, player, SpawnsLocalPlayer && !Net.LiveSession.Active);
+        Triggers.Bind(contents.TriggerActors);   // the actor trigger objects' drawn actors
         devBreakables?.AttachField(map.Entities);
         DevBreakableStates();
         var hdr = new FieldHdr();

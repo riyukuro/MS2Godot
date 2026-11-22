@@ -30,6 +30,9 @@ namespace Ms2Godot.World;
 /// entry of the entity, bound with <see cref="Bind(Climbables)"/>. A hidden rope with the flag set stays climbable, as in the client.
 /// SetEntityCollisionGroup then runs WorldService::FUN_141bc8e00 (worldservice_1.cpp:4995-5009): each PC's
 /// controller gets ReportSceneChanged; NxController keeps no touched-shape state across moves for it to drop.
+/// An actor event (TriggerObjectActor::vfunc_2 @0x140de74b0, triggeractioncli.cpp:716-727) sets the entity's IsVisible
+/// flag (0xa0b6b179, FUN_140b60e10 at :720) to the event's bool and plays the named sequence on it (Unk_AnimSvc::PlayAnimation,
+/// :723), which an unknown name leaves as it was; bound with <see cref="Bind(IEnumerable{IActor})"/>.
 /// An effect event starts or removes the entity's effect through the field's effect service (<see cref="ApplyEffect"/>),
 /// bound with <see cref="Bind(IRegionSkillEffects)"/>; the effects go with the field, as the object's dtor removes its handle.
 /// The fade (FadeEntity, Fade tenths of a second) runs in <see cref="TriggerFade"/>; a mesh without drawn instances to
@@ -39,8 +42,9 @@ namespace Ms2Godot.World;
 /// (NpcGroundSpace keeps it; the client casts no npc ground: OnFieldAddNpc @0x141718cf0, scenestategame.cpp:3533-3584,
 /// and CNpc::ApplySyncBlock, npcactorandvibrate.cpp:913,965, place an npc at the packet's position + 4 z, so the
 /// server decides); the minimap mark (UIMinimapDialog::SetTriggerVisible) and the show/hide effects (0x6dd85c78 /
-/// 0x6454a3bb) of a type 3 event, and those of a rope / ladder event (picked by its flag, :750-753); the actor, cube, sound
-/// and camera events (read, not applied); a trigger mesh drawn as an animated prop (FieldProps); a hidden
+/// 0x6454a3bb) of a type 3 event, those of a rope / ladder event (picked by its flag, :750-753), and an actor event's
+/// minimap mark (:724-726); the actor sequence's blend (PlayAnimation's 1.0f and false go to the client's own
+/// NiActorManager::SetTargetAnimation, whose body is not in the recomp); the cube, sound and camera events (read, not applied); a trigger mesh drawn as an animated prop (FieldProps); a hidden
 /// mesh that BGTransparencyMgr fades back in (FieldFade restores its transform).
 /// </summary>
 public sealed class FieldTriggers
@@ -51,7 +55,17 @@ public sealed class FieldTriggers
     readonly Dictionary<int, FieldEntity> entities = new();
     readonly Dictionary<int, Climbables.Climb> climbs = new();
     readonly Dictionary<int, int> effectHandles = new();
+    readonly Dictionary<int, IActor> actors = new();
     IRegionSkillEffects effects;
+
+    /// <summary>A drawn trigger actor: its entity, whether it is drawn (IsVisible) and the sequence it plays.</summary>
+    public interface IActor
+    {
+        FieldEntity Entity { get; }
+        bool Visible { get; set; }
+        /// <summary>Plays the sequence of that name; false (nothing changes) when the actor has none.</summary>
+        bool PlayAnimation(string sequence);
+    }
 
     /// <summary>The node that runs the fades, in the tree with the field (null when built without fade draws).</summary>
     public readonly TriggerFade Fader;
@@ -96,6 +110,19 @@ public sealed class FieldTriggers
     /// <summary>Binds the field's effect service (CEffectService), which the effect objects start and remove their effects with.</summary>
     public void Bind(IRegionSkillEffects service) => effects = service;
 
+    /// <summary>Binds the drawn trigger actors: each to the actor object of its entity.</summary>
+    public void Bind(IEnumerable<IActor> drawn)
+    {
+        actors.Clear();
+        foreach (var a in drawn)
+            if (a.Entity != null && entities.TryGetValue((int)a.Entity.Number("TriggerObjectID"), out var e) && e == a.Entity
+                && kinds[(int)e.Number("TriggerObjectID")] == TriggerObjectKind.Actor)
+                actors[(int)e.Number("TriggerObjectID")] = a;
+    }
+
+    /// <summary>The drawn actor of the actor object with this id, or null.</summary>
+    public IActor Actor(int id) => actors.TryGetValue(id, out var a) ? a : null;
+
     /// <summary>The handle of the effect the effect object last started (m_nHandle; 0: none).</summary>
     public int EffectHandle(int id) => effectHandles.TryGetValue(id, out int h) ? h : 0;
 
@@ -113,6 +140,14 @@ public sealed class FieldTriggers
         {
             if (!ev.Known) { GD.PushWarning($"Trigger Object Sync Error. ObjectID:{ev.Id}"); continue; }
             if (ev.Kind == TriggerObjectKind.Effect) { if (ApplyEffect(ev)) n++; continue; }
+            if (ev.Kind == TriggerObjectKind.Actor)
+            {
+                if (!actors.TryGetValue(ev.Id, out var a)) continue;
+                a.Visible = ev.Show;            // FUN_140b60e10(entity, bOn), triggeractioncli.cpp:720
+                a.PlayAnimation(ev.Text);       // PlayAnimation(id, strAnim, 1.0f, false), :721-723
+                n++;
+                continue;
+            }
             if (ev.Kind is not (TriggerObjectKind.Mesh or TriggerObjectKind.Rope)) continue;
             bool drawn = meshes.TryGetValue(ev.Id, out var t);
             // WorldService::FadeEntity(id, bShow, nFade * 0.1f), triggeractioncli.cpp:650-651 (rope: :743-744)

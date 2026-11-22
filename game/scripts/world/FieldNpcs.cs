@@ -35,8 +35,8 @@ public sealed class FieldNpcs
     readonly AssetIndex assets;
     readonly ModelBuilder builder;
     readonly Dictionary<string, string> kfmByName = new(StringComparer.OrdinalIgnoreCase);
-    readonly Dictionary<string, (ModelData md, KfmFile kfm, string folder)> models = new(StringComparer.OrdinalIgnoreCase);
-    readonly Dictionary<(string, string), Godot.Animation> anims = new();
+    readonly Dictionary<string, (ModelData md, KfmFile kfm, string folder, string archive)> models = new(StringComparer.OrdinalIgnoreCase);
+    readonly Dictionary<(string, string, bool), Godot.Animation> anims = new();
     public int Actors, Npcs, Missing, Masked;
 
     /// <summary>A server stand-in npc: its row, node and where its head is.</summary>
@@ -58,45 +58,50 @@ public sealed class FieldNpcs
         if (!builder.TextureArchives.Contains(NpcArchive)) builder.TextureArchives = builder.TextureArchives.Append(NpcArchive).ToArray();
     }
 
-    (ModelData md, KfmFile kfm, string folder)? Model(string kfmEntry)
+    (ModelData md, KfmFile kfm, string folder, string archive)? Model(string archive, string kfmEntry)
     {
         if (kfmEntry == null) return null;
-        if (models.TryGetValue(kfmEntry, out var m)) return m.md == null ? null : m;
+        string key = archive + "/" + kfmEntry;
+        if (models.TryGetValue(key, out var m)) return m.md == null ? null : m;
         m = default;
         try
         {
             string folder = kfmEntry[..kfmEntry.LastIndexOf('/')];
-            var kfm = KfmFile.Load(packs.Read(NpcArchive, kfmEntry));
+            var kfm = KfmFile.Load(packs.Read(archive, kfmEntry));
             string nif = kfm.Nif.Replace('\\', '/').TrimStart('.', '/').ToLowerInvariant();
             nif = $"{folder}/{Path.GetFileName(nif)}";
-            if (packs.Exists(NpcArchive, nif)) m = (builder.LoadModel(NpcArchive, nif), kfm, folder);
+            if (packs.Exists(archive, nif)) m = (builder.LoadModel(archive, nif), kfm, folder, archive);
         }
-        catch (Exception ex) { GD.PushWarning($"npc model {kfmEntry}: {ex.Message}"); }
-        models[kfmEntry] = m;
+        catch (Exception ex) { GD.PushWarning($"actor model {kfmEntry}: {ex.Message}"); }
+        models[key] = m;
         return m.md == null ? null : m;
     }
 
-    Godot.Animation Anim((ModelData md, KfmFile kfm, string folder) m, string seqName)
+    /// <summary>The kfm's sequence of that name as an animation, or null. An npc's loops; with <paramref name="byCycle"/>
+    /// (a trigger actor's) it loops as the kf's cycle type says, as ReactorLayer plays a reactor's.</summary>
+    Godot.Animation Anim((ModelData md, KfmFile kfm, string folder, string archive) m, string seqName, bool byCycle = false)
     {
-        var seq = m.kfm.ByName(seqName);
+        var seq = byCycle ? m.kfm.Sequences.FirstOrDefault(s => s.Name == seqName) : m.kfm.ByName(seqName);
         if (seq == null) return null;
-        var slot = (m.folder, seq.Name);
+        var slot = (m.archive + "/" + m.folder, seq.Name, byCycle);
         if (anims.TryGetValue(slot, out var a)) return a;
         a = null;
         string entry = $"{m.folder}/{Path.GetFileName(seq.KfPath.Replace('\\', '/')).ToLowerInvariant()}";
         try
         {
-            if (packs.Exists(NpcArchive, entry))
+            if (packs.Exists(m.archive, entry))
             {
-                a = ModelBuilder.BuildAnimation(KfAnimation.Load(NifFile.Load(builder.Spec, packs.Read(NpcArchive, entry))), m.md);
-                a.LoopMode = Godot.Animation.LoopModeEnum.Linear;
+                var kf = KfAnimation.Load(NifFile.Load(builder.Spec, packs.Read(m.archive, entry)));
+                a = ModelBuilder.BuildAnimation(kf, m.md);
+                a.LoopMode = !byCycle ? Godot.Animation.LoopModeEnum.Linear
+                    : kf.Cycle switch { 1 => Godot.Animation.LoopModeEnum.Pingpong, 2 => Godot.Animation.LoopModeEnum.None, _ => Godot.Animation.LoopModeEnum.Linear };
             }
         }
         catch (Exception ex) { GD.PushWarning($"kf {entry}: {ex.Message}"); }
         return anims[slot] = a;
     }
 
-    Node3D Place(Node3D parent, (ModelData md, KfmFile kfm, string folder) m, string name, FieldEntity e, float scale, IEnumerable<string> sequences, float? yawDeg = null, float shadowRadius = 0, float lift = 0, string shadowKind = null)
+    Node3D Place(Node3D parent, (ModelData md, KfmFile kfm, string folder, string archive) m, string name, FieldEntity e, float scale, IEnumerable<string> sequences, float? yawDeg = null, float shadowRadius = 0, float lift = 0, string shadowKind = null)
     {
         var body = builder.Build(m.md, name.ValidateNodeName());
         var root = new Node3D { Name = body.Name };
@@ -124,18 +129,75 @@ public sealed class FieldNpcs
         return root;
     }
 
+    /// <summary>
+    /// A trigger actor (an Actor entity with the MS2TriggerObject mixin, TriggerObjectActor): its kfm may be a map model
+    /// (02000241's quest doors: Resource/Model/Map/.../co_quest_door_a01_ani.kfm). It is drawn even when its IsVisible
+    /// property (0xa0b6b179) is unset, hidden, as the Trigger packet's actor events set that flag and play a sequence
+    /// (<see cref="FieldTriggers"/>). Its sequences loop as their kf's cycle type says.
+    /// </summary>
+    public sealed class TriggerActor : FieldTriggers.IActor
+    {
+        readonly FieldNpcs owner;
+        readonly (ModelData md, KfmFile kfm, string folder, string archive) model;
+        readonly AnimationPlayer player;
+        public FieldEntity Entity { get; }
+        public readonly Node3D Root;
+
+        /// <summary>The sequence it plays (m_currentSequenceID's name), null before the first.</summary>
+        public string Sequence { get; private set; }
+
+        internal TriggerActor(FieldNpcs owner, (ModelData, KfmFile, string, string) model, FieldEntity e, Node3D root)
+        {
+            this.owner = owner; this.model = model; Entity = e; Root = root;
+            player = root.GetNodeOrNull<AnimationPlayer>("Body/Model/AnimationPlayer");
+        }
+
+        public bool Visible { get => Root.Visible; set => Root.Visible = value; }
+
+        /// <summary>
+        /// Unk_AnimSvc::PlayAnimation (animationmanager.cpp:389-405): an unknown sequence name changes nothing (false);
+        /// a known one becomes the current sequence and the target animation. The client asks with bForce false
+        /// (triggeractioncli.cpp:723), and Gamebryo's NiActorManager::SetTargetAnimation does not restart the sequence that
+        /// is already the target, so the same name again leaves it where it is (a finished "Opened" stays open).
+        /// </summary>
+        public bool PlayAnimation(string sequence)
+        {
+            if (sequence != null && sequence == Sequence) return true;
+            var a = player == null || string.IsNullOrEmpty(sequence) ? null : owner.Anim(model, sequence, byCycle: true);
+            if (a == null) return false;
+            var name = new StringName(sequence.ValidateNodeName());
+            var lib = player.GetAnimationLibrary("");
+            if (!lib.HasAnimation(name)) lib.AddAnimation(name, a);
+            player.Play(name);
+            Sequence = sequence;
+            return true;
+        }
+    }
+
+    /// <summary>The trigger actors <see cref="PlaceActors"/> drew.</summary>
+    public readonly List<TriggerActor> TriggerActors = new();
+
     /// <summary>The field's actor entities (client placed).</summary>
     public void PlaceActors(Node3D parent, FieldMap map)
     {
         foreach (var e in map.Entities)
         {
             if (e.ModelName != "MS2Actor" && !e.HasMixin("Actor")) continue;
-            if (!e.Bool("IsVisible", true)) continue;
+            bool trigger = Ms2.Net.Packets.TriggerObjects.KindOf(e.HasMixin) == Ms2.Net.Packets.TriggerObjectKind.Actor;
+            bool visible = e.Bool("IsVisible", true);
+            if (!visible && !trigger) continue;
             var (archive, entry) = assets.Resolve(e.Get("KfmAsset"));
-            var m = archive == NpcArchive ? Model(entry) : null;
+            var m = archive == NpcArchive || (trigger && archive != null) ? Model(archive, entry) : null;
             if (m == null) { Missing++; continue; }
             var seq = e.Get("InitialSequence");
-            Place(parent, m.Value, e.Name ?? "Actor", e, (float)e.Scale, new[] { seq, "Idle_A" }.Where(s => !string.IsNullOrEmpty(s)));
+            if (trigger)
+            {
+                var root = Place(parent, m.Value, e.Name ?? "Actor", e, (float)e.Scale, Array.Empty<string>());
+                var t = new TriggerActor(this, m.Value, e, root) { Visible = visible };
+                t.PlayAnimation(seq);
+                TriggerActors.Add(t);
+            }
+            else Place(parent, m.Value, e.Name ?? "Actor", e, (float)e.Scale, new[] { seq, "Idle_A" }.Where(s => !string.IsNullOrEmpty(s)));
             Actors++;
         }
     }
@@ -171,7 +233,7 @@ public sealed class FieldNpcs
                 var row = table.Find(id);
                 // CQuestMaskTable::CheckNpc: a masked npc shows only within its quest stretch; a new character has no quests
                 if (masks != null && !masks.CheckNpc(fieldId, id, QuestMaskTable.NoQuests)) { Masked++; break; }
-                var m = row?.Kfm != null && kfmByName.TryGetValue(row.Kfm, out var ke) ? Model(ke) : null;
+                var m = row?.Kfm != null && kfmByName.TryGetValue(row.Kfm, out var ke) ? Model(NpcArchive, ke) : null;
                 if (m == null) { Missing++; continue; }
                 var idles = row.IdleActions.Where(a => a.StartsWith("Idle", StringComparison.OrdinalIgnoreCase)).Append("Idle_A");
                 var root = Place(parent, m.Value, $"Npc_{id}", e, row.Scale, idles, null, row.ShadowScale, GroundOffset(world, e) + PacketLift, FieldShadows.NpcKind(row));
@@ -218,7 +280,7 @@ public sealed class FieldNpcs
             int id = cands[^1].NpcId;
             foreach (var c in cands) { pick -= Math.Max(1, c.Weight); if (pick < 0) { id = c.NpcId; break; } }
             var row = table.Find(id);
-            var m = kfmByName.TryGetValue(row.Kfm, out var ke) ? Model(ke) : null;
+            var m = kfmByName.TryGetValue(row.Kfm, out var ke) ? Model(NpcArchive, ke) : null;
             if (m == null) { Missing++; GD.Print($"mob {id} ({row.Kfm}): no model"); continue; }
             var idles = row.IdleActions.Where(a => a.StartsWith("Idle", StringComparison.OrdinalIgnoreCase)).Append("Idle_A");
             float yaw = e.Bool("UseRotAsSpawnDir") ? (float)e.RotationDeg.Z : 0;
