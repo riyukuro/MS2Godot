@@ -30,4 +30,23 @@ public class FlashKeysTests
     {
         Assert.That(GameStrings.FlashKeys(Encoding.UTF8.GetBytes(Xml), "KR")["$s_b"], Is.EqualTo("x\ny"));
     }
+
+    [Test]
+    public void AnEmptyLocaleAppliesAndOnlyTheWholeNameMatches()
+    {
+        var m = GameStrings.FlashKeys(Encoding.UTF8.GetBytes(
+            "<ms2><key id=\"a\" value=\"all\" locale=\"\" /><key id=\"b\" value=\"na2\" locale=\"NA2\" /><key id=\"c\" value=\"na\" locale=\"NA\" /></ms2>"), "NA");
+        Assert.That(m["a"], Is.EqualTo("all"), "an empty locale attribute is no filter");
+        Assert.That(m.ContainsKey("b"), Is.False, "NA2 is not NA");
+        Assert.That(m["c"], Is.EqualTo("na"));
+        Assert.That(GameStrings.FlashKeys(Encoding.UTF8.GetBytes("<ms2><key id=\"b\" value=\"na2\" locale=\"NA2\" /></ms2>"), "NA2")["b"], Is.EqualTo("na2"));
+    }
+
+    [Test]
+    public void ARowWithoutValueIsItsOwnKeyAndAnEmptyIdIsAdded()
+    {
+        var m = GameStrings.FlashKeys(Encoding.UTF8.GetBytes("<ms2><key id=\"$s_x\" /><key id=\"\" value=\"blank\" /><key value=\"again\" /></ms2>"), "KR");
+        Assert.That(m["$s_x"], Is.EqualTo("$s_x"));
+        Assert.That(m[""], Is.EqualTo("again"), "no id keeps the previous row's key, the later text replaces");
+    }
 }

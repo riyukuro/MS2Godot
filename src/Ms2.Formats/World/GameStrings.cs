@@ -82,20 +82,27 @@ public sealed class GameStrings
     }
 
     /// <summary>
-    /// korFlash.xml as NiGFxLocalizeManager::ParseStringXml (@0x1422ebc80) reads it: every &lt;key&gt; whose locale attribute is empty or
-    /// equals the client's locale (case-insensitive) is added, the later row replacing an earlier one; the feature attribute is not
-    /// looked at. The "\\n" and "\\r" escapes of the value become line breaks.
+    /// korFlash.xml rows as NiGFxLocalizeManager::ParseStringXml (nigfxlocalizemanager.cpp:171) reads them. A row whose locale
+    /// attribute is set and differs (case-insensitive, whole name) from the client's locale is skipped; the feature attribute is
+    /// not looked at. A row without the value attribute gets its own key as text (XmlGetAttr returns 1 for a missing attribute and
+    /// the client then sets text = key); a row without an id keeps the previous row's key (the key variable is outside the loop);
+    /// an empty id is added as an empty key. The "\\n" and "\\r" escapes of a present value become line breaks; the later row
+    /// replaces an earlier one (SetAt). A key that is not in the map is the caller's: the C++ GetString gives "" for it, while the
+    /// Flash translator shows the key itself.
     /// </summary>
     public static Dictionary<string, string> FlashKeys(byte[] xml, string locale)
     {
         var map = new Dictionary<string, string>();
         using var xr = System.Xml.XmlReader.Create(new MemoryStream(xml));
+        string key = "";
         while (xr.Read())
         {
             if (xr.NodeType != System.Xml.XmlNodeType.Element || xr.Name != "key") continue;
             var rowLocale = xr.GetAttribute("locale");
             if (!string.IsNullOrEmpty(rowLocale) && !string.Equals(rowLocale, locale, StringComparison.OrdinalIgnoreCase)) continue;
-            if (xr.GetAttribute("id") is { } id && xr.GetAttribute("value") is { } v) map[id] = v.Replace("\\n", "\n").Replace("\\r", "\r");
+            if (xr.GetAttribute("id") is { } id) key = id;
+            var v = xr.GetAttribute("value");
+            map[key] = v == null ? key : v.Replace("\\n", "\n").Replace("\\r", "\r");
         }
         return map;
     }
