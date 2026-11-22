@@ -650,4 +650,42 @@ public class ItemTooltipExtrasTests
         Assert.That(Fill(0x80).Data.ContainsKey("itemQuestInfo"), Is.False);            // no local player
         Assert.That(ItemTooltip.QuestItemState(Array.Empty<QuestItemLink>()), Is.EqualTo(4));
     }
+
+    [Test]
+    public void ItemTooltipByIdFillsFromTheItemData()
+    {
+        var m = NewModel();
+        m.HasLocalPlayer = true;
+        var tip = new ItemTooltip(m, 0);
+        Assert.That(tip.FillById(11300451, 3), Is.True);
+        var d = m.Tables.Items.Get(11300451);
+        Assert.That(tip.Data["tooltip"], Is.EqualTo("export_common_tooltip_kindsItem"));
+        Assert.That(tip.Data["itemName"], Is.EqualTo(m.Tables.ItemName(11300451)));
+        Assert.That(tip.Data["itemGrade"], Is.EqualTo(3));
+        Assert.That(tip.Data["tooltipAlign"], Is.EqualTo(5));
+        Assert.That(tip.Data["iconPath"], Is.EqualTo(d.IconPath));
+        Assert.That(tip.Data["itemMovie"], Is.EqualTo(d.Movie));
+        Assert.That(tip.Data.ContainsKey("extraDescription"), Is.True);         // with a local player
+        Assert.That(tip.Data.ContainsKey("itemDescription") && tip.Data.ContainsKey("itemGuideDescription"), Is.True);
+        // the same rows as the item tooltip of a new item where the two agree (Item.Create takes the data's rank, 4 here;
+        // the by-id tooltip shows the rank it is given)
+        var it = Item.Create(m.Tables.Items, 11300451, 3);
+        Assert.That(it.Rarity, Is.EqualTo(4));
+        tip = new ItemTooltip(m, 0);
+        tip.FillById(11300451, it.Rarity);
+        var full = new ItemTooltip(m, 0);
+        full.Fill(it);
+        foreach (var key in new[] { "itemKinds", "itemCash", "itemSkin", "itemPiece", "itemPetSkin", "extraDescription", "statDescription" })
+            Assert.That(tip.Data.ContainsKey(key) ? Json(tip.Data[key]) : null,
+                Is.EqualTo(full.Data.ContainsKey(key) ? Json(full.Data[key]) : null), key);
+
+        tip = new ItemTooltip(m, 0x40);
+        Assert.That(tip.FillById(11300451, 0), Is.True);
+        Assert.That(tip.Data["itemGrade"], Is.EqualTo(1));                      // rank 0 shows grade 1
+        Assert.That(tip.Data.ContainsKey("itemMovie"), Is.False);               // flag 0x40: no movie
+        Assert.That(tip.Data["tooltipAlign"], Is.EqualTo(7));
+        Assert.That(new ItemTooltip(m, 0).FillById(1, 1), Is.False);            // no data
+    }
+
+    static string Json(object v) => System.Text.Json.JsonSerializer.Serialize(v);
 }

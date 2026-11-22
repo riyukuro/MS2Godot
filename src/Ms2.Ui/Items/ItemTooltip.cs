@@ -334,14 +334,19 @@ public sealed partial class ItemTooltip
     /// </summary>
     public void SetExtraDescription(Item item)
     {
-        if (!model.HasLocalPlayer) return;                                    // FUN_1409c6540() == 0
-        var d = item.Data;
-        if (d.IsInstallItem || d.Vip || d.Wedding) return;
         var (level, additional) = ItemLevels.Of(item) ?? (0, 0);
+        SetExtraDescription(item.Data, item.Rarity, level, additional);
+    }
+
+    /// <summary>FUN_1409d64a0 itself, by the item's data, rank and levels (the by-id tooltip passes level 0).</summary>
+    void SetExtraDescription(ItemData d, int rank, int level, int additional)
+    {
+        if (!model.HasLocalPlayer) return;                                    // FUN_1409c6540() == 0
+        if (d.IsInstallItem || d.Vip || d.Wedding) return;
         var rows = new List<object>();
-        AddItemLevelRow(rows, d, item.Rarity, level, additional);
+        AddItemLevelRow(rows, d, rank, level, additional);
         AddLevelLimitRow(rows, d);
-        AddNameRow(rows, d, item.Rarity);
+        AddNameRow(rows, d, rank);
         if (d.IsGemstone) AddGemPartRow(rows, d);                             // FUN_14053d840: FUN_1409df760
         AddJobLimitRows(rows, d);
         Data["extraDescription"] = rows;

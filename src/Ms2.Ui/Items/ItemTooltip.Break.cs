@@ -14,9 +14,17 @@ public sealed partial class ItemTooltip
         int itemId = item.ItemId;
         if (item.Record is { GachaDismantleId: not 0 } r) itemId = r.GachaDismantleId;      // CItem::FUN_140529640, m_dc
         int sockets = item.Record?.Socket?.Gems.Count ?? 0;                                    // GetOpenSlotCount
+        SetBreakIngredients(itemId, item.Rarity, sockets);
+    }
+
+    /// <summary>FUN_1409d8650 (astooltip.cpp:3330): a gacha box's coin (ItemGachaBoxTable::GetBox,
+    /// CItemBreakIngredientTable::GetGachaBox), else the break ingredients at the grade and socket count (GetIngredients),
+    /// listed by FUN_1409e7460.</summary>
+    void SetBreakIngredients(int itemId, int grade, int sockets)
+    {
         var ingredients = Tables.GachaBoxes.HasBox(itemId)
             ? Tables.BreakIngredients.GachaBox(itemId)
-            : Tables.BreakIngredients.Ingredients(itemId, item.Rarity, sockets);
+            : Tables.BreakIngredients.Ingredients(itemId, grade, sockets);
         if (ingredients != null) SetItemBreakIngredientList(ingredients);
     }
 
