@@ -60,7 +60,7 @@ public class DamageHitEffectTests
         Assert.That(fx[0].At.Y, Is.EqualTo(0f).Within(1e-3f));
         Assert.That(fx[0].At.Z, Is.EqualTo(60f).Within(1e-3f));
         OwnTagMagics.AlongAxes(new Vector3(0, -1, 0), out var ax, out var ay, out var az);
-        Assert.That((fx[0].AxisX, fx[0].AxisY, fx[0].AxisZ), Is.EqualTo((ax, ay, az)), "FUN_141467f60 of the aimed direction");
+        Assert.That((fx[0].AxisX, fx[0].AxisY, fx[0].AxisZ), Is.EqualTo((ax, ay, az)), "the transform's axes along the aimed direction");
         Assert.That(fx[0].CasterKind, Is.EqualTo(3), "another PC's");
         Assert.That(fx[1].File, Is.EqualTo("Remain.xml"));
         Assert.That(fx[1].ActorId, Is.EqualTo(TargetId), "SetActor(target)");
@@ -140,7 +140,7 @@ public class DamageHitEffectTests
         DamageHitEffects.Aim(target, false, owner, 3, 0f, RandMax, ref pos, ref d);
         Assert.That(pos, Is.EqualTo(new Vector3(100, 0, 50)), "no owner: the target's position plus its extent");
         DamageHitEffects.Aim(target, true, owner, 3, 0f, () => 0, ref pos, ref d);
-        Assert.That(pos.Z, Is.EqualTo(40f).Within(1e-3f), "FUN_14109ace0 = -1: the height times 0.8");
+        Assert.That(pos.Z, Is.EqualTo(40f).Within(1e-3f), "the rand draw at -1: the height times 0.8");
     }
 
     [Test]
@@ -154,8 +154,8 @@ public class DamageHitEffectTests
         var d = Damage();
         d.OwnerId = 77;
         var gone = Run(d, Attack(), new HitEffectThrottle());
-        Assert.That(gone, Has.Count.EqualTo(2), "an owner not in the field still plays (FUN_14146c990 tests only the hit object)");
-        Assert.That(gone[0].CasterKind, Is.EqualTo(0), "FUN_141bd19d0 of no object");
+        Assert.That(gone, Has.Count.EqualTo(2), "an owner not in the field still plays (the pair tests only the hit object)");
+        Assert.That(gone[0].CasterKind, Is.EqualTo(0), "the caster kind of no object");
         Assert.That(gone[0].At, Is.EqualTo(new Vector3(100, 0, 50)), "the aim without the owner: the target's position plus its extent");
         Assert.That(Run(Damage(), null, new HitEffectThrottle()), Is.Empty, "no attack damage (Init fails)");
         d = Damage();
@@ -224,7 +224,7 @@ public class DamageHitEffectTests
         var fx = RunSplash(Splash(6), Attack(), new HitEffectThrottle());
         Assert.That(fx, Has.Count.EqualTo(2));
         Assert.That(fx[0], Is.EqualTo(new DamageHitEffect("Hit.xml", 0, new Vector3(100, 0, 0), Vector3.UnitX, Vector3.UnitY,
-            Vector3.UnitZ, 0)), "the hit object's position, DAT_143a09600; mode 6 has no owner: kind 0");
+            Vector3.UnitZ, 0)), "the hit object's position with the unit axes; mode 6 has no owner: kind 0");
         Assert.That(fx[1].File, Is.EqualTo("Remain.xml"));
         Assert.That(fx[1].ActorId, Is.EqualTo(TargetId));
         Assert.That(RunSplash(Splash(6, hits: 0), Attack(), new HitEffectThrottle()), Has.Count.EqualTo(2),
@@ -286,7 +286,7 @@ public class DamageHitEffectTests
     {
         var t = new HitEffectThrottle();
         var fx = RunSplash(Splash(5), Attack(), t);
-        Assert.That(fx[0].CasterKind, Is.EqualTo(3), "FUN_141bd19d0 of the region skill's owner");
+        Assert.That(fx[0].CasterKind, Is.EqualTo(3), "the caster kind of the region skill's owner");
         Assert.That(fx[1].CasterKind, Is.EqualTo(3));
         var again = RunSplash(Splash(5), Attack(), t, now: 5100);
         Assert.That(again, Has.Count.EqualTo(1), "within the object gap only the remain plays");

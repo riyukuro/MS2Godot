@@ -105,13 +105,16 @@ void fragment() {
 
     /// <summary>
     /// An effect on an actor (CEffect SetActor, no transform of its own); nothing when the actor is gone. Each nif part goes
-    /// where CNifEffect::vfunc_3 (nifeffectparam.cpp:667) puts it by its attach type (<see cref="EffectPart.AttachKind"/>):
+    /// where CNifEffect::vfunc_3's attach switch (nifeffectparam.cpp:717) puts it by its attach type (<see cref="EffectPart.AttachKind"/>):
     /// - type 0 (AttachToOwnerNode, :1044): under the world effect root, at the actor's parent node's world transform taken
     ///   once at the start (<see cref="WorldPlace"/>); it does not follow the actor and plays to its own end after the
     ///   actor is removed;
     /// - the others (type 1 Node :1079, 2 Mesh :1118, 3/4 weapon): under the actor, so they follow it and go with it at once.
     /// Sound and light parts play at its place now.
-    /// STILL-OPEN: types 1-4 hang on the actor's root, not on the named node or mesh parent.
+    /// STILL-OPEN: types 1-4 hang on the actor's root, not on the named node or mesh parent, and their &lt;update&gt; bits
+    /// are not applied (FUN_14154c580, SeparateNode :1158). vfunc_11 (:943+) is skipped: on a stop, a notForceStop part
+    /// moves to the world root and plays on. onGround is not applied to type 0 parts (EffectNode::UpdateWorldData,
+    /// effectservice.cpp:971).
     /// </summary>
     public void PlayEffectOn(string xmlPath, Node3D actor, int casterKind)
     {
@@ -228,9 +231,9 @@ void fragment() {
     /// no transform from the actor at all: the remain's request has no transform (magicdata.cpp:2872), so it plays at the
     /// world origin. That is a client quirk, kept as is.
     /// </summary>
-    Transform3D WorldPlace(EffectPart part, Node3D actor)
+    internal Transform3D WorldPlace(EffectPart part, Node3D actor)
     {
-        if (!part.ApplyNodeTransform) return Transform3D.Identity;
+        if (!part.ApplyNodeTransform) return parent.GlobalTransform.AffineInverse();
         var w = NodeWorld(actor, part.ParentNode);
         if (!(part.ApplyTranslate && part.ApplyRotation && part.ApplyScale))
         {

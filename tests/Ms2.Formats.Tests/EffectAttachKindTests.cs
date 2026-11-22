@@ -4,7 +4,7 @@ using NUnit.Framework;
 namespace Ms2.Formats.Tests;
 
 /// <summary>
-/// The attach type CNifEffect::vfunc_3 switches on (nifeffectparam.cpp:667): ParseAttachType (:275) and attachToNode (:398).
+/// The attach type CNifEffect::vfunc_3 switches on (nifeffectparam.cpp:717): ParseAttachType (:275) and attachToNode (:398).
 /// </summary>
 public class EffectAttachKindTests
 {

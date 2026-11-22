@@ -28,7 +28,7 @@ public sealed class EffectPart
     public bool AttachToNode, ApplyNodeTransform;
     /// <summary>
     /// m_nAttachType: ParseAttachType of attachType (nifeffectparam.cpp:275: Node 1, Mesh 2, WeaponL 3, WeaponR 4, else 0,
-    /// CompareNoCase), set to 1 by attachToNode="true" (:398). CNifEffect::vfunc_3 (:667) switches on it: 0 puts the part
+    /// CompareNoCase), set to 1 by attachToNode="true" (:398). CNifEffect::vfunc_3 switches on it (:717): 0 puts the part
     /// under the world effect root (AttachToOwnerNode), the others under a node of the actor.
     /// </summary>
     public int AttachKind => AttachToNode ? 1 : AttachTypeOf(AttachType);

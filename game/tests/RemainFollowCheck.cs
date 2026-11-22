@@ -17,7 +17,7 @@ namespace Ms2Godot.Tests;
 /// - the effect on the second npc goes when the field node goes;
 /// - an actor that is gone (null) plays nothing.
 /// A type 0 effect (the staff attack remain) on the first npc goes under the field at the npc's place, stays there when
-/// the npc moves and outlives the npc's removal. The node effect is the first (in name order) whose nif parts are all
+/// the npc moves and outlives the npc's removal (<see cref="Places"/> has the other type 0 cases). The node effect is the first (in name order) whose nif parts are all
 /// type 1+ with a first part lasting at least 2 s, so a part does not end on its own during the check.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
@@ -28,6 +28,8 @@ public partial class RemainFollowCheck : Node3D
     readonly List<string> fails = new();
     Node3D field, fx, fieldFx, worldFx;
     const string WorldXml = "ch/weapon/staff/eff_staff_attack01_remain_01.xml";
+    const string OriginXml = "ch/skill/knight/eff_knight_holystrike_remain_01.xml";
+    EffectTable effects;
     NpcLayer npcs;
     CombatLayer combat;
     string xml;
@@ -52,7 +54,7 @@ public partial class RemainFollowCheck : Node3D
         var packs = PackSet.Shared(Settings.DataDir);
         var builder = new ModelBuilder(ModelBuilder.SharedSpec(Settings.NifXml), packs);
         var table = new NpcTable(packs);
-        var effects = new EffectTable(packs);
+        effects = new EffectTable(packs);
         field = new Node3D();
         AddChild(field);
         npcs = new NpcLayer(packs, builder, table, field);
@@ -125,7 +127,56 @@ public partial class RemainFollowCheck : Node3D
             Check(worldFx.GlobalPosition.DistanceTo(at) < 0.01f, "the type 0 effect followed its target");
         }
 
+        Places();
         npcs.Remove(1, false);
+    }
+
+    /// <summary>
+    /// The type 0 start place's other cases (CombatLayer.WorldPlace, AttachToOwnerNode nifeffectparam.cpp:1044-1072), on an
+    /// actor turned, scaled 2 and moved, with the field moved off identity:
+    /// - all bits give the node's world transform; rotation and scale masked off keep only its translation; translate masked
+    ///   off keeps only its rotation and scale;
+    /// - without applyNodeTransform the part is at the world origin, wherever the field is (the holy strike remain played
+    ///   on the actor starts there too);
+    /// - parentNode finds a node under the actor, else a skeleton bone, else falls back to the actor.
+    /// </summary>
+    void Places()
+    {
+        var actor = new Node3D { Position = new Vector3(40, 0, 30), Rotation = new Vector3(0, 1f, 0), Scale = new Vector3(2, 2, 2) };
+        field.AddChild(actor);
+        field.Position = new Vector3(10, 0, 0);
+        Transform3D World(EffectPart p) => field.GlobalTransform * combat.WorldPlace(p, actor);
+        Check(World(new EffectPart { ApplyNodeTransform = true }).IsEqualApprox(actor.GlobalTransform), "all bits: not the actor's world transform");
+        var t = World(new EffectPart { ApplyNodeTransform = true, ApplyRotation = false, ApplyScale = false });
+        Check(t.Basis.IsEqualApprox(Basis.Identity) && t.Origin.IsEqualApprox(actor.GlobalPosition), $"translate only gave {t}");
+        var r = World(new EffectPart { ApplyNodeTransform = true, ApplyTranslate = false });
+        Check(r.Origin.IsEqualApprox(Vector3.Zero) && r.Basis.IsEqualApprox(actor.GlobalBasis), $"rotation and scale only gave {r}");
+        var none = World(new EffectPart());
+        Check(none.IsEqualApprox(Transform3D.Identity), $"no applyNodeTransform starts at {none.Origin}, not the world origin");
+
+        var named = new Node3D { Name = "Eff_Body_World", Position = new Vector3(0, 50, 0) };
+        actor.AddChild(named);
+        Check(World(new EffectPart { ApplyNodeTransform = true, ParentNode = "Eff_Body_World" }).IsEqualApprox(named.GlobalTransform),
+            "the parentNode node was not used");
+        var sk = new Skeleton3D();
+        actor.AddChild(sk);
+        int b = sk.AddBone("Bip01 Head");
+        sk.SetBoneRest(b, new Transform3D(Basis.Identity, new Vector3(0, 70, 5)));
+        sk.ResetBonePoses();
+        var bone = sk.GlobalTransform * sk.GetBoneGlobalPose(b);
+        Check(!bone.IsEqualApprox(actor.GlobalTransform)
+            && World(new EffectPart { ApplyNodeTransform = true, ParentNode = "Bip01 Head" }).IsEqualApprox(bone), "the parentNode bone was not used");
+        Check(World(new EffectPart { ApplyNodeTransform = true, ParentNode = "No Such Node" }).IsEqualApprox(actor.GlobalTransform),
+            "a missing parentNode does not fall back to the actor");
+
+        var parts = effects.Get(OriginXml);
+        Check(parts != null && parts.Exists(p => p.Type == "nif") && parts.TrueForAll(p => p.Type != "nif" || (p.AttachKind == 0 && !p.ApplyNodeTransform)),
+            "the holy strike remain is not type 0 without applyNodeTransform");
+        int c0 = field.GetChildCount();
+        combat.PlayEffectOn(OriginXml, actor, 5);
+        var h = field.GetChildCount() > c0 ? field.GetChild(field.GetChildCount() - 1) as Node3D : null;
+        Check(h != null && h.GlobalPosition.IsEqualApprox(Vector3.Zero), $"the holy strike remain starts at {h?.GlobalPosition}, not the world origin");
+        field.Position = Vector3.Zero;
     }
 
     void AfterRemove()
