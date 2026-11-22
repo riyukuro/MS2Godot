@@ -78,7 +78,7 @@ public partial class TaxiStations : Node3D
     public static bool IsOpen(PackSet packs, int fieldId)
     {
         bool? home = null;
-        if (packs.Exists(FieldMeta.Archive, FieldMeta.Entry) && QuestMapGraph.SharedMeta(packs).TaxiStations.TryGetValue(fieldId, out bool h)) home = h;
+        if (FieldMeta.EntryOf(packs) != null && QuestMapGraph.SharedMeta(packs).TaxiStations.TryGetValue(fieldId, out bool h)) home = h;
         return IsOpen(fieldId, home, Ui.StubHudData.Instance.FoundTaxis, null);   // STILL-OPEN: the house-taxi privilege
     }
 

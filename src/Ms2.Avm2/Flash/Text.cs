@@ -583,7 +583,7 @@ public class AsTextField : AsInteractiveObject
         double x = 2 + LineWidth(line[..col], start);
         // the field's paragraph align moves the line inside the box (the 2 px gutter either side)
         double free = Math.Max(0, Box.W - 4 - lineW);
-        switch (Format?.align as string) { case "center": x += free / 2; break; case "right" or "end": x += free; break; }
+        switch ((Format?.align as string)?.ToLowerInvariant()) { case "center": x += free / 2; break; case "right": x += free; break; }   // HtmlText.Build maps right/center/justify, anything else is left
         double w = col < line.Length ? TextMeasure.Width(FontName, Size, line[col].ToString()) : TextMeasure.Width(FontName, Size, Text[i].ToString());
         // the first line sits at the vertical align's top, a line with IMG chars has its own height (ImageTextH)
         double top = FirstLineTop(spans.Count) - Box.Y, y = top + k * (lh + Leading);

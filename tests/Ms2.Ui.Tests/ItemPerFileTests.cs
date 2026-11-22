@@ -34,6 +34,19 @@ public class ItemPerFileTests
     }
 
     [Test]
+    public void AKmsMissBuildsNoIndex()
+    {
+        var d = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
+        var packs = new PackSet(d);
+        if (!packs.Exists("Xml", "itemdata/150.xml")) Assert.Ignore("no itemdata/ files in this data");
+        var t = new ItemDataTable(packs);
+        Assert.That(t.Get(15099999), Is.Null, "an id that its itemdata file does not hold");
+        Assert.That(t.Get(99900001), Is.Null, "an id whose itemdata file does not exist");
+        Assert.That(t.PerItemIndexCount, Is.Zero);
+    }
+
+    [Test]
     public void Gms2ItemsLoadFromTheirOwnFiles()
     {
         var d = Environment.GetEnvironmentVariable("MS2_DATA");

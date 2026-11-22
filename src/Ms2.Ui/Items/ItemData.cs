@@ -400,6 +400,8 @@ public sealed class ItemDataTable
     public int? WornLayer(int itemId) => Get(itemId) is { ItemPreset: not 0 } d ? (d.HasSkinType ? 1 : 0) : null;
 
     readonly PackSet packs;
+    bool hasItemdata;
+    static string entry0(int file) => $"itemdata/{file:000}.xml";
     readonly Dictionary<int, Dictionary<int, ItemData>> files = new();
 
     public static readonly ItemDataTable Empty = new(null);
@@ -415,7 +417,9 @@ public sealed class ItemDataTable
         {
             rows = new();
             string entry = $"itemdata/{file:000}.xml";                 // LoadItemDataFile: "{0:03d}.xml"
-            if (packs.Exists("Xml", entry))
+            bool present = packs.Exists("Xml", entry);
+            hasItemdata |= present;
+            if (present)
                 using (var r = Ms2.Formats.Text.XmlRows.Open(packs.Read("Xml", entry)))
                 {
                     // the root's <item> children, each read as its own element (no document of the whole file)
@@ -437,7 +441,7 @@ public sealed class ItemDataTable
             files[file] = rows;
         }
         if (rows.TryGetValue(id, out var d)) return d;
-        return PerItem(id);
+        return hasItemdata || packs.Exists("Xml", entry0(file)) ? null : PerItem(id);   // a KMS miss: itemdata/ exists, so no per-item entries
     }
 
     /// <summary>
