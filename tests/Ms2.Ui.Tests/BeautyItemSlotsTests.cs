@@ -64,4 +64,16 @@ public class BeautyItemSlotsTests
         s.WornPairSlot = _ => 0;
         Assert.That((int)s.SlotOfId(30), Is.EqualTo(5));
     }
+
+    [Test]
+    public void ANewPreviewItemTakesTheDataRankAndTheSlotOfItsId()
+    {
+        var (s, items) = Make();
+        items[40] = new ItemData { Type = 1, Subtype = 0x16, ItemPreset = 4, Rank = 3 };
+        items[41] = new ItemData { Type = 1, Subtype = 5, ItemPreset = 4 };
+        var a = s.NewItem(40);
+        Assert.That((a.Id, a.Rarity, (int)a.Slot), Is.EqualTo((40, 3, 8)));
+        Assert.That(s.NewItem(41).Rarity, Is.EqualTo(1));
+        Assert.That(s.NewItem(99), Is.Null);
+    }
 }

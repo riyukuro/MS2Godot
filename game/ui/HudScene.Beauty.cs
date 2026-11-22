@@ -18,6 +18,7 @@ public partial class HudScene
     readonly BeautyShopFlow beautyFlow = new();
     readonly BeautyStyleFlow beautyStyleFlow = new();
     MovieDialog beautyMovie, beautyStyleMovie;
+    long beautyPreviewUid;
     Action unwatchBeauty;
 
     bool BeautyOpen => beautyFlow.IsOpen;
@@ -68,8 +69,8 @@ public partial class HudScene
     /// 3D avatar copy redraws from. Null without a worn item (CloneItems::Init @0x140ccf010 fails), so the flows stay shut as for
     /// no Customize. STILL-OPEN: the packets the Customize sends (Equipment::SendColors / SendAdded / SendModified / SendRemoved)
     /// need the free-try byte, the sale context and CItem::WriteItemBody, none recovered, so they stay unset and the commit does
-    /// not send them; new preview items (FUN_140523c40) and the worn-pair slot of a hand item (FUN_141420b30) stay unset, so a
-    /// preview that needs one does nothing.
+    /// not send them; the worn-pair slot of a hand item (FUN_141420b30) stays unset, so such an item's slot is unknown and its
+    /// preview does nothing.
     /// </summary>
     BeautyCustomize CreateBeautyCustomize(Ms2Godot.Net.LiveSession live)
     {
@@ -81,6 +82,8 @@ public partial class HudScene
             IsTopBottom = i => slots.IsTopBottom(tables.Items.Get(i.Id)),
             IsTwoHanded = i => slots.IsTwoHanded(tables.Items.Get(i.Id)),
             SlotOfId = slots.SlotOfId,
+            NewItem = slots.NewItem,
+            NextUid = () => --beautyPreviewUid,   // GenerateUniqueId is not recovered: a preview uid never meets a real one
         };
     }
 

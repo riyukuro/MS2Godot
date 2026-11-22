@@ -78,4 +78,17 @@ public sealed class BeautyItemSlots
         }
         return (EquipSlot)ModelOf(d).FirstSlotType;
     }
+
+    /// <summary>
+    /// CloneItems::CreateItem's new item (customize.cpp:1000): CItem::FUN_140523c40(id, 1, 0) (item.cpp:2759) takes the rank from
+    /// the item data (1 when it has none) and FUN_140526c10 sets the slot of FUN_141420f10. Null for an unknown item (the client
+    /// logs and returns false). The uid is set by the caller (GenerateUniqueId). STILL-OPEN: CreateExtraData's default colours
+    /// and the item's status, socket and transfer blocks are not built; the record keeps its zero colour.
+    /// </summary>
+    public EquipItem NewItem(int itemId)
+    {
+        var d = data(itemId);
+        if (d == null) return null;
+        return new EquipItem { Id = itemId, Rarity = d.Rank == 0 ? 1 : d.Rank, Slot = SlotOfId(itemId) };
+    }
 }
