@@ -35,6 +35,9 @@ public sealed class SkillMotion
     /// </summary>
     public string LoopEffect, SplashInvokeEffect, SplashEndEffect, SplashDurationCastEffect;
     public bool IgnoreOptimalHideCastEffect, SplashCastEffectStartDelay;
+    /// <summary>The motion's push cylinder (SkillMotionData::Load, skillleveldata.cpp:1197-1201), the force zone
+    /// <see cref="ForceZone"/> reads; all 0 without the attributes.</summary>
+    public PushCylinder PushCylinder;
 }
 
 /// <summary>
@@ -157,6 +160,8 @@ public sealed class SkillTable
                         mo.MoveDistance = Float(m, "movedistance");
                         mo.MoveAngle = Float(m, "moveangle");
                         if (uint.TryParse((string)m.Attribute("ignoreCollisionGroups"), out uint ignore)) mo.IgnoreCollisionGroups = ignore;
+                        mo.PushCylinder = new PushCylinder(Float(m, "pushCylinderVelH"), Float(m, "pushCylinderVelV"), Float(m, "pushCylinderOuter"),
+                            Float(m, "pushCylinderInner"), Float(m, "pushCylinderHeight"));
                         foreach (var a in m.Elements("attack")) mo.AttackPoints.Add((string)a.Attribute("point") ?? "");
                         foreach (var d in m.Descendants("damage"))
                             if ((string)d.Attribute("effectHit") is { Length: > 0 } eh) mo.HitEffects.Add(eh);

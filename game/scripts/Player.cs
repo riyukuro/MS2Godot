@@ -647,10 +647,18 @@ public partial class Player : CharacterBody3D
             // ground and not touching down (pcbase.cpp:2544-2556). StopJump's timer reset holds a warp's first frames.
             if (State == MoveState.Fall && !InAirFor(MoveConfig.IdleFallDelay)) { v.X = 0; v.Z = 0; }
         }
+        // PCBase::vfunc_68 (pcbase.cpp:1771-1775, 1793): the force zone's move is added to the frame's; a rising zone sets
+        // bNoVelocity, which drops the controller's own step (FUN_1412407f0: the gravity, jump or lift step) while the
+        // state's move stays. The push is in field units here, as the body moves; the client's 0.01 is its PhysX scale.
+        // STILL-OPEN: in the jump and fall states the client's horizontal drift is part of that step too, and goes with it.
+        var push = ForcePush(dt, out bool lifted);
+        if (lifted) v.Y = 0f;
         Velocity = skillMove == Vector3.Zero ? v : v + skillMove / dt;
 
         // GameObjectController::Move: the controller's up / side / down move by the frame's displacement
-        var firstHit = MoveStep(v * dt + skillMove, dt);
+        var delta = v * dt + skillMove + push;
+        var firstHit = MoveStep(delta, dt);
+        if (push != Vector3.Zero && delta != Vector3.Zero) syncPushed = true;   // vfunc_68: a push that moved calls vfunc_110 (pcbase.cpp:1820-1823)
 
         // m_unk_c68 is taken from the first move's flags, before the world box's slide (pcbase.cpp:1835-1840 vs 1844-1862)
         wallHit = (firstHit & NxController.Hit.Sides) != 0 && (firstHit & NxController.Hit.Down) == 0 && v.Y < 0;
@@ -658,6 +666,25 @@ public partial class Player : CharacterBody3D
         {
             // the controller stays under the ceiling until the jump curve comes back down
         }
+    }
+
+    /// <summary>The field's region skill objects, the force zones WorldService::FUN_141bc8420 reads first; null without them.</summary>
+    public Ms2.Formats.World.RegionSkillObjects ForceRegions;
+    /// <summary>The npc force zones FUN_141bc8420 reads next (npcs in the skill state with their cast's push cylinder).
+    /// STILL-OPEN: nothing fills it yet: the npcs' state (0x10) and their cast record are not tracked (NpcLayer).</summary>
+    public readonly List<Ms2.Formats.World.ForceZone.Source> ForceNpcs = new();
+
+    /// <summary>WorldService::FUN_141bc8420 for the own player: the frame's push in Godot axes (Y up), zero without a zone.
+    /// <paramref name="lifted"/> is vfunc_68's bNoVelocity set by a rising zone.
+    /// STILL-OPEN: only Integrate's states take it; the climb, ladder, rope, hold and revival moves add no push yet.</summary>
+    Vector3 ForcePush(float dt, out bool lifted)
+    {
+        lifted = false;
+        if (ForceRegions == null && ForceNpcs.Count == 0) return Vector3.Zero;
+        var g = GlobalPosition;
+        if (!Ms2.Formats.World.ForceZone.Step(new System.Numerics.Vector3(g.X, -g.Z, g.Y), DeadFlag, dt, ForceRegions, ForceNpcs, out var f, out lifted))
+            return Vector3.Zero;
+        return new Vector3(f.X, f.Z, -f.Y);
     }
 
     /// <summary>

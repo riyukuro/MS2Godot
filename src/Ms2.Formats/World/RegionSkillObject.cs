@@ -127,6 +127,8 @@ public sealed class RegionSkillObjects
 {
     readonly Dictionary<int, RegionSkillObject> objects = new();
     public IReadOnlyDictionary<int, RegionSkillObject> Objects => objects;
+    /// <summary>The objects, enumerated without an allocation (the per-frame force zone search).</summary>
+    public Dictionary<int, RegionSkillObject>.ValueCollection Values => objects.Values;
     public int DroppedDuplicates;
 
     public bool Add(RegionSkillObject o)
