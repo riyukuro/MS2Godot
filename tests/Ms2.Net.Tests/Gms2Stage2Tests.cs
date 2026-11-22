@@ -58,7 +58,8 @@ public class Gms2Stage2Tests {
         t.WriteInt(123456); t.WriteByte(1); t.WriteLong(0); t.WriteLong(9); t.WriteInt(8); t.WriteByte(0); t.WriteByte(0);
         var r = Reader(t);
         var d = SkillDamage.Read(r, Gms);
-        Assert.That((d.CastUid, d.OwnerId, d.SkillId, d.ProjectileCount), Is.EqualTo((5L, 7, 1001, 1)));
+        Assert.That((d.CastUid, d.OwnerId, d.SkillId, d.ProjectileCount, d.ServerTick), Is.EqualTo((5L, 7, 1001, 1, 123456)));
+        Assert.That((d.Projectiles[0].Serial, d.Projectiles[0].TargetId), Is.EqualTo((9L, 8)));
         Assert.That(r.Available, Is.EqualTo(0));
 
         var dot = new ByteWriter();

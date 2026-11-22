@@ -24,8 +24,13 @@ public sealed class SkillDamage {
     public int TargetId, BuffId; public Hit DotHit;
     // mode 5
     public int RegionId;
-    // mode 0
+    // mode 0 (FUN_14171c1d0 @0x14171c1d0, scenestategame.cpp:5511): the tag id (CastUid), owner, skill, level, the record's
+    // motion (Motion, nSrcLevel) and attack (AttackPoint, nSrcIndex), the start (Position), the direction (MagicDirection),
+    // bServer (FromServer; GMS2 then has an i32 server tick, ServerTick), the record count (ProjectileCount) and the records
+    // as their chains (Projectiles, see BuildChains)
     public int ProjectileCount;
+    public Vector3 MagicDirection; public bool FromServer; public int ServerTick;
+    public List<SkillDamageTarget> Projectiles;
     // mode 4 (FUN_14171d820 @0x14171d820, scenestategame.cpp:5685): TargetId and OwnerId in the client's names and read
     // order, the buff (BuffId), three values read as u32 and whether they show; the numbers go on OwnerId's object
     // (vfunc_111 on pOwner with TargetId as its other id)
@@ -42,6 +47,36 @@ public sealed class SkillDamage {
 
     public static SkillDamage Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
 
+    /// <summary>
+    /// FUN_14171c1d0's tag tree from mode 0's records (parent, serial m_nTagSub, object m_nCasterId, hit m_n84, bounce m_n80),
+    /// in packet order: a record whose parent is 0 is a root (arrRoots, and mapTags[serial] = it); one with a parent (an
+    /// unsigned compare, nParent &gt; 0) is made only when the parent is in mapTags, and then becomes the parent's m_spLinked (a
+    /// later link of the same parent replaces it) and mapTags[serial]. Each root's chain is its m_spLinked walk.
+    /// A root's bounce byte is read but not kept (SkillDamageTarget has none); Init's failure (an unknown skill or level, the
+    /// same for every record) is the caller's check.
+    /// </summary>
+    public static List<SkillDamageTarget> BuildChains(ReadOnlySpan<(long parent, long serial, int target, byte hit, byte bounce)> recs) {
+        var next = new int[recs.Length];
+        var roots = new List<int>();
+        var bySerial = new Dictionary<long, int>();
+        for (int i = 0; i < recs.Length; i++) {
+            next[i] = -1;
+            var (parent, serial, _, _, _) = recs[i];
+            if (parent != 0) {
+                if (!bySerial.TryGetValue(parent, out int p)) continue;
+                next[p] = i;
+            } else roots.Add(i);
+            bySerial[serial] = i;
+        }
+        var list = new List<SkillDamageTarget>(roots.Count);
+        foreach (int root in roots) {
+            var links = new List<SkillDamageLink>();
+            for (int j = next[root]; j >= 0; j = next[j]) links.Add(new SkillDamageLink(recs[j].serial, recs[j].target, recs[j].bounce, recs[j].hit));
+            list.Add(new SkillDamageTarget(recs[root].serial, recs[root].target, recs[root].hit, links));
+        }
+        return list;
+    }
+
     /// <summary>GMS2 (upstream SkillDamagePacket): mode 0 has an i32 server tick after the bool, mode 3 ends in an i32 hp amount instead of an i64.
     /// STILL-OPEN: the GMS2 layouts of modes 4, 7 and 8 are not known; they stay Raw there, so a different layout cannot throw.</summary>
     public static SkillDamage Read(ByteReader r, ProtocolProfile profile) {
@@ -53,10 +88,13 @@ public sealed class SkillDamage {
         }
         switch (d.Mode) {
             case 0: {
-                d.CastUid = r.ReadLong(); d.OwnerId = r.ReadInt(); d.SkillId = r.ReadInt(); d.Level = r.ReadShort(); r.ReadByte(); r.ReadByte();
-                d.Position = r.ReadVec3S(); r.ReadVec3(); r.ReadByte(); if (gms) r.ReadInt();
+                d.CastUid = r.ReadLong(); d.OwnerId = r.ReadInt(); d.SkillId = r.ReadInt(); d.Level = r.ReadShort();
+                d.Motion = r.ReadByte(); d.AttackPoint = r.ReadByte();
+                d.Position = r.ReadVec3S(); d.MagicDirection = r.ReadVec3(); d.FromServer = r.ReadByte() != 0; if (gms) d.ServerTick = r.ReadInt();
                 d.ProjectileCount = r.ReadByte();
-                for (int i = 0; i < d.ProjectileCount; i++) { r.ReadLong(); r.ReadLong(); r.ReadInt(); r.ReadByte(); r.ReadByte(); }
+                var recs = new (long parent, long serial, int target, byte hit, byte bounce)[d.ProjectileCount];
+                for (int i = 0; i < recs.Length; i++) recs[i] = (r.ReadLong(), r.ReadLong(), r.ReadInt(), r.ReadByte(), r.ReadByte());
+                d.Projectiles = BuildChains(recs);
                 break;
             }
             case 1: {
