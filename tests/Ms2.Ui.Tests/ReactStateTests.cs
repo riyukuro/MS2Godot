@@ -75,6 +75,18 @@ public class ReactStateTests
     }
 
     [Test]
+    public void WithoutTheCurrentStateDataTheCastKeepsTheDefaultTimeAndCaption()
+    {
+        // CReactor::GetReactorInfo (reactor.cpp:251) returns before m_nReactTimeMSec and m_strAction without the state's data
+        var (st, host, f, r) = Start();
+        f.Update(7, new ReactorState(5, 0, new long[0], 0));
+        Assert.That(r.State, Is.Null);
+        Assert.That(st.Begin(ReactState.KindReact, r.Data, "box"), Is.True);
+        Assert.That(host.Cast.Duration, Is.EqualTo(0), "not the data's reactTimeMSec 3000");
+        Assert.That(host.Cast.Text, Is.EqualTo(""));
+    }
+
+    [Test]
     public void TheDataAnimationWinsOverThePick()
     {
         var (st, host, _, r) = Start();
@@ -166,6 +178,31 @@ public class ReactStateTests
     }
 
     [Test]
+    public void OnReactorModeFiveStartsTheCreateAnimationOnlyWithTheOwnPc()
+    {
+        var (st, host, f, _) = Start();
+        host.HasPlayer = false;
+        Assert.That(st.BeginCreate(f.DataOf(40)), Is.False, "no local pc: assert and return");
+        Assert.That(st.Active, Is.False);
+        Assert.That(host.Anims, Is.Empty);
+
+        host.HasPlayer = true;
+        Assert.That(st.BeginCreate(f.DataOf(41)), Is.False, "unknown reactor data");
+        Assert.That(st.BeginCreate(f.DataOf(40)), Is.True);
+        Assert.That(host.Anims, Is.EqualTo(new[] { "C_A" }));
+        Assert.That(st.CurStateId(1), Is.EqualTo(ReactState.StateId));
+        Assert.That(host.Listener, Is.Null);
+        st.Tick(new Vector3(9999, 0, 0), false);
+        Assert.That(st.Active, Is.True, "no target: no reach check");
+        st.SequenceEnded();
+        Assert.That(st.Active, Is.False, "EndOfSequence: back to idle");
+
+        st.BeginCreate(f.DataOf(40));
+        st.Tick(Vector3.Zero, true);
+        Assert.That(st.Active, Is.False, "a move ends it (state 2)");
+    }
+
+    [Test]
     public void ARunningReactRefusesANewOneThroughTheStateGate()
     {
         var (st, _, _, r) = Start();
@@ -192,6 +229,74 @@ public class ReactStateTests
         Assert.That(taxi.Poll(true, false, true, id, station, null, 2000001, found), Is.True,
             "TaxiStationAction::vfunc_1 refuses only 0x25");
         Assert.That(InteractKey.StateId(null, null, null, 1), Is.EqualTo(1), "no react state yet");
+    }
+
+    static FieldEntity InteractEntity(string id, int rowId)
+    {
+        var raw = new XEntity { Id = id, ModelName = "MS2InteractObject", Name = "obj_" + id };
+        raw.Props["interactID"] = rowId.ToString();
+        raw.Props["Position"] = "0, 0, 0";
+        raw.Props["Rotation"] = "0, 0, 0";
+        var flat = new FlatModel { Name = "MS2InteractObject" };
+        flat.Mixins.Add("MS2InteractObject");
+        return new FieldEntity { Raw = raw, Flat = flat };
+    }
+
+    [Test]
+    public void AServerStateLeavesTheReactAndTheInteractionCastsWithoutASend()
+    {
+        var me = new MyCharacter();
+        var u = new FieldAddUser { ObjectId = 9, User = new UserBlock { Name = "a" } };
+        u.Stats[0].Health = 500; u.Stats[2].Health = 500;
+        me.Apply(u);
+        var (st, host, _, r) = Start();
+        var objHost = new LiveInteractObjectsTests.Host();
+        var objects = new LiveInteractObjects(objHost, new InteractObjectTable(new Dictionary<int, InteractObjectRow>
+        {
+            [301] = new() { Id = 301, Type = 1, InteractionDistance = 150, ReactTimeMs = 2000 },
+        }));
+        objects.Attach(new[] { InteractEntity("box-1", 301) });
+        objects.Apply(new InteractObjectMessage { Mode = InteractObjectMessage.ModeState, Name = "box-1", State = 1, Kind = 1 });
+        var npcHost = new LiveInteractNpcTests.Host();
+        var npcs = new LiveInteractNpc(npcHost);
+        npcs.Add(7, LiveInteractNpcTests.Row(), talkable: true, new Ms2.Formats.Model.Vec3(100, 0, 0));
+        me.StateEntered += s => InteractKey.LeaveForServerState(s, objects, npcs, st);
+        var at = new Ms2.Formats.Model.Vec3(0, 0, 0);
+
+        st.Begin(ReactState.KindReact, r.Data, "box");
+        Assert.That(me.ApplyUserState(9, 0x10), Is.False);
+        Assert.That(st.Active, Is.False, "vfunc_59(0x10) leaves StateReact while the move state is still idle");
+        Assert.That(host.Cancels, Is.EqualTo(1), "vfunc_5 cancels the bar");
+        st.OnCastingFinished();
+        st.Tick(new Vector3(100, 0, 0), false);
+        Assert.That(host.Sent, Is.Empty, "no StateReact after the server's state");
+
+        st.Begin(ReactState.KindReact, r.Data, "box");
+        me.ApplyUserState(9, 0x3d);
+        Assert.That(st.Active, Is.False, "StateReact::vfunc_25 is false: the same state leaves it too");
+
+        objects.Poll(at);
+        Assert.That(objects.Use(at), Is.True);
+        npcs.Poll(at);
+        Assert.That(npcs.Use(), Is.True);
+        me.ApplyUserState(9, 0x1a);
+        Assert.That(objects.IsCasting, Is.False, "StateInteraction is left");
+        Assert.That(objHost.CastCancels, Is.EqualTo(1));
+        Assert.That(npcs.IsCasting, Is.True, "State::vfunc_25 keeps StateInteractionNpc for 0x1a");
+        me.ApplyUserState(9, 0xc);
+        Assert.That(npcs.IsCasting, Is.False, "the death state leaves it");
+        Assert.That(npcHost.Cancels, Is.EqualTo(1));
+        npcHost.NowMs += 10_000;
+        objHost.NowMs += 10_000;
+        npcs.Tick(at, false);
+        objects.Tick(at, false);
+        Assert.That(npcHost.Sent, Is.Empty);
+        Assert.That(objHost.Sent, Has.Count.EqualTo(1), "only the start request, never the complete");
+
+        Assert.That(me.ApplyUserState(9, 0x23), Is.False);
+        st.Begin(ReactState.KindReact, r.Data, "box");
+        me.ApplyUserState(9, 0x23);
+        Assert.That(st.Active, Is.True, "an unregistered state is not entered and leaves nothing");
     }
 
     [Test]

@@ -130,6 +130,8 @@ public partial class LiveSession : Node
         BattleRecords.PetOwnerOf = id => remote?.Tracker.PetOwnerOf(id) ?? 0;
         // battlerecordmanager.cpp:188: the room id set, its row found, and the row's chaosDamageMeter
         BattleRecords.ChaosRoomMeter = () => dungeonRoomId != 0 && DungeonRoomOf?.Invoke(dungeonRoomId) is { ChaosDamageMeter: true };
+        // the server's state change leaves the running interaction or react state
+        Me.StateEntered += st => InteractKey.LeaveForServerState(st, InteractObjects, InteractNpcs, reactState);
     }
     /// <summary>CGroupChatManager's chats from the group chat packets (0x8B); live only. The HUD sets its texts and its browser.</summary>
     public readonly Ms2.Ui.GroupChatBook GroupChats = new();
@@ -1103,6 +1105,7 @@ public partial class LiveSession : Node
         player.SetBattleStance(SelfInBattle);
         player.ServerTick = () => game?.Session.ServerTick ?? 0;
         SyncDeadFlag();   // an own FieldAddUser with no health: the flag, no state (scenestategame.cpp:11185)
+        player.InteractAnimEnded += () => reactState?.SequenceEnded();
         player.StateSyncOut += records =>
         {
             if (game == null) return;

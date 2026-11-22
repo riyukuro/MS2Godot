@@ -885,6 +885,10 @@ public partial class Player : CharacterBody3D
     string interactAnim;
     bool interactLoop;
 
+    /// <summary>A non-loop interact motion played to its end (the state's EndOfSequence): StateReact 0x9e returns to idle
+    /// on it (statereact.cpp:263-275).</summary>
+    public event System.Action InteractAnimEnded;
+
     /// <summary>StateInteraction::FUN_1417d25e0 / vfunc_4 0x8b / 0x8c: plays a gather/use motion from the body's sequences.</summary>
     public void StartInteractAnim(string animName, bool loop)
     {
@@ -910,8 +914,10 @@ public partial class Player : CharacterBody3D
         {
             if (State != MoveState.Idle || (!interactLoop && !Anim.IsPlaying()))
             {
+                bool ended = State == MoveState.Idle;
                 interactAnim = null;
                 interactLoop = false;
+                if (ended) InteractAnimEnded?.Invoke();
             }
             else return;
         }

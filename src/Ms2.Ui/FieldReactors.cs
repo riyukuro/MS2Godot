@@ -201,6 +201,10 @@ public sealed class FieldReactors
 
     public int Count => byId.Count;
     public Reactor Get(int objectId) => byId.GetValueOrDefault(objectId);
+
+    /// <summary>CReactorDataTable::GetReactorData: the reactor data of <paramref name="reactorId"/>, null when unknown or
+    /// without the tables.</summary>
+    public ReactorTable.Reactor DataOf(int reactorId) => table?.Get(reactorId);
     /// <summary>The reactors in the name map's order.</summary>
     public IReadOnlyList<Reactor> ByName => byName;
 

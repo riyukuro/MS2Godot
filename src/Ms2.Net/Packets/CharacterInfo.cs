@@ -294,6 +294,8 @@ public sealed class MyCharacter {
     /// own (moving, skills, the spawn state) are not modelled, so a state left that way is still the one here.
     /// </summary>
     public int State { get; private set; }
+    /// <summary>The server put the player into <see cref="State"/> (the client's state manager left the one it was in).</summary>
+    public event Action<int> StateEntered;
 
     /// <summary>The ids PC registers in its state manager (pc.cpp:668-721); ChangeState ignores any other.</summary>
     static readonly HashSet<int> RegisteredStates = new() {
@@ -321,6 +323,7 @@ public sealed class MyCharacter {
         if (DeathOnlyStates && !(state == 0xc || state == 0x18 || state == 0x3f)) return false;
         if (!RegisteredStates.Contains(state)) return false;
         State = state;
+        StateEntered?.Invoke(state);
         return true;
     }
 

@@ -94,11 +94,26 @@ public sealed class ReactState : ICastingEventListener
             End();      // vfunc_59(1)
             return false;
         }
-        var param = new CastingParam { Duration = r.Data?.ReactTimeMSec ?? 0 };
+        // CReactor::GetReactorInfo (reactor.cpp:251): without the current state's data it returns before it sets the action
+        // string and m_nReactTimeMSec, so the cast keeps the defaults
+        var param = new CastingParam();
         var st = r.Data?.StateAt(r.StateIndex);
-        if (st != null) param.Text = host.CommonByKey(st.ActionStringKey) ?? "";
+        if (st != null)
+        {
+            param.Text = host.CommonByKey(st.ActionStringKey) ?? "";
+            param.Duration = r.Data.ReactTimeMSec;
+        }
         host.StartCasting(this, param);
         return true;
+    }
+
+    /// <summary>CSceneStateGame::OnReactor mode 5 (@0x14173c870, scenestategame.cpp:6756-6767): without the local pc an
+    /// assert and nothing; else the own pc's vfunc_59(0x3d, StateReactData(id, "", ""), 0x9e, 1), the create animation with
+    /// no target. It ends with the animation's sequence (<see cref="SequenceEnded"/>) or a move.</summary>
+    public bool BeginCreate(ReactorTable.Reactor data)
+    {
+        if (!host.HasPlayer) return false;
+        return Begin(KindCreate, data, "");
     }
 
     /// <summary>StateReact::OnCastingFinished (@0x140b8dfb0): m_n48 = 1.</summary>

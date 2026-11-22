@@ -121,7 +121,8 @@ public partial class LiveSession
                 foreach (var (itemId, grade) in m.Rewards) ReactorRewardSink?.Invoke(itemId, grade);
                 break;
             case 5:
-                GD.Print($"live: STILL-OPEN reactor {m.ReactorId}: the own PC's StateReact create animation (vfunc_59(0x3d, ..., 0x9e, 1))");
+                if (!React.BeginCreate(Reactors?.DataOf(m.ReactorId)))
+                    GD.Print($"live: reactor {m.ReactorId}: no create animation (no own pc or no reactor data)");
                 break;
         }
     }
@@ -175,6 +176,7 @@ public partial class LiveSession
                 React.Begin(ReactState.KindReact, r.Data, r.Name);
                 break;
             case FieldReactors.UseOutcome.RideOff:
+                // never reached live, here as in the client: the poll's CanReact and FUN_140b7a5e0 need state 1, a rider is 0x21
                 // RideOffActionReact(0) with the reactor's id and name, MyPC::SendRequestRideMode1. STILL-OPEN: the ResponseRide
                 // answer (OnResponseRide mode 1, MyPC::vfunc_121 case 0x14) is not ported; there the client enters state 0x19
                 // with the StateReactData and kind 0x8a, StateInteraction's dynamic_cast of it fails and it takes the nearest

@@ -33,6 +33,19 @@ public static class InteractKey
         return react != null ? react.CurStateId(id) : id;
     }
 
+    /// <summary>The server put the own pc into a state (<see cref="Ms2.Net.Packets.MyCharacter.StateEntered"/>: OnUserState,
+    /// OnDeadUser, OnRevival): MyPC::vfunc_59 -> CStateManager::ChangeState leaves the current state, so a running
+    /// StateInteraction (0x19, stateinteractdata.cpp:330), StateInteractionNpc (0x1a, :613) or StateReact (0x3d) runs its
+    /// vfunc_5, which cancels the bar without a send. The same state again leaves it too unless the state's vfunc_25 keeps
+    /// it (statemanager.cpp:297): StateInteraction and StateReact return false, StateInteractionNpc has State::vfunc_25,
+    /// which returns true, so a server 0x1a keeps the npc cast.</summary>
+    public static void LeaveForServerState(int state, LiveInteractObjects objects, LiveInteractNpc npcs, ReactState react)
+    {
+        objects?.CancelCast();
+        if (state != 0x1a) npcs?.CancelCast();
+        react?.End();
+    }
+
     /// <summary>The polls by ascending key; <paramref name="npc"/> tells whether the npc action took the key. 0 B.</summary>
     public static bool Poll(LiveInteractObjects objects, LiveInteractNpc npcs, Vec3 at, Vec3 npcAt, out bool npc) =>
         Poll(objects, npcs, at, npcAt, null, out npc, out _);
