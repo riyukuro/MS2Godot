@@ -52,7 +52,7 @@ public delegate bool MagicRayCast(Vector3 from, Vector3 dir, float length, out V
 /// Piercing arrows (bounceType 3 and 4) keep flying through their hits, forget them each piercing interval and send its
 /// splash (<see cref="SkillSplashRequest"/>); bounceType 4 then flies back to the owner (state 5) and ends there.
 /// STILL-OPEN: for an arrow record, the magic control flight (FUN_141464490, a skill with magicControl enable not 0: those make no arrow
-/// magic here), the bounce-off's effect, the hit effects, the end's cast record (FUN_14145f570; its effects go to <see cref="MagicEndEffect"/>); the linked records, the latency maximum (0 here: the time sync's latency is not kept),
+/// magic here), the bounce-off's effect, the hit effects; the linked records, the latency maximum (0 here: the time sync's latency is not kept),
 /// CFunctionCubeService::SetTagArea, the magic's own effects (PlayHitEffects) and MyPC::FUN_14152e0c0 after a fill are not
 /// ported.
 /// </summary>
@@ -755,9 +755,11 @@ public sealed class OwnTagMagics
     /// cubeMagicPathID sends the splash (<see cref="SkillSplashRequest"/>, the same fields as a piercing interval's) when
     /// FUN_141464410 holds (the owner the local player).</item>
     /// </list>
-    /// STILL-OPEN: the cast record of the magic's serial (CMagicService::FindCast, fired at the end point by FUN_14146b440 and
-    /// removed; with one the effects are not inserted) and the linked record's restart at the current point (FUN_14145ddd0)
-    /// are not ported.
+    /// The client first looks up a cast record of the magic's serial (CMagicService::FindCast @0x14146ce30); with one it plays that
+    /// record's hit at the end point (FUN_14146b440) instead of these effects. The map is filled only in FUN_14146b440's
+    /// bTracked 0 branch (magicdata.cpp:2760), and both calls of it in the exe (0x14145fa75 here, 0x14171d532 the 0x3d mode 1
+    /// hits) pass 1, so the lookup never finds one and is not ported.
+    /// STILL-OPEN: the linked record's restart at the current point (FUN_14145ddd0) is not ported.
     /// </summary>
     static void End(Magic m, in MagicOwner owner, List<SkillSplashRequest> splashes, List<MagicEndEffect> endEffects, bool lifeEnd)
     {
