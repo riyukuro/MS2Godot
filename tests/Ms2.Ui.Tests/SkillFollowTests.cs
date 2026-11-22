@@ -305,16 +305,38 @@ public class SkillFollowTests
     public void TheEndCastsTheNextWithoutTheSelfInputVeto()
     {
         // FUN_1417ee120 (:2911-2928) at the end of the last motion: vfunc_102 directly, not FUN_1417ef4a0 (whose
-        // endSelfInputcombo test, :3150, refuses the same skill); only the hold attack flag sends the combo output to idle
+        // endSelfInputcombo test, :3150, refuses the same skill); only a charging skill (m_b111) sends the combo output to idle
         var r = Running(combo: "inputSkill=\"1\" outputSkill=\"7\"");
         var w = At(0.45);
         w.EndSelfInput = true;
         w.EndOfSequence();
         Assert.That(SkillFollow.ChainsNow(r, r.Skill, 0, w, false), Is.False);
-        Assert.That(SkillFollow.CastsAtEnd(r, r.Skill, false), Is.True);
-        Assert.That(SkillFollow.CastsAtEnd(r, Skill(7), false), Is.True);
-        Assert.That(SkillFollow.CastsAtEnd(r, Skill(7), true), Is.False, "the combo output with the hold attack flag");
-        Assert.That(SkillFollow.CastsAtEnd(r, Skill(8), true), Is.True);
+        Assert.That(SkillFollow.CastsAtEnd(r, r.Skill), Is.True);
+        Assert.That(SkillFollow.CastsAtEnd(r, Skill(7)), Is.True);
+        var charging = Running(combo: "inputSkill=\"1\" outputSkill=\"7\" chargingSkill=\"1\"");
+        Assert.That(SkillFollow.CastsAtEnd(charging, Skill(7)), Is.False, "the combo output of a charging skill");
+        Assert.That(SkillFollow.CastsAtEnd(charging, Skill(8)), Is.True);
+        Assert.That(SkillFollow.CastsAtEnd(charging, charging.Skill), Is.True);
+    }
+
+    [Test]
+    public void AChargingSkillAfterItsComboKeyChainsNeitherItselfNorWhileLoopingItsOutput()
+    {
+        // FUN_1417ef4a0 (:3136-3142): m_b111 with m_b112 or m_b49 refuses the same skill; with m_bLoop and before the end
+        // (m_b112 down) also the combo output
+        var r = Running(selfInput: "", combo: "inputSkill=\"1\" outputSkill=\"7\" chargingSkill=\"1\"");
+        var combo = new SkillFollow.Window { Combo = true };
+        Assert.That(SkillFollow.ChainsNow(r, r.Skill, 0, combo, false), Is.False, "the same skill");
+        Assert.That(SkillFollow.ChainsNow(r, Skill(7), 0, combo, false), Is.True, "the output while not looping");
+        Assert.That(SkillFollow.ChainsNow(r, Skill(7), 0, combo, false, loop: true), Is.False, "the output while looping");
+        Assert.That(SkillFollow.ChainsNow(r, Skill(8), 0, combo, false, loop: true), Is.True, "another skill");
+        var ended = default(SkillFollow.Window);
+        ended.EndOfSequence();
+        Assert.That(SkillFollow.ChainsNow(r, r.Skill, 0, ended, false), Is.False, "the same skill after the end");
+        Assert.That(SkillFollow.ChainsNow(r, Skill(7), 0, ended, false, loop: true), Is.True, "the output after the end");
+        var plain = Running(selfInput: "", combo: "inputSkill=\"1\" outputSkill=\"7\"");
+        Assert.That(SkillFollow.ChainsNow(plain, plain.Skill, 0, combo, false), Is.True, "not a charging skill");
+        Assert.That(SkillFollow.ChainsNow(r, r.Skill, 1, default, false), Is.True, "a chain type without the combo key");
     }
 
     [Test]

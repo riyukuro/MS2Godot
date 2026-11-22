@@ -188,10 +188,12 @@ public static class SkillFollow
     /// (mypc.cpp:1036) is 1. For a motion with a selfInputCombo key, after "combo" but before "selfcombo" the same skill
     /// (with feature 0xca also its combo output) waits, and after "selfcombo" alone only the same skill (or with 0xca the
     /// output) goes (:3107-3135); endSelfInputcombo vetoes the same skill and the output (:3143-3149).
-    /// The auto change veto (m_b11e, :3150-3163) needs the skill change and is <see cref="SkillCast.AutoChangeVetoes"/>.
-    /// STILL-OPEN: the hold attack veto (m_b111, :3136-3142) is not ported.
+    /// A charging skill (m_b111, the record's chargingSkill, set at the sequence start :766) after "combo" or the sequence's
+    /// end refuses the same skill, and while it loops (<paramref name="loop"/>, m_bLoop) before the end its combo output
+    /// (:3136-3142). The auto change veto (m_b11e, :3150-3163) needs the skill change and is
+    /// <see cref="SkillCast.AutoChangeVetoes"/>.
     /// </summary>
-    public static bool ChainsNow(CastRecord running, SkillData next, int chainType, in Window w, bool jobChange01)
+    public static bool ChainsNow(CastRecord running, SkillData next, int chainType, in Window w, bool jobChange01, bool loop = false)
     {
         if (!w.Combo && !w.SelfCombo && chainType == 0 && !w.Ended) return false;
         if (!IsLastMotion(running)) return false;
@@ -208,18 +210,22 @@ public static class SkillFollow
                 if (next.Id != cur.Id && (!jobChange01 || !IsOutputSkill(cur, next.Id))) return false;
             }
         }
+        if (cur.ChargingSkill && (w.Ended || w.Combo))
+        {
+            if (next.Id == cur.Id) return false;
+            if (loop && !w.Ended && IsOutputSkill(cur, next.Id)) return false;
+        }
         if (w.EndSelfInput && (next.Id == cur.Id || IsOutputSkill(cur, next.Id))) return false;
         return true;
     }
 
     /// <summary>
     /// FUN_1417ee120 @0x1417ee120 (stateskill.cpp:2911-2928) at the end of the last motion: the next cast (m_spNext, else the
-    /// key polled then) goes through vfunc_102 without FUN_1417ef4a0's combo tests; only the hold attack flag
-    /// (<paramref name="holdAttack"/>, m_b111) sends the running skill's combo output to the idle state (FUN_1417f0070).
-    /// STILL-OPEN: m_b111 is not kept by the port (the callers pass false).
+    /// key polled then) goes through vfunc_102 without FUN_1417ef4a0's combo tests; only a charging running skill (m_b111,
+    /// set from the record's chargingSkill at the sequence start, :766) sends its combo output to the idle state (FUN_1417f0070).
     /// </summary>
-    public static bool CastsAtEnd(CastRecord running, SkillData next, bool holdAttack) =>
-        !(holdAttack && IsOutputSkill(running.Skill, next.Id));
+    public static bool CastsAtEnd(CastRecord running, SkillData next) =>
+        !(running.Skill.ChargingSkill && IsOutputSkill(running.Skill, next.Id));
 
     /// <summary>
     /// StateSkill::FUN_1417f0570 @0x1417f0570 (stateskill.cpp:2161-2181), its first part: a running record whose skill's

@@ -382,7 +382,7 @@ public partial class HudScene
     void TryChainOwn(CastRecord running)
     {
         if (ownNext == null || player == null) return;
-        if (!SkillFollow.ChainsNow(running, ownNext.Skill, ownChainType, ownWindow, hudModel.IsFeatureEnabled(0xca))) return;
+        if (!SkillFollow.ChainsNow(running, ownNext.Skill, ownChainType, ownWindow, hudModel.IsFeatureEnabled(0xca), ownLoop.Loop)) return;
         if (SkillCast.AutoChangeVetoes(OwnPollWorld(), running, ownNext, ownWindow)) return;   // :3150-3163
         var r = ownNext;
         ownNext = null;
@@ -430,7 +430,7 @@ public partial class HudScene
         if (next == null && OwnAutoChange(2) is { } auto && SkillFollow.AutoCastsAtEnd(running, auto)) next = auto;
         if (next == null) return false;
         if (next == ownQueued) { player.HoldSkillSequence(); return true; }   // the same cooling press again: still queued
-        if (!SkillFollow.CastsAtEnd(running, next.Skill, false)) return false;
+        if (!SkillFollow.CastsAtEnd(running, next.Skill)) return false;
         AimOwn(next, false);                       // :2939 vfunc_100(m_spNext, 0)
         next.HasSequence = next.Level.HasSequenceName;
         if (!UseOwnRecord(player, next)) return false;
