@@ -2,7 +2,9 @@ using System.Text.Json.Nodes;
 using System.Xml;
 using Godot;
 using Ms2.Formats.Pack;
+using Ms2.Formats.World;
 using Ms2.Swf;
+using Ms2.Ui;
 
 namespace Ms2Godot.Ui;
 
@@ -283,13 +285,7 @@ public sealed class UiAssets
         try
         {
             var bytes = Packs.Read("Xml", $"string/{Language}/korflash.xml");
-            using var xr = XmlReader.Create(new MemoryStream(bytes));
-            while (xr.Read())
-                if (xr.NodeType == XmlNodeType.Element && xr.Name == "key")
-                {
-                    var id = xr.GetAttribute("id"); var val = xr.GetAttribute("value");
-                    if (id != null && val != null) strings[id] = val.Replace("\\n", "\n");
-                }
+            foreach (var kv in GameStrings.FlashKeys(bytes, LobbyFeatures.LocaleOf(Packs))) strings[kv.Key] = kv.Value;
         }
         catch (Exception e) { GD.PushWarning($"UI string table: {e.Message}"); }
     }

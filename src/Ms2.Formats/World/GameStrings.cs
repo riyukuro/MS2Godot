@@ -81,5 +81,24 @@ public sealed class GameStrings
         return s;
     }
 
+    /// <summary>
+    /// korFlash.xml as NiGFxLocalizeManager::ParseStringXml (@0x1422ebc80) reads it: every &lt;key&gt; whose locale attribute is empty or
+    /// equals the client's locale (case-insensitive) is added, the later row replacing an earlier one; the feature attribute is not
+    /// looked at. The "\\n" and "\\r" escapes of the value become line breaks.
+    /// </summary>
+    public static Dictionary<string, string> FlashKeys(byte[] xml, string locale)
+    {
+        var map = new Dictionary<string, string>();
+        using var xr = System.Xml.XmlReader.Create(new MemoryStream(xml));
+        while (xr.Read())
+        {
+            if (xr.NodeType != System.Xml.XmlNodeType.Element || xr.Name != "key") continue;
+            var rowLocale = xr.GetAttribute("locale");
+            if (!string.IsNullOrEmpty(rowLocale) && !string.Equals(rowLocale, locale, StringComparison.OrdinalIgnoreCase)) continue;
+            if (xr.GetAttribute("id") is { } id && xr.GetAttribute("value") is { } v) map[id] = v.Replace("\\n", "\n").Replace("\\r", "\r");
+        }
+        return map;
+    }
+
     public static XDocument Parse(byte[] data) => PackXml.Parse(data);
 }
