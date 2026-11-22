@@ -13,9 +13,11 @@ namespace Ms2Godot.Net;
 /// at the PC (<see cref="PlayRideEffect"/>); a hideRider row hides the rider (<see cref="RemotePc.SetHideReason"/>).
 /// The ridee takes the rider's stats and their changes (<see cref="SetStat(Remote, int, int, long)"/>).
 /// The ridee has its own simple shadow (the row's &lt;shadow scale&gt;); in StateRide the rider's is off.
-/// STILL-OPEN: the breakable anchor of a ride-off, the fall start the ridee had (StateFallData),
-/// the ridee's m_unk_b80 SP idle, the mount's step keys. Mode 6 also writes the kept ride-on action's m_b28, which only a
-/// later PCBase::vfunc_120 of that action reads; a remote PC's ride is re-sent with it.
+/// The ride off's StateFallData (the ridee's fall start) only reaches MyPC::FUN_141676060 (statefall.cpp:104-106), so a
+/// remote PC's fall ignores it.
+/// STILL-OPEN: the breakable anchor of a ride-off, the ridee's m_unk_b80 SP idle, the mount's step keys. Mode 6 also
+/// writes the kept ride-on action's m_b28, which only a later PCBase::vfunc_120 of that action reads; a remote PC's ride
+/// is re-sent with it.
 /// </summary>
 public sealed partial class RemoteLayer
 {
