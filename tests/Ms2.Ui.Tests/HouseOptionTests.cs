@@ -180,6 +180,7 @@ public class HomeOptionDialogTests
     sealed class Env
     {
         public readonly List<string> Calls = new(), Notices = new();
+        public readonly List<int> Commons = new();
         public readonly List<(int Type, string Text, string Tag)> Boxes = new();
         public int Nexts;
         public readonly Dlg D;
@@ -187,7 +188,7 @@ public class HomeOptionDialogTests
         public Env(Action<TestHost> setup = null)
         {
             setup?.Invoke(H);
-            D = new Dlg(new HomeOptionController(H));
+            D = new Dlg(new HomeOptionController(H) { ShowCommon = Commons.Add });
             D.Str = k => "<" + k + ">";
             D.ShowBox = b => Boxes.Add((b.Type, b.Msg, b.Extra));
             D.NextBox = () => Nexts++;
@@ -247,6 +248,27 @@ public class HomeOptionDialogTests
         e.D.OnCallback("onConfirm", new object[] { false });
         Assert.That(e.D.Closed, Is.EqualTo(1));
         Assert.That(e.Boxes, Is.Empty);
+    }
+
+    [Test] public void ConfirmWithoutArgumentsDoesNothing()
+    {
+        // SetArgsIfAny == 0 (:122): the client returns; only an explicit false closes
+        var e = new Env();
+        Assert.That(e.D.OnCallback("onConfirm", null), Is.True);
+        Assert.That(e.D.OnCallback("onConfirm", new object[0]), Is.True);
+        Assert.That(e.D.Closed, Is.EqualTo(0));
+        Assert.That(e.Boxes, Is.Empty);
+    }
+
+    [Test] public void ApplyWithMissingArgumentsGoesOnWithZeros()
+    {
+        var e = new Env();
+        Assert.That(e.D.OnCallback("apply", new object[] { 1 }), Is.True);
+        Assert.That(e.Commons, Is.EqualTo(new[] { 0xb0a }), "the missing password reads as empty, so the length box shows");
+        e.H.CanChange = false;
+        e.D.OnCallback("apply", null);
+        Assert.That(e.Commons, Is.EqualTo(new[] { 0xb0a, 0x6e1 }));
+        Assert.That(e.H.Log, Is.Empty);
     }
 
     [Test] public void ApplyTakesTheOpenTypeThePasswordAndNineRows()

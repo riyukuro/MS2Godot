@@ -71,15 +71,17 @@ public class HomeOptionDialogController : UiController, IMessageBoxListener
         if (Is(name, "onApply")) Confirm("onApply");
         else if (Is(name, "onConfirm"))
         {
-            if (args.Length > 0 && Rt.ToBoolean(args[0])) Confirm("OnConfirm");
+            // SetArgsIfAny == 0 (:122): no argument means the client does nothing; only an explicit false closes
+            if (args.Length == 0) return true;
+            if (Rt.ToBoolean(args[0])) Confirm("OnConfirm");
             else Close();
         }
         else if (Is(name, "apply"))
         {
-            if (args.Length < 2 + HomeOptionController.Rows) return true;
+            // the client goes on with missing pops read as 0, so the notice and the boxes still show
             var rows = new int[HomeOptionController.Rows];
-            for (int i = 0; i < rows.Length; i++) rows[i] = Rt.ToInt32(args[2 + i]);
-            logic.Apply(Rt.ToInt32(args[0]), Rt.ToString(args[1]), rows);
+            for (int i = 0; i < rows.Length; i++) rows[i] = 2 + i < args.Length ? Rt.ToInt32(args[2 + i]) : 0;
+            logic.Apply(args.Length > 0 ? Rt.ToInt32(args[0]) : 0, args.Length > 1 ? Rt.ToString(args[1]) : "", rows);
         }
         else if (Is(name, "onKickUser")) ShowBox(MessageBoxQueue.Create(1, Str("s_home_option_msg_etc_kickuser"), this, "OnKickUser"));
         else if (Is(name, "OnReset")) ShowBox(MessageBoxQueue.Create(1, Str("s_home_option_init"), this, "OnReset"));
