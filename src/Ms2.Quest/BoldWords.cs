@@ -221,9 +221,8 @@ public sealed partial class ReservedWords
 
         // fielddata.cpp:573-749: the CFieldData rows (a later duplicate id overrides); worldmapmanager.cpp:392-523: the map tiles
         var searchable = new Dictionary<long, bool>();
-        var fd = entries.FirstOrDefault(n => string.Equals(n, "table/fielddata.xml", StringComparison.OrdinalIgnoreCase));
         XDocument fdDoc = null;
-        if (fd != null)
+        if (Ms2.Formats.World.FieldData.Exists(packs))
             try { fdDoc = Ms2.Formats.World.FieldData.Document(packs); }     // the session's parsed table, not a second parse
             catch (System.Xml.XmlException) { }
         foreach (var f in fdDoc?.Root?.Elements("fieldData") ?? Enumerable.Empty<XElement>())

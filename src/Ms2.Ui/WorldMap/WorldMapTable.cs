@@ -98,7 +98,8 @@ public sealed class WorldMapTable
     /// <summary>CFieldData::vfunc_1 (fielddata.cpp:640-750) over the environment FUN_14028f8d0 picks.</summary>
     void LoadFields(PackSet packs)
     {
-        foreach (var fd in Xml(packs, "fielddata.xml")?.Root?.Elements("fieldData") ?? Enumerable.Empty<XElement>())
+        // the table (locale folder first), else the per-map files of data that has none
+        foreach (var fd in (Xml(packs, "fielddata.xml") ?? FieldData.Document(packs))?.Root?.Elements("fieldData") ?? Enumerable.Empty<XElement>())
         {
             var env = FeatureElements.SelectEnvironment(packs, fd);
             if (env == null) continue;

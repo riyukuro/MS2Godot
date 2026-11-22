@@ -57,7 +57,7 @@ public sealed class CreateTables
     /// <summary>The xblock name of a map id (table/fielddata.xml, the environment without a locale).</summary>
     public string XBlockOf(int mapId)
     {
-        var x = Xml("table/fielddata.xml");
+        var x = packs.Exists("Xml", "table/fielddata.xml") ? Xml("table/fielddata.xml") : Ms2.Formats.World.FieldData.Document(packs);
         var fd = x?.Root.Elements("fieldData").FirstOrDefault(e => (int?)e.Attribute("id") == mapId);
         var env = fd?.Elements("environment").FirstOrDefault(e => e.Attribute("locale") == null);
         return (string)env?.Element("xblock")?.Attribute("name");

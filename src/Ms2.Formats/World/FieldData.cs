@@ -112,7 +112,18 @@ public sealed class FieldData
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, XDocument> docs = new();
 
     /// <summary>The parsed table, once per pack set: a pack entry never changes, the callers only read the tree, and FieldData results are built fresh from it.</summary>
-    static XDocument Doc(PackSet packs) => docs.GetValue(packs, p => PackXml.Parse(p.Read(Archive, Entry)));
+    static XDocument Doc(PackSet packs) => docs.GetValue(packs, p => Table(p) ?? new XDocument(new XElement("ms2")));
+
+    /// <summary>
+    /// The field table of the data: table/fielddata.xml, or where the pack has none (GMS2) one row per map/&lt;id&gt;.xml
+    /// (<see cref="PerFileTable"/>); null when the data has neither. Read the file once through <see cref="Document"/>.
+    /// </summary>
+    static XDocument Table(PackSet packs) => packs.Exists(Archive, Entry)
+        ? PackXml.Parse(packs.Read(Archive, Entry))
+        : PerFileTable.Rows(packs, "map/", "fieldData");
+
+    /// <summary>Whether the data has a field table, of either layout.</summary>
+    public static bool Exists(PackSet packs) => Doc(packs).Root!.HasElements;
 
     /// <summary>The parsed table shared per pack set (read once; callers must not change it).</summary>
     public static XDocument Document(PackSet packs) => Doc(packs);

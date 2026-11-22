@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Ms2.Formats.Tests" />
+    <InternalsVisibleTo Include="Ms2.Ui.Tests" />
   </ItemGroup>
   <ItemGroup>
     <!-- m2d/m2h archive reader (GPL-3.0-or-later). Wrapped by Pack/PackSet so it can be replaced. -->

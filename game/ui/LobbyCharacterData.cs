@@ -30,7 +30,7 @@ public sealed class LobbyCharacterData
         var res = Xml(packs, "table/commonresource.xml");
         NoProfile = (string)res?.Root?.Element("DEFAULT_PROFILE_IMAGE_PATH")?.Attribute("value") ?? "";
         // CFieldDataCli m_nEnterReturnId: <property enterreturnid> of the field's default environment
-        var fields = Xml(packs, FieldData.Entry);
+        var fields = packs.Exists("Xml", FieldData.Entry) ? Xml(packs, FieldData.Entry) : FieldData.Document(packs);
         foreach (var fd in fields?.Root?.Elements("fieldData") ?? Enumerable.Empty<XElement>())
         {
             var env = fd.Elements("environment").FirstOrDefault(e => e.Attribute("locale") == null);

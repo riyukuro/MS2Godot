@@ -46,7 +46,7 @@ public sealed class MinimapIcons
         mapNames = text.Table("mapname", "name");
         functionNames = text.Table("npcfunctionname", "name");
         // CFieldData: <indoor type="1|2"/> makes a field indoor (mask 2 or 4)
-        if (packs.Exists(FieldData.Archive, FieldData.Entry))
+        if (FieldData.Exists(packs))
             foreach (var fd in FieldData.Document(packs).Root!.Elements("fieldData"))
             {
                 if (!int.TryParse((string)fd.Attribute("id"), out int fid)) continue;
