@@ -2376,8 +2376,24 @@ public partial class HudScene : Node, IUiStageHost
         lapenshard.OnPacket(new Ms2.Net.Packets.LapenshardMessage.Worn(worn.ToArray()));   // perf-ok: shot hook, runs once
     }
 
+    /// <summary>--uigen-open lapenshardupgrade: the shot window on its upgrade tab with the first shard of the bag as the source.</summary>
+    void OpenLapenshardUpgradeShot()
+    {
+        if (lapenshard == null || lapenshardMovie == null) return;
+        var h = lapenshardMovie.Host;
+        h.Set(h.Child("m_buttonBar"), "selectedIndex", 1);     // perf-ok: shot hook, runs once
+        foreach (var tab in lapenshard.Tabs)
+            if (tab is Ms2.Ui.Hud.LapenshardUpgradeTabPage up)
+            {
+                int idx = 0;       // the first source with an upgrade and ingredients
+                for (int i = 0; i < up.SourceItems.Count; i++)
+                    if (hudModel.Tables.Lapenshards.Get(up.SourceItems[i].ItemId) is { Next: not 0, MinCount: > 0 }) { idx = i; break; }
+                up.OnCallback("OnSelectSourceItem", new object[] { (uint)idx });
+            }
+    }
+
     /// <summary>Opens the lapenshard window with its equip page when the feature (0xd3) allows; the worn table is the player state's
-    /// and the session's lapenshard packets reach the page while it is open. STILL-OPEN: the upgrade page; the bag is built when the page opens or a lapenshard packet arrives, not on inventory changes (the item events listener).</summary>
+    /// and the session's lapenshard packets reach the page while it is open. STILL-OPEN: the upgrade page's sale rate feed; the bag is built when the page opens or a lapenshard packet arrives, not on inventory changes (the item events listener).</summary>
     void OpenLapenshard()
     {
         if (GuideRefusesOpen("LapenshardSystemDialog")) return;
@@ -2386,6 +2402,14 @@ public partial class HudScene : Node, IUiStageHost
         var c = new Ms2.Ui.Hud.LapenshardSystemController();
         if (!hudModel.IsFeatureEnabled(Ms2.Ui.Hud.LapenshardSystemController.FeatureId)) return;
         c.AddTab(new Ms2.Ui.Hud.LapenshardEquipTabPage());
+        var upgrade = new Ms2.Ui.Hud.LapenshardUpgradeTabPage
+        {
+            Mesos = () => hudModel.HasLocalPlayer ? hudModel.Player.Mesos : 0,   // DAT_143ab2898
+            CountItems = (id, rank) => live?.Items.CountOf(id, rank) ?? 0,
+            CountByTag = tag => live == null ? 0 : (int)Ms2.Ui.Shop.ShopController.CountItemsByTag(live.Items.All, hudModel.Tables.Items, tag),
+        };   // STILL-OPEN: SaleRate (CGameRule::GetLapenshardUpgradeSaleRate, set by event sale packets) stays 0
+        upgrade.SystemNoticeId += id => Ms2.Ui.Hud.MessageBoxQueue.ShowCommon(id, 0, null, "");
+        c.AddTab(upgrade);
         c.InBattle = () => live?.SelfInBattle ?? false;
         if (live != null) c.Send = p => { live.SendTalk(p); return true; };
         // FUN_140c60920's source: the inventory's category 0xd (the lapenshard tab), as the bag's own item copies, and its
@@ -3998,6 +4022,8 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "guild" && frames == 200) ToggleGuild();
         if (openShot == "itemenchant" && frames == 200) OpenItemEnchantShot();
         if (openShot == "lapenshard" && frames == 200) OpenLapenshardShot();
+        if (openShot == "lapenshardupgrade" && frames == 200) OpenLapenshardShot();
+        if (openShot == "lapenshardupgrade" && frames == 212) OpenLapenshardUpgradeShot();
         if (openShot == "itembreak" && frames == 200) OpenItemBreakShot();
         if (guideShot != null && frames == 200)
         {
