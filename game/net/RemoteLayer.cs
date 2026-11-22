@@ -618,12 +618,14 @@ public sealed partial class RemoteLayer : Node3D
                     // (OnSplashDamageRecord :3970 tests its region attack's HasDamage, not read here)
                     bool byLocal = dmg.Damage.OwnerId == Tracker.SelfObjectId;
                     if (dmg.Damage.Mode != 1 || Ms2.Ui.Hud.DamageNumbers.HasDamage(dmg.Damage, SkillDamage))
-                    foreach (var t in dmg.Damage.Targets)
                     {
-                        if (t.Hits.Length == 0) continue;
-                        npcs.Damaged(t.TargetId, byLocal);
-                        // PCBase::vfunc_112 goes through vfunc_80: a local hit makes the member's bar, then shows it
-                        if (users.TryGetValue(t.TargetId, out var hit)) EnsureBar(hit)?.Hit(byLocal);
+                        foreach (var t in dmg.Damage.Targets)
+                        {
+                            if (t.Hits.Length == 0) continue;
+                            npcs.Damaged(t.TargetId, byLocal);
+                            // PCBase::vfunc_112 goes through vfunc_80: a local hit makes the member's bar, then shows it
+                            if (users.TryGetValue(t.TargetId, out var hit)) EnsureBar(hit)?.Hit(byLocal);
+                        }
                     }
                     if (Numbered != null) ShowNumbers(dmg.Damage);
                     break;

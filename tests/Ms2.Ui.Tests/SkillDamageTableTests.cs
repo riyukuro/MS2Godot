@@ -14,6 +14,28 @@ public class SkillDamageTableTests
         new(() => docs.Select(x => XDocument.Parse(x)), (p, c, _) => p.Elements(c).ToList());
 
     [Test]
+    public void AReaderDuringTheWorkerLoadWaitsAndTheFilesAreReadOnce()
+    {
+        // the field entry loads the table on a worker thread; a first hit that comes while it runs takes the same read
+        int reads = 0;
+        using var entered = new System.Threading.ManualResetEventSlim();
+        using var release = new System.Threading.ManualResetEventSlim();
+        var t = new SkillDamageTable(() =>
+        {
+            if (System.Threading.Interlocked.Increment(ref reads) == 1) { entered.Set(); release.Wait(5000); }
+            return new[] { XDocument.Parse(@"<ms2><skill id=""5""><basic/><level value=""1""><motion>
+                <attack><damage value=""7""/></attack></motion></level></skill></ms2>") };
+        }, (p, c, _) => p.Elements(c).ToList());
+        var worker = System.Threading.Tasks.Task.Run(t.Load);
+        Assert.That(entered.Wait(5000), Is.True);
+        var reader = System.Threading.Tasks.Task.Run(() => t.Get(5, 1, 0, 0).Value);
+        Assert.That(reader.Wait(200), Is.False, "the reader waits for the worker's read");
+        release.Set();
+        Assert.That(System.Threading.Tasks.Task.WaitAll(new System.Threading.Tasks.Task[] { worker, reader }, 5000), Is.True);
+        Assert.That((reader.Result, reads), Is.EqualTo((7L, 1)));
+    }
+
+    [Test]
     public void AMissingAttributeKeepsTheCtorValue()
     {
         // the ctor (:175): count 1, pushprob 1, hitSpeedRate 1, damagedVibrateRatio 1; an attack without <damage> keeps them all

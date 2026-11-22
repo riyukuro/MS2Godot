@@ -104,6 +104,7 @@ public sealed class SkillDamageTable
     readonly Func<IEnumerable<XDocument>> files;
     readonly Func<XElement, string, string, List<XElement>> collect;
     Dictionary<uint, Dictionary<ushort, SkillAttackDamage[][]>> skills;
+    readonly object loadLock = new();
 
     public static readonly SkillDamageTable Empty = new(() => Array.Empty<XDocument>(), (_, _, _) => new List<XElement>());
 
@@ -115,17 +116,27 @@ public sealed class SkillDamageTable
         this.collect = collect;
     }
 
+    /// <summary>Reads the files now (on the calling thread), so the first <see cref="Get"/> finds them read; the field entry
+    /// runs it on a worker thread. A reader that comes while it runs waits for it instead of reading them a second time.</summary>
+    public void Load() => All();
+
     Dictionary<uint, Dictionary<ushort, SkillAttackDamage[][]>> All()
     {
-        if (skills != null) return skills;
-        var d = new Dictionary<uint, Dictionary<ushort, SkillAttackDamage[][]>>();
-        foreach (var doc in files())
+        var read = System.Threading.Volatile.Read(ref skills);
+        if (read != null) return read;
+        lock (loadLock)
         {
-            if (doc?.Root is not { } root || root.Name != "ms2") continue;
-            foreach (var e in root.Elements("skill"))
-                d[Xml.UInt(e, "id")] = Levels(e);
+            if (skills != null) return skills;
+            var d = new Dictionary<uint, Dictionary<ushort, SkillAttackDamage[][]>>();
+            foreach (var doc in files())
+            {
+                if (doc?.Root is not { } root || root.Name != "ms2") continue;
+                foreach (var e in root.Elements("skill"))
+                    d[Xml.UInt(e, "id")] = Levels(e);
+            }
+            System.Threading.Volatile.Write(ref skills, d);
+            return d;
         }
-        return skills = d;
     }
 
     Dictionary<ushort, SkillAttackDamage[][]> Levels(XElement e)
