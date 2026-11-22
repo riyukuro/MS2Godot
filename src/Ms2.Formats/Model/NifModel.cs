@@ -343,6 +343,20 @@ public sealed class ModelData
     public List<ModelBone> Bones = new();
     public List<ModelMesh> Meshes = new();
 
+    /// <summary>
+    /// Where an attached asset's self node goes when the body lacks the target node: the body's rigid mesh named
+    /// <paramref name="target"/> gives the bone it hangs on and kXf, its local transform (FUN_141202280 @0x141202280,
+    /// equipmodel.cpp:993). A replace asset always hangs on Bip01 Head (CKfmModel::vfunc_13 @0x14143e900, kfmmodel.cpp:548-585)
+    /// with SetLocalTransform(kXf * local); a non-replace asset hangs on that mesh's own bone (vfunc_12 @0x14143e670,
+    /// kfmmodel.cpp:518-544). Without such a mesh: Bip01 Head, no offset (Local null).
+    /// </summary>
+    public (string Bone, Xform? Local) FindBodyAttach(string target, bool replace)
+    {
+        var m = Meshes.FirstOrDefault(x => x.FileName == target && x.ParentBone >= 0);
+        if (m == null) return ("Bip01 Head", null);
+        return (replace ? "Bip01 Head" : Bones[m.ParentBone].Name, m.Local);
+    }
+
     public int BoneIndex(string name) => Bones.FindIndex(b => b.Name == name);
 
     /// <summary>

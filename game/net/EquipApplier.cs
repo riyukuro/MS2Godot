@@ -813,8 +813,8 @@ public sealed class EquipApplier
     /// (CHairExtraData::vfunc_4 @0x14059aaa0; the client picks one custom at random, the hair items hold one) and the
     /// length from the slot's &lt;scale&gt; (the client picks at random between min and max; min here).</item>
     /// </list>
-    /// Not done: PhysX swing (the NiPhysX joints in the nif), Attack_Idle_A in battle stance (vfunc_32), and the
-    /// replace path to Bip01 Head (vfunc_13).
+    /// Not done: PhysX swing (the NiPhysX joints in the nif), Attack_Idle_A in battle stance (vfunc_32).
+    /// STILL-OPEN: FUN_1411e99a0, which gates the replace path, is not recovered; the replace attribute stands in for it.
     /// </summary>
     List<MeshInstance3D> AttachKfm(Part part, Skeleton3D skel, ModelData body, XElement asset, EquipItem item, int gender, int index)
     {
@@ -858,9 +858,12 @@ public sealed class EquipApplier
         if (skel.FindBone(bone) < 0)
         {
             // as Attach: a replace asset on a node the body lacks goes to Bip01 Head, else the body's rigid mesh of that name
-            var bodyMesh = (string)asset.Attribute("replace") == "1" ? null : body.Meshes.FirstOrDefault(x => x.FileName == target && x.ParentBone >= 0);
-            bone = bodyMesh != null ? body.Bones[bodyMesh.ParentBone].Name : "Bip01 Head";
-            if (bodyMesh != null) targetLocal = ModelBuilder.ToGodot(bodyMesh.Local);
+            // a replace asset hangs on Bip01 Head with its self node's local moved by kXf, the body mesh's local
+            // (ModelData.FindBodyAttach: CKfmModel::vfunc_13 @0x14143e900, kfmmodel.cpp:548-585); for the female
+            // body's HR that is the offset from the head bone back to the model root the hair is authored in
+            var (kb, kl) = body.FindBodyAttach(target, (string)asset.Attribute("replace") == "1");
+            bone = kb;
+            if (kl != null) targetLocal = ModelBuilder.ToGodot(kl.Value);
         }
         string tag = pony ? $"pony{index}" : "kfm";
         var att = new BoneAttachment3D { Name = $"eq{item.Id}_{tag}_attach", BoneName = bone };
