@@ -56,6 +56,14 @@ public partial class LiveSession
                 Check($"the field entry after the warp (map {live.CurrentEntry?.MapId})", entered > 0);
                 continue;
             }
+            if (step.StartsWith("level:"))
+            {
+                int level = int.Parse(step[6..]);
+                GD.Print($"live: combat {step}: {(hud.SubmitChatLine("/player level " + level) ? "sent" : "no chat window")}");
+                await until(() => live.Me.User.Level == level, 60 * 20); await frames(60);
+                Check($"the character is level {level}", live.Me.User.Level == level);
+                continue;
+            }
             switch (step)
             {
                 case "attack":
