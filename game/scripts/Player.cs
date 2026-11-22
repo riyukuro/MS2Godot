@@ -48,6 +48,9 @@ public partial class Player : CharacterBody3D
         UpdateWeaponStance();
     }
 
+    /// <summary>The client state id (gostate.h) of the current move state (<see cref="StateId(MoveState)"/>).</summary>
+    public int MoveStateId => StateId(State);
+
     /// <summary>
     /// State::vfunc_15 (@0x1417b8150, state.cpp:684): whether the current movement state allows weapons to remain in
     /// the hand nodes during battle stance (StateIdle::vfunc_15 @0x1417cd740, stateidle.cpp:210: not in water idle;
@@ -55,9 +58,6 @@ public partial class Player : CharacterBody3D
     /// StateFall @0x1417c7aa0, StateLand @0x1417da780: 1; hit, spawn, revival, swim dash, climb, glide, pvp win/lose: 1; swim, ladder, rope, dash, ride: 0). The table is WeaponStance.StateHoldsWeapons, shared
     /// with the remote characters; its STILL-OPEN lists the client states that also answer 1 and are not modelled.
     /// </summary>
-    /// <summary>The client state id (gostate.h) of the current move state (<see cref="StateId(MoveState)"/>).</summary>
-    public int MoveStateId => StateId(State);
-
     public bool StateAllowsWeapons =>
         Mount == null && Ms2.Ui.Items.WeaponStance.StateHoldsWeapons(StateId(State), State == MoveState.Idle && OnWater ? 7 : SubOf(State), !WalkMode);
 
