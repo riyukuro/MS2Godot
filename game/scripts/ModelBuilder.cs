@@ -899,7 +899,9 @@ public sealed class ModelBuilder
     /// at runtime (TransparencyMaterial, transparencymaterial.cpp:63-71: the 0x10 flag or the HasMS2MapProperties extra
     /// data) still passes; NIF data carries neither mark.
     /// STILL-OPEN: the ancestor test (:91-99) run while CameraMgr's m_27c (camera.cpp:1274) is set: a mesh under a node
-    /// with a blending NiAlphaProperty and no material alpha of 1 is skipped too.
+    /// with a blending NiAlphaProperty and no material alpha of 1 is skipped too. The client reads the material's current
+    /// alpha at cull time; this takes the NIF's, once, at build, so a material alpha an NiAlphaController or SetNodeAlpha
+    /// moves to or from 1 does not change whether the mesh casts.
     /// </summary>
     internal static bool ShadowCullingKeeps(ModelMesh m) =>
         !m.AlphaBlendOn || (m.Diffuse != null && MathF.Abs(m.MaterialAlpha - 1f) < 1e-6f);

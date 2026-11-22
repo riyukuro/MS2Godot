@@ -18,7 +18,10 @@ namespace Ms2Godot;
 /// root (alphaanimation.cpp:426-441), whose original alpha is -1: SetNodeAlpha gives it -factor (:503-515), which the
 /// NiDX9Renderer's fixed-point target clamps to 0, so the mesh is not seen until the restore detaches that property.
 /// STILL-OPEN: the swapped meshes keep their CharacterAlphaSort place; the glow twins keep their alpha; a material on a node
-/// above the mesh (which it would inherit instead of the root's) is not read.
+/// above the mesh (which it would inherit instead of the root's) is not read; a faded mesh with its own NiAlphaProperty
+/// blends with a material alpha below 1 (alphaanimation.cpp:478-536), so the client's shadow culling
+/// (ModelBuilder.ShadowCullingKeeps) drops it from the shadow map while the fade lasts, but here it keeps casting
+/// (its shadow-only twin below, or its own setting).
 /// </summary>
 public static class NodeFade
 {
@@ -66,6 +69,8 @@ public static class NodeFade
             copy.Shader = mi.GetMeta(Meta).As<Shader>();
             mi.MaterialOverride = copy;
             mi.SetMeta(Override, true);
+            // STILL-OPEN: the client's shadow culling drops a mesh faded this way (blending, material alpha below 1;
+            // see the summary); the twin keeps its shadow
             if (mi.CastShadow != GeometryInstance3D.ShadowCastingSetting.Off)
             {
                 var twin = new MeshInstance3D { Name = ShadowName, Mesh = mi.Mesh, Skin = mi.Skin, MaterialOverride = own, CastShadow = GeometryInstance3D.ShadowCastingSetting.ShadowsOnly };

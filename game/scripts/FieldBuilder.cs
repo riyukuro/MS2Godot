@@ -701,6 +701,9 @@ public sealed class FieldBuilder
                 // instances stay one MultiMesh per mesh. A blended mesh gets none: its BLEND/ADD (depth_draw_never) or SHELL material
                 // is transparent, and Godot leaves transparent materials out of the shadow pass (observed: Henesys, Ellinia and Tria
                 // stills are pixel-identical with and without its casters). The glow twin casts none.
+                // STILL-OPEN: the client's shadow culling keeps a blended mesh whose own material alpha is 1
+                // (ShadowCullingProcess::Process, unit_141753550.cpp:114-115, as ModelBuilder.ShadowCullingKeeps); 1471 of the
+                // 3846 blended map meshes in the restore data are such, and here they cast nothing.
                 var node = new MultiMeshInstance3D { Name = $"{ents[0].ModelName}{mi++}", Multimesh = mm, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off };
                 if (noRecv) { node.SetInstanceShaderParameter(ReceiveParam, 0f); NotReceivingDraws++; if (mesh.AlphaBlendOn) NotReceivingBlended++; }
                 MaskLights(node, lightOff);
