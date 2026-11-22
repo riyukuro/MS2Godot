@@ -29,6 +29,7 @@ public partial class FieldAudio : Node
 
     SoundLibrary library;
     SystemSoundTable systemSounds;
+    HitSoundTable hitSounds;
     public SoundLibrary Library => library;
     public MusicController MusicState { get; private set; }
     public BossBgmTracker BossBgm { get; private set; }
@@ -91,7 +92,10 @@ public partial class FieldAudio : Node
         GD.Print($"audio: MS2Sound.fev ready in {sw.ElapsedMilliseconds} ms: {library.Fev.Banks.Count} banks (voice {library.LanguageName}), {library.Fev.Defs.Count} sound definitions, {library.Fev.EventCount} events in {library.Fev.Groups.Count} groups, {library.Fev.CueIds.Count()} music cues");
         GD.Print($"audio: music volume {MusicVolume:F2}");
         if (packs != null)
+        {
             systemSounds = SystemSounds(packs);
+            hitSounds = HitSounds(packs);
+        }
         musicPlayers[0] = new AudioStreamPlayer { Name = "MusicA" };
         musicPlayers[1] = new AudioStreamPlayer { Name = "MusicB" };
         ui = new AudioStreamPlayer { Name = "Ui" };
@@ -113,6 +117,32 @@ public partial class FieldAudio : Node
         catch (Exception ex) { GD.PushWarning("audio: systemsound.xml: " + ex.Message); }
         systemSoundTables.AddOrUpdate(packs, t);
         return t;
+    }
+
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, HitSoundTable> hitSoundTables = new();
+
+    /// <summary>table/hitsound.xml, parsed once per pack set (SoundPropertyMgr::LoadHitSound, soundproperty.cpp:513, from the
+    /// same startup Load). Null when the table cannot be read (warned once).</summary>
+    static HitSoundTable HitSounds(PackSet packs)
+    {
+        if (hitSoundTables.TryGetValue(packs, out var t)) return t;
+        try { t = HitSoundTable.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/hitsound.xml"))); }
+        catch (Exception ex) { GD.PushWarning("audio: hitsound.xml: " + ex.Message); }
+        hitSoundTables.AddOrUpdate(packs, t);
+        return t;
+    }
+
+    /// <summary>
+    /// CEffectService::PlayHitSound @0x1411a5580 (effectservice.cpp:1355): the hit sound table's pick for the attack and
+    /// defence materials (<paramref name="rand"/> the CRT rand()), played as "ms2sound/sound/attack/hit/%08d" at
+    /// <paramref name="position"/>; no id plays nothing. Returns whether a sound played.
+    /// STILL-OPEN: FUN_1411a5110's checks (IsEffectTypeVisible of the object relation, the out-of-view skip) and the volume
+    /// (the caller's, and VolumeOtherPc for relation 3) are not applied.
+    /// </summary>
+    public bool PlayHitSound(int attack, int defence, Vector3 position, Func<int> rand)
+    {
+        int id = hitSounds?.Get(attack, defence, rand) ?? 0;
+        return id != 0 && PlayEventAt(HitSoundTable.EventPath(id), position);
     }
 
     /// <summary>The full &lt;bgm&gt; spec of a field's fielddata entry (default environment; CFieldDataCli::vfunc_1 @0x140a55500, fielddatacli.cpp:240-249).</summary>

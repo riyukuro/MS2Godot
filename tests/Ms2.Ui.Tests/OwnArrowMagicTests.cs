@@ -81,6 +81,36 @@ public class OwnArrowMagicTests
         Assert.That(sends.Single().Targets, Is.EqualTo(new[] { new SkillHitTarget(9, 0) }));
     }
 
+    [Test]
+    public void AnArrowsHitPlaysAHitSoundWithTheWeaponsMaterialWhenTheAttackHasNone()
+    {
+        // magicdata.cpp:1955: PlayHitEffects before the send, only for the local owner; the attack without attackMaterial
+        // (row +0x1a0 0) takes the worn weapon's, the npc its defence material, at its position
+        var r = Record(nonTarget: false);
+        var mob = Mob(9, 0, -300);
+        mob.DefenceMaterial = 4;
+        var objects = new[] { Me, mob };
+        var tags = new List<SkillDamageTarget> { new SkillDamageTarget(7, 9, 0, Array.Empty<SkillDamageLink>()) };
+        foreach (bool local in new[] { true, false })
+        {
+            var m = new OwnTagMagics();
+            m.Add(r.Skill, SkillAttackFire.AttackAt(r, 0), r, tags, T, Paths(Linear), _ => Vector3.Zero, ownerId: 42, objects: objects);
+            var sounds = new List<MagicHitSound>();
+            var owner = new MagicOwner(Vector3.Zero, 0, local, false, false, WeaponMaterial: 5);
+            for (int t = 0; t <= 400; t += 100)
+                m.Tick(T + t, 0, owner, objects, r, null, new List<SkillHitRequest>(), () => 0, null, hitSounds: sounds);
+            if (local) Assert.That(sounds, Is.EqualTo(new[] { new MagicHitSound(5, 4, mob.Position) }));
+            else Assert.That(sounds, Is.Empty, "not the local owner: no hit sound here");
+        }
+    }
+
+    [Test]
+    public void AnArrowsAttackMaterialComesFromItsDamage()
+    {
+        var r = Record(nonTarget: false, children: "<damage attackMaterial=\"2\"/>");
+        Assert.That(SkillAttackFire.AttackAt(r, 0).AttackMaterial, Is.EqualTo(2));
+    }
+
     static OwnTagMagics Chain(CastRecord r, HitCandidate[] objects)
     {
         var m = new OwnTagMagics();

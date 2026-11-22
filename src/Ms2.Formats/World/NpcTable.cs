@@ -32,6 +32,9 @@ public sealed class NpcRow
     /// attack still hits (FilterTarget through FUN_1410930a0).
     /// </summary>
     public bool CorpseHitAble;
+    /// <summary>The environment's "defenceMaterial" (CNpcData m_nDefenceMaterial +0x70, npcdata.cpp:1455, 0 by the ctor): the
+    /// hit sound's defence material (CEffectService::PlayHitSound).</summary>
+    public int DefenceMaterial;
     public bool Nametag;                         // environment nametag: the npc shows a name tag
     public int Kind;                             // environment kind: function npcs (shop, storage, ...) are not 0
     public bool Minimap = true;                  // environment minimap: shown on the minimap
@@ -146,6 +149,7 @@ public sealed class NpcTable
             CollisionDepth = Flt(env.Element("collision"), "depth", 0),
             CollisionHeight = Flt(env.Element("collision"), "height", 0),
             CorpseHitAble = Int(env.Element("corpse"), "hitAble") != 0,
+            DefenceMaterial = Int(env, "defenceMaterial"),
             Nametag = Int(env, "nametag") != 0,
             Kind = Int(env, "kind"),
             Illust = (string)env.Attribute("illust"),

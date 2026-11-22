@@ -1043,6 +1043,7 @@ public partial class HudScene
     readonly System.Collections.Generic.List<Ms2.Net.Packets.SkillHitRequest> ownHitSends = new();
     readonly System.Collections.Generic.List<Ms2.Net.Packets.SkillSplashRequest> ownSplashSends = new();
     readonly System.Collections.Generic.List<MagicEndEffect> ownEndEffects = new();
+    readonly System.Collections.Generic.List<MagicHitSound> ownHitSounds = new();
     Func<string, System.Numerics.Vector3> ownNodePosition;
     MagicRayBlocked ownRayBlocked;
     MagicRayCast ownRayCast;
@@ -1054,8 +1055,11 @@ public partial class HudScene
     /// <summary>
     /// CMagic::FUN_14145de80 for the own cast's magics (<see cref="OwnTagMagics"/>): each due one's region fill over the live
     /// objects, its send (SkillDamage 1/1) and its area registration into the live session's tomb tag pass, posed from the
-    /// player now. An arrow's end effects play in the field (CEffectService::InsertEffect, the object the own PC). The latency
-    /// lead is 0 (STILL-OPEN in <see cref="OwnTagMagics"/>); no stun state is kept, so the owner is never stunned.
+    /// player now. An arrow's end effects play in the field (CEffectService::InsertEffect, the object the own PC), and each
+    /// fill's hit sounds (CMagic::PlayHitEffects) before its send. The latency lead is 0 (STILL-OPEN in
+    /// <see cref="OwnTagMagics"/>); no stun state is kept, so the owner is never stunned.
+    /// STILL-OPEN: the worn weapon's attackMaterial is not looked up (the owner's WeaponMaterial is 0), so an attack without
+    /// its own attackMaterial plays the material 0 row.
     /// </summary>
     void TickOwnTagMagics()
     {
@@ -1071,8 +1075,13 @@ public partial class HudScene
         ownHitSends.Clear();
         ownSplashSends.Clear();
         ownEndEffects.Clear();
+        ownHitSounds.Clear();
         ownTagMagics.Tick(now, 0, owner, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(hitObjects), ownCast,
-            live.TombTags, ownHitSends, crtRand, ownRayBlocked, (slotField?.PkMode ?? 0) != 0, ownRayCast, ownSplashSends, ownEndEffects);
+            live.TombTags, ownHitSends, crtRand, ownRayBlocked, (slotField?.PkMode ?? 0) != 0, ownRayCast, ownSplashSends, ownEndEffects,
+            ownHitSounds);
+        // PlayHitEffects runs before the fill's send (magicdata.cpp:1838, :1955)
+        foreach (var hs in ownHitSounds)
+            FieldAudio.Instance?.PlayHitSound(hs.Attack, hs.Defence, new Vector3(hs.At.X, hs.At.Z, -hs.At.Y), crtRand);
         foreach (var req in ownHitSends) live.SendHit(req);
         foreach (var req in ownSplashSends) live.SendSplash(req);
         foreach (var fx in ownEndEffects)
@@ -1080,6 +1089,7 @@ public partial class HudScene
         ownHitSends.Clear();
         ownSplashSends.Clear();
         ownEndEffects.Clear();
+        ownHitSounds.Clear();
     }
 
     /// <summary>An end effect's client rotation columns as a godot basis: client (x, y, z) is godot (x, z, -y), so the godot

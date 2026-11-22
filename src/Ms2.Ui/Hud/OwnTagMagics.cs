@@ -6,8 +6,14 @@ using Ms2.Ui.Skills;
 namespace Ms2.Ui.Hud;
 
 /// <summary>The own player as a magic's owner sees it at a tick: the position and z rotation (degrees) the area is posed from,
-/// whether the owner (or the rider of the owner's ridee) is the local player, and the dead and stunned tests.</summary>
-public readonly record struct MagicOwner(Vector3 Position, float RotZ, bool LocalPlayer, bool Dead, bool Stunned);
+/// whether the owner (or the rider of the owner's ridee) is the local player, and the dead and stunned tests.
+/// <paramref name="WeaponMaterial"/> is the worn weapon's item data attackMaterial (+0x10c, CEquipment::FUN_1411e1860(5, 6, 0)),
+/// 0 without one: the hit sound's attack material when the attack has none (CMagic::PlayHitEffects).</summary>
+public readonly record struct MagicOwner(Vector3 Position, float RotZ, bool LocalPlayer, bool Dead, bool Stunned, int WeaponMaterial = 0);
+
+/// <summary>One hit sound an own magic's fill plays (CEffectService::PlayHitSound, effectservice.cpp:1355): the attack and
+/// defence materials the hit sound table pairs, at the hit object's position (client space).</summary>
+public readonly record struct MagicHitSound(int Attack, int Defence, Vector3 At);
 
 /// <summary>CPhysXHelper::RayCastFromPoint on the groups 0x201 (magicdata.cpp:1786): true when a ray from <paramref name="from"/>
 /// along the unit <paramref name="dir"/> hits within <paramref name="length"/>.</summary>
@@ -52,8 +58,8 @@ public delegate bool MagicRayCast(Vector3 from, Vector3 dir, float length, out V
 /// Piercing arrows (bounceType 3 and 4) keep flying through their hits, forget them each piercing interval and send its
 /// splash (<see cref="SkillSplashRequest"/>); bounceType 4 then flies back to the owner (state 5) and ends there.
 /// STILL-OPEN: for an arrow record, the magic control flight (FUN_141464490, a skill with magicControl enable not 0: those make no arrow
-/// magic here), the bounce-off's effect, the hit effects; the links of a record other than an arrow one, the latency maximum (0 here: the time sync's latency is not kept),
-/// CFunctionCubeService::SetTagArea, the magic's own effects (PlayHitEffects) and MyPC::FUN_14152e0c0 after a fill are not
+/// magic here), the bounce-off's effect; the links of a record other than an arrow one, the latency maximum (0 here: the time sync's latency is not kept),
+/// CFunctionCubeService::SetTagArea and MyPC::FUN_14152e0c0 after a fill are not
 /// ported.
 /// </summary>
 public sealed class OwnTagMagics
@@ -479,7 +485,8 @@ public sealed class OwnTagMagics
     /// </summary>
     public int Tick(int nowMs, int leadMs, in MagicOwner owner, ReadOnlySpan<HitCandidate> objects, CastRecord record,
         TombTagPass pass, List<SkillHitRequest> sends, Func<int> rand, MagicRayBlocked rayBlocked, bool pkMode = false,
-        MagicRayCast rayCast = null, List<SkillSplashRequest> splashes = null, List<MagicEndEffect> endEffects = null)
+        MagicRayCast rayCast = null, List<SkillSplashRequest> splashes = null, List<MagicEndEffect> endEffects = null,
+        List<MagicHitSound> hitSounds = null)
     {
         int registered = 0;
         // in the order the magics were made (the client runs aTags in order, stateskill.cpp:1401-1410)
@@ -488,7 +495,7 @@ public sealed class OwnTagMagics
             var m = live[i];
             if (m.Arrow)
             {
-                if (TickArrow(m, nowMs, owner, objects, pass, sends, splashes, endEffects, rand, rayCast, pkMode, ref registered)) live.RemoveAt(i);
+                if (TickArrow(m, nowMs, owner, objects, pass, sends, splashes, endEffects, hitSounds, rand, rayCast, pkMode, ref registered)) live.RemoveAt(i);
                 else i++;
                 continue;
             }
@@ -498,7 +505,7 @@ public sealed class OwnTagMagics
                 continue;
             }
             live.RemoveAt(i);
-            var req = Fill(m, owner, objects, record != null && record.CastId == m.CastId ? record : null, rand, rayBlocked, pkMode);
+            var req = Fill(m, owner, objects, record != null && record.CastId == m.CastId ? record : null, rand, rayBlocked, pkMode, hitSounds);
             if (req != null) sends?.Add(req);
             if (pass != null && Register(m, owner, pass)) registered++;
         }
@@ -514,8 +521,8 @@ public sealed class OwnTagMagics
     /// same way. m_nLastTick is the tick's time at the end. True when dropped.
     /// </summary>
     bool TickArrow(Magic m, int nowMs, in MagicOwner owner, ReadOnlySpan<HitCandidate> objects, TombTagPass pass,
-        List<SkillHitRequest> sends, List<SkillSplashRequest> splashes, List<MagicEndEffect> endEffects, Func<int> rand,
-        MagicRayCast rayCast, bool pkMode, ref int registered)
+        List<SkillHitRequest> sends, List<SkillSplashRequest> splashes, List<MagicEndEffect> endEffects,
+        List<MagicHitSound> hitSounds, Func<int> rand, MagicRayCast rayCast, bool pkMode, ref int registered)
     {
         if (m.Waiting)
         {
@@ -550,7 +557,7 @@ public sealed class OwnTagMagics
             Fly(m, nowMs, objects, rayCast);
             if (!m.Filled)
             {
-                var req = ArrowFill(m, nowMs, owner, objects, splashes, endEffects, rand, pkMode);
+                var req = ArrowFill(m, nowMs, owner, objects, splashes, endEffects, hitSounds, rand, pkMode);
                 if (req != null) sends?.Add(req);
             }
             // FUN_141462490: the attack's nonTarget 1 or brokenOffence, the owner the local player; the box every tick
@@ -709,7 +716,7 @@ public sealed class OwnTagMagics
     /// (<see cref="BounceOff"/>) instead of the end above.</item>
     /// </summary>
     SkillHitRequest ArrowFill(Magic m, int nowMs, in MagicOwner owner, ReadOnlySpan<HitCandidate> objects,
-        List<SkillSplashRequest> splashes, List<MagicEndEffect> endEffects, Func<int> rand, bool pkMode)
+        List<SkillSplashRequest> splashes, List<MagicEndEffect> endEffects, List<MagicHitSound> hitSounds, Func<int> rand, bool pkMode)
     {
         var a = m.Attack;
         int mode = a.Arrow.BounceType, max = a.Arrow.BounceCount > 1 ? a.Arrow.BounceCount : 1;
@@ -765,6 +772,8 @@ public sealed class OwnTagMagics
         SkillHitRequest req = null;
         if (owner.LocalPlayer)
         {
+            // PlayHitEffects before the send (magicdata.cpp:1955)
+            HitSounds(m, owner, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(queried), nHits, hitSounds);
             // the request keeps its target list: a new one per send
             var targets = new SkillHitTarget[nHits];
             for (int i = 0; i < nHits; i++)
@@ -802,7 +811,7 @@ public sealed class OwnTagMagics
     /// the reverse direction turned by MakeZRotation(FUN_14109ace0() * (FUN_141198810() * pi/4 + pi/4)), the first a CRT
     /// rand() in [-1, 1], the second one in [0, 1] (called in that order), unit; vel 1.2 times; the target the current point
     /// plus the side at that vel for the time left; no curve (m_n26C).
-    /// STILL-OPEN: the row's bounce effect (m_str188, m_n180, m_b19c) and the hit effects (PlayHitEffects) are not played.
+    /// STILL-OPEN: the row's bounce effect (m_str188, m_n180, m_b19c) is not played.
     /// </summary>
     static void BounceOff(Magic m, Func<int> rand)
     {
@@ -972,7 +981,7 @@ public sealed class OwnTagMagics
     /// own magics) and the owner's ridee rider.
     /// </summary>
     SkillHitRequest Fill(Magic m, in MagicOwner owner, ReadOnlySpan<HitCandidate> objects, CastRecord record, Func<int> rand,
-        MagicRayBlocked rayBlocked, bool pkMode)
+        MagicRayBlocked rayBlocked, bool pkMode, List<MagicHitSound> hitSounds = null)
     {
         if (owner.Dead || owner.Stunned || !owner.LocalPlayer) return null;
         var a = m.Attack;
@@ -1026,6 +1035,8 @@ public sealed class OwnTagMagics
             detected.Add(m.TargetId);
         }
         int nHits = detected.Count < a.TargetCount ? detected.Count : a.TargetCount;
+        // PlayHitEffects before the send (magicdata.cpp:1838)
+        HitSounds(m, owner, objects, nHits, hitSounds);
         // the request keeps its target list: a new one per send
         var targets = new SkillHitTarget[nHits];
         for (int i = 0; i < nHits; i++)
@@ -1037,6 +1048,27 @@ public sealed class OwnTagMagics
             m.AttackIndex, m.SendCount, targets);
         if (nHits > 0) m.Tag.Hit?.Invoke();
         return req;
+    }
+
+    /// <summary>
+    /// CMagic::PlayHitEffects @0x141464790 (magicdata.cpp:1697) for the local owner (FUN_141bd19d0 kind 1): the attack material
+    /// is the attack's (row +0x1a0), 0 taking the owner's worn weapon's (<see cref="MagicOwner.WeaponMaterial"/>, the owner a
+    /// PC); each of the first <paramref name="nHits"/> detected hits but the own PC plays a hit sound at its position, an npc
+    /// with its defence material, any other object with 1.
+    /// STILL-OPEN: the volume (the client constant hitRange, +0x13a0) is not applied, and a pet is taken as not a CNpc
+    /// (QueryInterface 0x6200028 is not checked).
+    /// </summary>
+    void HitSounds(Magic m, in MagicOwner owner, ReadOnlySpan<HitCandidate> from, int nHits, List<MagicHitSound> into)
+    {
+        if (into == null) return;
+        int attack = m.Attack.AttackMaterial;
+        if (attack == 0) attack = owner.WeaponMaterial;
+        for (int i = 0; i < nHits && i < detected.Count; i++)
+        {
+            int k = IndexOf(from, detected[i]);
+            if (k < 0 || from[k].IsOwner) continue;
+            into.Add(new MagicHitSound(attack, from[k].Kind == HitKind.Npc ? from[k].DefenceMaterial : 1, from[k].Position));
+        }
     }
 
     static float YawOf(float rotZ)

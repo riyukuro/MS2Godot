@@ -225,6 +225,15 @@ public class SkillAttackFireTests
         Assert.That(corpse.CorpseHitAble, Is.True);
     }
 
+    [Test]
+    public void TheNpcRowReadsItsDefenceMaterialZeroWhenAbsent()
+    {
+        // CNpcData::LoadXml (npcdata.cpp:1455) on the environment; the ctor's 0 (:649)
+        var row = NpcTable.ParseRow(XElement.Parse("<npc id=\"4\"><environment defenceMaterial=\"3\"/></npc>"), Array.Empty<EffectDummy>());
+        var none = NpcTable.ParseRow(XElement.Parse("<npc id=\"5\"><environment/></npc>"), Array.Empty<EffectDummy>());
+        Assert.That((row.DefenceMaterial, none.DefenceMaterial), Is.EqualTo((3, 0)));
+    }
+
     static CastRecord Level(string motions)
     {
         var doc = XDocument.Parse("<ms2><skill id=\"100\"><basic mainType=\"1\"/><level value=\"1\">" + motions + "</level></skill></ms2>");

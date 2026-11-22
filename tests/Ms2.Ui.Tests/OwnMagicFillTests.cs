@@ -62,6 +62,28 @@ public class OwnMagicFillTests
     }
 
     [Test]
+    public void ARegionFillPlaysAHitSoundPerHitButTheOwnPcBeforeItsSend()
+    {
+        // CMagic::PlayHitEffects (magicdata.cpp:1697) from FUN_141464d00 (:1838): the attack's attackMaterial; an npc with its
+        // defence material, another PC with 1, the own PC (MyPC) none; nonTarget 1 so the whole region is sent
+        var r = Record("<attack point=\"Hit_01\" targetCount=\"5\" brokenOffence=\"1\">" + Box
+            + "<arrow nonTarget=\"1\"/><damage attackMaterial=\"3\"/></attack>");
+        var mob = Mob(9, 0, -100);
+        mob.DefenceMaterial = 6;
+        // pkMode: another PC out of the party is hostile
+        var pc = Pc(11, 0, -150, 0);
+        var objects = new[] { Me(), mob, pc };
+        var m = new OwnTagMagics();
+        m.Add(r.Skill, SkillAttackFire.AttackAt(r, 0), r, Tags(9), 0, MagicPathTable.Empty, null);
+        var sends = new List<SkillHitRequest>();
+        var sounds = new List<MagicHitSound>();
+        m.Tick(0, 0, new MagicOwner(Vector3.Zero, 0, true, false, false, WeaponMaterial: 8), objects, r, null, sends, () => 0, null,
+            pkMode: true, hitSounds: sounds);
+        Assert.That(sends.Single().Targets.Select(t => t.Id), Is.SupersetOf(new[] { 9, 11 }));
+        Assert.That(sounds, Is.EquivalentTo(new[] { new MagicHitSound(3, 6, mob.Position), new MagicHitSound(3, 1, objects[2].Position) }));
+    }
+
+    [Test]
     public void ATargetedNormalAttackSendsModeOneOnePerTargetRecord()
     {
         // no brokenOffence, a targeted skill: the attack's send (1/0) then each record's magic fills and sends 1/1

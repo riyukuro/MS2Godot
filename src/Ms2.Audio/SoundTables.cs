@@ -35,6 +35,47 @@ public sealed class SystemSoundTable
 }
 
 /// <summary>
+/// table/hitSound.xml (SoundPropertyMgr::LoadHitSound, soundproperty.cpp:513): each element from the first &lt;hitSound&gt; on
+/// (the loop takes every next sibling element, whatever its name) adds its "soundID" to the list of its ("AttackMaterial",
+/// "DefenceMeterial") pair; a missing attribute reads 0.
+/// </summary>
+public sealed class HitSoundTable
+{
+    readonly Dictionary<(int attack, int defence), List<int>> map = new();
+
+    public static HitSoundTable Parse(string xml)
+    {
+        var t = new HitSoundTable();
+        var root = XDocument.Parse(xml.TrimStart('\uFEFF')).Root;
+        if (root == null || root.Name.LocalName != "ms2") return t;
+        bool started = false;
+        foreach (var e in root.Elements())
+        {
+            if (!started && e.Name.LocalName != "hitSound") continue;
+            started = true;
+            var key = (Int(e, "AttackMaterial"), Int(e, "DefenceMeterial"));
+            if (!t.map.TryGetValue(key, out var ids)) t.map[key] = ids = new List<int>();
+            ids.Add(Int(e, "soundID"));
+        }
+        return t;
+    }
+
+    static int Int(XElement e, string name) => int.TryParse((string)e.Attribute(name), out int v) ? v : 0;
+
+    /// <summary>SoundPropertyMgr::GetHitSound @0x141792d70 (soundproperty.cpp:652): one of the pair's ids by
+    /// <paramref name="rand"/> (FUN_140767ff0) modulo their count; 0 for a pair without ids.</summary>
+    public int Get(int attack, int defence, Func<int> rand)
+    {
+        if (!map.TryGetValue((attack, defence), out var ids) || ids.Count == 0) return 0;
+        return ids[(int)((uint)rand() % (uint)ids.Count)];
+    }
+
+    /// <summary>CEffectService::PlayHitSound @0x1411a5580 (effectservice.cpp:1355): the sound event of a hit sound id, in the
+    /// category "ms2sound/sound/attack/hit" under its 8-digit name.</summary>
+    public static string EventPath(int id) => "ms2sound/sound/attack/hit/" + id.ToString("D8", System.Globalization.CultureInfo.InvariantCulture);
+}
+
+/// <summary>
 /// Footsteps as the client plays them (CGroundEffectDataManager::PlayEffects): the ground's material name (the entity property
 /// MapAttribute: grass, rock, ...) selects groundeffect/&lt;ground&gt;.xml, the action (walk, run0, run1, land) selects an
 /// &lt;action&gt;, and every &lt;effects&gt; block of it picks one effect file by percent; the effect file's soundEvent effects are

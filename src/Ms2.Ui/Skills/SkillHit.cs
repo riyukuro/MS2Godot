@@ -241,6 +241,9 @@ public struct HitCandidate
     /// <summary>PCBase::FUN_1416749a0()-&gt;GetInvincible on a PC (<see cref="AdditionalBuffList.Invincible"/>): 2 turns an
     /// arrow aside (the arrow fill's bounce-off).</summary>
     public int Invincible;
+    /// <summary>An npc's CNpcData m_nDefenceMaterial (+0x70, "defenceMaterial", npcdata.cpp:1455): the hit sound's defence
+    /// material (CMagic::PlayHitEffects); the other objects use 1.</summary>
+    public int DefenceMaterial;
 }
 
 /// <summary>The area pick of a skill attack and the target records the damage send carries.</summary>

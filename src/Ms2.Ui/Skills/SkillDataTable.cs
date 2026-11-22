@@ -202,6 +202,10 @@ public sealed class SkillAttackData
     /// <summary>&lt;damage effectHit&gt; (SkillDamage m_strEffectHit +0x20, skillattackdata.cpp:264; the attack row's +0x188): the
     /// effect an arrow with explosion plays at its end (CMagic::FUN_14145f570, magicdata.cpp:1064).</summary>
     public string EffectHit = "";
+    /// <summary>&lt;damage attackMaterial&gt; (SkillDamage m_nAttackMaterial +0x38, skillattackdata.cpp:285; the attack row's
+    /// +0x1a0): an own magic hit's attack material for its hit sound, 0 taking the worn weapon's (CMagic::PlayHitEffects,
+    /// magicdata.cpp:1704).</summary>
+    public int AttackMaterial;
     public readonly SkillRange Range = new();
     public readonly SkillArrow Arrow = new();
 
@@ -209,7 +213,7 @@ public sealed class SkillAttackData
     {
         var a = new SkillAttackData { Point = (string)e.Attribute("point") ?? "", TargetCount = Xml.Int(e, "targetCount"), AttackMethodType = Xml.Int(e, "attackMethodType"), BrokenOffence = Xml.Int(e, "brokenOffence"), MagicPathId = Xml.UInt(e, "magicPathID"), PointGroupId = Xml.UInt(e, "pointGroupID"), CubeMagicPathId = Xml.Int(e, "cubeMagicPathID") };
         if (e.Attribute("direction") != null) a.Direction = Xml.Int(e, "direction");
-        if (e.Element("damage") is { } damage) { a.StateHitIgnore = Xml.Int(damage, "stateHitIgnore"); a.EffectHit = (string)damage.Attribute("effectHit") ?? ""; }
+        if (e.Element("damage") is { } damage) { a.StateHitIgnore = Xml.Int(damage, "stateHitIgnore"); a.EffectHit = (string)damage.Attribute("effectHit") ?? ""; a.AttackMaterial = Xml.Int(damage, "attackMaterial"); }
         a.Range.LoadElement(e);
         a.Arrow.Load(e);
         return a;
