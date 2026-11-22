@@ -3478,10 +3478,19 @@ public partial class HudScene : Node, IUiStageHost
             return Ms2.Ui.Skills.SkillTooltip.Build(hudModel.Tables, tipPlayer, id, level, 0x10, true);
         };
         c.Button += name => GD.Print($"skill book: {name} is not sent (display only)");
+        c.InBattle = () => live?.SelfInBattle ?? false;
+        c.Sound += key => FieldAudio.Instance?.PlayUi(key);
+        c.ChatLine += (text, kind) => ChatLog.AddSystemLine(text, kind);
+        if (live != null) c.Send = live.SendSkillBook;
         Action<Ms2.Net.Packets.SkillBookTreePacket> onTree = c.OnSkillBookTree;
         // the status events the open window listens to (UISkillBookTreeDialog vfunc_oa0_7 / 9 / 28): the local player's job
         // packet modes 0, 1, 2 and 7 close it, a level change and the skill points refresh the shown preview
-        Action<int> onJob = mode => { if (mode is 0 or 1 or 2 or 7) c.OnJobChanged(); };
+        Action<int> onJob = mode =>
+        {
+            if (mode is 0 or 1 or 2 or 7) c.OnJobChanged();
+            // OnJob modes 9, 10 and 11 (scenestategame.cpp:7513): the job system takes the book, the open window refreshes
+            else if (mode is 9 or 10 or 11 && live?.SkillBook != null) { jobs.Read(live.SkillBook); c.RefreshSlotsIfShown(); }
+        };
         Action onPoints = c.OnSkillPointsChanged;
         Action<Ms2.Ui.StatusEvent> onStatus = e => { if (e == Ms2.Ui.StatusEvent.Level) c.OnLevelChanged(hudModel.Player.Level); };
         hudModel.Changed += onStatus;

@@ -119,3 +119,26 @@ public sealed record SkillBookTreeRequest : IOutPacket {
     public Outbound Op => Outbound.RequestSkillBookTree;
     public void Write(ByteWriter w) => w.WriteByte(0);
 }
+
+/// <summary>Outbound 0xA2 (SendOp::RequestSkillBookTree) mode 1: UISkillBookTreeDialog::RequestTree @0x140eca8c0
+/// (uiskillbookautodistributedialog.cpp:1122) saves the tabs: u8 1, i64 the tab in use (m_nTabId), i64 the tab applied, i32 rank,
+/// i32 count of tabs, each CSkillBookTreeTabConfig::Write.</summary>
+public sealed record SkillBookTreeSave(long CurrentTab, long Tab, int Rank, IReadOnlyList<SkillTreeTab> Tabs) : IOutPacket {
+    public Outbound Op => Outbound.RequestSkillBookTree;
+    public void Write(ByteWriter w) {
+        w.WriteByte(1);
+        w.WriteLong(CurrentTab); w.WriteLong(Tab); w.WriteInt(Rank); w.WriteInt(Tabs.Count);
+        foreach (var t in Tabs) t.Write(w);
+    }
+}
+
+/// <summary>Outbound 0x25 (SendOp::Job) mode 9 (apply) or 0xb (apply, confirmed): UISkillBookTreeDialog::RequestJob @0x140ec9200
+/// (uiskillbookautodistributedialog.cpp:1180): u8 mode, i32 count of { i32 skill id, i16 level, bool learned }.
+/// STILL-OPEN: the GMS2 number of SendOp::Job is not mapped.</summary>
+public sealed record JobSkillsRequest(int Mode, IReadOnlyList<(int SkillId, int Level, bool Learned)> Skills) : IOutPacket {
+    public Outbound Op => Outbound.Job;
+    public void Write(ByteWriter w) {
+        w.WriteByte((byte)Mode); w.WriteInt(Skills.Count);
+        foreach (var (id, level, learned) in Skills) { w.WriteInt(id); w.WriteShort((short)level); w.WriteBool(learned); }
+    }
+}

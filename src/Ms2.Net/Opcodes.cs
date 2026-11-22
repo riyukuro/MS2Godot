@@ -195,6 +195,7 @@ public enum Outbound : ushort {
     GlobalFactor = 0x82,
     ServerEnter = 0xB0,
     RequestSkillBookTree = 0xA2,
+    Job = 0x25,                 // SendOp::Job (commonfiles/opcodes.h:342): UISkillBookTreeDialog::RequestJob, JobSystemCli::RequestReset
     SkillMacro = 0x7B,          // SendOp::SkillMacro (commonfiles/opcodes.h:428): UISkillCompactControlDialog's tab requests
     NpcTalk = 0x22,
     Beauty = 0x23,          // SendOp::Beauty (commonfiles/opcodes.h:340): CSceneStateGame::SendBeauty

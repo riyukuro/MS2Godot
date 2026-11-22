@@ -245,6 +245,8 @@ public partial class LiveSession : Node
     public event Action SkillPointsChanged;
     /// <summary>RequestSkillBookTree mode 0 (UISkillBookTreeDialog::OnLoadComplete): a read request for the saved tabs.</summary>
     public void RequestSkillBookTree() => Send(new SkillBookTreeRequest());
+    /// <summary>The skill window's own requests (FUN_140710590): the tab save (RequestSkillBookTree mode 1) and Job.</summary>
+    public void SendSkillBook(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
     /// <summary>A SkillMacro (0xD1) mode 0 packet, the compact skill control window's vfunc_79 (@0x140f9fee0).</summary>
     public event Action<SkillMacroPacket> SkillMacro;
     /// <summary>The compact tabs of the last SkillMacro mode 2 (CSkillSystem::FUN_141767ae0 @0x141767ae0, m_lstCompact), or of

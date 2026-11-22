@@ -152,6 +152,81 @@ public class SkillBookTreeTests
         Assert.That((c.IsClosed, c.Simulator), Is.EqualTo((true, (SkillPointSimulator)null)));
     }
     [Test]
+    public void ApplySendsTheTabsThenTheMergedSkillsAndWaitsForTheAnswer()
+    {
+        var (h, c, _) = Load();
+        h.Model.Player.Level = 20;
+        var sent = new List<Ms2.Net.Wire.IOutPacket>();
+        var sounds = new List<string>();
+        var lines = new List<(string, int)>();
+        c.Send = sent.Add;
+        c.Sound += sounds.Add;
+        c.ChatLine += (t, k) => lines.Add((t, k));
+        c.OnSkillBookTree(NoTabs());
+        c.OnLevelChanged(20);
+        Assert.That(c.OnCallback("onSkillPointUp", new object[] { 10500041u }), Is.True);
+        Assert.That(c.OnCallback("onApplySkill", Array.Empty<object>()), Is.True);
+        // RequestTree (RequestSkillBookTree mode 1), then Job mode 9 with the merged skills
+        Assert.That(sent.Select(x => x.Op), Is.EqualTo(new[] { Ms2.Net.Outbound.RequestSkillBookTree, Ms2.Net.Outbound.Job }));
+        var save = (SkillBookTreeSave)sent[0];
+        Assert.That(save.Tabs.Single().Slots, Does.Contain((10500041, 1)));
+        var job = (JobSkillsRequest)sent[1];
+        Assert.That(job.Mode, Is.EqualTo(9));
+        Assert.That(job.Skills, Does.Contain((10500041, 1, true)));
+        Assert.That(c.WaitServer, Is.True);
+        Assert.That(sounds, Is.EqualTo(new[] { "System_Skillbook_Skill_Fixed_01" }));
+        Assert.That(lines.Single().Item2, Is.EqualTo(0x14));
+        // the answer is awaited: a second apply and a +/- send nothing and change nothing
+        sent.Clear();
+        Assert.That(c.OnCallback("onApplySkill", Array.Empty<object>()), Is.False);
+        Assert.That(c.OnCallback("onSkillPointUp", new object[] { 10500041u }), Is.False);
+        Assert.That(sent, Is.Empty);
+        c.RefreshSlotsIfShown();
+        Assert.That(c.WaitServer, Is.False);
+        // the close clears the wait too
+        c.OnCallback("onApplySkill", Array.Empty<object>());
+        c.OnJobChanged();
+        Assert.That(c.WaitServer, Is.False);
+    }
+
+    [Test]
+    public void ApplyInBattleOrWithAFieldLimitShowsItsBoxAndSendsNothing()
+    {
+        var (h, c, _) = Load();
+        h.Model.Player.Level = 20;
+        var sent = new List<Ms2.Net.Wire.IOutPacket>();
+        var boxes = new List<MessageBoxData>();
+        c.Send = sent.Add;
+        c.ShowBox = boxes.Add;
+        c.OnSkillBookTree(NoTabs());
+        c.OnLevelChanged(20);
+        c.OnCallback("onSkillPointUp", new object[] { 10500041u });
+        c.InBattle = () => true;
+        c.OnCallback("onApplySkill", Array.Empty<object>());
+        c.InBattle = () => false;
+        c.FieldLimitsSkillSet = () => true;
+        c.OnCallback("onApplySkill", Array.Empty<object>());
+        Assert.That(sent, Is.Empty);
+        Assert.That(boxes.Count, Is.EqualTo(2));
+        Assert.That(boxes[0].Msg, Is.Not.EqualTo(boxes[1].Msg));
+        Assert.That(c.WaitServer, Is.False);
+    }
+
+    [Test]
+    public void ApplyWritesTheClientsPacketLayouts()
+    {
+        var w = new Maple2.PacketLib.Tools.ByteWriter();
+        new JobSkillsRequest(9, new[] { (10500001, 2, true) }).Write(w);
+        Assert.That(w.Buffer.AsSpan(0, w.Length).ToArray(), Is.EqualTo(new byte[] { 9, 1, 0, 0, 0, 0xA1, 0x37, 0xA0, 0, 2, 0, 1 }));
+        w = new Maple2.PacketLib.Tools.ByteWriter();
+        new SkillBookTreeSave(5, 6, 1, new[] { new SkillTreeTab(5, "A", new[] { (7, 2) }) }).Write(w);
+        var r = new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray());
+        Assert.That((r.ReadByte(), r.ReadLong(), r.ReadLong(), r.ReadInt(), r.ReadInt()), Is.EqualTo(((byte)1, 5L, 6L, 1, 1)));
+        Assert.That(SkillTreeTab.Read(r), Is.EqualTo(new SkillTreeTab(5, "A", new[] { (7, 2) })).Using<SkillTreeTab>((a, b) => a.Id == b.Id && a.Name == b.Name && a.Slots.SequenceEqual(b.Slots)));
+        Assert.That(Ms2.Net.Outbound.Job, Is.EqualTo((Ms2.Net.Outbound)0x25));
+    }
+
+    [Test]
     public void ABookSkillDroppedOnAQuickSlotIsSentAndKept()
     {
         // NotifyDragSlot::SlotDragEnd from a BookSlot to a SkillSlot: SkillSlot::vfunc_18 (skillslot.cpp:507) reads the book

@@ -1,5 +1,6 @@
 using Ms2.Avm2;
 using Ms2.Net.Packets;
+using Ms2.Net.Wire;
 using Ms2.Ui.Skills;
 
 namespace Ms2.Ui.Hud;
@@ -41,6 +42,26 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
     public event Action RequestTree;
     /// <summary>A callback whose client path sends a request or opens a part not here (by its callback name).</summary>
     public event Action<string> Button;
+
+    /// <summary>FUN_140710590(packet): the connection's send. Without one (no live session) a request goes nowhere.</summary>
+    public Action<IOutPacket> Send;
+    /// <summary>PC::vfunc_65 of the local player (CanApply :612): in battle, the skill set cannot be applied.</summary>
+    public Func<bool> InBattle = () => false;
+    /// <summary>CFieldDataCli::HasLimitContent(0x10) (CanApply :612). STILL-OPEN: the field's limit contents are not read, so false.</summary>
+    public Func<bool> FieldLimitsSkillSet = () => false;
+    /// <summary>ShowMessageBox / FUN_140d73c60: show a box.</summary>
+    public Action<MessageBoxData> ShowBox = MessageBoxQueue.Show;
+    /// <summary>IsCheckbox0Checked / IsCheckbox1Checked of the box the callback got; the box's own flags without a loaded layer.</summary>
+    public Func<MessageBoxData, int, bool> CheckboxChecked = (b, n) =>
+        MessageBoxQueue.Layer != null ? MessageBoxQueue.Layer.CheckboxChecked(b, n) : n == 0 ? b.Check0Selected : b.Check1Selected;
+    /// <summary>FUN_1412751b0(text, kind): a chat log line of the kind (0x14 for the apply notice).</summary>
+    public event Action<string, int> ChatLine;
+    /// <summary>PlaySystemSound(key).</summary>
+    public event Action<string> Sound;
+
+    /// <summary>m_nWaitServer: a request is out; the +/-, apply and tab callbacks wait for the server's Job answer
+    /// (RefreshSlotsIfShown :699) or the close.</summary>
+    public bool WaitServer { get; private set; }
 
     /// <summary>m_nJobLevel: the rank whose tree is shown (1, or 2 with feature 0xca after the second job change).</summary>
     public int JobLevel = 1;
@@ -91,6 +112,7 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
     {
         bag.Clear();
         ready = false;
+        WaitServer = false;
         shownTabId = 0;
         maxTabs = 1;
         simulators.Clear();
@@ -619,8 +641,8 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
         if (!ready) return false;
         switch (name)
         {
-            case "onSkillPointUp": SkillPointUp((uint)Rt.ToNumber(args.ElementAtOrDefault(0))); return true;
-            case "onSkillPointDown": SkillPointDown((uint)Rt.ToNumber(args.ElementAtOrDefault(0))); return true;
+            case "onSkillPointUp": if (WaitServer) return false; SkillPointUp((uint)Rt.ToNumber(args.ElementAtOrDefault(0))); return true;
+            case "onSkillPointDown": if (WaitServer) return false; SkillPointDown((uint)Rt.ToNumber(args.ElementAtOrDefault(0))); return true;
             case "onRequireSkillEffect":
                 // ASData pops in call order: the flag, then the skill id
                 RequireSkillEffect((uint)Rt.ToNumber(args.ElementAtOrDefault(1)), Rt.ToBoolean(args.ElementAtOrDefault(0)));
@@ -632,12 +654,122 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
                     RefreshSlots(true);
                 }
                 return false;
-            case "onApplySkill": case "onResetSkill": case "onUseTab": case "onAutoDistribute": case "OnRegisterShortcutkey":
+            case "onApplySkill":
+                if (WaitServer) return false;
+                ApplySkill();
+                return true;
+            case "onResetSkill": case "onUseTab": case "onAutoDistribute": case "OnRegisterShortcutkey":
             case "onRenameTab": case "onAddTab": case "onChangeSubJob": case "onRemoveTab": case "onLapenshardBtn":
                 Button?.Invoke(name);
                 return true;
         }
         return false;
+    }
+
+    /// <summary>CanApply @0x140ecd4b0 (:612): not in battle and not in a field that limits the skill set; each refusal shows its box.</summary>
+    bool CanApply()
+    {
+        if (InBattle()) { ShowBox(MessageBoxQueue.Create(0, Common("s_msg_skillbook_set_disable_battle"), null, "")); return false; }
+        if (FieldLimitsSkillSet()) { ShowBox(MessageBoxQueue.Create(0, Common("s_msg_skillbook_set_disable_field"), null, "")); return false; }
+        return true;
+    }
+
+    /// <summary>The apply branch of vfunc_28 (:2118): CanApply, then (CheckApply @0x140ecd6d0 :634, the platform state, which is
+    /// 0 here; STILL-OPEN: its notice box) with feature 0xca and a sub job of rank above 1 the rank box (OnApplyConfirm answers
+    /// it), otherwise RequestTree, RequestJob for every rank and the notice s_msg_skillbook_apply_skill.</summary>
+    void ApplySkill()
+    {
+        if (!CanApply()) return;
+        if (Feature(0xca) && Jobs != null)
+        {
+            int rank = JobTable.GetJobRank(Jobs.SubJob);
+            if (rank > 1)
+            {
+                var box = MessageBoxQueue.CreateWithCallback(Common("s_msg_skillbook_apply_skill_joblevel"), 0x19, OnApplyConfirm);
+                box.SetButtonPreset(1);
+                box.MustCheck = true;
+                box.SetCheckbox0(Common("s_msg_skillbook_skill_level_0"), JobLevel == 1);
+                box.SetCheckbox1(Common("s_msg_skillbook_skill_level_1"), JobLevel == 2);
+                box.Append(rank);
+                ShowBox(box);
+                return;
+            }
+        }
+        SaveTree(shownTabId, 0, 0);
+        RequestJob(false, false, 0);
+        ChatLine?.Invoke(Common("s_msg_skillbook_apply_skill"), 0x14);
+    }
+
+    /// <summary>OnApplyConfirm @0x140ece840 (:992): button 0 reads the rank from the two checkboxes (both: 0, the first: 1, the
+    /// second: 2; none: 0) when the box carries a sub job rank above 1, then RequestTree, RequestJob and the notice. The layer
+    /// takes the next box after the callback.</summary>
+    bool OnApplyConfirm(int result, MessageBoxData box)
+    {
+        if (result != 0) return true;
+        int rank = 0;
+        if (box.ArgInt(0, 0) > 1)
+        {
+            bool first = CheckboxChecked(box, 0), second = CheckboxChecked(box, 1);
+            if (first && second) rank = 0;
+            else if (first) rank = 1;
+            else if (second) rank = 2;
+        }
+        SaveTree(shownTabId, 0, rank);
+        RequestJob(false, false, rank);
+        ChatLine?.Invoke(Common("s_msg_skillbook_apply_skill"), 0x14);
+        return true;
+    }
+
+    /// <summary>RequestTree @0x140eca8c0 (:1122), mode 1: with <paramref name="keep"/> 0 the tab (all with id 0) takes the used
+    /// points of its preview for the rank; then the tabs are saved, the tab in use first.</summary>
+    void SaveTree(long id, int keep, int rank)
+    {
+        if (keep == 0)
+        {
+            foreach (var t in tabs)
+            {
+                if (id != 0 && t.Id != id) continue;
+                if (!simulators.TryGetValue(t.Id, out var s)) continue;
+                t.Slots.Clear();
+                foreach (var (skill, pts) in s.GetUsedPoints(rank)) t.Slots[skill] = (uint)pts;
+            }
+        }
+        Send?.Invoke(new SkillBookTreeSave(tabId, id, rank, tabs.Select(t =>
+            new SkillTreeTab(t.Id, t.Name, t.Slots.Select(kv => ((int)kv.Key, (int)kv.Value)).ToList())).ToList()));
+    }
+
+    /// <summary>RequestJob @0x140ec9200 (:1180): the preview must validate; a tab not in use is only saved (RequestTree with the
+    /// arguments as the client passes them); otherwise Job mode 9 (0xb confirmed) carries the merged (all: the snapshot) skills,
+    /// the wait starts, the changed skills play their effect, the preview commits and the fixed sound plays.</summary>
+    void RequestJob(bool confirm, bool all, int rank)
+    {
+        if (sim == null || !CanApply()) return;
+        if (!sim.Validate(out _)) return;
+        if (shownTabId != tabId)
+        {
+            SaveTree(shownTabId, rank, 0);
+            return;
+        }
+        var skills = all ? sim.GetSnapshot(0) : sim.GetMerged(rank);
+        Send?.Invoke(new JobSkillsRequest(confirm ? 0xb : 9, skills.Select(k => ((int)k.Id, (int)k.Level, k.Learned)).ToList()));
+        WaitServer = true;
+        var applied = new List<JobSkill>();
+        if (!all)
+        {
+            applied = sim.GetChanged(rank);
+            sim.Commit(rank);
+        }
+        foreach (var k in applied) Host.Invoke("playChangeEffect", k.Id);
+        Sound?.Invoke("System_Skillbook_Skill_Fixed_01");
+    }
+
+    /// <summary>RefreshSlotsIfShown @0x140ec8220 (:699), called by OnJob modes 9, 10 and 11 of the local player
+    /// (scenestategame.cpp:7513) after the job system took the packet's book: an open window refreshes its slots and the wait ends.</summary>
+    public void RefreshSlotsIfShown()
+    {
+        if (!ready || sim == null) return;
+        RefreshSlots(true);
+        WaitServer = false;
     }
 
     /// <summary>SkillPointUp @0x140ecaa30 (:1355): the preview one level up, the tree updated, the change effect, the job part.</summary>
