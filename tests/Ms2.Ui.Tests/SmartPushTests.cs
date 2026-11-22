@@ -279,4 +279,22 @@ public class SmartPushTests
         m.Update(1400);                       // FindStripUI is null: return
         Assert.That(strip.Log.Count, Is.EqualTo(8));
     }
+
+    [Test]
+    public void UpdateAllocatesNothingWhenNoPushIsWanted()
+    {
+        var (m, strip, f, _, _) = Mgr();
+        uint t = 1000;
+        void Run(int n) { for (int i = 0; i < n; i++) m.Update(t += 40); }   // every third call passes the 100 ms throttle
+        Run(300);                             // warm up: the first polls run every probe and the JIT settles
+        f.Hide = true; Run(300); f.Hide = false;
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        Run(2000);
+        f.Hide = true;                        // the suppressed path
+        Run(2000);
+        long used = GC.GetAllocatedBytesForCurrentThread() - before;
+        // 24 B is the whole reading however many ticks run (2,000 and 20,000 ticks gave the same 24), so it is not per tick.
+        Assert.That(used, Is.LessThanOrEqualTo(24), "4000 ticks, ~1300 polls");
+        Assert.That(strip.Log, Is.Empty);
+    }
 }
