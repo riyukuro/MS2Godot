@@ -605,10 +605,13 @@ public class AsTextField : AsInteractiveObject
     }
     [As] public void setTextFormat(AsTextFormat f, int b = -1, int e = -1) { Format ??= (AsTextFormat)R.GetClass("flash.text.TextFormat").Construct(); Format.MergeFrom(f); Changed(); }
     [As] public AsTextFormat getTextFormat(int b = -1, int e = -1) => defaultTextFormat;
-    [As] public void setSelection(int b, int e) { SelBegin = Math.Clamp(b, 0, Text.Length); SelEnd = Math.Clamp(e, SelBegin, Text.Length); }
+    /// <summary>Both ends clamped into the text, the order kept: the caret goes to <paramref name="e"/> and
+    /// <paramref name="b"/> is the anchor a Shift key extends from (TextField::SetSelection @0x1425bcfc0, which calls
+    /// EditorKit::SetSelection: SetCursorPos(e), then DocView::SetSelection(b, e) as given).</summary>
+    [As] public void setSelection(int b, int e) => Select(Math.Clamp(b, 0, Text.Length), Math.Clamp(e, 0, Text.Length));
     [As] public int selectionBeginIndex => SelBegin;
     [As] public int selectionEndIndex => SelEnd;
-    [As] public int caretIndex => SelEnd;
+    [As] public int caretIndex => CaretAtBegin ? SelBegin : SelEnd;
     [As] public int scrollV { get; set; } = 1;
     [As] public int scrollH { get; set; }
     [As] public int maxScrollV { get { int vis = Math.Max(1, (int)((Box.H - 4) / TextMeasure.LineHeight(FontName, Size, Leading))); return Math.Max(1, numLines - vis + 1); } }
@@ -661,7 +664,90 @@ public class AsTextField : AsInteractiveObject
     }
 
     /// <summary>Ctrl+A (KeyAct_SelectAll, EditorKit's key handler, sfr_gfx_07.cpp:821): the whole text is selected, nothing changes.</summary>
-    public void SelectAll() { SelBegin = 0; SelEnd = Text.Length; }
+    public void SelectAll() => Select(0, Text.Length);
+
+    /// <summary>The caret is at <see cref="SelBegin"/> (a selection made leftwards, or setSelection(b, e) with e &lt; b),
+    /// else at <see cref="SelEnd"/>. The other end is the anchor a Shift key extends from.</summary>
+    public bool CaretAtBegin;
+
+    void Select(int anchor, int caret) { SelBegin = Math.Min(anchor, caret); SelEnd = Math.Max(anchor, caret); CaretAtBegin = caret < anchor; }
+
+    // EditorKit::LastHorizCursorPos: the x an Up / Down / PageUp / PageDown move aimed at, kept for the next such move
+    // while the caret stays where that move put it (any other cursor move resets it, EditorKit::SetCursorPos @0x142619b80)
+    double keptCaretX = -1;
+    int keptCaretPos = -1;
+    string keptCaretText;
+
+    /// <summary>
+    /// A caret key (EditorKit's key handler, sfr_gfx_07.cpp:646-776, then its final block :864). <paramref name="shift"/>
+    /// extends the selection from its anchor, only in a selectable field (KeyAct_EnterSelectionMode sets the editor's
+    /// shift state only when IsSelectable). Without it the caret moves and the selection collapses; Left / Right / Up /
+    /// Down on a selection go to its start or end. A key that leaves the caret where it is still collapses a selection.
+    /// Up / Down / PageUp / PageDown keep the caret's x: the char nearest it on the target line
+    /// (DocView::GetCursorPosInLineByOffset @0x1426125b0), the start of the text before the first line, its end past the
+    /// last. The x is measured from the line start. Returns whether the caret or selection changed.
+    /// </summary>
+    public bool MoveCaret(CaretKey key, bool shift)
+    {
+        shift &= selectable;
+        int len = Text.Length, cur = Math.Min(caretIndex, len), pos = cur;
+        int b = Math.Min(SelBegin, len), e = Math.Min(SelEnd, len);
+        bool sel = b != e;
+        double x = -1;
+        var lines = Spans();
+        int line = 0;
+        while (line + 1 < lines.Count && lines[line + 1].Start <= cur) line++;
+        int End(int i) => lines[i].Start + lines[i].Line.Length;   // before the line's new line
+        switch (key)
+        {
+            case CaretKey.Left: if (pos > 0) pos--; if (!shift && sel) pos = b; break;
+            case CaretKey.Right: if (pos < len) pos++; if (!shift && sel) pos = e; break;
+            case CaretKey.LineHome: pos = lines[line].Start; break;
+            case CaretKey.LineEnd: pos = End(line); break;
+            case CaretKey.DocHome: pos = 0; break;
+            case CaretKey.DocEnd: pos = len; break;
+            case CaretKey.PageHome: pos = lines[Math.Clamp(scrollV - 1, 0, lines.Count - 1)].Start; break;
+            case CaretKey.PageEnd: pos = End(Math.Clamp(bottomScrollV - 1, 0, lines.Count - 1)); break;
+            case CaretKey.Up or CaretKey.Down when !shift && sel:
+                pos = key == CaretKey.Up ? b : e;
+                break;
+            default:
+            {
+                bool page = key is CaretKey.PageUp or CaretKey.PageDown;
+                int step = page ? bottomScrollV - scrollV + 1 : 1;
+                int to = key is CaretKey.Up or CaretKey.PageUp ? line - step : line + step;
+                // Up on the first line and Down on the last do not take the x; the page keys always do
+                if (page || (to >= 0 && to < lines.Count))
+                    x = keptCaretX >= 0 && keptCaretPos == cur && ReferenceEquals(keptCaretText, Text)
+                        ? keptCaretX : LineWidth(lines[line].Line[..Math.Min(cur - lines[line].Start, lines[line].Line.Length)], lines[line].Start);
+                pos = to < 0 ? 0 : to >= lines.Count ? len : PosAtX(lines[to], x);
+                break;
+            }
+        }
+        if (pos != cur)
+        {
+            if (shift) Select(CaretAtBegin ? e : b, pos);
+            else { SelBegin = SelEnd = pos; CaretAtBegin = false; }
+            keptCaretX = x; keptCaretPos = pos; keptCaretText = Text;
+            return true;
+        }
+        if (!shift && sel) { SelBegin = SelEnd = pos; CaretAtBegin = false; keptCaretX = -1; return true; }
+        return false;
+    }
+
+    // the char boundary nearest x on the line: past a char's middle the caret goes after it
+    int PosAtX((string Line, int Start) l, double x)
+    {
+        double w0 = 0;
+        int i = 0;
+        for (; i < l.Line.Length; i++)
+        {
+            double w1 = LineWidth(l.Line[..(i + 1)], l.Start);
+            if (w1 > x) { if (x - w0 > (w1 - w0) / 2) i++; break; }
+            w0 = w1;
+        }
+        return l.Start + i;
+    }
 
     /// <summary>
     /// Copies the selection to <paramref name="clipboard"/> (EditorKit::CopyToClipboard @0x142617440). A password field never
@@ -784,6 +870,9 @@ public class AsTextField : AsInteractiveObject
         return ok;
     }
 }
+
+/// <summary>The caret actions of the client's text key map (TextKeyMap::KeyAction, gfx_textclipboard.h).</summary>
+public enum CaretKey { Left, Right, Up, Down, LineHome, LineEnd, DocHome, DocEnd, PageUp, PageDown, PageHome, PageEnd }
 
 [AsClass("flash.text.TextFieldType")] public class AsTextFieldType : AsObject { [As] public const string DYNAMIC = "dynamic", INPUT = "input"; }
 [AsClass("flash.text.TextFieldAutoSize")] public class AsTextFieldAutoSize : AsObject { [As] public const string CENTER = "center", LEFT = "left", NONE = "none", RIGHT = "right"; }

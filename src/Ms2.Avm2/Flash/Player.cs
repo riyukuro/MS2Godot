@@ -1662,9 +1662,10 @@ namespace Ms2.Avm2.Flash
                         case EditAction.Paste: tf.Paste(Clipboard); return;
                         case EditAction.SelectAll: tf.SelectAll(); return;
                     }
+                    if (CaretKeyOf(keyCode, ctrl) is { } caret) { tf.MoveCaret(caret, shift); return; }
                     if (tf.type != "input") return;
                     if (keyCode == 8) { tf.Backspace(); return; }
-                if (keyCode == 46 && !shift) { tf.Delete(); return; }
+                    if (keyCode == 46 && !shift) { tf.Delete(); return; }
                     if (charCode >= 32 && !ctrl) TypeInto(tf, ((char)charCode).ToString());
                 });
         }
@@ -1687,6 +1688,25 @@ namespace Ms2.Avm2.Flash
             45 when ctrl => EditAction.Copy,
             46 when shift => EditAction.Cut,                                   // Delete
             _ => EditAction.None,
+        };
+
+        /// <summary>
+        /// The caret keys of the client's text key map (TextKeyMap::InitWindowsKeyMap @0x14258e0c0): the arrows, Home / End
+        /// for the line, Ctrl+Home / Ctrl+End for the text, PageUp / PageDown, Ctrl+PageUp / Ctrl+PageDown for the visible
+        /// lines. Extra modifiers do not matter (TextKeyMap::Find takes the first entry whose modifiers are held, the Ctrl
+        /// entries first), so Ctrl+Left is Left and Ctrl+Shift+Home selects to the start of the text.
+        /// </summary>
+        public static CaretKey? CaretKeyOf(uint keyCode, bool ctrl) => keyCode switch
+        {
+            0x25 => CaretKey.Left,
+            0x27 => CaretKey.Right,
+            0x26 => CaretKey.Up,
+            0x28 => CaretKey.Down,
+            0x24 => ctrl ? CaretKey.DocHome : CaretKey.LineHome,
+            0x23 => ctrl ? CaretKey.DocEnd : CaretKey.LineEnd,
+            0x21 => ctrl ? CaretKey.PageHome : CaretKey.PageUp,
+            0x22 => ctrl ? CaretKey.PageEnd : CaretKey.PageDown,
+            _ => null,
         };
 
         /// <summary>Text typed into the focused field (IME output arrives here too): textInput first, then the edit.</summary>
@@ -1755,7 +1775,7 @@ namespace Ms2.Avm2.Flash
             }
             if (ReferenceEquals(o, Focus)) return;
             Focus = o;
-            if (o is AsTextField tf) { tf.SelBegin = 0; tf.SelEnd = tf.Text.Length; }
+            if (o is AsTextField tf) tf.SelectAll();
             if (old != null) RT.Guard("focusOut", () => { var e = (AsFocusEvent)RT.GetClass("flash.events.FocusEvent").Construct("focusOut", Rt.True); e.relatedObject = o; old.Dispatch(e); });
             if (o != null) RT.Guard("focusIn", () => { var e = (AsFocusEvent)RT.GetClass("flash.events.FocusEvent").Construct("focusIn", Rt.True); e.relatedObject = old; o.Dispatch(e); });
         }
