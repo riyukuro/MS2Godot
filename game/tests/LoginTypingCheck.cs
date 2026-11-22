@@ -22,8 +22,9 @@ namespace Ms2Godot.Tests;
 /// right of its second glyph's pen, a drag off the field's left and back to just right of the fourth glyph's end, and the
 /// release select the second to fourth characters with the mouse (EditorKit::OnMouseDown/OnMouseMove/OnMouseUp): the press
 /// puts the caret at 1, the drag left selects 0..1, and the drag back 1..4, drawn as the script selection was. The click
-/// comes first because on a CLIK TextInput without the focus a press loses its capture at once, as in the client (see the
-/// first press). Quits with 0 when both fields hold what was typed and the
+/// comes first because on a CLIK TextInput without the focus a press loses its capture at once, as in the client: the
+/// field takes the press before the focus moves, and the focus move's focusIn makes CLIK focus the component, which kills
+/// the field's focus (see the first press). Quits with 0 when both fields hold what was typed and the
 /// selection showed so, else 1.
 /// </summary>
 public partial class LoginTypingCheck : Node
@@ -53,7 +54,7 @@ public partial class LoginTypingDriver : Node
     const string Id = "abc12", Password = "secret";
     int frames, connects;
     bool typed, keypadKeptBox;
-    string selection, unselected, relaid, outlined, dragged, dragLeft;
+    string selection, unselected, relaid, outlined, dragged, dragLeft, firstPress;
     Vector2 pressAt, endAt;
     ulong holdUntil;
     System.Collections.Generic.List<Rect2> before;
@@ -259,9 +260,12 @@ public partial class LoginTypingDriver : Node
         if (frames == 250) Press(Key.KpEnter, '\r');   // and on the bare dialog: no login either
         if (frames == 255 && Boundaries(NodeOf(idField)) is var (a, b))
         {
-            // the first press only focuses the field: CLIK's TextInput.handleMouseDown focuses its textField, whose focusIn
-            // (handleTextFieldFocusIn) gives the focus to the component, and the field losing it drops the press's capture
-            // (EditorKit::OnKillFocus); a press away from the drag's start, so the drag's press is no double press
+            // the first press only focuses the field. The field's editor takes the press before the press moves the focus
+            // (MovieImpl::ProcessMouse, PropagateMouseEvent before QueueSetFocusTo); the field's focusIn
+            // (TextInput.handleTextFieldFocusIn) gives the focus to the component (UIComponent.set_focused,
+            // FocusManager.setFocus), which kills the field's focus (TransferFocus, TextField::OnFocus), and
+            // EditorKit::OnKillFocus drops the capture before the mouseDown. A press away from the drag's start, so the
+            // drag's press is no double press
             (pressAt, endAt) = (a, b);
             Mouse(new InputEventMouseMotion { Position = endAt, GlobalPosition = endAt });
             holdUntil = Time.GetTicksMsec() + 120;
@@ -270,6 +274,7 @@ public partial class LoginTypingDriver : Node
         {
             Mouse(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = endAt, GlobalPosition = endAt, ButtonMask = MouseButtonMask.Left });
         }
+        if (frames == 262 && idField is { MouseCaptured: true }) firstPress = "the first press kept the capture";
         if (frames == 263) Mouse(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = endAt, GlobalPosition = endAt });
         if (frames == 266 && pressAt != default)
         {
@@ -299,8 +304,8 @@ public partial class LoginTypingDriver : Node
             Shot("login_id_dragged.png");
         }
         if (frames < 302) return;
-        bool boxClosed = MessageBoxQueue.IsIdle, ok = typed && keypadKeptBox && boxClosed && connects == 0 && selection == null && unselected == null && relaid == null && outlined == null && dragged == null;
-        GD.Print($"login typing: window {GetTree().Root.Size}, content {GetTree().Root.GetVisibleRect().Size}, id \"{login.Controller.Id}\", password {login.Controller.Password.Length} chars, keypad Enter kept the box {keypadKeptBox}, Enter on a box: closed {boxClosed}, logins {connects}, selection on the focused id: {selection ?? "shown"}, after a text change: {relaid ?? "redrawn"}, outlined: {outlined ?? "white glyphs"}, after Tab: {unselected ?? "none"}, mouse drag on the id: {dragged ?? "1..4 shown"} -> {(ok ? "ok" : "FAIL")}");
+        bool boxClosed = MessageBoxQueue.IsIdle, ok = typed && keypadKeptBox && boxClosed && connects == 0 && selection == null && unselected == null && relaid == null && outlined == null && dragged == null && firstPress == null;
+        GD.Print($"login typing: window {GetTree().Root.Size}, content {GetTree().Root.GetVisibleRect().Size}, id \"{login.Controller.Id}\", password {login.Controller.Password.Length} chars, keypad Enter kept the box {keypadKeptBox}, Enter on a box: closed {boxClosed}, logins {connects}, selection on the focused id: {selection ?? "shown"}, after a text change: {relaid ?? "redrawn"}, outlined: {outlined ?? "white glyphs"}, after Tab: {unselected ?? "none"}, first press on the id: {firstPress ?? "focus only"}, mouse drag on the id: {dragged ?? "1..4 shown"} -> {(ok ? "ok" : "FAIL")}");
         SetProcess(false);
         GetTree().Quit(ok ? 0 : 1);
     }
