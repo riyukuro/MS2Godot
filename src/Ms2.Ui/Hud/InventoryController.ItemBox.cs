@@ -140,6 +140,30 @@ public sealed partial class InventoryController
         return true;
     }
 
+    /// <summary>The answer of the blueprint open box: UIUGCCubeBillDialog::FUN_140ee8000 (<see cref="CubeBill.OnBlueprintOpenBox"/>), (answer, the box's item uid).
+    /// Null while no bill dialog is wired: BlueprintImport then stays with <see cref="OwnUseFunctions"/>.</summary>
+    public Func<int, long, bool> BlueprintOpenAnswer;
+    public const string UseFunctionItemTag = "use_function_item", OpenBlueprintKey = "s_msg_item_open_blueprint";
+
+    /// <summary>pUgc->m_nUgcUid of GetUgcInfo() (the look's id, uimeratmarketdialog.cpp:1764); null for an item with no ugc block (the client's GetUgcInfo() == 0).</summary>
+    static long? BlueprintUgcUid(Item item) => item.Record?.Ugc?.Uid;
+
+    /// <summary>BlueprintImport @0x140d1f6d0 (unit_140d1ae30_itemfunctiondispatch.cpp:982-1022), the blueprint with a ugc uid: box 0x11 with
+    /// s_msg_item_open_blueprint and the item's name, the item uid and entry, yes / no 0x477 / 0x478, answered by FUN_140ee8000.
+    /// STILL-OPEN: a blueprint with ugc uid 0 (FUN_1406321d0 → FUN_141405440, or UIItemBlueprintCreateDialog 0x4f7b); it stays with <see cref="OwnUseFunctions"/>.
+    /// The GetItemUseDialog(0x4f29) test is the bill dialog existing, which always holds here.</summary>
+    internal bool BlueprintImport(Item item)
+    {
+        string name = new ItemTooltip(Model, 0).Name(item);
+        var box = MessageBoxQueue.Create(0x11, Ms2.Quest.ClientFormat.Format(Model.Tables.Common(OpenBlueprintKey) ?? "", name), null, UseFunctionItemTag);
+        box.ItemUid = item.Uid;
+        box.SetItemEntry(item, name, 1, 0, -1, -1, 1, Model.Tables.Items.TextColor);
+        box.SetButtonLabelIds(0x477, 0x478, 0);
+        box.Callback = (answer, b) => BlueprintOpenAnswer(answer, b.ItemUid);
+        ShowBox(box);
+        return true;
+    }
+
     /// <summary>SelectItemBox @0x140d22430: the dialog of the item (nothing when it is open).</summary>
     internal bool SelectItemBox(Item item)
     {

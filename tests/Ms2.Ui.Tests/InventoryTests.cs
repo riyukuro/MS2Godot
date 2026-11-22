@@ -922,4 +922,35 @@ public class InventoryTests
         c.UseItem(c.FindItem(31), true);
         Assert.That((opened, sent.Count), Is.EqualTo((new[] { 31L }, 0)), "opened once, nothing sent by the open");
     }
+
+    [Test]
+    public void ABlueprintWithAUgcUidAsksBeforeItIsOpened()
+    {
+        // BlueprintImport @0x140d1f6d0 (unit_140d1ae30_itemfunctiondispatch.cpp:982-1022): a ugc uid != 0 shows box 0x11 answered by FUN_140ee8000; uid 0 is not ported
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
+        int id = Enumerable.Range(20000000, 40000000).FirstOrDefault(i => model.Tables.Items.Get(i)?.FunctionName == "BlueprintImport");
+        if (id == 0) Assert.Ignore("no BlueprintImport item in this data");
+        book.Apply(new ItemMessage.LoadTab(id / 10000000, new[] {
+            new EquipItem { Id = id, Uid = 41, InventorySlot = 0, Amount = 1, Rarity = 1, HasUgc = true, Ugc = new UgcLook { Uid = 5 } },
+            new EquipItem { Id = id, Uid = 42, InventorySlot = 1, Amount = 1, Rarity = 1, HasUgc = true, Ugc = new UgcLook { Uid = 0 } } }));
+        var (h, c, _) = Load(model, book);
+        var shown = new List<MessageBoxData>(); c.ShowBox = shown.Add;
+        var sent = new List<(long, string)>(); c.View.RequestUse = (u, a) => sent.Add((u, a));
+        var raised = new List<string>(); c.Button += raised.Add;
+        c.UseItem(c.FindItem(42), true);
+        Assert.That((shown.Count, raised.Count), Is.EqualTo((0, 1)), "uid 0 stays with the own-use list while the bill is not wired");
+        var answers = new List<(int, long)>();
+        c.BlueprintOpenAnswer = (a, u) => { answers.Add((a, u)); return true; };
+        c.UseItem(c.FindItem(42), true);
+        Assert.That((shown.Count, raised.Count), Is.EqualTo((0, 2)), "uid 0: not ported, nothing opens");
+        Assert.That(c.UseItem(c.FindItem(41), true), Is.True);
+        Assert.That(sent, Is.Empty, "the box asks first");
+        var box = shown.Single();
+        Assert.That((box.Type, box.ItemUid, box.Extra), Is.EqualTo((0x11, 41L, InventoryController.UseFunctionItemTag)));
+        box.InvokeCallback(0, box);
+        Assert.That(answers, Is.EqualTo(new[] { (0, 41L) }));
+    }
 }

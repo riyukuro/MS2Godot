@@ -41,8 +41,9 @@ public sealed class CubeBillCost : CubeBillPending
 /// The blueprint ask (SendRequestCubeMode66 @0x140ee86f0, :311-320) and the blueprint open box's answer (FUN_140ee8000 @0x140ee8000 with FUN_140ee8610 @0x140ee8610,
 /// :180-205) are here too.
 /// STILL-OPEN: their callers. The ask is called by the meret market's UGC product open (FUN_140ec0b50 @0x140ec0b50, uimeratmarketcommon.cpp:1119-1135; needs
-/// the product's FUN_140896350 check and its blueprint at +0x418) and no meret market dialog is ported yet; the box that FUN_140ee8000 answers is opened by the
-/// item use handler of unit_140d1ae30, which is not in the recovered source.
+/// the product's FUN_140896350 check and its blueprint at +0x418) and no meret market dialog is ported yet; the box that FUN_140ee8000 answers is BlueprintImport's
+/// (@0x140d1f6d0, unit_140d1ae30_itemfunctiondispatch.cpp:982-1022), ported for a blueprint with a ugc uid in
+/// <see cref="InventoryController.BlueprintImport"/>; its uid 0 paths (FUN_141405440, UIItemBlueprintCreateDialog 0x4f7b) are STILL-OPEN.
 /// </summary>
 public sealed class CubeBill
 {

@@ -21,6 +21,8 @@ public partial class HudScene
         bill.CloseBill = () => { if (CubeBillOpen) cubeBillDialog.Close(); };
         bill.CloseSaveSlots = () => { if (HomeSaveSlotOpen) homeSaveSlot.Close(); };
         bill.OpenBill = () => ShowCubeBill(bill);
+        bill.HasItem = uid => inventory?.FindItem(uid) != null;                                            // FUN_141a02c20 (FindItemByUid)
+        bill.UseItem = (uid, arg) => inventory?.FindItem(uid) is { } item && inventory.RequestUseItem(item, arg) ? 1 : 0;   // FUN_140a63880
     }
 
     void UnbindCubeBill(Net.LiveSession live)
@@ -29,6 +31,8 @@ public partial class HudScene
         bill.CloseBill = () => { };
         bill.CloseSaveSlots = () => { };
         bill.OpenBill = () => { };
+        bill.HasItem = _ => false;
+        bill.UseItem = (_, _) => 0;
         if (CubeBillOpen) cubeBillDialog.Close();
     }
 

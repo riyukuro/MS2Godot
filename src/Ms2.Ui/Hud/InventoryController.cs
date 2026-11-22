@@ -655,6 +655,8 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         if (item.Data.FunctionName == "ItemMergeRevert" && RevertOpen != null) { RevertOpen(item); return true; }   // ItemMergeRevert @0x140d21480
         if (item.Data.FunctionName == "OpenItemBox" && OpenMultiBox != null) return OpenItemBox(item);                // @0x140d259d0
         if (item.Data.FunctionName == "SelectItemBox" && OpenSelectBox != null) return SelectItemBox(item);          // @0x140d22430
+        if (item.Data.FunctionName == "BlueprintImport" && BlueprintOpenAnswer != null && BlueprintUgcUid(item) is long and not 0)
+            return BlueprintImport(item);                                                                             // @0x140d1f6d0
         if (OwnUseFunctions.Contains(item.Data.FunctionName)) { Button?.Invoke("notifySlotUse"); return true; }
         RequestUseItem(item, "");
         return true;

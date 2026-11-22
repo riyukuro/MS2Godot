@@ -3329,6 +3329,7 @@ public partial class HudScene : Node, IUiStageHost
         c.RevertOpen = OpenItemRevert;
         c.UseItemSkill = CastItemSkill;
         c.OpenSelectBox = OpenSelectItemBox;
+        c.BlueprintOpenAnswer = (answer, uid) => liveHome?.Bill.OnBlueprintOpenBox(answer, uid) ?? true;   // FUN_140ee8000
         c.SelectBoxOpen = () => SelectItemBoxOpen;
         c.OpenMultiBox = OpenItemMultiOpen;
         c.LockSlotDropped = (uid, mine) => itemLock?.DroppedOnInventory(uid, mine);
