@@ -110,6 +110,29 @@ public class PackReadTests
         Assert.That(fallbacks, Is.EqualTo(0));
     }
 
+    /// <summary>An entry the platform-AES route turns down before its in-place decode (not an AES flag, no key) still holds
+    /// the bytes as read, so the package's decrypt runs on them without a second read from the archive file.</summary>
+    [Test]
+    public void AMissBeforeTheDecodeReadsTheEntryOnce()
+    {
+        var data = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(data)) Assert.Ignore("MS2_DATA not set");
+        var packs = new PackSet(data);
+        var name = packs.List("Xml").OrderBy(n => n, StringComparer.Ordinal)
+            .First(n => packs.EntryOf("Xml", n) is { } e && ((uint)e.BufferFlag & 0xff000000) != 0xff000000 && ((uint)e.BufferFlag & 9) == 9
+                && ((uint)e.BufferFlag & 0xee000000) == 0xee000000);
+        var entry = packs.EntryOf("Xml", name);
+        var flag = entry.BufferFlag;
+        try
+        {
+            entry.BufferFlag = (Maple2.File.IO.Crypto.Common.Encryption)((uint)flag & ~0xee000000u);
+            long misses0 = PackSet.FastAesMisses, reads0 = PackSet.EncodedReads;
+            try { packs.Read("Xml", name); } catch (Exception) { }   // whatever the package's decrypt makes of the flag
+            Assert.That((PackSet.FastAesMisses - misses0, PackSet.EncodedReads - reads0), Is.EqualTo((1L, 1L)), name);
+        }
+        finally { entry.BufferFlag = flag; }
+    }
+
     /// <summary>A read costs the entry's encoded bytes and its output, not copies of them: the base64 decodes in place and
     /// the AES keystream is made a chunk at a time, so no array as large as the entry is made besides the read buffer and the
     /// result (the streamed read: the read buffer only).</summary>

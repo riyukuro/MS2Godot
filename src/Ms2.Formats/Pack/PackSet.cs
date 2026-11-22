@@ -96,6 +96,9 @@ public sealed class PackSet : IDisposable
 
     public IEnumerable<string> List(string archive) => Get(archive).ByName.Keys;
 
+    /// <summary>The index entry of <paramref name="entry"/>, null when the archive has none.</summary>
+    internal PackIndex.Entry EntryOf(string archive, string entry) => Get(archive).ByName.GetValueOrDefault(entry.Replace('\\', '/'));
+
     public bool Exists(string archive, string entry) => Get(archive).ByName.ContainsKey(entry.Replace('\\', '/'));
 
     public byte[] Read(string archive, string entry)
@@ -166,22 +169,26 @@ public sealed class PackSet : IDisposable
     // the same standard AES (System.Security.Cryptography.Aes, AES-NI) makes exactly the needed blocks, a chunk at a time into
     // one stack buffer, and the xor is vectorized. The base64 is decoded in place, so the entry's encoded bytes are the only
     // array. Returns the decrypted length at the start of src, or -1 for anything else (not an AES entry, any exception);
-    // src may then be overwritten and the package's decrypt runs on a fresh read.
+    // decoded says whether the in-place decode ran, after which src may be overwritten and the package's decrypt runs on a
+    // fresh read (a miss before it leaves src as read).
     // FastAesMisses counts every entry the platform-AES route did not decrypt (a -1 return for any reason); Fallbacks every
     // read that ended in the package's GetBytes. Zero of both over a test run means every entry took the fast path.
-    internal static long FastAesHits, FastAesMisses, Fallbacks;
+    // EncodedReads counts the reads of an entry's encoded bytes from its archive file.
+    internal static long FastAesHits, FastAesMisses, Fallbacks, EncodedReads;
 
     static int Miss() { Interlocked.Increment(ref FastAesMisses); return -1; }
 
     const int KeystreamChunk = 4096;
 
-    static int FastAes(IPackFileHeader h, Encryption flag, byte[] src)
+    static int FastAes(IPackFileHeader h, Encryption flag, byte[] src, out bool decoded)
     {
+        decoded = false;
         try
         {
             if (((uint)flag & 0xee000000) != 0xee000000) return Miss();
             CipherKeys.GetKeyAndIV(h.Version, (uint)h.CompressedFileSize, out var key, out var iv);
             if (key == null || iv == null || iv.Length != 16 || (key.Length != 16 && key.Length != 24 && key.Length != 32)) return Miss();
+            decoded = true;
             if (Base64.DecodeFromUtf8InPlace(src, out int written) != System.Buffers.OperationStatus.Done) return Miss();
             using var aes = Aes.Create();
             aes.Key = key;
@@ -253,9 +260,9 @@ public sealed class PackSet : IDisposable
                 var buf = new byte[h.EncodedFileSize];
                 if (!ReadEncoded(a, h, buf)) return null;
                 var flag = (Encryption)((uint)h.BufferFlag & ~ZlibFlag);   // the package's decrypt, without its inflate
-                length = FastAes(h, flag, buf);
+                length = FastAes(h, flag, buf, out bool decoded);
                 if (length >= 0) return buf;
-                if (!ReadEncoded(a, h, buf)) return null;   // the in-place decode may have overwritten it
+                if (decoded && !ReadEncoded(a, h, buf)) return null;   // the in-place decode may have overwritten it
                 byte[] plain;
                 lock (gate) plain = (byte[])decrypt.Invoke(null, new object[] { h.Version, (uint)h.EncodedFileSize, (uint)h.CompressedFileSize, flag, buf });
                 length = plain?.Length ?? 0;
@@ -268,6 +275,7 @@ public sealed class PackSet : IDisposable
 
     bool ReadEncoded(Archive a, PackIndex.Entry h, byte[] buf)
     {
+        Interlocked.Increment(ref EncodedReads);
         lock (gate)
         {
             a.Handle ??= File.OpenHandle(a.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
