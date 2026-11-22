@@ -173,14 +173,7 @@ public partial class HudScene
             RotZ = rotZ,
             Key = key,
         };
-        SkillCast.OwnDead(w, Net.LiveSession.Instance?.Me);     // FUN_14176a380's 0xc on PCBase::IsDead
-        var sp = me.Velocity;
-        castWorld.Jumping = me.State == Player.MoveState.Jump;
-        castWorld.Rising = sp.Y > 0;
-        castWorld.Falling = me.State == Player.MoveState.Fall;
-        castWorld.GameTime = Time.GetTicksMsec() / 1000.0;
-        // vfunc_100(rec, 1), skillslot.cpp:2178: the same-skill keep (pcbase.cpp:2575-2591), then the auto target from it
-        castWorld.Aim = ownAutoTarget ??= rec => AimOwn(rec, true);
+        FillCastWorld(w, me);
         var res = SkillCast.Request(w, castWorld, req, _ => SkillCast.NormalAttackSkillId(held, weaponActions, 0));
         if (res.Record is not { } r)
         {
@@ -189,6 +182,47 @@ public partial class HudScene
         }
         return r;
     }
+
+    /// <summary>What CreateSkillRecord reads of the own pc now (<see cref="CastWorld"/>), and its aim.</summary>
+    void FillCastWorld(SlotWorld w, Player me)
+    {
+        SkillCast.OwnDead(w, Net.LiveSession.Instance?.Me);     // FUN_14176a380's 0xc on PCBase::IsDead
+        var sp = me.Velocity;
+        castWorld.Jumping = me.State == Player.MoveState.Jump;
+        castWorld.Rising = sp.Y > 0;
+        castWorld.Falling = me.State == Player.MoveState.Fall;
+        castWorld.GameTime = Time.GetTicksMsec() / 1000.0;
+        // vfunc_100(rec, 1), skillslot.cpp:2178: the same-skill keep (pcbase.cpp:2575-2591), then the auto target from it
+        castWorld.Aim = ownAutoTarget ??= rec => AimOwn(rec, true);
+    }
+
+    /// <summary>
+    /// StateSkill::FUN_1417f0570 @0x1417f0570 (stateskill.cpp:2161) for the own skill state: the running record's auto change
+    /// (<see cref="SkillCast.AutoChangePoll"/>), which sets the window's m_b11d / m_b11e; null for none. 0 B for a running
+    /// skill without an autoChange or with its window closed.
+    /// </summary>
+    CastRecord OwnAutoChange(int kind)
+    {
+        if (ownCast == null || player == null || !SkillFollow.AutoChangeWanted(ownCast, kind, ownWindow)) return null;
+        var w = OwnPollWorld();
+        FillCastWorld(w, player);
+        ownAutoCastId ??= Net.LiveSession.NewCastId;
+        ownAutoTick ??= Net.LiveSession.CastTick;
+        return ownAuto.Get(w, castWorld, ownCast, kind, ref ownWindow, ownAutoCastId, ownAutoTick);
+    }
+
+    /// <summary>FUN_1417eeb10 (stateskill.cpp:3008-3015) with no record polled: the auto change FUN_1417f0570(0) as the
+    /// press would go (<see cref="OwnPress"/>). The same record queued again is left as it is (the per-frame chain runs).</summary>
+    void OwnAutoPress()
+    {
+        var r = OwnAutoChange(0);
+        if (r == null || r == ownNext) return;
+        OwnPress(r, false);
+    }
+
+    readonly SkillCast.AutoChangePoll ownAuto = new();
+    Func<long> ownAutoCastId;
+    Func<int> ownAutoTick;
 
     /// <summary>
     /// Where a requested record goes: while the own skill state's sequence runs, StateSkill::FUN_1417eeb10
@@ -211,17 +245,17 @@ public partial class HudScene
     /// <see cref="SkillFollow.MayFollow"/> (FUN_1417eed70) lets follow becomes the state's next cast (m_spNext, a later
     /// accepted press replacing it), started by <see cref="TryChainOwn"/> (FUN_1417ef4a0) now for a chain type, else at the
     /// combo keys or the sequence's end; any other press is dropped, so the running motion is not restarted by its own key.
-    /// STILL-OPEN: the auto change fallback (FUN_1417f0570(0), :3009), the skill system's queued record for a record with
-    /// m_nB0 (FUN_1417f0230, :3003) and the state's end casting the key held then (FUN_1417ee120 :2905-2909, the key-down
-    /// skill's held key in MyPC::FUN_141526730) are not ported; a record a motion other than the last would chain is kept
+    /// With no record polled the auto change goes instead (<see cref="OwnAutoPress"/>, :3009).
+    /// STILL-OPEN: the skill system's queued record for a record with m_nB0 (FUN_1417f0230, :3003) is not ported, nor the
+    /// auto change after a press this frame that the request refused; a record a motion other than the last would chain is kept
     /// until the next motion starts (<see cref="OwnNextMotion"/>; the state's enter clears m_spNext).
     /// </summary>
-    bool OwnPress(CastRecord r)
+    bool OwnPress(CastRecord r, bool log = true)
     {
         var w = OwnPressWindow();
         if (!SkillFollow.MayFollow(ownCast, r.Skill, w, hudModel.IsFeatureEnabled(0xca), ref ownChainType))
         {
-            GD.Print($"cast: skill {r.Skill.Id} pressed while skill {ownCast.Skill.Id} runs, dropped");
+            if (log) GD.Print($"cast: skill {r.Skill.Id} pressed while skill {ownCast.Skill.Id} runs, dropped");
             return false;
         }
         ownNext = r;
@@ -255,19 +289,28 @@ public partial class HudScene
             var cr = CompactPress(cw, out bool picked);
             if (picked)
             {
-                if (cr != null && cr != ownQueued && (!OwnSkillStateRuns() || !OwnPress(cr))) RefusePoll(0, cr.Skill, cw);
+                if (cr == null) OwnAutoPress();
+                else if (cr != ownQueued && (!OwnSkillStateRuns() || !OwnPress(cr))) RefusePoll(0, cr.Skill, cw);
                 return;
             }
         }
         int dik = PollOwnKey(out bool pressed);
-        if (dik == 0 || pressed) return;
+        if (pressed) return;
+        if (dik == 0) { OwnAutoPress(); return; }
         var s = OwnKeySkill(dik);
-        if (s == null) return;
+        if (s == null) { OwnAutoPress(); return; }
         if (ownNext != null && ownNext.Key == dik && (object)ownNext.Skill == s) return;
         var w = OwnPressWindow();
-        if (PollRefused(dik, s, w)) return;
+        if (PollRefused(dik, s, w)) { if (pollRefusedNoRecord) OwnAutoPress(); return; }
         KeyRequest(dik, out var r);
-        if (r == null || !OwnSkillStateRuns() || !OwnPress(r)) RefusePoll(dik, s, w);
+        if (r == null)
+        {
+            RefusePoll(dik, s, w);
+            pollRefusedNoRecord = true;
+            OwnAutoPress();
+            return;
+        }
+        if (!OwnSkillStateRuns() || !OwnPress(r)) RefusePoll(dik, s, w);
     }
 
     readonly HeldKeyPoll heldKeys = new();          // MyPC m_map17c0, m_n15ec / m_n15f0
@@ -287,7 +330,20 @@ public partial class HudScene
 
     void RefusePoll(int dik, SkillData s, in SkillFollow.Window w)
     {
-        pollRefusedKey = dik; pollRefusedSkill = s; pollRefusedIn = ownCast; pollRefusedWindow = w;
+        pollRefusedKey = dik; pollRefusedSkill = s; pollRefusedIn = ownCast; pollRefusedWindow = w; pollRefusedNoRecord = false;
+    }
+
+    bool pollRefusedNoRecord;                      // the refused poll made no record (vfunc_104 null: the auto change goes)
+
+    /// <summary>The poll's world for the keys' skills (QuickSlotWorld), taken once per state.</summary>
+    SlotWorld OwnPollWorld()
+    {
+        if (ownPollWorld == null)
+        {
+            ownPollWorld = QuickSlotWorld();
+            ownPollHeld = ownPollWorld.Weapon is { } h ? weaponActions.FindAction(h.Right, h.Left) : null;
+        }
+        return ownPollWorld;
     }
 
     /// <summary>
@@ -300,12 +356,7 @@ public partial class HudScene
         pressed = framePressFrame == Engine.GetProcessFrames();
         if (hudModel?.Keys is not { } keys || Ms2.Ui.InputBlock.Active) return 0;   // the keys read nothing then (OwnKeyDown)
         keys.GetBoundKeys(boundKeys, hudModel.ServerKeys);
-        if (ownPollWorld == null)
-        {
-            ownPollWorld = QuickSlotWorld();
-            ownPollHeld = ownPollWorld.Weapon is { } h ? weaponActions.FindAction(h.Right, h.Left) : null;
-        }
-        castKeyWorld = ownPollWorld;
+        castKeyWorld = OwnPollWorld();
         castKeyHeld = ownPollHeld;
         pollKeyDown ??= CastKeyDown;
         pollNoPress ??= _ => false;
@@ -325,12 +376,14 @@ public partial class HudScene
 
     /// <summary>
     /// StateSkill::FUN_1417ef4a0 @0x1417ef4a0 (stateskill.cpp:3091-3184): the next cast goes through MyPC::vfunc_102
-    /// (<see cref="UseOwnRecord"/>) once <see cref="SkillFollow.ChainsNow"/> lets it; m_spNext is cleared then (:3181).
+    /// (<see cref="UseOwnRecord"/>) once <see cref="SkillFollow.ChainsNow"/> lets it and the auto change does not veto it
+    /// (<see cref="SkillCast.AutoChangeVetoes"/>); m_spNext is cleared then (:3181).
     /// </summary>
     void TryChainOwn(CastRecord running)
     {
         if (ownNext == null || player == null) return;
         if (!SkillFollow.ChainsNow(running, ownNext.Skill, ownChainType, ownWindow, hudModel.IsFeatureEnabled(0xca))) return;
+        if (SkillCast.AutoChangeVetoes(OwnPollWorld(), running, ownNext, ownWindow)) return;   // :3150-3163
         var r = ownNext;
         ownNext = null;
         AimOwn(r, false);                          // :3170 vfunc_100(m_spNext, 0)
@@ -364,7 +417,7 @@ public partial class HudScene
     /// or a cast without a sequence keeps the state (the body holds the last frame), so the next step polls again. False =
     /// idle (FUN_1417f0070).
     /// A record not in its last motion casts its next motion instead (<see cref="OwnNextMotion"/>).
-    /// STILL-OPEN: the auto change (FUN_1417f0570(2), :2905-2909) is not ported.
+    /// With nothing to cast the auto change FUN_1417f0570(2) goes when <see cref="SkillFollow.AutoCastsAtEnd"/> (:2905-2915).
     /// </summary>
     bool OwnEndStep()
     {
@@ -374,6 +427,7 @@ public partial class HudScene
         if (!SkillFollow.IsLastMotion(running)) return OwnNextMotion(running);
         var next = ownNext ?? OwnEndPoll();
         ownNext = null;
+        if (next == null && OwnAutoChange(2) is { } auto && SkillFollow.AutoCastsAtEnd(running, auto)) next = auto;
         if (next == null) return false;
         if (next == ownQueued) { player.HoldSkillSequence(); return true; }   // the same cooling press again: still queued
         if (!SkillFollow.CastsAtEnd(running, next.Skill, false)) return false;
@@ -624,7 +678,8 @@ public partial class HudScene
         ownQueued = null;                          // StateSkill::vfunc_4 (stateskill.cpp:416)
         ownChainType = 0;                          // :412
         ownNext = null;                            // the enter clears m_spNext and the combo flags (:403-412)
-        ownWindow = default;
+        ownWindow = default;                       // m_b11c-m_b11e too (:413-415)
+        ownAuto.Clear();
         var motion = r.Motion < r.Level.Motions.Count ? r.Level.Motions[r.Motion] : null;
         Ms2.Formats.Model.KfAnimation kf = null;
         if (me.SkillSequence != null) me.Anims?.Kf.TryGetValue(me.SkillSequence, out kf);

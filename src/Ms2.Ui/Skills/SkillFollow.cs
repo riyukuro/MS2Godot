@@ -34,6 +34,12 @@ public static class SkillFollow
         public bool SelfCombo;
         /// <summary>m_b112: the sequence ended (EndOfSequence @0x1417e9130, :1066).</summary>
         public bool Ended;
+        /// <summary>m_b11c: between "startAutoChangeSkill" and "endAutoChangeSkill" (:1029-1033).</summary>
+        public bool AutoChangeOn;
+        /// <summary>m_b11d: "endAutoChangeSkill" passed (:1034-1038); an auto change record clears it (FUN_1417f0570, :2195).</summary>
+        public bool AutoChangeEnd;
+        /// <summary>m_b11e: an auto change record was made in this state (FUN_1417f0570, :2197).</summary>
+        public bool AutoChanged;
 
         /// <summary>EndOfSequence @0x1417e9130 (stateskill.cpp:1062-1070) for the target sequence: m_b116, m_b49, m_b112.</summary>
         public void EndOfSequence() { SelfCombo = true; Combo = true; Ended = true; }
@@ -41,16 +47,18 @@ public static class SkillFollow
         /// <summary>The same flags (no boxing, 0 B).</summary>
         public readonly bool Same(in Window o) =>
             InputCombo == o.InputCombo && SelfInputCombo == o.SelfInputCombo && EndSelfInput == o.EndSelfInput && KeyHeld == o.KeyHeld
-            && ChargeTimeZero == o.ChargeTimeZero && Combo == o.Combo && SelfCombo == o.SelfCombo && Ended == o.Ended;
+            && ChargeTimeZero == o.ChargeTimeZero && Combo == o.Combo && SelfCombo == o.SelfCombo && Ended == o.Ended
+            && AutoChangeOn == o.AutoChangeOn && AutoChangeEnd == o.AutoChangeEnd && AutoChanged == o.AutoChanged;
     }
 
-    /// <summary>A combo text key of the skill state (StateSkill::TextKeyEvent, stateskill.cpp:999-1027).</summary>
-    public enum ComboKey : byte { Combo, InputCombo, EndInputCombo, SelfInput, EndSelfInput, SelfCombo }
+    /// <summary>A combo or auto change text key of the skill state (StateSkill::TextKeyEvent, stateskill.cpp:999-1038).</summary>
+    public enum ComboKey : byte { Combo, InputCombo, EndInputCombo, SelfInput, EndSelfInput, SelfCombo, StartAutoChange, EndAutoChange }
 
     /// <summary>
     /// The running motion's combo text keys in its sequence, in time order, every key of each name: "combo", "inputcombo",
     /// "endInputCombo", the motion data's selfInputCombo key (SkillMotionData::Load, skillleveldata.cpp:1165),
-    /// "endSelfInputcombo" and "selfcombo" (StateSkill::TextKeyEvent, stateskill.cpp:999-1027). Filled once per cast
+    /// "endSelfInputcombo", "selfcombo", "startAutoChangeSkill" and "endAutoChangeSkill" (StateSkill::TextKeyEvent,
+    /// stateskill.cpp:999-1038). Filled once per cast
     /// (<see cref="Set"/>); the list is reused, so a refill and every per-frame call allocate 0 B once it has grown.
     /// </summary>
     public sealed class ComboKeys
@@ -61,9 +69,10 @@ public static class SkillFollow
         public int Count => times.Count;
 
         /// <summary>
-        /// TextKeyEvent's test of one key (stateskill.cpp:999-1027), in its order: "combo", "inputcombo" and "selfcombo" by
+        /// TextKeyEvent's test of one key (stateskill.cpp:999-1038), in its order: "combo", "inputcombo" and "selfcombo" by
         /// exact compare (CString ==), "endInputCombo" and "endSelfInputcombo" by EqualsNoCase, the motion's
-        /// <paramref name="selfInput"/> (null or empty = none) exactly; null for any other key.
+        /// <paramref name="selfInput"/> (null or empty = none) exactly, then "startAutoChangeSkill" and "endAutoChangeSkill"
+        /// by EqualsNoCase; null for any other key.
         /// </summary>
         public static ComboKey? Classify(string text, string selfInput)
         {
@@ -74,6 +83,8 @@ public static class SkillFollow
             if (!string.IsNullOrEmpty(selfInput) && text == selfInput) return ComboKey.SelfInput;
             if (string.Equals(text, "endSelfInputcombo", StringComparison.OrdinalIgnoreCase)) return ComboKey.EndSelfInput;
             if (text == "selfcombo") return ComboKey.SelfCombo;
+            if (string.Equals(text, "startAutoChangeSkill", StringComparison.OrdinalIgnoreCase)) return ComboKey.StartAutoChange;
+            if (string.Equals(text, "endAutoChangeSkill", StringComparison.OrdinalIgnoreCase)) return ComboKey.EndAutoChange;
             return null;
         }
 
@@ -120,6 +131,8 @@ public static class SkillFollow
                     case ComboKey.SelfInput: w.SelfInputCombo = true; break;
                     case ComboKey.EndSelfInput: w.EndSelfInput = true; break;
                     case ComboKey.SelfCombo: w.SelfCombo = true; chain = true; break;
+                    case ComboKey.StartAutoChange: w.AutoChangeOn = true; w.AutoChangeEnd = false; break;
+                    case ComboKey.EndAutoChange: w.AutoChangeOn = false; w.AutoChangeEnd = true; break;
                 }
             }
             return chain;
@@ -175,7 +188,8 @@ public static class SkillFollow
     /// (mypc.cpp:1036) is 1. For a motion with a selfInputCombo key, after "combo" but before "selfcombo" the same skill
     /// (with feature 0xca also its combo output) waits, and after "selfcombo" alone only the same skill (or with 0xca the
     /// output) goes (:3107-3135); endSelfInputcombo vetoes the same skill and the output (:3143-3149).
-    /// STILL-OPEN: the hold attack veto (m_b111, :3136-3142) and the auto change veto (m_b11e, :3150-3163) are not ported.
+    /// The auto change veto (m_b11e, :3150-3163) needs the skill change and is <see cref="SkillCast.AutoChangeVetoes"/>.
+    /// STILL-OPEN: the hold attack veto (m_b111, :3136-3142) is not ported.
     /// </summary>
     public static bool ChainsNow(CastRecord running, SkillData next, int chainType, in Window w, bool jobChange01)
     {
@@ -206,6 +220,26 @@ public static class SkillFollow
     /// </summary>
     public static bool CastsAtEnd(CastRecord running, SkillData next, bool holdAttack) =>
         !(holdAttack && IsOutputSkill(running.Skill, next.Id));
+
+    /// <summary>
+    /// StateSkill::FUN_1417f0570 @0x1417f0570 (stateskill.cpp:2161-2181), its first part: a running record whose skill's
+    /// changeSkill autoChange (Unk_SkillBlockB0 m_eAutoChange) is 1 with "startAutoChangeSkill" up (m_b11c) or 2 after
+    /// "endAutoChangeSkill" (m_b11d); <paramref name="kind"/> 0 takes either, else only that autoChange.
+    /// </summary>
+    public static bool AutoChangeWanted(CastRecord running, int kind, in Window w)
+    {
+        if (running?.Skill == null) return false;
+        int auto = running.Skill.Change.AutoChange;
+        if (kind != 0 && kind != auto) return false;
+        return auto switch { 1 => w.AutoChangeOn, 2 => w.AutoChangeEnd, _ => false };
+    }
+
+    /// <summary>
+    /// FUN_1417ee120 (stateskill.cpp:2905-2915) at the end with nothing else to cast: the auto change record
+    /// (FUN_1417f0570(2)) goes unless it is the running skill again and not a key-down skill, or its immediateActive is 0.
+    /// </summary>
+    public static bool AutoCastsAtEnd(CastRecord running, CastRecord auto) =>
+        auto != null && !(!auto.Skill.KeyIsDown && auto.Skill.Id == running.Skill.Id) && auto.Skill.ImmediateActive != 0;
 
     /// <summary>CSkillRecord::IsLastMotion @0x141759f20 (skillrecord.cpp:337): m_nMotion + 1 &gt;= the level's motion count.</summary>
     public static bool IsLastMotion(CastRecord r) => r.Motion + 1 >= r.Level.Motions.Count;

@@ -164,8 +164,9 @@ public static class SkillCast
     /// (<see cref="SlotWorld.HasEffect"/> with the check's compare sign). True when the id or level was set.
     /// Ported callers: the own press (MyPC::vfunc_104, mypc.cpp:1728, <see cref="OwnSkill"/>) and the compact pick
     /// (skillslot.cpp:2488). STILL-OPEN, callers not ported: MyPC::FUN_141526730 (mypc.cpp:1827), FUN_141525480
-    /// (mypc.cpp:2382), StateSkill::FUN_1417f0570 (stateskill.cpp:2188, the auto change), StateSkill::FUN_1417ef4a0
-    /// (stateskill.cpp:3162) and Unk_Inventory::FUN_140a635f0 (inventory.cpp:1390, the item skill).
+    /// (mypc.cpp:2382) and Unk_Inventory::FUN_140a635f0 (inventory.cpp:1390, the item skill). The skill state's auto change
+    /// (StateSkill::FUN_1417f0570, stateskill.cpp:2188) and its veto (FUN_1417ef4a0, :3162) are <see cref="AutoChangePoll"/>
+    /// and <see cref="AutoChangeVetoes"/>.
     /// </summary>
     public static bool ChangeSkill(SlotWorld w, ref uint skillId, ref ushort level)
     {
@@ -208,6 +209,58 @@ public static class SkillCast
         bool changed = ChangeSkill(w, ref skillId, ref level);
         hasSequence = w.Tables.Skills.GetSkillLevelData(skillId, level)?.HasSequenceName ?? true;
         return changed;
+    }
+
+    /// <summary>
+    /// StateSkill::FUN_1417f0570 @0x1417f0570 (stateskill.cpp:2161-2199), the auto change, for one running record: when
+    /// <see cref="SkillFollow.AutoChangeWanted"/>, the running level's skill and level through <see cref="ChangeSkill"/>;
+    /// unchanged gives null, else CreateSkillRecord of a request of that skill and level (the ctor's new cast id and server
+    /// tick, no key, m_b38 set, no position: the aim sets it), and on success m_b11d is cleared and m_b11e set.
+    /// The state's poll asks this each frame (FUN_1417eeb10, :3009) and the client makes a new record each time; here the
+    /// record made for the same running record, skill and level is given again (the flags set again), and a refused
+    /// request is not asked again for them until the window's flags change, so a frame costs 0 B after the first.
+    /// </summary>
+    public sealed class AutoChangePoll
+    {
+        CastRecord running, record;
+        uint skillId;
+        ushort level;
+        SkillFollow.Window refusedIn;
+        public int LastWhy { get; private set; }
+
+        public void Clear() { running = null; record = null; LastWhy = 0; }
+
+        /// <summary>The auto change record, or null; <paramref name="castId"/> and <paramref name="tick"/> are read only for a
+        /// new request.</summary>
+        public CastRecord Get(SlotWorld w, CastWorld c, CastRecord run, int kind, ref SkillFollow.Window win, Func<long> castId,
+            Func<int> tick)
+        {
+            if (!SkillFollow.AutoChangeWanted(run, kind, win)) return null;
+            uint id = run.Level.Skill?.Id ?? run.Skill.Id;
+            ushort lv = run.Level.Level;
+            uint id0 = id;
+            ushort lv0 = lv;
+            ChangeSkill(w, ref id, ref lv);
+            if (id == id0 && lv == lv0) return null;
+            if ((object)running != run || skillId != id || level != lv)
+            {
+                running = run; skillId = id; level = lv; record = null; LastWhy = 0;
+                Make(w, c, castId, tick, win);
+            }
+            else if (record == null && !refusedIn.Same(win)) Make(w, c, castId, tick, win);
+            if (record == null) return null;
+            win.AutoChangeEnd = false;
+            win.AutoChanged = true;
+            return record;
+        }
+
+        void Make(SlotWorld w, CastWorld c, Func<long> castId, Func<int> tick, in SkillFollow.Window win)
+        {
+            var res = CreateRecord(w, c, new CastRequest(skillId, level, castId(), tick()));
+            record = res.Record;
+            LastWhy = res.Why;
+            refusedIn = win;
+        }
     }
 
     /// <summary>The result of a request: the record, or the reason (0 with no record: a refusal the client shows no code for).</summary>
@@ -282,6 +335,20 @@ public static class SkillCast
         };
         if (!req.NoAim) c.Aim(rec);
         return new(rec, 0, null);
+    }
+
+    /// <summary>
+    /// StateSkill::FUN_1417ef4a0 (stateskill.cpp:3150-3163): before the state made an auto change record (m_b11e clear), a
+    /// running skill with an autoChange does not chain into the skill and level its own change gives (<see cref="ChangeSkill"/>
+    /// of the running skill and level), so that change goes only by the auto change itself. 0 B.
+    /// </summary>
+    public static bool AutoChangeVetoes(SlotWorld w, CastRecord running, CastRecord next, in SkillFollow.Window win)
+    {
+        if (win.AutoChanged || running.Skill.Change.AutoChange == 0) return false;
+        uint id = running.Skill.Id;
+        ushort level = running.Level.Level;
+        ChangeSkill(w, ref id, ref level);
+        return id == next.Skill.Id && level == next.Level.Level;
     }
 
     /// <summary>

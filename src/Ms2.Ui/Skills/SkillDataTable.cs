@@ -216,6 +216,9 @@ public sealed class SkillChange
     public readonly List<uint> CheckEffectId = new(), CheckEffectOverlapCount = new(), ChangeSkillId = new();
     public readonly List<ushort> CheckEffectLevel = new();
     public readonly List<int> CheckEffectCompareFunc = new();
+    /// <summary>autoChange (Unk_SkillBlockB0 m_eAutoChange, skillleveldata.cpp:609): 1 / 2 the skill state's auto change
+    /// (StateSkill::FUN_1417f0570); the lists' length check does not clear it.</summary>
+    public int AutoChange;
 
     /// <summary>The ChangeSkillId at <paramref name="i"/>, 0 past the list's end.</summary>
     public uint ChangeSkillAt(int i) => i < ChangeSkillId.Count ? ChangeSkillId[i] : 0;
@@ -348,6 +351,7 @@ public sealed class SkillData
             s.Change.CheckEffectLevel.AddRange(T(ch, "changeSkillCheckEffectLevel").Select(t => (ushort)Xml.Atoi(t)));
             s.Change.CheckEffectOverlapCount.AddRange(T(ch, "changeSkillCheckEffectOverlapCount").Select(t => (uint)Xml.Atoi(t)));
             s.Change.ChangeSkillId.AddRange(T(ch, "changeSkillID").Select(t => (uint)Xml.Atoi(t)));
+            s.Change.AutoChange = Xml.Int(ch, "autoChange");
             s.Change.CheckEffectCompareFunc.AddRange(T(ch, "changeSkillCheckEffectCompareFunc").Select(Xml.Atoi));
         }
         var change = s.Change;
