@@ -1954,6 +1954,13 @@ public partial class LiveSession : Node
         if (game != null) Send(new HomeDemolishRequest());
     }
 
+    /// <summary>UIHomeSaveSlotDialog's sends (unit_140fa9eb0_uihomesaveslotdialog.cpp): RequestCube 0x2e / 0x2f / 0x23 (design) and 0x40 / 0x41 (blueprint).</summary>
+    public void SendHomeDesignSave(int slot, string name) { if (game != null) Send(new HomeDesignSaveRequest(slot, name)); }
+    public void SendHomeDesignLoadBlocked(int slot) { if (game != null) Send(new HomeDesignLoadBlockedRequest(slot)); }
+    public void SendHomeDesignLoad(int slot) { if (game != null) Send(new HomeDesignLoadRequest(slot)); }
+    public void SendHomeBlueprintSave(int slot, string name) { if (game != null) Send(new HomeBlueprintSaveRequest(slot, name)); }
+    public void SendHomeBlueprintLoad(int slot) { if (game != null) Send(new HomeBlueprintLoadRequest(slot)); }
+
     /// <summary>CNetworkService::SendRequestQuit (@0x141538820, networkservice.cpp:501-505): flushes guide state (SendFunctionCube) and sends RequestQuit(0).</summary>
     public void SendRequestQuit()
     {

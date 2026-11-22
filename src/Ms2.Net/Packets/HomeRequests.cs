@@ -56,3 +56,33 @@ public sealed record CraftModeOffRequest() : IOutPacket {
     public Outbound Op => Outbound.RequestSetCraftMode;
     public void Write(ByteWriter w) { w.WriteByte(0); w.WriteByte(0); }
 }
+
+/// <summary>UIHomeSaveSlotDialog's design save (OnSaveNameEntered @0x140faa7d0, SendRequestCubeMode46 @0x140faadb0): RequestCube u8 0x2e, i32 slot, unicode name.</summary>
+public sealed record HomeDesignSaveRequest(int Slot, string Name) : IOutPacket {
+    public Outbound Op => Outbound.RequestCube;
+    public void Write(ByteWriter w) { w.WriteByte(0x2e); w.WriteInt(Slot); w.WriteUnicodeString(Name ?? ""); }
+}
+
+/// <summary>OnLoadConfirmed's blocked form (@0x140faac30): RequestCube u8 0x2f, i32 slot.</summary>
+public sealed record HomeDesignLoadBlockedRequest(int Slot) : IOutPacket {
+    public Outbound Op => Outbound.RequestCube;
+    public void Write(ByteWriter w) { w.WriteByte(0x2f); w.WriteInt(Slot); }
+}
+
+/// <summary>SendRequestCubeMode35 (@0x140ee8360, uiugccubebilldialog.cpp:264): RequestCube u8 0x23, i32 cube id (the slot).</summary>
+public sealed record HomeDesignLoadRequest(int Slot) : IOutPacket {
+    public Outbound Op => Outbound.RequestCube;
+    public void Write(ByteWriter w) { w.WriteByte(0x23); w.WriteInt(Slot); }
+}
+
+/// <summary>The blueprint save (OnBlueprintSaveNameEntered @0x140faaeb0, SendRequestCubeMode64 @0x140fab420): RequestCube u8 0x40, i32 slot, unicode name.</summary>
+public sealed record HomeBlueprintSaveRequest(int Slot, string Name) : IOutPacket {
+    public Outbound Op => Outbound.RequestCube;
+    public void Write(ByteWriter w) { w.WriteByte(0x40); w.WriteInt(Slot); w.WriteUnicodeString(Name ?? ""); }
+}
+
+/// <summary>SendRequestCubeMode65 (@0x140fab310): RequestCube u8 0x41, i32 slot.</summary>
+public sealed record HomeBlueprintLoadRequest(int Slot) : IOutPacket {
+    public Outbound Op => Outbound.RequestCube;
+    public void Write(ByteWriter w) { w.WriteByte(0x41); w.WriteInt(Slot); }
+}

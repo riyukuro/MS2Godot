@@ -56,3 +56,22 @@ public class HouseSettingPacketTests {
         Assert.That((ushort) Outbound.RequestCube, Is.EqualTo(0x37));
     }
 }
+
+/// <summary>The home save slot dialog's sends (unit_140fa9eb0_uihomesaveslotdialog.cpp): RequestCube modes 0x2e, 0x2f, 0x23, 0x40, 0x41.</summary>
+public class HomeSaveSlotPacketTests {
+    static byte[] Bytes(Ms2.Net.Wire.IOutPacket p) { var w = new ByteWriter(); p.Write(w); return w.Buffer[..w.Length]; }
+
+    [Test] public void SaveWritesModeSlotAndUnicodeName() {
+        var w = new ByteWriter(); w.WriteByte(0x2e); w.WriteInt(3); w.WriteUnicodeString("ab");
+        Assert.That(Bytes(new HomeDesignSaveRequest(3, "ab")), Is.EqualTo(w.Buffer[..w.Length]));
+        w = new ByteWriter(); w.WriteByte(0x40); w.WriteInt(1); w.WriteUnicodeString("");
+        Assert.That(Bytes(new HomeBlueprintSaveRequest(1, "")), Is.EqualTo(w.Buffer[..w.Length]));
+    }
+
+    [Test] public void LoadsWriteModeAndSlot() {
+        Assert.That(Bytes(new HomeDesignLoadBlockedRequest(2)), Is.EqualTo(new byte[] { 0x2f, 2, 0, 0, 0 }));
+        Assert.That(Bytes(new HomeDesignLoadRequest(4)), Is.EqualTo(new byte[] { 0x23, 4, 0, 0, 0 }));
+        Assert.That(Bytes(new HomeBlueprintLoadRequest(5)), Is.EqualTo(new byte[] { 0x41, 5, 0, 0, 0 }));
+        Assert.That(new HomeBlueprintLoadRequest(0).Op, Is.EqualTo(Outbound.RequestCube));
+    }
+}
