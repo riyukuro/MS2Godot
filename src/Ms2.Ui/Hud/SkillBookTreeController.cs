@@ -69,6 +69,14 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
     public Func<MessageBoxData, string> InputText = box => MessageBoxQueue.Layer?.InputText(box) ?? "";
     /// <summary>CBanTextChecker::CheckAutoDistributeEntryName: the notice text of a refused name, null when it passes.</summary>
     public Func<string, string> CheckEntryName = _ => null;
+    /// <summary>The platform's Execute("AddTab", name, 0) (Unk_SkillService, command 0x4f2d): 1 when it took the tab. STILL-OPEN: the
+    /// platform service is not ported, so no tab is added here.</summary>
+    public Func<string, bool> PlatformAddTab = _ => false;
+    /// <summary>FindItemByTag(0x76) != null: the player holds a tab coupon. STILL-OPEN: not read from the bag here.</summary>
+    public Func<bool> HasTabCoupon = () => false;
+    /// <summary>The paid tab's price (the client constant at +0x8bb8) and the platform's HasMoney / HasMeret for it. STILL-OPEN.</summary>
+    public Func<uint> TabPrice = () => 0;
+    public Func<uint, bool> CanPayTab = _ => false;
     /// <summary>PlaySystemSound(key).</summary>
     public event Action<string> Sound;
 
@@ -694,11 +702,96 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
                 if (ulong.TryParse(Rt.ToString(args.ElementAtOrDefault(0)), out var renameId))     // ParseUInt64W
                     PromptRenameTab((long)renameId, Rt.ToString(args.ElementAtOrDefault(1)) ?? "");
                 return true;
-            case "onAddTab": case "onChangeSubJob": case "onRemoveTab": case "onLapenshardBtn":
+            case "onAddTab":
+                if (WaitServer) return false;
+                return AddTabClicked();
+            case "onChangeSubJob":
+                if (WaitServer) return false;
+                return ChangeSubJob((int)Rt.ToNumber(args.ElementAtOrDefault(0)) + 1);
+            case "onRemoveTab": case "onLapenshardBtn":
                 Button?.Invoke(name);
                 return true;
         }
         return false;
+    }
+
+    /// <summary>onAddTab (:2242): three tabs at most; below the tab limit the name box, else the paid-tab box (the money text is
+    /// STILL-OPEN) with the coupon checkbox.</summary>
+    bool AddTabClicked()
+    {
+        if (tabs.Count >= 3) return false;
+        if (tabs.Count < maxTabs)
+        {
+            PromptAddTab();
+            return true;
+        }
+        var box = MessageBoxQueue.CreateWithCallback(Common("s_skillbook_tree_config_payment_add_tab", TabPrice(), ""), 0x19, OnAddTabPayConfirm);
+        box.SetButtonPreset(1);
+        bool coupon = HasTabCoupon();
+        box.SetCheckbox0(Common("s_skillbook_tree_config_payment_add_tab_coupon"), coupon);
+        box.Check0Enabled = coupon;
+        ShowBox(box);
+        return true;
+    }
+
+    /// <summary>PromptAddTab @0x140ecf3d0 (:859).</summary>
+    void PromptAddTab()
+    {
+        var box = MessageBoxQueue.CreateWithCallback(Common("s_skillbook_tree_config_add_tab"), 10, OnAddTabConfirm);
+        box.SetInput(0, "", 10, 0, 0);
+        ShowBox(box);
+    }
+
+    /// <summary>OnAddTabConfirm @0x140ec8d30: a full tab list or an empty name keeps the box; the platform's AddTab command then adds
+    /// the tab (AddPaidTab).</summary>
+    bool OnAddTabConfirm(int result, MessageBoxData box)
+    {
+        if (result != 0) return true;
+        if (tabs.Count >= maxTabs) return false;
+        string text = InputText(box) ?? "";
+        string name = text.Substring(text.IndexOf(',') + 1);
+        if (name.Length == 0) return false;
+        return !PlatformAddTab(name) || AddPaidTab(name);
+    }
+
+    /// <summary>AddPaidTab @0x140ec9130 (:715).</summary>
+    bool AddPaidTab(string name)
+    {
+        SelectTab(AddTab(name, true));
+        SaveTree(shownTabId, 0, 0);
+        RefreshTabButtons(true);
+        RefreshSlots(false);
+        return true;
+    }
+
+    /// <summary>OnAddTabPayConfirm @0x140ec8f60: with the coupon (item tag 0x76 held) or the price payable, mode 4 and wait for the
+    /// server; else the client's not-enough-money notice (FUN_141add1f0, STILL-OPEN: raised as Button("addTabNoMoney")).</summary>
+    bool OnAddTabPayConfirm(int result, MessageBoxData box)
+    {
+        if (result != 0) return true;
+        if (tabs.Count >= 3) return false;
+        bool coupon = CheckboxChecked(box, 0);
+        bool hasCoupon = coupon && HasTabCoupon();
+        if (!hasCoupon && !CanPayTab(TabPrice())) { Button?.Invoke("addTabNoMoney"); return true; }
+        if (TrySend(new SkillBookTreeAddPaid(coupon))) WaitServer = true;
+        return true;
+    }
+
+    /// <summary>onChangeSubJob (:2272): the rank the button stands for; the same one does nothing, one above the sub job's rank
+    /// shows the notice and puts the button back, else the slots are rebuilt for it.</summary>
+    bool ChangeSubJob(int job)
+    {
+        if (job == JobLevel) return true;
+        if (Jobs == null) return false;
+        if (JobTable.GetJobRank(Jobs.SubJob) < job)
+        {
+            SystemNotice?.Invoke(Common("s_skillbook_tree_disable_sub_job_skill"));
+            Host.Invoke("SetSelectedSubJobLevel", (uint)(JobLevel - 1));        // UpdateSubJobLevel (:656)
+            return true;
+        }
+        JobLevel = job;
+        RefreshSlots(false);
+        return true;
     }
 
     /// <summary>onRenameTab (:2162): a type 10 box s_skillbook_tree_config_rename_tab with the name in its input (10 chars) and the tab id.</summary>

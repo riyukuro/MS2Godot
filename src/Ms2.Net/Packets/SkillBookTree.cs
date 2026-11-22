@@ -139,6 +139,12 @@ public sealed record SkillBookTreeRename(long Tab, string Name) : IOutPacket {
     public void Write(ByteWriter w) { w.WriteByte(2); w.WriteLong(Tab); w.WriteUnicodeString(Name); }
 }
 
+/// <summary>Outbound 0xA2 (SendOp::RequestSkillBookTree) mode 4: UISkillBookTreeDialog::OnAddTabPayConfirm @0x140ec8f60: u8 4, i32 0x4f2d, bool coupon.</summary>
+public sealed record SkillBookTreeAddPaid(bool Coupon) : IOutPacket {
+    public Outbound Op => Outbound.RequestSkillBookTree;
+    public void Write(ByteWriter w) { w.WriteByte(4); w.WriteInt(0x4f2d); w.WriteBool(Coupon); }
+}
+
 /// <summary>Outbound 0x25 (SendOp::Job) mode 9 (apply) or 0xb (apply, confirmed): UISkillBookTreeDialog::RequestJob @0x140ec9200
 /// (uiskillbookautodistributedialog.cpp:1180): u8 mode, i32 count of { i32 skill id, i16 level, bool learned }.
 /// STILL-OPEN: the GMS2 number of SendOp::Job is not mapped.</summary>

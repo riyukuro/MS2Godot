@@ -871,4 +871,56 @@ public class SkillBookTreeTests
         Assert.That(c.OnCallback("onChangeTab", new object[] { tab.ToString() }), Is.False);
         Assert.That(boxes, Is.Empty);
     }
+
+    [Test]
+    public void AddTabWithRoomAsksForANameAndTheFullTabListAsksToPay()
+    {
+        var (c, sent, boxes) = OpenForClose();
+        c.OnSkillBookTree(SkillBookTreePacket.Read(new ByteReader(SkillBookTreePacket.WriteTabs(2, 0, Array.Empty<SkillTreeTab>()))));
+        Assert.That(c.OnCallback("onAddTab", Array.Empty<object>()), Is.True);
+        Assert.That(boxes.Count, Is.EqualTo(1));
+        Assert.That(boxes[0].Callback, Is.Not.Null);
+        string typed = "";
+        c.InputText = _ => typed;
+        Assert.That(boxes[0].Callback(0, boxes[0]), Is.False);        // empty name keeps the box
+        typed = "a,Mine";
+        c.PlatformAddTab = n => { Assert.That(n, Is.EqualTo("Mine")); return true; };
+        int before = c.Tabs.Count;
+        Assert.That(boxes[0].Callback(0, boxes[0]), Is.True);
+        Assert.That(c.Tabs.Count, Is.EqualTo(before + 1));            // AddPaidTab
+        Assert.That(c.Tabs.Last().Name, Is.EqualTo("Mine"));
+        Assert.That(sent.OfType<SkillBookTreeSave>().Count(), Is.EqualTo(1));   // RequestTree(shown, 0, 0)
+    }
+
+    [Test]
+    public void PaidAddTabSendsMode4OnlyWithTheCouponOrTheMoneyAndWaits()
+    {
+        var (c, sent, boxes) = OpenForClose();
+        var buttons = new List<string>();
+        c.Button += buttons.Add;
+        c.OnCallback("onAddTab", Array.Empty<object>());
+        var box = boxes.Last();
+        c.CheckboxChecked = (b, n) => false;
+        Assert.That(box.Callback(0, box), Is.True);                   // no coupon, cannot pay
+        Assert.That(sent.OfType<SkillBookTreeAddPaid>(), Is.Empty);
+        Assert.That(c.WaitServer, Is.False);
+        c.CanPayTab = _ => true;
+        Assert.That(box.Callback(0, box), Is.True);
+        Assert.That(sent.OfType<SkillBookTreeAddPaid>().Single().Coupon, Is.False);
+        Assert.That(c.WaitServer, Is.True);
+    }
+
+    [Test]
+    public void ChangeSubJobToARankTheSubJobLacksShowsTheNoticeAndKeepsTheRank()
+    {
+        var (c, sent, boxes) = OpenForClose();
+        var notices = new List<string>();
+        c.SystemNotice += notices.Add;
+        int rank = c.JobLevel;
+        Assert.That(c.OnCallback("onChangeSubJob", new object[] { (double)(rank - 1) }), Is.True);   // the same rank
+        Assert.That(notices, Is.Empty);
+        Assert.That(c.OnCallback("onChangeSubJob", new object[] { (double)rank }), Is.True);         // one above this book's sub job
+        Assert.That(notices.Count, Is.EqualTo(1));
+        Assert.That(c.JobLevel, Is.EqualTo(rank));
+    }
 }
