@@ -475,13 +475,7 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         return true;
     }
 
-    /// <summary>
-    /// NotifyDragSlot::SlotUse (notifydragslot.cpp:33) for a slot of this bag: the button is the second argument (0 without
-    /// one). Button 0, the double click: nothing while Shift is held (GetKeyState(VK_SHIFT)), else <see cref="DoubleClick"/>.
-    /// Button 1, the right click: MS2DragSlot::vfunc_19 (ms2dragslot.cpp:60; the slot is enabled) with action 0x49406 held is
-    /// the preview (vfunc_16, not ported: raised), else <see cref="RightClick"/>. Other names are raised (notifySlotUse). The
-    /// client guards neither against a repeat: each call goes through.
-    /// </summary>
+    /// <summary>A diagnostic line of the inventory click path (the live harness logs it); not part of the client.</summary>
     public event Action<string> Diag;
 
     /// <summary>The slot name of the shown bag's cell that holds item <paramref name="itemId"/>, null when none does.</summary>
@@ -493,6 +487,13 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         return null;
     }
 
+    /// <summary>
+    /// NotifyDragSlot::SlotUse (notifydragslot.cpp:33) for a slot of this bag: the button is the second argument (0 without
+    /// one). Button 0, the double click: nothing while Shift is held (GetKeyState(VK_SHIFT)), else <see cref="DoubleClick"/>.
+    /// Button 1, the right click: MS2DragSlot::vfunc_19 (ms2dragslot.cpp:60; the slot is enabled) with action 0x49406 held is
+    /// the preview (vfunc_16, not ported: raised), else <see cref="RightClick"/>. Other names are raised (notifySlotUse). The
+    /// client guards neither against a repeat: each call goes through.
+    /// </summary>
     bool SlotUse(object[] args)
     {
         int i = args.Length > 0 ? SlotIndexOf(args[0]) : -1;
