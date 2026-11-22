@@ -89,4 +89,21 @@ public class QuestPacketTests {
         var w = new ByteWriter(); w.WriteByte(3); w.WriteInt(100); w.WriteInt(int.MaxValue); w.WriteInt(5); w.WriteInt(6);
         Assert.That(() => QuestMessage.Read(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray())), Throws.Exception.Not.TypeOf<OutOfMemoryException>());
     }
+
+    /// <summary>Every recorded GMS2 quest packet (0x53): each mode this reader decodes is read to its last byte; the modes left as Other are listed (printed), and 0x1e (the client's RemoveQuestsByTypeAndState(8, 2), no body) is the only one with a body of zero.</summary>
+    [Test] public void EveryRecordedGms2QuestPacketReadsWhole() {
+        var other = new SortedDictionary<int, (int Count, int MaxLen)>();
+        int whole = 0;
+        foreach (var (file, data) in Gms2Sniffs.Inbound("gms2", 0x53)) {
+            var r = new ByteReader(data);
+            var m = QuestMessage.Read(r);
+            if (m is QuestMessage.Other o) { other.TryGetValue(o.Mode, out var c); other[o.Mode] = (c.Count + 1, Math.Max(c.MaxLen, data.Length)); continue; }
+            Assert.That(r.Available, Is.Zero, $"{file}: mode {data[0]:x2} of {data.Length} bytes");
+            whole++;
+        }
+        TestContext.Out.WriteLine($"read whole {whole}; left as Other: " + string.Join(", ", other.Select(k => $"0x{k.Key:x2} x{k.Value.Count} (longest {k.Value.MaxLen} bytes)")));
+        Assert.That(other.Keys.Except(new[] { 0x1e }), Is.Empty, "a recorded mode this reader does not decode");
+        if (other.TryGetValue(0x1e, out var b)) Assert.That(b.MaxLen, Is.EqualTo(1), "mode 0x1e carries no body");
+    }
+
 }
