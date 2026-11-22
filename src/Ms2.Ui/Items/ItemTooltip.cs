@@ -86,12 +86,24 @@ public sealed partial class ItemTooltip
         SetExtraComment(item);
         SetItemLockInfo(item);
         Data["itemPiece"] = d.IsPieceItem;                                        // SetItemPiece
+        SetGemstoneLevel(d.Id);                                                   // FUN_1409d43b0
         Data["itemPetSkin"] = d.GemSubtype == 0xb;                                // SetItemPetSkin(FUN_14053e900() == 0xb), the gem subtype
         if ((Flags & 0x80) != 0 || (Flags & 4) != 0) SetUseHints(item);              // FUN_1409cd750
         if ((Flags & (0x80 | 4 | 0x200 | 0x20 | 0x400 | 0x1000 | 0x100 | 2)) != 0)
             if (SetCustomizeColor(item)) SetCustomizeColorData(item);             // FUN_1409d2cb0, then FUN_1409d3010
         Data.SetTooltipAlign((Flags & 0x40) != 0 || (Flags & 2) != 0 ? 9 : 5);
         return true;
+    }
+
+    /// <summary>ASTooltip::SetGemstoneLevel (astooltip.cpp:472): a gemstone's level (FUN_140626f20, the gemstone upgrade
+    /// table's GemLevel) as "gemstoneLevel" when not 0.</summary>
+    void SetGemstoneLevel(int itemId)
+    {
+        var d = Tables.Items.Get(itemId);
+        if (d == null || !d.IsGemstone) return;
+        int level = (ushort)Tables.GemstoneUpgrades.Level(d.Id);
+        if (level == 0) return;
+        Data["gemstoneLevel"] = level;
     }
 
     /// <summary>FUN_1409e6fc0 (:5571): the icon code as the movie's tooltip_item_type_N.</summary>

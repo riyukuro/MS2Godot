@@ -492,4 +492,74 @@ public class ItemTooltipExtrasTests
         // an item without a maid id keeps its own statDescription
         Assert.That(m.Tables.MaidInfo(0), Is.Null);
     }
+
+    [Test]
+    public void FunctionPackageListsBeautyCouponsAndRemakeScrollItems()
+    {
+        var m = NewModel();
+        EquipItem It(int id, long uid) => new EquipItem { Id = id, Uid = uid, Rarity = 1, Amount = 1 };
+        var beauty = m.Tables.Items.Get(20500001);
+        Assume.That(beauty, Is.Not.Null);
+        Assert.That((beauty.FunctionName, beauty.FunctionArgInt(0, 0)), Is.EqualTo(("ItemChangeBeauty", 601)));
+        // no local player: no list (FUN_1409d7900 needs GetLocalPlayer)
+        Assert.That(Tip(m, It(20500001, 40)).Data.ContainsKey("itemPackageList"), Is.False);
+        m.HasLocalPlayer = true;
+        m.Player.JobGroup = 10;
+        var tip = Tip(m, It(20500001, 41));
+        Assert.That(tip.Data["tooltip"], Is.EqualTo("export_common_tooltip_kindsItemPackage"));
+        var coupons = m.Tables.BeautyCoupons.CouponsOf(601).Where(c => m.Tables.Items.Get((int)c) != null).ToList();
+        var rows = ((List<object>)tip.Data["itemPackageList"]).Cast<Dictionary<string, object>>().ToList();
+        Assert.That(rows, Is.Not.Empty);
+        Assert.That(rows.Count, Is.LessThanOrEqualTo(coupons.Count));
+        foreach (var r in rows) TestContext.Out.WriteLine(string.Join(", ", r.Select(kv => kv.Key + "=" + kv.Value)));
+        // a remake scroll lists the items of its scroll row the job group may wear, at the row's first rank
+        var scroll = m.Tables.RemakeScroll(10000001);
+        Assert.That(scroll, Is.Not.Null);
+        var expected = scroll.Value.Items.Select(i => m.Tables.Items.Get((int)i))
+            .Where(d => d != null && d.IsJobAllowed(10) && d.IsJobRecommended(10)).ToList();
+        var stip = Tip(m, It(31000183, 42));
+        if (expected.Count == 0) Assert.That(stip.Data.ContainsKey("itemPackageList"), Is.False);
+        else
+        {
+            var srows = ((List<object>)stip.Data["itemPackageList"]).Cast<Dictionary<string, object>>().ToList();
+            Assert.That(srows.Count, Is.EqualTo(expected.Count));
+            int rank = scroll.Value.Ranks.Length == 0 ? 1 : (int)scroll.Value.Ranks[0];
+            Assert.That(srows.Select(r => r["itemGrade"]), Is.All.EqualTo(rank));
+        }
+        TestContext.Out.WriteLine($"scroll 10000001: {scroll.Value.Items.Length} items, {expected.Count} for job group 10");
+    }
+
+    [Test]
+    public void MaidContractShowsTheMaidSpecialtyAndSalary()
+    {
+        var m = NewModel();
+        var d = m.Tables.Items.Get(50800001);
+        Assume.That(d, Is.Not.Null);
+        Assert.That(d.MaidId, Is.EqualTo(11000512));
+        string specialty = m.Tables.MaidSpecialty(11000512);
+        var info = m.Tables.MaidInfo(11000512);
+        Assert.That(specialty, Is.Not.Null);
+        Assert.That(info, Is.Not.Null);
+        var tip = Tip(m, new EquipItem { Id = 50800001, Uid = 50, Rarity = 1, Amount = 1 });
+        var row = (Dictionary<string, object>)tip.Data["statDescription"];
+        string text = (string)row["text"];
+        TestContext.Out.WriteLine($"salary {info.Value.SalaryType}/{info.Value.Salary}: {text}");
+        Assert.That(row["type"], Is.EqualTo(0));
+        Assert.That(text, Does.Contain(specialty));
+        Assert.That(text, Does.Contain(info.Value.SalaryType == 0 ? "export_common_icon_meso" : "export_common_icon_merat"));
+        Assert.That(text, Does.Contain(NumberText.Group(info.Value.Salary.ToString())));
+        // an item without a maid id keeps its own statDescription
+        Assert.That(m.Tables.MaidInfo(0), Is.Null);
+    }
+
+    [Test]
+    public void GemstoneTooltipShowsItsLevel()
+    {
+        var m = NewModel();
+        int gem = Enumerable.Range(40200001, 400).FirstOrDefault(i => m.Tables.Items.Get(i) is { IsGemstone: true } && m.Tables.GemstoneUpgrades.Level(i) > 0);
+        Assume.That(gem, Is.Not.Zero);
+        var tip = Tip(m, new EquipItem { Id = gem, Uid = 60, Rarity = 1, Amount = 1 });
+        Assert.That(tip.Data["gemstoneLevel"], Is.EqualTo(m.Tables.GemstoneUpgrades.Level(gem)));
+        Assert.That(Tip(m, new EquipItem { Id = 11300000, Uid = 61, Rarity = 1, Amount = 1 }).Data.ContainsKey("gemstoneLevel"), Is.False);
+    }
 }
