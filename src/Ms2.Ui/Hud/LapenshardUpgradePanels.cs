@@ -256,7 +256,7 @@ public sealed partial class LapenshardUpgradeTabPage
         body = host.Get(root, "m_body");
         if (body == null) return;
         panelSource = Source;
-        if (State == 0) host.Invoke(body, "gotoAndStop", "start");
+        if (State == 0) host.Invoke(body, "gotoAndPlay", "start");
         else if (State == 1 && panelSource != null)
         {
             UpdateSaleRate();
@@ -265,9 +265,10 @@ public sealed partial class LapenshardUpgradeTabPage
     }
 
     /// <summary>FUN_140c671d0: the "select" frame, the source and result slots and the ingredient list.</summary>
+    // m_body->vfunc_13(label) is ASGameEntity::vfunc_13, gotoAndPlay (the label frames fade their content in)
     void SelectFrame()
     {
-        host.Invoke(body, "gotoAndStop", "select");
+        host.Invoke(body, "gotoAndPlay", "select");
         UpdateSourceAndResultSlots();
         var row = Owner.Model.Tables.Lapenshards.Get(panelSource.ItemId);
         if (row == null || row.Next == 0) return;
@@ -304,7 +305,7 @@ public sealed partial class LapenshardUpgradeTabPage
         SetInfoSlot(SourceSlot, src);
         SetInfoSlot(ResultSlot, res);
         foreach (var (child, name) in new[] { ("m_sourceSlot", SourceSlot), ("m_resultSlot", ResultSlot) })
-            if (host.Get(root, child) is { } c) host.Invoke(c, "setData", host.Obj(("bindID", name)));
+            if (host.Get(body, child) is { } c) host.Invoke(c, "setData", host.Obj(("bindID", name)));
         host.Push(SourceSlot);
         host.Push(ResultSlot);
         SetName("m_sourceItemName", src);
@@ -313,7 +314,7 @@ public sealed partial class LapenshardUpgradeTabPage
 
     void SetName(string child, Item item)
     {
-        if (host.Get(root, child) is not { } c || host.Get(c, "textField") is not { } tf) return;
+        if (host.Get(body, child) is not { } c || host.Get(c, "textField") is not { } tf) return;
         host.Set(tf, "htmlText", item == null ? "" : RankColored(item.ItemId, item.Rarity));
     }
 
@@ -392,7 +393,7 @@ public sealed partial class LapenshardUpgradeTabPage
     void ShowUpgradeResult(bool success)
     {
         if (body == null || panelSource == null) { return; }
-        host.Invoke(body, "gotoAndStop", "result");
+        host.Invoke(body, "gotoAndPlay", "result");
         var m = Owner.Model;
         var row = m.Tables.Lapenshards.Get(panelSource.ItemId);
         if (row == null || row.Next == 0) return;

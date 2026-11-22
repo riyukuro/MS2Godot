@@ -29,7 +29,7 @@ public class LapenshardUpgradePanelTests
 
     sealed class Rig
     {
-        public UiHost Host; public LapenshardSystemController C; public LapenshardUpgradeTabPage Page; public GameTables Tables;
+        public UiHost Host; public Action Tick; public LapenshardSystemController C; public LapenshardUpgradeTabPage Page; public GameTables Tables;
         public List<IOutPacket> Sent = new(); public List<Item> Bag = new();
     }
 
@@ -73,7 +73,7 @@ public class LapenshardUpgradePanelTests
         r.C = c;
         var (rt, p) = src.Open(c.Movie, x => x.Budget = 40_000_000);
         p.StageW = 1280; p.StageH = 720;
-        r.Host = new UiHost(p, c, model);
+        r.Host = new UiHost(p, c, model); r.Tick = () => p.Tick();
         Assert.That(r.Host.Load(), Is.True, "load: " + string.Join("; ", rt.Errors));
         for (int i = 0; i < 30; i++) p.Tick();
         r.Host.Set(r.Host.Child("m_buttonBar"), "selectedIndex", 1);
@@ -110,6 +110,13 @@ public class LapenshardUpgradePanelTests
         Assert.That(r.Page.SlotItems[0].ItemId, Is.EqualTo(x.Fodder), "the first slot is the group's first item at the minimum count");
         Assert.That(r.Page.SlotItems[0].Count, Is.EqualTo((uint)x.Row.MinCount));
         Assert.That(r.Page.GetBinding(LapenshardUpgradeTabPage.SlotBag + ".0"), Is.Not.Null);
+        // the label frames are played (vfunc_13 is gotoAndPlay) and the names sit in the body's children
+        var h = r.Host;
+        var body = h.Get(h.Get(h.Child("m_body"), "m_upgradePage"), "m_body");
+        Assert.That(body, Is.Not.Null);
+        for (int i = 0; i < 40; i++) r.Tick();
+        Assert.That(h.Get(body, "currentLabel"), Is.EqualTo("select"));
+        Assert.That(h.Get(h.Get(h.Get(body, "m_sourceItemName"), "textField"), "text")?.ToString(), Does.Not.EqualTo("itemName").And.Not.Empty);
     }
 
     [Test]
