@@ -93,8 +93,8 @@ public sealed partial class RemoteLayer
     /// <summary>
     /// CEquipment::GetAbilityRate (equipment.cpp:731-746) of another player: the worn items' part (kept like m_abilities,
     /// <see cref="Ms2.Ui.Items.WornEquipment.Abilities"/> of its level and worn items, usable at the server time), its
-    /// buffs' and the hot time sum (with the PC bang events for a PC bang grade above 0), over 1000. STILL-OPEN: the set
-    /// items' term, as for the own.
+    /// buffs' and the hot time sum (with the PC bang events for a PC bang grade above 0), over 1000. The set items' term is
+    /// 0, as for the own (see the STILL-OPEN at <see cref="Ms2.Ui.Items.WornEquipment.AbilityTotal(int, int, Ms2.Ui.Skills.AdditionalBuffList, Ms2.Ui.SpecialAbilityHotTimes, bool)"/>).
     /// </summary>
     float RiderAbilityRate(Remote r, int type)
     {

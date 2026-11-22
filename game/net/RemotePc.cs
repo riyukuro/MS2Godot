@@ -527,6 +527,8 @@ public sealed class RemotePc : IRemotePc
     public float RunSpeed => Mount == null ? MoveConfig.RunSpeed
         : (float)((double)Mount.Data.RunSpeed * (double)(1.0f + (RiderAbilityRate?.Invoke(Player.RunXSameSpeedAbility) ?? 0f)) + 0.000001) * 100f;
     public float SwimSpeed => Mount == null ? MoveConfig.SwimSpeed : Mount.Data.SwimSpeed * 100f;
+    /// <summary>The row's run speed with no ability rate (m_unk_180.m_z, ridee.cpp:431), StateSwim sub 0x84's.</summary>
+    public float RowRunSpeed => Mount == null ? MoveConfig.RunSpeed : Mount.Data.RunSpeed * 100f;
     /// <summary>Ridee::FUN_1417075e0 (ridee.cpp:1091-1103): a riding type 1 or 2, or the rider's enabled buff of
     /// eventBuffType 3 (<see cref="RiderEventBuff"/>); false for a PC.</summary>
     public bool WaterRunner => Mount != null && (Mount.Data.Type is 1 or 2 || RiderEventBuff?.Invoke(3) == true);

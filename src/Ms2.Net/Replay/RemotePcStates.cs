@@ -52,8 +52,11 @@ public interface IRemotePc : ISkillMotionOwner
     float RunSpeed { get; }
     float SwimSpeed { get; }
     /// <summary>StateSwim::FUN_1417fb370 (stateswim.cpp:304-310): a ridee that runs on water (Ridee::FUN_1417075e0), which
-    /// swims at its run speed (sub 0x84); false for a PC.</summary>
+    /// swims at its row's run speed (sub 0x84); false for a PC.</summary>
     bool WaterRunner { get; }
+    /// <summary>The row's run speed m_unk_180.m_z (ridee.cpp:431) without GetRunSpeed's ability rate: sub 0x84 swims at it
+    /// (stateswim.cpp:147-153); a PC's is its run speed.</summary>
+    float RowRunSpeed { get; }
     /// <summary>PCBase::vfunc_96 (@0x141671680, pcbase.cpp:2269-2275): move-speed stat rate (CalcMsiR, 1 at base).</summary>
     float MoveSpeedRate { get; }
     /// <summary>PCBase::vfunc_97 (@0x141671720, pcbase.cpp:2504-2519): scale animation rate (m_fScaleA8 / m_fScaleAC, 1 when equal).</summary>
@@ -912,11 +915,11 @@ public sealed class RemotePcStates
                 break;
             case StateSwim:
                 // StateSwim::vfunc_4 (stateswim.cpp:89-129): State::vfunc_4 -> StateSwim::vfunc_10 sets m_f938; sub 0x84
-                // (a remote ridee never has the RunX flag for 0x85) at the run speed for a ridee that runs on water
-                // (FUN_1417fb370), else at the swim speed
+                // (a remote ridee never has the RunX flag for 0x85) at the row's raw run speed m_z for a ridee that runs
+                // on water (FUN_1417fb370), else at the swim speed
                 pc.AnimSpeed = pc.Gait(EffectiveSpeed, pc.RunSpeed, pc.WalkSpeed, out _);
                 subs[s] = 0x84;
-                Speed = pc.WaterRunner ? pc.RunSpeed : pc.SwimSpeed;
+                Speed = pc.WaterRunner ? pc.RowRunSpeed : pc.SwimSpeed;
                 break;
         }
     }
@@ -975,7 +978,7 @@ public sealed class RemotePcStates
             case StateSwim:
             {
                 // StateSwim::vfunc_3 (stateswim.cpp:141-174): sub 0x84's speed as at the enter
-                Speed = pc.WaterRunner ? pc.RunSpeed : pc.SwimSpeed;
+                Speed = pc.WaterRunner ? pc.RowRunSpeed : pc.SwimSpeed;
                 var v = MoveDirection() * EffectiveSpeed;
                 pc.SetVelocity(v);
                 MoveBy(v * dt, dt);

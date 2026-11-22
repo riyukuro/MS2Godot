@@ -66,6 +66,7 @@ public class RemotePcStatesTests {
         public float Gait(float speed, float run, float walk, out bool isRun) { isRun = speed > walk; return (speed == run ? 1f : speed / run) * ScaleAnimRate; }
         public float WalkSpeed => 120f;
         public float RunSpeed => 350f;
+        public float RowRunSpeed => 350f;
         public float SwimSpeed => 350f;
         public bool WaterRunner { get; set; }
         public float MoveSpeedRate { get; set; } = 1f;

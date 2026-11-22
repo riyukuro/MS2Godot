@@ -273,7 +273,8 @@ public partial class RemoteRideCheck : Node3D
 
     /// <summary>Ridee::GetRunSpeed and FUN_1417fb370 at another player's mount: with no worn item, buff or hot time the
     /// rate of 0xae is 0 and the run speed is the row's; a rate of 0.5 runs it at 1.5 times; a water-running mount
-    /// (type 1 or 2, or the rider's event buff type 3) swims at its run speed, any other at its swim speed.</summary>
+    /// (type 1 or 2, or the rider's event buff type 3) swims at the row's run speed with no rate, any other at its swim
+    /// speed.</summary>
     void RideeSpeeds(RemoteLayer layer, int rideId)
     {
         const int User = 39;
@@ -292,12 +293,16 @@ public partial class RemoteRideCheck : Node3D
         float rated = ridee.RunSpeed;
         ridee.RiderEventBuff = t => t == 3;
         bool buffWater = ridee.WaterRunner;
+        ridee.States.ChangeState(RemotePcStates.StateSwim);    // sub 0x84 at the row's raw run speed (stateswim.cpp:147-153)
+        ridee.States.Update(1 / 60f);
+        float swim = ridee.States.Speed;
+        ridee.States.ChangeState(RemotePcStates.StateIdle);
         ridee.RiderAbilityRate = keep; ridee.RiderEventBuff = keepBuff;
         layer.OnRide(new ResponseRide(1, User, null, new RideOffAction(0, 0), 0, 0, 0, 0, false));
         if (rate0 != 0f || Mathf.Abs(plain - d.RunSpeed * 100f) > 0.01f || Mathf.Abs(rated - d.RunSpeed * 150f) > 0.01f
-            || water != (d.Type is 1 or 2) || !buffWater)
-            fails.Add($"ridee speeds: rate {rate0}, run {plain} of {d.RunSpeed}, at 0.5 {rated}, water runner {water} (type {d.Type}), with event buff 3 {buffWater}");
-        GD.Print($"remote ride: ridee {d.Id} rate {rate0}, run {plain}, at rate 0.5 {rated}, water runner {water} (type {d.Type}), with event buff 3 {buffWater}");
+            || water != (d.Type is 1 or 2) || !buffWater || Mathf.Abs(swim - d.RunSpeed * 100f) > 0.01f)
+            fails.Add($"ridee speeds: rate {rate0}, run {plain} of {d.RunSpeed}, at 0.5 {rated}, water runner {water} (type {d.Type}), with event buff 3 {buffWater}, swims at {swim}");
+        GD.Print($"remote ride: ridee {d.Id} rate {rate0}, run {plain}, at rate 0.5 {rated}, water runner {water} (type {d.Type}), with event buff 3 {buffWater} swims at {swim} under rate 0.5 (row run {d.RunSpeed * 100f})");
     }
 
     /// <summary>PCBase::vfunc_96 with the stats: the PC's rate is calc_msiR of its movement speed, the ridee's calc_rmsiR of

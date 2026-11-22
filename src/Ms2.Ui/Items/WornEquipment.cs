@@ -218,7 +218,9 @@ public sealed partial class WornEquipment
     /// (<paramref name="worn"/>, taken from <see cref="Abilities"/> when the equipment changes): plus the own buffs'
     /// <see cref="AdditionalBuffList.SpecialAbility"/> and the game rule's hot time sum (CGameRule::FUN_1404774a0, with
     /// the PC bang events when PC::FUN_141658f30, <paramref name="pcBang"/>). STILL-OPEN: the set items' term
-    /// (GetSetItems()->GetSpecialAbility): the set item table is not loaded, so 0. No allocation.
+    /// (GetSetItems()->GetSpecialAbility) is 0 here. No set row in the KMS2 or KMS2_DEV SetItemInfo carries
+    /// improve_riding_speed (0xae) or improve_riding_run_speed (0xa5): 0 of 1039 / 1025 sets, 66 / 60 special values in
+    /// all. So the ride speeds are right without the term; other types still need it. No allocation.
     /// </summary>
     public static int AbilityTotal(int worn, int type, AdditionalBuffList buffs, SpecialAbilityHotTimes rule, bool pcBang) =>
         worn + (buffs?.SpecialAbility(type) ?? 0) + (rule?.Total(type, pcBang) ?? 0);
