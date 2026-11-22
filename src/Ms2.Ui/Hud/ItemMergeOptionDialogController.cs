@@ -420,6 +420,31 @@ public sealed class ItemMergeOptionDialogController : UiController
         return tip.Fill(list[i]) ? tip.Data : new AsTooltip();
     }
 
+    /// <summary>
+    /// vfunc_45 (uiitemmergeoptiondialog.cpp:448), after UIObject's: "getTooltipByGUID" (the uid text, FUN_141b71960) is
+    /// FUN_1409e0d40 of FindMergeItem(uid), "getTooltipByID" (id, rank) is FUN_1409e1770, both ASTooltip(player, 0x20, 2).
+    /// </summary>
+    public override IDictionary<string, object> GetUserData(string name, object[] args)
+    {
+        if (string.Equals(name, "getTooltipByGUID", StringComparison.OrdinalIgnoreCase))
+        {
+            long uid = args is { Length: > 0 } && long.TryParse(Rt.ToString(args[0]), NumberStyles.Integer, CultureInfo.InvariantCulture, out var u) ? u : 0;
+            var tip = new ItemTooltip(Model, TooltipFlags) { Localize = k => Host.Player.Translate?.Invoke(k) ?? k };
+            return Find(uid) is { } item && tip.Fill(item) ? tip.Data : null;
+        }
+        if (string.Equals(name, "getTooltipByID", StringComparison.OrdinalIgnoreCase))
+        {
+            int id = args is { Length: > 0 } ? (int)Rt.ToUint32(args[0]) : 0;
+            int rank = args is { Length: > 1 } ? (int)Rt.ToUint32(args[1]) : 0;
+            return ItemTooltip.ById(Model, TooltipFlags, id, rank);
+        }
+        return base.GetUserData(name, args);
+    }
+
+    /// <summary>vfunc_45's "isMergeable": true.</summary>
+    public override object GetUserValue(string name, object[] args)
+        => string.Equals(name, "isMergeable", StringComparison.OrdinalIgnoreCase) ? true : base.GetUserValue(name, args);
+
     // ---- the shown pieces --------------------------------------------------------------------------------------------
 
     static string UidText(long uid) => uid.ToString(CultureInfo.InvariantCulture);

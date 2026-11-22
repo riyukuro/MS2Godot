@@ -106,6 +106,22 @@ public class ItemMergeOptionDialogTests
     }
 
     [Test]
+    public void UserDataAnswersTooltipsByGuidAndIdAndIsMergeable()
+    {
+        // vfunc_45 (:448): getTooltipByGUID = FUN_1409e0d40 of FindMergeItem, getTooltipByID = FUN_1409e1770(id, rank)
+        var r = new Rig();
+        var it = r.Add(41);
+        var byUid = r.C.GetUserData("getTooltipByGUID", new object[] { "41" });
+        Assert.That(byUid["itemName"], Is.EqualTo(r.Model.Tables.ItemName(it.ItemId)));
+        Assert.That(r.C.GetUserData("getTooltipByGUID", new object[] { "42" }), Is.Null);
+        var byId = r.C.GetUserData("getTooltipByID", new object[] { (uint)it.ItemId, 2u });
+        Assert.That(byId["itemName"], Is.EqualTo(r.Model.Tables.ItemName(it.ItemId)));
+        Assert.That(byId["itemGrade"], Is.EqualTo(2));
+        Assert.That(r.C.GetUserData("getTooltipByID", new object[] { 1u, 2u }), Is.Null);
+        Assert.That(r.C.GetUserValue("isMergeable", Array.Empty<object>()), Is.EqualTo(true));
+    }
+
+    [Test]
     public void InfoSubZeroIsPhaseOneAndSelectionIsIgnoredBefore()
     {
         var r = new Rig();
