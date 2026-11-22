@@ -57,6 +57,8 @@ public sealed partial class RemoteLayer : Node3D
         public readonly Ms2.Ui.CubeCraftState Cube = new();
         /// <summary>The pc's held item (PC GetHeldItem).</summary>
         public readonly Ms2.Ui.HeldItem Held = new();
+        /// <summary>The PC's mount (PCBase m_spB10, RemoteLayer.Ride.cs), null when not riding.</summary>
+        public RemotePc Ridee;
     }
 
     /// <summary>CItem::FUN_140523c40's outcome for an item id: false when the item data has no such item (no function = true).</summary>
@@ -551,9 +553,12 @@ public sealed partial class RemoteLayer : Node3D
                 case UserAddedEvent add:
                     if (add.User.User.CharacterId == selfCharacter) break;
                     // a replaced or leaving PC: ~PC frees its kept invincible effect m_n1060 (pc.cpp:764-768)
-                    if (users.Remove(add.User.ObjectId, out var old)) { old.Invincible.End(null, RegionFx); tags.Remove(old.Root); bars.Remove(old.Root); old.Death.Free(); old.Pc.Free(); }
+                    if (users.Remove(add.User.ObjectId, out var old)) { old.Invincible.End(null, RegionFx); tags.Remove(old.Root); bars.Remove(old.Root); old.Death.Free(); FreeRidee(old); old.Pc.Free(); }
                     if (old != null) PcLeft?.Invoke(old.ObjectId);
                     var added = users[add.User.ObjectId] = Spawn(add.User); UsersSpawned++; ArmCodi();
+                    // FieldAddUser's ride (PCBase::SetRideOnAction), ridden at the PC's creation (PCBase::vfunc_10 ->
+                    // vfunc_120(GetRideOnAction()), pcbase.cpp:921)
+                    RideOn(added, add.User.Ride);
                     PcShown?.Invoke(Shown(added));
                     GD.Print($"live: other player '{add.User.User.Name}' object {add.User.ObjectId} shown at {add.User.Position}");
                     break;
@@ -561,16 +566,19 @@ public sealed partial class RemoteLayer : Node3D
                     if (users.Remove(rem.ObjectId, out var gone))
                     {
                         gone.Invincible.End(null, RegionFx);   // ~PC, pc.cpp:764-768
-                        tags.Remove(gone.Root); bars.Remove(gone.Root); gone.Death.Free(); gone.Pc.Free();
+                        tags.Remove(gone.Root); bars.Remove(gone.Root); gone.Death.Free(); FreeRidee(gone); gone.Pc.Free();
                         PcLeft?.Invoke(gone.ObjectId);
                         GD.Print($"live: other player {gone.Name} (object {rem.ObjectId}) left");
                     }
                     break;
                 case UserMovedEvent mv:
                     // CSceneStateGame::OnUserSync -> FUN_1417127b0 -> PC::vfunc_114 (scenestategame.cpp:2509-2517): each record
-                    // goes to the PC's state queue; a RideSync record goes to the PC's ridee (OnRideSync), which is not here
-                    if (mv.Ride || !users.TryGetValue(mv.ObjectId, out var r)) break;
-                    r.Pc.States.Push(SyncRecord.From(mv.Record));
+                    // goes to the PC's state queue; a RideSync record goes to the PC's ridee (OnRideSync, scenestategame.cpp:2472),
+                    // dropped when it has none
+                    if (!users.TryGetValue(mv.ObjectId, out var r)) break;
+                    var to = mv.Ride ? r.Ridee : r.Pc;
+                    if (to == null) break;
+                    to.States.Push(SyncRecord.From(mv.Record));
                     if (++movedSeen <= 3 || movedSeen % 100 == 0) GD.Print($"live: other player {r.Name} moved #{movedSeen} to {mv.Position} yaw {mv.YawDegrees}");
                     break;
                 case UserStatEvent st:
@@ -742,6 +750,7 @@ public sealed partial class RemoteLayer : Node3D
         foreach (var a in users.Values)
         {
             a.Pc.Tick(dt);
+            if (a.Ridee != null) TickRide(a, dt);
             if (a.Invincible.Blink.Active && a.Invincible.Tick(now, a.Visual)) a.Invincible.End(a.Visual, RegionFx);
             a.Death.Revival.Expire(tick);
         }

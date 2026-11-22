@@ -21,6 +21,9 @@ public sealed class RemotePc : IRemotePc
     public readonly Node3D Visual;
     public readonly AnimationPlayer Anim;
     public readonly ActionAnims Anims;
+    /// <summary>The mount this body is (a Ridee, <see cref="CreateRidee"/>), whose actions and speeds are the riding row's;
+    /// null for a PC.</summary>
+    public readonly Mount Mount;
     public readonly RemotePcStates States;
     readonly NxController nx;
     readonly GroundMaterialSnapshot ground = new();
@@ -45,9 +48,9 @@ public sealed class RemotePc : IRemotePc
     // the sequence the states asked for
     int currentAct = -1; string currentName; double lastPos = -1;
 
-    RemotePc(CharacterBody3D body, Node3D visual, AnimationPlayer anim, ActionAnims anims, float gravity, NxController.FaceGrids faces)
+    RemotePc(CharacterBody3D body, Node3D visual, AnimationPlayer anim, ActionAnims anims, Mount mount, float gravity, NxController.FaceGrids faces)
     {
-        Body = body; Visual = visual; Anim = anim; Anims = anims; this.gravity = gravity;
+        Body = body; Visual = visual; Anim = anim; Anims = anims; Mount = mount; this.gravity = gravity;
         var collision = body.GetNode<CollisionShape3D>("Collision");
         nx = new NxController(body, collision, faces) { ShapeHit = NoteHit };
         States = new RemotePcStates(this, (int)body.GetInstanceId());
@@ -60,7 +63,20 @@ public sealed class RemotePc : IRemotePc
     /// StateFall (pcbase.cpp:792, :924). <paramref name="faces"/> is the field's mesh face cache (Field.FaceGrids), shared
     /// with the player's and the other remote PCs' controllers.
     /// </summary>
-    public static RemotePc Create(string name, Node3D visual, AnimationPlayer anim, ActionAnims anims, float gravity, Vector3 feet, float rotZ, NxController.FaceGrids faces)
+    public static RemotePc Create(string name, Node3D visual, AnimationPlayer anim, ActionAnims anims, float gravity, Vector3 feet, float rotZ, NxController.FaceGrids faces) =>
+        Create(name, visual, anim, anims, null, gravity, feet, rotZ, faces);
+
+    /// <summary>
+    /// Another player's mount at <paramref name="feet"/>: Ridee::FUN_1417043a0 (@0x1417043a0) gives it the PC's model size
+    /// (25, 105) and Ridee::vfunc_10 (@0x141704750) the PC's collision group 2 and 0x399 sweep, so it is a PC body with the
+    /// mount's model. Ridee::vfunc_123 plays idleXMotion / runXMotion for actions 0x1e / 0x1f and the action table's
+    /// sequence otherwise; its walk, run and swim speeds are the row's (m_unk_180).
+    /// STILL-OPEN: the equipment ability rates GetRunSpeed / GetRideSpeed apply (0xae / 0xa5) and the row's box for remotes.
+    /// </summary>
+    public static RemotePc CreateRidee(string name, Mount mount, float gravity, Vector3 feet, float rotZ, NxController.FaceGrids faces) =>
+        Create(name, mount.Visual, mount.Anim, null, mount, gravity, feet, rotZ, faces);
+
+    static RemotePc Create(string name, Node3D visual, AnimationPlayer anim, ActionAnims anims, Mount mount, float gravity, Vector3 feet, float rotZ, NxController.FaceGrids faces)
     {
         var body = new CharacterBody3D { Name = name, CollisionLayer = MoveConfig.PcLayer, CollisionMask = MoveConfig.PcGroups };
         body.AddChild(new CollisionShape3D
@@ -71,7 +87,7 @@ public sealed class RemotePc : IRemotePc
         });
         body.AddChild(visual);
         body.Position = feet;
-        var pc = new RemotePc(body, visual, anim, anims, gravity, faces) { RotationZ = rotZ };
+        var pc = new RemotePc(body, visual, anim, anims, mount, gravity, faces) { RotationZ = rotZ };
         pc.States.TargetYaw = rotZ;
         return pc;
     }
@@ -329,7 +345,24 @@ public sealed class RemotePc : IRemotePc
     public bool IsAction(int action) => currentAct == action && Anim.IsPlaying();
     /// <summary>ActionAnims names an action only once its sequence is in the (shared) library, so no per-call name lookup
     /// on the player (a string to StringName conversion each call).</summary>
-    public bool HasAction(int action) => Anims?.Name((Act)action, WeaponPrefix) != null;
+    public bool HasAction(int action) => ActionKey(action) != null;
+
+    string ActionKey(int action) => Mount == null ? Anims?.Name((Act)action, WeaponPrefix) : action switch
+    {
+        0x1e => Mount.SequenceKey(Mount.Data.IdleXMotion, true),
+        0x1f => Mount.SequenceKey(Mount.Data.RunXMotion, true),
+        _ => Mount.Key(ActionAnims.TypeName(action), ActionAnims.Loops(action)),
+    };
+
+    /// <summary>The blend into <paramref name="to"/>: NiActorManager's KFM transition from the current sequence (the local
+    /// player's PlaySequence), or a mount's 0.15 s (<see cref="Mount.Play"/>).</summary>
+    double Blend(string to)
+    {
+        if (currentName == null || to == currentName) return 0;
+        if (Anims == null) return MountBlend;
+        return (Anims.Transition(currentName, to) ?? Anims.DefaultTransition)?.Duration ?? 0;
+    }
+    const double MountBlend = 0.15;
 
     /// <summary>PC::vfunc_60 (@0x141658a30, pc.cpp:1737-1749): the weapon action's prefix while weapons are held, "" otherwise.
     /// Every action resolves through it (CAnimationManager::PlayAnimation, animationmanager.cpp:248-265).</summary>
@@ -388,12 +421,10 @@ public sealed class RemotePc : IRemotePc
 
     public bool PlayAction(int action, float rate, bool restart)
     {
-        var name = Anims?.Name((Act)action, WeaponPrefix);
+        var name = ActionKey(action);
         if (name == null) return false;
         if (name == currentName && !restart && Anim.IsPlaying()) { Anim.SpeedScale = rate; currentAct = action; return true; }
-        // NiActorManager's KFM transition from the current sequence (the local player's PlaySequence), as a blend time
-        var tr = currentName == null || name == currentName ? null : Anims.Transition(currentName, name) ?? Anims.DefaultTransition;
-        Anim.Play(name, tr?.Duration ?? 0);
+        Anim.Play(name, Blend(name));
         Anim.SpeedScale = rate;
         currentAct = action; currentName = name; lastPos = -1;
         return true;
@@ -416,8 +447,7 @@ public sealed class RemotePc : IRemotePc
     {
         if (key == null) return false;      // a key from ActionAnims is a loaded sequence
         if (key == currentName && Anim.IsPlaying()) { Anim.SpeedScale = rate; return true; }
-        var tr = currentName == null ? null : Anims.Transition(currentName, key) ?? Anims.DefaultTransition;
-        Anim.Play(key, tr?.Duration ?? 0);
+        Anim.Play(key, Blend(key));
         Anim.SpeedScale = rate;
         currentAct = -1; currentName = key; lastPos = -1;
         return true;
@@ -448,9 +478,10 @@ public sealed class RemotePc : IRemotePc
 
     public float Gait(float speed, float run, float walk, out bool isRun) => ActionAnims.GaitRate(speed, run, walk, out isRun) * ScaleAnimRate;
 
-    public float WalkSpeed => MoveConfig.WalkSpeed;
-    public float RunSpeed => MoveConfig.RunSpeed;
-    public float SwimSpeed => MoveConfig.SwimSpeed;
+    // a mount's are its row's, in m/s (Ridee::FUN_1417043a0's m_unk_180 y / z / w)
+    public float WalkSpeed => Mount == null ? MoveConfig.WalkSpeed : Mount.Data.WalkSpeed * 100f;
+    public float RunSpeed => Mount == null ? MoveConfig.RunSpeed : Mount.Data.RunSpeed * 100f;
+    public float SwimSpeed => Mount == null ? MoveConfig.SwimSpeed : Mount.Data.SwimSpeed * 100f;
     // STILL-OPEN: remote PC move-speed stat (PCBase::vfunc_96 -> CalcMsiR, pcbase.cpp:2269-2275) and scale easing
     // (PCBase::vfunc_97, pcbase.cpp:2504-2519, m_fScaleA8 / m_fScaleAC) are not replicated yet, taken as 1f.
     public float MoveSpeedRate => 1f;

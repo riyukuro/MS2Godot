@@ -38,6 +38,19 @@ public class OwnRideTests
     }
 
     [Test]
+    public void AnyActorRidesOnAndOffByTheSameModes()
+    {
+        Assert.That(OwnRide.ForActor(Ride(0, 7, Action), false), Is.EqualTo(OwnRide.Step.RideOn));
+        Assert.That(OwnRide.ForActor(Ride(0, 7, Action), true), Is.EqualTo(OwnRide.Step.None));
+        Assert.That(OwnRide.ForActor(Ride(0, 7), false), Is.EqualTo(OwnRide.Step.None));
+        Assert.That(OwnRide.ForActor(Ride(1, 7), true), Is.EqualTo(OwnRide.Step.RideOff));
+        Assert.That(OwnRide.ForActor(Ride(2, 7), false), Is.EqualTo(OwnRide.Step.RideOff));
+        foreach (byte mode in new byte[] { 3, 4, 5, 6 })
+            Assert.That(OwnRide.ForActor(Ride(mode, 7, Action), false), Is.EqualTo(OwnRide.Step.None), $"mode {mode}");
+        Assert.That(OwnRide.ForActor(null, false), Is.EqualTo(OwnRide.Step.None));
+    }
+
+    [Test]
     public void PassengerAndFlagModesAreNotTheOwnRide()
     {
         foreach (byte mode in new byte[] { 3, 4, 5, 6 })

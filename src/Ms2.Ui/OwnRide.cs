@@ -3,7 +3,8 @@ using Ms2.Net.Packets;
 namespace Ms2.Ui;
 
 /// <summary>
-/// CSceneStateGame::OnResponseRide (@0x14172a8f0, scenestategame.cpp:12026) for the own pc's object: modes 0, 1 and 2.
+/// CSceneStateGame::OnResponseRide (@0x14172a8f0, scenestategame.cpp:12026) for the own pc's object (<see cref="For"/>) and
+/// any other actor (<see cref="ForActor"/>): modes 0, 1 and 2.
 /// Mode 0 is PCBase::vfunc_120 through MyPC::vfunc_120 (mypc.cpp:3295); modes 1 and 2 are PCBase::vfunc_121 through
 /// MyPC::vfunc_121 (mypc.cpp:3348). The passenger modes 3-5 and mode 6 are not the own pc's ride.
 /// </summary>
@@ -28,6 +29,17 @@ public static class OwnRide
     public static Step For(ResponseRide r, int selfObjectId, bool mounted)
     {
         if (r == null || selfObjectId <= 0 || r.ObjectId != selfObjectId) return Step.None;
+        return ForActor(r, mounted);
+    }
+
+    /// <summary>
+    /// The step any actor takes: modes 0 and 1 find any actor (FUN_141bd1200) and call its vfunc_120 / vfunc_121, mode 2
+    /// calls vfunc_121(null) on any actor too (the summon after it is the own pc's only). <paramref name="mounted"/> is the
+    /// actor's ridee (m_spB10).
+    /// </summary>
+    public static Step ForActor(ResponseRide r, bool mounted)
+    {
+        if (r == null) return Step.None;
         return r.Mode switch
         {
             0 => r.RideOn == null || mounted ? Step.None : Step.RideOn,

@@ -23,7 +23,7 @@ public sealed class RideData
     /// <summary>basic enableRideOffUI (m_basic.m_nEnableRideOffUI, XmlGetBool): the ride-off button and the 0xf ride-off action.</summary>
     public bool EnableRideOffUI;
     public float[] RideTranslation = new float[3], RideRotation = new float[3];
-    public string AniPC = "Ride_Idle_A", AniPCIdle, AniPCRun, AniPCJump;
+    public string AniPC = "Ride_Idle_A", AniPCIdle, AniPCRun, AniPCJump, AniPCSPIdle, AniPCSPRun, AniPCSPJump;
     /// <summary>RideeData::Collision (@0x140783800): the box size, 100 each when absent (ctor @0x1407836e0), and whether the
     /// mount carries the kinematic box (Ridee::MakeNxBoxController).</summary>
     public float Width = 100, Depth = 100, Height = 100;
@@ -60,6 +60,9 @@ public sealed class RideData
         d.AniPCIdle = Or((string)b.Attribute("rideAniPC_Idle"), d.AniPC);
         d.AniPCRun = Or((string)b.Attribute("rideAniPC_Run"), d.AniPC);
         d.AniPCJump = Or((string)b.Attribute("rideAniPC_Jump"), d.AniPC);
+        d.AniPCSPIdle = Or((string)b.Attribute("rideAniPC_SP_Idle"), d.AniPC);
+        d.AniPCSPRun = Or((string)b.Attribute("rideAniPC_SP_Run"), d.AniPC);
+        d.AniPCSPJump = Or((string)b.Attribute("rideAniPC_SP_Jump"), d.AniPC);
         if (riding.Element("collision") is { } c)
         {
             d.Width = F(c, "width", 100);
@@ -69,6 +72,9 @@ public sealed class RideData
         }
         return d;
     }
+
+    /// <summary>The rider sequences StateRide picks from (<see cref="Ms2.Net.Replay.StateRideAnim"/>).</summary>
+    public Ms2.Net.Replay.RiderSequences Rider => new(AniPC, AniPCIdle, AniPCRun, AniPCJump, AniPCSPIdle, AniPCSPRun, AniPCSPJump);
 
     static string Or(string a, string b) => string.IsNullOrEmpty(a) ? b : a;
 

@@ -70,23 +70,49 @@ public sealed class Mount
     /// <summary>Plays the sequence of an action type (IDLE, WALK, JUMP_UP, ...) when the mount's kfm has it.</summary>
     public void Play(string type, bool loop, bool restart = false)
     {
-        if (!actions.TryGetValue(type, out var seq)) return;
-        string key = seq.ToLowerInvariant();
-        var lib = Anim.GetAnimationLibrary("");
-        if (!lib.HasAnimation(key))
-        {
-            var s = kfm.ByName(seq);
-            if (s == null) return;
-            string entry = $"{folder}/{Path.GetFileName(s.KfPath.Replace('\\', '/')).ToLowerInvariant()}";
-            if (!packs.Exists(NpcArchive, entry)) return;
-            var a = ModelBuilder.BuildAnimation(KfAnimation.Load(NifFile.Load(mb.Spec, packs.Read(NpcArchive, entry))), md);
-            a.LoopMode = loop ? Godot.Animation.LoopModeEnum.Linear : Godot.Animation.LoopModeEnum.None;
-            lib.AddAnimation(key, a);
-        }
-        if (key == Current && !restart) return;
+        var key = Key(type, loop);
+        if (key == null || key == Current && !restart) return;
         Anim.Play(key, 0.15);
         if (restart) Anim.Seek(0, true);
         Current = key;
+    }
+
+    readonly Dictionary<string, string> typeKeys = new(StringComparer.Ordinal), seqKeys = new(StringComparer.Ordinal);
+
+    /// <summary>The animation key of an action type's sequence, loaded on first use (with <paramref name="loop"/> as its loop
+    /// mode); null when the action table or the kfm lacks it. Remembered per type, so a repeat call allocates nothing.</summary>
+    public string Key(string type, bool loop)
+    {
+        if (type == null) return null;
+        if (typeKeys.TryGetValue(type, out var k)) return k;
+        k = actions.TryGetValue(type, out var seq) ? SequenceKey(seq, loop) : null;
+        typeKeys[type] = k;
+        return k;
+    }
+
+    /// <summary>The animation key of a kfm sequence by name, loaded on first use; null when the kfm or the pack lacks it.</summary>
+    public string SequenceKey(string seq, bool loop)
+    {
+        if (string.IsNullOrEmpty(seq)) return null;
+        if (seqKeys.TryGetValue(seq, out var k)) return k;
+        k = LoadSequence(seq, loop);
+        seqKeys[seq] = k;
+        return k;
+    }
+
+    string LoadSequence(string seq, bool loop)
+    {
+        string key = seq.ToLowerInvariant();
+        var lib = Anim.GetAnimationLibrary("");
+        if (lib.HasAnimation(key)) return key;
+        var s = kfm.ByName(seq);
+        if (s == null) return null;
+        string entry = $"{folder}/{Path.GetFileName(s.KfPath.Replace('\\', '/')).ToLowerInvariant()}";
+        if (!packs.Exists(NpcArchive, entry)) return null;
+        var a = ModelBuilder.BuildAnimation(KfAnimation.Load(NifFile.Load(mb.Spec, packs.Read(NpcArchive, entry))), md);
+        a.LoopMode = loop ? Godot.Animation.LoopModeEnum.Linear : Godot.Animation.LoopModeEnum.None;
+        lib.AddAnimation(key, a);
+        return key;
     }
 
     /// <summary>

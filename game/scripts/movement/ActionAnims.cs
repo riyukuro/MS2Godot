@@ -41,6 +41,12 @@ public sealed class ActionAnims
     // sequences that cycle; the rest play once and hold their last frame
     static readonly HashSet<Act> Looping = new() { Act.Idle, Act.BattleIdle, Act.Run, Act.Walk, Act.JumpFall, Act.WaterIdle, Act.WaterSwim, Act.WaterDash, Act.LadderIdle, Act.ClimbIdle, Act.PoleIdle, Act.HoldIdle };
 
+    /// <summary>The pcactiondata type of action <paramref name="act"/> (IDLE, WALK, ...), null past the table.</summary>
+    public static string TypeName(int act) => act >= 0 && act < TypeNames.Length ? TypeNames[act] : null;
+
+    /// <summary>Whether action <paramref name="act"/>'s sequence cycles.</summary>
+    public static bool Loops(int act) => Looping.Contains((Act)act);
+
     readonly Dictionary<Act, string> names = new();
     readonly HashSet<string> missing = new(StringComparer.Ordinal);
     public readonly Dictionary<string, KfAnimation> Kf = new();
