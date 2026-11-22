@@ -121,6 +121,8 @@ public sealed class LapenshardTable
                         var tok = v.Split(':', StringSplitOptions.RemoveEmptyEntries);
                         ings.Add(new(tok.Length > 0 ? ItemData.Atoi(tok[0]) : 0, ItemData.Atoi(c), tok.Length > 1 ? ItemTags.ByName(tok[1]) : 0));
                     }
+                    // meso: the client reads it with XmlGetAttr(.., "meso", m_nMeso) (itemlapensharddata.cpp:227), whose 64-bit overload
+                    // (tinyxmlhelper.cpp:159) goes to XmlQuery (:251), which scans the text with _atoi64 (:256); TryScanInt is that scan.
                     var row = new Row(group, level, ItemData.Atoi((string)e.Attribute("NextItemID") ?? "0"), masks[id],
                         ItemData.Atoi((string)e.Attribute("GroupLapenshardMinCount") ?? "0"), (string)e.Attribute("meso") is { } mesoText && ItemData.TryScanInt(mesoText, out long meso) ? meso : 0, ings);
                     rows[id] = row;
