@@ -41,6 +41,24 @@ public class SkillCastTests
 
     static CastRequest Req(uint id, bool seq = true) => new(id, 1, 77, 5000) { HasSequence = seq };
 
+    /// <summary>A double-clicked bag item's skill (inventory.cpp:1379-1397) is CreateSkillRecord only: a refusal gives nothing
+    /// where the quick slot chain (FUN_141764e30) casts the useDefaultSkill fallback; a cast carries the item uid at level 1.</summary>
+    [Test]
+    public void ABagItemSkillHasNoDefaultSkillFallback()
+    {
+        var w = World(Skills(Attack, JumpAttack, Costly));
+        var c = new CastWorld();
+        Assert.That(SkillCast.Request(w, c, Req(300), _ => 100).Record?.Skill.Id, Is.EqualTo(100u), "the quick slot chain falls back");
+        var res = SkillCast.ItemRequest(w, c, new CastRequest(0, 0, 78, 5000), 300, 0x99);
+        Assert.That(res.Record, Is.Null);
+        Assert.That(res.Why, Is.Not.Zero, "the sp refusal itself");
+
+        var r = SkillCast.ItemRequest(w, c, new CastRequest(0, 0, 79, 5000), 100, 0x99).Record;
+        Assert.That(r, Is.Not.Null);
+        Assert.That((r.Skill.Id, r.Level.Level, r.ItemUid), Is.EqualTo((100u, (ushort)1, 0x99L)));
+        Assert.That(SkillCast.ItemRequest(w, c, new CastRequest(0, 0, 80, 5000), 999, 0x99).Record, Is.Null, "no level 1 row");
+    }
+
     [Test]
     public void TheCooldownKeyIsTheTargetingKeyCombinedWithTheMotion()
     {

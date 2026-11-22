@@ -318,6 +318,26 @@ public static class SkillCast
     }
 
     /// <summary>
+    /// Unk_Inventory::FUN_140a635f0 (inventory.cpp:1379-1397), a double-clicked bag item's skill: the skill's level 1 row
+    /// (none: nothing), MyPC::FUN_141526c80's swap (<see cref="ChangeSkill"/>), and CreateSkillRecord of a request with the
+    /// swapped skill and level, m_b38 from the level 1 row read before the swap and the item uid (m_n40). It never goes
+    /// through CSkillSystem::FUN_141764e30, so there is no learnt test, no key item and no useDefaultSkill fallback.
+    /// <paramref name="req"/> brings the cast id, tick and aim; its skill, level, m_b38 and item uid are set here.
+    /// </summary>
+    public static Result ItemRequest(SlotWorld w, CastWorld c, CastRequest req, uint skillId, long itemUid)
+    {
+        var data = w.Tables.Skills.GetSkillLevelData(skillId, 1);
+        if (data == null) return new(null, 0, null);
+        ushort level = 1;
+        ChangeSkill(w, ref skillId, ref level);
+        req.SkillId = skillId;
+        req.Level = level;
+        req.HasSequence = data.HasSequenceName;
+        req.ItemUid = itemUid;
+        return CreateRecord(w, c, req);
+    }
+
+    /// <summary>
     /// CSkillSystem::CreateSkillRecord @0x141765570: the request's level row; a sequence request goes to the active cast's
     /// output skill and the jump skill (GetCastSkillId) at the highest level up to the request's (FUN_14176b7c0); then
     /// FUN_141769b70 (a reason: the client's FUN_141769440 notice, null), else the record (Init) and the aim when b39 is clear.
