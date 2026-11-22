@@ -98,13 +98,10 @@ public sealed partial class RemoteLayer
         }
         if (mount?.Data != null && mount.Skeleton != null && IsInstanceValid(mount.Skeleton))
         {
-            foreach (var seat in mount.Data.Seats.Values)
+            foreach (var (b, name) in mount.RideBones())
             {
-                if (string.IsNullOrEmpty(seat.RideBone)) break;
-                int b = mount.Bone(seat.RideBone);
-                if (b < 0) continue;
                 float d = mount.BoneWorld(b).Origin.DistanceTo(from);
-                if (d < best) { best = d; node = seat.RideBone; }
+                if (d < best) { best = d; node = name; }
             }
         }
         return best;
@@ -118,7 +115,8 @@ public sealed partial class RemoteLayer
         return n;
     }
 
-    /// <summary>The Hold_PointNN bones of a skeleton, found once per skeleton.</summary>
+    /// <summary>The Hold_PointNN bones of a skeleton, found once per skeleton; emptied when a field's layer goes
+    /// (<see cref="_ExitTree"/>), as the skeletons go with it.</summary>
     static readonly Dictionary<ulong, (int Bone, string Name)[]> holdPoints = new();
     static (int Bone, string Name)[] HoldPoints(Skeleton3D sk)
     {
@@ -169,4 +167,7 @@ public sealed partial class RemoteLayer
 
     /// <summary>Godot world to the client's Z-up world, (x, y, z) to (x, -z, y) (DummyAnchor's ToClient).</summary>
     static readonly Transform3D ToClient = new(new Basis(new Vector3(1, 0, 0), new Vector3(0, 0, 1), new Vector3(0, -1, 0)), Vector3.Zero);
+
+    /// <summary>The field is freed: its skeletons' hold points are dropped (the next field's are found again).</summary>
+    public override void _ExitTree() => holdPoints.Clear();
 }

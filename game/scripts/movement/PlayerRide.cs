@@ -147,6 +147,24 @@ public sealed class Mount
         bone >= 0 ? Skeleton.GlobalTransform * Skeleton.GetBoneGlobalPose(bone) : Visual.GlobalTransform;
 
     readonly Dictionary<string, int> bones = new(StringComparer.Ordinal);
+    (int Bone, string Name)[] rideBones;
+
+    /// <summary>Ridee::vfunc_119's passenger rideBone nodes (ridee.cpp:638): the seats by passengerid up to the first one
+    /// without a rideBone, each with its skeleton bone (those the skeleton lacks left out). Found once per mount, so the
+    /// per-frame hold poll does not enumerate the seat map.</summary>
+    public (int Bone, string Name)[] RideBones()
+    {
+        if (rideBones != null) return rideBones;
+        var found = new List<(int, string)>();
+        if (Data != null && Skeleton != null)
+            foreach (var seat in Data.Seats.Values)
+            {
+                if (string.IsNullOrEmpty(seat.RideBone)) break;
+                int b = Bone(seat.RideBone);
+                if (b >= 0) found.Add((b, seat.RideBone));
+            }
+        return rideBones = found.ToArray();
+    }
 
     /// <summary>The skeleton bone of a node name (-1 when absent), remembered per name. Ridee::vfunc_119 (ridee.cpp:638) adds
     /// the passenger seats' rideBone nodes to the rider's node map, where PCBase::FUN_1416757c0 finds them.</summary>

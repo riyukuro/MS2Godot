@@ -98,11 +98,19 @@ public partial class RemoteRideCheck : Node3D
         switch (frame)
         {
             case 60:
+                var at0 = ridee.Body.GlobalPosition;
                 if (ridee.States.Cur != RemotePcStates.StateIdle) fails.Add($"ridee landing: state {ridee.States.Cur}");
                 if (rider.States.Cur != RemotePcStates.StateRide) fails.Add($"rider state {rider.States.Cur}");
                 if (rider.Body.Position != ridee.Body.Position) fails.Add($"rider at {rider.Body.Position}, ridee at {ridee.Body.Position}");
                 if (RiderKey(d.AniPCIdle) is { } idle && rider.Anim.CurrentAnimation != idle) fails.Add($"rider idle sequence {rider.Anim.CurrentAnimation}, not {idle}");
                 GD.Print($"remote ride: landed at {ridee.Body.Position}, ridee {ridee.Anim.CurrentAnimation}, rider {rider.Anim.CurrentAnimation} at seat {rider.Visual.GlobalPosition} (bone {ridee.Mount.Data.RideBone} #{ridee.Mount.SeatBone})");
+                // the hold poll asks each riding pc's seat nodes every frame: 0 B once the mount's list is found
+                RemoteLayer.NearestHoldNode(null, ridee.Mount, at0, out _);
+                long a0 = GC.GetAllocatedBytesForCurrentThread();
+                for (int i = 0; i < 100; i++) RemoteLayer.NearestHoldNode(null, ridee.Mount, at0, out _);
+                long alloc = GC.GetAllocatedBytesForCurrentThread() - a0;
+                if (alloc != 0) fails.Add($"hold poll of the mount's seats allocates {alloc} B per 100");
+                GD.Print($"remote ride: hold poll of {ridee.Mount.RideBones().Length} seat node(s) {alloc} B per 100");
                 runStart = ridee.Body.GlobalPosition;
                 ridee.States.Push(Rec(2, 0x18, ridee, new System.Numerics.Vector2(0, 1)));
                 break;
