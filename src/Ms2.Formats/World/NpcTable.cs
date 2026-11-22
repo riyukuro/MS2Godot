@@ -41,6 +41,11 @@ public sealed class NpcRow
     /// </summary>
     public float DamagedVibrateDuration, DamagedVibrateAmp;
     /// <summary>
+    /// The environment's damagedColorScale (CNpcData::LoadXml, npcdata.cpp:1464; 2 when absent, the ctor's m_fDamagedColorScale,
+    /// :651): the colour boost the npc takes when the own PC hits it (CNpc::vfunc_33's AddColorBoost).
+    /// </summary>
+    public float DamagedColorScale = 2f;
+    /// <summary>
     /// &lt;dead defaultaction upaction&gt; (CNpcData::LoadXml, npcdata.cpp:1651-1659): XmlTokenList, the attribute split at ','
     /// by CString::Tokenize (achievedata.cpp:501), which skips empty tokens and trims nothing.
     /// </summary>
@@ -200,6 +205,7 @@ public sealed class NpcTable
         }
         row.DamagedVibrateDuration = Flt(env, "damagedVibrateDuration", 0);
         row.DamagedVibrateAmp = Flt(env, "damagedVibrateAmp", 0);
+        row.DamagedColorScale = Flt(env, "damagedColorScale", 2f);
         if (env.Element("dead") is { } dead)
         {
             row.DeadDefaultActions = ((string)dead.Attribute("defaultaction") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);

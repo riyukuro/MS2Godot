@@ -37,6 +37,8 @@ public sealed class NpcLayer
         public World.FieldNpcs.Placed Talk;   // the npc as the talk finds it (WorldService::FindNpcById by object id)
         public readonly Ms2.Ui.Skills.NpcVibrate Vibrate = new();   // m_vibrate (+0xe18)
         public Godot.Vector3 VisualBase;          // the body's place under the root, which the shake moves off and back to
+        public readonly Ms2.Ui.Skills.ColorBoost Boost = new();   // PCBase m_colorBoost
+        public List<ShaderMaterial> BoostMaterials;                // the body's character-shader materials, gathered on the first boost
     }
 
     /// <summary>The CRT rand() the death pick draws from (0..0x7fff).</summary>
@@ -334,21 +336,55 @@ public sealed class NpcLayer
     /// (@0x141098940).
     /// - A cast's total below 0 by the own player arms the npc's shake (<see cref="Ms2.Ui.Skills.NpcVibrate.OnHit"/>,
     ///   :1869); <see cref="Process"/> moves the body with it. The dot and the splash do not shake.
+    /// - A cast's total below 0 by the own player also adds the npc's colour boost (AddColorBoost(damagedColorScale, 0.1, 0.1),
+    ///   DAT_1439f6ff4 and DAT_1439f6ff8, :1862-1865, before the shake); <see cref="Process"/> runs it.
     /// - Then, all three: a living npc whose current hp stat is 0 (FUN_141670a00(4), PCBase m_unk_1c0[2][4], pcbase.cpp:1967)
     ///   dies with its dead sound (vfunc_125(1), :1890-1892), whatever the hit's total.
     /// True when the shake armed.
-    /// STILL-OPEN: the rest of the three (PlayInvokeEffectsByEvent(1), the boss camera, FUN_141098fb0(1), the colour boost
-    /// AddColorBoost(damagedColorScale), MyPC::FUN_14152e240 for a boss, the hit sound, the knockback record, the hit basis,
+    /// STILL-OPEN: the rest of the three (PlayInvokeEffectsByEvent(1), the boss camera, FUN_141098fb0(1),
+    /// MyPC::FUN_14152e240 for a boss, the hit sound, the knockback record, the hit basis,
     /// the cast's MakeDeadPhysXActor, the boss kill voices, the dps meter and vfunc_113) is not ported here.
     /// </summary>
     public bool Hit(int id, bool cast, long totalDamage, bool byLocalPlayer, Ms2.Ui.Skills.SkillAttackDamage attack)
     {
         if (!inst.TryGetValue(id, out var i)) return false;
         var row = table.Find(i.NpcId);
+        if (cast && row != null && totalDamage < 0 && byLocalPlayer) i.Boost.Add(Now, row.DamagedColorScale, DamagedBoostDuration, DamagedBoostAccumRatio);
         bool armed = cast && row != null
             && i.Vibrate.OnHit(Now, totalDamage, byLocalPlayer, row.DamagedVibrateDuration, row.DamagedVibrateAmp, attack);
         if (!i.Dead && i.HpCur == 0) Die(id, true);
         return armed;
+    }
+
+    // DAT_1439f6ff4, DAT_1439f6ff8: the hit boost's CColorBoostData duration and accumulation ratio
+    const float DamagedBoostDuration = 0.1f, DamagedBoostAccumRatio = 0.1f;
+
+    /// <summary>The colour boost last written to the npc's body (1 before any); null when there is no npc of the id.</summary>
+    public float? ColorBoostOf(int id) => inst.TryGetValue(id, out var i) ? i.Boost.Scale : null;
+
+    /// <summary>The npc's character-shader materials the boost writes to (gathered on the first boost); null before it.</summary>
+    public IReadOnlyList<ShaderMaterial> BoostMaterialsOf(int id) => inst.TryGetValue(id, out var i) ? i.BoostMaterials : null;
+
+    /// <summary>
+    /// SetColorScale (util.cpp:717): the scale goes to the "ColorBoost" float of every render object under the actor, the
+    /// character shader's color_boost here, in place of the nif's own value. The shadow-only twins draw no colour.
+    /// </summary>
+    static void GatherBoostMaterials(Node n, List<ShaderMaterial> into)
+    {
+        if (n is GeometryInstance3D g && g.CastShadow != GeometryInstance3D.ShadowCastingSetting.ShadowsOnly)
+        {
+            if (g.MaterialOverride is ShaderMaterial o) AddPasses(o, into);
+            else if (g is MeshInstance3D mi && mi.Mesh != null)
+                for (int s = 0; s < mi.Mesh.GetSurfaceCount(); s++)
+                    if ((mi.GetSurfaceOverrideMaterial(s) ?? mi.Mesh.SurfaceGetMaterial(s)) is ShaderMaterial sm) AddPasses(sm, into);
+        }
+        for (int c = 0; c < n.GetChildCount(); c++) GatherBoostMaterials(n.GetChild(c), into);
+
+        static void AddPasses(ShaderMaterial m, List<ShaderMaterial> into)
+        {
+            for (var p = m; p != null; p = p.NextPass as ShaderMaterial)
+                if (ModelBuilder.IsCharacterShader(p.Shader) && !into.Contains(p)) into.Add(p);
+        }
     }
 
     /// <summary>The npc's body offset from its root by the shake (zero when none runs); null when there is no npc of the id.</summary>
@@ -463,6 +499,12 @@ public sealed class NpcLayer
             {
                 var off = System.Numerics.Vector3.Zero;
                 i.Visual.Position = i.Vibrate.Update(Now, ref off, Rand) ? i.VisualBase + G(off) : i.VisualBase;
+            }
+            // PCBase::vfunc_53 (pcbase.cpp:3733): UpdateBoosts, which writes the scale only when it changed
+            if (i.Boost.Count > 0 && i.Boost.Update(Now) && i.Visual != null)
+            {
+                if (i.BoostMaterials == null) GatherBoostMaterials(i.Visual, i.BoostMaterials = new List<ShaderMaterial>());
+                foreach (var m in i.BoostMaterials) m.SetShaderParameter(ShaderParam.ColorBoost, i.Boost.Scale);
             }
         }
     }

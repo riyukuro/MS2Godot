@@ -16,6 +16,9 @@ namespace Ms2Godot.Tests;
 /// - the hold key's search (WorldService::FindNearestActor) finds a live npc's Hold_PointNN node and skips a dead one.
 /// - A hit record (CNpc::vfunc_33/34/35) kills a living npc whose current hp stat is 0, whatever the total, the owner or the
 ///   hit kind; one with hp left stays alive.
+/// - A cast's hit below 0 by the own player adds the npc's colour boost (vfunc_33's AddColorBoost): the next frame writes
+///   1 + the npc's damagedColorScale to the color_boost of its body's character materials, and 1 once the boost has run out;
+///   another's hit adds none.
 /// RemoteLayer's PlayCast returns for a dead npc on this flag. Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class NpcDeadCheck : Node3D
@@ -68,8 +71,31 @@ public partial class NpcDeadCheck : Node3D
         Check(npcs.IsDead(12), "a dot's or splash's hit on an npc at hp 0 did not kill it");
         npcs.Hit(12, false, -5, false, null);
         Check(npcs.Deaths == deaths0 + 2, $"deaths {npcs.Deaths - deaths0} from the hits, not 2");
+        // the colour boost: 1 + scale on its first frame (remain 1), back to 1 after its 0.1 s
+        npcs.Add(new NpcAddedEvent(0, WithHp(20, 100)));
+        npcs.Add(new NpcAddedEvent(0, WithHp(21, 100)));
+        float scale = table.Find(npcId).DamagedColorScale;
+        npcs.Hit(20, true, -10, true, null);
+        npcs.Hit(21, true, -10, false, null);
+        npcs.Process(0);
+        Check(npcs.ColorBoostOf(20) == 1 + scale, $"boost {npcs.ColorBoostOf(20)} after the own hit, not {1 + scale}");
+        Check(npcs.BoostMaterialsOf(20)?.Count > 0, "the boost found no character material on the npc's body");
+        Check(BodyBoost(20) == 1 + scale, $"body color_boost {BodyBoost(20)} after the own hit");
+        Check(npcs.ColorBoostOf(21) == 1, $"another's hit boosted the npc ({npcs.ColorBoostOf(21)})");
+        npcs.Process(0.2f);
+        Check(npcs.ColorBoostOf(20) == 1 && BodyBoost(20) == 1, $"boost {npcs.ColorBoostOf(20)}, body {BodyBoost(20)} after it ran out");
         GD.Print($"npc dead: npc {npcId}, deaths {npcs.Deaths}, {(fails.Count == 0 ? "ok" : "FAIL " + string.Join("; ", fails))}");
         GetTree().Quit(fails.Count == 0 ? 0 : 1);
+
+        float? BodyBoost(int id)
+        {
+            // every character material on the npc's body carries the written scale, the nif's own value replaced
+            var mats = npcs.BoostMaterialsOf(id);
+            if (mats == null || mats.Count == 0) return null;
+            float v = mats[0].GetShaderParameter(ShaderParam.ColorBoost).AsSingle();
+            foreach (var m in mats) if (m.GetShaderParameter(ShaderParam.ColorBoost).AsSingle() != v) return float.NaN;
+            return v;
+        }
     }
 
     /// <summary>The hold key's nearest-actor search over the npcs: a live npc's Hold_PointNN bone is found within range,
