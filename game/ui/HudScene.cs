@@ -1188,11 +1188,12 @@ public partial class HudScene : Node, IUiStageHost
     /// <summary>
     /// UpdateOtherPlayer's tests (uiminimapentity.cpp:3207-3223): CPartyManager::FindMemberByCharId (the leader is the chief),
     /// CGuildManager::FindMemberByName, CBuddyManager::FUN_140ae4d70. Loops, not the books' LINQ finds: the minimap asks
-    /// each refresh round. Null with no own pc (GetLocalPlayer()==0, :3199): the proxy keeps its state.
+    /// each refresh round. Null with no own pc (GetLocalPlayer()==0, :3199; SelfObjectId is -1 before the own FieldAddUser,
+    /// after a field change and after quit): the proxy keeps its state.
     /// </summary>
     static MinimapController.PlayerRelation? MinimapRelation(long characterId, string name)
     {
-        if (Net.LiveSession.Instance is not { } live || live.SelfObjectId == 0) return null;
+        if (Net.LiveSession.Instance is not { } live || live.SelfObjectId < 0) return null;
         if (live.Party.Find(characterId) != null)
             return live.Party.LeaderId == characterId ? MinimapController.PlayerRelation.PartyChief : MinimapController.PlayerRelation.Party;
         if (live.Guilds.Info?.Members is { } members)
