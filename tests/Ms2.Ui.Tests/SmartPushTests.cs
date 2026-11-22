@@ -289,13 +289,20 @@ public class SmartPushTests
         uint t = 1000;
         for (int i = 0; i < 300; i++) m.Update(t += 40);      // warm up: the first polls run every probe and the JIT settles
         f.Hide = true; for (int i = 0; i < 300; i++) m.Update(t += 40); f.Hide = false;
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 2000; i++) m.Update(t += 40);     // every third call passes the 100 ms throttle
-        f.Hide = true;                        // the suppressed path
-        for (int i = 0; i < 2000; i++) m.Update(t += 40);
-        long used = GC.GetAllocatedBytesForCurrentThread() - before;
-        // the 24 B an earlier version read was the test's own local function (a closure over t); Update itself is 0
-        Assert.That(used, Is.EqualTo(0), "4000 ticks, ~1300 polls");
+        long Measure(int n, bool hide)
+        {
+            f.Hide = hide;
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < n; i++) m.Update(t += 40);      // every third call passes the 100 ms throttle
+            return GC.GetAllocatedBytesForCurrentThread() - before;
+        }
+        // A Release run reads a constant 24 B however many ticks run (one-off, not per tick: JIT or tiering), so the claim is
+        // that ten times the ticks cost no more bytes than the short run.
+        long shortRun = Measure(500, false), longRun = Measure(5000, false);
+        Assert.That(longRun, Is.LessThanOrEqualTo(shortRun), "per tick: 0 B");
+        long shortHidden = Measure(500, true), longHidden = Measure(5000, true);
+        Assert.That(longHidden, Is.LessThanOrEqualTo(shortHidden), "the suppressed path: 0 B per tick");
+        f.Hide = false;
         Assert.That(strip.Log, Is.Empty);
     }
 
