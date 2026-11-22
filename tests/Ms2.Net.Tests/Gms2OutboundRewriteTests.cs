@@ -85,6 +85,19 @@ public class Gms2OutboundRewriteTests {
 
     [Test] public void UserSyncRewritesByteForByte() => All(0x12, r => UserSyncOut.Read(r, ProtocolProfile.Gms2));
     [Test] public void RideSyncRewritesByteForByte() => All(0x42, r => { var p = UserSyncOut.Read(r, ProtocolProfile.Gms2); p.Ride = true; return p; });
+    [Test] public void ItemEquipRewritesByteForByte() => All(0x16, r => r.ReadByte() switch {
+        0 => (IOutPacket) new ItemEquipRequest(r.ReadLong(), (byte) ItemReader.ParseSlotName(r.ReadUnicodeString()), r.ReadByte()),
+        1 => new ItemUnequipRequest(r.ReadLong()),
+        2 => new ItemSwapEquipRequest(r.ReadLong(), r.ReadByte()),
+        _ => throw new InvalidDataException("unrecorded equip mode") });
+
+    [Test] public void ItemEquipKeepsItsKmsBytesAndNamesTheSlotOnGms2() {
+        var kms = new ByteWriter(); new ItemEquipRequest(0x1122, (byte) EquipSlot.CP, 1).Write(kms, ProtocolProfile.Kms2525);
+        Assert.That(kms.ToArray(), Is.EqualTo(new byte[] { 0, 0x22, 0x11, 0, 0, 0, 0, 0, 0, 6, 1 }));
+        var g = new ByteWriter(); new ItemEquipRequest(0x1122, (byte) EquipSlot.CP, 1).Write(g, ProtocolProfile.Gms2);
+        Assert.That(g.ToArray(), Is.EqualTo(new byte[] { 0, 0x22, 0x11, 0, 0, 0, 0, 0, 0, 2, 0, 0x43, 0, 0x50, 0, 1 }));
+    }
+
     [Test] public void PongRewritesByteForByte() => All(0x06, Pong.Read);
     [Test] public void RequestTimeSyncRewritesByteForByte() => All(0x0B, RequestTimeSync.Read);
     [Test] public void StateChangeRewritesByteForByte() => All(0x81, StateChange.Read);

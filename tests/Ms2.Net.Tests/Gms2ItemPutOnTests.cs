@@ -20,4 +20,12 @@ public class Gms2ItemPutOnTests {
         foreach (var (file, data) in Gms2Sniffs.Inbound("kms2", ProtocolProfile.Kms2525.Number(Inbound.ItemPutOn)))
             Assert.DoesNotThrow(() => ItemPutOn.Read(new ByteReader(data), ProtocolProfile.Kms2525), file);
     }
+
+    [Test]
+    public void EveryRecordedGms2PutOffAndPutOnOrOffReadsToTheEnd() {
+        int off = 0, mode = 0;
+        foreach (var (file, data) in Gms2Sniffs.Inbound("gms2", ProtocolProfile.Gms2.Number(Inbound.ItemPutOff))) { Assert.DoesNotThrow(() => ItemPutOff.Read(new ByteReader(data)), file); off++; }
+        foreach (var (file, data) in Gms2Sniffs.Inbound("gms2", ProtocolProfile.Gms2.Number(Inbound.ItemPutOnOrOff))) { Assert.DoesNotThrow(() => ItemPutOnOrOff.Read(new ByteReader(data)), file); mode++; }
+        TestContext.Out.WriteLine($"put off {off}, put on or off {mode}");
+    }
 }
