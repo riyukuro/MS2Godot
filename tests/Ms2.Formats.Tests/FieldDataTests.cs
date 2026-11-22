@@ -43,6 +43,26 @@ public class FieldDataTests
         Assert.That(got.HasTutorialType, Is.True);
         Assert.That(FieldData.FindByXBlock(packs, "02000001_tw_tria").HasTutorialType, Is.False);
     }
+    /// <summary>capacity (fielddata.cpp:667) is the property's int, 0 when absent (:558).</summary>
+    [Test]
+    public void CapacityFollowsTheProperty()
+    {
+        var data = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(data) || !Directory.Exists(data)) Assert.Ignore("MS2_DATA not set");
+        var packs = new PackSet(data);
+        int withCap = 0;
+        foreach (var fd in FieldData.Document(packs).Root.Elements("fieldData"))
+        {
+            var env = fd.Elements("environment").FirstOrDefault(e => e.Attribute("locale") == null);
+            if (env?.Element("xblock")?.Attribute("name") == null) continue;
+            var prop = env.Element("property") ?? fd.Element("property");
+            int want = int.TryParse((string)prop?.Attribute("capacity"), out var w) ? w : 0;
+            var got = FieldData.FindByXBlock(packs, (string)env.Element("xblock").Attribute("name"));
+            Assert.That(got.Capacity, Is.EqualTo(want), (string)fd.Attribute("id"));
+            if (want != 0) withCap++;
+        }
+        Assert.That(withCap, Is.GreaterThan(0));
+    }
     /// <summary>gemSystem (fielddata.cpp:706) follows the property's attribute and is true when absent (:557).</summary>
     [Test]
     public void GemSystemFollowsTheProperty()

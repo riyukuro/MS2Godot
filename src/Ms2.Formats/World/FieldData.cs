@@ -56,6 +56,8 @@ public sealed class FieldData
     public bool CheckFly, UseEPSkill = true, UseRidee = true, UsePet = true;
     /// <summary>&lt;property skillUseDisable&gt;: a comma list of skill main types, each a bit of m_nSkillUseDisableMask (fielddata.cpp:707).</summary>
     public uint SkillUseDisableMask;
+    /// <summary>&lt;property capacity&gt; (CFieldData m_nCapacity, default 0; fielddata.cpp:667, GetCapacity @0x1403757c0, :870).</summary>
+    public int Capacity;
     /// <summary>&lt;ui instancingGrid&gt;: the hardware-instancing cell edge (CFieldDataCli m_nInstancingGrid, default 0 = one cell);
     /// WorldService::FUN_141bc72f0 hands it to HardwareInstancingService::SetCellSize before BuildInstancings.</summary>
     public int InstancingGrid;
@@ -211,6 +213,7 @@ public sealed class FieldData
         if ((string)env.Element("ui")?.Attribute("useRidee") is { } ur) o.UseRidee = ur != "0";
         if ((string)env.Element("ui")?.Attribute("usePet") is { } up) o.UsePet = up != "0";
         if ((string)prop?.Attribute("mapType") is { } mt && int.TryParse(mt, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mti)) o.MapType = mti;
+        o.Capacity = Int(prop, "capacity");
         o.PkMode = Int(prop, "pkMode"); o.ContinentCode = Int(prop, "continentCode"); o.RequireQuest = Int(prop, "requireQuest"); o.TutorialType = Int(prop, "tutorialType");
         if ((string)prop?.Attribute("channelGroupID") is { } cg && int.TryParse(cg, NumberStyles.Integer, CultureInfo.InvariantCulture, out var cgi)) o.ChannelGroupId = cgi;
         o.RecallOtherUserProhibit = Flag(env.Element("cashCall"), "RecallOtherUserProhibit");
