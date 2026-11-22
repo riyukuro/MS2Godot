@@ -531,13 +531,14 @@ public class OwnArrowMagicTests
     const string EndFx = " explosion=\"1\" effectRemain=\"remain.xml\" effectDestroy=\"destroy.xml\"";
     const string HitFx = "<damage effectHit=\"hit.xml\"/>";
 
-    static List<MagicEndEffect> EndEffects(string arrow, string children, string path, MagicRayCast ray = null)
+    static List<MagicEndEffect> EndEffects(string arrow, string children, string path, MagicRayCast ray = null,
+        MagicOwner? owner = null)
     {
         var r = Record(arrow, children: children);
         var m = Add(r, Paths(path));
         var fx = new List<MagicEndEffect>();
         for (int t = 0; t <= 1000 && m.Count > 0; t += 100)
-            m.Tick(T + t, 0, Owner, new[] { Me }, r, null, null, () => 0, null, rayCast: ray, endEffects: fx);
+            m.Tick(T + t, 0, owner ?? Owner, new[] { Me }, r, null, null, () => 0, null, rayCast: ray, endEffects: fx);
         Assert.That(m.Count, Is.EqualTo(0), "ended");
         return fx;
     }
@@ -554,6 +555,22 @@ public class OwnArrowMagicTests
         // +-x: the z angle atan2(dir.x, -1) is +-pi with the sign of the turn's float rest in dir.x)
         AssertAxes(fx[1], Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ);
         AssertAxes(fx[0], fx[0].AxisX.X > 0 ? Vector3.UnitX : -Vector3.UnitX, -Vector3.UnitY, Vector3.UnitZ);
+    }
+
+    [Test]
+    public void AnOwnerOtherThanTheLocalPlayerPlaysNoEndEffectsOutsideTheSightRange()
+    {
+        // ShouldCullByDistance (magicdata.cpp:2263): the end point farther than the range from the local player culls the
+        // end effects of an owner whose relation is not 1; the local player's own magic never
+        float d = EndEffects(EndFx, HitFx, Linear)[0].At.Length();
+        Assert.That(d, Is.EqualTo(810f).Within(1f));
+        MagicOwner Other(float? range, Vector3? player) => Owner with { LocalPlayer = false, Sight = new FieldSight(range, player) };
+        Assert.That(EndEffects(EndFx, HitFx, Linear, owner: Other(d - 10, Vector3.Zero)), Is.Empty, "farther than the range");
+        Assert.That(EndEffects(EndFx, HitFx, Linear, owner: Other(d + 10, Vector3.Zero)), Has.Count.EqualTo(2), "inside the range");
+        Assert.That(EndEffects(EndFx, HitFx, Linear, owner: Other(null, Vector3.Zero)), Has.Count.EqualTo(2), "no sight range");
+        Assert.That(EndEffects(EndFx, HitFx, Linear, owner: Other(d - 10, null)), Has.Count.EqualTo(2), "no local player");
+        Assert.That(EndEffects(EndFx, HitFx, Linear, owner: Owner with { Sight = new FieldSight(d - 10, Vector3.Zero) }),
+            Has.Count.EqualTo(2), "the local player's own magic");
     }
 
     static void AssertAxes(MagicEndEffect f, Vector3 x, Vector3 y, Vector3 z)

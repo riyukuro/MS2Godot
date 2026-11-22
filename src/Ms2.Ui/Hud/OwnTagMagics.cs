@@ -8,8 +8,10 @@ namespace Ms2.Ui.Hud;
 /// <summary>The own player as a magic's owner sees it at a tick: the position and z rotation (degrees) the area is posed from,
 /// whether the owner (or the rider of the owner's ridee) is the local player, and the dead and stunned tests.
 /// <paramref name="WeaponMaterial"/> is the worn weapon's item data attackMaterial (+0x10c, CEquipment::FUN_1411e1860(5, 6, 0)),
-/// 0 without one: the hit sound's attack material when the attack has none (CMagic::PlayHitEffects).</summary>
-public readonly record struct MagicOwner(Vector3 Position, float RotZ, bool LocalPlayer, bool Dead, bool Stunned, int WeaponMaterial = 0);
+/// 0 without one: the hit sound's attack material when the attack has none (CMagic::PlayHitEffects).
+/// <paramref name="Sight"/> is the field's sight range and the local player's position, the end effects' distance cull.</summary>
+public readonly record struct MagicOwner(Vector3 Position, float RotZ, bool LocalPlayer, bool Dead, bool Stunned, int WeaponMaterial = 0,
+    FieldSight Sight = default);
 
 /// <summary>One hit sound an own magic's fill plays (CEffectService::PlayHitSound, effectservice.cpp:1355): the attack and
 /// defence materials the hit sound table pairs, at the hit object's position (client space), at <paramref name="Volume"/>.</summary>
@@ -952,7 +954,9 @@ public sealed class OwnTagMagics
     static void End(Magic m, in MagicOwner owner, List<SkillSplashRequest> splashes, List<MagicEndEffect> endEffects, bool lifeEnd,
         int nowMs, ReadOnlySpan<HitCandidate> objects)
     {
-        if (endEffects != null) EndEffects(m, lifeEnd, endEffects);
+        // ShouldCullByDistance (magicdata.cpp:2263): never for the local player's own magic, else the current point farther
+        // than the sight range from the local player
+        if (endEffects != null && (owner.LocalPlayer || !owner.Sight.IsOutside(m.Current))) EndEffects(m, lifeEnd, endEffects);
         var next = m.Linked;
         if (next != null && next.Waiting && !next.Abandoned)
         {
@@ -984,7 +988,9 @@ public sealed class OwnTagMagics
 
     /// <summary>
     /// FUN_14145f570's effects (magicdata.cpp:1057-1145), the owner not hidden by the optimizer (FUN_14161ce60 0: an own magic's
-    /// owner is shown) and not culled by distance (ShouldCullByDistance: false for the local player's own, relation 1):
+    /// owner is shown) and not culled by distance (ShouldCullByDistance, magicdata.cpp:2263: false for the local player's own,
+    /// relation 1, or without a sight range or local player; else true when the current point is farther than the range from
+    /// the local player; the caller tests it with <see cref="MagicOwner.Sight"/>):
     /// <list type="bullet">
     /// <item>The arrow's explosion with the damage's effectHit not empty: effectHit, kind 1.</item>
     /// <item>At the end check (m_n52C 0): effectDestroy, kind 1, after a ray stop (m_n1C8), else effectRemain, kind 0; each
@@ -994,7 +1000,8 @@ public sealed class OwnTagMagics
     /// </list>
     /// Kind 1 turns by FUN_141467f60 (<see cref="AlongAxes"/> of the direction); kind 0 by the magic scene's rotation
     /// (<see cref="LookAt"/>).
-    /// STILL-OPEN: the distance cull of an owner other than the local player (the sight range) is not ported.
+    /// STILL-OPEN: the client tests relation 1 by the owner's object kind; a ridee the local player rides is taken as the local
+    /// player here. The beam and link magics' culls (magicdata.cpp:1293, :1664) and UpdateCulling (:2254) are not ported.
     /// </summary>
     static void EndEffects(Magic m, bool lifeEnd, List<MagicEndEffect> endEffects)
     {

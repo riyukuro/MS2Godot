@@ -22,6 +22,11 @@ public sealed partial class RemoteLayer
     static readonly Func<int> magicRand = () => Random.Shared.Next(0x8000);
     static readonly StringName PlayerGroup = Player.Group;
     Player magicPlayer;
+    System.Numerics.Vector3? magicPlayerPos;   // client space, FillMagicObjects; null without a local player
+    /// <summary>The field's sight range (LiveSession.FieldProperties, field property 6), null without one.</summary>
+    public Func<float?> SightRange;
+    // after FillMagicObjects: IsOutsideSightRange's range and local player (worldservice_1.cpp:7956)
+    FieldSight MagicSight() => new(SightRange?.Invoke(), magicPlayerPos);
     public int MagicsMade;
     HitEffectThrottle hitEffects = new();
     readonly List<DamageHitEffect> damageHitEffects = new();
@@ -76,11 +81,12 @@ public sealed partial class RemoteLayer
         if (!remoteMagics.Any) return;
         FillMagicObjects();
         remoteMagicRayCast ??= RemoteMagicRayCast;
+        var sight = MagicSight();
         foreach (var (id, r) in users)
         {
             if (remoteMagics.Count(id) == 0) continue;
             var st = r.Pc.States;
-            var owner = new MagicOwner(r.Pc.Position, r.Pc.RotationZ, false, st.Dead, false);
+            var owner = new MagicOwner(r.Pc.Position, r.Pc.RotationZ, false, st.Dead, false, Sight: sight);
             magicEndEffects.Clear();
             remoteMagics.Tick(id, st.Cur == Ms2.Net.Replay.RemotePcStates.StateSkill, (int)now, owner, OwnerObjects(id), magicRand,
                 remoteMagicRayCast, magicEndEffects);
@@ -112,7 +118,7 @@ public sealed partial class RemoteLayer
         FillMagicObjects();
         damageHitEffects.Clear();
         DamageHitEffects.Records(d, attack, data?.Direction ?? 3, motion?.MoveDistance ?? 0f, findHitObject ??= FindHitObject,
-            hitEffects, (uint)Time.GetTicksMsec(), magicRand, damageHitEffects);
+            hitEffects, (uint)Time.GetTicksMsec(), magicRand, damageHitEffects, MagicSight());
         foreach (var fx in damageHitEffects)
         {
             PlayDamageHitEffect(fx);
@@ -153,7 +159,7 @@ public sealed partial class RemoteLayer
         FillMagicObjects();
         damageHitEffects.Clear();
         DamageHitEffects.SplashRecords(d, attack, findHitObject ??= FindHitObject, hitEffects, (uint)Time.GetTicksMsec(),
-            damageHitEffects, hitAnchors ??= npcs.CollisionAnchors, anchorScratch);
+            damageHitEffects, hitAnchors ??= npcs.CollisionAnchors, anchorScratch, MagicSight());
         foreach (var fx in damageHitEffects)
         {
             PlayDamageHitEffect(fx);
@@ -188,10 +194,12 @@ public sealed partial class RemoteLayer
     {
         magicObjects.Clear();
         HitCandidates(magicObjects);
+        magicPlayerPos = null;
         if (magicPlayer == null || !IsInstanceValid(magicPlayer)) magicPlayer = GetTree().GetFirstNodeInGroup(PlayerGroup) as Player;
         if (magicPlayer == null) return;
         var g = magicPlayer.GlobalPosition;
         var pos = new System.Numerics.Vector3(g.X, -g.Z, g.Y);
+        magicPlayerPos = pos;
         magicObjects.Add(new HitCandidate { Id = Tracker.SelfObjectId, Position = pos, Body = SkillHit.PlayerBody(pos, magicPlayer.FacingRotZ),
             Kind = HitKind.Pc, Team = 1, Hp = 1 });
     }

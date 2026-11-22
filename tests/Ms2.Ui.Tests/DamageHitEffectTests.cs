@@ -41,10 +41,10 @@ public class DamageHitEffectTests
     static bool Find(int id, out DamageHitObject o) => Field.TryGetValue(id, out o);
 
     static List<DamageHitEffect> Run(SkillDamage d, SkillAttackDamage a, HitEffectThrottle t, uint now = 5000, int direction = 3,
-        float moveDistance = 0f)
+        float moveDistance = 0f, FieldSight sight = default)
     {
         var into = new List<DamageHitEffect>();
-        DamageHitEffects.Records(d, a, direction, moveDistance, Find, t, now, RandMax, into);
+        DamageHitEffects.Records(d, a, direction, moveDistance, Find, t, now, RandMax, into, sight);
         return into;
     }
 
@@ -211,10 +211,11 @@ public class DamageHitEffectTests
         return d;
     }
 
-    static List<DamageHitEffect> RunSplash(SkillDamage d, SkillAttackDamage a, HitEffectThrottle t, uint now = 5000)
+    static List<DamageHitEffect> RunSplash(SkillDamage d, SkillAttackDamage a, HitEffectThrottle t, uint now = 5000,
+        FieldSight sight = default)
     {
         var into = new List<DamageHitEffect>();
-        DamageHitEffects.SplashRecords(d, a, Find, t, now, into);
+        DamageHitEffects.SplashRecords(d, a, Find, t, now, into, sight: sight);
         return into;
     }
 
@@ -294,6 +295,39 @@ public class DamageHitEffectTests
         var d = Splash(5);
         d.OwnerId = 77;
         Assert.That(RunSplash(d, Attack(), new HitEffectThrottle())[0].CasterKind, Is.EqualTo(0), "an owner gone: kind 0");
+    }
+
+    // the local player 1000 from the target (x 100) along y; the aimed hit point is 60 above the target
+    static readonly Vector3 Far = new(100, 1000, 0);
+
+    [Test]
+    public void AHitOutsideTheSightRangePlaysNothingAndLeavesTheThrottle()
+    {
+        var t = new HitEffectThrottle();
+        Assert.That(Run(Damage(), Attack(), t, sight: new FieldSight(999, Far)), Is.Empty,
+            "an owner of kind 3 and a point farther than the range: neither the hit nor the remain");
+        Assert.That(Run(Damage(), Attack(), t, sight: new FieldSight(1100, Far)), Has.Count.EqualTo(2),
+            "inside the range, at the same time: the throttle was not touched");
+        var d = Damage();
+        d.OwnerId = Self;
+        Assert.That(Run(d, Attack(), new HitEffectThrottle(), sight: new FieldSight(1, Far)), Has.Count.EqualTo(2),
+            "an owner of kind 1 is never culled");
+        Assert.That(Run(Damage(), Attack(), new HitEffectThrottle(), sight: new FieldSight(null, Far)), Has.Count.EqualTo(2),
+            "no sight range");
+        Assert.That(Run(Damage(), Attack(), new HitEffectThrottle(), sight: new FieldSight(1, null)), Has.Count.EqualTo(2),
+            "no local player");
+    }
+
+    [Test]
+    public void ASplashOutsideTheSightRangePlaysNothingAndLeavesTheThrottle()
+    {
+        var t = new HitEffectThrottle();
+        Assert.That(RunSplash(Splash(6), Attack(), t, sight: new FieldSight(999, Far)), Is.Empty,
+            "the hit object 1000 away, farther than 999 (mode 6: kind 0)");
+        Assert.That(RunSplash(Splash(6), Attack(), t, sight: new FieldSight(1000, Far)), Has.Count.EqualTo(2),
+            "as far as the range is inside; the throttle was not touched");
+        Assert.That(RunSplash(Splash(5), Attack(), new HitEffectThrottle(), sight: new FieldSight(999, Far)), Is.Empty,
+            "a region skill of an owner of kind 3");
     }
 
     [Test]

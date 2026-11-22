@@ -41,8 +41,9 @@ public delegate bool DamageHitAnchors(int id, List<Vector3> into);
 /// the target (the same kind).
 /// FUN_14146c990 (pCaster the hit object; the owner need not be in the field, its kind is then 0): second always; first when the effectHit has a number (an empty name has none) and the
 /// object's hit effect throttle lets it through (<see cref="HitEffectThrottle"/>, the target's state).
-/// STILL-OPEN: FUN_14146c990's optimizer hide of the owner (FUN_14161ce60), the sight range for an owner other than the
-/// local player (field property 6, not ported), IsUpdateEnabled's check (taken as on), the effects' IgnoreOptimalHide flags;
+/// With an owner of a kind other than 1 and a point outside the field's sight range (<paramref name="sight"/>,
+/// IsOutsideSightRange), FUN_14146c990 returns (false, false) before the throttle: neither effect plays.
+/// STILL-OPEN: FUN_14146c990's optimizer hide of the owner (FUN_14161ce60), IsUpdateEnabled's check (taken as on), the effects' IgnoreOptimalHide flags;
 /// the npc owner's property tag 0x11 (the record's hit point and the aim's attach); the shut-down branch (0x73 on).
 /// </summary>
 public static class DamageHitEffects
@@ -55,7 +56,7 @@ public static class DamageHitEffects
     /// FUN_14109ace0 reads. Returns the number added.
     /// </summary>
     public static int Records(SkillDamage d, SkillAttackDamage damage, int direction, float moveDistance, DamageHitFind find,
-        HitEffectThrottle throttle, uint nowMs, Func<int> rand, List<DamageHitEffect> into)
+        HitEffectThrottle throttle, uint nowMs, Func<int> rand, List<DamageHitEffect> into, FieldSight sight = default)
     {
         if (d.Mode != 1 || damage == null || d.Targets == null) return 0;
         int n = into.Count;
@@ -73,6 +74,7 @@ public static class DamageHitEffects
             if (t.Hits == null || t.Hits.Length == 0) continue;
             // FUN_14146c990 null-tests only the hit object; the kind is FUN_141bd19d0(owner), 0 without one
             int kind = hasOwner ? owner.Kind : 0;
+            if (kind != 1 && sight.IsOutside(pos)) continue;   // the point is kXform.m_Translate, the aimed hit point
             if (throttle.TryPlay(t.TargetId, damage.EffectHit, nowMs))
             {
                 OwnTagMagics.AlongAxes(dir, out var ax, out var ay, out var az);
@@ -98,10 +100,13 @@ public static class DamageHitEffects
     /// 0x14171e3ba), and an npc with no anchors ends the whole packet there (the targets after it play nothing). Mode 6's
     /// CSplashDamageRecord::Init (0x14175b1c0) fills only +0x60 and +0x6c, so the point stays the ctor's Point3::ZERO: the
     /// effect plays at the world origin. That is a client quirk, kept as is.
+    /// Outside the sight range (<paramref name="sight"/>) at the effectHit's point with an owner kind other than 1, the record
+    /// plays nothing (FUN_14146c990), and its throttle is not touched.
     /// STILL-OPEN: the region object's PlayHitEffect, vf35_End, the shut-down branch (0x73 on).
     /// </summary>
     public static int SplashRecords(SkillDamage d, SkillAttackDamage damage, DamageHitFind find, HitEffectThrottle throttle,
-        uint nowMs, List<DamageHitEffect> into, DamageHitAnchors anchors = null, List<Vector3> anchorScratch = null)
+        uint nowMs, List<DamageHitEffect> into, DamageHitAnchors anchors = null, List<Vector3> anchorScratch = null,
+        FieldSight sight = default)
     {
         if (d.Mode is not (5 or 6) || damage == null || d.Targets == null) return 0;
         int n = into.Count;
@@ -119,6 +124,7 @@ public static class DamageHitEffects
                     else if (!Nearest(anchorScratch, t.Origin.ToVector3(), out at)) break;
                 }
             }
+            if (kind != 1 && sight.IsOutside(at)) continue;
             if (throttle.TryPlay(t.TargetId, damage.EffectHit, nowMs))
                 into.Add(new DamageHitEffect(damage.EffectHit, 0, at, Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ, kind));
             if (damage.EffectRemain.Length != 0)
