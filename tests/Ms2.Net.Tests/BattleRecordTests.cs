@@ -198,6 +198,14 @@ public class BattleRecordTests {
     }
 
     [Test]
+    public void ModeSevenTakesNoCapacityPastTheBytesLeft() {
+        // a misread or hostile count must not size the list before the reads run out (16M ids, two on the wire)
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        Assert.That(() => Read(w => { w.WriteByte(7); w.WriteInt(40); w.WriteInt(0x01000000); w.WriteInt(41); w.WriteInt(42); }), Throws.Exception);
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(1 << 20));
+    }
+
+    [Test]
     public void ModesFourSevenAndEightReadTheClientsFields() {
         // FUN_14171d820 (scenestategame.cpp:5685): target, owner, buff, three u32 values, the show byte
         var h = Read(w => { w.WriteByte(4); w.WriteInt(31); w.WriteInt(10); w.WriteInt(777); w.WriteInt(-1); w.WriteInt(0); w.WriteInt(55); w.WriteByte(1); });

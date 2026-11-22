@@ -97,7 +97,7 @@ public sealed class SkillDamage {
             case 7: {
                 d.TargetId = r.ReadInt();
                 int n = r.ReadInt();
-                d.Released = new List<int>(n < 0 ? 0 : n);
+                d.Released = new List<int>(Math.Clamp(n, 0, r.Available / 4));   // the bytes left bound the count's capacity
                 for (int i = 0; i < n; i++) d.Released.Add(r.ReadInt());
                 break;
             }
