@@ -275,6 +275,12 @@ public sealed class SkillDamageTable
     /// throws; a file the retry reads whole is disposed without being opened.</summary>
     public static TextReader Deferred(Func<TextReader> open) => new DeferredReader(open);
 
+    /// <summary>The files' text in <paramref name="names"/>' order: <see cref="Deferred"/> for a file that exists and null for
+    /// one that does not, so the read skips a missing file (an empty deferred text would throw, the whole-entry retry would
+    /// throw on the missing entry, and the table would be stored empty).</summary>
+    public static IEnumerable<TextReader> DeferExisting(IEnumerable<string> names, Func<string, bool> exists, Func<string, TextReader> open) =>
+        names.Select(n => exists(n) ? Deferred(() => open(n)) : null);
+
     sealed class DeferredReader(Func<TextReader> open) : TextReader
     {
         TextReader text;

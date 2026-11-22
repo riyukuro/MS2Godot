@@ -85,6 +85,17 @@ public class SkillDamageTableTests
     }
 
     [Test]
+    public void AMissingFileIsSkippedAndTheOthersLoad()
+    {
+        // a listed file that does not exist is not read: neither the streamed read nor the whole-entry retry, which throws on
+        // a missing entry, sees it
+        string[] names = { "5", "gone", "6" };
+        var t = new SkillDamageTable(() => SkillDamageTable.DeferExisting(names, n => n != "gone", n => new StringReader(n == "5" ? Skill5 : Skill6)),
+            rows => rows, i => i == 1 ? throw new FileNotFoundException("gone") : new StringReader(i == 0 ? Skill5 : Skill6));
+        Assert.That((t.Get(5, 1, 0, 0)?.Value, t.Get(6, 1, 0, 0)?.Value), Is.EqualTo(((long?)7, (long?)9)));
+    }
+
+    [Test]
     public void AReadThatFailsBothWaysIsStoredEmpty()
     {
         // the worker load swallows the error; the hits after it must not read every file again on the frame
