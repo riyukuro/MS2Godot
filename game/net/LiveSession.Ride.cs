@@ -11,7 +11,7 @@ namespace Ms2Godot.Net;
 /// CSceneStateGame::OnResponseRide (0x79, @0x14172a8f0, scenestategame.cpp:12026) for the own pc: modes 0, 1 and 2
 /// (<see cref="OwnRide"/>), other players' in <see cref="Net.RemoteLayer.OnRide"/>; the own pc's passenger map and
 /// no-boarding flag of modes 3-6 (<see cref="RidePassengers"/>), mode 3's own StateHold on another player's mount
-/// (<see cref="Player.HoldOn"/>). STILL-OPEN: the own ride-on action's m_b28 of mode 6; RecvOp NpcRide 0xE7 (CSceneStateGame::OnNpcRide,
+/// (<see cref="Player.HoldOn"/>). STILL-OPEN: RecvOp NpcRide 0xE7 (CSceneStateGame::OnNpcRide,
 /// scenestategame.cpp:4871: i32 npc id, then CNpc::FUN_141092c50) and the ridee skill set (mypc.cpp:1219-1226).
 /// The own pc's ride-off-first cast (IsUnrideOnUse, mypc.cpp:2447-2470) is <see cref="RideOffForSkill"/>.
 /// </summary>
@@ -89,8 +89,9 @@ public partial class LiveSession
         catch (Exception ex) { GD.PushWarning($"live: ride {a.RideId}: {ex.Message}"); return; }
         player.RideOn(m);
         PlayOwnCommonEffect(RideOnEffectKey);
-        // STILL-OPEN: hideRider (AddHideReason 2), the RideeItemInfo of a type 1 action, the camera target, PC::FUN_1416642c0
-        // (m_b28); MyPC: ClearRecords, AddSkillSet of skillSetId, the dialog closes for hidePCInfo above 1 (0x4e2d, 0x4f2d,
+        OwnNoBoarding = a.Flag;           // PC::FUN_1416642c0(m_b28), pcbase.cpp:3341-3343
+        // STILL-OPEN: hideRider (AddHideReason 2), the RideeItemInfo of a type 1 action, the camera target; MyPC:
+        // ClearRecords, AddSkillSet of skillSetId, the dialog closes for hidePCInfo above 1 (0x4e2d, 0x4f2d,
         // 0x4ec8, 0x2711, 0x4f76, 0x4ec3), NotifyStatusChanged(0xc, 1)
     }
 }

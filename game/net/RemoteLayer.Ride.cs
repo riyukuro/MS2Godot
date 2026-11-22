@@ -11,8 +11,8 @@ namespace Ms2Godot.Net;
 /// seat and plays StateRide::vfunc_9's sequence by the mount's state (<see cref="StateRideAnim"/>).
 /// STILL-OPEN: the ride-on and ride-off effects (CommonResource +0x2b0 / +0x2b8) and rideOffBySkillEffect, hideRider
 /// (AddHideReason(2)), StateRide's shadow off, the rider's stats copied to the ridee, the breakable anchor of a ride-off,
-/// the fall start the ridee had (StateFallData), the ridee's m_unk_b80 SP idle, the mount's step keys, the ride-on action's
-/// m_b28 of mode 6.
+/// the fall start the ridee had (StateFallData), the ridee's m_unk_b80 SP idle, the mount's step keys. Mode 6 also writes the
+/// kept ride-on action's m_b28, which only a later PCBase::vfunc_120 of that action reads; a remote PC's ride is re-sent with it.
 /// </summary>
 public sealed partial class RemoteLayer
 {
@@ -22,7 +22,7 @@ public sealed partial class RemoteLayer
     {
         if (r == null || !users.TryGetValue(r.ObjectId, out var u)) return false;
         if (Ms2.Ui.RidePassengers.Apply(r, u.Passengers)) return true;
-        if (r.Mode == 6) { u.NoBoarding = r.Flag; return true; }
+        if (r.Mode == 6) { u.NoBoarding = r.Flag; return true; }   // and GetRideOnAction()->m_b28 (:12119-12122)
         switch (Ms2.Ui.OwnRide.ForActor(r, u.Ridee != null))
         {
             case Ms2.Ui.OwnRide.Step.RideOn: RideOn(u, r.RideOn); break;
@@ -52,6 +52,7 @@ public sealed partial class RemoteLayer
         ridee.Spawn();
         r.Ridee = ridee;
         r.Pc.States.ChangeState(RemotePcStates.StateRide);
+        r.NoBoarding = a.Flag;            // PC::FUN_1416642c0(m_b28), pcbase.cpp:3341-3343
     }
 
     /// <summary>
