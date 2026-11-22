@@ -15,7 +15,8 @@ public sealed class ItemModelSlots
     readonly PackSet packs;
     readonly Dictionary<int, Dictionary<int, (int Preset, bool Cap)>> presets = new();
     readonly Dictionary<int, Dictionary<int, EquipSlot>> models = new();
-    public ItemModelSlots(PackSet packs) { this.packs = packs; }
+    readonly Ms2.Ui.Items.ItemDataTable perItem;
+    public ItemModelSlots(PackSet packs) { this.packs = packs; perItem = new Ms2.Ui.Items.ItemDataTable(packs); }
 
     static XDocument Doc(PackSet p, string entry) => PackXml.Parse(p.Read("Xml", entry));
 
@@ -39,7 +40,16 @@ public sealed class ItemModelSlots
             presets[prefix] = byItem;
         }
         // no itemPreset, no model (itemdata.cpp:377); a cap is told by subtype 0xd, not by its slot (CreateExtraData itemdata.cpp:1430)
-        if (!byItem.TryGetValue(id, out var info)) return EquipSlot.Unknown;
+        // data with one file per item (GMS2 item/<a>/<bb>/<id>.xml): the same property and tool rows through the table's lazy index
+        if (!byItem.TryGetValue(id, out var info) && !packs.Exists("Xml", $"itemdata/{prefix}.xml") && perItem.Get(id) is { } d) byItem[id] = info = (d.ItemPreset, d.Type == 1 && d.Subtype == 0xd);
+        if (!byItem.TryGetValue(id, out info)) return EquipSlot.Unknown;
+        // GMS2 item files name their model slot (<slots><slot name>). The client picks the decal appearance by its first model group type 3 (FD) and
+        // the hair by type 1 (HR); a cap only by GetEquipSubtype() == 0xd, CP is never consulted (CreateExtraData itemdata.cpp:1430). Here CP stands in
+        // for subtype 0xd: in the KMS data CP <-> subtype 13 one to one (2847 = 2847); the GMS2 subtypes seen are 0 and 16, so the name is what
+        // tells a GMS2 cap. The FA face slot (group type 2) is no case of that switch, so leaving it unmapped is what the client does.
+        // The name is matched exactly and case-sensitively (Parse_14021bdc0).
+        if (!packs.Exists("Xml", $"itemdata/{prefix}.xml") && perItem.Get(id) is { } own && own.FirstSlot is "HR" or "FD" or "CP")
+            return own.FirstSlot switch { "HR" => EquipSlot.HR, "FD" => EquipSlot.FD, _ => EquipSlot.CP };
         if (info.Preset == 0) return info.Cap ? EquipSlot.CP : EquipSlot.Unknown;
         int model = info.Preset;
         int mp = model / 100000;

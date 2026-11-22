@@ -16,7 +16,8 @@ public sealed class ItemKinds
     readonly PackSet packs;
     readonly Dictionary<int, Dictionary<int, (int Type, bool Skin, bool Ucc, uint SlotMax, string SlotIcon)>> files = new();
     HashSet<int> customNotes;
-    public ItemKinds(PackSet packs) { this.packs = packs; }
+    readonly Ms2.Ui.Items.ItemDataTable perItem;
+    public ItemKinds(PackSet packs) { this.packs = packs; perItem = new Ms2.Ui.Items.ItemDataTable(packs); }
 
     static XDocument Doc(PackSet p, string entry) => PackXml.Parse(p.Read("Xml", entry));
 
@@ -37,11 +38,14 @@ public sealed class ItemKinds
                     int.TryParse((string)prop?.Attribute("type"), out int type);
                     int.TryParse((string)prop?.Attribute("skinType"), out int skin);
                     uint slotMax = uint.TryParse((string)prop?.Attribute("slotMax"), out uint sm) ? Math.Min(sm, 99999u) : 1;   // CItemProperty: default 1, capped at 99999
-                    rows[i] = (type, skin != 0, !string.IsNullOrEmpty((string)env.Descendants("ucc").FirstOrDefault()?.Attribute("mesh")), slotMax, (string)prop?.Attribute("slotIcon") ?? "");
+                    rows[i] = (type, skin != 0, !string.IsNullOrEmpty((string)env.Element("ucc")?.Attribute("mesh")), slotMax, (string)prop?.Attribute("slotIcon") ?? "");
                 }
             files[prefix] = rows;
         }
-        return rows.TryGetValue(id, out var r) ? r : null;
+        if (rows.TryGetValue(id, out var r)) return r;
+        // the data keeps one file per item (GMS2 item/<a>/<bb>/<id>.xml): the same CItemData::Load rows, through the table's lazy index
+        if (rows.Count == 0 && perItem.Get(id) is { } d) return (d.Type, d.SkinType != 0, d.HasCubeTextureMesh, Math.Min(d.SlotMax, 99999u), d.SlotIcon);
+        return null;
     }
 
     bool CustomNote(int id)
@@ -49,8 +53,8 @@ public sealed class ItemKinds
         if (customNotes == null)
         {
             customNotes = new();
-            if (packs.Exists("Xml", "table/musicscore.xml"))
-                foreach (var e in Doc(packs, "table/musicscore.xml").Descendants("MusicScore"))
+            if (TablePath.Resolve(packs, "musicscore.xml") is { } music)   // the locale folder first (kr/ or na/), then the plain path
+                foreach (var e in Doc(packs, music).Descendants("MusicScore"))
                     if (((string)e.Attribute("isCustomNote"))?.ToLowerInvariant() is "true" or "1" && int.TryParse((string)e.Attribute("id"), out int i))
                         customNotes.Add(i);
         }

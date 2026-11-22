@@ -115,6 +115,8 @@ public sealed class ItemData
     public int OriginOrItemId => OriginId != 0 ? OriginId : Id;
     /// <summary>ItemAdditionalEffect::Load (itemdatastruct.cpp:1687): the &lt;AdditionalEffect id&gt; list (XmlSplit ",").</summary>
     public readonly List<string> AdditionalEffectIds = new();
+    /// <summary>The name of the first &lt;slots&gt;/&lt;slot&gt; of the item itself (GMS2 data names the model slot in the item file): HR, FD, CP, or empty.</summary>
+    public string FirstSlot = "";
 
     public static ItemData Load(int id, XElement env, bool globalTransferType = false)
     {
@@ -124,6 +126,7 @@ public sealed class ItemData
             Int(b, "originID", ref d.OriginId);
             d.StringTag = (string)b.Attribute("stringTag") ?? "";
         }
+        if (env.Element("slots")?.Element("slot") is { } slot) d.FirstSlot = (string)slot.Attribute("name") ?? "";
         if (env.Element("ucc") is { } ucc) d.UccMesh = (string)ucc.Attribute("mesh") ?? "";
         if (env.Element("property") is { } p)
         {
