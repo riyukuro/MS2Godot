@@ -628,6 +628,7 @@ public partial class HudScene : Node, IUiStageHost
         optionHost.AgreementReminder += SetAgreementReminder;
         optionHost.HasTutorial = FieldHasTutorial;
         if (hudModel?.Keys is { } k && k != KeyTable.Empty) optionHost.Keys = k;
+        optionHost.QuickSlots = new OptionQuickSlots(this);
         optionDialog = optionHost.Dialog = new Ms2.Formats.Options.GameOptionDialog(optionHost);
     }
 

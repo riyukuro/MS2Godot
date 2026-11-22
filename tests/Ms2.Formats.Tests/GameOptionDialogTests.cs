@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Xml.Linq;
@@ -114,6 +115,8 @@ public class GameOptionDialogTests
         public GameOption.CharacterFlag LearningQuestFlag { get; } = GameOption.CharacterFlag.LearningQuest();
         public bool MouseCameraMode { get; set; }
         public IKeyTable Keys { get; set; }
+        public IQuickSlots QuickSlots { get; set; }
+        public void NotifyChangeGameOptionInput(int id) => Log.Add("notify " + id);
         public int Region { get; set; }
         public GameOptionLocale.Row LocaleData { get; set; }
         public int RunningVoice { get; set; }
@@ -549,6 +552,92 @@ public class GameOptionDialogTests
         public bool SendKeysToServer() { Sends++; return true; }
         public void BackupKeys() => Backups++;
         public void RestoreKeysFromBackup() => Restores++;
+        public int Defaults;
+        public Action OnDefaults;
+        public void LoadDefaultKeyboardKeys() { Defaults++; OnDefaults?.Invoke(); }
+    }
+
+    sealed class FakeSlots : IQuickSlots
+    {
+        public readonly List<string> Calls = new();
+        public int Page { get; set; } = 2;
+        public readonly Dictionary<int, (int Skill, long Uid, int Slot)> Keys = new();
+        public void GetBoundKeys(List<int> into) { into.Clear(); into.AddRange(Keys.Keys); }
+        public int SkillIdByKey(int key) => Keys[key].Skill;
+        public long ItemUidByKey(int key) => Keys[key].Uid;
+        public int FindSlot(int skillId, long itemUid) => Keys.Values.Where(v => v.Skill == skillId && v.Uid == itemUid).Select(v => v.Slot).DefaultIfEmpty(-1).First();
+        public void Put(int skillId, int itemId, long itemUid, int page, int slot) => Calls.Add($"put {skillId},{itemId},{itemUid},{page},{slot}");
+        public void Refresh() => Calls.Add("refresh");
+        public void UpdateModifiedKeys() => Calls.Add("modified");
+    }
+
+    static (GameOptionDialog, FakeHost, TrackingKeys, FakeSlots, OptionPage) OpenInput(int tab = 8)
+    {
+        var (d, h) = Open();
+        var keys = new TrackingKeys(); var slots = new FakeSlots();
+        h.Keys = keys; h.QuickSlots = slots;
+        slots.Keys[0x31] = (1001, 0, 3);
+        slots.Keys[0x32] = (2002, 77, 5);
+        slots.Keys[0x33] = (3003, 0, -1);   // not on the page: left out of the snapshot
+        d.Call("OnOpenTab", tab);
+        d.Call("OnTabInit", tab);
+        h.Log.Clear();
+        return (d, h, keys, slots, d.GetPageByIndex(tab));
+    }
+
+    /// <summary>ResetKeysToDefault (@0x141252200): the snapshot is taken before the default keys load; cancel (vfunc_9, FUN_141252ae0) puts every
+    /// snapshot slot back with item id 0, refreshes, and posts the notify.</summary>
+    [Test]
+    public void InputPageCancelPutsTheSnapshotQuickSlotsBack()
+    {
+        var (d, h, keys, slots, page) = OpenInput();
+        keys.OnDefaults = () => { slots.Keys.Clear(); slots.Calls.Add("defaults"); };   // the default keys unbind the slots
+        d.ResetPages(0);
+        Assert.That(keys.Defaults, Is.EqualTo(1));
+        Assert.That(slots.Calls, Is.EqualTo(new[] { "defaults", "refresh" }));
+        Assert.That(h.Log, Does.Contain("notify 9"));
+        slots.Calls.Clear(); h.Log.Clear();
+        page.DropChanges();
+        Assert.That(slots.Calls, Is.EqualTo(new[] { "put 1001,0,0,2,3", "put 2002,0,77,2,5", "refresh" }));
+        Assert.That(keys.Restores, Is.EqualTo(1));
+        Assert.That(h.Log, Does.Contain("notify 9"));
+    }
+
+    [Test]
+    public void InputPageSaveDropsTheSnapshotAndUpdatesTheModifiedKeys()
+    {
+        var (d, h, keys, slots, page) = OpenInput();
+        d.ResetPages(0);
+        slots.Calls.Clear(); h.Log.Clear();
+        page.Save();
+        Assert.That(slots.Calls, Is.EqualTo(new[] { "modified" }));
+        Assert.That(h.Log, Does.Contain("notify 9"));
+        slots.Calls.Clear();
+        page.DropChanges();
+        Assert.That(slots.Calls, Is.EqualTo(new[] { "refresh" }), "the saved snapshot is gone: nothing to put back");
+    }
+
+    [Test]
+    public void InputPageOutsideItsTabTakesNoSnapshotAndPostsNothingWhileInactive()
+    {
+        var (d, h, keys, slots, page) = OpenInput();
+        d.SetTab(1);   // the page's tab is not the dialog's
+        d.ResetPages(0);
+        Assert.That(keys.Defaults, Is.EqualTo(0), "FUN_141252c10 false: no default keys, no snapshot");
+        page.DropChanges();
+        Assert.That(slots.Calls, Is.EqualTo(new[] { "refresh" }));
+    }
+
+    [Test]
+    public void InputPagePageResetWithThePadFeatureAsksFirstAndLoadsNothing()
+    {
+        var (d, h, keys, slots, page) = OpenInput();
+        h.Features.Add(0xb5);
+        d.ResetPages(1);
+        Assert.That(keys.Defaults, Is.EqualTo(0));
+        h.Features.Remove(0xb5);
+        d.ResetPages(1);
+        Assert.That(keys.Defaults, Is.EqualTo(1), "feature off: the keys reset");
     }
 
     [Test]

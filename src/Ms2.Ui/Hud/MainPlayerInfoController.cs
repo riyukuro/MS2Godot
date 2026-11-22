@@ -173,7 +173,7 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
 
     /// <summary>RefreshQuickSlots (uimainplayerinfo.cpp:1071): m_slot.updateBindSlot(expand). The slot contents come
     /// through DataBinding ("&lt;slot name&gt;.N" bindings) once the key table is wired.</summary>
-    void RefreshQuickSlots() => Host.Invoke(Slot, "updateBindSlot", SlotExpand);
+    public void RefreshQuickSlots() => Host.Invoke(Slot, "updateBindSlot", SlotExpand);
 
     /// <summary>InitPlayerInfo (uimainplayerinfo.cpp:1394): m_playerInfo visible, then init(obj).</summary>
     void InitPlayerInfo()

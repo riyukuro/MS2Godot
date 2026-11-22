@@ -112,6 +112,9 @@ public sealed class KeyTable : IKeyTable
         return LoadDefaultXml(bytes, sendToServer);
     }
 
+    /// <summary>ResetKeysToDefault's FUN_1414297e0(DefaultKey.xml, 0) (gameoptioninputdefault.cpp:473): nothing sent.</summary>
+    public void LoadDefaultKeyboardKeys() => LoadDefaultKeys(DefaultKeyPath, sendToServer: false);
+
     bool LoadDefaultXml(byte[] xmlBytes, bool sendToServer)
     {
         if (xmlBytes == null) return false;

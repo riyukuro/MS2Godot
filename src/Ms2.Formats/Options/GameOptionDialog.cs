@@ -65,12 +65,39 @@ public interface IKeyTable
     void BackupKeys() { }
     /// <summary>CKeyTable::RestoreKeysFromBackup (gameoptioninputdefault.cpp:595).</summary>
     void RestoreKeysFromBackup() { }
+    /// <summary>CKeyTable::FUN_1414297e0 (@0x1414297e0, keytable.cpp:429) on DefaultKey.xml, nothing sent (ResetKeysToDefault passes 0,
+    /// gameoptioninputdefault.cpp:473).</summary>
+    void LoadDefaultKeyboardKeys() { }
     /// <summary>CKeyTable::GetQuickSlotActionCount (@0x14142cbb0): the quick-slot actions m_quickSlotActions holds.</summary>
     int GetQuickSlotActionCount() => 0;
     /// <summary>CKeyTable::GetQuickSlotAction (@0x14142cbe0): the action of quick slot index, 0 past the end.</summary>
     long GetQuickSlotAction(int index) => 0;
     /// <summary>CKeyTable::FindKeyByQuickSlot (@0x14142cb40): the key bound to the slot's action at that priority, 0 for none.</summary>
     int FindKeyByQuickSlot(int index, int priority) => 0;
+}
+
+/// <summary>
+/// What the input pages reach of the quick slots (the key table's page and the main player info's slots): the snapshot before a key
+/// reset, the put-back on cancel and the refreshes (gameoptioninputdefault.cpp:394-398, 592-638).
+/// </summary>
+public interface IQuickSlots
+{
+    /// <summary>CKeyTable::FUN_140a700b0: the current quick slot page.</summary>
+    int Page { get; }
+    /// <summary>CKeyTable::GetBoundKeys (@0x14142c5d0): the keys with a valid entry, into the list (cleared first).</summary>
+    void GetBoundKeys(List<int> into);
+    /// <summary>CKeyTable::GetSkillIdByKey (@0x14142dad0).</summary>
+    int SkillIdByKey(int key);
+    /// <summary>CKeyTable::GetQuickSlotItemUidByKey (@0x14142ded0).</summary>
+    long ItemUidByKey(int key);
+    /// <summary>CKeyTable::FindQuickSlotBySkillAndItemUid (@0x14142e090): -1 for none.</summary>
+    int FindSlot(int skillId, long itemUid);
+    /// <summary>FUN_14092f690 (QuickSlotEdit.Add): puts the entry on the page's slot and sends KeyTable mode 3 (not in a skill set).</summary>
+    void Put(int skillId, int itemId, long itemUid, int page, int slot);
+    /// <summary>UIMainPlayerInfo::RefreshQuickSlots (@0x1419f19c0), when the main player info (0x4e5f) is open.</summary>
+    void Refresh();
+    /// <summary>UIMainPlayerInfo::UpdateModifiedKeys (@0x1419f1e60), when the main player info (0x4e5f) is open.</summary>
+    void UpdateModifiedKeys();
 }
 
 /// <summary>One row of RefreshKeyList's list: keyGUID is the action as a string, or the int 0x49409.</summary>
@@ -122,6 +149,11 @@ public interface IGameOptionDialogHost
     void SendBuddyMode20();
     /// <summary>FUN_140d86260()->vfunc_24, the secondary password dialog.</summary>
     void OpenSecondaryPassword();
+
+    /// <summary>The quick slots the input pages snapshot and put back; null = no HUD (nothing is snapshotted or put back).</summary>
+    IQuickSlots QuickSlots => null;
+    /// <summary>FUN_1412532f0's post: NotifySystem.Post(NotifyChangeGameOptionInput(optionId)).</summary>
+    void NotifyChangeGameOptionInput(int optionId) { }
 
     /// <summary>CGameOption +0x1a0, the stored gamepad block (GetGamepadState @0x140a58500).</summary>
     GameOption.GamePad GamePad { get; }
@@ -355,6 +387,8 @@ public sealed class GameOptionDialog
     public int Tab { get; private set; } = 1;
     public bool Simple { get; private set; }
     int resetScope;   // m_nF1cc
+    /// <summary>FUN_141254a00 (m_nF1cc): the scope the last reset ran with (0 all pages, else the current page).</summary>
+    public int ResetScope => resetScope;
     bool agreementRedCircle;   // m_bF1d0
 
     /// <summary>The ctor (@0x141941b80): the pages by key, typed in creation order. Pages the dialog does not port yet
@@ -1060,20 +1094,100 @@ public sealed class InputOptionPage : OptionPage
     /// <summary>@0x141251510.</summary>
     public override void ReadControls() => RefreshKeyList(Type);
 
-    /// <summary>vfunc_9 (@0x141251db0, gameoptioninputdefault.cpp:378-385, 592-596): page 9 restores keys from backup on cancel.
-    /// STILL-OPEN: the quick slots changed in the dialog are not put back (FUN_141252ae0, :625-638: FUN_14092f690 with mode 3, then RefreshQuickSlots).</summary>
-    public override void DropChanges()
+    /// <summary>m_mapQuickSlots (+0x98): the quick slots as they were before a key reset, slot to (skill, item uid); the entry's
+    /// item id stays 0 (the client's Unk_SsQuickEntry sets the skill and the uid only, :355-357).</summary>
+    readonly Dictionary<int, (int SkillId, long ItemUid)> quickSlots = new();
+    readonly List<int> boundKeys = new();
+
+    /// <summary>FUN_141252c10 (@0x141252c10, gameoptioninputdefault.cpp:642-650): pages 9..12 are in their tab when it is the
+    /// dialog's; the rest compare with tab 9.</summary>
+    bool InTab() => Id >= 9 && Id <= 12 ? Type == Dialog.Tab : Type == 9;
+
+    /// <summary>FUN_1412532f0 (@0x1412532f0, :843-848): posts NotifyChangeGameOptionInput(id) while the page is active.</summary>
+    void NotifyChanged()
     {
-        if (Id == 9) Host.Keys?.RestoreKeysFromBackup();
+        if (Active) Host.NotifyChangeGameOptionInput(Id);
     }
 
-    /// <summary>vfunc_10 (@0x141251df0, gameoptioninputdefault.cpp:389-400): sends dirty keys to server and backs up on page 9.
-    /// STILL-OPEN: m_mapQuickSlots, UpdateModifiedKeys and FUN_1412532f0 (:394-398) are not ported.</summary>
+    /// <summary>FUN_141252970 (@0x141252970, :602-622): in the tab, the snapshot is rebuilt from every bound key: its skill and item
+    /// uid, and the slot of the current page holding both (-1 is left out).</summary>
+    void SnapshotQuickSlots()
+    {
+        if (!InTab()) return;
+        quickSlots.Clear();
+        var q = Host.QuickSlots;
+        if (q == null) return;
+        q.GetBoundKeys(boundKeys);
+        foreach (int key in boundKeys)
+        {
+            int skill = q.SkillIdByKey(key);
+            long uid = q.ItemUidByKey(key);
+            int slot = q.FindSlot(skill, uid);
+            if (slot != -1) quickSlots[slot] = (skill, uid);
+        }
+    }
+
+    /// <summary>FUN_141252ae0 (@0x141252ae0, :625-638): each snapshot entry goes back on its slot of the current page
+    /// (FUN_14092f690), then RefreshQuickSlots and the notify.</summary>
+    void PutBackQuickSlots()
+    {
+        var q = Host.QuickSlots;
+        if (q != null)
+        {
+            int page = q.Page;
+            foreach (var (slot, e) in quickSlots) q.Put(e.SkillId, 0, e.ItemUid, page, slot);
+            q.Refresh();
+        }
+        NotifyChanged();
+    }
+
+    /// <summary>
+    /// ResetKeysToDefault (@0x141252200, gameoptioninputdefault.cpp:444-485), the keyboard path (bDefault): in the tab, the quick slots
+    /// are snapshotted, DefaultKey.xml is loaded (nothing sent), the slots refresh and the notify posts; the list refreshes when the
+    /// tab is current. STILL-OPEN: the game pad paths (feature 0xb5 with a pad kind: DefaultPSKey.xml / DefaultXboxKey.xml through
+    /// FUN_141429e60) and the edit reset (m_spEdit = 0, the key capture is not ported).
+    /// </summary>
+    void ResetKeysToDefault()
+    {
+        if (InTab())
+        {
+            SnapshotQuickSlots();
+            Host.Keys?.LoadDefaultKeyboardKeys();
+            Host.QuickSlots?.Refresh();
+            NotifyChanged();
+        }
+        if (Dialog.Tab == Type) RefreshKeyList(Type);
+    }
+
+    /// <summary>vfunc_12 (@0x141251e90, :402-432): a page reset (FUN_141254a00 != 0) with the game pad feature (0xb5) on asks
+    /// s_gameoption_input_reset_message first (FUN_1412523d0) and does nothing else here; with the feature off, and for a reset of all
+    /// pages, the keys reset to the defaults (pad kind 0, the keyboard file). STILL-OPEN: the message box, and the pad kind's default
+    /// files for a connected pad (GetPadKind is not read: a pad kind of 1..3 still loads the keyboard file here).</summary>
+    public override void ResetToDefaults()
+    {
+        if (Dialog.ResetScope != 0 && Host.IsFeatureEnabled(0xb5)) return;
+        ResetKeysToDefault();
+    }
+
+    /// <summary>vfunc_9 (@0x141251db0, gameoptioninputdefault.cpp:378-385, 592-638): page 9 restores keys from backup (FUN_141252940),
+    /// then puts the snapshot's quick slots back (FUN_141252ae0).</summary>
+    public override void DropChanges()
+    {
+        if (Id != 9) return;
+        Host.Keys?.RestoreKeysFromBackup();
+        PutBackQuickSlots();
+    }
+
+    /// <summary>vfunc_10 (@0x141251df0, gameoptioninputdefault.cpp:389-400): sends dirty keys to server, backs up on page 9, drops the
+    /// snapshot, UpdateModifiedKeys on the main player info and posts the notify.</summary>
     public override void Save()
     {
         base.Save();
         Host.Keys?.SendKeysToServer();
         if (Id == 9) Host.Keys?.BackupKeys();
+        quickSlots.Clear();
+        Host.QuickSlots?.UpdateModifiedKeys();
+        NotifyChanged();
     }
 
     /// <summary>RefreshKeyList @0x141250cc0: a row per setting of the page id's category. Action 0x49409 shows key 1 as

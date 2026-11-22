@@ -278,6 +278,14 @@ public sealed class GameOptionHost : IGameOptionDialogHost
     public void ApplyStatus(GameOption.Status state) => GD.Print("options: status stored (the hp and exp bars read it when hosted)");
     public void SendRideMode(bool disableSingleRiding) { }   // no server offline
 
+    /// <summary>The HUD's quick slots for the input pages (the main player info's); null without a HUD.</summary>
+    public IQuickSlots QuickSlots { get; set; }
+
+    /// <summary>NotifySystem.Post(NotifyChangeGameOptionInput(id)) (FUN_1412532f0): raised for the active input page.
+    /// STILL-OPEN: its listener (UIHouseDemolishDialog::OnNotifyChangeGameOptionInput, unit_14134fc90.cpp:270) is not ported.</summary>
+    public event Action<int> InputOptionChanged;
+    public void NotifyChangeGameOptionInput(int optionId) => InputOptionChanged?.Invoke(optionId);
+
     // ---- the input pages --------------------------------------------------------------------------------------------
 
     IKeyTable keys;
