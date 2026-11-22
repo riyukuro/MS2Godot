@@ -147,6 +147,33 @@ public class EffectDummyTests
         Assert.That(NpcTable.ParseRow(XElement.Parse("<npc id='9' />"), DefaultRows()), Is.Null);
     }
 
+    /// <summary>
+    /// The vibrate pair and the dead actions (npcdata.cpp:1465-1466, 1651-1659); the death pick (GetRandomDefaultAction,
+    /// StateDeadNPC::vfunc_4): "Dead_A" for no list, list[rand % count], and "Dead_Idle_A" for a boss that dies unseen.
+    /// </summary>
+    [Test]
+    public void NpcRowReadsTheVibrateAndPicksTheDeathSequence()
+    {
+        var row = NpcTable.ParseRow(XElement.Parse("""
+            <npc id="5"><environment damagedVibrateDuration="0.25" damagedVibrateAmp="3.5" class="3">
+              <dead defaultaction=",Dead_B,, Dead_C" upaction="Dead_Up_A" /></environment></npc>
+            """), DefaultRows());
+        Assert.That((row.DamagedVibrateDuration, row.DamagedVibrateAmp), Is.EqualTo((0.25f, 3.5f)));
+        Assert.That(row.DeadDefaultActions, Is.EqualTo(new[] { "Dead_B", " Dead_C" }), "empty tokens skipped, nothing trimmed");
+        Assert.That(row.DeadUpActions, Is.EqualTo(new[] { "Dead_Up_A" }));
+        Assert.That((row.RandomDeadDefaultAction(() => 7), row.RandomDeadDefaultAction(() => 32766)), Is.EqualTo((" Dead_C", "Dead_B")));
+        Assert.That((row.DeadSequence(true, "x"), row.DeadSequence(false, "x")), Is.EqualTo(("x", "Dead_Idle_A")), "a boss");
+        row.Friendly = 1;
+        Assert.That(row.DeadSequence(false, "x"), Is.EqualTo("x"), "not a boss");
+
+        var plain = NpcTable.ParseRow(XElement.Parse("<npc id='6'><environment><dead time='1' /></environment></npc>"), DefaultRows());
+        Assert.That((plain.DamagedVibrateDuration, plain.DamagedVibrateAmp, plain.DeadDefaultActions.Length, plain.DeadUpActions.Length),
+            Is.EqualTo((0f, 0f, 0, 0)));
+        int draws = 0;
+        Assert.That((plain.RandomDeadDefaultAction(() => ++draws), draws), Is.EqualTo(("Dead_A", 0)), "no draw for an empty list");
+        Assert.That(NpcTable.ParseRow(XElement.Parse("<npc id='7'><environment /></npc>"), DefaultRows()).DeadDefaultActions, Is.Empty);
+    }
+
     /// <summary>The target frame's row fields: level (1 when absent), class (1 when absent), race, the hidden level tag and the stat hp.</summary>
     [Test]
     public void NpcRowReadsLevelClassAndRace()

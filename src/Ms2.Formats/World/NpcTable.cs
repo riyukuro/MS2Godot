@@ -35,6 +35,16 @@ public sealed class NpcRow
     /// <summary>The environment's "defenceMaterial" (CNpcData m_nDefenceMaterial +0x70, npcdata.cpp:1455, 0 by the ctor): the
     /// hit sound's defence material (CEffectService::PlayHitSound).</summary>
     public int DefenceMaterial;
+    /// <summary>
+    /// The environment's damagedVibrateDuration and damagedVibrateAmp (CNpcData::LoadXml, npcdata.cpp:1465-1466; 0 when absent):
+    /// how long and how far the npc's body shakes when the own PC hits it (CNpc::vfunc_33 @0x141097c40).
+    /// </summary>
+    public float DamagedVibrateDuration, DamagedVibrateAmp;
+    /// <summary>
+    /// &lt;dead defaultaction upaction&gt; (CNpcData::LoadXml, npcdata.cpp:1651-1659): XmlTokenList, the attribute split at ','
+    /// by CString::Tokenize (achievedata.cpp:501), which skips empty tokens and trims nothing.
+    /// </summary>
+    public string[] DeadDefaultActions = Array.Empty<string>(), DeadUpActions = Array.Empty<string>();
     public bool Nametag;                         // environment nametag: the npc shows a name tag
     public int Kind;                             // environment kind: function npcs (shop, storage, ...) are not 0
     public bool Minimap = true;                  // environment minimap: shown on the minimap
@@ -58,6 +68,22 @@ public sealed class NpcRow
     public bool InteractShowCastingBar = true;   // interactIsShowCastingBar: the casting gauge is drawn
     /// <summary>The npc's effect dummies: the default rows with the npc's &lt;effectdummy&gt; merged in (EffectDummyTable.MergeNpc).</summary>
     public IReadOnlyList<EffectDummy> EffectDummies = Array.Empty<EffectDummy>();
+
+    /// <summary>
+    /// Unk_NpcDead::GetRandomDefaultAction (@0x1406c95b0, npcdata.cpp:442): "Dead_A" when the list is empty, else
+    /// list[rand() % count]; <paramref name="rand"/> is drawn only for a non-empty list.
+    /// </summary>
+    public string RandomDeadDefaultAction(Func<int> rand) =>
+        DeadDefaultActions.Length == 0 ? "Dead_A" : DeadDefaultActions[rand() % DeadDefaultActions.Length];
+
+    /// <summary>
+    /// The sequence StateDeadNPC::vfunc_4 (statedead.cpp:224) plays: the boss flag of StateDeadNPCData, which CNpc::vfunc_125
+    /// (@0x141091210) sets for a boss that dies without <paramref name="show"/>, plays "Dead_Idle_A"; otherwise
+    /// CNpc::vfunc_123(0x34) (:760), the action <paramref name="picked"/> at spawn (m_strED0, :539).
+    /// STILL-OPEN: MakeDeadPhysXActor (:1693-1788) repicks m_strED0 (the up action when pushed up) only for a hit that pushes
+    /// the body; the push is not ported, so the spawn pick stays.
+    /// </summary>
+    public string DeadSequence(bool show, string picked) => !show && IsBoss ? "Dead_Idle_A" : picked;
 
     /// <summary>CNpcData::IsBoss: friendly 0 and class 3 or more.</summary>
     public bool IsBoss => Friendly == 0 && Class >= 3;
@@ -171,6 +197,13 @@ public sealed class NpcTable
             row.InteractCastingTime = Int(ia, "interactCastingTime");
             row.InteractCoolTime = Int(ia, "interactCoolTime");
             row.InteractShowCastingBar = EffectDummy.Bool(ia, "interactIsShowCastingBar", true);
+        }
+        row.DamagedVibrateDuration = Flt(env, "damagedVibrateDuration", 0);
+        row.DamagedVibrateAmp = Flt(env, "damagedVibrateAmp", 0);
+        if (env.Element("dead") is { } dead)
+        {
+            row.DeadDefaultActions = ((string)dead.Attribute("defaultaction") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);
+            row.DeadUpActions = ((string)dead.Attribute("upaction") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);
         }
         var normal = env.Element("normal");
         row.IdleActions = ((string)normal?.Attribute("action") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

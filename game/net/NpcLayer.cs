@@ -28,6 +28,7 @@ public sealed class NpcLayer
         public int NpcId, Life, Moves;
         public Godot.Vector3 Target; public float TargetYaw; public int Sequence = -1; public string Playing = "";
         public bool Placeholder, Dead;
+        public string DeadAction;                 // m_strED0: the death sequence picked at spawn (CNpc init, :539)
         public long Exp;                          // m_nE60: the exp the own PC got for this npc, shown when its death sequence ends
         public float Height = 150;
         public long HpCur, HpMax;                 // the npc's stat pair (FieldAddNpc, then the Stat packets)
@@ -35,6 +36,10 @@ public sealed class NpcLayer
         public World.NpcHpBar Bar;                  // a live field's movie bar
         public World.FieldNpcs.Placed Talk;   // the npc as the talk finds it (WorldService::FindNpcById by object id)
     }
+
+    /// <summary>The CRT rand() the death pick draws from (0..0x7fff).</summary>
+    public Random Rand = new();
+    readonly Func<int> crtRand;
 
     readonly PackSet packs; readonly ModelBuilder mb; readonly NpcTable table; readonly Node3D parent;
     readonly Dictionary<int, Model> models = new();
@@ -80,6 +85,7 @@ public sealed class NpcLayer
     public NpcLayer(PackSet packs, ModelBuilder mb, NpcTable table, Node3D parent)
     {
         this.packs = packs; this.mb = mb; this.table = table; this.parent = parent;
+        crtRand = () => Rand.Next(0x8000);
         foreach (var e in packs.List(NpcArchive))
             if (e.EndsWith(".kfm", StringComparison.OrdinalIgnoreCase)) kfmEntries[Path.GetFileNameWithoutExtension(e).ToLowerInvariant()] = e;
         if (!mb.TextureArchives.Contains(NpcArchive)) mb.TextureArchives = mb.TextureArchives.Prepend(NpcArchive).ToArray();
@@ -152,6 +158,7 @@ public sealed class NpcLayer
         var model = ModelFor(row);
         var root = new Node3D { Name = $"Npc{n.ObjectId}" };
         var i = new Inst { Root = root, Model = model, NpcId = n.NpcId, Target = Placed(n.Position), TargetYaw = n.Rotation.Z };
+        i.DeadAction = row.RandomDeadDefaultAction(crtRand);
         if (model != null)
         {
             i.Visual = mb.Build(model.Data, row.Kfm);
@@ -356,7 +363,9 @@ public sealed class NpcLayer
     /// CNpc::vfunc_125 (@0x141091210): the npc dies (m_unk_15c = 1) and enters StateDeadNPC (0xc), which plays its
     /// death sequence; <paramref name="show"/> (OnFieldDeadNpc passes 1, OnFieldAddNpc's dead flag 0,
     /// scenestategame.cpp:3556-3558/3610) plays its dead sound (m_strSoundDead) too.
-    /// STILL-OPEN: FUN_141099ab0, FUN_141098fb0, the corpse box (m_corpse) and the boss bgm tracker are not ported.
+    /// StateDeadNPC::vfunc_4 (statedead.cpp:224) plays <see cref="NpcRow.DeadSequence"/> by name; a model without that
+    /// sequence plays nothing (PlayAnimation finds no sequence) and counts in <see cref="NoDeathSequence"/>.
+    /// STILL-OPEN: FUN_141099ab0, FUN_141098fb0, the corpse box (m_corpse), the corpse effect and the boss bgm tracker are not ported.
     /// </summary>
     public void Die(int id, bool show)
     {
@@ -364,17 +373,13 @@ public sealed class NpcLayer
         i.Dead = true; Deaths++;
         Tags?.Died(i.Root);
         if (i.Bar != null) { i.Bar.Dead = true; Bars?.Remove(i.Root); }      // vfunc_8: a dead npc's bar drops for good; its entry and clip go back to the pool
-        var dead = show ? table.Find(i.NpcId)?.SoundDead : null;
+        var row = table.Find(i.NpcId);
+        var dead = show ? row?.SoundDead : null;
         if (!string.IsNullOrEmpty(dead)) FieldAudio.Instance?.PlayEventAt(dead, i.Root.GlobalPosition);
         if (i.HpMat != null) { i.Root.GetNodeOrNull("HpBar")?.QueueFree(); i.HpMat = null; }
         if (i.Model == null) return;
-        KfmFile.Sequence seq = null; Godot.Animation a = null;
-        foreach (var cand in new[] { "Dead_A", "Dead_B" }.Select(n => i.Model.Kfm.ByName(n)).Concat(i.Model.Kfm.Sequences.Where(q => q.Name.StartsWith("Dead", StringComparison.OrdinalIgnoreCase))))
-        {
-            if (cand == null) continue;
-            a = Anim(i.Model, cand.Id);
-            if (a != null) { seq = cand; break; }
-        }
+        var seq = row == null ? null : i.Model.Kfm.ByName(row.DeadSequence(show, i.DeadAction));
+        var a = seq == null ? null : Anim(i.Model, seq.Id);
         if (a == null) { NoDeathSequence++; return; }
         a.LoopMode = Godot.Animation.LoopModeEnum.None;
         string name = $"s{seq.Id}";
