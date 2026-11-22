@@ -20,12 +20,53 @@ public sealed record SelectCharacter(long CharacterId, short Channel = 0) : IOut
 /// i32 skin color 0, i32 skin color 1 (ARGB), i16 length + the shown equips (u8 count, each: i32 item id, u8, then the
 /// item's color/look data, kept raw), i32 elapsed seconds in the dialog.
 /// </summary>
-public sealed record CreateCharacter(byte Gender, short JobGroup, string Name, int Color0, int Color1, byte[] Items, int Elapsed) : IOutPacket {
+public sealed record CreateCharacter(byte Gender, short JobGroup, string Name, int Color0, int Color1, byte[] Items, int Elapsed) : IProfileOutPacket {
     public Outbound Op => Outbound.CharacterManagement;
     public void Write(ByteWriter w) {
         w.WriteByte(1); w.WriteByte(Gender); w.WriteShort(JobGroup); w.WriteUnicodeString(Name); w.WriteInt(Color0); w.WriteInt(Color1);
         w.WriteShort((short) Items.Length); w.WriteBytes(Items); w.WriteInt(Elapsed);
     }
+    /// <summary>
+    /// The request of a GMS2 server: the same fields, the item block with the slot written as its name (a counted UTF-16 string, "HR") instead of
+    /// the slot byte. <see cref="Items"/> stays in the KMS form and is converted here.
+    /// </summary>
+    public void Write(ByteWriter w, ProtocolProfile profile) {
+        if (!profile.IsGms2) { Write(w); return; }
+        w.WriteByte(1); w.WriteByte(Gender); w.WriteShort(JobGroup); w.WriteUnicodeString(Name); w.WriteInt(Color0); w.WriteInt(Color1);
+        var block = EncodeItemsGms2(DecodeItems(Items));
+        w.WriteShort((short) block.Length); w.WriteBytes(block); w.WriteInt(Elapsed);
+    }
+
+    /// <summary>The GMS2 item block: u8 count, per item i32 id, the slot name, the colours and the appearance as in <see cref="EncodeItems"/>.</summary>
+    public static byte[] EncodeItemsGms2(IReadOnlyList<CreateItem> list) {
+        var w = new ByteWriter();
+        w.WriteByte((byte) list.Count);
+        foreach (var it in list) {
+            w.WriteInt(it.Id); w.WriteUnicodeString(it.Slot.ToString());
+            foreach (var c in new[] { it.Color.Primary, it.Color.Secondary, it.Color.Tertiary }) { w.WriteByte(c.B); w.WriteByte(c.G); w.WriteByte(c.R); w.WriteByte(c.A); }
+            w.WriteInt(it.Color.Index); w.WriteInt(it.Color.PaletteId);
+            foreach (var f in it.Appearance) w.WriteFloat(f);
+        }
+        return w.ToArray();
+    }
+
+    /// <summary>Reads back a GMS2 item block.</summary>
+    public static List<CreateItem> DecodeItemsGms2(byte[] block) {
+        var r = new ByteReader(block, 0);
+        var list = new List<CreateItem>();
+        int n = r.ReadByte();
+        for (int i = 0; i < n; i++) {
+            int id = r.ReadInt();
+            if (!Enum.TryParse<EquipSlot>(r.ReadUnicodeString(), out var slot)) throw new PacketLayoutException("unknown equip slot name");
+            var color = r.ReadEquipColor();
+            var app = new float[CreateItem.AppearanceLength(slot)];
+            for (int k = 0; k < app.Length; k++) app[k] = r.ReadFloat();
+            list.Add(new CreateItem(id, slot, color, app));
+        }
+        r.ExpectEnd("CreateCharacter items");
+        return list;
+    }
+
     /// <summary>The item block: u8 count, then each <see cref="CreateItem"/>.</summary>
     public static byte[] EncodeItems(IEnumerable<CreateItem> items) {
         var list = items.ToList();
