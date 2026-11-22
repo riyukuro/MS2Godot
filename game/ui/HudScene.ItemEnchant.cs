@@ -37,15 +37,16 @@ public partial class HudScene
         book.Talk = () => (live.TalkNpcId != 0, live.TalkNpcId);
         var table = hudModel.Tables.Items;
         ShowItemEnchant(book, cat => BagItemsOf(live, cat, table), (id, rank) => CountItems(live, id, rank),
+            Ms2.Ui.Hud.LapenshardUpgradeTabPage.TagCounter(() => live.Items.All, table, itemUse.Error),
             () => live.GameSession?.ServerTime ?? 0, () => { if (live.TalkNpcId != 0) live.EndTalk(); },   // vfunc_67: SendNpcTalkMode0
             () => ItemEnchantDialogController.WornLayerItems(live.Me.Equips, table, Ms2Godot.Net.LiveSession.WornLayer));
     }
 
-    void ShowItemEnchant(Ms2.Ui.Items.ItemEnchantBook book, Func<int, IEnumerable<Ms2.Ui.Items.Item>> bag, Func<int, int, int> count,
+    void ShowItemEnchant(Ms2.Ui.Items.ItemEnchantBook book, Func<int, IEnumerable<Ms2.Ui.Items.Item>> bag, Func<int, int, int> count, Func<int, int> countByTag,
         Func<long> now, Action closed, Func<IEnumerable<Ms2.Ui.Items.Item>> worn = null)
     {
         if (itemEnchantMovie != null) { itemEnchantMovie.Host.Unload(); itemEnchantMovie.QueueFree(); itemEnchantMovie = null; }
-        var c = new ItemEnchantDialogController { Book = book, Now = now, BagItems = bag, WornItems = worn ?? (() => System.Array.Empty<Ms2.Ui.Items.Item>()), CountOf = count,
+        var c = new ItemEnchantDialogController { Book = book, Now = now, BagItems = bag, WornItems = worn ?? (() => System.Array.Empty<Ms2.Ui.Items.Item>()), CountOf = count, CountByTag = countByTag,
             Enchantable = hudModel.Tables.ItemOptions.InEnchantLimit };
         c.NoticeText += SystemNoticeText;
         c.Closed += closed;
@@ -69,7 +70,7 @@ public partial class HudScene
         item.Uid = 1;
         item.Record = new Ms2.Net.Packets.EquipItem { Id = id, Uid = 1 };
         var book = new Ms2.Ui.Items.ItemEnchantBook { Send = _ => { }, Find = u => u == 1 ? item : null, CanEnchantItem = _ => true };
-        ShowItemEnchant(book, cat => cat == 0 ? new[] { item } : System.Array.Empty<Ms2.Ui.Items.Item>(), (_, _) => 0, () => 0, () => { });
+        ShowItemEnchant(book, cat => cat == 0 ? new[] { item } : System.Array.Empty<Ms2.Ui.Items.Item>(), (_, _) => 0, _ => 0, () => 0, () => { });
         book.Select(1);
         book.Apply(new Ms2.Net.Packets.ItemEnchantMessage.Info(1, 1, new Ms2.Net.Packets.EnchantIngredient[0], 0,
             new System.Collections.Generic.Dictionary<int, int> { [1] = 100 }, new Ms2.Net.Packets.EnchantRates(40, 0, 25, 5, 2), 0, 0, 0, id, 1, 1));

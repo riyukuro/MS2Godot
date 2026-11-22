@@ -181,33 +181,41 @@ public class ItemEnchantDialogTests
         Assert.That(r.C.IngredientCountText(1, 3), Is.Not.EqualTo(r.C.IngredientCountText(3, 3)), "lack text vs the plain one");
         r.Add(5);
         int id = r.Inv[5].ItemId;
-        r.C.CountOf = (i, _) => 1;
+        r.C.CountByTag = _ => 1;
         r.Select(5, r.Info(5, ing: new[] { new EnchantIngredient(id, 0x60, 4), new EnchantIngredient(id, 1, 1) }));
         var o = r.C.BuildInfo();
         Assert.That(Rt.ToString(r.Get(o, "enchantFee")), Is.Not.Empty, "(4 - 1) * 1000");
         Assert.That(r.Model.ItemSlots.ContainsKey(ItemEnchantDialogController.IngredientPrefix + "0"), Is.True);
         Assert.That(r.Model.ItemSlots.ContainsKey(ItemEnchantDialogController.IngredientPrefix + "1"), Is.True);
-        r.C.CountOf = (i, _) => 9;
+        r.C.CountByTag = _ => 9;
         Assert.That(Rt.ToString(r.Get(r.C.BuildInfo(), "enchantFee")), Is.Empty);
     }
 
-    // CIngredientInfo::GetItemId (@0x14026b500): a cost that names a tag (item id 0) is the tag's item (GetTagItemId, from
-    // table/itemdata.xml's <tag name itemID>): its slot shows that item and the have count is its count.
+    // CIngredientInfo::GetItemId (@0x14026b500): a cost that names a tag (item id 0) shows the tag's item (GetTagItemId, from
+    // table/itemdata.xml's <tag name itemID>) in its slot; the have count is by tag (FUN_1419c6cd0: GetItemCountByTag(m_b), inventory.cpp:835),
+    // so several different items sharing the tag all count, and the item id is asked for nothing.
     [Test]
-    public void ATagCostIsTheTagsItemInItsSlotAndCount()
+    public void ATagCostIsTheTagsItemInItsSlotAndCountedByTag()
     {
         var r = new Rig();
         r.Add(5);
-        var asked = new List<int>();
-        r.C.CountOf = (i, _) => { asked.Add(i); return 1; };
+        var askedTags = new List<int>();
+        var askedIds = new List<int>();
         int onix = ItemTags.ByName("Onix"), chaos = ItemTags.ByName("ChaosOnix");
         Assert.That(onix, Is.Not.Zero);
         Assert.That(r.Model.Tables.Items.TagItemId(onix), Is.Not.Zero, "the tag has an item in the table");
         Assert.That(r.Model.Tables.Items.TagItemId(chaos), Is.Not.EqualTo(r.Model.Tables.Items.TagItemId(onix)));
         Assert.That(r.Model.Tables.Items.TagItemId(0), Is.Zero);
+        r.C.CountOf = (i, _) => { askedIds.Add(i); return 1; };   // only the tag item itself is held: one of 17
+        r.C.CountByTag = t => { askedTags.Add(t); return t == onix ? 17 : 1; };   // 17 across two different items sharing the Onix tag
         r.Select(5, r.Info(5, ing: new[] { new EnchantIngredient(0, onix, 40), new EnchantIngredient(0, chaos, 2) }));
-        r.C.BuildInfo();
-        Assert.That(asked, Does.Contain(r.Model.Tables.Items.TagItemId(onix)).And.Contain(r.Model.Tables.Items.TagItemId(chaos)));
+        askedTags.Clear(); askedIds.Clear();   // Select already built the info once
+        var o = r.C.BuildInfo();
+        Assert.That(askedTags, Is.EquivalentTo(new[] { onix, chaos }));
+        Assert.That(askedIds, Does.Not.Contain(r.Model.Tables.Items.TagItemId(onix)).And.Not.Contain(r.Model.Tables.Items.TagItemId(chaos)), "no cost is counted by the tag item's id (the equip ingredient asks for the result item)");
+        var list = ((Ms2.Avm2.AsArray)r.Get(o, "ingredient")).Items;
+        Assert.That(Rt.ToString(r.Get(list[0], "countText")), Is.EqualTo(r.C.IngredientCountText(17, 40)));
+        Assert.That(Rt.ToString(r.Get(list[1], "countText")), Is.EqualTo(r.C.IngredientCountText(1, 2)));
         Assert.That(r.Model.ItemSlots.ContainsKey(ItemEnchantDialogController.IngredientPrefix + "0"), Is.True, "bound with the tag's item");
         Assert.That(r.Model.ItemSlots.ContainsKey(ItemEnchantDialogController.IngredientPrefix + "1"), Is.True);
     }

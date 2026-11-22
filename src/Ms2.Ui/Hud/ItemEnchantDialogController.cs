@@ -43,6 +43,8 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
     public Func<IEnumerable<Item>> WornItems = () => Array.Empty<Item>();
     /// <summary>The count of the inventory items of an item id and rank (the ingredient have-count).</summary>
     public Func<int, int, int> CountOf = (_, _) => 0;
+    /// <summary>Unk_Inventory::GetItemCountByTag (inventory.cpp:835): the usable items whose stringTag is the tag; the ingredient rows count by it.</summary>
+    public Func<int, int> CountByTag = _ => 0;
     /// <summary>The limit test of GetEnchantableItemUids (CItemEnchantLimitTable::FUN_14058e230, ItemOptionTables.InEnchantLimit);
     /// default: the book's CanEnchantItem. The lock and plus-level tests are the controller's.</summary>
     public Func<Item, bool> Enchantable;
@@ -356,10 +358,10 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
         {
             var g = Book.Ingredients[i];
             int itemId = g.ItemId != 0 ? g.ItemId : Model.Tables.Items.TagItemId(g.Tag);   // CIngredientInfo::GetItemId (@0x14026b500): the id, else the tag's item (:143)
-            var it = Item.Create(Model.Tables.Items, itemId, 0);
+            var it = Item.Create(Model.Tables.Items, itemId, Model.Tables.Items.Get(itemId)?.Rank ?? 0);   // GetItemRank(itemId)
             string name = IngredientPrefix + i.ToString(CultureInfo.InvariantCulture);
             if (it != null) { it.SetCountClamped(g.Count); Bind(name, it, SlotFlags); ingredientSlots.Add(name); }
-            int have = CountOf(itemId, 0);
+            int have = CountByTag(g.Tag);   // GetItemCountByTag(ing->m_b, 0): by tag, not by the item the slot shows
             if (g.Tag == 0x60 && g.Count > have) fee += (long)(g.Count - have) * FeePerUnit;
             list.Add(Host.Obj(("binding", name), ("countText", IngredientCountText(have, g.Count))));
         }

@@ -216,6 +216,10 @@ public class ItemEnchantBookTests {
         Assert.That(t.B.IsIngredientCandidate(m, 0), Is.False, "a name outside the tag list is tag 0");
         sel.Rarity = 6; m.Data.StringTag = "EnchantJockerItemEpic";
         Assert.That(t.B.IsIngredientCandidate(m, 0), Is.True, "rank 6 is 0xd0, Epic");
+        sel.Rarity = 0; m.Data.StringTag = "";
+        Assert.That(t.B.IsIngredientCandidate(m, 0), Is.True, "a base outside rank 1..6 leaves flag 0, which an untagged item holds");
+        m.Data.StringTag = "EnchantJockerItemEpic";
+        Assert.That(t.B.IsIngredientCandidate(m, 0), Is.False, "and a tagged one does not");
     }
 
     [Test] public void ResultsRaiseTheMovieEventAndErrorsTheirNotices() {

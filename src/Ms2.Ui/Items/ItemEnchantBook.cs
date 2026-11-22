@@ -50,7 +50,7 @@ public sealed class ItemEnchantBook
     /// stringTag attribute (&lt;basic stringTag&gt;, CItemData Load itemdata.cpp:338) read through CItemDataTable::GetTagByName
     /// (itemdatatable.cpp:578) equals the key. The keys FUN_1419c93a0 asks for, 0xcb..0xd0 (203..208), are the AddItemTag names
     /// EnchantJockerItemNormal..Epic (itemdatatable.cpp:1446-1451); see <see cref="ItemTags"/>.</summary>
-    public Func<Item, int, bool> HasStringTag { get; set; } = (item, key) => item?.Data != null && key != 0 && ItemTags.ByName(item.Data.StringTag) == key;
+    public Func<Item, int, bool> HasStringTag { get; set; } = (item, key) => item?.Data != null && ItemTags.ByName(item.Data.StringTag) == key;
     public Func<long, Item> Find { get; set; } = _ => null;
     public Action<IOutPacket> Send { get; set; }
     /// <summary>The talk the dialog opened from: (talking, npc id), and the client constant m_69a0.</summary>
@@ -152,8 +152,9 @@ public sealed class ItemEnchantBook
     /// <summary>FUN_1419c93a0 (@0x1419c93a0).</summary>
     bool IsTagMaterial(Item baseItem, Item other)
     {
-        if (baseItem == null || baseItem.Rarity < 1 || baseItem.Rarity > 6) return false;
-        return HasStringTag(other, 0xcb + baseItem.Rarity - 1) && other.Count == 1;
+        if (baseItem == null) return false;
+        int flag = baseItem.Rarity >= 1 && baseItem.Rarity <= 6 ? 0xcb + baseItem.Rarity - 1 : 0;   // the switch's default leaves flag 0, and HasStringTag(0) holds for an untagged item
+        return HasStringTag(other, flag) && other.Count == 1;
     }
 
     /// <summary>OnSelectEquipIngredient (@0x1419c1220) with the mode 2 send (FUN_1419c16c0): an enchanted ingredient asks first.</summary>
