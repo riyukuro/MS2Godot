@@ -14,6 +14,8 @@ public sealed class EquipItem {
     public int Id; public long Uid; public EquipSlot Slot; public int Rarity;
     public int Amount; public long CreationTime, ExpiryTime;
     public EquipColor Color;
+    /// <summary>A copy of the record (CItem::Clone); the appearance floats are copied too.</summary>
+    public EquipItem Clone() { var c = (EquipItem) MemberwiseClone(); c.Appearance = (float[]) (Appearance ?? Array.Empty<float>()).Clone(); return c; }
     /// <summary>Hair: back length, back pos 1, 2 (x,y,z each), front length, front pos 1, 2. Decal: 4 floats. Cap: 4 vec3 + 1 float. Else empty.</summary>
     public float[] Appearance = Array.Empty<float>();
     /// <summary>Badge records only: the worn gem's slot (CItem m_5c, GetSlot): the record's first u8, as

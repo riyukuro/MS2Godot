@@ -472,6 +472,18 @@ public sealed class MyCharacter {
     }
 
     /// <summary>
+    /// Replaces the own worn lists with another gear / outfit set and raises <see cref="EquipChanged"/> and <see cref="Changed"/>,
+    /// so a view built from them redraws (the beauty shop's preview puts items on the own PC with PC::vfunc_127 / vfunc_128 and
+    /// takes them off again; the packets' <see cref="PutOnOrOff"/> is not raised, no put-on / put-off packet came).
+    /// </summary>
+    public void ReplaceWorn(IReadOnlyList<EquipItem> equips, IReadOnlyList<EquipItem> outfit2)
+    {
+        Equips = equips ?? Array.Empty<EquipItem>(); Outfit2 = outfit2 ?? Array.Empty<EquipItem>();
+        EquipChanged?.Invoke();
+        Changed?.Invoke();
+    }
+
+    /// <summary>
     /// CSceneStateGame::OnItemPutOff (scenestategame.cpp:3144) for the own object: the worn item of that uid
     /// (PC::FUN_141655b80) is taken off when it has a model preset (PC::vfunc_128, pc.cpp:1415; CEquipment::FUN_1411e3960
     /// finds it by uid). Returns whether the lists changed. A worn uid raises <see cref="PutOnOrOff"/> after the lists, with
