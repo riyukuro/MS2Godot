@@ -30,7 +30,7 @@ public class Gms2BadgeEquipTests {
         int equip = 0, off = 0, setting = 0;
         foreach (var (file, d) in all) {
             switch (d[0]) {
-                case 0: Assert.That(d.Length, Is.EqualTo(10), file); Assert.That(d[9], Is.EqualTo((byte) 0xFF).Or.LessThan((byte) 10), file); equip++; break;
+                case 0: Assert.That(d.Length, Is.EqualTo(10), file); Assert.That(d[9], Is.EqualTo((byte) 0xFF).Or.LessThan((byte) 10), file); Assert.That(Bytes(new GemEquipRequest(BitConverter.ToInt64(d, 1), d[9])), Is.EqualTo(d), file); equip++; break;
                 case 1: Assert.That(d.Length, Is.EqualTo(2), file); Assert.That(Bytes(new GemUnequipRequest(d[1])), Is.EqualTo(d), file); off++; break;
                 case 3:
                     Assert.That(d.Length, Is.EqualTo(12), file);
