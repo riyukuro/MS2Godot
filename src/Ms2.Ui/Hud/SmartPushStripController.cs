@@ -38,9 +38,14 @@ public sealed class SmartPushStripController : UiController, ISmartPushStrip
     protected override bool IsDialog => false;
     protected override bool TweenEnabled => false;
 
-    /// <summary>FUN_1418dd0d0 (added to 0x5a in vfunc_43, :106): the height the strip sits above the stage's bottom.
-    /// STILL-OPEN: what the function reads is not identified, 0 is used.</summary>
-    public int BottomInset;
+    /// <summary>The bar heights and margin FUN_1418dd0d0 sums (uibuiltindialog.cpp:53): DAT_1439f8ccc, DAT_1439f8cd0 (with feature
+    /// 0xbd) and DAT_1439f8cc8 (193 in the data; STILL-OPEN whether the client changes it at run time), as PopupNpcTalk keeps them.</summary>
+    public int BottomBarHeight = 21, AdventureBarHeight = 21, ScreenMargin = 193;
+
+    /// <summary>FUN_1418dd0d0 = (DAT_1439f8ccc - 2) + FUN_1418dd110 + DAT_1439f8cc8, added to 0x5a in vfunc_43 (:106); FUN_1418dd110
+    /// is the adventure bar's height - 2 with feature 0xbd, else 0.</summary>
+    public int BottomInset
+        => BottomBarHeight - 2 + (Model.IsFeatureEnabled(MainPlayerInfoController.AdventureLevelFeature) ? AdventureBarHeight - 2 : 0) + ScreenMargin;
 
     /// <summary>vfunc_28 "onSmartPush" (:136): CSmartPushManager::OnPushClicked(id).</summary>
     public event Action<int> PushClicked;

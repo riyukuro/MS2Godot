@@ -2154,11 +2154,14 @@ public class HudTests
         Assert.That(Count(), Is.EqualTo(2));
         Assert.That(c.RemovePush(5), Is.True);
         Assert.That(Count(), Is.EqualTo(1));
-        // vfunc_43 (uismartpush.cpp:100): bottom left, 0x1b4 across, 0x5a above the bottom
+        // vfunc_43 (uismartpush.cpp:100): bottom left, 0x1b4 across, FUN_1418dd0d0 + 0x5a above the bottom; FUN_1418dd0d0 is
+        // (bar - 2) + the adventure bar's (feature 0xbd) + the margin 193 (uibuiltindialog.cpp:53)
+        int inset = 21 - 2 + (m.IsFeatureEnabled(0xbd) ? 21 - 2 : 0) + 193;
+        Assert.That(c.BottomInset, Is.EqualTo(inset));
         double ht = Rt.ToNumber(h.Get(h.Entity, "height"));
         c.Layout(1920, 1080);
         Assert.That(Rt.ToNumber(h.Get(h.Entity, "x")), Is.EqualTo(0x1b4));
-        Assert.That(Rt.ToNumber(h.Get(h.Entity, "y")), Is.EqualTo(1080 - (int)ht - 0x5a));
+        Assert.That(Rt.ToNumber(h.Get(h.Entity, "y")), Is.EqualTo(1080 - (int)ht - (inset + 0x5a)));
         var clicked = new List<int>();
         c.PushClicked += clicked.Add;
         Assert.That(c.OnCallback("onSmartPush", new object[] { 6 }), Is.True);       // vfunc_28 (:136)
