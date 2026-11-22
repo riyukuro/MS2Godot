@@ -61,7 +61,7 @@ public interface ITriggerSounds
 /// 0x6454a3bb) of a type 3 event, those of a rope / ladder event (picked by its flag, :750-753), and an actor event's
 /// minimap mark (:724-726); the actor sequence's blend (PlayAnimation's 1.0f and false go to the client's own
 /// NiActorManager::SetTargetAnimation, whose body is not in the recomp); a hidden cube's object weapon (IsObjectWeapon; PullObjectWeaponAction::FUN_140959eb0 takes only a cube whose IsVisible is set,
-/// actionkeyobject.cpp:1873-1875; not ported here); the sound Effect kind (<see cref="ApplySound"/>); the camera events (read, not applied); a trigger mesh drawn as an animated prop (FieldProps); a hidden
+/// actionkeyobject.cpp:1873-1875; not ported here); the sound Effect kind (<see cref="ApplySound"/>); the camera parts listed at <see cref="TriggerCamera"/>; a trigger mesh drawn as an animated prop (FieldProps); a hidden
 /// mesh that BGTransparencyMgr fades back in (FieldFade restores its transform).
 /// </summary>
 public sealed class FieldTriggers
