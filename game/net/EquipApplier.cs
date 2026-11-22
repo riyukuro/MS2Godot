@@ -159,7 +159,7 @@ public sealed class EquipApplier
         var im = FindItem(itemId);
         foreach (var slot in im?.Element("slots")?.Elements("slot") ?? Enumerable.Empty<XElement>())
         {
-            var asset = slot.Elements("asset").FirstOrDefault(a => (string)a.Attribute("gender") == null || (string)a.Attribute("gender") == gender.ToString());
+            var asset = slot.Elements("asset").FirstOrDefault(a => ForGender(a, gender));
             if (asset == null) continue;
             string name = ((string)asset.Attribute("name") ?? "").Trim();
             try
@@ -172,6 +172,8 @@ public sealed class EquipApplier
     }
 
     ArrayMesh Mesh(ModelMesh m) => meshes.TryGetValue(m, out var am) ? am : meshes[m] = mb.SharedMesh(m);
+
+    static bool ForGender(XElement asset, int gender) => AssetGender.Matches((string)asset.Attribute("gender"), gender);
 
     /// <summary>The visible item per slot: the last one listed for each slot.</summary>
     public static List<EquipItem> Visible(IEnumerable<EquipItem> items)
@@ -309,7 +311,7 @@ public sealed class EquipApplier
         int subtype = part.Subtype;
         foreach (var slot in im.Element("slots")?.Elements("slot") ?? Enumerable.Empty<XElement>())
         {
-            var asset = slot.Elements("asset").FirstOrDefault(a => (string)a.Attribute("gender") == null || (string)a.Attribute("gender") == gender.ToString());
+            var asset = slot.Elements("asset").FirstOrDefault(a => ForGender(a, gender));
             if (asset == null) { NoAsset++; continue; }
             // ModelPart::Load (itemdatastruct.cpp:287-303): a name not ending in ".nif" is a kfm asset, a CKfmModel
             bool isNif = ((string)asset.Attribute("name") ?? "").TrimEnd().EndsWith(".nif", StringComparison.Ordinal);
@@ -329,7 +331,7 @@ public sealed class EquipApplier
             foreach (var c in im.Element("cutting")?.Elements("mesh") ?? Enumerable.Empty<XElement>())
             {
                 var g = (string)c.Attribute("gender");
-                if (g == null || g == gender.ToString()) part.Cuts.Add((string)c.Attribute("name"));
+                if (AssetGender.Matches(g, gender)) part.Cuts.Add((string)c.Attribute("name"));
             }
             // FUN_141200ca0 (equipmodel.cpp:714-720) hangs a replace="1" part through vfunc_13 and every other part through
             // vfunc_12, which returns before CreateAttachNode when the part name is empty (CNifModel, nifmodel.cpp:232-238;
@@ -352,7 +354,7 @@ public sealed class EquipApplier
             }
             int ponyIndex = 0;
             foreach (var pony in slot.Elements("asset").Where(a => a != asset && (string)a.Attribute("pony") == "1"
-                         && ((string)a.Attribute("gender") == null || (string)a.Attribute("gender") == gender.ToString())))
+                         && ForGender(a, gender)))
             {
                 var p = AttachKfm(part, skel, body, pony, item, gender, ponyIndex++);
                 if (p == null) continue;

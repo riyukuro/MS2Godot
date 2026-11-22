@@ -10,6 +10,7 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageReference Include="NUnit" Version="3.14.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
+    <Compile Include="../../game/net/AssetGender.cs" Link="game/AssetGender.cs" />
     <Compile Include="../../game/net/ItemKinds.cs" Link="game/ItemKinds.cs" />
     <Compile Include="../../game/net/ItemModelSlots.cs" Link="game/ItemModelSlots.cs" />
     <ProjectReference Include="../../src/Ms2.Net/Ms2.Net.csproj" />
