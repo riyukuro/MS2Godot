@@ -1,4 +1,5 @@
 using Godot;
+using Ms2.Formats.Model;
 using Ms2.Formats.Pack;
 using Ms2.Formats.Options;
 using Ms2.Net.Packets;
@@ -241,9 +242,50 @@ public partial class RemoteRideCheck : Node3D
         RideeSpeeds(layer, m.Data.Id);
         RideShadow(layer, pc);
         OwnUnRideSkillEffect(pc, m);
+        KeysByKfm();
         pc.QueueFree();
         field.QueueFree();
         layer.Free();
+    }
+
+    /// <summary>A sequence's text keys are kept by the kfm that names it: the same mount loaded twice, the second pointed at
+    /// another kfm entry in the folder with no companion xml, loads a sequence whose first-kfm keys include the xml's. The
+    /// first mount then looks the sequence up again with its animation already built (its sequence maps cleared, as a mount
+    /// sharing the built library does) and must get its own list back, not the second kfm's.</summary>
+    void KeysByKfm()
+    {
+        const System.Reflection.BindingFlags Own = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        var f = typeof(Mount).GetField("kfmEntry", Own);
+        var kf = typeof(Mount).GetField("kfm", Own);
+        var seqKeys = typeof(Mount).GetField("seqKeys", Own);
+        var textKeys = typeof(Mount).GetField("textKeys", Own);
+        int mounts = 0, pairs = 0, took = 0;
+        foreach (var e in packs.List("Xml").Where(e => e.StartsWith("riding/", StringComparison.OrdinalIgnoreCase)).Order(StringComparer.Ordinal))
+        {
+            if (pairs >= 4 || mounts >= 40 || !int.TryParse(Path.GetFileNameWithoutExtension(e), out int id)) continue;
+            Mount a, b;
+            try { a = Mount.Load(packs, builder, id); b = Mount.Load(packs, builder, id); }
+            catch (Exception) { continue; }
+            mounts++;
+            string entry = (string)f.GetValue(b);
+            f.SetValue(b, entry[..entry.LastIndexOf('/')] + "/other_kfm_without_xml.kfm");
+            foreach (var s in ((KfmFile)kf.GetValue(a)).Sequences)
+            {
+                var ak = a.TextKeys(a.SequenceKey(s.Name, false));
+                var bk = b.TextKeys(b.SequenceKey(s.Name, false));
+                if (ak == null || bk == null || ak.Count == bk.Count) continue;
+                pairs++;
+                ((System.Collections.IDictionary)seqKeys.GetValue(a)).Clear();
+                ((System.Collections.IDictionary)textKeys.GetValue(a)).Clear();
+                var again = a.TextKeys(a.SequenceKey(s.Name, false));
+                if (again == null || again.Count != ak.Count) took++;
+                break;
+            }
+            a.Visual.Free();
+            b.Visual.Free();
+        }
+        if (pairs == 0 || took != 0) fails.Add($"text keys by kfm: {took} of {pairs} sequence(s) looked up again took the other kfm's keys ({mounts} mount(s))");
+        GD.Print($"remote ride: text keys by kfm: {pairs} sequence(s) keyed by the xml too, of {mounts} mount(s), {took} took the other kfm's keys");
     }
 
     /// <summary>Another player's ridee by its object id: no node in the ridee's own m_unk_b88, so no target (the fallback

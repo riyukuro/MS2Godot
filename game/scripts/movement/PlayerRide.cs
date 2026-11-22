@@ -107,7 +107,7 @@ public sealed class Mount
         if (seqKeys.TryGetValue(seq, out var k)) return k;
         k = LoadSequence(seq, loop);
         seqKeys[seq] = k;
-        if (k != null && KeyCache.TryGetValue(folder + "/" + k, out var keys)) textKeys[k] = keys;
+        if (k != null && KeyCache.TryGetValue(kfmEntry + "/" + k, out var keys)) textKeys[k] = keys;
         return k;
     }
 
@@ -120,7 +120,8 @@ public sealed class Mount
     /// </summary>
     public List<(double time, string text)> TextKeys(string key) => key != null && textKeys.TryGetValue(key, out var l) ? l : null;
     readonly Dictionary<string, List<(double time, string text)>> textKeys = new(StringComparer.Ordinal);
-    /// <summary>The text keys by "folder/key", kept for every mount of the model (the animation library is built once).</summary>
+    /// <summary>The text keys by "kfm entry/key", kept for every mount of the kfm: the keys are the kf's and the kfm's
+    /// companion xml's, so two kfms in one folder that name a sequence alike do not share them.</summary>
     static readonly Dictionary<string, List<(double time, string text)>> KeyCache = new(StringComparer.Ordinal);
     static readonly Dictionary<string, Dictionary<string, List<(double, string)>>> XmlKeyCache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -160,7 +161,7 @@ public sealed class Mount
         var kf = KfAnimation.Load(NifFile.Load(mb.Spec, packs.Read(NpcArchive, entry)));
         var keys = new List<(double time, string text)>(kf.TextKeys);
         if (XmlKeys().TryGetValue(Path.GetFileNameWithoutExtension(entry), out var extra)) keys.AddRange(extra);
-        if (keys.Count > 0) KeyCache[folder + "/" + key] = keys.OrderBy(k => k.time).ToList();   // stable: one time keeps its order
+        if (keys.Count > 0) KeyCache[kfmEntry + "/" + key] = keys.OrderBy(k => k.time).ToList();   // stable: one time keeps its order
         var a = ModelBuilder.BuildAnimation(kf, md);
         a.LoopMode = loop ? Godot.Animation.LoopModeEnum.Linear : Godot.Animation.LoopModeEnum.None;
         lib.AddAnimation(key, a);
