@@ -48,7 +48,8 @@ public partial class HudScene
         uiRoot.AddChild(itemLockMovie);
     }
 
-    /// <summary>UIItemLockDialog's key handling, as UIDialog's: Escape closes it.</summary>
+    /// <summary>UIItemLockDialog's key handling, as UIDialog's: Escape closes it. STILL-OPEN: UIDialog's key handler also
+    /// returns early on vfunc_56 (uidialog.cpp:846), whose condition is not recovered; it is not tested here.</summary>
     bool ItemLockKeys(InputEventKey k)
     {
         if (!ItemLockOpen || k.Keycode != Key.Escape) return false;

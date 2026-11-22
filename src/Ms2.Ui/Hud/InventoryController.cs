@@ -185,6 +185,11 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     /// <summary>The item lock dialog (0x4f08) / the item break dialog (0x4e8d) / the donation dialog (0x4e8e) is open
     /// (UIDialog::vfunc_55 == 0 of each in UpdateButtonState). Set by the host; closed when unset.</summary>
     public Func<bool> LockDialogOpen = () => false, BreakDialogOpen = () => false, DonationDialogOpen = () => false;
+    /// <summary>A lock (0x4f08) or break (0x4e8d) dialog exists (UpdateButtonState's lookups, @0x141999f60 uiinventorydialog.cpp:1150-1154:
+    /// all of lock, break and the two extraction dialogs null = return before the push). The host sets it to "its controller was
+    /// created"; unset means none exists. STILL-OPEN: the extraction scroll dialogs (0x4f49, 0x4f4a) are not in this HUD, so they
+    /// are always null here.</summary>
+    public Func<bool> LockOrBreakDialogExists = () => false;
     /// <summary>m_1a4 (UpdateButtonState): 0 none, 1 break, 2 donation, 3 lock open (the last one found open wins, in that order).
     /// STILL-OPEN: 4 and 5, the item and pet extraction scroll dialogs (0x4f49, 0x4f4a), are not in this HUD.</summary>
     public int ButtonMode { get; private set; }
@@ -192,8 +197,8 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     /// <summary>
     /// UpdateButtonState @0x141999f60. bAutoPickup: level &gt;= 1. bOpenBank: PC bang or VIP (FUN_141658f30 || IsVip); neither
     /// state is here, so 0. An open lock dialog turns bItemBreak off (m_1a4 3); an open break dialog (1) or donation dialog (2)
-    /// turns bItemLock off. The dialogs the client looks up first (the early return when none of them exists, the extraction
-    /// scrolls 0x4f49 / 0x4f4a) are not modelled: the call always goes out. Public: the break and lock dialogs call it after
+    /// turns bItemLock off. None of lock, break and the extraction scrolls (0x4f49 / 0x4f4a, not in this HUD) existing returns
+    /// before the push (uiinventorydialog.cpp:1152, <see cref="LockOrBreakDialogExists"/>). Public: the break and lock dialogs call it after
     /// their load and close (uiinventorydialog.cpp:2347, 2359).
     /// </summary>
     public void UpdateButtonState()
@@ -201,6 +206,7 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         bool bank = false;
         int itemBreak = 1, itemLock = 1;
         ButtonMode = 0;
+        if (!LockOrBreakDialogExists()) return;
         if (LockDialogOpen()) { ButtonMode = 3; itemBreak = 0; }
         if (BreakDialogOpen()) { ButtonMode = 1; itemLock = 0; }
         if (DonationDialogOpen()) { ButtonMode = 2; itemLock = 0; }
@@ -216,6 +222,15 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
             ("slotExpandToolTip", GetExpandTooltip()),
             ("bOpenBank", bank ? 1 : 0),
             ("openBankTooltip", GetOpenBankTooltip(bank))));
+    }
+
+    /// <summary>What the item lock and break dialogs do to the inventory after their load and unload (uiinventorydialog.cpp:2340-2362,
+    /// uiitemlockdialog.cpp:160-185): nothing while it is closed, else UpdateButtonState, then FUN_141999e00.</summary>
+    public void ItemDialogChanged()
+    {
+        if (IsClosed) return;
+        UpdateButtonState();
+        AddFlags();
     }
 
     /// <summary>FUN_141999e00 (@0x141999e00): m_19c = 7, the new marks, the expand label and the tab rebuild pending again.</summary>

@@ -89,12 +89,11 @@ public partial class HudScene
     /// the inventory's UpdateButtonState, then FUN_141999e00 (m_19c = 7).</summary>
     void InventoryButtonsAndFlags()
     {
-        if (inventory is not { IsClosed: false }) return;
-        inventory.UpdateButtonState();
-        inventory.AddFlags();
+        inventory?.ItemDialogChanged();
     }
 
-    /// <summary>UIItemBreakDialog's key handling, as UIDialog's: Escape closes it.</summary>
+    /// <summary>UIItemBreakDialog's key handling, as UIDialog's: Escape closes it. STILL-OPEN: UIDialog's key handler also
+    /// returns early on vfunc_56 (uidialog.cpp:846), whose condition is not recovered; it is not tested here.</summary>
     bool ItemBreakKeys(InputEventKey k)
     {
         if (!ItemBreakOpen || k.Keycode != Key.Escape) return false;

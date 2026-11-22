@@ -135,6 +135,7 @@ public class InventoryTests
         Packs();
         var (h, c, _) = Load();
         bool Enabled(string n) => Rt.ToBoolean(h.Get(h.Child(n), "enabled"));
+        c.LockOrBreakDialogExists = () => true;
         c.UpdateButtonState();
         Assert.That((c.ButtonMode, Enabled("m_itemBreak"), Enabled("m_itemLock")), Is.EqualTo((0, true, true)));
         bool lockOpen = true;
@@ -152,6 +153,42 @@ public class InventoryTests
         c.DonationDialogOpen = () => false;
         c.UpdateButtonState();
         Assert.That((c.ButtonMode, Enabled("m_itemBreak"), Enabled("m_itemLock")), Is.EqualTo((0, true, true)));
+    }
+
+    [Test]
+    public void ButtonStateIsNotPushedWhileNoLockOrBreakDialogExists()
+    {
+        // UpdateButtonState (uiinventorydialog.cpp:1152): lock, break and both extraction dialogs null = return before the push
+        Packs();
+        var (h, c, _) = Load();
+        bool Enabled(string n) => Rt.ToBoolean(h.Get(h.Child(n), "enabled"));
+        h.Set(h.Child("m_itemLock"), "enabled", true);
+        c.LockDialogOpen = () => true;
+        c.UpdateButtonState();
+        Assert.That(Enabled("m_itemBreak"), Is.True, "nothing pushed: the open test is not even reached");
+        Assert.That(c.ButtonMode, Is.Zero);
+        c.LockOrBreakDialogExists = () => true;
+        c.UpdateButtonState();
+        Assert.That((c.ButtonMode, Enabled("m_itemBreak")), Is.EqualTo((3, false)));
+    }
+
+    [Test]
+    public void ItemDialogChangedPushesTheButtonsAndFlagsOnlyWhileOpen()
+    {
+        // the lock / break dialogs' load and unload (uiinventorydialog.cpp:2340-2362): UpdateButtonState then FUN_141999e00
+        Packs();
+        var (h, c, _) = Load();
+        bool Enabled(string n) => Rt.ToBoolean(h.Get(h.Child(n), "enabled"));
+        c.LockOrBreakDialogExists = () => true;
+        c.LockDialogOpen = () => true;
+        c.ItemDialogChanged();
+        Assert.That((c.ButtonMode, Enabled("m_itemBreak")), Is.EqualTo((3, false)));
+        c.LockDialogOpen = () => false;
+        c.Close();
+        for (int i = 0; i < 300 && !c.IsClosed; i++) { h.Player.Tick(); c.Process(); }
+        Assert.That(c.IsClosed, Is.True);
+        c.ItemDialogChanged();
+        Assert.That(c.ButtonMode, Is.EqualTo(3), "closed: neither the state nor the mode is touched");
     }
 
     [Test]

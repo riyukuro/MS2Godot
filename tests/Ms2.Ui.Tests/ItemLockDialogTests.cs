@@ -90,6 +90,19 @@ public class ItemLockDialogTests
     }
 
     [Test]
+    public void InventoryButtonsAreRefreshedWhenTheDialogIsUnloadedNotWhenTheCloseStarts()
+    {
+        // the unload (vfunc_26 after the close tween) is what the inventory's open-dialog test (vfunc_55) sees as closed
+        var r = new Rig();
+        var closedAtEvent = new List<bool>();
+        r.C.InventoryButtons += () => closedAtEvent.Add(r.C.IsClosed);
+        r.C.Close();
+        for (int i = 0; i < 300 && !r.C.IsClosed; i++) r.Host.Player.Tick();
+        Assert.That(r.C.IsClosed, Is.True);
+        Assert.That(closedAtEvent, Is.EqualTo(new[] { true }));
+    }
+
+    [Test]
     public void LoadingOpensTheBookAndSendsTheResetOnce()
     {
         var r = new Rig();

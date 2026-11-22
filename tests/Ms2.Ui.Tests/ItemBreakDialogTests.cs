@@ -273,11 +273,12 @@ public class ItemBreakDialogTests
     }
 
     [Test]
-    public void IdleProcessAllocatesLittle()
+    public void IdleTickAllocatesNothing()
     {
+        // the controller's per-frame Tick (vfunc_15, HudScene.cs): RemoveMissingItems over the listed items, no Item built
         var r = new Rig();
         r.Add(5); r.Put(5, 0);
-        for (int i = 0; i < 30; i++) r.Host.Player.Tick();
-        Assert.That(Alloc.Least(() => { for (int i = 0; i < 100; i++) r.Host.Player.Tick(); }), Is.LessThan(2_000_000));
+        for (int i = 0; i < 5000; i++) r.C.Tick();     // past the tiered JIT's call counting
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 100_000; i++) r.C.Tick(); }), Is.LessThan(512));
     }
 }
