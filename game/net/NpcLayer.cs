@@ -178,6 +178,10 @@ public sealed class NpcLayer
             i.Visual = mb.Build(model.Data, row.Kfm);
             i.Visual.Scale = new Godot.Vector3(row.Scale, row.Scale, row.Scale);
             i.Player = i.Visual.GetNode<AnimationPlayer>("Model/AnimationPlayer");
+            // the idle queued after a one-shot (Play) starts at speed 1, not the block's: the client's speed is per sequence, and
+            // PlayAnimationById passes m_f938 (pcbase.cpp:1533), 1.0 from the PCBase ctor (:787) and never set for a CNpc
+            var player = i.Player;
+            player.AnimationChanged += (_, _) => player.SpeedScale = 1f;
             root.AddChild(i.Visual);
             FieldShadows.Character(root, i.Visual, FieldShadows.NpcKind(row), row.ShadowScale, 1f);
             var idle = model.Kfm.ByName("Idle_A");
@@ -485,6 +489,9 @@ public sealed class NpcLayer
     public int SequenceId(int id, Func<string, bool> pick) =>
         inst.TryGetValue(id, out var i) ? i.Model?.Kfm.Sequences.FirstOrDefault(q => pick(q.Name))?.Id ?? -1 : -1;
 
+    /// <summary>The animation the npc's player is on (a queued one once it started), null when the npc or its model is missing.</summary>
+    public string CurrentAnimation(int id) => inst.TryGetValue(id, out var i) && i.Player != null ? i.Player.CurrentAnimation : null;
+
     /// <summary>The speed the npc's animation plays at, 0 when the npc or its model is missing.</summary>
     public float AnimSpeed(int id) => inst.TryGetValue(id, out var i) && i.Player != null ? (float)i.Player.SpeedScale : 0;
 
@@ -531,6 +538,7 @@ public sealed class NpcLayer
         var lib = i.Player.GetAnimationLibrary("");
         if (!lib.HasAnimation(name)) lib.AddAnimation(name, a);
         i.Player.Play(name, 0.1);
+        i.Player.SpeedScale = 1f;      // StateDeadNPC::vfunc_4 plays it at 1.0 (statedead.cpp:250), whatever the last block's speed
         i.Playing = name; i.Sequence = seq.Id;
         // EndOfSequence of the death sequence, once (m_bFinished); a body without a death sequence never gets there
         var player = i.Player;

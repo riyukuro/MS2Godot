@@ -14,7 +14,8 @@ namespace Ms2Godot.Tests;
 /// - on a Run_ sequence an npc 40 short of the block position stays put, and its velocity is scaled by the clamped catch-up ratio (1.2);
 /// - the Run_ animation plays at the row's anispeed times PCBase::vfunc_97 times the unclamped catch-up ratio; an npc made with the row's
 ///   model scale at 1.5 (no scale buff) plays it at 2 - 1/1.5, and vfunc_97's four branches give the client's rates;
-/// - a block speed of 0 on a one-shot sequence the model has is kept, not taken as 1 (a model without one fails);
+/// - a block speed of 0 on a one-shot sequence the model has is kept, not taken as 1 (a model without one fails); a death after it
+///   plays at 1 and ends, so the exp is shown; the idle queued after a one-shot played at 2 starts at 1;
 /// - a jump sequence stops the velocity and keeps the yaw;
 /// - the yaw turns at most the row's rotationSpeed per second (CNpc::TurnTowardTargetYaw @0x141099170);
 /// - Process allocates nothing per frame.
@@ -110,11 +111,63 @@ public partial class NpcMoveCheck : Node3D
         for (int k = 0; k < 100; k++) npcs.Process(0.016f);
         long alloc = System.GC.GetAllocatedBytesForCurrentThread() - a0;
         Check(alloc == 0, $"Process allocated {alloc} B in 100 frames");
-        GD.Print($"npc move: npc {npcId}, run {run}, anispeed {row.AniSpeed}, scale {row.Scale}, rotationSpeed {row.RotationSpeed}, {alloc} B per 100 frames, {(fails.Count == 0 ? "ok" : "FAIL " + string.Join("; ", fails))}");
-        GetTree().Quit(fails.Count == 0 ? 0 : 1);
+        string head = $"npc move: npc {npcId}, run {run}, anispeed {row.AniSpeed}, scale {row.Scale}, rotationSpeed {row.RotationSpeed}, {alloc} B per 100 frames";
+        AfterFrames(npcs, npcId, fails, head);
     }
 
     static bool OneShot(string n) => !n.StartsWith("Idle", System.StringComparison.OrdinalIgnoreCase) && !n.StartsWith("Walk", System.StringComparison.OrdinalIgnoreCase)
         && !n.StartsWith("Run", System.StringComparison.OrdinalIgnoreCase) && !n.Contains("Idle", System.StringComparison.OrdinalIgnoreCase)
         && !n.StartsWith("Dead", System.StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The checks that need the animation player to run: a death after a speed 0 block ends (its exp is shown), and the
+    /// idle queued after a one-shot at speed 2 starts at 1.</summary>
+    async void AfterFrames(NpcLayer npcs, int npcId, System.Collections.Generic.List<string> fails, string head)
+    {
+        void Block(int obj, short seq, float speed) =>
+            npcs.Move(new NpcMovedEvent(0, new NpcSync { ObjectId = obj, Position = new Vector3S(0, 0, 0), Sequence = seq, AnimSpeed = speed }));
+        async System.Threading.Tasks.Task<bool> Until(System.Func<bool> done, int frames)
+        {
+            for (int f = 0; f < frames && !done(); f++) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            return done();
+        }
+        string extra = "";
+        // death after a speed 0 block
+        npcs.Add(new NpcAddedEvent(0, new FieldAddNpc { ObjectId = 3, NpcId = npcId }));
+        int shot = npcs.SequenceId(3, OneShot);
+        long shown = 0;
+        npcs.ExpShown += (_, exp) => shown = exp;
+        if (shot >= 0)
+        {
+            Block(3, (short)shot, 0);
+            int noDeath = npcs.NoDeathSequence;
+            npcs.AddExp(3, 7);
+            npcs.Die(3, true);
+            if (npcs.NoDeathSequence != noDeath) fails.Add($"npc {npcId} has no death sequence to play after the speed 0 block");
+            else
+            {
+                if (npcs.AnimSpeed(3) != 1f) fails.Add($"the death sequence after a speed 0 block plays at {npcs.AnimSpeed(3)}");
+                if (!await Until(() => shown != 0, 600)) fails.Add("the death sequence after a speed 0 block never ended: the exp text is lost");
+            }
+        }
+        // the idle queued after a one-shot at speed 2: the first candidate npc with Idle_A and a one-shot sequence
+        int obj = 10, idleNpc = 0;
+        foreach (int id in new[] { 21000001, 21000002, 21000003, 21000004, 21000005, 11000001, 11000002, 11000003, 11000004, 11000005 })
+        {
+            npcs.Add(new NpcAddedEvent(0, new FieldAddNpc { ObjectId = ++obj, NpcId = id }));
+            if (npcs.SequenceId(obj, "Idle_A") >= 0 && npcs.SequenceId(obj, OneShot) >= 0) { idleNpc = id; break; }
+        }
+        if (idleNpc == 0) fails.Add("no candidate npc has Idle_A and a one-shot sequence");
+        else
+        {
+            int s2 = npcs.SequenceId(obj, OneShot);
+            Block(obj, (short)s2, 2f);
+            bool two = npcs.AnimSpeed(obj) == 2f;
+            bool idled = await Until(() => npcs.CurrentAnimation(obj) == "s" + npcs.SequenceId(obj, "Idle_A"), 900);
+            float sp = npcs.AnimSpeed(obj);
+            if (!two || !idled || sp != 1f) fails.Add($"npc {idleNpc}: one-shot at 2 {two}, queued idle started {idled}, at speed {sp}, want 1");
+            extra = $", queued idle npc {idleNpc} at {sp}";
+        }
+        GD.Print($"{head}, death exp shown {shown}{extra}, {(fails.Count == 0 ? "ok" : "FAIL " + string.Join("; ", fails))}");
+        GetTree().Quit(fails.Count == 0 ? 0 : 1);
+    }
 }
