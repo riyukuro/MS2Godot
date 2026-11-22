@@ -125,14 +125,16 @@ public sealed class Mount
     static readonly Dictionary<string, List<(double time, string text)>> KeyCache = new(StringComparer.Ordinal);
     static readonly Dictionary<string, Dictionary<string, List<(double, string)>>> XmlKeyCache = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>The companion xml's keys by kf name (the first element of each name, keys without text skipped).</summary>
+    /// <summary>The companion xml's keys by kf name: under the &lt;ms2&gt; root, the first element of each name, matched
+    /// case-sensitively as TinyXML's FirstChildElement does (NiTextKeyExtraData.cpp:59-73); keys without text skipped.</summary>
     Dictionary<string, List<(double, string)>> XmlKeys()
     {
         string x = kfmEntry[..^4] + ".xml";
         if (XmlKeyCache.TryGetValue(x, out var map)) return map;
-        map = new Dictionary<string, List<(double, string)>>(StringComparer.OrdinalIgnoreCase);
-        if (packs.Exists(NpcArchive, x))
-            foreach (var el in PackXml.Parse(packs.Read(NpcArchive, x)).Root?.Elements() ?? Enumerable.Empty<XElement>())
+        map = new Dictionary<string, List<(double, string)>>(StringComparer.Ordinal);
+        var root = packs.Exists(NpcArchive, x) ? PackXml.Parse(packs.Read(NpcArchive, x)).Root : null;
+        if (root?.Name.LocalName == "ms2")
+            foreach (var el in root.Elements())
             {
                 if (map.ContainsKey(el.Name.LocalName)) continue;
                 List<(double, string)> list = null;
@@ -156,12 +158,14 @@ public sealed class Mount
         if (lib.HasAnimation(key)) return key;
         var s = kfm.ByName(seq);
         if (s == null) return null;
-        string entry = $"{folder}/{Path.GetFileName(s.KfPath.Replace('\\', '/')).ToLowerInvariant()}";
+        string kfName = Path.GetFileName(s.KfPath.Replace('\\', '/'));
+        string entry = $"{folder}/{kfName.ToLowerInvariant()}";
         if (!packs.Exists(NpcArchive, entry)) return null;
         var kf = KfAnimation.Load(NifFile.Load(mb.Spec, packs.Read(NpcArchive, entry)));
         var keys = new List<(double time, string text)>(kf.TextKeys);
-        if (XmlKeys().TryGetValue(Path.GetFileNameWithoutExtension(entry), out var extra)) keys.AddRange(extra);
-        if (keys.Count > 0) KeyCache[kfmEntry + "/" + key] = keys.OrderBy(k => k.time).ToList();   // stable: one time keeps its order
+        // the kf's keys, then the xml's, unsorted (NiTextKeyExtraData.cpp:69-72); the xml element is named like the kf file
+        if (XmlKeys().TryGetValue(Path.GetFileNameWithoutExtension(kfName), out var extra)) keys.AddRange(extra);
+        if (keys.Count > 0) KeyCache[kfmEntry + "/" + key] = keys;
         var a = ModelBuilder.BuildAnimation(kf, md);
         a.LoopMode = loop ? Godot.Animation.LoopModeEnum.Linear : Godot.Animation.LoopModeEnum.None;
         lib.AddAnimation(key, a);
