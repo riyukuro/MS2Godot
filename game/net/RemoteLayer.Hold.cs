@@ -19,7 +19,11 @@ public sealed partial class RemoteLayer
     /// adds them, overwriting by name), so a riding PC's node is the mount's bone first; with the asker's seat on the mount
     /// (FUN_141676790, seat 0 when not in the map) the seat's position, rotation and sequences come with it.
     /// The own pc (<see cref="SelfPc"/>) is looked up the same way, with its mount and <see cref="SelfPassengers"/>.
-    /// STILL-OPEN: the ridees as targets are not looked up (HoldKind.None).
+    /// A ridee's object id (OnObjectCreated of m_spB10, pcbase.cpp:3321) resolves in the client (FUN_141bd1200 is
+    /// FindObjectById and a cast to PCBase), but StateHold asks the target's own m_unk_b88 for the node (FUN_1416757c0,
+    /// pcbase.cpp:2995). Ridee's vfunc_119 (ridee.cpp:638) fills the rider's map instead, and no function of the exe
+    /// fills a ridee's own (+0xb88 is written by PCBase's ctor, dtor, vfunc_14 and vfunc_119 only, and Ridee overrides
+    /// slot 119), so the node is null and the hold falls back to its jump on the first frame: HoldKind.None does the same.
     /// </summary>
     // StateHold asks every frame: the path made once (a string and a NodePath per call otherwise)
     static readonly NodePath HoldSkeletonPath = "Model/" + ModelBuilder.SkeletonName;

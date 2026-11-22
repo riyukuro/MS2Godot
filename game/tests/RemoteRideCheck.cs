@@ -18,6 +18,8 @@ namespace Ms2Godot.Tests;
 /// - The own pc as a hold target (RemoteLayer.FindHoldTarget with <see cref="RemoteLayer.SelfPc"/>), on the first row with
 ///   a passenger seat 0: unknown before it is in; on foot a pc without a ridee; riding, its ridee's feet z, the seat's
 ///   rideBone as the node, the asker's seat 0 and the own state ids.
+/// - A ridee's object id is no hold target (the client finds the ridee, but its own node map is empty, so the hold
+///   falls back): another player's mount ridden through OnRide mode 0 gives HoldKind.None by the action's object id.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class RemoteRideCheck : Node3D
@@ -203,9 +205,27 @@ public partial class RemoteRideCheck : Node3D
         for (int i = 0; i < 100; i++) RemoteLayer.NearestHoldNode(null, m, Vector3.Zero, out _);
         long alloc = GC.GetAllocatedBytesForCurrentThread() - a0;
         if (m.RideBones().Length == 0 || alloc != 0) fails.Add($"hold poll of {m.RideBones().Length} seat node(s) allocates {alloc} B per 100");
+        RideeIdNoTarget(layer, m.Data.Id, bone);
         pc.QueueFree();
         field.QueueFree();
         layer.Free();
+    }
+
+    /// <summary>Another player's ridee by its object id: no node in the ridee's own m_unk_b88, so no target (the fallback
+    /// jump); the rider stays a pc target with its ridee.</summary>
+    void RideeIdNoTarget(RemoteLayer layer, int rideId, string bone)
+    {
+        const int User = 33, Ridee = 5033, Asker = 77;
+        var u = new FieldAddUser { ObjectId = User, User = new UserBlock { Name = "r", CharacterId = 133, Gender = 1 } };
+        u.Stats[0].Health = 100; u.Stats[2].Health = 100;
+        layer.Tracker.Events.Enqueue(new UserAddedEvent(0, u, false));
+        layer._Process(0);
+        layer.OnRide(new ResponseRide(0, User, new RideOnAction(0, rideId, Ridee, false, 0, 0, 0, 0), null, 0, 0, 0, 0, false));
+        var t = layer.FindHoldTarget(Asker, Ridee, bone);
+        var r = layer.FindHoldTarget(Asker, User, bone);
+        if (t.Kind != HoldKind.None || t.HasNode) fails.Add($"ridee id {Ridee} as hold target: kind {t.Kind}, node {t.HasNode} (the client falls back)");
+        if (r.Kind != HoldKind.Pc || !r.HasRidee) fails.Add($"rider {User}: kind {r.Kind}, ridee {r.HasRidee}");
+        GD.Print($"remote ride: ridee id {Ridee} as hold target {t.Kind} (fallback), rider {r.Kind} with ridee {r.HasRidee}");
     }
 
     void Done(string fail)

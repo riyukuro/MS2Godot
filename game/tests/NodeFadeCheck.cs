@@ -155,7 +155,9 @@ public partial class NodeFadeCheck : Node
         tick.Invoke(ls, null);
         var drop = typeof(LiveSession).GetMethod("DropOwnPc", Private);
         Check(drop != null, "no DropOwnPc (the field change's SetMyPC(0))");
+        ls.OwnPassengers[5] = 1;
         drop?.Invoke(ls, null);
+        Check(ls.OwnPassengers.Count == 0, $"the field change kept {ls.OwnPassengers.Count} own passenger(s) (~MyPC drops m_mapB28)");
         Check(!ls.Invincible.Active && ls.Invincible.TimerId == 0 && lastOn == false,
             $"the field change left the invincible (active {ls.Invincible.Active}, timer {ls.Invincible.TimerId}, effect {lastOn})");
         Check(lastOld == -1 && lastNew == -1 && ls.InvincibleBuffEnd == buffEnd, $"the field change touched the icon ({lastOld}->{lastNew}, end {ls.InvincibleBuffEnd})");
