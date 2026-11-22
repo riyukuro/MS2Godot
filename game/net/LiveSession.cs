@@ -607,10 +607,10 @@ public partial class LiveSession : Node
     public IEnumerable<RemoteLayer.Pc> FieldPcs => remote?.Pcs ?? Enumerable.Empty<RemoteLayer.Pc>();
     /// <summary>The other pcs the field shows now, as the minimap's proxies read them.</summary>
     public IEnumerable<RemoteLayer.ShownPc> ShownPcs => remote?.ShownPcs ?? Enumerable.Empty<RemoteLayer.ShownPc>();
-    /// <summary>Another pc entered the field (UIMinimapDialog::vfunc_3) or left it (vfunc_4, by character id); a new field's
+    /// <summary>Another pc entered the field (UIMinimapDialog::vfunc_3) or left it (vfunc_4, by object id); a new field's
     /// layer starts empty.</summary>
     public event Action<RemoteLayer.ShownPc> FieldPcShown;
-    public event Action<long> FieldPcLeft;
+    public event Action<int> FieldPcLeft;
     /// <summary>The remote layer's tomb tag pass (the own magics register their areas into it), null before the field is built.</summary>
     public Ms2.Ui.Hud.TombTagPass TombTags => remote?.TombTags;
     /// <summary>The own FieldAddUser object id, -1 before it.</summary>

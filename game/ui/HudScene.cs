@@ -1142,7 +1142,7 @@ public partial class HudScene : Node, IUiStageHost
         unwatchMinimapPing = () => live.MinimapPinged -= on;
         unwatchMinimapPcs?.Invoke();
         Action<Net.RemoteLayer.ShownPc> shown = pc => minimapSide?.AddOtherPlayer(MinimapPc(pc));
-        Action<long> left = id => minimapSide?.RemoveOtherPlayer(id);
+        Action<int> left = id => minimapSide?.RemoveOtherPlayer(id);
         live.FieldPcShown += shown;
         live.FieldPcLeft += left;
         unwatchMinimapPcs = () => { live.FieldPcShown -= shown; live.FieldPcLeft -= left; };
@@ -1164,7 +1164,7 @@ public partial class HudScene : Node, IUiStageHost
             bool dead = i == tiers.Length - 1;
             c.AddOtherPlayer(new MinimapController.OtherPlayer
             {
-                CharacterId = 900 + i, Name = "pc" + i, Image = Net.ProfileImageService.Images.Path(900 + i, "", true),
+                ObjectId = 900 + i, CharacterId = 900 + i, Name = "pc" + i, Image = Net.ProfileImageService.Images.Path(900 + i, "", true),
                 Position = () => { var p = LocalMinimapPlayer().Item1; return new Vec3(p.X + dx, p.Y + dy, p.Z); },
                 Dead = () => dead,
             });
@@ -1178,7 +1178,7 @@ public partial class HudScene : Node, IUiStageHost
         var at = pc.Position;
         return new MinimapController.OtherPlayer
         {
-            CharacterId = pc.CharacterId, Name = pc.Name, TodayMemo = pc.Motto,
+            ObjectId = pc.ObjectId, CharacterId = pc.CharacterId, Name = pc.Name, TodayMemo = pc.Motto,
             Image = Net.ProfileImageService.Images.Path(pc.CharacterId, pc.Picture, true),
             Position = () => { var v = at(); return new Vec3(v.X, v.Y, v.Z); },
             Dead = pc.Dead,
@@ -1188,11 +1188,11 @@ public partial class HudScene : Node, IUiStageHost
     /// <summary>
     /// UpdateOtherPlayer's tests (uiminimapentity.cpp:3207-3223): CPartyManager::FindMemberByCharId (the leader is the chief),
     /// CGuildManager::FindMemberByName, CBuddyManager::FUN_140ae4d70. Loops, not the books' LINQ finds: the minimap asks
-    /// each refresh round.
+    /// each refresh round. Null with no own pc (GetLocalPlayer()==0, :3199): the proxy keeps its state.
     /// </summary>
-    static MinimapController.PlayerRelation MinimapRelation(long characterId, string name)
+    static MinimapController.PlayerRelation? MinimapRelation(long characterId, string name)
     {
-        if (Net.LiveSession.Instance is not { } live) return MinimapController.PlayerRelation.Normal;
+        if (Net.LiveSession.Instance is not { } live || live.SelfObjectId == 0) return null;
         if (live.Party.Find(characterId) != null)
             return live.Party.LeaderId == characterId ? MinimapController.PlayerRelation.PartyChief : MinimapController.PlayerRelation.Party;
         if (live.Guilds.Info?.Members is { } members)

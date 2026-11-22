@@ -69,6 +69,8 @@ public sealed class MinimapController : UiController
     /// <summary>Another pc's proxy (CProxyGameObject, IsOtherPlayer) as the minimap reads it.</summary>
     public sealed class OtherPlayer
     {
+        /// <summary>The proxy's object id, m_proxies' key.</summary>
+        public int ObjectId;
         public long CharacterId;
         public string Name = "";
         /// <summary>GetTodayMemo: the user block's motto.</summary>
@@ -85,13 +87,14 @@ public sealed class MinimapController : UiController
         internal bool Visible;
     }
 
-    /// <summary>m_proxies' other pcs by character id, in the order they were added.</summary>
+    /// <summary>m_proxies' other pcs by object id, in the order they were added.</summary>
     readonly List<OtherPlayer> others = new();
     public IReadOnlyList<OtherPlayer> Others => others;
 
     /// <summary>The pc's tier for UpdateOtherPlayer: the party (leader or member), the guild by name, a buddy, else
-    /// normal. The nearest quest target (m_460) is the caller's.</summary>
-    public Func<long, string, PlayerRelation> Relation = (_, _) => PlayerRelation.Normal;
+    /// normal. The nearest quest target (m_460) is the caller's. Null when there is no own pc (GetLocalPlayer()==0):
+    /// UpdateOtherPlayer then returns with the proxy's state as it was.</summary>
+    public Func<long, string, PlayerRelation?> Relation = (_, _) => PlayerRelation.Normal;
 
     /// <summary>
     /// vfunc_3 (@0x141a38b90) -> AddProxy (uiminimapentity.cpp:3539) for another pc: nothing before the movie or for a pc
@@ -101,16 +104,16 @@ public sealed class MinimapController : UiController
     public void AddOtherPlayer(OtherPlayer p)
     {
         if (p == null) return;
-        if (FindOther(p.CharacterId) >= 0) return;
+        if (FindOther(p.ObjectId) >= 0) return;
         others.Add(p);
         if (Host?.Entity != null && fieldLoaded) CreateOther(p);
     }
 
     /// <summary>vfunc_4 (@0x141a38c20) -> RemoveProxy (uiminimapentity.cpp:3632): FUN_141a3f730 (removeEntity(clip, the
     /// "%I64d" character id)), then the proxy leaves m_proxies.</summary>
-    public void RemoveOtherPlayer(long characterId)
+    public void RemoveOtherPlayer(int objectId)
     {
-        int i = FindOther(characterId);
+        int i = FindOther(objectId);
         if (i < 0) return;
         var p = others[i];
         others.RemoveAt(i);
@@ -118,10 +121,10 @@ public sealed class MinimapController : UiController
         p.Clip = null;
     }
 
-    int FindOther(long characterId)
+    int FindOther(int objectId)
     {
         for (int i = 0; i < others.Count; i++)
-            if (others[i].CharacterId == characterId) return i;
+            if (others[i].ObjectId == objectId) return i;
         return -1;
     }
 
@@ -145,7 +148,8 @@ public sealed class MinimapController : UiController
     /// </summary>
     void UpdateOtherPlayer(OtherPlayer p)
     {
-        (p.State, p.Layer) = Relation(p.CharacterId, p.Name) switch
+        if (Relation(p.CharacterId, p.Name) is not { } relation) return;
+        (p.State, p.Layer) = relation switch
         {
             PlayerRelation.QuestTarget => ("quest_target", "quest_target"),
             PlayerRelation.PartyChief => ("party_chief", "party"),
@@ -261,8 +265,9 @@ public sealed class MinimapController : UiController
     {
         var name = CharacterName(characterId);
         if (!string.IsNullOrEmpty(name)) return name;
-        int i = FindOther(characterId);
-        return i >= 0 ? others[i].Name ?? "" : "";
+        for (int i = 0; i < others.Count; i++)
+            if (others[i].CharacterId == characterId) return others[i].Name ?? "";
+        return "";
     }
     /// <summary>PlaySystemSound(key, ""); null = no sound player.</summary>
     public Action<string> SystemSound;
