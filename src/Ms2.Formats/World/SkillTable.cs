@@ -60,14 +60,40 @@ public sealed class SkillTable
 
     /// <summary>A per-skill file's text in the shape the skilldata rows have: the recorded GMS2 data holds a motion's attributes in a child
     /// &lt;motionProperty&gt; and names an attack's children rangeProperty, arrowProperty and damageProperty (skilldata: attributes on &lt;motion&gt;,
-    /// &lt;range&gt;, &lt;arrow&gt;, &lt;damage&gt;); the attribute names are the same.</summary>
+    /// &lt;range&gt;, &lt;arrow&gt;, &lt;damage&gt;); the attribute names are the same. Not mapped, and so read as 0 / none: the cooldown
+    /// (level/beginCondition@cooldownTime, skilldata level@cooldown) and the weapon condition (level/beginCondition/weapon, skilldata basic/condition/weapon),
+    /// which have no recording to check the mapping against. Text that does not parse comes back unchanged.</summary>
     public static string ToSkillRows(string xml)
     {
         if (xml.IndexOf("Property", StringComparison.Ordinal) < 0) return xml;
-        xml = MotionProperty.Replace(xml, "<motion $1>");
-        return xml.Replace("<rangeProperty", "<range").Replace("<arrowProperty", "<arrow").Replace("<damageProperty", "<damage");
+        XDocument d;
+        try { d = XDocument.Parse(xml); } catch { return xml; }
+        ToSkillRows(d);
+        return d.ToString(SaveOptions.DisableFormatting);
     }
-    static readonly System.Text.RegularExpressions.Regex MotionProperty = new(@"<motion>\s*<motionProperty\s([^>]*?)\s*/>");
+
+    /// <summary>The same mapping on a parsed file, in place.</summary>
+    public static void ToSkillRows(XDocument d)
+    {
+        foreach (var e in d.Descendants().ToList())
+        {
+            switch (e.Name.LocalName)
+            {
+                case "rangeProperty": e.Name = "range"; break;
+                case "arrowProperty": e.Name = "arrow"; break;
+                case "damageProperty": e.Name = "damage"; break;
+                case "motion":
+                    // the motion's own attributes win; the property child's attributes and children move up onto the motion
+                    foreach (var mp in e.Elements("motionProperty").ToList())
+                    {
+                        foreach (var at in mp.Attributes()) if (e.Attribute(at.Name) == null) e.SetAttributeValue(at.Name, at.Value);
+                        mp.Remove();
+                        foreach (var c in mp.Nodes().ToList()) e.Add(c);
+                    }
+                    break;
+            }
+        }
+    }
 
     /// <summary>The skill id (digits) of a per-skill file name, skill/&lt;nn&gt;/&lt;id&gt;.xml; null for any other entry.</summary>
     public static string PerSkillId(string entry)
@@ -87,8 +113,13 @@ public sealed class SkillTable
         foreach (var entry in entries)
         {
             XDocument x;
-            try { x = PerSkillId(entry) != null ? XDocument.Parse(ToSkillRows(PackXml.Text(packs.Read("Xml", entry)))) : PackXml.Parse(packs.Read("Xml", entry)); } catch { continue; }
             string fileId = PerSkillId(entry);
+            try
+            {
+                if (fileId != null) { x = XDocument.Parse(PackXml.Text(packs.Read("Xml", entry))); ToSkillRows(x); }
+                else x = PackXml.Parse(packs.Read("Xml", entry));
+            }
+            catch { continue; }
             foreach (var s in fileId != null ? new[] { x.Root } : x.Descendants("skill"))
             {
                 if (s == null || !int.TryParse(fileId ?? (string)s.Attribute("id"), out int id)) continue;

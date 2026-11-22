@@ -56,6 +56,49 @@ public class Gms2SkillDataTests {
     }
 
     [Test]
+    public void PairedPropertyTagsAndMotionsWithAttributesMapToo() {
+        var d = System.Xml.Linq.XDocument.Parse("<level><motion a=\"1\" sequenceName=\"own\"><motionProperty sequenceName=\"x\" b=\"2\"><k/></motionProperty><attack><rangeProperty distance=\"5\"><r/></rangeProperty><damageProperty rate=\"2\"></damageProperty></attack></motion></level>");
+        Ms2.Formats.World.SkillTable.ToSkillRows(d);
+        var m = d.Root.Element("motion");
+        Assert.That((string)m.Attribute("a"), Is.EqualTo("1"));
+        Assert.That((string)m.Attribute("b"), Is.EqualTo("2"), "the property child's attribute moves up");
+        Assert.That((string)m.Attribute("sequenceName"), Is.EqualTo("own"), "the motion's own attribute wins");
+        Assert.That(m.Element("k"), Is.Not.Null, "its children move up");
+        Assert.That(m.Element("attack").Element("range").Element("r"), Is.Not.Null, "a paired tag keeps its children");
+        Assert.That(m.Element("attack").Element("damage"), Is.Not.Null);
+        Assert.That(d.Descendants().Count(e => e.Name.LocalName is "rangeProperty" or "arrowProperty" or "damageProperty" or "motionProperty"), Is.Zero);
+        Assert.That(Ms2.Formats.World.SkillTable.ToSkillRows("<level><motion><motionProperty"), Is.EqualTo("<level><motion><motionProperty"), "text that does not parse is left as it is");
+    }
+
+    /// <summary>The shapes of the real files (the numbers are printed): none of the four Property elements is left after the mapping, and every motionProperty sat inside a motion.</summary>
+    [Test]
+    public void TheRealFilesHaveNoPropertyElementLeft() {
+        using var packs = Packs();
+        int files = 0, motions = 0, bare = 0, withProp = 0, attrOnly = 0, selfClosing = 0, pairedProp = 0, strayMp = 0, left = 0;
+        foreach (var e in packs.List("Xml").Where(n => Ms2.Formats.World.SkillTable.PerSkillId(n) != null)) {
+            string text = Ms2.Formats.Text.PackXml.Text(packs.Read("Xml", e));
+            files++;
+            System.Xml.Linq.XDocument d;
+            try { d = System.Xml.Linq.XDocument.Parse(text); } catch { continue; }
+            foreach (var m in d.Descendants("motion")) {
+                motions++;
+                var mp = m.Elements("motionProperty").ToList();
+                if (mp.Count > 0) withProp++; else if (m.HasAttributes) attrOnly++;
+                if (mp.Count > 0 && !m.HasAttributes) bare++;
+            }
+            foreach (var x in d.Descendants().Where(x => x.Name.LocalName is "rangeProperty" or "arrowProperty" or "damageProperty" or "motionProperty")) {
+                if (x.HasElements || x.Nodes().Any()) pairedProp++; else selfClosing++;
+                if (x.Name.LocalName == "motionProperty" && x.Parent?.Name.LocalName != "motion") strayMp++;
+            }
+            Ms2.Formats.World.SkillTable.ToSkillRows(d);
+            left += d.Descendants().Count(x => x.Name.LocalName is "rangeProperty" or "arrowProperty" or "damageProperty" or "motionProperty");
+        }
+        TestContext.Out.WriteLine($"files {files} motions {motions} motionProperty-child {withProp} (bare motion {bare}) attributes-only {attrOnly} property elements empty {selfClosing} with content {pairedProp} motionProperty outside a motion {strayMp} left after mapping {left}");
+        Assert.That(strayMp, Is.Zero);
+        Assert.That(left, Is.Zero);
+    }
+
+    [Test]
     public void TheSkillTableReadsOnceWhenThreadsAskTogether() {
         int reads = 0;
         var t = new Ms2.Ui.Skills.SkillDataTable(() => { System.Threading.Interlocked.Increment(ref reads); System.Threading.Thread.Sleep(50);
