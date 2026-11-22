@@ -35,10 +35,19 @@ public sealed record GuideRecordOut(IReadOnlyList<(int SaveId, int Step)> Steps)
     }
 }
 
-/// <summary>CGuideActionServerTriggerEvent::Start (@0x141385e60): Trigger (0x2F) with u8 9, u8 1 and i32 the event id.</summary>
-public sealed record GuideServerTriggerEvent(int EventId) : IOutPacket {
+/// <summary>CGuideActionServerTriggerEvent::Start (@0x141385e60): Trigger (0x2F) with u8 9, u8 1 and i32 the event id. The GMS2 client's
+/// Trigger requests all start with 8 instead of 9 (every recorded one, 40+ sessions: 08 01 id here, 08 05 id for <see cref="CutSceneExitTrigger"/>).</summary>
+public sealed record GuideServerTriggerEvent(int EventId) : IProfileOutPacket {
     public Outbound Op => Outbound.Trigger;
-    public void Write(ByteWriter w) { w.WriteByte(9); w.WriteByte(1); w.WriteInt(EventId); }
+    public void Write(ByteWriter w) => Write(w, ProtocolProfile.Kms2525);
+    public void Write(ByteWriter w, ProtocolProfile profile) { w.WriteByte(profile.IsGms2 ? (byte) 8 : (byte) 9); w.WriteByte(1); w.WriteInt(EventId); }
+}
+
+/// <summary>UICutSceneMovie::Exit (uicutscenemovie.cpp:425): Trigger (0x2F) with u8 9 (GMS2 8), u8 5 and i32 the cut scene id, when a cut scene movie ends.</summary>
+public sealed record CutSceneExitTrigger(int CutSceneId) : IProfileOutPacket {
+    public Outbound Op => Outbound.Trigger;
+    public void Write(ByteWriter w) => Write(w, ProtocolProfile.Kms2525);
+    public void Write(ByteWriter w, ProtocolProfile profile) { w.WriteByte(profile.IsGms2 ? (byte) 8 : (byte) 9); w.WriteByte(5); w.WriteInt(CutSceneId); }
 }
 
 /// <summary>CGuideActionRequestTutorialItem::Start (@0x141386150): RequestTutorialItem (0x9C), no body.</summary>
