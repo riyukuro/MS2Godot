@@ -275,7 +275,7 @@ public sealed class GameTables
                 r.GuildProperties[level] = new GuildProperty(fundMax, donationMax);
             }
         // JobTable::Load (jobtable.cpp:309): table/job.xml
-        r.Jobs = new Skills.JobTable(Xml("table/job.xml"), (parent, child, key) => FeatureElements.Collect(packs, parent, child, key));
+        r.Jobs = new Skills.JobTable(Xml("table/job.xml"), (parent, child, key) => FeatureElements.Collect(packs, parent, child, key), Xml("table/jobgroup.xml"));
         return r;
     }
 

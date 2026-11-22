@@ -47,6 +47,26 @@ public sealed class JobSkillData
         return d;
     }
 
+    /// <summary>The GMS2 &lt;skill main sub subJobCode uiPosition quickSlotPriority&gt; row (no require lists in that table).</summary>
+    internal static JobSkillData LoadGms2(XElement e)
+    {
+        var d = new JobSkillData
+        {
+            SkillId = Xml.UInt(e, "main"),
+            UiHighlight = Xml.Bool(e, "uiHighlight"),
+            JobLevel = e.Attribute("subJobCode") != null ? 2 : 1,
+        };
+        if (e.Attribute("uiPosition") is { } p)
+        {
+            var t = Xml.Tokens((string)p);
+            d.UiX = t.Count > 0 ? Xml.Atoi(t[0]) : 0;
+            d.UiY = t.Count > 1 ? Xml.Atoi(t[1]) : 0;
+        }
+        if (e.Attribute("quickSlotPriority") != null) d.QuickSlotPriority = Xml.Int(e, "quickSlotPriority");
+        foreach (var t in Xml.Tokens((string)e.Attribute("sub"))) d.SubSkillIds.Add((uint)Xml.Atoi(t));
+        return d;
+    }
+
     /// <summary>HasRequirement @0x140643880 (:114).</summary>
     public bool HasRequirement => RequireLevel.Count > 0 || RequireSkillIds.Count > 0 || RequireQuestId != 0;
 
@@ -92,6 +112,30 @@ public sealed class JobData
         return j;
     }
 
+    /// <summary>
+    /// The GMS2 &lt;job code&gt; (table/job.xml): &lt;skills&gt;&lt;skill main sub uiPosition maxLevel quickSlotPriority [subJobCode]&gt;, the
+    /// learnt skills in &lt;learn&gt;&lt;skill id&gt;. A skill with a subJobCode is the second rank's tree (JobLevel 2). The sub jobs of the group
+    /// are in table/jobgroup.xml (subJobLevel 0 and 1 are SubJob1 and SubJob2), passed in <paramref name="subJobs"/>.
+    /// </summary>
+    internal static JobData LoadGms2(XElement e, Dictionary<uint, ushort> maxLevels, Dictionary<int, int[]> subJobs)
+    {
+        var j = new JobData { JobGroupId = Xml.Int(e, "code") };
+        if (subJobs != null && subJobs.TryGetValue(j.JobGroupId, out var sj)) { j.SubJob1 = sj[0]; j.SubJob2 = sj[1]; }
+        if (e.Attribute("startField") != null) j.StartField = Xml.UInt(e, "startField");
+        var learnt = new HashSet<uint>();
+        foreach (var s in e.Elements("learn").Elements("skill")) learnt.Add(Xml.UInt(s, "id"));
+        if (e.Element("skills") is { } skills)
+            foreach (var v in skills.Elements("skill"))
+            {
+                var d = JobSkillData.LoadGms2(v);
+                d.IsLearn = learnt.Contains(d.SkillId);
+                j.skills.TryAdd(d.SkillId, d);
+                foreach (var sub in d.SubSkillIds) j.subSkills.TryAdd(sub, d);
+                maxLevels[d.SkillId] = (ushort)Xml.Int(v, "maxLevel");
+            }
+        return j;
+    }
+
     /// <summary>GetSubJob @0x140643e60 (:181): 1 or 2, else none (0).</summary>
     public int GetSubJob(int index) => index == 1 ? SubJob1 : index == 2 ? SubJob2 : 0;
 
@@ -118,10 +162,27 @@ public sealed class JobTable
     public static readonly JobTable Empty = new(null, null);
 
     /// <param name="collect">FUN_14028faa0(root, "job", "jobGroupID"): the available &lt;job&gt; elements, one per group.</param>
-    public JobTable(XDocument doc, Func<XElement, string, string, List<XElement>> collect)
+    /// <param name="jobGroup">GMS2 table/jobgroup.xml (the sub jobs of each group); unused for the KMS shape.</param>
+    public JobTable(XDocument doc, Func<XElement, string, string, List<XElement>> collect, XDocument jobGroup = null)
     {
         var root = doc?.Root;
         if (root == null || root.Name != "ms2") return;
+        // The GMS2 file has <job code> and no jobGroupID; the KMS shape keeps its own reader.
+        if (!root.Elements("job").Any(e => e.Attribute("jobGroupID") != null) && root.Elements("job").Any(e => e.Attribute("code") != null))
+        {
+            var subJobs = new Dictionary<int, int[]>();
+            foreach (var g in jobGroup?.Root?.Elements("JobGroup") ?? Enumerable.Empty<XElement>())
+            {
+                int code = Xml.Int(g, "jobCode"), level = Xml.Int(g, "subJobLevel");
+                if (level is 0 or 1) { if (!subJobs.TryGetValue(code, out var a)) subJobs[code] = a = new int[2]; a[level] = Xml.Int(g, "subJobCode"); }
+            }
+            foreach (var e in collect(root, "job", "code"))
+            {
+                var j = JobData.LoadGms2(e, maxLevels, subJobs);
+                jobs.TryAdd(j.JobGroupId, j);
+            }
+            return;
+        }
         foreach (var e in collect(root, "job", "jobGroupID"))       // JobTable::Load @0x140644540 (:309)
         {
             var j = JobData.Load(e, maxLevels);
