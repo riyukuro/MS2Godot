@@ -117,6 +117,12 @@ public sealed class EffectMesh
 
 public enum EmitterKind { Mesh, Box, Sphere, Cylinder, Other }
 
+/// <summary>NiPSMeshEmitter::MeshEmissionType (NiPSMeshEmitter.h:58-75).</summary>
+public enum MeshEmitFrom { Vertices, FaceCenter, EdgeCenter, FaceSurface, EdgeSurface }
+
+/// <summary>NiPSMeshEmitter::InitialVelocityType (NiPSMeshEmitter.h:80-98).</summary>
+public enum MeshVelocity { Normals, Random, Direction }
+
 public sealed class EmitterDef
 {
     public EmitterKind Kind; public string Name; public int Node = -1;
@@ -124,7 +130,11 @@ public sealed class EmitterDef
     public double RotAngle, RotAngleVar, RotSpeed, RotSpeedVar; public Vec3 RotAxis; public bool RandomRotSpeedSign, RandomRotAxis;
     public double Width, Height, Depth, Radius;
     public float[] MeshPositions;                // mesh emitter: vertices (xyz) in the mesh's own space
+    public float[] MeshNormals;                  // mesh emitter: vertex normals (xyz), or null
+    public int[] MeshTriangles;                  // mesh emitter: triangle list indices, or null
     public int MeshNode = -1;                    // node the mesh hangs from
+    public MeshEmitFrom MeshEmission;            // NiPSMeshEmitter "Mesh Emission Type"
+    public MeshVelocity MeshVelocityType;        // NiPSMeshEmitter "Initial Velocity Type"
     public Func<double, double> Rate; public TimeCtl RateCtl;           // births per second (NiPSEmitParticlesCtlr)
     public Func<double, double> On; public TimeCtl OnCtl;               // emitter active
 
@@ -132,6 +142,82 @@ public sealed class EmitterDef
     /// NiPSEmitter::ComputeDirection (NiPSEmitter.inl:267-311). Declination 0 is +Z. A pre-RPI system (NiPSParticleSystem
     /// "Pre RPI") uses (sin dec cos plan, sin dec sin plan, cos dec); otherwise the RPI method (cos dec sin plan, -sin dec,
     /// cos dec cos plan).</summary>
+    /// <summary>A mesh emitter's start point and, for <see cref="MeshVelocity.Normals"/>, its direction, both in the mesh's
+    /// own space: NiPSMeshEmitter::EmitFromVertex / EmitFromFace / EmitFromEdge (NiPSMeshEmitter.cpp:187-440).
+    /// - vertices: a random vertex and its normal;
+    /// - faces: a random non-degenerate triangle (ComputeIndices, NiPSMeshEmitter.cpp:706-760, at most 6 steps past
+    ///   degenerate ones) and the unit mean of its normals; face centre is the centroid, face surface the point
+    ///   v0 + sqrt(r1) (r2 (v2 - v0) - (v1 - v0)) + (v1 - v0);
+    /// - edges: one of the triangle's three edges (NiRand() % 3) and the unit mean of its two normals; edge centre is the
+    ///   midpoint, edge surface v0 + (v1 - v0) r.
+    /// A mesh without indices emits from vertices. The normal goes through ComputeDirection (NiPSMeshEmitter.inl:100-108):
+    /// x += declination var * s1, z += planar angle var * s2 (s in [-1, 1]), then made unit. Returns false when the
+    /// velocity type is not normals or the mesh has no normals (the client then uses the emitter direction,
+    /// NiPSMeshEmitter.cpp:230-238). Draws from <paramref name="rng"/> only; allocates nothing.</summary>
+    public bool SampleMesh(Random rng, out Vec3 pos, out Vec3 dir)
+    {
+        var p = MeshPositions; var nm = MeshNormals; var ix = MeshTriangles;
+        int a, b = -1, c = -1;
+        var from = MeshEmission;
+        if (ix == null || ix.Length < 3) from = MeshEmitFrom.Vertices;
+        if (from == MeshEmitFrom.Vertices)
+        {
+            int nv = p.Length / 3;
+            a = Math.Min((int)(rng.NextDouble() * nv), nv - 1);
+        }
+        else
+        {
+            int nt = ix.Length / 3, tri = Math.Min((int)(rng.NextDouble() * nt), nt - 1);
+            for (int scan = 0; scan < 6; scan++)
+            {
+                if (ix[tri * 3] != ix[tri * 3 + 1] && ix[tri * 3] != ix[tri * 3 + 2] && ix[tri * 3 + 1] != ix[tri * 3 + 2]) break;
+                if (++tri >= nt) tri = 0;
+            }
+            a = ix[tri * 3]; b = ix[tri * 3 + 1]; c = ix[tri * 3 + 2];
+            if (from is MeshEmitFrom.EdgeCenter or MeshEmitFrom.EdgeSurface)
+            {
+                switch (rng.Next(3))
+                {
+                    case 1: a = b; b = c; break;
+                    case 2: b = c; break;
+                }
+                c = -1;
+            }
+        }
+        Vec3 P(int k) => new(p[k * 3], p[k * 3 + 1], p[k * 3 + 2]);
+        Vec3 v0 = P(a);
+        switch (from)
+        {
+            case MeshEmitFrom.Vertices: pos = v0; break;
+            case MeshEmitFrom.FaceCenter: pos = (v0 + P(b) + P(c)) * (1.0 / 3); break;
+            case MeshEmitFrom.FaceSurface:
+            {
+                Vec3 d1 = P(b) - v0, d2 = P(c) - v0;
+                double sq = Math.Sqrt(rng.NextDouble());
+                pos = v0 + (d2 * rng.NextDouble() - d1) * sq + d1;
+                break;
+            }
+            case MeshEmitFrom.EdgeCenter: pos = (v0 + P(b)) * 0.5; break;
+            default: pos = v0 + (P(b) - v0) * rng.NextDouble(); break;
+        }
+        dir = default;
+        if (MeshVelocityType != MeshVelocity.Normals || nm == null || nm.Length != p.Length) return false;
+        Vec3 N(int k) => new(nm[k * 3], nm[k * 3 + 1], nm[k * 3 + 2]);
+        var n = N(a);
+        if (b >= 0) n += N(b);
+        if (c >= 0) n += N(c);
+        if (b >= 0) n = Unit(n);
+        n = new Vec3(n.X + DeclinationVar * (2 * rng.NextDouble() - 1), n.Y, n.Z + PlanarAngleVar * (2 * rng.NextDouble() - 1));
+        dir = Unit(n);
+        return true;
+    }
+
+    static Vec3 Unit(Vec3 v)
+    {
+        double l = Math.Sqrt(v.X * v.X + v.Y * v.Y + v.Z * v.Z);
+        return l > 0 ? v * (1 / l) : v;
+    }
+
     public static Vec3 Direction(double dec, double plan, bool preRpi)
     {
         if (dec == 0) return new Vec3(0, 0, 1);
@@ -553,8 +639,16 @@ public sealed class EffectScene
                     foreach (var mb in e.Ints("Mesh Emitters"))
                     {
                         var mm = ModelData.MeshStreams(n, (int)mb);
-                        if (mm.TryGetValue("POSITION", out var pos)) { ed.MeshPositions = pos.v.Select(x => (float)x).ToArray(); ed.MeshNode = NodeOfBlock.GetValueOrDefault((int)mb, -1); break; }
+                        if (!mm.TryGetValue("POSITION", out var pos)) continue;
+                        ed.MeshPositions = pos.v.Select(x => (float)x).ToArray();
+                        if (mm.TryGetValue("NORMAL", out var nrm) && nrm.n == 3) ed.MeshNormals = nrm.v.Select(x => (float)x).ToArray();
+                        if (mm.TryGetValue("INDEX", out var idx) && n.Blocks[(int)mb].IntOr("Primitive Type", 0) == 0)
+                            ed.MeshTriangles = idx.v.Select(x => (int)x).ToArray();
+                        ed.MeshNode = NodeOfBlock.GetValueOrDefault((int)mb, -1);
+                        break;
                     }
+                    ed.MeshEmission = (MeshEmitFrom)e.IntOr("Mesh Emission Type", 0);
+                    ed.MeshVelocityType = (MeshVelocity)e.IntOr("Initial Velocity Type", 0);
                     break;
                 }
                 default: ed.Kind = EmitterKind.Other; Unsupported.Add(e.Type); break;

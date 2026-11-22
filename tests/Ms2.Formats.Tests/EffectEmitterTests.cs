@@ -44,4 +44,68 @@ public class EffectEmitterTests
         Assert.That(e.Width * e.Height, Is.GreaterThan(1000));
         Near(EmitterDef.Direction(e.Declination, e.PlanarAngle, ps.PreRpi), 0, 0, -1, "Blizzard01");
     }
+
+    /// <summary>The Focus Seal cast (ch/skill/wizard/eff_wizard_concentration_cast_01_a.nif) system PArray01 emits from the
+    /// face surface of a hidden thin column mesh (z 0 to 120) along its normals. Its particles start all along the column
+    /// and leave sideways, not on the two vertex rings at z 0 and z 120 going the emitter direction.</summary>
+    [Test]
+    public void FocusSealEmitsFromColumnSurfaceAlongNormals()
+    {
+        var (packs, spec) = NifEnv.Open();
+        var sc = EffectScene.Load(NifFile.Load(spec, packs.Read("Resource/Model/Effect", "ch/skill/wizard/eff_wizard_concentration_cast_01_a.nif")));
+        var e = sc.Systems.Single(s => s.Name == "PArray01").Emitters.Single();
+        Assert.That(e.Kind, Is.EqualTo(EmitterKind.Mesh));
+        Assert.That(e.MeshEmission, Is.EqualTo(MeshEmitFrom.FaceSurface));
+        Assert.That(e.MeshVelocityType, Is.EqualTo(MeshVelocity.Normals));
+        Assert.That(e.MeshTriangles, Has.Length.EqualTo(108));
+        Assert.That(e.MeshNormals, Has.Length.EqualTo(e.MeshPositions.Length));
+        var rng = new Random(7);
+        int middle = 0, sideways = 0;
+        const int N = 2000;
+        for (int k = 0; k < N; k++)
+        {
+            Assert.That(e.SampleMesh(rng, out var p, out var d), Is.True);
+            Assert.That(p.Z, Is.InRange(-1e-3, 120 + 1e-3));
+            if (p.Z > 10 && p.Z < 110) middle++;
+            if (Math.Abs(d.Z) < 0.3) sideways++;
+            Assert.That(Math.Sqrt(d.X * d.X + d.Y * d.Y + d.Z * d.Z), Is.EqualTo(1).Within(1e-9));
+        }
+        Assert.That(middle, Is.GreaterThan(N * 7 / 10), "points along the column");
+        Assert.That(sideways, Is.GreaterThan(N * 9 / 10), "directions off the side normals");
+    }
+
+    /// <summary>Each emission type on one triangle (0,0,0) (10,0,0) (0,10,0) with +Z normals: the vertex, centroid, edge
+    /// midpoint and surface points, and a mesh without indices falling back to vertices.</summary>
+    [Test]
+    public void MeshEmissionTypes()
+    {
+        var e = new EmitterDef
+        {
+            MeshPositions = new float[] { 0, 0, 0, 10, 0, 0, 0, 10, 0 },
+            MeshNormals = new float[] { 0, 0, 1, 0, 0, 1, 0, 0, 1 },
+            MeshTriangles = new[] { 0, 1, 2 },
+        };
+        var rng = new Random(3);
+        bool IsVertex(Vec3 p) => (p.X == 0 && p.Y == 0) || (p.X == 10 && p.Y == 0) || (p.X == 0 && p.Y == 10);
+        bool IsMid(Vec3 p) => (p.X == 5 && p.Y == 0) || (p.X == 5 && p.Y == 5) || (p.X == 0 && p.Y == 5);
+        for (int k = 0; k < 200; k++)
+        {
+            e.MeshEmission = MeshEmitFrom.Vertices; e.SampleMesh(rng, out var p, out var d);
+            Assert.That(IsVertex(p), Is.True, $"vertex {p}");
+            Near(d, 0, 0, 1, "normal");
+            e.MeshEmission = MeshEmitFrom.FaceCenter; e.SampleMesh(rng, out p, out _);
+            Near(p, 10.0 / 3, 10.0 / 3, 0, "centroid");
+            e.MeshEmission = MeshEmitFrom.EdgeCenter; e.SampleMesh(rng, out p, out _);
+            Assert.That(IsMid(p), Is.True, $"edge midpoint {p}");
+            e.MeshEmission = MeshEmitFrom.FaceSurface; e.SampleMesh(rng, out p, out _);
+            Assert.That(p.X >= -1e-9 && p.Y >= -1e-9 && p.X + p.Y <= 10 + 1e-9 && p.Z == 0, Is.True, $"face surface {p}");
+            e.MeshEmission = MeshEmitFrom.EdgeSurface; e.SampleMesh(rng, out p, out _);
+            Assert.That(Math.Abs(p.X) < 1e-9 || Math.Abs(p.Y) < 1e-9 || Math.Abs(p.X + p.Y - 10) < 1e-9, Is.True, $"edge surface {p}");
+        }
+        e.MeshTriangles = null; e.MeshEmission = MeshEmitFrom.FaceSurface;
+        e.SampleMesh(rng, out var q, out _);
+        Assert.That(IsVertex(q), Is.True, "no indices: a vertex");
+        e.MeshVelocityType = MeshVelocity.Direction;
+        Assert.That(e.SampleMesh(rng, out _, out _), Is.False, "direction velocity takes no normal");
+    }
 }

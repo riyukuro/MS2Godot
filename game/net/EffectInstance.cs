@@ -15,9 +15,9 @@ static class FxParam
 
 /// <summary>
 /// A playing effect NIF: its node tree with the transform controllers, its static meshes with the alpha, uv-scroll and flipbook controllers, and its
-/// particle systems simulated on the CPU (emitters, gravity and drag forces, size / color keys over the particle's age, grow and shrink ramps)
+/// particle systems simulated on the CPU (emitters, gravity, drag and bomb forces, size / color keys over the particle's age, grow and shrink ramps)
 /// and drawn as camera-facing or velocity-aligned quads in one MultiMesh per system. All of it lives in MS2 file space (Z up) under one rotated node.
-/// Not simulated: bomb and other forces, colliders, spawners (death spawns), emitter-radius / color / morph controllers, mesh particles (drawn as quads).
+/// Not simulated: the other forces, colliders, spawners (death spawns), emitter-radius / color / morph controllers, mesh particles (drawn as quads).
 /// </summary>
 public sealed partial class EffectInstance : Node3D
 {
@@ -878,7 +878,8 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         int i = ps.Count++;
         ParticlesEmitted++;
         var ew = World(e.Node >= 0 ? e.Node : ps.Def.Node, t, camLocal);
-        Vector3 local;
+        Vector3 local, normalDir = default;
+        bool meshNormal = false;
         switch (e.Kind)
         {
             case EmitterKind.Box: local = new Vector3(Spread((float)e.Width / 2), Spread((float)e.Height / 2), Spread((float)e.Depth / 2)); break;
@@ -886,11 +887,12 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             case EmitterKind.Cylinder: { float a = R() * Mathf.Tau, r = Mathf.Sqrt(R()) * (float)e.Radius; local = new Vector3(Mathf.Cos(a) * r, Mathf.Sin(a) * r, Spread((float)e.Height / 2)); break; }
             case EmitterKind.Mesh when e.MeshPositions != null && e.MeshPositions.Length >= 3:
             {
-                int vi = rng.Next(e.MeshPositions.Length / 3) * 3;
-                var v = new Vector3(e.MeshPositions[vi], e.MeshPositions[vi + 1], e.MeshPositions[vi + 2]);
+                // NiPSMeshEmitter: a point on the mesh by its emission type, moved into place by the mesh's world transform
+                // (TransformIntoCoordinateSpace, NiPSMeshEmitter.cpp:770-823)
                 var mw = e.MeshNode >= 0 ? World(e.MeshNode, t, camLocal) : Transform3D.Identity;
-                // the emitter's own transform positions the mesh points relative to the emitter object
-                ps.Pos[i] = mw * v;
+                meshNormal = e.SampleMesh(rng, out var mp, out var mn);
+                ps.Pos[i] = mw * new Vector3((float)mp.X, (float)mp.Y, (float)mp.Z);
+                if (meshNormal) normalDir = (mw.Basis.Orthonormalized() * new Vector3((float)mn.X, (float)mn.Y, (float)mn.Z)).Normalized();
                 local = Vector3.Zero;
                 goto haveMeshPos;
             }
@@ -899,11 +901,21 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         ps.Pos[i] = ew * local;
         haveMeshPos:
         // NiPSEmitter::ComputeDirection; speed and life spread over +-var/2 (ComputeSpeed, NiPSEmitter.cpp:139), the other
-        // variances over +-var; then the speed flip (NiPSEmitter.cpp:186-193). STILL-OPEN: a mesh emitter's
-        // VELOCITY_USE_NORMALS / VELOCITY_USE_RANDOM types (NiPSMeshEmitter.cpp:789-818); every emitter uses the direction here.
-        double dec = e.Declination + Spread((float)e.DeclinationVar), pl = e.PlanarAngle + Spread((float)e.PlanarAngleVar);
-        var dl = EmitterDef.Direction(dec, pl, ps.Def.PreRpi);
-        var dir = (ew.Basis.Orthonormalized() * new Vector3((float)dl.X, (float)dl.Y, (float)dl.Z)).Normalized();
+        // variances over +-var; then the speed flip (NiPSEmitter.cpp:186-193). A mesh emitter with VELOCITY_USE_NORMALS
+        // takes the mesh normal (SampleMesh) and VELOCITY_USE_RANDOM a random unit vector (NiPSMeshEmitter.cpp:796-806).
+        Vector3 dir;
+        if (meshNormal) dir = normalDir;
+        else if (e.Kind == EmitterKind.Mesh && e.MeshVelocityType == MeshVelocity.Random)
+        {
+            dir = new Vector3(Spread(1), Spread(1), Spread(1));
+            dir = dir.LengthSquared() > 0 ? dir.Normalized() : Vector3.Up;
+        }
+        else
+        {
+            double dec = e.Declination + Spread((float)e.DeclinationVar), pl = e.PlanarAngle + Spread((float)e.PlanarAngleVar);
+            var dl = EmitterDef.Direction(dec, pl, ps.Def.PreRpi);
+            dir = (ew.Basis.Orthonormalized() * new Vector3((float)dl.X, (float)dl.Y, (float)dl.Z)).Normalized();
+        }
         float speed = (float)e.Speed + Spread((float)e.SpeedVar / 2);
         if (e.SpeedFlipRatio > 0 && R() < e.SpeedFlipRatio) speed = -speed;
         ps.Vel[i] = dir * (speed * psScale);
