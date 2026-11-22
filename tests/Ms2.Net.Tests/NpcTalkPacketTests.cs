@@ -21,6 +21,13 @@ public class NpcTalkPacketTests {
         Assert.That(Read(w => w.WriteByte(0)), Is.TypeOf<NpcTalkMessage.Close>());
     }
 
+    /// <summary>Mode 8 as a recorded GMS2 server sends it (3 of 3 packets are this 18-byte form): type, quest id, script id, page, button set.</summary>
+    [Test] public void AGms2ReloadReadsWhole() {
+        var r = new ByteReader(Convert.FromHexString("08047354 9a056400 00000000 00000400 0000".Replace(" ", "")));
+        Assert.That(NpcTalkMessage.Read(r), Is.EqualTo(new NpcTalkMessage.Reload(4, 0x059a5473, 100, 0, 4)));
+        Assert.That(r.Available, Is.Zero);
+    }
+
     [Test] public void RewardsReadAsTheClientReadsThem() {
         Assert.That(Read(w => { w.WriteByte(3); w.WriteByte(7); w.WriteLong(1000); }), Is.EqualTo(new NpcTalkMessage.RewardMeso(1000)));
         // the server writes the exp as an i64 (RewardExp); the client's OnRewardExp reads an i32
