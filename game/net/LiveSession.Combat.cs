@@ -80,11 +80,11 @@ public partial class LiveSession
                     Check("the mob is in the field", npcs > added);
                     Shot("attack_spawned.png");
                     int presses = 0, deadBefore = kills;
-                    for (; presses < 30 && kills == deadBefore; presses++)
+                    for (; presses < 30 && kills - deadBefore < npcs - added; presses++)
                     {
                         bool cast = hud.AttackScripted();
                         if (presses == 0) { Check("the attack key gave a cast request", cast); await frames(30); Shot("attack_cast.png"); }
-                        await frames(60);
+                        await frames(20); if (presses < 3) Shot($"attack_press{presses}.png"); await frames(40);
                         if (presses == 1) Shot("attack_hit.png");
                     }
                     await frames(120);

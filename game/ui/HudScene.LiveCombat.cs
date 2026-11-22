@@ -11,6 +11,7 @@ public partial class HudScene
     /// True when the press gave a cast request.</summary>
     public bool AttackScripted()
     {
+        if (levelUpGuide is { IsClosed: false }) levelUpGuide.Close();     // the level-up guide window opens over the field and hides the shots
         if (hudModel?.Keys is not { } keys) return false;
         for (int dik = 1; dik < 0xd4; dik++)
             if (keys.IsKeyBoundToAction(dik, 0x49401)) return CastKey(dik) == true;
@@ -32,6 +33,7 @@ public partial class HudScene
         if (inventory == null || inventory.IsClosed) OpenInventory();
         if (inventory?.FindItem(e.Uid) is not { } item) return false;
         inventory.RequestEquipItem(item, 0, 0);
+        if (inventory is { IsClosed: false }) inventory.Close();     // the window would cover the field in the shots
         return true;
     }
 
