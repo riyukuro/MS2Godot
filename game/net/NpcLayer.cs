@@ -27,6 +27,8 @@ public sealed class NpcLayer
         public Node3D Root, Visual; public AnimationPlayer Player; public Model Model;
         public int NpcId, Life, Moves;
         public Godot.Vector3 Target; public float TargetYaw; public int Sequence = -1; public string Playing = "";
+        public Godot.Vector3 Velocity;            // m_posD40: the last block's velocity, added to the position every frame (CNpc::vfunc_53)
+        public bool Eases;                        // a jump arc or a dead body: eased toward the block position, no velocity
         public bool Placeholder, Dead;
         public string DeadAction;                 // m_strED0: the death sequence picked at spawn (CNpc init, :539)
         public long Exp;                          // m_nE60: the exp the own PC got for this npc, shown when its death sequence ends
@@ -473,6 +475,9 @@ public sealed class NpcLayer
     }
 
     /// <summary>Whether the npc of the object id is dead (PCBase::IsDead, m_unk_15c); false when there is none.</summary>
+    /// <summary>The id of the npc model's sequence of that name, -1 when the npc or the sequence is missing.</summary>
+    public int SequenceId(int id, string name) => inst.TryGetValue(id, out var i) ? i.Model?.Kfm.ByName(name)?.Id ?? -1 : -1;
+
     public bool IsDead(int id) => inst.TryGetValue(id, out var i) && i.Dead;
 
     /// <summary>The npc's position in the client's z-up coordinates (vfunc_18) and its rotation z in degrees (vfunc_20, the
@@ -528,15 +533,41 @@ public sealed class NpcLayer
         player.AnimationFinished += Ended;
     }
 
+    /// <summary>
+    /// A sync block as CNpc::ApplySyncBlock (@0x1410918e0) applies it: the npc is put at the block position, its target yaw is the block's
+    /// (snapped when the rotate flag is set), and the block velocity moves it until the next block (<see cref="Process"/>). On a Run_ sequence
+    /// an npc more than 30 off the block position does not jump to it: when the point 0.3 s ahead on the velocity is up to twice as far from the npc
+    /// as from the block position, the ratio clamped to 0.8 - 1.2 scales the velocity so the npc catches up, unless that is within 3 % of 1.
+    /// STILL-OPEN: jump sequences (-2/-3) run the arc mover m_unkDB0 in the client; here the npc eases toward the block position.
+    /// STILL-OPEN: in state 0xd the client keeps the npc's own height; the npc state is not tracked here.
+    /// </summary>
     public void Move(Ms2.Net.Replay.NpcMovedEvent e)
     {
         var b = e.Sync;
         if (!inst.TryGetValue(b.ObjectId, out var i)) return;
-        if (i.Dead) { i.Target = Placed(b.Position.ToVector3()); i.Moves++; return; }       // a dead body keeps its last frame
         i.Target = Placed(b.Position.ToVector3());
-        if (b.Rotates) i.TargetYaw = b.RotationZ;
         i.Moves++;
+        if (i.Dead) { i.Velocity = default; i.Eases = true; return; }       // a dead body keeps its last frame
         if (i.Model != null && b.Sequence >= 0 && b.Sequence != i.Sequence) Play(i, b.Sequence);
+        i.TargetYaw = b.RotationZ;
+        if (b.Rotates && !i.Placeholder) i.Visual.Rotation = new Godot.Vector3(0, Mathf.DegToRad(b.RotationZ), 0);
+        if (b.Sequence is -2 or -3) { i.Velocity = default; i.Eases = true; return; }
+        i.Eases = false;
+        var vel = G(b.Velocity.ToVector3());
+        bool place = true;
+        string name = b.Sequence >= 0 ? i.Model?.Kfm.ById(b.Sequence)?.Name : null;
+        if (name != null && name.StartsWith("Run_", System.StringComparison.Ordinal) && i.Root.Position.DistanceTo(i.Target) > 30f)
+        {
+            var ahead = i.Target + vel * 0.3f;
+            float ratio = (ahead - i.Root.Position).Length() / (ahead - i.Target).Length();
+            if (ratio < 2f)
+            {
+                float scale = Mathf.Clamp(ratio, 0.8f, 1.2f);
+                if (scale > 1.03f || scale < 0.97f) { vel *= scale; place = false; }
+            }
+        }
+        if (place) i.Root.Position = i.Target;
+        i.Velocity = vel;
     }
 
     /// <summary>Where the busiest npc is (the one that has had the most sync blocks), for a camera that follows the action.</summary>
@@ -547,9 +578,13 @@ public sealed class NpcLayer
         Now += dt;
         foreach (var i in inst.Values)
         {
-            var d = i.Target - i.Root.Position;
-            if (d.Length() > 600) i.Root.Position = i.Target;
-            else i.Root.Position += d * Mathf.Min(1f, dt * 10f);
+            if (i.Eases)
+            {
+                var d = i.Target - i.Root.Position;
+                if (d.Length() > 600) i.Root.Position = i.Target;
+                else i.Root.Position += d * Mathf.Min(1f, dt * 10f);
+            }
+            else i.Root.Position += i.Velocity * dt;          // CNpc::vfunc_53 (@0x1410952f0): pos += m_posD40 * time
             if (!i.Placeholder)
                 i.Visual.Rotation = new Godot.Vector3(0, Mathf.LerpAngle(i.Visual.Rotation.Y, Mathf.DegToRad(i.TargetYaw), Mathf.Min(1f, dt * 10f)), 0);
             // the CNpc update's shake (:2419-2424): the drawn point is the npc's own plus the offset, each frame anew
