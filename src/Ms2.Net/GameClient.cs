@@ -34,13 +34,16 @@ public sealed record ItemInventoryMoveRequest(long Uid, short Slot) : IOutPacket
 /// <summary>Outbound 0x16 (SendOp::ItemEquip) mode 0: Unk_Inventory::RequestEquipItem (inventory.cpp:1238), u8 0 then the payload as
 /// FUN_1401fb760 writes it: i64 the item's uid, u8 the equip slot, u8 the layer mode (FUN_1401fb870: 0 / 1, and 2 only with feature 142,
 /// else 1; any other value 0). The client equips nothing itself: the server's equip packets do.</summary>
-/// <summary>GMS2 (every one of the 206 recorded mode 0 packets): the slot goes as its two letter name, a unicode string, in place of the slot byte: u8 0, i64 uid, string slot name (the EquipSlot name), u8 layer mode.</summary>
+/// <summary>GMS2 (every one of the 160 recorded mode 0 packets; the other recorded 0x16 are 46 mode 1, none mode 2): the slot goes as its two letter name, a unicode string, in place of the slot byte: u8 0, i64 uid, string slot name (the EquipSlot name), u8 layer mode.</summary>
 public sealed record ItemEquipRequest(long Uid, byte Slot, byte Mode) : IProfileOutPacket {
     public Outbound Op => Outbound.ItemEquip;
     public void Write(Maple2.PacketLib.Tools.ByteWriter w) => Write(w, ProtocolProfile.Kms2525);
     public void Write(Maple2.PacketLib.Tools.ByteWriter w, ProtocolProfile profile) {
         w.WriteByte(0); w.WriteLong(Uid);
-        if (profile.IsGms2) w.WriteUnicodeString(((Ms2.Net.Packets.EquipSlot) Slot).ToString()); else w.WriteByte(Slot);
+        if (profile.IsGms2) {
+            if (Slot is < 1 or > 19) throw new ArgumentOutOfRangeException(nameof(Slot), "no equip slot name for " + Slot);
+            w.WriteUnicodeString(((Ms2.Net.Packets.EquipSlot) Slot).ToString());
+        } else w.WriteByte(Slot);
         w.WriteByte(Mode);
     }
 }

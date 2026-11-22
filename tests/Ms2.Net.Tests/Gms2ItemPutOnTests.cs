@@ -21,11 +21,11 @@ public class Gms2ItemPutOnTests {
             Assert.DoesNotThrow(() => ItemPutOn.Read(new ByteReader(data), ProtocolProfile.Kms2525), file);
     }
 
+    /// <summary>Every recorded GMS2 ItemPutOff (0x26) reads to the end (0x20 has no GMS2 recording).</summary>
     [Test]
-    public void EveryRecordedGms2PutOffAndPutOnOrOffReadsToTheEnd() {
-        int off = 0, mode = 0;
-        foreach (var (file, data) in Gms2Sniffs.Inbound("gms2", ProtocolProfile.Gms2.Number(Inbound.ItemPutOff))) { Assert.DoesNotThrow(() => ItemPutOff.Read(new ByteReader(data)), file); off++; }
-        foreach (var (file, data) in Gms2Sniffs.Inbound("gms2", ProtocolProfile.Gms2.Number(Inbound.ItemPutOnOrOff))) { Assert.DoesNotThrow(() => ItemPutOnOrOff.Read(new ByteReader(data)), file); mode++; }
-        TestContext.Out.WriteLine($"put off {off}, put on or off {mode}");
+    public void EveryRecordedGms2PutOffReadsToTheEnd() {
+        var list = Gms2Sniffs.Inbound("gms2", ProtocolProfile.Gms2.Number(Inbound.ItemPutOff));
+        Assert.That(list, Is.Not.Empty);
+        foreach (var (file, data) in list) Assert.DoesNotThrow(() => ItemPutOff.Read(new ByteReader(data)), file);
     }
 }
