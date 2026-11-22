@@ -86,6 +86,26 @@ public class ItemTooltipExtrasTests
     }
 
     [Test]
+    public void ItemSocketListsGemsEmptyAndLockedSlots()
+    {
+        var m = NewModel();
+        m.HasLocalPlayer = true;
+        // three slots, two open: a gem (itemgemstoneupgrade.xml IconId export_socket_b07) and an empty one
+        var r = new EquipItem { Id = IntroMagicianCoat, Uid = 8, Rarity = 1, Amount = 1 };
+        r.Socket.MaxSlot = 3;
+        r.Socket.Gems.Add(new SocketGem { GemId = 40200001 });
+        r.Socket.Gems.Add(null);
+        string text = (string)Tip(m, r).Data["itemSocket"];
+        string lockRow = m.Tables.Common("s_tooltip_itemoption_socket_row_lock");
+        string emptyRow = m.Tables.Common("s_tooltip_itemoption_socket_row_empty");
+        TestContext.Out.WriteLine(text);
+        Assert.That(text, Does.Contain("export_socket_b07"));
+        Assert.That(text, Does.Contain(emptyRow + lockRow), "the empty open slot, then the locked one");
+        // no max slot: no member
+        Assert.That(Tip(m, new EquipItem { Id = IntroMagicianCoat, Uid = 9, Rarity = 1, Amount = 1 }).Data.ContainsKey("itemSocket"), Is.False);
+    }
+
+    [Test]
     public void ExpiringItemCannotBeEnchanted()
     {
         var m = NewModel();

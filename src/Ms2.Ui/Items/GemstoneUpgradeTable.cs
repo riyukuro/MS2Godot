@@ -12,9 +12,10 @@ namespace Ms2.Ui.Items;
 /// </summary>
 public sealed class GemstoneUpgradeTable
 {
-    /// <summary>CItemGemStoneData: m_nLinked (NextItemID), the ingredient item ids in file order and m_nMask (the EquipPart
-    /// bits, <see cref="EquipPartMask"/>).</summary>
-    public sealed record Row(int NextItemId, IReadOnlyList<int> Ingredients, uint Mask = 7);
+    /// <summary>CItemGemStoneData: m_nLinked (NextItemID), the ingredient item ids in file order, m_nMask (the EquipPart
+    /// bits, <see cref="EquipPartMask"/>) and m_strName, which Load reads from IconId (itemgemstonedata.cpp:140) and
+    /// GetGemStoneName returns.</summary>
+    public sealed record Row(int NextItemId, IReadOnlyList<int> Ingredients, uint Mask = 7, string Icon = "");
 
     readonly PackSet packs;
     Dictionary<int, Row> rows;
@@ -53,7 +54,7 @@ public sealed class GemstoneUpgradeTable
             }
             uint mask = EquipPartMask(e);                       // the ctor's m_nMask is 7 (:85)
             if ((mask & 8) != 0 && mask != 8) break;
-            rows[id] = new Row(next, ingredients, mask);
+            rows[id] = new Row(next, ingredients, mask, (string)e.Attribute("IconId") ?? "");
         }
         return rows;
     }
