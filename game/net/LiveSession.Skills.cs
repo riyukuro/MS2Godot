@@ -90,6 +90,10 @@ public partial class LiveSession
     public void PlayFieldEffect(string effect, Vector3 at, float yawRadians, int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
         => remote?.PlayEffect(effect, at, yawRadians, casterKind);
 
+    /// <summary>The same turned by a full rotation (godot space), as an own magic's end effect.</summary>
+    public void PlayFieldEffect(string effect, Vector3 at, Basis rotation, int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
+        => remote?.PlayEffect(effect, at, rotation, casterKind);
+
     /// <summary>
     /// A CommonResource effect on the own PC (CEffectService::InsertEffect with the actor set and kind 1, the own PC):
     /// <paramref name="key"/> is the commonResource.xml key. Played once at the body's place and facing.

@@ -1076,10 +1076,18 @@ public partial class HudScene
         foreach (var req in ownHitSends) live.SendHit(req);
         foreach (var req in ownSplashSends) live.SendSplash(req);
         foreach (var fx in ownEndEffects)
-            live.PlayFieldEffect(fx.File, new Vector3(fx.At.X, fx.At.Z, -fx.At.Y), Mathf.DegToRad(fx.RotZ), Ms2.Audio.SoundMusicEffectState.CasterMyPc);
+            live.PlayFieldEffect(fx.File, new Vector3(fx.At.X, fx.At.Z, -fx.At.Y), EffectBasis(fx), Ms2.Audio.SoundMusicEffectState.CasterMyPc);
         ownHitSends.Clear();
         ownSplashSends.Clear();
         ownEndEffects.Clear();
+    }
+
+    /// <summary>An end effect's client rotation columns as a godot basis: client (x, y, z) is godot (x, z, -y), so the godot
+    /// x, y and z columns are the client x, z and -y columns mapped the same way.</summary>
+    static Basis EffectBasis(in MagicEndEffect fx)
+    {
+        static Vector3 G(System.Numerics.Vector3 v) => new(v.X, v.Z, -v.Y);
+        return new Basis(G(fx.AxisX), G(fx.AxisZ), G(-fx.AxisY));
     }
 
     /// <summary>The player's vf36_GetNodePosition (MS2 coordinates): the effect dummy <paramref name="node"/>, else the player's

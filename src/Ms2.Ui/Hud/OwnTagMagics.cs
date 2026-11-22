@@ -17,11 +17,11 @@ public delegate bool MagicRayBlocked(Vector3 from, Vector3 dir, float length);
 /// from <paramref name="from"/> along the unit <paramref name="dir"/> hits within <paramref name="length"/>.</summary>
 /// <summary>
 /// One effect an arrow magic's end inserts (CEffectService::InsertEffect, CMagic::FUN_14145f570 @0x14145f570,
-/// magicdata.cpp:1080-1098): the effect file at <paramref name="At"/> (client space) turned to <paramref name="RotZ"/> (degrees,
-/// rotation z 0 faces -y). <paramref name="Along"/> is the kind 1 transform (FUN_141467f60: looking along the flight's direction),
-/// else kind 0 (the magic scene's rotation).
+/// magicdata.cpp:1080-1098): the effect file at <paramref name="At"/> (client space) turned by the rotation whose columns are
+/// <paramref name="AxisX"/>, <paramref name="AxisY"/> and <paramref name="AxisZ"/> (client space). <paramref name="Along"/> is
+/// the kind 1 transform (FUN_141467f60 of the flight's direction), else kind 0 (the magic scene's rotation).
 /// </summary>
-public readonly record struct MagicEndEffect(string File, bool Along, Vector3 At, float RotZ);
+public readonly record struct MagicEndEffect(string File, bool Along, Vector3 At, Vector3 AxisX, Vector3 AxisY, Vector3 AxisZ);
 
 public delegate bool MagicRayCast(Vector3 from, Vector3 dir, float length, out Vector3 hit);
 
@@ -86,6 +86,8 @@ public sealed class OwnTagMagics
         public MagicPathMove Row;
         public int State, StateTick, LastTick, HoldUntil;
         public Vector3 Current, Last, Target, Predicted, Dir, DefaultDir, AxisX, AxisY, AxisZ;
+        // the magic scene's rotation columns (m_spScene's SetRotate by UpdateLookAtRotation); identity until the first one
+        public Vector3 SceneX = Vector3.UnitX, SceneY = Vector3.UnitY, SceneZ = Vector3.UnitZ;
         public float Remain, Total;
         // the row's vel as the magic's own copy keeps it (m_data.m_fVelocity): the bounce-off raises it
         public float Velocity;
@@ -355,7 +357,7 @@ public sealed class OwnTagMagics
     /// CMagic::FUN_1414614d0 @0x1414614d0 (magicdata.cpp:1497): unless the target is the current point, the direction the unit
     /// current-to-target and m_matRotation the columns (right, axis, up) of axis = -direction (the record's direction when that
     /// is nearly zero), right = axis x UNIT_Z unit (UNIT_X and -UNIT_X for the axis nearly UNIT_Z and -UNIT_Z), up = right x axis
-    /// unit.
+    /// unit; then the scene's rotation (<see cref="LookAt"/>, UpdateLookAtRotation(0)).
     /// </summary>
     static void Frame(Magic m)
     {
@@ -370,6 +372,60 @@ public sealed class OwnTagMagics
         m.AxisX = right;
         m.AxisY = axis;
         m.AxisZ = SkillHit.Unitize(Vector3.Cross(right, axis));
+        LookAt(m.Row.LookAtType, m.Dir, m.Current, m.Last, m.DefaultDir, out m.SceneX, out m.SceneY, out m.SceneZ);
+    }
+
+    /// <summary>
+    /// CMagic::UpdateLookAtRotation @0x141461720 (magicdata.cpp:1526) with flag 0: the scene's rotation columns (right, axis, up)
+    /// of axis = -direction for lookAtType 0 (and any other type), -direction with z 0 unitized for 1, -(current - last)
+    /// unitized for 2; the record's direction when that is exactly zero; right = axis x UNIT_Z unit (UNIT_X and -UNIT_X for the
+    /// axis exactly UNIT_Z and -UNIT_Z), up = right x axis unit. Unlike <see cref="Frame"/> the compares are exact.
+    /// </summary>
+    internal static void LookAt(int lookAtType, Vector3 dir, Vector3 current, Vector3 last, Vector3 defaultDir,
+        out Vector3 x, out Vector3 y, out Vector3 z)
+    {
+        var axis = -dir;
+        if (lookAtType == 1) { axis.Z = 0; axis = SkillHit.Unitize(axis); }
+        else if (lookAtType == 2) axis = -SkillHit.Unitize(current - last);
+        if (axis == Vector3.Zero) axis = defaultDir;
+        Columns(axis, out x, out z);
+        y = axis;
+    }
+
+    /// <summary>The right and up columns of the rotations whose y column is <paramref name="axis"/> (FUN_141467f60 and
+    /// UpdateLookAtRotation, exact compares): right = axis x UNIT_Z unit (UNIT_X and -UNIT_X for UNIT_Z and -UNIT_Z), up =
+    /// right x axis unit.</summary>
+    static void Columns(Vector3 axis, out Vector3 right, out Vector3 up)
+    {
+        if (axis == Vector3.UnitZ) right = Vector3.UnitX;
+        else if (axis == -Vector3.UnitZ) right = -Vector3.UnitX;
+        else right = SkillHit.Unitize(Vector3.Cross(axis, Vector3.UnitZ));
+        up = SkillHit.Unitize(Vector3.Cross(right, axis));
+    }
+
+    /// <summary>
+    /// FUN_141467f60 @0x141467f60 (magicdata.cpp:2158): the kind 1 end effect's rotation columns. Identity for a direction
+    /// exactly zero; else the columns (right, direction, up) of <see cref="Columns"/>, unless their efd ToEulerAnglesXYZ
+    /// (FUN_142085840: y = -asin of the row 0 z, clamped to [-1, 1]; inside (-pi/2, pi/2) z = atan2(row 0 y, row 0 x), else z 0)
+    /// gives z above 0: then the x-mirror (FUN_14146aa10 m[0][0] = -1) times MakeZRotation(2 pi - z), rows (cos, sin, 0),
+    /// (-sin, cos, 0), (0, 0, 1). That drops the pitch and keeps the y column on the flight's side.
+    /// </summary>
+    internal static void AlongAxes(Vector3 dir, out Vector3 x, out Vector3 y, out Vector3 z)
+    {
+        x = Vector3.UnitX; y = Vector3.UnitY; z = Vector3.UnitZ;
+        if (dir == Vector3.Zero) return;
+        Columns(dir, out var right, out var up);
+        x = right; y = dir; z = up;
+        const float HalfPi = 1.5707964f;
+        float r02 = up.X;
+        float ay = -(r02 > -1f ? (1f > r02 ? MathF.Asin(r02) : HalfPi) : -HalfPi);
+        float az = ay < HalfPi && ay > -HalfPi ? MathF.Atan2(dir.X, right.X) : 0f;
+        if (!(0f < az)) return;
+        float a = 6.2831855f - az, c = MathF.Cos(a), s = MathF.Sin(a);
+        // flip * rot: row 0 negated, so rows (-c, -s, 0), (-s, c, 0), (0, 0, 1)
+        x = new Vector3(-c, -s, 0);
+        y = new Vector3(-s, c, 0);
+        z = Vector3.UnitZ;
     }
 
     /// <summary>IsNearlyEqual (commonutil.cpp:669): |a - b| below 1e-6.</summary>
@@ -836,24 +892,23 @@ public sealed class OwnTagMagics
     /// <item>At the lifeTime's end (<paramref name="lifeEnd"/>, m_n52C 1): effectRemain, kind 0, even when empty (the insert of
     /// an empty name finds no effect; it is not added here).</item>
     /// </list>
-    /// Kind 1 turns by FUN_141467f60 (the y column the direction, so the yaw faces away from it); kind 0 by the magic scene's
-    /// rotation (UpdateLookAtRotation's lookAtType 0: the y column -direction, the port's m_matRotation).
-    /// STILL-OPEN: only the yaw is kept: FUN_141467f60's pitch and its flip for a positive z angle, and lookAtType 1 and 2, are
-    /// not ported. The distance cull of an owner other than the local player (the sight range) is not ported.
+    /// Kind 1 turns by FUN_141467f60 (<see cref="AlongAxes"/> of the direction); kind 0 by the magic scene's rotation
+    /// (<see cref="LookAt"/>).
+    /// STILL-OPEN: the distance cull of an owner other than the local player (the sight range) is not ported.
     /// </summary>
     static void EndEffects(Magic m, bool lifeEnd, List<MagicEndEffect> endEffects)
     {
         var a = m.Attack;
-        if (a.Arrow.Explosion != 0 && a.EffectHit.Length != 0) endEffects.Add(new MagicEndEffect(a.EffectHit, true, m.Current, Heading(-m.Dir)));
+        AlongAxes(m.Dir, out var ax, out var ay, out var az);
+        if (a.Arrow.Explosion != 0 && a.EffectHit.Length != 0) endEffects.Add(new MagicEndEffect(a.EffectHit, true, m.Current, ax, ay, az));
         string file;
         bool along;
         if (!lifeEnd && m.RayStopped) { file = a.Arrow.EffectDestroy; along = true; }
         else { file = a.Arrow.EffectRemain; along = false; }
-        if (file.Length != 0) endEffects.Add(new MagicEndEffect(file, along, m.Current, along ? Heading(-m.Dir) : Heading(-m.AxisY)));
+        if (file.Length == 0) return;
+        endEffects.Add(along ? new MagicEndEffect(file, true, m.Current, ax, ay, az)
+            : new MagicEndEffect(file, false, m.Current, m.SceneX, m.SceneY, m.SceneZ));
     }
-
-    /// <summary>The rotation z (degrees) whose forward (sin r, -cos r) points along <paramref name="v"/>'s x/y (0 for none).</summary>
-    static float Heading(Vector3 v) => v.X == 0f && v.Y == 0f ? 0f : MathF.Atan2(v.X, -v.Y) * (180f / 3.1415927f);
 
     /// <summary>FUN_140a0b1f0: m_matRotation's ToEulerAnglesXYZ times -57.2957764, that is the angles of the matrix (AxisX,
     /// AxisY, AxisZ) in degrees.</summary>

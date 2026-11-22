@@ -44,13 +44,16 @@ public sealed record MagicPathMove(float DelayTime, float SpawnTime, float LifeT
     /// <summary>"piercingAttackMaxTargetCount" (m_nPiercingAttackMaxTargetCount): the most targets a piercing arrow hits
     /// between two intervals (CMagic::FUN_141465b30); 0 no cap.</summary>
     public int PiercingAttackMaxTargetCount { get; init; }
+    /// <summary>"lookAtType" (m_nLookAtType, magicdata.cpp:346): how the magic scene turns (CMagic::UpdateLookAtRotation): 0
+    /// against the direction, 1 the same flattened, 2 against the last move.</summary>
+    public int LookAtType { get; init; }
 }
 
 /// <summary>
 /// The magic paths (LoadMagicPath @0x14145c4d0, magicdata.cpp:302): ./data/xml/table/magicPath.xml, each &lt;type id&gt; a list of
 /// its &lt;move&gt; rows; a repeated id replaces the earlier list (SetAt). The default id 0 is then set to one row of zeros, so an
 /// attack without a magicPathID still gets a magic. Read on first use (FUN_14145c300 reloads a dirty cache).
-/// STILL-OPEN: lookAtType and traceTargetOffsetPos are not read.
+/// STILL-OPEN: traceTargetOffsetPos is not read.
 /// </summary>
 public sealed class MagicPathTable
 {
@@ -80,6 +83,7 @@ public sealed class MagicPathTable
                     TraceTargetDuration = Xml.Float(m, "traceTargetDuration"),
                     PiercingAttackInterval = Xml.UInt(m, "piercingAttackInterval"),
                     PiercingAttackMaxTargetCount = Xml.Int(m, "piercingAttackMaxTargetCount"),
+                    LookAtType = Xml.Int(m, "lookAtType"),
                 })
                 .ToArray();
         types[0] = new[] { Zero };

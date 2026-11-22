@@ -454,9 +454,73 @@ public class OwnArrowMagicTests
         var fx = EndEffects(EndFx, HitFx, Linear);
         Assert.That(fx.Select(f => (f.File, f.Along)), Is.EqualTo(new[] { ("hit.xml", true), ("remain.xml", false) }));
         Assert.That(fx.Select(f => f.At.Y), Is.All.EqualTo(-810f).Within(1e-2f), "at the current point");
-        // the flight runs -y: the scene's y column is +y, so kind 0 faces -y (rotation z 0); kind 1's y column is -y (180)
-        Assert.That(MathF.Cos(fx[1].RotZ * MathF.PI / 180f), Is.EqualTo(1f).Within(1e-4f));
-        Assert.That(MathF.Cos(fx[0].RotZ * MathF.PI / 180f), Is.EqualTo(-1f).Within(1e-4f));
+        // the flight runs -y: the scene's y column is +y (lookAtType 0, -direction); kind 1's y column is -y (its x column is
+        // +-x: the z angle atan2(dir.x, -1) is +-pi with the sign of the turn's float rest in dir.x)
+        AssertAxes(fx[1], Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ);
+        AssertAxes(fx[0], fx[0].AxisX.X > 0 ? Vector3.UnitX : -Vector3.UnitX, -Vector3.UnitY, Vector3.UnitZ);
+    }
+
+    static void AssertAxes(MagicEndEffect f, Vector3 x, Vector3 y, Vector3 z)
+    {
+        Assert.That(Vector3.Distance(f.AxisX, x), Is.LessThan(1e-4f), $"x column {f.AxisX}");
+        Assert.That(Vector3.Distance(f.AxisY, y), Is.LessThan(1e-4f), $"y column {f.AxisY}");
+        Assert.That(Vector3.Distance(f.AxisZ, z), Is.LessThan(1e-4f), $"z column {f.AxisZ}");
+    }
+
+    [Test]
+    public void TheKindOneTransformMirrorsAndLevelsADirectionWithAPositiveZAngle()
+    {
+        // FUN_141467f60: dir (0.6, 0.48, -0.64): right = dir x Z unit = (0.6247, -0.7809, 0), z angle = atan2(0.6, 0.6247) > 0,
+        // so the columns become (-cos z, sin z, 0), (sin z, cos z, 0), Z: the pitch is gone and x points the other way
+        var dir = new Vector3(0.6f, 0.48f, -0.64f);
+        OwnTagMagics.AlongAxes(dir, out var x, out var y, out var z);
+        float h = MathF.Sqrt(0.6f * 0.6f + 0.48f * 0.48f), ang = MathF.Atan2(0.6f, 0.48f / h);
+        Assert.That(Vector3.Distance(x, new Vector3(-MathF.Cos(ang), MathF.Sin(ang), 0)), Is.LessThan(1e-5f), $"x {x}");
+        Assert.That(Vector3.Distance(y, new Vector3(MathF.Sin(ang), MathF.Cos(ang), 0)), Is.LessThan(1e-5f), $"y {y}");
+        Assert.That(z, Is.EqualTo(Vector3.UnitZ));
+    }
+
+    [Test]
+    public void TheKindOneTransformKeepsThePitchOfANonPositiveZAngle()
+    {
+        // dir (-0.6, 0.48, -0.64): z angle atan2(-0.6, ...) < 0, the columns stay (right, dir, up) with the pitch
+        var dir = new Vector3(-0.6f, 0.48f, -0.64f);
+        OwnTagMagics.AlongAxes(dir, out var x, out var y, out var z);
+        Assert.That(y, Is.EqualTo(dir));
+        var right = Vector3.Normalize(Vector3.Cross(dir, Vector3.UnitZ));
+        Assert.That(Vector3.Distance(x, right), Is.LessThan(1e-5f), $"x {x}");
+        Assert.That(Vector3.Distance(z, Vector3.Normalize(Vector3.Cross(right, dir))), Is.LessThan(1e-5f), $"z {z}");
+        OwnTagMagics.AlongAxes(Vector3.Zero, out x, out y, out z);
+        Assert.That((x, y, z), Is.EqualTo((Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ)), "a zero direction is identity");
+    }
+
+    [Test]
+    public void TheLookAtTypeTurnsTheScene()
+    {
+        // UpdateLookAtRotation: 0 against the direction, 1 the same with z 0 unitized, 2 against the last move
+        var dir = Vector3.Normalize(new Vector3(0, -1, -1));
+        var cur = new Vector3(10, 0, 0);
+        var last = new Vector3(0, 0, 0);
+        OwnTagMagics.LookAt(0, dir, cur, last, Vector3.UnitY, out _, out var y, out _);
+        Assert.That(y, Is.EqualTo(-dir));
+        OwnTagMagics.LookAt(1, dir, cur, last, Vector3.UnitY, out var x, out y, out var z);
+        Assert.That(Vector3.Distance(y, Vector3.UnitY), Is.LessThan(1e-6f), $"flattened {y}");
+        Assert.That(Vector3.Distance(x, Vector3.UnitX), Is.LessThan(1e-6f), $"right {x}");
+        Assert.That(Vector3.Distance(z, Vector3.UnitZ), Is.LessThan(1e-6f), $"up {z}");
+        OwnTagMagics.LookAt(2, dir, cur, last, Vector3.UnitY, out _, out y, out _);
+        Assert.That(y, Is.EqualTo(-Vector3.UnitX), "against the move");
+        OwnTagMagics.LookAt(1, Vector3.UnitZ, cur, last, new Vector3(0, 1, 0), out _, out y, out _);
+        Assert.That(y, Is.EqualTo(Vector3.UnitY), "a flattened zero takes the record's direction");
+    }
+
+    [TestCase("", 0.70710677f)]
+    [TestCase(" lookAtType=\"1\"", 0f)]
+    public void ARemainEffectTakesTheScenesLookAtRotation(string lookAt, float upZ)
+    {
+        // a flight down and along -y: lookAtType 0 keeps the scene's pitch (y column -direction), lookAtType 1 levels it
+        var fx = EndEffects(EndFx, "", "vel=\"1800\" distance=\"810\" direction=\"0,1,-1\"" + lookAt);
+        Assert.That(fx.Select(f => f.File), Is.EqualTo(new[] { "remain.xml" }));
+        Assert.That(fx[0].AxisY.Z, Is.EqualTo(upZ).Within(1e-4f), $"y column {fx[0].AxisY}");
     }
 
     [Test]

@@ -97,6 +97,10 @@ void fragment() {
 
     /// <summary>Plays an effect xml at a place: the nif parts show for their duration; sound events play at the place; soundMusic parts follow CSoundMusicEffect's caster-kind gate (m_unk_18 &lt;= 1, default rejected for unknown/remote casters).</summary>
     public void PlayEffect(string xmlPath, Godot.Vector3 at, float yawRadians, int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
+        => PlayEffect(xmlPath, at, new Basis(Godot.Vector3.Up, yawRadians), casterKind);
+
+    /// <summary>The same turned by a full rotation (godot space), as an effect's NiTransform turns it.</summary>
+    public void PlayEffect(string xmlPath, Godot.Vector3 at, Basis rotation, int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
     {
         if (!ShowEffects || string.IsNullOrEmpty(xmlPath)) return;
         var parts = effects.Get(xmlPath);
@@ -109,7 +113,7 @@ void fragment() {
                 EffectSounds++;
                 continue;
             }
-            if (part.Type == "light" && part.Light != null) { QueueLight(part, at, yawRadians); continue; }
+            if (part.Type == "light" && part.Light != null) { QueueLight(part, at, rotation); continue; }
             if (string.Equals(part.Type, "soundMusic", StringComparison.OrdinalIgnoreCase))
             {
                 FieldAudio.Instance?.PlayEffectSoundMusic(part, casterKind);
@@ -117,7 +121,7 @@ void fragment() {
                 continue;
             }
             if (part.Type != "nif" || string.IsNullOrEmpty(part.FilePath)) { EffectsNotNif++; continue; }
-            if (Particles && TryScene(part, at, yawRadians)) continue;
+            if (Particles && TryScene(part, at, rotation)) continue;
             var e = Effect(part.FilePath);
             if (e == null) { EffectsNoNif++; MissingEffects.Add(part.FilePath); continue; }
             if (e.Value.particles) { EffectsWithParticles++; ParticleEffects.Add(part.FilePath); }
@@ -125,7 +129,7 @@ void fragment() {
             var root = mb.Build(e.Value.md, "Effect");
             float s = part.Scale <= 0 ? 1 : part.Scale;
             root.Scale = new Godot.Vector3(s, s, s);
-            var holder = new Node3D { Position = at, Rotation = new Godot.Vector3(0, yawRadians, 0), Visible = part.StartDelay <= 0 };
+            var holder = new Node3D { Transform = new Transform3D(rotation, at), Visible = part.StartDelay <= 0 };
             root.Position = G(part.Translate[0], part.Translate[1], part.Translate[2]);
             holder.AddChild(root);
             parent.AddChild(holder);
@@ -157,10 +161,10 @@ void fragment() {
     readonly List<LiveLight> lights = new();
     public int EffectLightsStarted;
 
-    void QueueLight(EffectPart part, Godot.Vector3 at, float yawRadians)
+    void QueueLight(EffectPart part, Godot.Vector3 at, Basis rotation)
     {
-        // the part's translate is in the effect's own space (Z up, turned by the effect's yaw), the light's place in client space
-        var off = new Godot.Vector3(part.Translate[0], part.Translate[2], -part.Translate[1]).Rotated(Godot.Vector3.Up, yawRadians);
+        // the part's translate is in the effect's own space (Z up, turned by the effect's rotation), the light's place in client space
+        var off = rotation * new Godot.Vector3(part.Translate[0], part.Translate[2], -part.Translate[1]);
         var g = at + off;
         float dur = part.Duration > 0 ? part.Duration : 0.6f;
         lights.Add(new LiveLight { Param = part.Light, Pos = new Ms2.Formats.Model.Vec3(g.X, -g.Z, g.Y), Start = part.StartDelay, End = part.StartDelay + Mathf.Min(dur, 3f) });
@@ -180,12 +184,12 @@ void fragment() {
     }
 
     /// <summary>Plays an effect part through the scene runtime (particles and controllers); false when the nif could not be read as a scene.</summary>
-    bool TryScene(EffectPart part, Godot.Vector3 at, float yawRadians)
+    bool TryScene(EffectPart part, Godot.Vector3 at, Basis rotation)
     {
         var sc = Scene(part.FilePath);
         if (sc == null) return false;
         float dur = part.Duration > 0 ? part.Duration : 0.6f;
-        var inst = new EffectInstance(sc, mb, dur, (int)(GD.Randi() & 0x7fffffff)) { Position = at, Rotation = new Godot.Vector3(0, yawRadians, 0), Delay = part.StartDelay };
+        var inst = new EffectInstance(sc, mb, dur, (int)(GD.Randi() & 0x7fffffff)) { Transform = new Transform3D(rotation, at), Delay = part.StartDelay };
         float s = part.Scale <= 0 ? 1 : part.Scale;
         var q = new Godot.Quaternion(Godot.Vector3.Back, Mathf.DegToRad(part.Rotation[2])) * new Godot.Quaternion(Godot.Vector3.Up, Mathf.DegToRad(part.Rotation[1])) * new Godot.Quaternion(Godot.Vector3.Right, Mathf.DegToRad(part.Rotation[0]));
         inst.FileSpace = new Transform3D(new Basis(q).Scaled(new Godot.Vector3(s, s, s)), new Godot.Vector3(part.Translate[0], part.Translate[1], part.Translate[2]));

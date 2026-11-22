@@ -347,6 +347,10 @@ public sealed partial class RemoteLayer : Node3D
     public void PlayEffect(string effect, Vector3 at, float yawRadians, int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
         => combat.PlayEffect(effect, at, yawRadians, casterKind);
 
+    /// <summary>The same turned by a full rotation (godot space).</summary>
+    public void PlayEffect(string effect, Vector3 at, Basis rotation, int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
+        => combat.PlayEffect(effect, at, rotation, casterKind);
+
     /// <summary>Feature 0x8e and the server clock, which the layer switch (WornEquips.OutfitShown) reads.</summary>
     public Func<bool> Feature8e = () => false;
     public Func<long> ServerNow = () => 0;
