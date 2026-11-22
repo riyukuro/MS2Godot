@@ -74,7 +74,7 @@ public sealed class ItemColoringOwnCustomize : IItemColoringCustomize
     /// <summary>
     /// Customize::GetModifiedAndSelect (@0x140cd2360): Equipment::GetModified (customize.cpp:1253) resets the edit and gives the
     /// worn item when it differs from its copy, else null; the hidden slots go back and the uid is selected. The item carries the
-    /// slot 0 colour as the extra data.
+    /// slot 0 colour and the slot's appearance floats as the extra data.
     /// </summary>
     public BeautyColorItem GetModifiedAndSelect(long uid)
     {
@@ -84,7 +84,16 @@ public sealed class ItemColoringOwnCustomize : IItemColoringCustomize
         cust.SelectUid(uid);
         if (modified == null) return null;
         var color = modified.Color;
-        return new BeautyColorItem(false, false, modified.Uid, modified.Id, w => w.WriteEquipColor(color));
+        var appearance = modified.Appearance ?? Array.Empty<float>();
+        // The extra data is CItem::GetProxy()->vfunc_5 (uiitemcoloringdialog.cpp:1038), typed by CreateExtraData
+        // (itemdata.cpp:1430): the colour, then the slot's floats: hair 14 (itemextradata.cpp:646), face decal 4 (:513), cap 13 (:784).
+        // An item whose floats are not the slot's count cannot be written as the client would; it is not sent (no padding).
+        if (appearance.Length != CreateItem.AppearanceLength(modified.Slot)) return null;
+        return new BeautyColorItem(false, false, modified.Uid, modified.Id, w =>
+        {
+            w.WriteEquipColor(color);
+            foreach (float f in appearance) w.WriteFloat(f);
+        });
     }
 
     public bool TryGetEditSlotColor(out uint palette, out uint color)

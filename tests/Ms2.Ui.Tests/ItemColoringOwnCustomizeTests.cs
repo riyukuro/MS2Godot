@@ -40,7 +40,7 @@ public class ItemColoringOwnCustomizeTests
     static (ItemColoringOwnCustomize c, Avatar a) Rig(bool eye = false)
     {
         var a = new Avatar();
-        a.Items.Add(new EquipItem { Id = 5000, Uid = 1, Slot = (EquipSlot)3 });
+        a.Items.Add(new EquipItem { Id = 5000, Uid = 1, Slot = (EquipSlot)3, Appearance = new float[4] });
         var b = new BeautyCustomize(a);
         var c = new ItemColoringOwnCustomize(b, Table(), id => eye);
         c.SelectUid(1);
@@ -130,9 +130,56 @@ public class ItemColoringOwnCustomizeTests
         Assert.That(it, Is.Not.Null);
         Assert.That((it.Uid, it.ItemId), Is.EqualTo((1L, 5000)));
         var w = new ByteWriter(); w.WriteEquipColor(a.Items[0].Color);
+        foreach (float f in a.Items[0].Appearance) w.WriteFloat(f);
         Assert.That(Extra(it), Is.EqualTo(w.ToArray()));
-        Assert.That(Extra(it).Length, Is.EqualTo(20));
+        Assert.That(Extra(it).Length, Is.EqualTo(20 + 4 * 4), "the colour and the decal's 4 floats");
         Assert.That(c.GetModifiedAndSelect(2), Is.Null, "not worn");
+    }
+
+    /// <summary>The extra data put into an item body in place of its colour block, then read with the item reader.</summary>
+    static EquipItem ReadBack(EquipSlot slot, byte[] extra)
+    {
+        var empty = new ByteWriter(); ItemReader.WriteEmptyBody(empty, 1);
+        byte[] e = empty.ToArray();
+        const int headerLen = 4 + 4 + 8 + 8 + 8 + 4 + 4 + 1 + 8 + 2 + 1 + 4, colorLen = 20;
+        var body = new ByteWriter();
+        body.WriteBytes(e[..headerLen]); body.WriteBytes(extra); body.WriteBytes(e[(headerLen + colorLen)..]);
+        var r = new ByteReader(body.ToArray(), 0);
+        var it = new EquipItem { Id = 5000, Uid = 1, Slot = slot };
+        ItemReader.ReadBodyInto(r, it);
+        r.ExpectEnd("body");
+        return it;
+    }
+
+    [TestCase(EquipSlot.HR, 14)]
+    [TestCase(EquipSlot.FD, 4)]
+    [TestCase(EquipSlot.CP, 13)]
+    public void TheExtraDataCarriesTheColourAndTheSlotsFloatsAndTheItemReaderReadsThemBack(EquipSlot slot, int floats)
+    {
+        var a = new Avatar();
+        var app = Enumerable.Range(0, floats).Select(i => 0.5f + i).ToArray();
+        a.Items.Add(new EquipItem { Id = 5000, Uid = 1, Slot = slot, Appearance = app });
+        var c = new ItemColoringOwnCustomize(new BeautyCustomize(a), Table(), _ => false);
+        c.SelectUid(1);
+        c.ApplyPalette(7, 12);
+        var it = c.GetModifiedAndSelect(1);
+        Assert.That(it, Is.Not.Null);
+        byte[] extra = Extra(it);
+        Assert.That(extra.Length, Is.EqualTo(20 + 4 * floats));
+        var back = ReadBack(slot, extra);
+        Assert.That(back.Color, Is.EqualTo(a.Items[0].Color));
+        Assert.That(back.Appearance, Is.EqualTo(app));
+    }
+
+    [Test]
+    public void AnItemWhoseFloatsAreNotTheSlotsCountIsNotSent()
+    {
+        var a = new Avatar();
+        a.Items.Add(new EquipItem { Id = 5000, Uid = 1, Slot = EquipSlot.HR, Appearance = new float[3] });
+        var c = new ItemColoringOwnCustomize(new BeautyCustomize(a), Table(), _ => false);
+        c.SelectUid(1);
+        c.ApplyPalette(7, 12);
+        Assert.That(c.GetModifiedAndSelect(1), Is.Null);
     }
 
     [Test]
