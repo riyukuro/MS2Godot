@@ -27,6 +27,19 @@ public sealed partial class ItemTooltip
     string StatusRow(string value) => ClientFormat.Format(Common("s_tooltip_itemoption_stat_row"), value);
 
     /// <summary>
+    /// FUN_1409c7cc0 (astooltip.cpp:871), "itemMovie": without flag 0x40, the item data's movie, set even when empty. A UGC
+    /// item (type 0x16) uses its UGC look's movie instead, and only when it has UGC info.
+    /// STILL-OPEN: that UGC movie (CUgcManager::FUN_1418859f0, the common resource's UGC movie or the download path of the
+    /// UGC name); a UGC item sets nothing here.
+    /// </summary>
+    void SetItemMovie(Item item)
+    {
+        if ((Flags & 0x40) != 0) return;
+        if (item.Data.Type == 0x16) return;
+        Data["itemMovie"] = item.Data.Movie;
+    }
+
+    /// <summary>
     /// FUN_1409c7fc0 (:305): flag 0x800 without 0x10000 fills the compact block FUN_1409cc090, else the option block
     /// FUN_1409c9170.
     /// </summary>

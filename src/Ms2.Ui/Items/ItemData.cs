@@ -19,6 +19,8 @@ public sealed class ItemData
     public int DoNotPreview;
     public uint SlotMax = 1;                                   // ctor default 1 (:1115), capped at 99999
     public string SlotIcon = "", Category = "";
+    /// <summary>ItemProperty movie (itemdatastruct.cpp:1132): the tooltip's preview movie.</summary>
+    public string Movie = "";
     /// <summary>ItemProperty moveDisable (itemdatastruct.cpp:1158) and socketDataId.</summary>
     public bool MoveDisable;
     /// <summary>property remakeDisable (ItemProperty::Load, itemdatastruct.cpp:1133).</summary>
@@ -102,13 +104,21 @@ public sealed class ItemData
     public bool ExceptEnchant;
     /// <summary>CItemData::Load (itemdata.cpp:366): &lt;option constantID randomID&gt;, the option table ids.</summary>
     public int ConstantId, RandomId;
+    /// <summary>&lt;basic originID&gt; (CItemData::Load, itemdata.cpp:335).</summary>
+    public int OriginId;
+    /// <summary>CItemData::GetOriginOrItemId (itemdata.cpp:477): originID, else the item id.</summary>
+    public int OriginOrItemId => OriginId != 0 ? OriginId : Id;
     /// <summary>ItemAdditionalEffect::Load (itemdatastruct.cpp:1687): the &lt;AdditionalEffect id&gt; list (XmlSplit ",").</summary>
     public readonly List<string> AdditionalEffectIds = new();
 
     public static ItemData Load(int id, XElement env, bool globalTransferType = false)
     {
         var d = new ItemData { Id = id };
-        if (env.Element("basic") is { } b) d.StringTag = (string)b.Attribute("stringTag") ?? "";
+        if (env.Element("basic") is { } b)
+        {
+            Int(b, "originID", ref d.OriginId);
+            d.StringTag = (string)b.Attribute("stringTag") ?? "";
+        }
         if (env.Element("ucc") is { } ucc) d.UccMesh = (string)ucc.Attribute("mesh") ?? "";
         if (env.Element("property") is { } p)
         {
@@ -127,6 +137,7 @@ public sealed class ItemData
             d.SlotMax = Math.Min(d.SlotMax, 99999u);
             d.Category = (string)p.Attribute("category") ?? d.Category;
             d.SlotIcon = (string)p.Attribute("slotIcon") ?? d.SlotIcon;
+            d.Movie = (string)p.Attribute("movie") ?? d.Movie;
             Bool(p, "moveDisable", ref d.MoveDisable);
             Bool(p, "remakeDisable", ref d.RemakeDisable);
             Int(p, "rePackingLimitCount", ref d.RePackingLimitCount);

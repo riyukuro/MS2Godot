@@ -54,6 +54,20 @@ public class ItemTooltipExtrasTests
     }
 
     [Test]
+    public void ItemMovieIsTheDataMovieEvenWhenEmpty()
+    {
+        var m = NewModel();
+        m.HasLocalPlayer = true;
+        // itemdata/113.xml: 11300002 shows the 11300048 movie; the coat has none
+        Assert.That(Tip(m, new EquipItem { Id = 11300002, Uid = 3, Rarity = 1, Amount = 1 }).Data["itemMovie"], Is.EqualTo("Item/11300048.usm"));
+        Assert.That(Tip(m, new EquipItem { Id = IntroMagicianCoat, Uid = 4, Rarity = 1, Amount = 1 }).Data["itemMovie"], Is.EqualTo(""));
+        // flag 0x40 leaves it out
+        var tip = new ItemTooltip(m, 0x40);
+        tip.Fill(Ms2.Ui.Hud.InventoryController.ToItem(new EquipItem { Id = 11300002, Uid = 5, Rarity = 1, Amount = 1 }, m.Tables.Items));
+        Assert.That(tip.Data.ContainsKey("itemMovie"), Is.False);
+    }
+
+    [Test]
     public void ExpiringItemCannotBeEnchanted()
     {
         var m = NewModel();

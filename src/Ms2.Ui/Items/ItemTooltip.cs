@@ -63,6 +63,7 @@ public sealed partial class ItemTooltip
         if (Name(item) is { } name) Data["itemName"] = name;                      // SetItemName
         Data["itemGrade"] = item.Rarity;                                          // SetItemGrade
         Data["itemKinds"] = Kinds(d.IconCode);                                    // FUN_1409d5610
+        SetItemMovie(item);                                                       // FUN_1409c7cc0
         Data["ugctag"] = item.UgcTag;                                             // SetUgcTag
         SetItemStatus(item);                                                      // FUN_1409c7fc0
         Data["iconPath"] = item.IconPath;                                         // SetItemIconPath (FUN_14016a730: to wide text)
