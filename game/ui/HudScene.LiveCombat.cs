@@ -50,7 +50,9 @@ public partial class HudScene
     public bool GuideStepScripted(int step)
     {
         if (Ms2.Ui.Guide.GuideManager.Current is not { } g) return false;
+        g.ClearStates();     // the account's own record holds save id 1 (everything cleared)
         g.ReceiveStates(new Ms2.Net.Packets.GuideRecordIn(new[] { (110, step) }, 0));
+        g.QueueOccurrence(Ms2.Ui.Guide.GuideOccurrence.GuideClear, 0);     // the open conditions are tried on an occurrence
         return true;
     }
 
