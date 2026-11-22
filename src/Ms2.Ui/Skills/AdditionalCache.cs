@@ -15,7 +15,7 @@ namespace Ms2.Ui.Skills;
 public sealed class AdditionalCache
 {
     /// <summary>The format and parse version: bump it with any change to what the build writes or how the XML is read.</summary>
-    public const int Version = 9;     // 2: the levels' EventBuffType; 3: PvpOnOff; 4: ForceApplyTarget, Hide; 5: SpecialEffect; 6: InvokeEffect; 7: SpecialAbility; 8: DisableRevivalHere; 9: Invincible
+    public const int Version = 9;     // 2: the levels' EventBuffType; 3: PvpOnOff; 4: ForceApplyTarget, Hide; 5: SpecialEffect; 6: InvokeEffect; 7: SpecialAbility; 8: DisableRevivalHere; 9: Invincible, SuperArmor, SuperArmorApplyFieldType
     const uint Magic = 0x4441324D;     // "M2AD"
     const uint EndMagic = 0x444E4541;  // "AEND"
 
@@ -131,6 +131,8 @@ public sealed class AdditionalCache
             w.Write(l.ForceApplyTarget);
             w.Write(l.Hide);
             w.Write(l.Invincible);
+            w.Write(l.SuperArmor);
+            w.Write(l.SuperArmorApplyFieldType);
             w.Write(l.SpecialEffectType);
             w.Write(l.SpecialEffectProbability);
             w.Write(l.SpecialEffectValues?.Count ?? -1);
@@ -264,6 +266,7 @@ public sealed class AdditionalCache
                 IconOnOff = r.ReadInt32(), Icon = r.ReadString(), Priority = r.ReadInt32(), IsHideCooltime = r.ReadBoolean(),
                 EventBuffType = r.ReadUInt32(), PvpOnOff = r.ReadBoolean(), DisableRevivalHere = r.ReadBoolean(),
                 ForceApplyTarget = r.ReadInt32(), Hide = r.ReadInt32(), Invincible = r.ReadInt32(),
+                SuperArmor = r.ReadUInt32(), SuperArmorApplyFieldType = r.ReadInt32(),
                 SpecialEffectType = r.ReadInt32(), SpecialEffectProbability = r.ReadSingle(), SpecialEffectValues = ReadValues(r),
                 InvokeSkillId = r.ReadUInt32(), InvokeSkillGroupId = r.ReadUInt32(), InvokeEffectId = r.ReadUInt32(), InvokeEffectGroupId = r.ReadUInt32(),
                 InvokeTypes = ReadInts(r), InvokeValues = ReadInts(r), InvokeRates = ReadFloats(r),

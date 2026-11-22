@@ -45,7 +45,7 @@ public class AdditionalCacheTests
                 foreach (var e in GameStrings.Parse(packs.Read("Xml", n)).Root?.Elements("additional") ?? Enumerable.Empty<XElement>())
                     if (uint.TryParse((string)e.Attribute("id"), out var id)) ids.Add(id);
             Assert.That(ids.Count, Is.GreaterThan(1000));
-            int levels = 0, specials = 0;
+            int levels = 0, specials = 0, armors = 0;
             foreach (var id in ids.Append(0u).Append(99999999u))
             {
                 var a = xml.Additional.GetAdditional(id);
@@ -62,6 +62,8 @@ public class AdditionalCacheTests
                     levels++;
                     Assert.That((lb.Level, lb.StringParam, lb.DurationTick, lb.KeepCondition, lb.IconOnOff, lb.Icon, lb.Priority, lb.IsHideCooltime, lb.EventBuffType, lb.PvpOnOff, lb.DisableRevivalHere, lb.ForceApplyTarget, lb.Hide, lb.Invincible, lb.Parent == b),
                         Is.EqualTo((la.Level, la.StringParam, la.DurationTick, la.KeepCondition, la.IconOnOff, la.Icon, la.Priority, la.IsHideCooltime, la.EventBuffType, la.PvpOnOff, la.DisableRevivalHere, la.ForceApplyTarget, la.Hide, la.Invincible, true)), $"effect {id} level {lv}");
+                    Assert.That((lb.SuperArmor, lb.SuperArmorApplyFieldType), Is.EqualTo((la.SuperArmor, la.SuperArmorApplyFieldType)), $"effect {id} level {lv} super armor");
+                    if (la.SuperArmor != 0) armors++;
                     Assert.That((lb.SpecialEffectType, lb.SpecialEffectProbability, lb.SpecialEffectValues), Is.EqualTo((la.SpecialEffectType, la.SpecialEffectProbability, la.SpecialEffectValues)), $"effect {id} level {lv} special effect");
                     Assert.That((lb.InvokeSkillId, lb.InvokeSkillGroupId, lb.InvokeEffectId, lb.InvokeEffectGroupId, lb.InvokeTypes, lb.InvokeValues, lb.InvokeRates),
                         Is.EqualTo((la.InvokeSkillId, la.InvokeSkillGroupId, la.InvokeEffectId, la.InvokeEffectGroupId, la.InvokeTypes, la.InvokeValues, la.InvokeRates)), $"effect {id} level {lv} invoke effect");
@@ -73,6 +75,7 @@ public class AdditionalCacheTests
             }
             TestContext.Progress.WriteLine($"additional cache: {ids.Count} ids, {levels} levels compared");
             Assert.That(specials, Is.GreaterThan(1000), "levels with special abilities");
+            Assert.That(armors, Is.GreaterThan(0), "levels with super armor");
         }
         finally
         {
