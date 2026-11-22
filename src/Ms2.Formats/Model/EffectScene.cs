@@ -214,10 +214,6 @@ public sealed class EmitterDef
         return l > 0 ? v * (1 / l) : v;
     }
 
-    /// <summary>The emitter-space direction for a declination and planar angle (variances already applied):
-    /// NiPSEmitter::ComputeDirection (NiPSEmitter.inl:267-311). Declination 0 is +Z. A pre-RPI system (NiPSParticleSystem
-    /// "Pre RPI") uses (sin dec cos plan, sin dec sin plan, cos dec); otherwise the RPI method (cos dec sin plan, -sin dec,
-    /// cos dec cos plan).</summary>
     /// <summary>A triangle list of <paramref name="count"/> indices from <paramref name="start"/> of the INDEX stream, or null
     /// when the range is outside the stream, is not whole triangles or holds an index at or past
     /// <paramref name="vertexCount"/>; a null list makes the emitter emit from vertices.</summary>
@@ -234,6 +230,10 @@ public sealed class EmitterDef
         return t;
     }
 
+    /// <summary>The emitter-space direction for a declination and planar angle (variances already applied):
+    /// NiPSEmitter::ComputeDirection (NiPSEmitter.inl:267-311). Declination 0 is +Z. A pre-RPI system (NiPSParticleSystem
+    /// "Pre RPI") uses (sin dec cos plan, sin dec sin plan, cos dec); otherwise the RPI method (cos dec sin plan, -sin dec,
+    /// cos dec cos plan).</summary>
     public static Vec3 Direction(double dec, double plan, bool preRpi)
     {
         if (dec == 0) return new Vec3(0, 0, 1);
