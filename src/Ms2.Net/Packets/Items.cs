@@ -418,7 +418,8 @@ public static class ItemReader {
             // ItemBlueprint: i64, 3 x i32, i64, i32 type, i64, i64, string
             r.ReadLong(); r.ReadInt(); r.ReadInt(); r.ReadInt(); r.ReadLong(); r.ReadInt(); r.ReadLong(); r.ReadLong(); r.ReadUnicodeString();
         }
-        if (gms2 && badge) {
+        if (gms2 && (badge || (extra & ItemExtra.Gem) != 0)) {
+            // upstream Item.WriteTo writes ItemBadge for any badge-tab item, in an inventory list as in a worn badge
             // upstream ItemBadge.WriteTo: u8 1, u8 BadgeType, the item id as a string; Transparency: 10 bools; PetSkin: i32 pet id
             r.ReadByte(); it.GemType = r.ReadByte();
             int.TryParse(r.ReadUnicodeString(), out it.GemId);

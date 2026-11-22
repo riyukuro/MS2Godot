@@ -24,6 +24,27 @@ public class Gms2InventoryLayoutTests {
     }
 
     [Test]
+    public void ABadgeTabItemCarriesTheBadgeBlockInAnInventoryList() {
+        var old = ItemReader.ExtraOf;
+        ItemReader.ExtraOf = id => id == 70000001 ? ItemExtra.Gem : ItemExtra.None;
+        try {
+            var w = new ByteWriter();
+            w.WriteByte(7); w.WriteShort(2);
+            Head(w, 70000001, 100, 0);
+            Gms2CharacterListLayoutTests.WriteBody(w, extra: x => {
+                x.WriteByte(1); x.WriteByte(1); x.WriteUnicodeString("70000001");
+                for (int i = 0; i < 10; i++) x.WriteBool(i % 2 == 0);
+            });
+            Head(w, 20000001, 101, 1); Gms2CharacterListLayoutTests.WriteBody(w);
+            var r = new ByteReader(w.ToArray());
+            var m = (ItemMessage.Load) ItemMessage.Read(r, _ => null, Gms);
+            Assert.That(m.Items[0].GemType, Is.EqualTo(1)); Assert.That(m.Items[0].GemId, Is.EqualTo(70000001));
+            Assert.That(m.Items[1].Id, Is.EqualTo(20000001));
+            Assert.That(r.Available, Is.EqualTo(0));
+        } finally { ItemReader.ExtraOf = old; }
+    }
+
+    [Test]
     public void AddCarriesAUnicodeSlotAfterTheRarity() {
         var w = new ByteWriter();
         w.WriteByte(0); Head(w, 20000001, 5, 3); w.WriteUnicodeString(""); Gms2CharacterListLayoutTests.WriteBody(w);
