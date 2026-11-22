@@ -822,7 +822,7 @@ public partial class LiveSession : Node
 
     static Ms2.Ui.Items.ItemDataTable itemData;
     /// <summary>The worn layer of an item (ItemDataTable.WornLayer); null when the item data is missing.</summary>
-    static int? WornLayer(int itemId) {
+    public static int? WornLayer(int itemId) {
         try { return (itemData ??= new Ms2.Ui.Items.ItemDataTable(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir))).WornLayer(itemId); }
         catch (Exception e) { GD.Print($"live: item data unavailable ({e.Message})"); return null; }
     }

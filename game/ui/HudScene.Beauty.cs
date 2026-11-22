@@ -29,11 +29,13 @@ public partial class HudScene
         beautyFlow.CreateController = () => CreateBeauty(live);
         beautyFlow.Show = ShowBeauty;
         beautyFlow.Log = m => GD.Print(m);
+        beautyFlow.CreateCustomize = () => CreateBeautyCustomize(live);
         beautyFlow.SendOpenRequest = uid => live.SendBeauty(new BeautyOpenRequest(uid));   // SendBeauty (scenestategame.cpp:8714)
         void OnRequested(BeautyReq req) => beautyFlow.OpenFor(req);
         beautyStyleFlow.CreateController = () => CreateBeautyStyle(live);
         beautyStyleFlow.Show = ShowBeautyStyle;
         beautyStyleFlow.Log = m => GD.Print(m);
+        beautyStyleFlow.CreateCustomize = () => CreateBeautyCustomize(live);
         void OnBeautyPacket(byte[] body) => BeautyPacketRouter.Route(body, beautyFlow, beautyStyleFlow, m => GD.Print(m));
         live.BeautyRequested += OnRequested;
         live.BeautyPacketReceived += OnBeautyPacket;
@@ -59,6 +61,20 @@ public partial class HudScene
         };
         c.NoticeText += SystemNoticeText;
         return c;
+    }
+
+    /// <summary>
+    /// The own-avatar Customize over the live own player (<see cref="BeautyOwnAvatar"/>): the preview dresses the same lists the
+    /// 3D avatar copy redraws from. Null without a worn item (CloneItems::Init @0x140ccf010 fails), so the flows stay shut as for
+    /// no Customize. STILL-OPEN: the packets the Customize sends (Equipment::SendColors / SendAdded / SendModified / SendRemoved)
+    /// need the free-try byte, the sale context and CItem::WriteItemBody, none recovered, so they stay unset and the commit does
+    /// not send them; slot-of-id, the two-slot predicates and new preview items (FUN_141420f10, FUN_14053d2b0, FUN_14053d460,
+    /// FUN_140523c40) also stay unset, so a preview that needs one does nothing.
+    /// </summary>
+    BeautyCustomize CreateBeautyCustomize(Ms2Godot.Net.LiveSession live)
+    {
+        if (live.Me.User == null || live.Me.Equips == null || live.Me.Equips.Count + (live.Me.Outfit2?.Count ?? 0) == 0) return null;
+        return new BeautyCustomize(new BeautyOwnAvatar(live.Me, Ms2Godot.Net.LiveSession.WornLayer));
     }
 
     void ShowBeauty(BeautyShopDialogController c)
