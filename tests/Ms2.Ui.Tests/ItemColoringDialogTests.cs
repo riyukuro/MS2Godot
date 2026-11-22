@@ -195,4 +195,18 @@ public class ItemColoringDialogTests
         Assert.That(talk.Run(BeautyTalkCommand.ShopDialog, "itemColor"), Is.True);
         Assert.That((flow.IsOpen, ended), Is.EqualTo((true, 1)));
     }
+
+    [Test] public void OnChangeItemSkipsTheFirstStringThenReadsUidAndIndex() {
+        var r = new Rig();
+        r.C.OnPacket(Rig.Open());
+        Assert.That(r.C.OnCallback("OnChangeItem", new object[] { "skipped", "777", 3 }), Is.True);
+        Assert.That((r.C.SelectedIndex, r.Cu.Calls), Is.EqualTo((3, new List<string> { "restore900", "select777" })));
+    }
+
+    [Test] public void OnChangeItemNeedsThreeArguments() {
+        var r = new Rig();
+        r.C.OnPacket(Rig.Open());
+        r.C.OnCallback("OnChangeItem", new object[] { "777", 3 });
+        Assert.That((r.C.SelectedIndex, r.Cu.Calls), Is.EqualTo((-1, new List<string>())));
+    }
 }

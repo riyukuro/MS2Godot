@@ -609,10 +609,11 @@ public sealed class ItemColoringDialogController : UiController
         switch (name.ToLowerInvariant())
         {
             case "onchangeitem":
-                if (args.Length >= 2)
+                // uiitemcoloringdialog.cpp:434-440: the first string argument is skipped (FUN_1422b8d30); uid is args[1], index args[2].
+                if (args.Length >= 3)
                 {
-                    long.TryParse(Rt.ToString(args[0]), out long uid);
-                    SelectItem(uid, (int)Rt.ToNumber(args[1]));
+                    long.TryParse(Rt.ToString(args[1]), out long uid);
+                    SelectItem(uid, (int)Rt.ToNumber(args[2]));
                     return true;
                 }
                 break;
