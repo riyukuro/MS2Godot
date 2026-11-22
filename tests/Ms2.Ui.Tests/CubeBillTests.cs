@@ -31,6 +31,52 @@ public class CubeBillTests
         Assert.That(b.Cost.Amounts.Select(x => (x.Key, x.Value)), Is.EqualTo(new[] { (1, 5L) }));
     }
 
+    [Test] public void BlueprintAskClosesTheBillClearsThePendingAndSends0x42()
+    {
+        var (b, sent, log) = Make();
+        b.Pending.Kind = 3; b.Pending.BlueprintUid = 9; b.Pending.CubeId = 4;
+        b.RequestBlueprintBill(77);
+        Assert.That(log, Is.EqualTo(new[] { "closeBill" }));
+        Assert.That(sent, Is.EqualTo(new IOutPacket[] { new BlueprintBillAskRequest(77) }));
+        Assert.That((b.Pending.Kind, b.Pending.BlueprintUid, b.Pending.CubeId), Is.EqualTo((0, 0L, 0)));
+    }
+
+    [Test] public void BlueprintOpenBoxAnswersOnlyYesForAnItemInTheBag()
+    {
+        var (b, sent, log) = Make();
+        var used = new List<(long, string)>();
+        b.HasItem = uid => uid == 5;
+        b.UseItem = (uid, arg) => { used.Add((uid, arg)); return 1; };
+        Assert.That(b.OnBlueprintOpenBox(1, 5), Is.True);
+        Assert.That(b.OnBlueprintOpenBox(0, 6), Is.True);
+        Assert.That(used, Is.Empty);
+        Assert.That(b.OnBlueprintOpenBox(0, 5), Is.True);
+        Assert.That(used, Is.EqualTo(new[] { (5L, "") }));
+        Assert.That(log, Is.EqualTo(new[] { "closeBill" }));
+        Assert.That((b.Pending.Kind, b.Pending.BlueprintUid), Is.EqualTo((3, 5L)));
+        Assert.That(sent, Is.Empty);
+    }
+
+    [Test] public void BlueprintOpenBoxKeepsThePendingWhenTheUseDoesNotGoThrough()
+    {
+        var (b, _, log) = Make();
+        b.Pending.Kind = 1; b.Pending.CubeId = 4;
+        b.HasItem = _ => true;   // UseItem stays the default: 0
+        b.OnBlueprintOpenBox(0, 5);
+        Assert.That(log, Is.Empty);
+        Assert.That((b.Pending.Kind, b.Pending.CubeId), Is.EqualTo((1, 4)));
+    }
+
+    [Test] public void BlueprintPreviewBillOpensWithNoBuy()
+    {
+        var (b, sent, log) = Make();
+        b.RequestBlueprintBill(77);
+        b.OnBill(Bill(ResponseCubeBill.ModeBlueprint, true));
+        b.Buy();
+        Assert.That(log, Does.Contain("openBill"));
+        Assert.That(sent.OfType<BlueprintBuyRequest>(), Is.Empty);
+    }
+
     [Test] public void AskClosesTheBillSetsThePendingCubeAndSends0x23()
     {
         var (b, sent, log) = Make();

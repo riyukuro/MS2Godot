@@ -38,8 +38,11 @@ public sealed class CubeBillCost : CubeBillPending
 /// The bill of a cube or blueprint purchase, the statics and free functions of uiugccubebilldialog.cpp: the ask (SendRequestCubeMode35 @0x140ee8360,
 /// :264-273), the server's bills (FUN_140ee8190 @0x140ee8190 for ResponseCube 0x24, FUN_140ee83f0 @0x140ee83f0 for 0x43) and the buy
 /// (UIUGCCubeBillDialog::SendRequestCube @0x140ee80a0). The dialog itself is <see cref="CubeBillDialogController"/>.
-/// STILL-OPEN: SendRequestCubeMode66 (@0x140ee86f0, the ask for a blueprint's bill, 0x42) and FUN_140ee8610 / FUN_140ee8000 (the blueprint open box)
-/// have no opener here yet.
+/// The blueprint ask (SendRequestCubeMode66 @0x140ee86f0, :311-320) and the blueprint open box's answer (FUN_140ee8000 @0x140ee8000 with FUN_140ee8610 @0x140ee8610,
+/// :180-205) are here too.
+/// STILL-OPEN: their callers. The ask is called by the meret market's UGC product open (FUN_140ec0b50 @0x140ec0b50, uimeratmarketcommon.cpp:1119-1135; needs
+/// the product's FUN_140896350 check and its blueprint at +0x418) and no meret market dialog is ported yet; the box that FUN_140ee8000 answers is opened by the
+/// item use handler of unit_140d1ae30, which is not in the recovered source.
 /// </summary>
 public sealed class CubeBill
 {
@@ -67,6 +70,40 @@ public sealed class CubeBill
         Pending.Kind = 1;
         Pending.CubeId = cubeId;
         Send(new HomeDesignBillRequest(cubeId));
+    }
+
+    /// <summary>SendRequestCubeMode66 (@0x140ee86f0): the bill dialog closes, the pending cost is cleared (the blueprint uid is not kept in it), then
+    /// RequestCube 0x42 with the uid and true.</summary>
+    public void RequestBlueprintBill(long blueprintUid)
+    {
+        CloseBill();
+        Pending.Reset();
+        Send(new BlueprintBillAskRequest(blueprintUid));
+    }
+
+    /// <summary>The bag's FindItemByUid: the item is in the inventory.</summary>
+    public Func<long, bool> HasItem = _ => false;
+    /// <summary>Unk_Inventory::FUN_140a63880 (@0x140a63880, inventory.cpp:1403): the item's use with the argument; 0 for an item with no function or one
+    /// that is not used. A path without the client's use request ported does nothing.</summary>
+    public Func<long, string, int> UseItem = (_, _) => 0;
+
+    /// <summary>UIUGCCubeBillDialog::FUN_140ee8000 (@0x140ee8000, :195-205): the blueprint open box's answer; yes (0) looks the item up by the box's uid
+    /// (FUN_141a02c20) and goes on with it. Always handles the box.</summary>
+    public bool OnBlueprintOpenBox(int answer, long itemUid)
+    {
+        if (answer == 0 && HasItem(itemUid)) OpenBlueprint(itemUid);
+        return true;
+    }
+
+    /// <summary>FUN_140ee8610 (@0x140ee8610, :180-193): the item is used with an empty argument; when that went through, the bill dialog closes and the
+    /// pending cost is the blueprint (kind 3).</summary>
+    public void OpenBlueprint(long itemUid)
+    {
+        if (UseItem(itemUid, "") == 0) return;
+        CloseBill();
+        Pending.Reset();
+        Pending.BlueprintUid = itemUid;
+        Pending.Kind = 3;
     }
 
     /// <summary>FUN_140ee8190 (ResponseCube 0x24) and FUN_140ee83f0 (0x43): the dialog closes, the cost is rebuilt from the pending cost and the

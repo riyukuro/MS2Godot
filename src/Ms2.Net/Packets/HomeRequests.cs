@@ -98,3 +98,9 @@ public sealed record BlueprintBuyRequest(long BlueprintUid) : IOutPacket {
     public Outbound Op => Outbound.RequestCube;
     public void Write(ByteWriter w) { w.WriteByte(0x46); w.WriteLong(BlueprintUid); }
 }
+
+/// <summary>SendRequestCubeMode66 (@0x140ee86f0, uiugccubebilldialog.cpp:311-320): the ask for a blueprint's bill, RequestCube u8 0x42, i64 the blueprint's uid, bool true.</summary>
+public sealed record BlueprintBillAskRequest(long BlueprintUid) : IOutPacket {
+    public Outbound Op => Outbound.RequestCube;
+    public void Write(ByteWriter w) { w.WriteByte(0x42); w.WriteLong(BlueprintUid); w.WriteBool(true); }
+}

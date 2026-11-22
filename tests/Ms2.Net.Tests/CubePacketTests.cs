@@ -401,5 +401,7 @@ public class ResponseCubeBillTests
         Assert.That(w.Buffer[..w.Length], Is.EqualTo(new byte[] { 0x30, 6, 0, 0, 0 }));
         w = new ByteWriter(); new BlueprintBuyRequest(2).Write(w);
         Assert.That(w.Buffer[..w.Length], Is.EqualTo(new byte[] { 0x46, 2, 0, 0, 0, 0, 0, 0, 0 }));
+        w = new ByteWriter(); new BlueprintBillAskRequest(3).Write(w);
+        Assert.That(w.Buffer[..w.Length], Is.EqualTo(new byte[] { 0x42, 3, 0, 0, 0, 0, 0, 0, 0, 1 }));
     }
 }
