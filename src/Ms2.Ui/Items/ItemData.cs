@@ -239,6 +239,8 @@ public sealed class ItemData
     /// <summary>HasCubeTextureMesh (:987).</summary>
     public bool HasCubeTextureMesh => UccMesh.Length > 0;
     public bool IsRideItem => Type == 9;                       // :681
+    /// <summary>GetRideeId (:1173): param1 of a ride item (type 9), else 0.</summary>
+    public int RideeId => Type == 9 ? Param1 : 0;
     /// <summary>FUN_14053ccc0 (:687): a ride item of subtype 1.</summary>
     public bool IsMultiRideItem => IsRideItem && Subtype == 1;
     /// <summary>FUN_14053d900 (:1056).</summary>

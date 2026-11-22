@@ -100,7 +100,7 @@ public partial class Player
     public event Action<Ms2.Ui.HeldItemState> HeldStateEntered;
 
     /// <summary>The client's state id (gostate.h) of a move state, for the sync record's first byte.</summary>
-    static byte StateId(MoveState s) => s switch
+    internal static byte StateId(MoveState s) => s switch
     {
         MoveState.Idle => 1, MoveState.Walk => 2, MoveState.Land => 4, MoveState.Fall => 5, MoveState.Jump => 6,
         MoveState.Ladder => 8, MoveState.Rope => 9, MoveState.Dead => 0xc, MoveState.Hit => 0xd, MoveState.Revival => 0x18, MoveState.Dash => 20, MoveState.Swim => 27, MoveState.Climb => 29, MoveState.Hold => 0x20, _ => 1,

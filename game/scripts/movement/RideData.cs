@@ -22,6 +22,8 @@ public sealed class RideData
     public int Type;
     /// <summary>basic enableRideOffUI (m_basic.m_nEnableRideOffUI, XmlGetBool): the ride-off button and the 0xf ride-off action.</summary>
     public bool EnableRideOffUI;
+    /// <summary>rideSummonCastTime in seconds, null without it (RideeData::Basic, ridingtable.cpp:360-361).</summary>
+    public float? SummonCastTime;
     public float[] RideTranslation = new float[3], RideRotation = new float[3];
     public string AniPC = "Ride_Idle_A", AniPCIdle, AniPCRun, AniPCJump, AniPCSPIdle, AniPCSPRun, AniPCSPJump;
     /// <summary>RideeData::Collision (@0x140783800): the box size, 100 each when absent (ctor @0x1407836e0), and whether the
@@ -61,6 +63,9 @@ public sealed class RideData
             RideTranslation = V(b, "rideTranslation"),
             RideRotation = V(b, "rideRotation"),
         };
+        if (b.Attribute("rideSummonCastTime") is { } sct && float.TryParse((string)sct, NumberStyles.Float,
+                CultureInfo.InvariantCulture, out float sec))
+            d.SummonCastTime = sec;
         var pc = (string)b.Attribute("rideAniPC");
         if (!string.IsNullOrEmpty(pc)) d.AniPC = pc;
         d.AniPCIdle = Or((string)b.Attribute("rideAniPC_Idle"), d.AniPC);

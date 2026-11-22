@@ -73,8 +73,7 @@ public partial class LiveSession
                 // otherwise). STILL-OPEN: the vfunc_25 test before both effects, rideOffBySkillEffect for type 0x18.
                 if (wasRiding) { PlayOwnCommonEffect(RideOffEffectKey); OwnPassengers.Clear(); }   // and ClearPassengers
                 if (r.RideOff?.Type == RideOffHoldRequest.ActionType) HoldAfterRideOff();
-                if (OwnRide.SummonsAfterRideOff(r, selfObject))
-                    GD.Print($"live: ride off for summon {r.RideeId} item {r.ItemUid}");   // STILL-OPEN: state 0x26, StateSummonData
+                if (OwnRide.SummonsAfterRideOff(r, selfObject)) SummonAfterRideOff(r);
                 break;
         }
     }

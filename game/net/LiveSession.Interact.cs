@@ -374,6 +374,7 @@ public partial class LiveSession
     {
         InteractObjects?.Tick(at, playerMoved);
         InteractNpcs?.Tick(at, playerMoved);
+        rideSummon?.Tick(playerMoved);   // StateSummon::vfunc_8, the body's move standing in for the move input
     }
 
     /// <summary>Action key press on the polled interact object: only the polled action runs, and its own state gate refuses it

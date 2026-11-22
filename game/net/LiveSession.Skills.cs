@@ -14,6 +14,8 @@ public partial class LiveSession
     public bool SendCast(CastRecord r, bool holdAttackFeature)
     {
         if (game == null) return false;
+        // UseStateSkill kind 0x26 (stateskill.cpp:2009-2021): MyPC's class takes UseRideeItem for the record's item
+        if (!r.Skill.IsEmotion && r.Skill.ActionKind == 0x26 && r.ItemUid != 0) { UseRideeItem(r.ItemUid); return true; }
         if (SkillCast.Use(r, game.Session.ServerTick, game.Session.ElapsedMs, holdAttackFeature) is { } pk) Send(pk);
         return true;
     }
