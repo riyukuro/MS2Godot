@@ -1371,7 +1371,7 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.MeretMarket))
             {
-                var mm = MeretMarketPacket.Read(p.Reader());
+                var mm = MeretMarketPacket.Read(p.Reader(), game.Profile);
                 if (mm != null)
                 {
                     GD.Print($"live: merat market buy mode 0x{mm.Mode:x}");

@@ -31,7 +31,10 @@ public sealed class MeretMarketBuy {
     public int RandomRate;      // m_n88 (type 7 / 8 products)
 
     /// <summary>BuyPacket::Write.</summary>
-    public void Write(ByteWriter w) {
+    public void Write(ByteWriter w) => Write(w, ProtocolProfile.Kms2525);
+
+    /// <summary>GMS2 stops after the pay type: the four home sale / random rate ints are not sent.</summary>
+    public void Write(ByteWriter w, ProtocolProfile profile) {
         w.WriteByte((byte)Kind);
         w.WriteInt(PremiumId); w.WriteLong(UgcId);
         w.WriteInt(Quantity); w.WriteInt(Option); w.WriteLong(BookmarkId);
@@ -39,11 +42,14 @@ public sealed class MeretMarketBuy {
         w.WriteByte((byte)Gift);
         w.WriteUnicodeString(Receiver); w.WriteUnicodeString(Message);
         w.WriteLong(Price); w.WriteBool(StarPoint); w.WriteByte((byte)PayType);
+        if (profile.IsGms2) return;
         w.WriteInt(HomeA); w.WriteInt(HomeB); w.WriteInt(HomeCount); w.WriteInt(RandomRate);
     }
 
     /// <summary>BuyPacket::Read.</summary>
-    public static MeretMarketBuy Read(ByteReader r) {
+    public static MeretMarketBuy Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    public static MeretMarketBuy Read(ByteReader r, ProtocolProfile profile) {
         var b = new MeretMarketBuy { Kind = r.ReadByte() };
         b.PremiumId = r.ReadInt(); b.UgcId = r.ReadLong();
         b.Quantity = r.ReadInt(); b.Option = r.ReadInt(); b.BookmarkId = r.ReadLong();
@@ -51,15 +57,17 @@ public sealed class MeretMarketBuy {
         b.Gift = r.ReadByte();
         b.Receiver = r.ReadUnicodeString(); b.Message = r.ReadUnicodeString();
         b.Price = r.ReadLong(); b.StarPoint = r.ReadBool(); b.PayType = r.ReadByte();
+        if (profile.IsGms2) return b;
         b.HomeA = r.ReadInt(); b.HomeB = r.ReadInt(); b.HomeCount = r.ReadInt(); b.RandomRate = r.ReadInt();
         return b;
     }
 }
 
 /// <summary>Outbound 0x39 mode 0x1e (SendMeretMarketMode30): u8 0x1e, then the <see cref="MeretMarketBuy"/>.</summary>
-public sealed record MeretMarketBuyRequest(MeretMarketBuy Buy) : IOutPacket {
+public sealed record MeretMarketBuyRequest(MeretMarketBuy Buy) : IProfileOutPacket {
     public Outbound Op => Outbound.MeretMarket;
-    public void Write(ByteWriter w) { w.WriteByte(0x1e); Buy.Write(w); }
+    public void Write(ByteWriter w) => Write(w, ProtocolProfile.Kms2525);
+    public void Write(ByteWriter w, ProtocolProfile profile) { w.WriteByte(0x1e); Buy.Write(w, profile); }
 }
 
 /// <summary>
@@ -75,10 +83,12 @@ public sealed class MeretMarketPacket {
     public bool Succeeded => Mode == 0x1e;
 
     /// <summary>Null for a mode other than 0x1e / 0x1f.</summary>
-    public static MeretMarketPacket Read(ByteReader r) {
+    public static MeretMarketPacket Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    public static MeretMarketPacket Read(ByteReader r, ProtocolProfile profile) {
         byte mode = r.ReadByte();
         if (mode != 0x1e && mode != 0x1f) return null;
-        var p = new MeretMarketPacket { Mode = mode, Buy = MeretMarketBuy.Read(r) };
+        var p = new MeretMarketPacket { Mode = mode, Buy = MeretMarketBuy.Read(r, profile) };
         if (mode == 0x1e) { p.BuyCount = r.ReadInt(); p.SoldCount = r.ReadInt(); p.Ugc3c = r.ReadInt(); p.Ugc40 = r.ReadInt(); }
         else p.Error = r.ReadInt();
         return p;
