@@ -206,6 +206,7 @@ public partial class RemoteRideCheck : Node3D
         long alloc = GC.GetAllocatedBytesForCurrentThread() - a0;
         if (m.RideBones().Length == 0 || alloc != 0) fails.Add($"hold poll of {m.RideBones().Length} seat node(s) allocates {alloc} B per 100");
         RideeIdNoTarget(layer, m.Data.Id, bone);
+        RideEffects(layer, m.Data.Id);
         pc.QueueFree();
         field.QueueFree();
         layer.Free();
@@ -226,6 +227,38 @@ public partial class RemoteRideCheck : Node3D
         if (t.Kind != HoldKind.None || t.HasNode) fails.Add($"ridee id {Ridee} as hold target: kind {t.Kind}, node {t.HasNode} (the client falls back)");
         if (r.Kind != HoldKind.Pc || !r.HasRidee) fails.Add($"rider {User}: kind {r.Kind}, ridee {r.HasRidee}");
         GD.Print($"remote ride: ridee id {Ridee} as hold target {t.Kind} (fallback), rider {r.Kind} with ridee {r.HasRidee}");
+    }
+
+    /// <summary>PCBase::vfunc_120 / vfunc_121's effects at another player: the ride-on effect, the ride-off effect, and
+    /// after an UnRideSkill (type 24) ride off the row's rideOffBySkillEffect too; a plain ride off plays only the
+    /// ride-off effect.</summary>
+    void RideEffects(RemoteLayer layer, int rideId)
+    {
+        const int User = 34;
+        var tables = Ms2.Ui.GameTables.Shared(packs, GameOptions.StringLanguage);
+        string on = tables.CommonResource(LiveSession.RideOnEffectKey), off = tables.CommonResource(LiveSession.RideOffEffectKey);
+        if (string.IsNullOrEmpty(on) || string.IsNullOrEmpty(off)) { fails.Add($"ride effects: common resource '{on}' / '{off}'"); return; }
+        var u = new FieldAddUser { ObjectId = User, User = new UserBlock { Name = "e", CharacterId = 134, Gender = 1 } };
+        u.Stats[0].Health = 100; u.Stats[2].Health = 100;
+        layer.Tracker.Events.Enqueue(new UserAddedEvent(0, u, false));
+        layer._Process(0);
+        var played = new List<string>();
+        layer.RideEffectsPlayed = (id, path) => played.Add($"{id}:{path}");
+        ResponseRide Mount() => new ResponseRide(0, User, new RideOnAction(0, rideId, 5034, false, 0, 0, 0, 0), null, 0, 0, 0, 0, false);
+        layer.OnRide(Mount());
+        if (played.Count != 1 || played[0] != $"{User}:{on}") fails.Add($"ride on effects: {string.Join(", ", played)}");
+        played.Clear();
+        layer.OnRide(new ResponseRide(1, User, null, new RideOffAction(0, 0), 0, 0, 0, 0, false));
+        if (played.Count != 1 || played[0] != $"{User}:{off}") fails.Add($"plain ride off effects: {string.Join(", ", played)}");
+        layer.OnRide(Mount());
+        var row = layer.RideeRow(User);
+        if (row == null) { fails.Add("ride effects: no ridee row after the second ride on"); return; }
+        row.RideOffBySkillEffect = on;    // a stand-in path: the rows' own value is data
+        played.Clear();
+        layer.OnRide(new ResponseRide(1, User, null, new RideOffAction(RemoteLayer.UnRideSkillType, 0), 0, 0, 0, 0, false));
+        if (played.Count != 2 || played[0] != $"{User}:{off}" || played[1] != $"{User}:{on}") fails.Add($"UnRideSkill ride off effects: {string.Join(", ", played)}");
+        layer.RideEffectsPlayed = null;
+        GD.Print($"remote ride: ride effects on '{on}', off '{off}', UnRideSkill adds the row's effect ({played.Count} played)");
     }
 
     void Done(string fail)

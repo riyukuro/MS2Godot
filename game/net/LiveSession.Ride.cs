@@ -68,10 +68,12 @@ public partial class LiveSession
                 // chair, Recall ...); a react ride-off reads null (no case 20 in ReadRideOffAction, rideonaction.cpp:159), so
                 // it is a plain ride off.
                 bool wasRiding = player.Mount != null;
+                string skillEffect = r.RideOff?.Type == RemoteLayer.UnRideSkillType ? player.Mount?.Data?.RideOffBySkillEffect : null;
                 player.RideOff();
                 // PCBase::vfunc_121: the ride-off effect only when a ridee was released (the body returns before it
-                // otherwise). STILL-OPEN: the vfunc_25 test before both effects, rideOffBySkillEffect for type 0x18.
-                if (wasRiding) { PlayOwnCommonEffect(RideOffEffectKey); OwnPassengers.Clear(); }   // and ClearPassengers
+                // otherwise), then an UnRideSkill's rideOffBySkillEffect (pcbase.cpp:3397-3401, :3423-3429). STILL-OPEN:
+                // the vfunc_25 test before the effects.
+                if (wasRiding) { PlayOwnCommonEffect(RideOffEffectKey); PlayOwnEffect(skillEffect); OwnPassengers.Clear(); }   // and ClearPassengers
                 if (r.RideOff?.Type == RideOffHoldRequest.ActionType) HoldAfterRideOff();
                 if (OwnRide.SummonsAfterRideOff(r, selfObject)) SummonAfterRideOff(r);
                 break;

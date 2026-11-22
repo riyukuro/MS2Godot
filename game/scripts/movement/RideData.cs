@@ -22,6 +22,9 @@ public sealed class RideData
     public int Type;
     /// <summary>basic enableRideOffUI (m_basic.m_nEnableRideOffUI, XmlGetBool): the ride-off button and the 0xf ride-off action.</summary>
     public bool EnableRideOffUI;
+    /// <summary>rideOffBySkillEffect: the effect PCBase::vfunc_121 plays at the rider after an UnRideSkill (type 24)
+    /// ride off (pcbase.cpp:3397-3401, :3423-3429); null when the row has none.</summary>
+    public string RideOffBySkillEffect;
     /// <summary>rideSummonCastTime in seconds, null without it (RideeData::Basic, ridingtable.cpp:360-361).</summary>
     public float? SummonCastTime;
     public float[] RideTranslation = new float[3], RideRotation = new float[3];
@@ -60,6 +63,7 @@ public sealed class RideData
             DisablePickUp = F(b, "disablePickUp", 0) != 0,
             Type = Ms2.Ui.RideOff.TypeOf((string)b.Attribute("type")),
             EnableRideOffUI = QueryBool((string)b.Attribute("enableRideOffUI"), false),
+            RideOffBySkillEffect = (string)b.Attribute("rideOffBySkillEffect"),
             RideTranslation = V(b, "rideTranslation"),
             RideRotation = V(b, "rideRotation"),
         };

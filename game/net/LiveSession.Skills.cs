@@ -106,7 +106,13 @@ public partial class LiveSession
         string path;
         try { path = Ms2.Ui.GameTables.Shared(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), GameOptions.StringLanguage).CommonResource(key); }
         catch (Exception ex) { GD.PushWarning($"common effect {key}: {ex.Message}"); return; }
-        if (string.IsNullOrEmpty(path)) return;
+        PlayOwnEffect(path);
+    }
+
+    /// <summary>An effect xml at the own PC as <see cref="PlayOwnCommonEffect"/> plays it; nothing for an empty path.</summary>
+    void PlayOwnEffect(string path)
+    {
+        if (string.IsNullOrEmpty(path) || player == null || !IsInstanceValid(player)) return;
         OwnEffectsPlayed?.Invoke(path);
         remote?.PlayEffect(path, player.GlobalPosition, player.Visual?.Rotation.Y ?? 0, Ms2.Audio.SoundMusicEffectState.CasterMyPc);
     }

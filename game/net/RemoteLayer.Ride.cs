@@ -9,7 +9,8 @@ namespace Ms2Godot.Net;
 /// of its own (<see cref="RemotePc.CreateRidee"/>) that replays the PC's RideSync records (CSceneStateGame::OnRideSync,
 /// scenestategame.cpp:2472: the PC's ridee, nothing without one) through its own states; the rider sits in StateRide on its
 /// seat and plays StateRide::vfunc_9's sequence by the mount's state (<see cref="StateRideAnim"/>).
-/// STILL-OPEN: the ride-on and ride-off effects (CommonResource +0x2b0 / +0x2b8) and rideOffBySkillEffect, hideRider
+/// The ride-on and ride-off effects (CommonResource +0x2b0 / +0x2b8) and an UnRideSkill ride off's rideOffBySkillEffect play
+/// at the PC (<see cref="PlayRideEffect"/>). STILL-OPEN: hideRider
 /// (AddHideReason(2)), StateRide's shadow off, the rider's stats copied to the ridee, the breakable anchor of a ride-off,
 /// the fall start the ridee had (StateFallData), the ridee's m_unk_b80 SP idle, the mount's step keys. Mode 6 also writes the
 /// kept ride-on action's m_b28, which only a later PCBase::vfunc_120 of that action reads; a remote PC's ride is re-sent with it.
@@ -26,7 +27,7 @@ public sealed partial class RemoteLayer
         switch (Ms2.Ui.OwnRide.ForActor(r, u.Ridee != null))
         {
             case Ms2.Ui.OwnRide.Step.RideOn: RideOn(u, r.RideOn); break;
-            case Ms2.Ui.OwnRide.Step.RideOff: RideOff(u); break;
+            case Ms2.Ui.OwnRide.Step.RideOff: RideOff(u, r.RideOff); break;
         }
         return true;
     }
@@ -54,20 +55,49 @@ public sealed partial class RemoteLayer
         r.Ridee = ridee;
         r.Pc.States.RideOn(ridee.States, r.HpCur, r.HpMax);
         r.NoBoarding = a.Flag;            // PC::FUN_1416642c0(m_b28), pcbase.cpp:3341-3343
+        PlayRideEffect(r, CommonPath(ref rideOnPath, LiveSession.RideOnEffectKey));   // pcbase.cpp:3324-3330
     }
 
     /// <summary>
     /// PCBase::vfunc_121 (@0x1416773f0): the rider takes the ridee's position and direction, the ridee is released, the
     /// jump stopped, then vfunc_59 of StateIdle when the ridee stood on the ground (FUN_141671a30) or StateFall, through
-    /// PC::vfunc_124.
+    /// PC::vfunc_124; then the ride-off effect, and for an UnRideSkill action (type 24) the row's rideOffBySkillEffect.
     /// </summary>
-    void RideOff(Remote r)
+    void RideOff(Remote r, RideOffAction action)
     {
         var ridee = r.Ridee;
         if (ridee == null) return;
+        string skillEffect = action?.Type == UnRideSkillType ? ridee.Mount?.Data?.RideOffBySkillEffect : null;
         Dismount(r.Pc, r.Visual, ridee, r.HpCur, r.HpMax);
         FreeRidee(r);
+        PlayRideEffect(r, CommonPath(ref rideOffPath, LiveSession.RideOffEffectKey));   // pcbase.cpp:3416-3422
+        PlayRideEffect(r, skillEffect);                                                  // :3423-3429
     }
+
+    /// <summary>RideOffAction type 24, UnRideSkill.</summary>
+    public const int UnRideSkillType = 24;
+
+    string rideOnPath, rideOffPath;
+    string CommonPath(ref string path, string key) =>
+        path ??= Ms2.Ui.GameTables.Shared(packs, Ms2Godot.GameOptions.StringLanguage).CommonResource(key) ?? "";
+
+    /// <summary>
+    /// CEffectService::InsertEffect at a remote PC (the actor set, its object kind): played once at its feet and facing.
+    /// PCBase::vfunc_120 / vfunc_121 test vfunc_25 first (GameObject m_unk_40, set by PC's hide option, pc.cpp:2735); the
+    /// other players are always shown here, so it reads 0. STILL-OPEN: the effect does not follow the actor.
+    /// </summary>
+    void PlayRideEffect(Remote r, string path)
+    {
+        if (string.IsNullOrEmpty(path) || r.Pc?.Body == null) return;
+        RideEffectsPlayed?.Invoke(r.ObjectId, path);
+        combat.PlayEffect(path, r.Pc.Body.GlobalPosition, r.Visual?.Rotation.Y ?? 0);
+    }
+
+    /// <summary>The riding row of a remote PC's ridee, null without one.</summary>
+    public Ms2Godot.Movement.RideData RideeRow(int objectId) => users.TryGetValue(objectId, out var u) ? u.Ridee?.Mount?.Data : null;
+
+    /// <summary>The object id and effect xml of each ride effect played at a remote PC (for the checks).</summary>
+    public Action<int, string> RideEffectsPlayed;
 
     /// <summary>The rider's side of <see cref="RideOff"/>, before the ridee is freed; <paramref name="hp"/> and
     /// <paramref name="hpMax"/> are the rider's health for PC::vfunc_124.</summary>
