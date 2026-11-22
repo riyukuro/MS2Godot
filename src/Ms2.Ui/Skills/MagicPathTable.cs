@@ -7,9 +7,10 @@ namespace Ms2.Ui.Skills;
 /// <summary>A &lt;move&gt; of magicPath.xml (CMagicData): the times a magic's tick reads, in seconds, and its fire point: the
 /// owner's node "fireNode" (m_strFireNode), or "fireFixedPosition" (m_ptFireFixed) when that is not zero
 /// (CMagic::FUN_1414609e0, magicdata.cpp:1397), plus "fireOffsetPosition" (m_ptFireOffset) turned by "rotation" (m_nRotation,
-/// 1 by the ctor, :212) and "dirRotZDegree" (m_fDirRotZ).</summary>
+/// 1 by the ctor, :212) and "dirRotZDegree" (m_fDirRotZ). "ignoreCancelAtSpawnTime" (XmlGetBool, :340) keeps a magic in its
+/// spawn wait from the skill state's cancel (CMagicModel::CanCancel).</summary>
 public sealed record MagicPathMove(float DelayTime, float SpawnTime, float LifeTime, float DestroyTime, string FireNode = "",
-    Vector3 FireFixed = default, Vector3 FireOffset = default, int Rotation = 1, float DirRotZ = 0);
+    Vector3 FireFixed = default, Vector3 FireOffset = default, int Rotation = 1, float DirRotZ = 0, bool IgnoreCancelAtSpawnTime = false);
 
 /// <summary>
 /// The magic paths (LoadMagicPath @0x14145c4d0, magicdata.cpp:302): ./data/xml/table/magicPath.xml, each &lt;type id&gt; a list of
@@ -31,7 +32,8 @@ public sealed class MagicPathTable
                 .Select(m => new MagicPathMove(Xml.Float(m, "delayTime"), Xml.Float(m, "spawnTime"), Xml.Float(m, "lifeTime"), Xml.Float(m, "destroyTime"),
                     (string)m.Attribute("fireNode") ?? "", Point3((string)m.Attribute("fireFixedPosition")),
                     Point3((string)m.Attribute("fireOffsetPosition")),
-                    m.Attribute("rotation") != null ? Xml.Int(m, "rotation") : 1, Xml.Float(m, "dirRotZDegree")))
+                    m.Attribute("rotation") != null ? Xml.Int(m, "rotation") : 1, Xml.Float(m, "dirRotZDegree"),
+                    Xml.Bool(m, "ignoreCancelAtSpawnTime")))
                 .ToArray();
         types[0] = new[] { Zero };
     }

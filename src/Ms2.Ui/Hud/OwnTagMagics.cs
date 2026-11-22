@@ -31,10 +31,10 @@ public delegate bool MagicRayBlocked(Vector3 from, Vector3 dir, float length);
 /// <item>A skill whose magicControl enable is 2 (m_n538) makes no region fill, so it registers nothing.</item>
 /// </list>
 /// So a magic is dropped after its one fill and registration.
+/// When the own skill state ends, <see cref="CancelCaster"/> drops the cast's delay-0 magics that have not fired.
 /// STILL-OPEN: attackMethodType 1 (the arrow fill FUN_141465b30 and the registration every tick): FUN_141462490 hands
 /// FUN_141bc3470 the area the arrow fill (StateSkill::FUN_1417e9d20, CArrowFillTargetContext from m_ptLast to m_ptCurrent)
 /// sweeps, so it needs the magic's flight (FUN_14145ec50) first; the linked records, the
-/// cancel of a delay-0 magic when the skill state ends (CMagicService::RemoveCasterModels / CMagicModel::CanCancel), the
 /// latency maximum (0 here: the time sync's latency is not kept), CFunctionCubeService::SetTagArea, the magic's own
 /// flight and effects (PlayHitEffects), MyPC::FUN_14152e0c0 after a fill, and the splash send's call sites
 /// (FUN_14145f570 at the magic's end, FUN_141466da0 per piercing interval: both need the flight; the packet is
@@ -55,6 +55,9 @@ public sealed class OwnTagMagics
         public int TargetId, SendCount;
         public byte AttackIndex;
         public Vector3 StartPoint;
+        // CanCancel's reads of the row: delayTime nearly 0 (IsNearlyEqual, commonutil.cpp:669), ignoreCancelAtSpawnTime, and
+        // the attack's arrow bounceType 2
+        public bool DelayZero, IgnoreCancelAtSpawn, Bounce2;
     }
 
     readonly List<Magic> live = new();
@@ -99,6 +102,8 @@ public sealed class OwnTagMagics
                 CastId = r?.CastId ?? 0, Serial = t.Serial, TargetId = t.TargetId, SendCount = r?.SendCount ?? 0,
                 AttackIndex = (byte)(r?.AttackIndex ?? 0),
                 StartPoint = StartPoint(d, dir, nodePosition?.Invoke(d.FireNode) ?? r?.Position ?? Vector3.Zero),
+                DelayZero = MathF.Abs(d.DelayTime) < 1e-6f, IgnoreCancelAtSpawn = d.IgnoreCancelAtSpawnTime,
+                Bounce2 = attack.Arrow.BounceType == 2,
             });
             n++;
         }
@@ -307,6 +312,29 @@ public sealed class OwnTagMagics
         if (a.Range.Shape is < 1 or > 4) return false;
         SkillHit.AreaPose(a, owner.Position, new Vector3(0, 0, owner.RotZ), out var pos, out var rot);
         return pass.Register(m.Tag, SkillHitShape.Pose(a.Range, 0, pos, rot));
+    }
+
+    /// <summary>
+    /// CMagicService::RemoveCasterModels(<paramref name="castId"/>, 0, 0) @0x14146c6c0 (magicdata.cpp:2950), from StateSkill's
+    /// exits vfunc_5 and vfunc_7 (stateskill.cpp:520, :582): the cast's magics that CMagicModel::CanCancel @0x141467dd0
+    /// (:2574) lets go are dropped without end effects. CanCancel: the cast id matches, the attack's arrow bounceType is not 2,
+    /// not state 1 with ignoreCancelAtSpawnTime, state 0 or 1, and delayTime nearly 0. A magic still kept here has not fired,
+    /// so its state is 0 or 1 (CMagic::FUN_14145de80 goes on to state 2 and fires in the same tick, magicdata.cpp:772-785);
+    /// it is in state 1 once a tick saw start + delay, which the client ticks every frame: from start + delay on.
+    /// Returns the number dropped.
+    /// </summary>
+    public int CancelCaster(long castId, int nowMs)
+    {
+        int n = 0;
+        for (int i = live.Count - 1; i >= 0; i--)
+        {
+            var m = live[i];
+            if (m.CastId != castId || m.Bounce2 || !m.DelayZero) continue;
+            if (m.IgnoreCancelAtSpawn && (uint)nowMs >= (uint)(m.Start + m.Delay)) continue;
+            live.RemoveAt(i);
+            n++;
+        }
+        return n;
     }
 
     public void Clear() => live.Clear();

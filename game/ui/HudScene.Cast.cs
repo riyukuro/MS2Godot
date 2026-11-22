@@ -530,9 +530,17 @@ public partial class HudScene
 
     void EndOwnState()
     {
+        CancelOwnMagics();
         ownCast = null;
         ownNext = null;
         ownEnded = false;
+    }
+
+    /// <summary>StateSkill's exits vfunc_5 and vfunc_7 (stateskill.cpp:520, :582): CMagicService::RemoveCasterModels(m_nCastId, 0, 0),
+    /// the running cast's delay-0 magics that have not fired are dropped (<see cref="OwnTagMagics.CancelCaster"/>).</summary>
+    void CancelOwnMagics()
+    {
+        if (ownCast != null) ownTagMagics.CancelCaster(ownCast.CastId, (int)Time.GetTicksMsec());
     }
 
     FrameOnce ownEndStepFrame;                     // the end step runs once a frame (StateSkill::vfunc_8)
@@ -673,6 +681,7 @@ public partial class HudScene
     /// <summary>StateSkill's attack count at the start of the own cast's motion: attack 0, its point's text key.</summary>
     void StartOwnAttacks(Player me, CastRecord r)
     {
+        CancelOwnMagics();                         // the running skill state's exit
         ownCast = r;
         ownQueued = null;                          // StateSkill::vfunc_4 (stateskill.cpp:416)
         ownChainType = 0;                          // :412
@@ -1076,6 +1085,7 @@ public partial class HudScene
             if (uid != 0 && uid != ownCast.CastId) return;
             GD.Print($"cast: skill {ownCast.Skill.Id} cancelled by the server");
             player.CancelSkillSequence();
+            CancelOwnMagics();
             ownCast = null;
         };
         Action<Ms2.Net.Packets.SkillSync> sync = OwnSkillSync;
@@ -1096,6 +1106,7 @@ public partial class HudScene
         if (player == null) return;
         bool running = ownCast != null && (object)player.SkillSequence == ownSequence;
         if (running && ownCast.CastId == s.CastUid && ownCast.Motion == s.Motion) return;
+        CancelOwnMagics();
         ownCast = null;
         castMotions ??= new Ms2.Formats.World.SkillTable(assets.Packs);
         var motion = castMotions.Motion(s.SkillId, s.Level, s.Motion);

@@ -116,6 +116,54 @@ public class OwnTagMagicsTests
         Assert.That(pass.Count, Is.EqualTo(0));
     }
 
+    // CMagicModel::CanCancel / CMagicService::RemoveCasterModels: 7 = delay 0 spawn 0.3; 8 = the same with
+    // ignoreCancelAtSpawnTime; 5 row 0 = delay 1
+    static readonly MagicPathTable CancelPaths = new(XDocument.Parse(
+        "<ms2><type id=\"7\"><move delayTime=\"0\" spawnTime=\"0.3\"/></type>" +
+        "<type id=\"8\"><move delayTime=\"0.0000001\" spawnTime=\"0.3\" ignoreCancelAtSpawnTime=\"1\"/></type>" +
+        "<type id=\"5\"><move delayTime=\"1\"/></type></ms2>"));
+
+    static int AddCast(OwnTagMagics m, long castId, uint magic, int startMs, int bounce = 0)
+    {
+        var a = Attack(magic);
+        a.Arrow.BounceType = bounce;
+        return m.Add(null, a, new CastRecord { CastId = castId }, Tags(0), startMs, CancelPaths, null);
+    }
+
+    [Test]
+    public void IgnoreCancelAtSpawnTimeLoads()
+    {
+        Assert.That(CancelPaths.Get(8, 0).IgnoreCancelAtSpawnTime, Is.True);
+        Assert.That(CancelPaths.Get(7, 0).IgnoreCancelAtSpawnTime, Is.False);
+    }
+
+    [Test]
+    public void TheStateExitDropsTheCastsDelayZeroMagicsInTheirSpawnWait()
+    {
+        var m = new OwnTagMagics();
+        var pass = new TombTagPass();
+        AddCast(m, 70, 7, 1000);
+        AddCast(m, 71, 7, 1000);
+        Assert.That(m.Tick(1100, 0, Owner(), pass), Is.EqualTo(0), "the spawn wait");
+        Assert.That(m.CancelCaster(70, 1100), Is.EqualTo(1));
+        Assert.That(m.Count, Is.EqualTo(1), "another cast's magic stays");
+        Assert.That(m.Tick(1300, 0, Owner(), pass), Is.EqualTo(1), "only cast 71's magic fills");
+    }
+
+    [Test]
+    public void TheCancelKeepsDelayedBouncingAndIgnoringMagics()
+    {
+        var m = new OwnTagMagics();
+        AddCast(m, 70, 5, 1000);                   // delay 1 s
+        AddCast(m, 70, 7, 1000, bounce: 2);        // the arrow bounceType 2
+        AddCast(m, 70, 8, 1000);                   // delay nearly 0, ignoreCancelAtSpawnTime
+        Assert.That(m.CancelCaster(70, 1100), Is.EqualTo(0));
+        Assert.That(m.Count, Is.EqualTo(3));
+        var early = new OwnTagMagics();
+        AddCast(early, 70, 8, 1000);
+        Assert.That(early.CancelCaster(70, 999), Is.EqualTo(1), "state 0: ignoreCancelAtSpawnTime only keeps state 1");
+    }
+
     [Test]
     public void TheClientsMagicPathsRead()
     {
