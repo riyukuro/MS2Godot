@@ -41,6 +41,9 @@ public partial class LiveSession
     /// <summary>The own CEquipment::GetAbilityRate (the HUD keeps the worn part and the buffs); 0 without the HUD.</summary>
     public Func<int, float> OwnAbilityRate = _ => 0f;
 
+    /// <summary>The own buffs' HasEnabledWithEventBuffType (the HUD keeps the buffs); false without the HUD.</summary>
+    public Func<int, bool> OwnEventBuff = _ => false;
+
     /// <summary>String 0x48 and s_strNoticeEp (ridee.cpp:347): Ridee::UpdateRunEffects' RunX without the EP.</summary>
     public const int RunXNoEpNoticeId = 0x48;
     public const string RunXNoEpSound = "system_notice_error_ep";
@@ -54,6 +57,7 @@ public partial class LiveSession
         p.CurrentEp = () => Ms2Godot.Ui.StubHudData.Instance.EpCurrent;
         p.FieldUsesEp = FieldUsesEp;
         p.RideAbilityRate = type => OwnAbilityRate(type);
+        p.RiderEventBuff = type => OwnEventBuff(type);
         p.PlayRideEffect = path =>
         {
             if (remote == null || player == null || !IsInstanceValid(player)) return 0;

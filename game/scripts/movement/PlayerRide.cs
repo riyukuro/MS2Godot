@@ -369,9 +369,15 @@ public partial class Player
         runXEpAt = runXNoticeAt = runFxUntil = runFx2Until = double.NegativeInfinity;
     }
 
-    /// <summary>StateSwim's RunX sub 0x85: the flag and Ridee::FUN_1417075e0, a riding type 1 or 2 (FUN_1417fb370).
-    /// STILL-OPEN: FUN_1417075e0's other case, the rider's event buff of type 3.</summary>
-    bool SwimRunX => RunX && Mount != null && Mount.Data.Type is 1 or 2;
+    /// <summary>StateSwim's RunX sub 0x85: the flag and Ridee::FUN_1417075e0 @0x1417075e0 (ridee.cpp:1091-1103), a riding
+    /// type 1 or 2, or the rider's enabled buff of eventBuffType 3 (<see cref="RiderEventBuff"/>).</summary>
+    bool SwimRunX => RunX && Mount != null && (Mount.Data.Type is 1 or 2 || RiderEventBuff?.Invoke(SwimEventBuffType) == true);
+
+    /// <summary>The eventBuffType FUN_1417075e0 asks the rider's buffs for.</summary>
+    const int SwimEventBuffType = 3;
+
+    /// <summary>The own AdditionalCliList::HasEnabledWithEventBuffType; null reads false.</summary>
+    public Func<int, bool> RiderEventBuff;
 
     /// <summary>
     /// Ridee::UpdateRunEffects (@0x141705b60, ridee.cpp:717-799), each frame before the state's vfunc_8 (Ridee::FUN_141705ac0).

@@ -3292,6 +3292,7 @@ public partial class HudScene : Node, IUiStageHost
         // the mount's RunX speed (Ridee::GetRideSpeed, ridee.cpp:1021-1024): GetAbilityRate(0xae) or (0xa5) on each call
         live.OwnAbilityRate = type => Ms2.Ui.Items.WornEquipment.AbilityRate(Ms2.Ui.Items.WornEquipment.AbilityTotal(
             OwnWorn(type), type, buffs, live.HotTimes, (live.Me.User?.PcBangGrade ?? 0) > 0));
+        live.OwnEventBuff = buffs.HasEnabledWithEventBuffType;   // the swimming mount's RunX (Ridee::FUN_1417075e0)
         Action<Ms2.Net.Packets.BuffPacket> onBuff = b =>
         {
             ownBuffs.UpperTargetId = live.UpperTargetId;
@@ -3316,6 +3317,7 @@ public partial class HudScene : Node, IUiStageHost
             live.OwnPushResistLevel = () => 0;
             live.OwnBuffSuperArmor = _ => 0;
             live.OwnAbilityRate = _ => 0f;
+            live.OwnEventBuff = _ => false;
         };
     }
 
