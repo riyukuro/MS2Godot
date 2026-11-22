@@ -1296,4 +1296,38 @@ public class RuntimeTests
         Assert.That(X.currentFrame, Is.EqualTo(frame));
         Assert.That(rt.Errors, Is.Empty);
     }
+
+    /// <summary>
+    /// A frame whose tag replaces the character at a depth puts the new object where the old one was, below a child a
+    /// script added after the timeline built the frame (DisplayList::ReplaceDisplayObject). RankIcon's grade frames work
+    /// so: its constructor adds m_icon and re-adds the named children, and "_2" swaps the depth-1 background, which has
+    /// to stay below the icon. A plain placement at that depth (no replace) still goes in by depth.
+    /// </summary>
+    [TestCase(true, "bg1,icon,border")]
+    [TestCase(false, "icon,bg1,border")]
+    public void ReplacingPlacementTakesTheReplacedObjectsPlace(bool replace, string order)
+    {
+        static JsonObject Pl(int depth, int first, string name) => new() { ["id"] = 2, ["depth"] = depth, ["first"] = first, ["name"] = name };
+        var bg0 = Pl(1, 0, "bg0"); bg0["last"] = 0;
+        var bg1 = Pl(1, 1, "bg1");
+        if (replace) bg1["replace"] = true;
+        var layout = new JsonObject
+        {
+            ["movie"] = "t", ["stage"] = new JsonObject { ["width"] = 800, ["height"] = 600 },
+            ["symbols"] = new JsonObject { ["2"] = new JsonObject { ["kind"] = "sprite", ["timeline"] = new JsonObject { ["frames"] = 1 } } },
+            ["root"] = new JsonObject { ["frames"] = 2, ["children"] = new JsonArray(bg0, Pl(2, 0, "border"), bg1) },
+        };
+        var rt = new Runtime();
+        var p = new Player(rt, layout);
+        Assert.That(p.Start(), Is.True);
+        var root = (AsMovieClip)p.Root;
+        var icon = (AsMovieClip)rt.GetClass("flash.display.MovieClip").Construct();
+        icon.InstanceName = "icon";
+        root.addChild(icon);
+        root.addChild(root.Children.First(k => k.InstanceName == "border"));
+        Assert.That(string.Join(",", root.Children.Select(k => k.InstanceName)), Is.EqualTo("bg0,icon,border"));
+        p.GotoFrame(root, 1);
+        Assert.That(string.Join(",", root.Children.Select(k => k.InstanceName)), Is.EqualTo(order));
+        Assert.That(rt.Errors, Is.Empty);
+    }
 }

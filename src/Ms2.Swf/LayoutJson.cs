@@ -308,6 +308,9 @@ public static class LayoutJson
                         ["blend"] = p.BlendMode, ["visible"] = p.Visible, ["cacheAsBitmap"] = p.CacheAsBitmap,
                         ["filters"] = Filters(p.Filters),
                     };
+                    // the player puts the new object where the replaced one was in its parent's list
+                    // (DisplayList::ReplaceDisplayObject, sfr_gfx_06c.cpp:331), not by depth
+                    if (replace) o["replace"] = true;
                     live[p.Depth] = o; all.Add(o);
                 }
                 else if (p.ClassName != null && !p.Move)

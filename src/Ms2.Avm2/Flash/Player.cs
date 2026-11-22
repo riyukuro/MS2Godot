@@ -222,7 +222,7 @@ namespace Ms2.Avm2.Flash
             {
                 d.Placement = pl; d.Depth = depth;
                 if (pl != null) ApplyPlacement(d, pl, initial: true);
-                if (parent != null) { if (depth == 0 && pl == null) parent.Children.Add(d); else parent.InsertByDepth(d); d.Parent = parent; }
+                if (parent != null) { if (depth == 0 && pl == null) parent.Children.Add(d); else PlaceChild(parent, d); d.Parent = parent; }
             }
             pending = (scope, sym, pl);
             RT.BeforeConstruct(o);
@@ -286,7 +286,7 @@ namespace Ms2.Avm2.Flash
                 var size = ImageSize?.Invoke(img) ?? (0, 0);
                 var bm = NewBitmap(img, size.W, size.H);
                 bm.Placement = pl; bm.Depth = J.Iv(pl["depth"]); ApplyPlacement(bm, pl, initial: true);
-                parent.InsertByDepth(bm);
+                PlaceChild(parent, bm);
                 if ((string)pl["name"] is string bn && bn.Length > 0) { bm.InstanceName = bn; BindName(parent, bn, bm); }
                 return bm;
             }
@@ -300,7 +300,7 @@ namespace Ms2.Avm2.Flash
                 var ib = NewBitmap(null, pi.W, pi.H);
                 ib.bitmapData.ImageScope = scope; ib.bitmapData.ImageId = J.Iv(iid);
                 ib.Placement = pl; ib.Depth = J.Iv(pl["depth"]); ApplyPlacement(ib, pl, initial: true);
-                parent.InsertByDepth(ib);
+                PlaceChild(parent, ib);
                 if ((string)pl["name"] is string ibn && ibn.Length > 0) { ib.InstanceName = ibn; BindName(parent, ibn, ib); }
                 return ib;
             }
@@ -371,11 +371,41 @@ namespace Ms2.Avm2.Flash
         static bool AliveAt(JsonObject pl, int f) => J.Iv(pl["first"]) <= f && (pl["last"] is not JsonNode l || f <= J.Iv(l));
 
         /// <summary>Makes the timeline children match frame <paramref name="f"/> (creates, moves, removes).</summary>
+        // where PlaceChild puts the next timeline object: before this child of replaceParent (null: at the end)
+        AsContainer replaceParent;
+        AsDisplayObject replaceBefore;
+
+        /// <summary>Puts a timeline object into its parent: where the object it replaces was, else in depth order.</summary>
+        void PlaceChild(AsContainer parent, AsDisplayObject d)
+        {
+            if (replaceParent == parent)
+            {
+                replaceParent = null;
+                int idx = replaceBefore == null ? -1 : parent.Children.IndexOf(replaceBefore);
+                replaceBefore = null;
+                parent.Children.Insert(idx < 0 ? parent.Children.Count : idx, d);
+                d.Parent = parent;
+                return;
+            }
+            parent.InsertByDepth(d);
+        }
+
+        /// <summary>
+        /// A placement whose tag replaces the character at its depth (PlaceObject2/3 with the move flag and a character,
+        /// "replace" in the layout) takes the replaced object's place in the parent's list: the client's Place_Replace runs
+        /// DisplayList::ReplaceDisplayObject (sfr_gfx_05.cpp:575, sfr_gfx_06c.cpp:331), which swaps the entry at that index.
+        /// So a script-added child (Depth -1 in the client, int.MinValue here) that went above the old object stays above
+        /// the new one: RankIcon's grade frames swap the depth-1 background below the m_icon its constructor added.
+        /// Without the replaced object (script removed it) the new one goes in by depth, as AddDisplayObject does.
+        /// </summary>
         void BuildFrame(AsMovieClip mc, int f)
         {
             mc.Frame = f;
             if (mc.TL == null) return;
             var pls = mc.TL.Placements; var tracks = mc.TL.Tracks;
+            // the objects removed this frame by depth, with the child that followed each (a replacing placement comes
+            // after the one it replaces, which was placed earlier); built only when a frame removes something
+            Dictionary<int, AsDisplayObject> removedNext = null;
             for (int i = 0; i < pls.Count; i++)
             {
                 var pl = pls[i]; var tr = tracks[i];
@@ -383,14 +413,23 @@ namespace Ms2.Avm2.Flash
                 mc.Live.TryGetValue(pl, out var cur);
                 if (alive && cur == null)
                 {
+                    if (removedNext != null && pl["replace"] != null && removedNext.TryGetValue(J.Iv(pl["depth"]), out replaceBefore))
+                        replaceParent = mc;
                     var o = Instantiate(mc, pl, mc.TL.Scope);
+                    replaceParent = null; replaceBefore = null;
                     if (o != null) { mc.Live[pl] = o; ApplyMoves(o, pl, tr, f); if (mc.OnStage) EnterStage(o); }
                 }
                 else if (alive) ApplyMoves(cur, pl, tr, f);
                 else if (cur != null)
                 {
                     mc.Live.Remove(pl);
-                    if (cur.Parent == mc) mc.RemoveChildInternal(cur, true);
+                    if (cur.Parent == mc)
+                    {
+                        int idx = mc.Children.IndexOf(cur);
+                        removedNext ??= new Dictionary<int, AsDisplayObject>();
+                        removedNext[cur.Depth] = idx + 1 < mc.Children.Count ? mc.Children[idx + 1] : null;
+                        mc.RemoveChildInternal(cur, true);
+                    }
                 }
             }
         }
