@@ -2315,6 +2315,44 @@ public partial class HudScene : Node, IUiStageHost
     }
 
 
+    // ---- lapenshard window: uilapenshardsystemdialog, UILapenshardSystemDialog's C++ side as LapenshardSystemController
+
+    MovieDialog lapenshardMovie;
+    Ms2.Ui.Hud.LapenshardSystemController lapenshard;
+
+    /// <summary>CUIService::ToggleDialog(0x4f6d): the skill book's lapenshard button and the game menu entry.</summary>
+    void ToggleLapenshard()
+    {
+        if (lapenshardMovie != null && lapenshard?.IsClosed == false) lapenshard.Close();
+        else OpenLapenshard();
+    }
+
+    /// <summary>Opens the lapenshard window with its equip page when the feature (0xd3) allows; the worn table is the player state's
+    /// and the session's lapenshard packets reach the page while it is open. STILL-OPEN: the upgrade page and the item bag.</summary>
+    void OpenLapenshard()
+    {
+        if (GuideRefusesOpen("LapenshardSystemDialog")) return;
+        if (lapenshardMovie != null) { lapenshardMovie.Host.Unload(); lapenshardMovie.QueueFree(); lapenshardMovie = null; }
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        var c = new Ms2.Ui.Hud.LapenshardSystemController();
+        if (!hudModel.IsFeatureEnabled(Ms2.Ui.Hud.LapenshardSystemController.FeatureId)) return;
+        c.AddTab(new Ms2.Ui.Hud.LapenshardEquipTabPage());
+        c.InBattle = () => live?.SelfInBattle ?? false;
+        if (live != null) c.Send = p => { live.SendTalk(p); return true; };
+        Action<Ms2.Net.Packets.LapenshardMessage> onMsg = c.OnPacket;
+        if (live != null) live.LapenshardReceived += onMsg;
+        c.Unloaded += () =>
+        {
+            if (live != null) live.LapenshardReceived -= onMsg;
+            lapenshardMovie?.Host.Unload();
+            lapenshardMovie?.QueueFree();
+            lapenshardMovie = null;
+        };
+        lapenshard = c;
+        lapenshardMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
+        uiRoot.AddChild(lapenshardMovie);
+    }
+
     // ---- adventure level: uiadventureleveldialog run by its own ActionScript, UIAdventureLevelDialog's C++ side as AdventureLevelController
 
     MovieDialog adventureLevelMovie;
@@ -2768,6 +2806,7 @@ public partial class HudScene : Node, IUiStageHost
         else if (id == 0x4f2d) ToggleSkillBook();
         else if (id == 0x4ef6) ToggleSkillCompact();    // entry 27 "compactkey" (gameeventmanagercli.cpp:692)
         else if (id == 0x4f67) ToggleAdventureLevel();
+        else if (id == Ms2.Ui.Hud.LapenshardSystemController.UiId) ToggleLapenshard();
         else if (id == GameMenuController.CharacterAbilityUiId) ToggleCharacterAbility();
         else if (id == 0x4f1e) ToggleMastery();
         else if (id == 0x4e7a) ToggleDynamicAction();   // UIDynamicActionDialog
@@ -3592,7 +3631,11 @@ public partial class HudScene : Node, IUiStageHost
             tipPlayer.DialogSimulator = d.Simulator;
             return Ms2.Ui.Skills.SkillTooltip.Build(hudModel.Tables, tipPlayer, id, level, 0x10, true);
         };
-        c.Button += name => GD.Print($"skill book: {name} is not sent (display only)");
+        c.Button += name =>
+        {
+            if (name == "onLapenshardBtn") ToggleLapenshard();      // the skill book's lapenshard button: ToggleDialog(0x4f6d)
+            else GD.Print($"skill book: {name} is not sent (display only)");
+        };
         c.AutoTable = Ms2.Ui.Skills.AutoDistributeTable.Load(assets.Packs);
         c.OpenAutoDistribute = presets => OpenSkillAutoDistribute(c, presets);
         c.InBattle = () => live?.SelfInBattle ?? false;
