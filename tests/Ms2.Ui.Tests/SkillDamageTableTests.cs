@@ -80,6 +80,18 @@ public class SkillDamageTableTests
     }
 
     [Test]
+    public void AnAttackCannotBeWrittenFromOutside()
+    {
+        // equal attacks are one object across skills and levels: a write from outside the loader's assembly (the game) would
+        // change all of them; the loader and its tests set them
+        var t = typeof(SkillAttackDamage);
+        var writable = t.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance).Where(f => !f.IsInitOnly).Select(f => f.Name)
+            .Concat(t.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance).Where(p => p.SetMethod is { IsPublic: true }).Select(p => p.Name));
+        Assert.That(writable, Is.Empty);
+        Assert.That(t.GetProperties().Count(p => p.CanWrite), Is.EqualTo(31), "the attributes read");
+    }
+
+    [Test]
     public void AMissingAttributeKeepsTheCtorValue()
     {
         // the ctor (:175): count 1, pushprob 1, hitSpeedRate 1, damagedVibrateRatio 1; an attack without <damage> keeps them all

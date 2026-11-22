@@ -15,38 +15,48 @@ public sealed class SkillAttackDamage
 {
     public static readonly SkillAttackDamage None = new();
 
-    public int Count = 1, Hand;
-    public float Rate;
+    public int Count { get; internal set; } = 1;
+    public int Hand { get; internal set; }
+    public float Rate { get; internal set; }
     /// <summary>"value" (m_nValue, read as __int64).</summary>
-    public long Value;
-    public float HitSpeedRate = 1f, HitPauseTime, DamagedVibrateRatio = 1f;
-    public string EffectHit = "", EffectRemain = "";
-    public float DamageByTargetMaxHP;
-    public long ConstDamageByTargetHP;
+    public long Value { get; internal set; }
+    public float HitSpeedRate { get; internal set; } = 1f;
+    public float HitPauseTime { get; internal set; }
+    public float DamagedVibrateRatio { get; internal set; } = 1f;
+    public string EffectHit { get; internal set; } = "";
+    public string EffectRemain { get; internal set; } = "";
+    public float DamageByTargetMaxHP { get; internal set; }
+    public long ConstDamageByTargetHP { get; internal set; }
     /// <summary>"push" (SkillPushType, XmlValue: an enum read as a number).</summary>
-    public int Push;
-    public float PushDistance, PushDuration, PushProb = 1f;
+    public int Push { get; internal set; }
+    public float PushDistance { get; internal set; }
+    public float PushDuration { get; internal set; }
+    public float PushProb { get; internal set; } = 1f;
     /// <summary>"pushEaseType", 0 outside 0..2 (:274).</summary>
-    public int PushEaseType;
+    public int PushEaseType { get; internal set; }
     /// <summary>"pushApplyField" (SkillPushApplyField): 1 no push on the ground states, 2 none off them (GetPush :393).</summary>
-    public int PushApplyField;
-    public float PushUpDistance;
-    public int PushDown, PushFall, PushPriority, PushPriorityHitImmune;
-    public string PushAnimation = "";
+    public int PushApplyField { get; internal set; }
+    public float PushUpDistance { get; internal set; }
+    public int PushDown { get; internal set; }
+    public int PushFall { get; internal set; }
+    public int PushPriority { get; internal set; }
+    public int PushPriorityHitImmune { get; internal set; }
+    public string PushAnimation { get; internal set; } = "";
     /// <summary>"stateHitIgnore" / "stateHitOnly" (SkillStateHit enums).</summary>
-    public int StateHitIgnore, StateHitOnly;
-    public int SuperArmorBreak;
+    public int StateHitIgnore { get; internal set; }
+    public int StateHitOnly { get; internal set; }
+    public int SuperArmorBreak { get; internal set; }
     /// <summary>"attackMaterial" (m_nAttackMaterial :285): the hit sound's material (CDamageRecord::GetAttackMaterial,
     /// skillrecord.cpp:580).</summary>
-    public int AttackMaterial;
+    public int AttackMaterial { get; internal set; }
     /// <summary>"invokeEffectDisable" (:289): PC::vfunc_33 (pc.cpp:885) skips the buffs' hit invoke effects.</summary>
-    public int InvokeEffectDisable;
+    public int InvokeEffectDisable { get; internal set; }
     /// <summary>The attack's "hitImmuneBreak" (m_nHitImmuneBreak :583, CDamageRecord::vfunc_1).</summary>
-    public int HitImmuneBreak;
+    public int HitImmuneBreak { get; internal set; }
     /// <summary>The attack's "attackMethodType" (SkillAttackMethodType :582; FUN_14175acc0 tests 1).</summary>
-    public int AttackMethodType;
+    public int AttackMethodType { get; internal set; }
     /// <summary>The attack's "grabTargetType" (SkillGrabTargetType :595).</summary>
-    public int GrabTargetType;
+    public int GrabTargetType { get; internal set; }
 
     /// <summary>
     /// SkillDamage::GetPush @0x1407e0f90 (skillattackdata.cpp:393): no push on a ground field (map type 9 or 3,
