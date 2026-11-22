@@ -183,6 +183,9 @@ public sealed class SkillAttackData
     /// <summary>"cubeMagicPathID" (:579, +0x34): non-zero makes the magic send the splash (SkillDamage 1/2) at its end and per
     /// piercing interval (magicdata.cpp:1154, :2385).</summary>
     public int CubeMagicPathId;
+    /// <summary>&lt;damage stateHitIgnore&gt; (SkillDamage m_eStateHitIgnore +0x98, skillattackdata.cpp:286; the attack row's +0x200):
+    /// a nonTarget 1 arrow skips the PCs in this state (CMagic::FUN_141465b30, magicdata.cpp:1923).</summary>
+    public int StateHitIgnore;
     public readonly SkillRange Range = new();
     public readonly SkillArrow Arrow = new();
 
@@ -190,6 +193,7 @@ public sealed class SkillAttackData
     {
         var a = new SkillAttackData { Point = (string)e.Attribute("point") ?? "", TargetCount = Xml.Int(e, "targetCount"), AttackMethodType = Xml.Int(e, "attackMethodType"), BrokenOffence = Xml.Int(e, "brokenOffence"), MagicPathId = Xml.UInt(e, "magicPathID"), PointGroupId = Xml.UInt(e, "pointGroupID"), CubeMagicPathId = Xml.Int(e, "cubeMagicPathID") };
         if (e.Attribute("direction") != null) a.Direction = Xml.Int(e, "direction");
+        if (e.Element("damage") is { } damage) a.StateHitIgnore = Xml.Int(damage, "stateHitIgnore");
         a.Range.LoadElement(e);
         a.Arrow.Load(e);
         return a;

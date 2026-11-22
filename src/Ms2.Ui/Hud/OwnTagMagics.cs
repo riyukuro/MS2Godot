@@ -44,7 +44,7 @@ public delegate bool MagicRayCast(Vector3 from, Vector3 dir, float length, out V
 /// Piercing arrows (bounceType 3 and 4) keep flying through their hits, forget them each piercing interval and send its
 /// splash (<see cref="SkillSplashRequest"/>); bounceType 4 then flies back to the owner (state 5) and ends there.
 /// STILL-OPEN: for an arrow record, the magic control flight (FUN_141464490, a skill with magicControl enable not 0: those make no arrow
-/// magic here), the PC state filter (the row's +0x200), the invincible bounce-off (m_n528 2), the hit effects and the end
+/// magic here), the bounce-off's effect, the hit effects and the end
 /// splash (FUN_14145f570); the linked records, the latency maximum (0 here: the time sync's latency is not kept),
 /// CFunctionCubeService::SetTagArea, the magic's own effects (PlayHitEffects) and MyPC::FUN_14152e0c0 after a fill are not
 /// ported.
@@ -79,6 +79,8 @@ public sealed class OwnTagMagics
         public int State, StateTick, LastTick, HoldUntil;
         public Vector3 Current, Last, Target, Predicted, Dir, DefaultDir, AxisX, AxisY, AxisZ;
         public float Remain, Total;
+        // the row's vel as the magic's own copy keeps it (m_data.m_fVelocity): the bounce-off raises it
+        public float Velocity;
         public bool Curve, RayStopped, Filled, HasArea;
         public HashSet<int> Hits, Excluded;
         public HitBox Area;
@@ -196,6 +198,7 @@ public sealed class OwnTagMagics
     {
         m.Arrow = true;
         m.Row = d;
+        m.Velocity = d.Velocity;
         m.Hits = new HashSet<int>();
         m.Excluded = new HashSet<int>();
         m.OwnerId = ownerId;
@@ -236,7 +239,7 @@ public sealed class OwnTagMagics
         var d = m.Row;
         int ownerId = m.OwnerId;
         float length = (m.Target - start).Length();
-        m.Total = d.Velocity != 0f ? length / d.Velocity : 0f;
+        m.Total = m.Velocity != 0f ? length / m.Velocity : 0f;
         m.Remain = m.Total;
         int sx = unchecked((int)m.CastId + ownerId), sy = unchecked((int)m.Serial + ownerId), sz = unchecked(sx * sy * ownerId);
         var rand = new DropRandom((uint)sx, (uint)sy, (uint)sz);
@@ -272,7 +275,7 @@ public sealed class OwnTagMagics
             if (d.Control0 != Vector3.Zero || d.Control1 != Vector3.Zero || d.ControlEnd != Vector3.Zero) cap += d.ControlEnd.Z;
             if (p.Z > cap) p.Z = cap;
             m.Target = p;
-            m.Remain = d.Velocity != 0f ? (m.Target - m.Current).Length() / d.Velocity : 0f;
+            m.Remain = m.Velocity != 0f ? (m.Target - m.Current).Length() / m.Velocity : 0f;
         }
         Frame(m);
         return entity;
@@ -497,7 +500,7 @@ public sealed class OwnTagMagics
     static void Fly(Magic m, int nowMs, ReadOnlySpan<HitCandidate> objects, MagicRayCast rayCast)
     {
         var d = m.Row;
-        if (NearlyEqual(d.Velocity, 0f)) return;
+        if (NearlyEqual(m.Velocity, 0f)) return;
         bool entity = UpdateTarget(m, nowMs, objects);
         var start = m.StartPoint;
         Vector3 p;
@@ -530,7 +533,7 @@ public sealed class OwnTagMagics
             else
             {
                 m.Remain -= step;
-                p = m.Current + m.Dir * d.Velocity * step;
+                p = m.Current + m.Dir * m.Velocity * step;
             }
         }
         if (!NearlyEqual(m.Remain, 0f))
@@ -598,7 +601,10 @@ public sealed class OwnTagMagics
     /// <item>The count reached: the fill is done (m_n1CC), and with a count of 1, not piercing, the flight ends at the current
     /// point.</item>
     /// </list>
-    /// STILL-OPEN: the PC state filter (+0x200) and the invincible bounce-off (m_n528, the first hit's GetInvincible: 0 here).
+    /// <item>nonTarget 1 with the attack's stateHitIgnore: the PCs in that state are dropped (none left: a send with no
+    /// target).</item>
+    /// <item>A PC among the sent hits whose invincible kind is 2 (the first PC with a kind not 0 decides) turns the arrow aside
+    /// (<see cref="BounceOff"/>) instead of the end above.</item>
     /// </summary>
     SkillHitRequest ArrowFill(Magic m, int nowMs, in MagicOwner owner, ReadOnlySpan<HitCandidate> objects,
         List<SkillSplashRequest> splashes, Func<int> rand, bool pkMode)
@@ -632,22 +638,43 @@ public sealed class OwnTagMagics
             if (!found) return null;
             detected.Add(m.TargetId);
         }
-        if (!owner.LocalPlayer) return null;
+        else if (a.Arrow.IsNonTargetOne && a.StateHitIgnore != 0)
+        {
+            // the PCs in that state are dropped; none left empties the list (the send still goes, with no target)
+            for (int i = detected.Count - 1; i >= 0; i--)
+            {
+                int k = IndexOf(detected[i]);
+                if (k >= 0 && queried[k].Kind == HitKind.Pc && queried[k].StateId == a.StateHitIgnore) detected.RemoveAt(i);
+            }
+        }
         int left = max - m.Hits.Count;
         int nHits = detected.Count < left ? detected.Count : left;
         if (nHits < 0) nHits = 0;
         int cap = m.Row.PiercingAttackMaxTargetCount;
         if (pierce && cap != 0 && m.Excluded.Count + nHits > cap) nHits = cap > m.Excluded.Count ? cap - m.Excluded.Count : 0;
-        // the request keeps its target list: a new one per send
-        var targets = new SkillHitTarget[nHits];
+        // m_n528: the first PC (PCBase) among the sent hits with GetInvincible not 0
+        int invincible = 0;
         for (int i = 0; i < nHits; i++)
         {
-            targets[i] = new SkillHitTarget(detected[i], (byte)m.Hits.Count);
-            m.Hits.Add(detected[i]);
-            m.Excluded.Add(detected[i]);
+            int k = IndexOf(detected[i]);
+            if (k >= 0 && queried[k].Kind == HitKind.Pc && queried[k].Invincible != 0) { invincible = queried[k].Invincible; break; }
         }
-        var req = new SkillHitRequest(m.CastId, m.Serial, m.Last, m.Current, m.AxisY, m.AttackIndex, m.SendCount, targets);
-        if (m.Hits.Count >= max)
+        SkillHitRequest req = null;
+        if (owner.LocalPlayer)
+        {
+            // the request keeps its target list: a new one per send
+            var targets = new SkillHitTarget[nHits];
+            for (int i = 0; i < nHits; i++)
+            {
+                targets[i] = new SkillHitTarget(detected[i], (byte)m.Hits.Count);
+                m.Hits.Add(detected[i]);
+                m.Excluded.Add(detected[i]);
+            }
+            req = new SkillHitRequest(m.CastId, m.Serial, m.Last, m.Current, m.AxisY, m.AttackIndex, m.SendCount, targets);
+        }
+        // FUN_141464490 (the magic control flight) is 0: a skill with magicControl enable makes no arrow magic here
+        if (invincible == 2) BounceOff(m, rand ?? (() => 0));
+        else if (m.Hits.Count >= max)
         {
             m.Filled = true;
             if (!pierce && max == 1)
@@ -657,6 +684,33 @@ public sealed class OwnTagMagics
             }
         }
         return req;
+    }
+
+    /// <summary>The index in the queried objects of the object <paramref name="id"/>, -1 when it is not there.</summary>
+    int IndexOf(int id)
+    {
+        for (int i = 0; i < queried.Count; i++)
+            if (queried[i].Id == id) return i;
+        return -1;
+    }
+
+    /// <summary>
+    /// The arrow fill's bounce-off (magicdata.cpp:1980) off a PC whose invincible kind is 2: the fill done (m_n1CC); the side
+    /// the reverse direction turned by MakeZRotation(FUN_14109ace0() * (FUN_141198810() * pi/4 + pi/4)), the first a CRT
+    /// rand() in [-1, 1], the second one in [0, 1] (called in that order), unit; vel 1.2 times; the target the current point
+    /// plus the side at that vel for the time left; no curve (m_n26C).
+    /// STILL-OPEN: the row's bounce effect (m_str188, m_n180, m_b19c) and the hit effects (PlayHitEffects) are not played.
+    /// </summary>
+    static void BounceOff(Magic m, Func<int> rand)
+    {
+        m.Filled = true;
+        float sign = -1f + 2f * rand() / 32767f;
+        float unit = rand() / 32767f;
+        float angle = sign * (unit * 1.5707964f * 0.5f + 0.7853982f);
+        var side = SkillHit.Unitize(Turn(angle, -m.Dir));
+        m.Velocity *= 1.2f;
+        m.Target = m.Current + side * m.Velocity * m.Remain;
+        m.Curve = false;
     }
 
     /// <summary>

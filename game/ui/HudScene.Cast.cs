@@ -493,7 +493,8 @@ public partial class HudScene
         hitObjects.Add(new HitCandidate { Id = live?.SelfObjectId ?? 0, Position = pos, Body = SkillHit.PlayerBody(pos, me.FacingRotZ), IsOwner = true,
             Kind = HitKind.Pc, Team = 1, Hp = 1, PartyId = live?.Party?.PartyId ?? 0,
             PvpOnOff = ownBuffs?.IsPvpOnOff ?? false,
-            ForceApplyTarget = ownBuffs?.ForceApplyTarget ?? 0, Hidden = ownBuffs?.IsHidden ?? false });
+            ForceApplyTarget = ownBuffs?.ForceApplyTarget ?? 0, Hidden = ownBuffs?.IsHidden ?? false,
+            StateId = live?.TaxiPlayerStateId ?? 0, Invincible = ownBuffs?.Invincible ?? 0 });
         return pos;
     }
 

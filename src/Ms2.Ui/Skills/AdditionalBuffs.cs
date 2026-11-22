@@ -289,6 +289,22 @@ public sealed class AdditionalBuffList
     }
 
     /// <summary>
+    /// GetInvincible @additionalcli_2.cpp:587, m_nInvincible as FUN_140972a00 (:1075) sums it: the last enabled, unsuspended
+    /// effect (in the map's walk) whose level's invincible is not 0 gives it, else 0.
+    /// STILL-OPEN: the client walks the CAtlMap's hash order; here it is the add order (they differ only with two such effects).
+    /// </summary>
+    public int Invincible
+    {
+        get
+        {
+            int kind = 0;
+            foreach (var b in map.Values)
+                if (b.Enabled != 0 && !b.Suspended && b.LevelData.Invincible != 0) kind = b.LevelData.Invincible;
+            return kind;
+        }
+    }
+
+    /// <summary>
     /// GetForceApplyTarget @0x140970b10 (additionalcli_2.cpp:593), m_nForceApplyTarget as FUN_140972a00 (:1096) sums it: the OR
     /// of the levels' forceApplyTarget over the enabled, unsuspended effects.
     /// </summary>

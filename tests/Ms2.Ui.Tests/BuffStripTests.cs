@@ -103,6 +103,28 @@ public class BuffStripTests
     }
 
     [Test]
+    public void InvincibleIsTheLastEnabledEffectsKind()
+    {
+        // <Defensive invincible> (AdditionalLevelData) as AdditionalCliList::FUN_140972a00 (additionalcli_2.cpp:1075) sums it:
+        // the last enabled, unsuspended effect whose kind is not 0 gives GetInvincible
+        var a = AdditionalLevelData.Load(System.Xml.Linq.XElement.Parse("<level level=\"1\"><Defensive invincible=\"2\"/></level>"), null);
+        var b = AdditionalLevelData.Load(System.Xml.Linq.XElement.Parse("<level level=\"1\"><Defensive invincible=\"1\"/></level>"), null);
+        Assert.That((a.Invincible, b.Invincible), Is.EqualTo((2, 1)));
+        var list = new AdditionalBuffList((id, lv) => id == 7 ? a : id == 8 ? b : Level(id, lv));
+        list.Apply(Add(10, 1));
+        Assert.That(list.Invincible, Is.EqualTo(0), "an effect without it");
+        list.Apply(new BuffPacket(BuffPacket.Add, 5, 11, 5, 0, new BuffState(0, 1000, 7, 1, 1, 0), 0));
+        Assert.That(list.Invincible, Is.EqualTo(0), "not enabled");
+        list.Apply(new BuffPacket(BuffPacket.Modify, 5, 11, 5, BuffPacket.ModifyState, new BuffState(0, 1000, 7, 1, 1, 1), null));
+        Assert.That(list.Invincible, Is.EqualTo(2));
+        list.Apply(new BuffPacket(BuffPacket.Add, 5, 12, 5, 0, new BuffState(0, 1000, 8, 1, 1, 1), 0));
+        Assert.That(list.Invincible, Is.EqualTo(1), "the later effect");
+        list.Buffs.Single(x => x.Key == 12).Suspended = true;
+        Assert.That(list.Invincible, Is.EqualTo(2), "suspended");
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 1000; i++) _ = list.Invincible; }), Is.LessThan(512));
+    }
+
+    [Test]
     public void SpecialAbilityNamesResolveThroughTheStringTable()
     {
         // FUN_14081c880 (specialability.cpp:101): rows 1-0xce by case-insensitive option, a name's first row kept; the

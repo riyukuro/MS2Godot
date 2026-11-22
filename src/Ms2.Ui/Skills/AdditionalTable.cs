@@ -37,6 +37,9 @@ public sealed class AdditionalLevelData
     /// FUN_1409726e0 lets count in the field as the list's super armor.</summary>
     public uint SuperArmor;
     public int SuperArmorApplyFieldType;
+    /// <summary>&lt;Defensive invincible&gt; (m_nInvincible +0x29c, additionalactionadditional.cpp:1256): AdditionalCliList::FUN_140972a00
+    /// (additionalcli_2.cpp:1075) takes the list's GetInvincible from it.</summary>
+    public int Invincible;
     /// <summary>&lt;SpecialEffect type probability values&gt; (m_specialEffect, :1349-1353; Clear @0x140192c40 makes the
     /// probability 1): the kind CSpecialEffectFunctionManager runs (4 CSEReduceSkillGroupCooltime), the chance against
     /// FUN_140768090's roll and the values' attributes (SpecialEffectProperty::Parse @0x140192ce0, CXmlData::ParseValues
@@ -109,6 +112,7 @@ public sealed class AdditionalLevelData
             lv.SuperArmor = Xml.UInt(motion, "superArmor");
             lv.SuperArmorApplyFieldType = Xml.Int(motion, "superArmorApplyFieldType");
         }
+        if (e.Element("Defensive") is { } defensive) lv.Invincible = Xml.Int(defensive, "invincible");
         if (e.Element("InvokeEffect") is { } invoke)
         {
             lv.InvokeSkillId = Xml.UInt(invoke, "skillID");

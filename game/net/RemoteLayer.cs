@@ -313,7 +313,8 @@ public sealed partial class RemoteLayer : Node3D
     /// <see cref="NpcLayer.HitCandidates"/>. A player is a pc of team 1 with its stat pair's hp, for
     /// <see cref="Ms2.Ui.Skills.SkillHit.FilterTarget"/>.
     /// Its party id is the own party's when CPartyManager has it as a member (PC::FUN_141661bc0, pc.cpp:4438), else 0.
-    /// Its pvp on/off, forceApplyTarget bits and hidden flag are its buff list's (<see cref="Ms2.Ui.Skills.AdditionalBuffList"/>).
+    /// Its pvp on/off, forceApplyTarget bits, hidden flag and invincible kind are its buff list's
+    /// (<see cref="Ms2.Ui.Skills.AdditionalBuffList"/>); its state id is its state machine's current one.
     /// STILL-OPEN: the states 6 / 7 half of hidden and HasPvPPoint (false here) are not fed.
     /// </summary>
     public void HitCandidates(List<Ms2.Ui.Skills.HitCandidate> into)
@@ -327,7 +328,8 @@ public sealed partial class RemoteLayer : Node3D
             into.Add(new Ms2.Ui.Skills.HitCandidate { Id = id, Position = p, Body = Ms2.Ui.Skills.SkillHit.PlayerBody(p, r.Pc.RotationZ),
                 Kind = Ms2.Ui.Skills.HitKind.Pc, Team = 1, Hp = r.HpCur, PartyId = partyId,
                 PvpOnOff = r.Buffs.IsPvpOnOff,
-                ForceApplyTarget = r.Buffs.ForceApplyTarget, Hidden = r.Buffs.IsHidden });
+                ForceApplyTarget = r.Buffs.ForceApplyTarget, Hidden = r.Buffs.IsHidden,
+                StateId = r.Pc.States.Cur, Invincible = r.Buffs.Invincible });
         }
         npcs.HitCandidates(into);
     }

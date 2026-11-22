@@ -14,14 +14,14 @@ namespace Ms2.Ui.Tests;
 /// </summary>
 public class OwnArrowMagicTests
 {
-    static string Arrow(string arrow, string attack) =>
+    static string Arrow(string arrow, string attack, string children = "") =>
         "<attack point=\"Hit_01\" targetCount=\"1\" attackMethodType=\"1\" magicPathID=\"600\" brokenOffence=\"1\"" + attack + ">"
         + "<range rangeType=\"box\" distance=\"200\" height=\"100\" width=\"100\" applyTarget=\"1\"/>"
-        + "<arrow nonTarget=\"1\" rayPhysxTest=\"1\" collision=\"25,100,15\" collisionAdd=\"0,25,15\"" + arrow + "/></attack>";
+        + "<arrow nonTarget=\"1\" rayPhysxTest=\"1\" collision=\"25,100,15\" collisionAdd=\"0,25,15\"" + arrow + "/>" + children + "</attack>";
 
-    static CastRecord Record(string arrow = "", string attack = "", bool nonTarget = true)
+    static CastRecord Record(string arrow = "", string attack = "", bool nonTarget = true, string children = "")
     {
-        var xml = Arrow(arrow, attack);
+        var xml = Arrow(arrow, attack, children);
         if (!nonTarget) xml = xml.Replace("nonTarget=\"1\"", "nonTarget=\"0\"");
         var doc = XDocument.Parse("<ms2><skill id=\"100\"><basic mainType=\"1\"/><level value=\"1\"><motion sequenceName=\"A\">"
             + xml + "</motion></level></skill></ms2>");
@@ -112,6 +112,51 @@ public class OwnArrowMagicTests
         Assert.That(Vector3.Distance(s.Rotation, new Vector3(0, 1, 0)), Is.LessThan(1e-5f), "m_matRotation's y column, -direction");
         Assert.That(s.Targets, Is.EqualTo(new[] { new SkillHitTarget(9, 0) }));
         Assert.That(m.Count, Is.EqualTo(0), "a bounce count of 1 ends the flight at the hit");
+    }
+
+    static HitCandidate Pc(int id, float x, float y, int state = 0, int invincible = 0) => new()
+    {
+        Id = id, Position = new Vector3(x, y, 0), Body = SkillHit.PlayerBody(new Vector3(x, y, 0), 0),
+        Kind = HitKind.Pc, Team = 0, Hp = 100, StateId = state, Invincible = invincible,
+    };
+
+    [TestCase(5, false)]
+    [TestCase(6, true)]
+    public void AStateHitIgnoreArrowSkipsAPcInThatState(int state, bool hit)
+    {
+        // FUN_141465b30 (magicdata.cpp:1912): nonTarget 1 and the damage's stateHitIgnore (m_n200) drop each PC whose
+        // GetCurStateId is that state; none left still sends, with no target
+        var r = Record(children: "<damage stateHitIgnore=\"5\"/>");
+        var m = Add(r, Paths(Linear));
+        var objects = new[] { Me, Pc(9, 0, -250, state) };
+        var sends = new List<SkillHitRequest>();
+        m.Tick(T + 0, 0, Owner, objects, r, null, sends, () => 0, null);
+        m.Tick(T + 100, 0, Owner, objects, r, null, sends, () => 0, null);
+        Assert.That(sends.Single().Targets, Is.EqualTo(hit ? new[] { new SkillHitTarget(9, 0) } : Array.Empty<SkillHitTarget>()));
+        Assert.That(m.Count, Is.EqualTo(hit ? 0 : 1), "a skipped PC does not end the flight");
+    }
+
+    [Test]
+    public void AnInvincibleTwoPcTurnsTheArrowAside()
+    {
+        // FUN_141465b30 (magicdata.cpp:1980): m_n528 == 2 sends the hit, then turns the reverse direction by
+        // -1 * (0 * pi/4 + pi/4) (both rands 0), vel 1.2 times, and the flight goes on instead of ending at the hit
+        var r = Record();
+        var m = Add(r, Paths(Linear));
+        var objects = new[] { Me, Pc(9, 0, -250, invincible: 2) };
+        var sends = new List<SkillHitRequest>();
+        m.Tick(T + 0, 0, Owner, objects, r, null, sends, () => 0, null);
+        m.Tick(T + 100, 0, Owner, objects, r, null, sends, () => 0, null);
+        Assert.That(sends.Single().Targets, Is.EqualTo(new[] { new SkillHitTarget(9, 0) }));
+        Assert.That(m.Count, Is.EqualTo(1), "the bounce keeps the magic");
+        var f = m.Flight(0);
+        var side = Vector3.Normalize(f.Target - f.Current);
+        Assert.That(Math.Abs(side.X), Is.EqualTo(MathF.Sqrt(0.5f)).Within(1e-4f), "45 degrees off the line");
+        Assert.That(side.Y, Is.EqualTo(MathF.Sqrt(0.5f)).Within(1e-4f), "back along the reverse direction");
+        var before = f.Current;
+        m.Tick(T + 150, 0, Owner, objects, r, null, sends, () => 0, null);
+        Assert.That(Vector3.Distance(m.Flight(0).Current, before), Is.EqualTo(1800f * 1.2f * 0.05f).Within(0.5f), "vel 1.2 times");
+        Assert.That(sends.Count, Is.EqualTo(1), "filled: no second send");
     }
 
     [Test]
