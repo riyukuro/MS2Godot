@@ -12,7 +12,10 @@ namespace Ms2Godot.Tests;
 /// - a block puts the npc at its position (raised by the packet lift) and the block velocity moves it on every frame;
 /// - the rotate flag snaps the yaw;
 /// - on a Run_ sequence an npc 40 short of the block position stays put, and its velocity is scaled by the clamped catch-up ratio (1.2);
-/// - a jump sequence stops the velocity.
+/// - the Run_ animation plays at the row's anispeed times the unclamped catch-up ratio;
+/// - a jump sequence stops the velocity and keeps the yaw;
+/// - the yaw turns at most the row's rotationSpeed per second (CNpc::TurnTowardTargetYaw @0x141099170);
+/// - Process allocates nothing per frame.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class NpcMoveCheck : Node3D
@@ -31,8 +34,10 @@ public partial class NpcMoveCheck : Node3D
         Check(npcId != 0, "no npc row");
         npcs.Add(new NpcAddedEvent(0, new FieldAddNpc { ObjectId = 1, NpcId = npcId }));
         float lift = World.FieldNpcs.PacketLift;
+        var row = table.Find(npcId);
         void Block(short x, short vx, short seq = -1, bool rotates = false, float yaw = 0) =>
-            npcs.Move(new NpcMovedEvent(0, new NpcSync { ObjectId = 1, Flags = (byte)(rotates ? 1 : 0), Position = new Vector3S(x, 0, 0), Velocity = new Vector3S(vx, 0, 0), RotationZ = yaw, Sequence = seq }));
+            npcs.Move(new NpcMovedEvent(0, new NpcSync { ObjectId = 1, Flags = (byte)(rotates ? 1 : 0), Position = new Vector3S(x, 0, 0), Velocity = new Vector3S(vx, 0, 0), RotationZ = yaw, Sequence = seq, AnimSpeed = 1 }));
+        float Yaw() => Mathf.RadToDeg(npcs.Info(1)?.yaw ?? float.NaN);
         Vector3 At() => npcs.Info(1)?.root.Position ?? new Vector3(float.NaN, 0, 0);
         bool Near(Vector3 a, float x) => (a - new Vector3(x, lift, 0)).Length() < 0.01f;
 
@@ -48,20 +53,39 @@ public partial class NpcMoveCheck : Node3D
         if (run < 0) GD.Print("npc move: no Run_A sequence, the catch-up part is skipped");
         else
         {
-            Block(0, 0, (short)run);
-            Check(Near(At(), 0), $"the run block did not place the npc at 0: {At()}");
+            Block(0, 0);
+            Check(Near(At(), 0), $"the block did not place the npc at 0: {At()}");
             // ahead = 40 + 200 * 0.3 = 100, 100 from the npc and 60 from the block: ratio 1.67, clamped to 1.2
             Block(40, 200, (short)run);
             Check(Near(At(), 0), $"the catch-up block placed the npc: {At()}");
+            float anim = npcs.AnimSpeed(1);
+            Check(Mathf.Abs(anim - row.AniSpeed * (100f / 60f)) < 0.001f, $"the catch-up animation speed {anim} is not anispeed {row.AniSpeed} x ratio 1.67");
             npcs.Process(0.25f);
             Check(Near(At(), 60), $"the catch-up velocity is not 240: {At()} after 0.25 s");
         }
 
-        Block(300, 100, -2);
+        // the turn: snapped to 0, then a target of 90 without the snap flag turns at the row's cap (or closes 10x the gap per second)
+        Block(0, 0, rotates: true, yaw: 0);
+        Block(0, 0, yaw: 90);
+        npcs.Process(0.05f);
+        float want = Mathf.Min(90f / 0.1f, row.RotationSpeed) * 0.05f;
+        Check(Mathf.Abs(Yaw() - want) < 0.01f, $"the turn step is {Yaw()}, want {want} (rotationSpeed {row.RotationSpeed})");
+
+        Block(0, 0, rotates: true, yaw: 0);
+        Block(300, 100, -2, rotates: true, yaw: 45);
+        Check(Mathf.Abs(Yaw()) < 0.01f, $"the jump block snapped the yaw to {Yaw()}");
         npcs.Process(0.1f);
         npcs.Process(1f);
         Check(Near(At(), 300), $"the jump block did not stop the velocity: {At()}");
-        GD.Print($"npc move: npc {npcId}, run {run}, {(fails.Count == 0 ? "ok" : "FAIL " + string.Join("; ", fails))}");
+        Check(Mathf.Abs(Yaw()) < 0.01f, $"the jump block set the yaw target: {Yaw()}");
+
+        Block(300, 100);
+        npcs.Process(0.016f);
+        long a0 = System.GC.GetAllocatedBytesForCurrentThread();
+        for (int k = 0; k < 100; k++) npcs.Process(0.016f);
+        long alloc = System.GC.GetAllocatedBytesForCurrentThread() - a0;
+        Check(alloc == 0, $"Process allocated {alloc} B in 100 frames");
+        GD.Print($"npc move: npc {npcId}, run {run}, anispeed {row.AniSpeed}, rotationSpeed {row.RotationSpeed}, {alloc} B per 100 frames, {(fails.Count == 0 ? "ok" : "FAIL " + string.Join("; ", fails))}");
         GetTree().Quit(fails.Count == 0 ? 0 : 1);
     }
 }

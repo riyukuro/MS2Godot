@@ -29,6 +29,7 @@ public sealed class NpcLayer
         public Godot.Vector3 Target; public float TargetYaw; public int Sequence = -1; public string Playing = "";
         public Godot.Vector3 Velocity;            // m_posD40: the last block's velocity, added to the position every frame (CNpc::vfunc_53)
         public bool Eases;                        // a jump arc or a dead body: eased toward the block position, no velocity
+        public float AniSpeed = 1f, TurnCap;      // the row's anispeed (Run_ sequences) and rotationSpeed (the turn cap, degrees per second)
         public bool Placeholder, Dead;
         public string DeadAction;                 // m_strED0: the death sequence picked at spawn (CNpc init, :539)
         public long Exp;                          // m_nE60: the exp the own PC got for this npc, shown when its death sequence ends
@@ -170,7 +171,7 @@ public sealed class NpcLayer
         if (row == null) { NoRow++; return; }
         var model = ModelFor(row);
         var root = new Node3D { Name = $"Npc{n.ObjectId}" };
-        var i = new Inst { Root = root, Model = model, NpcId = n.NpcId, Target = Placed(n.Position), TargetYaw = n.Rotation.Z };
+        var i = new Inst { Root = root, Model = model, NpcId = n.NpcId, Target = Placed(n.Position), TargetYaw = n.Rotation.Z, AniSpeed = row.AniSpeed, TurnCap = row.RotationSpeed };
         i.DeadAction = row.RandomDeadDefaultAction(crtRand);
         if (model != null)
         {
@@ -234,7 +235,7 @@ public sealed class NpcLayer
         i.Root.QueueFree();
     }
 
-    void Play(Inst i, int seqId)
+    void Play(Inst i, int seqId, float speed = 1f)
     {
         var a = Anim(i.Model, seqId);
         if (a == null) { SequencesMissing++; return; }
@@ -242,6 +243,7 @@ public sealed class NpcLayer
         var lib = i.Player.GetAnimationLibrary("");
         if (!lib.HasAnimation(name)) lib.AddAnimation(name, a);
         i.Player.Play(name, 0.12);
+        i.Player.SpeedScale = speed;
         i.Playing = name; i.Sequence = seqId; SequencesPlayed++;
         if (a.LoopMode == Godot.Animation.LoopModeEnum.None)
         {
@@ -479,6 +481,9 @@ public sealed class NpcLayer
     /// <summary>The id of the npc model's sequence of that name, -1 when the npc or the sequence is missing.</summary>
     public int SequenceId(int id, string name) => inst.TryGetValue(id, out var i) ? i.Model?.Kfm.ByName(name)?.Id ?? -1 : -1;
 
+    /// <summary>The speed the npc's animation plays at, 0 when the npc or its model is missing.</summary>
+    public float AnimSpeed(int id) => inst.TryGetValue(id, out var i) && i.Player != null ? (float)i.Player.SpeedScale : 0;
+
     public bool IsDead(int id) => inst.TryGetValue(id, out var i) && i.Dead;
 
     /// <summary>The npc's root node, dead or not; null when there is no npc of the id.</summary>
@@ -542,7 +547,11 @@ public sealed class NpcLayer
     /// (snapped when the rotate flag is set), and the block velocity moves it until the next block (<see cref="Process"/>). On a Run_ sequence
     /// an npc more than 30 off the block position does not jump to it: when the point 0.3 s ahead on the velocity is up to twice as far from the npc
     /// as from the block position, the ratio clamped to 0.8 - 1.2 scales the velocity so the npc catches up, unless that is within 3 % of 1.
-    /// STILL-OPEN: jump sequences (-2/-3) run the arc mover m_unkDB0 in the client; here the npc eases toward the block position.
+    /// The animation plays at the block's speed; a Run_ sequence at the row's anispeed times PCBase::vfunc_97 (taken as 1: the npc's scale is not
+    /// changed here), times the unclamped ratio while it catches up. As in CAnimationManager::PlayAnimation the speed only takes when the
+    /// sequence changes; a speed of 0 or less is taken as 1.
+    /// A jump block (-2/-3) starts the arc mover m_unkDB0, which keeps the yaw target and the snap from applying, as a dead body does here.
+    /// STILL-OPEN: the arc mover is not ported; a jumping npc eases toward the block position.
     /// STILL-OPEN: in state 0xd the client keeps the npc's own height; the npc state is not tracked here.
     /// </summary>
     public void Move(Ms2.Net.Replay.NpcMovedEvent e)
@@ -551,26 +560,30 @@ public sealed class NpcLayer
         if (!inst.TryGetValue(b.ObjectId, out var i)) return;
         i.Target = Placed(b.Position.ToVector3());
         i.Moves++;
-        if (i.Dead) { i.Velocity = default; i.Eases = true; return; }       // a dead body keeps its last frame
-        if (i.Model != null && b.Sequence >= 0 && b.Sequence != i.Sequence) Play(i, b.Sequence);
-        i.TargetYaw = b.RotationZ;
-        if (b.Rotates && !i.Placeholder) i.Visual.Rotation = new Godot.Vector3(0, Mathf.DegToRad(b.RotationZ), 0);
-        if (b.Sequence is -2 or -3) { i.Velocity = default; i.Eases = true; return; }
+        if (i.Dead || b.Sequence is -2 or -3) { i.Velocity = default; i.Eases = true; return; }       // a dead body keeps its last frame
         i.Eases = false;
         var vel = G(b.Velocity.ToVector3());
         bool place = true;
+        float speed = b.AnimSpeed;
         string name = b.Sequence >= 0 ? i.Model?.Kfm.ById(b.Sequence)?.Name : null;
-        if (name != null && name.StartsWith("Run_", System.StringComparison.Ordinal) && i.Root.Position.DistanceTo(i.Target) > 30f)
+        if (name != null && name.StartsWith("Run_", System.StringComparison.Ordinal))
         {
-            var ahead = i.Target + vel * 0.3f;
-            float ratio = (ahead - i.Root.Position).Length() / (ahead - i.Target).Length();
-            if (ratio < 2f)
+            speed = i.AniSpeed;
+            if (i.Root.Position.DistanceTo(i.Target) > 30f)
             {
-                float scale = Mathf.Clamp(ratio, 0.8f, 1.2f);
-                if (scale > 1.03f || scale < 0.97f) { vel *= scale; place = false; }
+                var ahead = i.Target + vel * 0.3f;
+                float ratio = (ahead - i.Root.Position).Length() / (ahead - i.Target).Length();
+                if (ratio < 2f)
+                {
+                    float scale = Mathf.Clamp(ratio, 0.8f, 1.2f);
+                    if (scale > 1.03f || scale < 0.97f) { speed *= ratio; vel *= scale; place = false; }
+                }
             }
         }
+        if (i.Model != null && b.Sequence >= 0 && b.Sequence != i.Sequence) Play(i, b.Sequence, speed > 0 ? speed : 1f);
         if (place) i.Root.Position = i.Target;
+        i.TargetYaw = b.RotationZ;
+        if (b.Rotates && !i.Placeholder) i.Visual.Rotation = new Godot.Vector3(0, Mathf.DegToRad(b.RotationZ), 0);
         i.Velocity = vel;
     }
 
@@ -589,8 +602,7 @@ public sealed class NpcLayer
                 else i.Root.Position += d * Mathf.Min(1f, dt * 10f);
             }
             else i.Root.Position += i.Velocity * dt;          // CNpc::vfunc_53 (@0x1410952f0): pos += m_posD40 * time
-            if (!i.Placeholder)
-                i.Visual.Rotation = new Godot.Vector3(0, Mathf.LerpAngle(i.Visual.Rotation.Y, Mathf.DegToRad(i.TargetYaw), Mathf.Min(1f, dt * 10f)), 0);
+            if (!i.Placeholder) Turn(i, dt);
             // the CNpc update's shake (:2419-2424): the drawn point is the npc's own plus the offset, each frame anew
             if (i.Vibrate.Active)
             {
@@ -604,6 +616,21 @@ public sealed class NpcLayer
                 foreach (var m in i.BoostMaterials) m.SetShaderParameter(ShaderParam.ColorBoost, i.Boost.Scale);
             }
         }
+    }
+
+    /// <summary>
+    /// CNpc::TurnTowardTargetYaw (@0x141099170): the yaw turns toward the target at the rate that would close the gap in 0.1 s, capped by the
+    /// row's rotationSpeed (an npc without one does not turn), and lands on the target when the step would pass it.
+    /// STILL-OPEN: the optimizer's early out (COptimizer FUN_14109a9d0) is taken as off.
+    /// </summary>
+    static void Turn(Inst i, float dt)
+    {
+        float cur = Mathf.RadToDeg(i.Visual.Rotation.Y);
+        float delta = Mathf.Wrap(i.TargetYaw - cur, -180f, 180f);
+        if (delta == 0) return;
+        float step = Mathf.Sign(delta) * Mathf.Min(Mathf.Abs(delta) / 0.1f, i.TurnCap) * dt;
+        cur = Mathf.Abs(delta) < Mathf.Abs(step) ? i.TargetYaw : cur + step;
+        i.Visual.Rotation = new Godot.Vector3(0, Mathf.DegToRad(Mathf.Wrap(cur, -180f, 180f)), 0);
     }
 
     /// <summary>Check: each npc's applied position is the recorded one after the same number of blocks.</summary>

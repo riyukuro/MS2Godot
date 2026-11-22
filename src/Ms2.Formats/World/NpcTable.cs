@@ -18,6 +18,8 @@ public sealed class NpcRow
     public float Scale = 1f;
     public float ShadowScale;                // <model shadowScale>: radius of the simple ground shadow (0 = none)
     public float WalkSpeed, RunSpeed;
+    public float AniSpeed = 1f;              // <model anispeed>: CNpcData m_model.m_fAniSpeed, 1 when absent (Unk_NpcModel ctor)
+    public float RotationSpeed;              // <model rotationSpeed>: CNpcData m_fRotationSpeed, the turn cap in degrees per second, 0 when absent
     public string[] IdleActions = Array.Empty<string>();
     public string[] MoveActions = Array.Empty<string>();
     public int Gender;
@@ -189,6 +191,8 @@ public sealed class NpcTable
             ShadowScale = Flt(model, "shadowScale", 0f),
             WalkSpeed = Flt(model, "walkSpeed", 0),
             RunSpeed = Flt(model, "runSpeed", 0),
+            AniSpeed = Flt(model, "anispeed", 1f),
+            RotationSpeed = Flt(model, "rotationSpeed", 0),
             CapsuleHeight = Flt(env.Element("capsule"), "height", 150f),
             CapsuleRadius = Flt(env.Element("capsule"), "radius", 25f),
             CapsuleIgnore = Int(env.Element("capsule"), "ignore") != 0,
