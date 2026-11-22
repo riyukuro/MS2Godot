@@ -58,13 +58,15 @@ public delegate bool MagicRayCast(Vector3 from, Vector3 dir, float length, out V
 /// Piercing arrows (bounceType 3 and 4) keep flying through their hits, forget them each piercing interval and send its
 /// splash (<see cref="SkillSplashRequest"/>); bounceType 4 then flies back to the owner (state 5) and ends there.
 /// STILL-OPEN: for an arrow record, the magic control flight (FUN_141464490, a skill with magicControl enable not 0: those make no arrow
-/// magic here), the bounce-off's effect for an owner other than the local player; the links of a record other than an arrow one, the latency maximum (0 here: the time sync's latency is not kept),
+/// magic here), the bounce-off's effect for an owner other than the local player; the links of a record other than an arrow one,
+/// and another owner's magics other than arrow ones (<see cref="AddRemote"/>: their fill and registration do nothing for it,
+/// so they are not made), the latency maximum (0 here: the time sync's latency is not kept),
 /// CFunctionCubeService::SetTagArea and MyPC::FUN_14152e0c0 after a fill are not
 /// ported.
 /// </summary>
 public sealed class OwnTagMagics
 {
-    sealed class Magic
+    internal sealed class Magic
     {
         public TagRecord Tag;
         public SkillAttackData Attack;
@@ -178,17 +180,83 @@ public sealed class OwnTagMagics
         return n;
     }
 
+    /// <summary>
+    /// FUN_14171c1d0's models (scenestategame.cpp:5569-5588) for another owner's records <paramref name="tags"/> of the attack
+    /// <paramref name="attack"/>: CMagicModel::Init(tag, prev, ptStart, 1, bServer, 0) for each root, then for each link of its
+    /// chain. The tag id <paramref name="castId"/> and attack index <paramref name="attackIndex"/> are the packet's, the start
+    /// <paramref name="start"/> its ptStart (m_n530 1: FUN_1414609e0 takes no fire node, and the start ray runs from ptStart,
+    /// m_ptAc) and <paramref name="dir"/> its direction (each record's m_ptDir).
+    /// A root starts at <paramref name="nowMs"/> when <paramref name="server"/> (bServer: its m_nStartTick the server clock),
+    /// else it waits (start tick 0) for SetTargetStartTicks (<see cref="SetStart"/>); a link waits for the end of the one
+    /// before it, as an own link does. With the owner's record for the cast (spCast), each root's model joins its list:
+    /// <paramref name="pending"/> gets (the attack index, the magic), the magic null when the root has none.
+    /// Only an arrow record (attackMethodType 1) of a skill without magic control makes a magic here: the fill and the
+    /// registration of any other do nothing for an owner other than the local player.
+    /// Returns the number kept.
+    /// </summary>
+    internal int AddRemote(SkillData skill, SkillAttackData attack, long castId, byte attackIndex, Vector3 start, Vector3 dir,
+        IReadOnlyList<SkillDamageTarget> tags, bool server, int nowMs, MagicPathTable paths, int ownerId, MagicRayCast rayCast,
+        ReadOnlySpan<HitCandidate> objects, List<(int Attack, Magic Model)> pending)
+    {
+        if (tags == null) return 0;
+        bool arrow = attack != null && paths != null && attack.AttackMethodType == 1 && (skill?.MagicControlEnable ?? 0) == 0;
+        int n = 0;
+        foreach (var t in tags)
+        {
+            Magic m = null;
+            var d = arrow ? paths.Get(attack.MagicPathId, t.Hit) : null;
+            if (d != null)
+            {
+                m = Make(attack, d, castId, 0, attackIndex, start, t.Serial, t.TargetId, t.Hit, server ? nowMs : 0, dir, null, null, default);
+                m.Waiting = !server;
+                InitArrow(m, d, dir, ownerId, start, rayCast, nowMs, objects);
+                live.Add(m);
+                n++;
+                var prev = m;
+                foreach (var link in t.Links)
+                {
+                    var ld = paths.Get(attack.MagicPathId, link.Hit);
+                    if (ld == null) break;
+                    var lm = Make(attack, ld, castId, 0, attackIndex, start, link.Serial, link.TargetId, link.Hit, 0, dir, null, null, default);
+                    lm.Waiting = true;
+                    InitArrow(lm, ld, dir, ownerId, start, rayCast, nowMs, objects);
+                    live.Add(lm);
+                    prev.Linked = lm;
+                    prev = lm;
+                    n++;
+                }
+            }
+            pending?.Add((attackIndex, m));
+        }
+        return n;
+    }
+
+    /// <summary>SetTargetStartTicks' store (stateskill.cpp:1370) into a model's tag: the start tick <paramref name="tick"/>,
+    /// which ends a root's wait.</summary>
+    internal static void SetStart(Magic m, int tick)
+    {
+        m.Start = tick;
+        m.Waiting = false;
+    }
+
     /// <summary>CMagicModel::Init's CMagic::Init (magicdata.cpp:2605, :672) for the record with <paramref name="serial"/>,
     /// <paramref name="targetId"/> and hit index <paramref name="hit"/> (its row <paramref name="d"/>).</summary>
     static Magic Make(SkillAttackData attack, MagicPathMove d, CastRecord r, long serial, int targetId, int hit, int startMs,
-        Vector3 dir, Func<string, Vector3> nodePosition, Action onHit, TagIdentity id) => new()
+        Vector3 dir, Func<string, Vector3> nodePosition, Action onHit, TagIdentity id) =>
+        Make(attack, d, r?.CastId ?? 0, r?.SendCount ?? 0, (byte)(r?.AttackIndex ?? 0), r?.Position ?? Vector3.Zero, serial, targetId,
+            hit, startMs, dir, nodePosition, onHit, id);
+
+    /// <summary>The same with the record's cast id, send count and attack index given, and the start point's
+    /// <paramref name="fallback"/> when <paramref name="nodePosition"/> is null.</summary>
+    static Magic Make(SkillAttackData attack, MagicPathMove d, long castId, int sendCount, byte attackIndex, Vector3 fallback,
+        long serial, int targetId, int hit, int startMs, Vector3 dir, Func<string, Vector3> nodePosition, Action onHit,
+        TagIdentity id) => new()
     {
         Tag = new TagRecord { BrokenOffence = attack.BrokenOffence, Hit = onHit, Id = id },
         Attack = attack, Start = startMs,
         Delay = MagicPathTable.Ms(d.DelayTime), Spawn = MagicPathTable.Ms(d.SpawnTime), Life = MagicPathTable.Ms(d.LifeTime),
-        CastId = r?.CastId ?? 0, Serial = serial, TargetId = targetId, SendCount = r?.SendCount ?? 0,
-        AttackIndex = (byte)(r?.AttackIndex ?? 0),
-        StartPoint = StartPoint(d, dir, nodePosition?.Invoke(d.FireNode) ?? r?.Position ?? Vector3.Zero),
+        CastId = castId, Serial = serial, TargetId = targetId, SendCount = sendCount, AttackIndex = attackIndex,
+        StartPoint = StartPoint(d, dir, nodePosition?.Invoke(d.FireNode) ?? fallback),
         DelayZero = MathF.Abs(d.DelayTime) < 1e-6f, IgnoreCancelAtSpawn = d.IgnoreCancelAtSpawnTime,
         Bounce2 = attack.Arrow.BounceType == 2, HitIndex = hit,
     };
@@ -1138,7 +1206,8 @@ public sealed class OwnTagMagics
         {
             var m = live[i];
             if (m.CastId != castId || m.Bounce2 || !m.DelayZero || m.State >= 2) continue;
-            if (m.IgnoreCancelAtSpawn && (uint)nowMs >= (uint)(m.Start + m.Delay)) continue;
+            // a waiting record (start tick 0) is in state 0, so ignoreCancelAtSpawnTime does not keep it
+            if (!m.Waiting && m.IgnoreCancelAtSpawn && (uint)nowMs >= (uint)(m.Start + m.Delay)) continue;
             if (m.Linked != null) m.Linked.Abandoned = true;
             live.RemoveAt(i);
             n++;
