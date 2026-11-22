@@ -13,8 +13,8 @@ namespace Ms2Godot.Ui;
 /// The beauty shop dialog UIBeautyShopDialog (0x4eee) with its C++ side as <see cref="BeautyShopDialogController"/>. Live only:
 /// the beauty item's use (ItemUse mode 6, <see cref="Ms2Godot.Net.LiveSession.BeautyRequested"/>) opens it and the shop packets
 /// (inbound 0x31) go to it while it is open, as the client's handler does. STILL-OPEN: the open from the NPC talk (the enter
-/// request's reader side), the own-avatar Customize and the style dialog (step 3), the price text and payment check
-/// (GetFeePriceText, CanPayFee), the bill dialog's beauty kind.
+/// request's reader side), the own-avatar Customize and the style dialog (step 3). The price text is GetFeePriceText @0x14134a220;
+/// CanPayFee @0x14134a1d0 (CanPayCurrency, then HasEnoughCurrency) is recovered but not wired yet, so a buy sends nothing.
 /// </summary>
 public partial class HudScene
 {
@@ -69,7 +69,8 @@ public partial class HudScene
         };
     }
 
-    // STILL-OPEN: CanPay (CanPayFee is not recovered) and SlotOfKind (FUN_140f01070) stay unset, so the paths that need them do nothing.
+    // STILL-OPEN: CanPay stays unset (CanPayFee @0x14134a1d0 is recovered; it is wired with the bill's modal behaviour), so a buy does nothing.
+    // SlotOfKind (FUN_140f01070) is the controller's default.
     BeautyShopDialogController CreateBeauty(Ms2Godot.Net.LiveSession live)
     {
         var c = new BeautyShopDialogController

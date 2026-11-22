@@ -30,9 +30,10 @@ public interface IBeautyCustomize
 /// <see cref="BeautyShopPacket"/>); this controller shows the fee and runs the dialog's paths: the fee row (UpdateFee), the fee by
 /// shop page (GetFee), the bill rows (BuildBillRows), the buy (@0x1418c9f20), the close ask (RequestClose) and the packets' modes
 /// 0, 8, 9, 0xb, 0xc, 0x10 and 0x11.
-/// <para>STILL-OPEN: the price text and affordability of a payment (GetFeePriceText, CanPayFee) and its "not enough" box
-/// (FUN_14134a2e0) are not recovered, so <see cref="FeePriceText"/>, <see cref="CanPay"/> and <see cref="NotEnough"/> are set by the
-/// host and a path that needs one does nothing without it; the list rows (FUN_1418c6870, WriteItemInfo), the page's per-frame
+/// <para>The price text (GetFeePriceText @0x14134a220), the affordability (CanPayFee @0x14134a1d0: CanPayCurrency, then
+/// HasEnoughCurrency) and the "not enough" box (FUN_14134a2e0) belong to the shop host, so <see cref="FeePriceText"/>,
+/// <see cref="CanPay"/> and <see cref="NotEnough"/> are set by it and a path that needs one does nothing without it.
+/// STILL-OPEN: the list rows (FUN_1418c6870, WriteItemInfo), the page's per-frame
 /// state (vfunc_15), the camera dialog 0x4ef2, the style select dialog and the UIBillDialog (0x4e7b) beauty kind are step 3 /
 /// not ported: the bill is handed to <see cref="OpenBill"/>.</para>
 /// </summary>
@@ -56,9 +57,9 @@ public sealed class BeautyShopDialogController : UiController
     public Action<MessageBoxData> ShowData = d => MessageBoxQueue.Show(d);
     /// <summary>g_143ab2a90.HasItemWithTag: the bag holds an item with the tag (IsCouponSaleActive).</summary>
     public Func<int, bool> HasItemWithTag = _ => false;
-    /// <summary>GetFeePriceText (not recovered): the price text of a payment and an amount.</summary>
+    /// <summary>GetFeePriceText @0x14134a220: the price text of a payment and an amount (set by the host).</summary>
     public Func<BeautyPayment, long, string> FeePriceText;
-    /// <summary>CanPayFee (not recovered).</summary>
+    /// <summary>CanPayFee @0x14134a1d0 (unit_141347b10.cpp:614: CanPayCurrency, then HasEnoughCurrency), set by the host.</summary>
     public Func<BeautyPayment, long, bool> CanPay;
     /// <summary>FUN_14134a2e0 (not recovered): the "not enough" message of a payment.</summary>
     public Action<BeautyPayment> NotEnough;
@@ -308,8 +309,9 @@ public sealed class BeautyShopDialogController : UiController
         Left?.Invoke();
     }
 
-    /// <summary>FUN_140f01070 of the shop kind: the equip slot the shop edits (not recovered: set by the host).</summary>
-    public Func<int, int> SlotOfKind = _ => 0;
+    /// <summary>FUN_140f01070 of the shop kind: the equip slot the shop edits (1 -> 1, 2 -> 3, 3 -> 2, else 0; recovered at
+    /// uibeautyshopstyledialog.cpp:381, <see cref="BeautyStyleDialogController.SlotOfKind"/>).</summary>
+    public Func<int, int> SlotOfKind = BeautyStyleDialogController.SlotOfKind;
     int WornSlot() => SlotOfKind(ShopKind);
 
     /// <summary>RequestClose (@0x1418c9d80): leave at once for the special page or with nothing changed; else ask (common string 0x271).</summary>

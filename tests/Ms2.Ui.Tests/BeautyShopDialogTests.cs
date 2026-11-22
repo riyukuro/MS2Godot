@@ -89,6 +89,18 @@ public class BeautyShopDialogTests
         };
     }
 
+    /// <summary>The shop's worn slot is FUN_140f01070 by default (kind 1 -> slot 1); unset, Leave restored slot 0.</summary>
+    [Test]
+    public void LeaveRestoresTheSlotOfTheShopKind()
+    {
+        Packs();
+        var cu = new Cust();
+        var c = new BeautyShopDialogController { Customize = cu };    // the default SlotOfKind, none set by a host
+        c.OnPacket(Rig.Open(1));
+        c.Leave();
+        Assert.That(cu.Calls, Is.EqualTo(new[] { "restore1" }));
+    }
+
     [Test]
     public void ModeZeroStoresTheShopAndBuildsThePageOnLoad()
     {
