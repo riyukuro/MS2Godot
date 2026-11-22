@@ -249,27 +249,27 @@ public sealed record QuestLearningRequest(int LearningId) : IOutPacket {
     public void Write(ByteWriter w) { w.WriteByte(0x10); w.WriteInt(LearningId); }
 }
 
-/// <summary>Outbound 0x29 mode 6 (UIQuestDialog abandon, uiquestdialog.cpp:1809 and its message box answer :1823): u8 6, i32 quest.</summary>
+/// <summary>Outbound 0x29 mode 6 (UIQuestDialog abandon, uiquestdialog.cpp:1814 and its message box answer :1828): u8 6, i32 quest.</summary>
 public sealed record QuestAbandonRequest(int QuestId) : IOutPacket {
     public Outbound Op => Outbound.Quest;
     public void Write(ByteWriter w) { w.WriteByte(6); w.WriteInt(QuestId); }
 }
 
 /// <summary>Outbound 0x29 mode 8 (CQuestManager::FUN_1416d3250 @0x1416d3250, questmanager_2.cpp:2206): u8 8, i32 count, count x i32 quest id.
-/// The auto-start and map quests of the field that can start.</summary>
+/// The auto-start and map quests of the field that can start. The client never sends an empty list (questmanager_2.cpp:2205 sends only when the count is > 0): a caller skips that case.</summary>
 public sealed record QuestAutoStartRequest(IReadOnlyList<int> QuestIds) : IOutPacket {
     public Outbound Op => Outbound.Quest;
     public void Write(ByteWriter w) { w.WriteByte(8); w.WriteInt(QuestIds.Count); foreach (int id in QuestIds) w.WriteInt(id); }
 }
 
-/// <summary>Outbound 0x29 mode 0xC (CQuestManager::SendQuestMode12 @0x1416cf510, questmanager_2.cpp:1433): u8 0xC, i32 quest.</summary>
-public sealed record QuestMode12Request(int QuestId) : IOutPacket {
+/// <summary>Outbound 0x29 mode 0xC, the quest dialog's onGotoNpc (uiquestdialog.cpp:468; CQuestManager::SendQuestMode12 @0x1416cf510, questmanager_2.cpp:1433): u8 0xC, i32 quest.</summary>
+public sealed record QuestGotoNpcRequest(int QuestId) : IOutPacket {
     public Outbound Op => Outbound.Quest;
     public void Write(ByteWriter w) { w.WriteByte(0xC); w.WriteInt(QuestId); }
 }
 
-/// <summary>Outbound 0x29 mode 0xD (CQuestManager::SendQuestMode13 @0x1416cf630, questmanager_2.cpp:1446): u8 0xD, i32 quest.</summary>
-public sealed record QuestMode13Request(int QuestId) : IOutPacket {
+/// <summary>Outbound 0x29 mode 0xD, the quest dialog's onGotoDungeon (uiquestdialog.cpp:478; CQuestManager::SendQuestMode13 @0x1416cf630, questmanager_2.cpp:1446): u8 0xD, i32 quest.</summary>
+public sealed record QuestGotoDungeonRequest(int QuestId) : IOutPacket {
     public Outbound Op => Outbound.Quest;
     public void Write(ByteWriter w) { w.WriteByte(0xD); w.WriteInt(QuestId); }
 }
@@ -280,8 +280,8 @@ public sealed record QuestSkyFortressRequest : IOutPacket {
     public void Write(ByteWriter w) => w.WriteByte(0xE);
 }
 
-/// <summary>Outbound 0x29 mode 0x14 (CQuestManager::SendQuestMode20 @0x1416d0ea0, questmanager_2.cpp:1795, a message box answer): u8 0x14, i32 id, i16 count.</summary>
-public sealed record QuestMode20Request(int Id, short Count) : IOutPacket {
+/// <summary>Outbound 0x29 mode 0x14 (CQuestManager::SendQuestMode20 @0x1416d0ea0, questmanager_2.cpp:1795, the yes answer of the quest dispatch box, s_quest_dispatch_yes stringtable.cpp:265): u8 0x14, i32 id, i16 count.</summary>
+public sealed record QuestDispatchYesRequest(int Id, short Count) : IOutPacket {
     public Outbound Op => Outbound.Quest;
     public void Write(ByteWriter w) { w.WriteByte(0x14); w.WriteInt(Id); w.WriteShort(Count); }
 }
