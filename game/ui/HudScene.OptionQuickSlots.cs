@@ -45,8 +45,7 @@ public partial class HudScene
 
         public void Refresh() => hud.playerInfo?.RefreshQuickSlots();
 
-        /// <summary>STILL-OPEN: UIMainPlayerInfo::UpdateModifiedKeys (@0x1419f1e60) sets the game pad modifier key texts
-        /// (setModifiedKey, only with the expanded slot bar); the key text builder FUN_141431820 is not ported, so nothing is set.</summary>
-        public void UpdateModifiedKeys() { }
+        /// <summary>UIMainPlayerInfo::UpdateModifiedKeys (@0x1419f1e60).</summary>
+        public void UpdateModifiedKeys() => hud.playerInfo?.UpdateModifiedKeys();
     }
 }

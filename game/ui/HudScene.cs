@@ -2615,6 +2615,7 @@ public partial class HudScene : Node, IUiStageHost
         {
             SlotWorld = QuickSlotWorld,
             SlotExpand = GameOptions.GamePad.Use,
+            PadKind = () => optionHost?.GetPadKind() ?? 0,
             TooltipPlayer = () => { QuickSlotWorld(); return SkillTooltipPlayer(slotJobs); },
             Send = packet =>
             {

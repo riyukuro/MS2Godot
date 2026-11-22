@@ -68,6 +68,9 @@ public interface IKeyTable
     /// <summary>CKeyTable::FUN_1414297e0 (@0x1414297e0, keytable.cpp:429) on DefaultKey.xml, nothing sent (ResetKeysToDefault passes 0,
     /// gameoptioninputdefault.cpp:473).</summary>
     void LoadDefaultKeyboardKeys() { }
+    /// <summary>CKeyTable::FUN_141429e60 (@0x141429e60, keytable.cpp:500) on DefaultPSKey.xml (pad kind 2) or DefaultXboxKey.xml
+    /// (kinds 1 and 3): the game pad keys only, then sent to the server (ResetKeysToDefault, gameoptioninputdefault.cpp:451-461).</summary>
+    bool LoadDefaultPadKeys(int padKind) => false;
     /// <summary>CKeyTable::GetQuickSlotActionCount (@0x14142cbb0): the quick-slot actions m_quickSlotActions holds.</summary>
     int GetQuickSlotActionCount() => 0;
     /// <summary>CKeyTable::GetQuickSlotAction (@0x14142cbe0): the action of quick slot index, 0 past the end.</summary>
@@ -133,6 +136,11 @@ public interface IGameOptionDialogHost
     /// <summary>UIDialog::vfunc_55: the dialog is closed; checked before the tab and key handlers.</summary>
     bool IsClosed { get; }
     bool IsFeatureEnabled(int feature);
+    /// <summary>MS2InputService::GetPadKind (m_nPadKind, FUN_140a58540): 0 none, 1 XInput pad, 2 DualShock pad, 3 Steam pad.</summary>
+    int GetPadKind() => 0;
+    /// <summary>CreateMessageBox(6, s_gameoption_input_reset_message), AddStringArg(<paramref name="padArg"/>), SetButtonPreset(2) and
+    /// the callback FUN_1412523d0 (vfunc_12 @0x141251e90): the callback gets the clicked button and the string arg.</summary>
+    void ResetMessageBox(string padArg, Func<int, string, bool> callback) { }
     /// <summary>DAT_143ab2914, compared with 0x32 for bNewBuild.</summary>
     int BuildNumber { get; }
     /// <summary>FUN_140651390, the locale passed to initData.</summary>
@@ -1142,31 +1150,42 @@ public sealed class InputOptionPage : OptionPage
     }
 
     /// <summary>
-    /// ResetKeysToDefault (@0x141252200, gameoptioninputdefault.cpp:444-485), the keyboard path (bDefault): in the tab, the quick slots
-    /// are snapshotted, DefaultKey.xml is loaded (nothing sent), the slots refresh and the notify posts; the list refreshes when the
-    /// tab is current. STILL-OPEN: the game pad paths (feature 0xb5 with a pad kind: DefaultPSKey.xml / DefaultXboxKey.xml through
-    /// FUN_141429e60) and the edit reset (m_spEdit = 0, the key capture is not ported).
+    /// ResetKeysToDefault(nPadKind) (@0x141252200, gameoptioninputdefault.cpp:444-485): in the tab, the quick slots are snapshotted;
+    /// with the game pad feature (0xb5) on, pad kind 2 loads DefaultPSKey.xml and kinds 1 and 3 DefaultXboxKey.xml through
+    /// FUN_141429e60 (sent to the server); any other kind, or the feature off, loads DefaultKey.xml with nothing sent. Then the slots
+    /// refresh and the notify posts; the list refreshes when the tab is current. STILL-OPEN: the edit reset (m_spEdit = 0, the key
+    /// capture is not ported).
     /// </summary>
-    void ResetKeysToDefault()
+    void ResetKeysToDefault(int padKind)
     {
         if (InTab())
         {
             SnapshotQuickSlots();
-            Host.Keys?.LoadDefaultKeyboardKeys();
+            if (Host.IsFeatureEnabled(0xb5) && padKind is 1 or 2 or 3) Host.Keys?.LoadDefaultPadKeys(padKind);
+            else Host.Keys?.LoadDefaultKeyboardKeys();
             Host.QuickSlots?.Refresh();
             NotifyChanged();
         }
         if (Dialog.Tab == Type) RefreshKeyList(Type);
     }
 
-    /// <summary>vfunc_12 (@0x141251e90, :402-432): a page reset (FUN_141254a00 != 0) with the game pad feature (0xb5) on asks
-    /// s_gameoption_input_reset_message first (FUN_1412523d0) and does nothing else here; with the feature off, and for a reset of all
-    /// pages, the keys reset to the defaults (pad kind 0, the keyboard file). STILL-OPEN: the message box, and the pad kind's default
-    /// files for a connected pad (GetPadKind is not read: a pad kind of 1..3 still loads the keyboard file here).</summary>
+    /// <summary>vfunc_12 (@0x141251e90, :402-432): a page reset (FUN_141254a00 != 0) with the game pad feature (0xb5) on, in its tab,
+    /// asks s_gameoption_input_reset_message first (the pad arg is whether a pad is connected) and resets from the answer
+    /// (<see cref="OnResetMessage"/>); with the feature off the keyboard file loads (pad kind 0); a reset of all pages resets for
+    /// the connected pad's kind.</summary>
     public override void ResetToDefaults()
     {
-        if (Dialog.ResetScope != 0 && Host.IsFeatureEnabled(0xb5)) return;
-        ResetKeysToDefault();
+        if (Dialog.ResetScope == 0) { ResetKeysToDefault(Host.GetPadKind()); return; }
+        if (!Host.IsFeatureEnabled(0xb5)) { ResetKeysToDefault(0); return; }
+        if (InTab()) Host.ResetMessageBox(Host.GetPadKind() != 0 ? "1" : "0", OnResetMessage);
+    }
+
+    /// <summary>FUN_1412523d0 (@0x1412523d0, :623-635): the first button resets: a pad arg of 0 for the keyboard file, otherwise for
+    /// the connected pad's kind. Handled either way.</summary>
+    bool OnResetMessage(int button, string padArg)
+    {
+        if (button == 0) ResetKeysToDefault((int.TryParse(padArg, out var pad) ? pad : 0) == 0 ? 0 : Host.GetPadKind());
+        return true;
     }
 
     /// <summary>vfunc_9 (@0x141251db0, gameoptioninputdefault.cpp:378-385, 592-638): page 9 restores keys from backup (FUN_141252940),

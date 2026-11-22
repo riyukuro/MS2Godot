@@ -124,6 +124,10 @@ public class GameOptionDialogTests
         public bool FileExists(string path) => Files.Contains(path);
         public void TextNotice(string text) => Log.Add("text " + text);
         public void NextMessageBox() => Log.Add("next box");
+        public int PadKind;
+        public int GetPadKind() => PadKind;
+        public Func<int, string, bool> ResetAnswer;
+        public void ResetMessageBox(string padArg, Func<int, string, bool> callback) { Log.Add("resetbox " + padArg); ResetAnswer = callback; }
         public void PageMessageBox(int id, string tag, OptionPage listener) => Log.Add($"pagebox {id:x} {tag}");
         public void ApplyCamera(GameOption.Camera c) => Log.Add("camera");
         public void ApplyInterface(GameOption.Interface s) => Log.Add("interface");
@@ -556,6 +560,8 @@ public class GameOptionDialogTests
         public int Defaults;
         public Action OnDefaults;
         public void LoadDefaultKeyboardKeys() { Defaults++; OnDefaults?.Invoke(); }
+        public List<int> PadLoads = new();
+        public bool LoadDefaultPadKeys(int padKind) { PadLoads.Add(padKind); return true; }
     }
 
     sealed class FakeSlots : IQuickSlots
@@ -636,9 +642,59 @@ public class GameOptionDialogTests
         h.Features.Add(0xb5);
         d.ResetPages(1);
         Assert.That(keys.Defaults, Is.EqualTo(0));
+        Assert.That(h.Log, Does.Contain("resetbox 0"), "no pad connected: the box carries pad arg 0");
         h.Features.Remove(0xb5);
         d.ResetPages(1);
         Assert.That(keys.Defaults, Is.EqualTo(1), "feature off: the keys reset");
+        Assert.That(keys.PadLoads, Is.Empty, "feature off: never the pad files");
+    }
+
+    /// <summary>vfunc_12 (@0x141251e90) and FUN_1412523d0 (@0x1412523d0): the box carries whether a pad is connected; its first button
+    /// resets for the pad kind (a pad arg of 0 resets the keyboard file); another button resets nothing.</summary>
+    [TestCase(2, 2)]
+    [TestCase(1, 1)]
+    [TestCase(3, 3)]
+    public void InputPageResetBoxAnswerLoadsThePadKindsDefaultFile(int kind, int loaded)
+    {
+        var (d, h, keys, slots, page) = OpenInput();
+        h.Features.Add(0xb5); h.PadKind = kind;
+        d.ResetPages(1);
+        Assert.That(h.Log, Does.Contain("resetbox 1"));
+        Assert.That(h.ResetAnswer(1, "1"), Is.True, "handled either way");
+        Assert.That(keys.PadLoads, Is.Empty.And.Property("Count").EqualTo(0), "the second button resets nothing");
+        h.ResetAnswer(0, "1");
+        Assert.That(keys.PadLoads, Is.EqualTo(new[] { loaded }));
+        Assert.That(keys.Defaults, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void InputPageResetBoxWithoutAPadAnswersWithTheKeyboardFile()
+    {
+        var (d, h, keys, slots, page) = OpenInput();
+        h.Features.Add(0xb5); h.PadKind = 2;
+        d.ResetPages(1);
+        h.ResetAnswer(0, "0");   // pad arg 0 (the pad was gone when the box was made)
+        Assert.That(keys.Defaults, Is.EqualTo(1));
+        Assert.That(keys.PadLoads, Is.Empty);
+    }
+
+    [TestCase(0, 0, 1)]
+    [TestCase(1, 1, 0)]
+    [TestCase(2, 2, 0)]
+    [TestCase(3, 3, 0)]
+    public void InputPageResetOfAllPagesLoadsTheConnectedPadsFile(int kind, int padLoad, int keyboard)
+    {
+        var (d, h, keys, slots, page) = OpenInput();
+        h.Features.Add(0xb5); h.PadKind = kind;
+        d.ResetPages(0);
+        Assert.That(keys.Defaults, Is.EqualTo(keyboard));
+        Assert.That(keys.PadLoads.Count, Is.EqualTo(padLoad == 0 ? 0 : 1));
+        if (padLoad != 0) Assert.That(keys.PadLoads[0], Is.EqualTo(padLoad));
+        h.Features.Remove(0xb5);
+        keys.PadLoads.Clear(); keys.Defaults = 0;
+        d.ResetPages(0);
+        Assert.That(keys.PadLoads, Is.Empty, "feature off: the keyboard file whatever the pad");
+        Assert.That(keys.Defaults, Is.EqualTo(1));
     }
 
     [Test]

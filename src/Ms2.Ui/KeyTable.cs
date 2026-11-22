@@ -28,12 +28,15 @@ public sealed class KeyTable : IKeyTable
     readonly Dictionary<string, string> names = new();
     byte[] defaultKeys;
     byte[] defaultMouseKeys;
+    byte[] defaultPadKeysPs, defaultPadKeysXbox;
     readonly Dictionary<int, List<KeySetting>> settings = new();
     readonly GameStrings strings;
     Dictionary<string, string> skillNames;
 
     public const string DefaultKeyPath = "table/default/defaultkey.xml";
     public const string DefaultMouseControlKeyPath = "table/default/defaultmousecontrolkey.xml";
+    public const string DefaultPsKeyPath = "table/default/defaultpskey.xml";
+    public const string DefaultXboxKeyPath = "table/default/defaultxboxkey.xml";
 
     /// <summary>CKeyTable::GetLocked (m_nLocked): when true, key sends and UIKeySettingSelectDialog buttons are disabled (keytable.cpp:380,405, uikeysettingselectdialog.cpp:87).</summary>
     public bool Locked { get; set; }
@@ -79,6 +82,8 @@ public sealed class KeyTable : IKeyTable
         }
         if (packs.Exists("Xml", DefaultKeyPath)) defaultKeys = packs.Read("Xml", DefaultKeyPath);
         if (packs.Exists("Xml", DefaultMouseControlKeyPath)) defaultMouseKeys = packs.Read("Xml", DefaultMouseControlKeyPath);
+        if (packs.Exists("Xml", DefaultPsKeyPath)) defaultPadKeysPs = packs.Read("Xml", DefaultPsKeyPath);
+        if (packs.Exists("Xml", DefaultXboxKeyPath)) defaultPadKeysXbox = packs.Read("Xml", DefaultXboxKeyPath);
         LoadDefaultKeys();
     }
 
@@ -114,6 +119,48 @@ public sealed class KeyTable : IKeyTable
 
     /// <summary>ResetKeysToDefault's FUN_1414297e0(DefaultKey.xml, 0) (gameoptioninputdefault.cpp:473): nothing sent.</summary>
     public void LoadDefaultKeyboardKeys() => LoadDefaultKeys(DefaultKeyPath, sendToServer: false);
+
+    /// <summary>
+    /// CKeyTable::FUN_141429e60 (@0x141429e60, keytable.cpp:500-565) on DefaultPSKey.xml (pad kind 2) or DefaultXboxKey.xml (kinds 1
+    /// and 3), as ResetKeysToDefault picks them (gameoptioninputdefault.cpp:451-461): only the game pad keys take the file's type, code
+    /// and priority (a key the file lacks gets 0), then the table is dirty and sent to the server (unlike the keyboard reset).
+    /// STILL-OPEN: FUN_141432360(code), the emotion skill bookkeeping per key (keytable.cpp:2674).
+    /// </summary>
+    public bool LoadDefaultPadKeys(int padKind)
+    {
+        byte[] bytes = padKind == 2 ? defaultPadKeysPs : defaultPadKeysXbox;
+        if (bytes == null) return false;
+        var rows = new Dictionary<int, XElement>();
+        foreach (var e in GameStrings.Parse(bytes).Descendants("KeyConfig").Descendants("key"))
+            if (int.TryParse((string)e.Attribute("keyCode"), out var kc)) rows[kc] = e;
+        foreach (var (k, key) in keys)
+        {
+            if (!IsGamepadKey(k)) continue;
+            if (rows.TryGetValue(k, out var e))
+            {
+                key.Type = Atoi((string)e.Attribute("type"));
+                key.Code = long.TryParse((string)e.Attribute("code"), out var c) ? c : 0;
+                key.Priority = Atoi((string)e.Attribute("priority"));
+            }
+            else { key.Type = 0; key.Code = 0; key.Priority = 0; }
+        }
+        IsDirty = true;
+        SendKeysToServer();
+        return true;
+    }
+
+    /// <summary>
+    /// CKeyTable::FUN_141431820 (@0x141431820, keytable.cpp:2478): the text of a game pad key on the HUD. Empty while the game pad
+    /// option's Use byte is off; for pad kind 2 the four shoulder keys 0x96..0x99 read L1, L2, R1, R2 (any other key: empty);
+    /// otherwise the key table's name for the key.
+    /// </summary>
+    public string GamepadKeyText(int key, bool gamepadUse, int padKind)
+    {
+        if (!gamepadUse) return "";
+        if (padKind == 2)
+            return key switch { 0x96 => "L1", 0x97 => "L2", 0x98 => "R1", 0x99 => "R2", _ => "" };
+        return byId.TryGetValue(key, out var k) ? k.Name : "";
+    }
 
     bool LoadDefaultXml(byte[] xmlBytes, bool sendToServer)
     {

@@ -17,9 +17,8 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
     /// panel by it (GuideUIByName2, uiguideeventarrow.cpp:679).</summary>
     public override string TypeName => "MainPlayerInfo";
 
-    /// <summary>CGameOption game pad state m_bExpand, and the pad kind (2 = no key captions).</summary>
+    /// <summary>CGameOption game pad state m_bExpand.</summary>
     public bool SlotExpand;
-    public bool PadShowsKeys = true;
     public bool SkillMinimize, CommonMinimize;
     /// <summary>The quick slot page (CKeyTable current page + 1).</summary>
     public int ShortkeyPage = 1;
@@ -66,10 +65,28 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         if (Host.Child("m_slot") != null) ChangeSkillSlot(use ? 1 : 0);
     }
 
+    /// <summary>MS2InputService::GetPadKind (FUN_140a58540), for the pad key captions.</summary>
+    public Func<int> PadKind = () => 0;
+
+    /// <summary>
+    /// UpdateModifiedKeys @0x1419f1e60 (uimainplayerinfo.cpp:1136-1152): with the movie loaded and the pad's expanded slot bar, the keys
+    /// bound to the actions 800001, 800002 and 800003 at priority 2 give the three modifier captions (CKeyTable::FUN_141431820, upper
+    /// case), passed as modifiedKey1..3 to setModifiedKey.
+    /// </summary>
+    public void UpdateModifiedKeys()
+    {
+        if (Host.Entity == null || !SlotExpand || Model.Keys is not { } keys) return;
+        var caption = new Dictionary<string, object>();
+        for (int i = 0; i < 3; i++)
+            caption["modifiedKey" + (i + 1)] = keys.GamepadKeyText(keys.FindKeyByActionAndPriority(800001 + i, 2), SlotExpand, PadKind()).ToUpperInvariant();
+        Host.Invoke("setModifiedKey", caption);
+    }
+
     /// <summary>ChangeSkillSlot (uimainplayerinfo.cpp:1121): m_30.changeSkillSlot(slot, showKey), then SyncSlotMode.</summary>
     void ChangeSkillSlot(int slot)
     {
-        Host.Invoke("changeSkillSlot", slot, PadShowsKeys);
+        Host.Invoke("changeSkillSlot", slot, PadKind() != PadKinds.Dual);   // bShowKey: the dual pad shows no key captions (:1126)
+        UpdateModifiedKeys();
         UpdateEffectPositions();
         Host.Invoke(Slot, "onSlotModeChange", 0);       // SyncSlotMode, m_nSlotMode = 0
     }

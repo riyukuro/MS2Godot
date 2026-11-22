@@ -265,6 +265,29 @@ public sealed class GameOptionHost : IGameOptionDialogHost
     public void PageMessageBox(int stringId, string tag, OptionPage listener) =>
         MessageBoxQueue.ShowMessageBox(Common(stringId), 1, new Listener(listener.OnMessage, false), tag);
 
+    /// <summary>MS2InputService::GetPadKind through DetectGamePad's rules (<see cref="Ms2.Ui.PadKinds.Detect"/>). STILL-OPEN: Godot
+    /// does not tell XInput from DirectInput pads; a pad whose name says Xbox or XInput counts as the XInput one, every other
+    /// connected pad as the DirectInput8 (dual) one.</summary>
+    public int GetPadKind()
+    {
+        bool xinput = false, other = false;
+        foreach (int id in Input.GetConnectedJoypads())
+        {
+            string name = Input.GetJoyName(id).ToLowerInvariant();
+            if (name.Contains("xbox") || name.Contains("xinput")) xinput = true; else other = true;
+        }
+        return Ms2.Ui.PadKinds.Detect(GameOptions.GamePad.Use, IsFeatureEnabled(0xb5), xinput, other);
+    }
+
+    public void ResetMessageBox(string padArg, Func<int, string, bool> callback)
+    {
+        var box = MessageBoxQueue.Create(6, common("s_gameoption_input_reset_message"), null, "");
+        box.Args.Add(padArg);
+        box.SetButtonPreset(2);
+        box.Callback = (button, data) => callback(button, data.Args.Count > 0 ? data.Args[0] : "");
+        MessageBoxQueue.Show(box);
+    }
+
     public void ApplyCamera(GameOption.Camera camera) => GD.Print("options: camera option stored (CameraMgr and BGTransparencyMgr are not ported)");
     /// <summary>The HUD's UIDamageEffect::SetAlpha, null without a HUD.</summary>
     public Action<int> DamageEffectAlpha;
