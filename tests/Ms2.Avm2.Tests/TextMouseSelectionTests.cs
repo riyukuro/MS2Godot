@@ -146,6 +146,25 @@ public class TextMouseSelectionTests
     }
 
     [Test]
+    public void RemovingTheFocusedFieldMidDragEndsTheCapture()
+    {
+        // the field leaving the display list loses the focus with no events, but its editor's focus still goes
+        // (OnEventUnload, ResetFocusForChar, SetFocusTo(NULL), EditorKit::OnKillFocus)
+        var (p, a, _) = Fields();
+        Press(p, 19, 10);
+        p.Key(16, 0, true, shift: true);
+        Assert.That(a.MouseCaptured && a.ShiftPressed && p.TextMouseCaptured, Is.True);
+        p.Stage.removeChild(a);
+        Assert.That(p.Focus, Is.Null);
+        Assert.That(a.MouseCaptured || a.ShiftPressed, Is.False, "the editor's capture and Shift state end");
+        Assert.That(p.TextCapture, Is.Null);
+        p.MouseMove(44, 10);
+        Assert.That(Sel(a), Is.EqualTo((3, 3, 3)), "the move goes nowhere");
+        p.MouseButton(false);
+        p.Key(16, 0, false);
+    }
+
+    [Test]
     public void LosingTheFocusEndsTheCaptureAndTheShiftState()
     {
         var (p, a, b) = Fields();

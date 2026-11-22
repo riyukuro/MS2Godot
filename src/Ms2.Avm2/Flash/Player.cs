@@ -1505,7 +1505,7 @@ namespace Ms2.Avm2.Flash
             UpdateDrag();               // Stage::PropagateMouseEvent: a mouse move drags what is being dragged
             // TextField's mouse handler (sfr_gfx_03e.cpp:1583) passes the move to the editor that has the mouse capture,
             // wherever the mouse is, before the AS3 events
-            if (TextCapture is { MouseCaptured: true, visible: true } c) { var (lx, ly) = c.GlobalToLocal(x, y); c.MouseMove(lx, ly); }
+            if (TextCapture is { MouseCaptured: true, visible: true, OnStage: true } c) { var (lx, ly) = c.GlobalToLocal(x, y); c.MouseMove(lx, ly); }
             var t = covered ? null : MouseTarget(x, y);
             Hover(t);
             MouseEv(t ?? (AsInteractiveObject)Stage, "mouseMove");
@@ -1841,7 +1841,15 @@ namespace Ms2.Avm2.Flash
             return sp.tabIndex > 0 || sp.buttonMode;
         }
 
-        public void ClearFocusSilently() => Focus = null;
+        /// <summary>The focused object, or one under it, left the display list: the focus goes with no events. A text field
+        /// still loses its editor's focus (OnEventUnload, ResetFocusForChar, SetFocusTo(NULL), TextField::OnFocus), which
+        /// ends its mouse capture and its Shift state (EditorKit::OnKillFocus).</summary>
+        public void ClearFocusSilently()
+        {
+            if (Focus is AsTextField { HasEditor: true } tf) tf.KillEditorFocus();
+            TextCapture = null;
+            Focus = null;
+        }
 
         /// <summary>Moves the focus to <paramref name="o"/> (null for none). With <paramref name="how"/> the focused object (or
         /// the stage) first gets the cancelable mouseFocusChange / keyFocusChange, its relatedObject <paramref name="related"/>
