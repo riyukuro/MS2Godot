@@ -1595,8 +1595,11 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.StateFallDamage))
             {
-                int g = Me.ApplyFallDamage(StateFallDamage.Read(p.Reader()));    // OnStateFallDamage (scenestategame.cpp:5815)
+                var fall = StateFallDamage.Read(p.Reader());
+                int g = Me.ApplyFallDamage(fall);    // OnStateFallDamage (scenestategame.cpp:5815)
                 if (g != 0) guide?.AddTrigger(GuideTrigger.FallDamage, g, 0);
+                if (Me.FallDamageVoice(fall, player != null && IsInstanceValid(player) && player.Mount != null) is { } voice)
+                    PlayOwnCommonEffect(voice);
             }
             else if (game.Is(p, Inbound.Tombstone))
             {

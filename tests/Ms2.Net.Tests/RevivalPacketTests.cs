@@ -99,6 +99,23 @@ public class RevivalPacketTests {
     }
 
     [Test]
+    public void FallDamageOnAMountPicksTheVoiceOfTheGender() {
+        MyCharacter Me(byte gender) {
+            var me = new MyCharacter();
+            var u = new FieldAddUser { ObjectId = 9, User = new UserBlock { Name = "a", Gender = gender } };
+            u.Stats[0].Health = 500; u.Stats[2].Health = 480;
+            me.Apply(u);
+            return me;
+        }
+        var fall = new StateFallDamage(9, 5);
+        Assert.That(Me(1).FallDamageVoice(fall, true), Is.EqualTo(MyCharacter.FemaleDropDamgVoiceKey), "gender 1: +0x2d0");
+        Assert.That(Me(0).FallDamageVoice(fall, true), Is.EqualTo(MyCharacter.MaleDropDamgVoiceKey), "gender 0: +0x2d8");
+        Assert.That(Me(2).FallDamageVoice(fall, true), Is.Null, "another gender: no name");
+        Assert.That(Me(1).FallDamageVoice(fall, false), Is.Null, "no mount");
+        Assert.That(Me(1).FallDamageVoice(new StateFallDamage(8, 5), true), Is.Null, "another object");
+    }
+
+    [Test]
     public void TombstoneIsReadAndSentWithItsObjectAndHitter() {
         Assert.That((ushort)Outbound.Tombstone, Is.EqualTo(0x2A));
         Assert.That(Bytes(new TombstoneRequest(9)), Is.EqualTo(new byte[] { 9, 0, 0, 0, 1, 0, 0, 0 }));

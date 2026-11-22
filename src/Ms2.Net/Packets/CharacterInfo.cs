@@ -399,13 +399,28 @@ public sealed class MyCharacter {
 
     /// <summary>
     /// OnStateFallDamage (scenestategame.cpp:5815 @0x141723050) for the local player: vfunc_59(0x1f) when not dead, then the guide
-    /// trigger FallDamage (0xf) with value 1 when dead, else -1. Returns that value; other objects: 0 (nothing).
-    /// STILL-OPEN: the damage effect dialog (0x4e3c) and the rider's effect are not here.
+    /// trigger FallDamage (0xf) with value 1 when dead, else -1. Returns that value; other objects: 0 (nothing). The damage
+    /// effect dialog's call (0x4e3c, UIDamageEffect::FUN_141910b10) is an empty hook; the rider's voice is
+    /// <see cref="FallDamageVoice"/>.
     /// </summary>
     public int ApplyFallDamage(StateFallDamage f) {
         if (f.ObjectId != ObjectId || User == null) return 0;
         if (!Dead) EnterState(0x1f);
         return Dead ? 1 : -1;
+    }
+
+    /// <summary>CommonResource female_DropDamg_Voice (+0x2d0) and male_DropDamg_Voice (+0x2d8).</summary>
+    public const string FemaleDropDamgVoiceKey = "female_DropDamg_Voice", MaleDropDamgVoiceKey = "male_DropDamg_Voice";
+
+    /// <summary>
+    /// OnStateFallDamage's last step (scenestategame.cpp:5830-5840) for the local player: while it rides (PCBase::GetRidee,
+    /// m_spB10, not null) the CommonResource key of its gender's voice effect (PC::GetGender 1 female_DropDamg_Voice, 0
+    /// male_DropDamg_Voice), inserted on the own PC; null for another object, without a mount, or for another gender (the
+    /// query's empty name).
+    /// </summary>
+    public string FallDamageVoice(StateFallDamage f, bool riding) {
+        if (f.ObjectId != ObjectId || User == null || !riding) return null;
+        return User.Gender switch { 1 => FemaleDropDamgVoiceKey, 0 => MaleDropDamgVoiceKey, _ => null };
     }
 
     /// <summary>The last Tombstone update for the own player (OnTombstone): kind, value and hitter; <c>TombstoneHidden</c> after kind 0.
