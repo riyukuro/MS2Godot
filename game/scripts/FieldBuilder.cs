@@ -237,7 +237,9 @@ public sealed class FieldBuilder
     /// <summary>MS2 (x, y, z) -> Godot (x, z, -y).</summary>
     public static Vector3 ToGodotPoint(Vec3 p) => new((float)p.X, (float)p.Z, (float)-p.Y);
 
-    public static Transform3D ZupToYup => new(new Basis(Vector3.Right, -Mathf.Pi / 2), Vector3.Zero);
+    /// <summary>MS2 z-up to Godot y-up as <see cref="ToGodotPoint"/> maps it: x stays, y to -z, z to y. The basis is
+    /// written with 0 and 1 entries: a rotation by -pi/2 has a float cosine of -4.4e-8, not 0, and moves points off.</summary>
+    public static Transform3D ZupToYup => new(new Basis(new Vector3(1, 0, 0), new Vector3(0, 0, -1), new Vector3(0, 1, 0)), Vector3.Zero);
 
     ModelEntry Model(string llid)
     {

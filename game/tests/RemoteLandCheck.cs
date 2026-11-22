@@ -20,7 +20,8 @@ namespace Ms2Godot.Tests;
 /// After 3 s the added player must be out of StateFall (it leaves StateFall when the body touches ground) and not under
 /// the floor's top.
 /// The own PC's ray (Player.Ray) with a zero direction, from inside the floor and from its top, must give no hit, as
-/// CastRay returns false for a direction that normalizes to zero (physxhelper.cpp:207-209).
+/// CastRay returns false for a direction that normalizes to zero (physxhelper.cpp:207-209). FieldBuilder.ZupToYup must
+/// map an MS2 point exactly as ToGodotPoint does (x, z, -y), with no float error from a rotation by an angle.
 /// With MS2_REC set to a recording (.msb), the players it adds on the first field it enters are spawned on that field, built from MS2_DATA, instead of the floor.
 /// Quits with 0 when it holds, else 1.
 /// </summary>
@@ -125,6 +126,9 @@ public partial class RemoteLandCheck : Node3D
                     GD.Print($"remote land: own zero-direction ray from y {y}: {got?.pos.ToString() ?? "none"}");
                     if (got != null) fails.Add($"the own PC's zero-direction ray from y {y} hit {got.Value.pos}");
                 }
+                var zup = FieldBuilder.ZupToYup * new Vector3(0, -3000, 100);
+                GD.Print($"remote land: ZupToYup of ms2 (0, -3000, 100): ({zup.X:R}, {zup.Y:R}, {zup.Z:R})");
+                if (zup != new Vector3(0, 100, 3000)) fails.Add($"ZupToYup maps ms2 (0, -3000, 100) to ({zup.X:R}, {zup.Y:R}, {zup.Z:R}), not (0, 100, 3000)");
             }
         }
         if (frame < 2 + 180) return;
