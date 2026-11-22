@@ -18,8 +18,14 @@ namespace Ms2Godot.Net;
 /// A remote ridee never sets m_unk_b80 (the RunX SP idle): only Ridee::UpdateRunEffects sets it, from StateRide::vfunc_8
 /// (statemanager.cpp:1108-1116), and State::vfunc_8 runs only from MyPC's update (mypc.cpp:2966) and the own ridee's
 /// (ridee.cpp:712).
-/// STILL-OPEN: the breakable anchor of a ride-off. The mount's step keys play through <see cref="RemotePc.TextKeys"/> from <see cref="Mount.TextKeys"/>. Mode 6 also writes the kept ride-on action's
-/// m_b28, which only a later PCBase::vfunc_120 of that action reads; a remote PC's ride is re-sent with it.
+/// The mount's step keys play through <see cref="RemotePc.TextKeys"/> from <see cref="Mount.TextKeys"/>. Mode 6 also writes
+/// the kept ride-on action's m_b28, which only a later PCBase::vfunc_120 of that action reads; a remote PC's ride is re-sent
+/// with it.
+/// The ride off gives the rider the ridee's touched entity (pcbase.cpp:3364-3366, <see cref="RemotePc.TakeHitReport"/>).
+/// STILL-OPEN: the rest of the ride off's field object anchor (pcbase.cpp:3367-3376). When that entity is a field object's
+/// marker (WorldService::FindMarkerByEntity), the rider goes to the marker's top + 10 if the ridee stood on the ground, and
+/// takes the ridee's moving platform anchor (m_unk_ae0 / m_posAE8). It needs the field's breakable markers to have
+/// colliders that map back to their entity, and the remote platform carry (see <see cref="RemotePc"/>).
 /// </summary>
 public sealed partial class RemoteLayer
 {
@@ -158,6 +164,7 @@ public sealed partial class RemoteLayer
     {
         bool ground = ridee.OnGround;
         rider.Body.Position = ridee.Body.Position;
+        rider.TakeHitReport(ridee);
         riderVisual.Transform = Transform3D.Identity;
         rider.RotationZ = ridee.RotationZ;
         rider.States.TargetYaw = ridee.RotationZ;

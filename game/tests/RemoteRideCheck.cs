@@ -15,7 +15,7 @@ namespace Ms2Godot.Tests;
 ///   idle sequence (rideAniPC_Idle) once the ridee idles.
 /// - A run record on the ridee moves it at the row's run speed; the rider stays on it and plays rideAniPC_Run.
 /// - The dismount puts the rider at the ridee's place in StateIdle (the ridee stood on the ground) with its model back
-///   at the body.
+///   at the body, and its report takes the ridee's touched entity (the stone) over the water it held before the ride.
 /// - The own pc as a hold target (RemoteLayer.FindHoldTarget with <see cref="RemoteLayer.SelfPc"/>), on the first row with
 ///   a passenger seat 0: unknown before it is in; on foot a pc without a ridee; riding, its ridee's feet z, the seat's
 ///   rideBone as the node, the asker's seat 0 and the own state ids.
@@ -151,7 +151,22 @@ public partial class RemoteRideCheck : Node3D
             case 150:
             {
                 var at = ridee.Body.Position;
+                // the rider's report still holds what it touched before the ride: a water cell; the ridee's holds the stone
+                var water = new StaticBody3D { Position = new Vector3(3000, -50, 0) };
+                var wcs = new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(150, 150, 150) } };
+                wcs.SetMeta(FieldBuilder.KindMeta, MoveConfig.WaterGroup);
+                water.AddChild(wcs);
+                AddChild(water);
+                const System.Reflection.BindingFlags Private = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+                typeof(RemotePc).GetMethod("SetHitEntity", Private).Invoke(rider, new object[] { water, 0 });
+                var owner = typeof(RemotePc).GetField("hitOwner", Private);
+                ulong rideeOwner = (ulong)owner.GetValue(ridee);
+                bool wetBefore = rider.OnWater;
                 RemoteLayer.Dismount(rider, rider.Visual, ridee, 1, 1);
+                ulong riderOwner = (ulong)owner.GetValue(rider);
+                GD.Print($"remote ride: dismount report: rider on water {wetBefore} then {rider.OnWater}, ridee's entity {rideeOwner != 0 && riderOwner == rideeOwner}");
+                if (!wetBefore || rideeOwner == 0 || riderOwner != rideeOwner || rider.OnWater)
+                    fails.Add($"dismount report: the rider keeps its own entity (water {rider.OnWater}), not the ridee's");
                 ridee.Free();
                 ridee = null;
                 if (rider.Body.Position != at) fails.Add($"dismount at {rider.Body.Position}, ridee was at {at}");

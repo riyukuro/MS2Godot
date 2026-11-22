@@ -323,6 +323,16 @@ public sealed partial class RemotePc : IRemotePc
         ground.Entity = FieldBuilder.GroundMaterial(owner);
     }
 
+    /// <summary>PCBase::vfunc_121's report copy (pcbase.cpp:3364-3366): the ridee's touched entity, when it has one, goes
+    /// into the rider's report.</summary>
+    public void TakeHitReport(RemotePc ridee)
+    {
+        if (ridee.hitOwner == 0) return;
+        hitOwner = ridee.hitOwner;
+        hitGroup = ridee.hitGroup;
+        ground.Entity = ridee.ground.Entity;
+    }
+
     bool OnOrAboveGround => OnGround || groundDistance < float.MaxValue;
 
     /// <summary>StateLand::vfunc_4 (stateland.cpp:83-93): RayCastFixedDirection from 30 above the feet, length 50; a hit
