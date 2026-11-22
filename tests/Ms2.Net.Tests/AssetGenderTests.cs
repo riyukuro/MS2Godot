@@ -16,6 +16,10 @@ public class AssetGenderTests
     [TestCase("0", 1, false)]
     [TestCase("1", 1, true)]
     [TestCase("1", 0, false)]
+    [TestCase("3", 0, false)]
+    [TestCase("3", 1, false)]
+    [TestCase("x", 0, true)]       // atoi: no digits is 0, the male
+    [TestCase("x", 1, false)]
     public void AnAssetIsWornWhenItsGenderIsBothOrTheCharacters(string attr, int gender, bool worn)
         => Assert.That(AssetGender.Matches(attr, gender), Is.EqualTo(worn));   // pc.cpp:1226
 
