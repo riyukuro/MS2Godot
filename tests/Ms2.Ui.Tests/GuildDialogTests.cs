@@ -368,6 +368,22 @@ public class GuildDialogTests
         }
     }
 
+    /// <summary>CreateManagePage (@0x14196a1b0): the page is made on the category and hidden by the other categories. The rows it gets
+    /// (grades, members) go to the AS3 page, which this does not read.</summary>
+    [Test]
+    public void TheManagerCategoryMakesThePageAndTheOthersHideIt()
+    {
+        var b = InGuild();
+        var c = Load(b);
+        c.OpenCategoryPage("Manager");
+        Assert.That(c.ManagePage, Is.Not.Null);
+        Assert.That(Rt.ToBoolean(c.Host.Get(c.ManagePage, "visible")), Is.True);
+        c.OpenCategoryPage("Event");
+        Assert.That(Rt.ToBoolean(c.Host.Get(c.ManagePage, "visible")), Is.False, "HideAllPages");
+        c.OpenCategoryPage("Manager");
+        Assert.That(Rt.ToBoolean(c.Host.Get(c.ManagePage, "visible")), Is.True);
+    }
+
     [Test]
     public void TheMemberPopupCallbackRaisesTheMemberFoundByName()
     {

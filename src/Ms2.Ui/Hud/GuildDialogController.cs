@@ -14,7 +14,7 @@ namespace Ms2.Ui.Hud;
 /// management (the invite, expel, grade and master change, the notice, the own memo, the propensity and the search flag), the grade edit (OnChangeGrade) and the rank buttons (the ranking dialog 0x4f24 and the web browser 0x4e6a are
 /// events: neither is in this client).
 /// The pages are made on first use (EnsurePageCreated) and laid on the movie root.
-/// STILL-OPEN: the other in-guild pages (Skill, MemberSkill, Event, Manager, House, Storage, Raid, ChampionShip,
+/// STILL-OPEN: the other in-guild pages (House, Storage, Raid, ChampionShip,
 /// ChampionShipHistroy) and their callbacks (PvP, mail, house and mark), the character card of the master and expel boxes
 /// (CMsgBoxData::SetCharacterInfo), the master popup
 /// (OnSearchGuildMasterPopupMenu, 0x4e39) as an event, the block check of OnClickCreateGuild (CBlockManager
@@ -50,6 +50,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     object skillPage;           // m_skillPage
     object skillPage2;          // m_skillPage2
     object eventPage;           // m_eventPage
+    object managePage;          // m_managePage
     object eventVsGame;         // m_eventVsGame
     object eventRegisterButton, eventUnregisterButton, eventImageArea, eventLoader;   // m_button368, m_button378, m_eventImageArea, m_eventLoader
     /// <summary>m_requests (a multimap of the tick an open event stops being shown → the event id): kept in key order, equal keys in the order added.</summary>
@@ -222,6 +223,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         joinPage = null;
         infoPage = null;
         memberPage = null;
+        managePage = null;
         acceptRequestPage = null;
     }
 
@@ -258,7 +260,8 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         else if (category == "Skill") CreateSkillPage();
         else if (category == "MemberSkill") CreateMemberSkillPage();
         else if (category == "Event") CreateEventPage();
-        // Manager, House, Storage, Raid, ChampionShip, ChampionShipHistroy: STILL-OPEN
+        else if (category == "Manager") CreateManagePage();
+        // House, Storage, Raid, ChampionShip, ChampionShipHistroy: STILL-OPEN
         if (category == "Join") SetPageVisible(joinPage, true);              // ShowCategoryPage (@0x141969290)
         else if (category == "Create") SetPageVisible(createPage, true);
         else if (category == "Info") SetPageVisible(infoPage, true);
@@ -267,6 +270,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         else if (category == "Skill") SetPageVisible(skillPage, true);
         else if (category == "MemberSkill") SetPageVisible(skillPage2, true);
         else if (category == "Event") SetPageVisible(eventPage, true);
+        else if (category == "Manager") SetPageVisible(managePage, true);
     }
 
     /// <summary>HideAllPages (@0x1419698f0).</summary>
@@ -280,7 +284,8 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         SetPageVisible(skillPage, false);
         SetPageVisible(skillPage2, false);
         SetPageVisible(eventPage, false);
-        // m_housePage, m_storagePage, m_raidPage, m_managePage,
+        SetPageVisible(managePage, false);
+        // m_housePage, m_storagePage, m_raidPage,
         // m_championshipPage, m_pvpHistoryPage: STILL-OPEN
     }
 
@@ -303,6 +308,18 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         BuildMembers();
         if (Host.Child("m_sortDropdown", memberPage) is { } sort) Host.Set(sort, "selectedIndex", memberSort);
     }
+
+    /// <summary>CreateManagePage (@0x14196a1b0, uiguilddialog.cpp:1591): made now, SetGradeInfo, then the member rows (FUN_141975620).
+    /// STILL-OPEN: in the NA region the edit grade popup's grade name takes 15 characters (SetMaxChars 0xf); the port has no region flag.</summary>
+    void CreateManagePage()
+    {
+        if (!EnsurePageCreated("guild_manage_page", ref managePage)) return;
+        SetGradeInfo();
+        BuildMembers();
+    }
+
+    /// <summary>The Manager page (m_managePage) once made.</summary>
+    public object ManagePage => managePage;
 
     /// <summary>CreateAcceptRequestPage (@0x14196a440): made now, the guild info, the requests and the member count
     /// text.</summary>
@@ -695,6 +712,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         var row = MemberRow(m);
         Host.Invoke(Host.Entity, "addOrUpdateMember", row);
         if (memberPage != null) Host.Invoke(memberPage, "addOrUpdateMember", row);
+        if (managePage != null) Host.Invoke(managePage, "addOrUpdateMember", row);
         if (Book.IsMaster(name)) SetMasterInfo();
         if (PlayerName() == name) SetPlayer();
     }
@@ -705,6 +723,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         if (IsClosed || NoMovie) return;
         Host.Invoke(Host.Entity, "removeMember", name);
         if (memberPage != null) Host.Invoke(memberPage, "removeMember", name);
+        if (managePage != null) Host.Invoke(managePage, "removeMember", name);
     }
 
     void SetChildText(object page, string name, string text)
@@ -789,6 +808,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
             rows.Add(Host.Obj(("gradeRank", i), ("gradeName", g.Name), ("gradeAuth", g.Permissions)));
         }
         Host.Invoke(Host.Entity, "setGradeInfo", rows);
+        if (managePage != null) Host.Invoke(managePage, "setGradeInfo", rows);
     }
 
     /// <summary>FUN_141975620: the member rows to the root and the Member page.</summary>
@@ -799,6 +819,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         foreach (var m in Book.Members) rows.Add(MemberRow(m));
         Host.Invoke(Host.Entity, "buildGuildMembers", rows);
         if (memberPage != null) Host.Invoke(memberPage, "buildGuildMembers", rows);
+        if (managePage != null) Host.Invoke(managePage, "buildGuildMembers", rows);
     }
 
     /// <summary>FUN_1419771b0 (:3462): one member's row.</summary>
