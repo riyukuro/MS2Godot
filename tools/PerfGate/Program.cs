@@ -122,8 +122,12 @@ static JsonObject Summarize(List<JsonObject> sessions)
         n++;
         string c = (string)s["case"];
         AddAll("field." + c, s["field"].AsObject());
-        foreach (var idleKey in new[] { "idle", "idle_3_open", "idle_live", "move" })
+        // remotes_spawn: the other players' spawn (HudScene.PerfGateRemotes.cs), counts as the field load's; absent from
+        // sessions recorded before it, as the remotes window is
+        if (s["remotes_spawn"] is JsonObject rs) AddAll("remotes_spawn." + c, rs);
+        foreach (var idleKey in new[] { "idle", "idle_3_open", "idle_live", "move", "remotes" })
         {
+            if (idleKey == "remotes" && s[idleKey] == null) continue;
             // per case: the install session's background work (the per-install cache) still runs in its idle
             var o = s[idleKey].AsObject();
             string idle = idleKey + "." + c;

@@ -123,6 +123,7 @@ public partial class HudScene
         long now = System.Diagnostics.Stopwatch.GetTimestamp();
         if (gateIdleName != null && gateLastTick != 0) gateFrameMs.Add(GateMark.Ms(gateLastTick, now));
         gateLastTick = now;
+        if (gateRemoteChurn) GateRemotesTick();
         if (gateChurn) GateChurn();
         // a guide arrow at the open inventory (its dialog and movie root every frame): idle_3_open has the inventory open
         else if (gateIdleName == "idle_3_open" && FindGuideDialogOf(0x4e2d)?.Root == null) GD.PushError("perf gate: the open inventory does not answer the guide");
@@ -207,7 +208,13 @@ public partial class HudScene
         else if (t == 100 + GateIdle + 30 + GateQuiet + GateIdle) { GateLiveEnd(); GateIdleEnd(); }
         else if (t == 100 + GateIdle + 30 + GateQuiet + GateIdle + GateQuiet) GateLiveStart("move", true);
         else if (t == 100 + GateIdle + 30 + GateQuiet + GateIdle + GateQuiet + GateIdle) { GateLiveEnd(); GateIdleEnd(); }
-        else if (t == 100 + GateIdle + 30 + GateQuiet + GateIdle + GateQuiet + GateIdle + 30)
+        // the other players (HudScene.PerfGateRemotes.cs): their spawn, then the remotes window GateQuiet frames after a collection
+        else if (t == 100 + GateIdle + 30 + GateQuiet + GateIdle + GateQuiet + GateIdle + 30) GateRemotesSpawn();
+        else if (t == 100 + GateIdle + 30 + GateQuiet + GateIdle + GateQuiet + GateIdle + 30 + 10) GateRemotesSpawnEnd();
+        else if (t == 100 + GateIdle + 30 + GateQuiet + GateIdle + GateQuiet + GateIdle + 30 + GateRemoteSettle - GateQuiet) GateCollect();
+        else if (t == 100 + GateIdle + 30 + GateQuiet + GateIdle + GateQuiet + GateIdle + 30 + GateRemoteSettle) GateRemotesStart();
+        else if (t == 100 + GateIdle + 30 + GateQuiet + GateIdle + GateQuiet + GateIdle + 30 + GateRemoteSettle + GateIdle) GateRemotesEnd();
+        else if (t == 100 + GateIdle + 30 + GateQuiet + GateIdle + GateQuiet + GateIdle + 30 + GateRemoteSettle + GateIdle + 30)
         {
             gateOut["opens"] = gateOpens;
             System.IO.File.WriteAllText(GatePath, gateOut.ToJsonString(new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
@@ -294,6 +301,11 @@ public partial class HudScene
     void GateChurn()
     {
         int f = gateChurnFrame++;
+        if (gateMove && gatePlayer != null && f % 6 == 0)
+        {
+            var g = gatePlayer.GlobalPosition;
+            gatePath.Add(new System.Numerics.Vector3(g.X, -g.Z, g.Y));
+        }
         if (gateMove && gatePlayer != null)
             gatePlayer.Input2 = (f / 60 % 4) switch { 0 => new Vector2(0, 1), 1 => new Vector2(1, 0), 2 => new Vector2(0, -1), _ => new Vector2(-1, 0) };
         if (f % 30 == 0) ChatLog.AddSystemLine(GateChat[f / 30 % GateChat.Length], Ms2.Ui.Hud.TalkKind.SystemNotice);
