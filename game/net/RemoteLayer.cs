@@ -137,6 +137,8 @@ public sealed partial class RemoteLayer : Node3D
     /// <summary>An npc made and an npc removed (<see cref="NpcLayer.Added"/>, <see cref="NpcLayer.Removed"/>).</summary>
     public Action<World.FieldNpcs.Placed> NpcAdded { set => npcs.Added = value; }
     public Action<int> NpcRemoved { set => npcs.Removed = value; }
+    /// <summary>The own player's place for the npcs' hit sounds (<see cref="NpcLayer.Viewer"/>).</summary>
+    public Func<Vector3?> Viewer { set => npcs.Viewer = value; }
     /// <summary>The field's npcs, dead or not.</summary>
     public IEnumerable<World.FieldNpcs.Placed> Npcs => npcs.All;
     public bool NpcDead(int objectId) => npcs.IsDead(objectId);
@@ -672,6 +674,11 @@ public sealed partial class RemoteLayer : Node3D
                     // A dot (mode 3, OnDotDamageRecord pcbase.cpp:3958) has no such gate. STILL-OPEN: modes 5 and 6
                     // (OnSplashDamageRecord :3970 tests its region attack's HasDamage, not read here)
                     bool byLocal = dmg.Damage.OwnerId == Tracker.SelfObjectId;
+                    // what the owner id finds (WorldService::FUN_141bd1200): the hit sound's attack material and relation.
+                    // STILL-OPEN: a field object that is neither a PC nor an npc (GetAttackMaterial takes its attack's
+                    // material, its own object kind) counts as nothing here
+                    var owner = byLocal || users.ContainsKey(dmg.Damage.OwnerId) ? Ms2.Ui.Skills.HitOwner.Pc
+                        : npcs.Contains(dmg.Damage.OwnerId) ? Ms2.Ui.Skills.HitOwner.Npc : Ms2.Ui.Skills.HitOwner.None;
                     if (dmg.Damage.Mode != 1 || Ms2.Ui.Hud.DamageNumbers.HasDamage(dmg.Damage, SkillDamage))
                     {
                         foreach (var t in dmg.Damage.Targets)
@@ -685,7 +692,7 @@ public sealed partial class RemoteLayer : Node3D
                             // with no hits or without the attack's HasDamage too, which the gates above leave out
                             bool cast = dmg.Damage.Mode == 1;
                             var kind = cast ? NpcHitKind.Cast : dmg.Damage.Mode == 3 ? NpcHitKind.Dot : NpcHitKind.Splash;
-                            npcs.Hit(t.TargetId, kind, Ms2.Ui.Skills.NpcVibrate.TotalDamage(t.Hits), byLocal,
+                            npcs.Hit(t.TargetId, kind, Ms2.Ui.Skills.NpcVibrate.TotalDamage(t.Hits), byLocal, owner,
                                 cast ? SkillDamage?.Get(dmg.Damage.SkillId, dmg.Damage.Level, dmg.Damage.Motion, dmg.Damage.AttackPoint) : null);
                             // PCBase::vfunc_112 goes through vfunc_80: a local hit makes the member's bar, then shows it
                             if (users.TryGetValue(t.TargetId, out var hit)) EnsureBar(hit)?.Hit(byLocal);

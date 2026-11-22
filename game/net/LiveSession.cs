@@ -982,6 +982,7 @@ public partial class LiveSession : Node
         remote.NpcExpShown = (npc, exp) => NpcExpShown?.Invoke(npc, exp);
         remote.NpcAdded = npc => NpcAdded?.Invoke(npc);
         remote.NpcRemoved = id => NpcRemoved?.Invoke(id);
+        remote.Viewer = () => player != null && IsInstanceValid(player) ? player.GlobalPosition : null;
         remote.BattleStanceChanged = (id, on) => BattleStanceChanged?.Invoke(id, on);
         remote.PcShown += pc => FieldPcShown?.Invoke(pc);
         remote.PcLeft += id => FieldPcLeft?.Invoke(id);

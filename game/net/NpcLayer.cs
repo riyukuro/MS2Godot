@@ -44,6 +44,8 @@ public sealed class NpcLayer
     /// <summary>The CRT rand() the death pick draws from (0..0x7fff).</summary>
     public Random Rand = new();
     readonly Func<int> crtRand;
+    /// <summary>s_random's Tausworthe stream for the hit sound table's pick (HitSoundTable.Get).</summary>
+    readonly Func<uint> hitSoundRand;
     /// <summary>The game time (CMainSystem::GetGameTime) the npcs' shakes run on, in seconds: <see cref="Process"/>'s sum.</summary>
     public float Now;
 
@@ -54,6 +56,8 @@ public sealed class NpcLayer
     public int Spawned, NoRow, NoModel, SequencesPlayed, SequencesMissing;
     public readonly HashSet<string> MissingModels = new();
     public int Count => inst.Count;
+    /// <summary>Whether an npc of the object id is in the field.</summary>
+    public bool Contains(int id) => inst.ContainsKey(id);
     public CombatLayer Combat;
     /// <summary>The npcs' name tags (the movie tag); none when null.</summary>
     public LiveNameTags Tags;
@@ -92,6 +96,7 @@ public sealed class NpcLayer
     {
         this.packs = packs; this.mb = mb; this.table = table; this.parent = parent;
         crtRand = () => Rand.Next(0x8000);
+        hitSoundRand = new Ms2.Quest.QuestRandom(unchecked((int)System.Environment.TickCount64 + Random.Shared.Next(0x8000))).Next;
         foreach (var e in packs.List(NpcArchive))
             if (e.EndsWith(".kfm", StringComparison.OrdinalIgnoreCase)) kfmEntries[Path.GetFileNameWithoutExtension(e).ToLowerInvariant()] = e;
         if (!mb.TextureArchives.Contains(NpcArchive)) mb.TextureArchives = mb.TextureArchives.Prepend(NpcArchive).ToArray();
@@ -340,14 +345,19 @@ public sealed class NpcLayer
     ///   :1869); <see cref="Process"/> moves the body with it. The dot and the splash do not shake.
     /// - A cast's total below 0 by the own player also adds the npc's colour boost (AddColorBoost(damagedColorScale, 0.1, 0.1),
     ///   DAT_1439f6ff4 and DAT_1439f6ff8, :1862-1865, before the shake); <see cref="Process"/> runs it.
+    /// - A cast's total below 0 whose owner is not the own player (:1874-1880), and any splash's total below 0 (:1979-1982),
+    ///   plays the hit sound of the attack's material on the npc's defenceMaterial at the npc's place
+    ///   (<see cref="PlayHitSound"/>), after the shake.
     /// - Then, all three: a living npc whose current hp stat is 0 (FUN_141670a00(4), PCBase m_unk_1c0[2][4], pcbase.cpp:1967)
     ///   dies with its dead sound (vfunc_125(1), :1890-1892), whatever the hit's total.
     /// True when the shake armed.
     /// STILL-OPEN: the rest of the three (PlayInvokeEffectsByEvent(1), the boss camera,
-    /// MyPC::FUN_14152e240 for a boss, the hit sound, the knockback record, the hit basis,
+    /// MyPC::FUN_14152e240 for a boss, the dot's hit sound (vfunc_34 plays its buff level's dotDamage soundMaterial, :1927-1935;
+    /// the buff tables are not read here), the knockback record, the hit basis,
     /// the cast's MakeDeadPhysXActor, the boss kill voices, the dps meter and vfunc_113) is not ported here.
     /// </summary>
-    public bool Hit(int id, NpcHitKind kind, long totalDamage, bool byLocalPlayer, Ms2.Ui.Skills.SkillAttackDamage attack)
+    public bool Hit(int id, NpcHitKind kind, long totalDamage, bool byLocalPlayer, Ms2.Ui.Skills.HitOwner owner,
+        Ms2.Ui.Skills.SkillAttackDamage attack)
     {
         if (!inst.TryGetValue(id, out var i)) return false;
         var row = table.Find(i.NpcId);
@@ -356,6 +366,7 @@ public sealed class NpcLayer
         if (cast && row != null && totalDamage < 0 && byLocalPlayer) i.Boost.Add(Now, row.DamagedColorScale, DamagedBoostDuration, DamagedBoostAccumRatio);
         bool armed = cast && row != null
             && i.Vibrate.OnHit(Now, totalDamage, byLocalPlayer, row.DamagedVibrateDuration, row.DamagedVibrateAmp, attack);
+        if (row != null && totalDamage < 0 && (kind == NpcHitKind.Splash || (cast && !byLocalPlayer))) PlayHitSound(i, row, byLocalPlayer, owner, attack);
         if (!i.Dead && i.HpCur == 0) Die(id, true);
         return armed;
     }
@@ -373,6 +384,30 @@ public sealed class NpcLayer
         EffectPlayed?.Invoke(i.NpcId, effect);
         Combat?.PlayEffect(effect, i.Root.GlobalPosition, i.Visual?.Rotation.Y ?? 0, row.IsBoss ? 6 : 5);
     }
+
+    /// <summary>
+    /// The hit sound of a record on the npc: CEffectService::PlayHitSound(GetAttackMaterial(), m_nDefenceMaterial, the owner's
+    /// object kind, vfunc_18(), the relation's volume) (:1876-1879, :1979-1982; <see cref="Ms2.Ui.Skills.NpcHitSound"/>).
+    /// Nothing plays when the attack's material cannot be told (<see cref="Ms2.Ui.Skills.NpcHitSound.AttackMaterial"/>).
+    /// </summary>
+    void PlayHitSound(Inst i, NpcRow row, bool byLocalPlayer, Ms2.Ui.Skills.HitOwner owner, Ms2.Ui.Skills.SkillAttackDamage attack)
+    {
+        int material = Ms2.Ui.Skills.NpcHitSound.AttackMaterial(owner, attack);
+        if (material < 0 || i.Root == null) return;
+        int relation = Ms2.Ui.Skills.NpcHitSound.Relation(owner, byLocalPlayer);
+        constants ??= Ms2Godot.World.FieldContents.Constants(packs);
+        float volume = Ms2.Ui.Skills.NpcHitSound.Volume(relation, constants);
+        HitSoundPlayed?.Invoke(i.NpcId, material, row.DefenceMaterial, volume);
+        FieldAudio.Instance?.PlayHitSound(material, row.DefenceMaterial, relation, i.Root.GlobalPosition, volume, Viewer?.Invoke(), hitSoundRand);
+    }
+
+    Ms2.Formats.World.ClientConstants constants;
+
+    /// <summary>The own player's place, FUN_1411a5110's view distance origin for the hit sound; none when null.</summary>
+    public Func<Vector3?> Viewer;
+
+    /// <summary>The npc id, attack material, defence material and volume of each hit sound asked for (for the checks).</summary>
+    public Action<int, int, int, float> HitSoundPlayed;
 
     /// <summary>The npc id and effect xml of each damage or dead effect played (for the checks).</summary>
     public Action<int, string> EffectPlayed;

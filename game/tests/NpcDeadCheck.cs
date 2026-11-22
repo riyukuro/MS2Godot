@@ -3,6 +3,7 @@ using Godot;
 using Ms2.Formats.Pack;
 using Ms2.Net.Packets;
 using Ms2.Net.Replay;
+using Ms2.Ui.Skills;
 using Ms2Godot.Net;
 
 namespace Ms2Godot.Tests;
@@ -22,6 +23,9 @@ namespace Ms2Godot.Tests;
 ///   another's hit adds none.
 /// - FUN_141098fb0: a cast's or a splash's hit below 0 plays the row's damageEffect, a dot's or one of 0 none; a death with
 ///   its sound plays the deadEffect, the add packet's dead flag none.
+/// - The hit sound (vfunc_33 :1874-1880, vfunc_35 :1979-1982): a cast's hit below 0 not by the own player and a splash's below
+///   0 play the attack's material on the row's defence material at the relation's volume; the own cast, a cast of 0, a dot
+///   and an attack whose material cannot be told play none.
 /// RemoteLayer's PlayCast returns for a dead npc on this flag. Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class NpcDeadCheck : Node3D
@@ -66,20 +70,20 @@ public partial class NpcDeadCheck : Node3D
         npcs.Add(new NpcAddedEvent(0, WithHp(11, 0)));
         npcs.Add(new NpcAddedEvent(0, WithHp(12, 0)));
         int deaths0 = npcs.Deaths;
-        npcs.Hit(10, NpcHitKind.Cast, -60, true, null);
+        npcs.Hit(10, NpcHitKind.Cast, -60, true, HitOwner.Pc, null);
         Check(!npcs.IsDead(10), "a hit on an npc with hp left killed it");
-        npcs.Hit(11, NpcHitKind.Cast, 0, false, null);
+        npcs.Hit(11, NpcHitKind.Cast, 0, false, HitOwner.Pc, null);
         Check(npcs.IsDead(11), "a cast's hit on an npc at hp 0 did not kill it");
-        npcs.Hit(12, NpcHitKind.Dot, -5, false, null);
+        npcs.Hit(12, NpcHitKind.Dot, -5, false, HitOwner.Pc, null);
         Check(npcs.IsDead(12), "a dot's or splash's hit on an npc at hp 0 did not kill it");
-        npcs.Hit(12, NpcHitKind.Dot, -5, false, null);
+        npcs.Hit(12, NpcHitKind.Dot, -5, false, HitOwner.Pc, null);
         Check(npcs.Deaths == deaths0 + 2, $"deaths {npcs.Deaths - deaths0} from the hits, not 2");
         // the colour boost: 1 + scale on its first frame (remain 1), back to 1 after its 0.1 s
         npcs.Add(new NpcAddedEvent(0, WithHp(20, 100)));
         npcs.Add(new NpcAddedEvent(0, WithHp(21, 100)));
         float scale = table.Find(npcId).DamagedColorScale;
-        npcs.Hit(20, NpcHitKind.Cast, -10, true, null);
-        npcs.Hit(21, NpcHitKind.Cast, -10, false, null);
+        npcs.Hit(20, NpcHitKind.Cast, -10, true, HitOwner.Pc, null);
+        npcs.Hit(21, NpcHitKind.Cast, -10, false, HitOwner.Pc, null);
         npcs.Process(0);
         Check(npcs.ColorBoostOf(20) == 1 + scale, $"boost {npcs.ColorBoostOf(20)} after the own hit, not {1 + scale}");
         Check(npcs.BoostMaterialsOf(20)?.Count > 0, "the boost found no character material on the npc's body");
@@ -99,10 +103,10 @@ public partial class NpcDeadCheck : Node3D
             if (string.IsNullOrEmpty(dmgRow.DamageEffect)) dmgRow.DamageEffect = dmgRow.DeadEffect + "#damage";
             FieldAddNpc Of(int obj, int id, bool dead) { var n = new FieldAddNpc { ObjectId = obj, NpcId = id, Hidden = dead }; n.Stats[0].Health = 100; n.Stats[2].Health = 100; return n; }
             npcs.Add(new NpcAddedEvent(0, Of(30, dmgRow.Id, false)));
-            npcs.Hit(30, NpcHitKind.Cast, -10, false, null);
-            npcs.Hit(30, NpcHitKind.Dot, -10, true, null);
-            npcs.Hit(30, NpcHitKind.Cast, 0, true, null);
-            npcs.Hit(30, NpcHitKind.Splash, -10, false, null);
+            npcs.Hit(30, NpcHitKind.Cast, -10, false, HitOwner.Pc, null);
+            npcs.Hit(30, NpcHitKind.Dot, -10, true, HitOwner.Pc, null);
+            npcs.Hit(30, NpcHitKind.Cast, 0, true, HitOwner.Pc, null);
+            npcs.Hit(30, NpcHitKind.Splash, -10, false, HitOwner.Pc, null);
             Check(played.Count == 2 && played.All(p => p == (dmgRow.Id, dmgRow.DamageEffect)),
                 $"damage effects {played.Count} from a cast, a dot, a cast of 0 and a splash, not the cast's and the splash's");
             played.Clear();
@@ -111,6 +115,30 @@ public partial class NpcDeadCheck : Node3D
             npcs.Add(new NpcAddedEvent(0, Of(32, deadRow.Id, false)));
             npcs.Remove(32, true);
             Check(played.Count == 1 && played[0] == (deadRow.Id, deadRow.DeadEffect), $"dead effects {played.Count} from FieldDeadNpc, not its row's one");
+        }
+        // the hit sound (vfunc_33 :1874-1880, vfunc_35 :1979-1982): a cast's below 0 not by the own player, a splash's below 0
+        // by anyone; the attack's material by the owner (1 for none, an npc's attack's, nothing when it cannot be told), the
+        // row's defence material, the relation's volume (VolumePcToNpc 0.5 for none and for another, before
+        // FieldAudio's VolumeOtherPc; 1 for the own player)
+        var sounds = new System.Collections.Generic.List<(int npc, int atk, int def, float vol)>();
+        npcs.HitSoundPlayed = (n, a, d, v) => sounds.Add((n, a, d, v));
+        var soundRow = table.Find(npcId);
+        if (soundRow != null)
+        {
+            npcs.Add(new NpcAddedEvent(0, WithHp(40, 100)));
+            npcs.Hit(40, NpcHitKind.Cast, -10, true, HitOwner.None, null);
+            npcs.Hit(40, NpcHitKind.Cast, -10, false, HitOwner.Npc, SkillAttackDamage.None);
+            npcs.Hit(40, NpcHitKind.Cast, 0, false, HitOwner.Npc, SkillAttackDamage.None);
+            npcs.Hit(40, NpcHitKind.Cast, -10, false, HitOwner.Pc, null);
+            npcs.Hit(40, NpcHitKind.Dot, -10, false, HitOwner.None, null);
+            npcs.Hit(40, NpcHitKind.Splash, -10, false, HitOwner.None, null);
+            npcs.Hit(40, NpcHitKind.Splash, -10, true, HitOwner.Pc, SkillAttackDamage.None);
+            int def = soundRow.DefenceMaterial;
+            var want = new[] { (soundRow.Id, 0, def, 0.5f), (soundRow.Id, 1, def, 0.5f) };
+            Check(sounds.Count == 2 && sounds[0].npc == want[0].Item1 && sounds[0].atk == 0 && sounds[0].def == def
+                    && Mathf.IsEqualApprox(sounds[0].vol, 0.5f) && sounds[1].atk == 1 && sounds[1].def == def
+                    && Mathf.IsEqualApprox(sounds[1].vol, 0.5f),
+                $"hit sounds [{string.Join(", ", sounds)}], not an npc owner's cast and an ownerless splash");
         }
         GD.Print($"npc dead: npc {npcId}, deaths {npcs.Deaths}, {(fails.Count == 0 ? "ok" : "FAIL " + string.Join("; ", fails))}");
         GetTree().Quit(fails.Count == 0 ? 0 : 1);
