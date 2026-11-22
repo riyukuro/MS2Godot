@@ -165,3 +165,21 @@ public sealed record BeautyColoringRequest(BeautyColorItem[] Items) : BeautyRequ
         foreach (var it in Items) { w.WriteByte(1); it.Write(w); }
     }
 }
+
+/// <summary>
+/// Inbound 0x31 as UIItemColoringDialog::OnBeautyShopPacket (@0x1419b00b0, uiitemcoloringdialog.cpp:937) reads it: a mode byte.
+/// 1: the shop kind byte (m_1a0) and <see cref="BeautyShopData"/> (m_1a8); 8: the result code (i32). Other modes read nothing.
+/// </summary>
+public sealed record BeautyColoringPacket(int Mode) {
+    public int Kind, Result;
+    public BeautyShopData Shop;
+
+    public static BeautyColoringPacket Read(ByteReader r) {
+        var p = new BeautyColoringPacket(r.ReadByte());
+        switch (p.Mode) {
+            case 1: p.Kind = r.ReadByte(); p.Shop = BeautyShopData.Read(r); break;
+            case 8: p.Result = r.ReadInt(); break;
+        }
+        return p;
+    }
+}
