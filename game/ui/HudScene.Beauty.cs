@@ -168,8 +168,8 @@ public partial class HudScene
     }
 
     /// <summary>
-    /// BuildItems' worn-item list over the live own player (<see cref="ItemColoringDialogController.WornRows"/>). STILL-OPEN: the
-    /// item's loaded models are not scanned for a shader-textured mesh (CEquipItem::FUN_1411dcda0), so no row is listed.
+    /// BuildItems' worn-item list over the live own player (<see cref="ItemColoringDialogController.WornRows"/>); the model test
+    /// (CEquipItem::FUN_1411dcda0) scans the item's models for a shader-textured mesh (<see cref="Ms2Godot.Net.EquipApplier.HasModelTexture"/>).
     /// </summary>
     IReadOnlyList<ColoringRow> OwnColoringRows(Ms2Godot.Net.LiveSession live)
     {
@@ -177,8 +177,15 @@ public partial class HudScene
         long now = live.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var record = live.Me.ToPcInfo(now);
         return ItemColoringDialogController.WornRows(WornEquipment.Of(record, t.Items), record.Gender, record.CodiActive,
-            hudModel.IsFeatureEnabled(0x8e), it => ItemLevels.Usable(it, now), null, id => hudModel.Tables.ItemName(id) ?? "", t.Items, t.ItemModels);
+            hudModel.IsFeatureEnabled(0x8e), it => ItemLevels.Usable(it, now),
+            it => ColoringModels().HasModelTexture(it.ItemId, record.Gender), id => hudModel.Tables.ItemName(id) ?? "", t.Items, t.ItemModels);
     }
+
+    Ms2Godot.Net.EquipApplier coloringModels;
+
+    /// <summary>The item models the colouring list scans, loaded once and kept (the applier caches each file).</summary>
+    Ms2Godot.Net.EquipApplier ColoringModels() => coloringModels ??=
+        new Ms2Godot.Net.EquipApplier(assets.Packs, new ModelBuilder(ModelBuilder.SharedSpec(Settings.NifXml), assets.Packs));
 
     void ShowItemColoring(ItemColoringDialogController c)
     {

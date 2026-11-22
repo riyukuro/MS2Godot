@@ -346,6 +346,15 @@ public sealed class ModelData
     public int BoneIndex(string name) => Bones.FindIndex(b => b.Name == name);
 
     /// <summary>
+    /// FUN_141422f30 (@0x141422f30, itemugcmesh.cpp:455), the test behind CNifModel::vfunc_15 (@0x1415664f0, nifmodel.cpp:293) and
+    /// CKfmModel::vfunc_15 (@0x14143ed00, kfmmodel.cpp:598): a mesh whose material is not MS2CharacterSkinMaterial and whose
+    /// NiTexturingProperty has shader map 0 with a source texture. STILL-OPEN: the client looks at every material of a mesh and at
+    /// the properties of the nodes above it; the model keeps the active material and the properties the mesh inherits.
+    /// </summary>
+    public bool HasShaderTexture() =>
+        Meshes.Any(m => m.Material != "MS2CharacterSkinMaterial" && m.Textures.ContainsKey("shader0"));
+
+    /// <summary>
     /// A skinned mesh drawn at the file's node pose, as Gamebryo's skinning draws an unanimated skin
     /// (NiSkinningMeshModifier: vertex = sum w_j BoneWorld_j * SkinBind_j * p), in scene root space; a copy with the
     /// positions, normals and tangent frame moved. A bone outside the mesh's skin binds through World^-1 (identity at

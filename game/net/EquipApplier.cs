@@ -126,6 +126,38 @@ public sealed class EquipApplier
         return nifs[entry] = md;
     }
 
+    /// <summary>
+    /// CEquipItem::FUN_1411dcda0 (@0x1411dcda0, equipitem.cpp:394) for an item not yet worn through this applier: some model of the
+    /// item answers CNifModel / CKfmModel::vfunc_15 (<see cref="ModelData.HasShaderTexture"/>). The models are the item's
+    /// ItemModel assets for the wearer's gender (as Apply picks them); a model that does not load answers false.
+    /// </summary>
+    public bool HasModelTexture(int itemId, int gender)
+    {
+        var im = FindItem(itemId);
+        foreach (var slot in im?.Element("slots")?.Elements("slot") ?? Enumerable.Empty<XElement>())
+        {
+            var asset = slot.Elements("asset").FirstOrDefault(a => (string)a.Attribute("gender") == null || (string)a.Attribute("gender") == gender.ToString());
+            if (asset == null) continue;
+            string name = ((string)asset.Attribute("name") ?? "").Trim();
+            try
+            {
+                ModelData md;
+                if (name.EndsWith(".nif", StringComparison.Ordinal)) md = Nif(name);
+                else
+                {
+                    string kfmName = name.Replace("urn:gamebryo-animation:", "").Replace("urn:", "");
+                    string kfmEntry = packs.FindByFileName(ItemArchive, kfmName.ToLowerInvariant() + ".kfm");
+                    if (kfmEntry == null) continue;
+                    var kfm = KfmFile.Load(packs.Read(ItemArchive, kfmEntry));
+                    md = Nif(kfmEntry[..(kfmEntry.LastIndexOf('/') + 1)] + System.IO.Path.GetFileName(kfm.Nif.Replace('\\', '/')).ToLowerInvariant());
+                }
+                if (md != null && md.HasShaderTexture()) return true;
+            }
+            catch (Exception ex) { GD.PushWarning($"item {itemId}: {ex.Message}"); }
+        }
+        return false;
+    }
+
     ArrayMesh Mesh(ModelMesh m) => meshes.TryGetValue(m, out var am) ? am : meshes[m] = mb.SharedMesh(m);
 
     /// <summary>The visible item per slot: the last one listed for each slot.</summary>
