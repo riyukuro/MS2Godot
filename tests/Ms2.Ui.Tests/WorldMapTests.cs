@@ -288,4 +288,144 @@ public class WorldMapTests
         c.Close();
         Assert.That(c.TaxiMode, Is.Zero, "closing the map resets the taxi mode");
     }
+
+    // ---- the taxi: OnTaxi (uiworldmapdialog.cpp:516), OnMessage (:755), TakeTaxi (@0x141b5a550), the fare line (:2108) ----
+
+    sealed class TaxiRig
+    {
+        public WorldMapController C;
+        public readonly List<MessageBoxData> Boxes = new();
+        public readonly List<int> Started = new(), RodeOff = new();
+        public uint Near, Far, Island;      // Near: two portals from Tria; Far: no route
+        public long Mesos = 100000;
+    }
+
+    static TaxiRig Rig(out Runtime rt)
+    {
+        var (h, c, r) = Load();
+        rt = r;
+        var ids = table.Fields.Values.Where(f => f.MapType != 3 && f.Id != (int)Tria).Select(f => (uint)f.Id).OrderBy(x => x).Take(3).ToArray();
+        var m = new FieldMeta();
+        m.PortalTargets[(int)Tria] = new List<int> { (int)ids[0] };
+        m.PortalTargets[(int)ids[0]] = new List<int> { (int)Tria, (int)ids[1] };
+        c.Meta = m;
+        c.PlayerLevel = 24;
+        var rig = new TaxiRig { C = c, Near = ids[1], Far = ids[2] };
+        c.ShowBox = rig.Boxes.Add;
+        c.HasPlayer = () => true;
+        c.CanEnterState = _ => true;
+        c.StationNear = () => true;
+        c.Mesos = () => rig.Mesos;
+        c.StartTaxiCall = rig.Started.Add;
+        c.RideOffForTaxi = rig.RodeOff.Add;
+        MessageBoxData.CommonByKey = new Ms2.Formats.World.GameStrings(packs, "en").Common();
+        c.SetTaxiMode(1);
+        return rig;
+    }
+
+    static object[] TaxiArgs(uint field) => new object[] { "name", field };
+
+    [Test]
+    public void OnTaxiAsksTheFareAndYesStartsTheCall()
+    {
+        var r = Rig(out _);
+        Assert.That(r.C.OnCallback("OnTaxi", TaxiArgs(r.Near)), Is.True);
+        Assert.That(r.Boxes, Has.Count.EqualTo(1));
+        Assert.That(r.Boxes[0].Type, Is.EqualTo(1), "a yes / no box");
+        Assert.That(r.Boxes[0].Extra, Is.EqualTo("onTaxi"));
+        Assert.That(r.Boxes[0].Msg, Does.Contain(TaxiManager.CalcTaxiCharge(2, 24).ToString()), "two portal hops at level 24");
+        Assert.That(r.Started, Is.Empty, "nothing starts before the answer");
+        Assert.That(r.C.OnMessageBox(null, 0, "onTaxi"), Is.True);
+        Assert.That(r.Started, Is.EqualTo(new[] { (int)r.Near }));
+        Assert.That(r.C.TaxiMode, Is.Zero, "TakeTaxi closed the dialog");
+    }
+
+    [Test]
+    public void OnTaxiNoticesTheSameFieldTheNoRouteAndAPlayerThatCannotCall()
+    {
+        var r = Rig(out _);
+        r.C.OnCallback("OnTaxi", TaxiArgs(Tria));
+        Assert.That(r.Boxes.Select(b => (b.Type, b.Msg)), Is.EqualTo(new[] { (0, MessageBoxData.Common(0x8a)) }));
+        r.Boxes.Clear();
+        r.C.OnCallback("OnTaxi", TaxiArgs(r.Far));
+        Assert.That(r.Boxes.Select(b => (b.Type, b.Msg)), Is.EqualTo(new[] { (0, r.C.Model.Tables.Common("s_err_taxi_continent") ?? "") }));
+        r.Boxes.Clear();
+        r.C.CanEnterState = _ => false;
+        r.C.OnCallback("OnTaxi", TaxiArgs(r.Near));
+        Assert.That(r.Boxes.Select(b => (b.Type, b.Msg)), Is.EqualTo(new[] { (0, MessageBoxData.Common(0x93)) }));
+        r.C.HasPlayer = () => false;
+        r.Boxes.Clear();
+        r.C.OnCallback("OnTaxi", TaxiArgs(r.Near));
+        Assert.That(r.Boxes, Is.Empty);
+    }
+
+    [Test]
+    public void TakeTaxiRefusesInTheClientsOrderAndNeverStartsTheCall()
+    {
+        var r = Rig(out _);
+        var c = r.C;
+        c.OnCallback("OnTaxi", TaxiArgs(r.Near));
+        r.Boxes.Clear();
+        void Answer(int notice)
+        {
+            Assert.That(c.OnMessageBox(null, 0, "onTaxi"), Is.True);
+            Assert.That(r.Started, Is.Empty);
+            Assert.That(r.RodeOff, Is.Empty);
+            Assert.That(c.TaxiMode, Is.EqualTo(1), "a refusal leaves the dialog open");
+            if (notice < 0) Assert.That(r.Boxes, Is.Empty);
+            else Assert.That(r.Boxes.Select(b => b.Msg), Is.EqualTo(new[] { MessageBoxData.Common(notice) }));
+            r.Boxes.Clear();
+        }
+        c.PlayerDead = () => true; Answer(-1); c.PlayerDead = () => false;
+        c.PlayerStateId = () => 0x25; Answer(-1);
+        c.PlayerStateId = () => 0x2a; Answer(-1); c.PlayerStateId = () => 0;
+        c.StationNear = () => false; Answer(0x89); c.StationNear = () => true;
+        r.Mesos = TaxiManager.CalcTaxiCharge(2, 24) - 1; Answer(0x34);
+        var t3 = table.Fields.Values.FirstOrDefault(f => f.MapType == 3 && f.Id != (int)Tria);
+        if (t3 != null)
+        {
+            c.Meta.PortalTargets[(int)Tria] = new List<int> { t3.Id };
+            c.OnCallback("OnTaxi", TaxiArgs((uint)t3.Id)); r.Boxes.Clear();
+            Answer(0x51);                                          // CFieldData::FUN_140374410: m_nMapType == 3
+            c.OnCallback("OnTaxi", TaxiArgs(r.Near)); r.Boxes.Clear();    // its fare is cached: 2 hops
+        }
+        r.Mesos = TaxiManager.CalcTaxiCharge(2, 24);
+        c.OnMessageBox(null, 0, "onTaxi");
+        Assert.That(r.Started, Is.EqualTo(new[] { (int)r.Near }), "exactly the fare in mesos is enough");
+    }
+
+    [Test]
+    public void ARiderRidesOffInsteadOfCallingAndANoAnswerDoesNothing()
+    {
+        var r = Rig(out _);
+        r.C.OnCallback("OnTaxi", TaxiArgs(r.Near));
+        Assert.That(r.C.OnMessageBox(null, 1, "onTaxi"), Is.False);
+        Assert.That(r.Started, Is.Empty);
+        r.C.PlayerRiding = () => true;
+        Assert.That(r.C.OnMessageBox(null, 0, "onTaxi"), Is.True);
+        Assert.That(r.RodeOff, Is.EqualTo(new[] { (int)r.Near }));
+        Assert.That(r.Started, Is.Empty);
+    }
+
+    [Test]
+    public void TheTooltipShowsTheFareOfAFoundStationAndNoDescriptionThen()
+    {
+        var r = Rig(out _);
+        var other = meta.TaxiStations.Where(kv => !kv.Value && kv.Key != (int)Tria && table.FindTile((uint)kv.Key) != null)
+                        .Select(kv => (uint)kv.Key).FirstOrDefault();
+        if (other == 0 || !meta.TaxiStations.TryGetValue((int)Tria, out bool home) || home) Assert.Ignore("no two plain taxi stations with tiles");
+        var c = r.C;
+        c.Meta.TaxiStations[(int)Tria] = false;
+        c.Meta.TaxiStations[(int)other] = false;
+        c.Meta.PortalTargets[(int)Tria] = new List<int> { (int)other };
+        c.FoundTaxis = new[] { Tria, other };
+        var o = new Dictionary<string, object>();
+        c.TaxiMembers(table.FindTile(other), o);
+        Assert.That(o["taxicost"], Is.Not.EqualTo(""), "the fare line");
+        Assert.That(o["taxicost"].ToString(), Does.Contain(TaxiManager.CalcTaxiCharge(1, 24).ToString()));
+        Assert.That(o["taxidesc"], Is.EqualTo(""), "no description beside a fare");
+        o.Clear(); c.TaxiMembers(table.FindTile(Tria), o);
+        Assert.That(o["taxicost"], Is.EqualTo(""), "the current field has no fare");
+        Assert.That(o["taxidesc"], Is.Not.EqualTo(""));
+    }
 }

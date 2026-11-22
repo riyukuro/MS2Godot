@@ -1866,6 +1866,27 @@ public partial class HudScene : Node, IUiStageHost
         Ms2.Ui.Guide.GuideManager.Current?.AddTrigger(Ms2.Ui.Guide.GuideTrigger.TaxiAction, 0, 0);
     }
 
+    /// <summary>The world map's TakeTaxi hooks over the live session (offline: no player, so no taxi runs).</summary>
+    void WireTaxi(Ms2.Ui.Hud.WorldMapController c)
+    {
+        c.HasPlayer = () => Ms2Godot.Net.LiveSession.Instance is { TaxiPlayerReady: true };
+        c.PlayerDead = () => Ms2Godot.Net.LiveSession.Instance?.TaxiPlayerDead ?? false;
+        c.PlayerStateId = () => Ms2Godot.Net.LiveSession.Instance?.TaxiPlayerStateId ?? 0;
+        c.CanEnterState = _ => Ms2Godot.Net.LiveSession.Instance is { TaxiCalling: false };   // STILL-OPEN: FUN_141527160's other gates
+        c.StationNear = () => Ms2Godot.Net.LiveSession.Instance?.TaxiStationNear ?? false;
+        c.Mesos = () => hudModel.HasLocalPlayer ? hudModel.Player.Mesos : 0;   // DAT_143ab2898
+        c.PlayerRiding = () => Ms2Godot.Net.LiveSession.Instance?.TaxiPlayerRiding ?? false;
+        c.StartTaxiCall = field =>
+        {
+            if (Ms2Godot.Net.LiveSession.Instance is not { } live) return;
+            var k = Ms2.Ui.FeatureElements.Constants(assets.Packs);
+            live.TaxiCallDurationMs = (int)k.Float("TaxiCallDuration", 3000);
+            live.TaxiBestDriverDurationMs = (int)k.Float("TaxiCallBestDriverDuration", 3000);
+            live.TaxiBestDriverLevel = (int)k.Float("TaxiCallBestDriverLevel", 25);
+            live.StartTaxiCall(field, PlayerLevel);
+        };
+    }
+
     void ToggleWorldMap()
     {
         if (WorldMapOpen) worldMapSide.Close();
@@ -1908,6 +1929,7 @@ public partial class HudScene : Node, IUiStageHost
                 Missions = fieldMissions,       // the quest tracker's, read when the HUD starts
                 MissionRewards = fieldMissionTable ??= Ms2.Ui.WorldMap.FieldMissionTable.Load(assets.Packs),
             };
+            WireTaxi(worldMapSide);
             worldMapSide.Unloaded += () => { worldMap?.Host.Unload(); worldMap?.QueueFree(); worldMap = null; };
         }
         // DAT_143ab3078, the found-taxi list the taxi tiles read (FUN_141b5ee80)

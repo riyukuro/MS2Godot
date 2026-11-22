@@ -856,6 +856,7 @@ public partial class LiveSession : Node
             StubHudData.Instance.Wallet = entry.Enter?.Wallet;
             // the found-taxi list DAT_143ab3078: ServerEnter's second int list (OnServerEnter, scenestategame.cpp:2115-2122);
             // without the enter packet it starts empty, so the stub's offline value never reaches a live session
+            taxiCall = null;               // a new server enter drops the call (the state is reset)
             TaxiAction.ServerEnter();      // DAT_143ab3098.RemoveAll() (scenestategame.cpp:2115)
             StubHudData.Instance.FoundTaxis = entry.Enter?.UnlockedTaxis is { } taxis ? new HashSet<int>(taxis) : new HashSet<int>();
             Me.Apply(entry.Enter);                 // the exp counters (OnServerEnter, scenestategame.cpp:2085-2086)
@@ -1140,6 +1141,7 @@ public partial class LiveSession : Node
         while (game != null && game.Incoming.TryDequeue(out var p)) { Handle(p); SyncDeadFlag(); }
         if (game == null) return;   // a GameToGame let the connection go: the next server's comes with the migration
         guide?.Tick();
+        TickTaxi(delta);
         Me.ExpireRevival((uint)game.Session.ServerTick);   // PC::FUN_141661ac0 (pc.cpp:2043), in PC's per-frame update
         if (bindPending) TryBindPlayer();
         CubeCraft.Owner ??= cubeCraftOwner ??= new CubeCraftOwner(this);

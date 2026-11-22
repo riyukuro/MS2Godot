@@ -382,6 +382,7 @@ public partial class LiveSession
     int InteractPlayerStateId()
     {
         if (selfObject < 0 || player == null || !IsInstanceValid(player)) return -1;
+        if (TaxiCalling) return TaxiStationAction.StateTaxiCall;
         int move;
         if (player.Mount != null) move = 0x21;
         else

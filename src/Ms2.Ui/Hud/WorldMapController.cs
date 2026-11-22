@@ -12,7 +12,7 @@ namespace Ms2.Ui.Hud;
 /// the movie's createMap five a frame. The radio buttons, the world tabs, a tile click and the search land here.
 /// The tile data is WorldMapManager's (<see cref="WorldMapTable"/>).
 /// </summary>
-public sealed class WorldMapController : UiController
+public sealed class WorldMapController : UiController, IMessageBoxListener
 {
     public override string Movie => "uiworldmapdialog";
     protected override string EntityMethod => "initializeIsland";
@@ -475,7 +475,7 @@ public sealed class WorldMapController : UiController
 
     /// <summary>
     /// FUN_141b5ee80 (:2080): a taxi station's icon state: found ones "enabled" ("default" here, "active" elsewhere while
-    /// m_194, <see cref="TaxiMode"/>, is set), the others "disabled". The fare (CTaxiManager GetTaxiFare) is not ported: no fare line.
+    /// m_194, <see cref="TaxiMode"/>, is set), the others "disabled". The fare line is CTaxiManager::GetTaxiFare (<see cref="TaxiManager"/>).
     /// </summary>
     internal void TaxiMembers(WorldMapTable.Tile t, Dictionary<string, object> o)
     {
@@ -488,12 +488,17 @@ public sealed class WorldMapController : UiController
                 here = t.FieldId == field;
                 state = TaxiMode != 0 ? (here ? "default" : "active") : "enabled";
             }
-            string desc = here ? Common("s_worldmap_tooltip_taxi_current")                          // 0x727
+            // nFare (GetTaxiFare from the field the map is opened on, only for a found station): above 0 the cost line
+            // (0x725 with the grouped fare, FUN_1409404f0) and no description; otherwise the description (:2108-2117)
+            long fare = FoundTaxis.Contains(t.FieldId) ? Taxi.GetTaxiFare(field, (int)t.FieldId, (short)PlayerLevel) : 0;
+            string cost = "", desc = "";
+            if (fare > 0) cost = Fill(Model.Tables.Common(0x725), fare.ToString("N0", CultureInfo.InvariantCulture));
+            else desc = here ? Common("s_worldmap_tooltip_taxi_current")                            // 0x727
                 : state == "disabled" ? Common("s_worldmap_tooltip_taxi_seal")                       // 0x726
                 : Common("s_worldmap_tooltip_taxi_other_continent");                                 // 0x728
             // FUN_141b71c00: "goodtaxi" from TaxiCallBestDriverLevel (not in the tables) up
             o[PlayerLevel >= TaxiCallBestDriverLevel ? "goodtaxi" : "taxi"] = state;
-            o["taxicost"] = "";
+            o["taxicost"] = cost;
             o["taxidesc"] = desc;
             o["taxiTitle"] = Fill(Common("s_worldmap_tooltip_taxi_title"), MapName(t.FieldId));   // 0x724
         }
@@ -501,6 +506,92 @@ public sealed class WorldMapController : UiController
         {
             o["taxi"] = ""; o["goodtaxi"] = ""; o["taxicost"] = "";
         }
+    }
+
+
+    // ---- the taxi (uiworldmapdialog.cpp OnTaxi :516, OnMessage :755, TakeTaxi @0x141b5a550) ----
+    TaxiManager taxi; FieldMeta taxiMeta;
+    /// <summary>TSingleton&lt;CTaxiManager&gt; over the field's portal graph.</summary>
+    internal TaxiManager Taxi => taxi != null && ReferenceEquals(taxiMeta, Meta) ? taxi : (taxi = new TaxiManager(taxiMeta = Meta));
+    uint taxiTarget;             // m_190
+    /// <summary>GetLocalPlayer != null (TakeTaxi :1371). False = no player: nothing runs.</summary>
+    public Func<bool> HasPlayer = () => false;
+    /// <summary>IsDead.</summary>
+    public Func<bool> PlayerDead = () => false;
+    /// <summary>GetCurStateId.</summary>
+    public Func<int> PlayerStateId = () => 0;
+    /// <summary>FUN_141527160(state): whether the player can enter the state (OnTaxi :536, TakeTaxi).</summary>
+    public Func<int, bool> CanEnterState = _ => false;
+    /// <summary>WorldService::FUN_141bcfd30(0x85359406, position, TaxiStationFindDistance, 1, 0) != 0.</summary>
+    public Func<bool> StationNear = () => false;
+    /// <summary>DAT_143ab2898, the mesos held.</summary>
+    public Func<long> Mesos = () => 0;
+    /// <summary>IsRiding.</summary>
+    public Func<bool> PlayerRiding = () => false;
+    /// <summary>RideOffActionTaxi(0) with m_n28 = field, SendRequestRideMode1. STILL-OPEN: no port; null does nothing.</summary>
+    public Action<int> RideOffForTaxi;
+    /// <summary>Turn toward the station (yaw + 180), then vfunc_59(0x25, StateTaxiCallData(field)).</summary>
+    public Action<int> StartTaxiCall;
+    const int StateTaxiCall = 0x25, StateTaxiBoard = 0x2a;
+
+    /// <summary>CFieldData::FUN_140374410 (fielddata.cpp:637): m_nMapType == 3.</summary>
+    bool FieldMapType3(int id) => Table.FindField((uint)id) is { MapType: 3 };
+
+    /// <summary>FUN_14151f150, how a box is shown (a seam for tests).</summary>
+    public Action<MessageBoxData> ShowBox = MessageBoxQueue.Show;
+    /// <summary>The notice FUN_140d73bc0(id, 0, 0, ""): common string <paramref name="id"/>.</summary>
+    void Notice(int id) => ShowBox(MessageBoxQueue.Create(0, MessageBoxData.Common(id), null, ""));
+
+    /// <summary>
+    /// OnTaxi (:516-545). Nothing while m_214 (the mission attack) is set; the name is read, m_190 = the field. Same field:
+    /// notice 0x8a; a fare of 0 or less (another continent, no route): the s_err_taxi_continent box; the player cannot enter
+    /// StateTaxiCall (0x25): notice 0x93; else the yes / no box (0x8b: the map name and the fare) with the tag "onTaxi".
+    /// A missing player returns before the call (the callback's own player check, :373).
+    /// </summary>
+    void OnTaxi(object[] args)
+    {
+        if (missionAttack || args.Length < 2 || !HasPlayer()) return;
+        taxiTarget = UInt(args, 1);          // args: the name (FUN_1422b8f40), then the field (PopUInt)
+        long fare = Taxi.GetTaxiFare(field, (int)taxiTarget, (short)PlayerLevel);
+        if (field == taxiTarget) { Notice(0x8a); return; }
+        if (fare <= 0) { ShowBox(MessageBoxQueue.Create(0, Common("s_err_taxi_continent"), null, "")); return; }
+        if (!CanEnterState(StateTaxiCall)) { Notice(0x93); return; }
+        ShowBox(MessageBoxQueue.Create(1, Fill(Model.Tables.Common(0x8b), MapName(taxiTarget), fare), this, "onTaxi"));
+    }
+
+    /// <summary>
+    /// OnMessage (:755-775): a box's answer is taken from the queue first (FUN_14151f200); yes (0) on "onTaxi" is TakeTaxi(m_190),
+    /// handled. Any other answer is not handled.
+    /// STILL-OPEN: "onPortal", "onCashTaxi" and "onTopMostLayer" (MoveByPortal, TakeCashTaxi, the layer) are not ported here.
+    /// </summary>
+    public bool OnMessageBox(MessageBoxController sender, int button, string tag)
+    {
+        MessageBoxQueue.Next();
+        if (button != 0) return false;
+        if (tag == "onTaxi") { TakeTaxi((int)taxiTarget); return true; }
+        return tag is "onPortal" or "onCashTaxi" or "onTopMostLayer";
+    }
+
+    /// <summary>
+    /// TakeTaxi (@0x141b5a550, :1369): no player, a dead player, or state 0x25 / 0x2a: nothing. No station near: notice 0x89;
+    /// a field of map type 3: 0x51; the current field: 0x8a; mesos less than the fare: 0x34. Then the dialog closes; a
+    /// rider rides off (RideOffActionTaxi) and the taxi comes after the dismount; otherwise, if the player can enter state
+    /// 0x25, it turns to the station and enters it with the field.
+    /// </summary>
+    void TakeTaxi(int fieldId)
+    {
+        if (!HasPlayer() || PlayerDead()) return;
+        int st = PlayerStateId();
+        if (st == StateTaxiCall || st == StateTaxiBoard) return;
+        if (!StationNear()) { Notice(0x89); return; }
+        if (FieldMapType3(fieldId)) { Notice(0x51); return; }
+        if (field == fieldId) { Notice(0x8a); return; }
+        long fare = Taxi.GetTaxiFare(field, fieldId, (short)PlayerLevel);
+        if (Mesos() - fare < 0) { Notice(0x34); return; }
+        Close();                                                    // CloseDialog(0x4e42)
+        if (PlayerRiding()) { RideOffForTaxi?.Invoke(fieldId); return; }
+        if (!CanEnterState(StateTaxiCall)) return;
+        StartTaxiCall?.Invoke(fieldId);
     }
 
     /// <summary>Client::Constants TaxiCallBestDriverLevel (+0x2b28).</summary>
@@ -900,9 +991,10 @@ public sealed class WorldMapController : UiController
             case "onclickmissionrewardnext":
                 if (args.Length > 0 && MissionRewards?.GetNextRound(Int(args, 0)) is int next and not 0) UpdateFieldMissionRound(next);
                 return true;
-            // a taxi, the cash taxi, a portal move, the boss / dungeon dialogs and the mission reward (SendQuest :1782, the
+            case "ontaxi": OnTaxi(args); return true;
+            // the cash taxi, a portal move, the boss / dungeon dialogs and the mission reward (SendQuest :1782, the
             // Quest packet 0x1a once the round's target is reached) move the player or spend: not here
-            case "ontaxi": case "oncashtaxi": case "onportal": case "onboss": case "ondungeon": case "onclicksearchinfoicon":
+            case "oncashtaxi": case "onportal": case "onboss": case "ondungeon": case "onclicksearchinfoicon":
             case "onclickmissionreward":
                 return true;
         }

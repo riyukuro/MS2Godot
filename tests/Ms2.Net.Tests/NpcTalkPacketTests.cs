@@ -117,4 +117,25 @@ public class NpcTalkPacketTests {
         Assert.That(Bytes(new RequestTaxiRegister()), Is.EqualTo(new byte[] { 0 }));
         Assert.That((ushort)new RequestTaxiRegister().Op, Is.EqualTo(0x48));
     }
+
+    // StateTaxiCall phase 0x69 (statetaxicalldata.cpp:282-288): Encode1(1), then WriteTaxiRequest = Encode4(id), Encode4(cost)
+    [Test] public void RequestTaxiRideIsModeOneThenIdAndCost() {
+        Assert.That(Bytes(new RequestTaxiRide(0x01020304)), Is.EqualTo(new byte[] { 1, 4, 3, 2, 1, 0, 0xe1, 0xf5, 5 }));
+        Assert.That(Bytes(new RequestTaxiRide(2, 7)), Is.EqualTo(new byte[] { 1, 2, 0, 0, 0, 7, 0, 0, 0 }));
+        Assert.That((ushort)new RequestTaxiRide(1).Op, Is.EqualTo(0x48));
+    }
+
+    // StateCashCall::SendRequest (statecashcalldata.cpp:365-376): call types 1 and 2 are mode 3, type 3 is mode 4, then the price
+    [Test] public void RequestTaxiCashIsMode3Or4ThenThePrice() {
+        Assert.That(Bytes(new RequestTaxiCash(1, 0x0a0b)), Is.EqualTo(new byte[] { 3, 0x0b, 0x0a, 0, 0 }));
+        Assert.That(Bytes(new RequestTaxiCash(2, 5)), Is.EqualTo(new byte[] { 3, 5, 0, 0, 0 }));
+        Assert.That(Bytes(new RequestTaxiCash(3, 5)), Is.EqualTo(new byte[] { 4, 5, 0, 0, 0 }));
+        Assert.Throws<ArgumentOutOfRangeException>(() => Bytes(new RequestTaxiCash(0, 5)));
+    }
+
+    // CAutoFindTaxiStation::SendRequestTaxiMode5 (autofindtaxistation.cpp:299-301): Encode1(5)
+    [Test] public void RequestTaxiAutoFindIsModeFiveAlone() {
+        Assert.That(Bytes(new RequestTaxiAutoFind()), Is.EqualTo(new byte[] { 5 }));
+        Assert.That((ushort)new RequestTaxiAutoFind().Op, Is.EqualTo(0x48));
+    }
 }

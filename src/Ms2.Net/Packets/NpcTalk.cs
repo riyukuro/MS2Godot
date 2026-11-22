@@ -235,3 +235,32 @@ public sealed record RequestTaxiRegister : IOutPacket {
     public Outbound Op => Outbound.RequestTaxi;
     public void Write(ByteWriter w) => w.WriteByte(0);
 }
+
+/// <summary>Outbound 0x48 mode 1 (StateTaxiCall::vfunc_3 phase 0x69, @0x1417fd690, statetaxicalldata.cpp:276-288): u8 1, then
+/// WriteTaxiRequest (@0x1401fe9e0, unit_1401f9eb0_packetpayloadserializers.cpp:1329): i32 station field id, i32 cost. The client
+/// always puts 100000000 in the cost (:284); the server prices the ride.</summary>
+public sealed record RequestTaxiRide(int TaxiId, int Cost = RequestTaxiRide.ClientCost) : IOutPacket {
+    /// <summary>Unk_TaxiReq.m_nCost as StateTaxiCall fills it (statetaxicalldata.cpp:285).</summary>
+    public const int ClientCost = 100000000;
+    public Outbound Op => Outbound.RequestTaxi;
+    public void Write(ByteWriter w) { w.WriteByte(1); w.WriteInt(TaxiId); w.WriteInt(Cost); }
+}
+
+/// <summary>Outbound 0x48 mode 3 / 4 (StateCashCall::SendRequest @0x141023650, statecashcalldata.cpp:365-376, a call with no item
+/// uid): u8 3 for m_nCallType 1 or 2, u8 4 for m_nCallType 3; then i32 price (m_nPrice).</summary>
+public sealed record RequestTaxiCash(int CallType, int Price) : IOutPacket {
+    public Outbound Op => Outbound.RequestTaxi;
+    public void Write(ByteWriter w) {
+        if (CallType == 3) w.WriteByte(4);
+        else if (CallType == 1 || CallType == 2) w.WriteByte(3);
+        else throw new ArgumentOutOfRangeException(nameof(CallType), "StateCashCall::SendRequest sends only call types 1, 2 and 3");
+        w.WriteInt(Price);
+    }
+}
+
+/// <summary>Outbound 0x48 mode 5 (CAutoFindTaxiStation::SendRequestTaxiMode5 @0x1409f1890, autofindtaxistation.cpp:294-302, and the
+/// escape branch :379-381): u8 5. The auto find that sends it is not ported.</summary>
+public sealed record RequestTaxiAutoFind : IOutPacket {
+    public Outbound Op => Outbound.RequestTaxi;
+    public void Write(ByteWriter w) => w.WriteByte(5);
+}

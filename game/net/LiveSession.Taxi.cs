@@ -36,4 +36,39 @@ public partial class LiveSession
         if (selfObject < 0 || player == null || !IsInstanceValid(player)) return;   // vfunc_2: no player, return
         TaxiKey?.Invoke();
     }
+
+    // ---- the ride: the world map's TakeTaxi (@0x141b5a550) enters StateTaxiCall (0x25) with the field ----
+
+    /// <summary>Client::Constants TaxiCallDuration / TaxiCallBestDriverDuration (ms) and TaxiCallBestDriverLevel (the HUD sets
+    /// them from the constants table).</summary>
+    public int TaxiCallDurationMs = 3000, TaxiBestDriverDurationMs = 3000, TaxiBestDriverLevel = 25;
+    TaxiCallState taxiCall;
+
+    /// <summary>GetCurStateId() is 0x25: a call is running.</summary>
+    public bool TaxiCalling => taxiCall is { Finished: false };
+    /// <summary>The local player is in the field (WorldService::GetLocalPlayer).</summary>
+    public bool TaxiPlayerReady => selfObject >= 0 && player != null && IsInstanceValid(player);
+    public bool TaxiPlayerDead => Me.Dead;
+    public int TaxiPlayerStateId => InteractPlayerStateId();
+    public bool TaxiPlayerRiding => player != null && IsInstanceValid(player) && player.Mount != null;
+    /// <summary>WorldService::FUN_141bcfd30(0x85359406, the player's point, TaxiStationFindDistance, 1, 0) != 0.</summary>
+    public bool TaxiStationNear => TaxiAction.FindStation(taxiAt) >= 0;
+
+    /// <summary>
+    /// vfunc_59(0x25, new StateTaxiCallData(field)): vfunc_4 starts phase 0x65 for TaxiCallDuration, or
+    /// TaxiCallBestDriverDuration from TaxiCallBestDriverLevel; vfunc_3 sends RequestTaxi mode 1 at 0x69.
+    /// STILL-OPEN: the turn toward the station (yaw + 180, SetRotationAndTargetYaw) and the state's animation and effects.
+    /// </summary>
+    public void StartTaxiCall(int field, int level)
+    {
+        taxiCall = new TaxiCallState { Send = Send };
+        taxiCall.Begin(true, field, TaxiCallState.Duration(level, TaxiBestDriverLevel, TaxiCallDurationMs, TaxiBestDriverDurationMs), true);
+    }
+
+    void TickTaxi(double delta)
+    {
+        if (taxiCall == null) return;
+        taxiCall.Tick(delta);
+        if (taxiCall.Finished) taxiCall = null;
+    }
 }
