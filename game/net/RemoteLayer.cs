@@ -443,6 +443,15 @@ public sealed partial class RemoteLayer : Node3D
         r.Gender = u.User.Gender;
         r.PremiumTime = u.PremiumTime; r.WeddingState = u.WeddingState; r.PcBangGrade = u.User.PcBangGrade;
         r.HpCur = u.Stats[2].Health; r.HpMax = u.Stats[0].Health; r.InBattle = u.InBattle; r.Emotion = u.InBattle ? 1 : 0;
+        // PC::vfunc_91 = vfunc_90's 0x23 block (pc.cpp:1645-1660): per kind health 4, attack speed 0xd, movement speed 0xe,
+        // mount speed 0x20, jump height 0x16
+        for (int k = 0; k < 3; k++)
+        {
+            var st = u.Stats[k];
+            pc.SetStat(k, PcStat.Health, st.Health); pc.SetStat(k, PcStat.AttackSpeed, st.AttackSpeed);
+            pc.SetStat(k, PcStat.MovementSpeed, st.MoveSpeed); pc.SetStat(k, PcStat.MountSpeed, st.MountSpeed);
+            pc.SetStat(k, PcStat.JumpHeight, st.JumpHeight);
+        }
         // OnAddUser (scenestategame.cpp:11185-11186): no current health after the stats -> FUN_14166ce50(1), the dead flag
         if (r.HpCur == 0) pc.States.SetDead(true);
         levelOf ??= Ms2.Ui.GameTables.Shared(packs, Ms2Godot.GameOptions.StringLanguage).Additional.GetLevel;
@@ -604,6 +613,8 @@ public sealed partial class RemoteLayer : Node3D
                     // OnStat (vfunc_74 -> FUN_141992230): an hp change shows the member's bar
                     if (!users.TryGetValue(st.Stat.ObjectId, out var su)) break;
                     if (st.Stat.TryGet(PcStat.Health, out long hpMax, out long hpCur)) { su.HpMax = hpMax; su.HpCur = hpCur; }
+                    foreach (var (id, v) in st.Stat.Values)
+                        for (int k = 0; k < 3; k++) SetStat(su, k, id, v[k]);
                     EnsureBar(su)?.Stat(su.HpCur, su.HpMax);
                     break;
                 case UserBattleEvent bat:

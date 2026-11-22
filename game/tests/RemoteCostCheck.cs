@@ -48,6 +48,7 @@ public partial class RemoteCostCheck : Node3D
             if (anims == null) { anims = ActionAnims.Load(packs, builder, md, anim, "female"); lib = anim.GetAnimationLibrary(""); }
             else { anim.RemoveAnimationLibrary(""); anim.AddAnimationLibrary("", lib); }
             var pc = RemotePc.Create($"Pc{i}", visual, anim, anims, MoveConfig.SceneGravity, new Vector3(i * 300, 25, 0), 0, faceGrids);
+            for (int kind = 0; kind < 3; kind += 2) { pc.SetStat(kind, MoveSpeedRate.MovementSpeedStat, 100); pc.SetStat(kind, MoveSpeedRate.MountSpeedStat, 100); }   // FieldAddUser's speeds: rate 1
             AddChild(pc.Body);
             pcs.Add(pc);
         }

@@ -11,9 +11,10 @@ namespace Ms2Godot.Net;
 /// seat and plays StateRide::vfunc_9's sequence by the mount's state (<see cref="StateRideAnim"/>).
 /// The ride-on and ride-off effects (CommonResource +0x2b0 / +0x2b8) and an UnRideSkill ride off's rideOffBySkillEffect play
 /// at the PC (<see cref="PlayRideEffect"/>); a hideRider row hides the rider (<see cref="RemotePc.SetHideReason"/>).
-/// STILL-OPEN: StateRide's shadow off, the rider's stats copied to the ridee, the breakable anchor of a ride-off,
-/// the fall start the ridee had (StateFallData), the ridee's m_unk_b80 SP idle, the mount's step keys. Mode 6 also writes the
-/// kept ride-on action's m_b28, which only a later PCBase::vfunc_120 of that action reads; a remote PC's ride is re-sent with it.
+/// The ridee takes the rider's stats and their changes (<see cref="SetStat(Remote, int, int, long)"/>).
+/// STILL-OPEN: StateRide's shadow off, the breakable anchor of a ride-off, the fall start the ridee had (StateFallData),
+/// the ridee's m_unk_b80 SP idle, the mount's step keys. Mode 6 also writes the kept ride-on action's m_b28, which only a
+/// later PCBase::vfunc_120 of that action reads; a remote PC's ride is re-sent with it.
 /// </summary>
 public sealed partial class RemoteLayer
 {
@@ -52,6 +53,9 @@ public sealed partial class RemoteLayer
         var ridee = RemotePc.CreateRidee($"Ridee{r.ObjectId}", m, gravity, r.Pc.Body.Position + Vector3.Up * 25f, r.Pc.RotationZ, faceGrids);
         AddChild(ridee.Body);
         ridee.Spawn();
+        // the rider's stats, every kind and id (pcbase.cpp:3317-3320): the ridee's move-speed rate reads its mount speed
+        for (int k = 0; k < 3; k++)
+            for (int s = 0; s < MoveSpeedRate.StatCount; s++) ridee.SetStat(k, s, r.Pc.Stat(k, s));
         r.Ridee = ridee;
         r.Pc.States.RideOn(ridee.States, r.HpCur, r.HpMax);
         PlayRideEffect(r, CommonPath(ref rideOnPath, LiveSession.RideOnEffectKey));   // pcbase.cpp:3324-3330
@@ -98,6 +102,10 @@ public sealed partial class RemoteLayer
     /// <summary>The riding row of a remote PC's ridee, null without one.</summary>
     public Ms2Godot.Movement.RideData RideeRow(int objectId) => users.TryGetValue(objectId, out var u) ? u.Ridee?.Mount?.Data : null;
 
+    /// <summary>The move-speed rate (vfunc_96) of a remote PC, or of its ridee; null without that body.</summary>
+    public float? MoveSpeedRateOf(int objectId, bool ridee) =>
+        users.TryGetValue(objectId, out var u) ? (ridee ? u.Ridee : u.Pc)?.MoveSpeedRate : null;
+
     /// <summary>The object id and effect xml of each ride effect played at a remote PC (for the checks).</summary>
     public Action<int, string> RideEffectsPlayed;
 
@@ -112,6 +120,14 @@ public sealed partial class RemoteLayer
         rider.States.TargetYaw = ridee.RotationZ;
         rider.StopJump();
         rider.States.RideOff(ground, hp, hpMax);
+    }
+
+    /// <summary>PCBase::SetStat for a remote PC: FUN_1416708a0, FUN_1416705c0 and SetCurrentStat each go on to the ridee
+    /// (m_spB10, pcbase.cpp:2369-2394), which holds the value to its own total, the same as the PC's.</summary>
+    static void SetStat(Remote r, int kind, int stat, long value)
+    {
+        r.Pc.SetStat(kind, stat, value);
+        r.Ridee?.SetStat(kind, stat, value);
     }
 
     static void FreeRidee(Remote r)

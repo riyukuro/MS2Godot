@@ -212,13 +212,14 @@ public sealed record PlayerStat(int ObjectId, IReadOnlyDictionary<byte, long[]> 
 /// Inbound 0x2E for another player's actor (OnStat's PCBase is a PC, so PC::vfunc_90, pc.cpp:1645; FieldAddUser's stat
 /// block goes through PC::vfunc_91, the same body): i32 object id, u8 command, u8 count. 0x23 = the same block
 /// FieldAddUser carries, three stat rows (total, base, current) of i64 health, i32 attack speed (0xd), i32 movement
-/// speed (0xe), i32 jump height (0x20), i32 mount speed (0x16); any other count x (u8 stat, 3 values, i64 for health 4
-/// else i32, IsPercentStat stat.cpp:314). No end check: PC::vfunc_90 consumes only what the count's branch reads, so the
+/// speed (0xe), i32 mount speed (0x20, the stat a ridee's CalcRmsiR reads), i32 jump height (0x16); any other count x
+/// (u8 stat, 3 values, i64 for health 4 else i32, IsPercentStat stat.cpp:314). No end check: PC::vfunc_90 consumes only
+/// what the count's branch reads, so the
 /// self form the server broadcasts on a skill use (StatsPacket.Init, the 35-attribute body) is read as its first three
 /// rows and the rest is left unread, exactly as the client leaves it.
 /// </summary>
 public sealed record PcStat(int ObjectId, IReadOnlyDictionary<byte, long[]> Values) {
-    public const byte Health = 4, AttackSpeed = 0xd, MovementSpeed = 0xe, JumpHeight = 0x20, MountSpeed = 0x16;
+    public const byte Health = 4, AttackSpeed = 0xd, MovementSpeed = 0xe, MountSpeed = 0x20, JumpHeight = 0x16;
     public static PcStat Read(ByteReader r) {
         int id = r.ReadInt(); r.ReadByte(); byte count = r.ReadByte();
         var d = new Dictionary<byte, long[]>();
@@ -226,7 +227,7 @@ public sealed record PcStat(int ObjectId, IReadOnlyDictionary<byte, long[]> Valu
             for (byte kind = 0; kind < 3; kind++) {
                 void Set(byte s, long v) { if (!d.TryGetValue(s, out var a)) d[s] = a = new long[3]; a[kind] = v; }
                 Set(Health, r.ReadLong()); Set(AttackSpeed, r.ReadInt()); Set(MovementSpeed, r.ReadInt());
-                Set(JumpHeight, r.ReadInt()); Set(MountSpeed, r.ReadInt());
+                Set(MountSpeed, r.ReadInt()); Set(JumpHeight, r.ReadInt());
             }
         } else {
             for (int n = 0; n < count; n++) {

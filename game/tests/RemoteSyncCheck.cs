@@ -58,6 +58,7 @@ public partial class RemoteSyncCheck : Node3D
             var anim = visual.GetNode<AnimationPlayer>("Model/AnimationPlayer");
             var anims = ActionAnims.Load(packs, builder, md, anim, "female");
             var pc = RemotePc.Create(name, visual, anim, anims, MoveConfig.SceneGravity, at, 0, faceGrids);
+            for (int kind = 0; kind < 3; kind += 2) { pc.SetStat(kind, MoveSpeedRate.MovementSpeedStat, 100); pc.SetStat(kind, MoveSpeedRate.MountSpeedStat, 100); }   // FieldAddUser's speeds: rate 1
             pc.Effects = (a, g, p, y) => fx.Add((a, g));
             AddChild(pc.Body);
             return pc;

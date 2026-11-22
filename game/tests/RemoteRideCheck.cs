@@ -20,6 +20,8 @@ namespace Ms2Godot.Tests;
 ///   rideBone as the node, the asker's seat 0 and the own state ids.
 /// - A ridee's object id is no hold target (the client finds the ridee, but its own node map is empty, so the hold
 ///   falls back): another player's mount ridden through OnRide mode 0 gives HoldKind.None by the action's object id.
+/// - The move-speed rates (vfunc_96): the PC's of its movement speed, the ridee's of the mount speed copied at the ride
+///   on, a stat packet's change and the hold to the total.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class RemoteRideCheck : Node3D
@@ -94,6 +96,7 @@ public partial class RemoteRideCheck : Node3D
             var m = FirstMount();
             if (m == null) { Done("no riding row with a model and a run speed"); return; }
             ridee = RemotePc.CreateRidee("Ridee", m, MoveConfig.SceneGravity, rider.Body.Position + Vector3.Up * 25f, rider.RotationZ, faceGrids);
+            for (int kind = 0; kind < 3; kind += 2) { ridee.SetStat(kind, MoveSpeedRate.MovementSpeedStat, 100); ridee.SetStat(kind, MoveSpeedRate.MountSpeedStat, 100); }   // FieldAddUser's speeds: rate 1
             AddChild(ridee.Body);
             ridee.Spawn();
             rider.States.RideOn(ridee.States, 1, 1);
@@ -209,6 +212,7 @@ public partial class RemoteRideCheck : Node3D
         RideEffects(layer, m.Data.Id);
         NpcBeforePlayer(layer, pc);
         HideRider(layer, pc);
+        RideeStats(layer, m.Data.Id);
         OwnUnRideSkillEffect(pc, m);
         pc.QueueFree();
         field.QueueFree();
@@ -262,6 +266,35 @@ public partial class RemoteRideCheck : Node3D
         if (played.Count != 2 || played[0] != $"{User}:{off}" || played[1] != $"{User}:{on}") fails.Add($"UnRideSkill ride off effects: {string.Join(", ", played)}");
         layer.RideEffectsPlayed = null;
         GD.Print($"remote ride: ride effects on '{on}', off '{off}', UnRideSkill adds the row's effect ({played.Count} played)");
+    }
+
+    /// <summary>PCBase::vfunc_96 with the stats: the PC's rate is calc_msiR of its movement speed, the ridee's calc_rmsiR of
+    /// the mount speed it took from the rider at the ride on (pcbase.cpp:3317-3320); a later stat packet reaches the ridee
+    /// too, its current held to the total.</summary>
+    void RideeStats(RemoteLayer layer, int rideId)
+    {
+        const int User = 36;
+        var u = new FieldAddUser { ObjectId = User, User = new UserBlock { Name = "s", CharacterId = 136, Gender = 1 } };
+        for (int k = 0; k < 3; k++) u.Stats[k] = (100, 100, 120, 150, 100);
+        layer.Tracker.Events.Enqueue(new UserAddedEvent(0, u, false));
+        layer._Process(0);
+        float? pcRate = layer.MoveSpeedRateOf(User, false);
+        layer.OnRide(new ResponseRide(0, User, new RideOnAction(0, rideId, 5036, false, 0, 0, 0, 0), null, 0, 0, 0, 0, false));
+        float? onRate = layer.MoveSpeedRateOf(User, true);
+        void Stat(long total, long current)
+        {
+            var v = new Dictionary<byte, long[]> { [PcStat.MountSpeed] = new[] { total, total, current } };
+            layer.Tracker.Events.Enqueue(new UserStatEvent(0, new PcStat(User, v)));
+            layer._Process(0);
+        }
+        Stat(150, 130);
+        float? changed = layer.MoveSpeedRateOf(User, true);
+        Stat(150, 180);
+        float? held = layer.MoveSpeedRateOf(User, true);
+        layer.OnRide(new ResponseRide(1, User, null, new RideOffAction(0, 0), 0, 0, 0, 0, false));
+        if (pcRate != 1.2f || onRate != 1.5f || changed != 1.3f || held != 1.5f)
+            fails.Add($"move-speed rates: pc {pcRate}, ridee {onRate}, after mount speed 130 {changed}, 180 of 150 {held}");
+        GD.Print($"remote ride: move-speed rate pc {pcRate}, ridee {onRate}, mount speed 130 -> {changed}, 180 of 150 -> {held}");
     }
 
     /// <summary>hideRider: PCBase::vfunc_120 hides the rider of such a row (AddHideReason(2), the body's vfunc_23(1)) and

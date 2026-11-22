@@ -491,6 +491,27 @@ public sealed class RemotePc : IRemotePc
     /// <summary>The hide reason of a hideRider mount (pcbase.cpp:3331-3333).</summary>
     public const int HideReasonRide = 2;
 
+    // PCBase m_unk_1c0: the stats by kind (0 total, 1 base, 2 current) and id
+    readonly long[][] stats = { new long[Ms2.Net.Replay.MoveSpeedRate.StatCount], new long[Ms2.Net.Replay.MoveSpeedRate.StatCount],
+        new long[Ms2.Net.Replay.MoveSpeedRate.StatCount] };
+
+    /// <summary>PCBase::GetStat: kind 0 total, 1 base, 2 current.</summary>
+    public long Stat(int kind, int stat) => (uint)kind < 3 && (uint)stat < (uint)stats[0].Length ? stats[kind][stat] : 0;
+
+    /// <summary>PCBase::SetStat (@0x141670540): the total as given (FUN_1416708a0), the base (FUN_1416705c0) and the current
+    /// (SetCurrentStat) held to 0 below and the total above. Each also goes on to the PC's ridee (m_spB10); RemoteLayer
+    /// passes it on (<see cref="RemoteLayer"/>'s SetStat).</summary>
+    public void SetStat(int kind, int stat, long value)
+    {
+        if ((uint)kind >= 3 || (uint)stat >= (uint)stats[0].Length) return;
+        if (kind != 0)
+        {
+            if (value < 0) value = 0;
+            if (value > stats[0][stat]) value = stats[0][stat];
+        }
+        stats[kind][stat] = value;
+    }
+
     /// <summary>The held actor's lookup (RemoteLayer: FUN_141bd1200 and FUN_1416757c0 over the field's users and npcs).</summary>
     public Func<int, string, HoldTarget> HoldLookup;
     public HoldTarget FindHoldTarget(int id, string node) => HoldLookup?.Invoke(id, node) ?? default;
@@ -501,9 +522,12 @@ public sealed class RemotePc : IRemotePc
     public float WalkSpeed => Mount == null ? MoveConfig.WalkSpeed : Mount.Data.WalkSpeed * 100f;
     public float RunSpeed => Mount == null ? MoveConfig.RunSpeed : Mount.Data.RunSpeed * 100f;
     public float SwimSpeed => Mount == null ? MoveConfig.SwimSpeed : Mount.Data.SwimSpeed * 100f;
-    // STILL-OPEN: remote PC move-speed stat (PCBase::vfunc_96 -> CalcMsiR, pcbase.cpp:2269-2275) and scale easing
-    // (PCBase::vfunc_97, pcbase.cpp:2504-2519, m_fScaleA8 / m_fScaleAC) are not replicated yet, taken as 1f.
-    public float MoveSpeedRate => 1f;
+    /// <summary>PCBase::vfunc_96: a ridee's CalcRmsiR of its current mount speed, a PC's CalcMsiR of its current movement
+    /// speed (<see cref="Ms2.Net.Replay.MoveSpeedRate"/>).</summary>
+    public float MoveSpeedRate => Mount != null
+        ? Ms2.Net.Replay.MoveSpeedRate.Ridee(stats[2][Ms2.Net.Replay.MoveSpeedRate.MountSpeedStat])
+        : Ms2.Net.Replay.MoveSpeedRate.Pc(stats[2][Ms2.Net.Replay.MoveSpeedRate.MovementSpeedStat]);
+    // STILL-OPEN: the scale easing (PCBase::vfunc_97, pcbase.cpp:2504-2519, m_fScaleA8 / m_fScaleAC) is taken as 1f.
     public float ScaleAnimRate => 1f;
     public float AnimSpeed { get; set; } = 1f;
     public float Gravity => gravity;
