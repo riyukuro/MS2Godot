@@ -276,7 +276,9 @@ public partial class Player : CharacterBody3D
         }
         // under a field move's loading screen the client's MyPC is gone (Ms2.Ui.FieldMoveCover): no key, click or script moves it
         if (Ms2.Ui.FieldMoveCover.Up) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }
-        if (SkillHoldsMove()) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }   // the skill state (PlayerSkill)
+        bool skill = SkillHoldsMove();
+        var skillInput = skill && !DeathHoldsMove ? (Input2 != Vector2.Zero ? Input2 : MouseInput) : Vector2.Zero;
+        if (skill) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }   // the skill state (PlayerSkill)
         if (DeathHoldsMove) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }    // StateDead / StateRevival (PlayerDeath)
         // StateTaxiCall (0x25, statetaxicalldata.cpp:302-315): in phase 0x65 a move input leaves for the walk state, in the other phases the state holds the body
         // a click-move target (MouseMove) is kept: CMouseController::FUN_140ad23f0 sets it in any state and StateTaxiCall::vfunc_8 returns
@@ -400,7 +402,7 @@ public partial class Player : CharacterBody3D
         {
             if (hasInput && State != MoveState.Dash) targetYawDeg = Mathf.RadToDeg(Mathf.Atan2(dir.X, dir.Z));
             var before = GlobalPosition;
-            Integrate(dt);
+            Integrate(dt, skill ? SkillMotionMove(skillInput, dt) : Vector3.Zero);
             if (State == MoveState.Dash) DashAfterMove(before, dt);
         }
         else wallHit = false;
@@ -579,7 +581,9 @@ public partial class Player : CharacterBody3D
         StateChangeOut?.Invoke(0, 6, new Vector3(GlobalPosition.X, -GlobalPosition.Z, GlobalPosition.Y));   // StateJump::vfunc_4 (statejump.cpp:134: SendStateChange(0, 6) with the position)
     }
 
-    void Integrate(float dt)
+    /// <summary>The frame's controller move; <paramref name="skillMove"/> is the own cast's motion (<see cref="SkillMotionMove"/>),
+    /// added to the sweep.</summary>
+    void Integrate(float dt, Vector3 skillMove)
     {
         var v = new Vector3(kVel.X, 0, kVel.Z);
         if (State is MoveState.Idle or MoveState.Land or MoveState.Dead) v = Vector3.Zero;
@@ -599,10 +603,10 @@ public partial class Player : CharacterBody3D
             // ground and not touching down (pcbase.cpp:2544-2556). StopJump's timer reset holds a warp's first frames.
             if (State == MoveState.Fall && !InAirFor(MoveConfig.IdleFallDelay)) { v.X = 0; v.Z = 0; }
         }
-        Velocity = v;
+        Velocity = skillMove == Vector3.Zero ? v : v + skillMove / dt;
 
         // GameObjectController::Move: the controller's up / side / down move by the frame's displacement
-        var firstHit = MoveStep(v * dt, dt);
+        var firstHit = MoveStep(v * dt + skillMove, dt);
 
         // m_unk_c68 is taken from the first move's flags, before the world box's slide (pcbase.cpp:1835-1840 vs 1844-1862)
         wallHit = (firstHit & NxController.Hit.Sides) != 0 && (firstHit & NxController.Hit.Down) == 0 && v.Y < 0;

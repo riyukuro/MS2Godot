@@ -1,36 +1,87 @@
 using Godot;
+using Ms2.Net.Replay;
+using Ms2Godot.Movement;
 
 namespace Ms2Godot;
 
 // The own cast's motion on the body.
-public partial class Player
+public partial class Player : ISkillMotionOwner
 {
     string skillSequence;   // the own cast's sequence while it plays; null otherwise
-    bool skillHoldsMove;    // the skill state does not take the move input (Ms2.Ui.Skills.SkillFollow.HoldsMove)
+    // the record's motion data and move time, the move phases and the motion controller (the remote PCs' code), and the
+    // sequence time its move keys were read up to
+    readonly SkillMotion skillMotion = new();
+    double skillKeyPos = -1;
 
     /// <summary>
     /// The own cast's motion (StateSkill plays the record's motion sequence at its sequenceSpeed): the body's &lt;name&gt;.kf, the
     /// same file the other players' casts play (ReplayField.SkillAnim). False when the body has no such sequence.
-    /// <paramref name="holdsMove"/>: the skill state does not read the move input while it plays (SkillFollow.HoldsMove,
-    /// <see cref="SkillHoldsMove"/>). STILL-OPEN: a moveType 2 / 3 skill's own move (StateSkill::FUN_1417edc20,
-    /// stateskill.cpp:2866-2874: the input at the owner's speed inside the skill state) goes through the walk state here.
+    /// <paramref name="move"/> is what the motion controller reads and <paramref name="rotZ"/> the record's rotation z
+    /// (m_kRot.z): the state's entry (vfunc_4, stateskill.cpp:457-480) starts the controller of the motion's movetype on a
+    /// new record (m_fDuration = m_fElapsed = 0), with no held actor.
     /// </summary>
-    public bool PlaySkillSequence(string sequenceName, float speed, bool holdsMove)
+    public bool PlaySkillSequence(string sequenceName, float speed, CastMove move, float rotZ)
     {
         var key = Anims?.Sequence(sequenceName, false);
         if (key == null || Anim == null) return false;
         PlaySequence(key, speed, true);
         skillSequence = key;
         skillHeld = false;
-        skillHoldsMove = holdsMove;
         kVel = Vector3.Zero;   // the state's enter, vfunc_4 (stateskill.cpp:437): the owner's velocity 0 (the vertical one is kept here)
+        skillMotion.Record(move, speed, rotZ);
+        skillMotion.Enter(this, false);
+        skillKeyPos = -1;      // an activated sequence throws its keys from 0
         return true;
     }
 
-    /// <summary>The own cast's skill state holds the move, jump and click-move input (StateSkill moves by its motion only,
-    /// stateskill.cpp:2855-2866): true while a sequence played with holdsMove plays. Asked each frame, so the sequence's end
-    /// (<see cref="SkillSequenceEnding"/>) is seen in the frame it comes.</summary>
-    bool SkillHoldsMove() => SkillSequencePlaying() && skillHoldsMove;
+    /// <summary>The own cast's skill state holds the walk, jump and click-move input: the state moves by its motion and, for a
+    /// moveType 2 / 3 skill, the input it reads itself (<see cref="SkillMotionMove"/>, stateskill.cpp:2855-2874). Asked
+    /// each frame, so the sequence's end (<see cref="SkillSequenceEnding"/>) is seen in the frame it comes.</summary>
+    bool SkillHoldsMove() => SkillSequencePlaying();
+
+    /// <summary>The own cast's motion for this frame (StateSkill::FUN_1417edc20, stateskill.cpp:2844-2878), in Godot units:
+    /// the sequence's move keys passed since the last read (TextKeyEvent :958-977), then the controller's step and, for a
+    /// moveType 2 / 3 skill with move time left, <paramref name="rawInput"/> (the held move or click input, as the walk
+    /// state reads it) at the owner's speed. Zero without a playing cast or with magicControl (m_n10 0x3c).
+    /// STILL-OPEN: the client hands the two moves to vfunc_68 one after the other (each with its gravity step and
+    /// collision); here they are one sweep. The hit pause (feature 0xca) and the ignored collision groups are not ported.</summary>
+    Vector3 SkillMotionMove(Vector2 rawInput, float dt)
+    {
+        if (!SkillSequencePlaying()) return Vector3.Zero;
+        SkillMotionKeys();
+        if (skillMotion.NoMove) return Vector3.Zero;
+        bool input = skillMotion.TakesInput;
+        var dir = WorldDir(rawInput);
+        skillMotion.Step(this, dt, Ms2N(dir));
+        var d = FromMs2(skillMotion.Displacement);
+        // vfunc_95: the owner's move speed (the run speed; a mount's while riding)
+        if (input) d += dir * ((Mount != null ? RideSpeed() : MoveConfig.RunSpeed) * dt);
+        return d;
+    }
+
+    /// <summary>StateSkill::TextKeyEvent's move keys for the keys the own sequence passed since the last read.</summary>
+    void SkillMotionKeys()
+    {
+        double pos = SkillSequencePosition;
+        if (pos < 0 || Anims == null || !Anims.Kf.TryGetValue(skillSequence, out var kf)) return;
+        skillMotion.TextKeys(this, kf.TextKeys, skillKeyPos, pos);
+        skillKeyPos = pos;
+    }
+
+    // ---- ISkillMotionOwner (MS2 axes) --------------------------------------------------------------------------------
+
+    static System.Numerics.Vector3 Ms2N(Vector3 g) => new(g.X, -g.Z, g.Y);
+    static Vector3 FromMs2(System.Numerics.Vector3 p) => new(p.X, p.Z, -p.Y);
+
+    System.Numerics.Vector3 ISkillMotionOwner.Position => Ms2N(GlobalPosition);
+    bool ISkillMotionOwner.InAirFor(int ms) => fallTimerRunning && InAirFor(ms * 0.001f);
+    bool ISkillMotionOwner.Jumping => jumping;
+    float ISkillMotionOwner.CastKeyTime(string key) => skillSequence != null && Anims != null ? Anims.TextKey(skillSequence, key) : -1f;
+    bool ISkillMotionOwner.LedgeAhead(System.Numerics.Vector3 dir, float dist, float height, float up) =>
+        Net.RemotePc.LedgeAhead(GlobalPosition, dir, dist, height, up, skillBlocked ??= SkillBlocked);
+
+    System.Func<Vector3, Vector3, float, bool> skillBlocked;
+    bool SkillBlocked(Vector3 from, Vector3 dir, float len) => Ray(from, dir, len, MoveConfig.DownRayGroups) != null;
 
     /// <summary>The own cast's sequence while it plays, else null.</summary>
     public string SkillSequence => skillSequence;
@@ -40,10 +91,15 @@ public partial class Player
         skillSequence != null && (object)CurrentAnim == skillSequence && Anim != null ? Anim.CurrentAnimationPosition : -1;
 
     /// <summary>The own cast's sequence moved to <paramref name="time"/> seconds of the kf (a continue round's
-    /// m_pSequence->SetOffset, stateskill.cpp:937); nothing when it does not play.</summary>
-    public void SeekSkillSequence(double time)
+    /// m_pSequence->SetOffset, stateskill.cpp:937); nothing when it does not play. <paramref name="loopRestart"/>: the
+    /// loop's next round, after which FUN_1417f1a90 (stateskill.cpp:2316-2354) arms the loop's move phases again and the
+    /// keys at the time count as read; otherwise (the release's skip) the keys at the time are still to come.</summary>
+    public void SeekSkillSequence(double time, bool loopRestart)
     {
-        if (SkillSequencePosition >= 0) Anim.Seek(time, true);
+        if (SkillSequencePosition < 0) return;
+        Anim.Seek(time, true);
+        skillKeyPos = loopRestart ? time : System.Math.BitDecrement(time);
+        if (loopRestart) skillMotion.ArmMovePhases(this);
     }
 
     /// <summary>

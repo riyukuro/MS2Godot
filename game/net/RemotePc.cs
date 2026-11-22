@@ -243,23 +243,33 @@ public sealed class RemotePc : IRemotePc
     /// (CastRay returns on a zero direction).
     /// STILL-OPEN: each IntersectRay returns a Godot Dictionary (up to 4 per moving remote PC per frame, as Ray does).
     /// </summary>
-    public bool LedgeAhead(System.Numerics.Vector3 dir, float dist, float height, float up)
+    public bool LedgeAhead(System.Numerics.Vector3 dir, float dist, float height, float up) =>
+        LedgeAhead(Body.GlobalPosition, dir, dist, height, up, blocked ??= Blocked);
+
+    System.Func<Vector3, Vector3, float, bool> blocked;
+    bool Blocked(Vector3 from, Vector3 dir, float len) => Ray(from, dir, len) != null;
+
+    /// <summary><see cref="LedgeAhead(System.Numerics.Vector3, float, float, float)"/> for any PC's feet (Godot axes):
+    /// <paramref name="blocked"/>(from, unit dir, len) is the PC's RayCastFromPoint on groups 0x389 (len &gt; 0). The own
+    /// player's skill motion asks it too (Player.LedgeAhead).</summary>
+    public static bool LedgeAhead(Vector3 feet, System.Numerics.Vector3 dir, float dist, float height, float up,
+        System.Func<Vector3, Vector3, float, bool> blocked)
     {
         float l = dir.Length();
         if (l <= 1e-6f) return false;
         dir /= l;
         if (dist < 0f) { dir = -dir; dist = -dist; }
-        var from = Body.GlobalPosition + Vector3.Up * up;
+        var from = feet + Vector3.Up * up;
         var d = G(dir);
-        if (Ray(from, d, dist) != null) return false;
+        if (blocked(from, d, dist)) return false;
         var flat = new Vector3(d.X, 0f, d.Z);
         float fl = flat.Length();
-        if (fl > 1e-6f && Ray(from, flat / fl, dist) != null) return false;
+        if (fl > 1e-6f && blocked(from, flat / fl, dist)) return false;
         var end = from + d * dist + Vector3.Up * 10f;
         float len = 10f + height + 1f;
-        if (Ray(end, len) != null) return false;
+        if (blocked(end, Vector3.Down, len)) return false;
         end += G(new System.Numerics.Vector3(0.1f, 0.05f, 0f));
-        return Ray(end, len) == null;
+        return !blocked(end, Vector3.Down, len);
     }
 
     /// <summary>onShapeHit (0x140cfade0): a touched shape's entity goes into the report (another controller's touch goes to

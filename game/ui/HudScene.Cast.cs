@@ -10,6 +10,19 @@ public partial class HudScene
 {
     readonly CastWorld castWorld = new();          // CSkillSystem's last cast time / skill, kept across casts
     Ms2.Formats.World.SkillTable castMotions;      // the motion effects, the table the replayed casts read
+
+    /// <summary>What the own skill state's motion controller reads (the remote casts' CastMove, RemoteLayer.Casts): the motion's
+    /// movetype, keyMove, movedistance and moveangle, the skill's stateAttr, and the record's m_kStart
+    /// (<paramref name="dir"/>, MS2 axes). Zero motion data without the motion row.</summary>
+    Ms2.Net.Replay.CastMove OwnCastMove(int skillId, int level, int motionIndex, System.Numerics.Vector3 dir)
+    {
+        castMotions ??= new Ms2.Formats.World.SkillTable(assets.Packs);
+        var st = castMotions.StateMove(skillId);
+        var m = castMotions.Motion(skillId, level, motionIndex);
+        return m == null
+            ? new Ms2.Net.Replay.CastMove(0, 0, 0, 0, st.MoveType, st.MovingInMovekey, st.MagicControl, dir)
+            : new Ms2.Net.Replay.CastMove(m.MoveType, m.KeyMove, m.MoveDistance, m.MoveAngle, st.MoveType, st.MovingInMovekey, st.MagicControl, dir);
+    }
     // StateSkill's record and m_nAttack for the own cast whose sequence plays, the sequence, and the next point's text key time
     CastRecord ownCast;
     int ownAttack;
@@ -504,7 +517,8 @@ public partial class HudScene
         {
             // :1213-1216: a level with a sequence enters the skill state (vfunc_59(0x10), which also ends a taxi call in 0x65); the cooldown counts the old state's time off
             live?.TaxiSkillCast(true);
-            if (motion != null && !string.IsNullOrEmpty(motion.SequenceName) && me.PlaySkillSequence(motion.SequenceName, motion.SequenceSpeed, SkillFollow.HoldsMove(r.Skill)))
+            if (motion != null && !string.IsNullOrEmpty(motion.SequenceName) && me.PlaySkillSequence(motion.SequenceName, motion.SequenceSpeed,
+                    OwnCastMove((int)r.Skill.Id, r.Level.Level, r.Motion, r.Direction), r.Rotation.Z))
                 StartOwnAttacks(me, r);
             delay = elapsed;
         }
@@ -625,7 +639,8 @@ public partial class HudScene
     /// for m_b111, the charging skill flag :766, with m_b112 or repeats left) with the accepted press's chain at "combo" and
     /// "selfcombo" (FUN_1417ef4a0, :1004, :1027), so an attack point before the key fires (and sends) first. False when the
     /// state stopped reading on: a point ended it, a chain took over, or a loopend sought the next round.
-    /// STILL-OPEN: the sequence's move0-3 keys are not read; charging_combo's m_b112 (:952) is not kept in the window.
+    /// The move0-3 keys go to the body's skill motion (Player.SkillMotionMove).
+    /// STILL-OPEN: charging_combo's m_b112 (:952) is not kept in the window.
     /// </summary>
     bool OwnKeys(double pos)
     {
@@ -728,12 +743,13 @@ public partial class HudScene
     /// tick. The text keys read on from there; the loopstart key is taken as passed at the seek (an assumption: the client
     /// restarts the sequence with SetTargetAnimation and sets its offset at or after the key; loopstart's m_fChargeTime = 0 is
     /// what lets the hold check run for the next round).
-    /// STILL-OPEN: m_nStartTick (the combo ticks) and FUN_1417f1a90 (move0 / move2) are not ported.
+    /// FUN_1417f1a90 (move0 / move2) runs in the body's seek (Player.SeekSkillSequence).
+    /// STILL-OPEN: m_nStartTick (the combo ticks) is not ported.
     /// </summary>
     void SeekOwnLoop(Player me, uint now)
     {
         double t = ownLoop.LoopStart + ownLoop.ChargeTick * 0.001;
-        me.SeekSkillSequence(t);
+        me.SeekSkillSequence(t, true);
         ownKeyPos = t;
         // the loopstart event (:844-868) only for a sequence with the key
         if (ownLoopStartKey >= 0) ownLoop.OnLoopStart(ownLoopStartKey, now);
@@ -786,7 +802,7 @@ public partial class HudScene
     /// </summary>
     void SeekOwnRelease(float t)
     {
-        player.SeekSkillSequence(t);
+        player.SeekSkillSequence(t, false);
         ownKeyPos = Math.BitDecrement((double)t);
     }
 
@@ -977,7 +993,12 @@ public partial class HudScene
         var motion = castMotions.Motion(s.SkillId, s.Level, s.Motion);
         if (motion == null) return;
         if (!string.IsNullOrEmpty(motion.SequenceName))
-            player.PlaySkillSequence(motion.SequenceName, MathF.Max(s.Speed, 0.1f), SkillFollow.HoldsMove(QuickSlotWorld().Tables.GetSkillData((uint)s.SkillId)));
+        {
+            // the sync's cast has no record here (STILL-OPEN below): the motion starts from the PC's facing
+            float rotZ = player.FacingRotZ, rad = Mathf.DegToRad(rotZ);
+            player.PlaySkillSequence(motion.SequenceName, MathF.Max(s.Speed, 0.1f),
+                OwnCastMove(s.SkillId, s.Level, s.Motion, new System.Numerics.Vector3(MathF.Sin(rad), -MathF.Cos(rad), 0)), rotZ);
+        }
         var g = player.GlobalPosition;
         if (!string.IsNullOrEmpty(motion.MotionEffect)) Net.LiveSession.Instance?.PlayFieldEffect(motion.MotionEffect, g, player.Visual?.Rotation.Y ?? 0);
         GD.Print($"cast: skill {s.SkillId} motion {s.Motion} started by the server");
