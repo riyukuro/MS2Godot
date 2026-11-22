@@ -137,12 +137,12 @@ public partial class HudScene
         if (PartySearchRegisterOpen)
         {
             if (k.Keycode == Key.Escape) { partySearchRegister.Close(); return true; }
-            if (k.Keycode is Key.Enter or Key.KpEnter or Key.Tab) { partySearchRegister.Key(k.Keycode != Key.Tab); return true; }
+            if (k.Keycode is Key.Enter or Key.Tab) { partySearchRegister.Key(k.Keycode != Key.Tab); return true; }
         }
         if (PartySearchOpen)
         {
             if (k.Keycode == Key.Escape) { partySearch.Close(); return true; }
-            if (k.Keycode is Key.Enter or Key.KpEnter) return partySearch.EnterKey();
+            if (k.Keycode == Key.Enter) return partySearch.EnterKey();
         }
         return false;
     }

@@ -383,7 +383,7 @@ public partial class CharacterCreateScene : LobbyFieldScene
         // UICharacterCreateDialog::vfunc_13: Enter (key 0x1c) while the page takes input -> onEnterKey; the job page's Enter
         // does nothing (CharacterCreateSelectDialog.onEnterKey returns)
         var vp = GetViewport();   // taken before the dispatch, which can change the scene
-        if (e is InputEventKey { Pressed: true, Echo: false } k && k.Keycode is Key.Enter or Key.KpEnter && create?.OnEnterKey() == true)
+        if (e is InputEventKey { Pressed: true, Echo: false } k && k.Keycode == Key.Enter && create?.OnEnterKey() == true)
             if (IsInstanceValid(vp)) vp.SetInputAsHandled();
     }
 

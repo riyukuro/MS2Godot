@@ -70,7 +70,7 @@ public partial class HudScene
     {
         if (!BlackMarketOpen) return false;
         if (k.Keycode == Key.Escape) { blackMarket.Close(); return true; }
-        if (k.Keycode is Key.Enter or Key.KpEnter) { blackMarket.Key(true); return true; }
+        if (k.Keycode == Key.Enter) { blackMarket.Key(true); return true; }
         if (k.Keycode == Key.Tab) { blackMarket.Key(false); return true; }
         return false;
     }

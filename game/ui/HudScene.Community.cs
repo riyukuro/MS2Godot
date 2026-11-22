@@ -195,7 +195,7 @@ public partial class HudScene
     /// </summary>
     bool CommunityKeys(InputEventKey k)
     {
-        bool enter = k.Keycode is Key.Enter or Key.KpEnter;
+        bool enter = k.Keycode == Key.Enter;
         if (CommunityQueryOpen)
         {
             if (k.Keycode == Key.Escape) { communityQuery.Close(); return true; }

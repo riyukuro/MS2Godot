@@ -10,8 +10,8 @@ namespace Ms2Godot.Tests;
 /// --typing-shots DIR for the picture after each field): the login screen as the game opens it, with the run's message box
 /// layer and tooltip layer under the tree's root (<see cref="Flow.GameFlow"/>), takes typed keys into both fields. The
 /// keys go through the engine's input as a keyboard's do (key events with their characters): an id into the id field
-/// the dialog focuses, Tab to the password field, a password; then a message box over the dialog and Enter, which closes
-/// the box and sends no login (the client asks the top dialog first, UISwfEntityManager @0x1422d1c20). The idle message box layer, the root's last child, took
+/// the dialog focuses, Tab to the password field, a password; then a message box over the dialog, the keypad's Enter, which
+/// neither closes the box nor logs in, and Enter, which closes the box and sends no login (the client asks the top dialog first, UISwfEntityManager @0x1422d1c20). The idle message box layer, the root's last child, took
 /// every key first, so nothing reached the login dialog. Quits with 0 when both fields hold what was typed, else 1.
 /// </summary>
 public partial class LoginTypingCheck : Node
@@ -40,7 +40,7 @@ public partial class LoginTypingDriver : Node
     public Vector2I? Size;
     const string Id = "abc12", Password = "secret";
     int frames, connects;
-    bool typed;
+    bool typed, keypadKeptBox;
 
     static void Press(Key key, char ch)
     {
@@ -79,10 +79,14 @@ public partial class LoginTypingDriver : Node
             login.Controller.Connect += () => connects++;
             MessageBoxQueue.ShowMessageBox(Id, 0, null, "");
         }
+        // the keypad's Enter is not Return (DIK 0x9c; the box and the login dialog read DIK 0x1c): the box stays, no login
+        if (frames == 200) Press(Key.KpEnter, '\r');
+        if (frames == 210) keypadKeptBox = !MessageBoxQueue.IsIdle && connects == 0;
         if (frames == 215) Press(Key.Enter, '\r');
+        if (frames == 230) Press(Key.KpEnter, '\r');   // and on the bare dialog: no login either
         if (frames < 245) return;
-        bool boxClosed = MessageBoxQueue.IsIdle, ok = typed && boxClosed && connects == 0;
-        GD.Print($"login typing: window {GetTree().Root.Size}, content {GetTree().Root.GetVisibleRect().Size}, id \"{login.Controller.Id}\", password {login.Controller.Password.Length} chars, Enter on a box: closed {boxClosed}, logins {connects} -> {(ok ? "ok" : "FAIL")}");
+        bool boxClosed = MessageBoxQueue.IsIdle, ok = typed && keypadKeptBox && boxClosed && connects == 0;
+        GD.Print($"login typing: window {GetTree().Root.Size}, content {GetTree().Root.GetVisibleRect().Size}, id \"{login.Controller.Id}\", password {login.Controller.Password.Length} chars, keypad Enter kept the box {keypadKeptBox}, Enter on a box: closed {boxClosed}, logins {connects} -> {(ok ? "ok" : "FAIL")}");
         SetProcess(false);
         GetTree().Quit(ok ? 0 : 1);
     }

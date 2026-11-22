@@ -164,7 +164,7 @@ public partial class LoginScene : Control
         if (dialog == null || !dialog.Visible) return;
         if (e is InputEventKey { Pressed: true, Echo: false } k)
         {
-            if (k.Keycode is Key.Enter or Key.KpEnter) { Controller.EnterKey(); if (IsInstanceValid(vp)) vp.SetInputAsHandled(); }
+            if (k.Keycode == Key.Enter) { Controller.EnterKey(); if (IsInstanceValid(vp)) vp.SetInputAsHandled(); }
             else if (k.Keycode == Key.Tab) { Controller.TabKey(); if (IsInstanceValid(vp)) vp.SetInputAsHandled(); }
         }
     }

@@ -72,7 +72,7 @@ public partial class HudScene
     {
         if (!AchieveOpen) return false;
         if (k.Keycode == Key.Escape) return achieve.OnKey(true, false);
-        if (k.Keycode is Key.Enter or Key.KpEnter) return achieve.OnKey(false, true);
+        if (k.Keycode == Key.Enter) return achieve.OnKey(false, true);
         return false;
     }
 

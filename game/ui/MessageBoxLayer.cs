@@ -108,7 +108,9 @@ public partial class MessageBoxLayer : CanvasLayer
     public bool Shown => controller?.IsIdle == false;
 
     /// <summary>UIMessageBox::vfunc_13 @0x1419f7560 while a box is shown: Enter, Esc, the arrows and Tab go to the movie.
-    /// The layer is under the root after the scene, so it sees the keys first.</summary>
+    /// The layer is under the root after the scene, so it sees the keys first. Enter is the main Return key only:
+    /// CInputKeyHandler::IsEnterPressed @0x14116d890 reads DIK 0x1c or action 0x49408 (no default key has it; the keypad's
+    /// Enter, DIK 0x9c, is unbound in DefaultKey.xml), and every dialog under the box reads DIK 0x1c too.</summary>
     public override void _Input(InputEvent e)
     {
         if (controller == null || controller.IsIdle) return;
@@ -116,7 +118,7 @@ public partial class MessageBoxLayer : CanvasLayer
         if (e is not InputEventKey { Pressed: true, Echo: false } k) return;
         string key = k.Keycode switch
         {
-            Key.Enter or Key.KpEnter => "enter",
+            Key.Enter => "enter",
             Key.Escape => "escape",
             Key.Up => "up",
             Key.Left => "left",

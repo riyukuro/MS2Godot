@@ -75,7 +75,7 @@ public partial class HudScene
         switch (k.Keycode)
         {
             case Key.Escape: mailSend.Close(); return true;
-            case Key.Enter or Key.KpEnter: return mailSend.OnKeyCode(MailSendDialogController.EnterKey);
+            case Key.Enter: return mailSend.OnKeyCode(MailSendDialogController.EnterKey);
             case Key.Tab: return mailSend.OnKeyCode(MailSendDialogController.TabKey);
         }
         if (k.Unicode >= 0x20) mailSendTyped = true;   // a typed character (vfunc_74)

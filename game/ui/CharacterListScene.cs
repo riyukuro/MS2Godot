@@ -387,7 +387,7 @@ public partial class CharacterListScene : LobbyFieldScene
         if (controller == null) return;
         // the answer may change the scene at once (OnCreatePC / OnGameStart): this one is then out of the tree
         var vp = GetViewport();
-        if (e is InputEventKey { Pressed: true, Echo: false } k && k.Keycode is Key.Enter or Key.KpEnter && controller.EnterKey())
+        if (e is InputEventKey { Pressed: true, Echo: false } k && k.Keycode == Key.Enter && controller.EnterKey())
             if (IsInstanceValid(vp)) vp.SetInputAsHandled();
     }
 
