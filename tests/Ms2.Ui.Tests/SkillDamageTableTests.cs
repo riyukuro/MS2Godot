@@ -156,6 +156,22 @@ public class SkillDamageTableTests
     }
 
     [Test]
+    public void EqualAttacksAreOneObject()
+    {
+        // the levels of a skill often repeat an attack: one object for equal values, a new one for any differing field
+        var t = Table(Skills(4, i => i == 4 ? @"rate=""1.5"" effectHit=""b.xml""" : @"rate=""1.5"" effectHit=""a.xml"""),
+            @"<ms2><skill id=""9""><basic/><level value=""1""><motion><attack><damage rate=""1.5"" effectHit=""a.xml"" pushprob=""0.5""/></attack>
+                <attack><damage rate=""1.5"" effectHit=""a.xml"" count=""2""/></attack><attack/></motion></level></skill></ms2>");
+        Assert.That(t.Get(2, 1, 0, 0), Is.SameAs(t.Get(1, 1, 0, 0)));
+        Assert.That(t.Get(3, 1, 0, 0), Is.SameAs(t.Get(1, 1, 0, 0)));
+        Assert.That(t.Get(4, 1, 0, 0), Is.Not.SameAs(t.Get(1, 1, 0, 0)));
+        Assert.That((t.Get(4, 1, 0, 0).EffectHit, t.Get(1, 1, 0, 0).EffectHit), Is.EqualTo(("b.xml", "a.xml")));
+        Assert.That(t.Get(9, 1, 0, 0), Is.Not.SameAs(t.Get(1, 1, 0, 0)));
+        Assert.That(t.Get(9, 1, 0, 0).PushProb, Is.EqualTo(0.5f));
+        Assert.That((t.Get(9, 1, 0, 1).Count, t.Get(1, 1, 0, 0).Count, t.Get(9, 1, 0, 2)), Is.EqualTo((2, 1, SkillAttackDamage.None)));
+    }
+
+    [Test]
     public void OnTheDataEveryAttackOfSkillDataTableHasItsDamage()
     {
         // the same files and the same walk: every level, motion and attack SkillDataTable keeps has a damage block here,

@@ -41,22 +41,69 @@ public sealed class SkillAttackDamage
 
     /// <summary>The attack at the reader (an &lt;attack&gt; element), read to its end: its first &lt;damage&gt; child's
     /// attributes (the first XmlGetChild, as attack.Element("damage")).</summary>
-    internal static SkillAttackDamage Read(XmlReader r, AttributeValues values)
+    internal static SkillAttackDamage Read(XmlReader r, AttributeValues values, Shared shared)
     {
-        SkillAttackDamage d = null;
+        bool damage = false;
+        var d = shared.Scratch;
+        d.Reset();
         if (!r.IsEmptyElement)
         {
             int depth = r.Depth;
             while (SkillDamageTable.Child(r, depth))
             {
-                if (d != null || !SkillDamageTable.Is(r, "damage")) continue;
-                d = new SkillAttackDamage();
+                if (damage || !SkillDamageTable.Is(r, "damage")) continue;
+                damage = true;
                 while (r.MoveToNextAttribute()) d.Set(r.LocalName, r, values);
                 r.MoveToElement();
                 if (d.PushEaseType < 0 || d.PushEaseType > 2) d.PushEaseType = 0;
             }
         }
-        return d ?? None;
+        return damage ? shared.Get() : None;
+    }
+
+    /// <summary>The read's attacks by value: equal ones are one object (the table is read only), so the many levels of a
+    /// skill whose attacks differ in nothing take one each.</summary>
+    internal sealed class Shared : IEqualityComparer<SkillAttackDamage>
+    {
+        readonly HashSet<SkillAttackDamage> kept;
+        /// <summary>The attack being read.</summary>
+        public readonly SkillAttackDamage Scratch = new();
+
+        public Shared() => kept = new HashSet<SkillAttackDamage>(this);
+
+        /// <summary>The kept attack equal to <see cref="Scratch"/>, kept as a copy when there is none yet.</summary>
+        public SkillAttackDamage Get()
+        {
+            if (kept.TryGetValue(Scratch, out var same)) return same;
+            var copy = (SkillAttackDamage)Scratch.MemberwiseClone();
+            kept.Add(copy);
+            return copy;
+        }
+
+        public bool Equals(SkillAttackDamage a, SkillAttackDamage b) =>
+            a.Count == b.Count && a.Hand == b.Hand && a.Rate.Equals(b.Rate) && a.Value == b.Value
+            && a.HitSpeedRate.Equals(b.HitSpeedRate) && a.HitPauseTime.Equals(b.HitPauseTime)
+            && a.DamagedVibrateRatio.Equals(b.DamagedVibrateRatio) && a.EffectHit == b.EffectHit && a.EffectRemain == b.EffectRemain
+            && a.DamageByTargetMaxHP.Equals(b.DamageByTargetMaxHP) && a.ConstDamageByTargetHP == b.ConstDamageByTargetHP
+            && a.Push == b.Push && a.PushDistance.Equals(b.PushDistance) && a.PushDuration.Equals(b.PushDuration)
+            && a.PushProb.Equals(b.PushProb) && a.PushEaseType == b.PushEaseType && a.PushApplyField == b.PushApplyField
+            && a.PushUpDistance.Equals(b.PushUpDistance) && a.PushDown == b.PushDown && a.PushFall == b.PushFall
+            && a.PushPriority == b.PushPriority && a.PushPriorityHitImmune == b.PushPriorityHitImmune
+            && a.PushAnimation == b.PushAnimation && a.StateHitIgnore == b.StateHitIgnore && a.StateHitOnly == b.StateHitOnly
+            && a.SuperArmorBreak == b.SuperArmorBreak;
+
+        public int GetHashCode(SkillAttackDamage a) =>
+            HashCode.Combine(a.Value, a.Rate, a.Count, a.Push, a.PushDistance, a.EffectHit, a.HitSpeedRate, a.PushProb);
+    }
+
+    /// <summary>The ctor's values (:175).</summary>
+    void Reset()
+    {
+        Count = 1; Hand = 0; Rate = 0f; Value = 0; HitSpeedRate = 1f; HitPauseTime = 0f; DamagedVibrateRatio = 1f;
+        EffectHit = ""; EffectRemain = ""; DamageByTargetMaxHP = 0f; ConstDamageByTargetHP = 0;
+        Push = 0; PushDistance = 0f; PushDuration = 0f; PushProb = 1f; PushEaseType = 0; PushApplyField = 0; PushUpDistance = 0f;
+        PushDown = 0; PushFall = 0; PushPriority = 0; PushPriorityHitImmune = 0; PushAnimation = "";
+        StateHitIgnore = 0; StateHitOnly = 0; SuperArmorBreak = 0;
     }
 
     // XmlGetAttr: a missing attribute leaves the value; only the attributes read here take their value
@@ -201,6 +248,7 @@ public sealed class SkillDamageTable
             var settings = Settings.Clone();
             settings.NameTable = new NameTable();
             var values = new AttributeValues(settings.NameTable);
+            var shared = new SkillAttackDamage.Shared();
             var rows = new List<LevelRow>();
             var motions = new List<SkillAttackDamage[]>();
             var attacks = new List<SkillAttackDamage>();
@@ -210,7 +258,7 @@ public sealed class SkillDamageTable
                 using var r = XmlReader.Create(text, settings);
                 if (r.MoveToContent() != XmlNodeType.Element || !Is(r, "ms2") || r.IsEmptyElement) continue;
                 while (Child(r, 0))
-                    if (Is(r, "skill")) Levels(r, values, d, SkillId(r, values), rows, motions, attacks);
+                    if (Is(r, "skill")) Levels(r, values, shared, d, SkillId(r, values), rows, motions, attacks);
             }
             System.Threading.Volatile.Write(ref skills, d);
             return d;
@@ -229,7 +277,7 @@ public sealed class SkillDamageTable
 
     /// <summary>The skill at the reader, read to its end into <paramref name="d"/>, replacing the levels of an earlier skill
     /// with the same id (the lists are the read's, reused from skill to skill).</summary>
-    void Levels(XmlReader r, AttributeValues values, Loaded d, uint id, List<LevelRow> rows, List<SkillAttackDamage[]> motions, List<SkillAttackDamage> attacks)
+    void Levels(XmlReader r, AttributeValues values, SkillAttackDamage.Shared shared, Loaded d, uint id, List<LevelRow> rows, List<SkillAttackDamage[]> motions, List<SkillAttackDamage> attacks)
     {
         if (d.Skills.TryGetValue(id, out ushort old))
             for (int l = 1; l <= old; l++) d.Levels.Remove(Key(id, (ushort)l));
@@ -263,7 +311,7 @@ public sealed class SkillDamageTable
                     {
                         int motionDepth = r.Depth;
                         while (Child(r, motionDepth))
-                            if (Is(r, "attack")) attacks.Add(SkillAttackDamage.Read(r, values));
+                            if (Is(r, "attack")) attacks.Add(SkillAttackDamage.Read(r, values, shared));
                     }
                     motions.Add(attacks.ToArray());
                 }
