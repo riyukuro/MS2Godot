@@ -348,7 +348,8 @@ public sealed class ModelData
     /// <paramref name="target"/> gives the bone it hangs on and kXf, its local transform (FUN_141202280 @0x141202280,
     /// equipmodel.cpp:993). A replace asset always hangs on Bip01 Head (CKfmModel::vfunc_13 @0x14143e900, kfmmodel.cpp:548-585)
     /// with SetLocalTransform(kXf * local); a non-replace asset hangs on that mesh's own bone (vfunc_12 @0x14143e670,
-    /// kfmmodel.cpp:518-544). Without such a mesh: Bip01 Head, no offset (Local null).
+    /// kfmmodel.cpp:518-544). Without such a mesh: Bip01 Head, no offset (Local null). The mesh is found by the exact name only;
+    /// the client's "<part><suffix>" suffix loop (FUN_141202280) is not ported (STILL-OPEN).
     /// </summary>
     public (string Bone, Xform? Local) FindBodyAttach(string target, bool replace)
     {

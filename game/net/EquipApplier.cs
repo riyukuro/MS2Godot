@@ -814,7 +814,8 @@ public sealed class EquipApplier
     /// length from the slot's &lt;scale&gt; (the client picks at random between min and max; min here).</item>
     /// </list>
     /// Not done: PhysX swing (the NiPhysX joints in the nif), Attack_Idle_A in battle stance (vfunc_32).
-    /// STILL-OPEN: FUN_1411e99a0, which gates the replace path, is not recovered; the replace attribute stands in for it.
+    /// STILL-OPEN: FUN_1411e99a0, the inner allow check the replace path calls, is not recovered; the gate itself is the asset's replace attribute
+    /// (CKfmModel::vfunc_13), which is what is read here.
     /// </summary>
     List<MeshInstance3D> AttachKfm(Part part, Skeleton3D skel, ModelData body, XElement asset, EquipItem item, int gender, int index)
     {
@@ -855,9 +856,8 @@ public sealed class EquipApplier
         string target = (string)asset.Attribute("targetnode") ?? "Bip01 Head";
         string bone = target;
         var targetLocal = Transform3D.Identity;     // the target node relative to its bone
-        if (skel.FindBone(bone) < 0)
+        if (skel.FindBone(bone) < 0)   // a replace asset hangs on Bip01 Head only when its target is not a bone of the body (as before)
         {
-            // as Attach: a replace asset on a node the body lacks goes to Bip01 Head, else the body's rigid mesh of that name
             // a replace asset hangs on Bip01 Head with its self node's local moved by kXf, the body mesh's local
             // (ModelData.FindBodyAttach: CKfmModel::vfunc_13 @0x14143e900, kfmmodel.cpp:548-585); for the female
             // body's HR that is the offset from the head bone back to the model root the hair is authored in
