@@ -3945,7 +3945,7 @@ public partial class HudScene : Node, IUiStageHost
         if (PartyWindowOpen) party.Process();      // UIPartyDialog::vfunc_15: the vote page's time, the ready marks' deadline
         ugc?.Update();             // CUgcManager::Update: the picked file's refresh
         if (uploadDialog is { IsClosed: false } upload) upload.Tick();     // UIUGCImageUploadDialog::vfunc_72
-        if (guild is { IsClosed: false }) guild.Tick();     // UIGuildDialog::vfunc_72 (@0x1419614e0): UpdateSkillInfo
+        if (guild is { IsClosed: false }) guild.Tick();     // UIGuildDialog::vfunc_72 (@0x1419614e0): UpdateSkillInfo, PurgeExpiredRequests
         alignWidgets?.ProcessPendingLayout();      // the end of UISwfEntityManager::UpdateEntities
         playerInfo?.UpdateEffects();      // UIMainPlayerInfo::vfunc_15 (uimainplayerinfo.cpp:625): m_effectManager->Update()
         // UIMainPlayerInfo::vfunc_15 (uimainplayerinfo.cpp:639): the queued slot refresh, when its 200 ms timer fires

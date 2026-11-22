@@ -185,6 +185,189 @@ public class GuildDialogTests
         Assert.That(c.Host.Get(c.Host.Child("m_guildFund", c.SkillPage2), "text")?.ToString(), Is.EqualTo("g4242"));
     }
 
+    const string EventXml = "<ms2><guildEvent id=\"1\" mapCode=\"2000001\" imagePath=\"a.png\"/><guildEvent id=\"2\" mapCode=\"2000002\" imagePath=\"b.png\"/></ms2>";
+
+    static void Click(GuildDialogController c, object button) =>
+        c.Host.Player.Call(button, "dispatchEvent", new object[] { c.Host.RT.GetClass("flash.events.Event").Construct("buttonClick", false, false) });
+
+    /// <summary>CreateEventPage / FUN_141970900 / PurgeExpiredRequests (@0x14196a6f0, @0x141970900, @0x1419760c0): the page is made on the category,
+    /// each open custom event waits 30 seconds after its time, and once the tick passes the rows are rebuilt.</summary>
+    [Test]
+    public void TheEventCategoryMakesThePageAndRebuildsTheRowsWhenAnOpenEventExpires()
+    {
+        var b = InGuild();
+        b.ServerTime = () => 1000;
+        b.Info.CustomEvents.Add((1, 990));      // open: 990 + 30 > 1000, expires 20 s on
+        b.Info.CustomEvents.Add((2, 900));      // closed
+        var c = Load(b);
+        uint tick = 5000;
+        int built = 0;
+        c.TickCount = () => tick;
+        c.Events = new Ms2.Formats.World.GuildEventTable(System.Xml.Linq.XDocument.Parse(EventXml));
+        c.FieldCapacity = _ => { built++; return 10; };
+        c.OpenCategoryPage("Event");
+        Assert.That(c.EventPage, Is.Not.Null);
+        Assert.That(Rt.ToBoolean(c.Host.Get(c.EventPage, "visible")), Is.True);
+        Assert.That(built, Is.EqualTo(2), "a row per event");
+        Assert.That(c.EventRequestCount, Is.EqualTo(1), "only the open event waits");
+        tick = 5000 + 19_999; c.Tick();
+        Assert.That(built, Is.EqualTo(2), "not expired yet");
+        tick = 5000 + 20_001; c.Tick();
+        Assert.That(built, Is.EqualTo(4), "expired: the rows are rebuilt");
+        Assert.That(c.EventRequestCount, Is.EqualTo(1), "the server time is fixed, so the event is open again");
+        c.OpenCategoryPage("Skill");
+        Assert.That(Rt.ToBoolean(c.Host.Get(c.EventPage, "visible")), Is.False, "HideAllPages");
+    }
+
+    /// <summary>FUN_141970900: a row whose custom event or field is missing ends the build (no buildGuildEvent, no later row).</summary>
+    [Test]
+    public void AnEventWithoutACustomEventOrAFieldEndsTheBuild()
+    {
+        var b = InGuild();
+        b.Info.CustomEvents.Add((2, 0));
+        var c = Load(b);
+        int asked = 0;
+        c.Events = new Ms2.Formats.World.GuildEventTable(System.Xml.Linq.XDocument.Parse(EventXml));
+        c.FieldCapacity = _ => { asked++; return null; };
+        c.OpenCategoryPage("Event");
+        Assert.That(asked, Is.EqualTo(0), "event 1 has no custom event: the loop returns before the field");
+        Assert.That(c.EventRequestCount, Is.EqualTo(0));
+    }
+
+    /// <summary>Captures the rows of buildGuildEvent; each call adds the rows (id, eventName, eventDesc, state,
+    /// isOpenTag) to the list.</summary>
+    static List<List<(object Id, object Name, object Desc, object State, object Open)>> CaptureBuilds(GuildDialogController c)
+    {
+        var calls = new List<List<(object, object, object, object, object)>>();
+        c.EventRowsBuilt += list => calls.Add(list.Select(row => (c.Host.Get(row, "id"), c.Host.Get(row, "eventName"), c.Host.Get(row, "eventDesc"),
+            c.Host.Get(row, "state"), c.Host.Get(row, "isOpenTag"))).ToList());
+        return calls;
+    }
+
+    /// <summary>FUN_141970900: the row's name is string table 3 of the map code, its description table 0x26 of the event id, the open event is
+    /// state 1 and tagged open (a swap of the two tables, or of the state, fails).</summary>
+    [Test]
+    public void TheRowsTakeTheirNameFromTable3AndTheirDescriptionFromTable38()
+    {
+        var b = InGuild();
+        b.ServerTime = () => 1000;
+        b.Info.CustomEvents.Add((1, 990));
+        b.Info.CustomEvents.Add((2, 900));
+        var c = Load(b);
+        c.StringTableText = (t, id) => $"{t}:{id}";
+        c.TickCount = () => 5000;
+        c.Events = new Ms2.Formats.World.GuildEventTable(System.Xml.Linq.XDocument.Parse(EventXml));
+        c.FieldCapacity = _ => 10;
+        c.OpenCategoryPage("Event");
+        var calls = CaptureBuilds(c);
+        b.Apply(new Ms2.Net.Packets.GuildMessage((byte)0x38) { Name = "x", EventId = 1, EventTime = 990 });
+        var rows = calls.Single();
+        Assert.That(rows.Select(r => (Convert.ToInt32(r.Id), r.Name?.ToString(), r.Desc?.ToString(), Convert.ToInt32(r.State), Rt.ToBoolean(r.Open))),
+            Is.EqualTo(new[] { (1, "3:2000001", "38:1", 1, true), (2, "3:2000002", "38:2", 0, false) }));
+    }
+
+    /// <summary>FUN_141970900: both custom events exist and the field of event 1 is unknown: the field is asked once and no row is built.</summary>
+    [Test]
+    public void AnUnknownFieldEndsTheBuildAfterOneAskAndWithoutTheInvoke()
+    {
+        var b = InGuild();
+        b.Info.CustomEvents.Add((1, 0));
+        b.Info.CustomEvents.Add((2, 0));
+        var c = Load(b);
+        c.Events = new Ms2.Formats.World.GuildEventTable(System.Xml.Linq.XDocument.Parse(EventXml));
+        c.FieldCapacity = _ => 10;
+        c.OpenCategoryPage("Event");
+        var calls = CaptureBuilds(c);
+        int asked = 0;
+        c.FieldCapacity = _ => { asked++; return null; };
+        b.Apply(new Ms2.Net.Packets.GuildMessage((byte)0x38) { Name = "x", EventId = 1, EventTime = 0 });
+        Assert.That(asked, Is.EqualTo(1));
+        Assert.That(calls, Is.Empty);
+    }
+
+    /// <summary>PurgeExpiredRequests: the row expires when the tick passes it; at exactly the expire tick (strict less-than) nothing is rebuilt.</summary>
+    [Test]
+    public void ATickExactlyAtTheExpireTimeRebuildsNothing()
+    {
+        var b = InGuild();
+        b.ServerTime = () => 1000;
+        b.Info.CustomEvents.Add((1, 990));
+        b.Info.CustomEvents.Add((2, 900));
+        var c = Load(b);
+        uint tick = 5000;
+        c.TickCount = () => tick;
+        c.Events = new Ms2.Formats.World.GuildEventTable(System.Xml.Linq.XDocument.Parse(EventXml));
+        c.FieldCapacity = _ => 10;
+        c.OpenCategoryPage("Event");
+        var calls = CaptureBuilds(c);
+        tick = 25000; c.Tick();
+        Assert.That(calls, Is.Empty, "expire = 5000 + (30 - 10) * 1000");
+        tick = 25001; c.Tick();
+        Assert.That(calls, Has.Count.EqualTo(1));
+    }
+
+    /// <summary>The vs game modes 0x76 and 0x77 reach the open dialog's UpdateEventButtons (FUN_141968140): the button follows the registration.</summary>
+    [Test]
+    public void TheVsGameModesUpdateTheOpenDialogsButtons()
+    {
+        var b = InGuild();
+        var c = Load(b);
+        c.FeatureEnabled = _ => true;
+        c.OpenCategoryPage("Event");
+        var (reg, unreg) = c.EventButtons;
+        Assert.That(Rt.ToBoolean(c.Host.Get(reg, "visible")), Is.True);
+        b.Apply(new Ms2.Net.Packets.GuildMessage((byte)0x76) { Accepted = true });
+        Assert.That(Rt.ToBoolean(c.Host.Get(unreg, "visible")), Is.True);
+        Assert.That(Rt.ToBoolean(c.Host.Get(reg, "visible")), Is.False);
+        b.Apply(new Ms2.Net.Packets.GuildMessage((byte)0x77) { Value = 5 });
+        Assert.That(Rt.ToBoolean(c.Host.Get(reg, "visible")), Is.True, "0x77 clears the registration");
+    }
+
+    /// <summary>UpdateEventButtons (@0x1419761f0) and the click handlers (@0x141976380, @0x1419763d0): both hidden without feature 0x78; else the
+    /// register button, or the unregister button once registered; each click sends its mode.</summary>
+    [Test]
+    public void TheEventButtonsFollowTheFeatureAndTheRegistrationAndSendTheirModes()
+    {
+        var b = InGuild();
+        var sent = new List<Ms2.Net.Wire.IOutPacket>();
+        b.Send = sent.Add;
+        var c = Load(b);
+        bool on = false;
+        c.FeatureEnabled = _ => on;
+        c.OpenCategoryPage("Event");
+        var (reg, unreg) = c.EventButtons;
+        Assert.That(reg, Is.Not.Null);
+        Assert.That(Rt.ToBoolean(c.Host.Get(reg, "visible")), Is.False);
+        Assert.That(Rt.ToBoolean(c.Host.Get(unreg, "visible")), Is.False);
+        on = true; c.UpdateEventButtons();
+        Assert.That(Rt.ToBoolean(c.Host.Get(reg, "visible")), Is.True);
+        Assert.That(Rt.ToBoolean(c.Host.Get(unreg, "visible")), Is.False);
+        Click(c, reg);
+        Assert.That(sent.OfType<Ms2.Net.Packets.GuildVsGameRegisterRequest>().Count(), Is.EqualTo(1));
+        b.Info.F354 = true; c.UpdateEventButtons();
+        Assert.That(Rt.ToBoolean(c.Host.Get(reg, "visible")), Is.False);
+        Assert.That(Rt.ToBoolean(c.Host.Get(unreg, "visible")), Is.True);
+        Click(c, unreg);
+        Assert.That(sent.OfType<Ms2.Net.Packets.GuildVsGameUnregisterRequest>().Count(), Is.EqualTo(1));
+    }
+
+    /// <summary>The data's guild events (guildevent.xml): each one has a map name (string table 3), a description (table 0x26) and a field
+    /// capacity, so the page's rows build whole.</summary>
+    [Test]
+    public void TheDataGuildEventsHaveNamesDescriptionsAndFields()
+    {
+        Load(InGuild());
+        var ev = new Ms2.Formats.World.GuildEventTable(packs);
+        Assert.That(ev.Count, Is.GreaterThan(0));
+        foreach (int id in ev.Ids())
+        {
+            var e = ev.Get(id);
+            Assert.That(tables.StringTableText(3, e.MapCode), Is.Not.Empty, "map name of " + e.MapCode);
+            Assert.That(tables.StringTableText(0x26, e.Id), Is.Not.Empty, "description of " + e.Id);
+            Assert.That(Ms2.Formats.World.FieldData.FindById(packs, e.MapCode)?.Capacity, Is.GreaterThan(0), "capacity of " + e.MapCode);
+        }
+    }
+
     [Test]
     public void TheMemberPopupCallbackRaisesTheMemberFoundByName()
     {

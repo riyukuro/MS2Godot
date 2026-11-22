@@ -49,6 +49,11 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     object acceptRequestPage;   // m_acceptRequestPage
     object skillPage;           // m_skillPage
     object skillPage2;          // m_skillPage2
+    object eventPage;           // m_eventPage
+    object eventVsGame;         // m_eventVsGame
+    object eventRegisterButton, eventUnregisterButton, eventImageArea, eventLoader;   // m_button368, m_button378, m_eventImageArea, m_eventLoader
+    /// <summary>m_requests (a multimap of the tick an open event stops being shown → the event id): kept in key order, equal keys in the order added.</summary>
+    readonly List<(uint Expire, int Id)> requests = new();
     readonly SortedSet<int> activeSkills = new();   // m_1b0
     long lastSkillInfoSecond = long.MinValue;       // the server second UpdateSkillInfo last pushed
     int memberSort;             // m_nMemberSort (0 in the ctor)
@@ -90,6 +95,15 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     public Func<uint, ushort, string> EffectIcon = (_, _) => null;
     /// <summary>FormatTimeSpan(CTimeSpan(seconds), true, true, true, false) (timeutil.cpp:371): days, hours and minutes.</summary>
     public Func<long, string> TimeSpanText = _ => "";
+
+    /// <summary>The event table (CGuildXmlData's GuildEvent rows).</summary>
+    public GuildEventTable Events;
+    /// <summary>CStringTable::FUN_141811980(table, id): the string of a numbered table (3 = mapName, 0x26 = GuildEventDesc); "" when unknown.</summary>
+    public Func<int, long, string> StringTableText = (_, _) => "";
+    /// <summary>CFieldDataCli::Find(mapCode)->vfunc_2: the field's capacity, null when the field is unknown.</summary>
+    public Func<int, int?> FieldCapacity = _ => null;
+    /// <summary>GetTickCountMs2.</summary>
+    public Func<uint> TickCount = () => (uint)Environment.TickCount64;
 
     /// <summary>FUN_14151f200: the box on show closes before the use box shows (uiguilddialog.cpp:1105).</summary>
     public Action NextBox = MessageBoxQueue.Next;
@@ -160,6 +174,10 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         Book.RequestsForGuildRefresh += OnRequestsForGuild;
         Book.GuildInfoRefresh -= OnGuildInfoRefresh;
         Book.GuildInfoRefresh += OnGuildInfoRefresh;
+        Book.VsGameRefresh -= UpdateEventButtons;
+        Book.VsGameRefresh += UpdateEventButtons;
+        Book.EventsRefresh -= BuildEvents;
+        Book.EventsRefresh += BuildEvents;
         Book.MemberRefresh -= OnMemberRefresh;
         Book.MemberRefresh += OnMemberRefresh;
         Book.MemberRemoved -= OnMemberRemoved;
@@ -195,6 +213,8 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         Book.MyRequestsRefresh -= BuildSearchMy;
         Book.RequestsForGuildRefresh -= OnRequestsForGuild;
         Book.GuildInfoRefresh -= OnGuildInfoRefresh;
+        Book.VsGameRefresh -= UpdateEventButtons;
+        Book.EventsRefresh -= BuildEvents;
         Book.MemberRefresh -= OnMemberRefresh;
         Book.MemberRemoved -= OnMemberRemoved;
         Book.ClearSearchResults();
@@ -237,7 +257,8 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         else if (category == "AcceptMember") CreateAcceptRequestPage();
         else if (category == "Skill") CreateSkillPage();
         else if (category == "MemberSkill") CreateMemberSkillPage();
-        // Event, Manager, House, Storage, Raid, ChampionShip, ChampionShipHistroy: STILL-OPEN
+        else if (category == "Event") CreateEventPage();
+        // Manager, House, Storage, Raid, ChampionShip, ChampionShipHistroy: STILL-OPEN
         if (category == "Join") SetPageVisible(joinPage, true);              // ShowCategoryPage (@0x141969290)
         else if (category == "Create") SetPageVisible(createPage, true);
         else if (category == "Info") SetPageVisible(infoPage, true);
@@ -245,6 +266,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         else if (category == "AcceptMember") SetPageVisible(acceptRequestPage, true);
         else if (category == "Skill") SetPageVisible(skillPage, true);
         else if (category == "MemberSkill") SetPageVisible(skillPage2, true);
+        else if (category == "Event") SetPageVisible(eventPage, true);
     }
 
     /// <summary>HideAllPages (@0x1419698f0).</summary>
@@ -257,7 +279,8 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         SetPageVisible(acceptRequestPage, false);
         SetPageVisible(skillPage, false);
         SetPageVisible(skillPage2, false);
-        // m_eventPage, m_housePage, m_storagePage, m_raidPage, m_managePage,
+        SetPageVisible(eventPage, false);
+        // m_housePage, m_storagePage, m_raidPage, m_managePage,
         // m_championshipPage, m_pvpHistoryPage: STILL-OPEN
     }
 
@@ -306,6 +329,150 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         if (!EnsurePageCreated("guild_skill_page", ref skillPage2)) return;
         Host.Invoke(skillPage2, "setType", 1);
         BuildPersonalSkills();
+    }
+
+    /// <summary>The Event page (m_eventPage) once made.</summary>
+    public object EventPage => eventPage;
+    /// <summary>The buttons of the vs game part (m_button368 register, m_button378 unregister).</summary>
+    public (object Register, object Unregister) EventButtons => (eventRegisterButton, eventUnregisterButton);
+    /// <summary>How many open events wait to expire (m_requests).</summary>
+    public int EventRequestCount => requests.Count;
+
+    /// <summary>CreateEventPage (@0x14196a6f0, uiguilddialog.cpp:1668): the page made now, its vs game part and buttons found (a missing one is a
+    /// GfxExceptionSwfLoad: the page stays as made and nothing more runs), the loader added to the image area, the click handlers, then the event rows
+    /// (FUN_141970900) and the vs game part (FUN_141970f00).</summary>
+    void CreateEventPage()
+    {
+        if (!EnsurePageCreated("UIGuildDialog_EventPage", ref eventPage)) return;
+        eventVsGame = Host.Child("m_guildEventVsGame", eventPage);
+        if (eventVsGame == null) return;
+        eventRegisterButton = Host.Child("m_guildEventVsGameRegisterButton", eventVsGame);
+        if (eventRegisterButton == null) return;
+        eventUnregisterButton = Host.Child("m_guildEventVsGameUnregisterButton", eventVsGame);
+        if (eventUnregisterButton == null) return;
+        eventImageArea = Host.Child("m_guildEventImageArea", eventVsGame);
+        if (eventImageArea == null) return;
+        var loaderClass = Host.RT.GetClass("flash.display.Loader");
+        if (loaderClass != null) Host.RT.Guard("create the event loader", () => eventLoader = Host.RT.Construct(loaderClass, Array.Empty<object>()));
+        if (eventLoader != null) Host.Invoke(eventImageArea, "addChild", eventLoader);
+        AddEventClick(eventRegisterButton, OnEventRegisterClick);
+        AddEventClick(eventUnregisterButton, OnEventUnregisterClick);
+        BuildEvents();
+        SetVsGame();
+    }
+
+    void AddEventClick(object button, Action handler)
+    {
+        Func<object[], object> f = _ => { handler(); return null; };
+        Host.Invoke(button, "addEventListener", "buttonClick", f, false, 0, false);
+    }
+
+    /// <summary>FUN_141970900 (@0x141970900, uiguilddialog.cpp:2383): m_requests cleared, then a row per guild event to buildGuildEvent. A row whose
+    /// custom event (FUN_1404d27b0) or field is missing ends the build without the invoke. An open event (IsActive) is state 1 and its row expires
+    /// 30 seconds after its time.</summary>
+    void BuildEvents()
+    {
+        if (eventPage == null) return;
+        requests.Clear();
+        var rows = new List<object>();
+        foreach (int id in Events?.Ids() ?? Enumerable.Empty<int>())
+        {
+            if (Events.Get(id) is not { } ev) continue;
+            if (Book.CustomEvent(ev.Id) is not { } custom) return;
+            if (FieldCapacity(ev.MapCode) is not { } maxUser) return;
+            int state = 0;
+            bool open = false;
+            if (Book.IsEventActive(custom))
+            {
+                state = 1;
+                open = true;
+                long now = Book.ServerTime();
+                uint tick = TickCount();
+                uint expire = (uint)(int)(tick + (30 - (now - (uint)custom.Time)) * 1000);
+                int at = requests.FindLastIndex(r => r.Expire <= expire) + 1;     // multimap::insert: after the equal keys
+                requests.Insert(at, (expire, ev.Id));
+            }
+            rows.Add(Host.Obj(("id", ev.Id), ("eventName", StringTableText(3, ev.MapCode)),
+                ("maxUserText", ClientFormat.Format(CommonByKey("s_guild_ui_event_max_user_count"), maxUser)),
+                ("eventDesc", StringTableText(0x26, ev.Id)), ("imgpath", ev.ImagePath), ("state", state), ("isOpenTag", open)));
+        }
+        EventRowsBuilt?.Invoke(rows);
+        Host.Invoke(eventPage, "buildGuildEvent", rows);
+    }
+
+    /// <summary>The rows handed to the page's buildGuildEvent (the value objects of the call), raised just before it.</summary>
+    public event Action<IReadOnlyList<object>> EventRowsBuilt;
+
+    /// <summary>FUN_141970f00 (@0x141970f00, uiguilddialog.cpp:2429): the vs game part's title, user count, description (feature 0x78 on, else the
+    /// closed text) and its image; m_eventInfo goes right of the title. STILL-OPEN: GetIconUrl's body (FUN_140d011c0 @0x140d011c0 loads the url it
+    /// returns; "img://icon:" and the path is assumed).</summary>
+    void SetVsGame()
+    {
+        if (eventVsGame == null) return;
+        SetChildText(eventVsGame, "m_eventName", CommonByKey("s_guild_ui_vsGame_title"));
+        SetChildText(eventVsGame, "m_maxUserCount", CommonByKey("s_guild_ui_vsGame_userCount"));
+        if (Host.Child("m_eventName", eventVsGame) is { } name && Host.Child("m_eventInfo", eventVsGame) is { } info)
+        {
+            double x = Convert.ToDouble(Host.Get(name, "x") ?? 0.0), w = Convert.ToDouble(Host.Get(name, "textWidth") ?? 0.0);
+            Host.Set(info, "x", (double)(uint)(x + w + 10.0));
+        }
+        SetChildText(eventVsGame, "m_eventDesc", CommonByKey(FeatureEnabled(VsGameFeature) ? "s_guild_ui_vsGame_description" : "s_guild_ui_vsGame_description_close"));
+        if (eventLoader != null)
+        {
+            // ASSUMED (FUN_140d011c0 body not read): unloadAndStop, then a load of "img://icon:" + path
+            Host.Invoke(eventLoader, "unloadAndStop", true);
+            var req = Host.RT.GetClass("flash.net.URLRequest");
+            if (req != null)
+            {
+                object r = null;
+                Host.RT.Guard("create the event url", () => r = Host.RT.Construct(req, new object[] { "img://icon:" + VsGameImage }));
+                if (r != null) Host.Invoke(eventLoader, "load", r);
+            }
+        }
+        UpdateEventButtons();
+    }
+
+    /// <summary>The vs game feature (IsFeatureEnabled 0x78).</summary>
+    public const int VsGameFeature = 0x78;
+    /// <summary>The vs game's image path (FUN_141970f00).</summary>
+    public const string VsGameImage = "./Data/Resource/Image/Map/GuildEvent/00000001.png";
+
+    /// <summary>PurgeExpiredRequests (@0x1419760c0, uiguilddialog.cpp:3097): the requests whose tick passed are dropped from the front and the
+    /// rows rebuilt.</summary>
+    void PurgeExpiredRequests()
+    {
+        if (eventPage == null || requests.Count == 0) return;
+        uint now = TickCount();
+        int n = 0;
+        while (n < requests.Count && requests[n].Expire < now) n++;
+        if (n == 0) return;
+        requests.RemoveRange(0, n);
+        BuildEvents();
+    }
+
+    /// <summary>UpdateEventButtons (@0x1419761f0, uiguilddialog.cpp:3121): both hidden without feature 0x78, else the unregister button when
+    /// the guild is registered (FUN_1404d2c60 on CGuildManager::GetInstance(), uiguilddialog.cpp:3130; ASSUMED: it reads f354, its body is not in the tree) and the register button when not. The client calls it too for the modes 0x76/0x77
+    /// (FUN_141968140, :1247), here <see cref="GuildBook.VsGameRefresh"/>.</summary>
+    public void UpdateEventButtons()
+    {
+        if (eventRegisterButton == null || eventUnregisterButton == null) return;
+        bool on = FeatureEnabled(VsGameFeature), registered = on && Book.VsGameRegistered;
+        Host.SetVisible(eventUnregisterButton, registered);
+        Host.SetVisible(eventRegisterButton, on && !registered);
+    }
+
+    /// <summary>OnEventRegisterClick (@0x141976380): SendGuildMode115 when the player exists.</summary>
+    void OnEventRegisterClick()
+    {
+        if (PlayerName() == null) return;
+        Book.SendGuildMode115();
+    }
+
+    /// <summary>OnEventUnregisterClick (@0x1419763d0): SendGuildMode116 when the player exists.</summary>
+    void OnEventUnregisterClick()
+    {
+        if (PlayerName() == null) return;
+        Book.SendGuildMode116();
     }
 
     /// <summary>FUN_14196e2c0 (@0x14196e2c0): the fund and the event fund to the info page and the skill page.</summary>
@@ -438,7 +605,11 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     }
 
     /// <summary>The per-frame part of vfunc_72 (@0x1419614e0) that is ported: UpdateSkillInfo.</summary>
-    public void Tick() => UpdateSkillInfo();
+    public void Tick()
+    {
+        UpdateSkillInfo();
+        PurgeExpiredRequests();
+    }
 
     /// <summary>FUN_14196f830 (@0x14196f830): the personal skills of the second skill page, over the player's mesos.
     /// STILL-OPEN: the remaining time of the player's own buff (AdditionalCli::GetRemainTicks) is not ported, so a personal skill is

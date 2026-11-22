@@ -44,6 +44,8 @@ public partial class HudScene
         book.Property = level => t.GuildProperties.TryGetValue(level, out var p) ? p : null;
         book.DonateMeso = t.GuildDonateMeso;
         book.SkillTable ??= new Ms2.Formats.World.GuildSkillTable(assets.Packs, e => Ms2.Ui.FeatureElements.IsAvailable(assets.Packs, e));   // CGuildXmlData::LoadGuildBuff
+        book.Events ??= new Ms2.Formats.World.GuildEventTable(assets.Packs, e => Ms2.Ui.FeatureElements.IsAvailable(assets.Packs, e));   // CGuildXmlData::LoadGuildEvent
+        book.StringTableText = t.StringTableText;
         book.Mesos = () => hudModel.HasLocalPlayer ? hudModel.Player.Mesos : 0;
         book.RefuseInvite = () => GameOptions.AccountCommunity.DisableGuildRequest;    // m_refuseGuildInvite, flag 5
         var checker = CommunityChecker();
@@ -117,6 +119,9 @@ public partial class HudScene
                 FeatureEnabled = hudModel.IsFeatureEnabled,
                 JobName = t.JobName,
                 MapName = id => t.MapName(id) ?? id.ToString(),
+                StringTableText = t.StringTableText,
+                FieldCapacity = id => Ms2.Formats.World.FieldData.FindById(assets.Packs, id)?.Capacity,   // CFieldDataCli::Find(id)->vfunc_2
+                Events = book.Events,
                 ServerTime = GuildServerTime,
                 DonateMeso = t.GuildDonateMeso,
                 EffectText = t.AdditionalDescription,
