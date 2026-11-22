@@ -79,6 +79,11 @@ public sealed class ItemData
     /// <summary>function.xml FUN_14042cad0(L"notifyMsg", L"") (scenestategame.cpp:8627): the common string key of the use notice's message.</summary>
     public string NotifyMsg => FunctionXmlString("notifyMsg");
 
+    /// <summary>ItemFunction::HasXmlValues (itemdatastruct.cpp:1815): the parameter is "&lt;...&gt;" xml values.</summary>
+    public bool HasFunctionXml => FunctionParameter.Length >= 2 && FunctionParameter[0] == '<' && FunctionParameter[^1] == '>';
+    /// <summary>The function's xml values GetInt(name, 0), the attribute read with atoi.</summary>
+    public int FunctionXmlInt(string name) => Atoi(FunctionXmlString(name));
+
     string FunctionXmlString(string name)
     {
         string s = FunctionParameter;

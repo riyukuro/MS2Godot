@@ -15,7 +15,7 @@ public sealed class GemstoneUpgradeTable
     /// <summary>CItemGemStoneData: m_nLinked (NextItemID), the ingredient item ids in file order, m_nMask (the EquipPart
     /// bits, <see cref="EquipPartMask"/>) and m_strName, which Load reads from IconId (itemgemstonedata.cpp:140) and
     /// GetGemStoneName returns.</summary>
-    public sealed record Row(int NextItemId, IReadOnlyList<int> Ingredients, uint Mask = 7, string Icon = "");
+    public sealed record Row(int NextItemId, IReadOnlyList<int> Ingredients, uint Mask = 7, string Icon = "", int Level = 0);
 
     readonly PackSet packs;
     Dictionary<int, Row> rows;
@@ -26,6 +26,9 @@ public sealed class GemstoneUpgradeTable
 
     /// <summary>FindData (:233): the row of an item id, null when none.</summary>
     public Row Find(int itemId) => Rows().TryGetValue(itemId, out var r) ? r : null;
+
+    /// <summary>FUN_140626f20 (itemsocketsystemutil.cpp:205): the row's GemLevel, 0 for no row.</summary>
+    public int Level(int itemId) => Find(itemId)?.Level ?? 0;
 
     /// <summary>FUN_140627020 (itemsocketsystemutil.cpp:223): no next tier, or the next tier has no row.</summary>
     public bool IsLastTier(Row row) => row.NextItemId == 0 || Find(row.NextItemId) == null;
@@ -54,7 +57,8 @@ public sealed class GemstoneUpgradeTable
             }
             uint mask = EquipPartMask(e);                       // the ctor's m_nMask is 7 (:85)
             if ((mask & 8) != 0 && mask != 8) break;
-            rows[id] = new Row(next, ingredients, mask, (string)e.Attribute("IconId") ?? "");
+            int level = ItemData.Atoi((string)e.Attribute("GemLevel") ?? "0");   // m_nSlot (itemgemstonedata.cpp:138)
+            rows[id] = new Row(next, ingredients, mask, (string)e.Attribute("IconId") ?? "", level);
         }
         return rows;
     }

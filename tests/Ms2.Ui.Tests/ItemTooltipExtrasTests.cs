@@ -106,6 +106,32 @@ public class ItemTooltipExtrasTests
     }
 
     [Test]
+    public void BoxItemListsItsContentsForTheLocalPlayer()
+    {
+        var m = NewModel();
+        var d = m.Tables.Items.Get(20300327);
+        Assume.That(d, Is.Not.Null);
+        Assert.That((d.Type, d.FunctionName), Is.EqualTo((0x19, "OpenItemBox")));
+        EquipItem Box(long uid) => new EquipItem { Id = 20300327, Uid = uid, Rarity = 1, Amount = 1 };
+        // no local player: no list (FUN_1409d5920 needs GetLocalPlayer)
+        Assert.That(Tip(m, Box(30)).Data.ContainsKey("itemPackageList"), Is.False);
+        m.HasLocalPlayer = true;
+        m.Player.JobGroup = 10;
+        var tip = Tip(m, Box(31));
+        Assert.That(tip.Data["tooltip"], Is.EqualTo("export_common_tooltip_kindsItemPackage"));
+        var rows = (List<object>)tip.Data["itemPackageList"];
+        Assert.That(rows, Is.Not.Empty);
+        foreach (Dictionary<string, object> r in rows)
+        {
+            TestContext.Out.WriteLine(string.Join(", ", r.Select(kv => kv.Key + "=" + kv.Value)));
+            Assert.That((string)r["itemName"], Is.Not.Empty);
+            Assert.That(r.ContainsKey("itemGrade") && r.ContainsKey("iconPath") && r.ContainsKey("itemPiece"), Is.True);
+        }
+        // an item that is no box has no list
+        Assert.That(Tip(m, new EquipItem { Id = 11300000, Uid = 32, Rarity = 1, Amount = 1 }).Data.ContainsKey("itemPackageList"), Is.False);
+    }
+
+    [Test]
     public void ItemMergeMarksTheTopRangeAndTheMax()
     {
         var m = NewModel();
