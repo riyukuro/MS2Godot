@@ -9,7 +9,9 @@ namespace Ms2.Ui;
 /// commonfiles/gamerule.cpp:2266-2278) as GameEventManagerCli (gameeventmanagercli.cpp) fills it from GameEventReactor:
 /// OnStart sets the event's context, vfunc_6 sets null (gameevent.cpp:5480/5484) whichever reactor event held it.
 /// <para>The manager keys its events by id across every type; this holder only sees the Reactor type (as
-/// <see cref="ConstructionEvents"/> does its two).</para>
+/// <see cref="ConstructionEvents"/> does its two). STILL-OPEN: an event of another type with the same id replaces the
+/// reactor event in the client's map (and its remove drops it); here the two stay apart until one manager holds every
+/// type.</para>
 /// </summary>
 public sealed class ReactorRule
 {
@@ -275,6 +277,17 @@ public sealed class FieldReactors
             if (c < 0) lo = mid + 1; else hi = mid - 1;
         }
         return ~lo;
+    }
+
+    /// <summary>ReactorAction::vfunc_1 (@0x14095f130, actionkeyobject.cpp:2868): the nearest usable reactor becomes
+    /// <paramref name="polled"/> (m_nReactorId) and the key applies; with none found the key does not apply and
+    /// <paramref name="polled"/> keeps the last one. 0 B.</summary>
+    public bool Poll(Vector3 pos, IReactorUser user, ref int polled)
+    {
+        var r = Nearest(pos, user);
+        if (r == null) return false;
+        polled = r.ObjectId;
+        return true;
     }
 
     /// <summary>

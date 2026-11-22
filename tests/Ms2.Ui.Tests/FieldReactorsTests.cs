@@ -179,6 +179,19 @@ public class FieldReactorsTests
     }
 
     [Test]
+    public void APollThatFindsNothingKeepsTheLastPolledReactor()
+    {
+        var f = new FieldReactors(Table());
+        var u = new User();
+        f.Add(Add(1, "a", 10, new Vector3(100, 0, 0), St(0)), out _);
+        int polled = 0;
+        Assert.That(f.Poll(Vector3.Zero, u, ref polled), Is.True);
+        Assert.That(polled, Is.EqualTo(1));
+        Assert.That(f.Poll(new Vector3(1000, 0, 0), u, ref polled), Is.False, "out of reach: the key does not apply");
+        Assert.That(polled, Is.EqualTo(1), "ReactorAction::vfunc_1 sets m_nReactorId only for a found reactor");
+    }
+
+    [Test]
     public void NearestAllocatesNothing()
     {
         var f = new FieldReactors(Table());

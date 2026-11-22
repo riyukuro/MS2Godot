@@ -54,14 +54,7 @@ public partial class LiveSession
         /// <summary>FUN_140b7a5e0 is 0: the player's state is 1. STILL-OPEN: FUN_141675ed0 and the sub scene check.</summary>
         public bool CanReact => s.InteractPlayerStateId() == 1;
         public long CharacterId => s.CharacterId;
-        public int ItemCount(int code, int rank)
-        {
-            int n = 0;
-            if (s.Items.All is Dictionary<long, EquipItem>.ValueCollection items)
-                foreach (var it in items)
-                    if (it.Id == code && it.Rarity == rank) n += it.Amount;
-            return n;
-        }
+        public int ItemCount(int code, int rank) => s.Items.CountOf(code, rank);
         public int ItemRank(int code) => s.ItemRank?.Invoke(code) ?? 1;
     }
 
@@ -157,13 +150,9 @@ public partial class LiveSession
     /// <paramref name="at"/> (the ridee-aware point). STILL-OPEN: the highlight (CReactor::FUN_140b78b40) and vfunc_13.</summary>
     public bool PollReactor(Vec3 at)
     {
-        polledReactor = 0;
         if (selfObject < 0 || Reactors is not { } all) return false;
         reactorUser ??= new ReactorUser(this);
-        var r = all.Nearest(new System.Numerics.Vector3((float)at.X, (float)at.Y, (float)at.Z), reactorUser);
-        if (r == null) return false;
-        polledReactor = r.ObjectId;
-        return true;
+        return all.Poll(new System.Numerics.Vector3((float)at.X, (float)at.Y, (float)at.Z), reactorUser, ref polledReactor);
     }
 
     /// <summary>ReactorAction::vfunc_2 @0x14095f2f0: the polled reactor's game event check, then the cast, the ride-off or

@@ -82,6 +82,13 @@ public sealed class ItemBook {
     readonly Dictionary<long, EquipItem> items = new();
     public IReadOnlyCollection<EquipItem> All => items.Values;
     public EquipItem Get(long uid) => items.TryGetValue(uid, out var i) ? i : null;
+    /// <summary>The summed amount of the items with <paramref name="id"/> and <paramref name="rarity"/> across every tab (the
+    /// reactor item condition, CReactor::CanUse). 0 B.</summary>
+    public int CountOf(int id, int rarity) {
+        int n = 0;
+        foreach (var it in items.Values) if (it.Id == id && it.Rarity == rarity) n += it.Amount;
+        return n;
+    }
     public IReadOnlyDictionary<int, int> ExtraSlots => extra;
     readonly Dictionary<int, int> extra = new();
     public Func<int, int> TabOf { get; set; }

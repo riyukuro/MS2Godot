@@ -20,6 +20,20 @@ public class InventoryViewTests {
     // tab = id / 10000000, capacity 10 + extra
     static ItemBook Book() => new() { TabOf = id => id / 10000000, BaseSlots = _ => 10 };
 
+    [Test] public void CountOfSumsTheAmountsOfOneIdAndRarityAcrossTabsWithoutAllocating() {
+        var b = Book();
+        var x = It(20000001, 1, 0, 5); x.Rarity = 2; b.TryAdd(x);
+        var y = It(20000001, 2, 1, 3); y.Rarity = 2; b.TryAdd(y);
+        var z = It(20000001, 3, 2, 7); z.Rarity = 1; b.TryAdd(z);
+        Assert.That(b.CountOf(20000001, 2), Is.EqualTo(8));
+        Assert.That(b.CountOf(20000001, 1), Is.EqualTo(7));
+        Assert.That(b.CountOf(20000002, 2), Is.EqualTo(0));
+        for (int i = 0; i < 100; i++) b.CountOf(20000001, 2);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 10000; i++) b.CountOf(20000001, 2);
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(256));
+    }
+
     [Test] public void CellsAreOrderedByInventorySlotAndCapacityIsBasePlusExtra() {
         var b = Book(); b.TryAdd(It(20000001, 1, 3, 5)); b.TryAdd(It(20000002, 2, 0));
         var v = new InventoryView(b);
