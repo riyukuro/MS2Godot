@@ -422,8 +422,9 @@ public class BeautyShopDialogTests
         string beauty = File.ReadAllText(Path.Combine(dir.FullName, "game", "ui", "HudScene.Beauty.cs"));
         string hud = File.ReadAllText(Path.Combine(dir.FullName, "game", "ui", "HudScene.cs"));
         Assert.That(beauty, Does.Contain("live.BeautyRequested -="));
-        Assert.That(beauty, Does.Contain("live.BeautyShopReceived -="));
+        Assert.That(beauty, Does.Contain("live.BeautyPacketReceived -="));
         Assert.That(beauty, Does.Contain("beautyFlow.Shutdown()"), "the teardown runs the close path, not a bare Close");
+        Assert.That(beauty, Does.Contain("beautyStyleFlow.Shutdown()"), "the style dialog goes with the scene too");
         Assert.That(hud, Does.Contain("unwatchBeauty?.Invoke()"), "the scene's teardown runs it");
         Assert.That(beauty, Does.Not.Contain("beautyWatched"), "no once-forever flag that survives a rebuilt scene");
     }

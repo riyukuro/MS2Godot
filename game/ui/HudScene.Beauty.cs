@@ -16,7 +16,8 @@ namespace Ms2Godot.Ui;
 public partial class HudScene
 {
     readonly BeautyShopFlow beautyFlow = new();
-    MovieDialog beautyMovie;
+    readonly BeautyStyleFlow beautyStyleFlow = new();
+    MovieDialog beautyMovie, beautyStyleMovie;
     Action unwatchBeauty;
 
     bool BeautyOpen => beautyFlow.IsOpen;
@@ -30,13 +31,18 @@ public partial class HudScene
         beautyFlow.Log = m => GD.Print(m);
         beautyFlow.SendOpenRequest = uid => live.SendBeauty(new BeautyOpenRequest(uid));   // SendBeauty (scenestategame.cpp:8714)
         void OnRequested(BeautyReq req) => beautyFlow.OpenFor(req);
+        beautyStyleFlow.CreateController = () => CreateBeautyStyle(live);
+        beautyStyleFlow.Show = ShowBeautyStyle;
+        beautyStyleFlow.Log = m => GD.Print(m);
+        void OnBeautyPacket(byte[] body) => BeautyPacketRouter.Route(body, beautyFlow, beautyStyleFlow, m => GD.Print(m));
         live.BeautyRequested += OnRequested;
-        live.BeautyShopReceived += beautyFlow.OnPacket;
+        live.BeautyPacketReceived += OnBeautyPacket;
         unwatchBeauty = () =>
         {
             live.BeautyRequested -= OnRequested;
-            live.BeautyShopReceived -= beautyFlow.OnPacket;
+            live.BeautyPacketReceived -= OnBeautyPacket;
             beautyFlow.Shutdown();
+            beautyStyleFlow.Shutdown();
             unwatchBeauty = null;
         };
     }
@@ -61,6 +67,33 @@ public partial class HudScene
         var m = beautyMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
         c.Unloaded += () => { m.Host.Unload(); m.QueueFree(); if (beautyMovie == m) beautyMovie = null; };
         GD.Print($"beauty shop: load={m.Loaded}");
+        uiRoot.AddChild(m);
+    }
+
+    /// <summary>The saved-styles dialog's controller with the host-set parts. STILL-OPEN: nothing calls
+    /// <c>beautyStyleFlow.Open()</c> until the NPC talk command "BeautyStyleDialog" (uitalkcinematic.cpp:1190) is ported; the payment's
+    /// "not enough" box and the hair apply effect are unset, so the paths that need them do nothing.</summary>
+    BeautyStyleDialogController CreateBeautyStyle(Ms2Godot.Net.LiveSession live)
+    {
+        var t = hudModel.Tables;
+        var c = new BeautyStyleDialogController
+        {
+            Send = live.SendBeauty,
+            ExpandSlotPrice = t.BeautyStyleExpandSlotPrice,
+            ExpandSlotCount1Time = t.BeautyStyleExpandSlotCount1time,
+            DefaultSlotCount = t.BeautyStyleDefaultSlotCount,
+            MaxExtendSlotCount = t.BeautyStyleMaxSlotCount,
+        };
+        c.NoticeText += SystemNoticeText;
+        return c;
+    }
+
+    void ShowBeautyStyle(BeautyStyleDialogController c)
+    {
+        if (beautyStyleMovie != null) { beautyStyleMovie.Host.Unload(); beautyStyleMovie.QueueFree(); beautyStyleMovie = null; }
+        var m = beautyStyleMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
+        c.Unloaded += () => { m.Host.Unload(); m.QueueFree(); if (beautyStyleMovie == m) beautyStyleMovie = null; };
+        GD.Print($"beauty style: load={m.Loaded}");
         uiRoot.AddChild(m);
     }
 }

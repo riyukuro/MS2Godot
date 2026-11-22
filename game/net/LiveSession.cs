@@ -327,8 +327,9 @@ public partial class LiveSession : Node
     public event Action<BeautyReq> BeautyRequested;
     /// <summary>CSceneStateGame::OnItemBox (@0x141739e40): the box result; the consumer checks the item's function (OpenItemBox / SelectItemBox) as the client does.</summary>
     public event Action<ItemBoxResult> ItemBoxResulted;
-    /// <summary>Inbound 0x31, UIBeautyShopDialog::OnBeautyShopPacket (uibeautyshopdialog.cpp:1510).</summary>
-    public event Action<BeautyShopPacket> BeautyShopReceived;
+    /// <summary>Inbound 0x31 body: UIBeautyShopDialog::OnBeautyShopPacket (uibeautyshopdialog.cpp:1510) or UIBeautyShopStyleDialog's
+    /// FUN_140f05a80 (uibeautyshopstyledialog.cpp:1205) reads it, whichever is open (<see cref="Ms2.Ui.Hud.BeautyPacketRouter"/>).</summary>
+    public event Action<byte[]> BeautyPacketReceived;
     /// <summary>The adventure data the client keeps in globals (DAT_143ab2958..3318): session-lived, so a field change keeps
     /// the exp, the filled level, the claimed levels and the missions.</summary>
     public readonly Ms2.Ui.AdventureData Adventure = new();
@@ -1342,9 +1343,7 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.Beauty))
             {
-                var bp = BeautyShopPacket.Read(p.Reader());
-                GD.Print($"live: beauty shop mode {bp.Mode}");
-                BeautyShopReceived?.Invoke(bp);
+                BeautyPacketReceived?.Invoke(p.Body);
             }
             else if (game.Is(p, Inbound.Shop))
             {
