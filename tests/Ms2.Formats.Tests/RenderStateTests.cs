@@ -17,6 +17,16 @@ public class RenderStateTests
         return EffectScene.Load(NifFile.Load(spec, packs.Read(Archive, entry)));
     }
 
+    /// <summary>A mirrored world shows the other side in D3D9; Godot flips a mirrored instance's cull itself, so the side swaps.</summary>
+    [Test]
+    public void AMirroredWorldSwapsTheCulledSide()
+    {
+        Assert.That(new[] { FaceCull.Back, FaceCull.Front, FaceCull.None }.Select(c => c.UnderWorld(true)),
+            Is.EqualTo(new[] { FaceCull.Front, FaceCull.Back, FaceCull.None }));
+        Assert.That(new[] { FaceCull.Back, FaceCull.Front, FaceCull.None }.Select(c => c.UnderWorld(false)),
+            Is.EqualTo(new[] { FaceCull.Back, FaceCull.Front, FaceCull.None }));
+    }
+
     /// <summary>A mesh without properties of its own takes the defaults: z test and write with TEST_LESSEQUAL (15), DRAW_CCW_OR_BOTH.</summary>
     [Test]
     public void Defaults()

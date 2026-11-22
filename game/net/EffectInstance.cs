@@ -245,18 +245,19 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
     /// cull_back), CW the front, BOTH none (the portals' NiStencilProperty 19840 is DRAW_BOTH with the stencil test off).
     /// The stencil test itself is not drawn: no effect NIF sets the stencil enable bit (RenderStateTests.NoEffectEnablesStencil).
     /// The field meshes cull the same way (ModelBuilder.CullDefine).
-    /// STILL-OPEN: Godot flips the culled side for a node whose transform has a negative determinant (a mirrored effect);
-    /// D3D9 keeps the render state's cull mode whatever the world matrix.</summary>
-    internal static string RenderModes(ModelMesh m)
+    /// Under a mirrored world (<paramref name="mirrored"/>, a negative determinant: an x-mirrored end effect basis) the culled
+    /// side swaps (<see cref="FaceCulls.UnderWorld"/>): D3D9 keeps the render state's cull mode whatever the world matrix,
+    /// while Godot flips the culled side of a mirrored instance.</summary>
+    internal static string RenderModes(ModelMesh m, bool mirrored = false)
     {
-        string cull = m.Cull switch { FaceCull.None => "cull_disabled", FaceCull.Front => "cull_front", _ => "cull_back" };
+        string cull = m.Cull.UnderWorld(mirrored) switch { FaceCull.None => "cull_disabled", FaceCull.Front => "cull_front", _ => "cull_back" };
         string depth = m.ZWrite ? "depth_draw_always" : "depth_draw_never";
         return m.ZTest ? $"{cull}, {depth}" : $"{cull}, {depth}, depth_test_disabled";
     }
 
-    static Shader MeshShader(ModelMesh m, bool add)
+    static Shader MeshShader(ModelMesh m, bool add, bool mirrored = false)
     {
-        string state = RenderModes(m), key = state + (add ? " add" : " mix");
+        string state = RenderModes(m, mirrored), key = state + (add ? " add" : " mix");
         if (!meshShaders.TryGetValue(key, out var sh))
             meshShaders[key] = sh = new Shader { Code = WithFog(MeshCode).Replace("MESHSTATE", state).Replace("BLEND", add ? "blend_add" : "blend_mix") };
         return sh;
@@ -474,7 +475,18 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         Advance((float)delta);
     }
 
-    public override void _EnterTree() => inTree = true;
+    public override void _EnterTree()
+    {
+        inTree = true;
+        // the mesh shaders' culled side for the world the effect is placed in (RenderModes): checked on entering the tree,
+        // as the placement is set after construction
+        bool m = GlobalBasis.Determinant() < 0;
+        if (m == mirrored) return;
+        mirrored = m;
+        foreach (var ms in meshes)
+            if (ms.Def.Mesh.Cull != FaceCull.None) ms.Mat.Shader = MeshShader(ms.Def.Mesh, ms.Add, mirrored);
+    }
+    bool mirrored;
     public override void _ExitTree() => inTree = false;
 
     // the frame's camera, fetched once per frame for all effects (one viewport holds them); its position is still read

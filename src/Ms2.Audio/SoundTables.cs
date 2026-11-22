@@ -63,11 +63,12 @@ public sealed class HitSoundTable
     static int Int(XElement e, string name) => int.TryParse((string)e.Attribute(name), out int v) ? v : 0;
 
     /// <summary>SoundPropertyMgr::GetHitSound @0x141792d70 (soundproperty.cpp:652): one of the pair's ids by
-    /// <paramref name="rand"/> (FUN_140767ff0) modulo their count; 0 for a pair without ids.</summary>
-    public int Get(int attack, int defence, Func<int> rand)
+    /// <paramref name="rand"/> modulo their count, both unsigned; 0 for a pair without ids. The client's number is
+    /// FUN_140767ff0, s_random.FUN_1407684c0: the three-register Tausworthe generator (Ms2.Quest.QuestRandom.Next), not the CRT rand().</summary>
+    public int Get(int attack, int defence, Func<uint> rand)
     {
         if (!map.TryGetValue((attack, defence), out var ids) || ids.Count == 0) return 0;
-        return ids[(int)((uint)rand() % (uint)ids.Count)];
+        return ids[(int)(rand() % (uint)ids.Count)];
     }
 
     /// <summary>CEffectService::PlayHitSound @0x1411a5580 (effectservice.cpp:1355): the sound event of a hit sound id, in the

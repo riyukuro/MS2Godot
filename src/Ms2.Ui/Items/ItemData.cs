@@ -117,6 +117,9 @@ public sealed class ItemData
     public readonly List<string> AdditionalEffectIds = new();
     /// <summary>The name of the first &lt;slots&gt;/&lt;slot&gt; of the item itself (GMS2 data names the model slot in the item file): HR, FD, CP, or empty.</summary>
     public string FirstSlot = "";
+    /// <summary>ItemMaterial::Load @0x1405473c0 (itemdatastruct.cpp:1086): &lt;material attack&gt;, the CItemData +0x10c a worn
+    /// weapon gives a hit sound whose attack has no attackMaterial (CMagic::PlayHitEffects, magicdata.cpp:1709).</summary>
+    public int AttackMaterial;
 
     public static ItemData Load(int id, XElement env, bool globalTransferType = false)
     {
@@ -172,6 +175,7 @@ public sealed class ItemData
             if ((string)l.Attribute("recommendJobs") is { } jobs)
                 foreach (var t in jobs.Split(',', StringSplitOptions.RemoveEmptyEntries)) d.RecommendJobs.Add(Atoi(t));
         }
+        if (env.Element("material") is { } mat) Int(mat, "attack", ref d.AttackMaterial);
         if (env.Element("option") is { } opt)
         {
             Int(opt, "constantID", ref d.ConstantId);

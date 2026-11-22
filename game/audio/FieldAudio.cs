@@ -30,6 +30,8 @@ public partial class FieldAudio : Node
     SoundLibrary library;
     SystemSoundTable systemSounds;
     HitSoundTable hitSounds;
+    Ms2.Formats.World.EffectSkipTable effectSkip;
+    float volumeOtherPc = 1f;
     public SoundLibrary Library => library;
     public MusicController MusicState { get; private set; }
     public BossBgmTracker BossBgm { get; private set; }
@@ -95,6 +97,9 @@ public partial class FieldAudio : Node
         {
             systemSounds = SystemSounds(packs);
             hitSounds = HitSounds(packs);
+            effectSkip = EffectSkip(packs);
+            try { volumeOtherPc = World.FieldContents.Constants(packs).Float("VolumeOtherPc", 1f); }
+            catch (Exception ex) { GD.PushWarning("audio: constants: " + ex.Message); }
         }
         musicPlayers[0] = new AudioStreamPlayer { Name = "MusicA" };
         musicPlayers[1] = new AudioStreamPlayer { Name = "MusicB" };
@@ -132,18 +137,39 @@ public partial class FieldAudio : Node
         return t;
     }
 
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Ms2.Formats.World.EffectSkipTable> effectSkipTables = new();
+
+    /// <summary>Table/effectOption.xml for the graphic quality (EffectSkipMgr::LoadOption, effectskipmgr.cpp:181), read once per
+    /// pack set as the client reads it once. Null when the table cannot be read (warned once): nothing is skipped by view.</summary>
+    static Ms2.Formats.World.EffectSkipTable EffectSkip(PackSet packs)
+    {
+        if (effectSkipTables.TryGetValue(packs, out var t)) return t;
+        try { t = Ms2.Formats.World.EffectSkipTable.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/effectoption.xml")), GameOptions.Current.GraphicOption.Quality); }
+        catch (Exception ex) { GD.PushWarning("audio: effectOption.xml: " + ex.Message); }
+        effectSkipTables.AddOrUpdate(packs, t);
+        return t;
+    }
+
     /// <summary>
     /// CEffectService::PlayHitSound @0x1411a5580 (effectservice.cpp:1355): the hit sound table's pick for the attack and
-    /// defence materials (<paramref name="rand"/> the CRT rand()), played as "ms2sound/sound/attack/hit/%08d" at
-    /// <paramref name="position"/>; no id plays nothing. Returns whether a sound played.
-    /// STILL-OPEN: FUN_1411a5110's checks (IsEffectTypeVisible of the object relation, the out-of-view skip) and the volume
-    /// (the caller's, and VolumeOtherPc for relation 3) are not applied.
+    /// defence materials (<paramref name="rand"/> s_random's Tausworthe number), played as "ms2sound/sound/attack/hit/%08d"
+    /// at <paramref name="position"/> through FUN_1411a5110's checks (<see cref="Ms2.Formats.World.EffectSkipTable.SoundEventVolume"/>:
+    /// the pet options of the object relation <paramref name="kind"/>, the sound row's view distance from
+    /// <paramref name="viewer"/>, the camera's actor, and VolumeOtherPc for relation 3) at <paramref name="volume"/>; no id
+    /// plays nothing. Returns whether a sound played. CEffectService::IsEnabled is always true here (only the developer
+    /// dialog turns it off, uidevelopdialog.cpp:378).
     /// </summary>
-    public bool PlayHitSound(int attack, int defence, Vector3 position, Func<int> rand)
+    public bool PlayHitSound(int attack, int defence, int kind, Vector3 position, float volume, Vector3? viewer, Func<uint> rand)
     {
         int id = hitSounds?.Get(attack, defence, rand) ?? 0;
-        return id != 0 && PlayEventAt(HitSoundTable.EventPath(id), position);
+        if (id == 0) return false;
+        var status = GameOptions.Current?.StatusOption;
+        float v = Ms2.Formats.World.EffectSkipTable.SoundEventVolume(effectSkip, kind, ToNumerics(position), viewer is { } e ? ToNumerics(e) : null,
+            volume, volumeOtherPc, status?.DisplayShowOnlyMyPet ?? false, status?.DisplayHideMyPet ?? false);
+        return v >= 0 && PlayEventAt(HitSoundTable.EventPath(id), position, 0, v);
     }
+
+    static System.Numerics.Vector3 ToNumerics(Vector3 v) => new(v.X, v.Y, v.Z);
 
     /// <summary>The full &lt;bgm&gt; spec of a field's fielddata entry (default environment; CFieldDataCli::vfunc_1 @0x140a55500, fielddatacli.cpp:240-249).</summary>
     public static FieldBgmSpec FieldBgm(PackSet packs, string xblockName) =>
@@ -545,9 +571,10 @@ public partial class FieldAudio : Node
 
     /// <summary>
     /// Play a sound event at a world position (effect soundEvent parts, npc sounds). <paramref name="path"/> is the event name or
-    /// "group/name"; <paramref name="delay"/> seconds later. Attenuation follows the event's 3D distances.
+    /// "group/name"; <paramref name="delay"/> seconds later, at <paramref name="volume"/> times the event's own volume
+    /// (CreateSoundEventEffectParam's volume). Attenuation follows the event's 3D distances.
     /// </summary>
-    public bool PlayEventAt(string path, Vector3 position, float delay = 0)
+    public bool PlayEventAt(string path, Vector3 position, float delay = 0, float volume = 1)
     {
         var clip = library?.ResolveEvent(path);
         if (clip == null) return false;
@@ -561,7 +588,7 @@ public partial class FieldAudio : Node
         if (v == null) { v = voices3d[(nextVoice3d - 1) % voices3d.Length] = new AudioStreamPlayer3D { MaxDistance = 3000, UnitSize = 300 }; AddChild(v); }
         v.Stream = wav;
         v.GlobalPosition = position;
-        v.VolumeDb = Mathf.LinearToDb(clip.Volume);
+        v.VolumeDb = Mathf.LinearToDb(clip.Volume * volume);
         v.MaxDistance = clip.MaxDistance > 0 ? clip.MaxDistance : 3000;
         v.UnitSize = clip.MinDistance > 0 ? clip.MinDistance : 300;
         // the tree's timer outlives the field: a voice freed with it before the delay ends plays nothing

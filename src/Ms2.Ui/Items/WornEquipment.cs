@@ -101,6 +101,12 @@ public sealed class WornEquipment
     }
 
     /// <summary>
+    /// CMagic::PlayHitEffects' worn weapon material (magicdata.cpp:1709): <see cref="ItemData.AttackMaterial"/> of
+    /// <see cref="TopUsable"/>(5), the RH slot; 0 with no usable RH item.
+    /// </summary>
+    public int WeaponMaterial(Func<Item, bool> canUse) => TopUsable(5, canUse)?.Data.AttackMaterial ?? 0;
+
+    /// <summary>
     /// FUN_141420a70 (unit_141420a70.cpp:25): the equip slot a right-clicked item is sent for (RequestEquipItem with slot 0).
     /// FUN_141420b30 first, 0 for no weapon: a two-handed weapon RH (5). Equip subtype 0x1f / 0x22 (FUN_14053d510): a skin
     /// item by the layer-0 hands (both worn: RH while layer 1 has no RH, else LH while layer 1 has no LH, else RH; one worn:

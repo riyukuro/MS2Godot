@@ -1040,6 +1040,10 @@ public partial class HudScene
     }
 
     readonly OwnTagMagics ownTagMagics = new();
+    bool ownHitVolumeRead;
+    // the client's s_random (an Unk_Random seeded by GetTickCountMs2() + rand(), questmasktable.cpp:381) for the hit sound pick
+    static readonly Func<uint> hitSoundRand =
+        new Ms2.Quest.QuestRandom(unchecked((int)System.Environment.TickCount64 + System.Random.Shared.Next(0x8000))).Next;
     readonly System.Collections.Generic.List<Ms2.Net.Packets.SkillHitRequest> ownHitSends = new();
     readonly System.Collections.Generic.List<Ms2.Net.Packets.SkillSplashRequest> ownSplashSends = new();
     readonly System.Collections.Generic.List<MagicEndEffect> ownEndEffects = new();
@@ -1057,9 +1061,10 @@ public partial class HudScene
     /// objects, its send (SkillDamage 1/1) and its area registration into the live session's tomb tag pass, posed from the
     /// player now. An arrow's end effects play in the field (CEffectService::InsertEffect, the object the own PC), and each
     /// fill's hit sounds (CMagic::PlayHitEffects) before its send. The latency lead is 0 (STILL-OPEN in
-    /// <see cref="OwnTagMagics"/>); no stun state is kept, so the owner is never stunned.
-    /// STILL-OPEN: the worn weapon's attackMaterial is not looked up (the owner's WeaponMaterial is 0), so an attack without
-    /// its own attackMaterial plays the material 0 row.
+    /// <see cref="OwnTagMagics"/>); no stun state is kept, so the owner is never stunned. The owner's weapon material is the
+    /// worn RH weapon's attackMaterial (<see cref="Ms2.Ui.Items.WornEquipment.WeaponMaterial"/>, kept by RefreshOwnWorn), the
+    /// hit volume the client constant VolumeMyPcToNpc (CMagic +0x13a0, magicdata.cpp:1721), read once; the hit sounds are
+    /// the own PC's (relation 1) heard from the player, picked with the client's s_random (<see cref="hitSoundRand"/>).
     /// </summary>
     void TickOwnTagMagics()
     {
@@ -1069,7 +1074,13 @@ public partial class HudScene
         int now = (int)Time.GetTicksMsec();
         if (!ownTagMagics.AnyDue(now, 0)) return;
         var pos = FillHitObjects(player);
-        var owner = new MagicOwner(pos, player.FacingRotZ, true, live.Me.Dead, false);
+        var owner = new MagicOwner(pos, player.FacingRotZ, true, live.Me.Dead, false, ownWeaponMaterial);
+        if (!ownHitVolumeRead)
+        {
+            slotConstants ??= Ms2.Ui.FeatureElements.Constants(assets.Packs);
+            ownTagMagics.HitVolume = slotConstants.Float("VolumeMyPcToNpc", 1f);
+            ownHitVolumeRead = true;
+        }
         ownRayBlocked ??= MagicRayBlocked;
         ownRayCast ??= MagicRayCast;
         ownHitSends.Clear();
@@ -1081,7 +1092,8 @@ public partial class HudScene
             ownHitSounds);
         // PlayHitEffects runs before the fill's send (magicdata.cpp:1838, :1955)
         foreach (var hs in ownHitSounds)
-            FieldAudio.Instance?.PlayHitSound(hs.Attack, hs.Defence, new Vector3(hs.At.X, hs.At.Z, -hs.At.Y), crtRand);
+            FieldAudio.Instance?.PlayHitSound(hs.Attack, hs.Defence, Ms2.Audio.SoundMusicEffectState.CasterMyPc,
+                new Vector3(hs.At.X, hs.At.Z, -hs.At.Y), hs.Volume, player.GlobalPosition, hitSoundRand);
         foreach (var req in ownHitSends) live.SendHit(req);
         foreach (var req in ownSplashSends) live.SendSplash(req);
         foreach (var fx in ownEndEffects)

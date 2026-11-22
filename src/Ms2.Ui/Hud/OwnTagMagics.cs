@@ -12,8 +12,8 @@ namespace Ms2.Ui.Hud;
 public readonly record struct MagicOwner(Vector3 Position, float RotZ, bool LocalPlayer, bool Dead, bool Stunned, int WeaponMaterial = 0);
 
 /// <summary>One hit sound an own magic's fill plays (CEffectService::PlayHitSound, effectservice.cpp:1355): the attack and
-/// defence materials the hit sound table pairs, at the hit object's position (client space).</summary>
-public readonly record struct MagicHitSound(int Attack, int Defence, Vector3 At);
+/// defence materials the hit sound table pairs, at the hit object's position (client space), at <paramref name="Volume"/>.</summary>
+public readonly record struct MagicHitSound(int Attack, int Defence, Vector3 At, float Volume = 1);
 
 /// <summary>CPhysXHelper::RayCastFromPoint on the groups 0x201 (magicdata.cpp:1786): true when a ray from <paramref name="from"/>
 /// along the unit <paramref name="dir"/> hits within <paramref name="length"/>.</summary>
@@ -1054,10 +1054,13 @@ public sealed class OwnTagMagics
     /// CMagic::PlayHitEffects @0x141464790 (magicdata.cpp:1697) for the local owner (FUN_141bd19d0 kind 1): the attack material
     /// is the attack's (row +0x1a0), 0 taking the owner's worn weapon's (<see cref="MagicOwner.WeaponMaterial"/>, the owner a
     /// PC); each of the first <paramref name="nHits"/> detected hits but the own PC plays a hit sound at its position, an npc
-    /// with its defence material, any other object with 1.
-    /// STILL-OPEN: the volume (the client constant hitRange, +0x13a0) is not applied, and a pet is taken as not a CNpc
-    /// (QueryInterface 0x6200028 is not checked).
+    /// with its defence material, any other object with 1, each at <see cref="HitVolume"/>. No owner object plays none.
+    /// STILL-OPEN: a pet is taken as not a CNpc (QueryInterface 0x6200028 is not checked).
     /// </summary>
+    /// <summary>The hit sounds' volume: the client constant VolumeMyPcToNpc (Client::Constants +0x13a0, read at each hit,
+    /// magicdata.cpp:1721); the host sets it from constants.xml.</summary>
+    public float HitVolume = 1f;
+
     void HitSounds(Magic m, in MagicOwner owner, ReadOnlySpan<HitCandidate> from, int nHits, List<MagicHitSound> into)
     {
         if (into == null) return;
@@ -1067,7 +1070,7 @@ public sealed class OwnTagMagics
         {
             int k = IndexOf(from, detected[i]);
             if (k < 0 || from[k].IsOwner) continue;
-            into.Add(new MagicHitSound(attack, from[k].Kind == HitKind.Npc ? from[k].DefenceMaterial : 1, from[k].Position));
+            into.Add(new MagicHitSound(attack, from[k].Kind == HitKind.Npc ? from[k].DefenceMaterial : 1, from[k].Position, HitVolume));
         }
     }
 

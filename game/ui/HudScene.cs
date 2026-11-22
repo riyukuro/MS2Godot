@@ -3294,11 +3294,11 @@ public partial class HudScene : Node, IUiStageHost
         };
     }
 
-    int ownWornCooldown, ownWornPushResist, ownWornLevel;
+    int ownWornCooldown, ownWornPushResist, ownWornLevel, ownWeaponMaterial;
     object ownWornEquips;
 
     /// <summary>
-    /// The worn items' "skillCooldown" (0x23) and push resistance (0x27) parts of m_abilities (CEquipment::FUN_1411e76c0, equipment.cpp:2922), taken
+    /// The worn RH weapon's attackMaterial (the own magics' hit sounds) and the worn items' "skillCooldown" (0x23) and push resistance (0x27) parts of m_abilities (CEquipment::FUN_1411e76c0, equipment.cpp:2922), taken
     /// again only when the equipment lists or the level change. STILL-OPEN: FUN_1411e76c0 also rebuilds when a worn item
     /// expires; an item expiring while worn keeps its part here until the next change.
     /// </summary>
@@ -3310,8 +3310,10 @@ public partial class HudScene : Node, IUiStageHost
         var t = hudModel.Tables;
         ownWornEquips = live.Me.Equips;
         ownWornLevel = live.Me.User?.Level ?? 0;
-        var worn = Ms2.Ui.Items.WornEquipment.Abilities(live.Me.ToPcInfo(now), t.Items, t.ItemModels,
-            it => Ms2.Ui.Items.ItemLevels.Usable(it, now));
+        var info = live.Me.ToPcInfo(now);
+        Func<Ms2.Ui.Items.Item, bool> canUse = it => Ms2.Ui.Items.ItemLevels.Usable(it, now);
+        var worn = Ms2.Ui.Items.WornEquipment.Abilities(info, t.Items, t.ItemModels, canUse);
+        ownWeaponMaterial = Ms2.Ui.Items.WornEquipment.Of(info, t.Items)?.WeaponMaterial(canUse) ?? 0;
         ownWornCooldown = worn != null && worn.TryGetValue(0x23, out int v) ? v : 0;
         ownWornPushResist = worn != null && worn.TryGetValue(0x27, out int r) ? r : 0;
     }

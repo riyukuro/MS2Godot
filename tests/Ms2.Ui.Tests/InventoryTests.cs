@@ -301,6 +301,20 @@ public class InventoryTests
     }
 
     [Test]
+    public void TheWornWeaponMaterialIsTheUsableRightHandItemsAttackMaterial()
+    {
+        var t = NewModel().Tables;
+        EquipItem E(int id, long uid, EquipSlot slot) => new() { Id = id, Uid = uid, Slot = slot, Rarity = 1 };
+        Assert.That(t.Items.Get(13000001).AttackMaterial, Is.EqualTo(6), "<material ui=\"6\" attack=\"6\"/>");
+        Assert.That(t.Items.Get(14000001).AttackMaterial, Is.Zero, "no attack attribute");
+        var worn = WornEquipment.Of(new PcInfo { Equips = new[] { E(13000001, 2, EquipSlot.RH), E(14000001, 3, EquipSlot.LH) } }, t.Items);
+        Assert.That(worn.WeaponMaterial(_ => true), Is.EqualTo(6));
+        Assert.That(worn.WeaponMaterial(_ => false), Is.Zero, "an unusable weapon");
+        var leftOnly = WornEquipment.Of(new PcInfo { Equips = new[] { E(13000001, 3, EquipSlot.LH) } }, t.Items);
+        Assert.That(leftOnly.WeaponMaterial(_ => true), Is.Zero, "only the RH slot");
+    }
+
+    [Test]
     public void TheWornItemComparedIsTheClients()
     {
         var model = NewModel(); var t = model.Tables;

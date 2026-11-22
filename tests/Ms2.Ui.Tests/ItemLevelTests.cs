@@ -19,6 +19,14 @@ public class ItemLevelTests
     }
 
     [Test]
+    public void TheMaterialsAttackIsTheAttackMaterial()
+    {
+        Assert.That(ItemData.Load(1, XElement.Parse("<env><material ui=\"6\" attack=\"7\"/></env>")).AttackMaterial, Is.EqualTo(7));
+        Assert.That(ItemData.Load(1, XElement.Parse("<env><material ui=\"10\"/></env>")).AttackMaterial, Is.Zero);
+        Assert.That(ItemData.Load(1, XElement.Parse("<env/>")).AttackMaterial, Is.Zero);
+    }
+
+    [Test]
     public void BaseFollowsTheGearScoreBands()
     {
         var weapon = Data(1, 0x1f, 20);

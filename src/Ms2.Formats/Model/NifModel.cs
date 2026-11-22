@@ -14,6 +14,20 @@ public sealed class ModelBone
 /// <summary>Which faces a mesh's draw culls (<see cref="ModelMesh.Cull"/>).</summary>
 public enum FaceCull { Back, Front, None }
 
+/// <summary>A cull mode under a mirrored world transform.</summary>
+public static class FaceCulls
+{
+    /// <summary>
+    /// The side Godot must cull for a mesh drawn with <paramref name="cull"/> under a world transform with a negative
+    /// determinant: D3D9 culls by the screen-space winding with the render state's cull mode whatever the world matrix
+    /// (NiDX9RenderState::ApplyStencil, NiDX9RenderState.cpp:615, the left-handed column only from SetLeftRightSwap,
+    /// which the client never calls), so a mirrored mesh shows its other side; Godot flips the culled side for a mirrored
+    /// instance, so back and front swap here. Unmirrored, or no culling: unchanged.
+    /// </summary>
+    public static FaceCull UnderWorld(this FaceCull cull, bool mirrored) =>
+        !mirrored ? cull : cull switch { FaceCull.Back => FaceCull.Front, FaceCull.Front => FaceCull.Back, _ => FaceCull.None };
+}
+
 /// <summary>The blend a mesh draws with (ModelMesh.Blend).</summary>
 public enum BlendForm { Opaque, Mix, Add, AddUnweighted }
 
