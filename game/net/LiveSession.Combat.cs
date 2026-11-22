@@ -238,6 +238,46 @@ public partial class LiveSession
                 }
                 continue;
             }
+            if (step.StartsWith("enchant"))      // the item enchant steps: enchantopen, enchantselect, enchantpress, enchantclose
+            {
+                switch (step)
+                {
+                    case "enchantopen":
+                        Check("the enchant window is open", hud.EnchantOpenScripted(Env("MS2_LIVE_ENCHANT_MODE", "")));
+                        await frames(90); Shot("enchant_open.png");
+                        break;
+                    case "enchantselect":      // the worn weapon (MS2_LIVE_COMBAT_WEAPON, after the equip step) when MS2_LIVE_ENCHANT_WORN=1, else the first item of the bag
+                    {
+                        var held = hud.EnchantBagScripted();
+                        GD.Print($"live: combat enchant bag: {held.Count} items");
+                        int weapon = int.Parse(Env("MS2_LIVE_COMBAT_WEAPON", "0"));
+                        long uid = Env("MS2_LIVE_ENCHANT_WORN", "0") == "1" ? (live.Me.Equips?.FirstOrDefault(e => e.Id == weapon)?.Uid ?? 0) : (held.Count > 0 ? held[0] : 0);
+                        Check("the item is in the enchantable bag", uid != 0 && held.Contains(uid));
+                        GD.Print($"live: combat enchant select {uid}: {(hud.EnchantSelectScripted(uid) ? "sent" : "not sent")}");
+                        await until(() => hud.EnchantStateScripted().Selected == uid && hud.EnchantStateScripted().Ready, 60 * 10); await frames(60);
+                        var st = hud.EnchantStateScripted();
+                        GD.Print($"live: combat enchant state: selected={st.Selected} state={st.State} ready={st.Ready} result item={st.ResultId} chance={st.Chance} ingredients={st.Ingredients}");
+                        Check("the server's answer is in (info read, result item)", st.Selected == uid && st.Ready);
+                        Shot("enchant_select.png");
+                        break;
+                    }
+                    case "enchantpress":
+                    {
+                        int asked = hud.EnchantPressScripted();
+                        GD.Print($"live: combat enchant press: boxes asked={asked}");
+                        await frames(180);
+                        var st = hud.EnchantStateScripted();
+                        GD.Print($"live: combat enchant after press: selected={st.Selected} state={st.State} ready={st.Ready}");
+                        Shot("enchant_press.png");
+                        break;
+                    }
+                    case "enchantclose":
+                        hud.EnchantCloseScripted(); await frames(60); Shot("enchant_close.png");
+                        break;
+                    default: GD.Print($"live: combat: unknown step {step}"); break;
+                }
+                continue;
+            }
             switch (step)
             {
                 case "attack":
