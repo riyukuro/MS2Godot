@@ -332,4 +332,26 @@ public class GuideTests
         Assert.That(g.FindEntity(170).State, Is.EqualTo(0), "the open bag closes it");
         Assert.That(g.IsRestricted(GuideLimit.ItemPutOn), Is.False);
     }
+
+    sealed class SlotWorld : GuideWorld
+    {
+        public bool Slotted;
+        public override int FindQuickSlotBySkill(int skillId) => Slotted ? 4 : -1;
+    }
+
+    /// <summary>CGuideConditionEquipSkill's constructor (@0x1413a8420) sets isEquip 1: without the attribute the condition is
+    /// met by a slotted skill, as with isEquip="1", and not by an empty quick bar.</summary>
+    [Test]
+    public void EquipSkillConditionWithoutAttributeMeansSlotted()
+    {
+        var w = new SlotWorld();
+        var g = new GuideManager(w);
+        var bare = new EquipSkillCondition(); bare.Load(XElement.Parse("<condition type=\"equipSkill\" value=\"5\" />"));
+        var explicitOne = new EquipSkillCondition(); explicitOne.Load(XElement.Parse("<condition type=\"equipSkill\" value=\"5\" isEquip=\"1\" />"));
+        w.Slotted = true;
+        Assert.That(bare.Check(g), Is.EqualTo(explicitOne.Check(g)));
+        int met = bare.Check(g);
+        w.Slotted = false;
+        Assert.That(bare.Check(g), Is.Not.EqualTo(met), "an empty quick bar does not meet it");
+    }
 }

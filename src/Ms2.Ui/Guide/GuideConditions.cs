@@ -757,10 +757,11 @@ public sealed class HasStatPointCondition : GuideCondition
     public override int Check(GuideManager g) => g.World.StatPointsLeft is int n ? ApplyNotBool((uint)n > 0) : 0;
 }
 
-/// <summary>EquipSkill: whether a quick slot holds the skill <see cref="GuideCondition.Value"/> is isEquip.</summary>
+/// <summary>EquipSkill: whether a quick slot holds the skill <see cref="GuideCondition.Value"/> is isEquip. The constructor
+/// (CGuideConditionEquipSkill @0x1413a8420, unit_1413a8370.cpp:114-117) sets isEquip 1, so a condition without the attribute waits for the skill to be slotted.</summary>
 public sealed class EquipSkillCondition : GuideCondition
 {
-    public int IsEquip;
+    public int IsEquip = 1;
     public override void Load(XElement e) { base.Load(e); GuideXml.Int(e, "isEquip", ref IsEquip); }
     public override int Check(GuideManager g) =>
         ApplyNotBool((g.World.FindQuickSlotBySkill(Value) != -1 ? 1u : 0u) == (uint)IsEquip);
