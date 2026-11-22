@@ -124,6 +124,37 @@ public class SkillDamageTableTests
         Assert.That(bytes, Is.LessThan(document / 3), $"{bytes} B, a document {document} B");
     }
 
+    static string Skills(int count, Func<int, string> damage)
+    {
+        var sb = new System.Text.StringBuilder("<ms2>");
+        for (int i = 1; i <= count; i++)
+            sb.Append($@"<skill id=""{i}""><basic/><level value=""1""><motion><attack><damage {damage(i)}/></attack></motion></level></skill>");
+        return sb.Append("</ms2>").ToString();
+    }
+
+    static long LoadBytes(string text)
+    {
+        var t = Table(text);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        t.Load();
+        return GC.GetAllocatedBytesForCurrentThread() - before;
+    }
+
+    [Test]
+    public void ASkillLevelCostsItsRowsNotStringsOrAMapEach()
+    {
+        // per skill level: no value strings for the numbers, no level map of its own; the field entry reads 21738 levels
+        string Damage(int i) => $@"count=""1"" rate=""{i}.5"" value=""{i}"" pushdistance=""{i}"" pushprob=""0.5"" hitSpeedRate=""2""";
+        LoadBytes(Skills(100, Damage));
+        long small = LoadBytes(Skills(2000, Damage)), large = LoadBytes(Skills(6000, Damage));
+        long perSkill = (large - small) / 4000;
+        TestContext.Progress.WriteLine($"{perSkill} B per skill level");
+        Assert.That(perSkill, Is.LessThan(560), $"{perSkill} B per skill level");
+        var t = Table(Skills(3, Damage));
+        var a = t.Get(3, 1, 0, 0);
+        Assert.That((a.Rate, a.Value, a.PushDistance, a.PushProb, a.HitSpeedRate, a.Count), Is.EqualTo((3.5f, 3L, 3f, 0.5f, 2f, 1)));
+    }
+
     [Test]
     public void OnTheDataEveryAttackOfSkillDataTableHasItsDamage()
     {

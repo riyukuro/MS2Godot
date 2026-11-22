@@ -41,7 +41,7 @@ public sealed class SkillAttackDamage
 
     /// <summary>The attack at the reader (an &lt;attack&gt; element), read to its end: its first &lt;damage&gt; child's
     /// attributes (the first XmlGetChild, as attack.Element("damage")).</summary>
-    internal static SkillAttackDamage Read(XmlReader r)
+    internal static SkillAttackDamage Read(XmlReader r, AttributeValues values)
     {
         SkillAttackDamage d = null;
         if (!r.IsEmptyElement)
@@ -51,7 +51,7 @@ public sealed class SkillAttackDamage
             {
                 if (d != null || !SkillDamageTable.Is(r, "damage")) continue;
                 d = new SkillAttackDamage();
-                while (r.MoveToNextAttribute()) d.Set(r.LocalName, r);
+                while (r.MoveToNextAttribute()) d.Set(r.LocalName, r, values);
                 r.MoveToElement();
                 if (d.PushEaseType < 0 || d.PushEaseType > 2) d.PushEaseType = 0;
             }
@@ -59,43 +59,43 @@ public sealed class SkillAttackDamage
         return d ?? None;
     }
 
-    // XmlGetAttr: a missing attribute leaves the value; only the attributes read here take their value string
-    void Set(string name, XmlReader r)
+    // XmlGetAttr: a missing attribute leaves the value; only the attributes read here take their value
+    void Set(string name, XmlReader r, AttributeValues v)
     {
         switch (name)
         {
-            case "count": Count = (int)Atoll(r.Value); break;
-            case "hand": Hand = (int)Atoll(r.Value); break;
-            case "rate": Rate = Float(r.Value); break;
-            case "hitSpeedRate": HitSpeedRate = Float(r.Value); break;
-            case "hitPauseTime": HitPauseTime = Float(r.Value); break;
-            case "damagedVibrateRatio": DamagedVibrateRatio = Float(r.Value); break;
-            case "value": Value = Atoll(r.Value); break;
-            case "effectRemain": EffectRemain = r.Value; break;
-            case "effectHit": EffectHit = r.Value; break;
-            case "damageByTargetMaxHP": DamageByTargetMaxHP = Float(r.Value); break;
-            case "constDamageByTargetHP": ConstDamageByTargetHP = Atoll(r.Value); break;
-            case "push": Push = (int)Atoll(r.Value); break;
-            case "pushdistance": PushDistance = Float(r.Value); break;
-            case "pushduration": PushDuration = Float(r.Value); break;
-            case "pushprob": PushProb = Float(r.Value); break;
-            case "pushEaseType": PushEaseType = (int)Atoll(r.Value); break;
-            case "pushApplyField": PushApplyField = (int)Atoll(r.Value); break;
-            case "pushUpDistance": PushUpDistance = Float(r.Value); break;
-            case "pushDown": PushDown = (int)Atoll(r.Value); break;
-            case "pushFall": PushFall = (int)Atoll(r.Value); break;
-            case "pushPriority": PushPriority = (int)Atoll(r.Value); break;
-            case "pushPriorityHitImmune": PushPriorityHitImmune = (int)Atoll(r.Value); break;
-            case "pushAnimation": PushAnimation = r.Value; break;
-            case "stateHitIgnore": StateHitIgnore = (int)Atoll(r.Value); break;
-            case "stateHitOnly": StateHitOnly = (int)Atoll(r.Value); break;
-            case "superArmorBreak": SuperArmorBreak = (int)Atoll(r.Value); break;
+            case "count": Count = (int)Atoll(v.Of(r)); break;
+            case "hand": Hand = (int)Atoll(v.Of(r)); break;
+            case "rate": Rate = Float(v.Of(r)); break;
+            case "hitSpeedRate": HitSpeedRate = Float(v.Of(r)); break;
+            case "hitPauseTime": HitPauseTime = Float(v.Of(r)); break;
+            case "damagedVibrateRatio": DamagedVibrateRatio = Float(v.Of(r)); break;
+            case "value": Value = Atoll(v.Of(r)); break;
+            case "effectRemain": EffectRemain = v.String(r); break;
+            case "effectHit": EffectHit = v.String(r); break;
+            case "damageByTargetMaxHP": DamageByTargetMaxHP = Float(v.Of(r)); break;
+            case "constDamageByTargetHP": ConstDamageByTargetHP = Atoll(v.Of(r)); break;
+            case "push": Push = (int)Atoll(v.Of(r)); break;
+            case "pushdistance": PushDistance = Float(v.Of(r)); break;
+            case "pushduration": PushDuration = Float(v.Of(r)); break;
+            case "pushprob": PushProb = Float(v.Of(r)); break;
+            case "pushEaseType": PushEaseType = (int)Atoll(v.Of(r)); break;
+            case "pushApplyField": PushApplyField = (int)Atoll(v.Of(r)); break;
+            case "pushUpDistance": PushUpDistance = Float(v.Of(r)); break;
+            case "pushDown": PushDown = (int)Atoll(v.Of(r)); break;
+            case "pushFall": PushFall = (int)Atoll(v.Of(r)); break;
+            case "pushPriority": PushPriority = (int)Atoll(v.Of(r)); break;
+            case "pushPriorityHitImmune": PushPriorityHitImmune = (int)Atoll(v.Of(r)); break;
+            case "pushAnimation": PushAnimation = v.String(r); break;
+            case "stateHitIgnore": StateHitIgnore = (int)Atoll(v.Of(r)); break;
+            case "stateHitOnly": StateHitOnly = (int)Atoll(v.Of(r)); break;
+            case "superArmorBreak": SuperArmorBreak = (int)Atoll(v.Of(r)); break;
         }
     }
 
-    static float Float(string s) => float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var f) ? f : 0f;
+    static float Float(ReadOnlySpan<char> s) => float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var f) ? f : 0f;
 
-    internal static long Atoll(string s)
+    internal static long Atoll(ReadOnlySpan<char> s)
     {
         int i = 0;
         while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
@@ -104,6 +104,35 @@ public sealed class SkillAttackDamage
         long v = 0;
         while (i < s.Length && s[i] >= '0' && s[i] <= '9') v = v * 10 + (s[i++] - '0');
         return neg ? -v : v;
+    }
+}
+
+/// <summary>The value of the attribute at a reader, read into a buffer kept for the read (XmlReader.ReadValueChunk), so a
+/// number is parsed without a string and a repeated text value is one string (atomized in the read's name table).</summary>
+internal sealed class AttributeValues
+{
+    readonly XmlNameTable names;
+    char[] buffer = new char[64];
+    int length;
+
+    public AttributeValues(XmlNameTable names) => this.names = names;
+
+    /// <summary>The value's characters, valid until the next read.</summary>
+    public ReadOnlySpan<char> Of(XmlReader r)
+    {
+        if (!r.CanReadValueChunk) return r.Value;
+        length = 0;
+        int n;
+        while ((n = r.ReadValueChunk(buffer, length, buffer.Length - length)) > 0)
+            if ((length += n) == buffer.Length) Array.Resize(ref buffer, buffer.Length * 2);
+        return buffer.AsSpan(0, length);
+    }
+
+    /// <summary>The value as a string: "" when empty, else the name table's string for those characters.</summary>
+    public string String(XmlReader r)
+    {
+        if (!r.CanReadValueChunk) return names.Add(r.Value);
+        return Of(r).Length == 0 ? "" : names.Add(buffer, 0, length);
     }
 }
 
@@ -126,7 +155,17 @@ public sealed class SkillDamageTable
 
     readonly Func<IEnumerable<TextReader>> files;
     readonly Func<List<LevelRow>, IEnumerable<LevelRow>> pick;
-    Dictionary<uint, Dictionary<ushort, SkillAttackDamage[][]>> skills;
+    /// <summary>The read: every skill id with its highest level kept (0 for none), and each kept level's motions by
+    /// <see cref="Key"/>; one map for all the skills' levels, not one per skill.</summary>
+    sealed class Loaded
+    {
+        public readonly Dictionary<uint, ushort> Skills = new();
+        public readonly Dictionary<long, SkillAttackDamage[][]> Levels = new();
+    }
+
+    static long Key(uint skillId, ushort level) => (long)skillId << 16 | level;
+
+    Loaded skills;
     readonly object loadLock = new();
 
     public static readonly SkillDamageTable Empty = new(() => Array.Empty<TextReader>(), rows => rows);
@@ -150,35 +189,52 @@ public sealed class SkillDamageTable
         CloseInput = true,
     };
 
-    Dictionary<uint, Dictionary<ushort, SkillAttackDamage[][]>> All()
+    Loaded All()
     {
         var read = System.Threading.Volatile.Read(ref skills);
         if (read != null) return read;
         lock (loadLock)
         {
             if (skills != null) return skills;
-            var d = new Dictionary<uint, Dictionary<ushort, SkillAttackDamage[][]>>();
+            var d = new Loaded();
+            // one name table for the read's files: each file's reader atomizes the same element and attribute names
+            var settings = Settings.Clone();
+            settings.NameTable = new NameTable();
+            var values = new AttributeValues(settings.NameTable);
             var rows = new List<LevelRow>();
             var motions = new List<SkillAttackDamage[]>();
             var attacks = new List<SkillAttackDamage>();
             foreach (var text in files())
             {
                 if (text == null) continue;
-                using var r = XmlReader.Create(text, Settings);
+                using var r = XmlReader.Create(text, settings);
                 if (r.MoveToContent() != XmlNodeType.Element || !Is(r, "ms2") || r.IsEmptyElement) continue;
                 while (Child(r, 0))
-                    if (Is(r, "skill")) d[(uint)SkillAttackDamage.Atoll(r.GetAttribute("id") ?? "")] = Levels(r, rows, motions, attacks);
+                    if (Is(r, "skill")) Levels(r, values, d, SkillId(r, values), rows, motions, attacks);
             }
             System.Threading.Volatile.Write(ref skills, d);
             return d;
         }
     }
 
-    /// <summary>The skill at the reader, read to its end (the lists are the read's, reused from skill to skill).</summary>
-    Dictionary<ushort, SkillAttackDamage[][]> Levels(XmlReader r, List<LevelRow> rows, List<SkillAttackDamage[]> motions, List<SkillAttackDamage> attacks)
+    /// <summary>The skill's "id" (0 when missing), the reader left on the element.</summary>
+    static uint SkillId(XmlReader r, AttributeValues values)
     {
-        var levels = new Dictionary<ushort, SkillAttackDamage[][]>();
-        if (r.IsEmptyElement) return levels;
+        uint id = 0;
+        while (r.MoveToNextAttribute())
+            if (r.LocalName == "id") { id = (uint)SkillAttackDamage.Atoll(values.Of(r)); break; }
+        r.MoveToElement();
+        return id;
+    }
+
+    /// <summary>The skill at the reader, read to its end into <paramref name="d"/>, replacing the levels of an earlier skill
+    /// with the same id (the lists are the read's, reused from skill to skill).</summary>
+    void Levels(XmlReader r, AttributeValues values, Loaded d, uint id, List<LevelRow> rows, List<SkillAttackDamage[]> motions, List<SkillAttackDamage> attacks)
+    {
+        if (d.Skills.TryGetValue(id, out ushort old))
+            for (int l = 1; l <= old; l++) d.Levels.Remove(Key(id, (ushort)l));
+        d.Skills[id] = 0;
+        if (r.IsEmptyElement) return;
         rows.Clear();
         bool basic = false;
         int depth = r.Depth;
@@ -186,7 +242,15 @@ public sealed class SkillDamageTable
         {
             if (Is(r, "basic")) { basic = true; continue; }
             if (!Is(r, "level")) continue;
-            var row = new LevelRow { Value = r.GetAttribute("value") ?? "", Feature = r.GetAttribute("feature") ?? "", Locale = r.GetAttribute("locale") ?? "" };
+            var row = new LevelRow();
+            while (r.MoveToNextAttribute())
+                switch (r.LocalName)
+                {
+                    case "value": row.Value = values.String(r); break;
+                    case "feature": row.Feature = values.String(r); break;
+                    case "locale": row.Locale = values.String(r); break;
+                }
+            r.MoveToElement();
             motions.Clear();
             if (!r.IsEmptyElement)
             {
@@ -199,7 +263,7 @@ public sealed class SkillDamageTable
                     {
                         int motionDepth = r.Depth;
                         while (Child(r, motionDepth))
-                            if (Is(r, "attack")) attacks.Add(SkillAttackDamage.Read(r));
+                            if (Is(r, "attack")) attacks.Add(SkillAttackDamage.Read(r, values));
                     }
                     motions.Add(attacks.ToArray());
                 }
@@ -207,14 +271,16 @@ public sealed class SkillDamageTable
             row.Motions = motions.ToArray();
             rows.Add(row);
         }
-        if (!basic) return levels;
+        if (!basic) return;
+        ushort max = 0;
         foreach (var l in pick(rows))
         {
             var level = (ushort)Xml.Atoi(l.Value);
             if (level < 1) break;
-            levels[level] = l.Motions;
+            d.Levels[Key(id, level)] = l.Motions;
+            if (level > max) max = level;
         }
-        return levels;
+        d.Skills[id] = max;
     }
 
     /// <summary>Moves to the next child element of the element at <paramref name="parentDepth"/> (its descendants'
@@ -240,15 +306,15 @@ public sealed class SkillDamageTable
     public SkillAttackDamage Get(int skillId, int level, int motion, int attack)
     {
         if (skillId == 0 || level < 0 || level > ushort.MaxValue || motion < 0 || attack < 0) return null;
-        if (!All().TryGetValue((uint)skillId, out var levels) || !levels.TryGetValue((ushort)level, out var motions)) return null;
+        if (!All().Levels.TryGetValue(Key((uint)skillId, (ushort)level), out var motions)) return null;
         if (motion >= motions.Length || attack >= motions[motion].Length) return null;
         return motions[motion][attack];
     }
 
     /// <summary>The skill ids read.</summary>
-    public IEnumerable<uint> SkillIds => All().Keys;
+    public IEnumerable<uint> SkillIds => All().Skills.Keys;
 
     /// <summary>CDamageRecord::Init's test (@0x14175a610, skillrecord.cpp:465): the skill and its level exist.</summary>
     public bool HasLevel(int skillId, int level) =>
-        skillId != 0 && level is >= 0 and <= ushort.MaxValue && All().TryGetValue((uint)skillId, out var levels) && levels.ContainsKey((ushort)level);
+        skillId != 0 && level is >= 0 and <= ushort.MaxValue && All().Levels.ContainsKey(Key((uint)skillId, (ushort)level));
 }
