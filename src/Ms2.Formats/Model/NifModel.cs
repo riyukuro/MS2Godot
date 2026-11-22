@@ -347,12 +347,55 @@ public sealed class ModelData
 
     /// <summary>
     /// FUN_141422f30 (@0x141422f30, itemugcmesh.cpp:455), the test behind CNifModel::vfunc_15 (@0x1415664f0, nifmodel.cpp:293) and
-    /// CKfmModel::vfunc_15 (@0x14143ed00, kfmmodel.cpp:598): a mesh whose material is not MS2CharacterSkinMaterial and whose
-    /// NiTexturingProperty has shader map 0 with a source texture. STILL-OPEN: the client looks at every material of a mesh and at
-    /// the properties of the nodes above it; the model keeps the active material and the properties the mesh inherits.
+    /// CKfmModel::vfunc_15 (@0x14143ed00, kfmmodel.cpp:598), run over the file's scene graph at load (<see cref="Load"/>): true
+    /// when some object, a node or a mesh, has no MS2CharacterSkinMaterial among ALL of its materials and its own
+    /// NiTexturingProperty (GetProperty(8)) has an NiSourceTexture in shader map 0 (the first entry of the shader map array).
     /// </summary>
-    public bool HasShaderTexture() =>
-        Meshes.Any(m => m.Material != "MS2CharacterSkinMaterial" && m.Textures.ContainsKey("shader0"));
+    public bool HasShaderTexture() => ShaderTexture;
+
+    /// <summary>The result of <see cref="HasShaderTexture"/>; set by <see cref="Load"/>.</summary>
+    public bool ShaderTexture;
+
+    /// <summary>FUN_141422f30's walk (Unk_NodeQueue breadth first from the root) over the file's blocks.</summary>
+    internal static bool ScanShaderTexture(NifFile nif, int root)
+    {
+        var B = nif.Blocks;
+        var queue = new Queue<int>(); queue.Enqueue(root);
+        var seen = new HashSet<int>();
+        while (queue.Count > 0)
+        {
+            int i = queue.Dequeue();
+            if (!seen.Add(i)) continue;
+            var b = B[i];
+            foreach (var k in b.Ints("Children")) if (k >= 0) queue.Enqueue((int)k);
+            bool skin = false;
+            if (b.TryGetValue("Material Data", out var mdv) && mdv is NifStruct md && md.IntOr("Num Materials", 0) > 0
+                && md.TryGetValue("Material Name", out var names))
+            {
+                foreach (var n in names switch { long[] l => l.Select(x => (object)x), object[] o => o, _ => Enumerable.Empty<object>() })
+                {
+                    string name = n switch
+                    {
+                        long l => nif.Str(l),
+                        NifStruct st when st.TryGetValue("Index", out var ix) && ix is long li => nif.Str(li),
+                        _ => null,
+                    };
+                    if (name == "MS2CharacterSkinMaterial") skin = true;
+                }
+            }
+            if (skin) continue;
+            foreach (var p in b.Ints("Properties"))
+            {
+                if (p < 0 || B[(int)p].Type != "NiTexturingProperty") continue;
+                var tex = B[(int)p];
+                if (tex.TryGetValue("Shader Textures", out var stv) && stv is object[] sts && sts.Length > 0
+                    && sts[0] is NifStruct st0 && st0.IntOr("Has Map", 0) != 0 && st0.Struct("Map").Int("Source") >= 0)
+                    return true;
+                break;   // GetProperty(8): the first texturing property
+            }
+        }
+        return false;
+    }
 
     /// <summary>
     /// A skinned mesh drawn at the file's node pose, as Gamebryo's skinning draws an unanimated skin
@@ -902,6 +945,7 @@ public sealed class ModelData
         int root = nif.Roots[0];
         md.RootName = nif.Name(root);
         md.RootLocal = XformOf(B[root]);
+        md.ShaderTexture = ScanShaderTexture(nif, root);
         var boneOf = new Dictionary<int, int>();     // block -> bone index
 
         void Add(int i, int parentBone, Xform parentWorld)

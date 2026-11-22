@@ -131,6 +131,8 @@ public sealed class EquipApplier
     /// item answers CNifModel / CKfmModel::vfunc_15 (<see cref="ModelData.HasShaderTexture"/>). The models are the item's
     /// ItemModel assets for the wearer's gender (as Apply picks them); a model that does not load answers false.
     /// </summary>
+    readonly Dictionary<string, bool> assetTexture = new();   // an asset name's answer: kfm / nif loads once
+
     public bool HasModelTexture(int itemId, int gender)
     {
         var im = FindItem(itemId);
@@ -139,6 +141,8 @@ public sealed class EquipApplier
             var asset = slot.Elements("asset").FirstOrDefault(a => (string)a.Attribute("gender") == null || (string)a.Attribute("gender") == gender.ToString());
             if (asset == null) continue;
             string name = ((string)asset.Attribute("name") ?? "").Trim();
+            if (assetTexture.TryGetValue(name, out bool known)) { if (known) return true; continue; }
+            assetTexture[name] = false;
             try
             {
                 ModelData md;
@@ -151,7 +155,7 @@ public sealed class EquipApplier
                     var kfm = KfmFile.Load(packs.Read(ItemArchive, kfmEntry));
                     md = Nif(kfmEntry[..(kfmEntry.LastIndexOf('/') + 1)] + System.IO.Path.GetFileName(kfm.Nif.Replace('\\', '/')).ToLowerInvariant());
                 }
-                if (md != null && md.HasShaderTexture()) return true;
+                if (md != null && md.HasShaderTexture()) { assetTexture[name] = true; return true; }
             }
             catch (Exception ex) { GD.PushWarning($"item {itemId}: {ex.Message}"); }
         }
