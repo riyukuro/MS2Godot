@@ -1,3 +1,4 @@
+using System.Threading;
 using System.Globalization;
 using System.Numerics;
 using System.Xml.Linq;
@@ -501,9 +502,19 @@ public sealed class SkillDataTable
         this.collect = collect;
     }
 
+    readonly object loadLock = new();
+
+    /// <summary>Reads every skill file now (a worker thread may do it ahead of the first lookup); a lookup that comes while it reads waits for the one read.</summary>
+    public void Load() => All();
+
     Dictionary<uint, SkillData> All()
     {
-        if (skills != null) return skills;
+        if (Volatile.Read(ref skills) is { } done) return done;
+        lock (loadLock) return skills ??= Read();
+    }
+
+    Dictionary<uint, SkillData> Read()
+    {
         var d = new Dictionary<uint, SkillData>();
         foreach (var doc in files())        // LoadSkillFile @0x1407ee530 (:1277)
         {
@@ -514,7 +525,7 @@ public sealed class SkillDataTable
                 d[s.Id] = s;
             }
         }
-        return skills = d;
+        return d;
     }
 
     /// <summary>GetSkillData @0x1407ee1d0 (:1233): null for 0 or an unknown id.</summary>

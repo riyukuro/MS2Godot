@@ -41,4 +41,14 @@ public class Gms2SkillDataTests {
         Assert.That(t.SkillDamage.Get(10800001, 1, 0, 0), Is.Not.Null, "the first attack of the assassin's basic skill has a damage row");
         Assert.That(Ms2.Ui.Skills.PerSkillFile.UnwrappedCount, Is.EqualTo(unwrapped), "every per-skill file wraps");
     }
+
+    [Test]
+    public void TheSkillTableReadsOnceWhenThreadsAskTogether() {
+        int reads = 0;
+        var t = new Ms2.Ui.Skills.SkillDataTable(() => { System.Threading.Interlocked.Increment(ref reads); System.Threading.Thread.Sleep(50);
+            return new[] { System.Xml.Linq.XDocument.Parse("<ms2><skill id=\"5\"><basic/><level value=\"1\"/></skill></ms2>") }; },
+            (_, _, _) => new List<System.Xml.Linq.XElement>());
+        System.Threading.Tasks.Parallel.For(0, 8, i => { if (i == 0) t.Load(); else Assert.That(t.GetSkillData(5), Is.Not.Null); });
+        Assert.That(reads, Is.EqualTo(1), "one read, the others wait for it");
+    }
 }
