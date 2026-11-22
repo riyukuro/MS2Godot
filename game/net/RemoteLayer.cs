@@ -684,7 +684,8 @@ public sealed partial class RemoteLayer : Node3D
                             // runs for every record whose skill and level are found (CDamageRecord::Init, skillrecord.cpp:483),
                             // with no hits or without the attack's HasDamage too, which the gates above leave out
                             bool cast = dmg.Damage.Mode == 1;
-                            npcs.Hit(t.TargetId, cast, Ms2.Ui.Skills.NpcVibrate.TotalDamage(t.Hits), byLocal,
+                            var kind = cast ? NpcHitKind.Cast : dmg.Damage.Mode == 3 ? NpcHitKind.Dot : NpcHitKind.Splash;
+                            npcs.Hit(t.TargetId, kind, Ms2.Ui.Skills.NpcVibrate.TotalDamage(t.Hits), byLocal,
                                 cast ? SkillDamage?.Get(dmg.Damage.SkillId, dmg.Damage.Level, dmg.Damage.Motion, dmg.Damage.AttackPoint) : null);
                             // PCBase::vfunc_112 goes through vfunc_80: a local hit makes the member's bar, then shows it
                             if (users.TryGetValue(t.TargetId, out var hit)) EnsureBar(hit)?.Hit(byLocal);

@@ -331,9 +331,11 @@ public sealed class NpcLayer
     }
 
     /// <summary>
-    /// A hit record on the npc: CNpc::vfunc_33 for a cast's (<paramref name="cast"/>; @0x141097c40,
+    /// A hit record on the npc (<paramref name="kind"/>): CNpc::vfunc_33 for a cast's (@0x141097c40,
     /// unit_14108e1e0_npcactorandvibrate.cpp:1840), vfunc_34 for a dot's (@0x141098390) and vfunc_35 for a splash's
-    /// (@0x141098940).
+    /// (@0x141098940, :1957).
+    /// - A cast's or a splash's total below 0 plays the npc's damage effect first (FUN_141098fb0(1), :1858 and :1976;
+    ///   <see cref="PlayNpcEffect"/>). The dot plays none.
     /// - A cast's total below 0 by the own player arms the npc's shake (<see cref="Ms2.Ui.Skills.NpcVibrate.OnHit"/>,
     ///   :1869); <see cref="Process"/> moves the body with it. The dot and the splash do not shake.
     /// - A cast's total below 0 by the own player also adds the npc's colour boost (AddColorBoost(damagedColorScale, 0.1, 0.1),
@@ -341,20 +343,39 @@ public sealed class NpcLayer
     /// - Then, all three: a living npc whose current hp stat is 0 (FUN_141670a00(4), PCBase m_unk_1c0[2][4], pcbase.cpp:1967)
     ///   dies with its dead sound (vfunc_125(1), :1890-1892), whatever the hit's total.
     /// True when the shake armed.
-    /// STILL-OPEN: the rest of the three (PlayInvokeEffectsByEvent(1), the boss camera, FUN_141098fb0(1),
+    /// STILL-OPEN: the rest of the three (PlayInvokeEffectsByEvent(1), the boss camera,
     /// MyPC::FUN_14152e240 for a boss, the hit sound, the knockback record, the hit basis,
     /// the cast's MakeDeadPhysXActor, the boss kill voices, the dps meter and vfunc_113) is not ported here.
     /// </summary>
-    public bool Hit(int id, bool cast, long totalDamage, bool byLocalPlayer, Ms2.Ui.Skills.SkillAttackDamage attack)
+    public bool Hit(int id, NpcHitKind kind, long totalDamage, bool byLocalPlayer, Ms2.Ui.Skills.SkillAttackDamage attack)
     {
         if (!inst.TryGetValue(id, out var i)) return false;
         var row = table.Find(i.NpcId);
+        bool cast = kind == NpcHitKind.Cast;
+        if (kind != NpcHitKind.Dot && totalDamage < 0) PlayNpcEffect(i, row, row?.DamageEffect);
         if (cast && row != null && totalDamage < 0 && byLocalPlayer) i.Boost.Add(Now, row.DamagedColorScale, DamagedBoostDuration, DamagedBoostAccumRatio);
         bool armed = cast && row != null
             && i.Vibrate.OnHit(Now, totalDamage, byLocalPlayer, row.DamagedVibrateDuration, row.DamagedVibrateAmp, attack);
         if (!i.Dead && i.HpCur == 0) Die(id, true);
         return armed;
     }
+
+    /// <summary>
+    /// CNpc::FUN_141098fb0 (@0x141098fb0, :2006): a non-empty effect of the row (deadEffect for 0, damageEffect for 1) goes to
+    /// InsertEffect with the npc as its actor and object kind 6 for a boss, else 5 (which only the soundMusic parts test).
+    /// Played once at the npc's place and facing through the combat layer.
+    /// STILL-OPEN: the effect is not attached to the actor (it stays where it started), and the dead kind's removal of the
+    /// npc's kept effect (m_nE54, FUN_1411a6060) is not ported.
+    /// </summary>
+    void PlayNpcEffect(Inst i, NpcRow row, string effect)
+    {
+        if (string.IsNullOrEmpty(effect) || i.Root == null) return;
+        EffectPlayed?.Invoke(i.NpcId, effect);
+        Combat?.PlayEffect(effect, i.Root.GlobalPosition, i.Visual?.Rotation.Y ?? 0, row.IsBoss ? 6 : 5);
+    }
+
+    /// <summary>The npc id and effect xml of each damage or dead effect played (for the checks).</summary>
+    public Action<int, string> EffectPlayed;
 
     // DAT_1439f6ff4, DAT_1439f6ff8: the hit boost's CColorBoostData duration and accumulation ratio
     const float DamagedBoostDuration = 0.1f, DamagedBoostAccumRatio = 0.1f;
@@ -434,7 +455,8 @@ public sealed class NpcLayer
     /// scenestategame.cpp:3556-3558/3610) plays its dead sound (m_strSoundDead) too.
     /// StateDeadNPC::vfunc_4 (statedead.cpp:224) plays <see cref="NpcRow.DeadSequence"/> by name; a model without that
     /// sequence plays nothing (PlayAnimation finds no sequence) and counts in <see cref="NoDeathSequence"/>.
-    /// STILL-OPEN: FUN_141099ab0, FUN_141098fb0, the corpse box (m_corpse), the corpse effect and the boss bgm tracker are not ported.
+    /// With <paramref name="show"/> the npc's dead effect plays before the sound (FUN_141098fb0(0), :2134; <see cref="PlayNpcEffect"/>).
+    /// STILL-OPEN: FUN_141099ab0, the corpse box (m_corpse), the corpse effect and the boss bgm tracker are not ported.
     /// </summary>
     public void Die(int id, bool show)
     {
@@ -443,6 +465,7 @@ public sealed class NpcLayer
         Tags?.Died(i.Root);
         if (i.Bar != null) { i.Bar.Dead = true; Bars?.Remove(i.Root); }      // vfunc_8: a dead npc's bar drops for good; its entry and clip go back to the pool
         var row = table.Find(i.NpcId);
+        if (show) PlayNpcEffect(i, row, row?.DeadEffect);
         var dead = show ? row?.SoundDead : null;
         if (!string.IsNullOrEmpty(dead)) FieldAudio.Instance?.PlayEventAt(dead, i.Root.GlobalPosition);
         if (i.HpMat != null) { i.Root.GetNodeOrNull("HpBar")?.QueueFree(); i.HpMat = null; }
@@ -523,3 +546,7 @@ public sealed class NpcLayer
         return (n, bad);
     }
 }
+
+/// <summary>The kind of a hit record on an npc: a cast's (SkillDamage mode 1, CNpc::vfunc_33), a dot's (mode 3, vfunc_34) or a
+/// splash's (modes 5 and 6, vfunc_35).</summary>
+public enum NpcHitKind { Cast, Dot, Splash }

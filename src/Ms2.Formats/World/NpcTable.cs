@@ -60,6 +60,9 @@ public sealed class NpcRow
     public string Portrait;                      // environment portrait (CNpcData m_strPortrait, npcdata.cpp:1467): the dictionary's picture
     public string Title;                         // npctitle.xml, shown above the name
     public string SoundStart, SoundEnd, SoundDead;   // npcSoundStart/End/Dead: sound event paths like ko/Npc/01000022
+    /// <summary>The environment's deadEffect and damageEffect (NpcDataCli::LoadXml, npcdatacli.cpp:176-177; null when absent):
+    /// the effect xml CNpc::FUN_141098fb0 plays on the npc when it dies with its sound (0) or takes a hit below 0 (1).</summary>
+    public string DeadEffect, DamageEffect;
     public string Name;                      // from string/en/npcname.xml (or kr), null when absent
     public bool HpBar;                           // environment hpBar (NpcDataCli, default false): the npc has a head hp bar
     public int Level = 1;                        // environment level (CNpcData m_nLevel, 1 when absent)
@@ -167,6 +170,7 @@ public sealed class NpcTable
             Gender = Int(env, "gender"),
             PropertyTags = ((string)env.Attribute("propertyTags") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
             SoundStart = (string)env.Attribute("npcSoundStart"), SoundEnd = (string)env.Attribute("npcSoundEnd"), SoundDead = (string)env.Attribute("npcSoundDead"),
+            DeadEffect = (string)env.Attribute("deadEffect"), DamageEffect = (string)env.Attribute("damageEffect"),
             Kfm = (string)model?.Attribute("kfm"),
             Scale = Flt(model, "scale", 1f),
             ShadowScale = Flt(model, "shadowScale", 0f),
@@ -256,4 +260,7 @@ public sealed class NpcTable
     static float Flt(XElement e, string a, float def) => float.TryParse((string)e?.Attribute(a), NumberStyles.Float, CultureInfo.InvariantCulture, out float v) ? v : def;
 
     public NpcRow Find(int id) => rows.GetValueOrDefault(id);
+
+    /// <summary>Every row, in no set order.</summary>
+    public IEnumerable<NpcRow> Rows => rows.Values;
 }
