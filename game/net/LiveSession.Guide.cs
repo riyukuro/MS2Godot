@@ -48,6 +48,21 @@ public partial class LiveSession
         catch (Exception e) { GD.PushWarning($"live: guide tables unavailable ({e.Message})"); guide = null; }
     }
 
+    string guideStatusShown;
+    ulong guideStatusAt;
+
+    /// <summary>Why the guide is idle: the pane missing or not loaded, no player; printed when it changes, at most every 2 s,
+    /// so a log shows whether the guide ever ran (UpdateEntities waits on all three).</summary>
+    void LogGuideStatus()
+    {
+        if (guide == null || Time.GetTicksMsec() - guideStatusAt < 2000) return;
+        guideStatusAt = Time.GetTicksMsec();
+        string now = $"pane {(GuidePane == null ? "missing" : GuidePane.Loaded ? "loaded" : "loading")}, player {(Me.User != null && player != null && GodotObject.IsInstanceValid(player) ? "bound" : "not bound")}, field {FieldId}";
+        if (now == guideStatusShown) return;
+        guideStatusShown = now;
+        GD.Print("live: guide status: " + now);
+    }
+
     void StopGuide()
     {
         if (guide == null) return;
@@ -104,7 +119,7 @@ public partial class LiveSession
         /// as the client's while no dialog object is there.</summary>
         public override GuideDialog FindDialog(string name) => s.FindDialogOf?.Invoke(name);
         public override void GuideLog(string text) => GD.Print(text);
-        public override void Send(Ms2.Net.Wire.IOutPacket packet) => s.Send(packet);
+        public override void Send(Ms2.Net.Wire.IOutPacket packet) { GD.Print($"live: guide sends {packet.GetType().Name}"); s.Send(packet); }
 
         public override bool HasPlayer => s.Me.User != null && s.player != null && GodotObject.IsInstanceValid(s.player);
 

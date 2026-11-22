@@ -1179,6 +1179,7 @@ public partial class LiveSession : Node
         while (game != null && game.Incoming.TryDequeue(out var p)) { Handle(p); SyncDeadFlag(); }
         if (game == null) return;   // a GameToGame let the connection go: the next server's comes with the migration
         guide?.Tick();
+        LogGuideStatus();
         TickTaxi(delta);
         Me.ExpireRevival((uint)game.Session.ServerTick);   // PC::FUN_141661ac0 (pc.cpp:2043), in PC's per-frame update
         if (bindPending) TryBindPlayer();
