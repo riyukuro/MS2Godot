@@ -792,6 +792,12 @@ public sealed class GameTables
     /// folder first, as for multicontrol above; the packs hold the file only as table/kr/smartpush.xml.</summary>
     public Hud.SmartPushTable SmartPush => smartPush ??= packs == null ? Hud.SmartPushTable.Empty
         : new Hud.SmartPushTable(Xml(packs.Exists("Xml", "table/kr/smartpush.xml") ? "table/kr/smartpush.xml" : "table/smartpush.xml"), e => FeatureElements.IsAvailable(packs, e));
+    Ms2.Ui.Items.ItemEnchantTransformTable enchantTransform;
+    /// <summary>CItemEnchantTransformTable (GetXmlPath("Table", "ItemEnchantTransform.xml"), the locale folder first as for
+    /// smartPush above), read on first use.</summary>
+    public Ms2.Ui.Items.ItemEnchantTransformTable EnchantTransform => enchantTransform ??= packs == null ? Ms2.Ui.Items.ItemEnchantTransformTable.Empty
+        : new Ms2.Ui.Items.ItemEnchantTransformTable(Xml(packs.Exists("Xml", "table/kr/itemenchanttransform.xml") ? "table/kr/itemenchanttransform.xml"
+            : "table/itemenchanttransform.xml"), e => FeatureElements.IsAvailable(packs, e));
     Ms2.Ui.Skills.SkillCompactControlTable skillCompactControl;
     /// <summary>CSkillCompactControlTable (Table/SkillCompactControl.xml), read on first use; empty with feature 0x10
     /// (CompactControl) off, as Load @0x140dca800 reads nothing then.</summary>

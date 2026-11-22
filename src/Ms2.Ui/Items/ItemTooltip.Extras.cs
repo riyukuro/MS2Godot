@@ -28,9 +28,8 @@ public sealed partial class ItemTooltip
     /// <summary>
     /// FUN_1409d8d90 (astooltip.cpp:3402): equipment without a skin. An expiring, period or PC bang item, or one whose data
     /// sets exceptEnchant, shows the cannot-enchant line (0x94e). An item that CItemEnchantLimitTable::CanEnchant passes
-    /// shows "Can Be Enchanted" (0x959; CItemEnchantInfo::FUN_14058c8a0, which picks 0x95a, always returns 0) and, with a
-    /// fail stack, s_itemenchant_fail_stack_count. STILL-OPEN: the feature 0xa6 transform line
-    /// (CItemEnchantTransformTable::GetLowestLimitLevel, s_itemenchant_transform_valid_item); that table is not read.
+    /// shows "Can Be Enchanted" (0x959; CItemEnchantInfo::FUN_14058c8a0, which picks 0x95a, always returns 0), the transform
+    /// line and, with a fail stack, s_itemenchant_fail_stack_count; one it fails shows only the transform line.
     /// </summary>
     void AppendEnchant(Item item, StringBuilder sb)
     {
@@ -46,15 +45,32 @@ public sealed partial class ItemTooltip
             sb.Append(Tables.Common(0x94e));
             return;
         }
-        if (!Tables.ItemOptions.CanEnchant(item)) return;
+        if (!Tables.ItemOptions.CanEnchant(item))
+        {
+            AppendTransform(item, sb);
+            return;
+        }
         NewLine(sb);
         sb.Append(Tables.Common(0x959));
+        AppendTransform(item, sb);
         int failStack = item.Record?.Enchant.FailStack ?? 0;                     // CItemEnchantInfo::GetFailStackCount
         if (failStack > 0)
         {
             NewLine(sb);
             sb.Append(CommonF("s_itemenchant_fail_stack_count", failStack));
         }
+    }
+
+    /// <summary>FUN_1409d8d90's transform line, in both branches: with feature 0xa6, an item with transform rows
+    /// (CItemEnchantTransformTable::GetLowestLimitLevel != 0) shows s_itemenchant_transform_valid_item with that level after
+    /// a new line, which the exe appends even to empty text.</summary>
+    void AppendTransform(Item item, StringBuilder sb)
+    {
+        if (!model.IsFeatureEnabled(0xa6)) return;
+        uint level = Tables.EnchantTransform.LowestLimitLevel(item.Data.Id);
+        if (level == 0) return;
+        sb.Append('\n');
+        sb.Append(CommonF("s_itemenchant_transform_valid_item", level));
     }
 
     /// <summary>FUN_1409d99a0 (astooltip.cpp:3577): with feature 0x6f, an item whose data sets fusion fusionable shows

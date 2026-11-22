@@ -128,4 +128,40 @@ public class ItemTooltipExtrasTests
         }
         finally { m.Tables.ColorPalettes = null; }
     }
+
+    [Test]
+    public void TransformTableKeepsEachItemsLowestEnchantLevel()
+    {
+        var doc = System.Xml.Linq.XDocument.Parse("""
+            <ms2>
+              <transform inputRank="4" inputEnchantLevel="12" inputSlot="1,2" inputItemId="100,200" output1Id="9" output1Rank="1" output1Count="1"/>
+              <transform inputRank="4" inputEnchantLevel="10" inputSlot="1" inputItemId="200" output1Id="9" output1Rank="1" output1Count="1"/>
+              <transform inputRank="4" inputEnchantLevel="5" inputSlot="1" inputItemId="300" output1Id="0" output1Rank="1" output1Count="1"/>
+              <transform inputRank="4" inputEnchantLevel="7" inputSlot="1" inputItemId="400" output1Id="9" output1Rank="1" output1Count="1"/>
+            </ms2>
+            """);
+        var t = new ItemEnchantTransformTable(doc, _ => true);
+        Assert.That(t.LowestLimitLevel(100), Is.EqualTo(12));
+        Assert.That(t.LowestLimitLevel(200), Is.EqualTo(10));
+        Assert.That(t.LowestLimitLevel(300), Is.EqualTo(5));   // set before the bad output stops the load
+        Assert.That(t.LowestLimitLevel(400), Is.EqualTo(0));   // after it
+        Assert.That(t.LowestLimitLevel(1), Is.EqualTo(0));
+    }
+
+    [Test]
+    public void TransformLineFollowsCanBeEnchanted()
+    {
+        var m = NewModel();
+        m.HasLocalPlayer = true;
+        TestContext.WriteLine($"feature 0xa6: {m.IsFeatureEnabled(0xa6)}");
+        if (!m.IsFeatureEnabled(0xa6)) Assert.Ignore("feature 0xa6 is off in this data");
+        int id = 0; uint level = 0;
+        foreach (int i in m.Tables.EnchantTransform.ItemIds.OrderBy(i => i))
+            if (m.Tables.Items.Get(i) is { IsEquipItem: true, HasSkinType: false } && (level = m.Tables.EnchantTransform.LowestLimitLevel(i)) != 0) { id = i; break; }
+        if (id == 0) Assert.Ignore("no item has transform rows");
+        var text = (string)Tip(m, new EquipItem { Id = id, Uid = 3, Rarity = 4, Amount = 1 }).Data["itemDamage"];
+        TestContext.WriteLine($"{id} level {level}: {text}");
+        Assert.That(text, Does.Contain(level.ToString()));
+        Assert.That(text, Does.Contain("\n"));
+    }
 }
