@@ -123,6 +123,15 @@ public sealed class AdditionalBuffList
         return false;
     }
 
+    /// <summary>FUN_14096fe60 with bAll set (guildmanager.cpp:807): a record of the id counts enabled or not, at the level unless it
+    /// is 0; the overlap count is not asked.</summary>
+    public bool HasAny(uint id, ushort level)
+    {
+        foreach (var b in map.Values)
+            if (b.Id == id && (level == 0 || b.Level == level)) return true;
+        return false;
+    }
+
     /// <summary>AdditionalCliList::HasEnabledWithEventBuffType (additionalcli_2.cpp:407): an enabled effect whose level data has
     /// the event buff type.</summary>
     public bool HasEnabledWithEventBuffType(int type)

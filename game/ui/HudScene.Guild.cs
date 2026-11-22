@@ -36,6 +36,7 @@ public partial class HudScene
         book.CommonByKey = key => t.Common(key) ?? "";
         book.NameLengthMin = t.GuildNameLengthMin;
         book.CreateMinLevel = t.GuildCreateMinLevel;
+        book.HasOwnEffect = (id, level) => ownBuffs?.HasAny(id, level) == true;
         book.Level = () => hudModel.HasLocalPlayer ? hudModel.Player.Level : null;
         book.PlayerName = () => hudModel.HasLocalPlayer ? hudModel.Player.Name : null;
         book.ServerTime = GuildServerTime;

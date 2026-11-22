@@ -42,6 +42,19 @@ public class BuffStripTests
     }
 
     [Test]
+    public void HasAnyCountsADisabledRecordAtTheLevelButHasDoesNot()
+    {
+        // FUN_14096fe60 with bAll set (guildmanager.cpp:807) against bAll clear (additionalcli_2.cpp:383)
+        var list = new AdditionalBuffList(Level);
+        list.Apply(new BuffPacket(BuffPacket.Add, 5, 11, 5, 0, new BuffState(0, 1000, 1, 1, 1, 0), 0));
+        Assert.That(list.Has(1, 0, 0, 0), Is.False, "not enabled");
+        Assert.That(list.HasAny(1, 0), Is.True);
+        Assert.That(list.HasAny(1, 1), Is.True);
+        Assert.That(list.HasAny(1, 2), Is.False, "another level");
+        Assert.That(list.HasAny(2, 0), Is.False, "another id");
+    }
+
+    [Test]
     public void EventBuffTypeNeedsAnEnabledEffectWithThatType()
     {
         // AdditionalCliList::HasEnabledWithEventBuffType (additionalcli_2.cpp:407)

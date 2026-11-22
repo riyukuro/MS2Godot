@@ -291,8 +291,12 @@ public sealed class GuildBook
         return true;
     }
 
-    /// <summary>FUN_1413b96e0 (@0x1413b96e0): use a personal skill: the guild level, then the meso (s_err_lack_meso). STILL-OPEN:
-    /// the local player's existing buff check (AdditionalCli) is not ported, so a skill whose buff is up is not refused here.</summary>
+    /// <summary>The local player's effect list asked with bAll set (FUN_14096fe60(id, level, 0, true, 1), guildmanager.cpp:807): any
+    /// record of the effect id at the level, enabled or not. Unset means no list, so no effect is up.</summary>
+    public Func<uint, ushort, bool> HasOwnEffect;
+
+    /// <summary>FUN_1413b96e0 (@0x1413b96e0, guildmanager.cpp:795-812): use a personal skill: the guild level, then the meso
+    /// (s_err_lack_meso), the local player, then s_guild_err_cannot_use_skill while the skill's effect is already on the player.</summary>
     public bool UsePersonalSkill(int id)
     {
         if (!InGuild) return false;
@@ -301,6 +305,7 @@ public sealed class GuildBook
         if (GuildLevel < s.RequireLevel) return NoticeKey("s_guild_err_not_enough_guild_level");
         if (Mesos() < PersonalSkillDiscountedCost(id, level)) return NoticeKey("s_err_lack_meso");
         if (Level() == null) return false;     // GetLocalPlayer() == 0
+        if (HasOwnEffect?.Invoke((uint)s.AdditionalEffectId, (ushort)s.AdditionalEffectLevel) == true) return NoticeKey("s_guild_err_cannot_use_skill");
         Send(new GuildPersonalSkillUseRequest(id));
         return true;
     }

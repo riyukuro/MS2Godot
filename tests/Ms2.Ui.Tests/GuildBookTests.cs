@@ -535,4 +535,45 @@ public class GuildBookTests {
         Assert.That(b.UsePersonalSkill(20000), Is.True);
         Assert.That(sent.Single(), Is.EqualTo(new GuildPersonalSkillUseRequest(20000)));
     }
+
+    /// <summary>guildmanager.cpp:807-812: the skill's effect already on the player refuses with s_guild_err_cannot_use_skill, and the
+    /// meso skill's packet does not go out.</summary>
+    [Test]
+    public void PersonalUseIsRefusedWhileTheEffectIsOnThePlayer() {
+        var sent = new List<IOutPacket>(); var notices = new List<string>();
+        var b = SkillBook(sent, notices, 2, 0, 0);
+        b.Info.Skills.Add(new GuildSkillState(20000, 1, 0));
+        b.Mesos = () => 5000; b.Level = () => 50;
+        var asked = new List<(uint, ushort)>();
+        bool up = true;
+        b.HasOwnEffect = (id, lv) => { asked.Add((id, lv)); return up; };
+        Assert.That(b.UsePersonalSkill(20000), Is.False);
+        Assert.That(notices.Last(), Is.EqualTo("s_guild_err_cannot_use_skill"));
+        Assert.That(sent, Is.Empty);
+        Assert.That(asked, Has.Count.EqualTo(1));
+        up = false;
+        Assert.That(b.UsePersonalSkill(20000), Is.True);
+        Assert.That(sent.Single(), Is.EqualTo(new GuildPersonalSkillUseRequest(20000)));
+    }
+
+    [Test]
+    public void UseOfAnEventSkillReadsTheEventFundAndNeedsTheMaster() {
+        var sent = new List<IOutPacket>(); var notices = new List<string>();
+        var b = SkillBook(sent, notices, 2, 1000, 0);
+        Assert.That(b.UseSkill(2000), Is.False);
+        Assert.That(notices.Last(), Is.EqualTo("s_guild_err_not_enough_guild_event_fund"), "the event fund, not the guild fund");
+        b.Info.EventFund = 1000;
+        Assert.That(b.UseSkill(2000), Is.True);
+        Assert.That(sent.Single(), Is.EqualTo(new GuildSkillUseRequest(2000)));
+    }
+
+    [Test]
+    public void UseOfASkillFromANonMasterIsRefusedWithTheMasterText() {
+        var sent = new List<IOutPacket>(); var notices = new List<string>();
+        var b = SkillBook(sent, notices, 2, 1000, 1000);
+        b.PlayerName = () => "Other";
+        Assert.That(b.UseSkill(1), Is.False);
+        Assert.That(sent, Is.Empty);
+        Assert.That(notices, Has.Count.EqualTo(1));
+    }
 }
