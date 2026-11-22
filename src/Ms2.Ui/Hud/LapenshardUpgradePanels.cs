@@ -87,7 +87,8 @@ public sealed partial class LapenshardUpgradeTabPage
                 if (tableOnly && !table.HasUpgrade(id)) continue;
                 var w = Item.Create(m.Tables.Items, id, ItemTooltip.ItemRank(m.Tables.Items, id));
                 if (w == null) continue;
-                w.IsEquipped = true;                  // STILL-OPEN: the client lists the worn map (FUN_14152f960, mypc.cpp:4276) in hash order; here slot order                  // InitWithCount(id, grade, 0, 1) through the worn list
+                w.IsEquipped = true;                  // InitWithCount(id, grade, 0, 1) through the worn list
+                // STILL-OPEN: the client lists the worn map (FUN_14152f960, mypc.cpp:4276) in hash order; here slot order
                 all.Add(w);                           // STILL-OPEN: BindToCharacter for transfer type 2
             }
         }

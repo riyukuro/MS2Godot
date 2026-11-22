@@ -381,7 +381,7 @@ public sealed class ItemData
         else if (s.Equals("false", StringComparison.OrdinalIgnoreCase) || s.Equals("no", StringComparison.OrdinalIgnoreCase) || s == "0") v = false;
     }
 
-    static bool TryScanInt(string s, out long v)
+    internal static bool TryScanInt(string s, out long v)
     {
         v = 0;
         int i = 0;
