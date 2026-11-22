@@ -436,9 +436,44 @@ public sealed class ItemDataTable
                 }
             files[file] = rows;
         }
-        return rows.TryGetValue(id, out var d) ? d : null;
+        if (rows.TryGetValue(id, out var d)) return d;
+        return PerItem(id);
     }
 
+    /// <summary>
+    /// The data that keeps one file per item (GMS2: item/&lt;a&gt;/&lt;bb&gt;/&lt;id&gt;.xml, whose &lt;ms2&gt; root holds the item's
+    /// &lt;environment&gt; children). STILL-OPEN: the GMS2 client's own path rule (its exe is packed, so unread); the entries are
+    /// indexed by the id in their file name, once, and only when the pack has no itemdata/ files, so the KMS data never pays.
+    /// </summary>
+    ItemData PerItem(int id)
+    {
+        perItemIndex ??= PerItemIndex(packs.List("Xml"));
+        if (perItemRows.TryGetValue(id, out var d)) return d;
+        if (perItemIndex.TryGetValue(id, out var entry)
+            && GameStrings.Parse(packs.Read("Xml", entry))?.Root is { } root
+            && FeatureElements.SelectEnvironment(packs, root) is { } env)
+            d = ItemData.Load(id, env, globalTransferType ??= LobbyFeatures.IsEnabled(packs, "GlobalTransferType"));
+        perItemRows[id] = d;
+        return d;
+    }
+
+    /// <summary>id -> entry for every item/.../&lt;id&gt;.xml, empty when the names hold itemdata/ files.</summary>
+    internal static Dictionary<int, string> PerItemIndex(IEnumerable<string> names)
+    {
+        var index = new Dictionary<int, string>();
+        if (names.Any(n => n.StartsWith("itemdata/", StringComparison.Ordinal))) return index;
+        foreach (var n in names)
+        {
+            if (!n.StartsWith("item/", StringComparison.Ordinal) || !n.EndsWith(".xml", StringComparison.Ordinal)) continue;
+            int slash = n.LastIndexOf('/');
+            if (int.TryParse(n.AsSpan(slash + 1, n.Length - slash - 5), NumberStyles.None, CultureInfo.InvariantCulture, out int i)) index.TryAdd(i, n);
+        }
+        return index;
+    }
+
+    internal int PerItemIndexCount => perItemIndex?.Count ?? 0;
+    Dictionary<int, string> perItemIndex;
+    readonly Dictionary<int, ItemData> perItemRows = new();
     bool? globalTransferType;
 
     Dictionary<int, uint> textColors;
