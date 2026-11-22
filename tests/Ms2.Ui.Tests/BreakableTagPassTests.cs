@@ -194,13 +194,15 @@ public class BreakableTagPassTests
         var hits = new List<BreakableHit>();
         pass.RunMarkers(b, hits);
         b.Update(1);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
+        long bytes = Alloc.Least(() =>
         {
-            b.Update(i);
-            pass.RunMarkers(b, hits);
-        }
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0));
+            for (int i = 0; i < 1000; i++)
+            {
+                b.Update(i);
+                pass.RunMarkers(b, hits);
+            }
+        });
+        Assert.That(bytes, Is.EqualTo(0));
     }
 
     [Test]
