@@ -99,7 +99,7 @@ public partial class PlayerDeathCheck : Node3D
             {
                 case 5: Dead(); break;
                 case 30: Shot("dead.png"); TombHeld(); Revival(); break;
-                case 60: Shot("revival.png"); TombGone(); AfterRevival(); InPlace(); FlagHold(); Bar(); Effects(); Finish(); break;
+                case 60: Shot("revival.png"); TombGone(); AfterRevival(); InPlace(); FlagHold(); FlagCleared(); Bar(); Effects(); Finish(); break;
             }
         }
         catch (System.Exception e) { fails.Add($"{e.InnerException ?? e}"); Finish(); }
@@ -254,6 +254,21 @@ public partial class PlayerDeathCheck : Node3D
         while (pc.State == Player.MoveState.Revival && n < 600) { Steps(1); n++; }
         Expect(pc.State == Player.MoveState.Idle, $"dead flag cleared, after revival: {pc.State}");
         GD.Print($"player death: dead flag holds idle, death and revival pass");
+    }
+
+    /// <summary>The dead flag cleared without a revival (the live link off or lost), then a teleport's StateIdle: leaving
+    /// StateDead runs StateDead::vfunc_5 (statedead.cpp:181), so the body is shown and the shadow on again.</summary>
+    void FlagCleared()
+    {
+        pc.DeadFlag = true;
+        pc.EnterDead(false, 1);
+        bool hidden = pc.State == Player.MoveState.Dead && !pc.Visual.Visible && shadow != null && !shadow.Enabled;
+        pc.DeadFlag = false;
+        pc.ResetMotion();
+        bool shown = pc.Visual.Visible, lit = shadow != null && shadow.Enabled;
+        GD.Print($"player death: dead flag cleared, then a teleport: {pc.State}, body shown {shown}, shadow on {lit}");
+        Expect(hidden && pc.State == Player.MoveState.Idle && shown && lit,
+            $"dead flag cleared then a teleport: dead and hidden first {hidden}, {pc.State}, body shown {shown}, shadow on {lit}");
     }
 
     void Finish()

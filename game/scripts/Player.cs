@@ -476,6 +476,9 @@ public partial class Player : CharacterBody3D
         if (old == MoveState.Hold && s != MoveState.Hold) HoldExit();
         if (old is MoveState.Ladder or MoveState.Climb) StopJump();                // StateLadder / StateClimb::vfunc_5
         if (old == MoveState.Hit) LeaveHit();
+        // StateDead::vfunc_5 (statedead.cpp:181) on any exit: the body shown and the shadow on, also when the dead flag was
+        // cleared without a revival (the live link off or lost) and the next state is an ordinary one
+        if (old == MoveState.Dead && s != MoveState.Dead) { SetBodyShown(true); FieldShadows.SetShadowEnabled(this, true); }
         prevState = old;
         State = s;
         stateTime = 0;
