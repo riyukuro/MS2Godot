@@ -2327,6 +2327,26 @@ public partial class HudScene : Node, IUiStageHost
         else OpenLapenshard();
     }
 
+    /// <summary>--uigen-open lapenshard: the window offline with one lapenshard worn per colour and the rest in the bag (no session).</summary>
+    void OpenLapenshardShot()
+    {
+        var t = hudModel.Tables;
+        hudModel.Player.Level = 99; hudModel.Player.JobGroup = 10;
+        var usable = t.Lapenshards.ItemIds().Where(i => t.Items.Get(i) is { IsLapenshard: true } d && d.IsJobAllowed(10) && d.IsLevelAllowed(99)
+            && t.Lapenshards.Mask(i) is 1 or 2 or 4).OrderBy(i => i).ToList();
+        var worn = new List<(int, int)>();
+        foreach (var (slot, mask) in new[] { (1, 1u), (3, 2u), (5, 4u) })
+            if (usable.FirstOrDefault(i => t.Lapenshards.Mask(i) == mask) is var id and not 0) worn.Add((slot, id));
+        hudModel.Player.Lapenshards.Apply(new Ms2.Net.Packets.LapenshardMessage.Worn(worn.ToArray()));
+        OpenLapenshard();
+        if (lapenshard == null) return;
+        var bag = usable.Where(i => worn.All(w => w.Item2 != i)).Take(24).Select((i, n) => { var it = Ms2.Ui.Items.Item.Create(t.Items, i, 1); it.Uid = 100 + n; return it; }).ToList();
+        lapenshard.InventoryItems = _ => bag;
+        lapenshard.Close(); OpenLapenshard();
+        lapenshard.InventoryItems = _ => bag;
+        lapenshard.OnPacket(new Ms2.Net.Packets.LapenshardMessage.Worn(worn.ToArray()));
+    }
+
     /// <summary>Opens the lapenshard window with its equip page when the feature (0xd3) allows; the worn table is the player state's
     /// and the session's lapenshard packets reach the page while it is open. STILL-OPEN: the upgrade page; the bag is built when the page opens or a lapenshard packet arrives, not on inventory changes (the item events listener).</summary>
     void OpenLapenshard()
@@ -3931,6 +3951,7 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "partydps" && frames == 200) OpenPartyDpsShot();
         if (openShot == "guild" && frames == 200) ToggleGuild();
         if (openShot == "itemenchant" && frames == 200) OpenItemEnchantShot();
+        if (openShot == "lapenshard" && frames == 200) OpenLapenshardShot();
         if (openShot == "itembreak" && frames == 200) OpenItemBreakShot();
         if (guideShot != null && frames == 200)
         {

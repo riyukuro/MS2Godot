@@ -33,6 +33,9 @@ public sealed class LapenshardTable
         return groups.TryGetValue(itemId, out var g) ? g : 0;
     }
 
+    /// <summary>The item ids of the rows, for fixtures.</summary>
+    public IEnumerable<int> ItemIds() { Load(); return masks.Keys; }
+
     void Load()
     {
         if (masks == null)
