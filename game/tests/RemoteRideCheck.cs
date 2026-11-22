@@ -2,6 +2,7 @@ using Godot;
 using Ms2.Formats.Model;
 using Ms2.Formats.Pack;
 using Ms2.Formats.Options;
+using Ms2.Formats.Text;
 using Ms2.Net.Packets;
 using Ms2.Net.Replay;
 using Ms2Godot.Movement;
@@ -245,9 +246,78 @@ public partial class RemoteRideCheck : Node3D
         RideShadow(layer, pc);
         OwnUnRideSkillEffect(pc, m);
         KeysByKfm();
+        KeyCaseAndOrder(m.Data.Id);
         pc.QueueFree();
         field.QueueFree();
         layer.Free();
+    }
+
+    /// <summary>
+    /// The client's text key reader (FUN_1414a90c0, ms2animationservice.cpp:349-405) finds the companion xml's element by
+    /// the kf name with TinyXML, which matches by case, and NiTextKeyExtraData::LoadBinary (NiTextKeyExtraData.cpp:69-72)
+    /// puts the kf's own keys first and the xml's after, unsorted. A mount pointed at Npc kfms whose companion xml names
+    /// a kf only with another case gets just the kf's keys for that sequence, and a sequence whose xml has a key earlier
+    /// than a kf key keeps the kf's keys then the xml's.
+    /// </summary>
+    void KeyCaseAndOrder(int rideId)
+    {
+        const System.Reflection.BindingFlags Own = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        var entryField = typeof(Mount).GetField("kfmEntry", Own);
+        var folderField = typeof(Mount).GetField("folder", Own);
+        var kfmField = typeof(Mount).GetField("kfm", Own);
+        // kfms whose xml names a kf only with another case (a scan of the Npc archive finds 49 such names)
+        string[] names = { "02010039_berzzo", "02010049_el_woman1", "02020069_m_bungbung", "11000074_karl", "11000100_hiphopman1" };
+        var all = packs.List(Mount.NpcArchive);
+        int caseSeqs = 0, caseWrong = 0, lateSeqs = 0, orderWrong = 0;
+        var wrong = new List<string>();
+        foreach (var n in names)
+        {
+            string entry = all.FirstOrDefault(e => e.EndsWith("/" + n + ".kfm", StringComparison.OrdinalIgnoreCase));
+            string xml = entry == null ? null : entry[..^4] + ".xml";
+            if (xml == null || !packs.Exists(Mount.NpcArchive, xml)) { wrong.Add($"{n}: no kfm and xml"); continue; }
+            var els = PackXml.Parse(packs.Read(Mount.NpcArchive, xml)).Root.Elements().ToList();
+            Mount mt;
+            try { mt = Mount.Load(packs, builder, rideId); } catch (Exception e) { wrong.Add($"{n}: {e.Message}"); continue; }
+            var kfm = KfmFile.Load(packs.Read(Mount.NpcArchive, entry));
+            entryField.SetValue(mt, entry);
+            folderField.SetValue(mt, entry[..entry.LastIndexOf('/')]);
+            kfmField.SetValue(mt, kfm);
+            var lib = mt.Anim.GetAnimationLibrary("");
+            foreach (var sq in kfm.Sequences)
+            {
+                if (string.IsNullOrEmpty(sq.Name)) continue;    // a nameless sequence (one in m_bungbung) is never played by name
+                string kfName = Path.GetFileName(sq.KfPath.Replace('\\', '/'));
+                string stem = Path.GetFileNameWithoutExtension(kfName);
+                var exact = els.FirstOrDefault(e => e.Name.LocalName == stem);
+                bool caseOnly = exact == null && els.Any(e => string.Equals(e.Name.LocalName, stem, StringComparison.OrdinalIgnoreCase));
+                if (!caseOnly && exact == null) continue;
+                string kfEntry = $"{entry[..entry.LastIndexOf('/')]}/{kfName.ToLowerInvariant()}";
+                if (!packs.Exists(Mount.NpcArchive, kfEntry)) continue;
+                var own = KfAnimation.Load(Ms2.Formats.Nif.NifFile.Load(builder.Spec, packs.Read(Mount.NpcArchive, kfEntry))).TextKeys;
+                var want = new List<(double time, string text)>(own);
+                if (!caseOnly)
+                    foreach (var k in exact.Elements("key"))
+                    {
+                        string text = (string)k.Attribute("text");
+                        if (string.IsNullOrEmpty(text)) continue;
+                        double.TryParse((string)k.Attribute("time"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double t);
+                        want.Add((t, text));
+                    }
+                bool late = !caseOnly && own.Count > 0 && want.Count > own.Count && want.Skip(own.Count).Min(k => k.time) < own.Max(k => k.time);
+                if (!caseOnly && !late) continue;
+                string key = sq.Name.ToLowerInvariant();
+                if (lib.HasAnimation(key)) lib.RemoveAnimation(key);    // a sequence of this name from another kfm
+                var got = mt.TextKeys(mt.SequenceKey(sq.Name, false)) ?? new List<(double time, string text)>();
+                bool same = got.SequenceEqual(want);
+                if (caseOnly) { caseSeqs++; if (!same) caseWrong++; }
+                else { lateSeqs++; if (!same) orderWrong++; }
+                if (!same && wrong.Count < 4) wrong.Add($"{n} {sq.Name}: {got.Count} key(s) for {want.Count}{(caseOnly ? " (case only)" : " (xml key earlier)")}");
+            }
+            mt.Visual.Free();
+        }
+        GD.Print($"remote ride: key case and order: case-only sequences {caseSeqs} ({caseWrong} took xml keys), xml-earlier sequences {lateSeqs} ({orderWrong} reordered){(wrong.Count > 0 ? "; " + string.Join("; ", wrong) : "")}");
+        if (caseSeqs == 0 || lateSeqs == 0 || caseWrong != 0 || orderWrong != 0 || wrong.Count > 0)
+            fails.Add($"key case and order: case-only {caseSeqs} ({caseWrong} wrong), xml-earlier {lateSeqs} ({orderWrong} wrong); {string.Join("; ", wrong)}");
     }
 
     /// <summary>A sequence's text keys are kept by the kfm that names it: the same mount loaded twice, the second pointed at

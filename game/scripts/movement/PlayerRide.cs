@@ -112,11 +112,11 @@ public sealed class Mount
     }
 
     /// <summary>
-    /// The text keys of a loaded sequence (by its animation key), in time order as NiControllerSequence throws them: the
-    /// kf's own NiTextKeyExtraData keys and those of the kfm's companion xml (NiTextKeyExtraData::LoadBinary,
-    /// NiTextKeyExtraData.cpp:59-75: &lt;kf dir&gt;&lt;studio name&gt;.xml, the &lt;ms2&gt; root's first element named as the kf,
-    /// read by FUN_1414a90c0, ms2animationservice.cpp:349-422). Null for none. The ridee's PCBase::TextKeyEvent
-    /// (pcbase.cpp:997-1008) plays their step keys.
+    /// The text keys of a loaded sequence (by its animation key): the kf's own NiTextKeyExtraData keys, then those of the
+    /// kfm's companion xml, unsorted (NiTextKeyExtraData::LoadBinary, NiTextKeyExtraData.cpp:69-72). The xml is
+    /// &lt;kf dir&gt;&lt;studio name&gt;.xml, read by the client's installed reader FUN_1414a90c0 (ms2animationservice.cpp:349-405):
+    /// the &lt;ms2&gt; root's first element named as the kf. Null for none. The ridee's PCBase::TextKeyEvent
+    /// (pcbase.cpp:997-1008) plays their step keys, each checked every frame, so the order does not matter there.
     /// </summary>
     public List<(double time, string text)> TextKeys(string key) => key != null && textKeys.TryGetValue(key, out var l) ? l : null;
     readonly Dictionary<string, List<(double time, string text)>> textKeys = new(StringComparer.Ordinal);
@@ -126,7 +126,8 @@ public sealed class Mount
     static readonly Dictionary<string, Dictionary<string, List<(double, string)>>> XmlKeyCache = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The companion xml's keys by kf name: under the &lt;ms2&gt; root, the first element of each name, matched
-    /// case-sensitively as TinyXML's FirstChildElement does (NiTextKeyExtraData.cpp:59-73); keys without text skipped.</summary>
+    /// case-sensitively as TinyXML's FirstChildElement does in FUN_1414a90c0 (ms2animationservice.cpp:349-405), the
+    /// reader the client installs (NiTextKeyExtraData::MS2SetTextKeyReader); keys without text skipped.</summary>
     Dictionary<string, List<(double, string)>> XmlKeys()
     {
         string x = kfmEntry[..^4] + ".xml";
