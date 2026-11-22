@@ -968,6 +968,7 @@ public partial class HudScene : Node, IUiStageHost
             WireUserChat(live);
             liveHome = live;
             live.HomeInfoApplied += OnHomeInfoApplied;
+            OpenHomeMenuOnEntry();
             Action<Ms2.Net.Packets.ChatMessage, Func<Ms2.Net.Packets.WeddingChatHall>> onChat = ChatLog.OnUserChat;
             live.UserChat += onChat;
             Action<Ms2.Net.Packets.ChatItemLinks> onLinks = ChatLog.OnItemLinks;
@@ -1444,6 +1445,7 @@ public partial class HudScene : Node, IUiStageHost
         worldLoadPending = false;
         ScreenMask();
         if (systemText == null && SystemText != null && systemTextSlot != null && IsInstanceValid(systemTextSlot)) LoadSystemText();
+        OpenHomeMenuOnEntry();
     }
 
     static string ArgField()
