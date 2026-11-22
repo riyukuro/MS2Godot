@@ -84,13 +84,13 @@ public sealed class MeratUgcProduct {
         r.ReadLong(); r.ReadLong(); r.ReadLong();
         ReadUser(r, out p.Seller);
         p.Title = r.ReadUnicodeString(); p.Tags = r.ReadUnicodeString(); r.ReadUnicodeString();
-        // CUgcItemLook
+        // CUgcItemLook::Read (ugcdef.cpp:1551)
         r.ReadLong(); r.ReadUnicodeString(); r.ReadUnicodeString(); r.ReadByte(); r.ReadInt(); r.ReadLong(); r.ReadLong();
         r.ReadUnicodeString(); r.ReadLong(); r.ReadUnicodeString(); r.ReadByte();
-        // CUgcItemMusicNote
+        // CUgcItemMusicNote::Read (ugcdef.cpp:1727)
         r.ReadLong(); r.ReadInt(); r.ReadInt(); r.ReadUnicodeString(); r.ReadUnicodeString(); r.ReadString();
         r.ReadInt(); r.ReadLong(); r.ReadLong(); r.ReadUnicodeString();
-        // CBlueprintItemData
+        // CBlueprintItemData::Read (ugcdef.cpp:1385)
         r.ReadLong(); r.ReadInt(); r.ReadInt(); r.ReadInt(); r.ReadLong(); r.ReadInt(); r.ReadLong(); r.ReadLong(); r.ReadUnicodeString();
         p.Type = r.ReadByte();
         return p;

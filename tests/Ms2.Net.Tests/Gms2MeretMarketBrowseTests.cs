@@ -21,6 +21,37 @@ public class Gms2MeretMarketBrowseTests {
         }
     }
 
+    /// <summary>A layout error that shifts one field and cancels in the next would still end on the last byte, so the values are checked too:
+    /// every product of every recorded browse answer has a key, a price and a name, and the recordings carry both kinds (kind 1, the UGC
+    /// runs CUgcItemLook / CUgcItemMusicNote / CBlueprintItemData, appears in modes 0x0b, 0x0d, 0x1b and 0x66).</summary>
+    [Test]
+    public void RecordedProductsCarryRealValues() {
+        int premium = 0, ugc = 0; var ugcModes = new HashSet<byte>(); bool badge = false;
+        foreach (var (file, d) in Gms2Sniffs.Inbound("gms2", 0x6E)) {
+            var m = MeretMarketBrowse.Read(new ByteReader(d), ProtocolProfile.Gms2);
+            if (!m.Known) continue;
+            foreach (var p in m.Products) {
+                if (p.Kind == 0) {
+                    premium++;
+                    Assert.That(p.Premium.Id, Is.GreaterThan(0), file);
+                    Assert.That(p.Premium.Id, Is.EqualTo(p.Key.PremiumId), file);
+                    Assert.That(p.Premium.Name, Is.Not.Empty, file);
+                    Assert.That(p.Premium.Price, Is.InRange(0, 100_000_000), file);
+                    if (p.Premium.Id == 140500130) { badge = true; Assert.That((p.Premium.ItemId, p.Premium.Price), Is.EqualTo((70100005, 360L)), file); }
+                } else {
+                    ugc++; ugcModes.Add(m.Mode);
+                    Assert.That(p.Ugc.Uid, Is.EqualTo(p.Key.UgcId), file);
+                    Assert.That(p.Ugc.ItemId, Is.GreaterThan(0), file);
+                    Assert.That(p.Ugc.Seller, Is.Not.Empty, file);
+                    Assert.That(p.Ugc.Price, Is.InRange(0, 100_000_000), file);
+                }
+            }
+        }
+        Assert.That(premium, Is.GreaterThan(0)); Assert.That(ugc, Is.GreaterThan(0));
+        Assert.That(ugcModes, Is.SupersetOf(new byte[] { 0x0b, 0x0d, 0x1b, 0x66 }));
+        Assert.That(badge, Is.True, "the Auto-Gathering Badge (30 Day) product of mode 0x1b");
+    }
+
     [Test]
     public void SearchConditionRoundTrips() {
         var c = new MeratSearchCond(300, 3, 0xFFF, 4, "", 0, 0, 0, 0, 0);
