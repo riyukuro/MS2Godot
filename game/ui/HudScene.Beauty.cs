@@ -28,14 +28,15 @@ public partial class HudScene
         beautyFlow.CreateController = () => CreateBeauty(live);
         beautyFlow.Show = ShowBeauty;
         beautyFlow.Log = m => GD.Print(m);
-        void OnRequested(BeautyReq _) => beautyFlow.Open();
+        beautyFlow.SendOpenRequest = uid => live.SendBeauty(new BeautyOpenRequest(uid));   // SendBeauty (scenestategame.cpp:8714)
+        void OnRequested(BeautyReq req) => beautyFlow.OpenFor(req);
         live.BeautyRequested += OnRequested;
         live.BeautyShopReceived += beautyFlow.OnPacket;
         unwatchBeauty = () =>
         {
             live.BeautyRequested -= OnRequested;
             live.BeautyShopReceived -= beautyFlow.OnPacket;
-            beautyFlow.Current?.Close();
+            beautyFlow.Shutdown();
             unwatchBeauty = null;
         };
     }

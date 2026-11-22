@@ -385,6 +385,35 @@ public class BeautyShopDialogTests
     }
 
     [Test]
+    public void TheOpenRequestGoesOutOnlyWhenTheDialogOpens()
+    {
+        var f = new FlowRig(false);
+        var sent = new List<long>();
+        f.Flow.SendOpenRequest = sent.Add;
+        Assert.That(f.Flow.OpenFor(new BeautyReq(1, 77)), Is.False, "no customize: the dialog stays shut");
+        Assert.That(sent, Is.Empty, "no request for a dialog that never opened");
+
+        var g = new FlowRig(true);
+        g.Flow.SendOpenRequest = sent.Add;
+        Assert.That(g.Flow.OpenFor(new BeautyReq(1, 78)), Is.True);
+        Assert.That(sent, Is.EqualTo(new long[] { 78 }));
+        Assert.That(g.Flow.OpenFor(new BeautyReq(1, 79)), Is.False, "already open");
+        Assert.That(sent, Is.EqualTo(new long[] { 78 }), "no second request while open");
+    }
+
+    [Test]
+    public void ASceneTeardownRestoresTheSlotWithoutTheHostHook()
+    {
+        var f = new FlowRig(true);
+        Assert.That(f.Flow.Open(), Is.True);
+        f.Flow.Shutdown();
+        Assert.That(f.Cu.Calls, Does.Contain("restore0"), "FUN_1418c9cd0 restores the worn slot");
+        Assert.That(f.Exits, Is.EqualTo(0), "no camera / sub scene hook while the scene goes away");
+        Assert.That(f.Flow.IsOpen, Is.False);
+        f.Flow.Shutdown();
+    }
+
+    [Test]
     public void TheHudSceneUnsubscribesTheBeautyWatchersWithTheScene()
     {
         var dir = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
@@ -394,6 +423,7 @@ public class BeautyShopDialogTests
         string hud = File.ReadAllText(Path.Combine(dir.FullName, "game", "ui", "HudScene.cs"));
         Assert.That(beauty, Does.Contain("live.BeautyRequested -="));
         Assert.That(beauty, Does.Contain("live.BeautyShopReceived -="));
+        Assert.That(beauty, Does.Contain("beautyFlow.Shutdown()"), "the teardown runs the close path, not a bare Close");
         Assert.That(hud, Does.Contain("unwatchBeauty?.Invoke()"), "the scene's teardown runs it");
         Assert.That(beauty, Does.Not.Contain("beautyWatched"), "no once-forever flag that survives a rebuilt scene");
     }

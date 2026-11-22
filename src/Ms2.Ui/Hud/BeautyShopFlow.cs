@@ -24,6 +24,10 @@ public sealed class BeautyShopFlow
     public Action ExitSubScene;
     public Action<string> Log = _ => { };
 
+    /// <summary>Sends the open request (Beauty 0x17, the item's uid) once the dialog is open.</summary>
+    public Action<long> SendOpenRequest;
+    bool shuttingDown;
+
     public BeautyShopDialogController Current { get; private set; }
     public bool IsOpen => Current != null;
 
@@ -35,11 +39,36 @@ public sealed class BeautyShopFlow
         if (customize == null) { Log("beauty shop: no own-avatar customize, the dialog stays shut"); return false; }
         var c = CreateController();
         c.Customize = customize;
-        c.Left += () => { ExitSubScene?.Invoke(); c.Close(); };
+        c.Left += () => { if (!shuttingDown) ExitSubScene?.Invoke(); c.Close(); };
         c.Closed += () => { if (Current == c) Current = null; };
         Current = c;
         Show?.Invoke(c);
         return true;
+    }
+
+    /// <summary>
+    /// SendBeauty (@0x14173c630, scenestategame.cpp:8699-8714): the open request goes out only when the dialog exists and was not
+    /// already open (<c>pDlg == 0 || FUN_141924630() == 1</c> returns), after it is opened. Here: only when <see cref="Open"/> succeeds.
+    /// </summary>
+    public bool OpenFor(BeautyReq req)
+    {
+        if (!Open()) return false;
+        SendOpenRequest?.Invoke(req.Uid);
+        return true;
+    }
+
+    /// <summary>
+    /// The scene goes away (field change, HUD reload) with the dialog open: the close path of FUN_1418c9cd0 runs, so the worn slot
+    /// is restored, but not the host's camera / sub scene hook (the scene is being torn down).
+    /// </summary>
+    public void Shutdown()
+    {
+        var c = Current;
+        if (c == null) return;
+        shuttingDown = true;
+        try { c.Leave(); }
+        finally { shuttingDown = false; }
+        if (Current == c) { c.Close(); Current = null; }
     }
 
     public void OnPacket(BeautyShopPacket p)

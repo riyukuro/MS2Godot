@@ -1236,7 +1236,7 @@ public partial class LiveSession : Node
                 if (n.NoticeStringId != 0)
                     Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(Ms2.Ui.Hud.MessageBoxData.Common(n.NoticeStringId), 0, null, "");   // FUN_140d73bc0(id, 0, 0, "")
                 if (n.Codi is { } codi) ActiveCodiTab(codi);
-                if (n.Beauty is { Type: not 0 } bq) { Send(new BeautyOpenRequest(bq.Uid)); BeautyRequested?.Invoke(bq); }   // SendBeauty (:8692); the beauty dialog 0x4eee opens from this event (HudScene.Beauty)
+                if (n.Beauty is { Type: not 0 } bq) BeautyRequested?.Invoke(bq);   // SendBeauty (:8692): the beauty dialog 0x4eee opens from this event and sends the open request (0x17) only when it opened (HudScene.Beauty, BeautyShopFlow.OpenFor)
                 GD.Print($"live: item use mode {n.Mode}{(n.ItemId != 0 ? " item " + n.ItemId : "")}");
             }
             else if (game.Is(p, Inbound.ItemBox))
