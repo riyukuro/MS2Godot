@@ -92,8 +92,18 @@ public sealed class ItemColoringDialogController : UiController
     public Func<bool> IsBillOpen = () => false;
     /// <summary>The name of an item id (the string table's item name, FUN_141811980(1, id)).</summary>
     public Func<int, string> ItemName = _ => "";
-    /// <summary>FUN_1412761e0(m_30, enabled): the movie takes input again (true) or waits for the answer (false).</summary>
-    public Action<bool> SetInputEnabled;
+    /// <summary>FUN_1412761e0(m_30, enabled): the movie root's mouseChildren and mouseEnabled; the movie takes input again (true) or
+    /// waits for the answer (false).</summary>
+    void SetInputEnabled(bool enable)
+    {
+        var root = Host?.Entity;
+        if (root == null) return;
+        Host.Set(root, "mouseChildren", enable);
+        Host.Set(root, "mouseEnabled", enable);
+    }
+
+    /// <summary>Whether the movie root waits for the answer (FUN_1412761e0(root, 0)).</summary>
+    public bool InputLocked => Host?.Entity is { } r && !Rt.ToBoolean(Host.Get(r, "mouseChildren"));
     /// <summary>IsPaletteColorLocked(palette, colorSN) (@0x140f02a80, the item data table's palette rows): not ported.</summary>
     public Func<uint, uint, bool> IsPaletteColorLocked;
     /// <summary>FUN_140f32290 / FUN_140f328a0: the movie's data object of the edit item (buildCurrentItem, buildResetItem); null when none.</summary>
@@ -515,7 +525,7 @@ public sealed class ItemColoringDialogController : UiController
     public void SendBasket()
     {
         var c = Customize;
-        if (c == null) return;
+        if (c == null || Pending > 0) return;   // a request is out: a second click or Enter must not pay twice
         var items = new List<BeautyColorItem>();
         foreach (var b in Basket)
         {
@@ -525,7 +535,7 @@ public sealed class ItemColoringDialogController : UiController
         }
         Send(new BeautyColoringRequest(items.ToArray()));
         AddPendingRequests(items.Count);
-        SetInputEnabled?.Invoke(false);
+        SetInputEnabled(false);
     }
 
     /// <summary>AddPendingRequests (@0x1419b1f50).</summary>
@@ -543,7 +553,7 @@ public sealed class ItemColoringDialogController : UiController
         var c = Customize;
         if (c == null) return;
         c.RestoreAll();
-        SetInputEnabled?.Invoke(true);
+        SetInputEnabled(true);
     }
 
     /// <summary>OnDyeApplied (@0x1419af840): the fee is refreshed and the movie takes input again. STILL-OPEN: the hair-apply effect (FUN_1419af750).</summary>
@@ -551,7 +561,7 @@ public sealed class ItemColoringDialogController : UiController
     {
         Dyeing = false;
         RefreshBasketState();
-        SetInputEnabled?.Invoke(true);
+        SetInputEnabled(true);
         return true;
     }
 

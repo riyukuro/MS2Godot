@@ -209,4 +209,17 @@ public class ItemColoringDialogTests
         r.C.OnCallback("OnChangeItem", new object[] { "777", 3 });
         Assert.That((r.C.SelectedIndex, r.Cu.Calls), Is.EqualTo((-1, new List<string>())));
     }
+
+    [Test] public void ADoubleClickPaysOnceAndTheMovieWaitsForTheAnswer() {
+        var r = new Rig();
+        r.C.OnPacket(Rig.Open());
+        r.C.AddCurrentItemToBasket(11100000);
+        Assert.That(r.C.InputLocked, Is.False);
+        r.C.TryPay();
+        r.C.TryPay();
+        r.C.SendBasket();
+        Assert.That((r.Sent.Count, r.C.Pending, r.C.InputLocked), Is.EqualTo((1, 1, true)));
+        r.C.OnDyeApplied();
+        Assert.That(r.C.InputLocked, Is.False);
+    }
 }
