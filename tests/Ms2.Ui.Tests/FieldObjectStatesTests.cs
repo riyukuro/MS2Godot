@@ -369,7 +369,8 @@ public class FieldObjectStatesTests
         var b = new BreakableObjects();
         var l = new LiftableObjects();
         var t = new LiftableTargetBoxes();
-        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(map), false, b, l, t), Is.EqualTo(FieldEnterResult.NewField));
+        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(map), b, l, t), Is.EqualTo(FieldEnterResult.NewField));
+        entry.FieldLoaded(_ => { });
         b.AttachField(new List<FieldEntity>());
         b.AddMarker("m");
         l.AttachField(new List<FieldEntity> { LiftEntity("lift1") });
@@ -385,7 +386,7 @@ public class FieldObjectStatesTests
         // attaches its breakables and lifts, so the updates before it wait
         var b = new BreakableObjects();
         var l = new LiftableObjects();
-        Assert.That(FieldEnter.Take(new Ms2.Net.FieldEntry(), FieldEnterPacket(2000001), false, b, l, new LiftableTargetBoxes()), Is.EqualTo(FieldEnterResult.NewField));
+        Assert.That(FieldEnter.Take(new Ms2.Net.FieldEntry(), FieldEnterPacket(2000001), b, l, new LiftableTargetBoxes()), Is.EqualTo(FieldEnterResult.NewField));
         Assert.That((b.Holding, l.Holding), Is.EqualTo((true, true)));
     }
 
@@ -394,7 +395,7 @@ public class FieldObjectStatesTests
     {
         // a non-zero error only shows the message box; LoadMap does not run, so the field and its objects stay
         var (entry, b, l, t) = LoadedField(2000001);
-        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000062, 5), false, b, l, t), Is.EqualTo(FieldEnterResult.Refused));
+        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000062, 5), b, l, t), Is.EqualTo(FieldEnterResult.Refused));
         Assert.That(entry.Current.MapId, Is.EqualTo(2000001));
         Assert.That((b.Holding, b.Find("m") != null, l.Holding, l.Find("lift1") != null, t.Count), Is.EqualTo((false, true, false, true, 1)));
         // the next update applies to the field's lift at once
@@ -405,17 +406,25 @@ public class FieldObjectStatesTests
     [Test]
     public void TheLoadingMapEnteredAgainKeepsItsObjectsAndANewMapResetsThem()
     {
-        // LoadMap returns at once for the map that is still loading (worldservice_1.cpp:3295); another map tears the field
-        // down: markers and entity lifts go (:3526-3533), and the updates wait for the new field
+        // LoadMap returns at once for the map that is still loading (worldservice_1.cpp:3296-3297); another map tears the
+        // field down: markers and entity lifts go (:3526-3533), and the updates wait for the new field
         var (entry, b, l, t) = LoadedField(2000001);
-        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000001), true, b, l, t), Is.EqualTo(FieldEnterResult.LoadingAlready));
-        Assert.That((b.Holding, b.Find("m") != null, l.Holding, l.Count, t.Count), Is.EqualTo((false, true, false, 1, 1)));
-        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000062), true, b, l, t), Is.EqualTo(FieldEnterResult.NewField));
+        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000062), b, l, t), Is.EqualTo(FieldEnterResult.NewField));
+        b.AttachField(new List<FieldEntity>());
+        b.AddMarker("m");
+        l.AttachField(new List<FieldEntity> { LiftEntity("lift1") });
+        Assert.That((b.Holding, b.Find("m") != null, l.Holding, l.Count), Is.EqualTo((false, true, false, 1)));
+        // 2000062 still loading: entered again, its objects stay
+        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000062), b, l, t), Is.EqualTo(FieldEnterResult.LoadingAlready));
+        Assert.That((b.Holding, b.Find("m") != null, l.Holding, l.Count), Is.EqualTo((false, true, false, 1)));
+        // another map while loading tears it down
+        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000001), b, l, t), Is.EqualTo(FieldEnterResult.NewField));
         Assert.That((b.Holding, b.Find("m") != null, l.Holding, l.Count, t.Count), Is.EqualTo((true, false, true, 0, 0)));
         // the same map entered again once its load is done is a new field load
+        entry.FieldLoaded(_ => { });
         b.AttachField(new List<FieldEntity>());
         l.AttachField(new List<FieldEntity> { LiftEntity("lift1") });
-        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000062), false, b, l, t), Is.EqualTo(FieldEnterResult.NewField));
+        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000001), b, l, t), Is.EqualTo(FieldEnterResult.NewField));
         Assert.That((b.Holding, l.Holding, l.Count), Is.EqualTo((true, true, 0)));
     }
 

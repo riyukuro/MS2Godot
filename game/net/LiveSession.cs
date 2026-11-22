@@ -856,7 +856,7 @@ public partial class LiveSession : Node
             Me.Apply(entry.Enter);                 // the exp counters (OnServerEnter, scenestategame.cpp:2085-2086)
         });
         GD.Print($"live: {entry.Early.Count} packets before the field: {Quests.All.Count} quests, {Items.All.Count} items, adventure claimed {Adventure.Claimed.Count}, missions {Adventure.Missions.Count}");
-        Ms2.Ui.FieldEnter.Take(fieldEntry, entry.Field, false, Breakables, Liftables, LiftTargets);   // the login's field: its breakables and lifts wait for its entities
+        Ms2.Ui.FieldEnter.Take(fieldEntry, entry.Field, Breakables, Liftables, LiftTargets);   // the login's field: its breakables and lifts wait for its entities
         NewFieldPortals(entry.Field.MapId);
         NewFieldInteractObjects(entry.Field.MapId);
         NewFieldReactors();
@@ -979,7 +979,8 @@ public partial class LiveSession : Node
     /// FieldAddUser (OnAddUser builds a new MyPC); the sync number stays until the server sends one (OnSyncNumber,
     /// networkservice.cpp:799, is not reset by the move).
     /// LoadMap returns at once when the field is still loading the same map (worldservice_1.cpp:3295, m_state 2 and the
-    /// same map id): a repeat entry for the map in load changes the entry's values only; the load goes on.
+    /// same map id): a repeat entry for the map in load changes the entry's values only; the load goes on with the first
+    /// entry's portal, and its field-loaded sends and answer go out once (<see cref="Ms2.Net.FieldEntry.Enter"/>).
     /// STILL-OPEN: DAT_143ab2890 = 0 (the free-roam test field flag),
     /// FUN_140930ba0's group type (DAT_143ab2888; the room id is kept for the battle records' chaos test), CUIService FUN_141adc400 (uiservice.cpp:1574: each
     /// registered dialog with m_158 set and m_15c clear is opened again, vfunc_61(0) then vfunc_65; this HUD is rebuilt with
@@ -990,7 +991,7 @@ public partial class LiveSession : Node
     void OnRequestFieldEnter(RequestFieldEnter f)
     {
         // a refused entry or the loading map again keeps the field's breakables and lifts; a new field resets them
-        var taken = Ms2.Ui.FieldEnter.Take(fieldEntry, f, moveClock.IsRunning, Breakables, Liftables, LiftTargets); // perf-ok: FieldEnter.Take is a static method, not LINQ
+        var taken = Ms2.Ui.FieldEnter.Take(fieldEntry, f, Breakables, Liftables, LiftTargets); // perf-ok: FieldEnter.Take is a static method, not LINQ
         if (taken == Ms2.Ui.FieldEnterResult.Refused)
         {
             string text = Ms2.Ui.FieldMoveError.Text(f.Error, Ms2.Ui.Hud.MessageBoxData.CommonByKey);
@@ -1006,6 +1007,8 @@ public partial class LiveSession : Node
             GD.Print($"live: RequestFieldEnter in game: map {f.MapId} is loading already, the load goes on (pos {f.Position} portal {f.Portal})");
             return;
         }
+        // a new field: no region skill or trigger object survives it (an error or the loading map again keeps the field)
+        regionSkills.Clear(); RegionSkillLog.Clear(); ClearFieldEffects(); pendingTriggers.Clear(); triggerField = null;
         // the old field's own player stops sending: SetMyPC(0) until the new field's FieldAddUser
         DropOwnPc();
         moveClock.Restart();
@@ -1145,7 +1148,6 @@ public partial class LiveSession : Node
     {
         try
         {
-            if (game.Is(p, Inbound.RequestFieldEnter)) { regionSkills.Clear(); RegionSkillLog.Clear(); ClearFieldEffects(); pendingTriggers.Clear(); triggerField = null; }   // a new field: no region skill or trigger object survives it
             bool own = game.Is(p, Inbound.Stat) && p.Body.Length >= 4 && BitConverter.ToInt32(p.Body, 0) == selfObject;
             if (own) { var st = PlayerStat.Read(p.Reader()); ApplyStat(st); Me.Apply(st); }
             else remote?.Tracker.Inbound(p);     // others' users and npcs (FieldTracker keeps the rest)

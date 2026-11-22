@@ -449,13 +449,12 @@ public enum FieldEnterResult
 /// </summary>
 public static class FieldEnter
 {
-    /// <summary>Takes <paramref name="f"/> into <paramref name="entry"/>. <paramref name="loading"/>: a field load is still
-    /// running (its entry is the current one).</summary>
-    public static FieldEnterResult Take(Ms2.Net.FieldEntry entry, RequestFieldEnter f, bool loading, BreakableObjects breakables, LiftableObjects lifts, LiftableTargetBoxes targets)
+    /// <summary>Takes <paramref name="f"/> into <paramref name="entry"/>; the map still loading again
+    /// (<see cref="Ms2.Net.FieldEntry.LoadingAlready"/>) keeps the field.</summary>
+    public static FieldEnterResult Take(Ms2.Net.FieldEntry entry, RequestFieldEnter f, BreakableObjects breakables, LiftableObjects lifts, LiftableTargetBoxes targets)
     {
-        int loadingMap = loading ? entry.Current?.MapId ?? 0 : 0;
         if (!entry.Enter(f)) return FieldEnterResult.Refused;
-        if (loadingMap != 0 && loadingMap == f.MapId) return FieldEnterResult.LoadingAlready;
+        if (entry.LoadingAlready) return FieldEnterResult.LoadingAlready;
         breakables.ClearMarkers();
         lifts.FieldLeft();
         targets.Clear();

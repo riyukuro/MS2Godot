@@ -41,17 +41,26 @@ public sealed class FieldEntry
 
     public FieldEntry(RequestFieldEnter first = null) { if (first != null) Enter(first); }
 
-    /// <summary>OnRequestFieldEnter: true when the entry is taken (error 0): LoadMap keeps its portal and a new field load
-    /// starts (state 2). False on an error: nothing changes.</summary>
+    /// <summary>True when the last taken entry was the map still loading (<see cref="Enter"/>): its load goes on.</summary>
+    public bool LoadingAlready { get; private set; }
+
+    /// <summary>OnRequestFieldEnter: true when the entry is taken (error 0). False on an error: nothing changes.
+    /// <para>LoadMap (@0x141bbbe40, worldservice_1.cpp:3296-3297) returns at once when the field is still loading
+    /// (state 2) and the map is the one in load: the entry's values are taken (the globals, scenestategame.cpp:2340-2344),
+    /// but the portal stays the first entry's (m_2c0 is set only after the check, :3319), no new load starts and the
+    /// load's sends go out once (<see cref="LoadingAlready"/>). Otherwise LoadMap keeps the portal and a new field load
+    /// starts (state 2, FUN_141bbc1d0, :3388); a loaded field entered again for its own map loads it again.</para></summary>
     public bool Enter(RequestFieldEnter f)
     {
         if (f == null || f.Error != 0) return false;
+        LoadingAlready = Loading && Current != null && Current.MapId == f.MapId;
         Current = f;
+        Entries++;
+        if (LoadingAlready) return true;
         Portal = f.Portal;
         Answered = false;
         Loading = true;
         Loaded = false;
-        Entries++;
         return true;
     }
 

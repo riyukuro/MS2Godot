@@ -187,6 +187,41 @@ public class FieldMoveTests {
         l.Stop();
     }
 
+    /// <summary>LoadMap's early return (worldservice_1.cpp:3296-3297): a RequestFieldEnter for the map still loading
+    /// (state 2) takes the entry's values but starts no load and keeps the first entry's portal (m_2c0 is set at :3319,
+    /// after the check). So the field load sends RequestLoadUgcMap and Ugc 0x12 once, and the answer carries the first
+    /// portal.</summary>
+    [Test] public async Task TheLoadingMapEnteredAgainSendsTheFieldEnteredSendsOnce() {
+        var (s, l, srv, e, game) = await Enter();
+        using (game) {
+            var entry = new FieldEntry(e.Field);
+            await Serve(s, srv, game, entry, srv.Frame(Inbound.RequestFieldEnter, FieldEnter(2000001, 66)));
+            Assert.That((entry.LoadingAlready, entry.Loading, entry.Portal, entry.Entries), Is.EqualTo((true, true, 55, 2)));
+            await Loaded(game, entry);
+            await Serve(s, srv, game, entry, srv.Frame(Inbound.LoadUgcMap, UgcMap(0)));
+            Assert.That(await UpToMarker(s, srv, game), Is.EqualTo(new[] { LoadUgcMapAsk(55), Banners(2000001), Answer(55) }));
+        }
+        l.Stop();
+    }
+
+    /// <summary>Once the load is done (state 4) the same map entered again is a new field load (LoadMap past the check):
+    /// the new portal, the field-loaded sends again and a new answer.</summary>
+    [Test] public async Task TheLoadedMapEnteredAgainLoadsItAgain() {
+        var (s, l, srv, e, game) = await Enter();
+        using (game) {
+            var entry = new FieldEntry(e.Field);
+            await Loaded(game, entry);
+            await Serve(s, srv, game, entry, srv.Frame(Inbound.LoadUgcMap, UgcMap(0)));
+            Assert.That(await UpToMarker(s, srv, game), Is.EqualTo(new[] { LoadUgcMapAsk(55), Banners(2000001), Answer(55) }));
+            await Serve(s, srv, game, entry, srv.Frame(Inbound.RequestFieldEnter, FieldEnter(2000001, 66)));
+            Assert.That((entry.LoadingAlready, entry.Loading, entry.Answered, entry.Portal), Is.EqualTo((false, true, false, 66)));
+            await Loaded(game, entry);
+            await Serve(s, srv, game, entry, srv.Frame(Inbound.LoadUgcMap, UgcMap(0)));
+            Assert.That(await UpToMarker(s, srv, game), Is.EqualTo(new[] { LoadUgcMapAsk(66), Banners(2000001), Answer(66) }));
+        }
+        l.Stop();
+    }
+
     [Test] public async Task InGameFieldEnterErrorKeepsTheField() {
         var (s, l, srv, e, game) = await Enter();
         using (game) {
