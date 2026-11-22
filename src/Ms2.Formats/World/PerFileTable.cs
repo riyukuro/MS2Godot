@@ -59,7 +59,7 @@ public static class PerFileTable
     static byte[] Write(Table t) => Serialize(t.Doc);
     internal static byte[] Serialize(XDocument d) => System.Text.Encoding.UTF8.GetBytes(Text(d));
     internal static XDocument Deserialize(byte[] body) => Read(body).Doc;
-    static Table Read(byte[] body) => new(body.Length == 0 ? null : XDocument.Parse(System.Text.Encoding.UTF8.GetString(body)));
+    static Table Read(byte[] body) => new(body.Length == 0 ? null : PackXml.Parse(body));
 
     static bool Has(PackSet packs, string folder) => packs.List("Xml").Any(n => n.StartsWith(folder, StringComparison.Ordinal) && n.EndsWith(".xml", StringComparison.Ordinal));
 
