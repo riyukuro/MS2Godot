@@ -81,6 +81,10 @@ public sealed class GameTables
         var k = FeatureElements.Constants(packs);
         AdventureLevelLvUpExp = (long)k.Float("AdventureLevelLvUpExp", AdventureLevelLvUpExp);
         AdventureLevelStartLevel = (int)k.Float("AdventureLevelStartLevel", AdventureLevelStartLevel);
+        BeautyStyleExpandSlotPrice = (long)k.Float("BeautyStyleExpandSlotPrice", BeautyStyleExpandSlotPrice);
+        BeautyStyleExpandSlotCount1time = (int)k.Float("BeautyStyleExpandSlotCount1time", BeautyStyleExpandSlotCount1time);
+        BeautyStyleDefaultSlotCount = (int)k.Float("BeautyStyleDefaultSlotCount", BeautyStyleDefaultSlotCount);
+        BeautyStyleMaxSlotCount = (int)k.Float("BeautyStyleMaxSlotCount", BeautyStyleMaxSlotCount);
         ItemBoxMultiOpenMaxCount = (int)k.Float("ItemBoxMultiOpenMaxCount", ItemBoxMultiOpenMaxCount);
         ItemBoxMultiOpenLimitCount = (int)k.Float("ItemBoxMultiOpenLimitCount", ItemBoxMultiOpenLimitCount);
         CharacterAbilityDefaultPoint = (uint)k.Float("CharacterAbilityDefaultPoint", CharacterAbilityDefaultPoint);
@@ -361,6 +365,11 @@ public sealed class GameTables
     /// 15000 and 50, unit_1402ab440_constantsblocks.cpp:1155, :1157).</summary>
     public long AdventureLevelLvUpExp = 15000;
     public int AdventureLevelStartLevel = 50;
+    /// <summary>Client::Constants BeautyStyleExpandSlotPrice (+0x64b8, default 790: GetExtendPrice), BeautyStyleExpandSlotCount1time
+    /// (+0x6518, default 3: the slots one extend adds), BeautyStyleDefaultSlotCount (+0x6570, default 1) and BeautyStyleMaxSlotCount
+    /// (+0x65c8, default 12: the extra slots on top of the default); clientconstants.h:428-431, constantsblocks.cpp:1023-1026.</summary>
+    public long BeautyStyleExpandSlotPrice = 790;
+    public int BeautyStyleExpandSlotCount1time = 3, BeautyStyleDefaultSlotCount = 1, BeautyStyleMaxSlotCount = 12;
     /// <summary>Client::Constants ItemBoxMultiOpenMaxCount (the batch one RequestItemBox carries, UIItemMultiOpenBoxDialog::vfunc_15
     /// min(m_194, it)) and ItemBoxMultiOpenLimitCount (the clamp of the bag count in the use dispatch, +0xa340): the Define
     /// defaults 20 and 1000, unit_1402ab440_constantsblocks.cpp:1220, :1221.</summary>
