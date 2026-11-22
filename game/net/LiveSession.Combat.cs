@@ -37,7 +37,8 @@ public partial class LiveSession
         void Check(string what, bool ok) => GD.Print($"live: combat {(ok ? "PASS" : "FAIL")}: {what}");
         string Env(string k, string d) => System.Environment.GetEnvironmentVariable(k) is { Length: > 0 } v ? v : d;
         int numbers = 0, kills = 0, npcs = 0, storeItem = int.Parse(Env("MS2_LIVE_STORE_ITEM", "0").Split(';')[0]);
-        long mesoDelta = 0;
+        long mesoDelta = 0, lockUid = 0;
+        int lockId = 0;
         live.DamageNumbered += (n, npc, pc) => { if (npc != null) numbers++; };
         live.NpcExpShown += (npc, exp) => kills++;
         live.NpcAdded += npc => npcs++;
@@ -153,6 +154,82 @@ public partial class LiveSession
                     case "storeclose":
                         GD.Print($"live: combat store close: {(hud.StoreCloseScripted() ? "sent" : "not open")}");
                         await frames(120); Shot("store_close.png");
+                        break;
+                    default: GD.Print($"live: combat: unknown step {step}"); break;
+                }
+                continue;
+            }
+            if (step.StartsWith("lock"))      // the item lock steps: lockgive, lockopen, lockselect, lockconfirm, lockcheck, lockunlock, lockclose
+            {
+                string lname = step;
+                switch (lname)
+                {
+                    case "lockgive":
+                    {
+                        foreach (var cand in Env("MS2_LIVE_LOCK_ITEM", "0").Split(';'))      // the first id the GM item command gives
+                        {
+                            lockId = int.Parse(cand);
+                            var known = live.Items.All.Select(e => e.Uid).ToHashSet();
+                            hud.SubmitChatLine($"/item {lockId}");
+                            await until(() => live.Items.All.Any(e => e.Id == lockId && !known.Contains(e.Uid)), 60 * 3); await frames(30);
+                            if (live.Items.All.FirstOrDefault(e => e.Id == lockId && !known.Contains(e.Uid)) is { } got) { lockUid = got.Uid; break; }
+                        }
+                        Check($"the bag holds the item to lock (id {lockId})", lockUid != 0 && live.Items.Get(lockUid) != null);
+                        break;
+                    }
+                    case "lockopen":
+                        Check("the lock dialog is open", hud.LockOpenScripted());
+                        await frames(90); Shot("lock_open.png");
+                        break;
+                    case "lockselect":
+                    {
+                        bool sent = hud.LockSelectScripted(lockUid);
+                        GD.Print($"live: combat lock select: {(sent ? "sent" : "not sent")}");
+                        await until(() => live.LockBook.Contains(lockUid), 60 * 10); await frames(60);
+                        Check("the item is in the lock bag (the server's answer)", live.LockBook.Contains(lockUid));
+                        Shot("lock_select.png");
+                        break;
+                    }
+                    case "lockconfirm":
+                    {
+                        byte state0 = live.Items.Get(lockUid)?.LockState ?? 0; long at0 = live.Items.Get(lockUid)?.UnlockTime ?? 0;
+                        GD.Print($"live: combat lock confirm: {(hud.LockConfirmScripted() ? "asked and answered yes" : "no box")}");
+                        await until(() => !live.LockBook.Contains(lockUid), 60 * 10); await frames(60);
+                        var r = hud.LockRulesScripted(lockUid);
+                        GD.Print($"live: combat lock state: {state0} -> {r.State}, unlock time {at0} -> {r.UnlockAt}, server time {r.Now}");
+                        Check("the item left the lock bag after the answer", !live.LockBook.Contains(lockUid));
+                        Shot("lock_confirm.png");
+                        break;
+                    }
+                    case "lockcheck":
+                    {
+                        var r = hud.LockRulesScripted(lockUid);
+                        GD.Print($"live: combat lock rules: not locked={r.NotLocked} state={r.State} unlock time={r.UnlockAt} server time={r.Now}");
+                        Check("the item is locked (a trade, a shop sale and a dismantle are refused by the lock rule)", !r.NotLocked);
+                        break;
+                    }
+                    case "lockfree":
+                    {
+                        var r = hud.LockRulesScripted(lockUid);
+                        GD.Print($"live: combat lock rules: not locked={r.NotLocked} state={r.State} unlock time={r.UnlockAt} server time={r.Now}");
+                        Check("the item is free (the lock rule lets it through)", r.NotLocked);
+                        break;
+                    }
+                    case "lockunlock":
+                    {
+                        Check("the unlock tab is up", hud.LockTabScripted(1));
+                        GD.Print($"live: combat lock select (unlock): {(hud.LockSelectScripted(lockUid) ? "sent" : "not sent")}");
+                        await until(() => live.LockBook.Contains(lockUid), 60 * 10); await frames(60);
+                        Check("the item is in the unlock bag", live.LockBook.Contains(lockUid));
+                        GD.Print($"live: combat lock unlock confirm: {(hud.LockConfirmScripted() ? "asked and answered yes" : "no box")}");
+                        await until(() => !live.LockBook.Contains(lockUid), 60 * 10); await frames(60);
+                        var r = hud.LockRulesScripted(lockUid);
+                        GD.Print($"live: combat lock state after the unlock request: {r.State}, unlock time {r.UnlockAt}, server time {r.Now}, wait {r.UnlockAt - r.Now} s");
+                        Shot("lock_unlock.png");
+                        break;
+                    }
+                    case "lockclose":
+                        hud.LockCloseScripted(); await frames(60); Shot("lock_close.png");
                         break;
                     default: GD.Print($"live: combat: unknown step {step}"); break;
                 }
