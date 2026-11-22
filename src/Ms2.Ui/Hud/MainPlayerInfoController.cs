@@ -368,7 +368,7 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         if (item == null && e.ItemId != 0)
         {
             var gone = new Items.ItemTooltip(Model, SlotTooltipFlags);
-            int rank = Model.Tables.Items.Get(e.ItemId) is { Rank: not 0 } d ? d.Rank : 1;
+            int rank = Items.ItemTooltip.ItemRank(Model.Tables.Items, e.ItemId);
             if (!gone.FillById(e.ItemId, rank)) return null;
             if (!IsFixed) gone.SetEnablePuton(removeHint);
             return gone.Data;

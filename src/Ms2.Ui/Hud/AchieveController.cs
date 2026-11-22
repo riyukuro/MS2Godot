@@ -14,8 +14,7 @@ namespace Ms2.Ui.Hud;
 /// STILL-OPEN (each answered by a delegate that defaults to "none"): the game events of CheckRequire and the category
 /// filters (GameEventManagerCli); the collection marks of reqCondition (DAT_143ab30e0 items, CFishingManager, CPetManager,
 /// the dungeon record); IsDebugMode (CInputKeyHandler); the item-coloring palette members of the reward line and the
-/// getTooltipColor / getTooltipAchieve tooltips (CItemDataTable palettes, ASTooltip::SetAchieveTooltip); the item tooltip
-/// (vfunc_49); OnUseLink (FUN_140d2cca0, raised as <see cref="UseLink"/>); vfunc_80, the platform's late search answer
+/// getTooltipColor / getTooltipAchieve tooltips (CItemDataTable palettes, ASTooltip::SetAchieveTooltip); OnUseLink (FUN_140d2cca0, raised as <see cref="UseLink"/>); vfunc_80, the platform's late search answer
 /// (KR's vfunc_37 answers at once, so it is not reached).
 /// </para>
 /// </summary>
@@ -171,6 +170,14 @@ public sealed class AchieveController : UiController
             if (name.Length != 0) s.GetAttr(name, ref v);
             kinds[i] = v;
         }
+    }
+
+    /// <summary>vfunc_49 (@0x1418a8690): the item id's tooltip at its default rank, ASTooltip(player, 0x20, 2).FUN_1409e1770
+    /// (id, GetItemRank(id)); none when the item has no data.</summary>
+    public override IDictionary<string, object> GetTooltip(object[] args)
+    {
+        int id = args is { Length: > 0 } ? (int)Rt.ToUint32(args[0]) : 0;
+        return Items.ItemTooltip.ById(Model, 0x20, id, Items.ItemTooltip.ItemRank(Model.Tables.Items, id));
     }
 
     /// <summary>vfunc_28 (:226).</summary>

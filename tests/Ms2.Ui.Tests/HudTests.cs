@@ -392,6 +392,23 @@ public class HudTests
     }
 
     [Test]
+    public void AchieveItemTooltipIsTheTooltipById()
+    {
+        // UIAchieveDialog::vfunc_49 (@0x1418a8690): ASTooltip(player, 0x20, 2).FUN_1409e1770(id, GetItemRank(id))
+        var m = Model();
+        var book = new AchieveBook(new Dictionary<int, AchieveData>(), Array.Empty<AchieveData>());
+        var c = new AchieveController(book, new AchieveTexts(new(), new()) { Data = book.DataOf, Find = book.Find },
+            new AchieveCategoryTable(new List<AchieveCategory>()));
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        var tip = c.GetTooltip(new object[] { 11300451u });
+        Assert.That(tip["itemName"], Is.EqualTo(m.Tables.ItemName(11300451)));
+        Assert.That(tip["itemGrade"], Is.EqualTo(Ms2.Ui.Items.ItemTooltip.ItemRank(m.Tables.Items, 11300451)));
+        Assert.That(tip["tooltipAlign"], Is.EqualTo(5));   // flags 0x20: neither 0x40 nor 2
+        Assert.That(c.GetTooltip(new object[] { 1u }), Is.Null);
+    }
+
+    [Test]
     public void QuickSlotsSwapByDragAndEmptyByRightClick()
     {
         // SkillSlot::vfunc_18 (skillslot.cpp:507) from another SkillSlot: FUN_14092f690 of the source's entry on the target

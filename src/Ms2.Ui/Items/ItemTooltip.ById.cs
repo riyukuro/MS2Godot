@@ -59,6 +59,17 @@ public sealed partial class ItemTooltip
         return true;
     }
 
+    /// <summary>GetItemRank(id): the item's default rank, its data's rank or 1 when that is 0 (or there is no data).</summary>
+    public static int ItemRank(ItemDataTable items, int itemId) => items.Get(itemId) is { Rank: not 0 } d ? d.Rank : 1;
+
+    /// <summary>The usual caller form: ASTooltip(local player, flags, 2).FUN_1409e1770(id, rank).GetValue(), null when the
+    /// item has no data.</summary>
+    public static AsTooltip ById(UiModel model, int flags, int itemId, int rank)
+    {
+        var tip = new ItemTooltip(model, flags);
+        return tip.FillById(itemId, rank) ? tip.Data : null;
+    }
+
     /// <summary>
     /// FUN_1409d5b70 (astooltip.cpp:2925), "itemGuideDescription" by id: the string table's guideDescription, then m_50
     /// (<see cref="ShopGuideText"/>). STILL-OPEN, so the member is left out: an install object's rights (objCode: 0xafa /
