@@ -809,12 +809,19 @@ public partial class HudScene : Node, IUiStageHost
         if (Ms2Godot.Net.LiveSession.Instance is { } live)
         {
             live.GuidePane = GuideEvent;
-            live.FindDialogOf = FindGuideDialog;      // the guide's dialog conditions over the HUD's dialogs
+            if (guideDialogLookup == null)
+            {
+                Func<string, Ms2.Ui.Guide.GuideDialog> open = FindGuideDialog;      // the one delegate each lookup passes on
+                guideDialogLookup = name => Ms2.Ui.Guide.GuideDialogLookup.Resolve(name, open);
+            }
+            live.FindDialogOf = guideDialogLookup;      // the guide's dialog conditions over the HUD's dialogs
             // the room table read here at the field's HUD build, on the main thread: no parse on the packet path
             var rooms = dungeonRooms ??= DungeonRooms.Load(assets.Packs, e => Ms2.Ui.FeatureElements.IsAvailable(assets.Packs, e));
             live.DungeonRoomOf = rooms.GetRoom;
         }
     }
+
+    Func<string, Ms2.Ui.Guide.GuideDialog> guideDialogLookup;     // built once: a guide tick's lookup allocates no delegate
 
     /// <summary>
     /// CUIService::FindObjectByName (the guide's dialog lookups): the open movies' controllers by their type name, read

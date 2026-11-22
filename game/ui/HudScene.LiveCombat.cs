@@ -82,4 +82,8 @@ public partial class HudScene
         player.Face(d);
         return d.Length();
     }
+
+    /// <summary>The Escape key pressed, through the dialog key handler. True when a dialog took it.</summary>
+    public bool EscScripted() =>
+        DialogKeys(new InputEventKey { Keycode = Key.Escape, PhysicalKeycode = Key.Escape, Pressed = true, Echo = false });
 }

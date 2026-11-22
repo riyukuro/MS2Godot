@@ -333,6 +333,103 @@ public class GuideTests
         Assert.That(g.IsRestricted(GuideLimit.ItemPutOn), Is.False);
     }
 
+    sealed class ClosedWorld : GuideWorld
+    {
+        sealed class Dlg : GuideDialog { readonly string n; public Dlg(string n) { this.n = n; } public override string TypeName => n; public override bool Hidden => false; }
+        readonly Pane pane = new();
+        public uint Time = 1000;
+        public readonly HashSet<string> Open = new();
+        public override uint Now => Time;
+        public override IGuideEventPane Pane => pane;
+        public override int GuideMode => 1;
+        public override void GuideLog(string text) { }
+        public override GuideDialog FindDialog(string name) =>
+            GuideDialogLookup.Resolve(name, n => Open.Contains(n) ? new Dlg(n) : null);
+    }
+
+    /// <summary>The "close all windows" step (event 250 of the tutorial) closes on dialogs with isOpen 0. The client's registry
+    /// answers a closed dialog; the port frees it, so a dialog that was open and was closed must still meet isOpen 0.</summary>
+    [Test]
+    public void ClosedDialogMeetsIsOpenZero()
+    {
+        var w = new ClosedWorld();
+        var g = new GuideManager(w);
+        var table = new GuideTable();
+        table.Files.Add(new GuideTableFile("table/test.xml", XElement.Parse("""
+            <ms2>
+              <event id="250" saveId="110" saveStep="71">
+                <open><condition type="trigger" trigger="ShopOpen" value="7" /></open>
+                <close>
+                  <condition type="dialog" dialogName="MyInfoDialog" dialogID="10001" isOpen="0" />
+                  <condition type="dialog" dialogName="InventoryDialog" isOpen="0" />
+                </close>
+              </event>
+            </ms2>
+            """).Elements("event").ToList()));
+        g.Load(table);
+        Assert.That(g.LoadErrors, Is.Empty);
+        w.Time = 1300; g.Tick();
+        g.AddTrigger(GuideTrigger.ShopOpen, 7);
+        w.Open.Add("MyInfoDialog"); w.Open.Add("InventoryDialog");
+        w.Time = 1600; g.Tick();
+        w.Time = 1900; g.Tick();
+        Assert.That(g.FindEntity(250).State, Is.EqualTo(2));
+        w.Open.Clear();     // both closed and freed
+        g.QueueOccurrence(GuideOccurrence.Dialog, 0);
+        w.Time = 2200; g.Tick();
+        w.Time = 2500; g.Tick();
+        Assert.That(g.FindEntity(250).State, Is.EqualTo(0), "closing the windows closes it");
+    }
+
+    /// <summary>The closed-dialog answer is one kept stand-in per name: a guide tick's lookup allocates nothing.</summary>
+    [Test]
+    public void ClosedDialogLookupAllocatesNothing()
+    {
+        Func<string, GuideDialog> none = _ => null;
+        var first = GuideDialogLookup.Resolve("InventoryDialog", none);
+        Assert.That(first, Is.Not.Null);
+        Assert.That(first.Hidden, Is.True);
+        Assert.That(GuideDialogLookup.Resolve("NotARegisteredDialog", none), Is.Null);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1000; i++)
+        {
+            GuideDialogLookup.Resolve("InventoryDialog", none);
+            GuideDialogLookup.Resolve("NotARegisteredDialog", none);
+        }
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0));
+        Assert.That(GuideDialogLookup.Resolve("inventorydialog", none), Is.SameAs(first));
+    }
+
+    /// <summary>Event 250 with neither window opened in this process (a restart on the saved step): the client's registry holds
+    /// both from the start, closed, so the step is met.</summary>
+    [Test]
+    public void NeverOpenedRegisteredDialogsMeetIsOpenZero()
+    {
+        var w = new ClosedWorld();
+        var g = new GuideManager(w);
+        var table = new GuideTable();
+        table.Files.Add(new GuideTableFile("table/test.xml", XElement.Parse("""
+            <ms2>
+              <event id="250" saveId="110" saveStep="71">
+                <open><condition type="trigger" trigger="ShopOpen" value="7" /></open>
+                <close>
+                  <condition type="dialog" dialogName="MyInfoDialog" dialogID="10001" isOpen="0" />
+                  <condition type="dialog" dialogName="InventoryDialog" isOpen="0" />
+                </close>
+              </event>
+            </ms2>
+            """).Elements("event").ToList()));
+        g.Load(table);
+        w.Time = 1300; g.Tick();
+        g.AddTrigger(GuideTrigger.ShopOpen, 7);
+        w.Time = 1600; g.Tick();
+        w.Time = 1900; g.Tick();
+        g.QueueOccurrence(GuideOccurrence.Dialog, 0);
+        w.Time = 2200; g.Tick();
+        w.Time = 2500; g.Tick();
+        Assert.That(g.FindEntity(250).State, Is.EqualTo(0));
+    }
+
     sealed class SlotWorld : GuideWorld
     {
         public bool Slotted;

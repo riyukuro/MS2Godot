@@ -35,6 +35,38 @@ public sealed class GuideControllerDialog : GuideDialog
     public override GuideNode Root => host?.Entity is { } e && !Rt.IsNullish(e) ? new GuideObjectNode(host, e) : null;
 }
 
+/// <summary>
+/// A registered dialog that is not open: CUIService::FindObjectByName answers it (vfunc_55 true), so a dialog condition with
+/// isOpen 0 is met by it (CGuideConditionDialog::vfunc_3 @0x1413a6140). The port frees a dialog's movie when it closes and
+/// builds it on first open; this is the answer for the registered ones without a movie.
+/// </summary>
+public sealed class GuideClosedDialog : GuideDialog
+{
+    readonly string typeName;
+    public GuideClosedDialog(string typeName) { this.typeName = typeName; }
+    public override string TypeName => typeName;
+    public override bool Hidden => true;
+    public override int SubIndex => -1;     // UIDialog::vfunc_82 (uidialog.cpp:913)
+}
+
+public static class GuideDialogLookup
+{
+    static readonly Dictionary<string, GuideClosedDialog> closed = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The open dialog of the name, else a closed stand-in when the client registers the name (<see cref="RegisteredDialogs"/>:
+    /// CreateAllDialogs registers each once, RegisterObject puts it in m_mapC until ClearAllUI, uiservice.cpp:495), else null.
+    /// One stand-in per name, kept: a guide tick's lookup allocates nothing.
+    /// </summary>
+    public static GuideDialog Resolve(string name, Func<string, GuideDialog> open)
+    {
+        var d = open(name);
+        if (d != null || !RegisteredDialogs.Contains(name)) return d;
+        if (!closed.TryGetValue(name, out var c)) closed[name] = c = new GuideClosedDialog(name);
+        return c;
+    }
+}
+
 /// <summary>A display object of a dialog's movie (ASDisplayObject) as the guide walks it: its place and its named
 /// children (GetChild&lt;ASDisplayObject&gt;).</summary>
 public sealed class GuideObjectNode : GuideNode

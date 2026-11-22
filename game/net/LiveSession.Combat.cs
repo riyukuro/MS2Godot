@@ -339,6 +339,13 @@ public partial class LiveSession
                     GD.Print($"live: combat guide state: {hud.GuideStateText()}");
                     break;
                 }
+                case "esc":
+                {
+                    GD.Print($"live: combat esc: {(hud.EscScripted() ? "taken" : "not taken")}");
+                    await frames(60 * 4);
+                    GD.Print($"live: combat guide state: {hud.GuideStateText()}");
+                    break;
+                }
                 case "openbag":
                 {
                     GD.Print($"live: combat bag: {(hud.OpenInventoryScripted() ? "open" : "refused")}");
