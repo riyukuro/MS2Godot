@@ -2328,7 +2328,7 @@ public partial class HudScene : Node, IUiStageHost
     }
 
     /// <summary>Opens the lapenshard window with its equip page when the feature (0xd3) allows; the worn table is the player state's
-    /// and the session's lapenshard packets reach the page while it is open. STILL-OPEN: the upgrade page and the item bag.</summary>
+    /// and the session's lapenshard packets reach the page while it is open. STILL-OPEN: the upgrade page; the bag is built when the page opens or a lapenshard packet arrives, not on inventory changes (the item events listener).</summary>
     void OpenLapenshard()
     {
         if (GuideRefusesOpen("LapenshardSystemDialog")) return;
@@ -2339,6 +2339,11 @@ public partial class HudScene : Node, IUiStageHost
         c.AddTab(new Ms2.Ui.Hud.LapenshardEquipTabPage());
         c.InBattle = () => live?.SelfInBattle ?? false;
         if (live != null) c.Send = p => { live.SendTalk(p); return true; };
+        // FUN_140c60920's source: the inventory's category 0xd (the lapenshard tab), as the bag's own item copies
+        if (live != null)
+            c.InventoryItems = cat => live.Items.All.Where(e => live.Items.TabOf?.Invoke(e.Id) == cat)
+                .OrderBy(e => e.InventorySlot).Select(e => Ms2.Ui.Hud.InventoryController.ToItem(e, hudModel.Tables.Items)).Where(i => i != null).ToList();
+        c.NoticeText += SystemNoticeText;
         Action<Ms2.Net.Packets.LapenshardMessage> onMsg = c.OnPacket;
         if (live != null) live.LapenshardReceived += onMsg;
         c.Unloaded += () =>
