@@ -30,7 +30,9 @@ public sealed class PartyUser {
     /// <summary>GetTombType @0x1408f1cf0 (userproxy.cpp:1895): m_4c &amp; 3 is 1 or 2, else 0.</summary>
     public int TombType => (TombFlags & 3) is 1 or 2 ? TombFlags & 3 : 0;
 
-    public static PartyUser Read(ByteReader r) {
+    public static PartyUser Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    public static PartyUser Read(ByteReader r, ProtocolProfile profile) {
         var u = new PartyUser();
         u.AccountId = r.ReadLong();
         u.CharacterId = r.ReadLong();
@@ -65,6 +67,7 @@ public sealed class PartyUser {
         r.ReadByte();                                  // m_24
         for (int i = 0; i < 12; i++) r.ReadInt();      // m_140[12]
         r.ReadUnicodeString(); r.ReadLong();           // m_330: CKRPlatformProxy::vfunc_6 (userproxy.cpp:279; region 0, KMS)
+        if (profile.IsGms2) { ReadGms2Tail(r, u); return u; }
         int set = r.ReadInt();                         // FUN_1408f1110 per value
         for (int i = 0; i < set; i++) r.ReadLong();
         u.ReturnUserKind = r.ReadByte();
@@ -75,6 +78,17 @@ public sealed class PartyUser {
         r.ReadShort();                                 // m_1ac
         r.ReadLong();                                  // m_88
         return u;
+    }
+
+    /// <summary>The upstream PlayerInfo.WriteTo after the login name and session id: two i64, a counted i64 list, the mentor role byte, a bool,
+    /// i64 birthday, i32 super chat id, i32, i64 time, i32, i64, i32, i32, i16, i64.</summary>
+    static void ReadGms2Tail(ByteReader r, PartyUser u) {
+        r.ReadLong(); r.ReadLong();
+        int set = r.ReadInt();                         // a count of i64 (the KMS2 set before the return user byte; the recordings show members in it)
+        for (int i = 0; i < set; i++) r.ReadLong();
+        r.ReadByte();                                  // MentorRole
+        r.ReadBool();
+        r.ReadLong(); r.ReadInt(); r.ReadInt(); r.ReadLong(); r.ReadInt(); r.ReadLong(); r.ReadInt(); r.ReadInt(); r.ReadShort(); r.ReadLong();
     }
 
     /// <summary>Writes the record in the layout <see cref="Read"/> takes (tests and offline fixtures).</summary>
@@ -108,13 +122,15 @@ public abstract record PartyMessage(int Mode) {
 
     /// <summary>Reads one party packet. Every mode this reader decodes ends with ExpectEnd, so a layout the client reads differently
     /// shows up as a PacketLayoutException; the modes it does not decode (PartyOtherMode) are returned without reading their body.</summary>
-    public static PartyMessage Read(ByteReader r) {
-        var m = ReadBody(r);
+    public static PartyMessage Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    public static PartyMessage Read(ByteReader r, ProtocolProfile profile) {
+        var m = ReadBody(r, profile);
         if (m is not PartyOtherMode) r.ExpectEnd($"Party mode {m.Mode}");
         return m;
     }
 
-    static PartyMessage ReadBody(ByteReader r) {
+    static PartyMessage ReadBody(ByteReader r, ProtocolProfile profile) {
         int mode = r.ReadByte();
         switch (mode) {
             case 0: { int result = r.ReadByte(); return new PartyResult(result, r.ReadUnicodeString()); }   // OnPartyResultMessage @0x14162f030 (partymanager.cpp:1370)
@@ -122,17 +138,17 @@ public abstract record PartyMessage(int Mode) {
             case 0x12: { long id = r.ReadLong(); return new PartyMemberResult(id, r.ReadByte()); }          // FUN_14162e3d0 @0x14162e3d0
             case 0x14: return new PartyNotice(r.ReadUnicodeString(), r.ReadUnicodeString(), r.ReadUnicodeString());   // OnPartyNotice @0x14162e5d0
             case 0x19: { bool matching = r.ReadBool(); return new PartyMatchDungeonChange(matching, r.ReadInt()); }   // OnPartyMatchDungeonChange @0x14162e820
-            case 2: { var u = PartyUser.Read(r); SkipCounters(r); return new PartyJoin(u); }            // OnPartyMemberJoin
+            case 2: { var u = PartyUser.Read(r, profile); SkipCounters(r); return new PartyJoin(u); }            // OnPartyMemberJoin
             case 3: return new PartyLeave(r.ReadLong(), r.ReadBool());                                    // OnPartyMemberLeave
             case 4: return new PartyKick(r.ReadLong());                                                    // OnPartyMemberKick
-            case 5: return new PartyOnline(PartyUser.Read(r));                                             // OnPartyMemberOnline
+            case 5: return new PartyOnline(PartyUser.Read(r, profile));                                             // OnPartyMemberOnline
             case 6: return new PartyOffline(r.ReadLong());                                                 // OnPartyMemberOffline
             case 7: return new PartyDisband();                                                             // OnPartyDisband
             case 8: return new PartyLeaderChange(r.ReadLong());                                            // OnPartyLeaderChange
-            case 9: return PartyInfo.ReadBody(r);                                                          // OnPartyInfo
+            case 9: return PartyInfo.ReadBody(r, profile);                                                          // OnPartyInfo
             case 0xb: return new PartyInvite(r.ReadUnicodeString(), r.ReadInt());                          // OnPartyInvite
             case 0xc: case 0xd: {                                                                                  // OnPartyMemberInfoUpdate @0x14162e100
-                long id = r.ReadLong(); var u = PartyUser.Read(r);
+                long id = r.ReadLong(); var u = PartyUser.Read(r, profile);
                 if (r.Available > 0) SkipCounters(r);   // the KMS2 server appends the member's counters; the client stops after the user (:1221)
                 return new PartyMemberUpdate(mode, id, u);
             }
@@ -261,7 +277,7 @@ public sealed record PartyInfo(bool Announce, int PartyId, long LeaderId, IReadO
     /// <summary>The party's listing (CMatchPartyRecruit::Read, matchpartyrecruitschcond.cpp:228), null when has recruit is 0.</summary>
     public PartyRecruit Recruit { get; init; }
 
-    internal static PartyInfo ReadBody(ByteReader r) {
+    internal static PartyInfo ReadBody(ByteReader r, ProtocolProfile profile) {
         bool announce = r.ReadBool();
         int id = r.ReadInt();
         long leader = r.ReadLong();
@@ -269,7 +285,7 @@ public sealed record PartyInfo(bool Announce, int PartyId, long LeaderId, IReadO
         var members = new List<PartyInfoMember>();
         for (int i = 0; i < count && i < 10; i++) {
             bool offline = r.ReadBool();
-            var u = PartyUser.Read(r);
+            var u = PartyUser.Read(r, profile);
             int n = r.ReadInt(); for (int k = 0; k < n; k++) { r.ReadInt(); r.ReadByte(); }
             members.Add(new PartyInfoMember(offline, u));
         }

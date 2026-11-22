@@ -139,4 +139,34 @@ public class Gms2Stage2Tests {
             Assert.That(all.Count - bad, Is.GreaterThanOrEqualTo(all.Count * 9 / 10), op.ToString());
         }
     }
+
+    [Test]
+    public void EveryRecordedGms2PartyPacketDecodes() {
+        var all = Gms2Sniffs.Inbound("gms2", Gms.Number(Inbound.Party));
+        Assert.That(all, Is.Not.Empty);
+        foreach (var (file, data) in all) {
+            var r = new ByteReader(data);
+            Assert.DoesNotThrow(() => PartyMessage.Read(r, Gms), file);
+        }
+    }
+
+    [Test]
+    public void Gms2PartyMemberTailHasACountedIdList() {
+        // the KMS2 record written by PartyUser.Write, cut before its tail, then the GMS2 tail with two ids in the list
+        var u = new PartyUser { Name = "A", Level = 5 };
+        var kms = new ByteWriter(); u.Write(kms);
+        var bytes = kms.Buffer.AsSpan(0, kms.Length).ToArray();
+        // KMS tail after the 12 ints and the empty string + i64: i32 set(0), u8, bool, 6 values, 2 i32 sets, i16, i64
+        int tail = 4 + 1 + 1 + (8 + 4 + 4 + 8 + 4 + 8) + 4 + 4 + 2 + 8;
+        var w = new ByteWriter();
+        w.WriteBytes(bytes.AsSpan(0, bytes.Length - tail).ToArray());
+        w.WriteLong(0); w.WriteLong(0); w.WriteInt(2); w.WriteLong(11); w.WriteLong(22);
+        w.WriteByte(0); w.WriteBool(false);
+        w.WriteLong(0); w.WriteInt(0); w.WriteInt(0); w.WriteLong(0); w.WriteInt(0); w.WriteLong(0); w.WriteInt(0); w.WriteInt(0); w.WriteShort(0); w.WriteLong(0);
+        var r = Reader(w);
+        var got = PartyUser.Read(r, Gms);
+        Assert.That(got.Name, Is.EqualTo("A"));
+        Assert.That(got.Level, Is.EqualTo((short) 5));
+        Assert.That(r.Available, Is.EqualTo(0));
+    }
 }
