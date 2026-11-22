@@ -54,6 +54,8 @@ public sealed class ItemData
     /// <summary>ItemLimit transferType (:574; "globalTransferType" instead with feature 0x84 GlobalTransferType, :576),
     /// shopSell (:578) and enableBreak (:579); the ctor's 0 / false / 0 (:560).</summary>
     public int TransferType, EnableBreak;
+    /// <summary>ItemLimit enableRegisterMeratMarket (itemdatastruct.cpp:580; ctor false, :561): CItemData::IsMeratMarketRegisterable.</summary>
+    public bool EnableRegisterMeratMarket;
     public bool ShopSell;
     public readonly SortedSet<int> RecommendJobs = new();      // XmlTokenList (",") into std::set
     /// <summary>ItemLimit genderLimit (:572; the ctor's 2, any gender).</summary>
@@ -166,6 +168,7 @@ public sealed class ItemData
             if (globalTransferType && l.Attribute("globalTransferType") != null) Int(l, "globalTransferType", ref d.TransferType);
             Bool(l, "shopSell", ref d.ShopSell);
             Int(l, "enableBreak", ref d.EnableBreak);
+            Bool(l, "enableRegisterMeratMarket", ref d.EnableRegisterMeratMarket);
             Bool(l, "exceptEnchant", ref d.ExceptEnchant);
             Int(l, "genderLimit", ref d.GenderLimit);
             if ((string)l.Attribute("jobLimit") is { } jl)

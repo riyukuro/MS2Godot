@@ -501,4 +501,28 @@ public class ItemTooltipExtrasTests
         var rows = (List<object>)Tip(m, item).Data["itemBreakIngredientList"];
         Assert.That(rows, Is.Not.Empty);
     }
+
+    [Test]
+    public void DesignedItemThatCannotBeRegisteredShowsTheUgcMarketLimit()
+    {
+        var m = NewModel();
+        m.HasLocalPlayer = true;
+        ItemTooltip Fill(ItemData d, Ms2.Net.Packets.EquipItem r = null)
+        {
+            var tip = new ItemTooltip(m, 0x200);
+            var it = Item.Create(d, 1);
+            it.Record = r;
+            tip.Fill(it);
+            return tip;
+        }
+        var shut = new ItemData { Id = 11300000, UccMesh = "m" };
+        Assert.That(Fill(shut).Data["ugcItemLimitRegister"], Is.EqualTo(m.Tables.Common(0x9b9)));
+        var open = new ItemData { Id = 11300000, UccMesh = "m", EnableRegisterMeratMarket = true };
+        Assert.That(Fill(open).Data.ContainsKey("ugcItemLimitRegister"), Is.False);
+        var ugc = new Ms2.Net.Packets.EquipItem { Id = 11300000, Uid = 63, HasUgc = true, Ugc = new Ms2.Net.Packets.UgcLook { Uid = 5 } };
+        Assert.That(Fill(shut, ugc).Data.ContainsKey("ugcItemLimitRegister"), Is.False);    // FUN_1406a5a50: still open
+        Assert.That(Fill(new ItemData { Id = 11300000 }).Data.ContainsKey("ugcItemLimitRegister"), Is.False);
+        m.HasLocalPlayer = false;
+        Assert.That(Fill(shut).Data.ContainsKey("ugcItemLimitRegister"), Is.False);
+    }
 }

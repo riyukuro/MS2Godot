@@ -83,6 +83,7 @@ public sealed partial class ItemTooltip
         SetExtraDescription(item);                                                // FUN_1409d64a0
         SetItemDamage(item);                                                      // FUN_1409c7b10
         SetMaidInfo(item);
+        SetUgcItemLimitRegister(item);                                            // FUN_1409d88e0
         SetExtraComment(item);
         SetItemLockInfo(item);
         Data["itemPiece"] = d.IsPieceItem;                                        // SetItemPiece
