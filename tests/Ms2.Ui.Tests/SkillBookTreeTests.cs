@@ -265,6 +265,114 @@ public class SkillBookTreeTests
         Assert.That(c.WaitServer, Is.False);
     }
 
+    /// <summary>A table with, for the book's job group, one preset for any sub job and one for a sub job the player has not.</summary>
+    static AutoDistributeTable PresetTable(int group) => AutoDistributeTable.Load(Packs(), System.Xml.Linq.XDocument.Parse(
+        $"<ms2><job code=\"{group}\">" +
+        "<type name=\"s_a\" tooltip=\"s_a_tip\" subJobCode=\"0\"><skill id=\"10500041\" point=\"3\"/><skill id=\"10500001\" point=\"5\"/></type>" +
+        "<type name=\"s_b\" tooltip=\"\" subJobCode=\"999\"><skill id=\"10500041\" point=\"1\"/></type></job></ms2>"));
+
+    [Test]
+    public void AutoDistributeTableOfTheRealDataIsPerSubJob()
+    {
+        var t = AutoDistributeTable.Load(Packs());
+        // job.xml group 10 has presets for sub job 101 only (types carry subJobCode); another sub job gets none
+        Assert.That(t.HasPresets(10), Is.True);
+        Assert.That(t.For(10, 101)!.Count, Is.GreaterThan(0));
+        Assert.That(t.For(10, 101)!.All(p => p.SubJob == 101 && p.SkillIds.Count == p.SkillPoints.Count && p.SkillIds.Count > 0), Is.True);
+        Assert.That(t.For(10, 0), Is.Empty);
+        Assert.That(t.For(-5, 0), Is.Null);
+    }
+
+    [Test]
+    public void AutoDistributeOpensTheDialogWithTheSubJobsPresetsAndWaitsForTheServer()
+    {
+        var (h, c, _) = Load();
+        h.Model.Player.Level = 20;
+        c.Send = _ => { };
+        c.AutoTable = PresetTable(c.Jobs.JobGroupId);
+        IReadOnlyList<AutoDistributePreset> opened = null;
+        c.OpenAutoDistribute = p => opened = p;
+        c.OnSkillBookTree(NoTabs());
+        c.OnLevelChanged(20);
+        Assert.That(c.OnCallback("onAutoDistribute", Array.Empty<object>()), Is.True);
+        Assert.That(opened!.Select(p => p.Name), Is.EqualTo(new[] { "s_a" }), "the preset of another sub job is left out");
+        // no presets for the job group: nothing opens
+        opened = null;
+        c.AutoTable = AutoDistributeTable.Empty;
+        c.OnCallback("onAutoDistribute", Array.Empty<object>());
+        Assert.That(opened, Is.Null);
+        // a request is out: the button waits
+        c.AutoTable = PresetTable(c.Jobs.JobGroupId);
+        c.OnCallback("onSkillPointUp", new object[] { 10500041u });
+        c.OnCallback("onApplySkill", Array.Empty<object>());
+        Assert.That(c.WaitServer, Is.True);
+        Assert.That(c.OnCallback("onAutoDistribute", Array.Empty<object>()), Is.False);
+        Assert.That(opened, Is.Null);
+    }
+
+    [Test]
+    public void ApplyDistributeSpendsThePresetAndSendsTheConfirmedJobOnTheTabInUse()
+    {
+        var (h, c, _) = Load();
+        h.Model.Player.Level = 20;
+        var sent = new List<Ms2.Net.Wire.IOutPacket>();
+        var lines = new List<(string, int)>();
+        c.Send = sent.Add;
+        c.ChatLine += (t, k) => lines.Add((t, k));
+        c.AutoTable = PresetTable(c.Jobs.JobGroupId);
+        c.OnSkillBookTree(NoTabs());
+        c.OnLevelChanged(20);
+        c.ApplyDistribute(5);                               // past the list: nothing
+        Assert.That(sent, Is.Empty);
+        c.ApplyDistribute(0);
+        Assert.That(sent.Select(x => x.Op), Is.EqualTo(new[] { Ms2.Net.Outbound.RequestSkillBookTree, Ms2.Net.Outbound.Job }));
+        var job = (JobSkillsRequest)sent[1];
+        Assert.That(job.Mode, Is.EqualTo(0xb));
+        Assert.That(job.Skills.Single(k => k.SkillId == 10500041).Level, Is.GreaterThan(0), "the preset's first skill took points");
+        Assert.That(((SkillBookTreeSave)sent[0]).Tabs.Single().Slots.Any(), Is.True);
+        Assert.That(c.WaitServer, Is.True);
+        Assert.That(lines.Single().Item2, Is.EqualTo(0x14));
+    }
+
+    [Test]
+    public void TheAutoDistributeWindowShowsThePresetsAsksAndApplies()
+    {
+        var model = new UiModel(new GameTables(Packs(), "en")) { FeatureEnabledByName = f => LobbyFeatures.IsEnabled(Packs(), f), HasLocalPlayer = true };
+        var presets = new[]
+        {
+            new AutoDistributePreset("s_skillbook_auto_distribute_kngiht_type_a_jobChange01", "s_skillbook_auto_distribute_kngiht_type_a_guide_jobChange01", 0, new uint[] { 1 }, new uint[] { 1 }),
+            new AutoDistributePreset("s_skillbook_auto_distribute_kngiht_type_b_jobChange01", "", 0, new uint[] { 1 }, new uint[] { 1 }),
+        };
+        var applied = new List<int>();
+        var boxes = new List<MessageBoxData>();
+        var c = new SkillBookAutoDistributeController { Presets = presets, ApplyDistribute = applied.Add, ShowBox = boxes.Add };
+        var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
+        p.StageW = 1280; p.StageH = 720;
+        var h = new UiHost(p, c, model);
+        Assert.That(h.Load(), Is.True, "load: " + string.Join("; ", rt.Errors));
+        for (int i = 0; i < 10; i++) p.Tick();
+        Assert.That(Rt.ToBoolean(h.Get(h.Child("m_distribute1"), "visible")), Is.True);
+        Assert.That(Rt.ToBoolean(h.Get(h.Child("m_distribute2"), "visible")), Is.True);
+        Assert.That(Rt.ToBoolean(h.Get(h.Child("m_distribute3"), "visible")), Is.False, "no third preset");
+        Assert.That(Rt.ToString(h.Get(h.Child("m_distribute1"), "label")), Is.Not.Empty);
+        Assert.That(Rt.ToNumber(h.Get(h.Child("m_bg"), "height")), Is.EqualTo(2 * 0x2a + 0x41));
+        // a click on the second button (onDistribute, 2) asks; the preset is applied only after the yes
+        Assert.That(c.OnCallback("onDistribute", new object[] { 2 }), Is.True);
+        Assert.That(boxes.Count, Is.EqualTo(1));
+        Assert.That(applied, Is.Empty);
+        boxes[0].Callback(1, boxes[0]);
+        Assert.That(applied, Is.Empty);
+        Assert.That(c.IsClosed, Is.False);
+        boxes[0].Callback(0, boxes[0]);
+        Assert.That(applied, Is.EqualTo(new[] { 1 }));
+        for (int i = 0; i < 60; i++) p.Tick();             // the close tween
+        Assert.That(c.IsClosed, Is.True);
+        // a button with no preset asks nothing
+        boxes.Clear();
+        c.OnCallback("onDistribute", new object[] { 3 });
+        Assert.That(boxes, Is.Empty);
+    }
+
     [Test]
     public void ResetInBattleShowsItsBoxAndAsksNothing()
     {

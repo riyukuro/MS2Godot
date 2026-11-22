@@ -3487,6 +3487,8 @@ public partial class HudScene : Node, IUiStageHost
             return Ms2.Ui.Skills.SkillTooltip.Build(hudModel.Tables, tipPlayer, id, level, 0x10, true);
         };
         c.Button += name => GD.Print($"skill book: {name} is not sent (display only)");
+        c.AutoTable = Ms2.Ui.Skills.AutoDistributeTable.Load(assets.Packs);
+        c.OpenAutoDistribute = presets => OpenSkillAutoDistribute(c, presets);
         c.InBattle = () => live?.SelfInBattle ?? false;
         c.Sound += key => FieldAudio.Instance?.PlayUi(key);
         c.ChatLine += (text, kind) => ChatLog.AddSystemLine(text, kind);

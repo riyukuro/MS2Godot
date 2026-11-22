@@ -662,12 +662,58 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
                 if (WaitServer) return false;
                 PromptReset();
                 return true;
-            case "onUseTab": case "onAutoDistribute": case "OnRegisterShortcutkey":
+            case "onAutoDistribute":
+                if (WaitServer) return false;
+                ApplyAutoDistribute();
+                return true;
+            case "onUseTab": case "OnRegisterShortcutkey":
             case "onRenameTab": case "onAddTab": case "onChangeSubJob": case "onRemoveTab": case "onLapenshardBtn":
                 Button?.Invoke(name);
                 return true;
         }
         return false;
+    }
+
+    /// <summary>Table/skillAutoDistribute.xml (LoadAutoDistribute @0x140eccf50).</summary>
+    public AutoDistributeTable AutoTable = AutoDistributeTable.Empty;
+    /// <summary>The auto distribute dialog (UISkillBookAutoDistributeDialog, UI id 0x4f20) is opened with the presets the player's
+    /// sub job can use; it answers with <see cref="ApplyDistribute"/>.</summary>
+    public Action<IReadOnlyList<AutoDistributePreset>> OpenAutoDistribute;
+
+    /// <summary>ApplyAutoDistribute @0x140eca230 (:1318): CanApply (CheckApply, the platform state, is 0 here; STILL-OPEN: its notice
+    /// box), the presets of the player's job group (none: nothing), then the dialog with the ones for the sub job. STILL-OPEN: the
+    /// dialog's vfunc_55 test (meaning not recovered) that the client runs before it fills the dialog's names.</summary>
+    void ApplyAutoDistribute()
+    {
+        if (!CanApply() || Jobs == null) return;
+        var presets = AutoTable.For(Jobs.JobGroupId, Jobs.SubJob);
+        if (presets == null || presets.Count == 0) return;
+        OpenAutoDistribute?.Invoke(presets);
+    }
+
+    /// <summary>ApplyDistribute @0x140ec8280 (:1272): the chosen preset of the job group's list the sub job can use; the preview is
+    /// reset and spends the preset's points (SkillPointSimulator.AutoDistribute; false: nothing more). On the tab in use the tabs are
+    /// saved and Job mode 0xb is sent (RequestJob, confirmed); on another tab it is saved, the slots refreshed and the fixed sound
+    /// plays. The notice s_msg_skillbook_auto_distribute_skill follows.</summary>
+    public void ApplyDistribute(int index)
+    {
+        if (Jobs == null || sim == null) return;
+        var presets = AutoTable.For(Jobs.JobGroupId, Jobs.SubJob);
+        if (presets == null || index < 0 || index >= presets.Count) return;
+        var p = presets[index];
+        if (!sim.AutoDistribute(p.SkillIds.ToList(), p.SkillPoints.ToList())) return;
+        if (shownTabId == tabId)
+        {
+            SaveTree(shownTabId, 0, 0);
+            RequestJob(true, false, 0);
+        }
+        else
+        {
+            SaveTree(shownTabId, 0, 0);
+            RefreshSlots(true);
+            Sound?.Invoke("System_Skillbook_Skill_Fixed_01");
+        }
+        ChatLine?.Invoke(Common("s_msg_skillbook_auto_distribute_skill"), 0x14);
     }
 
     /// <summary>CanApply @0x140ecd4b0 (:612): not in battle and not in a field that limits the skill set; each refusal shows its box.</summary>
