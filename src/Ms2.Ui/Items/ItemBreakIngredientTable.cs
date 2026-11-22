@@ -38,9 +38,8 @@ public sealed class ItemBreakIngredientTable
     {
         if (items != null) return items;
         items = new();
-        XDocument doc = null;
-        foreach (var p in new[] { "table/kr/itembreakingredient.xml", "table/itembreakingredient.xml" })   // GetXmlPath("Table", ...)
-            if (packs != null && packs.Exists("Xml", p)) { doc = GameStrings.Parse(packs.Read("Xml", p)); break; }
+        string path = packs == null ? null : TablePath.Resolve(packs, "itembreakingredient.xml");   // GetXmlPath("Table", ...)
+        XDocument doc = path == null ? null : GameStrings.Parse(packs.Read("Xml", path));
         if (doc?.Root is not { Name.LocalName: "ms2" } root) return items;
         foreach (var e in root.Elements("item"))
         {
