@@ -520,7 +520,6 @@ public sealed class OwnTagMagics
         int mode = a.Arrow.BounceType, max = a.Arrow.BounceCount > 1 ? a.Arrow.BounceCount : 1;
         if (mode is 3 or 4) return null;
         if (mode == 2 && !NearlyEqual(m.Remain, 0f)) return null;
-        if (owner.Dead) return null;
         var col = a.Arrow.Collision;
         var size = new Vector3(col.X, (m.Current - m.Last).Length() + col.Y, col.Z);
         var add = new Vector3(0f, a.Arrow.CollisionAdd.Y, a.Arrow.CollisionAdd.Z);
@@ -699,9 +698,10 @@ public sealed class OwnTagMagics
     /// CMagicService::RemoveCasterModels(<paramref name="castId"/>, 0, 0) @0x14146c6c0 (magicdata.cpp:2950), from StateSkill's
     /// exits vfunc_5 and vfunc_7 (stateskill.cpp:520, :582): the cast's magics that CMagicModel::CanCancel @0x141467dd0
     /// (:2574) lets go are dropped without end effects. CanCancel: the cast id matches, the attack's arrow bounceType is not 2,
-    /// not state 1 with ignoreCancelAtSpawnTime, state 0 or 1, and delayTime nearly 0. A magic still kept here has not fired,
-    /// so its state is 0 or 1 (CMagic::FUN_14145de80 goes on to state 2 and fires in the same tick, magicdata.cpp:772-785);
-    /// it is in state 1 once a tick saw start + delay, which the client ticks every frame: from start + delay on.
+    /// not state 1 with ignoreCancelAtSpawnTime, state 0 or 1, and delayTime nearly 0. A kept magic other than an arrow one has
+    /// not fired, so its state is 0 or 1 (CMagic::FUN_14145de80 goes on to state 2 and fires in the same tick,
+    /// magicdata.cpp:772-785); it is in state 1 once a tick saw start + delay, which the client ticks every frame: from
+    /// start + delay on. A flying arrow (state 2) stays.
     /// Returns the number dropped.
     /// </summary>
     public int CancelCaster(long castId, int nowMs)

@@ -141,6 +141,20 @@ public class OwnArrowMagicTests
     }
 
     [Test]
+    public void ADeadOwnersArrowStillHits()
+    {
+        // FUN_141465b30 and FUN_1417e9d20 test no death: an arrow in flight when its owner dies still sends its hit
+        var r = Record();
+        var m = Add(r, Paths(Linear));
+        var dead = new MagicOwner(Vector3.Zero, 0, true, true, false);
+        var objects = new[] { Me, Mob(9, 0, -250) };
+        var sends = new List<SkillHitRequest>();
+        m.Tick(T + 0, 0, dead, objects, r, null, sends, () => 0, null);
+        m.Tick(T + 100, 0, dead, objects, r, null, sends, () => 0, null);
+        Assert.That(sends.Single().Targets, Is.EqualTo(new[] { new SkillHitTarget(9, 0) }));
+    }
+
+    [Test]
     public void AFlyingArrowIsNotCancelled()
     {
         var r = Record();
