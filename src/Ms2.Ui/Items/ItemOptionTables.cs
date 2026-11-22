@@ -251,6 +251,22 @@ public sealed class ItemOptionTables
     }
 
     /// <summary>
+    /// CItemEnchantLimitTable::FUN_14058e230 @0x14058e230 (itemenchantlimittable.cpp:218), the limit test of the enchant
+    /// dialog's list (UIItemEnchantDialog::GetEnchantableItemUids): the item's slot has a limit with the required level inside
+    /// it and the item data does not set exceptEnchant. Unlike <see cref="CanEnchant"/> it asks neither the item type, the lock,
+    /// the plus level nor the enchant level against the max grade.
+    /// </summary>
+    public bool InEnchantLimit(Item item)
+    {
+        var d = item?.Data;
+        if (d == null) return false;
+        if (!Limits().TryGetValue(d.EquipSubtype, out var l)) return false;
+        int level = (ushort)d.LevelLimit;
+        if (level < l.MinLv || level > l.MaxLv) return false;
+        return !d.ExceptEnchant;
+    }
+
+    /// <summary>
     /// LoadItemOptionConstant (itemoptiondata_3.cpp:872): every &lt;option&gt; of Table/ItemOptionConstant.xml whose feature is
     /// on (FUN_14028f5d0), by "code" (code 0 is dropped); each of its &lt;rank&gt; children that pass the same filter is one
     /// ItemOptionConstant of the code (a multimap, the ranks in file order; the client loads the options in parallel, so the

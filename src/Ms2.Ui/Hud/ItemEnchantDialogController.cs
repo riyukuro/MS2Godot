@@ -11,7 +11,7 @@ namespace Ms2.Ui.Hud;
 /// "ItemEnchantDialog", movie uiitemenchantdialog). The state is <see cref="ItemEnchantBook"/>; this controller binds the two
 /// item bags, writes the movie's setEnchantInfo / setEnchantResult objects from it, handles the movie's callbacks and runs the
 /// confirm box chain (refund, enchanted ingredient, binding, protector, payback).
-/// <para>STILL-OPEN: GetEnchantableItemUids' limit and lock tests (FUN_14058e230, FUN_140525c60), the sale-rate text (saleDesc),
+/// <para>STILL-OPEN: the sale-rate text (saleDesc),
 /// the event bonus of the rate text, GetEnchantRatio (the "before" stat is the unscaled base), the exp divisor and the fail stack limit,
 /// the failure reward page (inventory 0x4e40), sounds, the protector
 /// rank warning, the EnchantScroll table behind ProtectorCount, the over-enchanted ingredient test (FUN_1419c9490), the debug buttons (onForceEnchant).</para>
@@ -43,7 +43,8 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
     public Func<IEnumerable<Item>> WornItems = () => Array.Empty<Item>();
     /// <summary>The count of the inventory items of an item id and rank (the ingredient have-count).</summary>
     public Func<int, int, int> CountOf = (_, _) => 0;
-    /// <summary>FUN_14058e230 &amp; the plus-level / lock tests of GetEnchantableItemUids; default: the book's CanEnchantItem.</summary>
+    /// <summary>The limit test of GetEnchantableItemUids (CItemEnchantLimitTable::FUN_14058e230, ItemOptionTables.InEnchantLimit);
+    /// default: the book's CanEnchantItem. The lock and plus-level tests are the controller's.</summary>
     public Func<Item, bool> Enchantable;
     /// <summary>The feature value the movie's initData gets (feature 0x86).</summary>
     public Func<int> Feature86 = () => 0;
@@ -127,13 +128,16 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
 
     // ---- the bags ----------------------------------------------------------------------------------------------------
 
-    /// <summary>GetEnchantableItemUids: category 0 and worn items that pass the limit test.</summary>
+    /// <summary>GetEnchantableItemUids @0x1419c1a40 (uiitemenchantdialog.cpp:869): the category 0 items, then the worn ones, each
+    /// skipped when locked (CItem::FUN_140525c60, 0 &lt; m_80) or with a plus level (GetPlusLevel), else kept when the limit test
+    /// passes. The enchant level is not asked: an item at +N stays in the list.</summary>
     public List<Item> EnchantableItems()
     {
         var test = Enchantable ?? Book.CanEnchantItem;
         var list = new List<Item>();
-        foreach (var i in BagItems(0)) if (i.EnchantLevel <= 0 && test(i)) list.Add(i);
-        foreach (var i in WornItems()) if (i.EnchantLevel <= 0 && test(i)) list.Add(i);
+        bool Take(Item i) => i.ExpiryTime <= 0 && i.UnlimitedEnchantLevel <= 0 && test(i);
+        foreach (var i in BagItems(0)) if (Take(i)) list.Add(i);
+        foreach (var i in WornItems()) if (Take(i)) list.Add(i);
         return list;
     }
 

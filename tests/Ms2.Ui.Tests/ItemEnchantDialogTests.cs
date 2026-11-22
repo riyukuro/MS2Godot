@@ -105,13 +105,22 @@ public class ItemEnchantDialogTests
     }
 
     [Test]
-    public void TheEnchantableBagHoldsTheUnenchantedItemsThatPassTheLimit()
+    public void TheEnchantableBagHoldsTheItemsThatPassTheLimit()
     {
         var r = new Rig();
-        r.Add(5); r.Add(6, level: 3); r.Add(7);
+        r.Add(5); r.Add(7);
         r.Book.CanEnchantItem = i => i.Uid != 7;
         var list = r.C.EnchantableItems();
         Assert.That(list.Select(i => i.Uid), Is.EqualTo(new long[] { 5 }));
+    }
+
+    [Test]
+    public void TheEnchantableBagKeepsAnEnchantedItemAndSkipsLockedAndPlusItems()
+    {
+        var r = new Rig();
+        r.Add(5); r.Add(6, level: 3); r.Add(7).ExpiryTime = 100; r.Add(8).UnlimitedEnchantLevel = 2;
+        r.C.Enchantable = _ => true;   // the limit test passes for all
+        Assert.That(r.C.EnchantableItems().Select(i => i.Uid), Is.EqualTo(new long[] { 5, 6 }));
     }
 
     [Test]

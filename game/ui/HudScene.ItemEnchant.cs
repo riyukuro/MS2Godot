@@ -43,7 +43,8 @@ public partial class HudScene
         Func<long> now, Action closed)
     {
         if (itemEnchantMovie != null) { itemEnchantMovie.Host.Unload(); itemEnchantMovie.QueueFree(); itemEnchantMovie = null; }
-        var c = new ItemEnchantDialogController { Book = book, Now = now, BagItems = bag, CountOf = count };
+        var c = new ItemEnchantDialogController { Book = book, Now = now, BagItems = bag, CountOf = count,
+            Enchantable = hudModel.Tables.ItemOptions.InEnchantLimit };
         c.NoticeText += SystemNoticeText;
         c.Closed += closed;
         c.Unloaded += () =>
