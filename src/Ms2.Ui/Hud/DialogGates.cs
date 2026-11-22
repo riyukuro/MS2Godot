@@ -20,4 +20,23 @@ public static class DialogGates
         }
         return false;
     }
+
+    /// <summary>
+    /// CUIService::FindObjectByName as the guide asks it: the registry's loaded, not closed controller whose type name
+    /// matches (case blind), else null. A list read with no allocation: the guide's dialog conditions ask it on every
+    /// guide tick for each event left queued by a dialog open (its open condition failing keeps it queued until the
+    /// field changes), and its arrows every frame one shows; the HUD's former walk of its whole node tree with
+    /// GetChildren there took the frame rate down after the first inventory open on a live field.
+    /// </summary>
+    public static UiController FindOpen(IReadOnlyList<UiController> dialogs, string typeName)
+    {
+        if (typeName == null) return null;
+        for (int i = 0; i < dialogs.Count; i++)
+        {
+            var d = dialogs[i];
+            if (d.Host?.Entity != null && !d.IsClosed && string.Equals(d.TypeName, typeName, StringComparison.OrdinalIgnoreCase))
+                return d;
+        }
+        return null;
+    }
 }

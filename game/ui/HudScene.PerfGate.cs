@@ -258,7 +258,8 @@ public partial class HudScene
 
     /// <summary>
     /// A window with the live field's per-frame parts on: a chat line every 30 frames from a fixed list, a damage number and an
-    /// HP bar change on one of the 4 nearest npcs every 20, a hit on the own PC every 45 (the name tags are always on). With
+    /// HP bar change on one of the 4 nearest npcs every 20, a hit on the own PC every 45 (the name tags are always on), and
+    /// every frame a guide arrow's lookups of the closed inventory (by id and by name). With
     /// <paramref name="move"/> the player also walks a fixed loop (a second a side, scripted input: with --fixed-fps the
     /// path is the same every run).
     /// </summary>
@@ -302,6 +303,9 @@ public partial class HudScene
             damageText.OnNpc(n, 100 + f, 0);
         }
         if (f % 45 == 10) damageText.OnPlayer(50 + f, 0);
+        // a guide arrow at the inventory left up after its close (a live guide event's dialog arrow, which asks its
+        // dialog every frame until the event lets it go): the window runs after the inventory's opens and closes
+        if (FindGuideDialogOf(0x4e2d) != null || FindGuideDialog("InventoryDialog") != null) GD.PushError("perf gate: the closed inventory answers the guide");
     }
 
     /// <summary>

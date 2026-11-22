@@ -712,6 +712,46 @@ public class GuideEventTests
         Assert.That(pane.ArrowPosition(50), Is.Not.Null, "closed again: the arrow shows");
     }
 
+    [Test]
+    public void TheGuidesDialogLookupReadsTheRegistryWithoutAllocating()
+    {
+        // FindObjectByName as the HUD answers the guide (its dialog conditions and the arrows at a dialog, which ask
+        // every frame one shows): the registry's loaded, open controller by type name, with no allocation, open or not
+        Model();
+        var book = new Ms2.Net.Packets.ItemBook { TabOf = _ => 0, BaseSlots = _ => 24 };
+        var notLoaded = new InventoryController { View = new Ms2.Net.Packets.InventoryView(book) };
+        var inv = new InventoryController { View = new Ms2.Net.Packets.InventoryView(book) };
+        var (irt, ip) = src.Open(inv.Movie, r => r.Budget = 20_000_000);
+        ip.StageW = 1280; ip.StageH = 720;
+        var ih = new UiHost(ip, inv, Model());
+        Assert.That(ih.Load(), Is.True, "inventory load: " + string.Join("; ", irt.Errors));
+        for (int i = 0; i < 10; i++) { ip.Tick(); inv.Process(); }
+        UiController[] registry = { notLoaded, inv };
+
+        Assert.That(DialogGates.FindOpen(registry, "InventoryDialog"), Is.SameAs(inv), "the loaded one, not the unloaded one before it");
+        Assert.That(DialogGates.FindOpen(registry, "inventorydialog"), Is.SameAs(inv), "case blind");
+        Assert.That(DialogGates.FindOpen(registry, "QuestDialog"), Is.Null);
+        Assert.That(DialogGates.FindOpen(registry, null), Is.Null);
+        Assert.That(DialogGates.FindOpen(new UiController[] { notLoaded }, "InventoryDialog"), Is.Null, "a movie that did not load");
+
+        long Bytes(string name)
+        {
+            for (int i = 0; i < 100; i++) DialogGates.FindOpen(registry, name);
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 10_000; i++) DialogGates.FindOpen(registry, name);
+            return GC.GetAllocatedBytesForCurrentThread() - before;
+        }
+        Assert.That(Bytes("InventoryDialog"), Is.EqualTo(0), "found: no allocation");
+
+        inv.Close();
+        for (int i = 0; i < 30 && !inv.IsClosed; i++) { ip.Tick(); inv.Process(); }
+        Assert.That(inv.IsClosed, Is.True);
+        Assert.That(DialogGates.FindOpen(registry, "InventoryDialog"), Is.Null, "closed");
+        Assert.That(Bytes("InventoryDialog"), Is.EqualTo(0), "closed: no allocation, as an arrow left up asks every frame");
+        ih.Unload();
+        Assert.That(DialogGates.FindOpen(registry, "InventoryDialog"), Is.Null, "unloaded");
+    }
+
     sealed class FakeNode : GuideNode
     {
         readonly double x, y, width;

@@ -817,27 +817,13 @@ public partial class HudScene : Node, IUiStageHost
     }
 
     /// <summary>
-    /// CUIService::FindObjectByName (the guide's dialog lookups): the open movies' controllers by their type name. The
-    /// HUD holds one movie per dialog, as the client holds one dialog object per UI class, and its always-on movies
-    /// (the game menu, the minimap, the main player info) answer like the client's.
+    /// CUIService::FindObjectByName (the guide's dialog lookups): the open movies' controllers by their type name, read
+    /// from the movie registry (no walk of the HUD's nodes: the guide asks this on each tick for every event a dialog
+    /// open left queued). The HUD holds one movie per dialog, as the client holds one dialog object per UI class, and
+    /// its always-on movies (the game menu, the minimap, the main player info) answer like the client's.
     /// </summary>
-    public Ms2.Ui.Guide.GuideDialog FindGuideDialog(string name)
-    {
-        Ms2.Ui.Guide.GuideDialog found = null;
-        void Walk(Node n)
-        {
-            if (found != null) return;
-            if (n is MovieDialog { Loaded: true } m && !m.Host.Controller.IsClosed
-                && m.Host.Controller.TypeName.Equals(name, StringComparison.OrdinalIgnoreCase))
-            {
-                found = new Ms2.Ui.Guide.GuideControllerDialog(m.Host.Controller);
-                return;
-            }
-            foreach (var c in n.GetChildren()) Walk(c);
-        }
-        Walk(this);
-        return found;
-    }
+    public Ms2.Ui.Guide.GuideDialog FindGuideDialog(string name) =>
+        Ms2.Ui.Hud.DialogGates.FindOpen(MovieDialog.Live, name) is { } c ? new Ms2.Ui.Guide.GuideControllerDialog(c) : null;
 
     /// <summary>
     /// FUN_141274f80 (unit_141274d10_uihelpers.cpp:181-191): CUIService::FUN_141adcbb0's any-shown-window gate first —
