@@ -403,9 +403,11 @@ namespace Ms2.Avm2.Flash
             mc.Frame = f;
             if (mc.TL == null) return;
             var pls = mc.TL.Placements; var tracks = mc.TL.Tracks;
-            // the objects removed this frame by depth, with the child that followed each (a replacing placement comes
-            // after the one it replaces, which was placed earlier); built only when a frame removes something
-            Dictionary<int, AsDisplayObject> removedNext = null;
+            // the objects removed this frame by depth, and the child that followed each removed object (a replacing
+            // placement comes after the one it replaces, which was placed earlier); built only when a frame removes
+            // something. When that child was itself removed, the anchor walks on to the child that followed it.
+            Dictionary<int, AsDisplayObject> removedAt = null;
+            Dictionary<AsDisplayObject, AsDisplayObject> removedNext = null;
             for (int i = 0; i < pls.Count; i++)
             {
                 var pl = pls[i]; var tr = tracks[i];
@@ -413,8 +415,12 @@ namespace Ms2.Avm2.Flash
                 mc.Live.TryGetValue(pl, out var cur);
                 if (alive && cur == null)
                 {
-                    if (removedNext != null && pl["replace"] != null && removedNext.TryGetValue(J.Iv(pl["depth"]), out replaceBefore))
+                    if (removedAt != null && pl["replace"] != null && removedAt.TryGetValue(J.Iv(pl["depth"]), out var gone))
+                    {
+                        replaceBefore = removedNext[gone];
+                        while (replaceBefore != null && removedNext.TryGetValue(replaceBefore, out var next)) replaceBefore = next;
                         replaceParent = mc;
+                    }
                     var o = Instantiate(mc, pl, mc.TL.Scope);
                     replaceParent = null; replaceBefore = null;
                     if (o != null) { mc.Live[pl] = o; ApplyMoves(o, pl, tr, f); if (mc.OnStage) EnterStage(o); }
@@ -426,8 +432,10 @@ namespace Ms2.Avm2.Flash
                     if (cur.Parent == mc)
                     {
                         int idx = mc.Children.IndexOf(cur);
-                        removedNext ??= new Dictionary<int, AsDisplayObject>();
-                        removedNext[cur.Depth] = idx + 1 < mc.Children.Count ? mc.Children[idx + 1] : null;
+                        removedAt ??= new Dictionary<int, AsDisplayObject>();
+                        removedNext ??= new Dictionary<AsDisplayObject, AsDisplayObject>();
+                        removedAt[cur.Depth] = cur;
+                        removedNext[cur] = idx + 1 < mc.Children.Count ? mc.Children[idx + 1] : null;
                         mc.RemoveChildInternal(cur, true);
                     }
                 }

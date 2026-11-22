@@ -1330,4 +1330,45 @@ public class RuntimeTests
         Assert.That(string.Join(",", root.Children.Select(k => k.InstanceName)), Is.EqualTo(order));
         Assert.That(rt.Errors, Is.Empty);
     }
+
+    /// <summary>
+    /// Replacing placements at two adjacent depths: the first one's recorded next sibling is the second replaced object,
+    /// removed in the same frame, so its anchor walks on to the next live child; a replaced last child goes at the end.
+    /// </summary>
+    [TestCase("a,b,c", "1,2", "a1,b1,c")]
+    [TestCase("a,b", "2", "a,b1")]
+    [TestCase("a,b,c", "2,3", "a,b1,c1")]
+    public void AdjacentReplacingPlacementsKeepTheirOrder(string names, string replaced, string order)
+    {
+        static JsonObject Pl(int depth, int first, string name) => new() { ["id"] = 2, ["depth"] = depth, ["first"] = first, ["name"] = name };
+        var children = new JsonArray();
+        var redo = new List<JsonObject>();
+        var depths = replaced.Split(',').Select(int.Parse).ToHashSet();
+        var n = names.Split(',');
+        for (int i = 0; i < n.Length; i++)
+        {
+            var pl = Pl(i + 1, 0, n[i]);
+            children.Add(pl);
+            if (!depths.Contains(i + 1)) continue;
+            pl["last"] = 0;
+            var r = Pl(i + 1, 1, n[i] + "1");
+            r["replace"] = true;
+            redo.Add(r);
+        }
+        foreach (var r in redo) children.Add(r);
+        var layout = new JsonObject
+        {
+            ["movie"] = "t", ["stage"] = new JsonObject { ["width"] = 800, ["height"] = 600 },
+            ["symbols"] = new JsonObject { ["2"] = new JsonObject { ["kind"] = "sprite", ["timeline"] = new JsonObject { ["frames"] = 1 } } },
+            ["root"] = new JsonObject { ["frames"] = 2, ["children"] = children },
+        };
+        var rt = new Runtime();
+        var p = new Player(rt, layout);
+        Assert.That(p.Start(), Is.True);
+        var root = (AsMovieClip)p.Root;
+        Assert.That(string.Join(",", root.Children.Select(k => k.InstanceName)), Is.EqualTo(names));
+        p.GotoFrame(root, 1);
+        Assert.That(string.Join(",", root.Children.Select(k => k.InstanceName)), Is.EqualTo(order));
+        Assert.That(rt.Errors, Is.Empty);
+    }
 }
