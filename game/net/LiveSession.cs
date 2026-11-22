@@ -147,6 +147,7 @@ public partial class LiveSession : Node
 
     public LiveSession()
     {
+        fieldEntry.CubeServiceCleared += HomeRows.Reset;   // FUN_1410b76a0 at each field teardown (worldservice_1.cpp:10015)
         Party.BattleRecords = BattleRecords;
         BattleRecords.CharacterIdOf = id => remote?.Tracker.CharacterIdOf(id) ?? (id == selfObject ? CharacterId : 0);
         BattleRecords.NpcClassOf = id => remote?.NpcClassOf(id) ?? 0;

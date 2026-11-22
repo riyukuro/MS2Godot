@@ -224,6 +224,17 @@ public class FieldMoveTests {
 
     /// <summary>The GameToGame teardown (FUN_141bbc580: state 6, worldservice_1.cpp:9975, and the cube map reset
     /// FUN_1410b76a0, :10015): the house values go, and a LoadUgcMap after it is dropped (:2174, the field is not loaded).</summary>
+    [Test] public void TheCubeServiceClearsAtANewFieldLoadAndAtATeardownNotAtTheSameMapAgain() {
+        var entry = new FieldEntry();
+        int cleared = 0; entry.CubeServiceCleared += () => cleared++;
+        entry.Enter(new RequestFieldEnter(0, 5, 0, 0, 0, 0, default, default, 0));
+        Assert.That(cleared, Is.EqualTo(1), "a new field load tears the old field down (FUN_1410b76a0, worldservice_1.cpp:10015)");
+        entry.Enter(entry.Current);
+        Assert.That(cleared, Is.EqualTo(1), "the map still loading goes on: no teardown");
+        entry.TornDown();
+        Assert.That(cleared, Is.EqualTo(2));
+    }
+
     [Test] public async Task AGameToGameTeardownClearsTheCubeMap() {
         var (s, l, srv, e, game) = await Enter();
         using (game) {

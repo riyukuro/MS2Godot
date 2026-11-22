@@ -43,6 +43,10 @@ public sealed class FieldEntry
     /// LoadUgcMap in the loaded field, cleared by a new field load (<see cref="Enter"/>).</summary>
     public CubeMapInfo CubeMap { get; } = new();
 
+    /// <summary>The service's other values go with the cube map: FUN_1410b76a0 (ClearCubes, then FUN_1410d0310, whose reset covers
+    /// the home option rows, cubemapinformationservice_3.cpp:5455-5475). Raised at each field teardown, after <see cref="CubeMap"/> is cleared.</summary>
+    public event Action CubeServiceCleared;
+
     public FieldEntry(RequestFieldEnter first = null) { if (first != null) Enter(first); }
 
     /// <summary>True when the last taken entry was the map still loading (<see cref="Enter"/>): its load goes on.</summary>
@@ -65,7 +69,7 @@ public sealed class FieldEntry
         Answered = false;
         Loading = true;
         Loaded = false;
-        CubeMap.Reset();   // the old field's teardown (FUN_141bbc580, worldservice_1.cpp:10015, FUN_1410b76a0 to FUN_1410d0310)
+        CubeMap.Reset(); CubeServiceCleared?.Invoke();   // the old field's teardown (FUN_141bbc580, worldservice_1.cpp:10015, FUN_1410b76a0 to FUN_1410d0310)
         return true;
     }
 
@@ -92,7 +96,7 @@ public sealed class FieldEntry
     {
         Loading = false;
         Loaded = false;
-        CubeMap.Reset();
+        CubeMap.Reset(); CubeServiceCleared?.Invoke();
     }
 
     /// <summary>OnLoadUgcMap (scenestategame.cpp:2172-2331): nothing unless the field has loaded (:2174). Mode 0 sets the
