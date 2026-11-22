@@ -55,6 +55,32 @@ public sealed class CubeMapInfo
 
     public CubeMapInfo() => Reset();
 
+    /// <summary>f3dc (FUN_1410d5530; the home menu's "the design has changes"): reset false, set by <see cref="SetDesignChanged"/>.
+    /// STILL-OPEN: the callers that set it true (cubemapinformationservice_3.cpp:2722-2770) are not ported.</summary>
+    public bool DesignChanged { get; private set; }
+
+    /// <summary>FUN_1410d54f0 (@0x1410d54f0, cubemapinformationservice_3.cpp:1162): only while the service's owner is the own account.</summary>
+    public void SetDesignChanged(bool changed, long ownAccount)
+    {
+        if (ownAccount != Owner) return;
+        DesignChanged = changed;
+    }
+
+    /// <summary>FUN_1410d4450 (@0x1410d4450, :2025): the slot's name and time when the slot is in a388, else a new slot at the end;
+    /// nothing unless <paramref name="characterId"/> is the service's owner (FUN_1410c3180).</summary>
+    public void SetDesignSlot(long characterId, int slot, string name, long time) => SetSlot(designs, characterId, slot, name, time);
+
+    /// <summary>FUN_1410d4710 (@0x1410d4710, :2044): the same for a3a8.</summary>
+    public void SetBlueprintSlot(long characterId, int slot, string name, long time) => SetSlot(blueprints, characterId, slot, name, time);
+
+    void SetSlot(List<UgcMapLayout> list, long characterId, int slot, string name, long time)
+    {
+        if (Owner != characterId) return;
+        var info = new UgcMapLayout(slot, name, time);
+        int i = list.FindIndex(l => l.Id == slot);
+        if (i >= 0) list[i] = info; else list.Add(info);
+    }
+
     /// <summary>f368's flag of the kind: false when no packet set it.</summary>
     public bool PermissionSet(int kind) => permissionSet.TryGetValue(kind, out bool v) && v;
     /// <summary>f378's value of the kind: 0 when no packet set it.</summary>
@@ -77,6 +103,7 @@ public sealed class CubeMapInfo
         for (int k = 0; k < PermissionKinds; k++) { permissionSet[k] = false; permissionValue[k] = 0; }
         designs.Clear();
         blueprints.Clear();
+        DesignChanged = false;
     }
 
     /// <summary>OnLoadUgcMap's setters (:2248-2281 for mode 0, :2294-2327 otherwise; the same calls).</summary>

@@ -404,4 +404,52 @@ public class ResponseCubeBillTests
         w = new ByteWriter(); new BlueprintBillAskRequest(3).Write(w);
         Assert.That(w.Buffer[..w.Length], Is.EqualTo(new byte[] { 0x42, 3, 0, 0, 0, 0, 0, 0, 0, 1 }));
     }
+
+    static CubeMapInfo HouseOf(long owner)
+    {
+        var info = new CubeMapInfo();
+        info.Apply(new LoadUgcMap(2, 1, new UgcMapHome(owner, "n", "m", 0, 0, 0, 0, 0, 0, 10, 5, 0, 0, 0,
+            Array.Empty<(bool, byte)>(), new[] { new UgcMapLayout(1, "a", 10) }, new[] { new UgcMapLayout(2, "b", 20) })));
+        return info;
+    }
+
+    [Test]
+    public void SaveSlotReplyReadsErrorOrTheSlot()
+    {
+        // scenestategame.cpp:10655-10697: u8 error; with none i64 character id, i32 slot, name, i64 time; an error leaves the body unread
+        var err = ResponseCubeSaveSlot.Read(Reader(w => w.WriteByte(7)), 0x2e);
+        Assert.That((err.Error, err.Mode), Is.EqualTo(((byte) 7, (byte) 0x2e)));
+        var ok = ResponseCubeSaveSlot.Read(Reader(w => { w.WriteByte(0); w.WriteLong(5); w.WriteInt(3); w.WriteUnicodeString("x"); w.WriteLong(99); }), 0x40);
+        Assert.That(ok, Is.EqualTo(new ResponseCubeSaveSlot(0x40, 0, 5, 3, "x", 99)));
+        Assert.Throws<InvalidDataException>(() => ResponseCubeSaveSlot.Read(Reader(w => { w.WriteByte(0); w.WriteLong(5); w.WriteInt(3); w.WriteUnicodeString("x"); w.WriteLong(99); w.WriteByte(1); }), 0x2e));
+    }
+
+    [Test]
+    public void SaveSlotUpdatesTheOwnersListsOnly()
+    {
+        // FUN_1410d4450 / FUN_1410d4710 (cubemapinformationservice_3.cpp:2025-2062): a known slot takes the name and time, a new slot appends; another id changes nothing
+        var info = HouseOf(77);
+        info.SetDesignSlot(77, 1, "z", 11);
+        info.SetDesignSlot(77, 4, "n", 12);
+        info.SetBlueprintSlot(77, 2, "y", 21);
+        info.SetBlueprintSlot(78, 9, "other", 1);
+        Assert.That(info.Designs, Is.EqualTo(new[] { new UgcMapLayout(1, "z", 11), new UgcMapLayout(4, "n", 12) }));
+        Assert.That(info.Blueprints, Is.EqualTo(new[] { new UgcMapLayout(2, "y", 21) }));
+    }
+
+    [Test]
+    public void DesignChangedFlagFollowsTheOwner()
+    {
+        // FUN_1410d54f0 (:1162): only while the service's owner is the own account; a reset clears it
+        var info = HouseOf(77);
+        info.SetDesignChanged(true, 78);
+        Assert.That(info.DesignChanged, Is.False);
+        info.SetDesignChanged(true, 77);
+        Assert.That(info.DesignChanged, Is.True);
+        info.SetDesignChanged(false, 77);
+        Assert.That(info.DesignChanged, Is.False);
+        info.SetDesignChanged(true, 77);
+        info.Reset();
+        Assert.That(info.DesignChanged, Is.False);
+    }
 }

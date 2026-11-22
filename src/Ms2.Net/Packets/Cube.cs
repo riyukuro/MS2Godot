@@ -355,6 +355,25 @@ public sealed record ResponseCubeRowSwitch(byte Row, bool On)
     }
 }
 
+/// <summary>
+/// ResponseCube 0x2e (design) and 0x40 (blueprint) (scenestategame.cpp:10655-10697): u8 error; with no error i64 character id, i32 slot, the slot's name, i64 time.
+/// An error stops the read (the client shows its build notice and leaves the rest of the body unread).
+/// </summary>
+public sealed record ResponseCubeSaveSlot(byte Mode, byte Error, long CharacterId, int Slot, string Name, long Time)
+{
+    public const byte ModeDesign = 0x2e;
+    public const byte ModeBlueprint = 0x40;
+
+    public static ResponseCubeSaveSlot Read(ByteReader r, byte mode)
+    {
+        byte error = r.ReadByte();
+        if (error != 0) return new ResponseCubeSaveSlot(mode, error, 0, 0, "", 0);
+        var m = new ResponseCubeSaveSlot(mode, 0, r.ReadLong(), r.ReadInt(), r.ReadUnicodeString(), r.ReadLong());
+        r.ExpectEnd("ResponseCube 0x" + mode.ToString("x"));
+        return m;
+    }
+}
+
 /// <summary>ResponseCube 0x2b (scenestategame.cpp:10626-10633): u8 row, u8 level: the home option row's level (FUN_1410c3f10 into the map at +0x378).</summary>
 public sealed record ResponseCubeRowLevel(byte Row, byte Level)
 {

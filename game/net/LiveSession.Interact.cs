@@ -47,6 +47,9 @@ public partial class LiveSession
     /// <summary>CubeMapInformationService's home option rows (ResponseCube 0x2a / 0x2b); read by the home option dialog's host.</summary>
     public readonly Ms2.Ui.HomeOptionRows HomeRows = new();   // reset at GameToLogin (OnGameToLogin) and at each field teardown (FieldEntry.CubeServiceCleared) (FUN_1410b76a0 @0x1410b76a0 calls FUN_1410d0310; its caller is not traced)
 
+    /// <summary>The home save slot dialog's UpdateSlots after a save reply (ResponseCube 0x2e / 0x40); the dialog subscribes while it lives.</summary>
+    public event Action SaveSlotsUpdated;
+
     /// <summary>After ResponseCube 0x14 stored the local player's home info (the changed flag UIUGCEventDispatcher::vfunc_7 gets).
     /// The client then asks the house visit question when the player has a home (scenestategame.cpp:10231-10236).</summary>
     public event Action<bool> HomeInfoApplied;
@@ -146,7 +149,8 @@ public partial class LiveSession
     void OnResponseCube(Ms2.Net.Wire.RawPacket p)
     {
         var r = p.Reader();
-        switch (r.ReadByte())
+        byte mode = r.ReadByte();
+        switch (mode)
         {
             case ResponseCubeHousingGrade.Mode: Housing.Apply(ResponseCubeHousingGrade.Read(r, accountId)); return;
             case ResponseCubeHouseOwner.Mode: Housing.Apply(ResponseCubeHouseOwner.Read(r), accountId); return;
@@ -169,6 +173,8 @@ public partial class LiveSession
             case ResponseCubeHomeInfo.Mode: OnHomeInfo(ResponseCubeHomeInfo.Read(r, game.Profile)); return;
             case ResponseCubeRowSwitch.Mode: HomeRows.Apply(ResponseCubeRowSwitch.Read(r)); return;
             case ResponseCubeRowLevel.Mode: HomeRows.Apply(ResponseCubeRowLevel.Read(r)); return;
+            case ResponseCubeSaveSlot.ModeDesign:
+            case ResponseCubeSaveSlot.ModeBlueprint: OnSaveSlot(ResponseCubeSaveSlot.Read(r, mode)); return;
             case ResponseCubeBill.ModeCube: Bill.OnBill(ResponseCubeBill.Read(r, ResponseCubeBill.ModeCube)); return;
             case ResponseCubeBill.ModeBlueprint: Bill.OnBill(ResponseCubeBill.Read(r, ResponseCubeBill.ModeBlueprint)); return;
         }
@@ -200,6 +206,20 @@ public partial class LiveSession
         int added = cells?.Load(m, id => ItemExists?.Invoke(id) ?? true) ?? 0;
         GD.Print($"live: LoadCubes {m.Cubes.Count} cube(s), {added} added");
         FieldCubesMade(added);
+    }
+
+    /// <summary>ResponseCube 0x2e / 0x40 (scenestategame.cpp:10655-10697): an error shows its build notice; otherwise, for the own
+    /// character with the service up, the slot goes into the list and the changed flag clears; then the open slot dialog updates.</summary>
+    void OnSaveSlot(ResponseCubeSaveSlot m)
+    {
+        if (m.Error != 0) { ShowBuildNotice(m.Error); return; }
+        if (m.CharacterId == accountId && FieldId != null)
+        {
+            if (m.Mode == ResponseCubeSaveSlot.ModeDesign) CubeMap.SetDesignSlot(m.CharacterId, m.Slot, m.Name, m.Time);
+            else CubeMap.SetBlueprintSlot(m.CharacterId, m.Slot, m.Name, m.Time);
+            CubeMap.SetDesignChanged(false, accountId);
+        }
+        SaveSlotsUpdated?.Invoke();
     }
 
     /// <summary>The built field's cube map (its player's CubeGrid), or null before the field is built.</summary>

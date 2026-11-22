@@ -15,6 +15,9 @@ public partial class HudScene
 
     bool HomeSaveSlotOpen => homeSaveSlotMovie != null && homeSaveSlot?.IsClosed == false;
 
+    /// <summary>GetHomeSaveSlotDialog(0x4f27)->UpdateSlots after ResponseCube 0x2e / 0x40: only an open dialog.</summary>
+    void OnSaveSlotsUpdated() { if (HomeSaveSlotOpen) homeSaveSlot.UpdateSlots(); }
+
     void SetHomeSaveSlotMode(bool save)
     {
         if (!HomeSaveSlotOpen)
