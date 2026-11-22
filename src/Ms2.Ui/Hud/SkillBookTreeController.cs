@@ -65,6 +65,10 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
     public event Action<string, int> ChatLine;
     /// <summary>ShowSystemNotice(text, 1, 1): the screen notice.</summary>
     public event Action<string> SystemNotice;
+    /// <summary>The input text of the box the callback got (GetInputText @0x141a04da0).</summary>
+    public Func<MessageBoxData, string> InputText = box => MessageBoxQueue.Layer?.InputText(box) ?? "";
+    /// <summary>CBanTextChecker::CheckAutoDistributeEntryName: the notice text of a refused name, null when it passes.</summary>
+    public Func<string, string> CheckEntryName = _ => null;
     /// <summary>PlaySystemSound(key).</summary>
     public event Action<string> Sound;
 
@@ -661,6 +665,7 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
                 RequireSkillEffect((uint)Rt.ToNumber(args.ElementAtOrDefault(1)), Rt.ToBoolean(args.ElementAtOrDefault(0)));
                 return true;
             case "onChangeTab":
+                if (WaitServer) return false;
                 if (ulong.TryParse(Rt.ToString(args.ElementAtOrDefault(0)), out var tab))      // ParseUInt64W
                 {
                     SelectTab((long)tab);
@@ -684,11 +689,39 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
                 PromptChangeTab();
                 return true;
             case "OnRegisterShortcutkey":
-            case "onRenameTab": case "onAddTab": case "onChangeSubJob": case "onRemoveTab": case "onLapenshardBtn":
+            case "onRenameTab":
+                if (WaitServer) return false;
+                if (ulong.TryParse(Rt.ToString(args.ElementAtOrDefault(0)), out var renameId))     // ParseUInt64W
+                    PromptRenameTab((long)renameId, Rt.ToString(args.ElementAtOrDefault(1)) ?? "");
+                return true;
+            case "onAddTab": case "onChangeSubJob": case "onRemoveTab": case "onLapenshardBtn":
                 Button?.Invoke(name);
                 return true;
         }
         return false;
+    }
+
+    /// <summary>onRenameTab (:2162): a type 10 box s_skillbook_tree_config_rename_tab with the name in its input (10 chars) and the tab id.</summary>
+    void PromptRenameTab(long id, string name)
+    {
+        var box = MessageBoxQueue.CreateWithCallback(Common("s_skillbook_tree_config_rename_tab"), 10, OnRenameConfirm);
+        box.SetInput(0, name, 10, 0, 0);
+        box.Append(id);
+        ShowBox(box);
+    }
+
+    /// <summary>OnRenameConfirm @0x140ec8b20: on yes, the input's text after the first ','; empty is refused, a banned name shows its
+    /// notice, else RequestSkillBookTree mode 2 and the box closes. The name is renamed when the server answers (OnSkillBookTree).</summary>
+    bool OnRenameConfirm(int result, MessageBoxData box)
+    {
+        if (result != 0) return true;
+        string text = InputText(box) ?? "";
+        string name = text.Substring(text.IndexOf(',') + 1);
+        long id = box.ArgLong(0, 0);
+        if (name.Length == 0) return false;
+        if (CheckEntryName(name) is { } msg) { SystemNotice?.Invoke(msg); return false; }
+        TrySend(new SkillBookTreeRename(id, name));
+        return true;
     }
 
     /// <summary>PromptChangeTab @0x140ec9fd0 (:1165): CanApply, then (CheckApply(true), the platform state, is 0 here; STILL-OPEN: its

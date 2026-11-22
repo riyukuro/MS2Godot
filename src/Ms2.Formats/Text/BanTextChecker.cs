@@ -315,6 +315,9 @@ public sealed class BanTextChecker
     public int CheckContentText(string content, out string message) =>
         Check(content, (Checks)0xd8, default, out message, "s_ban_check_comment_err_any_word");
 
+    /// <summary>CBanTextChecker::CheckAutoDistributeEntryName: the same check as CheckContentText (the skill tab's name).</summary>
+    public int CheckAutoDistributeEntryName(string name, out string message) => CheckContentText(name, out message);
+
     /// <summary>CBanTextChecker::CheckBuddyMemo (@0x140226220, commonstringtable.cpp:964): CheckTypes(0xd8, true), the same
     /// tables as the club name; the friend dialogs' block memo.</summary>
     public int CheckBuddyMemo(string memo, out string message) => Check(memo, (Checks)0xd8, default, out message);

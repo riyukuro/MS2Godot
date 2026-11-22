@@ -831,4 +831,44 @@ public class SkillBookTreeTests
         Assert.That(boxes, Is.Empty);
         Assert.That(sent.Count, Is.EqualTo(2));
     }
+
+    [Test]
+    public void RenameTabAsksWithTheNameAndSendsMode2OnlyForAnAcceptedName()
+    {
+        var (c, sent, boxes) = OpenForClose();
+        var notices = new List<string>();
+        c.SystemNotice += notices.Add;
+        string typed = "";
+        c.InputText = _ => typed;
+        string banned = null;
+        c.CheckEntryName = n => n == banned ? "no" : null;
+        long tab = c.Tabs.First().Id;
+        c.OnCallback("onRenameTab", new object[] { tab.ToString(), "old" });
+        Assert.That(boxes.Count, Is.EqualTo(1));
+        var box = boxes[0];
+        Assert.That(box.ArgLong(0, -1), Is.EqualTo(tab));
+        typed = "";                                                   // empty: stays open, sends nothing
+        Assert.That(box.Callback(0, box), Is.False);
+        banned = "bad"; typed = "x,bad";                              // banned: notice, stays open
+        Assert.That(box.Callback(0, box), Is.False);
+        Assert.That(notices, Is.EqualTo(new[] { "no" }));
+        Assert.That(sent, Is.Empty);
+        typed = "x,fine";                                             // text after the first comma
+        Assert.That(box.Callback(0, box), Is.True);
+        var req = (SkillBookTreeRename)sent.Single();
+        Assert.That((req.Tab, req.Name), Is.EqualTo((tab, "fine")));
+    }
+
+    [Test]
+    public void RenameAndChangeTabAreRefusedWhileWaitingForTheServer()
+    {
+        var (c, sent, boxes) = OpenForClose();
+        c.OnCallback("onUseTab", Array.Empty<object>());
+        boxes[0].Callback(0, boxes[0]);                               // WaitServer set
+        boxes.Clear();
+        long tab = c.Tabs.First().Id;
+        Assert.That(c.OnCallback("onRenameTab", new object[] { tab.ToString(), "n" }), Is.False);
+        Assert.That(c.OnCallback("onChangeTab", new object[] { tab.ToString() }), Is.False);
+        Assert.That(boxes, Is.Empty);
+    }
 }

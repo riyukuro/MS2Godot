@@ -132,6 +132,13 @@ public sealed record SkillBookTreeSave(long CurrentTab, long Tab, int Rank, IRea
     }
 }
 
+/// <summary>Outbound 0xA2 (SendOp::RequestSkillBookTree) mode 2: UISkillBookTreeDialog::OnRenameConfirm @0x140ec8b20: u8 2, i64 the tab,
+/// unicode name.</summary>
+public sealed record SkillBookTreeRename(long Tab, string Name) : IOutPacket {
+    public Outbound Op => Outbound.RequestSkillBookTree;
+    public void Write(ByteWriter w) { w.WriteByte(2); w.WriteLong(Tab); w.WriteUnicodeString(Name); }
+}
+
 /// <summary>Outbound 0x25 (SendOp::Job) mode 9 (apply) or 0xb (apply, confirmed): UISkillBookTreeDialog::RequestJob @0x140ec9200
 /// (uiskillbookautodistributedialog.cpp:1180): u8 mode, i32 count of { i32 skill id, i16 level, bool learned }.
 /// STILL-OPEN: the GMS2 number of SendOp::Job is not mapped.</summary>
