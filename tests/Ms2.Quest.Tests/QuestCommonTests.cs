@@ -16,6 +16,15 @@ public class QuestCommonTests
         QuestCommon.Buttons(d, r, live, FieldMeta.Parse("<ms2/>"), st ?? new NoQuestState(1), Rooms());
 
     [Test]
+    public void TheRoomTableIsFoundLocaleFirstAndAbsentIsNull()
+    {
+        Assert.That(DungeonRooms.EntryOf(e => e == "table/na/dungeonroom.xml"), Is.EqualTo("table/na/dungeonroom.xml"), "GMS2 data");
+        Assert.That(DungeonRooms.EntryOf(e => e == "table/dungeonroom.xml"), Is.EqualTo("table/dungeonroom.xml"));
+        Assert.That(DungeonRooms.EntryOf(e => e == "table/dungeonroom.xml" || e == "table/kr/dungeonroom.xml"), Is.EqualTo("table/kr/dungeonroom.xml"), "locale folder wins");
+        Assert.That(DungeonRooms.EntryOf(_ => false), Is.Null, "LoadRooms returns after Clear() when the file is missing");
+    }
+
+    [Test]
     public void TheRoomRowKeepsChaosDamageMeter()
     {
         var t = DungeonRooms.Parse(System.Xml.Linq.XDocument.Parse(

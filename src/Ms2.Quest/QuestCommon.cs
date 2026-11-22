@@ -25,7 +25,10 @@ public sealed record DungeonRoom(int Id, int GroupType, int MaxUserCount, int[] 
 public sealed class DungeonRooms
 {
     public const string Archive = "Xml";
-    public const string Entry = "table/dungeonroom.xml";
+    public const string File = "dungeonroom.xml";
+
+    /// <summary>GetXmlPath("Table", "DungeonRoom.xml") (dungeonroom.cpp:1058): the locale folder first, then the plain path; null when the data has none.</summary>
+    public static string EntryOf(Func<string, bool> exists) => TablePath.Resolve(exists, File);
 
     readonly Dictionary<int, DungeonRoom> rooms = new();
 
@@ -41,8 +44,9 @@ public sealed class DungeonRooms
     }
 
     /// <param name="available">IsElementAvailable (QuestTable.Available): FUN_14028faa0 skips the rows that fail it.</param>
+    /// <remarks>No file: LoadXmlFile fails and LoadRooms returns after Clear() (dungeonroom.cpp:1056-1060), so the table is empty.</remarks>
     public static DungeonRooms Load(PackSet packs, Func<XElement, bool> available) =>
-        Parse(PackXml.Parse(packs.Read(Archive, Entry)), available);
+        EntryOf(e => packs.Exists(Archive, e)) is { } entry ? Parse(PackXml.Parse(packs.Read(Archive, entry)), available) : new DungeonRooms();
 
     /// <summary>A later row of the same id replaces an earlier one (m_rooms[id] = room, :1068).</summary>
     public static DungeonRooms Parse(XDocument doc, Func<XElement, bool> available)
