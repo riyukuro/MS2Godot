@@ -3985,6 +3985,7 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "mailsend" && frames == 200) OpenMailSendShot();
         if (openShot == "chatemoticon" && frames == 200) OpenChatEmoticon();    // with --chatemoticon-fixture: every pack owned
         if (openShot == "inventory" && frames == 200) ToggleInventory();
+        if (openShot == "skillbook" && frames == 200) ToggleSkillBook();
         if (openShot is "selectitembox" or "multiopenbox" && frames == 200) OpenSelectItemBoxShot(openShot == "multiopenbox");
         if (openShot == "itempreview" && frames == 200) OpenItemPreview(Ms2.Ui.Items.Item.Create(hudModel.Tables.Items, 11300001, 1), 1);
         if (openShot == "myinfo" && frames == 200) ToggleMyInfo();
