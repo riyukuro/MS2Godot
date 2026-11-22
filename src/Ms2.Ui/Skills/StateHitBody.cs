@@ -230,7 +230,7 @@ public interface IPushBody
     /// (:451) / GetGroundDistance (:475). <paramref name="hitZ"/> is the hit's z.</summary>
     bool GroundBelow(Vector3 from, float len, out float hitZ);
     /// <summary>PCBase::vfunc_106 (@0x141674750, pcbase.cpp:4188): the controller's move by <paramref name="move"/>
-    /// (field units) leaving out the npcs (flags 0x10), then the body faces along the move.</summary>
+    /// (field units) leaving out the npcs (flags 0x10), then the body faces against the move (heading -atan2(x, y)).</summary>
     void PushMove(Vector3 move, double dt);
 }
 
