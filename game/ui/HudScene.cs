@@ -2679,6 +2679,10 @@ public partial class HudScene : Node, IUiStageHost
         hudModel.HasLocalPlayer = true;     // the HUD runs in a field, where WorldService::GetLocalPlayer is the MyPC
         hudModel.CanBreakItem = it => Ms2Godot.Net.LiveSession.Instance?.BreakManager.CanBreakItem(it) == true;   // CItemBreakManager::CanBreakItem
         hudModel.QuestItemLinks = ItemQuestLinks;    // CQuestManager::GetQuestItemLinks, an item tooltip's quest line
+        // an install item's guide lines: the own housing grade, CAchieveManager::IsGradeCleared, GetRequireAchieveText
+        hudModel.HousingGrade = () => Ms2Godot.Net.LiveSession.Instance?.Housing.Grade ?? 0;
+        hudModel.IsAchieveGradeCleared = (id, grade) => Ms2Godot.Net.LiveSession.Instance?.Achieves.IsGradeCleared(id, grade) == true;
+        hudModel.RequireAchieveText = (id, grade) => Ms2Godot.Net.LiveSession.Instance is { } s ? AchieveTextsFor(s.Achieves).RequireText(id, grade) : "";
         hudModel.LocalPlayer = () =>
         {
             var live = Ms2Godot.Net.LiveSession.Instance;

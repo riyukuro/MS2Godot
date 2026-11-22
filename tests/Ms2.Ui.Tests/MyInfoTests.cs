@@ -702,6 +702,84 @@ public class MyInfoTests
     }
 
     [Test]
+    public void GuideDescriptionByIdHasAnInstallItemsRightsHousingLevelAndTrophy()
+    {
+        var m = NewModel();
+        m.HasLocalPlayer = true;
+        m.FeatureEnabledByName = null;                  // the features come from m.Features below
+        var t = m.Tables;
+        string Guide(int id)
+        {
+            var tip = new ItemTooltip(m, 0);
+            Assert.That(tip.FillById(id, 1), Is.True);
+            return tip.Data.TryGetValue("itemGuideDescription", out var v) ? (string)v : null;
+        }
+        string F(int common, object arg) => Ms2.Quest.ClientFormat.Format(t.Common(common), arg);
+        string Rights(ItemData d, string text)
+        {
+            var (state, trigger) = t.ObjectCubeRights(d.InstallObjCode);
+            if (state) text = F(0xafa, text);
+            if (trigger) text = F(0xaf9, text);
+            return text;
+        }
+
+        // the rights (FormatStringId 0xafa, then 0xaf9) with every trophy cleared and feature 0xdb off: nothing appended
+        m.IsAchieveGradeCleared = (_, _) => true;
+        m.RequireAchieveText = (id, grade) => $"trophy {id}/{grade}";
+        int both = 0, rights = 0;
+        foreach (var row in t.Housing.Rows.OrderBy(r => r.ItemId))
+        {
+            var d = t.Items.Get(row.ItemId);
+            if (d == null || d.InstallObjCode == 0) continue;
+            var r = t.ObjectCubeRights(d.InstallObjCode);
+            if (!r.StateChange && !r.TriggerControl) continue;
+            if (rights++ < 3 || (r.StateChange && r.TriggerControl && both++ == 0))
+            {
+                string guide = Guide(d.Id);
+                TestContext.WriteLine($"{d.Id} (object {d.InstallObjCode}, {r}): {guide}");
+                Assert.That(guide, Is.EqualTo(Rights(d, t.ItemDescription(d.Id, "guideDescription"))));
+            }
+        }
+        TestContext.WriteLine($"items with rights: {rights}, with both: {both}");
+        Assert.That(rights, Is.GreaterThan(0));
+        Assert.That(t.ObjectCubeRights(0), Is.EqualTo((false, false)));
+
+        // feature 0xdb, an interiorLevel above 0 and priceCount 1: BlockFormat(0x6fa, the level raised to the category's
+        // interior requireLevel) above the own housing grade (0 with no housing state)
+        var leveled = t.Housing.Rows.OrderBy(r => r.ItemId).First(r => r.InteriorLevel > 1 && r.MoneyType == 1
+            && t.Items.Get(r.ItemId) is { IsInstallItem: true } d && t.ObjectCubeRights(d.InstallObjCode) == (false, false));
+        var ld = t.Items.Get(leveled.ItemId);
+        string plain = t.ItemDescription(ld.Id, "guideDescription");
+        Assert.That(Guide(ld.Id), Is.EqualTo(plain));
+        m.Features.Add(0xdb);
+        int level = Math.Max(leveled.InteriorLevel, t.CubeInteriors.RequireLevel(leveled.CategoryIndex) ?? 0);
+        string line = F(0x6fa, level);
+        TestContext.WriteLine($"{ld.Id} (interiorLevel {leveled.InteriorLevel}, category {leveled.CategoryIndex}): {Guide(ld.Id)}");
+        Assert.That(Guide(ld.Id), Is.EqualTo(string.IsNullOrEmpty(plain) ? line : plain + "\n" + line));
+        m.HousingGrade = () => level;
+        Assert.That(Guide(ld.Id), Is.EqualTo(plain), "a level at the own grade adds nothing");
+        m.HousingGrade = () => level - 1;
+        Assert.That(Guide(ld.Id), Does.EndWith(line));
+        m.Features.Remove(0xdb);
+
+        // a trophy grade not cleared: s_construct_require_trophy with GetRequireAchieveText, when that is not empty
+        var trophied = t.Housing.Rows.OrderBy(r => r.ItemId).First(r => r.TrophyId != 0
+            && t.Items.Get(r.ItemId) is { IsInstallItem: true } d && t.ObjectCubeRights(d.InstallObjCode) == (false, false));
+        var td = t.Items.Get(trophied.ItemId);
+        string tplain = t.ItemDescription(td.Id, "guideDescription");
+        Assert.That(Guide(td.Id), Is.EqualTo(tplain));
+        m.IsAchieveGradeCleared = (id, grade) => id != (int)trophied.TrophyId || grade != (int)trophied.TrophyLevel;
+        string tline = Ms2.Quest.ClientFormat.Format(t.Common("s_construct_require_trophy"), $"trophy {trophied.TrophyId}/{trophied.TrophyLevel}");
+        TestContext.WriteLine($"{td.Id} (trophy {trophied.TrophyId}/{trophied.TrophyLevel}): {Guide(td.Id)}");
+        Assert.That(Guide(td.Id), Is.EqualTo(string.IsNullOrEmpty(tplain) ? tline : tplain + "\n" + tline));
+        m.RequireAchieveText = (_, _) => "";
+        Assert.That(Guide(td.Id), Is.EqualTo(tplain), "an empty requirement text adds nothing");
+        m.RequireAchieveText = null;
+        m.IsAchieveGradeCleared = null;
+        Assert.That(Guide(td.Id), Is.EqualTo(tplain));
+    }
+
+    [Test]
     public void DyeLineIsTheClientsForACustomizableOutfit()
     {
         // the Green Hood Uniform's model 12200398: <customize color="1" colorPalette="10" defaultColorIndex="13">

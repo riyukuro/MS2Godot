@@ -158,6 +158,14 @@ public sealed class UiModel
     public Func<Items.Item, IReadOnlyList<Items.QuestItemLink>> QuestItemLinks;
     /// <summary>The quest table an item tooltip's quest line names its quests from (GetQuestName, GetQuestData).</summary>
     public Ms2.Quest.QuestTable Quests;
+    /// <summary>DAT_143ab291c, the own housing grade (<see cref="HousingState.Grade"/>) an install item's guide lines read;
+    /// null reads 0.</summary>
+    public Func<int> HousingGrade;
+    /// <summary>CAchieveManager::IsGradeCleared (<see cref="AchieveBook.IsGradeCleared"/>) for an install item's trophy
+    /// line; null clears nothing.</summary>
+    public Func<int, int, bool> IsAchieveGradeCleared;
+    /// <summary>GetRequireAchieveText(id, grade, "") (<see cref="AchieveTexts.RequireText"/>) for that line; null gives "".</summary>
+    public Func<int, int, string> RequireAchieveText;
 
     /// <summary>The align widgets (UIAlignWidgetManager) of the movies sharing this model; null lays every movie out by
     /// itself.</summary>

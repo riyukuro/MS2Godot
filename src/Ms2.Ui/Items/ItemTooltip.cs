@@ -211,11 +211,12 @@ public sealed partial class ItemTooltip
 
     /// <summary>
     /// FUN_1409d0a80 (astooltip.cpp:2178), "itemGuideDescription": the string table's guideDescription, then m_50 (set
-    /// only by the shop and merat market tooltips, FUN_1409dbc30). Ported: the plain text. Not ported, so the member is left
-    /// out: a UGC block, a score, a multi-ride item with feature 0xad (s_multi_riding_item_desc and the UGC counts
-    /// FUN_141901d20 / f70), a gacha box (type 0x1a, its item list), the InstallBillBoard limits, an install object's
-    /// rights (objCode: 0xafa / 0xaf9), an install item's housing limits and trophy, and a type 0x19 item (the expiry
-    /// notice by FUN_1409e0450).
+    /// only by the shop and merat market tooltips, FUN_1409dbc30). Ported: the plain text, with an install object's rights
+    /// (objCode: FormatStringId 0xafa / 0xaf9, <see cref="InstallRights"/>). Not ported, so the member is left out: a UGC
+    /// block, a score, a multi-ride item with feature 0xad (s_multi_riding_item_desc and the UGC counts FUN_141901d20 /
+    /// f70), a gacha box (type 0x1a, its item list), the InstallBillBoard limits, an install item (the housing level and
+    /// trophy lines as by id, then the owner's house forms and the stock counts BlockFormat(0x6fd, FUN_141901f70,
+    /// FUN_141901d20)), and a type 0x19 item (the expiry notice by FUN_1409e0450).
     /// </summary>
     public void SetItemGuideDescription(Item item)
     {
@@ -223,8 +224,8 @@ public sealed partial class ItemTooltip
         string text = null;
         if (!(item.Record?.HasUgc == true || d.IsScoreItem)
             && !(d.IsMultiRideItem && model.IsFeatureEnabled(0xad))
-            && !(d.Type == 0x1a || d.FunctionName == "InstallBillBoard" || d.InstallObjCode != 0 || d.IsInstallItem || d.Type == 0x19))
-            text = Tables.ItemDescription(d.Id, "guideDescription");
+            && !(d.Type == 0x1a || d.FunctionName == "InstallBillBoard" || d.IsInstallItem || d.Type == 0x19))
+            text = InstallRights(d.InstallObjCode, Tables.ItemDescription(d.Id, "guideDescription"));   // :2262-2268
         if (!string.IsNullOrEmpty(ShopGuideText))
             text = string.IsNullOrEmpty(text) ? ShopGuideText : text + "\n" + ShopGuideText;   // :2355-2361
         if (text != null) Data["itemGuideDescription"] = text;

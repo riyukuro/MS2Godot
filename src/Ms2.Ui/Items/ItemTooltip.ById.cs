@@ -71,18 +71,57 @@ public sealed partial class ItemTooltip
     }
 
     /// <summary>
-    /// FUN_1409d5b70 (astooltip.cpp:2925), "itemGuideDescription" by id: the string table's guideDescription, then m_50
-    /// (<see cref="ShopGuideText"/>). STILL-OPEN, so the member is left out: an install object's rights (objCode: 0xafa /
-    /// 0xaf9) and an install item's housing level and trophy lines.
+    /// FUN_1409d5b70 (astooltip.cpp:2925), "itemGuideDescription" by id: the string table's guideDescription; for an
+    /// install object (objCode) wrapped in FormatStringId 0xafa when it has the state change permission and 0xaf9 when it
+    /// has trigger control (<see cref="GameTables.ObjectCubeRights"/>); for an install item (<see cref="InstallGuideLines"/>)
+    /// the housing level and trophy lines, the member left out when it has no housing row; then m_50
+    /// (<see cref="ShopGuideText"/>).
     /// </summary>
     void SetGuideDescriptionById(ItemData d)
     {
-        if (d.InstallObjCode != 0 || d.IsInstallItem) return;
-        string text = Tables.ItemDescription(d.Id, "guideDescription");
+        string text = InstallRights(d.InstallObjCode, Tables.ItemDescription(d.Id, "guideDescription"));
+        if (d.IsInstallItem && !InstallGuideLines(d.Id, ref text)) return;
         if (!string.IsNullOrEmpty(ShopGuideText))
             text = string.IsNullOrEmpty(text) ? ShopGuideText : text + "\n" + ShopGuideText;
         Data["itemGuideDescription"] = text;
     }
+
+    /// <summary>The objCode rights of the guide description (astooltip.cpp:2932-2938 and :2262-2268): FormatStringId(0xafa)
+    /// of the text with HasStateChangePermission, then FormatStringId(0xaf9) of that with IsTriggerControlEnabled.</summary>
+    string InstallRights(int objCode, string text)
+    {
+        var (stateChange, triggerControl) = Tables.ObjectCubeRights(objCode);
+        if (stateChange) text = Format(Tables.Common(0xafa), text);
+        if (triggerControl) text = Format(Tables.Common(0xaf9), text);
+        return text;
+    }
+
+    /// <summary>
+    /// FUN_1409d5b70's install item lines (astooltip.cpp:2939-2972), false with no housing row (the client returns before
+    /// setting the member): with feature 0xdb, an interiorLevel above 0 and priceCount 1, the level (raised to the
+    /// category's interior requireLevel) above the own housing grade adds BlockFormat(0x6fa, level); a trophy grade not
+    /// cleared adds s_construct_require_trophy with GetRequireAchieveText when that is not empty. Each line goes after a
+    /// "\n" when the text is not empty.
+    /// </summary>
+    bool InstallGuideLines(int itemId, ref string text)
+    {
+        var h = Tables.Housing?.Get(itemId);
+        if (h == null) return false;
+        int level = h.InteriorLevel;
+        if (model.IsFeatureEnabled(CubeLock.HousingLevelFeature) && level > 0 && h.MoneyType == 1)
+        {
+            if (Tables.CubeInteriors?.RequireLevel(h.CategoryIndex) is { } require && require > level) level = require;
+            if (level > (model.HousingGrade?.Invoke() ?? 0)) text = AppendLine(text, Format(Tables.Common(0x6fa), level));
+        }
+        if (model.IsAchieveGradeCleared?.Invoke((int)h.TrophyId, (int)h.TrophyLevel) != true)
+        {
+            string trophy = model.RequireAchieveText?.Invoke((int)h.TrophyId, (int)h.TrophyLevel) ?? "";
+            if (trophy.Length != 0) text = AppendLine(text, CommonF("s_construct_require_trophy", trophy));
+        }
+        return true;
+    }
+
+    static string AppendLine(string text, string line) => string.IsNullOrEmpty(text) ? line : text + "\n" + line;
 
     /// <summary>FUN_1409d6120 (astooltip.cpp:2984), "statDescription" by id: the string table's mainDescription as a
     /// { type 0, text } row when not empty; else a ChatEmoticonAdd item's FUN_1409daff0 text (STILL-OPEN, nothing set).</summary>

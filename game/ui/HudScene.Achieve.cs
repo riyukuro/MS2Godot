@@ -76,6 +76,27 @@ public partial class HudScene
         return false;
     }
 
+    /// <summary>CAchieveUIData for <paramref name="book"/>: read once, then pointed at the book and the HUD model's tables
+    /// (the trophy window's texts, also GetRequireAchieveText for an install item's guide line).</summary>
+    AchieveTexts AchieveTextsFor(AchieveBook book)
+    {
+        if (achieveTexts == null)
+        {
+            var words = (questTable ??= QuestTable.Load(assets.Packs, new GameStrings(assets.Packs, assets.Language).Languages, data.Locale,
+                                                        f => !data.FeaturesOff.Contains(f))).Words;   // the quest log's tables
+            achieveTexts = AchieveTexts.Load(assets.Packs, new GameStrings(assets.Packs, assets.Language).Languages,
+                                             words.ReplaceObjectWords, words.ReplaceBoldWords);
+        }
+        achieveTexts.Data = book.DataOf;
+        achieveTexts.Find = book.Find;
+        achieveTexts.CommonByKey = hudModel.Tables.Common;
+        achieveTexts.TableString = hudModel.Tables.StringTableText;
+        achieveTexts.TitleName = hudModel.Tables.TitleName;
+        achieveTexts.FeatureOn = hudModel.IsFeatureEnabled;
+        achieveTexts.Gender = () => Ms2Godot.Net.LiveSession.Instance is { } live ? live.Me.User?.Gender : hudModel.HasLocalPlayer ? 0 : null;
+        return achieveTexts;
+    }
+
     /// <summary>
     /// Opens the trophy window (FUN_141924680 -> vfunc_65): the movie runs its own ActionScript with UIAchieveDialog's C++ side
     /// (AchieveController). A dialog that is open is left; the movie is dropped when its close tween ends.
@@ -90,20 +111,7 @@ public partial class HudScene
         if (achieve == null || achieve.Book != book)
         {
             achieveCategories ??= AchieveCategory.Load(assets.Packs);
-            if (achieveTexts == null)
-            {
-                var words = (questTable ??= QuestTable.Load(assets.Packs, new GameStrings(assets.Packs, assets.Language).Languages, data.Locale,
-                                                            f => !data.FeaturesOff.Contains(f))).Words;   // the quest log's tables
-                achieveTexts = AchieveTexts.Load(assets.Packs, new GameStrings(assets.Packs, assets.Language).Languages,
-                                                 words.ReplaceObjectWords, words.ReplaceBoldWords);
-            }
-            achieveTexts.Data = book.DataOf;
-            achieveTexts.Find = book.Find;
-            achieveTexts.CommonByKey = hudModel.Tables.Common;
-            achieveTexts.TableString = hudModel.Tables.StringTableText;
-            achieveTexts.TitleName = hudModel.Tables.TitleName;
-            achieveTexts.FeatureOn = hudModel.IsFeatureEnabled;
-            achieveTexts.Gender = () => live != null ? live.Me.User?.Gender : hudModel.HasLocalPlayer ? 0 : null;
+            AchieveTextsFor(book);
             var c = new AchieveController(book, achieveTexts, achieveCategories)
             {
                 HasPlayer = () => live == null || live.Me.User != null,

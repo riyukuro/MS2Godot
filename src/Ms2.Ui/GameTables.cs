@@ -848,6 +848,32 @@ public sealed class GameTables
     /// <summary>CItemDataTable::GetHousing: the install items' housing rows (<see cref="HousingTable"/>), read on first use;
     /// null without packs.</summary>
     public HousingTable Housing => housing ??= packs == null ? null : new HousingTable(packs);
+    CubeInteriorTable cubeInteriors;
+    /// <summary>UGCCubeCategoryTable's interiors (GetInterior(category)->m_nRequireLevel, <see cref="CubeInteriorTable"/>),
+    /// read on first use; null without packs.</summary>
+    public CubeInteriorTable CubeInteriors => cubeInteriors ??= packs == null ? null : new CubeInteriorTable(packs);
+
+    readonly Dictionary<int, (bool StateChange, bool TriggerControl)> objectCubeRights = new();
+    /// <summary>
+    /// GetObjectData(objCode) (@0x140704ec0: Object/%08d.xml, &lt;ms2&gt;, &lt;FunctionCube&gt;) as read by
+    /// HasStateChangePermission (objectdata.cpp:541: StateChangeActionPermissionType == 1) and IsTriggerControlEnabled
+    /// (:523: enableTriggerControl != 0); both false for id 0, with no file or no FunctionCube. Cached by id.
+    /// </summary>
+    public (bool StateChange, bool TriggerControl) ObjectCubeRights(int objCode)
+    {
+        if (objCode == 0 || packs == null) return default;
+        lock (objectCubeRights)
+        {
+            if (objectCubeRights.TryGetValue(objCode, out var known)) return known;
+            var r = default((bool, bool));
+            if (Xml(string.Format(CultureInfo.InvariantCulture, "object/{0:D8}.xml", (uint)objCode))?.Root is { Name.LocalName: "ms2" } root
+                && root.Element("FunctionCube") is { } cube)
+                r = (Ms2.Formats.World.ReservedWords.Atoi((string)cube.Attribute("StateChangeActionPermissionType") ?? "") == 1,
+                     Ms2.Formats.World.ReservedWords.Atoi((string)cube.Attribute("enableTriggerControl") ?? "") != 0);
+            objectCubeRights[objCode] = r;
+            return r;
+        }
+    }
     Ms2.Ui.Items.UgcMapSetItemTable ugcMapSetItems;
     /// <summary>CUGCMapSetItemTable (GetXmlPath("Table", "UGCMapSetItem.xml"), the locale folder first), read on first use.</summary>
     public Ms2.Ui.Items.UgcMapSetItemTable UgcMapSetItems => ugcMapSetItems ??= packs == null ? Ms2.Ui.Items.UgcMapSetItemTable.Empty
