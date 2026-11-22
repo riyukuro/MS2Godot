@@ -261,13 +261,23 @@ public partial class LiveSession
                         Shot("enchant_select.png");
                         break;
                     }
+                    case "enchantgive":      // the selected item's costs into the bag (the server's GM item command)
+                    {
+                        foreach (var (id, n) in hud.EnchantCostsScripted())
+                        {
+                            GD.Print($"live: combat enchant give {id} x{n}: {(hud.SubmitChatLine($"/item {id} --amount {n}") ? "sent" : "no chat window")}");
+                            await frames(60);
+                        }
+                        await frames(90); Shot("enchant_given.png");
+                        break;
+                    }
                     case "enchantpress":
                     {
                         int asked = hud.EnchantPressScripted();
                         GD.Print($"live: combat enchant press: boxes asked={asked}");
                         await frames(180);
                         var st = hud.EnchantStateScripted();
-                        GD.Print($"live: combat enchant after press: selected={st.Selected} state={st.State} ready={st.Ready}");
+                        GD.Print($"live: combat enchant after press: selected={st.Selected} state={st.State} ready={st.Ready} result item={st.ResultId}");
                         Shot("enchant_press.png");
                         break;
                     }
