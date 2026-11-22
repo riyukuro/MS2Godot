@@ -13,6 +13,10 @@ public sealed partial class ItemTooltip
     /// </summary>
     public void SetItemDamage(Item item)
     {
+        // only the enchant and merge lines are ported; skip the builder when neither can add text
+        bool enchant = item.Data.IsEquipItem;
+        bool merge = item.Data.Fusionable != 0 && model.IsFeatureEnabled(0x6f);
+        if (!enchant && !merge) return;
         var sb = new StringBuilder();
         AppendEnchant(item, sb);
         AppendMerge(item, sb);
@@ -30,6 +34,8 @@ public sealed partial class ItemTooltip
     /// </summary>
     void AppendEnchant(Item item, StringBuilder sb)
     {
+        // the exe returns on a null GetStatus()->GetEnchant(); every item has one (FUN_140523c40 makes the CItemStatus,
+        // whose constructor makes the CItemEnchantInfo, itemsocketsystemutil.cpp:1603), a made item's at level 0
         var d = item.Data;
         if (!d.IsEquipItem) return;                                               // FUN_14053cbc0
         if (d.HasSkinType) return;                                                // CItem::HasSkin
@@ -43,7 +49,7 @@ public sealed partial class ItemTooltip
         if (!Tables.ItemOptions.CanEnchant(item)) return;
         NewLine(sb);
         sb.Append(Tables.Common(0x959));
-        int failStack = item.Record?.Enchant?.FailStack ?? 0;                    // CItemEnchantInfo::GetFailStackCount
+        int failStack = item.Record?.Enchant.FailStack ?? 0;                     // CItemEnchantInfo::GetFailStackCount
         if (failStack > 0)
         {
             NewLine(sb);
@@ -93,6 +99,8 @@ public sealed partial class ItemTooltip
     /// FUN_140f33250 / FUN_140f33400 (unit_140f32290_charactercustomizepayloadwriters.cpp:267), bAlt false: c1 is ch0 and
     /// c2 is ch1 for the avatar colour item (CItemData::IsAvatarColorItem, id 10100001) else ch2. realColor c1; visibleColor
     /// the palette colour, or with show2color c1 plus realColor2 and visibleColor2 c2; ch2Color c2, colorSN and paletteID.
+    /// The colours are uints (ASObj::FUN_1409c4990 takes an unsigned long), colorSN an int (SetIntMember) and paletteID a
+    /// uint (SetMemberUInt).
     /// </summary>
     public static Dictionary<string, object> ColorObject(ColorPaletteTable.Color c, ItemData d)
     {

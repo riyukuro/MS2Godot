@@ -2,7 +2,7 @@ namespace Ms2.Ui.Items;
 
 /// <summary>
 /// CItem (ms2/commonfiles/item.cpp), as far as a slot shows it. A new item (<see cref="Create"/>) has the constructor's
-/// values (:715): slot -1, count 1, no lock; its status has no enchant. The parts of owned items (UGC, gem and music
+/// values (:715): slot -1, count 1, no lock; its status (FUN_140523c40) has a level 0 enchant. The parts of owned items (UGC, gem and music
 /// data, enchant, lock) are fields the owner fills.
 /// </summary>
 public sealed class Item
