@@ -121,6 +121,30 @@ public class LapenshardItemBagTests
     }
 
     [Test]
+    public void TheSlotsCarryTheClientsLapenshardSlotFlags()
+    {
+        // LapenshardSlot::vfunc_8 (lapenshardslot.cpp:348): a bag item is 0x49|0x24 (+count/disable/seal/equip marks, no enchant or
+        // grade background clears); a worn slot is 0x49, +0x400 when its mask is not 1, +0x2000, and its grade is 0
+        var r = Load(t => new[] { (1, Pick(t, 1).Id), (3, Pick(t, 2).Id) }, t => new[] { Make(t, Pick(t, 1).Id, 11) });
+        var h = r.Host;
+        var bag = r.Page.GetBinding("LapenshardItemSlotBag.0");
+        Assert.That(bag, Is.Not.Null);
+        Assert.That(h.Get(bag, "itemCount"), Is.Not.Null);
+        Assert.That(h.Get(bag, "dropShadowDisable"), Is.Not.EqualTo(1), "the bag slot has no drop shadow flag");
+        Assert.That(h.Get(bag, "disableDrag"), Is.Not.EqualTo(1), "kind 1 leaves 0x400 off");
+        var red = r.Page.GetBinding(LapenshardEquipTabPage.SlotName(0));
+        var blue = r.Page.GetBinding(LapenshardEquipTabPage.SlotName(2));
+        Assert.That(red, Is.Not.Null);
+        Assert.That(blue, Is.Not.Null);
+        Assert.That(h.Get(red, "dropShadowDisable"), Is.EqualTo(1), "0x2000");
+        Assert.That(h.Get(blue, "dropShadowDisable"), Is.EqualTo(1));
+        Assert.That(h.Get(red, "disableDrag"), Is.Not.EqualTo(1), "a red slot's mask is 1");
+        Assert.That(h.Get(blue, "disableDrag"), Is.EqualTo(1), "0x400 when the mask is not 1");
+        Assert.That(h.Get(red, "itemGrade"), Is.EqualTo(0), "SetItemGrade(0)");
+        Assert.That(h.Get(blue, "itemGrade"), Is.EqualTo(0));
+    }
+
+    [Test]
     public void ADropOnASlotOfTheKindSendsTheEquip()
     {
         var r = Load(_ => Array.Empty<(int, int)>(), t => new[] { Make(t, Pick(t, 2).Id, 21) });

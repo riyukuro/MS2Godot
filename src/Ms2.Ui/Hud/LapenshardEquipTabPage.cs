@@ -17,8 +17,12 @@ public sealed class LapenshardEquipTabPage : LapenshardTabPage
 {
     public const string Bag = "LapenshardEquipSlotBag";
     public const int Slots = 6;
-    /// <summary>The slot panel's slot flags and the tooltip's flags, as the other item bags use.</summary>
-    public const int SlotFlags = 0x1401f, TooltipFlags = 0x20;
+    /// <summary>LapenshardSlot::vfunc_8 (lapenshardslot.cpp:348): a bag item (slot 0) of kind 1, which LapenshardItemSlotBagPanel::vfunc_3
+    /// binds (uilapenshardsystemdialog.cpp:373), is 0x49 | 0x24, less the 0x20 that only acts on equipment (a lapenshard never passes
+    /// FUN_14053cbc0); kind 0 would add 0x400. The tooltip's flags are 0x20 (vfunc_0).</summary>
+    public const int BagSlotFlags = 0x4d, TooltipFlags = 0x20;
+    /// <summary>A worn slot's flags (slot != 0): 0x49, 0x400 when the slot's equip mask is not 1, and 0x2000.</summary>
+    public const int WornSlotFlags = 0x49, WornSlotNotRedFlags = 0x400, WornSlotShadowFlags = 0x2000;
 
     public override string Name => "equip";
     public override string LabelKey => "s_lapenshard_tabname_equip";
@@ -171,13 +175,33 @@ public sealed class LapenshardEquipTabPage : LapenshardTabPage
     {
         if (Owner?.Model == null) return null;
         Item item;
-        if (ParseItemSlot(name, out int bi)) item = ItemAtBag(bi);
-        else if (ParseSlot(name, out int i)) item = WornItem(i);
+        int flags, worn = 0;
+        if (ParseItemSlot(name, out int bi)) { item = ItemAtBag(bi); flags = BagSlotFlags; }
+        else if (ParseSlot(name, out int i))
+        {
+            item = WornItem(i); worn = i + 1;
+            flags = WornSlotFlags | WornSlotShadowFlags | (TargetKind(worn) != 1 ? WornSlotNotRedFlags : 0);
+        }
         else return null;
         if (item == null) return null;
         var slot = new List<(string, object)>();
         var m = Owner.Model;
-        return ItemSlot.Build(slot, item, m.HasLocalPlayer, SlotFlags, m, m.ItemSlotSources) ? host?.Obj(slot.ToArray()) : null;
+        if (!ItemSlot.Build(slot, item, m.HasLocalPlayer, flags, m, m.ItemSlotSources)) return null;
+        if (worn == 0)
+        {
+            // vfunc_8: the count, disable, seal and equip marks of a bag item
+            slot.RemoveAll(p => p.Item1 == "itemCount");
+            slot.Add(("itemCount", item.Count));
+            if (item.Count == 0) slot.Add(("disable", 1));
+            if (item.HasFlags(2)) slot.Add(("itemSeal", 1));
+            if (item.IsEquipped) slot.Add(("itemEquip", 1));
+        }
+        else
+        {
+            slot.RemoveAll(p => p.Item1 == "itemGrade");
+            slot.Add(("itemGrade", 0));                                          // SetItemGrade(0)
+        }
+        return host?.Obj(slot.ToArray());
     }
 
     public override IDictionary<string, object> GetSlotTooltip(string name)
