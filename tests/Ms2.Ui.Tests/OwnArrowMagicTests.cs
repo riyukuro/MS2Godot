@@ -334,6 +334,22 @@ public class OwnArrowMagicTests
     }
 
     [Test]
+    public void APiercingIntervalPlaysTheArrowsEffectInvokeAtTheCurrentPoint()
+    {
+        var r = Record(" bounceType=\"3\" bounceCount=\"5\" effectInvoke=\"invoke.xml\"", "");
+        var m = Add(r, Paths("vel=\"100\" distance=\"810\" piercingAttackInterval=\"150\""));
+        var objects = new[] { Me, Mob(9, 0, -50) };
+        var fx = new List<MagicEndEffect>();
+        foreach (int t in new[] { 0, 100, 149 }) m.Tick(T + t, 0, Owner, objects, r, null, null, () => 0, null, endEffects: fx);
+        Assert.That(fx, Is.Empty, "no interval yet");
+        m.Tick(T + 150, 0, Owner, objects, r, null, null, () => 0, null, endEffects: fx);
+        var e = fx.Single();
+        Assert.That((e.File, e.Along), Is.EqualTo(("invoke.xml", false)));
+        Assert.That(e.At.Y, Is.EqualTo(-15f).Within(1e-3f), "the current point");
+        AssertAxes(e, Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ);
+    }
+
+    [Test]
     public void ThePiercingMaxTargetCountCapsTheHits()
     {
         var r = Record(" bounceType=\"3\" bounceCount=\"5\"");

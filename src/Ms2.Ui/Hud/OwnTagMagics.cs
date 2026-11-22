@@ -550,7 +550,7 @@ public sealed class OwnTagMagics
             Fly(m, nowMs, objects, rayCast);
             if (!m.Filled)
             {
-                var req = ArrowFill(m, nowMs, owner, objects, splashes, rand, pkMode);
+                var req = ArrowFill(m, nowMs, owner, objects, splashes, endEffects, rand, pkMode);
                 if (req != null) sends?.Add(req);
             }
             // FUN_141462490: the attack's nonTarget 1 or brokenOffence, the owner the local player; the box every tick
@@ -709,7 +709,7 @@ public sealed class OwnTagMagics
     /// (<see cref="BounceOff"/>) instead of the end above.</item>
     /// </summary>
     SkillHitRequest ArrowFill(Magic m, int nowMs, in MagicOwner owner, ReadOnlySpan<HitCandidate> objects,
-        List<SkillSplashRequest> splashes, Func<int> rand, bool pkMode)
+        List<SkillSplashRequest> splashes, List<MagicEndEffect> endEffects, Func<int> rand, bool pkMode)
     {
         var a = m.Attack;
         int mode = a.Arrow.BounceType, max = a.Arrow.BounceCount > 1 ? a.Arrow.BounceCount : 1;
@@ -717,7 +717,7 @@ public sealed class OwnTagMagics
         if (pierce)
         {
             if (max <= m.Hits.Count) return null;
-            PierceInterval(m, nowMs, splashes);
+            PierceInterval(m, nowMs, splashes, endEffects);
         }
         else if (mode == 2 && !NearlyEqual(m.Remain, 0f)) return null;
         var col = a.Arrow.Collision;
@@ -820,15 +820,18 @@ public sealed class OwnTagMagics
     /// CMagic::FUN_141466da0 @0x141466da0 (magicdata.cpp:2402), a piercing arrow's interval: once piercingAttackInterval (not 0)
     /// passed since the last one (m_n268), the skipped targets are forgotten and, for an attack with a cubeMagicPathID, the
     /// splash goes out (<see cref="SkillSplashRequest"/>: the record's cast id, attack index, send count and hit index, the
-    /// current point and m_matRotation's euler angles in degrees).
-    /// STILL-OPEN: the local owner's effect (m_str160) at the current point is not played.
+    /// current point and m_matRotation's euler angles in degrees). Before the splash, an owner the optimizer does not hide (the
+    /// local player always) plays the arrow's effectInvoke (row +0x160) at the current point, not turned, into
+    /// <paramref name="endEffects"/> (magicdata.cpp:2389-2399).
     /// </summary>
-    static void PierceInterval(Magic m, int nowMs, List<SkillSplashRequest> splashes)
+    static void PierceInterval(Magic m, int nowMs, List<SkillSplashRequest> splashes, List<MagicEndEffect> endEffects)
     {
         uint interval = m.Row.PiercingAttackInterval;
         if (interval == 0 || (uint)m.PierceTick + interval > (uint)nowMs) return;
         m.Excluded.Clear();
         m.PierceTick = nowMs;
+        if (endEffects != null && m.Attack.Arrow.EffectInvoke.Length != 0)
+            endEffects.Add(new MagicEndEffect(m.Attack.Arrow.EffectInvoke, false, m.Current, Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ));
         if (m.Attack.CubeMagicPathId != 0)
             splashes?.Add(new SkillSplashRequest(m.CastId, m.AttackIndex, m.SendCount, m.HitIndex, m.Current, EulerDegrees(m)));
     }

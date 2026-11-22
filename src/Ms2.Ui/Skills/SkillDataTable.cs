@@ -144,6 +144,9 @@ public sealed class SkillArrow
     /// <summary>"effectRemain" and "effectDestroy" (:115-116, row +0x148 and +0x150): the effect at the arrow's end, effectDestroy
     /// when its ray stopped it (magicdata.cpp:1071-1077).</summary>
     public string EffectRemain = "", EffectDestroy = "";
+    /// <summary>"effectInvoke" (:118, row +0x160): the effect a piercing arrow's interval plays at its current point
+    /// (CMagic::FUN_141466da0, magicdata.cpp:2389-2399).</summary>
+    public string EffectInvoke = "";
 
     /// <summary>IsNonTargetOne @0x1407dfbb0 (:168): nonTarget == 1.</summary>
     public bool IsNonTargetOne => NonTarget == 1;
@@ -164,6 +167,7 @@ public sealed class SkillArrow
         Explosion = Xml.Int(a, "explosion");
         EffectRemain = (string)a.Attribute("effectRemain") ?? "";
         EffectDestroy = (string)a.Attribute("effectDestroy") ?? "";
+        EffectInvoke = (string)a.Attribute("effectInvoke") ?? "";
     }
 }
 
