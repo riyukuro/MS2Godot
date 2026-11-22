@@ -164,4 +164,24 @@ public class ItemTooltipExtrasTests
         Assert.That(text, Does.Contain(level.ToString()));
         Assert.That(text, Does.Contain("\n"));
     }
+
+    [Test]
+    public void ExtractionLineCountsTheTriesLeft()
+    {
+        var m = NewModel();
+        m.HasLocalPlayer = true;
+        int id = m.Tables.Extraction.ItemIds.OrderBy(i => i).FirstOrDefault(i => m.Tables.Items.Get(i) != null);
+        if (id == 0) Assert.Ignore("no itemExtraction row with item data");
+        uint scrolls = m.Tables.Extraction.ScrollCount(id).Value;
+        // a made item's count is 1 (the table has its row)
+        var made = new ItemTooltip(m, 0x200);
+        made.Fill(Item.Create(m.Tables.Items, id, 1));
+        var text = (string)made.Data["itemDamage"];
+        TestContext.WriteLine($"{id} scrolls {scrolls}: {text}");
+        Assert.That(text, Does.EndWith(Ms2.Quest.ClientFormat.Format(m.Tables.Common("s_itemextraction_trycount"), 1u, scrolls)));
+        var used = (string)Tip(m, new EquipItem { Id = id, Uid = 4, Rarity = 1, Amount = 1, GlamorForges = 0 }).Data["itemDamage"];
+        TestContext.WriteLine("used up: " + used);
+        Assert.That(used, Does.EndWith(m.Tables.Common("s_itemextraction_invalid")));
+        Assert.That(m.Tables.Common("s_itemextraction_invalid"), Is.Not.Empty);
+    }
 }

@@ -798,6 +798,11 @@ public sealed class GameTables
     public Ms2.Ui.Items.ItemEnchantTransformTable EnchantTransform => enchantTransform ??= packs == null ? Ms2.Ui.Items.ItemEnchantTransformTable.Empty
         : new Ms2.Ui.Items.ItemEnchantTransformTable(Xml(packs.Exists("Xml", "table/kr/itemenchanttransform.xml") ? "table/kr/itemenchanttransform.xml"
             : "table/itemenchanttransform.xml"), e => FeatureElements.IsAvailable(packs, e));
+    Ms2.Ui.Items.ItemExtractionTable extraction;
+    /// <summary>CItemExtractionTable (GetXmlPath("Table", "itemExtraction.xml"), the locale folder first), read on first use.</summary>
+    public Ms2.Ui.Items.ItemExtractionTable Extraction => extraction ??= packs == null ? Ms2.Ui.Items.ItemExtractionTable.Empty
+        : new Ms2.Ui.Items.ItemExtractionTable(Xml(packs.Exists("Xml", "table/kr/itemextraction.xml") ? "table/kr/itemextraction.xml"
+            : "table/itemextraction.xml"));
     Ms2.Ui.Skills.SkillCompactControlTable skillCompactControl;
     /// <summary>CSkillCompactControlTable (Table/SkillCompactControl.xml), read on first use; empty with feature 0x10
     /// (CompactControl) off, as Load @0x140dca800 reads nothing then.</summary>

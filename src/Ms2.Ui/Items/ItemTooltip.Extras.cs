@@ -7,19 +7,20 @@ public sealed partial class ItemTooltip
     /// <summary>
     /// ASTooltip::FUN_1409c7b10 (astooltip.cpp:267), "itemDamage": the repack line (FUN_1409d95f0), the enchant line
     /// (FUN_1409d8d90), the remake line (FUN_1409d9330), the merge line (FUN_1409d99a0) and the extraction line
-    /// (FUN_1409d9aa0), joined by new lines; the member is set only when the text is not empty. Ported: the enchant and
-    /// merge lines. STILL-OPEN: the repack, remake and extraction lines (the item's repack and remake counts and the
-    /// extraction table are not read yet).
+    /// (FUN_1409d9aa0), joined by new lines; the member is set only when the text is not empty. Ported: the enchant, merge
+    /// and extraction lines. STILL-OPEN: the repack and remake lines.
     /// </summary>
     public void SetItemDamage(Item item)
     {
         // only the enchant and merge lines are ported; skip the builder when neither can add text
         bool enchant = item.Data.IsEquipItem;
         bool merge = item.Data.Fusionable != 0 && model.IsFeatureEnabled(0x6f);
-        if (!enchant && !merge) return;
+        uint? scrolls = Tables.Extraction.ScrollCount(item.Data.Id);
+        if (!enchant && !merge && scrolls == null) return;
         var sb = new StringBuilder();
         AppendEnchant(item, sb);
         AppendMerge(item, sb);
+        if (scrolls != null) AppendExtraction(item, scrolls.Value, sb);
         if (sb.Length != 0) Data["itemDamage"] = sb.ToString();
     }
 
@@ -59,6 +60,17 @@ public sealed partial class ItemTooltip
             NewLine(sb);
             sb.Append(CommonF("s_itemenchant_fail_stack_count", failStack));
         }
+    }
+
+    /// <summary>FUN_1409d9aa0 (astooltip.cpp:3592): an item with an itemExtraction row shows s_itemextraction_trycount (the
+    /// item's extraction count, the row's ScrollCount) while the count is above 0, else s_itemextraction_invalid. The count
+    /// is CItem m_d8 (GetExtractionCount): the record's i16, or for a made item whether the table has its row
+    /// (FUN_140523c40, item.cpp:2790).</summary>
+    void AppendExtraction(Item item, uint scrollCount, StringBuilder sb)
+    {
+        uint tries = item.Record != null ? item.Record.GlamorForges : 1u;
+        NewLine(sb);
+        sb.Append(tries > 0 ? CommonF("s_itemextraction_trycount", tries, scrollCount) : Common("s_itemextraction_invalid"));
     }
 
     /// <summary>FUN_1409d8d90's transform line, in both branches: with feature 0xa6, an item with transform rows
