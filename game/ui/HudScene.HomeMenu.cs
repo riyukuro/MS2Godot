@@ -34,7 +34,7 @@ public partial class HudScene
             homeMenuMovie = null;
         }
         var host = new HomeMenuHost(liveHome, id => HomeOptionHost.FieldIsHome(assets.Packs, id), hudModel.IsFeatureEnabled,
-            id => { if (id == HomeMenuDialogController.HomeOptionId) ToggleHomeOption(); }, SystemNoticeText);
+            id => { if (id == HomeMenuDialogController.HomeOptionId) ToggleHomeOption(); }, SystemNoticeText, SetHomeSaveSlotMode);
         var c = homeMenu = new HomeMenuDialogController(host) { SystemNotice = SystemNoticeText };
         var m = homeMenuMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
         c.Unloaded += () =>
