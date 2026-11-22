@@ -90,6 +90,7 @@ public sealed partial class ItemTooltip
         SetGemstoneLevel(d.Id);                                                   // FUN_1409d43b0
         SetSuperWorldChatPreview(d.Id);                                           // FUN_1409d4460
         SetItemBreakIngredients(item);                                            // FUN_1409d8570
+        SetPetEvolution(item);
         Data["itemPetSkin"] = d.GemSubtype == 0xb;                                // SetItemPetSkin(FUN_14053e900() == 0xb), the gem subtype
         if ((Flags & 0x80) != 0 || (Flags & 4) != 0) SetUseHints(item);              // FUN_1409cd750
         if ((Flags & (0x80 | 4 | 0x200 | 0x20 | 0x400 | 0x1000 | 0x100 | 2)) != 0)

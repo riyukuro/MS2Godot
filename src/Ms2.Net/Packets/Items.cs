@@ -64,6 +64,8 @@ public sealed class EquipItem {
     public bool HasMusic; public string MusicTitle = "", MusicWriter = "";
     /// <summary>A pet item's name (CItem m_strB8, the pet block's first string, item.cpp:2693); "" for other items.</summary>
     public string PetName = "";
+    /// <summary>A pet item's evolution point (CItem m_c8, GetPetEvolutionPoint) and level (m_cc, GetPetLevel), item.cpp:2695-2696.</summary>
+    public int PetEvolutionPoint, PetLevel;
     /// <summary>CItem m_strE0 (FUN_140529500): the name OnItemInventory mode 7 carries when it is not empty (scenestategame.cpp:2846).</summary>
     public string NotifiedName = "";
 }
@@ -458,7 +460,7 @@ public static class ItemReader {
         }
         if ((extra & ItemExtra.Pet) != 0) {
             // item.cpp:2655: string, i64, i32, i32 pet level, u8
-            it.PetName = r.ReadUnicodeString(); r.ReadLong(); r.ReadInt(); r.ReadInt(); r.ReadBool();
+            it.PetName = r.ReadUnicodeString(); r.ReadLong(); it.PetEvolutionPoint = r.ReadInt(); it.PetLevel = r.ReadInt(); r.ReadBool();
         }
 
         var t = it.Transfer;

@@ -540,4 +540,34 @@ public class ItemTooltipExtrasTests
         plain.Fill(Item.Create(m.Tables.Items.Get(11300000) ?? new ItemData { Id = 11300000 }, 1));
         Assert.That(plain.Data.ContainsKey("previewSuperWorldChat"), Is.False);
     }
+
+    [Test]
+    public void PetAtTheMaxLevelShowsItsEvolutionGauge()
+    {
+        var m = NewModel();
+        string pets = FeatureTable.Names[0xeb - 1];
+        var on = m.FeatureEnabledByName;
+        m.FeatureEnabledByName = f => f == pets || on(f);
+        ItemTooltip Fill(int level, int rarity, int petLevel, int point)
+        {
+            var tip = new ItemTooltip(m, 0x200);
+            var it = Item.Create(new ItemData { Id = 60000001, Type = 0xb, LevelLimit = level }, 1);
+            it.Rarity = rarity;
+            it.Record = new EquipItem { Id = 60000001, PetLevel = petLevel, PetEvolutionPoint = point };
+            tip.Fill(it);
+            return tip;
+        }
+        Assert.That(m.Tables.PetMaxLevel, Is.EqualTo(50u));
+        var t = Fill(70, 4, 50, 30);                                   // petEvolution.xml level 70 Grade4 = 40
+        Assert.That(t.Data["petEvolution"], Is.EqualTo(m.Tables.Common("s_pet_tooltip_evolution_point") + "gauge:\n\n"));
+        Assert.That(t.Data["petEvolutionGauge"], Is.EqualTo("30 / 40"));
+        Assert.That(t.Data["petEvolutionPercent"], Is.EqualTo(75u));
+        Assert.That(Fill(70, 4, 49, 30).Data.ContainsKey("petEvolution"), Is.False);     // under the max level
+        Assert.That(Fill(50, 4, 50, 30).Data.ContainsKey("petEvolution"), Is.False);     // Grade4 = 0 at level 50
+        Assert.That(Fill(55, 1, 50, 30).Data.ContainsKey("petEvolution"), Is.False);     // no row for level 55
+        Assert.That(Fill(70, 5, 50, 30).Data.ContainsKey("petEvolution"), Is.False);     // grade 5 is 0
+        Assert.That(m.Tables.PetEvolution(70, 6), Is.EqualTo(0u));
+        m.FeatureEnabledByName = f => f != pets && on(f);
+        Assert.That(Fill(70, 4, 50, 30).Data.ContainsKey("petEvolution"), Is.False);     // feature 0xeb off
+    }
 }

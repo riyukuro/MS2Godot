@@ -94,6 +94,7 @@ public sealed class GameTables
         CharacterAbilityResetMerat = (int)k.Float("CharacterAbilityResetMerat", CharacterAbilityResetMerat);
         CharacterAbilityOpenQuestID = (uint)k.Float("CharacterAbilityOpenQuestID", CharacterAbilityOpenQuestID);
         MaxChatLength = (int)k.Float("MaxChatLength", MaxChatLength);
+        PetMaxLevel = (uint)k.Float("PetMaxLevel", PetMaxLevel);
         PartyVoteReadyTagExpireSeconds = (int)k.Float("PartyVoteReadyTagExpireSeconds", PartyVoteReadyTagExpireSeconds);
         PCBangItemDefaultPeriod = (uint)k.Float("PCBangItemDefaultPeriod", PCBangItemDefaultPeriod);
         MeratConsumeWorldChat = (uint)k.Float("MeratConsumeWorldChat", MeratConsumeWorldChat);
@@ -365,6 +366,28 @@ public sealed class GameTables
     /// <summary>Client::Constants AdventureLevelLvUpExp / AdventureLevelStartLevel (table/constants.xml; the Define defaults
     /// 15000 and 50, unit_1402ab440_constantsblocks.cpp:1155, :1157).</summary>
     public long AdventureLevelLvUpExp = 15000;
+    /// <summary>Client::Constants PetMaxLevel (+0x84c0, default 50: clientconstants.h:516, constantsblocks.cpp:1110).</summary>
+    public uint PetMaxLevel = 50;
+    Dictionary<int, uint[]> petEvolution;
+    /// <summary>CExpTable::GetPetEvolution (exptable.cpp:480): the evolution points a pet of an item level and grade needs; 0
+    /// for none. LoadPetEvolution (:333) reads Table/petEvolution.xml's available &lt;petEvolution&gt; rows by
+    /// requireItemLevel (u16), the grades 0 and 5 being 0 and 1 to 4 the Grade1..Grade4 attributes. Read on first use.</summary>
+    public uint PetEvolution(int itemLevel, int grade)
+    {
+        if (petEvolution == null)
+        {
+            petEvolution = new();
+            if (TableXml("petevolution.xml")?.Root is { Name.LocalName: "ms2" } root)
+                foreach (var e in root.Elements("petEvolution"))
+                {
+                    if (!FeatureElements.IsAvailable(packs, e)) continue;
+                    int level = (ushort)Ms2.Ui.Items.ItemData.Atoi((string)e.Attribute("requireItemLevel") ?? "");
+                    uint G(string a) => (uint)Ms2.Ui.Items.ItemData.Atoi((string)e.Attribute(a) ?? "");
+                    petEvolution[level] = new[] { 0u, G("Grade1"), G("Grade2"), G("Grade3"), G("Grade4"), 0u };
+                }
+        }
+        return petEvolution.TryGetValue((ushort)itemLevel, out var g) && (uint)grade < g.Length ? g[grade] : 0;
+    }
     public int AdventureLevelStartLevel = 50;
     /// <summary>Client::Constants BeautyStyleExpandSlotPrice (+0x64b8, default 790: GetExtendPrice), BeautyStyleExpandSlotCount1time
     /// (+0x6518, default 3: the slots one extend adds), BeautyStyleDefaultSlotCount (+0x6570, default 1) and BeautyStyleMaxSlotCount
