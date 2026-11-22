@@ -570,4 +570,17 @@ public class ItemTooltipExtrasTests
         m.FeatureEnabledByName = f => f != pets && on(f);
         Assert.That(Fill(70, 4, 50, 30).Data.ContainsKey("petEvolution"), Is.False);     // feature 0xeb off
     }
+
+    [Test]
+    public void GachaCoinTooltipShowsItsBoxSeason()
+    {
+        // 22201001 is box 1001001's coin; the box shows its season on the icon
+        var m = NewModel();
+        var tip = new ItemTooltip(m, 0x200);
+        tip.Fill(Item.Create(m.Tables.Items, 22201001, 0));
+        Assert.That(tip.Data["itemSeason"], Is.EqualTo(m.Tables.GachaBoxes.SeasonText(1001001)).And.Not.Empty);
+        var plain = new ItemTooltip(m, 0x200);
+        plain.Fill(Item.Create(m.Tables.Items, 20300327, 0));
+        Assert.That(plain.Data.ContainsKey("itemSeason"), Is.False);
+    }
 }
