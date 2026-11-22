@@ -99,4 +99,21 @@ public class Gms2OutboundRewriteTests {
     [Test] public void RideOffRewritesByteForByte() => All(0x41, r => { r.ReadByte(); return new RideOffSkillRequest(RideOffAction.Read(r)); }, d => d[0] == 1);
     [Test] public void UserChatRewritesByteForByte() => All(0x11, r => new UserChatRequest(r.ReadInt(), r.ReadUnicodeString(), r.ReadUnicodeString(), r.ReadLong()));
     [Test] public void StateFallDamageRewritesByteForByte() => All(0x34, r => new StateFallDamageRequest(r.ReadFloat()));
+    [Test] public void QuestRewritesByteForByte() => All(0x29, r => {
+        byte m = r.ReadByte();
+        return m switch { 2 => (IOutPacket) new QuestAcceptRequest(r.ReadInt(), r.ReadInt()), 4 => new QuestCompleteRequest(r.ReadInt(), r.ReadInt(), r.ReadInt()),
+            6 => new QuestAbandonRequest(r.ReadInt()), 8 => new QuestAutoStartRequest(Enumerable.Range(0, r.ReadInt()).Select(_ => r.ReadInt()).ToList()),
+            0xC => new QuestMode12Request(r.ReadInt()), 0xD => new QuestMode13Request(r.ReadInt()), 0xE => new QuestSkyFortressRequest(),
+            0x12 => new QuestProgressRequest(r.ReadInt()), 0x14 => new QuestMode20Request(r.ReadInt(), r.ReadShort()), 0x18 => new QuestGuideRewardRequest(r.ReadInt()),
+            _ => throw new InvalidDataException("mode " + m) }; });
+
+    [Test] public void QuestPacketsKeepTheirKmsBytes() {
+        byte[] Bytes(IOutPacket p) { var w = new ByteWriter(); p.Write(w); return w.ToArray(); }
+        Assert.That(Bytes(new QuestAbandonRequest(7)), Is.EqualTo(new byte[] { 6, 7, 0, 0, 0 }));
+        Assert.That(Bytes(new QuestAutoStartRequest(new[] { 1, 2 })), Is.EqualTo(new byte[] { 8, 2, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0 }));
+        Assert.That(Bytes(new QuestSkyFortressRequest()), Is.EqualTo(new byte[] { 0xE }));
+        Assert.That(Bytes(new QuestMode20Request(5, 3)), Is.EqualTo(new byte[] { 0x14, 5, 0, 0, 0, 3, 0 }));
+        Assert.That(Bytes(new QuestMode12Request(9)), Is.EqualTo(new byte[] { 0xC, 9, 0, 0, 0 }));
+        Assert.That(Bytes(new QuestMode13Request(9)), Is.EqualTo(new byte[] { 0xD, 9, 0, 0, 0 }));
+    }
 }

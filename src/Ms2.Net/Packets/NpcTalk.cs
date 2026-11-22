@@ -249,6 +249,43 @@ public sealed record QuestLearningRequest(int LearningId) : IOutPacket {
     public void Write(ByteWriter w) { w.WriteByte(0x10); w.WriteInt(LearningId); }
 }
 
+/// <summary>Outbound 0x29 mode 6 (UIQuestDialog abandon, uiquestdialog.cpp:1809 and its message box answer :1823): u8 6, i32 quest.</summary>
+public sealed record QuestAbandonRequest(int QuestId) : IOutPacket {
+    public Outbound Op => Outbound.Quest;
+    public void Write(ByteWriter w) { w.WriteByte(6); w.WriteInt(QuestId); }
+}
+
+/// <summary>Outbound 0x29 mode 8 (CQuestManager::FUN_1416d3250 @0x1416d3250, questmanager_2.cpp:2206): u8 8, i32 count, count x i32 quest id.
+/// The auto-start and map quests of the field that can start.</summary>
+public sealed record QuestAutoStartRequest(IReadOnlyList<int> QuestIds) : IOutPacket {
+    public Outbound Op => Outbound.Quest;
+    public void Write(ByteWriter w) { w.WriteByte(8); w.WriteInt(QuestIds.Count); foreach (int id in QuestIds) w.WriteInt(id); }
+}
+
+/// <summary>Outbound 0x29 mode 0xC (CQuestManager::SendQuestMode12 @0x1416cf510, questmanager_2.cpp:1433): u8 0xC, i32 quest.</summary>
+public sealed record QuestMode12Request(int QuestId) : IOutPacket {
+    public Outbound Op => Outbound.Quest;
+    public void Write(ByteWriter w) { w.WriteByte(0xC); w.WriteInt(QuestId); }
+}
+
+/// <summary>Outbound 0x29 mode 0xD (CQuestManager::SendQuestMode13 @0x1416cf630, questmanager_2.cpp:1446): u8 0xD, i32 quest.</summary>
+public sealed record QuestMode13Request(int QuestId) : IOutPacket {
+    public Outbound Op => Outbound.Quest;
+    public void Write(ByteWriter w) { w.WriteByte(0xD); w.WriteInt(QuestId); }
+}
+
+/// <summary>Outbound 0x29 mode 0xE (CQuestManager::SendQuestMode14 @0x1416d0c10, questmanager_2.cpp:1749): u8 0xE, no body. Sent when the player may enter the sky fortress.</summary>
+public sealed record QuestSkyFortressRequest : IOutPacket {
+    public Outbound Op => Outbound.Quest;
+    public void Write(ByteWriter w) => w.WriteByte(0xE);
+}
+
+/// <summary>Outbound 0x29 mode 0x14 (CQuestManager::SendQuestMode20 @0x1416d0ea0, questmanager_2.cpp:1795, a message box answer): u8 0x14, i32 id, i16 count.</summary>
+public sealed record QuestMode20Request(int Id, short Count) : IOutPacket {
+    public Outbound Op => Outbound.Quest;
+    public void Write(ByteWriter w) { w.WriteByte(0x14); w.WriteInt(Id); w.WriteShort(Count); }
+}
+
 /// <summary>Outbound 0x48 mode 0 (TaxiStationAction::vfunc_1 @0x14095bca0, actionkeyobject.cpp:800-802): u8 0. Sent once per field
 /// (the requested list) when the player stands by a station the found-taxi list does not hold.</summary>
 public sealed record RequestTaxiRegister : IOutPacket {
