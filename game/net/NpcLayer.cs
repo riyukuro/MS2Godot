@@ -42,6 +42,7 @@ public sealed class NpcLayer
         public Godot.Vector3 VisualBase;          // the body's place under the root, which the shake moves off and back to
         public readonly Ms2.Ui.Skills.ColorBoost Boost = new();   // PCBase m_colorBoost
         public List<ShaderMaterial> BoostMaterials;                // the body's character-shader materials, gathered on the first boost
+        public int[] AnchorBones;                 // the skeleton's bone per <nodeCollisions> row (-1: none), found on the first hit
     }
 
     /// <summary>The CRT rand() the death pick draws from (0..0x7fff).</summary>
@@ -326,6 +327,40 @@ public sealed class NpcLayer
             changed = true;
         }
         return changed;
+    }
+
+    /// <summary>
+    /// The <see cref="Ms2.Ui.Hud.DamageHitAnchors"/> of an npc: false unless its row has property tag 0x1d
+    /// "collision_position" (CNpcData::HasPropertyTag, npcdata.cpp:1387). Else <paramref name="into"/> (cleared first) gets
+    /// in client space the center of each &lt;nodeCollisions&gt; box whose node the skeleton has (CNpc::BuildCollision,
+    /// m_arrE68), at the node's world transform, rotation only (vfunc_50, <see cref="Ms2.Ui.Hud.DamageHitEffects.NodeBoxCenter"/>).
+    /// A placeholder has no skeleton, so it counts as untagged.
+    /// </summary>
+    public bool CollisionAnchors(int id, List<System.Numerics.Vector3> into)
+    {
+        if (!inst.TryGetValue(id, out var i) || i.Placeholder || i.Visual == null || !GodotObject.IsInstanceValid(i.Visual)) return false;
+        var row = i.Talk?.Row ?? i.Model?.Row;
+        if (row == null || !row.CollisionPosition) return false;
+        into.Clear();
+        var sk = i.Visual.GetNodeOrNull<Skeleton3D>(HoldSkeletonPath);
+        if (sk == null || !sk.IsInsideTree()) return true;
+        var rows = row.NodeCollisions;
+        if (i.AnchorBones == null)
+        {
+            i.AnchorBones = new int[rows.Length];
+            for (int k = 0; k < rows.Length; k++) i.AnchorBones[k] = sk.FindBone(rows[k].TargetNode);
+        }
+        var skWorld = sk.GlobalTransform;
+        for (int k = 0; k < rows.Length; k++)
+        {
+            int b = i.AnchorBones[k];
+            if (b < 0) continue;
+            var w = RemoteLayer.ToClient * (skWorld * sk.GetBoneGlobalPose(b));
+            var q = w.Basis.Orthonormalized().GetRotationQuaternion();
+            into.Add(Ms2.Ui.Hud.DamageHitEffects.NodeBoxCenter(rows[k].Volume, rows[k].Offset,
+                new System.Numerics.Quaternion(q.X, q.Y, q.Z, q.W), new System.Numerics.Vector3(w.Origin.X, w.Origin.Y, w.Origin.Z)));
+        }
+        return true;
     }
 
     /// <summary>Plays a named kfm sequence (a skill's motion) on an npc.</summary>

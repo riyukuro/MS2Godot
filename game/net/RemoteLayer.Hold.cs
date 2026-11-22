@@ -223,7 +223,7 @@ public sealed partial class RemoteLayer
     }
 
     /// <summary>Godot world to the client's Z-up world, (x, y, z) to (x, -z, y) (DummyAnchor's ToClient).</summary>
-    static readonly Transform3D ToClient = new(new Basis(new Vector3(1, 0, 0), new Vector3(0, 0, 1), new Vector3(0, -1, 0)), Vector3.Zero);
+    internal static readonly Transform3D ToClient = new(new Basis(new Vector3(1, 0, 0), new Vector3(0, 0, 1), new Vector3(0, -1, 0)), Vector3.Zero);
 
     /// <summary>The field is freed: its skeletons' hold points are dropped (the next field's are found again).</summary>
     public override void _ExitTree() => holdPoints.Clear();

@@ -26,6 +26,8 @@ public sealed partial class RemoteLayer
     HitEffectThrottle hitEffects = new();
     readonly List<DamageHitEffect> damageHitEffects = new();
     DamageHitFind findHitObject;
+    DamageHitAnchors hitAnchors;   // NpcLayer.CollisionAnchors, made once
+    readonly List<System.Numerics.Vector3> anchorScratch = new();
     public int DamageHitEffectsPlayed;
 
     /// <summary>The objects' hit effect throttle, shared with the own magics (<see cref="LiveSession.HitEffects"/>).</summary>
@@ -151,7 +153,7 @@ public sealed partial class RemoteLayer
         FillMagicObjects();
         damageHitEffects.Clear();
         DamageHitEffects.SplashRecords(d, attack, findHitObject ??= FindHitObject, hitEffects, (uint)Time.GetTicksMsec(),
-            damageHitEffects);
+            damageHitEffects, npcs == null ? null : hitAnchors ??= npcs.CollisionAnchors, anchorScratch);
         foreach (var fx in damageHitEffects)
         {
             PlayDamageHitEffect(fx);
