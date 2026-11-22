@@ -1,16 +1,17 @@
 namespace Ms2.Ui.Hud;
 
 /// <summary>
-/// The hit effect throttle of CMagicService::FUN_14146c990 @0x14146c990 (magicdata.cpp:2991) for a local owner (the
-/// optimizer never hides it, FUN_141bd19d0 kind 1: no sight range check, and IsUpdateEnabled's check passes). The state is
-/// the looked-up object's: its last play tick (GameObject +0x11c, 0 at first) and the last tick per effect key (m_map120,
-/// GameObject::FUN_14123dc30 / FUN_14123dcb0 @0x14123dcb0, which sets both).
+/// The hit effect throttle of CMagicService::FUN_14146c990 @0x14146c990 (magicdata.cpp:2991). The state is the looked-up
+/// object's: its last play tick (GameObject +0x11c, 0 at first) and the last tick per effect key (m_map120,
+/// GameObject::FUN_14123dc30 / FUN_14123dcb0 @0x14123dcb0, which sets both). Every caller of FUN_14146c990 reads the same
+/// state (an arrow's bounce-off, the damage's effectHit FUN_14146b440, the dot's FUN_14146bc80), so one instance serves them
+/// all; it goes with the object (<see cref="Remove"/>) and with the field (<see cref="Clear"/>).
 /// </summary>
 /// <remarks>
 /// The client's key is the damage's m_nNameIndex, SkillDataTable::IndexSensors' number for the effectHit name (one per
 /// distinct name); here the name itself is the key. An empty name has no number (0): FUN_14146c990 returns without a play.
 /// The numbering runs over the skill files in the parallel load's order, so the one name numbered 0 (never played) is not
-/// fixed and is not ported. The client drops the state with the object; here it stays for the object id.
+/// fixed and is not ported.
 /// </remarks>
 public sealed class HitEffectThrottle
 {
@@ -41,4 +42,13 @@ public sealed class HitEffectThrottle
         t.ByKey[key] = nowMs;
         return true;
     }
+
+    /// <summary>The object <paramref name="objectId"/> left: its state goes with it (a new object starts at 0).</summary>
+    public void Remove(int objectId) => objects.Remove(objectId);
+
+    /// <summary>The field's objects are gone: every state goes.</summary>
+    public void Clear() => objects.Clear();
+
+    /// <summary>The objects with a state (for the checks).</summary>
+    public int Count => objects.Count;
 }

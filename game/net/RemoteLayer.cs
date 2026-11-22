@@ -645,7 +645,7 @@ public sealed partial class RemoteLayer : Node3D
                 case UserAddedEvent add:
                     if (add.User.User.CharacterId == selfCharacter) break;
                     // a replaced or leaving PC: ~PC frees its kept invincible effect m_n1060 (pc.cpp:764-768)
-                    if (users.Remove(add.User.ObjectId, out var old)) { remoteMagics.Remove(old.ObjectId); old.Invincible.End(null, RegionFx); tags.Remove(old.Root); bars.Remove(old.Root); old.Death.Free(); FreeRidee(old); old.Pc.Free(); }
+                    if (users.Remove(add.User.ObjectId, out var old)) { remoteMagics.Remove(old.ObjectId); hitEffects.Remove(old.ObjectId); old.Invincible.End(null, RegionFx); tags.Remove(old.Root); bars.Remove(old.Root); old.Death.Free(); FreeRidee(old); old.Pc.Free(); }
                     if (old != null) PcLeft?.Invoke(old.ObjectId);
                     var added = users[add.User.ObjectId] = Spawn(add.User); UsersSpawned++; ArmCodi();
                     // FieldAddUser's ride (PCBase::SetRideOnAction) and its passengers, ridden at the PC's creation
@@ -664,6 +664,7 @@ public sealed partial class RemoteLayer : Node3D
                     {
                         gone.Invincible.End(null, RegionFx);   // ~PC, pc.cpp:764-768
                         remoteMagics.Remove(rem.ObjectId);
+                        hitEffects.Remove(rem.ObjectId);
                         tags.Remove(gone.Root); bars.Remove(gone.Root); gone.Death.Free(); FreeRidee(gone); gone.Pc.Free();
                         PcLeft?.Invoke(gone.ObjectId);
                         GD.Print($"live: other player {gone.Name} (object {rem.ObjectId}) left");
@@ -763,6 +764,7 @@ public sealed partial class RemoteLayer : Node3D
                         }
                     }
                     if (Numbered != null) ShowNumbers(dmg.Damage);
+                    OnDamageHitEffects(dmg.Damage);
                     OnRemoteMagics(dmg.Damage);
                     break;
                 case UserBuffEvent ub:
@@ -784,6 +786,8 @@ public sealed partial class RemoteLayer : Node3D
                     break;
                 case NpcRemovedEvent nr:
                     npcs.Remove(nr.ObjectId, nr.Dead);
+                    // the corpse stays an object (and keeps its throttle) until the field goes
+                    if (!nr.Dead) hitEffects.Remove(nr.ObjectId);
                     if (nr.Dead) LiveSession.Instance?.InteractNpcs?.SetDead(nr.ObjectId, true);
                     else LiveSession.Instance?.InteractNpcs?.Remove(nr.ObjectId);
                     break;

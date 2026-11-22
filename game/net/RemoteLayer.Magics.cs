@@ -22,6 +22,17 @@ public sealed partial class RemoteLayer
     static readonly StringName PlayerGroup = Player.Group;
     Player magicPlayer;
     public int MagicsMade;
+    HitEffectThrottle hitEffects = new();
+    readonly List<DamageHitEffect> damageHitEffects = new();
+    DamageHitFind findHitObject;
+    public int DamageHitEffectsPlayed;
+
+    /// <summary>The objects' hit effect throttle, shared with the own magics (<see cref="LiveSession.HitEffects"/>).</summary>
+    public HitEffectThrottle HitEffects
+    {
+        get => hitEffects;
+        set { hitEffects = value; remoteMagics.HitEffects = value; }
+    }
 
     /// <summary>The remote's skill state drives its magics' cast records: the entry takes the current record, each fired attack
     /// sets its tick (FUN_1417ecce0 for an owner other than MyPC), the exit cancels and starts the rest.</summary>
@@ -72,9 +83,54 @@ public sealed partial class RemoteLayer
                 remoteMagicRayCast, magicEndEffects);
             foreach (var fx in magicEndEffects)
                 combat.PlayEffect(fx.File, new Vector3(fx.At.X, fx.At.Z, -fx.At.Y), MagicEffectBasis(fx),
-                    Ms2.Audio.SoundMusicEffectState.CasterOther);
+                    Ms2.Audio.SoundMusicEffectState.CasterOtherPc);   // PCBase::vfunc_58 (pcbase.cpp:1092)
         }
         magicEndEffects.Clear();
+    }
+
+    /// <summary>
+    /// FUN_14171cdf0's hit effects (<see cref="DamageHitEffects.Records"/>) over the field's objects now: the effectHit at its
+    /// transform, the effectRemain at the target. STILL-OPEN: the remain is placed at the target's position, not attached to
+    /// it (SetActor), and its end with the target is not ported.
+    /// </summary>
+    void OnDamageHitEffects(SkillDamage d)
+    {
+        if (d.Mode != 1 || d.Targets.Count == 0) return;
+        var attack = AttackDamage(d.SkillId, d.Level, d.Motion, d.AttackPoint);
+        if (attack == null) return;
+        var tables = Ms2.Ui.GameTables.Shared(packs, Ms2Godot.GameOptions.StringLanguage);
+        var motions = tables.Skills.GetSkillData((uint)d.SkillId)?.GetLevelData(d.Level)?.Motions;
+        var motion = motions != null && d.Motion < motions.Count ? motions[d.Motion] : null;
+        var data = motion != null && d.AttackPoint < motion.Attacks.Count ? motion.Attacks[d.AttackPoint] : null;
+        FillMagicObjects();
+        damageHitEffects.Clear();
+        DamageHitEffects.Records(d, attack, data?.Direction ?? 3, motion?.MoveDistance ?? 0f, findHitObject ??= FindHitObject,
+            hitEffects, (uint)Time.GetTicksMsec(), magicRand, damageHitEffects);
+        foreach (var fx in damageHitEffects)
+        {
+            var at = new Vector3(fx.At.X, fx.At.Z, -fx.At.Y);
+            combat.PlayEffect(fx.File, at, ClientBasis(fx.AxisX, fx.AxisY, fx.AxisZ), fx.CasterKind);
+            DamageHitEffectsPlayed++;
+        }
+        damageHitEffects.Clear();
+    }
+
+    /// <summary>WorldService::FindObjectById over <see cref="magicObjects"/>: the position, the facing (the local player's or
+    /// <see cref="PoseOf"/>), half the body box's height (vfunc_37's extent z) and FUN_14146c990's kind.
+    /// STILL-OPEN: vfunc_43's height and a riding PC's ridee box are not added.</summary>
+    bool FindHitObject(int id, out DamageHitObject o)
+    {
+        foreach (var c in magicObjects)
+        {
+            if (c.Id != id) continue;
+            bool self = id == Tracker.SelfObjectId;
+            float rot = self ? magicPlayer.FacingRotZ : PoseOf(id)?.RotZ ?? 0f;
+            int kind = self ? 1 : c.Kind == HitKind.Pc ? 3 : 0;
+            o = new DamageHitObject(c.Position, rot, (c.Body.MaxZ - c.Body.MinZ) * 0.5f, kind);
+            return true;
+        }
+        o = default;
+        return false;
     }
 
     /// <summary>The field's players and npcs and the local player last, in client space; no one is the owner yet.
@@ -114,9 +170,12 @@ public sealed partial class RemoteLayer
     }
 
     /// <summary>An end effect's client rotation columns as a godot basis (client (x, y, z) is godot (x, z, -y)).</summary>
-    static Basis MagicEffectBasis(in MagicEndEffect fx)
+    static Basis MagicEffectBasis(in MagicEndEffect fx) => ClientBasis(fx.AxisX, fx.AxisY, fx.AxisZ);
+
+    /// <summary>Client rotation columns as a godot basis.</summary>
+    static Basis ClientBasis(System.Numerics.Vector3 x, System.Numerics.Vector3 y, System.Numerics.Vector3 z)
     {
         static Vector3 G(System.Numerics.Vector3 v) => new(v.X, v.Z, -v.Y);
-        return new Basis(G(fx.AxisX), G(fx.AxisZ), G(-fx.AxisY));
+        return new Basis(G(x), G(z), G(-y));
     }
 }

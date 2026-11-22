@@ -13,6 +13,10 @@ public partial class LiveSession
     /// <summary>The own buffs' super armor (AdditionalCliList::GetSuperArmor's buff part) on a field of map type 9 or not.</summary>
     public Func<bool, uint> OwnBuffSuperArmor = _ => 0;
 
+    /// <summary>The objects' hit effect throttle (the GameObject's +0x11c state FUN_14146c990 reads): one for the own and the
+    /// other players' magics and the damage's hit effect, emptied with each field and an object's entry when it leaves.</summary>
+    public readonly Ms2.Ui.Hud.HitEffectThrottle HitEffects = new();
+
     readonly StateHitData ownHitData = new();
     int hitMapId = -1, hitMapType;
 

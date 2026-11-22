@@ -50,6 +50,9 @@ public sealed class SkillMotionData
     public int MoveType;
     /// <summary>"loopCount" (:1196), m_nLoopCount (+0xc8); the ctor (:1011) leaves it 0.</summary>
     public int LoopCount;
+    /// <summary>"movedistance" (:1192), m_fB8 (+0xb8); the ctor (:1006) sets 0. FUN_14145e1a0 keeps the packet's direction
+    /// when it is not 0 (magicdata.cpp:873).</summary>
+    public float MoveDistance;
     /// <summary>"selfInputCombo" (SkillMotionData::Load @0x140808350, :1165), m_strSelfInputCombo: the text key that opens the
     /// motion's self combo (<see cref="SkillFollow.MayFollow"/>).</summary>
     public string SelfInputCombo = "";
@@ -421,7 +424,7 @@ public sealed class SkillData
             };
             foreach (var m in l.Elements("motion"))
             {
-                var md = new SkillMotionData { SequenceName = (string)m.Attribute("sequenceName") ?? "", MoveType = Xml.Int(m, "movetype"), LoopCount = Xml.Int(m, "loopCount"), SelfInputCombo = (string)m.Attribute("selfInputCombo") ?? "" };
+                var md = new SkillMotionData { SequenceName = (string)m.Attribute("sequenceName") ?? "", MoveType = Xml.Int(m, "movetype"), LoopCount = Xml.Int(m, "loopCount"), MoveDistance = Xml.Float(m, "movedistance"), SelfInputCombo = (string)m.Attribute("selfInputCombo") ?? "" };
                 if (m.Attribute("sequenceSpeed") != null) md.SequenceSpeed = Xml.Float(m, "sequenceSpeed");
                 foreach (var a in m.Elements("attack")) md.Attacks.Add(SkillAttackData.Load(a));
                 lv.Motions.Add(md);

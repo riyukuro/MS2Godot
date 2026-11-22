@@ -113,8 +113,9 @@ public sealed class OwnTagMagics
     readonly List<Magic> live = new();
     readonly List<HitCandidate> queried = new();
     readonly List<int> detected = new(), kept = new(), others = new();
-    // the hit effect throttle's state of the objects (FUN_14146c990)
-    readonly HitEffectThrottle hitEffects = new();
+    /// <summary>The hit effect throttle's state of the objects (FUN_14146c990), the field's one when the caller shares it
+    /// (every FUN_14146c990 caller reads the object's state); its own instance by default.</summary>
+    public HitEffectThrottle HitEffects { get; set; } = new();
 
     /// <summary>The magics that may still fill or register.</summary>
     public int Count => live.Count;
@@ -908,7 +909,7 @@ public sealed class OwnTagMagics
         bool found = false;
         foreach (ref readonly var o in objects)
             if (o.Id == m.TargetId) { found = true; break; }
-        if (found && hitEffects.TryPlay(m.TargetId, m.Attack.EffectHit, (uint)nowMs))
+        if (found && HitEffects.TryPlay(m.TargetId, m.Attack.EffectHit, (uint)nowMs))
             endEffects.Add(new MagicEndEffect(m.Attack.EffectHit, false, m.Current, Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ));
     }
 

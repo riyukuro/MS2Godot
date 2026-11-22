@@ -1071,6 +1071,7 @@ public partial class HudScene
         if (ownTagMagics.Count == 0) return;
         var live = Net.LiveSession.Instance;
         if (player == null || live == null) { ownTagMagics.Clear(); return; }
+        ownTagMagics.HitEffects = live.HitEffects;
         int now = (int)Time.GetTicksMsec();
         if (!ownTagMagics.AnyDue(now, 0)) return;
         var pos = FillHitObjects(player);

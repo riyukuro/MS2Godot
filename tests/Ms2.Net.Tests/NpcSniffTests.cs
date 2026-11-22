@@ -34,7 +34,11 @@ public class NpcSniffTests {
                             break;
                         }
                         case 0x2E: if (npcOf.ContainsKey(BitConverter.ToInt32(p.Data, 0))) { NpcStat.Read(r); stats++; } break;
-                        case 0x3D: { var d = SkillDamage.Read(r); dmgModes[d.Mode] = dmgModes.GetValueOrDefault(d.Mode) + 1; if (d.Raw != null) dmgRaw++; else dmgPk++; break; }
+                        case 0x3D: {
+                            var d = SkillDamage.Read(r); dmgModes[d.Mode] = dmgModes.GetValueOrDefault(d.Mode) + 1; if (d.Raw != null) dmgRaw++; else dmgPk++;
+                            if (d.Mode == 0 && d.Raw == null) Assert.That(r.Available, Is.EqualTo(0), "a short mode 0 read leaves bytes");
+                            break;
+                        }
                         case 0x56: NpcObjectId.Read(r); removes++; break;
                         case 0x57: NpcObjectId.Read(r); dead++; break;
                         case 0x58: {

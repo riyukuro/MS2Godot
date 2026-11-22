@@ -34,6 +34,19 @@ public sealed class RemoteTagMagics
     }
 
     readonly Dictionary<int, Owner> owners = new();
+    HitEffectThrottle hitEffects;
+
+    /// <summary>The hit effect throttle every owner's magics share (the objects' FUN_14146c990 state); null keeps each
+    /// owner's own.</summary>
+    public HitEffectThrottle HitEffects
+    {
+        get => hitEffects;
+        set
+        {
+            hitEffects = value;
+            if (value != null) foreach (var o in owners.Values) o.Magics.HitEffects = value;
+        }
+    }
 
     /// <summary>The magics of <paramref name="ownerId"/> still kept (0 for an unknown owner).</summary>
     public int Count(int ownerId) => owners.TryGetValue(ownerId, out var o) ? o.Magics.Count : 0;
@@ -56,7 +69,11 @@ public sealed class RemoteTagMagics
 
     Owner Get(int ownerId)
     {
-        if (!owners.TryGetValue(ownerId, out var o)) owners[ownerId] = o = new Owner();
+        if (!owners.TryGetValue(ownerId, out var o))
+        {
+            owners[ownerId] = o = new Owner();
+            if (hitEffects != null) o.Magics.HitEffects = hitEffects;
+        }
         return o;
     }
 
@@ -85,6 +102,8 @@ public sealed class RemoteTagMagics
     /// packet makes magics, and they join no record. <paramref name="skill"/> and <paramref name="attack"/> are the packet's
     /// skill level and attack (CMagicModel::Init fails without them, for every record alike). The caller drops an absent
     /// owner (FUN_1414609e0 returns at once without it). Returns the number of magics made.
+    /// STILL-OPEN: a bServer packet's magics start at the local receipt time (<paramref name="nowMs"/>), not at the server
+    /// clock's time (Unk_ServerClock GetTimeByKind), so a late packet starts late.
     /// </summary>
     public int OnDamage(SkillDamage d, SkillData skill, SkillAttackData attack, MagicPathTable paths, int nowMs,
         MagicRayCast rayCast, ReadOnlySpan<HitCandidate> objects)
