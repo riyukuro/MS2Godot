@@ -1,4 +1,7 @@
 using Ms2.Avm2;
+using Ms2.Net.Packets;
+using Ms2.Net.Wire;
+using Ms2.Ui.Items;
 
 namespace Ms2.Ui.Hud;
 
@@ -12,6 +15,9 @@ public abstract class LapenshardTabPage
     public abstract string LabelKey { get; }
     /// <summary>vfunc_3: the page was created over the body frame's first child.</summary>
     public virtual void Show(UiHost host, object root) { }
+    /// <summary>The window the page belongs to.</summary>
+    protected LapenshardSystemController Owner { get; private set; }
+    internal void Attach(LapenshardSystemController owner) => Owner = owner;
     /// <summary>vfunc_4: the page is left.</summary>
     public virtual void Leave() { }
     /// <summary>vfunc_2: NotifyPage(event).</summary>
@@ -20,6 +26,14 @@ public abstract class LapenshardTabPage
     public virtual bool OnCallback(string name, object[] args) => false;
     /// <summary>vfunc_1: the dialog closes.</summary>
     public virtual void Destroy() { }
+    /// <summary>The binding of a slot of the page's bags (null: not the page's).</summary>
+    public virtual object GetBinding(string name) => null;
+    /// <summary>The slot names of a bag the page owns.</summary>
+    public virtual IEnumerable<string> GetBagSlotBindings(string bag) => Array.Empty<string>();
+    /// <summary>The tooltip of a slot of the page's bags (null: not the page's).</summary>
+    public virtual IDictionary<string, object> GetSlotTooltip(string name) => null;
+    /// <summary>vfunc_9: an inbound lapenshard packet reaches the current page.</summary>
+    public virtual void OnPacket(LapenshardMessage m) { }
 }
 
 /// <summary>
@@ -52,7 +66,54 @@ public sealed class LapenshardSystemController : UiController
     /// <summary>m_spPage: the page shown now.</summary>
     public LapenshardTabPage Page => page;
 
-    public void AddTab(LapenshardTabPage p) => tabs.Add(p);
+    public void AddTab(LapenshardTabPage p) { tabs.Add(p); p?.Attach(this); }
+
+    /// <summary>Send an outbound packet (true: sent).</summary>
+    public Func<IOutPacket, bool> Send;
+    /// <summary>The local player is in battle (MyPC vfunc_65).</summary>
+    public Func<bool> InBattle = () => false;
+    /// <summary>CFieldDataCli::HasLimitContent(0x200). STILL-OPEN: the field's limit contents are not read, so false.</summary>
+    public Func<bool> FieldLimitsLapenshard = () => false;
+    /// <summary>ShowMessageBox: show a box.</summary>
+    public Action<MessageBoxData> ShowBox = MessageBoxQueue.Show;
+
+    /// <summary>MyPC::GetLapenshardItemId: the item worn in a slot, 0 for none.</summary>
+    public int WornItemId(int slot) => Model?.Player.Lapenshards?.GetItemId(slot) ?? 0;
+
+    /// <summary>The kind (red 1, blue 2, green 4) the player selected: m_nSlot (SelectSlot).</summary>
+    public int SelectedKind { get; private set; }
+
+    /// <summary>FUN_140c62520 (@0x140c62520): a local player, not in battle (s_lapenshard_disable_battle), a field whose
+    /// limits allow it (s_lapenshard_disable_field); the box is shown for the two refusals.</summary>
+    public bool CanUse()
+    {
+        if (Model == null || !Model.HasLocalPlayer) return false;
+        if (InBattle())
+        {
+            ShowBox(MessageBoxQueue.CreateWithCallback(T("s_lapenshard_disable_battle"), 0, (_, _) => true));
+            return false;
+        }
+        if (FieldLimitsLapenshard())
+        {
+            ShowBox(MessageBoxQueue.CreateWithCallback(T("s_lapenshard_disable_field"), 0, (_, _) => true));
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>SelectSlot(kind): the kind is kept and the pages light that kind's slots (event 10).</summary>
+    public void SelectSlot(int kind)
+    {
+        SelectedKind = kind;
+        NotifyPage(10);
+    }
+
+    /// <summary>vfunc_79: an inbound lapenshard packet goes to the current page.</summary>
+    public void OnPacket(LapenshardMessage m) { if (!IsClosed) page?.OnPacket(m); }
+
+    public override IEnumerable<string> GetBagSlotBindings(string bag) => page?.GetBagSlotBindings(bag) ?? base.GetBagSlotBindings(bag);
+    public override object GetBinding(string name) => page?.GetBinding(name) ?? base.GetBinding(name);
+    public override IDictionary<string, object> GetSlotTooltip(string name) => page?.GetSlotTooltip(name) ?? base.GetSlotTooltip(name);
 
     /// <summary>vfunc_75: IsFeatureEnabled(0xd3).</summary>
     public bool IsAvailable => Model != null && Model.IsFeatureEnabled(FeatureId);
