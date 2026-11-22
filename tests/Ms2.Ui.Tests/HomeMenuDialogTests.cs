@@ -13,6 +13,7 @@ public class HomeMenuDialogTests
         public int PlotMode { get; set; }
         public bool CanChange { get; set; }
         public bool CanEditHome { get; set; }
+        public bool HasService { get; set; } = true;
         public bool OwnsHome { get; set; } = true;
         public bool InOwnersHouse { get; set; }
         public bool Blueprints = true, Shop = true;
@@ -152,6 +153,15 @@ public class HomeMenuDialogTests
         h.InOwnersHouse = true;
         c.OnCallback("ToggleCraftMode", null);
         Assert.That(h.Log, Is.EqualTo(new[] { "craftOn" }));
+    }
+
+    [Test] public void DesignModeSkipsTheOwnerCheckWithoutTheService()
+    {
+        var (c, h, notices, _, _, _) = Make();
+        h.HasService = false;
+        c.ToggleDesignMode();
+        Assert.That(notices, Is.Empty);
+        Assert.That(h.Log, Is.EqualTo(new[] { "move 4" }));
     }
 
     [Test] public void DesignModeEntersMode4AndLeavesWithMode3()

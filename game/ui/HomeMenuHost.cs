@@ -23,6 +23,7 @@ sealed class HomeMenuHost(Net.LiveSession live, Func<int, bool> fieldIsHome, Fun
     /// <summary>FUN_1410d56a0: the same with the f330 == 1 test inverted.</summary>
     public bool CanEditHome => live.FieldId is int id
         && Ms2.Ui.HomeOptionRows.CanChange(fieldIsHome(id), live.CubeMap.PlotMode != 1, live.CubeMap.Owner, live.OwnAccountId);
+    public bool HasService => live.FieldId != null;
     public bool OwnsHome => live.OwnAccountId != 0 && live.CubeMap.Owner == live.OwnAccountId;
     public bool InOwnersHouse => live.Housing.InOwnersHouse;
     public bool BlueprintAvailable(bool message) => feature(0xe9);

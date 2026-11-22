@@ -15,6 +15,8 @@ public interface IHomeMenuHost
     bool CanChange { get; }
     /// <summary>FUN_1410d56a0: the player may edit this home (the f330 == 1 test inverted).</summary>
     bool CanEditHome { get; }
+    /// <summary>The CubeMapInformationService exists (the client tests the smart pointer before FUN_1410d5640 / FUN_1410d56a0).</summary>
+    bool HasService { get; }
     /// <summary>FUN_1418fd280 (uicommon.cpp:353): the own account owns the home.</summary>
     bool OwnsHome { get; }
     /// <summary>FUN_140930c50: in a house with a known owner.</summary>
@@ -113,7 +115,8 @@ public class HomeMenuDialogController : UiController, IMessageBoxListener
         return "default";
     }
 
-    /// <summary>Refresh @0x140c29600: setState with the frame name, the free camera off in craft mode, the button states.</summary>
+    /// <summary>Refresh @0x140c29600: setState with the frame name (only while m_30 is an ASDialog: the movie hook is set then), the free camera off in craft mode,
+    /// the button states. STILL-OPEN: the closing vfunc_43 (UIDialog @0x1419257b0, :822), the check that moves a dialog sitting outside the screen back (vfunc_25).</summary>
     public void Refresh(bool craft)
     {
         Call("setState", GetStateFrameName());
@@ -248,7 +251,7 @@ public class HomeMenuDialogController : UiController, IMessageBoxListener
     public void ToggleDesignMode()
     {
         if (!host.HasPlayer) return;
-        if (!host.CanChange && !host.CanEditHome) { SystemNotice(CommonText(0x6e1)); return; }
+        if (host.HasService && !host.CanChange && !host.CanEditHome) { SystemNotice(CommonText(0x6e1)); return; }
         if (host.PlotMode == 1)
         {
             if (host.DesignHasChanges) LeaveBox("s_home_info_exit_messagebox_save");
