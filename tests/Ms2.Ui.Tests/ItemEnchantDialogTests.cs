@@ -191,6 +191,23 @@ public class ItemEnchantDialogTests
         Assert.That(Rt.ToString(r.Get(r.C.BuildInfo(), "enchantFee")), Is.Empty);
     }
 
+    // FUN_1419c6cd0 (uiitemenchantdialog.cpp:1600): the fee is assigned in the loop, so the last short 0x60 row wins; a row whose item
+    // cannot be made (InitWithCount fails, :1610) adds no list entry and no fee.
+    [Test]
+    public void TheFeeIsTheLastShortRowsAndAnUnmakableRowAddsNothing()
+    {
+        var r = new Rig();
+        r.Add(5);
+        int id = r.Inv[5].ItemId;
+        r.C.CountByTag = _ => 1;
+        r.Select(5, r.Info(5, ing: new[] { new EnchantIngredient(id, 0x60, 10), new EnchantIngredient(id, 0x60, 3) }));
+        Assert.That(Rt.ToString(r.Get(r.C.BuildInfo(), "enchantFee")), Is.EqualTo(r.C.FeeText(1, 3)), "the last short row, not the sum");
+        r.Select(5, r.Info(5, ing: new[] { new EnchantIngredient(2000000999, 0x60, 10), new EnchantIngredient(id, 1, 1) }));
+        var o = r.C.BuildInfo();
+        Assert.That(Rt.ToString(r.Get(o, "enchantFee")), Is.Empty, "no item, no fee");
+        Assert.That(((Ms2.Avm2.AsArray)r.Get(o, "ingredient")).Items, Has.Count.EqualTo(1), "no list entry for the row without an item");
+    }
+
     // CIngredientInfo::GetItemId (@0x14026b500): a cost that names a tag (item id 0) shows the tag's item (GetTagItemId, from
     // table/itemdata.xml's <tag name itemID>) in its slot; the have count is by tag (FUN_1419c6cd0: GetItemCountByTag(m_b), inventory.cpp:835),
     // so several different items sharing the tag all count, and the item id is asked for nothing.

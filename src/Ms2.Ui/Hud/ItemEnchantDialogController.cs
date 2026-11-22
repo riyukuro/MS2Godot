@@ -360,9 +360,10 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
             int itemId = g.ItemId != 0 ? g.ItemId : Model.Tables.Items.TagItemId(g.Tag);   // CIngredientInfo::GetItemId (@0x14026b500): the id, else the tag's item (:143)
             var it = Item.Create(Model.Tables.Items, itemId, Model.Tables.Items.Get(itemId)?.Rank ?? 0);   // GetItemRank(itemId)
             string name = IngredientPrefix + i.ToString(CultureInfo.InvariantCulture);
-            if (it != null) { it.SetCountClamped(g.Count); Bind(name, it, SlotFlags); ingredientSlots.Add(name); }
+            if (it == null) continue;   // FUN_1419c6cd0 keeps the have, the list entry and the fee under InitWithCount (uiitemenchantdialog.cpp:1610)
+            it.SetCountClamped(g.Count); Bind(name, it, SlotFlags); ingredientSlots.Add(name);
             int have = CountByTag(g.Tag);   // GetItemCountByTag(ing->m_b, 0): by tag, not by the item the slot shows
-            if (g.Tag == 0x60 && g.Count > have) fee += (long)(g.Count - have) * FeePerUnit;
+            if (g.Tag == 0x60 && g.Count > have) fee = (long)(g.Count - have) * FeePerUnit;   // assigned, not summed: the last short row wins (:1618)
             list.Add(Host.Obj(("binding", name), ("countText", IngredientCountText(have, g.Count))));
         }
         m.Add(("ingredient", list));
