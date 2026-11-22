@@ -58,7 +58,7 @@ public delegate bool MagicRayCast(Vector3 from, Vector3 dir, float length, out V
 /// Piercing arrows (bounceType 3 and 4) keep flying through their hits, forget them each piercing interval and send its
 /// splash (<see cref="SkillSplashRequest"/>); bounceType 4 then flies back to the owner (state 5) and ends there.
 /// STILL-OPEN: for an arrow record, the magic control flight (FUN_141464490, a skill with magicControl enable not 0: those make no arrow
-/// magic here), the bounce-off's effect; the links of a record other than an arrow one, the latency maximum (0 here: the time sync's latency is not kept),
+/// magic here), the bounce-off's effect for an owner other than the local player; the links of a record other than an arrow one, the latency maximum (0 here: the time sync's latency is not kept),
 /// CFunctionCubeService::SetTagArea and MyPC::FUN_14152e0c0 after a fill are not
 /// ported.
 /// </summary>
@@ -110,6 +110,8 @@ public sealed class OwnTagMagics
     readonly List<Magic> live = new();
     readonly List<HitCandidate> queried = new();
     readonly List<int> detected = new(), kept = new(), others = new();
+    // the hit effect throttle's state of the objects (FUN_14146c990)
+    readonly HitEffectThrottle hitEffects = new();
 
     /// <summary>The magics that may still fill or register.</summary>
     public int Count => live.Count;
@@ -785,7 +787,7 @@ public sealed class OwnTagMagics
             req = new SkillHitRequest(m.CastId, m.Serial, m.Last, m.Current, m.AxisY, m.AttackIndex, m.SendCount, targets);
         }
         // FUN_141464490 (the magic control flight) is 0: a skill with magicControl enable makes no arrow magic here
-        if (invincible == 2) BounceOff(m, rand ?? (() => 0));
+        if (invincible == 2) BounceOff(m, rand ?? (() => 0), nowMs, owner, objects, endEffects);
         else if (m.Hits.Count >= max)
         {
             m.Filled = true;
@@ -811,9 +813,17 @@ public sealed class OwnTagMagics
     /// the reverse direction turned by MakeZRotation(FUN_14109ace0() * (FUN_141198810() * pi/4 + pi/4)), the first a CRT
     /// rand() in [-1, 1], the second one in [0, 1] (called in that order), unit; vel 1.2 times; the target the current point
     /// plus the side at that vel for the time left; no curve (m_n26C).
-    /// STILL-OPEN: the row's bounce effect (m_str188, m_n180, m_b19c) is not played.
+    /// Then, with CContentShutdown 0x73 off, the damage's effectHit (row +0x188) at the current point, not turned, into
+    /// <paramref name="endEffects"/> for a local owner when the record's target (m_nCasterId, FindObjectById: among
+    /// <paramref name="objects"/>) lets it through the hit effect throttle (<see cref="HitEffectThrottle"/>, its key the
+    /// effectHit's number m_n180). The local owner's hit sounds were played before the send, so PlayHitEffects is not called
+    /// again (FUN_141464410).
+    /// STILL-OPEN: for an owner other than the local player, the optimizer's hide, the sight range, IsUpdateEnabled's check and
+    /// the hit sounds after the effect; the shut-down branch (0x73 on, no throttle); the effect's IgnoreOptimalHideDamageHitEffect
+    /// flag (m_b19c, only read by the optimizer's hide of another owner's effect).
     /// </summary>
-    static void BounceOff(Magic m, Func<int> rand)
+    void BounceOff(Magic m, Func<int> rand, int nowMs, in MagicOwner owner, ReadOnlySpan<HitCandidate> objects,
+        List<MagicEndEffect> endEffects)
     {
         m.Filled = true;
         float sign = -1f + 2f * rand() / 32767f;
@@ -823,6 +833,12 @@ public sealed class OwnTagMagics
         m.Velocity *= 1.2f;
         m.Target = m.Current + side * m.Velocity * m.Remain;
         m.Curve = false;
+        if (endEffects == null || !owner.LocalPlayer || m.TargetId == 0) return;
+        bool found = false;
+        foreach (ref readonly var o in objects)
+            if (o.Id == m.TargetId) { found = true; break; }
+        if (found && hitEffects.TryPlay(m.TargetId, m.Attack.EffectHit, (uint)nowMs))
+            endEffects.Add(new MagicEndEffect(m.Attack.EffectHit, false, m.Current, Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ));
     }
 
     /// <summary>

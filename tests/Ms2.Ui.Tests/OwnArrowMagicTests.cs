@@ -246,6 +246,56 @@ public class OwnArrowMagicTests
     }
 
     [Test]
+    public void ABounceOffPlaysTheEffectHitThroughTheTargetsThrottle()
+    {
+        // magicdata.cpp:1990-2008: after the turn, the damage's effectHit at the current point, unturned, when
+        // FUN_14146c990 lets it through for the record's target (m_nCasterId): 150 ms since that object's last play and
+        // 300 ms since this key's last play on it
+        var r = Record(nonTarget: false, children: "<damage effectHit=\"Hit.xml\"/>");
+        var m = new OwnTagMagics();
+        var objects = new[] { Me, Pc(9, 0, -250, invincible: 2) };
+        var effects = new List<MagicEndEffect>();
+        int Fire(int start, long serial)
+        {
+            var tags = new List<SkillDamageTarget> { new SkillDamageTarget(serial, 9, 0, Array.Empty<SkillDamageLink>()) };
+            m.Add(r.Skill, SkillAttackFire.AttackAt(r, 0), r, tags, start, Paths(Linear), _ => Vector3.Zero, ownerId: 42,
+                objects: objects);
+            int before = effects.Count;
+            m.Tick(start, 0, Owner, objects, r, null, null, () => 0, null, endEffects: effects);
+            m.Tick(start + 100, 0, Owner, objects, r, null, null, () => 0, null, endEffects: effects);
+            return effects.Count - before;
+        }
+        Assert.That(Fire(T, 7), Is.EqualTo(1));
+        var e = effects[0];
+        Assert.That((e.File, e.Along, e.AxisX, e.AxisY, e.AxisZ), Is.EqualTo(("Hit.xml", false, Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ)));
+        Assert.That(e.At, Is.EqualTo(m.Flight(m.Count - 1).Current), "at the current point of the turn");
+        Assert.That(Fire(T + 200, 8), Is.EqualTo(0), "200 ms after the key's last play on the target");
+        Assert.That(Fire(T + 500, 9), Is.EqualTo(1), "500 ms after it");
+
+        var nonTarget = Record(children: "<damage effectHit=\"Hit.xml\"/>");
+        var n = Add(nonTarget, Paths(Linear));
+        var none = new List<MagicEndEffect>();
+        n.Tick(T, 0, Owner, objects, nonTarget, null, null, () => 0, null, endEffects: none);
+        n.Tick(T + 100, 0, Owner, objects, nonTarget, null, null, () => 0, null, endEffects: none);
+        Assert.That(Math.Abs(n.Flight(0).Target.X), Is.GreaterThan(1f), "it bounced");
+        Assert.That(none, Is.Empty, "a record without a target finds no object (FindObjectById(0))");
+    }
+
+    [Test]
+    public void TheHitEffectThrottleKeepsAnObjectGapAndAKeyGap()
+    {
+        var t = new HitEffectThrottle();
+        Assert.That(t.TryPlay(9, "", 5000), Is.False, "no name, no number");
+        Assert.That(t.TryPlay(9, "A", 100), Is.False, "the object's last tick starts at 0");
+        Assert.That(t.TryPlay(9, "A", 5000), Is.True);
+        Assert.That(t.TryPlay(9, "B", 5149), Is.False, "the object gap");
+        Assert.That(t.TryPlay(9, "B", 5150), Is.True, "another key after 150 ms");
+        Assert.That(t.TryPlay(9, "A", 5299), Is.False, "the key gap");
+        Assert.That(t.TryPlay(9, "A", 5300), Is.True);
+        Assert.That(t.TryPlay(10, "A", 5300), Is.True, "another object keeps its own times");
+    }
+
+    [Test]
     public void AnArrowWithoutHitsEndsAtItsDistance()
     {
         var r = Record();
