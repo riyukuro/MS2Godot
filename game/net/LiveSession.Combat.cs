@@ -94,8 +94,10 @@ public partial class LiveSession
                 {
                     Check("the revival dialog is open", hud.RevivalUiUp());
                     GD.Print($"live: combat free revive: {(hud.ReviveScripted(1) ? "sent" : "no dialog")}");
-                    await until(() => !live.Me.Dead, 60 * 15); await frames(120);
-                    Check("the character is alive again", !live.Me.Dead);
+                    bool alive = false;     // seen at the revival itself: a mob that stands on the spot kills the revived character again
+                    await until(() => alive = !live.Me.Dead, 60 * 15);
+                    Check("the character is alive again", alive);
+                    await frames(30);
                     Shot("revived.png");
                     break;
                 }
