@@ -912,7 +912,7 @@ public partial class As3View : Node2D
     {
         var vp = GetViewport();
         foreach (var v in inTree)
-            if (v != this && v.TakesMouse && v.GetViewport() == vp && DrawnOver(v) && !v.Player.Dragging)
+            if (v != this && v.TakesMouse && v.GetViewport() == vp && DrawnOver(v) && !v.Player.Dragging && !v.Player.TextMouseCaptured)
             {
                 var p = v.StagePoint(viewport);
                 v.Player.MouseMove(p.X, p.Y, covered: true);
@@ -942,12 +942,15 @@ public partial class As3View : Node2D
     /// <summary>
     /// While this movie drags a sprite (DragManager's startDrag) it gets the mouse before any other movie: the client's
     /// movies share one stage, so the drag follows the mouse over other dialogs and the release ends it
-    /// (DragManager.handleEndDragEvent on the stage's MOUSE_UP) wherever it happens.
+    /// (DragManager.handleEndDragEvent on the stage's MOUSE_UP) wherever it happens. A text field's editor that took the
+    /// mouse capture with a press (EditorKit::OnMouseDown) gets the moves and the release the same way, so a drag selection
+    /// goes on outside the field and its movie.
     /// </summary>
     public override void _Input(InputEvent ev)
     {
-        // no capture for a hidden view or a drag sprite that left the stage
-        if (Player == null || !Player.Dragging || !IsVisibleInTree() || Player.DraggedSprite is not { OnStage: true }) return;
+        // no capture for a hidden view, a drag sprite or a captured field that left the stage
+        if (Player == null || !IsVisibleInTree()) return;
+        if (!(Player.Dragging && Player.DraggedSprite is { OnStage: true }) && !(Player.TextMouseCaptured && Player.TextCapture.OnStage)) return;
         // the dispatch can change the scene and take this view out of the tree: the viewport is taken before it
         var vp = GetViewport();
         switch (ev)
