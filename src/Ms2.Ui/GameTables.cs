@@ -820,7 +820,7 @@ public sealed class GameTables
     /// <see cref="Skills"/>), read on first use or by <see cref="PrefetchSkillDamage"/>; one table for every thread.</summary>
     public Ms2.Ui.Skills.SkillDamageTable SkillDamage => System.Threading.LazyInitializer.EnsureInitialized(ref skillDamage, ref skillDamageLock,
         () => packs == null ? Ms2.Ui.Skills.SkillDamageTable.Empty
-            : new Ms2.Ui.Skills.SkillDamageTable(() => SkillFiles(packs).Select(XmlText),
+            : new Ms2.Ui.Skills.SkillDamageTable(() => SkillFiles(packs).Select(n => Ms2.Ui.Skills.SkillDamageTable.Deferred(() => XmlText(n))),
                 rows => FeatureElements.Collect(packs, rows, r => r.Value, r => r.Feature, r => r.Locale),
                 i => Ms2.Formats.Text.PackXml.Reader(new MemoryStream(packs.Read("Xml", SkillFiles(packs)[i]), false))));
     /// <summary>Reads <see cref="SkillDamage"/> on a worker thread while the field builds, so the first hit's damage event

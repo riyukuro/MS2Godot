@@ -67,6 +67,24 @@ public class SkillDamageTableTests
     }
 
     [Test]
+    public void AFileWhoseOpenFailsIsReadWhole()
+    {
+        // the pack's streamed open reads the zlib header and the text's first bytes; an open that throws is retried like a
+        // read that throws, and the retried file is not opened streamed a second time
+        string[] names = { "5", "6" };
+        int opens6 = 0;
+        TextReader open(string n)
+        {
+            if (n == "5") return new StringReader(Skill5);
+            opens6++;
+            throw new InvalidDataException("zlib header");
+        }
+        var t = new SkillDamageTable(() => names.Select(n => SkillDamageTable.Deferred(() => open(n))), rows => rows,
+            i => i == 1 ? new StringReader(Skill6) : null);
+        Assert.That((t.Get(5, 1, 0, 0)?.Value, t.Get(6, 1, 0, 0)?.Value, opens6), Is.EqualTo(((long?)7, (long?)9, 1)));
+    }
+
+    [Test]
     public void AReadThatFailsBothWaysIsStoredEmpty()
     {
         // the worker load swallows the error; the hits after it must not read every file again on the frame

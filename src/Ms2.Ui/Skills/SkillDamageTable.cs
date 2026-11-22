@@ -270,6 +270,31 @@ public sealed class SkillDamageTable
 
     public static readonly SkillDamageTable Empty = new(() => Array.Empty<TextReader>(), rows => rows);
 
+    /// <summary>A file's text opened on its first read, so that an open that throws (a bad zlib header, the mark sniff of the
+    /// first bytes) throws inside the table's read of that file and is retried by the whole-entry route like a read that
+    /// throws; a file the retry reads whole is disposed without being opened.</summary>
+    public static TextReader Deferred(Func<TextReader> open) => new DeferredReader(open);
+
+    sealed class DeferredReader(Func<TextReader> open) : TextReader
+    {
+        TextReader text;
+        bool opened;
+        TextReader Text()
+        {
+            if (!opened) { opened = true; text = open(); }
+            return text;
+        }
+        public override int Peek() => Text()?.Peek() ?? -1;
+        public override int Read() => Text()?.Read() ?? -1;
+        public override int Read(char[] buffer, int index, int count) => Text()?.Read(buffer, index, count) ?? 0;
+        public override int Read(Span<char> buffer) => Text()?.Read(buffer) ?? 0;
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) { opened = true; text?.Dispose(); text = null; }
+            base.Dispose(disposing);
+        }
+    }
+
     /// <param name="files">The skilldata files' text, in load order (each reader is disposed when read; null for a missing
     /// file).</param>
     /// <param name="pick">FUN_14028faa0 over a skill's &lt;level&gt; rows, in the elements' order.</param>
