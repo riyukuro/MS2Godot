@@ -68,6 +68,14 @@ public class BreakableTagPassTests
     }
 
     [Test]
+    public void AnAnimatedMarkerWithoutAnIdleNameStillPlaysIt()
+    {
+        // SetState(2) (breakableobject.cpp:302): m_bHasAnim alone gates the idle, so an empty m_strIdleAnim is played too
+        var m = Field(Actor("Box2")).Find("box2");
+        Assert.That((m.HasAnim, m.State, m.Play, m.PlayForce), Is.EqualTo((true, 2, "", true)));
+    }
+
+    [Test]
     public void AnAreaHitsAMarkerOnceSendsBreakableAndStartsTheHitTimer()
     {
         var b = Field(Entity("box1"));

@@ -76,8 +76,8 @@ public sealed class BreakableObjects
         long hitUntil = long.MinValue, fadeEnd = -1;
 
         /// <summary>FUN_140addea0 (breakableobject.cpp:205) for a field marker: hittable, the hit timer (m_kHitTimer, 1000 ms
-        /// from a hit) not running, and idle (state 2). A marker without an entity is never in the pass.</summary>
-        public bool CanBeHit(long nowMs) => Hittable && Entity != null && nowMs >= hitUntil && State == 2;
+        /// from a hit) not running, and idle (state 2).</summary>
+        public bool CanBeHit(long nowMs) => Hittable && nowMs >= hitUntil && State == 2;
 
         /// <summary>GetBox: the CBoxCollision FUN_140adf9d0 builds (:621-631) at the marker's position and rotation.</summary>
         public Skills.HitBox Box() => Skills.HitBox.Pose(
@@ -109,7 +109,7 @@ public sealed class BreakableObjects
             switch (state)
             {
                 case 2:
-                    if (HasAnim && !string.IsNullOrEmpty(IdleAnim)) (Play, PlayForce) = (IdleAnim, true);
+                    if (HasAnim) (Play, PlayForce) = (IdleAnim ?? "", true);   // m_bHasAnim alone gates it (:302), an empty name included
                     break;
                 case 3:
                     if (!string.IsNullOrEmpty(DeadEffect)) Effect = DeadEffect;

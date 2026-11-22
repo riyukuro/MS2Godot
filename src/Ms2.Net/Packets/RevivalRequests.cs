@@ -52,14 +52,14 @@ public sealed record TombstoneRequest(int ObjectId, int Hitter = 1) : IOutPacket
 /// tag's skill level, u8 the cast's motion (tag +0x58) and u8 its attack index (tag +0x5c), stored as 32 bits, written as bytes.
 /// The sender is Ms2.Ui's TombTagPass.RunMarkers over the own cast's tag areas.
 /// </summary>
-public sealed record BreakableRequest(string Name, long TagId, int SkillId, short SkillLevel, byte Tag58, byte Tag5C) : IOutPacket {
+public sealed record BreakableRequest(string Name, long TagId, int SkillId, short SkillLevel, byte Motion, byte Attack) : IOutPacket {
     public Outbound Op => Outbound.Breakable;
     public void Write(ByteWriter w) {
         w.WriteString(Name ?? "");
         w.WriteLong(TagId);
         w.WriteInt(SkillId);
         w.WriteShort(SkillLevel);
-        w.WriteByte(Tag58);
-        w.WriteByte(Tag5C);
+        w.WriteByte(Motion);
+        w.WriteByte(Attack);
     }
 }

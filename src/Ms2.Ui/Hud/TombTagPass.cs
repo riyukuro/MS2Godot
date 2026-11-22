@@ -21,7 +21,7 @@ public sealed class TagRecord
 }
 
 /// <summary>
-/// The SkillTargetRecord values WriteBreakableInfo sends: the tag id (+0x30, the cast id), the skill (+0x38, GetId), the skill
+/// The SkillTargetRecord values WriteBreakableInfo sends: the tag id (+0x18, the cast id), the skill (+0x38, GetId), the skill
 /// level (+0x48, GetLevel), +0x58 the cast's motion and +0x5c its attack index.
 /// </summary>
 public readonly record struct TagIdentity(long CastId, int SkillId, short Level, byte Motion, byte Attack);
@@ -102,7 +102,7 @@ public sealed class TombTagPass
         for (int i = 0; i < list.Count; i++)
         {
             var m = list[i];
-            if (!m.CanBeHit(now) || !m.ReactionArrow) continue;
+            if (m.Entity == null || !m.CanBeHit(now) || !m.ReactionArrow) continue;   // the pass walks game objects (m_118, worldservice_1.cpp:9320): a marker without an entity is none
             var box = m.Box();
             foreach (var (tag, area) in areas)
             {

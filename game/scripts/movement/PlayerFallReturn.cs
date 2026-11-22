@@ -111,6 +111,8 @@ public partial class Player
     {
         // The player's own records never carry the riding ids 0x17/0x27/0x85/0x87: that flag (m_unk_b80, FUN_141676b70) is set
         // by Ridee::UpdateRunEffects on the mount itself (ridee.cpp:721-779).
+        // STILL-OPEN: UpdateRunEffects (the mount's RunX sprint: runXSpeed, runXMotion and that flag) is not ported, so our
+        // mount's records carry none of those ids either.
         // Rope 0x33-0x39 (statemanager.cpp:1226-1414), climb 0x56-0x62 (state.cpp:1049-1051, 1177), dash 0x1d-0x1f
         // (state.cpp:1812-1920) and ladder 0x2a-0x31 (stateladder.cpp:237-462) are the states' own m_n10, which the controller keeps.
         // Fall has no sub id (0).
@@ -188,7 +190,9 @@ public partial class Player
             fallMarked = true;
             force = true;
         }
-        // the mount's test (Ridee::FUN_141706650, ridee.cpp:924) has no one-second and no target-yaw term
+        // the mount's test (Ridee::FUN_141706650, ridee.cpp:924) has no one-second and no target-yaw term. Its pushed flag
+        // m_bDF8 (Ridee::vfunc_110, ridee.cpp:633: the push control moved it, pcbase.cpp:1820-1822, 3738-3741) forces a record
+        // as MyPC's m_b15d5 does (MyPC::vfunc_110, mypc.cpp:1054); neither is modelled
         bool onFoot = Mount == null;
         if (!(force || syncPushed || current == null || State != current.State || moveDir != current.Dir
               || onFoot && (syncClock - current.Made >= 1.0 || targetYawDeg != current.Yaw) || StateVfunc22()))
@@ -209,6 +213,9 @@ public partial class Player
             // StateSyncObject::FUN_1408356c0 writes the position as three int16 (CByteBuffer::WriteVector3Short, stream.cpp:127)
             rec.Pos = new Vector3((short)feet.X, (short)feet.Y, (short)(feet.Z + 0.0001f)); rec.Marked = marked;
             rec.Cell = marked ? CellKey(feet) : int.MaxValue;
+            // on the mount the camera field is the Ridee's m_posBF4, which Ridee::vfunc_67 (ridee.cpp:819-823) takes from the
+            // camera whenever the mount's move direction or look yaw is worked out (PCBase::CalcMoveDirection, pcbase.cpp:2834;
+            // UpdateTargetYawFromLook, :1424); ours reads the camera when the record is made, mounted or not
             rec.State = State; rec.Dir = moveDir; rec.Yaw = targetYawDeg; rec.BodyYaw = yawDeg; rec.CamEuler = CameraEuler; rec.Sub = SubOf(State);
             rec.Tick = ServerTick?.Invoke() ?? 0; rec.Made = syncClock;
         }
