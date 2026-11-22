@@ -223,6 +223,20 @@ public sealed class ItemData
         return d;
     }
 
+    /// <summary>
+    /// GMS2 item files write subtype="0" on the weapon equips, and no other field of the GMS2 item file, itemdefine or itemdata
+    /// names the hand kind (blackMarketCategory carries only the same id group, "134_equip"). The weaponaction.xml rows key on
+    /// 30..34, 40, 41, 50..56 and 80..83, the KMS subtype of the 130xxxxx..134xxxxx, 140/141xxxxx, 150..156xxxxx and 180..183xxxxx items (id / 100000 % 100).
+    /// With 0 the held weapon's kind is 0 and PC::GetNormalAttackSkillId (pc.cpp:2877) takes the bare-hand row, skill 1.
+    /// The id rule is INFERRED: a GMS2 client exe dump exists but is not decompiled, so its own reader of the kind is unread.
+    /// STILL-OPEN. The non-weapon subtype users are left as the file says.
+    /// </summary>
+    public void FillEquipSubtype()
+    {
+        int group = Id / 100000;
+        if (Type == 1 && Subtype == 0 && group is (>= 130 and <= 134) or 140 or 141 or (>= 150 and <= 156) or (>= 180 and <= 183)) Subtype = group % 100;
+    }
+
     public int EquipSubtype => Type == 1 ? Subtype : 0;        // GetEquipSubtype @0x14053c620 (commonfiles/itemdata.cpp:509)
 
     /// <summary>ItemFunctionArgs::FUN_1408d1f60 (unit_1408d1ec0_commandargumentaccessors.cpp:61): the word at the index as _wtoi, the default past the list.</summary>
@@ -470,6 +484,7 @@ public sealed class ItemDataTable
             && GameStrings.Parse(packs.Read("Xml", entry))?.Root is { } root
             && FeatureElements.SelectEnvironment(packs, root) is { } env)
             d = ItemData.Load(id, env, globalTransferType ??= LobbyFeatures.IsEnabled(packs, "GlobalTransferType"));
+        d?.FillEquipSubtype();
         perItemRows[id] = d;
         return d;
     }
