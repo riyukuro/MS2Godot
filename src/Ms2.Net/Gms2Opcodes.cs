@@ -158,6 +158,7 @@ static class Gms2Opcodes {
         [Outbound.Breakable] = 0x27,
         [Outbound.Liftable] = 0x3D,
         [Outbound.StateReact] = 0xAA,
+        [Outbound.RequestRide] = 0x41,
         [Outbound.MeretMarket] = 0x3A,
         [Outbound.ResponseLogin] = 0x03,
         [Outbound.ResponseKey] = 0x04,

@@ -92,4 +92,17 @@ public class ReactorPacketTests
         Assert.That(req.Op, Is.EqualTo(Outbound.StateReact));
         Assert.That(w.Buffer.AsSpan(0, w.Length).ToArray(), Is.EqualTo(new byte[] { 2, 4, 3, 2, 1 }));
     }
+
+    [Test]
+    public void RideOffReactWritesModeOneTheReactActionAndTheReactor()
+    {
+        // SendRequestRideMode1 (mypc.cpp:3581-3583): Encode1(1), RideOffActionReact::vfunc_1: u8 20, u8 0, i32 id, name
+        var w = new ByteWriter();
+        var req = new RideOffReactRequest(0x01020304, "ab");
+        req.Write(w);
+        Assert.That(req.Op, Is.EqualTo(Outbound.RequestRide));
+        Assert.That(w.Buffer.AsSpan(0, w.Length).ToArray(), Is.EqualTo(new byte[] { 1, 20, 0, 4, 3, 2, 1, 2, 0, (byte)'a', 0, (byte)'b', 0 }));
+        Assert.That(ProtocolProfile.Kms2525.Number(Outbound.RequestRide), Is.EqualTo((ushort)0x40));
+        Assert.That(ProtocolProfile.Gms2.Number(Outbound.RequestRide), Is.EqualTo((ushort)0x41));
+    }
 }

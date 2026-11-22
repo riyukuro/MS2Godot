@@ -189,7 +189,14 @@ public partial class LiveSession
                 React.Begin(ReactState.KindReact, r.Data, r.Name);
                 break;
             case FieldReactors.UseOutcome.RideOff:
-                GD.Print($"live: STILL-OPEN reactor {r.ObjectId}: the ride off first (RideOffActionReact, SendRequestRideMode1)");
+                // RideOffActionReact(0) with the reactor's id and name, MyPC::SendRequestRideMode1. STILL-OPEN: the ResponseRide
+                // answer (OnResponseRide mode 1, MyPC::vfunc_121 case 0x14) is not ported; there the client enters state 0x19
+                // with the StateReactData and kind 0x8a, StateInteraction's dynamic_cast of it fails and it takes the nearest
+                // interact object, so the react never starts after the ride-off (exe bug).
+                var ride = player.Mount.Data;
+                if (RideOff.Request(true, ride != null, ride?.Type ?? 0, ride?.EnableRideOffUI ?? false, RideOffReactRequest.ActionType,
+                        false, new RideOffReactRequest(r.Data?.Id ?? 0, r.Name), Send) == RideOff.Outcome.CantRide)
+                    SystemNoticeSink?.Invoke(MessageBoxData.Common(RideOff.CantRideNoticeId));
                 break;
             case FieldReactors.UseOutcome.Send:
                 // FUN_14152e0c0 (STILL-OPEN), then CReactor::SendStateReact
