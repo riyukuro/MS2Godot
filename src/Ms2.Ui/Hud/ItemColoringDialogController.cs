@@ -1,4 +1,5 @@
 using Ms2.Quest;
+using Ms2.Ui.Items;
 using Ms2.Ui.Shop;
 using Ms2.Avm2;
 using Ms2.Net.Packets;
@@ -204,6 +205,31 @@ public sealed class ItemColoringDialogController : UiController
         BuildItems();
         PageBuilt = true;
         return true;
+    }
+
+    /// <summary>
+    /// BuildItems' list of worn items (@0x1419ae170, uiitemcoloringdialog.cpp:595-635): <see cref="WornEquipment.Listed"/>
+    /// (FUN_1411e3000(equips, 4, 0, 1)) without the items FUN_141421690 takes (<see cref="WornEquipment.IsCustomizeKind"/>), an
+    /// item whose models hold no shader-textured mesh (CEquipItem::FUN_1411dcda0, <paramref name="hasModelTexture"/>) and one that
+    /// is not <see cref="WornEquipment.IsCustomizable"/>. The wearer is the own player, never a ClonePC (the MissMatch tag counts).
+    /// STILL-OPEN: <paramref name="hasModelTexture"/> is CNifModel::vfunc_15 / CKfmModel::vfunc_15 over the item's loaded models
+    /// (FUN_141422f30, itemugcmesh.cpp:455: a node without a MS2CharacterSkinMaterial whose shader map 0 has a source texture);
+    /// a host that does not load the item's models leaves it null and no item is listed.
+    /// </summary>
+    public static IReadOnlyList<ColoringRow> WornRows(WornEquipment worn, int gender, bool layerActive, bool layer2Feature,
+        Func<Item, bool> canUse, Func<Item, bool> hasModelTexture, Func<int, string> name, ItemDataTable items, ItemModelTable models)
+    {
+        var rows = new List<ColoringRow>();
+        if (worn == null || hasModelTexture == null) return rows;
+        var missMatch = worn.MissMatched(gender, layer2Feature, canUse, models);
+        foreach (var item in worn.Listed(4, true, layerActive, true, canUse, missMatch, items, models))
+        {
+            if (WornEquipment.IsCustomizeKind(item.Data, models)) continue;
+            if (!hasModelTexture(item)) continue;
+            if (!WornEquipment.IsCustomizable(item.Data, models)) continue;
+            rows.Add(new ColoringRow(item.Uid, item.ItemId, name(item.ItemId), item.IconPath));
+        }
+        return rows;
     }
 
     /// <summary>BuildItems (@0x1419ae170): the list of the worn dyeable items, then buildItems(items, -1).</summary>

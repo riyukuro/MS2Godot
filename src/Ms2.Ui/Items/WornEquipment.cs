@@ -7,7 +7,7 @@ namespace Ms2.Ui.Items;
 /// A player's CEquipment as a record carries it: per layer, the item at its slot. The local player's one answers the
 /// inventory hover's worn-item lookup (MyPC::FUN_14152e2f0) and its "equipped" test (PC::GetEquipByUid).
 /// </summary>
-public sealed class WornEquipment
+public sealed partial class WornEquipment
 {
     readonly Dictionary<int, Item>[] layers;
 

@@ -4,6 +4,7 @@ using Godot;
 using Ms2.Net.Packets;
 using Ms2.Ui;
 using Ms2.Ui.Hud;
+using Ms2.Ui.Items;
 
 namespace Ms2Godot.Ui;
 
@@ -159,9 +160,24 @@ public partial class HudScene
             Send = live.SendBeauty,
             ItemCount = id => live.Items.All.Where(e => e.Id == id).Sum(e => (long)e.Amount),   // same sum as the shop's BindLiveState
             GuildFund = () => live.Guilds?.Info?.Fund ?? 0,
+            ItemName = id => hudModel.Tables.ItemName(id) ?? "",
+            EquippedRows = () => OwnColoringRows(live),
         };
         c.NoticeText += SystemNoticeText;
         return c;
+    }
+
+    /// <summary>
+    /// BuildItems' worn-item list over the live own player (<see cref="ItemColoringDialogController.WornRows"/>). STILL-OPEN: the
+    /// item's loaded models are not scanned for a shader-textured mesh (CEquipItem::FUN_1411dcda0), so no row is listed.
+    /// </summary>
+    IReadOnlyList<ColoringRow> OwnColoringRows(Ms2Godot.Net.LiveSession live)
+    {
+        var t = hudModel.Tables;
+        long now = live.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var record = live.Me.ToPcInfo(now);
+        return ItemColoringDialogController.WornRows(WornEquipment.Of(record, t.Items), record.Gender, record.CodiActive,
+            hudModel.IsFeatureEnabled(0x8e), it => ItemLevels.Usable(it, now), null, id => hudModel.Tables.ItemName(id) ?? "", t.Items, t.ItemModels);
     }
 
     void ShowItemColoring(ItemColoringDialogController c)
