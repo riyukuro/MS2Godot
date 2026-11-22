@@ -83,16 +83,16 @@ public partial class Player : IHitBody, IPushBody
         }
         hasSequence ??= s => Anims?.Sequence(s, false) != null;
         string seq = hit.PickSequence("", hasSequence);
-        PlayHitSequence(seq, true);
+        PlayHitSequence(seq, true, hit.Speed);
     }
 
-    void PlayHitSequence(string seq, bool restart)
+    void PlayHitSequence(string seq, bool restart, float speed)
     {
         string key = seq.Length > 0 ? Anims?.Sequence(seq, false) : null;
         hitAnim = key ?? "";
         hitPlaying = key != null ? seq : "";
         hitSeqEnded = false;
-        if (key != null) PlaySequence(key, hit.Speed, restart);
+        if (key != null) PlaySequence(key, speed, restart);
     }
 
     /// <summary>PC::vfunc_59(1) from the hit reaction (pc.cpp:946-950): a push the PC does not react to, or a skill hit in
@@ -126,7 +126,7 @@ public partial class Player : IHitBody, IPushBody
             hitSeqEnded = true;
             var end = hit.EndOfSequence(hitPlaying);
             if (end == HitStep.Idle) { Enter(MoveState.Idle); return; }
-            if (end == HitStep.ReplayFly) PlayHitSequence(hitPlaying, true);
+            if (end == HitStep.ReplayFly) PlayHitSequence(hitPlaying, true, 1f);   // PlayAnimation("Jump_FlyDamg_A", 1.0f, true): not the data's speed
         }
         var step = hit.Update(gameTime);
         if (step == HitStep.Idle) { Enter(MoveState.Idle); return; }
