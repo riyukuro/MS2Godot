@@ -42,6 +42,21 @@ public class BuffStripTests
     }
 
     [Test]
+    public void EventBuffTypeNeedsAnEnabledEffectWithThatType()
+    {
+        // AdditionalCliList::HasEnabledWithEventBuffType (additionalcli_2.cpp:407)
+        var typed = AdditionalLevelData.Load(System.Xml.Linq.XElement.Parse("<level level=\"1\"><Basic eventBuffType=\"3\"/></level>"), null);
+        var list = new AdditionalBuffList((id, lv) => id == 7 ? typed : Level(id, lv));
+        list.Apply(Add(10, 1));
+        Assert.That(list.HasEnabledWithEventBuffType(3), Is.False, "an effect without the type");
+        list.Apply(new BuffPacket(BuffPacket.Add, 5, 11, 5, 0, new BuffState(0, 1000, 7, 1, 1, 0), 0));
+        Assert.That(list.HasEnabledWithEventBuffType(3), Is.False, "not enabled");
+        list.Apply(new BuffPacket(BuffPacket.Modify, 5, 11, 5, BuffPacket.ModifyState, new BuffState(0, 1000, 7, 1, 1, 1), null));
+        Assert.That(list.HasEnabledWithEventBuffType(3), Is.True);
+        Assert.That(list.HasEnabledWithEventBuffType(2), Is.False, "another type");
+    }
+
+    [Test]
     public void PvpOnOffIsSetByAnEnabledEffectWhoseLevelHasIt()
     {
         // <Basic pvpOnOff> (AdditionalLevelData::Load, additionalactionadditional.cpp:1066) summed by

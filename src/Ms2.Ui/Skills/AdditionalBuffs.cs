@@ -123,6 +123,15 @@ public sealed class AdditionalBuffList
         return false;
     }
 
+    /// <summary>AdditionalCliList::HasEnabledWithEventBuffType (additionalcli_2.cpp:407): an enabled effect whose level data has
+    /// the event buff type.</summary>
+    public bool HasEnabledWithEventBuffType(int type)
+    {
+        foreach (var b in map.Values)
+            if (b.Enabled != 0 && b.LevelData != null && b.LevelData.EventBuffType == (uint)type) return true;
+        return false;
+    }
+
     /// <summary>AdditionalCliList::GetOverlapCount (additionalcli_2.cpp:669): the overlap count of the first effect of the id, at the
     /// level unless it is 0, enabled or not; 0 when none.</summary>
     public int OverlapCountOf(uint id, ushort level)

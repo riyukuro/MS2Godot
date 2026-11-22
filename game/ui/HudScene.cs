@@ -1237,7 +1237,14 @@ public partial class HudScene : Node, IUiStageHost
         if (smartPushMovie == null)
         {
             var strip = new SmartPushStripController();
-            smartPushManager = new SmartPushManager(hudModel.Tables.SmartPush, SmartPushNotices, key => hudModel.Tables.Common(key) ?? "", new SmartPushField { HasPlayer = () => true })
+            smartPushManager = new SmartPushManager(hudModel.Tables.SmartPush, SmartPushNotices, key => hudModel.Tables.Common(key) ?? "", new SmartPushField
+            {
+                HasPlayer = () => true,
+                IsRiding = () => player?.Mount != null,                                  // MyPC::IsRiding
+                RideeType = () => player?.Mount?.Data.Type ?? 0,
+                EventBuff = t => ownBuffs?.HasEnabledWithEventBuffType(t) == true,       // additionalcli_2.cpp:407
+                AdventureReached = () => AdventureLevelTable().IsReached((uint)hudModel.Player.AdventureLevel),   // vfunc_141 = m_n1208, the prestige level
+            })
             {
                 Strip = strip,
                 Suppressed = () => GameOptions.Current.StatusOption.DisplayHideSmartPush,

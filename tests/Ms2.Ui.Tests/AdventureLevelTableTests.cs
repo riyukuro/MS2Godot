@@ -42,6 +42,16 @@ public class AdventureLevelTableTests
     }
 
     [Test]
+    public void IsReachedNeedsTheCurrentAbilitysRequiredLevel()
+    {
+        // CAdventureLevelTableHelper::IsReached @0x1401955f0
+        var t = Load(true);
+        if (t.Current == null) { Assert.That(t.IsReached(1000), Is.False, "no current ability"); return; }
+        Assert.That(t.IsReached(t.Current.RequireLevel), Is.True);
+        if (t.Current.RequireLevel > 0) Assert.That(t.IsReached(t.Current.RequireLevel - 1), Is.False);
+    }
+
+    [Test]
     public void AbilityStepsFollowTheInterval()
     {
         var t = Load(true);
