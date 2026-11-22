@@ -234,6 +234,53 @@ public class DamageHitEffectTests
         Assert.That(RunSplash(Splash(1), Attack(), new HitEffectThrottle()), Is.Empty, "not a splash");
     }
 
+    static List<DamageHitEffect> RunTagged(SkillDamage d, params Vector3[] anchorsOfTarget)
+    {
+        var into = new List<DamageHitEffect>();
+        DamageHitEffects.SplashRecords(d, Attack(), Find, new HitEffectThrottle(), 5000, into, (id, list) =>
+        {
+            list.Clear();
+            if (id != TargetId) return false;
+            list.AddRange(anchorsOfTarget);
+            return true;
+        }, new List<Vector3> { new(9, 9, 9) });
+        return into;
+    }
+
+    [Test]
+    public void ARegionSkillOnACollisionPositionNpcPlaysAtTheAnchorNearestTheOrigin()
+    {
+        // the record's origin is (1, 2, 3): bc80 reads +0x78, mode 5 sets it to the nearest m_arrE68 center (0x14171e3ba)
+        var fx = RunTagged(Splash(5), new Vector3(50, 0, 0), new Vector3(1, 2, 13), new Vector3(1, 2, -7));
+        Assert.That(fx[0].At, Is.EqualTo(new Vector3(1, 2, 13)), "the nearest anchor, the first of equals");
+        Assert.That((fx[1].File, fx[1].ActorId), Is.EqualTo(("Remain.xml", TargetId)), "the remain stays on the npc");
+        Assert.That(RunTagged(Splash(5, 1, Self))[0].At, Is.EqualTo(Field[Self].Position), "an untagged object: its position");
+        var stop = RunTagged(Splash(5, 1, Self, TargetId, Self));
+        Assert.That(stop, Has.Count.EqualTo(2), "a tagged npc without anchors ends the packet: only the first target played");
+        Assert.That(stop[0].At, Is.EqualTo(Field[Self].Position));
+    }
+
+    [Test]
+    public void ASplashOnACollisionPositionNpcPlaysAtTheWorldOrigin()
+    {
+        // CSplashDamageRecord::Init (0x14175b1c0) never fills +0x78: the ctor's Point3::ZERO (a client quirk)
+        var fx = RunTagged(Splash(6), new Vector3(50, 0, 0));
+        Assert.That(fx[0].At, Is.EqualTo(Vector3.Zero));
+        Assert.That(RunTagged(Splash(6))[0].At, Is.EqualTo(Vector3.Zero), "mode 6 does not read the anchors");
+        Assert.That(RunTagged(Splash(6, 1, Self))[0].At, Is.EqualTo(Field[Self].Position));
+    }
+
+    [Test]
+    public void ANodeBoxCenterIsTheOffsetBoxMidHeightTurnedByTheNode()
+    {
+        // CNpc::BuildCollision's box (0 to vz high) moved by the offset, placed by vfunc_2 (rotation, scale 1)
+        var c = DamageHitEffects.NodeBoxCenter(new Vector3(250, 250, 300), new Vector3(0, -75, -150),
+            Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2), new Vector3(10, 20, 30));
+        Assert.That(Vector3.Distance(c, new Vector3(85, 20, 30)), Is.LessThan(1e-3f), $"got {c}");
+        Assert.That(DamageHitEffects.NodeBoxCenter(new Vector3(1, 1, 40), Vector3.Zero, Quaternion.Identity, Vector3.One),
+            Is.EqualTo(new Vector3(1, 1, 21)));
+    }
+
     [Test]
     public void ARegionSkillsDamageTakesItsOwnersKindAndTheSharedThrottle()
     {

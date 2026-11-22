@@ -5,6 +5,9 @@ using Ms2.Formats.Text;
 
 namespace Ms2.Formats.World;
 
+/// <summary>One &lt;nodeCollisions&gt; row of an npc (CNpcData::NodeCollision): the model node, the box's volume and its offset.</summary>
+public readonly record struct NpcNodeCollision(string TargetNode, System.Numerics.Vector3 Volume, System.Numerics.Vector3 Offset);
+
 /// <summary>One row of the npc table (Xml pack: npcdata/*.xml, npc/environment): the parts the client's packet readers and the model loader need.</summary>
 public sealed class NpcRow
 {
@@ -30,6 +33,13 @@ public sealed class NpcRow
     /// <summary>The collision's widthOffset, depthOffset and heightOffset (npcdata.cpp:1611-1613, ints; 0 when absent): CNpc::vfunc_51's
     /// offset (unit_14108e1e0_npcactorandvibrate.cpp:2215).</summary>
     public int CollisionWidthOffset, CollisionDepthOffset, CollisionHeightOffset;
+    /// <summary>
+    /// The environment's &lt;nodeCollisions&gt;&lt;collision targetNode volume offset&gt; rows (CNpcData::LoadXml, npcdata.cpp:1615-1626,
+    /// m_aNodeCollision): CNpc::BuildCollision makes one box per row bound to the model node (m_arrE68, CNpc::vfunc_27's anchors).
+    /// </summary>
+    public NpcNodeCollision[] NodeCollisions = Array.Empty<NpcNodeCollision>();
+    /// <summary>CNpcData::HasPropertyTag(0x1d) "collision_position" (npcdata.cpp:1387): a hit on the npc is placed by its anchors.</summary>
+    public bool CollisionPosition => HasTag("collision_position");
     /// <summary>
     /// &lt;corpse hitAble&gt; (CNpcData::LoadXml, npcdata.cpp:1717; read by npcdata.cpp:814): a dead npc's corpse a hostile
     /// attack still hits (FilterTarget through FUN_1410930a0).
@@ -189,6 +199,9 @@ public sealed class NpcTable
             CollisionWidthOffset = Int(env.Element("collision"), "widthOffset"),
             CollisionDepthOffset = Int(env.Element("collision"), "depthOffset"),
             CollisionHeightOffset = Int(env.Element("collision"), "heightOffset"),
+            NodeCollisions = env.Element("nodeCollisions")?.Elements("collision")
+                .Select(c => new NpcNodeCollision((string)c.Attribute("targetNode") ?? "", Vec(c, "volume"), Vec(c, "offset"))).ToArray()
+                ?? Array.Empty<NpcNodeCollision>(),
             CorpseHitAble = Int(env.Element("corpse"), "hitAble") != 0,
             DefenceMaterial = Int(env, "defenceMaterial"),
             Nametag = Int(env, "nametag") != 0,
@@ -262,6 +275,13 @@ public sealed class NpcTable
         }
     }
 
+    /// <summary>XmlGetAttr of an efd::Point3: "x,y,z", zero when absent (the NodeCollision ctor's zero).</summary>
+    static System.Numerics.Vector3 Vec(XElement e, string a)
+    {
+        var p = ((string)e?.Attribute(a) ?? "").Split(',', StringSplitOptions.TrimEntries);
+        float F(int i) => i < p.Length && float.TryParse(p[i], NumberStyles.Float, CultureInfo.InvariantCulture, out float v) ? v : 0f;
+        return new System.Numerics.Vector3(F(0), F(1), F(2));
+    }
     static int Int(XElement e, string a) => int.TryParse((string)e?.Attribute(a), out int v) ? v : 0;
     static float Flt(XElement e, string a, float def) => float.TryParse((string)e?.Attribute(a), NumberStyles.Float, CultureInfo.InvariantCulture, out float v) ? v : def;
 

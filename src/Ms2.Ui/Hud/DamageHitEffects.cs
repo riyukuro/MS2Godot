@@ -25,6 +25,13 @@ public readonly record struct DamageHitEffect(string File, int ActorId, Vector3 
 public delegate bool DamageHitFind(int id, out DamageHitObject o);
 
 /// <summary>
+/// True when the object <paramref name="id"/> is an npc with property tag 0x1d "collision_position" (CNpcData::HasPropertyTag,
+/// npcdata.cpp:1387); then <paramref name="into"/> (cleared first) gets the centers of its anchor boxes in client space
+/// (CNpc::vfunc_27, m_arrE68: one per &lt;nodeCollisions&gt; row; see <see cref="DamageHitEffects.NodeBoxCenter"/>).
+/// </summary>
+public delegate bool DamageHitAnchors(int id, List<Vector3> into);
+
+/// <summary>
 /// The hit effects of a mode 1 skill damage (CSceneStateGame::FUN_14171cdf0 @0x14171cdf0, scenestategame.cpp:5606). Per target
 /// a CDamageRecord; when the target is an object, the hit point and direction start as the packet's, FUN_14145e1a0 aims them
 /// unless attackMethodType is 1 (FUN_14175acc0), FUN_141467f60 turns them into the transform
@@ -86,11 +93,15 @@ public static class DamageHitEffects
     /// (FUN_141bd19d0, 0 without an object). first plays the effectHit at the hit object's position with no rotation (scale 1,
     /// DAT_143a09600), through the object's throttle; second the effectRemain on the object. A record without hits plays
     /// alike (bc80 does not read them). The caller drops a mode 5 packet whose region skill object is gone.
-    /// STILL-OPEN: an npc with property tag 0x1d takes the record's hit point (mode 5: the nearest anchor box's center to the
-    /// origin; mode 6: the packet's point), the region object's PlayHitEffect, vf35_End, the shut-down branch (0x73 on).
+    /// An npc with property tag 0x1d (<paramref name="anchors"/>) has the effectHit at the record's point (+0x78, bc80 at
+    /// 0x14146be67) instead. Mode 5 sets it to the anchor box center nearest the record's origin (scenestategame.cpp:7800,
+    /// 0x14171e3ba), and an npc with no anchors ends the whole packet there (the targets after it play nothing). Mode 6's
+    /// CSplashDamageRecord::Init (0x14175b1c0) fills only +0x60 and +0x6c, so the point stays the ctor's Point3::ZERO: the
+    /// effect plays at the world origin. That is a client quirk, kept as is.
+    /// STILL-OPEN: the region object's PlayHitEffect, vf35_End, the shut-down branch (0x73 on).
     /// </summary>
     public static int SplashRecords(SkillDamage d, SkillAttackDamage damage, DamageHitFind find, HitEffectThrottle throttle,
-        uint nowMs, List<DamageHitEffect> into)
+        uint nowMs, List<DamageHitEffect> into, DamageHitAnchors anchors = null, List<Vector3> anchorScratch = null)
     {
         if (d.Mode is not (5 or 6) || damage == null || d.Targets == null) return 0;
         int n = into.Count;
@@ -98,14 +109,45 @@ public static class DamageHitEffects
         foreach (var t in d.Targets)
         {
             if (!find(t.TargetId, out var target)) continue;
+            var at = target.Position;
+            if (anchors != null)
+            {
+                anchorScratch ??= new List<Vector3>();
+                if (anchors(t.TargetId, anchorScratch))
+                {
+                    if (d.Mode == 6) at = Vector3.Zero;
+                    else if (!Nearest(anchorScratch, t.Origin.ToVector3(), out at)) break;
+                }
+            }
             if (throttle.TryPlay(t.TargetId, damage.EffectHit, nowMs))
-                into.Add(new DamageHitEffect(damage.EffectHit, 0, target.Position, Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ, kind));
+                into.Add(new DamageHitEffect(damage.EffectHit, 0, at, Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ, kind));
             if (damage.EffectRemain.Length != 0)
                 into.Add(new DamageHitEffect(damage.EffectRemain, t.TargetId, target.Position, Vector3.UnitX, Vector3.UnitY,
                     Vector3.UnitZ, kind));
         }
         return into.Count - n;
     }
+
+    /// <summary>The point of <paramref name="points"/> nearest <paramref name="from"/> (the first of equals); false when empty.</summary>
+    static bool Nearest(List<Vector3> points, Vector3 from, out Vector3 best)
+    {
+        best = from;
+        float bestSq = float.MaxValue;
+        for (int i = 0; i < points.Count; i++)
+        {
+            float sq = Vector3.DistanceSquared(points[i], from);
+            if (sq < bestSq) { bestSq = sq; best = points[i]; }
+        }
+        return points.Count != 0;
+    }
+
+    /// <summary>
+    /// The center of a &lt;nodeCollisions&gt; box (CNpc::BuildCollision, CBoxCollision with bounds (-vx/2, -vy/2, 0) to
+    /// (vx/2, vy/2, vz) moved by the row's offset) placed by vfunc_50 at its node's world transform, rotation only and scale 1
+    /// (vfunc_2): <paramref name="nodeRotation"/> * (offset + (0, 0, vz/2)) + <paramref name="nodePosition"/>, client space.
+    /// </summary>
+    public static Vector3 NodeBoxCenter(Vector3 volume, Vector3 offset, Quaternion nodeRotation, Vector3 nodePosition) =>
+        Vector3.Transform(offset + new Vector3(0, 0, volume.Z * 0.5f), nodeRotation) + nodePosition;
 
     /// <summary>
     /// FUN_14145e1a0 @0x14145e1a0 (magicdata.cpp:848) from the target (nFrom) to the owner (nTo): the point starts at the

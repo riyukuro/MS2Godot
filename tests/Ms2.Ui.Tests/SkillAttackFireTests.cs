@@ -230,6 +230,23 @@ public class SkillAttackFireTests
     }
 
     [Test]
+    public void TheNpcRowReadsItsNodeCollisionsAndTheCollisionPositionTag()
+    {
+        // CNpcData::LoadXml (npcdata.cpp:1615); tag 0x1d (npcdata.cpp:1387)
+        var row = NpcTable.ParseRow(XElement.Parse("<npc id=\"23401071\">"
+            + "<environment propertyTags=\"big_hp_bar,Collision_Position\"><nodeCollisions><collision targetNode=\"Bip01 Neck\" volume=\"250,250,300\" offset=\"0,-75,-150\"/>"
+            + "<collision targetNode=\"Arm01_03\" volume=\"80, 60.5,40\"/></nodeCollisions></environment></npc>"),
+            Array.Empty<EffectDummy>());
+        Assert.That(row.NodeCollisions, Is.EqualTo(new[]
+        {
+            new NpcNodeCollision("Bip01 Neck", new System.Numerics.Vector3(250, 250, 300), new System.Numerics.Vector3(0, -75, -150)),
+            new NpcNodeCollision("Arm01_03", new System.Numerics.Vector3(80, 60.5f, 40), System.Numerics.Vector3.Zero),
+        }), "rows in order; an absent offset is zero");
+        var none = NpcTable.ParseRow(XElement.Parse("<npc id=\"2\"><environment/></npc>"), Array.Empty<EffectDummy>());
+        Assert.That((row.CollisionPosition, none.CollisionPosition, none.NodeCollisions.Length), Is.EqualTo((true, false, 0)));
+    }
+
+    [Test]
     public void TheNpcRowReadsItsDefenceMaterialZeroWhenAbsent()
     {
         // CNpcData::LoadXml (npcdata.cpp:1455) on the environment; the ctor's 0 (:649)
