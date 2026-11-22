@@ -42,10 +42,15 @@ public sealed class SkillDamage {
 
     public static SkillDamage Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
 
-    /// <summary>GMS2 (upstream SkillDamagePacket): mode 0 has an i32 server tick after the bool, mode 3 ends in an i32 hp amount instead of an i64.</summary>
+    /// <summary>GMS2 (upstream SkillDamagePacket): mode 0 has an i32 server tick after the bool, mode 3 ends in an i32 hp amount instead of an i64.
+    /// STILL-OPEN: the GMS2 layouts of modes 4, 7 and 8 are not known; they stay Raw there, so a different layout cannot throw.</summary>
     public static SkillDamage Read(ByteReader r, ProtocolProfile profile) {
         bool gms = profile.IsGms2;
         var d = new SkillDamage { Mode = r.ReadByte() };
+        if (gms && d.Mode is 4 or 7 or 8) {
+            d.Raw = r.ReadBytes(r.Available);
+            return d;
+        }
         switch (d.Mode) {
             case 0: {
                 d.CastUid = r.ReadLong(); d.OwnerId = r.ReadInt(); d.SkillId = r.ReadInt(); d.Level = r.ReadShort(); r.ReadByte(); r.ReadByte();
