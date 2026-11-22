@@ -1343,6 +1343,103 @@ public class HudTests
         Assert.That(h.RT.Errors, Is.Empty);
     }
 
+    static MinimapController.OtherPlayer OtherPc(long id, string name, Func<Ms2.Formats.Model.Vec3> at, Func<bool> dead = null) =>
+        new() { CharacterId = id, Name = name, TodayMemo = "hello", Image = "", Position = at, Dead = dead ?? (() => false) };
+
+    [Test]
+    public void MinimapOtherPlayerProxyIsAddedAndRemoved()
+    {
+        // AddProxy (uiminimapentity.cpp:3539-3580): another pc is createPlayer + a kind 1 entity (UpdateOtherPlayer's
+        // normal/pc); before the movie it waits for BuildEntities; RemoveProxy (:3632) drops it; GetCharacterName (:2625)
+        // falls back to its name
+        var (c, h) = PingMinimap(true, new List<string>());
+        c.AddOtherPlayer(OtherPc(21, "other", () => default));
+        var o = c.Others[0];
+        Assert.That(h.RT.Errors, Is.Empty);
+        Assert.That(o.Clip, Is.Not.Null);
+        Assert.That((o.State, o.Layer), Is.EqualTo(("normal", "pc")));
+        c.AddOtherPlayer(OtherPc(21, "again", () => default));
+        Assert.That(c.Others, Has.Count.EqualTo(1), "a held pc is not added twice");
+        c.AddPing(21, 0, new Ms2.Formats.Model.Vec3(1, 2, 0));
+        Assert.That(c.TryGetPing(21, out _, out var text) && text == "other", Is.True, "the ping names the pc proxy");
+        // a rebuild makes its entity again
+        var first = o.Clip;
+        Assert.That(c.OnCallback("onFieldLoadComplete", new object[] { c.FieldClip }), Is.True);
+        Assert.That(o.Clip, Is.Not.Null.And.Not.SameAs(first));
+        c.RemoveOtherPlayer(21);
+        Assert.That(c.Others, Is.Empty);
+        Assert.That(o.Clip, Is.Null);
+        Assert.That(h.RT.Errors, Is.Empty);
+        // before the movie's field load the proxy is only held
+        var late = new MinimapController { ImageName = "map/minimap/02000001.dds", LocalPlayer = () => (default, 90f, false) };
+        late.AddOtherPlayer(OtherPc(5, "five", () => default));
+        Assert.That(late.Others[0].Clip, Is.Null);
+        var lh = Load(late, Model());
+        Assert.That(late.OnCallback("onFieldLoadComplete", new object[] { late.FieldClip }), Is.True);
+        Assert.That(late.Others[0].Clip, Is.Not.Null);
+        Assert.That(lh.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void MinimapOtherPlayerStateFollowsTheRelation()
+    {
+        // UpdateOtherPlayer (uiminimapentity.cpp:3193-3227) in RefreshOtherPlayer (:3106), the m_47c round 1 of 4: a state
+        // change goes through changeEntityData and its clip is kept; dead is "die" over any tier
+        var (c, h) = PingMinimap(true, new List<string>());
+        var rel = MinimapController.PlayerRelation.Normal;
+        bool dead = false;
+        c.Relation = (_, _) => rel;
+        c.AddOtherPlayer(OtherPc(21, "other", () => default, () => dead));
+        var o = c.Others[0];
+        ulong now = 1000;
+        void Round() { for (int i = 0; i < 4; i++) { c.Process(now); now += 60; } }
+        foreach (var (r, state, layer) in new[]
+        {
+            (MinimapController.PlayerRelation.PartyChief, "party_chief", "party"),
+            (MinimapController.PlayerRelation.Party, "party", "party"),
+            (MinimapController.PlayerRelation.Guild, "guild", "guild"),
+            (MinimapController.PlayerRelation.Buddy, "buddy", "buddy"),
+            (MinimapController.PlayerRelation.QuestTarget, "quest_target", "quest_target"),
+        })
+        {
+            rel = r;
+            Round();
+            Assert.That((o.State, o.Layer), Is.EqualTo((state, layer)), r.ToString());
+            Assert.That(o.Clip, Is.Not.Null);
+        }
+        dead = true;
+        Round();
+        Assert.That((o.State, o.Layer), Is.EqualTo(("die", "quest_target")));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void MinimapOtherPlayersAllocateNothingPerFrame()
+    {
+        // vfunc_15 with moving pc proxies and the own one, after the first rounds: no state change, so no
+        // changeEntityData; each move is DisplayObject's own x / y: 0 B per frame
+        var (c, h) = PingMinimap(true, new List<string>());
+        c.Viewport = new Ms2.Formats.World.MinimapInfo { FrLeft = -1000, FrRight = 1000, FrBottom = -1000, FrTop = 1000, ImgRight = 1920, ImgBottom = 1200 };
+        float t = 0;
+        c.LocalPlayer = () => (new Ms2.Formats.Model.Vec3(t, 0, 0), 90f, false);
+        for (int i = 0; i < 8; i++)
+        {
+            int k = i;
+            c.AddOtherPlayer(OtherPc(100 + i, "pc" + i, () => new Ms2.Formats.Model.Vec3(t + k, -t, t - k)));
+        }
+        ulong now = 1000;
+        for (int i = 0; i < 16; i++) { c.Process(now); now += 60; t += 1; }
+        Assert.That(c.Others.All(o => o.Visible), Is.True, "the proxies project");
+        double At3() => System.Convert.ToDouble(h.Get(c.Others[3].Clip, "x")) + System.Convert.ToDouble(h.Get(c.Others[3].Clip, "y"));
+        var before3 = At3();
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 400; i++) { c.Process(now); now += 16; t += 0.5f; }
+        long used = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.That(used, Is.EqualTo(0), "bytes over 400 frames");
+        Assert.That(At3(), Is.Not.EqualTo(before3), "the proxy moved");
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
     [Test]
     public void UpperHudTokenAndMeratTooltips()
     {

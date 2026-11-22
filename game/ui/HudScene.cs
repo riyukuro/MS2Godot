@@ -98,6 +98,7 @@ public partial class HudScene : Node, IUiStageHost
         questFixture = args.Contains("--questlog-fixture");
         damageShot = args.Contains("--damageshot");
         partyFixture = args.Contains("--party-fixture");
+        minimapPcsFixture = args.Contains("--minimap-pcs-fixture");
         groupChatFixture = args.Contains("--groupchat-fixture");
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog") questShot = args[i + 1].Split(',').Select(int.Parse).ToArray();
         for (int i = 0; i + 1 < args.Length; i++) if (args[i] == "--questlog-state") questState = args[i + 1];
@@ -188,6 +189,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchMinimapPing?.Invoke();
         unwatchMinimapPing = null;
         CloseQuestNavigation();
+        unwatchMinimapPcs?.Invoke();
+        unwatchMinimapPcs = null;
         if (Ms2Godot.Net.LiveSession.Instance is { } liveChannel) { liveChannel.ChannelsChanged -= ChannelsChanged; if (liveChannel.ChannelNoticeSink == (Action<int, int>)ChannelNotice) liveChannel.ChannelNoticeSink = null; }
         RevivalUnwatch();
         unwatchQuickSlotState?.Invoke();
@@ -1113,11 +1116,15 @@ public partial class HudScene : Node, IUiStageHost
             PingAllowed = pingAllowed,
             Send = live != null ? live.SendMinimapPing : null,
             CharacterName = MinimapPingName,
+            Relation = MinimapRelation,
             SystemSound = key => FieldAudio.Instance?.PlayUi(key),
         };
         c.WorldMap += ToggleWorldMap;       // OnWorldMap (uiminimapentity.cpp:1253): ToggleDialog(0x4e42)
         try { MinimapMarks(fc, c.Marks); }
         catch (Exception e) { GD.PushWarning("minimap marks: " + e.Message); }
+        // the pcs already shown get their proxies with the rest (BuildEntities); later ones come through vfunc_3 / vfunc_4
+        if (live != null) foreach (var pc in live.ShownPcs) c.AddOtherPlayer(MinimapPc(pc));
+        else if (minimapPcsFixture) MinimapPcsFixture(c);
         minimap = new MovieDialog(assets, c, model, ScreenMode.PixelSize(GetWindow()));
         minimapSlot.AddChild(minimap);
     }
@@ -1133,11 +1140,70 @@ public partial class HudScene : Node, IUiStageHost
             minimapSide?.AddPing(m.Uid, m.Type, new Vec3(m.Position.X, m.Position.Y, m.Position.Z));
         live.MinimapPinged += on;
         unwatchMinimapPing = () => live.MinimapPinged -= on;
+        unwatchMinimapPcs?.Invoke();
+        Action<Net.RemoteLayer.ShownPc> shown = pc => minimapSide?.AddOtherPlayer(MinimapPc(pc));
+        Action<long> left = id => minimapSide?.RemoveOtherPlayer(id);
+        live.FieldPcShown += shown;
+        live.FieldPcLeft += left;
+        unwatchMinimapPcs = () => { live.FieldPcShown -= shown; live.FieldPcLeft -= left; };
+    }
+
+    Action unwatchMinimapPcs;
+    bool minimapPcsFixture;             // --minimap-pcs-fixture: offline pcs around the own one, one per tier
+
+    /// <summary>The offline shot's pcs: one per UpdateOtherPlayer tier (and a dead one) a few metres around the own pc.</summary>
+    void MinimapPcsFixture(MinimapController c)
+    {
+        var tiers = new[] { MinimapController.PlayerRelation.Normal, MinimapController.PlayerRelation.PartyChief, MinimapController.PlayerRelation.Party,
+            MinimapController.PlayerRelation.Guild, MinimapController.PlayerRelation.Buddy, MinimapController.PlayerRelation.Normal };
+        c.Relation = (id, _) => tiers[(int)(id - 900) % tiers.Length];
+        for (int i = 0; i < tiers.Length; i++)
+        {
+            double a = i * Math.PI * 2 / tiers.Length;
+            float dx = (float)(Math.Cos(a) * 900), dy = (float)(Math.Sin(a) * 900);
+            bool dead = i == tiers.Length - 1;
+            c.AddOtherPlayer(new MinimapController.OtherPlayer
+            {
+                CharacterId = 900 + i, Name = "pc" + i, Image = Net.ProfileImageService.Images.Path(900 + i, "", true),
+                Position = () => { var p = LocalMinimapPlayer().Item1; return new Vec3(p.X + dx, p.Y + dy, p.Z); },
+                Dead = () => dead,
+            });
+        }
+    }
+
+    /// <summary>UIMinimapDialog::AddProxy's view of another pc: BuildPlayerData's picture (FUN_141028be0(id, portrait, 1)),
+    /// name and today memo, its position and its dead flag.</summary>
+    static MinimapController.OtherPlayer MinimapPc(Net.RemoteLayer.ShownPc pc)
+    {
+        var at = pc.Position;
+        return new MinimapController.OtherPlayer
+        {
+            CharacterId = pc.CharacterId, Name = pc.Name, TodayMemo = pc.Motto,
+            Image = Net.ProfileImageService.Images.Path(pc.CharacterId, pc.Picture, true),
+            Position = () => { var v = at(); return new Vec3(v.X, v.Y, v.Z); },
+            Dead = pc.Dead,
+        };
     }
 
     /// <summary>
-    /// GetCharacterName @0x141a45d50 (uiminimapentity.cpp:2620): the field pc's name by character id, else "".
-    /// STILL-OPEN: the client's second lookup (the minimap proxies' names) is not ported.
+    /// UpdateOtherPlayer's tests (uiminimapentity.cpp:3207-3223): CPartyManager::FindMemberByCharId (the leader is the chief),
+    /// CGuildManager::FindMemberByName, CBuddyManager::FUN_140ae4d70. Loops, not the books' LINQ finds: the minimap asks
+    /// each refresh round.
+    /// </summary>
+    static MinimapController.PlayerRelation MinimapRelation(long characterId, string name)
+    {
+        if (Net.LiveSession.Instance is not { } live) return MinimapController.PlayerRelation.Normal;
+        if (live.Party.Find(characterId) != null)
+            return live.Party.LeaderId == characterId ? MinimapController.PlayerRelation.PartyChief : MinimapController.PlayerRelation.Party;
+        if (live.Guilds.Info?.Members is { } members)
+            for (int i = 0; i < members.Count; i++)
+                if (string.Equals(members[i].Name, name, StringComparison.OrdinalIgnoreCase)) return MinimapController.PlayerRelation.Guild;
+        return live.Buddies.IsFriend(characterId) ? MinimapController.PlayerRelation.Buddy : MinimapController.PlayerRelation.Normal;
+    }
+
+    /// <summary>
+    /// GetCharacterName @0x141a45d50 (uiminimapentity.cpp:2620): the field pc's name by character id, else "" (the
+    /// controller then asks its pc proxies, :2625-2629).
     /// </summary>
     static string MinimapPingName(long characterId)
     {

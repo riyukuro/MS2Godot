@@ -22,7 +22,9 @@ public sealed partial class RemoteLayer : Node3D
     sealed class Remote
     {
         public RemotePc Pc; public Node3D Root, Visual;
-        public string Name;
+        public string Name, Motto;
+        /// <summary>The minimap's view of it, made once.</summary>
+        public ShownPc Shown;
         public int ObjectId; public long CharacterId; public string Picture = "";
         public long HpCur, HpMax; public bool InBattle; public int Emotion;         // PCBase's stat pair and battle stance (m_unk_160)
         public EquipApplier.WeaponRig Weapons;
@@ -92,6 +94,19 @@ public sealed partial class RemoteLayer : Node3D
     /// PC::CanUseItem state of its balloon gem (premium time, PC bang grade, wedding state).</summary>
     public readonly record struct Pc(int ObjectId, long CharacterId, string Name, string Picture, Node3D Root, Func<Vector3> Anchor,
         IReadOnlyList<Ms2.Net.Packets.EquipItem> Gems, long PremiumTime, byte PcBangGrade, short WeddingState);
+    /// <summary>Another pc as the minimap's proxy reads it (UIMinimapDialog::AddProxy): its character id, name, today memo
+    /// and picture key, its position in the client's z-up coordinates and its dead flag (the proxy's m_68).</summary>
+    public sealed record ShownPc(long CharacterId, string Name, string Motto, string Picture, Func<System.Numerics.Vector3> Position, Func<bool> Dead);
+    /// <summary>A pc was spawned (FieldAddUser, after the own one is skipped): UIMinimapDialog::vfunc_3's AddProxy.</summary>
+    public event Action<ShownPc> PcShown;
+    /// <summary>A pc left (FieldRemoveUser), by character id: UIMinimapDialog::vfunc_4's RemoveProxy.</summary>
+    public event Action<long> PcLeft;
+    /// <summary>The pcs spawned now, for a minimap built after them.</summary>
+    public IEnumerable<ShownPc> ShownPcs => users.Values.Select(Shown);
+    ShownPc Shown(Remote r) => r.Shown ??= new ShownPc(r.CharacterId, r.Name ?? "", r.Motto ?? "", r.Picture ?? "",
+        () => r.Root != null && GodotObject.IsInstanceValid(r.Root) && r.Root.IsInsideTree()
+            ? new System.Numerics.Vector3(r.Root.GlobalPosition.X, -r.Root.GlobalPosition.Z, r.Root.GlobalPosition.Y) : default,
+        () => r.Pc?.States.Dead ?? false);
     /// <summary>A shown player's position in the client's z-up coordinates (WorldService::FindPCById then vfunc_18); null when it is not here.</summary>
     public System.Numerics.Vector3? PositionOf(int objectId) =>
         users.TryGetValue(objectId, out var r) && r.Root != null && GodotObject.IsInstanceValid(r.Root) && r.Root.IsInsideTree()
@@ -394,7 +409,7 @@ public sealed partial class RemoteLayer : Node3D
         // the other player's CObjectShadow, of the PC row (PC::vfunc_49, pc.cpp:3028-3035; the same size as the player's)
         FieldShadows.Character(root, visual, Ms2.Formats.Options.GraphicOptionTable.PC, 100f, 3f);
         tags.AddPc(root, visual.GetNodeOrNull<Node3D>("Model"), md.RootName, u, false);
-        var r = new Remote { Pc = pc, Root = root, Visual = visual, Name = u.User.Name };
+        var r = new Remote { Pc = pc, Root = root, Visual = visual, Name = u.User.Name, Motto = u.User.Motto };
         r.ObjectId = u.ObjectId; r.CharacterId = u.User.CharacterId; r.Picture = u.User.Picture ?? ""; r.Gems = u.Badges; r.Equips = u.Equips; r.Outfit2 = u.Outfit2; r.CodiStart = u.SkinTabStart; r.CodiEnd = u.SkinTabEnd;
         r.Gender = u.User.Gender;
         r.PremiumTime = u.PremiumTime; r.WeddingState = u.WeddingState; r.PcBangGrade = u.User.PcBangGrade;
@@ -522,7 +537,9 @@ public sealed partial class RemoteLayer : Node3D
                     if (add.User.User.CharacterId == selfCharacter) break;
                     // a replaced or leaving PC: ~PC frees its kept invincible effect m_n1060 (pc.cpp:764-768)
                     if (users.Remove(add.User.ObjectId, out var old)) { old.Invincible.End(null, RegionFx); tags.Remove(old.Root); bars.Remove(old.Root); old.Death.Free(); old.Pc.Free(); }
-                    users[add.User.ObjectId] = Spawn(add.User); UsersSpawned++; ArmCodi();
+                    if (old != null) PcLeft?.Invoke(old.CharacterId);
+                    var added = users[add.User.ObjectId] = Spawn(add.User); UsersSpawned++; ArmCodi();
+                    PcShown?.Invoke(Shown(added));
                     GD.Print($"live: other player '{add.User.User.Name}' object {add.User.ObjectId} shown at {add.User.Position}");
                     break;
                 case UserRemovedEvent rem:
@@ -530,6 +547,7 @@ public sealed partial class RemoteLayer : Node3D
                     {
                         gone.Invincible.End(null, RegionFx);   // ~PC, pc.cpp:764-768
                         tags.Remove(gone.Root); bars.Remove(gone.Root); gone.Death.Free(); gone.Pc.Free();
+                        PcLeft?.Invoke(gone.CharacterId);
                         GD.Print($"live: other player {gone.Name} (object {rem.ObjectId}) left");
                     }
                     break;

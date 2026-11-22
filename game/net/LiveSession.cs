@@ -605,6 +605,12 @@ public partial class LiveSession : Node
     public IEnumerable<FieldNpcs.Placed> TalkNpcs => remote?.TalkNpcs ?? Enumerable.Empty<FieldNpcs.Placed>();
     /// <summary>The field's other players (the remote layer's), none before the field is built.</summary>
     public IEnumerable<RemoteLayer.Pc> FieldPcs => remote?.Pcs ?? Enumerable.Empty<RemoteLayer.Pc>();
+    /// <summary>The other pcs the field shows now, as the minimap's proxies read them.</summary>
+    public IEnumerable<RemoteLayer.ShownPc> ShownPcs => remote?.ShownPcs ?? Enumerable.Empty<RemoteLayer.ShownPc>();
+    /// <summary>Another pc entered the field (UIMinimapDialog::vfunc_3) or left it (vfunc_4, by character id); a new field's
+    /// layer starts empty.</summary>
+    public event Action<RemoteLayer.ShownPc> FieldPcShown;
+    public event Action<long> FieldPcLeft;
     /// <summary>The remote layer's tomb tag pass (the own magics register their areas into it), null before the field is built.</summary>
     public Ms2.Ui.Hud.TombTagPass TombTags => remote?.TombTags;
     /// <summary>The own FieldAddUser object id, -1 before it.</summary>
@@ -951,6 +957,8 @@ public partial class LiveSession : Node
         remote.NpcAdded = npc => NpcAdded?.Invoke(npc);
         remote.NpcRemoved = id => NpcRemoved?.Invoke(id);
         remote.BattleStanceChanged = (id, on) => BattleStanceChanged?.Invoke(id, on);
+        remote.PcShown += pc => FieldPcShown?.Invoke(pc);
+        remote.PcLeft += id => FieldPcLeft?.Invoke(id);
         var kinds = Kinds();
         var dropLayer = drops = new DropLayer(field, builder, entry.Enter.CharacterId, kinds.Known,
             id => kinds.ExtraOf(id) is { } x && x.HasFlag(ItemExtra.Pet), kinds.IconPath);

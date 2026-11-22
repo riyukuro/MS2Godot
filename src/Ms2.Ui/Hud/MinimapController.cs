@@ -63,6 +63,121 @@ public sealed class MinimapController : UiController
     /// <summary>The marks in BuildEntities' order: non-portal proxies, the portals, then the taxi, named and map objects.</summary>
     public readonly List<Mark> Marks = new();
 
+    /// <summary>UpdateOtherPlayer's tiers (uiminimapentity.cpp:3193-3227), in its order of tests.</summary>
+    public enum PlayerRelation { Normal, QuestTarget, PartyChief, Party, Guild, Buddy }
+
+    /// <summary>Another pc's proxy (CProxyGameObject, IsOtherPlayer) as the minimap reads it.</summary>
+    public sealed class OtherPlayer
+    {
+        public long CharacterId;
+        public string Name = "";
+        /// <summary>GetTodayMemo: the user block's motto.</summary>
+        public string TodayMemo = "";
+        /// <summary>FUN_141028be0(id, GetPortraitPath(), 1): the downloaded picture, else the default image.</summary>
+        public string Image = "";
+        public Func<Vec3> Position;
+        /// <summary>The proxy's m_68: the pc is dead.</summary>
+        public Func<bool> Dead = () => false;
+        /// <summary>The entity the movie made for it, with its m_state, m_layer and m_visible.</summary>
+        public AsObject Clip { get; internal set; }
+        public string State { get; internal set; } = "";
+        public string Layer { get; internal set; } = "";
+        internal bool Visible;
+    }
+
+    /// <summary>m_proxies' other pcs by character id, in the order they were added.</summary>
+    readonly List<OtherPlayer> others = new();
+    public IReadOnlyList<OtherPlayer> Others => others;
+
+    /// <summary>The pc's tier for UpdateOtherPlayer: the party (leader or member), the guild by name, a buddy, else
+    /// normal. The nearest quest target (m_460) is the caller's.</summary>
+    public Func<long, string, PlayerRelation> Relation = (_, _) => PlayerRelation.Normal;
+
+    /// <summary>
+    /// vfunc_3 (@0x141a38b90) -> AddProxy (uiminimapentity.cpp:3539) for another pc: nothing before the movie or for a pc
+    /// it holds; createPlayer(BuildPlayerData), then a UIMinimapEntityProxy of kind 1: icon "other", shown, m_text the
+    /// name, no text or guide, UpdateOtherPlayer's state and layer, then FUN_141a3e7d0.
+    /// </summary>
+    public void AddOtherPlayer(OtherPlayer p)
+    {
+        if (p == null) return;
+        if (FindOther(p.CharacterId) >= 0) return;
+        others.Add(p);
+        if (Host?.Entity != null && fieldLoaded) CreateOther(p);
+    }
+
+    /// <summary>vfunc_4 (@0x141a38c20) -> RemoveProxy (uiminimapentity.cpp:3632): FUN_141a3f730 (removeEntity(clip, the
+    /// "%I64d" character id)), then the proxy leaves m_proxies.</summary>
+    public void RemoveOtherPlayer(long characterId)
+    {
+        int i = FindOther(characterId);
+        if (i < 0) return;
+        var p = others[i];
+        others.RemoveAt(i);
+        if (p.Clip != null && Host?.Entity != null) Host.Invoke("removeEntity", p.Clip, CharId(p.CharacterId));
+        p.Clip = null;
+    }
+
+    int FindOther(long characterId)
+    {
+        for (int i = 0; i < others.Count; i++)
+            if (others[i].CharacterId == characterId) return i;
+        return -1;
+    }
+
+    static string CharId(long id) => id.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    void CreateOther(OtherPlayer p)
+    {
+        // BuildPlayerData @0x141a3bda0 (uiminimapentity.cpp:2205-2222)
+        string tip = Ms2.Quest.ClientFormat.Format(Model.Tables.Common("s_tooltip_todayword"), p.Name ?? "", p.TodayMemo ?? "");
+        Host.Invoke("createPlayer", Host.Obj(("imgpath", p.Image ?? ""), ("charid", CharId(p.CharacterId)),
+            ("tooltipData", Host.Obj(("className", "export_common_tooltip_tooltipText"), ("id", tip), ("align", "bottomLeft"),
+                ("onDelay", 300), ("offDelay", 60000)))));
+        p.Visible = true;
+        UpdateOtherPlayer(p);
+        p.Clip = Create("other", p.State, p.Layer, p.Name ?? "", false, false, false, p.Position(), true);
+    }
+
+    /// <summary>
+    /// UpdateOtherPlayer @0x141a43440 (uiminimapentity.cpp:3193-3227): the nearest quest target, a party member
+    /// (party_chief for the leader), a guild member, a buddy, else normal; "die" while the proxy is dead.
+    /// </summary>
+    void UpdateOtherPlayer(OtherPlayer p)
+    {
+        (p.State, p.Layer) = Relation(p.CharacterId, p.Name) switch
+        {
+            PlayerRelation.QuestTarget => ("quest_target", "quest_target"),
+            PlayerRelation.PartyChief => ("party_chief", "party"),
+            PlayerRelation.Party => ("party", "party"),
+            PlayerRelation.Guild => ("guild", "guild"),
+            PlayerRelation.Buddy => ("buddy", "buddy"),
+            _ => ("normal", "pc"),
+        };
+        if (p.Dead()) p.State = "die";
+    }
+
+    /// <summary>
+    /// RefreshOtherPlayer @0x141a42d50 (uiminimapentity.cpp:3106-3190): UpdateOtherPlayer, and on a state change
+    /// changeEntityData(clip, {frame, layer}), whose returned object is the clip from then on; then shown when the point
+    /// projects.
+    /// STILL-OPEN: the pk-mode, PvP (rank, team, point) and hide-and-seek visibility, and the proxy's m_cc 0x3f hide; no
+    /// field here has them.
+    /// </summary>
+    void RefreshOtherPlayer(OtherPlayer p)
+    {
+        if (p.Clip == null) return;
+        var state = p.State;
+        UpdateOtherPlayer(p);
+        if (!string.Equals(state, p.State, StringComparison.Ordinal))
+        {
+            if (Host.Invoke("changeEntityData", p.Clip, Host.Obj(("frame", p.State), ("layer", p.Layer))) is not AsObject clip) return;
+            p.Clip = clip;
+        }
+        p.Visible = ProjectClip(p.Position(), p.Clip);
+        if (!p.Visible) Show(p.Clip, false);
+    }
+
     /// <summary>The local player: world position, GetPlayerHeading (degrees) and dead (GetCurStateId() == 12).</summary>
     public Func<(Vec3 Pos, float Heading, bool Dead)> LocalPlayer;
     /// <summary>WorldService::FUN_141bc80c0(channel): asks to change channel; false keeps the current one selected.</summary>
@@ -101,6 +216,7 @@ public sealed class MinimapController : UiController
     double viewScale = 1;                                // MinimapViewport m_fScale
     double centerX, centerY, scale = 1;                  // m_208, m_scale (OnUpdateCenter)
     ulong lastRefresh;                                   // m_timer474
+    int refreshKind = 1;                                 // m_47c
 
     /// <summary>
     /// OnLoadComplete (uiminimapentity.cpp:1104): UIDialog's, then BuildUIData and BuildField; last (:1127-1131), when the
@@ -135,9 +251,19 @@ public sealed class MinimapController : UiController
     /// <summary>
     /// GetCharacterName @0x141a45d50 (uiminimapentity.cpp:2620): the name of the field pc with that character id
     /// (WorldService::FUN_141bd1530, vfunc_77), else "".
-    /// STILL-OPEN: the proxies' m_name fallback (:2625-2629); this minimap holds no player proxies.
+    /// Then the proxies' m_name (:2625-2629, <see cref="PingName"/>).
     /// </summary>
     public Func<long, string> CharacterName = _ => "";
+
+    /// <summary>GetCharacterName @0x141a45d50: <see cref="CharacterName"/>, else the name of the held pc proxy with that
+    /// character id, else "".</summary>
+    string PingName(long characterId)
+    {
+        var name = CharacterName(characterId);
+        if (!string.IsNullOrEmpty(name)) return name;
+        int i = FindOther(characterId);
+        return i >= 0 ? others[i].Name ?? "" : "";
+    }
     /// <summary>PlaySystemSound(key, ""); null = no sound player.</summary>
     public Action<string> SystemSound;
 
@@ -225,7 +351,7 @@ public sealed class MinimapController : UiController
             Host.Set(p.Clip, "y", (float)pos.Y);
             SystemSound?.Invoke(color == 0 ? RedPingSound : BluePingSound);
         }
-        p.Text = CharacterName(uid) ?? "";
+        p.Text = PingName(uid);
     }
 
     /// <summary>BuildUIData (uiminimapentity.cpp:3456): initData(obj).</summary>
@@ -285,11 +411,20 @@ public sealed class MinimapController : UiController
     /// MinimapViewport::WorldToMinimap (minimapviewport.cpp FUN_141486450 / ProjectPoint): the point on the field image in
     /// its loaded pixels; false outside the minimap camera's view.
     /// </summary>
+    MinimapInfo axesOf;
+    Vec3 axesRot, axesRight, axesUp;
+
     bool WorldToMinimap(Vec3 p, out double x, out double y)
     {
         x = y = 0;
         if (Viewport is not { } v) return false;
-        var (right, _, up) = v.Axes();
+        // the camera's axes, kept while the viewport and its rotation stay: Axes() builds its matrices as arrays
+        if (!ReferenceEquals(v, axesOf) || v.CamRotDeg.X != axesRot.X || v.CamRotDeg.Y != axesRot.Y || v.CamRotDeg.Z != axesRot.Z)
+        {
+            (axesRight, _, axesUp) = v.Axes();
+            (axesOf, axesRot) = (v, v.CamRotDeg);
+        }
+        var (right, up) = (axesRight, axesUp);
         var d = new Vec3(p.X - v.CamPos.X, p.Y - v.CamPos.Y, p.Z - v.CamPos.Z);
         double fx = (right.X * d.X + right.Y * d.Y + right.Z * d.Z - v.FrLeft) / (v.FrRight - v.FrLeft);
         double fy = (up.X * d.X + up.Y * d.Y + up.Z * d.Z - v.FrBottom) / (v.FrTop - v.FrBottom);
@@ -315,6 +450,8 @@ public sealed class MinimapController : UiController
         // RemoveAllEntities: removeEntity for each entity the dialog made
         if (playerClip != null) Host.Invoke("removeEntity", playerClip);
         foreach (var m in Marks) if (m.Clip != null) { Host.Invoke("removeEntity", m.Clip); m.Clip = null; }
+        // RemoveProxyEntities: FUN_141a3f730 with the proxy, so a pc's clip goes with its character id
+        foreach (var o in others) if (o.Clip != null) { Host.Invoke("removeEntity", o.Clip, CharId(o.CharacterId)); o.Clip = null; }
         // RemovePingEntities @0x141a47190 (FUN_141a3f730: removeEntity(clip, "")), then ClearEntityContainers' m_pings.RemoveAll
         foreach (var p in pings.Values) if (p.Clip != null) Host.Invoke("removeEntity", p.Clip, "");
         pings.Clear();
@@ -327,6 +464,8 @@ public sealed class MinimapController : UiController
             var pos = LocalPlayer().Pos;
             playerClip = Create("player", playerState, "player", "", false, false, false, pos, true);
         }
+        // the proxies without a portal (WorldService's CAtlMap order; here the order they were added), before the portals
+        foreach (var o in others) CreateOther(o);
         foreach (var m in Marks)
         {
             m.Visible = m.Entity.Visible;
@@ -361,11 +500,20 @@ public sealed class MinimapController : UiController
         if (lastRefresh != 0 && nowMs - lastRefresh < 60) return;
         lastRefresh = nowMs;
         RefreshLocalPlayer();
+        // m_47c (1..4): the proxies of that kind are refreshed (RefreshProxy), the others only moved (UpdateProxyPosition);
+        // kind 1 is another pc
+        for (int i = 0; i < others.Count; i++)
+        {
+            var o = others[i];
+            if (refreshKind == 1) RefreshOtherPlayer(o);
+            else if (o.Visible && o.Clip != null && !ProjectClip(o.Position(), o.Clip)) { o.Visible = false; Show(o.Clip, false); }
+        }
+        if (++refreshKind >= 5) refreshKind = 1;
         foreach (var m in Marks)
         {
             // UpdateProxyPosition (uiminimapentity.cpp:2963): a shown entity that no longer projects is hidden
             if (!m.Moves || !m.Visible || m.Clip == null) continue;
-            if (!ProjectClip(m.Position(), m.Clip)) { m.Visible = false; Host.SetVisible(m.Clip, false); }
+            if (!ProjectClip(m.Position(), m.Clip)) { m.Visible = false; Show(m.Clip, false); }
         }
     }
 
@@ -373,10 +521,25 @@ public sealed class MinimapController : UiController
     bool ProjectClip(Vec3 pos, AsObject clip)
     {
         if (clip == null || !WorldToMinimap(pos, out var x, out var y)) return false;
-        Host.SetVisible(clip, true);
-        Host.Set(clip, "x", (float)x);
-        Host.Set(clip, "y", (float)y);
+        Place(clip, (float)x, (float)y);
         return true;
+    }
+
+    /// <summary>Shown at (x, y). On DisplayObject's own visible / x / y when the clip is one (the entity classes do not
+    /// override them): Host.Set boxes each value and makes a closure, and this runs for every proxy each 60 ms.</summary>
+    void Place(AsObject clip, float x, float y)
+    {
+        if (clip is Ms2.Avm2.Flash.AsDisplayObject d) { d.visible = true; d.x = x; d.y = y; return; }
+        Host.SetVisible(clip, true);
+        Host.Set(clip, "x", x);
+        Host.Set(clip, "y", y);
+    }
+
+    /// <summary>The clip's vfunc_3 / vfunc_4 (SetDisplayInfo visible), on DisplayObject's own field when it is one.</summary>
+    void Show(AsObject clip, bool visible)
+    {
+        if (clip is Ms2.Avm2.Flash.AsDisplayObject d) d.visible = visible;
+        else Host.SetVisible(clip, visible);
     }
 
     /// <summary>
@@ -388,25 +551,16 @@ public sealed class MinimapController : UiController
         if (playerClip == null || LocalPlayer == null) return;
         var (pos, heading, dead) = LocalPlayer();
         double x = 0, y = 0;
-        if (WorldToMinimap(pos, out x, out y))
-        {
-            Host.SetVisible(playerClip, true);
-            Host.Set(playerClip, "x", (float)x);
-            Host.Set(playerClip, "y", (float)y);
-        }
-        if (!FullMap && FieldClip != null)
-        {
-            Host.SetVisible(FieldClip, true);
-            Host.Set(FieldClip, "x", (float)(centerX - (float)x * scale));
-            Host.Set(FieldClip, "y", (float)(centerY - (float)y * scale));
-        }
+        if (WorldToMinimap(pos, out x, out y)) Place(playerClip, (float)x, (float)y);
+        if (!FullMap && FieldClip != null) Place(FieldClip, (float)(centerX - (float)x * scale), (float)(centerY - (float)y * scale));
         string state = dead ? "die" : "idle";
         if (state != playerState) { playerState = state; Host.Invoke(playerClip, "gotoAndPlay", state); }
         arrow ??= Host.Get(playerClip, "m_arrow") as AsObject;
         if (arrow != null)
         {
-            Host.SetVisible(arrow, !dead);
-            if (!dead) Host.Set(arrow, "rotation", heading);
+            Show(arrow, !dead);
+            if (!dead && arrow is Ms2.Avm2.Flash.AsDisplayObject a) a.rotation = heading;
+            else if (!dead) Host.Set(arrow, "rotation", heading);
         }
     }
 
