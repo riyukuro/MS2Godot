@@ -31,7 +31,27 @@ public class PackReadTests
         Assert.That(checkedEntries, Is.GreaterThan(0));
     }
 
-    /// <summary>The platform-AES route against the package reader over 5000+ entries of every archive under the data folder.</summary>
+    /// <summary>OpenRead's inflate is held to the entry's size, as Read's exact-size buffer and its one-byte overrun read are.</summary>
+    [Test]
+    public void TheStreamedInflateChecksTheEntrySize()
+    {
+        var text = System.Text.Encoding.UTF8.GetBytes(string.Concat(Enumerable.Repeat("<ms2><skill id=\"1\"/></ms2>", 500)));
+        var packed = new MemoryStream();
+        using (var z = new System.IO.Compression.ZLibStream(packed, System.IO.Compression.CompressionLevel.Optimal, true)) z.Write(text);
+        byte[] ReadAll(long size)
+        {
+            using var s = new PackSet.InflateStream(packed.ToArray(), size);
+            var o = new MemoryStream();
+            s.CopyTo(o, 777);
+            return o.ToArray();
+        }
+        Assert.That(ReadAll(text.Length), Is.EqualTo(text));
+        Assert.Throws<InvalidDataException>(() => ReadAll(text.Length + 1), "fewer bytes than the size");
+        Assert.Throws<InvalidDataException>(() => ReadAll(text.Length - 1), "more bytes than the size");
+    }
+
+    /// <summary>The platform-AES route (and <see cref="PackSet.OpenRead"/>'s streamed inflate) against the package reader over
+    /// 5000+ entries of every archive under the data folder.</summary>
     [Test]
     public void PlatformAesMatchesThePackageReaderOverEveryArchive()
     {
@@ -66,6 +86,14 @@ public class PackReadTests
                 catch (Exception) { skip++; continue; }   // the package cannot read it either (no baseline to compare)
                 var got = packs.Read(archive, name);
                 if (got == null || !got.AsSpan().SequenceEqual(want)) { failures.Add($"{archive}: {name}"); break; }
+                // the streamed form: the same bytes, read in small pieces
+                using (var s = packs.OpenRead(archive, name))
+                {
+                    var streamed = new MemoryStream();
+                    var piece = new byte[1000];
+                    for (int n; (n = s.Read(piece, 0, piece.Length)) > 0;) streamed.Write(piece, 0, n);
+                    if (!streamed.ToArray().AsSpan().SequenceEqual(want)) { failures.Add($"{archive}: {name} (stream)"); break; }
+                }
                 done++;
             }
             Interlocked.Add(ref total, done);

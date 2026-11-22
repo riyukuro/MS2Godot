@@ -107,6 +107,46 @@ public sealed class PackSet : IDisposable
         return ReadPlain(a, e);
     }
 
+    /// <summary>The entry's bytes as <see cref="Read"/> gives them, as a stream that inflates them as it is read (no array of
+    /// the whole entry). A stream whose inflated length is not the entry's size throws <see cref="InvalidDataException"/>
+    /// at its end, where <see cref="Read"/> would fall back to the package's reader.</summary>
+    public Stream OpenRead(string archive, string entry)
+    {
+        var a = Get(archive);
+        if (!a.ByName.TryGetValue(entry.Replace('\\', '/'), out var e))
+            throw new FileNotFoundException($"{entry} not in {archive}");
+        if (((uint)e.BufferFlag & XorFlag) != XorFlag && ((uint)e.BufferFlag & ZlibFlag) == ZlibFlag && Decrypted(a, e) is { } plain)
+            return new InflateStream(plain, (long)e.FileSize);
+        return new MemoryStream(Read(archive, entry), false);
+    }
+
+    /// <summary>An entry's inflate, checked against its size: more bytes, or fewer at the end, throw.</summary>
+    internal sealed class InflateStream : Stream
+    {
+        readonly ZLibStream z;
+        readonly long size;
+        long read;
+        public InflateStream(byte[] deflated, long size) { z = new ZLibStream(new MemoryStream(deflated, false), CompressionMode.Decompress); this.size = size; }
+        public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
+        public override int Read(Span<byte> buffer)
+        {
+            int n = z.Read(buffer);
+            read += n;
+            if (read > size || (n == 0 && buffer.Length > 0 && read != size)) throw new InvalidDataException($"inflated {read} bytes of an entry of {size}");
+            return n;
+        }
+        protected override void Dispose(bool disposing) { if (disposing) z.Dispose(); base.Dispose(disposing); }
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => size;
+        public override long Position { get => read; set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
     // M2dReader.GetBytes allocates about six times the entry's size on the way (copies of the encrypted block, the
     // decrypted block, a growing inflate buffer). The same bytes come from the package's own decrypt (which is kept: the
     // cipher is not reimplemented here) over exactly the entry's encoded bytes, then an inflate into a buffer of the
@@ -162,6 +202,28 @@ public sealed class PackSet : IDisposable
         var h = e;
         try
         {
+            var plain = Decrypted(a, e);
+            if (plain != null)
+            {
+                if (((uint)h.BufferFlag & ZlibFlag) != ZlibFlag) return plain.Length == (int)h.FileSize ? plain : Fallback(a, e);
+                var output = new byte[(int)h.FileSize];
+                using var z = new ZLibStream(new MemoryStream(plain, false), CompressionMode.Decompress);
+                z.ReadExactly(output);
+                if (z.Read(new byte[1], 0, 1) != 0) return Fallback(a, e);
+                return output;
+            }
+        }
+        catch (Exception) { }
+        return Fallback(a, e);
+    }
+
+    /// <summary>The entry's decrypted bytes (deflated when its flag has the zlib bit), or null where only the package's
+    /// reader can read it.</summary>
+    byte[] Decrypted(Archive a, PackIndex.Entry e)
+    {
+        var h = e;
+        try
+        {
             if (!noDecrypt)
             {
                 decrypt ??= typeof(M2dReader).Assembly.GetType("Maple2.File.IO.Crypto.CryptoManager")
@@ -179,22 +241,17 @@ public sealed class PackSet : IDisposable
                 lock (gate)
                 {
                     a.Handle ??= File.OpenHandle(a.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                    if (RandomAccess.Read(a.Handle, buf, (long)h.Offset) != buf.Length) return Fallback(a, e);
+                    if (RandomAccess.Read(a.Handle, buf, (long)h.Offset) != buf.Length) return null;
                 }
                 var flag = (Encryption)((uint)h.BufferFlag & ~ZlibFlag);   // the package's decrypt, without its inflate
                 plain = FastAes(h, flag, buf);
                 if (plain == null)
                     lock (gate) plain = (byte[])decrypt.Invoke(null, new object[] { h.Version, (uint)h.EncodedFileSize, (uint)h.CompressedFileSize, flag, buf });
-                if (((uint)h.BufferFlag & ZlibFlag) != ZlibFlag) return plain.Length == (int)h.FileSize ? plain : Fallback(a, e);
-                var output = new byte[(int)h.FileSize];
-                using var z = new ZLibStream(new MemoryStream(plain, false), CompressionMode.Decompress);
-                z.ReadExactly(output);
-                if (z.Read(new byte[1], 0, 1) != 0) return Fallback(a, e);
-                return output;
+                return plain;
             }
         }
         catch (Exception) { }
-        return Fallback(a, e);
+        return null;
     }
 
     byte[] Fallback(Archive a, PackIndex.Entry e)

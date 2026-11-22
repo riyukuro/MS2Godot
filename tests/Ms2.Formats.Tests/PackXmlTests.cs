@@ -48,6 +48,27 @@ public class PackXmlTests
         Assert.That(doc.Root!.Name.LocalName, Is.EqualTo("ms2"));
     }
 
+    [Test]
+    public void TheReaderGivesTheTextAndTakesTheSameEntries()
+    {
+        // the forward-only form of Text: the same characters for every mark (a cut one too), and an XmlReader over it ignores a declaration
+        var forms = new[]
+        {
+            Encoding.UTF8.GetBytes(Body), WithBom(Body), new byte[] { 0xEF, 0xBB, 0xBF }.Concat(WithBom(Body)).ToArray(),
+            new byte[] { 0xFF, 0xFE }.Concat(Encoding.Unicode.GetBytes("\uFEFF" + Body)).ToArray(),
+            new byte[] { 0xFE, 0xFF }.Concat(Encoding.BigEndianUnicode.GetBytes(Body)).ToArray(),
+            WithBom("<?xml version=\"1.0\" encoding=\"euc-kr\"?>" + Body), Encoding.UTF8.GetBytes("\uFEFF\uFEFF" + Body),
+            new byte[] { 0xFF }, new byte[] { 0xEF, 0xBB }, Array.Empty<byte>(),
+        };
+        foreach (var data in forms)
+        {
+            using (var r = PackXml.Reader(new MemoryStream(data))) Assert.That(r.ReadToEnd(), Is.EqualTo(PackXml.Text(data)));
+            if (data.Length < Body.Length) continue;   // the cut marks: text only
+            using var x = XmlReader.Create(PackXml.Reader(new MemoryStream(data)), new XmlReaderSettings { CloseInput = true });
+            Assert.That(x.MoveToContent() == XmlNodeType.Element && x.LocalName == "ms2", Is.True);
+        }
+    }
+
     /// <summary>No site parses a pack entry with XDocument.Parse(Encoding.UTF8.GetString(...Read(...))): that is PackXml.Parse.</summary>
     [Test]
     public void NoSiteParsesAPackEntryByHand()
