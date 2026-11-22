@@ -20,6 +20,7 @@ public partial class HudScene
     /// <summary>The talk's open-dialog action: the mode by name, then the window.</summary>
     void OnTalkDialogOpen(string dialog, string argument)
     {
+        if (beautyTalk != null && beautyTalk.Run(dialog, argument)) return;   // BeautyShopDialog / BeautyStyleDialog (uitalkcinematic.cpp:1190)
         if (!string.Equals(dialog, ItemEnchantDialogController.Bag, StringComparison.OrdinalIgnoreCase)) return;
         if (Ms2Godot.Net.LiveSession.Instance is not { } live) return;
         if (ItemEnchantOpen) return;

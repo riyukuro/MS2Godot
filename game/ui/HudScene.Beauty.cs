@@ -19,6 +19,7 @@ public partial class HudScene
     readonly BeautyStyleFlow beautyStyleFlow = new();
     MovieDialog beautyMovie, beautyStyleMovie;
     long beautyPreviewUid;
+    BeautyTalkCommand beautyTalk;
     Action unwatchBeauty;
 
     bool BeautyOpen => beautyFlow.IsOpen;
@@ -32,6 +33,11 @@ public partial class HudScene
         beautyFlow.Log = m => GD.Print(m);
         beautyFlow.CreateCustomize = () => CreateBeautyCustomize(live);
         beautyFlow.SendOpenRequest = uid => live.SendBeauty(new BeautyOpenRequest(uid));   // SendBeauty (scenestategame.cpp:8714)
+        beautyTalk = new BeautyTalkCommand
+        {
+            Shop = beautyFlow, Style = beautyStyleFlow, Log = m => GD.Print(m),
+            TalkNpcId = () => live.TalkNpcId, Send = live.SendBeauty, EndTalk = () => live.EndTalk(),   // SendNpcTalkMode0
+        };
         void OnRequested(BeautyReq req) => beautyFlow.OpenFor(req);
         beautyStyleFlow.CreateController = () => CreateBeautyStyle(live);
         beautyStyleFlow.Show = ShowBeautyStyle;
@@ -46,6 +52,7 @@ public partial class HudScene
             live.BeautyPacketReceived -= OnBeautyPacket;
             beautyFlow.Shutdown();
             beautyStyleFlow.Shutdown();
+            beautyTalk = null;
             unwatchBeauty = null;
         };
     }
@@ -96,9 +103,8 @@ public partial class HudScene
         uiRoot.AddChild(m);
     }
 
-    /// <summary>The saved-styles dialog's controller with the host-set parts. STILL-OPEN: nothing calls
-    /// <c>beautyStyleFlow.Open()</c> until the NPC talk command "BeautyStyleDialog" (uitalkcinematic.cpp:1190) is ported; the payment's
-    /// "not enough" box and the hair apply effect are unset, so the paths that need them do nothing.</summary>
+    /// <summary>The saved-styles dialog's controller with the host-set parts. The NPC talk's "BeautyStyleDialog"
+    /// action opens it (<see cref="BeautyTalkCommand"/>, uitalkcinematic.cpp:1190). STILL-OPEN: the payment's "not enough" box and the hair apply effect are unset, so the paths that need them do nothing.</summary>
     BeautyStyleDialogController CreateBeautyStyle(Ms2Godot.Net.LiveSession live)
     {
         var c = new BeautyStyleDialogController { Send = live.SendBeauty };
