@@ -158,6 +158,11 @@ public class ItemColoringDialogTests
         Assert.That((r.Sent.Count, r.NotEnoughCalls), Is.EqualTo((1, 0)));
     }
 
+    [Test] public void WithoutAShopTheBasketCannotBePaid() {
+        var r = new Rig();
+        Assert.That(r.C.CanPayBasket(out _), Is.False);
+    }
+
     [Test] public void APurseOneShortOfTheBasketDoesNotPay() {
         var r = new Rig { Money = 699 };
         r.C.OnPacket(Rig.Open());

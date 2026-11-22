@@ -293,6 +293,7 @@ public sealed class ItemColoringDialogController : UiController
         coupons = 0;
         int have = GetCouponCount(UseCoupon);
         var fee = GetFee();
+        if (fee == null) return false;   // no shop, so no payment to read (the client's shop is always set while the dialog is open)
         long left = CurrencyHeld(fee, GetSalePrice((uint)GetTotalPrice()));
         foreach (var _ in Basket)
         {
