@@ -58,6 +58,28 @@ public partial class MovementSyncCheck : Node3D
         return flags;
     }
 
+    // GMS2 walk cadence: half a second of walking at 60 fps sends an unchanged walk record about every TrafficLimitMs
+    // (recorded GMS2 client: about 100 ms; direction, yaw and state changes go at once), not one per frame (KMS2 client)
+    bool WalkCadence()
+    {
+        var step = typeof(Player).GetMethod("Step", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        int Count(bool byAge)
+        {
+            runner.WalkRecordByAge = byAge;
+            sent.Clear();
+            runner.Input2 = new Vector2(0, 1);
+            for (int i = 0; i < 30; i++) step.Invoke(runner, new object[] { 1.0 / 60 });
+            runner.Input2 = Vector2.Zero;
+            for (int i = 0; i < 30; i++) step.Invoke(runner, new object[] { 1.0 / 60 });
+            runner.WalkRecordByAge = false;
+            return sent.Count(r => r.State == 2);
+        }
+        int perFrame = Count(false), byAge = Count(true);
+        bool ok = perFrame >= 20 && byAge is >= 3 and <= 8;
+        GD.Print($"movement sync check: walking half a second sent {perFrame} walk record(s) per frame, {byAge} on the GMS2 cadence: {(ok ? "OK" : "FAIL")}");
+        return ok;
+    }
+
     // walks on a bare mount (no model: the seat is the visual) and off it again, counting the packets of each kind
     bool RideSync()
     {
@@ -586,6 +608,7 @@ public partial class MovementSyncCheck : Node3D
         bool dir = right == 8 && forward == 13;
         GD.Print($"movement sync check: camera a quarter turned, right key flags {right}, forward key flags {forward}: {(dir ? "OK" : "FAIL")}");
         bool ride = RideSync();
+        bool cadence = WalkCadence();
         bool runX = RunX();
         var floor = new StaticBody3D { Position = new Vector3(0, -50, 0) };
         floor.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(20000, 100, 20000) } });
@@ -597,7 +620,7 @@ public partial class MovementSyncCheck : Node3D
         bool meshLand = MeshLandings();
         bool oneSided = OneSidedMeshes();
         bool walls = OneSidedWalls(floor);
-        bool ok = dir && ride && runX && spawn && land && alloc && restAlloc && meshLand && oneSided && walls;
+        bool ok = dir && ride && cadence && runX && spawn && land && alloc && restAlloc && meshLand && oneSided && walls;
         GetTree().Quit(ok ? 0 : 1);
     }
 }

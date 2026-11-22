@@ -1176,6 +1176,7 @@ public partial class LiveSession : Node
     {
         player = found;
         player.Live = true;
+        player.WalkRecordByAge = game?.Profile.IsGms2 ?? false;   // the recorded GMS2 client's walk cadence, see Player.WalkRecordByAge
         player.TaxiHold = TaxiHoldsMove;
         player.SetBattleStance(SelfInBattle);
         player.ServerTick = () => game?.Session.ServerTick ?? 0;

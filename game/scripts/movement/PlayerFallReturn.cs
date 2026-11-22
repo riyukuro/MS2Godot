@@ -34,6 +34,14 @@ public partial class Player
     /// </summary>
     public int TrafficLimitMs = 100;
 
+    /// <summary>
+    /// GMS2 client: a walk makes a record when the current one is TrafficLimitMs old, not on every frame. Recorded walking, KMS2 client: a record every
+    /// frame (median gap 0 ms, record time 8 ms, 108851 packets); recorded GMS2 client: an unchanged walk record goes out at about 100 ms (TrafficLimit),
+    /// while direction, yaw and state changes go at once (100929 walk packets).
+    /// Records of a few ms make the receivers' queue (RemotePcStates.Push keeps 100 ms) play each for one frame, and the server's relay jumps.
+    /// </summary>
+    public bool WalkRecordByAge;
+
     /// <summary>The server processed a state sync: the synced position and whether it carried a cube (SyncNumber).</summary>
     public event Action<Vector3, bool> ServerSynced;
 
@@ -167,7 +175,7 @@ public partial class Player
     /// box's floor (forced), when there is none, or when the state, the move direction (m_pos98) or the target yaw changed or a second
     /// passed since the current one; an unsent current record goes out first, except that a walk record left for another
     /// state goes out in one packet with the new record. The state's own test (vfunc_22, StateVfunc22) also makes one: a
-    /// walk makes a record every frame. m_b15d5 (<see cref="syncPushed"/>, set by MyPC::vfunc_110, mypc.cpp:1054) forces a
+    /// walk makes a record every frame (KMS; GMS2: see WalkRecordByAge). m_b15d5 (<see cref="syncPushed"/>, set by MyPC::vfunc_110, mypc.cpp:1054) forces a
     /// record and is cleared when one is made (:2308-2314).
     /// STILL-OPEN: the other vfunc_110 call, PCBase::vfunc_68's move by a pushing platform (pcbase.cpp:1820-1823), is not ported.
     /// </summary>
@@ -237,7 +245,7 @@ public partial class Player
     /// <summary>
     /// The current state's vfunc_22(spCur), the last test of the new-record condition (mypc.cpp:2311). State::vfunc_22 is 0
     /// (state.cpp:732). StateWalk's is always 1 (statewalk.cpp:392-395), so every walking frame makes a record and the
-    /// unsent one before it goes out. StateSwim's is 1 once a second while riding (stateswim.cpp:273-288); its other test,
+    /// unsent one before it goes out (KMS; GMS2: see WalkRecordByAge). StateSwim's is 1 once a second while riding (stateswim.cpp:273-288); its other test,
     /// and those of StateIdle (stateidle.cpp:510) and StateJump (statejump.cpp:346), compare the record's sub-state, which
     /// this model's states do not change, so they are 0.
     /// </summary>
@@ -246,7 +254,7 @@ public partial class Player
         switch (State)
         {
             case MoveState.Walk:
-                return true;
+                return !WalkRecordByAge || current == null || (syncClock - current.Made) * 1000.0 >= TrafficLimitMs;
             case MoveState.Swim:
                 if (Mount != null && syncClock - swimRideTick >= 1.0)
                 {
