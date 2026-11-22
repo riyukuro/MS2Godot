@@ -127,6 +127,14 @@ public partial class LiveSession
                     Shot("equipped.png");
                     break;
                 }
+                case "unequip":
+                {
+                    int weapon = int.Parse(Env("MS2_LIVE_COMBAT_WEAPON", "0"));
+                    GD.Print($"live: combat unequip: {(hud.UnequipScripted(weapon) ? "sent" : "not worn")}");
+                    await until(() => live.Me.Equips?.Any(e => e.Id == weapon) != true, 60 * 10); await frames(60);
+                    Check("the weapon is off", live.Me.Equips?.Any(e => e.Id == weapon) != true);
+                    break;
+                }
                 case "revivepaid":
                 {
                     Check("the revival dialog is open", hud.RevivalUiUp());

@@ -34,4 +34,14 @@ public partial class HudScene
         inventory.RequestEquipItem(item, 0, 0);
         return true;
     }
+
+    /// <summary>The worn item <paramref name="itemId"/> taken off: the inventory view's unequip request, as the character window's
+    /// take-off sends it. False when it is not worn.</summary>
+    public bool UnequipScripted(int itemId)
+    {
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        if (live?.Me.Equips?.FirstOrDefault(e => e.Id == itemId) is not { } worn || live.Inventory?.RequestUnequip == null) return false;
+        live.Inventory.RequestUnequip(worn.Uid);
+        return true;
+    }
 }
