@@ -2137,6 +2137,36 @@ public class HudTests
     }
 
     [Test]
+    public void SmartPushStripAddsAndRemovesButtonsAndReportsClicks()
+    {
+        var m = Model();
+        var c = new SmartPushStripController();
+        Assert.That(c.AddPush(new SmartPushView { Id = 1 }), Is.False, "uismartpush.cpp:122: no entity yet, nothing is added");
+        Assert.That(c.RemovePush(1), Is.False);
+        var h = Load(c, m);
+        Assert.That(h.RT.Errors, Is.Empty);
+        Assert.That(c.Ready, Is.True);
+        int Count() => (int)Rt.ToNumber(h.Get(h.Entity, "numChildren"));
+        Assert.That(Count(), Is.EqualTo(0));
+        Assert.That(c.AddPush(new SmartPushView { Id = 5, Text = "Auto", ActiveMovie = "UISmartPush_autofish" }), Is.True);
+        Assert.That(c.AddPush(new SmartPushView { Id = 6, Text = "Ride", IsToggle = true, Active = true }), Is.True);
+        for (int i = 0; i < 10; i++) h.Player.Tick();
+        Assert.That(Count(), Is.EqualTo(2));
+        Assert.That(c.RemovePush(5), Is.True);
+        Assert.That(Count(), Is.EqualTo(1));
+        // vfunc_43 (uismartpush.cpp:100): bottom left, 0x1b4 across, 0x5a above the bottom
+        double ht = Rt.ToNumber(h.Get(h.Entity, "height"));
+        c.Layout(1920, 1080);
+        Assert.That(Rt.ToNumber(h.Get(h.Entity, "x")), Is.EqualTo(0x1b4));
+        Assert.That(Rt.ToNumber(h.Get(h.Entity, "y")), Is.EqualTo(1080 - (int)ht - 0x5a));
+        var clicked = new List<int>();
+        c.PushClicked += clicked.Add;
+        Assert.That(c.OnCallback("onSmartPush", new object[] { 6 }), Is.True);       // vfunc_28 (:136)
+        Assert.That(c.OnCallback("onOther", new object[] { 6 }), Is.False);
+        Assert.That(clicked, Is.EqualTo(new[] { 6 }));
+    }
+
+    [Test]
     public void NoticeTabClosedLeftMiddleAndToggles()
     {
         var m = Model();
