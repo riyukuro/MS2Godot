@@ -365,7 +365,7 @@ public class HudTests
         // label, nothing for an empty slot
         var m = Model();
         m.HasLocalPlayer = true;   // vfunc_0 shows a skill or item tooltip only with a local PC
-        var pages = new IReadOnlyList<(int, QuickSlotEntry)>[] { new[] { (3, new QuickSlotEntry(10500001, 0, 0)) } };   // Arrow Stream
+        var pages = new IReadOnlyList<(int, QuickSlotEntry)>[] { new[] { (3, new QuickSlotEntry(10500001, 0, 0)), (4, new QuickSlotEntry(0, 11300451, 77)) } };   // Arrow Stream; an item not held
         var t = new ServerKeyTable();
         t.Apply(new Maple2.PacketLib.Tools.ByteReader(ServerKeyTable.Write(0, false, Array.Empty<KeyBinding>(), 0, pages)));
         m.Keys = new KeyTable(packs, "en"); m.ServerKeys = t; m.Keys.Apply(t);
@@ -382,6 +382,13 @@ public class HudTests
         Assert.That(key["tooltipAlign"], Is.EqualTo(5));
         Assert.That(c.GetSlotTooltip(MainPlayerInfoController.SlotBag + ".1"), Is.Empty);
         Assert.That(c.GetSlotTooltip("SlotInfo.other.1"), Is.Null);
+        // an item id whose item is gone (:719): FUN_1409e1770 at the data's rank, flags 0x40 (align 7), with the remove hint
+        var gone = c.GetSlotTooltip(MainPlayerInfoController.SlotBag + ".4");
+        Assert.That(gone["tooltip"], Is.EqualTo("export_common_tooltip_kindsItem"));
+        Assert.That(gone["itemName"], Is.EqualTo(m.Tables.ItemName(11300451)));
+        Assert.That(gone["itemGrade"], Is.EqualTo(m.Tables.Items.Get(11300451).Rank is var r && r != 0 ? r : 1));
+        Assert.That(gone["tooltipAlign"], Is.EqualTo(7));
+        Assert.That(gone["enablePuton"], Is.EqualTo(hint));
     }
 
     [Test]

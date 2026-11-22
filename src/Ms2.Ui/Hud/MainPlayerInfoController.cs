@@ -342,8 +342,8 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
     /// SkillSlot::vfunc_0 (ITooltip, skillslot.cpp:716) through NotifyDragSlot::GetSlotTooltip: null for a name that is not
     /// a slot; an empty object when the slot gives none. With m_bFixed 0 (no slot of this bar is fixed) every filled
     /// tooltip gets the right-click remove hint, SetEnablePuton(GetStringCommon(0x759)) = s_msg_rclick_putoff_qslot.
-    /// - An item id whose item is gone: ASTooltip(player, 0x40, 2).FUN_1409e1770(id, GetItemRank(id)).
-    ///   STILL-OPEN: the item tooltip by id is not ported, so that slot shows none.
+    /// - An item id whose item is gone: ASTooltip(player, 0x40, 2).FUN_1409e1770(id, GetItemRank(id)) (:722), GetItemRank
+    ///   being the data's default rank (its rank field, 1 when that is 0).
     /// - An item that FUN_14053e460 allows: FUN_1409e0d40 over the item, the same flags.
     /// - Else the skill: none for an item kind skill (FUN_1407e9d70); a key bound slot (22..24) gets its action's text
     ///   (GetActionLabel, :1467) aligned 5; else FUN_1409e1c50(skill, the book's level or 1, 0) with flags 0x40.
@@ -365,7 +365,14 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         var s = new Skills.SkillSlotState(w, (uint)e.SkillId, e.ItemId, e.ItemUid);
         var item = s.Item();
         string removeHint = Model.Tables.Common("s_msg_rclick_putoff_qslot") ?? "";     // 0x759
-        if (item == null && e.ItemId != 0) return null;
+        if (item == null && e.ItemId != 0)
+        {
+            var gone = new Items.ItemTooltip(Model, SlotTooltipFlags);
+            int rank = Model.Tables.Items.Get(e.ItemId) is { Rank: not 0 } d ? d.Rank : 1;
+            if (!gone.FillById(e.ItemId, rank)) return null;
+            gone.SetEnablePuton(removeHint);
+            return gone.Data;
+        }
         if (item != null && w.ItemData(item.Id) is { } data && data.IsQuickSlotUsable)
         {
             if (!Model.HasLocalPlayer) return null;
