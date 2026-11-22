@@ -53,6 +53,8 @@ public sealed class QuestNavigator
     QuestNavigationMap tracedMap;
     QuestRecord tracedRecord;
     TraceContext tracedContext;
+    List<int> tracedPath;       // FindMapPath(current, context field) for a target in another field, with its second field
+    int tracedNext;
     // the last distance text by its value bucket, so an unchanged distance makes no new string
     int distanceKey = int.MinValue;
     string distanceText;
@@ -173,6 +175,8 @@ public sealed class QuestNavigator
             (tracedQuest, tracedField, tracedMap) = (questId, current, Map);
             tracedRecord = quests.Get(questId);
             tracedContext = Map.TraceQuest(tracedRecord, current);
+            tracedPath = tracedContext != null && tracedContext.MapId != current ? Map.Graph.FindMapPath(current, tracedContext.MapId) : null;
+            tracedNext = tracedPath is { Count: > 1 } ? tracedPath[1] : 0;     // GetNextMapOnPath over the same path
         }
         var record = tracedRecord;
         var context = tracedContext;
@@ -194,12 +198,13 @@ public sealed class QuestNavigator
                 (Result.X, Result.Y, Result.Z) = (hit.X, hit.Y, hit.Z);
             }
         }
-        else if (Map.Graph.FindMapPath(current, context.MapId) is { } path)
+        else if (tracedPath is { } path)
         {
             var portals = Portals();
             bool found = false;
-            foreach (var p in portals)
+            for (int k = 0; k < portals.Count; k++)
             {
+                var p = portals[k];
                 if (!p.Shown || !path.Contains(p.TargetField)) continue;
                 SetPortal(p);
                 found = true;
@@ -207,10 +212,10 @@ public sealed class QuestNavigator
             }
             if (!found)
             {
-                int next = Map.Graph.GetNextMapOnPath(current, context.MapId);
+                int next = tracedNext;
                 if (next != 0)
-                    foreach (var p in portals)
-                        if (p.TargetField == next)
+                    for (int k = 0; k < portals.Count; k++)
+                        if (portals[k] is var p && p.TargetField == next)
                         {
                             // FindPortalByDestMap: the first portal to the field, then IsShown
                             if (p.Shown) SetPortal(p);

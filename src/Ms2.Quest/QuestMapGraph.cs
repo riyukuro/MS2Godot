@@ -209,7 +209,12 @@ public sealed class QuestMapGraph
         return p != null && p.Count > 1 ? p[1] : 0;
     }
 
-    /// <summary>NearestMap: of the fields, the one with the fewest path entries from <paramref name="current"/> (the last of equals), 0 when none is reachable.</summary>
+    /// <summary>
+    /// NearestMap: of the fields, the one with the fewest path entries from <paramref name="current"/> (the last of equals),
+    /// 0 when none is reachable. STILL-OPEN: "the last of equals" is in the caller's order (a Dictionary's insertion order
+    /// for the trace table's fields); the client walks a CAtlMap in its bucket order, so a tie between two fields at the
+    /// same path length may pick the other one.
+    /// </summary>
     public int NearestMap(int current, IEnumerable<int> maps)
     {
         int best = int.MaxValue, nearest = 0;

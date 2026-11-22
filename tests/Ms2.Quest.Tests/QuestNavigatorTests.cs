@@ -203,4 +203,87 @@ public class QuestNavigatorTests
         Assert.That(nav.TraceQuestTarget(), Is.EqualTo(2));
         Assert.That(nav.Result.DistanceText, Is.EqualTo(TraceStrings.Default.Initializing));
     }
+
+    static long FrameBytes(QuestNavigator nav)
+    {
+        for (int i = 0; i < 10; i++) nav.Frame();
+        long b = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1000; i++) nav.Frame();
+        return GC.GetAllocatedBytesForCurrentThread() - b;
+    }
+
+    [Test]
+    public void FramesBetweenEventsAllocateNothing()
+    {
+        // same field: the nearest interact object
+        var (nav, state, _) = Navigator(2);
+        state.List.Add(Active(100, false, 0, 0));
+        var hit = ((double, double, double, float)?)(0, 200, 0, 200f);
+        nav.NearestNpc = _ => null;
+        nav.NearestInteract = _ => hit;
+        nav.OnQuestAccepted(state.List[0]);
+        nav.OnCompleteMyPc();
+        Assert.That(FrameBytes(nav), Is.EqualTo(0));
+        Assert.That(nav.Result.Kind, Is.EqualTo(TraceKind.InteractObject));
+
+        // another field: a shown portal on the path; only a hidden one (GetNextMapOnPath, then FindPortalByDestMap)
+        foreach (var (portals, kind) in new[] { (new[] { new TracePortal(9, 0, 0, 0), new TracePortal(2, 0, 700, 0) }, TraceKind.Portal),
+                                                (new[] { new TracePortal(2, 0, 700, 0, Shown: false) }, TraceKind.None) })
+        {
+            var (other, otherState, _) = Navigator(1);
+            otherState.List.Add(Active(102, false, 0));
+            other.Portals = () => portals;
+            other.OnQuestAccepted(otherState.List[0]);
+            other.OnCompleteMyPc();
+            Assert.That(FrameBytes(other), Is.EqualTo(0));
+            Assert.That(other.Result.Kind, Is.EqualTo(kind));
+        }
+    }
+
+    [Test]
+    public void TraceIsRebuiltOnProgressAndFieldChange()
+    {
+        int field = 2;
+        var (nav, state, _) = Navigator(2);
+        nav.FieldId = () => field;
+        state.List.Add(Active(100, false, 0, 0));
+        nav.NearestNpc = ids => ids.Contains(12) ? (300, 0, 0, 300f) : null;
+        nav.NearestInteract = ids => ids.Contains(21) ? (0, 900, 0, 900f) : null;
+        nav.OnQuestAccepted(state.List[0]);
+        nav.OnCompleteMyPc();
+        nav.Frame();
+        Assert.That(nav.Result.Kind, Is.EqualTo(TraceKind.Npc));
+        // the npc condition done: without the event the kept trace still names the npc, with it the interact object
+        state.List[0] = Active(100, false, 1, 0);
+        nav.Frame();
+        Assert.That(nav.Result.Kind, Is.EqualTo(TraceKind.Npc));
+        nav.OnQuestProgress();
+        nav.Frame();
+        Assert.That(nav.Result.Kind, Is.EqualTo(TraceKind.InteractObject));
+        // a new field re-traces without an event: from field 1 the target field 2 is through the portal
+        field = 1;
+        nav.Portals = () => new[] { new TracePortal(2, 0, 700, 0) };
+        nav.Frame();
+        Assert.That(nav.Result.Kind, Is.EqualTo(TraceKind.Portal));
+    }
+
+    [TestCase(99), TestCase(100), TestCase(199), TestCase(99999), TestCase(100000), TestCase(100001), TestCase(250000)]
+    public void DistanceTextMatchesItsBucket(int dist)
+    {
+        var (nav, state, _) = Navigator(2);
+        state.List.Add(Active(100, false, 0, 0));
+        nav.NearestNpc = _ => null;
+        nav.NearestInteract = _ => (dist, 0, 0, dist);
+        nav.OnQuestAccepted(state.List[0]);
+        nav.OnCompleteMyPc();
+        nav.Frame();
+        Assert.That(nav.Result.DistanceText, Is.EqualTo(QuestTrace.DistanceText(dist, nav.Strings)));
+        // a walk across the edges: each frame's text is the one made from its own distance
+        foreach (int d in new[] { 99, 100, 100000, 100001, 99, 150, 199 })
+        {
+            nav.NearestInteract = _ => (d, 0, 0, d);
+            nav.Frame();
+            Assert.That(nav.Result.DistanceText, Is.EqualTo(QuestTrace.DistanceText(d, nav.Strings)), d.ToString());
+        }
+    }
 }
