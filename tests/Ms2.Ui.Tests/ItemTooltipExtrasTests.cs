@@ -484,4 +484,21 @@ public class ItemTooltipExtrasTests
         Assert.That(tip.Data["gemstoneLevel"], Is.EqualTo(m.Tables.GemstoneUpgrades.Level(gem)));
         Assert.That(Tip(m, new EquipItem { Id = 11300000, Uid = 61, Rarity = 1, Amount = 1 }).Data.ContainsKey("gemstoneLevel"), Is.False);
     }
+
+    [Test]
+    public void BreakableItemListsItsBreakIngredients()
+    {
+        var m = NewModel();
+        var t = m.Tables;
+        int id = Enumerable.Range(11300001, 3000).FirstOrDefault(i => t.Items.Get(i) != null && !t.GachaBoxes.HasBox(i)
+            && t.BreakIngredients.BreakItem(i) is { } r && r.Any(x => t.Items.Get(x.ItemId) is { } d && (d.IsPieceItem || d.Type == 0x14 || d.Type == 0xf)));
+        Assume.That(id, Is.Not.Zero);
+        var item = new EquipItem { Id = id, Uid = 62, Rarity = 1, Amount = 1 };
+        Assert.That(Tip(m, item).Data.ContainsKey("itemBreakIngredientList"), Is.False);     // no break manager: no list
+        m.CanBreakItem = _ => false;
+        Assert.That(Tip(m, item).Data.ContainsKey("itemBreakIngredientList"), Is.False);
+        m.CanBreakItem = _ => true;
+        var rows = (List<object>)Tip(m, item).Data["itemBreakIngredientList"];
+        Assert.That(rows, Is.Not.Empty);
+    }
 }

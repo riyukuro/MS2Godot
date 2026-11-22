@@ -9,7 +9,7 @@ namespace Ms2.Ui.Items;
 /// </summary>
 public sealed class GachaBoxTable
 {
-    sealed record Box(int Id, int Season, int CoinItemId, int ShopId, bool SeasonNumberOnIcon, int IndividualDropBoxId);
+    sealed record Box(int Id, int Season, int CoinItemId, int ShopId, bool SeasonNumberOnIcon, int IndividualDropBoxId, int CoinAmount);
 
     readonly PackSet packs;
     SortedDictionary<int, Box> boxes;
@@ -34,7 +34,8 @@ public sealed class GachaBoxTable
             string onIcon = (string)e.Attribute("seasonNumberOnIcon") ?? "";
             bool shows = onIcon.Equals("true", StringComparison.OrdinalIgnoreCase) || onIcon.Equals("yes", StringComparison.OrdinalIgnoreCase) || onIcon == "1";
             int dropBox = ItemData.Atoi((string)e.Attribute("individualDropBoxID") ?? "");   // m_nIndividualDropBoxID (:111)
-            boxes[id] = new Box(id, season, coin, shopId, shows, dropBox);               // m_map[nKey] = spBox
+            int amount = e.Attribute("coinItemAmount") is { } am ? ItemData.Atoi((string)am) : 1;   // m_nCoinItemAmount (:114), 1 by the ctor
+            boxes[id] = new Box(id, season, coin, shopId, shows, dropBox, amount);               // m_map[nKey] = spBox
         }
         return boxes;
     }
@@ -48,6 +49,8 @@ public sealed class GachaBoxTable
     public int CoinItemIdByShopId(int shopId) => Boxes().Values.FirstOrDefault(b => b.ShopId == shopId)?.CoinItemId ?? 0;
     /// <summary>GetBox != null.</summary>
     public bool HasBox(int boxId) => Boxes().ContainsKey(boxId);
+    /// <summary>The box's m_nCoinItemID and m_nCoinItemAmount (what LoadGachaBoxes puts in the break table); null for no box.</summary>
+    public (int ItemId, int Count)? Coin(int boxId) => Boxes().TryGetValue(boxId, out var b) ? (b.CoinItemId, b.CoinAmount) : null;
     /// <summary>GetBox(boxId)->m_nIndividualDropBoxID, 0 for no box (ItemFunction::GetBoxId, itemdatastruct.cpp:1845).</summary>
     public int IndividualDropBoxId(int boxId) => Boxes().TryGetValue(boxId, out var b) ? b.IndividualDropBoxId : 0;
     /// <summary>IsSeasonNumberOnIcon (:297).</summary>

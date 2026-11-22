@@ -148,6 +148,8 @@ public sealed class UiModel
     /// <summary>WorldService::GetLocalPlayer as a record (the MyPC's equipment and gender): what an item tooltip with no
     /// owner (an item with no object id) reads for its set block. Null = no local player.</summary>
     public Func<Ms2.Net.Packets.PcInfo> LocalPlayer;
+    /// <summary>CItemBreakManager::CanBreakItem (@0x140531270) for an item tooltip's break ingredients; null = none can.</summary>
+    public Func<Items.Item, bool> CanBreakItem;
 
     /// <summary>The align widgets (UIAlignWidgetManager) of the movies sharing this model; null lays every movie out by
     /// itself.</summary>

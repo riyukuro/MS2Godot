@@ -50,6 +50,7 @@ public sealed class GameTables
         this.packs = packs;
         Items = new Items.ItemDataTable(packs);
         GachaBoxes = new Items.GachaBoxTable(packs);
+        BreakIngredients = new Items.ItemBreakIngredientTable(packs, GachaBoxes);
         Pets = new Items.PetDataTable(packs);
         ItemSockets = new Items.ItemSocketTable(packs);
         IndividualDrops = new Items.IndividualDropTable(packs);
@@ -339,6 +340,8 @@ public sealed class GameTables
     public readonly Items.ItemDataTable Items = Ms2.Ui.Items.ItemDataTable.Empty;
     /// <summary>ItemGachaBoxTable (table/gacha_info.xml), read on first use.</summary>
     public readonly Items.GachaBoxTable GachaBoxes = Ms2.Ui.Items.GachaBoxTable.Empty;
+    /// <summary>CItemBreakIngredientTable (table/itembreakingredient.xml and the gacha boxes' coins), read on first use.</summary>
+    public readonly Items.ItemBreakIngredientTable BreakIngredients = Ms2.Ui.Items.ItemBreakIngredientTable.Empty;
     /// <summary>CPetDataTable (table/petproperty.xml), read on first use.</summary>
     public readonly Items.PetDataTable Pets = Ms2.Ui.Items.PetDataTable.Empty;
     /// <summary>table/itemSocket.xml (CItemSocketTable); empty without data.</summary>

@@ -2560,6 +2560,7 @@ public partial class HudScene : Node, IUiStageHost
         hudModel = NewModel();
         MovieLayerHost.Layers.FeatureEnabled = hudModel.IsFeatureEnabled;   // the adventure level bar's layer (feature 0xbd)
         hudModel.HasLocalPlayer = true;     // the HUD runs in a field, where WorldService::GetLocalPlayer is the MyPC
+        hudModel.CanBreakItem = it => Ms2Godot.Net.LiveSession.Instance?.BreakManager.CanBreakItem(it) == true;   // CItemBreakManager::CanBreakItem
         hudModel.LocalPlayer = () =>
         {
             var live = Ms2Godot.Net.LiveSession.Instance;
