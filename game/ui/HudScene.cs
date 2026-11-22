@@ -247,6 +247,8 @@ public partial class HudScene : Node, IUiStageHost
         ChatLog.WindowCreated -= OnMessengerCreated;
         ChatLog.WindowClosed -= OnMessengerClosed;
         if (ReferenceEquals(ChatLog.ToggleDynamicAction, toggleDynamicAction)) ChatLog.ToggleDynamicAction = null;
+        if (offlineChat != null && ReferenceEquals(ChatLog.SendPacket, offlineChat)) ChatLog.SendPacket = null;
+        offlineChat = null;
         UnhookChatEmoticon();
         if (groupBrowser != null)
         {
@@ -1481,6 +1483,21 @@ public partial class HudScene : Node, IUiStageHost
     // ---- chat: uimessengerdialog and uigroupmessengerbrowser, run from their movies ------------------------------------
 
     /// <summary>
+    /// The send of a line typed without a session. The client has no offline mode: its own line reaches the chat log only
+    /// through the server's chat echo (0x1D, OnUserChat). Offline the HUD gives the line that echo straight away: the
+    /// request's kind as the type and the local player as the speaker; a whisper sent (kind 4) names its target instead,
+    /// as its line (ChatHtml string 0x674) does.
+    /// </summary>
+    void OfflineChat(Ms2.Net.Packets.UserChatRequest chat)
+    {
+        var pc = hudModel.Player;
+        string name = chat.Kind == 4 ? chat.Target ?? "" : pc.Name ?? "";
+        ChatLog.OnUserChat(new Ms2.Net.Packets.ChatMessage(0, 0, name, false, 0, chat.Message ?? "", chat.Kind, false, pc.Gender,
+            chat.Kind == 4 ? chat.Target ?? "" : "", chat.Value, 0, 0));
+    }
+    Action<Ms2.Net.Packets.UserChatRequest> offlineChat;
+
+    /// <summary>
     /// UIMessengerBrowser::LoadDefaultWindows (uimessenger.cpp:3149): a chat window (UIMessenger) per
     /// table/default/DefaultMessenger&lt;i&gt;.xml, named messengerdialog&lt;i&gt;.xml, first load; then UIGroupMessengerBrowser,
     /// the group chat bar, all over the shared log (<see cref="ChatLog"/>). The saved windows of the character folder
@@ -1499,6 +1516,7 @@ public partial class HudScene : Node, IUiStageHost
         if (messengers.Count == 0)
         {
             ChatLog.Model = hudModel;
+            if (Ms2Godot.Net.LiveSession.Instance == null) ChatLog.SendPacket = offlineChat = OfflineChat;
             HookChatEmoticon();
             var docs = hudModel.Tables.DefaultMessengers;
             for (int i = 0; i < docs.Count; i++)
