@@ -139,12 +139,12 @@ public class LoginClientTests {
     }
 
     /// <summary>Opt-in: MS2_LIVE_ARGS="--ip=host --port=n" (the launcher's arguments; a test run has no command line of its own) and MS2_LIVE_ACCOUNT=user:password (user without the region code; "KR" is appended like the client does).
-    /// Optional MS2_LIVE_EXPECT=name1,name2 lists the character names the server's game db holds for the account.</summary>
+    /// Optional MS2_LIVE_PORT=n (the test server's port; the test fails when --port differs). Optional MS2_LIVE_EXPECT=name1,name2 lists the character names the server's game db holds for the account.</summary>
     [Test] public async Task LiveServerCharacterList() {
         var addr = LauncherArgs.Parse((Environment.GetEnvironmentVariable("MS2_LIVE_ARGS") ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries)); var acct = Environment.GetEnvironmentVariable("MS2_LIVE_ACCOUNT");
         if (!addr.HasAddress || string.IsNullOrEmpty(acct)) Assert.Ignore("MS2_LIVE_ARGS / MS2_LIVE_ACCOUNT not set");
         var up = acct.Split(':', 2);
-        Assert.That(addr.Port, Is.Not.EqualTo(20001), "never the shared server");
+        if (int.TryParse(Environment.GetEnvironmentVariable("MS2_LIVE_PORT"), out int expected)) Assert.That(addr.Port, Is.EqualTo(expected), "the port MS2_LIVE_PORT names, the test server's");   // set it so a stray --port never reaches another server
         using var t = new TcpTransport();
         var o = await new LoginClient(t).LoginAsync(addr.Host, addr.Port, up[0] + "KR", up[1]);
         Assert.That(o.Success, Is.True, o.Result.Message);

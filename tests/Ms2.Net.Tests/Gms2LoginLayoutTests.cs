@@ -153,13 +153,13 @@ public class Gms2LoginLayoutTests {
 
     [Test]
     public void ServerListLoadIsOneServerWithItsChannels() {
-        var w = UpstreamServerList("Paperwood", new[] { ("1.2.3.4", (ushort) 20002) }, new short[] { 1, 2, 3 });
+        var w = UpstreamServerList("Paperwood", new[] { ("1.2.3.4", (ushort) 1235) }, new short[] { 1, 2, 3 });
         var list = ServerList.Read(new ByteReader(Bytes(w)), Gms);
         Assert.That(list.Usable, Is.True);
         Assert.That(list.Servers, Has.Count.EqualTo(1));
         var s = list.Servers[0];
         Assert.That(s.Name, Is.EqualTo("Paperwood"));
-        Assert.That(s.Addresses, Is.EqualTo(new[] { ("1.2.3.4", (ushort) 20002) }));
+        Assert.That(s.Addresses, Is.EqualTo(new[] { ("1.2.3.4", (ushort) 1235) }));
         Assert.That(s.TrafficPercent, Is.EqualTo(100));
         Assert.That(s.Channels, Is.EqualTo(new ushort[] { 1, 2, 3 }));
     }

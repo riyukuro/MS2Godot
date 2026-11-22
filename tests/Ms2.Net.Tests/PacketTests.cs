@@ -61,9 +61,9 @@ public class PacketTests {
 
     [Test] public void LoginToGameOkAndError() {
         var w = new ByteWriter();
-        w.WriteByte(0); w.WriteBytes(new byte[] { 127, 0, 0, 1 }); w.WriteShort(20001); w.WriteLong(-5); w.WriteInt(2000062);
+        w.WriteByte(0); w.WriteBytes(new byte[] { 127, 0, 0, 1 }); w.WriteShort(1234); w.WriteLong(-5); w.WriteInt(2000062);
         var p = LoginToGame.Read(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray()));
-        Assert.That(p.Ok); Assert.That(p.Address.ToString(), Is.EqualTo("127.0.0.1")); Assert.That(p.Port, Is.EqualTo(20001)); Assert.That(p.MapId, Is.EqualTo(2000062));
+        Assert.That(p.Ok); Assert.That(p.Address.ToString(), Is.EqualTo("127.0.0.1")); Assert.That(p.Port, Is.EqualTo(1234)); Assert.That(p.MapId, Is.EqualTo(2000062));
         Assert.That(p.Token, Is.EqualTo(ulong.MaxValue - 4));
     }
 

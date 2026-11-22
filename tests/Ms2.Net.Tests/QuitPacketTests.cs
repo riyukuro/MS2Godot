@@ -42,13 +42,13 @@ public class QuitPacketTests {
         var w = new ByteWriter();
         w.WriteByte(0);
         w.WriteBytes(new byte[] { 127, 0, 0, 1 });
-        w.WriteShort(20001);
+        w.WriteShort(1234);
         w.WriteInt(0x11223344);
         w.WriteInt(unchecked((int)0x55667788));
         var ok = GameToLogin.Read(new ByteReader(w.ToArray()));
         Assert.That(ok.Ok, Is.True);
         Assert.That(ok.Address, Is.EqualTo(IPAddress.Loopback));
-        Assert.That(ok.Port, Is.EqualTo(20001));
+        Assert.That(ok.Port, Is.EqualTo(1234));
         Assert.That(ok.Token1, Is.EqualTo(0x11223344));
         Assert.That(ok.Token2, Is.EqualTo(0x55667788));
         Assert.That(ok.Token, Is.EqualTo(0x5566778811223344UL));
