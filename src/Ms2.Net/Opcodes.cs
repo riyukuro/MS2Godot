@@ -128,6 +128,7 @@ public enum Inbound : ushort {
     Guild = 0x8A,           // RecvOp Guild (commonfiles/opcodes.h): CGuildManager::FUN_1413b6370
     GroupChat = 0x8B,       // RecvOp GroupChat (commonfiles/opcodes.h): CGroupChatManager::OnGroupChat (networkservice.cpp:687)
     Prestige = 0x11C,
+    Lapenshard = 0x11B,     // RecvOp Lapenshard (commonfiles/opcodes.h): CSceneStateGame::OnLapenshard @0x14173d2e0 (scenestategame.cpp:8743)
     Buddy = 0x61,           // RecvOp Buddy (commonfiles/opcodes.h): CSceneStateGame::OnBuddy -> CBuddyManager::OnBuddy
     Fishing = 0xC4,         // RecvOp Fishing (commonfiles/opcodes.h:203): CFishingManager::FUN_140cd9840 (scenestategame.cpp:1805)
     Breakable = 0x4F,       // RecvOp Breakable (commonfiles/opcodes.h:87): CSceneStateGame::OnBreakable
@@ -233,6 +234,7 @@ public enum Outbound : ushort {
     EventReward = 0x97,     // SendOp EventReward (commonfiles/opcodes.h): the friend dialog's VIP row (mode 5)
     RequestUserEnv = 0x69,
     Prestige = 0xAC,
+    Lapenshard = 0xAD,      // SendOp Lapenshard (commonfiles/opcodes.h): the lapenshard dialog's equip, unequip and upgrade sends
     CharacterInfo = 0x1E,       // SendOp::CharacterInfo (commonfiles/opcodes.h)
     CharacterAbility = 0x89,    // SendOp CharacterAbility (commonfiles/opcodes.h): the character ability dialog's sends
     Trade = 0x49,           // SendOp Trade (commonfiles/opcodes.h): CTradeManagerEx's SendTradeMode*
