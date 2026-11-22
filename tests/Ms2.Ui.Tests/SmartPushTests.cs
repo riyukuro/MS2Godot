@@ -297,4 +297,16 @@ public class SmartPushTests
         Assert.That(used, Is.LessThanOrEqualTo(24), "4000 ticks, ~1300 polls");
         Assert.That(strip.Log, Is.Empty);
     }
+
+    [Test]
+    public void TheClientsOwnTableMakesPushes()
+    {
+        // smartpushtable.cpp:105 reads Table/smartPush.xml; the packs hold it only under table/kr/ (locale folder first)
+        var d = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
+        var packs = new PackSet(d);
+        if (!packs.Exists("Xml", "table/kr/smartpush.xml") && !packs.Exists("Xml", "table/smartpush.xml")) Assert.Ignore("no smartpush.xml in this data");
+        var tables = new GameTables(packs, "en");
+        Assert.That(tables.SmartPush.Count, Is.GreaterThan(0));
+    }
 }
