@@ -354,6 +354,9 @@ public sealed class FieldTriggers
     /// </summary>
     void CameraStart(FieldEntity e)
     {
+        // the client sets the action camera (mode 5) here and does not run the next step itself (triggeractioncli.cpp:
+        // 949-951); with mode 5 not ported the steps queued after such an object wait until the next camera packet
+        // clears the queue
         if (!string.IsNullOrEmpty(e.Get("XmlFilePath"))) return;
         var set = CameraSettingOf(e);
         int kind = (int)(uint)e.Number("StartInterpolator", 1);
