@@ -1,3 +1,4 @@
+using System.Linq;
 using Godot;
 
 namespace Ms2Godot.Ui;
@@ -21,4 +22,16 @@ public partial class HudScene
 
     /// <summary>The revival dialog's "onRevival(button)" callback, as its movie raises it. False without the dialog.</summary>
     public bool ReviveScripted(int button) => RevivalOpen && revival.OnCallback("onRevival", new object[] { button });
+
+    /// <summary>The inventory's equip action on the bag item <paramref name="itemId"/> (the right click's RequestEquipItem(item, 0, 0)).
+    /// False without the item or the inventory.</summary>
+    public bool EquipScripted(int itemId)
+    {
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        if (live?.Items.All.FirstOrDefault(e => e.Id == itemId) is not { } e) return false;
+        if (inventory == null || inventory.IsClosed) OpenInventory();
+        if (inventory?.FindItem(e.Uid) is not { } item) return false;
+        inventory.RequestEquipItem(item, 0, 0);
+        return true;
+    }
 }

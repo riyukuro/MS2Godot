@@ -101,6 +101,18 @@ public partial class LiveSession
                     Shot("revived.png");
                     break;
                 }
+                case "equip":
+                {
+                    int weapon = int.Parse(Env("MS2_LIVE_COMBAT_WEAPON", "0"));
+                    GD.Print($"live: combat weapon item: {(hud.SubmitChatLine($"/item {weapon}") ? "sent" : "no chat window")}");
+                    await until(() => live.Items.All.Any(e => e.Id == weapon), 60 * 10); await frames(60);
+                    Check("the weapon is in the bag", live.Items.All.Any(e => e.Id == weapon));
+                    GD.Print($"live: combat equip: {(hud.EquipScripted(weapon) ? "sent" : "not sent")}");
+                    await until(() => live.Me.Equips?.Any(e => e.Id == weapon) == true, 60 * 10); await frames(60);
+                    Check("the weapon is worn", live.Me.Equips?.Any(e => e.Id == weapon) == true);
+                    Shot("equipped.png");
+                    break;
+                }
                 case "revivepaid":
                 {
                     Check("the revival dialog is open", hud.RevivalUiUp());
