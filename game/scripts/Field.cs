@@ -925,6 +925,7 @@ public partial class Field : Node3D, World.ITargetCamera
 
     /// <summary>The camera manager the camera trigger objects drive; while its mode is not the follow one it places the camera.</summary>
     public World.TriggerCamera TriggerCamera { get; private set; }
+    bool triggerCameraShown;   // the trigger camera placed the camera last frame
 
     /// <summary>The follow mode's setting as CameraMgr reads it: the camera's fov, the CCameraMode near and far
     /// (cameramode.cpp:305-307), the placed eye and the camera's euler, in MS2 axes.</summary>
@@ -1081,10 +1082,12 @@ public partial class Field : Node3D, World.ITargetCamera
                 // a lock or fly-by mode (CameraMgr::Update, camera.cpp:819-825) places the camera; the follow mode waits
                 camera.GlobalTransform = s.Transform();
                 camera.Fov = s.Fov;
+                triggerCameraShown = true;
             }
             else
             {
-                if (camera.Fov != cam.FovDeg) camera.Fov = cam.FovDeg;
+                // the field's fov is set once at load, so it is put back only when the trigger camera stops placing it
+                if (triggerCameraShown) { camera.Fov = cam.FovDeg; triggerCameraShown = false; }
                 UpdateCamera(delta);
             }
         }
