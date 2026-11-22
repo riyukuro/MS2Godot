@@ -1744,7 +1744,7 @@ public partial class HudScene : Node, IUiStageHost
         if (k.Keycode == Key.Escape && inventory?.IsClosed == false) { inventory.Close(); return true; }
         if (k.Keycode == Key.Escape && myInfo?.IsClosed == false) { myInfo.Close(); return true; }
         if (k.Keycode == Key.Escape && PcInfoOpen) { pcInfo.Close(); return true; }
-        if (k.Keycode == Key.Escape && skillBook?.IsClosed == false) { skillBook.Close(); return true; }
+        if (k.Keycode == Key.Escape && skillBook?.IsClosed == false) { skillBook.RequestClose(); return true; }
         if (k.Keycode == Key.Escape && gameDictionary?.IsClosed == false) { gameDictionary.Close(); return true; }
         if (AchieveKeys(k)) return true;
         if (MailSendKeys(k)) return true;

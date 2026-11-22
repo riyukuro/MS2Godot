@@ -149,3 +149,10 @@ public sealed record JobResetRequest(int Rank) : IOutPacket {
     public Outbound Op => Outbound.Job;
     public void Write(ByteWriter w) { w.WriteByte(10); w.WriteInt(Rank); }
 }
+
+/// <summary>Outbound 0x25 (SendOp::Job) mode 8: JobSystemCli::RequestReset @0x140a6e0e0 (jobsystemcli.cpp:155), the skill window's
+/// close (UISkillBookTreeDialog::vfunc_67 @0x140ec5340): u8 8, nothing else.</summary>
+public sealed record JobCloseRequest : IOutPacket {
+    public Outbound Op => Outbound.Job;
+    public void Write(ByteWriter w) => w.WriteByte(8);
+}

@@ -724,4 +724,55 @@ public class SkillBookTreeTests
         c.OnCallback("onUseTab", new object[] { "1" });
         Assert.That(names.Count, Is.EqualTo(1));
     }
+
+    static (SkillBookTreeController c, List<Ms2.Net.Wire.IOutPacket> sent, List<MessageBoxData> boxes) OpenForClose()
+    {
+        var (h, c, _) = Load();
+        h.Model.Player.Level = 20;
+        var sent = new List<Ms2.Net.Wire.IOutPacket>();
+        var boxes = new List<MessageBoxData>();
+        c.Send = Sink(sent);
+        c.ShowBox = boxes.Add;
+        c.OnSkillBookTree(NoTabs());
+        c.OnLevelChanged(20);
+        return (c, sent, boxes);
+    }
+
+    [Test]
+    public void ClosingWithNothingChangedSendsTheJobCloseOnceAndAsksNothing()
+    {
+        var (c, sent, boxes) = OpenForClose();
+        Assert.That(c.OnCallbackBeforeDialog("onCloseDialog", Array.Empty<object>()), Is.True);
+        c.RequestClose();
+        Assert.That(boxes, Is.Empty);
+        Assert.That(sent.OfType<JobCloseRequest>().Count(), Is.EqualTo(1));
+    }
+
+    [Test]
+    public void ClosingWithAPendingPreviewAsksFirstAndNoLeavesWithoutApplying()
+    {
+        var (c, sent, boxes) = OpenForClose();
+        c.OnCallback("onSkillPointUp", new object[] { 10500041u });
+        Assert.That(c.OnCallbackBeforeDialog("onCloseDialog", Array.Empty<object>()), Is.True);
+        Assert.That(boxes.Count, Is.EqualTo(1));
+        Assert.That(sent, Is.Empty);                          // asked, nothing closed or sent
+        boxes[0].Callback(1, boxes[0]);
+        Assert.That(sent.Select(x => x.Op), Is.EqualTo(new[] { Ms2.Net.Outbound.Job }));
+        Assert.That(sent[0], Is.TypeOf<JobCloseRequest>());
+    }
+
+    [Test]
+    public void ClosingWithAPendingPreviewAndYesAppliesThenCloses()
+    {
+        var (c, sent, boxes) = OpenForClose();
+        var lines = new List<(string, int)>();
+        c.ChatLine += (t, k) => lines.Add((t, k));
+        c.OnCallback("onSkillPointUp", new object[] { 10500041u });
+        c.RequestClose();
+        boxes[0].Callback(0, boxes[0]);
+        Assert.That(sent.Select(x => x.GetType()), Is.EqualTo(new[] { typeof(SkillBookTreeSave), typeof(JobSkillsRequest), typeof(JobCloseRequest) }));
+        Assert.That(((JobSkillsRequest)sent[1]).Mode, Is.EqualTo(9));
+        Assert.That(lines.Single().Item2, Is.EqualTo(0x14));
+        Assert.That(c.WaitServer, Is.False);                  // the close cleared it
+    }
 }

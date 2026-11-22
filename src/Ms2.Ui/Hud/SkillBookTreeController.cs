@@ -106,6 +106,7 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
     public override void OnLoadComplete()
     {
         base.OnLoadComplete();
+        closeSent = false;
         Host.Invoke("SetMaxTabCount", 3u);
         if (Host.Child("m_webGuideButton") is { } web) Host.SetVisible(web, false);
         if (JobChange01 && Jobs != null) JobLevel = JobTable.GetJobRank(Jobs.SubJob);
@@ -113,10 +114,13 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
         RequestTree?.Invoke();
     }
 
-    /// <summary>vfunc_67 @0x140ec5340 (:505): the slot bag dropped, the state cleared, UIDialog's close. Its RequestReset (Job
-    /// mode 8) is not sent.</summary>
+    bool closeSent;
+
+    /// <summary>vfunc_67 @0x140ec5340 (:505): the local player's JobSystem RequestReset (Job mode 8), the slot bag dropped, the
+    /// state cleared, UIDialog's close. The mode 8 packet goes out once per open.</summary>
     public override void Close()
     {
+        if (Jobs != null && !closeSent) { closeSent = true; TrySend(new JobCloseRequest()); }
         bag.Clear();
         ready = false;
         WaitServer = false;
@@ -683,6 +687,42 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
                 return true;
         }
         return false;
+    }
+
+    /// <summary>The close button and Escape (UIDialog vfunc_69 / vfunc_70: vfunc_71 first, vfunc_67 when it returns 0).</summary>
+    public void RequestClose()
+    {
+        if (!CloseGuard()) Close();
+    }
+
+    public override bool OnCallbackBeforeDialog(string name, object[] args)
+    {
+        if (!string.Equals(name, "onCloseDialog", StringComparison.OrdinalIgnoreCase)) return false;
+        RequestClose();
+        return true;
+    }
+
+    /// <summary>vfunc_71 @0x140ec7420 (:907): with a changed preview in any tab the close is asked (CheckApply(false) is the
+    /// platform state, 0 here; STILL-OPEN: its direct-close branch) and true is returned; nothing changed: false.</summary>
+    bool CloseGuard()
+    {
+        if (!simulators.Values.Any(s => s.IsChanged())) return false;
+        ShowBox(MessageBoxQueue.CreateWithCallback(Common("s_msg_skillbook_close_apply_msg"), 1, OnCloseConfirm));
+        return true;
+    }
+
+    /// <summary>OnCloseConfirm @0x140eca7e0 (:936): yes saves every tab, shows the tab in use, sends the apply and the notice;
+    /// then the box closes and the window with it (vfunc_67), also on no.</summary>
+    bool OnCloseConfirm(int result, MessageBoxData box)
+    {
+        if (result == 0)
+        {
+            SaveTree(0, 0, 0);
+            SelectTab(tabId);
+            if (RequestJob(false, false, 0)) ChatLine?.Invoke(Common("s_msg_skillbook_apply_skill"), 0x14);
+        }
+        Close();
+        return true;
     }
 
     /// <summary>Table/skillAutoDistribute.xml (LoadAutoDistribute @0x140eccf50).</summary>
