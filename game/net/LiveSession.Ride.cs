@@ -35,6 +35,35 @@ public partial class LiveSession
         return true;
     }
 
+    /// <summary>The attack key (action 0x49401) as held state, which the HUD's key events set (Unk_PCMove::IsActionKeyDown).</summary>
+    public bool AttackKeyHeld;
+
+    /// <summary>String 0x48 and s_strNoticeEp (ridee.cpp:347): Ridee::UpdateRunEffects' RunX without the EP.</summary>
+    public const int RunXNoEpNoticeId = 0x48;
+    public const string RunXNoEpSound = "system_notice_error_ep";
+
+    /// <summary>Ridee::UpdateRunEffects' inputs for the own mount: the attack key, the rider's EP (stat 10), the field's
+    /// useEPSkill, the ride effects at the pc (InsertEffect with the ridee as actor), and the no-EP notice
+    /// (FUN_141275260(0x48, 1, 0), then PlaySystemSound).</summary>
+    void WireRunX(Player p)
+    {
+        p.AttackKeyDown = () => AttackKeyHeld && !Ms2.Ui.InputBlock.Active;
+        p.CurrentEp = () => Ms2Godot.Ui.StubHudData.Instance.EpCurrent;
+        p.FieldUsesEp = FieldUsesEp;
+        p.PlayRideEffect = path =>
+        {
+            if (remote == null || player == null || !IsInstanceValid(player)) return 0;
+            PlayOwnEffect(path);
+            return remote.EffectLength(path);
+        };
+        p.RunXNoEp += () =>
+        {
+            string text = MessageBoxData.Common(RunXNoEpNoticeId);
+            if (!string.IsNullOrEmpty(text)) SystemNoticeSink?.Invoke(text);
+            FieldAudio.Instance?.PlayUi(RunXNoEpSound);
+        };
+    }
+
     /// <summary>The own pc's PCBase m_mapB28 (passenger object id to seat) and PC m_b1224 (ResponseRide modes 3-6).</summary>
     public readonly System.Collections.Generic.Dictionary<int, int> OwnPassengers = new();
     public bool OwnNoBoarding { get; private set; }

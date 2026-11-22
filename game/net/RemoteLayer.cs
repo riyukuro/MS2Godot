@@ -351,6 +351,9 @@ public sealed partial class RemoteLayer : Node3D
     public void PlayEffect(string effect, Vector3 at, Basis rotation, int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
         => combat.PlayEffect(effect, at, rotation, casterKind);
 
+    /// <summary>How long an effect xml's parts stay (CombatLayer.EffectLength).</summary>
+    public float EffectLength(string effect) => combat.EffectLength(effect);
+
     /// <summary>Feature 0x8e and the server clock, which the layer switch (WornEquips.OutfitShown) reads.</summary>
     public Func<bool> Feature8e = () => false;
     public Func<long> ServerNow = () => 0;

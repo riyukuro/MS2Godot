@@ -307,6 +307,8 @@ public partial class Player : CharacterBody3D
         bool grounded = Grounded;
         ProbeGround();
         stateTime += dt;
+        // Ridee::FUN_141705ac0: UpdateMoveDirection, then UpdateRunEffects, then the state's vfunc_8 (the subs it sets)
+        if (Mount != null) { UpdateRunEffects(hasInput); UpdateRunXSubs(); }
 
         switch (State)
         {
@@ -477,6 +479,9 @@ public partial class Player : CharacterBody3D
         prevState = old;
         State = s;
         stateTime = 0;
+        // StateWalk::vfunc_4 0x17 (statewalk.cpp:116-117), StateLand::vfunc_4 0x87 (stateland.cpp:78-79) with the RunX flag
+        walkRunX = s == MoveState.Walk && RunX;
+        landRunX = s == MoveState.Land && RunX;
         // StateIdle::vfunc_4 (stateidle.cpp:187-189) and StateDead::vfunc_4 (statedead.cpp:150-153) reset the own PC's push
         if (s is MoveState.Idle or MoveState.Dead) Push.Reset();
         // StateLadder::vfunc_4 (stateladder.cpp:143), StateRope::vfunc_4 (statemanager.cpp:1225), StateClimb::vfunc_4
@@ -589,8 +594,9 @@ public partial class Player : CharacterBody3D
         // the old state's vfunc_5 runs first, then StateJump::vfunc_4: StopJump, then StartJump (statejump.cpp:126-128)
         Enter(MoveState.Jump);
         StopJump();
-        // StateJump::vfunc_4: the jump variant
-        if (sub == 0x25)
+        // StateJump::vfunc_4: the jump variant, the mount's RunX 0x27 first (statejump.cpp:99-116)
+        if (RunX) jumpSub = 0x27;
+        else if (sub == 0x25)
         {
             jumpToggle = (jumpToggle + 1) % 2;
             jumpSub = rng.Next(2) != 0 ? (jumpToggle == 0 ? 0x22 : 0x24) : (jumpToggle == 0 ? 0x21 : 0x23);

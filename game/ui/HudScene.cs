@@ -1693,8 +1693,13 @@ public partial class HudScene : Node, IUiStageHost
         if (k.Pressed && Ms2.Ui.InputBlock.Active) return;
         if (Ms2Godot.Net.LiveSession.Instance is not { } live) return;
         foreach (int dik in hudModel.Keys.KeysOfAction(PickupAction))
-            if (GodotKeyOfDik(dik) is { } g && g == k.PhysicalKeycode) { live.PickupKeyHeld = k.Pressed; return; }
+            if (GodotKeyOfDik(dik) is { } g && g == k.PhysicalKeycode) { live.PickupKeyHeld = k.Pressed; break; }
+        // the attack key the same way, for the own mount's RunX (Ridee::UpdateRunEffects' IsActionKeyDown(0x49401))
+        foreach (int dik in hudModel.Keys.KeysOfAction(AttackAction))
+            if (GodotKeyOfDik(dik) is { } g && g == k.PhysicalKeycode) { live.AttackKeyHeld = k.Pressed; return; }
     }
+
+    const int AttackAction = 0x49401;
 
     /// <summary>The scene's keys: the chat windows first, then the dialogs, then the own casts.</summary>
     public override void _Input(InputEvent e)

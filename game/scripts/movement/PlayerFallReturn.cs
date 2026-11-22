@@ -107,23 +107,21 @@ public partial class Player
     };
 
     /// <summary>The state's own sub id (FUN_14166cc80, mypc.cpp:2323): Walk 0x18 (statewalk.cpp:86; the gamepad 0x19 is not modelled), Swim 0x84,
-    /// Jump the Player's jumpSub 0x21-0x24, Land 0x86, Idle 1 (boredom variants 2-5 not modelled), Ladder/Rope/Climb/Dash their m_n10; Fall 0.</summary>
+    /// Jump the Player's jumpSub 0x21-0x24, Land 0x86, Idle 1, or a mount's RunX ids (boredom variants 2-5 not modelled), Ladder/Rope/Climb/Dash their m_n10; Fall 0.</summary>
     byte SubOf(MoveState s)
     {
-        // The player's own records never carry the riding ids 0x17/0x27/0x85/0x87: that flag (m_unk_b80, FUN_141676b70) is set
-        // by Ridee::UpdateRunEffects on the mount itself (ridee.cpp:721-779).
-        // STILL-OPEN: UpdateRunEffects (the mount's RunX sprint: runXSpeed, runXMotion and that flag) is not ported, so our
-        // mount's records carry none of those ids either.
+        // The mount's RunX ids (the flag m_unk_b80, FUN_141676b70, which Ridee::UpdateRunEffects sets): Walk 0x17, Swim 0x85,
+        // Jump 0x27 (in jumpSub), Land 0x87, Idle 0xc (PlayerRide.UpdateRunXSubs).
         // Rope 0x33-0x39 (statemanager.cpp:1226-1414), climb 0x56-0x62 (state.cpp:1049-1051, 1177), dash 0x1d-0x1f
         // (state.cpp:1812-1920) and ladder 0x2a-0x31 (stateladder.cpp:237-462) are the states' own m_n10, which the controller keeps.
         // Fall has no sub id (0).
         return s switch
         {
-            MoveState.Walk => (byte)0x18,
-            MoveState.Swim => 0x84,
+            MoveState.Walk => walkRunX ? (byte)0x17 : (byte)0x18,
+            MoveState.Swim => SwimRunX ? (byte)0x85 : (byte)0x84,
             MoveState.Jump => (byte)jumpSub,
-            MoveState.Land => 0x86,
-            MoveState.Idle => 1,
+            MoveState.Land => landRunX ? (byte)0x87 : (byte)0x86,
+            MoveState.Idle => RunX ? (byte)0xc : (byte)1,
             MoveState.Ladder => (byte)lsub,
             MoveState.Rope => (byte)rsub,
             MoveState.Climb => (byte)csub,

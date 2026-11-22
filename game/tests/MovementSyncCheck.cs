@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Godot;
 
 namespace Ms2Godot.Tests;
@@ -70,6 +71,57 @@ public partial class MovementSyncCheck : Node3D
         Walk(new Vector2(0, 1));
         bool ok = rideOn > 0 && footOn == 0 && ride == rideOn && foot > 0;
         GD.Print($"movement sync check: riding sent {rideOn} RideSync and {footOn} UserSync record(s); on foot again {ride - rideOn} and {foot}: {(ok ? "OK" : "FAIL")}");
+        return ok;
+    }
+
+    // Ridee::UpdateRunEffects on a bare mount with the attack key held: standing sets the flag (idle sub 0xc) with the
+    // pressX idle effects; walking with the EP runs at runXSpeed with sub 0x17 and the run loop effect; without the EP the
+    // flag clears after the 1 s of the last EP check, with one notice in 5 s; the walk keeps 0x17; the key up clears it.
+    bool RunX()
+    {
+        var step = typeof(Player).GetMethod("Step", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        void Frames(int n) { for (int i = 0; i < n; i++) step.Invoke(runner, new object[] { 1.0 / 60 }); }
+        var subs = new List<(byte State, byte Sub)>();
+        runner.RideSyncOut += list => { foreach (var (r, _) in list) subs.Add((r.State, r.SubState)); };
+        var played = new List<string>();
+        int notices = 0;
+        long ep = 20;
+        bool key = true;
+        runner.AttackKeyDown = () => key;
+        runner.CurrentEp = () => ep;
+        runner.FieldUsesEp = () => true;
+        runner.PlayRideEffect = path => { played.Add(path); return 0.5f; };
+        runner.RunXNoEp += () => notices++;
+        runner.RideOn(new Mount
+        {
+            Data = new Movement.RideData
+            {
+                Id = 1, RunSpeed = 5, RunXSpeed = 8, RunXConsumeEp = 10, PressXEffectIdle = "idle", PressXEffectIdleNonstop = "idleLoop",
+                PressXEffectRun = "run", PressXEffectRunNonstop = "runLoop",
+            },
+            Visual = new Node3D(),
+        });
+        Frames(60);    // standing a second: the idle effect once, the idle loop at 0 and 0.5 s
+        bool idle = runner.RunX && subs.Count > 0 && subs[^1] == (1, 0xc)
+            && played.Count(p => p == "idle") == 1 && played.Count(p => p == "idleLoop") == 2;
+        subs.Clear(); played.Clear();
+        runner.Input2 = new Vector2(0, 1);
+        Frames(25);
+        var vel = (Vector3)typeof(Player).GetField("kVel", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(runner);
+        float speed = new Vector2(vel.X, vel.Z).Length();
+        bool run = runner.RunX && subs.Count > 0 && subs[^1] == (2, 0x17) && Mathf.Abs(speed - 800f) < 1f
+            && played.Count(p => p == "run") == 0 && played.Count(p => p == "runLoop") == 1;   // the flag stays set from the idle: no pressXEffectRun
+        ep = 0;
+        Frames(120);   // the last EP check was at the walk's first frame: clear after 1 s, one notice
+        bool noEp = !runner.RunX && notices == 1 && subs[^1] == (2, 0x17);
+        key = false;
+        runner.Input2 = Vector2.Zero;
+        Frames(10);
+        bool up = !runner.RunX && subs[^1].Sub == 1;
+        runner.RideOff();
+        runner.AttackKeyDown = null; runner.CurrentEp = null; runner.FieldUsesEp = null; runner.PlayRideEffect = null;
+        bool ok = idle && run && noEp && up;
+        GD.Print($"movement sync check: RunX standing {idle}, running at {speed:0.#} {run}, without the EP {noEp} ({notices} notice(s)), key up {up}: {(ok ? "OK" : "FAIL")}");
         return ok;
     }
 
@@ -527,6 +579,7 @@ public partial class MovementSyncCheck : Node3D
         bool dir = right == 8 && forward == 13;
         GD.Print($"movement sync check: camera a quarter turned, right key flags {right}, forward key flags {forward}: {(dir ? "OK" : "FAIL")}");
         bool ride = RideSync();
+        bool runX = RunX();
         var floor = new StaticBody3D { Position = new Vector3(0, -50, 0) };
         floor.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(20000, 100, 20000) } });
         AddChild(floor);
@@ -537,7 +590,7 @@ public partial class MovementSyncCheck : Node3D
         bool meshLand = MeshLandings();
         bool oneSided = OneSidedMeshes();
         bool walls = OneSidedWalls(floor);
-        bool ok = dir && ride && spawn && land && alloc && restAlloc && meshLand && oneSided && walls;
+        bool ok = dir && ride && runX && spawn && land && alloc && restAlloc && meshLand && oneSided && walls;
         GetTree().Quit(ok ? 0 : 1);
     }
 }

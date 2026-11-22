@@ -150,6 +150,18 @@ void fragment() {
         }
     }
 
+    /// <summary>How long <see cref="PlayEffect(string, Godot.Vector3, Basis, int)"/> keeps an effect xml's nif parts: the
+    /// latest start delay plus duration (0.6 s without one, at most 3 s), 0 for no xml, hidden effects or no nif part.</summary>
+    public float EffectLength(string xmlPath)
+    {
+        if (!ShowEffects || string.IsNullOrEmpty(xmlPath) || effects.Get(xmlPath) is not { } parts) return 0;
+        float end = 0;
+        foreach (var part in parts)
+            if (part.Type == "nif" && !string.IsNullOrEmpty(part.FilePath))
+                end = Mathf.Max(end, part.StartDelay + Mathf.Min(part.Duration > 0 ? part.Duration : 0.6f, 3f));
+        return end;
+    }
+
     /// <summary>An effect light waiting for its start delay or running (CLightEffect: it adds its light when it starts and the
     /// effect's end destroys it, FieldLightSet.StartEffect / EndEffect). The light entity is added at Init
     /// (lighteffectparam.cpp:382, AddEntity) and attached only after m_fStartDelay (:384, :401-411); whether the added but

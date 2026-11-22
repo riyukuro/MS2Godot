@@ -37,6 +37,9 @@ public class StateRideAnimTests
         // the fall (5) is not in StateRide::vfunc_9's switch
         Assert.That(StateRideAnim.For(RemotePcStates.StateFall, 0, S), Is.EqualTo("pc"));
         Assert.That(StateRideAnim.For(RemotePcStates.StateSkill, 0x17, S), Is.EqualTo("pc"));
+        // with the ridee's m_unk_b80 set (the own ridee's RunX), the SP idle
+        Assert.That(StateRideAnim.For(RemotePcStates.StateFall, 0, S, spIdle: true), Is.EqualTo("spIdle"));
+        Assert.That(StateRideAnim.For(RemotePcStates.StateLand, 0x87, S, spIdle: true), Is.EqualTo("idle"));
     }
 
     [Test]

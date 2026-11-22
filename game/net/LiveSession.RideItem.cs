@@ -21,19 +21,36 @@ public partial class LiveSession
         (int)(Constants()?.Float("SummonRideeDuration", RideItemUse.DefaultSummonDuration) ?? RideItemUse.DefaultSummonDuration);
 
     int? rideeFieldId;
-    bool rideeFieldUse = true;
+    bool rideeFieldUse = true, epFieldUse = true;
     /// <summary>WorldService::FUN_141bcb210's field part: the current field's &lt;ui useRidee&gt; (no field: false, as m_298 null);
     /// unreadable field data passes.</summary>
     bool FieldUsesRidee()
     {
         if (FieldId is not int id) return false;
-        if (rideeFieldId != id)
-        {
-            rideeFieldId = id;
-            try { rideeFieldUse = Ms2.Formats.World.FieldData.FindById(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), id)?.UseRidee ?? true; }
-            catch { rideeFieldUse = true; }
-        }
+        ReadFieldUse(id);
         return rideeFieldUse;
+    }
+
+    /// <summary>The current field's &lt;ui useEPSkill&gt; (CFieldData m_nA4, default 1), which Ridee::UpdateRunEffects reads
+    /// (ridee.cpp:752); no field or unreadable field data reads the default.</summary>
+    bool FieldUsesEp()
+    {
+        if (FieldId is not int id) return true;
+        ReadFieldUse(id);
+        return epFieldUse;
+    }
+
+    void ReadFieldUse(int id)
+    {
+        if (rideeFieldId == id) return;
+        rideeFieldId = id;
+        try
+        {
+            var f = Ms2.Formats.World.FieldData.FindById(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), id);
+            rideeFieldUse = f?.UseRidee ?? true;
+            epFieldUse = f?.UseEPSkill ?? true;
+        }
+        catch { rideeFieldUse = epFieldUse = true; }
     }
 
     /// <summary>

@@ -36,6 +36,9 @@ public sealed class ActionAnims
         "SPECIAL_JUMP_DOWN", "REGEN", "TALK_UP", "TALK_IDLE", "LISTEN_IDLE", "WATER_IDLE", "WATER_SWIM", "WATER_DASH",
         "REVIVAL", "DEAD", "HIT", "UGC_CRAFT_IDLE", "CRAFT_IDLE", "CRAFT_RUN", "CRAFT_WALK", "CRAFT_JUMP_UP",
         "CRAFT_JUMP_DOWN", "CRAFT_JUMP_LAND", "FITTING_IDLE", "HOLD_IDLE", "FALL_DAMAGE", "MODEPVP_DEAD",
+        // 65-74 (actioncontainer.cpp:547-566): no Act of their own, so the body does not load them; a mount plays the stunt jump
+        "MODEPVP_WIN", "HAPPY", "SKILL", "AUTO_REVIVE", "NUTRIENT", "STUNT_JUMP_UP", "STUNT_JUMP_DOWN", "STUNT_JUMP_LAND",
+        "CHARACTER_SELECT_BORE", "CHARACTER_SELECT_BORE_IDLE",
     };
 
     // sequences that cycle; the rest play once and hold their last frame

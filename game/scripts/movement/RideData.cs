@@ -12,7 +12,15 @@ namespace Ms2Godot.Movement;
 public sealed class RideData
 {
     public int Id;
-    public string Kfm, Kfm2, Nif, RideBone, IdleXMotion, RunXMotion;
+    public string Kfm, Kfm2, Nif, RideBone;
+    /// <summary>basic idleXMotion / runXMotion, the mount's RunX sequences: the client keeps "Attack_01_A" / "Attack_01_B"
+    /// unless the attribute is non-empty (unit_140781d80_ridingtable.cpp:368-373).</summary>
+    public string IdleXMotion = "Attack_01_A", RunXMotion = "Attack_01_B";
+    /// <summary>basic runXConsumeEp: the EP a RunX takes each second; 0 is free (Ridee::FUN_1417060d0).</summary>
+    public int RunXConsumeEp;
+    /// <summary>basic pressXEffectIdle / pressXEffectRun (played once as RunX starts) and pressXEffectIdleNonstop /
+    /// pressXEffectRunNonstop (kept alive while it lasts), Ridee::UpdateRunEffects (ridee.cpp:717-799).</summary>
+    public string PressXEffectIdle, PressXEffectRun, PressXEffectIdleNonstop, PressXEffectRunNonstop;
     public float Scale = 1, WalkSpeed = 1, RunSpeed, RunXSpeed, SwimSpeed;
     public bool EnableSwim;
     /// <summary>basic disablePickUp (CRideeData m_basic.m_nDisablePickUp): a rider cannot pick up drops (mypc.cpp:4716-4721).</summary>
@@ -58,8 +66,11 @@ public sealed class RideData
             Kfm2 = (string)b.Attribute("kfm2"),
             Nif = (string)b.Attribute("nif"),
             RideBone = (string)b.Attribute("rideBone"),
-            IdleXMotion = (string)b.Attribute("idleXMotion"),
-            RunXMotion = (string)b.Attribute("runXMotion"),
+            RunXConsumeEp = (int)F(b, "runXConsumeEp", 0),
+            PressXEffectIdle = (string)b.Attribute("pressXEffectIdle"),
+            PressXEffectRun = (string)b.Attribute("pressXEffectRun"),
+            PressXEffectIdleNonstop = (string)b.Attribute("pressXEffectIdleNonstop"),
+            PressXEffectRunNonstop = (string)b.Attribute("pressXEffectRunNonstop"),
             Scale = F(b, "scale", 1),
             WalkSpeed = F(b, "walkSpeed", 1),
             RunSpeed = F(b, "runSpeed", 0),
@@ -74,6 +85,8 @@ public sealed class RideData
             RideTranslation = V(b, "rideTranslation"),
             RideRotation = V(b, "rideRotation"),
         };
+        if ((string)b.Attribute("idleXMotion") is { Length: > 0 } ixm) d.IdleXMotion = ixm;
+        if ((string)b.Attribute("runXMotion") is { Length: > 0 } rxm) d.RunXMotion = rxm;
         if (b.Attribute("rideSummonCastTime") is { } sct && float.TryParse((string)sct, NumberStyles.Float,
                 CultureInfo.InvariantCulture, out float sec))
             d.SummonCastTime = sec;

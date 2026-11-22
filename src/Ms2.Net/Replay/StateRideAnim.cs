@@ -15,16 +15,16 @@ public static class StateRideAnim
     /// <summary>
     /// The sequence for a ridee in <paramref name="state"/> with sub <paramref name="sub"/>: walk (2) or swim (0x1b) runs
     /// (the SP run for subs 0x17 / 0x85), the jump (6) jumps (the SP jump for sub 0x27), land (4) stands, idle (1) stands
-    /// (the SP idle for subs 0xc / 0x87), anything else plays rideAniPC.
-    /// STILL-OPEN: the SP idle of the last branch (the ridee's m_unk_b80, FUN_141676b70) is taken as unset.
+    /// (the SP idle for subs 0xc / 0x87), anything else plays the SP idle when the ridee's m_unk_b80 is set
+    /// (<paramref name="spIdle"/>, FUN_141676b70: the RunX flag of the own ridee; a remote ridee's is never set), else rideAniPC.
     /// </summary>
-    public static string For(int state, int sub, in RiderSequences s) => state switch
+    public static string For(int state, int sub, in RiderSequences s, bool spIdle = false) => state switch
     {
         RemotePcStates.StateWalk or RemotePcStates.StateSwim => sub is 0x17 or 0x85 ? s.SpRun : s.Run,
         RemotePcStates.StateJump => sub == 0x27 ? s.SpJump : s.Jump,
         RemotePcStates.StateLand => s.Idle,
         RemotePcStates.StateIdle => sub is 0xc or 0x87 ? s.SpIdle : s.Idle,
-        _ => s.Pc,
+        _ => spIdle ? s.SpIdle : s.Pc,
     };
 
     /// <summary>
