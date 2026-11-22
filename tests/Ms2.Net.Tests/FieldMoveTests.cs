@@ -236,6 +236,61 @@ public class FieldMoveTests {
         l.Stop();
     }
 
+    /// <summary>A LoadUgcMap with the house info (OnLoadUgcMap :2197-2240): owner, name "n", message "m", head 4, scores 5
+    /// and 6, plot map 7, plot 8, plot mode 9, area 10, height 11, setting 1/2/3, three permission kinds (only 0 set, value
+    /// 4), and for the own account one design and two blueprints.</summary>
+    static Action<ByteWriter> HouseMap(int mode, long owner) => w => {
+        w.WriteInt(mode); w.WriteInt(2000062); w.WriteByte(1);
+        w.WriteLong(owner); w.WriteUnicodeString("n"); w.WriteUnicodeString("m"); w.WriteByte(4);
+        w.WriteInt(5); w.WriteInt(6); w.WriteInt(7); w.WriteInt(8); w.WriteByte(9); w.WriteByte(10); w.WriteByte(11);
+        w.WriteByte(1); w.WriteByte(2); w.WriteByte(3);
+        w.WriteByte(3); w.WriteByte(1); w.WriteByte(4); w.WriteByte(0); w.WriteByte(2);   // only 1 is set (:2214): 0 and 2 carry no value
+        if (owner == Account) {
+            w.WriteByte(1); w.WriteInt(21); w.WriteUnicodeString("d"); w.WriteLong(22);
+            w.WriteByte(2); w.WriteInt(31); w.WriteUnicodeString("b"); w.WriteLong(32); w.WriteInt(41); w.WriteUnicodeString("c"); w.WriteLong(42);
+        }
+    };
+
+    /// <summary>What OnLoadUgcMap stores in CubeMapInformationService (:2245-2281 and :2293-2327, the same setters in
+    /// both modes): a house packet of mode 2 in the loaded field keeps its owner, plot mode (f330) and the rest; the own
+    /// account's layouts append (FUN_1410d43c0 / FUN_1410d4680). A packet without info sets the reader's defaults (owner 0,
+    /// area 10, height 5) and leaves the permissions and layouts. One before the field has loaded is dropped (:2174), an error
+    /// entry keeps them, and a new field load clears them (the teardown's FUN_1410d0310).</summary>
+    [Test] public async Task LoadUgcMapKeepsTheHouseForTheField() {
+        var (s, l, srv, e, game) = await Enter();
+        using (game) {
+            var entry = new FieldEntry(e.Field);
+            var map = entry.CubeMap;
+            await Serve(s, srv, game, entry, srv.Frame(Inbound.LoadUgcMap, HouseMap(2, Account)));
+            Assert.That((map.Owner, map.MapId, map.Area), Is.EqualTo((0L, 0, 0)), "a LoadUgcMap before the load is dropped");
+            await Loaded(game, entry);
+            await Serve(s, srv, game, entry, srv.Frame(Inbound.LoadUgcMap, HouseMap(2, Account)));
+            Assert.That((map.MapId, map.Owner, map.Name, map.Message, map.HeadByte, map.CurrentArchitectScore, map.ArchitectScore),
+                Is.EqualTo((2000062, Account, "n", "m", 4, 5, 6)));
+            Assert.That((map.PlotMapId, map.PlotNumber, map.PlotMode, map.Area, map.Height), Is.EqualTo((7, 8, 9, 10, 11)));
+            Assert.That((map.Background, map.Lighting, map.Camera), Is.EqualTo(((byte) 1, (byte) 2, (byte) 3)));
+            Assert.That(Enumerable.Range(0, 4).Select(k => (map.PermissionSet(k), map.PermissionValue(k))),
+                Is.EqualTo(new[] { (true, 4), (false, 0), (false, 0), (false, 0) }));
+            Assert.That((map.Designs.Count, map.Blueprints.Count), Is.EqualTo((1, 2)));
+            await Serve(s, srv, game, entry, srv.Frame(Inbound.LoadUgcMap, HouseMap(2, Account)));
+            Assert.That((map.Designs.Count, map.Blueprints.Count), Is.EqualTo((2, 4)), "the layouts append");
+            await Serve(s, srv, game, entry, srv.Frame(Inbound.LoadUgcMap, UgcMap(0)));
+            Assert.That((map.MapId, map.Owner, map.Name, map.PlotMode, map.Area, map.Height, map.Background),
+                Is.EqualTo((0, 0L, "", 0, 10, 5, (byte) 0)), "the reader's defaults");
+            Assert.That((map.PermissionSet(0), map.PermissionValue(0), map.Designs.Count), Is.EqualTo((true, 4, 2)), "no info keeps the permissions and layouts");
+            await Serve(s, srv, game, entry, srv.Frame(Inbound.LoadUgcMap, HouseMap(0, Account + 1)));
+            Assert.That((map.Owner, map.PlotMode, map.Designs.Count), Is.EqualTo((Account + 1, 9, 2)), "mode 0 stores too; another owner's house adds no layout");
+            await s.WriteAsync(srv.Frame(Inbound.RequestFieldEnter, w => w.WriteByte(0x1d)));
+            entry.Enter(RequestFieldEnter.Read((await Dequeue(game)).Reader()));
+            Assert.That((map.Owner, map.Designs.Count), Is.EqualTo((Account + 1, 2)), "an error entry keeps the field");
+            await Serve(s, srv, game, entry, srv.Frame(Inbound.RequestFieldEnter, FieldEnter(2000002, 66)));
+            Assert.That((map.Owner, map.PlotMode, map.Area, map.Height, map.PermissionSet(0), map.PermissionValue(0), map.Designs.Count, map.Blueprints.Count),
+                Is.EqualTo((0L, 0, 0, 0, false, 0, 0, 0)), "a new field load resets them");
+            Assert.That(entry.TimerEnabled, Is.True, "the reset leaves f248");
+        }
+        l.Stop();
+    }
+
     /// <summary>LoadUgcMap's opcode (commonfiles/opcodes.h:133; the upstream GMS2 SendOp table has 0x7F) and layout
     /// (OnLoadUgcMap :2174-2240): the designs and blueprints are read for the client's own account only.</summary>
     [Test] public void LoadUgcMapLayout() {

@@ -39,6 +39,10 @@ public sealed class FieldEntry
     /// false and no field load resets it.</summary>
     public bool TimerEnabled { get; private set; }
 
+    /// <summary>What OnLoadUgcMap stores in CubeMapInformationService for this field (<see cref="CubeMapInfo"/>): set by every
+    /// LoadUgcMap in the loaded field, cleared by a new field load (<see cref="Enter"/>).</summary>
+    public CubeMapInfo CubeMap { get; } = new();
+
     public FieldEntry(RequestFieldEnter first = null) { if (first != null) Enter(first); }
 
     /// <summary>True when the last taken entry was the map still loading (<see cref="Enter"/>): its load goes on.</summary>
@@ -61,6 +65,7 @@ public sealed class FieldEntry
         Answered = false;
         Loading = true;
         Loaded = false;
+        CubeMap.Reset();   // the old field's teardown (FUN_141bbc580, worldservice_1.cpp:10015, FUN_1410b76a0 to FUN_1410d0310)
         return true;
     }
 
@@ -87,6 +92,7 @@ public sealed class FieldEntry
     public ResponseFieldEnter LoadUgcMap(LoadUgcMap m, Action<Wire.IOutPacket> send)
     {
         if (m == null || !Loaded) return null;
+        CubeMap.Apply(m);   // both modes call the same setters (:2248-2281, :2294-2327); SetTimerEnabled is among them
         TimerEnabled = m.Mode == 0;
         return m.Mode == 0 ? Answer(send) : null;
     }

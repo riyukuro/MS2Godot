@@ -1028,6 +1028,9 @@ public partial class LiveSession : Node
     readonly System.Diagnostics.Stopwatch moveClock = new();
     /// <summary>The entry the client is in (or loading).</summary>
     public RequestFieldEnter CurrentEntry => fieldEntry.Current;
+    /// <summary>What the field's LoadUgcMap stored (CubeMapInformationService: the owner FUN_1410c3180, the plot mode f330
+    /// FUN_1410c3650, the house setting, permissions and layouts); cleared on each new field load.</summary>
+    public Ms2.Net.CubeMapInfo CubeMap => fieldEntry.CubeMap;
 
     /// <summary>The own Stat (0x2E; CSceneStateGame::OnStat, scenestategame.cpp:9424): health, spirit and stamina reach the HUD data.</summary>
     void ApplyStat(PlayerStat st)
