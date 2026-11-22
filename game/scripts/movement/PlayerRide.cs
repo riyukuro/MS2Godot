@@ -318,12 +318,21 @@ public partial class Player
             GlobalPosition + Vector3.Up * (Mount.Data.Height / 2 + 20f));
     }
 
-    /// <summary>StateWalk / StateSwim::vfunc_3's speed: <see cref="RunXRideSpeed"/> for the RunX subs 0x17 / 0x85; else the
-    /// row's run (walk in walk mode) or swim speed.</summary>
+    /// <summary>StateWalk / StateSwim::vfunc_3's speed (statewalk.cpp:164-199, stateswim.cpp:141-166):
+    /// <see cref="RunXRideSpeed"/> for the RunX subs 0x17 / 0x85; on water (sub 0x84) the row's run speed for a mount
+    /// that runs on water (FUN_1417fb370, <see cref="WaterRunner"/>), else its swim speed; on land the row's walk speed
+    /// in walk mode (sub 0x19) and <see cref="RunRideSpeed"/> otherwise (sub 0x18).</summary>
     float RideSpeed() => Mount == null ? MoveConfig.RunSpeed
         : (OnWater ? SwimRunX : walkRunX) ? RunXRideSpeed() * 100f
-        : OnWater ? Mount.Data.SwimSpeed * 100f
-        : (WalkMode ? Mount.Data.WalkSpeed : Mount.Data.RunSpeed) * 100f;
+        : OnWater ? (WaterRunner ? Mount.Data.RunSpeed : Mount.Data.SwimSpeed) * 100f
+        : WalkMode ? Mount.Data.WalkSpeed * 100f
+        : RunRideSpeed() * 100f;
+
+    /// <summary>Ridee::GetRunSpeed @0x1417071d0 (ridee.cpp:1028-1037): the row's run speed times 1 + the rider's
+    /// GetAbilityRate(0xae), with FUN_1411f0e30's rounding.</summary>
+    float RunRideSpeed() => ScaleRideSpeed(Mount.Data.RunSpeed, RideAbilityRate?.Invoke(RunXSameSpeedAbility) ?? 0f);
+
+    static float ScaleRideSpeed(float speed, float rate) => (float)((double)speed * (double)(1.0f + rate) + 0.000001);
 
     /// <summary>Ridee::GetRideSpeed @0x1417070a0 (ridee.cpp:1014-1025): the row's runXSpeed times 1 + the rider's
     /// CEquipment::GetAbilityRate, of special ability 0xae when runSpeed is nearly runXSpeed (IsNearlyEqual, 1e-6), else
@@ -333,11 +342,11 @@ public partial class Player
     {
         var d = Mount.Data;
         int type = MathF.Abs(d.RunSpeed - d.RunXSpeed) < 1e-6f ? RunXSameSpeedAbility : RunXSpeedAbility;
-        float rate = RideAbilityRate?.Invoke(type) ?? 0f;
-        return (float)((double)d.RunXSpeed * (double)(1.0f + rate) + 0.000001);
+        return ScaleRideSpeed(d.RunXSpeed, RideAbilityRate?.Invoke(type) ?? 0f);
     }
 
-    /// <summary>The special abilities GetRideSpeed reads: 0xae when the row's runSpeed equals runXSpeed, else 0xa5.</summary>
+    /// <summary>The special abilities GetRideSpeed reads: 0xae when the row's runSpeed equals runXSpeed (and GetRunSpeed's),
+    /// else 0xa5.</summary>
     public const int RunXSameSpeedAbility = 0xae, RunXSpeedAbility = 0xa5;
 
     /// <summary>The own CEquipment::GetAbilityRate of a special ability type (the total over 1000).</summary>
@@ -369,9 +378,12 @@ public partial class Player
         runXEpAt = runXNoticeAt = runFxUntil = runFx2Until = double.NegativeInfinity;
     }
 
-    /// <summary>StateSwim's RunX sub 0x85: the flag and Ridee::FUN_1417075e0 @0x1417075e0 (ridee.cpp:1091-1103), a riding
-    /// type 1 or 2, or the rider's enabled buff of eventBuffType 3 (<see cref="RiderEventBuff"/>).</summary>
-    bool SwimRunX => RunX && Mount != null && (Mount.Data.Type is 1 or 2 || RiderEventBuff?.Invoke(SwimEventBuffType) == true);
+    /// <summary>StateSwim's RunX sub 0x85: the flag and <see cref="WaterRunner"/> (FUN_1417fb370).</summary>
+    bool SwimRunX => RunX && WaterRunner;
+
+    /// <summary>Ridee::FUN_1417075e0 @0x1417075e0 (ridee.cpp:1091-1103): a riding type 1 or 2, or the rider's enabled buff
+    /// of eventBuffType 3 (<see cref="RiderEventBuff"/>).</summary>
+    bool WaterRunner => Mount != null && (Mount.Data.Type is 1 or 2 || RiderEventBuff?.Invoke(SwimEventBuffType) == true);
 
     /// <summary>The eventBuffType FUN_1417075e0 asks the rider's buffs for.</summary>
     const int SwimEventBuffType = 3;

@@ -119,10 +119,16 @@ public partial class MovementSyncCheck : Node3D
         runner.Input2 = Vector2.Zero;
         Frames(10);
         bool up = !runner.RunX && subs[^1].Sub == 1;
+        runner.Input2 = new Vector2(0, 1);
+        Frames(10);    // the plain run (sub 0x18): GetRunSpeed, runSpeed times 1 + 0xae's rate
+        vel = (Vector3)typeof(Player).GetField("kVel", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(runner);
+        float plain = new Vector2(vel.X, vel.Z).Length();
+        bool plainOk = subs[^1] == (2, 0x18) && Mathf.Abs(plain - 750f) < 1f;
+        runner.Input2 = Vector2.Zero;
         runner.RideOff();
         runner.AttackKeyDown = null; runner.CurrentEp = null; runner.FieldUsesEp = null; runner.PlayRideEffect = null; runner.RideAbilityRate = null;
-        bool ok = idle && run && noEp && up;
-        GD.Print($"movement sync check: RunX standing {idle}, running at {speed:0.#} {run}, without the EP {noEp} ({notices} notice(s)), key up {up}: {(ok ? "OK" : "FAIL")}");
+        bool ok = idle && run && noEp && up && plainOk;
+        GD.Print($"movement sync check: RunX standing {idle}, running at {speed:0.#} {run}, without the EP {noEp} ({notices} notice(s)), key up {up}, plain run at {plain:0.#} {plainOk}: {(ok ? "OK" : "FAIL")}");
         return ok;
     }
 
