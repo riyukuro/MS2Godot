@@ -71,7 +71,7 @@ public partial class As3ViewerScene : Control
 
     void QuestLogScenario(PackSet packs, FlashPlayer p)
     {
-        var table = Ms2.Quest.QuestTable.Load(packs, new Ms2.Formats.World.GameStrings(packs, GameOptions.StringLanguage).Languages, "KR", _ => true);
+        var table = Ms2.Quest.QuestTable.Load(packs, new Ms2.Formats.World.GameStrings(packs, GameOptions.StringLanguage).Languages, Ms2.Ui.LobbyFeatures.LocaleOf(packs), _ => true);
         var fd = System.Xml.Linq.XDocument.Load(new System.IO.MemoryStream(packs.Read("Xml", "table/fielddata.xml")));
         var log = new Ms2.Quest.QuestLog(table, new Ms2.Quest.QuestShotState(table, 30))
         { Meta = Ms2.Quest.FieldMeta.Load(packs), FieldCodes = Ms2.Quest.QuestTable.FieldCodes(fd, table.Available) };

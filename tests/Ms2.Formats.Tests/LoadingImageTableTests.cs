@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Xml.Linq;
 using Ms2.Formats.World;
 using NUnit.Framework;
@@ -13,6 +14,15 @@ public class LoadingImageTableTests
         new(XDocument.Parse("<ms2>" + string.Concat(rows) + "</ms2>"));
 
     static string Row(int code, string bg, string extra = "") => $"<image code=\"{code:D8}\" locale=\"\" {Always} bgLoading=\"{bg}\" {extra} />";
+
+    [Test]
+    public void AnNaPackKeepsItsOwnRowsAndDropsKr()
+    {
+        string Loc(int code, string bg, string loc) => $"<image code=\"{code:D8}\" locale=\"{loc}\" {Always} bgLoading=\"{bg}\" />";
+        var doc = XDocument.Parse("<ms2>" + Loc(100, "Na_01", "NA") + Loc(100, "Kr_01", "KR") + "</ms2>");
+        Assert.That(new LoadingImageTable(doc, "NA").Candidates(100, DateTime.Now).Single(), Does.Contain("na_01"));
+        Assert.That(new LoadingImageTable(doc).Candidates(100, DateTime.Now).Single(), Does.Contain("kr_01"));
+    }
 
     [Test]
     public void SameOwnPicturesGiveTheScreenshot()

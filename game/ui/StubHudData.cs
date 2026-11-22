@@ -14,7 +14,8 @@ public sealed class StubHudData
     public long Mesos = 0, Merets = 0;
     /// <summary>The ServerEnter wallet longs (<see cref="ServerEnter.Wallet"/>), null before a live entry.</summary>
     public long[] Wallet;
-    public string Locale = "KR";
+    /// <summary>The data's region (LobbyFeatures.LocaleOf): KR on the KMS data, NA on GMS2.</summary>
+    public string Locale => Ms2.Ui.LobbyFeatures.LocaleOf(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir));
     /// <summary>The fields whose taxi station the player has found (the login packet's list, OnTaxi adds to it). The
     /// reference run had found Tria's: its minimap shows the station enabled. Offline only: a live entry replaces the list
     /// with the ServerEnter one, or an empty one when the packet is missing (LiveSession).</summary>

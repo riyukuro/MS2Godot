@@ -12,14 +12,14 @@ public static class TablePath
     /// <summary>The region folders the data uses, in the order they are tried.</summary>
     public static readonly string[] RegionFolders = { "kr", "na" };
 
-    /// <summary>Entry names to try for a table file, locale folder first, the plain path last (lower case, as the packs hold them).</summary>
-    /// <summary>The region folder the data is the client's own: the first of <see cref="RegionFolders"/> whose table/&lt;r&gt;/multicontrol.xml the pack holds, "kr" when none (plain tables only).</summary>
+    /// <summary>The region folder the data is the client's own: the first of <see cref="RegionFolders"/> whose table/&lt;r&gt;/multicontrol.xml the pack holds, "kr" when none (plain tables only). Only multicontrol.xml decides: a pack without it is read as KR.</summary>
     public static string Region(Func<string, bool> exists)
     {
         foreach (var r in RegionFolders) if (exists("table/" + r + "/multicontrol.xml")) return r;
         return RegionFolders[0];
     }
 
+    /// <summary>Entry names to try for a table file, locale folder first, the plain path last (lower case, as the packs hold them).</summary>
     public static IEnumerable<string> Candidates(string file)
     {
         file = file.Replace('\\', '/').ToLowerInvariant();

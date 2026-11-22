@@ -21,22 +21,24 @@ public sealed class LoadingImageTable
     // movieFileName: per map code, the transition movie by index ("index:file", or a bare file for index 0) and playOneTime
     readonly Dictionary<int, (Dictionary<int, string> Files, bool OneTime)> movies = new();
 
-    public LoadingImageTable(PackSet packs)
+    public LoadingImageTable(PackSet packs, string locale = "KR")
     {
+        this.locale = locale;
         const string entry = "table/loadingimage.xml";
         if (!packs.Exists("Xml", entry)) return;
         Load(PackXml.Parse(packs.Read("Xml", entry)));
     }
 
     /// <summary>The table from the xml itself (tests).</summary>
-    public LoadingImageTable(XDocument x) => Load(x);
+    public LoadingImageTable(XDocument x, string locale = "KR") { this.locale = locale; Load(x); }
+    readonly string locale;
 
     void Load(XDocument x)
     {
         foreach (var e in x.Descendants("image"))
         {
             var loc = (string)e.Attribute("locale");
-            if (!string.IsNullOrEmpty(loc) && loc != "KR") continue;
+            if (!string.IsNullOrEmpty(loc) && !string.Equals(loc, locale, StringComparison.OrdinalIgnoreCase)) continue;
             int.TryParse((string)e.Attribute("code"), out int code);
             var movie = (string)e.Attribute("movieFileName");
             if (!string.IsNullOrEmpty(movie))

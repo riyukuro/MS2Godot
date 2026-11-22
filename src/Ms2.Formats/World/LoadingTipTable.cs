@@ -14,14 +14,15 @@ public sealed class LoadingTipTable
     readonly List<(DateTime? start, DateTime? end, string text)> tips = new();
     public int Count => tips.Count;
 
+    /// <param name="locale">The data's region (LobbyFeatures.LocaleOf); rows of another locale are skipped.</param>
     /// <param name="words">The reserved word table the texts are resolved with; null leaves them as written.</param>
-    public LoadingTipTable(PackSet packs, GameStrings text, ReservedWords words = null)
+    public LoadingTipTable(PackSet packs, GameStrings text, ReservedWords words = null, string locale = "KR")
     {
         var seen = new HashSet<string>();
         foreach (var t in text.Rows("loadingdescription", "tip"))
         {
             var loc = (string)t.Attribute("locale");
-            if (!string.IsNullOrEmpty(loc) && loc != "KR") continue;
+            if (!string.IsNullOrEmpty(loc) && !string.Equals(loc, locale, StringComparison.OrdinalIgnoreCase)) continue;
             var id = (string)t.Attribute("id");
             if (id == null || !seen.Add(id)) continue;      // the preferred language's row of an id wins
             var s = (string)t.Attribute("text");

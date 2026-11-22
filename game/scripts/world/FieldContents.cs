@@ -422,7 +422,7 @@ public partial class FieldContents : Node3D
             if (tipTable == null)
             {
                 var text = new GameStrings(packs, GameOptions.StringLanguage);
-                tipTable = new LoadingTipTable(packs, text, new ReservedWords(text, null));
+                tipTable = new LoadingTipTable(packs, text, new ReservedWords(text, null), Ms2.Ui.LobbyFeatures.LocaleOf(packs));
             }
             return tipTable.Pick(new Random()) ?? "";
         }
@@ -469,7 +469,7 @@ public partial class FieldContents : Node3D
         Ms2.Ui.FieldMoveCover.Raise();      // the field and MyPC go at the move (FUN_141bbc580): no input reaches them from now
         talk?.End();
         // UILoadingProgress::GetLoadingImagePath: a picture of the target map, or a screenshot of this field (see PickForMove)
-        Travel.LoadingImage = new LoadingImageTable(packs).PickForMove(target, fieldId, new Random());
+        Travel.LoadingImage = new LoadingImageTable(packs, Ms2.Ui.LobbyFeatures.LocaleOf(packs)).PickForMove(target, fieldId, new Random());
         Travel.LoadingTip = PickTip();
         GD.Print($"field move -> {target}, loading picture {Travel.LoadingImage ?? "(screenshot)"}");
         // the loading screen comes up at once at 0%; the load starts once a frame with it has been drawn. The client has no

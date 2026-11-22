@@ -14,7 +14,7 @@ namespace Ms2Godot.Ui.Native;
 public partial class NGameMenu : Control
 {
     const string Movie = "uigamemenudialog";
-    public string Locale = "KR";
+    public string Locale = Ms2.Ui.LobbyFeatures.LocaleOf(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir));
     public Func<string, bool> FeatureOn = _ => true;
     public readonly List<string> Calls = new();
 

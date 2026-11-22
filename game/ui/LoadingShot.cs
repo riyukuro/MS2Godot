@@ -44,7 +44,7 @@ public partial class LoadingShot : Node
         var assets = new UiAssets(packs);
         if (map != 0 && picture == null)
         {
-            var table = new LoadingImageTable(packs);
+            var table = new LoadingImageTable(packs, Ms2.Ui.LobbyFeatures.LocaleOf(packs));
             GD.Print($"loading pictures of {map}: {string.Join(", ", table.Candidates(map, System.DateTime.Now))}");
             picture = table.Pick(map, new System.Random(0));
         }
