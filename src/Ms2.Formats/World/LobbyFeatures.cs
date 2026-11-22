@@ -35,7 +35,7 @@ public static class LobbyFeatures
     /// </summary>
     public static string LocaleOf(PackSet packs) => packs == null ? "KR" : Load(packs).Locale;
 
-    /// <summary>The service region of the data (the client's DAT_143ab0248, set by its "-locale" argument through
+    /// <summary>The service region of the data (the client's DAT_143ab0248, set by its "-locale" argument (read at unit_1414b1230.cpp:320-321, FUN_1414b1f10) through
     /// SetRegionByCode localepath.cpp:293-301; GetRegionCode: 0 KR, 2 NA): the data's locale, so the KMS2 data is 0 and the
     /// GMS2 data 2.</summary>
     public static int RegionOf(PackSet packs) => Ms2.Formats.Options.GameOptionLocale.RegionId(LocaleOf(packs));
@@ -110,7 +110,7 @@ public static class LobbyFeatures
     static XDocument Xml(PackSet packs, string entry, string locale)
     {
         var text = Loose(packs.DataDir, "Xml/" + entry) ?? Loose(packs.DataDir, "Xml/" + LocalePath(entry, locale));
-        if (text == null && packs.Exists("Xml", entry)) text = Ms2.Formats.Text.PackXml.Text(packs.Read("Xml", entry));
+        if (text == null && HasPacked(packs, entry)) text = Ms2.Formats.Text.PackXml.Text(packs.Read("Xml", entry));
         return text == null ? null : XDocument.Parse(text.TrimStart('\ufeff'));
     }
 

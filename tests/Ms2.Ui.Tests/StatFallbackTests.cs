@@ -10,7 +10,7 @@ public class StatFallbackTests
     {
         var common = new Dictionary<string, string>
         {
-            ["s_word_stat_ndd_v"] = "Defense {0}", ["s_word_stat_int_v"] = "Intelligence +{0}", ["s_word_stat_abp_v"] = "Accuracy +{0}%",
+            ["s_word_stat_ndd_v"] = "Defense {0}", ["s_word_stat_int_v"] = "Intelligence +{0}", ["s_word_stat_abp_v"] = "Perfect Guard +{0}",
             ["s_word_stat_wap_d_v"] = "Min Attack {0}", ["s_word_stat_wap_u_v"] = "Max Attack {0}",
         };
         var names = new Dictionary<string, string>();

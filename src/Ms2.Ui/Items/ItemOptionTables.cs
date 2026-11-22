@@ -76,9 +76,11 @@ public sealed class ItemOptionTables
     /// STAND-IN (STILL-OPEN): the stat definitions of a pack that has no statStringTable.xml (the GMS2 data has none, in table/,
     /// table/na/ or any other entry; LoadStatDefinitions stat.cpp:180 would find none either). These are the 33 rows of
     /// KMS2_DEV's table/statstringtable.xml (stat id, option name, valueType) copied here, since the pack gives no table of its
-    /// own to read. The texts are not guessed: the GMS2 stringcommon.xml holds the client's own common-string keys
+    /// own to read. The texts are inferred from the option name: the GMS2 stringcommon.xml holds the client's own common-string keys
     /// s_word_stat_&lt;option&gt; (name) and s_word_stat_&lt;option&gt;_v (value format), which the client lists in its CommonStringTable
     /// (commonstringtable.cpp:2781-2880); <see cref="FallbackStatTexts"/> files them under the ids the table would give.
+    /// The pack also has s_word_stat_&lt;option&gt;_r rate texts; LoadStatDefinitions (stat.cpp:180-198) reads only valueStringID,
+    /// so no stat row takes a rate text and none is read here.
     /// </summary>
     public static readonly (string Option, int ValueType)[] DefaultStats =
     {

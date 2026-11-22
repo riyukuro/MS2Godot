@@ -30,4 +30,37 @@ public class RegionOfDataTests
     {
         Assert.That(LobbyFeatures.RegionOf(null), Is.Zero);
     }
+
+    static int RegionOfLooseFolder(string folder)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ms2-region-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var file = Path.Combine(dir, "Xml", "table", folder, "multicontrol.xml");
+            Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+            Directory.CreateDirectory(Path.Combine(dir, "Resource"));
+            File.WriteAllText(file, "<ms2/>");
+            using var packs = new PackSet(dir);
+            return LobbyFeatures.RegionOf(packs);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    // data-free: a loose table folder stands for the pack's, as the client reads loose files first
+    [Test]
+    public void ANaTableFolderMakesRegion2AndAKrFolderRegion0()
+    {
+        Assert.That(RegionOfLooseFolder("na"), Is.EqualTo(2));
+        Assert.That(RegionOfLooseFolder("kr"), Is.EqualTo(0));
+    }
+
+    [Test]
+    public void TheNaRegionPicksTheLanguageOfTheSystemLocale()
+    {
+        // the fresh-file pick of the NA region (gameoption.cpp:1840-1844)
+        Assert.That(GameOptionLocale.LanguageFromLangId(GameOptionLocale.WindowsLangId("de_DE.UTF-8")), Is.EqualTo(5));
+        Assert.That(GameOptionLocale.LanguageFromLangId(GameOptionLocale.WindowsLangId("pt_BR")), Is.EqualTo(6));
+        Assert.That(GameOptionLocale.LanguageFromLangId(GameOptionLocale.WindowsLangId("en_US")), Is.EqualTo(2));
+        Assert.That(new GameOption.Language(2).LanguageIndex, Is.EqualTo(2));
+    }
 }
