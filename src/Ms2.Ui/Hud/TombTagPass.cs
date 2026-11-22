@@ -56,7 +56,7 @@ public readonly record struct TombHit(TombstoneRequest Request, int HitSound, Ve
 /// The registrations come from the own cast's magics (<see cref="OwnTagMagics"/>); the magics of the 0x3d mode 0 cast records
 /// (scenestategame.cpp:5509) are not the local player's (FUN_141464410), so they register nothing.
 /// The field markers' loop runs first (<see cref="RunMarkers"/>).
-/// STILL-OPEN: the arrow magics' registrations (see <see cref="OwnTagMagics"/>), PlayHitSound and the movers' part (m_738).
+/// STILL-OPEN: PlayHitSound and the movers' part (m_738).
 /// </summary>
 public sealed class TombTagPass
 {

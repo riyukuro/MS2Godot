@@ -51,7 +51,10 @@ public class OwnTagMagicsTests
         var m = new OwnTagMagics();
         Assert.That(m.Add(null, Attack(brokenOffence: 0), Tags(0), 0, Paths), Is.EqualTo(1), "brokenOffence 0: the fill only");
         m.Clear();
-        Assert.That(m.Add(null, Attack(method: 1), Tags(0), 0, Paths), Is.EqualTo(0), "attackMethodType 1: the arrow path");
+        Assert.That(m.Add(null, Attack(method: 1), Tags(0), 0, Paths), Is.EqualTo(1), "attackMethodType 1: an arrow magic");
+        m.Clear();
+        Assert.That(m.Add(new SkillData { MagicControlEnable = 1 }, Attack(method: 1), Tags(0), 0, Paths), Is.EqualTo(0),
+            "an arrow with magic control: the controlled flight is not ported");
         Assert.That(m.Add(new SkillData { MagicControlEnable = 2 }, Attack(), Tags(0), 0, Paths), Is.EqualTo(0), "magicControl 2: no fill");
         Assert.That(m.Add(null, Attack(magic: 99), Tags(0, 1), 0, Paths), Is.EqualTo(0), "an unknown id makes no magic");
         Assert.That(m.Add(null, Attack(), Tags(0, 1, 2), 0, Paths), Is.EqualTo(3), "one magic per target record");

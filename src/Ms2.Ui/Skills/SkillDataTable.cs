@@ -135,6 +135,9 @@ public sealed class SkillArrow
     /// <summary>"rayPhysxTest" (:106, row +0x120): non-zero drops the region hits a ray from the caster cannot reach
     /// (CMagic::FUN_141464d00, magicdata.cpp:1773).</summary>
     public int RayPhysxTest;
+    /// <summary>"collision" and "collisionAdd" (:116-117): the arrow fill's box size and its back / down reach
+    /// (StateSkill::FUN_1417e9d20).</summary>
+    public Vector3 Collision, CollisionAdd;
 
     /// <summary>IsNonTargetOne @0x1407dfbb0 (:168): nonTarget == 1.</summary>
     public bool IsNonTargetOne => NonTarget == 1;
@@ -150,6 +153,8 @@ public sealed class SkillArrow
         BounceRadius = Xml.Float(a, "bounceRadius");
         if (a.Attribute("bounceOverlap") != null) BounceOverlap = Xml.Int(a, "bounceOverlap");
         RayPhysxTest = Xml.Int(a, "rayPhysxTest");
+        Collision = MagicPathTable.Point3((string)a.Attribute("collision"));
+        CollisionAdd = MagicPathTable.Point3((string)a.Attribute("collisionAdd"));
     }
 }
 

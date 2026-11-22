@@ -23,8 +23,6 @@ public struct HitBox
     /// </summary>
     public static HitBox Pose(Vector3 size, Vector3 add, Vector3 pos, Vector3 rotDegrees)
     {
-        var min = new Vector3(-size.X / 2f, -add.Y, -add.Z);
-        var max = new Vector3(size.X / 2f, size.Y, size.Z);
         float z = rotDegrees.Z * 3.1415927f / 180f, cz = MathF.Cos(z), sz = MathF.Sin(z);
         var ax = new Vector3(cz, sz, 0);
         var ay = new Vector3(-sz, cz, 0);
@@ -38,6 +36,15 @@ public struct HitBox
             ay = y1;
             az = z1;
         }
+        return PoseAxes(size, add, pos, ax, ay, az);
+    }
+
+    /// <summary>CBoxCollision::vfunc_2 @0x140ada910 at scale 1: the same box posed by a rotation given as its columns
+    /// <paramref name="ax"/>, <paramref name="ay"/> and <paramref name="az"/> (the arrow fill's matAim).</summary>
+    public static HitBox PoseAxes(Vector3 size, Vector3 add, Vector3 pos, Vector3 ax, Vector3 ay, Vector3 az)
+    {
+        var min = new Vector3(-size.X / 2f, -add.Y, -add.Z);
+        var max = new Vector3(size.X / 2f, size.Y, size.Z);
         var local = (min + max) * 0.5f;
         local.Y = -local.Y;
         var b = new HitBox
@@ -332,11 +339,17 @@ public static class SkillHit
     public static void Detect(in SkillHitShape shape, Vector3 pos, Vector3 rotDegrees, int sortMode, bool includeCaster,
         bool ownerAfterTest, ReadOnlySpan<HitCandidate> objects, Func<int> rand, List<int> targets)
     {
+        Axes(rotDegrees.Z, out var dir, out var right);
+        Detect(shape, pos, Vector3.Normalize(dir), Vector3.Normalize(right), sortMode, includeCaster, ownerAfterTest, objects, rand, targets);
+    }
+
+    /// <summary>The pick with the sort axes given: <paramref name="dir"/> and <paramref name="right"/> (unit).
+    /// CBaseCollision::DetectWithMatrixRotation @basecollision.cpp:202 gives the matrix's column 0 and that x UNIT_Z.</summary>
+    public static void Detect(in SkillHitShape shape, Vector3 pos, Vector3 dir, Vector3 right, int sortMode, bool includeCaster,
+        bool ownerAfterTest, ReadOnlySpan<HitCandidate> objects, Func<int> rand, List<int> targets)
+    {
         targets.Clear();
         if (objects.Length <= 0) return;
-        Axes(rotDegrees.Z, out var dir, out var right);
-        dir = Vector3.Normalize(dir);
-        right = Vector3.Normalize(right);
         bool facing = sortMode == 5 || sortMode == 6;
         int first = 0;
         bool hasFirst = false;
@@ -400,7 +413,7 @@ public static class SkillHit
     }
 
     /// <summary>efd::Point3::Unitize: a zero vector stays zero.</summary>
-    static Vector3 Unitize(Vector3 v)
+    internal static Vector3 Unitize(Vector3 v)
     {
         float l = v.Length();
         return l > 1e-06f ? v / l : Vector3.Zero;

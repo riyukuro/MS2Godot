@@ -993,9 +993,10 @@ public partial class HudScene
         if (req != null)
         {
             ownNodePosition ??= OwnNodePosition;
+            ownRayCast ??= MagicRayCast;
             ownTagMagics.Add(r.Skill, SkillAttackFire.AttackAt(r, attack), r, req.Targets, (int)Time.GetTicksMsec(),
                 hudModel.Tables.MagicPaths, ownNodePosition, null, new TagIdentity(r.CastId, (int)r.Skill.Id,
-                    (short)(r.Level?.Level ?? 0), r.Motion, (byte)attack));
+                    (short)(r.Level?.Level ?? 0), r.Motion, (byte)attack), live?.SelfObjectId ?? 0, pos, ownRayCast);
         }
         bool sent = req != null && (live?.SendDamage(req) ?? false);
         TickOwnTagMagics();
@@ -1006,6 +1007,7 @@ public partial class HudScene
     readonly System.Collections.Generic.List<Ms2.Net.Packets.SkillHitRequest> ownHitSends = new();
     Func<string, System.Numerics.Vector3> ownNodePosition;
     MagicRayBlocked ownRayBlocked;
+    MagicRayCast ownRayCast;
     // CMagic::FUN_141464d00's RayCastFromPoint mask (magicdata.cpp:1786): groups 0 and 9
     readonly RayQuery magicRay = RayQuery.CastRay(0x201);
     System.Collections.Generic.IReadOnlyList<Ms2.Formats.World.EffectDummy> ownDummies;
@@ -1027,9 +1029,10 @@ public partial class HudScene
         var pos = FillHitObjects(player);
         var owner = new MagicOwner(pos, player.FacingRotZ, true, live.Me.Dead, false);
         ownRayBlocked ??= MagicRayBlocked;
+        ownRayCast ??= MagicRayCast;
         ownHitSends.Clear();
         ownTagMagics.Tick(now, 0, owner, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(hitObjects), ownCast,
-            live.TombTags, ownHitSends, crtRand, ownRayBlocked, (slotField?.PkMode ?? 0) != 0);
+            live.TombTags, ownHitSends, crtRand, ownRayBlocked, (slotField?.PkMode ?? 0) != 0, ownRayCast);
         foreach (var req in ownHitSends) live.SendHit(req);
         ownHitSends.Clear();
     }
@@ -1061,6 +1064,20 @@ public partial class HudScene
         var a = new Vector3(from.X, from.Z, -from.Y);
         var b = new Vector3(to.X, to.Z, -to.Y);
         return magicRay.Nearest(player.GetWorld3D().DirectSpaceState, a, b, player.GetRid(), 0x201) != null;
+    }
+
+    /// <summary>CPhysXHelper::RayCastFromPoint(from, out hit, dir, length, 0x201), in MS2 coordinates, past the player's own
+    /// body: the arrow magic's start and flight rays (CMagic::FUN_1414609e0, FUN_14145ec50).</summary>
+    bool MagicRayCast(System.Numerics.Vector3 from, System.Numerics.Vector3 dir, float length, out System.Numerics.Vector3 hit)
+    {
+        hit = default;
+        if (player == null) return false;
+        var to = from + dir * length;
+        var a = new Vector3(from.X, from.Z, -from.Y);
+        var b = new Vector3(to.X, to.Z, -to.Y);
+        if (magicRay.Nearest(player.GetWorld3D().DirectSpaceState, a, b, player.GetRid(), 0x201) is not { } h) return false;
+        hit = new System.Numerics.Vector3(h.Position.X, -h.Position.Z, h.Position.Y);
+        return true;
     }
 
     Action unwatchOwnSkill;

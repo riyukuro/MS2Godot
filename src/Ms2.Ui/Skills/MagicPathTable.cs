@@ -10,13 +10,36 @@ namespace Ms2.Ui.Skills;
 /// 1 by the ctor, :212) and "dirRotZDegree" (m_fDirRotZ). "ignoreCancelAtSpawnTime" (XmlGetBool, :340) keeps a magic in its
 /// spawn wait from the skill state's cancel (CMagicModel::CanCancel).</summary>
 public sealed record MagicPathMove(float DelayTime, float SpawnTime, float LifeTime, float DestroyTime, string FireNode = "",
-    Vector3 FireFixed = default, Vector3 FireOffset = default, int Rotation = 1, float DirRotZ = 0, bool IgnoreCancelAtSpawnTime = false);
+    Vector3 FireFixed = default, Vector3 FireOffset = default, int Rotation = 1, float DirRotZ = 0, bool IgnoreCancelAtSpawnTime = false)
+{
+    /// <summary>"vel" (m_fVelocity): the flight speed per second; 0 makes no flight (CMagic::FUN_14145ec50).</summary>
+    public float Velocity { get; init; }
+    /// <summary>"distance" (m_fDistance): how far the target is set from the start, and the flight's 2D stop distance.</summary>
+    public float Distance { get; init; }
+    /// <summary>"direction" (m_ptDirection), unitized; UNIT_Y by the ctor (magicdata.cpp:216).</summary>
+    public Vector3 Direction { get; init; } = Vector3.UnitY;
+    /// <summary>"controlValue0" / "controlValue1" (m_ptControl): the range of the random control point
+    /// (CMagicData::FUN_14145c030), and "controlEndOffsetValue" (m_ptControlEnd) added to the target.</summary>
+    public Vector3 Control0 { get; init; }
+    public Vector3 Control1 { get; init; }
+    public Vector3 ControlEnd { get; init; }
+    /// <summary>"controlRate" (m_fControlRate) and "catmullrom" (m_nCatmullRom): the curve's split and kind.</summary>
+    public float ControlRate { get; init; }
+    public int CatmullRom { get; init; }
+    /// <summary>"nonTargetMoveDistance" (m_fNonTargetMoveDistance).</summary>
+    public float NonTargetMoveDistance { get; init; }
+    /// <summary>"moveEndHoldDuration" (m_nMoveEndHoldDuration), milliseconds.</summary>
+    public int MoveEndHoldDuration { get; init; }
+    /// <summary>"ignorePhysxTestInitPosition" (XmlGetBool): skips the start ray of an arrow magic (CMagic::FUN_1414609e0).</summary>
+    public bool IgnorePhysxTestInitPosition { get; init; }
+}
 
 /// <summary>
 /// The magic paths (LoadMagicPath @0x14145c4d0, magicdata.cpp:302): ./data/xml/table/magicPath.xml, each &lt;type id&gt; a list of
 /// its &lt;move&gt; rows; a repeated id replaces the earlier list (SetAt). The default id 0 is then set to one row of zeros, so an
 /// attack without a magicPathID still gets a magic. Read on first use (FUN_14145c300 reloads a dirty cache).
-/// STILL-OPEN: only the times and the fire point are read; the fire offsets, the flight (vel, distance, control values) and the rest are not.
+/// STILL-OPEN: lookAtType, traceTargetDuration, traceTargetOffsetPos, explosionByDestroy and the piercing interval and
+/// count are not read.
 /// </summary>
 public sealed class MagicPathTable
 {
@@ -33,7 +56,16 @@ public sealed class MagicPathTable
                     (string)m.Attribute("fireNode") ?? "", Point3((string)m.Attribute("fireFixedPosition")),
                     Point3((string)m.Attribute("fireOffsetPosition")),
                     m.Attribute("rotation") != null ? Xml.Int(m, "rotation") : 1, Xml.Float(m, "dirRotZDegree"),
-                    Xml.Bool(m, "ignoreCancelAtSpawnTime")))
+                    Xml.Bool(m, "ignoreCancelAtSpawnTime"))
+                {
+                    Velocity = Xml.Float(m, "vel"), Distance = Xml.Float(m, "distance"),
+                    Direction = SkillHit.Unitize(string.IsNullOrEmpty((string)m.Attribute("direction")) ? Vector3.UnitY : Point3((string)m.Attribute("direction"))),
+                    Control0 = Point3((string)m.Attribute("controlValue0")), Control1 = Point3((string)m.Attribute("controlValue1")),
+                    ControlEnd = Point3((string)m.Attribute("controlEndOffsetValue")),
+                    ControlRate = Xml.Float(m, "controlRate"), CatmullRom = Xml.Int(m, "catmullrom"),
+                    NonTargetMoveDistance = Xml.Float(m, "nonTargetMoveDistance"), MoveEndHoldDuration = Xml.Int(m, "moveEndHoldDuration"),
+                    IgnorePhysxTestInitPosition = Xml.Bool(m, "ignorePhysxTestInitPosition"),
+                })
                 .ToArray();
         types[0] = new[] { Zero };
     }
