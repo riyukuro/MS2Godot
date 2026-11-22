@@ -247,7 +247,7 @@ public sealed class GameMenuController : UiController
     /// <summary>SetNotifyRedCircle16 @0x141939360 / SetNotifyRedCircle7 @0x1419394e0.</summary>
     void SetNotifyRedCircle(int id, bool on)
     {
-        if (MenuItem(MenuName(Table.FindTopId(id))) is { } b) Host.Invoke(b, "setNotifyRedCircle", MenuName(id), on);
+        if (MenuItem(MenuName(Table.FindTopId(id))) is { } b && Host.Has(b, "setNotifyRedCircle")) Host.Invoke(b, "setNotifyRedCircle", MenuName(id), on);
     }
 
     /// <summary>vfunc_oa0_9 @0x141937d70 (the level change): the character ability mark, the learning quest count.

@@ -328,6 +328,16 @@ public sealed class UiHost
         return Player.Call(target, method, args.Select(ToAs).ToArray());
     }
 
+    /// <summary>True when the movie's object has the member (a method or property). The KMS2 movies carry members the
+    /// GMS2 movies lack (e.g. the menu's red circle); the client only calls what its own movie declares.</summary>
+    public bool Has(object target, string member)
+    {
+        if (Rt.IsNullish(target)) return false;
+        bool v = false;
+        RT.Guard("has " + member, () => v = RT.HasProperty(target, Name.Public(member)));
+        return v;
+    }
+
     /// <summary>GetChild&lt;T&gt;("m_x"): a member of the entity (the instance names the movie declares).</summary>
     public object Child(string name, object parent = null)
     {

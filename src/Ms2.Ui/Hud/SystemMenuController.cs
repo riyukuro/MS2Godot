@@ -102,7 +102,7 @@ public sealed class SystemMenuController : UiController
             else Host.RT.NoteMissing($"system menu: the leave entry's text for map type {t}");
         }
         Host.Invoke("arrangeConrols");
-        Host.Invoke("setSystemOptionNotifyRedCircle", RedCircle);
+        if (Host.Has(Host.Entity, "setSystemOptionNotifyRedCircle")) Host.Invoke("setSystemOptionNotifyRedCircle", RedCircle);
     }
 
     /// <summary>

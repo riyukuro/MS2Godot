@@ -137,6 +137,16 @@ public class GameMenuTests
         Assert.That(OptionRedCircle(h, c), Is.False);
     }
 
+    [Test]
+    public void HasSeesTheMoviesOwnMethodsOnly()
+    {
+        var (h, c) = Load();
+        string top = c.Table.Find(c.Table.FindTopId(7)).Name;
+        var button = h.Invoke(h.Invoke(h.Child("m_menus"), "getChildByName", top), "getChildByName", "m_button");
+        Assert.That(h.Has(button, "setNotifyUp"), Is.True, "a method every movie has");
+        Assert.That(h.Has(button, "setNoSuchMethod"), Is.False);
+    }
+
     static UiModel LevelSixty()
     {
         var m = NewModel();
