@@ -33,6 +33,7 @@ public enum Inbound : ushort {
     EnterUgcMap = 0xAA,     // RecvOp (scenestategame.h:182): CSceneStateGame::OnEnterUgcMap
     NpcTalk = 0x4B,
     RegionSkill = 0x4C,         // RecvOp RegionSkill (commonfiles/opcodes.h): CSceneStateGame::OnRegionSkill
+    FieldProperty = 0xCA,       // RecvOp FieldProperty (commonfiles/opcodes.h:209): CSceneStateGame::OnFieldProperty (scenestategame.cpp:3895)
     Trigger = 0x4E,             // RecvOp Trigger (commonfiles/opcodes.h:86): CSceneStateGame::OnTrigger
     Quest = 0x52,
     Party = 0x53,

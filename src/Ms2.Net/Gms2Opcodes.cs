@@ -37,6 +37,7 @@ static class Gms2Opcodes {
         [Inbound.EnterUgcMap] = 0xAC,
         [Inbound.NpcTalk] = 0x4C,
         [Inbound.RegionSkill] = 0x4D,
+        [Inbound.FieldProperty] = 0xCC,
         [Inbound.Trigger] = 0x4F,
         [Inbound.Quest] = 0x53,
         [Inbound.Party] = 0x54,
