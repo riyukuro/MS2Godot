@@ -2,6 +2,7 @@ using System;
 using Godot;
 using Ms2.Ui.Skills;
 using Ms2Godot.Movement;
+using Act = Ms2Godot.Movement.ActionAnims.Act;
 
 namespace Ms2Godot;
 
@@ -64,9 +65,8 @@ public partial class Player : IHitBody, IPushBody
     /// then the sequence: Jump_FlyDamg_A with the lift, else the body's hit action, replaced by the data's animation when
     /// the body has it; it plays at the data's speed from its start. The vfunc_59 leaves StateSkill (State::vfunc_5), so
     /// the own cast's sequence ends.
-    /// STILL-OPEN: the body's hit action (vfunc_123(0x35), action 53) is not in the action table, so a hit without a
-    /// custom animation or a lift has no sequence and StateHit::vfunc_9 goes on to StateIdle; the 70% timer
-    /// (statehit.cpp:104, read by vfunc_36) is not run, as vfunc_36's callers are not ported.
+    /// The body's hit action is vfunc_123(0x35), the action table's HIT (Damg_A on both bodies), with the weapon prefix.
+    /// STILL-OPEN: the 70% timer (statehit.cpp:104, read by vfunc_36) is not run, as vfunc_36's callers are not ported.
     /// </summary>
     /// <param name="force">vfunc_59's bForce: vfunc_33 passes the data's duration above 0.</param>
     public void EnterHit(StateHitData data, bool force)
@@ -83,7 +83,7 @@ public partial class Player : IHitBody, IPushBody
             if (lift.Start(hit.Data.Duration, hit.Data.UpDistance, hit.OwnerZ)) jumping = false;
         }
         hasSequence ??= s => Anims?.Sequence(s, false) != null;
-        string seq = hit.PickSequence("", hasSequence);
+        string seq = hit.PickSequence(Anims?.Name(Act.Hit, WeaponPrefix), hasSequence);    // vfunc_123(0x35), HIT
         PlayHitSequence(seq, true, hit.Speed);
     }
 

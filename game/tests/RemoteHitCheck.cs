@@ -14,7 +14,8 @@ namespace Ms2Godot.Tests;
 /// - The push (CPushControl::vfunc_1 after the state's move) moves it the push's distance along its direction and turns it
 ///   against the move (PCBase::vfunc_106), then ends.
 /// - Past the hit's end time it is back in StateIdle on the ground.
-/// - A hit with no sequence on the body goes to StateIdle on the next frame (StateHit::vfunc_9).
+/// - A hit without a lift whose animation the body lacks plays the body's hit action, vfunc_123(0x35) (HIT, Damg_A), and
+///   stays in StateHit on the next frame.
 /// - A dead PC takes no hit (PC::vfunc_124).
 /// Quits with 0 when all hold, else 1.
 /// </summary>
@@ -84,13 +85,16 @@ public partial class RemoteHitCheck : Node3D
                 if (pc.States.Cur != RemotePcStates.StateIdle) fails.Add($"after the hit's end: state {pc.States.Cur}");
                 if (!pc.OnGround || Mathf.Abs(pc.Body.Position.Y - start.Y) > 2f) fails.Add($"after the hit's end: y {pc.Body.Position.Y:0.0}, on ground {pc.OnGround}");
                 pc.EnterHit(new StateHitData { SpeedRate = 1f, Duration = 0.5f, Animation = "NoSuchSequence" }, true);
-                if (pc.States.Cur != RemotePcStates.StateHit || pc.HitAnim.Length != 0) fails.Add($"hit without a sequence: state {pc.States.Cur}, anim '{pc.HitAnim}'");
+                string hitAction = pc.Anims.Name(ActionAnims.Act.Hit, pc.WeaponPrefix);
+                if (pc.States.Cur != RemotePcStates.StateHit || string.IsNullOrEmpty(hitAction) || pc.HitAnim != hitAction)
+                    fails.Add($"hit without a lift: state {pc.States.Cur}, anim '{pc.HitAnim}', not the hit action '{hitAction}'");
                 break;
             case 151:
-                if (pc.States.Cur != RemotePcStates.StateIdle) fails.Add($"hit without a sequence: state {pc.States.Cur} a frame later");
+                if (pc.States.Cur != RemotePcStates.StateHit) fails.Add($"hit without a lift: state {pc.States.Cur} a frame later");
+                GD.Print($"remote hit: hit action '{pc.HitAnim}', state {pc.States.Cur} a frame later");
                 pc.States.SetDead(true);
-                pc.EnterHit(new StateHitData { SpeedRate = 1f, Duration = 0.5f }, true);
-                if (pc.States.Cur == RemotePcStates.StateHit) fails.Add("a dead PC took a hit");
+                pc.EnterHit(new StateHitData { SpeedRate = 1f, Duration = 0.25f }, true);
+                if (pc.HitState.Duration != 0.5f) fails.Add("a dead PC took a hit");
                 pc.States.SetDead(false);
                 Done(null);
                 break;

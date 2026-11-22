@@ -3,6 +3,7 @@ using Godot;
 using Ms2.Net.Replay;
 using Ms2.Ui.Skills;
 using Ms2Godot.Movement;
+using Act = Ms2Godot.Movement.ActionAnims.Act;
 
 namespace Ms2Godot.Net;
 
@@ -94,9 +95,9 @@ public sealed partial class RemotePc : IHitBody, IPushBody
     /// StateHit::vfunc_4 (@0x1417ca370, statehit.cpp:62-110): the fields are copied from the data with the body's z; a
     /// lifting hit ends any lift and starts its own (EndLift, StartLift(duration, lift, owner z); a started lift ends the
     /// jump), then the sequence: Jump_FlyDamg_A with the lift, else the body's hit action, replaced by the data's animation
-    /// when the body has it; it plays at the data's speed from its start.
-    /// STILL-OPEN: the body's hit action (vfunc_123(0x35)) is not in the action table, as for the own PC; the 70% timer
-    /// (statehit.cpp:104) is not run.
+    /// when the body has it; it plays at the data's speed from its start. The body's hit action is vfunc_123(0x35), the
+    /// action table's HIT (Damg_A on both bodies).
+    /// STILL-OPEN: the 70% timer (statehit.cpp:104) is not run.
     /// </summary>
     void OnHitEntered()
     {
@@ -108,7 +109,7 @@ public sealed partial class RemotePc : IHitBody, IPushBody
             if (lift.Start(hit.Data.Duration, hit.Data.UpDistance, hit.OwnerZ)) jumping = false;
         }
         hasSequence ??= s => Anims?.Sequence(s, false) != null;
-        PlayHitSequence(hit.PickSequence("", hasSequence), true, hit.Speed);
+        PlayHitSequence(hit.PickSequence(ActionKey((int)Act.Hit), hasSequence), true, hit.Speed);
     }
 
     /// <summary>NiActorManager's play of the hit's sequence (PlayAnimation(name, speed, restart)): a body without it plays

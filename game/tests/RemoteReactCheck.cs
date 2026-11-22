@@ -61,8 +61,7 @@ public partial class RemoteReactCheck : Node3D
             Check(PcOf(layer, id)?.ClientStateId == RemotePcStates.StateIdle, $"player {id} did not land: state {PcOf(layer, id)?.ClientStateId}");
 
         // the first attack in the table that pushes away from the record's position (kind 1) with a lift off a ground field
-        // (a lifting hit plays Jump_FlyDamg_A; the body's own hit action is not in the action table, so a hit without one
-        // goes idle on its next frame)
+        // (a lifting hit plays Jump_FlyDamg_A, which every body has)
         int skill = 0, motion = 0, attack = 0;
         foreach (uint id in Ms2.Ui.GameTables.Shared(packs, GameOptions.StringLanguage).SkillDamage.SkillIds)
         {
