@@ -82,5 +82,16 @@ public class Gms2UserSyncTests {
         Assert.That(SyncRecord.From(new StateSync { Flags = StateSync.Flag.Flag3 | StateSync.Flag.Flag6, Flag6Value = 7, Flag2Value = 9 }, ProtocolProfile.Gms2).HoldTargetId, Is.EqualTo(9));
     }
 
+    [Test] public void AGms2BitOneRecordReachesTheSyncRecordAsTheMarker() {
+        // no recorded inbound record has bit 1 (vec3 + name), so one is built by hand and round-tripped through the GMS2 layout
+        var rec = new StateSync { State = 1, Flags = StateSync.Flag.Flag2, Flag5Vec = new System.Numerics.Vector3(1.5f, -2f, 30f), Flag5Text = "Marker_A" };
+        var w = new ByteWriter(); rec.WriteGms2(w);
+        var back = StateSync.ReadGms2(new ByteReader(w.ToArray()));
+        var r = SyncRecord.From(back, ProtocolProfile.Gms2);
+        Assert.That((r.MarkerName, r.MarkerOffset, r.HoldTargetId), Is.EqualTo(("Marker_A", new System.Numerics.Vector3(1.5f, -2f, 30f), 0)));
+        // the same flags mean something else on KMS (bit 1 = an i32): From does not read a marker there
+        Assert.That(SyncRecord.From(new StateSync { Flags = StateSync.Flag.Flag2, Flag2Value = 3 }).MarkerName, Is.EqualTo(""));
+    }
+
     static byte[] Write(UserSyncOut o) { var w = new ByteWriter(); o.Write(w, ProtocolProfile.Gms2); return w.ToArray(); }
 }
