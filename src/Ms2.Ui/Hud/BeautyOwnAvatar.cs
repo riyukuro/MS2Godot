@@ -13,7 +13,9 @@ namespace Ms2.Ui.Hud;
 /// <para>STILL-OPEN: <see cref="IsRealItem"/> is FUN_141421690, whose owned-item test is not recovered: an item counts as real
 /// when its uid was worn when the avatar was created. The skin colours (FUN_1414239e0 / FUN_141423650) are the user block's two
 /// colours packed in wire order; setting one is remembered but the player model's skin tint is not redrawn. The "Customize" tag
-/// of a hidden slot (CEquipItem::AddTag) has no effect on a drawn item yet.</para>
+/// of a hidden slot (CEquipItem::AddTag) has no effect on a drawn item yet. MyPC::vfunc_127 / vfunc_128 (mypc.cpp:4883-4905) also
+/// re-sample DAT_143aea120 and call ExcludeFromAutoEquip when an item is taken off, for a preview too; that auto-equip exclusion
+/// list is not ported, so a preview take-off does not touch it.</para>
 /// </summary>
 public sealed class BeautyOwnAvatar : IBeautyAvatar
 {
@@ -22,38 +24,76 @@ public sealed class BeautyOwnAvatar : IBeautyAvatar
     readonly HashSet<long> realUids;
     readonly int[] skin = new int[2];
     readonly HashSet<EquipSlot> hiddenSlots = new();
+    // Uids that sit (or sat, before the preview took them off) in the outfit list: they go back there, as ItemPutOn kind 2.
+    readonly HashSet<long> outfitUids;
+    // Inside a BeginChange / EndChange bracket the lists are edited here and the views redraw once at the end.
+    IReadOnlyList<EquipItem> pendingEquips, pendingOutfit;
+    int depth;
+    bool dirty;
 
     public BeautyOwnAvatar(MyCharacter me, Func<int, int?> wornLayer)
     {
         this.me = me; this.wornLayer = wornLayer;
         realUids = new HashSet<long>(Worn.Select(e => e.Uid));
+        outfitUids = new HashSet<long>((me.Outfit2 ?? Array.Empty<EquipItem>()).Select(e => e.Uid));
         var s = me.User?.Skin ?? default;
         skin[0] = Pack(s.Primary); skin[1] = Pack(s.Secondary);
     }
 
     static int Pack(Rgba c) => c.B | c.G << 8 | c.R << 16 | c.A << 24;
 
+    IReadOnlyList<EquipItem> Gear => depth > 0 ? pendingEquips : me.Equips;
+    IReadOnlyList<EquipItem> Outfit => depth > 0 ? pendingOutfit : me.Outfit2;
+
     public IReadOnlyList<EquipItem> Worn =>
-        (me.Equips ?? Array.Empty<EquipItem>()).Concat(me.Outfit2 ?? Array.Empty<EquipItem>()).ToList();
+        (Gear ?? Array.Empty<EquipItem>()).Concat(Outfit ?? Array.Empty<EquipItem>()).ToList();
 
     public IReadOnlyCollection<EquipSlot> HiddenSlots => hiddenSlots;
 
     public EquipItem Clone(EquipItem item) => item?.Clone();
 
+    /// <summary>
+    /// FUN_140cd3fe0(pc, 0) @customize.cpp:527: the redraw of the avatar waits until <see cref="EndChange"/>, so a restore of
+    /// every slot is one change of the worn lists instead of one per item.
+    /// </summary>
+    public void BeginChange()
+    {
+        if (depth++ == 0) { pendingEquips = me.Equips; pendingOutfit = me.Outfit2; dirty = false; }
+    }
+
+    /// <summary>FUN_140cd3fe0(pc, 1) @customize.cpp:552: the lists of the bracket go to the player in one change, if any changed.</summary>
+    public void EndChange()
+    {
+        if (depth == 0 || --depth > 0) return;
+        var e = pendingEquips; var o = pendingOutfit;
+        pendingEquips = pendingOutfit = null;
+        if (dirty) me.ReplaceWorn(e, o);
+        dirty = false;
+    }
+
     public void Equip(EquipItem item)
     {
         if (item == null) return;
-        var equips = me.Equips; var outfit = me.Outfit2;
-        // Kind 0: the layer comes from the item data (a variant-2 outfit is not what the preview puts on).
-        if (!WornEquips.PutOn(ref equips, ref outfit, new ItemPutOn(me.ObjectId, 0, item), wornLayer)) return;
-        me.ReplaceWorn(equips, outfit);
+        var equips = Gear; var outfit = Outfit;
+        // Kind 0: the layer comes from the item data. An item that came from the outfit list goes back there (kind 2), not onto
+        // the gear of its slot.
+        byte kind = (byte)(outfitUids.Contains(item.Uid) ? 2 : 0);
+        if (!WornEquips.PutOn(ref equips, ref outfit, new ItemPutOn(me.ObjectId, kind, item), wornLayer)) return;
+        Store(equips, outfit);
     }
 
     public void Unequip(EquipItem item)
     {
         if (item == null) return;
-        var equips = me.Equips; var outfit = me.Outfit2;
+        var equips = Gear; var outfit = Outfit;
+        if ((outfit ?? Array.Empty<EquipItem>()).Any(e => e.Uid == item.Uid)) outfitUids.Add(item.Uid);
         if (WornEquips.PutOff(ref equips, ref outfit, item.Uid, wornLayer) == null) return;
+        Store(equips, outfit);
+    }
+
+    void Store(IReadOnlyList<EquipItem> equips, IReadOnlyList<EquipItem> outfit)
+    {
+        if (depth > 0) { pendingEquips = equips; pendingOutfit = outfit; dirty = true; return; }
         me.ReplaceWorn(equips, outfit);
     }
 

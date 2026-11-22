@@ -25,6 +25,10 @@ public interface IBeautyAvatar
     void SetSkinColor(int index, int color);
     /// <summary>CEquipItem::AddTag / RemoveTag of the "Customize" tag (HideSlot / ShowSlot, @0x140cd0980, @0x140cd08c0).</summary>
     void SetSlotHidden(EquipSlot slot, bool hidden);
+    /// <summary>FUN_140cd3fe0(pc, 0) (customize.cpp:527): the following puts on and takes off are one change of the worn items.</summary>
+    void BeginChange() { }
+    /// <summary>FUN_140cd3fe0(pc, 1) (customize.cpp:552): ends the change begun by <see cref="BeginChange"/>.</summary>
+    void EndChange() { }
 }
 
 /// <summary>
@@ -76,6 +80,8 @@ public sealed class BeautyCustomize : IBeautyCustomize
     public Func<int, EquipSlot> SlotOfId = _ => 0;
     /// <summary>CItemData::IsAvatarColorItem of an item id.</summary>
     public Func<int, bool> IsAvatarColorId = _ => false;
+    /// <summary>FUN_14053f870(id) != null: the item data of an id exists (CloneItems::CreateItem checks it first, customize.cpp:992-995).</summary>
+    public Func<int, bool> HasItemData = _ => false;
     /// <summary>A new preview item of an id (CloneItems::CreateItem's CItem::FUN_140523c40 with the grade of FUN_141420f10), or null.</summary>
     public Func<int, EquipItem> NewItem = _ => null;
     /// <summary>The next preview uid (GenerateUniqueId).</summary>
@@ -227,6 +233,7 @@ public sealed class BeautyCustomize : IBeautyCustomize
     /// <summary>CloneItems::CreateItem @0x140cce7d0: a copy of the saved item of the id, else a new preview item (host-set).</summary>
     public EquipItem CreateItem(int itemId)
     {
+        if (!HasItemData(itemId)) return null;
         foreach (var c in items.Values)
             if (c.Id == itemId) return pc.Clone(c);
         var n = NewItem(itemId);
@@ -237,6 +244,12 @@ public sealed class BeautyCustomize : IBeautyCustomize
 
     /// <summary>CloneItems::Restore @0x140ccbfd0: every preview item off, the copies back on, the colours back.</summary>
     public void Restore(IReadOnlyCollection<EquipSlot> tagged)
+    {
+        pc.BeginChange();
+        try { RestoreItems(tagged); } finally { pc.EndChange(); }
+    }
+
+    void RestoreItems(IReadOnlyCollection<EquipSlot> tagged)
     {
         foreach (var w in pc.Worn.ToArray())
             if (w != null && !pc.IsRealItem(w)) pc.Unequip(w);
@@ -283,6 +296,12 @@ public sealed class BeautyCustomize : IBeautyCustomize
     /// held are put back, so a two-slot item does not leave half of itself on.
     /// </summary>
     public void Apply(EquipItem item, int slot)
+    {
+        pc.BeginChange();
+        try { ApplyCopies(item, slot); } finally { pc.EndChange(); }
+    }
+
+    void ApplyCopies(EquipItem item, int slot)
     {
         int orig = slot;
         slots.TryGetValue(orig, out var old);
@@ -412,7 +431,9 @@ public sealed class BeautyCustomize : IBeautyCustomize
     /// <summary>
     /// Customize::CommitSlot @0x140cd2280 (Equipment::CommitSlot @0x140ccfc90): the colours when they changed (mode 6), then what
     /// was added (mode 3) and modified (mode 5) on the slot is sent; the edit item is reset, the hidden slots go back on and the
-    /// slot is selected again.
+    /// slot is selected again. What is sent is what CloneItems::CollectSlot @0x140ccc470 collects: GetAddedSlot (@0x140cce490) and
+    /// GetModifiedSlot (@0x140cce630) each put the one item worn in that slot (PC::FUN_141655e10) into their map when the slot is
+    /// added / modified, so there is at most one item per map.
     /// </summary>
     public void CommitSlot(int slot)
     {

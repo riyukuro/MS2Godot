@@ -98,6 +98,7 @@ public partial class HudScene
             IsTwoHanded = i => slots.IsTwoHanded(tables.Items.Get(i.Id)),
             SlotOfId = slots.SlotOfId,
             NewItem = slots.NewItem,
+            HasItemData = i => tables.Items.Get(i) != null,
             NextUid = () => --beautyPreviewUid,   // GenerateUniqueId is not recovered: a preview uid never meets a real one
         };
     }

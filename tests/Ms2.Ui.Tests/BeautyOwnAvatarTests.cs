@@ -72,4 +72,33 @@ public class BeautyOwnAvatarTests
         c.RestoreAll();
         Assert.That(me.Equips.Select(e => e.Uid), Is.EquivalentTo(new long[] { 1, 2 }));
     }
+
+    [Test]
+    public void AnOutfitItemTakenOffAndRestoredGoesBackIntoTheOutfitListAndNotOverTheGear()
+    {
+        var me = Me((100, 1, EquipSlot.CL));
+        me.Outfit2 = new List<EquipItem> { new EquipItem { Id = 300, Uid = 5, Slot = EquipSlot.CL } };
+        var a = new BeautyOwnAvatar(me, Layer);   // the data layer is 0: only the outfit list says it is a variant-2 item
+        var outfit = me.Outfit2[0];
+        a.Unequip(outfit);
+        Assert.That(me.Outfit2, Is.Empty);
+        a.Equip(outfit.Clone());
+        Assert.That(me.Equips.Select(e => e.Uid), Is.EqualTo(new long[] { 1 }), "the real gear stays");
+        Assert.That(me.Outfit2.Select(e => e.Uid), Is.EqualTo(new long[] { 5 }), "once, in the outfit list");
+    }
+
+    [Test]
+    public void ARestoreOfSeveralItemsRedrawsOnce()
+    {
+        var me = Me((100, 1, EquipSlot.HR), (200, 2, EquipSlot.CL), (210, 3, EquipSlot.SH));
+        var avatar = new BeautyOwnAvatar(me, Layer);
+        var c = new BeautyCustomize(avatar);
+        avatar.Equip(new EquipItem { Id = 101, Uid = 9, Slot = EquipSlot.HR });
+        avatar.Equip(new EquipItem { Id = 201, Uid = 10, Slot = EquipSlot.CL });
+        avatar.Equip(new EquipItem { Id = 211, Uid = 11, Slot = EquipSlot.SH });
+        int changed = 0; me.Changed += () => changed++;
+        c.RestoreAll();
+        Assert.That(me.Equips.Select(e => e.Uid), Is.EquivalentTo(new long[] { 1, 2, 3 }));
+        Assert.That(changed, Is.EqualTo(1));
+    }
 }

@@ -14,7 +14,7 @@ public sealed class EquipItem {
     public int Id; public long Uid; public EquipSlot Slot; public int Rarity;
     public int Amount; public long CreationTime, ExpiryTime;
     public EquipColor Color;
-    /// <summary>A copy of the record (CItem::Clone); the appearance floats are copied too.</summary>
+    /// <summary>A copy of the record (CItem::Clone): the fields and the appearance floats are copied; the nested blocks (options, enchant, limit break, transfer, socket, ugc, stat and special data) are shared with the original, so they must not be edited through a copy.</summary>
     public EquipItem Clone() { var c = (EquipItem) MemberwiseClone(); c.Appearance = (float[]) (Appearance ?? Array.Empty<float>()).Clone(); return c; }
     /// <summary>Hair: back length, back pos 1, 2 (x,y,z each), front length, front pos 1, 2. Decal: 4 floats. Cap: 4 vec3 + 1 float. Else empty.</summary>
     public float[] Appearance = Array.Empty<float>();

@@ -173,8 +173,11 @@ public class BeautyCustomizeTests
     public void CreateItemCopiesTheSavedItemOrAsksTheHost()
     {
         var a = Worn((100, 1, EquipSlot.HR));
-        var c = new BeautyCustomize(a) { NewItem = id => new EquipItem { Id = id, Slot = EquipSlot.CL }, NextUid = () => 77 };
+        var c = new BeautyCustomize(a) { NewItem = id => new EquipItem { Id = id, Slot = EquipSlot.CL }, NextUid = () => 77, HasItemData = id => id != 100 && id != 4040 };
+        Assert.That(c.CreateItem(4040), Is.Null);
+        c = new BeautyCustomize(a) { NewItem = c.NewItem, NextUid = () => 77, HasItemData = _ => true };
         Assert.That(c.CreateItem(100).Uid, Is.EqualTo(1));
+        Assert.That(new BeautyCustomize(a) { HasItemData = id => id != 100 }.CreateItem(100), Is.Null, "no item data: not even the saved copy");
         var n = c.CreateItem(555);
         Assert.That((n.Id, n.Uid), Is.EqualTo((555, 77L)));
         Assert.That(new BeautyCustomize(a).CreateItem(555), Is.Null);
