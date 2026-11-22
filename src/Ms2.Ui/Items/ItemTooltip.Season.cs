@@ -17,4 +17,11 @@ public sealed partial class ItemTooltip
         if (season == 0 || !boxes.IsSeasonNumberOnIcon(season)) return;
         Data["itemSeason"] = boxes.SeasonText(season);
     }
+
+    /// <summary>FUN_1409d46e0 (astooltip.cpp:2746): "unlimited", the item's unlimited enchant level
+    /// (CItemStatus GetUnlimitedEnchantInfo, GetLevel) when above 0.</summary>
+    void SetUnlimitedEnchant(Item item)
+    {
+        if (item.UnlimitedEnchantLevel > 0) Data["unlimited"] = item.UnlimitedEnchantLevel;
+    }
 }

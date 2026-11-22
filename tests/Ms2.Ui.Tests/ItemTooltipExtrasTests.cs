@@ -583,4 +583,18 @@ public class ItemTooltipExtrasTests
         plain.Fill(Item.Create(m.Tables.Items, 20300327, 0));
         Assert.That(plain.Data.ContainsKey("itemSeason"), Is.False);
     }
+
+    [Test]
+    public void UnlimitedEnchantedItemShowsItsLevel()
+    {
+        var m = NewModel();
+        var it = Item.Create(m.Tables.Items, 11300000, 0);
+        var tip = new ItemTooltip(m, 0x200);
+        tip.Fill(it);
+        Assert.That(tip.Data.ContainsKey("unlimited"), Is.False);
+        it.UnlimitedEnchantLevel = 3;
+        tip = new ItemTooltip(m, 0x200);
+        tip.Fill(it);
+        Assert.That(tip.Data["unlimited"], Is.EqualTo(3));
+    }
 }
