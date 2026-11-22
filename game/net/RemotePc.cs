@@ -11,10 +11,10 @@ namespace Ms2Godot.Net;
 /// <see cref="NxController"/>) moves and collides, its hit report keeps the touched entity (water, ground material), and its
 /// animation's "run*" / "walk*" text keys play steps (PCBase::TextKeyEvent, pcbase.cpp:997-1008).
 /// STILL-OPEN: the world box slide of PCBase::vfunc_68 (WorldService::FUN_141bd36f0), the moving platform carry
-/// (pcbase.cpp:1794-1816), the pushes (WorldService::FUN_141bc8420) and the TRANSDEST hold frame of a KFM blend
-/// (the local player's PlaySequence) are not ported for remote PCs.
+/// (pcbase.cpp:1794-1816), the pushes of WorldService::FUN_141bc8420 and the TRANSDEST hold frame of a KFM blend
+/// (the local player's PlaySequence) are not ported for remote PCs. A hit's StateHit, lift and push are (RemotePcHit).
 /// </summary>
-public sealed class RemotePc : IRemotePc
+public sealed partial class RemotePc : IRemotePc
 {
     /// <summary>The PC's root: the controller body, the visual under it; the name tags and bars hang on it.</summary>
     public readonly CharacterBody3D Body;
@@ -56,6 +56,7 @@ public sealed class RemotePc : IRemotePc
         States = new RemotePcStates(this, (int)body.GetInstanceId());
         States.ShadowVisible = shown => FieldShadows.SetShadowVisible(body, shown);
         anim.AnimationFinished += OnAnimationFinished;
+        WireHit();
     }
 
     /// <summary>
@@ -97,11 +98,14 @@ public sealed class RemotePc : IRemotePc
     /// <summary>Starts the state machine once the body is in the tree (its first move needs the space).</summary>
     public void Spawn() => States.Spawn();
 
-    /// <summary>One drawn frame: PCBase::vfunc_53 (pcbase.cpp:3728-3743), then the frame's text keys.</summary>
+    /// <summary>One drawn frame: PCBase::vfunc_53 (pcbase.cpp:3728-3743): the states, then the push (:3737); then the
+    /// frame's text keys.</summary>
     public void Tick(float dt)
     {
+        gameTime += dt;
         ProbeGround();
         States.Update(dt);
+        Push.Tick(dt, this);
         TextKeys();
     }
 
@@ -124,8 +128,8 @@ public sealed class RemotePc : IRemotePc
     }
 
     /// <summary>GameObjectController::IsOnGround (gameobjectcontrollerphysxhelpers.cpp:487-490): the last move touched down
-    /// and the controller is not jumping (no lift here).</summary>
-    public bool OnGround => (nxHit & NxController.Hit.Down) != 0 && !jumping;
+    /// and the controller is neither jumping nor lifted.</summary>
+    public bool OnGround => (nxHit & NxController.Hit.Down) != 0 && !jumping && !lift.Active;
     /// <summary>The swim exit's water test of FUN_141675ed0 for the PC's own ground hit.
     /// STILL-OPEN: its ridee branch (a mounted PC tests its ride's ground) is not modelled.</summary>
     public bool OnWater => hitGroup == MoveConfig.WaterGroup;
@@ -174,7 +178,8 @@ public sealed class RemotePc : IRemotePc
         if (!noVelocity)
         {
             var v = Vector3.Zero;
-            if (jumping)
+            if (!jumping && lift.Active) v.Y = LiftStep(dt);   // FUN_1412407f0's lift branch: the step only
+            else if (jumping)
             {
                 jumpTime += dt;
                 float h = jumpV0 * jumpTime + 0.5f * gravity * jumpTime * jumpTime;
@@ -199,10 +204,18 @@ public sealed class RemotePc : IRemotePc
     /// ControllerMove: an up-only move or a landing on another controller leaves group 4 out of the next moves; a landing
     /// stops the jump and the fall timer unless that ignore holds; a move with no down part starts the fall timer.
     /// </summary>
-    void ControllerMove(Vector3 delta, float dt)
+    /// <param name="exclude">Move's nExcludeGroups (:220): groups left out of this move only.</param>
+    void ControllerMove(Vector3 delta, float dt, uint exclude = 0)
     {
         moveShapeHit = false;
-        nxHit = nx.Move(delta);
+        if (exclude != 0 && (exclude & ~nx.IgnoreGroups) != 0)
+        {
+            uint keep = nx.IgnoreGroups;
+            nx.IgnoreGroups = keep | exclude;
+            nxHit = nx.Move(delta);
+            nx.IgnoreGroups = keep;
+        }
+        else nxHit = nx.Move(delta);
         bool other = nx.HitController;
         if (nxHit == NxController.Hit.Up) nx.IgnoreGroups = MoveConfig.ControllerHitIgnore;
         if (nxHit == NxController.Hit.Down && other) nx.IgnoreGroups = MoveConfig.ControllerHitIgnore;
