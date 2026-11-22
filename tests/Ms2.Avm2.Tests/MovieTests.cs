@@ -207,6 +207,43 @@ public class MovieTests
     }
 
     [Test]
+    public void LoginIdFieldTakesCaretKeys()
+    {
+        var (rt, p) = Open("uilogindialog");
+        var dlg = p.FindOwner("onEnterKey");
+        string connected = null;
+        p.External = (n, a) =>
+        {
+            if (a.Length > 0 && Rt.ToString(a[0]) == "OnConnect")
+                connected = Rt.ToString(Get(p, Get(p, dlg, "m_inputID"), "text"));
+            return null;
+        };
+        var id = (AsTextField)Get(p, Get(p, dlg, "m_inputID"), "textField");
+        var b = id.GetBounds(null);
+        p.Click(b.X + b.W / 2, b.Y + b.H / 2); p.Tick();
+        Assert.That(p.Focus, Is.SameAs(id));
+        foreach (var ch in "testerXY") p.Key(char.ToUpperInvariant(ch), ch, true);
+        p.Tick();
+        void Press(uint key, bool shift = false) { p.Key(key, 0, true, shift); p.Key(key, 0, false, shift); p.Tick(); }
+        (string, int, int, int) State() => (id.Text, id.caretIndex, id.selectionBeginIndex, id.selectionEndIndex);
+        Press(0x25); Press(0x25);
+        Assert.That(State(), Is.EqualTo(("testerXY", 6, 6, 6)), "Left twice");
+        Press(0x27, shift: true);
+        Assert.That(State(), Is.EqualTo(("testerXY", 7, 6, 7)), "Shift+Right selects the X");
+        Press(46);
+        Assert.That(State(), Is.EqualTo(("testerY", 6, 6, 6)), "Delete removes the selection");
+        Press(0x24); Press(46);
+        Assert.That(State(), Is.EqualTo(("esterY", 0, 0, 0)), "Home, then Delete");
+        Press(0x23); Press(0x25, shift: true); Press(0x25, shift: true);
+        Assert.That(State(), Is.EqualTo(("esterY", 4, 4, 6)), "End, then Shift+Left twice");
+        Press(8);
+        Assert.That(State(), Is.EqualTo(("este", 4, 4, 4)), "Backspace removes the selection");
+        p.Call(dlg, "onEnterKey"); p.Tick();
+        Assert.That(connected, Is.EqualTo("este"));
+        Assert.That(rt.Errors, Is.Empty);
+    }
+
+    [Test]
     public void MinimapEntityHidesItsHitArea()
     {
         var (rt, p) = Open("uiminimapdialog");
