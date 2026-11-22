@@ -166,7 +166,7 @@ public partial class LiveSession
             // OnStateSkill @0x141718b80 (:3476): type 6 calls the PC's current state's vfunc_33(true), which only StateHit
             // overrides (statehit.cpp:350, its m_bC8). STILL-OPEN: no player here has a hit state, so it is logged only.
             var st = Ms2.Net.Packets.StateSkill.Read(p.Reader());
-            if (st.Type == 6 && selfObject >= 0 && st.ActorId == selfObject) GD.Print($"live: state skill 6, skill {st.SkillId} level {st.Level}");
+            if (LogPackets && st.Type == 6 && selfObject >= 0 && st.ActorId == selfObject) GD.Print($"live: state skill 6, skill {st.SkillId} level {st.Level}");
             return false;
         }
         else return false;

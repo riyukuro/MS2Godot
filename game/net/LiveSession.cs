@@ -786,7 +786,7 @@ public partial class LiveSession : Node
 
     void ApplyItems(Ms2.Net.Wire.RawPacket p) {
         if (System.Environment.GetEnvironmentVariable("MS2_LIVE_DUMP") == "1") GD.Print("live: item raw " + Convert.ToHexString(p.Body));
-        try { var r = p.Reader(); var m = ItemMessage.Read(r, Items.Get, game.Profile); Items.Apply(m); GD.Print("live: item " + Describe(m) + (r.Available != 0 ? $" !! {r.Available} bytes left" : "")); }
+        try { var r = p.Reader(); var m = ItemMessage.Read(r, Items.Get, game.Profile); Items.Apply(m); if (r.Available != 0) GD.PushWarning($"live: item {Describe(m)} !! {r.Available} bytes left"); else if (LogPackets) GD.Print("live: item " + Describe(m)); }
         catch (Exception e) { GD.PushWarning($"live: item packet: {e.Message}"); }
     }
 
@@ -1078,7 +1078,7 @@ public partial class LiveSession : Node
         if (st.TryGet(PlayerStat.Health, out long hm, out long hc)) { hud.Player.HpMax = (int)hm; hud.Player.HpCurrent = (int)hc; }
         if (st.TryGet(PlayerStat.Spirit, out long sm, out long sc)) { hud.SpMax = (int)sm; hud.SpCurrent = (int)sc; }
         if (st.TryGet(PlayerStat.Stamina, out long em, out long ec)) { hud.EpMax = (int)em; hud.EpCurrent = (int)ec; }
-        GD.Print($"live: Stat hp {hud.Player.HpCurrent}/{hud.Player.HpMax} sp {hud.SpCurrent}/{hud.SpMax} ep {hud.EpCurrent}/{hud.EpMax} ({st.Values.Count} attribute(s))");
+        if (LogPackets) GD.Print($"live: Stat hp {hud.Player.HpCurrent}/{hud.Player.HpMax} sp {hud.SpCurrent}/{hud.SpMax} ep {hud.EpCurrent}/{hud.EpMax} ({st.Values.Count} attribute(s))");
     }
 
     /// <summary>The field is built and shown: the end of the field load (CSceneStateGame::vfunc_1, scenestategame.cpp:1995-2001)
@@ -1143,7 +1143,7 @@ public partial class LiveSession : Node
         foreach (var r in records) pk.Records.Add(r);
         Send(pk);
         var l = records[^1].Record;
-        GD.Print($"live: {(ride ? "RideSync" : "UserSync")} sent, {records.Count} record(s), last state {l.State} pos ({l.Position.X},{l.Position.Y},{l.Position.Z}) sync {l.SyncNumber}");
+        if (LogPackets) GD.Print($"live: {(ride ? "RideSync" : "UserSync")} sent, {records.Count} record(s), last state {l.State} pos ({l.Position.X},{l.Position.Y},{l.Position.Z}) sync {l.SyncNumber}");
     }
 
     void BindPlayer(Player found)
@@ -1163,14 +1163,15 @@ public partial class LiveSession : Node
         {
             if (game == null) return;
             Send(new StateChange(mode, arg, game.Session.ServerTick, new System.Numerics.Vector3(pos.X, pos.Y, pos.Z)));   // mypc.cpp:3661: GetServerTick
-            GD.Print($"live: State sent, mode {mode} arg {arg}");
+            if (LogPackets) GD.Print($"live: State sent, mode {mode} arg {arg}");
         };
         OwnPlayerBound?.Invoke();
     }
 
-    /// <summary>MS2_LIVE_PACKETS=1: print each packet this session does not read itself, a debug switch; off by default (most
-    /// of them go to the field tracker; in a town, NpcControl alone arrives about a thousand times a second).</summary>
-    static readonly bool LogPackets = System.Environment.GetEnvironmentVariable("MS2_LIVE_PACKETS") == "1";
+    /// <summary>MS2_LIVE_PACKETS=1: print each packet this session does not read itself, and each own movement packet it sends
+    /// (UserSync, RideSync, StateChange: one per step while walking); a debug switch, off by default (most received ones go to the
+    /// field tracker; in a town, NpcControl alone arrives about a thousand times a second).</summary>
+    internal static readonly bool LogPackets = System.Environment.GetEnvironmentVariable("MS2_LIVE_PACKETS") == "1";
 
     public override void _Process(double delta)
     {

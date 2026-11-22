@@ -97,7 +97,7 @@ public partial class QuestGuide : Node3D
         string who = npcs?.Find(npcId)?.Name ?? $"npc {npcId}";
         string where = Last.Kind == TraceKind.Portal ? "portal" : who;
         label.Text = $"{where}   {Last.DistanceText}";
-        if ((dbg += delta) > 2) { dbg = 0; GD.Print($"quest: {Last.Kind} yaw {Last.BeamYawDeg:F0} {Last.DistanceText} beam={(beam != null)}"); }
+        if ((dbg += delta) > 2) { dbg = 0; if (Ms2Godot.Net.LiveSession.LogPackets) GD.Print($"quest: {Last.Kind} yaw {Last.BeamYawDeg:F0} {Last.DistanceText} beam={(beam != null)}"); }
         if (beam != null)
         {
             beam.Visible = true;
