@@ -52,14 +52,14 @@ public interface ITriggerSounds
 /// An effect event starts or removes the entity's effect through the field's effect service (<see cref="ApplyEffect"/>),
 /// bound with <see cref="Bind(IRegionSkillEffects)"/>; the effects go with the field, as the object's dtor removes its handle.
 /// The fade (FadeEntity, Fade tenths of a second) runs in <see cref="TriggerFade"/>; a mesh without drawn instances to
-/// fade switches at once. The collision switch does not wait for it.
+/// fade switches at once. The collision switch does not wait for it. A mesh or rope / ladder event whose fade starts plays
+/// the entity's show or hide effect (<see cref="InsertShowHideEffect"/>).
 /// STILL-OPEN: the model swap a shown mesh with a model
 /// name gets (property 0x770e5fc6 and skin scale 0x2d7cad2d); whether the server's npc ground drops a hidden mesh
 /// (NpcGroundSpace keeps it; the client casts no npc ground: OnFieldAddNpc @0x141718cf0, scenestategame.cpp:3533-3584,
 /// and CNpc::ApplySyncBlock, npcactorandvibrate.cpp:913,965, place an npc at the packet's position + 4 z, so the
-/// server decides); the minimap mark (UIMinimapDialog::SetTriggerVisible) and the show/hide effects (0x6dd85c78 /
-/// 0x6454a3bb) of a type 3 event, those of a rope / ladder event (picked by its flag, :750-753), and an actor event's
-/// minimap mark (:724-726); the actor sequence's blend (PlayAnimation's 1.0f and false go to the client's own
+/// server decides); the minimap mark of a mesh event (UIMinimapDialog::SetTriggerVisible, :702-704) and an actor event's
+/// (:724-726); the actor sequence's blend (PlayAnimation's 1.0f and false go to the client's own
 /// NiActorManager::SetTargetAnimation, whose body is not in the recomp); a hidden cube's object weapon (IsObjectWeapon; PullObjectWeaponAction::FUN_140959eb0 takes only a cube whose IsVisible is set,
 /// actionkeyobject.cpp:1873-1875; not ported here); the sound Effect kind (<see cref="ApplySound"/>); the camera parts listed at <see cref="TriggerCamera"/>; a trigger mesh drawn as an animated prop (FieldProps); a hidden
 /// mesh that BGTransparencyMgr fades back in (FieldFade restores its transform).
@@ -218,17 +218,35 @@ public sealed class FieldTriggers
             if (ev.Kind is not (TriggerObjectKind.Mesh or TriggerObjectKind.Rope)) continue;
             bool drawn = meshes.TryGetValue(ev.Id, out var t);
             // WorldService::FadeEntity(id, bShow, nFade * 0.1f), triggeractioncli.cpp:650-651 (rope: :743-744)
-            if (drawn && Fader != null && t.Draws.Count > 0) Fader.FadeEntity(ev.Id, t, ev.Show, ev.Fade * 0.1f);
-            else if (drawn) TriggerFade.Switch(t, ev.Show);
+            // it is true when the entity's show state starts to change (FUN_141bd8860 / FUN_141bd8ae0)
+            bool faded = false;
+            if (drawn && Fader != null && t.Draws.Count > 0) faded = Fader.FadeEntity(ev.Id, t, ev.Show, ev.Fade * 0.1f);
+            else if (drawn) { faded = t.Shown != ev.Show; TriggerFade.Switch(t, ev.Show); }
             // SetCachedBoolProperty(entity, 0x4df0c0de, bFlag), triggeractioncli.cpp:745
             bool climbable = false;
             if (ev.Kind == TriggerObjectKind.Rope && climbs.TryGetValue(ev.Id, out var c)) { c.Usable = ev.Flag2; climbable = true; }
             // FUN_140b60e40(entity, bShow), triggeractioncli.cpp:679 (rope: :746): after the fade and model swap
             bool collides = colliders.TryGetValue(ev.Id, out var tc);
             if (collides) tc.SetGroup(ev.Show ? tc.Group : HiddenGroup);
+            if (faded && !ev.SkipFx) InsertShowHideEffect(ev);
             if (drawn || collides || climbable) n++;
         }
         return n;
+    }
+
+    /// <summary>
+    /// The effect a mesh or rope / ladder event plays once its fade starts, unless the event is a type 2 one
+    /// (TriggerObjectMesh::vfunc_2, triggeractioncli.cpp:687-701; TriggerObjectRope::vfunc_2, :747-761): the entity's
+    /// showEffectXml (0x6dd85c78) or hideEffectXml (0x6454a3bb), picked by the mesh's show bool or the rope's second
+    /// bool, inserted once (CEffectService::InsertEffect, not kept) on the entity's scene node, here at its placement
+    /// (<see cref="FieldEntity.Transform"/>). An empty name plays nothing.
+    /// </summary>
+    void InsertShowHideEffect(TriggerObjectEvent ev)
+    {
+        if (effects == null || !entities.TryGetValue(ev.Id, out var e)) return;
+        bool show = ev.Kind == TriggerObjectKind.Rope ? ev.Flag2 : ev.Show;
+        string fx = e.Get(show ? "showEffectXml" : "hideEffectXml") ?? "";
+        if (fx.Length != 0) effects.Insert(fx, e.Transform, false, 0);
     }
 
     /// <summary>
