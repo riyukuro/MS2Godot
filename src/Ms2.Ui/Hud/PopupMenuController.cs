@@ -193,7 +193,8 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
     /// character: PopUpMenu on the own PC (kind 1, type 1). Another character: FindProxyObjectByOwner gives a proxy in the field
     /// (FUN_141a7eb60, STILL-OPEN: the field's proxy objects are not in this HUD, so a character in the field opens nothing);
     /// none: FUN_141a7f090 (:2102), OpenFromCharName (:2537) with type 0 for the chief's name, the account and the character id
-    /// (kind 2). No local player (the world's), nothing.
+    /// (kind 2). No local player (the world's), nothing. <paramref name="accountId"/> is accepted and ignored: the client's m_a0
+    /// only feeds CUserReportData, which this menu does not send.
     /// </summary>
     public void OpenForPartySearch(float x, float y, long accountId, long characterId, string name, PlayerState self)
     {
@@ -206,7 +207,8 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
     }
 
     /// <summary>OpenFromCharName (:2537) through FUN_141a834e0 (:2686) with nMode 2 and nDir 1: the header is the name only (no
-    /// level, picture, trophy or job), the character counts as online, the buddy items read the list by the name.</summary>
+    /// level, picture, trophy or job), the character counts as online, the buddy items read the list by the name. STILL-OPEN: the client returns 0 when the
+    /// camera manager's FUN_140a18070() is 0 (uipartydialog.cpp:2540); that check is not modelled.</summary>
     bool OpenFromCharName(float x, float y, long accountId, long characterId, string name, int flags)
     {
         if (Host?.Entity == null) return false;                         // m_30
