@@ -102,7 +102,7 @@ public static class SkillAttackFire
             }
         }
         if (collision)
-            SkillHit.PickTargets(a, AttackAt(r, r.AttackIndex)?.AttackMethodType ?? 0, picked, rand, serial, tags);
+            SkillHit.PickTargets(a, AttackAt(r, r.AttackIndex)?.AttackMethodType ?? 0, picked, rand, serial, tags, objects, pkMode);
         return new SkillDamageRequest(r.CastId, (byte)attack, r.Position, dir, r.SendCount, tags);
     }
 }

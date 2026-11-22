@@ -52,7 +52,7 @@ public delegate bool MagicRayCast(Vector3 from, Vector3 dir, float length, out V
 /// Piercing arrows (bounceType 3 and 4) keep flying through their hits, forget them each piercing interval and send its
 /// splash (<see cref="SkillSplashRequest"/>); bounceType 4 then flies back to the owner (state 5) and ends there.
 /// STILL-OPEN: for an arrow record, the magic control flight (FUN_141464490, a skill with magicControl enable not 0: those make no arrow
-/// magic here), the bounce-off's effect, the hit effects; the linked records, the latency maximum (0 here: the time sync's latency is not kept),
+/// magic here), the bounce-off's effect, the hit effects; the links of a record other than an arrow one, the latency maximum (0 here: the time sync's latency is not kept),
 /// CFunctionCubeService::SetTagArea, the magic's own effects (PlayHitEffects) and MyPC::FUN_14152e0c0 after a fill are not
 /// ported.
 /// </summary>
@@ -93,6 +93,10 @@ public sealed class OwnTagMagics
         public HashSet<int> Hits, Excluded;
         public HitBox Area;
         public int HitIndex, OwnerId, PierceTick, Invincible;
+        // a bounce chain's next record (SkillTargetRecord m_spLinked) and, for a link, the wait for the previous one's end (its
+        // m_nStartTick 0, magicdata.cpp:758); Abandoned: the previous one is gone without starting it
+        public Magic Linked;
+        public bool Waiting, Abandoned;
     }
 
     readonly List<Magic> live = new();
@@ -140,23 +144,44 @@ public sealed class OwnTagMagics
             var t = tags[i];
             var d = paths.Get(attack.MagicPathId, t.Hit);
             if (d == null) continue;
-            var m = new Magic
-            {
-                Tag = new TagRecord { BrokenOffence = attack.BrokenOffence, Hit = onHit, Id = id },
-                Attack = attack, Start = startMs,
-                Delay = MagicPathTable.Ms(d.DelayTime), Spawn = MagicPathTable.Ms(d.SpawnTime), Life = MagicPathTable.Ms(d.LifeTime),
-                CastId = r?.CastId ?? 0, Serial = t.Serial, TargetId = t.TargetId, SendCount = r?.SendCount ?? 0,
-                AttackIndex = (byte)(r?.AttackIndex ?? 0),
-                StartPoint = StartPoint(d, dir, nodePosition?.Invoke(d.FireNode) ?? r?.Position ?? Vector3.Zero),
-                DelayZero = MathF.Abs(d.DelayTime) < 1e-6f, IgnoreCancelAtSpawn = d.IgnoreCancelAtSpawnTime,
-                Bounce2 = attack.Arrow.BounceType == 2, HitIndex = t.Hit,
-            };
+            var m = Make(attack, d, r, t.Serial, t.TargetId, t.Hit, startMs, dir, nodePosition, onHit, id);
             if (arrow) InitArrow(m, d, dir, ownerId, ownerPosition, rayCast, startMs, objects);
             live.Add(m);
             n++;
+            if (!arrow) continue;
+            // the bounce chain's links (stateskill.cpp:1356-1367): each a model whose caster is the record before it; with no
+            // row for a link it has no model, so it and the links after it never start
+            var prev = m;
+            foreach (var link in t.Links)
+            {
+                var ld = paths.Get(attack.MagicPathId, link.Hit);
+                if (ld == null) break;
+                var lm = Make(attack, ld, r, link.Serial, link.TargetId, link.Hit, 0, dir, nodePosition, onHit, id);
+                lm.Waiting = true;
+                InitArrow(lm, ld, dir, ownerId, ownerPosition, rayCast, startMs, objects);
+                live.Add(lm);
+                prev.Linked = lm;
+                prev = lm;
+                n++;
+            }
         }
         return n;
     }
+
+    /// <summary>CMagicModel::Init's CMagic::Init (magicdata.cpp:2605, :672) for the record with <paramref name="serial"/>,
+    /// <paramref name="targetId"/> and hit index <paramref name="hit"/> (its row <paramref name="d"/>).</summary>
+    static Magic Make(SkillAttackData attack, MagicPathMove d, CastRecord r, long serial, int targetId, int hit, int startMs,
+        Vector3 dir, Func<string, Vector3> nodePosition, Action onHit, TagIdentity id) => new()
+    {
+        Tag = new TagRecord { BrokenOffence = attack.BrokenOffence, Hit = onHit, Id = id },
+        Attack = attack, Start = startMs,
+        Delay = MagicPathTable.Ms(d.DelayTime), Spawn = MagicPathTable.Ms(d.SpawnTime), Life = MagicPathTable.Ms(d.LifeTime),
+        CastId = r?.CastId ?? 0, Serial = serial, TargetId = targetId, SendCount = r?.SendCount ?? 0,
+        AttackIndex = (byte)(r?.AttackIndex ?? 0),
+        StartPoint = StartPoint(d, dir, nodePosition?.Invoke(d.FireNode) ?? r?.Position ?? Vector3.Zero),
+        DelayZero = MathF.Abs(d.DelayTime) < 1e-6f, IgnoreCancelAtSpawn = d.IgnoreCancelAtSpawnTime,
+        Bounce2 = attack.Arrow.BounceType == 2, HitIndex = hit,
+    };
 
     /// <summary>
     /// CMagic::FUN_1414609e0 @0x1414609e0 (magicdata.cpp:1397) for an own magic (m_n530 0): the owner's fire node
@@ -374,7 +399,7 @@ public sealed class OwnTagMagics
         {
             if (m.Arrow)
             {
-                if ((uint)nowMs >= (uint)(m.Start + m.Delay)) return true;
+                if (m.Waiting ? m.Abandoned : (uint)nowMs >= (uint)(m.Start + m.Delay)) return true;
                 continue;
             }
             if (Due(m, nowMs, leadMs, out bool expired) || expired) return true;
@@ -436,6 +461,11 @@ public sealed class OwnTagMagics
         List<SkillHitRequest> sends, List<SkillSplashRequest> splashes, List<MagicEndEffect> endEffects, Func<int> rand,
         MagicRayCast rayCast, bool pkMode, ref int registered)
     {
+        if (m.Waiting)
+        {
+            if (m.Abandoned && m.Linked != null) m.Linked.Abandoned = true;
+            return m.Abandoned;
+        }
         int begin = m.Start + m.Delay;
         if ((uint)nowMs < (uint)begin) return false;
         if (m.LastTick == 0) m.LastTick = nowMs;
@@ -458,7 +488,7 @@ public sealed class OwnTagMagics
         {
             if (m.Life != 0 && (uint)(m.StateTick + m.Life) <= (uint)nowMs)
             {
-                End(m, owner, splashes, endEffects, lifeEnd: true);
+                End(m, owner, splashes, endEffects, lifeEnd: true, nowMs, objects);
                 return true;
             }
             Fly(m, nowMs, objects, rayCast);
@@ -482,7 +512,7 @@ public sealed class OwnTagMagics
                 {
                     if (m.State != 2 || m.Attack.Arrow.BounceType != 4 || m.Invincible == 2)
                     {
-                        End(m, owner, splashes, endEffects, lifeEnd: false);
+                        End(m, owner, splashes, endEffects, lifeEnd: false, nowMs, objects);
                         return true;
                     }
                     m.StateTick = nowMs;
@@ -759,14 +789,41 @@ public sealed class OwnTagMagics
     /// record's hit at the end point (FUN_14146b440) instead of these effects. The map is filled only in FUN_14146b440's
     /// bTracked 0 branch (magicdata.cpp:2760), and both calls of it in the exe (0x14145fa75 here, 0x14171d532 the 0x3d mode 1
     /// hits) pass 1, so the lookup never finds one and is not ported.
-    /// STILL-OPEN: the linked record's restart at the current point (FUN_14145ddd0) is not ported.
+    /// Then the bounce chain's next record (m_spLinked) starts from the current point (<see cref="Restart"/>) when its model is
+    /// there (a waiting link here) and its target is among <paramref name="objects"/>; otherwise it never starts (here it is
+    /// dropped, with the links after it).
     /// </summary>
-    static void End(Magic m, in MagicOwner owner, List<SkillSplashRequest> splashes, List<MagicEndEffect> endEffects, bool lifeEnd)
+    static void End(Magic m, in MagicOwner owner, List<SkillSplashRequest> splashes, List<MagicEndEffect> endEffects, bool lifeEnd,
+        int nowMs, ReadOnlySpan<HitCandidate> objects)
     {
         if (endEffects != null) EndEffects(m, lifeEnd, endEffects);
+        var next = m.Linked;
+        if (next != null && next.Waiting && !next.Abandoned)
+        {
+            bool there = false;
+            foreach (ref readonly var o in objects)
+                if (o.Id == next.TargetId && next.TargetId != 0) { there = true; break; }
+            if (there) Restart(next, m.Current, nowMs, objects);
+            else next.Abandoned = true;
+        }
         bool explosion = m.Row.ExplosionByDestroy || m.RayStopped || m.Filled;
         if (owner.LocalPlayer && m.Attack.CubeMagicPathId != 0 && explosion)
             splashes?.Add(new SkillSplashRequest(m.CastId, m.AttackIndex, m.SendCount, m.HitIndex, m.Current, EulerDegrees(m)));
+    }
+
+    /// <summary>
+    /// CMagic::FUN_14145ddd0 @0x14145ddd0 (magicdata.cpp:743) and the start tick (magicdata.cpp:1147): the start, last and current
+    /// points become <paramref name="at"/> (its path points cleared, SetPosition), the target is taken again
+    /// (<see cref="UpdateTarget"/>) and the record starts at <paramref name="nowMs"/>, so its delay counts from there. The flight
+    /// time, predicted point and curve stay those of the Add (FUN_14145d9d0 is not run again).
+    /// </summary>
+    static void Restart(Magic m, Vector3 at, int nowMs, ReadOnlySpan<HitCandidate> objects)
+    {
+        m.StartPoint = at;
+        m.Last = m.Current = at;
+        UpdateTarget(m, nowMs, objects);
+        m.Start = nowMs;
+        m.Waiting = false;
     }
 
     /// <summary>
@@ -973,6 +1030,7 @@ public sealed class OwnTagMagics
             var m = live[i];
             if (m.CastId != castId || m.Bounce2 || !m.DelayZero || m.State >= 2) continue;
             if (m.IgnoreCancelAtSpawn && (uint)nowMs >= (uint)(m.Start + m.Delay)) continue;
+            if (m.Linked != null) m.Linked.Abandoned = true;
             live.RemoveAt(i);
             n++;
         }

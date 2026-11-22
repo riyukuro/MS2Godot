@@ -431,10 +431,11 @@ public static class SkillHit
     /// up to the count when <paramref name="attackMethodType"/> is 1 (CSkillRecord::FUN_141759f70 @0x141759f70,
     /// skillrecord.cpp:346: the type of the record's m_nAttackIndex attack), else one for a nonTarget 1 arrow.
     /// <paramref name="hits"/> is null when the arrow is nonTarget 1 (no area pick).
-    /// STILL-OPEN: the bounce chains (FUN_1417f3e80, arrow bounceCount) are not picked; every record goes without links.
+    /// Between the picked records and the target-less ones, an arrow with a bounceCount chains each picked record
+    /// (<see cref="Chain"/>) over <paramref name="objects"/>, so the links take their serials in that order.
     /// </summary>
     public static void PickTargets(SkillAttackData attack, int attackMethodType, IReadOnlyList<int> hits, Func<int> rand, Func<long> serial,
-        List<SkillDamageTarget> tags)
+        List<SkillDamageTarget> tags, ReadOnlySpan<HitCandidate> objects = default, bool pkMode = false)
     {
         tags.Clear();
         int limit = attack.TargetCount;
@@ -449,6 +450,13 @@ public static class SkillHit
             for (int i = 0; i < extra; i++) { used++; picked.Add(hits[rand() % hitCount]); }
         int hit = 0;
         foreach (int id in picked) tags.Add(new SkillDamageTarget(serial(), id, (byte)hit++, Array.Empty<SkillDamageLink>()));
+        int bounce = attack.Arrow.BounceCount;
+        if (bounce > 0)
+            for (int i = 0; i < tags.Count; i++)
+            {
+                var links = Chain(attack, bounce, tags[i].TargetId, objects, rand, serial, pkMode);
+                if (links.Count != 0) tags[i] = tags[i] with { Links = links };
+            }
         if (attackMethodType == 1)
         {
             int rest = limit - used < 0 ? 0 : limit - used;
@@ -456,6 +464,93 @@ public static class SkillHit
         }
         else if (attack.Arrow.IsNonTargetOne)
             tags.Add(new SkillDamageTarget(serial(), 0, 0, Array.Empty<SkillDamageLink>()));
+    }
+
+    [ThreadStatic] static List<HitCandidate> chainQueried;
+    [ThreadStatic] static List<int> chainFound, chainIds;
+
+    /// <summary>
+    /// StateSkill::FUN_1417f3e80 @0x1417f3e80 (stateskill.cpp:2689), the bounce chain of a picked record that hits
+    /// <paramref name="rootId"/>. Each bounce (<paramref name="bounce"/> of them, stopping early when nothing is found) searches
+    /// around the chain's last hit: a cylinder of the arrow's bounceRadius, 150 high, at that object's position. The search
+    /// goes over the objects the owner may target (<see cref="Query"/>: the range's applyTarget and applyTargetIgnoreNpcRanks),
+    /// sorted by mode 3 (the squared distance), without the owner. It stops when the last hit or the owner is not among
+    /// <paramref name="objects"/>. Which objects are left:
+    /// <list type="bullet">
+    /// <item>bounceType 2: the found objects that are not in the chain. When none are left and bounceOverlap is 1, then with
+    /// more than one found the chain starts over (it is emptied), the last hit is dropped from the found ones, and they are
+    /// shuffled (for each i, swap with rand() % count). With one found, nothing is left.</item>
+    /// <item>bounceType 1, or bounceOverlap 0: the found objects without those in the chain.</item>
+    /// <item>Otherwise every found object, the last hit included.</item>
+    /// </list>
+    /// The first one left gets the next link: a new serial, its object, the bounce number (bounceCount - bounces left + 1) and
+    /// hit index 0. It is added to the chain, and the chain goes on from it.
+    /// </summary>
+    public static List<SkillDamageLink> Chain(SkillAttackData attack, int bounce, int rootId, ReadOnlySpan<HitCandidate> objects,
+        Func<int> rand, Func<long> serial, bool pkMode = false)
+    {
+        var links = new List<SkillDamageLink>();
+        var arrow = attack.Arrow;
+        var queried = chainQueried ??= new List<HitCandidate>();
+        var found = chainFound ??= new List<int>();
+        var chain = chainIds ??= new List<int>();
+        chain.Clear();
+        chain.Add(rootId);
+        int lastId = rootId;
+        for (; bounce != 0; bounce--)
+        {
+            int from = -1, owner = -1;
+            for (int i = 0; i < objects.Length; i++)
+            {
+                if (from < 0 && objects[i].Id == lastId && lastId != 0) from = i;
+                if (owner < 0 && objects[i].IsOwner) owner = i;
+            }
+            if (from < 0 || owner < 0) break;
+            var at = objects[from].Position;
+            var shape = new SkillHitShape { Shape = 2, CylinderCenter = at, Radius = arrow.BounceRadius, Height = 150f };
+            Query(objects, attack.Range.ApplyTarget, attack.Range.IgnoreNpcRanks, queried, pkMode);
+            Detect(shape, at, Vector3.Zero, 3, false, false, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(queried), rand, found);
+            if (arrow.BounceType == 2)
+            {
+                int left = found.Count;
+                foreach (int id in chain)
+                    if (found.IndexOf(id) >= 0) left--;
+                if (arrow.BounceOverlap == 1 && left == 0)
+                {
+                    if (found.Count > 1)
+                    {
+                        int last = chain.Count != 0 ? chain[^1] : 0;
+                        chain.Clear();
+                        int at0 = found.IndexOf(last);
+                        if (at0 >= 0) found.RemoveAt(at0);
+                        for (int i = 0; i < found.Count; i++)
+                        {
+                            int pick = rand() % found.Count;
+                            (found[i], found[pick]) = (found[pick], found[i]);
+                        }
+                    }
+                    else found.Clear();
+                }
+                else RemoveChain(found, chain);
+            }
+            else if (arrow.BounceType == 1 || arrow.BounceOverlap == 0) RemoveChain(found, chain);
+            if (found.Count == 0) break;
+            int next = found[0];
+            links.Add(new SkillDamageLink(serial(), next, (byte)(arrow.BounceCount - bounce + 1), 0));
+            chain.Add(next);
+            lastId = next;
+        }
+        return links;
+    }
+
+    /// <summary>FindTargetIndex @0x1417f5710 then RemoveAt for each record of the chain: one occurrence each.</summary>
+    static void RemoveChain(List<int> found, List<int> chain)
+    {
+        foreach (int id in chain)
+        {
+            int i = found.IndexOf(id);
+            if (i >= 0) found.RemoveAt(i);
+        }
     }
 
     /// <summary>The body box of a player (PC::SetDefaultBoundingBox, pc.cpp:2776): size (70, 35, 150), add (0, 35, 0).</summary>

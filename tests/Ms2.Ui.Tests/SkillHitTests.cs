@@ -159,4 +159,76 @@ public class SkillHitTests
         Assert.That(Pick(Attack("<attack targetCount=\"3\"><arrow nonTarget=\"1\"/></attack>"), null),
             Is.EqualTo(new[] { (0, (byte)0) }));
     }
+
+    static HitCandidate Foe(int id, float x, float y) =>
+        new() { Id = id, Position = new Vector3(x, y, 0), Body = SkillHit.PlayerBody(new Vector3(x, y, 0), 0), Team = 1, Hp = 100 };
+
+    static SkillAttackData Bouncer(string arrow) =>
+        Attack("<attack targetCount=\"1\"><range applyTarget=\"1\"/><arrow bounceCount=\"3\" bounceRadius=\"300\" " + arrow + "/></attack>");
+
+    static List<SkillDamageTarget> PickChain(SkillAttackData a, int[] hits, HitCandidate[] objects, params int[] rolls)
+    {
+        long serial = 0;
+        var q = new Queue<int>(rolls);
+        var tags = new List<SkillDamageTarget>();
+        SkillHit.PickTargets(a, a.AttackMethodType, hits, q.Dequeue, () => ++serial, tags, objects);
+        return tags;
+    }
+
+    static (long, int, byte)[] Links(SkillDamageTarget t) => t.Links.Select(l => (l.Serial, l.TargetId, l.Bounce)).ToArray();
+
+    [Test]
+    public void TheBounceChainHopsToTheNearestTargetNotYetHit()
+    {
+        var me = new HitCandidate { Id = 1, IsOwner = true, Position = new Vector3(0, 1000, 0), Hp = 100 };
+        // from 10: 11 is 100 away, 12 150, 13 350 (out); from 12, 13 is 200 away; 14 is out of every radius
+        var objs = new[] { me, Foe(10, 0, 0), Foe(11, 100, 0), Foe(12, -150, 0), Foe(13, -350, 0), Foe(14, 2000, 0) };
+        var tags = PickChain(Bouncer("bounceType=\"1\""), new[] { 10 }, objs);
+        Assert.That(tags.Count, Is.EqualTo(1));
+        Assert.That(Links(tags[0]), Is.EqualTo(new[] { (2L, 11, (byte)1), (3L, 12, (byte)2), (4L, 13, (byte)3) }),
+            "the root takes serial 1, each bounce the next; no target is hit twice");
+        Assert.That(tags[0].Links.All(l => l.Hit == 0));
+        var none = PickChain(Bouncer("bounceType=\"1\""), new[] { 14 }, objs);
+        Assert.That(none[0].Links, Is.Empty, "nothing else within the radius");
+    }
+
+    [Test]
+    public void BounceTypeZeroWithOverlapMayHitTheLastTargetAgain()
+    {
+        var me = new HitCandidate { Id = 1, IsOwner = true, Position = new Vector3(0, 1000, 0), Hp = 100 };
+        var objs = new[] { me, Foe(10, 0, 0), Foe(11, 100, 0) };
+        // type 0, overlap 1: nothing is removed, the nearest found (the last hit itself, distance 0) comes first
+        var tags = PickChain(Bouncer(""), new[] { 10 }, objs);
+        Assert.That(Links(tags[0]).Select(l => l.Item2), Is.EqualTo(new[] { 10, 10, 10 }));
+        var no = PickChain(Bouncer("bounceOverlap=\"0\""), new[] { 10 }, objs);
+        Assert.That(Links(no[0]).Select(l => l.Item2), Is.EqualTo(new[] { 11 }), "overlap 0 drops the chain's targets");
+    }
+
+    [Test]
+    public void BounceTypeTwoStartsOverWhenEveryFoundTargetIsInTheChain()
+    {
+        var me = new HitCandidate { Id = 1, IsOwner = true, Position = new Vector3(0, 1000, 0), Hp = 100 };
+        var objs = new[] { me, Foe(10, 0, 0), Foe(11, 100, 0), Foe(12, 150, 0) };
+        // bounce 1: 11; bounce 2 from 11: 12; bounce 3 from 12: all found are in the chain, so the chain empties, 12 is
+        // dropped and [11, 10] (by distance) is shuffled: i 0 swaps with 1 % 2 = 1, i 1 with 0 % 2 = 0, giving [11, 10]
+        var tags = PickChain(Bouncer("bounceType=\"2\""), new[] { 10 }, objs, 1, 0);
+        Assert.That(Links(tags[0]).Select(l => l.Item2), Is.EqualTo(new[] { 11, 12, 11 }));
+        var one = new[] { me, Foe(10, 0, 0), Foe(11, 100, 0) };
+        var t1 = PickChain(Bouncer("bounceType=\"2\""), new[] { 10 }, one, 0);
+        Assert.That(Links(t1[0]).Select(l => l.Item2), Is.EqualTo(new[] { 11, 10, 11 }),
+            "from 11 both found are in the chain: start over without 11, so 10; then the chain is [10] and 11 is new again");
+    }
+
+    [Test]
+    public void ChainsTakeSerialsBeforeTheTargetlessRecords()
+    {
+        var me = new HitCandidate { Id = 1, IsOwner = true, Position = new Vector3(0, 1000, 0), Hp = 100 };
+        var objs = new[] { me, Foe(10, 0, 0), Foe(11, 100, 0), Foe(20, 0, 5000), Foe(21, 100, 5000) };
+        var a = Attack("<attack targetCount=\"3\" attackMethodType=\"1\"><range applyTarget=\"1\"/>"
+            + "<arrow bounceType=\"1\" bounceCount=\"1\" bounceRadius=\"300\"/></attack>");
+        var tags = PickChain(a, new[] { 10, 20 }, objs);
+        Assert.That(tags.Select(t => (t.Serial, t.TargetId)), Is.EqualTo(new[] { (1L, 10), (2L, 20), (5L, 0) }));
+        Assert.That(Links(tags[0]), Is.EqualTo(new[] { (3L, 11, (byte)1) }));
+        Assert.That(Links(tags[1]), Is.EqualTo(new[] { (4L, 21, (byte)1) }));
+    }
 }

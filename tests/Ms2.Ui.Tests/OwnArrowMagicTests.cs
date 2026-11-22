@@ -81,6 +81,62 @@ public class OwnArrowMagicTests
         Assert.That(sends.Single().Targets, Is.EqualTo(new[] { new SkillHitTarget(9, 0) }));
     }
 
+    static OwnTagMagics Chain(CastRecord r, HitCandidate[] objects)
+    {
+        var m = new OwnTagMagics();
+        var tags = new List<SkillDamageTarget> { new SkillDamageTarget(7, 9, 0, new[] { new SkillDamageLink(8, 10, 1, 0) }) };
+        // a delay keeps the link still in the tick that starts it (it runs right after the record in that tick)
+        Assert.That(m.Add(r.Skill, SkillAttackFire.AttackAt(r, 0), r, tags, T, Paths(Linear + " delayTime=\"0.1\""), _ => Vector3.Zero,
+            ownerId: 42, objects: objects), Is.EqualTo(2), "the record and its bounce link each get a magic");
+        return m;
+    }
+
+    [Test]
+    public void ABounceLinkWaitsThenFliesFromWhereTheRecordBeforeItEnded()
+    {
+        // stateskill.cpp:1356: the link's model starts with m_nStartTick 0, so its tick does nothing (magicdata.cpp:758);
+        // the record's end (magicdata.cpp:1139) moves it to the end point (FUN_14145ddd0) and starts it then
+        var r = Record(nonTarget: false);
+        var objects = new[] { Me, Mob(9, 0, -300), Mob(10, 300, -300) };
+        var m = Chain(r, objects);
+        var sends = new List<SkillHitRequest>();
+        Vector3 before = default;
+        int t = 0;
+        for (; t <= 2000 && m.Count == 2; t += 50)
+        {
+            before = m.Flight(0).Current;
+            m.Tick(T + t, 0, Owner, objects, r, null, sends, () => 0, null);
+            if (m.Count == 2)
+                Assert.That((m.Flight(1).State, m.Flight(1).Current), Is.EqualTo((0, Vector3.Zero)), "the link waits");
+        }
+        Assert.That(m.Count, Is.EqualTo(1), "the record ended");
+        Assert.That(sends.Select(x => x.Targets.Single().Id), Is.EqualTo(new[] { 9 }));
+        var link = m.Flight(0);
+        // the record's last tick flew it 90 further (vel 1800, 50 ms) to its hit, where it ended
+        Assert.That(Vector3.Distance(link.Current, before), Is.EqualTo(90f).Within(1e-2f), "the link starts at the record's last point");
+        Assert.That(link.Current.Y, Is.LessThan(before.Y), "on toward the record's target");
+        Assert.That(link.Last, Is.EqualTo(link.Current));
+        Assert.That(Vector3.Distance(link.Target, objects[2].Body.Center), Is.LessThan(1e-3f), "aimed at its own target");
+        for (; t <= 4000 && m.Count == 1; t += 50)
+            m.Tick(T + t, 0, Owner, objects, r, null, sends, () => 0, null);
+        Assert.That(m.Count, Is.EqualTo(0));
+        Assert.That(sends.Select(x => (x.Serial, x.Targets.Single().Id)), Is.EqualTo(new[] { (7L, 9), (8L, 10) }),
+            "the link hits the next target under its own serial");
+    }
+
+    [Test]
+    public void ABounceLinkWhoseTargetIsGoneNeverStarts()
+    {
+        var r = Record(nonTarget: false);
+        var objects = new[] { Me, Mob(9, 0, -300) };
+        var m = Chain(r, objects);
+        var sends = new List<SkillHitRequest>();
+        for (int t = 0; t <= 2000; t += 50)
+            m.Tick(T + t, 0, Owner, objects, r, null, sends, () => 0, null);
+        Assert.That(m.Count, Is.EqualTo(0), "FindObjectById finds no target: the link is not started (dropped here)");
+        Assert.That(sends.Select(x => x.Targets.Single().Id), Is.EqualTo(new[] { 9 }));
+    }
+
     [Test]
     public void AnArrowWhoseTargetIsGoneFliesAlongTheFacing()
     {
