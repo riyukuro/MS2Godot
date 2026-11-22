@@ -387,7 +387,9 @@ public class AsContainer : AsInteractiveObject
         return child;
     }
 
-    /// <summary>Puts a timeline child in depth order among the other timeline children.</summary>
+    /// <summary>Puts a timeline child in depth order among the other timeline children: before the first one of a greater
+    /// depth. A script-added child (Depth int.MinValue here) never counts, as DisplayList::FindDisplayIndex skips the
+    /// client's INVALID_DEPTH (-1) on every path (sfr_gfx_06c.cpp:73; timeline depths are never below 0).</summary>
     public void InsertByDepth(AsDisplayObject child)
     {
         int idx = Children.Count;
