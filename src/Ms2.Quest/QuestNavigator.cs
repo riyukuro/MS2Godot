@@ -49,6 +49,8 @@ public sealed class QuestNavigator
     // TraceQuest's record and context, kept between quest events: the client re-traces each frame, but the trace reads only
     // the record (changed by the quest events), the field and the map, so a frame between events gets the same context
     bool traceStale = true;
+    int naviQuest = -1;
+    bool naviUsed;
     int tracedQuest, tracedField;
     QuestNavigationMap tracedMap;
     QuestRecord tracedRecord;
@@ -167,7 +169,9 @@ public sealed class QuestNavigator
             return 2;
         }
         int questId = Result.QuestId;
-        if (!UseNavi(questId)) return 1;
+        if (questId != naviQuest)                       // the table's SortedDictionary lookup allocates on .NET 8
+            (naviQuest, naviUsed) = (questId, UseNavi(questId));
+        if (!naviUsed) return 1;
         int current = FieldId();
         if (traceStale || tracedQuest != questId || tracedField != current || tracedMap != Map)
         {
