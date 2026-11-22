@@ -125,6 +125,22 @@ public class BattleRecordTests {
         Assert.That(BattleRecordManager.DamageRecords(d, _ => true, id => id == 10, _ => true), Is.Empty, "the PCBase test is on the object hit");
     }
 
+    /// <summary>Mode 3 on the GMS2 profile ends in an i32 damage (recorded: 5857 of 5857 packets are 18 bytes); the KMS form keeps the i64 (22 bytes). Each form reads to its end.</summary>
+    [Test]
+    public void ModeThreeDamageIsOneIntOnGms2AndOneLongOnKms() {
+        var g = new ByteWriter(); g.WriteByte(3); g.WriteInt(10); g.WriteInt(31); g.WriteInt(777); g.WriteByte(1); g.WriteInt(-60);
+        var gr = new ByteReader(g.Buffer.AsSpan(0, g.Length).ToArray());
+        Assert.That(g.Length, Is.EqualTo(18));
+        var d = SkillDamage.Read(gr, ProtocolProfile.Gms2);
+        Assert.That(gr.Available, Is.Zero);
+        Assert.That(d.DotHit.Damage, Is.EqualTo(-60));
+        var k = new ByteWriter(); k.WriteByte(3); k.WriteInt(10); k.WriteInt(31); k.WriteInt(777); k.WriteByte(1); k.WriteLong(-60);
+        var kr = new ByteReader(k.Buffer.AsSpan(0, k.Length).ToArray());
+        Assert.That(k.Length, Is.EqualTo(22));
+        SkillDamage.Read(kr, ProtocolProfile.Kms2525);
+        Assert.That(kr.Available, Is.Zero);
+    }
+
     [Test]
     public void TheSkillDamageModesFeedTheirRecords() {
         var hits = new[] { new Hit(0, -5) };
