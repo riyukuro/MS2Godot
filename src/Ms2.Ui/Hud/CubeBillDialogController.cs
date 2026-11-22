@@ -50,7 +50,9 @@ public sealed class CubeBill
 
     /// <summary>FUN_140710590: the packet goes out.</summary>
     public Action<IOutPacket> Send = _ => { };
-    /// <summary>RequestCloseDialog(0x4f29) / CloseDialog(0x4f29): the bill dialog closes (its close clears the cost).</summary>
+    /// <summary>RequestCloseDialog(0x4f29) / CloseDialog(0x4f29): the bill dialog closes (its close clears the cost). The client closes at once:
+    /// UIDialog::vfunc_68 (@0x141924df0, uidialog.cpp:619-633) calls vfunc_67 itself with the tween off, and UIUGCCubeBillDialog overrides only
+    /// vfunc_67 (@0x140ee7730, uiugccubebilldialog.cpp:78-80). So a close never lands after the next bill's cost is stored.</summary>
     public Action CloseBill = () => { };
     /// <summary>OpenDialog(0x4f29).</summary>
     public Action OpenBill = () => { };

@@ -22,6 +22,15 @@ public class CubeBillTests
     static ResponseCubeBill Bill(byte mode, bool preview, params (int, long)[] rows)
         => new(mode, 7, rows.Select(r => new KeyValuePair<int, long>(r.Item1, r.Item2)).ToArray(), preview) { Count = rows.Length };
 
+    [Test] public void TheCloseClearsTheCostAtOnceSoTheNextBillKeepsItsCost()
+    {
+        var (b, _, _) = Make();
+        b.CloseBill = () => b.Cost.Reset();   // the dialog's close: UIDialog's, then s_cost.Reset
+        b.OnBill(Bill(ResponseCubeBill.ModeCube, false, (3, 40)));
+        b.OnBill(Bill(ResponseCubeBill.ModeCube, false, (1, 5)));
+        Assert.That(b.Cost.Amounts.Select(x => (x.Key, x.Value)), Is.EqualTo(new[] { (1, 5L) }));
+    }
+
     [Test] public void AskClosesTheBillSetsThePendingCubeAndSends0x23()
     {
         var (b, sent, log) = Make();
