@@ -20,7 +20,7 @@ public sealed class LapenshardTable
 
     /// <summary>CItemLapenshardData (:101-124): the upgrade row of a lapenshard. Ingredients keep the file order, at most
     /// four (IngredientItemID1-4 "id:tagName" with IngredientCount1-4, both attributes needed).</summary>
-    public sealed record Row(int Group, int Level, int Next, uint Mask, int MinCount, int Meso,
+    public sealed record Row(int Group, int Level, int Next, uint Mask, int MinCount, long Meso,
         IReadOnlyList<MasteryRecipeTable.Ingredient> Ingredients);
 
     public static readonly LapenshardTable Empty = new(null);
@@ -122,7 +122,7 @@ public sealed class LapenshardTable
                         ings.Add(new(tok.Length > 0 ? ItemData.Atoi(tok[0]) : 0, ItemData.Atoi(c), tok.Length > 1 ? ItemTags.ByName(tok[1]) : 0));
                     }
                     var row = new Row(group, level, ItemData.Atoi((string)e.Attribute("NextItemID") ?? "0"), masks[id],
-                        ItemData.Atoi((string)e.Attribute("GroupLapenshardMinCount") ?? "0"), ItemData.Atoi((string)e.Attribute("meso") ?? "0"), ings);
+                        ItemData.Atoi((string)e.Attribute("GroupLapenshardMinCount") ?? "0"), long.TryParse((string)e.Attribute("meso"), out var meso) ? meso : 0, ings);
                     rows[id] = row;
                     if (level == 1) firstItems[group] = id;
                     if (!levels.TryGetValue(group, out var lv)) levels[group] = lv = new();

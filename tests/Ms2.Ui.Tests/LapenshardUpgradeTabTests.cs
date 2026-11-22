@@ -183,6 +183,31 @@ public class LapenshardUpgradeTabTests
     }
 
     [Test]
+    public void ASecondUpgradeRequestWhileOneIsPendingSendsNothing()
+    {
+        var r = Requested(out _);
+        Assert.That(r.Page.State, Is.EqualTo(2));
+        r.Sent.Clear();
+        Assert.That(r.Page.SendMode5(), Is.False, "state 2 blocks a second mode 5 (uilapenshardsystemdialog.cpp:2143)");
+        r.Page.OnCallback("OnAction", new object[] { 1 });
+        Assert.That(r.Sent, Is.Empty);
+    }
+
+    [Test]
+    public void TheTagCountSkipsItemsThePlayerCannotUse()
+    {
+        Packs();
+        var tables = new GameTables(Packs(), "en");
+        var row = tables.Lapenshards.ItemIds().Select(i => tables.Lapenshards.Get(i)).SelectMany(w => w.Ingredients)
+            .First(i => i.ItemId != 0 && Ms2.Ui.Items.ItemTags.ByName(tables.Items.Get(i.ItemId)?.StringTag) != 0);
+        int tag = Ms2.Ui.Items.ItemTags.ByName(tables.Items.Get(row.ItemId).StringTag);
+        var bag = new[] { new Ms2.Net.Packets.EquipItem { Id = row.ItemId, Uid = 1, Amount = 7 }, new Ms2.Net.Packets.EquipItem { Id = row.ItemId, Uid = 2, Amount = 5 } };
+        Assert.That(LapenshardUpgradeTabPage.TagCounter(() => bag, tables.Items, _ => 0)(tag), Is.EqualTo(12));
+        Assert.That(LapenshardUpgradeTabPage.TagCounter(() => bag, tables.Items, it => it.Record.Uid == 2 ? 1 : 0)(tag), Is.EqualTo(7), "an unusable item is not counted (inventory.cpp:845)");
+        Assert.That(LapenshardUpgradeTabPage.TagCounter(() => null, tables.Items, _ => 0)(tag), Is.EqualTo(0));
+    }
+
+    [Test]
     public void ThePreviewRateIsKept()
     {
         var r = Load();

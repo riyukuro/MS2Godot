@@ -2406,7 +2406,7 @@ public partial class HudScene : Node, IUiStageHost
         {
             Mesos = () => hudModel.HasLocalPlayer ? hudModel.Player.Mesos : 0,   // DAT_143ab2898
             CountItems = (id, rank) => live?.Items.CountOf(id, rank) ?? 0,
-            CountByTag = tag => live == null ? 0 : (int)Ms2.Ui.Shop.ShopController.CountItemsByTag(live.Items.All, hudModel.Tables.Items, tag),
+            CountByTag = Ms2.Ui.Hud.LapenshardUpgradeTabPage.TagCounter(() => live?.Items.All, hudModel.Tables.Items, itemUse.Error),
         };   // STILL-OPEN: SaleRate (CGameRule::GetLapenshardUpgradeSaleRate, set by event sale packets) stays 0
         upgrade.SystemNoticeId += id => Ms2.Ui.Hud.MessageBoxQueue.ShowCommon(id, 0, null, "");
         c.AddTab(upgrade);

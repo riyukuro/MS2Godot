@@ -46,6 +46,13 @@ public sealed partial class LapenshardUpgradeTabPage : LapenshardTabPage
     public Func<int, int, int> CountItems = (_, _) => 0;
     /// <summary>The inventory count of the items with a tag (Unk_Inventory::GetItemCountByTag).</summary>
     public Func<int, int> CountByTag = _ => 0;
+    /// <summary>Unk_Inventory::GetItemCountByTag (inventory.cpp:835) over the inventory's records: items with the tag that the player
+    /// can use (<paramref name="itemUseError"/> 0, :845). STILL-OPEN: the untagged count (FUN_140a5f180, inventory.cpp:782) takes
+    /// rarity 0 as any rarity and skips unusable items, with GetItemRank for the rank; ours matches the rarity exactly (the tab passes the
+    /// data rank, the panels the tooltip rank, 1 for rank 0). Latent: every source and ingredient row in KMS2_DEV is rank 3 or tagged.</summary>
+    public static Func<int, int> TagCounter(Func<IEnumerable<Ms2.Net.Packets.EquipItem>> items, ItemDataTable table, Func<Item, int> itemUseError) =>
+        tag => (int)Ms2.Ui.Shop.ShopController.CountItemsByTag(items(), table, tag, itemUseError);
+
     /// <summary>DAT_143ab2898: the meso the player holds.</summary>
     public Func<long> Mesos = () => 0;
     /// <summary>FUN_141275260(id, 1, 1): a system notice by string id (0x34 is the lack of meso).</summary>

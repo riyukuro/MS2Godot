@@ -87,7 +87,7 @@ public sealed partial class LapenshardUpgradeTabPage
                 if (tableOnly && !table.HasUpgrade(id)) continue;
                 var w = Item.Create(m.Tables.Items, id, ItemTooltip.ItemRank(m.Tables.Items, id));
                 if (w == null) continue;
-                w.IsEquipped = true;                  // InitWithCount(id, grade, 0, 1) through the worn list
+                w.IsEquipped = true;                  // STILL-OPEN: the client lists the worn map (FUN_14152f960, mypc.cpp:4276) in hash order; here slot order                  // InitWithCount(id, grade, 0, 1) through the worn list
                 all.Add(w);                           // STILL-OPEN: BindToCharacter for transfer type 2
             }
         }
@@ -213,7 +213,7 @@ public sealed partial class LapenshardUpgradeTabPage
     /// <summary>The message box's callback (FUN_140c64bc0, result 0): the count of the item at the index, up to the need.</summary>
     void UpgradedItemConfirmed(int index, int sourceId, int need)
     {
-        if (index < 0 || index >= ingredientItems.Count) return;
+        if (index < 0 || index >= ingredientItems.Count || Owner.Model.Tables.Lapenshards.Get(sourceId) == null) return;   // the client's table row check of the source
         ToggleIngredient(index, -(int)Math.Min(ingredientItems[index].Count, (uint)need));
     }
 
