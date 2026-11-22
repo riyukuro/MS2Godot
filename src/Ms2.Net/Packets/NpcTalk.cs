@@ -180,6 +180,26 @@ public sealed record NpcTalkQuestRedirectRequest(int QuestId, short Kind) : IOut
     public void Write(ByteWriter w) { w.WriteByte(7); w.WriteInt(QuestId); w.WriteShort(Kind); }
 }
 
+/// <summary>Outbound 0x22 mode 6 (UIItemEnchantDialog / UIItemMergeOptionDialog, uiitemenchantdialog.cpp:409,568,746; uiitemmergeoptiondialog.cpp:1030): u8 6,
+/// i32 the talk npc's id, i32 the dialog's client constant, i16 the request type, and for the enchant start (type 1) i64 the item uid. Sent while a talk is open;
+/// with no talk the client sends mode 4 (<see cref="NpcTalkModifyRequest"/>) instead. The merge dialog adds i16 0xca, i16 its talk id after the type's place.</summary>
+public sealed record NpcTalkModifyInTalkRequest(int NpcId, int Constant, short Type, long? ItemUid) : IOutPacket {
+    public Outbound Op => Outbound.NpcTalk;
+    public void Write(ByteWriter w) { w.WriteByte(6); w.WriteInt(NpcId); w.WriteInt(Constant); w.WriteShort(Type); if (ItemUid is { } u) w.WriteLong(u); }
+}
+
+/// <summary>Outbound 0x22 mode 4 (UIItemModifyDialogBase::vfunc_85, uiitemenchantdialog.cpp:409): u8 4, i16 the request type. The same as mode 6 with no open talk.</summary>
+public sealed record NpcTalkModifyRequest(short Type) : IOutPacket {
+    public Outbound Op => Outbound.NpcTalk;
+    public void Write(ByteWriter w) { w.WriteByte(4); w.WriteShort(Type); }
+}
+
+/// <summary>Outbound 0x22 mode 0xB (CCustomSelectableDistractorCinematicComponent::vfunc_1 @0x14107fb30, cinematiccomponent.cpp:754): u8 0xB, i32 the talk npc's id, i32 the selection.</summary>
+public sealed record NpcTalkDistractorRequest(int NpcId, int Select) : IOutPacket {
+    public Outbound Op => Outbound.NpcTalk;
+    public void Write(ByteWriter w) { w.WriteByte(0xB); w.WriteInt(NpcId); w.WriteInt(Select); }
+}
+
 /// <summary>Outbound 0x29 mode 2 (CQuestAcceptCinematicComponent::SendQuestAccept @0x14107ecc0, cinematiccomponent.cpp:577): u8 2, i32 quest,
 /// i32 the talk npc's object id (UITalkManager::GetNpcId). Starts the quest.</summary>
 public sealed record QuestAcceptRequest(int QuestId, int NpcObjectId) : IOutPacket {
