@@ -92,6 +92,7 @@ public class RemotePcStatesTests {
         public bool Ledge;
         public readonly List<(Vector3 dir, float dist, float height, float up)> LedgeAsked = new();
         public bool LedgeAhead(Vector3 dir, float dist, float height, float up) { LedgeAsked.Add((dir, dist, height, up)); return Ledge; }
+        public bool Pushed { get; set; }
     }
 
     // the default field camera's Euler rotation (CameraMathTests: hangle 45, vangle 30), its flat view direction (1, 1)/sqrt 2
@@ -267,6 +268,56 @@ public class RemotePcStatesTests {
         Assert.That(sm.Cur, Is.EqualTo(0xb));
         Assert.That(RemotePcStates.CorrectionAllowed(0x20), Is.False);
         Assert.That(RemotePcStates.CorrectionAllowed(2), Is.True);
+    }
+
+    [Test] public void AHitTakesNoRecordUntilItEnds() {
+        // FUN_1417dc4c0 (statemanager.cpp:622): StateHit::vfunc_32 is m_bC8, cleared at the end of vfunc_4 and set by
+        // vfunc_5, so while the PC reacts to a hit a record still places it but leaves its state
+        var b = new Body();
+        var sm = new RemotePcStates(b);
+        int entered = 0, left = 0, updates = 0, frames = 0;
+        sm.HitEntered = () => entered++;
+        sm.HitLeft = () => left++;
+        sm.HitUpdate = _ => updates++;
+        sm.HitFrame = () => frames++;
+        sm.Spawn(); Run(sm, 0.1f);
+        Assert.That(sm.TakesRecords, Is.True);
+        sm.ChangeState(RemotePcStates.StateHit);
+        Assert.That((sm.Cur, entered, sm.TakesRecords), Is.EqualTo((RemotePcStates.StateHit, 1, false)));
+        sm.Push(Rec(2, 0x18, new Vector3(300, 0, 0), new Vector2(0, 1), 0f));
+        sm.Update(1 / 60f);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateHit), "a walk record took the PC out of its hit");
+        Assert.That(b.Position.X, Is.EqualTo(300).Within(1), "the record no longer placed the PC");
+        Assert.That((updates, frames), Is.EqualTo((1, 1)), "the hit's vfunc_3 and vfunc_9 did not run each frame");
+        // the hit's own end (vfunc_59(1)) runs vfunc_5: records are taken again
+        sm.ChangeState(RemotePcStates.StateIdle);
+        Assert.That((left, sm.TakesRecords), Is.EqualTo((1, true)));
+        sm.Push(Rec(2, 0x18, new Vector3(300, 0, 0), new Vector2(0, 1), 0f));
+        sm.Update(1e-4f);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateWalk));
+        // StateStun::vfunc_32 is false: a stunned PC keeps its stun
+        sm.ChangeState(RemotePcStates.StateStun);
+        sm.Push(Rec(1, 1, b.Position, Vector2.Zero, 0f));
+        sm.Update(1e-4f);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateStun));
+    }
+
+    [Test] public void APushedPcIsNotCorrected() {
+        // FUN_1417dc4c0 (statemanager.cpp:600-608): a running push (m_pos18 not zero) skips the correction, the rotation and
+        // the target yaw; the record's state is still applied
+        var b = new Body();
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.1f);
+        b.Pushed = true;
+        sm.Push(Rec(0xb, 0, new Vector3(300, 0, 0), Vector2.Zero, 0f, yaw: 90));
+        sm.Update(1e-4f);
+        Assert.That(b.Position.X, Is.LessThan(5), "a pushed PC was put on the record");
+        Assert.That(b.RotationZ, Is.Not.EqualTo(90f).Within(0.1f), "a pushed PC took the record's rotation");
+        Assert.That(sm.Cur, Is.EqualTo(0xb));
+        b.Pushed = false;
+        sm.Push(Rec(0xb, 0, new Vector3(300, 0, 0), Vector2.Zero, 0f, yaw: 90));
+        sm.Update(1e-4f);
+        Assert.That(b.Position.X, Is.EqualTo(300).Within(0.01));
     }
 
     [Test] public void JumpWithANewSubRestarts() {

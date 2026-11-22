@@ -85,6 +85,9 @@ public interface IRemotePc : ISkillMotionOwner
     /// SetOffset: the cast's sequence again from <paramref name="time"/> (s); the next frame throws its text keys from 0
     /// to the new time.</summary>
     void SeekCast(float time);
+    /// <summary>GetPushControl()-&gt;m_pos18 != ZERO (FUN_1417dc4c0, statemanager.cpp:600): a push moves the PC, so a record
+    /// does not correct its position.</summary>
+    bool Pushed { get; }
 }
 
 /// <summary>
@@ -170,7 +173,8 @@ public struct HoldTarget
 public sealed class RemotePcStates
 {
     public const int StateNone = 0, StateIdle = 1, StateWalk = 2, StateLand = 4, StateFall = 5, StateJump = 6,
-        StateSkill = 0x10, StateHold = 0x20, StateRide = 0x21, StateSwim = 0x1b, StateDead = 0xc;
+        StateSkill = 0x10, StateHold = 0x20, StateRide = 0x21, StateSwim = 0x1b, StateDead = 0xc, StateHit = 0xd,
+        StateStun = 0x12;
 
     // action ids (ActionType, actioncontainer.cpp) the ported states play through vfunc_123
     public const int ActIdle = 0, ActBattleIdle = 1, ActJumpDown = 2, ActJumpLand = 3, ActJumpUp = 4, ActJumpFall = 5,
@@ -236,6 +240,27 @@ public sealed class RemotePcStates
     public Action SkillExited;
     /// <summary>FUN_1417ecce0 for each attack FireAttacksAtPoint fires (the attack's index in the motion).</summary>
     public Action<int> AttackFired;
+    /// <summary>StateHit::vfunc_4 past State::vfunc_4 (@0x1417ca370, statehit.cpp:65-114): the hit's data, the lift and the
+    /// sequence (the host's StateHit body, which keeps the data the reaction handed it).</summary>
+    public Action HitEntered;
+    /// <summary>StateHit::vfunc_3 (@0x1417ca8a0, statehit.cpp:116-130) after its vfunc_68(ZERO): the end time's down sequence
+    /// or StateIdle, with the frame's seconds.</summary>
+    public Action<float> HitUpdate;
+    /// <summary>StateHit::vfunc_9 (@0x1417caa80, statehit.cpp:148-152): StateIdle when the state plays no sequence.</summary>
+    public Action HitFrame;
+    /// <summary>StateHit::vfunc_5 (@0x1417caa10, statehit.cpp:135-145): the lift ends.</summary>
+    public Action HitLeft;
+    /// <summary>StateHit m_bC8: false from the end of vfunc_4 (statehit.cpp:114) until vfunc_5 sets it (:144).</summary>
+    bool hitTakesRecords = true;
+
+    /// <summary>
+    /// The current state's vfunc_32, whether it takes a record's state (FUN_1417dc4c0, statemanager.cpp:622): State's is
+    /// true (state.h:97), StateStun's false (statestun.h:29), StateHit's its m_bC8 (@0x1417cb980, statehit.cpp:349), so a
+    /// PC reacting to a hit keeps its own StateHit until that ends.
+    /// STILL-OPEN: StateHit::vfunc_33(true) from CSceneStateGame::OnStateSkill's mode 6 (scenestategame.cpp:3493), which
+    /// lets the hit take records again, is not ported (the packet is not read).
+    /// </summary>
+    public bool TakesRecords => Cur == StateHit ? hitTakesRecords : Cur != StateStun;
 
     void NotifyWeaponKey()
     {
@@ -684,20 +709,21 @@ public sealed class RemotePcStates
     }
 
     /// <summary>
-    /// CStateManager::FUN_1417dc4c0 (@0x1417dc4c0, statemanager.cpp:587-637): with no push and the current state allowing
+    /// CStateManager::FUN_1417dc4c0 (@0x1417dc4c0, statemanager.cpp:597-637): with no push and the current state allowing
     /// it (IsPositionCorrectionAllowed), the position correction, the body rotation and the target yaw; then, unless the
-    /// state refuses records (vfunc_32) or the record is StateHit (0xd) or StateStun (0x12), the record's state through
-    /// vfunc_59, forced when the state asks for it (vfunc_28).
+    /// state refuses records (vfunc_32, <see cref="TakesRecords"/>) or the record is StateHit (0xd) or StateStun (0x12),
+    /// the record's state through vfunc_59, forced when the state asks for it (vfunc_28).
     /// </summary>
     void ApplyPc(SyncRecord r)
     {
-        if (CorrectionAllowed(Cur))
+        if (!pc.Pushed && CorrectionAllowed(Cur))
         {
             Correct(r);
             pc.RotationZ = r.RotationZ;              // vfunc_21(m_dir2c)
             TargetYaw = r.TargetYaw;                 // SetTargetYaw(m_f58)
         }
-        if (r.State == 0xd || r.State == 0x12) return;
+        if (!TakesRecords) return;
+        if (r.State == StateHit || r.State == StateStun) return;
         bool force = Cur == r.State && StateForces(r);
         // FUN_1417dc9a0 (vfunc_27) then StateData::vfunc_2: StateHoldData::vfunc_2 (@0x1417cbaf0) reads m_n90 / m_str98
         if (r.State == StateHold) { pendingHoldId = r.HoldTargetId; pendingHoldNode = r.HoldNode; }
@@ -913,6 +939,13 @@ public sealed class RemotePcStates
                 pc.AnimSpeed = 1f;
                 DeadEntered?.Invoke();
                 break;
+            case StateHit:
+                // StateHit::vfunc_4: State::vfunc_4 -> State::vfunc_10 sets m_f938; m_bC8 cleared last (nothing between
+                // reads it)
+                pc.AnimSpeed = 1f;
+                hitTakesRecords = false;
+                HitEntered?.Invoke();
+                break;
             case StateSwim:
                 // StateSwim::vfunc_4 (stateswim.cpp:89-129): State::vfunc_4 -> StateSwim::vfunc_10 sets m_f938; sub 0x84
                 // (a remote ridee never has the RunX flag for 0x85) at the row's raw run speed m_z for a ridee that runs
@@ -944,6 +977,10 @@ public sealed class RemotePcStates
                 break;
             case StateRide:
                 ShadowVisible?.Invoke(true);                  // StateRide::vfunc_5 (statemanager.cpp:1103)
+                break;
+            case StateHit:
+                HitLeft?.Invoke();                            // StateHit::vfunc_5: EndLift, then m_bC8 set
+                hitTakesRecords = true;
                 break;
             case StateHold:
                 // StateHold::vfunc_5 (@0x1417cbe70, stateholddata.cpp:188-201): StopJump, the shadow back on
@@ -997,6 +1034,10 @@ public sealed class RemotePcStates
                 break;
             case StateHold:
                 HoldMove();
+                break;
+            case StateHit:
+                MoveBy(Vector3.Zero, dt);                     // StateHit::vfunc_3: vfunc_68(ZERO)
+                HitUpdate?.Invoke(dt);
                 break;
             case StateSkill:
                 // StateSkill::vfunc_3 (@0x1417e6820, stateskill.cpp:605-631): on water (FUN_141675ed0) the cast gives way
@@ -1059,6 +1100,7 @@ public sealed class RemotePcStates
                 break;
             case StateJump: JumpFrame(); break;
             case StateHold: HoldFrame(); break;
+            case StateHit: HitFrame?.Invoke(); break;
             case StateSwim:
                 // StateSwim::vfunc_9 (@0x1417fac90, stateswim.cpp:228-263), no ridee: StateSwim::vfunc_10
                 // (@0x1417fafb0, stateswim.cpp:266-270) sets m_f938 and PlayAnimation passes FUN_1416713c0().
