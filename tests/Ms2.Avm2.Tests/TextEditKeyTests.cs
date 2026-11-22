@@ -118,4 +118,20 @@ public class TextEditKeyTests
         Press(p, 8);
         Assert.That((tf.text, changes()), Is.EqualTo(("hello", 0)), "a read-only field: no change");
     }
+
+    [Test]
+    public void AnEmptyRestrictLetsNoCharIn()
+    {
+        // EditorKit::SetRestrict @0x14261a490 parses "" into a restrict set with no range: CheckRestrict refuses every
+        // char. Only null (ClearRestrict) lets everything in.
+        var (p, tf) = Field("ab");
+        var changes = CountChanges(p, tf);
+        tf.restrict = "";
+        tf.setSelection(2, 2);
+        Type(p, "xY1");
+        Assert.That((tf.text, changes(), tf.restrict), Is.EqualTo(("ab", 0, "")));
+        tf.restrict = null;
+        Type(p, "c");
+        Assert.That((tf.text, changes()), Is.EqualTo(("abc", 1)));
+    }
 }

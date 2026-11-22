@@ -625,7 +625,7 @@ public class AsTextField : AsInteractiveObject
     public void TypeText(string s)
     {
         if (type != "input") return;
-        if (!string.IsNullOrEmpty(restrict))
+        if (restrict != null)
         {
             var sb = new StringBuilder(s.Length);
             foreach (var ch in s) if (Restricted(ch) is char c) sb.Append(c);
@@ -816,7 +816,7 @@ public class AsTextField : AsInteractiveObject
             t = Text[..b] + ins + Text[e..];
         }
         // the restrict pass runs on every paste, also one that inserted nothing
-        if (!string.IsNullOrEmpty(restrict))
+        if (restrict != null)
         {
             var sb = new StringBuilder(t.Length);
             foreach (var ch in t) if (Restricted(ch) is char c) sb.Append(c);
@@ -852,7 +852,8 @@ public class AsTextField : AsInteractiveObject
     }
 
     /// <summary>The character the restrict set lets in for <paramref name="ch"/>: itself, else the other case, else null
-    /// (the paste filter, sfr_gfx_07.cpp:1100, and EditorKit::OnChar @0x142618120).</summary>
+    /// (the paste filter, sfr_gfx_07.cpp:1100, and EditorKit::OnChar @0x142618120). Callers ask only when restrict is not
+    /// null; "" is a set with no range (EditorKit::SetRestrict @0x14261a490), so it lets no char in.</summary>
     char? Restricted(char ch)
     {
         if (Allowed(ch)) return ch;

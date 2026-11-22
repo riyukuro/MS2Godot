@@ -192,4 +192,16 @@ public class TextClipboardTests
         Press(p, C, ctrl: true);
         Assert.That(cb.Stored, Has.Count.EqualTo(1), "a field that is not selectable copies nothing");
     }
+
+    [Test]
+    public void PasteUnderAnEmptyRestrictEmptiesTheField()
+    {
+        // the paste filter (sfr_gfx_07.cpp:1100) runs over the whole text; an empty restrict set refuses every char
+        var (p, tf, cb) = Field("ab");
+        tf.restrict = "";
+        tf.setSelection(2, 2);
+        cb.Text = "xy";
+        Press(p, V, ctrl: true);
+        Assert.That((tf.text, tf.caretIndex), Is.EqualTo(("", 0)));
+    }
 }
