@@ -33,9 +33,6 @@ public partial class LiveSession
     /// <summary>The own pc's StateReact (0x3d): the react cast and the create animation.</summary>
     public ReactState React => reactState ??= new ReactState(new ReactStateHost(this), () => reactors) { Held = HeldItem };
 
-    /// <summary><see cref="InteractPlayerStateId"/> with StateReact: 0x3d while it runs.</summary>
-    int ReactPlayerStateId() => reactState?.CurStateId(InteractPlayerStateId()) ?? InteractPlayerStateId();
-
     /// <summary>The field's reactors; null when the reactor tables do not load.</summary>
     public FieldReactors Reactors
     {
@@ -55,7 +52,7 @@ public partial class LiveSession
         readonly LiveSession s;
         public ReactorUser(LiveSession s) => this.s = s;
         /// <summary>FUN_140b7a5e0 is 0: the player's state is 1. STILL-OPEN: FUN_141675ed0 and the sub scene check.</summary>
-        public bool CanReact => s.ReactPlayerStateId() == 1;
+        public bool CanReact => s.InteractPlayerStateId() == 1;
         public long CharacterId => s.CharacterId;
         public int ItemCount(int code, int rank)
         {
@@ -176,7 +173,7 @@ public partial class LiveSession
         if (polledReactor == 0 || reactors?.Get(polledReactor) is not { } r || selfObject < 0) return;
         int check = FieldReactors.CheckGameEvent(r.Data, ReactorRules.Current, (uint)(FieldId ?? 0));
         bool riding = player != null && IsInstanceValid(player) && player.Mount != null;
-        switch (FieldReactors.Use(r.Data, check, ReactPlayerStateId(), riding))
+        switch (FieldReactors.Use(r.Data, check, InteractPlayerStateId(), riding))
         {
             case FieldReactors.UseOutcome.FailedRewardCount:
                 SystemNoticeSink?.Invoke(MessageBoxData.CommonByKey("s_reactor_action_failed_reward_count"));

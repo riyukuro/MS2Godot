@@ -24,6 +24,15 @@ public static class InteractKey
         return otherState;
     }
 
+    /// <summary>As the other overload, with StateReact: 0x3d (<see cref="ReactState.StateId"/>) while the react cast or the
+    /// create animation runs. 0x3d is none of the states FUN_141527160 lets the npc or object interaction start from, so a
+    /// running react refuses them; TaxiStationAction::vfunc_1 refuses only 0x25 and still polls (actionkeyobject.cpp:769).</summary>
+    public static int StateId(LiveInteractObjects objects, LiveInteractNpc npcs, ReactState react, int otherState)
+    {
+        int id = StateId(objects, npcs, otherState);
+        return react != null ? react.CurStateId(id) : id;
+    }
+
     /// <summary>The polls by ascending key; <paramref name="npc"/> tells whether the npc action took the key. 0 B.</summary>
     public static bool Poll(LiveInteractObjects objects, LiveInteractNpc npcs, Vec3 at, Vec3 npcAt, out bool npc) =>
         Poll(objects, npcs, at, npcAt, null, out npc, out _);

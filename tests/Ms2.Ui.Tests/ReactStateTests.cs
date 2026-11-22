@@ -174,6 +174,27 @@ public class ReactStateTests
     }
 
     [Test]
+    public void ARunningReactBlocksTheNpcAndObjectInteractionsButNotTheTaxiPoll()
+    {
+        var (st, _, _, r) = Start();
+        var taxi = new TaxiStationAction { Send = _ => { } };
+        var station = new Ms2.Formats.Model.Vec3(0, 0, 0);
+        taxi.AddStation(station, false);
+        var found = new HashSet<int> { 2000001 };
+
+        Assert.That(InteractKey.StateId(null, null, st, 1), Is.EqualTo(1));
+        Assert.That(LiveInteractObjects.StateAllowsInteraction(InteractKey.StateId(null, null, st, 1)), Is.True);
+
+        st.Begin(ReactState.KindReact, r.Data, "box");
+        int id = InteractKey.StateId(null, null, st, 1);
+        Assert.That(id, Is.EqualTo(ReactState.StateId), "MyPC::GetCurStateId while StateReact runs");
+        Assert.That(LiveInteractObjects.StateAllowsInteraction(id), Is.False, "FUN_141527160: npc (0x1a) and object (0x19) interactions refuse 0x3d");
+        Assert.That(taxi.Poll(true, false, true, id, station, null, 2000001, found), Is.True,
+            "TaxiStationAction::vfunc_1 refuses only 0x25");
+        Assert.That(InteractKey.StateId(null, null, null, 1), Is.EqualTo(1), "no react state yet");
+    }
+
+    [Test]
     public void FindByNameUsesTheNameMap()
     {
         var (f, r) = Field(Vector3.Zero);
