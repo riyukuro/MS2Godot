@@ -2101,6 +2101,7 @@ public partial class LiveSession : Node
                 Shot($"mail_{tab}_removed.png");
             }
         }
+        await CombatRun(flow, Frames, async (c, max) => await Until(c, max));   // MS2_LIVE_COMBAT_STEP (LiveSession.Combat.cs)
         // MS2_LIVE_GUILD_SHOTS=<dir> with MS2_LIVE_GUILD_STEP: one scripted step of the guild dialog against the live
         // server, each with its shots. create: the Create page's button, the name (MS2_LIVE_GUILD_NAME) into the box, the
         // box's OK, the created box's OK. apply: the Join page's first row's join. accept: the accept page's first row's
