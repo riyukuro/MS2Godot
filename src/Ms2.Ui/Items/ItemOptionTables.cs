@@ -72,7 +72,44 @@ public sealed class ItemOptionTables
         return d;
     }
 
-    Def[] Stats() => stats ??= Defs("table/statstringtable.xml", 0x23, statValueNames);
+    /// <summary>
+    /// STAND-IN (STILL-OPEN): the stat definitions of a pack that has no statStringTable.xml (the GMS2 data has none, in table/,
+    /// table/na/ or any other entry; LoadStatDefinitions stat.cpp:180 would find none either). These are the 33 rows of
+    /// KMS2_DEV's table/statstringtable.xml (stat id, option name, valueType) copied here, since the pack gives no table of its
+    /// own to read. The texts are not guessed: the GMS2 stringcommon.xml holds the client's own common-string keys
+    /// s_word_stat_&lt;option&gt; (name) and s_word_stat_&lt;option&gt;_v (value format), which the client lists in its CommonStringTable
+    /// (commonstringtable.cpp:2781-2880); <see cref="FallbackStatTexts"/> files them under the ids the table would give.
+    /// </summary>
+    public static readonly (string Option, int ValueType)[] DefaultStats =
+    {
+        ("str", 1), ("dex", 1), ("int", 1), ("luk", 1), ("hp", 1), ("hp_rgp", 1), ("hp_inv", 1), ("sp", 1), ("sp_rgp", 1), ("sp_inv", 1),
+        ("ep", 1), ("ep_rgp", 1), ("ep_inv", 1), ("asp", 1), ("msp", 1), ("atp", 1), ("evp", 1), ("cap", 1), ("cad", 1), ("car", 1),
+        ("ndd", 1), ("abp", 2), ("jmp", 2), ("pap", 1), ("map", 1), ("par", 1), ("mar", 1), ("wapmin", 1), ("wapmax", 1), ("bap", 1),
+        ("bap_pet", 1), ("pen", 2), ("rmsp", 1),
+    };
+
+    /// <summary>The common-string key stem of a stat option: the weapon's min and max attack are s_word_stat_wap_d_v and
+    /// s_word_stat_wap_u_v ("Min Attack {0}", "Max Attack {0}", commonstringtable.cpp:2841-2842); the rest are the option's name.</summary>
+    static string TextKey(string option) => option switch { "wapmin" => "wap_d", "wapmax" => "wap_u", _ => option };
+
+    /// <summary>The value format texts of <see cref="DefaultStats"/> by valueStringID (1000 + stat id), from the common strings.
+    /// The name texts (s_word_stat_&lt;option&gt;) of wapmin and wapmax have no key of their own and stay empty (STILL-OPEN).</summary>
+    public static void FallbackStatTexts(Dictionary<string, string> common, Dictionary<string, string> valueNames)
+    {
+        for (int i = 0; i < DefaultStats.Length; i++)
+            if (common.TryGetValue("s_word_stat_" + TextKey(DefaultStats[i].Option) + "_v", out var v)) valueNames.TryAdd((1000 + i).ToString(), v);
+    }
+
+    Def[] Stats()
+    {
+        if (stats != null) return stats;
+        var path = packs == null ? null : TablePath.Resolve(packs, "statstringtable.xml");
+        if (path != null) return stats = Defs(path, 0x23, statValueNames);
+        var d = new Def[0x23];
+        for (int i = 0; i < DefaultStats.Length; i++)
+            d[i] = new Def(DefaultStats[i].Option, DefaultStats[i].ValueType, statValueNames.TryGetValue((1000 + i).ToString(), out var t) ? t : "");
+        return stats = d;
+    }
     Def[] Specials() => specials ??= Defs("table/specialabilitystringtable.xml", 0xcf, specialValueNames);
 
     /// <summary>FindStatByName (stat.cpp): the stat whose option name equals <paramref name="name"/> (case-insensitive),

@@ -237,9 +237,22 @@ public sealed class GameTables
         // the item option tables read the same two string tables (only looked up, as CommonTexts does)
         r.StatValueNames = s.Table("stringstatname", "name");
         r.SpecialValueNames = s.Table("stringspecialabilityname", "name");
-        r.StatNames = CommonTexts(packs, "table/statstringtable.xml", r.StatValueNames);
-        r.StatOptions = Options(packs, "table/statstringtable.xml");
+        var statTable = TablePath.Resolve(packs, "statstringtable.xml");   // GetXmlPath: the locale folder first
+        r.StatNames = CommonTexts(packs, statTable ?? "table/statstringtable.xml", r.StatValueNames);
+        r.StatOptions = Options(packs, statTable ?? "table/statstringtable.xml");
         r.SpecialNames = CommonTexts(packs, "table/specialabilitystringtable.xml", r.SpecialValueNames);
+        if (statTable == null)
+        {
+            // no stat table (the GMS2 data has none): ItemOptionTables.DefaultStats is the stand-in; the texts are the pack's
+            // common strings s_word_stat_<option>[_v]
+            Ms2.Ui.Items.ItemOptionTables.FallbackStatTexts(r.CommonStrings, r.StatValueNames);
+            for (int i = 0; i < Ms2.Ui.Items.ItemOptionTables.DefaultStats.Length; i++)
+            {
+                var o = Ms2.Ui.Items.ItemOptionTables.DefaultStats[i].Option;
+                r.StatOptions[i] = o;
+                r.StatNames[i] = r.CommonStrings.TryGetValue("s_word_stat_" + o, out var n) && n != null ? n : "";
+            }
+        }
         // CFishingTable::LoadSpots (fishsimultedata.cpp:331) and CMasteryTable::LoadMastery (masterytable.cpp:173)
         XDocument Xml(string path) => packs.Exists("Xml", path) ? GameStrings.Parse(packs.Read("Xml", path)) : null;
         r.Fishing = new FishingSpots(Xml("table/fishingspot.xml"), Xml("table/mastery.xml"), e => FeatureElements.IsAvailable(packs, e));
