@@ -74,7 +74,8 @@ public sealed partial class RemotePc : IRemotePc
     /// mount's model. Ridee::vfunc_123 plays idleXMotion / runXMotion for actions 0x1e / 0x1f and the action table's
     /// sequence otherwise; its walk, run and swim speeds are the row's (m_unk_180).
     /// Its run speed is Ridee::GetRunSpeed's (<see cref="RunSpeed"/>); a remote ridee never has the RunX flag, so
-    /// GetRideSpeed's runXSpeed is not used. STILL-OPEN: the row's box for remotes.
+    /// GetRideSpeed's runXSpeed is not used. Ridee::vfunc_10 ends with MakeNxBoxController (ridee.cpp:487), so a row with
+    /// physic set gives another player's mount the same kinematic box as the own (<see cref="RideBox"/>).
     /// </summary>
     public static RemotePc CreateRidee(string name, Mount mount, float gravity, Vector3 feet, float rotZ, NxController.FaceGrids faces) =>
         Create(name, mount.Visual, mount.Anim, null, mount, gravity, feet, rotZ, faces);
@@ -92,6 +93,7 @@ public sealed partial class RemotePc : IRemotePc
         body.Position = feet;
         var pc = new RemotePc(body, visual, anim, anims, mount, gravity, faces) { RotationZ = rotZ };
         pc.States.TargetYaw = rotZ;
+        if (mount?.Data?.Physic == true) pc.MakeRideBox();
         return pc;
     }
 
@@ -107,6 +109,32 @@ public sealed partial class RemotePc : IRemotePc
         States.Update(dt);
         Push.Tick(dt, this);
         TextKeys();
+        PoseRideBox();
+    }
+
+    /// <summary>The kinematic box of Ridee::MakeNxBoxController (ridee.cpp:1184-1231) for a row with physic set; null otherwise.</summary>
+    public AnimatableBody3D RideBox { get; private set; }
+
+    /// <summary>Ridee::MakeNxBoxController: one box of the row's width, height and depth, which other actors meet; the
+    /// ridee's own sweeps pass through it, as they start inside it (<see cref="NxController.IgnoreBody"/>).</summary>
+    void MakeRideBox()
+    {
+        var d = Mount.Data;
+        RideBox = new AnimatableBody3D { Name = "RideBox", TopLevel = true, SyncToPhysics = false };
+        RideBox.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(d.Width, d.Height, d.Depth) } });
+        Body.AddChild(RideBox);
+        PoseRideBox();
+        nx.IgnoreBody = RideBox.GetRid();
+    }
+
+    /// <summary>Ridee::vfunc_53's box pose (ridee.cpp:1166-1180): at the ridee's position with its centre half the row's
+    /// height plus 0.2 m up, turned by the ridee's Z rotation. It goes with the body at <see cref="Free"/>
+    /// (FUN_1417082c0, ridee.cpp:407).</summary>
+    void PoseRideBox()
+    {
+        if (RideBox == null) return;
+        RideBox.GlobalTransform = new Transform3D(new Basis(Vector3.Up, Mathf.DegToRad(rotZ)),
+            (Body.IsInsideTree() ? Body.GlobalPosition : Body.Position) + Vector3.Up * (Mount.Data.Height / 2 + 20f));
     }
 
     static Vector3 G(System.Numerics.Vector3 p) => new(p.X, p.Z, -p.Y);

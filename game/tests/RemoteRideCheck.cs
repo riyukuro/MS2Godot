@@ -237,6 +237,7 @@ public partial class RemoteRideCheck : Node3D
         RideeIdNoTarget(layer, m.Data.Id, bone);
         RideEffects(layer, m.Data.Id);
         RiderWater(layer, m.Data.Id);
+        RideeBox(m);
         NpcBeforePlayer(layer, pc);
         HideRider(layer, pc);
         RideeStats(layer, m.Data.Id);
@@ -368,6 +369,41 @@ public partial class RemoteRideCheck : Node3D
         bool after = pc.OnWater;
         GD.Print($"remote ride: rider water: ridee on water {riding}, on stone {ridingDry}; after the ride off {after}");
         if (!riding || ridingDry || after) fails.Add($"rider water: riding on a water ridee {riding}, on a stone ridee {ridingDry}, after the ride off {after}");
+    }
+
+    /// <summary>Ridee::MakeNxBoxController (ridee.cpp:487, :1184-1231) at another player's mount: a row with physic set
+    /// gets a kinematic box of the row's width, height and depth, posed by vfunc_53 (:1166-1180) at the ridee's position
+    /// with its centre half the height plus 20 up, turned by its Z rotation; the ridee's own sweeps pass through it; a row
+    /// without physic gets none.</summary>
+    void RideeBox(Mount plain)
+    {
+        const System.Reflection.BindingFlags Private = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        var m = FirstMount(x => x.Data.Physic);
+        if (m == null) { fails.Add("ridee box: no riding row with physic set"); return; }
+        var rd = RemotePc.CreateRidee("BoxRidee", m, MoveConfig.SceneGravity, rider.Body.Position + new Vector3(400, 25, 0), 90f, faceGrids);
+        AddChild(rd.Body);
+        rd.Spawn();
+        rd.Tick(Dt);
+        static AnimatableBody3D BoxOf(RemotePc p) => p.Body.GetChildren().OfType<AnimatableBody3D>().FirstOrDefault();
+        var box = BoxOf(rd);
+        var size = (box?.GetChildren().OfType<CollisionShape3D>().FirstOrDefault()?.Shape as BoxShape3D)?.Size;
+        var want = rd.Body.GlobalPosition + Vector3.Up * (m.Data.Height / 2 + 20f);
+        var at = box?.GlobalPosition ?? Vector3.Zero;
+        float yaw = box == null ? float.NaN : Mathf.RadToDeg(box.GlobalBasis.GetEuler().Y);
+        var nx = typeof(RemotePc).GetField("nx", Private).GetValue(rd);
+        var ignored = (Rid)nx.GetType().GetField("IgnoreBody").GetValue(nx);
+        bool ownPasses = box != null && ignored == box.GetRid();
+        bool plainNone = plain.Data.Physic;
+        if (!plain.Data.Physic)
+        {
+            var pr = RemotePc.CreateRidee("PlainRidee", plain, MoveConfig.SceneGravity, rider.Body.Position + new Vector3(-400, 25, 0), 0f, faceGrids);
+            plainNone = BoxOf(pr) == null;
+            pr.Free();
+        }
+        GD.Print($"remote ride: ridee box {m.Data.Id}: size {size}, centre {at} for {want}, yaw {yaw:0.#}, own sweeps pass {ownPasses}; row {plain.Data.Id} without physic boxless {plainNone}");
+        if (size != new Vector3(m.Data.Width, m.Data.Height, m.Data.Depth) || !at.IsEqualApprox(want) || !Mathf.IsEqualApprox(yaw, 90f, 0.01f) || !ownPasses || !plainNone)
+            fails.Add($"ridee box {m.Data.Id}: size {size}, centre {at} for {want}, yaw {yaw}, own sweeps pass {ownPasses}, plain row boxless {plainNone}");
+        rd.Free();
     }
 
     /// <summary>Ridee::GetRunSpeed and FUN_1417fb370 at another player's mount: with no worn item, buff or hot time the
