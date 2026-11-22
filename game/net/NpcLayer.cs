@@ -35,11 +35,15 @@ public sealed class NpcLayer
         public ShaderMaterial HpMat;                 // a replay's stand-in quad
         public World.NpcHpBar Bar;                  // a live field's movie bar
         public World.FieldNpcs.Placed Talk;   // the npc as the talk finds it (WorldService::FindNpcById by object id)
+        public readonly Ms2.Ui.Skills.NpcVibrate Vibrate = new();   // m_vibrate (+0xe18)
+        public Godot.Vector3 VisualBase;          // the body's place under the root, which the shake moves off and back to
     }
 
     /// <summary>The CRT rand() the death pick draws from (0..0x7fff).</summary>
     public Random Rand = new();
     readonly Func<int> crtRand;
+    /// <summary>The game time (CMainSystem::GetGameTime) the npcs' shakes run on, in seconds: <see cref="Process"/>'s sum.</summary>
+    public float Now;
 
     readonly PackSet packs; readonly ModelBuilder mb; readonly NpcTable table; readonly Node3D parent;
     readonly Dictionary<int, Model> models = new();
@@ -176,6 +180,7 @@ public sealed class NpcLayer
             i.Visual = new MeshInstance3D { Mesh = new CapsuleMesh { Radius = 30, Height = 120 }, Position = new Godot.Vector3(0, 60, 0) };
             root.AddChild(i.Visual);
         }
+        i.VisualBase = i.Visual.Position;
         i.Height = row.CapsuleHeight * row.Scale;
         parent.AddChild(root);
         root.Position = i.Target;
@@ -323,6 +328,24 @@ public sealed class NpcLayer
         if (inst.TryGetValue(id, out var i) && !i.Dead && i.Bar is { Shown: false }) i.Bar.Shown = byLocalPlayer;
     }
 
+    /// <summary>
+    /// CNpc::vfunc_33 (@0x141097c40, unit_14108e1e0_npcactorandvibrate.cpp:1840): a hit record on the npc. A total below 0
+    /// by the own player arms the npc's shake (<see cref="Ms2.Ui.Skills.NpcVibrate.OnHit"/>, :1869); <see cref="Process"/>
+    /// moves the body with it. True when it armed.
+    /// STILL-OPEN: the rest of vfunc_33 (PlayInvokeEffectsByEvent(1), the boss camera, FUN_141098fb0(1), the colour boost
+    /// AddColorBoost(damagedColorScale), MyPC::FUN_14152e240 for a boss, the hit sound, the knockback record, the hit basis
+    /// and the death at hp 0) is not ported here.
+    /// </summary>
+    public bool Hit(int id, long totalDamage, bool byLocalPlayer, Ms2.Ui.Skills.SkillAttackDamage attack)
+    {
+        if (!inst.TryGetValue(id, out var i)) return false;
+        var row = table.Find(i.NpcId);
+        return row != null && i.Vibrate.OnHit(Now, totalDamage, byLocalPlayer, row.DamagedVibrateDuration, row.DamagedVibrateAmp, attack);
+    }
+
+    /// <summary>The npc's body offset from its root by the shake (zero when none runs); null when there is no npc of the id.</summary>
+    public Godot.Vector3? ShakeOf(int id) => inst.TryGetValue(id, out var i) && i.Visual != null ? i.Visual.Position - i.VisualBase : null;
+
     /// <summary>CNpc::vfunc_66 (@0x1410935b0): the emotion changed to battle, so a living npc's bar is made active with
     /// its current stat pair (UpdateHpBar = FUN_141992180); a living-out change does nothing to it.
     /// STILL-OPEN: the client also sets the npc's emotion from its states (StateSkill SetEmotion(1) for a battle skill,
@@ -417,6 +440,7 @@ public sealed class NpcLayer
 
     public void Process(float dt)
     {
+        Now += dt;
         foreach (var i in inst.Values)
         {
             var d = i.Target - i.Root.Position;
@@ -424,6 +448,12 @@ public sealed class NpcLayer
             else i.Root.Position += d * Mathf.Min(1f, dt * 10f);
             if (!i.Placeholder)
                 i.Visual.Rotation = new Godot.Vector3(0, Mathf.LerpAngle(i.Visual.Rotation.Y, Mathf.DegToRad(i.TargetYaw), Mathf.Min(1f, dt * 10f)), 0);
+            // the CNpc update's shake (:2419-2424): the drawn point is the npc's own plus the offset, each frame anew
+            if (i.Vibrate.Active)
+            {
+                var off = System.Numerics.Vector3.Zero;
+                i.Visual.Position = i.Vibrate.Update(Now, ref off, Rand) ? i.VisualBase + G(off) : i.VisualBase;
+            }
         }
     }
 
