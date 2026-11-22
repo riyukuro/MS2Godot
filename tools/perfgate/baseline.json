@@ -28,9 +28,9 @@
       "worst": 10648
     },
     "field.install.jit_methods": {
-      "min": 6671,
-      "max": 6681,
-      "limit": 6825
+      "min": 6793,
+      "max": 6833,
+      "limit": 7010
     },
     "field.install.jit_ms": {
       "median": 749.984,
@@ -53,9 +53,9 @@
       "limit": 27947
     },
     "field.install.total_bytes": {
-      "min": 2549642576,
-      "max": 2550675144,
-      "limit": 2602721215
+      "min": 2412169120,
+      "max": 2412828632,
+      "limit": 2461744717
     },
     "field.session.gc0": {
       "min": 37,
@@ -78,9 +78,9 @@
       "worst": 10965
     },
     "field.session.jit_methods": {
-      "min": 6652,
-      "max": 6681,
-      "limit": 6844
+      "min": 6795,
+      "max": 6825,
+      "limit": 6992
     },
     "field.session.jit_ms": {
       "median": 838.832,
@@ -103,9 +103,9 @@
       "limit": 27947
     },
     "field.session.total_bytes": {
-      "min": 2549611344,
-      "max": 2550586872,
-      "limit": 2602574138
+      "min": 2410991368,
+      "max": 2412876224,
+      "limit": 2463018605
     },
     "idle.install.finalized_godot_per_frame": {
       "min": 1,
@@ -823,9 +823,9 @@
       "limit": 127
     },
     "open.inventory.install.main_bytes": {
-      "min": 25072912,
-      "max": 25223592,
-      "limit": 25878744
+      "min": 24627088,
+      "max": 24780352,
+      "limit": 25429224
     },
     "open.inventory.install.ms": {
       "median": 119.323,
@@ -958,9 +958,9 @@
       "limit": 127
     },
     "open.inventory.session.main_bytes": {
-      "min": 25044280,
-      "max": 25226720,
-      "limit": 25913695
+      "min": 24499424,
+      "max": 24777808,
+      "limit": 25551749
     },
     "open.inventory.session.ms": {
       "median": 135.322,
@@ -1023,9 +1023,9 @@
       "limit": 215
     },
     "open.myinfo.install.main_bytes": {
-      "min": 56537744,
-      "max": 56701848,
-      "limit": 57999989
+      "min": 55790384,
+      "max": 55968344,
+      "limit": 57265671
     },
     "open.myinfo.install.ms": {
       "median": 212.181,
@@ -1088,9 +1088,9 @@
       "limit": 16
     },
     "open.myinfo.repeat.main_bytes": {
-      "min": 15371384,
-      "max": 15452936,
-      "limit": 15843547
+      "min": 15265520,
+      "max": 15337824,
+      "limit": 15716885
     },
     "open.myinfo.repeat.ms": {
       "median": 77.009,
@@ -1158,9 +1158,9 @@
       "limit": 215
     },
     "open.myinfo.session.main_bytes": {
-      "min": 56453896,
-      "max": 56703200,
-      "limit": 58086568
+      "min": 55790544,
+      "max": 55956760,
+      "limit": 57242112
     },
     "open.myinfo.session.ms": {
       "median": 245.979,
@@ -1223,9 +1223,9 @@
       "limit": 84
     },
     "open.options.install.main_bytes": {
-      "min": 22494464,
-      "max": 22652368,
-      "limit": 23263320
+      "min": 22277144,
+      "max": 22434824,
+      "limit": 23041201
     },
     "open.options.install.ms": {
       "median": 97.221,
@@ -1358,9 +1358,9 @@
       "limit": 84
     },
     "open.options.session.main_bytes": {
-      "min": 22467064,
-      "max": 22733592,
-      "limit": 23454792
+      "min": 22277144,
+      "max": 22306312,
+      "limit": 22781607
     },
     "open.options.session.ms": {
       "median": 121.562,
@@ -1423,9 +1423,9 @@
       "limit": 79
     },
     "open.quest.install.main_bytes": {
-      "min": 22713216,
-      "max": 22863464,
-      "limit": 23470982
+      "min": 17111256,
+      "max": 17261128,
+      "limit": 17756223
     },
     "open.quest.install.ms": {
       "median": 109.819,
@@ -1558,9 +1558,9 @@
       "limit": 79
     },
     "open.quest.session.main_bytes": {
-      "min": 22707416,
-      "max": 22862824,
-      "limit": 23475489
+      "min": 17111336,
+      "max": 17261008,
+      "limit": 17755901
     },
     "open.quest.session.ms": {
       "median": 113.676,
@@ -1623,9 +1623,9 @@
       "limit": 185
     },
     "open.shop.install.main_bytes": {
-      "min": 60056560,
-      "max": 60216752,
-      "limit": 61581280
+      "min": 59398840,
+      "max": 59558632,
+      "limit": 60909597
     },
     "open.shop.install.ms": {
       "median": 276.177,
@@ -1688,9 +1688,9 @@
       "limit": 20
     },
     "open.shop.repeat.main_bytes": {
-      "min": 15603224,
-      "max": 15771024,
-      "limit": 16254245
+      "min": 15474008,
+      "max": 15554584,
+      "limit": 15946252
     },
     "open.shop.repeat.ms": {
       "median": 81.886,
@@ -1758,9 +1758,9 @@
       "limit": 185
     },
     "open.shop.session.main_bytes": {
-      "min": 60041576,
-      "max": 60216192,
-      "limit": 61595132
+      "min": 59398696,
+      "max": 59538280,
+      "limit": 60868630
     },
     "open.shop.session.ms": {
       "median": 244.206,
@@ -2023,9 +2023,9 @@
       "limit": 1026
     },
     "open.worldmap.install.main_bytes": {
-      "min": 77552160,
-      "max": 77712016,
-      "limit": 79426113
+      "min": 76523960,
+      "max": 76688752,
+      "limit": 78387320
     },
     "open.worldmap.install.ms": {
       "median": 414.99,
@@ -2088,9 +2088,9 @@
       "limit": 16
     },
     "open.worldmap.repeat.main_bytes": {
-      "min": 22261272,
-      "max": 22459544,
-      "limit": 23107007
+      "min": 22162208,
+      "max": 22248160,
+      "limit": 22779076
     },
     "open.worldmap.repeat.ms": {
       "median": 122.034,
@@ -2158,9 +2158,9 @@
       "limit": 1026
     },
     "open.worldmap.session.main_bytes": {
-      "min": 77516416,
-      "max": 77719600,
-      "limit": 79477176
+      "min": 76525696,
+      "max": 76683400,
+      "limit": 78374772
     },
     "open.worldmap.session.ms": {
       "median": 419.256,
