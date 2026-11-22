@@ -26,7 +26,7 @@ Exit codes, for `run.sh` and every `PerfGate` command:
 `run.sh` does a fresh install (`setup.tscn` into `SCRATCH/xdg`). Then it runs three sessions of the offline field with the HUD (`hud.tscn` with `MS2_PERF_GATE`; `game/ui/HudScene.PerfGate.cs`). The first session is `install` (the first launch after setup). The next is `session` (a later launch); `--full` runs two of those. Each session runs with `--fixed-fps 60`, so it follows the same frame schedule whatever the frames' wall time:
 
 - `field.<case>.*`: the field load, from process start to the first HUD frame. It covers wall time, bytes allocated on all threads, collections, engine objects and nodes, and JIT-compiled methods.
-- `idle.<case>.*`: 300 frames with no dialog open. `idle_3_open.<case>.*`: 300 frames with inventory, myinfo and skill open. Each records:
+- `idle.<case>.*`: 300 frames with no dialog open. `idle_3_open.<case>.*`: 300 frames with inventory, myinfo and skill open, and every frame the lookup a guide arrow at the open inventory makes (`FindGuideDialogOf(0x4e2d)` and its `Root`, one kept wrapper each). Each records:
   - bytes per frame on the main thread and on all threads, and collections;
   - the field effects' bytes per effect frame (`EffectInstance.Count`) and their µs per effect frame;
   - the median and worst frame time.

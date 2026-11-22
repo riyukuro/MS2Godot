@@ -17,6 +17,11 @@ public sealed class GuideControllerDialog : GuideDialog
         host = controller?.Host;
     }
 
+    /// <summary>The controller's one wrapper, made on its first lookup and kept (null for null): the arrows ask for their
+    /// dialog every frame one shows, so the lookup allocates nothing after the first.</summary>
+    public static GuideControllerDialog Of(UiController controller) =>
+        controller == null ? null : controller.GuideDialog is { } g && g.host == controller.Host ? g : controller.GuideDialog = new GuideControllerDialog(controller);
+
     /// <summary>GetTypeName: what the guide's name lookups match (the client's FindObjectByName compares it).</summary>
     public override string TypeName => controller?.TypeName;
 
@@ -32,7 +37,18 @@ public sealed class GuideControllerDialog : GuideDialog
     /// nothing with one closed (the client's opens a dialog that is loaded but hidden).</summary>
     public override void Open() { }
 
-    public override GuideNode Root => host?.Entity is { } e && !Rt.IsNullish(e) ? new GuideObjectNode(host, e) : null;
+    /// <summary>The movie's entity as a node, kept while the entity stays the same (a reload makes a new one).</summary>
+    public override GuideNode Root
+    {
+        get
+        {
+            if (host?.Entity is not { } e || Rt.IsNullish(e)) return null;
+            if (root == null || !ReferenceEquals(root.Target, e)) root = new GuideObjectNode(host, e);
+            return root;
+        }
+    }
+
+    GuideObjectNode root;
 }
 
 /// <summary>

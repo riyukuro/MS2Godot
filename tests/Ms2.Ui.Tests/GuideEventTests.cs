@@ -715,8 +715,8 @@ public class GuideEventTests
     [Test]
     public void TheGuidesDialogLookupReadsTheRegistryWithoutAllocating()
     {
-        // FindObjectByName as the HUD answers the guide (its dialog conditions and the arrows at a dialog, which ask
-        // every frame one shows): the registry's loaded, open controller by type name, with no allocation, open or not
+        // the open-dialog lookup the guide's arrows use (GuideUIById / GuideUIByName, which ask every frame one shows):
+        // the registry's loaded, open controller by type name, with no allocation, open or not
         Model();
         var book = new Ms2.Net.Packets.ItemBook { TabOf = _ => 0, BaseSlots = _ => 24 };
         var notLoaded = new InventoryController { View = new Ms2.Net.Packets.InventoryView(book) };
@@ -742,6 +742,21 @@ public class GuideEventTests
             return GC.GetAllocatedBytesForCurrentThread() - before;
         }
         Assert.That(Bytes("InventoryDialog"), Is.EqualTo(0), "found: no allocation");
+
+        // an arrow at the open inventory asks its wrapper and the movie root every frame: one of each, kept
+        var g = Ms2.Ui.Guide.GuideControllerDialog.Of(inv);
+        Assert.That(Ms2.Ui.Guide.GuideControllerDialog.Of(inv), Is.SameAs(g), "one wrapper per controller");
+        Assert.That(g.Root, Is.Not.Null.And.SameAs(g.Root), "one root node while the entity stays");
+        Assert.That(Ms2.Ui.Guide.GuideControllerDialog.Of(null), Is.Null);
+        // measured in a local function after a warm-up call: the Release JIT's first pass through a loop may allocate once
+        long OpenBytes()
+        {
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 10_000; i++) _ = Ms2.Ui.Guide.GuideControllerDialog.Of(DialogGates.FindOpen(registry, "InventoryDialog"))?.Root;
+            return GC.GetAllocatedBytesForCurrentThread() - before;
+        }
+        OpenBytes();
+        Assert.That(OpenBytes(), Is.EqualTo(0), "open: the wrapper and its root allocate nothing per lookup");
 
         inv.Close();
         for (int i = 0; i < 30 && !inv.IsClosed; i++) { ip.Tick(); inv.Process(); }

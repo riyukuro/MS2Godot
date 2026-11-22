@@ -124,6 +124,8 @@ public partial class HudScene
         if (gateIdleName != null && gateLastTick != 0) gateFrameMs.Add(GateMark.Ms(gateLastTick, now));
         gateLastTick = now;
         if (gateChurn) GateChurn();
+        // a guide arrow at the open inventory (its dialog and movie root every frame): idle_3_open has the inventory open
+        else if (gateIdleName == "idle_3_open" && FindGuideDialogOf(0x4e2d)?.Root == null) GD.PushError("perf gate: the open inventory does not answer the guide");
         if (gateFrame == 0)
         {
             EffectInstance.Count = true;

@@ -22,11 +22,13 @@ public static class DialogGates
     }
 
     /// <summary>
-    /// CUIService::FindObjectByName as the guide asks it: the registry's loaded, not closed controller whose type name
-    /// matches (case blind), else null. A list read with no allocation: the guide's dialog conditions ask it on every
-    /// guide tick for each event left queued by a dialog open (its open condition failing keeps it queued until the
-    /// field changes), and its arrows every frame one shows; the HUD's former walk of its whole node tree with
-    /// GetChildren there took the frame rate down after the first inventory open on a live field.
+    /// The open-dialog lookup the guide's arrows use (GuideUIById / GuideUIByName, uiguideeventarrow.cpp:629-657; an
+    /// arrow gives up on a null GetScript, :874-878, :719-723, :679-683): the registry's loaded, not closed controller
+    /// whose type name matches (case blind), else null. The client's FindObjectByName also answers closed and
+    /// never-opened dialogs; <see cref="Ms2.Ui.Guide.GuideDialogLookup.Resolve"/> adds those for the dialog conditions.
+    /// A list read with no allocation: the conditions ask it on every guide tick for each event left queued by a dialog
+    /// open, and the arrows every frame one shows; the HUD's former walk of its whole node tree with GetChildren there
+    /// took the frame rate down after the first inventory open on a live field.
     /// </summary>
     public static UiController FindOpen(IReadOnlyList<UiController> dialogs, string typeName)
     {

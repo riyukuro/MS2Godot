@@ -10,6 +10,8 @@ namespace Ms2.Ui;
 public abstract class UiController
 {
     public UiHost Host { get; internal set; }
+    /// <summary>The guide's wrapper of this dialog (<see cref="Guide.GuideControllerDialog.Of"/>), made once.</summary>
+    internal Guide.GuideControllerDialog GuideDialog;
     public UiModel Model => Host.Model;
     protected PlayerState Pc => Host.Model.Player;
 

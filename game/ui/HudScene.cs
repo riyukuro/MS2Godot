@@ -824,13 +824,14 @@ public partial class HudScene : Node, IUiStageHost
     Func<string, Ms2.Ui.Guide.GuideDialog> guideDialogLookup;     // built once: a guide tick's lookup allocates no delegate
 
     /// <summary>
-    /// CUIService::FindObjectByName (the guide's dialog lookups): the open movies' controllers by their type name, read
-    /// from the movie registry (no walk of the HUD's nodes: the guide asks this on each tick for every event a dialog
-    /// open left queued). The HUD holds one movie per dialog, as the client holds one dialog object per UI class, and
+    /// The open-dialog lookup the guide's arrows use (GuideUIById / GuideUIByName, uiguideeventarrow.cpp:629-657) and its
+    /// conditions build on (GuideDialogLookup.Resolve adds the client's closed dialogs): the open movies' controllers by
+    /// their type name, read from the movie registry (no walk of the HUD's nodes: the arrows ask this every frame), each
+    /// as its one kept guide wrapper. The HUD holds one movie per dialog, as the client holds one dialog object per UI class, and
     /// its always-on movies (the game menu, the minimap, the main player info) answer like the client's.
     /// </summary>
     public Ms2.Ui.Guide.GuideDialog FindGuideDialog(string name) =>
-        Ms2.Ui.Hud.DialogGates.FindOpen(MovieDialog.Live, name) is { } c ? new Ms2.Ui.Guide.GuideControllerDialog(c) : null;
+        Ms2.Ui.Guide.GuideControllerDialog.Of(Ms2.Ui.Hud.DialogGates.FindOpen(MovieDialog.Live, name));
 
     /// <summary>
     /// FUN_141274f80 (unit_141274d10_uihelpers.cpp:181-191): CUIService::FUN_141adcbb0's any-shown-window gate first —
