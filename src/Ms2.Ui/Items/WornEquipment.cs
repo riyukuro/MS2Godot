@@ -44,6 +44,17 @@ public sealed class WornEquipment
     public Item At(int slot, int layer) =>
         layer >= 0 && layer < layers.Length && layers[layer].TryGetValue(slot, out var it) ? it : null;
 
+    /// <summary>CEquipment::FUN_1411e1fc0(list, 2): the worn items of every layer but 2, each once (the item's m_bShown slot;
+    /// here one entry per item at its slot).</summary>
+    public IEnumerable<Item> Shown()
+    {
+        for (int layer = 0; layer < layers.Length; layer++)
+        {
+            if (layer == 2) continue;
+            foreach (var it in layers[layer].Values) yield return it;
+        }
+    }
+
     /// <summary>PC::GetEquipByUid (CEquipment::FindItemByUid): an item of any slot and layer has the uid.</summary>
     public bool Wears(long uid) => layers.Any(l => l.Values.Any(it => it.Uid == uid));
 

@@ -66,6 +66,7 @@ public sealed partial class ItemTooltip
         SetItemMovie(item);                                                       // FUN_1409c7cc0
         Data["ugctag"] = item.UgcTag;                                             // SetUgcTag
         SetItemStatus(item);                                                      // FUN_1409c7fc0
+        SetItemStatusSet(item);                                                   // FUN_1409c8020
         Data["iconPath"] = item.IconPath;                                         // SetItemIconPath (FUN_14016a730: to wide text)
         SetSellPrice(item);                                                       // SetItemSellPrice
         SetNotExchange(item);
@@ -869,7 +870,7 @@ public sealed partial class ItemTooltip
 
     /// <summary>A side tooltip: ASTooltip(the owner, flags, 2) (FUN_1409e13f0 passes m_40 on).</summary>
     ItemTooltip Side() => new(model, Flags) { Owner = Owner, Localize = Localize, OwnerWearsUid = OwnerWearsUid, IsDialogOpen = IsDialogOpen,
-        OwnerEquipment = OwnerEquipment, ShiftHeld = ShiftHeld };
+        OwnerEquipment = OwnerEquipment, OwnerGender = OwnerGender, ShiftHeld = ShiftHeld };
 
     /// <summary>
     /// FUN_1409e13a0 (:315) with this tooltip's flags for both sides, i.e. FUN_1409e13f0 (:4748): false without either

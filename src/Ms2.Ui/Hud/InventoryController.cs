@@ -1162,6 +1162,7 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
             Localize = Localize,
             OwnerWearsUid = uid => equipment?.Wears(uid) == true,
             OwnerEquipment = equipment,
+            OwnerGender = record?.Gender ?? 2,
             ShiftHeld = ShiftHeld,
             OwnedCount = id => (world ??= SlotWorld?.Invoke())?.CountById(id) ?? 0,
         };

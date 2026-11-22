@@ -68,6 +68,24 @@ public class ItemTooltipExtrasTests
     }
 
     [Test]
+    public void ItemStatusSetListsTheSetPiecesAndParts()
+    {
+        var m = NewModel();
+        m.HasLocalPlayer = true;
+        // setiteminfo.xml: set 15123101 lists 11300451 and four more pieces; parts at 2 (str), 4 (pap) and 5 (pen)
+        var arr = (List<object>)Tip(m, new EquipItem { Id = 11300451, Uid = 6, Rarity = 1, Amount = 1 }).Data["itemStatusSet"];
+        Assert.That(arr, Has.Count.EqualTo(1));
+        var text = (string)arr[0];
+        Assert.That(text, Does.Contain(m.Tables.SetItemName(15123101)));
+        foreach (int id in new[] { 11300451, 11400397, 11500317, 11600392, 11700419 })
+            Assert.That(text, Does.Contain(m.Tables.ItemName(id)), id.ToString());
+        Assert.That(text, Does.Not.Contain("ffffff"), "nothing worn");
+        // an item no set lists still sets the member, empty
+        var none = (List<object>)Tip(m, new EquipItem { Id = IntroMagicianCoat, Uid = 7, Rarity = 1, Amount = 1 }).Data.GetValueOrDefault("itemStatusSet");
+        Assert.That(none ?? new List<object>(), Is.Empty);
+    }
+
+    [Test]
     public void ExpiringItemCannotBeEnchanted()
     {
         var m = NewModel();

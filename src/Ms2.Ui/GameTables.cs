@@ -685,6 +685,9 @@ public sealed class GameTables
     Ms2.Ui.Items.ColorPaletteTable colorPalettes;
     public string PopupMenuName(int id) => Lazy(ref popupMenuNames, "popupmenu", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
     /// <summary>CStringTable::FUN_141811980(8, id): string table 8 "slotName" (a weapon kind's name); "" when unknown.</summary>
+    Dictionary<string, string> setItemNames;
+    /// <summary>CStringTable::GetSetItemName(id, "name") (stringtable.cpp:827): SetItemName.xml.</summary>
+    public string SetItemName(int id) => Lazy(ref setItemNames, "setitemname", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
     public string SlotName(int id) => Lazy(ref slotNames, "slotname", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
     /// <summary>The "name" text of the skill's row in stringSkillDescription.xml (CStringTable::GetSkillDescription
     /// @stringtable.cpp:750 reads the tag "name"); null when the skill has no row.</summary>
@@ -803,6 +806,11 @@ public sealed class GameTables
     public Ms2.Ui.Items.ItemExtractionTable Extraction => extraction ??= packs == null ? Ms2.Ui.Items.ItemExtractionTable.Empty
         : new Ms2.Ui.Items.ItemExtractionTable(Xml(packs.Exists("Xml", "table/kr/itemextraction.xml") ? "table/kr/itemextraction.xml"
             : "table/itemextraction.xml"));
+    Ms2.Ui.Items.SetItemTable setItems;
+    /// <summary>SetItemTable (GetXmlPath("Table", "SetItemInfo.xml"), the locale folder first), read on first use.</summary>
+    public Ms2.Ui.Items.SetItemTable SetItems => setItems ??= packs == null ? Ms2.Ui.Items.SetItemTable.Empty
+        : new Ms2.Ui.Items.SetItemTable(Xml(packs.Exists("Xml", "table/kr/setiteminfo.xml") ? "table/kr/setiteminfo.xml" : "table/setiteminfo.xml"),
+            (p, c, k) => FeatureElements.Collect(packs, p, c, k), e => FeatureElements.IsAvailable(packs, e), StatOption, k => ItemOptions.SpecialOption(k));
     Ms2.Ui.Skills.SkillCompactControlTable skillCompactControl;
     /// <summary>CSkillCompactControlTable (Table/SkillCompactControl.xml), read on first use; empty with feature 0x10
     /// (CompactControl) off, as Load @0x140dca800 reads nothing then.</summary>
