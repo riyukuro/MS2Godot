@@ -525,7 +525,27 @@ public class AsTextField : AsInteractiveObject
         set { SetHtml(value); Changed(); needGeom = true; }
     }
     [As] public void appendText(string s) { Text += s ?? ""; Html = null; Changed(); }
-    [As] public void replaceText(int b, int e, string s) { b = Math.Clamp(b, 0, Text.Length); e = Math.Clamp(e, b, Text.Length); Text = Text[..b] + (s ?? "") + Text[e..]; Html = null; Changed(); }
+    /// <summary>TextField::replaceText (sfr_as3_13.cpp): the chars between b and e become s. The chars the document keeps
+    /// keep their html formats and the new ones take the format of the char before them (the heading of a CommonTooltip
+    /// status text stays yellow after its "gauge:" marker is cut out).</summary>
+    [As] public void replaceText(int b, int e, string s)
+    {
+        b = Math.Clamp(b, 0, Text.Length); e = Math.Clamp(e, b, Text.Length); s ??= "";
+        var f = Formats;
+        var old = Text;
+        Text = old[..b] + s + old[e..];
+        if (f != null && f.Length >= old.Length)
+        {
+            var fill = b > 0 ? f[b - 1] : f.Length > 0 && b < f.Length ? f[b] : default;
+            if (fill.Image != null) fill = fill with { Image = null };
+            var nf = new HtmlFormat[Text.Length + (f.Length - old.Length)];
+            Array.Copy(f, 0, nf, 0, b);
+            for (int i = 0; i < s.Length; i++) nf[b + i] = fill;
+            Array.Copy(f, e, nf, b + s.Length, f.Length - e);
+            SetFormats(nf, formatsBreak);
+        }
+        Html = null; Changed();
+    }
     [As] public void replaceSelectedText(string s) => replaceText(SelBegin, SelEnd, s);
     [As] public int length => Text.Length;
     [As] public double textWidth => TextW();
@@ -536,14 +556,29 @@ public class AsTextField : AsInteractiveObject
     // sfr_render_03b.cpp:619, :609): a negative line or one past the last gives -1, never a RangeError
     [As] public int getLineLength(int i) { var l = Lines(); return i >= 0 && i < l.Count ? l[i].Length : -1; }
     [As] public int getLineOffset(int i) { var l = Lines(); if (i < 0 || i >= l.Count) return -1; int o = 0; for (int k = 0; k < i; k++) o += l[k].Length; return o; }
-    [As] public int getLineIndexOfChar(int c) { var l = Lines(); int o = 0; for (int k = 0; k < l.Count; k++) { o += l[k].Length; if (c < o) return k; } return -1; }
+    [As] public int getLineIndexOfChar(int c) => c < 0 || c >= Text.Length ? -1 : LineOfChar(Spans(), c);
     [As] public int getLineIndexAtPoint(double x, double y) => Math.Clamp((int)((y - 2) / TextMeasure.LineHeight(FontName, Size, Leading)), 0, numLines - 1);
     [As] public int getCharIndexAtPoint(double x, double y) => -1;
+    // DocView::GetCharBoundaries: the char's box in the field, on the line it is laid out on (the line's top is the lines
+    // above it, each LineHeight + leading tall, below the 2 px gutter; its x the width of the line's text before it).
     [As] public AsRectangle getCharBoundaries(int i)
     {
         if (i < 0 || i >= Text.Length) return null;
-        double x = 2 + TextMeasure.Width(FontName, Size, Text[..i]);
-        return AsRectangle.New(R, x, 2, TextMeasure.Width(FontName, Size, Text[i].ToString()), TextMeasure.LineHeight(FontName, Size, 0));
+        var spans = Spans();
+        int k = LineOfChar(spans, i);
+        double lh = TextMeasure.LineHeight(FontName, Size, 0);
+        var (line, start) = spans[k];
+        int col = Math.Clamp(i - start, 0, line.Length);
+        double x = 2 + LineWidth(line[..col], start);
+        double w = col < line.Length ? TextMeasure.Width(FontName, Size, line[col].ToString()) : TextMeasure.Width(FontName, Size, Text[i].ToString());
+        return AsRectangle.New(R, x, 2 + k * (lh + Leading), w, lh);
+    }
+
+    static int LineOfChar(List<(string Line, int Start)> spans, int i)
+    {
+        int k = 0;
+        for (int j = 0; j < spans.Count; j++) { if (spans[j].Start <= i) k = j; else break; }
+        return k;
     }
     // TextField::getLineMetrics (sfr_as3_13.cpp:2025) from DocView::GetLineMetrics (sfr_render_03b.cpp): the line's height is
     // IRound(max ascent + max descent) (the formatter, sfr_render_03b.cpp:1665), its leading kept apart (SetLeading :1712)

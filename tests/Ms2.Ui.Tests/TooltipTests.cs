@@ -46,7 +46,10 @@ public class TooltipTests
 
     /// <summary>The tooltip movie draws <paramref name="data"/> (createTooltip as a dialog's TooltipManager sends it, with
     /// the movie's "$" strings from korflash): the texts it shows.</summary>
-    internal static List<string> Draw(IDictionary<string, object> data)
+    internal static List<string> Draw(IDictionary<string, object> data) =>
+        Texts(DrawStage(data).Stage).Select(t => t.Text).Where(t => t.Length > 0).ToList();
+
+    internal static Player DrawStage(IDictionary<string, object> data)
     {
         Packs();
         if (flash == null)
@@ -67,8 +70,10 @@ public class TooltipTests
         tc.Call("createTooltip", new object[] { 1, data, new Dictionary<string, object> { ["x"] = 600, ["y"] = 300, ["width"] = 40, ["height"] = 20 } });
         for (int i = 0; i < 30; i++) p.Tick();
         Assert.That(rt.Errors, Is.Empty, string.Join("; ", rt.Errors));
-        return Texts(p.Stage).Select(t => t.Text).Where(t => t.Length > 0).ToList();
+        return p;
     }
+
+    internal static IEnumerable<AsTextField> TextFields(AsDisplayObject o) => Texts(o);
 
     [Test]
     public void TextTooltipIsTheClientsObject()
