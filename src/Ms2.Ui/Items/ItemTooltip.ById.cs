@@ -6,14 +6,14 @@ public sealed partial class ItemTooltip
     /// FUN_1409e1770 (astooltip.cpp:4808): the item tooltip of an item id at a rank, with no item behind it (a quickslot
     /// item that is gone, a shop product, a reward): false when the item has no data. The class, the pet rank (feature
     /// 0x8c, FUN_1409d7560) or pet flag, the cash / skin / PC bang / VIP / wedding flags, the name (SetItemNameById), the
-    /// grade (FUN_1409d55a0: the rank, 1 for 0), kind, movie, icon path (FUN_1409d5770), the sell price of a new item at
-    /// the rank (FUN_1409d5860), box and package lists, the description, guide description (FUN_1409d5b70), stat
-    /// description (FUN_1409d6120), extra description at level 0 (FUN_1409d64a0), maid row (FUN_1409d6730), piece flag,
-    /// data period (FUN_1409d6a40 with 0 minutes), UGC market limit (SetUgcItemLimitRegister by data, @0x1409d8800),
-    /// gemstone level, super chat preview, break ingredients at the rank with no sockets (FUN_1409d8650), season and pet
-    /// skin flag; the align is 7 with flag 0x40 or 2, else 5.
-    /// STILL-OPEN, so nothing is set for them: the housing set block (FUN_1409c8df0), and a ChatEmoticonAdd item's stat
-    /// text (FUN_1409daff0) and extra comment (FUN_1409d7630 = FUN_1409daa30's emoticons).
+    /// grade (FUN_1409d55a0: the rank, 1 for 0), kind, movie, housing set block (FUN_1409c8df0), icon path
+    /// (FUN_1409d5770), the sell price of a new item at the rank (FUN_1409d5860), box and package lists, the description,
+    /// guide description (FUN_1409d5b70), stat description (FUN_1409d6120), extra description at level 0 (FUN_1409d64a0),
+    /// maid row (FUN_1409d6730), piece flag, data period (FUN_1409d6a40 with 0 minutes), UGC market limit
+    /// (SetUgcItemLimitRegister by data, @0x1409d8800), gemstone level, super chat preview, break ingredients at the rank
+    /// with no sockets (FUN_1409d8650), season and pet skin flag; the align is 7 with flag 0x40 or 2, else 5.
+    /// STILL-OPEN, so nothing is set for them: a ChatEmoticonAdd item's stat text (FUN_1409daff0) and extra comment
+    /// (FUN_1409d7630 = FUN_1409daa30's emoticons).
     /// </summary>
     public bool FillById(int itemId, int rank)
     {
