@@ -427,6 +427,28 @@ public class ResponseCubeBillTests
     }
 
     [Test]
+    public void HomeOptionReplyReadsErrorOrTheIndex()
+    {
+        // scenestategame.cpp:10699-10743: u8 error; with none u8 the chosen index; the end is not checked
+        var err = ResponseCubeHomeOption.Read(Reader(w => w.WriteByte(7)), 0x33);
+        Assert.That(err, Is.EqualTo(new ResponseCubeHomeOption(0x33, 7, 0)));
+        var ok = ResponseCubeHomeOption.Read(Reader(w => { w.WriteByte(0); w.WriteByte(5); w.WriteByte(9); }), 0x36);
+        Assert.That(ok, Is.EqualTo(new ResponseCubeHomeOption(0x36, 0, 5)));
+    }
+
+    [Test]
+    public void HomeSettingBytesAreSetOneByOne()
+    {
+        var info = HouseOf(77);
+        info.SetBackground(3);
+        info.SetLighting(4);
+        info.SetCamera(5);
+        Assert.That((info.Background, info.Lighting, info.Camera), Is.EqualTo(((byte) 3, (byte) 4, (byte) 5)));
+        info.SetLighting(1);
+        Assert.That((info.Background, info.Lighting, info.Camera), Is.EqualTo(((byte) 3, (byte) 1, (byte) 5)));
+    }
+
+    [Test]
     public void SaveSlotUpdatesTheOwnersListsOnly()
     {
         // FUN_1410d4450 / FUN_1410d4710 (cubemapinformationservice_3.cpp:2025-2062): a known slot takes the name and time, a new slot appends; another id changes nothing

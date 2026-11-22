@@ -106,6 +106,13 @@ public sealed class CubeMapInfo
         DesignChanged = false;
     }
 
+    /// <summary>FUN_1410c3560 (cubemapinformationservice_3.cpp:1530): the background byte of the house setting.</summary>
+    public void SetBackground(byte v) => Background = v;
+    /// <summary>FUN_1410c3580 (:1532): the light byte.</summary>
+    public void SetLighting(byte v) => Lighting = v;
+    /// <summary>FUN_1410c35a0 (:1534): the camera byte.</summary>
+    public void SetCamera(byte v) => Camera = v;
+
     /// <summary>OnLoadUgcMap's setters (:2248-2281 for mode 0, :2294-2327 otherwise; the same calls).</summary>
     public void Apply(LoadUgcMap m)
     {

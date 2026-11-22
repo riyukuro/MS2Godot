@@ -175,6 +175,9 @@ public partial class LiveSession
             case ResponseCubeRowLevel.Mode: HomeRows.Apply(ResponseCubeRowLevel.Read(r)); return;
             case ResponseCubeSaveSlot.ModeDesign:
             case ResponseCubeSaveSlot.ModeBlueprint: OnSaveSlot(ResponseCubeSaveSlot.Read(r, mode)); return;
+            case ResponseCubeHomeOption.ModeBackground:
+            case ResponseCubeHomeOption.ModeLight:
+            case ResponseCubeHomeOption.ModeCamera: OnHomeOption(ResponseCubeHomeOption.Read(r, mode)); return;
             case ResponseCubeBill.ModeCube: Bill.OnBill(ResponseCubeBill.Read(r, ResponseCubeBill.ModeCube)); return;
             case ResponseCubeBill.ModeBlueprint: Bill.OnBill(ResponseCubeBill.Read(r, ResponseCubeBill.ModeBlueprint)); return;
         }
@@ -221,6 +224,16 @@ public partial class LiveSession
             CubeMap.SetDesignChanged(false, accountId);
         }
         SaveSlotsUpdated?.Invoke();
+    }
+
+    /// <summary>ResponseCube 0x33 / 0x34 / 0x36 (scenestategame.cpp:10699-10743): an error shows its build notice; otherwise the home
+    /// setting's byte is set. STILL-OPEN: UgcHomeOptionData::ApplyBg / ApplyLight / ApplyCamera (the field's background, light and camera) are not ported.</summary>
+    void OnHomeOption(ResponseCubeHomeOption m)
+    {
+        if (m.Error != 0) { ShowBuildNotice(m.Error); return; }
+        if (m.Mode == ResponseCubeHomeOption.ModeBackground) CubeMap.SetBackground(m.Value);
+        else if (m.Mode == ResponseCubeHomeOption.ModeLight) CubeMap.SetLighting(m.Value);
+        else CubeMap.SetCamera(m.Value);
     }
 
     /// <summary>The built field's cube map (its player's CubeGrid), or null before the field is built.</summary>

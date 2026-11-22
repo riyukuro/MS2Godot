@@ -373,6 +373,22 @@ public sealed record ResponseCubeSaveSlot(byte Mode, byte Error, long CharacterI
     }
 }
 
+/// <summary>
+/// ResponseCube 0x33 (background), 0x34 (light) and 0x36 (camera) (scenestategame.cpp:10699-10743): u8 error; with no error u8 the chosen
+/// entry's index (the home setting's byte, FUN_1410c3560 / FUN_1410c3580 / FUN_1410c35a0, then UgcHomeOptionData::ApplyBg / ApplyLight /
+/// ApplyCamera). An error shows its build notice. The client never checks the end of the body, so trailing bytes stay unread.
+/// </summary>
+public sealed record ResponseCubeHomeOption(byte Mode, byte Error, byte Value)
+{
+    public const byte ModeBackground = 0x33, ModeLight = 0x34, ModeCamera = 0x36;
+
+    public static ResponseCubeHomeOption Read(ByteReader r, byte mode)
+    {
+        byte error = r.ReadByte();
+        return new ResponseCubeHomeOption(mode, error, error == 0 ? r.ReadByte() : (byte) 0);
+    }
+}
+
 /// <summary>ResponseCube 0x2b (scenestategame.cpp:10626-10633): u8 row, u8 level: the home option row's level (FUN_1410c3f10 into the map at +0x378).</summary>
 public sealed record ResponseCubeRowLevel(byte Row, byte Level)
 {
