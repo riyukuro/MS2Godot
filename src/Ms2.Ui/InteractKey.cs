@@ -46,6 +46,19 @@ public static class InteractKey
         react?.End();
     }
 
+    /// <summary>CSceneStateGame::OnReactor mode 5 (scenestategame.cpp:6756-6767): the own pc's vfunc_59(0x3d, .., 0x9e, 1).
+    /// MyPC::vfunc_59 runs PC::vfunc_124 first (pc.cpp:1189), which refuses 0x3d for a dead pc
+    /// (<see cref="Ms2.Net.Packets.MyCharacter.DeathOnlyStates"/>); else ChangeState leaves a running StateInteraction or
+    /// StateInteractionNpc (<see cref="LeaveForServerState"/>: the bar cancelled, nothing sent), then the create animation
+    /// (<see cref="ReactState.BeginCreate"/>). Returns whether the create began.</summary>
+    public static bool ServerCreate(Ms2.Net.Packets.MyCharacter me, ReactState react, Ms2.Formats.World.ReactorTable.Reactor data,
+        LiveInteractObjects objects, LiveInteractNpc npcs)
+    {
+        if (react == null || (me?.DeathOnlyStates ?? false)) return false;
+        LeaveForServerState(0x3d, objects, npcs, null);
+        return react.BeginCreate(data);
+    }
+
     /// <summary>The polls by ascending key; <paramref name="npc"/> tells whether the npc action took the key. 0 B.</summary>
     public static bool Poll(LiveInteractObjects objects, LiveInteractNpc npcs, Vec3 at, Vec3 npcAt, out bool npc) =>
         Poll(objects, npcs, at, npcAt, null, out npc, out _);

@@ -242,6 +242,59 @@ public class ReactStateTests
         return new FieldEntity { Raw = raw, Flat = flat };
     }
 
+    static (MyCharacter, LiveInteractObjects, LiveInteractObjectsTests.Host, LiveInteractNpc, LiveInteractNpcTests.Host) Casting(long hp)
+    {
+        var me = new MyCharacter();
+        var u = new FieldAddUser { ObjectId = 9, User = new UserBlock { Name = "a" } };
+        u.Stats[0].Health = 500; u.Stats[2].Health = hp;
+        me.Apply(u);
+        var objHost = new LiveInteractObjectsTests.Host();
+        var objects = new LiveInteractObjects(objHost, new InteractObjectTable(new Dictionary<int, InteractObjectRow>
+        {
+            [301] = new() { Id = 301, Type = 1, InteractionDistance = 150, ReactTimeMs = 2000 },
+        }));
+        objects.Attach(new[] { InteractEntity("box-1", 301) });
+        objects.Apply(new InteractObjectMessage { Mode = InteractObjectMessage.ModeState, Name = "box-1", State = 1, Kind = 1 });
+        var npcHost = new LiveInteractNpcTests.Host();
+        var npcs = new LiveInteractNpc(npcHost);
+        npcs.Add(7, LiveInteractNpcTests.Row(), talkable: true, new Ms2.Formats.Model.Vec3(100, 0, 0));
+        var at = new Ms2.Formats.Model.Vec3(0, 0, 0);
+        objects.Poll(at);
+        Assert.That(objects.Use(at), Is.True);
+        return (me, objects, objHost, npcs, npcHost);
+    }
+
+    [Test]
+    public void ModeFiveLeavesARunningObjectCastBeforeTheCreateAnimation()
+    {
+        // OnReactor mode 5 (scenestategame.cpp:6756-6767): MyPC::vfunc_59(0x3d) leaves StateInteraction, then the animation
+        var (me, objects, objHost, npcs, npcHost) = Casting(500);
+        var (st, host, f, _) = Start();
+        Assert.That(objects.IsCasting, Is.True);
+        Assert.That(InteractKey.ServerCreate(me, st, f.DataOf(40), objects, npcs), Is.True);
+        Assert.That(objects.IsCasting, Is.False, "the object cast is left");
+        Assert.That(objHost.CastCancels, Is.EqualTo(1));
+        Assert.That(host.Anims, Is.EqualTo(new[] { "C_A" }));
+        objHost.NowMs += 10_000;
+        objects.Tick(new Ms2.Formats.Model.Vec3(0, 0, 0), false);
+        Assert.That(objHost.Sent, Has.Count.EqualTo(1), "only the start request, never the complete");
+        Assert.That(npcHost.Sent, Is.Empty);
+    }
+
+    [Test]
+    public void ModeFiveDoesNothingForADeadPc()
+    {
+        // PC::vfunc_124 (pc.cpp:1199) refuses 0x3d for a dead pc: the cast keeps running and nothing plays
+        var (me, objects, objHost, npcs, _) = Casting(0);
+        var (st, host, f, _) = Start();
+        Assert.That(me.DeathOnlyStates, Is.True);
+        Assert.That(InteractKey.ServerCreate(me, st, f.DataOf(40), objects, npcs), Is.False);
+        Assert.That(objects.IsCasting, Is.True);
+        Assert.That(objHost.CastCancels, Is.EqualTo(0));
+        Assert.That(host.Anims, Is.Empty);
+        Assert.That(st.Active, Is.False);
+    }
+
     [Test]
     public void AServerStateLeavesTheReactAndTheInteractionCastsWithoutASend()
     {

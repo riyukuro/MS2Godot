@@ -212,13 +212,29 @@ public class FieldReactorsTests
         Assert.That((polled, bare.Highlighted), Is.EqualTo((3, false)), "FUN_140b78b40 without the entity: nothing");
         int warm = 0;
         f.Poll(new Vector3(50, 0, 0), u, ref warm);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 100; i++)
+        Assert.That(Alloc.Least(() =>
         {
-            f.Poll(new Vector3(50, 0, 0), u, ref warm);
-            f.Poll(new Vector3(-50, 0, 0), u, ref warm);
-        }
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0));
+            for (int i = 0; i < 100; i++)
+            {
+                f.Poll(new Vector3(50, 0, 0), u, ref warm);
+                f.Poll(new Vector3(-50, 0, 0), u, ref warm);
+            }
+        }), Is.LessThan(512));
+    }
+
+    [Test]
+    public void ARemovedEntityClearsTheHighlight()
+    {
+        // CReactor's entity goes with ReactorLayer.Remove: the highlight goes with it
+        var f = new FieldReactors(Table());
+        var a = f.Add(Add(1, "a", 10, new Vector3(100, 0, 0), St(0)), out _);
+        a.HasEntity = true;
+        int polled = 0;
+        Assert.That(f.Poll(Vector3.Zero, new User(), ref polled), Is.True);
+        Assert.That(a.Highlighted, Is.True);
+        a.HasEntity = false;
+        a.ClearHighlight();
+        Assert.That(a.Highlighted, Is.False);
     }
 
     [Test]

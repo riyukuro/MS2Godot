@@ -140,6 +140,7 @@ public partial class ReactorLayer : Node3D
     {
         if (!inst.Remove(r.ObjectId, out var i)) return;
         r.HasEntity = false;
+        r.ClearHighlight();
         EffectOff(i);
         i.Root.QueueFree();
     }

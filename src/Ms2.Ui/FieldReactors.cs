@@ -102,6 +102,9 @@ public sealed class FieldReactors
         /// reactor with an entity. STILL-OPEN: the entity highlight draw (SetEntityHighlight).</summary>
         public bool Highlighted { get; internal set; }
 
+        /// <summary>The entity went (the model layer cleared <see cref="HasEntity"/>): no highlight is left on it.</summary>
+        public void ClearHighlight() => Highlighted = false;
+
         /// <summary>GetCurrentStateData: the state at the index, or null.</summary>
         public ReactorTable.State State => Data?.StateAt(StateIndex);
 

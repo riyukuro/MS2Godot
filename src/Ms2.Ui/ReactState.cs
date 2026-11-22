@@ -127,6 +127,8 @@ public sealed class ReactState : ICastingEventListener
     /// statereact.cpp:212-251): with the target found, a finished cast sends (FUN_140b8dfd0: StateReact for 0x9f), else the
     /// pc farther than the data's reactDistance from it ends the state; a finished cast ends it whether the target was found
     /// or not; then moving (FUN_1416749c0) ends it (state 2).
+    /// STILL-OPEN: vfunc_8's else branch (statereact.cpp:251), State::FUN_1417b9460 (state.cpp:984): a queued skill
+    /// (vfunc_104) leaves the react state for the cast; no queued-skill exit is ported.
     /// </summary>
     public void Tick(Vector3 playerPos, bool playerMoved)
     {

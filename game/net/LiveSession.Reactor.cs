@@ -121,8 +121,8 @@ public partial class LiveSession
                 foreach (var (itemId, grade) in m.Rewards) ReactorRewardSink?.Invoke(itemId, grade);
                 break;
             case 5:
-                if (!React.BeginCreate(Reactors?.DataOf(m.ReactorId)))
-                    GD.Print($"live: reactor {m.ReactorId}: no create animation (no own pc or no reactor data)");
+                if (!InteractKey.ServerCreate(Me, React, Reactors?.DataOf(m.ReactorId), InteractObjects, InteractNpcs))
+                    GD.Print($"live: reactor {m.ReactorId}: no create animation (dead, no own pc or no reactor data)");
                 break;
         }
     }
