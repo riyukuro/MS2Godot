@@ -8,7 +8,7 @@ namespace Ms2Godot.Ui;
 /// <summary>
 /// The item enchant window UIItemEnchantDialog (0x4e92) with its C++ side as <see cref="ItemEnchantDialogController"/>, over the
 /// session's <see cref="Ms2.Ui.Items.ItemEnchantBook"/>. Live only: the NPC talk's open-dialog action (NpcTalk mode 3 sub 4,
-/// argument "expMode" for the peachy mode) opens it. STILL-OPEN: the worn equips in the enchantable bag.
+/// argument "expMode" for the peachy mode) opens it. The enchantable bag holds the worn layer-0 equips too (uiitemenchantdialog.cpp:887).
 /// </summary>
 public partial class HudScene
 {
@@ -37,14 +37,15 @@ public partial class HudScene
         book.Talk = () => (live.TalkNpcId != 0, live.TalkNpcId);
         var table = hudModel.Tables.Items;
         ShowItemEnchant(book, cat => BagItemsOf(live, cat, table), (id, rank) => CountItems(live, id, rank),
-            () => live.GameSession?.ServerTime ?? 0, () => { if (live.TalkNpcId != 0) live.EndTalk(); });   // vfunc_67: SendNpcTalkMode0
+            () => live.GameSession?.ServerTime ?? 0, () => { if (live.TalkNpcId != 0) live.EndTalk(); },   // vfunc_67: SendNpcTalkMode0
+            () => ItemEnchantDialogController.WornLayerItems(live.Me.Equips, table, Ms2Godot.Net.LiveSession.WornLayer));
     }
 
     void ShowItemEnchant(Ms2.Ui.Items.ItemEnchantBook book, Func<int, IEnumerable<Ms2.Ui.Items.Item>> bag, Func<int, int, int> count,
-        Func<long> now, Action closed)
+        Func<long> now, Action closed, Func<IEnumerable<Ms2.Ui.Items.Item>> worn = null)
     {
         if (itemEnchantMovie != null) { itemEnchantMovie.Host.Unload(); itemEnchantMovie.QueueFree(); itemEnchantMovie = null; }
-        var c = new ItemEnchantDialogController { Book = book, Now = now, BagItems = bag, CountOf = count,
+        var c = new ItemEnchantDialogController { Book = book, Now = now, BagItems = bag, WornItems = worn ?? (() => System.Array.Empty<Ms2.Ui.Items.Item>()), CountOf = count,
             Enchantable = hudModel.Tables.ItemOptions.InEnchantLimit };
         c.NoticeText += SystemNoticeText;
         c.Closed += closed;

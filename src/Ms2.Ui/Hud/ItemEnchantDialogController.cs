@@ -128,6 +128,22 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
 
     // ---- the bags ----------------------------------------------------------------------------------------------------
 
+    /// <summary>The worn items of layer 0 (CEquipment::CollectShownItemsInLayer(list, 0), uiitemenchantdialog.cpp:887) as UI items.
+    /// <paramref name="layer"/> is the item data's worn layer (ItemDataTable.WornLayer). STILL-OPEN: the per-slot shown flag
+    /// (m_bShown, equipment.cpp:866) is not in the worn list; every worn item of the layer counts as shown.</summary>
+    public static IEnumerable<Item> WornLayerItems(IEnumerable<EquipItem> worn, ItemDataTable table, Func<int, int?> layer)
+    {
+        foreach (var e in worn ?? Array.Empty<EquipItem>())
+            if (e != null && (layer(e.Id) ?? 0) == 0 && InventoryController.ToItem(e, table) is { } item) yield return item;
+    }
+
+    /// <summary>FUN_1419be700 (the dialog's FindItemByUid, @0x1419bef70): the inventory's item of the uid, else the worn one.</summary>
+    public static Item FindHeld(long uid, Func<long, EquipItem> inventory, IEnumerable<EquipItem> worn, ItemDataTable table)
+    {
+        var e = inventory(uid) ?? (worn ?? Array.Empty<EquipItem>()).FirstOrDefault(w => w != null && w.Uid == uid);
+        return e == null ? null : InventoryController.ToItem(e, table);
+    }
+
     /// <summary>GetEnchantableItemUids @0x1419c1a40 (uiitemenchantdialog.cpp:869): the category 0 items, then the worn ones, each
     /// skipped when locked (CItem::FUN_140525c60, 0 &lt; m_80) or with a plus level (GetPlusLevel), else kept when the limit test
     /// passes. The enchant level is not asked: an item at +N stays in the list.</summary>

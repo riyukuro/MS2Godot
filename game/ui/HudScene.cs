@@ -1015,7 +1015,7 @@ public partial class HudScene : Node, IUiStageHost
         // FUN_140d2e2b0's held containers: the bag (g_143ab2a90.FindItemByUid)
         ChatLog.FindHeldItem = uid => live.Inventory?.FindByUid(uid) is { } e ? Ms2.Ui.Hud.InventoryController.ToItem(e, hudModel.Tables.Items) : null;
         // UIItemEnchantDialog's model: the UI item of a uid and the limit table's CanEnchant (needed by the 0x97 results).
-        live.EnchantBook.Find = uid => live.Items.Get(uid) is { } e ? Ms2.Ui.Hud.InventoryController.ToItem(e, hudModel.Tables.Items) : null;
+        live.EnchantBook.Find = uid => Ms2.Ui.Hud.ItemEnchantDialogController.FindHeld(uid, live.Items.Get, live.Me.Equips, hudModel.Tables.Items);   // inventory or worn (FUN_1419be700)
         live.EnchantBook.CanEnchantItem = hudModel.Tables.ItemOptions.CanEnchant;
         live.TalkDialogOpen -= OnTalkDialogOpen;
         live.TalkDialogOpen += OnTalkDialogOpen;

@@ -115,6 +115,26 @@ public class ItemEnchantDialogTests
     }
 
     [Test]
+    public void AWornItemIsInTheBagFoundByUidAndSelectingItSendsMode1()
+    {
+        var r = new Rig();
+        r.Add(5);
+        int id = r.Inv[5].ItemId;
+        var worn = new[] { new EquipItem { Id = id, Uid = 90 }, new EquipItem { Id = id, Uid = 91 } };
+        worn[0].Enchant.Version = 1;
+        var table = r.Model.Tables.Items;
+        r.C.WornItems = () => ItemEnchantDialogController.WornLayerItems(worn, table, _ => 0);
+        r.Book.Find = u => ItemEnchantDialogController.FindHeld(u, _ => null, worn, table);
+        Assert.That(r.C.EnchantableItems().Select(i => i.Uid), Is.EqualTo(new long[] { 5, 90, 91 }), "the bag, then the worn ones");
+        Assert.That(ItemEnchantDialogController.WornLayerItems(worn, table, _ => 1), Is.Empty, "only layer 0 is listed (uiitemenchantdialog.cpp:887)");
+        r.Sent.Clear();
+        Assert.That(r.Book.Select(90), Is.EqualTo(EnchantStep.Sent));
+        Assert.That(r.Sent.OfType<ItemEnchantSelectRequest>().Select(x => x.Uid), Is.EqualTo(new long[] { 90 }));
+        Assert.That(r.Book.Select(777), Is.EqualTo(EnchantStep.NoItem), "an unknown uid sends nothing");
+        Assert.That(r.Sent.OfType<ItemEnchantSelectRequest>().Count(), Is.EqualTo(1));
+    }
+
+    [Test]
     public void TheEnchantableBagKeepsAnEnchantedItemAndSkipsLockedAndPlusItems()
     {
         var r = new Rig();
