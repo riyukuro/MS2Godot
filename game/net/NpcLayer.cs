@@ -331,20 +331,28 @@ public sealed class NpcLayer
 
     /// <summary>
     /// The <see cref="Ms2.Ui.Hud.DamageHitAnchors"/> of an npc: false unless its row has property tag 0x1d
-    /// "collision_position" (CNpcData::HasPropertyTag, npcdata.cpp:1387). Else <paramref name="into"/> (cleared first) gets
-    /// in client space the center of each &lt;nodeCollisions&gt; box whose node the skeleton has (CNpc::BuildCollision,
-    /// m_arrE68), at the node's world transform, rotation only (vfunc_50, <see cref="Ms2.Ui.Hud.DamageHitEffects.NodeBoxCenter"/>).
-    /// A placeholder has no skeleton, so it counts as untagged.
+    /// "collision_position" (CNpcData::HasPropertyTag, npcdata.cpp:1387). The client's anchors (CNpc::BuildCollision,
+    /// m_arrE68) are one box per &lt;nodeCollisions&gt; row whatever the model has, so whether a mode 5 packet ends
+    /// (scenestategame.cpp:7802, an empty array) follows the rows only:
+    /// - a tagged row without rows: true with <paramref name="into"/> empty, placeholder or not;
+    /// - else <paramref name="into"/> (cleared first) gets in client space the center of each box whose node the skeleton
+    ///   has, at the node's world transform, rotation only (vfunc_50, <see cref="Ms2.Ui.Hud.DamageHitEffects.NodeBoxCenter"/>);
+    /// - a tagged row with rows on a placeholder, a model without a skeleton, or a skeleton with none of the nodes: false
+    ///   (the target's position), since the client's boxes are there but this port cannot place them.
+    /// STILL-OPEN: a row whose node the model lacks keeps its box in the client, unplaced by vfunc_50 (:2169), so its
+    /// center is the NxBox center never set; here that row is left out of the nearest pick.
     /// </summary>
     public bool CollisionAnchors(int id, List<System.Numerics.Vector3> into)
     {
-        if (!inst.TryGetValue(id, out var i) || i.Placeholder || i.Visual == null || !GodotObject.IsInstanceValid(i.Visual)) return false;
+        if (!inst.TryGetValue(id, out var i)) return false;
         var row = i.Talk?.Row ?? i.Model?.Row;
         if (row == null || !row.CollisionPosition) return false;
         into.Clear();
-        var sk = i.Visual.GetNodeOrNull<Skeleton3D>(HoldSkeletonPath);
-        if (sk == null || !sk.IsInsideTree()) return true;
         var rows = row.NodeCollisions;
+        if (rows.Length == 0) return true;
+        if (i.Placeholder || i.Visual == null || !GodotObject.IsInstanceValid(i.Visual)) return false;
+        var sk = i.Visual.GetNodeOrNull<Skeleton3D>(HoldSkeletonPath);
+        if (sk == null || !sk.IsInsideTree()) return false;
         if (i.AnchorBones == null)
         {
             i.AnchorBones = new int[rows.Length];
@@ -360,7 +368,7 @@ public sealed class NpcLayer
             into.Add(Ms2.Ui.Hud.DamageHitEffects.NodeBoxCenter(rows[k].Volume, rows[k].Offset,
                 new System.Numerics.Quaternion(q.X, q.Y, q.Z, q.W), new System.Numerics.Vector3(w.Origin.X, w.Origin.Y, w.Origin.Z)));
         }
-        return true;
+        return into.Count != 0;
     }
 
     /// <summary>Plays a named kfm sequence (a skill's motion) on an npc.</summary>

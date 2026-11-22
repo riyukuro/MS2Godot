@@ -12,9 +12,12 @@ namespace Ms2Godot.Tests;
 /// Headless check (res://tests/collision_anchors.tscn) of <see cref="NpcLayer.CollisionAnchors"/>, the anchors of a splash hit
 /// on an npc with property tag 0x1d "collision_position" (npcdata.cpp:1387, CNpc::BuildCollision's m_arrE68):
 /// - an npc without the tag has none (false);
-/// - a tagged npc with &lt;nodeCollisions&gt; rows gets one center per row whose bone the skeleton has. Each lies
-///   |offset + (0, 0, vz/2)| from its bone's world position in client space (rotation only), and moves with the npc's root;
-/// - a tagged npc without rows is tagged with no anchors (true, empty), which ends a mode 5 packet.
+/// - a tagged npc with &lt;nodeCollisions&gt; rows, on a turned root, gets one center per row whose bone the skeleton has: the
+///   bone's client-space position plus offset + (0, 0, vz/2) turned by the bone's world rotation (worked out here by vectors
+///   in skeleton space), and the centers move with the npc's root;
+/// - a tagged npc with rows but no skeleton in the tree, with none of the rows' bones, or a placeholder: false (the client
+///   still has its boxes, so the packet goes on);
+/// - a tagged npc without rows, a placeholder too: tagged with no anchors (true, empty), which ends a mode 5 packet.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class CollisionAnchorsCheck : Node3D
@@ -36,40 +39,86 @@ public partial class CollisionAnchorsCheck : Node3D
             npcs.Add(new NpcAddedEvent(0, new FieldAddNpc { ObjectId = ++obj, NpcId = npcId }));
             return npcs.HoldInfo(obj, out _, out _, out var v) ? v : null;
         }
+        static System.Numerics.Vector3 Client(Godot.Vector3 v) => new(v.X, -v.Z, v.Y);
 
         var plain = table.Rows.First(r => !r.CollisionPosition && r.NodeCollisions.Length == 0);
         Spawn(plain.Id);
         Check(!npcs.CollisionAnchors(obj, anchors), $"untagged npc {plain.Id} has anchors");
 
-        int tagged = 0, withRows = 0;
-        foreach (var row in table.Rows.Where(r => r.CollisionPosition && r.NodeCollisions.Length != 0).OrderBy(r => r.Id))
+        var withRowsList = table.Rows.Where(r => r.CollisionPosition && r.NodeCollisions.Length != 0).OrderBy(r => r.Id).ToList();
+        var bareList = table.Rows.Where(r => r.CollisionPosition && r.NodeCollisions.Length == 0).OrderBy(r => r.Id).ToList();
+        Check(withRowsList.Count >= 2 && bareList.Count >= 2, $"{withRowsList.Count} tagged rows with rows, {bareList.Count} without");
+
+        // placeholders first, from the ends of the lists, so no later spawn reuses their (missing) model
+        var phRows = withRowsList.Count >= 2 ? withRowsList[^1] : null;
+        var phBare = bareList.Count >= 2 ? bareList[^1] : null;
+        if (phRows != null)
         {
+            phRows.Kfm = null;
+            Check(Spawn(phRows.Id) == null, $"npc {phRows.Id} without a kfm is not a placeholder");
+            Check(!npcs.CollisionAnchors(obj, anchors), $"placeholder tagged npc {phRows.Id} with rows reads as tagged");
+        }
+        if (phBare != null)
+        {
+            phBare.Kfm = null;
+            Check(Spawn(phBare.Id) == null, $"npc {phBare.Id} without a kfm is not a placeholder");
+            anchors.Add(default);
+            Check(npcs.CollisionAnchors(obj, anchors) && anchors.Count == 0, $"placeholder tagged npc {phBare.Id} without rows: not tagged and empty");
+        }
+
+        int tagged = 0, withRows = 0;
+        foreach (var row in withRowsList)
+        {
+            if (row == phRows) continue;
             var visual = Spawn(row.Id);
             var sk = visual?.GetNodeOrNull<Skeleton3D>(SkeletonPath);
-            if (sk == null) continue;
+            if (sk == null)
+            {
+                Check(!npcs.CollisionAnchors(obj, anchors), $"tagged npc {row.Id} with rows but no skeleton reads as tagged");
+                continue;
+            }
             tagged = row.Id;
+            var root = visual.GetParent<Node3D>();
+            root.Rotation = new Godot.Vector3(0, 0.7f, 0);
             Check(npcs.CollisionAnchors(obj, anchors), $"tagged npc {row.Id} reads untagged");
             var expect = row.NodeCollisions.Where(c => sk.FindBone(c.TargetNode) >= 0).ToList();
             withRows = expect.Count;
             Check(anchors.Count == expect.Count && expect.Count != 0, $"npc {row.Id}: {anchors.Count} anchors for {expect.Count} found rows");
+            bool turns = false;
             for (int k = 0; k < anchors.Count && k < expect.Count; k++)
             {
-                var g = (sk.GlobalTransform * sk.GetBoneGlobalPose(sk.FindBone(expect[k].TargetNode))).Origin;
-                var bone = new System.Numerics.Vector3(g.X, -g.Z, g.Y);
-                float want = (expect[k].Offset + new System.Numerics.Vector3(0, 0, expect[k].Volume.Z * 0.5f)).Length();
-                float got = System.Numerics.Vector3.Distance(anchors[k], bone);
-                Check(Mathf.Abs(got - want) < 0.01f, $"npc {row.Id} anchor {k}: {got:0.###} from its bone, not {want:0.###}");
+                var pose = sk.GetBoneGlobalPose(sk.FindBone(expect[k].TargetNode));
+                var skWorld = sk.GlobalTransform;
+                var local = new Godot.Vector3(expect[k].Offset.X, expect[k].Offset.Y, expect[k].Offset.Z + expect[k].Volume.Z * 0.5f);
+                var bone = Client(skWorld * pose.Origin);
+                var turned = Client(skWorld.Basis.Orthonormalized() * (pose.Basis.Orthonormalized() * local));
+                var want = bone + turned;
+                var unturned = bone + new System.Numerics.Vector3(local.X, local.Y, local.Z);
+                turns |= System.Numerics.Vector3.Distance(want, unturned) > 1f;
+                Check(System.Numerics.Vector3.Distance(anchors[k], want) < 0.05f, $"npc {row.Id} anchor {k}: {anchors[k]}, not {want}");
             }
+            Check(turns, $"npc {row.Id}: no anchor's offset is turned, so the rotation is not checked");
             var before = anchors.ToList();
-            visual.GetParent<Node3D>().Position += new Godot.Vector3(100, 0, 0);
+            root.Position += new Godot.Vector3(100, 0, 0);
             npcs.CollisionAnchors(obj, anchors);
             Check(anchors.Count == before.Count && anchors.Zip(before).All(p => System.Numerics.Vector3.Distance(p.First, p.Second + new System.Numerics.Vector3(100, 0, 0)) < 0.01f),
                 "the anchors did not move with the npc's root");
+
+            sk.GetParent().RemoveChild(sk);
+            anchors.Add(default);
+            Check(!npcs.CollisionAnchors(obj, anchors), $"tagged npc {row.Id} without its skeleton in the tree reads as tagged");
+            sk.Free();
+
+            var kept = row.NodeCollisions;
+            row.NodeCollisions = kept.Select(c => c with { TargetNode = "No Such Bone" }).ToArray();
+            Check(Spawn(row.Id)?.GetNodeOrNull<Skeleton3D>(SkeletonPath) != null, $"npc {row.Id} respawned without a skeleton");
+            Check(!npcs.CollisionAnchors(obj, anchors), $"tagged npc {row.Id} with none of its rows' bones reads as tagged");
+            row.NodeCollisions = kept;
             break;
         }
         Check(tagged != 0, "no tagged npc with rows has a model");
 
-        var bare = table.Rows.FirstOrDefault(r => r.CollisionPosition && r.NodeCollisions.Length == 0 && Spawn(r.Id) != null);
+        var bare = bareList.FirstOrDefault(r => r != phBare && Spawn(r.Id) != null);
         if (bare != null)
         {
             anchors.Add(default);

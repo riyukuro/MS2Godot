@@ -112,8 +112,8 @@ void fragment() {
     /// - the others (type 1 Node :1079, 2 Mesh :1118, 3/4 weapon): under the actor, so they follow it and go with it at once.
     /// Sound and light parts play at its place now.
     /// STILL-OPEN: types 1-4 hang on the actor's root, not on the named node or mesh parent, and their &lt;update&gt; bits
-    /// are not applied (FUN_14154c580, SeparateNode :1158). vfunc_11 (:943+) is skipped: on a stop, a notForceStop part
-    /// moves to the world root and plays on. onGround is not applied to type 0 parts (EffectNode::UpdateWorldData,
+    /// are not applied (FUN_14154c580, SeparateNode :1158). vfunc_11 (:946) is skipped: on a stop, a type 1 part still
+    /// inside its duration moves to the world root and plays on (unless the param's +0x30 flag is set). onGround is not applied to type 0 parts (EffectNode::UpdateWorldData,
     /// effectservice.cpp:971).
     /// </summary>
     public void PlayEffectOn(string xmlPath, Node3D actor, int casterKind)

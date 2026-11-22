@@ -76,7 +76,7 @@ public class DamageHitEffectTests
         d.OwnerId = TargetId;
         d.Targets[0] = new HitTarget(OwnerId, d.Targets[0].Hits, d.Position, default);
         Assert.That(Run(d, Attack(), new HitEffectThrottle())[0].CasterKind, Is.EqualTo(5),
-            "CNpc::vfunc_58: an npc-owned hit is kind 5, which SoundMusicEffectState rejects");
+            "an npc's caster kind is 5, which SoundMusicEffectState rejects");
     }
 
     [Test]

@@ -153,7 +153,7 @@ public sealed partial class RemoteLayer
         FillMagicObjects();
         damageHitEffects.Clear();
         DamageHitEffects.SplashRecords(d, attack, findHitObject ??= FindHitObject, hitEffects, (uint)Time.GetTicksMsec(),
-            damageHitEffects, npcs == null ? null : hitAnchors ??= npcs.CollisionAnchors, anchorScratch);
+            damageHitEffects, hitAnchors ??= npcs.CollisionAnchors, anchorScratch);
         foreach (var fx in damageHitEffects)
         {
             PlayDamageHitEffect(fx);
