@@ -1598,8 +1598,10 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         if (productType == 1) { Request?.Invoke("previewMerat", new object[] { serial }); return; }
         var p = FindCurrentProduct(serial);
         if (p?.Item == null) return;
-        // STILL-OPEN: ItemPreviewMgr::OpenPreview is not ported, so the live HUD leaves PreviewItem and IsPreviewHudOn unset
-        // (no preview window opens and the HUD-preview redirects never fire).
+        // PreviewItem is set by the HUD (HudScene.Shop.cs: ItemPreviewMgr::OpenPreview); IsPreviewHudOn stays unset there, so
+        // only force opens the window and the HUD-preview redirects never fire.
+        // STILL-OPEN: PreviewNormalItem (uishopdialog.cpp:2592) first calls InitColorsFromPalette (CItemExtraData) on the item's
+        // proxy before OpenPreview; the item's palette colours are not initialised here.
         if (IsPreviewHudOn() || force) PreviewItem?.Invoke(p.Item);
     }
 
