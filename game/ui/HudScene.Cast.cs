@@ -470,6 +470,8 @@ public partial class HudScene
         var g = me.GlobalPosition;
         var live = Net.LiveSession.Instance;
         uint now = (uint)Net.LiveSession.CastTick();
+        // StateTaxiCall::vfunc_8 (statetaxicalldata.cpp:302-304): no skill fires in the taxi call's phases 0x66-0x6a
+        if (live != null && live.TaxiHoldsSkill) return false;
         // MyPC::vfunc_102 (mypc.cpp:1152-1166): a skill still cooling is never sent; in the skill state it becomes the state's
         // queued press (StateSkill::SetChargeRecord @0x1417ed740, stateskill.cpp:1491, a later press replacing it), else dropped.
         // STILL-OPEN: the running record's +0x90 (= 0 here, mypc.cpp:1165; CSkillRecord::FUN_141759fc0 sets it to 1) has no
@@ -484,6 +486,7 @@ public partial class HudScene
                 return gate == CoolGate.Queued;
             }
         }
+        live?.TaxiSkillCast();   // a cast in the taxi call's phase 0x65 leaves the state (ChangeState): the call ends
         // :1197-1203: the running skill state's elapsed time (StateSkill m_nElapsed, FUN_14028d280: ms to seconds)
         float elapsed = OwnSkillStateRuns() ? (Time.GetTicksMsec() - ownStateStartMs) * 0.001f : 0f;
         // StateSkill::FUN_1417ea570: the skill state and the mode 0 send

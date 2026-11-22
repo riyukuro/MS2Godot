@@ -161,15 +161,40 @@ public class TaxiManagerTests
         {
             var sent = new List<IOutPacket>();
             var s = Running(sent, phase);
-            s.Cancel();                                   // death, a knockback, a skill, another state set
+            s.LeaveState();                               // death, a skill, another state set
             Assert.That(s.Finished, Is.True, $"phase {phase:x}");
             for (int i = 0; i < 100; i++) s.Tick(0.1);
             Assert.That(sent, Is.Empty, $"phase {phase:x}");
         }
         var out69 = new List<IOutPacket>();
         var l = Running(out69, TaxiCallState.Leave);
-        l.Cancel();
+        l.LeaveState();
+        Assert.That(l.Finished, Is.True, "a state change ends the call in 0x69 too (ChangeState swaps the state in every phase)");
         l.Tick(1.0);
-        Assert.That(out69, Has.Count.EqualTo(1), "0x69 survives a state change and the request goes out");
+        Assert.That(out69, Is.Empty, "and no request goes out");
+        var hit = new List<IOutPacket>();
+        var h = Running(hit, TaxiCallState.Leave);
+        h.Cancel();
+        h.Tick(1.0);
+        Assert.That(hit, Has.Count.EqualTo(1), "a hit's vfunc_6 keeps 0x69 and the request goes out");
+        var early = Running(new List<IOutPacket>(), TaxiCallState.Board);
+        early.Cancel();
+        Assert.That(early.Finished, Is.True, "a hit before 0x69 ends the call");
+    }
+
+    [Test]
+    public void NoSkillFiresInPhases66To6aAndOneInPhase65LeavesTheCall()
+    {
+        foreach (int phase in new[] { TaxiCallState.Arrive, TaxiCallState.Board, TaxiCallState.Ride, TaxiCallState.Leave })
+        {
+            var s = Running(new List<IOutPacket>(), phase);
+            Assert.That(s.HoldsSkill, Is.True, $"phase {phase:x}: the cast is held, the ride goes on");
+            Assert.That(s.Finished, Is.False);
+        }
+        var call = Running(new List<IOutPacket>(), TaxiCallState.Call);
+        Assert.That(call.HoldsSkill, Is.False, "phase 0x65 lets the skill fire");
+        call.LeaveState();                                // the cast's state change
+        Assert.That((call.Finished, call.HoldsSkill), Is.EqualTo((true, false)));
+        Assert.That(new TaxiCallState().HoldsSkill, Is.False, "no call");
     }
 }

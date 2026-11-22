@@ -47,6 +47,14 @@ public partial class LiveSession
 
     /// <summary>GetCurStateId() is 0x25: a call is running.</summary>
     public bool TaxiCalling => taxiCall is { Finished: false };
+    /// <summary>StateTaxiCall::vfunc_8 (@0x1417d9e0, statetaxicalldata.cpp:302-304) returns before State::vfunc_8 (state.cpp:~632, where
+    /// the queued skill is cast) while m_n10 is not 0x65: in phases 0x66-0x6a no skill fires. In 0x65 one does, and the cast's state
+    /// change ends the call (<see cref="TaxiSkillCast"/>). No allocation.</summary>
+    public bool TaxiHoldsSkill => taxiCall is { HoldsSkill: true };
+
+    /// <summary>A skill's cast in phase 0x65 sends the owner to the skill state (ChangeState): the call ends.</summary>
+    public void TaxiSkillCast() => EndTaxiCall();
+
     /// <summary>The local player is in the field (WorldService::GetLocalPlayer).</summary>
     public bool TaxiPlayerReady => selfObject >= 0 && player != null && IsInstanceValid(player);
     public bool TaxiPlayerDead => Me.Dead;
@@ -67,14 +75,16 @@ public partial class LiveSession
         taxiCall.Begin(true, field, TaxiCallState.Duration(level, TaxiBestDriverLevel, TaxiCallDurationMs, TaxiBestDriverDurationMs), true);
     }
 
-    /// <summary>StateTaxiCall::vfunc_6 (@0x1417fdae0, statetaxicalldata.cpp:318-324) through <see cref="TaxiCallState.Cancel"/>: the
-    /// state is left (a move input in 0x65, death, a knockback, a skill, any other state set) and the call ends in every phase but
-    /// 0x69, where the request goes out.</summary>
+    /// <summary>The own state is set (CStateManager::ChangeState, statemanager.cpp:291, through PCBase::vfunc_59, pcbase.cpp:1098): the
+    /// old state's vfunc_5 runs and the state is swapped in every phase, so the call ends and no RequestTaxi goes out, 0x69 included
+    /// (<see cref="TaxiCallState.LeaveState"/>). Run for the server's UserState, OnDeadUser's vfunc_137, a ride and a skill's cast.
+    /// STILL-OPEN: a hit with a reaction cancels the call before 0x69 (<see cref="TaxiCallState.Cancel"/>, pc.cpp:952/1075), to be
+    /// wired when the own player's hit reaction lands.</summary>
     void EndTaxiCall()
     {
         if (taxiCall == null) return;
-        taxiCall.Cancel();
-        if (taxiCall.Finished) taxiCall = null;
+        taxiCall.LeaveState();
+        taxiCall = null;
     }
 
     /// <summary>The Player's per-frame ask (<see cref="Player.TaxiHold"/>). StateTaxiCall::vfunc_8 (@0x1417d9e0, :302-315): in 0x65
@@ -87,8 +97,8 @@ public partial class LiveSession
         return held;
     }
 
-    /// <summary>The call is no longer the own state: a state other than the one the call began in (the server's UserState, a
-    /// knockback), death, a ride, or a skill's cast.</summary>
+    /// <summary>The call is no longer the own state: a state other than the one the call began in (the server's UserState),
+    /// death, a ride, or a skill's cast. A hit's reaction is not here (STILL-OPEN, <see cref="EndTaxiCall"/>).</summary>
     bool TaxiStateLeft() =>
         selfObject < 0 || player == null || !IsInstanceValid(player) || Me.Dead || Me.State != taxiStateAtBegin
         || player.Mount != null || player.DeathHoldsMove || player.SkillSequence != null;

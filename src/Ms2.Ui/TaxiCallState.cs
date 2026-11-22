@@ -54,20 +54,32 @@ public sealed class TaxiCallState
     /// else TaxiCallDuration.</summary>
     public static int Duration(int level, int bestDriverLevel, int callMs, int bestDriverMs) => level >= bestDriverLevel ? bestDriverMs : callMs;
 
-    /// <summary>vfunc_6 (@0x1417fdae0, :318-324): back to idle (state 1) unless the phase is 0x69. Run when the owner leaves the state
-    /// for any reason: a move input in 0x65, death, a knockback, a skill, another state set.</summary>
+    /// <summary>CStateManager::ChangeState (statemanager.cpp:291) leaving StateTaxiCall: the old state's vfunc_5 (statetaxicalldata.cpp
+    /// ~:222) only closes the casting bar and the camera, and the state is swapped in every phase, 0x69 included, so the call ends and
+    /// RequestTaxi mode 1 never goes out. Run when the owner's state is set (the server's UserState, OnDeadUser's vfunc_137, a move
+    /// input in 0x65, a ride, a skill's cast).</summary>
+    public void LeaveState() => Finished = true;
+
+    /// <summary>vfunc_6 (@0x1417fdae0, :318-324), the hit reaction hook (pc.cpp:952/1075, "hit while dead" in statedead.h): back to
+    /// idle (state 1) unless the phase is 0x69. It is not "leave the state", see <see cref="LeaveState"/>. STILL-OPEN: the caller, the
+    /// own player's hit with a reaction, is not wired (the own PC's hit reaction is not ported).</summary>
     public void Cancel()
     {
         if (Phase != Leave) Finished = true;
     }
 
+    /// <summary>StateTaxiCall::vfunc_8 (statetaxicalldata.cpp:302-304) returns before State::vfunc_8 (state.cpp:~632, the queued
+    /// skill's cast) while m_n10 is not 0x65: in phases 0x66-0x6a no skill fires. In 0x65 one does, and the cast's state change ends
+    /// the call (<see cref="LeaveState"/>).</summary>
+    public bool HoldsSkill => !Finished && Phase != 0 && Phase != Call;
+
     /// <summary>vfunc_8 (@0x1417d9e0, :302-315) with the move direction: in phase 0x65 a move input sends the owner to the walk state
-    /// (state 2), which leaves this one through <see cref="Cancel"/>, and the input goes on to the walk; in the other phases the
+    /// (state 2), which leaves this one through <see cref="LeaveState"/>, and the input goes on to the walk; in the other phases the
     /// state holds the body. True: the move input is held this frame.</summary>
     public bool HoldsMove(bool moveInput)
     {
         if (Finished || Phase == 0) return false;
-        if (moveInput && Phase == Call) { Cancel(); return false; }
+        if (moveInput && Phase == Call) { LeaveState(); return false; }
         return true;
     }
 

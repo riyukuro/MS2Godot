@@ -1472,7 +1472,7 @@ public partial class LiveSession : Node
             {
                 var u = UserState.Read(p.Reader());     // OnUserState (scenestategame.cpp:5758): the state, then state 12 runs PC::vfunc_137
                 Me.ApplyUserState(u.ObjectId, u.State);
-                if (u.ObjectId == selfObject) EndTaxiCall();    // any state set on the own player leaves StateTaxiCall (vfunc_6)
+                if (u.ObjectId == selfObject) EndTaxiCall();    // any state set on the own player leaves StateTaxiCall (ChangeState, vfunc_5)
                 bool died = u.ObjectId == selfObject && u.State == 12 && Me.Dead;  // the dead branch runs each time, not only on the flip
                 // every state goes through vfunc_59, so ride, rope, climb and ladder from the server let go of the held item too
                 if (u.ObjectId == selfObject) HeldItem.UserState(u.State, Me.Dead, Send);

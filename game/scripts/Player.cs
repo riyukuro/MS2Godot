@@ -250,6 +250,10 @@ public partial class Player : CharacterBody3D
     /// <summary>The own taxi call (StateTaxiCall): asked each frame with whether a move input is down; true holds the move, jump and click-move input.</summary>
     public System.Func<bool, bool> TaxiHold;
 
+    /// <summary>The taxi call held the body this frame (<see cref="TaxiHold"/> answered true): a click-move target set meanwhile is dropped
+    /// (Movement.MouseMove), so it does not walk the player off after the ride. In 0x65 the answer is false: the move ends the call and walks.</summary>
+    public bool TaxiHeld { get; private set; }
+
     void Step(double delta)
     {
         // WorldService::OnTick (worldservice_1.cpp:9679-9703) passes the scheduler's game-time delta with no clamp in the
@@ -279,7 +283,8 @@ public partial class Player : CharacterBody3D
         if (SkillHoldsMove()) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }   // the skill state (PlayerSkill)
         if (DeathHoldsMove) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }    // StateDead / StateRevival (PlayerDeath)
         // StateTaxiCall (0x25, statetaxicalldata.cpp:302-315): in phase 0x65 a move input leaves for the walk state, in the other phases the state holds the body
-        if (TaxiHold != null && TaxiHold(Input2 != Vector2.Zero || MouseInput != Vector2.Zero)) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }
+        TaxiHeld = TaxiHold != null && TaxiHold(Input2 != Vector2.Zero || MouseInput != Vector2.Zero);
+        if (TaxiHeld) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }
         var rawInput = Input2 != Vector2.Zero ? Input2 : MouseInput;
         var input = DiagonalHold(rawInput, dt);
         bool jumpPressed = JumpHeld && !prevJump;
