@@ -986,8 +986,7 @@ public sealed class GameTables
 
     string SkillText(string entry)
     {
-        using var r = Ms2.Formats.Text.PackXml.Reader(packs.OpenRead("Xml", entry));
-        return Ms2.Ui.Skills.PerSkillFile.Wrap(entry, r.ReadToEnd());
+        return Ms2.Ui.Skills.PerSkillFile.Wrap(entry, Ms2.Formats.Text.PackXml.Text(packs.Read("Xml", entry)));
     }
     XDocument SkillXml(string path) => Ms2.Ui.Skills.PerSkillFile.Id(path) == null ? Xml(path) : packs.Exists("Xml", path) ? XDocument.Parse(SkillText(path)) : null;
     TextReader SkillReader(string path) => Ms2.Ui.Skills.PerSkillFile.Id(path) == null ? XmlText(path) : packs.Exists("Xml", path) ? new StringReader(SkillText(path)) : null;
@@ -996,10 +995,12 @@ public sealed class GameTables
     /// <summary>The skill attacks' &lt;damage&gt; blocks (SkillDamage::Load, from the same SkillData files as
     /// <see cref="Skills"/>), read on first use or by <see cref="PrefetchSkillDamage"/>; one table for every thread.</summary>
     public Ms2.Ui.Skills.SkillDamageTable SkillDamage => System.Threading.LazyInitializer.EnsureInitialized(ref skillDamage, ref skillDamageLock,
-        () => packs == null ? Ms2.Ui.Skills.SkillDamageTable.Empty
-            : new Ms2.Ui.Skills.SkillDamageTable(() => Ms2.Ui.Skills.SkillDamageTable.DeferExisting(SkillFiles(packs), n => packs.Exists("Xml", n), SkillReader),
+        () => { if (packs == null) return Ms2.Ui.Skills.SkillDamageTable.Empty; var files = SkillFiles(packs);
+            return new Ms2.Ui.Skills.SkillDamageTable(() => Ms2.Ui.Skills.SkillDamageTable.DeferExisting(files, n => packs.Exists("Xml", n), SkillReader),
                 rows => FeatureElements.Collect(packs, rows, r => r.Value, r => r.Feature, r => r.Locale),
-                i => new StringReader(SkillText(SkillFiles(packs)[i]))));
+                i => Ms2.Ui.Skills.PerSkillFile.Id(files[i]) == null
+                    ? Ms2.Formats.Text.PackXml.Reader(new MemoryStream(packs.Read("Xml", files[i]), false))
+                    : new StringReader(SkillText(files[i]))); });
     /// <summary>Reads <see cref="SkillDamage"/> on a worker thread while the field builds, so the first hit's damage event
     /// (a skill damage with mode 1 reads the attack's damage) does not read every skilldata file on the frame.</summary>
     public System.Threading.Tasks.Task PrefetchSkillDamage() => System.Threading.Tasks.Task.Run(() => { try { SkillDamage.Load(); } catch { } });
