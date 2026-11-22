@@ -17,7 +17,7 @@ public partial class Player : CharacterBody3D
     public const string Group = "player";
     public Player() { AddToGroup(Group); }
 
-    public enum MoveState { Idle, Walk, Jump, Fall, Land, Swim, Ladder, Rope, Climb, Dash, Dead, Revival, Hit, Hold }
+    public enum MoveState { Idle, Walk, Jump, Fall, Land, Swim, Ladder, Rope, Climb, Dash, Dead, Revival, Hit, Hold, FallDamage }
 
     public Node3D Visual;                 // the character root (faces +Z)
     /// <summary>The body's gender (0 male, 1 female) and its model root node name, for the player's effect dummies.</summary>
@@ -414,6 +414,10 @@ public partial class Player : CharacterBody3D
             case MoveState.Hold:
                 HoldUpdate(dir, hasInput, jumpPressed);
                 break;
+
+            case MoveState.FallDamage:
+                FallDamageUpdate(hasInput);
+                break;
         }
         prevRawInput = rawInput;
 
@@ -625,7 +629,7 @@ public partial class Player : CharacterBody3D
     void Integrate(float dt, Vector3 skillMove)
     {
         var v = new Vector3(kVel.X, 0, kVel.Z);
-        if (State is MoveState.Idle or MoveState.Land or MoveState.Dead or MoveState.Hit) v = Vector3.Zero;
+        if (State is MoveState.Idle or MoveState.Land or MoveState.Dead or MoveState.Hit or MoveState.FallDamage) v = Vector3.Zero;
         if (!jumping && lift.Active) v.Y = LiftStep(dt) / dt;   // FUN_1412407f0's lift branch: the step only
         else if (jumping)
         {

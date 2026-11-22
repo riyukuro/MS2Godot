@@ -1607,6 +1607,7 @@ public partial class LiveSession : Node
             {
                 var fall = StateFallDamage.Read(p.Reader());
                 int g = Me.ApplyFallDamage(fall);    // OnStateFallDamage (scenestategame.cpp:5815)
+                if (g == -1 && player != null && IsInstanceValid(player)) player.EnterFallDamage();   // the own PC not dead: vfunc_59(0x1f)
                 if (g != 0) guide?.AddTrigger(GuideTrigger.FallDamage, g, 0);
                 if (Me.FallDamageVoice(fall, player != null && IsInstanceValid(player) && player.Mount != null) is { } voice)
                     PlayOwnCommonEffect(voice);

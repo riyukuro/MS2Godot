@@ -99,7 +99,7 @@ public partial class PlayerDeathCheck : Node3D
             {
                 case 5: Dead(); break;
                 case 30: Shot("dead.png"); TombHeld(); Revival(); break;
-                case 60: Shot("revival.png"); TombGone(); AfterRevival(); InPlace(); FlagHold(); FlagCleared(); Bar(); Effects(); Finish(); break;
+                case 60: Shot("revival.png"); TombGone(); AfterRevival(); InPlace(); FlagHold(); FlagCleared(); FallDamage(); Bar(); Effects(); Finish(); break;
             }
         }
         catch (System.Exception e) { fails.Add($"{e.InnerException ?? e}"); Finish(); }
@@ -269,6 +269,48 @@ public partial class PlayerDeathCheck : Node3D
         GD.Print($"player death: dead flag cleared, then a teleport: {pc.State}, body shown {shown}, shadow on {lit}");
         Expect(hidden && pc.State == Player.MoveState.Idle && shown && lit,
             $"dead flag cleared then a teleport: dead and hidden first {hidden}, {pc.State}, body shown {shown}, shadow on {lit}");
+    }
+
+    /// <summary>
+    /// OnStateFallDamage's vfunc_59(0x1f) on the own PC (scenestategame.cpp:5823-5825): StateFallDamage plays FALL_DAMAGE
+    /// once, holds the body still, goes to StateWalk on a held move and to StateIdle when the sequence ends; a dead PC
+    /// stays out of it.
+    /// </summary>
+    void FallDamage()
+    {
+        var enter = typeof(Player).GetMethod("EnterFallDamage", BindingFlags.Instance | BindingFlags.Public);
+        Expect(enter != null, "no fall damage state on the own PC");
+        if (enter == null) return;
+        string seq = pc.Anims.Name(Act.FallDamage);
+        Expect(seq != null && pc.Anim.HasAnimation(seq), $"the body has no FALL_DAMAGE sequence ('{seq}')");
+        if (seq == null) return;
+        pc.Input2 = Vector2.Zero;
+        Steps(10);
+        sent.Clear();
+        var at = pc.GlobalPosition;
+        enter.Invoke(pc, null);
+        bool entered = Player.StateId(pc.State) == 0x1f && pc.CurrentAnim == seq;
+        Steps(10);
+        bool held = Player.StateId(pc.State) == 0x1f && Flat(pc.GlobalPosition, at) < 0.01f;
+        bool synced = sent.Exists(r => r.State == 0x1f);
+        pc.Input2 = new Vector2(0, 1);
+        Steps(1);
+        bool walked = pc.State == Player.MoveState.Walk;
+        pc.Input2 = Vector2.Zero;
+        Steps(10);
+        enter.Invoke(pc, null);
+        int len = (int)(pc.Anim.GetAnimation(seq).Length / Dt) + 10;
+        Steps(len);
+        bool idled = pc.State == Player.MoveState.Idle;
+        pc.DeadFlag = true;
+        pc.EnterDead(false, 1);
+        enter.Invoke(pc, null);
+        bool deadKept = pc.State == Player.MoveState.Dead;
+        pc.DeadFlag = false;
+        pc.ResetMotion();
+        GD.Print($"player death: fall damage '{seq}': entered {entered}, held {held}, synced {synced}, walked {walked}, idle at the end {idled}, dead kept {deadKept}");
+        Expect(entered && held && synced && walked && idled && deadKept,
+            $"fall damage: entered {entered}, held {held}, synced {synced}, walked {walked}, idle at the end {idled}, dead kept {deadKept}");
     }
 
     void Finish()
