@@ -138,10 +138,6 @@ public sealed class EmitterDef
     public Func<double, double> Rate; public TimeCtl RateCtl;           // births per second (NiPSEmitParticlesCtlr)
     public Func<double, double> On; public TimeCtl OnCtl;               // emitter active
 
-    /// <summary>The emitter-space direction for a declination and planar angle (variances already applied):
-    /// NiPSEmitter::ComputeDirection (NiPSEmitter.inl:267-311). Declination 0 is +Z. A pre-RPI system (NiPSParticleSystem
-    /// "Pre RPI") uses (sin dec cos plan, sin dec sin plan, cos dec); otherwise the RPI method (cos dec sin plan, -sin dec,
-    /// cos dec cos plan).</summary>
     /// <summary>A mesh emitter's start point and, for <see cref="MeshVelocity.Normals"/>, its direction, both in the mesh's
     /// own space: NiPSMeshEmitter::EmitFromVertex / EmitFromFace / EmitFromEdge (NiPSMeshEmitter.cpp:187-440).
     /// - vertices: a random vertex and its normal;
@@ -216,6 +212,26 @@ public sealed class EmitterDef
     {
         double l = Math.Sqrt(v.X * v.X + v.Y * v.Y + v.Z * v.Z);
         return l > 0 ? v * (1 / l) : v;
+    }
+
+    /// <summary>The emitter-space direction for a declination and planar angle (variances already applied):
+    /// NiPSEmitter::ComputeDirection (NiPSEmitter.inl:267-311). Declination 0 is +Z. A pre-RPI system (NiPSParticleSystem
+    /// "Pre RPI") uses (sin dec cos plan, sin dec sin plan, cos dec); otherwise the RPI method (cos dec sin plan, -sin dec,
+    /// cos dec cos plan).</summary>
+    /// <summary>A triangle list of <paramref name="count"/> indices from <paramref name="start"/> of the INDEX stream, or null
+    /// when the range is outside the stream, is not whole triangles or holds an index at or past
+    /// <paramref name="vertexCount"/>; a null list makes the emitter emit from vertices.</summary>
+    public static int[] Triangles(double[] index, int start, int count, int vertexCount)
+    {
+        if (start < 0 || count < 3 || count % 3 != 0 || start > index.Length - count) return null;
+        var t = new int[count];
+        for (int i = 0; i < count; i++)
+        {
+            double x = index[start + i];
+            if (!(x >= 0 && x < vertexCount)) return null;
+            t[i] = (int)x;
+        }
+        return t;
     }
 
     public static Vec3 Direction(double dec, double plan, bool preRpi)
@@ -373,6 +389,28 @@ public sealed class EffectScene
     }
 
     static Vec3 V3(NifStruct s) => new(s.Float("x"), s.Float("y"), s.Float("z"));
+
+    /// <summary>The first element and element count of submesh 0 in the NiMesh's stream holding
+    /// <paramref name="semantic"/> (index 0): the stream ref's "Submesh To Region Map"[0] picks one of the stream's
+    /// "Regions" (NiDataStreamRef::GetRegionForSubmesh). (0, 0) when the region is missing or outside the stream's
+    /// <paramref name="total"/> elements. STILL-OPEN: a stream with no submesh map or no regions is taken whole.</summary>
+    internal static (int start, int count) Submesh0(NifFile n, int mesh, string semantic, int total)
+    {
+        foreach (var r in n.Blocks[mesh].Structs("Datastreams"))
+        {
+            bool has = false;
+            foreach (var cs in r.Structs("Component Semantics"))
+                if (cs.IntOr("Index", 0) == 0 && n.StrField(cs, "Name") == semantic) { has = true; break; }
+            if (!has) continue;
+            var map = r.Ints("Submesh To Region Map");
+            var regions = n.Blocks[(int)r.Int("Stream")].Structs("Regions");
+            if (map.Length == 0 || regions.Length == 0) return (0, total);
+            if (map[0] < 0 || map[0] >= regions.Length) return (0, 0);
+            long start = regions[(int)map[0]].Int("Start Index"), count = regions[(int)map[0]].Int("Num Indices");
+            return start >= 0 && count >= 0 && start + count <= total ? ((int)start, (int)count) : (0, 0);
+        }
+        return (0, 0);
+    }
 
     public static EffectScene Load(NifFile n)
     {
@@ -639,11 +677,25 @@ public sealed class EffectScene
                     foreach (var mb in e.Ints("Mesh Emitters"))
                     {
                         var mm = ModelData.MeshStreams(n, (int)mb);
-                        if (!mm.TryGetValue("POSITION", out var pos)) continue;
-                        ed.MeshPositions = pos.v.Select(x => (float)x).ToArray();
-                        if (mm.TryGetValue("NORMAL", out var nrm) && nrm.n == 3) ed.MeshNormals = nrm.v.Select(x => (float)x).ToArray();
-                        if (mm.TryGetValue("INDEX", out var idx) && n.Blocks[(int)mb].IntOr("Primitive Type", 0) == 0)
-                            ed.MeshTriangles = idx.v.Select(x => (int)x).ToArray();
+                        if (!mm.TryGetValue("POSITION", out var pos) || pos.n != 3) continue;
+                        // The client locks each stream's submesh 0 region only (NiDataStreamElementLock::begin/count,
+                        // GetRegionForSubmesh(0); ComputeIndices(kIndicesLock, 0, ...) NiPSMeshEmitter.cpp:281/356), and an
+                        // index counts from that region's first vertex.
+                        var (ps, pc) = Submesh0(n, (int)mb, "POSITION", pos.v.Length / 3);
+                        if (pc <= 0) continue;
+                        ed.MeshPositions = pos.v.Skip(ps * 3).Take(pc * 3).Select(x => (float)x).ToArray();
+                        if (mm.TryGetValue("NORMAL", out var nrm) && nrm.n == 3)
+                        {
+                            var (ns, nc) = Submesh0(n, (int)mb, "NORMAL", nrm.v.Length / 3);
+                            if (nc == pc) ed.MeshNormals = nrm.v.Skip(ns * 3).Take(nc * 3).Select(x => (float)x).ToArray();
+                        }
+                        // STILL-OPEN: a tristrip mesh (Primitive Type 1) emits from vertices here; the client takes its
+                        // triangles through NiIndexedPrimitiveIterator.
+                        if (mm.TryGetValue("INDEX", out var idx) && idx.n == 1 && n.Blocks[(int)mb].IntOr("Primitive Type", 0) == 0)
+                        {
+                            var (xs, xc) = Submesh0(n, (int)mb, "INDEX", idx.v.Length);
+                            ed.MeshTriangles = EmitterDef.Triangles(idx.v, xs, xc, pc);
+                        }
                         ed.MeshNode = NodeOfBlock.GetValueOrDefault((int)mb, -1);
                         break;
                     }

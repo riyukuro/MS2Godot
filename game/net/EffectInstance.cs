@@ -888,7 +888,11 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             case EmitterKind.Mesh when e.MeshPositions != null && e.MeshPositions.Length >= 3:
             {
                 // NiPSMeshEmitter: a point on the mesh by its emission type, moved into place by the mesh's world transform
-                // (TransformIntoCoordinateSpace, NiPSMeshEmitter.cpp:770-823)
+                // (TransformIntoCoordinateSpace, NiPSMeshEmitter.cpp:770-823).
+                // STILL-OPEN: a skinned emitter mesh (bind-pose streams only) has no positions here, so its particles
+                // start at the emitter's node; the client emits from the skinned mesh (EmitFromSkinned*,
+                // NiPSMeshEmitter.cpp:440+). Only the first mesh emitter is used; the
+                // client picks one at random per particle (NiPSMeshEmitter.cpp:108-118).
                 var mw = e.MeshNode >= 0 ? World(e.MeshNode, t, camLocal) : Transform3D.Identity;
                 meshNormal = e.SampleMesh(rng, out var mp, out var mn);
                 ps.Pos[i] = mw * new Vector3((float)mp.X, (float)mp.Y, (float)mp.Z);

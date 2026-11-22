@@ -108,4 +108,19 @@ public class EffectEmitterTests
         e.MeshVelocityType = MeshVelocity.Direction;
         Assert.That(e.SampleMesh(rng, out _, out _), Is.False, "direction velocity takes no normal");
     }
+
+    /// <summary>The mesh emitter's triangle list is checked at load: only the submesh 0 range of the INDEX stream is used,
+    /// and a range with an index past the vertex count, past the stream's end or not whole triangles gives no list (the
+    /// emitter then emits from vertices instead of reading past its vertices every frame).</summary>
+    [Test]
+    public void MeshTrianglesCheckedAtLoad()
+    {
+        double[] two = { 0, 1, 2, 2, 1, 3, 4, 5, 6 };
+        Assert.That(EmitterDef.Triangles(two, 0, 6, 4), Is.EqualTo(new[] { 0, 1, 2, 2, 1, 3 }), "submesh 0 of two regions");
+        Assert.That(EmitterDef.Triangles(two, 0, 9, 4), Is.Null, "an index past the vertex count");
+        Assert.That(EmitterDef.Triangles(two, 0, 9, 7), Is.EqualTo(new[] { 0, 1, 2, 2, 1, 3, 4, 5, 6 }), "all in range");
+        Assert.That(EmitterDef.Triangles(two, 6, 6, 7), Is.Null, "a range past the stream's end");
+        Assert.That(EmitterDef.Triangles(two, 0, 4, 7), Is.Null, "not whole triangles");
+        Assert.That(EmitterDef.Triangles(new double[] { 0, -1, 2 }, 0, 3, 3), Is.Null, "a negative index");
+    }
 }
