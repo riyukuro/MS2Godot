@@ -18,8 +18,10 @@ namespace Ms2Godot.Tests;
 /// packet's z. The client raises the position by 25 before its down ray, so the ray starts over the floor and hits it;
 /// a ray from the bare packet z starts inside the floor and misses it, and the body then fell through the floor for good.
 /// After 3 s the added player must be out of StateFall (it leaves StateFall when the body touches ground) and not under
-/// the floor's top. With MS2_REC set to a recording (.msb), the players it adds on the
-/// first field it enters are spawned on that field, built from MS2_DATA, instead of the floor.
+/// the floor's top.
+/// The own PC's ray (Player.Ray) with a zero direction, from inside the floor and from its top, must give no hit, as
+/// CastRay returns false for a direction that normalizes to zero (physxhelper.cpp:207-209).
+/// With MS2_REC set to a recording (.msb), the players it adds on the first field it enters are spawned on that field, built from MS2_DATA, instead of the floor.
 /// Quits with 0 when it holds, else 1.
 /// </summary>
 public partial class RemoteLandCheck : Node3D
@@ -28,6 +30,8 @@ public partial class RemoteLandCheck : Node3D
     readonly List<(FieldAddUser U, bool Hit, float HitY)> adds = new();
     RemoteLayer layer;
     int frame;
+    Player own;
+    readonly Ms2Godot.Movement.NxController.FaceGrids faceGrids = new();
 
     public override void _Ready()
     {
@@ -55,6 +59,11 @@ public partial class RemoteLandCheck : Node3D
             u.Stats[0].Health = 100; u.Stats[2].Health = 100;
             u.Position = new System.Numerics.Vector3(-600, 450, 0);
             adds.Add((u, false, 0));
+            own = Player.Create(new Node3D(), null, faceGrids);
+            AddChild(own);
+            own.SetProcess(false);
+            own.SetPhysicsProcess(false);
+            own.GlobalPosition = new Vector3(600, 200, 0);
         }
         else
         {
@@ -105,6 +114,17 @@ public partial class RemoteLandCheck : Node3D
                 using var hit = space.IntersectRay(q);
                 adds[i] = (u, hit.Count > 0, hit.Count > 0 ? ((Vector3)hit[PhysicsKeys.Position]).Y : 0);
                 layer.Tracker.Events.Enqueue(new UserAddedEvent(0, u, false));
+            }
+            if (own != null)
+            {
+                var ray = typeof(Player).GetMethod("Ray", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance,
+                    null, new[] { typeof(Vector3), typeof(Vector3), typeof(float), typeof(uint) }, null);
+                foreach (var y in new[] { -10f, 0.01f })
+                {
+                    var got = ((Vector3 pos, Vector3 normal)?)ray.Invoke(own, new object[] { new Vector3(600, y, 0), Vector3.Zero, 100f, uint.MaxValue });
+                    GD.Print($"remote land: own zero-direction ray from y {y}: {got?.pos.ToString() ?? "none"}");
+                    if (got != null) fails.Add($"the own PC's zero-direction ray from y {y} hit {got.Value.pos}");
+                }
             }
         }
         if (frame < 2 + 180) return;

@@ -90,19 +90,24 @@ public partial class Player
     const uint GroundGroups = 0x389;
 
     /// <summary>The nearest hit of a ray on a collider whose PropCollisionGroup bit is in <paramref name="groups"/>
-    /// (a collider without one is group 0); the client's CastRay passes the groups to raycastAllShapes.</summary>
+    /// (a collider without one is group 0); the client's CastRay passes the groups to raycastAllShapes. A direction that
+    /// normalizes to zero casts nothing (CastRay returns false for it, physxhelper.cpp:207-209).</summary>
     readonly RayQuery rayQ = RayQuery.CastRay();
 
     (Vector3 pos, Vector3 normal)? Ray(Vector3 from, Vector3 dir, float len, uint groups)
     {
-        return rayQ.Nearest(GetWorld3D().DirectSpaceState, from, from + dir.Normalized() * len, GetRid(), groups) is { } hit
+        var d = dir.Normalized();
+        if (d == Vector3.Zero) return null;
+        return rayQ.Nearest(GetWorld3D().DirectSpaceState, from, from + d * len, GetRid(), groups) is { } hit
             ? (hit.Position, hit.Normal) : null;
     }
 
     /// <summary><see cref="Ray"/>'s nearest hit as the collider and its shape index (Unk_RayCastInfo's entity comes from it).</summary>
     (GodotObject collider, int shape)? RayHit(Vector3 from, Vector3 dir, float len, uint groups)
     {
-        return rayQ.Nearest(GetWorld3D().DirectSpaceState, from, from + dir.Normalized() * len, GetRid(), groups) is { } hit
+        var d = dir.Normalized();
+        if (d == Vector3.Zero) return null;
+        return rayQ.Nearest(GetWorld3D().DirectSpaceState, from, from + d * len, GetRid(), groups) is { } hit
             ? (GodotObject.InstanceFromId(hit.ColliderId), hit.Shape) : null;
     }
 
