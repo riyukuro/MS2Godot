@@ -647,8 +647,7 @@ public partial class HudScene
     /// its level's sequence (:1612) and goes through MyPC::vfunc_102 (<see cref="UseOwnRecord"/>); the state's enter and exit
     /// (the enter, vfunc_4 :416; the ctor :340) and the state's end here drop it. A record a continue round queued (m_n98,
     /// :1589-1607) plays the loop again instead: the round's sends (<see cref="SendOwnRound"/>) and the seek
-    /// (<see cref="SeekOwnLoop"/>). 0 B/frame until it goes.
-    /// STILL-OPEN: FUN_1417f1a90 (the loop's move0 / move2) is not ported.
+    /// (<see cref="SeekOwnLoop"/>, whose body seek runs FUN_1417f1a90, the loop's move0 / move2, :1592). 0 B/frame until it goes.
     /// </summary>
     void TickOwnQueued()
     {
