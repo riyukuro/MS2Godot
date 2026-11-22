@@ -13,6 +13,7 @@ namespace Ms2Godot.Tests;
 /// - FieldDeadNpc makes the first dead (vfunc_125(1)), the body stays, a second one changes nothing;
 /// - FieldRemoveNpc drops it.
 /// - FieldAddNpc for an object id already present raises the old npc's Removed before the new one replaces it.
+/// - the hold key's search (WorldService::FindNearestActor) finds a live npc's Hold_PointNN node and skips a dead one.
 /// RemoteLayer's PlayCast returns for a dead npc on this flag. Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class NpcDeadCheck : Node3D
@@ -36,6 +37,7 @@ public partial class NpcDeadCheck : Node3D
         Check(!npcs.IsDead(1), "npc without the dead flag is dead");
         Check(npcs.IsDead(2), "npc with the dead flag is alive");
         Check(npcs.Deaths == 1, $"deaths {npcs.Deaths} after the adds");
+        HoldNodes(npcs, Check);
         npcs.Remove(1, true);
         Check(npcs.IsDead(1) && npcs.Count == 2, "FieldDeadNpc did not kill and keep the npc");
         npcs.Remove(1, true);
@@ -52,5 +54,34 @@ public partial class NpcDeadCheck : Node3D
         Check(npcs.Count == 1 && !npcs.IsDead(2), "the replacing add did not keep one live npc");
         GD.Print($"npc dead: npc {npcId}, deaths {npcs.Deaths}, {(fails.Count == 0 ? "ok" : "FAIL " + string.Join("; ", fails))}");
         GetTree().Quit(fails.Count == 0 ? 0 : 1);
+    }
+
+    /// <summary>The hold key's nearest-actor search over the npcs: a live npc's Hold_PointNN bone is found within range,
+    /// the dead one is skipped, a range below the distance or a nearer pick finds none, and the poll allocates nothing.</summary>
+    static void HoldNodes(NpcLayer npcs, System.Action<bool, string> check)
+    {
+        Vector3 at = default;
+        foreach (int id in new[] { 1, 2 })
+        {
+            if (!npcs.HoldInfo(id, out _, out _, out var visual) || visual == null) { check(false, $"npc {id}: no model for the hold check"); return; }
+            var sk = visual.GetNodeOrNull<Skeleton3D>("Model/" + ModelBuilder.SkeletonName);
+            if (sk == null) { check(false, $"npc {id}: no skeleton"); return; }
+            int b = sk.AddBone("Hold_Point00");
+            sk.SetBonePosePosition(b, new Vector3(0, 100, 0));
+            at = sk.GlobalTransform * sk.GetBoneGlobalPose(b).Origin;
+        }
+        var from = at + new Vector3(10, 0, 0);
+        float best = float.MaxValue;
+        int got = npcs.NearestHold(from, 230, ref best, out string node);
+        check(got == 1 && node == "Hold_Point00" && Mathf.Abs(best - 10) < 0.01f, $"npc hold: {got} '{node}' at {best} (want the live npc 1 at 10)");
+        best = float.MaxValue;
+        check(npcs.NearestHold(from, 5, ref best, out _) == 0, "npc hold: found beyond the range");
+        best = 5;
+        check(npcs.NearestHold(from, 230, ref best, out _) == 0 && best == 5, "npc hold: replaced a nearer pick");
+        long a0 = System.GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 100; i++) { best = float.MaxValue; npcs.NearestHold(from, 230, ref best, out _); }
+        long alloc = System.GC.GetAllocatedBytesForCurrentThread() - a0;
+        check(alloc == 0, $"npc hold poll allocates {alloc} B per 100");
+        GD.Print($"npc dead: hold node of npc {got} '{node}' at {best:0.##}, {alloc} B per 100 lookups");
     }
 }

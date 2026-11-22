@@ -101,7 +101,8 @@ public sealed partial class RemoteLayer
     /// <summary>
     /// WorldService::FindNearestActor (@0x141bc9830, worldservice_1.cpp:5143) over the field's other players: each one not
     /// dead whose nearest hold node (PC::vfunc_118, the distance from <paramref name="from"/> to each node of m_unk_b88) lies
-    /// within <paramref name="maxDist"/> and below <paramref name="best"/> replaces the pick. 0 when none is nearer.
+    /// within <paramref name="maxDist"/> and below <paramref name="best"/> replaces the pick, then the npcs
+    /// (<see cref="NpcLayer.NearestHold"/>). 0 when none is nearer.
     /// </summary>
     public int NearestHold(Vector3 from, float maxDist, ref float best, out string node)
     {
@@ -116,6 +117,7 @@ public sealed partial class RemoteLayer
             id = r.ObjectId;
             node = n;
         }
+        if (npcs != null && npcs.NearestHold(from, maxDist, ref best, out string npcNode) is var npc && npc != 0) { id = npc; node = npcNode; }
         return id;
     }
 

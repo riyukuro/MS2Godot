@@ -43,7 +43,9 @@ public partial class LiveSession : IHoldPcWorld
     /// <summary>
     /// PC::FindHoldTarget (FindNearestActor): the own pc's feet against every PC's hold nodes, the own pc's (its body's
     /// Hold_PointNN and its own mount's seats) among them, so standing nearest to the own nodes refuses the key.
-    /// STILL-OPEN: the ridees and npcs are PCBase too in the client's list; only the players are searched here.
+    /// The npcs are searched as well (CNpc keeps PCBase::vfunc_119); a nearer npc wins and fails FindPCById, so the key
+    /// refuses. A ridee never matches: Ridee::vfunc_119 (ridee.cpp:638) fills its rider's map, its own stays empty.
+    /// STILL-OPEN: the pets, guide objects and cube spawn objects (PCBase too, own vfunc_119) are not searched.
     /// </summary>
     public int FindHoldTarget(float range, out string node)
     {
