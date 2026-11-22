@@ -285,6 +285,27 @@ public static class SkillCast
     }
 
     /// <summary>
+    /// StateSkill::FUN_1417ee120 @0x1417ee120 (stateskill.cpp:2965-2980) at the end of a record that is not in its last motion
+    /// (FUN_141759e40 false: m_nMotion + m_nAttack, which FUN_141759fc0 sets to 1, is below the motion count) for the local
+    /// owner (FUN_1417b8340): a request of the record's skill and level (the ctor's server tick <paramref name="tick"/>, no key,
+    /// no item, b3a clear) with the record's cast id, its motion + 1, the owner's position now <paramref name="position"/>, the
+    /// record's direction and rotation z, through CSkillRecord::Init (no CreateSkillRecord: no checks, no output skill, no aim),
+    /// m_bAD from the level's HasSequenceName. Null in the last motion (or past it).
+    /// STILL-OPEN: the record's m_nB0 / m_strB8 copy (:2974-2978) has no field in this port; the request ctor's
+    /// GenerateUniqueId call (the id is replaced by the record's cast id) is not made.
+    /// </summary>
+    public static CastRecord NextMotion(CastRecord r, Vector3 position, int tick)
+    {
+        if (r?.Level == null || r.Motion + 1 >= r.Level.Motions.Count) return null;
+        return new CastRecord
+        {
+            Skill = r.Skill, Level = r.Level, Tick = tick, SendTick = tick, CastId = r.CastId, Motion = (byte)(r.Motion + 1),
+            Position = position, Direction = r.Direction, Rotation = new Vector3(0, 0, r.Rotation.Z),
+            HasSequence = r.Level.HasSequenceName,
+        };
+    }
+
+    /// <summary>
     /// PCBase::vfunc_100 @0x141672910 (pcbase.cpp:2561-2603) on a record cast later than its press (StateSkill's m_spNext at
     /// the end step, stateskill.cpp:2939, and at the chain, :3170): m_k50, the Skill packet's position (FUN_1417ebc00), is the
     /// owner's position now (vfunc_18, :2602); m_k5c and m_k68 are aimed again (vfunc_105, :2593) as the press aims them, the

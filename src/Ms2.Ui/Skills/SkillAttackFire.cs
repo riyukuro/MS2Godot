@@ -29,6 +29,17 @@ public static class SkillAttackFire
     }
 
     /// <summary>
+    /// StateSkill::FireFirstAttack @0x1417ea920 (stateskill.cpp:1844), which MyPC::vfunc_102 (mypc.cpp:1219-1226) runs for a
+    /// started cast whose level has no sequence (no skill state): with the record's current attack (GetCurrentAttackData, its
+    /// m_nAttackIndex) FUN_1417ecce0 fires attack 0. The attack to fire, -1 for a level with a sequence or no current attack.
+    /// </summary>
+    public static int FirstAttack(CastRecord r)
+    {
+        if (r?.Level == null || r.Level.HasSequenceName || AttackAt(r, r.AttackIndex) == null) return -1;
+        return 0;
+    }
+
+    /// <summary>
     /// StateSkill::FireAttacksAtPoint @0x1417f0f10 (stateskill.cpp:2272): from the current attack, every attack in a row whose
     /// point is set and equal to the first's fires (FireCurrentAttack, m_nAttack++). The count it fires; 0 without a point.
     /// The caller has already checked the text key against the current attack's point (StateSkill::TextKeyEvent,

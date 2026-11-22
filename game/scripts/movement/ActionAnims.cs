@@ -22,7 +22,7 @@ public sealed class ActionAnims
         ClimbIdle = 17, ClimbLUp = 18, ClimbLCenter = 19, ClimbLDown = 20, ClimbRUp = 21, ClimbRCenter = 22,
         ClimbRDown = 23, ClimbUpLand = 24, ClimbUpTake = 25, ClimbDownLand = 26, ClimbDownTake = 27,
         Run = 28, Walk = 29, PoleUp = 34, PoleDown = 35, PoleIdle = 36, PoleTurn = 37, PoleTake = 38, SpecialJumpUp = 42, SpecialJumpDown = 43,
-        WaterIdle = 48, WaterSwim = 49, WaterDash = 50, Revival = 51, Dead = 52, HoldIdle = 62, FallDamage = 63, ModePvpDead = 64,
+        WaterIdle = 48, WaterSwim = 49, WaterDash = 50, Revival = 51, Dead = 52, Hit = 53, HoldIdle = 62, FallDamage = 63, ModePvpDead = 64,
     }
 
     static readonly string[] TypeNames =

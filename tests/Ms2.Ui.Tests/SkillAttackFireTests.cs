@@ -224,4 +224,46 @@ public class SkillAttackFireTests
             Array.Empty<EffectDummy>());
         Assert.That(corpse.CorpseHitAble, Is.True);
     }
+
+    static CastRecord Level(string motions)
+    {
+        var doc = XDocument.Parse("<ms2><skill id=\"100\"><basic mainType=\"1\"/><level value=\"1\">" + motions + "</level></skill></ms2>");
+        var t = new SkillDataTable(() => new[] { doc }, (e, n, _) => e.Elements(n).ToList());
+        var d = t.GetSkillData(100);
+        return new CastRecord
+        {
+            Skill = d, Level = d.GetLevelData(1), CastId = 0x1122334455L, Tick = 5, SendTick = 6, Motion = 0, Key = 30, ItemUid = 9,
+            Flag = true, Position = new Vector3(10, 20, 30), Direction = new Vector3(1, 0, 0), Rotation = new Vector3(4, 5, 90),
+        };
+    }
+
+    [Test]
+    public void ALevelWithoutASequenceFiresItsFirstAttack()
+    {
+        Assert.That(SkillAttackFire.FirstAttack(Level("<motion><attack/></motion>")), Is.EqualTo(0));
+        Assert.That(SkillAttackFire.FirstAttack(Level("<motion sequenceName=\"A\"><attack/></motion>")), Is.EqualTo(-1),
+            "a sequence enters the skill state, its attacks fire at their points");
+        Assert.That(SkillAttackFire.FirstAttack(Level("<motion/>")), Is.EqualTo(-1), "no current attack");
+        var past = Level("<motion><attack/></motion>");
+        past.AttackIndex = 1;
+        Assert.That(SkillAttackFire.FirstAttack(past), Is.EqualTo(-1), "GetCurrentAttackData reads m_nAttackIndex");
+    }
+
+    [Test]
+    public void ANotLastMotionCastsTheNextMotion()
+    {
+        var r = Level("<motion sequenceName=\"A\"/><motion sequenceName=\"B\"/>");
+        var n = SkillCast.NextMotion(r, new Vector3(7, 8, 9), 1234);
+        Assert.That(n, Is.Not.Null);
+        Assert.That((n.Skill, n.Level, n.CastId, n.Motion), Is.EqualTo((r.Skill, r.Level, r.CastId, (byte)1)));
+        Assert.That((n.Tick, n.SendTick), Is.EqualTo((1234, 1234)), "the request ctor's tick");
+        Assert.That(n.Position, Is.EqualTo(new Vector3(7, 8, 9)), "the owner's position now");
+        Assert.That(n.Direction, Is.EqualTo(r.Direction));
+        Assert.That(n.Rotation, Is.EqualTo(new Vector3(0, 0, 90)), "Init's (0, 0, rotZ)");
+        Assert.That((n.Key, n.ItemUid, n.Flag, n.HasSequence), Is.EqualTo((0, 0L, false, true)), "no key, no item, b3a clear");
+        Assert.That(SkillCast.NextMotion(n, Vector3.Zero, 0), Is.Null, "the last motion");
+
+        var noSeq = Level("<motion/><motion/>");
+        Assert.That(SkillCast.NextMotion(noSeq, Vector3.Zero, 0).HasSequence, Is.False, "m_bAD from the level");
+    }
 }

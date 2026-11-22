@@ -137,8 +137,9 @@ public partial class HudScene
     /// charge use (OnRechargeSkillUsed), then the motion effect.
     /// STILL-OPEN, not fired here: FUN_141525580's refusals (states 0x2b / 0x2f, FUN_141527960, mypc.cpp:2436-2443) and its
     /// IsUnrideOnUse ride-off (:2447-2470); the item kind and quick slot item checks with the binding confirm (:1167-1193);
-    /// NotifyUseSKill and the DPS meter (:1206, :1210); a level with a sequence while riding, and a level without one
-    /// (the ridee FUN_141706650 / FUN_141524a80 and StateSkill::FireFirstAttack, :1219-1226).
+    /// NotifyUseSKill and the DPS meter (:1206, :1210); a level with a sequence while riding, and a level without one's
+    /// ridee FUN_141706650 / FUN_141524a80 (:1220-1224); its StateSkill::FireFirstAttack (:1225) is
+    /// <see cref="FireOwnAttack"/>.
     /// <paramref name="key"/>: the DIK key of the press (kReq.m_n34, mypc.cpp:1690-1729), 0 for a clicked slot without a key;
     /// the record keeps it (m_nA4, skillrecord.cpp:192) for the charging skill's release (<see cref="TickOwnSync"/>).
     /// </summary>
@@ -213,7 +214,7 @@ public partial class HudScene
     /// STILL-OPEN: the auto change fallback (FUN_1417f0570(0), :3009), the skill system's queued record for a record with
     /// m_nB0 (FUN_1417f0230, :3003) and the state's end casting the key held then (FUN_1417ee120 :2905-2909, the key-down
     /// skill's held key in MyPC::FUN_141526730) are not ported; a record a motion other than the last would chain is kept
-    /// until the state ends (the next motion, FUN_1417ee120 :2930-2980, is not ported).
+    /// until the next motion starts (<see cref="OwnNextMotion"/>; the state's enter clears m_spNext).
     /// </summary>
     bool OwnPress(CastRecord r)
     {
@@ -362,14 +363,15 @@ public partial class HudScene
     /// elapsed time, unless <see cref="SkillFollow.CastsAtEnd"/> sends it to idle; m_spNext is cleared. A queued cooling cast
     /// or a cast without a sequence keeps the state (the body holds the last frame), so the next step polls again. False =
     /// idle (FUN_1417f0070).
-    /// STILL-OPEN: the next motion of a record not in its last one (:2930-2980) and the auto change (FUN_1417f0570(2),
-    /// :2905-2909) are not ported.
+    /// A record not in its last motion casts its next motion instead (<see cref="OwnNextMotion"/>).
+    /// STILL-OPEN: the auto change (FUN_1417f0570(2), :2905-2909) is not ported.
     /// </summary>
     bool OwnEndStep()
     {
         ownEndStepFrame.Take(Engine.GetProcessFrames());
         var running = ownCast;
-        if (running == null || !SkillFollow.IsLastMotion(running)) { ownNext = null; return false; }
+        if (running == null) { ownNext = null; return false; }
+        if (!SkillFollow.IsLastMotion(running)) return OwnNextMotion(running);
         var next = ownNext ?? OwnEndPoll();
         ownNext = null;
         if (next == null) return false;
@@ -377,6 +379,21 @@ public partial class HudScene
         if (!SkillFollow.CastsAtEnd(running, next.Skill, false)) return false;
         AimOwn(next, false);                       // :2939 vfunc_100(m_spNext, 0)
         next.HasSequence = next.Level.HasSequenceName;
+        if (!UseOwnRecord(player, next)) return false;
+        if (ownCast == running) player.HoldSkillSequence();
+        return true;
+    }
+
+    /// <summary>
+    /// FUN_1417ee120 (stateskill.cpp:2965-2980) for a record not in its last motion: the next motion's record
+    /// (<see cref="SkillCast.NextMotion"/>, from where the player is now) through vfunc_102 (<see cref="UseOwnRecord"/>),
+    /// idle (FUN_1417f0070) when that fails. m_spNext is left as it is; the next motion's state enter clears it.
+    /// </summary>
+    bool OwnNextMotion(CastRecord running)
+    {
+        var g = player.GlobalPosition;
+        var next = SkillCast.NextMotion(running, new System.Numerics.Vector3(g.X, -g.Z, g.Y), Net.LiveSession.CastTick());
+        if (next == null) return true;             // Init failed: return before the idle and the timeout (:2973)
         if (!UseOwnRecord(player, next)) return false;
         if (ownCast == running) player.HoldSkillSequence();
         return true;
@@ -522,6 +539,7 @@ public partial class HudScene
                 StartOwnAttacks(me, r);
             delay = elapsed;
         }
+        else if (SkillAttackFire.FirstAttack(r) is int first and >= 0) FireOwnAttack(me, r, first);   // :1225 FireFirstAttack
         CompactUsed(r);   // :1228 FUN_141767990, whether or not it was sent
         // :1230: after the send, the cast's own cooldown (FUN_141525ff0) from the sequence's text keys
         if (sent) live.Cooltimes.StartCast(r, seq, delay, now);
@@ -855,35 +873,36 @@ public partial class HudScene
     void FireOwnPoint(Player me)
     {
         if (ownCast.QueuedCharge) return;   // FireAttacksAtPoint :2276: a queued record fires nothing
-        var live = Net.LiveSession.Instance;
         int n = SkillAttackFire.AttacksAtPoint(ownCast, ownAttack);
-        if (n > 0)
-        {
-            var pos = FillHitObjects(me);
-            float rotZ = me.FacingRotZ;
-            nextSerial ??= () => serialIds.Next(Net.LiveSession.Instance?.SelfObjectId ?? 0);
-            for (int i = 0; i < n; i++)
-            {
-                var req = SkillAttackFire.Fire(ownCast, ownAttack, pos, rotZ, 0,
-                    System.Runtime.InteropServices.CollectionsMarshal.AsSpan(hitObjects), crtRand, nextSerial, hitQueried, hitIds,
-                    (slotField?.PkMode ?? 0) != 0);
-                // FUN_1417ecce0 (stateskill.cpp:1347): a magic model per target record, started at the attack's tick, the send,
-                // then the models run once. STILL-OPEN: the tags carry no hit (onHit: the record's FUN_1417591b0).
-                if (req != null)
-                {
-                    ownNodePosition ??= OwnNodePosition;
-                    ownTagMagics.Add(ownCast.Skill, SkillAttackFire.AttackAt(ownCast, ownAttack), ownCast, req.Targets,
-                        (int)Time.GetTicksMsec(), hudModel.Tables.MagicPaths, ownNodePosition, null, new TagIdentity(ownCast.CastId,
-                            (int)ownCast.Skill.Id, (short)(ownCast.Level?.Level ?? 0), ownCast.Motion, (byte)ownAttack));
-                }
-                bool sent = req != null && (live?.SendDamage(req) ?? false);
-                TickOwnTagMagics();
-                GD.Print($"cast: skill {ownCast.Skill.Id} attack {ownAttack} targets {req?.Targets.Count ?? 0}{(sent ? " sent" : " (offline, not sent)")}");
-                ownAttack++;
-            }
-        }
+        for (int i = 0; i < n; i++) FireOwnAttack(me, ownCast, ownAttack++);
         ownPointTime = OwnPointTime(me);
     }
+
+    /// <summary>
+    /// StateSkill::FUN_1417ecce0 @0x1417ecce0 for the own record <paramref name="r"/>'s attack <paramref name="attack"/>: the
+    /// area pick and the send (<see cref="SkillAttackFire.Fire"/>, LiveSession.SendDamage), a magic model per target record
+    /// started at the attack's tick (:1347), then the models run once.
+    /// </summary>
+    void FireOwnAttack(Player me, CastRecord r, int attack)
+    {
+        var live = Net.LiveSession.Instance;
+        var pos = FillHitObjects(me);
+        nextSerial ??= () => serialIds.Next(Net.LiveSession.Instance?.SelfObjectId ?? 0);
+        var req = SkillAttackFire.Fire(r, attack, pos, me.FacingRotZ, 0,
+            System.Runtime.InteropServices.CollectionsMarshal.AsSpan(hitObjects), crtRand, nextSerial, hitQueried, hitIds,
+            (slotField?.PkMode ?? 0) != 0);
+        if (req != null)
+        {
+            ownNodePosition ??= OwnNodePosition;
+            ownTagMagics.Add(r.Skill, SkillAttackFire.AttackAt(r, attack), r, req.Targets, (int)Time.GetTicksMsec(),
+                hudModel.Tables.MagicPaths, ownNodePosition, null, new TagIdentity(r.CastId, (int)r.Skill.Id,
+                    (short)(r.Level?.Level ?? 0), r.Motion, (byte)attack));
+        }
+        bool sent = req != null && (live?.SendDamage(req) ?? false);
+        TickOwnTagMagics();
+        GD.Print($"cast: skill {r.Skill.Id} attack {attack} targets {req?.Targets.Count ?? 0}{(sent ? " sent" : " (offline, not sent)")}");
+    }
+
     readonly OwnTagMagics ownTagMagics = new();
     readonly System.Collections.Generic.List<Ms2.Net.Packets.SkillHitRequest> ownHitSends = new();
     Func<string, System.Numerics.Vector3> ownNodePosition;
