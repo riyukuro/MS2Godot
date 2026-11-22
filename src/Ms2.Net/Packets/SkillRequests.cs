@@ -41,19 +41,24 @@ public static class UniqueId
 /// </summary>
 public sealed record SkillCastRequest(long CastId, int ServerTick, int SkillId, short Level, byte Motion, Vector3 Position,
     Vector3 Direction, Vector3 Rotation, float TargetDistance, int ElapsedTime, bool Flag, long ItemUid, long CooldownKey,
-    bool HoldAttackFeature, int AttachId = 0, string AttachNode = "") : IOutPacket
+    bool HoldAttackFeature, int AttachId = 0, string AttachNode = "") : IProfileOutPacket
 {
     public Outbound Op => Outbound.Skill;
 
-    public void Write(ByteWriter w)
+    public void Write(ByteWriter w) => Write(w, ProtocolProfile.Kms2525);
+
+    /// <summary>GMS2: all 15966 recorded casts are 74 bytes, the item uid then one bool, so no cooldown key and the attached bool
+    /// is always there (it was 0 in every recording; an attached cast is written as the KMS tail does).</summary>
+    public void Write(ByteWriter w, ProtocolProfile profile)
     {
         w.WriteByte(0);
         w.WriteLong(CastId); w.WriteInt(ServerTick); w.WriteInt(SkillId);
         w.WriteShort(Level); w.WriteByte(Motion);
         WritePoint(w, Position); WritePoint(w, Direction); WritePoint(w, Rotation);
         w.WriteFloat(TargetDistance); w.WriteInt(ElapsedTime);
-        w.WriteBool(Flag); w.WriteLong(ItemUid); w.WriteLong(CooldownKey);
-        if (!HoldAttackFeature) return;
+        w.WriteBool(Flag); w.WriteLong(ItemUid);
+        if (!profile.IsGms2) w.WriteLong(CooldownKey);
+        if (!HoldAttackFeature && !profile.IsGms2) return;
         bool attached = AttachId != 0;   // FUN_1417ebc00: m_bAttached = m_nB0 != 0
         w.WriteBool(attached);
         if (attached) { w.WriteInt(AttachId); w.WriteUnicodeString(AttachNode ?? ""); }

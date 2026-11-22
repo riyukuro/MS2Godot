@@ -36,6 +36,19 @@ public class SkillRequestTests
     }
 
     [Test]
+    public void TheGms2CastHasNoCooldownKeyAndAlwaysTheAttachedBool()
+    {
+        byte[] G(SkillCastRequest c) { var w = new ByteWriter(); c.Write(w, ProtocolProfile.Gms2); return w.Buffer.AsSpan(0, w.Length).ToArray(); }
+        var plain = G(Cast(false));
+        Assert.That(plain.Length, Is.EqualTo(74));
+        Assert.That(plain.Take(66).ToArray(), Is.EqualTo(Expect(Body).Take(66).ToArray()));   // up to and with the item uid
+        Assert.That(plain[^1], Is.EqualTo(0));
+        Assert.That(G(Cast(true)), Is.EqualTo(plain), "the feature flag changes nothing on GMS2");
+        Assert.That(G(Cast(false, 5, "n")).Length, Is.GreaterThan(74));
+        Assert.That(Bytes(Cast(false)).Length, Is.EqualTo(81), "KMS bytes unchanged");
+    }
+
+    [Test]
     public void TheHoldAttackFeatureAddsTheAttachedTarget()
     {
         Assert.That(Bytes(Cast(true)), Is.EqualTo(Expect(w => { Body(w); w.WriteBool(false); })), "not attached: only the bool");
