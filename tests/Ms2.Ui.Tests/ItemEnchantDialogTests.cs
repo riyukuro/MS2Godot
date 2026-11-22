@@ -191,6 +191,27 @@ public class ItemEnchantDialogTests
         Assert.That(Rt.ToString(r.Get(r.C.BuildInfo(), "enchantFee")), Is.Empty);
     }
 
+    // CIngredientInfo::GetItemId (@0x14026b500): a cost that names a tag (item id 0) is the tag's item (GetTagItemId, from
+    // table/itemdata.xml's <tag name itemID>): its slot shows that item and the have count is its count.
+    [Test]
+    public void ATagCostIsTheTagsItemInItsSlotAndCount()
+    {
+        var r = new Rig();
+        r.Add(5);
+        var asked = new List<int>();
+        r.C.CountOf = (i, _) => { asked.Add(i); return 1; };
+        int onix = ItemTags.ByName("Onix"), chaos = ItemTags.ByName("ChaosOnix");
+        Assert.That(onix, Is.Not.Zero);
+        Assert.That(r.Model.Tables.Items.TagItemId(onix), Is.Not.Zero, "the tag has an item in the table");
+        Assert.That(r.Model.Tables.Items.TagItemId(chaos), Is.Not.EqualTo(r.Model.Tables.Items.TagItemId(onix)));
+        Assert.That(r.Model.Tables.Items.TagItemId(0), Is.Zero);
+        r.Select(5, r.Info(5, ing: new[] { new EnchantIngredient(0, onix, 40), new EnchantIngredient(0, chaos, 2) }));
+        r.C.BuildInfo();
+        Assert.That(asked, Does.Contain(r.Model.Tables.Items.TagItemId(onix)).And.Contain(r.Model.Tables.Items.TagItemId(chaos)));
+        Assert.That(r.Model.ItemSlots.ContainsKey(ItemEnchantDialogController.IngredientPrefix + "0"), Is.True, "bound with the tag's item");
+        Assert.That(r.Model.ItemSlots.ContainsKey(ItemEnchantDialogController.IngredientPrefix + "1"), Is.True);
+    }
+
     [Test]
     public void AnOldChargeAsksTheRefundBoxFirst()
     {

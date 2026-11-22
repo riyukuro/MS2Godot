@@ -130,7 +130,8 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
 
     /// <summary>The worn items of layer 0 (CEquipment::CollectShownItemsInLayer(list, 0), uiitemenchantdialog.cpp:887) as UI items.
     /// <paramref name="layer"/> is the item data's worn layer (ItemDataTable.WornLayer). STILL-OPEN: the per-slot shown flag
-    /// (m_bShown, equipment.cpp:866) is not in the worn list; every worn item of the layer counts as shown.</summary>
+    /// (m_bShown, equipment.cpp:866) is not in the worn list; every worn item of the layer counts as shown. STILL-OPEN: the
+    /// client walks its worn map in CAtlMap hash order (equipment.cpp:868); the list here is the worn list's own order.</summary>
     public static IEnumerable<Item> WornLayerItems(IEnumerable<EquipItem> worn, ItemDataTable table, Func<int, int?> layer)
     {
         foreach (var e in worn ?? Array.Empty<EquipItem>())
@@ -354,10 +355,11 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
         for (int i = 0; i < Book.Ingredients.Count; i++)
         {
             var g = Book.Ingredients[i];
-            var it = Item.Create(Model.Tables.Items, g.ItemId, 0);
+            int itemId = g.ItemId != 0 ? g.ItemId : Model.Tables.Items.TagItemId(g.Tag);   // CIngredientInfo::GetItemId (@0x14026b500): the id, else the tag's item (:143)
+            var it = Item.Create(Model.Tables.Items, itemId, 0);
             string name = IngredientPrefix + i.ToString(CultureInfo.InvariantCulture);
             if (it != null) { it.SetCountClamped(g.Count); Bind(name, it, SlotFlags); ingredientSlots.Add(name); }
-            int have = CountOf(g.ItemId, 0);
+            int have = CountOf(itemId, 0);
             if (g.Tag == 0x60 && g.Count > have) fee += (long)(g.Count - have) * FeePerUnit;
             list.Add(Host.Obj(("binding", name), ("countText", IngredientCountText(have, g.Count))));
         }

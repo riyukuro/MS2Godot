@@ -514,6 +514,24 @@ public sealed class ItemDataTable
         return textColors.TryGetValue(grade, out var c) ? c : 0xffffff;
     }
 
+    Dictionary<int, int> tagItemIds;
+
+    /// <summary>CItemDataTable::GetTagItemId (@0x1405575b0, itemdatatable.cpp:569): the item id of a tag, 0 for a tag without one.
+    /// LoadTagItemIds (:1476) reads table/itemdata.xml's &lt;tag name itemID&gt; rows: the name goes through GetTagByName (a name
+    /// outside the AddItemTag list is skipped), a later row of a tag replaces the earlier one.</summary>
+    public int TagItemId(int tag)
+    {
+        if (tagItemIds == null)
+        {
+            tagItemIds = new();
+            if (packs != null && packs.Exists("Xml", "table/itemdata.xml"))
+                foreach (var e in GameStrings.Parse(packs.Read("Xml", "table/itemdata.xml")).Root.Elements("tag"))
+                    if (ItemTags.ByName((string)e.Attribute("name") ?? "") is var t and not 0)
+                        tagItemIds[t] = ItemData.Atoi((string)e.Attribute("itemID") ?? "0");
+        }
+        return tagItemIds.TryGetValue(tag, out int id) ? id : 0;
+    }
+
     /// <summary>FUN_14028c0d0 (commonutil): "r,g,b" as 0xffRRGGBB (atoi of each part); 0 unless there are three parts.</summary>
     static uint Rgb(string text)
     {
