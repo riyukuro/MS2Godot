@@ -202,6 +202,20 @@ public class HudTests
         Assert.That(kt.FindKeyByActionAndPriority(500001, 0), Is.EqualTo(30));
     }
 
+    /// <summary>The client's player-info object holds curHP/maxHP as 64-bit values (ASObj AddInt64, uimainplayerinfo.cpp:809-810): a long member
+    /// of the init object reaches the movie whole (the controller used to cast it to uint, which cut it at 2^32). The movie does not keep the
+    /// member under its name, so this checks the value object the controller builds and sends.</summary>
+    [Test]
+    public void AHealthAboveTwoToThe32KeepsItsValueInTheInitObject()
+    {
+        var m = Model();
+        var h = Load(new MainPlayerInfoController(), m);
+        var o = h.Obj(("curHP", 6_000_000_000L), ("maxHP", 9_000_000_000L));
+        Assert.That(Rt.ToNumber(h.Get(o, "curHP")), Is.EqualTo(6_000_000_000d));
+        Assert.That(Rt.ToNumber(h.Get(o, "maxHP")), Is.EqualTo(9_000_000_000d));
+        Assert.That(Rt.ToNumber(h.Get(h.Obj(("curHP", unchecked((uint)6_000_000_000L))), "curHP")), Is.Not.EqualTo(6_000_000_000d), "the old (uint) cast cut it");
+    }
+
     [Test]
     public void MainPlayerInfoPageNavigationWrapsAndEmitsSetPage()
     {

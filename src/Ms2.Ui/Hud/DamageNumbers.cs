@@ -49,7 +49,8 @@ public static class DamageNumbers
         {
             // OnDotDamage (scenestategame.cpp:5663) returns when the object hit (the second int) is none; the record then reaches
             // PCBase::OnDotDamageRecord (pcbase.cpp:3958): vfunc_111(total damage, first type, the attacker). The i64 damage is
-            // kept whole. STILL-OPEN: IsOutsideSightRange and the magic service's delivery (FUN_14146bc20).
+            // kept whole. STILL-OPEN: IsOutsideSightRange, the magic service's delivery (FUN_14146bc20) and CNpc::vfunc_111's skip of a dead
+            // NPC whose data has CorpseHitAble (unit_14108e1e0_npcactorandvibrate.cpp:768).
             if (isObject == null || !isObject(d.TargetId)) return;
             into.Add(new DamageNumber(d.TargetId, d.DotHit.Damage < 0 ? -d.DotHit.Damage : d.DotHit.Damage, d.DotHit.Flag, d.OwnerId));
             return;

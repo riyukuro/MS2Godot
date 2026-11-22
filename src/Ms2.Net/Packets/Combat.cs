@@ -77,7 +77,7 @@ public sealed class SkillDamage {
         return list;
     }
 
-    /// <summary>GMS2 (upstream SkillDamagePacket): mode 0 has an i32 server tick after the bool, mode 3 ends in an i32 hp amount instead of an i64.
+    /// <summary>GMS2 (upstream SkillDamagePacket): mode 0 has an i32 server tick after the bool, mode 3 ends in an i32 or an i64 hp amount, see below.
     /// Mode 3 on GMS2 reads the damage at the width the packet carries (the client reads an i64, scenestategame.cpp:5663): 8 bytes left
     /// after the flag -> i64, otherwise i32 widened to long (any other size keeps the leftover warning). Recorded GMS2 servers send i32;
     /// some servers send i64, so a tick above 2^31 shows exactly.

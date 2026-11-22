@@ -204,19 +204,19 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
             ("jobCode", (uint)Pc.SubJob),
             ("jobName", Model.Tables.JobName(Pc.SubJob)),
             ("name", Pc.NameWithTitle),
-            ("curHP", (uint)Pc.HpCur),
+            ("curHP", Pc.HpCur),
             ("curSP", (uint)Pc.SpCur),
             ("curEP", (uint)Pc.EpCur),
             ("maxEP", (uint)Pc.EpMax),
             ("battle", Pc.Battle ? 1 : 0),
-            ("maxHP", (uint)Pc.HpMax),
+            ("maxHP", Pc.HpMax),
             ("maxSP", (uint)Pc.SpMax)));
         Host.Invoke(pi, "setName", Pc.NameWithTitle);      // UpdateName
     }
 
     void OnRiding(bool riding)
     {
-        Host.Invoke(PlayerInfo, "onRiding", Host.Obj(("riding", riding ? 1 : 0), ("curHP", (uint)Pc.HpCur), ("maxHP", (uint)Pc.HpMax),
+        Host.Invoke(PlayerInfo, "onRiding", Host.Obj(("riding", riding ? 1 : 0), ("curHP", Pc.HpCur), ("maxHP", Pc.HpMax),
             ("curSP", (uint)Pc.SpCur), ("maxSP", (uint)Pc.SpMax)));
     }
 
@@ -226,7 +226,7 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         var pi = PlayerInfo;
         switch (e)
         {
-            case StatusEvent.Hp: Host.Invoke(pi, "setHP", (uint)Pc.HpCur, (uint)Pc.HpMax); break;
+            case StatusEvent.Hp: Host.Invoke(pi, "setHP", (int)Pc.HpCur, (int)Pc.HpMax); break;
             case StatusEvent.Sp: Host.Invoke(pi, "setSP", (uint)Pc.SpCur, (uint)Pc.SpMax); break;
             case StatusEvent.Ep: Host.Invoke(pi, "setEP", (uint)prevEp, (uint)Pc.EpCur, (uint)Pc.EpMax); prevEp = Pc.EpCur; break;
             case StatusEvent.Job: Host.Invoke(pi, "setJob", (uint)Pc.SubJob, Model.Tables.JobName(Pc.SubJob)); break;
