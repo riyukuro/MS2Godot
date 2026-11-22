@@ -94,14 +94,17 @@ public partial class Player
 
     /// <summary>PCBase::AddHideReason (@0x14166ca20) / RemoveHideReason (@0x14166ca80): nothing when the bit already has that
     /// value, else ApplyHideReasons (@0x14166cb30): vfunc_23(1) while any reason is set, vfunc_23(0) when none is. Its
-    /// re-show of the ridee for reason 2 alone is the port's already: the rider's visual does not carry the mount.
-    /// STILL-OPEN: SetShadowVisible, reason 1 (the ridee's AddHideReason(1) in vfunc_120).</summary>
+    /// re-show of the ridee for reason 2 alone is the port's already: the rider's visual does not carry the mount. The
+    /// simple shadow follows: SetShadowVisible(false) while hidden, (true) when shown (pcbase.cpp:1188-1203).
+    /// STILL-OPEN: reason 1 has no setter yet (FieldPropertyHideMyPCCli::vfunc_4, fieldpropertycli.cpp:148-160), so
+    /// vfunc_120's pass of it to the ridee (pcbase.cpp:3334-3335) is not ported.</summary>
     public void SetHideReason(int reason, bool on)
     {
         int bit = 1 << reason;
         if (((hideReasons & bit) != 0) == on) return;
         hideReasons = on ? hideReasons | bit : hideReasons & ~bit;
         SetBodyShown(hideReasons == 0);
+        FieldShadows.SetShadowVisible(this, hideReasons == 0);
     }
 
     /// <summary>The hide reason of a hideRider mount (pcbase.cpp:3331-3333).</summary>

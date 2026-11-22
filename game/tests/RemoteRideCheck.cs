@@ -393,12 +393,25 @@ public partial class RemoteRideCheck : Node3D
         bool after = rider is { Off: false };
         if (!before || !riding || !after || !mountOk)
             fails.Add($"remote ride shadow {rideId}: rider shown before {before}, off riding {riding}, shown after {after}; mount's {mount?.Radius} of {scale}");
+        // PCBase::ApplyHideReasons (pcbase.cpp:1188-1203): a hidden PC's simple shadow goes off, back on when shown
+        var users = (System.Collections.IDictionary)typeof(RemoteLayer)
+            .GetField("users", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(layer);
+        var rpc = (RemotePc)users[User].GetType().GetField("Pc").GetValue(users[User]);
+        rpc.SetHideReason(1, true);
+        bool hiddenOff = rider is { Off: true };
+        rpc.SetHideReason(1, false);
+        bool shownOn = rider is { Off: false };
+        if (!hiddenOff || !shownOn) fails.Add($"remote hide reason shadow: off hidden {hiddenOff}, on shown {shownOn}");
         Add(DeadUser, 0);
         var dead = Shadow(layer.HoldVisual(DeadUser)?.GetParent());
         Ride(DeadUser);
         if (dead is not { Off: false }) fails.Add($"ride shadow: a dead rider's shadow went off ({dead?.Off})");
         Off(DeadUser);
         var own = Shadow(pc) ?? BlobShadow.Add(pc, 100f, 3f);
+        pc.SetHideReason(1, true);
+        bool ownHiddenOff = own is { Off: true };
+        pc.SetHideReason(1, false);
+        if (!ownHiddenOff || own is not { Off: false }) fails.Add($"own hide reason shadow: off hidden {ownHiddenOff}, on shown {own?.Off == false}");
         var om = Mount.Load(packs, builder, rideId);
         pc.RideOn(om);
         bool ownRiding = own is { Off: true };
