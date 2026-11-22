@@ -180,6 +180,9 @@ public sealed partial class ReservedWords
 
         // npcdata.cpp:1449: friendly of the picked environment (FindNpcData), the last available one
         npcFriendly = new();
+        if (!entries.Any(n => Under(n, "npcdata/")) && Ms2.Formats.World.PerFileTable.Rows(packs, "npc/", "npc") is { } perFile)     // GMS2: npc/<id>.xml
+            foreach (var n in perFile.Root.Elements("npc"))
+                npcFriendly[FieldMissions.Long((string)n.Attribute("id"))] = FieldMissions.Int((string)n.Element("environment")?.Attribute("friendly"));
         foreach (var entry in entries.Where(n => Under(n, "npcdata/")))
         {
             var rows = new List<(long Id, int Friendly)>();

@@ -62,4 +62,27 @@ public class PerFileTableTests
         Assert.That(f?.XBlock, Is.EqualTo("02000001_TW_Tria"));
         Assert.That(f.Id, Is.EqualTo(2000001));
     }
+
+    const string NpcFile = @"<ms2><environment feature=""Season1"" locale=""""><model kfm=""02010001_Stan"" scale=""0.75"" />
+      <basic friendly=""2"" level=""20"" /><capsule radius=""70"" height=""210"" ignore=""0"" /></environment></ms2>";
+
+    // the KMS npcdata row shape: <npc id><environment friendly level ...><model/><capsule/></environment></npc>
+    [Test]
+    public void ANpcFileReadsAsAKmsNpcRow()
+    {
+        var doc = PerFileTable.Build(new[] { ("npc/11/00/11000001.xml", XElement.Parse(NpcFile)) }, "npc", f => f.Element("environment"));
+        var row = NpcTable.ParseRow(doc.Root.Element("npc"), Array.Empty<EffectDummy>());
+        Assert.That(row.Id, Is.EqualTo(11000001));
+        Assert.That(row.Kfm, Is.EqualTo("02010001_Stan"));
+        Assert.That(row.Scale, Is.EqualTo(0.75f));
+        Assert.That(row.CapsuleHeight, Is.EqualTo(210f));
+    }
+
+    [Test]
+    public void TheNpcTableHasRowsInEitherLayout()
+    {
+        var packs = Packs();
+        var t = new NpcTable(packs);
+        Assert.That(t.Count, Is.GreaterThan(1000));
+    }
 }

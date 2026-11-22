@@ -19,9 +19,19 @@ public static class PerFileTable
     /// holding a copy of the environment the client picks (FeatureElements.SelectEnvironment, FUN_14028f8d0) with its locale and
     /// feature attributes dropped, which is the shape of the KMS row's single &lt;environment&gt;. A file without an available
     /// environment or a readable name or content has no row. Null when the pack has no such file, so a table that is absent
-    /// in this data stays absent.
+    /// in this data stays absent. Read only: the document is shared.
     /// </summary>
-    public static XDocument Rows(PackSet packs, string folder, string row) => Build(Files(packs, folder), row, f => FeatureElements.SelectEnvironment(packs, f));
+    public static XDocument Rows(PackSet packs, string folder, string row)
+    {
+        // once per pack set and folder: a folder is thousands of files, and its readers only read the tree
+        var cache = built.GetOrCreateValue(packs);
+        lock (cache)
+            return cache.TryGetValue(folder + "|" + row, out var d)
+                ? d
+                : cache[folder + "|" + row] = Build(Files(packs, folder), row, f => FeatureElements.SelectEnvironment(packs, f));
+    }
+
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Dictionary<string, XDocument>> built = new();
 
     static IEnumerable<(string Name, XElement Root)> Files(PackSet packs, string folder)
     {
