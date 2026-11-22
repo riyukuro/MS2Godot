@@ -166,9 +166,12 @@ public partial class RemoteSyncCheck : Node3D
                 stone.States.StateChanged = null;
                 Vector3 Up(RemotePc p) => p.Body.GlobalPosition + new Vector3(0, 150, 0);
                 stone.States.DeadEntered = () => stoneDeath.Enter(this, packs, builder, stone, () => Up(stone), false, 1);
-                stone.States.DeadLeft = () => stone.SetBodyShown(true);
+                stone.States.DeadLeft = stone.LeaveDead;
                 wet.States.DeadEntered = () => wetDeath.Enter(this, packs, builder, wet, () => Up(wet), true, 1);
-                wet.States.DeadLeft = () => wet.SetBodyShown(true);
+                wet.States.DeadLeft = wet.LeaveDead;
+                BlobShadow.Load(packs);
+                foreach (var p in new[] { stone, wet })
+                    if (p.Body.GetNodeOrNull<BlobShadow>(FieldShadows.ShadowNode) == null) BlobShadow.Add(p.Body, 50f, 1f);
                 stone.States.Die(0);
                 stone.States.Push(Rec(RemotePcStates.StateDead, 0, stone, default));
                 wet.States.Die(0);
@@ -190,6 +193,8 @@ public partial class RemoteSyncCheck : Node3D
                 var pvp = wet.Anims.NameAt(ActionAnims.Act.ModePvpDead, 1);
                 if (pvp == null || wet.Anim.CurrentAnimation != pvp) fails.Add($"revive in place: sequence {wet.Anim.CurrentAnimation}, not {pvp}");
                 if (wetDeath.Tomb != null) fails.Add("revive in place: a tomb");
+                foreach (var p in new[] { stone, wet })
+                    if (p.Body.GetNodeOrNull<BlobShadow>(FieldShadows.ShadowNode) is not { Enabled: false }) fails.Add($"death: {p.Body.Name}'s shadow not off (StateDead::vfunc_4's vfunc_31(false))");
                 hitStage = stoneDeath.Hit(1, 5);         // hit 1 of 5: stage 1
                 GD.Print($"remote sync: death sequence {stone.Anim.CurrentAnimation}, tomb {(t != null && IsInstanceValid(t) ? t.State.Initial : "none")}, revive in place {wet.Anim.CurrentAnimation}, hit stage {hitStage?.ToString() ?? "none"}");
                 break;
@@ -204,6 +209,8 @@ public partial class RemoteSyncCheck : Node3D
             {
                 if (stone.States.Cur == RemotePcStates.StateDead) fails.Add("revival: still dead");
                 if (!stone.Visual.Visible) fails.Add("revival: body hidden");
+                bool shadowOn = stone.Body.GetNodeOrNull<BlobShadow>(FieldShadows.ShadowNode) is { Enabled: true };
+                if (!shadowOn) fails.Add("revival: shadow not on (StateDead::vfunc_5's vfunc_31(true))");
                 if (stoneDeath.Tomb != null && IsInstanceValid(stoneDeath.Tomb)) fails.Add("revival: tomb kept");
                 bool barRuns = stoneDeath.Bar != null && IsInstanceValid(stoneDeath.Bar) && stoneDeath.Bar.IsProcessing();
                 if (barRuns) fails.Add("revival: tomb bar still processing without a tomb");

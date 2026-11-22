@@ -73,7 +73,7 @@ public partial class BlobShadow : MeshInstance3D
     const float RecastEvery = 1.5f;       // seconds (90 frames at 60 fps) a still owner keeps its last cast
     const float MovedSq = 1f;
 
-    bool off;
+    bool off, disabled;
 
     /// <summary>GameObject::SetShadowVisible (@0x14123cb20): FUN_14160fe70 sets CObjectShadow m_bFlag32 to !shown, which
     /// hides the simple shadow only (UpdateVisibility unit_14160fb10.cpp:316-329; the real shadow's "shown" ignores it).</summary>
@@ -84,14 +84,32 @@ public partial class BlobShadow : MeshInstance3D
         {
             if (off == value) return;
             off = value;
-            if (off) Visible = false;
-            else { lastPos = new(float.NaN, 0, 0); idleTime = 0; }   // cast again on the next frame
+            Changed();
         }
+    }
+
+    /// <summary>GameObject::vfunc_31 (@0x14123cad0): SetEnabled sets CObjectShadow m_bEnabled, which UpdateVisibility
+    /// (unit_14160fb10.cpp:311-333) needs for the simple shadow as well as the real one, apart from <see cref="Off"/>.</summary>
+    public bool Enabled
+    {
+        get => !disabled;
+        set
+        {
+            if (disabled == !value) return;
+            disabled = !value;
+            Changed();
+        }
+    }
+
+    void Changed()
+    {
+        if (off || disabled) Visible = false;
+        else { lastPos = new(float.NaN, 0, 0); idleTime = 0; }   // cast again on the next frame
     }
 
     public override void _Process(double delta)
     {
-        if (off) return;
+        if (off || disabled) return;
         var owner = GetParent<Node3D>();
         var pos = owner.GlobalPosition;
         if (pos.DistanceSquaredTo(lastPos) < MovedSq && (idleTime += (float)delta) < RecastEvery) return;

@@ -65,6 +65,14 @@ public static class FieldShadows
         if (owner?.GetNodeOrNull<BlobShadow>(ShadowNode) is { } s) s.Off = !shown;
     }
 
+    /// <summary>GameObject::vfunc_31 on <paramref name="owner"/>: its simple shadow enabled or not (nothing without one).
+    /// PC::vfunc_31 (pc.cpp:1160-1169) forces it off in state 0x3f.
+    /// STILL-OPEN: the flag also gates the real shadow (UpdateVisibility's shown); the model's casters are not touched.</summary>
+    public static void SetShadowEnabled(Node3D owner, bool enabled)
+    {
+        if (owner?.GetNodeOrNull<BlobShadow>(ShadowNode) is { } s) s.Enabled = enabled;
+    }
+
     /// <summary>An npc's row: CNpc::vfunc_49 (unit_14108e1e0_npcactorandvibrate.cpp:2240-2249) takes bossMonster when IsBoss
     /// (CNpc::IsBoss = CNpcData::IsBoss), else monster; its shadow is sized by the model's shadowScale and lifted 1.</summary>
     public static string NpcKind(Ms2.Formats.World.NpcRow row) => row.IsBoss ? GraphicOptionTable.BossMonster : GraphicOptionTable.Monster;

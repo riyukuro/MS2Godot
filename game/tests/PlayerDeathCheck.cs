@@ -30,6 +30,7 @@ public partial class PlayerDeathCheck : Node3D
     readonly List<string> fails = new();
     readonly List<Ms2.Net.Packets.StateSync> sent = new();
     Player pc;
+    BlobShadow shadow;
     PlayerTombstone tomb;
     PackSet packs;
     ModelBuilder builder;
@@ -51,6 +52,8 @@ public partial class PlayerDeathCheck : Node3D
         pc = Player.Create(visual, anim, faceGrids);
         pc.Anims = ActionAnims.Load(packs, builder, md, anim, bodyDir);
         AddChild(pc);
+        BlobShadow.Load(packs);
+        shadow = pc.GetNodeOrNull<BlobShadow>(FieldShadows.ShadowNode) ?? BlobShadow.Add(pc, 50f, 1f);
         pc.SetProcess(false);
         pc.SetPhysicsProcess(false);
         pc.ScriptDriven = true;
@@ -126,6 +129,7 @@ public partial class PlayerDeathCheck : Node3D
         pc.EnterDead(false, 1);
         Expect(pc.Anim.CurrentAnimationPosition == t, "a repeat death restarted the sequence");
         Expect(!pc.Visual.Visible, "the body is shown while dead");
+        Expect(shadow != null && !shadow.Enabled, "the shadow is on while dead (StateDead::vfunc_4's vfunc_31(false))");
         GD.Print($"player death: dead '{dead}' held at {t:0.##} s, {sent.Count} sync records");
         Tomb();
     }
@@ -193,6 +197,7 @@ public partial class PlayerDeathCheck : Node3D
         pc.EnterRevival();
         Expect(pc.State == Player.MoveState.Revival && pc.CurrentAnim == rev, $"revival: {pc.State} '{pc.CurrentAnim}' (REVIVAL '{rev}')");
         Expect(pc.Visual.Visible, "the body is hidden while reviving");
+        Expect(shadow != null && shadow.Enabled, "the shadow is off while reviving (StateDead::vfunc_5's vfunc_31(true))");
         var at = pc.GlobalPosition;
         Steps(10);
         Expect(Flat(pc.GlobalPosition, at) < 0.01f, $"reviving body moved {Flat(pc.GlobalPosition, at):0.##}");
@@ -220,9 +225,11 @@ public partial class PlayerDeathCheck : Node3D
         pc.EnterDead(true, 1);
         Expect(entry == null || pc.CurrentAnim == entry, $"revive-in-place death: '{pc.CurrentAnim}' (MODEPVP_DEAD 1 '{entry}')");
         Expect(pc.Visual.Visible, "the body is hidden by the revive-in-place death");
+        Expect(shadow != null && !shadow.Enabled, "the shadow is on in the revive-in-place death");
         Expect(pc.Anims.NameAt(Act.ModePvpDead, 99) == null, "MODEPVP_DEAD entry 99 resolved");
         pc.LeaveDeath();        // another user state let in (OnUserState's vfunc_59)
         Expect(pc.State == Player.MoveState.Idle, $"user state after death: {pc.State}");
+        Expect(shadow != null && shadow.Enabled, "the shadow is off after a user state ended the death");
         pc.EnterRevival();
         GD.Print($"player death: revive-in-place entry 1 '{entry ?? "-"}'");
     }

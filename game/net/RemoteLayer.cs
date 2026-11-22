@@ -550,7 +550,7 @@ public sealed partial class RemoteLayer : Node3D
         r.Anchor = () => World.DummyAnchor.Point(dummies, "Eff_UI", model, md.RootName) ?? root.GlobalPosition;
         r.Damage = new Ui.DamageTarget(root, () => World.DummyAnchor.Point(dummies, "Eff_Damage", model, md.RootName) ?? root.GlobalPosition, true);
         pc.States.DeadEntered = () => EnterDead(r);
-        pc.States.DeadLeft = () => r.Pc.SetBodyShown(true);
+        pc.States.DeadLeft = pc.LeaveDead;
         HookMagics(r);
         pc.Spawn();
         // PC::vfunc_10 (a hurt spawn) and OnAddUser's SetEmotion of the packet's emotion byte (scenestategame.cpp:11188,

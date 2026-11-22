@@ -482,13 +482,23 @@ public sealed partial class RemotePc : IRemotePc
     /// StateDead::vfunc_4's body part (statedead.cpp:107-146) for another PC: the revive in place (<paramref name="inPlace"/>)
     /// shows the body (vfunc_23(0)) and plays MODEPVP_DEAD (0x40) entry <paramref name="reviveAnim"/> once (PlayAnimation
     /// with rate 1); the normal death hides the body (vfunc_23(1): the entity's IsVisible cleared) and plays DEAD (0x34,
-    /// vfunc_123). STILL-OPEN: vfunc_31(false) (the shadow off) and vfunc_23's tails are not ported.
+    /// vfunc_123); both then turn the shadow off (vfunc_31(false)). STILL-OPEN: vfunc_23's tails are not ported.
     /// </summary>
     public void EnterDead(bool inPlace, int reviveAnim)
     {
         SetBodyShown(inPlace);
         if (inPlace) PlayKey(Anims?.NameAt(Act.ModePvpDead, reviveAnim), 1f);
         else PlayAction((int)Act.Dead, 1f, false);
+        FieldShadows.SetShadowEnabled(Body, false);
+    }
+
+    /// <summary>StateDead::vfunc_5 (statedead.cpp:177-185): the body shown (vfunc_23(0)) and the shadow on (vfunc_31(true);
+    /// the state is still StateDead there, CStateManager::ChangeState statemanager.cpp:301-310, so PC::vfunc_31's state 0x3f
+    /// case does not apply).</summary>
+    public void LeaveDead()
+    {
+        SetBodyShown(true);
+        FieldShadows.SetShadowEnabled(Body, true);
     }
 
     /// <summary>PC::vfunc_23(!shown): the character root hidden or shown (StateDead::vfunc_5 shows it, statedead.cpp:181).</summary>

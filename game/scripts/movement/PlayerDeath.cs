@@ -35,8 +35,8 @@ public partial class Player
     /// The camera is not touched: neither the state (vfunc_4, vfunc_3, vfunc_5) nor the camera modes test the death, so the
     /// field camera keeps following the player's position (Field.UpdateCamera) with the body hidden, and zoom and rotation
     /// stay live.
-    /// STILL-OPEN: vfunc_31 (the shadow) has no Godot counterpart on the player; vfunc_23's tails and random target
-    /// effect are not hidden; the guide trigger 8 is not played. The live session plays the MyPC death effect
+    /// Both cases turn the shadow off (vfunc_31(false)); leaving StateDead turns it on (StateDead::vfunc_5, statedead.cpp:182).
+    /// STILL-OPEN: vfunc_23's tails and random target effect are not hidden; the guide trigger 8 is not played. The live session plays the MyPC death effect
     /// (dead_Start_MyPC, or dead_Start_MyPC_PvP in place), not attached to the body and not removed early.
     /// </summary>
     public void EnterDead(bool reviveInPlace, int reviveAnim)
@@ -48,6 +48,7 @@ public partial class Player
         Enter(MoveState.Dead);
         kVel = Vector3.Zero;
         SetBodyShown(reviveInPlace);
+        FieldShadows.SetShadowEnabled(this, false);
         if (deadSequence != null && Anim != null && Anim.HasAnimation(deadSequence)) PlaySequence(deadSequence, 1f, true);
     }
 
@@ -60,6 +61,7 @@ public partial class Player
     {
         deadSequence = null;
         SetBodyShown(true);
+        FieldShadows.SetShadowEnabled(this, true);   // StateDead::vfunc_5
         CancelSkillSequence();
         Enter(MoveState.Revival);
         kVel = Vector3.Zero;
@@ -78,6 +80,7 @@ public partial class Player
         if (State is not (MoveState.Dead or MoveState.Revival)) return;
         deadSequence = null;
         SetBodyShown(true);
+        FieldShadows.SetShadowEnabled(this, true);   // StateDead::vfunc_5
         Enter(MoveState.Idle);
     }
 
