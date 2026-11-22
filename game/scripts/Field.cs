@@ -214,6 +214,7 @@ public partial class Field : Node3D
         await Budget();
         Movement.MoveProof.Effects = (packs, builder);   // the scripted run's fx step
         if (SpawnsLocalPlayer) SpawnPlayer(builder, map);
+        if (player != null) Triggers.Bind(player.Climbs);
         await Budget();
         // From here to the end of the load, one frame: FieldContents.Start adopts the loading screen into the field, so no
         // frame is drawn between it and Loaded. The field is enabled again first, as it was throughout the one-frame build:

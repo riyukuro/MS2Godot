@@ -2,6 +2,7 @@ using Godot;
 using Maple2.PacketLib.Tools;
 using Ms2.Formats.World;
 using Ms2.Net.Packets;
+using Ms2Godot.Movement;
 
 namespace Ms2Godot.World;
 
@@ -21,6 +22,11 @@ namespace Ms2Godot.World;
 /// bit 5, so a hidden mesh no longer stops the player. An entity without PhysX props keeps its floor (FUN_140b60e40 returns
 /// first). FieldBuilder gives a trigger mesh with colliders a body of its own (<see cref="FieldBuilder.TriggerCollider"/>);
 /// the switch sets that body's layer, on the packet only.
+/// A rope / ladder event (TriggerObjectRope::vfunc_2 @0x140de7670, triggeractioncli.cpp:738-763) fades the entity in the
+/// same way (FadeEntity, :744), sets its Climbable flag (0x4df0c0de, :745) to the event's second bool, and switches its
+/// colliders by the show bool (FUN_140b60e40, :746). The flag is what PC::FUN_141659b80 (pc.cpp:3209), StateLadder::UpdateClimb
+/// (stateladder.cpp:374) and StateRope::FUN_1417e1e60 (statemanager.cpp:1440) read: the field's <see cref="Climbables"/>
+/// entry of the entity, bound with <see cref="Bind(Climbables)"/>. A hidden rope with the flag set stays climbable, as in the client.
 /// SetEntityCollisionGroup then runs WorldService::FUN_141bc8e00 (worldservice_1.cpp:4995-5009): each PC's
 /// controller gets ReportSceneChanged; NxController keeps no touched-shape state across moves for it to drop.
 /// The fade (FadeEntity, Fade tenths of a second) runs in <see cref="TriggerFade"/>; a mesh without drawn instances to
@@ -30,7 +36,8 @@ namespace Ms2Godot.World;
 /// (NpcGroundSpace keeps it; the client casts no npc ground: OnFieldAddNpc @0x141718cf0, scenestategame.cpp:3533-3584,
 /// and CNpc::ApplySyncBlock, npcactorandvibrate.cpp:913,965, place an npc at the packet's position + 4 z, so the
 /// server decides); the minimap mark (UIMinimapDialog::SetTriggerVisible) and the show/hide effects (0x6dd85c78 /
-/// 0x6454a3bb) of a type 3 event; the other kinds' events (read, not applied); a trigger mesh drawn as an animated prop (FieldProps); a hidden
+/// 0x6454a3bb) of a type 3 event, and those of a rope / ladder event (picked by its flag, :750-753); the actor, effect, cube,
+/// sound and camera events (read, not applied); a trigger mesh drawn as an animated prop (FieldProps); a hidden
 /// mesh that BGTransparencyMgr fades back in (FieldFade restores its transform).
 /// </summary>
 public sealed class FieldTriggers
@@ -38,6 +45,8 @@ public sealed class FieldTriggers
     readonly Dictionary<int, TriggerObjectKind> kinds = new();
     readonly Dictionary<int, TriggerFade.Target> meshes = new();
     readonly Dictionary<int, FieldBuilder.TriggerCollider> colliders = new();
+    readonly Dictionary<int, FieldEntity> entities = new();
+    readonly Dictionary<int, Climbables.Climb> climbs = new();
 
     /// <summary>The node that runs the fades, in the tree with the field (null when built without fade draws).</summary>
     public readonly TriggerFade Fader;
@@ -55,16 +64,28 @@ public sealed class FieldTriggers
             if (TriggerObjects.KindOf(e.HasMixin) is not { } kind) continue;
             int id = (int)e.Number("TriggerObjectID");
             kinds[id] = kind;     // CAtlMap::SetAt: a later entity with the same id replaces the earlier
-            if (kind == TriggerObjectKind.Mesh && meshDraws.TryGetValue(e, out var draws) && draws.Count > 0)
+            this.entities[id] = e;
+            bool fades = kind is TriggerObjectKind.Mesh or TriggerObjectKind.Rope;
+            if (fades && meshDraws.TryGetValue(e, out var draws) && draws.Count > 0)
             {
                 var t = meshes[id] = new TriggerFade.Target();
                 foreach (var (mm, i) in draws) t.All.Add((mm, i, mm.GetInstanceTransform(i)));
                 if (fadeDraws != null && fadeDraws.TryGetValue(e, out var drawn)) t.Draws.AddRange(drawn);
             }
             else meshes.Remove(id);
-            if (kind == TriggerObjectKind.Mesh && meshColliders != null && meshColliders.TryGetValue(e, out var tc)) colliders[id] = tc;
+            if (fades && meshColliders != null && meshColliders.TryGetValue(e, out var tc)) colliders[id] = tc;
             else colliders.Remove(id);
         }
+    }
+
+    /// <summary>Binds the rope / ladder objects to the field's climbables: the entry of each object's entity.</summary>
+    public void Bind(Climbables field)
+    {
+        climbs.Clear();
+        foreach (var c in field.All)
+            if (c.Entity != null && TriggerObjects.KindOf(c.Entity.HasMixin) == TriggerObjectKind.Rope
+                && entities.TryGetValue((int)c.Entity.Number("TriggerObjectID"), out var e) && e == c.Entity)
+                climbs[(int)e.Number("TriggerObjectID")] = c;
     }
 
     /// <summary>The kind of the object with this id, or null when the field holds none.</summary>
@@ -80,15 +101,18 @@ public sealed class FieldTriggers
         foreach (var ev in TriggerObjects.Read(r, KindOf))
         {
             if (!ev.Known) { GD.PushWarning($"Trigger Object Sync Error. ObjectID:{ev.Id}"); continue; }
-            if (ev.Kind != TriggerObjectKind.Mesh) continue;
+            if (ev.Kind is not (TriggerObjectKind.Mesh or TriggerObjectKind.Rope)) continue;
             bool drawn = meshes.TryGetValue(ev.Id, out var t);
-            // WorldService::FadeEntity(id, bShow, nFade * 0.1f), triggeractioncli.cpp:650-651
+            // WorldService::FadeEntity(id, bShow, nFade * 0.1f), triggeractioncli.cpp:650-651 (rope: :743-744)
             if (drawn && Fader != null && t.Draws.Count > 0) Fader.FadeEntity(ev.Id, t, ev.Show, ev.Fade * 0.1f);
             else if (drawn) TriggerFade.Switch(t, ev.Show);
-            // FUN_140b60e40(entity, bShow), triggeractioncli.cpp:679: after the fade and model swap
+            // SetCachedBoolProperty(entity, 0x4df0c0de, bFlag), triggeractioncli.cpp:745
+            bool climbable = false;
+            if (ev.Kind == TriggerObjectKind.Rope && climbs.TryGetValue(ev.Id, out var c)) { c.Usable = ev.Flag2; climbable = true; }
+            // FUN_140b60e40(entity, bShow), triggeractioncli.cpp:679 (rope: :746): after the fade and model swap
             bool collides = colliders.TryGetValue(ev.Id, out var tc);
             if (collides) tc.SetGroup(ev.Show ? tc.Group : HiddenGroup);
-            if (drawn || collides) n++;
+            if (drawn || collides || climbable) n++;
         }
         return n;
     }

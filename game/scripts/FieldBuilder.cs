@@ -119,8 +119,14 @@ public sealed class FieldBuilder
     /// <summary>The colliders of every trigger mesh entity that has any (<see cref="TriggerCollider"/>).</summary>
     public readonly Dictionary<FieldEntity, TriggerCollider> TriggerColliders = new();
 
-    /// <summary>A trigger object of mesh kind (TriggerObject::Create, Ms2.Net.Packets.TriggerObjects.KindOf).</summary>
-    public static bool IsTriggerMesh(FieldEntity e) => Ms2.Net.Packets.TriggerObjects.KindOf(e.HasMixin) == Ms2.Net.Packets.TriggerObjectKind.Mesh;
+    /// <summary>
+    /// A trigger object whose event fades the entity and switches its colliders (TriggerObject::Create,
+    /// Ms2.Net.Packets.TriggerObjects.KindOf): the mesh kind (TriggerObjectMesh::vfunc_2, triggeractioncli.cpp:651,679) and
+    /// the rope / ladder kind (TriggerObjectRope::vfunc_2, triggeractioncli.cpp:744,746). The trigger mesh draws and
+    /// colliders above hold both.
+    /// </summary>
+    public static bool IsTriggerMesh(FieldEntity e) =>
+        Ms2.Net.Packets.TriggerObjects.KindOf(e.HasMixin) is Ms2.Net.Packets.TriggerObjectKind.Mesh or Ms2.Net.Packets.TriggerObjectKind.Rope;
 
     /// <summary>
     /// The instances (drawn and shadow-only) of every field breakable (MS2Breakable), for world/FieldBreakables: the

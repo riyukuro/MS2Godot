@@ -18,7 +18,8 @@ public sealed class Climbables
         public Vector3 Position;      // entity position, Godot space
         public float YawDeg;          // entity Rotation.z
         public float Extrude;         // ExtrudeOffset
-        public bool Usable;           // Climbable
+        public bool Usable;           // Climbable (0x4df0c0de); a rope / ladder trigger event sets it (world/FieldTriggers)
+        public FieldEntity Entity;
         public Vector3 Base => Position + Direction(YawDeg) * Extrude;
     }
 
@@ -47,6 +48,7 @@ public sealed class Climbables
                 YawDeg = (float)e.RotationDeg.Z,
                 Extrude = (float)e.Number("ExtrudeOffset"),
                 Usable = e.Bool("Climbable"),
+                Entity = e,
             });
         }
         return c;

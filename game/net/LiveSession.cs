@@ -946,7 +946,7 @@ public partial class LiveSession : Node
     {
         if (field.Triggers == null) return;
         int n = field.Triggers.Apply(new Maple2.PacketLib.Tools.ByteReader(body));
-        if (n > 0) GD.Print($"live: Trigger applied {n} mesh event(s)");
+        if (n > 0) GD.Print($"live: Trigger applied {n} object event(s)");
     }
 
     /// <summary>A node's position in the client's z-up coordinates (the inverse of the field's G); null without a live node.</summary>

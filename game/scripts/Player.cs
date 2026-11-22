@@ -794,6 +794,16 @@ public partial class Player : CharacterBody3D
         return r <= 0.5f ? la + (lb - la) * (r * 2f) : lb + (lc - lb) * ((r - 0.5f) * 2f);
     }
 
+    /// <summary>
+    /// StateLadder::UpdateClimb (@0x1417d8c00, stateladder.cpp:370-386), read on every update whatever the sub state: the
+    /// ladder's Climbable flag (0x4df0c0de), which a rope / ladder trigger event can clear mid-climb (world/FieldTriggers).
+    /// With it off, a ground hit below the feet (CPhysXHelper::GetGroundDistance cast there and then, length 0 = unlimited,
+    /// not the cached PCBase::vfunc_93 value, which stays 0 from the ground the pc left; not FLT_MAX) sets sub 0x32 (:380-385),
+    /// which FUN_1417d9240 (:480-484) turns into the fall state (vfunc_59(5)); without a hit the climb moves nothing and finds
+    /// no top or base.
+    /// </summary>
+    bool LadderOff => ladder != null && !ladder.Usable;
+
     void LadderUpdate(Vector2 input, bool jumpPressed, float dt)
     {
         if (jumpPressed)
@@ -803,6 +813,7 @@ public partial class Player : CharacterBody3D
             StartJump(d, d != Vector3.Zero, 0x21);
             return;
         }
+        if (LadderOff && Ray(GlobalPosition, Vector3.Down, MoveConfig.UnlimitedRay, GroundGroups) != null) { Enter(MoveState.Fall); return; }
         var pos = GlobalPosition;
         switch (lsub)
         {
@@ -859,6 +870,7 @@ public partial class Player : CharacterBody3D
             stepPrevRatio = r;
             if (r >= 1f) stepRunning = false;
         }
+        if (LadderOff) return;
 
         if (lsub == Ladder.Up)
         {
