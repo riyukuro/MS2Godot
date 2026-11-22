@@ -125,6 +125,9 @@ public class HouseOptionTests
         public int RowLevel(int row) => Levels[row];
         public bool SendHouseSetting(int kind, string value, bool flag) { Log.Add($"setting {kind} '{value}' {flag}"); return true; }
         public void SendRow(int row, bool on, int level) => Log.Add($"row {row} {on} {level}");
+        public bool OwnsHome = true;
+        bool IHomeOptionHost.OwnsHome => OwnsHome;
+        public void SendKickUsers() => Log.Add("kick");
     }
 
     [Test] public void SetDataIsZeroWhenOffElseLevelPlusOne()
@@ -163,5 +166,124 @@ public class HouseOptionTests
         Assert.That(c.Apply(0, "123", new int[9]), Is.False);
         Assert.That(common, Is.EqualTo(new[] { 0x6e1, 0xb0a }));
         Assert.That(h.Log, Is.Empty);
+    }
+}
+
+public class HomeOptionDialogTests
+{
+    sealed class Dlg(HomeOptionController c) : HomeOptionDialogController(c)
+    {
+        public int Closed;
+        public override void Close() => Closed++;
+    }
+
+    sealed class Env
+    {
+        public readonly List<string> Calls = new(), Notices = new();
+        public readonly List<(int Type, string Text, string Tag)> Boxes = new();
+        public int Nexts;
+        public readonly Dlg D;
+        public readonly TestHost H = new();
+        public Env(Action<TestHost> setup = null)
+        {
+            setup?.Invoke(H);
+            D = new Dlg(new HomeOptionController(H));
+            D.Str = k => "<" + k + ">";
+            D.ShowBox = b => Boxes.Add((b.Type, b.Msg, b.Extra));
+            D.NextBox = () => Nexts++;
+            D.SystemNotice = Notices.Add;
+            D.CallMovie = (n, a) => Calls.Add(n + "(" + string.Join(",", a) + ")");
+        }
+    }
+
+    sealed class TestHost : IHomeOptionHost
+    {
+        public bool HasService = true, CanChange = true, OwnsHome = true;
+        public int? OpenType = 1;
+        public int[] Levels = new int[9]; public bool[] On = new bool[9];
+        public List<string> Log = new();
+        bool IHomeOptionHost.HasService => HasService;
+        bool IHomeOptionHost.CanChange => CanChange;
+        bool IHomeOptionHost.OwnsHome => OwnsHome;
+        int? IHomeOptionHost.OpenType => OpenType;
+        public bool RowOn(int row) => On[row];
+        public int RowLevel(int row) => Levels[row];
+        public void SendKickUsers() => Log.Add("kick");
+        public bool SendHouseSetting(int kind, string value, bool flag) { Log.Add($"setting {kind} '{value}' {flag}"); return true; }
+        public void SendRow(int row, bool on, int level) => Log.Add($"row {row} {on} {level}");
+    }
+
+    [Test] public void SetDataKeysTheRowsByNameAndSkipsAnUnknownOpenType()
+    {
+        var e = new Env(h => { h.On[3] = true; h.Levels[3] = 2; });
+        var m = e.D.Members();
+        Assert.That(m.Select(x => x.Key), Is.EqualTo(new[] { "opentype", "jump", "climb", "skill", "playInstrument", "potion", "ride_ground", "ride_air", "pet_summon", "revival_here" }));
+        Assert.That(m.Single(x => x.Key == "playInstrument").Value, Is.EqualTo(3));
+        Assert.That(m.Single(x => x.Key == "jump").Value, Is.EqualTo(0));
+        e.H.OpenType = null;
+        Assert.That(e.D.Members().Select(x => x.Key), Does.Not.Contain("opentype"));
+        e.H.HasService = false;
+        Assert.That(e.D.Members(), Is.Null);
+    }
+
+    [Test] public void TheFiveCallsOpenTheirBoxesWithTheirTags()
+    {
+        var e = new Env();
+        Assert.That(e.D.OnCallback("ONAPPLY", null), Is.True);
+        Assert.That(e.D.OnCallback("onConfirm", new object[] { true }), Is.True);
+        Assert.That(e.D.OnCallback("onKickUser", null), Is.True);
+        Assert.That(e.D.OnCallback("onreset", null), Is.True);
+        Assert.That(e.Boxes, Is.EqualTo(new[]
+        {
+            (1, "<s_home_option_msg_confirm>", "onApply"), (1, "<s_home_option_msg_confirm>", "OnConfirm"),
+            (1, "<s_home_option_msg_etc_kickuser>", "OnKickUser"), (1, "<s_home_option_init>", "OnReset"),
+        }));
+        Assert.That(e.D.OnCallback("nothing", null), Is.False);
+    }
+
+    [Test] public void ConfirmFalseClosesAndShowsNoBox()
+    {
+        var e = new Env();
+        e.D.OnCallback("onConfirm", new object[] { false });
+        Assert.That(e.D.Closed, Is.EqualTo(1));
+        Assert.That(e.Boxes, Is.Empty);
+    }
+
+    [Test] public void ApplyTakesTheOpenTypeThePasswordAndNineRows()
+    {
+        var e = new Env();
+        var args = new object[] { 1, " 654321 ", 0, 1, 2, 0, 0, 0, 0, 0, 3 };
+        Assert.That(e.D.OnCallback("apply", args), Is.True);
+        Assert.That(e.H.Log[0], Is.EqualTo("setting 1 '654321' True"));
+        Assert.That(e.H.Log[2], Is.EqualTo("row 1 True 0"));
+        Assert.That(e.H.Log[9], Is.EqualTo("row 8 True 2"));
+    }
+
+    [Test] public void OnlyYesActsAndEveryAnswerAdvancesTheQueue()
+    {
+        var e = new Env();
+        foreach (var (tag, call) in new[] { ("OnReset", "reset()"), ("onApply", "requestData(False)"), ("OnConfirm", "requestData(True)") })
+        {
+            e.Calls.Clear();
+            e.D.OnMessageBox(null, 1, tag);
+            Assert.That(e.Calls, Is.Empty, tag + " no");
+            e.D.OnMessageBox(null, 0, tag);
+            Assert.That(e.Calls, Is.EqualTo(new[] { call }), tag + " yes");
+        }
+        Assert.That(e.Nexts, Is.EqualTo(6));
+    }
+
+    [Test] public void KickUserSendsAlwaysAndNoticesOnlyForTheOwner()
+    {
+        var e = new Env();
+        e.D.OnMessageBox(null, 0, "OnKickUser");
+        Assert.That(e.H.Log, Is.EqualTo(new[] { "kick" }));
+        Assert.That(e.Notices, Is.EqualTo(new[] { "<s_home_option_msg_kick_user>" }));
+        e.H.OwnsHome = false;
+        e.D.OnMessageBox(null, 0, "OnKickUser");
+        Assert.That(e.H.Log.Count, Is.EqualTo(2));
+        Assert.That(e.Notices.Count, Is.EqualTo(1));
+        e.D.OnMessageBox(null, 1, "OnKickUser");
+        Assert.That(e.H.Log.Count, Is.EqualTo(2));
     }
 }

@@ -39,6 +39,12 @@ public sealed record HomeOptionRowLevelRequest(byte Row, byte Level) : IOutPacke
     public void Write(ByteWriter w) { w.WriteByte(0x2b); w.WriteByte(Row); w.WriteByte(Level); }
 }
 
+/// <summary>UIHomeOptionDialog::SendRequestCubeMode49 (@0x140fa9bd0, uihomeoptiondialog.cpp:276): RequestCube u8 0x31, nothing else (the home's visitors are sent out).</summary>
+public sealed record HomeKickUsersRequest() : IOutPacket {
+    public Outbound Op => Outbound.RequestCube;
+    public void Write(ByteWriter w) { w.WriteByte(0x31); }
+}
+
 /// <summary>MyPC::SendCraftModeOff (@0x141530200, mypc.cpp:4501): RequestSetCraftMode u8 0, u8 0.</summary>
 public sealed record CraftModeOffRequest() : IOutPacket {
     public Outbound Op => Outbound.RequestSetCraftMode;

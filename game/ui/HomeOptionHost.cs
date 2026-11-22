@@ -8,7 +8,7 @@ namespace Ms2Godot.Ui;
 /// The home option dialog's outside (<see cref="IHomeOptionHost"/>): the cube map service's rows (<see cref="Net.LiveSession.HomeRows"/>,
 /// ResponseCube 0x2a / 0x2b), CanChange (CubeMapInformationService::FUN_1410d5640, cubemapinformationservice_3.cpp:1186) and the home's
 /// open type (<see cref="Net.LiveSession.Home"/>). The service exists in the game scene (RegisterServices), taken here as a field being loaded.
-/// STILL-OPEN: the HomeOptionDialog movie that would use it is not ported, so nothing creates this host yet; the service owner (f1c0) and f330
+/// The movie is <see cref="Ms2.Ui.Hud.HomeOptionDialogController"/> (HudScene.OpenHomeOption; its opener is still open). The service owner (f1c0) and f330
 /// are <see cref="Ms2.Net.CubeMapInfo"/>'s Owner and PlotMode, set from LoadUgcMap's nOwner and nF (scenestategame.cpp:2252, 2258).
 /// </summary>
 sealed class HomeOptionHost(Net.LiveSession live, GameOptionHost options, Func<int, bool> fieldIsHome) : IHomeOptionHost
@@ -17,6 +17,9 @@ sealed class HomeOptionHost(Net.LiveSession live, GameOptionHost options, Func<i
     /// <summary>FUN_1410d2f10 (CFieldData::FUN_140374410 of the field id: map type 3), FUN_1410c35c0, FUN_1410c3180 == DAT_143ab2820.</summary>
     public bool CanChange => live.FieldId is int id
         && Ms2.Ui.HomeOptionRows.CanChange(fieldIsHome(id), live.CubeMap.PlotMode == 1, live.CubeMap.Owner, live.OwnAccountId);
+    /// <summary>FUN_1418fd280 (uicommon.cpp:353): the own account is known and is the service's owner (FUN_1410c3180).</summary>
+    public bool OwnsHome => live.OwnAccountId != 0 && live.CubeMap.Owner == live.OwnAccountId;
+    public void SendKickUsers() => live.SendHomeKickUsers();
     public int? OpenType => live.Home.OpenType;
     public bool RowOn(int row) => live.HomeRows.RowOn(row);
     public int RowLevel(int row) => live.HomeRows.RowLevel(row);

@@ -1938,6 +1938,12 @@ public partial class LiveSession : Node
         Send(new HomeOptionRowLevelRequest((byte) row, (byte) level));
     }
 
+    /// <summary>UIHomeOptionDialog::SendRequestCubeMode49 (uihomeoptiondialog.cpp:276-283): the packet that sends the home's visitors out.</summary>
+    public void SendHomeKickUsers()
+    {
+        if (game != null) Send(new HomeKickUsersRequest());
+    }
+
     /// <summary>CNetworkService::SendRequestQuit (@0x141538820, networkservice.cpp:501-505): flushes guide state (SendFunctionCube) and sends RequestQuit(0).</summary>
     public void SendRequestQuit()
     {

@@ -13,6 +13,10 @@ public interface IHomeOptionHost
     bool RowOn(int row);
     /// <summary>FUN_1410c3e80(row): the row's level.</summary>
     int RowLevel(int row);
+    /// <summary>FUN_1418fd280 (uicommon.cpp:353): the own account is the home service's owner.</summary>
+    bool OwnsHome { get; }
+    /// <summary>SendRequestCubeMode49's packet (RequestCube 0x31).</summary>
+    void SendKickUsers();
     /// <summary>MyPC::SendHouseSetting; false without the local player.</summary>
     bool SendHouseSetting(int kind, string value, bool flag);
     /// <summary>SendRequestCubeMode42 and SendRequestCubeMode43 of one row.</summary>
@@ -21,8 +25,7 @@ public interface IHomeOptionHost
 
 /// <summary>
 /// The logic of UIHomeOptionDialog (uihomeoptiondialog.cpp:112-275) apart from its movie: the values setData gets, and "apply".
-/// STILL-OPEN: the HomeOptionDialog movie and the "reset", "kick user" and confirm message boxes are not ported, and nothing gives it an
-/// <see cref="IHomeOptionHost"/> yet (the live session does not carry the home's map info or the cube map service state).
+/// The movie and its boxes are <see cref="HomeOptionDialogController"/>.
 /// </summary>
 public sealed class HomeOptionController
 {
@@ -61,6 +64,14 @@ public sealed class HomeOptionController
     {
         if (openType != 1) password = "";
         host.SendHouseSetting(openType, password, true);
+    }
+
+    /// <summary>SendRequestCubeMode49 (@0x140fa9bd0, :276-283): the packet, then the system notice when the own account owns the home
+    /// (FUN_1418fd280 == 1). <paramref name="notice"/> is ShowSystemNotice(text, 1, 1) of s_home_option_msg_kick_user.</summary>
+    public void KickUsers(Action notice)
+    {
+        host.SendKickUsers();
+        if (host.OwnsHome) notice?.Invoke();
     }
 
     /// <summary>SetPermissionRow (@0x140fa9a50, :244): mode 42 with value &gt; 0, mode 43 with max(0, value - 1).</summary>
