@@ -53,8 +53,8 @@ public sealed class GuildSkillTable
     /// <summary>GetGuildSkillIds: ids ascending (the client's std::map), whose first row is a guild skill.</summary>
     public IEnumerable<int> GuildSkillIds() => skills.Where(k => k.Value.Count > 0 && k.Value[0].IsGuild).Select(k => k.Key);
 
-    /// <summary>GetPersonalSkillIds (its body is not in the recovered source). STILL-OPEN: taken as the ids whose first row is a personal skill,
-    /// the mirror of <see cref="GuildSkillIds"/>.</summary>
+    /// <summary>GetPersonalSkillIds (@0x1404d7730, guilddef_2.cpp:697-706): the ids whose first row is a personal skill, the mirror of
+    /// <see cref="GuildSkillIds"/>.</summary>
     public IEnumerable<int> PersonalSkillIds() => skills.Where(k => k.Value.Count > 0 && k.Value[0].IsPersonal).Select(k => k.Key);
 
     public int Count => skills.Count;

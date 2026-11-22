@@ -50,6 +50,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     object skillPage;           // m_skillPage
     object skillPage2;          // m_skillPage2
     readonly SortedSet<int> activeSkills = new();   // m_1b0
+    long lastSkillInfoSecond = long.MinValue;       // the server second UpdateSkillInfo last pushed
     int memberSort;             // m_nMemberSort (0 in the ctor)
     string masterTarget = "";   // m_strName: the member the changeMaster box names
     string expelTarget = "";    // m_strDesc: the member the expelMember box names
@@ -89,6 +90,9 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     public Func<uint, ushort, string> EffectIcon = (_, _) => null;
     /// <summary>FormatTimeSpan(CTimeSpan(seconds), true, true, true, false) (timeutil.cpp:371): days, hours and minutes.</summary>
     public Func<long, string> TimeSpanText = _ => "";
+
+    /// <summary>FUN_14151f200: the box on show closes before the use box shows (uiguilddialog.cpp:1105).</summary>
+    public Action NextBox = MessageBoxQueue.Next;
     /// <summary>FUN_140d73c60: show a message box.</summary>
     public Action<MessageBoxData> ShowBox = MessageBoxQueue.Show;
 
@@ -316,10 +320,13 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         Host.Invoke(skillPage, "onChangedFund", fund);
     }
 
-    string SkillInfoText(GuildSkillTable.Skill s)
+    /// <summary>The guild page (FUN_14196e590, :2213) writes the duration with FormatTimeSpan; the member page (FUN_14196f830, :2324)
+    /// with the short time text.</summary>
+    public string SkillInfoText(GuildSkillTable.Skill s, bool personal = false)
     {
         string info = "";
-        if (s.Duration > 0) info += ClientFormat.Format(CommonByKey("s_guild_ui_skill_duration"), TimeSpanText(s.Duration));
+        if (s.Duration > 0)
+            info += ClientFormat.Format(CommonByKey("s_guild_ui_skill_duration"), personal ? ShortTimeText((uint)s.Duration) : TimeSpanText(s.Duration));
         if (s.Cooltime > 0)
         {
             if (info.Length > 0) info += ", ";
@@ -371,6 +378,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     {
         if (NoMovie || skillPage == null) return;
         activeSkills.Clear();
+        lastSkillInfoSecond = long.MinValue;
         int fund = Book.Info?.Fund ?? 0, eventFund = Book.Info?.EventFund ?? 0;
         SetChildText(skillPage, "m_guildFund", GroupText(fund));
         SetChildText(skillPage, "m_guildEventFund", GroupText(eventFund));
@@ -412,8 +420,12 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     public void UpdateSkillInfo()
     {
         if (NoMovie || activeSkills.Count == 0 || skillPage == null) return;
+        // every input is a whole second (server time, duration, time), so the rows change once a second
+        long now = Book.ServerTime();
+        if (now == lastSkillInfoSecond) return;
+        lastSkillInfoSecond = now;
         var rows = new List<object>();
-        foreach (int id in activeSkills.ToList())
+        foreach (int id in activeSkills)
         {
             if (Book.SkillTable?.Get(id, Book.SkillLevel(id)) is not { } s) continue;
             if (Book.Info?.Skills.FirstOrDefault(r => r.Id == id) is not { } rec) continue;
@@ -430,7 +442,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
 
     /// <summary>FUN_14196f830 (@0x14196f830): the personal skills of the second skill page, over the player's mesos.
     /// STILL-OPEN: the remaining time of the player's own buff (AdditionalCli::GetRemainTicks) is not ported, so a personal skill is
-    /// never shown as in use; the game event's sale rate is 0; the ids are the personal skills' (GetPersonalSkillIds' body is not recovered).</summary>
+    /// never shown as in use; the game event's sale rate is 0; the ids are GetPersonalSkillIds (@0x1404d7730).</summary>
     void BuildPersonalSkills()
     {
         if (NoMovie || skillPage2 == null) return;
@@ -453,7 +465,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
                 ("isEnough", meso >= require),
                 ("isMaster", master),
                 ("saleRate", Book.GuildPersonalSkillSaleRate() / 100),
-                ("skillInfo", SkillInfoText(s)),
+                ("skillInfo", SkillInfoText(s, true)),
                 ("skillDesc", EffectText((uint)s.AdditionalEffectId, (ushort)s.AdditionalEffectLevel, "tooltipDescription")),
                 ("state", state), ("stateString", stateText), ("imgpath", icon),
                 ("remainCoolSec", 0), ("remainDurationSec", 0),
@@ -976,8 +988,8 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
 
     /// <summary>OnGuildSkillUse (uiguilddialog.cpp:1084): a type 0x1f box of s_guild_ui_skill_use_skill (the _event text for an event
     /// skill) with the cost after the sale and the skill's name, the yes / no preset, the terms check box and the skill id as
-    /// its argument; yes (FUN_141974ba0 @0x141974ba0) is <see cref="GuildBook.UseSkill"/>. STILL-OPEN: FUN_14151f200
-    /// (the open box closes first).</summary>
+    /// its argument; yes (FUN_141974ba0 @0x141974ba0) is <see cref="GuildBook.UseSkill"/>. FUN_14151f200
+    /// (<see cref="NextBox"/>) closes the open box first.</summary>
     void GuildSkillUseBox(int id)
     {
         int level = Book.SkillLevel(id);
@@ -990,6 +1002,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         box.SetCheckbox0(CommonByKey("s_guild_ui_skill_use_skill_term_agree"), false);
         box.SetAgreement(false);
         box.Callback = (n, b) => { if (n == 0) Book.UseSkill(b.ArgInt(0, 0)); return true; };
+        NextBox();
         ShowBox(box);
     }
 

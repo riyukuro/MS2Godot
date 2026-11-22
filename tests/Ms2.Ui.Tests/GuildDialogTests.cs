@@ -103,6 +103,62 @@ public class GuildDialogTests
         Assert.That(boxes, Is.Empty, "no row, and a guild skill is not a personal one");
     }
 
+    /// <summary>OnGuildSkillUse (uiguilddialog.cpp:1105): the box on show closes before the use box shows, so two clicks leave one box.</summary>
+    [Test]
+    public void TheUseBoxClosesTheShownBoxFirst()
+    {
+        var b = InGuild();
+        b.SkillTable = new Ms2.Formats.World.GuildSkillTable(System.Xml.Linq.XDocument.Parse(SkillBoxXml));
+        b.Info.Skills.Add(new GuildSkillState(1, 1, 0));
+        var c = new GuildDialogController(b) { CommonByKey = k => k, EffectText = (_, _, _) => "n", GroupText = n => n.ToString() };
+        var order = new List<string>();
+        c.NextBox = () => order.Add("next");
+        c.ShowBox = _ => order.Add("show");
+        c.OnCallback("onGuildSkillUse", new object[] { 1.0 });
+        c.OnCallback("onGuildSkillUse", new object[] { 1.0 });
+        Assert.That(order, Is.EqualTo(new[] { "next", "show", "next", "show" }));
+    }
+
+    /// <summary>The guild page writes the duration with FormatTimeSpan (:2213), the member page with the short time text (:2324).</summary>
+    [Test]
+    public void ThePersonalSkillInfoUsesTheShortTimeText()
+    {
+        var b = InGuild();
+        b.SkillTable = new Ms2.Formats.World.GuildSkillTable(System.Xml.Linq.XDocument.Parse(SkillBoxXml));
+        var c = new GuildDialogController(b) { Common = id => "c" + id + ":{0}", CommonByKey = k => k + ":{0}", TimeSpanText = n => "span" + n };
+        var s = b.SkillTable.Get(1, 1);
+        Assert.That(c.SkillInfoText(s), Does.Contain("span60"));
+        Assert.That(c.SkillInfoText(s, true), Does.Not.Contain("span"));
+        Assert.That(c.SkillInfoText(s, true), Does.Contain("c2428:1"), "60 s is the one-minute text 0x97c");
+    }
+
+    /// <summary>UpdateSkillInfo's inputs are whole seconds, so it pushes once a second and a rebuild waits for the next one.</summary>
+    [Test]
+    public void TheSkillInfoUpdateRunsOncePerServerSecond()
+    {
+        var b = InGuild();
+        b.SkillTable = new Ms2.Formats.World.GuildSkillTable(System.Xml.Linq.XDocument.Parse(SkillBoxXml));
+        long now = 1000;
+        b.ServerTime = () => now;
+        b.Level = () => 50;
+        b.Info.Skills.Add(new GuildSkillState(1, 1, 990));      // running: 50 s of duration, 110 s of cooldown left
+        var c = Load(b);
+        int built = 0;
+        c.EffectIcon = (_, _) => "icon.png";
+        c.EffectText = (_, _, _) => { built++; return "n"; };
+        c.OpenCategoryPage("Skill");
+        int afterOpen = built;
+        Assert.That(afterOpen, Is.GreaterThan(0));
+        c.Tick();
+        Assert.That(built, Is.EqualTo(afterOpen), "the skill is still running");
+        b.Info.Skills[0] = new GuildSkillState(1, 1, 0);        // both times over, in the same second
+        c.Tick();
+        Assert.That(built, Is.EqualTo(afterOpen), "the same second: nothing is read again");
+        now = 1001;
+        c.Tick();
+        Assert.That(built, Is.GreaterThan(afterOpen), "the next second sees the skill ran out and rebuilds the page");
+    }
+
     /// <summary>CreateSkillPage / CreateMemberSkillPage (@0x14196a590, @0x14196a640): the pages are made on the category, the fund texts
     /// come from the guild fund and the player's mesos, and HideAllPages hides them. The rows go to the AS3 page, which this does not read.</summary>
     [Test]
