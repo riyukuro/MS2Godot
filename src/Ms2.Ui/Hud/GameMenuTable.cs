@@ -171,13 +171,9 @@ public sealed class GameMenuTable
     public static GameMenuTable Load(PackSet packs, Func<int, bool> featureOn)
     {
         var xml = packs.Exists("Xml", "table/gamemenu.xml") ? GameStrings.Parse(packs.Read("Xml", "table/gamemenu.xml")) : null;
-        return new GameMenuTable(xml, featureOn, e => LocaleInList((string)e.Attribute("locale") ?? "")
+        return new GameMenuTable(xml, featureOn, e => LobbyFeatures.IsLocaleInList(packs, (string)e.Attribute("locale") ?? "")
             && LobbyFeatures.IsEnabledByName(packs, (string)e.Attribute("feature")));
     }
-
-    /// <summary>CFeatureManager::IsLocaleInList: empty, or a comma list holding the client's locale.</summary>
-    static bool LocaleInList(string list) => list.Length == 0
-        || list.Split(',').Any(l => string.Equals(l.Trim(), LobbyFeatures.LocaleName, StringComparison.OrdinalIgnoreCase));
 
     static int SetOf(string type) =>
         string.Equals(type, "gamePad", StringComparison.OrdinalIgnoreCase) ? 1

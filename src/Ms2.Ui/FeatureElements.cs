@@ -16,7 +16,7 @@ public static class FeatureElements
 
     /// <summary>IsElementAvailable on an element's locale and feature attributes ("" when missing).</summary>
     public static bool IsAvailable(PackSet packs, string locale, string feature) =>
-        (locale == "" || locale == LobbyFeatures.LocaleName) && LobbyFeatures.IsEnabledByName(packs, feature);
+        (locale == "" || locale == LobbyFeatures.LocaleOf(packs)) && LobbyFeatures.IsEnabledByName(packs, feature);
 
     static string Locale(XElement e) => (string)e.Attribute("locale") ?? "";
     static string Feature(XElement e) => (string)e.Attribute("feature") ?? "";
@@ -111,12 +111,12 @@ public static class FeatureElements
             bool aWins = la > lb || (la == lb && string.CompareOrdinal(fa, fb) > 0);   // SelectHigherLevelFeatureName
             return aWins ? a : b;
         }
-        string xa = localeOf(a), xb = localeOf(b);
+        string xa = localeOf(a), xb = localeOf(b), mine = LobbyFeatures.LocaleOf(packs);
         if (xa != xb)
         {
             // FUN_14036dfa0: the client's locale, else the empty one, else A
-            if (xa == LobbyFeatures.LocaleName) return a;
-            if (xb == LobbyFeatures.LocaleName) return b;
+            if (xa == mine) return a;
+            if (xb == mine) return b;
             if (xa == "") return a;
             if (xb == "") return b;
         }

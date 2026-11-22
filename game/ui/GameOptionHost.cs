@@ -119,7 +119,7 @@ public sealed class GameOptionHost : IGameOptionDialogHost
     public int BuildNumber => 0;
 
     /// <summary>FUN_140651390 (localepath.cpp:309), the locale code.</summary>
-    public string Locale => Ms2.Ui.LobbyFeatures.LocaleName;
+    public string Locale => Ms2.Ui.LobbyFeatures.LocaleOf(packs);
 
     /// <summary>GFxSceneService::GetSceneId: the field scene, none of the simple-mode scenes (0x620000d, 0x6200009,
     /// 0x6200085).</summary>

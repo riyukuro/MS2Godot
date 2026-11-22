@@ -43,6 +43,9 @@ public sealed class GameTables
     public static GameTables Shared(PackSet packs, string language) =>
         shared.GetOrCreateValue(packs).GetOrAdd(language, l => new GameTables(packs, l));
 
+    /// <summary>The client's locale this data is (<see cref="LobbyFeatures.LocaleOf"/>); "KR" for a table set without packs.</summary>
+    public string Locale => LobbyFeatures.LocaleOf(packs);
+
     GameTables() { }
 
     public GameTables(PackSet packs, params string[] languages)

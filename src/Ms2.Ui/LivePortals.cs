@@ -139,7 +139,7 @@ public sealed class LivePortals
     }
 
     public static LivePortals ForPacks(PackSet packs, int fieldId, QuestMaskTable masks, Func<int, QuestMaskTable.QuestStatus> quest) =>
-        new(fieldId, masks, (f, l) => LobbyFeatures.IsEnabledByName(packs, f) && LobbyFeatures.IsLocaleInList(l), quest);
+        new(fieldId, masks, (f, l) => LobbyFeatures.IsEnabledByName(packs, f) && LobbyFeatures.IsLocaleInList(packs, l), quest);
 
     public int FieldId => fieldId;
     public IReadOnlyList<LivePortal> All => order;

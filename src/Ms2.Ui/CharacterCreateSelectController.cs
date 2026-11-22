@@ -191,7 +191,7 @@ public sealed class CharacterCreateSelectController : UiController
             else if (kind.Equals("display", StringComparison.OrdinalIgnoreCase))
             {
                 var locale = (string)g.Attribute("locale") ?? "";
-                if (!LocaleInList(locale)) continue;
+                if (!LobbyFeatures.IsLocaleInList(packs, locale)) continue;
                 if (locale.Length == 0) displayAny = g; else display = g;
             }
         }
@@ -232,12 +232,8 @@ public sealed class CharacterCreateSelectController : UiController
         }
     }
 
-    /// <summary>CFeatureManager::IsLocaleInList: empty, or a comma list holding the client's locale.</summary>
-    static bool LocaleInList(string list) => list.Length == 0
-        || list.Split(',').Any(l => string.Equals(l.Trim(), LobbyFeatures.LocaleName, StringComparison.OrdinalIgnoreCase));
-
     /// <summary>IsElementAvailable: the client's locale (or none) and an enabled feature (or none).</summary>
-    static bool Available(PackSet packs, XElement e) => LocaleInList((string)e.Attribute("locale") ?? "")
+    static bool Available(PackSet packs, XElement e) => LobbyFeatures.IsLocaleInList(packs, (string)e.Attribute("locale") ?? "")
         && LobbyFeatures.IsEnabledByName(packs, (string)e.Attribute("feature"));
 
     /// <summary>CFeatureManager::SelectHigherLevelFeatureName.</summary>

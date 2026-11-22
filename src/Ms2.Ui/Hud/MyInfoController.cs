@@ -547,7 +547,7 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     {
         var a = CombatScore.OffenseArgs(info.JobGroup, info.Stats0, AverageStat(), s => Basic(s)?.Total, (s, t) => Special(s, t)?.Total,
             MainHandRarity());
-        return a == null ? null : CombatScore.Result(CombatScore.Offense(a, LobbyFeatures.LocaleName));
+        return a == null ? null : CombatScore.Result(CombatScore.Offense(a, Model.Tables.Locale));
     }
 
     /// <summary>GetDefenseScore's feature 0xdf branch (<see cref="CombatScore"/>); null while a stat it reads is not known.</summary>

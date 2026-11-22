@@ -10,11 +10,13 @@ namespace Ms2.Ui;
 /// </summary>
 public static class LobbyFeatures
 {
-    const string ServerType = "Live", Locale = "KR";
+    const string ServerType = "Live";
     /// <summary>The levels a pack set's client reads (each client folder its own: a loose feature.xml in one is not the other's).</summary>
     sealed class Levels
     {
         public int Server;
+        /// <summary>The locale this data is the client's: "KR" or "NA" (see <see cref="LocaleOf"/>).</summary>
+        public string Locale = "KR";
         public readonly Dictionary<string, int> Names = new();
         /// <summary>Every feature name in table/feature.xml, including the ones its level leaves off (LoadFeature skips those).</summary>
         public readonly HashSet<string> All = new(StringComparer.Ordinal);
@@ -22,8 +24,20 @@ public static class LobbyFeatures
 
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Levels> sets = new();
 
-    /// <summary>The locale the client runs as (CFeatureManager::GetLocaleName).</summary>
-    public const string LocaleName = Locale;
+    /// <summary>
+    /// The locale the client runs as (CFeatureManager::GetLocaleName, read by IsElementAvailable commonutil.cpp:1047,
+    /// SelectFeatureElement FUN_14036dfa0, LoadFeature featuremanager.cpp:804-806, the locale folder of GetLocalePath
+    /// filesystem.cpp:928 and CreateClientPlatform ms2clientplatform.cpp:29). The KMS exe's is "KR". The data tells which
+    /// client it belongs to: the region folder <see cref="TablePath"/> finds in the pack (table/kr/ is KR, table/na/ is NA), so
+    /// one value serves the feature levels, the element locales and the table folders alike.
+    /// STILL-OPEN: the GMS2 build's own GetLocaleName constant (its exe is packed); "NA" is what its data (feature_setting.xml,
+    /// feature.xml, item environments, table/na/) is written for.
+    /// </summary>
+    public static string LocaleOf(PackSet packs) => packs == null ? "KR" : Load(packs).Locale;
+
+    /// <summary>CFeatureManager::IsLocaleInList: empty, or a comma list holding the client's locale.</summary>
+    public static bool IsLocaleInList(PackSet packs, string list) => string.IsNullOrEmpty(list)
+        || list.Split(',').Any(l => string.Equals(l.Trim(), LocaleOf(packs), StringComparison.OrdinalIgnoreCase));
 
     /// <summary>The level of a feature name (m_nameLevels); 0 for an unknown name, as the client's failed Lookup leaves it.</summary>
     public static int LevelOf(PackSet packs, string feature)
@@ -33,10 +47,6 @@ public static class LobbyFeatures
 
     /// <summary>IsFeatureEnabledByName: an empty name is on, an unknown name is off.</summary>
     public static bool IsEnabledByName(PackSet packs, string feature) => string.IsNullOrEmpty(feature) || IsEnabled(packs, feature);
-
-    /// <summary>CFeatureManager::IsLocaleInList: empty, or a comma list holding the client's locale.</summary>
-    public static bool IsLocaleInList(string list) => string.IsNullOrEmpty(list)
-        || list.Split(',').Any(l => string.Equals(l.Trim(), Locale, StringComparison.OrdinalIgnoreCase));
 
     public static bool IsEnabled(PackSet packs, string feature)
     {
@@ -71,10 +81,11 @@ public static class LobbyFeatures
 
     static Levels Read(PackSet packs)
     {
-        var levels = new Levels();
-        foreach (var s in Xml(packs, "table/feature_setting.xml")?.Root.Elements("setting") ?? Enumerable.Empty<XElement>())
+        var levels = new Levels { Locale = TablePath.Region(e => Loose(packs.DataDir, "Xml/" + e) != null || HasPacked(packs, e)).ToUpperInvariant() };
+        string Locale = levels.Locale;
+        foreach (var s in Xml(packs, "table/feature_setting.xml", Locale)?.Root.Elements("setting") ?? Enumerable.Empty<XElement>())
             if ((string)s.Attribute("type") == ServerType && int.TryParse((string)s.Attribute(Locale), out int l)) levels.Server = l;
-        foreach (var f in Xml(packs, "table/feature.xml")?.Root.Elements("feature") ?? Enumerable.Empty<XElement>())
+        foreach (var f in Xml(packs, "table/feature.xml", Locale)?.Root.Elements("feature") ?? Enumerable.Empty<XElement>())
             // a level of 0 (or no KR attribute) is skipped, so the feature stays off (CFeatureManager::LoadFeature, featuremanager.cpp:804-806)
             if ((string)f.Attribute("name") is { } name)
             {
@@ -91,17 +102,23 @@ public static class LobbyFeatures
     /// Xml.m2d runs with that file's levels.
     /// STILL-OPEN: the other tables (assets.Table, GameTables) read the pack alone.
     /// </summary>
-    static XDocument Xml(PackSet packs, string entry)
+    static XDocument Xml(PackSet packs, string entry, string locale)
     {
-        var text = Loose(packs.DataDir, "Xml/" + entry) ?? Loose(packs.DataDir, "Xml/" + LocalePath(entry));
+        var text = Loose(packs.DataDir, "Xml/" + entry) ?? Loose(packs.DataDir, "Xml/" + LocalePath(entry, locale));
         if (text == null && packs.Exists("Xml", entry)) text = Ms2.Formats.Text.PackXml.Text(packs.Read("Xml", entry));
         return text == null ? null : XDocument.Parse(text.TrimStart('\ufeff'));
     }
 
-    static string LocalePath(string entry)
+    static bool HasPacked(PackSet packs, string entry)
+    {
+        try { return packs.Exists("Xml", entry); }
+        catch (FileNotFoundException) { return false; }
+    }
+
+    static string LocalePath(string entry, string locale)
     {
         int slash = entry.LastIndexOf('/');
-        return entry[..(slash + 1)] + "kr/" + entry[(slash + 1)..];
+        return entry[..(slash + 1)] + locale.ToLowerInvariant() + "/" + entry[(slash + 1)..];
     }
 
     /// <summary>A loose file's text by a path under <paramref name="dir"/>, its segments matched without case (Windows paths); null when absent.</summary>

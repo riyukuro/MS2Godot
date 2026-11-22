@@ -28,7 +28,7 @@ public sealed class GachaBoxTable
         {
             int id = ItemData.Atoi((string)e.Attribute("randomBoxID") ?? "");
             // m_nSeason[DAT_143ab0248]: the locale index, 0 = KR (CreateClientPlatform, ms2clientplatform.cpp:29)
-            int season = ItemData.Atoi((string)e.Attribute("randomBoxSeason" + LobbyFeatures.LocaleName) ?? "");
+            int season = ItemData.Atoi((string)e.Attribute("randomBoxSeason" + LobbyFeatures.LocaleOf(packs)) ?? "");
             int coin = ItemData.Atoi((string)e.Attribute("coinItemID") ?? "");
             int shopId = ItemData.Atoi((string)e.Attribute("shopID") ?? "");
             string onIcon = (string)e.Attribute("seasonNumberOnIcon") ?? "";

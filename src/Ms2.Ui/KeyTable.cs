@@ -487,7 +487,7 @@ public sealed class KeyTable : IKeyTable
         if (root?.Name != "ms2") return;
         foreach (var e in root.Elements("key"))
         {
-            if (!LocaleInList((string)e.Attribute("locale") ?? "") || !LobbyFeatures.IsEnabledByName(packs, (string)e.Attribute("feature")))
+            if (!LobbyFeatures.IsLocaleInList(packs, (string)e.Attribute("locale") ?? "") || !LobbyFeatures.IsEnabledByName(packs, (string)e.Attribute("feature")))
                 continue;   // IsElementAvailable, then IsLocaleInList on the same attribute
             int category = Atoi((string)e.Attribute("category"));
             if (!settings.TryGetValue(category, out var list)) settings[category] = list = new();
@@ -496,9 +496,6 @@ public sealed class KeyTable : IKeyTable
                 Atoi((string)e.Attribute("disablethirdly"))));
         }
     }
-
-    static bool LocaleInList(string list) => list.Length == 0
-        || list.Split(',').Any(l => string.Equals(l.Trim(), LobbyFeatures.LocaleName, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>GetKeyAction: the code bound to <paramref name="key"/> (0 for none or an unknown key).</summary>
     public long GetKeyAction(int key) => keys.TryGetValue(key, out var k) ? k.Code : 0;
