@@ -350,6 +350,10 @@ public partial class LiveSession : Node
     /// <summary>The adventure data the client keeps in globals (DAT_143ab2958..3318): session-lived, so a field change keeps
     /// the exp, the filled level, the claimed levels and the missions.</summary>
     public readonly Ms2.Ui.AdventureData Adventure = new();
+    /// <summary>The worn lapenshards (MyPC's table, filled by OnLapenshard), session-lived like the PC.</summary>
+    public readonly Ms2.Ui.LapenshardData Lapenshards = new();
+    /// <summary>Inbound 0x11B, every mode the client reads (the worn table is already updated).</summary>
+    public event Action<LapenshardMessage> LapenshardReceived;
     bool? fishingFeature;
     /// <summary>Feature 0xb (the fishing book's packets), read like <see cref="MissionFeature"/>.</summary>
     bool FishingFeature()
@@ -1680,6 +1684,12 @@ public partial class LiveSession : Node
                 if (ownLevel) Me.User.PrestigeLevel = ((PrestigeMessage.LevelUp)m).Value;
                 if (m != null) PrestigeReceived?.Invoke(m);
                 GD.Print($"live: prestige {m?.GetType().Name ?? "other kind"}");
+            }
+            else if (game.Is(p, Inbound.Lapenshard))
+            {
+                var m = LapenshardMessage.Read(p.Reader());        // OnLapenshard (scenestategame.cpp:8743); other modes are dropped
+                if (m != null) { Lapenshards.Apply(m); LapenshardReceived?.Invoke(m); }
+                GD.Print($"live: lapenshard {m?.GetType().Name ?? "other mode"} ({Lapenshards.Count} worn)");
             }
             else if (game.Is(p, Inbound.CharacterAbility))
             {

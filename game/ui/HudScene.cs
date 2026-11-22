@@ -2602,7 +2602,7 @@ public partial class HudScene : Node, IUiStageHost
         p.Exp = (long)Math.Round(hudModel.NextLevelExp * data.ExpPercent / 100);
         p.AdventureLevel = data.Player.PrestigeLevel;      // the user block's m_530 (vfunc_141); live, WatchLivePlayer's
         // the session's adventure data (the client's globals), so a relayout or a field move keeps it
-        if (Ms2Godot.Net.LiveSession.Instance is { } liveAdventure) p.Adventure = liveAdventure.Adventure;
+        if (Ms2Godot.Net.LiveSession.Instance is { } liveAdventure) { p.Adventure = liveAdventure.Adventure; p.Lapenshards = liveAdventure.Lapenshards; }
         if (quickSlotPlayer != null)
         {
             p.SubJob = quickSlotPlayer[0];

@@ -59,6 +59,8 @@ public sealed class PlayerState
     /// <summary>The adventure data that outlives a field change (the client's globals DAT_143ab2958..3318): a live HUD
     /// binds the session's (LiveSession.Adventure), so a new HUD after a field move sees what the earlier one saw.</summary>
     public AdventureData Adventure = new();
+    /// <summary>The worn lapenshards (MyPC's table, <see cref="LapenshardData"/>); a live HUD binds the session's.</summary>
+    public LapenshardData Lapenshards = new();
     /// <summary>The exp in this level (DAT_143ab2958).</summary>
     public long AdventureExp { get => Adventure.Exp; set => Adventure.Exp = value; }
     /// <summary>The exp shown for the level above the filled level (DAT_143ab2968).</summary>
