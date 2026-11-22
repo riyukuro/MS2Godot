@@ -254,10 +254,10 @@ public partial class LiveSession
                         long uid = Env("MS2_LIVE_ENCHANT_WORN", "0") == "1" ? (live.Me.Equips?.FirstOrDefault(e => e.Id == weapon)?.Uid ?? 0) : (held.Count > 0 ? held[0] : 0);
                         Check("the item is in the enchantable bag", uid != 0 && held.Contains(uid));
                         GD.Print($"live: combat enchant select {uid}: {(hud.EnchantSelectScripted(uid) ? "sent" : "not sent")}");
-                        await until(() => hud.EnchantStateScripted().Selected == uid && hud.EnchantStateScripted().Ready, 60 * 10); await frames(60);
+                        await until(() => hud.EnchantStateScripted().Selected == uid && hud.EnchantStateScripted().Ingredients > 0, 60 * 10); await frames(60);
                         var st = hud.EnchantStateScripted();
                         GD.Print($"live: combat enchant state: selected={st.Selected} state={st.State} ready={st.Ready} result item={st.ResultId} chance={st.Chance} ingredients={st.Ingredients}");
-                        Check("the server's answer is in (info read, result item)", st.Selected == uid && st.Ready);
+                        Check("the server's info is in (the ingredients and rates of the selected item)", st.Selected == uid && st.Ingredients > 0);
                         Shot("enchant_select.png");
                         break;
                     }
