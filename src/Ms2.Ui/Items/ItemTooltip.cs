@@ -68,6 +68,7 @@ public sealed partial class ItemTooltip
         SetItemStatus(item);                                                      // FUN_1409c7fc0
         SetItemStatusSet(item);                                                   // FUN_1409c8020
         SetItemSocket(item);
+        SetItemMerge(item);
         Data["iconPath"] = item.IconPath;                                         // SetItemIconPath (FUN_14016a730: to wide text)
         SetSellPrice(item);                                                       // SetItemSellPrice
         SetNotExchange(item);

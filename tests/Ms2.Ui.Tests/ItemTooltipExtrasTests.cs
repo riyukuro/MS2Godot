@@ -106,6 +106,39 @@ public class ItemTooltipExtrasTests
     }
 
     [Test]
+    public void ItemMergeMarksTheTopRangeAndTheMax()
+    {
+        var m = NewModel();
+        m.HasLocalPlayer = true;
+        int pap = m.Tables.ItemOptions.FindStatByName("pap");
+        Assert.That(pap, Is.Not.EqualTo(-1));
+        // itemMergeOptionBase.xml mergeOption 37000013 part 13 (the material 37000017 is type 19 subtype 1 with param1
+        // 37000013, so the part is
+        // the earring's equip subtype): pap min 2, ten steps to 19, so the whole range is 3..19 and the top range 11..19
+        string Merge(int v)
+        {
+            var r = new EquipItem { Id = 11300000, Uid = 10, Rarity = 1, Amount = 1 };
+            r.Options.MergeId = 37000017;
+            r.Options.Stat[4][pap] = v;
+            var tip = Tip(m, r);
+            return tip.Data.TryGetValue("itemMerge", out var t) ? (string)t : null;
+        }
+        string color = m.Tables.Common("s_word_stat_max_color"), max = m.Tables.Common("s_word_stat_max");
+        Assert.That(color, Is.Not.Empty);
+        Assert.That(max[(max.LastIndexOf('}') + 1)..], Is.Not.Empty);
+        string low = Merge(5), mid = Merge(12), top = Merge(19);
+        TestContext.Out.WriteLine(low + "\n" + mid + "\n" + top);
+        Assert.That(low, Does.StartWith(m.Tables.Common("s_tooltip_itemoption_kinds_merge")));
+        string colorHead = color.Split('{')[0], maxTail = max[(max.LastIndexOf('}') + 1)..];
+        Assert.That(low, Does.Not.Contain(colorHead));
+        Assert.That(mid, Does.Contain(colorHead));
+        Assert.That(mid, Does.Not.Contain(maxTail));
+        Assert.That(top, Does.Contain(maxTail));
+        // without a group 4 option there is no member
+        Assert.That(Tip(m, new EquipItem { Id = 11300000, Uid = 11, Rarity = 1, Amount = 1 }).Data.ContainsKey("itemMerge"), Is.False);
+    }
+
+    [Test]
     public void ExpiringItemCannotBeEnchanted()
     {
         var m = NewModel();

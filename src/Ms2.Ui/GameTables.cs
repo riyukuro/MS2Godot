@@ -811,6 +811,13 @@ public sealed class GameTables
     public Ms2.Ui.Items.SetItemTable SetItems => setItems ??= packs == null ? Ms2.Ui.Items.SetItemTable.Empty
         : new Ms2.Ui.Items.SetItemTable(Xml(packs.Exists("Xml", "table/kr/setiteminfo.xml") ? "table/kr/setiteminfo.xml" : "table/setiteminfo.xml"),
             (p, c, k) => FeatureElements.Collect(packs, p, c, k), e => FeatureElements.IsAvailable(packs, e), StatOption, k => ItemOptions.SpecialOption(k));
+    Ms2.Ui.Items.ItemMergeOptionTable mergeOptions;
+    /// <summary>CItemMergeOptionTable (GetXmlPath("Table", "itemMergeOptionBase.xml"), the locale folder first), read on
+    /// first use.</summary>
+    public Ms2.Ui.Items.ItemMergeOptionTable MergeOptions => mergeOptions ??= packs == null ? Ms2.Ui.Items.ItemMergeOptionTable.Empty
+        : new Ms2.Ui.Items.ItemMergeOptionTable(Xml(packs.Exists("Xml", "table/kr/itemmergeoptionbase.xml") ? "table/kr/itemmergeoptionbase.xml"
+            : "table/itemmergeoptionbase.xml"), (p, c, k) => FeatureElements.Collect(packs, p, c, k), ItemOptions.FindStatByName,
+            ItemOptions.FindSpecialByName);
     Ms2.Ui.Skills.SkillCompactControlTable skillCompactControl;
     /// <summary>CSkillCompactControlTable (Table/SkillCompactControl.xml), read on first use; empty with feature 0x10
     /// (CompactControl) off, as Load @0x140dca800 reads nothing then.</summary>
