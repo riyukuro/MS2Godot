@@ -27,6 +27,7 @@ public interface ISmartPushStrip
 /// UISmartPush (uismartpush.cpp; UI id 0x4ef7), the strip of smart push buttons at the bottom left of the HUD, run from the
 /// uismartpush movie. The manager adds and removes pushes (<see cref="AddPush"/>, <see cref="RemovePush"/>); a click on a
 /// push's button calls back "onSmartPush" with its id (vfunc_28, :136), which becomes <see cref="PushClicked"/>.
+/// STILL-OPEN: OnLoadComplete (:97) also calls the platform's vfunc_43(0xe, 0, 1000); what that call does is not ported.
 /// </summary>
 public sealed class SmartPushStripController : UiController, ISmartPushStrip
 {

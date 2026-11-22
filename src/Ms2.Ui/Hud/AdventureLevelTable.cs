@@ -119,11 +119,11 @@ public sealed class AdventureLevelTable
         string.Equals(s, "statPoint", StringComparison.OrdinalIgnoreCase) ? 2
         : string.Equals(s, "item", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
 
-    /// <summary>GetReward (:335): the empty row when missing.</summary>
     /// <summary>CAdventureLevelTableHelper::IsReached @0x1401955f0: false with no current ability, else the level is at
     /// least its requireLevel.</summary>
     public bool IsReached(uint level) => Current != null && level >= Current.RequireLevel;
 
+    /// <summary>GetReward (:335): the empty row when missing.</summary>
     public Reward GetReward(uint level) => rewards.TryGetValue(level, out var r) ? r : EmptyReward;
     /// <summary>GetAbility (:344).</summary>
     public Ability GetAbility(uint effectId) => abilities.TryGetValue(effectId, out var a) ? a : EmptyAbility;

@@ -114,6 +114,8 @@ public sealed class SmartPushManager
 
     /// <summary>UpdatePushes: without the strip's entity nothing happens; at most once per 100 ms each push is compared with
     /// what the field wants, and a change removes or adds its button. A failed add keeps the old state.</summary>
+    /// <summary>STILL-OPEN: the client calls push->vfunc_2() after each push of every poll (smartpushmanager.cpp:120), which
+    /// AutoFishing (:413) and AutoPlayInstrument (:647) use to renew themselves; it is not ported, so those two do not renew.</summary>
     public void Update(uint nowMs)
     {
         if (Strip == null || !Strip.Ready) return;
@@ -189,7 +191,9 @@ public sealed class SmartPushManager
     }
 
     /// <summary>OnPushClicked (:125) then the push's vfunc_3. The base (smartpush.cpp:285): a free push answers at once; one
-    /// with a merat price asks first (a type 0x20 box, yes answers). The toggle (:2a80) always answers with accept false.
+    /// with a merat price asks first: a type 0x20 box with SetButtonPreset(1) (yes / no), Enter off (FUN_141a024a0(0)) and
+    /// the callback FUN_140dcf800, where yes (0) answers (:296-301). The toggle (:2a80) always answers with accept false.
+    /// STILL-OPEN: SetBuff(m_nActionValue, 1, "") puts the effect's buff in the box; the box record has no buff list.
     /// STILL-OPEN: AutoFishing / AutoPlayInstrument / AutoInteraction override vfunc_3 with their package and item boxes
     /// (the fishing and instrument managers, the inventory and the mastery tables are not wired); they answer as the base.</summary>
     public void OnPushClicked(int id)
@@ -202,6 +206,8 @@ public sealed class SmartPushManager
             if (result == 0) notices.Answer(p.Id, p.N1c, false);                       // FUN_140dcf800
             return true;
         });
+        box.SetButtonPreset(1);                                                       // :296 yes / no
+        box.EnterAllowed = false;                                                     // :301 FUN_141a024a0(0)
         notices.ShowBox?.Invoke(box);
     }
 

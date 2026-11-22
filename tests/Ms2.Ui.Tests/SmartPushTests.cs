@@ -132,7 +132,7 @@ public class SmartPushTests
 
     // ---- the manager (smartpushmanager.cpp) ----
 
-    sealed class Fake
+    internal sealed class Fake
     {
         public bool Player = true, Riding, Reached, Fishing, Hide;
         public int Ridee, Instrument;
@@ -140,7 +140,7 @@ public class SmartPushTests
         public List<string> Log = new();
     }
 
-    sealed class FakeStrip : ISmartPushStrip
+    internal sealed class FakeStrip : ISmartPushStrip
     {
         public bool Ready { get; set; } = true;
         public bool CanAdd = true;
@@ -149,7 +149,7 @@ public class SmartPushTests
         public bool RemovePush(int id) { Log.Add("remove " + id); return true; }
     }
 
-    static (SmartPushManager, FakeStrip, Fake, List<(int, int, bool)>, List<MessageBoxData>) Mgr()
+    internal static (SmartPushManager, FakeStrip, Fake, List<(int, int, bool)>, List<MessageBoxData>) Mgr()
     {
         var f = new Fake();
         var strings = new Dictionary<string, string>
@@ -220,6 +220,8 @@ public class SmartPushTests
         Assert.That(sent.Count, Is.EqualTo(2));
         Assert.That(boxes.Count, Is.EqualTo(1));
         Assert.That(boxes[0].Type, Is.EqualTo(0x20));
+        Assert.That((boxes[0].Btn0, boxes[0].Btn1), Is.EqualTo((MessageBoxData.CommonByKey("s_word_yes"), MessageBoxData.CommonByKey("s_word_no"))), "SetButtonPreset(1): yes / no (:296)");
+        Assert.That(boxes[0].EnterAllowed, Is.False, "FUN_141a024a0(0) (:301)");
         boxes[0].Callback(1, boxes[0]);          // no
         Assert.That(sent.Count, Is.EqualTo(2));
         boxes[0].Callback(0, boxes[0]);          // yes: FUN_140dcf800
@@ -285,16 +287,15 @@ public class SmartPushTests
     {
         var (m, strip, f, _, _) = Mgr();
         uint t = 1000;
-        void Run(int n) { for (int i = 0; i < n; i++) m.Update(t += 40); }   // every third call passes the 100 ms throttle
-        Run(300);                             // warm up: the first polls run every probe and the JIT settles
-        f.Hide = true; Run(300); f.Hide = false;
+        for (int i = 0; i < 300; i++) m.Update(t += 40);      // warm up: the first polls run every probe and the JIT settles
+        f.Hide = true; for (int i = 0; i < 300; i++) m.Update(t += 40); f.Hide = false;
         long before = GC.GetAllocatedBytesForCurrentThread();
-        Run(2000);
+        for (int i = 0; i < 2000; i++) m.Update(t += 40);     // every third call passes the 100 ms throttle
         f.Hide = true;                        // the suppressed path
-        Run(2000);
+        for (int i = 0; i < 2000; i++) m.Update(t += 40);
         long used = GC.GetAllocatedBytesForCurrentThread() - before;
-        // 24 B is the whole reading however many ticks run (2,000 and 20,000 ticks gave the same 24), so it is not per tick.
-        Assert.That(used, Is.LessThanOrEqualTo(24), "4000 ticks, ~1300 polls");
+        // the 24 B an earlier version read was the test's own local function (a closure over t); Update itself is 0
+        Assert.That(used, Is.EqualTo(0), "4000 ticks, ~1300 polls");
         Assert.That(strip.Log, Is.Empty);
     }
 

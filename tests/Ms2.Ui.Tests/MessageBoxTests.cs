@@ -136,6 +136,24 @@ public class MessageBoxTests
     }
 
     [Test]
+    public void PricedSmartPushBoxHasARealNoButton()
+    {
+        // CSmartPush::vfunc_3 (smartpush.cpp:296-301): yes / no; only yes answers (FUN_140dcf800)
+        var (h, c) = Load();
+        var (m, _, _, sent, boxes) = SmartPushTests.Mgr();
+        m.OnPushClicked(2);                       // the AutoMining row costs 300 merat
+        Assert.That(boxes.Count, Is.EqualTo(1));
+        MessageBoxQueue.Show(boxes[0]);
+        h.Player.Tick();
+        Click(h, "m_button1");
+        Assert.That(sent, Is.Empty, "no: nothing is sent, merat not spent");
+        Assert.That(c.IsIdle, Is.True);
+        MessageBoxQueue.Show(boxes[0]);
+        Click(h, "m_button0");
+        Assert.That(sent, Is.EqualTo(new[] { (2, 0, false) }), "yes answers");
+    }
+
+    [Test]
     public void WindowCloseOnTheLauncherQuitsAtOnce()
     {
         // the launcher is MS2Godot's own page before Logo: no confirm box there
