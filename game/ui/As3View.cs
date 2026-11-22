@@ -32,6 +32,8 @@ public partial class As3View : Node2D
     int gen;
     double frameTime, caretTime;
     readonly TextCaret caret = new();
+    AsTextField selField;                                     // the field whose selection was last shown (ShowSelection)
+    FieldText selContent;
 
     public override void _Notification(int what)
     {
@@ -190,9 +192,38 @@ public partial class As3View : Node2D
         SyncMs += System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
         var focus = Player.Focus as AsTextField;
         var fe = focus?.Tag as Entry;
+        ShowSelection(focus, fe?.Content as FieldText);
         caret.Update(focus, fe?.Holder, fe?.Content, caretTime);
         caretTime = 0;
         if (Checks) Check();
+    }
+
+    /// <summary>
+    /// The focused field's selection on its text node, in the active colours, black behind white text
+    /// (GFX_ACTIVE_SEL_BKCOLOR / GFX_ACTIVE_SEL_TEXTCOLOR); the field that lost the focus is shown once more, in the inactive
+    /// colours, grey behind white (the client's EditorKit constructor, sfr_gfx_07.cpp:52), when it kept its selection
+    /// (alwaysShowSelection), else without one (Player.SetFocus dropped it). Only a selectable field shows one
+    /// (EditorKit::SetSelection passes IsSelectable to DocView::SetSelection).
+    /// </summary>
+    void ShowSelection(AsTextField focus, FieldText content)
+    {
+        if (focus != selField)
+        {
+            if (selField != null && IsInstanceValid(selContent)) ShowSelection(selField, selContent, false);
+            selField = focus;
+        }
+        selContent = content;
+        if (focus != null && content != null) ShowSelection(focus, content, true);
+    }
+
+    static readonly Color ActiveSelectionBack = new(0, 0, 0), InactiveSelectionBack = new(0x80 / 255f, 0x80 / 255f, 0x80 / 255f), SelectionText = new(1, 1, 1);
+
+    static void ShowSelection(AsTextField tf, FieldText content, bool active)
+    {
+        if (content.Node is not TextNode node) return;
+        if (tf.selectable && tf.SelBegin != tf.SelEnd && (active || tf.alwaysShowSelection))
+            node.SetSelection(tf.SelBegin, tf.SelEnd, active ? ActiveSelectionBack : InactiveSelectionBack, SelectionText);
+        else node.SetSelection(0, 0, default, default);
     }
 
     /// <summary>
@@ -1310,6 +1341,10 @@ public partial class FieldText : Node2D
     readonly AsTextField tf;
     readonly UiScope scope;
     TextNode node;
+
+    /// <summary>The text node the field is drawn with, null until it is built.</summary>
+    public TextNode Node => node;
+
     /// <summary>The text node was built (a field made in a sync pass builds once it is in the tree).</summary>
     public bool Built => built != null;
     string built;

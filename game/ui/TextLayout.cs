@@ -221,6 +221,42 @@ public partial class TextNode
     /// <summary>True when the glyph is past the label's visible character count.</summary>
     public bool Hidden(in PlacedGlyph g) => Label.VisibleCharacters >= 0 && g.Index >= Label.VisibleCharacters;
 
+    Func<int, float> sizeAt;
+
+    /// <summary>
+    /// The selection's highlight in label pixels, as TextLayout builds it (sfr_render_04d.cpp:625): each selected glyph's
+    /// rectangle, its pen to its advance across and its line's top (the baseline less BaseLineOffset, MaxFontAscent) to the
+    /// line's height plus its leading when that is not negative down, joined while the glyphs follow one another (the
+    /// highlight colour is the same throughout). Shown lines only, without the glyphs past the visible characters.
+    /// </summary>
+    public List<Rect2> SelectionRects()
+    {
+        var res = new List<Rect2>();
+        if (!HasSelection || string.IsNullOrEmpty(Label.Text)) return res;
+        sizeAt ??= SizeAt;
+        foreach (var line in ShownLines())
+        {
+            var (asc, height, advance) = ClientLine(line.Start, line.End, codePoints.Length, sizeAt);
+            float top = line.Baseline - asc / Label.Scale.Y, h = Math.Max(height, advance) / Label.Scale.Y;
+            float x0 = 0, x1 = 0;
+            bool open = false;
+            foreach (var g in line.Shaped)
+            {
+                if (Hidden(g) || !Selected(g.Index))
+                {
+                    if (open) res.Add(new Rect2(x0, top, x1 - x0, h));
+                    open = false;
+                    continue;
+                }
+                float pen = line.LabelX + g.Pen + line.Dx, end = pen + g.Advance * g.Repeat;
+                if (!open) { x0 = pen; x1 = end; open = true; }
+                else { x0 = Math.Min(x0, pen); x1 = Math.Max(x1, end); }
+            }
+            if (open) res.Add(new Rect2(x0, top, x1 - x0, h));
+        }
+        return res;
+    }
+
     /// <summary>
     /// The label's character position x of code point <paramref name="index"/> in label pixels (Label::get_character_bounds:
     /// the pen of the first glyph with a position of its own whose cluster holds it), null when it has none; with no index,

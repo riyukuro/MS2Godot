@@ -1,4 +1,3 @@
-using System.Linq;
 using Godot;
 using Ms2.Avm2;
 using Ms2.Avm2.Flash;
@@ -19,8 +18,9 @@ namespace Ms2Godot.Ui;
 /// cursor, y the line's top and the height the line's (ascent plus descent, no leading); moved by the scroll into the
 /// text rect (the field less its 2 px gutter), cut at the text rect's bottom when the line is shown, drawn 1 px wide and
 /// only when the text rect holds it.</item>
-/// <item>Colour: the default text format's colour when it is set, else opaque black (CursorColor's 0xFF000000). The client
-/// also takes a highlight's text colour under the cursor; the runtime keeps no highlights, so there is none to take.</item>
+/// <item>Colour: the default text format's colour when it is set, else opaque black (CursorColor's 0xFF000000); over a
+/// highlight with a text colour (the selection, TextNode.SetSelection), that colour (the highlighter's at the cursor
+/// position).</item>
 /// <item>Only an editable field (not read-only) that has the focus draws it.</item>
 /// </list>
 /// </summary>
@@ -61,8 +61,9 @@ public partial class TextCaret : Node2D
             version = field.Version;
         }
         Advance(delta);
-        var b = Box(field, content);
-        var c = Color(field);
+        var node = (content as FieldText)?.Node;
+        var b = Box(field, node);
+        var c = node != null && node.SelectedUtf16(field.caretIndex) ? node.SelectionText : Color(field);
         if (b != box || c != color || Visible != blink)
         {
             box = b; color = c; Visible = blink;
@@ -95,14 +96,13 @@ public partial class TextCaret : Node2D
     }
 
     /// <summary>The cursor box in field units, null when the text rect does not hold it.</summary>
-    Rect2? Box(AsTextField tf, Node2D content)
+    Rect2? Box(AsTextField tf, TextNode node)
     {
         var text = new Rect2((float)tf.Box.X + 2, (float)tf.Box.Y + 2, (float)tf.Box.W - 4, (float)tf.Box.H - 4);
         int at = Math.Clamp(tf.caretIndex, 0, tf.Text.Length);
         float lineH = (float)TextMeasure.LineHeight(tf.FontClass, tf.FontSize, tf.Leading);
         float height = (float)TextMeasure.LineHeight(tf.FontClass, tf.FontSize, 0);
         int line; float x;
-        var node = content?.GetChildren().OfType<TextNode>().FirstOrDefault();
         if (node != null) (line, x) = LabelCursor(node, at);
         else (line, x) = MeasuredCursor(tf, at, text);
         float y = (float)tf.FirstLineTop(Math.Max(1, tf.numLines)) + (line - (tf.scrollV - 1)) * lineH;

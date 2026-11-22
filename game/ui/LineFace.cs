@@ -129,6 +129,29 @@ public partial class LineFace : Node2D
 }
 
 /// <summary>
+/// A text field's selection highlight (TextNode.SetSelection): TextNode.SelectionRects in the selection's highlight colour,
+/// behind the label's glyphs (TextMeshProvider's layers: TextLayer_Selection after the background, before the shadow and
+/// the text).
+/// </summary>
+public partial class SelectionHighlight : Node2D
+{
+    readonly TextNode text;
+
+    public SelectionHighlight(TextNode text) { this.text = text; Name = NodeName; ShowBehindParent = true; }
+
+    static readonly StringName NodeName = "Selection";
+
+    public SelectionHighlight() { }
+
+    public override void _Draw()
+    {
+        if (text == null || !text.HasSelection) return;
+        var color = text.SelectionFill;
+        foreach (var r in text.SelectionRects()) DrawRect(r, color);
+    }
+}
+
+/// <summary>
 /// Scaleform's faux bold and italic (GlyphCache::copyAndTransformShape, GlyphCacheParams FauxItalicAngle 0.25 and FauxBoldRatio
 /// 0.045): the game's fonts have no bold or italic face (gfxfontlib's fonts are plain), so FontManager makes a faux handle and
 /// the glyph cache styles the outline. Italic shears it, x + tan(-0.25) * (y + descent) with y down, about the line

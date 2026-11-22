@@ -405,7 +405,7 @@ public partial class TextNode : Node2D
         // a hard drop shadow (ApplyFilters with no blur) on text with FONT-sized runs: the label could only draw the field's
         // size, so the face is drawn by line, its shadow pass first (LineFace)
         faceShadow = runStyles != null && ls != null && !plainFace && (HasSizedRuns || HasImages) && ls.OutlineSize <= 0 && ls.ShadowSize <= 0;
-        colored = runStyles != null && (plainFace || faceShadow);
+        colored = (runStyles != null || HasSelection) && (plainFace || faceShadow);
         perLineDx = false;
         foreach (var l in all) l.Dx = 0;
         if (exact && lines == 1)
@@ -564,8 +564,48 @@ public partial class TextNode : Node2D
     public GlyphStyle StyleAt(int index) =>
         runStyles != null && index >= 0 && index < runStyles.Length ? runStyles[index] : default;
 
-    /// <summary>The colour LineFace draws the code point at <paramref name="index"/> in: its FONT colour, else the field's.</summary>
-    public Color GlyphColor(int index) => StyleAt(index).Color ?? Label.LabelSettings.FontColor;
+    /// <summary>The colour LineFace draws the code point at <paramref name="index"/> in: the selection's text colour when it is
+    /// selected, else its FONT colour, else the field's.</summary>
+    public Color GlyphColor(int index) => Selected(index) ? SelectionText : StyleAt(index).Color ?? Label.LabelSettings.FontColor;
+
+    SelectionHighlight selection;   // made by the first selection shown: most fields never show one
+    int selBegin, selEnd;
+
+    /// <summary>The selection's highlight colour behind its glyphs and its glyphs' colour.</summary>
+    public Color SelectionFill { get; private set; }
+    public Color SelectionText { get; private set; }
+
+    /// <summary>True while the field shows a selection: its label's face is drawn by line (LineFace) to colour the selected glyphs.</summary>
+    public bool HasSelection => selEnd > selBegin;
+
+    /// <summary>
+    /// The selection the field shows (EditorKit::SetSelection @0x14261a4f0 into DocView::SetSelection): the text from
+    /// <paramref name="begin"/> to <paramref name="end"/> in UTF-16 units (the runtime's indices, either order), highlighted in
+    /// <paramref name="back"/> with its glyphs in <paramref name="text"/>; an empty range shows none. The highlight is drawn
+    /// behind the label (<see cref="SelectionHighlight"/>), the glyphs by LineFace.
+    /// </summary>
+    public void SetSelection(int begin, int end, Color back, Color text)
+    {
+        if (end < begin) (begin, end) = (end, begin);
+        if (begin == end) begin = end = 0;
+        if (begin == selBegin && end == selEnd && (begin == end || (back == SelectionFill && text == SelectionText))) return;
+        selBegin = begin; selEnd = end;
+        SelectionFill = back; SelectionText = text;
+        Label.QueueRedraw();     // AlignLine: the face by line while a selection shows
+        if (selection == null && HasSelection) Label.AddChild(selection = new SelectionHighlight(this));
+        selection?.QueueRedraw();
+    }
+
+    /// <summary>True when the code point at <paramref name="index"/> is in the selection.</summary>
+    public bool Selected(int index)
+    {
+        if (selEnd <= selBegin) return false;
+        int at = index < utf16.Count ? utf16[index] : Label.Text.Length;
+        return at >= selBegin && at < selEnd;
+    }
+
+    /// <summary>True when the UTF-16 index <paramref name="at"/> is in the selection.</summary>
+    public bool SelectedUtf16(int at) => at >= selBegin && at < selEnd;
 
     /// <summary>
     /// The font's descent per pixel of font size (DefineFont layout: the line height less the ascent), the faux italic pivot and
