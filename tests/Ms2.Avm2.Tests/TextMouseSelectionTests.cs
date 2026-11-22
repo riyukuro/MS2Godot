@@ -109,6 +109,18 @@ public class TextMouseSelectionTests
     }
 
     [Test]
+    public void AMoveAfterThePressEndsTheDoubleClick()
+    {
+        // EditorKit::OnMouseMove stores the floored point in LastMousePos, the point a double press is tested against
+        var (p, a, _) = Fields();
+        Press(p, 10, 10);
+        p.MouseMove(40, 10); p.MouseButton(false);
+        now += 50; p.MouseMove(10, 10); p.MouseButton(true);
+        Assert.That(Sel(a), Is.EqualTo((1, 1, 1)), "LastMousePos is the move's point: no word selection");
+        p.MouseButton(false);
+    }
+
+    [Test]
     public void AFieldThatIsNotSelectableTakesTheCaretButNoCapture()
     {
         var (p, a, _) = Fields();

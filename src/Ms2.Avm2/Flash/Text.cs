@@ -879,7 +879,10 @@ public class AsTextField : AsInteractiveObject
     public void MouseMove(double x, double y)
     {
         if (!MouseCaptured) return;
-        int pos = CursorPosAtPoint(x, y);
+        // LastMousePos takes the floored point, which also ends a double click at the press point
+        double ax = Math.Floor((x - Box.X) * 20), ay = Math.Floor((y - Box.Y) * 20);
+        lastPressX = ax; lastPressY = ay;
+        int pos = CursorPosAtPoint(Box.X + ax / 20, Box.Y + ay / 20);
         SetCursorPos(pos);
         if (selectable) Select(Anchor, pos);
     }
