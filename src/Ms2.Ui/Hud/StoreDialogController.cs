@@ -2,6 +2,7 @@ using System.Globalization;
 using Ms2.Avm2;
 using Ms2.Net.Packets;
 using Ms2.Ui.Items;
+using Ms2.Quest;
 
 namespace Ms2.Ui.Hud;
 
@@ -218,11 +219,64 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
                 Sender?.RequestClose();           // vfunc_28 :733, CStore::RequestClose (mode 8)
                 return true;
             case "notifyslotuse":
+                SlotUse(args);
+                return true;
             case "notifyslotshiftclick":
                 Button?.Invoke(name);
                 return true;
         }
         return false;
+    }
+
+    /// <summary>The own character id (DAT_143ab2828), the binding check's.</summary>
+    public Func<long> SelfId = () => 0;
+    /// <summary>The bag the withdraw lands in (g_143ab2a90's tabs); null without a live inventory.</summary>
+    public Func<InventoryView> InventoryBag = () => null;
+    /// <summary>CStringTable::GetInventoryTabName.</summary>
+    public Func<int, string> TabName = _ => "";
+
+    /// <summary>
+    /// NotifyDragSlot::SlotUse (notifydragslot.cpp:33) on a store slot: args = slot name, button. The double click (0) runs
+    /// vfunc_13 (unless Shift), the right click (1) vfunc_14, both <see cref="WithdrawSlot"/>; vfunc_19 is 0 for a store slot.
+    /// </summary>
+    void SlotUse(object[] args)
+    {
+        if (args.Length < 1 || args[0] == null) return;
+        int button = args.Length == 1 ? 0 : InventoryController.ArgInt(args[1]);
+        if (!ParseSlot(Rt.ToString(args[0]), out int slot)) return;
+        if (button == 0 && ShiftHeld()) return;
+        if (button == 0 || button == 1) WithdrawSlot(slot);
+    }
+
+    /// <summary>
+    /// StoreSlot::vfunc_14 (storeslot.cpp:244, @0x141808d90): the store item of the slot; the binding (CItem::FUN_14052a580: an
+    /// item bound to another character: box 0xff); with the inventory window open, its tab's slot for one (the whole stack with
+    /// Shift) by FUN_140a612b0 (-1: notice 0x44 with the tab name); a stack that asks no count or Shift sends the withdraw of the
+    /// whole stack. A stack that asks a count is not sent. STILL-OPEN: the count box (ShowUseStoreCountInput), vfunc_26's
+    /// restriction and binding boxes, Unk_Inventory::FUN_140a661e0 (a constant 1), the error sound.
+    /// </summary>
+    public bool WithdrawSlot(int bankSlot)
+    {
+        var rec = Book?.Slot(bankSlot);
+        if (rec == null || Sender == null || Model == null) return false;
+        if (!StorageSender.BindingAllows(rec, SelfId()))
+        {
+            ShowBox(Model.Tables.Common(0xff) ?? "", 0);
+            return false;
+        }
+        if (OpenInventory() == null || InventoryBag() is not { } bag) return true;
+        int tab = bag.TabOfItem(rec.Id);
+        bool all = ShiftHeld();
+        int slot = bag.SlotForIncoming(tab, rec, all ? rec.Amount : 1);
+        if (slot == -1)
+        {
+            NoticeText?.Invoke(ClientFormat.Format(Model.Tables.Common(0x44), TabName(tab)));
+            return false;
+        }
+        var item = InventoryController.ToItem(rec, Model.Tables.Items);
+        if (item != null && ItemTradeRules.AsksCount(item, Now()) && !all) return true;
+        Sender.Withdraw(rec.Uid, slot, rec.Amount);
+        return true;
     }
 
     // ---- the meso and expand buttons ---------------------------------------------------------------------------------

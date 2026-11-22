@@ -44,6 +44,19 @@ public class InventoryViewTests {
         Assert.That(v.Capacity(15), Is.EqualTo(0));
     }
 
+    [Test] public void IncomingSlotIsZeroWithStackRoomElseTheFirstEmptyCell() {
+        var b = Book(); b.MaxStackOf = _ => 10;
+        b.TryAdd(It(20000001, 1, 0, 8)); b.TryAdd(It(20000002, 2, 1));
+        var v = new InventoryView(b);
+        Assert.That(v.FindEmptySlot(2), Is.EqualTo(2));
+        Assert.That(v.StackRoom(2, It(20000001, 9, 0)), Is.EqualTo(2));
+        Assert.That(v.SlotForIncoming(2, It(20000001, 9, 0), 2), Is.EqualTo(0), "fits the stack");
+        Assert.That(v.SlotForIncoming(2, It(20000001, 9, 0), 3), Is.EqualTo(2), "does not fit: the empty cell");
+        b.MaxStackOf = _ => 1;
+        Assert.That(v.StackRoom(2, It(20000001, 9, 0)), Is.EqualTo(0));
+        Assert.That(v.FindEmptySlot(15), Is.EqualTo(-1));
+    }
+
     [Test] public void NewFlagIsSetByNotifyNewAndClearedByTheClientPaths() {
         var b = Book(); b.TryAdd(It(20000001, 1, 0)); b.TryAdd(It(30000001, 2, 0));
         var v = new InventoryView(b); var r = new Rec(); v.Bind(r, 4, true);

@@ -379,4 +379,76 @@ public class StoreDialogTests
         var dep = (StorageDepositRequest)w.Sent.Single();
         Assert.That((dep.Uid, dep.Slot), Is.EqualTo((12L, (short)1)), "AvailableSlot: the first empty slot");
     }
+
+    static (InventoryView Bag, ItemBook Book) BagWith(params EquipItem[] items)
+    {
+        var b = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 4, MaxStackOf = _ => 99 };
+        foreach (var it in items) b.TryAdd(it);
+        return (new InventoryView(b), b);
+    }
+
+    static Wire BankedRig(EquipItem banked, InventoryView bag, long self = 7)
+    {
+        var w = Rig();
+        w.Book.Apply(new StorageMessage.Add(0, banked));
+        w.Sender.CanMove = it => StorageSender.BindingAllows(it, self);
+        w.C.InventoryBag = () => bag;
+        w.C.SelfId = () => self;
+        w.C.TabName = t => "tab" + t;
+        w.C.OpenInventory = () => w.C;                     // any open window
+        Load(w.C, w.Model);
+        w.Sent.Clear();
+        return w;
+    }
+
+    [Test]
+    public void ARightClickInTheBankWithdrawsTheStackIntoTheFirstFreeBagSlot()
+    {
+        var banked = Item(20000001, 50, 2, 1);
+        var (bag, _) = BagWith(Item(20000002, 60, 0, 1));
+        var w = BankedRig(banked, bag);
+        w.C.OnCallback("notifySlotUse", new object[] { StoreDialogController.SlotName(2), 1 });
+        var wd = (StorageWithdrawRequest)w.Sent.Single();
+        Assert.That((wd.Uid, wd.Slot, wd.Count), Is.EqualTo((50L, (short)1, 1)), "FindEmptySlot: the first empty cell of the item's tab");
+        w.Sent.Clear();
+        w.C.OnCallback("notifySlotUse", new object[] { StoreDialogController.SlotName(2), 0 });
+        Assert.That(w.Sent.Single(), Is.InstanceOf<StorageWithdrawRequest>(), "the double click is the same withdraw");
+        w.Sent.Clear();
+        w.C.ShiftHeld = () => true;
+        w.C.OnCallback("notifySlotUse", new object[] { StoreDialogController.SlotName(2), 0 });
+        Assert.That(w.Sent, Is.Empty, "a double click with Shift does nothing");
+    }
+
+    [Test]
+    public void AStackableWithdrawGoesToSlotZeroWhenTheBagStacksHaveRoom()
+    {
+        var banked = Item(20000001, 50, 2, 1);
+        var (bag, _) = BagWith(Item(20000001, 60, 0, 90), Item(20000002, 61, 1, 1));
+        var w = BankedRig(banked, bag);
+        w.C.OnCallback("notifySlotUse", new object[] { StoreDialogController.SlotName(2), 1 });
+        Assert.That(((StorageWithdrawRequest)w.Sent.Single()).Slot, Is.EqualTo((short)0), "FUN_140a612b0: room in a stack");
+    }
+
+    [Test]
+    public void AWithdrawWithNoBagRoomOrAForeignBindingOrNoInventorySendsNothing()
+    {
+        var banked = Item(20000001, 50, 2, 1);
+        var (full, _) = BagWith(Item(20000002, 1, 0), Item(20000002, 2, 1), Item(20000002, 3, 2), Item(20000002, 4, 3));
+        var w = BankedRig(banked, full);
+        w.C.OnCallback("notifySlotUse", new object[] { StoreDialogController.SlotName(2), 1 });
+        Assert.That(w.Sent, Is.Empty, "no free slot in the tab");
+        Assert.That(w.Notices.Count, Is.EqualTo(1), "notice 0x44");
+        var (bag, _) = BagWith();
+        var bound = Item(20000001, 51, 3, 1); bound.BindingId = 99;
+        w = BankedRig(bound, bag);
+        int boxes = 0;
+        w.C.ShowBox = (_, _) => boxes++;
+        w.C.OnCallback("notifySlotUse", new object[] { StoreDialogController.SlotName(3), 1 });
+        Assert.That(w.Sent, Is.Empty, "bound to another character");
+        Assert.That(boxes, Is.EqualTo(1));
+        w = BankedRig(banked, bag);
+        w.C.OpenInventory = () => null;
+        w.C.OnCallback("notifySlotUse", new object[] { StoreDialogController.SlotName(2), 1 });
+        Assert.That(w.Sent, Is.Empty, "the inventory window is not open");
+    }
 }

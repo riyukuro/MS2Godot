@@ -102,6 +102,10 @@ public sealed class StorageSender {
         return true;
     }
 
+    /// <summary>CItem::FUN_14052a580 (item.cpp:1674): an item with no binding (FUN_14052d1c0 == 0) passes, a bound one only for the
+    /// character it is bound to (FUN_140634790).</summary>
+    public static bool BindingAllows(EquipItem it, long selfId) => it.BindingId == 0 || it.BindingId == selfId;
+
     /// <summary>FUN_140de31f0 (mode 1): an item the bank holds is checked for the character binding first; an unknown uid is sent.</summary>
     public bool Withdraw(long uid, int slot, int count) {
         var it = book.Find(uid);

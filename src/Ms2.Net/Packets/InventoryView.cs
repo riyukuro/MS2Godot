@@ -110,6 +110,35 @@ public sealed class InventoryView {
         return false;
     }
 
+    /// <summary>Unk_Inventory::FindEmptySlot @0x140a61190 (inventory.cpp:1074): the first empty cell of the tab, -1 for none or a tab
+    /// outside 0-14.</summary>
+    public int FindEmptySlot(int tab) {
+        var c = Cells(tab);
+        for (int i = 0; i < c.Count; i++) if (c[i].Empty) return i;
+        return -1;
+    }
+
+    /// <summary>Unk_Inventory::FUN_140a5fe70 @0x140a5fe70 (inventory.cpp:904): the room left in the stacks of the tab that hold the
+    /// reference's item id (slotMax - amount of each, never below 0); 0 for an item with slotMax 1 or no known max. STILL-OPEN: the
+    /// client's stacks of a cube-texture item only count where the owners agree (HasCubeTextureMesh, the UGC info), not carried here.</summary>
+    public int StackRoom(int tab, EquipItem reference) {
+        if (reference == null || (uint) tab >= ItemBook.Tabs) return 0;
+        if (book.MaxStackOf?.Invoke(reference.Id) is not uint max || max == 1) return 0;
+        long room = 0;
+        foreach (var c in Cells(tab))
+            if (!c.Empty && c.ItemId == reference.Id) room += Math.Max(0, (long) max - c.Amount);
+        return (int) Math.Min(room, int.MaxValue);
+    }
+
+    /// <summary>Unk_Inventory::FUN_140a612b0 @0x140a612b0 (inventory.cpp:1087): the bag slot a moved-in item is sent for: 0 when it is
+    /// stackable (slotMax above 1) and the tab's stacks have room for the quantity, else FindEmptySlot (-1 for none).</summary>
+    public int SlotForIncoming(int tab, EquipItem item, int quantity) {
+        if (item == null) return 0;
+        if (tab == -1) tab = TabOfItem(item.Id);
+        if (book.MaxStackOf?.Invoke(item.Id) is uint max && max > 1 && StackRoom(tab, item) >= quantity) return 0;
+        return FindEmptySlot(tab);
+    }
+
     /// <summary>FUN_14199bc00 per tab: true when any item of the tab IsNew.</summary>
     public bool HasNew(int tab) => (uint) tab < ItemBook.Tabs && book.All.Any(i => i.IsNew && tabOf(i.Id) == tab);
 

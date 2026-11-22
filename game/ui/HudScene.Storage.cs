@@ -37,6 +37,7 @@ public partial class HudScene
             InventoryMeso = () => hudModel.HasLocalPlayer ? hudModel.Player.Mesos : 0,
             FindInventoryItem = uid => live.Inventory?.FindByUid(uid),
             PlayerAlive = () => live.Me is { Dead: false },
+            CanMove = it => StorageSender.BindingAllows(it, live.CharacterId),
             IsScoreItem = id => hudModel.Tables.Items.Get(id)?.IsScoreItem ?? false,
             PlayingScoreUid = () => live.PlayingScoreUid,
             SummonUid = () => live.Me?.Pet?.Uid ?? 0,
@@ -99,6 +100,9 @@ public partial class HudScene
             OpenInventory = () => inventory != null && !inventory.IsClosed ? inventory : null,
             IsTalking = () => live.IsTalking(),
             EndTalk = live.EndTalk,
+            SelfId = () => live.CharacterId,
+            InventoryBag = () => live.Inventory,
+            TabName = tab => inventory?.Tabs.FirstOrDefault(t => t.Tab == tab).Name is { } n ? hudModel.Tables.Common("s_inventory_tab_" + n) ?? "" : "",
         };
         c.InventoryWindowPos += _ =>
         {
