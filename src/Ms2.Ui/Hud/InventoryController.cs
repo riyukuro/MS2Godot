@@ -224,6 +224,11 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
             ("openBankTooltip", GetOpenBankTooltip(bank))));
     }
 
+    /// <summary>UpdateButtonState's lookups (uiinventorydialog.cpp:1152): the lock (0x4f08) or break (0x4e8d) dialog was created.
+    /// The donation dialog (0x4e8e) is not in the test, so a break controller that is the donation one does not count.</summary>
+    public static bool LockOrBreakExists(ItemLockDialogController itemLock, ItemBreakDialogController itemBreak)
+        => itemLock != null || itemBreak?.Id == ItemBreakDialogController.UiId;
+
     /// <summary>What the item lock and break dialogs do to the inventory after their load and unload (uiinventorydialog.cpp:2340-2362,
     /// uiitemlockdialog.cpp:160-185): nothing while it is closed, else UpdateButtonState, then FUN_141999e00.</summary>
     public void ItemDialogChanged()

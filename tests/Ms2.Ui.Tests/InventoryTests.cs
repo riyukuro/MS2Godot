@@ -173,6 +173,16 @@ public class InventoryTests
     }
 
     [Test]
+    public void TheDonationDialogAloneDoesNotCountAsAnExistingLockOrBreakDialog()
+    {
+        // UpdateButtonState tests 0x4f08, 0x4e8d and the extraction dialogs, not the donation dialog 0x4e8e (uiinventorydialog.cpp:1152)
+        Assert.That(InventoryController.LockOrBreakExists(null, null), Is.False);
+        Assert.That(InventoryController.LockOrBreakExists(null, new ItemBreakDialogController(true)), Is.False, "donation only");
+        Assert.That(InventoryController.LockOrBreakExists(null, new ItemBreakDialogController(false)), Is.True);
+        Assert.That(InventoryController.LockOrBreakExists(new ItemLockDialogController(), null), Is.True);
+    }
+
+    [Test]
     public void ItemDialogChangedPushesTheButtonsAndFlagsOnlyWhileOpen()
     {
         // the lock / break dialogs' load and unload (uiinventorydialog.cpp:2340-2362): UpdateButtonState then FUN_141999e00
