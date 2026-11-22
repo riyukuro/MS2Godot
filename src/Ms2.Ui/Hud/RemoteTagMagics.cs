@@ -38,6 +38,16 @@ public sealed class RemoteTagMagics
     /// <summary>The magics of <paramref name="ownerId"/> still kept (0 for an unknown owner).</summary>
     public int Count(int ownerId) => owners.TryGetValue(ownerId, out var o) ? o.Magics.Count : 0;
 
+    /// <summary>Whether any owner keeps a magic.</summary>
+    public bool Any
+    {
+        get
+        {
+            foreach (var o in owners.Values) if (o.Magics.Count != 0) return true;
+            return false;
+        }
+    }
+
     /// <summary>The models of the owner's skill state record still waiting for a start tick (for the checks).</summary>
     public int Pending(int ownerId) => owners.TryGetValue(ownerId, out var o) && o.State != null ? o.State.Models.Count : 0;
 

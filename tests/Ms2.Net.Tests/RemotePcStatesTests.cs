@@ -511,6 +511,24 @@ public class RemotePcStatesTests {
         Assert.That(b.Played, Does.Contain(RemotePcStates.ActJumpUp));
     }
 
+    [Test] public void TheSkillStateHooksFollowItsEntryItsExitAndEachAttackFired() {
+        // the remote magics' cast record follows StateSkill: its entry (m_spRecord), its exit (stateskill.cpp:512-535, also on
+        // a forced entry again) and FUN_1417ecce0 for each attack FireAttacksAtPoint fires
+        var b = new Body();
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        var log = new List<string>();
+        sm.SkillEntered = () => log.Add("enter");
+        sm.SkillExited = () => log.Add("exit");
+        sm.AttackFired = a => log.Add("fire" + a);
+        sm.Cast(10200001, false, Vector3.Zero, 0f, attackPoints: new[] { "Hit_01", "Hit_01", "Hit_02" });
+        sm.CastTextKey("Hit_01", 0.1f);
+        sm.CastTextKey("Hit_02", 0.2f);
+        sm.Cast(10200001, false, Vector3.Zero, 0f, attackPoints: new[] { "Hit_01" });
+        sm.CastSequenceEnded();
+        Assert.That(log, Is.EqualTo(new[] { "enter", "fire0", "fire1", "fire2", "exit", "enter", "exit" }));
+    }
+
     [Test] public void TheSkillStateEndsInIdleAndTheNextStatePlaysItsSequence() {
         // a cast again in StateSkill re-enters it (forced); its last motion's end (EndOfSequence -> FUN_1417f0070) or a cancel
         // (State::vfunc_7(1)) enters StateIdle; a PC in the air then falls with the fall sequence

@@ -464,6 +464,7 @@ public sealed partial class RemoteLayer : Node3D
         r.Damage = new Ui.DamageTarget(root, () => World.DummyAnchor.Point(dummies, "Eff_Damage", model, md.RootName) ?? root.GlobalPosition, true);
         pc.States.DeadEntered = () => EnterDead(r);
         pc.States.DeadLeft = () => r.Pc.SetBodyShown(true);
+        HookMagics(r);
         pc.Spawn();
         // PC::vfunc_10 (a hurt spawn) and OnAddUser's SetEmotion of the packet's emotion byte (scenestategame.cpp:11188,
         // a change from the ctor's 0): either runs UpdateHpBar, so a member's bar is made active at once (not shown)
@@ -565,7 +566,7 @@ public sealed partial class RemoteLayer : Node3D
                 case UserAddedEvent add:
                     if (add.User.User.CharacterId == selfCharacter) break;
                     // a replaced or leaving PC: ~PC frees its kept invincible effect m_n1060 (pc.cpp:764-768)
-                    if (users.Remove(add.User.ObjectId, out var old)) { old.Invincible.End(null, RegionFx); tags.Remove(old.Root); bars.Remove(old.Root); old.Death.Free(); FreeRidee(old); old.Pc.Free(); }
+                    if (users.Remove(add.User.ObjectId, out var old)) { remoteMagics.Remove(old.ObjectId); old.Invincible.End(null, RegionFx); tags.Remove(old.Root); bars.Remove(old.Root); old.Death.Free(); FreeRidee(old); old.Pc.Free(); }
                     if (old != null) PcLeft?.Invoke(old.ObjectId);
                     var added = users[add.User.ObjectId] = Spawn(add.User); UsersSpawned++; ArmCodi();
                     // FieldAddUser's ride (PCBase::SetRideOnAction) and its passengers, ridden at the PC's creation
@@ -579,6 +580,7 @@ public sealed partial class RemoteLayer : Node3D
                     if (users.Remove(rem.ObjectId, out var gone))
                     {
                         gone.Invincible.End(null, RegionFx);   // ~PC, pc.cpp:764-768
+                        remoteMagics.Remove(rem.ObjectId);
                         tags.Remove(gone.Root); bars.Remove(gone.Root); gone.Death.Free(); FreeRidee(gone); gone.Pc.Free();
                         PcLeft?.Invoke(gone.ObjectId);
                         GD.Print($"live: other player {gone.Name} (object {rem.ObjectId}) left");
@@ -659,6 +661,7 @@ public sealed partial class RemoteLayer : Node3D
                         }
                     }
                     if (Numbered != null) ShowNumbers(dmg.Damage);
+                    OnRemoteMagics(dmg.Damage);
                     break;
                 case UserBuffEvent ub:
                     if (users.TryGetValue(ub.Buff.OwnerObjectId, out var rb)) rb.Buffs.Apply(ub.Buff);
@@ -767,6 +770,7 @@ public sealed partial class RemoteLayer : Node3D
             if (a.Invincible.Blink.Active && a.Invincible.Tick(now, a.Visual)) a.Invincible.End(a.Visual, RegionFx);
             a.Death.Revival.Expire(tick);
         }
+        TickRemoteMagics(now);
         LiveSession.Instance?.Breakables.Update(now);
         if (TombTags.Count > 0) { RunMarkerTags(); RunTombTags(); }
         CodiTick(dt);

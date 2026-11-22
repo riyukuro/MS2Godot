@@ -220,6 +220,12 @@ public sealed class RemotePcStates
     /// <summary>StateDead::vfunc_5 (@0x1417c29b0, statedead.cpp:177-186): the body shown again (vfunc_23(0)) and the shadow
     /// back on (vfunc_31(true)).</summary>
     public Action DeadLeft;
+    /// <summary>StateSkill::vfunc_4's m_spRecord: called as the skill state is entered, before its entry runs.</summary>
+    public Action SkillEntered;
+    /// <summary>StateSkill::vfunc_5 (stateskill.cpp:512-535): called as the skill state is left, before its exit runs.</summary>
+    public Action SkillExited;
+    /// <summary>FUN_1417ecce0 for each attack FireAttacksAtPoint fires (the attack's index in the motion).</summary>
+    public Action<int> AttackFired;
 
     void NotifyWeaponKey()
     {
@@ -585,6 +591,7 @@ public sealed class RemotePcStates
                 && (first == null || first == castPoints[castAttack]))
             {
                 first = castPoints[castAttack];
+                AttackFired?.Invoke(castAttack);
                 castAttack++;
             }
             return;
@@ -731,11 +738,13 @@ public sealed class RemotePcStates
             return;
         }
         if (state == StateSkill) FlushRequests();
+        if (Cur == StateSkill) SkillExited?.Invoke();
         Exit(Cur, state);
         Prev = Cur;
         if (sub != 0) subs[state] = sub;
         Cur = state;
         StateChanged?.Invoke(state);
+        if (state == StateSkill) SkillEntered?.Invoke();
         Enter(state);
         NotifyWeaponKey();
     }

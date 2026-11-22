@@ -27,7 +27,7 @@ public sealed partial class RemoteLayer
     {
         if (users.TryGetValue(u.ActorId, out var r)) r.Cast.Use(u.CastUid, u.Motion);
         PlayCast(u.ActorId, u.SkillId, u.Level, u.Motion, u.Speed, new System.Numerics.Vector3(u.Position.X, u.Position.Y, u.Position.Z), u.Rotation.Z,
-            new System.Numerics.Vector3(u.Direction.X, u.Direction.Y, u.Direction.Z), u.HasExtra ? u.Extra : 0, u.HasExtra ? u.ExtraText ?? "" : "");
+            new System.Numerics.Vector3(u.Direction.X, u.Direction.Y, u.Direction.Z), u.HasExtra ? u.Extra : 0, u.HasExtra ? u.ExtraText ?? "" : "", u.CastUid);
     }
 
     /// <summary>
@@ -50,7 +50,7 @@ public sealed partial class RemoteLayer
         }
         else if (npcs.Info(s.ActorId) == null) return;
         PlayCast(s.ActorId, s.SkillId, s.Level, s.Motion, s.Speed, new System.Numerics.Vector3(s.Position.X, s.Position.Y, s.Position.Z), s.Rotation.Z,
-            new System.Numerics.Vector3(s.Direction.X, s.Direction.Y, s.Direction.Z));
+            new System.Numerics.Vector3(s.Direction.X, s.Direction.Y, s.Direction.Z), castUid: s.CastUid);
     }
 
     /// <summary>OnSkillCancel @0x141718680 (:3409): the cast of the uid in the skill state leaves it for StateIdle
@@ -75,9 +75,11 @@ public sealed partial class RemoteLayer
     /// and the packet's direction <paramref name="dir"/>, the record's m_kStart).
     /// PlayCastStartEffect returns at once for a dead owner (stateskill.cpp:1821-1822, PCBase::IsDead: the user's
     /// <see cref="RemotePcStates.Dead"/>, the npc's <see cref="NpcLayer.IsDead"/>, set by CNpc::vfunc_125).
+    /// A user's cast record of <paramref name="castUid"/> and the motion is the one its magics join
+    /// (<see cref="Ms2.Ui.Hud.RemoteTagMagics.BeginCast"/>).
     /// </summary>
     void PlayCast(int actorId, int skillId, int level, int motionIndex, float speed, System.Numerics.Vector3 pos, float rotZ,
-        System.Numerics.Vector3 dir, int holdId = 0, string holdNode = "")
+        System.Numerics.Vector3 dir, int holdId = 0, string holdNode = "", long castUid = 0)
     {
         skillMotions ??= new Ms2.Formats.World.SkillTable(packs);
         var motion = skillMotions.Motion(skillId, level, motionIndex);
@@ -92,6 +94,8 @@ public sealed partial class RemoteLayer
                 var st = skillMotions.StateMove(skillId);
                 var move = new CastMove(motion.MoveType, motion.KeyMove, motion.MoveDistance, motion.MoveAngle,
                     st.MoveType, st.MovingInMovekey, st.MagicControl, dir);
+                // FUN_141673ce0 before the state is entered: the record list replaced unless the uid and motion are there
+                remoteMagics.BeginCast(actorId, castUid, motionIndex);
                 r.Pc.PlaySkill(sk.name, Math.Max(speed, 0.1f), skillId, skillMotions.ChargingSkill(skillId), pos, rotZ, holdId, holdNode,
                     motionIndex, skillMotions.MotionCount(skillId, level), motion.LoopCount, motion.AttackPoints, move);
                 CastsPlayed++;
