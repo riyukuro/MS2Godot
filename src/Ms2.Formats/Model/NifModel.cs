@@ -367,7 +367,7 @@ public sealed class ModelData
             int i = queue.Dequeue();
             if (!seen.Add(i)) continue;
             var b = B[i];
-            foreach (var k in b.Ints("Children")) if (k >= 0) queue.Enqueue((int)k);
+            if (b.Has("Children")) foreach (var k in b.Ints("Children")) if (k >= 0) queue.Enqueue((int)k);
             bool skin = false;
             if (b.TryGetValue("Material Data", out var mdv) && mdv is NifStruct md && md.IntOr("Num Materials", 0) > 0
                 && md.TryGetValue("Material Name", out var names))
@@ -384,7 +384,7 @@ public sealed class ModelData
                 }
             }
             if (skin) continue;
-            foreach (var p in b.Ints("Properties"))
+            foreach (var p in b.Has("Properties") ? b.Ints("Properties") : Array.Empty<long>())
             {
                 if (p < 0 || B[(int)p].Type != "NiTexturingProperty") continue;
                 var tex = B[(int)p];

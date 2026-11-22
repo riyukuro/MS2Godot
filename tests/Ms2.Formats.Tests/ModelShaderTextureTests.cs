@@ -66,6 +66,14 @@ public class ModelShaderTextureTests
     }
 
     [Test]
+    public void ABlockWithoutChildrenOrPropertiesFieldsIsSkipped()
+    {
+        var bare = new NifStruct { Type = "NiMesh" };
+        Assert.That(Scan(Texturing(true), bare), Is.False);
+        Assert.That(Scan(Texturing(true), bare, Obj("NiMesh", new long[0], new long[] { 9 })), Is.True);
+    }
+
+    [Test]
     public void AnySkinMaterialAmongTheMeshMaterialsDisqualifiesIt()
     {
         Assert.That(Scan(Texturing(true), Obj("NiMesh", new long[0], new long[] { 9 }, Skin)), Is.False);
