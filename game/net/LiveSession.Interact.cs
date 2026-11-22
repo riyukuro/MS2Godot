@@ -115,18 +115,25 @@ public partial class LiveSession
     /// <summary>
     /// CSceneStateGame::OnSetCraftMode (@0x141723410, scenestategame.cpp:7827-7851): the pc by id, nothing if it is missing or
     /// dead (:7832-7835), then PC::vfunc_135 with the cube mode, the craft mode and the item (0, 0 and none with mode 0).
-    /// STILL-OPEN: other pcs' cube modes (their PC objects keep no cube state here); MyPC's target refresh after it
-    /// (FUN_141bd3620()-&gt;vfunc_149, :7846-7851).
+    /// Another pc's goes to <see cref="RemoteLayer.SetCraftMode"/>.
+    /// STILL-OPEN: MyPC's target refresh after it (FUN_141bd3620()-&gt;vfunc_149, :7846-7851); the own pc's StateIdle on
+    /// entering the cube mode (PC::vfunc_135's vfunc_59, pc.cpp:3072-3078).
     /// </summary>
     void OnSetCraftMode(SetCraftMode m)
     {
-        if (m.Id != selfObject) return;
+        if (m.Id != selfObject)
+        {
+            if (remote?.SetCraftMode(m.Id, m.CubeMode, m.CraftMode, m.Item) == true)
+                GD.Print($"live: SetCraftMode pc {m.Id} mode {m.CubeMode} craft {m.CraftMode}");
+            return;
+        }
         CubeCraft.Set(m.CubeMode, m.CraftMode, m.Item, Me.Dead);
         GD.Print($"live: SetCraftMode mode {m.CubeMode} craft {m.CraftMode} item {m.Item?.ItemId ?? 0}");
     }
 
     /// <summary>CSceneStateGame::OnResponseCube (scenestategame.cpp:9876), the held-item modes (<see cref="HeldItem.ResponseCube"/>)
-    /// and their errors' build notice for the local pc (<see cref="BuildNotice.OfHeldItemResponse"/>).
+    /// and their errors' build notice for the local pc (<see cref="BuildNotice.OfHeldItemResponse"/>); another pc's go to
+    /// <see cref="RemoteLayer.ResponseCube"/>.
     /// The housing modes 0x27 / 0x35 / 0x37 fill <see cref="Housing"/>. The place answers 0xa / 0xf add their cube to the
     /// player's cube map (<see cref="Ms2.Ui.CubeCellMap.Apply"/>).
     /// The place answers' own-pc part (the guide, the place sound and an error's notice) is
@@ -162,7 +169,9 @@ public partial class LiveSession
         }
         var m = ResponseCubeHeldItem.Read(p.Reader());
         if (m == null) return;
-        HeldItem.ResponseCube(m, selfObject, null, ItemExists?.Invoke(m.ItemId) ?? true);
+        // the pc by id (:10165 / :10180): another pc's held item is its own; the cube weapon test is not ported (null)
+        if (m.Id == selfObject) HeldItem.ResponseCube(m, selfObject, null, ItemExists?.Invoke(m.ItemId) ?? true);
+        else remote?.ResponseCube(m, null);
         int notice = BuildNotice.OfHeldItemResponse(m, selfObject);
         if (notice != 0) ShowBuildNotice(notice);
         GD.Print($"live: ResponseCube 0x{m.Mode:x} error {m.Error} id {m.Id}");

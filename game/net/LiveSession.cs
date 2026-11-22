@@ -944,7 +944,7 @@ public partial class LiveSession : Node
         foreach (var body in pendingTriggers) ApplyTrigger(field, body);
         pendingTriggers.Clear();
         regionSkills.Clear(); RegionSkillLog.Clear();
-        var layer = remote = new RemoteLayer(field, builder, entry.Enter.CharacterId) { Feature8e = CodiFeature, ServerNow = () => ServerTime };
+        var layer = remote = new RemoteLayer(field, builder, entry.Enter.CharacterId) { Feature8e = CodiFeature, ServerNow = () => ServerTime, ItemExists = id => ItemExists?.Invoke(id) ?? true };
         remote.Tracker.Profile = game.Profile;
         remote.Numbered = (n, npc, pc) => DamageNumbered?.Invoke(n, npc, pc);
         remote.NpcExpShown = (npc, exp) => NpcExpShown?.Invoke(npc, exp);

@@ -50,7 +50,15 @@ public sealed partial class RemoteLayer : Node3D
         public Ms2.Ui.Skills.AdditionalBuffList Buffs;
         /// <summary>The revival flag and count, the tomb and its bar.</summary>
         public readonly RemoteDeath Death = new();
+        /// <summary>The pc's cube mode and craft (m_nCubeModeFFC, m_pCubeCraft): only the mode and the craft's record, the
+        /// guide is the local pc's.</summary>
+        public readonly Ms2.Ui.CubeCraftState Cube = new();
+        /// <summary>The pc's held item (PC GetHeldItem).</summary>
+        public readonly Ms2.Ui.HeldItem Held = new();
     }
+
+    /// <summary>CItem::FUN_140523c40's outcome for an item id: false when the item data has no such item (no function = true).</summary>
+    public Func<int, bool> ItemExists;
 
     readonly ModelBuilder builder;
     readonly EquipApplier equip;
@@ -152,6 +160,39 @@ public sealed partial class RemoteLayer : Node3D
         if (item == null || !users.TryGetValue(objectId, out var r)) return;
         equip.Reapply(r.Visual, LookOf(r), item.Slot);
     }
+
+    /// <summary>
+    /// CSceneStateGame::OnSetCraftMode (@0x141723410, scenestategame.cpp:7827-7851) for another pc: nothing when it is missing or
+    /// dead, else PC::vfunc_135 (@0x141659450, pc.cpp:3068-3082): a pc not in the cube mode yet goes to StateIdle (StateFall
+    /// while its model is not in, FUN_14123bea0), then the mode and the craft (FUN_141659250), then the weapon hold
+    /// (FUN_141659000: no weapons in the cube mode). False when no pc took it.
+    /// STILL-OPEN: the craft's guide cube for another pc (Unk_PCCubeCraft::FUN_1410a8af0's RebuildGuides, cubecraft_2.cpp:340).
+    /// </summary>
+    public bool SetCraftMode(int objectId, int cubeMode, int craftMode, Ms2.Net.Packets.CubeItemInfo item)
+    {
+        if (!users.TryGetValue(objectId, out var r) || r.Pc.States.Dead) return false;
+        if (!r.Cube.InCubeMode) r.Pc.States.ChangeState(r.Cube.ModelLoaded ? RemotePcStates.StateIdle : RemotePcStates.StateFall);
+        r.Cube.Set(cubeMode, craftMode, item, false);
+        RefreshWeapons(r);
+        return true;
+    }
+
+    /// <summary>
+    /// OnResponseCube's held-item modes for another pc (scenestategame.cpp:10145-10190): 0x11 holds the item when the cube
+    /// has its weapon, 0x12 lets it go (<see cref="Ms2.Ui.HeldItem.ResponseCube"/>); errors are the local pc's notice only.
+    /// False when no pc took it.
+    /// STILL-OPEN: the held item's model (AvatarPC::vfunc_127, AddItemAndPreloadModels).
+    /// </summary>
+    public bool ResponseCube(Ms2.Net.Packets.ResponseCubeHeldItem m, Func<int, bool> cubeHasWeapon)
+    {
+        if (m == null || !users.TryGetValue(m.Id, out var r)) return false;
+        return r.Held.ResponseCube(m, r.ObjectId, cubeHasWeapon, ItemExists?.Invoke(m.ItemId) ?? true);
+    }
+
+    /// <summary>Another pc's cube mode (0 = none, also without the pc), held item id (0 = none), whether its craft is made
+    /// and its state id.</summary>
+    public (int CubeMode, int HeldItem, bool Craft, int State) CubeStateOf(int objectId) =>
+        users.TryGetValue(objectId, out var r) ? (r.Cube.CubeMode, r.Held.ItemId, r.Cube.Current != null, r.Pc.States.Cur) : (0, 0, false, 0);
 
     /// <summary>The other players shown now (the own PC is not among them).</summary>
     public IEnumerable<Pc> Pcs => users.Values.Select(r => new Pc(r.ObjectId, r.CharacterId, r.Name ?? "", r.Picture, r.Root, r.Anchor, r.Gems,
@@ -319,7 +360,7 @@ public sealed partial class RemoteLayer : Node3D
         var st = r.Pc.States;
         // vfunc_15 allows the hands, vfunc_16 forces them (StateHold not riding; ridees are not modelled, so never riding)
         r.Weapons?.SetState(r.InBattle, Ms2.Ui.Items.WeaponStance.StateHoldsWeapons(st.Cur, st.Sub, st.WalkRun),
-            stateForces: Ms2.Ui.Items.WeaponStance.StateForces(st.Cur));
+            stateForces: Ms2.Ui.Items.WeaponStance.StateForces(st.Cur), inCubeMode: r.Cube.InCubeMode);
         r.Pc.SetWeaponPrefix(r.Weapons?.ActivePrefix);
     }
     Remote Spawn(FieldAddUser u)
@@ -365,6 +406,11 @@ public sealed partial class RemoteLayer : Node3D
         r.Death.BuffsDisableRevival = () => r.Buffs.IsDisableRevivalHere;
         r.Death.Revival.Apply(u);   // OnAddUser (scenestategame.cpp:11280-11281): the confirm end tick and count, the flag
         foreach (var b in u.Buffs) r.Buffs.Apply(BuffPacket.FromAdd(b));
+        // OnAddUser (scenestategame.cpp:11189-11192): the new PC's PC::vfunc_135 before its model, after the dead flag (a dead
+        // pc gets no mode); its StateFall is the spawn's own. PC::vfunc_12 (pc.cpp:844-855) on the model: the waiting craft is
+        // made and the AddUser i32 is held.
+        r.Cube.NewPc(); r.Cube.Set(u.CubeMode, u.CraftMode, u.CubeItem, pc.States.Dead); r.Cube.ModelAttached();
+        r.Held.AddUser(u.HeldObject, ItemExists?.Invoke(u.HeldObject) ?? true);
         r.Weapons = EquipApplier.RigOf(visual);
         r.Pc.States.WeaponKeyChanged = () => RefreshWeapons(r);
         RefreshWeapons(r);

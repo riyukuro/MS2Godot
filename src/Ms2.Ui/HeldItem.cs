@@ -11,7 +11,8 @@ namespace Ms2.Ui;
 /// the port has no skill state yet.
 /// STILL-OPEN: StateGlide, StateEmotion and StateTriggerEmotion have no port, so nothing calls <see cref="EnterState"/>
 /// with them yet; they are listed for when they come.
-/// STILL-OPEN: other pcs' held items (ResponseCube 0x11 / 0x12 for another id, AddUser of another pc).
+/// Each other pc has its own (the game's RemoteLayer: AddUser, ResponseCube for its id).
+/// STILL-OPEN: the held item's model (AvatarPC::vfunc_127, AddItemAndPreloadModels), for any pc.
 /// </summary>
 public sealed class HeldItem
 {
@@ -83,8 +84,8 @@ public sealed class HeldItem
     }
 
     /// <summary>
-    /// OnResponseCube's held-item modes for the local pc (<paramref name="selfObject"/>; FindPCById of another pc is not
-    /// tracked):
+    /// OnResponseCube's held-item modes for the pc whose object id is <paramref name="pcId"/> (FindPCById: a packet for
+    /// another id is not this pc's):
     /// <list type="bullet">
     /// <item>0x11, error 0 (scenestategame.cpp:10149-10165): GetCubeByKey(cube key); a cube with a weapon takes the value
     /// and the pc holds the item (FUN_14165f1f0(item, 1)). <paramref name="cubeHasWeapon"/> is that lookup; null: the cube
@@ -94,9 +95,9 @@ public sealed class HeldItem
     /// STILL-OPEN: the cube weapon's value (m_n1c, CubeMapInformationService::FUN_1410caf20) and the cube map's weapon
     /// components have no port (the Liftable side).
     /// </summary>
-    public bool ResponseCube(ResponseCubeHeldItem m, int selfObject, Func<int, bool> cubeHasWeapon, bool itemExists)
+    public bool ResponseCube(ResponseCubeHeldItem m, int pcId, Func<int, bool> cubeHasWeapon, bool itemExists)
     {
-        if (m == null || m.Error != 0 || m.Id != selfObject) return false;
+        if (m == null || m.Error != 0 || m.Id != pcId) return false;
         if (m.Mode == ResponseCubeHeldItem.ModeRelease) { Release(); return true; }
         if (m.Mode == ResponseCubeHeldItem.ModeHold && cubeHasWeapon != null && cubeHasWeapon(m.CubeKey))
             return Hold(m.ItemId, itemExists);
