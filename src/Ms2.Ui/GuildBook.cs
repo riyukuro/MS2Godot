@@ -99,6 +99,16 @@ public sealed class GuildBook
     /// <summary>The open guild dialog's RemoveMember(name).</summary>
     public event Action<string> MemberRemoved;
 
+    /// <summary>The open guild dialog's UpdateEventButtons (FUN_141968140, uiguilddialog.cpp:1247): the vs game registration changed (modes 0x76, 0x77).</summary>
+    public event Action VsGameRefresh;
+    /// <summary>The open guild dialog's FUN_141970900: the event rows again (mode 0x38).</summary>
+    public event Action EventsRefresh;
+
+    /// <summary>CGuildXmlData's guild events (LoadGuildEvent), for the notice of an opened event.</summary>
+    public Ms2.Formats.World.GuildEventTable Events;
+    /// <summary>CStringTable::FUN_141811980(table, id).</summary>
+    public Func<int, long, string> StringTableText = (_, _) => "";
+
     /// <summary>GetGuildId: CGuildInfo's first field, 0 outside a guild.</summary>
     public long GuildId { get; private set; }
 
@@ -268,6 +278,42 @@ public sealed class GuildBook
 
     /// <summary>CGuildSkill::IsUsable (@0x1404cbcd0): no duration and no cooldown left.</summary>
     public bool SkillUsable(GuildSkillState rec) => RemainingDuration(rec) <= 0 && RemainingCooldown(rec) <= 0;
+
+    /// <summary>FUN_1404d27b0 (@0x1404d27b0, on CGuildManager::GetInstance(), uiguilddialog.cpp:2396): the custom event of an id, null when the guild has none.</summary>
+    public (int Id, int Time)? CustomEvent(int id)
+    {
+        foreach (var e in Info?.CustomEvents ?? new()) if (e.Id == id) return e;
+        return null;
+    }
+
+    /// <summary>CGuildCustomEvent::IsActive (@0x1404cbee0, guilddef_1.cpp:957): the time (unsigned) plus 30 seconds is after the server time.</summary>
+    public bool IsEventActive((int Id, int Time) e) => (uint)e.Time + 0x1e > ServerTime();
+
+    /// <summary>The guild's registration for the vs game (CGuildManager f354, the guild info's flag); the "another game exists" id is F350.</summary>
+    public bool VsGameRegistered => Info?.F354 == true;
+
+    /// <summary>CGuildManager::SendGuildMode115 (@0x1413bd2e0, guildmanager.cpp:1425-1440): register for the vs game. Already registered
+    /// sends nothing; another game existing shows the box of key s_guild_vsGame_another_game_exist (FUN_140d73ff0, "system message box
+    /// by string key", scenestategame.cpp:6097; STILL-OPEN: its body is not read, the common string table is assumed); without the
+    /// member right 0x400 the notice of common 0x415 (FUN_141275260(0x415, 1, 1)); else the send of mode 0x73.</summary>
+    public bool SendGuildMode115()
+    {
+        if (VsGameRegistered) return false;
+        if ((Info?.F350 ?? 0) != 0) { Box?.Invoke(CommonByKey("s_guild_vsGame_another_game_exist")); return false; }
+        if (!HasMemberPermission(PlayerName() ?? "", 0x400)) { NoticeId(0x415); return false; }
+        Send(new GuildVsGameRegisterRequest());
+        return true;
+    }
+
+    /// <summary>CGuildManager::SendGuildMode116 (@0x1413bd3f0, :1443-1456): unregister from the vs game. Not registered sends nothing;
+    /// without the member right 0x400 the notice of common 0x415; else the send of mode 0x74.</summary>
+    public bool SendGuildMode116()
+    {
+        if (!VsGameRegistered) return false;
+        if (!HasMemberPermission(PlayerName() ?? "", 0x400)) { NoticeId(0x415); return false; }
+        Send(new GuildVsGameUnregisterRequest());
+        return true;
+    }
 
     bool NoticeKey(string key) { Notice?.Invoke(CommonByKey(key), 1, true); return false; }
 
@@ -552,6 +598,39 @@ public sealed class GuildBook
                 donor.Ff8 = m.DonationTime;
                 ChatLine?.Invoke(CommonByKey("s_guild_donate_complete"), 0xd);
                 break;
+            case 0x76:
+                // OnPacketVsGameTicket (@0x1413c4420, guildmanager.cpp:2653): f354 = the flag; with the notify flag the line of the
+                // register (3 when registered) or unregister ticket key, type 3; then the dialog's UpdateEventButtons.
+                if (Info != null) Info.F354 = m.Accepted;
+                if (m.Notify) ChatLine?.Invoke(CommonByKey(m.Accepted ? "s_guild_notify_vsGame_register_ticket" : "s_guild_notify_vsGame_unregister_ticket"), 3);
+                VsGameRefresh?.Invoke();
+                break;
+            case 0x75:
+                // OnPacketVsGameMatchCanceled (@0x1413c4580, :2670): f354 = 0 and the notice s_guild_notify_vsGame_match_canceled
+                // (FUN_1412752d0(key, 1); the notice of the key with type 1 is assumed).
+                if (Info != null) Info.F354 = false;
+                Notice?.Invoke(CommonByKey("s_guild_notify_vsGame_match_canceled"), 1, true);
+                break;
+            case 0x77:
+                // FUN_1413c45e0 (@0x1413c45e0, :2679): f350 = the id, f354 = 0, then the dialog's UpdateEventButtons. STILL-OPEN: the
+                // yes / no box s_guild_notify_vsGame_open (30 s timer, callback SendGuildMode120) is not shown: its message box type
+                // (FUN_140d73f20) is not ported, and the send of mode 120 does nothing.
+                if (Info != null) { Info.F350 = m.Value; Info.F354 = false; }
+                VsGameRefresh?.Invoke();
+                break;
+            case 0x38:
+            {
+                // FUN_1413c3780 (@0x1413c3780, :2531): the guild's custom event of the id is overwritten by the one read (none: the
+                // packet ends), the dialog rebuilds the rows, then the line s_guild_notify_open_event_user of the user and the event's
+                // map name (no such guild event: no line).
+                int i = Info?.CustomEvents.FindIndex(e => e.Id == m.EventId) ?? -1;
+                if (i < 0) break;
+                Info.CustomEvents[i] = (m.EventId, m.EventTime);
+                EventsRefresh?.Invoke();
+                if (Events?.Get(m.EventId) is not { } ev) break;
+                ChatLine?.Invoke(ClientFormat.Format(CommonByKey("s_guild_notify_open_event_user"), m.Name, StringTableText(3, ev.MapCode)), 0xd);
+                break;
+            }
             case 0x44:
                 // FUN_1413bf2a0 (guildmanager.cpp:1855): in a guild, the propensity focus and value.
                 if (!InGuild || Info == null) break;

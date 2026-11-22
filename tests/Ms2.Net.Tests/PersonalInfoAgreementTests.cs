@@ -82,3 +82,15 @@ public class HomeSaveSlotPacketTests {
         Assert.That(new HomeBlueprintLoadRequest(0).Op, Is.EqualTo(Outbound.RequestCube));
     }
 }
+
+/// <summary>The vs game registration sends (CGuildManager::SendGuildMode115/116 @0x1413bd2e0/@0x1413bd3f0): Guild modes 0x73 and 0x74, no body.</summary>
+public class GuildVsGameRequestTests {
+    static byte[] Bytes(Ms2.Net.Wire.IOutPacket p) { var w = new ByteWriter(); p.Write(w); return w.Buffer[..w.Length]; }
+
+    [Test] public void RegisterIsMode0x73AndUnregisterIsMode0x74() {
+        Assert.That(Bytes(new GuildVsGameRegisterRequest()), Is.EqualTo(new byte[] { 0x73 }));
+        Assert.That(Bytes(new GuildVsGameUnregisterRequest()), Is.EqualTo(new byte[] { 0x74 }));
+        Assert.That(new GuildVsGameRegisterRequest().Op, Is.EqualTo(Outbound.Guild));
+        Assert.That(new GuildVsGameUnregisterRequest().Op, Is.EqualTo(Outbound.Guild));
+    }
+}

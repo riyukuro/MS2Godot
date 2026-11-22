@@ -576,4 +576,95 @@ public class GuildBookTests {
         Assert.That(sent, Is.Empty);
         Assert.That(notices, Has.Count.EqualTo(1));
     }
+
+    [Test]
+    public void VsGameRegisterAsksForTheRightAndTheStateBeforeTheSend() {
+        var sent = new List<IOutPacket>(); var notices = new List<string>(); var boxes = new List<string>();
+        var b = InGuild(sent, new List<string>());
+        b.Notice += (t, _, _) => notices.Add(t);
+        b.Box += boxes.Add;
+        // the master holds the right: mode 0x73
+        Assert.That(b.SendGuildMode115(), Is.True);
+        Assert.That(sent.Single(), Is.EqualTo(new GuildVsGameRegisterRequest()));
+        sent.Clear();
+        // a member without 0x400: notice 0x415, no send
+        b.PlayerName = () => "bo";
+        Assert.That(b.SendGuildMode115(), Is.False);
+        Assert.That((sent, notices), Is.EqualTo((new List<IOutPacket>(), new List<string> { "c415" })));
+        // another game exists: the box of the key, ahead of the right check
+        b.Info.F350 = 1;
+        Assert.That(b.SendGuildMode115(), Is.False);
+        Assert.That(boxes, Is.EqualTo(new[] { "s_guild_vsGame_another_game_exist" }));
+        Assert.That(notices, Has.Count.EqualTo(1));
+        // already registered: nothing at all
+        b.Info.F354 = true;
+        Assert.That(b.SendGuildMode115(), Is.False);
+        Assert.That((sent, boxes, notices.Count), Is.EqualTo((new List<IOutPacket>(), boxes, 1)));
+        Assert.That(boxes, Has.Count.EqualTo(1));
+    }
+
+    [Test]
+    public void VsGameUnregisterNeedsTheRegistrationAndTheRight() {
+        var sent = new List<IOutPacket>(); var notices = new List<string>();
+        var b = InGuild(sent, new List<string>());
+        b.Notice += (t, _, _) => notices.Add(t);
+        Assert.That(b.SendGuildMode116(), Is.False);   // not registered
+        Assert.That((sent, notices), Is.EqualTo((new List<IOutPacket>(), new List<string>())));
+        b.Info.F354 = true;
+        b.PlayerName = () => "bo";
+        Assert.That(b.SendGuildMode116(), Is.False);
+        Assert.That(notices, Is.EqualTo(new[] { "c415" }));
+        Assert.That(sent, Is.Empty);
+        b.PlayerName = () => "Ma";
+        Assert.That(b.SendGuildMode116(), Is.True);
+        Assert.That(sent.Single(), Is.EqualTo(new GuildVsGameUnregisterRequest()));
+    }
+
+    [Test]
+    public void TheVsGameModesWriteTheRegistrationAndTheOtherGame() {
+        var sent = new List<IOutPacket>(); var lines = new List<string>(); var notices = new List<string>();
+        var b = InGuild(sent, lines);
+        b.Notice += (t, _, _) => notices.Add(t);
+        int refreshed = 0;
+        b.VsGameRefresh += () => refreshed++;
+        // registered, with the notice: the ticket line, and the register button's send does nothing
+        b.Apply(new GuildMessage((byte)0x76) { Accepted = true, Notify = true });
+        Assert.That(b.Info.F354, Is.True);
+        Assert.That(lines, Is.EqualTo(new[] { "s_guild_notify_vsGame_register_ticket" }));
+        Assert.That(b.SendGuildMode115(), Is.False);
+        Assert.That(sent, Is.Empty, "register confirmed: no second send");
+        // unregistered without the notice: no line
+        b.Apply(new GuildMessage((byte)0x76) { Accepted = false, Notify = false });
+        Assert.That(lines, Has.Count.EqualTo(1));
+        b.Apply(new GuildMessage((byte)0x76) { Accepted = true });
+        // the match was canceled: the flag drops, the notice shows, the register sends again
+        b.Apply(new GuildMessage((byte)0x75));
+        Assert.That(b.Info.F354, Is.False);
+        Assert.That(notices, Is.EqualTo(new[] { "s_guild_notify_vsGame_match_canceled" }));
+        Assert.That(b.SendGuildMode115(), Is.True);
+        Assert.That(sent.Single(), Is.EqualTo(new GuildVsGameRegisterRequest()));
+        // the vs game opened: the other game's id, the flag dropped
+        b.Info.F354 = true;
+        b.Apply(new GuildMessage((byte)0x77) { Value = 9 });
+        Assert.That((b.Info.F350, b.Info.F354), Is.EqualTo((9, false)));
+        Assert.That(refreshed, Is.EqualTo(4), "0x76 three times and 0x77 once; 0x75 is not routed to the dialog");
+    }
+
+    [Test]
+    public void AnOpenedEventOverwritesTheCustomEventAndNamesTheUser() {
+        var sent = new List<IOutPacket>(); var lines = new List<string>();
+        var b = InGuild(sent, lines);
+        b.CommonByKey = k => k == "s_guild_notify_open_event_user" ? "{0}|{1}" : k;
+        b.StringTableText = (t, id) => $"{t}:{id}";
+        b.Events = new Ms2.Formats.World.GuildEventTable(System.Xml.Linq.XDocument.Parse("<ms2><guildEvent id=\"1\" mapCode=\"77\" imagePath=\"a\"/></ms2>"));
+        b.Info.CustomEvents.Add((1, 5));
+        int rebuilt = 0;
+        b.EventsRefresh += () => rebuilt++;
+        b.Apply(new GuildMessage((byte)0x38) { Name = "bo", EventId = 2, EventTime = 9 });   // no custom event of the id: nothing
+        Assert.That((rebuilt, lines), Is.EqualTo((0, new List<string>())));
+        b.Apply(new GuildMessage((byte)0x38) { Name = "bo", EventId = 1, EventTime = 100 });
+        Assert.That(b.CustomEvent(1), Is.EqualTo((1, 100)));
+        Assert.That(rebuilt, Is.EqualTo(1));
+        Assert.That(lines, Is.EqualTo(new[] { "bo|3:77" }));
+    }
 }

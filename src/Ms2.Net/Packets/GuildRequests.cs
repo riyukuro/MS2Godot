@@ -162,3 +162,15 @@ public sealed record GuildPropensityRequest(int Focus, int Value) : IOutPacket {
     public Outbound Op => Outbound.Guild;
     public void Write(ByteWriter w) { w.WriteByte(0x44); w.WriteByte((byte)Focus); w.WriteInt(Value); }
 }
+
+/// <summary>CGuildManager::SendGuildMode115 (@0x1413bd2e0, guildmanager.cpp:1436): register for the vs game (u8 0x73).</summary>
+public sealed record GuildVsGameRegisterRequest : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) { w.WriteByte(0x73); }
+}
+
+/// <summary>CGuildManager::SendGuildMode116 (@0x1413bd3f0, :1452): unregister from the vs game (u8 0x74).</summary>
+public sealed record GuildVsGameUnregisterRequest : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) { w.WriteByte(0x74); }
+}

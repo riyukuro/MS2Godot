@@ -169,6 +169,10 @@ public sealed class GuildInviteInfo {
 /// <item>0xf OnPacketAttendComplete (@0x1413bebc0): no body.</item>
 /// <item>0x71 OnPacketMyDonation (@0x1413bece0): i32 the donations today, i64 the time of the last one (the member's
 /// ff0 / ff8).</item>
+/// <item>0x38 FUN_1413c3780 (:2531): string the user, CGuildCustomEvent (i32 id, i32 time).</item>
+/// <item>0x76 OnPacketVsGameTicket (:2653): u8 registered (f354), u8 notify.</item>
+/// <item>0x75 OnPacketVsGameMatchCanceled (:2670): no body.</item>
+/// <item>0x77 FUN_1413c45e0 (:2679): i32 the other game id (f350).</item>
 /// <item>0x44 FUN_1413bf2a0 (guildmanager.cpp:1855): u8 the propensity focus, i32 its value (CGuildInfo f154 / f158).</item>
 /// </list>
 /// The other types are not read here (STILL-OPEN).
@@ -206,6 +210,10 @@ public sealed record GuildMessage(byte Type) {
     public GuildMember Member { get; init; }
     /// <summary>Type 0x12: the notice line is wanted.</summary>
     public bool Notify { get; init; }
+    /// <summary>Type 0x38: the custom event (id and time) a member opened; <see cref="Name"/> is the member. Type 0x76: the registration
+    /// flag (<see cref="Accepted"/>) and the notice flag (<see cref="Notify"/>). Type 0x77: the other game id is <see cref="Value"/>.</summary>
+    public int EventId { get; init; }
+    public int EventTime { get; init; }
     /// <summary>Type 0x44: the guild's propensity focus (f154) and value (f158).</summary>
     public int Focus { get; init; }
     public int Value { get; init; }
@@ -231,7 +239,7 @@ public sealed record GuildMessage(byte Type) {
     public static GuildMessage Read(ByteReader r, ProtocolProfile profile) {
         var m = ReadBody(r, profile);
         // Types 7 and 0xf have no body, the others end with their fields.
-        if (m.Type is 1 or 2 or 3 or 4 or 5 or 6 or 7 or 0xf or 0x12 or 0x13 or 0x71 or 0x2d or 0x2e or 0x2f or 0x30 or 0x44 or 0x52 or 0x53 or 0x54 or 0x55 or 0x56 or 0x57) r.ExpectEnd($"Guild type {m.Type}");
+        if (m.Type is 1 or 2 or 3 or 4 or 5 or 6 or 7 or 0xf or 0x12 or 0x13 or 0x71 or 0x2d or 0x2e or 0x2f or 0x30 or 0x44 or 0x75 or 0x76 or 0x77 or 0x38 or 0x52 or 0x53 or 0x54 or 0x55 or 0x56 or 0x57) r.ExpectEnd($"Guild type {m.Type}");
         return m;
     }
 
@@ -305,6 +313,14 @@ public sealed record GuildMessage(byte Type) {
             case 0x23: return Done(new(t) { Name = r.ReadUnicodeString(), AchieveId = r.ReadInt(), Grade = r.ReadInt(), Kind = (ushort) r.ReadShort() }, r);
             // FUN_1413c3c40 (:2576)
             case 0x3a: return Done(new(t) { GuildId = r.ReadLong(), Name = r.ReadUnicodeString(), Value = r.ReadInt(), Text = r.ReadUnicodeString() }, r);
+            // FUN_1413c3780 (:2531): the user, then CGuildCustomEvent::ReadPacket (guilddef_1.cpp:951)
+            case 0x38: return Done(new(t) { Name = r.ReadUnicodeString(), EventId = r.ReadInt(), EventTime = r.ReadInt() }, r);
+            // OnPacketVsGameTicket (:2653)
+            case 0x76: return Done(new(t) { Accepted = r.ReadByte() != 0, Notify = r.ReadByte() != 0 }, r);
+            // OnPacketVsGameMatchCanceled (:2670): no body
+            case 0x75: return new(t);
+            // FUN_1413c45e0 (:2679)
+            case 0x77: return Done(new(t) { Value = r.ReadInt() }, r);
             default: return new(t);
         }
     }

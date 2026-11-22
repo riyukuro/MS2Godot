@@ -211,4 +211,14 @@ public class GuildPacketTests {
         var d = GuildMessage.Read(R(w => { w.WriteByte(0x71); w.WriteInt(2); w.WriteLong(99); }));
         Assert.That((d.DonationCount, d.DonationTime), Is.EqualTo((2, 99L)));
     }
+
+    [Test]
+    public void TheVsGameAndEventTypesReadTheirFields() {
+        var t = GuildMessage.Read(R(w => { w.WriteByte(0x76); w.WriteByte(1); w.WriteByte(0); }));
+        Assert.That((t.Accepted, t.Notify), Is.EqualTo((true, false)));
+        Assert.That(GuildMessage.Read(R(w => w.WriteByte(0x75))).Type, Is.EqualTo((byte)0x75));
+        Assert.That(GuildMessage.Read(R(w => { w.WriteByte(0x77); w.WriteInt(-3); })).Value, Is.EqualTo(-3));
+        var e = GuildMessage.Read(R(w => { w.WriteByte(0x38); w.WriteUnicodeString("bo"); w.WriteInt(4); w.WriteInt(1234); }));
+        Assert.That((e.Name, e.EventId, e.EventTime), Is.EqualTo(("bo", 4, 1234)));
+    }
 }
