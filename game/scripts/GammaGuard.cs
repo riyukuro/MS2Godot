@@ -25,9 +25,17 @@ public partial class GammaGuard : Node
 #endif
         if (DisplayServer.GetName() == "headless") { SetProcess(false); return; }   // nothing drawn, no RenderingDevice
         GetTree().NodeAdded += OnNodeAdded;
+        connected = true;
     }
 
-    public override void _ExitTree() => GetTree().NodeAdded -= OnNodeAdded;
+    // headless never connects: disconnecting there makes the engine print an error at every exit
+    bool connected;
+
+    public override void _ExitTree()
+    {
+        if (connected) GetTree().NodeAdded -= OnNodeAdded;
+        connected = false;
+    }
 
     void OnNodeAdded(Node node)
     {
