@@ -95,8 +95,20 @@ public sealed class BeautyShopDialogController : UiController
     /// <summary>m_2d8: a buy / preview answer is awaited.</summary>
     public bool Waiting;
     /// <summary>The shop root's input is off (FUN_1412761e0(m_30, 0) at uibeautyshopdialog.cpp:1860, after the send): the shop takes no
-    /// callback and the host blocks its view until the answer turns it on (FUN_1418ca380 :1885, on a result other than 0).</summary>
+    /// callback and the host blocks its view until the answer turns it on (FUN_1418ca380 :1885, on a result other than 0) or an item event does (<see cref="OnItemEvent"/>).
+    /// STILL-OPEN: the host feeds only vfunc_24; the own-equip (vfunc_21) and skin-colour (vfunc_25) events have no LiveSession source yet.</summary>
     public bool InputOff;
+    /// <summary>m_2b8: the id of the item worn in the shop's slot, kept before the mode-7 send (uibeautyshopdialog.cpp:1840, FUN_141655e10
+    /// of FUN_140f01070(kind)); 0 = none. <see cref="WornItemId"/> reads it, the host sets it.</summary>
+    public int OldItemId;
+    /// <summary>m_2c8: the item the server put on (the item event listener vfunc_21 @0x1418c57b0, kept on the special page only); 0 = none.</summary>
+    public int NewItemId;
+    /// <summary>FUN_141655e10(FUN_140f01070(kind)): the id of the item worn in a slot; null or 0 = none.</summary>
+    public Func<int, int> WornItemId;
+    /// <summary>OpenStyleSelectDialog (@0x1418cb000) of the old and the new item id, raised by mode 0xb when both match the kept ones.
+    /// STILL-OPEN: the dialog itself (its item rows with WriteItemInfo, the random select and the selected-index callbacks) is not
+    /// ported and the host leaves this unset, so the answer opens nothing.</summary>
+    public event Action<int, int> StyleSelectRequested;
     /// <summary>The Customize's commit sends (SendColors, SendAdded, SendModified) behind CommitSlot on the items, colour and skin pages are
     /// ported. STILL-OPEN: they are not, so without this the buy on those pages does nothing (no local commit, no send).</summary>
     public bool CommitSendsPorted;
@@ -163,7 +175,9 @@ public sealed class BeautyShopDialogController : UiController
         switch (p.Mode)
         {
             case 0xb:
-                // OpenStyleSelectDialog needs the two items the dialog kept (m_2b8, m_2c8): step 3.
+                // :1541-1548: the two ids of the packet must be the kept ones (m_2b8, m_2c8), as the items are not null
+                if (OldItemId != 0 && OldItemId == p.OldItemId && NewItemId != 0 && NewItemId == p.NewItemId)
+                    StyleSelectRequested?.Invoke(OldItemId, NewItemId);
                 break;
             case 0xc:
                 NoticeText?.Invoke(CouponNotice(p.CouponId, p.Mailed));
@@ -459,12 +473,30 @@ public sealed class BeautyShopDialogController : UiController
         if (Page == PageSpecial)
         {
             c.RestoreSlot(slot);
+            OldItemId = WornItemId?.Invoke(slot) ?? 0;   // m_2b8 (:1840), after the restore
             Send(new BeautyBuyRequest(ev, couponChecked, Context));
         }
         else c.CommitSlot(slot);
         InputOff = true;   // FUN_1412761e0(m_30, 0) (:1860)
         Waiting = true;
         return true;
+    }
+
+    /// <summary>The item event listeners vfunc_21 (@0x1418c57b0, the own equip's new item; <paramref name="newItemId"/> is its id),
+    /// vfunc_24 (@0x1418c5850, OnItemUpdate) and vfunc_25 (@0x1418c58a0, the skin colour) of the dialog (uibeautyshopdialog.cpp:896-925):
+    /// with the movie attached (m_30) each runs FUN_1418ca240 (:1868): the wait ends, the slot is restored and the shop takes input again,
+    /// which is how a successful buy unlocks; vfunc_21 also keeps the item on the special page (m_2c8). STILL-OPEN: FUN_1418c7ce0 (the
+    /// refresh), FUN_1418ca400 (the hair apply effect), vfunc_84 (the list rebuild) and, on page 1, FUN_1418cb6a0.</summary>
+    public void OnItemEvent(int newItemId = 0, bool ownEquip = false)
+    {
+        if (Host?.Entity == null) return;   // m_30 == 0
+        Waiting = false;
+        if (Customize != null)               // m_1b8 == 0 (:1871): the restore, the input and the rest do not run
+        {
+            Customize.RestoreSlot(WornSlot());
+            InputOff = false;               // FUN_1412761e0(m_30, 1)
+        }
+        if (ownEquip && Page == PageSpecial) NewItemId = newItemId;   // vfunc_21 stores m_2c8 after the call
     }
 
     // ---- movie callbacks (vfunc_28) -----------------------------------------------------------------------------------

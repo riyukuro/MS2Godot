@@ -282,6 +282,61 @@ public class BeautyShopDialogTests
         Assert.That(r.C.InputOff, Is.False, "an answer other than 0 turns it on");
     }
 
+    /// <summary>The item event listeners (vfunc_21/24/25, uibeautyshopdialog.cpp:896-925) run FUN_1418ca240 (:1868): a successful buy
+    /// (result 0) unlocks through them; vfunc_21 keeps the new item on the special page only (m_2c8).</summary>
+    [Test]
+    public void TheItemEventTurnsTheInputBackOnAfterABuy()
+    {
+        var r = new Rig();
+        var opened = new List<BillData>();
+        r.C.OpenBill = opened.Add;
+        r.C.OnPacket(Rig.Open(BeautyShopDialogController.PageSpecial));
+        r.C.OnCallback("OnClickSave", System.Array.Empty<object>());
+        opened.Single().Answer(0, false);
+        r.C.OnPacket(new BeautyShopPacket(8) { Result = 0 });
+        Assert.That(r.C.InputOff, Is.True);
+        r.Cu.Calls.Clear();
+        r.C.OnItemEvent(501, ownEquip: true);
+        Assert.That(r.C.InputOff, Is.False, "the shop takes input again");
+        Assert.That(r.C.Waiting, Is.False);
+        Assert.That(r.Cu.Calls, Is.Not.Empty, "the slot is restored");
+        Assert.That(r.C.NewItemId, Is.EqualTo(501));
+        r.C.OnItemEvent(777);
+        Assert.That(r.C.NewItemId, Is.EqualTo(501), "vfunc_24 does not keep the item");
+    }
+
+    [Test]
+    public void TheItemIsKeptOnlyOnTheSpecialPage()
+    {
+        var r = new Rig();
+        r.C.OnPacket(Rig.Open(1));
+        r.C.OnItemEvent(501, ownEquip: true);
+        Assert.That(r.C.NewItemId, Is.EqualTo(0));
+    }
+
+    /// <summary>Mode 0xb opens the style select only when both ids are the kept ones (:1541-1548).</summary>
+    [Test]
+    public void TheStyleAnswerOpensOnlyForTheKeptItems()
+    {
+        var r = new Rig();
+        var opened = new List<(int, int)>();
+        r.C.StyleSelectRequested += (a, b) => opened.Add((a, b));
+        r.C.WornItemId = _ => 400;
+        var bills = new List<BillData>();
+        r.C.OpenBill = bills.Add;
+        r.C.OnPacket(Rig.Open(BeautyShopDialogController.PageSpecial));
+        r.C.OnCallback("OnClickSave", System.Array.Empty<object>());
+        bills.Single().Answer(0, false);
+        Assert.That(r.C.OldItemId, Is.EqualTo(400), "m_2b8 is kept with the send");
+        r.C.OnItemEvent(501, ownEquip: true);
+        r.C.OnPacket(new BeautyShopPacket(0xb) { OldItemId = 400, NewItemId = 999 });
+        Assert.That(opened, Is.Empty, "the new id differs");
+        r.C.OnPacket(new BeautyShopPacket(0xb) { OldItemId = 401, NewItemId = 501 });
+        Assert.That(opened, Is.Empty, "the old id differs");
+        r.C.OnPacket(new BeautyShopPacket(0xb) { OldItemId = 400, NewItemId = 501 });
+        Assert.That(opened, Is.EqualTo(new[] { (400, 501) }));
+    }
+
     [Test]
     public void UnportedCommitSendsAndTheUnportedStyleAnswerDoNothing()
     {

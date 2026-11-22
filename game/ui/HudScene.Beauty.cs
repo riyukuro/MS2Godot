@@ -54,7 +54,11 @@ public partial class HudScene
         itemColoringFlow.Log = m => GD.Print(m);
         itemColoringFlow.CreateCustomize = () => CreateItemColoringCustomize(live);
         void OnBeautyPacket(byte[] body) => BeautyPacketRouter.Route(body, beautyFlow, beautyStyleFlow, m => GD.Print(m), itemColoringFlow);
-        void OnOwnItem(int itemId) => itemColoringFlow.Current?.OnItemDyed(itemId);   // vfunc_24 of the item event listeners
+        void OnOwnItem(int itemId)   // vfunc_24 of the item event listeners
+        {
+            itemColoringFlow.Current?.OnItemDyed(itemId);
+            beautyFlow.Current?.OnItemEvent();   // uibeautyshopdialog.cpp:896-925; STILL-OPEN: vfunc_21 (own equip) and vfunc_25 (skin colour) have no LiveSession event
+        }
         live.BeautyRequested += OnRequested;
         live.OwnItemUpdated += OnOwnItem;
         live.BeautyPacketReceived += OnBeautyPacket;
