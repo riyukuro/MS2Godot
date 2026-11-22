@@ -34,7 +34,8 @@ public partial class HudScene
             homeInsideOptionMovie.QueueFree();
             homeInsideOptionMovie = null;
         }
-        ugcHomeOptions ??= new UgcHomeOptionData(assets.Packs, id => hudModel.Tables.StringTableText(UgcHomeOptionData.NameTable, id));
+        ugcHomeOptions ??= new UgcHomeOptionData(assets.Packs, id => hudModel.Tables.StringTableText(UgcHomeOptionData.NameTable, id),
+            root => Ms2.Ui.FeatureElements.Collect(assets.Packs, root, "list", "id"));
         var c = homeInsideOption = new HomeInsideOptionDialogController(new HomeInsideOptionHost(liveHome, ugcHomeOptions));
         var m = homeInsideOptionMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
         c.Unloaded += () =>

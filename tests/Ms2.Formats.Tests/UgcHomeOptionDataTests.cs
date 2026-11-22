@@ -27,6 +27,16 @@ public class UgcHomeOptionDataTests
     }
 
     [Test]
+    public void ABackgroundRowTheCollectorDropsLeavesNoGapInTheKeys()
+    {
+        var bg = X("<ms2><list id=\"1\" path=\"a\"/><list id=\"2\" path=\"b\" feature=\"Off\"/><list id=\"3\" path=\"c\"/></ms2>");
+        var d = new UgcHomeOptionData(bg, null, null, id => "",
+            root => root.Elements("list").Where(e => (string)e.Attribute("feature") != "Off").ToList());
+        Assert.That(d.Backgrounds.Select(b => b.Id), Is.EqualTo(new[] { 1, 3 }));
+        Assert.That(new UgcHomeOptionData(bg, null, null, id => "").Backgrounds.Count, Is.EqualTo(3));
+    }
+
+    [Test]
     public void AFileWithoutTheMs2RootGivesNoRows()
     {
         var d = new UgcHomeOptionData(X("<root><list id=\"1\" path=\"a\"/></root>"), null, X("<ms2/>"), _ => "");
