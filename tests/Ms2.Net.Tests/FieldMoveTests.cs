@@ -222,6 +222,23 @@ public class FieldMoveTests {
         l.Stop();
     }
 
+    /// <summary>The GameToGame teardown (FUN_141bbc580: state 6, worldservice_1.cpp:9975, and the cube map reset
+    /// FUN_1410b76a0, :10015): the house values go, and a LoadUgcMap after it is dropped (:2174, the field is not loaded).</summary>
+    [Test] public async Task AGameToGameTeardownClearsTheCubeMap() {
+        var (s, l, srv, e, game) = await Enter();
+        using (game) {
+            var entry = new FieldEntry(e.Field);
+            await Loaded(game, entry);
+            await Serve(s, srv, game, entry, srv.Frame(Inbound.LoadUgcMap, HouseMap(2, Account)));
+            Assert.That((entry.CubeMap.Owner, entry.CubeMap.Designs.Count), Is.EqualTo((Account, 1)));
+            entry.TornDown();
+            Assert.That((entry.CubeMap.Owner, entry.CubeMap.Area, entry.CubeMap.Designs.Count, entry.Loaded), Is.EqualTo((0L, 0, 0, false)));
+            await Serve(s, srv, game, entry, srv.Frame(Inbound.LoadUgcMap, HouseMap(2, Account)));
+            Assert.That(entry.CubeMap.Owner, Is.EqualTo(0L), "a LoadUgcMap after the teardown is dropped");
+        }
+        l.Stop();
+    }
+
     [Test] public async Task InGameFieldEnterErrorKeepsTheField() {
         var (s, l, srv, e, game) = await Enter();
         using (game) {

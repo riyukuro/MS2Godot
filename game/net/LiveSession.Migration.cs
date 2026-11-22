@@ -44,6 +44,7 @@ public partial class LiveSession
         GD.Print($"live: GameToGame to {m.Address}:{m.Port} field {m.FieldId} kind {m.Kind}");
         // FUN_141bbc580: SetMyPC(0), the field's objects go; no input reaches the old field from now
         Ms2.Ui.FieldMoveCover.Raise();
+        fieldEntry.TornDown();   // m_state = 6: the next server's entry is a fresh load, the cube map values go
         DropOwnPc();
         PortalAction.Current = null;
         moveClock.Restart();

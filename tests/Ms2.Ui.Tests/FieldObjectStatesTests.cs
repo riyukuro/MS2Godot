@@ -428,6 +428,28 @@ public class FieldObjectStatesTests
         Assert.That((b.Holding, l.Holding, l.Count), Is.EqualTo((true, true, 0)));
     }
 
+    [Test]
+    public void AGameToGameDuringTheLoadMakesTheNextEntryOfThatMapAFreshLoad()
+    {
+        // the GameToGame teardown (FUN_141bbc580) sets the world state to 6 (worldservice_1.cpp:9975): the next server's
+        // entry for the map that was loading passes LoadMap's check and tears the field down; the old load sends nothing
+        var (entry, b, l, t) = LoadedField(2000001);
+        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000062), b, l, t), Is.EqualTo(FieldEnterResult.NewField));
+        b.AttachField(new List<FieldEntity>());
+        b.AddMarker("m");
+        l.AttachField(new List<FieldEntity> { LiftEntity("lift1") });
+        entry.TornDown();
+        Assert.That((entry.Loading, entry.Loaded), Is.EqualTo((false, false)));
+        int sent = 0;
+        Assert.That(entry.FieldLoaded(_ => sent++), Is.False, "the torn-down load has no field-loaded sends");
+        Assert.That(sent, Is.EqualTo(0));
+        Assert.That(FieldEnter.Take(entry, FieldEnterPacket(2000062), b, l, t), Is.EqualTo(FieldEnterResult.NewField));
+        Assert.That((entry.LoadingAlready, entry.Loading, entry.Answered), Is.EqualTo((false, true, false)));
+        Assert.That((b.Holding, b.Find("m") != null, l.Holding, l.Count), Is.EqualTo((true, false, true, 0)));
+        Assert.That(entry.FieldLoaded(_ => sent++), Is.True);
+        Assert.That(sent, Is.EqualTo(2));
+    }
+
     internal static FieldEntity TargetBox(string id, string target, string pos = "0, 0, 0", string rot = "0, 0, 0")
     {
         var raw = new XEntity { Id = id, ModelName = "MS2LiftableTargetBox", Name = id };

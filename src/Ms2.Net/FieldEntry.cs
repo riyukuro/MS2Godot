@@ -84,6 +84,17 @@ public sealed class FieldEntry
         return true;
     }
 
+    /// <summary>The field teardown of a GameToGame (OnGameToGame, networkservice.cpp:953, to WorldService FUN_141bbc580
+    /// @0x141bbc580): the state becomes 6 (worldservice_1.cpp:9975) whatever it was, so the load in progress ends with no
+    /// field-loaded sends and the next server's entry starts a fresh load, even for the map that was loading; the cube map
+    /// values go (FUN_1410b76a0, :10015). The entry and its portal stay until the next one is taken.</summary>
+    public void TornDown()
+    {
+        Loading = false;
+        Loaded = false;
+        CubeMap.Reset();
+    }
+
     /// <summary>OnLoadUgcMap (scenestategame.cpp:2172-2331): nothing unless the field has loaded (:2174). Mode 0 sets the
     /// timer flag and answers ResponseFieldEnter(portal) through <paramref name="send"/> (:2283-2286), each time such a packet
     /// comes (the client keeps no once flag; FUN_141bdb690 after it is empty); another mode clears the flag and waits for the
@@ -97,8 +108,9 @@ public sealed class FieldEntry
         return m.Mode == 0 ? Answer(send) : null;
     }
 
-    /// <summary>FUN_1410cf5c0 (cubemapinformationservice_3.cpp:5645-5716): in the loaded field, when the last cube waiting
-    /// for its entity is made and the timer flag is clear, the flag is set and ResponseFieldEnter(portal) goes out. Ours
+    /// <summary>FUN_1410cf5c0 (cubemapinformationservice_3.cpp:5645-5716): when the last cube waiting for its entity is made
+    /// and the timer flag is clear, the flag is set and ResponseFieldEnter(portal) goes out. The drain has no world-state
+    /// check (:5701); ours tests <see cref="Loaded"/> because its cubes come only from packets read in the loaded field. Ours
     /// makes a packet's cubes at once, so <paramref name="made"/> cubes made by one packet drain the set together.
     /// STILL-OPEN: the client makes the entities over later frames, so cubes of several packets can drain as one set; ours
     /// answers after the first packet that makes any. Returns the answer when one went out.</summary>
