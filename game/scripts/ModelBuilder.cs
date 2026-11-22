@@ -850,11 +850,13 @@ public sealed class ModelBuilder
     /// transparent material, so the blended mesh stops casting and a shadow-only twin of the same mesh, skin and culling,
     /// drawn with the opaque form and the same opacity test, casts in its place. A child of the mesh, so it hides, moves and
     /// frees with it.
+    /// A blended mesh that <see cref="ShadowCullingKeeps"/> drops casts nothing: no twin, and the mesh itself stops casting.
     /// </summary>
     /// <param name="skelBone">the skeleton's bone index for a bone index of the mesh's model</param>
     public static void Attached(MeshInstance3D mi, ModelMesh m, Skeleton3D skel, System.Func<int, int> skelBone)
     {
-        if (m.Blend != BlendForm.Opaque && mi.CastShadow != GeometryInstance3D.ShadowCastingSetting.Off
+        if (m.Blend != BlendForm.Opaque && !ShadowCullingKeeps(m)) mi.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
+        else if (m.Blend != BlendForm.Opaque && mi.CastShadow != GeometryInstance3D.ShadowCastingSetting.Off
             && mi.Mesh is { } mesh && mesh.SurfaceGetMaterial(0) is ShaderMaterial sm && IsCharacterShader(sm.Shader))
         {
             if (!casterMaterials.TryGetValue(mesh, out var caster))
@@ -887,6 +889,20 @@ public sealed class ModelBuilder
         }
         CharacterAlphaSort.Register(mi, m, skel, skelBone);
     }
+
+    /// <summary>
+    /// Whether the shadow map's culling pass lets a blended mesh through. MS2::OnInit installs ShadowCullingProcess as the
+    /// shadow render culling process (ms2.cpp:1146). Its Process (@0x141753590, unit_141753550.cpp:86-139) skips an object
+    /// whose own NiAlphaProperty blends unless FUN_141753a00 (@0x141753a00, :150-157) holds: the object has an
+    /// NiMaterialProperty of its own whose alpha IsNearlyEqual 1 (@0x14028d470, commonutil.cpp:669: closer than 1e-6).
+    /// A model's effect quads (blended, material alpha 0.2 or 2.3) thus cast nothing. Geometry the client turns transparent
+    /// at runtime (TransparencyMaterial, transparencymaterial.cpp:63-71: the 0x10 flag or the HasMS2MapProperties extra
+    /// data) still passes; NIF data carries neither mark.
+    /// STILL-OPEN: the ancestor test (:91-99) run while CameraMgr's m_27c (camera.cpp:1274) is set: a mesh under a node
+    /// with a blending NiAlphaProperty and no material alpha of 1 is skipped too.
+    /// </summary>
+    internal static bool ShadowCullingKeeps(ModelMesh m) =>
+        !m.AlphaBlendOn || (m.Diffuse != null && MathF.Abs(m.MaterialAlpha - 1f) < 1e-6f);
 
     static string CullMode(ModelMesh m) => m.Cull switch { FaceCull.None => "cull_disabled", FaceCull.Front => "cull_front", _ => "cull_back" };
 
