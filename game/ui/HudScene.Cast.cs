@@ -858,7 +858,8 @@ public partial class HudScene
                 {
                     ownNodePosition ??= OwnNodePosition;
                     ownTagMagics.Add(ownCast.Skill, SkillAttackFire.AttackAt(ownCast, ownAttack), ownCast, req.Targets,
-                        (int)Time.GetTicksMsec(), hudModel.Tables.MagicPaths, ownNodePosition);
+                        (int)Time.GetTicksMsec(), hudModel.Tables.MagicPaths, ownNodePosition, null, new TagIdentity(ownCast.CastId,
+                            (int)ownCast.Skill.Id, (short)(ownCast.Level?.Level ?? 0), ownCast.Motion, (byte)ownAttack));
                 }
                 bool sent = req != null && (live?.SendDamage(req) ?? false);
                 TickOwnTagMagics();

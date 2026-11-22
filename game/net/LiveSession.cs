@@ -472,6 +472,8 @@ public partial class LiveSession : Node
 
     /// <summary>The revive dialog's sends (Revival 0x1F, RequestMoveField): fire and forget like the client's.</summary>
     public void SendRevival(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
+    /// <summary>The field breakables' tag pass sends (Breakable 0x27, WorldService::FUN_141bc3560).</summary>
+    public void SendBreakable(Ms2.Net.Packets.BreakableRequest packet) => Send(packet);
     /// <summary>CBuddyManager: the friends, requests and blocks from the Buddy packets (0x61, CSceneStateGame::OnBuddy); live
     /// only. Its sends (Buddy 0x30) go out while the game connection is up.</summary>
     public Ms2.Ui.BuddyBook Buddies => buddies ??= new Ms2.Ui.BuddyBook { Send = SendBuddy };

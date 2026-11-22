@@ -49,8 +49,8 @@ public sealed record TombstoneRequest(int ObjectId, int Hitter = 1) : IOutPacket
 /// Outbound Breakable (SendOp 0x27), WorldService::FUN_141bc3560 (worldservice_1.cpp:9312 @0x141bc3560), sent when a hittable
 /// breakable's box meets a skill tag area it has not entered yet. WriteBreakableInfo (@0x1401fe0d0,
 /// unit_1401f9eb0_packetpayloadserializers.cpp:1168): str the breakable's name, i64 the tag id, i32 the tag's skill id, i16 the
-/// tag's skill level, u8 and u8 two tag values (tag +0x58 and +0x5c, stored as 32 bits, written as bytes).
-/// STILL-OPEN: the meaning of the two tag values; the sender, since the skill tag areas (WorldService m_3f0, CMagic) are not ported.
+/// tag's skill level, u8 the cast's motion (tag +0x58) and u8 its attack index (tag +0x5c), stored as 32 bits, written as bytes.
+/// The sender is Ms2.Ui's TombTagPass.RunMarkers over the own cast's tag areas.
 /// </summary>
 public sealed record BreakableRequest(string Name, long TagId, int SkillId, short SkillLevel, byte Tag58, byte Tag5C) : IOutPacket {
     public Outbound Op => Outbound.Breakable;

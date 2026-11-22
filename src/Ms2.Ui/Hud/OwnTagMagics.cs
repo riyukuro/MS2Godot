@@ -31,7 +31,9 @@ public delegate bool MagicRayBlocked(Vector3 from, Vector3 dir, float length);
 /// <item>A skill whose magicControl enable is 2 (m_n538) makes no region fill, so it registers nothing.</item>
 /// </list>
 /// So a magic is dropped after its one fill and registration.
-/// STILL-OPEN: attackMethodType 1 (the arrow fill FUN_141465b30 and the registration every tick), the linked records, the
+/// STILL-OPEN: attackMethodType 1 (the arrow fill FUN_141465b30 and the registration every tick): FUN_141462490 hands
+/// FUN_141bc3470 the area the arrow fill (StateSkill::FUN_1417e9d20, CArrowFillTargetContext from m_ptLast to m_ptCurrent)
+/// sweeps, so it needs the magic's flight (FUN_14145ec50) first; the linked records, the
 /// cancel of a delay-0 magic when the skill state ends (CMagicService::RemoveCasterModels / CMagicModel::CanCancel), the
 /// latency maximum (0 here: the time sync's latency is not kept), CFunctionCubeService::SetTagArea, the magic's own
 /// flight and effects (PlayHitEffects), MyPC::FUN_14152e0c0 after a fill, and the splash send's call sites
@@ -64,17 +66,18 @@ public sealed class OwnTagMagics
 
     /// <summary>The magics without a cast record (no region send, the registration only).</summary>
     public int Add(SkillData skill, SkillAttackData attack, IReadOnlyList<SkillDamageTarget> tags, int startMs, MagicPathTable paths,
-        Action onHit = null) => Add(skill, attack, null, tags, startMs, paths, null, onHit);
+        Action onHit = null, TagIdentity id = default) => Add(skill, attack, null, tags, startMs, paths, null, onHit, id);
 
     /// <summary>
     /// FUN_1417ecce0's models for the attack <paramref name="attack"/> of <paramref name="skill"/> fired at
     /// <paramref name="startMs"/> by the record <paramref name="r"/> with the target records <paramref name="tags"/> (one magic
     /// each, its row picked by the record's index <see cref="SkillDamageTarget.Hit"/>). Returns the number kept.
-    /// <paramref name="onHit"/> is each tag's <see cref="TagRecord.Hit"/>. <paramref name="nodePosition"/> is the owner's
+    /// <paramref name="onHit"/> is each tag's <see cref="TagRecord.Hit"/> and <paramref name="id"/> its
+    /// <see cref="TagRecord.Id"/>, the cast's values. <paramref name="nodePosition"/> is the owner's
     /// vf36_GetNodePosition (the owner's position when null): the start point (<see cref="StartPoint"/>).
     /// </summary>
     public int Add(SkillData skill, SkillAttackData attack, CastRecord r, IReadOnlyList<SkillDamageTarget> tags, int startMs,
-        MagicPathTable paths, Func<string, Vector3> nodePosition, Action onHit = null)
+        MagicPathTable paths, Func<string, Vector3> nodePosition, Action onHit = null, TagIdentity id = default)
     {
         if (attack == null || tags == null || paths == null) return 0;
         if (attack.AttackMethodType == 1 || (skill?.MagicControlEnable ?? 0) == 2) return 0;
@@ -90,7 +93,7 @@ public sealed class OwnTagMagics
             if (d == null) continue;
             live.Add(new Magic
             {
-                Tag = new TagRecord { BrokenOffence = attack.BrokenOffence, Hit = onHit },
+                Tag = new TagRecord { BrokenOffence = attack.BrokenOffence, Hit = onHit, Id = id },
                 Attack = attack, Start = startMs,
                 Delay = MagicPathTable.Ms(d.DelayTime), Spawn = MagicPathTable.Ms(d.SpawnTime), Life = MagicPathTable.Ms(d.LifeTime),
                 CastId = r?.CastId ?? 0, Serial = t.Serial, TargetId = t.TargetId, SendCount = r?.SendCount ?? 0,

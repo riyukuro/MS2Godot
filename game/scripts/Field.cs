@@ -49,6 +49,28 @@ public partial class Field : Node3D
     public World.FieldFade Fade { get; private set; }
     /// <summary>The field's trigger objects (CTriggerService), which the live session's Trigger packets drive.</summary>
     public World.FieldTriggers Triggers { get; private set; }
+    /// <summary>The field's breakable objects as drawn (CBreakableObject::SetState), which the live session's Breakable packets drive.</summary>
+    public World.FieldBreakables Breakables { get; private set; }
+    Ms2.Ui.BreakableObjects devBreakables;    // offline only, with MS2_BREAKABLE_STATE
+
+    /// <summary>Dev: MS2_BREAKABLE_STATE="name=state[,name=state]" (name * = every marker) gives an offline field breakable list for those states.</summary>
+    Ms2.Ui.BreakableObjects DevBreakables() =>
+        Net.LiveSession.Active || string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable("MS2_BREAKABLE_STATE")) ? null : devBreakables = new();
+
+    void DevBreakableStates()
+    {
+        if (devBreakables == null) return;
+        var list = new List<Ms2.Net.Packets.BreakableEntry>();
+        foreach (var pair in System.Environment.GetEnvironmentVariable("MS2_BREAKABLE_STATE").Split(','))
+            if (pair.Split('=') is [var name, var st] && byte.TryParse(st, out byte state))
+            {
+                if (name.Trim() != "*") list.Add(new(name.Trim(), state, 0, 0, 0));
+                else foreach (var m in devBreakables.Sorted) list.Add(new(m.Name, state, 0, 0, 0));   // every marker
+            }
+        devBreakables.Apply(new Ms2.Net.Packets.BreakableUpdate(1, list));
+        GD.Print($"MS2Godot breakables: {devBreakables.Count} markers, {Breakables.Count} drawn, {list.Count} dev states");
+        foreach (var m in devBreakables.Sorted) GD.Print($"  breakable {m.Name} at {m.Position} state {m.State} drawn {Breakables.Shown(m.Entity)}");
+    }
     FieldCamera cam = new();
     float camYaw;                         // Ctrl + left/right arrows turn the camera round the player
     float? camPitch;                      // Ctrl + up/down arrows set the angle (0.15..1.57); a distance change goes back to the distance's own
@@ -168,6 +190,8 @@ public partial class Field : Node3D
         AddChild(Fade);
         Triggers = new World.FieldTriggers(map.Entities, fb.TriggerMeshDraws, fb.TriggerColliders, fb.TriggerFadeDraws);
         AddChild(Triggers.Fader);
+        Breakables = new World.FieldBreakables(Net.LiveSession.Instance?.Breakables ?? DevBreakables(), fb.BreakableMeshDraws, fb.BreakableFadeDraws);
+        AddChild(Breakables.Fader);
         contents.Props.Entities.AddRange(fb.DrawnElsewhere);
         contents.Props.NotReceiving.UnionWith(fb.NotReceivingElsewhere);
         foreach (var (e, off) in fb.LightOffElsewhere) contents.Props.LightOff[e] = off;
@@ -197,6 +221,8 @@ public partial class Field : Node3D
         AddChild(contents);
         abandon = null;
         contents.Start(map, fieldName, player, SpawnsLocalPlayer && !Net.LiveSession.Active);
+        devBreakables?.AttachField(map.Entities);
+        DevBreakableStates();
         var hdr = new FieldHdr();
         cam = fd?.Camera ?? cam;
         hdr = fd?.Hdr ?? hdr;
@@ -335,6 +361,7 @@ public partial class Field : Node3D
     public override void _ExitTree()
     {
         if (Active == this) Active = null;
+        Breakables?.Detach();
         FieldLights.Clear(lightSet);
         if (began && !IsLoaded) World.FieldContents.AbandonLoad(this, loadMove);
         layers?.Stop();

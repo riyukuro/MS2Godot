@@ -122,8 +122,24 @@ public sealed class FieldBuilder
     /// <summary>A trigger object of mesh kind (TriggerObject::Create, Ms2.Net.Packets.TriggerObjects.KindOf).</summary>
     public static bool IsTriggerMesh(FieldEntity e) => Ms2.Net.Packets.TriggerObjects.KindOf(e.HasMixin) == Ms2.Net.Packets.TriggerObjectKind.Mesh;
 
+    /// <summary>
+    /// The instances (drawn and shadow-only) of every field breakable (MS2Breakable), for world/FieldBreakables: the
+    /// server's Breakable state hides (state 4) and shows them (CBreakableObject::SetState, breakableobject.cpp:270).
+    /// </summary>
+    public readonly Dictionary<FieldEntity, List<(MultiMesh Mm, int Index)>> BreakableMeshDraws = new();
+    /// <summary>The drawn instances of every field breakable, which state 4's 500 ms fade draws alone.</summary>
+    public readonly Dictionary<FieldEntity, List<FadeDraw>> BreakableFadeDraws = new();
+
+    /// <summary>A field breakable object (CBreakableObject, the MS2Breakable mixin).</summary>
+    public static bool IsBreakable(FieldEntity e) => e.HasMixin("MS2Breakable");
+
     void AddTriggerDraw(FieldEntity e, MultiMesh mm, int index)
     {
+        if (IsBreakable(e))
+        {
+            if (!BreakableMeshDraws.TryGetValue(e, out var own)) BreakableMeshDraws[e] = own = new List<(MultiMesh, int)>();
+            own.Add((mm, index));
+        }
         if (!IsTriggerMesh(e)) return;
         if (!TriggerMeshDraws.TryGetValue(e, out var list)) TriggerMeshDraws[e] = list = new List<(MultiMesh, int)>();
         list.Add((mm, index));
@@ -132,6 +148,11 @@ public sealed class FieldBuilder
     void AddFadeDraw(FieldEntity e, MultiMesh mm, int index, ModelMesh mesh, Node3D parent, bool notReceiving, uint lightOff)
     {
         AddTriggerDraw(e, mm, index);
+        if (IsBreakable(e))
+        {
+            if (!BreakableFadeDraws.TryGetValue(e, out var own)) BreakableFadeDraws[e] = own = new List<FadeDraw>();
+            own.Add(new FadeDraw { Mm = mm, Index = index, Mesh = mesh, Parent = parent, NotReceiving = notReceiving });
+        }
         if (IsTriggerMesh(e))
         {
             if (!TriggerFadeDraws.TryGetValue(e, out var drawn)) TriggerFadeDraws[e] = drawn = new List<FadeDraw>();

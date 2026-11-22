@@ -11,12 +11,23 @@ namespace Ms2.Ui.Hud;
 public sealed class TagRecord
 {
     public int BrokenOffence;
+    /// <summary>The record's cast: the Breakable request's tag values.</summary>
+    public TagIdentity Id;
     public readonly HashSet<ulong> Entered = new();
     /// <summary>SkillTargetRecord::FUN_1417591b0 (skillrecord.cpp:143), run after a hit: an owner that is MyPC in the skill
     /// state (0x10) arms that state's pause from the tag. STILL-OPEN: StateSkill's ArmPauseFromTag is not ported, so the
     /// caller gets the call and does nothing yet.</summary>
     public Action Hit;
 }
+
+/// <summary>
+/// The SkillTargetRecord values WriteBreakableInfo sends: the tag id (+0x30, the cast id), the skill (+0x38, GetId), the skill
+/// level (+0x48, GetLevel), +0x58 the cast's motion and +0x5c its attack index.
+/// </summary>
+public readonly record struct TagIdentity(long CastId, int SkillId, short Level, byte Motion, byte Attack);
+
+/// <summary>A field breakable the pass hit: the request it sent, the hit sound FUN_140ade030(1, 1) plays and where.</summary>
+public readonly record struct BreakableHit(BreakableRequest Request, int HitSound, Vector3 Position);
 
 /// <summary>Another PC's standing tomb, as the pass sees it: the PC's object id, whether it is hostile to the local player
 /// (slot 122, see <see cref="TombTagPass.HostileInField"/>) and the tomb at its position and rotation.</summary>
@@ -44,6 +55,7 @@ public readonly record struct TombHit(TombstoneRequest Request, int HitSound, Ve
 /// m_3f0 is a tree keyed by the record pointer, so its order is the heap's; here it is the registration order.
 /// The registrations come from the own cast's magics (<see cref="OwnTagMagics"/>); the magics of the 0x3d mode 0 cast records
 /// (scenestategame.cpp:5509) are not the local player's (FUN_141464410), so they register nothing.
+/// The field markers' loop runs first (<see cref="RunMarkers"/>).
 /// STILL-OPEN: the arrow magics' registrations (see <see cref="OwnTagMagics"/>), PlayHitSound and the movers' part (m_738).
 /// </summary>
 public sealed class TombTagPass
@@ -71,6 +83,41 @@ public sealed class TombTagPass
     /// compare are not fed, as in LiveNameTags.
     /// </summary>
     public static bool HostileInField(int pkMode) => pkMode != 0;
+
+    /// <summary>
+    /// The named sensors' loop (worldservice_1.cpp:9262-9316), before the tombs' and with the same areas (not emptied here):
+    /// each field marker in name order that can be hit (FUN_140addea0: hittable, the hit timer not running, idle) and has
+    /// reactionArrow takes the first area whose record has not entered the marker's entity and that intersects its box.
+    /// The record keeps the entity id, FUN_140ade030(1, 1) starts the hit timer (the host plays the hit sound), the Breakable
+    /// request goes out (the marker's name and the record's <see cref="TagIdentity"/>), and the record's FUN_1417591b0 runs
+    /// when the box has SkillPauseControllFeedback. The area level read there is dead. Hits go to <paramref name="hits"/>
+    /// (cleared first). With no area registered nothing is read.
+    /// </summary>
+    public int RunMarkers(BreakableObjects markers, List<BreakableHit> hits)
+    {
+        hits.Clear();
+        if (areas.Count == 0 || markers == null) return 0;
+        var list = markers.Sorted;
+        long now = markers.NowMs;
+        for (int i = 0; i < list.Count; i++)
+        {
+            var m = list[i];
+            if (!m.CanBeHit(now) || !m.ReactionArrow) continue;
+            var box = m.Box();
+            foreach (var (tag, area) in areas)
+            {
+                if (tag.Entered.Contains(m.EntityId) || !area.Intersects(box)) continue;
+                tag.Entered.Add(m.EntityId);
+                markers.Hit(m);
+                var id = tag.Id;
+                hits.Add(new BreakableHit(new BreakableRequest(m.Name, id.CastId, id.SkillId, id.Level, id.Motion, id.Attack), m.HitSound,
+                    new Vector3((float)m.Position.X, (float)m.Position.Y, (float)m.Position.Z)));
+                if (m.SkillPauseFeedback) tag.Hit?.Invoke();
+                break;
+            }
+        }
+        return hits.Count;
+    }
 
     /// <summary>The pass over <paramref name="tombs"/>: each hit goes to <paramref name="hits"/> (cleared first); the areas are
     /// emptied. Returns the number of hits.</summary>

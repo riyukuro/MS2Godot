@@ -99,6 +99,14 @@ public sealed partial class TriggerFade : Node
         return true;
     }
 
+    /// <summary>Drops any fade of the object and shows or hides it at once (a breakable's state change, world/FieldBreakables).</summary>
+    public void Stop(int id, Target t, bool show)
+    {
+        if (showers.Remove(id, out var a)) foreach (var p in a.Parts) p.Node.QueueFree();
+        if (hiders.Remove(id, out var b)) foreach (var p in b.Parts) p.Node.QueueFree();
+        Switch(t, show);
+    }
+
     void Begin(Run run)
     {
         foreach (var d in run.Target.Draws)

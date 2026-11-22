@@ -33,8 +33,11 @@ public sealed class Tombstone
 
     static long nextEntity;
 
+    /// <summary>A new entity id: the tombs and the field's breakable markers share the counter, as entity ids are unique.</summary>
+    internal static ulong NextEntityId() => (ulong)Interlocked.Increment(ref nextEntity);
+
     /// <summary>The entity's id (GetEntityIDValue): one per tomb built; a tag area keeps the ids it hit.</summary>
-    public ulong EntityId { get; } = (ulong)Interlocked.Increment(ref nextEntity);
+    public ulong EntityId { get; } = NextEntityId();
     /// <summary>m_bHittable: "Enabled" (0x2683e9ec), cleared when the size is zero (FUN_140adf9d0, breakableobject.cpp:586-590).</summary>
     public bool Hittable { get; private set; }
     /// <summary>"ShapeDimensions" (0x9dc22aea, m_ptSize): the box (width, depth, height).</summary>

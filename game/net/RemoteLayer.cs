@@ -597,6 +597,22 @@ public sealed partial class RemoteLayer : Node3D
     int? tombPkField;
     int tombPkMode;
 
+    readonly List<Ms2.Ui.Hud.BreakableHit> markerHits = new();
+
+    /// <summary>
+    /// WorldService::FUN_141bc3560's named sensors' loop (worldservice_1.cpp:9262-9316), before the tombs' with the same areas:
+    /// the field's breakable markers (LiveSession.Breakables, in field space as the field entities), each hit sending the
+    /// Breakable request (0x27).
+    /// STILL-OPEN: PlayHitSound of the marker's SoundMaterial.
+    /// </summary>
+    void RunMarkerTags()
+    {
+        var live = LiveSession.Instance;
+        if (live == null) return;
+        if (TombTags.RunMarkers(live.Breakables, markerHits) == 0) return;
+        foreach (var h in markerHits) live.SendBreakable(h.Request);
+    }
+
     /// <summary>
     /// WorldService::FUN_141bc3560's tomb loop (worldservice_1.cpp:9319-9375), run from the world tick only while an area is
     /// registered: every other PC's standing tomb, at its node's place in client space (z up, unrotated: PC::FUN_14165cac0 places
@@ -645,7 +661,8 @@ public sealed partial class RemoteLayer : Node3D
             if (a.Invincible.Blink.Active && a.Invincible.Tick(now, a.Visual)) a.Invincible.End(a.Visual, RegionFx);
             a.Death.Revival.Expire(tick);
         }
-        if (TombTags.Count > 0) RunTombTags();
+        LiveSession.Instance?.Breakables.Update(now);
+        if (TombTags.Count > 0) { RunMarkerTags(); RunTombTags(); }
         CodiTick(dt);
         npcs.Process(dt);
         combat.Process(dt);

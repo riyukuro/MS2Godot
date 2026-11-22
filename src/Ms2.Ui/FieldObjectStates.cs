@@ -16,9 +16,10 @@ namespace Ms2.Ui;
 /// <para>The field's markers (<see cref="AttachField"/>): WorldService's field load (worldservice_1.cpp:6757-6768) makes a
 /// CBreakableObject for every entity of model 0xd3b04f05 (net hash of "MS2Breakable") and adds it when vfunc_1(entity, 2)
 /// (@0x140ade120, breakableobject.cpp:244-266) returns 1, which it always does.</para>
-/// STILL-OPEN: SetState's effects, animations, physics actor and shadow per state (breakableobject.cpp:270-343) have no
-/// port; the host gets <see cref="StateSet"/> and <see cref="Marker.Shown"/>, which the game does not draw yet. The reader of the cube map's list (+0x1a0)
-/// is not found.
+/// <para>SetState (<see cref="Marker"/>): the host gets <see cref="StateSet"/>, the marker's show/hide, the sequence and the
+/// dead effect to play; the tag pass (<see cref="Hud.TombTagPass.RunMarkers"/>) reads the hittable and idle rules.</para>
+/// STILL-OPEN: the physics actor, the shadow and the move cycle (Update's moveDirection/moveDistance, synced by the sync
+/// values) per marker. The reader of the cube map's list (+0x1a0) is not found.
 /// </summary>
 public sealed class BreakableObjects
 {
@@ -31,6 +32,8 @@ public sealed class BreakableObjects
         public int SyncC { get; internal set; }
         /// <summary>The field entity (m_spEntity); null for a marker added by name only.</summary>
         public FieldEntity Entity { get; internal set; }
+        /// <summary>The entity's id (GetEntityIDValue): a tag area keeps the ids it entered.</summary>
+        public ulong EntityId { get; } = Hud.Tombstone.NextEntityId();
         /// <summary>m_bHittable: property 0x2683e9ec ("Enabled"), false when the size is zero (FUN_140adf9d0,
         /// breakableobject.cpp:586-590).</summary>
         public bool Hittable { get; internal set; }
@@ -38,26 +41,94 @@ public sealed class BreakableObjects
         /// (0, y * 0.5, 0) from the position (:621-625).</summary>
         public Vec3 Size { get; internal set; }
         /// <summary>m_bC1: property 0x54adb2fd ("reactionArrow"); the tag pass sends only for such a marker
-        /// (worldservice_1.cpp:9169-9392).</summary>
+        /// (worldservice_1.cpp:9268). The flats set it True for MS2BreakableActor and False for MS2BreakableNIF, which
+        /// the enter pass (reactionEnter, worldservice_1.cpp:10712) takes instead.</summary>
         public bool ReactionArrow { get; internal set; }
-        /// <summary>The hit box's m_b54: property 0xa34897b1 ("SkillPauseControllFeedback") (:630).</summary>
+        /// <summary>The hit box's m_b54: property 0xa34897b1 ("SkillPauseControllFeedback") (:630): a hit runs the tag's
+        /// FUN_1417591b0.</summary>
         public bool SkillPauseFeedback { get; internal set; }
+        /// <summary>m_nHitSound: property 0x8843d885 ("SoundMaterial"), the material FUN_140ade030 plays.</summary>
+        public int HitSound { get; internal set; }
         /// <summary>m_ptPos / m_ptRot: properties 0xfd95ca52 ("Position") and 0x68c7c29d ("Rotation") (:617-618).</summary>
         public Vec3 Position { get; internal set; }
         public Vec3 Rotation { get; internal set; }
+        /// <summary>m_bHasAnim: the entity's model contains 0x48ccc02d ("Actor").</summary>
+        public bool HasAnim { get; internal set; }
+        /// <summary>m_strIdleAnim: property 0x3ff293c8 ("InitialSequence").</summary>
+        public string IdleAnim { get; internal set; }
+        /// <summary>The revive list: property 0xc9385319 ("reactionSequenceName") split on ",".</summary>
+        public string[] ReviveAnims { get; internal set; } = Array.Empty<string>();
+        /// <summary>m_strDeadEffect: property 0xf509dc4a ("reactionEffectXml"), played by state 3.</summary>
+        public string DeadEffect { get; internal set; }
         /// <summary>Whether SetState last showed the model (FUN_140ae07d0(1): states 2, 3, 5 and 6) or hid it
         /// (FUN_140ae07d0(0), state 4: a 500 ms alpha fade from 1 to 0, breakableobject.cpp:755-776); other states leave it.
         /// A marker without an entity changes nothing (:277).</summary>
         public bool Shown { get; internal set; } = true;
+        /// <summary>The entity's IsVisible (0xa0b6b179): set by a show, cleared by Update once a hide's 500 ms fade ran out.</summary>
+        public bool Visible { get; internal set; } = true;
+        /// <summary>The sequence the last SetState asked for and PlayAnimation's force flag; null when it plays nothing.
+        /// Read and cleared by the model (<see cref="Played"/>).</summary>
+        public string Play { get; private set; }
+        public bool PlayForce { get; private set; }
+        /// <summary>The effect the last SetState asked for (state 3's <see cref="DeadEffect"/>); read and cleared by the host.</summary>
+        public string Effect { get; private set; }
 
-        /// <summary>CBreakableObject::SetState (@0x140ade420, breakableobject.cpp:270-343), the visibility part.</summary>
-        internal void SetState(int state)
+        long hitUntil = long.MinValue, fadeEnd = -1;
+
+        /// <summary>FUN_140addea0 (breakableobject.cpp:205) for a field marker: hittable, the hit timer (m_kHitTimer, 1000 ms
+        /// from a hit) not running, and idle (state 2). A marker without an entity is never in the pass.</summary>
+        public bool CanBeHit(long nowMs) => Hittable && Entity != null && nowMs >= hitUntil && State == 2;
+
+        /// <summary>GetBox: the CBoxCollision FUN_140adf9d0 builds (:621-631) at the marker's position and rotation.</summary>
+        public Skills.HitBox Box() => Skills.HitBox.Pose(
+            new((float)Size.X, (float)(Size.Y * 0.5), (float)Size.Z), new(0, (float)(Size.Y * 0.5), 0),
+            new((float)Position.X, (float)Position.Y, (float)Position.Z), new((float)Rotation.X, (float)Rotation.Y, (float)Rotation.Z));
+
+        /// <summary>FUN_140ade030(hitter, kind) (breakableobject.cpp:186): PlayHitSound (the host plays <see cref="HitSound"/>),
+        /// then m_kHitTimer.Start(1000).</summary>
+        internal void Hit(long nowMs) => hitUntil = nowMs + 1000;
+
+        /// <summary>The model took <see cref="Play"/>.</summary>
+        public void Played() => Play = null;
+        /// <summary>The host took <see cref="Effect"/>.</summary>
+        public void EffectPlayed() => Effect = null;
+
+        /// <summary>
+        /// CBreakableObject::SetState(state, 0) (@0x140ade420, breakableobject.cpp:270-343) for a field marker: its regen and
+        /// damage lists and effects are empty (FUN_140ae0c20 runs only for a tomb), so 5 and 6 only show it; 2 plays the idle
+        /// (force) when the model animates and shows it; 3 plays the dead effect and a random revive entry (not forced) and
+        /// shows it; 4 hides it. No entity: the state only (:277). FUN_140adf6e0 acts only for a tomb, so a field marker's
+        /// state changes only by the server's Breakable.
+        /// STILL-OPEN: the physics actor (MakeNxBoxController for 2, ReleasePhysicsActor for 3 and 4) and the shadow.
+        /// </summary>
+        internal void SetState(int state, long nowMs = 0, Func<int, int> pick = null)
         {
             State = state;
             if (Entity == null) return;
-            if (state is 2 or 3 or 5 or 6) Shown = true;
-            else if (state == 4) Shown = false;
+            Play = null; PlayForce = false;
+            switch (state)
+            {
+                case 2:
+                    if (HasAnim && !string.IsNullOrEmpty(IdleAnim)) (Play, PlayForce) = (IdleAnim, true);
+                    break;
+                case 3:
+                    if (!string.IsNullOrEmpty(DeadEffect)) Effect = DeadEffect;
+                    if (HasAnim && ReviveAnims.Length > 0) Play = ReviveAnims[(pick ?? Random.Shared.Next)(ReviveAnims.Length)];
+                    break;
+            }
+            if (state is 2 or 3 or 5 or 6) { Shown = true; Visible = true; fadeEnd = -1; }
+            else if (state == 4) { Shown = false; fadeEnd = nowMs + 500; }
         }
+
+        /// <summary>Update's fade (FUN_140ae07d0): a hide's timer ran out, IsVisible is cleared.</summary>
+        internal void Update(long nowMs)
+        {
+            if (fadeEnd < 0 || nowMs < fadeEnd) return;
+            fadeEnd = -1;
+            Visible = false;
+        }
+
+        internal bool Fading => fadeEnd >= 0;
     }
 
     /// <summary>The model every field breakable has: net hash 0xd3b04f05 (worldservice_1.cpp:6760).</summary>
@@ -77,8 +148,60 @@ public sealed class BreakableObjects
         // a marker's name is lowercase (vfunc_1's ToLower), as FindMarkerByName looks it up
         var m = new Marker { Name = name.ToLowerInvariant(), State = state };
         markers[m.Name] = m;
+        sortedDirty = true;
         return m;
     }
+
+    /// <summary>rand() % n for the revive entry; tests set it.</summary>
+    public Func<int, int> Pick;
+
+    /// <summary>The clock SetState and the fades read: the last <see cref="Update"/>'s time.</summary>
+    public long NowMs { get; private set; }
+
+    readonly List<Marker> sorted = new();
+    readonly List<Marker> fading = new();
+    bool sortedDirty;
+
+    /// <summary>
+    /// The markers as WorldService m_4b0 iterates them: a CRBMap keyed by the lowercase name, so in ordinal name order.
+    /// Rebuilt only after a marker is added or the field is left.
+    /// </summary>
+    public IReadOnlyList<Marker> Sorted
+    {
+        get
+        {
+            if (sortedDirty)
+            {
+                sorted.Clear();
+                foreach (var m in markers.Values) sorted.Add(m);
+                sorted.Sort(static (a, b) => string.CompareOrdinal(a.Name, b.Name));
+                sortedDirty = false;
+            }
+            return sorted;
+        }
+    }
+
+    /// <summary>The frame's clock: the hides whose 500 ms fade ran out clear IsVisible (FUN_140ae07d0's timer in Update).
+    /// No loop over the markers: only the fading ones are kept.</summary>
+    public void Update(long nowMs)
+    {
+        NowMs = nowMs;
+        for (int i = fading.Count - 1; i >= 0; i--)
+        {
+            var m = fading[i];
+            m.Update(nowMs);
+            if (!m.Fading) fading.RemoveAt(i);
+        }
+    }
+
+    void SetState(Marker m, int state)
+    {
+        m.SetState(state, NowMs, Pick);
+        if (m.Fading && !fading.Contains(m)) fading.Add(m);
+    }
+
+    /// <summary>The tag pass hit <paramref name="m"/>: FUN_140ade030(1, 1)'s hit timer.</summary>
+    internal void Hit(Marker m) => m.Hit(NowMs);
 
     /// <summary>FindMarkerByName: the name lowercased.</summary>
     public Marker Find(string name) => name != null && markers.TryGetValue(name.ToLowerInvariant(), out var m) ? m : null;
@@ -95,6 +218,7 @@ public sealed class BreakableObjects
     public int AttachField(IReadOnlyList<FieldEntity> entities)
     {
         int n = 0;
+        sortedDirty = true;
         for (int i = 0; entities != null && i < entities.Count; i++)
         {
             var e = entities[i];
@@ -103,15 +227,20 @@ public sealed class BreakableObjects
             if (string.IsNullOrEmpty(id)) continue;
             // FUN_140adf9d0 (breakableobject.cpp:584-635)
             var size = e.Vector("ShapeDimensions");
+            var revive = e.Get("reactionSequenceName");
             var m = new Marker
             {
                 Name = id.ToLowerInvariant(), Entity = e, Size = size,
                 Hittable = e.Bool("Enabled") && !(size.X == 0 && size.Y == 0 && size.Z == 0),
                 ReactionArrow = e.Bool("reactionArrow"), SkillPauseFeedback = e.Bool("SkillPauseControllFeedback"),
+                HitSound = (int)e.Number("SoundMaterial"),
                 Position = e.Position, Rotation = e.Vector("Rotation"),
+                HasAnim = e.HasMixin("Actor"), IdleAnim = e.Get("InitialSequence"),
+                ReviveAnims = string.IsNullOrEmpty(revive) ? Array.Empty<string>() : revive.Split(',', StringSplitOptions.RemoveEmptyEntries),
+                DeadEffect = e.Get("reactionEffectXml"),
             };
-            m.SetState(2);
             markers[m.Name] = m;
+            SetState(m, 2);
             n++;
         }
         Holding = false;
@@ -130,6 +259,8 @@ public sealed class BreakableObjects
     public void ClearMarkers()
     {
         markers.Clear();
+        fading.Clear();
+        sortedDirty = true;
         held.Clear();
         Holding = true;
     }
@@ -145,7 +276,7 @@ public sealed class BreakableObjects
         {
             if (e.Name != null && markers.TryGetValue(e.Name.ToLowerInvariant(), out var m))
             {
-                m.SetState(e.State);
+                SetState(m, e.State);
                 m.SyncA = e.SyncA;
                 m.SyncB = e.SyncB;
                 m.SyncC = e.SyncC;
