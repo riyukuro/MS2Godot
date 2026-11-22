@@ -56,6 +56,12 @@ public partial class LiveSession
                 Check($"the field entry after the warp (map {live.CurrentEntry?.MapId})", entered > 0);
                 continue;
             }
+            if (step.StartsWith("chat:"))      // one chat line, no comma in it
+            {
+                GD.Print($"live: combat {step}: {(hud.SubmitChatLine(step[5..]) ? "sent" : "no chat window")}");
+                await frames(120);
+                continue;
+            }
             if (step.StartsWith("level:"))
             {
                 int level = int.Parse(step[6..]);
