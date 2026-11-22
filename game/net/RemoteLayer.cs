@@ -593,7 +593,7 @@ public sealed partial class RemoteLayer : Node3D
                     if (!users.TryGetValue(mv.ObjectId, out var r)) break;
                     var to = mv.Ride ? r.Ridee : r.Pc;
                     if (to == null) break;
-                    to.States.Push(SyncRecord.From(mv.Record));
+                    to.States.Push(SyncRecord.From(mv.Record, Tracker.Profile));
                     if (++movedSeen <= 3 || movedSeen % 100 == 0) GD.Print($"live: other player {r.Name} moved #{movedSeen} to {mv.Position} yaw {mv.YawDegrees}");
                     break;
                 case UserStatEvent st:

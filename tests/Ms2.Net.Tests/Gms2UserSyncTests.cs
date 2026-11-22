@@ -66,5 +66,21 @@ public class Gms2UserSyncTests {
         Assert.That(n, Is.GreaterThan(0));
     }
 
+    [Test] public void RecordedGms2RemoteHoldAndMarkerRecordsReachTheSyncRecord() {
+        int holds = 0, marks = 0;
+        foreach (var (f, d) in Gms2Sniffs.Inbound("gms2", 0x1C)) {
+            foreach (var rec in UserSyncIn.Read(new ByteReader(d), ProtocolProfile.Gms2).Records) {
+                var r = SyncRecord.From(rec, ProtocolProfile.Gms2);
+                if (((byte) rec.Flags & 4) != 0) { holds++; Assert.That((r.HoldTargetId, r.HoldNode), Is.EqualTo((rec.Flag2Value, rec.Flag2Text ?? "")), f); }
+                else Assert.That(r.HoldTargetId, Is.EqualTo(0), f);
+                if (((byte) rec.Flags & 2) != 0) { marks++; Assert.That(r.MarkerName, Is.EqualTo(rec.Flag5Text ?? ""), f); }
+            }
+        }
+        Assert.That(holds, Is.GreaterThan(0));
+        // the KMS meaning is untouched: a record with Flag6 holds, one with Flag3 only does not
+        Assert.That(SyncRecord.From(new StateSync { Flags = StateSync.Flag.Flag6, Flag6Value = 7, Flag6Text = "n" }).HoldTargetId, Is.EqualTo(7));
+        Assert.That(SyncRecord.From(new StateSync { Flags = StateSync.Flag.Flag3 | StateSync.Flag.Flag6, Flag6Value = 7, Flag2Value = 9 }, ProtocolProfile.Gms2).HoldTargetId, Is.EqualTo(9));
+    }
+
     static byte[] Write(UserSyncOut o) { var w = new ByteWriter(); o.Write(w, ProtocolProfile.Gms2); return w.ToArray(); }
 }

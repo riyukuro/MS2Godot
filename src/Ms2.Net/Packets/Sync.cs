@@ -105,17 +105,11 @@ public sealed class StateSync {
         if (r.Position > start) SpecialTail = r.Buffer.AsSpan(start, r.Position - start).ToArray();
     }
 
-    /// <summary>The GMS2 hold record (state 32, flags 0x05): the target id and its node go in bit 2, not in KMS bit 5 (no recording has 0x25).
-    /// A record built with the KMS meaning (Flag6Value/Flag6Text) is moved there; any other record is returned as it is.</summary>
-    public StateSync ForGms2() {
-        if (State != 32 || (Flags & Flag.Flag6) == 0) return this;
-        var c = (StateSync) MemberwiseClone();
-        c.Flags = (Flags & ~Flag.Flag6) | Flag.Flag3; c.Flag2Value = Flag6Value; c.Flag2Text = Flag6Text;
-        return c;
-    }
-
     public void WriteGms2(ByteWriter w) {
         int f = (int) Flags;
+        // a live hold record (state 32) carries the target in the KMS bit 5 (Flag6); GMS2 sends it in bit 2 (flags 0x05, no recording has 0x25)
+        bool hold = State == 32 && (f & 32) != 0;
+        if (hold) f = (f & ~32) | 4;
         w.WriteByte(State); w.WriteByte(SubState); w.WriteByte((byte) f);
         if ((f & 1) != 0) { w.WriteInt(Flag1Value); w.WriteShort(Flag3Value); }
         w.WriteShort(Position.X); w.WriteShort(Position.Y); w.WriteShort(Position.Z);
@@ -124,7 +118,7 @@ public sealed class StateSync {
         w.WriteShort(Speed.X); w.WriteShort(Speed.Y); w.WriteShort(Speed.Z);
         w.WriteByte(Unknown1); w.WriteShort(Rotation2); w.WriteShort(Unknown3);
         if ((f & 2) != 0) { w.WriteFloat(Flag5Vec.X); w.WriteFloat(Flag5Vec.Y); w.WriteFloat(Flag5Vec.Z); w.WriteUnicodeString(Flag5Text ?? ""); }
-        if ((f & 4) != 0) { w.WriteInt(Flag2Value); w.WriteUnicodeString(Flag2Text ?? ""); }
+        if ((f & 4) != 0) { w.WriteInt(hold ? Flag6Value : Flag2Value); w.WriteUnicodeString((hold ? Flag6Text : Flag2Text) ?? ""); }
         if ((f & 8) != 0) w.WriteUnicodeString(AnimationName ?? "");
         if ((f & 16) != 0) { w.WriteInt(Flag6Value); w.WriteUnicodeString(Flag6Text ?? ""); }
         w.WriteInt(SyncNumber);
@@ -158,7 +152,7 @@ public sealed class UserSyncOut : IProfileOutPacket {
         foreach (var (rec, tick) in Records) {
             // GMS2: its own record layout, then the record's CLIENT elapsed tick and its server tick. A live record carries the server tick
             // (the KMS slot), so the client tick is that minus the packet's server-vs-client offset; a parsed one has both and keeps them.
-            if (profile.IsGms2) { rec.ForGms2().WriteGms2(w); w.WriteInt(rec.Gms2ServerTick is null ? tick - (ServerTick - ClientTick) : tick); w.WriteInt(rec.Gms2ServerTick ?? tick); }
+            if (profile.IsGms2) { rec.WriteGms2(w); w.WriteInt(rec.Gms2ServerTick is null ? tick - (ServerTick - ClientTick) : tick); w.WriteInt(rec.Gms2ServerTick ?? tick); }
             else { rec.Write(w); w.WriteInt(tick); }
         }
     }

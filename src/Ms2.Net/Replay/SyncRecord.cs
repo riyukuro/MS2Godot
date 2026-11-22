@@ -48,7 +48,11 @@ public sealed class SyncRecord
     public bool Fired;
 
     /// <summary>The client's record from a read wire record.</summary>
-    public static SyncRecord From(StateSync s)
+    public static SyncRecord From(StateSync s) => From(s, ProtocolProfile.Kms2525);
+
+    /// <summary>On GMS2 a record read by <see cref="StateSync.ReadGms2"/> keeps the wire bits as they are: bit 1 is the marker (vec3 + name,
+    /// Flag5Vec/Text), bit 2 the held actor (id + node, Flag2Value/Text); bit 4 (i32 + string, 40 recorded) has no known meaning here.</summary>
+    public static SyncRecord From(StateSync s, ProtocolProfile profile)
     {
         var r = new SyncRecord
         {
@@ -62,8 +66,16 @@ public sealed class SyncRecord
             CubeCell = s.SyncNumber,
         };
         if (s.Flags.HasFlag(StateSync.Flag.Flag1)) r.SkillId = s.Flag1Value;
-        if (s.Flags.HasFlag(StateSync.Flag.Flag5)) { r.MarkerName = s.Flag5Text ?? ""; r.MarkerOffset = s.Flag5Vec; }
-        if (s.Flags.HasFlag(StateSync.Flag.Flag6)) { r.HoldTargetId = s.Flag6Value; r.HoldNode = s.Flag6Text ?? ""; }
+        if (profile.IsGms2)
+        {
+            if (s.Flags.HasFlag(StateSync.Flag.Flag2)) { r.MarkerName = s.Flag5Text ?? ""; r.MarkerOffset = s.Flag5Vec; }
+            if (s.Flags.HasFlag(StateSync.Flag.Flag3)) { r.HoldTargetId = s.Flag2Value; r.HoldNode = s.Flag2Text ?? ""; }
+        }
+        else
+        {
+            if (s.Flags.HasFlag(StateSync.Flag.Flag5)) { r.MarkerName = s.Flag5Text ?? ""; r.MarkerOffset = s.Flag5Vec; }
+            if (s.Flags.HasFlag(StateSync.Flag.Flag6)) { r.HoldTargetId = s.Flag6Value; r.HoldNode = s.Flag6Text ?? ""; }
+        }
         r.Move = UnpackMove(s.Animation, s.Float1, s.Float2);
         return r;
     }
