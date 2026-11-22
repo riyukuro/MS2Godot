@@ -26,6 +26,22 @@ public sealed class EffectPart
     /// </summary>
     public string AttachType, ParentNode;
     public bool AttachToNode, ApplyNodeTransform;
+    /// <summary>
+    /// m_nAttachType: ParseAttachType of attachType (nifeffectparam.cpp:275: Node 1, Mesh 2, WeaponL 3, WeaponR 4, else 0,
+    /// CompareNoCase), set to 1 by attachToNode="true" (:398). CNifEffect::vfunc_3 (:667) switches on it: 0 puts the part
+    /// under the world effect root (AttachToOwnerNode), the others under a node of the actor.
+    /// </summary>
+    public int AttachKind => AttachToNode ? 1 : AttachTypeOf(AttachType);
+    /// <summary>&lt;applyNodeTransform translate rotation scale&gt; (true when absent, nifeffectparam.cpp:366, :408-414):
+    /// m_bitsApply, the parts of the parent node's world transform a type 0 part takes at its start (:1058-1072).</summary>
+    public bool ApplyTranslate = true, ApplyRotation = true, ApplyScale = true;
+
+    /// <summary>ParseAttachType (nifeffectparam.cpp:275).</summary>
+    public static int AttachTypeOf(string s) =>
+        string.Equals(s, "Node", StringComparison.OrdinalIgnoreCase) ? 1
+        : string.Equals(s, "Mesh", StringComparison.OrdinalIgnoreCase) ? 2
+        : string.Equals(s, "WeaponL", StringComparison.OrdinalIgnoreCase) ? 3
+        : string.Equals(s, "WeaponR", StringComparison.OrdinalIgnoreCase) ? 4 : 0;
     /// <summary>update translate / rotation / scale: the parts of the parent's world the effect follows (true when absent).</summary>
     /// <summary>The light a type="light" part makes (null for other parts).</summary>
     public EffectLightParam Light;
@@ -86,6 +102,12 @@ public sealed class EffectTable
                         p.ParentNode = (string)a.Attribute("parentNode");
                         p.AttachToNode = B((string)a.Attribute("attachToNode"), false);
                         p.ApplyNodeTransform = B((string)a.Attribute("applyNodeTransform"), false);
+                    }
+                    if (e.Element("applyNodeTransform") is { } an)
+                    {
+                        p.ApplyTranslate = B((string)an.Attribute("translate"), true);
+                        p.ApplyRotation = B((string)an.Attribute("rotation"), true);
+                        p.ApplyScale = B((string)an.Attribute("scale"), true);
                     }
                     if (e.Element("update") is { } u)
                     {

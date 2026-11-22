@@ -103,9 +103,16 @@ void fragment() {
     public void PlayEffect(string xmlPath, Godot.Vector3 at, Basis rotation, int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
         => Play(xmlPath, at, rotation, casterKind, null);
 
-    /// <summary>An effect on an actor (CEffect SetActor, no transform of its own): the nif parts are children of
-    /// <paramref name="actor"/>, so they follow it and go with it; sound and light parts play at its place now. Nothing
-    /// when the actor is gone.</summary>
+    /// <summary>
+    /// An effect on an actor (CEffect SetActor, no transform of its own); nothing when the actor is gone. Each nif part goes
+    /// where CNifEffect::vfunc_3 (nifeffectparam.cpp:667) puts it by its attach type (<see cref="EffectPart.AttachKind"/>):
+    /// - type 0 (AttachToOwnerNode, :1044): under the world effect root, at the actor's parent node's world transform taken
+    ///   once at the start (<see cref="WorldPlace"/>); it does not follow the actor and plays to its own end after the
+    ///   actor is removed;
+    /// - the others (type 1 Node :1079, 2 Mesh :1118, 3/4 weapon): under the actor, so they follow it and go with it at once.
+    /// Sound and light parts play at its place now.
+    /// STILL-OPEN: types 1-4 hang on the actor's root, not on the named node or mesh parent.
+    /// </summary>
     public void PlayEffectOn(string xmlPath, Node3D actor, int casterKind)
     {
         if (actor == null || !GodotObject.IsInstanceValid(actor)) return;
@@ -137,7 +144,10 @@ void fragment() {
                 continue;
             }
             if (part.Type != "nif" || string.IsNullOrEmpty(part.FilePath)) { EffectsNotNif++; continue; }
-            if (Particles && TryScene(part, actor == null ? at : Godot.Vector3.Zero, rotation, actor)) continue;
+            bool onActor = actor != null && part.AttachKind != 0;
+            var place = actor == null ? new Transform3D(rotation, at) : onActor ? Transform3D.Identity : WorldPlace(part, actor);
+            var host = onActor ? actor : parent;
+            if (Particles && TryScene(part, place, host)) continue;
             var e = Effect(part.FilePath);
             if (e == null) { EffectsNoNif++; MissingEffects.Add(part.FilePath); continue; }
             if (e.Value.particles) { EffectsWithParticles++; ParticleEffects.Add(part.FilePath); }
@@ -145,10 +155,10 @@ void fragment() {
             var root = mb.Build(e.Value.md, "Effect");
             float s = part.Scale <= 0 ? 1 : part.Scale;
             root.Scale = new Godot.Vector3(s, s, s);
-            var holder = new Node3D { Transform = new Transform3D(rotation, actor == null ? at : Godot.Vector3.Zero), Visible = part.StartDelay <= 0 };
+            var holder = new Node3D { Transform = place, Visible = part.StartDelay <= 0 };
             root.Position = G(part.Translate[0], part.Translate[1], part.Translate[2]);
             holder.AddChild(root);
-            (actor ?? parent).AddChild(holder);
+            host.AddChild(holder);
             float dur = part.Duration > 0 ? part.Duration : 0.6f;
             // Without the nif's alpha and texture controllers the meshes would sit solid; draw them additive and unlit and fade them out
             // over the duration, so dark or hidden parts vanish and light parts glow.
@@ -211,17 +221,49 @@ void fragment() {
         return scenes[entry] = sc;
     }
 
-    /// <summary>Plays an effect part through the scene runtime (particles and controllers); false when the nif could not be read as a scene.</summary>
-    bool TryScene(EffectPart part, Godot.Vector3 at, Basis rotation, Node3D actor)
+    /// <summary>
+    /// Where a type 0 part on <paramref name="actor"/> starts, local to the field node (AttachToOwnerNode, nifeffectparam.cpp:1044):
+    /// with applyNodeTransform, the world transform of the node named parentNode under the actor (else the actor's own),
+    /// keeping only the translate / rotation / scale its applyNodeTransform bits allow (:1058-1072). Without it the part takes
+    /// no transform from the actor at all: the remain's request has no transform (magicdata.cpp:2872), so it plays at the
+    /// world origin. That is a client quirk, kept as is.
+    /// </summary>
+    Transform3D WorldPlace(EffectPart part, Node3D actor)
+    {
+        if (!part.ApplyNodeTransform) return Transform3D.Identity;
+        var w = NodeWorld(actor, part.ParentNode);
+        if (!(part.ApplyTranslate && part.ApplyRotation && part.ApplyScale))
+        {
+            float s = part.ApplyScale ? w.Basis.Scale.X : 1f;
+            var rot = part.ApplyRotation ? new Basis(w.Basis.GetRotationQuaternion()) : Basis.Identity;
+            w = new Transform3D(rot.Scaled(new Godot.Vector3(s, s, s)), part.ApplyTranslate ? w.Origin : Godot.Vector3.Zero);
+        }
+        return parent.GlobalTransform.AffineInverse() * w;
+    }
+
+    /// <summary>The world transform of the node <paramref name="name"/> under <paramref name="actor"/> (GetObjectByName on its
+    /// scene node: a node, else a skeleton bone), else the actor's own (the fallback to the actor node, :1053).</summary>
+    static Transform3D NodeWorld(Node3D actor, string name)
+    {
+        if (string.IsNullOrEmpty(name)) return actor.GlobalTransform;
+        if (actor.FindChild(name, true, false) is Node3D n) return n.GlobalTransform;
+        foreach (var sk in actor.FindChildren("*", "Skeleton3D", true, false))
+            if (sk is Skeleton3D s && s.FindBone(name) is int b and >= 0) return s.GlobalTransform * s.GetBoneGlobalPose(b);
+        return actor.GlobalTransform;
+    }
+
+    /// <summary>Plays an effect part through the scene runtime (particles and controllers) at <paramref name="place"/> under
+    /// <paramref name="host"/>; false when the nif could not be read as a scene.</summary>
+    bool TryScene(EffectPart part, Transform3D place, Node3D host)
     {
         var sc = Scene(part.FilePath);
         if (sc == null) return false;
         float dur = part.Duration > 0 ? part.Duration : 0.6f;
-        var inst = new EffectInstance(sc, mb, dur, (int)(GD.Randi() & 0x7fffffff)) { Transform = new Transform3D(rotation, at), Delay = part.StartDelay };
+        var inst = new EffectInstance(sc, mb, dur, (int)(GD.Randi() & 0x7fffffff)) { Transform = place, Delay = part.StartDelay };
         float s = part.Scale <= 0 ? 1 : part.Scale;
         var q = new Godot.Quaternion(Godot.Vector3.Back, Mathf.DegToRad(part.Rotation[2])) * new Godot.Quaternion(Godot.Vector3.Up, Mathf.DegToRad(part.Rotation[1])) * new Godot.Quaternion(Godot.Vector3.Right, Mathf.DegToRad(part.Rotation[0]));
         inst.FileSpace = new Transform3D(new Basis(q).Scaled(new Godot.Vector3(s, s, s)), new Godot.Vector3(part.Translate[0], part.Translate[1], part.Translate[2]));
-        (actor ?? parent).AddChild(inst);
+        host.AddChild(inst);
         SceneEffects++; EffectsSpawned++;
         if (sc.Systems.Count > 0) { ParticleSystemsRun += sc.Systems.Count; EffectsWithParticles++; ParticleEffects.Add(part.FilePath); }
         return true;
