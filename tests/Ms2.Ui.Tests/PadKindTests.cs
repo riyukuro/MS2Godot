@@ -62,4 +62,33 @@ public class PadKindTests
                 Assert.That((b.Type, b.Code, b.Priority), Is.EqualTo((before[b.Key].Type, before[b.Key].Code, before[b.Key].Priority)), $"key {b.Key:x}");
         Assert.That(k.SnapshotBindings().Any(b => KeyTable.IsGamepadKey(b.Key) && b.Type != 0), "the file binds some pad key");
     }
+
+    static bool AnyPadKeyBound(KeyTable k) => k.SnapshotBindings().Any(b => KeyTable.IsGamepadKey(b.Key) && b.Type != 0);
+
+    [Test]
+    public void TheServersDefaultFlagLoadsThePadFileOnlyWithTheFeatureOn()
+    {
+        var off = Keys();
+        off.Apply(UiFixture.NewCharacterKeyTable());
+        var on = Keys();
+        int kind = -1;
+        on.Apply(UiFixture.NewCharacterKeyTable(), () => { kind = 2; return kind; });
+        Assert.That(kind, Is.EqualTo(2), "the kind is asked once the defaults load");
+        Assert.That(AnyPadKeyBound(on), "pad keys bound from the pad file");
+        Assert.That(on.SnapshotBindings().Count(b => KeyTable.IsGamepadKey(b.Key) && b.Type != 0),
+            Is.GreaterThan(off.SnapshotBindings().Count(b => KeyTable.IsGamepadKey(b.Key) && b.Type != 0)));
+    }
+
+    [Test]
+    public void EnablingThePadLoadsItsFileOnlyWhileNoKeyCarriesThePadMarker()
+    {
+        var k = Keys();
+        int sent = 0; k.KeysSentToServer += _ => sent++;
+        Assert.That(k.FindKeyByActionAndPriority(KeyTable.PadMarkerAction, 2), Is.EqualTo(0), "the keyboard defaults carry no pad marker");
+        Assert.That(k.LoadDefaultPadKeysIfUnset(1), Is.True);
+        Assert.That(sent, Is.EqualTo(1));
+        Assert.That(k.FindKeyByActionAndPriority(KeyTable.PadMarkerAction, 2), Is.Not.EqualTo(0), "the pad file binds the marker action");
+        Assert.That(k.LoadDefaultPadKeysIfUnset(1), Is.False, "the marker is set now: nothing loads again");
+        Assert.That(sent, Is.EqualTo(1));
+    }
 }

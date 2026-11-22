@@ -75,13 +75,17 @@ public static class GameOptions
     /// <summary>The pad switch changed (SetGamepadEnabled @0x14125f670): the main player info's slots and the upper hud follow.</summary>
     public static event Action<bool> GamepadEnabledChanged;
 
+    /// <summary>SetGamePadEnabled with the pad on and <c>notify</c> set (ms2inputservice.cpp:604-614): the HUD shows the "search for a pad" box when no pad was found.</summary>
+    public static event Action GamepadSearchNotice;
+
     /// <summary>SetGamepadEnabled (gameoptionstruct.cpp:2589-2600): the block's switch, the followers, then the character file.
-    /// STILL-OPEN: the input service's pad polling and the no-pad notice (MS2InputService::SetGamePadEnabled, ms2inputservice.cpp:594-632)
-    /// are not ported, so <c>notify</c> has no effect.</summary>
+    /// The input service's part (MS2InputService::SetGamePadEnabled @0x140d8b900, ms2inputservice.cpp:594-632) is the HUD's: the pad file
+    /// load, then <see cref="GamepadSearchNotice"/>. STILL-OPEN: the pad polling switch (SetGamePadPollEnabled) and the "controller" big data log.</summary>
     public static void SetGamepadEnabled(GameOption.GamePad stored, bool use, bool notify)
     {
         stored.Use = use;
         GamepadEnabledChanged?.Invoke(use);
+        if (use && notify) GamepadSearchNotice?.Invoke();
         SaveCharacterSettings();
     }
 

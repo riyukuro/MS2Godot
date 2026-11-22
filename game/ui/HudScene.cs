@@ -164,9 +164,25 @@ public partial class HudScene : Node, IUiStageHost
         Ms2Godot.Net.ProfileImageService.Images.Ready += ProfileImageReady;
     }
 
+    /// <summary>Feature 0xb5 (the game pad feature) from the data packs.</summary>
+    bool PadFeature() => Ms2.Ui.LobbyFeatures.IsEnabledByName(assets.Packs, Ms2.Ui.FeatureTable.Names[0xb5 - 1]);
+
+    /// <summary>The pad kind the key table's default loads follow (OnKeyTable mode 0, keytable.cpp:296-319): null with feature 0xb5 off.</summary>
+    Func<int> PadDefaultsKind() => PadFeature() ? () => GameOptionHost.DetectPadKind(true) : null;
+
+    /// <summary>MS2InputService::SetGamePadEnabled (ms2inputservice.cpp:604-614): no pad found after DetectGamePad shows the type 1 box
+    /// "s_gamepad_notice_search_gamepad". Its callback (@0x140d8c8d0) only re-enumerates the devices on OK, which Godot does by itself.</summary>
+    void OnGamepadSearchNotice()
+    {
+        if (GameOptionHost.DetectPadKind(PadFeature()) != 0 || commonStrings == null) return;
+        Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(commonStrings("s_gamepad_notice_search_gamepad"), 1, null, "");
+    }
+
     /// <summary>SetGamepadEnabled's HUD calls: MainPlayerInfo ChangeSkillSlot, then UpperHud SetGamePadMode.</summary>
     void OnGamepadEnabled(bool use)
     {
+        // MS2InputService::SetGamePadEnabled runs first (@0x140d8b900): with the pad on and no pad key set, the pad file loads
+        if (use) hudModel?.Keys?.LoadDefaultPadKeysIfUnset(GameOptionHost.DetectPadKind(PadFeature()));
         playerInfo?.SetGamePadMode(use);
         upperHudSide?.SetGamePadMode(use);
     }
@@ -178,6 +194,7 @@ public partial class HudScene : Node, IUiStageHost
     public override void _ExitTree()
     {
         GameOptions.GamepadEnabledChanged -= OnGamepadEnabled;
+        GameOptions.GamepadSearchNotice -= OnGamepadSearchNotice;
         if (Ms2Godot.Net.LiveSession.Instance is { } livePortals)
         {
             if (livePortals.SystemNoticeSink == (Action<string>)SystemNoticeText) livePortals.SystemNoticeSink = null;
@@ -730,6 +747,8 @@ public partial class HudScene : Node, IUiStageHost
         upperHudSide.GamePadClick += use => GameOptions.SetGamepadEnabled(GameOptions.GamePad, use, use);
         GameOptions.GamepadEnabledChanged -= OnGamepadEnabled;
         GameOptions.GamepadEnabledChanged += OnGamepadEnabled;
+        GameOptions.GamepadSearchNotice -= OnGamepadSearchNotice;
+        GameOptions.GamepadSearchNotice += OnGamepadSearchNotice;
         upperHudSide.ToggleDictionary += ToggleGameDictionary;
         upperHudSide.ToggleFishingBook += ToggleFishingBook;
         upperHudSide.ToggleTokenPocket += ToggleTokenPocket;
@@ -2547,7 +2566,7 @@ public partial class HudScene : Node, IUiStageHost
         // the server's key table when live (OnKeyTable), else the packet a new character gets
         hudModel.ServerKeys = Ms2Godot.Net.LiveSession.Instance?.KeyTable is { Loaded: true } live ? live
             : quickSlotShot != null ? QuickSlotShotTable(quickSlotShot) : UiFixture.NewCharacterKeyTable();
-        hudModel.Keys.Apply(hudModel.ServerKeys);
+        hudModel.Keys.Apply(hudModel.ServerKeys, PadDefaultsKind());
         var p = hudModel.Player;
         p.Name = data.Player.Name; p.Level = data.Player.Level;
         // jobCode is the sub job (uimainplayerinfo.cpp:1405): 100 Knight, 200 Berserker ... 1100 Soul Binder; the stub
@@ -3327,7 +3346,7 @@ public partial class HudScene : Node, IUiStageHost
         {
             hudModel.ServerKeys = live.KeyTable;
             hudModel.Keys.Locked = live.KeyTable.Locked;
-            if (mode == 0) hudModel.Keys.Apply(live.KeyTable);
+            if (mode == 0) hudModel.Keys.Apply(live.KeyTable, PadDefaultsKind());
             if (mode == 0 || mode == 7) playerInfo.OnKeyTable();
             playerInfo.RebindSlots();
         };

@@ -272,15 +272,30 @@ public sealed class KeyTable : IKeyTable
     }
 
     /// <summary>OnKeyTable mode 0 (keytable.cpp:285-350): ClearAllBindings, then DefaultKey.xml (use-default flag or no
-    /// bindings) or each binding of the packet, followed by BackupKeys (:349).</summary>
-    public void Apply(ServerKeyTable t)
+    /// bindings) and, with feature 0xb5 (<paramref name="padKind"/> not null), the pad file of GetPadKind (kind 2 the PS file, else
+    /// the Xbox one; keytable.cpp:296-303, 312-319), or each binding of the packet, followed by BackupKeys (:349).
+    /// STILL-OPEN: FUN_141432360(code), the emotion bookkeeping per bound code (:331).</summary>
+    public void Apply(ServerKeyTable t, Func<int> padKind = null)
     {
         if (t == null || !t.Loaded) return;
         ClearAllBindings();
-        if (t.UsesDefaultKeys) LoadDefaultKeys();
+        if (t.UsesDefaultKeys)
+        {
+            LoadDefaultKeys();
+            if (padKind != null) LoadDefaultPadKeys(padKind() == 2 ? 2 : 1);
+        }
         else foreach (var b in t.Bindings) SetBinding(b.Key, b.Type, b.Code, b.Slot, b.Priority);
         BackupKeys();
     }
+
+    /// <summary>The action the game pad's own keys carry (FindKeyByActionAndPriority(0x30d41, 2) == 0 means no pad key is set,
+    /// SetGamePadEnabled @0x140d8b900, ms2inputservice.cpp:615).</summary>
+    public const long PadMarkerAction = 0x30d41;
+
+    /// <summary>The pad file load of SetGamePadEnabled's enable path (ms2inputservice.cpp:615-621): when no key carries
+    /// <see cref="PadMarkerAction"/> at priority 2, kind 2 loads the PS file and every other kind the Xbox one.</summary>
+    public bool LoadDefaultPadKeysIfUnset(int padKind) =>
+        FindKeyByActionAndPriority(PadMarkerAction, 2) == 0 && LoadDefaultPadKeys(padKind == 2 ? 2 : 1);
 
     static int Atoi(string s) => int.TryParse(s, out var v) ? v : 0;
 

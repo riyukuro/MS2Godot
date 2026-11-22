@@ -268,7 +268,10 @@ public sealed class GameOptionHost : IGameOptionDialogHost
     /// <summary>MS2InputService::GetPadKind through DetectGamePad's rules (<see cref="Ms2.Ui.PadKinds.Detect"/>). STILL-OPEN: Godot
     /// does not tell XInput from DirectInput pads; a pad whose name says Xbox or XInput counts as the XInput one, every other
     /// connected pad as the DirectInput8 (dual) one.</summary>
-    public int GetPadKind()
+    public int GetPadKind() => DetectPadKind(IsFeatureEnabled(0xb5));
+
+    /// <summary><see cref="GetPadKind"/> without a host: <paramref name="padFeature"/> is feature 0xb5.</summary>
+    public static int DetectPadKind(bool padFeature)
     {
         bool xinput = false, other = false;
         foreach (int id in Input.GetConnectedJoypads())
@@ -276,7 +279,7 @@ public sealed class GameOptionHost : IGameOptionDialogHost
             string name = Input.GetJoyName(id).ToLowerInvariant();
             if (name.Contains("xbox") || name.Contains("xinput")) xinput = true; else other = true;
         }
-        return Ms2.Ui.PadKinds.Detect(GameOptions.GamePad.Use, IsFeatureEnabled(0xb5), xinput, other);
+        return Ms2.Ui.PadKinds.Detect(GameOptions.GamePad.Use, padFeature, xinput, other);
     }
 
     public void ResetMessageBox(string padArg, Func<int, string, bool> callback)
