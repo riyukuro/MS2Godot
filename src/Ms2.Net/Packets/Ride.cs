@@ -99,14 +99,14 @@ public sealed record RideOffUseFunctionItem(byte Arg, long ItemUid, string Text3
 public sealed record ResponseRide(byte Mode, int ObjectId, RideOnAction RideOn, RideOffAction RideOff, int RideeId, long ItemUid,
     int RiderId, byte Seat, bool Flag)
 {
-    public static ResponseRide Read(ByteReader r, int selfObjectId)
+    public static ResponseRide Read(ByteReader r, int selfObjectId, ProtocolProfile profile)
     {
         byte mode = r.ReadByte();
         int id = 0, rideeId = 0, riderId = 0; long uid = 0; byte seat = 0; bool flag = false;
         RideOnAction on = null; RideOffAction off = null;
         switch (mode)
         {
-            case 0: id = r.ReadInt(); on = RideOnAction.TryRead(r); break;
+            case 0: id = r.ReadInt(); on = RideOnAction.TryRead(r, profile); break;
             case 1: id = r.ReadInt(); off = RideOffAction.Read(r); break;
             case 2:
                 id = r.ReadInt();

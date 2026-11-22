@@ -292,11 +292,11 @@ public sealed record RideOnAction(byte Type, int RideId, int ObjectId, bool Flag
         return new RideOnAction(type, rideId, obj, flag, itemId, uid, extra, es);
     }
 
-    /// <summary>ReadRideOnAction (@0x14077deb0, rideonaction.cpp:46) as OnResponseRide uses it (KMS2 layout): a type above 3
-    /// has no case, reads as null and nothing after the type byte is read.</summary>
-    public static RideOnAction TryRead(ByteReader r) {
+    /// <summary>ReadRideOnAction (@0x14077deb0, rideonaction.cpp:46) as OnResponseRide uses it: a type above 3 has no case,
+    /// reads as null and nothing after the type byte is read. GMS2 has no m_b28 byte, as in <see cref="Read"/>.</summary>
+    public static RideOnAction TryRead(ByteReader r, ProtocolProfile profile) {
         byte type = r.ReadByte();
-        return type > 3 ? null : ReadBody(r, type, ProtocolProfile.Kms2525);
+        return type > 3 ? null : ReadBody(r, type, profile);
     }
 }
 

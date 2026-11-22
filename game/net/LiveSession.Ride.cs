@@ -9,7 +9,9 @@ namespace Ms2Godot.Net;
 /// <summary>
 /// CSceneStateGame::OnResponseRide (0x79, @0x14172a8f0, scenestategame.cpp:12026) for the own pc: modes 0, 1 and 2
 /// (<see cref="OwnRide"/>). STILL-OPEN: other pcs' rides (modes 0/1 and the RideSync records), the passenger modes 3-5,
-/// mode 6 (PC::FUN_1416642c0 and RideOnAction m_b28).
+/// mode 6 (PC::FUN_1416642c0 and RideOnAction m_b28); RecvOp NpcRide 0xE7 (CSceneStateGame::OnNpcRide,
+/// scenestategame.cpp:4871: i32 npc id, then CNpc::FUN_141092c50); the own pc's ride-off-first cast when mounted
+/// (IsUnrideOnUse, mypc.cpp:2447-2470) and the ridee skill set (mypc.cpp:1219-1226).
 /// </summary>
 public partial class LiveSession
 {

@@ -21,7 +21,23 @@ public sealed class Mount
     public Skeleton3D Skeleton;
     public int SeatBone = -1;
     public string Current = "";
-    readonly Dictionary<string, string> actions = new(StringComparer.OrdinalIgnoreCase);
+    Dictionary<string, string> actions = NoActions;
+    static readonly Dictionary<string, string> NoActions = new();
+    static PackSet actionsPacks;
+    static Dictionary<string, string> actionsCache;
+
+    /// <summary>pcactiondata.xml groups 0 and 1001 (the same for every mount), parsed once per pack set.</summary>
+    static Dictionary<string, string> Actions(PackSet packs)
+    {
+        if (actionsCache != null && ReferenceEquals(actionsPacks, packs)) return actionsCache;
+        var a = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var x = PackXml.Parse(packs.Read("Xml", "table/pcactiondata.xml"));
+        foreach (var gid in new[] { "0", "1001" })
+            foreach (var v in x.Root?.Elements("group").FirstOrDefault(g => (string)g.Attribute("groupID") == gid)?.Elements("v") ?? Enumerable.Empty<XElement>())
+                a[(string)v.Attribute("type")] = ((string)v.Attribute("names") ?? "").Split(',')[0].Trim();
+        actionsPacks = packs;
+        return actionsCache = a;
+    }
     KfmFile kfm;
     string folder;
     PackSet packs;
@@ -47,10 +63,7 @@ public sealed class Mount
         m.Skeleton = m.Visual.GetNode<Skeleton3D>($"Model/{ModelBuilder.SkeletonName}");
         m.SeatBone = string.IsNullOrEmpty(d.RideBone) ? -1 : m.Skeleton.FindBone(d.RideBone);
 
-        var x = PackXml.Parse(packs.Read("Xml", "table/pcactiondata.xml"));
-        foreach (var gid in new[] { "0", "1001" })
-            foreach (var v in x.Root?.Elements("group").FirstOrDefault(g => (string)g.Attribute("groupID") == gid)?.Elements("v") ?? Enumerable.Empty<XElement>())
-                m.actions[(string)v.Attribute("type")] = ((string)v.Attribute("names") ?? "").Split(',')[0].Trim();
+        m.actions = Actions(packs);
         return m;
     }
 

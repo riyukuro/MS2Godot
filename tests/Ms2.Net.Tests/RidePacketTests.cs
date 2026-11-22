@@ -9,6 +9,8 @@ namespace Ms2.Net.Tests;
 /// rideonaction.cpp:159) and the RequestRide writers.</summary>
 public class RidePacketTests
 {
+    static ResponseRide Read(ByteReader r, int self) => ResponseRide.Read(r, self, ProtocolProfile.Kms2525);
+
     static ByteReader Reader(Action<ByteWriter> write)
     {
         var w = new ByteWriter();
@@ -35,7 +37,7 @@ public class RidePacketTests
     [Test]
     public void ModeZeroReadsTheRideOnAction()
     {
-        var p = ResponseRide.Read(Reader(w =>
+        var p = Read(Reader(w =>
         {
             w.WriteByte(0); w.WriteInt(77);
             w.WriteByte(0); w.WriteInt(60000001); w.WriteInt(500); w.WriteBool(true);
@@ -46,10 +48,24 @@ public class RidePacketTests
     }
 
     [Test]
+    public void Gms2ModeZeroHasNoM28Byte()
+    {
+        var r = Reader(w =>
+        {
+            w.WriteByte(0); w.WriteInt(77);
+            w.WriteByte(0); w.WriteInt(60000001); w.WriteInt(500);
+            w.WriteByte(0xEE);
+        });
+        var p = ResponseRide.Read(r, 1, ProtocolProfile.Gms2);
+        Assert.That((p.RideOn.Type, p.RideOn.RideId, p.RideOn.ObjectId, p.RideOn.Flag), Is.EqualTo(((byte)0, 60000001, 500, false)));
+        Assert.That(r.Available, Is.EqualTo(1), "GMS2 ReadBody skips m_b28, as FieldAddUser does");
+    }
+
+    [Test]
     public void ARideOnTypeAboveThreeIsNullAndStopsAfterTheType()
     {
         var r = Reader(w => { w.WriteByte(0); w.WriteInt(5); w.WriteByte(4); w.WriteInt(123); });
-        var p = ResponseRide.Read(r, 1);
+        var p = Read(r, 1);
         Assert.That(p.RideOn, Is.Null);
         Assert.That(r.Available, Is.EqualTo(4), "ReadRideOnAction reads nothing after a type without a case");
     }
@@ -57,7 +73,7 @@ public class RidePacketTests
     [Test]
     public void ModeOneReadsTheRideOffActionWithItsFields()
     {
-        var p = ResponseRide.Read(Reader(w =>
+        var p = Read(Reader(w =>
         {
             w.WriteByte(1); w.WriteInt(9);
             w.WriteByte(2); w.WriteByte(1); w.WriteInt(42); w.WriteUnicodeString("obj");
@@ -71,7 +87,7 @@ public class RidePacketTests
     {
         // rideonaction.cpp:159-243: no case 20 (RideOffActionReact), so OnResponseRide mode 1 runs vfunc_121(null)
         var r = Reader(w => { w.WriteByte(1); w.WriteInt(9); w.WriteByte(20); w.WriteByte(0); w.WriteInt(5); w.WriteUnicodeString("r"); });
-        var p = ResponseRide.Read(r, 1);
+        var p = Read(r, 1);
         Assert.That(p.RideOff, Is.Null);
         Assert.That(RideOffAction.Known(20), Is.False);
         Assert.That(r.Available, Is.EqualTo(1 + 4 + 2 + 2));
@@ -111,23 +127,23 @@ public class RidePacketTests
     [Test]
     public void ModeTwoCarriesTheSummonOnlyForTheOwnPc()
     {
-        var own = ResponseRide.Read(Reader(w => { w.WriteByte(2); w.WriteInt(5); w.WriteInt(60000002); w.WriteLong(0x1122334455L); }), 5);
+        var own = Read(Reader(w => { w.WriteByte(2); w.WriteInt(5); w.WriteInt(60000002); w.WriteLong(0x1122334455L); }), 5);
         Assert.That((own.RideeId, own.ItemUid), Is.EqualTo((60000002, 0x1122334455L)));
         var r = Reader(w => { w.WriteByte(2); w.WriteInt(6); });
-        var other = ResponseRide.Read(r, 5);
+        var other = Read(r, 5);
         Assert.That((other.ObjectId, other.RideeId, other.ItemUid, r.Available), Is.EqualTo((6, 0, 0L, 0)));
     }
 
     [Test]
     public void PassengerAndFlagModes()
     {
-        var m3 = ResponseRide.Read(Reader(w => { w.WriteByte(3); w.WriteInt(1); w.WriteInt(2); w.WriteByte(1); }), 0);
+        var m3 = Read(Reader(w => { w.WriteByte(3); w.WriteInt(1); w.WriteInt(2); w.WriteByte(1); }), 0);
         Assert.That((m3.ObjectId, m3.RiderId, m3.Seat), Is.EqualTo((1, 2, (byte)1)));
-        var m4 = ResponseRide.Read(Reader(w => { w.WriteByte(4); w.WriteInt(1); w.WriteInt(2); }), 0);
+        var m4 = Read(Reader(w => { w.WriteByte(4); w.WriteInt(1); w.WriteInt(2); }), 0);
         Assert.That((m4.ObjectId, m4.RiderId), Is.EqualTo((1, 2)));
-        var m5 = ResponseRide.Read(Reader(w => { w.WriteByte(5); w.WriteInt(1); }), 0);
+        var m5 = Read(Reader(w => { w.WriteByte(5); w.WriteInt(1); }), 0);
         Assert.That(m5.ObjectId, Is.EqualTo(1));
-        var m6 = ResponseRide.Read(Reader(w => { w.WriteByte(6); w.WriteInt(1); w.WriteByte(1); }), 0);
+        var m6 = Read(Reader(w => { w.WriteByte(6); w.WriteInt(1); w.WriteByte(1); }), 0);
         Assert.That((m6.ObjectId, m6.Flag), Is.EqualTo((1, true)));
     }
 
