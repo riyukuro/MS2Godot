@@ -45,6 +45,8 @@ public partial class HudScene
         book.DonateMeso = t.GuildDonateMeso;
         book.SkillTable ??= new Ms2.Formats.World.GuildSkillTable(assets.Packs, e => Ms2.Ui.FeatureElements.IsAvailable(assets.Packs, e));   // CGuildXmlData::LoadGuildBuff
         book.Events ??= new Ms2.Formats.World.GuildEventTable(assets.Packs, e => Ms2.Ui.FeatureElements.IsAvailable(assets.Packs, e));   // CGuildXmlData::LoadGuildEvent
+        book.Houses ??= new Ms2.Formats.World.GuildHouseTable(assets.Packs, e => Ms2.Ui.FeatureElements.IsAvailable(assets.Packs, e));   // CGuildXmlData::LoadGuildHouse
+        book.Npcs ??= new Ms2.Formats.World.GuildNpcTable(assets.Packs, e => Ms2.Ui.FeatureElements.IsAvailable(assets.Packs, e));   // CGuildXmlData::LoadGuildNpc
         book.StringTableText = t.StringTableText;
         book.Mesos = () => hudModel.HasLocalPlayer ? hudModel.Player.Mesos : 0;
         book.RefuseInvite = () => GameOptions.AccountCommunity.DisableGuildRequest;    // m_refuseGuildInvite, flag 5

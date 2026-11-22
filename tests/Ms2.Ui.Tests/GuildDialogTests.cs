@@ -384,6 +384,107 @@ public class GuildDialogTests
         Assert.That(Rt.ToBoolean(c.Host.Get(c.ManagePage, "visible")), Is.True);
     }
 
+    const string HouseTableXml = "<ms2><guildHouse level='1' theme='1' stringKey='4' areaSize='25' facility='11,12,13' imagePath='h.png'/></ms2>";
+    const string NpcTableXml = "<ms2>" +
+        "<npc type='goods' level='1' upgradeCost='0' requireGuildLevel='2' requireHouseLevel='1' stringKey='6'/>" +
+        "<npc type='goods' level='2' upgradeCost='900' requireGuildLevel='3' requireHouseLevel='2' stringKey='6'/>" +
+        "<npc type='equip' level='1' upgradeCost='5' requireGuildLevel='1' requireHouseLevel='1' stringKey='7'/></ms2>";
+
+    static (GuildDialogController c, List<IReadOnlyList<object>> npc, List<IReadOnlyList<object>> fac) HousePage(GuildBook b, bool feature = true)
+    {
+        b.Houses = new Ms2.Formats.World.GuildHouseTable(System.Xml.Linq.XDocument.Parse(HouseTableXml));
+        b.Npcs = new Ms2.Formats.World.GuildNpcTable(System.Xml.Linq.XDocument.Parse(NpcTableXml));
+        var c = Load(b);
+        c.FeatureEnabled = id => feature && id == 0x5b;
+        c.StringTableText = (t, id) => $"{t}:{id}";
+        var npc = new List<IReadOnlyList<object>>(); var fac = new List<IReadOnlyList<object>>();
+        c.NpcRowsBuilt += r => npc.Add(r.ToList()); c.HouseFacilityRowsBuilt += r => fac.Add(r.ToList());
+        return (c, npc, fac);
+    }
+
+    /// <summary>CreateHousePage / FUN_141971490 / FUN_141971ac0: the page is made on the category, hidden by the others, and does nothing
+    /// without feature 0x5b.</summary>
+    [Test]
+    public void TheHouseCategoryMakesThePageAndTheOthersHideItAndNoFeatureDoesNothing()
+    {
+        var (c, npc, fac) = HousePage(InGuild());
+        c.OpenCategoryPage("House");
+        Assert.That(c.HousePage, Is.Not.Null);
+        Assert.That(Rt.ToBoolean(c.Host.Get(c.HousePage, "visible")), Is.True);
+        Assert.That(npc.Count, Is.EqualTo(1));
+        Assert.That(fac.Count, Is.EqualTo(1));
+        c.OpenCategoryPage("Event");
+        Assert.That(Rt.ToBoolean(c.Host.Get(c.HousePage, "visible")), Is.False);
+
+        var (off, npc2, fac2) = HousePage(InGuild(), false);
+        off.OpenCategoryPage("House");
+        Assert.That(npc2.Count + fac2.Count, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void TheFacilityRowsPairTheNamesFromTable0x37()
+    {
+        var (c, _, fac) = HousePage(InGuild());
+        c.OpenCategoryPage("House");
+        var rows = fac.Single();
+        Assert.That(rows.Count, Is.EqualTo(2));
+        Assert.That(c.Host.Get(rows[0], "facility1"), Is.EqualTo("55:11"));
+        Assert.That(c.Host.Get(rows[0], "facility2"), Is.EqualTo("55:12"));
+        Assert.That(c.Host.Get(rows[1], "facility1"), Is.EqualTo("55:13"));
+    }
+
+    [Test]
+    public void TheNpcRowsHoldTheNextLevelsConditionsAndTheMasterRuleAndMaxAtTheTop()
+    {
+        var b = InGuild();
+        b.LevelByExp = _ => 2;
+        var (c, npc, _) = HousePage(b);
+        c.OpenCategoryPage("House");
+        var rows = npc.Last();
+        object Row(int kind) => rows.First(r => Convert.ToInt32(c.Host.Get(r, "type")) == kind);
+        Assert.That(rows.Count, Is.EqualTo(2));
+        // goods (kind 2) at level 0: the next row is level 1 (guild level 2, house level 1, cost 0): upgradable by the master
+        Assert.That(Rt.ToBoolean(c.Host.Get(Row(2), "canUpgrade")), Is.True);
+        Assert.That(c.Host.Get(Row(2), "upgradeCost"), Is.EqualTo(tables.Common("s_guild_ui_house_npc_upgrade_nocost") ?? ""));
+        // equip (kind 1): the guild level reaches it too
+        Assert.That(Rt.ToBoolean(c.Host.Get(Row(1), "canUpgrade")), Is.True);
+        // goods at level 2 is the top: MAX and no upgrade
+        b.Apply(new GuildMessage((byte)0x3b) { Name = "Ma", NpcKind = 2, NpcLevel = 2 });
+        var top = npc.Last().First(r => Convert.ToInt32(c.Host.Get(r, "type")) == 2);
+        Assert.That(c.Host.Get(top, "condition"), Is.EqualTo("MAX"));
+        Assert.That(c.Host.Get(top, "upgradeCost"), Is.EqualTo("MAX"));
+        Assert.That(Rt.ToBoolean(c.Host.Get(top, "canUpgrade")), Is.False);
+    }
+
+    [Test]
+    public void OnlyTheMasterCanUpgradeAnNpc()
+    {
+        var b = InGuild();
+        b.LevelByExp = _ => 3;
+        b.Info.MasterCharId = 99;
+        var (c, npc, _) = HousePage(b);
+        c.OpenCategoryPage("House");
+        Assert.That(npc.Last().Select(r => Rt.ToBoolean(c.Host.Get(r, "canUpgrade"))), Is.All.False);
+    }
+
+    [Test]
+    public void ALowGuildOrHouseLevelBlocksTheUpgrade()
+    {
+        var b = InGuild();
+        b.LevelByExp = _ => 1;                     // goods level 1 needs guild level 2
+        var (c, npc, _) = HousePage(b);
+        c.OpenCategoryPage("House");
+        var goods = npc.Last().First(r => Convert.ToInt32(c.Host.Get(r, "type")) == 2);
+        Assert.That(Rt.ToBoolean(c.Host.Get(goods, "canUpgrade")), Is.False, "guild level 1 < 2");
+        b.LevelByExp = _ => 3;
+        b.Apply(new GuildMessage((byte)0x3b) { Name = "Ma", NpcKind = 2, NpcLevel = 1 });   // next is level 2: house level 2 needed
+        goods = npc.Last().First(r => Convert.ToInt32(c.Host.Get(r, "type")) == 2);
+        Assert.That(Rt.ToBoolean(c.Host.Get(goods, "canUpgrade")), Is.False, "house level 1 < 2");
+        b.Apply(new GuildMessage((byte)0x39) { Name = "Ma", HouseLevel = 2, HouseTheme = 1 });
+        goods = npc.Last().First(r => Convert.ToInt32(c.Host.Get(r, "type")) == 2);
+        Assert.That(Rt.ToBoolean(c.Host.Get(goods, "canUpgrade")), Is.True);
+    }
+
     [Test]
     public void TheMemberPopupCallbackRaisesTheMemberFoundByName()
     {

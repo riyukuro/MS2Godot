@@ -51,6 +51,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     object skillPage2;          // m_skillPage2
     object eventPage;           // m_eventPage
     object managePage;          // m_managePage
+    object housePage;           // m_housePage
     object eventVsGame;         // m_eventVsGame
     object eventRegisterButton, eventUnregisterButton, eventImageArea, eventLoader;   // m_button368, m_button378, m_eventImageArea, m_eventLoader
     /// <summary>m_requests (a multimap of the tick an open event stops being shown → the event id): kept in key order, equal keys in the order added.</summary>
@@ -179,6 +180,10 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         Book.VsGameRefresh += UpdateEventButtons;
         Book.EventsRefresh -= BuildEvents;
         Book.EventsRefresh += BuildEvents;
+        Book.HouseRefresh -= SetHouseInfo;
+        Book.HouseRefresh += SetHouseInfo;
+        Book.NpcRefresh -= SetNpcInfo;
+        Book.NpcRefresh += SetNpcInfo;
         Book.MemberRefresh -= OnMemberRefresh;
         Book.MemberRefresh += OnMemberRefresh;
         Book.MemberRemoved -= OnMemberRemoved;
@@ -216,6 +221,8 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         Book.GuildInfoRefresh -= OnGuildInfoRefresh;
         Book.VsGameRefresh -= UpdateEventButtons;
         Book.EventsRefresh -= BuildEvents;
+        Book.HouseRefresh -= SetHouseInfo;
+        Book.NpcRefresh -= SetNpcInfo;
         Book.MemberRefresh -= OnMemberRefresh;
         Book.MemberRemoved -= OnMemberRemoved;
         Book.ClearSearchResults();
@@ -224,6 +231,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         infoPage = null;
         memberPage = null;
         managePage = null;
+        housePage = null;
         acceptRequestPage = null;
     }
 
@@ -261,7 +269,8 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         else if (category == "MemberSkill") CreateMemberSkillPage();
         else if (category == "Event") CreateEventPage();
         else if (category == "Manager") CreateManagePage();
-        // House, Storage, Raid, ChampionShip, ChampionShipHistroy: STILL-OPEN
+        else if (category == "House") CreateHousePage();
+        // Storage, Raid, ChampionShip, ChampionShipHistroy: STILL-OPEN
         if (category == "Join") SetPageVisible(joinPage, true);              // ShowCategoryPage (@0x141969290)
         else if (category == "Create") SetPageVisible(createPage, true);
         else if (category == "Info") SetPageVisible(infoPage, true);
@@ -271,6 +280,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         else if (category == "MemberSkill") SetPageVisible(skillPage2, true);
         else if (category == "Event") SetPageVisible(eventPage, true);
         else if (category == "Manager") SetPageVisible(managePage, true);
+        else if (category == "House") SetPageVisible(housePage, true);
     }
 
     /// <summary>HideAllPages (@0x1419698f0).</summary>
@@ -285,7 +295,8 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         SetPageVisible(skillPage2, false);
         SetPageVisible(eventPage, false);
         SetPageVisible(managePage, false);
-        // m_housePage, m_storagePage, m_raidPage,
+        SetPageVisible(housePage, false);
+        // m_storagePage, m_raidPage,
         // m_championshipPage, m_pvpHistoryPage: STILL-OPEN
     }
 
@@ -316,6 +327,95 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         if (!EnsurePageCreated("guild_manage_page", ref managePage)) return;
         SetGradeInfo();
         BuildMembers();
+    }
+
+    /// <summary>The House feature (IsFeatureEnabled 0x5b): both parts of the House page do nothing without it.</summary>
+    public const int HouseFeature = 0x5b;
+
+    /// <summary>CreateHousePage (@0x14196b0e0, uiguilddialog.cpp:1687): made now, then the house part (FUN_141971490) and the npc part (FUN_141971ac0).</summary>
+    void CreateHousePage()
+    {
+        if (!EnsurePageCreated("guild_house_page", ref housePage)) return;
+        SetHouseInfo();
+        SetNpcInfo();
+    }
+
+    /// <summary>The rows handed to setHouseFacility, raised just before the call.</summary>
+    public event Action<IReadOnlyList<object>> HouseFacilityRowsBuilt;
+
+    /// <summary>The rows handed to setNpc, raised just before the call.</summary>
+    public event Action<IReadOnlyList<object>> NpcRowsBuilt;
+
+    /// <summary>The House page (m_housePage) once made.</summary>
+    public object HousePage => housePage;
+
+    /// <summary>FUN_141971490 (@0x141971490, uiguilddialog.cpp:2452-2495): the house of the guild's level and theme. Its theme title (string table
+    /// 0x36), its area (s_home_info_area) and its facility names (string table 0x37, two to a row) go to the page's "m_house" clip, the facility rows
+    /// to setHouseFacility, and its image path to setPreviewImage. Nothing without the feature, the page or the house row.</summary>
+    void SetHouseInfo()
+    {
+        if (!FeatureEnabled(HouseFeature) || housePage == null) return;
+        if (Book.Houses?.Get(Book.HouseLevel, Book.HouseTheme) is not { } house) return;
+        if (Host.Child("m_house", housePage) is not { } houseClip) return;
+        SetChildText(houseClip, "m_themeTitle", StringTableText(0x36, house.StringKey));
+        if (Host.Child("m_houseInfo", houseClip) is { } info)
+        {
+            SetChildText(info, "m_areaText", ClientFormat.Format(CommonByKey("s_home_info_area"), house.AreaSize));
+            var rows = new List<object>();
+            var ids = house.Facilities;
+            for (int i = 0; i < ids.Count; i += 2)
+            {
+                var row = new List<(string, object)> { ("facility1", StringTableText(0x37, ids[i])) };
+                if (i + 1 < ids.Count) row.Add(("facility2", StringTableText(0x37, ids[i + 1])));
+                rows.Add(Host.Obj(row.ToArray()));
+            }
+            HouseFacilityRowsBuilt?.Invoke(rows);
+            Host.Invoke(housePage, "setHouseFacility", rows);
+        }
+        Host.Invoke(housePage, "setPreviewImage", house.ImagePath);
+    }
+
+    /// <summary>FUN_141971ac0 (@0x141971ac0, uiguilddialog.cpp:2499-2553): a row per npc kind of the table to setNpc: its name (s_guild_ui_house_npc_name
+    /// with the level, or _nolevel at level 0), the next level's conditions (the guild and house levels) and cost (a number, or _nocost), and
+    /// whether the master can upgrade it (the guild and house levels reach the next row's). At the top level the row's texts are "MAX" and it
+    /// cannot be upgraded. Nothing without the feature or the page.</summary>
+    void SetNpcInfo()
+    {
+        if (!FeatureEnabled(HouseFeature) || housePage == null) return;
+        bool master = Book.PlayerName() is { } me && Book.IsMaster(me);
+        var rows = new List<object>();
+        foreach (int kind in Book.Npcs?.Kinds() ?? Enumerable.Empty<int>())
+        {
+            string condition = "", cost = "", name = "";
+            bool canUpgrade = true;
+            int level = Book.NpcLevel(kind);
+            if (Book.Npcs.Get(kind, level + 1) is not { } next)
+            {
+                if (Book.Npcs.Get(kind, level) is { } current)
+                {
+                    condition = "MAX";
+                    cost = "MAX";
+                    name = ClientFormat.Format(CommonByKey("s_guild_ui_house_npc_name"), StringTableText(0x3f, current.StringKey), level);
+                }
+                canUpgrade = false;
+            }
+            else
+            {
+                condition = ClientFormat.Format(CommonByKey("s_guild_ui_house_npc_condition_guildlevel"), next.RequireGuildLevel)
+                    + "\n" + ClientFormat.Format(CommonByKey("s_guild_ui_house_npc_condition_guildhouselevel"), next.RequireHouseLevel);
+                cost = next.UpgradeCost == 0 ? CommonByKey("s_guild_ui_house_npc_upgrade_nocost")
+                    : ClientFormat.Format(CommonByKey("s_guild_ui_house_npc_upgrade_cost"), GroupText(next.UpgradeCost));
+                name = level == 0
+                    ? ClientFormat.Format(CommonByKey("s_guild_ui_house_npc_name_nolevel"), StringTableText(0x3f, next.StringKey))
+                    : ClientFormat.Format(CommonByKey("s_guild_ui_house_npc_name"), StringTableText(0x3f, next.StringKey), level);
+                if (Book.GuildLevel < next.RequireGuildLevel) canUpgrade = false;
+                if (Book.HouseLevel < next.RequireHouseLevel) canUpgrade = false;
+                if (!master) canUpgrade = false;
+            }
+            rows.Add(Host.Obj(("type", kind), ("shopName", name), ("condition", condition), ("canUpgrade", canUpgrade), ("upgradeCost", cost)));
+        }
+        NpcRowsBuilt?.Invoke(rows);
+        Host.Invoke(housePage, "setNpc", rows);
     }
 
     /// <summary>The Manager page (m_managePage) once made.</summary>
