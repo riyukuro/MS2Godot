@@ -31,9 +31,10 @@ public partial class HudScene
     {
         var live = Ms2Godot.Net.LiveSession.Instance;
         if (!ItemLockOpen || live?.Items.Get(uid) is not { } e) return false;
-        int before = live.LockBook.HasLockedItem ? 1 : 0;
-        itemLock.SelectFromInventory(InventoryController.ToItem(e, hudModel.Tables.Items));
-        return before == 0;
+        var item = InventoryController.ToItem(e, hudModel.Tables.Items);
+        if (item == null) return false;
+        itemLock.SelectFromInventory(item);
+        return true;
     }
 
     /// <summary>The lock / unlock button and its confirm box answered yes. True when the box was asked.</summary>

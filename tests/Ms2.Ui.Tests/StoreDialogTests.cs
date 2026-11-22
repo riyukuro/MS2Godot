@@ -404,6 +404,46 @@ public class StoreDialogTests
     }
 
     [Test]
+    public void TheCountBoxTagsGoToTheirOwnAnswers()
+    {
+        var c = new MessageBoxController();
+        var got = new List<string>();
+        c.UseStoreIn = (u, n) => got.Add($"in {u} {n}");
+        c.UseStoreOut = (u, n) => got.Add($"out {u} {n}");
+        c.SwapStoreIn = (u, s, n) => got.Add($"swap {u} {s} {n}");
+        c.data = new MessageBoxData(5) { ItemUid = 41, InventorySlot = 6 };
+        Assert.That(c.HandleArgTag(0, "usestorein,3"), Is.True);
+        Assert.That(c.HandleArgTag(0, "usestoreout,4"), Is.True);
+        Assert.That(c.HandleArgTag(0, "swapstorein,5"), Is.True);
+        Assert.That(c.HandleArgTag(1, "swapstorein,9"), Is.True, "the no button answers nothing");
+        Assert.That(got, Is.EqualTo(new[] { "in 41 3", "out 41 4", "swap 41 6 5" }));
+    }
+
+    [Test]
+    public void ARightClickWithdrawOfAStackAsksTheCountWithTheBankSlot()
+    {
+        var banked = Item(RealId(Rig().Model), 50, 2, 30);
+        var (bag, _) = BagWith(Item(20000002, 61, 1, 1));
+        var w = BankedRig(banked, bag);
+        w.C.OnCallback("notifySlotUse", new object[] { StoreDialogController.SlotName(2), 1 });
+        Assert.That(w.Sent, Is.Empty, "the stack asks a count");
+        Assert.That(w.Boxes.Single().InventorySlot, Is.EqualTo(2), "m_nIndex, not the bag slot");
+    }
+
+    [Test]
+    public void AWithdrawAnswerBoundToAnotherCharacterIsRefusedWithoutABox()
+    {
+        var bound = Item(20000001, 50, 2, 3); bound.BindingId = 99;
+        var (bag, _) = BagWith();
+        var w = BankedRig(bound, bag);
+        int boxes = 0;
+        w.C.ShowBox = (_, _) => boxes++;
+        w.C.UseStoreOut(50, 1);
+        Assert.That(w.Sent, Is.Empty);
+        Assert.That(boxes, Is.EqualTo(0), "FUN_140de31f0 returns silently (store.cpp:633)");
+    }
+
+    [Test]
     public void ARightClickInTheBagDepositsTheStackIntoTheFirstFreeSlot()
     {
         var w = Rig();

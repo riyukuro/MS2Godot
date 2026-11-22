@@ -306,7 +306,7 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
         }
         var item = InventoryController.ToItem(rec, Model.Tables.Items);
         if (item != null && ItemTradeRules.AsksCount(item, Now()) && !all)
-            ShowUseStoreCountInput(rec.Uid, rec.Amount, (int)item.Data.SlotMax, true, slot);
+            ShowUseStoreCountInput(rec.Uid, rec.Amount, (int)item.Data.SlotMax, true, bankSlot);   // m_nIndex (storeslot.cpp:277)
         else Sender.Withdraw(rec.Uid, slot, rec.Amount);
         return true;
     }
@@ -325,7 +325,7 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
     }
 
     /// <summary>HandleSwapStoreInButton's yes (@0x1419fe590): the count checked against the bag item (FUN_141a002b0), then
-    /// FUN_140de2dc0(uid, the box's slot, count): the deposit request. STILL-OPEN: its score / summoned-pet refusals.</summary>
+    /// FUN_140de2dc0(uid, the box's slot, count): the deposit request (its score / summoned-pet refusals are StorageSender.Deposit's).</summary>
     public void SwapStoreIn(long uid, int slot, int count)
     {
         if (Sender == null || Model == null) return;
@@ -355,7 +355,7 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
     }
 
     /// <summary>HandleUseStoreInButton's yes (@0x1419fe240): the count checked against the bag item (FUN_141a002b0), then
-    /// FUN_140de2dc0(uid, slot 0, count): the deposit request. STILL-OPEN: its score / summoned-pet refusals.</summary>
+    /// FUN_140de2dc0(uid, slot 0, count): the deposit request (its score / summoned-pet refusals are StorageSender.Deposit's).</summary>
     public void UseStoreIn(long uid, int count)
     {
         if (Sender == null || Model == null) return;
@@ -375,8 +375,7 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
         int tab = bag.TabOfItem(rec.Id);
         int slot = bag.SlotForIncoming(tab, rec, count);
         if (slot == -1) { NoticeText?.Invoke(ClientFormat.Format(Model.Tables.Common(0x44), TabName(tab))); return; }
-        if (!StorageSender.BindingAllows(rec, SelfId())) { ShowBox(Model.Tables.Common(0xff) ?? "", 0); return; }
-        Sender.Withdraw(uid, slot, count);
+        Sender.Withdraw(uid, slot, count);          // FUN_140de31f0 returns silently on a binding mismatch (store.cpp:633): CanMove refuses
     }
 
     // ---- the meso and expand buttons ---------------------------------------------------------------------------------
@@ -555,7 +554,7 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
                         refused = true;
                     }
                     if (!refused && !ItemTradeRules.AsksCount(item, Now())) Sender.Deposit(item.Uid, slot, (int)item.Count);
-                else if (!refused) ShowSwapStoreInCountInput(item.Uid, (int)item.Count, (int)item.Data.SlotMax, to);
+                    else if (!refused) ShowSwapStoreInCountInput(item.Uid, (int)item.Count, (int)item.Data.SlotMax, to);
                 }
             }
             else if (sourceOwner == this && ParseSlot(source, out int from)) Sender.MoveSlot(from, to);

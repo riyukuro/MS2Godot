@@ -202,7 +202,7 @@ public sealed class MessageBoxController : UiController
     protected override bool IsDialog => false;
     public override string TypeName => "MessageBox";
 
-    MessageBoxData data;    // m_data
+    internal MessageBoxData data;    // m_data
     int count;              // m_count
     bool closing;           // m_closing
 
@@ -476,7 +476,7 @@ public sealed class MessageBoxController : UiController
 
     /// <summary>FUN_1419fa910 (uimessagebox.cpp:1092): a tag of exactly two tokens split by "," (FUN_14028cb70(tag, tokens,
     /// L",", 2)); 0 otherwise. Of its tags "tradein", "sell" and "sellconfirm" are ported; the others are reported as unported.</summary>
-    bool HandleArgTag(int button, string tag)
+    internal bool HandleArgTag(int button, string tag)
     {
         var tokens = tag.Split(',');
         if (tokens.Length != 2) return false;
