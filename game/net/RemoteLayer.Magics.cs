@@ -95,6 +95,11 @@ public sealed partial class RemoteLayer
     /// </summary>
     void OnDamageHitEffects(SkillDamage d)
     {
+        if (d.Mode is 5 or 6)
+        {
+            OnSplashHitEffects(d);
+            return;
+        }
         if (d.Mode != 1 || d.Targets.Count == 0) return;
         var attack = AttackDamage(d.SkillId, d.Level, d.Motion, d.AttackPoint);
         if (attack == null) return;
@@ -110,6 +115,37 @@ public sealed partial class RemoteLayer
         {
             var at = new Vector3(fx.At.X, fx.At.Z, -fx.At.Y);
             combat.PlayEffect(fx.File, at, ClientBasis(fx.AxisX, fx.AxisY, fx.AxisZ), fx.CasterKind);
+            DamageHitEffectsPlayed++;
+        }
+        damageHitEffects.Clear();
+    }
+
+    /// <summary>
+    /// OnSplashDamage (mode 6) and OnRegionSkillDamage (mode 5)'s hit effects (<see cref="DamageHitEffects.SplashRecords"/>):
+    /// the records' attack damage is the packet's skill at motion 0, attack 0 (mode 6), or the region skill object's skill and
+    /// level at motion 0 and the packet's attack (mode 5, nothing without the object).
+    /// </summary>
+    void OnSplashHitEffects(SkillDamage d)
+    {
+        if (d.Targets.Count == 0) return;
+        int skillId = d.SkillId, attackPoint = 0;
+        short level = d.Level;
+        if (d.Mode == 5)
+        {
+            if (RegionSkillOf?.Invoke(d.RegionId) is not { } region) return;
+            (skillId, level) = region;
+            attackPoint = d.AttackPoint;
+        }
+        var attack = AttackDamage(skillId, level, 0, attackPoint);
+        if (attack == null) return;
+        FillMagicObjects();
+        damageHitEffects.Clear();
+        DamageHitEffects.SplashRecords(d, attack, findHitObject ??= FindHitObject, hitEffects, (uint)Time.GetTicksMsec(),
+            damageHitEffects);
+        foreach (var fx in damageHitEffects)
+        {
+            combat.PlayEffect(fx.File, new Vector3(fx.At.X, fx.At.Z, -fx.At.Y), ClientBasis(fx.AxisX, fx.AxisY, fx.AxisZ),
+                fx.CasterKind);
             DamageHitEffectsPlayed++;
         }
         damageHitEffects.Clear();

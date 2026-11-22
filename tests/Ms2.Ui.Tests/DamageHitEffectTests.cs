@@ -125,7 +125,10 @@ public class DamageHitEffectTests
         Assert.That(Run(Damage(1, 77), Attack(), new HitEffectThrottle()), Is.Empty, "a target not in the field");
         var d = Damage();
         d.OwnerId = 77;
-        Assert.That(Run(d, Attack(), new HitEffectThrottle()), Is.Empty, "an owner not in the field (FUN_14146c990)");
+        var gone = Run(d, Attack(), new HitEffectThrottle());
+        Assert.That(gone, Has.Count.EqualTo(2), "an owner not in the field still plays (FUN_14146c990 tests only the hit object)");
+        Assert.That(gone[0].CasterKind, Is.EqualTo(0), "FUN_141bd19d0 of no object");
+        Assert.That(gone[0].At, Is.EqualTo(new Vector3(100, 0, 50)), "the aim without the owner: the target's position plus its extent");
         Assert.That(Run(Damage(), null, new HitEffectThrottle()), Is.Empty, "no attack damage (Init fails)");
         d = Damage();
         d.Mode = 0;
@@ -170,6 +173,52 @@ public class DamageHitEffectTests
         Assert.That(m.MagicsOf(OwnerId + 1).HitEffects, Is.SameAs(t), "an owner made after");
         var own = new OwnTagMagics { HitEffects = t };
         Assert.That(own.HitEffects, Is.SameAs(m.MagicsOf(OwnerId).HitEffects));
+    }
+
+    static SkillDamage Splash(int mode, int hits = 1, params int[] targets)
+    {
+        var d = new SkillDamage { Mode = (byte)mode, OwnerId = mode == 5 ? OwnerId : 0 };
+        foreach (var t in targets.Length == 0 ? new[] { TargetId } : targets)
+            d.Targets.Add(new HitTarget(t, new Hit[hits], new Vector3S(1, 2, 3), new Vector3(0, 1, 0)));
+        return d;
+    }
+
+    static List<DamageHitEffect> RunSplash(SkillDamage d, SkillAttackDamage a, HitEffectThrottle t, uint now = 5000)
+    {
+        var into = new List<DamageHitEffect>();
+        DamageHitEffects.SplashRecords(d, a, Find, t, now, into);
+        return into;
+    }
+
+    [Test]
+    public void ASplashPlaysAtTheHitObjectWithoutRotationAndTheRemainOnIt()
+    {
+        var fx = RunSplash(Splash(6), Attack(), new HitEffectThrottle());
+        Assert.That(fx, Has.Count.EqualTo(2));
+        Assert.That(fx[0], Is.EqualTo(new DamageHitEffect("Hit.xml", 0, new Vector3(100, 0, 0), Vector3.UnitX, Vector3.UnitY,
+            Vector3.UnitZ, 0)), "the hit object's position, DAT_143a09600; mode 6 has no owner: kind 0");
+        Assert.That(fx[1].File, Is.EqualTo("Remain.xml"));
+        Assert.That(fx[1].ActorId, Is.EqualTo(TargetId));
+        Assert.That(RunSplash(Splash(6, hits: 0), Attack(), new HitEffectThrottle()), Has.Count.EqualTo(2),
+            "bc80 does not read the hits");
+        Assert.That(RunSplash(Splash(6, 1, 77), Attack(), new HitEffectThrottle()), Is.Empty, "a hit object not in the field");
+        Assert.That(RunSplash(Splash(6), null, new HitEffectThrottle()), Is.Empty, "no attack damage");
+        Assert.That(RunSplash(Splash(1), Attack(), new HitEffectThrottle()), Is.Empty, "not a splash");
+    }
+
+    [Test]
+    public void ARegionSkillsDamageTakesItsOwnersKindAndTheSharedThrottle()
+    {
+        var t = new HitEffectThrottle();
+        var fx = RunSplash(Splash(5), Attack(), t);
+        Assert.That(fx[0].CasterKind, Is.EqualTo(3), "FUN_141bd19d0 of the region skill's owner");
+        Assert.That(fx[1].CasterKind, Is.EqualTo(3));
+        var again = RunSplash(Splash(5), Attack(), t, now: 5100);
+        Assert.That(again, Has.Count.EqualTo(1), "within the object gap only the remain plays");
+        Assert.That(t.TryPlay(TargetId, "Other.xml", 5100), Is.False, "the magics' throttle state");
+        var d = Splash(5);
+        d.OwnerId = 77;
+        Assert.That(RunSplash(d, Attack(), new HitEffectThrottle())[0].CasterKind, Is.EqualTo(0), "an owner gone: kind 0");
     }
 
     [Test]

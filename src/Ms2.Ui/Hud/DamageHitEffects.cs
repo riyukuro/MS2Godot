@@ -32,7 +32,7 @@ public delegate bool DamageHitFind(int id, out DamageHitObject o);
 /// CContentShutdown 0x73 off plays them: for a record with hits, FUN_14146c990 (magicdata.cpp:2991) gives the pair
 /// (first, second) and the owner's kind; first plays the damage's effectHit at the transform, second its effectRemain on
 /// the target (the same kind).
-/// FUN_14146c990 for a found owner: second always; first when the effectHit has a number (an empty name has none) and the
+/// FUN_14146c990 (pCaster the hit object; the owner need not be in the field, its kind is then 0): second always; first when the effectHit has a number (an empty name has none) and the
 /// object's hit effect throttle lets it through (<see cref="HitEffectThrottle"/>, the target's state).
 /// STILL-OPEN: FUN_14146c990's optimizer hide of the owner (FUN_14161ce60), the sight range for an owner other than the
 /// local player (field property 6, not ported), IsUpdateEnabled's check (taken as on), the effects' IgnoreOptimalHide flags;
@@ -64,14 +64,42 @@ public static class DamageHitEffects
                 Aim(target, hasOwner, owner, direction, moveDistance, rand, ref pos, ref dir);
             // FUN_14146b440: the record keeps every hit (AddDamage); none, nothing
             if (t.Hits == null || t.Hits.Length == 0) continue;
-            // FUN_14146c990: without the owner object nothing plays
-            if (!hasOwner) continue;
-            int kind = owner.Kind;
+            // FUN_14146c990 null-tests only the hit object; the kind is FUN_141bd19d0(owner), 0 without one
+            int kind = hasOwner ? owner.Kind : 0;
             if (throttle.TryPlay(t.TargetId, damage.EffectHit, nowMs))
             {
                 OwnTagMagics.AlongAxes(dir, out var ax, out var ay, out var az);
                 into.Add(new DamageHitEffect(damage.EffectHit, 0, pos, ax, ay, az, kind));
             }
+            if (damage.EffectRemain.Length != 0)
+                into.Add(new DamageHitEffect(damage.EffectRemain, t.TargetId, target.Position, Vector3.UnitX, Vector3.UnitY,
+                    Vector3.UnitZ, kind));
+        }
+        return into.Count - n;
+    }
+
+    /// <summary>
+    /// The hit effects of a splash (mode 6, CSceneStateGame::OnSplashDamage, scenestategame.cpp:5728) or region skill
+    /// (mode 5, OnRegionSkillDamage, scenestategame.cpp:7768) damage: per record whose hit object is in the field,
+    /// CMagicService::FUN_14146bc80 @0x14146bc80 (magicdata.cpp:2844) with CContentShutdown 0x73 off. The record's caster is the
+    /// object hit and its owner the packet's (mode 6 has none: 0); FUN_14146c990 gives (first, second) and the owner's kind
+    /// (FUN_141bd19d0, 0 without an object). first plays the effectHit at the hit object's position with no rotation (scale 1,
+    /// DAT_143a09600), through the object's throttle; second the effectRemain on the object. A record without hits plays
+    /// alike (bc80 does not read them). The caller drops a mode 5 packet whose region skill object is gone.
+    /// STILL-OPEN: an npc with property tag 0x1d takes the record's hit point (mode 5: the nearest anchor box's center to the
+    /// origin; mode 6: the packet's point), the region object's PlayHitEffect, vf35_End, the shut-down branch (0x73 on).
+    /// </summary>
+    public static int SplashRecords(SkillDamage d, SkillAttackDamage damage, DamageHitFind find, HitEffectThrottle throttle,
+        uint nowMs, List<DamageHitEffect> into)
+    {
+        if (d.Mode is not (5 or 6) || damage == null || d.Targets == null) return 0;
+        int n = into.Count;
+        int kind = d.Mode == 5 && find(d.OwnerId, out var owner) ? owner.Kind : 0;
+        foreach (var t in d.Targets)
+        {
+            if (!find(t.TargetId, out var target)) continue;
+            if (throttle.TryPlay(t.TargetId, damage.EffectHit, nowMs))
+                into.Add(new DamageHitEffect(damage.EffectHit, 0, target.Position, Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ, kind));
             if (damage.EffectRemain.Length != 0)
                 into.Add(new DamageHitEffect(damage.EffectRemain, t.TargetId, target.Position, Vector3.UnitX, Vector3.UnitY,
                     Vector3.UnitZ, kind));
