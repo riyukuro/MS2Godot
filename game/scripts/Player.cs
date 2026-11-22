@@ -17,7 +17,7 @@ public partial class Player : CharacterBody3D
     public const string Group = "player";
     public Player() { AddToGroup(Group); }
 
-    public enum MoveState { Idle, Walk, Jump, Fall, Land, Swim, Ladder, Rope, Climb, Dash, Dead, Revival, Hit }
+    public enum MoveState { Idle, Walk, Jump, Fall, Land, Swim, Ladder, Rope, Climb, Dash, Dead, Revival, Hit, Hold }
 
     public Node3D Visual;                 // the character root (faces +Z)
     /// <summary>The body's gender (0 male, 1 female) and its model root node name, for the player's effect dummies.</summary>
@@ -408,10 +408,14 @@ public partial class Player : CharacterBody3D
             case MoveState.Hit:
                 HitUpdate(input, pressedInput, jumpPressed);
                 break;
+
+            case MoveState.Hold:
+                HoldUpdate(dir, hasInput, jumpPressed);
+                break;
         }
         prevRawInput = rawInput;
 
-        if (State is not (MoveState.Ladder or MoveState.Rope or MoveState.Climb or MoveState.Revival))
+        if (State is not (MoveState.Ladder or MoveState.Rope or MoveState.Climb or MoveState.Revival or MoveState.Hold))
         {
             if (hasInput && State != MoveState.Dash) targetYawDeg = Mathf.RadToDeg(Mathf.Atan2(dir.X, dir.Z));
             var before = GlobalPosition;
@@ -467,6 +471,7 @@ public partial class Player : CharacterBody3D
         if (old == MoveState.Ladder) { ladder = null; ClearHitReport(); }   // StateLadder::vfunc_5 clears the hit report
         if (old == MoveState.Rope) rope = null;
         if (old == MoveState.Dash && s != MoveState.Dash) DashExit();
+        if (old == MoveState.Hold && s != MoveState.Hold) HoldExit();
         if (old is MoveState.Ladder or MoveState.Climb) StopJump();                // StateLadder / StateClimb::vfunc_5
         if (old == MoveState.Hit) LeaveHit();
         prevState = old;
@@ -590,7 +595,7 @@ public partial class Player : CharacterBody3D
             jumpToggle = (jumpToggle + 1) % 2;
             jumpSub = rng.Next(2) != 0 ? (jumpToggle == 0 ? 0x22 : 0x24) : (jumpToggle == 0 ? 0x21 : 0x23);
         }
-        else jumpSub = 0x21;
+        else jumpSub = sub == 0 ? 0x21 : sub;              // m_n10 0 becomes 0x21 (statejump.cpp:103-106); StateHold's 0x22 stays
         jumpDir = dir;
         jumpHadInput = hasInput;
         jumpFirstSteer = true;
@@ -1015,6 +1020,9 @@ public partial class Player : CharacterBody3D
                 break;
             case MoveState.Dash:
                 DashAnimation();
+                break;
+            case MoveState.Hold:
+                HoldAnimation();
                 break;
         }
     }

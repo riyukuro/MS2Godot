@@ -10,9 +10,8 @@ namespace Ms2Godot.Net;
 /// <summary>
 /// CSceneStateGame::OnResponseRide (0x79, @0x14172a8f0, scenestategame.cpp:12026) for the own pc: modes 0, 1 and 2
 /// (<see cref="OwnRide"/>), other players' in <see cref="Net.RemoteLayer.OnRide"/>; the own pc's passenger map and
-/// no-boarding flag of modes 3-6 (<see cref="RidePassengers"/>). STILL-OPEN: mode 3's own StateHold on another player's
-/// mount (vfunc_59(0x20)) and modes 4 / 5's camera back on the own pc (MyPC::FUN_14152e060), the own ride-on action's
-/// m_b28 of mode 6; RecvOp NpcRide 0xE7 (CSceneStateGame::OnNpcRide,
+/// no-boarding flag of modes 3-6 (<see cref="RidePassengers"/>), mode 3's own StateHold on another player's mount
+/// (<see cref="Player.HoldOn"/>). STILL-OPEN: the own ride-on action's m_b28 of mode 6; RecvOp NpcRide 0xE7 (CSceneStateGame::OnNpcRide,
 /// scenestategame.cpp:4871: i32 npc id, then CNpc::FUN_141092c50) and the ridee skill set (mypc.cpp:1219-1226).
 /// The own pc's ride-off-first cast (IsUnrideOnUse, mypc.cpp:2447-2470) is <see cref="RideOffForSkill"/>.
 /// </summary>
@@ -44,11 +43,14 @@ public partial class LiveSession
     {
         if (r != null && r.Mode >= 3)
         {
-            // FindPCById(owner) for modes 3-6: the own pc's map here, another player's in the remote layer
-            if (RidePassengers.BoardsSelf(r, selfObject))
-                GD.Print($"live: boarding {r.ObjectId} seat {r.Seat}");    // STILL-OPEN: the own StateHold (state 0x20)
-            if (r.ObjectId != selfObject) { remote?.OnRide(r); return; }
-            if (!RidePassengers.Apply(r, OwnPassengers) && r.Mode == 6) OwnNoBoarding = r.Flag;
+            // FindPCById(owner) for modes 3-6: the own pc's map here, another player's in the remote layer; no owner, nothing
+            if (r.ObjectId != selfObject) { if (remote == null || !remote.OnRide(r)) return; }
+            else if (!RidePassengers.Apply(r, OwnPassengers) && r.Mode == 6) OwnNoBoarding = r.Flag;
+            if (player == null || !IsInstanceValid(player)) return;
+            // mode 3 with the own pc as the rider: vfunc_59(0x20, StateHoldData{owner, the seat's rideBone}) (:12073-12087)
+            if (RidePassengers.BoardsSelf(r, selfObject)) player.HoldOn(r.ObjectId, remote?.SeatBone(r.ObjectId, r.Seat) ?? "");
+            // modes 4 / 5: CameraMgr::SetTarget(the own pc) when the own pc holds on to this owner (:12096-12112)
+            else if (r.Mode is 4 or 5) player.HoldCameraBack(r.ObjectId);
             return;
         }
         // modes 0-2 find any actor (FUN_141bd1200): another player's PC rides in the remote layer

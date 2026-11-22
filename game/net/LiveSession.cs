@@ -1170,6 +1170,8 @@ public partial class LiveSession : Node
         player.StateSyncOut += records => SendSync(records, false);
         player.RideSyncOut += records => SendSync(records, true);   // StateRideeController::vfunc_0 (state.cpp:537-562)
         player.HeldStateEntered += st => HeldItem.EnterState(st, Send);
+        player.HoldLookup = (id, node) => remote?.FindHoldTarget(selfObject, id, node) ?? default;
+        player.HoldLeft += () => { if (game != null) Send(new RideLeaveRequest()); };   // MyPC::SendRequestRideMode4
         player.FallDamageHeight += h => { if (game != null) Send(new StateFallDamageRequest(h)); };   // PCBase::SendFallDamage (pcbase.cpp:4350)
         player.StateChangeOut += (mode, arg, pos) =>
         {

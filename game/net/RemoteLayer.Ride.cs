@@ -18,17 +18,23 @@ public sealed partial class RemoteLayer
 {
     /// <summary>OnResponseRide (scenestategame.cpp:12026) for another player's PC: modes 0-2 (<see cref="Ms2.Ui.OwnRide.ForActor"/>),
     /// the owner's passenger map of modes 3-5 (<see cref="Ms2.Ui.RidePassengers"/>) and mode 6's PC::FUN_1416642c0 (m_b1224).</summary>
-    public void OnRide(ResponseRide r)
+    public bool OnRide(ResponseRide r)
     {
-        if (r == null || !users.TryGetValue(r.ObjectId, out var u)) return;
-        if (Ms2.Ui.RidePassengers.Apply(r, u.Passengers)) return;
-        if (r.Mode == 6) { u.NoBoarding = r.Flag; return; }
+        if (r == null || !users.TryGetValue(r.ObjectId, out var u)) return false;
+        if (Ms2.Ui.RidePassengers.Apply(r, u.Passengers)) return true;
+        if (r.Mode == 6) { u.NoBoarding = r.Flag; return true; }
         switch (Ms2.Ui.OwnRide.ForActor(r, u.Ridee != null))
         {
             case Ms2.Ui.OwnRide.Step.RideOn: RideOn(u, r.RideOn); break;
             case Ms2.Ui.OwnRide.Step.RideOff: RideOff(u); break;
         }
+        return true;
     }
+
+    /// <summary>ResponseRide mode 3 (scenestategame.cpp:12076-12082): the owner's ridee's GetData()->GetPassenger(seat)
+    /// m_strRideBone, "" without a ridee or that seat.</summary>
+    public string SeatBone(int ownerId, int seat) =>
+        users.TryGetValue(ownerId, out var u) ? u.Ridee?.Mount?.Data.Passenger(seat)?.RideBone ?? "" : "";
 
     /// <summary>
     /// PCBase::vfunc_120 (@0x141676b90): nothing for a null action or with a ridee set; Ridee::FUN_1417043a0 loads the row

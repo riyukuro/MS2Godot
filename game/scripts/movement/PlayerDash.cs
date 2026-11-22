@@ -22,7 +22,7 @@ public partial class Player
     /// <summary>StateDash::vfunc_4: the dash speed along the facing; any jump stops.</summary>
     public void StartDash()
     {
-        if (Mount != null || State is MoveState.Ladder or MoveState.Rope or MoveState.Climb) return;
+        if (Mount != null || State is MoveState.Ladder or MoveState.Rope or MoveState.Climb or MoveState.Hold) return;   // StateHold::vfunc_8 takes only the jump key
         jumping = false;
         Enter(MoveState.Dash);
         baseSpeed = MoveConfig.DashSpeed;

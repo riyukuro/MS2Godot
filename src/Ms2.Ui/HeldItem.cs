@@ -58,6 +58,7 @@ public sealed class HeldItem
         HeldItemState.Glide => SendRequestCube(send),           // StateGlide::vfunc_4 (stateglide.cpp:140), past its overlap return
         HeldItemState.Emotion => SendRequestCube(send),         // StateEmotion::vfunc_4 (stateemotionidle.cpp:214-215)
         HeldItemState.TriggerEmotion => SendRequestCube(send),  // StateTriggerEmotion::vfunc_4 (stateemotionidle.cpp:390-391)
+        HeldItemState.Hold => SendRequestCube(send),            // StateHold::vfunc_4 with its data (stateholddata.cpp:177-180)
         _ => false,
     };
 
@@ -116,4 +117,4 @@ public sealed class HeldItem
 }
 
 /// <summary>The local pc's states whose vfunc_4 calls PC::SendRequestCube (see <see cref="HeldItem.EnterState"/>).</summary>
-public enum HeldItemState { Other, Ride, Rope, Climb, Ladder, Dead, Glide, Emotion, TriggerEmotion }
+public enum HeldItemState { Other, Ride, Rope, Climb, Ladder, Dead, Glide, Emotion, TriggerEmotion, Hold }

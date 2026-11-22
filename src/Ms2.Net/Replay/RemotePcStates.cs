@@ -119,6 +119,10 @@ public struct HoldTarget
     /// <summary>The node's world rotation as rows 0 of its matrix (m[0][0], m[0][1], m[0][2]), MS2 axes: what
     /// NiMatrix3::ToEulerAnglesXYZ reads for the y and z angles.</summary>
     public Vector3 NodeRow0;
+    /// <summary>A PC target has a ridee (GetRidee, StateHold::FUN_1417cd060).</summary>
+    public bool HasRidee;
+    /// <summary>With <see cref="HasRidee"/>: the ridee's feet z (vfunc_18().z), MS2 axes.</summary>
+    public float RideeZ;
     /// <summary>A PC target's ridee has the asker's seat: GetRidee, its CRideeData, and GetPassenger(FUN_141676790(the asker's
     /// object id)) all set.</summary>
     public bool HasSeat;

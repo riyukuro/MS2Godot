@@ -778,6 +778,7 @@ public class HeldItemTests
     [TestCase(HeldItemState.Glide)]
     [TestCase(HeldItemState.Emotion)]
     [TestCase(HeldItemState.TriggerEmotion)]
+    [TestCase(HeldItemState.Hold)]
     public void EnteringAStateThatSendsRequestCubeLetsTheHeldItemGo(HeldItemState state)
     {
         // each state's vfunc_4 calls PC::SendRequestCube (StateRide statemanager.cpp:1095, StateRope :1239, StateClimb

@@ -22,7 +22,7 @@ public sealed partial class RemoteLayer
     // StateHold asks every frame: the path made once (a string and a NodePath per call otherwise)
     static readonly NodePath HoldSkeletonPath = "Model/" + ModelBuilder.SkeletonName;
 
-    HoldTarget FindHoldTarget(int asker, int id, string node)
+    public HoldTarget FindHoldTarget(int asker, int id, string node)
     {
         var t = default(HoldTarget);
         Node3D visual;
@@ -31,6 +31,8 @@ public sealed partial class RemoteLayer
         else if (npcs.HoldInfo(id, out int npcId, out bool dead, out visual)) { t.Kind = HoldKind.Npc; t.NpcId = npcId; t.Dead = dead; }
         else return t;
         RideSeat model = null;
+        t.HasRidee = owner?.Ridee != null;
+        if (t.HasRidee) t.RideeZ = owner.Ridee.Position.Z;
         if (owner?.Ridee is { } ridee && ridee.Mount != null)
         {
             // GetRidee, GetData, GetPassenger(FUN_141676790(asker)): seat 0 for a rider not in m_mapB28

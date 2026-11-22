@@ -48,6 +48,7 @@ public partial class Player
     {
         public Vector3 Pos; public bool Marked; public MoveState State; public Vector3 Dir; public float Yaw, BodyYaw; public Vector3 CamEuler;
         public byte Sub; public int Tick;
+        public int HoldId; public string HoldNode;   // StateHoldData::vfunc_1: m_n90 and m_str98
         public double Made; public float Time; public bool Sent; public int Cell = int.MaxValue;
         public bool InQueue;              // in the queued list until the next Flush
     }
@@ -102,7 +103,7 @@ public partial class Player
     static byte StateId(MoveState s) => s switch
     {
         MoveState.Idle => 1, MoveState.Walk => 2, MoveState.Land => 4, MoveState.Fall => 5, MoveState.Jump => 6,
-        MoveState.Ladder => 8, MoveState.Rope => 9, MoveState.Dead => 0xc, MoveState.Hit => 0xd, MoveState.Revival => 0x18, MoveState.Dash => 20, MoveState.Swim => 27, MoveState.Climb => 29, _ => 1,
+        MoveState.Ladder => 8, MoveState.Rope => 9, MoveState.Dead => 0xc, MoveState.Hit => 0xd, MoveState.Revival => 0x18, MoveState.Dash => 20, MoveState.Swim => 27, MoveState.Climb => 29, MoveState.Hold => 0x20, _ => 1,
     };
 
     /// <summary>The state's own sub id (FUN_14166cc80, mypc.cpp:2323): Walk 0x18 (statewalk.cpp:86; the gamepad 0x19 is not modelled), Swim 0x84,
@@ -218,6 +219,14 @@ public partial class Player
             // UpdateTargetYawFromLook, :1424); ours reads the camera when the record is made, mounted or not
             rec.State = State; rec.Dir = moveDir; rec.Yaw = targetYawDeg; rec.BodyYaw = yawDeg; rec.CamEuler = CameraEuler; rec.Sub = SubOf(State);
             rec.Tick = ServerTick?.Invoke() ?? 0; rec.Made = syncClock;
+            // State::vfunc_26 after the fields above (mypc.cpp:2333-2334): StateHoldData::vfunc_1 (stateholddata.cpp:113-127)
+            // adds the target and node, and with the held PC's ridee its feet z replaces the position's
+            rec.HoldId = 0; rec.HoldNode = null;
+            if (State == MoveState.Hold)
+            {
+                rec.HoldId = holdTargetId; rec.HoldNode = holdNode;
+                if (HoldLookup?.Invoke(holdTargetId, holdNode) is { HasRidee: true } held) rec.Pos.Z = (short)held.RideeZ;
+            }
         }
         QueueCurrent();                                                              // FUN_1417b7670
         if (current != null && !current.InQueue) freeRecords.Push(current);         // sent in an earlier packet: no longer held
@@ -315,6 +324,14 @@ public partial class Player
             Speed = new Ms2.Net.Packets.Vector3S((short)q.CamEuler.X, (short)q.CamEuler.Y, (short)q.CamEuler.Z), /* camera field: see LiveRecord doc */ Unknown1 = 2,
             Unknown3 = (short)(q.Time * 1000f),   // WriteShortDivScaled(m_fTime, 1000), the record's age in ms (statesyncobject.cpp:126)
         };
+        if (q.State == MoveState.Hold)
+        {
+            // StateSkillData::vfunc_1 (state.cpp:2058-2063) with StateHoldData's skill 20000031 level 1 (stateholddata.cpp:106-110):
+            // m_n64 and m_n6c; m_n90 / m_str98 the target and node. FUN_140836250 sets each optional bit for a non-zero value.
+            rec.Flags = Ms2.Net.Packets.StateSync.Flag.Flag1 | Ms2.Net.Packets.StateSync.Flag.Flag3;
+            rec.Flag1Value = HoldSkillId; rec.Flag3Value = 1;
+            if (q.HoldId != 0) { rec.Flags |= Ms2.Net.Packets.StateSync.Flag.Flag6; rec.Flag6Value = q.HoldId; rec.Flag6Text = q.HoldNode ?? ""; }
+        }
         static int Axis(float v) => v == -1f ? 0 : v == 0f ? 1 : v == 1f ? 2 : -1;
         int ax = Axis(vx), ay = Axis(vy);
         if (ax >= 0 && ay >= 0) rec.Animation = (byte)(ax + 4 * (ay + 1));
