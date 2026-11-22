@@ -75,6 +75,11 @@ public sealed class GameOptionLocale
         1 => "jp", 2 => "en", 3 => "cn", 4 => "fr", 5 => "de", 6 => "pt", 7 => "es", _ => "kr",
     };
 
+    /// <summary>The language the strings are read in: <paramref name="language"/> when the data has its string folder, else the
+    /// region's own language (a fresh file's pick, Unk_LgState reset gameoptionstruct.cpp:2466-2490). A saved index the data has
+    /// no strings for (a KMS2 run's GameOption.xml on the GMS2 data) would otherwise leave every UI text unresolved.</summary>
+    public static int LanguageWithStrings(int language, int region, Func<int, bool> hasStrings) => hasStrings(language) ? language : region;
+
     /// <summary>SetLanguageByCode @0x140650e70 (localepath.cpp:276-289): the code upper-cased against FUN_140652030's codes;
     /// an unknown code keeps <paramref name="current"/>.</summary>
     public static int LanguageByCode(string code, int current)

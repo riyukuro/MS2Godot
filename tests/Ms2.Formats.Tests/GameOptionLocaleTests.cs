@@ -20,6 +20,15 @@ public class GameOptionLocaleTests
         Assert.That(GameOptionLocale.StringDirectory(language), Is.EqualTo(folder));
 
     [Test]
+    public void ASavedLanguageWithoutStringsGivesTheRegionsOwn()
+    {
+        var gms2 = new HashSet<int> { 2, 5, 6 };   // the GMS2 data holds string/en, de and pt
+        Assert.That(GameOptionLocale.LanguageWithStrings(0, 2, gms2.Contains), Is.EqualTo(2), "a KMS2 run's index 0 is string/kr");
+        Assert.That(GameOptionLocale.LanguageWithStrings(5, 2, gms2.Contains), Is.EqualTo(5));
+        Assert.That(GameOptionLocale.LanguageWithStrings(0, 0, _ => true), Is.EqualTo(0));
+    }
+
+    [Test]
     public void LanguageByCodeUpperCasesAndKeepsUnknown()
     {
         Assert.That(GameOptionLocale.LanguageByCode("en", 0), Is.EqualTo(2));

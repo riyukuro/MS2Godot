@@ -282,6 +282,10 @@ public static class GameOptions
             lang = GameOptionLocale.LanguageByCode(code, 0);    // DAT_143ab0240 starts at 0 (KR)
             voice = GameOptionLocale.LanguageByCode(code, 0);
         }
+        // a saved language the data has no strings for (a GameOption.xml kept from a KMS2 run: languageIndex 0 is string/kr/, which
+        // the GMS2 data lacks) gives the region's own language, as a fresh file would; the client has no such data to meet.
+        // STILL-OPEN: the client's own pick for a saved index outside the region's language list.
+        if (LanguageArgument() == null && packs != null) lang = GameOptionLocale.LanguageWithStrings(lang, regionIndex, HasStrings(packs));
         Voice = voice;
         language = lang;
         region = regionIndex;
@@ -291,6 +295,13 @@ public static class GameOptions
         var g = o.GraphicOption;
         GD.Print($"options: {(fromDefault ? "default" : "GameOption.xml")}, {g.Width}x{g.Height} mode {g.ScreenMode} row {g.ResolutionIndex}, music {o.SoundOption.CategoryVolume(2):F2}");
     }
+
+    /// <summary>Whether the data holds the UI string table (korflash.xml) of a language's folder.</summary>
+    static Func<int, bool> HasStrings(PackSet packs) => l =>
+    {
+        try { return packs.Exists("Xml", "string/" + GameOptionLocale.StringDirectory(l) + "/korflash.xml"); }
+        catch (System.IO.IOException) { return true; }
+    };
 
     /// <summary>SaveGameSettings: the blocks into the kept documents (the community request switches into the account
     /// one), the version, then both files (gameoption.cpp:1852-1875).</summary>
