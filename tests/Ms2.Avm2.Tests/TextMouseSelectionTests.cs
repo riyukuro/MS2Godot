@@ -123,10 +123,11 @@ public class TextMouseSelectionTests
     }
 
     [Test]
-    public void APressSendsTheFocusChangeBeforeTheMouseDownAndMovesTheFocusAfterIt()
+    public void APressSendsTheFocusChangeAndMovesTheFocusBeforeTheMouseDown()
     {
-        // MovieImpl's mouse handling: QueueSetFocusTo (sfr_gfx_01i.cpp:3679) sends the mouseFocusChange at once
-        // (NotifyOnFocusChange, :2688) and queues the move; GenerateMouseEvents (:3681) sends the mouseDown after it
+        // MovieImpl's mouse handling: QueueSetFocusTo (sfr_gfx_01i.cpp:3679) sends the mouseFocusChange (NotifyOnFocusChange,
+        // :2688), then the AS3 root's NotifyQueueSetFocus moves the focus at once (TransferFocus, sfr_as3_18.cpp:9444);
+        // GenerateMouseEvents (:3681) sends the mouseDown after both
         var (p, a, b) = Fields();
         p.SetFocus(b, "key");
         var got = new System.Collections.Generic.List<string>();
@@ -139,7 +140,7 @@ public class TextMouseSelectionTests
         Listen(p.Stage, "mouseDown");
         Listen(a, "focusIn");
         Press(p, 19, 10);
-        Assert.That(got, Is.EqualTo(new[] { "mouseFocusChange", "mouseDown", "focusIn (a focused)" }));
+        Assert.That(got, Is.EqualTo(new[] { "mouseFocusChange", "focusIn (a focused)", "mouseDown (a focused)" }));
         Assert.That(a.MouseCaptured, Is.True, "the press's capture is kept: the field got the focus, it lost none");
         p.MouseButton(false);
     }
