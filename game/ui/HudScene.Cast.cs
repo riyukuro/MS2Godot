@@ -849,7 +849,7 @@ public partial class HudScene
                     System.Runtime.InteropServices.CollectionsMarshal.AsSpan(hitObjects), crtRand, nextSerial, hitQueried, hitIds,
                     (slotField?.PkMode ?? 0) != 0);
                 // FUN_1417ecce0 (stateskill.cpp:1347): a magic model per target record, started at the attack's tick, the send,
-                // then the models run once
+                // then the models run once. STILL-OPEN: the tags carry no hit (onHit: the record's FUN_1417591b0).
                 if (req != null)
                 {
                     ownNodePosition ??= OwnNodePosition;

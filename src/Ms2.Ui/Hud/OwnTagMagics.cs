@@ -46,7 +46,9 @@ public sealed class OwnTagMagics
         public SkillAttackData Attack;
         public int Start, Delay, Spawn, Life;
         // the target record: the cast id (m_nTagId), its serial (m_nTagSub), its target (m_nCasterId), the attack index
-        // (m_b5c) and the send count (m_n8c); the magic's start point (m_ptStart)
+        // (m_b5c) and the send count (m_n8c); the magic's start point (m_ptStart), set once at the Add.
+        // STILL-OPEN: attackMethodType 2's tick sets m_ptStart again each tick (FUN_141462900 calls FUN_1414609e0,
+        // magicdata.cpp:1232).
         public long CastId, Serial;
         public int TargetId, SendCount;
         public byte AttackIndex;
@@ -76,6 +78,8 @@ public sealed class OwnTagMagics
     {
         if (attack == null || tags == null || paths == null) return 0;
         if (attack.AttackMethodType == 1 || (skill?.MagicControlEnable ?? 0) == 2) return 0;
+        // STILL-OPEN: FUN_1417ecce0's direction for a PC whose FUN_141489940 is 10 (stateskill.cpp:1335-1342: -x turned by the
+        // record's euler rotation) is not ported; the record's z rotation's forward is used.
         var dir = Vector3.Zero;
         if (r != null) SkillHit.Axes(r.Rotation.Z, out dir, out _);
         int n = 0;
@@ -148,17 +152,20 @@ public sealed class OwnTagMagics
     /// <paramref name="objects"/> for <paramref name="owner"/>, its send going to <paramref name="sends"/>, then registers the
     /// area into <paramref name="pass"/> (when not null), and is dropped. <paramref name="record"/> is the owner's current cast
     /// record (PCBase::FUN_141673e10 finds a record by its cast id; an older cast's is gone). Returns the number registered.
+    /// STILL-OPEN: the point group sees only the current cast's record; PCBase::FUN_141673e10 finds any record the owner
+    /// still keeps by its cast id.
     /// </summary>
     public int Tick(int nowMs, int leadMs, in MagicOwner owner, ReadOnlySpan<HitCandidate> objects, CastRecord record,
         TombTagPass pass, List<SkillHitRequest> sends, Func<int> rand, MagicRayBlocked rayBlocked, bool pkMode = false)
     {
         int registered = 0;
-        for (int i = live.Count - 1; i >= 0; i--)
+        // in the order the magics were made (the client runs aTags in order, stateskill.cpp:1401-1410)
+        for (int i = 0; i < live.Count;)
         {
             var m = live[i];
             if (!Due(m, nowMs, leadMs, out bool expired))
             {
-                if (expired) live.RemoveAt(i);
+                if (expired) live.RemoveAt(i); else i++;
                 continue;
             }
             live.RemoveAt(i);

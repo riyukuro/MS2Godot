@@ -74,8 +74,9 @@ public class OwnMagicFillTests
         Assert.That(m.Add(r.Skill, SkillAttackFire.AttackAt(r, 0), r, damage.Targets, 0, MagicPathTable.Empty, null), Is.EqualTo(2));
         var sends = new List<SkillHitRequest>();
         m.Tick(0, 0, Owner, objects, r, new TombTagPass(), sends, () => 0, null);
-        Assert.That(sends.Select(s => (s.Serial, s.Targets.Single())).OrderBy(x => x.Serial),
-            Is.EqualTo(new[] { (1L, new SkillHitTarget(9, 0)), (2L, new SkillHitTarget(7, 0)) }), "each record's own target, hit byte 0");
+        Assert.That(sends.Select(s => (s.Serial, s.Targets.Single())),
+            Is.EqualTo(new[] { (1L, new SkillHitTarget(9, 0)), (2L, new SkillHitTarget(7, 0)) }),
+            "each record's own target, hit byte 0, in the target records' order");
         foreach (var s in sends)
         {
             Assert.That((s.CastId, s.Attack, s.SendCount, s.Start, s.OwnerPosition, s.Rotation),
