@@ -10,6 +10,24 @@ namespace Ms2.Formats.Tests;
 public class PackIndexTests
 {
     [Test]
+    public void ABackupFolderIsNotAnArchive()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "ms2-arch-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            foreach (var f in new[] { "Xml", "Resource/Exported", "!backup/Xml" })
+                foreach (var ext in new[] { ".m2d", ".m2h" })
+                {
+                    var p = Path.Combine(dir, f + ext);
+                    Directory.CreateDirectory(Path.GetDirectoryName(p)!);
+                    File.WriteAllBytes(p, new byte[1]);
+                }
+            Assert.That(PackIndex.Archives(dir), Is.EqualTo(new[] { "Resource/Exported", "Xml" }));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Test]
     public void CachedIndexEqualsThePackageReaders()
     {
         var data = Environment.GetEnvironmentVariable("MS2_DATA");

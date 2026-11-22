@@ -127,11 +127,14 @@ public static class PackIndex
         return store.Ensure(Piece(archive), m2hHash, Build, () => Parse(m2d), Write, onlyConfig: true);
     }
 
-    /// <summary>The archives of a data folder: each .m2d with its .m2h, as the folder-relative name without extension.</summary>
+    /// <summary>The archives of a data folder: each .m2d with its .m2h, as the folder-relative name without extension. A folder
+    /// whose name starts with "!" (the GMS2 data's "!backup" holds an older Xml.m2d) is no pack the client opens: PackSet names
+    /// its archives by their own path ("Xml", "Resource/Exported"), so it is not walked.</summary>
     public static IEnumerable<string> Archives(string dataDir) =>
         Directory.EnumerateFiles(dataDir, "*.m2h", new EnumerationOptions { RecurseSubdirectories = true, MatchCasing = MatchCasing.CaseInsensitive })
             .Where(h => File.Exists(Path.ChangeExtension(h, ".m2d")))
             .Select(h => Path.GetRelativePath(dataDir, Path.ChangeExtension(h, null)).Replace('\\', '/'))
+            .Where(n => !n.Split('/').Any(part => part.StartsWith('!')))
             .OrderBy(n => n, StringComparer.Ordinal);
 
     static string Piece(string archive) => "index-" + archive.Replace('\\', '/').Replace('/', '_').ToLowerInvariant();
