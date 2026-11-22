@@ -93,6 +93,7 @@ public partial class PlayerHoldCheck : Node3D
         pc.Input2 = Vector2.Zero;
         var want = new Vector3(100f, 70f, -200f);
         Expect(pc.State == Player.MoveState.Hold && pc.HoldTargetId == Owner, $"hold: state {pc.State}, target {pc.HoldTargetId}");
+        Expect(pc.StateTakesHits, "a held pc takes hits (StateHold m_n14 1)");
         Expect(pc.GlobalPosition.DistanceTo(want) < 0.01f, $"seat: at {pc.GlobalPosition}, want {want}");
         Expect(Mathf.Abs(Mathf.Wrap(pc.Visual.RotationDegrees.Y - yaw, -180f, 180f)) < 0.5f, $"seat rotation {pc.Visual.RotationDegrees.Y:0.#}, want {yaw:0.#}");
         float seatYaw = pc.Visual.RotationDegrees.Y;

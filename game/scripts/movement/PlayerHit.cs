@@ -39,12 +39,13 @@ public partial class Player : IHitBody, IPushBody
     /// <summary>
     /// State::vfunc_14 (m_n14, 1 from State's ctor, state.cpp:569) of the current state: StateSkill's is whether the push
     /// runs with a speed above 0 (stateskill.cpp:1300); StateIdle's is 0 on water (m_n10 7, stateidle.cpp:493); StateWalk
-    /// and StateHit keep 1; jump, fall, land, swim, ladder, rope, climb, dash, dead and revival set 0 in their ctors.
+    /// and StateHit keep 1, and StateHold sets 1 (stateholddata.cpp:148); jump, fall, land, swim, ladder, rope, climb,
+    /// dash, dead and revival set 0 in their ctors.
     /// </summary>
     public bool StateTakesHits => skillSequence != null ? Push.Speed > 0f : State switch
     {
         MoveState.Idle => !OnWater,
-        MoveState.Walk or MoveState.Hit => true,
+        MoveState.Walk or MoveState.Hit or MoveState.Hold => true,
         _ => false,
     };
 
