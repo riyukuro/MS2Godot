@@ -18,7 +18,7 @@ public class Gms2JobTableTests
     <skill main=""10100001"" uiPosition=""0, 1"" maxLevel=""10"" quickSlotPriority=""1"" />
     <skill main=""10100171"" subJobCode=""101"" uiPosition=""0, 3"" maxLevel=""4"" />
   </skills>
-  <learn level=""1""><skill id=""20000001"" /><skill id=""10100001"" /></learn>
+  <learn level=""1""><skill id=""20000001"" /><skill id=""10100001"" /></learn><learn level=""2""><skill id=""10100061"" /></learn>
 </job></ms2>";
     const string Group = @"<ms2><JobGroup jobCode=""10"" subJobLevel=""0"" subJobCode=""100"" /><JobGroup jobCode=""10"" subJobLevel=""1"" subJobCode=""101"" /></ms2>";
 
@@ -35,7 +35,7 @@ public class Gms2JobTableTests
         Assert.That(j.GetSkillData(10100062)?.SkillId, Is.EqualTo(10100061u));
         var b = j.FindSkill(10100171);
         Assert.That((b.JobLevel, b.IsLearn, t.GetSkillMaxLevel(10100171)), Is.EqualTo((2, false, (ushort)4)));
-        Assert.That(j.FindSkill(10100061).IsLearn, Is.False);
+        Assert.That((j.FindSkill(10100061).IsLearn, j.FindSkill(10100061).LearnLevel, a.LearnLevel), Is.EqualTo((false, 2, 1)));
     }
 
     [Test]

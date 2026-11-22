@@ -16,6 +16,8 @@ public sealed class JobSkillData
     public readonly List<uint> SubSkillIds = new();
     /// <summary>m_isLearn: learnt with the rank, without points.</summary>
     public bool IsLearn;
+    /// <summary>GMS2 only: the level of the &lt;learn&gt; block that lists the skill (0 = none; the KMS table has no such value).</summary>
+    public int LearnLevel;
     public readonly List<ushort> RequireLevel = new();
     public readonly List<uint> RequireSkillIds = new();
     public readonly List<ushort> RequireSkillLevels = new();
@@ -114,7 +116,7 @@ public sealed class JobData
 
     /// <summary>
     /// The GMS2 &lt;job code&gt; (table/job.xml): &lt;skills&gt;&lt;skill main sub uiPosition maxLevel quickSlotPriority [subJobCode]&gt;, the
-    /// learnt skills in &lt;learn&gt;&lt;skill id&gt;. A skill with a subJobCode is the second rank's tree (JobLevel 2). The sub jobs of the group
+    /// learnt skills in &lt;learn&gt;&lt;skill id&gt;. A skill with a subJobCode is put in the second rank's tree (JobLevel 2): inferred from the data (every subJobCode in the file is a SubJob2 code of jobgroup.xml), not from a client source. The sub jobs of the group
     /// are in table/jobgroup.xml (subJobLevel 0 and 1 are SubJob1 and SubJob2), passed in <paramref name="subJobs"/>.
     /// </summary>
     internal static JobData LoadGms2(XElement e, Dictionary<uint, ushort> maxLevels, Dictionary<int, int[]> subJobs)
@@ -122,13 +124,17 @@ public sealed class JobData
         var j = new JobData { JobGroupId = Xml.Int(e, "code") };
         if (subJobs != null && subJobs.TryGetValue(j.JobGroupId, out var sj)) { j.SubJob1 = sj[0]; j.SubJob2 = sj[1]; }
         if (e.Attribute("startField") != null) j.StartField = Xml.UInt(e, "startField");
-        var learnt = new HashSet<uint>();
-        foreach (var s in e.Elements("learn").Elements("skill")) learnt.Add(Xml.UInt(s, "id"));
+        // <learn level="N"><skill id>: the KMS table has no learn level (isLearn is learnt with the rank), so what N counts is
+        // inferred: only level 1 is read as "learnt with the rank" (IsLearn); a skill in a later block (job 001's level 2:
+        // 10000001, 10000011, 10000041) keeps its level in LearnLevel and is not learnt at the start.
+        var learnLevel = new Dictionary<uint, int>();
+        foreach (var l in e.Elements("learn"))
+            foreach (var s in l.Elements("skill")) learnLevel.TryAdd(Xml.UInt(s, "id"), Xml.Int(l, "level"));
         if (e.Element("skills") is { } skills)
             foreach (var v in skills.Elements("skill"))
             {
                 var d = JobSkillData.LoadGms2(v);
-                d.IsLearn = learnt.Contains(d.SkillId);
+                if (learnLevel.TryGetValue(d.SkillId, out int ll)) { d.LearnLevel = ll; d.IsLearn = ll == 1; }
                 j.skills.TryAdd(d.SkillId, d);
                 foreach (var sub in d.SubSkillIds) j.subSkills.TryAdd(sub, d);
                 maxLevels[d.SkillId] = (ushort)Xml.Int(v, "maxLevel");
@@ -174,6 +180,7 @@ public sealed class JobTable
             foreach (var g in jobGroup?.Root?.Elements("JobGroup") ?? Enumerable.Empty<XElement>())
             {
                 int code = Xml.Int(g, "jobCode"), level = Xml.Int(g, "subJobLevel");
+                // a subJobLevel other than 0 and 1 has no SubJob field and is dropped (the file has none)
                 if (level is 0 or 1) { if (!subJobs.TryGetValue(code, out var a)) subJobs[code] = a = new int[2]; a[level] = Xml.Int(g, "subJobCode"); }
             }
             foreach (var e in collect(root, "job", "code"))
