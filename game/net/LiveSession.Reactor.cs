@@ -148,7 +148,7 @@ public partial class LiveSession
     }
 
     /// <summary>ReactorAction::vfunc_1 @0x14095f130 with FUN_14095fcb0: the nearest usable reactor from
-    /// <paramref name="at"/> (the ridee-aware point). STILL-OPEN: the highlight (CReactor::FUN_140b78b40) and vfunc_13.</summary>
+    /// <paramref name="at"/> (the ridee-aware point), with the highlight moved to it (<see cref="FieldReactors.Poll"/>).</summary>
     public bool PollReactor(Vec3 at)
     {
         if (selfObject < 0 || Reactors is not { } all) return false;

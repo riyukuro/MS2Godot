@@ -192,6 +192,36 @@ public class FieldReactorsTests
     }
 
     [Test]
+    public void ThePollMovesTheHighlightAndClearsItWhenNothingIsFound()
+    {
+        var f = new FieldReactors(Table());
+        var u = new User();
+        var a = f.Add(Add(1, "a", 10, new Vector3(100, 0, 0), St(0)), out _);
+        var b = f.Add(Add(2, "b", 10, new Vector3(-100, 0, 0), St(0)), out _);
+        var bare = f.Add(Add(3, "c", 10, new Vector3(0, 300, 0), St(0)), out _);
+        a.HasEntity = b.HasEntity = true;
+        int polled = 0;
+        Assert.That(f.Poll(new Vector3(50, 0, 0), u, ref polled), Is.True);
+        Assert.That((a.Highlighted, b.Highlighted), Is.EqualTo((true, false)), "the found reactor gets the highlight");
+        Assert.That(f.Poll(new Vector3(-50, 0, 0), u, ref polled), Is.True);
+        Assert.That((a.Highlighted, b.Highlighted), Is.EqualTo((false, true)), "the last polled one loses it");
+        Assert.That(f.Poll(new Vector3(1000, 0, 0), u, ref polled), Is.False);
+        Assert.That(b.Highlighted, Is.False, "none found: the last polled one loses it, polled stays");
+        Assert.That(polled, Is.EqualTo(2));
+        Assert.That(f.Poll(new Vector3(0, 250, 0), u, ref polled), Is.True);
+        Assert.That((polled, bare.Highlighted), Is.EqualTo((3, false)), "FUN_140b78b40 without the entity: nothing");
+        int warm = 0;
+        f.Poll(new Vector3(50, 0, 0), u, ref warm);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 100; i++)
+        {
+            f.Poll(new Vector3(50, 0, 0), u, ref warm);
+            f.Poll(new Vector3(-50, 0, 0), u, ref warm);
+        }
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0));
+    }
+
+    [Test]
     public void NearestAllocatesNothing()
     {
         var f = new FieldReactors(Table());

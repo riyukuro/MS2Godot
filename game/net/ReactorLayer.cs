@@ -131,6 +131,7 @@ public partial class ReactorLayer : Node3D
         AddChild(root);
         root.Transform = Placement(r.Position, r.Rotation);
         inst[r.ObjectId] = i;
+        r.HasEntity = i.Model != null;
         Tick(i);
     }
 
@@ -138,6 +139,7 @@ public partial class ReactorLayer : Node3D
     public void Remove(FieldReactors.Reactor r)
     {
         if (!inst.Remove(r.ObjectId, out var i)) return;
+        r.HasEntity = false;
         EffectOff(i);
         i.Root.QueueFree();
     }

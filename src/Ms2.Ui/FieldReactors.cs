@@ -95,6 +95,12 @@ public sealed class FieldReactors
         public readonly List<long> Players = new();
         /// <summary>m_listAnims: the animations to play, the head first.</summary>
         public readonly List<string> Animations = new();
+        /// <summary>m_unk_80 (GameObject::SetEntity @0x14123c430) is set: the reactor's model is in the field. The model
+        /// layer sets it when it builds the model and clears it when the model goes.</summary>
+        public bool HasEntity;
+        /// <summary>The action key's highlight (CReactor::FUN_140b78b40 @0x140b78b40, reactor.cpp:217-222): set only on a
+        /// reactor with an entity. STILL-OPEN: the entity highlight draw (SetEntityHighlight).</summary>
+        public bool Highlighted { get; internal set; }
 
         /// <summary>GetCurrentStateData: the state at the index, or null.</summary>
         public ReactorTable.State State => Data?.StateAt(StateIndex);
@@ -283,15 +289,27 @@ public sealed class FieldReactors
         return ~lo;
     }
 
-    /// <summary>ReactorAction::vfunc_1 (@0x14095f130, actionkeyobject.cpp:2868): the nearest usable reactor becomes
-    /// <paramref name="polled"/> (m_nReactorId) and the key applies; with none found the key does not apply and
+    /// <summary>ReactorAction::vfunc_1 (@0x14095f130, actionkeyobject.cpp:2868-2895): the last polled reactor
+    /// (m_nReactorId), when it is not the one found, loses its highlight; the nearest usable reactor gets the highlight,
+    /// becomes <paramref name="polled"/> and the key applies; with none found the key does not apply and
     /// <paramref name="polled"/> keeps the last one. 0 B.</summary>
     public bool Poll(Vector3 pos, IReactorUser user, ref int polled)
     {
         var r = Nearest(pos, user);
+        // the last polled reactor loses its highlight when another one (or none) is found
+        if (polled != 0 && Get(polled) is { } old && old != r) SetHighlight(old, false);
         if (r == null) return false;
+        SetHighlight(r, true);
         polled = r.ObjectId;
         return true;
+    }
+
+    /// <summary>CReactor::FUN_140b78b40 (@0x140b78b40, reactor.cpp:217-222): without the entity (m_unk_80) nothing, else
+    /// SetEntityHighlight(entity id, on, 1, false).</summary>
+    static void SetHighlight(Reactor r, bool on)
+    {
+        if (!r.HasEntity) return;
+        r.Highlighted = on;
     }
 
     /// <summary>
