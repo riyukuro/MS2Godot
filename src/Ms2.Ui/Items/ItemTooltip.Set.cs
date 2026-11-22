@@ -21,7 +21,8 @@ public sealed partial class ItemTooltip
     /// non-empty buff names), green up to the worn count; a part without rows is left out. A set whose gender-bound pieces
     /// (a class model group, or a gender limit) do not fit the gender (the item's own limit when it has no class group and
     /// one gender, else the owner's) is left out. The owner is the tooltip's player (m_40 as PC; the local player when the
-    /// item has no object id): <see cref="OwnerEquipment"/> and <see cref="OwnerGender"/>.
+    /// item has no object id): <see cref="OwnerEquipment"/> and <see cref="OwnerGender"/>, else with no owner the model's
+    /// <see cref="UiModel.LocalPlayer"/>.
     /// STILL-OPEN: an item no set lists goes to the housing set block FUN_1409c8df0 (UGC map set items); another player's
     /// item (FindPCById of its object id).
     /// </summary>
@@ -33,9 +34,16 @@ public sealed partial class ItemTooltip
         int itemGender = 2;
         if (!HasClassGroup(item.Data)) itemGender = item.Data.GenderLimit;     // CItem::HasAnyEquipSlotOf
         if (itemGender == 3) itemGender = 2;
-        int pcGender = OwnerGender == 3 ? 2 : OwnerGender;
+        var equipment = OwnerEquipment;
+        int ownerGender = OwnerGender;
+        if (equipment == null && Owner == null && model.LocalPlayer?.Invoke() is { } me)   // no object id: the local player
+        {
+            equipment = WornEquipment.Of(me, Tables.Items);
+            ownerGender = me.Gender;
+        }
+        int pcGender = ownerGender == 3 ? 2 : ownerGender;
         int gender = itemGender != 2 ? itemGender : pcGender;
-        var worn = OwnerEquipment?.Shown().ToList();                           // CEquipment::FUN_1411e1fc0(list, 2)
+        var worn = equipment?.Shown().ToList();                           // CEquipment::FUN_1411e1fc0(list, 2)
         var arr = new List<object>();
         foreach (var s in sets.SetsOf(origin))
         {

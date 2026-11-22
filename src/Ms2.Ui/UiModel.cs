@@ -145,6 +145,9 @@ public sealed class UiModel
     public Items.ItemSlot.Sources ItemSlotSources;
     /// <summary>WorldService::GetLocalPlayer is set: a field with the player's character.</summary>
     public bool HasLocalPlayer;
+    /// <summary>WorldService::GetLocalPlayer as a record (the MyPC's equipment and gender): what an item tooltip with no
+    /// owner (an item with no object id) reads for its set block. Null = no local player.</summary>
+    public Func<Ms2.Net.Packets.PcInfo> LocalPlayer;
 
     /// <summary>The align widgets (UIAlignWidgetManager) of the movies sharing this model; null lays every movie out by
     /// itself.</summary>

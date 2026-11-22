@@ -2560,6 +2560,11 @@ public partial class HudScene : Node, IUiStageHost
         hudModel = NewModel();
         MovieLayerHost.Layers.FeatureEnabled = hudModel.IsFeatureEnabled;   // the adventure level bar's layer (feature 0xbd)
         hudModel.HasLocalPlayer = true;     // the HUD runs in a field, where WorldService::GetLocalPlayer is the MyPC
+        hudModel.LocalPlayer = () =>
+        {
+            var live = Ms2Godot.Net.LiveSession.Instance;
+            return (live != null ? live.Me : OfflineMe()).ToPcInfo(live?.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        };
         // UIAlignWidgetManager::LoadWidgets (uiservice.cpp:1941): table/alignwidget.xml, one manager for the scene
         hudModel.AlignWidgets = alignWidgets ??= AlignWidgetManager.Load(assets.Table("table/alignwidget.xml")?.Root);
         hudModel.Keys = new KeyTable(assets.Packs, assets.Language);
