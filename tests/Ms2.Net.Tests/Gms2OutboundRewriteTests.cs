@@ -116,4 +116,5 @@ public class Gms2OutboundRewriteTests {
         Assert.That(Bytes(new QuestMode12Request(9)), Is.EqualTo(new byte[] { 0xC, 9, 0, 0, 0 }));
         Assert.That(Bytes(new QuestMode13Request(9)), Is.EqualTo(new byte[] { 0xD, 9, 0, 0, 0 }));
     }
+    [Test] public void RequestItemPickupRewritesByteForByte() => All(0x1C, r => { int id = r.ReadInt(); return new RequestItemPickup(id, r.ReadBool() ? r.ReadInt() : 0); });
 }
