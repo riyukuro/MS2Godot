@@ -96,10 +96,14 @@ public class ItemTooltipExtrasTests
         var r = new EquipItem { Id = 11300451, Uid = 6, Rarity = 1, Amount = 1 };
         var text = (string)((List<object>)Tip(m, r).Data["itemStatusSet"])[0];
         Assert.That(text, Does.Contain("ffffff"), "the local player's piece is worn");
-        // another player's tooltip (an owner without equipment) does not read the local player
+        // a binding owner's name (the game dictionary sets one) still reads the local player: the item has no object id
         var tip = new ItemTooltip(m, 0) { Owner = (5, "other") };
         tip.Fill(Ms2.Ui.Hud.InventoryController.ToItem(r, m.Tables.Items));
-        Assert.That((string)((List<object>)tip.Data["itemStatusSet"])[0], Does.Not.Contain("ffffff"));
+        Assert.That((string)((List<object>)tip.Data["itemStatusSet"])[0], Is.EqualTo(text));
+        // another player's equipment (OwnerEquipment set, wearing nothing) replaces it
+        tip = new ItemTooltip(m, 0) { Owner = (5, "other"), OwnerEquipment = WornEquipment.Of(new PcInfo { Gender = gender, Equips = Array.Empty<EquipItem>() }, m.Tables.Items), OwnerGender = gender };
+        tip.Fill(Ms2.Ui.Hud.InventoryController.ToItem(r, m.Tables.Items));
+        Assert.That((string)((List<object>)tip.Data["itemStatusSet"])[0], Is.Not.EqualTo(text));
     }
 
     [Test]

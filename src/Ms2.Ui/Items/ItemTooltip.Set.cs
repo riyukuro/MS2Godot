@@ -21,8 +21,9 @@ public sealed partial class ItemTooltip
     /// non-empty buff names), green up to the worn count; a part without rows is left out. A set whose gender-bound pieces
     /// (a class model group, or a gender limit) do not fit the gender (the item's own limit when it has no class group and
     /// one gender, else the owner's) is left out. The owner is the tooltip's player (m_40 as PC; the local player when the
-    /// item has no object id): <see cref="OwnerEquipment"/> and <see cref="OwnerGender"/>, else with no owner the model's
-    /// <see cref="UiModel.LocalPlayer"/>.
+    /// item has no object id): <see cref="OwnerEquipment"/> and <see cref="OwnerGender"/>, else the model's
+    /// <see cref="UiModel.LocalPlayer"/> (the port keeps no item object id; <see cref="Owner"/> is only the binding owner's
+    /// name, so it does not stop the fallback).
     /// STILL-OPEN: an item no set lists goes to the housing set block FUN_1409c8df0 (UGC map set items); another player's
     /// item (FindPCById of its object id).
     /// </summary>
@@ -36,7 +37,7 @@ public sealed partial class ItemTooltip
         if (itemGender == 3) itemGender = 2;
         var equipment = OwnerEquipment;
         int ownerGender = OwnerGender;
-        if (equipment == null && Owner == null && model.LocalPlayer?.Invoke() is { } me)   // no object id: the local player
+        if (equipment == null && model.LocalPlayer?.Invoke() is { } me)   // no object id (astooltip.cpp:961-963): the local player
         {
             equipment = WornEquipment.Of(me, Tables.Items);
             ownerGender = me.Gender;
