@@ -908,6 +908,36 @@ public class SkillBookTreeTests
         Assert.That(box.Callback(0, box), Is.True);
         Assert.That(sent.OfType<SkillBookTreeAddPaid>().Single().Coupon, Is.False);
         Assert.That(c.WaitServer, Is.True);
+        // the server's mode 4 answer: max tabs, the success notice, one more tab, and the wait is over
+        var notices = new List<string>();
+        c.SystemNotice += notices.Add;
+        int tabsBefore = c.Tabs.Count;
+        c.OnSkillBookTree(new SkillBookTreePacket { Mode = 4, MaxTabs = 3 });
+        Assert.That(c.WaitServer, Is.False);
+        Assert.That(c.Tabs.Count, Is.EqualTo(tabsBefore + 1));
+        Assert.That(notices.Count, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void PaidAddTabShowsThePriceAndTheNoMoneyBoxCallsThePlatform()
+    {
+        var (c, sent, boxes) = OpenForClose();
+        c.TabPrice = () => 1234;
+        int shorts = 0;
+        c.PaymentShort += () => shorts++;
+        c.CheckboxChecked = (b, n) => false;
+        c.OnCallback("onAddTab", Array.Empty<object>());
+        Assert.That(boxes.Single().Msg, Does.Contain("1234"));
+        boxes[0].Callback(0, boxes[0]);
+        Assert.That(shorts, Is.EqualTo(1));
+        Assert.That(sent, Is.Empty);
+    }
+
+    [Test]
+    public void ChangeSubJobWithoutAnArgumentIsRefused()
+    {
+        var (c, _, _) = OpenForClose();
+        Assert.That(c.OnCallback("onChangeSubJob", Array.Empty<object>()), Is.False);
     }
 
     [Test]

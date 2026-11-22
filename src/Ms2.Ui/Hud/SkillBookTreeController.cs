@@ -74,9 +74,13 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
     public Func<string, bool> PlatformAddTab = _ => false;
     /// <summary>FindItemByTag(0x76) != null: the player holds a tab coupon. STILL-OPEN: not read from the bag here.</summary>
     public Func<bool> HasTabCoupon = () => false;
-    /// <summary>The paid tab's price (the client constant at +0x8bb8) and the platform's HasMoney / HasMeret for it. STILL-OPEN.</summary>
-    public Func<uint> TabPrice = () => 0;
+    /// <summary>The paid tab's price: the constant SkillBookTreeAddTabFeeMerat (+0x8bb8, 1000 unless the tables set it).</summary>
+    public Func<uint> TabPrice = () => 1000;
+    /// <summary>The platform's HasMoney / HasMeret(price). STILL-OPEN: the platform service is not ported; the host answers with the
+    /// merat balance.</summary>
     public Func<uint, bool> CanPayTab = _ => false;
+    /// <summary>CUIService FUN_141add1f0: the platform's payment box when the merat is short.</summary>
+    public event Action PaymentShort;
     /// <summary>PlaySystemSound(key).</summary>
     public event Action<string> Sound;
 
@@ -197,8 +201,11 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
         }
         else if (p.Mode == 4)
         {
+            // vfunc_79 :2014: max tabs, the success notice, the new tab named by its number, then the wait ends
             maxTabs = p.MaxTabs;
-            Button?.Invoke("addPaidTab");
+            SystemNotice?.Invoke(Common("s_skillbook_tree_config_payment_sucess"));
+            AddPaidTab(Common("s_skillbook_tree_config_default_tab_name", tabs.Count + 1));
+            WaitServer = false;
         }
     }
 
@@ -701,13 +708,13 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
                 if (WaitServer) return false;
                 if (ulong.TryParse(Rt.ToString(args.ElementAtOrDefault(0)), out var renameId))     // ParseUInt64W
                     PromptRenameTab((long)renameId, Rt.ToString(args.ElementAtOrDefault(1)) ?? "");
-                return true;
+                return false;                   // the client's handler ends without a result after the box
             case "onAddTab":
                 if (WaitServer) return false;
                 return AddTabClicked();
             case "onChangeSubJob":
                 if (WaitServer) return false;
-                return ChangeSubJob((int)Rt.ToNumber(args.ElementAtOrDefault(0)) + 1);
+                return args.Length > 0 && ChangeSubJob((int)Rt.ToNumber(args[0]) + 1);      // SetArgsIfAny
             case "onRemoveTab": case "onLapenshardBtn":
                 Button?.Invoke(name);
                 return true;
@@ -715,8 +722,8 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
         return false;
     }
 
-    /// <summary>onAddTab (:2242): three tabs at most; below the tab limit the name box, else the paid-tab box (the money text is
-    /// STILL-OPEN) with the coupon checkbox.</summary>
+    /// <summary>onAddTab (:2242): three tabs at most; below the tab limit the name box, else the paid-tab box (price from the
+    /// constant, the merat icon; the feature variant of the icon, FUN_14036d6d0, is STILL-OPEN) with the coupon checkbox.</summary>
     bool AddTabClicked()
     {
         if (tabs.Count >= 3) return false;
@@ -725,7 +732,7 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
             PromptAddTab();
             return true;
         }
-        var box = MessageBoxQueue.CreateWithCallback(Common("s_skillbook_tree_config_payment_add_tab", TabPrice(), ""), 0x19, OnAddTabPayConfirm);
+        var box = MessageBoxQueue.CreateWithCallback(Common("s_skillbook_tree_config_payment_add_tab", TabPrice(), "<img src='export_common_icon_merat' vspace='-4'/>"), 0x19, OnAddTabPayConfirm);
         box.SetButtonPreset(1);
         bool coupon = HasTabCoupon();
         box.SetCheckbox0(Common("s_skillbook_tree_config_payment_add_tab_coupon"), coupon);
@@ -765,14 +772,14 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
     }
 
     /// <summary>OnAddTabPayConfirm @0x140ec8f60: with the coupon (item tag 0x76 held) or the price payable, mode 4 and wait for the
-    /// server; else the client's not-enough-money notice (FUN_141add1f0, STILL-OPEN: raised as Button("addTabNoMoney")).</summary>
+    /// server; else the platform payment box (FUN_141add1f0).</summary>
     bool OnAddTabPayConfirm(int result, MessageBoxData box)
     {
         if (result != 0) return true;
         if (tabs.Count >= 3) return false;
         bool coupon = CheckboxChecked(box, 0);
         bool hasCoupon = coupon && HasTabCoupon();
-        if (!hasCoupon && !CanPayTab(TabPrice())) { Button?.Invoke("addTabNoMoney"); return true; }
+        if (!hasCoupon && !CanPayTab(TabPrice())) { PaymentShort?.Invoke(); return true; }
         if (TrySend(new SkillBookTreeAddPaid(coupon))) WaitServer = true;
         return true;
     }

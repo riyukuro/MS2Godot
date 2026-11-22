@@ -3541,6 +3541,8 @@ public partial class HudScene : Node, IUiStageHost
             Jobs = jobs,
             Points = live?.SkillPoints ?? new Ms2.Ui.Skills.SkillPoints(),
             IsQuestRewarded = id => live?.Quests.Get((int)id)?.State == 2,
+            TabPrice = () => (uint)Ms2.Ui.FeatureElements.Constants(assets.Packs).Int("SkillBookTreeAddTabFeeMerat", 1000),
+            CanPayTab = price => hudModel.Player.Merats >= price,
             CheckEntryName = name => CommunityChecker().CheckAutoDistributeEntryName(name, out var msg) != 0 ? msg : null,
         };
         // ASTooltip(pPlayer, 0x10, 2).FUN_1409e1c50(id, level, 1) (uiskillbookautodistributedialog.cpp:2061)
