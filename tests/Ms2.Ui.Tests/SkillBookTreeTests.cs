@@ -286,6 +286,14 @@ public class SkillBookTreeTests
     }
 
     [Test]
+    public void AutoDistributeTableIsParsedOncePerPackSet()
+    {
+        // the skill window loads it at every open (perfgate open.skill.repeat.main_bytes)
+        var packs = Packs();
+        Assert.That(AutoDistributeTable.Load(packs), Is.SameAs(AutoDistributeTable.Load(packs)));
+    }
+
+    [Test]
     public void AutoDistributeOpensTheDialogWithTheSubJobsPresetsAndWaitsForTheServer()
     {
         var (h, c, _) = Load();

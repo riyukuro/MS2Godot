@@ -19,9 +19,17 @@ public sealed class AutoDistributeTable
 
     public static readonly AutoDistributeTable Empty = new();
 
+    // one parse per pack set: the skill window loads the table at each open, and the file is the same every time
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, AutoDistributeTable> cache = new();
+
     public static AutoDistributeTable Load(PackSet packs)
     {
         if (packs == null) return Empty;
+        return cache.GetValue(packs, LoadFile);
+    }
+
+    static AutoDistributeTable LoadFile(PackSet packs)
+    {
         string path = packs.Exists("Xml", "table/skillautodistribute.xml") ? "table/skillautodistribute.xml"
             : packs.Exists("Xml", "table/skillAutoDistribute.xml") ? "table/skillAutoDistribute.xml" : null;
         return path == null ? Empty : Load(packs, GameStrings.Parse(packs.Read("Xml", path)));
