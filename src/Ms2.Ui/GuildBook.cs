@@ -1,3 +1,4 @@
+using Ms2.Formats.World;
 using Ms2.Net.Packets;
 using Ms2.Net.Wire;
 using Ms2.Quest;
@@ -209,6 +210,120 @@ public sealed class GuildBook
         if (guildFund + fund > guildFundMax) { Notice?.Invoke(CommonByKey("s_guild_err_donate_guildFundMax"), 1, true); return false; }
         if (Mesos() < cost) { Notice?.Invoke(CommonByKey("s_guild_err_no_money"), 1, true); return false; }
         Send(new GuildDonateRequest(amount));
+        return true;
+    }
+
+    /// <summary>CGuildXmlData's guildBuff.xml rows (GetSkill), or null when the data is not loaded.</summary>
+    public GuildSkillTable SkillTable;
+    /// <summary>CGameEventValueGuildSkillSale GetRate(): the guild skill sale of the game events (1/BonusRateScale).
+    /// STILL-OPEN: the game events are read but not kept, so 0.</summary>
+    public Func<int> GuildSkillSaleRate = () => 0;
+    /// <summary>CGameEventValueGuildPersonalSkillSale GetRate(). STILL-OPEN: as <see cref="GuildSkillSaleRate"/>.</summary>
+    public Func<int> GuildPersonalSkillSaleRate = () => 0;
+    /// <summary>Unk_GuildGameEventMgr::GetBonusRateScale; the donate bonus above divides by the same 10000.</summary>
+    public const int BonusRateScale = 10000;
+
+    /// <summary>CGuildInfo::GetSkillLevel (@0x1404d26f0): the level of the guild's skill record, 0 without one.</summary>
+    public int SkillLevel(int id) => Info?.Skills.FirstOrDefault(s => s.Id == id)?.Level ?? 0;
+
+    /// <summary>CGuildInfo::GetSkillCost (@0x1404d2510): the row's cost, 0x7fffffff without the row.</summary>
+    public int SkillCost(int id, int level) => SkillTable?.Get(id, level) is { } s ? s.Cost : 0x7fffffff;
+
+    /// <summary>CGuildManager::GetSkillCostWithEventDiscount (@0x1413bd050): 0 without the row; the event skills take no sale.</summary>
+    public int SkillCostWithEventDiscount(int id, int level)
+    {
+        if (SkillTable?.Get(id, level) is not { } s) return 0;
+        long cost = SkillCost(id, level);
+        int discount = s.IsEvent ? 0 : GuildSkillSaleRate();
+        cost -= cost * discount / BonusRateScale;
+        return (int)cost;
+    }
+
+    /// <summary>CGuildManager::GetPersonalSkillDiscountedCost (@0x1413bd1a0): 0x7fffffff without the row or for a guild skill.
+    /// The client takes the row's f28, the cost.</summary>
+    public int PersonalSkillDiscountedCost(int id, int level)
+    {
+        if (SkillTable?.Get(id, level) is not { } s || !s.IsPersonal) return 0x7fffffff;
+        long cost = s.Cost;
+        cost -= cost * GuildPersonalSkillSaleRate() / BonusRateScale;
+        return (int)cost;
+    }
+
+    /// <summary>CGuildSkill::GetRemainingDuration (@0x1404cbb00, guilddef_1.cpp:891): 0 unused or past, else the seconds left.</summary>
+    public int RemainingDuration(GuildSkillState rec)
+    {
+        if (rec.Time == 0) return 0;
+        if (SkillTable?.Get(rec.Id, rec.Level) is not { } s) return 0;
+        long until = (long)s.Duration + rec.Time, now = ServerTime();
+        return until < now ? 0 : (int)(until - now);
+    }
+
+    /// <summary>CGuildSkill::GetRemainingCooldown (@0x1404cbbf0): 0x7fffffff without the row, 0 once past.</summary>
+    public int RemainingCooldown(GuildSkillState rec)
+    {
+        if (SkillTable?.Get(rec.Id, rec.Level) is not { } s) return 0x7fffffff;
+        long until = (long)s.Cooltime + rec.Time, now = ServerTime();
+        return now > until ? 0 : (int)(until - now);
+    }
+
+    /// <summary>CGuildSkill::IsUsable (@0x1404cbcd0): no duration and no cooldown left.</summary>
+    public bool SkillUsable(GuildSkillState rec) => RemainingDuration(rec) <= 0 && RemainingCooldown(rec) <= 0;
+
+    bool NoticeKey(string key) { Notice?.Invoke(CommonByKey(key), 1, true); return false; }
+
+    /// <summary>FUN_1413b8fe0 (@0x1413b8fe0, guildmanager.cpp:743): use a guild skill. A non-master gets common 0x416; the guild
+    /// level, the fund (the event fund for an event skill), the record and IsUsable follow. STILL-OPEN: the "recall" skill's member
+    /// count box (0xb5c) and CCashCallManager::CanRecall are not ported, so the recall skill is refused without a send.</summary>
+    public bool UseSkill(int id)
+    {
+        if (!InGuild) return false;
+        if (PlayerName() is not { } me || !IsMaster(me)) { Notice?.Invoke(Common(0x416), 1, true); return false; }
+        int level = SkillLevel(id);
+        if (SkillTable?.Get(id, level) is not { } s) return false;
+        if (GuildLevel < s.RequireLevel) return NoticeKey("s_guild_err_not_enough_guild_level");
+        int fund = s.IsEvent ? Info.EventFund : Info.Fund;
+        if (fund < SkillCostWithEventDiscount(id, level))
+            return NoticeKey(s.IsEvent ? "s_guild_err_not_enough_guild_event_fund" : "s_guild_err_not_enough_guild_fund");
+        if (Info.Skills.FirstOrDefault(r => r.Id == id) is not { } rec) return false;
+        if (!SkillUsable(rec)) return NoticeKey("s_guild_err_cannot_use_skill");
+        if (s.FunctionName == "recall") return false;
+        Send(new GuildSkillUseRequest(id));
+        return true;
+    }
+
+    /// <summary>FUN_1413b96e0 (@0x1413b96e0): use a personal skill: the guild level, then the meso (s_err_lack_meso). STILL-OPEN:
+    /// the local player's existing buff check (AdditionalCli) is not ported, so a skill whose buff is up is not refused here.</summary>
+    public bool UsePersonalSkill(int id)
+    {
+        if (!InGuild) return false;
+        int level = SkillLevel(id);
+        if (SkillTable?.Get(id, level) is not { } s || !s.IsPersonal) return false;
+        if (GuildLevel < s.RequireLevel) return NoticeKey("s_guild_err_not_enough_guild_level");
+        if (Mesos() < PersonalSkillDiscountedCost(id, level)) return NoticeKey("s_err_lack_meso");
+        if (Level() == null) return false;     // GetLocalPlayer() == 0
+        Send(new GuildPersonalSkillUseRequest(id));
+        return true;
+    }
+
+    /// <summary>FUN_1413b9ac0 (@0x1413b9ac0, :820): upgrade a skill to the next level: both rows, the master, the guild level
+    /// (s_guild_err_need_guild_level with it), the fund (the event fund for an event skill) against the next row's upgrade cost.
+    /// STILL-OPEN: SendPacketThrottled's 1000 ms delay (key 0x5c).</summary>
+    public bool UpgradeSkill(int id)
+    {
+        if (!InGuild) return false;
+        int level = SkillLevel(id);
+        if (SkillTable?.Get(id, level) is not { } cur) return false;
+        if (SkillTable.Get(id, level + 1) is not { } next) return NoticeKey("s_guild_err_max_level");
+        if (PlayerName() is not { } me || !IsMaster(me)) { Notice?.Invoke(Common(0x416), 1, true); return false; }
+        if (next.RequireLevel > GuildLevel)
+        {
+            Notice?.Invoke(ClientFormat.Format(CommonByKey("s_guild_err_need_guild_level"), next.RequireLevel), 1, true);
+            return false;
+        }
+        int fund = cur.IsEvent ? Info.EventFund : Info.Fund;
+        if (next.UpgradeCost > fund)
+            return NoticeKey(cur.IsEvent ? "s_guild_err_not_enough_guild_event_fund" : "s_guild_err_not_enough_guild_fund");
+        Send(new GuildSkillUpgradeRequest(id));
         return true;
     }
 

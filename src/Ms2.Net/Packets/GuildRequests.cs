@@ -77,6 +77,24 @@ public sealed record GuildDonateRequest(int Amount) : IOutPacket {
     public void Write(ByteWriter w) { w.WriteByte(0x71); w.WriteInt(Amount); }
 }
 
+/// <summary>CGuildManager::FUN_1413b8fe0 (@0x1413b8fe0, guildmanager.cpp:743): use a guild skill (u8 0x5a, i32 skill id).</summary>
+public sealed record GuildSkillUseRequest(int SkillId) : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) { w.WriteByte(0x5a); w.WriteInt(SkillId); }
+}
+
+/// <summary>CGuildManager::FUN_1413b96e0 (@0x1413b96e0): use a personal guild skill (u8 0x5b, i32 skill id).</summary>
+public sealed record GuildPersonalSkillUseRequest(int SkillId) : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) { w.WriteByte(0x5b); w.WriteInt(SkillId); }
+}
+
+/// <summary>CGuildManager::FUN_1413b9ac0 (@0x1413b9ac0): upgrade a guild skill (u8 0x5c, i32 skill id).</summary>
+public sealed record GuildSkillUpgradeRequest(int SkillId) : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) { w.WriteByte(0x5c); w.WriteInt(SkillId); }
+}
+
 /// <summary>SendGuildMode7 (@0x1413b75a0): leave the guild (u8 7, no body). The client sends it only from a member who
 /// is not the master.</summary>
 public sealed record GuildLeaveRequest : IOutPacket {

@@ -425,4 +425,114 @@ public class GuildBookTests {
         b.Apply(new GuildMessage(4) { Invite = new GuildInviteInfo { Invitee = "Ma" } });
         Assert.That((b.ReceivedInvite, shown, sent.Count), Is.EqualTo(((GuildInviteInfo)null, 0, 0)));
     }
+
+    const string SkillXml = "<ms2>" +
+        "<guildBuff id=\"1\" level=\"1\" requireLevel=\"2\" upgradeCost=\"0\" cost=\"100\" duration=\"1\" cooltime=\"2\"/>" +
+        "<guildBuff id=\"1\" level=\"2\" requireLevel=\"5\" upgradeCost=\"300\" cost=\"100\" duration=\"1\" cooltime=\"2\"/>" +
+        "<guildBuff id=\"2000\" level=\"1\" requireLevel=\"1\" upgradeCost=\"50\" cost=\"80\" duration=\"0\" cooltime=\"0\"/>" +
+        "<guildBuff id=\"2000\" level=\"2\" requireLevel=\"1\" upgradeCost=\"90\" cost=\"80\" duration=\"0\" cooltime=\"0\"/>" +
+        "<guildBuff id=\"20000\" level=\"1\" requireLevel=\"2\" upgradeCost=\"0\" cost=\"1000\" duration=\"0\" cooltime=\"0\"/>" +
+        "</ms2>";
+
+    /// <summary>A guild with the skill table, the guild level (exp 0 gives level <paramref name="guildLevel"/>), and fund / event fund.</summary>
+    static GuildBook SkillBook(List<IOutPacket> sent, List<string> notices, int guildLevel, int fund, int eventFund, long now = 1000) {
+        var b = InGuild(sent, new List<string>());
+        b.Notice += (t, _, _) => notices.Add(t);
+        b.SkillTable = new Ms2.Formats.World.GuildSkillTable(System.Xml.Linq.XDocument.Parse(SkillXml));
+        b.LevelByExp = _ => guildLevel;
+        b.ServerTime = () => now;
+        b.Info.Fund = fund; b.Info.EventFund = eventFund;
+        b.Info.Skills.Add(new GuildSkillState(1, 1, 0));
+        b.Info.Skills.Add(new GuildSkillState(2000, 1, 0));
+        return b;
+    }
+
+    [Test]
+    public void SkillLevelAndCostsFollowTheRecordAndTheTable() {
+        var b = SkillBook(new List<IOutPacket>(), new List<string>(), 3, 0, 0);
+        Assert.That((b.SkillLevel(1), b.SkillLevel(9)), Is.EqualTo((1, 0)));
+        Assert.That((b.SkillCost(1, 1), b.SkillCost(1, 9)), Is.EqualTo((100, 0x7fffffff)));
+        b.GuildSkillSaleRate = () => 2500;
+        Assert.That((b.SkillCostWithEventDiscount(1, 1), b.SkillCostWithEventDiscount(2000, 1), b.SkillCostWithEventDiscount(1, 9)), Is.EqualTo((75, 80, 0)));
+        b.GuildPersonalSkillSaleRate = () => 1000;
+        Assert.That((b.PersonalSkillDiscountedCost(20000, 1), b.PersonalSkillDiscountedCost(1, 1), b.PersonalSkillDiscountedCost(20000, 5)), Is.EqualTo((900, 0x7fffffff, 0x7fffffff)));
+    }
+
+    [Test]
+    public void UpgradeChecksInTheClientsOrderAndSendsOnlyWhenAllPass() {
+        var sent = new List<IOutPacket>(); var notices = new List<string>();
+        var b = SkillBook(sent, notices, 3, 500, 0);
+        Assert.That(b.UpgradeSkill(1), Is.False);                       // next row needs guild level 5
+        Assert.That(notices.Last(), Is.EqualTo("s_guild_err_need_guild_level"));
+        b.LevelByExp = _ => 5; b.Info.Fund = 299;
+        Assert.That(b.UpgradeSkill(1), Is.False);
+        Assert.That(notices.Last(), Is.EqualTo("s_guild_err_not_enough_guild_fund"));
+        b.Info.Fund = 300;
+        Assert.That((b.UpgradeSkill(1), sent.Single()), Is.EqualTo((true, (IOutPacket)new GuildSkillUpgradeRequest(1))));
+        b.Info.Skills[0] = new GuildSkillState(1, 2, 0);
+        Assert.That(b.UpgradeSkill(1), Is.False);                       // no row above level 2
+        Assert.That(notices.Last(), Is.EqualTo("s_guild_err_max_level"));
+        Assert.That(sent.Count, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void UpgradeOfAnEventSkillReadsTheEventFundAndNeedsTheMaster() {
+        var sent = new List<IOutPacket>(); var notices = new List<string>();
+        var b = SkillBook(sent, notices, 3, 9999, 89);
+        Assert.That(b.UpgradeSkill(2000), Is.False);
+        Assert.That(notices.Last(), Is.EqualTo("s_guild_err_not_enough_guild_event_fund"));
+        b.PlayerName = () => "bo";
+        Assert.That(b.UpgradeSkill(2000), Is.False);
+        Assert.That(notices.Last(), Is.EqualTo("c416"));
+        b.PlayerName = () => "Ma"; b.Info.EventFund = 90;
+        Assert.That(b.UpgradeSkill(2000), Is.True);
+        Assert.That(sent.Single(), Is.EqualTo(new GuildSkillUpgradeRequest(2000)));
+    }
+
+    [Test]
+    public void UseChecksLevelFundAndTheUsableStateBeforeTheSend() {
+        var sent = new List<IOutPacket>(); var notices = new List<string>();
+        var b = SkillBook(sent, notices, 1, 99, 0);
+        Assert.That(b.UseSkill(1), Is.False);
+        Assert.That(notices.Last(), Is.EqualTo("s_guild_err_not_enough_guild_level"));
+        b.LevelByExp = _ => 2;
+        Assert.That(b.UseSkill(1), Is.False);
+        Assert.That(notices.Last(), Is.EqualTo("s_guild_err_not_enough_guild_fund"));
+        b.Info.Fund = 100;
+        Assert.That(b.UseSkill(1), Is.True);                            // never used: Time 0, past its cooldown
+        Assert.That(sent.Single(), Is.EqualTo(new GuildSkillUseRequest(1)));
+        b.Info.Skills[0] = new GuildSkillState(1, 1, 999);              // used a second ago: the 1 minute duration still runs
+        Assert.That(b.UseSkill(1), Is.False);
+        Assert.That(notices.Last(), Is.EqualTo("s_guild_err_cannot_use_skill"));
+        Assert.That((b.RemainingDuration(b.Info.Skills[0]), b.RemainingCooldown(b.Info.Skills[0])), Is.EqualTo((59, 119)));
+        Assert.That(sent.Count, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void RemainingDurationAndCooldownCountDownFromTheUseTime() {
+        var b = SkillBook(new List<IOutPacket>(), new List<string>(), 3, 0, 0, now: 1000);
+        var used = new GuildSkillState(1, 1, 900);                       // duration 1 min, cooltime 2 min (the xml's minutes x 60)
+        Assert.That((b.RemainingDuration(used), b.RemainingCooldown(used), b.SkillUsable(used)), Is.EqualTo((0, 20, false)));
+        b.ServerTime = () => 950;
+        Assert.That((b.RemainingDuration(used), b.RemainingCooldown(used)), Is.EqualTo((10, 70)));
+        b.ServerTime = () => 1021;
+        Assert.That(b.SkillUsable(used), Is.True);
+        Assert.That(b.RemainingCooldown(new GuildSkillState(1, 9, 0)), Is.EqualTo(0x7fffffff));
+    }
+
+    [Test]
+    public void PersonalUseNeedsLevelMesoAndAPlayerAndTheRecallSkillIsRefused() {
+        var sent = new List<IOutPacket>(); var notices = new List<string>();
+        var b = SkillBook(sent, notices, 1, 0, 0);
+        b.Info.Skills.Add(new GuildSkillState(20000, 1, 0));
+        Assert.That(b.UsePersonalSkill(20000), Is.False);
+        Assert.That(notices.Last(), Is.EqualTo("s_guild_err_not_enough_guild_level"));
+        b.LevelByExp = _ => 2; b.Mesos = () => 999;
+        Assert.That(b.UsePersonalSkill(20000), Is.False);
+        Assert.That(notices.Last(), Is.EqualTo("s_err_lack_meso"));
+        b.Mesos = () => 1000;
+        Assert.That(b.UsePersonalSkill(1), Is.False);                    // a guild skill is not a personal one
+        Assert.That(b.UsePersonalSkill(20000), Is.True);
+        Assert.That(sent.Single(), Is.EqualTo(new GuildPersonalSkillUseRequest(20000)));
+    }
 }
