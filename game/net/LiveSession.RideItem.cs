@@ -20,12 +20,28 @@ public partial class LiveSession
     int SummonRideeDuration => summonRideeDuration ??=
         (int)(Constants()?.Float("SummonRideeDuration", RideItemUse.DefaultSummonDuration) ?? RideItemUse.DefaultSummonDuration);
 
+    int? rideeFieldId;
+    bool rideeFieldUse = true;
+    /// <summary>WorldService::FUN_141bcb210's field part: the current field's &lt;ui useRidee&gt; (no field: false, as m_298 null);
+    /// unreadable field data passes.</summary>
+    bool FieldUsesRidee()
+    {
+        if (FieldId is not int id) return false;
+        if (rideeFieldId != id)
+        {
+            rideeFieldId = id;
+            try { rideeFieldUse = Ms2.Formats.World.FieldData.FindById(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), id)?.UseRidee ?? true; }
+            catch { rideeFieldUse = true; }
+        }
+        return rideeFieldUse;
+    }
+
     /// <summary>
     /// MyPC::UseRideeItem (@0x14152ba80, mypc.cpp:4627) for the item <paramref name="uid"/>: the facts as far as the port
     /// knows them, then <see cref="RideItemUse.Decide"/>.
     /// STILL-OPEN: the kept mount action (m_spB00) is not kept here; CanUseItem's checks and box; FUN_1415271e0's water row
-    /// fields (m_n88, kind 1/2, event buff type 3), so in water it refuses; FUN_141bcb210's map info +0xac and the cube map
-    /// flag 5 are taken as passing; the PC bang, VIP, wedding and owner-bind refusals are never raised.
+    /// fields (m_n88, kind 1/2, event buff type 3), so in water it refuses; FUN_141bcb210's cube map flag 5 (a house's
+    /// permission) is taken as off; the PC bang, VIP, wedding and owner-bind refusals are never raised.
     /// </summary>
     public void UseRideeItem(long uid)
     {
@@ -44,7 +60,7 @@ public partial class LiveSession
             CanUseItem = item != null,
             SkillUsable = !player.OnWater,
             StateAllows = LiveInteractObjects.StateAllowsInteraction(InteractPlayerStateId()),
-            MapAllows = true,
+            MapAllows = FieldUsesRidee(),
             Expired = item != null && item.ExpiryTime > 0 && item.ExpiryTime <= ServerTime,
         };
         switch (RideItemUse.Decide(f, out int noticeId, out string noticeKey))

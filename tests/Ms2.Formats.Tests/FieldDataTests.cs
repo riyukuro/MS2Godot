@@ -91,6 +91,29 @@ public class FieldDataTests
         TestContext.WriteLine($"minimapPing on {on}, off {off}");
     }
 
+    /// <summary>useRidee (fielddatacli.cpp:229, CFieldDataCli m_nUseRidee) follows the default environment's ui attribute and
+    /// is on when absent.</summary>
+    [Test]
+    public void UseRideeFollowsTheUiAttribute()
+    {
+        var data = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(data)) Assert.Ignore("MS2_DATA not set");
+        var packs = new PackSet(data);
+        int on = 0, off = 0;
+        foreach (var fd in FieldData.Document(packs).Root.Elements("fieldData"))
+        {
+            var env = fd.Elements("environment").FirstOrDefault(e => e.Attribute("locale") == null);
+            if (env?.Element("xblock")?.Attribute("name") == null) continue;
+            bool want = (string)env.Element("ui")?.Attribute("useRidee") != "0";
+            var f = FieldData.FindById(packs, (int)fd.Attribute("id"));
+            if (f == null || f.Id != (int)fd.Attribute("id")) continue;
+            Assert.That(f.UseRidee, Is.EqualTo(want), "field " + f.Id);
+            if (want) on++; else off++;
+        }
+        Assert.That(on, Is.GreaterThan(0));
+        TestContext.WriteLine($"useRidee on {on}, off {off}");
+    }
+
     /// <summary>The death-state map properties (fielddata.cpp:665-699, :729) follow the property's attributes with the client's defaults.</summary>
     [Test]
     public void RevivalPropertiesFollowTheProperty()

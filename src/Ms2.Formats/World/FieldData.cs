@@ -51,8 +51,9 @@ public sealed class FieldData
     public bool OuterGlow;
     /// <summary>&lt;property checkClimb&gt;: wall climbing allowed (CFieldData default 1).</summary>
     public bool CheckClimb = true;
-    /// <summary>&lt;property checkFly&gt; (CFieldData default 0), &lt;ui useEPSkill usePet&gt; (CFieldDataCli, default 1; fielddatacli.cpp:228).</summary>
-    public bool CheckFly, UseEPSkill = true, UsePet = true;
+    /// <summary>&lt;property checkFly&gt; (CFieldData default 0), &lt;ui useEPSkill useRidee usePet&gt; (CFieldDataCli, default 1;
+    /// fielddatacli.cpp:228-230). useRidee is the map test of WorldService::FUN_141bcb210 (worldservice_1.cpp:5476).</summary>
+    public bool CheckFly, UseEPSkill = true, UseRidee = true, UsePet = true;
     /// <summary>&lt;property skillUseDisable&gt;: a comma list of skill main types, each a bit of m_nSkillUseDisableMask (fielddata.cpp:707).</summary>
     public uint SkillUseDisableMask;
     /// <summary>&lt;ui instancingGrid&gt;: the hardware-instancing cell edge (CFieldDataCli m_nInstancingGrid, default 0 = one cell);
@@ -197,6 +198,7 @@ public sealed class FieldData
             foreach (var t in sud.Split(',', StringSplitOptions.RemoveEmptyEntries))
                 if (int.TryParse(t, NumberStyles.Integer, CultureInfo.InvariantCulture, out var bit)) o.SkillUseDisableMask |= 1u << bit;
         if ((string)env.Element("ui")?.Attribute("useEPSkill") is { } ue) o.UseEPSkill = ue != "0";
+        if ((string)env.Element("ui")?.Attribute("useRidee") is { } ur) o.UseRidee = ur != "0";
         if ((string)env.Element("ui")?.Attribute("usePet") is { } up) o.UsePet = up != "0";
         if ((string)prop?.Attribute("mapType") is { } mt && int.TryParse(mt, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mti)) o.MapType = mti;
         o.PkMode = Int(prop, "pkMode"); o.ContinentCode = Int(prop, "continentCode"); o.RequireQuest = Int(prop, "requireQuest"); o.TutorialType = Int(prop, "tutorialType");
