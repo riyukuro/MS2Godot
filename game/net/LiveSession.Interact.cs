@@ -407,6 +407,17 @@ public partial class LiveSession
         return InteractKey.StateId(InteractObjects, InteractNpcs, reactState, move);
     }
 
+    /// <summary>The own PC's current state id as PCBase::GetCurStateId gives it (<see cref="Ms2.Ui.OwnPcState.CurStateId"/>): the
+    /// taxi call and the interaction casts as <see cref="InteractPlayerStateId"/> has them, but a move that is not idle or walk
+    /// keeps its own id (jump 6, fall 5, swim 27, climb 29 ...) and the own skill state is 0x10. -1 outside the field.</summary>
+    public int OwnCurStateId(bool skillStateRuns)
+    {
+        if (selfObject < 0 || player == null || !IsInstanceValid(player)) return -1;
+        if (TaxiCalling) return TaxiStationAction.StateTaxiCall;
+        return InteractKey.StateId(InteractObjects, InteractNpcs, reactState,
+            Ms2.Ui.OwnPcState.CurStateId(Me.State, player.Mount != null, skillStateRuns, player.MoveStateId));
+    }
+
     /// <summary>The local pc as the cube craft reads it (<see cref="Ms2.Ui.ICubeCraftOwner"/>): the player's point or the
     /// ridee's when riding (PCBase::FUN_1416767d0), the facing (GetRideeAwareRotation), the target yaw, the state id as
     /// <see cref="InteractPlayerStateId"/> knows it, and the field's cubes. No allocation.</summary>

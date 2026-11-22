@@ -494,7 +494,7 @@ public partial class HudScene
             Kind = HitKind.Pc, Team = 1, Hp = 1, PartyId = live?.Party?.PartyId ?? 0,
             PvpOnOff = ownBuffs?.IsPvpOnOff ?? false,
             ForceApplyTarget = ownBuffs?.ForceApplyTarget ?? 0, Hidden = ownBuffs?.IsHidden ?? false,
-            StateId = live?.TaxiPlayerStateId ?? 0, Invincible = ownBuffs?.Invincible ?? 0 });
+            StateId = live?.OwnCurStateId(OwnSkillStateRuns()) ?? 0, Invincible = ownBuffs?.Invincible ?? 0 });
         return pos;
     }
 
