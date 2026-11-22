@@ -238,7 +238,7 @@ public sealed class FieldTracker {
             }
             case Ms2.Net.Inbound.UserSync:
             case Ms2.Net.Inbound.RideSync: {
-                var s = UserSyncIn.Read(p.Reader());
+                var s = UserSyncIn.Read(p.Reader(), Profile);
                 bool ride = op == Ms2.Net.Inbound.RideSync;
                 foreach (var r in s.Records) Moved(s.ObjectId, r, false, ride);
                 break;
@@ -249,7 +249,7 @@ public sealed class FieldTracker {
     /// <summary>The recording's own client packets: the local player's movement.</summary>
     public void Outbound(MsbPacket p) {
         if (p.Opcode != (ushort) Ms2.Net.Outbound.UserSync || SelfObjectId == 0) return;
-        var o = UserSyncOut.Read(new Maple2.PacketLib.Tools.ByteReader(p.Data));
+        var o = UserSyncOut.Read(new Maple2.PacketLib.Tools.ByteReader(p.Data), Profile);
         foreach (var (rec, _) in o.Records) Moved(SelfObjectId, rec, true);
     }
 

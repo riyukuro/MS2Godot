@@ -105,6 +105,15 @@ public sealed class StateSync {
         if (r.Position > start) SpecialTail = r.Buffer.AsSpan(start, r.Position - start).ToArray();
     }
 
+    /// <summary>The GMS2 hold record (state 32, flags 0x05): the target id and its node go in bit 2, not in KMS bit 5 (no recording has 0x25).
+    /// A record built with the KMS meaning (Flag6Value/Flag6Text) is moved there; any other record is returned as it is.</summary>
+    public StateSync ForGms2() {
+        if (State != 32 || (Flags & Flag.Flag6) == 0) return this;
+        var c = (StateSync) MemberwiseClone();
+        c.Flags = (Flags & ~Flag.Flag6) | Flag.Flag3; c.Flag2Value = Flag6Value; c.Flag2Text = Flag6Text;
+        return c;
+    }
+
     public void WriteGms2(ByteWriter w) {
         int f = (int) Flags;
         w.WriteByte(State); w.WriteByte(SubState); w.WriteByte((byte) f);
@@ -126,16 +135,17 @@ public sealed class StateSync {
 /// <summary>Inbound 0x1C: i32 object id, u8 count, count x StateSync.</summary>
 public sealed class UserSyncIn {
     public int ObjectId; public List<StateSync> Records = new();
-    public static UserSyncIn Read(ByteReader r) {
+    public static UserSyncIn Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+    public static UserSyncIn Read(ByteReader r, ProtocolProfile profile) {
         var p = new UserSyncIn { ObjectId = r.ReadInt() };
         int n = r.ReadByte();
-        for (int i = 0; i < n; i++) p.Records.Add(StateSync.Read(r));
+        for (int i = 0; i < n; i++) p.Records.Add(profile.IsGms2 ? StateSync.ReadGms2(r) : StateSync.Read(r));
         r.ExpectEnd("UserSync");
         return p;
     }
 }
 
-/// <summary>Outbound 0x12 (StateLocalController::vfunc_0): u8 sync number, i32 server tick, i32 client tick, u8 count, count x (StateSync + i32 client tick).
+/// <summary>Outbound 0x12 (StateLocalController::vfunc_0): u8 sync number, i32 server tick, i32 client tick, u8 count, count x (StateSync + i32 tick). The tick slot is the record's SERVER tick on KMS; on GMS2 it is the CLIENT elapsed tick, followed by a second i32 with the record's server tick.
 /// With <see cref="Ride"/> it is RideSync 0x41 (StateRideeController::vfunc_0, state.cpp:537-562), the mount's records in the same layout.</summary>
 public sealed class UserSyncOut : IProfileOutPacket {
     public byte SyncNumber; public int ServerTick, ClientTick;
@@ -146,8 +156,9 @@ public sealed class UserSyncOut : IProfileOutPacket {
     public void Write(ByteWriter w, ProtocolProfile profile) {
         w.WriteByte(SyncNumber); w.WriteInt(ServerTick); w.WriteInt(ClientTick); w.WriteByte((byte) Records.Count);
         foreach (var (rec, tick) in Records) {
-            // GMS2: its own record layout, and after the client tick the server time of the record (the packet's server tick minus how long ago it was)
-            if (profile.IsGms2) { rec.WriteGms2(w); w.WriteInt(tick); w.WriteInt(rec.Gms2ServerTick ?? ServerTick - (ClientTick - tick)); }
+            // GMS2: its own record layout, then the record's CLIENT elapsed tick and its server tick. A live record carries the server tick
+            // (the KMS slot), so the client tick is that minus the packet's server-vs-client offset; a parsed one has both and keeps them.
+            if (profile.IsGms2) { rec.ForGms2().WriteGms2(w); w.WriteInt(rec.Gms2ServerTick is null ? tick - (ServerTick - ClientTick) : tick); w.WriteInt(rec.Gms2ServerTick ?? tick); }
             else { rec.Write(w); w.WriteInt(tick); }
         }
     }
