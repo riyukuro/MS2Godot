@@ -390,13 +390,20 @@ public class GuideTests
         Assert.That(first, Is.Not.Null);
         Assert.That(first.Hidden, Is.True);
         Assert.That(GuideDialogLookup.Resolve("NotARegisteredDialog", none), Is.Null);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
+        // Measured in a local function after a warm-up call, as the open lookup's test does: the Release JIT's
+        // first pass through a loop may allocate once (24 bytes in the CI form).
+        long Bytes()
         {
-            GuideDialogLookup.Resolve("InventoryDialog", none);
-            GuideDialogLookup.Resolve("NotARegisteredDialog", none);
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 1000; i++)
+            {
+                GuideDialogLookup.Resolve("InventoryDialog", none);
+                GuideDialogLookup.Resolve("NotARegisteredDialog", none);
+            }
+            return GC.GetAllocatedBytesForCurrentThread() - before;
         }
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0));
+        Bytes();
+        Assert.That(Bytes(), Is.EqualTo(0));
         Assert.That(GuideDialogLookup.Resolve("inventorydialog", none), Is.SameAs(first));
     }
 
