@@ -65,6 +65,7 @@ public partial class Player
 
     int hitFallReturn = -1;               // the hit report's entity when it is a fall-return cube (FieldBuilder.FallReturnMeta), else -1
     bool fallMarked;                      // MyPC m_b15d6: the below-the-box-floor sync was forced
+    bool syncPushed;                      // MyPC m_b15d5: a push moved the PC, the next state-sync record is forced
     SyncRecord current;                   // StatePcGuideObjectController m_spCurrent
     readonly System.Collections.Generic.List<SyncRecord> queued = new();   // m_records: the next packet's records
     double syncClock;
@@ -165,7 +166,9 @@ public partial class Player
     /// box's floor (forced), when there is none, or when the state, the move direction (m_pos98) or the target yaw changed or a second
     /// passed since the current one; an unsent current record goes out first, except that a walk record left for another
     /// state goes out in one packet with the new record. The state's own test (vfunc_22, StateVfunc22) also makes one: a
-    /// walk makes a record every frame. Not modelled: m_b15d5.
+    /// walk makes a record every frame. m_b15d5 (<see cref="syncPushed"/>, set by MyPC::vfunc_110, mypc.cpp:1054) forces a
+    /// record and is cleared when one is made (:2308-2314).
+    /// STILL-OPEN: the other vfunc_110 call, PCBase::vfunc_68's move by a pushing platform (pcbase.cpp:1820-1823), is not ported.
     /// </summary>
     void StateSync(float dt)
     {
@@ -187,9 +190,10 @@ public partial class Player
         }
         // the mount's test (Ridee::FUN_141706650, ridee.cpp:924) has no one-second and no target-yaw term
         bool onFoot = Mount == null;
-        if (!(force || current == null || State != current.State || moveDir != current.Dir
+        if (!(force || syncPushed || current == null || State != current.State || moveDir != current.Dir
               || onFoot && (syncClock - current.Made >= 1.0 || targetYawDeg != current.Yaw) || StateVfunc22()))
             return;
+        syncPushed = false;
         bool flushAfter = false;
         if (current != null)
         {

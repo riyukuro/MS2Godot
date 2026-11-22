@@ -414,10 +414,12 @@ public partial class Player : CharacterBody3D
             var before = GlobalPosition;
             Integrate(dt, skill ? SkillMotionMove(skillInput, dt) : Vector3.Zero);
             if (State == MoveState.Dash) DashAfterMove(before, dt);
-            // PCBase::vfunc_53 (pcbase.cpp:3737): the push moves the body after the state's update
-            Push.Tick(dt, this);
         }
         else wallHit = false;
+        // PCBase::vfunc_53 (pcbase.cpp:3737-3741): the push moves the body after the state's update, in every state; a
+        // push that ran calls vfunc_110, MyPC's m_b15d5 (mypc.cpp:1054), which forces the next state-sync record
+        // STILL-OPEN: a mounted PC's push moves the ridee (pcbase.cpp:3736-3739); the ridee is not ported here
+        if (Push.Tick(dt, this)) syncPushed = true;
         // MyPC::vfunc_53 (mypc.cpp:2949-2951) sends the fall damage each frame once on the ground; StateHit holds it
         // until a lifting hit's arrive time (pcbase.cpp:4360)
         if (State == MoveState.Hit && Grounded && !FallDamageHeld) SendFallDamage();
