@@ -145,7 +145,7 @@ public sealed class GameOptionHost : IGameOptionDialogHost
     public Func<bool> HasUgcMapInfo = () => Net.LiveSession.Instance?.Home.HasInfo == true;
 
     /// <summary>MyPC::SendHouseSetting (@0x141530720): the RequestCube 0x18 packet, then with feature 0x117 the agreement's group 1 takes the kind's flag and goes out as 0xC0.
-    /// The callers are Ms2.Ui.Hud.HouseVisitQuestion (wired) and HomeOptionController (its host, HomeOptionHost, is made by HudScene.OpenHomeOption; the opener UIHomeMenuDialog::OnHomePriority is STILL-OPEN).</summary>
+    /// The callers are Ms2.Ui.Hud.HouseVisitQuestion (wired) and HomeOptionController (its host, HomeOptionHost, is made by HudScene.OpenHomeOption; opened by the home menu's OnHomePriority, HomeMenuDialogController).</summary>
     public void SendHouseSetting(int kind, string value, bool flag)
     {
         if (HasUgcMapInfo == null || !HasUgcMapInfo()) return;

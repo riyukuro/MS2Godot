@@ -5,8 +5,8 @@ namespace Ms2Godot.Ui;
 
 /// <summary>
 /// UIHomeOptionDialog (0x4f26, movie uihomeoptiondialog, uihomeoptiondialog.cpp) over the home's cube map service rows
-/// (<see cref="HomeOptionHost"/>). STILL-OPEN: the opener, UIHomeMenuDialog::OnHomePriority (uihomemenudialog.cpp:526-535), is not
-/// ported, so only <see cref="ToggleHomeOption"/> (CUIService::ToggleDialog(0x4f26)) reaches it, and nothing in the game calls that yet.
+/// (<see cref="HomeOptionHost"/>). The opener is the home menu's OnHomePriority (<see cref="HomeMenuDialogController"/>), which calls
+/// <see cref="ToggleHomeOption"/> (CUIService::ToggleDialog(0x4f26)).
 /// </summary>
 public partial class HudScene
 {

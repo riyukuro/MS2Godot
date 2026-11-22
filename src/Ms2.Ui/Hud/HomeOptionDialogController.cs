@@ -6,7 +6,7 @@ namespace Ms2.Ui.Hud;
 /// UIHomeOptionDialog's movie (uihomeoptiondialog.cpp; dialog 0x4f26, movie uihomeoptiondialog, GetTypeName "HomeOptionDialog"): the setData
 /// call after the load, the movie's five calls (vfunc_28 @ :112-190) and the answers to the boxes they open (OnMessage). The values and the
 /// sends are <see cref="HomeOptionController"/>.
-/// STILL-OPEN: the opener, UIHomeMenuDialog::OnHomePriority (uihomemenudialog.cpp:526-535), is not ported; nothing opens this dialog from the game yet.
+/// The opener is <see cref="HomeMenuDialogController.OnHomePriority"/> (UIHomeMenuDialog @0x140c2a370, uihomemenudialog.cpp:526-535).
 /// </summary>
 public class HomeOptionDialogController : UiController, IMessageBoxListener
 {

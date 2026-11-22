@@ -41,6 +41,12 @@ public class HouseSettingPacketTests {
         Assert.That(Bytes(p), Is.EqualTo(new byte[] { 0x31 }));
     }
 
+    [Test] public void DemolishIsMode0x1fOnly() {
+        var p = new HomeDemolishRequest();
+        Assert.That(p.Op, Is.EqualTo(Outbound.RequestCube));
+        Assert.That(Bytes(p), Is.EqualTo(new byte[] { 0x1f }));
+    }
+
     [Test] public void PublicKindWritesAnEmptyStringAndAOneFlag() {
         var b = Bytes(new HouseSettingRequest(0, "", true));
         Assert.That(b, Is.EqualTo(new byte[] { 0x18, 0, 0, 0, 1 }));

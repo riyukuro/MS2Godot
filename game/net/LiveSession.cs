@@ -1944,6 +1944,12 @@ public partial class LiveSession : Node
         if (game != null) Send(new HomeKickUsersRequest());
     }
 
+    /// <summary>UIHomeMenuDialog::SendRequestCube (uihomemenudialog.cpp:759-776): the packet that demolishes the home.</summary>
+    public void SendHomeDemolish()
+    {
+        if (game != null) Send(new HomeDemolishRequest());
+    }
+
     /// <summary>CNetworkService::SendRequestQuit (@0x141538820, networkservice.cpp:501-505): flushes guide state (SendFunctionCube) and sends RequestQuit(0).</summary>
     public void SendRequestQuit()
     {

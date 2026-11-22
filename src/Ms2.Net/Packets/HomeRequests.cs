@@ -45,6 +45,12 @@ public sealed record HomeKickUsersRequest() : IOutPacket {
     public void Write(ByteWriter w) { w.WriteByte(0x31); }
 }
 
+/// <summary>UIHomeMenuDialog::SendRequestCube (@0x140c2b3e0, uihomemenudialog.cpp:759): RequestCube u8 0x1f, nothing else (the home is demolished).</summary>
+public sealed record HomeDemolishRequest() : IOutPacket {
+    public Outbound Op => Outbound.RequestCube;
+    public void Write(ByteWriter w) { w.WriteByte(0x1f); }
+}
+
 /// <summary>MyPC::SendCraftModeOff (@0x141530200, mypc.cpp:4501): RequestSetCraftMode u8 0, u8 0.</summary>
 public sealed record CraftModeOffRequest() : IOutPacket {
     public Outbound Op => Outbound.RequestSetCraftMode;
