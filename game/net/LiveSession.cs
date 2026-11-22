@@ -439,7 +439,7 @@ public partial class LiveSession : Node
     public event Action<Ui.DamageTarget, int, string> ItemGained;
     /// <summary>The region skill objects' ids of the field (OnRegionSkill 0x4C modes 0 and 1): mode 5's damage needs one
     /// (OnRegionSkillDamage drops the packet when GetRegionSkillObject finds none).</summary>
-    readonly HashSet<int> regionSkills = new();
+    readonly Dictionary<int, (int Skill, short Level)> regionSkills = new();
     /// <summary>The field's OnRegionSkill messages in order, for a <see cref="World.RegionSkills"/> node made after them; cleared
     /// with the ids on a new field.</summary>
     public readonly List<Ms2.Net.Packets.RegionSkillMessage> RegionSkillLog = new();
@@ -982,6 +982,7 @@ public partial class LiveSession : Node
         remote.NpcExpShown = (npc, exp) => NpcExpShown?.Invoke(npc, exp);
         remote.NpcAdded = npc => NpcAdded?.Invoke(npc);
         remote.NpcRemoved = id => NpcRemoved?.Invoke(id);
+        remote.RegionSkillOf = id => regionSkills.TryGetValue(id, out var s) ? s : null;
         remote.Viewer = () => player != null && IsInstanceValid(player) ? player.GlobalPosition : null;
         remote.BattleStanceChanged = (id, on) => BattleStanceChanged?.Invoke(id, on);
         remote.PcShown += pc => FieldPcShown?.Invoke(pc);
@@ -1710,7 +1711,7 @@ public partial class LiveSession : Node
                 // OnRegionSkill (scenestategame.cpp:7718-7749): mode 0 adds the region skill object of the id, mode 1 removes
                 // it, mode 2 stops its loop effects. The ids serve mode 5's damage; the field's RegionSkills node draws the effects.
                 var m = Ms2.Net.Packets.RegionSkillMessage.Read(p.Reader());
-                if (m is Ms2.Net.Packets.RegionSkillMessage.Add) regionSkills.Add(m.Id);
+                if (m is Ms2.Net.Packets.RegionSkillMessage.Add add) regionSkills[m.Id] = (add.SkillId, add.Level);
                 else if (m is Ms2.Net.Packets.RegionSkillMessage.Remove) regionSkills.Remove(m.Id);
                 if (m != null) { RegionSkillLog.Add(m); RegionSkillReceived?.Invoke(m); }
             }
@@ -1723,11 +1724,11 @@ public partial class LiveSession : Node
                 // is a PCBase in the client, so a pet's DoT on the own player cancels there but not here yet)
                 foreach (var total in Ms2.Ui.Hud.MasteryEvents.SelfRecords(d, selfObject,
                              id => remote?.Tracker.HasObject(id) ?? (id == selfObject),
-                             id => remote?.Tracker.HasObject(id) ?? (id == selfObject), regionSkills.Contains))
+                             id => remote?.Tracker.HasObject(id) ?? (id == selfObject), regionSkills.ContainsKey))
                     SelfDamaged?.Invoke(total);
                 ReactToHits(d);   // PC::vfunc_33 on the own PC (LiveSession.Hits.cs)
                 // PCBase::vfunc_113 (RecordDamage) at the end of the hit object's vfunc_33/34/35, for every record
-                BattleRecords.Record(d, objectInField ??= ObjectInField, objectInField, isRegionSkill ??= regionSkills.Contains);
+                BattleRecords.Record(d, objectInField ??= ObjectInField, objectInField, isRegionSkill ??= regionSkills.ContainsKey);
             }
             else if (game.Is(p, Inbound.Mastery))
             {

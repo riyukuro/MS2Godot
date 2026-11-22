@@ -283,6 +283,11 @@ public sealed partial class RemoteLayer : Node3D
     Func<int, bool> isObject;
     Ms2.Ui.Skills.SkillDamageTable skillDamage;
     /// <summary>The skill attacks' damage blocks (read on the first hit).</summary>
+    Func<int, int, int, int, Ms2.Ui.Skills.SkillAttackDamage> attackOf;
+
+    /// <summary>The skill and level of a region skill object of the field by its id (OnRegionSkill mode 0); null for none.</summary>
+    public Func<int, (int Skill, short Level)?> RegionSkillOf;
+
     Ms2.Ui.Skills.SkillDamageTable SkillDamage => skillDamage ??= Ms2.Ui.GameTables.Shared(packs, Ms2Godot.GameOptions.StringLanguage).SkillDamage;
     static readonly Ms2.Formats.Options.GameOption.Battle defaultBattle = new();
     /// <summary>CDamageRecord::GetAttackData then m_damage (<see cref="Ms2.Ui.Skills.SkillDamageTable.Get"/>); null when none.</summary>
@@ -749,8 +754,9 @@ public sealed partial class RemoteLayer : Node3D
                             // with no hits or without the attack's HasDamage too, which the gates above leave out
                             bool cast = dmg.Damage.Mode == 1;
                             var kind = cast ? NpcHitKind.Cast : dmg.Damage.Mode == 3 ? NpcHitKind.Dot : NpcHitKind.Splash;
+                            attackOf ??= (s, l, m, a) => SkillDamage?.Get(s, l, m, a);
                             npcs.Hit(t.TargetId, kind, Ms2.Ui.Skills.NpcVibrate.TotalDamage(t.Hits), byLocal, owner,
-                                cast ? SkillDamage?.Get(dmg.Damage.SkillId, dmg.Damage.Level, dmg.Damage.Motion, dmg.Damage.AttackPoint) : null);
+                                Ms2.Ui.Skills.NpcHitSound.RecordAttack(dmg.Damage, RegionSkillOf, attackOf));
                             // PCBase::vfunc_112 goes through vfunc_80: a local hit makes the member's bar, then shows it
                             if (users.TryGetValue(t.TargetId, out var hit)) EnsureBar(hit)?.Hit(byLocal);
                         }

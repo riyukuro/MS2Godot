@@ -22,6 +22,23 @@ public class NpcHitSoundTests
     }
 
     [Test]
+    public void ARegionSkillsRecordTakesItsRegionsAttack()
+    {
+        (int, int, int, int) asked = default;
+        SkillAttackDamage AttackOf(int s, int l, int m, int a) { asked = (s, l, m, a); return Attack(9); }
+        (int Skill, short Level)? Region(int id) => id == 40 ? (10500001, 3) : null;
+        var region = new Ms2.Net.Packets.SkillDamage { Mode = 5, OwnerId = 7, RegionId = 40, AttackPoint = 2 };
+        Assert.That(NpcHitSound.RecordAttack(region, Region, AttackOf)?.AttackMaterial, Is.EqualTo(9), "mode 5: the region's attack");
+        Assert.That(asked, Is.EqualTo((10500001, 3, 0, 2)), "the region's skill and level, motion 0, the packet's attack");
+        region.RegionId = 41;
+        Assert.That(NpcHitSound.RecordAttack(region, Region, AttackOf), Is.Null, "an unknown region: none");
+        var cast = new Ms2.Net.Packets.SkillDamage { Mode = 1, SkillId = 10100161, Level = 2, Motion = 1, AttackPoint = 3 };
+        Assert.That(NpcHitSound.RecordAttack(cast, Region, AttackOf), Is.Not.Null);
+        Assert.That(asked, Is.EqualTo((10100161, 2, 1, 3)), "mode 1: the packet's skill, level, motion and attack");
+        Assert.That(NpcHitSound.RecordAttack(new Ms2.Net.Packets.SkillDamage { Mode = 6, SkillId = 1 }, Region, AttackOf), Is.Null, "mode 6: owner 0");
+    }
+
+    [Test]
     public void TheRelationIsTheOwnersObjectKind()
     {
         Assert.That(NpcHitSound.Relation(HitOwner.None, false), Is.EqualTo(0));

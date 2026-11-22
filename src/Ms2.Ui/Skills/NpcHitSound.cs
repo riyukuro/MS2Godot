@@ -36,6 +36,24 @@ public static class NpcHitSound
     }
 
     /// <summary>
+    /// The attack a damage record's GetAttackData() reads for its material: a cast's (mode 1) by the packet's skill, level,
+    /// motion and attack; a region skill's (mode 5) by its region object's skill and level (CRegionSkillObject m_spSkill,
+    /// <paramref name="region"/>), motion 0 and the packet's attack (OnRegionSkillDamage, scenestategame.cpp:7783-7785),
+    /// none when the region is unknown; none for the rest: a dot's sound is not ported, and a splash's (mode 6) record has
+    /// owner 0 (OnSplashDamage, :5743), so its material is 1 without the attack.
+    /// </summary>
+    public static SkillAttackDamage RecordAttack(Ms2.Net.Packets.SkillDamage d, System.Func<int, (int Skill, short Level)?> region,
+        System.Func<int, int, int, int, SkillAttackDamage> attackOf)
+    {
+        switch (d.Mode)
+        {
+            case 1: return attackOf(d.SkillId, d.Level, d.Motion, d.AttackPoint);
+            case 5: return region?.Invoke(d.RegionId) is { } r ? attackOf(r.Skill, r.Level, 0, d.AttackPoint) : null;
+            default: return null;
+        }
+    }
+
+    /// <summary>
     /// The volume: VolumeMyPcToNpc (1 by default, constantsblocks.cpp:787) for relation 1 or 2, else VolumePcToNpc (0.5,
     /// :790). VolumeOtherPc for relation 3 is applied later by CEffectService::FUN_1411a5110 (effectservice.cpp:1336), in
     /// FieldAudio.PlayHitSound.
