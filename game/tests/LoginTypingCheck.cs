@@ -18,7 +18,12 @@ namespace Ms2Godot.Tests;
 /// focus and shows none (TextField::OnFocus drops it). A script text change under the kept range redraws the rectangle
 /// over the new glyphs (the label's relayout, TextNode.AlignLine); with an outline on the field's label and a dark text
 /// colour the selected glyphs are still drawn white over the rectangle (the client draws the outline in its own colour
-/// and the text in the highlighter's, TextLayer_Shadow). Quits with 0 when both fields hold what was typed and the
+/// and the text in the highlighter's, TextLayer_Shadow). Last, a click on the id field focuses it, then a left press just
+/// right of its second glyph's pen, a drag off the field's left and back to just right of the fourth glyph's end, and the
+/// release select the second to fourth characters with the mouse (EditorKit::OnMouseDown/OnMouseMove/OnMouseUp): the press
+/// puts the caret at 1, the drag left selects 0..1, and the drag back 1..4, drawn as the script selection was. The click
+/// comes first because on a CLIK TextInput without the focus a press loses its capture at once, as in the client (see the
+/// first press). Quits with 0 when both fields hold what was typed and the
 /// selection showed so, else 1.
 /// </summary>
 public partial class LoginTypingCheck : Node
@@ -48,7 +53,9 @@ public partial class LoginTypingDriver : Node
     const string Id = "abc12", Password = "secret";
     int frames, connects;
     bool typed, keypadKeptBox;
-    string selection, unselected, relaid, outlined;
+    string selection, unselected, relaid, outlined, dragged, dragLeft;
+    Vector2 pressAt, endAt;
+    ulong holdUntil;
     System.Collections.Generic.List<Rect2> before;
     LabelSettings saved;
     Ms2.Avm2.Flash.AsTextField idField;
@@ -165,6 +172,29 @@ public partial class LoginTypingDriver : Node
         return node.FaceByLine && colours && rect ? null : got + $" (want x {x0}..{x1})";
     }
 
+    /// <summary>A mouse event through the engine's input; a move also warps the cursor, as the viewport's mouse position (which
+    /// the 50 ms sample over each movie reads) follows the cursor, not parsed events.</summary>
+    static void Mouse(InputEvent ev)
+    {
+        if (ev is InputEventMouseMotion mm) Input.WarpMouse(mm.Position);
+        Input.ParseInputEvent(ev);
+    }
+
+    /// <summary>The id field's char boundaries 1 and 4, in viewport pixels, half a line above the baseline and 1 pixel inside the glyphs.</summary>
+    static (Vector2, Vector2)? Boundaries(TextNode node)
+    {
+        var lines = node?.ShownLines();
+        if (lines is not { Count: 1 }) return null;
+        var line = lines[0];
+        var g1 = line.Shaped.Find(g => g.Index == 1);
+        var g4 = line.Shaped.Find(g => g.Index == 4);
+        float y = line.Baseline - 4;
+        var xf = node.Label.GetViewport().GetFinalTransform() * node.Label.GetGlobalTransformWithCanvas();
+        return (xf * new Vector2(line.LabelX + g1.Pen + line.Dx + 1, y), xf * new Vector2(line.LabelX + g4.Pen + line.Dx + 1, y));
+    }
+
+    static string Sel(Ms2.Avm2.Flash.AsTextField tf) => tf == null ? "no id field" : $"caret {tf.caretIndex}, {tf.selectionBeginIndex}..{tf.selectionEndIndex}";
+
     public override void _Process(double delta)
     {
         frames++;
@@ -173,6 +203,9 @@ public partial class LoginTypingDriver : Node
             if (frames > 600) { GD.Print("login typing: FAIL no login scene"); GetTree().Quit(1); }
             return;
         }
+        // the game samples the mouse over each movie at most every 50 ms (CUIService, As3View.MouseOverUi) and a press goes
+        // to the movie the sample found: after a move the schedule waits 120 ms of clock, whatever the frame rate
+        if (Time.GetTicksMsec() < holdUntil) { frames--; return; }
         if (frames == 120) Type(Id);
         if (frames == 140)
         {
@@ -224,9 +257,50 @@ public partial class LoginTypingDriver : Node
         if (frames == 230) keypadKeptBox = !MessageBoxQueue.IsIdle && connects == 0;
         if (frames == 235) Press(Key.Enter, '\r');
         if (frames == 250) Press(Key.KpEnter, '\r');   // and on the bare dialog: no login either
-        if (frames < 265) return;
-        bool boxClosed = MessageBoxQueue.IsIdle, ok = typed && keypadKeptBox && boxClosed && connects == 0 && selection == null && unselected == null && relaid == null && outlined == null;
-        GD.Print($"login typing: window {GetTree().Root.Size}, content {GetTree().Root.GetVisibleRect().Size}, id \"{login.Controller.Id}\", password {login.Controller.Password.Length} chars, keypad Enter kept the box {keypadKeptBox}, Enter on a box: closed {boxClosed}, logins {connects}, selection on the focused id: {selection ?? "shown"}, after a text change: {relaid ?? "redrawn"}, outlined: {outlined ?? "white glyphs"}, after Tab: {unselected ?? "none"} -> {(ok ? "ok" : "FAIL")}");
+        if (frames == 255 && Boundaries(NodeOf(idField)) is var (a, b))
+        {
+            // the first press only focuses the field: CLIK's TextInput.handleMouseDown focuses its textField, whose focusIn
+            // (handleTextFieldFocusIn) gives the focus to the component, and the field losing it drops the press's capture
+            // (EditorKit::OnKillFocus); a press away from the drag's start, so the drag's press is no double press
+            (pressAt, endAt) = (a, b);
+            Mouse(new InputEventMouseMotion { Position = endAt, GlobalPosition = endAt });
+            holdUntil = Time.GetTicksMsec() + 120;
+        }
+        if (frames == 261 && pressAt != default)
+        {
+            Mouse(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = endAt, GlobalPosition = endAt, ButtonMask = MouseButtonMask.Left });
+        }
+        if (frames == 263) Mouse(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = endAt, GlobalPosition = endAt });
+        if (frames == 266 && pressAt != default)
+        {
+            Mouse(new InputEventMouseMotion { Position = pressAt, GlobalPosition = pressAt });
+            holdUntil = Time.GetTicksMsec() + 120;
+        }
+        if (frames == 272 && pressAt != default)
+        {
+            Mouse(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = pressAt, GlobalPosition = pressAt, ButtonMask = MouseButtonMask.Left });
+        }
+        if (frames == 275)
+        {
+            var off = pressAt - new Vector2(200, 0);
+            Mouse(new InputEventMouseMotion { Position = off, GlobalPosition = off, ButtonMask = MouseButtonMask.Left });
+        }
+        if (frames == 278)
+        {
+            dragLeft = idField is { selectionBeginIndex: 0, selectionEndIndex: 1, caretIndex: 0 } ? null : Sel(idField);
+            Mouse(new InputEventMouseMotion { Position = endAt, GlobalPosition = endAt, ButtonMask = MouseButtonMask.Left });
+        }
+        if (frames == 281) Mouse(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = endAt, GlobalPosition = endAt });
+        if (frames == 287)
+        {
+            dragged = pressAt == default ? "no glyph boundaries to press at"
+                : idField is { selectionBeginIndex: 1, selectionEndIndex: 4, caretIndex: 4 } ? Selection(idField, true) : Sel(idField);
+            if (dragLeft != null) dragged = $"drag off the left: {dragLeft}" + (dragged == null ? "" : $"; {dragged}");
+            Shot("login_id_dragged.png");
+        }
+        if (frames < 302) return;
+        bool boxClosed = MessageBoxQueue.IsIdle, ok = typed && keypadKeptBox && boxClosed && connects == 0 && selection == null && unselected == null && relaid == null && outlined == null && dragged == null;
+        GD.Print($"login typing: window {GetTree().Root.Size}, content {GetTree().Root.GetVisibleRect().Size}, id \"{login.Controller.Id}\", password {login.Controller.Password.Length} chars, keypad Enter kept the box {keypadKeptBox}, Enter on a box: closed {boxClosed}, logins {connects}, selection on the focused id: {selection ?? "shown"}, after a text change: {relaid ?? "redrawn"}, outlined: {outlined ?? "white glyphs"}, after Tab: {unselected ?? "none"}, mouse drag on the id: {dragged ?? "1..4 shown"} -> {(ok ? "ok" : "FAIL")}");
         SetProcess(false);
         GetTree().Quit(ok ? 0 : 1);
     }
