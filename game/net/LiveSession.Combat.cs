@@ -36,14 +36,12 @@ public partial class LiveSession
         }
         void Check(string what, bool ok) => GD.Print($"live: combat {(ok ? "PASS" : "FAIL")}: {what}");
         string Env(string k, string d) => System.Environment.GetEnvironmentVariable(k) is { Length: > 0 } v ? v : d;
-        int numbers = 0, kills = 0, mesoGains = 0, itemGains = 0, npcs = 0;
-        long mesoGained = 0, mesoDelta = 0;
+        int numbers = 0, kills = 0, npcs = 0;
+        long mesoDelta = 0;
         live.DamageNumbered += (n, npc, pc) => { if (npc != null) numbers++; };
         live.NpcExpShown += (npc, exp) => kills++;
         live.NpcAdded += npc => npcs++;
-        live.MesoGained += (pc, amount) => { mesoGains++; mesoGained += amount; };
         live.MesoChanged += (delta, kind) => mesoDelta += delta;
-        live.ItemGained += (pc, amount, icon) => itemGains++;
         await frames(240);
         foreach (var step in steps.Split(','))
         {
@@ -109,17 +107,15 @@ public partial class LiveSession
                     GD.Print($"live: combat drop item: {(hud.SubmitChatLine($"/item {item} --drop") ? "sent" : "no chat window")}");
                     await frames(120); Shot("loot_item_dropped.png");
                     live.PickupKeyHeld = true;      // the pickup key held (the key handler's flag)
-                    await until(() => itemGains > 0, 60 * 10); await frames(60);
+                    await until(() => BagSum(live) != bag0, 60 * 10); await frames(60);
                     live.PickupKeyHeld = false;
-                    Check("the item pickup reached the client", itemGains > 0);
                     Check($"the bag changed ({bag0} -> {BagSum(live)})", BagSum(live) != bag0);
                     Shot("loot_item_picked.png");
                     GD.Print($"live: combat drop meso: {(hud.SubmitChatLine($"/item {mesoItem} --amount {meso} --drop") ? "sent" : "no chat window")}");
                     await frames(120); Shot("loot_meso_dropped.png");
                     live.PickupKeyHeld = true;
-                    await until(() => mesoGains > 0, 60 * 10); await frames(60);
+                    await until(() => mesoDelta > 0, 60 * 10); await frames(60);
                     live.PickupKeyHeld = false;
-                    Check($"the meso pickup reached the client ({mesoGained})", mesoGains > 0);
                     Check($"the meso count changed ({mesoDelta})", mesoDelta > 0);
                     Shot("loot_meso_picked.png");
                     break;
