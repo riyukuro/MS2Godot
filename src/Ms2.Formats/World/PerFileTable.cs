@@ -67,4 +67,47 @@ public static class PerFileTable
         }
         return root == null ? null : new XDocument(root);
     }
+
+    /// <summary>
+    /// GMS2's itemmodel: itempreset/&lt;a&gt;/&lt;bb&gt;/&lt;id&gt;.xml, one file per model whose &lt;ms2&gt; root holds the children of the KMS
+    /// itemmodel/&lt;id / 100000&gt;.xml &lt;ItemModel id&gt; row (slots with their assets, customize). The rows of one prefix file, or null
+    /// when the pack has no preset of that prefix. Read only. The customize element is the file's own: it carries
+    /// colordetail and the HR/FD/CP offsets and no colorPalette, which the KMS rows have (STILL-OPEN: the palette source).
+    /// </summary>
+    public static XDocument ItemModels(PackSet packs, int prefix)
+    {
+        var cache = presets.GetOrCreateValue(packs);
+        lock (cache)
+        {
+            cache.Index ??= PresetIndex(packs.List("Xml"));
+            if (!cache.Index.TryGetValue(prefix, out var names)) return null;
+            if (cache.Docs.TryGetValue(prefix, out var d)) return d;
+            var root = new XElement("ms2");
+            foreach (var (id, name) in names)
+            {
+                XElement file;
+                try { file = PackXml.Parse(packs.Read("Xml", name)).Root; } catch (System.Xml.XmlException) { continue; }
+                if (file != null) root.Add(new XElement("ItemModel", new XAttribute("id", id.ToString(CultureInfo.InvariantCulture)), file.Elements()));
+            }
+            return cache.Docs[prefix] = new XDocument(root);
+        }
+    }
+
+    sealed class Presets { public Dictionary<int, List<(long Id, string Name)>> Index; public readonly Dictionary<int, XDocument> Docs = new(); }
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Presets> presets = new();
+
+    /// <summary>prefix (id / 100000) -> the itempreset files of it, in id order.</summary>
+    internal static Dictionary<int, List<(long Id, string Name)>> PresetIndex(IEnumerable<string> names)
+    {
+        var index = new Dictionary<int, List<(long, string)>>();
+        foreach (var n in names)
+        {
+            if (!n.StartsWith("itempreset/", StringComparison.Ordinal) || !n.EndsWith(".xml", StringComparison.Ordinal) || IdOf(n) is not long id) continue;
+            int prefix = (int)(id / 100000);
+            if (!index.TryGetValue(prefix, out var l)) index[prefix] = l = new();
+            l.Add((id, n));
+        }
+        foreach (var l in index.Values) l.Sort((a, b) => a.Item1.CompareTo(b.Item1));
+        return index;
+    }
 }

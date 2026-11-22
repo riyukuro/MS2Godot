@@ -1,6 +1,7 @@
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
+using Ms2.Ui.Items;
 using NUnit.Framework;
 
 namespace Ms2.Ui.Tests;
@@ -84,5 +85,24 @@ public class PerFileTableTests
         var packs = Packs();
         var t = new NpcTable(packs);
         Assert.That(t.Count, Is.GreaterThan(1000));
+    }
+
+    [Test]
+    public void PresetFilesAreIndexedByTheirModelFilePrefixInIdOrder()
+    {
+        var ix = PerFileTable.PresetIndex(new[] { "itempreset/1/14/11400031.xml", "itempreset/1/14/11400016.xml", "itempreset/0/00/00000001.xml", "itempreset/1/14/readme.xml", "item/1/14/11400016.xml" });
+        Assert.That(ix.Keys, Is.EquivalentTo(new[] { 114, 0 }));
+        Assert.That(ix[114].Select(x => x.Id), Is.EqualTo(new long[] { 11400016, 11400031 }));
+    }
+
+    [Test]
+    public void ThePresetsGiveTheModelsOfTheKmsItemModelFile()
+    {
+        var packs = Packs();
+        if (!packs.List("Xml").Any(n => n.StartsWith("itempreset/", StringComparison.Ordinal))) return;      // the KMS packs keep itemmodel/
+        var assets = new ItemModelTable(packs).GetAssets(11400016);
+        Assert.That(assets, Is.Not.Empty);
+        Assert.That(assets[0].SlotName, Is.EqualTo("CL"));
+        Assert.That(assets.All(a => a.Name.StartsWith("Data/Resource/Model/Item/", StringComparison.OrdinalIgnoreCase)));
     }
 }

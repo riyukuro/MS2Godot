@@ -150,8 +150,10 @@ public sealed class ItemModelTable
     {
         var models = new Dictionary<int, Model>();
         string path = $"itemmodel/{file}.xml";
-        if (packs == null || !packs.Exists("Xml", path)) return models;
-        foreach (var e in GameStrings.Parse(packs.Read("Xml", path)).Root.Elements("ItemModel"))
+        if (packs == null) return models;
+        var doc = packs.Exists("Xml", path) ? GameStrings.Parse(packs.Read("Xml", path)) : PerFileTable.ItemModels(packs, file);    // GMS2: itempreset/
+        if (doc == null) return models;
+        foreach (var e in doc.Root.Elements("ItemModel"))
         {
             int id = ItemData.Atoi((string)e.Attribute("id") ?? "0");
             bool color = false; int palette = 0; var ids = new List<int>();
@@ -174,8 +176,10 @@ public sealed class ItemModelTable
     {
         var byId = new Dictionary<int, IReadOnlyList<Asset>>();
         string path = $"itemmodel/{file}.xml";
-        if (packs == null || !packs.Exists("Xml", path)) return byId;
-        foreach (var e in GameStrings.Parse(packs.Read("Xml", path)).Root.Elements("ItemModel"))
+        if (packs == null) return byId;
+        var doc = packs.Exists("Xml", path) ? GameStrings.Parse(packs.Read("Xml", path)) : PerFileTable.ItemModels(packs, file);
+        if (doc == null) return byId;
+        foreach (var e in doc.Root.Elements("ItemModel"))
         {
             int id = ItemData.Atoi((string)e.Attribute("id") ?? "0");
             byId[id] = ParseAssets(e);

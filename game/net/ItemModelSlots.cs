@@ -57,8 +57,9 @@ public sealed class ItemModelSlots
         {
             slots = new();
             string entry = $"itemmodel/{mp}.xml";
-            if (packs.Exists("Xml", entry))
-                foreach (var e in Doc(packs, entry).Descendants("ItemModel"))
+            var presetDoc = packs.Exists("Xml", entry) ? Doc(packs, entry) : Ms2.Formats.World.PerFileTable.ItemModels(packs, mp);   // GMS2: itempreset/
+            if (presetDoc != null)
+                foreach (var e in presetDoc.Descendants("ItemModel"))
                     if (int.TryParse((string)e.Attribute("id"), out int i)
                         && Enum.TryParse<EquipSlot>((string)e.Element("slots")?.Element("slot")?.Attribute("name"), true, out var s))
                         slots[i] = s;

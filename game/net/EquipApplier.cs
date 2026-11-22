@@ -106,9 +106,9 @@ public sealed class EquipApplier
         {
             byId = new Dictionary<int, XElement>();
             string entry = $"itemmodel/{prefix}.xml";
-            if (packs.Exists("Xml", entry))
+            var x = packs.Exists("Xml", entry) ? PackXml.Parse(packs.Read("Xml", entry)) : Ms2.Formats.World.PerFileTable.ItemModels(packs, prefix);   // GMS2: itempreset/
+            if (x != null)
             {
-                var x = PackXml.Parse(packs.Read("Xml", entry));
                 foreach (var e in x.Descendants("ItemModel"))
                     if (int.TryParse((string)e.Attribute("id"), out int i)) byId[i] = e;
             }
