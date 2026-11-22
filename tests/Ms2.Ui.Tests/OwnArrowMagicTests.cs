@@ -330,6 +330,47 @@ public class OwnArrowMagicTests
     {
         var d = Paths("piercingAttackInterval=\"300\" piercingAttackMaxTargetCount=\"4\" traceTargetDuration=\"1.5\"").Get(600, 0);
         Assert.That((d.PiercingAttackInterval, d.PiercingAttackMaxTargetCount, d.TraceTargetDuration), Is.EqualTo((300u, 4, 1.5f)));
+        // explosionByDestroy: XmlGetBool over the CMagicData ctor's 1
+        Assert.That((d.ExplosionByDestroy, Paths("explosionByDestroy=\"0\"").Get(600, 0).ExplosionByDestroy,
+            Paths("explosionByDestroy=\"1\"").Get(600, 0).ExplosionByDestroy), Is.EqualTo((true, false, true)));
+    }
+
+    [TestCase("", false, true, true)]
+    [TestCase(" explosionByDestroy=\"0\"", false, true, false)]
+    [TestCase(" explosionByDestroy=\"0\"", true, true, true)]
+    [TestCase("", false, false, false)]
+    public void AnArrowsEndSendsItsSplash(string path, bool hit, bool local, bool splash)
+    {
+        // FUN_14145f570 (magicdata.cpp:1150): explosionByDestroy, else the fill done (m_n1CC) or a ray stop (m_n1C8), an
+        // attack with a cubeMagicPathID and FUN_141464410 (the owner the local player) send the splash at the end
+        var r = Record(attack: " cubeMagicPathID=\"1\"");
+        var m = Add(r, Paths(Linear + path));
+        var owner = new MagicOwner(Vector3.Zero, 0, local, false, false);
+        var objects = hit ? new[] { Me, Mob(9, 0, -250) } : new[] { Me };
+        var splashes = new List<SkillSplashRequest>();
+        foreach (int t in new[] { 0, 100, 400, 500 })
+            m.Tick(T + t, 0, owner, objects, r, null, null, () => 0, null, splashes: splashes);
+        Assert.That(m.Count, Is.EqualTo(0), "ended");
+        Assert.That(splashes, Has.Count.EqualTo(splash ? 1 : 0));
+        if (!splash) return;
+        var sp = splashes[0];
+        Assert.That((sp.CastId, sp.Attack, sp.SendCount), Is.EqualTo((r.CastId, (byte)0, 3)));
+        Assert.That(sp.Position.Y, Is.EqualTo(hit ? -180f : -810f).Within(1e-2f), "the current point at the end");
+    }
+
+    [Test]
+    public void AnArrowThatBouncedOffDoesNotTurnBack()
+    {
+        // FUN_141463fb0 (magicdata.cpp:2238): bounceType 4 turns back only when m_n528 is not 2
+        var r = Record(" bounceType=\"4\" bounceCount=\"2\"");
+        var m = Add(r, Paths(Linear));
+        var objects = new[] { Me, Pc(9, 0, -250, invincible: 2) };
+        for (int t = 0; t <= 600 && m.Count > 0; t += 50)
+        {
+            m.Tick(T + t, 0, Owner, objects, r, null, null, () => 0, null);
+            if (m.Count > 0) Assert.That(m.Flight(0).State, Is.EqualTo(2), "never state 5");
+        }
+        Assert.That(m.Count, Is.EqualTo(0), "the end at the bounce's target");
     }
 
     [Test]

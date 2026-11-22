@@ -44,8 +44,7 @@ public delegate bool MagicRayCast(Vector3 from, Vector3 dir, float length, out V
 /// Piercing arrows (bounceType 3 and 4) keep flying through their hits, forget them each piercing interval and send its
 /// splash (<see cref="SkillSplashRequest"/>); bounceType 4 then flies back to the owner (state 5) and ends there.
 /// STILL-OPEN: for an arrow record, the magic control flight (FUN_141464490, a skill with magicControl enable not 0: those make no arrow
-/// magic here), the bounce-off's effect, the hit effects and the end
-/// splash (FUN_14145f570); the linked records, the latency maximum (0 here: the time sync's latency is not kept),
+/// magic here), the bounce-off's effect, the hit effects, the end's effects and its cast record (FUN_14145f570); the linked records, the latency maximum (0 here: the time sync's latency is not kept),
 /// CFunctionCubeService::SetTagArea, the magic's own effects (PlayHitEffects) and MyPC::FUN_14152e0c0 after a fill are not
 /// ported.
 /// </summary>
@@ -73,7 +72,8 @@ public sealed class OwnTagMagics
         // the record's direction (m_ptDefaultDir), m_matRotation's columns, the remaining and total flight seconds, the curve
         // flag (m_n26C), the ray stop (m_n1C8), the fill done (m_n1CC), the targets hit (m_map1D8), the targets the fill skips
         // (m_map220: the same ones, but a piercing interval forgets them), the last piercing interval (m_n268), the last box
-        // (m_spVal), the target record's hit index (m_n84) and the owner's object id (the random seeds)
+        // (m_spVal), the target record's hit index (m_n84), the owner's object id (the random seeds) and the invincible kind of
+        // the last fill's hits (m_n528)
         public bool Arrow;
         public MagicPathMove Row;
         public int State, StateTick, LastTick, HoldUntil;
@@ -84,7 +84,7 @@ public sealed class OwnTagMagics
         public bool Curve, RayStopped, Filled, HasArea;
         public HashSet<int> Hits, Excluded;
         public HitBox Area;
-        public int HitIndex, OwnerId, PierceTick;
+        public int HitIndex, OwnerId, PierceTick, Invincible;
     }
 
     readonly List<Magic> live = new();
@@ -419,7 +419,7 @@ public sealed class OwnTagMagics
     /// <summary>
     /// CMagic::FUN_14145de80 @0x14145de80 (magicdata.cpp:755) for an arrow record: nothing before start + delay; state 0 to 1
     /// (the state tick start + delay), 1 to 2 once spawnTime passed (the state tick moves by it), both in the same tick; in
-    /// state 2 a lifeTime that ran out ends it (state 3, the end splash FUN_14145f570 not ported: dropped), else the flight
+    /// state 2 a lifeTime that ran out ends it (state 3, <see cref="End"/>: dropped), else the flight
     /// (<see cref="Fly"/>), the arrow fill (FUN_141461bd0 then <see cref="ArrowFill"/>), the registration of its box
     /// (FUN_141462490) and the end check (FUN_141463fb0). The turn back of bounceType 4 (state 5, FUN_141460700) ticks the
     /// same way. m_nLastTick is the tick's time at the end. True when dropped.
@@ -448,7 +448,11 @@ public sealed class OwnTagMagics
         }
         if (m.State is 2 or 5)
         {
-            if (m.Life != 0 && (uint)(m.StateTick + m.Life) <= (uint)nowMs) return true;
+            if (m.Life != 0 && (uint)(m.StateTick + m.Life) <= (uint)nowMs)
+            {
+                End(m, owner, splashes);
+                return true;
+            }
             Fly(m, nowMs, objects, rayCast);
             if (!m.Filled)
             {
@@ -462,13 +466,17 @@ public sealed class OwnTagMagics
                 registered++;
             if (m.Remain <= 0f)
             {
-                // FUN_141463fb0: moveEndHoldDuration once, then bounceType 4 turns back (state 5, the hold not set again, so
-                // the turn back ends at its arrival), else the end (state 3: dropped)
+                // FUN_141463fb0: moveEndHoldDuration once, then bounceType 4 turns back unless it bounced off (state 5, the
+                // hold not set again, so the turn back ends at its arrival), else the end (state 3, FUN_14145f570: dropped)
                 int hold = m.Row.MoveEndHoldDuration;
                 if (m.HoldUntil == 0 && hold > 0) m.HoldUntil = nowMs + hold;
                 else if ((uint)m.HoldUntil < (uint)nowMs)
                 {
-                    if (m.State != 2 || m.Attack.Arrow.BounceType != 4) return true;
+                    if (m.State != 2 || m.Attack.Arrow.BounceType != 4 || m.Invincible == 2)
+                    {
+                        End(m, owner, splashes);
+                        return true;
+                    }
                     m.StateTick = nowMs;
                     m.State = 5;
                     TurnBack(m, nowMs, objects);
@@ -659,6 +667,7 @@ public sealed class OwnTagMagics
             int k = IndexOf(detected[i]);
             if (k >= 0 && queried[k].Kind == HitKind.Pc && queried[k].Invincible != 0) { invincible = queried[k].Invincible; break; }
         }
+        m.Invincible = invincible;
         SkillHitRequest req = null;
         if (owner.LocalPlayer)
         {
@@ -727,6 +736,22 @@ public sealed class OwnTagMagics
         m.Excluded.Clear();
         m.PierceTick = nowMs;
         if (m.Attack.CubeMagicPathId != 0)
+            splashes?.Add(new SkillSplashRequest(m.CastId, m.AttackIndex, m.SendCount, m.HitIndex, m.Current, EulerDegrees(m)));
+    }
+
+    /// <summary>
+    /// CMagic::FUN_14145f570 @0x14145f570 (magicdata.cpp:1031), an arrow magic's end: an explosion (the row's
+    /// explosionByDestroy, else a ray stop (m_n1C8) or a fill done (m_n1CC)) of an attack with a cubeMagicPathID sends the
+    /// splash (<see cref="SkillSplashRequest"/>, the same fields as a piercing interval's) when FUN_141464410 holds (the
+    /// owner the local player).
+    /// STILL-OPEN: the cast record of the magic's serial (CMagicService::FindCast, fired at the end point by FUN_14146b440 and
+    /// removed), the end and hit effects (m_str148 / m_str150 / m_str188) and the linked record's restart at the current
+    /// point (FUN_14145ddd0) are not ported.
+    /// </summary>
+    static void End(Magic m, in MagicOwner owner, List<SkillSplashRequest> splashes)
+    {
+        bool explosion = m.Row.ExplosionByDestroy || m.RayStopped || m.Filled;
+        if (owner.LocalPlayer && m.Attack.CubeMagicPathId != 0 && explosion)
             splashes?.Add(new SkillSplashRequest(m.CastId, m.AttackIndex, m.SendCount, m.HitIndex, m.Current, EulerDegrees(m)));
     }
 

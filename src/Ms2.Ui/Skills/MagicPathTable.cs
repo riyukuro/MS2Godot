@@ -30,6 +30,9 @@ public sealed record MagicPathMove(float DelayTime, float SpawnTime, float LifeT
     public float NonTargetMoveDistance { get; init; }
     /// <summary>"moveEndHoldDuration" (m_nMoveEndHoldDuration), milliseconds.</summary>
     public int MoveEndHoldDuration { get; init; }
+    /// <summary>"explosionByDestroy" (XmlGetBool, m_nExplosionByDestroy, 1 in the CMagicData ctor): the end of the magic sends
+    /// its splash (CMagic::FUN_14145f570) even without a ray stop or a fill.</summary>
+    public bool ExplosionByDestroy { get; init; } = true;
     /// <summary>"ignorePhysxTestInitPosition" (XmlGetBool): skips the start ray of an arrow magic (CMagic::FUN_1414609e0).</summary>
     public bool IgnorePhysxTestInitPosition { get; init; }
     /// <summary>"traceTargetDuration" (m_fTraceTargetDuration), seconds: past it (from the state tick, state 2 on) the magic no
@@ -47,7 +50,7 @@ public sealed record MagicPathMove(float DelayTime, float SpawnTime, float LifeT
 /// The magic paths (LoadMagicPath @0x14145c4d0, magicdata.cpp:302): ./data/xml/table/magicPath.xml, each &lt;type id&gt; a list of
 /// its &lt;move&gt; rows; a repeated id replaces the earlier list (SetAt). The default id 0 is then set to one row of zeros, so an
 /// attack without a magicPathID still gets a magic. Read on first use (FUN_14145c300 reloads a dirty cache).
-/// STILL-OPEN: lookAtType, traceTargetOffsetPos and explosionByDestroy are not read.
+/// STILL-OPEN: lookAtType and traceTargetOffsetPos are not read.
 /// </summary>
 public sealed class MagicPathTable
 {
@@ -73,6 +76,7 @@ public sealed class MagicPathTable
                     ControlRate = Xml.Float(m, "controlRate"), CatmullRom = Xml.Int(m, "catmullrom"),
                     NonTargetMoveDistance = Xml.Float(m, "nonTargetMoveDistance"), MoveEndHoldDuration = Xml.Int(m, "moveEndHoldDuration"),
                     IgnorePhysxTestInitPosition = Xml.Bool(m, "ignorePhysxTestInitPosition"),
+                    ExplosionByDestroy = m.Attribute("explosionByDestroy") == null || Xml.Bool(m, "explosionByDestroy"),
                     TraceTargetDuration = Xml.Float(m, "traceTargetDuration"),
                     PiercingAttackInterval = Xml.UInt(m, "piercingAttackInterval"),
                     PiercingAttackMaxTargetCount = Xml.Int(m, "piercingAttackMaxTargetCount"),
