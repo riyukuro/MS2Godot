@@ -16,6 +16,8 @@ public sealed class ItemKinds
     readonly PackSet packs;
     readonly Dictionary<int, Dictionary<int, (int Type, bool Skin, bool Ucc, uint SlotMax, string SlotIcon)>> files = new();
     HashSet<int> customNotes;
+    /// <summary>The id prefixes without an itemdata/{prefix}.xml (GMS2 keeps one file per item): found when the prefix's rows were loaded.</summary>
+    readonly HashSet<int> noPrefixFile = new();
     readonly Ms2.Ui.Items.ItemDataTable perItem;
     public ItemKinds(PackSet packs) { this.packs = packs; perItem = new Ms2.Ui.Items.ItemDataTable(packs); }
 
@@ -28,7 +30,8 @@ public sealed class ItemKinds
         {
             rows = new();
             string entry = $"itemdata/{prefix}.xml";
-            if (packs.Exists("Xml", entry))
+            if (!packs.Exists("Xml", entry)) noPrefixFile.Add(prefix);
+            else
                 foreach (var e in Doc(packs, entry).Root.Elements("item"))
                 {
                     if (!int.TryParse((string)e.Attribute("id"), out int i)) continue;
@@ -68,7 +71,8 @@ public sealed class ItemKinds
         var x = ItemExtra.None;
         if (r.Ucc || r.Type == 0x16) x |= ItemExtra.Ugc;
         if (r.Type == 7) x |= ItemExtra.Gem;
-        if (r.Type == 0xc && CustomNote(id)) x |= ItemExtra.Music;
+        // GMS2 keeps the flag in the item's own file (no itemdata/<n>.xml), KMS in musicscore.xml
+        if (r.Type == 0xc && (CustomNote(id) || (noPrefixFile.Contains(id / 100000) && perItem.Get(id) is { CustomNote: true }))) x |= ItemExtra.Music;
         if (r.Type == 0xb) x |= ItemExtra.Pet;
         return x;
     }

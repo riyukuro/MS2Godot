@@ -119,6 +119,8 @@ public sealed class ItemData
     public readonly List<string> AdditionalEffectIds = new();
     /// <summary>The name of the first &lt;slots&gt;/&lt;slot&gt; of the item itself (GMS2 data names the model slot in the item file): HR, FD, CP, or empty.</summary>
     public string FirstSlot = "";
+    /// <summary>The item's own &lt;MusicScore isCustomNote&gt; (GMS2 item files; KMS keeps the flag in musicscore.xml).</summary>
+    public bool CustomNote;
     /// <summary>ItemMaterial::Load @0x1405473c0 (itemdatastruct.cpp:1086): &lt;material attack&gt;, the CItemData +0x10c a worn
     /// weapon gives a hit sound whose attack has no attackMaterial (CMagic::PlayHitEffects, magicdata.cpp:1709).</summary>
     public int AttackMaterial;
@@ -132,6 +134,7 @@ public sealed class ItemData
             d.StringTag = (string)b.Attribute("stringTag") ?? "";
         }
         if (env.Element("slots")?.Element("slot") is { } slot) d.FirstSlot = (string)slot.Attribute("name") ?? "";
+        d.CustomNote = ((string)env.Element("MusicScore")?.Attribute("isCustomNote"))?.ToLowerInvariant() is "true" or "1";
         if (env.Element("ucc") is { } ucc) d.UccMesh = (string)ucc.Attribute("mesh") ?? "";
         if (env.Element("property") is { } p)
         {
