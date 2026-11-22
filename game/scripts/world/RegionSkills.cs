@@ -29,8 +29,6 @@ namespace Ms2Godot.World;
 public partial class RegionSkills : Node3D, IRegionSkillEffects
 {
     const string EffectArchive = "Resource/Model/Effect";
-    static readonly Dictionary<PackSet, SkillTable> skillTables = new();
-
     readonly PackSet packs;
     readonly ModelBuilder builder;
     readonly EffectTable table;
@@ -59,7 +57,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
         Name = "RegionSkills";
     }
 
-    SkillTable Skills => skillTables.TryGetValue(packs, out var t) ? t : skillTables[packs] = new SkillTable(packs);
+    SkillTable Skills => SkillTable.For(packs);
 
     public override void _EnterTree()
     {

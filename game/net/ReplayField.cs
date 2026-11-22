@@ -117,7 +117,7 @@ public partial class ReplayField : Field
         equip = new EquipApplier(packs, builder) { Palettes = new Look.ColorPalettes(packs) };
         npcTable = new Ms2.Formats.World.NpcTable(packs);
         npcs = new NpcLayer(packs, builder, npcTable, this);
-        skills = new SkillTable(packs);
+        skills = SkillTable.For(packs);
         combat = new CombatLayer(packs, builder, new EffectTable(packs), this);
         if (System.Environment.GetEnvironmentVariable("MS2_NOPARTICLES") != null) combat.Particles = false;
         npcs.Combat = combat;

@@ -81,7 +81,7 @@ public sealed partial class RemoteLayer
     void PlayCast(int actorId, int skillId, int level, int motionIndex, float speed, System.Numerics.Vector3 pos, float rotZ,
         System.Numerics.Vector3 dir, int holdId = 0, string holdNode = "", long castUid = 0)
     {
-        skillMotions ??= new Ms2.Formats.World.SkillTable(packs);
+        skillMotions ??= Ms2.Formats.World.SkillTable.For(packs);
         var motion = skillMotions.Motion(skillId, level, motionIndex);
         if (motion == null) return;
         Node3D at; float yaw;

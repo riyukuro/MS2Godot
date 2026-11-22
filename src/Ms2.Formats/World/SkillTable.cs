@@ -105,6 +105,13 @@ public sealed class SkillTable
         return id.Length > 0 && id.All(char.IsAsciiDigit) ? id : null;
     }
 
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Lazy<SkillTable>> shared = new();
+
+    /// <summary>The one table of a data set: the parse of every skilldata file (about 190 MB of XML nodes and 0.2 s) is paid
+    /// once per PackSet, not again by each user (the own cast, the remote casts, the region skills, the replay). Nothing
+    /// changes a table after its build, so the users read the same one.</summary>
+    public static SkillTable For(PackSet packs) => shared.GetValue(packs, p => new Lazy<SkillTable>(() => new SkillTable(p))).Value;
+
     public SkillTable(PackSet packs)
     {
         var entries = packs.List("Xml").Where(n => n.StartsWith("skilldata/", StringComparison.OrdinalIgnoreCase) && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).ToList();
