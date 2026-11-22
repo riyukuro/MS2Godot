@@ -110,14 +110,19 @@ public partial class Player
         if (State == MoveState.Rope) RopeSequenceEvents();
     }
 
-    /// <summary>StateRope::FUN_1417e1e60: this frame's climb step; the next segment or the end of the rope.</summary>
+    /// <summary>
+    /// StateRope::FUN_1417e1e60: this frame's climb step; the next segment or the end of the rope. With the rope's Climbable
+    /// flag (0x4df0c0de) off, a ground hit below the feet lets go (sub 0x39, statemanager.cpp:1438-1446): a ground ray cast
+    /// there and then (CPhysXHelper::GetGroundDistance, length 0 = unlimited), not the cached PCBase::vfunc_93 value, which
+    /// stays 0 from the ground the pc left.
+    /// </summary>
     float RopeStep(float dt)
     {
         var pos = GlobalPosition;
         float step = 0;
         if (!rope.Usable)
         {
-            if (GroundDistance < float.MaxValue) rsub = RopeSub.Drop;
+            if (Ray(pos, Vector3.Down, MoveConfig.UnlimitedRay, GroundGroups) != null) rsub = RopeSub.Drop;
             return 0;
         }
         if (rsub is RopeSub.Up or RopeSub.Down && ropeStepT >= 0)

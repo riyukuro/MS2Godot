@@ -15,6 +15,10 @@ namespace Ms2Godot.Tests;
 /// - the same, cleared while the pc is still taking hold: the pc falls (the client reads it whatever the sub state);
 /// - a ladder with nothing below, flag cleared while the up key is held: the pc stays on it and does not move; set again,
 ///   the climb goes on.
+/// StateRope (StateRope::FUN_1417e1e60, statemanager.cpp:1438-1446) reads the rope's flag the same way, sub 0x39 on a hit:
+/// - a rope over the floor, flag cleared in the middle of a climb: the pc falls;
+/// - a rope with nothing below, flag cleared while the up key is held: the pc stays on it and does not move; set again,
+///   the down key moves it.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class PlayerLadderCheck : Node3D
@@ -22,7 +26,7 @@ public partial class PlayerLadderCheck : Node3D
     readonly NxController.FaceGrids faceGrids = new();
     readonly List<string> fails = new();
     Player pc;
-    MethodInfo step, take;
+    MethodInfo step, take, takeRope;
     int frames;
     const float Dt = 1f / 60;
     // the floor spans x -2000..2000 with its top at 0; the first ladder stands 200 above it, the second past it
@@ -48,6 +52,7 @@ public partial class PlayerLadderCheck : Node3D
         pc.GlobalPosition = new Vector3(0, 5, 0);
         step = typeof(Player).GetMethod("Step", BindingFlags.Instance | BindingFlags.NonPublic);
         take = typeof(Player).GetMethod("TryLadder", BindingFlags.Instance | BindingFlags.NonPublic);
+        takeRope = typeof(Player).GetMethod("TryRope", BindingFlags.Instance | BindingFlags.NonPublic);
     }
 
     void Steps(int n)
@@ -60,7 +65,7 @@ public partial class PlayerLadderCheck : Node3D
     public override void _Process(double delta)
     {
         if (++frames != 5) return;
-        try { Run(); }
+        try { Run(); Rope(); }
         catch (System.Exception e) { fails.Add($"{e.InnerException ?? e}"); }
         SetProcess(false);
         GD.Print($"player ladder: {(fails.Count == 0 ? "ok" : "FAIL\n  " + string.Join("\n  ", fails))}");
@@ -77,6 +82,53 @@ public partial class PlayerLadderCheck : Node3D
         pc.GlobalPosition = at;
         if (!(bool)take.Invoke(pc, new object[] { 1 })) fails.Add($"no hold of the ladder at {at}");
         return l;
+    }
+
+    /// <summary>A rope with its base at <paramref name="at"/>, takes hold of it from beside (side 1).</summary>
+    Climbables.Climb TakeRope(Vector3 at)
+    {
+        var l = new Climbables.Climb { Name = "rope", IsRope = true, Position = at, YawDeg = 0, Extrude = 0, Usable = true };
+        pc.Climbs = new Climbables();
+        pc.Climbs.All.Add(l);
+        pc.Input2 = Vector2.Zero;
+        pc.GlobalPosition = at;
+        if (!(bool)takeRope.Invoke(pc, new object[] { 1 })) fails.Add($"no hold of the rope at {at}");
+        return l;
+    }
+
+    void Rope()
+    {
+        Steps(30);
+        var l = TakeRope(OverFloor);
+        Steps(30);
+        pc.Input2 = new Vector2(0, 1);
+        Steps(10);
+        Expect(pc.State == Player.MoveState.Rope, $"rope climb: {pc.State}");
+        float y0 = pc.GlobalPosition.Y;
+        l.Usable = false;
+        Steps(1);
+        Expect(pc.State == Player.MoveState.Fall, $"rope flag cleared mid-climb over the floor: {pc.State}, want Fall");
+        pc.Input2 = Vector2.Zero;
+        Steps(60);
+        GD.Print($"player ladder: rope over the floor, cleared at y {y0:0.#}, after it {pc.State} at y {pc.GlobalPosition.Y:0.#}");
+
+        l = TakeRope(OverNothing);
+        Steps(30);
+        pc.Input2 = new Vector2(0, 1);
+        Steps(10);
+        l.Usable = false;
+        float y1 = pc.GlobalPosition.Y;
+        Steps(30);
+        float y2 = pc.GlobalPosition.Y;
+        Expect(pc.State == Player.MoveState.Rope, $"rope flag cleared with nothing below: {pc.State}, want Rope");
+        Expect(Mathf.Abs(y2 - y1) < 0.01f, $"rope flag cleared with nothing below: moved {y2 - y1:0.##}, want 0");
+        // a lone segment is held at its top (base + RopeGrip), so set again the pc climbs down it
+        l.Usable = true;
+        pc.Input2 = new Vector2(0, -1);
+        Steps(10);
+        float y3 = pc.GlobalPosition.Y;
+        Expect(y3 < y2 - 1f, $"rope flag set again, down held: {pc.State}, moved {y3 - y2:0.##}");
+        GD.Print($"player ladder: rope with nothing below, off {y2 - y1:0.##} moved, on again {y3 - y2:0.##} moved");
     }
 
     void Run()
