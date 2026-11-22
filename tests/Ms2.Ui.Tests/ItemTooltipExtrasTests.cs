@@ -525,4 +525,19 @@ public class ItemTooltipExtrasTests
         m.HasLocalPlayer = false;
         Assert.That(Fill(shut).Data.ContainsKey("ugcItemLimitRegister"), Is.False);
     }
+
+    [Test]
+    public void SuperWorldChatItemPreviewsItsChatLine()
+    {
+        var m = NewModel();
+        var tip = new ItemTooltip(m, 0x200);
+        tip.Fill(Item.Create(m.Tables.Items.Get(20800001), 1));          // SuperWorldChat "20800001,3,ff66fa"
+        var p = (Dictionary<string, object>)tip.Data["previewSuperWorldChat"];
+        Assert.That(p["colorIdx"], Is.EqualTo(3u));
+        Assert.That(p["text"], Is.EqualTo(Ms2.Quest.ClientFormat.Format(m.Tables.Common("s_html_chat_super_preview"),
+            "export_super_icon20800001", 0xff66fau, m.Tables.ItemName(20800001))));
+        var plain = new ItemTooltip(m, 0x200);
+        plain.Fill(Item.Create(m.Tables.Items.Get(11300000) ?? new ItemData { Id = 11300000 }, 1));
+        Assert.That(plain.Data.ContainsKey("previewSuperWorldChat"), Is.False);
+    }
 }

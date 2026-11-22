@@ -88,6 +88,7 @@ public sealed partial class ItemTooltip
         SetItemLockInfo(item);
         Data["itemPiece"] = d.IsPieceItem;                                        // SetItemPiece
         SetGemstoneLevel(d.Id);                                                   // FUN_1409d43b0
+        SetSuperWorldChatPreview(d.Id);                                           // FUN_1409d4460
         SetItemBreakIngredients(item);                                            // FUN_1409d8570
         Data["itemPetSkin"] = d.GemSubtype == 0xb;                                // SetItemPetSkin(FUN_14053e900() == 0xb), the gem subtype
         if ((Flags & 0x80) != 0 || (Flags & 4) != 0) SetUseHints(item);              // FUN_1409cd750
