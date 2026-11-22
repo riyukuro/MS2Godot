@@ -45,6 +45,14 @@ public sealed record HomeKickUsersRequest() : IOutPacket {
     public void Write(ByteWriter w) { w.WriteByte(0x31); }
 }
 
+/// <summary>UIHomeInsideOptionDialog's send (FUN_140c280d0 @0x140c280d0, uihomeinsideoptiondialog.cpp:200-233): RequestCube u8 mode (0x33 background,
+/// 0x34 light, 0x36 camera), u8 the combo's selected index.</summary>
+public sealed record HomeInsideOptionRequest(byte Mode, byte Index) : IOutPacket {
+    public const byte Background = 0x33, Light = 0x34, Camera = 0x36;
+    public Outbound Op => Outbound.RequestCube;
+    public void Write(ByteWriter w) { w.WriteByte(Mode); w.WriteByte(Index); }
+}
+
 /// <summary>UIHomeMenuDialog::SendRequestCube (@0x140c2b3e0, uihomemenudialog.cpp:759): RequestCube u8 0x1f, nothing else (the home is demolished).</summary>
 public sealed record HomeDemolishRequest() : IOutPacket {
     public Outbound Op => Outbound.RequestCube;

@@ -41,6 +41,13 @@ public class HouseSettingPacketTests {
         Assert.That(Bytes(p), Is.EqualTo(new byte[] { 0x31 }));
     }
 
+    [Test] public void HomeInsideOptionPacketsAreModes0x33And0x34And0x36() {
+        Assert.That(Bytes(new HomeInsideOptionRequest(HomeInsideOptionRequest.Background, 4)), Is.EqualTo(new byte[] { 0x33, 4 }));
+        Assert.That(Bytes(new HomeInsideOptionRequest(HomeInsideOptionRequest.Light, 1)), Is.EqualTo(new byte[] { 0x34, 1 }));
+        Assert.That(Bytes(new HomeInsideOptionRequest(HomeInsideOptionRequest.Camera, 2)), Is.EqualTo(new byte[] { 0x36, 2 }));
+        Assert.That(new HomeInsideOptionRequest(0x33, 0).Op, Is.EqualTo(Outbound.RequestCube));
+    }
+
     [Test] public void DemolishIsMode0x1fOnly() {
         var p = new HomeDemolishRequest();
         Assert.That(p.Op, Is.EqualTo(Outbound.RequestCube));

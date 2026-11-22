@@ -1967,6 +1967,9 @@ public partial class LiveSession : Node
         if (game != null) Send(new HomeKickUsersRequest());
     }
 
+    /// <summary>UIHomeInsideOptionDialog::FUN_140c280d0 (uihomeinsideoptiondialog.cpp:200-233): one of the three selections.</summary>
+    public void SendHomeInsideOption(byte mode, byte index) { if (game != null) Send(new HomeInsideOptionRequest(mode, index)); }
+
     /// <summary>UIHomeMenuDialog::SendRequestCube (uihomemenudialog.cpp:759-776): the packet that demolishes the home.</summary>
     public void SendHomeDemolish()
     {
