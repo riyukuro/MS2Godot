@@ -174,10 +174,13 @@ public sealed class RideSummonCast : ICastingEventListener
     /// vfunc_8 (@0x1417f7b60): a finished cast sends RequestRide mode 0 (RideOnActionUseItem: the row's ridee id, the item
     /// uid, the option byte) when the item's riding row is found, then state 1; else move input leaves for state 2 (the
     /// exit, vfunc_5, cancels the bar). Returns true when the state ended. No allocation unless the cast finishes.
+    /// The own pc gone (SetMyPC(0) of a field change frees MyPC and its state manager) ends the state with it, without a send
+    /// or a bar cancel: the bar went with the old field's HUD, and the new field's bar is not this state's.
     /// </summary>
     public bool Tick(bool moveInput)
     {
-        if (!active || !host.HasPlayer) return false;
+        if (!active) return false;
+        if (!host.HasPlayer) { End(); return true; }
         if (!finished && endMs != 0 && host.NowMs >= endMs) finished = true;
         if (finished)
         {

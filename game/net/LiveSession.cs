@@ -157,8 +157,8 @@ public partial class LiveSession : Node
         BattleRecords.PetOwnerOf = id => remote?.Tracker.PetOwnerOf(id) ?? 0;
         // battlerecordmanager.cpp:188: the room id set, its row found, and the row's chaosDamageMeter
         BattleRecords.ChaosRoomMeter = () => dungeonRoomId != 0 && DungeonRoomOf?.Invoke(dungeonRoomId) is { ChaosDamageMeter: true };
-        // the server's state change leaves the running interaction or react state
-        Me.StateEntered += st => InteractKey.LeaveForServerState(st, InteractObjects, InteractNpcs, reactState);
+        // the server's state change (a death included) leaves the running interaction, react or ride summon state
+        Me.StateEntered += st => InteractKey.LeaveForServerState(st, InteractObjects, InteractNpcs, reactState, rideSummon);
     }
     /// <summary>CGroupChatManager's chats from the group chat packets (0x8B); live only. The HUD sets its texts and its browser.</summary>
     public readonly Ms2.Ui.GroupChatBook GroupChats = new();
@@ -1007,10 +1007,12 @@ public partial class LiveSession : Node
 
     /// <summary>SetMyPC(0) of a field change (RequestFieldEnter in game, GameToGame): the own PC's running invincible ends with
     /// it (<see cref="DropOwnPcInvincible"/>), the old field's player stops sending and the own object is unknown until the
-    /// new field's FieldAddUser.</summary>
+    /// new field's FieldAddUser. A running ride item summon (StateSummon) goes with the old MyPC: its bar is cancelled and
+    /// nothing is sent.</summary>
     void DropOwnPc()
     {
         DropOwnPcInvincible();
+        rideSummon?.Cancel();
         if (player != null && IsInstanceValid(player)) { player.Live = false; player.DeadFlag = false; }
         player = null;
         selfObject = -1;

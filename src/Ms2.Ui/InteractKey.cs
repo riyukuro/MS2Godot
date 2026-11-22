@@ -33,6 +33,25 @@ public static class InteractKey
         return react != null ? react.CurStateId(id) : id;
     }
 
+    /// <summary>StateSummon's state id (StateSummon::vfunc_1, statesummon.h:30).</summary>
+    public const int StateSummon = 0x26;
+
+    /// <summary>As the react overload, with the ride item's StateSummon: 0x26 while <paramref name="summon"/> casts. StateSummon
+    /// is a pc state like the others, so 0x26 is what MyPC::GetCurStateId reads, and it is none of the states
+    /// MyPC::FUN_141527160 lets an interaction start from (1, 0xb, 0xf, 0x21, 0x3a; mypc.cpp:1873-1882).</summary>
+    public static int StateId(LiveInteractObjects objects, LiveInteractNpc npcs, ReactState react, RideSummonCast summon, int otherState) =>
+        summon != null && summon.IsCasting ? StateSummon : StateId(objects, npcs, react, otherState);
+
+    /// <summary>As the other overload, and a running StateSummon (0x26) is left too: its vfunc_5 (statesummon.cpp:283) cancels
+    /// the bar and sends nothing, so a finished cast sends no RequestRide. StateSummon keeps State::vfunc_25 (state.cpp:751,
+    /// true), so a server 0x26 keeps it.</summary>
+    public static void LeaveForServerState(int state, LiveInteractObjects objects, LiveInteractNpc npcs, ReactState react,
+        RideSummonCast summon)
+    {
+        LeaveForServerState(state, objects, npcs, react);
+        if (state != StateSummon) summon?.Cancel();
+    }
+
     /// <summary>The server put the own pc into a state (<see cref="Ms2.Net.Packets.MyCharacter.StateEntered"/>: OnUserState,
     /// OnDeadUser, OnRevival): MyPC::vfunc_59 -> CStateManager::ChangeState leaves the current state, so a running
     /// StateInteraction (0x19, stateinteractdata.cpp:330), StateInteractionNpc (0x1a, :613) or StateReact (0x3d) runs its
