@@ -9,8 +9,10 @@ namespace Ms2Godot.Net;
 
 /// <summary>
 /// CSceneStateGame::OnResponseRide (0x79, @0x14172a8f0, scenestategame.cpp:12026) for the own pc: modes 0, 1 and 2
-/// (<see cref="OwnRide"/>), other players' in <see cref="Net.RemoteLayer.OnRide"/>. STILL-OPEN: the passenger modes 3-5,
-/// mode 6 (PC::FUN_1416642c0 and RideOnAction m_b28); RecvOp NpcRide 0xE7 (CSceneStateGame::OnNpcRide,
+/// (<see cref="OwnRide"/>), other players' in <see cref="Net.RemoteLayer.OnRide"/>; the own pc's passenger map and
+/// no-boarding flag of modes 3-6 (<see cref="RidePassengers"/>). STILL-OPEN: mode 3's own StateHold on another player's
+/// mount (vfunc_59(0x20)) and modes 4 / 5's camera back on the own pc (MyPC::FUN_14152e060), the own ride-on action's
+/// m_b28 of mode 6; RecvOp NpcRide 0xE7 (CSceneStateGame::OnNpcRide,
 /// scenestategame.cpp:4871: i32 npc id, then CNpc::FUN_141092c50) and the ridee skill set (mypc.cpp:1219-1226).
 /// The own pc's ride-off-first cast (IsUnrideOnUse, mypc.cpp:2447-2470) is <see cref="RideOffForSkill"/>.
 /// </summary>
@@ -34,8 +36,21 @@ public partial class LiveSession
         return true;
     }
 
+    /// <summary>The own pc's PCBase m_mapB28 (passenger object id to seat) and PC m_b1224 (ResponseRide modes 3-6).</summary>
+    public readonly System.Collections.Generic.Dictionary<int, int> OwnPassengers = new();
+    public bool OwnNoBoarding { get; private set; }
+
     void OnResponseRide(ResponseRide r)
     {
+        if (r != null && r.Mode >= 3)
+        {
+            // FindPCById(owner) for modes 3-6: the own pc's map here, another player's in the remote layer
+            if (RidePassengers.BoardsSelf(r, selfObject))
+                GD.Print($"live: boarding {r.ObjectId} seat {r.Seat}");    // STILL-OPEN: the own StateHold (state 0x20)
+            if (r.ObjectId != selfObject) { remote?.OnRide(r); return; }
+            if (!RidePassengers.Apply(r, OwnPassengers) && r.Mode == 6) OwnNoBoarding = r.Flag;
+            return;
+        }
         // modes 0-2 find any actor (FUN_141bd1200): another player's PC rides in the remote layer
         if (r != null && r.ObjectId != selfObject) { remote?.OnRide(r); return; }
         bool own = player != null && IsInstanceValid(player);
@@ -53,7 +68,7 @@ public partial class LiveSession
                 player.RideOff();
                 // PCBase::vfunc_121: the ride-off effect only when a ridee was released (the body returns before it
                 // otherwise). STILL-OPEN: the vfunc_25 test before both effects, rideOffBySkillEffect for type 0x18.
-                if (wasRiding) PlayOwnCommonEffect(RideOffEffectKey);
+                if (wasRiding) { PlayOwnCommonEffect(RideOffEffectKey); OwnPassengers.Clear(); }   // and ClearPassengers
                 if (OwnRide.SummonsAfterRideOff(r, selfObject))
                     GD.Print($"live: ride off for summon {r.RideeId} item {r.ItemUid}");   // STILL-OPEN: state 0x26, StateSummonData
                 break;

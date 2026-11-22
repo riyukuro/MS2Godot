@@ -122,17 +122,39 @@ public sealed class Mount
     /// </summary>
     public Transform3D Seat()
     {
-        var bone = SeatBone >= 0 ? Skeleton.GlobalTransform * Skeleton.GetBoneGlobalPose(SeatBone) : Visual.GlobalTransform;
-        var c = new Basis(Vector3.Right, -Mathf.Pi / 2);          // MS2 (Z-up) -> Godot
-        var ci = c.Inverse();
-        var rs = (ci * bone.Basis).Orthonormalized();
-        var rr = Data.RideRotation;
+        ClientSeat(BoneWorld(SeatBone), Data.RideTranslation, Data.RideRotation, out var pos, out var r);
+        return new Transform3D(ToGodot * r * ToClient, ToGodot * pos);
+    }
+
+    static readonly Basis ToGodot = new(Vector3.Right, -Mathf.Pi / 2), ToClient = ToGodot.Inverse();   // MS2 (Z-up) <-> Godot
+
+    /// <summary>
+    /// The seat on a node's Godot world transform <paramref name="w"/> in the client's Z-up axes: the rotation and
+    /// position <see cref="Seat"/> converts, also Ridee::FUN_1417083a0 (ridee.cpp:1254) for a passenger seat, with the
+    /// passenger's translation and rotation.
+    /// </summary>
+    public static void ClientSeat(in Transform3D w, float[] t, float[] rr, out Vector3 pos, out Basis r)
+    {
+        var rs = (ToClient * w.Basis).Orthonormalized();
         var e = new Basis(Vector3.Right, Mathf.DegToRad(rr[0])) * new Basis(new Vector3(0, 1, 0), Mathf.DegToRad(rr[1]))
                 * new Basis(new Vector3(0, 0, 1), Mathf.DegToRad(rr[2]));
-        var r = rs * e;
-        var t = Data.RideTranslation;
-        var pos = ci * bone.Origin + r.Column0 * t[0] - r.Column1 * t[1] + r.Column2 * t[2];
-        return new Transform3D(c * r * ci, c * pos);
+        r = rs * e;
+        pos = ToClient * w.Origin + r.Column0 * t[0] - r.Column1 * t[1] + r.Column2 * t[2];
+    }
+
+    /// <summary>The Godot world transform of a skeleton bone, the model's root for -1.</summary>
+    public Transform3D BoneWorld(int bone) =>
+        bone >= 0 ? Skeleton.GlobalTransform * Skeleton.GetBoneGlobalPose(bone) : Visual.GlobalTransform;
+
+    readonly Dictionary<string, int> bones = new(StringComparer.Ordinal);
+
+    /// <summary>The skeleton bone of a node name (-1 when absent), remembered per name. Ridee::vfunc_119 (ridee.cpp:638) adds
+    /// the passenger seats' rideBone nodes to the rider's node map, where PCBase::FUN_1416757c0 finds them.</summary>
+    public int Bone(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return -1;
+        if (!bones.TryGetValue(name, out int b)) bones[name] = b = Skeleton.FindBone(name);
+        return b;
     }
 }
 

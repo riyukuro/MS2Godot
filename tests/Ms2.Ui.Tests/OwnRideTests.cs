@@ -56,4 +56,41 @@ public class OwnRideTests
         foreach (byte mode in new byte[] { 3, 4, 5, 6 })
             Assert.That(OwnRide.For(Ride(mode, Self, Action), Self, false), Is.EqualTo(OwnRide.Step.None), $"mode {mode}");
     }
+
+    static ResponseRide Pass(byte mode, int owner, int rider = 0, byte seat = 0) =>
+        new(mode, owner, null, null, 0, 0, rider, seat, false);
+
+    [Test]
+    public void PassengerModesSetRemoveAndClearTheOwnersMap()
+    {
+        // mode 3 FUN_141676670 (SetAt rider -> seat), mode 4 RemovePassenger, mode 5 ClearPassengers
+        var map = new Dictionary<int, int>();
+        Assert.That(RidePassengers.Apply(Pass(3, 7, 8, 1), map), Is.True);
+        Assert.That(RidePassengers.Apply(Pass(3, 7, 9, 0), map), Is.True);
+        Assert.That(map, Is.EquivalentTo(new Dictionary<int, int> { [8] = 1, [9] = 0 }));
+        Assert.That(RidePassengers.Apply(Pass(4, 7, 8), map), Is.True);
+        Assert.That(map.Keys, Is.EquivalentTo(new[] { 9 }));
+        Assert.That(RidePassengers.Apply(Pass(5, 7), map), Is.True);
+        Assert.That(map, Is.Empty);
+        Assert.That(RidePassengers.Apply(Pass(6, 7), map), Is.False);
+        Assert.That(RidePassengers.Apply(Pass(0, 7), map), Is.False);
+    }
+
+    [Test]
+    public void OnlyModeThreeWithTheOwnPcAsRiderBoardsSelf()
+    {
+        Assert.That(RidePassengers.BoardsSelf(Pass(3, 7, Self, 1), Self), Is.True);
+        Assert.That(RidePassengers.BoardsSelf(Pass(3, 7, 8, 1), Self), Is.False);
+        Assert.That(RidePassengers.BoardsSelf(Pass(4, 7, Self), Self), Is.False);
+        Assert.That(RidePassengers.BoardsSelf(Pass(3, 7, Self, 1), -1), Is.False);
+    }
+
+    [Test]
+    public void FieldAddUserReplacesTheMap()
+    {
+        // scenestategame.cpp:11201-11212: ClearPassengers, then SetAt per entry
+        var map = new Dictionary<int, int> { [5] = 0 };
+        RidePassengers.Load(new List<(int, byte)> { (8, 1), (9, 0) }, map);
+        Assert.That(map, Is.EquivalentTo(new Dictionary<int, int> { [8] = 1, [9] = 0 }));
+    }
 }

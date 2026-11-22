@@ -119,6 +119,22 @@ public struct HoldTarget
     /// <summary>The node's world rotation as rows 0 of its matrix (m[0][0], m[0][1], m[0][2]), MS2 axes: what
     /// NiMatrix3::ToEulerAnglesXYZ reads for the y and z angles.</summary>
     public Vector3 NodeRow0;
+    /// <summary>A PC target's ridee has the asker's seat: GetRidee, its CRideeData, and GetPassenger(FUN_141676790(the asker's
+    /// object id)) all set.</summary>
+    public bool HasSeat;
+    /// <summary>With <see cref="HasSeat"/> and <see cref="HasNode"/>: Ridee::FUN_1417083a0's position for the asker on the
+    /// node with the seat's translation, MS2 axes.</summary>
+    public Vector3 SeatPosition;
+    /// <summary>With <see cref="HasSeat"/> and <see cref="HasNode"/>: row 0 of the node's world rotation times the seat's
+    /// EulerToMatrix(rotation), MS2 axes (what FUN_140a0b1f0 reads for the y and z angles).</summary>
+    public Vector3 SeatRow0;
+    /// <summary>With <see cref="HasSeat"/>: the ridee's GetCurStateId, FUN_14166cc80 (its sub), FUN_1416713c0 (its animation
+    /// speed) and FUN_141676b70 (m_unk_b80 set).</summary>
+    public int RideeState, RideeSub;
+    public float RideeAnimSpeed;
+    public bool RideeSpIdle;
+    /// <summary>With <see cref="HasSeat"/>: the seat's rider sequences.</summary>
+    public RiderSequences Seat;
 }
 
 /// <summary>
@@ -714,10 +730,12 @@ public sealed class RemotePcStates
     /// <summary>
     /// StateHold::vfunc_3 (@0x1417cbfa0, stateholddata.cpp:204-248): with the held actor alive and its node found, an npc
     /// or any actor but a PC or a ridee puts the PC on the node's world translation turned by its world rotation
-    /// (ToEulerAnglesXYZ times -57.2957764 through vfunc_21, only when the angles are unique); else the fallback state
-    /// (StateMoveSkill m_nFallbackState 6, m_nFallbackSub 0x22: StateJump). No vfunc_68 runs: no gravity, no turn.
-    /// STILL-OPEN: a PC target's mount seat (Ridee::FUN_1417083a0 with the ridee data's passenger model) and the x / y
-    /// angles of vfunc_21 (the body keeps only its Z rotation); efd::FastATan2 is taken as the exact atan2.
+    /// (ToEulerAnglesXYZ times -57.2957764 through vfunc_21, only when the angles are unique); a PC target with the asker's
+    /// seat on its ridee puts the PC on the seat (Ridee::FUN_1417083a0: vfunc_19 and vfunc_21 of FUN_140a0b1f0's angles,
+    /// unique or not), a PC target without one leaves it; else the fallback state (StateMoveSkill m_nFallbackState 6,
+    /// m_nFallbackSub 0x22: StateJump). No vfunc_68 runs: no gravity, no turn.
+    /// STILL-OPEN: the x / y angles of vfunc_21 (the body keeps only its Z rotation); efd::FastATan2 is taken as the exact
+    /// atan2.
     /// </summary>
     void HoldMove()
     {
@@ -727,19 +745,34 @@ public sealed class RemotePcStates
             ChangeState(StateJump, 0x22);            // StateHold::ChangeState: vfunc_59(m_nFallbackState, 0, m_nFallbackSub, 0)
             return;
         }
-        if (t.Kind == HoldKind.Pc || t.Kind == HoldKind.Ridee) return;
-        // efd::Matrix3::ToEulerAnglesXYZ (Matrix3_Win32.cpp:938-951): y = -asin(m[0][2]), z = atan2(m[0][1], m[0][0])
-        float y = -MathF.Asin(Math.Clamp(t.NodeRow0.Z, -1f, 1f));
-        const float Edge = MathF.PI / 2 - 1e-3f;     // EE_HALF_PI - EE_RIGHT_ANGLE_EPSILON
-        if (y < Edge && y > -Edge) pc.RotationZ = MathF.Atan2(t.NodeRow0.Y, t.NodeRow0.X) * -57.2957764f;
+        if (t.Kind == HoldKind.Pc)
+        {
+            if (!t.HasSeat) return;
+            if (!EulerZ(t.SeatRow0, out float z)) z = 0f;    // the non-unique branch sets z to 0
+            pc.Position = t.SeatPosition;
+            pc.RotationZ = z * -57.2957764f;
+            return;
+        }
+        if (t.Kind == HoldKind.Ridee) return;
+        if (EulerZ(t.NodeRow0, out float zn)) pc.RotationZ = zn * -57.2957764f;
         pc.Position = t.NodePosition;
+    }
+
+    /// <summary>efd::Matrix3::ToEulerAnglesXYZ (Matrix3_Win32.cpp:938-951) from row 0: y = -asin(m[0][2]), and when y is
+    /// inside (-pi/2, pi/2) by EE_RIGHT_ANGLE_EPSILON, z = atan2(m[0][1], m[0][0]) and true.</summary>
+    public static bool EulerZ(Vector3 row0, out float z)
+    {
+        float y = -MathF.Asin(Math.Clamp(row0.Z, -1f, 1f));
+        const float Edge = MathF.PI / 2 - 1e-3f;     // EE_HALF_PI - EE_RIGHT_ANGLE_EPSILON
+        bool unique = y < Edge && y > -Edge;
+        z = unique ? MathF.Atan2(row0.Y, row0.X) : 0f;
+        return unique;
     }
 
     /// <summary>
     /// StateHold::vfunc_9 (@0x1417cc5a0, stateholddata.cpp:277-374): the held npc 0xa7e02a plays "Ride_Idle_U", the npcs
     /// 0xadf341 / 0xadf342 "Idle_A", a PC target its mount's passenger sequence, and any other actor HOLD_IDLE (0x3e,
     /// PlayAnimationById); all at FUN_1416713c0() without a restart.
-    /// STILL-OPEN: a PC target's passenger sequences (CRideeData::GetPassenger's m_strAniPC* by the ridee's state).
     /// </summary>
     void HoldFrame()
     {
@@ -750,7 +783,11 @@ public sealed class RemotePcStates
             if (t.NpcId == 0xa7e02a) { pc.PlaySequence("Ride_Idle_U", pc.AnimSpeed); return; }
             if (t.NpcId == 0xadf341 || t.NpcId == 0xadf342) { pc.PlaySequence("Idle_A", pc.AnimSpeed); return; }
         }
-        else if (t.Kind == HoldKind.Pc) return;
+        else if (t.Kind == HoldKind.Pc)
+        {
+            if (t.HasSeat) pc.PlaySequence(StateRideAnim.ForPassenger(t.RideeState, t.RideeSub, t.RideeSpIdle, t.Seat), t.RideeAnimSpeed);
+            return;
+        }
         if (!pc.IsAction(ActHoldIdle)) pc.PlayAction(ActHoldIdle, pc.AnimSpeed, false);
     }
 

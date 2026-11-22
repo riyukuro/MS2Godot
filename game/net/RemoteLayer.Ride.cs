@@ -11,14 +11,18 @@ namespace Ms2Godot.Net;
 /// seat and plays StateRide::vfunc_9's sequence by the mount's state (<see cref="StateRideAnim"/>).
 /// STILL-OPEN: the ride-on and ride-off effects (CommonResource +0x2b0 / +0x2b8) and rideOffBySkillEffect, hideRider
 /// (AddHideReason(2)), StateRide's shadow off, the rider's stats copied to the ridee, the breakable anchor of a ride-off,
-/// the fall start the ridee had (StateFallData), the ridee's m_unk_b80 SP idle, the mount's step keys, the passenger modes 3-5 and mode 6.
+/// the fall start the ridee had (StateFallData), the ridee's m_unk_b80 SP idle, the mount's step keys, the ride-on action's
+/// m_b28 of mode 6.
 /// </summary>
 public sealed partial class RemoteLayer
 {
-    /// <summary>OnResponseRide (scenestategame.cpp:12026) for another player's PC: modes 0-2 (<see cref="Ms2.Ui.OwnRide.ForActor"/>).</summary>
+    /// <summary>OnResponseRide (scenestategame.cpp:12026) for another player's PC: modes 0-2 (<see cref="Ms2.Ui.OwnRide.ForActor"/>),
+    /// the owner's passenger map of modes 3-5 (<see cref="Ms2.Ui.RidePassengers"/>) and mode 6's PC::FUN_1416642c0 (m_b1224).</summary>
     public void OnRide(ResponseRide r)
     {
         if (r == null || !users.TryGetValue(r.ObjectId, out var u)) return;
+        if (Ms2.Ui.RidePassengers.Apply(r, u.Passengers)) return;
+        if (r.Mode == 6) { u.NoBoarding = r.Flag; return; }
         switch (Ms2.Ui.OwnRide.ForActor(r, u.Ridee != null))
         {
             case Ms2.Ui.OwnRide.Step.RideOn: RideOn(u, r.RideOn); break;
@@ -73,6 +77,7 @@ public sealed partial class RemoteLayer
         if (r.Ridee == null) return;
         r.Ridee.Free();
         r.Ridee = null;
+        r.Passengers.Clear();               // PCBase::vfunc_121's ClearPassengers (pcbase.cpp:3430)
     }
 
     /// <summary>

@@ -852,6 +852,54 @@ public class RemotePcStatesTests {
         Assert.That(b.Position, Is.EqualTo(new Vector3(100, 200, 300)));
     }
 
+    static HoldTarget PcSeat(bool seat = true) => new HoldTarget {
+        Kind = HoldKind.Pc, HasNode = true, NodePosition = new Vector3(1, 2, 3), NodeRow0 = new Vector3(1, 0, 0),
+        HasSeat = seat, SeatPosition = new Vector3(100, 200, 300), SeatRow0 = new Vector3(0, -1, 0),
+        RideeState = RemotePcStates.StateWalk, RideeSub = 0x17, RideeAnimSpeed = 1.5f,
+        Seat = new RiderSequences("pc", "idle", "run", "jump", "spIdle", "spRun", "spJump"),
+    };
+
+    [Test] public void HoldOnAPcsMountSitsOnTheSeatAndPlaysItsSequence() {
+        // vfunc_3: Ridee::FUN_1417083a0 puts the passenger on the seat, z = atan2(m01, m00) * -57.2957764 (row 0 (0, -1, 0):
+        // -90 deg -> 90); vfunc_9: walk sub 0x17 plays the seat's SP run
+        var b = new Body { Hold = PcSeat() };
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Push(Rec(RemotePcStates.StateHold, 0, Vector3.Zero, Vector2.Zero, 0.05f, hold: 777, holdNode: "Ride_B"));
+        sm.Update(1 / 60f);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateHold));
+        Assert.That(b.Position, Is.EqualTo(new Vector3(100, 200, 300)));
+        Assert.That(b.RotationZ, Is.EqualTo(90f).Within(1e-3));
+        Assert.That(b.Sequences[^1], Is.EqualTo("spRun"));
+    }
+
+    [Test] public void HoldOnAPcWithoutASeatStaysPut() {
+        // vfunc_3 / vfunc_9 return for a PC without a ridee, data or seat model: no move, no sequence, no fallback
+        var b = new Body { Hold = PcSeat(seat: false) };
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        b.Position = new Vector3(5, 6, 7);
+        sm.Push(Rec(RemotePcStates.StateHold, 0, new Vector3(5, 6, 7), Vector2.Zero, 0.05f, hold: 777, holdNode: "Ride_B"));
+        int seqs = b.Sequences.Count;
+        sm.Update(1 / 60f);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateHold));
+        Assert.That(b.Position, Is.EqualTo(new Vector3(5, 6, 7)));
+        Assert.That(b.Sequences.Count, Is.EqualTo(seqs));
+    }
+
+    [Test] public void SeatOnAGimbalEdgeTurnsToZero() {
+        // FUN_140a0b1f0 applies the angles whether unique or not: the non-unique branch sets z = 0
+        Assert.That(RemotePcStates.EulerZ(new Vector3(0, 0, -1), out float z), Is.False);
+        Assert.That(z, Is.EqualTo(0f));
+        var b = new Body { Hold = PcSeat() with { SeatRow0 = new Vector3(0, 0, 1) } };
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.5f);
+        b.RotationZ = 33f;
+        sm.Push(Rec(RemotePcStates.StateHold, 0, Vector3.Zero, Vector2.Zero, 0.05f, hold: 777, holdNode: "Ride_B", yaw: 33f));
+        sm.Update(1 / 60f);
+        Assert.That(b.RotationZ, Is.EqualTo(0f).Within(1e-4));
+    }
+
     [Test] public void HoldWithoutTheActorOrNodeFallsBackToTheJump() {
         // StateHold::ChangeState: no actor, no node or a dead actor -> vfunc_59(6, 0, 0x22, 0)
         foreach (var t in new[] { default, NpcNode() with { HasNode = false }, NpcNode() with { Dead = true } }) {

@@ -53,3 +53,36 @@ public static class OwnRide
     public static bool SummonsAfterRideOff(ResponseRide r, int selfObjectId) =>
         r != null && r.Mode == 2 && selfObjectId > 0 && r.ObjectId == selfObjectId;
 }
+
+/// <summary>
+/// CSceneStateGame::OnResponseRide modes 3-6 (scenestategame.cpp:12065-12123) on the owner PC found by FindPCById: its
+/// passenger map PCBase m_mapB28 (rider object id to seat) and PC m_b1224, the no-boarding flag.
+/// </summary>
+public static class RidePassengers
+{
+    /// <summary>The owner's map after <paramref name="r"/>: mode 3 FUN_141676670 (SetAt rider -> seat), mode 4
+    /// RemovePassenger, mode 5 ClearPassengers. False for any other mode.</summary>
+    public static bool Apply(ResponseRide r, IDictionary<int, int> passengers)
+    {
+        if (r == null || passengers == null) return false;
+        switch (r.Mode)
+        {
+            case 3: passengers[r.RiderId] = r.Seat; return true;
+            case 4: passengers.Remove(r.RiderId); return true;
+            case 5: passengers.Clear(); return true;
+            default: return false;
+        }
+    }
+
+    /// <summary>Mode 3 with the own pc (GetLocalPlayer's object id) as the rider: it holds on to the owner, vfunc_59(0x20,
+    /// StateHoldData{the owner, the seat's rideBone}).</summary>
+    public static bool BoardsSelf(ResponseRide r, int selfObjectId) =>
+        r != null && r.Mode == 3 && selfObjectId > 0 && r.RiderId == selfObjectId;
+
+    /// <summary>FieldAddUser's ride block (scenestategame.cpp:11201-11212): ClearPassengers, then FUN_141676670 per entry.</summary>
+    public static void Load(IReadOnlyList<(int Key, byte Value)> entries, IDictionary<int, int> passengers)
+    {
+        passengers.Clear();
+        foreach (var (k, v) in entries) passengers[k] = v;
+    }
+}

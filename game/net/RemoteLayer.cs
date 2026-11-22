@@ -59,6 +59,10 @@ public sealed partial class RemoteLayer : Node3D
         public readonly Ms2.Ui.HeldItem Held = new();
         /// <summary>The PC's mount (PCBase m_spB10, RemoteLayer.Ride.cs), null when not riding.</summary>
         public RemotePc Ridee;
+        /// <summary>PCBase m_mapB28: the seat of each passenger's object id on this PC's mount (ResponseRide modes 3-5).</summary>
+        public readonly Dictionary<int, int> Passengers = new();
+        /// <summary>PC m_b1224 (PC::FUN_1416642c0, ResponseRide mode 6): no boarding this PC's mount.</summary>
+        public bool NoBoarding;
     }
 
     /// <summary>CItem::FUN_140523c40's outcome for an item id: false when the item data has no such item (no function = true).</summary>
@@ -420,7 +424,8 @@ public sealed partial class RemoteLayer : Node3D
         pc.JobGroup = u.User.JobCode;          // the user block's job group (CharacterInfo maps JobGroup from it)
         pc.BattleStance = u.InBattle;
         pc.Effects = PlayGroundEffects;
-        pc.HoldLookup = FindHoldTarget;
+        int asker = u.ObjectId;
+        pc.HoldLookup = (id, node) => FindHoldTarget(asker, id, node);
         var root = pc.Body;
         AddChild(root);
         // the other player's CObjectShadow, of the PC row (PC::vfunc_49, pc.cpp:3028-3035; the same size as the player's)
@@ -556,8 +561,9 @@ public sealed partial class RemoteLayer : Node3D
                     if (users.Remove(add.User.ObjectId, out var old)) { old.Invincible.End(null, RegionFx); tags.Remove(old.Root); bars.Remove(old.Root); old.Death.Free(); FreeRidee(old); old.Pc.Free(); }
                     if (old != null) PcLeft?.Invoke(old.ObjectId);
                     var added = users[add.User.ObjectId] = Spawn(add.User); UsersSpawned++; ArmCodi();
-                    // FieldAddUser's ride (PCBase::SetRideOnAction), ridden at the PC's creation (PCBase::vfunc_10 ->
-                    // vfunc_120(GetRideOnAction()), pcbase.cpp:921)
+                    // FieldAddUser's ride (PCBase::SetRideOnAction) and its passengers, ridden at the PC's creation
+                    // (PCBase::vfunc_10 -> vfunc_120(GetRideOnAction()), pcbase.cpp:921)
+                    if (add.User.Ride != null) Ms2.Ui.RidePassengers.Load(add.User.Passengers, added.Passengers);
                     RideOn(added, add.User.Ride);
                     PcShown?.Invoke(Shown(added));
                     GD.Print($"live: other player '{add.User.User.Name}' object {add.User.ObjectId} shown at {add.User.Position}");

@@ -26,4 +26,18 @@ public static class StateRideAnim
         RemotePcStates.StateIdle => sub is 0xc or 0x87 ? s.SpIdle : s.Idle,
         _ => s.Pc,
     };
+
+    /// <summary>
+    /// StateHold::vfunc_9 (@0x1417cc5a0, stateholddata.cpp:309-370) for a PC target: the passenger's sequence of its seat by
+    /// the owner's ridee's state and sub. Walk (2) or swim (0x1b) runs (the SP run for subs 0x17 / 0x85), the jump (6)
+    /// jumps (the SP jump for sub 0x27), idle (1) and land (4) stand (the SP idle for subs 0xc / 0x87), anything else plays
+    /// the SP idle when the ridee's m_unk_b80 is set (<paramref name="spIdle"/>, FUN_141676b70), else rideAniPC.
+    /// </summary>
+    public static string ForPassenger(int state, int sub, bool spIdle, in RiderSequences s) => state switch
+    {
+        RemotePcStates.StateWalk or RemotePcStates.StateSwim => sub is 0x17 or 0x85 ? s.SpRun : s.Run,
+        RemotePcStates.StateJump => sub == 0x27 ? s.SpJump : s.Jump,
+        RemotePcStates.StateIdle or RemotePcStates.StateLand => sub is 0xc or 0x87 ? s.SpIdle : s.Idle,
+        _ => spIdle ? s.SpIdle : s.Pc,
+    };
 }
