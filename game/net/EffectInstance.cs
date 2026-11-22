@@ -65,6 +65,10 @@ public sealed partial class EffectInstance : Node3D
 
     static Shader partAdd, partMix;
     static readonly Dictionary<string, Shader> meshShaders = new();
+    // An effect mesh's built ArrayMesh, one per EffectMesh (the scenes are cached per file): every instance of the effect
+    // draws the same vertices with its own material (MaterialOverride), and nothing here changes a built mesh, so a
+    // footstep or cast effect replayed by each player shares it instead of building the arrays (and a surface material) again.
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<EffectMesh, ArrayMesh> builtMeshes = new();
     // Textures and colours are taken raw (no source_color): the colour buffer holds gamma values (field_lit.gdshader).
     static readonly string MeshCode = @"shader_type spatial;
 render_mode unshaded, MESHSTATE, BLEND;
@@ -344,7 +348,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             // STILL-OPEN: a field entity's EffectMesh graph is flagged a caster like any entity graph (WorldService::
             // SetShadowEnabled, @0x141bd30f0); whether the client's shadow-write pass draws its alpha-blended meshes is not traced.
             // Every mesh here is blended, and the field's blended meshes cast none either (FieldBuilder: Godot leaves them out).
-            ms.Node = new MeshInstance3D { Mesh = mb.BuildMesh(m, false, uv2: true, vertexColor: vcu.Any), MaterialOverride = mat, Name = m.Name ?? "mesh", CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+            ms.Node = new MeshInstance3D { Mesh = builtMeshes.GetValue(em, e => mb.BuildMesh(e.Mesh, false, uv2: true, vertexColor: e.VertexColors.Any)), MaterialOverride = mat, Name = m.Name ?? "mesh", CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
                 Visible = !scene.Nodes[em.Node].Culled };
             z.AddChild(ms.Node);
             meshes.Add(ms);
