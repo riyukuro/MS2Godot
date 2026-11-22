@@ -88,6 +88,25 @@ public class SkillCastTests
         Assert.That(SkillCast.Request(w, c, Req(100), _ => 100).Record, Is.Not.Null, "revived");
     }
 
+    /// <summary>CSkillSystem::FUN_141764e30's quick slot item (skillslot.cpp:2093-2103): the key's item uid goes on the record;
+    /// an item the bag lacks gives nothing, one above the own level the s_err_not_enough_level notice.</summary>
+    [Test]
+    public void AKeysQuickSlotItemGoesOnTheRecord()
+    {
+        var w = World(Skills(Attack));
+        var c = new CastWorld();
+        bool? atLevel = true;
+        var req = Req(100);
+        req.Key = 3;
+        Assert.That(SkillCast.Request(w, c, req, _ => 100, k => k == 3 ? 0x55 : 0, _ => atLevel).Record.ItemUid, Is.EqualTo(0x55));
+        atLevel = false;
+        Assert.That(SkillCast.Request(w, c, Req(100), _ => 100, _ => 0x55, _ => atLevel),
+            Is.EqualTo(new SkillCast.Result(null, 0, "s_err_not_enough_level")));
+        atLevel = null;
+        Assert.That(SkillCast.Request(w, c, Req(100), _ => 100, _ => 0x55, _ => atLevel), Is.EqualTo(new SkillCast.Result(null, 0, null)));
+        Assert.That(SkillCast.Request(w, c, Req(100), _ => 100, _ => 0, _ => atLevel).Record.ItemUid, Is.Zero, "no item on the key");
+    }
+
     [Test]
     public void ARequestBuildsTheRecordTheCastSends()
     {

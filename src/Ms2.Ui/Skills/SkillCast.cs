@@ -272,15 +272,25 @@ public static class SkillCast
 
     /// <summary>
     /// CSkillSystem::FUN_141764e30 @0x141764e30 (skillslot.cpp:2084): not learnt → notice s_err_not_learn_skill; the key's quick
-    /// slot item (STILL-OPEN: the quick slot item path, the level check and s_err_not_enough_level; a key with an item uid gives
-    /// nothing here); CreateSkillRecord; when that fails and the skill has a default skill, a reason 6 / 7 / 2 casts the default
+    /// slot item (<paramref name="keyItemUid"/>, GetQuickSlotItemUidByKey): no such item (<paramref name="itemAtLevel"/> null)
+    /// gives nothing, CanUseAtLevel false the notice s_err_not_enough_level, else the request carries the item's uid (m_n40);
+    /// without <paramref name="itemAtLevel"/> a key with an item uid gives nothing. CreateSkillRecord; when that fails and the skill has a default skill, a reason 6 / 7 / 2 casts the default
     /// (useDefaultSkillID, or the normal attack when there is none or the reason is 2 and useDefaultSkill is set) at its level 1,
     /// with the record's origin the asked skill.
     /// </summary>
-    public static Result Request(SlotWorld w, CastWorld c, CastRequest req, Func<int, int> normalAttack, Func<int, long> keyItemUid = null)
+    public static Result Request(SlotWorld w, CastWorld c, CastRequest req, Func<int, int> normalAttack, Func<int, long> keyItemUid = null,
+        Func<long, bool?> itemAtLevel = null)
     {
         if (w.Jobs == null || !w.Jobs.IsLearned(req.SkillId)) return new(null, 0, "s_err_not_learn_skill");
-        if (keyItemUid != null && keyItemUid(req.Key) != 0) return new(null, 0, null);
+        if (keyItemUid?.Invoke(req.Key) is long uid && uid != 0)
+        {
+            switch (itemAtLevel?.Invoke(uid))
+            {
+                case null: return new(null, 0, null);
+                case false: return new(null, 0, "s_err_not_enough_level");
+            }
+            req.ItemUid = uid;
+        }
         var r = CreateRecord(w, c, req);
         if (r.Record != null) return r;
         var level = CastGate.LevelData(w, req.SkillId);

@@ -128,7 +128,8 @@ public partial class HudScene
     SlotWorld castKeyWorld;
     WeaponAction castKeyHeld;
     Func<int> castAttackSkill;
-    Func<int, long> castSlotItemUid;
+    Func<int, long> castSlotItemUid, castKeyItemUid;
+    Func<long, bool?> castItemAtLevel;
 
     /// <summary>
     /// CSkillSystem::FUN_141764e30 for the own player (<see cref="SkillCast.Request"/>) at MyPC::GetSkillLevel, then
@@ -174,7 +175,11 @@ public partial class HudScene
             Key = key,
         };
         FillCastWorld(w, me);
-        var res = SkillCast.Request(w, castWorld, req, _ => SkillCast.NormalAttackSkillId(held, weaponActions, 0));
+        castSlotItemUid ??= i => playerInfo?.SlotItemUid(i) ?? 0;
+        castKeyItemUid ??= k => hudModel?.Keys?.GetQuickSlotItemUidByKey(k, playerInfo != null ? castSlotItemUid : null) ?? 0;
+        castItemAtLevel ??= uid => Net.LiveSession.Instance?.ItemAtOwnLevel(uid);
+        var res = SkillCast.Request(w, castWorld, req, _ => SkillCast.NormalAttackSkillId(held, weaponActions, 0),
+            key != 0 ? castKeyItemUid : null, castItemAtLevel);
         if (res.Record is not { } r)
         {
             GD.Print($"cast: skill {skillId} refused, reason {res.Why}{(res.Notice != null ? " " + res.Notice : "")}");

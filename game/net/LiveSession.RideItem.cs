@@ -69,6 +69,16 @@ public partial class LiveSession
         }
     }
 
+    /// <summary>The quick slot item's CanUseAtLevel for CSkillSystem::FUN_141764e30 (skillslot.cpp:2093-2103): null when the
+    /// bag has no item <paramref name="uid"/> (FindItemByUid), else its levelLimit against the own level.</summary>
+    public bool? ItemAtOwnLevel(long uid)
+    {
+        var item = Items.Get(uid);
+        if (item == null) return null;
+        var data = ItemDataOf(item.Id);
+        return data == null || data.IsLevelAllowed(Me.User?.Level ?? 0);
+    }
+
     /// <summary>vfunc_59(0x26, StateSummonData(uid, 0)): the cast for the row's rideSummonCastTime or SummonRideeDuration.</summary>
     void StartRideSummon(long uid, int rideeId) =>
         RideSummon.Start(uid, RideItemUse.CastMs(RideeRow(rideeId)?.SummonCastTime, SummonRideeDuration),
