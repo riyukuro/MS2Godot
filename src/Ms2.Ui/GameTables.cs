@@ -836,6 +836,51 @@ public sealed class GameTables
         }
         return remakeScrolls.TryGetValue(id, out var r) ? r : null;
     }
+    Dictionary<int, (int SalaryType, int Salary)> maidInfos;
+    /// <summary>CMaidInfoTable::Find (maid.cpp:447): Load (:420) reads Table/MaidProperty.xml's &lt;Property&gt; rows by MaidID,
+    /// each with its salary from CPriceTable::GetSalary (pricetable.cpp:66; LoadSalary :143 reads Table/MaidSalary.xml's
+    /// &lt;key id SalaryType SalaryAmount&gt; rows, 0 and 0 for none); null for no row. Read on first use.</summary>
+    public (int SalaryType, int Salary)? MaidInfo(int maidId)
+    {
+        if (maidInfos == null)
+        {
+            maidInfos = new();
+            var salaries = new Dictionary<int, (int, int)>();
+            if (TableXml("maidsalary.xml")?.Root is { Name.LocalName: "ms2" } sr)
+                foreach (var e in sr.Elements("key"))
+                    salaries[Ms2.Ui.Items.ItemData.Atoi((string)e.Attribute("id") ?? "")] = (Ms2.Ui.Items.ItemData.Atoi((string)e.Attribute("SalaryType") ?? ""),
+                        Ms2.Ui.Items.ItemData.Atoi((string)e.Attribute("SalaryAmount") ?? ""));
+            if (TableXml("maidproperty.xml")?.Root is { Name.LocalName: "ms2" } root)
+                foreach (var e in root.Elements("Property"))
+                {
+                    int id = Ms2.Ui.Items.ItemData.Atoi((string)e.Attribute("MaidID") ?? "");
+                    maidInfos[id] = salaries.GetValueOrDefault(id);
+                }
+        }
+        return maidInfos.TryGetValue(maidId, out var r) ? r : null;
+    }
+
+    Dictionary<int, string> maidSpecialties;
+    /// <summary>CMaidDescTable::Find's specialty (maid.cpp:470): the string folder's MaidPropertyString.xml (FUN_14071ae20)
+    /// &lt;Desc&gt; rows by MaidID, "Specialty"; null for no row. With several string languages the first that has the row is
+    /// used. Read on first use.</summary>
+    public string MaidSpecialty(int maidId)
+    {
+        if (maidSpecialties == null)
+        {
+            maidSpecialties = new();
+            foreach (var lang in strings?.Languages ?? Array.Empty<string>())
+            {
+                string entry = $"string/{lang}/maidpropertystring.xml";
+                if (packs == null || !packs.Exists("Xml", entry)) continue;
+                if (Xml(entry)?.Root is not { Name.LocalName: "ms2" } root) continue;
+                foreach (var e in root.Elements("Desc"))
+                    maidSpecialties.TryAdd(Ms2.Ui.Items.ItemData.Atoi((string)e.Attribute("MaidID") ?? ""), (string)e.Attribute("Specialty") ?? "");
+            }
+        }
+        return maidSpecialties.TryGetValue(maidId, out var s) ? s : null;
+    }
+
     /// <summary>GetXmlPath("Table", file): the locale's table folder first, else the shared one (<see cref="TablePath.Resolve"/>).</summary>
     XDocument TableXml(string file) => packs != null && TablePath.Resolve(packs, file) is { } path ? Xml(path) : null;
     Ms2.Ui.Skills.SkillCompactControlTable skillCompactControl;
