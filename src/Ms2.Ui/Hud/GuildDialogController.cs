@@ -79,6 +79,8 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     public int DonateMeso = 10000;
     /// <summary>CReservedWordTable::ReplaceValueWords.</summary>
     public Func<string, string> ReplaceValueWords = s => s;
+    /// <summary>CStringTable::FUN_141812290(effectId, level, tag): an additional effect's "name" or "tooltipDescription".</summary>
+    public Func<uint, ushort, string, string> EffectText = (_, _, _) => "";
     /// <summary>FUN_140d73c60: show a message box.</summary>
     public Action<MessageBoxData> ShowBox = MessageBoxQueue.Show;
 
@@ -622,6 +624,16 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
                 acceptPage++;
                 OnRequestsForGuild();
                 return true;
+            case "onguildskilluse":
+                if (args.Length > 0) GuildSkillUseBox(Int(0));
+                return true;
+            case "onguildmemberskilluse":
+                if (args.Length > 0) PersonalSkillUseBox(Int(0));
+                return true;
+            case "onguildskillupgrade":
+            case "onguildmemberskillupgrade":
+                if (args.Length > 0) SkillUpgradeBox(Int(0));
+                return false;                   // the client's chain ends without a return 1
             case "onguildmemberpopupmenu":
                 // :811: x, y, the name; FindMemberByName, then PopUpMenuFromGuildMember on the 0x4e39 menu
                 if (args.Length > 2 && Book.FindMemberByName(Str(2)) is { } clicked) MemberPopupRequested?.Invoke(Float(0), Float(1), clicked);
@@ -763,6 +775,56 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
             }
         }
         return false;
+    }
+
+    string SkillName(Ms2.Formats.World.GuildSkillTable.Skill s) => EffectText((uint)s.AdditionalEffectId, (ushort)s.AdditionalEffectLevel, "name");
+
+    /// <summary>OnGuildSkillUse (uiguilddialog.cpp:1084): a type 0x1f box of s_guild_ui_skill_use_skill (the _event text for an event
+    /// skill) with the cost after the sale and the skill's name, the yes / no preset, the terms check box and the skill id as
+    /// its argument; yes (FUN_141974ba0 @0x141974ba0) is <see cref="GuildBook.UseSkill"/>. STILL-OPEN: FUN_14151f200
+    /// (the open box closes first).</summary>
+    void GuildSkillUseBox(int id)
+    {
+        int level = Book.SkillLevel(id);
+        if (Book.SkillTable?.Get(id, level) is not { } s) return;
+        string cost = GroupText(Book.SkillCostWithEventDiscount(s.Id, s.Level));
+        string msg = ClientFormat.Format(CommonByKey(s.IsEvent ? "s_guild_ui_skill_use_skill_event" : "s_guild_ui_skill_use_skill"), cost, SkillName(s));
+        var box = new MessageBoxData(0x1f) { Msg = ReplaceValueWords(msg) };
+        box.SetButtonPreset(2);
+        box.Append(id);
+        box.SetCheckbox0(CommonByKey("s_guild_ui_skill_use_skill_term_agree"), false);
+        box.SetAgreement(false);
+        box.Callback = (n, b) => { if (n == 0) Book.UseSkill(b.ArgInt(0, 0)); return true; };
+        ShowBox(box);
+    }
+
+    /// <summary>OnGuildMemberSkillUse (:1115): a yes / no box (type 1) of s_guild_ui_skill_use_personal_skill with the discounted
+    /// cost and the name, for a personal skill only; yes (FUN_141974bf0) is <see cref="GuildBook.UsePersonalSkill"/>.</summary>
+    void PersonalSkillUseBox(int id)
+    {
+        int level = Book.SkillLevel(id);
+        if (Book.SkillTable?.Get(id, level) is not { IsPersonal: true } s) return;
+        string msg = ClientFormat.Format(CommonByKey("s_guild_ui_skill_use_personal_skill"),
+            GroupText(Book.PersonalSkillDiscountedCost(id, level)), SkillName(s));
+        var box = MessageBoxQueue.Create(1, ReplaceValueWords(msg), null, "");
+        box.Append(id);
+        box.Callback = (n, b) => { if (n == 0) Book.UsePersonalSkill(b.ArgInt(0, 0)); return true; };
+        ShowBox(box);
+    }
+
+    /// <summary>OnGuildSkillUpgrade / OnGuildMemberSkillUpgrade (:1141): a yes / no box (type 1) of
+    /// s_guild_ui_event_skill_upgrade_popup (s_guild_ui_skill_upgrade_popup) with the next level's upgrade cost, the name and the
+    /// next level; both rows must exist. Yes (OnUpgradeSkillConfirm @0x141974c40) is <see cref="GuildBook.UpgradeSkill"/>.</summary>
+    void SkillUpgradeBox(int id)
+    {
+        int level = Book.SkillLevel(id);
+        if (Book.SkillTable?.Get(id, level) is not { } cur || Book.SkillTable.Get(id, level + 1) is not { } next) return;
+        string msg = ClientFormat.Format(CommonByKey(next.IsEvent ? "s_guild_ui_event_skill_upgrade_popup" : "s_guild_ui_skill_upgrade_popup"),
+            GroupText(next.UpgradeCost), SkillName(cur), level + 1);
+        var box = MessageBoxQueue.Create(1, msg, null, "");
+        box.Append(id);
+        box.Callback = (n, b) => { if (n == 0) Book.UpgradeSkill(b.ArgInt(0, 0)); return true; };
+        ShowBox(box);
     }
 
     /// <summary>OnMessage (:560): a box's answer. The client closes the box (FUN_14151f200) unless an answer of 0

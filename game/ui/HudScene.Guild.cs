@@ -42,6 +42,7 @@ public partial class HudScene
         book.LevelByExp = t.GuildLevelByExp;
         book.Property = level => t.GuildProperties.TryGetValue(level, out var p) ? p : null;
         book.DonateMeso = t.GuildDonateMeso;
+        book.SkillTable ??= new Ms2.Formats.World.GuildSkillTable(assets.Packs, e => Ms2.Ui.FeatureElements.IsAvailable(assets.Packs, e));   // CGuildXmlData::LoadGuildBuff
         book.Mesos = () => hudModel.HasLocalPlayer ? hudModel.Player.Mesos : 0;
         book.RefuseInvite = () => GameOptions.AccountCommunity.DisableGuildRequest;    // m_refuseGuildInvite, flag 5
         var checker = CommunityChecker();
@@ -117,6 +118,7 @@ public partial class HudScene
                 MapName = id => t.MapName(id) ?? id.ToString(),
                 ServerTime = GuildServerTime,
                 DonateMeso = t.GuildDonateMeso,
+                EffectText = t.AdditionalDescription,
                 ReplaceValueWords = s => t.ReservedWords.ReplaceValueWords(s, hudModel.HasLocalPlayer ? hudModel.Player.Name : null),
                 PlayerCharId = () => hudModel.HasLocalPlayer ? Ms2Godot.Net.LiveSession.Instance?.CharacterId : null,
                 ImagePath = (id, code) => Ms2Godot.Net.ProfileImageService.Images.Path(id, code, true),

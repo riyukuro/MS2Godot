@@ -60,6 +60,49 @@ public class GuildDialogTests
         return b;
     }
 
+    const string SkillBoxXml = "<ms2>" +
+        "<guildBuff id=\"1\" level=\"1\" requireLevel=\"2\" upgradeCost=\"0\" cost=\"100\" duration=\"1\" cooltime=\"2\"/>" +
+        "<guildBuff id=\"1\" level=\"2\" requireLevel=\"5\" upgradeCost=\"300\" cost=\"100\" duration=\"1\" cooltime=\"2\"/>" +
+        "<guildBuff id=\"20000\" level=\"1\" requireLevel=\"2\" upgradeCost=\"0\" cost=\"1000\" duration=\"0\" cooltime=\"0\"/>" +
+        "</ms2>";
+
+    /// <summary>OnGuildSkillUse / OnGuildMemberSkillUse / OnGuildSkillUpgrade (uiguilddialog.cpp): each callback opens a confirm box; only its yes sends.</summary>
+    [Test]
+    public void TheSkillCallbacksOpenConfirmBoxesAndOnlyYesSends()
+    {
+        var sent = new List<IOutPacket>();
+        var b = InGuild();
+        b.Send = sent.Add;
+        b.SkillTable = new Ms2.Formats.World.GuildSkillTable(System.Xml.Linq.XDocument.Parse(SkillBoxXml));
+        b.LevelByExp = _ => 5;
+        b.ServerTime = () => 1000;
+        b.Mesos = () => 5000;
+        b.Level = () => 50;
+        b.Info.Fund = 9999;
+        b.Info.Skills.Add(new GuildSkillState(1, 1, 0));
+        b.Info.Skills.Add(new GuildSkillState(20000, 1, 0));
+        var c = new GuildDialogController(b) { CommonByKey = k => k, EffectText = (_, _, _) => "n", GroupText = n => n.ToString() };
+        var boxes = new List<MessageBoxData>();
+        c.ShowBox = boxes.Add;
+
+        Assert.That(c.OnCallback("onGuildSkillUse", new object[] { 1.0 }), Is.True);
+        Assert.That(c.OnCallback("onGuildMemberSkillUse", new object[] { 20000.0 }), Is.True);
+        Assert.That(c.OnCallback("onGuildSkillUpgrade", new object[] { 1.0 }), Is.False);
+        Assert.That(boxes, Has.Count.EqualTo(3));
+        Assert.That(sent, Is.Empty, "opening a box sends nothing");
+        foreach (var box in boxes) box.InvokeCallback(1, null);
+        Assert.That(sent, Is.Empty, "no sends nothing");
+        foreach (var box in boxes) box.InvokeCallback(0, null);
+        Assert.That(sent.OfType<GuildSkillUseRequest>().Single().SkillId, Is.EqualTo(1));
+        Assert.That(sent.OfType<GuildPersonalSkillUseRequest>().Single().SkillId, Is.EqualTo(20000));
+        Assert.That(sent.OfType<GuildSkillUpgradeRequest>().Single().SkillId, Is.EqualTo(1));
+
+        boxes.Clear();
+        c.OnCallback("onGuildSkillUse", new object[] { 99.0 });
+        c.OnCallback("onGuildMemberSkillUse", new object[] { 1.0 });
+        Assert.That(boxes, Is.Empty, "no row, and a guild skill is not a personal one");
+    }
+
     [Test]
     public void TheMemberPopupCallbackRaisesTheMemberFoundByName()
     {
