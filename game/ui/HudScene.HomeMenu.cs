@@ -7,7 +7,7 @@ namespace Ms2Godot.Ui;
 /// <summary>
 /// UIHomeMenuDialog (0x4f7c, movie uihomemenudialog, uihomemenudialog.cpp) over <see cref="HomeMenuHost"/>. Its menu entries reach the home
 /// option dialog (<see cref="ToggleHomeOption"/>, OnHomePriority @0x140c2a370). The other dialogs the menu toggles (0x4f7a, 0x4f7b) are not ported
-/// and do nothing. The field entry opens it in a home field (<see cref="OpenHomeMenuOnEntry"/>). STILL-OPEN: the other openers are not ported:
+/// and do nothing. The field entry opens it in a home field (<see cref="OpenHomeMenuOnEntry"/>) and the field leave closes it (<see cref="CloseHomeMenuOnLeave"/>). STILL-OPEN: the other openers are not ported:
 /// the game menu's home button (UIGameMenuDialog @0x14193b750, whose FUN_14193e9c0 toggles the design and blueprint modes,
 /// uigamemenudialog.cpp:2475-2480) and the craft scene's Refresh(true) (uiservice.cpp:784-788).
 /// </summary>
@@ -18,16 +18,20 @@ public partial class HudScene
 
     bool HomeMenuOpen => homeMenuMovie != null && homeMenu?.IsClosed == false;
 
-    /// <summary>CUIService::FUN_141ad9e50 (@0x141ad9e50, uiservice.cpp:766-769): entering the game scene (0x620001d) in a field whose
-    /// WorldService map type is 3 (FUN_141bcb1a0, m_4c == 3) queues OpenDialog(0x4f7c). STILL-OPEN: the early return of the client's
-    /// micro-game mode query FUN_1412755a0 is not ported (never taken in a field). STILL-OPEN: how the client closes the old field's
-    /// menu at a move is not traced; here a menu left open by a home field is unloaded when the new field is not a home.</summary>
+    /// <summary>CUIService::FUN_141ad9e50 (@0x141ad9e50, uiservice.cpp:758-769): the entry into the game scene opens the menu by
+    /// <see cref="HomeMenuEntry.Decide"/>. STILL-OPEN: FUN_1412755a0 (micro-game query) and 0x4f7f / bTab2, see there.</summary>
     void OpenHomeMenuOnEntry()
     {
         FieldData fd = null;
         try { fd = FieldData.FindByXBlock(assets.Packs, xblock); } catch (Exception ex) { GD.PushWarning("home menu field data: " + ex.Message); }
-        if (fd?.MapType == 3) { if (!HomeMenuOpen) OpenHomeMenu(); }
-        else if (homeMenuMovie != null) homeMenu.Close();
+        if (HomeMenuEntry.Decide(fd?.MapType, hudModel.HasLocalPlayer, HomeMenuOpen)) OpenHomeMenu();
+    }
+
+    /// <summary>UISceneGame::vfunc_49 (@0x141ac74f0, uiscenegame.cpp:218): FUN_141ada610(0x620001d) runs CloseClosableDialogs (uiservice.cpp:1496),
+    /// which closes 0x4f7c (flag 2 unset) with vfunc_68; the entry then opens a fresh menu in a home field.</summary>
+    void CloseHomeMenuOnLeave()
+    {
+        if (HomeMenuOpen) homeMenu.Close();
     }
 
     void ToggleHomeMenu()

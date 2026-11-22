@@ -1393,6 +1393,7 @@ public partial class HudScene : Node, IUiStageHost
     {
         damageText?.ClearAll();                      // FUN_141ad9dc0 -> UIDamageText::ClearAll
         WorldUnLoadComplete();
+        CloseHomeMenuOnLeave();
         if (fieldScene != null && IsInstanceValid(fieldScene))
         {
             int at = fieldScene.GetIndex();
