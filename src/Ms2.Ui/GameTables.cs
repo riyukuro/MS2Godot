@@ -145,7 +145,7 @@ public sealed class GameTables
         // :1352, not recursive), read on first use
         List<XElement> collect(XElement parent, string child, string key) => FeatureElements.Collect(packs, parent, child, key);
         var skillFiles = SkillFiles(packs);
-        Skills = new Skills.SkillTables(r.Jobs, new Skills.SkillDataTable(() => skillFiles.Select(Xml), collect));
+        Skills = new Skills.SkillTables(r.Jobs, new Skills.SkillDataTable(() => skillFiles.Select(SkillXml), collect));
         additionalCache = packs.DataDir is { } dataDir ? Ms2.Ui.Skills.AdditionalCache.Open(AdditionalCacheOf(dataDir)) : null;
         Additional = NewAdditionalTable(packs, additionalCache);
         foreach (var key in ChatTextColors.Keys.ToList()) ChatTextColors[key] = Rgb(k.Color(key, Unpack(ChatTextColors[key])));
@@ -975,17 +975,31 @@ public sealed class GameTables
             LobbyFeatures.IsEnabled(packs, "CompactControl"));
     XDocument Xml(string path) => packs.Exists("Xml", path) ? GameStrings.Parse(packs.Read("Xml", path)) : null;
     TextReader XmlText(string path) => packs.Exists("Xml", path) ? Ms2.Formats.Text.PackXml.Reader(packs.OpenRead("Xml", path)) : null;
-    static List<string> SkillFiles(PackSet packs) => packs.List("Xml").Where(n => n.StartsWith("skilldata/", StringComparison.OrdinalIgnoreCase)
-        && n.IndexOf('/', 10) < 0 && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).OrderBy(n => n, StringComparer.Ordinal).ToList();
+    static List<string> SkillFiles(PackSet packs)
+    {
+        var files = packs.List("Xml").Where(n => n.StartsWith("skilldata/", StringComparison.OrdinalIgnoreCase)
+            && n.IndexOf('/', 10) < 0 && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).OrderBy(n => n, StringComparer.Ordinal).ToList();
+        if (files.Count > 0) return files;
+        // the recorded GMS2 client's data keeps one file per skill, skill/<first two digits of the 8-digit id>/<id>.xml
+        return packs.List("Xml").Where(n => Ms2.Ui.Skills.PerSkillFile.Id(n) != null).OrderBy(n => n, StringComparer.Ordinal).ToList();
+    }
+
+    string SkillText(string entry)
+    {
+        using var r = Ms2.Formats.Text.PackXml.Reader(packs.OpenRead("Xml", entry));
+        return Ms2.Ui.Skills.PerSkillFile.Wrap(entry, r.ReadToEnd());
+    }
+    XDocument SkillXml(string path) => Ms2.Ui.Skills.PerSkillFile.Id(path) == null ? Xml(path) : packs.Exists("Xml", path) ? XDocument.Parse(SkillText(path)) : null;
+    TextReader SkillReader(string path) => Ms2.Ui.Skills.PerSkillFile.Id(path) == null ? XmlText(path) : packs.Exists("Xml", path) ? new StringReader(SkillText(path)) : null;
     Ms2.Ui.Skills.SkillDamageTable skillDamage;
     object skillDamageLock;
     /// <summary>The skill attacks' &lt;damage&gt; blocks (SkillDamage::Load, from the same SkillData files as
     /// <see cref="Skills"/>), read on first use or by <see cref="PrefetchSkillDamage"/>; one table for every thread.</summary>
     public Ms2.Ui.Skills.SkillDamageTable SkillDamage => System.Threading.LazyInitializer.EnsureInitialized(ref skillDamage, ref skillDamageLock,
         () => packs == null ? Ms2.Ui.Skills.SkillDamageTable.Empty
-            : new Ms2.Ui.Skills.SkillDamageTable(() => Ms2.Ui.Skills.SkillDamageTable.DeferExisting(SkillFiles(packs), n => packs.Exists("Xml", n), XmlText),
+            : new Ms2.Ui.Skills.SkillDamageTable(() => Ms2.Ui.Skills.SkillDamageTable.DeferExisting(SkillFiles(packs), n => packs.Exists("Xml", n), SkillReader),
                 rows => FeatureElements.Collect(packs, rows, r => r.Value, r => r.Feature, r => r.Locale),
-                i => Ms2.Formats.Text.PackXml.Reader(new MemoryStream(packs.Read("Xml", SkillFiles(packs)[i]), false))));
+                i => new StringReader(SkillText(SkillFiles(packs)[i]))));
     /// <summary>Reads <see cref="SkillDamage"/> on a worker thread while the field builds, so the first hit's damage event
     /// (a skill damage with mode 1 reads the attack's damage) does not read every skilldata file on the frame.</summary>
     public System.Threading.Tasks.Task PrefetchSkillDamage() => System.Threading.Tasks.Task.Run(() => { try { SkillDamage.Load(); } catch { } });
