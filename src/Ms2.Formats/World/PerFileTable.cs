@@ -18,6 +18,9 @@ namespace Ms2.Formats.World;
 /// </summary>
 public static class PerFileTable
 {
+    /// <summary>The KMS layout where the data has it (its file is read, the per-file folder never touched), else the per-file rows.</summary>
+    public static T Choose<T>(bool kmsHas, Func<T> kms, Func<T> perFile) => kmsHas ? kms() : perFile();
+
     /// <summary>
     /// A table document of the files under <paramref name="folder"/> ("map/", "npc/"): one &lt;<paramref name="row"/> id&gt; per file,
     /// holding a copy of the environment the client picks (FeatureElements.SelectEnvironment, FUN_14028f8d0) with its locale and
@@ -25,9 +28,6 @@ public static class PerFileTable
     /// environment or a readable name or content has no row. Null when the pack has no such file, so a table that is absent
     /// in this data stays absent. Read only: the document is shared.
     /// </summary>
-    /// <summary>The KMS layout where the data has it (its file is read, the per-file folder never touched), else the per-file rows.</summary>
-    public static T Choose<T>(bool kmsHas, Func<T> kms, Func<T> perFile) => kmsHas ? kms() : perFile();
-
     public static XDocument Rows(PackSet packs, string folder, string row)
     {
         // once per pack set and folder: the readers only read the tree
@@ -39,7 +39,7 @@ public static class PerFileTable
             if (!Has(packs, folder)) return cache[key] = null;
             var store = CacheStore.Of?.Invoke(packs);
             if (store == null) return cache[key] = Parse(packs, folder, row);
-            var t = store.Get(Piece(folder), LobbyFeatures.Stamp(packs), Code, () => new Table(Parse(packs, folder, row)),
+            var t = store.Get(Piece(folder), Config(packs), Code, () => new Table(Parse(packs, folder, row)),
                 Write, Read, (a, b) => Text(a.Doc) == Text(b.Doc) ? null : "rows differ", out var outcome);
             CacheStore.Logged?.Invoke(outcome);
             return cache[key] = t.Doc;
@@ -48,13 +48,17 @@ public static class PerFileTable
 
     /// <summary>Writes the merged table of the folder into the install's cache store when it is missing (the setup step); true when written.</summary>
     public static bool BuildCache(PackSet packs, CacheStore store, string folder, string row) =>
-        Has(packs, folder) && store.Ensure(Piece(folder), LobbyFeatures.Stamp(packs), Code, () => new Table(Parse(packs, folder, row)), Write);
+        Has(packs, folder) && store.Ensure(Piece(folder), Config(packs), Code, () => new Table(Parse(packs, folder, row)), Write);
 
     sealed record Table(XDocument Doc);
+    /// <summary>The cache config: the features stamp and the data's locale, which SelectEnvironment picks the rows by (a loose table/na or table/kr folder changes it).</summary>
+    internal static string Config(PackSet packs) => LobbyFeatures.Stamp(packs) + "|" + LobbyFeatures.LocaleOf(packs);
     static string Piece(string folder) => "perfile-" + folder.TrimEnd('/');
     static string Code => CacheStore.Build(typeof(PerFileTable).Assembly);
     static string Text(XDocument d) => d?.ToString(SaveOptions.DisableFormatting) ?? "";
-    static byte[] Write(Table t) => System.Text.Encoding.UTF8.GetBytes(Text(t.Doc));
+    static byte[] Write(Table t) => Serialize(t.Doc);
+    internal static byte[] Serialize(XDocument d) => System.Text.Encoding.UTF8.GetBytes(Text(d));
+    internal static XDocument Deserialize(byte[] body) => Read(body).Doc;
     static Table Read(byte[] body) => new(body.Length == 0 ? null : XDocument.Parse(System.Text.Encoding.UTF8.GetString(body)));
 
     static bool Has(PackSet packs, string folder) => packs.List("Xml").Any(n => n.StartsWith(folder, StringComparison.Ordinal) && n.EndsWith(".xml", StringComparison.Ordinal));

@@ -109,6 +109,21 @@ public class PerFileTableTests
         Assert.That(assets.All(a => a.Name.StartsWith("Data/Resource/Model/Item/", StringComparison.OrdinalIgnoreCase)));
     }
 
+    // data-free: what the setup writes is what a launch reads back
+    [Test]
+    public void TheCachedTableReadsBackEqual()
+    {
+        var doc = PerFileTable.Build(new[]
+        {
+            ("map/00000009.xml", XElement.Parse("<ms2><environment><xblock name=\"A\" /><property mapType=\"1\" /></environment></ms2>")),
+            ("map/00000010.xml", XElement.Parse("<ms2><environment><xblock name=\"B\" /></environment></ms2>")),
+        }, "fieldData", f => f.Element("environment"));
+        var back = PerFileTable.Deserialize(PerFileTable.Serialize(doc));
+        Assert.That(back.ToString(SaveOptions.DisableFormatting), Is.EqualTo(doc.ToString(SaveOptions.DisableFormatting)));
+        Assert.That(back.Root!.Elements().Count(), Is.EqualTo(2));
+        Assert.That(PerFileTable.Deserialize(PerFileTable.Serialize(null)), Is.Null, "an absent table reads back absent");
+    }
+
     // data-free: the choice between the layouts, as FieldData.Table, NpcTable and ItemModelTable make it
     [Test]
     public void TheKmsLayoutWinsAndThePerFileFolderIsNotReadWhenItIsThere()
