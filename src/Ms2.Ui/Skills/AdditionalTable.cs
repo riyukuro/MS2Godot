@@ -32,6 +32,11 @@ public sealed class AdditionalLevelData
     /// <summary>&lt;Motion hide&gt; (m_motion.m_nHide, :1100): FUN_140972a00 (additionalcli_2.cpp:1072) sets the list's
     /// IsHidden from any enabled, unsuspended effect with it.</summary>
     public int Hide;
+    /// <summary>&lt;Motion superArmor superArmorApplyFieldType&gt; (m_motion.m_nSuperArmor, m_eSuperArmorApplyFieldType,
+    /// additionalactionadditional.cpp:1112-1113): FUN_140972a00 (additionalcli_2.cpp:1077) keeps the largest that
+    /// FUN_1409726e0 lets count in the field as the list's super armor.</summary>
+    public uint SuperArmor;
+    public int SuperArmorApplyFieldType;
     /// <summary>&lt;SpecialEffect type probability values&gt; (m_specialEffect, :1349-1353; Clear @0x140192c40 makes the
     /// probability 1): the kind CSpecialEffectFunctionManager runs (4 CSEReduceSkillGroupCooltime), the chance against
     /// FUN_140768090's roll and the values' attributes (SpecialEffectProperty::Parse @0x140192ce0, CXmlData::ParseValues
@@ -98,7 +103,12 @@ public sealed class AdditionalLevelData
             lv.ForceApplyTarget = Xml.Int(basic, "forceApplyTarget");
             lv.DisableRevivalHere = Xml.Bool(basic, "disableRevivalHere");
         }
-        if (e.Element("Motion") is { } motion) lv.Hide = Xml.Int(motion, "hide");
+        if (e.Element("Motion") is { } motion)
+        {
+            lv.Hide = Xml.Int(motion, "hide");
+            lv.SuperArmor = Xml.UInt(motion, "superArmor");
+            lv.SuperArmorApplyFieldType = Xml.Int(motion, "superArmorApplyFieldType");
+        }
         if (e.Element("InvokeEffect") is { } invoke)
         {
             lv.InvokeSkillId = Xml.UInt(invoke, "skillID");

@@ -318,6 +318,15 @@ public sealed class NpcLayer
     /// <summary>Whether the npc of the object id is dead (PCBase::IsDead, m_unk_15c); false when there is none.</summary>
     public bool IsDead(int id) => inst.TryGetValue(id, out var i) && i.Dead;
 
+    /// <summary>The npc's position in the client's z-up coordinates (vfunc_18) and its rotation z in degrees (vfunc_20, the
+    /// one the moves set, not the eased visual); null when there is no npc of the id.</summary>
+    public (System.Numerics.Vector3 Pos, float RotZ)? PoseOf(int id)
+    {
+        if (!inst.TryGetValue(id, out var i) || i.Root == null || !GodotObject.IsInstanceValid(i.Root)) return null;
+        var g = i.Root.GlobalPosition;
+        return (new System.Numerics.Vector3(g.X, -g.Z, g.Y), i.TargetYaw);
+    }
+
     /// <summary>
     /// CNpc::vfunc_125 (@0x141091210): the npc dies (m_unk_15c = 1) and enters StateDeadNPC (0xc), which plays its
     /// death sequence; <paramref name="show"/> (OnFieldDeadNpc passes 1, OnFieldAddNpc's dead flag 0,

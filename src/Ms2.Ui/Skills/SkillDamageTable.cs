@@ -7,8 +7,9 @@ namespace Ms2.Ui.Skills;
 /// The &lt;damage&gt; of a skill attack (SkillDamage::Load @0x1407e01c0, commonfiles/skillattackdata.cpp:251, called from
 /// SkillAttackData::Load :574 as m_damage): the damage and push attributes. A missing attribute keeps the ctor's value
 /// (:175: count 1, pushprob 1, hitSpeedRate 1, damagedVibrateRatio 1, the rest 0); an attack without &lt;damage&gt; keeps
-/// them all. STILL-OPEN, not read yet: IgnoreOptimalHideDamageHitEffect / RemainEffect, isConstDamageValue,
-/// constDamageByTargetSP, attackMaterial (the hit sound), invokeEffectDisable and damageEventDisable.
+/// them all. Also the attack element's own hitImmuneBreak, attackMethodType and grabTargetType (SkillAttackData::Load
+/// :582-595, 0 from the ctor :498-503), which the hit reaction reads with the push. STILL-OPEN, not read yet:
+/// IgnoreOptimalHideDamageHitEffect / RemainEffect, isConstDamageValue, constDamageByTargetSP and damageEventDisable.
 /// </summary>
 public sealed class SkillAttackDamage
 {
@@ -35,14 +36,46 @@ public sealed class SkillAttackDamage
     /// <summary>"stateHitIgnore" / "stateHitOnly" (SkillStateHit enums).</summary>
     public int StateHitIgnore, StateHitOnly;
     public int SuperArmorBreak;
+    /// <summary>"attackMaterial" (m_nAttackMaterial :285): the hit sound's material (CDamageRecord::GetAttackMaterial,
+    /// skillrecord.cpp:580).</summary>
+    public int AttackMaterial;
+    /// <summary>"invokeEffectDisable" (:289): PC::vfunc_33 (pc.cpp:885) skips the buffs' hit invoke effects.</summary>
+    public int InvokeEffectDisable;
+    /// <summary>The attack's "hitImmuneBreak" (m_nHitImmuneBreak :583, CDamageRecord::vfunc_1).</summary>
+    public int HitImmuneBreak;
+    /// <summary>The attack's "attackMethodType" (SkillAttackMethodType :582; FUN_14175acc0 tests 1).</summary>
+    public int AttackMethodType;
+    /// <summary>The attack's "grabTargetType" (SkillGrabTargetType :595).</summary>
+    public int GrabTargetType;
+
+    /// <summary>
+    /// SkillDamage::GetPush @0x1407e0f90 (skillattackdata.cpp:393): no push on a ground field (map type 9 or 3,
+    /// CFieldData::FUN_1403744a0 / FUN_140374410) when pushApplyField is 1, none off one when it is 2, else "push".
+    /// </summary>
+    public int GetPush(bool ground)
+    {
+        if (ground && PushApplyField == 1) return 0;
+        if (!ground && PushApplyField == 2) return 0;
+        return Push;
+    }
 
     /// <summary>HasDamage @0x1407e0f40 (:384): value, constDamageByTargetHP, rate or damageByTargetMaxHP above 0.</summary>
     public bool HasDamage => Value > 0 || ConstDamageByTargetHP > 0 || Rate > 0f || DamageByTargetMaxHP > 0f;
 
-    /// <summary>The attack at the reader (an &lt;attack&gt; element), read to its end: its first &lt;damage&gt; child's
-    /// attributes (the first XmlGetChild, as attack.Element("damage")).</summary>
+    /// <summary>The attack at the reader (an &lt;attack&gt; element), read to its end: its own hitImmuneBreak,
+    /// attackMethodType and grabTargetType and its first &lt;damage&gt; child's attributes (the first XmlGetChild, as
+    /// attack.Element("damage")); <see cref="None"/> when it has none of them.</summary>
     internal static SkillAttackDamage Read(XmlReader r, AttributeValues values, Shared shared)
     {
+        int methodType = 0, hitImmuneBreak = 0, grabType = 0;
+        while (r.MoveToNextAttribute())
+            switch (r.LocalName)
+            {
+                case "attackMethodType": methodType = (int)Atoll(values.Of(r)); break;
+                case "hitImmuneBreak": hitImmuneBreak = (int)Atoll(values.Of(r)); break;
+                case "grabTargetType": grabType = (int)Atoll(values.Of(r)); break;
+            }
+        r.MoveToElement();
         bool damage = false;
         var d = shared.Scratch;
         d.Reset();
@@ -58,7 +91,11 @@ public sealed class SkillAttackDamage
                 if (d.PushEaseType < 0 || d.PushEaseType > 2) d.PushEaseType = 0;
             }
         }
-        return damage ? shared.Get() : None;
+        if (!damage && hitImmuneBreak == 0 && methodType == 0 && grabType == 0) return None;
+        d.HitImmuneBreak = hitImmuneBreak;
+        d.AttackMethodType = methodType;
+        d.GrabTargetType = grabType;
+        return shared.Get();
     }
 
     /// <summary>The read's attacks by value: equal ones are one object (the table is read only), so the many levels of a
@@ -90,7 +127,9 @@ public sealed class SkillAttackDamage
             && a.PushUpDistance.Equals(b.PushUpDistance) && a.PushDown == b.PushDown && a.PushFall == b.PushFall
             && a.PushPriority == b.PushPriority && a.PushPriorityHitImmune == b.PushPriorityHitImmune
             && a.PushAnimation == b.PushAnimation && a.StateHitIgnore == b.StateHitIgnore && a.StateHitOnly == b.StateHitOnly
-            && a.SuperArmorBreak == b.SuperArmorBreak;
+            && a.SuperArmorBreak == b.SuperArmorBreak && a.AttackMaterial == b.AttackMaterial
+            && a.InvokeEffectDisable == b.InvokeEffectDisable && a.HitImmuneBreak == b.HitImmuneBreak
+            && a.AttackMethodType == b.AttackMethodType && a.GrabTargetType == b.GrabTargetType;
 
         public int GetHashCode(SkillAttackDamage a) =>
             HashCode.Combine(a.Value, a.Rate, a.Count, a.Push, a.PushDistance, a.EffectHit, a.HitSpeedRate, a.PushProb);
@@ -103,7 +142,8 @@ public sealed class SkillAttackDamage
         EffectHit = ""; EffectRemain = ""; DamageByTargetMaxHP = 0f; ConstDamageByTargetHP = 0;
         Push = 0; PushDistance = 0f; PushDuration = 0f; PushProb = 1f; PushEaseType = 0; PushApplyField = 0; PushUpDistance = 0f;
         PushDown = 0; PushFall = 0; PushPriority = 0; PushPriorityHitImmune = 0; PushAnimation = "";
-        StateHitIgnore = 0; StateHitOnly = 0; SuperArmorBreak = 0;
+        StateHitIgnore = 0; StateHitOnly = 0; SuperArmorBreak = 0; AttackMaterial = 0; InvokeEffectDisable = 0;
+        HitImmuneBreak = 0; AttackMethodType = 0; GrabTargetType = 0;
     }
 
     // XmlGetAttr: a missing attribute leaves the value; only the attributes read here take their value
@@ -137,6 +177,8 @@ public sealed class SkillAttackDamage
             case "stateHitIgnore": StateHitIgnore = (int)Atoll(v.Of(r)); break;
             case "stateHitOnly": StateHitOnly = (int)Atoll(v.Of(r)); break;
             case "superArmorBreak": SuperArmorBreak = (int)Atoll(v.Of(r)); break;
+            case "attackMaterial": AttackMaterial = (int)Atoll(v.Of(r)); break;
+            case "invokeEffectDisable": InvokeEffectDisable = (int)Atoll(v.Of(r)); break;
         }
     }
 

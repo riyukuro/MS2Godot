@@ -1698,6 +1698,7 @@ public partial class LiveSession : Node
                              id => remote?.Tracker.HasObject(id) ?? (id == selfObject),
                              id => remote?.Tracker.HasObject(id) ?? (id == selfObject), regionSkills.Contains))
                     SelfDamaged?.Invoke(total);
+                ReactToHits(d);   // PC::vfunc_33 on the own PC (LiveSession.Hits.cs)
                 // PCBase::vfunc_113 (RecordDamage) at the end of the hit object's vfunc_33/34/35, for every record
                 BattleRecords.Record(d, objectInField ??= ObjectInField, objectInField, isRegionSkill ??= regionSkills.Contains);
             }

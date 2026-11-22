@@ -3210,6 +3210,11 @@ public partial class HudScene : Node, IUiStageHost
         live.Me.PutOnOrOff += onPutOnOrOff;
         RefreshOwnWorn();
         SampleAbilityRate();
+        // the hit reaction's CEquipment::GetAbilityTotal(0x27) (FUN_1411e0f90, equipment.cpp:705) and the buffs' part of
+        // AdditionalCliList::GetSuperArmor (additionalcli_2.cpp:599)
+        live.OwnPushResistLevel = () => Ms2.Ui.Items.WornEquipment.AbilityTotal(ownWornPushResist, 0x27, buffs, live.HotTimes,
+            (live.Me.User?.PcBangGrade ?? 0) > 0);
+        live.OwnBuffSuperArmor = buffs.SuperArmor;
         Action<Ms2.Net.Packets.BuffPacket> onBuff = b =>
         {
             ownBuffs.UpperTargetId = live.UpperTargetId;
@@ -3231,14 +3236,16 @@ public partial class HudScene : Node, IUiStageHost
             live.Me.EquipChanged -= onEquip;
             live.Me.Changed -= onMe;
             live.Me.PutOnOrOff -= onPutOnOrOff;
+            live.OwnPushResistLevel = () => 0;
+            live.OwnBuffSuperArmor = _ => 0;
         };
     }
 
-    int ownWornCooldown, ownWornLevel;
+    int ownWornCooldown, ownWornPushResist, ownWornLevel;
     object ownWornEquips;
 
     /// <summary>
-    /// The worn items' "skillCooldown" (0x23) part of m_abilities (CEquipment::FUN_1411e76c0, equipment.cpp:2922), taken
+    /// The worn items' "skillCooldown" (0x23) and push resistance (0x27) parts of m_abilities (CEquipment::FUN_1411e76c0, equipment.cpp:2922), taken
     /// again only when the equipment lists or the level change. STILL-OPEN: FUN_1411e76c0 also rebuilds when a worn item
     /// expires; an item expiring while worn keeps its part here until the next change.
     /// </summary>
@@ -3250,8 +3257,10 @@ public partial class HudScene : Node, IUiStageHost
         var t = hudModel.Tables;
         ownWornEquips = live.Me.Equips;
         ownWornLevel = live.Me.User?.Level ?? 0;
-        ownWornCooldown = Ms2.Ui.Items.WornEquipment.Abilities(live.Me.ToPcInfo(now), t.Items, t.ItemModels,
-            it => Ms2.Ui.Items.ItemLevels.Usable(it, now)) is { } worn && worn.TryGetValue(0x23, out int v) ? v : 0;
+        var worn = Ms2.Ui.Items.WornEquipment.Abilities(live.Me.ToPcInfo(now), t.Items, t.ItemModels,
+            it => Ms2.Ui.Items.ItemLevels.Usable(it, now));
+        ownWornCooldown = worn != null && worn.TryGetValue(0x23, out int v) ? v : 0;
+        ownWornPushResist = worn != null && worn.TryGetValue(0x27, out int r) ? r : 0;
     }
 
     /// <summary>

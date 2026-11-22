@@ -317,6 +317,32 @@ public sealed class AdditionalBuffList
         }
     }
 
+    /// <summary>
+    /// m_motion.m_nSuperArmor as FUN_140972a00 (additionalcli_2.cpp:1077-1080) sums it: the largest &lt;Motion superArmor&gt;
+    /// of the enabled, unsuspended effects that <see cref="SuperArmorApplies"/> lets count in the field.
+    /// </summary>
+    /// <param name="mapType9">CFieldData::FUN_1403744a0 of the field id: its map type is 9.</param>
+    public uint SuperArmor(bool mapType9)
+    {
+        uint v = 0;
+        foreach (var b in map.Values)
+        {
+            if (b.Enabled == 0 || b.Suspended) continue;
+            uint armor = b.LevelData.SuperArmor;
+            if (SuperArmorApplies(armor, b.LevelData.SuperArmorApplyFieldType, mapType9) && armor > v) v = armor;
+        }
+        return v;
+    }
+
+    /// <summary>AdditionalCliList::FUN_1409726e0 @0x1409726e0 (additionalcli_2.cpp:1008): no armor never counts, field type 0
+    /// counts everywhere, else type 2 counts only on map type 9 and the others only off it.</summary>
+    public static bool SuperArmorApplies(uint armor, int applyFieldType, bool mapType9)
+    {
+        if (armor == 0) return false;
+        if (applyFieldType == 0) return true;
+        return (applyFieldType == 2) == mapType9;
+    }
+
     /// <summary>OnBuff's three modes for the local player.</summary>
     public void Apply(BuffPacket p)
     {

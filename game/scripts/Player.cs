@@ -17,7 +17,7 @@ public partial class Player : CharacterBody3D
     public const string Group = "player";
     public Player() { AddToGroup(Group); }
 
-    public enum MoveState { Idle, Walk, Jump, Fall, Land, Swim, Ladder, Rope, Climb, Dash, Dead, Revival }
+    public enum MoveState { Idle, Walk, Jump, Fall, Land, Swim, Ladder, Rope, Climb, Dash, Dead, Revival, Hit }
 
     public Node3D Visual;                 // the character root (faces +Z)
     /// <summary>The body's gender (0 male, 1 female) and its model root node name, for the player's effect dummies.</summary>
@@ -398,6 +398,10 @@ public partial class Player : CharacterBody3D
             case MoveState.Revival:
                 DeathUpdate();
                 break;
+
+            case MoveState.Hit:
+                HitUpdate();
+                break;
         }
         prevRawInput = rawInput;
 
@@ -453,6 +457,8 @@ public partial class Player : CharacterBody3D
         if (old is MoveState.Ladder or MoveState.Climb) StopJump();                // StateLadder / StateClimb::vfunc_5
         State = s;
         stateTime = 0;
+        // StateIdle::vfunc_4 (stateidle.cpp:187-189) and StateDead::vfunc_4 (statedead.cpp:150-153) reset the own PC's push
+        if (s is MoveState.Idle or MoveState.Dead) Push.Reset();
         // StateLadder::vfunc_4 (stateladder.cpp:143), StateRope::vfunc_4 (statemanager.cpp:1225), StateClimb::vfunc_4
         // (state.cpp:1054), StateDash::vfunc_4 (state.cpp:1789)
         if (s is MoveState.Ladder or MoveState.Rope or MoveState.Climb or MoveState.Dash) StopJump();

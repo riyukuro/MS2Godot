@@ -130,6 +130,11 @@ public sealed partial class RemoteLayer : Node3D
     public IEnumerable<World.FieldNpcs.Placed> Npcs => npcs.All;
     public bool NpcDead(int objectId) => npcs.IsDead(objectId);
 
+    /// <summary>WorldService::FindObjectById then vfunc_18 / vfunc_20 on a shown player or an npc: its position in the client's
+    /// z-up coordinates and its rotation z in degrees; null when neither is here.</summary>
+    public (System.Numerics.Vector3 Pos, float RotZ)? PoseOf(int objectId) =>
+        users.TryGetValue(objectId, out var r) && r.Pc != null ? (r.Pc.Position, r.Pc.RotationZ) : npcs.PoseOf(objectId);
+
     /// <summary>WorldService::FindPCById then GetEquipByUid (OnItemUpdate): whether the player is here, and its worn equip of the uid (null when none).</summary>
     public (bool PcKnown, Ms2.Net.Packets.EquipItem Equip) EquipOf(int objectId, long uid)
     {
@@ -265,6 +270,9 @@ public sealed partial class RemoteLayer : Node3D
     /// <summary>The skill attacks' damage blocks (read on the first hit).</summary>
     Ms2.Ui.Skills.SkillDamageTable SkillDamage => skillDamage ??= Ms2.Ui.GameTables.Shared(packs, Ms2Godot.GameOptions.StringLanguage).SkillDamage;
     static readonly Ms2.Formats.Options.GameOption.Battle defaultBattle = new();
+    /// <summary>CDamageRecord::GetAttackData then m_damage (<see cref="Ms2.Ui.Skills.SkillDamageTable.Get"/>); null when none.</summary>
+    public Ms2.Ui.Skills.SkillAttackDamage AttackDamage(int skillId, int level, int motion, int attack) =>
+        SkillDamage.Get(skillId, level, motion, attack);
 
     /// <summary>
     /// PCBase::FUN_141671c20's vfunc_111 per hit (<see cref="Ms2.Ui.Hud.DamageNumbers.Records"/>) through UIDamageText's
