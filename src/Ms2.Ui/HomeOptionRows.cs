@@ -25,21 +25,12 @@ public sealed class HomeOptionRows
     public void Apply(ResponseCubeRowSwitch m) { if (m != null) on[m.Row] = m.On; }
     public void Apply(ResponseCubeRowLevel m) { if (m != null) level[m.Row] = m.Level; }
 
-    /// <summary>The service's reset (:5455-5475): rows 0 to 8 off and level 0, f330 back to 0.</summary>
+    /// <summary>The service's reset (:5455-5475): rows 0 to 8 off and level 0. f330 and the owner (f1c0) live in <see cref="Ms2.Net.CubeMapInfo"/> (PlotMode, Owner), which OnLoadUgcMap fills and the field teardown resets.</summary>
     public void Reset()
     {
         on.Clear(); level.Clear();
         for (int i = 0; i < 9; i++) { on[i] = false; level[i] = 0; }
-        F330 = 0;
     }
-
-    /// <summary>f330 (FUN_1410c3630 sets, FUN_1410c35c0 tests == 1); 0 from the ctor and the reset.
-    /// STILL-OPEN: OnLoadUgcMap sets it (nF), unported, so it stays 0.</summary>
-    public int F330 { get; set; }
-
-    /// <summary>f1c0 (FUN_1410c3180 reads, FUN_1410c31a0 sets): the cube map's owner account. OnLoadUgcMap (nOwner) sets it,
-    /// unported, so it stays 0 and <see cref="CanChange"/> refuses until that packet is read.</summary>
-    public long ServiceOwner { get; set; }
 
     /// <summary>
     /// CubeMapInformationService::FUN_1410d5640 (@0x1410d5640, :1186), UIHomeOptionDialog's CanChange: the field is a home map

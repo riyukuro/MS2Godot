@@ -29,15 +29,14 @@ public class HomeOptionRowsTests
     }
 
     [Test]
-    public void TheResetPutsRowsZeroToEightBackAndF330ToZero()
+    public void TheResetPutsRowsZeroToEightBackOff()
     {
-        var r = new HomeOptionRows { F330 = 1 };
+        var r = new HomeOptionRows();
         r.Apply(new ResponseCubeRowSwitch(0, true));
         r.Apply(new ResponseCubeRowLevel(8, 2));
         r.Reset();
         Assert.That(r.RowOn(0), Is.False);
         Assert.That(r.RowLevel(8), Is.EqualTo(0));
-        Assert.That(r.F330, Is.EqualTo(0));
     }
 
     [TestCase(true, false, 10L, 10L, true)]
