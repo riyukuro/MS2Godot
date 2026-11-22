@@ -164,6 +164,8 @@ public sealed partial class QuestTable
     readonly SortedDictionary<uint, QuestData> quests = new();          // m_quests, a std::map: quest id order
     readonly Dictionary<int, List<uint>> chapterQuests = new();         // m_chapter
     readonly Dictionary<int, List<uint>> groupQuests = new();           // m_390: group id -> its quests in id order
+    // m_148[2]: an item id -> the quests (id order; a code naming it twice adds it twice) with a condition of type 3 (kind 0) or 0xad (kind 1) naming it
+    readonly Dictionary<uint, List<uint>>[] itemKeyQuests = { new(), new() };
     readonly Dictionary<int, (int Count, int Kind)> groupPicks = new(); // m_3d8: QuestGroupTable.xml
     List<int> chapterOrder = new();                                     // m_chapter's CAtlMap order
     readonly Dictionary<int, Chapter> chapters = new();                 // s_chapters
@@ -529,10 +531,10 @@ public sealed partial class QuestTable
     };
 
     /// <summary>
-    /// BuildIndexes then FUN_1407503f0: each quest, in id order, under its chapter (m_chapter, a CAtlMap); each quest's
-    /// require and selectable quests get it as a following quest; then each chapter of two or more quests whose quests
-    /// are all non-repeat, non-event quests is reordered along its chain from its head quest, when the chain reaches all
-    /// of them.
+    /// BuildIndexes then FUN_1407503f0: each quest, in id order, under its chapter (m_chapter, a CAtlMap) and under the
+    /// item keys of its type 3 and 0xad conditions (m_148, questdata.cpp:2433); each quest's require and selectable
+    /// quests get it as a following quest; then each chapter of two or more quests whose quests are all non-repeat,
+    /// non-event quests is reordered along its chain from its head quest, when the chain reaches all of them.
     /// </summary>
     public void BuildIndexes()
     {
@@ -550,6 +552,18 @@ public sealed partial class QuestTable
             {
                 if (!groupQuests.TryGetValue(d.Require.GroupId, out var g)) groupQuests[d.Require.GroupId] = g = new List<uint>();
                 g.Add(id);
+            }
+        foreach (var keys in itemKeyQuests) keys.Clear();
+        foreach (var (id, d) in quests)
+            foreach (var c in d.Conditions)
+            {
+                if (c.Type != 3 && c.Type != 0xad) continue;
+                var keys = itemKeyQuests[c.Type == 3 ? 0 : 1];
+                foreach (uint key in Split(c.Code.Text))
+                {
+                    if (!keys.TryGetValue(key, out var l)) keys[key] = l = new List<uint>();
+                    l.Add(id);
+                }
             }
 
         foreach (var (id, d) in quests)
@@ -589,6 +603,11 @@ public sealed partial class QuestTable
             chapterQuests[chain] = ordered;
         }
     }
+
+    /// <summary>QuestDataTable::GetQuestIdsByKey (m_148[kind]): the quests whose type 3 (kind 0) or type 0xad (kind 1)
+    /// condition codes name the key, in quest id order; empty when none do.</summary>
+    public IReadOnlyList<uint> QuestIdsByKey(uint key, int kind) =>
+        (uint)kind < 2 && itemKeyQuests[kind].TryGetValue(key, out var l) ? l : Array.Empty<uint>();
 
     /// <summary>CollectChainQuestIds: depth first along the following quests that stay in the chapter (the depth counts every visit).</summary>
     void CollectChain(int chain, List<uint> into, QuestData q, int depth)

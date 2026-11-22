@@ -13,8 +13,8 @@ public sealed partial class ItemTooltip
     /// FUN_1409d3a40 (astooltip.cpp:2622): "itemQuestInfo", s_msg_tooltip_quest_info with the item's kind 0 quests
     /// (GetQuestNameWithLevel with s_msg_tooltip_quest_name_progress / _name / _name_complete by link state, joined by
     /// ", "), then a line of s_msg_tooltip_equip_quest_info when a kind 1 link is there; with the text, "questBeginAble" or
-    /// "questProgress" by FUN_1416ce6a0. Needs a local player. STILL-OPEN: CQuestManager::GetQuestItemLinks (the item to
-    /// quest index of the quest data table and the per-quest checks) comes from <see cref="UiModel.QuestItemLinks"/>.
+    /// "questProgress" by FUN_1416ce6a0. Needs a local player. The links come from <see cref="UiModel.QuestItemLinks"/>,
+    /// which the host answers with <see cref="QuestItemLinks"/>.
     /// </summary>
     void SetItemQuestInfo(Item item)
     {
@@ -50,6 +50,37 @@ public sealed partial class ItemTooltip
         int state = QuestItemState(links);
         if (state == 0) Data["questBeginAble"] = 1;
         else if (state == 1) Data["questProgress"] = 1;
+    }
+
+    /// <summary>
+    /// CQuestManager::GetQuestItemLinks (questmanager_2.cpp:1304): for kind 0 then 1, each quest of
+    /// QuestDataTable::GetQuestIdsByKey(item id, kind) that has data, is not locked (m_30), has its term tag when it has
+    /// one (FUN_14074b210: CGameRule::HasTermTag; a tag the context does not know counts as missing) and takes the job
+    /// group when it lists jobs; kind 1 skips an item with the stream flag m_d4 (FUN_140529620). The state is 0 with no
+    /// record, 1 in progress, 0 for a complete repeat quest; a complete non-repeat quest (and any other state) keeps the
+    /// default 4 and is left out. STILL-OPEN, taken as 0 so nothing is skipped: QuestDataTable::FUN_14074e510, the m_2d0
+    /// map lookup, whose setter is not found.
+    /// </summary>
+    public static List<QuestItemLink> QuestItemLinks(QuestTable table, IQuestContext quests, Item item)
+    {
+        var links = new List<QuestItemLink>();
+        if (table == null || quests == null || item == null) return links;
+        for (int kind = 0; kind < 2; kind++)
+            foreach (uint id in table.QuestIdsByKey((uint)item.ItemId, kind))
+            {
+                var d = table.Quest(id);
+                if (d == null || d.Locking) continue;
+                if (d.Schedule.Length != 0 && quests.TermTag(d.Schedule).Tag == null) continue;
+                if (d.Require.Job.Length != 0 && (quests.JobGroup is not int job || Array.IndexOf(d.Require.Job, job) < 0)) continue;
+                if (kind == 1 && item.Record?.HeaderFlagD4 == true) continue;
+                int state = 4;
+                var q = quests.Get((int)id);
+                if (q == null) state = 0;
+                else if (q.State == 2) { if (d.Repeat != 0) state = 0; }
+                else if (q.State == 1) state = 1;
+                if (state != 4) links.Add(new QuestItemLink((int)id, state, kind));
+            }
+        return links;
     }
 
     /// <summary>GetQuestNameWithLevel (questuidata.cpp:256): the key's string with GetQuestName and the quest level, or the

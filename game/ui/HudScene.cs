@@ -1978,6 +1978,21 @@ public partial class HudScene : Node, IUiStageHost
         catch (Exception e) { GD.PushWarning("quest log: " + e.Message); return null; }
     }
 
+    /// <summary>
+    /// CQuestManager::GetQuestItemLinks (questmanager_2.cpp:1304) for an item tooltip: the quests of the item in the quest
+    /// tables, checked against the live session's quest records and job (<see cref="Ms2.Ui.Items.ItemTooltip.QuestItemLinks"/>);
+    /// the tables also name the quests (<see cref="UiModel.Quests"/>). Offline the character has no quest state, so no links.
+    /// </summary>
+    IReadOnlyList<Ms2.Ui.Items.QuestItemLink> ItemQuestLinks(Ms2.Ui.Items.Item item)
+    {
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        if (live?.GameSession == null || questTable == null && QuestLogSource() == null) return null;
+        hudModel.Quests = questTable;
+        var state = new Ms2Godot.Net.LiveQuestState(live.Quests, questTable, live.GameSession, live.CharacterId, PlayerLevel,
+                                                    live.FieldId, null) { JobGroup = live.Me.User?.JobCode };
+        return Ms2.Ui.Items.ItemTooltip.QuestItemLinks(questTable, state, item);
+    }
+
     List<MovieDialog> eventWidgets;     // the event widgets opened at field entry, kept across a window relayout
 
     /// <summary>
@@ -2663,6 +2678,7 @@ public partial class HudScene : Node, IUiStageHost
         MovieLayerHost.Layers.FeatureEnabled = hudModel.IsFeatureEnabled;   // the adventure level bar's layer (feature 0xbd)
         hudModel.HasLocalPlayer = true;     // the HUD runs in a field, where WorldService::GetLocalPlayer is the MyPC
         hudModel.CanBreakItem = it => Ms2Godot.Net.LiveSession.Instance?.BreakManager.CanBreakItem(it) == true;   // CItemBreakManager::CanBreakItem
+        hudModel.QuestItemLinks = ItemQuestLinks;    // CQuestManager::GetQuestItemLinks, an item tooltip's quest line
         hudModel.LocalPlayer = () =>
         {
             var live = Ms2Godot.Net.LiveSession.Instance;
