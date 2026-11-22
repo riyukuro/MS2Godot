@@ -33,6 +33,9 @@ namespace Ms2Godot.World;
 /// An actor event (TriggerObjectActor::vfunc_2 @0x140de74b0, triggeractioncli.cpp:716-727) sets the entity's IsVisible
 /// flag (0xa0b6b179, FUN_140b60e10 at :720) to the event's bool and plays the named sequence on it (Unk_AnimSvc::PlayAnimation,
 /// :723), which an unknown name leaves as it was; bound with <see cref="Bind(IEnumerable{IActor})"/>.
+/// A cube event (TriggerObjectCube::vfunc_2 @0x140de7cd0, triggeractioncli.cpp:818-822) sets the entity's IsVisible flag
+/// (FUN_140b60e10, :821) to the event's bool and nothing else: the cube's draws show or hide at once (the engine's scene graph
+/// culls a Renderable entity whose IsVisible is cleared) and its colliders stay where they are.
 /// An effect event starts or removes the entity's effect through the field's effect service (<see cref="ApplyEffect"/>),
 /// bound with <see cref="Bind(IRegionSkillEffects)"/>; the effects go with the field, as the object's dtor removes its handle.
 /// The fade (FadeEntity, Fade tenths of a second) runs in <see cref="TriggerFade"/>; a mesh without drawn instances to
@@ -44,7 +47,8 @@ namespace Ms2Godot.World;
 /// server decides); the minimap mark (UIMinimapDialog::SetTriggerVisible) and the show/hide effects (0x6dd85c78 /
 /// 0x6454a3bb) of a type 3 event, those of a rope / ladder event (picked by its flag, :750-753), and an actor event's
 /// minimap mark (:724-726); the actor sequence's blend (PlayAnimation's 1.0f and false go to the client's own
-/// NiActorManager::SetTargetAnimation, whose body is not in the recomp); the cube, sound and camera events (read, not applied); a trigger mesh drawn as an animated prop (FieldProps); a hidden
+/// NiActorManager::SetTargetAnimation, whose body is not in the recomp); a hidden cube's object weapon (IsObjectWeapon; PullObjectWeaponAction::FUN_140959eb0 takes only a cube whose IsVisible is set,
+/// actionkeyobject.cpp:1873-1875; not ported here); the sound and camera events (read, not applied); a trigger mesh drawn as an animated prop (FieldProps); a hidden
 /// mesh that BGTransparencyMgr fades back in (FieldFade restores its transform).
 /// </summary>
 public sealed class FieldTriggers
@@ -85,7 +89,7 @@ public sealed class FieldTriggers
             kinds[id] = kind;     // CAtlMap::SetAt: a later entity with the same id replaces the earlier
             this.entities[id] = e;
             bool fades = kind is TriggerObjectKind.Mesh or TriggerObjectKind.Rope;
-            if (fades && meshDraws.TryGetValue(e, out var draws) && draws.Count > 0)
+            if ((fades || kind == TriggerObjectKind.Cube) && meshDraws.TryGetValue(e, out var draws) && draws.Count > 0)
             {
                 var t = meshes[id] = new TriggerFade.Target();
                 foreach (var (mm, i) in draws) t.All.Add((mm, i, mm.GetInstanceTransform(i)));
@@ -145,6 +149,14 @@ public sealed class FieldTriggers
                 if (!actors.TryGetValue(ev.Id, out var a)) continue;
                 a.Visible = ev.Show;            // FUN_140b60e10(entity, bOn), triggeractioncli.cpp:720
                 a.PlayAnimation(ev.Text);       // PlayAnimation(id, strAnim, 1.0f, false), :721-723
+                n++;
+                continue;
+            }
+            if (ev.Kind == TriggerObjectKind.Cube)
+            {
+                // FUN_140b60e10(entity, b): IsVisible, triggeractioncli.cpp:820-821; no fade and no collider switch
+                if (!meshes.TryGetValue(ev.Id, out var cube)) continue;
+                TriggerFade.Switch(cube, ev.Show);
                 n++;
                 continue;
             }

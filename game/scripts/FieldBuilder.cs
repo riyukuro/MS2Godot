@@ -86,8 +86,9 @@ public sealed class FieldBuilder
     public static bool IsFadeTarget(FieldEntity e) => e.HasMixin("MS2MapProperties") && e.Bool("Transparency");
 
     /// <summary>
-    /// The instances (drawn and shadow-only) of every trigger mesh entity, for world/FieldTriggers: the server shows and hides
-    /// them by trigger id (TriggerObjectMesh::vfunc_2, triggeractioncli.cpp:643).
+    /// The instances (drawn and shadow-only) of every trigger mesh and trigger cube entity (<see cref="IsTriggerDrawn"/>), for
+    /// world/FieldTriggers: the server shows and hides them by trigger id (TriggerObjectMesh::vfunc_2,
+    /// triggeractioncli.cpp:643; TriggerObjectCube::vfunc_2, :818-822).
     /// </summary>
     public readonly Dictionary<FieldEntity, List<(MultiMesh Mm, int Index)>> TriggerMeshDraws = new();
     /// <summary>The drawn instances of every trigger mesh entity, which a Trigger packet's fade draws alone (<see cref="World.TriggerFade"/>).</summary>
@@ -129,6 +130,15 @@ public sealed class FieldBuilder
         Ms2.Net.Packets.TriggerObjects.KindOf(e.HasMixin) is Ms2.Net.Packets.TriggerObjectKind.Mesh or Ms2.Net.Packets.TriggerObjectKind.Rope;
 
     /// <summary>
+    /// A trigger object whose event shows or hides the entity's draws: a trigger mesh (<see cref="IsTriggerMesh"/>) or a
+    /// trigger cube, whose event sets the entity's IsVisible alone (TriggerObjectCube::vfunc_2, triggeractioncli.cpp:818-822)
+    /// and leaves its colliders.
+    /// </summary>
+    public static bool IsTriggerDrawn(FieldEntity e) =>
+        Ms2.Net.Packets.TriggerObjects.KindOf(e.HasMixin) is Ms2.Net.Packets.TriggerObjectKind.Mesh or Ms2.Net.Packets.TriggerObjectKind.Rope
+            or Ms2.Net.Packets.TriggerObjectKind.Cube;
+
+    /// <summary>
     /// The instances (drawn and shadow-only) of every field breakable (MS2Breakable), for world/FieldBreakables: the
     /// server's Breakable state hides (state 4) and shows them (CBreakableObject::SetState, breakableobject.cpp:270).
     /// </summary>
@@ -146,7 +156,7 @@ public sealed class FieldBuilder
             if (!BreakableMeshDraws.TryGetValue(e, out var own)) BreakableMeshDraws[e] = own = new List<(MultiMesh, int)>();
             own.Add((mm, index));
         }
-        if (!IsTriggerMesh(e)) return;
+        if (!IsTriggerDrawn(e)) return;
         if (!TriggerMeshDraws.TryGetValue(e, out var list)) TriggerMeshDraws[e] = list = new List<(MultiMesh, int)>();
         list.Add((mm, index));
     }
