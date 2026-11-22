@@ -728,6 +728,18 @@ public class AsTextField : AsInteractiveObject
     /// <summary>Ctrl+A (KeyAct_SelectAll, EditorKit's key handler, sfr_gfx_07.cpp:821): the whole text is selected, nothing changes.</summary>
     public void SelectAll() => Select(0, Text.Length);
 
+    /// <summary>
+    /// EditorKit::ClearSelection on a lost focus: DocView::SetSelection(0, 0), the cursor kept. Here the selection collapses
+    /// to the caret instead, so caretIndex keeps its value (the client's selectionBeginIndex and selectionEndIndex then
+    /// read 0, ours read the caret).
+    /// </summary>
+    public void ClearSelection()
+    {
+        int at = caretIndex;
+        SelBegin = SelEnd = at;
+        CaretAtBegin = false;
+    }
+
     /// <summary>The caret is at <see cref="SelBegin"/> (a selection made leftwards, or setSelection(b, e) with e &lt; b),
     /// else at <see cref="SelEnd"/>. The other end is the anchor a Shift key extends from.</summary>
     public bool CaretAtBegin;

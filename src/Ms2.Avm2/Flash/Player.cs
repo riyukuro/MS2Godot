@@ -1822,7 +1822,13 @@ namespace Ms2.Avm2.Flash
             }
             if (ReferenceEquals(o, Focus)) return;
             Focus = o;
-            if (o is AsTextField tf) tf.SelectAll();
+            // TextField::OnFocus @0x1425ba020 (sfr_gfx_03e.cpp:1057), selectable fields only: the field losing the focus drops
+            // its selection unless alwaysShowSelection (EditorKit::ClearSelection), and the field getting it selects all of
+            // its text only when the keyboard moved the focus (GFx_FocusMovedByKeyboard; a press and stage.focus, which is
+            // GFx_FocusMovedByAS, sfr_as3_07.cpp:4007, keep its selection). Flags_NoAutoSelection, the one other condition,
+            // has only an AS2 setter.
+            if (old is AsTextField was && was.selectable && !was.alwaysShowSelection) was.ClearSelection();
+            if (o is AsTextField tf && tf.selectable && how == "key") tf.SelectAll();
             if (old != null) RT.Guard("focusOut", () => { var e = (AsFocusEvent)RT.GetClass("flash.events.FocusEvent").Construct("focusOut", Rt.True); e.relatedObject = o; old.Dispatch(e); });
             if (o != null) RT.Guard("focusIn", () => { var e = (AsFocusEvent)RT.GetClass("flash.events.FocusEvent").Construct("focusIn", Rt.True); e.relatedObject = old; o.Dispatch(e); });
         }
