@@ -13,6 +13,8 @@ namespace Ms2Godot.Tests;
 ///   bodies' (whose sweeps end in the end test), allocate at most 8 B per move;
 ///   bodies jumping on a 200 m floor box and on a mesh terrain never fall through, nor bodies crossing one-sided walls from
 ///   behind on that box.
+/// - Riding: the game tick makes the mount's records (scenestategame.cpp:1362-1368), which go out as RideSync
+///   (StateRideeController::vfunc_0, state.cpp:537-562); the rider's own records wait for the ride off.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class MovementSyncCheck : Node3D
@@ -53,6 +55,22 @@ public partial class MovementSyncCheck : Node3D
         int flags = -1;
         foreach (var r in sent) if (r.Animation != 9) flags = r.Animation;   // 9 = no input (x 0 = 1, y 0 = +8)
         return flags;
+    }
+
+    // walks on a bare mount (no model: the seat is the visual) and off it again, counting the packets of each kind
+    bool RideSync()
+    {
+        int ride = 0, foot = 0;
+        runner.RideSyncOut += list => ride += list.Count;
+        runner.StateSyncOut += list => foot += list.Count;
+        runner.RideOn(new Mount { Data = new Movement.RideData { Id = 1, RunSpeed = 5 }, Visual = new Node3D() });
+        Walk(new Vector2(0, 1));
+        int rideOn = ride, footOn = foot;
+        runner.RideOff();
+        Walk(new Vector2(0, 1));
+        bool ok = rideOn > 0 && footOn == 0 && ride == rideOn && foot > 0;
+        GD.Print($"movement sync check: riding sent {rideOn} RideSync and {footOn} UserSync record(s); on foot again {ride - rideOn} and {foot}: {(ok ? "OK" : "FAIL")}");
+        return ok;
     }
 
     public override void _PhysicsProcess(double delta)
@@ -508,6 +526,7 @@ public partial class MovementSyncCheck : Node3D
         int right = Walk(new Vector2(1, 0)), forward = Walk(new Vector2(0, 1));
         bool dir = right == 8 && forward == 13;
         GD.Print($"movement sync check: camera a quarter turned, right key flags {right}, forward key flags {forward}: {(dir ? "OK" : "FAIL")}");
+        bool ride = RideSync();
         var floor = new StaticBody3D { Position = new Vector3(0, -50, 0) };
         floor.AddChild(new CollisionShape3D { Shape = new BoxShape3D { Size = new Vector3(20000, 100, 20000) } });
         AddChild(floor);
@@ -518,7 +537,7 @@ public partial class MovementSyncCheck : Node3D
         bool meshLand = MeshLandings();
         bool oneSided = OneSidedMeshes();
         bool walls = OneSidedWalls(floor);
-        bool ok = dir && spawn && land && alloc && restAlloc && meshLand && oneSided && walls;
+        bool ok = dir && ride && spawn && land && alloc && restAlloc && meshLand && oneSided && walls;
         GetTree().Quit(ok ? 0 : 1);
     }
 }

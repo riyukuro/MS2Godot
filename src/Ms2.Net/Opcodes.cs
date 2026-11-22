@@ -166,6 +166,7 @@ public enum Outbound : ushort {
     Liftable = 0x3C,            // SendOp::Liftable (commonfiles/opcodes.h:365): LiftCubeAction::vfunc_2, the action key on a liftable cube
     StateReact = 0xA9,          // SendOp::StateReact (commonfiles/opcodes.h:472): CReactor::SendStateReact @0x140b799a0
     RequestRide = 0x40,         // SendOp::RequestRide (commonfiles/opcodes.h:369): MyPC::SendRequestRideMode1 @0x14152c280
+    RideSync = 0x41,            // SendOp::RideSync (commonfiles/opcodes.h:370): StateRideeController::vfunc_0 @0x1417b7b70
     StateFallDamage = 0x34,     // SendOp::StateFallDamage (commonfiles/opcodes.h:357): PCBase::SendFallDamage
     Revival = 0x1F,             // SendOp::Revival (commonfiles/opcodes.h:336): the revive dialog's buttons
     RequestItemInventory = 0x17,

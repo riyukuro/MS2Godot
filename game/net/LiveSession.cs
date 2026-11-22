@@ -1122,6 +1122,17 @@ public partial class LiveSession : Node
         if (found == player && player.Live) return;   // a repeat of the own FieldAddUser on the same field
         BindPlayer(found);
     }
+
+    void SendSync(System.Collections.Generic.List<(StateSync Record, int Tick)> records, bool ride)
+    {
+        if (game == null) return;
+        var pk = new UserSyncOut { SyncNumber = syncNumber, ServerTick = game.Session.ServerTick, ClientTick = game.Session.ElapsedMs, Ride = ride };   // state.cpp:491-493: GetServerTick, then GetElapsedTime
+        foreach (var r in records) pk.Records.Add(r);
+        Send(pk);
+        var l = records[^1].Record;
+        GD.Print($"live: {(ride ? "RideSync" : "UserSync")} sent, {records.Count} record(s), last state {l.State} pos ({l.Position.X},{l.Position.Y},{l.Position.Z}) sync {l.SyncNumber}");
+    }
+
     void BindPlayer(Player found)
     {
         player = found;
@@ -1131,15 +1142,8 @@ public partial class LiveSession : Node
         player.ServerTick = () => game?.Session.ServerTick ?? 0;
         SyncDeadFlag();   // an own FieldAddUser with no health: the flag, no state (scenestategame.cpp:11185)
         player.InteractAnimEnded += () => reactState?.SequenceEnded();
-        player.StateSyncOut += records =>
-        {
-            if (game == null) return;
-            var pk = new UserSyncOut { SyncNumber = syncNumber, ServerTick = game.Session.ServerTick, ClientTick = game.Session.ElapsedMs };   // state.cpp:491-493: GetServerTick, then GetElapsedTime
-            foreach (var r in records) pk.Records.Add(r);
-            Send(pk);
-            var l = records[^1].Record;
-            GD.Print($"live: UserSync sent, {records.Count} record(s), last state {l.State} pos ({l.Position.X},{l.Position.Y},{l.Position.Z}) sync {l.SyncNumber}");
-        };
+        player.StateSyncOut += records => SendSync(records, false);
+        player.RideSyncOut += records => SendSync(records, true);   // StateRideeController::vfunc_0 (state.cpp:537-562)
         player.HeldStateEntered += st => HeldItem.EnterState(st, Send);
         player.FallDamageHeight += h => { if (game != null) Send(new StateFallDamageRequest(h)); };   // PCBase::SendFallDamage (pcbase.cpp:4350)
         player.StateChangeOut += (mode, arg, pos) =>

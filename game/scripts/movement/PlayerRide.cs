@@ -123,12 +123,40 @@ public partial class Player
     public Mount Mount { get; private set; }
     AnimatableBody3D rideBox;
 
+    // MyPC's own controller while the mount's runs: the game tick makes the mount's records instead (scenestategame.cpp:1362-1368,
+    // Ridee::FUN_141706650 or MyPC::FUN_141524a80), so the rider's unsent records wait here and go out after the ride off
+    SyncRecord footCurrent;
+    readonly System.Collections.Generic.List<SyncRecord> footQueued = new();
+    bool footFallMarked;
+
+    /// <summary>A new Ridee starts with an empty StateRideeController (ridee.cpp:1296) and m_nDE0 = 0, m_bDF8 = false (ridee.cpp:361, 384).</summary>
+    void MountSyncBegin()
+    {
+        footCurrent = current; footQueued.Clear(); footQueued.AddRange(queued); footFallMarked = fallMarked;
+        current = null; queued.Clear(); fallMarked = false;
+    }
+
+    /// <summary>The mount goes with its controller: its unsent records are dropped (~StateRideeController only runs the base
+    /// dtor, ridee.h:25), and the rider's own controller is back.</summary>
+    void MountSyncEnd()
+    {
+        foreach (var q in queued)
+        {
+            q.InQueue = false;
+            if (q != current) freeRecords.Push(q);
+        }
+        if (current != null) freeRecords.Push(current);
+        current = footCurrent; queued.Clear(); queued.AddRange(footQueued); fallMarked = footFallMarked;
+        footCurrent = null; footQueued.Clear();
+    }
+
     /// <summary>RideOnAction: get on the mount (its visual takes the facing; the rider goes onto the seat).</summary>
     public void RideOn(Mount m)
     {
         if (Mount != null) RideOff();
         if (State is MoveState.Ladder or MoveState.Rope or MoveState.Climb or MoveState.Dash) ResetMotion();
         Mount = m;
+        MountSyncBegin();
         HeldStateEntered?.Invoke(Ms2.Ui.HeldItemState.Ride);   // StateRide::vfunc_4 (statemanager.cpp:1095): PC::SendRequestCube
         AddChild(m.Visual);
         m.Visual.Rotation = new Vector3(0, Mathf.DegToRad(yawDeg), 0);
@@ -150,6 +178,7 @@ public partial class Player
         RemoveChild(Mount.Visual);
         Mount.Visual.QueueFree();
         Mount = null;
+        MountSyncEnd();
         ReleaseRideBox();
         Visual.Transform = new Transform3D(new Basis(Vector3.Up, Mathf.DegToRad(yawDeg)), Vector3.Zero);
         baseSpeed = MoveConfig.RunSpeed;

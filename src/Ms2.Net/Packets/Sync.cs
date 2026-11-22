@@ -81,11 +81,13 @@ public sealed class UserSyncIn {
     }
 }
 
-/// <summary>Outbound 0x12 (StateLocalController::vfunc_0): u8 sync number, i32 server tick, i32 client tick, u8 count, count x (StateSync + i32 client tick).</summary>
+/// <summary>Outbound 0x12 (StateLocalController::vfunc_0): u8 sync number, i32 server tick, i32 client tick, u8 count, count x (StateSync + i32 client tick).
+/// With <see cref="Ride"/> it is RideSync 0x41 (StateRideeController::vfunc_0, state.cpp:537-562), the mount's records in the same layout.</summary>
 public sealed class UserSyncOut : IOutPacket {
     public byte SyncNumber; public int ServerTick, ClientTick;
+    public bool Ride;
     public List<(StateSync Record, int Tick)> Records = new();
-    public Outbound Op => Outbound.UserSync;
+    public Outbound Op => Ride ? Outbound.RideSync : Outbound.UserSync;
     public void Write(ByteWriter w) {
         w.WriteByte(SyncNumber); w.WriteInt(ServerTick); w.WriteInt(ClientTick); w.WriteByte((byte) Records.Count);
         foreach (var (rec, tick) in Records) { rec.Write(w); w.WriteInt(tick); }

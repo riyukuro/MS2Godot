@@ -88,6 +88,8 @@ public partial class Player
     public bool Live;
     /// <summary>The queued records of one StateLocalController::vfunc_0 packet, in order (live only).</summary>
     public event Action<System.Collections.Generic.List<(Ms2.Net.Packets.StateSync Record, int Tick)>> StateSyncOut;
+    /// <summary>The same while riding: the mount's controller's packet (StateRideeController::vfunc_0, RideSync).</summary>
+    public event Action<System.Collections.Generic.List<(Ms2.Net.Packets.StateSync Record, int Tick)>> RideSyncOut;
     /// <summary>GetServerTick (live): stamps each record when it is queued (m_nAC = nTick, mypc.cpp:2332).</summary>
     public Func<int> ServerTick;
     /// <summary>MyPC::SendStateChange (mypc.cpp:3655-3666): mode, argument and the feet position in field units (live only).</summary>
@@ -136,8 +138,14 @@ public partial class Player
     public bool PortalFlyCamera { get; private set; }
     public void ServerMoveByPortal(Vector3 pos, float rotZ, bool isPortal = false) { portal = pos; portalRot = rotZ; PortalFlyCamera = isPortal; }
 
-    /// <summary>CNetworkService::OnSyncNumber: the local controller's records are cleared (the number itself lives in the session).</summary>
-    public void OnSyncNumber() { current = null; queued.Clear(); }
+    /// <summary>CNetworkService::OnSyncNumber: the local controller's records are cleared (the number itself lives in the session).
+    /// It is MyPC's own controller (MyPC::GetStateController, mypc.cpp:1628, not virtual; networkservice.cpp:803): while riding
+    /// that is the set put aside, and the mount's records stay.</summary>
+    public void OnSyncNumber()
+    {
+        if (Mount != null) { footCurrent = null; footQueued.Clear(); }
+        else { current = null; queued.Clear(); }
+    }
 
     /// <summary>The server's last ground position (field units), for probes.</summary>
     public Vector3 LastGround => lastGround;
@@ -177,8 +185,10 @@ public partial class Player
             fallMarked = true;
             force = true;
         }
-        if (!(force || current == null || State != current.State || moveDir != current.Dir || syncClock - current.Made >= 1.0 || targetYawDeg != current.Yaw
-              || StateVfunc22()))
+        // the mount's test (Ridee::FUN_141706650, ridee.cpp:924) has no one-second and no target-yaw term
+        bool onFoot = Mount == null;
+        if (!(force || current == null || State != current.State || moveDir != current.Dir
+              || onFoot && (syncClock - current.Made >= 1.0 || targetYawDeg != current.Yaw) || StateVfunc22()))
             return;
         bool flushAfter = false;
         if (current != null)
@@ -253,7 +263,7 @@ public partial class Player
             liveOut.Clear();   // the handler copies the records into its packet before it returns
             foreach (var q in queued) liveOut.Add((LiveRecord(q), q.Tick));
             ReleaseQueued();
-            StateSyncOut?.Invoke(liveOut);
+            (Mount != null ? RideSyncOut : StateSyncOut)?.Invoke(liveOut);
             return;
         }
         var last = queued[^1];
@@ -358,7 +368,8 @@ public partial class Player
     void UserMoveByPortal(Vector3 pos, float rotZ)
     {
         current = null; queued.Clear();                                             // ClearRecords / Ridee::ResetStateController
-        fallMarked = false;                                                         // m_b15d6 = false
+        fallMarked = false;                                                         // m_b15d6 = false / the ridee's m_nDE0 = 0
+        footFallMarked = false;                                                     // m_b15d6 = false also while riding (mypc.cpp:2745)
         // FUN_141676060(ZERO) (mypc.cpp:2749, pcbase.cpp:3644-3653) clears the fall start (forwarded to a ridee) before the
         // ridee's vfunc_59(1) (mypc.cpp:2774), so a mount's Idle sends no fall damage (SendFallDamage bails on ZERO,
         // pcbase.cpp:4352); on foot StateFall::vfunc_4 sets the fall start on entry, and the clear comes after it

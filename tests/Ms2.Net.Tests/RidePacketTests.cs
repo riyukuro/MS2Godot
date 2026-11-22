@@ -32,6 +32,33 @@ public class RidePacketTests
         // commonfiles/opcodes.h:129 ResponseRide = 0x0079; upstream SendOp ResponseRide = 0x007B
         Assert.That((ushort)Inbound.ResponseRide, Is.EqualTo(0x0079));
         Assert.That(ProtocolProfile.Gms2.Number(Inbound.ResponseRide), Is.EqualTo((ushort)0x7B));
+        // commonfiles/opcodes.h:370 SendOp RideSync = 0x0041; upstream RecvOp RideSync = 0x0042
+        Assert.That((ushort)Outbound.RideSync, Is.EqualTo(0x0041));
+        Assert.That(ProtocolProfile.Gms2.Number(Outbound.RideSync), Is.EqualTo((ushort)0x42));
+    }
+
+    [Test]
+    public void RideSyncIsTheUserSyncLayoutUnderItsOwnOpcode()
+    {
+        // StateRideeController::vfunc_0 (state.cpp:537-562) writes what StateLocalController::vfunc_0 (state.cpp:483-505) does
+        UserSyncOut Make(bool ride)
+        {
+            var p = new UserSyncOut { SyncNumber = 3, ServerTick = 1000, ClientTick = 2000, Ride = ride };
+            p.Records.Add((new StateSync { State = 2, SubState = 0x18, Position = new Vector3S(1, 2, 3), Animation = 9 }, 1000));
+            return p;
+        }
+        Assert.That(Make(true).Op, Is.EqualTo(Outbound.RideSync));
+        Assert.That(Make(false).Op, Is.EqualTo(Outbound.UserSync));
+        static byte[] Body(IOutPacket p)
+        {
+            var w = new ByteWriter();
+            p.Write(w);
+            return w.Buffer.AsSpan(0, w.Length).ToArray();
+        }
+        Assert.That(Body(Make(true)), Is.EqualTo(Body(Make(false))));
+        var back = UserSyncOut.Read(new ByteReader(Body(Make(true))));
+        Assert.That(back.Records, Has.Count.EqualTo(1));
+        Assert.That(back.Records[0].Record.Position.Z, Is.EqualTo((short)3));
     }
 
     [Test]
