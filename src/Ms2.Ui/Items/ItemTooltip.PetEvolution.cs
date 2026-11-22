@@ -3,7 +3,7 @@ namespace Ms2.Ui.Items;
 public sealed partial class ItemTooltip
 {
     /// <summary>
-    /// SetPetEvolution (astooltip.cpp:2722): with feature 0xeb, a pet item at the pet max level (Client::Constants PetMaxLevel)
+    /// SetPetEvolution (astooltip.cpp:2721): with feature 0xeb, a pet item at the pet max level (Client::Constants PetMaxLevel)
     /// whose item level and grade need evolution points (CExpTable::GetPetEvolution) shows "petEvolution" (the
     /// s_pet_tooltip_evolution_point text and "gauge:\n\n"), "petEvolutionGauge" ("{0} / {1}" of the points and the need) and
     /// "petEvolutionPercent" (points * 100 / need, unsigned).
