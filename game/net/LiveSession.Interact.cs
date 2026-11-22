@@ -42,7 +42,7 @@ public partial class LiveSession
     public readonly Ms2.Ui.OwnHome Home = new();
 
     /// <summary>CubeMapInformationService's home option rows (ResponseCube 0x2a / 0x2b); read by the home option dialog's host.</summary>
-    public readonly Ms2.Ui.HomeOptionRows HomeRows = new();
+    public readonly Ms2.Ui.HomeOptionRows HomeRows = new();   // reset at GameToLogin (OnGameToLogin); STILL-OPEN: the per-field reset (FUN_1410b76a0 @0x1410b76a0 calls FUN_1410d0310; its caller is not traced)
 
     /// <summary>After ResponseCube 0x14 stored the local player's home info (the changed flag UIUGCEventDispatcher::vfunc_7 gets).
     /// The client then asks the house visit question when the player has a home (scenestategame.cpp:10231-10236).</summary>

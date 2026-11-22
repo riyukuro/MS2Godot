@@ -1339,7 +1339,7 @@ public sealed class AgreementOptionPage : OptionPage
     /// The call at scene entry (SetFlagsAndRefresh, scenestategame.cpp:11161-11168) needs DAT_143ab0248 == 3 (China) and is not made
     /// on the Korean service. OpenLink (:3597) navigates UIWebBrowserBase 0x4e6a; the host opens
     /// the PersonalInfoAgreementURL constant in the system browser (WebPage). MyPC::SendHouseSetting (mypc.cpp:4385-4396) sends the same 0xC0 after
-    /// the RequestCube 0x18 packet (HouseSettingRequest; the host's SendHouseSetting). STILL-OPEN: its callers, the house visit question and the home option dialog, are not ported.</summary>
+    /// the RequestCube 0x18 packet (HouseSettingRequest; the host's SendHouseSetting). The house visit question is wired; STILL-OPEN: the home option dialog's movie (its other caller) is not ported.</summary>
     public override void Save()
     {
         base.Save();

@@ -43,6 +43,7 @@ public partial class LiveSession
         player = null;
         selfObject = -1;
         Home.Clear();   // ~MyPC: m_sp1618 = 0 (mypc.cpp:897)
+        HomeRows.Reset();   // the game scene's services shut down: CubeMapInformationService::OnShutdown @0x1410cef40 -> FUN_1410d0310 (cubemapinformationservice_3.cpp:1107, 5455-5475)
         bindPending = false;
         PortalAction.Current = null;
         var old = game;
