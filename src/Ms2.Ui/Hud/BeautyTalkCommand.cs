@@ -7,7 +7,7 @@ namespace Ms2.Ui.Hud;
 /// (OpenBeautyShopDialog @0x141b1f920) and "BeautyStyleDialog" (OpenBeautyStyleDialog @0x141b1fa20, always dialog 0x4f03 type 4),
 /// both ending in OpenTalkDialog @0x141b1faa0. The open itself is the flows' own Open; the talk's tail (SendNpcTalkMode0) is the host's
 /// <see cref="EndTalk"/>. STILL-OPEN: SetPalette(npc) on the shop dialog 0x4eee; FindNpcData(npc) (only a talking npc is checked);
-/// dialogs 0x4e23 (item colour) and 0x4e24 (mirror), whose windows are not ported, do nothing; the sub scene's "openDialog" message
+/// dialog 0x4e24 (mirror), whose window is not ported, does nothing; the sub scene's "openDialog" message
 /// and SetKeyGroup (the flows' Show hooks stand in for the sub scene).
 /// </summary>
 public sealed class BeautyTalkCommand
@@ -17,6 +17,7 @@ public sealed class BeautyTalkCommand
 
     public BeautyShopFlow Shop;
     public BeautyStyleFlow Style;
+    public ItemColoringFlow Coloring;
     /// <summary>The talking npc's object id (GetTalkNpcId); 0 when none.</summary>
     public System.Func<int> TalkNpcId = () => 0;
     /// <summary>SendBeauty's queue (FUN_140710590): the enter request.</summary>
@@ -82,7 +83,8 @@ public sealed class BeautyTalkCommand
         {
             ShopId => Shop?.Open() ?? false,
             StyleId => Style?.Open() ?? false,
-            _ => false,   // 0x4e23 / 0x4e24 / 0: not ported
+            ItemColorId => Coloring?.Open() ?? false,
+            _ => false,   // 0x4e24 / 0: not ported
         };
         if (!opened) { Log($"beauty talk: dialog 0x{dialogId:x} did not open"); return; }
         if (mode != 0) Send?.Invoke(BeautyEnterRequest.Create(npc, (byte)mode));

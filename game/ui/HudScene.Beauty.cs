@@ -17,7 +17,8 @@ public partial class HudScene
 {
     readonly BeautyShopFlow beautyFlow = new();
     readonly BeautyStyleFlow beautyStyleFlow = new();
-    MovieDialog beautyMovie, beautyStyleMovie;
+    readonly ItemColoringFlow itemColoringFlow = new();
+    MovieDialog beautyMovie, beautyStyleMovie, itemColoringMovie;
     long beautyPreviewUid;
     BeautyTalkCommand beautyTalk;
     Action unwatchBeauty;
@@ -35,7 +36,7 @@ public partial class HudScene
         beautyFlow.SendOpenRequest = uid => live.SendBeauty(new BeautyOpenRequest(uid));   // SendBeauty (scenestategame.cpp:8714)
         beautyTalk = new BeautyTalkCommand
         {
-            Shop = beautyFlow, Style = beautyStyleFlow, Log = m => GD.Print(m),
+            Shop = beautyFlow, Style = beautyStyleFlow, Coloring = itemColoringFlow, Log = m => GD.Print(m),
             TalkNpcId = () => live.TalkNpcId, Send = live.SendBeauty, EndTalk = () => live.EndTalk(),   // SendNpcTalkMode0
         };
         void OnRequested(BeautyReq req) => beautyFlow.OpenFor(req);
@@ -43,7 +44,13 @@ public partial class HudScene
         beautyStyleFlow.Show = ShowBeautyStyle;
         beautyStyleFlow.Log = m => GD.Print(m);
         beautyStyleFlow.CreateCustomize = () => CreateBeautyCustomize(live);
-        void OnBeautyPacket(byte[] body) => BeautyPacketRouter.Route(body, beautyFlow, beautyStyleFlow, m => GD.Print(m));
+        itemColoringFlow.CreateController = () => CreateItemColoring(live);
+        itemColoringFlow.Show = ShowItemColoring;
+        itemColoringFlow.Log = m => GD.Print(m);
+        // STILL-OPEN: the own-avatar item colour edit (the item controllers behind FUN_140f32290) is not ported, so there is no
+        // Customize and the dialog stays shut.
+        itemColoringFlow.CreateCustomize = () => null;
+        void OnBeautyPacket(byte[] body) => BeautyPacketRouter.Route(body, beautyFlow, beautyStyleFlow, m => GD.Print(m), itemColoringFlow);
         live.BeautyRequested += OnRequested;
         live.BeautyPacketReceived += OnBeautyPacket;
         unwatchBeauty = () =>
@@ -52,6 +59,7 @@ public partial class HudScene
             live.BeautyPacketReceived -= OnBeautyPacket;
             beautyFlow.Shutdown();
             beautyStyleFlow.Shutdown();
+            itemColoringFlow.Shutdown();
             beautyTalk = null;
             unwatchBeauty = null;
         };
@@ -119,6 +127,28 @@ public partial class HudScene
         var m = beautyStyleMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
         c.Unloaded += () => { m.Host.Unload(); m.QueueFree(); if (beautyStyleMovie == m) beautyStyleMovie = null; };
         GD.Print($"beauty style: load={m.Loaded}");
+        uiRoot.AddChild(m);
+    }
+
+    /// <summary>The item colour dialog's controller with the host-set parts. STILL-OPEN: see <see cref="ItemColoringDialogController"/>.</summary>
+    ItemColoringDialogController CreateItemColoring(Ms2Godot.Net.LiveSession live)
+    {
+        var c = new ItemColoringDialogController
+        {
+            Sales = live.BeautySales,
+            PlayerLevel = () => live.Me.User?.Level ?? 0,
+            Send = live.SendBeauty,
+        };
+        c.NoticeText += SystemNoticeText;
+        return c;
+    }
+
+    void ShowItemColoring(ItemColoringDialogController c)
+    {
+        if (itemColoringMovie != null) { itemColoringMovie.Host.Unload(); itemColoringMovie.QueueFree(); itemColoringMovie = null; }
+        var m = itemColoringMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
+        c.Unloaded += () => { m.Host.Unload(); m.QueueFree(); if (itemColoringMovie == m) itemColoringMovie = null; };
+        GD.Print($"item coloring: load={m.Loaded}");
         uiRoot.AddChild(m);
     }
 }

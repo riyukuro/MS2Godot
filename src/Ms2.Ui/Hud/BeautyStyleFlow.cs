@@ -56,14 +56,20 @@ public sealed class BeautyStyleFlow
 
 /// <summary>
 /// Inbound 0x31 has one opcode and two readers: UIBeautyShopDialog::OnBeautyShopPacket (<see cref="BeautyShopPacket"/>) and
-/// UIBeautyShopStyleDialog's FUN_140f05a80 (<see cref="BeautyStylePacket"/>). Each dialog registers its handler at open and removes
+/// UIBeautyShopStyleDialog's FUN_140f05a80 (<see cref="BeautyStylePacket"/>), and UIItemColoringDialog's (<see cref="BeautyColoringPacket"/>). Each dialog registers its handler at open and removes
 /// it at close, so the body goes to the dialog that is open, and the style dialog first when both are.
 /// </summary>
 public static class BeautyPacketRouter
 {
-    public static void Route(byte[] body, BeautyShopFlow shop, BeautyStyleFlow style, Action<string> log)
+    public static void Route(byte[] body, BeautyShopFlow shop, BeautyStyleFlow style, Action<string> log, ItemColoringFlow coloring = null)
     {
-        if (style.IsOpen)
+        if (coloring is { IsOpen: true })
+        {
+            var cp = BeautyColoringPacket.Read(new ByteReader(body));
+            log($"live: item coloring mode {cp.Mode}");
+            coloring.OnPacket(cp);
+        }
+        else if (style.IsOpen)
         {
             var sp = BeautyStylePacket.Read(new ByteReader(body));
             log($"live: beauty style mode {sp.Mode}");
