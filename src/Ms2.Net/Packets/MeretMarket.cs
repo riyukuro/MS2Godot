@@ -70,6 +70,19 @@ public sealed record MeretMarketBuyRequest(MeretMarketBuy Buy) : IProfileOutPack
     public void Write(ByteWriter w, ProtocolProfile profile) { w.WriteByte(0x1e); Buy.Write(w, profile); }
 }
 
+/// <summary>Outbound 0x39 (0x3A on GMS2) mode 0x65 (CMeratMarketMan::SendMeretMarketMode101 @0x140d54300, meratmarketman.cpp:399): u8 0x65, u8 tab, u8 sort. The client sends nothing for tab 5 or a sort that is no shop tab.</summary>
+public sealed record MeretMarketTabRequest(byte Tab, byte Sort) : IOutPacket {
+    public Outbound Op => Outbound.MeretMarket;
+    public void Write(ByteWriter w) { w.WriteByte(0x65); w.WriteByte(Tab); w.WriteByte(Sort); }
+}
+
+/// <summary>The Meret Market requests that are only their mode byte (meratmarketman.cpp): 0x0B (SendMeretMarketMode11, :438), 0x0C (Mode12, :446),
+/// 0x16 (Mode22, :555), 0x66 (Mode102, :411), 0x67 (Mode103, the ad list, :420; the client also drops its cached ad list), 0x6B (Mode107, :430).</summary>
+public sealed record MeretMarketModeRequest(byte Mode) : IOutPacket {
+    public Outbound Op => Outbound.MeretMarket;
+    public void Write(ByteWriter w) => w.WriteByte(Mode);
+}
+
 /// <summary>
 /// Inbound 0x6C, the two buy answers: u8 mode, the echoed <see cref="MeretMarketBuy"/>, then mode 0x1e (bought): i32 buy count,
 /// i32 sold count, i32 ugc 3c, i32 ugc 40; mode 0x1f (failed): i32 error. Other modes are not read here.

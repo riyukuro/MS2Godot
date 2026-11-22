@@ -98,6 +98,14 @@ public class Gms2OutboundRewriteTests {
         Assert.That(g.ToArray(), Is.EqualTo(new byte[] { 0, 0x22, 0x11, 0, 0, 0, 0, 0, 0, 2, 0, 0x43, 0, 0x50, 0, 1 }));
     }
 
+    [Test] public void MeretMarketSimpleModesRewriteByteForByte() => All(0x3A, r => { byte m = r.ReadByte(); return m == 0x65 ? new MeretMarketTabRequest(r.ReadByte(), r.ReadByte()) : new MeretMarketModeRequest(m); }, d => d[0] is 0x65 or 0xB or 0xC or 0x16 or 0x66 or 0x67 or 0x6B);
+
+    [Test] public void MeretMarketSimpleModesKeepTheirBytes() {
+        byte[] Bytes(IOutPacket p) { var w = new ByteWriter(); p.Write(w); return w.ToArray(); }
+        Assert.That(Bytes(new MeretMarketTabRequest(2, 3)), Is.EqualTo(new byte[] { 0x65, 2, 3 }));
+        Assert.That(Bytes(new MeretMarketModeRequest(0x67)), Is.EqualTo(new byte[] { 0x67 }));
+    }
+
     [Test] public void PongRewritesByteForByte() => All(0x06, Pong.Read);
     [Test] public void RequestTimeSyncRewritesByteForByte() => All(0x0B, RequestTimeSync.Read);
     [Test] public void StateChangeRewritesByteForByte() => All(0x81, StateChange.Read);
