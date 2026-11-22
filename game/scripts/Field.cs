@@ -200,7 +200,9 @@ public partial class Field : Node3D
         AddChild(World.FieldEffects.BuildParticles(builder, fb.ParticleEntities, fb.StaticParticleModels));
         if (World.FieldWeather.Create(packs, builder, fd?.MapEffectId) is { } weather) AddChild(weather);
         if (taxis.Count > 0) AddChild(World.TaxiStations.Start(packs, builder, taxis, taxiField));
-        AddChild(new World.RegionSkills(packs, builder));   // WorldService's region skill objects (OnRegionSkill 0x4C)
+        var regionSkills = new World.RegionSkills(packs, builder);   // WorldService's region skill objects (OnRegionSkill 0x4C)
+        AddChild(regionSkills);
+        Triggers.Bind(regionSkills);   // the effect trigger objects' effects go through the same effect service
         long tBuild = sw.ElapsedMilliseconds;
         await Budget();
         GD.Print($"MS2Godot load count {contents.Load.Count} / {contents.Load.Total} entities placed");

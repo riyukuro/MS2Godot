@@ -1,5 +1,6 @@
 using Godot;
 using Maple2.PacketLib.Tools;
+using Ms2.Formats.Model;
 using Ms2.Formats.World;
 using Ms2.Net.Packets;
 using Ms2Godot.Movement;
@@ -29,6 +30,8 @@ namespace Ms2Godot.World;
 /// entry of the entity, bound with <see cref="Bind(Climbables)"/>. A hidden rope with the flag set stays climbable, as in the client.
 /// SetEntityCollisionGroup then runs WorldService::FUN_141bc8e00 (worldservice_1.cpp:4995-5009): each PC's
 /// controller gets ReportSceneChanged; NxController keeps no touched-shape state across moves for it to drop.
+/// An effect event starts or removes the entity's effect through the field's effect service (<see cref="ApplyEffect"/>),
+/// bound with <see cref="Bind(IRegionSkillEffects)"/>; the effects go with the field, as the object's dtor removes its handle.
 /// The fade (FadeEntity, Fade tenths of a second) runs in <see cref="TriggerFade"/>; a mesh without drawn instances to
 /// fade switches at once. The collision switch does not wait for it.
 /// STILL-OPEN: the model swap a shown mesh with a model
@@ -36,8 +39,8 @@ namespace Ms2Godot.World;
 /// (NpcGroundSpace keeps it; the client casts no npc ground: OnFieldAddNpc @0x141718cf0, scenestategame.cpp:3533-3584,
 /// and CNpc::ApplySyncBlock, npcactorandvibrate.cpp:913,965, place an npc at the packet's position + 4 z, so the
 /// server decides); the minimap mark (UIMinimapDialog::SetTriggerVisible) and the show/hide effects (0x6dd85c78 /
-/// 0x6454a3bb) of a type 3 event, and those of a rope / ladder event (picked by its flag, :750-753); the actor, effect, cube,
-/// sound and camera events (read, not applied); a trigger mesh drawn as an animated prop (FieldProps); a hidden
+/// 0x6454a3bb) of a type 3 event, and those of a rope / ladder event (picked by its flag, :750-753); the actor, cube, sound
+/// and camera events (read, not applied); a trigger mesh drawn as an animated prop (FieldProps); a hidden
 /// mesh that BGTransparencyMgr fades back in (FieldFade restores its transform).
 /// </summary>
 public sealed class FieldTriggers
@@ -47,6 +50,8 @@ public sealed class FieldTriggers
     readonly Dictionary<int, FieldBuilder.TriggerCollider> colliders = new();
     readonly Dictionary<int, FieldEntity> entities = new();
     readonly Dictionary<int, Climbables.Climb> climbs = new();
+    readonly Dictionary<int, int> effectHandles = new();
+    IRegionSkillEffects effects;
 
     /// <summary>The node that runs the fades, in the tree with the field (null when built without fade draws).</summary>
     public readonly TriggerFade Fader;
@@ -88,6 +93,12 @@ public sealed class FieldTriggers
                 climbs[(int)e.Number("TriggerObjectID")] = c;
     }
 
+    /// <summary>Binds the field's effect service (CEffectService), which the effect objects start and remove their effects with.</summary>
+    public void Bind(IRegionSkillEffects service) => effects = service;
+
+    /// <summary>The handle of the effect the effect object last started (m_nHandle; 0: none).</summary>
+    public int EffectHandle(int id) => effectHandles.TryGetValue(id, out int h) ? h : 0;
+
     /// <summary>The kind of the object with this id, or null when the field holds none.</summary>
     public TriggerObjectKind? KindOf(int id) => kinds.TryGetValue(id, out var k) ? k : null;
 
@@ -101,6 +112,7 @@ public sealed class FieldTriggers
         foreach (var ev in TriggerObjects.Read(r, KindOf))
         {
             if (!ev.Known) { GD.PushWarning($"Trigger Object Sync Error. ObjectID:{ev.Id}"); continue; }
+            if (ev.Kind == TriggerObjectKind.Effect) { if (ApplyEffect(ev)) n++; continue; }
             if (ev.Kind is not (TriggerObjectKind.Mesh or TriggerObjectKind.Rope)) continue;
             bool drawn = meshes.TryGetValue(ev.Id, out var t);
             // WorldService::FadeEntity(id, bShow, nFade * 0.1f), triggeractioncli.cpp:650-651 (rope: :743-744)
@@ -115,5 +127,33 @@ public sealed class FieldTriggers
             if (drawn || collides || climbable) n++;
         }
         return n;
+    }
+
+    /// <summary>
+    /// TriggerObjectEffect::vfunc_2 (@0x140de7a00, triggeractioncli.cpp:785-808): removes the effect the object started
+    /// before (CEffectService::FUN_1411a6060, :790-791), then, when on, starts the entity's XmlFilePath (0xdd2ac78a,
+    /// GetEffectName) through FUN_1411a49c0 at <see cref="EffectAt"/> and keeps its handle (:792-807). An off event leaves
+    /// the old handle, whose next removal finds nothing. The u8 and i32 the reader takes are not used.
+    /// Not applied (false) when the field has no effect service bound.
+    /// </summary>
+    bool ApplyEffect(TriggerObjectEvent ev)
+    {
+        if (effects == null || !entities.TryGetValue(ev.Id, out var e)) return false;
+        if (effectHandles.TryGetValue(ev.Id, out int h) && h != 0) effects.FadeOut(h, 0);
+        if (ev.Show) effectHandles[ev.Id] = effects.Spawn(e.Get("XmlFilePath") ?? "", EffectAt(e), false, 0);
+        return true;
+    }
+
+    /// <summary>
+    /// The transform an effect object starts its effect at (triggeractioncli.cpp:794-801): GetPosition, GetScale (1 when
+    /// unset) and NiMatrix3::MakeZRotation of GetAngle(entity).z. The client passes the Rotation property's z, which is in
+    /// degrees, to MakeZRotation unconverted (0x140de7b1d-0x140de7b2b load it straight into the call), so it is taken as
+    /// radians here too. MakeZRotation(t) is Gamebryo's clockwise matrix: rows (cos t, sin t, 0), (-sin t, cos t, 0), (0, 0, 1).
+    /// </summary>
+    public static Xform EffectAt(FieldEntity e)
+    {
+        float t = (float)e.RotationDeg.Z;
+        double c = MathF.Cos(t), s = MathF.Sin(t);
+        return new Xform(e.Position, new[] { c, s, 0, -s, c, 0, 0, 0, 1 }, (float)e.Number("Scale", 1));
     }
 }
