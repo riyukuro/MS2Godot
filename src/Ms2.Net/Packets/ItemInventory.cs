@@ -46,7 +46,8 @@ public abstract record ItemMessage {
             case 12: { int tab = r.ReadByte(); return new ExpandCount(tab, r.ReadInt()); }
             case 13: {
                 int code = r.ReadInt();
-                if (code is 0x28 or 0x29) { int id = r.ReadInt(); return new Error(code, id, (ushort) r.ReadShort()); }
+                // GMS2: upstream ItemInventoryPacket.Error writes the code alone; no recorded error carries 40/41
+                if (!profile.IsGms2 && code is 0x28 or 0x29) { int id = r.ReadInt(); return new Error(code, id, (ushort) r.ReadShort()); }
                 return new Error(code, 0, 0);
             }
             case 14: {

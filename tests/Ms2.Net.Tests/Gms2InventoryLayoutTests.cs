@@ -45,6 +45,16 @@ public class Gms2InventoryLayoutTests {
     }
 
     [Test]
+    public void ErrorIsTheCodeAloneEvenForTheLevelRestrictedCodes() {
+        foreach (int code in new[] { 13, 0x28, 0x29 }) {
+            var w = new ByteWriter(); w.WriteByte(15); w.WriteInt(code);
+            var r = new ByteReader(w.ToArray());
+            Assert.That(ItemMessage.Read(r, _ => null, Gms), Is.EqualTo(new ItemMessage.Error(code, 0, 0)));
+            Assert.That(r.Available, Is.EqualTo(0));
+        }
+    }
+
+    [Test]
     public void AddCarriesAUnicodeSlotAfterTheRarity() {
         var w = new ByteWriter();
         w.WriteByte(0); Head(w, 20000001, 5, 3); w.WriteUnicodeString(""); Gms2CharacterListLayoutTests.WriteBody(w);
