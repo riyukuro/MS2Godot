@@ -261,6 +261,9 @@ public sealed partial class RemoteLayer : Node3D
     readonly List<Ms2.Ui.Hud.DamageNumber> numbers = new();
     Func<int, int> pcMask;
     Func<int, bool> isObject;
+    Ms2.Ui.Skills.SkillDamageTable skillDamage;
+    /// <summary>The skill attacks' damage blocks (read on the first hit).</summary>
+    Ms2.Ui.Skills.SkillDamageTable SkillDamage => skillDamage ??= Ms2.Ui.GameTables.Shared(packs, Ms2Godot.GameOptions.StringLanguage).SkillDamage;
     static readonly Ms2.Formats.Options.GameOption.Battle defaultBattle = new();
 
     /// <summary>
@@ -272,7 +275,7 @@ public sealed partial class RemoteLayer : Node3D
         numbers.Clear();
         pcMask ??= PcMask;
         isObject ??= Tracker.HasObject;
-        Ms2.Ui.Hud.DamageNumbers.Records(d, numbers, isObject);
+        Ms2.Ui.Hud.DamageNumbers.Records(d, numbers, isObject, SkillDamage);
         var o = GameOptions.Current?.BattleOption ?? defaultBattle;
         foreach (var n in numbers)
             if (Ms2.Ui.Hud.DamageNumbers.Shows(o, n.Grade, n.TargetId, n.CasterId, Tracker.SelfObjectId, pcMask))
@@ -609,9 +612,12 @@ public sealed partial class RemoteLayer : Node3D
                     break;
                 case SkillDamageEvent dmg:
                     // FUN_141671c20 (pcbase.cpp:3922) calls vfunc_112 whenever the target has an entry, a miss (type 2) too
-                    // (AddDamage keeps every pair, skillrecord.cpp:554) and whatever the total; the skill's HasDamage
-                    // (skillattackdata.cpp:384) is the real gate and is not read here (STILL-OPEN)
+                    // (AddDamage keeps every pair, skillrecord.cpp:554) and whatever the total, when the packet's attack
+                    // has damage (HasDamage, skillattackdata.cpp:384; an unknown skill or level fails CDamageRecord::Init).
+                    // A dot (mode 3, OnDotDamageRecord pcbase.cpp:3958) has no such gate. STILL-OPEN: modes 5 and 6
+                    // (OnSplashDamageRecord :3970 tests its region attack's HasDamage, not read here)
                     bool byLocal = dmg.Damage.OwnerId == Tracker.SelfObjectId;
+                    if (dmg.Damage.Mode != 1 || Ms2.Ui.Hud.DamageNumbers.HasDamage(dmg.Damage, SkillDamage))
                     foreach (var t in dmg.Damage.Targets)
                     {
                         if (t.Hits.Length == 0) continue;

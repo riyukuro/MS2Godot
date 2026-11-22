@@ -1,6 +1,8 @@
 using Ms2.Formats.Options;
 using Ms2.Net.Packets;
 using Ms2.Ui.Hud;
+using Ms2.Ui.Skills;
+using System.Xml.Linq;
 using NUnit.Framework;
 
 namespace Ms2.Ui.Tests;
@@ -14,19 +16,52 @@ public class DamageNumbersTests
     [Test]
     public void EveryHitOfEveryTargetIsANumberWithTheOwnerAsCaster()
     {
-        var d = new SkillDamage { Mode = 1, OwnerId = 77 };
+        var d = new SkillDamage { Mode = 1, OwnerId = 77, SkillId = 100, Level = 1, Motion = 0, AttackPoint = 0 };
         d.Targets.Add(new HitTarget(5, new[] { new Hit(0, 120), new Hit(1, -300) }, default, default));
         d.Targets.Add(new HitTarget(6, new[] { new Hit(8, 40) }, default, default));
         d.Targets.Add(new HitTarget(7, new Hit[0], default, default));
         var list = new List<DamageNumber>();
-        DamageNumbers.Records(d, list);
+        DamageNumbers.Records(d, list, null, Damage);
         Assert.That(list, Is.EqualTo(new[]
         {
             new DamageNumber(5, 120, 0, 77), new DamageNumber(5, 300, 1, 77), new DamageNumber(6, 40, 3, 77),
         }), "abs value, type 8 becomes 3, a target without hits gives none");
         list.Clear();
-        DamageNumbers.Records(new SkillDamage { Mode = 3 }, list);
+        DamageNumbers.Records(new SkillDamage { Mode = 3 }, list, null, Damage);
         Assert.That(list, Is.Empty);
+    }
+
+    /// <summary>Skill 100: level 1 with one motion of two attacks, the first with rate 1.5 and the second with a &lt;damage&gt; of no
+    /// value; level 2 with an attack of no &lt;damage&gt;. Skill 101 has no &lt;basic&gt;, so no levels.</summary>
+    internal static readonly SkillDamageTable Damage = new(() => new[] { XDocument.Parse(@"<ms2>
+  <skill id=""100""><basic/>
+    <level value=""1""><motion><attack><damage rate=""1.5"" count=""3""/></attack><attack><damage push=""1""/></attack></motion></level>
+    <level value=""2""><motion><attack/></motion></level>
+  </skill>
+  <skill id=""101""><level value=""1""><motion><attack><damage value=""9""/></attack></motion></level></skill>
+</ms2>") }, (p, c, _) => p.Elements(c).ToList());
+
+    [Test]
+    public void OnlyAnAttackWithDamageGivesNumbers()
+    {
+        // CDamageRecord::Init fails for an unknown skill or level (the handler returns); FUN_141671c20 shows nothing for an
+        // attack the level lacks or whose damage has no value, constant, rate or max-hp rate (HasDamage)
+        SkillDamage Packet(int skill, short level, byte motion, byte attack)
+        {
+            var d = new SkillDamage { Mode = 1, OwnerId = 77, SkillId = skill, Level = level, Motion = motion, AttackPoint = attack };
+            d.Targets.Add(new HitTarget(5, new[] { new Hit(0, 120) }, default, default));
+            return d;
+        }
+        var list = new List<DamageNumber>();
+        foreach (var (skill, level, motion, attack, numbers) in new (int, short, byte, byte, int)[]
+                 { (100, 1, 0, 0, 1), (100, 1, 0, 1, 0), (100, 1, 0, 2, 0), (100, 1, 1, 0, 0), (100, 2, 0, 0, 0), (100, 3, 0, 0, 0), (101, 1, 0, 0, 0), (102, 1, 0, 0, 0) })
+        {
+            list.Clear();
+            DamageNumbers.Records(Packet(skill, level, motion, attack), list, null, Damage);
+            Assert.That(list.Count, Is.EqualTo(numbers), $"skill {skill} level {level} motion {motion} attack {attack}");
+            Assert.That(DamageNumbers.HasDamage(Packet(skill, level, motion, attack), Damage), Is.EqualTo(numbers > 0));
+        }
+        Assert.That(DamageNumbers.HasDamage(Packet(100, 1, 0, 0), null), Is.False, "no table");
     }
 
     static int Pc(int id) => id == 20 ? 2 : id == 30 ? 4 : 0;   // 20 a party member, 30 another player, the rest npcs
@@ -65,13 +100,13 @@ public class DamageNumbersTests
         // an owner in the field
         var d = new SkillDamage { Mode = 4, TargetId = 31, OwnerId = 10, Value1 = 120, Value2 = 0, Value3 = 4294967295L, ShowValues = true };
         var list = new List<DamageNumber>();
-        DamageNumbers.Records(d, list, id => id == 10);
+        DamageNumbers.Records(d, list, id => id == 10, Damage);
         Assert.That(list, Is.EqualTo(new[] { new DamageNumber(10, 120, 5, 31), new DamageNumber(10, 4294967295L, 7, 31) }));
         list.Clear();
-        DamageNumbers.Records(d, list, id => id == 31);
+        DamageNumbers.Records(d, list, id => id == 31, Damage);
         Assert.That(list, Is.Empty, "no owner object: the client returns");
         d.ShowValues = false;
-        DamageNumbers.Records(d, list, id => id == 10);
+        DamageNumbers.Records(d, list, id => id == 10, Damage);
         Assert.That(list, Is.Empty, "no show byte");
     }
 }

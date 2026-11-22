@@ -139,8 +139,7 @@ public sealed class GameTables
         // SkillDataTable::LoadSkillData (skilloverlapcompare.cpp:1195): every ./Data/Xml/SkillData/*.xml (FindSkillFiles
         // :1352, not recursive), read on first use
         List<XElement> collect(XElement parent, string child, string key) => FeatureElements.Collect(packs, parent, child, key);
-        var skillFiles = packs.List("Xml").Where(n => n.StartsWith("skilldata/", StringComparison.OrdinalIgnoreCase)
-            && n.IndexOf('/', 10) < 0 && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).OrderBy(n => n, StringComparer.Ordinal).ToList();
+        var skillFiles = SkillFiles(packs);
         Skills = new Skills.SkillTables(r.Jobs, new Skills.SkillDataTable(() => skillFiles.Select(Xml), collect));
         additionalCache = packs.DataDir is { } dataDir ? Ms2.Ui.Skills.AdditionalCache.Open(AdditionalCacheOf(dataDir)) : null;
         Additional = NewAdditionalTable(packs, additionalCache);
@@ -801,6 +800,13 @@ public sealed class GameTables
         : new Ms2.Ui.Skills.SkillCompactControlTable(Xml("table/skillcompactcontrol.xml"), e => FeatureElements.IsAvailable(packs, e),
             LobbyFeatures.IsEnabled(packs, "CompactControl"));
     XDocument Xml(string path) => packs.Exists("Xml", path) ? GameStrings.Parse(packs.Read("Xml", path)) : null;
+    static List<string> SkillFiles(PackSet packs) => packs.List("Xml").Where(n => n.StartsWith("skilldata/", StringComparison.OrdinalIgnoreCase)
+        && n.IndexOf('/', 10) < 0 && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).OrderBy(n => n, StringComparer.Ordinal).ToList();
+    Ms2.Ui.Skills.SkillDamageTable skillDamage;
+    /// <summary>The skill attacks' &lt;damage&gt; blocks (SkillDamage::Load, from the same SkillData files as
+    /// <see cref="Skills"/>), read on first use.</summary>
+    public Ms2.Ui.Skills.SkillDamageTable SkillDamage => skillDamage ??= packs == null ? Ms2.Ui.Skills.SkillDamageTable.Empty
+        : new Ms2.Ui.Skills.SkillDamageTable(() => SkillFiles(packs).Select(Xml), (parent, child, key) => FeatureElements.Collect(packs, parent, child, key));
     /// <summary>CNametagSymbolTable (Table/nametagSymbol.xml), read on first use.</summary>
     public NametagSymbols NametagSymbols => nametagSymbols ??= packs == null ? NametagSymbols.Empty : new NametagSymbols(packs);
     BeautyCouponTable beautyCoupons;

@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using Ms2.Formats.Options;
 using Ms2.Net.Packets;
+using Ms2.Ui.Skills;
 
 namespace Ms2.Ui.Hud;
 
@@ -23,9 +24,10 @@ public static class DamageNumbers
     /// PCBase::FUN_141671c20 (@0x141671c20, pcbase.cpp:3922) gives one vfunc_111 per hit with abs(damage)
     /// (pcbase.cpp:2844). The record's hit point (+0x78) stays zero (the number goes to the target's anchor) unless the
     /// caster is an npc with property tag 0x11.
-    /// STILL-OPEN: the skill's HasDamage gate (only main type 0x12's miss effect otherwise), the sight-range test, the tag
-    /// 0x11 hit point, and the delay of the magic service's hit (the numbers are made when the packet comes); modes 0, 3,
-    /// 5 and 6 are not listed here.
+    /// Nothing unless the packet's attack has damage (<see cref="HasDamage"/>).
+    /// STILL-OPEN: main type 0x12's miss effect when it has none (Constants m_8350 per type 2 hit, pcbase.cpp:3942), the
+    /// sight-range test, the tag 0x11 hit point, and the magic service's delivery of the hit (FUN_14146b440, only with a
+    /// caster object; the numbers are made when the packet comes); modes 0, 3, 5 and 6 are not listed here.
     /// <para>Mode 4 (CSceneStateGame::FUN_14171d820 @0x14171d820, scenestategame.cpp:5685-5726): nothing when the owner is
     /// no object of the field (FUN_141bd1200, <paramref name="isObject"/>; a null test means none is); with the show byte,
     /// each nonzero value of the three in order is one number of type 5, 6 and 7 (FUN_1417403b0 @0x1417403b0, :9005) on the
@@ -33,7 +35,7 @@ public static class DamageNumbers
     /// buff's invoke effect on the owner (FUN_14096fc00, additionalcli_2.cpp:325), the DPS meter's AddStat / AddHealTarget
     /// and CNpc::vfunc_111's skip of a dead npc whose data has CorpseHitAble (@0x141090620).</para>
     /// </summary>
-    public static void Records(SkillDamage d, List<DamageNumber> into, System.Func<int, bool> isObject = null)
+    public static void Records(SkillDamage d, List<DamageNumber> into, System.Func<int, bool> isObject, SkillDamageTable damage)
     {
         if (d.Mode == 4)
         {
@@ -43,7 +45,7 @@ public static class DamageNumbers
             if (d.Value3 != 0) into.Add(new DamageNumber(d.OwnerId, d.Value3, 7, d.TargetId));
             return;
         }
-        if (d.Mode != 1) return;
+        if (d.Mode != 1 || !HasDamage(d, damage)) return;
         foreach (var t in d.Targets)
             foreach (var h in t.Hits)
             {
@@ -51,6 +53,16 @@ public static class DamageNumbers
                 into.Add(new DamageNumber(t.TargetId, h.Damage < 0 ? -h.Damage : h.Damage, type, d.OwnerId));
             }
     }
+
+    /// <summary>
+    /// The gate of a mode 1 packet's hits on every target (the skill, level, motion and attack are the packet's): CDamageRecord::
+    /// Init (@0x14175a610, skillrecord.cpp:465) fails for a skill or level the table lacks, and the handler returns
+    /// (scenestategame.cpp:5624-5626); PCBase::FUN_141671c20 (pcbase.cpp:3926-3929) does nothing for an attack the level
+    /// lacks (GetAttackData, skillrecord.cpp:501) and gives the numbers and vfunc_112 only when its damage HasDamage
+    /// (skillattackdata.cpp:384). False with no table.
+    /// </summary>
+    public static bool HasDamage(SkillDamage d, SkillDamageTable damage) =>
+        damage?.Get(d.SkillId, d.Level, d.Motion, d.AttackPoint)?.HasDamage == true;
 
     /// <summary>
     /// UIDamageText::FUN_141913bd0 (@0x141913bd0, uidamagetext.cpp:609): grade 4 never shows. The masks: 1 the own
