@@ -54,6 +54,7 @@ public sealed class RemotePc : IRemotePc
         var collision = body.GetNode<CollisionShape3D>("Collision");
         nx = new NxController(body, collision, faces) { ShapeHit = NoteHit };
         States = new RemotePcStates(this, (int)body.GetInstanceId());
+        States.ShadowVisible = shown => FieldShadows.SetShadowVisible(body, shown);
         anim.AnimationFinished += OnAnimationFinished;
     }
 

@@ -12,7 +12,8 @@ namespace Ms2Godot.Net;
 /// The ride-on and ride-off effects (CommonResource +0x2b0 / +0x2b8) and an UnRideSkill ride off's rideOffBySkillEffect play
 /// at the PC (<see cref="PlayRideEffect"/>); a hideRider row hides the rider (<see cref="RemotePc.SetHideReason"/>).
 /// The ridee takes the rider's stats and their changes (<see cref="SetStat(Remote, int, int, long)"/>).
-/// STILL-OPEN: StateRide's shadow off, the breakable anchor of a ride-off, the fall start the ridee had (StateFallData),
+/// The ridee has its own simple shadow (the row's &lt;shadow scale&gt;); in StateRide the rider's is off.
+/// STILL-OPEN: the breakable anchor of a ride-off, the fall start the ridee had (StateFallData),
 /// the ridee's m_unk_b80 SP idle, the mount's step keys. Mode 6 also writes the kept ride-on action's m_b28, which only a
 /// later PCBase::vfunc_120 of that action reads; a remote PC's ride is re-sent with it.
 /// </summary>
@@ -52,6 +53,8 @@ public sealed partial class RemoteLayer
         catch (Exception ex) { GD.PushWarning($"live: riding {a.RideId} of {r.Name}: {ex.Message}"); return; }
         var ridee = RemotePc.CreateRidee($"Ridee{r.ObjectId}", m, gravity, r.Pc.Body.Position + Vector3.Up * 25f, r.Pc.RotationZ, faceGrids);
         AddChild(ridee.Body);
+        // Ridee::vfunc_49 (ridee.cpp:848-858): its own CObjectShadow of the PC row, the row's shadow scale, lifted 1
+        FieldShadows.Character(ridee.Body, m.Visual, Ms2.Formats.Options.GraphicOptionTable.PC, m.Data.ShadowScale, 1f);
         ridee.Spawn();
         // the rider's stats, every kind and id (pcbase.cpp:3317-3320): the ridee's move-speed rate reads its mount speed
         for (int k = 0; k < 3; k++)

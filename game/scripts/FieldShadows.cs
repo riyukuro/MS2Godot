@@ -50,10 +50,19 @@ public static class FieldShadows
     /// model's meshes kept out of the sun's shadow below <see cref="RealShadow"/>. Call after the model is complete (equips
     /// included). FUN_141567540 skips nodes tagged "NoShadow", which keep their own flag; a loaded NIF has no caster mark, so
     /// that flag is off (ModelMesh.NoShadow) and clearing every mesh here gives the same result.</summary>
-    public static void Character(Node3D owner, Node3D model, string kind, float radius, float lift)
+    public static void Character(Node3D owner, Node3D model, string kind, float radius, float lift, CollisionObject3D exclude = null)
     {
-        if (SimpleShadow(kind)) BlobShadow.Add(owner, radius, lift);
+        if (SimpleShadow(kind)) BlobShadow.Add(owner, radius, lift, exclude);
         if (!RealShadow(kind)) NoCasters(model);
+    }
+
+    /// <summary>The name <see cref="BlobShadow.Add"/> gives the shadow node under its owner.</summary>
+    public const string ShadowNode = "Shadow";
+
+    /// <summary>GameObject::SetShadowVisible on <paramref name="owner"/>: its simple shadow off or on (nothing without one).</summary>
+    public static void SetShadowVisible(Node3D owner, bool shown)
+    {
+        if (owner?.GetNodeOrNull<BlobShadow>(ShadowNode) is { } s) s.Off = !shown;
     }
 
     /// <summary>An npc's row: CNpc::vfunc_49 (unit_14108e1e0_npcactorandvibrate.cpp:2240-2249) takes bossMonster when IsBoss

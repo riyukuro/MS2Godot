@@ -36,6 +36,9 @@ public sealed class RideData
     /// mount carries the kinematic box (Ridee::MakeNxBoxController).</summary>
     public float Width = 100, Depth = 100, Height = 100;
     public bool Physic;
+    /// <summary>RideeData::Shadow (@0x140783980): &lt;shadow scale&gt;, 150 when absent (ctor @0x1407838e0); the side of the
+    /// mount's CObjectShadow (Ridee::vfunc_49, ridee.cpp:848-858).</summary>
+    public float ShadowScale = 150;
     /// <summary>CRideeData m_seats (std::map&lt;int, Rider&gt; by passengerid): &lt;passengers&gt;&lt;passenger&gt; (Passengers::FUN_140784010).</summary>
     public readonly SortedDictionary<int, RideSeat> Seats = new();
 
@@ -89,6 +92,7 @@ public sealed class RideData
             d.Height = F(c, "height", 100);
             d.Physic = QueryBool((string)c.Attribute("physic"), false);
         }
+        if (riding.Element("shadow") is { } sh) d.ShadowScale = F(sh, "scale", 150);
         foreach (var p in riding.Element("passengers")?.Elements("passenger") ?? Enumerable.Empty<XElement>())
         {
             var seat = RideSeat.Read(p);

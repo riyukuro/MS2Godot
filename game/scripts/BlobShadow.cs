@@ -23,6 +23,8 @@ public partial class BlobShadow : MeshInstance3D
     static Shader shader;
 
     float radius, lift;
+    /// <summary>The side of the square (CObjectShadow's size).</summary>
+    public float Radius => radius;
     CollisionObject3D self;
     ShaderMaterial mat;
 
@@ -38,13 +40,15 @@ public partial class BlobShadow : MeshInstance3D
         catch (Exception ex) { GD.PushWarning("shadow texture: " + ex.Message); }
     }
 
-    public static BlobShadow Add(Node3D owner, float radius, float lift = 3f)
+    /// <summary>Adds the shadow under <paramref name="owner"/>; the ground ray skips <paramref name="exclude"/>, the owner
+    /// itself when that is a body.</summary>
+    public static BlobShadow Add(Node3D owner, float radius, float lift = 3f, CollisionObject3D exclude = null)
     {
         if (OS.GetEnvironment("MS2_NOSHADOW") == "1" || radius <= 0 || texture == null) return null;   // before shots
         shader ??= GD.Load<Shader>("res://shaders/blob_shadow.gdshader");
         var s = new BlobShadow
         {
-            Name = "Shadow",
+            Name = FieldShadows.ShadowNode,
             radius = radius,
             lift = lift,
             TopLevel = true,
@@ -55,7 +59,7 @@ public partial class BlobShadow : MeshInstance3D
         s.mat = new ShaderMaterial { Shader = shader };
         s.mat.SetShaderParameter(ShaderParam.ShadowTex, texture);
         s.MaterialOverride = s.mat;
-        s.self = owner as CollisionObject3D;
+        s.self = exclude ?? owner as CollisionObject3D;
         owner.AddChild(s);
         return s;
     }
@@ -69,8 +73,25 @@ public partial class BlobShadow : MeshInstance3D
     const float RecastEvery = 1.5f;       // seconds (90 frames at 60 fps) a still owner keeps its last cast
     const float MovedSq = 1f;
 
+    bool off;
+
+    /// <summary>GameObject::SetShadowVisible (@0x14123cb20): FUN_14160fe70 sets CObjectShadow m_bFlag32 to !shown, which
+    /// hides the simple shadow only (UpdateVisibility unit_14160fb10.cpp:316-329; the real shadow's "shown" ignores it).</summary>
+    public bool Off
+    {
+        get => off;
+        set
+        {
+            if (off == value) return;
+            off = value;
+            if (off) Visible = false;
+            else { lastPos = new(float.NaN, 0, 0); idleTime = 0; }   // cast again on the next frame
+        }
+    }
+
     public override void _Process(double delta)
     {
+        if (off) return;
         var owner = GetParent<Node3D>();
         var pos = owner.GlobalPosition;
         if (pos.DistanceSquaredTo(lastPos) < MovedSq && (idleTime += (float)delta) < RecastEvery) return;

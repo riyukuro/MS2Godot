@@ -229,6 +229,11 @@ public partial class Player
         HeldStateEntered?.Invoke(Ms2.Ui.HeldItemState.Ride);   // StateRide::vfunc_4 (statemanager.cpp:1095): PC::SendRequestCube
         AddChild(m.Visual);
         m.Visual.Rotation = new Vector3(0, Mathf.DegToRad(yawDeg), 0);
+        // Ridee::vfunc_49 (ridee.cpp:848-858): the mount's own CObjectShadow, of the myPC row for the own pc's ridee, the
+        // row's shadow scale, lifted 1; it goes with the mount's visual. StateRide::vfunc_4 turns the rider's off
+        // (statemanager.cpp:1095).
+        FieldShadows.Character(m.Visual, m.Visual, Ms2.Formats.Options.GraphicOptionTable.MyPC, m.Data.ShadowScale, 1f, this);
+        FieldShadows.SetShadowVisible(this, false);
         // Ridee::vfunc_10: the mount is placed at the rider's position raised by 25 (a rider on a breakable's marker goes to
         // the breakable's top + 10 first), and takes the rider's hit-report entity, which the one body already has
         GlobalPosition += Vector3.Up * 25f;
@@ -246,6 +251,7 @@ public partial class Player
         // and no jump or lift (gameobjectcontrollerphysxhelpers.cpp:487-490). Our mount moves the rider's one body.
         bool mountOnGround = Grounded && !jumping;
         if (Mount.Data.HideRider) SetHideReason(HideReasonRide, false);   // PCBase::vfunc_121 (pcbase.cpp:3402-3404)
+        FieldShadows.SetShadowVisible(this, true);                       // StateRide::vfunc_5 (statemanager.cpp:1103)
         RemoveChild(Mount.Visual);
         Mount.Visual.QueueFree();
         Mount = null;

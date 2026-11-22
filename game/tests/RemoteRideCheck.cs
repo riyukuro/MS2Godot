@@ -1,5 +1,6 @@
 using Godot;
 using Ms2.Formats.Pack;
+using Ms2.Formats.Options;
 using Ms2.Net.Packets;
 using Ms2.Net.Replay;
 using Ms2Godot.Movement;
@@ -213,6 +214,7 @@ public partial class RemoteRideCheck : Node3D
         NpcBeforePlayer(layer, pc);
         HideRider(layer, pc);
         RideeStats(layer, m.Data.Id);
+        RideShadow(layer, pc);
         OwnUnRideSkillEffect(pc, m);
         pc.QueueFree();
         field.QueueFree();
@@ -295,6 +297,74 @@ public partial class RemoteRideCheck : Node3D
         if (pcRate != 1.2f || onRate != 1.5f || changed != 1.3f || held != 1.5f)
             fails.Add($"move-speed rates: pc {pcRate}, ridee {onRate}, after mount speed 130 {changed}, 180 of 150 {held}");
         GD.Print($"remote ride: move-speed rate pc {pcRate}, ridee {onRate}, mount speed 130 -> {changed}, 180 of 150 -> {held}");
+    }
+
+    /// <summary>StateRide::vfunc_4 / vfunc_5 (statemanager.cpp:1095, :1103): the rider's simple shadow is off while it rides
+    /// and back on after; a dead rider refuses StateRide and keeps it. Ridee::vfunc_49 (ridee.cpp:848-858) gives the mount its
+    /// own, the row's &lt;shadow scale&gt; wide (150 without one). Both for another player and the own pc.</summary>
+    void RideShadow(RemoteLayer layer, Player pc)
+    {
+        BlobShadow.Load(packs);
+        // the lowest graphics shadow level that shows both simple shadows (the option's level is put back at the end)
+        var graphic = Ms2Godot.GameOptions.Current.GraphicOption;
+        int optionLevel = graphic.ShadowLevel;
+        bool Simple() => FieldShadows.SimpleShadow(GraphicOptionTable.PC) && FieldShadows.SimpleShadow(GraphicOptionTable.MyPC);
+        for (int level = 0; level <= 4; level++)
+        {
+            graphic.ShadowLevel = level;
+            FieldShadows.Begin(packs, 0);
+            if (Simple()) break;
+        }
+        try { RideShadow(layer, pc, Simple()); }
+        finally { graphic.ShadowLevel = optionLevel; FieldShadows.Begin(packs, 0); }
+    }
+
+    void RideShadow(RemoteLayer layer, Player pc, bool simple)
+    {
+        const int User = 37, DeadUser = 38;
+        if (!simple) { fails.Add("ride shadow: no graphics shadow level shows the PC and myPC simple shadows"); return; }
+        var m = FirstMount(x => x.Data.ShadowScale != 150) ?? FirstMount(x => true);
+        if (m == null) { fails.Add("ride shadow: no riding row"); return; }
+        int rideId = m.Data.Id;
+        float scale = m.Data.ShadowScale;
+        m.Visual.Free();
+        BlobShadow Shadow(Node n) => n?.GetNodeOrNull<BlobShadow>(FieldShadows.ShadowNode);
+        void Add(int id, long hp)
+        {
+            var u = new FieldAddUser { ObjectId = id, User = new UserBlock { Name = "w", CharacterId = 100 + id, Gender = 1 } };
+            u.Stats[0].Health = 100; u.Stats[2].Health = hp;
+            layer.Tracker.Events.Enqueue(new UserAddedEvent(0, u, false));
+            layer._Process(0);
+        }
+        void Ride(int id) => layer.OnRide(new ResponseRide(0, id, new RideOnAction(0, rideId, 5000 + id, false, 0, 0, 0, 0), null, 0, 0, 0, 0, false));
+        void Off(int id) => layer.OnRide(new ResponseRide(1, id, null, new RideOffAction(0, 0), 0, 0, 0, 0, false));
+        Add(User, 100);
+        var rider = Shadow(layer.HoldVisual(User)?.GetParent());
+        bool before = rider is { Off: false };
+        Ride(User);
+        bool riding = rider is { Off: true };
+        var mount = Shadow(layer.GetNodeOrNull($"Ridee{User}"));
+        bool mountOk = mount is { Off: false } && mount.Radius == scale;
+        Off(User);
+        bool after = rider is { Off: false };
+        if (!before || !riding || !after || !mountOk)
+            fails.Add($"remote ride shadow {rideId}: rider shown before {before}, off riding {riding}, shown after {after}; mount's {mount?.Radius} of {scale}");
+        Add(DeadUser, 0);
+        var dead = Shadow(layer.HoldVisual(DeadUser)?.GetParent());
+        Ride(DeadUser);
+        if (dead is not { Off: false }) fails.Add($"ride shadow: a dead rider's shadow went off ({dead?.Off})");
+        Off(DeadUser);
+        var own = Shadow(pc) ?? BlobShadow.Add(pc, 100f, 3f);
+        var om = Mount.Load(packs, builder, rideId);
+        pc.RideOn(om);
+        bool ownRiding = own is { Off: true };
+        var ownMount = Shadow(om.Visual);
+        bool ownMountOk = ownMount is { Off: false } && ownMount.Radius == scale;
+        pc.RideOff();
+        bool ownAfter = own is { Off: false };
+        if (!ownRiding || !ownAfter || !ownMountOk)
+            fails.Add($"own ride shadow {rideId}: off riding {ownRiding}, shown after {ownAfter}; mount's {ownMount?.Radius} of {scale}");
+        GD.Print($"remote ride: ride shadow {rideId}: rider's off riding, mount's {mount?.Radius} wide (row {scale}); a dead rider keeps its own");
     }
 
     /// <summary>hideRider: PCBase::vfunc_120 hides the rider of such a row (AddHideReason(2), the body's vfunc_23(1)) and

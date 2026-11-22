@@ -220,6 +220,9 @@ public sealed class RemotePcStates
     /// <summary>StateDead::vfunc_5 (@0x1417c29b0, statedead.cpp:177-186): the body shown again (vfunc_23(0)) and the shadow
     /// back on (vfunc_31(true)).</summary>
     public Action DeadLeft;
+    /// <summary>GameObject::SetShadowVisible: StateRide::vfunc_4 turns the PC's simple shadow off and vfunc_5 back on
+    /// (statemanager.cpp:1095, :1103).</summary>
+    public Action<bool> ShadowVisible;
     /// <summary>StateSkill::vfunc_4's m_spRecord: called as the skill state is entered, before its entry runs.</summary>
     public Action SkillEntered;
     /// <summary>StateSkill::vfunc_5 (stateskill.cpp:512-535): called as the skill state is left, before its exit runs.</summary>
@@ -895,6 +898,9 @@ public sealed class RemotePcStates
                 pc.AnimSpeed = 1f;                            // State::vfunc_4 -> State::vfunc_10
                 JumpEnter();
                 break;
+            case StateRide:
+                ShadowVisible?.Invoke(false);                 // StateRide::vfunc_4 (statemanager.cpp:1095)
+                break;
             case StateDead:
                 // StateDead::vfunc_4 (@0x1417c2530, statedead.cpp:104-171): State::vfunc_4 -> State::vfunc_10 sets m_f938
                 pc.AnimSpeed = 1f;
@@ -927,6 +933,9 @@ public sealed class RemotePcStates
                 break;
             case StateDead:
                 DeadLeft?.Invoke();                           // StateDead::vfunc_5
+                break;
+            case StateRide:
+                ShadowVisible?.Invoke(true);                  // StateRide::vfunc_5 (statemanager.cpp:1103)
                 break;
             case StateHold:
                 // StateHold::vfunc_5 (@0x1417cbe70, stateholddata.cpp:188-201): StopJump, the shadow back on
