@@ -54,10 +54,21 @@ public sealed class TaxiCallState
     /// else TaxiCallDuration.</summary>
     public static int Duration(int level, int bestDriverLevel, int callMs, int bestDriverMs) => level >= bestDriverLevel ? bestDriverMs : callMs;
 
-    /// <summary>vfunc_6 (@0x1417fdae0, :326-332): back to idle unless the phase is 0x69 (the request is out).</summary>
+    /// <summary>vfunc_6 (@0x1417fdae0, :318-324): back to idle (state 1) unless the phase is 0x69. Run when the owner leaves the state
+    /// for any reason: a move input in 0x65, death, a knockback, a skill, another state set.</summary>
     public void Cancel()
     {
         if (Phase != Leave) Finished = true;
+    }
+
+    /// <summary>vfunc_8 (@0x1417d9e0, :302-315) with the move direction: in phase 0x65 a move input sends the owner to the walk state
+    /// (state 2), which leaves this one through <see cref="Cancel"/>, and the input goes on to the walk; in the other phases the
+    /// state holds the body. True: the move input is held this frame.</summary>
+    public bool HoldsMove(bool moveInput)
+    {
+        if (Finished || Phase == 0) return false;
+        if (moveInput && Phase == Call) { Cancel(); return false; }
+        return true;
     }
 
     /// <summary>vfunc_3: <paramref name="seconds"/> of game time.</summary>

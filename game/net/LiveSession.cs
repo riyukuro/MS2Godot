@@ -1015,6 +1015,7 @@ public partial class LiveSession : Node
         }
         // a new field: no region skill or trigger object survives it (an error or the loading map again keeps the field)
         regionSkills.Clear(); RegionSkillLog.Clear(); ClearFieldEffects(); pendingTriggers.Clear(); triggerField = null;
+        taxiCall = null;        // the call's state goes with the old field's own player (0x6a does not run on in the new field)
         // the old field's own player stops sending: SetMyPC(0) until the new field's FieldAddUser
         DropOwnPc();
         moveClock.Restart();
@@ -1106,6 +1107,7 @@ public partial class LiveSession : Node
     {
         player = found;
         player.Live = true;
+        player.TaxiHold = TaxiHoldsMove;
         player.SetBattleStance(SelfInBattle);
         player.ServerTick = () => game?.Session.ServerTick ?? 0;
         SyncDeadFlag();   // an own FieldAddUser with no health: the flag, no state (scenestategame.cpp:11185)
@@ -1470,6 +1472,7 @@ public partial class LiveSession : Node
             {
                 var u = UserState.Read(p.Reader());     // OnUserState (scenestategame.cpp:5758): the state, then state 12 runs PC::vfunc_137
                 Me.ApplyUserState(u.ObjectId, u.State);
+                if (u.ObjectId == selfObject) EndTaxiCall();    // any state set on the own player leaves StateTaxiCall (vfunc_6)
                 bool died = u.ObjectId == selfObject && u.State == 12 && Me.Dead;  // the dead branch runs each time, not only on the flip
                 // every state goes through vfunc_59, so ride, rope, climb and ladder from the server let go of the held item too
                 if (u.ObjectId == selfObject) HeldItem.UserState(u.State, Me.Dead, Send);
@@ -1493,6 +1496,7 @@ public partial class LiveSession : Node
             {
                 var d = DeadUser.Read(p.Reader());      // OnDeadUser (scenestategame.cpp:6532)
                 Me.Die(d.ObjectId, d.Flag);
+                if (d.ObjectId == selfObject) EndTaxiCall();
                 if (d.ObjectId == selfObject && Me.Dead)        // the dead branch runs each time, not only on the flip
                 {
                     GD.Print("live: own player dead");

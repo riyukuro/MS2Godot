@@ -43,6 +43,7 @@ public partial class LiveSession
     /// them from the constants table).</summary>
     public int TaxiCallDurationMs = 3000, TaxiBestDriverDurationMs = 3000, TaxiBestDriverLevel = 25;
     TaxiCallState taxiCall;
+    int taxiStateAtBegin;
 
     /// <summary>GetCurStateId() is 0x25: a call is running.</summary>
     public bool TaxiCalling => taxiCall is { Finished: false };
@@ -62,12 +63,40 @@ public partial class LiveSession
     public void StartTaxiCall(int field, int level)
     {
         taxiCall = new TaxiCallState { Send = Send };
+        taxiStateAtBegin = Me.State;
         taxiCall.Begin(true, field, TaxiCallState.Duration(level, TaxiBestDriverLevel, TaxiCallDurationMs, TaxiBestDriverDurationMs), true);
     }
+
+    /// <summary>StateTaxiCall::vfunc_6 (@0x1417fdae0, statetaxicalldata.cpp:318-324) through <see cref="TaxiCallState.Cancel"/>: the
+    /// state is left (a move input in 0x65, death, a knockback, a skill, any other state set) and the call ends in every phase but
+    /// 0x69, where the request goes out.</summary>
+    void EndTaxiCall()
+    {
+        if (taxiCall == null) return;
+        taxiCall.Cancel();
+        if (taxiCall.Finished) taxiCall = null;
+    }
+
+    /// <summary>The Player's per-frame ask (<see cref="Player.TaxiHold"/>). StateTaxiCall::vfunc_8 (@0x1417d9e0, :302-315): in 0x65
+    /// the move direction sends the owner to state 2 (the call ends); in the other phases the state holds the body.</summary>
+    bool TaxiHoldsMove(bool moveInput)
+    {
+        if (taxiCall == null) return false;
+        bool held = taxiCall.HoldsMove(moveInput);
+        if (taxiCall.Finished) taxiCall = null;
+        return held;
+    }
+
+    /// <summary>The call is no longer the own state: a state other than the one the call began in (the server's UserState, a
+    /// knockback), death, a ride, or a skill's cast.</summary>
+    bool TaxiStateLeft() =>
+        selfObject < 0 || player == null || !IsInstanceValid(player) || Me.Dead || Me.State != taxiStateAtBegin
+        || player.Mount != null || player.DeathHoldsMove || player.SkillSequence != null;
 
     void TickTaxi(double delta)
     {
         if (taxiCall == null) return;
+        if (TaxiStateLeft()) { EndTaxiCall(); if (taxiCall == null) return; }
         taxiCall.Tick(delta);
         if (taxiCall.Finished) taxiCall = null;
     }

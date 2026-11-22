@@ -408,6 +408,15 @@ public class WorldMapTests
     }
 
     [Test]
+    public void AnyYesAnswerIsHandledWhateverTheTagButANoIsNot()
+    {
+        var r = Rig(out _);
+        Assert.That(r.C.OnMessageBox(null, 0, "someOtherTag"), Is.True, "OnMessage :774 returns 1 for any result 0");
+        Assert.That(r.C.OnMessageBox(null, 1, "someOtherTag"), Is.False);
+        Assert.That(r.Started, Is.Empty, "an unknown tag runs nothing");
+    }
+
+    [Test]
     public void TheTooltipShowsTheFareOfAFoundStationAndNoDescriptionThen()
     {
         var r = Rig(out _);

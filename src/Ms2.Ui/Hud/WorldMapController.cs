@@ -561,7 +561,7 @@ public sealed class WorldMapController : UiController, IMessageBoxListener
 
     /// <summary>
     /// OnMessage (:755-775): a box's answer is taken from the queue first (FUN_14151f200); yes (0) on "onTaxi" is TakeTaxi(m_190),
-    /// handled. Any other answer is not handled.
+    /// handled. Any other yes is handled too (return 1 at :774); another answer is not.
     /// STILL-OPEN: "onPortal", "onCashTaxi" and "onTopMostLayer" (MoveByPortal, TakeCashTaxi, the layer) are not ported here.
     /// </summary>
     public bool OnMessageBox(MessageBoxController sender, int button, string tag)
@@ -569,7 +569,7 @@ public sealed class WorldMapController : UiController, IMessageBoxListener
         MessageBoxQueue.Next();
         if (button != 0) return false;
         if (tag == "onTaxi") { TakeTaxi((int)taxiTarget); return true; }
-        return tag is "onPortal" or "onCashTaxi" or "onTopMostLayer";
+        return true;     // :774: any yes answer is handled, whatever the tag (onPortal, onCashTaxi, onTopMostLayer do their part below)
     }
 
     /// <summary>

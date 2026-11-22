@@ -108,7 +108,7 @@ public class TaxiManagerTests
         s.Tick(0.1); s.Tick(1.95); s.Tick(0.5); s.Tick(0.5);
         Assert.That(s.Phase, Is.EqualTo(TaxiCallState.Leave));
         s.Cancel();
-        Assert.That(s.Finished, Is.False, "0x69: the request is out, vfunc_6 does not cancel");
+        Assert.That(s.Finished, Is.False, "0x69: the request is out, Cancel keeps phase 0x69");
         var bad = new TaxiCallState();
         bad.Begin(false, 0, 0, true);
         Assert.That(bad.Finished, Is.True, "data that is not a StateTaxiCallData: idle");
@@ -119,5 +119,57 @@ public class TaxiManagerTests
     {
         Assert.That(TaxiCallState.Duration(24, 25, 3000, 1000), Is.EqualTo(3000));
         Assert.That(TaxiCallState.Duration(25, 25, 3000, 1000), Is.EqualTo(1000));
+    }
+
+    static TaxiCallState Running(List<IOutPacket> sent, int phase)
+    {
+        var s = new TaxiCallState { Send = sent.Add };
+        s.Begin(true, 9, 100, true);
+        double[] steps = { 0.1, 1.9, 0.45, 0.45 };
+        for (int i = 0; s.Phase < phase; i++) s.Tick(steps[i]);
+        Assert.That(s.Phase, Is.EqualTo(phase));
+        return s;
+    }
+
+    [Test]
+    public void AMoveInputInPhase65LeavesTheCallAndNothingIsSent()
+    {
+        var sent = new List<IOutPacket>();
+        var s = Running(sent, TaxiCallState.Call);
+        Assert.That(s.HoldsMove(false), Is.True, "no input: the state holds the body");
+        Assert.That(s.HoldsMove(true), Is.False, "the move goes on to the walk state");
+        Assert.That(s.Finished, Is.True);
+        for (int i = 0; i < 100; i++) s.Tick(0.1);
+        Assert.That(sent, Is.Empty, "the call ended, so no RequestTaxi goes out");
+    }
+
+    [Test]
+    public void AMoveInputAfterPhase65IsHeldAndTheCallRunsOn()
+    {
+        var sent = new List<IOutPacket>();
+        var s = Running(sent, TaxiCallState.Arrive);
+        Assert.That(s.HoldsMove(true), Is.True);
+        Assert.That(s.Finished, Is.False);
+        s.Tick(1.9); s.Tick(0.45); s.Tick(0.45); s.Tick(1.0);
+        Assert.That(sent, Has.Count.EqualTo(1));
+    }
+
+    [Test]
+    public void LeavingTheStateInAnyPhaseBefore69EndsTheCallWithoutTheRequest()
+    {
+        foreach (int phase in new[] { TaxiCallState.Call, TaxiCallState.Arrive, TaxiCallState.Board, TaxiCallState.Ride })
+        {
+            var sent = new List<IOutPacket>();
+            var s = Running(sent, phase);
+            s.Cancel();                                   // death, a knockback, a skill, another state set
+            Assert.That(s.Finished, Is.True, $"phase {phase:x}");
+            for (int i = 0; i < 100; i++) s.Tick(0.1);
+            Assert.That(sent, Is.Empty, $"phase {phase:x}");
+        }
+        var out69 = new List<IOutPacket>();
+        var l = Running(out69, TaxiCallState.Leave);
+        l.Cancel();
+        l.Tick(1.0);
+        Assert.That(out69, Has.Count.EqualTo(1), "0x69 survives a state change and the request goes out");
     }
 }

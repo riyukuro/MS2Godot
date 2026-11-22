@@ -247,14 +247,14 @@ public sealed record RequestTaxiRide(int TaxiId, int Cost = RequestTaxiRide.Clie
 }
 
 /// <summary>Outbound 0x48 mode 3 / 4 (StateCashCall::SendRequest @0x141023650, statecashcalldata.cpp:365-376, a call with no item
-/// uid): u8 3 for m_nCallType 1 or 2, u8 4 for m_nCallType 3; then i32 price (m_nPrice).</summary>
-public sealed record RequestTaxiCash(int CallType, int Price) : IOutPacket {
+/// uid): u8 3 for m_nCallType 1 or 2, u8 4 for m_nCallType 3; then the i32 field id the call goes to (StateCashCallData m_nPrice is filled from the manager's field id argument, TakeCashTaxi @0x141b5aa70 -> cashcallmanager.cpp:149).</summary>
+public sealed record RequestTaxiCash(int CallType, int FieldId) : IOutPacket {
     public Outbound Op => Outbound.RequestTaxi;
     public void Write(ByteWriter w) {
         if (CallType == 3) w.WriteByte(4);
         else if (CallType == 1 || CallType == 2) w.WriteByte(3);
         else throw new ArgumentOutOfRangeException(nameof(CallType), "StateCashCall::SendRequest sends only call types 1, 2 and 3");
-        w.WriteInt(Price);
+        w.WriteInt(FieldId);
     }
 }
 

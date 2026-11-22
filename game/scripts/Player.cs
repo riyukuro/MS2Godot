@@ -247,6 +247,9 @@ public partial class Player : CharacterBody3D
         SeatOnMount();
     }
 
+    /// <summary>The own taxi call (StateTaxiCall): asked each frame with whether a move input is down; true holds the move, jump and click-move input.</summary>
+    public System.Func<bool, bool> TaxiHold;
+
     void Step(double delta)
     {
         // WorldService::OnTick (worldservice_1.cpp:9679-9703) passes the scheduler's game-time delta with no clamp in the
@@ -275,6 +278,8 @@ public partial class Player : CharacterBody3D
         if (Ms2.Ui.FieldMoveCover.Up) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }
         if (SkillHoldsMove()) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }   // the skill state (PlayerSkill)
         if (DeathHoldsMove) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }    // StateDead / StateRevival (PlayerDeath)
+        // StateTaxiCall (0x25, statetaxicalldata.cpp:302-315): in phase 0x65 a move input leaves for the walk state, in the other phases the state holds the body
+        if (TaxiHold != null && TaxiHold(Input2 != Vector2.Zero || MouseInput != Vector2.Zero)) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }
         var rawInput = Input2 != Vector2.Zero ? Input2 : MouseInput;
         var input = DiagonalHold(rawInput, dt);
         bool jumpPressed = JumpHeld && !prevJump;
