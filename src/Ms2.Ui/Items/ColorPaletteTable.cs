@@ -15,7 +15,7 @@ public sealed class ColorPaletteTable
 {
     /// <summary>
     /// ItemColorEx: ch0..ch2 (m_aValues), Visible (m_n38: the palette attribute, else ch0), Show2Color (m_bFlag,
-    /// show2color), StringKey (m_n2c, the stringColorPalette id), ColorSN (m_nColor) and PaletteId (m_nId). Colours are the
+    /// show2color), StringKey (m_n2c, the stringColorPalette id), ColorSN (m_nColor, -1 without the attribute: itemdata.h:310) and PaletteId (m_nId). Colours are the
     /// ARGB words as written.
     /// </summary>
     public sealed record Color(uint Ch0, uint Ch1, uint Ch2, uint Visible, bool Show2Color, int StringKey, int ColorSN, int PaletteId,
@@ -26,7 +26,11 @@ public sealed class ColorPaletteTable
 
     public static readonly ColorPaletteTable Empty = new();
 
-    readonly Dictionary<int, Dictionary<int, Color>> palettes = new();
+    /// <summary>CColorPaletteInfo: the colours in file order (m_spColors) and by colorSN (m_spColorMap).</summary>
+    sealed class Info { public readonly List<Color> Rows = new(); public readonly Dictionary<int, Color> BySN = new(); }
+
+    readonly Dictionary<int, Info> palettes = new();
+    static readonly IReadOnlyList<Color> NoRows = Array.Empty<Color>();
 
     ColorPaletteTable() { }
 
@@ -52,30 +56,40 @@ public sealed class ColorPaletteTable
         foreach (var p in root.Elements("colorPalette"))
         {
             int id = ItemData.Atoi((string)p.Attribute("id") ?? "0");
-            var map = palettes[id] = new Dictionary<int, Color>();              // a repeated id is cleared (spInfo->Clear)
+            var info = palettes[id] = new Info();                                 // a repeated id is cleared (spInfo->Clear)
             foreach (var c in p.Elements("color"))
             {
                 uint ch0 = Hex((string)c.Attribute("ch0"));
                 string pal = (string)c.Attribute("palette") ?? "";
                 var color = new Color(ch0, Hex((string)c.Attribute("ch1")), Hex((string)c.Attribute("ch2")),
                     pal.Length > 0 ? Hex(pal) : ch0, Flag((string)c.Attribute("show2color")),
-                    ItemData.Atoi((string)c.Attribute("stringKey") ?? "0"), ItemData.Atoi((string)c.Attribute("colorSN") ?? "0"), id,
+                    ItemData.Atoi((string)c.Attribute("stringKey") ?? "0"), ItemData.Atoi((string)c.Attribute("colorSN") ?? "-1"), id,
                     Hex((string)c.Attribute("ch0_eye")), Hex((string)c.Attribute("ch2_eye")));
-                map[color.ColorSN] = color;
+                info.Rows.Add(color);                                          // AddColor: the array keeps every row,
+                info.BySN[color.ColorSN] = color;                              // the map a later colorSN replaces
             }
         }
     }
 
     /// <summary>CItemDataTable::GetPaletteColorBySN (itemdatatable.cpp:802): null without the palette or the colour.</summary>
     public Color BySN(int palette, int colorSN) =>
-        palettes.TryGetValue(palette, out var map) && map.TryGetValue(colorSN, out var c) ? c : null;
+        palettes.TryGetValue(palette, out var info) && info.BySN.TryGetValue(colorSN, out var c) ? c : null;
 
-    /// <summary>ParseHexColor: "0xAARRGGBB" (0 when empty or not hex).</summary>
+    /// <summary>CItemDataTable::GetPaletteColors (itemdatatable.cpp:820): the palette's colours in file order, a repeated colorSN
+    /// included; empty without the palette.</summary>
+    public IReadOnlyList<Color> Rows(int palette) => palettes.TryGetValue(palette, out var info) ? info.Rows : NoRows;
+
+    /// <summary>ParseHexColor: strtoul base 16, so an optional "0x" and then the leading hex digits ("ff00zz" is 0xff00); 0 when
+    /// there are none.</summary>
     static uint Hex(string s)
     {
         if (string.IsNullOrEmpty(s)) return 0;
+        s = s.TrimStart();
         if (s.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) s = s[2..];
-        return uint.TryParse(s, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out uint v) ? v : 0;
+        int n = 0;
+        while (n < s.Length && Uri.IsHexDigit(s[n])) n++;
+        if (n == 0) return 0;
+        return n > 8 ? uint.MaxValue : uint.Parse(s[..n], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
     }
 
     /// <summary>XmlQuery of a bool: "1" or "true".</summary>
