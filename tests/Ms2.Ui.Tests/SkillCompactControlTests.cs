@@ -281,4 +281,17 @@ public class SkillCompactControlTests
         Assert.That(tip["level"], Is.EqualTo(w.C.Jobs.FindSkill(id)?.Level ?? 1));
         Assert.That(w.C.GetTooltip(new object[] { "other", id }), Is.Null);
     }
+
+    [Test]
+    public void AKeyBoundToTheOpenActionOpensTheWindowAndNoDefaultKeyDoes()
+    {
+        // keytable.cpp:881: action 400031 toggles 0x4ef6; defaultkey.xml binds no key to it
+        var keys = new KeyTable(Packs(), "en");
+        Assert.That(keys.KeysOfAction(SkillCompactControlController.OpenKeyAction), Is.Empty);
+        int free = Enumerable.Range(0x02, 0x80).First(k => KeyTable.IsKeyRebindable(k) && keys.GetKeyAction(k) == 0);
+        Assert.That(SkillCompactControlController.OpensWithKey(keys, free), Is.False);
+        Assert.That(keys.SetKeyBindingAndSync(free, 0, SkillCompactControlController.OpenKeyAction, 0, 0), Is.True);
+        Assert.That(SkillCompactControlController.OpensWithKey(keys, free), Is.True);
+        Assert.That(SkillCompactControlController.OpensWithKey(keys, free + 1), Is.False);
+    }
 }

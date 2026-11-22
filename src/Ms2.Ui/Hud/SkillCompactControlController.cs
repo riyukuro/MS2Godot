@@ -23,6 +23,18 @@ public sealed class SkillCompactControlController : UiController, IMessageBoxLis
     /// <summary>GetTypeName @0x140f9e330.</summary>
     public override string TypeName => "SkillCompactControl";
 
+    /// <summary>The window's key action: CKeyTable::FUN_14142b300 case 400031 runs ToggleDialog(0x4ef6) (keytable.cpp:881). The
+    /// default key table binds no key to it, so only a key the player set opens the window this way.</summary>
+    public const long OpenKeyAction = 400031;
+
+    /// <summary>True when DirectInput key <paramref name="dik"/> is bound to <see cref="OpenKeyAction"/> in <paramref name="keys"/>.</summary>
+    public static bool OpensWithKey(KeyTable keys, int dik)
+    {
+        foreach (int k in keys.KeysOfAction(OpenKeyAction))
+            if (k == dik) return true;
+        return false;
+    }
+
     /// <summary>The highest tab count (onAddTab / OnAddTabResult test m_lstConfig.GetCount() against 3).</summary>
     public const int MaxTabs = 3;
     /// <summary>The tab hot key actions GetTabKeyId hands out (0xaae61..0xaae63, string table 5 "{0}" names).</summary>

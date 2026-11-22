@@ -1636,6 +1636,8 @@ public partial class HudScene : Node, IUiStageHost
         if (actions && k.PhysicalKeycode == Key.I) { ToggleInventory(); return true; }     // action 400001 (DIK 23, I): ToggleDialog(0x4e2d)
         if (actions && k.PhysicalKeycode == Key.P) { ToggleMyInfo(); return true; }        // action 400002 (DIK 25, P): ToggleDialog(0x2711), keytable.cpp:738
         if (actions && k.PhysicalKeycode == Key.K) { ToggleSkillBook(); return true; }     // action 400005 (DIK 37, K): ToggleDialog(0x4f2d)
+        if (actions && Ms2.Ui.Hud.SkillCompactControlController.OpensWithKey(hudModel.Keys, DikOfGodotKey(k.PhysicalKeycode)))
+        { ToggleSkillCompact(); return true; }   // action 400031: ToggleDialog(0x4ef6), no default key
         bool open = questLog != null && questLogSide?.IsClosed == false;
         if (k.Keycode == Key.Escape && open) { questLogSide.Close(); return true; }
         if (k.Keycode == Key.Escape && inventory?.IsClosed == false) { inventory.Close(); return true; }
