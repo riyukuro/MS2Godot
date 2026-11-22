@@ -33,24 +33,26 @@ public sealed class BlackMarketProduct {
     /// <summary>PriceFor (@0x1401be310): n × unit price.</summary>
     public long PriceFor(int n) => (long)n * UnitPrice;
 
-    public static BlackMarketProduct Read(ByteReader r) {
+    public static BlackMarketProduct Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    public static BlackMarketProduct Read(ByteReader r, ProtocolProfile profile) {
         var p = new BlackMarketProduct {
             Id = r.ReadLong(), ListedTime = r.ReadLong(), Value28 = r.ReadLong(), ExpireTime = r.ReadLong(),
             Count = r.ReadInt(), Bought = r.ReadInt(), UnitPrice = r.ReadLong(), StateB = r.ReadByte(),
             ItemUid = r.ReadLong(), ItemId = r.ReadInt(), Rarity = r.ReadByte(), SellerAccountId = r.ReadLong(),
         };
         if (ItemReader.Known == null || ItemReader.Known(p.ItemId)) {
-            p.Item = ItemReader.ReadItem(r, p.ItemId, p.Rarity);
+            p.Item = ItemReader.ReadItem(r, p.ItemId, p.Rarity, profile);
             p.Item.Uid = p.ItemUid;                 // SetItemUid
         }
         return p;
     }
 
     /// <summary>i32 n, then n products (modes 1 and 4).</summary>
-    internal static List<BlackMarketProduct> ReadList(ByteReader r) {
+    internal static List<BlackMarketProduct> ReadList(ByteReader r, ProtocolProfile profile) {
         int n = r.ReadInt();
         var list = new List<BlackMarketProduct>();
-        for (int i = 0; i < n; i++) list.Add(Read(r));
+        for (int i = 0; i < n; i++) list.Add(Read(r, profile));
         return list;
     }
 }
@@ -140,14 +142,16 @@ public abstract record BlackMarketMessage {
 
     public byte Mode { get; init; }
 
-    public static BlackMarketMessage Read(ByteReader r) {
+    public static BlackMarketMessage Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    public static BlackMarketMessage Read(ByteReader r, ProtocolProfile profile) {
         byte mode = r.ReadByte();
         BlackMarketMessage m = mode switch {
             0 => new Error(r.ReadByte(), r.ReadInt(), r.ReadLong(), r.ReadInt(), (ushort)r.ReadInt()),
-            1 => new OwnList(BlackMarketProduct.ReadList(r)),
-            2 => new OwnAdded(BlackMarketProduct.Read(r)),
+            1 => new OwnList(BlackMarketProduct.ReadList(r, profile)),
+            2 => new OwnAdded(BlackMarketProduct.Read(r, profile)),
             3 => new OwnRemoved(r.ReadLong(), r.ReadByte()),
-            4 => new SearchResult(BlackMarketProduct.ReadList(r)),
+            4 => new SearchResult(BlackMarketProduct.ReadList(r, profile)),
             5 => new Bought(r.ReadLong(), r.ReadInt()),
             6 => new Status(r.ReadByte(), r.ReadLong(), r.ReadLong()),
             7 => new Sold(),

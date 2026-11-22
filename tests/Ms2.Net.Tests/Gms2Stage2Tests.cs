@@ -113,4 +113,30 @@ public class Gms2Stage2Tests {
         // without the item data hooks (the game sets them from the player's Data folder) an item body of a kind the id table would name is misread: about four in five decode
         Assert.That(all.Count - bad, Is.GreaterThanOrEqualTo(all.Count * 3 / 4));
     }
+
+    [Test]
+    public void MailSentModeCarriesTheMailIdOnGms2Only() {
+        var w = new ByteWriter(); w.WriteByte(1); w.WriteLong(0x3E95901);
+        var r = Reader(w);
+        Assert.That(MailMessage.Read(r, Gms), Is.InstanceOf<MailMessage.Sent>());
+        Assert.That(r.Available, Is.EqualTo(0));
+        var k = new ByteReader(new byte[] { 1 });
+        Assert.That(MailMessage.Read(k, ProtocolProfile.Kms2525), Is.InstanceOf<MailMessage.Sent>());
+    }
+
+    [Test]
+    public void EveryRecordedGms2MailAndBlackMarketPacketDecodes() {
+        foreach (var (op, read) in new (Inbound, Action<ByteReader>)[] {
+            (Inbound.Mail, r => MailMessage.Read(r, Gms)), (Inbound.BlackMarket, r => BlackMarketMessage.Read(r, Gms)) }) {
+            var all = Gms2Sniffs.Inbound("gms2", Gms.Number(op));
+            Assert.That(all, Is.Not.Empty);
+            int bad = 0;
+            foreach (var (_, data) in all) {
+                var r = new ByteReader(data);
+                try { read(r); if (r.Available != 0) bad++; } catch (Exception) { bad++; }
+            }
+            // the misses are item bodies of kinds only the item data names (hooks unset here)
+            Assert.That(all.Count - bad, Is.GreaterThanOrEqualTo(all.Count * 9 / 10), op.ToString());
+        }
+    }
 }

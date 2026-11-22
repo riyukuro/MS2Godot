@@ -1616,7 +1616,7 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.Mail))
             {
-                var m = MailMessage.Read(p.Reader());             // CSceneStateGame::OnMail (scenestategame.cpp:11496)
+                var m = MailMessage.Read(p.Reader(), game.Profile);             // CSceneStateGame::OnMail (scenestategame.cpp:11496)
                 if (m != null) Mails.Apply(m, MailListOpen(), GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds());
                 GD.Print($"live: mail {m?.GetType().Name ?? "other mode"} ({Mails.Mails.Count} mails, {Mails.Unread} unread)");
             }
@@ -1628,7 +1628,7 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.BlackMarket))
             {
-                var m = BlackMarketMessage.Read(p.Reader());      // CBlackMarketMan::OnBlackMarket (networkservice.cpp:690, @0x140a20650)
+                var m = BlackMarketMessage.Read(p.Reader(), game.Profile);      // CBlackMarketMan::OnBlackMarket (networkservice.cpp:690, @0x140a20650)
                 BlackMarket.OnBlackMarket(m);
                 GD.Print($"live: black market mode {m.Mode} ({BlackMarket.OwnProducts.Count} own, {BlackMarket.SearchProducts.Count} found)");
             }

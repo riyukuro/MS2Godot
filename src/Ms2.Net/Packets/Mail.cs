@@ -17,12 +17,14 @@ public sealed class MailAttachment {
     public int Value20; public long Value28;
     public EquipItem Item;
 
-    public static MailAttachment Read(ByteReader r) {
+    public static MailAttachment Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    public static MailAttachment Read(ByteReader r, ProtocolProfile profile) {
         var a = new MailAttachment {
             ItemId = r.ReadInt(), Uid = r.ReadLong(), Slot = r.ReadByte(), Rarity = r.ReadInt(), Amount = r.ReadInt(),
             ReceiveTime = r.ReadLong(), Value20 = r.ReadInt(), Value28 = r.ReadLong(),
         };
-        a.Item = ItemReader.ReadItem(r, a.ItemId, a.Rarity);
+        a.Item = ItemReader.ReadItem(r, a.ItemId, a.Rarity, profile);
         return a;
     }
 }
@@ -91,7 +93,9 @@ public sealed class MailInfo {
     public long ReadTime, ExpireTime, SentTime; // m_n100, m_n108, m_n118
     public int State;                           // m_nState: SetState(1) on any change
 
-    public static MailInfo Read(ByteReader r) {
+    public static MailInfo Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    public static MailInfo Read(ByteReader r, ProtocolProfile profile) {
         var m = new MailInfo { Kind = r.ReadByte(), Id = r.ReadLong(), SenderId = r.ReadLong() };
         m.Sender = r.ReadUnicodeString(); m.Title = r.ReadUnicodeString(); m.Content = r.ReadUnicodeString();
         m.TitleArgs = r.ReadUnicodeString(); m.ContentArgs = r.ReadUnicodeString();
@@ -105,7 +109,7 @@ public sealed class MailInfo {
         } else {
             int n = r.ReadByte();
             for (int i = 0; i < n; i++) {
-                var a = MailAttachment.Read(r);
+                var a = MailAttachment.Read(r, profile);
                 if (a.Slot < 5) m.Attachments[a.Slot] = a;     // SetAttachment(GetItemId(), ...)
             }
         }
@@ -226,13 +230,15 @@ public abstract record MailMessage {
 
     public byte Mode { get; init; }
 
-    public static MailMessage Read(ByteReader r) {
+    public static MailMessage Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    public static MailMessage Read(ByteReader r, ProtocolProfile profile) {
         byte mode = r.ReadByte();
         MailMessage m = mode switch {
             0x10 => new Clear(),
-            0 => ReadList(r),
+            0 => ReadList(r, profile),
             0x11 => new EndList(),
-            1 => new Sent(),
+            1 => ReadSent(r, profile),
             2 => new MarkedRead(r.ReadLong(), r.ReadLong()),
             3 => new Returned(r.ReadLong()),
             0xa => new Collected(r.ReadLong(), r.ReadByte() != 0, r.ReadByte(), r.ReadLong()),
@@ -248,10 +254,16 @@ public abstract record MailMessage {
         return m with { Mode = mode };
     }
 
-    static Listed ReadList(ByteReader r) {
+    /// <summary>Mode 1: the KMS2 client sends nothing after the mode; the GMS2 server adds the id of the mail sent (a recording shows it).</summary>
+    static Sent ReadSent(ByteReader r, ProtocolProfile profile) {
+        if (profile.IsGms2) r.ReadLong();
+        return new Sent();
+    }
+
+    static Listed ReadList(ByteReader r, ProtocolProfile profile) {
         int n = r.ReadInt();
         var list = new List<MailInfo>();
-        for (int i = 0; i < n; i++) list.Add(MailInfo.Read(r));
+        for (int i = 0; i < n; i++) list.Add(MailInfo.Read(r, profile));
         return new Listed(list);
     }
 }

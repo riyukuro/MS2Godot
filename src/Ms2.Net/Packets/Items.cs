@@ -246,9 +246,11 @@ public static class ItemReader {
     /// An item made from its id and rarity and then read (CItem::FUN_140523c40 + ReadFromStream, as the npc shop's products,
     /// npcshopproductbase.cpp:186): the body alone, its first model slot from <see cref="SlotOf"/>.
     /// </summary>
-    public static EquipItem ReadItem(ByteReader r, int id, int rarity) {
+    public static EquipItem ReadItem(ByteReader r, int id, int rarity) => ReadItem(r, id, rarity, ProtocolProfile.Kms2525);
+
+    public static EquipItem ReadItem(ByteReader r, int id, int rarity, ProtocolProfile profile) {
         var it = new EquipItem { Id = id, Rarity = rarity, Slot = SlotOf?.Invoke(id) ?? EquipSlot.Unknown };
-        ReadBody(r, it, it.Slot);
+        ReadBody(r, it, it.Slot, gms2: profile.IsGms2);
         return it;
     }
 
