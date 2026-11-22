@@ -968,7 +968,7 @@ public partial class LiveSession : Node
         foreach (var body in pendingTriggers) ApplyTrigger(field, body);
         pendingTriggers.Clear();
         regionSkills.Clear(); RegionSkillLog.Clear();
-        var layer = remote = new RemoteLayer(field, builder, entry.Enter.CharacterId) { Feature8e = CodiFeature, ServerNow = () => ServerTime, ItemExists = id => ItemExists?.Invoke(id) ?? true };
+        var layer = remote = new RemoteLayer(field, builder, entry.Enter.CharacterId) { Feature8e = CodiFeature, ServerNow = () => ServerTime, HotTimes = HotTimes, ItemExists = id => ItemExists?.Invoke(id) ?? true };
         remote.Tracker.Profile = game.Profile;
         remote.Tracker.Entered(entry.Enter.ObjectId);   // the ServerEnter the entry took: the own damage records' owner
         // WorldService::FUN_141bd1200 finds MyPC too: other players' StateHold on the own mount reads its seats
@@ -1346,6 +1346,7 @@ public partial class LiveSession : Node
             {
                 var l = LevelUp.Read(p.Reader());  // CSceneStateGame::OnLevelUp (scenestategame.cpp:9511)
                 bool selfLevel = Me.Apply(l);
+                if (!selfLevel) remote?.LevelUp(l.ObjectId, l.Level);
                 if (selfLevel) guide?.OnChangeMyLevel();   // NotifyChangeMyLevel (CGuideManager::OnChangeMyLevel)
                 GD.Print($"live: level up object {l.ObjectId} level {l.Level}{(selfLevel ? " SELF" : "")}");
             }

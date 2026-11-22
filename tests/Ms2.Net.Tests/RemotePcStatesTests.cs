@@ -67,6 +67,7 @@ public class RemotePcStatesTests {
         public float WalkSpeed => 120f;
         public float RunSpeed => 350f;
         public float SwimSpeed => 350f;
+        public bool WaterRunner { get; set; }
         public float MoveSpeedRate { get; set; } = 1f;
         public float ScaleAnimRate { get; set; } = 1f;
         float animSpeed = 1f;

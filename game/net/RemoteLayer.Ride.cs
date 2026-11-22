@@ -63,6 +63,9 @@ public sealed partial class RemoteLayer
         // the rider's stats, every kind and id (pcbase.cpp:3317-3320): the ridee's move-speed rate reads its mount speed
         for (int k = 0; k < 3; k++)
             for (int s = 0; s < MoveSpeedRate.StatCount; s++) ridee.SetStat(k, s, r.Pc.Stat(k, s));
+        // Ridee::GetRunSpeed's and FUN_1417075e0's rider (PC::GetEquipment, FUN_1416749a0)
+        ridee.RiderAbilityRate = type => RiderAbilityRate(r, type);
+        ridee.RiderEventBuff = type => r.Buffs?.HasEnabledWithEventBuffType(type) == true;
         r.Ridee = ridee;
         r.Pc.States.RideOn(ridee.States, r.HpCur, r.HpMax);
         PlayRideEffect(r, CommonPath(ref rideOnPath, LiveSession.RideOnEffectKey));   // pcbase.cpp:3324-3330
@@ -87,6 +90,36 @@ public sealed partial class RemoteLayer
         PlayRideEffect(r, skillEffect);                                                  // :3423-3429
     }
 
+    /// <summary>
+    /// CEquipment::GetAbilityRate (equipment.cpp:731-746) of another player: the worn items' part (kept like m_abilities,
+    /// <see cref="Ms2.Ui.Items.WornEquipment.Abilities"/> of its level and worn items, usable at the server time), its
+    /// buffs' and the hot time sum (with the PC bang events for a PC bang grade above 0), over 1000. STILL-OPEN: the set
+    /// items' term, as for the own.
+    /// </summary>
+    float RiderAbilityRate(Remote r, int type)
+    {
+        if (r.WornAbilities == null)
+        {
+            var t = Ms2.Ui.GameTables.Shared(packs, Ms2Godot.GameOptions.StringLanguage);
+            long now = ServerNow();
+            r.WornAbilities = Ms2.Ui.Items.WornEquipment.Abilities(new Ms2.Net.Packets.PcInfo { Level = (ushort)r.Level, Equips = r.Equips },
+                t.Items, t.ItemModels, it => Ms2.Ui.Items.ItemLevels.Usable(it, now)) ?? new Dictionary<int, int>();
+        }
+        int worn = r.WornAbilities.TryGetValue(type, out int v) ? v : 0;
+        return Ms2.Ui.Items.WornEquipment.AbilityRate(Ms2.Ui.Items.WornEquipment.AbilityTotal(worn, type, r.Buffs, HotTimes, r.PcBangGrade > 0));
+    }
+
+    /// <summary>The game rule's special ability hot times (CGameRule::FUN_1404774a0); null adds none.</summary>
+    public Ms2.Ui.SpecialAbilityHotTimes HotTimes;
+
+    /// <summary>OnLevelUp (scenestategame.cpp:9511) for another player: its level, and its worn abilities again.</summary>
+    public void LevelUp(int objectId, int level)
+    {
+        if (!users.TryGetValue(objectId, out var r)) return;
+        r.Level = (short)level;
+        r.WornAbilities = null;
+    }
+
     /// <summary>RideOffAction type 24, UnRideSkill.</summary>
     public const int UnRideSkillType = 24;
 
@@ -107,6 +140,9 @@ public sealed partial class RemoteLayer
     }
 
     /// <summary>The riding row of a remote PC's ridee, null without one.</summary>
+    /// <summary>The ridee another player rides, or null.</summary>
+    public RemotePc RideeOf(int objectId) => users.TryGetValue(objectId, out var u) ? u.Ridee : null;
+
     public Ms2Godot.Movement.RideData RideeRow(int objectId) => users.TryGetValue(objectId, out var u) ? u.Ridee?.Mount?.Data : null;
 
     /// <summary>The move-speed rate (vfunc_96) of a remote PC, or of its ridee; null without that body.</summary>

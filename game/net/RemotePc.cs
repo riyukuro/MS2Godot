@@ -72,7 +72,8 @@ public sealed class RemotePc : IRemotePc
     /// (25, 105) and Ridee::vfunc_10 (@0x141704750) the PC's collision group 2 and 0x399 sweep, so it is a PC body with the
     /// mount's model. Ridee::vfunc_123 plays idleXMotion / runXMotion for actions 0x1e / 0x1f and the action table's
     /// sequence otherwise; its walk, run and swim speeds are the row's (m_unk_180).
-    /// STILL-OPEN: the equipment ability rates GetRunSpeed / GetRideSpeed apply (0xae / 0xa5) and the row's box for remotes.
+    /// Its run speed is Ridee::GetRunSpeed's (<see cref="RunSpeed"/>); a remote ridee never has the RunX flag, so
+    /// GetRideSpeed's runXSpeed is not used. STILL-OPEN: the row's box for remotes.
     /// </summary>
     public static RemotePc CreateRidee(string name, Mount mount, float gravity, Vector3 feet, float rotZ, NxController.FaceGrids faces) =>
         Create(name, mount.Visual, mount.Anim, null, mount, gravity, feet, rotZ, faces);
@@ -521,8 +522,18 @@ public sealed class RemotePc : IRemotePc
 
     // a mount's are its row's, in units/s (row * 100; Ridee::FUN_1417043a0's m_unk_180 y / z / w)
     public float WalkSpeed => Mount == null ? MoveConfig.WalkSpeed : Mount.Data.WalkSpeed * 100f;
-    public float RunSpeed => Mount == null ? MoveConfig.RunSpeed : Mount.Data.RunSpeed * 100f;
+    /// <summary>A mount's is Ridee::GetRunSpeed @0x1417071d0 (ridee.cpp:1028-1037): the row's run speed times 1 + the rider's
+    /// GetAbilityRate(0xae) (<see cref="RiderAbilityRate"/>), with FUN_1411f0e30's rounding.</summary>
+    public float RunSpeed => Mount == null ? MoveConfig.RunSpeed
+        : (float)((double)Mount.Data.RunSpeed * (double)(1.0f + (RiderAbilityRate?.Invoke(Player.RunXSameSpeedAbility) ?? 0f)) + 0.000001) * 100f;
     public float SwimSpeed => Mount == null ? MoveConfig.SwimSpeed : Mount.Data.SwimSpeed * 100f;
+    /// <summary>Ridee::FUN_1417075e0 (ridee.cpp:1091-1103): a riding type 1 or 2, or the rider's enabled buff of
+    /// eventBuffType 3 (<see cref="RiderEventBuff"/>); false for a PC.</summary>
+    public bool WaterRunner => Mount != null && (Mount.Data.Type is 1 or 2 || RiderEventBuff?.Invoke(3) == true);
+    /// <summary>A ridee's rider's CEquipment::GetAbilityRate of a special ability; null reads 0.</summary>
+    public Func<int, float> RiderAbilityRate;
+    /// <summary>A ridee's rider's HasEnabledWithEventBuffType; null reads false.</summary>
+    public Func<int, bool> RiderEventBuff;
     /// <summary>PCBase::vfunc_96: a ridee's CalcRmsiR of its current mount speed, a PC's CalcMsiR of its current movement
     /// speed (<see cref="Ms2.Net.Replay.MoveSpeedRate"/>).</summary>
     public float MoveSpeedRate => Mount != null

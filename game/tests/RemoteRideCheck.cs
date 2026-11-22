@@ -214,6 +214,7 @@ public partial class RemoteRideCheck : Node3D
         NpcBeforePlayer(layer, pc);
         HideRider(layer, pc);
         RideeStats(layer, m.Data.Id);
+        RideeSpeeds(layer, m.Data.Id);
         RideShadow(layer, pc);
         OwnUnRideSkillEffect(pc, m);
         pc.QueueFree();
@@ -268,6 +269,35 @@ public partial class RemoteRideCheck : Node3D
         if (played.Count != 2 || played[0] != $"{User}:{off}" || played[1] != $"{User}:{on}") fails.Add($"UnRideSkill ride off effects: {string.Join(", ", played)}");
         layer.RideEffectsPlayed = null;
         GD.Print($"remote ride: ride effects on '{on}', off '{off}', UnRideSkill adds the row's effect ({played.Count} played)");
+    }
+
+    /// <summary>Ridee::GetRunSpeed and FUN_1417fb370 at another player's mount: with no worn item, buff or hot time the
+    /// rate of 0xae is 0 and the run speed is the row's; a rate of 0.5 runs it at 1.5 times; a water-running mount
+    /// (type 1 or 2, or the rider's event buff type 3) swims at its run speed, any other at its swim speed.</summary>
+    void RideeSpeeds(RemoteLayer layer, int rideId)
+    {
+        const int User = 39;
+        var u = new FieldAddUser { ObjectId = User, User = new UserBlock { Name = "v", CharacterId = 139, Gender = 1, Level = 30 } };
+        u.Stats[0].Health = 100; u.Stats[2].Health = 100;
+        layer.Tracker.Events.Enqueue(new UserAddedEvent(0, u, false));
+        layer._Process(0);
+        layer.OnRide(new ResponseRide(0, User, new RideOnAction(0, rideId, 5039, false, 0, 0, 0, 0), null, 0, 0, 0, 0, false));
+        var ridee = layer.RideeOf(User);
+        if (ridee == null) { fails.Add("ridee speeds: no ridee"); return; }
+        var d = ridee.Mount.Data;
+        float rate0 = ridee.RiderAbilityRate?.Invoke(Player.RunXSameSpeedAbility) ?? -1f, plain = ridee.RunSpeed;
+        bool water = ridee.WaterRunner;
+        var keep = ridee.RiderAbilityRate; var keepBuff = ridee.RiderEventBuff;
+        ridee.RiderAbilityRate = t => t == Player.RunXSameSpeedAbility ? 0.5f : 0f;
+        float rated = ridee.RunSpeed;
+        ridee.RiderEventBuff = t => t == 3;
+        bool buffWater = ridee.WaterRunner;
+        ridee.RiderAbilityRate = keep; ridee.RiderEventBuff = keepBuff;
+        layer.OnRide(new ResponseRide(1, User, null, new RideOffAction(0, 0), 0, 0, 0, 0, false));
+        if (rate0 != 0f || Mathf.Abs(plain - d.RunSpeed * 100f) > 0.01f || Mathf.Abs(rated - d.RunSpeed * 150f) > 0.01f
+            || water != (d.Type is 1 or 2) || !buffWater)
+            fails.Add($"ridee speeds: rate {rate0}, run {plain} of {d.RunSpeed}, at 0.5 {rated}, water runner {water} (type {d.Type}), with event buff 3 {buffWater}");
+        GD.Print($"remote ride: ridee {d.Id} rate {rate0}, run {plain}, at rate 0.5 {rated}, water runner {water} (type {d.Type}), with event buff 3 {buffWater}");
     }
 
     /// <summary>PCBase::vfunc_96 with the stats: the PC's rate is calc_msiR of its movement speed, the ridee's calc_rmsiR of

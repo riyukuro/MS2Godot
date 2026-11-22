@@ -49,6 +49,9 @@ public sealed partial class RemoteLayer : Node3D
         /// <summary>FieldAddUser's premium club time and wedding state (PC m_n1190 / m_n1220) and the user block's PC bang
         /// grade (m_nFF8, scenestategame.cpp:11151), the PC::CanUseItem inputs of the balloon gem.</summary>
         public long PremiumTime; public short WeddingState; public byte PcBangGrade;
+        /// <summary>The PC's level (FieldAddUser's, then LevelUp's) and its worn items' special abilities (CEquipment
+        /// m_abilities), taken again after an equipment or level change; null until asked.</summary>
+        public short Level; public Dictionary<int, int> WornAbilities;
         /// <summary>The PC's AdditionalCliList (FUN_1416749a0): FieldAddUser's list (DecodeListPacket, additionalcli_2.cpp:721,
         /// each one an add) and its OnBuff packets. Only what the target filter reads of it is used.</summary>
         public Ms2.Ui.Skills.AdditionalBuffList Buffs;
@@ -164,7 +167,7 @@ public sealed partial class RemoteLayer : Node3D
         if (itemKnown != null && !itemKnown(p.Item.Id)) return false;     // CItem::FUN_140523c40 (item.cpp:3096): an id without data is not put on
         var equips = r.Equips; var outfit = r.Outfit2;
         if (!Ms2.Net.Packets.WornEquips.PutOn(ref equips, ref outfit, p, wornLayer)) return false;
-        r.Equips = equips; r.Outfit2 = outfit;
+        r.Equips = equips; r.Outfit2 = outfit; r.WornAbilities = null;
         equip.Reapply(r.Visual, LookOf(r));
         return true;
     }
@@ -176,7 +179,7 @@ public sealed partial class RemoteLayer : Node3D
         if (!users.TryGetValue(p.ObjectId, out var r)) return false;
         var equips = r.Equips; var outfit = r.Outfit2;
         if (Ms2.Net.Packets.WornEquips.PutOff(ref equips, ref outfit, p.ItemUid, wornLayer) == null) return false;
-        r.Equips = equips; r.Outfit2 = outfit;
+        r.Equips = equips; r.Outfit2 = outfit; r.WornAbilities = null;
         equip.Reapply(r.Visual, LookOf(r));
         return true;
     }
@@ -186,6 +189,7 @@ public sealed partial class RemoteLayer : Node3D
     public void ItemUpdated(int objectId, Ms2.Net.Packets.EquipItem item)
     {
         if (item == null || !users.TryGetValue(objectId, out var r)) return;
+        r.WornAbilities = null;
         equip.Reapply(r.Visual, LookOf(r), item.Slot);
     }
 
@@ -444,7 +448,7 @@ public sealed partial class RemoteLayer : Node3D
         var r = new Remote { Pc = pc, Root = root, Visual = visual, Name = u.User.Name, Motto = u.User.Motto };
         r.ObjectId = u.ObjectId; r.CharacterId = u.User.CharacterId; r.GuildName = u.User.GuildName ?? ""; r.Picture = u.User.Picture ?? ""; r.Gems = u.Badges; r.Equips = u.Equips; r.Outfit2 = u.Outfit2; r.CodiStart = u.SkinTabStart; r.CodiEnd = u.SkinTabEnd;
         r.Gender = u.User.Gender;
-        r.PremiumTime = u.PremiumTime; r.WeddingState = u.WeddingState; r.PcBangGrade = u.User.PcBangGrade;
+        r.PremiumTime = u.PremiumTime; r.WeddingState = u.WeddingState; r.PcBangGrade = u.User.PcBangGrade; r.Level = u.User.Level;
         r.HpCur = u.Stats[2].Health; r.HpMax = u.Stats[0].Health; r.InBattle = u.InBattle; r.Emotion = u.InBattle ? 1 : 0;
         // PC::vfunc_91 = vfunc_90's 0x23 block (pc.cpp:1645-1660): per kind health 4, attack speed 0xd, movement speed 0xe,
         // mount speed 0x20, jump height 0x16
