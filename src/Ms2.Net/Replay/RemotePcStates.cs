@@ -133,7 +133,8 @@ public struct HoldTarget
     /// EulerToMatrix(rotation), MS2 axes (what FUN_140a0b1f0 reads for the y and z angles).</summary>
     public Vector3 SeatRow0;
     /// <summary>With <see cref="HasSeat"/>: the ridee's GetCurStateId, FUN_14166cc80 (its sub), FUN_1416713c0 (its animation
-    /// speed) and FUN_141676b70 (m_unk_b80 set).</summary>
+    /// speed) and FUN_141676b70 (m_unk_b80 set, which only the own ridee's UpdateRunEffects sets, so false for a remote
+    /// ridee: see RemoteLayer.Ride).</summary>
     public int RideeState, RideeSub;
     public float RideeAnimSpeed;
     public bool RideeSpIdle;

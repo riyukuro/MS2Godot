@@ -15,9 +15,11 @@ namespace Ms2Godot.Net;
 /// The ridee has its own simple shadow (the row's &lt;shadow scale&gt;); in StateRide the rider's is off.
 /// The ride off's StateFallData (the ridee's fall start) only reaches MyPC::FUN_141676060 (statefall.cpp:104-106), so a
 /// remote PC's fall ignores it.
-/// STILL-OPEN: the breakable anchor of a ride-off, the ridee's m_unk_b80 SP idle, the mount's step keys. Mode 6 also
-/// writes the kept ride-on action's m_b28, which only a later PCBase::vfunc_120 of that action reads; a remote PC's ride
-/// is re-sent with it.
+/// A remote ridee never sets m_unk_b80 (the RunX SP idle): only Ridee::UpdateRunEffects sets it, from StateRide::vfunc_8
+/// (statemanager.cpp:1108-1116), and State::vfunc_8 runs only from MyPC's update (mypc.cpp:2966) and the own ridee's
+/// (ridee.cpp:712).
+/// STILL-OPEN: the breakable anchor of a ride-off, the mount's step keys. Mode 6 also writes the kept ride-on action's
+/// m_b28, which only a later PCBase::vfunc_120 of that action reads; a remote PC's ride is re-sent with it.
 /// </summary>
 public sealed partial class RemoteLayer
 {
