@@ -32,6 +32,11 @@ public sealed class HomeOptionRows
         for (int i = 0; i < 9; i++) { on[i] = false; level[i] = 0; }
     }
 
+    /// <summary>CubeMapInformationService::FUN_1410d0310 (@0x1410d0310, cubemapinformationservice_3.cpp:5428-5480), the whole reset: the cube map's
+    /// values (<paramref name="map"/>: owner f1c0, plot mode f330, the house info) and these rows. The client runs it at OnShutdown (:1105, GameToLogin) and
+    /// at each field teardown (FUN_1410b76a0, worldservice_1.cpp:10015). STILL-OPEN: the rest of its body (the physics actors, entity maps and timers) is not modelled.</summary>
+    public void ResetService(Ms2.Net.CubeMapInfo map) { map?.Reset(); Reset(); }
+
     /// <summary>
     /// CubeMapInformationService::FUN_1410d5640 (@0x1410d5640, :1186), UIHomeOptionDialog's CanChange: the field is a home map
     /// (CFieldData::FUN_140374410, m_nMapType 3), the service's f330 is not 1 (FUN_1410c35c0), and the service's owner

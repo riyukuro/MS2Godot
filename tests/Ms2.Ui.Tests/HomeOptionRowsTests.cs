@@ -29,6 +29,17 @@ public class HomeOptionRowsTests
     }
 
     [Test]
+    public void TheServiceResetClearsTheRowsAndTheMapsOwnerAndPlotModeTogether()
+    {
+        var map = new Ms2.Net.CubeMapInfo();
+        map.Apply(new Ms2.Net.Packets.LoadUgcMap(0, 7, new Ms2.Net.Packets.UgcMapHome(99, "", "", 0, 0, 0, 0, 0, 1, 10, 5, 0, 0, 0, new (bool, byte)[0], new Ms2.Net.Packets.UgcMapLayout[0], new Ms2.Net.Packets.UgcMapLayout[0])));
+        var r = new HomeOptionRows();
+        r.Apply(new ResponseCubeRowSwitch(2, true));
+        r.ResetService(map);
+        Assert.That((map.Owner, map.PlotMode, r.RowOn(2)), Is.EqualTo((0L, 0, false)));
+    }
+
+    [Test]
     public void TheResetPutsRowsZeroToEightBackOff()
     {
         var r = new HomeOptionRows();

@@ -145,9 +145,12 @@ public partial class LiveSession : Node
     /// <summary>DungeonRoomTable::GetRoom over the HUD's room table; null before the HUD sets it or without the row.</summary>
     public Func<int, Ms2.Quest.DungeonRoom> DungeonRoomOf;
 
+    /// <summary>CubeMapInformationService::FUN_1410d0310: the cube map's values and the home option rows go together (<see cref="Ms2.Ui.HomeOptionRows.ResetService"/>).</summary>
+    void ResetCubeService() => HomeRows.ResetService(fieldEntry.CubeMap);
+
     public LiveSession()
     {
-        fieldEntry.CubeServiceCleared += HomeRows.Reset;   // FUN_1410b76a0 at each field teardown (worldservice_1.cpp:10015)
+        fieldEntry.CubeServiceCleared += ResetCubeService;   // FUN_1410b76a0 at each field teardown (worldservice_1.cpp:10015)
         Party.BattleRecords = BattleRecords;
         BattleRecords.CharacterIdOf = id => remote?.Tracker.CharacterIdOf(id) ?? (id == selfObject ? CharacterId : 0);
         BattleRecords.NpcClassOf = id => remote?.NpcClassOf(id) ?? 0;
