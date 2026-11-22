@@ -84,6 +84,9 @@ public sealed class EffectSkipTable
     public static bool IsEffectTypeVisible(int kind, bool showOnlyMyPet, bool hideMyPet) =>
         !(showOnlyMyPet && kind == 4) && !(hideMyPet && kind == 2);
 
+    /// <summary>The constant VolumeOtherPc's Define (constantsblocks.cpp:794), its value when the constants do not set it.</summary>
+    public const float VolumeOtherPcDefine = 0.9f;
+
     /// <summary>
     /// CEffectService::FUN_1411a5110 @0x1411a5110 (effectservice.cpp:1321), a sound event at a place: hidden by
     /// <see cref="IsEffectTypeVisible"/>, or out of view on <see cref="RowSound"/> for the relation (a null table skips

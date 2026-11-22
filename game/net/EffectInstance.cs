@@ -479,7 +479,9 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
     {
         inTree = true;
         // the mesh shaders' culled side for the world the effect is placed in (RenderModes): checked on entering the tree,
-        // as the placement is set after construction
+        // as the placement is set after construction. Only here: every caller sets Transform and FileSpace before AddChild,
+        // and the scene's own node keys scale by one float, so the sign cannot change later. A caller that turns a placed
+        // effect into a mirrored basis would have to check again
         bool m = GlobalBasis.Determinant() < 0;
         if (m == mirrored) return;
         mirrored = m;

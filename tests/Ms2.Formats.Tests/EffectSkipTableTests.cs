@@ -66,6 +66,16 @@ public class EffectSkipTableTests
         Assert.That(EffectSkipTable.SoundEventVolume(null, 3, new Vector3(5000, 0, 0), eye, 1, 1, false, false), Is.EqualTo(1f));
     }
 
+    /// <summary>VolumeOtherPc's Define (constantsblocks.cpp:794) is 0.9, the other players' scale without a constants value.</summary>
+    [Test]
+    public void TheOtherPlayersVolumeDefaultsToTheClientsDefine()
+    {
+        Assert.That(EffectSkipTable.VolumeOtherPcDefine, Is.EqualTo(0.9f));
+        var t = EffectSkipTable.Parse(Xml, 1);
+        Assert.That(EffectSkipTable.SoundEventVolume(t, 3, new Vector3(10, 0, 0), Vector3.Zero, 1, EffectSkipTable.VolumeOtherPcDefine,
+            false, false), Is.EqualTo(0.9f));
+    }
+
     /// <summary>The shipped table never skips an own sound: myPC's sound distance is 0 for every quality.</summary>
     [Test]
     public void TheShippedTableNeverSkipsAnOwnSound()

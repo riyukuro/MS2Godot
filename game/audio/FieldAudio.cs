@@ -31,7 +31,7 @@ public partial class FieldAudio : Node
     SystemSoundTable systemSounds;
     HitSoundTable hitSounds;
     Ms2.Formats.World.EffectSkipTable effectSkip;
-    float volumeOtherPc = 1f;
+    float volumeOtherPc = Ms2.Formats.World.EffectSkipTable.VolumeOtherPcDefine;
     public SoundLibrary Library => library;
     public MusicController MusicState { get; private set; }
     public BossBgmTracker BossBgm { get; private set; }
@@ -98,7 +98,7 @@ public partial class FieldAudio : Node
             systemSounds = SystemSounds(packs);
             hitSounds = HitSounds(packs);
             effectSkip = EffectSkip(packs);
-            try { volumeOtherPc = World.FieldContents.Constants(packs).Float("VolumeOtherPc", 1f); }
+            try { volumeOtherPc = World.FieldContents.Constants(packs).Float("VolumeOtherPc", Ms2.Formats.World.EffectSkipTable.VolumeOtherPcDefine); }
             catch (Exception ex) { GD.PushWarning("audio: constants: " + ex.Message); }
         }
         musicPlayers[0] = new AudioStreamPlayer { Name = "MusicA" };
