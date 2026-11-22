@@ -83,19 +83,28 @@ public sealed class UserSyncIn {
 
 /// <summary>Outbound 0x12 (StateLocalController::vfunc_0): u8 sync number, i32 server tick, i32 client tick, u8 count, count x (StateSync + i32 client tick).
 /// With <see cref="Ride"/> it is RideSync 0x41 (StateRideeController::vfunc_0, state.cpp:537-562), the mount's records in the same layout.</summary>
-public sealed class UserSyncOut : IOutPacket {
+public sealed class UserSyncOut : IProfileOutPacket {
     public byte SyncNumber; public int ServerTick, ClientTick;
+    /// <summary>GMS2 only, read side: the trailing i32, the server time of the first record (see <see cref="TrailerTick"/>).</summary>
+    public int Trailer;
+    /// <summary>GMS2 writes after the records the server time of its first record: the packet's server tick minus how long ago that record's client tick was
+    /// (the packet's own server tick when it has no record). Matches the trailing int of every recorded one-record packet.</summary>
+    public int TrailerTick => ServerTick - (ClientTick - (Records.Count > 0 ? Records[0].Tick : ClientTick));
     public bool Ride;
     public List<(StateSync Record, int Tick)> Records = new();
     public Outbound Op => Ride ? Outbound.RideSync : Outbound.UserSync;
-    public void Write(ByteWriter w) {
+    public void Write(ByteWriter w) => Write(w, ProtocolProfile.Kms2525);
+    public void Write(ByteWriter w, ProtocolProfile profile) {
         w.WriteByte(SyncNumber); w.WriteInt(ServerTick); w.WriteInt(ClientTick); w.WriteByte((byte) Records.Count);
         foreach (var (rec, tick) in Records) { rec.Write(w); w.WriteInt(tick); }
+        if (profile.IsGms2) w.WriteInt(TrailerTick);
     }
-    public static UserSyncOut Read(ByteReader r) {
+    public static UserSyncOut Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+    public static UserSyncOut Read(ByteReader r, ProtocolProfile profile) {
         var p = new UserSyncOut { SyncNumber = r.ReadByte(), ServerTick = r.ReadInt(), ClientTick = r.ReadInt() };
         int n = r.ReadByte();
         for (int i = 0; i < n; i++) p.Records.Add((StateSync.Read(r), r.ReadInt()));
+        if (profile.IsGms2) p.Trailer = r.ReadInt();
         r.ExpectEnd("UserSync (out)");
         return p;
     }
