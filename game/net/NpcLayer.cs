@@ -562,6 +562,8 @@ public sealed class NpcLayer
     /// The animation plays at the block's speed, unclamped (CAnimationManager::PlayAnimation passes fScale through); a Run_ sequence at the
     /// row's anispeed times PCBase::vfunc_97 (<see cref="ScaleRate"/>), times the unclamped ratio while it catches up. As in
     /// CAnimationManager::PlayAnimation the speed only takes when the sequence changes.
+    /// STILL-OPEN: a block speed of 0 is no clean freeze in either client: Godot scales the cross-fade by SpeedScale too, and the
+    /// client's frequency 0 gives a NaN or infinite sequence time (NiControllerSequence.cpp:755).
     /// A jump block (-2/-3) starts the arc mover m_unkDB0, which keeps the yaw target and the snap from applying, as a dead body does here.
     /// STILL-OPEN: the arc mover is not ported; a jumping npc eases toward the block position.
     /// STILL-OPEN: in state 0xd the client keeps the npc's own height; the npc state is not tracked here.
@@ -642,8 +644,8 @@ public sealed class NpcLayer
         if (buff == model) return 1f;
         if (model / 2f > buff) return 1.5f;
         if (buff < model) return 2f - buff / model;
-        if (model * 2f >= buff) return 1f - (buff - model) / (model * 2f);
-        return 0.5f;
+        if (model * 2f < buff) return 0.5f;
+        return 1f - (buff - model) / (model * 2f);
     }
 
     /// <summary>
