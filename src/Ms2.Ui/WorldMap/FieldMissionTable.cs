@@ -32,9 +32,7 @@ public sealed class FieldMissionTable
     /// </summary>
     public static FieldMissionTable Load(PackSet packs)
     {
-        foreach (var p in new[] { "table/kr/fieldmission.xml", "table/fieldmission.xml" })
-            if (packs.Exists("Xml", p)) return Parse(GameStrings.Parse(packs.Read("Xml", p)));
-        return new FieldMissionTable();
+        return TablePath.Resolve(packs, "fieldmission.xml") is { } p ? Parse(GameStrings.Parse(packs.Read("Xml", p))) : new FieldMissionTable();
     }
 
     public static FieldMissionTable Parse(XDocument doc)

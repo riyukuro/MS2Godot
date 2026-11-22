@@ -12,7 +12,9 @@ namespace Ms2.Quest;
 public sealed class FieldMeta
 {
     public const string Archive = "Xml";
+    /// <summary>The KMS entry; see <see cref="EntryOf"/> for the region folder the data really has.</summary>
     public const string Entry = "table/kr/fieldmetadata.xml";
+    public static string EntryOf(PackSet packs) => TablePath.Resolve(packs, "fieldmetadata.xml");
 
     /// <summary>Every field that has a fieldPortal element, in file order (the nodes of the map graph).</summary>
     public readonly List<int> PortalFields = new();
@@ -65,7 +67,7 @@ public sealed class FieldMeta
     /// <summary>The table read from the pack set, streamed (<see cref="XmlRows"/>: the text and reader XDocument.Parse uses).</summary>
     public static FieldMeta Load(PackSet packs)
     {
-        using var r = XmlRows.Open(packs.Read(Archive, Entry));
+        using var r = XmlRows.Open(packs.Read(Archive, EntryOf(packs) ?? Entry));
         return Read(r);
     }
 

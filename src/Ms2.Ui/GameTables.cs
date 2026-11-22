@@ -201,9 +201,8 @@ public sealed class GameTables
         var r = new ReadTables();
         // CGloabalFactor::LoadMultiControl (gloabalfactor.cpp:128): Table/multicontrol.xml, the locale folder first; the
         // tooltip reads only type equipmentSellPrice (3), keyed by rank
-        foreach (var path in new[] { "table/kr/multicontrol.xml", "table/multicontrol.xml" })
+        foreach (var path in TablePath.Resolve(packs, "multicontrol.xml") is { } mc ? new[] { mc } : Array.Empty<string>())
         {
-            if (!packs.Exists("Xml", path)) continue;
             foreach (var e in GameStrings.Parse(packs.Read("Xml", path)).Root?.Elements("multi") ?? Enumerable.Empty<XElement>())
             {
                 if (!string.Equals((string)e.Attribute("type"), "equipmentSellPrice", StringComparison.OrdinalIgnoreCase)) continue;
@@ -794,30 +793,27 @@ public sealed class GameTables
     /// <summary>CSmartPushTable (Table/smartPush.xml, smartpushtable.cpp:105), read on first use. GetXmlPath looks in the locale
     /// folder first, as for multicontrol above; the packs hold the file only as table/kr/smartpush.xml.</summary>
     public Hud.SmartPushTable SmartPush => smartPush ??= packs == null ? Hud.SmartPushTable.Empty
-        : new Hud.SmartPushTable(Xml(packs.Exists("Xml", "table/kr/smartpush.xml") ? "table/kr/smartpush.xml" : "table/smartpush.xml"), e => FeatureElements.IsAvailable(packs, e));
+        : new Hud.SmartPushTable(Xml(TablePath.Resolve(packs, "smartpush.xml") ?? "table/smartpush.xml"), e => FeatureElements.IsAvailable(packs, e));
     Ms2.Ui.Items.ItemEnchantTransformTable enchantTransform;
     /// <summary>CItemEnchantTransformTable (GetXmlPath("Table", "ItemEnchantTransform.xml"), the locale folder first as for
     /// smartPush above), read on first use.</summary>
     public Ms2.Ui.Items.ItemEnchantTransformTable EnchantTransform => enchantTransform ??= packs == null ? Ms2.Ui.Items.ItemEnchantTransformTable.Empty
-        : new Ms2.Ui.Items.ItemEnchantTransformTable(Xml(packs.Exists("Xml", "table/kr/itemenchanttransform.xml") ? "table/kr/itemenchanttransform.xml"
-            : "table/itemenchanttransform.xml"), e => FeatureElements.IsAvailable(packs, e));
+        : new Ms2.Ui.Items.ItemEnchantTransformTable(Xml(TablePath.Resolve(packs, "itemenchanttransform.xml") ?? "table/itemenchanttransform.xml"), e => FeatureElements.IsAvailable(packs, e));
     Ms2.Ui.Items.ItemExtractionTable extraction;
     /// <summary>CItemExtractionTable (GetXmlPath("Table", "itemExtraction.xml"), the locale folder first), read on first use.</summary>
     public Ms2.Ui.Items.ItemExtractionTable Extraction => extraction ??= packs == null ? Ms2.Ui.Items.ItemExtractionTable.Empty
-        : new Ms2.Ui.Items.ItemExtractionTable(Xml(packs.Exists("Xml", "table/kr/itemextraction.xml") ? "table/kr/itemextraction.xml"
-            : "table/itemextraction.xml"));
+        : new Ms2.Ui.Items.ItemExtractionTable(Xml(TablePath.Resolve(packs, "itemextraction.xml") ?? "table/itemextraction.xml"));
     Ms2.Ui.Items.SetItemTable setItems;
     /// <summary>SetItemTable (GetXmlPath("Table", "SetItemInfo.xml"), the locale folder first), read on first use.</summary>
     public Ms2.Ui.Items.SetItemTable SetItems => setItems ??= packs == null ? Ms2.Ui.Items.SetItemTable.Empty
-        : new Ms2.Ui.Items.SetItemTable(Xml(packs.Exists("Xml", "table/kr/setiteminfo.xml") ? "table/kr/setiteminfo.xml" : "table/setiteminfo.xml"),
+        : new Ms2.Ui.Items.SetItemTable(Xml(TablePath.Resolve(packs, "setiteminfo.xml") ?? "table/setiteminfo.xml"),
             (p, c, k) => FeatureElements.Collect(packs, p, c, k), e => FeatureElements.IsAvailable(packs, e), StatOption, k => ItemOptions.SpecialOption(k));
     Ms2.Ui.Items.ItemMergeOptionTable mergeOptions;
     /// <summary>CItemMergeOptionTable (GetXmlPath("Table", "itemMergeOptionBase.xml"), the locale folder first), read on
     /// first use.</summary>
     public Ms2.Ui.Items.ItemMergeOptionTable MergeOptions => mergeOptions ??= packs == null ? Ms2.Ui.Items.ItemMergeOptionTable.Empty
-        : new Ms2.Ui.Items.ItemMergeOptionTable(Xml(packs.Exists("Xml", "table/kr/itemmergeoptionbase.xml") ? "table/kr/itemmergeoptionbase.xml"
-            : "table/itemmergeoptionbase.xml"), (p, c, k) => FeatureElements.Collect(packs, p, c, k), ItemOptions.FindStatByName,
-            ItemOptions.FindSpecialByName);
+        : new Ms2.Ui.Items.ItemMergeOptionTable(Xml(TablePath.Resolve(packs, "itemmergeoptionbase.xml") ?? "table/itemmergeoptionbase.xml"),
+            (p, c, k) => FeatureElements.Collect(packs, p, c, k), ItemOptions.FindStatByName, ItemOptions.FindSpecialByName);
     Ms2.Ui.Skills.SkillCompactControlTable skillCompactControl;
     /// <summary>CSkillCompactControlTable (Table/SkillCompactControl.xml), read on first use; empty with feature 0x10
     /// (CompactControl) off, as Load @0x140dca800 reads nothing then.</summary>

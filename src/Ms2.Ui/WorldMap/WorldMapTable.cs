@@ -80,9 +80,7 @@ public sealed class WorldMapTable
     static XDocument Xml(PackSet packs, string name)
     {
         // GetXmlPath("Table", name): the locale folder first
-        foreach (var p in new[] { "table/kr/" + name.ToLowerInvariant(), "table/" + name.ToLowerInvariant() })
-            if (packs.Exists("Xml", p)) return GameStrings.Parse(packs.Read("Xml", p));
-        return null;
+        return TablePath.Resolve(packs, name) is { } p ? GameStrings.Parse(packs.Read("Xml", p)) : null;
     }
 
     static int Int(XElement e, string name, int def = 0) =>

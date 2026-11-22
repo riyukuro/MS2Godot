@@ -387,12 +387,8 @@ public sealed class MasteryRecipeTable
         };
     }
 
-    XDocument Read(params string[] paths)
-    {
-        foreach (var p in paths)                                  // GetXmlPath("Table", ...)
-            if (packs != null && packs.Exists("Xml", p)) return GameStrings.Parse(packs.Read("Xml", p));
-        return null;
-    }
+    XDocument Read(string file) =>                                // GetXmlPath("Table", ...)
+        packs != null && TablePath.Resolve(packs, file) is { } p ? GameStrings.Parse(packs.Read("Xml", p)) : null;
 
     bool Available(XElement e) => doc != null || FeatureElements.IsAvailable(packs, e);
 
@@ -404,7 +400,7 @@ public sealed class MasteryRecipeTable
         mastery = new SortedDictionary<int, GradeRow>[12];
         for (int i = 0; i < 12; i++) mastery[i] = new();
         differentials = new();
-        var d = doc ?? Read("table/kr/masteryreceipe.xml", "table/masteryreceipe.xml");
+        var d = doc ?? Read("masteryreceipe.xml");
         foreach (var e in d?.Root?.Elements("receipe") ?? Enumerable.Empty<XElement>())
         {
             if (!Available(e)) continue;
@@ -416,10 +412,10 @@ public sealed class MasteryRecipeTable
                 list.Add((r.Id, ing.Count));
             }
         }
-        var m = doc != null ? masteryDoc : Read("table/kr/mastery.xml", "table/mastery.xml");
+        var m = doc != null ? masteryDoc : Read("mastery.xml");
         if (!LoadMastery(m))
             for (int i = 0; i < 12; i++) mastery[i].Clear();        // a failed Load: STILL-OPEN what the client keeps
-        var f = doc != null ? differentialDoc : Read("table/kr/masterydifferentialfactor.xml", "table/masterydifferentialfactor.xml");
+        var f = doc != null ? differentialDoc : Read("masterydifferentialfactor.xml");
         foreach (var e in f?.Root?.Elements("v") ?? Enumerable.Empty<XElement>())
             differentials[ItemData.Atoi((string)e.Attribute("differential") ?? "0")] = (UInt(e, "factor"), (string)e.Attribute("icon") ?? "");
     }

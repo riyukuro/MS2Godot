@@ -217,7 +217,7 @@ public sealed partial class QuestTable
                 t.Words.AddTable(table, packs.Read("Xml", entry), t.Available, fillOnly: true);
             }
 
-        t.Words.LoadBold(packs, t.Available, packs.Exists(FieldMeta.Archive, FieldMeta.Entry) ? QuestMapGraph.SharedMeta(packs).ParentFields : null);   // the shared table, not a second read
+        t.Words.LoadBold(packs, t.Available, FieldMeta.EntryOf(packs) != null ? QuestMapGraph.SharedMeta(packs).ParentFields : null);   // the shared table, not a second read
 
         var common = t.commonStrings = new Dictionary<string, string>();
         foreach (var lang in languages)

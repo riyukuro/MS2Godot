@@ -159,6 +159,9 @@ public sealed partial class ReservedWords
             catch (System.Xml.XmlException) { return null; }
         }
         var entries = packs.List(A).ToList();
+        // the table's entry as the pack names it: the locale folder first, then the plain path (GetXmlPath("Table", file))
+        string FindTable(string file) => TablePath.Candidates(file)
+            .Select(c => entries.FirstOrDefault(n => string.Equals(n, c, StringComparison.OrdinalIgnoreCase))).FirstOrDefault(n => n != null);
         bool Under(string n, string dir) => n.StartsWith(dir, StringComparison.OrdinalIgnoreCase) && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase);
 
         // itemdatatable.cpp:743-765: <item id> with a picked environment (one available <environment> child is enough)
@@ -198,8 +201,7 @@ public sealed partial class ReservedWords
         SortedDictionary<long, DictionaryEntry> Dict(string file)
         {
             var map = new SortedDictionary<long, DictionaryEntry>();
-            string entry = entries.FirstOrDefault(n => string.Equals(n, "table/kr/" + file, StringComparison.OrdinalIgnoreCase))
-                        ?? entries.FirstOrDefault(n => string.Equals(n, "table/" + file, StringComparison.OrdinalIgnoreCase));
+            string entry = FindTable(file);
             if (entry == null) return map;
             var rows = new List<DictionaryEntry>();
             if (Rows(packs.Read(A, entry), "key",
@@ -246,8 +248,7 @@ public sealed partial class ReservedWords
         fieldMapSearch = searchable;
         var tiles = new HashSet<long>();
         string Table(string name) =>
-            entries.FirstOrDefault(n => string.Equals(n, "table/kr/" + name, StringComparison.OrdinalIgnoreCase))
-            ?? entries.FirstOrDefault(n => string.Equals(n, "table/" + name, StringComparison.OrdinalIgnoreCase));
+            FindTable(name);
         var list = Table("worldmap.xml") is { } wm ? Doc(wm) : null;
         foreach (var x in list?.Root?.Elements("xml") ?? Enumerable.Empty<XElement>())
         {

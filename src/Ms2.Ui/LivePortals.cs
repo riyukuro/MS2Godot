@@ -591,9 +591,8 @@ public sealed class PortalAction
     public static Dictionary<int, int> ContinentShadows(PackSet packs)
     {
         var map = new Dictionary<int, int>();
-        foreach (var p in new[] { "table/kr/mapcontinenttable.xml", "table/mapcontinenttable.xml" })
+        foreach (var p in TablePath.Resolve(packs, "mapcontinenttable.xml") is { } mp ? new[] { mp } : Array.Empty<string>())
         {
-            if (!packs.Exists("Xml", p)) continue;
             foreach (var c in GameStrings.Parse(packs.Read("Xml", p))?.Root?.Elements("continent") ?? Enumerable.Empty<XElement>())
                 if (int.TryParse((string)c.Attribute("id"), out int id))
                     map[id] = int.TryParse((string)c.Attribute("shadowContinent"), out int s) ? s : 0;

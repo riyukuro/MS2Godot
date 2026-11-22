@@ -52,9 +52,7 @@ public sealed class HousingTable
     /// then the shared one; null when neither has it.</summary>
     public static string EntryOf(PackSet packs, string file)
     {
-        foreach (var e in new[] { "table/kr/" + file, "table/" + file })
-            if (packs.Exists("Xml", e)) return e;
-        return null;
+        return TablePath.Resolve(packs, file);
     }
 
     public HousingTable(PackSet packs)

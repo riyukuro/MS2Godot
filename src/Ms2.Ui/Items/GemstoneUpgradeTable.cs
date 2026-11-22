@@ -38,8 +38,7 @@ public sealed class GemstoneUpgradeTable
         if (rows != null) return rows;
         rows = new();
         XDocument doc = null;
-        foreach (var p in new[] { "table/kr/itemgemstoneupgrade.xml", "table/itemgemstoneupgrade.xml" })   // GetXmlPath("Table", ...)
-            if (packs != null && packs.Exists("Xml", p)) { doc = GameStrings.Parse(packs.Read("Xml", p)); break; }
+        if (packs != null && TablePath.Resolve(packs, "itemgemstoneupgrade.xml") is { } gp) doc = GameStrings.Parse(packs.Read("Xml", gp));   // GetXmlPath("Table", ...)
         if (doc?.Root == null) return rows;
         foreach (var e in doc.Root.Elements("key"))
         {

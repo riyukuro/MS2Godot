@@ -24,9 +24,8 @@ public sealed class LapenshardTable
         if (masks == null)
         {
             masks = new();
-            foreach (var p in new[] { "table/kr/itemlapenshardupgrade.xml", "table/itemlapenshardupgrade.xml" })   // GetXmlPath("Table", ...)
+            foreach (var p in packs != null && TablePath.Resolve(packs, "itemlapenshardupgrade.xml") is { } lp ? new[] { lp } : Array.Empty<string>())   // GetXmlPath("Table", ...)
             {
-                if (packs == null || !packs.Exists("Xml", p)) continue;
                 var root = GameStrings.Parse(packs.Read("Xml", p)).Root;
                 if (root == null) break;
                 foreach (var e in root.Elements("key"))
