@@ -68,11 +68,12 @@ public class BreakableTagPassTests
     }
 
     [Test]
-    public void AnAnimatedMarkerWithoutAnIdleNameStillPlaysIt()
+    public void AnAnimatedMarkerWithoutAnIdleNamePlaysNothing()
     {
-        // SetState(2) (breakableobject.cpp:302): m_bHasAnim alone gates the idle, so an empty m_strIdleAnim is played too
+        // SetState(2) (breakableobject.cpp:302): m_bHasAnim alone gates the idle; an empty m_strIdleAnim finds no sequence,
+        // so no name reaches the player (an empty one would resume the assigned animation)
         var m = Field(Actor("Box2")).Find("box2");
-        Assert.That((m.HasAnim, m.State, m.Play, m.PlayForce), Is.EqualTo((true, 2, "", true)));
+        Assert.That((m.HasAnim, m.State, m.Play), Is.EqualTo((true, 2, (string)null)));
     }
 
     [Test]

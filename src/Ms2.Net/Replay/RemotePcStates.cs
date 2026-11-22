@@ -295,17 +295,44 @@ public sealed class RemotePcStates
     /// </summary>
     public void SetDead(bool dead) => Dead = dead;
 
+    /// <summary>PCBase m_spB10: the state machine of the ridee this PC rides (set by PCBase::vfunc_120, cleared by
+    /// vfunc_121 before its state change), null when not riding.</summary>
+    public RemotePcStates Ridee { get; private set; }
+
     /// <summary>
-    /// PC::vfunc_59 (@0x1416537d0, pc.cpp:1189-1194): PC::vfunc_124 (pc.cpp:1198-1205) lets the state through when the PC
-    /// is not dead and has health (or no max health, FUN_141670a30(4)), or for the death 0xc, revival 0x18 and observer
-    /// 0x3f states; then PCBase::vfunc_59 (pcbase.cpp:1098-1113) -> ChangeState. <paramref name="hp"/> and
-    /// <paramref name="hpMax"/> are the PC's current and maximum health. The PC is taken as loaded (m_unk_b4) and not
-    /// riding another's mount (m_spB10).
+    /// PC::vfunc_124 (@0x141653840, pc.cpp:1198-1205): a state goes through when the PC is not dead and has health
+    /// <paramref name="hp"/> (or no max health <paramref name="hpMax"/>, FUN_141670a30(4)), or for the death 0xc, revival
+    /// 0x18 and observer 0x3f states.
+    /// </summary>
+    public bool Allows(int state, long hp, long hpMax) =>
+        (!Dead && (hpMax <= 0 || hp != 0)) || state == 0xc || state == 0x18 || state == 0x3f;
+
+    /// <summary>
+    /// PC::vfunc_59 (@0x1416537d0, pc.cpp:1189-1194): <see cref="Allows"/> (PC::vfunc_124), then PCBase::vfunc_59
+    /// (pcbase.cpp:1097-1111): a PC in StateRide (0x21) with a ridee (m_spB10) passes the state to the ridee's vfunc_59 and
+    /// keeps its own; else ChangeState. The PC is taken as loaded (m_unk_b4).
     /// </summary>
     public void ServerState(int state, long hp, long hpMax)
     {
-        if (!((!Dead && (hpMax <= 0 || hp != 0)) || state == 0xc || state == 0x18 || state == 0x3f)) return;
-        ChangeState(state);
+        if (!Allows(state, hp, hpMax)) return;
+        if (Cur == StateRide && Ridee != null) Ridee.ChangeState(state);
+        else ChangeState(state);
+    }
+
+    /// <summary>PCBase::vfunc_120 (pcbase.cpp:3289-3343): m_spB10 = the ridee, then Ridee::vfunc_10 (ridee.cpp:461) runs the
+    /// rider's vfunc_59(0x21) (<see cref="ServerState"/>), which a dead or 0-health PC refuses.</summary>
+    public void RideOn(RemotePcStates ridee, long hp, long hpMax)
+    {
+        Ridee = ridee;
+        ServerState(StateRide, hp, hpMax);
+    }
+
+    /// <summary>PCBase::vfunc_121 (pcbase.cpp:3405-3415): m_spB10 = 0, then vfunc_59(1) when the ridee stood on the ground,
+    /// else vfunc_59(5) (<see cref="ServerState"/>).</summary>
+    public void RideOff(bool ground, long hp, long hpMax)
+    {
+        Ridee = null;
+        ServerState(ground ? StateIdle : StateFall, hp, hpMax);
     }
 
     /// <summary>

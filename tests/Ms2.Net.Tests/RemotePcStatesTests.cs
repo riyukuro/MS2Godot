@@ -1021,4 +1021,37 @@ public class RemotePcStatesTests {
         sm.UserState(RemotePcStates.StateWalk, 0, 0);
         Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateWalk));
     }
+
+    [Test] public void AMountedPcPassesServerStatesToItsRidee() {
+        // PCBase::vfunc_59 (pcbase.cpp:1097-1111): in StateRide with m_spB10 the state goes to the ridee; OnUserState 12
+        // then runs vfunc_137 on the rider, which is not in the death state, so its dead flag is set
+        var rider = new RemotePcStates(new Body());
+        var ridee = new RemotePcStates(new Body());
+        rider.Spawn(); ridee.Spawn();
+        rider.RideOn(ridee, 100, 100);
+        Assert.That((rider.Cur, rider.Ridee), Is.EqualTo((RemotePcStates.StateRide, ridee)));
+        Assert.That(rider.UserState(RemotePcStates.StateDead, 0, 100), Is.True);
+        Assert.That((rider.Cur, ridee.Cur, rider.Dead), Is.EqualTo((RemotePcStates.StateRide, RemotePcStates.StateDead, true)));
+        // vfunc_121: m_spB10 cleared first, then vfunc_59(1) through vfunc_124, which a dead pc refuses
+        rider.RideOff(true, 0, 100);
+        Assert.That((rider.Cur, rider.Ridee), Is.EqualTo((RemotePcStates.StateRide, (RemotePcStates)null)));
+    }
+
+    [Test] public void ADeadPcStaysOutOfTheRideAndALivingOneGetsOff() {
+        // FieldAddUser with no health and a ride: Ridee::vfunc_10's vfunc_59(0x21) is refused by PC::vfunc_124
+        var rider = new RemotePcStates(new Body());
+        var ridee = new RemotePcStates(new Body());
+        rider.Spawn();
+        rider.SetDead(true);
+        rider.RideOn(ridee, 0, 100);
+        Assert.That((rider.Cur, rider.Ridee), Is.EqualTo((RemotePcStates.StateFall, ridee)));
+        var live = new RemotePcStates(new Body());
+        live.Spawn();
+        live.RideOn(ridee, 50, 100);
+        live.RideOff(false, 50, 100);
+        Assert.That((live.Cur, live.Ridee), Is.EqualTo((RemotePcStates.StateFall, (RemotePcStates)null)));
+        live.RideOn(ridee, 50, 100);
+        live.RideOff(true, 50, 100);
+        Assert.That(live.Cur, Is.EqualTo(RemotePcStates.StateIdle));
+    }
 }

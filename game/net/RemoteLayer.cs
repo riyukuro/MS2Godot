@@ -199,7 +199,8 @@ public sealed partial class RemoteLayer : Node3D
     public bool SetCraftMode(int objectId, int cubeMode, int craftMode, Ms2.Net.Packets.CubeItemInfo item)
     {
         if (!users.TryGetValue(objectId, out var r) || r.Pc.States.Dead) return false;
-        if (!r.Cube.InCubeMode) r.Pc.States.ChangeState(r.Cube.ModelLoaded ? RemotePcStates.StateIdle : RemotePcStates.StateFall);
+        // vfunc_59 (PC::vfunc_59: the vfunc_124 gate, and a mounted pc's state goes to its ridee)
+        if (!r.Cube.InCubeMode) r.Pc.States.ServerState(r.Cube.ModelLoaded ? RemotePcStates.StateIdle : RemotePcStates.StateFall, r.HpCur, r.HpMax);
         r.Cube.Set(cubeMode, craftMode, item, false);
         RefreshWeapons(r);
         return true;

@@ -109,7 +109,8 @@ public sealed class BreakableObjects
             switch (state)
             {
                 case 2:
-                    if (HasAnim) (Play, PlayForce) = (IdleAnim ?? "", true);   // m_bHasAnim alone gates it (:302), an empty name included
+                    // m_bHasAnim alone gates it (:302); an empty name finds no sequence there, so it plays nothing here
+                    if (HasAnim && !string.IsNullOrEmpty(IdleAnim)) (Play, PlayForce) = (IdleAnim, true);
                     break;
                 case 3:
                     if (!string.IsNullOrEmpty(DeadEffect)) Effect = DeadEffect;

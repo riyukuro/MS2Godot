@@ -39,7 +39,8 @@ public sealed partial class RemoteLayer
     /// <summary>
     /// PCBase::vfunc_120 (@0x141676b90): nothing for a null action or with a ridee set; Ridee::FUN_1417043a0 loads the row
     /// (an unknown riding id makes no ridee); the ridee takes the rider's position and direction, Ridee::vfunc_10 raises it by
-    /// 25 and puts the rider in StateRide (0x21).
+    /// 25 and asks the rider's vfunc_59(0x21), which PC::vfunc_124 refuses for a dead or 0-health pc (the ridee is made
+    /// all the same).
     /// </summary>
     void RideOn(Remote r, RideOnAction a)
     {
@@ -51,24 +52,26 @@ public sealed partial class RemoteLayer
         AddChild(ridee.Body);
         ridee.Spawn();
         r.Ridee = ridee;
-        r.Pc.States.ChangeState(RemotePcStates.StateRide);
+        r.Pc.States.RideOn(ridee.States, r.HpCur, r.HpMax);
         r.NoBoarding = a.Flag;            // PC::FUN_1416642c0(m_b28), pcbase.cpp:3341-3343
     }
 
     /// <summary>
     /// PCBase::vfunc_121 (@0x1416773f0): the rider takes the ridee's position and direction, the ridee is released, the
-    /// jump stopped, then StateIdle when the ridee stood on the ground (FUN_141671a30) or StateFall.
+    /// jump stopped, then vfunc_59 of StateIdle when the ridee stood on the ground (FUN_141671a30) or StateFall, through
+    /// PC::vfunc_124.
     /// </summary>
     void RideOff(Remote r)
     {
         var ridee = r.Ridee;
         if (ridee == null) return;
-        Dismount(r.Pc, r.Visual, ridee);
+        Dismount(r.Pc, r.Visual, ridee, r.HpCur, r.HpMax);
         FreeRidee(r);
     }
 
-    /// <summary>The rider's side of <see cref="RideOff"/>, before the ridee is freed.</summary>
-    public static void Dismount(RemotePc rider, Node3D riderVisual, RemotePc ridee)
+    /// <summary>The rider's side of <see cref="RideOff"/>, before the ridee is freed; <paramref name="hp"/> and
+    /// <paramref name="hpMax"/> are the rider's health for PC::vfunc_124.</summary>
+    public static void Dismount(RemotePc rider, Node3D riderVisual, RemotePc ridee, long hp, long hpMax)
     {
         bool ground = ridee.OnGround;
         rider.Body.Position = ridee.Body.Position;
@@ -76,7 +79,7 @@ public sealed partial class RemoteLayer
         rider.RotationZ = ridee.RotationZ;
         rider.States.TargetYaw = ridee.RotationZ;
         rider.StopJump();
-        rider.States.ChangeState(ground ? RemotePcStates.StateIdle : RemotePcStates.StateFall);
+        rider.States.RideOff(ground, hp, hpMax);
     }
 
     static void FreeRidee(Remote r)

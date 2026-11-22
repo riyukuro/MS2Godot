@@ -88,7 +88,7 @@ public partial class RemoteRideCheck : Node3D
             ridee = RemotePc.CreateRidee("Ridee", m, MoveConfig.SceneGravity, rider.Body.Position + Vector3.Up * 25f, rider.RotationZ, faceGrids);
             AddChild(ridee.Body);
             ridee.Spawn();
-            rider.States.ChangeState(RemotePcStates.StateRide);
+            rider.States.RideOn(ridee.States, 1, 1);
             GD.Print($"remote ride: riding {m.Data.Id} run speed {ridee.RunSpeed}, rider idle '{m.Data.AniPCIdle}' run '{m.Data.AniPCRun}'");
             return;
         }
@@ -122,7 +122,7 @@ public partial class RemoteRideCheck : Node3D
             case 150:
             {
                 var at = ridee.Body.Position;
-                RemoteLayer.Dismount(rider, rider.Visual, ridee);
+                RemoteLayer.Dismount(rider, rider.Visual, ridee, 1, 1);
                 ridee.Free();
                 ridee = null;
                 if (rider.Body.Position != at) fails.Add($"dismount at {rider.Body.Position}, ridee was at {at}");

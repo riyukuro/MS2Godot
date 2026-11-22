@@ -478,7 +478,7 @@ public sealed class RemotePc : IRemotePc
 
     public float Gait(float speed, float run, float walk, out bool isRun) => ActionAnims.GaitRate(speed, run, walk, out isRun) * ScaleAnimRate;
 
-    // a mount's are its row's, in m/s (Ridee::FUN_1417043a0's m_unk_180 y / z / w)
+    // a mount's are its row's, in units/s (row * 100; Ridee::FUN_1417043a0's m_unk_180 y / z / w)
     public float WalkSpeed => Mount == null ? MoveConfig.WalkSpeed : Mount.Data.WalkSpeed * 100f;
     public float RunSpeed => Mount == null ? MoveConfig.RunSpeed : Mount.Data.RunSpeed * 100f;
     public float SwimSpeed => Mount == null ? MoveConfig.SwimSpeed : Mount.Data.SwimSpeed * 100f;

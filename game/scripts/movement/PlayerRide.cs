@@ -160,7 +160,7 @@ public sealed class Mount
 
 /// <summary>
 /// Riding: the rider sits in StateRide (0x21) on the mount's seat while the mount runs the movement states with the
-/// riding row's speeds (walkSpeed, runSpeed, swimSpeed in m/s). The jump height stays the rider's.
+/// riding row's speeds (walkSpeed, runSpeed, swimSpeed, row * 100 in units/s). The jump height stays the rider's.
 /// The mount (Ridee) is a PCBase with its own controller of the PC's size: Ridee::FUN_1417043a0 (@0x1417043a0) sets the
 /// model size to (25, 105) and PCBase::vfunc_10 creates the capsule from it, with collision group 2 and groups 0x399
 /// (Ridee::vfunc_10 @0x141704750), the same as PC::vfunc_10's. So the body keeps the player's capsule and controller.
