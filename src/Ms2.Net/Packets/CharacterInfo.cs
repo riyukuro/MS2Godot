@@ -272,6 +272,11 @@ public sealed class MyCharacter {
     /// (mypc.cpp:4882-4905) re-sample DAT_143aea120 (GetAbilityRate(0x23)) on each call, whether or not the item has a model
     /// preset and was worn or taken off.</summary>
     public event Action PutOnOrOff;
+    /// <summary>The item event hub's vfunc_20 (scenestategame.cpp:3117, :3123) after the own PC wore an item (PC::vfunc_127): the item
+    /// event listeners' vfunc_21 (the beauty shop, uibeautyshopdialog.cpp:896) take the item. The client raises it on the same
+    /// calls as <see cref="PutOnOrOff"/>, whether or not the item has a model preset; the beauty shop sub scene's slot filter
+    /// (:3114, slots 1, 2 and 3 only) belongs to the host, which knows whether that shop is open.</summary>
+    public event Action<EquipItem> OwnItemPutOn;
 
     /// <summary>The own FieldAddUser: object id, user block, the title (PC::FUN_141661c00 = m_n10f4) and the architect score
     /// values after the ride block (scenestategame.cpp:11220-11224).</summary>
@@ -483,6 +488,7 @@ public sealed class MyCharacter {
             Changed?.Invoke();
         }
         PutOnOrOff?.Invoke();
+        OwnItemPutOn?.Invoke(p.Item);
         return changed;
     }
 

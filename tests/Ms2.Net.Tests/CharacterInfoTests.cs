@@ -188,4 +188,23 @@ public class CharacterInfoTests {
         me.Apply(new ItemPutOff(7, 12), layer);
         Assert.That(calls, Is.EqualTo(4), "an uid not worn, another pc");
     }
+
+    /// <summary>The item event hub's vfunc_20 (scenestategame.cpp:3117) follows PC::vfunc_127 for the own PC only.</summary>
+    [Test]
+    public void TheOwnPutOnRaisesTheItemEventWithTheItemOnly()
+    {
+        var me = new MyCharacter();
+        var u = new FieldAddUser { ObjectId = 1, User = new UserBlock { Name = "a" } };
+        me.Apply(u);
+        var seen = new List<int>();
+        me.OwnItemPutOn += i => seen.Add(i.Id);
+        Func<int, int?> layer = id => id == 15000002 ? 0 : null;
+        Func<int, bool> known = id => id != 1;
+        me.Apply(new ItemPutOn(1, 0, new EquipItem { Id = 15000002, Uid = 13, Slot = EquipSlot.RH }), layer, known);
+        me.Apply(new ItemPutOn(1, 0, new EquipItem { Id = 50000002, Uid = 14, Slot = EquipSlot.CL }), layer, known);
+        me.Apply(new ItemPutOn(7, 0, new EquipItem { Id = 15000002, Uid = 15 }), layer, known);
+        me.Apply(new ItemPutOn(1, 3, new EquipItem { Id = 15000002, Uid = 15 }), layer, known);
+        me.Apply(new ItemPutOn(1, 0, new EquipItem { Id = 1, Uid = 15 }), layer, known);
+        Assert.That(seen, Is.EqualTo(new[] { 15000002, 50000002 }), "an item without a preset too; not another pc, kind 3, unknown id");
+    }
 }
