@@ -814,6 +814,30 @@ public sealed class GameTables
     public Ms2.Ui.Items.ItemMergeOptionTable MergeOptions => mergeOptions ??= packs == null ? Ms2.Ui.Items.ItemMergeOptionTable.Empty
         : new Ms2.Ui.Items.ItemMergeOptionTable(Xml(TablePath.Resolve(packs, "itemmergeoptionbase.xml") ?? "table/itemmergeoptionbase.xml"),
             (p, c, k) => FeatureElements.Collect(packs, p, c, k), ItemOptions.FindStatByName, ItemOptions.FindSpecialByName);
+    Dictionary<int, (uint[] Items, uint[] Ranks)> remakeScrolls;
+    /// <summary>CItemRemakeScrollTable::GetData (itemremakescrolldata.cpp:200): Load (:148) reads Table/itemRemakeScroll.xml's
+    /// &lt;remakeScroll&gt; rows whose feature is on (IsElementFeatureEnabled), id not 0, the item and rank lists split at ','
+    /// (XmlTokenList), the last row of an id kept; null for no row. Read on first use.</summary>
+    public (uint[] Items, uint[] Ranks)? RemakeScroll(int id)
+    {
+        if (remakeScrolls == null)
+        {
+            remakeScrolls = new();
+            if (TableXml("itemremakescroll.xml")?.Root is { Name.LocalName: "ms2" } root)
+                foreach (var e in root.Elements("remakeScroll"))
+                {
+                    if (!FeatureElements.IsAvailable(packs, "", (string)e.Attribute("feature") ?? "")) continue;
+                    int key = Ms2.Ui.Items.ItemData.Atoi((string)e.Attribute("id") ?? "");
+                    if (key == 0) continue;
+                    static uint[] List(string s) => (s ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
+                        .Select(t => (uint)Ms2.Ui.Items.ItemData.Atoi(t)).ToArray();
+                    remakeScrolls[key] = (List((string)e.Attribute("item")), List((string)e.Attribute("rank")));
+                }
+        }
+        return remakeScrolls.TryGetValue(id, out var r) ? r : null;
+    }
+    /// <summary>GetXmlPath("Table", file): the locale's table folder first, else the shared one (<see cref="TablePath.Resolve"/>).</summary>
+    XDocument TableXml(string file) => packs != null && TablePath.Resolve(packs, file) is { } path ? Xml(path) : null;
     Ms2.Ui.Skills.SkillCompactControlTable skillCompactControl;
     /// <summary>CSkillCompactControlTable (Table/SkillCompactControl.xml), read on first use; empty with feature 0x10
     /// (CompactControl) off, as Load @0x140dca800 reads nothing then.</summary>

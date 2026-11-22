@@ -397,4 +397,40 @@ public class ItemTooltipExtrasTests
         text = Tip(m, r).Data.TryGetValue("itemDamage", out var v) ? (string)v : "";
         Assert.That(text, Does.Not.Contain(m.Tables.Common("s_item_repacking_disable")));
     }
+
+    [Test]
+    public void FunctionPackageListsBeautyCouponsAndRemakeScrollItems()
+    {
+        var m = NewModel();
+        EquipItem It(int id, long uid) => new EquipItem { Id = id, Uid = uid, Rarity = 1, Amount = 1 };
+        var beauty = m.Tables.Items.Get(20500001);
+        Assume.That(beauty, Is.Not.Null);
+        Assert.That((beauty.FunctionName, beauty.FunctionArgInt(0, 0)), Is.EqualTo(("ItemChangeBeauty", 601)));
+        // no local player: no list (FUN_1409d7900 needs GetLocalPlayer)
+        Assert.That(Tip(m, It(20500001, 40)).Data.ContainsKey("itemPackageList"), Is.False);
+        m.HasLocalPlayer = true;
+        m.Player.JobGroup = 10;
+        var tip = Tip(m, It(20500001, 41));
+        Assert.That(tip.Data["tooltip"], Is.EqualTo("export_common_tooltip_kindsItemPackage"));
+        var coupons = m.Tables.BeautyCoupons.CouponsOf(601).Where(c => m.Tables.Items.Get((int)c) != null).ToList();
+        var rows = ((List<object>)tip.Data["itemPackageList"]).Cast<Dictionary<string, object>>().ToList();
+        Assert.That(rows, Is.Not.Empty);
+        Assert.That(rows.Count, Is.LessThanOrEqualTo(coupons.Count));
+        foreach (var r in rows) TestContext.Out.WriteLine(string.Join(", ", r.Select(kv => kv.Key + "=" + kv.Value)));
+        // a remake scroll lists the items of its scroll row the job group may wear, at the row's first rank
+        var scroll = m.Tables.RemakeScroll(10000001);
+        Assert.That(scroll, Is.Not.Null);
+        var expected = scroll.Value.Items.Select(i => m.Tables.Items.Get((int)i))
+            .Where(d => d != null && d.IsJobAllowed(10) && d.IsJobRecommended(10)).ToList();
+        var stip = Tip(m, It(31000183, 42));
+        if (expected.Count == 0) Assert.That(stip.Data.ContainsKey("itemPackageList"), Is.False);
+        else
+        {
+            var srows = ((List<object>)stip.Data["itemPackageList"]).Cast<Dictionary<string, object>>().ToList();
+            Assert.That(srows.Count, Is.EqualTo(expected.Count));
+            int rank = scroll.Value.Ranks.Length == 0 ? 1 : (int)scroll.Value.Ranks[0];
+            Assert.That(srows.Select(r => r["itemGrade"]), Is.All.EqualTo(rank));
+        }
+        TestContext.Out.WriteLine($"scroll 10000001: {scroll.Value.Items.Length} items, {expected.Count} for job group 10");
+    }
 }

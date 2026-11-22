@@ -75,6 +75,7 @@ public sealed partial class ItemTooltip
         SetItemCreateTime(item);
         SetItemUsePeriod(item);
         SetItemBox(d.Id);                                                         // FUN_1409d5920
+        SetItemFunctionPackage(d.Id);                                             // FUN_1409d7900
         SetItemCompare(item);                                                     // FUN_1409cfbf0
         SetItemDescription(item);                                                 // FUN_1409d0710
         SetItemGuideDescription(item);                                            // FUN_1409d0a80
