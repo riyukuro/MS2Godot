@@ -6,8 +6,8 @@ namespace Ms2Godot.Ui;
 
 /// <summary>
 /// UIHomeMenuDialog (0x4f7c, movie uihomemenudialog, uihomemenudialog.cpp) over <see cref="HomeMenuHost"/>. Its menu entries reach the home
-/// option dialog (<see cref="ToggleHomeOption"/>, OnHomePriority @0x140c2a370). The other dialogs the menu toggles (0x4f7a, 0x4f7b) are not ported
-/// and do nothing. The field entry opens it in a home field (<see cref="OpenHomeMenuOnEntry"/>) and the field leave closes it (<see cref="CloseHomeMenuOnLeave"/>). STILL-OPEN: the other openers are not ported:
+/// option dialog (<see cref="ToggleHomeOption"/>, OnHomePriority @0x140c2a370). OnHomeAttribute reaches the home inside option dialog (<see cref="ToggleHomeInsideOption"/>). The other dialog the menu toggles (0x4f7b) is not ported
+/// and does nothing. The field entry opens it in a home field (<see cref="OpenHomeMenuOnEntry"/>) and the field leave closes it (<see cref="CloseHomeMenuOnLeave"/>). STILL-OPEN: the other openers are not ported:
 /// the game menu's home button (UIGameMenuDialog @0x14193b750, whose FUN_14193e9c0 toggles the design and blueprint modes,
 /// uigamemenudialog.cpp:2475-2480) and the craft scene's Refresh(true) (uiservice.cpp:784-788).
 /// </summary>
@@ -52,7 +52,11 @@ public partial class HudScene
             homeMenuMovie = null;
         }
         var host = new HomeMenuHost(liveHome, id => HomeOptionHost.FieldIsHome(assets.Packs, id), hudModel.IsFeatureEnabled,
-            id => { if (id == HomeMenuDialogController.HomeOptionId) ToggleHomeOption(); }, SystemNoticeText, SetHomeSaveSlotMode);
+            id =>
+            {
+                if (id == HomeMenuDialogController.HomeOptionId) ToggleHomeOption();
+                else if (id == HomeMenuDialogController.HomeAttributeId) ToggleHomeInsideOption();
+            }, SystemNoticeText, SetHomeSaveSlotMode);
         var c = homeMenu = new HomeMenuDialogController(host) { SystemNotice = SystemNoticeText };
         var m = homeMenuMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
         c.Unloaded += () =>
