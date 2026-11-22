@@ -266,9 +266,13 @@ public class HomeOptionDialogTests
         Assert.That(e.D.OnCallback("apply", new object[] { 1 }), Is.True);
         Assert.That(e.Commons, Is.EqualTo(new[] { 0xb0a }), "the missing password reads as empty, so the length box shows");
         e.H.CanChange = false;
-        e.D.OnCallback("apply", null);
+        e.D.OnCallback("apply", new object[] { 1 });
         Assert.That(e.Commons, Is.EqualTo(new[] { 0xb0a, 0x6e1 }));
         Assert.That(e.H.Log, Is.Empty);
+        // no arguments at all (SetArgsIfAny == 0): nothing happens, not even a box
+        Assert.That(e.D.OnCallback("apply", null), Is.True);
+        Assert.That(e.D.OnCallback("apply", new object[0]), Is.True);
+        Assert.That(e.Commons, Is.EqualTo(new[] { 0xb0a, 0x6e1 }));
     }
 
     [Test] public void ApplyTakesTheOpenTypeThePasswordAndNineRows()

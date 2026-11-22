@@ -78,10 +78,12 @@ public class HomeOptionDialogController : UiController, IMessageBoxListener
         }
         else if (Is(name, "apply"))
         {
-            // the client goes on with missing pops read as 0, so the notice and the boxes still show
+            // SetArgsIfAny == 0 (:134): no argument means the client does nothing; with some, missing trailing pops read as 0
+            // and the 0x6e1 / 0xb0a boxes still show
+            if (args.Length == 0) return true;
             var rows = new int[HomeOptionController.Rows];
             for (int i = 0; i < rows.Length; i++) rows[i] = 2 + i < args.Length ? Rt.ToInt32(args[2 + i]) : 0;
-            logic.Apply(args.Length > 0 ? Rt.ToInt32(args[0]) : 0, args.Length > 1 ? Rt.ToString(args[1]) : "", rows);
+            logic.Apply(Rt.ToInt32(args[0]), args.Length > 1 ? Rt.ToString(args[1]) : "", rows);
         }
         else if (Is(name, "onKickUser")) ShowBox(MessageBoxQueue.Create(1, Str("s_home_option_msg_etc_kickuser"), this, "OnKickUser"));
         else if (Is(name, "OnReset")) ShowBox(MessageBoxQueue.Create(1, Str("s_home_option_init"), this, "OnReset"));
