@@ -214,14 +214,17 @@ public sealed record ShopProduct {
 
     /// <summary>CNpcShopProductCli::ReadPacket mode 7 (npcshopproductbase.cpp:191-202): i32 serial, i32 itemId, u8 rarity,
     /// i64 price, then the item stream (m_54 = item.GetCount(), m_a0 = price).</summary>
-    public static ShopProduct ReadRepurchase(ByteReader r) {
+    public static ShopProduct ReadRepurchase(ByteReader r) => ReadRepurchase(r, ProtocolProfile.Kms2525);
+
+    /// <summary><see cref="ReadRepurchase(ByteReader)"/> for a profile: the GMS2 entry has the same head and the GMS2 item body.</summary>
+    public static ShopProduct ReadRepurchase(ByteReader r, ProtocolProfile profile) {
         var p = new ShopProduct {
             Serial = r.ReadInt(),
             ItemId = r.ReadInt(),
             Rarity = r.ReadByte(),
             Price = r.ReadLong(),
         };
-        p.Item = ItemReader.ReadItem(r, p.ItemId, p.Rarity);
+        p.Item = ItemReader.ReadItem(r, p.ItemId, p.Rarity, profile);
         p.Count = p.Item?.Amount ?? 0;
         return p;
     }
@@ -340,7 +343,7 @@ public sealed class ShopPacket {
             case 7: {
                 int n = (ushort) r.ReadShort();
                 var list = new List<ShopProduct>(n);
-                for (int i = 0; i < n; i++) list.Add(ShopProduct.ReadRepurchase(r));
+                for (int i = 0; i < n; i++) list.Add(ShopProduct.ReadRepurchase(r, profile));
                 return new ShopPacket { Command = cmd, Products = list };
             }
             case 8: return new ShopPacket { Command = cmd, RemoveSerial = r.ReadInt() };
@@ -446,9 +449,11 @@ public sealed record ShopRepurchaseRequest(int Serial) : IOutPacket {
 }
 
 /// <summary>Outbound 0x28 mode 4 (UIShopDialog::SendPurchase @0x141b00060, uishopdialog.cpp:2846): u8 4, i32 serial, i32 quantity, i32 shopId.</summary>
-public sealed record ShopBuyRequest(int Serial, int Quantity, int ShopId) : IOutPacket {
+public sealed record ShopBuyRequest(int Serial, int Quantity, int ShopId) : IProfileOutPacket {
     public Outbound Op => Outbound.Shop;
-    public void Write(ByteWriter w) { w.WriteByte(4); w.WriteInt(Serial); w.WriteInt(Quantity); w.WriteInt(ShopId); }
+    public void Write(ByteWriter w) => Write(w, ProtocolProfile.Kms2525);
+    /// <summary>GMS2 sends no shop id: u8 4, i32 serial, i32 quantity (every recorded request, 9 bytes).</summary>
+    public void Write(ByteWriter w, ProtocolProfile profile) { w.WriteByte(4); w.WriteInt(Serial); w.WriteInt(Quantity); if (!profile.IsGms2) w.WriteInt(ShopId); }
 }
 
 /// <summary>Outbound 0x28 mode 5 (RequestSellItem @0x141425fc0, itemugcmesh.cpp:1097): u8 5, i64 itemUid, i32 count.</summary>
