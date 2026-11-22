@@ -1503,6 +1503,9 @@ namespace Ms2.Avm2.Flash
         {
             MouseX = x; MouseY = y; MouseActivated = true;
             UpdateDrag();               // Stage::PropagateMouseEvent: a mouse move drags what is being dragged
+            // TextField's mouse handler (sfr_gfx_03e.cpp:1583) passes the move to the editor that has the mouse capture,
+            // wherever the mouse is, before the AS3 events
+            if (TextCapture is { MouseCaptured: true, visible: true } c) { var (lx, ly) = c.GlobalToLocal(x, y); c.MouseMove(lx, ly); }
             var t = covered ? null : MouseTarget(x, y);
             Hover(t);
             MouseEv(t ?? (AsInteractiveObject)Stage, "mouseMove");
@@ -1583,6 +1586,7 @@ namespace Ms2.Avm2.Flash
             if ((uint)button >= (uint)pressedBy.Length) return;
             if (button == LeftButton) MouseDown = down;
             var t = MouseTarget(MouseX, MouseY);
+            if (button == LeftButton) EditorMouse(t, down);
             if (down)
             {
                 pressedBy[button] = t ?? Stage;     // SetMouseButtonDownEntity(activeEntitySafe)
@@ -1623,6 +1627,38 @@ namespace Ms2.Avm2.Flash
                 if (t != over) mouseInsideEntityLast = true;    // :7246, the top-most entity changed in this call
                 pressedBy[button] = null;
             }
+        }
+
+        /// <summary>The text field whose editor took the mouse capture with the last left press (null for none).</summary>
+        public AsTextField TextCapture { get; private set; }
+
+        /// <summary>Whether a text field's editor has the mouse capture: its moves and its release go to it wherever the
+        /// mouse is, as a drag's do.</summary>
+        public bool TextMouseCaptured => TextCapture is { MouseCaptured: true };
+
+        /// <summary>
+        /// The left button for a text field's editor (TextField's mouse handler, sfr_gfx_03e.cpp:1583): MovieImpl's mouse
+        /// handling propagates the event to the display list (Stage::PropagateMouseEvent) before it moves the focus and
+        /// runs the AS3 events (sfr_gfx_01i.cpp:3612). The top-most entity, when it is a visible field with an editor, gets
+        /// the press in its own units (the world matrix's inverse); an AS3 movie's top-most test takes every field
+        /// (GetTopMostEntity with testAll = avm2, sfr_gfx_01i.cpp:3621), selectable or not. The release goes to the field
+        /// with the capture, or to the top-most field.
+        /// </summary>
+        void EditorMouse(AsInteractiveObject t, bool down)
+        {
+            if (down)
+            {
+                if (t is AsTextField { HasEditor: true, visible: true } tf)
+                {
+                    var (lx, ly) = tf.GlobalToLocal(MouseX, MouseY);
+                    tf.MouseDown(lx, ly, (uint)(ulong)Clock());
+                    if (tf.MouseCaptured) TextCapture = tf;
+                }
+                return;
+            }
+            var to = TextCapture is { MouseCaptured: true } c ? c : t as AsTextField;
+            if (to is { HasEditor: true, visible: true }) to.MouseUp();
+            if (TextCapture is { MouseCaptured: false }) TextCapture = null;
         }
 
         /// <summary>The classes main.gfx's Main.useRClickEvent leaves alone: their right button events are not redispatched.</summary>
@@ -1686,6 +1722,13 @@ namespace Ms2.Avm2.Flash
                 e.keyCode = keyCode; e.charCode = charCode; e.shiftKey = shift; e.ctrlKey = ctrl;
                 proceed = target.Dispatch(e);
             });
+            // EditorKit's shift state (sfr_gfx_07.cpp): Shift down on the focused selectable field enters the selection mode
+            // (KeyAct_EnterSelectionMode), any Shift up leaves it (OnKeyUp)
+            if (keyCode == 16 && Focus is AsTextField sf && sf.HasEditor)
+            {
+                if (!down) sf.ShiftPressed = false;
+                else if (proceed && sf.selectable) sf.ShiftPressed = true;
+            }
             if (!down || !proceed) return;
             if (keyCode == 9)
             {
@@ -1828,6 +1871,8 @@ namespace Ms2.Avm2.Flash
             // GFx_FocusMovedByAS, sfr_as3_07.cpp:4007, keep its selection). Flags_NoAutoSelection, the one other condition,
             // has only an AS2 setter.
             if (old is AsTextField was && was.selectable && !was.alwaysShowSelection) was.ClearSelection();
+            // EditorKit::OnKillFocus @0x142618bb0: the shift state and the mouse capture end
+            if (old is AsTextField lost && lost.HasEditor) lost.KillEditorFocus();
             if (o is AsTextField tf && tf.selectable && how == "key") tf.SelectAll();
             if (old != null) RT.Guard("focusOut", () => { var e = (AsFocusEvent)RT.GetClass("flash.events.FocusEvent").Construct("focusOut", Rt.True); e.relatedObject = o; old.Dispatch(e); });
             if (o != null) RT.Guard("focusIn", () => { var e = (AsFocusEvent)RT.GetClass("flash.events.FocusEvent").Construct("focusIn", Rt.True); e.relatedObject = old; o.Dispatch(e); });

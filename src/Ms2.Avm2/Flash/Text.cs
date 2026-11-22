@@ -809,6 +809,135 @@ public class AsTextField : AsInteractiveObject
         return false;
     }
 
+    /// <summary>EditorKit's shift state (IsShiftPressed): set by a Shift key down while the field has the focus and is
+    /// selectable (KeyAct_EnterSelectionMode), cleared by its key up (OnKeyUp) and by a lost focus (OnKillFocus). A press
+    /// with it set extends the selection.</summary>
+    public bool ShiftPressed;
+
+    /// <summary>EditorKit's mouse capture (IsMouseCaptured): set by a left press on a selectable field, cleared by the
+    /// release (OnMouseUp) and by a lost focus (OnKillFocus). While it is set the mouse's moves go to the field wherever
+    /// the mouse is, and move the selection's end.</summary>
+    public bool MouseCaptured { get; private set; }
+
+    // EditorKit::LastMousePos (twips from the view's corner, floored) and LastClickTime (ms): a press at the same point
+    // within MS2_DOUBLE_CLICK_TIME_MS of the last one is a double click, the next one a triple click
+    double lastPressX = double.NaN, lastPressY = double.NaN;
+    uint lastPressTime;
+    bool lastPressDouble;
+
+    /// <summary>The window of <see cref="MouseDown"/>'s double and triple click (MS2_DOUBLE_CLICK_TIME_MS,
+    /// sfr_gfx_07.cpp:43).</summary>
+    public const uint DoubleClickMs = 300;
+
+    /// <summary>Whether the field has an editor (TextField's EditorKit): an input field or a selectable one.</summary>
+    public bool HasEditor => type == "input" || selectable;
+
+    /// <summary>
+    /// A left press on the field (EditorKit::OnMouseDown @0x142618bf0, called from TextField's mouse handler with the press
+    /// in field units): the caret goes to the char boundary nearest the press (<see cref="CursorPosAtPoint"/>); with the
+    /// shift state set the selection's end goes there, else the selection collapses there. A selectable field then takes
+    /// the mouse capture, unless it has it. A second press at the same point (in twips) within <see cref="DoubleClickMs"/>
+    /// selects the word there (the run of letters and digits around it), a third the paragraph with its new line; the caret
+    /// goes to the selection's end. <paramref name="timeMs"/> is the press's time in ms (Timer::GetTicks()/1000).
+    /// </summary>
+    public void MouseDown(double x, double y, uint timeMs)
+    {
+        double ax = Math.Floor((x - Box.X) * 20), ay = Math.Floor((y - Box.Y) * 20);
+        bool doubleClick = false, tripleClick = false;
+        if (ax == lastPressX && ay == lastPressY && timeMs <= unchecked(lastPressTime + DoubleClickMs))
+        {
+            if (lastPressDouble) tripleClick = true; else doubleClick = true;
+            lastPressDouble = true;
+        }
+        else lastPressDouble = false;
+        lastPressX = ax; lastPressY = ay; lastPressTime = timeMs;
+
+        // the lookup takes the floored point (GetCursorPosAtPoint(ax, ay))
+        int pos = CursorPosAtPoint(Box.X + ax / 20, Box.Y + ay / 20);
+        SetCursorPos(pos);
+        if (!selectable || MouseCaptured) return;
+        MouseCaptured = true;
+        if (doubleClick || tripleClick)
+        {
+            var (ps, pe) = ParagraphAt(pos);
+            int st = pos, en = pos;
+            if (doubleClick)
+            {
+                static bool Word(char c) => !char.IsWhiteSpace(c) && char.IsLetterOrDigit(c);
+                while (st > ps && Word(Text[st - 1])) st--;
+                while (en < pe && Word(Text[en])) en++;
+            }
+            else { st = ps; en = pe; }
+            SetCursorPos(en);
+            Select(st, en);
+        }
+        else if (!ShiftPressed) Select(pos, pos);
+    }
+
+    /// <summary>A mouse move while the field has the mouse capture (EditorKit::OnMouseMove @0x142618f60): the caret and the
+    /// selection's end go to the char boundary nearest the mouse. Without the capture it does nothing.</summary>
+    public void MouseMove(double x, double y)
+    {
+        if (!MouseCaptured) return;
+        int pos = CursorPosAtPoint(x, y);
+        SetCursorPos(pos);
+        if (selectable) Select(Anchor, pos);
+    }
+
+    /// <summary>The left button's release (EditorKit::OnMouseUp @0x142619040): the mouse capture ends.</summary>
+    public void MouseUp() { if (selectable) MouseCaptured = false; }
+
+    /// <summary>A lost focus (EditorKit::OnKillFocus @0x142618bb0): the shift state and the mouse capture end.</summary>
+    public void KillEditorFocus() { ShiftPressed = false; MouseCaptured = false; }
+
+    // the selection's fixed end, the one a Shift key or a drag extends from (DocView's begin selection)
+    int Anchor => CaretAtBegin ? SelEnd : SelBegin;
+
+    // EditorKit::SetCursorPos (sfr_gfx_07.cpp:85) from the mouse: the caret moves; in a selectable field with the shift
+    // state or the mouse capture the selection's end follows it, else the selection collapses there. The x an Up / Down
+    // key aimed at is dropped (LastHorizCursorPos = -1).
+    void SetCursorPos(int pos)
+    {
+        pos = Math.Clamp(pos, 0, Text.Length);
+        keptCaretX = -1;
+        if (selectable && (ShiftPressed || MouseCaptured)) Select(Anchor, pos);
+        else { SelBegin = SelEnd = pos; CaretAtBegin = false; }
+    }
+
+    // the paragraph holding text index i: its first index and the index past its new line (StyledText's paragraph, whose
+    // length counts the new line; CR LF is one new line)
+    (int Start, int End) ParagraphAt(int i)
+    {
+        int s = Math.Clamp(i, 0, Text.Length);
+        while (s > 0 && Text[s - 1] is not ('\r' or '\n')) s--;
+        int e = Math.Clamp(i, 0, Text.Length);
+        while (e < Text.Length && Text[e] is not ('\r' or '\n')) e++;
+        if (e < Text.Length) e += Text[e] == '\r' && e + 1 < Text.Length && Text[e + 1] == '\n' ? 2 : 1;
+        return (s, e);
+    }
+
+    /// <summary>
+    /// The char boundary nearest a point in field units (DocView::GetCursorPosAtPoint @0x142612410): the line at the point's
+    /// height, counted from the first shown line (scrollV) with each line its height plus the leading below the 2 px gutter;
+    /// above the lines the first, below them the last. On the line, the boundary nearest the x from the line's start (the
+    /// gutter and the paragraph align's offset): past a char's middle the caret goes after it
+    /// (GetCursorPosInLineByOffset @0x1426125b0). 0 in a field without lines.
+    /// </summary>
+    public int CursorPosAtPoint(double x, double y)
+    {
+        var lines = Spans();
+        if (lines.Count == 0) return 0;
+        double step = TextMeasure.LineHeight(FontName, Size, 0) + Leading;
+        double top = FirstLineTop(lines.Count);
+        int k = (int)Math.Floor((y - top) / step) + (scrollV - 1);
+        k = Math.Clamp(k, 0, lines.Count - 1);
+        var l = lines[k];
+        double lineX = Box.X + 2;
+        double free = Math.Max(0, Box.W - 4 - LineWidth(l.Line, l.Start));
+        switch ((Format?.align as string)?.ToLowerInvariant()) { case "center": lineX += free / 2; break; case "right": lineX += free; break; }
+        return PosAtX(l, x - lineX);
+    }
+
     // the char boundary nearest x on the line: past a char's middle the caret goes after it
     int PosAtX((string Line, int Start) l, double x)
     {
