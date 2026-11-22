@@ -21,6 +21,8 @@ public sealed class ItemData
     public string SlotIcon = "", Category = "";
     /// <summary>ItemProperty moveDisable (itemdatastruct.cpp:1158) and socketDataId.</summary>
     public bool MoveDisable;
+    /// <summary>property remakeDisable (ItemProperty::Load, itemdatastruct.cpp:1133).</summary>
+    public bool RemakeDisable;
     /// <summary>ItemProperty rePackingLimitCount and rePackingItemConsumeCount (itemdatastruct.cpp:1140).</summary>
     public int RePackingLimitCount, RePackingItemConsumeCount;
     public int SocketDataId;
@@ -126,6 +128,7 @@ public sealed class ItemData
             d.Category = (string)p.Attribute("category") ?? d.Category;
             d.SlotIcon = (string)p.Attribute("slotIcon") ?? d.SlotIcon;
             Bool(p, "moveDisable", ref d.MoveDisable);
+            Bool(p, "remakeDisable", ref d.RemakeDisable);
             Int(p, "rePackingLimitCount", ref d.RePackingLimitCount);
             Int(p, "rePackingItemConsumeCount", ref d.RePackingItemConsumeCount);
             Int(p, "socketDataId", ref d.SocketDataId);

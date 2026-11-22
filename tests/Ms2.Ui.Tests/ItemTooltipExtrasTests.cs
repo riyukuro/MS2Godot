@@ -202,6 +202,43 @@ public class ItemTooltipExtrasTests
         return 0;
     }
 
+    /// <summary>The first item id of the item data (file order) the predicate passes.</summary>
+    static int FirstItem(UiModel m, Func<ItemData, bool> pass)
+    {
+        var rx = new System.Text.RegularExpressions.Regex("<item id=\"(\\d+)\"");
+        for (int f = 0; f < 1000; f++)
+        {
+            string entry = $"itemdata/{f:000}.xml";
+            if (!Packs().Exists("Xml", entry)) continue;
+            string text = System.Text.Encoding.UTF8.GetString(Packs().Read("Xml", entry));
+            foreach (System.Text.RegularExpressions.Match x in rx.Matches(text))
+                if (m.Tables.Items.Get(int.Parse(x.Groups[1].Value)) is { } d && pass(d))
+                    return d.Id;
+        }
+        return 0;
+    }
+
+    [Test]
+    public void RemakeLineNeedsOptionsInTheSlotGroup()
+    {
+        var m = NewModel();
+        m.HasLocalPlayer = true;
+        int id = FirstItem(m, d => !d.IsPetItem && !d.RemakeDisable && d.LevelLimit >= 0x32 && d.Rank is 0 or >= 4
+            && d.EquipSubtype is 0xc or (>= 0xd and <= 0x16));
+        if (id == 0) Assert.Ignore("no remakeable equipment");
+        var r = new EquipItem { Id = id, Uid = 6, Rarity = 4, Amount = 1, RemakeCount = 3 };
+        string before = Tip(m, r).Data.TryGetValue("itemDamage", out var t0) ? (string)t0 : "";
+        Assert.That(before, Does.Not.Contain(Ms2.Quest.ClientFormat.Format(m.Tables.Common(0xbf9), 3)));
+        r.Options.Stat[2][1] = 10;
+        var text = (string)Tip(m, r).Data["itemDamage"];
+        TestContext.WriteLine($"{id}: {text}");
+        Assert.That(text, Does.Contain(Ms2.Quest.ClientFormat.Format(m.Tables.Common(0xbf9), 3)));
+        var flagged = new ItemTooltip(m, 0x400);
+        flagged.Fill(Ms2.Ui.Hud.InventoryController.ToItem(r, m.Tables.Items));
+        Assert.That((string)flagged.Data["itemDamage"], Does.Contain(m.Tables.Common(0xbfa)));
+        Assert.That(m.Tables.Common(0xbf9), Is.Not.Empty);
+    }
+
     [Test]
     public void RepackLineCountsWhatIsLeft()
     {

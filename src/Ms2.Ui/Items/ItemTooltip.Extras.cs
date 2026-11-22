@@ -7,20 +7,21 @@ public sealed partial class ItemTooltip
     /// <summary>
     /// ASTooltip::FUN_1409c7b10 (astooltip.cpp:267), "itemDamage": the repack line (FUN_1409d95f0), the enchant line
     /// (FUN_1409d8d90), the remake line (FUN_1409d9330), the merge line (FUN_1409d99a0) and the extraction line
-    /// (FUN_1409d9aa0), joined by new lines; the member is set only when the text is not empty. Ported: the repack,
-    /// enchant, merge and extraction lines. STILL-OPEN: the remake line.
+    /// (FUN_1409d9aa0), joined by new lines; the member is set only when the text is not empty. All five are ported.
     /// </summary>
     public void SetItemDamage(Item item)
     {
-        // only the enchant and merge lines are ported; skip the builder when neither can add text
+        // skip the builder when no line can add text
         bool enchant = item.Data.IsEquipItem;
+        bool remake = CanRemakeOption(item, 2);
         bool merge = item.Data.Fusionable != 0 && model.IsFeatureEnabled(0x6f);
         bool repack = item.Data.RePackingLimitCount > 0 && model.IsFeatureEnabled(0x38);
         uint? scrolls = Tables.Extraction.ScrollCount(item.Data.Id);
-        if (!enchant && !merge && !repack && scrolls == null) return;
+        if (!enchant && !merge && !repack && !remake && scrolls == null) return;
         var sb = new StringBuilder();
         if (repack) AppendRepack(item, sb);
         AppendEnchant(item, sb);
+        if (remake) AppendRemake(item, sb);
         AppendMerge(item, sb);
         if (scrolls != null) AppendExtraction(item, scrolls.Value, sb);
         if (sb.Length != 0) Data["itemDamage"] = sb.ToString();
@@ -95,6 +96,44 @@ public sealed partial class ItemTooltip
             key = "s_item_repacking_pet_limit_count";
         }
         sb.Append(CommonF(key, left, d.RePackingItemConsumeCount));
+    }
+
+    /// <summary>
+    /// CItem::CanRemakeOption (item.cpp:1831): FUN_140526670 for a pet (rarity 3 or more), else FUN_1405264c0 (rarity 4 or
+    /// more, an equip subtype FUN_14053d600 or FUN_14053d5c0 passes, and levelLimit at least CFeatureManager::FUN_14036dc40,
+    /// which returns 0x32); both need remakeDisable off and options in the slot's group (CItemOption::GetGroupOptionCount:
+    /// its stat and special options). A made item's option is empty, so it never passes.
+    /// </summary>
+    static bool CanRemakeOption(Item item, int slot)
+    {
+        var d = item.Data;
+        if (d.IsPetItem)
+        {
+            if (item.Rarity < 3) return false;
+        }
+        else
+        {
+            if (item.Rarity < 4) return false;
+            if (d.EquipSubtype is not (0xc or (>= 0x12 and <= 0x15) or (>= 0xd and <= 0x11) or 0x16)) return false;
+            if ((ushort)d.LevelLimit < 0x32) return false;
+        }
+        if (d.RemakeDisable) return false;
+        var o = item.Record?.Options;
+        return o != null && slot < o.Stat.Length && o.Stat[slot].Count + o.Special[slot].Count != 0;
+    }
+
+    /// <summary>FUN_1409d9330 (astooltip.cpp:3472): with flag 0x400 or 0x1000 the remake-enabled line (pet
+    /// s_tooltip_petremake_enable, else 0xbfa), otherwise the remake count (CItem m_9c; pet s_tooltip_petremake_count,
+    /// else BlockFormat(0xbf9)).</summary>
+    void AppendRemake(Item item, StringBuilder sb)
+    {
+        NewLine(sb);
+        bool pet = item.Data.IsPetItem;
+        int count = item.Record?.RemakeCount ?? 0;
+        if ((Flags & 0x400) != 0 || (Flags & 0x1000) != 0)
+            sb.Append(pet ? Common("s_tooltip_petremake_enable") : Tables.Common(0xbfa));
+        else
+            sb.Append(pet ? CommonF("s_tooltip_petremake_count", count) : Format(Tables.Common(0xbf9), count));
     }
 
     /// <summary>FUN_1409d9aa0 (astooltip.cpp:3592): an item with an itemExtraction row shows s_itemextraction_trycount (the
