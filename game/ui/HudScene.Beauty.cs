@@ -68,13 +68,20 @@ public partial class HudScene
     /// 3D avatar copy redraws from. Null without a worn item (CloneItems::Init @0x140ccf010 fails), so the flows stay shut as for
     /// no Customize. STILL-OPEN: the packets the Customize sends (Equipment::SendColors / SendAdded / SendModified / SendRemoved)
     /// need the free-try byte, the sale context and CItem::WriteItemBody, none recovered, so they stay unset and the commit does
-    /// not send them; slot-of-id, the two-slot predicates and new preview items (FUN_141420f10, FUN_14053d2b0, FUN_14053d460,
-    /// FUN_140523c40) also stay unset, so a preview that needs one does nothing.
+    /// not send them; new preview items (FUN_140523c40) and the worn-pair slot of a hand item (FUN_141420b30) stay unset, so a
+    /// preview that needs one does nothing.
     /// </summary>
     BeautyCustomize CreateBeautyCustomize(Ms2Godot.Net.LiveSession live)
     {
         if (live.Me.User == null || live.Me.Equips == null || live.Me.Equips.Count + (live.Me.Outfit2?.Count ?? 0) == 0) return null;
-        return new BeautyCustomize(new BeautyOwnAvatar(live.Me, Ms2Godot.Net.LiveSession.WornLayer));
+        var tables = hudModel.Tables;
+        var slots = new BeautyItemSlots(tables.Items.Get, tables.ItemModels.Get);
+        return new BeautyCustomize(new BeautyOwnAvatar(live.Me, Ms2Godot.Net.LiveSession.WornLayer))
+        {
+            IsTopBottom = i => slots.IsTopBottom(tables.Items.Get(i.Id)),
+            IsTwoHanded = i => slots.IsTwoHanded(tables.Items.Get(i.Id)),
+            SlotOfId = slots.SlotOfId,
+        };
     }
 
     void ShowBeauty(BeautyShopDialogController c)
