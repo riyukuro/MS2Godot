@@ -48,4 +48,30 @@ public class TextGaugeMarkerTests
         Assert.That(tf.text, Does.Not.Contain("gauge:"));
         Assert.That(tf.htmlText.ToLowerInvariant(), Does.Contain("ffd200"));
     }
+
+    [Test]
+    public void CharBoundariesFollowTheFieldsAlignAndVerticalAlign()
+    {
+        var tf = Field("<p>gauge:</p>");
+        tf.Format ??= (AsTextFormat)Runtime.Current.GetClass("flash.text.TextFormat").Construct();
+        var left = tf.getCharBoundaries(0);
+        tf.Format.align = "center";
+        var centred = tf.getCharBoundaries(0);
+        tf.Format.align = "right";
+        var right = tf.getCharBoundaries(0);
+        Assert.That(centred.x, Is.GreaterThan(left.x + 20), "a centred line starts right of the left edge");
+        Assert.That(right.x, Is.GreaterThan(centred.x + 20));
+        tf.Format.align = "left";
+        tf.VerticalAlign = "bottom";
+        Assert.That(tf.getCharBoundaries(0).y, Is.GreaterThan(left.y + 20), "bottom aligned text sits at the bottom of the box");
+    }
+
+    [Test]
+    public void AppendTextKeepsTheHeadingsColour()
+    {
+        var tf = Field(Doc);
+        tf.appendText("more");
+        Assert.That(tf.text, Does.EndWith("more"));
+        Assert.That(tf.htmlText.ToLowerInvariant(), Does.Contain("ffd200"));
+    }
 }

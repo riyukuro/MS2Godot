@@ -345,10 +345,18 @@ public class AsTextField : AsInteractiveObject
     /// </summary>
     double ImageTextH()
     {
+        var l = ImageLines();
+        return l.Count == 0 ? 0 : (l[^1].Top + l[^1].H) / 20;
+    }
+
+    /// <summary>Each line's top and height in twips by FinalizeLine (see ImageTextH).</summary>
+    List<(double Top, double H)> ImageLines()
+    {
         double asc = TextMeasure.AscentRatio(FontName) * Size * 20, desc = (TextMeasure.HeightRatio(FontName) - TextMeasure.AscentRatio(FontName)) * Size * 20;
         static double IRound(double v) => Math.Floor(v + 0.5);
         double leading = IRound(Leading * 20), offset = 0, height = 0;
         bool first = true;
+        var res = new List<(double Top, double H)>();
         foreach (var (line, start) in Spans())
         {
             double maxAsc = 0, maxDesc = 0;
@@ -360,8 +368,9 @@ public class AsTextField : AsInteractiveObject
             if (!first) offset += IRound(height + leading);
             first = false;
             height = IRound(maxAsc + maxDesc);
+            res.Add((offset, height));
         }
-        return (offset + height) / 20;
+        return res;
     }
 
     void AutoSize()
@@ -524,7 +533,8 @@ public class AsTextField : AsInteractiveObject
         get => IsHtml ? GetHtml() : Text;
         set { SetHtml(value); Changed(); needGeom = true; }
     }
-    [As] public void appendText(string s) { Text += s ?? ""; Html = null; Changed(); }
+    /// <summary>TextField::appendText: the new chars take the format of the last char, the document keeps the rest's.</summary>
+    [As] public void appendText(string s) => replaceText(Text.Length, Text.Length, s);
     /// <summary>TextField::replaceText (sfr_as3_13.cpp): the chars between b and e become s. The chars the document keeps
     /// keep their html formats and the new ones take the format of the char before them (the heading of a CommonTooltip
     /// status text stays yellow after its "gauge:" marker is cut out).</summary>
@@ -569,9 +579,21 @@ public class AsTextField : AsInteractiveObject
         double lh = TextMeasure.LineHeight(FontName, Size, 0);
         var (line, start) = spans[k];
         int col = Math.Clamp(i - start, 0, line.Length);
+        double lineW = LineWidth(line, start);
         double x = 2 + LineWidth(line[..col], start);
+        // the field's paragraph align moves the line inside the box (the 2 px gutter either side)
+        double free = Math.Max(0, Box.W - 4 - lineW);
+        switch (Format?.align as string) { case "center": x += free / 2; break; case "right" or "end": x += free; break; }
         double w = col < line.Length ? TextMeasure.Width(FontName, Size, line[col].ToString()) : TextMeasure.Width(FontName, Size, Text[i].ToString());
-        return AsRectangle.New(R, x, 2 + k * (lh + Leading), w, lh);
+        // the first line sits at the vertical align's top, a line with IMG chars has its own height (ImageTextH)
+        double top = FirstLineTop(spans.Count) - Box.Y, y = top + k * (lh + Leading);
+        if (HasImages && TextMeasure.HeightRatio != null && TextMeasure.AscentRatio != null)
+        {
+            var il = ImageLines();
+            y = top + il[k].Top / 20;
+            lh = il[k].H / 20;
+        }
+        return AsRectangle.New(R, x, y, w, lh);
     }
 
     static int LineOfChar(List<(string Line, int Start)> spans, int i)
