@@ -90,7 +90,10 @@ public abstract record UserEnvMessage {
     public sealed record TitleChanged(int ObjectId, int Title) : UserEnvMessage;
     public sealed record Titles(IReadOnlyList<uint> Ids) : UserEnvMessage;
     public sealed record Collection(IReadOnlyDictionary<uint, byte> Grades) : UserEnvMessage;
-    public sealed record GatheringCounts(IReadOnlyDictionary<int, int> Counts) : UserEnvMessage;
+    public sealed record GatheringCounts(IReadOnlyDictionary<int, int> Counts) : UserEnvMessage {
+        /// <summary>GMS2 writes a second table of the same (i32 id, i32 count) pairs after the first (KMS2: the trailing i32 is its count, 0); empty without one.</summary>
+        public IReadOnlyDictionary<int, int> Second { get; init; } = new Dictionary<int, int>();
+    }
     public sealed record MasteryRewards(IReadOnlyDictionary<uint, byte> Received) : UserEnvMessage;
     public sealed record Templates(IReadOnlyList<int> Ids) : UserEnvMessage;
     /// <summary>Fame by alliance (modes 0xa, 0xb) or by character id (0xc, 0xd); Replace is the 0xa/0xc whole-table forms.</summary>
@@ -144,8 +147,11 @@ public abstract record UserEnvMessage {
                 uint n = (uint) r.ReadInt();
                 var g = new Dictionary<int, int>();
                 for (uint i = 0; i < n; i++) { int id = r.ReadInt(); g[id] = r.ReadInt(); }     // g_143ab3150.SetAt
-                if (r.Available == 4) r.ReadInt();   // the Maple2 server's writer adds an i32 after the pairs; the client stops (:4455)
-                return new GatheringCounts(g);
+                // The Maple2 server's writer adds a second count after the pairs (0 on KMS2); the client stops (:4455). The GMS2 recordings
+                // carry a second table of the same pairs there (count 9 after 13 pairs, ...).
+                var second = new Dictionary<int, int>();
+                if (r.Available >= 4) { uint m = (uint) r.ReadInt(); for (uint i = 0; i < m; i++) { int id = r.ReadInt(); second[id] = r.ReadInt(); } }
+                return new GatheringCounts(g) { Second = second };
             }
             case 9: {
                 uint n = (uint) r.ReadInt();

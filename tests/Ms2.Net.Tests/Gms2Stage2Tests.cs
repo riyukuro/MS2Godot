@@ -231,4 +231,33 @@ public class Gms2Stage2Tests {
         var p = FieldAddPet.Read(Reader(w), Gms);
         Assert.That((p.ObjectId, p.SkinId, p.NpcId, p.OwnerId, p.Level, p.TamingRank, p.PetUid, p.Name), Is.EqualTo((7, 11, 22, 99, 4, (short) 3, 5L, "Mimi")));
     }
+
+    [Test]
+    public void EveryRecordedGms2LoadCubesPacketReadsWholeInItsMode() {
+        var all = Gms2Sniffs.Inbound("gms2", Gms.Number(Inbound.LoadCubes));
+        Assert.That(all, Is.Not.Empty);
+        foreach (var (file, data) in all) {
+            var r = new ByteReader(data);
+            if (data[0] == 0) Assert.That(LoadCubes.Read(r), Is.Not.Null, file);
+            else Assert.That(LoadCubesPlots.Read(r), Is.Not.Null, file);
+            Assert.That(r.Available, Is.EqualTo(0), file);
+        }
+    }
+
+    [Test]
+    public void EveryRecordedGms2UserEnvPacketReadsWhole() {
+        var all = Gms2Sniffs.Inbound("gms2", Gms.Number(Inbound.UserEnv));
+        Assert.That(all, Is.Not.Empty);
+        foreach (var (file, data) in all) Assert.DoesNotThrow(() => UserEnvMessage.Read(new ByteReader(data)), file);
+    }
+
+    [Test]
+    public void GatheringCountsReadASecondTable() {
+        var w = new ByteWriter();
+        w.WriteByte(8); w.WriteInt(1); w.WriteInt(10); w.WriteInt(3);
+        w.WriteInt(2); w.WriteInt(20); w.WriteInt(0); w.WriteInt(21); w.WriteInt(5);
+        var m = (UserEnvMessage.GatheringCounts) UserEnvMessage.Read(Reader(w));
+        Assert.That(m.Counts, Is.EqualTo(new Dictionary<int, int> { [10] = 3 }));
+        Assert.That(m.Second, Is.EqualTo(new Dictionary<int, int> { [20] = 0, [21] = 5 }));
+    }
 }
