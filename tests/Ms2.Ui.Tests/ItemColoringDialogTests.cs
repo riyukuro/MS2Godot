@@ -222,4 +222,12 @@ public class ItemColoringDialogTests
         r.C.OnDyeApplied();
         Assert.That(r.C.InputLocked, Is.False);
     }
+
+    [Test] public void LeavingClosesTheFlow() {
+        var r = new Rig();
+        var flow = new ItemColoringFlow { CreateCustomize = () => r.Cu, CreateController = () => r.C };
+        Assert.That(flow.Open(), Is.True);
+        r.C.Leave();
+        Assert.That((r.C.Closing, flow.IsOpen, r.Closed), Is.EqualTo((true, false, 1)));
+    }
 }

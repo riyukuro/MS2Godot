@@ -26,6 +26,7 @@ public sealed class ItemColoringFlow
         if (customize == null) { Log("item coloring: no own-avatar customize, the dialog stays shut"); return false; }
         var c = CreateController();
         c.Customize = customize;
+        c.Left += () => c.Close();
         c.Closed += () => { if (Current == c) Current = null; };
         Current = c;
         Show?.Invoke(c);
