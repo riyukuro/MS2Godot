@@ -5,6 +5,7 @@ using Ms2.Net.Packets;
 using Ms2.Ui;
 using Ms2.Ui.Hud;
 using Ms2.Ui.Items;
+using Ms2.Ui.Shop;
 
 namespace Ms2Godot.Ui;
 
@@ -162,6 +163,8 @@ public partial class HudScene
             GuildFund = () => live.Guilds?.Info?.Fund ?? 0,
             ItemName = id => hudModel.Tables.ItemName(id) ?? "",
             EquippedRows = () => OwnColoringRows(live),
+            FeePriceText = (fee, amount) => ColoringShop(live).PriceText(fee.Type, fee.ItemId, (uint)amount, fee.IconTag),   // GetFeePriceText @0x14134a220
+            NotEnough = fee => ColoringShop(live).ShowLackCurrency(fee.Type, fee.ItemId, 0),                          // FUN_14134a2e0 @0x14134a2e0
         };
         c.NoticeText += SystemNoticeText;
         return c;
@@ -180,6 +183,8 @@ public partial class HudScene
             hudModel.IsFeatureEnabled(0x8e), it => ItemLevels.Usable(it, now),
             it => ColoringModels().HasModelTexture(it.ItemId, record.Gender), id => hudModel.Tables.ItemName(id) ?? "", t.Items, t.ItemModels);
     }
+
+    ShopController ColoringShop(Ms2Godot.Net.LiveSession live) => liveShop ??= CreateShopController(live);
 
     Ms2Godot.Net.EquipApplier coloringModels;
 
