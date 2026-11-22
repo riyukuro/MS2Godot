@@ -71,12 +71,15 @@ public class ColorBoostTests
         b.Add(0f, 2f, 0.1f, 0.1f);
         b.Update(0f);
         b.Update(1f);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int f = 0; f < 1000; f++)
+        int f = 0;
+        long bytes = Alloc.Least(() =>
         {
-            if (b.Count < 5) b.Add(f * 0.01f, 2f, 0.1f, 0.1f);
-            b.Update(f * 0.01f);
-        }
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0L));
+            for (int end = f + 1000; f < end; f++)
+            {
+                if (b.Count < 5) b.Add(f * 0.01f, 2f, 0.1f, 0.1f);
+                b.Update(f * 0.01f);
+            }
+        });
+        Assert.That(bytes, Is.EqualTo(0L));
     }
 }

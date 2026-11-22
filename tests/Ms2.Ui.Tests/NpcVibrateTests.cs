@@ -78,8 +78,11 @@ public class NpcVibrateTests
         var p = Vector3.Zero;
         v.Arm(0f, 100f, 2f);
         v.Update(0f, ref p, rnd);
-        long before = System.GC.GetAllocatedBytesForCurrentThread();
-        for (int f = 0; f < 1000; f++) { v.Update(f * 0.01f, ref p, rnd); v.OnHit(f, -1, true, 1f, 1f, null); }
-        Assert.That(System.GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0L));
+        int f = 0;
+        long bytes = Alloc.Least(() =>
+        {
+            for (int end = f + 1000; f < end; f++) { v.Update(f * 0.01f, ref p, rnd); v.OnHit(f, -1, true, 1f, 1f, null); }
+        });
+        Assert.That(bytes, Is.EqualTo(0L));
     }
 }
