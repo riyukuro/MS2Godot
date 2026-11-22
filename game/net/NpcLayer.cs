@@ -371,7 +371,9 @@ public sealed class NpcLayer
         return into.Count != 0;
     }
 
-    /// <summary>Plays a named kfm sequence (a skill's motion) on an npc.</summary>
+    /// <summary>Plays a named kfm sequence (a skill's motion) on an npc.
+    /// STILL-OPEN: it plays at 1; the client's StateSkill plays the motion at its m_fSequenceSpeed through CalcNpcAsiR
+    /// (stateskill.cpp:1250-1252).</summary>
     public void PlaySequence(int id, string name)
     {
         if (!inst.TryGetValue(id, out var i) || i.Model == null || i.Dead) return;
@@ -610,6 +612,10 @@ public sealed class NpcLayer
     /// A jump block (-2/-3) starts the arc mover m_unkDB0, which keeps the yaw target and the snap from applying, as a dead body does here.
     /// STILL-OPEN: the arc mover is not ported; a jumping npc eases toward the block position.
     /// STILL-OPEN: in state 0xd the client keeps the npc's own height; the npc state is not tracked here.
+    /// STILL-OPEN: a hit-state block (state 0xd) replays its sequence at the block speed even when it is the sequence already playing
+    /// (unit_14108e1e0_npcactorandvibrate.cpp:1022); here the speed only takes when the sequence changes.
+    /// STILL-OPEN: a jump block without the arc data plays its sequence (Jump_A/Jump_B) at the block speed
+    /// (unit_14108e1e0_npcactorandvibrate.cpp:928); that branch is not ported.
     /// </summary>
     public void Move(Ms2.Net.Replay.NpcMovedEvent e)
     {
@@ -700,7 +706,7 @@ public sealed class NpcLayer
     {
         float cur = Mathf.RadToDeg(i.Visual.Rotation.Y);
         float delta = Mathf.Wrap(i.TargetYaw - cur, -180f, 180f);
-        if (delta == 0) return;
+        if (delta == 0 || i.TurnCap <= 0) return;
         float step = Mathf.Sign(delta) * Mathf.Min(Mathf.Abs(delta) / 0.1f, i.TurnCap) * dt;
         cur = Mathf.Abs(delta) < Mathf.Abs(step) ? i.TargetYaw : cur + step;
         i.Visual.Rotation = new Godot.Vector3(0, Mathf.DegToRad(Mathf.Wrap(cur, -180f, 180f)), 0);
