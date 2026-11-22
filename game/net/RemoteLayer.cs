@@ -577,6 +577,10 @@ public sealed partial class RemoteLayer : Node3D
                     GD.Print($"live: other player '{add.User.User.Name}' object {add.User.ObjectId} shown at {add.User.Position}");
                     break;
                 case UserRemovedEvent rem:
+                    // PCBase::vfunc_14 rides a riding PC off (vfunc_121(null), pcbase.cpp:855-859), whose ride-off effect
+                    // hangs on the PC's own model ("Scene Root", attachToNode: CNifEffect::AttachToModelNode,
+                    // nifeffectparam.cpp:1079-1108), which leaves the scene with the PC, and its sound is onlyCasterMyPC:
+                    // nothing shows, so FreeRidee plays no effect
                     if (users.Remove(rem.ObjectId, out var gone))
                     {
                         gone.Invincible.End(null, RegionFx);   // ~PC, pc.cpp:764-768

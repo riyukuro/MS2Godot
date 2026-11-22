@@ -136,7 +136,8 @@ public sealed partial class RemoteLayer
 
     /// <summary>
     /// PC::vfunc_118 (@0x141655a30, pc.cpp:1307) over a PC's m_unk_b88: PCBase::vfunc_119's "Hold_Point00".."Hold_Point49"
-    /// nodes of the body (the optimizer's DAT_143ae5ce0 names are STILL-OPEN) and Ridee::vfunc_119's passenger rideBone
+    /// nodes of the body (the optimizer branch's DAT_143ae5ce0 holds the same 50 names, filled with "Hold_Point%02d" at
+    /// startup, unit_1416bc380.cpp:399-404) and Ridee::vfunc_119's passenger rideBone
     /// nodes of its mount (ridee.cpp:638; the list stops at the first seat without a rideBone). float.MaxValue when the map
     /// is empty.
     /// </summary>

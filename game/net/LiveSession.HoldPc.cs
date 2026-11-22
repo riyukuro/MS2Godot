@@ -47,7 +47,8 @@ public partial class LiveSession : IHoldPcWorld
     /// refuses. A ridee never matches: Ridee::vfunc_119 (ridee.cpp:638) fills its rider's map, its own stays empty. Of equal
     /// distances the lowest object id wins (<see cref="RemoteLayer.Nearer"/>). HoldPCAction::vfunc_1 runs it from the action
     /// key poll (FieldContents' 100 ms action-key tick), not per key press.
-    /// STILL-OPEN: the pets, guide objects and cube spawn objects (PCBase too, own vfunc_119) are not searched.
+    /// The pets are not searched: no pet model carries a Hold_PointNN node (both vfunc_119 branches use those 50 names).
+    /// STILL-OPEN: guide objects and cube spawn objects (PCBase too, own vfunc_119) are not searched.
     /// </summary>
     public int FindHoldTarget(float range, out string node)
     {

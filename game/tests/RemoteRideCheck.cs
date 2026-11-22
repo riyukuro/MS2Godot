@@ -209,6 +209,7 @@ public partial class RemoteRideCheck : Node3D
         RideEffects(layer, m.Data.Id);
         NpcBeforePlayer(layer, pc);
         HideRider(layer, pc);
+        OwnUnRideSkillEffect(pc, m);
         pc.QueueFree();
         field.QueueFree();
         layer.Free();
@@ -296,6 +297,36 @@ public partial class RemoteRideCheck : Node3D
         bool oOff = pc.Visual.Visible;
         if (oOn || !mountShown || !oSwap || !oOff) fails.Add($"own hideRider: shown riding {oOn} (mount {mountShown}), plain after swap {oSwap}, after {oOff}");
         GD.Print($"remote ride: hideRider {hide.Data.Id} hides the rider ({!rOn}, own {!oOn}), shown after ride off ({rOff}, own {oOff}); plain {plain.Data.Id} shown");
+    }
+
+    /// <summary>The own pc's ride off through LiveSession's ResponseRide (mode 1, the own object id): PCBase::vfunc_121 plays
+    /// the ride-off effect, and after an UnRideSkill (type 24) the row's rideOffBySkillEffect after it; a ride off with no
+    /// mount plays nothing.</summary>
+    void OwnUnRideSkillEffect(Player pc, Mount m)
+    {
+        const int Self = 9;
+        const System.Reflection.BindingFlags Private = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        var tables = Ms2.Ui.GameTables.Shared(packs, GameOptions.StringLanguage);
+        string on = tables.CommonResource(LiveSession.RideOnEffectKey), off = tables.CommonResource(LiveSession.RideOffEffectKey);
+        var ls = new LiveSession();
+        typeof(LiveSession).GetField("player", Private).SetValue(ls, pc);
+        typeof(LiveSession).GetField("selfObject", Private).SetValue(ls, Self);
+        var respond = typeof(LiveSession).GetMethod("OnResponseRide", Private).CreateDelegate<Action<ResponseRide>>(ls);
+        var played = new List<string>();
+        ls.OwnEffectsPlayed = played.Add;
+        if (pc.Mount != null) pc.RideOff();
+        pc.RideOn(m);
+        string had = m.Data.RideOffBySkillEffect;
+        m.Data.RideOffBySkillEffect = on;     // a stand-in path: the rows' own value is data
+        respond(new ResponseRide(1, Self, null, new RideOffAction(RemoteLayer.UnRideSkillType, 0), 0, 0, 0, 0, false));
+        m.Data.RideOffBySkillEffect = had;
+        var skill = string.Join(", ", played);
+        played.Clear();
+        respond(new ResponseRide(1, Self, null, new RideOffAction(RemoteLayer.UnRideSkillType, 0), 0, 0, 0, 0, false));
+        if (skill != $"{off}, {on}" || pc.Mount != null) fails.Add($"own UnRideSkill ride off effects: {skill} (mount {pc.Mount?.Data.Id})");
+        if (played.Count != 0) fails.Add($"own ride off with no mount played {string.Join(", ", played)}");
+        ls.Free();
+        GD.Print($"remote ride: own UnRideSkill ride off plays '{skill}'; with no mount {played.Count}");
     }
 
     /// <summary>The hold key end to end: with the npc away the player is the pick and the poll keeps it; an npc's
