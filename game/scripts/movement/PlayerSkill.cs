@@ -11,7 +11,6 @@ public partial class Player : ISkillMotionOwner
     // the record's motion data and move time, the move phases and the motion controller (the remote PCs' code), and the
     // sequence time its move keys were read up to
     readonly SkillMotion skillMotion = new();
-    double skillKeyPos = -1;
 
     /// <summary>
     /// The own cast's motion (StateSkill plays the record's motion sequence at its sequenceSpeed): the body's &lt;name&gt;.kf, the
@@ -30,7 +29,6 @@ public partial class Player : ISkillMotionOwner
         kVel = Vector3.Zero;   // the state's enter, vfunc_4 (stateskill.cpp:437): the owner's velocity 0 (the vertical one is kept here)
         skillMotion.Record(move, speed, rotZ);
         skillMotion.Enter(this, false);
-        skillKeyPos = -1;      // an activated sequence throws its keys from 0
         return true;
     }
 
@@ -54,8 +52,10 @@ public partial class Player : ISkillMotionOwner
         var dir = WorldDir(rawInput);
         skillMotion.Step(this, dt, Ms2N(dir));
         var d = FromMs2(skillMotion.Displacement);
-        // vfunc_95: the owner's move speed (the run speed; a mount's while riding)
-        if (input) d += dir * ((Mount != null ? RideSpeed() : MoveConfig.RunSpeed) * dt);
+        // PCBase::vfunc_95 (pcbase.cpp:2238-2243): the speed the last state set (m_unk_190.z; StateSkill sets none, so the
+        // walk, run, ride or swim speed it came from) times vfunc_96 and m_f92c.
+        // STILL-OPEN: vfunc_96 (the move speed stat's rate) and m_f92c are not kept for the own player (1 here).
+        if (input) d += dir * (baseSpeed * dt);
         return d;
     }
 
@@ -64,8 +64,7 @@ public partial class Player : ISkillMotionOwner
     {
         double pos = SkillSequencePosition;
         if (pos < 0 || Anims == null || !Anims.Kf.TryGetValue(skillSequence, out var kf)) return;
-        skillMotion.TextKeys(this, kf.TextKeys, skillKeyPos, pos);
-        skillKeyPos = pos;
+        skillMotion.ReadKeys(this, kf.TextKeys, pos);
     }
 
     // ---- ISkillMotionOwner (MS2 axes) --------------------------------------------------------------------------------
@@ -91,15 +90,14 @@ public partial class Player : ISkillMotionOwner
         skillSequence != null && (object)CurrentAnim == skillSequence && Anim != null ? Anim.CurrentAnimationPosition : -1;
 
     /// <summary>The own cast's sequence moved to <paramref name="time"/> seconds of the kf (a continue round's
-    /// m_pSequence->SetOffset, stateskill.cpp:937); nothing when it does not play. <paramref name="loopRestart"/>: the
-    /// loop's next round, after which FUN_1417f1a90 (stateskill.cpp:2316-2354) arms the loop's move phases again and the
-    /// keys at the time count as read; otherwise (the release's skip) the keys at the time are still to come.</summary>
+    /// m_pSequence->SetOffset after the forced SetTargetAnimation, stateskill.cpp:932-937 and :710-714); nothing when it
+    /// does not play. The next frame reads the move keys from 0 (<see cref="SkillMotion.Restarted"/>);
+    /// <paramref name="loopRestart"/>: the loop's next round, which arms the loop's move phases again (FUN_1417f1a90).</summary>
     public void SeekSkillSequence(double time, bool loopRestart)
     {
         if (SkillSequencePosition < 0) return;
         Anim.Seek(time, true);
-        skillKeyPos = loopRestart ? time : System.Math.BitDecrement(time);
-        if (loopRestart) skillMotion.ArmMovePhases(this);
+        skillMotion.Restarted(this, loopRestart);
     }
 
     /// <summary>

@@ -121,7 +121,7 @@ public class SkillMotionTests
         Near(Run(s, o, 2, new Vector3(0, 1, 0)), new Vector3(0, 120, 0), "along the input");
         Near(Run(s, o, 1), Vector3.Zero, "no input");
         o.Air = true;
-        Near(Run(s, o, 1, new Vector3(0, 1, 0)), Vector3.Zero, "any fall time stops it (vfunc_99(0))");
+        Near(Run(s, o, 1, new Vector3(0, 1, 0)), Vector3.Zero, "any fall time stops it (the owner in the air)");
     }
 
     [Test]
@@ -137,6 +137,20 @@ public class SkillMotionTests
         Assert.That(s.TakesInput, Is.True);
         Run(s, o, 3);
         Assert.That(s.TakesInput, Is.False, "the move time ran out");
+    }
+
+    [Test]
+    public void AStateAttrMoveType2Or3SkillKeepsTheMoveDirectionAfterItsMoveTime()
+    {
+        var o = Keys(("move0", 0f), ("move1", 0.2f));
+        Assert.That(Start(o, Move(0, skillMoveType: 0)).ReadsMoveDirection, Is.False, "the enter's zero stays");
+        Assert.That(Start(o, Move(0, skillMoveType: 3)).ReadsMoveDirection, Is.True);
+        var s = Start(o, Move(0, skillMoveType: 2, inMoveKey: true));
+        Assert.That(s.ReadsMoveDirection, Is.True, "before its move key, unlike the move itself");
+        s.TextKey(o, "move0");
+        Run(s, o, 3);
+        Assert.That(s.TakesInput, Is.False);
+        Assert.That(s.ReadsMoveDirection, Is.True, "vfunc_8 still sets m_pos98 after the move time ran out");
     }
 
     [Test]
@@ -166,6 +180,28 @@ public class SkillMotionTests
         s.TextKeys(o, keys, 0.05, 0.15);
         Assert.That(s.Duration, Is.EqualTo(0.3f).Within(1e-6f), "the re-armed move0 starts the move time again");
         Near(Run(s, o, 3), new Vector3(300, 0, 0), "and the move runs again");
+    }
+
+    [Test]
+    public void AForcedRestartReadsTheKeysFromTheSequenceStartUpToTheNewTime()
+    {
+        // StateSkill's SetTargetAnimation(seq, speed, true) + Update + SetOffset(loopstart + charge tick): the sequence is
+        // activated again, so its next update throws the keys from 0 (a move0 before the new time too), not on from there
+        var keys = new List<(double, string)> { (0.05, "loopstart"), (0.1, "move0"), (0.4, "move1"), (0.7, "loopend") };
+        var o = Keys(("loopstart", 0.05f), ("move0", 0.1f), ("move1", 0.4f), ("loopend", 0.7f));
+        var s = Start(o, Move(0));
+        s.ReadKeys(o, keys, 0.7);
+        Assert.That(s.KeyMark, Is.EqualTo(0.7));
+        s.Restarted(o, true);
+        Assert.That((s.Duration, s.Elapsed), Is.EqualTo((0f, 0f)), "FUN_1417f1a90 cleared the move time");
+        s.ReadKeys(o, keys, 0.21);
+        Assert.That(s.Duration, Is.EqualTo(0.3f).Within(1e-6f), "move0 at 0.1 is thrown again after the seek to 0.2");
+        // the charging release's skip is the same forced restart (without the move phases)
+        s.Restarted(o, false);
+        Assert.That(s.KeyMark, Is.EqualTo(SkillMotion.KeysFromStart));
+        s.ReadKeys(o, keys, 0.5);
+        s.Record(Move(0), 1f, 0f);
+        Assert.That(s.KeyMark, Is.EqualTo(SkillMotion.KeysFromStart), "a new record's sequence starts from 0");
     }
 
     [Test]

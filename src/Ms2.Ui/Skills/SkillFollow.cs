@@ -213,12 +213,4 @@ public static class SkillFollow
     /// <summary>Unk_SkillBlockA4::IsOutputSkill @0x140802ff0 (skillleveldata.cpp:516): 0 without an input skill, else the output
     /// skill is <paramref name="id"/>.</summary>
     public static bool IsOutputSkill(SkillData s, uint id) => s.ComboInputSkill != 0 && s.ComboOutputSkill == id;
-
-    /// <summary>
-    /// The skill state takes the move input only for a skill whose moveType is 2 or 3 (StateSkill::vfunc_8 :642 and
-    /// FUN_1417edc20 :2866: the input direction at the owner's speed); for any other skill the state moves by the motion
-    /// alone, so a press while walking leaves the walk state (State::vfunc_8 @0x1417b7fb0, state.cpp:634-637, MyPC::vfunc_102's
-    /// state change to 0x10) and the walk input is not read until the state ends (FUN_1417f0070 :2811: idle, 1).
-    /// </summary>
-    public static bool HoldsMove(SkillData s) => s != null && s.MoveType != 2 && s.MoveType != 3;
 }

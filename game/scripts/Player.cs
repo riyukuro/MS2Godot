@@ -294,6 +294,9 @@ public partial class Player : CharacterBody3D
         // GameObject m_pos98: each state stores its move buffer's GetMoveDirection (stateidle.cpp:235, statejump.cpp:222,
         // statefall.cpp:170), the camera-relative input (unit_141682f80.cpp:313-335: x +1 left, y +1 forward), not the world move
         moveDir = MoveInputDir(input);
+        // the skill state's m_pos98: zero from its enter, the move input for a stateAttr moveType 2 / 3 skill (vfunc_8,
+        // stateskill.cpp:642-647), so a remote sees the cast's input move in the sync record
+        if (skill) moveDir = skillMotion.ReadsMoveDirection ? MoveInputDir(skillInput) : Vector3.Zero;
         bool hasInput = dir != Vector3.Zero;
         bool grounded = Grounded;
         ProbeGround();

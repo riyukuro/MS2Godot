@@ -190,18 +190,6 @@ public class SkillFollowTests
     }
 
     [Test]
-    public void TheSkillStateHoldsTheWalkUnlessTheSkillMovesByInput()
-    {
-        // StateSkill::vfunc_8 (:642) / FUN_1417edc20 (:2866): only moveType 2 / 3 read the move input
-        foreach (var (mt, holds) in new[] { (0, true), (1, true), (2, false), (3, false) })
-        {
-            var s = SkillData.Load(XElement.Parse($"<skill id=\"1\"><basic><stateAttr moveType=\"{mt}\"/></basic></skill>"), NoParts);
-            Assert.That(SkillFollow.HoldsMove(s), Is.EqualTo(holds), $"moveType {mt}");
-        }
-        Assert.That(SkillFollow.HoldsMove(null), Is.False);
-    }
-
-    [Test]
     public void TheSkillXmlLoadsImmediateActiveAndTheMotionsSelfInputComboKey()
     {
         // <kinds immediateActive> (skilloverlapcompare.cpp:845), the motion's selfInputCombo (skillleveldata.cpp:1165)
@@ -244,7 +232,7 @@ public class SkillFollowTests
         var lv = s.GetLevelData(1);
         var m = lv.Motions[0];
         Assert.That(s.KeyIsDown && !string.IsNullOrEmpty(m.SelfInputCombo), Is.True);
-        Assert.That(SkillFollow.HoldsMove(s), Is.True);
+        Assert.That(s.MoveType is not (2 or 3), Is.True, "stateAttr moveType 2 / 3 read the move input (stateskill.cpp:642)");
         var x = Ms2.Formats.Text.PackXml.Read(packs, "Resource/Model/Character", "female/female.xml");   // KMS2_DEV has a BOM
         var seq = x.Root!.Elements().First(e => string.Equals(e.Name.LocalName, m.SequenceName, StringComparison.OrdinalIgnoreCase));
         var keys = new SkillFollow.ComboKeys();

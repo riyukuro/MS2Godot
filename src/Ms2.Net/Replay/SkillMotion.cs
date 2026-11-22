@@ -59,6 +59,7 @@ public sealed class SkillMotion
         Speed = speedScale;
         RotZ = rotZ;
         Duration = Elapsed = 0f;
+        KeyMark = KeysFromStart;   // the record's sequence is activated anew
     }
 
     /// <summary>
@@ -100,8 +101,7 @@ public sealed class SkillMotion
 
     /// <summary>
     /// The sequence's text keys the play passed this frame, in order: each key with <paramref name="after"/> &lt; time
-    /// &lt;= <paramref name="upTo"/> goes to <see cref="TextKey"/> (the own PC's TextKeyEvent feed; a seek sets
-    /// <paramref name="after"/> so a key at the seek target fires again only after a loop restart).
+    /// &lt;= <paramref name="upTo"/> goes to <see cref="TextKey"/>.
     /// </summary>
     public void TextKeys(ISkillMotionOwner owner, List<(double time, string text)> keys, double after, double upTo)
     {
@@ -110,6 +110,35 @@ public sealed class SkillMotion
             var (t, key) = keys[i];
             if (t > after && t <= upTo) TextKey(owner, key);
         }
+    }
+
+    /// <summary>The read mark that puts every key of the sequence still to come, a key at time 0 too: an activated sequence's
+    /// first update throws its keys from 0 (NiControllerSequence::ThrowAllTextKeys with m_bNeedFirstTextKey set).</summary>
+    public const double KeysFromStart = -1;
+
+    /// <summary>The sequence time the own PC's keys were read up to (<see cref="ReadKeys"/>).</summary>
+    public double KeyMark { get; private set; } = KeysFromStart;
+
+    /// <summary>The own PC's TextKeyEvent feed for one frame: the keys after <see cref="KeyMark"/> up to
+    /// <paramref name="upTo"/> (<see cref="TextKeys"/>), then the mark moves there.</summary>
+    public void ReadKeys(ISkillMotionOwner owner, List<(double time, string text)> keys, double upTo)
+    {
+        TextKeys(owner, keys, KeyMark, upTo);
+        KeyMark = upTo;
+    }
+
+    /// <summary>
+    /// StateSkill's SetTargetAnimation(seq, m_fSpeed, true), Update and SetOffset (the loop's next round, loopend
+    /// stateskill.cpp:932-937; the charging release's skip, vfunc_8 :710-714): the forced restart deactivates the sequence
+    /// (NiActorManager::Reset) and the Update activates it again with an update that throws no keys (NiActorManager::Update,
+    /// m_bNeedFirstTextKey stays set), so the next frame throws its keys from 0 up to the new time
+    /// (<see cref="KeysFromStart"/>). <paramref name="loopRestart"/>: the loop's round, after which FUN_1417f1a90 runs
+    /// (<see cref="ArmMovePhases"/>, :941).
+    /// </summary>
+    public void Restarted(ISkillMotionOwner owner, bool loopRestart)
+    {
+        KeyMark = KeysFromStart;
+        if (loopRestart) ArmMovePhases(owner);
     }
 
     /// <summary>StateSkill::CalcSkillDuration (@0x1417ec210, stateskill.cpp:1259-1267): with both key times, the record's
@@ -149,6 +178,12 @@ public sealed class SkillMotion
     /// the owner's speed, unless a movingInMovekey skill's record has no time left.</summary>
     public bool TakesInput =>
         (Move.SkillMoveType == 2 || Move.SkillMoveType == 3) && !(Move.MovingInMovekey && NearlyEqual(RemainingDuration, 0f));
+
+    /// <summary>The owner's move direction (GameObject m_pos98, what the sync record's direction carries) in the skill state:
+    /// the state's enter sets it to zero (StateSkill::vfunc_4, stateskill.cpp:438) and each frame of a skill of stateAttr
+    /// moveType 2 or 3 sets it to the move buffer's direction (vfunc_8, :642-647), whether or not the record has move time
+    /// left. False keeps it zero.</summary>
+    public bool ReadsMoveDirection => Move.SkillMoveType == 2 || Move.SkillMoveType == 3;
 
     /// <summary>
     /// The controller's vfunc_5 by the motion's movetype: <see cref="Displacement"/> is what its vfunc_3 hands vfunc_68.

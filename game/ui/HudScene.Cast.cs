@@ -554,7 +554,7 @@ public partial class HudScene
         if (r.Charged)
         {
             SendOwnRound(live, r, (uint)Net.LiveSession.CastTick());
-            SeekOwnLoop(player, (uint)Time.GetTicksMsec());
+            SeekOwnLoop(player);
             return;
         }
         var g = player.GlobalPosition;
@@ -717,7 +717,7 @@ public partial class HudScene
             if (!ready && cool > 0f && !ownCast.Skill.ChargingSkill) { ownQueued = ownCast; ownCast.QueuedCharge = true; }
             else SendOwnRound(live, ownCast, tick);
         }
-        if (!ownCast.QueuedCharge) SeekOwnLoop(me, now);
+        if (!ownCast.QueuedCharge) SeekOwnLoop(me);
         else ownPointTime = OwnPointTime(me);
     }
 
@@ -740,19 +740,17 @@ public partial class HudScene
 
     /// <summary>
     /// The next round's start (loopend :930-942, FUN_1417f11d0 :1596-1607): the loop sequence again at loopstart plus the charge
-    /// tick. The text keys read on from there; the loopstart key is taken as passed at the seek (an assumption: the client
-    /// restarts the sequence with SetTargetAnimation and sets its offset at or after the key; loopstart's m_fChargeTime = 0 is
-    /// what lets the hold check run for the next round).
+    /// tick. The forced restart reactivates the sequence, so the next frame reads the keys from 0 up to the new time
+    /// (<see cref="Ms2.Net.Replay.SkillMotion.Restarted"/>): the loopstart key comes again then (its m_fChargeTime = 0 lets the
+    /// hold check run for the next round), with the earlier combo keys and the current attack's point if it lies there.
     /// FUN_1417f1a90 (move0 / move2) runs in the body's seek (Player.SeekSkillSequence).
     /// STILL-OPEN: m_nStartTick (the combo ticks) is not ported.
     /// </summary>
-    void SeekOwnLoop(Player me, uint now)
+    void SeekOwnLoop(Player me)
     {
         double t = ownLoop.LoopStart + ownLoop.ChargeTick * 0.001;
         me.SeekSkillSequence(t, true);
-        ownKeyPos = t;
-        // the loopstart event (:844-868) only for a sequence with the key
-        if (ownLoopStartKey >= 0) ownLoop.OnLoopStart(ownLoopStartKey, now);
+        ownKeyPos = Ms2.Net.Replay.SkillMotion.KeysFromStart;
         ownPointTime = OwnPointTime(me);
     }
 
@@ -797,13 +795,14 @@ public partial class HudScene
     }
 
     /// <summary>
-    /// The release's skip (vfunc_8 :708-714): the sequence moved to the charging_attack key. The keys at that time are read
-    /// as not yet passed (an assumption: the client's SetOffset then Update lets the attack whose point is the key fire).
+    /// The release's skip (vfunc_8 :708-714): the sequence restarted (SetTargetAnimation forced) and moved to the
+    /// charging_attack key, so the next frame reads the keys from 0 up to there
+    /// (<see cref="Ms2.Net.Replay.SkillMotion.Restarted"/>) and the attack whose point is the key fires.
     /// </summary>
     void SeekOwnRelease(float t)
     {
         player.SeekSkillSequence(t, false);
-        ownKeyPos = Math.BitDecrement((double)t);
+        ownKeyPos = Ms2.Net.Replay.SkillMotion.KeysFromStart;
     }
 
     /// <summary>IsKeyDown(m_nA4) (stateskill.cpp:701, :949): the cast's DIK key is down (<see cref="OwnKeyDown"/>); false

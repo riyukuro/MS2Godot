@@ -664,6 +664,26 @@ public class RemotePcStatesTests {
         Assert.That(b.Position, Is.EqualTo(Vector3.Zero));
     }
 
+    [Test] public void TheInputMoveReadsItsDirectionAfterTheMotionStepTurnedThePc() {
+        // FUN_1417edc20: vfunc_68 of the controller's displacement turns the PC toward the target yaw first; the input
+        // move's CalcMoveDirectionNoYaw (camera mode 0xe: the body's facing) comes after it (stateskill.cpp:2866-2869)
+        var b = new Body();
+        var sm = new RemotePcStates(b);
+        var s = Rec(1, 1, Vector3.Zero, Vector2.Zero, 0f);
+        s.CameraMode = 0xe;
+        sm.Push(s); Run(sm, 0.5f);
+        sm.Cast(10200001, false, Vector3.Zero, 0f, move: new CastMove(2, 0, 0, 0, 2, false, false, default));
+        sm.SkillSync(0f, new Vector2(0, 1), false, false);
+        sm.TargetYaw = 90f;
+        var p0 = b.Position;
+        sm.Update(1 / 60f);
+        // each vfunc_68 call turns by fTime (pcbase.cpp:1866-1868): 30 deg after the motion step, 60 after the input step
+        Assert.That(b.RotationZ, Is.EqualTo(60f).Within(1e-3f), "two vfunc_68 calls of the 1800 deg/s turn");
+        var d = Vector3.Normalize(b.Position - p0);
+        var facing30 = new Vector3(MathF.Sin(MathF.PI / 6), -MathF.Cos(MathF.PI / 6), 0);
+        Assert.That(Vector3.Distance(d, facing30), Is.LessThan(1e-3f), "the step follows the facing after the first turn (sin 30, -cos 30)");
+    }
+
     [Test] public void ArcMotionReachesItsDistanceInFourTenthsOfASecond() {
         // CArcMotionController: a bezier from the entry place to movedistance along the forward, its control point
         // halfway and 100 higher, walked by elapsed / 0.4

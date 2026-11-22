@@ -931,10 +931,11 @@ public sealed class RemotePcStates
     {
         if (skillMotion.NoMove) return;
         bool input = skillMotion.TakesInput;
-        var dir = MoveDirection();
-        skillMotion.Step(pc, dt, dir);
+        skillMotion.Step(pc, dt, MoveDirection());
         MoveBy(skillMotion.Displacement, dt);
-        if (input) MoveBy(dir * (EffectiveSpeed * dt), dt);
+        // CalcMoveDirectionNoYaw after the controller's vfunc_68 (stateskill.cpp:2866-2869), whose turn toward the target
+        // yaw a camera mode 0xe direction reads
+        if (input) MoveBy(MoveDirection() * (EffectiveSpeed * dt), dt);
     }
 
     /// <summary>The cast's move time (m_fDuration, m_fElapsed, for tests).</summary>
