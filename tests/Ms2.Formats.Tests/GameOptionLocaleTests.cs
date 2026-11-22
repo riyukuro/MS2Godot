@@ -25,7 +25,8 @@ public class GameOptionLocaleTests
         var gms2 = new HashSet<int> { 2, 5, 6 };   // the GMS2 data holds string/en, de and pt
         Assert.That(GameOptionLocale.LanguageWithStrings(0, 2, gms2.Contains), Is.EqualTo(2), "a KMS2 run's index 0 is string/kr");
         Assert.That(GameOptionLocale.LanguageWithStrings(5, 2, gms2.Contains), Is.EqualTo(5));
-        Assert.That(GameOptionLocale.LanguageWithStrings(0, 0, _ => true), Is.EqualTo(0));
+        Assert.That(GameOptionLocale.LanguageWithStrings(3, 0, gms2.Contains), Is.EqualTo(0), "no strings: the region's, whatever the saved index");
+        Assert.That(GameOptionLocale.LanguageWithStrings(7, 2, _ => false), Is.EqualTo(2), "a data folder with no string folder at all");
     }
 
     [Test]

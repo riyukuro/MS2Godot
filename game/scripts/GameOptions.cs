@@ -277,15 +277,25 @@ public static class GameOptions
         // gameoption.cpp:1840-1844: the NA region's fresh file takes the language of the system's UI language
         if (regionIndex == 2 && fromDefault)
             lang = o.LanguageOption.LanguageIndex = GameOptionLocale.LanguageFromLangId(GameOptionLocale.WindowsLangId(OS.GetLocale()));
-        if (LanguageArgument() is { } code)
+        var argument = LanguageArgument();
+        if (argument is { } code)
         {
             lang = GameOptionLocale.LanguageByCode(code, 0);    // DAT_143ab0240 starts at 0 (KR)
             voice = GameOptionLocale.LanguageByCode(code, 0);
         }
         // a saved language the data has no strings for (a GameOption.xml kept from a KMS2 run: languageIndex 0 is string/kr/, which
-        // the GMS2 data lacks) gives the region's own language, as a fresh file would; the client has no such data to meet.
-        // STILL-OPEN: the client's own pick for a saved index outside the region's language list.
-        if (LanguageArgument() == null && packs != null) lang = GameOptionLocale.LanguageWithStrings(lang, regionIndex, HasStrings(packs));
+        // the GMS2 data lacks) gives the region's own language and voice, as a fresh file would (FUN_14125f0c0, gameoptionstruct.cpp:2466:
+        // both set to the region index). The client applies the saved languageIndex unchecked and has no such case; this is ours for
+        // a data folder the file was not written for. The options dialog and the running voice then hold the same pick.
+        if (argument == null && packs != null)
+        {
+            int picked = GameOptionLocale.LanguageWithStrings(lang, regionIndex, HasStrings(packs));
+            if (picked != lang)
+            {
+                lang = o.LanguageOption.LanguageIndex = picked;
+                voice = o.LanguageOption.VoiceIndex = regionIndex;
+            }
+        }
         Voice = voice;
         language = lang;
         region = regionIndex;
