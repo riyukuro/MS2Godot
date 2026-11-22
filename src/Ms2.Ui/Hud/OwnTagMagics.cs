@@ -600,7 +600,7 @@ public sealed class OwnTagMagics
         if (pierce)
         {
             if (max <= m.Hits.Count) return null;
-            PierceInterval(m, nowMs, owner, splashes);
+            PierceInterval(m, nowMs, splashes);
         }
         else if (mode == 2 && !NearlyEqual(m.Remain, 0f)) return null;
         var col = a.Arrow.Collision;
@@ -657,7 +657,7 @@ public sealed class OwnTagMagics
     /// current point and m_matRotation's euler angles in degrees).
     /// STILL-OPEN: the local owner's effect (m_str160) at the current point is not played.
     /// </summary>
-    static void PierceInterval(Magic m, int nowMs, in MagicOwner owner, List<SkillSplashRequest> splashes)
+    static void PierceInterval(Magic m, int nowMs, List<SkillSplashRequest> splashes)
     {
         uint interval = m.Row.PiercingAttackInterval;
         if (interval == 0 || (uint)m.PierceTick + interval > (uint)nowMs) return;
