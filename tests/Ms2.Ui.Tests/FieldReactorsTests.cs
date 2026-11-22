@@ -222,6 +222,31 @@ public class FieldReactorsTests
     }
 
     [Test]
+    public void TheCaptionIsTheReactorFormatOfTheStateActionString()
+    {
+        var f = new FieldReactors(Table());
+        var strings = new Dictionary<string, string> { ["s_action_reactor"] = "{0} - press", ["s_open"] = "Open" };
+        string Common(string k) => strings.GetValueOrDefault(k ?? "", "");
+        f.Add(Add(1, "a", 10, Vector3.Zero, St(0)), out _);
+        f.Add(Add(2, "b", 10, Vector3.Zero, St(1)), out _);
+        Assert.That(f.Caption(1, Common), Is.EqualTo("Open - press"), "GetActionCaption(0x65e, action string)");
+        Assert.That(f.Caption(2, Common), Is.EqualTo(""), "state 2 has no action string");
+        Assert.That(f.Caption(0, Common), Is.EqualTo(""), "no polled reactor");
+        Assert.That(f.Caption(9, Common), Is.EqualTo(""), "a polled reactor that is gone");
+        f.Update(1, St(9));
+        Assert.That(f.Caption(1, Common), Is.EqualTo(""), "no current state data");
+    }
+
+    [Test]
+    public void AnActionCaptionWithoutTheArgumentIsCutAtTheFirstDash()
+    {
+        Assert.That(ActionCaption.Of("{0} - press", ""), Is.EqualTo(" "));
+        Assert.That(ActionCaption.Of("Ride - here - now", ""), Is.EqualTo("Ride "));
+        Assert.That(ActionCaption.Of("Ride - {0}", "x"), Is.EqualTo("Ride - x"));
+        Assert.That(ActionCaption.Of("Plain", ""), Is.EqualTo("Plain"));
+    }
+
+    [Test]
     public void NearestAllocatesNothing()
     {
         var f = new FieldReactors(Table());

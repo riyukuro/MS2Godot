@@ -304,6 +304,21 @@ public sealed class FieldReactors
         return true;
     }
 
+    /// <summary>
+    /// ReactorAction::vfunc_6 (@0x14095f870, actionkeyobject.cpp:2940-2955), the action key's caption: "" without a polled
+    /// reactor, for one that is gone, without its current state data or when the state's action string
+    /// (GetStringCommonByKey(actionStringKey)) is empty; else GetActionCaption(0x65e "s_action_reactor", action string).
+    /// It builds strings: call it when the polled reactor or its state changes, not per frame.
+    /// STILL-OPEN: the action key tooltip that shows it (UIActionTooltip 0x4e5c) has no port.
+    /// </summary>
+    public string Caption(int polled, Func<string, string> commonByKey)
+    {
+        if (polled == 0 || Get(polled) is not { } r || r.State is not { } st) return "";
+        string action = commonByKey(st.ActionStringKey) ?? "";
+        if (action.Length < 1) return "";
+        return ActionCaption.Of(commonByKey(Ms2.Formats.Text.CommonStringIds.Key(0x65e)) ?? "", action);
+    }
+
     /// <summary>CReactor::FUN_140b78b40 (@0x140b78b40, reactor.cpp:217-222): without the entity (m_unk_80) nothing, else
     /// SetEntityHighlight(entity id, on, 1, false).</summary>
     static void SetHighlight(Reactor r, bool on)
