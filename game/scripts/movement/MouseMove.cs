@@ -56,7 +56,6 @@ public partial class MouseMove : Node
     public override void _Process(double delta)
     {
         if (!Moving) { player.MouseInput = Vector2.Zero; return; }
-        if (player.TaxiHeld) { Stop(); return; }         // StateTaxiCall holds the body in 0x66-0x6a: no click-move waits for the ride's end
         if (player.DeathHoldsMove) { Stop(); return; }   // StateDead::vfunc_4: CPushControl::Reset (statedead.cpp:152)
         if (MoveInput.Read().Move != Vector2.Zero) { Stop(); return; }
         var d = target - player.GlobalPosition;

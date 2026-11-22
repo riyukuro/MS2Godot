@@ -197,4 +197,14 @@ public class TaxiManagerTests
         Assert.That((call.Finished, call.HoldsSkill), Is.EqualTo((true, false)));
         Assert.That(new TaxiCallState().HoldsSkill, Is.False, "no call");
     }
+
+    [Test]
+    public void ASkillWithoutASequenceInPhase65KeepsTheCall()
+    {
+        var s = Running(new List<IOutPacket>(), TaxiCallState.Call);
+        s.SkillCast(false);                               // no sequence name: Ridee / FireFirstAttack, no vfunc_59(0x10)
+        Assert.That((s.Finished, s.Phase), Is.EqualTo((false, TaxiCallState.Call)));
+        s.SkillCast(true);                                // a sequence enters the skill state
+        Assert.That(s.Finished, Is.True);
+    }
 }

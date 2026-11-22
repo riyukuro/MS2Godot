@@ -73,6 +73,11 @@ public sealed class TaxiCallState
     /// the call (<see cref="LeaveState"/>).</summary>
     public bool HoldsSkill => !Finished && Phase != 0 && Phase != Call;
 
+    /// <summary>MyPC::vfunc_102 (mypc.cpp:1205-1222): the call ends only when the cast enters the skill state (vfunc_59(0x10)), i.e. the
+    /// level has a sequence name. A skill without one (the ridee path, FireFirstAttack) and the bind-confirm box path keep StateTaxiCall,
+    /// which goes on to 0x66.</summary>
+    public void SkillCast(bool entersSkillState) { if (entersSkillState) LeaveState(); }
+
     /// <summary>vfunc_8 (@0x1417d9e0, :302-315) with the move direction: in phase 0x65 a move input sends the owner to the walk state
     /// (state 2), which leaves this one through <see cref="LeaveState"/>, and the input goes on to the walk; in the other phases the
     /// state holds the body. True: the move input is held this frame.</summary>

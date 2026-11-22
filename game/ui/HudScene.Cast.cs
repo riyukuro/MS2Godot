@@ -138,6 +138,7 @@ public partial class HudScene
     /// mypc.cpp:1711-1726, a silent refusal), then CSkillSystem::FUN_141764e30; the record, or null when refused.</summary>
     CastRecord RequestOwn(SlotWorld w, uint skillId, WeaponAction held, int key)
     {
+        if (Net.LiveSession.Instance is { TaxiHoldsSkill: true }) return null;   // the client never calls vfunc_104 in 0x66-0x6a (statetaxicalldata.cpp:304)
         if (GetTree().GetFirstNodeInGroup(Player.Group) is not Player me) return null;
         var level = w.Jobs?.SkillLevel(skillId) ?? 1;
         var d = w.Tables.GetSkillData(skillId);
@@ -486,7 +487,6 @@ public partial class HudScene
                 return gate == CoolGate.Queued;
             }
         }
-        live?.TaxiSkillCast();   // a cast in the taxi call's phase 0x65 leaves the state (ChangeState): the call ends
         // :1197-1203: the running skill state's elapsed time (StateSkill m_nElapsed, FUN_14028d280: ms to seconds)
         float elapsed = OwnSkillStateRuns() ? (Time.GetTicksMsec() - ownStateStartMs) * 0.001f : 0f;
         // StateSkill::FUN_1417ea570: the skill state and the mode 0 send
@@ -502,7 +502,8 @@ public partial class HudScene
             me.Anims.Kf.TryGetValue(seqKey, out seq);
         if (r.Level.HasSequenceName)
         {
-            // :1213-1216: a level with a sequence enters the skill state; the cooldown counts the old state's time off
+            // :1213-1216: a level with a sequence enters the skill state (vfunc_59(0x10), which also ends a taxi call in 0x65); the cooldown counts the old state's time off
+            live?.TaxiSkillCast(true);
             if (motion != null && !string.IsNullOrEmpty(motion.SequenceName) && me.PlaySkillSequence(motion.SequenceName, motion.SequenceSpeed, SkillFollow.HoldsMove(r.Skill)))
                 StartOwnAttacks(me, r);
             delay = elapsed;

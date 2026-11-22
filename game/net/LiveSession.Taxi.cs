@@ -53,7 +53,7 @@ public partial class LiveSession
     public bool TaxiHoldsSkill => taxiCall is { HoldsSkill: true };
 
     /// <summary>A skill's cast in phase 0x65 sends the owner to the skill state (ChangeState): the call ends.</summary>
-    public void TaxiSkillCast() => EndTaxiCall();
+    public void TaxiSkillCast(bool entersSkillState) { if (entersSkillState) EndTaxiCall(); }
 
     /// <summary>The local player is in the field (WorldService::GetLocalPlayer).</summary>
     public bool TaxiPlayerReady => selfObject >= 0 && player != null && IsInstanceValid(player);

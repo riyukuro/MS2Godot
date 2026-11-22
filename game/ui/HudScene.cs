@@ -1872,7 +1872,7 @@ public partial class HudScene : Node, IUiStageHost
         c.HasPlayer = () => Ms2Godot.Net.LiveSession.Instance is { TaxiPlayerReady: true };
         c.PlayerDead = () => Ms2Godot.Net.LiveSession.Instance?.TaxiPlayerDead ?? false;
         c.PlayerStateId = () => Ms2Godot.Net.LiveSession.Instance?.TaxiPlayerStateId ?? 0;
-        c.CanEnterState = _ => Ms2Godot.Net.LiveSession.Instance is { TaxiCalling: false };   // STILL-OPEN: FUN_141527160's other gates
+        c.CanEnterState = _ => Ms2Godot.Net.LiveSession.Instance is { TaxiCalling: false };   // STILL-OPEN: FUN_141527160's other gates; a call started while the own skill sequence runs ends on the next frame (TaxiStateLeft), where the client's ChangeState(0x25) replaces the skill state
         c.StationNear = () => Ms2Godot.Net.LiveSession.Instance?.TaxiStationNear ?? false;
         c.Mesos = () => hudModel.HasLocalPlayer ? hudModel.Player.Mesos : 0;   // DAT_143ab2898
         c.PlayerRiding = () => Ms2Godot.Net.LiveSession.Instance?.TaxiPlayerRiding ?? false;
