@@ -340,8 +340,8 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
 
     /// <summary>
     /// SkillSlot::vfunc_0 (ITooltip, skillslot.cpp:716) through NotifyDragSlot::GetSlotTooltip: null for a name that is not
-    /// a slot; an empty object when the slot gives none. With m_bFixed 0 (no slot of this bar is fixed) every filled
-    /// tooltip gets the right-click remove hint, SetEnablePuton(GetStringCommon(0x759)) = s_msg_rclick_putoff_qslot.
+    /// a slot; an empty object when the slot gives none. A filled tooltip of a slot that is not fixed (IsFixed() == 0,
+    /// :725; no slot of this bar is) gets the right-click remove hint, SetEnablePuton(GetStringCommon(0x759)) = s_msg_rclick_putoff_qslot.
     /// - An item id whose item is gone: ASTooltip(player, 0x40, 2).FUN_1409e1770(id, GetItemRank(id)) (:722), GetItemRank
     ///   being the data's default rank (its rank field, 1 when that is 0).
     /// - An item that FUN_14053e460 allows: FUN_1409e0d40 over the item, the same flags.
@@ -370,7 +370,7 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
             var gone = new Items.ItemTooltip(Model, SlotTooltipFlags);
             int rank = Model.Tables.Items.Get(e.ItemId) is { Rank: not 0 } d ? d.Rank : 1;
             if (!gone.FillById(e.ItemId, rank)) return null;
-            gone.SetEnablePuton(removeHint);
+            if (!IsFixed) gone.SetEnablePuton(removeHint);
             return gone.Data;
         }
         if (item != null && w.ItemData(item.Id) is { } data && data.IsQuickSlotUsable)
@@ -378,7 +378,7 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
             if (!Model.HasLocalPlayer) return null;
             var tip = new Items.ItemTooltip(Model, SlotTooltipFlags);
             if (!tip.Fill(InventoryController.ToItem(item, Model.Tables.Items))) return null;
-            tip.SetEnablePuton(removeHint);
+            if (!IsFixed) tip.SetEnablePuton(removeHint);
             return tip.Data;
         }
         uint skillId = s.EffectiveSkillId;
@@ -394,7 +394,7 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         int level = w.Jobs?.LevelData(skillId)?.Level ?? 1;
         var skillTip = Skills.SkillTooltip.Build(Model.Tables, player, skillId, level, SlotTooltipFlags, false);
         if (skillTip == null) return null;
-        skillTip["enablePuton"] = removeHint;
+        if (!IsFixed) skillTip["enablePuton"] = removeHint;
         return skillTip;
     }
 
@@ -589,8 +589,12 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         name != null && name.StartsWith(SlotBag + ".", StringComparison.Ordinal)
         && int.TryParse(name.AsSpan(SlotBag.Length + 1), System.Globalization.NumberStyles.None, null, out var i) && i < SlotCount ? i : -1;
 
-    /// <summary>SkillSlot::FUN_141761990 (skillslot.cpp:1433): IsFixed (0 on this bar) or a key bound slot (22..24).</summary>
-    static bool IsFixedOrBound(int slot) => SlotKeys.ContainsKey(slot);
+    /// <summary>SkillSlot::IsFixed (m_bFixed): 0 for every slot of this bar; a slot tooltip's remove hint and
+    /// FUN_141761990 test it (skillslot.cpp:725, :1433).</summary>
+    static bool IsFixed => false;
+
+    /// <summary>SkillSlot::FUN_141761990 (skillslot.cpp:1433): IsFixed or a key bound slot (22..24).</summary>
+    static bool IsFixedOrBound(int slot) => IsFixed || SlotKeys.ContainsKey(slot);
 
     /// <summary>A SkillSlot of the bar.</summary>
     public bool IsDragSlot(string name) => SlotIndex(name) >= 0;
