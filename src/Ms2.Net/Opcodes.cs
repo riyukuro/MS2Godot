@@ -57,6 +57,7 @@ public enum Inbound : ushort {
     ItemPutOff = 0x26,
     Stat = 0x2E,
     UserBattle = 0x2F,
+    UserSkinColor = 0x30,   // RecvOp UserSkinColor (commonfiles/opcodes.h:56): CSceneStateGame::OnUserSkinColor (scenestategame.cpp:3239, @0x141717340); KMS2 only: the GMS2 map has no row for it (STILL-OPEN)
     Beauty = 0x31,          // RecvOp Beauty (commonfiles/opcodes.h:57): UIBeautyShopDialog::OnBeautyShopPacket, by mode: see BeautyShopPacket
     RevivalConfirm = 0x33,   // OnRevivalConfirm
     Revival = 0x34,

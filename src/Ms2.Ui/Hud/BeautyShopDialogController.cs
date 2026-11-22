@@ -96,7 +96,7 @@ public sealed class BeautyShopDialogController : UiController
     public bool Waiting;
     /// <summary>The shop root's input is off (FUN_1412761e0(m_30, 0) at uibeautyshopdialog.cpp:1860, after the send): the shop takes no
     /// callback and the host blocks its view until the answer turns it on (FUN_1418ca380 :1885, on a result other than 0) or an item event does (<see cref="OnItemEvent"/>).
-    /// STILL-OPEN: the host feeds vfunc_21 and vfunc_24; the skin-colour event (vfunc_25, inbound 0x30) has no LiveSession source yet.</summary>
+    /// The host feeds vfunc_21, vfunc_24 and vfunc_25 (the own skin colour, inbound 0x30; KMS2 only, STILL-OPEN: the GMS2 number).</summary>
     public bool InputOff;
     /// <summary>m_2b8: the id of the item worn in the shop's slot, kept before the mode-7 send (uibeautyshopdialog.cpp:1840, FUN_141655e10
     /// of FUN_140f01070(kind)); 0 = none. <see cref="WornItemId"/> reads it; unchanged when the local player is absent (null answer).</summary>

@@ -57,21 +57,24 @@ public partial class HudScene
         void OnOwnItem(int itemId)   // vfunc_24 of the item event listeners
         {
             itemColoringFlow.Current?.OnItemDyed(itemId);
-            beautyFlow.Current?.OnItemEvent();   // vfunc_24 (uibeautyshopdialog.cpp:896-925); STILL-OPEN: vfunc_25 (skin colour) has no LiveSession event
+            beautyFlow.Current?.OnItemEvent();   // vfunc_24 (uibeautyshopdialog.cpp:896-925)
         }
         // OnItemPutOn (scenestategame.cpp:3112-3123): with the beauty shop's sub scene the hub's vfunc_20 runs for slots 1, 3 and 2 only
         void OnOwnPutOn(Ms2.Net.Packets.EquipItem item)
         {
             if (beautyFlow.Current is { } shop && (int)item.Slot is 1 or 2 or 3) shop.OnItemEvent(item.Id, ownEquip: true);
         }
+        void OnOwnSkinColor() => beautyFlow.Current?.OnItemEvent();   // hub slot 0 -> vfunc_25 (uibeautyshopdialog.cpp:896-925), no item stored
         live.BeautyRequested += OnRequested;
         live.OwnItemUpdated += OnOwnItem;
+        live.OwnSkinColor += OnOwnSkinColor;
         live.Me.OwnItemPutOn += OnOwnPutOn;
         live.BeautyPacketReceived += OnBeautyPacket;
         unwatchBeauty = () =>
         {
             live.BeautyRequested -= OnRequested;
             live.OwnItemUpdated -= OnOwnItem;
+            live.OwnSkinColor -= OnOwnSkinColor;
             live.Me.OwnItemPutOn -= OnOwnPutOn;
             live.BeautyPacketReceived -= OnBeautyPacket;
             beautyFlow.Shutdown();

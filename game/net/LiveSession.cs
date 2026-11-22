@@ -344,6 +344,8 @@ public partial class LiveSession : Node
     public event Action<BeautyReq> BeautyRequested;
     /// <summary>OnItemUpdate (scenestategame.cpp:3214) for the local player's worn item: the item event dispatcher's vfunc_23 (the item's id), whose listeners (the item colour dialog, vfunc_24 @0x1419adf80) take it.</summary>
     public event Action<int> OwnItemUpdated;
+    /// <summary>The own player's skin colour changed (OnUserSkinColor, scenestategame.cpp:3252-3257: the item event hub's slot 0, which the beauty shop listens to).</summary>
+    public event Action OwnSkinColor;
     /// <summary>CSceneStateGame::OnItemBox (@0x141739e40): the box result; the consumer checks the item's function (OpenItemBox / SelectItemBox) as the client does.</summary>
     public event Action<ItemBoxResult> ItemBoxResulted;
     /// <summary>Inbound 0x31 body: UIBeautyShopDialog::OnBeautyShopPacket (uibeautyshopdialog.cpp:1510) or UIBeautyShopStyleDialog's
@@ -1306,6 +1308,12 @@ public partial class LiveSession : Node
                 if (u.Own && Me.EquipByUid(u.Uid) is { } worn) OwnItemUpdated?.Invoke(worn.Id);
                 if (u.Updated && u.ObjectId != selfObject) remote?.ItemUpdated(u.ObjectId, remote.EquipOf(u.ObjectId, u.Uid).Equip);
                 GD.Print($"live: item update object {u.ObjectId} uid {u.Uid}{(u.Updated ? " (read again)" : u.Own ? " (own, item event)" : "")}");
+            }
+            else if (game.Is(p, Inbound.UserSkinColor))
+            {
+                var c = UserSkinColor.Read(p.Reader());   // CSceneStateGame::OnUserSkinColor (scenestategame.cpp:3239)
+                if (c.ObjectId == selfObject && selfObject > 0) OwnSkinColor?.Invoke();   // :3252-3257: only the own player raises the item event hub's slot 0
+                GD.Print($"live: skin colour object {c.ObjectId}");
             }
             else if (game.Is(p, Inbound.BindItem))
             {
