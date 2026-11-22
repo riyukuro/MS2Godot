@@ -101,6 +101,17 @@ public partial class LiveSession
                     Shot("revived.png");
                     break;
                 }
+                case "revivepaid":
+                {
+                    Check("the revival dialog is open", hud.RevivalUiUp());
+                    GD.Print($"live: combat paid revive: {(hud.ReviveScripted(2) ? "sent" : "no dialog")}");
+                    bool alive = false;
+                    await until(() => alive = !live.Me.Dead, 60 * 15);
+                    Check("the character is alive again after the paid revive", alive);
+                    await frames(30);
+                    Shot("revived_paid.png");
+                    break;
+                }
                 case "loot":
                 {
                     int item = int.Parse(Env("MS2_LIVE_COMBAT_ITEM", "0")), meso = int.Parse(Env("MS2_LIVE_COMBAT_MESO", "500"));
