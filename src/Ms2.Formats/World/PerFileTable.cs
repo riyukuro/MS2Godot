@@ -106,8 +106,10 @@ public static class PerFileTable
     /// <summary>
     /// GMS2's itemmodel: itempreset/&lt;a&gt;/&lt;bb&gt;/&lt;id&gt;.xml, one file per model whose &lt;ms2&gt; root holds the children of the KMS
     /// itemmodel/&lt;id / 100000&gt;.xml &lt;ItemModel id&gt; row (slots with their assets, customize). The rows of one prefix file, or null
-    /// when the pack has no preset of that prefix. Read only. The customize element is the file's own: it carries
-    /// colordetail and the HR/FD/CP offsets and no colorPalette, which the KMS rows have (STILL-OPEN: the palette source).
+    /// when the pack has no preset of that prefix. Read only. The customize element is the file's own. The client reads
+    /// colorPalette from it (itemdatastruct.cpp:936); 262 of the 7079 customize elements of the GMS2 presets have one (hair 10200001
+    /// has colorPalette="2"), the others carry colordetail / ch0 / ch2 only. STILL-OPEN: whether the KMS rows of those others had
+    /// a colorPalette the GMS2 data dropped, and where their default dye then comes from.
     /// </summary>
     public static XDocument ItemModels(PackSet packs, int prefix)
     {
