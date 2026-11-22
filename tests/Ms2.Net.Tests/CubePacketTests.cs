@@ -421,7 +421,9 @@ public class ResponseCubeBillTests
         Assert.That((err.Error, err.Mode), Is.EqualTo(((byte) 7, (byte) 0x2e)));
         var ok = ResponseCubeSaveSlot.Read(Reader(w => { w.WriteByte(0); w.WriteLong(5); w.WriteInt(3); w.WriteUnicodeString("x"); w.WriteLong(99); }), 0x40);
         Assert.That(ok, Is.EqualTo(new ResponseCubeSaveSlot(0x40, 0, 5, 3, "x", 99)));
-        Assert.Throws<InvalidDataException>(() => ResponseCubeSaveSlot.Read(Reader(w => { w.WriteByte(0); w.WriteLong(5); w.WriteInt(3); w.WriteUnicodeString("x"); w.WriteLong(99); w.WriteByte(1); }), 0x2e));
+        // trailing bytes stay unread (the client does not check the end)
+        var more = ResponseCubeSaveSlot.Read(Reader(w => { w.WriteByte(0); w.WriteLong(5); w.WriteInt(3); w.WriteUnicodeString("x"); w.WriteLong(99); w.WriteByte(1); }), 0x2e);
+        Assert.That(more, Is.EqualTo(new ResponseCubeSaveSlot(0x2e, 0, 5, 3, "x", 99)));
     }
 
     [Test]

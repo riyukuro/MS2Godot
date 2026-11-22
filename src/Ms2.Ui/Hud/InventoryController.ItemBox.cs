@@ -159,6 +159,7 @@ public sealed partial class InventoryController
         box.ItemUid = item.Uid;
         box.SetItemEntry(item, name, 1, 0, -1, -1, 1, Model.Tables.Items.TextColor);
         box.SetButtonLabelIds(0x477, 0x478, 0);
+        box.EnterAllowed = false;   // FUN_141a024a0(0) (itemfunctiondispatch.cpp:1015): Enter does not answer
         box.Callback = (answer, b) => BlueprintOpenAnswer(answer, b.ItemUid);
         ShowBox(box);
         return true;

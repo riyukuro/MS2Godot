@@ -213,6 +213,7 @@ public partial class LiveSession
     void OnSaveSlot(ResponseCubeSaveSlot m)
     {
         if (m.Error != 0) { ShowBuildNotice(m.Error); return; }
+        // the client tests the service pointer (the home's CubeMapInformationService); here the field id stands for it
         if (m.CharacterId == accountId && FieldId != null)
         {
             if (m.Mode == ResponseCubeSaveSlot.ModeDesign) CubeMap.SetDesignSlot(m.CharacterId, m.Slot, m.Name, m.Time);

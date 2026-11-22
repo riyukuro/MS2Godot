@@ -950,6 +950,7 @@ public class InventoryTests
         Assert.That(sent, Is.Empty, "the box asks first");
         var box = shown.Single();
         Assert.That((box.Type, box.ItemUid, box.Extra), Is.EqualTo((0x11, 41L, InventoryController.UseFunctionItemTag)));
+        Assert.That(box.EnterAllowed, Is.False);   // FUN_141a024a0(0) (:1015)
         box.InvokeCallback(0, box);
         Assert.That(answers, Is.EqualTo(new[] { (0, 41L) }));
     }

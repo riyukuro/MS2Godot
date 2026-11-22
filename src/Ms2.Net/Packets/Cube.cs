@@ -368,9 +368,8 @@ public sealed record ResponseCubeSaveSlot(byte Mode, byte Error, long CharacterI
     {
         byte error = r.ReadByte();
         if (error != 0) return new ResponseCubeSaveSlot(mode, error, 0, 0, "", 0);
-        var m = new ResponseCubeSaveSlot(mode, 0, r.ReadLong(), r.ReadInt(), r.ReadUnicodeString(), r.ReadLong());
-        r.ExpectEnd("ResponseCube 0x" + mode.ToString("x"));
-        return m;
+        // the client never checks the end of the body, so trailing bytes stay unread
+        return new ResponseCubeSaveSlot(mode, 0, r.ReadLong(), r.ReadInt(), r.ReadUnicodeString(), r.ReadLong());
     }
 }
 
