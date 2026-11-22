@@ -697,6 +697,7 @@ public partial class FieldContents : Node3D
     {
         if (offline || moving || Ms2Godot.Net.LiveSession.Instance is not { } ls) return;
         ls.TickInteract(at, playerMoved);
+        ls.TickReactor(at, playerMoved);
     }
 
     public bool LiveInteractUse(Ms2.Formats.Model.Vec3 at) =>

@@ -28,6 +28,13 @@ public partial class LiveSession
     // ReactorAction::m_nReactorId: the polled reactor's object id, 0 when none
     int polledReactor;
     ReactorUser reactorUser;
+    ReactState reactState;
+
+    /// <summary>The own pc's StateReact (0x3d): the react cast and the create animation.</summary>
+    public ReactState React => reactState ??= new ReactState(new ReactStateHost(this), () => reactors) { Held = HeldItem };
+
+    /// <summary><see cref="InteractPlayerStateId"/> with StateReact: 0x3d while it runs.</summary>
+    int ReactPlayerStateId() => reactState?.CurStateId(InteractPlayerStateId()) ?? InteractPlayerStateId();
 
     /// <summary>The field's reactors; null when the reactor tables do not load.</summary>
     public FieldReactors Reactors
@@ -48,7 +55,7 @@ public partial class LiveSession
         readonly LiveSession s;
         public ReactorUser(LiveSession s) => this.s = s;
         /// <summary>FUN_140b7a5e0 is 0: the player's state is 1. STILL-OPEN: FUN_141675ed0 and the sub scene check.</summary>
-        public bool CanReact => s.InteractPlayerStateId() == 1;
+        public bool CanReact => s.ReactPlayerStateId() == 1;
         public long CharacterId => s.CharacterId;
         public int ItemCount(int code, int rank)
         {
@@ -59,6 +66,42 @@ public partial class LiveSession
             return n;
         }
         public int ItemRank(int code) => s.ItemRank?.Invoke(code) ?? 1;
+    }
+
+    /// <summary>The own pc as StateReact reads it: the casting bar, the body's animation, the common strings.</summary>
+    sealed class ReactStateHost : IReactStateHost
+    {
+        readonly LiveSession s;
+        public ReactStateHost(LiveSession s) => this.s = s;
+        public bool HasPlayer => s.selfObject >= 0 && s.player != null && IsInstanceValid(s.player);
+        public void Send(Ms2.Net.Wire.IOutPacket packet)
+        {
+            s.Send(packet);
+            GD.Print($"live: react send {packet}");
+        }
+        public bool StartCasting(ICastingEventListener listener, CastingParam param)
+        {
+            if (s.CastingBar == null) return false;
+            s.CastingBar.StartCasting(listener, param);
+            return true;
+        }
+        public void CancelCasting() => s.CastingBar?.Cancel();
+        public void PlayPlayerAnim(string animName)
+        {
+            if (HasPlayer) s.player.StartInteractAnim(animName, false);
+        }
+        public void StopPlayerAnim()
+        {
+            if (HasPlayer) s.player.StopInteractAnim();
+        }
+        public string CommonByKey(string key) => MessageBoxData.CommonByKey(key);
+    }
+
+    /// <summary>Per frame: the own pc's StateReact (vfunc_3, vfunc_8). 0 B until it sends.</summary>
+    public void TickReactor(Vec3 at, bool playerMoved)
+    {
+        if (reactState is not { Active: true } st) return;
+        st.Tick(new System.Numerics.Vector3((float)at.X, (float)at.Y, (float)at.Z), playerMoved);
     }
 
     /// <summary>CSceneStateGame::OnReactor @0x14173c870.</summary>
@@ -109,6 +152,7 @@ public partial class LiveSession
     void NewFieldReactors()
     {
         polledReactor = 0;
+        reactState?.End();
         reactors?.Clear();
     }
 
@@ -132,7 +176,7 @@ public partial class LiveSession
         if (polledReactor == 0 || reactors?.Get(polledReactor) is not { } r || selfObject < 0) return;
         int check = FieldReactors.CheckGameEvent(r.Data, ReactorRules.Current, (uint)(FieldId ?? 0));
         bool riding = player != null && IsInstanceValid(player) && player.Mount != null;
-        switch (FieldReactors.Use(r.Data, check, InteractPlayerStateId(), riding))
+        switch (FieldReactors.Use(r.Data, check, ReactPlayerStateId(), riding))
         {
             case FieldReactors.UseOutcome.FailedRewardCount:
                 SystemNoticeSink?.Invoke(MessageBoxData.CommonByKey("s_reactor_action_failed_reward_count"));
@@ -141,7 +185,8 @@ public partial class LiveSession
                 SystemNoticeSink?.Invoke(MessageBoxData.CommonByKey("s_reactor_action_failed"));
                 break;
             case FieldReactors.UseOutcome.Cast:
-                GD.Print($"live: STILL-OPEN reactor {r.ObjectId}: the react cast (vfunc_59(0x3d, StateReactData({r.Data.Id}, '{r.Name}'), 0x9f, 0))");
+                // vfunc_59(0x3d, StateReactData(reactorId, name, ""), 0x9f, 0)
+                React.Begin(ReactState.KindReact, r.Data, r.Name);
                 break;
             case FieldReactors.UseOutcome.RideOff:
                 GD.Print($"live: STILL-OPEN reactor {r.ObjectId}: the ride off first (RideOffActionReact, SendRequestRideMode1)");

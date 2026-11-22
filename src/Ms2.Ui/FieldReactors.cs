@@ -255,6 +255,15 @@ public sealed class FieldReactors
         byName.Clear();
     }
 
+    /// <summary>WorldService::FindSpawnByName as StateReact reads it (statereact.cpp:158, 223, 293): the name map's
+    /// reactor, or null. No allocation.</summary>
+    public Reactor FindByName(string name)
+    {
+        if (name == null) return null;
+        int i = Find(name);
+        return i >= 0 ? byName[i] : null;
+    }
+
     int Find(string name)
     {
         int lo = 0, hi = byName.Count - 1;
