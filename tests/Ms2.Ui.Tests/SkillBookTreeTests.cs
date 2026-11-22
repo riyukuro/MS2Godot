@@ -718,19 +718,19 @@ public class SkillBookTreeTests
     public void UseTabWaitsForTheServerLikeTheOtherCallbacks()
     {
         var (_, c, _) = Load();
-        var names = new List<string>();
-        c.Button += names.Add;
+        var shown = new List<MessageBoxData>();
+        c.ShowBox = shown.Add;
         c.OnSkillBookTree(NoTabs());
         c.OnCallback("onUseTab", new object[] { "1" });
-        Assert.That(names, Is.EqualTo(new[] { "onUseTab" }));
+        Assert.That(shown.Count, Is.EqualTo(1));
         c.OnLevelChanged(20);
         c.OnCallback("onSkillPointUp", new object[] { 10500041u });
         c.Send = _ => true;
         c.ShowBox = b => b.Callback(0, b);
         c.OnCallback("onApplySkill", Array.Empty<object>());
         Assert.That(c.WaitServer, Is.True);
-        c.OnCallback("onUseTab", new object[] { "1" });
-        Assert.That(names.Count, Is.EqualTo(1));
+        Assert.That(c.OnCallback("onUseTab", new object[] { "1" }), Is.False);
+        Assert.That(shown.Count, Is.EqualTo(1));
     }
 
     static (SkillBookTreeController c, List<Ms2.Net.Wire.IOutPacket> sent, List<MessageBoxData> boxes) OpenForClose()
@@ -782,5 +782,53 @@ public class SkillBookTreeTests
         Assert.That(((JobSkillsRequest)sent[1]).Mode, Is.EqualTo(9));
         Assert.That(lines.Single().Item2, Is.EqualTo(0x14));
         Assert.That(c.WaitServer, Is.False);                  // the close cleared it
+    }
+
+    [Test]
+    public void UseTabAsksFirstAndNoSendsNothing()
+    {
+        var (c, sent, boxes) = OpenForClose();
+        var notices = new List<string>();
+        c.SystemNotice += notices.Add;
+        Assert.That(c.OnCallback("onUseTab", Array.Empty<object>()), Is.True);
+        Assert.That(boxes.Count, Is.EqualTo(1));
+        Assert.That(sent, Is.Empty);
+        boxes[0].Callback(1, boxes[0]);
+        Assert.That(sent, Is.Empty);
+        Assert.That(notices, Is.Empty);
+        Assert.That(c.WaitServer, Is.False);
+    }
+
+    [Test]
+    public void UseTabYesSavesTheTabsKeepsThePreviewSendsEveryRankAndShowsTheNotice()
+    {
+        var (c, sent, boxes) = OpenForClose();
+        var notices = new List<string>();
+        c.SystemNotice += notices.Add;
+        c.OnCallback("onUseTab", Array.Empty<object>());
+        Assert.That(boxes[0].Callback(0, boxes[0]), Is.True);
+        // RequestTree(0, 1, 0) then RequestJob(0, 1, 0): the tabs as they are, then the whole snapshot with mode 9
+        Assert.That(sent.Select(x => x.GetType()), Is.EqualTo(new[] { typeof(SkillBookTreeSave), typeof(JobSkillsRequest) }));
+        Assert.That(((JobSkillsRequest)sent[1]).Mode, Is.EqualTo(9));
+        Assert.That(notices.Count, Is.EqualTo(1));
+        Assert.That(c.WaitServer, Is.True);
+    }
+
+    [Test]
+    public void UseTabIsRefusedWhileWaitingForTheServerAndInBattle()
+    {
+        var (c, sent, boxes) = OpenForClose();
+        c.InBattle = () => true;
+        c.OnCallback("onUseTab", Array.Empty<object>());
+        Assert.That(boxes.Count, Is.EqualTo(1));              // only the in-battle refusal
+        Assert.That(boxes[0].Callback, Is.Null);
+        c.InBattle = () => false;
+        boxes.Clear();
+        c.OnCallback("onUseTab", Array.Empty<object>());
+        boxes[0].Callback(0, boxes[0]);                       // WaitServer is now set
+        boxes.Clear();
+        Assert.That(c.OnCallback("onUseTab", Array.Empty<object>()), Is.False);
+        Assert.That(boxes, Is.Empty);
+        Assert.That(sent.Count, Is.EqualTo(2));
     }
 }

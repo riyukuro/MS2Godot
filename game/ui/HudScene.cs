@@ -3502,6 +3502,7 @@ public partial class HudScene : Node, IUiStageHost
         c.InBattle = () => live?.SelfInBattle ?? false;
         c.Sound += key => FieldAudio.Instance?.PlayUi(key);
         c.ChatLine += (text, kind) => ChatLog.AddSystemLine(text, kind);
+        c.SystemNotice += SystemNoticeText;
         if (live != null) c.Send = live.SendSkillBook;
         Action<Ms2.Net.Packets.SkillBookTreePacket> onTree = c.OnSkillBookTree;
         // the status events the open window listens to (UISkillBookTreeDialog vfunc_oa0_7 / 9 / 28): the local player's job

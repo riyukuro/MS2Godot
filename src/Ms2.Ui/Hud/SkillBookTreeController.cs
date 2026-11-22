@@ -63,6 +63,8 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
         MessageBoxQueue.Layer != null ? MessageBoxQueue.Layer.CheckboxChecked(b, n) : n == 0 ? b.Check0Selected : b.Check1Selected;
     /// <summary>FUN_1412751b0(text, kind): a chat log line of the kind (0x14 for the apply notice).</summary>
     public event Action<string, int> ChatLine;
+    /// <summary>ShowSystemNotice(text, 1, 1): the screen notice.</summary>
+    public event Action<string> SystemNotice;
     /// <summary>PlaySystemSound(key).</summary>
     public event Action<string> Sound;
 
@@ -679,7 +681,7 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
                 return true;
             case "onUseTab":
                 if (WaitServer) return false;   // vfunc_28 m_nWaitServer guard
-                Button?.Invoke(name);
+                PromptChangeTab();
                 return true;
             case "OnRegisterShortcutkey":
             case "onRenameTab": case "onAddTab": case "onChangeSubJob": case "onRemoveTab": case "onLapenshardBtn":
@@ -687,6 +689,28 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
                 return true;
         }
         return false;
+    }
+
+    /// <summary>PromptChangeTab @0x140ec9fd0 (:1165): CanApply, then (CheckApply(true), the platform state, is 0 here; STILL-OPEN: its
+    /// notice) the shown tab's name in a type 1 box s_skillbook_tree_config_change_tab.</summary>
+    void PromptChangeTab()
+    {
+        if (!CanApply()) return;
+        if (FindTab(shownTabId) is not { } tab) return;
+        ShowBox(MessageBoxQueue.CreateWithCallback(Common("s_skillbook_tree_config_change_tab", tab.Name), 1, OnApplyTabConfirm));
+    }
+
+    /// <summary>OnApplyTabConfirm @0x140eca8c0 (:1018): yes makes the shown tab the one in use, saves it (RequestTree(0, 1, 0)), sends
+    /// every rank (RequestJob(0, 1, 0)) and shows the notice s_skillbook_tree_config_apply_tab with the tab's name.</summary>
+    bool OnApplyTabConfirm(int result, MessageBoxData box)
+    {
+        if (result != 0) return true;
+        if (FindTab(shownTabId) is not { } tab) return false;
+        tabId = tab.Id;
+        SaveTree(0, 1, 0);
+        if (!RequestJob(false, true, 0)) return true;
+        SystemNotice?.Invoke(Common("s_skillbook_tree_config_apply_tab", tab.Name));
+        return true;
     }
 
     /// <summary>The close button and Escape (UIDialog vfunc_69 / vfunc_70: vfunc_71 first, vfunc_67 when it returns 0).</summary>
