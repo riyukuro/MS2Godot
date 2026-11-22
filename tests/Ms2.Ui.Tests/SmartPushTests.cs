@@ -15,6 +15,10 @@ public class SmartPushTests
         "<push id='5' content='SafeWaterRidingToggle' actionType='additionalEffect' actionValue='70000005'/>" +
         "<push id='6' content='AutoFishing' actionType='additionalEffect' actionValue='70000006'/>" +
         "<push id='7' content='NoSuchClass' actionType='additionalEffect' actionValue='70000007'/>" +
+        "<push id='8' content='AutoInteractObject' actionType='AUTOINTERACTION' actionValue='1'/>" +
+        "<push id='9' content='AutoFunctionCubeObject' actionType='AUTOINTERACTION' actionValue='1'/>" +
+        "<push id='10' content='AutoInteractObjectBuffItem' actionType='AUTOINTERACTION' actionValue='1'/>" +
+        "<push id='11' content='AutoFunctionCubeObjectBuffItem' actionType='AUTOINTERACTION' actionValue='1'/>" +
         "<push id='1' content='AutoPlayInstrument' actionType='additionalEffect' actionValue='70000002'/>" +
         "</ms2>";
 
@@ -24,12 +28,12 @@ public class SmartPushTests
     public void TableParsesRowsLikeCSmartPushTableLoad()
     {
         var t = Table();
-        Assert.That(t.Count, Is.EqualTo(5), "id 3 (two item parts) and id 4 (unavailable) are dropped");
+        Assert.That(t.Count, Is.EqualTo(9), "id 3 (two item parts) and id 4 (unavailable) are dropped");
         Assert.That(t.Get(1).ActionValue, Is.EqualTo(70000002), "a later row replaces an earlier one (SetAt)");
         var p = t.Get(2);
         Assert.That((p.ActionType, p.ActionValue, p.RequireMerat), Is.EqualTo((2, 5, 300)), "Parse_140219650 is case-insensitive");
         Assert.That((p.RequireItemId, p.RequireItemTag, p.RequireItemCount), Is.EqualTo((20300001u, "tag", 4u)));
-        Assert.That(t.Get(9), Is.Null);
+        Assert.That(t.Get(99), Is.Null);
     }
 
     static SmartPushNotices Make(out List<string> notices, out List<MessageBoxData> boxes, out List<(int, int, bool)> sent)
@@ -80,6 +84,21 @@ public class SmartPushTests
         Assert.That(mastery, Is.EqualTo(new[] { "gain 3 recipe11", "gain 4 recipe11" }));
         Assert.That(p.GatherCounts[11], Is.EqualTo(7));
         Assert.That(notices, Is.Empty, "not the system notice kind 1");
+    }
+
+    [Test]
+    public void TheFourUnregisteredAutoInteractionBasesShowNothing()
+    {
+        var p = Make(out var notices, out _, out _);
+        var mastery = new List<string>();
+        p.RecipeOf = _ => 21;
+        p.RecipeName = r => "recipe" + r;
+        p.MasteryNotice = mastery.Add;
+        foreach (var id in new[] { 8, 9, 10, 11 })
+            p.OnPositional(id, 2);                          // smartpush.cpp:251-263: no registrar, so no push
+        Assert.That(mastery, Is.Empty);
+        Assert.That(notices, Is.Empty);
+        Assert.That(p.GatherCounts, Is.Empty);
     }
 
     [Test]

@@ -38,6 +38,10 @@ public sealed class SmartPushNotices
     /// types registered in smartpush.cpp. Any other content has no class: no push.</summary>
     enum PushClass { None, Base, AutoFishing, Toggle, AutoInteraction }
 
+    // CreatePushes builds the push through CreateClassObject("CSmartPush" + content); smartpush.cpp:251-263 registers only 13
+    // names (Breeding(Buff), Farming(Buff), Fishing, Gathering(Buff), Mining(Buff), PlayInstrument, SafeRiding, SafeWaterRiding,
+    // SafeWaterRidingToggle, each under the "Auto" prefix where the class has one). The abstract bases AutoInteractObject,
+    // AutoFunctionCubeObject and their BuffItem forms have no registrar, so a row with those contents makes no push.
     static PushClass ClassOf(string content) => content switch
     {
         "AutoPlayInstrument" or "SafeRiding" or "SafeWaterRiding" => PushClass.Base,      // vfunc_4 is CSmartPush's (:309)
