@@ -311,7 +311,27 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
         return true;
     }
 
-    public const string UseStoreInBox = "usestorein", UseStoreOutBox = "usestoreout";
+    public const string UseStoreInBox = "usestorein", UseStoreOutBox = "usestoreout", SwapStoreInBox = "swapstorein";
+
+    /// <summary>ShowSwapStoreCountInput (@0x1414045d0, invenslot.cpp:398), the deposit side: the box of ShowUseStoreCountInput
+    /// with the tag swapstorein, carrying the bag item's uid and the store slot dropped on.</summary>
+    public void ShowSwapStoreInCountInput(long uid, int count, int max, int slot)
+    {
+        var box = MessageBoxQueue.Create(5, Model.Tables.Common(0x2ab), null, SwapStoreInBox);
+        box.ItemUid = uid;
+        box.InventorySlot = slot;
+        box.SetInput(1, count.ToString(System.Globalization.CultureInfo.InvariantCulture), InventoryController.DigitCount(max), 0, 0);
+        ShowData(box);
+    }
+
+    /// <summary>HandleSwapStoreInButton's yes (@0x1419fe590): the count checked against the bag item (FUN_141a002b0), then
+    /// FUN_140de2dc0(uid, the box's slot, count): the deposit request. STILL-OPEN: its score / summoned-pet refusals.</summary>
+    public void SwapStoreIn(long uid, int slot, int count)
+    {
+        if (Sender == null || Model == null) return;
+        if (uid != 0 && !CountValid(InventoryBag?.Invoke()?.FindByUid(uid), count)) return;
+        Sender.Deposit(uid, slot, count);
+    }
 
     /// <summary>ShowUseStoreCountInput (@0x1414043e0, invenslot.cpp:379): a count box (type 5; Common 0x2ac out / 0x2ab in;
     /// tag usestoreout / usestorein) with the item uid and the slot; the input (mode 1) starts at the count and takes as many
@@ -505,7 +525,7 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
     /// <summary>
     /// StoreSlot::vfunc_18 (storeslot.cpp:314). An inventory slot dropped: its item (gone from the bag: the source is
     /// pushed again); a held stack in this slot with a max stack of 1 needs room (AvailableSlot -1: notice 0xf2); an item
-    /// the bank refuses: notice 0xf1; a stack the client asks a count of is not sent (STILL-OPEN); else the deposit
+    /// the bank refuses: notice 0xf1; a stack the client asks a count of opens the swapstorein count box with the slot dropped on; else the deposit
     /// (the store slot when this one is empty, 0 when it holds an item). A store slot dropped: onto itself nothing, else
     /// the move (mode 2). The source is pushed again either way: nothing moves until the server answers.
     /// </summary>
@@ -535,6 +555,7 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
                         refused = true;
                     }
                     if (!refused && !ItemTradeRules.AsksCount(item, Now())) Sender.Deposit(item.Uid, slot, (int)item.Count);
+                else if (!refused) ShowSwapStoreInCountInput(item.Uid, (int)item.Count, (int)item.Data.SlotMax, to);
                 }
             }
             else if (sourceOwner == this && ParseSlot(source, out int from)) Sender.MoveSlot(from, to);

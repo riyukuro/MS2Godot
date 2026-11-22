@@ -483,6 +483,7 @@ public sealed class MessageBoxController : UiController
         if (tokens[0] == "tradein") return HandleTradeInButton(button, MessageBoxData.WToI(tokens[1]));
         if (tokens[0] == "usestorein") return HandleUseStoreButton(false, button, MessageBoxData.WToI(tokens[1]));
         if (tokens[0] == "usestoreout") return HandleUseStoreButton(true, button, MessageBoxData.WToI(tokens[1]));
+        if (tokens[0] == "swapstorein") return HandleSwapStoreInButton(button, MessageBoxData.WToI(tokens[1]));
         if (tokens[0] == "sell") return HandleSellButton(button, MessageBoxData.WToI(tokens[1]));
         if (tokens[0] == "sellconfirm") return HandleSellConfirmButton(button, MessageBoxData.WToI(tokens[1]));
         if (data?.Listener == null) UnportedTag?.Invoke(button, tag);
@@ -527,6 +528,18 @@ public sealed class MessageBoxController : UiController
         if (button == 0) (take ? UseStoreOut : UseStoreIn)?.Invoke(data.ItemUid, count);
         return true;
     }
+
+    /// <summary>HandleSwapStoreInButton @0x1419fe590 (uimessagebox.cpp:1974): no record, 1; the yes passes the box's item uid,
+    /// its slot (FUN_141a02c60) and the typed count on; 1. STILL-OPEN: swapstoreout- (@0x1419fe690) has no opener here.</summary>
+    bool HandleSwapStoreInButton(int button, int count)
+    {
+        if (data == null) return true;
+        if (button == 0) SwapStoreIn?.Invoke(data.ItemUid, data.InventorySlot, count);
+        return true;
+    }
+
+    /// <summary>The swapstorein count box's yes: the item uid, the store slot and the count typed.</summary>
+    public Action<long, int, int> SwapStoreIn;
 
     /// <summary>The store count boxes' yes (usestorein / usestoreout): the box's item uid and the count typed.</summary>
     public Action<long, int> UseStoreIn, UseStoreOut;

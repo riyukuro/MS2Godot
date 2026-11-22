@@ -385,6 +385,25 @@ public class StoreDialogTests
     }
 
     [Test]
+    public void ADropOfAStackThatAsksACountOpensTheSwapBoxAndItsYesDepositsIntoTheDroppedSlot()
+    {
+        var w = Rig();
+        Load(w.C, w.Model);
+        var item = Bagged(w.Model, 13, 5, null);
+        w.InvItem = new EquipItem { Id = item.Data.Id, Uid = 13, Amount = 5 };
+        item.Record = w.InvItem;
+        Assert.That(Ms2.Ui.Items.ItemTradeRules.AsksCount(item, 0), Is.True, "the test item is a stack that asks a count");
+        var bag = new Bag { Uid = 13, Found = item };
+        w.C.SlotDroppedOn(StoreDialogController.SlotName(6), "InventoryDialog.0", bag);
+        Assert.That(w.Sent, Is.Empty, "nothing goes out before the box is answered");
+        var box = w.Boxes.Single();
+        Assert.That((box.Type, box.Extra, box.ItemUid, box.InventorySlot, box.InputDefault), Is.EqualTo((5, StoreDialogController.SwapStoreInBox, 13L, 6, "5")));
+        w.C.SwapStoreIn(13, 6, 3);
+        var dep = (StorageDepositRequest)w.Sent.Single();
+        Assert.That((dep.Uid, dep.Slot, dep.Count), Is.EqualTo((13L, (short)6, 3)));
+    }
+
+    [Test]
     public void ARightClickInTheBagDepositsTheStackIntoTheFirstFreeSlot()
     {
         var w = Rig();
