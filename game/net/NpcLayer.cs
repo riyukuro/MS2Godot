@@ -281,22 +281,23 @@ public sealed class NpcLayer
     /// WorldService::FindNearestActor (@0x141bc9830, worldservice_1.cpp:5143) over the field's npcs: m_0e8 holds every
     /// object OnObjectCreated registers (worldservice_1.cpp:3149), and CNpc keeps PCBase::vfunc_119, so its body's
     /// Hold_PointNN nodes count as a PC's do. Each npc not dead whose nearest node lies within <paramref name="maxDist"/>
-    /// and below <paramref name="best"/> replaces the pick; 0 when none is nearer. A placeholder has no skeleton.
+    /// and is <see cref="RemoteLayer.Nearer"/> than the pick (<paramref name="best"/>, <paramref name="id"/>,
+    /// <paramref name="node"/>) replaces it; true when the pick changed. A placeholder has no skeleton.
     /// </summary>
-    public int NearestHold(Godot.Vector3 from, float maxDist, ref float best, out string node)
+    public bool NearestHold(Godot.Vector3 from, float maxDist, ref float best, ref int id, ref string node)
     {
-        node = null;
-        int id = 0;
+        bool changed = false;
         foreach (var (objectId, i) in inst)
         {
             if (i.Dead || i.Placeholder || i.Visual == null || !GodotObject.IsInstanceValid(i.Visual)) continue;
             float d = RemoteLayer.NearestHoldNode(i.Visual.GetNodeOrNull<Skeleton3D>(HoldSkeletonPath), null, from, out string n);
-            if (d > maxDist || d >= best) continue;
+            if (d > maxDist || !RemoteLayer.Nearer(d, objectId, best, id)) continue;
             best = d;
             id = objectId;
             node = n;
+            changed = true;
         }
-        return id;
+        return changed;
     }
 
     /// <summary>Plays a named kfm sequence (a skill's motion) on an npc.</summary>

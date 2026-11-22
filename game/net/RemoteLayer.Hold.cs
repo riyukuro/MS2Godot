@@ -101,25 +101,38 @@ public sealed partial class RemoteLayer
     /// <summary>
     /// WorldService::FindNearestActor (@0x141bc9830, worldservice_1.cpp:5143) over the field's other players: each one not
     /// dead whose nearest hold node (PC::vfunc_118, the distance from <paramref name="from"/> to each node of m_unk_b88) lies
-    /// within <paramref name="maxDist"/> and below <paramref name="best"/> replaces the pick, then the npcs
-    /// (<see cref="NpcLayer.NearestHold"/>). 0 when none is nearer.
+    /// within <paramref name="maxDist"/> and is <see cref="Nearer"/> than the pick (<paramref name="best"/>,
+    /// <paramref name="id"/>, <paramref name="node"/>) replaces it, then the npcs (<see cref="NpcLayer.NearestHold"/>).
+    /// True when the pick changed.
     /// </summary>
-    public int NearestHold(Vector3 from, float maxDist, ref float best, out string node)
+    public bool NearestHold(Vector3 from, float maxDist, ref float best, ref int id, ref string node)
     {
-        node = null;
-        int id = 0;
+        bool changed = false;
         foreach (var r in users.Values)
         {
             if (r.Pc == null || r.Pc.States.Dead || r.Visual == null || !IsInstanceValid(r.Visual)) continue;
             float d = NearestHoldNode(r.Visual.GetNodeOrNull<Skeleton3D>(HoldSkeletonPath), r.Ridee?.Mount, from, out string n);
-            if (d > maxDist || d >= best) continue;
+            if (d > maxDist || !Nearer(d, r.ObjectId, best, id)) continue;
             best = d;
             id = r.ObjectId;
             node = n;
+            changed = true;
         }
-        if (npcs != null && npcs.NearestHold(from, maxDist, ref best, out string npcNode) is var npc && npc != 0) { id = npc; node = npcNode; }
-        return id;
+        if (npcs != null && npcs.NearestHold(from, maxDist, ref best, ref id, ref node)) changed = true;
+        return changed;
     }
+
+    /// <summary>The body visual (the model under it) of another player or an npc, null without one (for the checks).</summary>
+    public Node3D HoldVisual(int objectId) =>
+        users.TryGetValue(objectId, out var u) ? u.Visual : npcs != null && npcs.HoldInfo(objectId, out _, out _, out var v) ? v : null;
+
+    /// <summary>
+    /// FindNearestActor's pick order: m_0e8 is a CRBMap keyed by object id, walked in ascending order, and a candidate
+    /// replaces the pick only when strictly nearer (<c>dist &lt; best</c>), so of equal distances the lowest object id wins,
+    /// whatever kind of actor it is. The searches here run kind by kind, so a tie goes to the lower id explicitly.
+    /// </summary>
+    public static bool Nearer(float d, int objectId, float best, int bestId) =>
+        d < best || (d == best && bestId != 0 && objectId < bestId);
 
     /// <summary>
     /// PC::vfunc_118 (@0x141655a30, pc.cpp:1307) over a PC's m_unk_b88: PCBase::vfunc_119's "Hold_Point00".."Hold_Point49"

@@ -44,7 +44,9 @@ public partial class LiveSession : IHoldPcWorld
     /// PC::FindHoldTarget (FindNearestActor): the own pc's feet against every PC's hold nodes, the own pc's (its body's
     /// Hold_PointNN and its own mount's seats) among them, so standing nearest to the own nodes refuses the key.
     /// The npcs are searched as well (CNpc keeps PCBase::vfunc_119); a nearer npc wins and fails FindPCById, so the key
-    /// refuses. A ridee never matches: Ridee::vfunc_119 (ridee.cpp:638) fills its rider's map, its own stays empty.
+    /// refuses. A ridee never matches: Ridee::vfunc_119 (ridee.cpp:638) fills its rider's map, its own stays empty. Of equal
+    /// distances the lowest object id wins (<see cref="RemoteLayer.Nearer"/>). HoldPCAction::vfunc_1 runs it from the action
+    /// key poll (FieldContents' 100 ms action-key tick), not per key press.
     /// STILL-OPEN: the pets, guide objects and cube spawn objects (PCBase too, own vfunc_119) are not searched.
     /// </summary>
     public int FindHoldTarget(float range, out string node)
@@ -55,7 +57,7 @@ public partial class LiveSession : IHoldPcWorld
         int id = 0;
         float own = RemoteLayer.NearestHoldNode(player.Visual?.GetNodeOrNull<Skeleton3D>(OwnSkeletonPath), player.Mount, from, out string ownNode);
         if (own <= range && own < best) { best = own; id = selfObject; node = ownNode; }
-        if (remote != null && remote.NearestHold(from, range, ref best, out string n) is var r && r != 0) { id = r; node = n; }
+        remote?.NearestHold(from, range, ref best, ref id, ref node);
         return id;
     }
 

@@ -72,14 +72,22 @@ public partial class NpcDeadCheck : Node3D
         }
         var from = at + new Vector3(10, 0, 0);
         float best = float.MaxValue;
-        int got = npcs.NearestHold(from, 230, ref best, out string node);
+        int got = 0;
+        string node = null;
+        npcs.NearestHold(from, 230, ref best, ref got, ref node);
         check(got == 1 && node == "Hold_Point00" && Mathf.Abs(best - 10) < 0.01f, $"npc hold: {got} '{node}' at {best} (want the live npc 1 at 10)");
-        best = float.MaxValue;
-        check(npcs.NearestHold(from, 5, ref best, out _) == 0, "npc hold: found beyond the range");
+        float d1 = best;
+        best = float.MaxValue; int none = 0; string n0 = null;
+        check(!npcs.NearestHold(from, 5, ref best, ref none, ref n0) && none == 0, "npc hold: found beyond the range");
         best = 5;
-        check(npcs.NearestHold(from, 230, ref best, out _) == 0 && best == 5, "npc hold: replaced a nearer pick");
+        check(!npcs.NearestHold(from, 230, ref best, ref none, ref n0) && best == 5, "npc hold: replaced a nearer pick");
+        // FindNearestActor's tie: of equal distances the lowest object id wins
+        best = d1; int tie = 5; string tn = "x";
+        check(npcs.NearestHold(from, 230, ref best, ref tie, ref tn) && tie == 1, $"npc hold tie: npc 1 did not beat id 5 ({tie})");
+        best = d1; tie = 1; tn = "x";
+        check(!npcs.NearestHold(from, 230, ref best, ref tie, ref tn) && tn == "x", "npc hold tie: an equal pick was replaced");
         long a0 = System.GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 100; i++) { best = float.MaxValue; npcs.NearestHold(from, 230, ref best, out _); }
+        for (int i = 0; i < 100; i++) { best = float.MaxValue; none = 0; npcs.NearestHold(from, 230, ref best, ref none, ref n0); }
         long alloc = System.GC.GetAllocatedBytesForCurrentThread() - a0;
         check(alloc == 0, $"npc hold poll allocates {alloc} B per 100");
         GD.Print($"npc dead: hold node of npc {got} '{node}' at {best:0.##}, {alloc} B per 100 lookups");

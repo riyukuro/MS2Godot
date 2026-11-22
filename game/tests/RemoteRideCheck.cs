@@ -207,6 +207,7 @@ public partial class RemoteRideCheck : Node3D
         if (m.RideBones().Length == 0 || alloc != 0) fails.Add($"hold poll of {m.RideBones().Length} seat node(s) allocates {alloc} B per 100");
         RideeIdNoTarget(layer, m.Data.Id, bone);
         RideEffects(layer, m.Data.Id);
+        NpcBeforePlayer(layer, pc);
         pc.QueueFree();
         field.QueueFree();
         layer.Free();
@@ -259,6 +260,75 @@ public partial class RemoteRideCheck : Node3D
         if (played.Count != 2 || played[0] != $"{User}:{off}" || played[1] != $"{User}:{on}") fails.Add($"UnRideSkill ride off effects: {string.Join(", ", played)}");
         layer.RideEffectsPlayed = null;
         GD.Print($"remote ride: ride effects on '{on}', off '{off}', UnRideSkill adds the row's effect ({played.Count} played)");
+    }
+
+    /// <summary>The hold key end to end: with the npc away the player is the pick and the poll keeps it; an npc's
+    /// Hold_PointNN nearer than the player's makes FindNearestActor return the npc and HoldPCAction::vfunc_1 refuse
+    /// (FindPCById fails, m_n18 cleared); at equal distances the lower object id wins.</summary>
+    void NpcBeforePlayer(RemoteLayer layer, Player pc)
+    {
+        const int User = 31;
+        int npcId = 0;
+        var table = new Ms2.Formats.World.NpcTable(packs);
+        foreach (int id in new[] { 21000001, 21000002, 21000003, 11000001 })
+            if (table.Find(id) != null) { npcId = id; break; }
+        if (npcId == 0) { fails.Add("npc hold: no npc row"); return; }
+        foreach (int obj in new[] { 20, 40 })
+            layer.Tracker.Events.Enqueue(new NpcAddedEvent(0, new FieldAddNpc { ObjectId = obj, NpcId = npcId }));
+        layer._Process(0);
+        var from = pc.GlobalPosition;
+        Vector3 Place(int id, Vector3 at)
+        {
+            var sk = layer.HoldVisual(id)?.GetNodeOrNull<Skeleton3D>("Model/" + ModelBuilder.SkeletonName);
+            if (sk == null) return Vector3.Inf;
+            int b = sk.FindBone("Hold_Point00");
+            if (b < 0) b = sk.AddBone("Hold_Point00");
+            int parent = sk.GetBoneParent(b);
+            var local = sk.GlobalTransform.AffineInverse() * at;
+            sk.SetBonePosePosition(b, parent >= 0 ? sk.GetBoneGlobalPose(parent).AffineInverse() * local : local);
+            return sk.GlobalTransform * sk.GetBoneGlobalPose(b).Origin;
+        }
+        var world = new HoldWorld(layer, from, 9);
+        var key = new Ms2.Ui.HoldPcAction();
+        var pAt = Place(User, from + new Vector3(30, 0, 0));
+        var nAt = Place(20, from + new Vector3(0, 0, 300));
+        Place(40, from + new Vector3(0, 0, 200));
+        if (pAt == Vector3.Inf || nAt == Vector3.Inf) { fails.Add("npc hold: no skeleton on the player or the npc"); return; }
+        int far = world.FindHoldTarget(230, out _);
+        bool polled2 = key.Poll(world);
+        if (far != User || !polled2 || key.Target != User) fails.Add($"npc away: pick {far}, poll {polled2}, target {key.Target} (want player {User})");
+        Place(20, from + new Vector3(0, 0, 10));
+        int got = world.FindHoldTarget(230, out string node);
+        bool polled = key.Poll(world);
+        if (got != 20 || node != "Hold_Point00" || polled || key.Target != 0) fails.Add($"npc nearer: pick {got} '{node}', poll {polled}, target {key.Target} (want npc 20, refused, 0)");
+        // a tie at 30: npc 20 (lower id) beats player 31, npc 40 (higher) does not
+        Place(20, from + new Vector3(-30, 0, 0));
+        int tieLow = world.FindHoldTarget(230, out _);
+        Place(20, from + new Vector3(0, 0, 300));
+        Place(40, from + new Vector3(-30, 0, 0));
+        int tieHigh = world.FindHoldTarget(230, out _);
+        if (tieLow != 20 || tieHigh != User) fails.Add($"hold tie: lower id {tieLow} (want 20), higher id {tieHigh} (want {User})");
+        GD.Print($"remote ride: hold key npc 20 nearer than player {User} picks {got} and refuses ({polled}); npc away picks {far}; ties {tieLow} / {tieHigh}");
+    }
+
+    /// <summary>The hold key's world over the remote layer, the own feet at <c>from</c>: usable, state 1, boarding allowed.</summary>
+    sealed class HoldWorld : Ms2.Ui.IHoldPcWorld
+    {
+        readonly RemoteLayer layer; readonly Vector3 from; readonly int self;
+        public HoldWorld(RemoteLayer layer, Vector3 from, int self) { this.layer = layer; this.from = from; this.self = self; }
+        public bool HoldPcUsable => true;
+        public int HoldPcState => 1;
+        public int HoldPcSelfId => self;
+        public bool HoldPcRiding => false;
+        public int FindHoldTarget(float range, out string node)
+        {
+            float best = float.MaxValue; int id = 0; node = null;
+            layer.NearestHold(from, range, ref best, ref id, ref node);
+            return id;
+        }
+        public bool IsPc(int objectId) => layer.HoldPcInfo(objectId, out _, out _, out _, out _, out _, out _, out _);
+        public bool CanBoard(int objectId) => true;
+        public bool NoBoarding(int objectId) => false;
     }
 
     void Done(string fail)
