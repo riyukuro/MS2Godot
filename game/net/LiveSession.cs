@@ -971,6 +971,9 @@ public partial class LiveSession : Node
         var layer = remote = new RemoteLayer(field, builder, entry.Enter.CharacterId) { Feature8e = CodiFeature, ServerNow = () => ServerTime, ItemExists = id => ItemExists?.Invoke(id) ?? true };
         remote.Tracker.Profile = game.Profile;
         remote.Tracker.Entered(entry.Enter.ObjectId);   // the ServerEnter the entry took: the own damage records' owner
+        // WorldService::FUN_141bd1200 finds MyPC too: other players' StateHold on the own mount reads its seats
+        remote.SelfPc = id => id == selfObject && player != null && IsInstanceValid(player) ? player : null;
+        remote.SelfPassengers = OwnPassengers;
         remote.Numbered = (n, npc, pc) => DamageNumbered?.Invoke(n, npc, pc);
         remote.NpcExpShown = (npc, exp) => NpcExpShown?.Invoke(npc, exp);
         remote.NpcAdded = npc => NpcAdded?.Invoke(npc);

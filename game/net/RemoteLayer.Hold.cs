@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Godot;
 using Ms2.Net.Replay;
@@ -17,36 +18,70 @@ public sealed partial class RemoteLayer
     /// world rotation and translate in MS2 axes. A PC's map holds its ridee's passenger seat nodes too (Ridee::vfunc_119
     /// adds them, overwriting by name), so a riding PC's node is the mount's bone first; with the asker's seat on the mount
     /// (FUN_141676790, seat 0 when not in the map) the seat's position, rotation and sequences come with it.
-    /// STILL-OPEN: the local player and the ridees as targets are not looked up (HoldKind.None).
+    /// The own pc (<see cref="SelfPc"/>) is looked up the same way, with its mount and <see cref="SelfPassengers"/>.
+    /// STILL-OPEN: the ridees as targets are not looked up (HoldKind.None).
     /// </summary>
     // StateHold asks every frame: the path made once (a string and a NodePath per call otherwise)
     static readonly NodePath HoldSkeletonPath = "Model/" + ModelBuilder.SkeletonName;
+
+    /// <summary>The own pc of an object id (MyPC in WorldService's actor map), null for any other id or before it is in.</summary>
+    public Func<int, Player> SelfPc;
+    /// <summary>The own pc's m_mapB28 (passenger object id to seat).</summary>
+    public IReadOnlyDictionary<int, int> SelfPassengers;
 
     public HoldTarget FindHoldTarget(int asker, int id, string node)
     {
         var t = default(HoldTarget);
         Node3D visual;
-        Remote owner = null;
-        if (users.TryGetValue(id, out var r)) { t.Kind = HoldKind.Pc; visual = r.Visual; owner = r; }
+        Mount mount = null;
+        IReadOnlyDictionary<int, int> passengers = null;
+        int rideeState = 0, rideeSub = 0;
+        float rideeSpeed = 0f;
+        if (users.TryGetValue(id, out var r))
+        {
+            t.Kind = HoldKind.Pc; visual = r.Visual;
+            if (r.Ridee is { } ridee)
+            {
+                t.HasRidee = true;
+                t.RideeZ = ridee.Position.Z;
+                mount = ridee.Mount;
+                passengers = r.Passengers;
+                rideeState = ridee.States.Cur;
+                rideeSub = ridee.States.Sub;
+                rideeSpeed = ridee.AnimSpeed;
+            }
+        }
+        else if (SelfPc?.Invoke(id) is { } self && IsInstanceValid(self))
+        {
+            t.Kind = HoldKind.Pc; visual = self.Visual;
+            if (self.Mount != null)
+            {
+                // the one body is the mount's (Ridee::vfunc_10): its feet are the ridee's, (x, y, z) to MS2 (x, -z, y)
+                t.HasRidee = true;
+                t.RideeZ = self.GlobalPosition.Y;
+                mount = self.Mount;
+                passengers = SelfPassengers;
+                (rideeState, rideeSub) = self.RideeStateIds;
+                rideeSpeed = 1f;   // the own mount's sequences play at 1 (Mount.Play)
+            }
+        }
         else if (npcs.HoldInfo(id, out int npcId, out bool dead, out visual)) { t.Kind = HoldKind.Npc; t.NpcId = npcId; t.Dead = dead; }
         else return t;
         RideSeat model = null;
-        t.HasRidee = owner?.Ridee != null;
-        if (t.HasRidee) t.RideeZ = owner.Ridee.Position.Z;
-        if (owner?.Ridee is { } ridee && ridee.Mount != null)
+        if (mount != null)
         {
             // GetRidee, GetData, GetPassenger(FUN_141676790(asker)): seat 0 for a rider not in m_mapB28
-            model = ridee.Mount.Data.Passenger(owner.Passengers.GetValueOrDefault(asker));
+            model = mount.Data.Passenger(passengers?.GetValueOrDefault(asker) ?? 0);
             if (model != null)
             {
                 t.HasSeat = true;
-                t.RideeState = ridee.States.Cur;
-                t.RideeSub = ridee.States.Sub;
-                t.RideeAnimSpeed = ridee.AnimSpeed;
+                t.RideeState = rideeState;
+                t.RideeSub = rideeSub;
+                t.RideeAnimSpeed = rideeSpeed;
                 t.Seat = model.Sequences;
             }
-            int mb = ridee.Mount.Bone(node);
-            if (mb >= 0) { SetNode(ref t, ridee.Mount.BoneWorld(mb), model); return t; }
+            int mb = mount.Bone(node);
+            if (mb >= 0) { SetNode(ref t, mount.BoneWorld(mb), model); return t; }
         }
         var sk = visual?.GetNodeOrNull<Skeleton3D>(HoldSkeletonPath);
         if (sk == null || string.IsNullOrEmpty(node)) return t;

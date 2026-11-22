@@ -15,6 +15,9 @@ namespace Ms2Godot.Tests;
 /// - A run record on the ridee moves it at the row's run speed; the rider stays on it and plays rideAniPC_Run.
 /// - The dismount puts the rider at the ridee's place in StateIdle (the ridee stood on the ground) with its model back
 ///   at the body.
+/// - The own pc as a hold target (RemoteLayer.FindHoldTarget with <see cref="RemoteLayer.SelfPc"/>), on the first row with
+///   a passenger seat 0: unknown before it is in; on foot a pc without a ridee; riding, its ridee's feet z, the seat's
+///   rideBone as the node, the asker's seat 0 and the own state ids.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class RemoteRideCheck : Node3D
@@ -46,7 +49,9 @@ public partial class RemoteRideCheck : Node3D
         AddChild(rider.Body);
     }
 
-    Mount FirstMount()
+    Mount FirstMount() => FirstMount(m => m.Data.RunSpeed > 0 && m.SeatBone >= 0 && m.Data.AniPCRun != m.Data.AniPCIdle);
+
+    Mount FirstMount(Func<Mount, bool> pick)
     {
         foreach (var e in packs.List("Xml").Where(e => e.StartsWith("riding/", StringComparison.OrdinalIgnoreCase)).Order(StringComparer.Ordinal))
         {
@@ -54,7 +59,7 @@ public partial class RemoteRideCheck : Node3D
             try
             {
                 var m = Mount.Load(packs, builder, id);
-                if (m.Data.RunSpeed > 0 && m.SeatBone >= 0 && m.Data.AniPCRun != m.Data.AniPCIdle) return m;
+                if (pick(m)) return m;
                 m.Visual.Free();
             }
             catch (Exception) { }
@@ -83,6 +88,7 @@ public partial class RemoteRideCheck : Node3D
         if (frame == 3)
         {
             rider.Spawn();
+            SelfHoldTarget();
             var m = FirstMount();
             if (m == null) { Done("no riding row with a model and a run speed"); return; }
             ridee = RemotePc.CreateRidee("Ridee", m, MoveConfig.SceneGravity, rider.Body.Position + Vector3.Up * 25f, rider.RotationZ, faceGrids);
@@ -142,6 +148,49 @@ public partial class RemoteRideCheck : Node3D
                 Done(null);
                 break;
         }
+    }
+
+    void SelfHoldTarget()
+    {
+        const int Self = 9, Asker = 77;
+        // a row with a passenger seat 0 whose rideBone the skeleton has, so the seat comes with the node
+        var m = FirstMount(x => x.Data.Passenger(0) is { } p && x.Bone(p.RideBone) >= 0);
+        if (m == null) { fails.Add("self hold: no riding row with a passenger seat"); return; }
+        var field = new FieldStub(packs);
+        AddChild(field);
+        var layer = new RemoteLayer(field, builder, 1);
+        var (visual, anim, md, bodyDir) = Ms2Godot.Look.PlayerLook.Build(builder, packs);
+        var pc = Player.Create(visual, anim, faceGrids);
+        pc.Anims = ActionAnims.Load(packs, builder, md, anim, bodyDir);
+        AddChild(pc);
+        pc.SetProcess(false);
+        pc.SetPhysicsProcess(false);
+        pc.GlobalPosition = new Vector3(300, 40, -200);
+        string bone = m.Data.Passenger(0).RideBone;
+        if (layer.FindHoldTarget(Asker, Self, bone).Kind != HoldKind.None) fails.Add("self hold: found before the own pc is in");
+        layer.SelfPc = id => id == Self ? pc : null;
+        layer.SelfPassengers = new Dictionary<int, int>();
+        var foot = layer.FindHoldTarget(Asker, Self, bone);
+        if (foot.Kind != HoldKind.Pc || foot.HasRidee || foot.HasSeat) fails.Add($"self hold on foot: kind {foot.Kind}, ridee {foot.HasRidee}, seat {foot.HasSeat}");
+        if (layer.FindHoldTarget(Asker, Self + 1, bone).Kind != HoldKind.None) fails.Add("self hold: another id finds the own pc");
+        pc.RideOn(m);
+        var t = layer.FindHoldTarget(Asker, Self, bone);
+        var w = m.BoneWorld(m.Bone(bone)).Origin;
+        var want = new System.Numerics.Vector3(w.X, -w.Z, w.Y);
+        if (t.Kind != HoldKind.Pc || !t.HasRidee || t.RideeZ != pc.GlobalPosition.Y) fails.Add($"self hold riding: kind {t.Kind}, ridee {t.HasRidee}, z {t.RideeZ} (feet {pc.GlobalPosition.Y})");
+        if (!t.HasNode || System.Numerics.Vector3.Distance(t.NodePosition, want) > 0.01f) fails.Add($"self hold node: {t.HasNode} at {t.NodePosition}, mount bone {want}");
+        if (!t.HasSeat || t.Seat != m.Data.Passenger(0).Sequences) fails.Add($"self hold: seat {t.HasSeat}, not the row's seat 0");
+        if (t.RideeState != RemotePcStates.StateIdle || t.RideeAnimSpeed != 1f) fails.Add($"self hold ridee state {t.RideeState} speed {t.RideeAnimSpeed}");
+        GD.Print($"remote ride: own pc as hold target on {m.Data.Id}: node '{bone}' at {t.NodePosition}, ridee z {t.RideeZ}, seat {t.HasSeat}");
+        // the hold poll over a mount with seat nodes: 0 B once its list is found
+        RemoteLayer.NearestHoldNode(null, m, Vector3.Zero, out _);
+        long a0 = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 100; i++) RemoteLayer.NearestHoldNode(null, m, Vector3.Zero, out _);
+        long alloc = GC.GetAllocatedBytesForCurrentThread() - a0;
+        if (m.RideBones().Length == 0 || alloc != 0) fails.Add($"hold poll of {m.RideBones().Length} seat node(s) allocates {alloc} B per 100");
+        pc.QueueFree();
+        field.QueueFree();
+        layer.Free();
     }
 
     void Done(string fail)

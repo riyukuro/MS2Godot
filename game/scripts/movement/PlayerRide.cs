@@ -187,6 +187,9 @@ public sealed class Mount
 public partial class Player
 {
     public Mount Mount { get; private set; }
+    /// <summary>The mount's GetCurStateId and its sub (FUN_14166cc80): the one body runs the mount's states, so the own
+    /// state ids, as a passenger's StateHold reads them.</summary>
+    public (int State, int Sub) RideeStateIds => (StateId(State), SubOf(State));
     AnimatableBody3D rideBox;
 
     // MyPC's own controller while the mount's runs: the game tick makes the mount's records instead (scenestategame.cpp:1362-1368,
