@@ -1140,11 +1140,10 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
 
     /// <summary>FUN_1418fec90 (uicommon.cpp:912) for a ui currency: an item price s_common_payitem, else s_common_payment with the
     /// currency's icon (9 is the red merat's only with feature 0x43, else the merat's).</summary>
-    public string CurrencyPriceText(int currency, long amount)
+    public string CurrencyPriceText(int currency, long amount, int itemId = 0)
     {
-        if (currency == 2) return Common("s_common_payitem", Number(amount), 0u);
-        var (icon, vspace) = currency == 9 && !Model.IsFeatureEnabled(Feature.RedMerat) ? CurrencyIcon(3, 0) : currency == 9
-            ? ("export_common_icon_redmerat", -4) : CurrencyIcon(currency, 0);
+        if (currency == 2) return Common("s_common_payitem", Number(amount), (uint)itemId);
+        var (icon, vspace) = CurrencyIcon(currency, itemId, Model.IsFeatureEnabled(Feature.RedMerat));
         return icon.Length > 0 ? Common("s_common_payment", Number(amount), icon, vspace) : "";
     }
 
@@ -1375,15 +1374,9 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     public string PriceText(int kind, int itemId, long amount, string iconTag)
     {
         int currency = CurrencyOf(kind);
-        if (!string.IsNullOrEmpty(iconTag))
-        {
-            // FUN_1418fee40: an item price with the tag; else FUN_1418fec00 (the red merat swap is not ported)
-            if (currency == 2) return Common("s_common_payitem", Number(amount), iconTag);
-            if (currency == 3) throw new NotImplementedException("merat price text (FUN_1418fec00)");
-        }
-        if (currency == 2) return Common("s_common_payitem", Number(amount), (uint)itemId);
-        var (icon, vspace) = CurrencyIcon(currency, itemId);
-        return icon.Length > 0 ? Common("s_common_payment", Number(amount), icon, vspace) : "";
+        // FUN_1418fee40 (bAlt false): an item price with the tag; any other kind is FUN_1418fec00 = FUN_1418fec90 below.
+        if (!string.IsNullOrEmpty(iconTag) && currency == 2) return Common("s_common_payitem", Number(amount), iconTag);
+        return CurrencyPriceText(currency, amount, itemId);
     }
 
     /// <summary>FUN_1403baee0 (gameentitycommon.cpp:268): a shop's currency kind as the ui currency.</summary>
@@ -1394,8 +1387,8 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
     };
 
     /// <summary>FUN_1418fe870 (uicommon.cpp:816): a currency's icon and its vertical offset. The red / rainbow merat icons
-    /// (features) are not ported: 9 and 10 throw.</summary>
-    public static (string Icon, int VSpace) CurrencyIcon(int currency, int itemId) => currency switch
+    /// are the client's with the red merat feature (0x43, FUN_14036d650 / FUN_14036d6d0), else the merat's.</summary>
+    public static (string Icon, int VSpace) CurrencyIcon(int currency, int itemId, bool redMerat = false) => currency switch
     {
         0 => ("export_common_icon_cash_r", -4),
         1 => ("export_common_icon_meso_h21", -6),
@@ -1405,7 +1398,8 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
         5 => ("export_common_icon_treva", -6),
         6 => ("export_common_icon_lu", -6),
         7 => ("export_common_icon_habi", -6),
-        9 or 10 => throw new NotImplementedException("merat icon by feature"),
+        9 => (redMerat ? "export_common_icon_redmerat" : "export_common_icon_merat", -4),
+        10 => (redMerat ? "export_common_icon_rbmerat" : "export_common_icon_merat", -4),
         0xb => ("export_icon_guild_fund", -4),
         0xc => ("export_common_icon_reverse_coin", -7),
         0xd => ("export_common_icon_mentor_token", -4),
@@ -2208,7 +2202,7 @@ public sealed class ShopController : UiController, Hud.IMessageBoxListener
             string text;
             if (info.ResetLimited)
             {
-                var (icon, vspace) = CurrencyIcon(CurrencyOf(info.ResetTooltipCurrency), info.ResetCurrencyItem);
+                var (icon, vspace) = CurrencyIcon(CurrencyOf(info.ResetTooltipCurrency), info.ResetCurrencyItem, Model.IsFeatureEnabled(Feature.RedMerat));
                 text = Common("s_shop_tooltip_lua_reset", (uint)info.ResetCount, $"<img src='{icon}' vspace='{vspace}'/>");
             }
             else text = Common("s_shop_tooltip_reset");

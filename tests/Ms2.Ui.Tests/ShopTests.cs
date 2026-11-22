@@ -438,6 +438,24 @@ public class ShopTests
         Assert.That(ShopController.CurrencyIcon(0, 0), Is.EqualTo(("export_common_icon_cash_r", -4)));
     }
 
+    [TestCase(9, "export_common_icon_rbmerat", "export_common_icon_merat")]    // kind 9 is ui currency 10
+    [TestCase(10, "export_common_icon_redmerat", "export_common_icon_merat")]  // kind 10 is ui currency 9
+    [TestCase(4, "export_common_icon_merat", "export_common_icon_merat")]      // kind 4 is the plain merat
+    public void MeratPriceTextHasTheFeatureIconAndNeverThrows(int kind, string withFeature, string without)
+    {
+        foreach (bool on in new[] { true, false })
+        foreach (string tag in new[] { "", "tag" })
+        {
+            var model = NewModel();
+            model.FeatureEnabledByName = _ => on;
+            var (_, c) = Load(model);
+            string text = null;
+            Assert.DoesNotThrow(() => text = c.PriceText(kind, 0, 5, tag));
+            Assert.That(text, Does.Contain(on ? withFeature : without));
+            if (!on && kind != 4) Assert.That(text, Does.Not.Contain("redmerat").And.Not.Contain("rbmerat"));
+        }
+    }
+
     static ShopProduct StackableProduct() => new()
     {
         Serial = 200, ItemId = 20000028, Rarity = 1, Price = 100, OriginalPrice = 100, Count = 1, Bundle = 1, Categories = "CP",
