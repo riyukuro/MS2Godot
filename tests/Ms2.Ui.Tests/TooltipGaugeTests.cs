@@ -11,7 +11,9 @@ public class TooltipGaugeTests
     [Test]
     public void TheGaugeBarIsUnderItsHeading()
     {
-        var packs = new Ms2.Formats.Pack.PackSet(Environment.GetEnvironmentVariable("MS2_DATA") ?? "");
+        var d = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
+        var packs = new Ms2.Formats.Pack.PackSet(d);
         var m = new UiModel(new GameTables(packs, "en")) { FeatureEnabledByName = f => LobbyFeatures.IsEnabled(packs, f) };
         m.HasLocalPlayer = true;
         var gauge = new EquipItem { Id = 15000307, Uid = 12, Rarity = 4, Amount = 1 };
