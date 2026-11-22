@@ -451,4 +451,37 @@ public class StoreDialogTests
         w.C.OnCallback("notifySlotUse", new object[] { StoreDialogController.SlotName(2), 1 });
         Assert.That(w.Sent, Is.Empty, "the inventory window is not open");
     }
+
+    [Test]
+    public void TheStoreCountBoxCarriesTheItemTheSlotAndADigitLimitedInput()
+    {
+        var w = Rig();
+        Load(w.C, w.Model);
+        w.C.ShowUseStoreCountInput(50, 20, 100, true, 3);
+        w.C.ShowUseStoreCountInput(51, 7, 99, false, 4);
+        Assert.That(w.Boxes.Select(b => (b.Type, b.Extra, b.ItemUid, b.InventorySlot, b.InputDefault)),
+            Is.EqualTo(new[] { (5, StoreDialogController.UseStoreOutBox, 50L, 3, "20"), (5, StoreDialogController.UseStoreInBox, 51L, 4, "7") }));
+        Assert.That(w.Boxes[0].InputMaxChars, Is.EqualTo(3), "the digits of the slot max");
+    }
+
+    [Test]
+    public void TheCountBoxAnswersCheckTheCountThenSendTheMove()
+    {
+        var banked = Item(20000001, 50, 2, 30);
+        var (bag, _) = BagWith(Item(20000002, 60, 0, 8), Item(20000001, 61, 1, 90));
+        var w = BankedRig(banked, bag);
+        w.C.UseStoreOut(50, 31);
+        w.C.UseStoreOut(50, 0);
+        Assert.That(w.Sent, Is.Empty, "above the stack and zero are refused");
+        Assert.That(w.Notices.Count, Is.EqualTo(2));
+        w.C.UseStoreOut(50, 12);
+        var wd = (StorageWithdrawRequest)w.Sent.Single();
+        Assert.That((wd.Uid, wd.Slot, wd.Count), Is.EqualTo((50L, (short)2, 12)), "stack 61 holds 90 of 99: only 9 fit, so the first empty cell");
+        w.Sent.Clear();
+        w.InvItem = Item(20000002, 60, 0, 8);
+        w.C.UseStoreIn(60, 9);
+        w.C.UseStoreIn(60, 5);
+        var dep = (StorageDepositRequest)w.Sent.Single();
+        Assert.That((dep.Uid, dep.Slot, dep.Count), Is.EqualTo((60L, (short)0, 5)), "9 is more than the 8 held");
+    }
 }

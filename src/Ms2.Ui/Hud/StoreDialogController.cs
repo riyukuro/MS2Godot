@@ -252,7 +252,7 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
     /// StoreSlot::vfunc_14 (storeslot.cpp:244, @0x141808d90): the store item of the slot; the binding (CItem::FUN_14052a580: an
     /// item bound to another character: box 0xff); with the inventory window open, its tab's slot for one (the whole stack with
     /// Shift) by FUN_140a612b0 (-1: notice 0x44 with the tab name); a stack that asks no count or Shift sends the withdraw of the
-    /// whole stack. A stack that asks a count is not sent. STILL-OPEN: the count box (ShowUseStoreCountInput), vfunc_26's
+    /// whole stack. A stack that asks a count opens the count box (ShowUseStoreCountInput). STILL-OPEN: vfunc_26's
     /// restriction and binding boxes, Unk_Inventory::FUN_140a661e0 (a constant 1), the error sound.
     /// </summary>
     public bool WithdrawSlot(int bankSlot)
@@ -274,9 +274,58 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
             return false;
         }
         var item = InventoryController.ToItem(rec, Model.Tables.Items);
-        if (item != null && ItemTradeRules.AsksCount(item, Now()) && !all) return true;
-        Sender.Withdraw(rec.Uid, slot, rec.Amount);
+        if (item != null && ItemTradeRules.AsksCount(item, Now()) && !all)
+            ShowUseStoreCountInput(rec.Uid, rec.Amount, (int)item.Data.SlotMax, true, slot);
+        else Sender.Withdraw(rec.Uid, slot, rec.Amount);
         return true;
+    }
+
+    public const string UseStoreInBox = "usestorein", UseStoreOutBox = "usestoreout";
+
+    /// <summary>ShowUseStoreCountInput (@0x1414043e0, invenslot.cpp:379): a count box (type 5; Common 0x2ac out / 0x2ab in;
+    /// tag usestoreout / usestorein) with the item uid and the slot; the input (mode 1) starts at the count and takes as many
+    /// digits as the slot max has (FUN_1412773a0).</summary>
+    public void ShowUseStoreCountInput(long uid, int count, int max, bool take, int slot)
+    {
+        var box = MessageBoxQueue.Create(5, Model.Tables.Common(take ? 0x2ac : 0x2ab), null, take ? UseStoreOutBox : UseStoreInBox);
+        box.ItemUid = uid;
+        box.InventorySlot = slot;
+        box.SetInput(1, count.ToString(System.Globalization.CultureInfo.InvariantCulture), InventoryController.DigitCount(max), 0, 0);
+        ShowData(box);
+    }
+
+    /// <summary>IsItemCountValid (@0x141a00180, uimessagebox.cpp:2390): a count of 0 or less or above the stack shows the
+    /// notice Common 0xee (1, have). A uid of 0 or no such item passes (FUN_141a00250 / FUN_141a002b0).</summary>
+    bool CountValid(EquipItem have, int count)
+    {
+        if (have == null || count > 0 && count <= have.Amount) return true;
+        NoticeText?.Invoke(ClientFormat.Format(Model.Tables.Common(0xee), 1, have.Amount));
+        return false;
+    }
+
+    /// <summary>HandleUseStoreInButton's yes (@0x1419fe240): the count checked against the bag item (FUN_141a002b0), then
+    /// FUN_140de2dc0(uid, slot 0, count): the deposit request. STILL-OPEN: its score / summoned-pet refusals.</summary>
+    public void UseStoreIn(long uid, int count)
+    {
+        if (Sender == null || Model == null) return;
+        if (uid != 0 && !CountValid(InventoryBag?.Invoke()?.FindByUid(uid), count)) return;
+        Sender.Deposit(uid, 0, count);
+    }
+
+    /// <summary>HandleUseStoreOutButton's yes (@0x1419fe310): the count checked against the bank item (FUN_141a00250); the
+    /// item gone: nothing; the slot is FUN_140a612b0(tab, item, count), -1 the notice 0x44 with the tab name; then
+    /// FUN_140de31f0 (the binding rule, then Withdraw(uid, slot, count)).</summary>
+    public void UseStoreOut(long uid, int count)
+    {
+        if (Sender == null || Model == null || Book == null) return;
+        var rec = Book.Find(uid);
+        if (uid != 0 && !CountValid(rec, count)) return;
+        if (rec == null || InventoryBag?.Invoke() is not { } bag) return;
+        int tab = bag.TabOfItem(rec.Id);
+        int slot = bag.SlotForIncoming(tab, rec, count);
+        if (slot == -1) { NoticeText?.Invoke(ClientFormat.Format(Model.Tables.Common(0x44), TabName(tab))); return; }
+        if (!StorageSender.BindingAllows(rec, SelfId())) { ShowBox(Model.Tables.Common(0xff) ?? "", 0); return; }
+        Sender.Withdraw(uid, slot, count);
     }
 
     // ---- the meso and expand buttons ---------------------------------------------------------------------------------
@@ -465,7 +514,7 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
     /// <summary>
     /// InvenSlot::vfunc_14 case 3 (invenslot.cpp:923), the right-click with this window at the head of the dialogs: the
     /// target slot is AvailableSlot(item, 1, or the whole stack with Shift); -1: notice 0xf2; an item the bank refuses:
-    /// notice 0xf1; a stack that asks a count without Shift is not sent (STILL-OPEN: the count box); else the whole
+    /// notice 0xf1; a stack that asks a count without Shift opens the count box (ShowUseStoreCountInput, with the bag slot); else the whole
     /// stack is deposited.
     /// </summary>
     public void DepositFromInventory(Item item)
@@ -476,6 +525,7 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
         if (slot == -1) { NoticeText?.Invoke(Model.Tables.Common(0xf2)); return; }
         if (!Book.IsStorable(item.Record.Id)) { NoticeText?.Invoke(Model.Tables.Common(0xf1)); return; }
         if (!ItemTradeRules.AsksCount(item, Now()) || all) Sender.Deposit(item.Uid, slot, (int)item.Count);
+        else ShowUseStoreCountInput(item.Uid, (int)item.Count, (int)item.Data.SlotMax, false, item.Record.InventorySlot);
     }
 
     /// <summary>CStore::Allowed (bank, type 0), for the inventory's use mode.</summary>

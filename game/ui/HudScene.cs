@@ -3115,6 +3115,8 @@ public partial class HudScene : Node, IUiStageHost
         Action<long, int> sellItem = (uid, n) => inventory?.SellCountStep(uid, n);
         Action<long, int> sellConfirm = (uid, n) => inventory?.SellConfirmStep(uid, n);
         boxes.RequestTradeAnswer = tradeAnswer; boxes.TradeIn = tradeIn;
+        Action<long, int> storeIn = (uid, n) => store?.UseStoreIn(uid, n), storeOut = (uid, n) => store?.UseStoreOut(uid, n);
+        boxes.UseStoreIn = storeIn; boxes.UseStoreOut = storeOut;
         boxes.SellCountValid = sellValid; boxes.SellItem = sellItem; boxes.SellConfirm = sellConfirm;
         boundBoxes = boxes;
         unbindBoxAnswers = () =>
@@ -3124,6 +3126,8 @@ public partial class HudScene : Node, IUiStageHost
             if (boxes.UseBindGemEquipItem == gem) boxes.UseBindGemEquipItem = null;
             if (boxes.RequestTradeAnswer == tradeAnswer) boxes.RequestTradeAnswer = null;
             if (boxes.TradeIn == tradeIn) boxes.TradeIn = null;
+            if (boxes.UseStoreIn == storeIn) boxes.UseStoreIn = null;
+            if (boxes.UseStoreOut == storeOut) boxes.UseStoreOut = null;
             if (boxes.SellCountValid == sellValid) boxes.SellCountValid = null;
             if (boxes.SellItem == sellItem) boxes.SellItem = null;
             if (boxes.SellConfirm == sellConfirm) boxes.SellConfirm = null;

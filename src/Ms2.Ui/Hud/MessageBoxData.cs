@@ -58,6 +58,8 @@ public sealed class MessageBoxData
     public readonly List<string> Args = new();
     /// <summary>m_30 (SetItemUid @0x141a01600): the item a tag handler finds again (FindItemByUid).</summary>
     public long ItemUid;
+    /// <summary>m_inventorySlot (SetInventorySlot, invenslot.cpp:388): the bag slot a store count box was opened for.</summary>
+    public int InventorySlot;
     /// <summary>m_values: the extra members FillObj sets last (std::map&lt;CString, GFx::Value&gt;, ordinal key order);
     /// FUN_140613810(name, text) adds a string (unit_1406125d0_itemlockmanager.cpp:311).</summary>
     public readonly SortedDictionary<string, object> Values = new(StringComparer.Ordinal);

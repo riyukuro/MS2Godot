@@ -481,6 +481,8 @@ public sealed class MessageBoxController : UiController
         var tokens = tag.Split(',');
         if (tokens.Length != 2) return false;
         if (tokens[0] == "tradein") return HandleTradeInButton(button, MessageBoxData.WToI(tokens[1]));
+        if (tokens[0] == "usestorein") return HandleUseStoreButton(false, button, MessageBoxData.WToI(tokens[1]));
+        if (tokens[0] == "usestoreout") return HandleUseStoreButton(true, button, MessageBoxData.WToI(tokens[1]));
         if (tokens[0] == "sell") return HandleSellButton(button, MessageBoxData.WToI(tokens[1]));
         if (tokens[0] == "sellconfirm") return HandleSellConfirmButton(button, MessageBoxData.WToI(tokens[1]));
         if (data?.Listener == null) UnportedTag?.Invoke(button, tag);
@@ -516,6 +518,18 @@ public sealed class MessageBoxController : UiController
         RequestTradeAnswer?.Invoke(id, button == 0);
         return true;
     }
+
+    /// <summary>HandleUseStoreInButton @0x1419fe240 / HandleUseStoreOutButton @0x1419fe310 (uimessagebox.cpp:1928, :1944): no
+    /// record, 1; the yes passes the item uid and the typed count on; 1.</summary>
+    bool HandleUseStoreButton(bool take, int button, int count)
+    {
+        if (data == null) return true;
+        if (button == 0) (take ? UseStoreOut : UseStoreIn)?.Invoke(data.ItemUid, count);
+        return true;
+    }
+
+    /// <summary>The store count boxes' yes (usestorein / usestoreout): the box's item uid and the count typed.</summary>
+    public Action<long, int> UseStoreIn, UseStoreOut;
 
     /// <summary>HandleTradeInButton @0x1419fe940: no record, 1; the yes passes the item uid and count on; 1.</summary>
     bool HandleTradeInButton(int button, int count)
