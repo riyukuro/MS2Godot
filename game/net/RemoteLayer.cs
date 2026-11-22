@@ -677,7 +677,8 @@ public sealed partial class RemoteLayer : Node3D
                     var to = mv.Ride ? r.Ridee : r.Pc;
                     if (to == null) break;
                     to.States.Push(SyncRecord.From(mv.Record, Tracker.Profile));
-                    if (++movedSeen <= 3 || movedSeen % 100 == 0) GD.Print($"live: other player {r.Name} moved #{movedSeen} to {mv.Position} yaw {mv.YawDegrees}");
+                    if (++movedSeen <= 3 || movedSeen % 100 == 0)
+                        GD.Print($"live: other player {r.Name} moved #{movedSeen} to {mv.Position} yaw {mv.YawDegrees}, state {to.States.Cur}, {to.States.Snaps} snap(s) (last {to.States.LastSnap:0})");
                     break;
                 case UserStatEvent st:
                     // OnStat (vfunc_74 -> FUN_141992230): an hp change shows the member's bar

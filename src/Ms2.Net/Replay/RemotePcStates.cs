@@ -752,8 +752,18 @@ public sealed class RemotePcStates
         float limit = s == 0x1e ? 400f : 200f;
         if (MathF.Abs(dz) > limit) snap = true;
         if (s == 0x1e && Cur != 0x1e) snap = true;
+        if (snap && (d.X != 0 || d.Y != 0 || dz != 0))
+        {
+            Snaps++;
+            LastSnap = MathF.Sqrt(dist * dist + dz * dz);
+        }
         if (snap) pc.Position = r.Position;
     }
+
+    /// <summary>How many records moved the PC by putting it on the record's position (<see cref="Correct"/>), and how far
+    /// the last one moved it: the live log's measure of a remote PC that jumps instead of walking.</summary>
+    public int Snaps { get; private set; }
+    public float LastSnap { get; private set; }
 
     /// <summary>vfunc_28 of the current state (State::vfunc_28 is false; StateJump's is m_n10 != the record's sub,
     /// statejump.cpp:342-345).</summary>

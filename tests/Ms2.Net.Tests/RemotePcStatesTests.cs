@@ -244,14 +244,18 @@ public class RemotePcStatesTests {
         sm.Push(Rec(2, 0x18, new Vector3(60, 60, 0), new Vector2(0, 1), 0f));
         sm.Update(1e-4f);
         Assert.That(b.Position.X, Is.LessThan(5));
+        Assert.That(sm.Snaps, Is.EqualTo(0));
         // 100 or more away: put there
         sm.Push(Rec(2, 0x18, new Vector3(300, 0, 0), new Vector2(0, 1), 0f));
         sm.Update(1e-4f);
         Assert.That(b.Position.X, Is.EqualTo(300).Within(1));
+        Assert.That(sm.Snaps, Is.EqualTo(1));
+        Assert.That(sm.LastSnap, Is.InRange(290f, 310f));
         // a height difference over 200 snaps even when close
         sm.Push(Rec(2, 0x18, new Vector3(300, 0, 250), new Vector2(0, 1), 0f));
         sm.Update(1e-4f);
         Assert.That(b.Position.Z, Is.GreaterThan(200));
+        Assert.That(sm.Snaps, Is.EqualTo(2));
         // a state outside the moving list (StateEmotion 0xb) snaps at any distance
         b.Position = Vector3.Zero;
         sm.Push(Rec(0xb, 0, new Vector3(10, 0, 0), Vector2.Zero, 0f));
