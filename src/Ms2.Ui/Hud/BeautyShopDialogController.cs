@@ -64,6 +64,12 @@ public sealed class BeautyShopDialogController : UiController
     public Action<BeautyPayment> NotEnough;
     /// <summary>The bill (UIBillDialog 0x4e7b, not ported): its rows and total; the answer comes back through <see cref="OnBillAnswer"/>.</summary>
     public Action<BeautyBill> OpenBill;
+    /// <summary>The notice of an item id of mode 9 (FUN_141811980(1, id): the item's name in the common string 0x996).</summary>
+    public Func<int, string> ItemNoticeText;
+    /// <summary>GetMaxSlotCount / FUN_140f01220 (mode 0x11's slot count): not recovered, set by the host.</summary>
+    public int MaxSlotCount = int.MaxValue, ExtendBy;
+    /// <summary>The name of an item id (the string table's item name, FUN_141811980(1, id)).</summary>
+    public Func<int, string> ItemName = _ => "";
     /// <summary>ShowSystemNotice: a notice line.</summary>
     public event Action<string> NoticeText;
     /// <summary>FUN_14134a2e0-like exit: the page was left (FUN_1418c9cd0: the field camera and the sub scene 0x620001d).</summary>
@@ -132,7 +138,8 @@ public sealed class BeautyShopDialogController : UiController
             var text = ItemNoticeText?.Invoke(p.ItemId);
             if (text != null) NoticeText?.Invoke(text);
         }
-        if (Closing) return;
+        // the gated modes read the string tables and show boxes: they act only once the movie is attached
+        if (Closing || Host == null) return;
         Waiting = false;
         switch (p.Mode)
         {
@@ -157,12 +164,6 @@ public sealed class BeautyShopDialogController : UiController
         }
     }
 
-    /// <summary>The notice of an item id of mode 9 (FUN_141811980(1, id): the item's name in the common string 0x996).</summary>
-    public Func<int, string> ItemNoticeText;
-    /// <summary>GetMaxSlotCount / FUN_140f01220 (mode 0x11's slot count): not recovered, set by the host.</summary>
-    public int MaxSlotCount = int.MaxValue, ExtendBy;
-    /// <summary>The name of an item id (the string table's item name, FUN_141811980(1, id)).</summary>
-    public Func<int, string> ItemName = _ => "";
 
     string CouponNotice(int coupon, bool mailed)
     {

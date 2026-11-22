@@ -292,4 +292,109 @@ public class BeautyShopDialogTests
         r.C.OnBillAnswer(0, true);
         Assert.That(r.Sent.Select(Bytes).Single(), Is.EqualTo(Bytes(new BeautyBuyRequest(7, true, 0x1122334455L))));
     }
+
+    [Test]
+    public void AGatedModeBeforeTheMovieLoadsDoesNothing()
+    {
+        var r = new Rig(false);
+        r.C.OnPacket(Rig.Open());
+        Assert.DoesNotThrow(() => r.C.OnPacket(new BeautyShopPacket(8) { Result = 0x33 }));
+        Assert.DoesNotThrow(() => r.C.OnPacket(new BeautyShopPacket(0x10)));
+        Assert.DoesNotThrow(() => r.C.OnPacket(new BeautyShopPacket(0xc)));
+        Assert.That(r.Boxes, Is.Empty);
+    }
+
+    // ---- the host side: BeautyShopFlow, what HudScene.Beauty drives --------------------------------------------------------
+
+    sealed class FlowRig
+    {
+        public BeautyShopFlow Flow = new();
+        public List<BeautyShopDialogController> Shown = new();
+        public List<string> Logs = new();
+        public int Exits;
+        public Cust Cu;
+        public int Unloads;
+        public Player Player;
+
+        // a controller on its real movie, as MovieDialog attaches it
+        BeautyShopDialogController Make()
+        {
+            Packs();
+            var c = new BeautyShopDialogController();
+            var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
+            p.StageW = 1280; p.StageH = 720;
+            p.Translate = k => k.TrimStart('$');
+            var host = new UiHost(p, c, new UiModel(new GameTables(packs, "en")) { HasLocalPlayer = true });
+            Assert.That(host.Load(), Is.True, "load: " + string.Join("; ", rt.Errors));
+            Player = p;
+            c.Unloaded += () => Unloads++;
+            return c;
+        }
+        public void Tick(int n) { for (int i = 0; i < n; i++) Player.Tick(); }
+        public FlowRig(bool withCustomize)
+        {
+            Cu = withCustomize ? new Cust() : null;
+            Flow.CreateCustomize = () => Cu;
+            Flow.CreateController = Make;
+            Flow.Show = Shown.Add;
+            Flow.ExitSubScene = () => Exits++;
+            Flow.Log = Logs.Add;
+        }
+    }
+
+    [Test]
+    public void WithoutACustomizeTheDialogDoesNotOpen()
+    {
+        var f = new FlowRig(false);
+        Assert.That(f.Flow.Open(), Is.False);
+        Assert.That(f.Shown, Is.Empty);
+        Assert.That(f.Flow.IsOpen, Is.False);
+        f.Flow.OnPacket(Rig.Open());
+        Assert.That(f.Logs, Has.Count.EqualTo(2));
+    }
+
+    [Test]
+    public void LeavingClosesTheDialogAndItOpensAgain()
+    {
+        var f = new FlowRig(true);
+        Assert.That(f.Flow.Open(), Is.True);
+        Assert.That(f.Flow.IsOpen, Is.True);
+        Assert.That(f.Flow.Open(), Is.False, "already open");
+        var c = f.Flow.Current;
+        Assert.That(c.Customize, Is.SameAs(f.Cu));
+        c.Leave();
+        f.Tick(120);
+        Assert.That(f.Unloads, Is.EqualTo(1), "the movie is handed back to the host");
+        Assert.That(f.Exits, Is.EqualTo(1));
+        Assert.That(f.Flow.Current, Is.Null);
+        Assert.That(f.Flow.IsOpen, Is.False);
+        Assert.That(f.Flow.Open(), Is.True, "a second open after leaving");
+        Assert.That(f.Shown, Has.Count.EqualTo(2));
+        Assert.That(f.Cu.Calls, Is.EqualTo(new[] { "restore0" }), "FUN_1418c9cd0 restores the worn slot first");
+    }
+
+    [Test]
+    public void PacketsReachTheDialogOnlyWhileOpen()
+    {
+        var f = new FlowRig(true);
+        f.Flow.OnPacket(Rig.Open());
+        Assert.That(f.Logs, Has.Count.EqualTo(1));
+        f.Flow.Open();
+        f.Flow.OnPacket(Rig.Open(2));
+        Assert.That(f.Flow.Current.Page, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void TheHudSceneUnsubscribesTheBeautyWatchersWithTheScene()
+    {
+        var dir = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "MS2Godot.sln"))) dir = dir.Parent;
+        Assert.That(dir, Is.Not.Null);
+        string beauty = File.ReadAllText(Path.Combine(dir.FullName, "game", "ui", "HudScene.Beauty.cs"));
+        string hud = File.ReadAllText(Path.Combine(dir.FullName, "game", "ui", "HudScene.cs"));
+        Assert.That(beauty, Does.Contain("live.BeautyRequested -="));
+        Assert.That(beauty, Does.Contain("live.BeautyShopReceived -="));
+        Assert.That(hud, Does.Contain("unwatchBeauty?.Invoke()"), "the scene's teardown runs it");
+        Assert.That(beauty, Does.Not.Contain("beautyWatched"), "no once-forever flag that survives a rebuilt scene");
+    }
 }

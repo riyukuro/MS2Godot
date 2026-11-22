@@ -209,6 +209,7 @@ public partial class HudScene : Node, IUiStageHost
         unwatchBlackMarket = null;
         unwatchShop?.Invoke();
         unwatchShop = null;
+        unwatchBeauty?.Invoke();
         unwatchPcInfo?.Invoke();
         unwatchPcInfo = null;
         unwatchBuddies?.Invoke();

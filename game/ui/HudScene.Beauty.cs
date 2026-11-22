@@ -1,3 +1,4 @@
+using System;
 using Godot;
 using Ms2.Net.Packets;
 using Ms2.Ui;
@@ -14,28 +15,35 @@ namespace Ms2Godot.Ui;
 /// </summary>
 public partial class HudScene
 {
-    BeautyShopDialogController beauty;
+    readonly BeautyShopFlow beautyFlow = new();
     MovieDialog beautyMovie;
-    bool beautyWatched;
+    Action unwatchBeauty;
 
-    bool BeautyOpen => beauty != null && !beauty.IsClosed;
+    bool BeautyOpen => beautyFlow.IsOpen;
 
+    /// <summary>Subscribes once per scene and unsubscribes with it (the LiveSession outlives a field reload's HUD).</summary>
     void WatchBeauty()
     {
-        if (beautyWatched || Ms2Godot.Net.LiveSession.Instance is not { } live) return;
-        beautyWatched = true;
-        live.BeautyRequested += _ => OpenBeauty(live);
-        live.BeautyShopReceived += p =>
+        if (unwatchBeauty != null || Ms2Godot.Net.LiveSession.Instance is not { } live) return;
+        beautyFlow.CreateController = () => CreateBeauty(live);
+        beautyFlow.Show = ShowBeauty;
+        beautyFlow.Log = m => GD.Print(m);
+        void OnRequested(BeautyReq _) => beautyFlow.Open();
+        live.BeautyRequested += OnRequested;
+        live.BeautyShopReceived += beautyFlow.OnPacket;
+        unwatchBeauty = () =>
         {
-            if (BeautyOpen) beauty.OnPacket(p);
-            else GD.Print($"beauty shop: mode {p.Mode} arrived with the dialog closed");
+            live.BeautyRequested -= OnRequested;
+            live.BeautyShopReceived -= beautyFlow.OnPacket;
+            beautyFlow.Current?.Close();
+            unwatchBeauty = null;
         };
     }
 
-    void OpenBeauty(Ms2Godot.Net.LiveSession live)
+    // STILL-OPEN: FeePriceText / CanPay / NotEnough (GetFeePriceText, CanPayFee, FUN_14134a2e0 are not recovered), OpenBill (the
+    // UIBillDialog beauty kind) and SlotOfKind (FUN_140f01070) stay unset, so the paths that need them do nothing.
+    BeautyShopDialogController CreateBeauty(Ms2Godot.Net.LiveSession live)
     {
-        if (BeautyOpen) return;
-        if (beautyMovie != null) { beautyMovie.Host.Unload(); beautyMovie.QueueFree(); beautyMovie = null; }
         var c = new BeautyShopDialogController
         {
             Sales = live.BeautySales,
@@ -43,10 +51,15 @@ public partial class HudScene
             Send = live.SendBeauty,
         };
         c.NoticeText += SystemNoticeText;
-        c.Unloaded += () => { beautyMovie?.Host.Unload(); beautyMovie?.QueueFree(); beautyMovie = null; };
-        beauty = c;
-        beautyMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
-        GD.Print($"beauty shop: load={beautyMovie.Loaded}");
-        uiRoot.AddChild(beautyMovie);
+        return c;
+    }
+
+    void ShowBeauty(BeautyShopDialogController c)
+    {
+        if (beautyMovie != null) { beautyMovie.Host.Unload(); beautyMovie.QueueFree(); beautyMovie = null; }
+        var m = beautyMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
+        c.Unloaded += () => { m.Host.Unload(); m.QueueFree(); if (beautyMovie == m) beautyMovie = null; };
+        GD.Print($"beauty shop: load={m.Loaded}");
+        uiRoot.AddChild(m);
     }
 }
