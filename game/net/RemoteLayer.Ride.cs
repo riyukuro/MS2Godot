@@ -73,6 +73,7 @@ public sealed partial class RemoteLayer
         ridee.RiderAbilityRate = type => RiderAbilityRate(r, type);
         ridee.RiderEventBuff = type => r.Buffs?.HasEnabledWithEventBuffType(type) == true;
         r.Ridee = ridee;
+        r.Pc.Ridee = ridee;
         r.Pc.States.RideOn(ridee.States, r.HpCur, r.HpMax);
         PlayRideEffect(r, CommonPath(ref rideOnPath, LiveSession.RideOnEffectKey));   // pcbase.cpp:3324-3330
         if (m.Data.HideRider) r.Pc.SetHideReason(RemotePc.HideReasonRide, true);       // :3331-3333
@@ -185,6 +186,7 @@ public sealed partial class RemoteLayer
         if (r.Ridee == null) return;
         r.Ridee.Free();
         r.Ridee = null;
+        if (r.Pc != null) r.Pc.Ridee = null;
         r.Passengers.Clear();               // PCBase::vfunc_121's ClearPassengers (pcbase.cpp:3430)
     }
 

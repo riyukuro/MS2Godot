@@ -130,9 +130,11 @@ public sealed partial class RemotePc : IRemotePc
     /// <summary>GameObjectController::IsOnGround (gameobjectcontrollerphysxhelpers.cpp:487-490): the last move touched down
     /// and the controller is neither jumping nor lifted.</summary>
     public bool OnGround => (nxHit & NxController.Hit.Down) != 0 && !jumping && !lift.Active;
-    /// <summary>The swim exit's water test of FUN_141675ed0 for the PC's own ground hit.
-    /// STILL-OPEN: its ridee branch (a mounted PC tests its ride's ground) is not modelled.</summary>
-    public bool OnWater => hitGroup == MoveConfig.WaterGroup;
+    /// <summary>The ridee this PC rides (PCBase::GetRidee), set at the ride on and cleared at the ride off; null for a ridee.</summary>
+    public RemotePc Ridee { get; set; }
+    /// <summary>The swim exit's water test of FUN_141675ed0 (pcbase.cpp:4328-4345): a mounted PC answers with its ridee's test,
+    /// else the PC's own ground hit.</summary>
+    public bool OnWater => Ridee is { } r ? r.OnWater : hitGroup == MoveConfig.WaterGroup;
     /// <summary>PCBase::vfunc_99 as the local player has it: the fall timer past the delay, more than 0.3 m above the ground
     /// (the down ray) and not touching down.</summary>
     public bool InAirFor(int ms) => fallTimerRunning && airTime * 1000f > ms && groundDistance > MoveConfig.FallMinHeight && !OnGround;

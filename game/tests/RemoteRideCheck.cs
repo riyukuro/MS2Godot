@@ -236,6 +236,7 @@ public partial class RemoteRideCheck : Node3D
         if (m.RideBones().Length == 0 || alloc != 0) fails.Add($"hold poll of {m.RideBones().Length} seat node(s) allocates {alloc} B per 100");
         RideeIdNoTarget(layer, m.Data.Id, bone);
         RideEffects(layer, m.Data.Id);
+        RiderWater(layer, m.Data.Id);
         NpcBeforePlayer(layer, pc);
         HideRider(layer, pc);
         RideeStats(layer, m.Data.Id);
@@ -335,6 +336,38 @@ public partial class RemoteRideCheck : Node3D
         if (played.Count != 2 || played[0] != $"{User}:{off}" || played[1] != $"{User}:{on}") fails.Add($"UnRideSkill ride off effects: {string.Join(", ", played)}");
         layer.RideEffectsPlayed = null;
         GD.Print($"remote ride: ride effects on '{on}', off '{off}', UnRideSkill adds the row's effect ({played.Count} played)");
+    }
+
+    /// <summary>FUN_141675ed0 (pcbase.cpp:4328-4345) at another player: a mounted PC answers with its ridee's water test, so
+    /// a rider whose own report is stone reads water while its ridee stands on water; after the ride off it reads its own
+    /// report again.</summary>
+    void RiderWater(RemoteLayer layer, int rideId)
+    {
+        const int User = 35;
+        const System.Reflection.BindingFlags Private = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        var u = new FieldAddUser { ObjectId = User, User = new UserBlock { Name = "w", CharacterId = 135, Gender = 1 } };
+        u.Stats[0].Health = 100; u.Stats[2].Health = 100;
+        layer.Tracker.Events.Enqueue(new UserAddedEvent(0, u, false));
+        layer._Process(0);
+        var users = (System.Collections.IDictionary)typeof(RemoteLayer).GetField("users", Private).GetValue(layer);
+        var rec = users[User];
+        var pc = rec == null ? null : (RemotePc)rec.GetType().GetField("Pc").GetValue(rec);
+        if (pc == null) { fails.Add("rider water: no remote pc"); return; }
+        var group = typeof(RemotePc).GetField("hitGroup", Private);
+        group.SetValue(pc, 0);
+        layer.OnRide(new ResponseRide(0, User, new RideOnAction(0, rideId, 5035, false, 0, 0, 0, 0), null, 0, 0, 0, 0, false));
+        var rd = layer.RideeOf(User);
+        if (rd == null) { fails.Add("rider water: no ridee after the ride on"); return; }
+        group.SetValue(rd, MoveConfig.WaterGroup);
+        bool riding = pc.OnWater;
+        group.SetValue(rd, 0);
+        bool ridingDry = pc.OnWater;
+        group.SetValue(rd, MoveConfig.WaterGroup);
+        layer.OnRide(new ResponseRide(1, User, null, new RideOffAction(0, 0), 0, 0, 0, 0, false));
+        group.SetValue(pc, 0);
+        bool after = pc.OnWater;
+        GD.Print($"remote ride: rider water: ridee on water {riding}, on stone {ridingDry}; after the ride off {after}");
+        if (!riding || ridingDry || after) fails.Add($"rider water: riding on a water ridee {riding}, on a stone ridee {ridingDry}, after the ride off {after}");
     }
 
     /// <summary>Ridee::GetRunSpeed and FUN_1417fb370 at another player's mount: with no worn item, buff or hot time the
