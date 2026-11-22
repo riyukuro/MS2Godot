@@ -100,6 +100,24 @@ public class StoreDialogTests
     }
 
     [Test]
+    public void ASwapPushesTheSlotItLeftAsWellAsTheOneItReached()
+    {
+        Packs();
+        var book = NewBook();
+        var c = new StoreDialogController { Book = book };
+        Load(c, NewModel());
+        book.Apply(new StorageMessage.Add(0, Item(20000001, 1, 0, 6)));
+        var pushed = new List<string>();
+        c.SlotPushed += pushed.Add;
+        book.Apply(new StorageMessage.Swap(0, 1, 1, 0, 0));
+        Assert.That(pushed, Does.Contain(StoreDialogController.SlotName(1)));
+        Assert.That(pushed, Does.Contain(StoreDialogController.SlotName(0)), "the emptied slot is drawn again");
+        pushed.Clear();
+        book.Apply(new StorageMessage.Remove(0, 1));
+        Assert.That(pushed, Does.Contain(StoreDialogController.SlotName(1)));
+    }
+
+    [Test]
     public void ItemEventsRefreshTheCountText()
     {
         Packs();

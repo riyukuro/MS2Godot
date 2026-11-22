@@ -91,6 +91,7 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
         base.OnLoadComplete();
         if (Book == null) return;
         pending = PendingText | PendingBag;
+        SeedShown();
         Book.ItemAdded += OnItemChanged;
         Book.ItemRemoved += OnItemChanged;
         Book.ItemChanged += OnItemChanged;
@@ -118,11 +119,41 @@ public sealed class StoreDialogController : UiController, IDragSlotOwner
     void OnItemChanged(EquipItem e)
     {
         pending |= PendingText;
-        if (Host?.Entity != null) Host.Push(SlotName(e.InventorySlot));
+        PushSlot(SlotName(e.InventorySlot));
+        // OnSwap and OnRemove empty a slot without an event for it: the slots whose item changed since they were last
+        // drawn are pushed too. STILL-OPEN: the client's own refresh of those slots (its item events only set m_198 |= 2,
+        // @0x141b10950) is not recovered.
+        foreach (var slot in shown.Keys.ToList())
+        {
+            long now = Book.Slot(slot)?.Uid ?? 0;
+            if (now == shown[slot]) continue;
+            shown[slot] = now;
+            PushSlot(SlotName(slot));
+        }
+        shown[e.InventorySlot] = Book.Slot(e.InventorySlot)?.Uid ?? 0;
+    }
+
+    /// <summary>The slot names pushed again (the movie's slot refresh).</summary>
+    public event Action<string> SlotPushed;
+
+    /// <summary>The item uid each drawn slot last showed.</summary>
+    readonly Dictionary<int, long> shown = new();
+
+    void PushSlot(string name)
+    {
+        SlotPushed?.Invoke(name);
+        if (Host?.Entity != null) Host.Push(name);
+    }
+
+    /// <summary>The slots as the bag was built: every held item's slot.</summary>
+    void SeedShown()
+    {
+        shown.Clear();
+        foreach (var it in Book.All) shown[it.InventorySlot] = it.Uid;
     }
 
     /// <summary>The list loaded / the store ready (vfunc_il13): m_198 = 6.</summary>
-    void OnList() => pending = PendingText | PendingBag;
+    void OnList() { pending = PendingText | PendingBag; SeedShown(); }
 
     /// <summary>vfunc_oa0_13: Invoke("changeMoney", the grouped meso).</summary>
     void OnMeso(long meso)
