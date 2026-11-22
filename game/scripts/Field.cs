@@ -117,10 +117,11 @@ public partial class Field : Node3D
     {
         string fieldName = FieldNameFor(StartField);
         var args = OS.GetCmdlineUserArgs();
+        bool fieldArg = false;
         for (int i = 0; i + 1 < args.Length; i++)
         {
             if (args[i] == "--shots") shotDir = args[i + 1];
-            if (args[i] == "--field") fieldName = args[i + 1];
+            if (args[i] == "--field") { fieldName = args[i + 1]; fieldArg = true; }
         }
         bool navOn = System.Array.IndexOf(args, "--nav") >= 0;
         int questNpc = 0;
@@ -138,6 +139,13 @@ public partial class Field : Node3D
         GlowPass.Wanted = OS.GetEnvironment("MS2_NOGLOW") != "1";   // glow twins are built only for a field with the glow pass
         var sw = System.Diagnostics.Stopwatch.StartNew();
         packs = PackSet.Shared(data);
+        // --field takes an xblock name or a map id; a map id gives the xblock of that map's own fielddata entry (its <xblock name>,
+        // which is not the id: map 52000065 is xblock "52000065_QD")
+        if (fieldArg && int.TryParse(fieldName, out int fieldId))
+        {
+            try { fieldName = FieldData.FindById(packs, fieldId)?.XBlock ?? fieldName; }
+            catch (Exception ex) { GD.PushWarning("fielddata: " + ex.Message); }
+        }
         BeginLoad();
         if (coverStarted) await NextFrame();         // the new loading screen enters the tree and is drawn before the build
         AssetIndex.Prefetch(packs);
