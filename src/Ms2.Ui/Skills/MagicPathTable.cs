@@ -53,7 +53,8 @@ public sealed record MagicPathMove(float DelayTime, float SpawnTime, float LifeT
 /// The magic paths (LoadMagicPath @0x14145c4d0, magicdata.cpp:302): ./data/xml/table/magicPath.xml, each &lt;type id&gt; a list of
 /// its &lt;move&gt; rows; a repeated id replaces the earlier list (SetAt). The default id 0 is then set to one row of zeros, so an
 /// attack without a magicPathID still gets a magic. Read on first use (FUN_14145c300 reloads a dirty cache).
-/// STILL-OPEN: traceTargetOffsetPos is not read.
+/// STILL-OPEN: traceTargetOffsetPos is not read: UpdateTargetPosition uses it for a target without collision parts, which the
+/// port's body box stand-in never is (reachable in the client, not here).
 /// </summary>
 public sealed class MagicPathTable
 {

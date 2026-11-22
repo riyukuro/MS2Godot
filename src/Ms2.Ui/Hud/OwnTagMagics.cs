@@ -57,8 +57,9 @@ public delegate bool MagicRayCast(Vector3 from, Vector3 dir, float length, out V
 /// When the own skill state ends, <see cref="CancelCaster"/> drops the cast's delay-0 magics that have not fired.
 /// Piercing arrows (bounceType 3 and 4) keep flying through their hits, forget them each piercing interval and send its
 /// splash (<see cref="SkillSplashRequest"/>); bounceType 4 then flies back to the owner (state 5) and ends there.
-/// STILL-OPEN: for an arrow record, the magic control flight (FUN_141464490, a skill with magicControl enable not 0: those make no arrow
-/// magic here), the bounce-off's effect for an owner other than the local player; the links of a record other than an arrow one,
+/// STILL-OPEN: for an arrow record, the magic control flight (FUN_141464490 is m_n538, the skill's magicControl enable; with it
+/// FUN_14145ec50 runs FUN_1414607e0, which follows the cast's CSkillMagicControlGuide): reachable in the client, left out on
+/// purpose, as the port makes no magic for a skill with magicControl enable, so the branch is 0 for every magic made here; the bounce-off's effect for an owner other than the local player; the links of a record other than an arrow one,
 /// and another owner's magics other than arrow ones (<see cref="AddRemote"/>: their fill and registration do nothing for it,
 /// so they are not made), the latency maximum (0 here: the time sync's latency is not kept),
 /// CFunctionCubeService::SetTagArea and MyPC::FUN_14152e0c0 after a fill are not
@@ -369,7 +370,9 @@ public sealed class OwnTagMagics
     /// z when a control value is set); the remaining time then the current-to-target length over vel. Then
     /// <see cref="Frame"/>. Returns whether there is a target entity.
     /// STILL-OPEN: the object's body box centre stands in for its nearest collision part (FUN_141467100), and the row's
-    /// m_n34 branch (traceTargetOffsetPos, PCBase::FUN_141678710) for a target without parts is not ported.
+    /// m_n34 branch (traceTargetOffsetPos, PCBase::FUN_141678710) and the position plus extent fallback, both for a target
+    /// without collision parts, are not ported. They are reachable in the client; here every object has a body box centre, so
+    /// neither can run (unreachable because of the stand-in, not shown dead).
     /// </summary>
     static bool UpdateTarget(Magic m, int nowMs, ReadOnlySpan<HitCandidate> objects)
     {
