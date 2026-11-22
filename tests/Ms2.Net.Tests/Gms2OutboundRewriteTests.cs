@@ -106,6 +106,8 @@ public class Gms2OutboundRewriteTests {
         Assert.That(Bytes(new MeretMarketModeRequest(0x67)), Is.EqualTo(new byte[] { 0x67 }));
     }
 
+    [Test] public void UgcBannersAndProfileImageRewriteByteForByte() => All(0x39, r => { byte m = r.ReadByte(); return m == 0x12 ? new UgcLoadBannersRequest(r.ReadInt()) : new UgcProfileImageRequest(r.ReadUnicodeString()); }, d => d[0] is 0x12 or 0xB);
+
     [Test] public void PongRewritesByteForByte() => All(0x06, Pong.Read);
     [Test] public void RequestTimeSyncRewritesByteForByte() => All(0x0B, RequestTimeSync.Read);
     [Test] public void StateChangeRewritesByteForByte() => All(0x81, StateChange.Read);
