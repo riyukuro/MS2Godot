@@ -42,4 +42,26 @@ public class Gms2MeretMarketBrowseTests {
             Assert.That(w.Buffer.AsSpan(0, w.Length).ToArray(), Is.EqualTo(d), file);
         }
     }
+
+    [Test]
+    public void EveryRecordedAddProductRequestRewrites() {
+        var all = Gms2Sniffs.Outbound("gms2", 0x3A).Where(p => p.Data[0] == MeratAddProduct.Mode).ToList();
+        Assert.That(all, Is.Not.Empty);
+        foreach (var (file, d) in all) {
+            var r = new ByteReader(d); r.ReadByte();
+            var a = MeratAddProduct.Read(r);
+            Assert.That(r.Available, Is.EqualTo(0), file);
+            var w = new ByteWriter(); w.WriteByte(MeratAddProduct.Mode); a.Write(w);
+            Assert.That(w.Buffer.AsSpan(0, w.Length).ToArray(), Is.EqualTo(d), file);
+        }
+    }
+
+    [Test]
+    public void AddProductRoundTrips() {
+        var a = new MeratAddProduct(1234567890123L, 42L, true, "Name", "Description text", 500000L);
+        var w = new ByteWriter(); a.Write(w);
+        var r = new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray());
+        Assert.That(MeratAddProduct.Read(r), Is.EqualTo(a));
+        Assert.That(r.Available, Is.EqualTo(0));
+    }
 }

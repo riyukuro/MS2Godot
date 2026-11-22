@@ -187,3 +187,16 @@ public sealed class MeretMarketBrowse {
 
     static void Add(MeretMarketBrowse m, MeratProduct p) { if (p != null) m.Products.Add(p); }
 }
+
+/// <summary>C>S MeretMarket mode 13, register a UGC product: the client's UgcAddProduct write (product id, then id, enabled, name, description, price).</summary>
+public sealed record MeratAddProduct(long Product, long Id, bool Enabled, string Name, string Description, long Price) {
+    public const byte Mode = 0x0d;
+
+    public static MeratAddProduct Read(ByteReader r) =>
+        new(r.ReadLong(), r.ReadLong(), r.ReadByte() == 1, r.ReadUnicodeString(), r.ReadUnicodeString(), r.ReadLong());
+
+    public void Write(ByteWriter w) {
+        w.WriteLong(Product); w.WriteLong(Id); w.WriteByte((byte)(Enabled ? 1 : 0));
+        w.WriteUnicodeString(Name); w.WriteUnicodeString(Description); w.WriteLong(Price);
+    }
+}
