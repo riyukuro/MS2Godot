@@ -28,9 +28,9 @@ public sealed class ItemBreakIngredientTable
         gacha.Coin(boxId) is { } c ? new[] { c } : null;
 
     /// <summary>
-    /// GetIngredients (@0x14052e810): the item's row; without one, null for an item with no data or EnableBreak 0 or 2, and for
-    /// a skin item the skin calculation (FUN_140530c90 with the grade and socket count). STILL-OPEN: that calculation is not
-    /// ported, so a skin item without a row gives null.
+    /// GetIngredients (@0x14052e810): the item's row (<see cref="BreakItem"/>). Without a row the client gives null for an item
+    /// with no data or EnableBreak 0 or 2, and for a skin item the skin calculation (FUN_140530c90 with the grade and socket
+    /// count). STILL-OPEN: that calculation is not ported, so every item without a row gives null here.
     /// </summary>
     public IReadOnlyList<(int ItemId, int Count)> Ingredients(int itemId, int grade, int sockets) => BreakItem(itemId);
 
