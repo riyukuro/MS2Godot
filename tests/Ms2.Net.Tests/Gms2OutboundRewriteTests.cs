@@ -95,4 +95,8 @@ public class Gms2OutboundRewriteTests {
             7 => new NpcTalkQuestRedirectRequest(r.ReadInt(), r.ReadShort()),
             6 => new NpcTalkModifyInTalkRequest(r.ReadInt(), r.ReadInt(), r.ReadShort(), r.Available >= 8 ? r.ReadLong() : null),
             _ => throw new InvalidDataException("mode " + m) }; }, d => d[0] != 8);   // mode 8 (i32, i16; 3 recorded) has no client writer in the KMS client: STILL-OPEN
+    [Test] public void RideOnItemRewritesByteForByte() => All(0x41, r => { r.ReadByte(); r.ReadByte(); var id = r.ReadInt(); r.ReadLong(); var f = false; var uid = r.ReadLong(); ItemReader.ReadUgcLook(r); return new RideOnItemRequest(id, uid, f); }, d => d[0] == 0);
+    [Test] public void RideOffRewritesByteForByte() => All(0x41, r => { r.ReadByte(); return new RideOffSkillRequest(RideOffAction.Read(r)); }, d => d[0] == 1);
+    [Test] public void UserChatRewritesByteForByte() => All(0x11, r => new UserChatRequest(r.ReadInt(), r.ReadUnicodeString(), r.ReadUnicodeString(), r.ReadLong()));
+    [Test] public void StateFallDamageRewritesByteForByte() => All(0x34, r => new StateFallDamageRequest(r.ReadFloat()));
 }

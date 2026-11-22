@@ -44,6 +44,10 @@ public sealed record RideOffSkillRequest(RideOffAction Action) : IOutPacket
         {
             case RideOffUseSkill u: w.WriteInt(u.Value28); w.WriteBool(u.Flag2C); w.WriteInt(u.Value30); break;
             case RideOffUseGlideItem g: w.WriteLong(g.Value28); w.WriteBool(g.Flag30); w.WriteInt(g.Value34); break;
+            case RideOffInteract i: w.WriteInt(i.Id); w.WriteUnicodeString(i.Name ?? ""); break;
+            case RideOffTaxi t: w.WriteInt(t.TaxiId); break;
+            case RideOffCashCall c: w.WriteInt(c.Value28); w.WriteByte(c.Value2C); w.WriteLong(c.Value30); break;
+            case RideOffTakeLR l: w.WriteByte(l.Value28); w.WriteInt(l.Value2C); break;
         }
     }
 }
@@ -148,17 +152,21 @@ public sealed record ResponseRide(byte Mode, int ObjectId, RideOnAction RideOn, 
 /// RideOnActionUseItem::vfunc_1 (@0x14077e1d0): u8 type 1, i32 ridee id, i32 object id 0, u8 the game option flag
 /// (FUN_14124ab20()+2), i32 0, i64 the item uid, and a cleared CUgcItemLook (CUgcItemLook::Clear, ugcdef.cpp:1464).
 /// </summary>
-public sealed record RideOnItemRequest(int RideeId, long ItemUid, bool OptionFlag) : IOutPacket
+public sealed record RideOnItemRequest(int RideeId, long ItemUid, bool OptionFlag) : IProfileOutPacket
 {
     public Outbound Op => Outbound.RequestRide;
 
-    public void Write(ByteWriter w)
+    public void Write(ByteWriter w) => Write(w, ProtocolProfile.Kms2525);
+
+    /// <summary>The GMS2 recordings (570, all with zeros there) have 8 bytes between the ridee id and the item uid where KMS writes
+    /// i32 0, the option flag and i32 0 (9): the GMS2 form has no flag byte. STILL-OPEN: what the flag is in GMS2.</summary>
+    public void Write(ByteWriter w, ProtocolProfile profile)
     {
         w.WriteByte(0);
         w.WriteByte(1);                   // RideOnActionUseItem m_nType
         w.WriteInt(RideeId);              // m_n1c
         w.WriteInt(0);                    // m_n20
-        w.WriteBool(OptionFlag);          // m_b28
+        if (!profile.IsGms2) w.WriteBool(OptionFlag);   // m_b28
         w.WriteInt(0);                    // m_n30
         w.WriteLong(ItemUid);             // m_n38
         ItemReader.WriteUgcLook(w, new UgcLook());
