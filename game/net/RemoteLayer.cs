@@ -287,8 +287,10 @@ public sealed partial class RemoteLayer : Node3D
     readonly List<Ms2.Ui.Hud.DamageNumber> numbers = new();
     Func<int, int> pcMask;
     Func<int, bool> isObject;
-    Ms2.Ui.Skills.SkillDamageTable skillDamage;
     /// <summary>The skill attacks' damage blocks (read on the first hit).</summary>
+    Ms2.Ui.Skills.SkillDamageTable skillDamage;
+    /// <summary>The attack's damage block by skill, level, motion and attack (CDamageRecord::GetAttackData then m_damage),
+    /// which NpcHitSound.RecordAttack takes; made on the first hit, null when the attack has none.</summary>
     Func<int, int, int, int, Ms2.Ui.Skills.SkillAttackDamage> attackOf;
 
     /// <summary>The skill and level of a region skill object of the field by its id (OnRegionSkill mode 0); null for none.</summary>
