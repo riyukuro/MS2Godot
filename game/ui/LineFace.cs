@@ -11,8 +11,8 @@ namespace Ms2Godot.Ui;
 /// label's shaped line, repeat times, as Label::draw_glyph places them) and the baseline the line top plus the line ascent (as GlyphShadow places its glyphs); for text
 /// with no FONT size, drawn with no move, it is the label's own face, pixel for pixel. A label showing htmlText formats
 /// (TextNode.SetHtml) is drawn here too, each glyph in its run's colour, faux
-/// bold and faux italic (FauxStyle), and each underlined run with its line. It draws nothing while the label shows its own
-/// face.
+/// bold and faux italic (FauxStyle), and each underlined run with its line. While the label shows its own face it draws
+/// only a selection's glyphs over it (TextNode.SelectionOverFace), else nothing.
 /// </summary>
 public partial class LineFace : Node2D
 {
@@ -26,7 +26,9 @@ public partial class LineFace : Node2D
 
     public override void _Draw()
     {
-        if (text == null || !text.FaceByLine) return;
+        if (text == null) return;
+        bool overFace = !text.FaceByLine && text.SelectionOverFace;
+        if (!text.FaceByLine && !overFace) return;
         var label = text.Label;
         var ls = label.LabelSettings;
         if (ls?.Font == null || string.IsNullOrEmpty(label.Text)) return;
@@ -34,7 +36,7 @@ public partial class LineFace : Node2D
         var ts = TextServerManager.GetPrimaryInterface();
         var canvas = GetCanvasItem();
         float scale = 1;                         // the draw transform's scale: label pixels per raster pixel
-        bool shadow = text.FaceDrawsShadow;
+        bool shadow = !overFace && text.FaceDrawsShadow;
         foreach (var line in text.ShownLines())
         {
             float baseline = line.Baseline;
@@ -49,12 +51,12 @@ public partial class LineFace : Node2D
                 Color? ulColor = null;
                 foreach (var g in line.Shaped)
                 {
-                    if (text.Hidden(g)) continue;
+                    if (text.Hidden(g) || (overFace && !text.Selected(g.Index))) continue;
                     float pen = line.LabelX + g.Pen + line.Dx;
                     var style = text.StyleAt(g.Index);
                     var color = face ? text.GlyphColor(g.Index) : ls.ShadowColor;
                     float descent = text.DescentRatio * g.Size;
-                    Color? underline = face && style.Underline ? color : null;
+                    Color? underline = face && !overFace && style.Underline ? color : null;
                     if (underline != ulColor)
                     {
                         if (ulColor is Color uc) { Scale(ref scale, 1); Underline(ulX, ulY, ulLen, uc); }
@@ -64,7 +66,7 @@ public partial class LineFace : Node2D
                     ulColor = underline;
                     if (face && text.ImageAt(g.Index) is TextNode.ImageBox img)
                     {
-                        if (img.Tex != null) { Scale(ref scale, 1); Image(img, pen, baseline); }
+                        if (img.Tex != null && !overFace) { Scale(ref scale, 1); Image(img, pen, baseline); }
                         continue;
                     }
                     if (g.Glyph != 0)
@@ -143,11 +145,17 @@ public partial class SelectionHighlight : Node2D
 
     public SelectionHighlight() { }
 
+    /// <summary>The rects the last draw put down (a display check compares them with the field's current ones).</summary>
+    public System.Collections.Generic.IReadOnlyList<Rect2> Drawn => drawn;
+    readonly System.Collections.Generic.List<Rect2> drawn = new();
+
     public override void _Draw()
     {
+        drawn.Clear();
         if (text == null || !text.HasSelection) return;
         var color = text.SelectionFill;
-        foreach (var r in text.SelectionRects()) DrawRect(r, color);
+        drawn.AddRange(text.SelectionRects());
+        foreach (var r in drawn) DrawRect(r, color);
     }
 }
 

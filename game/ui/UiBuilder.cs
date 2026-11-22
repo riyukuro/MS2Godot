@@ -424,6 +424,8 @@ public partial class TextNode : Node2D
         var self = new Color(1, 1, 1, perLine || colored ? 0 : 1);
         if (Label.SelfModulate != self) Callable.From(() => Label.SelfModulate = self).CallDeferred();
         face?.QueueRedraw();
+        // the highlight's rects follow the relaid lines (a text change under a kept range, a resize)
+        if (HasSelection) selection?.QueueRedraw();
     }
 
     /// <summary>
@@ -465,6 +467,14 @@ public partial class TextNode : Node2D
 
     /// <summary>True while the label's own face is hidden and LineFace draws it (lines at their own x, or html colours and sizes).</summary>
     public bool FaceByLine => perLineDx || colored;
+
+    /// <summary>
+    /// True while a selection shows on a label that draws its own outline or soft shadow, so its face stays the label's:
+    /// LineFace then draws only the selected glyphs, in the selection's text colour, over the label's face. The client draws
+    /// the shadow and outline glyphs in their own colour (TextLayer_Shadow, sfr_render_07o.cpp:1005-1019) and the text in the
+    /// highlighter's colour over them, so a selected outlined glyph is white inside its outline.
+    /// </summary>
+    public bool SelectionOverFace => HasSelection && !FaceByLine;
 
     bool colored, faceShadow;
 
