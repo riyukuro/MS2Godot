@@ -78,6 +78,9 @@ public sealed class SkillDamage {
     }
 
     /// <summary>GMS2 (upstream SkillDamagePacket): mode 0 has an i32 server tick after the bool, mode 3 ends in an i32 hp amount instead of an i64.
+    /// Mode 3 on GMS2 reads the damage at the width the packet carries (the client reads an i64, scenestategame.cpp:5663): 8 bytes left
+    /// after the flag -> i64, otherwise i32 widened to long (any other size keeps the leftover warning). Recorded GMS2 servers send i32;
+    /// some servers send i64, so a tick above 2^31 shows exactly.
     /// STILL-OPEN: the GMS2 layouts of modes 4, 7 and 8 are not known; they stay Raw there, so a different layout cannot throw.</summary>
     public static SkillDamage Read(ByteReader r, ProtocolProfile profile) {
         bool gms = profile.IsGms2;
@@ -109,7 +112,7 @@ public sealed class SkillDamage {
                 break;
             }
             case 3:
-                d.OwnerId = r.ReadInt(); d.TargetId = r.ReadInt(); d.BuffId = r.ReadInt(); d.DotHit = new Hit(r.ReadByte(), gms ? r.ReadInt() : r.ReadLong());
+                d.OwnerId = r.ReadInt(); d.TargetId = r.ReadInt(); d.BuffId = r.ReadInt(); d.DotHit = new Hit(r.ReadByte(), !gms || r.Available == 8 ? r.ReadLong() : r.ReadInt());
                 d.Targets.Add(new HitTarget(d.TargetId, new[] { d.DotHit }, default, default));
                 break;
             case 4:

@@ -27,7 +27,7 @@ public static class DamageNumbers
     /// Nothing unless the packet's attack has damage (<see cref="HasDamage"/>).
     /// STILL-OPEN: main type 0x12's miss effect when it has none (Constants m_8350 per type 2 hit, pcbase.cpp:3942), the
     /// sight-range test, the tag 0x11 hit point, and the magic service's delivery of the hit (FUN_14146b440, only with a
-    /// caster object; the numbers are made when the packet comes); modes 0, 3, 5 and 6 are not listed here.
+    /// caster object; the numbers are made when the packet comes); modes 0, 5 and 6 are not listed here (mode 3 is the dot number).
     /// <para>Mode 4 (CSceneStateGame::FUN_14171d820 @0x14171d820, scenestategame.cpp:5685-5726): nothing when the owner is
     /// no object of the field (FUN_141bd1200, <paramref name="isObject"/>; a null test means none is); with the show byte,
     /// each nonzero value of the three in order is one number of type 5, 6 and 7 (FUN_1417403b0 @0x1417403b0, :9005) on the
@@ -43,6 +43,15 @@ public static class DamageNumbers
             if (d.Value1 != 0) into.Add(new DamageNumber(d.OwnerId, d.Value1, 5, d.TargetId));
             if (d.Value2 != 0) into.Add(new DamageNumber(d.OwnerId, d.Value2, 6, d.TargetId));
             if (d.Value3 != 0) into.Add(new DamageNumber(d.OwnerId, d.Value3, 7, d.TargetId));
+            return;
+        }
+        if (d.Mode == 3)
+        {
+            // OnDotDamage (scenestategame.cpp:5663) returns when the object hit (the second int) is none; the record then reaches
+            // PCBase::OnDotDamageRecord (pcbase.cpp:3958): vfunc_111(total damage, first type, the attacker). The i64 damage is
+            // kept whole. STILL-OPEN: IsOutsideSightRange and the magic service's delivery (FUN_14146bc20).
+            if (isObject == null || !isObject(d.TargetId)) return;
+            into.Add(new DamageNumber(d.TargetId, d.DotHit.Damage < 0 ? -d.DotHit.Damage : d.DotHit.Damage, d.DotHit.Flag, d.OwnerId));
             return;
         }
         if (d.Mode != 1 || !HasDamage(d, damage)) return;

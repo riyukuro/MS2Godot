@@ -154,7 +154,8 @@ public sealed class UserBlock {
     public int MapA, MapB, RoomId;
     public short Level, Channel;
     public int JobCode, Job;
-    public int HpMax, HpCurrent;
+    /// <summary>Read as i32 in the character list; the own Stat (i64 health pair) then fills them, so they are long.</summary>
+    public long HpMax, HpCurrent;
     public short DeathCount;
     public long StorageCooldown, DoctorCooldown;
     public int ReturnMap; public Vector3 ReturnPosition;

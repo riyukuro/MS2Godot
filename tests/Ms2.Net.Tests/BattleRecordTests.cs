@@ -125,9 +125,9 @@ public class BattleRecordTests {
         Assert.That(BattleRecordManager.DamageRecords(d, _ => true, id => id == 10, _ => true), Is.Empty, "the PCBase test is on the object hit");
     }
 
-    /// <summary>Mode 3 on the GMS2 profile ends in an i32 damage (recorded: 5857 of 5857 packets are 18 bytes); the KMS form keeps the i64 (22 bytes). Each form reads to its end.</summary>
+    /// <summary>Mode 3 on the GMS2 profile is an i32 damage in the recorded form (5857 of 5857 packets are 18 bytes) and an i64 in the 22-byte form some servers send; the KMS form is the i64 (22 bytes). Each form reads to its end.</summary>
     [Test]
-    public void ModeThreeDamageIsOneIntOnGms2AndOneLongOnKms() {
+    public void ModeThreeDamageIsOneIntOrOneLongOnGms2AndOneLongOnKms() {
         var g = new ByteWriter(); g.WriteByte(3); g.WriteInt(10); g.WriteInt(31); g.WriteInt(777); g.WriteByte(1); g.WriteInt(-60);
         var gr = new ByteReader(g.Buffer.AsSpan(0, g.Length).ToArray());
         Assert.That(g.Length, Is.EqualTo(18));
@@ -139,6 +139,41 @@ public class BattleRecordTests {
         Assert.That(k.Length, Is.EqualTo(22));
         SkillDamage.Read(kr, ProtocolProfile.Kms2525);
         Assert.That(kr.Available, Is.Zero);
+        var g22 = new ByteReader(k.Buffer.AsSpan(0, k.Length).ToArray());
+        Assert.That(SkillDamage.Read(g22, ProtocolProfile.Gms2).DotHit.Damage, Is.EqualTo(-60L), "the 22-byte form on the GMS2 profile");
+        Assert.That(g22.Available, Is.Zero);
+    }
+
+    static byte[] DotBytes(bool wide, long damage) {
+        var w = new ByteWriter(); w.WriteByte(3); w.WriteInt(10); w.WriteInt(31); w.WriteInt(777); w.WriteByte(1);
+        if (wide) w.WriteLong(damage); else w.WriteInt((int) damage);
+        return w.Buffer.AsSpan(0, w.Length).ToArray();
+    }
+
+    /// <summary>The client reads an i64 (scenestategame.cpp:5663). Recorded GMS2 servers send an i32 (18 bytes), some send the i64 (22): the GMS2 profile reads the width the packet carries, the KMS profile always the i64.</summary>
+    [Test]
+    public void GmsModeThreeReadsTheWidthThePacketCarries() {
+        var r18 = new ByteReader(DotBytes(false, -60));
+        Assert.That(SkillDamage.Read(r18, ProtocolProfile.Gms2).DotHit.Damage, Is.EqualTo(-60L)); Assert.That(r18.Available, Is.Zero);
+        var r22 = new ByteReader(DotBytes(true, -60));
+        Assert.That(SkillDamage.Read(r22, ProtocolProfile.Gms2).DotHit.Damage, Is.EqualTo(-60L)); Assert.That(r22.Available, Is.Zero);
+        var big = new ByteReader(DotBytes(true, -3_000_000_000L));
+        var d = SkillDamage.Read(big, ProtocolProfile.Gms2);
+        Assert.That(big.Available, Is.Zero);
+        Assert.That(d.DotHit.Damage, Is.EqualTo(-3_000_000_000L), "above 2^31, exact");
+        Assert.That(d.Targets.Single().Hits.Single().Damage, Is.EqualTo(-3_000_000_000L));
+        var k = new ByteReader(DotBytes(true, -3_000_000_000L));
+        Assert.That(SkillDamage.Read(k, ProtocolProfile.Kms2525).DotHit.Damage, Is.EqualTo(-3_000_000_000L)); Assert.That(k.Available, Is.Zero);
+        // any other size keeps the leftover warning: 19 bytes read as i32, one byte over
+        var odd = new ByteReader(DotBytes(false, -60).Append((byte) 0).ToArray());
+        Assert.That(() => SkillDamage.Read(odd, ProtocolProfile.Gms2), Throws.TypeOf<PacketLayoutException>().With.Message.Contains("1 bytes left over"));
+    }
+
+    [Test]
+    public void ADotAboveTwoToThe31IsRecordedWhole() {
+        var m = Manager(); m.Tick = () => 10_000; m.AddRecord(1, 1000); m.StartGroup(1);
+        m.RecordDamage(10, 31, new[] { new Hit(0, -3_000_000_000L), new Hit(0, -3_000_000_000L) });
+        Assert.That(m.RecordValueText(1, 1000, 0), Is.EqualTo("6000000000"));
     }
 
     [Test]

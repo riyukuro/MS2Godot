@@ -35,6 +35,18 @@ public class PlayerStateLiveTests
         Assert.That(p.Apply(me), Is.EqualTo(new[] { StatusEvent.Level }));
     }
     [Test]
+    public void AHealthAboveTwoToThe31StaysWhole()
+    {
+        var me = new MyCharacter { User = new UserBlock { Name = "Gdcap", Level = 3, JobCode = 40, Job = 400, HpMax = 5_000_000_000L, HpCurrent = 4_000_000_000L } };
+        var p = new PlayerState();
+        p.Apply(me);
+        Assert.That((p.HpCur, p.HpMax), Is.EqualTo((4_000_000_000L, 5_000_000_000L)), "the user block's pair is long (the own Stat fills it)");
+        me.Stats0[4] = 6_000_000_000L; me.Stats2[4] = 5_500_000_000L;
+        p.Apply(me);
+        Assert.That((p.HpCur, p.HpMax), Is.EqualTo((5_500_000_000L, 6_000_000_000L)));
+    }
+
+    [Test]
     public void TheMesoBalanceIsStatusEventEight()
     {
         var me = new MyCharacter { Meso = 12345, User = new UserBlock { Name = "Gdcap" } };   // ServerEnter's balance

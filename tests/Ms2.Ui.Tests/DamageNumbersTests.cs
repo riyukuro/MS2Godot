@@ -30,6 +30,22 @@ public class DamageNumbersTests
         Assert.That(list, Is.Empty);
     }
 
+    /// <summary>A dot (mode 3, OnDotDamage scenestategame.cpp:5663 into PCBase::OnDotDamageRecord pcbase.cpp:3958) is one number of
+    /// the record's first type on the object hit, the attacker as caster; the i64 damage reaches it whole.</summary>
+    [Test]
+    public void ADotIsOneNumberAndKeepsAnI64Damage()
+    {
+        var d = new SkillDamage { Mode = 3, OwnerId = 10, TargetId = 31, DotHit = new Hit(1, -3_000_000_000L) };
+        var list = new List<DamageNumber>();
+        DamageNumbers.Records(d, list, id => id == 31, Damage);
+        Assert.That(list, Is.EqualTo(new[] { new DamageNumber(31, 3_000_000_000L, 1, 10) }));
+        char[] buf = new char[40];
+        Assert.That(new string(buf, 0, DamageTextNames.ValueChars(list[0].Value, list[0].Grade, buf)), Is.EqualTo("3000000000"), "the shown text");
+        list.Clear();
+        DamageNumbers.Records(d, list, id => id == 10, Damage);
+        Assert.That(list, Is.Empty, "the object hit is none: the handler returns");
+    }
+
     /// <summary>Skill 100: level 1 with one motion of two attacks, the first with rate 1.5 and the second with a &lt;damage&gt; of no
     /// value; level 2 with an attack of no &lt;damage&gt;. Skill 101 has no &lt;basic&gt;, so no levels.</summary>
     internal static readonly SkillDamageTable Damage = new(() => new TextReader[] { new StringReader(@"<ms2>

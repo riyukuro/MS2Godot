@@ -1109,7 +1109,7 @@ public partial class LiveSession : Node
     void ApplyStat(PlayerStat st)
     {
         var hud = StubHudData.Instance;
-        if (st.TryGet(PlayerStat.Health, out long hm, out long hc)) { hud.Player.HpMax = (int)hm; hud.Player.HpCurrent = (int)hc; }
+        if (st.TryGet(PlayerStat.Health, out long hm, out long hc)) { hud.Player.HpMax = hm; hud.Player.HpCurrent = hc; }
         if (st.TryGet(PlayerStat.Spirit, out long sm, out long sc)) { hud.SpMax = (int)sm; hud.SpCurrent = (int)sc; }
         if (st.TryGet(PlayerStat.Stamina, out long em, out long ec)) { hud.EpMax = (int)em; hud.EpCurrent = (int)ec; }
         if (LogPackets) GD.Print($"live: Stat hp {hud.Player.HpCurrent}/{hud.Player.HpMax} sp {hud.SpCurrent}/{hud.SpMax} ep {hud.EpCurrent}/{hud.EpMax} ({st.Values.Count} attribute(s))");
