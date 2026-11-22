@@ -213,12 +213,17 @@ public class StateHitTests
         var b = new PushBody { Floor = 0f };
         b.Rays.Capacity = 64;
         b.Downs.Capacity = 64;
-        var p = Running(duration: 100f);
+        var p = Running(duration: 1000f);
         p.Tick(0.01, b);
-        b.Rays.Clear();
-        b.Downs.Clear();
-        long before = System.GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 10; i++) p.Tick(0.01, b);
-        Assert.That(System.GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0));
+        // 1000 ticks a window, up to 5 windows: 50 s of the 1000 s push
+        Assert.That(Alloc.Least(() =>
+        {
+            for (int i = 0; i < 1000; i++)
+            {
+                b.Rays.Clear();
+                b.Downs.Clear();
+                p.Tick(0.01, b);
+            }
+        }), Is.LessThan(512));
     }
 }

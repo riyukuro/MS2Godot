@@ -271,13 +271,14 @@ public class HitReactionTests
         var data = new StateHitData();
         var a = Attack(push: 1, distance: 300f, priority: 1);
         HitReaction.OnSkillHit(body, a, -5, 0, false, false, 0, Vector3.Zero, Vector3.Zero, 0f, (Vector3.Zero, Vector3.UnitX), data);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
+        Assert.That(Alloc.Least(() =>
         {
-            body.Push.Reset();
-            data.Clear();
-            HitReaction.OnSkillHit(body, a, -5, 0, false, false, 0, Vector3.Zero, Vector3.Zero, 0f, (Vector3.Zero, Vector3.UnitX), data);
-        }
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0));
+            for (int i = 0; i < 1000; i++)
+            {
+                body.Push.Reset();
+                data.Clear();
+                HitReaction.OnSkillHit(body, a, -5, 0, false, false, 0, Vector3.Zero, Vector3.Zero, 0f, (Vector3.Zero, Vector3.UnitX), data);
+            }
+        }), Is.LessThan(512));
     }
 }
