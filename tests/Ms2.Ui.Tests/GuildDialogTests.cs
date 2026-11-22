@@ -103,6 +103,32 @@ public class GuildDialogTests
         Assert.That(boxes, Is.Empty, "no row, and a guild skill is not a personal one");
     }
 
+    /// <summary>CreateSkillPage / CreateMemberSkillPage (@0x14196a590, @0x14196a640): the pages are made on the category, the fund texts
+    /// come from the guild fund and the player's mesos, and HideAllPages hides them. The rows go to the AS3 page, which this does not read.</summary>
+    [Test]
+    public void TheSkillCategoriesMakeTheSkillPagesWithTheirFunds()
+    {
+        var b = InGuild();
+        b.SkillTable = new Ms2.Formats.World.GuildSkillTable(System.Xml.Linq.XDocument.Parse(SkillBoxXml));
+        b.Info.Fund = 12345; b.Info.EventFund = 678;
+        b.Mesos = () => 4242;
+        b.Level = () => 50;
+        b.Info.Skills.Add(new GuildSkillState(1, 1, 0));
+        var c = Load(b);
+        c.GroupText = n => "g" + n;
+        c.EffectIcon = (_, _) => "icon.png";
+        c.OpenCategoryPage("Skill");
+        Assert.That(c.SkillPage, Is.Not.Null);
+        Assert.That(Rt.ToBoolean(c.Host.Get(c.SkillPage, "visible")), Is.True);
+        Assert.That(c.Host.Get(c.Host.Child("m_guildFund", c.SkillPage), "text")?.ToString(), Is.EqualTo("g12345"));
+        Assert.That(c.Host.Get(c.Host.Child("m_guildEventFund", c.SkillPage), "text")?.ToString(), Is.EqualTo("g678"));
+        c.OpenCategoryPage("MemberSkill");
+        Assert.That(Rt.ToBoolean(c.Host.Get(c.SkillPage, "visible")), Is.False, "HideAllPages");
+        Assert.That(c.SkillPage2, Is.Not.Null);
+        Assert.That(c.SkillPage2, Is.Not.SameAs(c.SkillPage));
+        Assert.That(c.Host.Get(c.Host.Child("m_guildFund", c.SkillPage2), "text")?.ToString(), Is.EqualTo("g4242"));
+    }
+
     [Test]
     public void TheMemberPopupCallbackRaisesTheMemberFoundByName()
     {

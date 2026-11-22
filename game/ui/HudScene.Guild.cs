@@ -119,6 +119,8 @@ public partial class HudScene
                 ServerTime = GuildServerTime,
                 DonateMeso = t.GuildDonateMeso,
                 EffectText = t.AdditionalDescription,
+                EffectIcon = (id, lv) => t.Additional.GetLevel(id, lv)?.Icon,   // SkillDataTableCli::FUN_140aafef0, GetIcon
+                TimeSpanText = sec => Ms2.Ui.Hud.BuffTooltip.FormatTimeSpan(t, sec, true, true, true, false),
                 ReplaceValueWords = s => t.ReservedWords.ReplaceValueWords(s, hudModel.HasLocalPlayer ? hudModel.Player.Name : null),
                 PlayerCharId = () => hudModel.HasLocalPlayer ? Ms2Godot.Net.LiveSession.Instance?.CharacterId : null,
                 ImagePath = (id, code) => Ms2Godot.Net.ProfileImageService.Images.Path(id, code, true),

@@ -1,4 +1,5 @@
 using Ms2.Avm2;
+using Ms2.Formats.World;
 using Ms2.Quest;
 using Ms2.Net.Packets;
 using ReservedWords = Ms2.Formats.World.ReservedWords;
@@ -46,6 +47,9 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     object infoPage;            // m_infoPage
     object memberPage;          // m_memberPage
     object acceptRequestPage;   // m_acceptRequestPage
+    object skillPage;           // m_skillPage
+    object skillPage2;          // m_skillPage2
+    readonly SortedSet<int> activeSkills = new();   // m_1b0
     int memberSort;             // m_nMemberSort (0 in the ctor)
     string masterTarget = "";   // m_strName: the member the changeMaster box names
     string expelTarget = "";    // m_strDesc: the member the expelMember box names
@@ -81,6 +85,10 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     public Func<string, string> ReplaceValueWords = s => s;
     /// <summary>CStringTable::FUN_141812290(effectId, level, tag): an additional effect's "name" or "tooltipDescription".</summary>
     public Func<uint, ushort, string, string> EffectText = (_, _, _) => "";
+    /// <summary>The icon of an additional effect's level (SkillDataTableCli::FUN_140aafef0 then AdditionalLevelData::GetIcon); null without the row.</summary>
+    public Func<uint, ushort, string> EffectIcon = (_, _) => null;
+    /// <summary>FormatTimeSpan(CTimeSpan(seconds), true, true, true, false) (timeutil.cpp:371): days, hours and minutes.</summary>
+    public Func<long, string> TimeSpanText = _ => "";
     /// <summary>FUN_140d73c60: show a message box.</summary>
     public Action<MessageBoxData> ShowBox = MessageBoxQueue.Show;
 
@@ -129,6 +137,10 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     public object MemberPage => memberPage;
     /// <summary>The accept page (m_acceptRequestPage) once made.</summary>
     public object AcceptRequestPage => acceptRequestPage;
+    /// <summary>m_skillPage.</summary>
+    public object SkillPage => skillPage;
+    /// <summary>m_skillPage2.</summary>
+    public object SkillPage2 => skillPage2;
 
     bool NoMovie => Host?.Entity == null;
 
@@ -219,12 +231,16 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         else if (category == "Info") CreateInfoPage();
         else if (category == "Member") CreateMemberPage();
         else if (category == "AcceptMember") CreateAcceptRequestPage();
-        // Skill, MemberSkill, Event, Manager, House, Storage, Raid, ChampionShip, ChampionShipHistroy: STILL-OPEN
+        else if (category == "Skill") CreateSkillPage();
+        else if (category == "MemberSkill") CreateMemberSkillPage();
+        // Event, Manager, House, Storage, Raid, ChampionShip, ChampionShipHistroy: STILL-OPEN
         if (category == "Join") SetPageVisible(joinPage, true);              // ShowCategoryPage (@0x141969290)
         else if (category == "Create") SetPageVisible(createPage, true);
         else if (category == "Info") SetPageVisible(infoPage, true);
         else if (category == "Member") SetPageVisible(memberPage, true);
         else if (category == "AcceptMember") SetPageVisible(acceptRequestPage, true);
+        else if (category == "Skill") SetPageVisible(skillPage, true);
+        else if (category == "MemberSkill") SetPageVisible(skillPage2, true);
     }
 
     /// <summary>HideAllPages (@0x1419698f0).</summary>
@@ -235,7 +251,9 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         SetPageVisible(infoPage, false);
         SetPageVisible(memberPage, false);
         SetPageVisible(acceptRequestPage, false);
-        // m_skillPage, m_skillPage2, m_eventPage, m_housePage, m_storagePage, m_raidPage, m_managePage,
+        SetPageVisible(skillPage, false);
+        SetPageVisible(skillPage2, false);
+        // m_eventPage, m_housePage, m_storagePage, m_raidPage, m_managePage,
         // m_championshipPage, m_pvpHistoryPage: STILL-OPEN
     }
 
@@ -267,6 +285,183 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         UpdateGuildInfo();
         OnRequestsForGuild();
         SetChildText(acceptRequestPage, "m_memberCountText", ClientFormat.Format(Common(1000), Book.MemberCount, Book.Capacity));
+    }
+
+    /// <summary>CreateSkillPage (@0x14196a590): made now, setType 0, the skill list, the fund texts.</summary>
+    void CreateSkillPage()
+    {
+        if (!EnsurePageCreated("guild_skill_page", ref skillPage)) return;
+        Host.Invoke(skillPage, "setType", 0);
+        BuildGuildSkills();
+        UpdateSkillFund();
+    }
+
+    /// <summary>CreateMemberSkillPage (@0x14196a640): made now, setType 1, the personal skill list.</summary>
+    void CreateMemberSkillPage()
+    {
+        if (!EnsurePageCreated("guild_skill_page", ref skillPage2)) return;
+        Host.Invoke(skillPage2, "setType", 1);
+        BuildPersonalSkills();
+    }
+
+    /// <summary>FUN_14196e2c0 (@0x14196e2c0): the fund and the event fund to the info page and the skill page.</summary>
+    void UpdateSkillFund()
+    {
+        if (NoMovie) return;
+        int fund = Book.Info?.Fund ?? 0, eventFund = Book.Info?.EventFund ?? 0;
+        if (infoPage != null) Host.Invoke(infoPage, "setGuildFund", GroupText(fund));
+        if (skillPage == null) return;
+        SetChildText(skillPage, "m_guildFund", GroupText(fund));
+        SetChildText(skillPage, "m_guildEventFund", GroupText(eventFund));
+        Host.Invoke(skillPage, "onChangedFund", fund);
+    }
+
+    string SkillInfoText(GuildSkillTable.Skill s)
+    {
+        string info = "";
+        if (s.Duration > 0) info += ClientFormat.Format(CommonByKey("s_guild_ui_skill_duration"), TimeSpanText(s.Duration));
+        if (s.Cooltime > 0)
+        {
+            if (info.Length > 0) info += ", ";
+            info += ClientFormat.Format(CommonByKey("s_guild_ui_skill_cooldown"), ShortTimeText((uint)s.Cooltime));
+        }
+        return info;
+    }
+
+    /// <summary>FUN_141b708a0 (@0x141b708a0, util.cpp:999) without the seconds: s_common ids 0x97b-0x97f.</summary>
+    string ShortTimeText(uint seconds)
+    {
+        if (seconds < 60) return ClientFormat.Format(Common(0x97b), seconds);
+        if (seconds < 3600)
+        {
+            uint m = seconds / 60, sec = seconds % 60;
+            return sec == 0 ? ClientFormat.Format(Common(0x97c), m) : ClientFormat.Format(Common(0x97e), m, sec);
+        }
+        uint h = seconds / 3600, mm = seconds / 60 % 60;
+        return mm == 0 ? ClientFormat.Format(Common(0x97d), h) : ClientFormat.Format(Common(0x97f), h, mm);
+    }
+
+    /// <summary>One skill's state, its text and the rate of the duration spent (FUN_14196e590, FUN_14196f830).</summary>
+    (int State, string Text) SkillState(GuildSkillTable.Skill s, int remainDuration, int remainCool)
+    {
+        int state = 0;
+        string text = "";
+        if (remainDuration == 0)
+        {
+            if (remainCool != 0) { state = 2; text = CommonByKey("s_guild_ui_skill_waiting"); }
+        }
+        else { state = 3; text = CommonByKey("s_guild_ui_skill_using"); }
+        if (Book.GuildLevel < s.RequireLevel)
+        {
+            state = 1;
+            text = ClientFormat.Format(CommonByKey("s_guild_ui_skill_require_level"), s.RequireLevel);
+        }
+        return (state, text);
+    }
+
+    static float SkillRate(int duration, int remainDuration) => duration != 0 ? (float)(duration - remainDuration) / duration : 1f;
+
+    /// <summary>The attendance gate of buildGuildSkill: the member's fc8 plus a day has passed.</summary>
+    bool CanUseSkills() => Book.Me is { } me && Book.ServerTime() >= me.Fc8 + 86400;
+
+    /// <summary>FUN_14196e590 (@0x14196e590): the guild skills of the skill page: the fund texts, one row per skill with a record, its
+    /// row and its effect, then buildGuildSkill(bCanUse, rows), setSimpleActiveIcon and UpdateSkillInfo. STILL-OPEN: the game
+    /// event's sale rate is 0 (GuildBook.GuildSkillSaleRate).</summary>
+    void BuildGuildSkills()
+    {
+        if (NoMovie || skillPage == null) return;
+        activeSkills.Clear();
+        int fund = Book.Info?.Fund ?? 0, eventFund = Book.Info?.EventFund ?? 0;
+        SetChildText(skillPage, "m_guildFund", GroupText(fund));
+        SetChildText(skillPage, "m_guildEventFund", GroupText(eventFund));
+        bool master = Book.PlayerName() is { } me && Book.IsMaster(me);
+        var rows = new List<object>();
+        var active = new List<object>();
+        foreach (int id in Book.SkillTable?.GuildSkillIds() ?? Enumerable.Empty<int>())
+        {
+            if (Book.Info?.Skills.FirstOrDefault(r => r.Id == id) is not { } rec) continue;
+            if (Book.SkillTable.Get(rec.Id, rec.Level) is not { } s) continue;
+            if (EffectIcon((uint)s.AdditionalEffectId, (ushort)s.AdditionalEffectLevel) is not { } icon) continue;
+            int require = Book.SkillCostWithEventDiscount(s.Id, s.Level);
+            bool bEvent = s.IsEvent;
+            int remainDuration = Book.RemainingDuration(rec), remainCool = Book.RemainingCooldown(rec);
+            var (state, stateText) = SkillState(s, remainDuration, remainCool);
+            if (state == 3) active.Add(Host.Obj(("imgpath", icon)));
+            rows.Add(Host.Obj(
+                ("id", s.Id), ("type", bEvent ? 2 : 0),
+                ("skillName", EffectText((uint)s.AdditionalEffectId, (ushort)s.AdditionalEffectLevel, "name")),
+                ("requireFund", GroupText(require)),
+                ("isEnough", (bEvent ? eventFund : fund) >= require),
+                ("isMaster", master),
+                ("saleRate", bEvent ? 0 : Book.GuildSkillSaleRate() / 100),
+                ("skillInfo", SkillInfoText(s)),
+                ("skillDesc", EffectText((uint)s.AdditionalEffectId, (ushort)s.AdditionalEffectLevel, "tooltipDescription")),
+                ("state", state), ("stateString", stateText), ("imgpath", icon),
+                ("remainCoolSec", remainCool), ("remainDurationSec", remainDuration),
+                ("rate", SkillRate(s.Duration, remainDuration))));
+            if (remainCool > 0 || remainDuration > 0) activeSkills.Add(rec.Id);
+        }
+        if (Book.Me == null) return;
+        Host.Invoke(skillPage, "buildGuildSkill", CanUseSkills(), rows);
+        Host.Invoke(skillPage, "setSimpleActiveIcon", active);
+        UpdateSkillInfo();
+    }
+
+    /// <summary>UpdateSkillInfo (@0x1419758a0): the remaining times of the timed skills to updateSkillInfo; one that ran out rebuilds the page.
+    /// The client calls it from vfunc_72 each frame. The host calls <see cref="Tick"/>.</summary>
+    public void UpdateSkillInfo()
+    {
+        if (NoMovie || activeSkills.Count == 0 || skillPage == null) return;
+        var rows = new List<object>();
+        foreach (int id in activeSkills.ToList())
+        {
+            if (Book.SkillTable?.Get(id, Book.SkillLevel(id)) is not { } s) continue;
+            if (Book.Info?.Skills.FirstOrDefault(r => r.Id == id) is not { } rec) continue;
+            int remainDuration = Book.RemainingDuration(rec), remainCool = Book.RemainingCooldown(rec);
+            rows.Add(Host.Obj(("id", id), ("remainCoolSec", remainCool), ("remainDurationSec", remainDuration),
+                ("rate", SkillRate(s.Duration, remainDuration))));
+            if (remainCool == 0 && remainDuration == 0) { BuildGuildSkills(); return; }
+        }
+        Host.Invoke(skillPage, "updateSkillInfo", rows);
+    }
+
+    /// <summary>The per-frame part of vfunc_72 (@0x1419614e0) that is ported: UpdateSkillInfo.</summary>
+    public void Tick() => UpdateSkillInfo();
+
+    /// <summary>FUN_14196f830 (@0x14196f830): the personal skills of the second skill page, over the player's mesos.
+    /// STILL-OPEN: the remaining time of the player's own buff (AdditionalCli::GetRemainTicks) is not ported, so a personal skill is
+    /// never shown as in use; the game event's sale rate is 0; the ids are the personal skills' (GetPersonalSkillIds' body is not recovered).</summary>
+    void BuildPersonalSkills()
+    {
+        if (NoMovie || skillPage2 == null) return;
+        long meso = Book.Mesos();
+        SetChildText(skillPage2, "m_guildFund", GroupText(meso));
+        if (Book.Level() == null) return;           // GetLocalPlayer() == 0
+        bool master = Book.PlayerName() is { } me && Book.IsMaster(me);
+        var rows = new List<object>();
+        foreach (int id in Book.SkillTable?.PersonalSkillIds() ?? Enumerable.Empty<int>())
+        {
+            int level = Book.SkillLevel(id);
+            if (Book.SkillTable.Get(id, level) is not { IsPersonal: true } s) continue;
+            if (EffectIcon((uint)s.AdditionalEffectId, (ushort)s.AdditionalEffectLevel) is not { } icon) continue;
+            long require = Book.PersonalSkillDiscountedCost(id, level);
+            var (state, stateText) = SkillState(s, 0, 0);
+            rows.Add(Host.Obj(
+                ("id", id), ("type", 1),
+                ("skillName", EffectText((uint)s.AdditionalEffectId, (ushort)s.AdditionalEffectLevel, "name")),
+                ("requireFund", GroupText(require)),
+                ("isEnough", meso >= require),
+                ("isMaster", master),
+                ("saleRate", Book.GuildPersonalSkillSaleRate() / 100),
+                ("skillInfo", SkillInfoText(s)),
+                ("skillDesc", EffectText((uint)s.AdditionalEffectId, (ushort)s.AdditionalEffectLevel, "tooltipDescription")),
+                ("state", state), ("stateString", stateText), ("imgpath", icon),
+                ("remainCoolSec", 0), ("remainDurationSec", 0),
+                ("rate", SkillRate(s.Duration, 0))));
+        }
+        if (Book.Me == null) return;
+        Host.Invoke(skillPage2, "buildGuildSkill", CanUseSkills(), rows);
+        Host.Invoke(skillPage2, "setSimpleActiveIcon", new List<object>());
     }
 
     /// <summary>FUN_14196da70 (@0x14196da70): the requests' count to the root, then (with the accept page up) its rows,

@@ -31,6 +31,7 @@ public class GuildSkillTableTests
         Assert.That(t.Get(10000, 1).IsEvent, Is.True);
         Assert.That(t.Get(10001, 1).IsPersonal && !t.Get(10001, 1).IsGuild, Is.True);
         Assert.That(t.GuildSkillIds(), Is.EqualTo(new[] { 1000, 1001, 10000 }));
+        Assert.That(t.PersonalSkillIds(), Is.EqualTo(new[] { 10001 }));
     }
 
     [Test]

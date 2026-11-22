@@ -177,7 +177,7 @@ public sealed class GuildBook
     /// <summary>CGuildMember::FUN_1404cb3e0: today's donations, 0 when the last one (ff8) was on another day.</summary>
     public int DonationToday(GuildMember m) => IsNotRecentDayChange(m.Ff8) == 1 ? 0 : m.Ff0;
 
-    GuildMember Me => PlayerName() is { } me ? FindMemberByName(me) : null;
+    public GuildMember Me => PlayerName() is { } me ? FindMemberByName(me) : null;
 
     /// <summary>CanAttend (@0x1413b8460): in a guild, a member, and the last attendance (fd8) on another day.</summary>
     public bool CanAttend => InGuild && Me is { } m && IsNotRecentDayChange(m.Fd8) != 0;
