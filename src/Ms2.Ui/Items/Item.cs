@@ -22,7 +22,18 @@ public sealed class Item
     /// <summary>The record the item was read from (CItem::ReadFromStream's blocks); null for a made item.</summary>
     public Ms2.Net.Packets.EquipItem Record;
 
+    /// <summary>m_flags (HasFlags, item.cpp:1336): bit 2 is the lapenshard panels' "selected" mark (UILapenshardSystemDialog).</summary>
+    public int Flags;
+    /// <summary>A worn item (the slot's itemEquip mark, LapenshardSlot::vfunc_8 lapenshardslot.cpp:348): set on items the
+    /// owner builds from the worn lapenshards, not on bag items.</summary>
+    public bool IsEquipped;
+
     Item(ItemData data) { Data = data; }
+
+    /// <summary>The item's copy (the client's CItem copy): every field, the record shared.</summary>
+    public Item Clone() => (Item)MemberwiseClone();
+
+    public bool HasFlags(int mask) => (Flags & mask) == mask;
 
     /// <summary>
     /// FUN_14052b130 (:2607) through FUN_140523c40 (:2760): null for an unknown item; the rarity is the data's rank, or

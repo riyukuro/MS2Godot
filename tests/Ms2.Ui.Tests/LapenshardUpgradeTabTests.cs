@@ -194,14 +194,15 @@ public class LapenshardUpgradeTabTests
     [Test]
     public void TheResultOfTheSourceEndsTheRequestAndFallsThroughToEventNine()
     {
+        // the ingredient panel answers events 6 and 7 with vfunc_4, which sends the tab event 0xd (ahead of the spy here)
         var r = Requested(out var s);
         r.Page.OnPacket(new LapenshardMessage.UpgradeResult(77, s.ItemId + 1, 0, true));
         Assert.That((r.Page.State, r.Events), Is.EqualTo((2, new List<int>())), "another item's result is ignored");
         r.Page.OnPacket(new LapenshardMessage.UpgradeResult(77, s.ItemId, 0, true));
-        Assert.That((r.Page.State, r.Events), Is.EqualTo((3, new List<int> { 6, 9 })));
+        Assert.That((r.Page.State, r.Events), Is.EqualTo((3, new List<int> { 0xd, 6, 9 })));
         var f = Requested(out var s2);
         f.Page.OnPacket(new LapenshardMessage.UpgradeResult(77, s2.ItemId, 0, false));
-        Assert.That(f.Events, Is.EqualTo(new[] { 7, 9 }));
+        Assert.That(f.Events, Is.EqualTo(new[] { 0xd, 7, 9 }));
     }
 
     [Test]

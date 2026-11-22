@@ -18,7 +18,7 @@ namespace Ms2.Ui.Hud;
 /// feed (CGameRule::GetLapenshardUpgradeSaleRate, set by event sale packets) is the host's <see cref="SaleRate"/>; the panels and
 /// their movie bindings (the next slice); the inventory counts the ingredient check reads come from the host.</para>
 /// </summary>
-public sealed class LapenshardUpgradeTabPage : LapenshardTabPage
+public sealed partial class LapenshardUpgradeTabPage : LapenshardTabPage
 {
     public override string Name => "upgrade";
     public override string LabelKey => "s_lapenshard_tabname_upgrade";
@@ -54,9 +54,14 @@ public sealed class LapenshardUpgradeTabPage : LapenshardTabPage
     public event Action<int> PanelEvent;
 
     /// <summary>vfunc_3: the page's movie root exists (m_ui). The panels build over it.</summary>
-    public override void Show(UiHost h, object r) { host = h; root = r; }
+    public override void Show(UiHost h, object r) { host = h; root = r; BuildSourceBag(); BuildIngredientBag(); BuildSlotPanel(); }
     public override void Leave() { }
-    public override void Destroy() { root = null; host = null; Source = null; ingredients.Clear(); }
+    public override void Destroy()
+    {
+        root = null; host = null; Source = null; ingredients.Clear();
+        sourceItems.Clear(); ingredientItems.Clear(); slotItems.Clear(); slotKinds.Clear(); infoSlots.Clear(); pushed.Clear();
+        panelSource = null; body = null; ingredientBagName = "";
+    }
 
     /// <summary>The chosen ingredients, uid to count (the client's map).</summary>
     public IReadOnlyDictionary<long, int> Ingredients => ingredients;
@@ -194,6 +199,7 @@ public sealed class LapenshardUpgradeTabPage : LapenshardTabPage
     /// <summary>vfunc_6 (@0x140c68500), the page's own callbacks: OnAction (1 the upgrade, 3 the reset) and OnProcessingComplete.</summary>
     public override bool OnCallback(string name, object[] args)
     {
+        if (root != null) PanelCallback(name, args);                 // the panels first, their results ignored
         if (root == null || !HasPlayer) return false;
         if (name.Equals("OnAction", StringComparison.OrdinalIgnoreCase))
         {
