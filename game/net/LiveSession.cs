@@ -739,6 +739,13 @@ public partial class LiveSession : Node
             var o = await new LoginClient(login) { Ticket = ticket, MachineIdPath = ticket != null ? ProjectSettings.GlobalizePath("user://machine-id") : null }.LoginAsync(host, port, user + "KR", pass, machine);
             if (!o.Success) { GD.PushWarning($"live: login refused, state {o.Result.State} {o.Result.Message}"); LastLoginRefusal = o.Result; return false; }
             accountId = o.Result.AccountId;
+            try
+            {
+                // unknown data (no folder, unreadable) gives no warning, and never fails a good login
+                string dataLocale = !string.IsNullOrEmpty(Settings.DataDir) && System.IO.Directory.Exists(Settings.DataDir) ? Ms2.Ui.LobbyFeatures.LocaleOf(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir)) : null;
+                if (Ms2.Ui.LobbyFeatures.MismatchWarning(login.Profile.IsGms2, dataLocale) is { } mismatch) GD.PushWarning("live: " + mismatch);
+            }
+            catch (Exception ex) { GD.Print("live: data/server check skipped: " + ex.Message); }
             if (o.Endpoint is { } ugc)
             {
                 // FUN_1410268a0 / CSoapClient::FUN_14176fcf0: the download host and the upload base

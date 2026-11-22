@@ -26,6 +26,27 @@ public class RegionOfDataTests
     }
 
     [Test]
+    public void DataAndServerOfOneClientDoNotWarn()
+    {
+        Assert.That(LobbyFeatures.MismatchWarning(true, "NA"), Is.Null);
+        Assert.That(LobbyFeatures.MismatchWarning(false, "KR"), Is.Null);
+    }
+
+    [Test]
+    public void DataOfTheOtherClientWarns()
+    {
+        Assert.That(LobbyFeatures.MismatchWarning(true, "KR"), Is.EqualTo("data and server do not match: use GMS2 data for a GMS2 server (this data is KR)"));
+        Assert.That(LobbyFeatures.MismatchWarning(false, "NA"), Is.EqualTo("data and server do not match: use KMS data for a KMS server (this data is NA)"));
+    }
+
+    [Test]
+    public void UnknownDataGivesNoWarning()
+    {
+        Assert.That(LobbyFeatures.MismatchWarning(true, null), Is.Null);
+        Assert.That(LobbyFeatures.MismatchWarning(false, ""), Is.Null);
+    }
+
+    [Test]
     public void NoDataIsKr()
     {
         Assert.That(LobbyFeatures.RegionOf(null), Is.Zero);

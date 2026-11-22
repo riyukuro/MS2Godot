@@ -40,6 +40,16 @@ public static class LobbyFeatures
     /// GMS2 data 2.</summary>
     public static int RegionOf(PackSet packs) => Ms2.Formats.Options.GameOptionLocale.RegionId(LocaleOf(packs));
 
+    /// <summary>The one line to log at login when the data and the server are not the same client's (GMS2 data is locale NA, KMS data KR), else null (null too when the data is unknown: <paramref name="dataLocale"/> null or empty). A warning only: the login goes on.</summary>
+    public static string MismatchWarning(bool serverIsGms2, string dataLocale)
+    {
+        if (string.IsNullOrEmpty(dataLocale)) return null;
+        bool dataIsGms2 = string.Equals(dataLocale, "NA", StringComparison.OrdinalIgnoreCase);
+        if (serverIsGms2 == dataIsGms2) return null;
+        return serverIsGms2 ? "data and server do not match: use GMS2 data for a GMS2 server (this data is " + dataLocale + ")"
+            : "data and server do not match: use KMS data for a KMS server (this data is " + dataLocale + ")";
+    }
+
     /// <summary>CFeatureManager::IsLocaleInList: empty, or a comma list holding the client's locale.</summary>
     public static bool IsLocaleInList(PackSet packs, string list) => string.IsNullOrEmpty(list)
         || list.Split(',').Any(l => string.Equals(l.Trim(), LocaleOf(packs), StringComparison.OrdinalIgnoreCase));
