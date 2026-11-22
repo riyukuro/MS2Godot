@@ -481,6 +481,10 @@ public sealed class NpcLayer
     /// <summary>The id of the npc model's sequence of that name, -1 when the npc or the sequence is missing.</summary>
     public int SequenceId(int id, string name) => inst.TryGetValue(id, out var i) ? i.Model?.Kfm.ByName(name)?.Id ?? -1 : -1;
 
+    /// <summary>The id of the npc model's first sequence whose name <paramref name="pick"/> takes, -1 when there is none.</summary>
+    public int SequenceId(int id, Func<string, bool> pick) =>
+        inst.TryGetValue(id, out var i) ? i.Model?.Kfm.Sequences.FirstOrDefault(q => pick(q.Name))?.Id ?? -1 : -1;
+
     /// <summary>The speed the npc's animation plays at, 0 when the npc or its model is missing.</summary>
     public float AnimSpeed(int id) => inst.TryGetValue(id, out var i) && i.Player != null ? (float)i.Player.SpeedScale : 0;
 
