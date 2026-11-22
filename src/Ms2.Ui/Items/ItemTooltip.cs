@@ -75,13 +75,14 @@ public sealed partial class ItemTooltip
         SetItemGuideDescription(item);                                            // FUN_1409d0a80
         SetStatDescription(item);                                                 // FUN_1409d1d30
         SetExtraDescription(item);                                                // FUN_1409d64a0
+        SetItemDamage(item);                                                      // FUN_1409c7b10
         SetExtraComment(item);
         SetItemLockInfo(item);
         Data["itemPiece"] = d.IsPieceItem;                                        // SetItemPiece
         Data["itemPetSkin"] = d.GemSubtype == 0xb;                                // SetItemPetSkin(FUN_14053e900() == 0xb), the gem subtype
         if ((Flags & 0x80) != 0 || (Flags & 4) != 0) SetUseHints(item);              // FUN_1409cd750
         if ((Flags & (0x80 | 4 | 0x200 | 0x20 | 0x400 | 0x1000 | 0x100 | 2)) != 0)
-            SetCustomizeColor(item);                                              // FUN_1409d2cb0; FUN_1409d3010 after it is not ported
+            if (SetCustomizeColor(item)) SetCustomizeColorData(item);             // FUN_1409d2cb0, then FUN_1409d3010
         Data.SetTooltipAlign((Flags & 0x40) != 0 || (Flags & 2) != 0 ? 9 : 5);
         return true;
     }

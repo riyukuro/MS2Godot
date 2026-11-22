@@ -674,6 +674,16 @@ public sealed class GameTables
     /// <summary>CStringTable::FUN_141811980(0x2f, id): stringMasteryReceipeName, empty when none.</summary>
     public string MasteryRecipeName(int id) => Lazy(ref masteryRecipeNames, "stringmasteryreceipename", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
     Dictionary<string, string> masteryRecipeNames;
+    /// <summary>CStringTable::FUN_141811980(0x48, id): stringColorPalette, a palette colour's name; empty when none.</summary>
+    public string ColorPaletteName(int id) => Lazy(ref colorPaletteNames, "stringcolorpalette", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
+    Dictionary<string, string> colorPaletteNames;
+    /// <summary>CItemDataTable's colour palettes by colorSN, loaded on first use (a test may set its own).</summary>
+    public Ms2.Ui.Items.ColorPaletteTable ColorPalettes
+    {
+        get => colorPalettes ??= packs == null ? Ms2.Ui.Items.ColorPaletteTable.Empty : new Ms2.Ui.Items.ColorPaletteTable(packs);
+        set => colorPalettes = value;
+    }
+    Ms2.Ui.Items.ColorPaletteTable colorPalettes;
     public string PopupMenuName(int id) => Lazy(ref popupMenuNames, "popupmenu", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
     /// <summary>CStringTable::FUN_141811980(8, id): string table 8 "slotName" (a weapon kind's name); "" when unknown.</summary>
     public string SlotName(int id) => Lazy(ref slotNames, "slotname", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
