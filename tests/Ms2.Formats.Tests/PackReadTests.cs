@@ -110,6 +110,47 @@ public class PackReadTests
         Assert.That(fallbacks, Is.EqualTo(0));
     }
 
+    /// <summary>A read costs the entry's encoded bytes and its output, not copies of them: the base64 decodes in place and
+    /// the AES keystream is made a chunk at a time, so no array as large as the entry is made besides the read buffer and the
+    /// result (the streamed read: the read buffer only).</summary>
+    [Test]
+    public void ALargeEntryReadAllocatesTheEncodedBytesAndTheOutputOnly()
+    {
+        var data = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(data)) Assert.Ignore("MS2_DATA not set");
+        var packs = new PackSet(data);
+        int checkedEntries = 0;
+        var piece = new byte[4096];
+        foreach (var archive in new[] { "Xml", "Resource/Exported", "Resource/Model/Map" })
+        {
+            var path = Path.Combine(data, archive + ".m2d");
+            if (!File.Exists(path)) continue;
+            using var reader = new M2dReader(path);
+            var big = reader.Files.Where(f => f.FileHeader.EncodedFileSize > 256 * 1024 && f.FileHeader.FileSize < 64 << 20)
+                .OrderByDescending(f => f.FileHeader.EncodedFileSize).Take(4).ToList();
+            foreach (var entry in big)
+            {
+                var name = entry.Name.Replace('\\', '/');
+                long encoded = entry.FileHeader.EncodedFileSize, size = (long)entry.FileHeader.FileSize;
+                packs.Read(archive, name);   // the archive's index is opened once, not counted
+                long before = GC.GetAllocatedBytesForCurrentThread();
+                var got = packs.Read(archive, name);
+                long read = GC.GetAllocatedBytesForCurrentThread() - before;
+                Assert.That(got, Has.Length.EqualTo(size), name);
+                Assert.That(read, Is.LessThan(encoded + size + 64 * 1024), $"{archive}: {name} read ({encoded} encoded, {size} out)");
+                before = GC.GetAllocatedBytesForCurrentThread();
+                long streamed = 0;
+                using (var s = packs.OpenRead(archive, name))
+                    for (int n; (n = s.Read(piece, 0, piece.Length)) > 0;) streamed += n;
+                long open = GC.GetAllocatedBytesForCurrentThread() - before;
+                Assert.That(streamed, Is.EqualTo(size), name);
+                Assert.That(open, Is.LessThan(encoded + 64 * 1024), $"{archive}: {name} stream ({encoded} encoded)");
+                checkedEntries++;
+            }
+        }
+        Assert.That(checkedEntries, Is.GreaterThan(0));
+    }
+
     /// <summary>Archives opened side by side by Prefetch (and by reads from several threads at once) hold the same entries and bytes as opened one by one.</summary>
     [Test]
     public void ArchivesOpenedSideBySideReadTheSameAsOneByOne()

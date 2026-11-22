@@ -115,8 +115,8 @@ public sealed class PackSet : IDisposable
         var a = Get(archive);
         if (!a.ByName.TryGetValue(entry.Replace('\\', '/'), out var e))
             throw new FileNotFoundException($"{entry} not in {archive}");
-        if (((uint)e.BufferFlag & XorFlag) != XorFlag && ((uint)e.BufferFlag & ZlibFlag) == ZlibFlag && Decrypted(a, e) is { } plain)
-            return new InflateStream(plain, (long)e.FileSize);
+        if (((uint)e.BufferFlag & XorFlag) != XorFlag && ((uint)e.BufferFlag & ZlibFlag) == ZlibFlag && Decrypted(a, e, out int length) is { } plain)
+            return new InflateStream(plain, length, (long)e.FileSize);
         return new MemoryStream(Read(archive, entry), false);
     }
 
@@ -126,7 +126,13 @@ public sealed class PackSet : IDisposable
         readonly ZLibStream z;
         readonly long size;
         long read;
-        public InflateStream(byte[] deflated, long size) { z = new ZLibStream(new MemoryStream(deflated, false), CompressionMode.Decompress); this.size = size; }
+        public InflateStream(byte[] deflated, long size) : this(deflated, deflated.Length, size) { }
+        /// <summary>The inflate of the first <paramref name="length"/> bytes of <paramref name="deflated"/>.</summary>
+        public InflateStream(byte[] deflated, int length, long size)
+        {
+            z = new ZLibStream(new MemoryStream(deflated, 0, length, false), CompressionMode.Decompress);
+            this.size = size;
+        }
         public override int Read(byte[] buffer, int offset, int count) => Read(buffer.AsSpan(offset, count));
         public override int Read(Span<byte> buffer)
         {
@@ -157,42 +163,48 @@ public sealed class PackSet : IDisposable
     // The package's AES entries are base64 text of a CTR-style stream: keystream block i is AES-ECB(key) of the 128-bit
     // big-endian counter iv + i (CipherKeys.GetKeyAndIV gives key and iv), xored over the decoded bytes. The package makes one
     // transform call and one 16-byte array per block and runs over the base64 length (a third more blocks than bytes). Here
-    // the same standard AES (System.Security.Cryptography.Aes, AES-NI) makes exactly the needed blocks in one call and the
-    // xor is vectorized. Returns null for anything else (not an AES entry, any exception): the package's decrypt then runs.
-    // FastAesMisses counts every entry the platform-AES route did not decrypt (a null return for any reason); Fallbacks every
+    // the same standard AES (System.Security.Cryptography.Aes, AES-NI) makes exactly the needed blocks, a chunk at a time into
+    // one stack buffer, and the xor is vectorized. The base64 is decoded in place, so the entry's encoded bytes are the only
+    // array. Returns the decrypted length at the start of src, or -1 for anything else (not an AES entry, any exception);
+    // src may then be overwritten and the package's decrypt runs on a fresh read.
+    // FastAesMisses counts every entry the platform-AES route did not decrypt (a -1 return for any reason); Fallbacks every
     // read that ended in the package's GetBytes. Zero of both over a test run means every entry took the fast path.
     internal static long FastAesHits, FastAesMisses, Fallbacks;
 
-    static byte[] Miss() { Interlocked.Increment(ref FastAesMisses); return null; }
+    static int Miss() { Interlocked.Increment(ref FastAesMisses); return -1; }
 
-    static byte[] FastAes(IPackFileHeader h, Encryption flag, byte[] src)
+    const int KeystreamChunk = 4096;
+
+    static int FastAes(IPackFileHeader h, Encryption flag, byte[] src)
     {
         try
         {
             if (((uint)flag & 0xee000000) != 0xee000000) return Miss();
             CipherKeys.GetKeyAndIV(h.Version, (uint)h.CompressedFileSize, out var key, out var iv);
             if (key == null || iv == null || iv.Length != 16 || (key.Length != 16 && key.Length != 24 && key.Length != 32)) return Miss();
-            var dec = new byte[Base64.GetMaxDecodedFromUtf8Length(src.Length)];
-            if (Base64.DecodeFromUtf8(src, dec, out var used, out var written) != System.Buffers.OperationStatus.Done || used != src.Length) return Miss();
-            if (written != dec.Length) Array.Resize(ref dec, written);
-            int blocks = (written + 15) / 16;
-            var ks = new byte[blocks * 16];
-            for (int b = 0; b < blocks; b++)
+            if (Base64.DecodeFromUtf8InPlace(src, out int written) != System.Buffers.OperationStatus.Done) return Miss();
+            using var aes = Aes.Create();
+            aes.Key = key;
+            Span<byte> chunk = stackalloc byte[KeystreamChunk];
+            int vs = Vector<byte>.Count;
+            for (int at = 0; at < written; at += KeystreamChunk)
             {
-                iv.CopyTo(ks, b * 16);
-                for (int k = 15; k >= 0 && ++iv[k] == 0; k--) { }
-            }
-            using (var aes = Aes.Create())
-            {
-                aes.Key = key;
+                int n = Math.Min(KeystreamChunk, written - at);
+                var ks = chunk[..((n + 15) / 16 * 16)];
+                for (int b = 0; b < ks.Length; b += 16)
+                {
+                    iv.CopyTo(ks.Slice(b, 16));
+                    for (int k = 15; k >= 0 && ++iv[k] == 0; k--) { }
+                }
                 aes.EncryptEcb(ks, ks, PaddingMode.None);
+                var d = src.AsSpan(at, n);
+                int i = 0;
+                for (; i + vs <= n; i += vs)
+                    (new Vector<byte>(d[i..]) ^ new Vector<byte>(ks[i..])).CopyTo(d[i..]);
+                for (; i < n; i++) d[i] ^= ks[i];
             }
-            int i = 0, vs = Vector<byte>.Count;
-            for (; i + vs <= written; i += vs)
-                (new Vector<byte>(dec, i) ^ new Vector<byte>(ks, i)).CopyTo(dec, i);
-            for (; i < written; i++) dec[i] ^= ks[i];
             Interlocked.Increment(ref FastAesHits);
-            return dec;
+            return written;
         }
         catch (Exception) { return Miss(); }
     }
@@ -202,12 +214,13 @@ public sealed class PackSet : IDisposable
         var h = e;
         try
         {
-            var plain = Decrypted(a, e);
+            var plain = Decrypted(a, e, out int length);
             if (plain != null)
             {
-                if (((uint)h.BufferFlag & ZlibFlag) != ZlibFlag) return plain.Length == (int)h.FileSize ? plain : Fallback(a, e);
+                if (((uint)h.BufferFlag & ZlibFlag) != ZlibFlag)
+                    return length != (int)h.FileSize ? Fallback(a, e) : length == plain.Length ? plain : plain.AsSpan(0, length).ToArray();
                 var output = new byte[(int)h.FileSize];
-                using var z = new ZLibStream(new MemoryStream(plain, false), CompressionMode.Decompress);
+                using var z = new ZLibStream(new MemoryStream(plain, 0, length, false), CompressionMode.Decompress);
                 z.ReadExactly(output);
                 if (z.Read(new byte[1], 0, 1) != 0) return Fallback(a, e);
                 return output;
@@ -217,11 +230,12 @@ public sealed class PackSet : IDisposable
         return Fallback(a, e);
     }
 
-    /// <summary>The entry's decrypted bytes (deflated when its flag has the zlib bit), or null where only the package's
-    /// reader can read it.</summary>
-    byte[] Decrypted(Archive a, PackIndex.Entry e)
+    /// <summary>The entry's decrypted bytes (deflated when its flag has the zlib bit), the first <paramref name="length"/> of the
+    /// array, or null where only the package's reader can read it.</summary>
+    byte[] Decrypted(Archive a, PackIndex.Entry e, out int length)
     {
         var h = e;
+        length = 0;
         try
         {
             if (!noDecrypt)
@@ -237,21 +251,28 @@ public sealed class PackSet : IDisposable
             if (!noDecrypt && h.EncodedFileSize > 0 && h.FileSize > 0 && h.FileSize <= int.MaxValue)
             {
                 var buf = new byte[h.EncodedFileSize];
-                byte[] plain;
-                lock (gate)
-                {
-                    a.Handle ??= File.OpenHandle(a.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-                    if (RandomAccess.Read(a.Handle, buf, (long)h.Offset) != buf.Length) return null;
-                }
+                if (!ReadEncoded(a, h, buf)) return null;
                 var flag = (Encryption)((uint)h.BufferFlag & ~ZlibFlag);   // the package's decrypt, without its inflate
-                plain = FastAes(h, flag, buf);
-                if (plain == null)
-                    lock (gate) plain = (byte[])decrypt.Invoke(null, new object[] { h.Version, (uint)h.EncodedFileSize, (uint)h.CompressedFileSize, flag, buf });
+                length = FastAes(h, flag, buf);
+                if (length >= 0) return buf;
+                if (!ReadEncoded(a, h, buf)) return null;   // the in-place decode may have overwritten it
+                byte[] plain;
+                lock (gate) plain = (byte[])decrypt.Invoke(null, new object[] { h.Version, (uint)h.EncodedFileSize, (uint)h.CompressedFileSize, flag, buf });
+                length = plain?.Length ?? 0;
                 return plain;
             }
         }
         catch (Exception) { }
         return null;
+    }
+
+    bool ReadEncoded(Archive a, PackIndex.Entry h, byte[] buf)
+    {
+        lock (gate)
+        {
+            a.Handle ??= File.OpenHandle(a.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+            return RandomAccess.Read(a.Handle, buf, (long)h.Offset) == buf.Length;
+        }
     }
 
     byte[] Fallback(Archive a, PackIndex.Entry e)
