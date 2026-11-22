@@ -41,7 +41,25 @@ public sealed class FieldAddItem {
     /// </summary>
     public bool IsPickupAllowed(long ownCharacterId) => OwnerType == 2 || (OwnerType <= 1 && OwnerUid == ownCharacterId);
 
-    public static FieldAddItem Read(ByteReader r) {
+    public static FieldAddItem Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    /// <summary>
+    /// GMS2 (upstream FieldPacket.AddItem): i32 object id, i32 item id, i32 amount, bool has receiver and then its i64 uid, vec3
+    /// position, i32 owner object id, i32 0, u8 drop type (0 default, 1, 2 player; 2 = anyone may pick it up), i32 rarity, i16, bool
+    /// fixed position, bool, then the GMS2 item body unless meso. Without a receiver there is no owner list, so the drop is anyone's.
+    /// </summary>
+    public static FieldAddItem Read(ByteReader r, ProtocolProfile profile) {
+        if (profile.IsGms2) {
+            var g = new FieldAddItem { ObjectId = r.ReadInt(), ItemId = r.ReadInt(), Amount = r.ReadInt() };
+            bool hasReceiver = r.ReadBool();
+            if (hasReceiver) g.OwnerUid = r.ReadLong();
+            g.Position = r.ReadVec3(); g.SourceObjectId = r.ReadInt(); r.ReadInt();
+            byte type = r.ReadByte();
+            g.OwnerType = hasReceiver ? (byte) (type == 2 ? 1 : 0) : (byte) 2;
+            g.Rarity = r.ReadInt(); g.DropKind = (ushort) r.ReadShort(); g.FixedThrow = r.ReadBool(); g.PetTrap = r.ReadBool();
+            if (!IsMesoId(g.ItemId)) { g.Item = new EquipItem { Id = g.ItemId, Rarity = g.Rarity, Slot = ItemReader.SlotOf?.Invoke(g.ItemId) ?? EquipSlot.Unknown }; ItemReader.ReadBodyInto(r, g.Item, profile); }
+            return g;
+        }
         var d = new FieldAddItem {
             ObjectId = r.ReadInt(), ItemId = r.ReadInt(), Amount = r.ReadInt(), OwnerUid = r.ReadLong(), Position = r.ReadVec3(),
             SourceObjectId = r.ReadInt(), OwnerType = r.ReadByte(), Rarity = r.ReadInt(), DropKind = (ushort)r.ReadShort(),

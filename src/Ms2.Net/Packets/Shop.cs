@@ -157,7 +157,12 @@ public sealed record ShopProduct {
     /// <summary>IsSoldOut: a limit and none left.</summary>
     public bool SoldOut => Limit > 0 && Remaining <= 0;
 
-    public static ShopProduct Read(ByteReader r) {
+    public static ShopProduct Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    /// <summary>The GMS2 list entry (upstream ShopItem.WriteTo, read from the recordings): the same fields in a different order and width, a restricted-buy
+    /// block that always carries both times and a u16 count of day ranges, no life block, and the item body of the GMS2 profile.</summary>
+    public static ShopProduct Read(ByteReader r, ProtocolProfile profile) {
+        if (profile.IsGms2) return ReadGms2(r, profile);
         var p = new ShopProduct();
         p.Serial = r.ReadInt(); p.ItemId = r.ReadInt(); p.Currency = r.ReadByte(); p.CurrencyItemId = r.ReadInt(); p.CurrencyItemTag = r.ReadInt();
         p.Price = (uint) r.ReadInt(); p.OriginalPrice = (uint) r.ReadInt(); p.Rarity = r.ReadByte(); p.Count = r.ReadInt(); p.Limit = r.ReadInt();
@@ -176,6 +181,34 @@ public sealed record ShopProduct {
             };
         }
         p.Item = ItemReader.ReadItem(r, p.ItemId, p.Rarity);
+        return p;
+    }
+
+    static ShopProduct ReadGms2(ByteReader r, ProtocolProfile profile) {
+        var p = new ShopProduct();
+        p.Serial = r.ReadInt(); p.ItemId = r.ReadInt();
+        p.Currency = r.ReadByte(); p.CurrencyItemId = r.ReadInt(); p.CurrencyItemTag = r.ReadInt(); p.Price = (uint) r.ReadInt(); p.OriginalPrice = (uint) r.ReadInt();
+        p.Rarity = r.ReadByte();
+        r.ReadInt();                                                   // the constant 500
+        p.Limit = r.ReadInt(); p.Bought = r.ReadInt(); p.GuildTrophy = r.ReadInt(); p.Categories = r.ReadString();
+        p.Achieve = r.ReadInt(); p.AchieveGrade = r.ReadInt();
+        p.ChampionshipRank = r.ReadByte(); p.ChampionshipScore = (ushort) r.ReadShort(); p.GuildNpc = r.ReadByte(); p.GuildNpcLevel = (ushort) r.ReadShort();
+        p.PremiumSlot = r.ReadBool(); p.Bundle = (ushort) r.ReadShort(); p.SaleTag = r.ReadByte(); p.Label = r.ReadByte();
+        p.IconTag = r.ReadString(); p.Alliance = (ushort) r.ReadShort(); p.FameGrade = r.ReadInt();
+        p.MainItem = r.ReadBool();
+        if (r.ReadBool()) {                                            // RestrictedBuyData: the times are always written
+            var period = new ShopBuyPeriod { HasTime = r.ReadBool() };
+            period.Start = r.ReadLong(); period.End = r.ReadLong();
+            int ranges = (ushort) r.ReadShort();
+            for (int i = 0; i < ranges; i++) period.PartTimes.Add((r.ReadInt(), r.ReadInt()));
+            period.HasPart = ranges > 0;
+            int days = r.ReadByte();
+            for (int i = 0; i < days; i++) period.Days.Add(r.ReadByte());
+            p.Period = period;
+        }
+        p.Item = new EquipItem { Id = p.ItemId, Rarity = p.Rarity, Slot = ItemReader.SlotOf?.Invoke(p.ItemId) ?? EquipSlot.Unknown };
+        ItemReader.ReadBodyInto(r, p.Item, profile);
+        p.Count = p.Item.Amount;
         return p;
     }
 
@@ -289,14 +322,16 @@ public sealed class ShopPacket {
     public IReadOnlyList<ShopNewProduct> NewProducts { get; private init; }
     public ShopError Error { get; private init; }
 
-    public static ShopPacket Read(ByteReader r) {
+    public static ShopPacket Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    public static ShopPacket Read(ByteReader r, ProtocolProfile profile) {
         int cmd = r.ReadByte();
         switch (cmd) {
             case 0: return new ShopPacket { Command = cmd, Info = ShopInfo.Read(r) };
             case 1: {
                 int n = r.ReadByte();
                 var list = new List<ShopProduct>(n);
-                for (int i = 0; i < n; i++) list.Add(ShopProduct.Read(r));
+                for (int i = 0; i < n; i++) list.Add(ShopProduct.Read(r, profile));
                 return new ShopPacket { Command = cmd, Products = list };
             }
             case 2: return new ShopPacket { Command = cmd, ProductUpdate = new ShopProductUpdate(r.ReadInt(), r.ReadInt()) };

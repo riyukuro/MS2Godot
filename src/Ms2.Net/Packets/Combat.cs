@@ -27,12 +27,16 @@ public sealed class SkillDamage {
     public int ProjectileCount;
     public byte[] Raw;
 
-    public static SkillDamage Read(ByteReader r) {
+    public static SkillDamage Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    /// <summary>GMS2 (upstream SkillDamagePacket): mode 0 has an i32 server tick after the bool, mode 3 ends in an i32 hp amount instead of an i64.</summary>
+    public static SkillDamage Read(ByteReader r, ProtocolProfile profile) {
+        bool gms = profile.IsGms2;
         var d = new SkillDamage { Mode = r.ReadByte() };
         switch (d.Mode) {
             case 0: {
                 d.CastUid = r.ReadLong(); d.OwnerId = r.ReadInt(); d.SkillId = r.ReadInt(); d.Level = r.ReadShort(); r.ReadByte(); r.ReadByte();
-                d.Position = r.ReadVec3S(); r.ReadVec3(); r.ReadByte();
+                d.Position = r.ReadVec3S(); r.ReadVec3(); r.ReadByte(); if (gms) r.ReadInt();
                 d.ProjectileCount = r.ReadByte();
                 for (int i = 0; i < d.ProjectileCount; i++) { r.ReadLong(); r.ReadLong(); r.ReadInt(); r.ReadByte(); r.ReadByte(); }
                 break;
@@ -49,7 +53,7 @@ public sealed class SkillDamage {
                 break;
             }
             case 3:
-                d.OwnerId = r.ReadInt(); d.TargetId = r.ReadInt(); d.BuffId = r.ReadInt(); d.DotHit = new Hit(r.ReadByte(), r.ReadLong());
+                d.OwnerId = r.ReadInt(); d.TargetId = r.ReadInt(); d.BuffId = r.ReadInt(); d.DotHit = new Hit(r.ReadByte(), gms ? r.ReadInt() : r.ReadLong());
                 d.Targets.Add(new HitTarget(d.TargetId, new[] { d.DotHit }, default, default));
                 break;
             case 5: {

@@ -1225,7 +1225,7 @@ public partial class LiveSession : Node
                 if (self && u.Book != null) { SkillBook = u.Book; SkillBookChanged?.Invoke(-1); }
                 GD.Print($"live: FieldAddUser object {u.ObjectId} {(self ? "SELF" : "other")} char {u.User.CharacterId} '{u.User.Name}' pos {u.Position}");
             }
-            else if (game.Is(p, Inbound.FieldAddItem)) { var item = FieldAddItem.Read(p.Reader()); drops?.Add(item); }
+            else if (game.Is(p, Inbound.FieldAddItem)) { var item = FieldAddItem.Read(p.Reader(), game.Profile); drops?.Add(item); }
             else if (game.Is(p, Inbound.FieldRemoveItem)) drops?.OnRemovePacket(FieldRemoveItem.Read(p.Reader()).ObjectId);
             else if (game.Is(p, Inbound.FieldPickupItem) && drops != null) drops.OnPickupPacket(FieldPickupItem.Read(p.Reader(), drops.Describe));
             else if (game.Is(p, Inbound.UserBattle) && p.Body.Length >= 5 && BitConverter.ToInt32(p.Body, 0) == selfObject)
@@ -1352,7 +1352,7 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.Shop))
             {
-                var sp = ShopPacket.Read(p.Reader());   // UIShopDialog::OnShopPacket (uishopdialog.cpp:1524)
+                var sp = ShopPacket.Read(p.Reader(), game.Profile);   // UIShopDialog::OnShopPacket (uishopdialog.cpp:1524)
                 GD.Print($"live: shop cmd {sp.Command}");
                 ShopReceived?.Invoke(sp);
             }
@@ -1678,7 +1678,7 @@ public partial class LiveSession : Node
             {
                 // The records that hit the own player; MasteryEvents applies the client's mode drops (3 needs its PC, 5 its
                 // region skill object). One event per target record (MyPC::vfunc_113 posts each).
-                var d = SkillDamage.Read(p.Reader());
+                var d = SkillDamage.Read(p.Reader(), game.Profile);
                 // mode 3's caster test is PCBase (players, npcs and pets; the tracker keeps the first two, and a pet
                 // is a PCBase in the client, so a pet's DoT on the own player cancels there but not here yet)
                 foreach (var total in Ms2.Ui.Hud.MasteryEvents.SelfRecords(d, selfObject,
