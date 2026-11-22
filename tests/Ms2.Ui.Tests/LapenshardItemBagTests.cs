@@ -163,6 +163,23 @@ public class LapenshardItemBagTests
     }
 
     [Test]
+    public void TheDropTargetKindIsTheWornItemsKindNotTheSlots()
+    {
+        // slot 1 is a red slot but wears a blue (a packet can put any table id there): the drop kind is the worn item's mask
+        var r = Load(t => new[] { (1, Pick(t, 2).Id) }, t =>
+        {
+            var worn = Pick(t, 2);
+            return new[] { Make(t, Pick(t, 2, worn.Group, worn.Id).Id, 41), Make(t, Pick(t, 1).Id, 42) };
+        });
+        r.C.SlotDroppedOn("LapenshardEquipSlotBag.0", "LapenshardItemSlotBag.0", r.C);        // another blue
+        Assert.That(r.Sent, Is.EqualTo(new IOutPacket[] { new LapenshardEquip(1, 41) }));
+        Assert.That(r.Codes, Is.Empty);
+        r.C.SlotDroppedOn("LapenshardEquipSlotBag.0", "LapenshardItemSlotBag.1", r.C);        // a red
+        Assert.That(r.Sent, Has.Count.EqualTo(1), "the red sends nothing");
+        Assert.That(r.Codes, Is.EqualTo(new[] { 0xd3 }));
+    }
+
+    [Test]
     public void ASameGroupItemOfAnotherLevelReplacesTheWornOne()
     {
         var pair = new Func<GameTables, ((int Id, int Mask, int Group) A, (int Id, int Mask, int Group) B)>(t =>
