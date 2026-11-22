@@ -81,7 +81,7 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     public override void OnLoadComplete()
     {
         base.OnLoadComplete();
-        if (Host.Child("m_itemBagEx") == null) { Host.RT.NoteMissing("inventory: m_itemBagEx"); return; }
+        if (SlotList() == null) { Host.RT.NoteMissing("inventory: m_itemBagEx"); return; }
         UpdateButtonState();
         // the search input's change handler (OnSearchTextChanged @0x14199a620) lists the tab's item names: needs the item names
         BuildTabs();
@@ -1110,12 +1110,26 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     /// its slot names (GetSlotNames, ASCoreList::vfunc_25), then invalidate + validateNow.</summary>
     void IInventoryBinding.bindSlotBag(int tab, IReadOnlyList<BagCell> cells)
     {
-        if (Host.Child("m_itemBagEx") is not { } list) return;
+        if (SlotList() is not { } list) return;
         slotCount = cells.Count;
+        if (Host.Child("m_itemBagEx") == null)
+        {
+            // GMS2 movie (uiinventorydialog.gfx): m_itemBag is an ItemBag (TileCacheList) whose bagId setter runs update(), i.e.
+            // dataProvider = GameDataModel.getBagSlotBindings(bagId): it asks for the names, no dataProvider is passed. The same
+            // bagId path the KMS enchant, lock and merge dialogs use (ItemEnchantDialogController.BindEnchantable). The bag id is
+            // GetTypeName, inferred: the GMS2 C++ is not in the tree.
+            Host.Set(list, "bagId", BagName);
+            Host.Invoke(list, "invalidate");
+            Host.Invoke(list, "validateNow");
+            return;
+        }
         Host.Set(list, "dataProvider", DataProvider(Enumerable.Range(0, slotCount).Select(i => (object)SlotName(i))));
         Host.Invoke(list, "invalidate");
         Host.Invoke(list, "validateNow");
     }
+
+    /// <summary>The slot list: KMS m_itemBagEx (a TileList), else the GMS2 movie's m_itemBag (an ItemBag).</summary>
+    object SlotList() => Host.Child("m_itemBagEx") ?? Host.Child("m_itemBag");
 
     /// <summary>InventorySlotBag::RefreshSlotForItem: the slot's binding pushed again (DragSlot::vfunc_10, PushBinding).</summary>
     void IInventoryBinding.refreshSlot(int tab, int slot, BagCell cell) => Host.Push(SlotName(slot));
