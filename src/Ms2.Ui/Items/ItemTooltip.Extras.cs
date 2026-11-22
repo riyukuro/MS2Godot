@@ -7,17 +7,19 @@ public sealed partial class ItemTooltip
     /// <summary>
     /// ASTooltip::FUN_1409c7b10 (astooltip.cpp:267), "itemDamage": the repack line (FUN_1409d95f0), the enchant line
     /// (FUN_1409d8d90), the remake line (FUN_1409d9330), the merge line (FUN_1409d99a0) and the extraction line
-    /// (FUN_1409d9aa0), joined by new lines; the member is set only when the text is not empty. Ported: the enchant, merge
-    /// and extraction lines. STILL-OPEN: the repack and remake lines.
+    /// (FUN_1409d9aa0), joined by new lines; the member is set only when the text is not empty. Ported: the repack,
+    /// enchant, merge and extraction lines. STILL-OPEN: the remake line.
     /// </summary>
     public void SetItemDamage(Item item)
     {
         // only the enchant and merge lines are ported; skip the builder when neither can add text
         bool enchant = item.Data.IsEquipItem;
         bool merge = item.Data.Fusionable != 0 && model.IsFeatureEnabled(0x6f);
+        bool repack = item.Data.RePackingLimitCount > 0 && model.IsFeatureEnabled(0x38);
         uint? scrolls = Tables.Extraction.ScrollCount(item.Data.Id);
-        if (!enchant && !merge && scrolls == null) return;
+        if (!enchant && !merge && !repack && scrolls == null) return;
         var sb = new StringBuilder();
+        if (repack) AppendRepack(item, sb);
         AppendEnchant(item, sb);
         AppendMerge(item, sb);
         if (scrolls != null) AppendExtraction(item, scrolls.Value, sb);
@@ -60,6 +62,39 @@ public sealed partial class ItemTooltip
             NewLine(sb);
             sb.Append(CommonF("s_itemenchant_fail_stack_count", failStack));
         }
+    }
+
+    /// <summary>
+    /// FUN_1409d95f0 (astooltip.cpp:3508), with feature 0x38: an item whose transfer type is 3 or 5 (FUN_14053d800), that is
+    /// not bound (FUN_140634230: a transfer binding, or a socketed gem bound to a character) and whose enchant history is
+    /// enabled, with a repack limit, shows s_item_repacking_disable when no repack is left (GetRemainingRePackingCount: the
+    /// limit less the transfer max, at least 0), else s_item_repacking_limit_count with the count left and the item's
+    /// rePackingItemConsumeCount. A pet uses s_item_repacking_pet_limit_count and needs feature 0x101; without it the exe
+    /// returns after the new line. FUN_140527030 (CItemEnchantInfo::FUN_14058c8a0) is always 0.
+    /// </summary>
+    void AppendRepack(Item item, StringBuilder sb)
+    {
+        var d = item.Data;
+        if (d.TransferType != 3 && d.TransferType != 5) return;
+        var r = item.Record;
+        if (r != null && (r.Transfer.HasBinding || r.Socket.Gems.Any(g => g != null && g.GemId != 0 && ItemTradeRules.GemBound(g))))
+            return;
+        if (r != null && !r.Enchant.HistoryEnabled) return;                       // CItemEnchantInfo::IsEnabled
+        if (d.RePackingLimitCount <= 0) return;
+        NewLine(sb);
+        int left = Math.Max(0, d.RePackingLimitCount - (r?.Transfer.Max ?? 0));    // a made item's transfer max is 0
+        if (left == 0)
+        {
+            sb.Append(Common("s_item_repacking_disable"));
+            return;
+        }
+        string key = "s_item_repacking_limit_count";
+        if (d.IsPetItem)
+        {
+            if (!model.IsFeatureEnabled(0x101)) return;
+            key = "s_item_repacking_pet_limit_count";
+        }
+        sb.Append(CommonF(key, left, d.RePackingItemConsumeCount));
     }
 
     /// <summary>FUN_1409d9aa0 (astooltip.cpp:3592): an item with an itemExtraction row shows s_itemextraction_trycount (the

@@ -184,4 +184,45 @@ public class ItemTooltipExtrasTests
         Assert.That(used, Does.EndWith(m.Tables.Common("s_itemextraction_invalid")));
         Assert.That(m.Tables.Common("s_itemextraction_invalid"), Is.Not.Empty);
     }
+
+    /// <summary>The first equipment id of the item data whose environment sets a repack limit, with transfer type 3 or 5.</summary>
+    static int FirstRepackItem(UiModel m)
+    {
+        var rx = new System.Text.RegularExpressions.Regex("<item id=\"(\\d+)\"");
+        for (int f = 0; f < 1000; f++)
+        {
+            string entry = $"itemdata/{f:000}.xml";
+            if (!Packs().Exists("Xml", entry)) continue;
+            string text = System.Text.Encoding.UTF8.GetString(Packs().Read("Xml", entry));
+            if (!text.Contains("rePackingLimitCount=\"")) continue;
+            foreach (System.Text.RegularExpressions.Match x in rx.Matches(text))
+                if (m.Tables.Items.Get(int.Parse(x.Groups[1].Value)) is { RePackingLimitCount: > 0, TransferType: 3 or 5, IsPetItem: false } d)
+                    return d.Id;
+        }
+        return 0;
+    }
+
+    [Test]
+    public void RepackLineCountsWhatIsLeft()
+    {
+        var m = NewModel();
+        m.HasLocalPlayer = true;
+        TestContext.WriteLine($"feature 0x38: {m.IsFeatureEnabled(0x38)}");
+        if (!m.IsFeatureEnabled(0x38)) Assert.Ignore("feature 0x38 is off in this data");
+        int id = FirstRepackItem(m);
+        if (id == 0) Assert.Ignore("no item with a repack limit");
+        var d = m.Tables.Items.Get(id);
+        var r = new EquipItem { Id = id, Uid = 5, Rarity = 4, Amount = 1 };
+        var text = (string)Tip(m, r).Data["itemDamage"];
+        TestContext.WriteLine($"{id} limit {d.RePackingLimitCount} consume {d.RePackingItemConsumeCount}: {text}");
+        Assert.That(text, Does.StartWith(Ms2.Quest.ClientFormat.Format(m.Tables.Common("s_item_repacking_limit_count"),
+            d.RePackingLimitCount, d.RePackingItemConsumeCount)));
+        r.Transfer.Max = d.RePackingLimitCount;
+        text = (string)Tip(m, r).Data["itemDamage"];
+        TestContext.WriteLine("used up: " + text);
+        Assert.That(text, Does.StartWith(m.Tables.Common("s_item_repacking_disable")));
+        r.Transfer.HasBinding = true;
+        text = Tip(m, r).Data.TryGetValue("itemDamage", out var v) ? (string)v : "";
+        Assert.That(text, Does.Not.Contain(m.Tables.Common("s_item_repacking_disable")));
+    }
 }
