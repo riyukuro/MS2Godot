@@ -282,6 +282,70 @@ public class BeautyShopDialogTests
         Assert.That(r.C.BuildBill(), Is.Null, "without the price text nothing is guessed");
     }
 
+    static BeautyShopPacket OpenWithCoupon(int page, int coupon) => new(0)
+    {
+        Kind = page, SlotCount = 3, SavedStyles = 1, Context = 1,
+        Shop = new BeautyShopData(7, 1, coupon, false, 0, 0, false, Pay, Recolor),
+        Items = new[] { new BeautyShopItem(100, 0, 0, 0, 0, new BeautyPayment(1, 0, 9000, "")) },
+    };
+
+    [Test]
+    public void SaveHandsTheBillToTheBillDialog()
+    {
+        var r = new Rig();
+        var opened = new List<BillData>();
+        r.C.OpenBill = opened.Add;
+        r.C.OnPacket(Rig.Open(2));
+        r.Cu.IsEditItemColorChanged = true;
+        r.C.ClickSave();
+        var d = opened.Single();
+        Assert.That((d.ShopKind, d.FeeType), Is.EqualTo((1, 1)));
+        Assert.That(d.Rows, Has.Count.EqualTo(1));
+        Assert.That(d.CheckText, Is.Empty, "no display coupon: the normal mode");
+        Assert.That(d.Warning, Is.Empty);
+        d.Answer(0, false);
+        Assert.That(r.Sent, Has.Count.EqualTo(1), "the dialog's answer reaches the buy");
+    }
+
+    [Test]
+    public void SaveOffersTheCouponLineOnlyForAShopWithADisplayCoupon()
+    {
+        var r = new Rig();
+        var opened = new List<BillData>();
+        r.C.OpenBill = opened.Add;
+        r.C.OnPacket(OpenWithCoupon(1, 5));
+        r.Cu.IsEditItemColorChanged = true;
+        r.C.ClickSave();
+        var d = opened.Single();
+        Assert.That(d.CheckText, Is.Not.Empty, "check box mode");
+        Assert.That(d.Checked, Is.False, "no sale coupon in the bag");
+    }
+
+    [Test]
+    public void SaveOpensNothingWithoutTheDialogOrTheRows()
+    {
+        var r = new Rig();
+        r.C.OnPacket(Rig.Open(1));
+        r.C.ClickSave();   // no OpenBill: nothing happens
+        var opened = new List<BillData>();
+        r.C.OpenBill = opened.Add;
+        r.C.FeePriceText = null;
+        r.C.ClickSave();
+        Assert.That(opened, Is.Empty, "no rows, nothing opens");
+    }
+
+    [Test]
+    public void ASaleEventUpdatesTheOpenBill()
+    {
+        var r = new Rig();
+        var prices = new List<uint>();
+        r.C.UpdateBill = prices.Add;
+        r.C.OnPacket(Rig.Open(1));
+        r.Cu.IsEditItemColorChanged = true;
+        r.C.OnSaleEvent();
+        Assert.That(prices, Has.Count.EqualTo(1));
+    }
+
     [Test]
     public void ABillAnswerOfZeroBuysAndOtherAnswersDoNot()
     {

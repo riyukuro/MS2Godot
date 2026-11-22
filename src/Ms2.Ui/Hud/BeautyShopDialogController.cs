@@ -62,8 +62,11 @@ public sealed class BeautyShopDialogController : UiController
     public Func<BeautyPayment, long, bool> CanPay;
     /// <summary>FUN_14134a2e0 (not recovered): the "not enough" message of a payment.</summary>
     public Action<BeautyPayment> NotEnough;
-    /// <summary>The bill (UIBillDialog 0x4e7b, not ported): its rows and total; the answer comes back through <see cref="OnBillAnswer"/>.</summary>
-    public Action<BeautyBill> OpenBill;
+    /// <summary>OnClickSave's UIBillDialog (0x4e7b: FUN_140f0a350's dialog, SetData, OpenDialog; <see cref="BillDialogController"/>): the bill
+    /// is handed over and its answer comes back through <see cref="OnBillAnswer"/>. Unset = the dialog does not exist, nothing opens.</summary>
+    public Action<BillData> OpenBill;
+    /// <summary>The open bill's total is shown again (OnGameEventChanged @0x1418c9780: IsDialogOpen(0x4e7b), FUN_1418cda70).</summary>
+    public Action<uint> UpdateBill;
     /// <summary>The notice of an item id of mode 9 (FUN_141811980(1, id): the item's name in the common string 0x996).</summary>
     public Func<int, string> ItemNoticeText;
     /// <summary>GetMaxSlotCount / FUN_140f01220 (mode 0x11's slot count): not recovered, set by the host.</summary>
@@ -293,6 +296,7 @@ public sealed class BeautyShopDialogController : UiController
         UpdateFee(fee, price);
         if (Host?.Entity != null && Host.Child("m_pcBang") is { } pc)
             Host.Set(pc, "visible", Sales.SaleIndex(SaleEventId, PlayerLevel()) == 0);
+        UpdateBill?.Invoke(price);
     }
 
     // ---- close / leave --------------------------------------------------------------------------------------------------
@@ -385,13 +389,37 @@ public sealed class BeautyShopDialogController : UiController
     }
     bool couponChecked;
 
-    /// <summary>OnClickSave: the bill is built and handed to the bill dialog; the coupon sale starts checked when it is active and
-    /// the discount is non-zero.</summary>
+    /// <summary>OnClickSave (@0x1418c8700, uibeautyshopdialog.cpp:771): with the bill dialog there, the rows are built (none: nothing opens), the
+    /// coupon is offered when the sale coupon is active and the fee after the sale is not 0, and the bill (shop kind 1, the fee's type, item and
+    /// icon tag, the price) goes to the dialog. The check box's line, warning and state are set only for a shop with a display coupon (m_1d0.m_20).</summary>
     public void ClickSave()
     {
+        if (OpenBill == null) return;
         var bill = BuildBill();
-        if (bill == null || OpenBill == null) return;
-        OpenBill(bill);
+        if (bill == null) return;
+        int kind = ShopKind;
+        string title = BillCouponLine(kind, Page);
+        bool coupon = IsCouponSaleActive(true);
+        var fee = GetFee(out uint nFee);
+        if (Sales.DiscountedPrice(SaleEventId, nFee, PlayerLevel()) == 0) coupon = false;
+        var data = new BillData
+        {
+            Answer = OnBillAnswer,
+            Category = bill.Category,
+            Rows = new() { (bill.Detail, bill.PriceText) },
+            ShopKind = 1,
+            FeeType = fee?.Type ?? 0,
+            FeeItemId = fee?.ItemId ?? 0,
+            FeeIconTag = fee?.IconTag ?? "",
+            Price = bill.Total,
+        };
+        if (Shop is { DisplayCouponId: not 0 })
+        {
+            data.Checked = coupon;
+            data.CheckText = title;
+            data.Warning = BillWarning(Page);
+        }
+        OpenBill(data);
     }
 
     /// <summary>The buy (@0x1418c9f20): the preview cap off, the price after the sale; a fee that can't be paid (and no coupon) shows

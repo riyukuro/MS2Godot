@@ -69,8 +69,7 @@ public partial class HudScene
         };
     }
 
-    // STILL-OPEN: FeePriceText / CanPay / NotEnough (GetFeePriceText, CanPayFee, FUN_14134a2e0 are not recovered), OpenBill (the
-    // UIBillDialog beauty kind) and SlotOfKind (FUN_140f01070) stay unset, so the paths that need them do nothing.
+    // STILL-OPEN: CanPay (CanPayFee is not recovered) and SlotOfKind (FUN_140f01070) stay unset, so the paths that need them do nothing.
     BeautyShopDialogController CreateBeauty(Ms2Godot.Net.LiveSession live)
     {
         var c = new BeautyShopDialogController
@@ -78,6 +77,10 @@ public partial class HudScene
             Sales = live.BeautySales,
             PlayerLevel = () => live.Me.User?.Level ?? 0,
             Send = live.SendBeauty,
+            FeePriceText = (fee, amount) => ColoringShop(live).PriceText(fee.Type, fee.ItemId, (uint)amount, fee.IconTag),   // GetFeePriceText @0x14134a220
+            NotEnough = fee => ColoringShop(live).ShowLackCurrency(fee.Type, fee.ItemId, 0),                          // FUN_14134a2e0 @0x14134a2e0
+            OpenBill = data => ShowBill(live, data),
+            UpdateBill = price => { if (BillOpen) billDialog.UpdatePrice(price); },
         };
         c.NoticeText += SystemNoticeText;
         return c;

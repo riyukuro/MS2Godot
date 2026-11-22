@@ -183,13 +183,15 @@ public sealed class CubeBillDialogController : UiController
 
     /// <summary>The kind 3 pay type's rows of an amount (FUN_140930590 @0x140930590, accountsessionstate.cpp:654): the wallet's kinds 3 and 2 in that
     /// order cover the amount (kinds 0 and 1 are skipped, FUN_140930200); a remainder, or no row at all, is a row of kind 1 (FUN_1409301f0).</summary>
-    public List<(int Kind, long Amount)> PoolRows(long amount)
+    public List<(int Kind, long Amount)> PoolRows(long amount) => PoolRows(Wallet != null ? Wallet() : Pc.MeratWallet, amount);
+
+    /// <summary><see cref="PoolRows(long)"/> over a given wallet.</summary>
+    public static List<(int Kind, long Amount)> PoolRows(long[] wallet, long amount)
     {
         var rows = new List<(int, long)>();
         long remain = amount;
         if (remain > 0)
         {
-            var wallet = Wallet != null ? Wallet() : Pc.MeratWallet;
             for (int i = 3; i >= 0; i--)
             {
                 if (i is 0 or 1) continue;
