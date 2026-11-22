@@ -1022,6 +1022,7 @@ public partial class LiveSession : Node
         player = null;
         selfObject = -1;
         Home.Clear();   // ~MyPC: m_sp1618 = 0 (mypc.cpp:897)
+        OwnPassengers.Clear();   // ~MyPC drops m_mapB28 with the pc
         bindPending = false;
     }
 

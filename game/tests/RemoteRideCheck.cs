@@ -181,6 +181,21 @@ public partial class RemoteRideCheck : Node3D
         if (!t.HasNode || System.Numerics.Vector3.Distance(t.NodePosition, want) > 0.01f) fails.Add($"self hold node: {t.HasNode} at {t.NodePosition}, mount bone {want}");
         if (!t.HasSeat || t.Seat != m.Data.Passenger(0).Sequences) fails.Add($"self hold: seat {t.HasSeat}, not the row's seat 0");
         if (t.RideeState != RemotePcStates.StateIdle || t.RideeAnimSpeed != 1f) fails.Add($"self hold ridee state {t.RideeState} speed {t.RideeAnimSpeed}");
+        pc.DeadFlag = true;
+        if (!layer.FindHoldTarget(Asker, Self, bone).Dead) fails.Add("self hold: a dead own pc is not a dead target");
+        pc.DeadFlag = false;
+        if (layer.FindHoldTarget(Asker, Self, bone).Dead) fails.Add("self hold: a live own pc is a dead target");
+        // other players: IsDead of the remote pc (a 0-health add is dead)
+        var live = new FieldAddUser { ObjectId = 31, User = new UserBlock { Name = "a", CharacterId = 131, Gender = 1 } };
+        live.Stats[0].Health = 100; live.Stats[2].Health = 100;
+        var dead = new FieldAddUser { ObjectId = 32, User = new UserBlock { Name = "b", CharacterId = 132, Gender = 1 } };
+        dead.Stats[0].Health = 100; dead.Stats[2].Health = 0;
+        layer.Tracker.Events.Enqueue(new UserAddedEvent(0, live, false));
+        layer.Tracker.Events.Enqueue(new UserAddedEvent(0, dead, false));
+        layer._Process(0);
+        var tl = layer.FindHoldTarget(Asker, 31, bone);
+        var td = layer.FindHoldTarget(Asker, 32, bone);
+        if (tl.Kind != HoldKind.Pc || tl.Dead || td.Kind != HoldKind.Pc || !td.Dead) fails.Add($"remote pc targets: live {tl.Kind} dead {tl.Dead}, dead {td.Kind} dead {td.Dead}");
         GD.Print($"remote ride: own pc as hold target on {m.Data.Id}: node '{bone}' at {t.NodePosition}, ridee z {t.RideeZ}, seat {t.HasSeat}");
         // the hold poll over a mount with seat nodes: 0 B once its list is found
         RemoteLayer.NearestHoldNode(null, m, Vector3.Zero, out _);

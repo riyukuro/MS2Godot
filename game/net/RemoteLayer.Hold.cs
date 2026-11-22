@@ -40,6 +40,7 @@ public sealed partial class RemoteLayer
         if (users.TryGetValue(id, out var r))
         {
             t.Kind = HoldKind.Pc; visual = r.Visual;
+            t.Dead = r.Pc?.States.Dead ?? false;    // pTarget->IsDead() (stateholddata.cpp:211): the fallback jump
             if (r.Ridee is { } ridee)
             {
                 t.HasRidee = true;
@@ -54,6 +55,7 @@ public sealed partial class RemoteLayer
         else if (SelfPc?.Invoke(id) is { } self && IsInstanceValid(self))
         {
             t.Kind = HoldKind.Pc; visual = self.Visual;
+            t.Dead = self.DeadFlag;
             if (self.Mount != null)
             {
                 // the one body is the mount's (Ridee::vfunc_10): its feet are the ridee's, (x, y, z) to MS2 (x, -z, y)
