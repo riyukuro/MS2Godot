@@ -43,6 +43,8 @@ public interface IHomeMenuHost
     void BeforeDemolish();
     /// <summary>UIHomeMenuDialog::SendRequestCube's packet: RequestCube byte 0x1f.</summary>
     void SendDemolish();
+    /// <summary>GetHomeSaveSlotDialog(0x4f27)->SetLoadMode() (SetSaveMode with <paramref name="save"/>).</summary>
+    void SetSaveSlotMode(bool save);
     /// <summary>UIHomeMenuDialog::SetFreeCamera's camera and dialog work (CameraMgr mode 6 and 0x4f3e, or the saved camera back).</summary>
     void SetFreeCamera(bool on);
     /// <summary>CameraMgr::GetModeType() == 1.</summary>
@@ -54,7 +56,8 @@ public interface IHomeMenuHost
 /// shows after the load (Refresh @0x140c29600), the button states (FUN_140c2a780), and the movie's calls (vfunc_28 @0x140c29340, matched
 /// without case).
 /// STILL-OPEN: OnScreenshot (@0x140c29c70, the upload box and the render pass of FUN_140c2b180), the design and blueprint save and load
-/// (OnDesignSave, OnDesignLoad, OnBlueprintSave, OnBlueprintImport: UIHomeSaveSlotDialog 0x4f27 is not ported), OnBlueprintShop
+/// (OnDesignSave and OnBlueprintSave: they choose by the cube count of CubeMapInformationService::FUN_1410ce310, which is not ported; OnDesignLoad
+/// and OnBlueprintImport reach <see cref="HomeSaveSlotDialogController"/>), OnBlueprintShop
 /// (UIMeratMarketDialog::SearchByCategory(3, 0xcc)), the 0x4f7a (home attribute) and 0x4f7b (blueprint export) dialogs behind their
 /// ToggleDialog calls, and the camera work of <see cref="IHomeMenuHost.SetFreeCamera"/>. Those calls do nothing here.
 /// </summary>
@@ -176,10 +179,19 @@ public class HomeMenuDialogController : UiController, IMessageBoxListener
         else if (Is(name, "OnHomeAttribute")) OnHomeAttribute();
         else if (Is(name, "OnHomeDemolish")) OnHomeDemolish();
         else if (Is(name, "OnBlueprintExport")) OnBlueprintExport();
-        else if (Is(name, "OnScreenshot") || Is(name, "OnDesignSave") || Is(name, "OnDesignLoad")
-            || Is(name, "OnBlueprintSave") || Is(name, "OnBlueprintImport") || Is(name, "OnBlueprintShop")) { }   // STILL-OPEN, see the class doc
+        else if (Is(name, "OnDesignLoad")) host.SetSaveSlotMode(false);
+        else if (Is(name, "OnBlueprintImport")) OnBlueprintImport();
+        else if (Is(name, "OnScreenshot") || Is(name, "OnDesignSave") || Is(name, "OnBlueprintSave")
+            || Is(name, "OnBlueprintShop")) { }   // STILL-OPEN, see the class doc
         else return false;
         return true;
+    }
+
+    /// <summary>OnBlueprintImport @0x140c2a320: FUN_141902580(1) (blueprints available, with the shutdown notice), then SetLoadMode of the slot dialog.</summary>
+    void OnBlueprintImport()
+    {
+        if (!host.BlueprintAvailable(true)) return;
+        host.SetSaveSlotMode(false);
     }
 
     static bool Is(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);

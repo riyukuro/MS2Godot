@@ -12,7 +12,7 @@ namespace Ms2Godot.Ui;
 /// ported either: nothing is shut down.
 /// </summary>
 sealed class HomeMenuHost(Net.LiveSession live, Func<int, bool> fieldIsHome, Func<int, bool> feature, Action<int> toggleDialog,
-    Action<string> notice) : IHomeMenuHost
+    Action<string> notice, Action<bool> setSaveSlotMode) : IHomeMenuHost
 {
     public bool HasPlayer => live.SelfObjectId >= 0;
     public bool InCubeMode => live.CubeCraft.InCubeMode;
@@ -37,6 +37,7 @@ sealed class HomeMenuHost(Net.LiveSession live, Func<int, bool> fieldIsHome, Fun
     public bool FeatureEnabled(int id) => feature(id);
     public void BeforeDemolish() { }
     public void SendDemolish() => live.SendHomeDemolish();
+    public void SetSaveSlotMode(bool save) => setSaveSlotMode(save);
     public void SetFreeCamera(bool on) { }
     public bool FreeCameraActive => false;
 }

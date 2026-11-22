@@ -32,6 +32,7 @@ public class HomeMenuDialogTests
         public void BeforeDemolish() => Log.Add("prelude");
         public void SendDemolish() => Log.Add("demolish");
         public void SetFreeCamera(bool on) => Log.Add("camera " + on);
+        public void SetSaveSlotMode(bool save) => Log.Add("slots " + (save ? "save" : "load"));
     }
 
     static (HomeMenuDialogController c, Host h, List<string> notices, List<MessageBoxData> boxes, List<(string, object[])> calls,
@@ -262,5 +263,23 @@ public class HomeMenuDialogTests
         Assert.That(HomeMenuDialogController.UiId, Is.EqualTo(0x4f7c));
         Assert.That(c.TypeName, Is.EqualTo("HomeMenuDialog"));
         Assert.That(c.Movie, Is.EqualTo("uihomemenudialog"));
+    }
+
+    [Test] public void DesignLoadSetsTheLoadModeOfTheSlotDialog()
+    {
+        var (c, h, _, _, _, _) = Make();
+        c.OnCallback("ondesignload", null);
+        Assert.That(h.Log, Is.EqualTo(new[] { "slots load" }));
+    }
+
+    [Test] public void BlueprintImportNeedsBlueprintsAvailable()
+    {
+        var (c, h, _, _, _, _) = Make();
+        h.Blueprints = false;
+        c.OnCallback("OnBlueprintImport", null);
+        Assert.That(h.Log, Is.EqualTo(new[] { "bp True" }));
+        h.Log.Clear(); h.Blueprints = true;
+        c.OnCallback("OnBlueprintImport", null);
+        Assert.That(h.Log, Is.EqualTo(new[] { "bp True", "slots load" }));
     }
 }
