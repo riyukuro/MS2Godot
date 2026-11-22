@@ -55,6 +55,7 @@ public static class FeatureElements
     public static List<T> Collect<T>(PackSet packs, IEnumerable<T> rows, Func<T, string> keyOf, Func<T, string> featureOf,
         Func<T, string> localeOf) where T : class
     {
+        if (rows is IReadOnlyList<T> list && list.Count <= ShortRows) return CollectShort(packs, list, keyOf, featureOf, localeOf);
         var byKey = new Dictionary<string, (int Index, T Elem)>();
         int index = 0;
         foreach (var e in rows)
@@ -69,6 +70,29 @@ public static class FeatureElements
             else byKey[key] = (index, e);
         }
         return byKey.Values.OrderBy(v => v.Index).Select(v => v.Elem).ToList();
+    }
+
+    /// <summary>Up to this many rows are collected by <see cref="CollectShort{T}"/>.</summary>
+    internal const int ShortRows = 16;
+
+    /// <summary><see cref="Collect{T}"/> over a few rows without the key map: the kept rows are the result list itself, in
+    /// the order of their positions (a replacing row has the highest position so far, so it moves to the end).</summary>
+    static List<T> CollectShort<T>(PackSet packs, IReadOnlyList<T> rows, Func<T, string> keyOf, Func<T, string> featureOf,
+        Func<T, string> localeOf) where T : class
+    {
+        var kept = new List<T>(rows.Count);
+        for (int i = 0; i < rows.Count; i++)
+        {
+            var e = rows[i];
+            if (!IsAvailable(packs, localeOf(e), featureOf(e))) continue;
+            string key = keyOf(e);
+            int at = -1;
+            for (int k = 0; k < kept.Count; k++)
+                if (keyOf(kept[k]) == key) { at = k; break; }
+            if (at < 0) kept.Add(e);
+            else if (Fold(packs, kept[at], e, featureOf, localeOf) == e) { kept.RemoveAt(at); kept.Add(e); }
+        }
+        return kept;
     }
 
     /// <summary>Common::Constants with the client's row pick: each key's &lt;v&gt; by <see cref="Collect"/> (FUN_14028faa0).</summary>
