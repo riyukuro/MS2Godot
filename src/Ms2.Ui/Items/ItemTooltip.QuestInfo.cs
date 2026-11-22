@@ -59,7 +59,8 @@ public sealed partial class ItemTooltip
     /// group when it lists jobs; kind 1 skips an item with the stream flag m_d4 (FUN_140529620). The state is 0 with no
     /// record, 1 in progress, 0 for a complete repeat quest; a complete non-repeat quest (and any other state) keeps the
     /// default 4 and is left out. STILL-OPEN, taken as 0 so nothing is skipped: QuestDataTable::FUN_14074e510, the m_2d0
-    /// map lookup, whose setter is not found.
+    /// map lookup, whose setter is not found. STILL-OPEN, live: LiveQuestState.TermTag answers (false, null) for every tag
+    /// (CGameRule's term tags are not read from the server yet), so a quest with an event or term tag never gets a line.
     /// </summary>
     public static List<QuestItemLink> QuestItemLinks(QuestTable table, IQuestContext quests, Item item)
     {

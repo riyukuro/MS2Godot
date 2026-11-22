@@ -100,6 +100,8 @@ public class ItemTooltipExtrasTests
         Assert.That(arr, Has.Count.EqualTo(2));
         Assert.That((string)arr[0], Does.Contain(t.UgcMapSetItemName((int)row.SetItemId)));
         string body = (string)arr[1];
+        // s_tooltip_itemoption_ugcmap_setitem_row ("&nbsp;x3<font color='#{0:x}'>{1}\n</font>") with 0xffffff: white
+        Assert.That(body, Does.StartWith("&nbsp;&nbsp;&nbsp;<font color='#ffffff'>" + t.ItemName((int)set.Pieces.Keys.First()) + "\n</font>"));
         int at = -1;
         foreach (uint id in set.Pieces.Keys)                                    // one row per piece, in piece id order
         {
