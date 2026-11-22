@@ -1042,6 +1042,7 @@ public partial class HudScene
     readonly OwnTagMagics ownTagMagics = new();
     readonly System.Collections.Generic.List<Ms2.Net.Packets.SkillHitRequest> ownHitSends = new();
     readonly System.Collections.Generic.List<Ms2.Net.Packets.SkillSplashRequest> ownSplashSends = new();
+    readonly System.Collections.Generic.List<MagicEndEffect> ownEndEffects = new();
     Func<string, System.Numerics.Vector3> ownNodePosition;
     MagicRayBlocked ownRayBlocked;
     MagicRayCast ownRayCast;
@@ -1053,8 +1054,8 @@ public partial class HudScene
     /// <summary>
     /// CMagic::FUN_14145de80 for the own cast's magics (<see cref="OwnTagMagics"/>): each due one's region fill over the live
     /// objects, its send (SkillDamage 1/1) and its area registration into the live session's tomb tag pass, posed from the
-    /// player now. The latency lead is 0 (STILL-OPEN in <see cref="OwnTagMagics"/>); no stun state is kept, so the owner is
-    /// never stunned.
+    /// player now. An arrow's end effects play in the field (CEffectService::InsertEffect, the object the own PC). The latency
+    /// lead is 0 (STILL-OPEN in <see cref="OwnTagMagics"/>); no stun state is kept, so the owner is never stunned.
     /// </summary>
     void TickOwnTagMagics()
     {
@@ -1069,12 +1070,16 @@ public partial class HudScene
         ownRayCast ??= MagicRayCast;
         ownHitSends.Clear();
         ownSplashSends.Clear();
+        ownEndEffects.Clear();
         ownTagMagics.Tick(now, 0, owner, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(hitObjects), ownCast,
-            live.TombTags, ownHitSends, crtRand, ownRayBlocked, (slotField?.PkMode ?? 0) != 0, ownRayCast, ownSplashSends);
+            live.TombTags, ownHitSends, crtRand, ownRayBlocked, (slotField?.PkMode ?? 0) != 0, ownRayCast, ownSplashSends, ownEndEffects);
         foreach (var req in ownHitSends) live.SendHit(req);
         foreach (var req in ownSplashSends) live.SendSplash(req);
+        foreach (var fx in ownEndEffects)
+            live.PlayFieldEffect(fx.File, new Vector3(fx.At.X, fx.At.Z, -fx.At.Y), Mathf.DegToRad(fx.RotZ), Ms2.Audio.SoundMusicEffectState.CasterMyPc);
         ownHitSends.Clear();
         ownSplashSends.Clear();
+        ownEndEffects.Clear();
     }
 
     /// <summary>The player's vf36_GetNodePosition (MS2 coordinates): the effect dummy <paramref name="node"/>, else the player's

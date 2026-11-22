@@ -153,6 +153,20 @@ static class Xml
         return s != null && (string.Equals(s, "true", StringComparison.OrdinalIgnoreCase) || Atoi(s) != 0);
     }
 
+    /// <summary>
+    /// XmlGetBool (tinyxmlhelper.cpp:218) over TiXmlElement::QueryBoolAttribute (tinyxml.cpp:620): a value starting with true,
+    /// yes or 1 is true, with false, no or 0 false, any case (TiXmlBase::StringEqual matches the tag as a prefix); a missing,
+    /// empty or other value keeps <paramref name="keep"/>.
+    /// </summary>
+    public static bool GetBool(XElement e, string name, bool keep)
+    {
+        var s = (string)e.Attribute(name);
+        if (string.IsNullOrEmpty(s)) return keep;
+        if (s.StartsWith("true", StringComparison.OrdinalIgnoreCase) || s.StartsWith("yes", StringComparison.OrdinalIgnoreCase) || s[0] == '1') return true;
+        if (s.StartsWith("false", StringComparison.OrdinalIgnoreCase) || s.StartsWith("no", StringComparison.OrdinalIgnoreCase) || s[0] == '0') return false;
+        return keep;
+    }
+
     /// <summary>atoi: leading spaces, a sign, the digits; 0 when none.</summary>
     public static int Atoi(string s) => (int)Atoll(s);
 

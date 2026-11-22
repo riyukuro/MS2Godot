@@ -335,6 +335,24 @@ public class OwnArrowMagicTests
             Paths("explosionByDestroy=\"1\"").Get(600, 0).ExplosionByDestroy), Is.EqualTo((true, false, true)));
     }
 
+    [TestCase("", true, false)]
+    [TestCase("0", false, false)]
+    [TestCase("1", true, true)]
+    [TestCase("yes", true, true)]
+    [TestCase("No", false, false)]
+    [TestCase("TRUE1", true, true)]
+    [TestCase("falsehood", false, false)]
+    [TestCase("2", true, false)]
+    [TestCase("on", true, false)]
+    public void TheMagicPathFlagsReadAsXmlGetBool(string value, bool explosion, bool ignore)
+    {
+        // XmlGetBool (tinyxmlhelper.cpp:218): QueryBoolAttribute matches true / yes / 1 and false / no / 0 as prefixes in any
+        // case (tinyxml.cpp:620, StringEqual); an empty or other value keeps the CMagicData ctor's value (explosionByDestroy 1,
+        // ignorePhysxTestInitPosition and ignoreCancelAtSpawnTime 0)
+        var d = Paths($"explosionByDestroy=\"{value}\" ignorePhysxTestInitPosition=\"{value}\" ignoreCancelAtSpawnTime=\"{value}\"").Get(600, 0);
+        Assert.That((d.ExplosionByDestroy, d.IgnorePhysxTestInitPosition, d.IgnoreCancelAtSpawnTime), Is.EqualTo((explosion, ignore, ignore)));
+    }
+
     [TestCase("", false, true, true)]
     [TestCase(" explosionByDestroy=\"0\"", false, true, false)]
     [TestCase(" explosionByDestroy=\"0\"", true, true, true)]
@@ -356,6 +374,66 @@ public class OwnArrowMagicTests
         var sp = splashes[0];
         Assert.That((sp.CastId, sp.Attack, sp.SendCount), Is.EqualTo((r.CastId, (byte)0, 3)));
         Assert.That(sp.Position.Y, Is.EqualTo(hit ? -180f : -810f).Within(1e-2f), "the current point at the end");
+    }
+
+    const string EndFx = " explosion=\"1\" effectRemain=\"remain.xml\" effectDestroy=\"destroy.xml\"";
+    const string HitFx = "<damage effectHit=\"hit.xml\"/>";
+
+    static List<MagicEndEffect> EndEffects(string arrow, string children, string path, MagicRayCast ray = null)
+    {
+        var r = Record(arrow, children: children);
+        var m = Add(r, Paths(path));
+        var fx = new List<MagicEndEffect>();
+        for (int t = 0; t <= 1000 && m.Count > 0; t += 100)
+            m.Tick(T + t, 0, Owner, new[] { Me }, r, null, null, () => 0, null, rayCast: ray, endEffects: fx);
+        Assert.That(m.Count, Is.EqualTo(0), "ended");
+        return fx;
+    }
+
+    [Test]
+    public void AnArrowsEndPlaysEffectHitThenEffectRemain()
+    {
+        // FUN_14145f570 (magicdata.cpp:1057): at the end check (m_n52C 0) the arrow's explosion adds the damage's effectHit
+        // (kind 1, FUN_141467f60: the y column the direction), then effectRemain (kind 0, the scene's rotation) without a ray stop
+        var fx = EndEffects(EndFx, HitFx, Linear);
+        Assert.That(fx.Select(f => (f.File, f.Along)), Is.EqualTo(new[] { ("hit.xml", true), ("remain.xml", false) }));
+        Assert.That(fx.Select(f => f.At.Y), Is.All.EqualTo(-810f).Within(1e-2f), "at the current point");
+        // the flight runs -y: the scene's y column is +y, so kind 0 faces -y (rotation z 0); kind 1's y column is -y (180)
+        Assert.That(MathF.Cos(fx[1].RotZ * MathF.PI / 180f), Is.EqualTo(1f).Within(1e-4f));
+        Assert.That(MathF.Cos(fx[0].RotZ * MathF.PI / 180f), Is.EqualTo(-1f).Within(1e-4f));
+    }
+
+    [Test]
+    public void ARayStoppedArrowPlaysEffectDestroy()
+    {
+        // m_n1C8 (the ray stop) picks effectDestroy, kind 1, instead of effectRemain
+        MagicRayCast ray = (Vector3 from, Vector3 dir, float len, out Vector3 hit) =>
+        {
+            hit = new Vector3(0, -100, 0);
+            return from.Y - len < -100f;
+        };
+        var fx = EndEffects(EndFx, HitFx, Linear, ray);
+        Assert.That(fx.Select(f => (f.File, f.Along)), Is.EqualTo(new[] { ("hit.xml", true), ("destroy.xml", true) }));
+        Assert.That(fx[1].At.Y, Is.EqualTo(-95f).Within(1e-2f), "five before the ray's hit");
+    }
+
+    [TestCase(EndFx, HitFx, new[] { "hit.xml", "remain.xml" })]
+    [TestCase(" effectRemain=\"remain.xml\"", HitFx, new[] { "remain.xml" })]
+    [TestCase(" explosion=\"1\"", HitFx, new[] { "hit.xml" })]
+    [TestCase(EndFx, "", new[] { "remain.xml" })]
+    public void AnArrowsLifeTimeEndPlaysEffectHitAndEffectRemain(string arrow, string children, string[] files)
+    {
+        // the lifeTime's end (m_n52C 1): effectHit with the explosion, then effectRemain (kind 0); an empty name inserts nothing
+        var fx = EndEffects(arrow, children, "vel=\"1\" distance=\"100000\" lifeTime=\"0.2\"");
+        Assert.That(fx.Select(f => f.File), Is.EqualTo(files));
+        Assert.That(fx.Where(f => f.File == "remain.xml").Select(f => f.Along), Is.All.False);
+    }
+
+    [Test]
+    public void AnArrowWithoutEndEffectsPlaysNone()
+    {
+        Assert.That(EndEffects("", HitFx, Linear), Is.Empty, "effectHit needs the arrow's explosion");
+        Assert.That(EndEffects(" effectDestroy=\"destroy.xml\"", "", Linear), Is.Empty, "effectDestroy needs a ray stop");
     }
 
     [Test]

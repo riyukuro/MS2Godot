@@ -67,7 +67,7 @@ public sealed class MagicPathTable
                     (string)m.Attribute("fireNode") ?? "", Point3((string)m.Attribute("fireFixedPosition")),
                     Point3((string)m.Attribute("fireOffsetPosition")),
                     m.Attribute("rotation") != null ? Xml.Int(m, "rotation") : 1, Xml.Float(m, "dirRotZDegree"),
-                    Xml.Bool(m, "ignoreCancelAtSpawnTime"))
+                    Xml.GetBool(m, "ignoreCancelAtSpawnTime", false))
                 {
                     Velocity = Xml.Float(m, "vel"), Distance = Xml.Float(m, "distance"),
                     Direction = SkillHit.Unitize(string.IsNullOrEmpty((string)m.Attribute("direction")) ? Vector3.UnitY : Point3((string)m.Attribute("direction"))),
@@ -75,8 +75,8 @@ public sealed class MagicPathTable
                     ControlEnd = Point3((string)m.Attribute("controlEndOffsetValue")),
                     ControlRate = Xml.Float(m, "controlRate"), CatmullRom = Xml.Int(m, "catmullrom"),
                     NonTargetMoveDistance = Xml.Float(m, "nonTargetMoveDistance"), MoveEndHoldDuration = Xml.Int(m, "moveEndHoldDuration"),
-                    IgnorePhysxTestInitPosition = Xml.Bool(m, "ignorePhysxTestInitPosition"),
-                    ExplosionByDestroy = m.Attribute("explosionByDestroy") == null || Xml.Bool(m, "explosionByDestroy"),
+                    IgnorePhysxTestInitPosition = Xml.GetBool(m, "ignorePhysxTestInitPosition", false),
+                    ExplosionByDestroy = Xml.GetBool(m, "explosionByDestroy", true),
                     TraceTargetDuration = Xml.Float(m, "traceTargetDuration"),
                     PiercingAttackInterval = Xml.UInt(m, "piercingAttackInterval"),
                     PiercingAttackMaxTargetCount = Xml.Int(m, "piercingAttackMaxTargetCount"),

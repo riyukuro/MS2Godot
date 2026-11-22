@@ -138,6 +138,12 @@ public sealed class SkillArrow
     /// <summary>"collision" and "collisionAdd" (:116-117): the arrow fill's box size and its back / down reach
     /// (StateSkill::FUN_1417e9d20).</summary>
     public Vector3 Collision, CollisionAdd;
+    /// <summary>"explosion" (:105, row +0x104): non-zero adds the damage's effectHit at the arrow's end (CMagic::FUN_14145f570,
+    /// magicdata.cpp:1064).</summary>
+    public int Explosion;
+    /// <summary>"effectRemain" and "effectDestroy" (:115-116, row +0x148 and +0x150): the effect at the arrow's end, effectDestroy
+    /// when its ray stopped it (magicdata.cpp:1071-1077).</summary>
+    public string EffectRemain = "", EffectDestroy = "";
 
     /// <summary>IsNonTargetOne @0x1407dfbb0 (:168): nonTarget == 1.</summary>
     public bool IsNonTargetOne => NonTarget == 1;
@@ -155,6 +161,9 @@ public sealed class SkillArrow
         RayPhysxTest = Xml.Int(a, "rayPhysxTest");
         Collision = MagicPathTable.Point3((string)a.Attribute("collision"));
         CollisionAdd = MagicPathTable.Point3((string)a.Attribute("collisionAdd"));
+        Explosion = Xml.Int(a, "explosion");
+        EffectRemain = (string)a.Attribute("effectRemain") ?? "";
+        EffectDestroy = (string)a.Attribute("effectDestroy") ?? "";
     }
 }
 
@@ -186,6 +195,9 @@ public sealed class SkillAttackData
     /// <summary>&lt;damage stateHitIgnore&gt; (SkillDamage m_eStateHitIgnore +0x98, skillattackdata.cpp:286; the attack row's +0x200):
     /// a nonTarget 1 arrow skips the PCs in this state (CMagic::FUN_141465b30, magicdata.cpp:1923).</summary>
     public int StateHitIgnore;
+    /// <summary>&lt;damage effectHit&gt; (SkillDamage m_strEffectHit +0x20, skillattackdata.cpp:264; the attack row's +0x188): the
+    /// effect an arrow with explosion plays at its end (CMagic::FUN_14145f570, magicdata.cpp:1064).</summary>
+    public string EffectHit = "";
     public readonly SkillRange Range = new();
     public readonly SkillArrow Arrow = new();
 
@@ -193,7 +205,7 @@ public sealed class SkillAttackData
     {
         var a = new SkillAttackData { Point = (string)e.Attribute("point") ?? "", TargetCount = Xml.Int(e, "targetCount"), AttackMethodType = Xml.Int(e, "attackMethodType"), BrokenOffence = Xml.Int(e, "brokenOffence"), MagicPathId = Xml.UInt(e, "magicPathID"), PointGroupId = Xml.UInt(e, "pointGroupID"), CubeMagicPathId = Xml.Int(e, "cubeMagicPathID") };
         if (e.Attribute("direction") != null) a.Direction = Xml.Int(e, "direction");
-        if (e.Element("damage") is { } damage) a.StateHitIgnore = Xml.Int(damage, "stateHitIgnore");
+        if (e.Element("damage") is { } damage) { a.StateHitIgnore = Xml.Int(damage, "stateHitIgnore"); a.EffectHit = (string)damage.Attribute("effectHit") ?? ""; }
         a.Range.LoadElement(e);
         a.Arrow.Load(e);
         return a;

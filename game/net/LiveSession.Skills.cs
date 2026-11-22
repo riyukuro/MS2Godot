@@ -85,8 +85,10 @@ public partial class LiveSession
     /// <summary>The server tick a new record takes (CMainSystem::GetServerTick); offline the elapsed time.</summary>
     public static int CastTick() => Instance?.GameSession?.ServerTick ?? (int)Time.GetTicksMsec();
 
-    /// <summary>A skill motion's effect in the field, through the combat layer the other players' casts use.</summary>
-    public void PlayFieldEffect(string effect, Vector3 at, float yawRadians) => remote?.PlayEffect(effect, at, yawRadians);
+    /// <summary>A skill motion's effect in the field, through the combat layer the other players' casts use;
+    /// <paramref name="casterKind"/> is the effect's object relation (FUN_141bd19d0: 1 the own PC).</summary>
+    public void PlayFieldEffect(string effect, Vector3 at, float yawRadians, int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
+        => remote?.PlayEffect(effect, at, yawRadians, casterKind);
 
     /// <summary>
     /// A CommonResource effect on the own PC (CEffectService::InsertEffect with the actor set and kind 1, the own PC):

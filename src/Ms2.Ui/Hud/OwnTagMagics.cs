@@ -15,6 +15,14 @@ public delegate bool MagicRayBlocked(Vector3 from, Vector3 dir, float length);
 
 /// <summary>CPhysXHelper::RayCastFromPoint on the groups 0x201 with its hit point: true and <paramref name="hit"/> when a ray
 /// from <paramref name="from"/> along the unit <paramref name="dir"/> hits within <paramref name="length"/>.</summary>
+/// <summary>
+/// One effect an arrow magic's end inserts (CEffectService::InsertEffect, CMagic::FUN_14145f570 @0x14145f570,
+/// magicdata.cpp:1080-1098): the effect file at <paramref name="At"/> (client space) turned to <paramref name="RotZ"/> (degrees,
+/// rotation z 0 faces -y). <paramref name="Along"/> is the kind 1 transform (FUN_141467f60: looking along the flight's direction),
+/// else kind 0 (the magic scene's rotation).
+/// </summary>
+public readonly record struct MagicEndEffect(string File, bool Along, Vector3 At, float RotZ);
+
 public delegate bool MagicRayCast(Vector3 from, Vector3 dir, float length, out Vector3 hit);
 
 /// <summary>
@@ -44,7 +52,7 @@ public delegate bool MagicRayCast(Vector3 from, Vector3 dir, float length, out V
 /// Piercing arrows (bounceType 3 and 4) keep flying through their hits, forget them each piercing interval and send its
 /// splash (<see cref="SkillSplashRequest"/>); bounceType 4 then flies back to the owner (state 5) and ends there.
 /// STILL-OPEN: for an arrow record, the magic control flight (FUN_141464490, a skill with magicControl enable not 0: those make no arrow
-/// magic here), the bounce-off's effect, the hit effects, the end's effects and its cast record (FUN_14145f570); the linked records, the latency maximum (0 here: the time sync's latency is not kept),
+/// magic here), the bounce-off's effect, the hit effects, the end's cast record (FUN_14145f570; its effects go to <see cref="MagicEndEffect"/>); the linked records, the latency maximum (0 here: the time sync's latency is not kept),
 /// CFunctionCubeService::SetTagArea, the magic's own effects (PlayHitEffects) and MyPC::FUN_14152e0c0 after a fill are not
 /// ported.
 /// </summary>
@@ -390,7 +398,7 @@ public sealed class OwnTagMagics
     /// </summary>
     public int Tick(int nowMs, int leadMs, in MagicOwner owner, ReadOnlySpan<HitCandidate> objects, CastRecord record,
         TombTagPass pass, List<SkillHitRequest> sends, Func<int> rand, MagicRayBlocked rayBlocked, bool pkMode = false,
-        MagicRayCast rayCast = null, List<SkillSplashRequest> splashes = null)
+        MagicRayCast rayCast = null, List<SkillSplashRequest> splashes = null, List<MagicEndEffect> endEffects = null)
     {
         int registered = 0;
         // in the order the magics were made (the client runs aTags in order, stateskill.cpp:1401-1410)
@@ -399,7 +407,7 @@ public sealed class OwnTagMagics
             var m = live[i];
             if (m.Arrow)
             {
-                if (TickArrow(m, nowMs, owner, objects, pass, sends, splashes, rand, rayCast, pkMode, ref registered)) live.RemoveAt(i);
+                if (TickArrow(m, nowMs, owner, objects, pass, sends, splashes, endEffects, rand, rayCast, pkMode, ref registered)) live.RemoveAt(i);
                 else i++;
                 continue;
             }
@@ -425,8 +433,8 @@ public sealed class OwnTagMagics
     /// same way. m_nLastTick is the tick's time at the end. True when dropped.
     /// </summary>
     bool TickArrow(Magic m, int nowMs, in MagicOwner owner, ReadOnlySpan<HitCandidate> objects, TombTagPass pass,
-        List<SkillHitRequest> sends, List<SkillSplashRequest> splashes, Func<int> rand, MagicRayCast rayCast, bool pkMode,
-        ref int registered)
+        List<SkillHitRequest> sends, List<SkillSplashRequest> splashes, List<MagicEndEffect> endEffects, Func<int> rand,
+        MagicRayCast rayCast, bool pkMode, ref int registered)
     {
         int begin = m.Start + m.Delay;
         if ((uint)nowMs < (uint)begin) return false;
@@ -450,7 +458,7 @@ public sealed class OwnTagMagics
         {
             if (m.Life != 0 && (uint)(m.StateTick + m.Life) <= (uint)nowMs)
             {
-                End(m, owner, splashes);
+                End(m, owner, splashes, endEffects, lifeEnd: true);
                 return true;
             }
             Fly(m, nowMs, objects, rayCast);
@@ -474,7 +482,7 @@ public sealed class OwnTagMagics
                 {
                     if (m.State != 2 || m.Attack.Arrow.BounceType != 4 || m.Invincible == 2)
                     {
-                        End(m, owner, splashes);
+                        End(m, owner, splashes, endEffects, lifeEnd: false);
                         return true;
                     }
                     m.StateTick = nowMs;
@@ -740,20 +748,53 @@ public sealed class OwnTagMagics
     }
 
     /// <summary>
-    /// CMagic::FUN_14145f570 @0x14145f570 (magicdata.cpp:1031), an arrow magic's end: an explosion (the row's
-    /// explosionByDestroy, else a ray stop (m_n1C8) or a fill done (m_n1CC)) of an attack with a cubeMagicPathID sends the
-    /// splash (<see cref="SkillSplashRequest"/>, the same fields as a piercing interval's) when FUN_141464410 holds (the
-    /// owner the local player).
+    /// CMagic::FUN_14145f570 @0x14145f570 (magicdata.cpp:1031), an arrow magic's end:
+    /// <list type="bullet">
+    /// <item>Its effects (<see cref="EndEffects"/>) into <paramref name="endEffects"/>.</item>
+    /// <item>An explosion (the row's explosionByDestroy, else a ray stop (m_n1C8) or a fill done (m_n1CC)) of an attack with a
+    /// cubeMagicPathID sends the splash (<see cref="SkillSplashRequest"/>, the same fields as a piercing interval's) when
+    /// FUN_141464410 holds (the owner the local player).</item>
+    /// </list>
     /// STILL-OPEN: the cast record of the magic's serial (CMagicService::FindCast, fired at the end point by FUN_14146b440 and
-    /// removed), the end and hit effects (m_str148 / m_str150 / m_str188) and the linked record's restart at the current
-    /// point (FUN_14145ddd0) are not ported.
+    /// removed; with one the effects are not inserted) and the linked record's restart at the current point (FUN_14145ddd0)
+    /// are not ported.
     /// </summary>
-    static void End(Magic m, in MagicOwner owner, List<SkillSplashRequest> splashes)
+    static void End(Magic m, in MagicOwner owner, List<SkillSplashRequest> splashes, List<MagicEndEffect> endEffects, bool lifeEnd)
     {
+        if (endEffects != null) EndEffects(m, lifeEnd, endEffects);
         bool explosion = m.Row.ExplosionByDestroy || m.RayStopped || m.Filled;
         if (owner.LocalPlayer && m.Attack.CubeMagicPathId != 0 && explosion)
             splashes?.Add(new SkillSplashRequest(m.CastId, m.AttackIndex, m.SendCount, m.HitIndex, m.Current, EulerDegrees(m)));
     }
+
+    /// <summary>
+    /// FUN_14145f570's effects (magicdata.cpp:1057-1145), the owner not hidden by the optimizer (FUN_14161ce60 0: an own magic's
+    /// owner is shown) and not culled by distance (ShouldCullByDistance: false for the local player's own, relation 1):
+    /// <list type="bullet">
+    /// <item>The arrow's explosion with the damage's effectHit not empty: effectHit, kind 1.</item>
+    /// <item>At the end check (m_n52C 0): effectDestroy, kind 1, after a ray stop (m_n1C8), else effectRemain, kind 0; each
+    /// only when not empty.</item>
+    /// <item>At the lifeTime's end (<paramref name="lifeEnd"/>, m_n52C 1): effectRemain, kind 0, even when empty (the insert of
+    /// an empty name finds no effect; it is not added here).</item>
+    /// </list>
+    /// Kind 1 turns by FUN_141467f60 (the y column the direction, so the yaw faces away from it); kind 0 by the magic scene's
+    /// rotation (UpdateLookAtRotation's lookAtType 0: the y column -direction, the port's m_matRotation).
+    /// STILL-OPEN: only the yaw is kept: FUN_141467f60's pitch and its flip for a positive z angle, and lookAtType 1 and 2, are
+    /// not ported. The distance cull of an owner other than the local player (the sight range) is not ported.
+    /// </summary>
+    static void EndEffects(Magic m, bool lifeEnd, List<MagicEndEffect> endEffects)
+    {
+        var a = m.Attack;
+        if (a.Arrow.Explosion != 0 && a.EffectHit.Length != 0) endEffects.Add(new MagicEndEffect(a.EffectHit, true, m.Current, Heading(-m.Dir)));
+        string file;
+        bool along;
+        if (!lifeEnd && m.RayStopped) { file = a.Arrow.EffectDestroy; along = true; }
+        else { file = a.Arrow.EffectRemain; along = false; }
+        if (file.Length != 0) endEffects.Add(new MagicEndEffect(file, along, m.Current, along ? Heading(-m.Dir) : Heading(-m.AxisY)));
+    }
+
+    /// <summary>The rotation z (degrees) whose forward (sin r, -cos r) points along <paramref name="v"/>'s x/y (0 for none).</summary>
+    static float Heading(Vector3 v) => v.X == 0f && v.Y == 0f ? 0f : MathF.Atan2(v.X, -v.Y) * (180f / 3.1415927f);
 
     /// <summary>FUN_140a0b1f0: m_matRotation's ToEulerAnglesXYZ times -57.2957764, that is the angles of the matrix (AxisX,
     /// AxisY, AxisZ) in degrees.</summary>
