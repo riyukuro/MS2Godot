@@ -2,7 +2,6 @@ using Ms2.Formats.Options;
 using Ms2.Net.Packets;
 using Ms2.Ui.Hud;
 using Ms2.Ui.Skills;
-using System.Xml.Linq;
 using NUnit.Framework;
 
 namespace Ms2.Ui.Tests;
@@ -33,13 +32,13 @@ public class DamageNumbersTests
 
     /// <summary>Skill 100: level 1 with one motion of two attacks, the first with rate 1.5 and the second with a &lt;damage&gt; of no
     /// value; level 2 with an attack of no &lt;damage&gt;. Skill 101 has no &lt;basic&gt;, so no levels.</summary>
-    internal static readonly SkillDamageTable Damage = new(() => new[] { XDocument.Parse(@"<ms2>
+    internal static readonly SkillDamageTable Damage = new(() => new TextReader[] { new StringReader(@"<ms2>
   <skill id=""100""><basic/>
     <level value=""1""><motion><attack><damage rate=""1.5"" count=""3""/></attack><attack><damage push=""1""/></attack></motion></level>
     <level value=""2""><motion><attack/></motion></level>
   </skill>
   <skill id=""101""><level value=""1""><motion><attack><damage value=""9""/></attack></motion></level></skill>
-</ms2>") }, (p, c, _) => p.Elements(c).ToList());
+</ms2>") }, rows => rows);
 
     [Test]
     public void OnlyAnAttackWithDamageGivesNumbers()

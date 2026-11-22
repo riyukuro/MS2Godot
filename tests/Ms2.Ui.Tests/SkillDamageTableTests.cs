@@ -11,7 +11,7 @@ namespace Ms2.Ui.Tests;
 public class SkillDamageTableTests
 {
     static SkillDamageTable Table(params string[] docs) =>
-        new(() => docs.Select(x => XDocument.Parse(x)), (p, c, _) => p.Elements(c).ToList());
+        new(() => docs.Select(x => (TextReader)new StringReader(x)), rows => rows);
 
     [Test]
     public void AReaderDuringTheWorkerLoadWaitsAndTheFilesAreReadOnce()
@@ -23,9 +23,9 @@ public class SkillDamageTableTests
         var t = new SkillDamageTable(() =>
         {
             if (System.Threading.Interlocked.Increment(ref reads) == 1) { entered.Set(); release.Wait(5000); }
-            return new[] { XDocument.Parse(@"<ms2><skill id=""5""><basic/><level value=""1""><motion>
+            return new TextReader[] { new StringReader(@"<ms2><skill id=""5""><basic/><level value=""1""><motion>
                 <attack><damage value=""7""/></attack></motion></level></skill></ms2>") };
-        }, (p, c, _) => p.Elements(c).ToList());
+        }, rows => rows);
         var worker = System.Threading.Tasks.Task.Run(t.Load);
         Assert.That(entered.Wait(5000), Is.True);
         var reader = System.Threading.Tasks.Task.Run(() => t.Get(5, 1, 0, 0).Value);
@@ -88,6 +88,43 @@ public class SkillDamageTableTests
     }
 
     [Test]
+    public void OnlyDirectChildrenCountAndTheFirstDamageIsRead()
+    {
+        // XmlGetChild / the child walks: an <attack> or <level> under another element is not a row; the first <damage> is read
+        var t = Table(@"<ms2><skill id=""5""><x><level value=""2""><motion><attack/></motion></level></x><basic/>
+            <level value=""1""><motion><attack><y><damage value=""9""/></y><damage value=""1""><damage value=""8""/></damage>
+              <damage value=""2""/></attack><z><attack/></z><attack/></motion><w><motion/></w></level></skill></ms2>");
+        Assert.That((t.HasLevel(5, 1), t.HasLevel(5, 2)), Is.EqualTo((true, false)));
+        var a = t.Get(5, 1, 0, 0);
+        Assert.That(a.Value, Is.EqualTo(1L));
+        Assert.That((t.Get(5, 1, 0, 1), t.Get(5, 1, 0, 2), t.Get(5, 1, 1, 0)),
+            Is.EqualTo((SkillAttackDamage.None, (SkillAttackDamage)null, (SkillAttackDamage)null)));
+    }
+
+    [Test]
+    public void TheReadKeepsNoDocument()
+    {
+        // the field entry reads every skilldata file: the elements and attributes outside <damage> cost no objects
+        var sb = new System.Text.StringBuilder("<ms2>");
+        for (int i = 1; i <= 2000; i++)
+            sb.Append($@"<skill id=""{i}""><basic><kinds type=""1"" subType=""2"" rangeType=""0""/><stateAttr useDefaultSkill=""0""/></basic>
+                <level value=""1""><consume><stat sp=""10"" ep=""5""/></consume><motion><motionProperty sequenceName=""Attack_01_A"" motionEffect=""a.xml""/>
+                <attack point=""0"" targetCount=""3"" pause=""0""><range type=""box"" distance=""150"" height=""100"" width=""50""/>
+                <damage count=""1"" rate=""1.5""/></attack></motion></level></skill>");
+        string text = sb.Append("</ms2>").ToString();
+        var t = Table(text);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        t.Load();
+        long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.That(t.Get(2000, 1, 0, 0).Rate, Is.EqualTo(1.5f));
+        before = GC.GetAllocatedBytesForCurrentThread();
+        GC.KeepAlive(XDocument.Parse(text));
+        long document = GC.GetAllocatedBytesForCurrentThread() - before;
+        TestContext.Progress.WriteLine($"read {bytes} B, a document of the text {document} B ({text.Length} chars)");
+        Assert.That(bytes, Is.LessThan(document / 3), $"{bytes} B, a document {document} B");
+    }
+
+    [Test]
     public void OnTheDataEveryAttackOfSkillDataTableHasItsDamage()
     {
         // the same files and the same walk: every level, motion and attack SkillDataTable keeps has a damage block here,
@@ -99,8 +136,10 @@ public class SkillDamageTableTests
         tables.Skills.GetSkillData(1);
         long skillData = clock.ElapsedMilliseconds;
         clock.Restart();
+        long before = GC.GetAllocatedBytesForCurrentThread();
         tables.SkillDamage.Get(1, 1, 0, 0);
-        TestContext.Progress.WriteLine($"first read: SkillDataTable {skillData} ms, SkillDamageTable {clock.ElapsedMilliseconds} ms");
+        long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+        TestContext.Progress.WriteLine($"first read: SkillDataTable {skillData} ms, SkillDamageTable {clock.ElapsedMilliseconds} ms, {bytes / 1024} KiB");
         int skills = 0, attacks = 0, damaging = 0;
         foreach (var id in tables.SkillDamage.SkillIds)
         {

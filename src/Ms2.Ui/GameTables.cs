@@ -800,6 +800,7 @@ public sealed class GameTables
         : new Ms2.Ui.Skills.SkillCompactControlTable(Xml("table/skillcompactcontrol.xml"), e => FeatureElements.IsAvailable(packs, e),
             LobbyFeatures.IsEnabled(packs, "CompactControl"));
     XDocument Xml(string path) => packs.Exists("Xml", path) ? GameStrings.Parse(packs.Read("Xml", path)) : null;
+    TextReader XmlText(string path) => packs.Exists("Xml", path) ? Ms2.Formats.Text.PackXml.Reader(packs.OpenRead("Xml", path)) : null;
     static List<string> SkillFiles(PackSet packs) => packs.List("Xml").Where(n => n.StartsWith("skilldata/", StringComparison.OrdinalIgnoreCase)
         && n.IndexOf('/', 10) < 0 && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).OrderBy(n => n, StringComparer.Ordinal).ToList();
     Ms2.Ui.Skills.SkillDamageTable skillDamage;
@@ -808,7 +809,8 @@ public sealed class GameTables
     /// <see cref="Skills"/>), read on first use or by <see cref="PrefetchSkillDamage"/>; one table for every thread.</summary>
     public Ms2.Ui.Skills.SkillDamageTable SkillDamage => System.Threading.LazyInitializer.EnsureInitialized(ref skillDamage, ref skillDamageLock,
         () => packs == null ? Ms2.Ui.Skills.SkillDamageTable.Empty
-            : new Ms2.Ui.Skills.SkillDamageTable(() => SkillFiles(packs).Select(Xml), (parent, child, key) => FeatureElements.Collect(packs, parent, child, key)));
+            : new Ms2.Ui.Skills.SkillDamageTable(() => SkillFiles(packs).Select(XmlText),
+                rows => FeatureElements.Collect(packs, rows, r => r.Value, r => r.Feature, r => r.Locale)));
     /// <summary>Reads <see cref="SkillDamage"/> on a worker thread while the field builds, so the first hit's damage event
     /// (a skill damage with mode 1 reads the attack's damage) does not read every skilldata file on the frame.</summary>
     public System.Threading.Tasks.Task PrefetchSkillDamage() => System.Threading.Tasks.Task.Run(() => { try { SkillDamage.Load(); } catch { } });
