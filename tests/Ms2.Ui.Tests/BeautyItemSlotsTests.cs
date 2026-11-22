@@ -54,15 +54,29 @@ public class BeautyItemSlotsTests
     }
 
     [Test]
-    public void AHandItemNeedsTheWornPairAnswer()
+    public void ATwoHandedItemIsSlot5AndAPlainHandItemTakesItsModelsFirstGroupWithoutWornState()
     {
         var (s, items) = Make();
         items[30] = new ItemData { Type = 1, Subtype = 0x32, ItemPreset = 2 };
-        Assert.That((int)s.SlotOfId(30), Is.EqualTo(0));
-        s.WornPairSlot = _ => 4;
-        Assert.That((int)s.SlotOfId(30), Is.EqualTo(4));
-        s.WornPairSlot = _ => 0;
         Assert.That((int)s.SlotOfId(30), Is.EqualTo(5));
+        items[31] = new ItemData { Type = 1, Subtype = 0x1e, ItemPreset = 3 };
+        Assert.That((int)s.SlotOfId(31), Is.EqualTo(5));
+        s.WornPairSlot = _ => 4;
+        Assert.That((int)s.SlotOfId(30), Is.EqualTo(5), "worn state does not change a two-handed item");
+        Assert.That((int)s.SlotOfId(31), Is.EqualTo(5));
+    }
+
+    [TestCase(0x1f), TestCase(0x22)]
+    public void ASubtype0x1fOr0x22ItemNeedsTheWornPairAnswer(int subtype)
+    {
+        var (s, items) = Make();
+        items[32] = new ItemData { Type = 1, Subtype = subtype, ItemPreset = 3 };
+        Assert.That((int)s.SlotOfId(32), Is.EqualTo(0));
+        Assert.That(s.NewItem(32), Is.Null, "slot 0 is the skin slot: no preview item");
+        s.WornPairSlot = _ => 4;
+        Assert.That((int)s.SlotOfId(32), Is.EqualTo(4));
+        s.WornPairSlot = _ => 0;
+        Assert.That((int)s.SlotOfId(32), Is.EqualTo(5), "no answer: the model's first group");
     }
 
     [Test]

@@ -9,9 +9,10 @@ namespace Ms2.Ui.Hud;
 /// together), FUN_14053d460 (two-handed, slots 4 and 5), FUN_14053d340 / FUN_14053d2f0, and FUN_141420f10 (the slot an item id
 /// goes on, avatarcustomize.cpp). Item data and model come from the host (<see cref="ItemDataTable.Get"/>,
 /// <see cref="ItemModelTable.Get"/>); an unknown item answers false / 0.
-/// <para>STILL-OPEN: FUN_141420b30 (@0x141420b30, unit_141420a70.cpp:39) picks the slot of a hand, ring or two-handed item from
+/// <para>STILL-OPEN: FUN_141420b30 (@0x141420b30, unit_141420a70.cpp:39) picks the slot of an equip-subtype 0x1f / 0x22 item from
 /// what the avatar wears (PC layer 0/1 items of slots 4 and 5, feature 0xda, CItem::FUN_140529070). It is the host-set
-/// <see cref="WornPairSlot"/>; unset, the slot of such an item is 0 (unknown) and a path that needs it does nothing.</para>
+/// <see cref="WornPairSlot"/>; unset, the slot of such an item is 0 (unknown) and a path that needs it does nothing. A two-handed item
+/// is slot 5 and any other hand item takes its model's first group type, with no worn state.</para>
 /// </summary>
 public sealed class BeautyItemSlots
 {
@@ -69,12 +70,17 @@ public sealed class BeautyItemSlots
         var d = data(itemId);
         if (d == null) return 0;
         if (IsTopBottom(d)) return (EquipSlot)8;
+        // FUN_141420b30 (unit_141420a70.cpp:39), with the avatar always the PC: 0 unless FUN_14053d2f0; a two-handed item is 5; a hand
+        // item that is not FUN_14053d510 (equip subtype 0x1f / 0x22) is 0, so the model's first group type is used below.
         if (IsHandOrTwoHanded(d))
         {
-            // FUN_141420b30: 0 unless FUN_14053d2f0; the host answers it from the worn items. Without one nothing is known.
-            int paired = WornPairSlot?.Invoke(d) ?? 0;
-            if (paired != 0) return (EquipSlot)paired;
-            if (WornPairSlot == null) return 0;
+            if (IsTwoHanded(d)) return (EquipSlot)5;
+            if (d.EquipSubtype is 0x1f or 0x22)
+            {
+                int paired = WornPairSlot?.Invoke(d) ?? 0;
+                if (paired != 0) return (EquipSlot)paired;
+                if (WornPairSlot == null) return 0;   // STILL-OPEN: the worn slots 4 / 5 are unknown
+            }
         }
         return (EquipSlot)ModelOf(d).FirstSlotType;
     }
@@ -82,13 +88,15 @@ public sealed class BeautyItemSlots
     /// <summary>
     /// CloneItems::CreateItem's new item (customize.cpp:1000): CItem::FUN_140523c40(id, 1, 0) (item.cpp:2759) takes the rank from
     /// the item data (1 when it has none) and FUN_140526c10 sets the slot of FUN_141420f10. Null for an unknown item (the client
-    /// logs and returns false). The uid is set by the caller (GenerateUniqueId). STILL-OPEN: CreateExtraData's default colours
+    /// logs and returns false) and for one whose slot is unknown (slot 0 is the skin slot, which a put-on would take off the real skin). The uid is set by the caller (GenerateUniqueId). STILL-OPEN: CreateExtraData's default colours
     /// and the item's status, socket and transfer blocks are not built; the record keeps its zero colour.
     /// </summary>
     public EquipItem NewItem(int itemId)
     {
         var d = data(itemId);
         if (d == null) return null;
-        return new EquipItem { Id = itemId, Rarity = d.Rank == 0 ? 1 : d.Rank, Slot = SlotOfId(itemId) };
+        var slot = SlotOfId(itemId);
+        if (slot == 0) return null;
+        return new EquipItem { Id = itemId, Rarity = d.Rank == 0 ? 1 : d.Rank, Slot = slot };
     }
 }
