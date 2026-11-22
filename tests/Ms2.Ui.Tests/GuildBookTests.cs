@@ -667,4 +667,45 @@ public class GuildBookTests {
         Assert.That(rebuilt, Is.EqualTo(1));
         Assert.That(lines, Is.EqualTo(new[] { "bo|3:77" }));
     }
+
+    const string HouseXml = "<ms2><guildHouse level='2' theme='3' stringKey='9'/></ms2>";
+    const string NpcXml = "<ms2><npc type='goods' level='2' stringKey='6'/></ms2>";
+
+    [Test]
+    public void TheHouseUpgradeSetsTheLevelAndThemeRaisesTheRefreshesAndSaysTheLine() {
+        var b = GuildDialogTests.InGuild();
+        b.CommonByKey = k => k + " {0} {1} {2}";
+        b.Houses = new Ms2.Formats.World.GuildHouseTable(System.Xml.Linq.XDocument.Parse(HouseXml));
+        b.StringTableText = (t, id) => $"{t}:{id}";
+        var lines = new List<(string, int)>(); int house = 0, npc = 0;
+        b.ChatLine += (t, ty) => lines.Add((t, ty));
+        b.HouseRefresh += () => house++; b.NpcRefresh += () => npc++;
+        Assert.That((b.HouseLevel, b.HouseTheme), Is.EqualTo((1, 1)));
+        b.Apply(new GuildMessage((byte)0x39) { Name = "bo", HouseLevel = 2, HouseTheme = 3 });
+        Assert.That((b.HouseLevel, b.HouseTheme, house, npc), Is.EqualTo((2, 3, 1, 1)));
+        Assert.That(lines.Count, Is.EqualTo(1));
+        Assert.That(lines[0].Item2, Is.EqualTo(0xd));
+        Assert.That(lines[0].Item1, Does.Contain("bo").And.Contain("54:9").And.Contain("2"));
+        b.Apply(new GuildMessage((byte)0x39) { Name = "bo", HouseLevel = 7, HouseTheme = 7 });
+        Assert.That(lines.Count, Is.EqualTo(1), "no row of that level and theme: no line");
+        Assert.That(house, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void TheNpcUpgradeReplacesTheNpcOfThatKindAndSaysTheLine() {
+        var b = GuildDialogTests.InGuild();
+        b.CommonByKey = k => k + " {0} {1} {2}";
+        b.Npcs = new Ms2.Formats.World.GuildNpcTable(System.Xml.Linq.XDocument.Parse(NpcXml));
+        b.StringTableText = (t, id) => $"{t}:{id}";
+        var lines = new List<string>(); int npc = 0;
+        b.ChatLine += (t, _) => lines.Add(t); b.NpcRefresh += () => npc++;
+        Assert.That(b.NpcLevel(2), Is.EqualTo(0));
+        b.Apply(new GuildMessage((byte)0x3b) { Name = "bo", NpcKind = 2, NpcLevel = 1 });
+        b.Apply(new GuildMessage((byte)0x3b) { Name = "bo", NpcKind = 2, NpcLevel = 2 });
+        Assert.That(b.NpcLevel(2), Is.EqualTo(2));
+        Assert.That(b.Info.Npcs.Count(n => n.Kind == 2), Is.EqualTo(1), "replaced, not added");
+        Assert.That(npc, Is.EqualTo(2));
+        Assert.That(lines.Count, Is.EqualTo(1), "only level 2 has a row");
+        Assert.That(lines[0], Does.Contain("63:6"));
+    }
 }

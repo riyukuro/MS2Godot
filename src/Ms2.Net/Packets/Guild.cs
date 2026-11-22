@@ -214,6 +214,12 @@ public sealed record GuildMessage(byte Type) {
     /// flag (<see cref="Accepted"/>) and the notice flag (<see cref="Notify"/>). Type 0x77: the other game id is <see cref="Value"/>.</summary>
     public int EventId { get; init; }
     public int EventTime { get; init; }
+    /// <summary>Type 0x39 (FUN_1413c39e0 @0x1413c39e0, guildmanager.cpp:2554): the new house level and theme; <see cref="Name"/> is the member
+    /// who upgraded. Type 0x3b (FUN_1413c3ef0 @0x1413c3ef0, :2603): the upgraded npc's kind and level.</summary>
+    public int HouseLevel { get; init; }
+    public int HouseTheme { get; init; }
+    public int NpcKind { get; init; }
+    public int NpcLevel { get; init; }
     /// <summary>Type 0x44: the guild's propensity focus (f154) and value (f158).</summary>
     public int Focus { get; init; }
     public int Value { get; init; }
@@ -239,7 +245,7 @@ public sealed record GuildMessage(byte Type) {
     public static GuildMessage Read(ByteReader r, ProtocolProfile profile) {
         var m = ReadBody(r, profile);
         // Types 7 and 0xf have no body, the others end with their fields.
-        if (m.Type is 1 or 2 or 3 or 4 or 5 or 6 or 7 or 0xf or 0x12 or 0x13 or 0x71 or 0x2d or 0x2e or 0x2f or 0x30 or 0x44 or 0x75 or 0x76 or 0x77 or 0x38 or 0x52 or 0x53 or 0x54 or 0x55 or 0x56 or 0x57) r.ExpectEnd($"Guild type {m.Type}");
+        if (m.Type is 1 or 2 or 3 or 4 or 5 or 6 or 7 or 0xf or 0x12 or 0x13 or 0x71 or 0x2d or 0x2e or 0x2f or 0x30 or 0x44 or 0x75 or 0x76 or 0x77 or 0x38 or 0x39 or 0x3b or 0x52 or 0x53 or 0x54 or 0x55 or 0x56 or 0x57) r.ExpectEnd($"Guild type {m.Type}");
         return m;
     }
 
@@ -315,6 +321,10 @@ public sealed record GuildMessage(byte Type) {
             case 0x3a: return Done(new(t) { GuildId = r.ReadLong(), Name = r.ReadUnicodeString(), Value = r.ReadInt(), Text = r.ReadUnicodeString() }, r);
             // FUN_1413c3780 (:2531): the user, then CGuildCustomEvent::ReadPacket (guilddef_1.cpp:951)
             case 0x38: return Done(new(t) { Name = r.ReadUnicodeString(), EventId = r.ReadInt(), EventTime = r.ReadInt() }, r);
+            // FUN_1413c39e0 (:2554): the user, the house level, the house theme
+            case 0x39: return Done(new(t) { Name = r.ReadUnicodeString(), HouseLevel = r.ReadInt(), HouseTheme = r.ReadInt() }, r);
+            // FUN_1413c3ef0 (:2603): the user, then CGuildNpc::ReadPacket (guilddef_1.cpp:1036: i32 kind, i32 level)
+            case 0x3b: return Done(new(t) { Name = r.ReadUnicodeString(), NpcKind = r.ReadInt(), NpcLevel = r.ReadInt() }, r);
             // OnPacketVsGameTicket (:2653)
             case 0x76: return Done(new(t) { Accepted = r.ReadByte() != 0, Notify = r.ReadByte() != 0 }, r);
             // OnPacketVsGameMatchCanceled (:2670): no body

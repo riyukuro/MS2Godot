@@ -221,4 +221,13 @@ public class GuildPacketTests {
         var e = GuildMessage.Read(R(w => { w.WriteByte(0x38); w.WriteUnicodeString("bo"); w.WriteInt(4); w.WriteInt(1234); }));
         Assert.That((e.Name, e.EventId, e.EventTime), Is.EqualTo(("bo", 4, 1234)));
     }
+
+    [Test]
+    public void TheHouseAndNpcUpgradeTypesReadTheirFields() {
+        var h = GuildMessage.Read(R(w => { w.WriteByte(0x39); w.WriteUnicodeString("bo"); w.WriteInt(3); w.WriteInt(2); }));
+        Assert.That((h.Name, h.HouseLevel, h.HouseTheme), Is.EqualTo(("bo", 3, 2)));
+        var n = GuildMessage.Read(R(w => { w.WriteByte(0x3b); w.WriteUnicodeString("bo"); w.WriteInt(4); w.WriteInt(5); }));
+        Assert.That((n.Name, n.NpcKind, n.NpcLevel), Is.EqualTo(("bo", 4, 5)));
+        Assert.Throws<PacketLayoutException>(() => GuildMessage.Read(R(w => { w.WriteByte(0x39); w.WriteUnicodeString("bo"); w.WriteInt(3); w.WriteInt(2); w.WriteByte(0); })), "ExpectEnd");
+    }
 }

@@ -81,8 +81,9 @@ public sealed class GuildInfo {
     public List<GuildSkillState> Skills = new();
     /// <summary>CGuildCustomEvent (CGuildInfo::ReadCustomEvents @0x1404cef10): i32 id, i32 time.</summary>
     public List<(int Id, int Time)> CustomEvents = new();
-    /// <summary>The two i32 of CGuildInfo::FUN_1404cf1e0 (@0x1404cf1e0) ahead of its string records.</summary>
-    public int Propensity0, Propensity1;
+    /// <summary>The two i32 of CGuildInfo::FUN_1404cf1e0 (@0x1404cf1e0, guilddef_1.cpp:1398) ahead of its string records: the house level (f168,
+    /// GetHouseLevel) and the house theme (f16c, GetHouseTheme); both 1 in Reset (guilddef_1.cpp:1058).</summary>
+    public int HouseLevel = 1, HouseTheme = 1;
     /// <summary>The string records of FUN_1404cf1e0: i32 key, unicode string, i64, unicode string (FUN_1404d4060).</summary>
     public List<(int Key, string Text, long Value, string Text2)> Records = new();
     /// <summary>CGuildNpc (ReadNpcs @0x1404cf490): i32 kind, i32 level.</summary>
@@ -117,7 +118,7 @@ public sealed class GuildInfo {
         n = r.ReadByte(); for (int i = 0; i < n; i++) g.Grades.Add(GuildGrade.Read(r));
         n = r.ReadByte(); for (int i = 0; i < n; i++) g.Skills.Add(GuildSkillState.Read(r));
         n = r.ReadByte(); for (int i = 0; i < n; i++) g.CustomEvents.Add((r.ReadInt(), r.ReadInt()));
-        r.ReadInt(); r.ReadInt();   // house rank, theme
+        g.HouseLevel = r.ReadInt(); g.HouseTheme = r.ReadInt();
         n = r.ReadInt(); for (int i = 0; i < n; i++) { r.ReadInt(); r.ReadUnicodeString(); r.ReadLong(); r.ReadUnicodeString(); }
         n = r.ReadByte(); for (int i = 0; i < n; i++) g.Npcs.Add((r.ReadInt(), r.ReadInt()));
         if (r.ReadBool()) ReadShops(r, g);
@@ -161,7 +162,7 @@ public sealed class GuildInfo {
 
     static void ReadTail(ByteReader r, GuildInfo g) {
         int n = r.ReadByte(); for (int i = 0; i < n; i++) g.CustomEvents.Add((r.ReadInt(), r.ReadInt()));
-        g.Propensity0 = r.ReadInt(); g.Propensity1 = r.ReadInt();
+        g.HouseLevel = r.ReadInt(); g.HouseTheme = r.ReadInt();
         n = r.ReadInt(); for (int i = 0; i < n; i++) g.Records.Add((r.ReadInt(), r.ReadUnicodeString(), r.ReadLong(), r.ReadUnicodeString()));
         n = r.ReadByte(); for (int i = 0; i < n; i++) g.Npcs.Add((r.ReadInt(), r.ReadInt()));
         if (r.ReadBool()) ReadShops(r, g);

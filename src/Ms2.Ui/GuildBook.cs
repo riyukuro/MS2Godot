@@ -104,8 +104,16 @@ public sealed class GuildBook
     /// <summary>The open guild dialog's FUN_141970900: the event rows again (mode 0x38).</summary>
     public event Action EventsRefresh;
 
+    /// <summary>The open guild dialog's FUN_141971490 (the house part of the House page) after the house was upgraded (mode 0x39).</summary>
+    public event Action HouseRefresh;
+    /// <summary>The open guild dialog's FUN_141971ac0 (the npc part of the House page) after a guild npc was upgraded (modes 0x39, 0x3b).</summary>
+    public event Action NpcRefresh;
+
     /// <summary>CGuildXmlData's guild events (LoadGuildEvent), for the notice of an opened event.</summary>
     public Ms2.Formats.World.GuildEventTable Events;
+    /// <summary>CGuildXmlData's guild houses (LoadGuildHouse) and guild npcs (LoadGuildNpc).</summary>
+    public Ms2.Formats.World.GuildHouseTable Houses;
+    public Ms2.Formats.World.GuildNpcTable Npcs;
     /// <summary>CStringTable::FUN_141811980(table, id).</summary>
     public Func<int, long, string> StringTableText = (_, _) => "";
 
@@ -152,6 +160,13 @@ public sealed class GuildBook
 
     /// <summary>GetNotice: CGuildInfo's notice (s190).</summary>
     public string GuildNotice => Info?.Notice ?? "";
+
+    /// <summary>GetHouseLevel / GetHouseTheme (@0x1404d1f90 / @0x1404d2030, guilddef_1.cpp:1961-1979): f168 and f16c, both 1 in Reset.</summary>
+    public int HouseLevel => Info?.HouseLevel ?? 1;
+    public int HouseTheme => Info?.HouseTheme ?? 1;
+
+    /// <summary>GetNpcLevel (@0x1404d2990, guilddef_1.cpp:2097): the level of the guild's npc of the kind, 0 without one.</summary>
+    public int NpcLevel(int kind) => Info?.Npcs.FirstOrDefault(n => n.Kind == kind).Level ?? 0;
 
     /// <summary>FUN_1404d1860 / GetPropensity: CGuildInfo f154 (the "listed in the search" flag the dialog's
     /// OnChageRegistSearch sets) and f158 (the propensity), read as b3 / v14 by CGuildInfo::Read and set by type 0x44.</summary>
@@ -629,6 +644,32 @@ public sealed class GuildBook
                 EventsRefresh?.Invoke();
                 if (Events?.Get(m.EventId) is not { } ev) break;
                 ChatLine?.Invoke(ClientFormat.Format(CommonByKey("s_guild_notify_open_event_user"), m.Name, StringTableText(3, ev.MapCode)), 0xd);
+                break;
+            }
+            case 0x39:
+                // FUN_1413c39e0 (@0x1413c39e0, guildmanager.cpp:2554): the house level and theme are set, the dialog's House page
+                // rebuilds its house part and its npc part, then (the house of that level and theme found) the line
+                // s_guild_notify_house_upgrade of the user, the level and the theme's name (string table 0x36), type 0xd.
+                // STILL-OPEN: UIGuildHouseUpgradeDialog (0x4f2e)'s FUN_140e39da0 refresh is not ported.
+                if (Info != null) { Info.HouseLevel = m.HouseLevel; Info.HouseTheme = m.HouseTheme; }
+                HouseRefresh?.Invoke();
+                NpcRefresh?.Invoke();
+                if (Houses?.Get(m.HouseLevel, m.HouseTheme) is { } house)
+                    ChatLine?.Invoke(ClientFormat.Format(CommonByKey("s_guild_notify_house_upgrade"), m.Name, m.HouseLevel, StringTableText(0x36, house.StringKey)), 0xd);
+                break;
+            case 0x3b:
+            {
+                // FUN_1413c3ef0 (@0x1413c3ef0, :2603): AddNpc (the npc of that kind is replaced), the dialog's House page rebuilds its npc
+                // part, then (the npc row of that kind and level found) the line s_guild_notify_upgrade_npc of the user, the npc's name
+                // (string table 0x3f) and the level, type 0xd.
+                if (Info != null)
+                {
+                    int i = Info.Npcs.FindIndex(n => n.Kind == m.NpcKind);
+                    if (i >= 0) Info.Npcs[i] = (m.NpcKind, m.NpcLevel); else Info.Npcs.Add((m.NpcKind, m.NpcLevel));
+                }
+                NpcRefresh?.Invoke();
+                if (Npcs?.Get(m.NpcKind, m.NpcLevel) is { } npc)
+                    ChatLine?.Invoke(ClientFormat.Format(CommonByKey("s_guild_notify_upgrade_npc"), m.Name, StringTableText(0x3f, npc.StringKey), m.NpcLevel), 0xd);
                 break;
             }
             case 0x44:
