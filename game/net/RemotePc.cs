@@ -128,8 +128,7 @@ public sealed partial class RemotePc : IRemotePc
     }
 
     /// <summary>Ridee::vfunc_53's box pose (ridee.cpp:1166-1180): at the ridee's position with its centre half the row's
-    /// height plus 0.2 m up, turned by the ridee's Z rotation. It goes with the body at <see cref="Free"/>
-    /// (FUN_1417082c0, ridee.cpp:407).</summary>
+    /// height plus 0.2 m up, turned by the ridee's Z rotation. <see cref="Free"/> releases it.</summary>
     void PoseRideBox()
     {
         if (RideBox == null) return;
@@ -656,10 +655,18 @@ public sealed partial class RemotePc : IRemotePc
 
     static bool Crossed(double from, double to, double t, double len) => to >= from ? from < t && t <= to : (t > from || t <= to);
 
-    /// <summary>Stops listening before the body is freed.</summary>
+    /// <summary>Stops listening before the body is freed. The ride box leaves the physics space at once, as the client
+    /// releases its actor (FUN_1417082c0, ridee.cpp:407), so a sweep later in the same frame does not meet it.</summary>
     public void Free()
     {
         Anim.AnimationFinished -= OnAnimationFinished;
+        if (RideBox != null)
+        {
+            nx.IgnoreBody = default;
+            Body.RemoveChild(RideBox);
+            RideBox.QueueFree();
+            RideBox = null;
+        }
         Body.QueueFree();
     }
 }

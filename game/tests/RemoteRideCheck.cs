@@ -393,8 +393,10 @@ public partial class RemoteRideCheck : Node3D
         var nx = typeof(RemotePc).GetField("nx", Private).GetValue(rd);
         var ignored = (Rid)nx.GetType().GetField("IgnoreBody").GetValue(nx);
         bool ownPasses = box != null && ignored == box.GetRid();
-        bool plainNone = plain.Data.Physic;
-        if (!plain.Data.Physic)
+        // the plain row must have no physic, else the boxless check tests nothing
+        bool plainNone = false;
+        if (plain.Data.Physic) fails.Add($"ridee box: plain row {plain.Data.Id} has physic set");
+        else
         {
             var pr = RemotePc.CreateRidee("PlainRidee", plain, MoveConfig.SceneGravity, rider.Body.Position + new Vector3(-400, 25, 0), 0f, faceGrids);
             plainNone = BoxOf(pr) == null;
@@ -403,7 +405,11 @@ public partial class RemoteRideCheck : Node3D
         GD.Print($"remote ride: ridee box {m.Data.Id}: size {size}, centre {at} for {want}, yaw {yaw:0.#}, own sweeps pass {ownPasses}; row {plain.Data.Id} without physic boxless {plainNone}");
         if (size != new Vector3(m.Data.Width, m.Data.Height, m.Data.Depth) || !at.IsEqualApprox(want) || !Mathf.IsEqualApprox(yaw, 90f, 0.01f) || !ownPasses || !plainNone)
             fails.Add($"ridee box {m.Data.Id}: size {size}, centre {at} for {want}, yaw {yaw}, own sweeps pass {ownPasses}, plain row boxless {plainNone}");
+        // FUN_1417082c0 (ridee.cpp:407) releases the actor at once: the box is out of the space before the frame ends
         rd.Free();
+        bool released = box != null && !box.IsInsideTree();
+        GD.Print($"remote ride: ridee box released at once {released}");
+        if (!released) fails.Add("ridee box: still in the physics space after the ridee was freed");
     }
 
     /// <summary>Ridee::GetRunSpeed and FUN_1417fb370 at another player's mount: with no worn item, buff or hot time the
