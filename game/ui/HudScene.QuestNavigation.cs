@@ -195,6 +195,21 @@ public partial class HudScene
         }
     }
 
+    /// <summary>
+    /// For the field move check: the main thread's bytes over <paramref name="frames"/> frames of the HUD's own part of
+    /// the trace (FindNearestNpc over every npc of the field, with its IsDead test, then the frame's portal IsShown sync and
+    /// the navigator), after ten warm-up frames; and how many npcs the search went over.
+    /// </summary>
+    internal (long Bytes, int Npcs) QuestNavigationFrameBytes(int frames)
+    {
+        var ids = new HashSet<int>();
+        foreach (var n in questNavigationNpcs.Values) if (n.Row != null) ids.Add(n.Row.Id);
+        for (int i = 0; i < 10; i++) { QuestNavigationNearestNpc(ids); QuestNavigationTick(); }
+        long b = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < frames; i++) { QuestNavigationNearestNpc(ids); QuestNavigationTick(); }
+        return (GC.GetAllocatedBytesForCurrentThread() - b, questNavigationNpcs.Count);
+    }
+
     /// <summary>OnAddNpc: the npc's marker (NotifyAddNpc) by its object id.</summary>
     void AddQuestNavigationNpc(int id, World.FieldNpcs.Placed n)
     {

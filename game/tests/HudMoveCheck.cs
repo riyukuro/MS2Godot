@@ -23,6 +23,8 @@ namespace Ms2Godot.Tests;
 /// <item>the window stays in window pixels on every frame (the canvas stretch never comes on);</item>
 /// <item>the Godot object and node counts after the tenth move are at most 1% above the ones after the sixth (the same
 /// field, two round trips later), counted after a full GC, with the loading screen's input guide off (see _Ready).</item>
+/// <item>the quest navigation's frames (its nearest-npc search with the IsDead test, the portal IsShown sync and the
+/// navigator) allocate nothing after the last move.</item>
 /// </list>
 /// Quits with 0 when all hold, else 1.
 /// </summary>
@@ -119,6 +121,10 @@ public partial class HudMoveDriver : Node
             GD.Print($"hud move: objects after move 6 {objectsBefore} ({nodesBefore} nodes), after move {stage + 1} {now} ({nodes} nodes)");
             if (now - objectsBefore > objectsBefore / 100) Fail($"objects grew per move: {objectsBefore} -> {now}");
             if (nodes - nodesBefore > nodesBefore / 100) Fail($"nodes grew per move: {nodesBefore} -> {nodes}");
+            var (bytes, npcs) = hud.QuestNavigationFrameBytes(1000);
+            GD.Print($"hud move: quest navigation {bytes} B over 1000 frames, {npcs} npcs");
+            if (npcs == 0) Fail("the quest navigation holds no npc to search");
+            if (bytes != 0) Fail($"the quest navigation's frames allocate {bytes} B");
             Finish();
             return;
         }

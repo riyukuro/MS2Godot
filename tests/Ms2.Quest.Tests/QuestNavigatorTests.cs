@@ -226,6 +226,17 @@ public class QuestNavigatorTests
         Assert.That(FrameBytes(nav), Is.EqualTo(0));
         Assert.That(nav.Result.Kind, Is.EqualTo(TraceKind.InteractObject));
 
+        // same field: the nearest npc target
+        var (npcNav, npcState, _) = Navigator(2);
+        npcState.List.Add(Active(100, false, 0, 0));
+        var npcHit = ((double, double, double, float)?)(300, 0, 0, 300f);
+        npcNav.NearestNpc = _ => npcHit;
+        npcNav.NearestInteract = _ => null;
+        npcNav.OnQuestAccepted(npcState.List[0]);
+        npcNav.OnCompleteMyPc();
+        Assert.That(FrameBytes(npcNav), Is.EqualTo(0));
+        Assert.That(npcNav.Result.Kind, Is.EqualTo(TraceKind.Npc));
+
         // another field: a shown portal on the path; only a hidden one (GetNextMapOnPath, then FindPortalByDestMap)
         foreach (var (portals, kind) in new[] { (new[] { new TracePortal(9, 0, 0, 0), new TracePortal(2, 0, 700, 0) }, TraceKind.Portal),
                                                 (new[] { new TracePortal(2, 0, 700, 0, Shown: false) }, TraceKind.None) })

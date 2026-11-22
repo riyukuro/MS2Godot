@@ -143,7 +143,10 @@ public sealed class NpcLayer
     public void Add(Ms2.Net.Replay.NpcAddedEvent e)
     {
         var n = e.Npc;
-        if (inst.TryGetValue(n.ObjectId, out var old)) { Tags?.Remove(old.Root); old.Root.QueueFree(); inst.Remove(n.ObjectId); }
+        // OnFieldAddNpc for a present object id: WorldService::OnObjectCreated only SetAt's the id maps over the old
+        // object (@0x141718cf0); here the old npc is freed, so its id is dropped first like OnFieldRemoveNpc's
+        // NotifyRemoveNpc, or a marker keyed by it outlives the npc
+        if (inst.TryGetValue(n.ObjectId, out var old)) { inst.Remove(n.ObjectId); Removed?.Invoke(n.ObjectId); Tags?.Remove(old.Root); Bars?.Remove(old.Root); old.Root.QueueFree(); }
         var row = table.Find(n.NpcId);
         if (row == null) { NoRow++; return; }
         var model = ModelFor(row);

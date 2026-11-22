@@ -12,6 +12,7 @@ namespace Ms2Godot.Tests;
 /// - one added with it is dead at once (OnFieldAddNpc's vfunc_125(0));
 /// - FieldDeadNpc makes the first dead (vfunc_125(1)), the body stays, a second one changes nothing;
 /// - FieldRemoveNpc drops it.
+/// - FieldAddNpc for an object id already present raises the old npc's Removed before the new one replaces it.
 /// RemoteLayer's PlayCast returns for a dead npc on this flag. Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class NpcDeadCheck : Node3D
@@ -42,6 +43,13 @@ public partial class NpcDeadCheck : Node3D
         Check(npcs.Deaths == 2, $"deaths {npcs.Deaths} after a second dead packet and hp 0 on a dead npc");
         npcs.Remove(1, false);
         Check(npcs.Count == 1 && !npcs.IsDead(1), "FieldRemoveNpc did not drop the npc");
+        // FieldAddNpc for a present object id replaces the npc: the old one's NotifyRemoveNpc goes out first, as when it
+        // is removed, so a marker keyed by the id goes with it
+        var removed = new System.Collections.Generic.List<int>();
+        npcs.Removed = removed.Add;
+        npcs.Add(new NpcAddedEvent(0, Npc(2, false)));
+        Check(removed.Count == 1 && removed[0] == 2, $"the replaced npc's removal was not raised ({removed.Count})");
+        Check(npcs.Count == 1 && !npcs.IsDead(2), "the replacing add did not keep one live npc");
         GD.Print($"npc dead: npc {npcId}, deaths {npcs.Deaths}, {(fails.Count == 0 ? "ok" : "FAIL " + string.Join("; ", fails))}");
         GetTree().Quit(fails.Count == 0 ? 0 : 1);
     }
