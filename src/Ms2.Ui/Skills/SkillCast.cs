@@ -65,6 +65,23 @@ public sealed class CastRecord
 
     /// <summary>GetCooldownKey: SkillLevelData::GetMotionKey of the record's motion.</summary>
     public ulong CooldownKey => Level.MotionKey(Motion);
+
+    // CSkillRecord m_targets (skillrecord.cpp:418): the ids hit per pointGroupID
+    Dictionary<uint, HashSet<int>> targetGroups;
+
+    /// <summary>CSkillRecord::AddTarget @0x14175a280 (skillrecord.cpp:418): <paramref name="id"/> joins the group.</summary>
+    public void AddTarget(uint group, int id)
+    {
+        targetGroups ??= new();
+        if (!targetGroups.TryGetValue(group, out var set)) targetGroups[group] = set = new();
+        set.Add(id);
+    }
+
+    /// <summary>CSkillRecord::HasTarget @0x14175a360 (skillrecord.cpp:432).</summary>
+    public bool HasTarget(uint group, int id) => targetGroups != null && targetGroups.TryGetValue(group, out var set) && set.Contains(id);
+
+    /// <summary>The group's ids, null when none was added.</summary>
+    public HashSet<int> TargetGroup(uint group) => targetGroups != null && targetGroups.TryGetValue(group, out var set) ? set : null;
 }
 
 /// <summary>The cast state CSkillSystem and the PC keep, and what the cast checks read of the body and the clock.</summary>

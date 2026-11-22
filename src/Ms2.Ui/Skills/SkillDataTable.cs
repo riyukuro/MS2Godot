@@ -132,6 +132,9 @@ public sealed class SkillArrow
     public float BounceRadius;
     /// <summary>"bounceOverlap", 1 by default (the ctor, :64).</summary>
     public int BounceOverlap = 1;
+    /// <summary>"rayPhysxTest" (:106, row +0x120): non-zero drops the region hits a ray from the caster cannot reach
+    /// (CMagic::FUN_141464d00, magicdata.cpp:1773).</summary>
+    public int RayPhysxTest;
 
     /// <summary>IsNonTargetOne @0x1407dfbb0 (:168): nonTarget == 1.</summary>
     public bool IsNonTargetOne => NonTarget == 1;
@@ -146,6 +149,7 @@ public sealed class SkillArrow
         BounceCount = Xml.Int(a, "bounceCount");
         BounceRadius = Xml.Float(a, "bounceRadius");
         if (a.Attribute("bounceOverlap") != null) BounceOverlap = Xml.Int(a, "bounceOverlap");
+        RayPhysxTest = Xml.Int(a, "rayPhysxTest");
     }
 }
 
@@ -168,12 +172,18 @@ public sealed class SkillAttackData
     public int BrokenOffence;
     /// <summary>"magicPathID" (m_nMagicId): the magicPath.xml type its magics take (CMagicModel::Init, magicdata.cpp:2614).</summary>
     public uint MagicPathId;
+    /// <summary>"pointGroupID" (:576, +0x28): the record's target group; a target already in it is not hit again
+    /// (CMagic::FUN_141464d00, magicdata.cpp:1796).</summary>
+    public uint PointGroupId;
+    /// <summary>"cubeMagicPathID" (:579, +0x34): non-zero makes the magic send the splash (SkillDamage 1/2) at its end and per
+    /// piercing interval (magicdata.cpp:1154, :2385).</summary>
+    public int CubeMagicPathId;
     public readonly SkillRange Range = new();
     public readonly SkillArrow Arrow = new();
 
     internal static SkillAttackData Load(XElement e)
     {
-        var a = new SkillAttackData { Point = (string)e.Attribute("point") ?? "", TargetCount = Xml.Int(e, "targetCount"), AttackMethodType = Xml.Int(e, "attackMethodType"), BrokenOffence = Xml.Int(e, "brokenOffence"), MagicPathId = Xml.UInt(e, "magicPathID") };
+        var a = new SkillAttackData { Point = (string)e.Attribute("point") ?? "", TargetCount = Xml.Int(e, "targetCount"), AttackMethodType = Xml.Int(e, "attackMethodType"), BrokenOffence = Xml.Int(e, "brokenOffence"), MagicPathId = Xml.UInt(e, "magicPathID"), PointGroupId = Xml.UInt(e, "pointGroupID"), CubeMagicPathId = Xml.Int(e, "cubeMagicPathID") };
         if (e.Attribute("direction") != null) a.Direction = Xml.Int(e, "direction");
         a.Range.LoadElement(e);
         a.Arrow.Load(e);

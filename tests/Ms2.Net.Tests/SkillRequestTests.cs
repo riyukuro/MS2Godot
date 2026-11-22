@@ -89,6 +89,40 @@ public class SkillRequestTests
     }
 
     [Test]
+    public void TheRegionHitWritesModeOneOne()
+    {
+        // CMagic::FUN_141464d00 (magicdata.cpp:1830-1855)
+        var p = new SkillHitRequest(0x0102030405060708, 0x1112131415161718, new Vector3(1, 2, 3), new Vector3(4, 5, 6),
+            new Vector3(0, 0, 90), 2, 7, [new SkillHitTarget(5001, 0), new SkillHitTarget(5002, 0)]);
+        Assert.That(p.Op, Is.EqualTo(Outbound.Skill));
+        Assert.That(Bytes(p), Is.EqualTo(Expect(w =>
+        {
+            w.WriteByte(1); w.WriteByte(1);
+            w.WriteLong(0x0102030405060708); w.WriteLong(0x1112131415161718);
+            foreach (var f in new float[] { 1, 2, 3, 4, 5, 6, 0, 0, 90 }) w.WriteFloat(f);
+            w.WriteByte(2); w.WriteByte(2); w.WriteInt(7);
+            w.WriteInt(5001); w.WriteByte(0);
+            w.WriteInt(5002); w.WriteByte(0);
+        })));
+        Assert.That(Bytes(new SkillHitRequest(1, 2, Vector3.Zero, Vector3.Zero, Vector3.Zero, 0, 0, [])).Length,
+            Is.EqualTo(2 + 16 + 36 + 1 + 1 + 4), "no hits: the send ends at the send count");
+    }
+
+    [Test]
+    public void TheSplashWritesModeOneTwo()
+    {
+        // CMagic::FUN_14145f570 (magicdata.cpp:1156-1167)
+        var p = new SkillSplashRequest(0x0102030405060708, 3, 9, 4, new Vector3(1, 2, 3), new Vector3(0, -1, 0));
+        Assert.That(p.Op, Is.EqualTo(Outbound.Skill));
+        Assert.That(Bytes(p), Is.EqualTo(Expect(w =>
+        {
+            w.WriteByte(1); w.WriteByte(2);
+            w.WriteLong(0x0102030405060708); w.WriteByte(3); w.WriteInt(9); w.WriteInt(4);
+            foreach (var f in new float[] { 1, 2, 3, 0, -1, 0 }) w.WriteFloat(f);
+        })));
+    }
+
+    [Test]
     public void TheSkillStateSyncWritesModeTwo()
     {
         // StateSkill::SendChargeState @0x1417ec2f0 (stateskill.cpp:1282-1294)

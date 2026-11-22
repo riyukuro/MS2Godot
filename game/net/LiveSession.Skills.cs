@@ -36,6 +36,23 @@ public partial class LiveSession
         return true;
     }
 
+    /// <summary>The mode 1 sub-mode 1 send of an own magic's region hits (CMagic::FUN_141464d00, magicdata.cpp:1830). False offline.</summary>
+    public bool SendHit(Ms2.Net.Packets.SkillHitRequest req)
+    {
+        if (game == null) return false;
+        Send(req);
+        return true;
+    }
+
+    /// <summary>The mode 1 sub-mode 2 send of an own magic's splash (CMagic::FUN_14145f570, magicdata.cpp:1156). False offline.
+    /// STILL-OPEN: no caller until the magic's flight is ported (its end and piercing intervals send it).</summary>
+    public bool SendSplash(Ms2.Net.Packets.SkillSplashRequest req)
+    {
+        if (game == null) return false;
+        Send(req);
+        return true;
+    }
+
     /// <summary>The mode 2 sync of the own skill state (StateSkill::SendChargeState, stateskill.cpp:1271). False offline.</summary>
     public bool SendSync(Ms2.Net.Packets.SkillSyncRequest req)
     {

@@ -150,3 +150,59 @@ public sealed record SkillDamageRequest(long CastId, byte Attack, Vector3 Positi
 
     static void WritePoint(ByteWriter w, Vector3 v) { w.WriteFloat(v.X); w.WriteFloat(v.Y); w.WriteFloat(v.Z); }
 }
+
+/// <summary>One object a magic's region fill hit: its object id and the byte after it (0 in the region fill,
+/// CMagic::FUN_141464d00; the hit number in the flight fill).</summary>
+public readonly record struct SkillHitTarget(int Id, byte Hit);
+
+/// <summary>
+/// Skill mode 1 sub-mode 1, a magic's region hit: CMagic::FUN_141464d00 @0x141464d00 (magicdata.cpp:1840-1858) writes u8 1,
+/// u8 1, i64 the record's cast id (m_nTagId), i64 the target record's serial (m_nTagSub), the magic's start point (m_ptStart),
+/// the owner's position, the rotation (0, 0, the owner's forward as yaw degrees, GameObject::DirectionToYawDegrees), u8 the
+/// attack index (m_b5c), u8 the hit count, i32 the record's send count (m_n8c), then per hit i32 the object id and u8
+/// <see cref="SkillHitTarget.Hit"/>.
+/// </summary>
+public sealed record SkillHitRequest(long CastId, long Serial, Vector3 Start, Vector3 OwnerPosition, Vector3 Rotation, byte Attack,
+    int SendCount, IReadOnlyList<SkillHitTarget> Targets) : IOutPacket
+{
+    public Outbound Op => Outbound.Skill;
+
+    public void Write(ByteWriter w)
+    {
+        w.WriteByte(1);
+        w.WriteByte(1);
+        w.WriteLong(CastId);
+        w.WriteLong(Serial);
+        WritePoint(w, Start); WritePoint(w, OwnerPosition); WritePoint(w, Rotation);
+        w.WriteByte(Attack);
+        w.WriteByte((byte)Targets.Count);
+        w.WriteInt(SendCount);
+        for (int i = 0; i < Targets.Count; i++) { w.WriteInt(Targets[i].Id); w.WriteByte(Targets[i].Hit); }
+    }
+
+    static void WritePoint(ByteWriter w, Vector3 v) { w.WriteFloat(v.X); w.WriteFloat(v.Y); w.WriteFloat(v.Z); }
+}
+
+/// <summary>
+/// Skill mode 1 sub-mode 2, a magic's splash: CMagic::FUN_14145f570 @0x14145f570 at the magic's end (magicdata.cpp:1156-1167)
+/// and FUN_141466da0 per piercing interval (:2402) write u8 1, u8 2, i64 the record's cast id (m_nTagId), u8 the attack index
+/// (m_b5c), i32 the record's send count (m_n8c), i32 the target record's hit index (m_n84), the magic's position (m_ptCurrent)
+/// and its direction (DAT_143a08d08 through m_matRotation).
+/// </summary>
+public sealed record SkillSplashRequest(long CastId, byte Attack, int SendCount, int Hit, Vector3 Position, Vector3 Direction) : IOutPacket
+{
+    public Outbound Op => Outbound.Skill;
+
+    public void Write(ByteWriter w)
+    {
+        w.WriteByte(1);
+        w.WriteByte(2);
+        w.WriteLong(CastId);
+        w.WriteByte(Attack);
+        w.WriteInt(SendCount);
+        w.WriteInt(Hit);
+        WritePoint(w, Position); WritePoint(w, Direction);
+    }
+
+    static void WritePoint(ByteWriter w, Vector3 v) { w.WriteFloat(v.X); w.WriteFloat(v.Y); w.WriteFloat(v.Z); }
+}

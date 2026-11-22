@@ -46,10 +46,11 @@ public class OwnTagMagicsTests
     }
 
     [Test]
-    public void OnlyBrokenOffenceNonArrowAttacksWithAPathMakeMagics()
+    public void NonArrowAttacksWithAPathMakeMagics()
     {
         var m = new OwnTagMagics();
-        Assert.That(m.Add(null, Attack(brokenOffence: 0), Tags(0), 0, Paths), Is.EqualTo(0));
+        Assert.That(m.Add(null, Attack(brokenOffence: 0), Tags(0), 0, Paths), Is.EqualTo(1), "brokenOffence 0: the fill only");
+        m.Clear();
         Assert.That(m.Add(null, Attack(method: 1), Tags(0), 0, Paths), Is.EqualTo(0), "attackMethodType 1: the arrow path");
         Assert.That(m.Add(new SkillData { MagicControlEnable = 2 }, Attack(), Tags(0), 0, Paths), Is.EqualTo(0), "magicControl 2: no fill");
         Assert.That(m.Add(null, Attack(magic: 99), Tags(0, 1), 0, Paths), Is.EqualTo(0), "an unknown id makes no magic");

@@ -850,9 +850,12 @@ public partial class HudScene
                     (slotField?.PkMode ?? 0) != 0);
                 // FUN_1417ecce0 (stateskill.cpp:1347): a magic model per target record, started at the attack's tick, the send,
                 // then the models run once
-                if (req != null && live?.TombTags != null)
-                    ownTagMagics.Add(ownCast.Skill, SkillAttackFire.AttackAt(ownCast, ownAttack), req.Targets, (int)Time.GetTicksMsec(),
-                        hudModel.Tables.MagicPaths);
+                if (req != null)
+                {
+                    ownNodePosition ??= OwnNodePosition;
+                    ownTagMagics.Add(ownCast.Skill, SkillAttackFire.AttackAt(ownCast, ownAttack), ownCast, req.Targets,
+                        (int)Time.GetTicksMsec(), hudModel.Tables.MagicPaths, ownNodePosition);
+                }
                 bool sent = req != null && (live?.SendDamage(req) ?? false);
                 TickOwnTagMagics();
                 GD.Print($"cast: skill {ownCast.Skill.Id} attack {ownAttack} targets {req?.Targets.Count ?? 0}{(sent ? " sent" : " (offline, not sent)")}");
@@ -862,20 +865,64 @@ public partial class HudScene
         ownPointTime = OwnPointTime(me);
     }
     readonly OwnTagMagics ownTagMagics = new();
+    readonly System.Collections.Generic.List<Ms2.Net.Packets.SkillHitRequest> ownHitSends = new();
+    Func<string, System.Numerics.Vector3> ownNodePosition;
+    MagicRayBlocked ownRayBlocked;
+    // CMagic::FUN_141464d00's RayCastFromPoint mask (magicdata.cpp:1786): groups 0 and 9
+    readonly RayQuery magicRay = RayQuery.CastRay(0x201);
+    System.Collections.Generic.IReadOnlyList<Ms2.Formats.World.EffectDummy> ownDummies;
+    int ownDummiesGender = -1;
 
     /// <summary>
-    /// CMagic::FUN_14145de80 for the own cast's magics (<see cref="OwnTagMagics"/>): their area registrations into the live
-    /// session's tomb tag pass, posed from the player now. The latency lead is 0 (STILL-OPEN in <see cref="OwnTagMagics"/>); no
-    /// stun state is kept, so the owner is never stunned.
+    /// CMagic::FUN_14145de80 for the own cast's magics (<see cref="OwnTagMagics"/>): each due one's region fill over the live
+    /// objects, its send (SkillDamage 1/1) and its area registration into the live session's tomb tag pass, posed from the
+    /// player now. The latency lead is 0 (STILL-OPEN in <see cref="OwnTagMagics"/>); no stun state is kept, so the owner is
+    /// never stunned.
     /// </summary>
     void TickOwnTagMagics()
     {
         if (ownTagMagics.Count == 0) return;
         var live = Net.LiveSession.Instance;
-        if (player == null || live?.TombTags is not { } pass) { ownTagMagics.Clear(); return; }
-        var g = player.GlobalPosition;
-        var owner = new MagicOwner(new System.Numerics.Vector3(g.X, -g.Z, g.Y), player.FacingRotZ, true, live.Me.Dead, false);
-        ownTagMagics.Tick((int)Time.GetTicksMsec(), 0, owner, pass);
+        if (player == null || live == null) { ownTagMagics.Clear(); return; }
+        int now = (int)Time.GetTicksMsec();
+        if (!ownTagMagics.AnyDue(now, 0)) return;
+        var pos = FillHitObjects(player);
+        var owner = new MagicOwner(pos, player.FacingRotZ, true, live.Me.Dead, false);
+        ownRayBlocked ??= MagicRayBlocked;
+        ownHitSends.Clear();
+        ownTagMagics.Tick(now, 0, owner, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(hitObjects), ownCast,
+            live.TombTags, ownHitSends, crtRand, ownRayBlocked, (slotField?.PkMode ?? 0) != 0);
+        foreach (var req in ownHitSends) live.SendHit(req);
+        ownHitSends.Clear();
+    }
+
+    /// <summary>The player's vf36_GetNodePosition (MS2 coordinates): the effect dummy <paramref name="node"/>, else the player's
+    /// position.</summary>
+    System.Numerics.Vector3 OwnNodePosition(string node)
+    {
+        if (player == null) return System.Numerics.Vector3.Zero;
+        var at = player.GlobalPosition;
+        if (!string.IsNullOrEmpty(node))
+        {
+            if (ownDummiesGender != player.Gender)
+            {
+                ownDummies = Ms2.Formats.World.EffectDummyTable.Load(assets.Packs).Pc(player.Gender);
+                ownDummiesGender = player.Gender;
+            }
+            at = Ms2Godot.World.DummyAnchor.Point(ownDummies, node, player.Visual?.GetNodeOrNull<Node3D>(ModelPath), player.RootName) ?? at;
+        }
+        return new System.Numerics.Vector3(at.X, -at.Z, at.Y);
+    }
+    static readonly NodePath ModelPath = "Model";
+
+    /// <summary>CPhysXHelper::RayCastFromPoint(from, out, dir, length, 0x201) != 0, in MS2 coordinates, past the player's own body.</summary>
+    bool MagicRayBlocked(System.Numerics.Vector3 from, System.Numerics.Vector3 dir, float length)
+    {
+        if (player == null) return false;
+        var to = from + dir * length;
+        var a = new Vector3(from.X, from.Z, -from.Y);
+        var b = new Vector3(to.X, to.Z, -to.Y);
+        return magicRay.Nearest(player.GetWorld3D().DirectSpaceState, a, b, player.GetRid(), 0x201) != null;
     }
 
     Action unwatchOwnSkill;
