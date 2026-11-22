@@ -63,14 +63,14 @@ public sealed record HomeDesignSaveRequest(int Slot, string Name) : IOutPacket {
     public void Write(ByteWriter w) { w.WriteByte(0x2e); w.WriteInt(Slot); w.WriteUnicodeString(Name ?? ""); }
 }
 
-/// <summary>OnLoadConfirmed's blocked form (@0x140faac30): RequestCube u8 0x2f, i32 slot.</summary>
-public sealed record HomeDesignLoadBlockedRequest(int Slot) : IOutPacket {
+/// <summary>OnLoadConfirmed's direct design load (@0x140faac30, taken when the plot is in design mode or a GM level 50 up meets an admin only group): RequestCube u8 0x2f, i32 slot.</summary>
+public sealed record HomeDesignLoadDirectRequest(int Slot) : IOutPacket {
     public Outbound Op => Outbound.RequestCube;
     public void Write(ByteWriter w) { w.WriteByte(0x2f); w.WriteInt(Slot); }
 }
 
-/// <summary>SendRequestCubeMode35 (@0x140ee8360, uiugccubebilldialog.cpp:264): RequestCube u8 0x23, i32 cube id (the slot).</summary>
-public sealed record HomeDesignLoadRequest(int Slot) : IOutPacket {
+/// <summary>SendRequestCubeMode35 (@0x140ee8360, uiugccubebilldialog.cpp:264), the ask for a design's bill: RequestCube u8 0x23, i32 cube id (the slot).</summary>
+public sealed record HomeDesignBillRequest(int Slot) : IOutPacket {
     public Outbound Op => Outbound.RequestCube;
     public void Write(ByteWriter w) { w.WriteByte(0x23); w.WriteInt(Slot); }
 }
@@ -85,4 +85,16 @@ public sealed record HomeBlueprintSaveRequest(int Slot, string Name) : IOutPacke
 public sealed record HomeBlueprintLoadRequest(int Slot) : IOutPacket {
     public Outbound Op => Outbound.RequestCube;
     public void Write(ByteWriter w) { w.WriteByte(0x41); w.WriteInt(Slot); }
+}
+
+/// <summary>UIUGCCubeBillDialog::SendRequestCube (@0x140ee80a0, uiugccubebilldialog.cpp:243-249): the purchase of a cube, RequestCube u8 0x30, i32 cube id.</summary>
+public sealed record CubeBuyRequest(int CubeId) : IOutPacket {
+    public Outbound Op => Outbound.RequestCube;
+    public void Write(ByteWriter w) { w.WriteByte(0x30); w.WriteInt(CubeId); }
+}
+
+/// <summary>UIUGCCubeBillDialog::SendRequestCube (@0x140ee80a0, uiugccubebilldialog.cpp:250-255): the purchase of a blueprint, RequestCube u8 0x46, i64 the blueprint item's uid.</summary>
+public sealed record BlueprintBuyRequest(long BlueprintUid) : IOutPacket {
+    public Outbound Op => Outbound.RequestCube;
+    public void Write(ByteWriter w) { w.WriteByte(0x46); w.WriteLong(BlueprintUid); }
 }

@@ -243,7 +243,7 @@ public partial class HudScene : Node, IUiStageHost
         if (Ms2Godot.Net.LiveSession.Instance is { } liveSession) { liveSession.GuidePane = null; liveSession.FindDialogOf = null; liveSession.DungeonRoomOf = null; }
         unwatchNotices?.Invoke();
         unwatchNotices = null;
-        if (liveHome != null) { liveHome.HomeInfoApplied -= OnHomeInfoApplied; liveHome = null; }
+        if (liveHome != null) { liveHome.HomeInfoApplied -= OnHomeInfoApplied; UnbindCubeBill(liveHome); liveHome = null; }
         unwatchChat?.Invoke();
         unwatchChat = null;
         unwatchNewItems?.Invoke();
@@ -968,6 +968,7 @@ public partial class HudScene : Node, IUiStageHost
             WireUserChat(live);
             liveHome = live;
             live.HomeInfoApplied += OnHomeInfoApplied;
+            BindCubeBill(live);
             OpenHomeMenuOnEntry();
             Action<Ms2.Net.Packets.ChatMessage, Func<Ms2.Net.Packets.WeddingChatHall>> onChat = ChatLog.OnUserChat;
             live.UserChat += onChat;

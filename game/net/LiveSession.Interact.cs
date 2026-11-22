@@ -41,6 +41,9 @@ public partial class LiveSession
     /// <summary>MyPC's UserUGCMapInfo (GetUGCMapInfo / SetUGCMapInfo / HasNoHome), filled by ResponseCube mode 0x14.</summary>
     public readonly Ms2.Ui.OwnHome Home = new();
 
+    Ms2.Ui.Hud.CubeBill billState;
+    /// <summary>UIUGCCubeBillDialog's statics (s_pending, s_cost) with the packets that ask for and answer a bill (ResponseCube 0x24 / 0x43).</summary>
+    public Ms2.Ui.Hud.CubeBill Bill => billState ??= new Ms2.Ui.Hud.CubeBill { Send = Send };
     /// <summary>CubeMapInformationService's home option rows (ResponseCube 0x2a / 0x2b); read by the home option dialog's host.</summary>
     public readonly Ms2.Ui.HomeOptionRows HomeRows = new();   // reset at GameToLogin (OnGameToLogin) and at each field teardown (FieldEntry.CubeServiceCleared) (FUN_1410b76a0 @0x1410b76a0 calls FUN_1410d0310; its caller is not traced)
 
@@ -166,6 +169,8 @@ public partial class LiveSession
             case ResponseCubeHomeInfo.Mode: OnHomeInfo(ResponseCubeHomeInfo.Read(r, game.Profile)); return;
             case ResponseCubeRowSwitch.Mode: HomeRows.Apply(ResponseCubeRowSwitch.Read(r)); return;
             case ResponseCubeRowLevel.Mode: HomeRows.Apply(ResponseCubeRowLevel.Read(r)); return;
+            case ResponseCubeBill.ModeCube: Bill.OnBill(ResponseCubeBill.Read(r, ResponseCubeBill.ModeCube)); return;
+            case ResponseCubeBill.ModeBlueprint: Bill.OnBill(ResponseCubeBill.Read(r, ResponseCubeBill.ModeBlueprint)); return;
         }
         var m = ResponseCubeHeldItem.Read(p.Reader());
         if (m == null) return;

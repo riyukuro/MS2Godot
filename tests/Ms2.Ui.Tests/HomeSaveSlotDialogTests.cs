@@ -22,8 +22,8 @@ public class HomeSaveSlotDialogTests
         public int Language { get; set; } = 1;
         public List<string> Log = new();
         public void SendSaveDesign(int slot, string name) => Log.Add($"save {slot} {name}");
-        public void SendLoadDesignBlocked(int slot) => Log.Add($"blocked {slot}");
-        public void SendLoadDesign(int slot) => Log.Add($"load {slot}");
+        public void SendLoadDesignDirect(int slot) => Log.Add($"direct {slot}");
+        public void RequestDesignBill(int slot) => Log.Add($"bill {slot}");
         public void SendSaveBlueprint(int slot, string name) => Log.Add($"bpsave {slot} {name}");
         public void SendLoadBlueprint(int slot) => Log.Add($"bpload {slot}");
     }
@@ -174,7 +174,7 @@ public class HomeSaveSlotDialogTests
         Assert.That(h.Log[^1], Is.EqualTo("bpsave 2 q"));
     }
 
-    [Test] public void DesignLoadIsBlockedInDesignModeElseMode35()
+    [Test] public void DesignLoadIsDirectInDesignModeElseBillAsk()
     {
         var (c, h, boxes, _, _) = Make();
         h.Plot = 1;
@@ -188,7 +188,7 @@ public class HomeSaveSlotDialogTests
         Answer(boxes[2], 0);
         c.OnCallback("OnLoadSlot", new object[] { 4 });
         Answer(boxes[3], 1);
-        Assert.That(h.Log, Is.EqualTo(new[] { "blocked 3", "load 3", "blocked 4" }));
+        Assert.That(h.Log, Is.EqualTo(new[] { "direct 3", "bill 3", "direct 4" }));
     }
 
     [Test] public void BlueprintLoadNeedsBlueprintMode()

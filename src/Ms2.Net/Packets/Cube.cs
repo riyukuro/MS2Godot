@@ -367,3 +367,28 @@ public sealed record ResponseCubeRowLevel(byte Row, byte Level)
         return m;
     }
 }
+
+/// <summary>
+/// ResponseCube 0x24 (cube) and 0x43 (blueprint): the server's bill, UIUGCCubeBillDialog's FUN_140ee8190 (@0x140ee8190, uiugccubebilldialog.cpp:277-303)
+/// and FUN_140ee83f0 (@0x140ee83f0, :330-358; scenestategame.cpp:10405-10409): u8 count, i32 the description's argument, count times (u8 pay type, i64 amount);
+/// the blueprint's then has bool preview. The amounts keep the client's order: a map by pay type, a later row of the same type replaces the earlier.
+/// </summary>
+public sealed record ResponseCubeBill(byte Mode, int Arg, IReadOnlyList<KeyValuePair<int, long>> Amounts, bool Preview)
+{
+    public const byte ModeCube = 0x24;
+    public const byte ModeBlueprint = 0x43;
+
+    public static ResponseCubeBill Read(ByteReader r, byte mode)
+    {
+        int count = r.ReadByte();
+        int arg = r.ReadInt();
+        var map = new SortedDictionary<int, long>();
+        for (int i = 0; i < count; i++) { int type = r.ReadByte(); map[type] = r.ReadLong(); }
+        bool preview = mode == ModeBlueprint && r.ReadBool();
+        r.ExpectEnd("ResponseCube 0x" + mode.ToString("x"));
+        return new ResponseCubeBill(mode, arg, map.ToArray(), preview) { Count = count };
+    }
+
+    /// <summary>The row count the packet carried (nCount; the map can hold fewer when a pay type repeats).</summary>
+    public int Count { get; init; }
+}

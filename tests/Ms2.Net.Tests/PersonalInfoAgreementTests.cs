@@ -69,8 +69,8 @@ public class HomeSaveSlotPacketTests {
     }
 
     [Test] public void LoadsWriteModeAndSlot() {
-        Assert.That(Bytes(new HomeDesignLoadBlockedRequest(2)), Is.EqualTo(new byte[] { 0x2f, 2, 0, 0, 0 }));
-        Assert.That(Bytes(new HomeDesignLoadRequest(4)), Is.EqualTo(new byte[] { 0x23, 4, 0, 0, 0 }));
+        Assert.That(Bytes(new HomeDesignLoadDirectRequest(2)), Is.EqualTo(new byte[] { 0x2f, 2, 0, 0, 0 }));
+        Assert.That(Bytes(new HomeDesignBillRequest(4)), Is.EqualTo(new byte[] { 0x23, 4, 0, 0, 0 }));
         Assert.That(Bytes(new HomeBlueprintLoadRequest(5)), Is.EqualTo(new byte[] { 0x41, 5, 0, 0, 0 }));
         Assert.That(new HomeBlueprintLoadRequest(0).Op, Is.EqualTo(Outbound.RequestCube));
     }

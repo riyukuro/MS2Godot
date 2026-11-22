@@ -20,8 +20,8 @@ sealed class HomeSaveSlotHost(Net.LiveSession live, Func<int, bool> fieldIsHome,
     public bool PlotAdminOnly => false;
     public int Language => language;
     public void SendSaveDesign(int slot, string name) => live.SendHomeDesignSave(slot, name);
-    public void SendLoadDesignBlocked(int slot) => live.SendHomeDesignLoadBlocked(slot);
-    public void SendLoadDesign(int slot) => live.SendHomeDesignLoad(slot);
+    public void SendLoadDesignDirect(int slot) => live.SendHomeDesignLoadDirect(slot);
+    public void RequestDesignBill(int slot) => live.Bill.RequestCubeBill(slot);
     public void SendSaveBlueprint(int slot, string name) => live.SendHomeBlueprintSave(slot, name);
     public void SendLoadBlueprint(int slot) => live.SendHomeBlueprintLoad(slot);
 }

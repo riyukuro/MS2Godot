@@ -26,10 +26,10 @@ public interface IHomeSaveSlotHost
     int Language { get; }
     /// <summary>RequestCube 0x2e: save the design into the slot.</summary>
     void SendSaveDesign(int slot, string name);
-    /// <summary>RequestCube 0x2f: load the design of the slot (the blocked form).</summary>
-    void SendLoadDesignBlocked(int slot);
-    /// <summary>SendRequestCubeMode35 (@0x140ee8360): the other design load.</summary>
-    void SendLoadDesign(int slot);
+    /// <summary>RequestCube 0x2f: load the design of the slot (the direct form).</summary>
+    void SendLoadDesignDirect(int slot);
+    /// <summary>SendRequestCubeMode35 (@0x140ee8360): the ask for the design's bill (CubeBill.RequestCubeBill).</summary>
+    void RequestDesignBill(int slot);
     /// <summary>RequestCube 0x40: save the blueprint into the slot.</summary>
     void SendSaveBlueprint(int slot, string name);
     /// <summary>RequestCube 0x41: load the blueprint of the slot.</summary>
@@ -40,8 +40,9 @@ public interface IHomeSaveSlotHost
 /// UIHomeSaveSlotDialog (dialog 0x4f27, GetTypeName "HomeSaveSlotDialog"; unit_140fa9eb0_uihomesaveslotdialog.cpp): the save and load slots
 /// of the home designer (m_saveMode +0x178, 1 save, 0 load) and of the blueprint designer (the second slot list).
 /// STILL-OPEN: the own account's GM level and the plot's admin-only group (<see cref="IHomeSaveSlotHost.GmLevel"/>, PlotAdminOnly) are not known
-/// here; FUN_14016a730(name, 0) (the code page conversion of the slot name) is taken as the name itself; SendRequestCubeMode35's
-/// bill state (UIUGCCubeBillDialog::s_pending, the close of dialog 0x4f29) is not ported.
+/// here. FUN_14016a730(name, 0) (the code page conversion of the slot name) is taken as the name itself; the client's round trip through
+/// the ANSI code page turns a character outside it into '?' in the displayed name only (the packet carries the name as typed).
+/// The bill ask (SendRequestCubeMode35) and its state are <see cref="CubeBill"/>.
 /// </summary>
 public class HomeSaveSlotDialogController : UiController
 {
@@ -234,15 +235,15 @@ public class HomeSaveSlotDialogController : UiController
         return true;
     }
 
-    /// <summary>OnLoadConfirmed @0x140faac30: blocked (design mode, or a GM level 50 up in a home field with an admin only group) sends 0x2f, else mode 35.</summary>
+    /// <summary>OnLoadConfirmed @0x140faac30: direct (design mode, or a GM level 50 up in a home field with an admin only group) sends 0x2f, else the bill ask (mode 35).</summary>
     bool OnLoadConfirmed(int result, MessageBoxData data)
     {
         if (result != 0 || !host.HasService) return true;
         int slot = data.ArgInt(0, 0);
-        bool blocked = host.PlotModeIs(1);
-        if (!blocked && host.GmLevel >= 50 && host.InHomeField) blocked = host.PlotAdminOnly;
-        if (blocked) host.SendLoadDesignBlocked(slot);
-        else host.SendLoadDesign(slot);
+        bool direct = host.PlotModeIs(1);
+        if (!direct && host.GmLevel >= 50 && host.InHomeField) direct = host.PlotAdminOnly;
+        if (direct) host.SendLoadDesignDirect(slot);
+        else host.RequestDesignBill(slot);
         return true;
     }
 }

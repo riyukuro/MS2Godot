@@ -370,3 +370,35 @@ public class CubePacketTests
         Assert.That(w.Buffer.AsSpan(0, w.Length).ToArray(), Is.EqualTo(new byte[] { 0, 0 }));
     }
 }
+
+[TestFixture]
+public class ResponseCubeBillTests
+{
+    static ByteReader Reader(Action<ByteWriter> write)
+    {
+        var w = new ByteWriter();
+        write(w);
+        return new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray());
+    }
+
+    [Test] public void CubeBillReadsRowsAsAMapByPayType()
+    {
+        var m = ResponseCubeBill.Read(Reader(w => { w.WriteByte(3); w.WriteInt(9); w.WriteByte(3); w.WriteLong(30); w.WriteByte(1); w.WriteLong(5); w.WriteByte(3); w.WriteLong(40); }), ResponseCubeBill.ModeCube);
+        Assert.That((m.Count, m.Arg, m.Preview), Is.EqualTo((3, 9, false)));
+        Assert.That(m.Amounts.Select(x => (x.Key, x.Value)), Is.EqualTo(new[] { (1, 5L), (3, 40L) }));
+    }
+
+    [Test] public void BlueprintBillHasThePreviewFlagAndTheCubeBillDoesNot()
+    {
+        Assert.That(ResponseCubeBill.Read(Reader(w => { w.WriteByte(0); w.WriteInt(1); w.WriteBool(true); }), ResponseCubeBill.ModeBlueprint).Preview, Is.True);
+        Assert.That(() => ResponseCubeBill.Read(Reader(w => { w.WriteByte(0); w.WriteInt(1); w.WriteBool(true); }), ResponseCubeBill.ModeCube), Throws.Exception);
+    }
+
+    [Test] public void BuyRequests()
+    {
+        var w = new ByteWriter(); new CubeBuyRequest(6).Write(w);
+        Assert.That(w.Buffer[..w.Length], Is.EqualTo(new byte[] { 0x30, 6, 0, 0, 0 }));
+        w = new ByteWriter(); new BlueprintBuyRequest(2).Write(w);
+        Assert.That(w.Buffer[..w.Length], Is.EqualTo(new byte[] { 0x46, 2, 0, 0, 0, 0, 0, 0, 0 }));
+    }
+}
