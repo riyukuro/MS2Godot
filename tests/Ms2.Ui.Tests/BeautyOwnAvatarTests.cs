@@ -42,13 +42,14 @@ public class BeautyOwnAvatarTests
     }
 
     [Test]
-    public void OnlyTheItemsWornAtTheStartAreReal()
+    public void AnItemIsRealByItsKindNotByItsUid()
     {
         var me = Me((100, 1, EquipSlot.HR));
-        var a = new BeautyOwnAvatar(me, Layer);
+        var a = new BeautyOwnAvatar(me, Layer, id => id == 101);
         a.Equip(new EquipItem { Id = 101, Uid = 9, Slot = EquipSlot.HR });
-        Assert.That(a.IsRealItem(new EquipItem { Uid = 1 }), Is.True);
-        Assert.That(a.IsRealItem(new EquipItem { Uid = 9 }), Is.False);
+        Assert.That(a.IsRealItem(new EquipItem { Id = 101, Uid = 9 }), Is.True);    // a previewed kind item
+        Assert.That(a.IsRealItem(new EquipItem { Id = 100, Uid = 1 }), Is.False);   // worn at the start, not of the kind
+        Assert.That(new BeautyOwnAvatar(me, Layer).IsRealItem(new EquipItem { Id = 101 }), Is.False);
     }
 
     [Test]

@@ -10,8 +10,9 @@ namespace Ms2.Ui.Hud;
 /// the client does on its PC (PC::vfunc_127 / vfunc_128 with preview = 1, pc.cpp:1400 / :1415), so every view built from
 /// <see cref="MyCharacter"/> (the 3D avatar copy redraws on its changed event) shows the preview. An item goes into the slot and
 /// layer of <see cref="WornEquips.PutOn"/>; an item without a model preset (<c>wornLayer</c> null) is not worn, as the client.
-/// <para>STILL-OPEN: <see cref="IsRealItem"/> is FUN_141421690, whose owned-item test is not recovered: an item counts as real
-/// when its uid was worn when the avatar was created. The skin colours (FUN_1414239e0 / FUN_141423650) are the user block's two
+/// <see cref="IsRealItem"/> is FUN_141421690 (customize.cpp:161-215): the customize kind of the item's data (see
+/// <c>WornEquipment.IsCustomizeKind</c>), not an owned-item test; without the kind hook no item is real.
+/// <para>STILL-OPEN: The skin colours (FUN_1414239e0 / FUN_141423650) are the user block's two
 /// colours packed in wire order; setting one is remembered but the player model's skin tint is not redrawn. The "Customize" tag
 /// of a hidden slot (CEquipItem::AddTag) has no effect on a drawn item yet. MyPC::vfunc_127 / vfunc_128 (mypc.cpp:4883-4905) also
 /// re-sample DAT_143aea120 and call ExcludeFromAutoEquip when an item is taken off, for a preview too; that auto-equip exclusion
@@ -21,7 +22,7 @@ public sealed class BeautyOwnAvatar : IBeautyAvatar
 {
     readonly MyCharacter me;
     readonly Func<int, int?> wornLayer;
-    readonly HashSet<long> realUids;
+    readonly Func<int, bool> isCustomizeKind;
     readonly int[] skin = new int[2];
     readonly HashSet<EquipSlot> hiddenSlots = new();
     // Uids that sit (or sat, before the preview took them off) in the outfit list: they go back there, as ItemPutOn kind 2.
@@ -31,10 +32,10 @@ public sealed class BeautyOwnAvatar : IBeautyAvatar
     int depth;
     bool dirty;
 
-    public BeautyOwnAvatar(MyCharacter me, Func<int, int?> wornLayer)
+    /// <param name="isCustomizeKind">FUN_141421690 over an item id (hair, face, eye, skin colour kinds); null = never.</param>
+    public BeautyOwnAvatar(MyCharacter me, Func<int, int?> wornLayer, Func<int, bool> isCustomizeKind = null)
     {
-        this.me = me; this.wornLayer = wornLayer;
-        realUids = new HashSet<long>(Worn.Select(e => e.Uid));
+        this.me = me; this.wornLayer = wornLayer; this.isCustomizeKind = isCustomizeKind;
         outfitUids = new HashSet<long>((me.Outfit2 ?? Array.Empty<EquipItem>()).Select(e => e.Uid));
         var s = me.User?.Skin ?? default;
         skin[0] = Pack(s.Primary); skin[1] = Pack(s.Secondary);
@@ -97,7 +98,7 @@ public sealed class BeautyOwnAvatar : IBeautyAvatar
         me.ReplaceWorn(equips, outfit);
     }
 
-    public bool IsRealItem(EquipItem item) => item != null && realUids.Contains(item.Uid);
+    public bool IsRealItem(EquipItem item) => item != null && isCustomizeKind != null && isCustomizeKind(item.Id);
 
     public int GetSkinColor(int index) => (uint)index < 2 ? skin[index] : 0;
 

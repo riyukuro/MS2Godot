@@ -96,7 +96,8 @@ public partial class HudScene
         if (live.Me.User == null || live.Me.Equips == null || live.Me.Equips.Count + (live.Me.Outfit2?.Count ?? 0) == 0) return null;
         var tables = hudModel.Tables;
         var slots = new BeautyItemSlots(tables.Items.Get, tables.ItemModels.Get);
-        return new BeautyCustomize(new BeautyOwnAvatar(live.Me, Ms2Godot.Net.LiveSession.WornLayer))
+        return new BeautyCustomize(new BeautyOwnAvatar(live.Me, Ms2Godot.Net.LiveSession.WornLayer,
+            id => WornEquipment.IsCustomizeKind(tables.Items.Get(id), tables.ItemModels)))
         {
             IsTopBottom = i => slots.IsTopBottom(tables.Items.Get(i.Id)),
             IsTwoHanded = i => slots.IsTwoHanded(tables.Items.Get(i.Id)),
