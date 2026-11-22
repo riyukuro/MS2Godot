@@ -46,7 +46,7 @@ public class GameOptionDialogTests
     {
         public readonly FakeTab T = new();
         public IOptionTab Tab => T;
-        public readonly List<string> Log = new();
+        public List<string> Log = new();
         public readonly HashSet<int> Features = new();
         public int Build = 0x32, Scene, Benchmark = 1;
         public bool Bound = true, Free = true, Playing, Active = true;
@@ -545,13 +545,14 @@ public class GameOptionDialogTests
     sealed class TrackingKeys : IKeyTable
     {
         public int Sends, Backups, Restores;
+        public List<string> Seq = new();
         public IReadOnlyList<KeySetting> GetSettingList(int category) => null;
         public int FindKeyByActionAndPriority(long action, int priority) => 0;
         public string GetKeyName(int key) => "";
         public string ActionName(long action) => "";
         public bool SendKeysToServer() { Sends++; return true; }
         public void BackupKeys() => Backups++;
-        public void RestoreKeysFromBackup() => Restores++;
+        public void RestoreKeysFromBackup() { Restores++; Seq.Add("restore"); }
         public int Defaults;
         public Action OnDefaults;
         public void LoadDefaultKeyboardKeys() { Defaults++; OnDefaults?.Invoke(); }
@@ -559,7 +560,7 @@ public class GameOptionDialogTests
 
     sealed class FakeSlots : IQuickSlots
     {
-        public readonly List<string> Calls = new();
+        public List<string> Calls = new();
         public int Page { get; set; } = 2;
         public readonly Dictionary<int, (int Skill, long Uid, int Slot)> Keys = new();
         public void GetBoundKeys(List<int> into) { into.Clear(); into.AddRange(Keys.Keys); }
@@ -591,16 +592,16 @@ public class GameOptionDialogTests
     public void InputPageCancelPutsTheSnapshotQuickSlotsBack()
     {
         var (d, h, keys, slots, page) = OpenInput();
-        keys.OnDefaults = () => { slots.Keys.Clear(); slots.Calls.Add("defaults"); };   // the default keys unbind the slots
+        var seq = new List<string>();   // one log for the keys, the slots and the host: the order is part of the client's body
+        keys.Seq = slots.Calls = h.Log = seq;
+        keys.OnDefaults = () => { slots.Keys.Clear(); seq.Add("defaults"); };   // the default keys unbind the slots
         d.ResetPages(0);
         Assert.That(keys.Defaults, Is.EqualTo(1));
-        Assert.That(slots.Calls, Is.EqualTo(new[] { "defaults", "refresh" }));
-        Assert.That(h.Log, Does.Contain("notify 9"));
-        slots.Calls.Clear(); h.Log.Clear();
+        Assert.That(seq, Is.EqualTo(new[] { "layout", "defaults", "refresh", "notify 9" }), "reset: the layout, the default keys, refresh, notify");
+        seq.Clear();
         page.DropChanges();
-        Assert.That(slots.Calls, Is.EqualTo(new[] { "put 1001,0,0,2,3", "put 2002,0,77,2,5", "refresh" }));
+        Assert.That(seq, Is.EqualTo(new[] { "restore", "put 1001,0,0,2,3", "put 2002,0,77,2,5", "refresh", "notify 9" }), "cancel: restore, put back, refresh, notify");
         Assert.That(keys.Restores, Is.EqualTo(1));
-        Assert.That(h.Log, Does.Contain("notify 9"));
     }
 
     [Test]
