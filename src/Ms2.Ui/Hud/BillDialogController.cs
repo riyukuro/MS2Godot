@@ -34,10 +34,10 @@ public sealed class BillData
 /// UIBillDialog (uibeautyshopdialog.cpp:2282; UI 0x4e7b, movie uibilldialog, GetTypeName "BillDialog"): the bill of the beauty shops
 /// the player confirms. OnLoadComplete (@0x1418cd2a0) fills the movie; the movie's "OnSubmit" answers the owner and closes it
 /// (vfunc_28 @0x1418cd7a0), its "OnSetSumPrice" asks for the total (<see cref="UpdatePrice"/>, FUN_1418cda70 @0x1418cda70).
-/// STILL-OPEN: ASDialog::vfunc_13(mode) is taken as the dialog's gotoAndStop(mode), as the movie's dialog sprite has the frame labels
-/// "normal" and "checkbox" and nothing else of that name; the check box's vfunc_24(true) and the dialog's vfunc_8(1) (shown) are not
-/// recovered and are left out (UIDialog::OnLoadComplete shows the dialog already); the wedding hall's price (shop kind 3) needs the hall
-/// dialog and is the unchanged price.
+/// The dialog's vfunc_13(mode) is ASMovieClip::vfunc_13 @0x1422c2220 (asmovieclip.cpp:111), gotoAndPlay(label); the check box's
+/// vfunc_24(true) is invalidate + validateNow @0x1422c80c0 (asuicomponent.h:71). STILL-OPEN: the dialog's vfunc_8(1) is the modal open
+/// (UIModalDialog @0x141a55380, uimodaldialog.cpp:32, SetModalDialogId), left to the host that shows it; the wedding hall's price
+/// (shop kind 3) needs the hall dialog and is the unchanged price.
 /// </summary>
 public sealed class BillDialogController : UiController
 {
@@ -61,6 +61,9 @@ public sealed class BillDialogController : UiController
     public Func<long[]> Wallet;
     /// <summary>The local player exists (WorldService::GetLocalPlayer).</summary>
     public Func<bool> HasPlayer;
+    /// <summary>What UpdatePrice hands the movie's setSumPrice: the total text, the pool label, the price before the sale (empty
+    /// without one) and whether no sale applies.</summary>
+    public Action<string, string, string, bool> SumShown;
 
     string Str(int id) => Model.Tables.Common(id) ?? "";
 
@@ -73,7 +76,7 @@ public sealed class BillDialogController : UiController
         Host.Invoke(Host.Entity, "initData", "");
         if (!d.HasRows) return;
         string mode = d.CheckText.Length > 0 ? "checkbox" : "normal";
-        Host.Invoke(Host.Entity, "gotoAndStop", mode);
+        Host.Invoke(Host.Entity, "gotoAndPlay", mode);
         if (d.CheckText.Length > 0)
         {
             if (Host.Child("m_checkbox") is { } check)
@@ -81,6 +84,8 @@ public sealed class BillDialogController : UiController
                 Host.Set(check, "label", d.CheckText);
                 Host.Set(check, "enabled", d.Checked);
                 Host.Set(check, "selected", d.Checked);
+                Host.Invoke(check, "invalidate");
+                Host.Invoke(check, "validateNow");
             }
             if (Host.Child("m_warning") is { } warning) Host.Set(warning, "text", d.Warning);
         }
@@ -89,17 +94,17 @@ public sealed class BillDialogController : UiController
     }
 
     /// <summary>vfunc_28 (@0x1418cd7a0): UIDialog's calls first; with the dialog closed or no bill nothing is taken. "OnSubmit" (result,
-    /// check box) answers the owner and closes; "OnSetSumPrice" shows the total. Names compare without case.</summary>
+    /// check box; the client takes any argument count above 0 and an absent check box is false, SetArgsIfAny asdata.cpp:437) answers the owner and closes; "OnSetSumPrice" shows the total. Names compare without case.</summary>
     public override bool OnCallback(string name, object[] args)
     {
         if (base.OnCallback(name, args)) return true;
         if (IsClosed || Data == null) return false;
         if (string.Equals(name, "OnSubmit", StringComparison.OrdinalIgnoreCase))
         {
-            if (args is { Length: >= 2 })
+            if (args is { Length: >= 1 })
             {
                 int result = Ms2.Avm2.Rt.ToInt32(args[0]);
-                bool check = Ms2.Avm2.Rt.ToBoolean(args[1]);
+                bool check = args.Length >= 2 && Ms2.Avm2.Rt.ToBoolean(args[1]);
                 Data.Answer?.Invoke(result, check);
                 Close();
             }
@@ -143,6 +148,7 @@ public sealed class BillDialogController : UiController
             if (PriceText == null) return;   // FUN_141349f30 is the host's: no text is guessed
             sum = PriceText(d.FeeType, d.FeeItemId, price, d.FeeIconTag);
         }
+        SumShown?.Invoke(sum, label, originalText, sale == 0);
         Host.Invoke(Host.Entity, "setSumPrice", sum, label, originalText, sale == 0);
     }
 

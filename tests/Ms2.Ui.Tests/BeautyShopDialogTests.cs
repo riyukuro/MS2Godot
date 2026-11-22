@@ -341,9 +341,37 @@ public class BeautyShopDialogTests
         r.C.ClickSave();   // no OpenBill: nothing happens
         var opened = new List<BillData>();
         r.C.OpenBill = opened.Add;
-        r.C.FeePriceText = null;
+        r.C.Customize = null;     // BuildBillRows @0x1418ca510 has no rows without a Customize
         r.C.ClickSave();
-        Assert.That(opened, Is.Empty, "no rows, nothing opens");
+        Assert.That(opened, Is.Empty, "no Customize, nothing opens");
+        r.C.Customize = r.Cu;
+        r.C.Page = 0;             // nor on page 0
+        r.C.ClickSave();
+        Assert.That(opened, Is.Empty, "page 0, nothing opens");
+    }
+
+    /// <summary>OnClickSave: the sale coupon is offered only while the fee after the sale is not 0.</summary>
+    [Test]
+    public void ADiscountedFeeOfZeroClearsTheCoupon()
+    {
+        foreach (bool free in new[] { false, true })
+        {
+            var r = new Rig();
+            var opened = new List<BillData>();
+            r.C.OpenBill = opened.Add;
+            r.C.HasItemWithTag = t => t == 9;
+            r.C.OnPacket(new BeautyShopPacket(0)
+            {
+                Kind = 1, SlotCount = 3, SavedStyles = 1, Context = 1,
+                Shop = new BeautyShopData(7, 1, 5, false, 0, 9, false, Pay, Recolor),
+                Items = new[] { new BeautyShopItem(100, 0, 0, 0, 0, new BeautyPayment(1, 0, 9000, "")) },
+            });
+            if (free) r.C.Sales.Apply(new GameEventMessage(0, System.Array.Empty<ShutdownInteractObjectEvent>(), System.Array.Empty<int>(), false)
+                { BeautySaleEvents = new[] { new BeautyShopSaleEvent(1, 7, 10000, 0) } });
+            r.Cu.IsEditItemColorChanged = true;
+            r.C.ClickSave();
+            Assert.That(opened.Single().Checked, Is.EqualTo(!free), free ? "a free fee offers no coupon" : "the coupon is offered");
+        }
     }
 
     [Test]

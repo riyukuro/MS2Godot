@@ -74,13 +74,50 @@ public class BillDialogTests
         Assert.That(r.Answers, Has.Count.EqualTo(1));
     }
 
+    /// <summary>The client takes any argument count above 0, an absent check box is false (SetArgsIfAny, asdata.cpp:437).</summary>
     [Test]
-    public void SubmitWithoutBothArgumentsAnswersNothing()
+    public void SubmitWithOneArgumentAnswersWithAnUncheckedBox()
     {
         var r = new Rig();
-        r.C.OnCallback("OnSubmit", new object[] { 0.0 });
+        Assert.That(r.C.OnCallback("OnSubmit", new object[] { 0.0 }), Is.True);
+        Assert.That(r.Answers, Is.EqualTo(new[] { (0, false) }));
+        Assert.That(r.C.Data, Is.Null, "closed");
+    }
+
+    [Test]
+    public void SubmitWithNoArgumentAnswersNothing()
+    {
+        var r = new Rig();
+        r.C.OnCallback("OnSubmit", System.Array.Empty<object>());
         Assert.That(r.Answers, Is.Empty);
         Assert.That(r.C.Data, Is.Not.Null, "not closed");
+    }
+
+    [Test]
+    public void TheCheckBoxModeOpensCheckedFromTheBill()
+    {
+        var r = new Rig("coupon");
+        var check = r.Host.Child("m_checkbox");
+        Assert.That(check, Is.Not.Null);
+        Assert.That(Rt.ToBoolean(r.Host.Get(check, "selected")), Is.True, "Checked = true selects the box");
+        Assert.That(Rt.ToBoolean(r.Host.Get(check, "enabled")), Is.True);
+    }
+
+    [Test]
+    public void ASaleShowsThePriceBeforeAndNoSaleShowsNone()
+    {
+        var r = new Rig(sale: true);
+        var shown = new List<(string Sum, string Label, string Original, bool NoSale)>();
+        r.C.SumShown = (a, b, c, d) => shown.Add((a, b, c, d));
+        r.C.UpdatePrice(1000);
+        Assert.That(shown.Single().Original, Is.Not.Empty, "the price before the sale");
+        Assert.That(shown.Single().NoSale, Is.False);
+        var n = new Rig();
+        var none = new List<(string, string, string, bool)>();
+        n.C.SumShown = (a, b, c, d) => none.Add((a, b, c, d));
+        n.C.UpdatePrice(1000);
+        Assert.That(none.Single().Item3, Is.Empty);
+        Assert.That(none.Single().Item4, Is.True);
     }
 
     [Test]
@@ -119,7 +156,12 @@ public class BillDialogTests
         var r = new Rig(feeType: 4);
         r.Texts.Clear();
         r.C.UpdatePrice(500);
+        var shown = new List<(string Sum, string Label)>();
+        r.C.SumShown = (a, b, c, d) => shown.Add((a, b));
+        r.C.UpdatePrice(500);
         Assert.That(r.Texts, Is.Empty, "fee type 4 does not use the price text");
+        Assert.That(shown.Single().Sum, Is.Not.Empty, "the pool text is built from the wallet");
+        Assert.That(shown.Single().Label, Is.Not.Empty);
         Assert.That(r.Errors, Is.Empty);
     }
 }
