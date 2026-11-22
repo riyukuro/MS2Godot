@@ -79,6 +79,9 @@ public sealed class FieldTracker {
     readonly Dictionary<int, Actor> actors = new();
     public ConcurrentQueue<ReplayEvent> Events { get; } = new();
     public int SelfObjectId { get; private set; }
+    /// <summary>The own object id from a ServerEnter the tracker did not see (a live connection takes it at the entry, before
+    /// the field's tracker is made): the own add, the own damage records (owner id) and the own syncs read it.</summary>
+    public void Entered(int objectId) => SelfObjectId = objectId;
     public RequestFieldEnter Field { get; private set; }
     public double Time { get; set; }
 

@@ -957,6 +957,7 @@ public partial class LiveSession : Node
         regionSkills.Clear(); RegionSkillLog.Clear();
         var layer = remote = new RemoteLayer(field, builder, entry.Enter.CharacterId) { Feature8e = CodiFeature, ServerNow = () => ServerTime, ItemExists = id => ItemExists?.Invoke(id) ?? true };
         remote.Tracker.Profile = game.Profile;
+        remote.Tracker.Entered(entry.Enter.ObjectId);   // the ServerEnter the entry took: the own damage records' owner
         remote.Numbered = (n, npc, pc) => DamageNumbered?.Invoke(n, npc, pc);
         remote.NpcExpShown = (npc, exp) => NpcExpShown?.Invoke(npc, exp);
         remote.NpcAdded = npc => NpcAdded?.Invoke(npc);

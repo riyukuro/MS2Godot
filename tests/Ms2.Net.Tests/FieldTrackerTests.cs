@@ -66,6 +66,16 @@ public class FieldTrackerTests {
     }
 
     [Test]
+    public void TheEntrysObjectIdMakesTheOwnAddSelf() {
+        // a live tracker is made after the entry took the ServerEnter: without its id the own records' owner reads as nobody's
+        var t = new FieldTracker();
+        t.Entered(77);
+        AddUser(t, 77, 2);
+        Assert.That(t.SelfObjectId, Is.EqualTo(77));
+        Assert.That(t.Events.OfType<UserAddedEvent>().Single().IsSelf, Is.True);
+    }
+
+    [Test]
     public void PlayerStatRoutesToUserStat() {
         var w = new ByteWriter();
         w.WriteInt(77); w.WriteByte(0); w.WriteByte(2);
