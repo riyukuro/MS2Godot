@@ -202,7 +202,10 @@ public partial class FieldContents : Node3D
     internal static UiAssets Ui(PackSet packs) => uiAssets != null && uiAssets.Packs == packs ? uiAssets : uiAssets = new UiAssets(packs);
     static LoadingTipTable tipTable;
 
-    /// <summary>The server's field entry after a portal move: the player stands at the target portal, facing its way.</summary>
+    /// <summary>The server's field entry after a portal move: the player stands at the target portal, facing its way.
+    /// STILL-OPEN: the client makes the MyPC in OnAddUser too (bMyPC, scenestategame.cpp:11117-11121), so it gets the
+    /// other players' spawn point (RemoteLayer.SpawnPoint: the position raised by 25, then the down ray's hit raised by
+    /// 25); here it stands 5 over the position and falls.</summary>
     void Arrive(Travel.Move move)
     {
         if (move.At is { } at)

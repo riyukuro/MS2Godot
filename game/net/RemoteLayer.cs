@@ -577,11 +577,13 @@ public sealed partial class RemoteLayer : Node3D
     }
 
     /// <summary>
-    /// OnAddUser's spawn point (scenestategame.cpp:11174-11181): RayCastFixedDirection down from the packet's position;
-    /// the hit raised by 25 when the capsule there overlaps nothing, else the packet's position.
+    /// OnAddUser's spawn point: the packet's position raised by 25 (kPos.z += 25, scenestategame.cpp:11138, set on the PC by
+    /// vfunc_19 at :11146), then RayCastFixedDirection down from there (:11174-11181); the hit raised by 25 when the capsule
+    /// there overlaps nothing, else the raised position.
     /// </summary>
-    Vector3 SpawnPoint(Vector3 at)
+    Vector3 SpawnPoint(Vector3 packet)
     {
+        var at = packet + Vector3.Up * 25f;
         var space = GetWorld3D().DirectSpaceState;
         using var q = PhysicsRayQueryParameters3D.Create(at, at + Vector3.Down * MoveConfig.UnlimitedRay, MoveConfig.DownRayGroups);
         q.HitBackFaces = false;
