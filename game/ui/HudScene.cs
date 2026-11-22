@@ -1705,14 +1705,18 @@ public partial class HudScene : Node, IUiStageHost
     {
         if (e is not InputEventKey k) return false;
         foreach (var (m, c) in messengers)
-            if (ChatKey(k, m, c.OnKey, () => c.InputActive) is { } used) return used;
+            if (ChatKey(k, m, c.OnKey, () => c.InputActive, c.Name) is { } used) return used;
         foreach (var (m, c) in groupWindows.ToArray())     // UIGroupMessenger::vfunc_13 (:523), the same keys
-            if (ChatKey(k, m, c.OnKey, () => c.InputActive) is { } used) return used;
+            if (ChatKey(k, m, c.OnKey, () => c.InputActive, c.Name) is { } used) return used;
         return false;
     }
 
-    /// <summary>One chat window's turn at a key: null passes it to the next window.</summary>
-    static bool? ChatKey(InputEventKey k, MovieDialog m, Func<int, bool, bool> onKey, Func<bool> inputActive)
+    /// <summary>
+    /// One chat window's turn at a key: null passes it to the next window. A Return the window does not take while its
+    /// input has the focus is kept from the movie, and logged with the window's name, the current window and whether a
+    /// Godot text control has the focus, so a run shows why a typed line stayed.
+    /// </summary>
+    static bool? ChatKey(InputEventKey k, MovieDialog m, Func<int, bool, bool> onKey, Func<bool> inputActive, string name)
     {
         if (!m.Loaded || !m.IsVisibleInTree()) return null;
         if (k.Pressed && !k.Echo && !UiFocus.IsTyping)
@@ -1722,7 +1726,12 @@ public partial class HudScene : Node, IUiStageHost
                 return true;
         }
         if (!inputActive()) return null;
-        if (k.Keycode is Key.Enter or Key.Escape) return true;
+        if (k.Keycode is Key.Enter or Key.Escape)
+        {
+            if (k.Keycode == Key.Enter && k.Pressed && !k.Echo)
+                GD.Print($"chat: Return not taken by {name} with its input focused (current window {ChatLog.GetCurrentName()}, Godot text focus {UiFocus.IsTyping})");
+            return true;
+        }
         uint code = As3View.FlashKeyCode(k.Keycode);
         if (code == 0 && k.Unicode == 0) return true;
         m.Player.Key(code, k.Pressed ? (uint)k.Unicode : 0, k.Pressed, k.ShiftPressed, k.CtrlPressed);
