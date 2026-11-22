@@ -65,7 +65,10 @@ public sealed class CharacterListController : UiController
     public void CarryFrom(CharacterListController old)
     {
         SavedName = old.SavedName; SavedSn = old.SavedSn;
-        selectedSn = old.selectedSn; previewedSn = old.previewedSn; fadedIn = old.fadedIn; Selecting = old.Selecting;
+        selectedSn = old.selectedSn; previewedSn = old.previewedSn; Selecting = old.Selecting;
+        // the map change is what the client's vfunc_58 fade-in follows (m_220 set); the rebuilt dialog's own OnSelectCharacter("") on an
+        // empty list would otherwise load the map again, for ever
+        fadedIn = true;
         KeepRow = old.ListIndex;
     }
 

@@ -12,7 +12,9 @@ public class CharacterListTests
     static MovieSource src;
     static GameTables tables;
 
-    static (UiHost, CharacterListController) Load(params LobbyCharacterRow[] rows)
+    static (UiHost, CharacterListController) Load(params LobbyCharacterRow[] rows) => Load(null, rows);
+
+    static (UiHost, CharacterListController) Load(Action<CharacterListController> setup, params LobbyCharacterRow[] rows)
     {
         if (packs == null)
         {
@@ -24,6 +26,7 @@ public class CharacterListTests
         }
         var c = new CharacterListController();
         c.Characters.AddRange(rows);
+        setup?.Invoke(c);
         var (rt, p) = src.Open(c.Movie, r => { r.Budget = 20_000_000; r.FixedWallClock = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc); });
         p.StageW = 1920; p.StageH = 1080;
         var h = new UiHost(p, c, new UiModel(tables));
@@ -35,6 +38,18 @@ public class CharacterListTests
 
     static LobbyCharacterRow Row(string name, string sn, string img) =>
         new(name, 1, 10, "Lv. 1", img, "2026/11/18", "Tria", sn);
+
+    [Test]
+    public void AnEmptyListReloadsTheSelectSceneOnce()
+    {
+        // vfunc_28 :2296: with no character the dialog's own OnSelectCharacter("") loads the select map while the scene's fade-in
+        // (m_220) is still to come; the map's load is the fade-in, so the rebuilt dialog's call finds m_220 set and does nothing
+        int first = 0, again = 0;
+        var (_, a) = Load(c => c.SelectCharacter += _ => first++);
+        Assert.That(first, Is.EqualTo(1), "the first entry loads the select map once");
+        Load(c => { c.CarryFrom(a); c.Previewed(null); c.SelectCharacter += _ => again++; });
+        Assert.That(again, Is.EqualTo(0), "the rebuilt dialog does not load it again");
+    }
 
     [Test]
     public void LobbyButtonsFadeInWithThePopup()
