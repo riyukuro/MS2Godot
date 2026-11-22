@@ -94,6 +94,12 @@ public partial class HudScene
             NotEnough = fee => ColoringShop(live).ShowLackCurrency(fee.Type, fee.ItemId, 0),                          // FUN_14134a2e0 @0x14134a2e0
             // CanPayFee @0x14134a1d0 (unit_141347b10.cpp:574-620): the wallet of the fee's currency against the unsigned price
             CanPay = (fee, amount) => ColoringShop(live).CanPayFee(fee.Type, fee.ItemId, amount),
+            // PC::FUN_141655e10 (pc.cpp:1364, @0x141655e10) = CEquipment::FUN_1411e1860(slot, 6, 0) (equipment.cpp:820-834): layers 5 down to 0,
+            // the first item the player can use (PC::CanUseItem). Inferred, not recovered: the second outfit before the gear is the higher layer
+            // winning, and the last item of each list as the top one. STILL-OPEN: the CanUseItem filter. An empty slot is 0 here as the port's
+            // choice (the client dereferences the null item at uibeautyshopdialog.cpp:1848); no local player = null, as the `if (pPc)` guard at :1845.
+            WornItemId = slot => live.Me.User == null ? null
+                : (live.Me.Outfit2?.LastOrDefault(e => (int)e.Slot == slot) ?? live.Me.Equips?.LastOrDefault(e => (int)e.Slot == slot))?.Id ?? 0,
             OpenBill = data => ShowBill(live, data),
             BillIsOpen = () => BillOpen,
             CloseBill = () => { if (BillOpen) billDialog.Close(); },

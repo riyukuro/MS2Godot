@@ -305,6 +305,42 @@ public class BeautyShopDialogTests
         Assert.That(r.C.NewItemId, Is.EqualTo(501), "vfunc_24 does not keep the item");
     }
 
+    /// <summary>FUN_1418ca240 (:1868) without a Customize (m_1b8 == 0) clears the wait and returns: the input stays off, nothing is
+    /// restored; vfunc_21 still keeps the item on the special page. Without the movie (m_30 == 0) nothing happens at all.</summary>
+    [Test]
+    public void TheItemEventWithoutACustomizeOrAMovieDoesLess()
+    {
+        var r = new Rig();
+        r.C.OnPacket(Rig.Open(BeautyShopDialogController.PageSpecial));
+        r.C.InputOff = true; r.C.Waiting = true;
+        r.C.Customize = null;
+        r.C.OnItemEvent(501, ownEquip: true);
+        Assert.That(r.C.Waiting, Is.False);
+        Assert.That(r.C.InputOff, Is.True, "no restore, no input on");
+        Assert.That(r.C.NewItemId, Is.EqualTo(501));
+        var n = new Rig(load: false);
+        n.C.InputOff = true; n.C.Waiting = true;
+        n.C.OnItemEvent(501, ownEquip: true);
+        Assert.That((n.C.InputOff, n.C.Waiting, n.C.NewItemId), Is.EqualTo((true, true, 0)), "no movie attached");
+    }
+
+    /// <summary>An item event before any buy leaves the input on; m_2b8 stays when there is no local player (a null answer).</summary>
+    [Test]
+    public void TheKeptWornItemStaysWithoutALocalPlayer()
+    {
+        var r = new Rig();
+        var bills = new List<BillData>();
+        r.C.OpenBill = bills.Add;
+        r.C.OnPacket(Rig.Open(BeautyShopDialogController.PageSpecial));
+        r.C.OnItemEvent();
+        Assert.That(r.C.InputOff, Is.False);
+        r.C.OldItemId = 400;
+        r.C.WornItemId = _ => null;
+        r.C.OnCallback("OnClickSave", System.Array.Empty<object>());
+        bills.Single().Answer(0, false);
+        Assert.That(r.C.OldItemId, Is.EqualTo(400), "no local player: unchanged");
+    }
+
     [Test]
     public void TheItemIsKeptOnlyOnTheSpecialPage()
     {

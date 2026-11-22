@@ -96,15 +96,15 @@ public sealed class BeautyShopDialogController : UiController
     public bool Waiting;
     /// <summary>The shop root's input is off (FUN_1412761e0(m_30, 0) at uibeautyshopdialog.cpp:1860, after the send): the shop takes no
     /// callback and the host blocks its view until the answer turns it on (FUN_1418ca380 :1885, on a result other than 0) or an item event does (<see cref="OnItemEvent"/>).
-    /// STILL-OPEN: the host feeds only vfunc_24; the own-equip (vfunc_21) and skin-colour (vfunc_25) events have no LiveSession source yet.</summary>
+    /// STILL-OPEN: the host feeds vfunc_21 and vfunc_24; the skin-colour event (vfunc_25, inbound 0x30) has no LiveSession source yet.</summary>
     public bool InputOff;
     /// <summary>m_2b8: the id of the item worn in the shop's slot, kept before the mode-7 send (uibeautyshopdialog.cpp:1840, FUN_141655e10
-    /// of FUN_140f01070(kind)); 0 = none. <see cref="WornItemId"/> reads it, the host sets it.</summary>
+    /// of FUN_140f01070(kind)); 0 = none. <see cref="WornItemId"/> reads it; unchanged when the local player is absent (null answer).</summary>
     public int OldItemId;
     /// <summary>m_2c8: the item the server put on (the item event listener vfunc_21 @0x1418c57b0, kept on the special page only); 0 = none.</summary>
     public int NewItemId;
-    /// <summary>FUN_141655e10(FUN_140f01070(kind)): the id of the item worn in a slot; null or 0 = none.</summary>
-    public Func<int, int> WornItemId;
+    /// <summary>FUN_141655e10(FUN_140f01070(kind)): the id of the item worn in a slot (0 = none); null = no local player, m_2b8 stays.</summary>
+    public Func<int, int?> WornItemId;
     /// <summary>OpenStyleSelectDialog (@0x1418cb000) of the old and the new item id, raised by mode 0xb when both match the kept ones.
     /// STILL-OPEN: the dialog itself (its item rows with WriteItemInfo, the random select and the selected-index callbacks) is not
     /// ported and the host leaves this unset, so the answer opens nothing.</summary>
@@ -473,7 +473,7 @@ public sealed class BeautyShopDialogController : UiController
         if (Page == PageSpecial)
         {
             c.RestoreSlot(slot);
-            OldItemId = WornItemId?.Invoke(slot) ?? 0;   // m_2b8 (:1840), after the restore
+            if (WornItemId?.Invoke(slot) is { } worn) OldItemId = worn;   // m_2b8 (:1840), after the restore
             Send(new BeautyBuyRequest(ev, couponChecked, Context));
         }
         else c.CommitSlot(slot);
