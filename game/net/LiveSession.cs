@@ -1036,16 +1036,20 @@ public partial class LiveSession : Node
         GD.Print($"live: Stat hp {hud.Player.HpCurrent}/{hud.Player.HpMax} sp {hud.SpCurrent}/{hud.SpMax} ep {hud.EpCurrent}/{hud.EpMax} ({st.Values.Count} attribute(s))");
     }
 
-    /// <summary>The field is built and shown: ResponseFieldEnter(field key) goes out. The client sends it when the map's entities are all created
-    /// (CubeMapInformationService::FUN_1410cf5c0, cubemapinformationservice_3.cpp:5701-5705: the pending entity set is empty, then
-    /// COutPacket ResponseFieldEnter with the world's field key).</summary>
+    /// <summary>The field is built and shown: the end of the field load (CSceneStateGame::vfunc_1, scenestategame.cpp:1995-2001)
+    /// sends RequestLoadUgcMap, then Ugc 0x12 (<see cref="Ms2.Net.FieldEntry.FieldLoaded"/>). ResponseFieldEnter waits for the
+    /// server's LoadUgcMap (<see cref="OnLoadUgcMap"/>) or the field's cubes (<see cref="FieldCubesMade"/>), as the client's.</summary>
     public void FieldLoaded()
     {
         if (entry == null) return;
-        // CSceneStateGame::vfunc_1 (scenestategame.cpp:1995-2001), the end of the field load: RequestLoadUgcMap, then Ugc 0x12,
-        // then the answer
-        var answer = fieldEntry.FieldLoaded(Send);
-        if (answer == null) return;
+        fieldEntry.FieldLoaded(Send);
+    }
+
+    /// <summary>ResponseFieldEnter went out (from LoadUgcMap or the cube drain); <paramref name="first"/> when the entry had
+    /// no answer yet: the field entry is done.</summary>
+    void FieldAnswered(ResponseFieldEnter answer, bool first)
+    {
+        if (answer == null || !first) return;
         // MyPC::FUN_1415302e0's tables, loaded with the field rather than at the first placement, after the answer so the
         // field entry does not wait on them; a failed load stays null (ConfirmPlacement stops at InventoryCheckOpen) and is
         // tried again at the next field
@@ -1713,6 +1717,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.Reactor)) OnReactor(ReactorMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.ResponseCube)) OnResponseCube(p);
             else if (game.Is(p, Inbound.LoadCubes)) OnLoadCubes(p);
+            else if (game.Is(p, Inbound.LoadUgcMap)) OnLoadUgcMap(p);
             else if (game.Is(p, Inbound.SetCraftMode)) OnSetCraftMode(SetCraftMode.Read(p.Reader()));
             else if (game.Is(p, Inbound.Emote)) OnEmote(EmoteMessage.Read(p.Reader(), game.Profile));
             else if (game.Is(p, Inbound.ChatStamp)) OnChatStamp(ChatStampMessage.Read(p.Reader()));

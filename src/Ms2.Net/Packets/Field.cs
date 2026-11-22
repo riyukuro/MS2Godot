@@ -32,6 +32,78 @@ public sealed record RequestLoadUgcMap(int Portal) : IOutPacket {
 }
 
 /// <summary>
+/// Inbound LoadUgcMap (RecvOp 0x7D, commonfiles/opcodes.h:133), the answer to <see cref="RequestLoadUgcMap"/>:
+/// CSceneStateGame::OnLoadUgcMap @0x14170e800 (scenestategame.cpp:2172-2331). i32 mode, i32 map id, u8 has-info; with the
+/// info, the house (<see cref="UgcMapHome"/>). Mode 0 answers the field entry at once (ResponseFieldEnter, :2283-2286); any
+/// other mode waits for the field's cubes (the Maple2 server writes the plot cube count as the mode). The client drops the
+/// whole packet unless WorldService's state is 4, the field loaded (:2174); <see cref="FieldEntry.LoadUgcMap"/> does that.
+/// </summary>
+public sealed record LoadUgcMap(int Mode, int MapId, UgcMapHome Home)
+{
+    /// <summary>The packet; <paramref name="accountId"/> is the client's DAT_143ab2820 (OnLoginResult's id,
+    /// uiserverlistdialog.cpp:617): only the owner's own house carries its designs and blueprints (:2220).</summary>
+    public static LoadUgcMap Read(ByteReader r, long accountId)
+    {
+        int mode = r.ReadInt();
+        int map = r.ReadInt();
+        bool hasInfo = r.ReadByte() != 0;
+        var home = hasInfo ? UgcMapHome.Read(r, accountId) : null;
+        r.ExpectEnd("LoadUgcMap");
+        return new LoadUgcMap(mode, map, home);
+    }
+}
+
+/// <summary>
+/// OnLoadUgcMap's house info (scenestategame.cpp:2196-2240), the names after the Maple2 server's Home writer: i64 owner,
+/// wstr name, wstr message, u8 (nC, FUN_1410c3310; the server writes 0), i32 current architect score (nA), i32 architect
+/// score (nB), i32 plot map id (nD), i32 plot number (nE), u8 plot mode (nF), u8 area (nG, default 10), u8 height (nH,
+/// default 5), the rule (Unk_UhSetting::Read @0x140b68ec0, ugchomebgdata.cpp:266: u8 background, u8 lighting, u8 camera),
+/// u8 n permissions, each u8 set (only 1 is set) and, when set, u8 its value; then, for the client's own account only,
+/// u8 n designs and u8 n blueprints, each i32 id, wstr name (ReadUnicodeStringA), i64 time.
+/// STILL-OPEN: what the client does with it, CubeMapInformationService's setters (:2247-2280) and rule.Apply (housing).
+/// </summary>
+public sealed record UgcMapHome(long Owner, string Name, string Message, byte HeadByte, int CurrentArchitectScore, int ArchitectScore,
+    int PlotMapId, int PlotNumber, byte PlotMode, byte Area, byte Height, byte Background, byte Lighting, byte Camera,
+    IReadOnlyList<(bool Set, byte Value)> Permissions, IReadOnlyList<UgcMapLayout> Designs, IReadOnlyList<UgcMapLayout> Blueprints)
+{
+    public static UgcMapHome Read(ByteReader r, long accountId)
+    {
+        long owner = r.ReadLong();
+        string name = r.ReadUnicodeString(), message = r.ReadUnicodeString();
+        byte head = r.ReadByte();
+        int current = r.ReadInt(), score = r.ReadInt(), plotMap = r.ReadInt(), plot = r.ReadInt();
+        byte mode = r.ReadByte(), area = r.ReadByte(), height = r.ReadByte();
+        byte background = r.ReadByte(), lighting = r.ReadByte(), camera = r.ReadByte();
+        int n = r.ReadByte();
+        var permissions = new List<(bool, byte)>(n);
+        for (int i = 0; i < n; i++)
+        {
+            bool set = r.ReadByte() == 1;
+            permissions.Add((set, set ? r.ReadByte() : (byte) 0));
+        }
+        var designs = new List<UgcMapLayout>();
+        var blueprints = new List<UgcMapLayout>();
+        if (owner == accountId)
+        {
+            ReadLayouts(r, designs);
+            ReadLayouts(r, blueprints);
+        }
+        return new UgcMapHome(owner, name, message, head, current, score, plotMap, plot, mode, area, height, background, lighting, camera,
+            permissions, designs, blueprints);
+    }
+
+    static void ReadLayouts(ByteReader r, List<UgcMapLayout> into)
+    {
+        int n = r.ReadByte();
+        for (int i = 0; i < n; i++) into.Add(new UgcMapLayout(r.ReadInt(), r.ReadUnicodeString(), r.ReadLong()));
+    }
+}
+
+/// <summary>A saved house design or blueprint in <see cref="UgcMapHome"/> (UGCMapDesignInfo / UGCMapBlueprintInfo m_nId,
+/// m_strName, m_nTime).</summary>
+public sealed record UgcMapLayout(int Id, string Name, long Time);
+
+/// <summary>
 /// Outbound 0x10 (scenestategame.cpp:2284, OnLoadUgcMap; also CubeMapInformationService, cubemapinformationservice_3.cpp:5703):
 /// the portal of the entry (WorldService FUN_141bd98d0 @0x141bd98d0 = LoadMap's nPortal), sent once the map has loaded.
 /// </summary>

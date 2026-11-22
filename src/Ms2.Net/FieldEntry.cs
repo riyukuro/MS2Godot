@@ -3,19 +3,20 @@ using Ms2.Net.Packets;
 namespace Ms2.Net;
 
 /// <summary>
-/// The field entry the server asked for (RequestFieldEnter) and its one answer. CSceneStateGame::OnRequestFieldEnter
+/// The field entry the server asked for (RequestFieldEnter) and its answer. CSceneStateGame::OnRequestFieldEnter
 /// @0x14170f930 (scenestategame.cpp:2335) handles the packet the same way at login and in game: on error 0 the globals take
 /// the new map, field type, instance and dungeon, and WorldService::LoadMap(map, 1, nPortal) tears the old field down and
-/// loads the new one, keeping nPortal (m_2c0, worldservice_1.cpp:3319). When the new map's entities are all created the
-/// client answers ResponseFieldEnter with that portal (FUN_141bd98d0; OnLoadUgcMap :2284 and CubeMapInformationService
-/// FUN_1410cf5c0, cubemapinformationservice_3.cpp:5703), once per entry. A non-zero error only shows a message box
+/// loads the new one, keeping nPortal (m_2c0, worldservice_1.cpp:3319); the client answers ResponseFieldEnter with that
+/// portal (FUN_141bd98d0) as below. A non-zero error only shows a message box
 /// (GetFieldMoveErrorMessage); the current field stays.
-/// <para>At the end of the field load (WorldService::FUN_141bcda90, worldservice_1.cpp:6919-6920) every field-entered
-/// callback gets the map id; CSceneStateGame's (vfunc_1 @0x14170d9f0, scenestategame.cpp:1991-2011) sends RequestLoadUgcMap
-/// then Ugc 0x12, for every field and with no other condition, once per load (<see cref="Loaded"/>). The client sends
-/// ResponseFieldEnter only after that: from the LoadUgcMap answer (OnLoadUgcMap :2284, mode 0) or once the answer's cubes
-/// are all created (cubemapinformationservice_3.cpp:5701-5705). STILL-OPEN: the LoadUgcMap answer is not read, so ours
-/// answers when the field is built, right after the two sends.</para>
+/// <para>At the end of the field load (WorldService FUN_141bc0a70 @0x141bc0a70, worldservice_1.cpp:3779: state 2, loading,
+/// becomes 4, loaded, and FUN_141bcda90 runs, :6919-6920) every field-entered callback gets the map id; CSceneStateGame's
+/// (vfunc_1 @0x14170d9f0, scenestategame.cpp:1991-2011) sends RequestLoadUgcMap then Ugc 0x12, for every field and with no
+/// other condition, once per load (<see cref="FieldLoaded"/>). ResponseFieldEnter has two senders only, both after that:
+/// OnLoadUgcMap mode 0 (scenestategame.cpp:2283-2286, <see cref="LoadUgcMap"/>) and the drain of the cubes waiting for
+/// their entities (CubeMapInformationService FUN_1410cf5c0, cubemapinformationservice_3.cpp:5701-5705,
+/// <see cref="CubesMade"/>). There is no timeout and no fallback: a server that never sends LoadUgcMap gets no answer
+/// (unless a cube is made in the loaded field while the timer flag is still clear, as the drain allows).</para>
 /// </summary>
 public sealed class FieldEntry
 {
@@ -25,50 +26,79 @@ public sealed class FieldEntry
     public int Entries { get; private set; }
     /// <summary>True once the current entry has been answered.</summary>
     public bool Answered { get; private set; }
-    /// <summary>True once the current entry's field-entered sends went out.</summary>
-    public bool LoadSent { get; private set; }
+    /// <summary>True while the entry's field loads (WorldService state 2, set by LoadMap's FUN_141bbc1d0,
+    /// worldservice_1.cpp:3388).</summary>
+    public bool Loading { get; private set; }
+    /// <summary>True once the field has loaded (state 4, FUN_141bc0a70): LoadUgcMap is read only then.</summary>
+    public bool Loaded { get; private set; }
+    /// <summary>The portal LoadMap keeps (m_2c0, worldservice_1.cpp:3319; FUN_141bd98d0 returns it): RequestLoadUgcMap and
+    /// ResponseFieldEnter carry it.</summary>
+    public int Portal { get; private set; }
+    /// <summary>CubeMapInformationService's f248 (SetTimerEnabled @0x1410cb8b0, cubemapinformationservice_3.cpp:1137; read
+    /// by FUN_1410cb900): set by a LoadUgcMap of mode 0 or by the cube drain, cleared by one of another mode. It starts
+    /// false and no field load resets it.</summary>
+    public bool TimerEnabled { get; private set; }
 
     public FieldEntry(RequestFieldEnter first = null) { if (first != null) Enter(first); }
 
-    /// <summary>OnRequestFieldEnter: true when the entry is taken (error 0): a new field load starts and waits for its answer.
-    /// False on an error: nothing changes.</summary>
+    /// <summary>OnRequestFieldEnter: true when the entry is taken (error 0): LoadMap keeps its portal and a new field load
+    /// starts (state 2). False on an error: nothing changes.</summary>
     public bool Enter(RequestFieldEnter f)
     {
         if (f == null || f.Error != 0) return false;
         Current = f;
+        Portal = f.Portal;
         Answered = false;
-        LoadSent = false;
+        Loading = true;
+        Loaded = false;
         Entries++;
         return true;
     }
 
-    /// <summary>The field-entered sends of the loaded entry, in the client's order: RequestLoadUgcMap(portal), then Ugc 0x12
-    /// with the map id; the first time only, null after that (or with no entry). STILL-OPEN: the rest of vfunc_1 (CUgcManager::
-    /// CacheBannerObjectTextures, the taxi stations' effect refresh FUN_141739450(false) and the reset of DAT_143ab285c and
-    /// DAT_143ab284b when DAT_143ab2860 is 3).</summary>
-    public (RequestLoadUgcMap LoadUgcMap, UgcLoadBannersRequest Banners)? Loaded()
+    /// <summary>The end of the field load (FUN_141bc0a70 with a loading state, then vfunc_1 :1995-2001): the state becomes
+    /// loaded and RequestLoadUgcMap(portal), then Ugc 0x12 with the map id go out through <paramref name="send"/>. Only once
+    /// per entry: a field not loading (none taken, or loaded already) sends nothing. Returns true when they went out.
+    /// STILL-OPEN: the rest of vfunc_1 (CUgcManager::CacheBannerObjectTextures, the taxi stations' effect refresh
+    /// FUN_141739450(false) and the reset of DAT_143ab285c and DAT_143ab284b when DAT_143ab2860 is 3).</summary>
+    public bool FieldLoaded(Action<Wire.IOutPacket> send)
     {
-        if (Current == null || LoadSent) return null;
-        LoadSent = true;
-        return (new RequestLoadUgcMap(Current.Portal), new UgcLoadBannersRequest(Current.MapId));
+        if (!Loading) return false;
+        Loading = false;
+        Loaded = true;
+        send(new RequestLoadUgcMap(Portal));
+        send(new UgcLoadBannersRequest(Current.MapId));
+        return true;
     }
 
-    /// <summary>What the client sends when the field has loaded, in its order, through <paramref name="send"/>: the
-    /// field-entered sends (<see cref="Loaded"/>, vfunc_1 :1995-2001), then the answer (<see cref="Answer"/>). Each goes out
-    /// once per entry. Returns the answer when it went out now, else null.</summary>
-    public ResponseFieldEnter FieldLoaded(Action<Wire.IOutPacket> send)
+    /// <summary>OnLoadUgcMap (scenestategame.cpp:2172-2331): nothing unless the field has loaded (:2174). Mode 0 sets the
+    /// timer flag and answers ResponseFieldEnter(portal) through <paramref name="send"/> (:2283-2286), each time such a packet
+    /// comes (the client keeps no once flag; FUN_141bdb690 after it is empty); another mode clears the flag and waits for the
+    /// cubes (<see cref="CubesMade"/>). Returns the answer when one went out. STILL-OPEN: the launch option
+    /// IsSkipLoadingUgcCube (:2179, mode forced to 0), which ours does not have.</summary>
+    public ResponseFieldEnter LoadUgcMap(LoadUgcMap m, Action<Wire.IOutPacket> send)
     {
-        if (Loaded() is { } loaded) { send(loaded.LoadUgcMap); send(loaded.Banners); }
-        var answer = Answer();
-        if (answer != null) send(answer);
-        return answer;
+        if (m == null || !Loaded) return null;
+        TimerEnabled = m.Mode == 0;
+        return m.Mode == 0 ? Answer(send) : null;
     }
 
-    /// <summary>The answer of the loaded entry: ResponseFieldEnter(portal) the first time, null after that (or with no entry).</summary>
-    public ResponseFieldEnter Answer()
+    /// <summary>FUN_1410cf5c0 (cubemapinformationservice_3.cpp:5645-5716): in the loaded field, when the last cube waiting
+    /// for its entity is made and the timer flag is clear, the flag is set and ResponseFieldEnter(portal) goes out. Ours
+    /// makes a packet's cubes at once, so <paramref name="made"/> cubes made by one packet drain the set together.
+    /// STILL-OPEN: the client makes the entities over later frames, so cubes of several packets can drain as one set; ours
+    /// answers after the first packet that makes any. Returns the answer when one went out.</summary>
+    public ResponseFieldEnter CubesMade(int made, Action<Wire.IOutPacket> send)
     {
-        if (Current == null || Answered) return null;
+        if (made <= 0 || !Loaded || TimerEnabled) return null;
+        TimerEnabled = true;
+        return Answer(send);
+    }
+
+    ResponseFieldEnter Answer(Action<Wire.IOutPacket> send)
+    {
+        var answer = new ResponseFieldEnter(Portal);
         Answered = true;
-        return new ResponseFieldEnter(Current.Portal);
+        send(answer);
+        return answer;
     }
 }

@@ -153,6 +153,7 @@ public partial class LiveSession
                 }
                 bool added = player != null && IsInstanceValid(player) && player.Cubes.Cells.Apply(placed, id => ItemExists?.Invoke(id) ?? true);
                 GD.Print($"live: ResponseCube 0x{placed.Mode:x} error {placed.Error} cell 0x{placed.Cell:x} item {placed.Item?.ItemId ?? 0}{(added ? ", cube added" : "")}");
+                FieldCubesMade(added ? 1 : 0);   // CreateCube's cube waits for its entity too (f78, :2699)
                 return;
             }
             case ResponseCubeHomeInfo.Mode: OnHomeInfo(ResponseCubeHomeInfo.Read(r)); return;
@@ -168,20 +169,48 @@ public partial class LiveSession
     }
 
     /// <summary>LoadCubes (RecvOp 0x6A), CSceneStateGame::OnLoadCubes (@0x141728110, scenestategame.cpp:10857): mode 0's
-    /// house cubes go into the player's cube map through the 0xa place path (<see cref="Ms2.Ui.CubeCellMap.Load"/>).
-    /// They answer RequestLoadUgcMap (<see cref="Ms2.Net.FieldEntry.Loaded"/>). Modes 1-3 (:10902-10944) fill the plot
-    /// states, owners and sale states (<see cref="Ms2.Ui.CubePlots.Apply"/>).</summary>
+    /// house cubes go into the field's cube map through the 0xa place path (<see cref="Ms2.Ui.CubeCellMap.Load"/>); the cubes
+    /// made may answer the field entry (<see cref="FieldCubesMade"/>). Modes 1-3 (:10902-10944) fill the plot states, owners
+    /// and sale states (<see cref="Ms2.Ui.CubePlots.Apply"/>). The cubes come before the own FieldAddUser, so they go to the
+    /// built field's cube map, not through the bound player.</summary>
     void OnLoadCubes(Ms2.Net.Wire.RawPacket p)
     {
+        var cells = FieldCubeCells();
         var m = LoadCubes.Read(p.Reader());
         if (m == null)
         {
             var plots = LoadCubesPlots.Read(p.Reader());
-            if (plots != null && player != null && IsInstanceValid(player)) player.Cubes.Cells.Plots.Apply(plots);
+            if (plots != null && cells != null) cells.Plots.Apply(plots);
             return;
         }
-        int added = player != null && IsInstanceValid(player) ? player.Cubes.Cells.Load(m, id => ItemExists?.Invoke(id) ?? true) : 0;
+        int added = cells?.Load(m, id => ItemExists?.Invoke(id) ?? true) ?? 0;
         GD.Print($"live: LoadCubes {m.Cubes.Count} cube(s), {added} added");
+        FieldCubesMade(added);
+    }
+
+    /// <summary>The built field's cube map (its player's CubeGrid), or null before the field is built.</summary>
+    Ms2.Ui.CubeCellMap FieldCubeCells() => triggerField != null && IsInstanceValid(triggerField) ? triggerField.Cubes?.Cells : null;
+
+    /// <summary>Cubes were made in the field (CubeMapInformationService FUN_1410cf5c0, cubemapinformationservice_3.cpp:5701-5705):
+    /// in the loaded field with the timer flag clear, the field entry is answered (<see cref="Ms2.Net.FieldEntry.CubesMade"/>).</summary>
+    void FieldCubesMade(int made)
+    {
+        bool first = !fieldEntry.Answered;
+        FieldAnswered(fieldEntry.CubesMade(made, Send), first);
+    }
+
+    /// <summary>LoadUgcMap (RecvOp 0x7D), CSceneStateGame::OnLoadUgcMap @0x14170e800 (scenestategame.cpp:2172-2331): read in
+    /// full; in the loaded field mode 0 answers the field entry, another mode waits for the cubes
+    /// (<see cref="Ms2.Net.FieldEntry.LoadUgcMap"/>). STILL-OPEN: the house info's setters on CubeMapInformationService
+    /// (:2247-2280) and the rule's Apply (housing).</summary>
+    void OnLoadUgcMap(Ms2.Net.Wire.RawPacket p)
+    {
+        var m = LoadUgcMap.Read(p.Reader(), accountId);
+        bool first = !fieldEntry.Answered;
+        var answer = fieldEntry.LoadUgcMap(m, Send);
+        GD.Print($"live: LoadUgcMap mode {m.Mode} map {m.MapId}{(m.Home != null ? ", with the house info" : "")}"
+            + (answer != null ? ", field entry answered" : fieldEntry.Loaded ? ", waiting for the cubes" : ", field not loaded: dropped"));
+        FieldAnswered(answer, first);
     }
 
     /// <summary>ResponseCube 0x14 (scenestategame.cpp:10199-10244): the info is the local player's when its owner id is the local object's

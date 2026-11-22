@@ -117,6 +117,7 @@ static class Gms2Opcodes {
         [Inbound.BadgeEquip] = 0x81,
         [Inbound.Taxi] = 0x82,
         [Inbound.RideSync] = 0x7C,
+        [Inbound.LoadUgcMap] = 0x7F,
         [Inbound.World] = 0xBB,
         [Inbound.AttributePoint] = 0x46,
         [Inbound.Achieve] = 0x5F,

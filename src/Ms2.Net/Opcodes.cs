@@ -118,6 +118,7 @@ public enum Inbound : ushort {
     BadgeEquip = 0x7F,
     Taxi = 0x80,            // RecvOp Taxi (commonfiles/opcodes.h): CSceneStateGame::OnTaxi
     RideSync = 0x7A,
+    LoadUgcMap = 0x7D,          // RecvOp::LoadUgcMap (commonfiles/opcodes.h:133): CSceneStateGame::OnLoadUgcMap @0x14170e800
     World = 0xB9,
     AttributePoint = 0x45,
     Achieve = 0x5E,

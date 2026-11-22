@@ -380,6 +380,8 @@ public partial class Field : Node3D
     /// <summary>Raised after the field is built (live mode adds its remote players and npcs here).</summary>
     public static event Action<Field, ModelBuilder> Built;
     public PackSet Packs => packs;
+    /// <summary>The field's cube map, the player's CubeGrid (null before the player is made).</summary>
+    public Movement.CubeGrid Cubes => player?.Cubes;
 
     protected FieldAudio Audio;
     protected World.QuestGuide Quest;
