@@ -126,7 +126,23 @@ public partial class MessageBoxLayer : CanvasLayer
             _ => null,
         };
         var vp = GetViewport();   // taken before the dispatch, which can change the scene
-        if (key != null && controller.ProcessKey(key)) if (IsInstanceValid(vp)) vp.SetInputAsHandled();
+        var box = controller.CurrentBox;     // read before the key, which can close it
+        if (key != null && controller.ProcessKey(key))
+        {
+            if (key == "enter") LogEnter(box);
+            if (IsInstanceValid(vp)) vp.SetInputAsHandled();
+        }
+    }
+
+    /// <summary>The box that took an Enter, so a run shows when a typed chat line went to a box instead (the layer sees the
+    /// keys before the scene's chat input).</summary>
+    void LogEnter(MessageBoxData box)
+    {
+        string text = box?.Msg ?? "";
+        if (text.Length > 40) text = text.Substring(0, 40) + "...";
+        GD.Print(box == null
+            ? "message box: Enter taken with no current box"
+            : $"message box: Enter taken by box {box.Id} type {box.Type} tag \"{box.Extra}\" listener {box.Listener?.GetType().Name ?? "-"} callback {box.HasCallback} modaless {box.Modaless} drawn {view?.IsVisibleInTree() ?? false} text \"{text}\"");
     }
 
     /// <summary>
