@@ -32,14 +32,22 @@ public sealed record MagicPathMove(float DelayTime, float SpawnTime, float LifeT
     public int MoveEndHoldDuration { get; init; }
     /// <summary>"ignorePhysxTestInitPosition" (XmlGetBool): skips the start ray of an arrow magic (CMagic::FUN_1414609e0).</summary>
     public bool IgnorePhysxTestInitPosition { get; init; }
+    /// <summary>"traceTargetDuration" (m_fTraceTargetDuration), seconds: past it (from the state tick, state 2 on) the magic no
+    /// longer follows its target entity (CMagic::UpdateTargetPosition, magicdata.cpp:1459); 0 follows it always.</summary>
+    public float TraceTargetDuration { get; init; }
+    /// <summary>"piercingAttackInterval" (m_nPiercingAttackInterval, unsigned), milliseconds: how often a piercing arrow
+    /// (bounceType 3 and 4) forgets the targets it pierced (CMagic::FUN_141466da0); 0 never.</summary>
+    public uint PiercingAttackInterval { get; init; }
+    /// <summary>"piercingAttackMaxTargetCount" (m_nPiercingAttackMaxTargetCount): the most targets a piercing arrow hits
+    /// between two intervals (CMagic::FUN_141465b30); 0 no cap.</summary>
+    public int PiercingAttackMaxTargetCount { get; init; }
 }
 
 /// <summary>
 /// The magic paths (LoadMagicPath @0x14145c4d0, magicdata.cpp:302): ./data/xml/table/magicPath.xml, each &lt;type id&gt; a list of
 /// its &lt;move&gt; rows; a repeated id replaces the earlier list (SetAt). The default id 0 is then set to one row of zeros, so an
 /// attack without a magicPathID still gets a magic. Read on first use (FUN_14145c300 reloads a dirty cache).
-/// STILL-OPEN: lookAtType, traceTargetDuration, traceTargetOffsetPos, explosionByDestroy and the piercing interval and
-/// count are not read.
+/// STILL-OPEN: lookAtType, traceTargetOffsetPos and explosionByDestroy are not read.
 /// </summary>
 public sealed class MagicPathTable
 {
@@ -65,6 +73,9 @@ public sealed class MagicPathTable
                     ControlRate = Xml.Float(m, "controlRate"), CatmullRom = Xml.Int(m, "catmullrom"),
                     NonTargetMoveDistance = Xml.Float(m, "nonTargetMoveDistance"), MoveEndHoldDuration = Xml.Int(m, "moveEndHoldDuration"),
                     IgnorePhysxTestInitPosition = Xml.Bool(m, "ignorePhysxTestInitPosition"),
+                    TraceTargetDuration = Xml.Float(m, "traceTargetDuration"),
+                    PiercingAttackInterval = Xml.UInt(m, "piercingAttackInterval"),
+                    PiercingAttackMaxTargetCount = Xml.Int(m, "piercingAttackMaxTargetCount"),
                 })
                 .ToArray();
         types[0] = new[] { Zero };

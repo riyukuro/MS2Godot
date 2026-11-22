@@ -1005,6 +1005,7 @@ public partial class HudScene
 
     readonly OwnTagMagics ownTagMagics = new();
     readonly System.Collections.Generic.List<Ms2.Net.Packets.SkillHitRequest> ownHitSends = new();
+    readonly System.Collections.Generic.List<Ms2.Net.Packets.SkillSplashRequest> ownSplashSends = new();
     Func<string, System.Numerics.Vector3> ownNodePosition;
     MagicRayBlocked ownRayBlocked;
     MagicRayCast ownRayCast;
@@ -1031,10 +1032,13 @@ public partial class HudScene
         ownRayBlocked ??= MagicRayBlocked;
         ownRayCast ??= MagicRayCast;
         ownHitSends.Clear();
+        ownSplashSends.Clear();
         ownTagMagics.Tick(now, 0, owner, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(hitObjects), ownCast,
-            live.TombTags, ownHitSends, crtRand, ownRayBlocked, (slotField?.PkMode ?? 0) != 0, ownRayCast);
+            live.TombTags, ownHitSends, crtRand, ownRayBlocked, (slotField?.PkMode ?? 0) != 0, ownRayCast, ownSplashSends);
         foreach (var req in ownHitSends) live.SendHit(req);
+        foreach (var req in ownSplashSends) live.SendSplash(req);
         ownHitSends.Clear();
+        ownSplashSends.Clear();
     }
 
     /// <summary>The player's vf36_GetNodePosition (MS2 coordinates): the effect dummy <paramref name="node"/>, else the player's

@@ -14,14 +14,15 @@ namespace Ms2.Ui.Tests;
 /// </summary>
 public class OwnArrowMagicTests
 {
-    const string Arrow = "<attack point=\"Hit_01\" targetCount=\"1\" attackMethodType=\"1\" magicPathID=\"600\" brokenOffence=\"1\">"
+    static string Arrow(string arrow, string attack) =>
+        "<attack point=\"Hit_01\" targetCount=\"1\" attackMethodType=\"1\" magicPathID=\"600\" brokenOffence=\"1\"" + attack + ">"
         + "<range rangeType=\"box\" distance=\"200\" height=\"100\" width=\"100\" applyTarget=\"1\"/>"
-        + "<arrow nonTarget=\"1\" rayPhysxTest=\"1\" collision=\"25,100,15\" collisionAdd=\"0,25,15\"/></attack>";
+        + "<arrow nonTarget=\"1\" rayPhysxTest=\"1\" collision=\"25,100,15\" collisionAdd=\"0,25,15\"" + arrow + "/></attack>";
 
-    static CastRecord Record()
+    static CastRecord Record(string arrow = "", string attack = "")
     {
         var doc = XDocument.Parse("<ms2><skill id=\"100\"><basic mainType=\"1\"/><level value=\"1\"><motion sequenceName=\"A\">"
-            + Arrow + "</motion></level></skill></ms2>");
+            + Arrow(arrow, attack) + "</motion></level></skill></ms2>");
         var t = new SkillDataTable(() => new[] { doc }, (e, n, _) => e.Elements(n).ToList());
         var d = t.GetSkillData(100);
         return new CastRecord { Skill = d, Level = d.GetLevelData(1), CastId = 0x1122334455L, Motion = 0, SendCount = 3 };
@@ -41,9 +42,11 @@ public class OwnArrowMagicTests
         Kind = HitKind.Npc, Team = 0, Hp = 100,
     };
 
-    static readonly HitCandidate Me = new()
+    static readonly HitCandidate Me = MeAt(Vector3.Zero);
+
+    static HitCandidate MeAt(Vector3 p) => new()
     {
-        Id = 42, Position = Vector3.Zero, Body = SkillHit.PlayerBody(Vector3.Zero, 0), IsOwner = true, Kind = HitKind.Pc, Team = 1, Hp = 1,
+        Id = 42, Position = p, Body = SkillHit.PlayerBody(p, 0), IsOwner = true, Kind = HitKind.Pc, Team = 1, Hp = 1,
     };
 
     static readonly MagicOwner Owner = new(Vector3.Zero, 0, true, false, false);
@@ -161,6 +164,95 @@ public class OwnArrowMagicTests
         var m = Add(r, Paths(Linear));
         m.Tick(T + 0, 0, Owner, new[] { Me }, r, null, null, () => 0, null);
         Assert.That(m.CancelCaster(r.CastId, T), Is.EqualTo(0), "CanCancel: state 0 or 1 only");
+    }
+
+    [Test]
+    public void APiercingArrowFliesThroughItsHitsUpToTheBounceCount()
+    {
+        var r = Record(" bounceType=\"3\" bounceCount=\"2\"");
+        var m = Add(r, Paths(Linear));
+        var objects = new[] { Me, Mob(9, 0, -250), Mob(10, 0, -450), Mob(11, 0, -650) };
+        var sends = new List<SkillHitRequest>();
+        for (int t = 0; t <= 400; t += 100) m.Tick(T + t, 0, Owner, objects, r, null, sends, () => 0, null);
+        Assert.That(sends.Select(s => s.Targets.Single()), Is.EqualTo(new[] { new SkillHitTarget(9, 0), new SkillHitTarget(10, 1) }),
+            "each hit once, the hits before it its index; the third past the bounce count");
+        Assert.That(m.Count, Is.EqualTo(1), "a piercing arrow flies on after its last hit");
+        Assert.That(m.Flight(0).Current.Y, Is.EqualTo(-720f).Within(1e-2f));
+    }
+
+    [Test]
+    public void APiercingIntervalForgetsTheHitsAndSendsItsSplash()
+    {
+        var r = Record(" bounceType=\"3\" bounceCount=\"5\"", " cubeMagicPathID=\"1\"");
+        var m = Add(r, Paths("vel=\"100\" distance=\"810\" piercingAttackInterval=\"150\""));
+        var objects = new[] { Me, Mob(9, 0, -50) };
+        var sends = new List<SkillHitRequest>();
+        var splashes = new List<SkillSplashRequest>();
+        foreach (int t in new[] { 0, 100, 149 }) m.Tick(T + t, 0, Owner, objects, r, null, sends, () => 0, null, splashes: splashes);
+        Assert.That(sends.Select(s => s.Targets.Single()), Is.EqualTo(new[] { new SkillHitTarget(9, 0) }), "hit once, then skipped");
+        Assert.That(splashes, Is.Empty);
+        m.Tick(T + 150, 0, Owner, objects, r, null, sends, () => 0, null, splashes: splashes);
+        Assert.That(sends.Select(s => s.Targets.Single()), Is.EqualTo(new[] { new SkillHitTarget(9, 0), new SkillHitTarget(9, 1) }),
+            "the interval forgets the skipped targets: hit again, the hits kept");
+        var sp = splashes.Single();
+        Assert.That((sp.CastId, sp.Attack, sp.SendCount, sp.Hit), Is.EqualTo((r.CastId, (byte)0, 3, 0)));
+        Assert.That(sp.Position.Y, Is.EqualTo(-15f).Within(1e-3f), "the current point");
+        Assert.That(sp.Direction.Length(), Is.LessThan(1e-3f), "flying along -y: m_matRotation is the identity");
+    }
+
+    [Test]
+    public void ThePiercingMaxTargetCountCapsTheHits()
+    {
+        var r = Record(" bounceType=\"3\" bounceCount=\"5\"");
+        var m = Add(r, Paths(Linear + " piercingAttackMaxTargetCount=\"1\""));
+        var objects = new[] { Me, Mob(9, 0, -250), Mob(10, 0, -260), Mob(11, 0, -450) };
+        var sends = new List<SkillHitRequest>();
+        for (int t = 0; t <= 200; t += 100) m.Tick(T + t, 0, Owner, objects, r, null, sends, () => 0, null);
+        Assert.That(sends[0].Targets, Has.Count.EqualTo(1), "two in the box, one let through");
+        Assert.That(sends.Skip(1).All(s => s.Targets.Count == 0), "the cap reached: the later sends carry no targets");
+    }
+
+    [Test]
+    public void AReturningArrowFliesBackToTheOwnerAndHitsAgain()
+    {
+        var r = Record(" bounceType=\"4\" bounceCount=\"2\"");
+        var m = Add(r, Paths(Linear));
+        var objects = new[] { Me, Mob(9, 0, -250) };
+        var sends = new List<SkillHitRequest>();
+        for (int t = 0; t <= 500; t += 50) m.Tick(T + t, 0, Owner, objects, r, null, sends, () => 0, null);
+        Assert.That(m.Flight(0).State, Is.EqualTo(5), "the flight's end turns it back");
+        Assert.That(sends.Count(s => s.Targets.Count != 0), Is.EqualTo(1));
+        for (int t = 550; t <= 850; t += 50) m.Tick(T + t, 0, Owner, objects, r, null, sends, () => 0, null);
+        var hits = sends.Where(s => s.Targets.Count != 0).ToList();
+        Assert.That(hits.Select(s => s.Targets.Single()), Is.EqualTo(new[] { new SkillHitTarget(9, 0), new SkillHitTarget(9, 0) }),
+            "the turn back forgets the hits");
+        Assert.That(hits[1].Rotation.Y, Is.EqualTo(-1f).Within(1e-2f), "flying back along +y");
+        Assert.That(m.Flight(0).Current.Y, Is.GreaterThan(-200f));
+        for (int t = 900; t <= 1100; t += 50) m.Tick(T + t, 0, Owner, objects, r, null, sends, () => 0, null);
+        Assert.That(m.Count, Is.EqualTo(0), "at the owner it ends: the hold is not set again");
+    }
+
+    [Test]
+    public void AReturningArrowFollowsTheOwnerUntilTheTraceDurationRunsOut()
+    {
+        float XAt(string trace)
+        {
+            var r = Record(" bounceType=\"4\"");
+            var m = Add(r, Paths(Linear + trace));
+            for (int t = 0; t <= 500; t += 50) m.Tick(T + t, 0, Owner, new[] { Me }, r, null, null, () => 0, null);
+            var moved = new[] { MeAt(new Vector3(300, 0, 0)) };
+            for (int t = 550; t <= 650; t += 50) m.Tick(T + t, 0, Owner, moved, r, null, null, () => 0, null);
+            return m.Flight(0).Current.X;
+        }
+        Assert.That(XAt(""), Is.GreaterThan(50f), "the owner moved: the arrow turns after it");
+        Assert.That(XAt(" traceTargetDuration=\"0.04\""), Is.EqualTo(0f).Within(1e-3f), "past the trace duration: no turn");
+    }
+
+    [Test]
+    public void TheMagicPathRowReadsThePiercingAndTraceValues()
+    {
+        var d = Paths("piercingAttackInterval=\"300\" piercingAttackMaxTargetCount=\"4\" traceTargetDuration=\"1.5\"").Get(600, 0);
+        Assert.That((d.PiercingAttackInterval, d.PiercingAttackMaxTargetCount, d.TraceTargetDuration), Is.EqualTo((300u, 4, 1.5f)));
     }
 
     [Test]

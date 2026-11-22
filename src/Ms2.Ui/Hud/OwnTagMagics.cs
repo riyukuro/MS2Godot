@@ -41,14 +41,14 @@ public delegate bool MagicRayCast(Vector3 from, Vector3 dir, float length, out V
 /// the current one, its hits sent), the registration of that box every tick, and the end check (FUN_141463fb0), which drops
 /// the magic once the flight ended (and moveEndHoldDuration passed).
 /// When the own skill state ends, <see cref="CancelCaster"/> drops the cast's delay-0 magics that have not fired.
-/// STILL-OPEN: for an arrow record, the target tracking (UpdateTargetPosition with a target entity, the record's target id
-/// not 0), the magic control flight (FUN_141464490, a skill with magicControl enable not 0: those make no arrow magic here),
-/// the bounce and piercing modes (bounceType 3 and 4: FUN_141466da0, piercingAttackMaxTargetCount, state 5), the PC state
-/// filter (the row's +0x200), the invincible bounce-off (m_n528 2), the hit effects and the end splash; the linked records, the
-/// latency maximum (0 here: the time sync's latency is not kept), CFunctionCubeService::SetTagArea, the magic's own
-/// flight and effects (PlayHitEffects), MyPC::FUN_14152e0c0 after a fill, and the splash send's call sites
-/// (FUN_14145f570 at the magic's end, FUN_141466da0 per piercing interval: both need the flight; the packet is
-/// <see cref="SkillSplashRequest"/>) are not ported.
+/// Piercing arrows (bounceType 3 and 4) keep flying through their hits, forget them each piercing interval and send its
+/// splash (<see cref="SkillSplashRequest"/>); bounceType 4 then flies back to the owner (state 5) and ends there.
+/// STILL-OPEN: for an arrow record, the target tracking of the record's target (UpdateTargetPosition with the record's
+/// target id not 0), the magic control flight (FUN_141464490, a skill with magicControl enable not 0: those make no arrow
+/// magic here), the PC state filter (the row's +0x200), the invincible bounce-off (m_n528 2), the hit effects and the end
+/// splash (FUN_14145f570); the linked records, the latency maximum (0 here: the time sync's latency is not kept),
+/// CFunctionCubeService::SetTagArea, the magic's own effects (PlayHitEffects) and MyPC::FUN_14152e0c0 after a fill are not
+/// ported.
 /// </summary>
 public sealed class OwnTagMagics
 {
@@ -72,16 +72,18 @@ public sealed class OwnTagMagics
         // the arrow record's flight (CMagic): its row, state (m_nState), state and last ticks (m_nStateTick, m_nLastTick), the
         // move end hold (m_nD0), the points (m_ptCurrent, m_ptLast, m_ptTarget, m_ptPredicted), the direction (m_ptDirection),
         // the record's direction (m_ptDefaultDir), m_matRotation's columns, the remaining and total flight seconds, the curve
-        // flag (m_n26C), the ray stop (m_n1C8), the fill done (m_n1CC), the targets hit (m_map1D8, m_map220: the same while no
-        // bounce is ported) and the last box (m_spVal)
+        // flag (m_n26C), the ray stop (m_n1C8), the fill done (m_n1CC), the targets hit (m_map1D8), the targets the fill skips
+        // (m_map220: the same ones, but a piercing interval forgets them), the last piercing interval (m_n268), the last box
+        // (m_spVal), the target record's hit index (m_n84) and the owner's object id (the random seeds)
         public bool Arrow;
         public MagicPathMove Row;
         public int State, StateTick, LastTick, HoldUntil;
         public Vector3 Current, Last, Target, Predicted, Dir, DefaultDir, AxisX, AxisY, AxisZ;
         public float Remain, Total;
         public bool Curve, RayStopped, Filled, HasArea;
-        public HashSet<int> Hits;
+        public HashSet<int> Hits, Excluded;
         public HitBox Area;
+        public int HitIndex, OwnerId, PierceTick;
     }
 
     readonly List<Magic> live = new();
@@ -136,7 +138,7 @@ public sealed class OwnTagMagics
                 AttackIndex = (byte)(r?.AttackIndex ?? 0),
                 StartPoint = StartPoint(d, dir, nodePosition?.Invoke(d.FireNode) ?? r?.Position ?? Vector3.Zero),
                 DelayZero = MathF.Abs(d.DelayTime) < 1e-6f, IgnoreCancelAtSpawn = d.IgnoreCancelAtSpawnTime,
-                Bounce2 = attack.Arrow.BounceType == 2,
+                Bounce2 = attack.Arrow.BounceType == 2, HitIndex = t.Hit,
             };
             if (arrow) InitArrow(m, d, dir, ownerId, ownerPosition, rayCast);
             live.Add(m);
@@ -192,6 +194,8 @@ public sealed class OwnTagMagics
         m.Arrow = true;
         m.Row = d;
         m.Hits = new HashSet<int>();
+        m.Excluded = new HashSet<int>();
+        m.OwnerId = ownerId;
         m.DefaultDir = dir;
         float yaw = -(YawDegrees(dir) * 3.1415927f / 180f);
         m.AxisX = Turn(yaw, Vector3.UnitX);
@@ -219,6 +223,15 @@ public sealed class OwnTagMagics
                 }
             }
         }
+        SetCurve(m, start);
+    }
+
+    /// <summary>CMagic::FUN_14145d9d0 @0x14145d9d0 (magicdata.cpp:712) from <paramref name="start"/>: the total and remaining
+    /// time, the predicted point and the curve flag (<see cref="InitArrow"/>).</summary>
+    static void SetCurve(Magic m, Vector3 start)
+    {
+        var d = m.Row;
+        int ownerId = m.OwnerId;
         float length = (m.Target - start).Length();
         m.Total = d.Velocity != 0f ? length / d.Velocity : 0f;
         m.Remain = m.Total;
@@ -229,6 +242,57 @@ public sealed class OwnTagMagics
         var r = new Vector3(d.Control0.X + range.X * rx, d.Control0.Y + range.Y * ry, d.Control0.Z + range.Z * rz);
         m.Predicted = start + m.Dir * r.Y * length + m.AxisZ * r.Z + m.AxisX * r.X;
         m.Curve = m.Total > 0f && start != m.Predicted && (r.X != 0f || r.Z != 0f);
+    }
+
+    /// <summary>
+    /// CMagic::UpdateTargetPosition (magicdata.cpp:1459) at the start of each flight: the target entity (GetTargetEntity) is the
+    /// owner in state 5, else the record's target (m_nCasterId) when not 0; it is followed unless traceTargetDuration is set and
+    /// ran out since the state tick (state 2 on). The followed target's point is the collision part centre nearest the current
+    /// point (FUN_141467100), its z at most the start's z plus the attack range's height and add z (and controlEndOffsetValue's
+    /// z when a control value is set); the remaining time then the current-to-target length over vel. Then
+    /// <see cref="Frame"/>. Returns whether there is a target entity.
+    /// STILL-OPEN: the record's target in state 2 (only the owner in state 5 is followed); the owner's body box centre stands
+    /// in for its nearest collision part.
+    /// </summary>
+    static bool UpdateTarget(Magic m, int nowMs, ReadOnlySpan<HitCandidate> objects)
+    {
+        bool entity = m.State == 5 || m.TargetId != 0;
+        int self = -1;
+        if (m.State == 5)
+            for (int i = 0; i < objects.Length; i++)
+                if (objects[i].IsOwner) { self = i; break; }
+        if (m.State == 5 && self < 0) entity = false;
+        var d = m.Row;
+        bool track = !(d.TraceTargetDuration != 0f && m.State >= 2
+            && (uint)(m.StateTick + MagicPathTable.Ms(d.TraceTargetDuration)) < (uint)nowMs);
+        if (self >= 0 && track)
+        {
+            var p = objects[self].Body.Center;
+            var range = m.Attack.Range;
+            float cap = m.StartPoint.Z + range.Height + range.Add.Z;
+            if (d.Control0 != Vector3.Zero || d.Control1 != Vector3.Zero || d.ControlEnd != Vector3.Zero) cap += d.ControlEnd.Z;
+            if (p.Z > cap) p.Z = cap;
+            m.Target = p;
+            m.Remain = d.Velocity != 0f ? (m.Target - m.Current).Length() / d.Velocity : 0f;
+        }
+        Frame(m);
+        return entity;
+    }
+
+    /// <summary>
+    /// CMagic::FUN_141460700 @0x141460700, the bounceType 4 turn back (state 5) with the owner present: the fill again
+    /// (m_n1CC 0) with the hit and skipped targets forgotten, the start the current point, the target the owner
+    /// (<see cref="UpdateTarget"/>), and the flight's time and curve again (FUN_14145d9d0).
+    /// STILL-OPEN: the record's hit set the client clears here is not kept.
+    /// </summary>
+    static void TurnBack(Magic m, int nowMs, ReadOnlySpan<HitCandidate> objects)
+    {
+        m.Filled = false;
+        m.Hits.Clear();
+        m.Excluded.Clear();
+        m.StartPoint = m.Current;
+        UpdateTarget(m, nowMs, objects);
+        SetCurve(m, m.StartPoint);
     }
 
     /// <summary>FUN_1407680d0: a float in [0, 1) from the generator's next value's low 23 bits.</summary>
@@ -310,11 +374,11 @@ public sealed class OwnTagMagics
     /// STILL-OPEN: the point group sees only the current cast's record; PCBase::FUN_141673e10 finds any record the owner
     /// still keeps by its cast id.
     /// An arrow magic ticks by <see cref="TickArrow"/> (no lead: it starts at start + delay) and stays until its flight ends;
-    /// <paramref name="rayCast"/> is its flight's ray.
+    /// <paramref name="rayCast"/> is its flight's ray and <paramref name="splashes"/> gets its piercing intervals' splashes.
     /// </summary>
     public int Tick(int nowMs, int leadMs, in MagicOwner owner, ReadOnlySpan<HitCandidate> objects, CastRecord record,
         TombTagPass pass, List<SkillHitRequest> sends, Func<int> rand, MagicRayBlocked rayBlocked, bool pkMode = false,
-        MagicRayCast rayCast = null)
+        MagicRayCast rayCast = null, List<SkillSplashRequest> splashes = null)
     {
         int registered = 0;
         // in the order the magics were made (the client runs aTags in order, stateskill.cpp:1401-1410)
@@ -323,7 +387,7 @@ public sealed class OwnTagMagics
             var m = live[i];
             if (m.Arrow)
             {
-                if (TickArrow(m, nowMs, owner, objects, pass, sends, rand, rayCast, pkMode, ref registered)) live.RemoveAt(i);
+                if (TickArrow(m, nowMs, owner, objects, pass, sends, splashes, rand, rayCast, pkMode, ref registered)) live.RemoveAt(i);
                 else i++;
                 continue;
             }
@@ -345,10 +409,12 @@ public sealed class OwnTagMagics
     /// (the state tick start + delay), 1 to 2 once spawnTime passed (the state tick moves by it), both in the same tick; in
     /// state 2 a lifeTime that ran out ends it (state 3, the end splash FUN_14145f570 not ported: dropped), else the flight
     /// (<see cref="Fly"/>), the arrow fill (FUN_141461bd0 then <see cref="ArrowFill"/>), the registration of its box
-    /// (FUN_141462490) and the end check (FUN_141463fb0). m_nLastTick is the tick's time at the end. True when dropped.
+    /// (FUN_141462490) and the end check (FUN_141463fb0). The turn back of bounceType 4 (state 5, FUN_141460700) ticks the
+    /// same way. m_nLastTick is the tick's time at the end. True when dropped.
     /// </summary>
     bool TickArrow(Magic m, int nowMs, in MagicOwner owner, ReadOnlySpan<HitCandidate> objects, TombTagPass pass,
-        List<SkillHitRequest> sends, Func<int> rand, MagicRayCast rayCast, bool pkMode, ref int registered)
+        List<SkillHitRequest> sends, List<SkillSplashRequest> splashes, Func<int> rand, MagicRayCast rayCast, bool pkMode,
+        ref int registered)
     {
         int begin = m.Start + m.Delay;
         if ((uint)nowMs < (uint)begin) return false;
@@ -356,9 +422,11 @@ public sealed class OwnTagMagics
         if ((uint)m.LastTick > (uint)nowMs) return false;
         if (m.State == 0)
         {
+            // FUN_14145e960: the piercing interval counts from here (m_n268)
             m.State = 1;
             m.StateTick = begin;
             m.LastTick = begin;
+            m.PierceTick = nowMs;
         }
         if (m.State == 1 && (uint)(m.StateTick + m.Spawn) <= (uint)nowMs)
         {
@@ -366,13 +434,13 @@ public sealed class OwnTagMagics
             m.StateTick += m.Spawn;
             m.LastTick = m.StateTick;
         }
-        if (m.State == 2)
+        if (m.State is 2 or 5)
         {
             if (m.Life != 0 && (uint)(m.StateTick + m.Life) <= (uint)nowMs) return true;
-            Fly(m, nowMs, rayCast);
+            Fly(m, nowMs, objects, rayCast);
             if (!m.Filled)
             {
-                var req = ArrowFill(m, owner, objects, rand, pkMode);
+                var req = ArrowFill(m, nowMs, owner, objects, splashes, rand, pkMode);
                 if (req != null) sends?.Add(req);
             }
             // FUN_141462490: the attack's nonTarget 1 or brokenOffence, the owner the local player; the box every tick
@@ -382,10 +450,17 @@ public sealed class OwnTagMagics
                 registered++;
             if (m.Remain <= 0f)
             {
-                // FUN_141463fb0: moveEndHoldDuration once, then the end (state 3: dropped)
+                // FUN_141463fb0: moveEndHoldDuration once, then bounceType 4 turns back (state 5, the hold not set again, so
+                // the turn back ends at its arrival), else the end (state 3: dropped)
                 int hold = m.Row.MoveEndHoldDuration;
                 if (m.HoldUntil == 0 && hold > 0) m.HoldUntil = nowMs + hold;
-                else if ((uint)m.HoldUntil < (uint)nowMs) return true;
+                else if ((uint)m.HoldUntil < (uint)nowMs)
+                {
+                    if (m.State != 2 || m.Attack.Arrow.BounceType != 4) return true;
+                    m.StateTick = nowMs;
+                    m.State = 5;
+                    TurnBack(m, nowMs, objects);
+                }
             }
         }
         m.LastTick = nowMs;
@@ -397,7 +472,7 @@ public sealed class OwnTagMagics
 
     /// <summary>
     /// CMagic::FUN_14145ec50 @0x14145ec50 (magicdata.cpp:1094), the flight, for a magic without magic control (m_n538 0) and
-    /// vel not nearly 0, after UpdateTargetPosition (no target entity: <see cref="Frame"/>):
+    /// vel not nearly 0, after UpdateTargetPosition (<see cref="UpdateTarget"/>):
     /// <list type="bullet">
     /// <item>A curve (m_n26C): t the seconds since the state tick over the total; at 1 the target, else catmullrom set the
     /// D3DXVec3CatmullRom through (start, start, predicted, target) to controlRate and (start, predicted, target, target)
@@ -405,16 +480,16 @@ public sealed class OwnTagMagics
     /// <item>Else the seconds since the last tick along the direction at vel, the target once that reaches the remaining time.</item>
     /// <item>The owner a PC (kind 1 or 3) with time left: the 2D distance from the start (the point before this step) at
     /// distance, or (not nonTarget 1, no target, nonTargetMoveDistance set) at nonTargetMoveDistance, ends the flight.</item>
-    /// <item>A step that moves: after the start ray's hit (m_n1C8) the start, else with rayPhysxTest the ray (groups 0x201)
-    /// from the current point along the direction for the step + 1; a hit stops 5 back from it (m_n1C8).</item>
+    /// <item>A step that moves, not in state 5: after the start ray's hit (m_n1C8) the start, else with rayPhysxTest the ray
+    /// (groups 0x201) from the current point along the direction for the step + 1; a hit stops 5 back from it (m_n1C8).</item>
     /// </list>
     /// Then CMagic::SetPosition and, with time left, the frame again.
     /// </summary>
-    static void Fly(Magic m, int nowMs, MagicRayCast rayCast)
+    static void Fly(Magic m, int nowMs, ReadOnlySpan<HitCandidate> objects, MagicRayCast rayCast)
     {
         var d = m.Row;
         if (NearlyEqual(d.Velocity, 0f)) return;
-        Frame(m);
+        bool entity = UpdateTarget(m, nowMs, objects);
         var start = m.StartPoint;
         Vector3 p;
         if (m.Curve)
@@ -453,12 +528,12 @@ public sealed class OwnTagMagics
         {
             float moved = Distance2D(m.Current, start);
             if (moved >= d.Distance) m.Remain = 0f;
-            else if (d.NonTargetMoveDistance != 0f && !m.Attack.Arrow.IsNonTargetOne && m.TargetId == 0
+            else if (d.NonTargetMoveDistance != 0f && !m.Attack.Arrow.IsNonTargetOne && !entity
                 && d.NonTargetMoveDistance <= moved)
                 m.Remain = 0f;
         }
         float delta = (p - m.Current).Length();
-        if (delta > 0f)
+        if (delta > 0f && m.State != 5)
         {
             if (m.RayStopped)
             {
@@ -503,23 +578,31 @@ public sealed class OwnTagMagics
     /// CMagic::FUN_141465b30 @0x141465b30 (magicdata.cpp:1950), the arrow fill, under FUN_141461bd0 (magicControl enable 2 and
     /// m_n1CC skip it):
     /// <list type="bullet">
-    /// <item>bounceType 2 waits for the flight's end; the bounce count (at least 1) caps the hits.</item>
+    /// <item>The bounce count (at least 1) caps the hits. bounceType 3 and 4 (piercing) stop once it is reached, else run the
+    /// piercing interval (<see cref="PierceInterval"/>); bounceType 2 waits for the flight's end.</item>
     /// <item>StateSkill::FUN_1417e9d20: the arrow's collision box (x, the last-to-current length + y, z; collisionAdd's y and
     /// z behind and below) posed at the last point by m_matRotation over the objects of applyTarget | 4, the hit ones
     /// excluded, the attack's sort; the box kept for the registration (m_spVal) hit or not.</item>
     /// <item>Not nonTarget: only the record's target; the hits up to the count left go in the send (mode 1 sub 1: last,
-    /// current, m_matRotation's y column), each with the hits before it, then kept.</item>
-    /// <item>The count reached: the fill is done (m_n1CC), and with a count of 1 the flight ends at the current point.</item>
+    /// current, m_matRotation's y column), each with the hits before it, then kept and skipped.</item>
+    /// <item>Piercing: piercingAttackMaxTargetCount (not 0) caps the skipped targets plus the new hits.</item>
+    /// <item>The count reached: the fill is done (m_n1CC), and with a count of 1, not piercing, the flight ends at the current
+    /// point.</item>
     /// </list>
-    /// STILL-OPEN: bounceType 3 and 4 (FUN_141466da0, the piercing cap), the PC state filter (+0x200) and the invincible
-    /// bounce-off (m_n528).
+    /// STILL-OPEN: the PC state filter (+0x200) and the invincible bounce-off (m_n528, the first hit's GetInvincible: 0 here).
     /// </summary>
-    SkillHitRequest ArrowFill(Magic m, in MagicOwner owner, ReadOnlySpan<HitCandidate> objects, Func<int> rand, bool pkMode)
+    SkillHitRequest ArrowFill(Magic m, int nowMs, in MagicOwner owner, ReadOnlySpan<HitCandidate> objects,
+        List<SkillSplashRequest> splashes, Func<int> rand, bool pkMode)
     {
         var a = m.Attack;
         int mode = a.Arrow.BounceType, max = a.Arrow.BounceCount > 1 ? a.Arrow.BounceCount : 1;
-        if (mode is 3 or 4) return null;
-        if (mode == 2 && !NearlyEqual(m.Remain, 0f)) return null;
+        bool pierce = mode is 3 or 4;
+        if (pierce)
+        {
+            if (max <= m.Hits.Count) return null;
+            PierceInterval(m, nowMs, owner, splashes);
+        }
+        else if (mode == 2 && !NearlyEqual(m.Remain, 0f)) return null;
         var col = a.Arrow.Collision;
         var size = new Vector3(col.X, (m.Current - m.Last).Length() + col.Y, col.Z);
         var add = new Vector3(0f, a.Arrow.CollisionAdd.Y, a.Arrow.CollisionAdd.Z);
@@ -529,7 +612,7 @@ public sealed class OwnTagMagics
         var dir = SkillHit.Unitize(m.AxisX);
         SkillHit.Query(objects, a.Range.ApplyTarget | 4, a.Range.IgnoreNpcRanks, queried, pkMode);
         for (int i = queried.Count - 1; i >= 0; i--)
-            if (m.Hits.Contains(queried[i].Id)) queried.RemoveAt(i);
+            if (m.Excluded.Contains(queried[i].Id)) queried.RemoveAt(i);
         SkillHit.Detect(shape, m.Last, dir, Vector3.Cross(dir, Vector3.UnitZ), a.Direction, a.Range.IncludeCaster != 0, false,
             System.Runtime.InteropServices.CollectionsMarshal.AsSpan(queried), rand ?? (() => 0), detected);
         if (detected.Count == 0) return null;
@@ -544,24 +627,71 @@ public sealed class OwnTagMagics
         int left = max - m.Hits.Count;
         int nHits = detected.Count < left ? detected.Count : left;
         if (nHits < 0) nHits = 0;
+        int cap = m.Row.PiercingAttackMaxTargetCount;
+        if (pierce && cap != 0 && m.Excluded.Count + nHits > cap) nHits = cap > m.Excluded.Count ? cap - m.Excluded.Count : 0;
         // the request keeps its target list: a new one per send
         var targets = new SkillHitTarget[nHits];
         for (int i = 0; i < nHits; i++)
         {
             targets[i] = new SkillHitTarget(detected[i], (byte)m.Hits.Count);
             m.Hits.Add(detected[i]);
+            m.Excluded.Add(detected[i]);
         }
         var req = new SkillHitRequest(m.CastId, m.Serial, m.Last, m.Current, m.AxisY, m.AttackIndex, m.SendCount, targets);
         if (m.Hits.Count >= max)
         {
             m.Filled = true;
-            if (max == 1)
+            if (!pierce && max == 1)
             {
                 m.Target = m.Current;
                 m.Remain = 0f;
             }
         }
         return req;
+    }
+
+    /// <summary>
+    /// CMagic::FUN_141466da0 @0x141466da0 (magicdata.cpp:2402), a piercing arrow's interval: once piercingAttackInterval (not 0)
+    /// passed since the last one (m_n268), the skipped targets are forgotten and, for an attack with a cubeMagicPathID, the
+    /// splash goes out (<see cref="SkillSplashRequest"/>: the record's cast id, attack index, send count and hit index, the
+    /// current point and m_matRotation's euler angles in degrees).
+    /// STILL-OPEN: the local owner's effect (m_str160) at the current point is not played.
+    /// </summary>
+    static void PierceInterval(Magic m, int nowMs, in MagicOwner owner, List<SkillSplashRequest> splashes)
+    {
+        uint interval = m.Row.PiercingAttackInterval;
+        if (interval == 0 || (uint)m.PierceTick + interval > (uint)nowMs) return;
+        m.Excluded.Clear();
+        m.PierceTick = nowMs;
+        if (m.Attack.CubeMagicPathId != 0)
+            splashes?.Add(new SkillSplashRequest(m.CastId, m.AttackIndex, m.SendCount, m.HitIndex, m.Current, EulerDegrees(m)));
+    }
+
+    /// <summary>FUN_140a0b1f0: m_matRotation's ToEulerAnglesXYZ times -57.2957764, that is the angles of the matrix (AxisX,
+    /// AxisY, AxisZ) in degrees.</summary>
+    static Vector3 EulerDegrees(Magic m)
+    {
+        const float Deg = 57.2957764f, Edge = 1.5707964f - 1e-3f;
+        float sy = Math.Clamp(m.AxisZ.X, -1f, 1f);
+        float y = MathF.Asin(sy), x, z;
+        if (MathF.Abs(y) < Edge)
+        {
+            x = MathF.Atan2(-m.AxisZ.Y, m.AxisZ.Z);
+            z = MathF.Atan2(-m.AxisY.X, m.AxisX.X);
+        }
+        else if (y <= -Edge)
+        {
+            x = -MathF.Atan2(m.AxisX.Y, m.AxisY.Y);
+            y = -1.5707964f;
+            z = 0f;
+        }
+        else
+        {
+            x = MathF.Atan2(m.AxisX.Y, m.AxisY.Y);
+            y = 1.5707964f;
+            z = 0f;
+        }
+        return new Vector3(x, y, z) * Deg;
     }
 
     /// <summary>Whether the fill and the registration run at <paramref name="nowMs"/>; <paramref name="expired"/> when the lifeTime ran
