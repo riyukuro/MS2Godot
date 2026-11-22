@@ -26,10 +26,11 @@ public partial class HudScene
 
     /// <summary>The inventory's equip action on the bag item <paramref name="itemId"/> (the right click's RequestEquipItem(item, 0, 0)).
     /// False without the item or the inventory.</summary>
-    public bool EquipScripted(int itemId)
+    public bool EquipScripted(int itemId, bool another = false)
     {
         var live = Ms2Godot.Net.LiveSession.Instance;
-        if (live?.Items.All.FirstOrDefault(e => e.Id == itemId) is not { } e) return false;
+        var worn = another ? live?.Me.Equips?.Select(w => w.Uid).ToHashSet() : null;     // a second copy: the one not worn yet
+        if (live?.Items.All.FirstOrDefault(e => e.Id == itemId && worn?.Contains(e.Uid) != true) is not { } e) return false;
         if (inventory == null || inventory.IsClosed) OpenInventory();
         if (inventory?.FindItem(e.Uid) is not { } item) return false;
         inventory.RequestEquipItem(item, 0, 0);
@@ -85,7 +86,31 @@ public partial class HudScene
         return d.Length();
     }
 
+    /// <summary>The own cast of skill <paramref name="skillId"/> through the request and route a quick slot click takes
+    /// (<see cref="CastOwn"/>), without the slot. True when the request was not refused.</summary>
+    public bool CastSkillScripted(uint skillId)
+    {
+        var w = QuickSlotWorld();
+        var held = w.Weapon is { } h ? weaponActions.FindAction(h.Right, h.Left) : null;
+        if (w.Tables.GetSkillData(skillId) is { } sd)
+            GD.Print($"live: combat skill {skillId} weapons {string.Join(' ', sd.Weapons.Select(x => $"R{x.RightHand}/L{x.LeftHand}"))}, held R{w.Weapon?.Right}/L{w.Weapon?.Left}");
+        if (RequestOwn(w, skillId, held, 0) is not { } r) return false;
+        RouteOwn(r);
+        return true;
+    }
+
     /// <summary>The Escape key pressed, through the dialog key handler. True when a dialog took it.</summary>
     public bool EscScripted() =>
         DialogKeys(new InputEventKey { Keycode = Key.Escape, PhysicalKeycode = Key.Escape, Pressed = true, Echo = false });
+
+    /// <summary>Harness: the player's move input driven by the script (x right, y forward, camera relative); false without a player.</summary>
+    public bool DriveScripted(Vector2 input, bool walk)
+    {
+        if (player == null) return false;
+        player.ScriptDriven = true; player.Input2 = input; player.WalkMode = walk;
+        return true;
+    }
+
+    /// <summary>Harness: gives the player back to the keyboard.</summary>
+    public void DriveEnd() { if (player != null) { player.Input2 = Vector2.Zero; player.ScriptDriven = false; } }
 }

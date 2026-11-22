@@ -37,7 +37,7 @@ public partial class LiveSession
         }
         void Check(string what, bool ok) => GD.Print($"live: combat {(ok ? "PASS" : "FAIL")}: {what}");
         string Env(string k, string d) => System.Environment.GetEnvironmentVariable(k) is { Length: > 0 } v ? v : d;
-        int numbers = 0, kills = 0, npcs = 0, storeItem = int.Parse(Env("MS2_LIVE_STORE_ITEM", "0").Split(';')[0]);
+        int aimMobs = 0, aimKills = 0, numbers = 0, kills = 0, npcs = 0, storeItem = int.Parse(Env("MS2_LIVE_STORE_ITEM", "0").Split(';')[0]);
         long mesoDelta = 0, lockUid = 0;
         int lockId = 0;
         var hitCount = new System.Collections.Generic.Dictionary<FieldNpcs.Placed, int>();
@@ -64,6 +64,44 @@ public partial class LiveSession
             {
                 GD.Print($"live: combat {step}: {(hud.SubmitChatLine(step[5..]) ? "sent" : "no chat window")}");
                 await frames(120);
+                continue;
+            }
+            if (step.StartsWith("aimcast:"))      // aimcast:<skill id>[:<frames to wait after>]: a mob in front, the player turned to it, then the cast
+            {
+                var parts = step[8..].Split(':');
+                if (parts[^1] == "new") parts = parts[..^1];
+                uint sid = uint.Parse(parts[0]);
+                int gap = parts.Length > 1 ? int.Parse(parts[1]) : 165;
+                int mob = int.Parse(Env("MS2_LIVE_COMBAT_MOB", "0")), added = npcs;
+                if (step.EndsWith(":new") || aimMobs == 0 || kills > aimKills)
+                {
+                    aimMobs++; aimKills = kills;
+                    hud.SubmitChatLine("/npc " + mob);
+                    await until(() => npcs > added, 60 * 5); await frames(120);
+                }
+                float dist = lastNpc?.Root != null && GodotObject.IsInstanceValid(lastNpc.Root) ? hud.FaceScripted(lastNpc.Position) : -1;
+                for (int walk = 0; walk < 60 * 25 && dist > 250 && lastNpc?.Root != null && GodotObject.IsInstanceValid(lastNpc.Root); walk++)
+                {      // the mob spawned far away: walk to it, facing it
+                    dist = hud.FaceScripted(lastNpc.Position); hud.DriveScripted(new Vector2(0, 1), false); await frames(1);
+                }
+                hud.DriveEnd(); await frames(20);
+                if (lastNpc?.Root != null && GodotObject.IsInstanceValid(lastNpc.Root)) dist = hud.FaceScripted(lastNpc.Position);
+                var target = lastNpc; int before = hitCount.GetValueOrDefault(target);
+                GD.Print($"live: combat {step}: distance {dist:F0}: {(hud.CastSkillScripted(sid) ? "cast" : "refused")}");
+                await frames(gap);
+                GD.Print($"live: combat {step}: numbers on the mob {hitCount.GetValueOrDefault(target) - before}");
+                Shot($"aimcast{sid}_{Math.Abs(step.GetHashCode()) % 1000}.png");
+                continue;
+            }
+            if (step.StartsWith("cast:"))      // cast:<skill id>[:<frames to wait after>]: the own cast, shots before, during and after
+            {
+                var parts = step[5..].Split(':');
+                uint sid = uint.Parse(parts[0]);
+                int gap = parts.Length > 1 ? int.Parse(parts[1]) : 165;
+                if (gap > 60) Shot($"cast{sid}_0.png");
+                GD.Print($"live: combat {step}: {(hud.CastSkillScripted(sid) ? "cast" : "refused")}");
+                await frames(Math.Min(gap, 15)); if (gap > 60) Shot($"cast{sid}_1.png");
+                if (gap > 15) await frames(gap - 15);
                 continue;
             }
             if (step.StartsWith("level:"))
@@ -373,6 +411,17 @@ public partial class LiveSession
                     await until(() => live.Me.Equips?.Any(e => e.Id == weapon) == true, 60 * 10); await frames(60);
                     Check("the weapon is worn", live.Me.Equips?.Any(e => e.Id == weapon) == true);
                     Shot("equipped.png");
+                    break;
+                }
+                case "equip2":     // a second copy of the weapon item, put on by the same equip action (the other hand)
+                {
+                    int weapon = int.Parse(Env("MS2_LIVE_COMBAT_WEAPON", "0"));
+                    GD.Print($"live: combat weapon item 2: {(hud.SubmitChatLine($"/item {weapon}") ? "sent" : "no chat window")}");
+                    await frames(120);
+                    GD.Print($"live: combat equip 2: {(hud.EquipScripted(weapon, true) ? "sent" : "not sent")}");
+                    await frames(120);
+                    GD.Print($"live: combat worn: {string.Join(' ', live.Me.Equips?.Where(e => e.Id == weapon).Select(e => e.Slot.ToString()) ?? new string[0])}");
+                    Shot("equipped2.png");
                     break;
                 }
                 case "guidestep":     // MS2_LIVE_GUIDE_STEP: the saved tutorial step, then 6 s of guide ticks

@@ -1036,7 +1036,8 @@ public partial class HudScene
         }
         bool sent = req != null && (live?.SendDamage(req) ?? false);
         TickOwnTagMagics();
-        GD.Print($"cast: skill {r.Skill.Id} attack {attack} targets {req?.Targets.Count ?? 0}{(sent ? " sent" : " (offline, not sent)")}");
+        GD.Print($"cast: skill {r.Skill.Id} attack {attack} targets {req?.Targets.Count ?? 0}{(sent ? " sent" : " (offline, not sent)")}"
+            + (req == null ? "" : $" [sub0 serial/target/hit/links: {string.Join(", ", req.Targets.Select(t => $"{t.Serial}/{t.TargetId}/{t.Hit}/{t.Links.Count}"))}]"));
     }
 
     readonly OwnTagMagics ownTagMagics = new();
@@ -1095,8 +1096,16 @@ public partial class HudScene
         foreach (var hs in ownHitSounds)
             FieldAudio.Instance?.PlayHitSound(hs.Attack, hs.Defence, Ms2.Audio.SoundMusicEffectState.CasterMyPc,
                 new Vector3(hs.At.X, hs.At.Z, -hs.At.Y), hs.Volume, player.GlobalPosition, hitSoundRand);
-        foreach (var req in ownHitSends) live.SendHit(req);
-        foreach (var req in ownSplashSends) live.SendSplash(req);
+        foreach (var req in ownHitSends)
+        {
+            GD.Print($"cast: sub1 hit attack {req.Attack} serial {req.Serial} targets {req.Targets.Count} [{string.Join(", ", req.Targets.Select(t => $"{t.Id}/{t.Hit}"))}]");
+            live.SendHit(req);
+        }
+        foreach (var req in ownSplashSends)
+        {
+            GD.Print($"cast: sub2 splash attack {req.Attack} hit {req.Hit}");
+            live.SendSplash(req);
+        }
         foreach (var fx in ownEndEffects)
             live.PlayFieldEffect(fx.File, new Vector3(fx.At.X, fx.At.Z, -fx.At.Y), EffectBasis(fx), Ms2.Audio.SoundMusicEffectState.CasterMyPc);
         ownHitSends.Clear();
