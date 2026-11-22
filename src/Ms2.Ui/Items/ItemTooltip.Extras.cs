@@ -142,6 +142,7 @@ public sealed partial class ItemTooltip
     /// (FUN_140523c40, item.cpp:2790).</summary>
     void AppendExtraction(Item item, uint scrollCount, StringBuilder sb)
     {
+        // GlamorForges is the record's i16 that CItem m_d8 holds (GetExtractionCount); a made item here has the row, so 1
         uint tries = item.Record != null ? item.Record.GlamorForges : 1u;
         NewLine(sb);
         sb.Append(tries > 0 ? CommonF("s_itemextraction_trycount", tries, scrollCount) : Common("s_itemextraction_invalid"));
