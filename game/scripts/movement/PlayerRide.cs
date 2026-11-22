@@ -39,7 +39,7 @@ public sealed class Mount
         return actionsCache = a;
     }
     KfmFile kfm;
-    string folder;
+    string folder, kfmEntry;
     PackSet packs;
     ModelBuilder mb;
     ModelData md;
@@ -51,7 +51,7 @@ public sealed class Mount
         string kfmEntry = packs.List(NpcArchive).FirstOrDefault(e => e.EndsWith("/" + want, StringComparison.OrdinalIgnoreCase))
                           ?? throw new FileNotFoundException($"riding {rideId}: kfm {d.Kfm} not in the Npc pack");
         if (!mb.TextureArchives.Contains(NpcArchive)) mb.TextureArchives = mb.TextureArchives.Prepend(NpcArchive).ToArray();
-        var m = new Mount { Data = d, packs = packs, mb = mb, folder = kfmEntry[..kfmEntry.LastIndexOf('/')] };
+        var m = new Mount { Data = d, packs = packs, mb = mb, folder = kfmEntry[..kfmEntry.LastIndexOf('/')], kfmEntry = kfmEntry };
         m.kfm = KfmFile.Load(packs.Read(NpcArchive, kfmEntry));
         string nif = string.IsNullOrEmpty(d.Nif) ? m.kfm.Nif.Replace('\\', '/').TrimStart('.', '/') : d.Nif;
         nif = Path.GetFileName(nif).ToLowerInvariant();
@@ -107,7 +107,45 @@ public sealed class Mount
         if (seqKeys.TryGetValue(seq, out var k)) return k;
         k = LoadSequence(seq, loop);
         seqKeys[seq] = k;
+        if (k != null && KeyCache.TryGetValue(folder + "/" + k, out var keys)) textKeys[k] = keys;
         return k;
+    }
+
+    /// <summary>
+    /// The text keys of a loaded sequence (by its animation key), in time order as NiControllerSequence throws them: the
+    /// kf's own NiTextKeyExtraData keys and those of the kfm's companion xml (NiTextKeyExtraData::LoadBinary,
+    /// NiTextKeyExtraData.cpp:59-75: &lt;kf dir&gt;&lt;studio name&gt;.xml, the &lt;ms2&gt; root's first element named as the kf,
+    /// read by FUN_1414a90c0, ms2animationservice.cpp:349-422). Null for none. The ridee's PCBase::TextKeyEvent
+    /// (pcbase.cpp:997-1008) plays their step keys.
+    /// </summary>
+    public List<(double time, string text)> TextKeys(string key) => key != null && textKeys.TryGetValue(key, out var l) ? l : null;
+    readonly Dictionary<string, List<(double time, string text)>> textKeys = new(StringComparer.Ordinal);
+    /// <summary>The text keys by "folder/key", kept for every mount of the model (the animation library is built once).</summary>
+    static readonly Dictionary<string, List<(double time, string text)>> KeyCache = new(StringComparer.Ordinal);
+    static readonly Dictionary<string, Dictionary<string, List<(double, string)>>> XmlKeyCache = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The companion xml's keys by kf name (the first element of each name, keys without text skipped).</summary>
+    Dictionary<string, List<(double, string)>> XmlKeys()
+    {
+        string x = kfmEntry[..^4] + ".xml";
+        if (XmlKeyCache.TryGetValue(x, out var map)) return map;
+        map = new Dictionary<string, List<(double, string)>>(StringComparer.OrdinalIgnoreCase);
+        if (packs.Exists(NpcArchive, x))
+            foreach (var el in PackXml.Parse(packs.Read(NpcArchive, x)).Root?.Elements() ?? Enumerable.Empty<XElement>())
+            {
+                if (map.ContainsKey(el.Name.LocalName)) continue;
+                List<(double, string)> list = null;
+                foreach (var k in el.Elements("key"))
+                {
+                    string text = (string)k.Attribute("text");
+                    if (string.IsNullOrEmpty(text)) continue;
+                    double.TryParse((string)k.Attribute("time"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double t);
+                    (list ??= new()).Add((t, text));
+                }
+                if (list != null) map[el.Name.LocalName] = list;
+            }
+        XmlKeyCache[x] = map;
+        return map;
     }
 
     string LoadSequence(string seq, bool loop)
@@ -119,7 +157,11 @@ public sealed class Mount
         if (s == null) return null;
         string entry = $"{folder}/{Path.GetFileName(s.KfPath.Replace('\\', '/')).ToLowerInvariant()}";
         if (!packs.Exists(NpcArchive, entry)) return null;
-        var a = ModelBuilder.BuildAnimation(KfAnimation.Load(NifFile.Load(mb.Spec, packs.Read(NpcArchive, entry))), md);
+        var kf = KfAnimation.Load(NifFile.Load(mb.Spec, packs.Read(NpcArchive, entry)));
+        var keys = new List<(double time, string text)>(kf.TextKeys);
+        if (XmlKeys().TryGetValue(Path.GetFileNameWithoutExtension(entry), out var extra)) keys.AddRange(extra);
+        if (keys.Count > 0) KeyCache[folder + "/" + key] = keys.OrderBy(k => k.time).ToList();   // stable: one time keeps its order
+        var a = ModelBuilder.BuildAnimation(kf, md);
         a.LoopMode = loop ? Godot.Animation.LoopModeEnum.Linear : Godot.Animation.LoopModeEnum.None;
         lib.AddAnimation(key, a);
         return key;

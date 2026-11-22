@@ -54,6 +54,8 @@ public partial class RemoteRideCheck : Node3D
         AddChild(rider.Body);
     }
 
+    readonly List<string> steps = new();
+
     Mount FirstMount() => FirstMount(m => m.Data.RunSpeed > 0 && m.SeatBone >= 0 && m.Data.AniPCRun != m.Data.AniPCIdle);
 
     Mount FirstMount(Func<Mount, bool> pick)
@@ -124,6 +126,7 @@ public partial class RemoteRideCheck : Node3D
                 if (alloc != 0) fails.Add($"hold poll of the mount's seats allocates {alloc} B per 100");
                 GD.Print($"remote ride: hold poll of {ridee.Mount.RideBones().Length} seat node(s) {alloc} B per 100");
                 runStart = ridee.Body.GlobalPosition;
+                ridee.Effects = (action, ground, at, yaw) => steps.Add(action);
                 ridee.States.Push(Rec(2, 0x18, ridee, new System.Numerics.Vector2(0, 1)));
                 break;
             case 120:
@@ -135,6 +138,12 @@ public partial class RemoteRideCheck : Node3D
                 if (rider.Body.Position != ridee.Body.Position) fails.Add("rider left behind on the run");
                 if (RiderKey(d.AniPCRun) is { } run && rider.Anim.CurrentAnimation != run) fails.Add($"rider run sequence {rider.Anim.CurrentAnimation}, not {run}");
                 if (!ridee.Anim.IsPlaying()) fails.Add("ridee plays nothing on the run");
+                // the ridee's run sequence throws its step keys (kf + companion xml) through PCBase::TextKeyEvent
+                var runKeys = ridee.Mount.TextKeys(ridee.Anim.CurrentAnimation);
+                int stepKeys = runKeys?.Count(k => k.text.StartsWith("run", StringComparison.OrdinalIgnoreCase)) ?? 0;
+                if (stepKeys > 0 && steps.Count == 0) fails.Add($"ridee run sequence has {stepKeys} run key(s), no step played");
+                ridee.Effects = null;
+                GD.Print($"remote ride: ridee run sequence keys {runKeys?.Count ?? 0} ({stepKeys} run), steps played {steps.Count}: {string.Join(",", steps.Distinct())}");
                 GD.Print($"remote ride: run moved {moved:0.0} (want {want:0.0}), ridee {ridee.Anim.CurrentAnimation}, rider {rider.Anim.CurrentAnimation}");
                 ridee.States.Push(Rec(1, 0, ridee, default));
                 break;

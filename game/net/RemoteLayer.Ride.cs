@@ -18,7 +18,7 @@ namespace Ms2Godot.Net;
 /// A remote ridee never sets m_unk_b80 (the RunX SP idle): only Ridee::UpdateRunEffects sets it, from StateRide::vfunc_8
 /// (statemanager.cpp:1108-1116), and State::vfunc_8 runs only from MyPC's update (mypc.cpp:2966) and the own ridee's
 /// (ridee.cpp:712).
-/// STILL-OPEN: the breakable anchor of a ride-off, the mount's step keys. Mode 6 also writes the kept ride-on action's
+/// STILL-OPEN: the breakable anchor of a ride-off. The mount's step keys play through <see cref="RemotePc.TextKeys"/> from <see cref="Mount.TextKeys"/>. Mode 6 also writes the kept ride-on action's
 /// m_b28, which only a later PCBase::vfunc_120 of that action reads; a remote PC's ride is re-sent with it.
 /// </summary>
 public sealed partial class RemoteLayer

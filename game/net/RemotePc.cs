@@ -583,12 +583,14 @@ public sealed partial class RemotePc : IRemotePc
     /// frame's later keys go on (the throw's range is already taken) and the next frame throw from the sequence start.
     void TextKeys()
     {
-        if (currentName == null || Anims == null || !Anims.Kf.TryGetValue(currentName, out var kf) || kf.TextKeys.Count == 0) return;
+        if (currentName == null) return;
+        var keys = Mount != null ? Mount.TextKeys(currentName) : Anims != null && Anims.Kf.TryGetValue(currentName, out var kf) ? kf.TextKeys : null;
+        if (keys == null || keys.Count == 0) return;
         double pos = Anim.CurrentAnimationPosition, len = Anim.CurrentAnimationLength;
         if (lastPos < 0 && lastPos != FromStart) { lastPos = pos; return; }
         bool cast = currentAct < 0 && States.Cur == RemotePcStates.StateSkill;
         seeked = false;
-        foreach (var (t, key) in kf.TextKeys)
+        foreach (var (t, key) in keys)
         {
             if (!Crossed(lastPos, pos, t, len)) continue;
             if (GroundEffectGate.StepKey(key, States.Cur, ClassPc)) PlayEffects(key);
