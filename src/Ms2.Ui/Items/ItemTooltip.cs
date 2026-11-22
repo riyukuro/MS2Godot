@@ -326,11 +326,11 @@ public sealed partial class ItemTooltip
     /// <summary>
     /// ASTooltip::FUN_1409d64a0 (astooltip.cpp:3014), "extraDescription": with the local player, { text, color } rows in
     /// this order: the item level (AddItemLevelRow), the level limit (AddLevelLimitRow), the name row (FUN_1409de140;
-    /// a gemstone adds its equip-part row, FUN_1409df760), the enabled jobs (AddJobLimitRows), the VIP and wedding
-    /// limits. The level comes from CItem::FUN_140529070 / FUN_140529090 (<see cref="ItemLevels.Of"/>).
-    /// STILL-OPEN, so the member is left out: an install item (its housing category row, FUN_1409dea00, reads
-    /// CItemDataTable::GetHousing, not ported), and a VIP or wedding item (PC::IsVip and WeddingManager::IsInProgress
-    /// pick the row color; neither state is in the port).
+    /// an install item adds its place and housing category rows, FUN_1409de630 and FUN_1409dea00, a gemstone its
+    /// equip-part row, FUN_1409df760), the enabled jobs (AddJobLimitRows), the VIP and wedding limits. The level comes
+    /// from CItem::FUN_140529070 / FUN_140529090 (<see cref="ItemLevels.Of"/>).
+    /// STILL-OPEN, so the member is left out: a VIP or wedding item (PC::IsVip and WeddingManager::IsInProgress pick the
+    /// row color; neither state is in the port).
     /// </summary>
     public void SetExtraDescription(Item item)
     {
@@ -342,12 +342,17 @@ public sealed partial class ItemTooltip
     void SetExtraDescription(ItemData d, int rank, int level, int additional)
     {
         if (!model.HasLocalPlayer) return;                                    // FUN_1409c6540() == 0
-        if (d.IsInstallItem || d.Vip || d.Wedding) return;
+        if (d.Vip || d.Wedding) return;
         var rows = new List<object>();
         AddItemLevelRow(rows, d, rank, level, additional);
         AddLevelLimitRow(rows, d);
         AddNameRow(rows, d, rank);
-        if (d.IsGemstone) AddGemPartRow(rows, d);                             // FUN_14053d840: FUN_1409df760
+        if (d.IsInstallItem)
+        {
+            AddInstallSpaceRow(rows, d);                                      // FUN_1409de630
+            AddHousingCategoryRow(rows, d.Id);                                // FUN_1409dea00
+        }
+        else if (d.IsGemstone) AddGemPartRow(rows, d);                        // FUN_14053d840: FUN_1409df760
         AddJobLimitRows(rows, d);
         Data["extraDescription"] = rows;
     }
@@ -433,6 +438,24 @@ public sealed partial class ItemTooltip
         0x35 => Common("s_word_iconcode_capsule"),
         _ => Common("s_empty_string"),
     };
+
+    /// <summary>FUN_1409de630 (astooltip.cpp:4223): an install item's place row by install.space: bit 1 with bit 2 or 4
+    /// s_word_outdoor_indoor (common 0x590), bit 1 alone s_word_outdoor_only (0x58f), else s_word_indoor_only (0x58e).</summary>
+    void AddInstallSpaceRow(List<object> rows, ItemData d)
+    {
+        int space = d.InstallSpace;
+        int id = (space & 1) == 0 ? 0x58e : (space & 6) != 0 ? 0x590 : 0x58f;
+        rows.Add(Row(Tables.Common(id), "aaaaaa"));
+    }
+
+    /// <summary>FUN_1409dea00 (astooltip.cpp:4263): with a housing row (CItemDataTable::GetHousing), FormatStringId(0x6f8
+    /// s_construct_category, FUN_141811980(0x32, categoryIndex)): the housing category's name.</summary>
+    void AddHousingCategoryRow(List<object> rows, int itemId)
+    {
+        var h = Tables.Housing?.Get(itemId);
+        if (h == null) return;
+        rows.Add(Row(Format(Tables.Common(0x6f8), Tables.UgcCubeCategoryName(h.CategoryIndex)), "aaaaaa"));
+    }
 
     /// <summary>FUN_1409df760 (astooltip.cpp:4398): a gemstone with an upgrade row shows its equip parts
     /// (FUN_1406285d0, itemsocketsystemutil.cpp:566: weapon, armor, accessory, skin joined by ", "; mask 0xf and up "").</summary>

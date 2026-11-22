@@ -704,6 +704,10 @@ public sealed class GameTables
     /// <summary>CStringTable::FUN_141811980(0x48, id): stringColorPalette, a palette colour's name; empty when none.</summary>
     public string ColorPaletteName(int id) => Lazy(ref colorPaletteNames, "stringcolorpalette", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
     Dictionary<string, string> colorPaletteNames;
+    /// <summary>CStringTable::FUN_141811980(0x32, id): string table 50 "stringUgcCubeCategory", a housing category's name;
+    /// empty when none.</summary>
+    public string UgcCubeCategoryName(int id) => Lazy(ref ugcCubeCategoryNames, "stringugccubecategory", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
+    Dictionary<string, string> ugcCubeCategoryNames;
     /// <summary>CItemDataTable's colour palettes by colorSN, loaded on first use (a test may set its own).</summary>
     public Ms2.Ui.Items.ColorPaletteTable ColorPalettes
     {

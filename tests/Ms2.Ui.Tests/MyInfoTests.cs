@@ -671,6 +671,37 @@ public class MyInfoTests
     }
 
     [Test]
+    public void ExtraDescriptionOfAnInstallItemHasItsPlaceAndHousingCategory()
+    {
+        var m = NewModel();
+        m.HasLocalPlayer = true;
+        var t = m.Tables;
+        // FUN_1409de630 by install.space (common 0x58e indoor, 0x58f outdoor, 0x590 both), then FUN_1409dea00:
+        // FormatStringId(0x6f8, string table 50 by categoryIndex); the first item by id of each place kind
+        var seen = new HashSet<int>();
+        foreach (var row in t.Housing.Rows.OrderBy(r => r.ItemId))
+        {
+            var d = t.Items.Get(row.ItemId);
+            if (d == null || !d.IsInstallItem || d.Vip || d.Wedding) continue;
+            int place = (d.InstallSpace & 1) == 0 ? 0x58e : (d.InstallSpace & 6) != 0 ? 0x590 : 0x58f;
+            if (!seen.Add(place)) continue;
+            var tip = new ItemTooltip(m, 0);
+            Assert.That(tip.FillById(d.Id, 1), Is.True);
+            var rows = RowTexts(tip.Data);
+            TestContext.WriteLine($"{d.Id} (space {d.InstallSpace}, category {row.CategoryIndex}): " + string.Join(" | ", rows));
+            string category = t.UgcCubeCategoryName(row.CategoryIndex);
+            Assert.That(category, Is.Not.Empty, "category " + row.CategoryIndex);
+            Assert.That(rows[^2], Is.EqualTo(t.Common(place) + " #aaaaaa"));
+            Assert.That(rows[^1], Is.EqualTo(Ms2.Quest.ClientFormat.Format(t.Common(0x6f8), category) + " #aaaaaa"));
+            Assert.That(rows, Has.Count.GreaterThanOrEqualTo(3), "the name row (rank and kind) comes first");
+        }
+        TestContext.WriteLine("place kinds: " + string.Join(", ", seen.Select(p => "0x" + p.ToString("x"))));
+        Assert.That(seen, Is.Not.Empty);
+        Assert.That(t.Common(0x58e), Is.Not.Empty);
+        Assert.That(t.UgcCubeCategoryName(0), Is.Empty);
+    }
+
+    [Test]
     public void DyeLineIsTheClientsForACustomizableOutfit()
     {
         // the Green Hood Uniform's model 12200398: <customize color="1" colorPalette="10" defaultColorIndex="13">
