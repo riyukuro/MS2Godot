@@ -347,14 +347,12 @@ public sealed class ModelData
 
     /// <summary>
     /// FUN_141422f30 (@0x141422f30, itemugcmesh.cpp:455), the test behind CNifModel::vfunc_15 (@0x1415664f0, nifmodel.cpp:293) and
-    /// CKfmModel::vfunc_15 (@0x14143ed00, kfmmodel.cpp:598), run over the file's scene graph at load (<see cref="Load"/>): true
-    /// when some object, a node or a mesh, has no MS2CharacterSkinMaterial among ALL of its materials and its own
-    /// NiTexturingProperty (GetProperty(8)) has an NiSourceTexture in shader map 0 (the first entry of the shader map array).
+    /// CKfmModel::vfunc_15 (@0x14143ed00, kfmmodel.cpp:598), run over a parsed file's scene graph: true when some object, a node or
+    /// a mesh, has no MS2CharacterSkinMaterial among ALL of its materials and its own NiTexturingProperty (GetProperty(8)) has an
+    /// NiSourceTexture in shader map 0 (the first entry of the shader map array). It runs on demand over the file
+    /// (<see cref="ModelTextureCache"/>); a loaded <see cref="ModelData"/> keeps neither the file nor the answer.
     /// </summary>
-    public bool HasShaderTexture() => ShaderTexture;
-
-    /// <summary>The result of <see cref="HasShaderTexture"/>; set by <see cref="Load"/>.</summary>
-    public bool ShaderTexture;
+    public static bool HasShaderTexture(NifFile nif) => nif.Roots.Count > 0 && ScanShaderTexture(nif, nif.Roots[0]);
 
     /// <summary>FUN_141422f30's walk (Unk_NodeQueue breadth first from the root) over the file's blocks.</summary>
     internal static bool ScanShaderTexture(NifFile nif, int root)
@@ -945,7 +943,6 @@ public sealed class ModelData
         int root = nif.Roots[0];
         md.RootName = nif.Name(root);
         md.RootLocal = XformOf(B[root]);
-        md.ShaderTexture = ScanShaderTexture(nif, root);
         var boneOf = new Dictionary<int, int>();     // block -> bone index
 
         void Add(int i, int parentBone, Xform parentWorld)

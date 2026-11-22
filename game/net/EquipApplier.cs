@@ -1,6 +1,7 @@
 using System.Xml.Linq;
 using Godot;
 using Ms2.Formats.Model;
+using Ms2.Formats.Nif;
 using Ms2.Formats.Pack;
 using Ms2.Net.Packets;
 using Ms2.Formats.Text;
@@ -128,10 +129,30 @@ public sealed class EquipApplier
 
     /// <summary>
     /// CEquipItem::FUN_1411dcda0 (@0x1411dcda0, equipitem.cpp:394) for an item not yet worn through this applier: some model of the
-    /// item answers CNifModel / CKfmModel::vfunc_15 (<see cref="ModelData.HasShaderTexture"/>). The models are the item's
+    /// item answers CNifModel / CKfmModel::vfunc_15 (<see cref="ModelData.HasShaderTexture(NifFile)"/>). The models are the item's
     /// ItemModel assets for the wearer's gender (as Apply picks them); a model that does not load answers false.
     /// </summary>
-    readonly Dictionary<string, bool> assetTexture = new();   // an asset name's answer: kfm / nif loads once
+    readonly ModelTextureCache assetTexture = new();   // an asset name's answer: the nif is parsed once, scanned and dropped
+
+    /// <summary>The parsed NIF of an item asset (a .nif, or the model a kfm names), for the shader texture test; null when it is not packed.</summary>
+    NifFile TextureNif(string name)
+    {
+        string entry;
+        if (name.EndsWith(".nif", StringComparison.Ordinal))
+        {
+            const string prefix = "Data/Resource/Model/Item/";
+            entry = (name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ? name[prefix.Length..] : name).ToLowerInvariant();
+        }
+        else
+        {
+            string kfmName = name.Replace("urn:gamebryo-animation:", "").Replace("urn:", "");
+            string kfmEntry = packs.FindByFileName(ItemArchive, kfmName.ToLowerInvariant() + ".kfm");
+            if (kfmEntry == null) return null;
+            var kfm = KfmFile.Load(packs.Read(ItemArchive, kfmEntry));
+            entry = kfmEntry[..(kfmEntry.LastIndexOf('/') + 1)] + System.IO.Path.GetFileName(kfm.Nif.Replace('\\', '/')).ToLowerInvariant();
+        }
+        return packs.Exists(ItemArchive, entry) ? NifFile.Load(mb.Spec, packs.Read(ItemArchive, entry)) : null;
+    }
 
     public bool HasModelTexture(int itemId, int gender)
     {
@@ -141,21 +162,9 @@ public sealed class EquipApplier
             var asset = slot.Elements("asset").FirstOrDefault(a => (string)a.Attribute("gender") == null || (string)a.Attribute("gender") == gender.ToString());
             if (asset == null) continue;
             string name = ((string)asset.Attribute("name") ?? "").Trim();
-            if (assetTexture.TryGetValue(name, out bool known)) { if (known) return true; continue; }
-            assetTexture[name] = false;
             try
             {
-                ModelData md;
-                if (name.EndsWith(".nif", StringComparison.Ordinal)) md = Nif(name);
-                else
-                {
-                    string kfmName = name.Replace("urn:gamebryo-animation:", "").Replace("urn:", "");
-                    string kfmEntry = packs.FindByFileName(ItemArchive, kfmName.ToLowerInvariant() + ".kfm");
-                    if (kfmEntry == null) continue;
-                    var kfm = KfmFile.Load(packs.Read(ItemArchive, kfmEntry));
-                    md = Nif(kfmEntry[..(kfmEntry.LastIndexOf('/') + 1)] + System.IO.Path.GetFileName(kfm.Nif.Replace('\\', '/')).ToLowerInvariant());
-                }
-                if (md != null && md.HasShaderTexture()) { assetTexture[name] = true; return true; }
+                if (assetTexture.Has(name, () => TextureNif(name))) return true;
             }
             catch (Exception ex) { GD.PushWarning($"item {itemId}: {ex.Message}"); }
         }

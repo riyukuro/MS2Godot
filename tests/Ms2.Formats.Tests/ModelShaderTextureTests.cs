@@ -81,4 +81,29 @@ public class ModelShaderTextureTests
         Assert.That(Scan(Texturing(true), Obj("NiMesh", new long[0], new long[] { 9 }, Skin),
             Obj("NiMesh", new long[0], new long[] { 9 }, "Other")), Is.True, "any other object counts");
     }
+
+    /// <summary>A loaded model holds neither the parsed file nor a scan result: nothing of the dialog-only test rides on every character,
+    /// npc and field object.</summary>
+    [Test]
+    public void ALoadedModelRetainsNoNifFile()
+    {
+        var fields = typeof(ModelData).GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public
+            | System.Reflection.BindingFlags.NonPublic);
+        Assert.That(fields.Where(f => f.FieldType == typeof(NifFile) || f.FieldType.IsSubclassOf(typeof(Delegate))), Is.Empty);
+    }
+
+    [Test]
+    public void TheCacheParsesAnAssetOnceAndAnswersFromTheNifOnDemand()
+    {
+        var (packs, spec) = NifEnv.Open();
+        var cache = new ModelTextureCache();
+        NifFile Load() => NifFile.Load(spec, packs.Read("Resource/Model/Map", "kritias/field/ks_fi_cubric_generator_a01.nif"));
+        bool first = cache.Has("a", Load);
+        Assert.That(cache.Parses, Is.EqualTo(1));
+        Assert.That(cache.Has("a", Load), Is.EqualTo(first));
+        Assert.That(cache.Parses, Is.EqualTo(1), "the second ask is a cache hit");
+        Assert.That(cache.Has("b", () => null), Is.False, "a file that is not packed answers false");
+        Assert.That(cache.Parses, Is.EqualTo(2));
+        Assert.That(first, Is.EqualTo(ModelData.HasShaderTexture(Load())));
+    }
 }
