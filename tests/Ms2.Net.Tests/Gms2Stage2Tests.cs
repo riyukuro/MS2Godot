@@ -169,4 +169,45 @@ public class Gms2Stage2Tests {
         Assert.That(got.Level, Is.EqualTo((short) 5));
         Assert.That(r.Available, Is.EqualTo(0));
     }
+
+    [Test]
+    public void EveryRecordedGms2GuildInfoAndListPacketDecodes() {
+        var all = Gms2Sniffs.Inbound("gms2", Gms.Number(Inbound.Guild));
+        Assert.That(all, Is.Not.Empty);
+        int seen = 0;
+        foreach (var (file, data) in all) {
+            if (data.Length == 0 || data[0] is not (0 or 83 or 84 or 85)) continue;   // the other modes are not decoded yet
+            seen++;
+            var r = new ByteReader(data);
+            try { GuildMessage.Read(r, Gms); } catch (Exception e) { Assert.Fail(file + ": " + e.Message); }
+            Assert.That(r.Available, Is.EqualTo(0), file);
+        }
+        Assert.That(seen, Is.GreaterThan(0));
+    }
+
+    [Test]
+    public void Gms2GuildListsReadTheirEntries() {
+        var w = new ByteWriter();
+        w.WriteByte(83); w.WriteInt(2);
+        w.WriteBool(true);
+        w.WriteLong(1); w.WriteLong(2); w.WriteLong(3); w.WriteLong(4); w.WriteUnicodeString("Ann"); w.WriteUnicodeString("pic");
+        w.WriteInt(10); w.WriteInt(20); w.WriteInt(30); w.WriteInt(1); w.WriteInt(2); w.WriteInt(3); w.WriteLong(99);
+        w.WriteBool(false);
+        var r = Reader(w);
+        var m = GuildMessage.Read(r, Gms);
+        Assert.That(m.GuildRequests, Has.Count.EqualTo(1));
+        Assert.That(m.GuildRequests[0].Name, Is.EqualTo("Ann"));
+        Assert.That(r.Available, Is.EqualTo(0));
+
+        w = new ByteWriter();
+        w.WriteByte(85); w.WriteInt(1); w.WriteBool(true);
+        w.WriteLong(7); w.WriteUnicodeString("G"); w.WriteUnicodeString("mark");
+        w.WriteInt(1); w.WriteInt(2); w.WriteInt(3); w.WriteInt(5); w.WriteInt(50); w.WriteInt(6);
+        w.WriteLong(8); w.WriteLong(9); w.WriteUnicodeString("Boss");
+        r = Reader(w);
+        m = GuildMessage.Read(r, Gms);
+        Assert.That(m.Results, Has.Count.EqualTo(1));
+        Assert.That((m.Results[0].GuildId, m.Results[0].MemberCount, m.Results[0].MasterName), Is.EqualTo((7L, 5, "Boss")));
+        Assert.That(r.Available, Is.EqualTo(0));
+    }
 }

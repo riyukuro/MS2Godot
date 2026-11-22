@@ -1640,7 +1640,7 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.Guild))
             {
-                var m = GuildMessage.Read(p.Reader());            // CGuildManager::FUN_1413b6370 (guildmanager.cpp:301)
+                var m = GuildMessage.Read(p.Reader(), game.Profile);            // CGuildManager::FUN_1413b6370 (guildmanager.cpp:301)
                 Guilds.Apply(m);
                 GD.Print($"live: guild type 0x{m.Type:x2} (guild {Guilds.GuildId}, {Guilds.MyRequests.Count} mine, {Guilds.RequestsForGuild.Count} for the guild, {Guilds.SearchResults.Count} results)");
             }

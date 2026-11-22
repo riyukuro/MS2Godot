@@ -66,6 +66,28 @@ public sealed class GuildJoinRequestForGuild {
     };
 }
 
+/// <summary>Reads for the GMS2 lists (upstream GuildApplication.WriteTo, ListAppliedGuilds, ListGuilds): the same fields as the KMS entries in another order.</summary>
+public static class GuildGms2Lists {
+    public static GuildJoinRequestForGuild ReadApplication(ByteReader r) {
+        var e = new GuildJoinRequestForGuild { Id = r.ReadLong(), GuildId = r.ReadLong(), CharId = r.ReadLong(), AccountId = r.ReadLong(), Name = r.ReadUnicodeString(), Picture = r.ReadUnicodeString() };
+        e.Job = r.ReadInt(); e.JobCode = r.ReadInt(); e.Level = r.ReadInt();
+        e.Trophy = (r.ReadInt(), r.ReadInt(), r.ReadInt()); e.Time = r.ReadLong();
+        return e;
+    }
+
+    public static GuildJoinRequest ReadApplied(ByteReader r) => new() {
+        Id = r.ReadLong(), GuildId = r.ReadLong(), GuildName = r.ReadUnicodeString(), Mark = r.ReadUnicodeString(),
+        Trophy = (r.ReadInt(), r.ReadInt(), r.ReadInt()), MemberCount = r.ReadInt(), Capacity = r.ReadInt(), MasterName = r.ReadUnicodeString(),
+        Value60 = r.ReadLong(), Value68 = r.ReadLong(), Value70 = r.ReadLong(),
+    };
+
+    public static GuildSearchEntry ReadGuild(ByteReader r) => new() {
+        GuildId = r.ReadLong(), Name = r.ReadUnicodeString(), Mark = r.ReadUnicodeString(), Trophy = (r.ReadInt(), r.ReadInt(), r.ReadInt()),
+        MemberCount = r.ReadInt(), Capacity = r.ReadInt(), Exp = r.ReadInt(),   // the focus
+        MasterAccountId = r.ReadLong(), MasterId = r.ReadLong(), MasterName = r.ReadUnicodeString(),
+    };
+}
+
 /// <summary>
 /// One join request this character sent, CGuildJoinRequestForChar (ReadStream @0x1404c8150): i64 the request id (f18),
 /// i64 the guild id (f20), the guild name (f28), i32 the guild exp (f30), the mark (f38), the trophy counts (f44), i32 the
@@ -204,17 +226,28 @@ public sealed record GuildMessage(byte Type) {
     public int Grade { get; init; }
     public int Kind { get; init; }
 
-    public static GuildMessage Read(ByteReader r) {
-        var m = ReadBody(r);
+    public static GuildMessage Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    public static GuildMessage Read(ByteReader r, ProtocolProfile profile) {
+        var m = ReadBody(r, profile);
         // Types 7 and 0xf have no body, the others end with their fields.
         if (m.Type is 1 or 2 or 3 or 4 or 5 or 6 or 7 or 0xf or 0x12 or 0x13 or 0x71 or 0x2d or 0x2e or 0x2f or 0x30 or 0x44 or 0x52 or 0x53 or 0x54 or 0x55 or 0x56 or 0x57) r.ExpectEnd($"Guild type {m.Type}");
         return m;
     }
 
-    static GuildMessage ReadBody(ByteReader r) {
+    static GuildMessage ReadBody(ByteReader r, ProtocolProfile profile) {
         byte t = r.ReadByte();
+        if (profile.IsGms2 && t is 83 or 84 or 85) {
+            // GMS2 lists: 83 the applications to the own guild, 84 the own applications, 85 the guild search; handed on as the KMS types 0x55, 0x56, 0x57
+            int n = r.ReadInt();
+            switch (t) {
+                case 83: { var list = new List<GuildJoinRequestForGuild>(); for (int i = 0; i < n; i++) if (r.ReadByte() != 0) list.Add(GuildGms2Lists.ReadApplication(r)); return new(0x55) { GuildRequests = list }; }
+                case 84: { var list = new List<GuildJoinRequest>(); for (int i = 0; i < n; i++) if (r.ReadByte() != 0) list.Add(GuildGms2Lists.ReadApplied(r)); return new(0x56) { Requests = list }; }
+                default: { var list = new List<GuildSearchEntry>(); for (int i = 0; i < n; i++) if (r.ReadByte() != 0) list.Add(GuildGms2Lists.ReadGuild(r)); return new(0x57) { Results = list, SearchCount = n }; }
+            }
+        }
         switch (t) {
-            case 0: { var info = GuildInfo.Read(r); r.ExpectEnd("Guild info"); return new(t) { GuildId = info.Id, Info = info }; }
+            case 0: { var info = GuildInfo.Read(r, profile); r.ExpectEnd("Guild info"); return new(t) { GuildId = info.Id, Info = info }; }
             case 1: {
                 int result = r.ReadByte();
                 return result != 0 ? new(t) { Result = result } : new(t) { Name = r.ReadUnicodeString() };
