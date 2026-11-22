@@ -996,7 +996,8 @@ public partial class HudScene
             ownRayCast ??= MagicRayCast;
             ownTagMagics.Add(r.Skill, SkillAttackFire.AttackAt(r, attack), r, req.Targets, (int)Time.GetTicksMsec(),
                 hudModel.Tables.MagicPaths, ownNodePosition, null, new TagIdentity(r.CastId, (int)r.Skill.Id,
-                    (short)(r.Level?.Level ?? 0), r.Motion, (byte)attack), live?.SelfObjectId ?? 0, pos, ownRayCast);
+                    (short)(r.Level?.Level ?? 0), r.Motion, (byte)attack), live?.SelfObjectId ?? 0, pos, ownRayCast,
+                System.Runtime.InteropServices.CollectionsMarshal.AsSpan(hitObjects));
         }
         bool sent = req != null && (live?.SendDamage(req) ?? false);
         TickOwnTagMagics();

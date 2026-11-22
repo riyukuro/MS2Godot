@@ -43,8 +43,7 @@ public delegate bool MagicRayCast(Vector3 from, Vector3 dir, float length, out V
 /// When the own skill state ends, <see cref="CancelCaster"/> drops the cast's delay-0 magics that have not fired.
 /// Piercing arrows (bounceType 3 and 4) keep flying through their hits, forget them each piercing interval and send its
 /// splash (<see cref="SkillSplashRequest"/>); bounceType 4 then flies back to the owner (state 5) and ends there.
-/// STILL-OPEN: for an arrow record, the target tracking of the record's target (UpdateTargetPosition with the record's
-/// target id not 0), the magic control flight (FUN_141464490, a skill with magicControl enable not 0: those make no arrow
+/// STILL-OPEN: for an arrow record, the magic control flight (FUN_141464490, a skill with magicControl enable not 0: those make no arrow
 /// magic here), the PC state filter (the row's +0x200), the invincible bounce-off (m_n528 2), the hit effects and the end
 /// splash (FUN_14145f570); the linked records, the latency maximum (0 here: the time sync's latency is not kept),
 /// CFunctionCubeService::SetTagArea, the magic's own effects (PlayHitEffects) and MyPC::FUN_14152e0c0 after a fill are not
@@ -93,8 +92,9 @@ public sealed class OwnTagMagics
     /// <summary>The magics that may still fill or register.</summary>
     public int Count => live.Count;
 
-    /// <summary>The flight of the magic at <paramref name="index"/> (for the checks): its current and last points and state.</summary>
-    internal (Vector3 Current, Vector3 Last, int State) Flight(int index) => (live[index].Current, live[index].Last, live[index].State);
+    /// <summary>The flight of the magic at <paramref name="index"/> (for the checks): its current and last points, state and target.</summary>
+    internal (Vector3 Current, Vector3 Last, int State, Vector3 Target) Flight(int index) =>
+        (live[index].Current, live[index].Last, live[index].State, live[index].Target);
 
     /// <summary>The magics without a cast record (no region send, the registration only).</summary>
     public int Add(SkillData skill, SkillAttackData attack, IReadOnlyList<SkillDamageTarget> tags, int startMs, MagicPathTable paths,
@@ -110,10 +110,11 @@ public sealed class OwnTagMagics
     /// </summary>
     /// <remarks>An arrow record (attackMethodType 1) is set up by CMagic::Init's FUN_1414609e0 and FUN_14145d9d0
     /// (<see cref="InitArrow"/>): <paramref name="ownerId"/> is the owner's object id (the random seeds),
-    /// <paramref name="ownerPosition"/> its position (the start ray) and <paramref name="rayCast"/> the physics ray.</remarks>
+    /// <paramref name="ownerPosition"/> its position (the start ray), <paramref name="rayCast"/> the physics ray and
+    /// <paramref name="objects"/> the objects the record's target is found in (UpdateTargetPosition).</remarks>
     public int Add(SkillData skill, SkillAttackData attack, CastRecord r, IReadOnlyList<SkillDamageTarget> tags, int startMs,
         MagicPathTable paths, Func<string, Vector3> nodePosition, Action onHit = null, TagIdentity id = default,
-        int ownerId = 0, Vector3 ownerPosition = default, MagicRayCast rayCast = null)
+        int ownerId = 0, Vector3 ownerPosition = default, MagicRayCast rayCast = null, ReadOnlySpan<HitCandidate> objects = default)
     {
         if (attack == null || tags == null || paths == null) return 0;
         int control = skill?.MagicControlEnable ?? 0;
@@ -140,7 +141,7 @@ public sealed class OwnTagMagics
                 DelayZero = MathF.Abs(d.DelayTime) < 1e-6f, IgnoreCancelAtSpawn = d.IgnoreCancelAtSpawnTime,
                 Bounce2 = attack.Arrow.BounceType == 2, HitIndex = t.Hit,
             };
-            if (arrow) InitArrow(m, d, dir, ownerId, ownerPosition, rayCast);
+            if (arrow) InitArrow(m, d, dir, ownerId, ownerPosition, rayCast, startMs, objects);
             live.Add(m);
             n++;
         }
@@ -179,8 +180,9 @@ public sealed class OwnTagMagics
     /// CMagic::FUN_1414609e0 and FUN_14145d9d0 (magicdata.cpp:1397, :712) for an arrow record:
     /// <list type="bullet">
     /// <item>m_matRotation MakeZRotation(DirectionToNegYawRadians(<paramref name="dir"/>)); the target the start plus the row's
-    /// direction turned by the fire turn times distance, plus controlEndOffsetValue; then UpdateTargetPosition (no target
-    /// entity: FUN_1414614d0, <see cref="Frame"/>).</item>
+    /// direction turned by the fire turn times distance, plus controlEndOffsetValue; then UpdateTargetPosition
+    /// (<see cref="UpdateTarget"/>: the record's target in <paramref name="objects"/> at <paramref name="nowMs"/>, the aim at
+    /// it).</item>
     /// <item>rayPhysxTest without ignorePhysxTestInitPosition: the ray from the start pulled back to the owner's x/y along the
     /// owner-to-start line; a hit moves the start (and the target) 5 back from it and stops the flight there (m_n1C8).</item>
     /// <item>The total time the start-to-target length over vel (0 at vel 0); the predicted point from the row's control values
@@ -189,7 +191,8 @@ public sealed class OwnTagMagics
     /// start and its x or z pick is not 0.</item>
     /// </list>
     /// </summary>
-    void InitArrow(Magic m, MagicPathMove d, Vector3 dir, int ownerId, Vector3 ownerPosition, MagicRayCast rayCast)
+    void InitArrow(Magic m, MagicPathMove d, Vector3 dir, int ownerId, Vector3 ownerPosition, MagicRayCast rayCast, int nowMs,
+        ReadOnlySpan<HitCandidate> objects)
     {
         m.Arrow = true;
         m.Row = d;
@@ -204,7 +207,7 @@ public sealed class OwnTagMagics
         var start = m.StartPoint;
         m.Target = start + Turn(FireTurn(d, dir), d.Direction) * d.Distance + d.ControlEnd;
         m.Last = m.Current = start;
-        Frame(m);
+        UpdateTarget(m, nowMs, objects);
         if (m.Attack.Arrow.RayPhysxTest != 0 && !d.IgnorePhysxTestInitPosition)
         {
             var delta = start - ownerPosition;
@@ -251,17 +254,13 @@ public sealed class OwnTagMagics
     /// point (FUN_141467100), its z at most the start's z plus the attack range's height and add z (and controlEndOffsetValue's
     /// z when a control value is set); the remaining time then the current-to-target length over vel. Then
     /// <see cref="Frame"/>. Returns whether there is a target entity.
-    /// STILL-OPEN: the record's target in state 2 (only the owner in state 5 is followed); the owner's body box centre stands
-    /// in for its nearest collision part.
+    /// STILL-OPEN: the object's body box centre stands in for its nearest collision part (FUN_141467100), and the row's
+    /// m_n34 branch (traceTargetOffsetPos, PCBase::FUN_141678710) for a target without parts is not ported.
     /// </summary>
     static bool UpdateTarget(Magic m, int nowMs, ReadOnlySpan<HitCandidate> objects)
     {
-        bool entity = m.State == 5 || m.TargetId != 0;
-        int self = -1;
-        if (m.State == 5)
-            for (int i = 0; i < objects.Length; i++)
-                if (objects[i].IsOwner) { self = i; break; }
-        if (m.State == 5 && self < 0) entity = false;
+        int self = TargetEntity(m, objects);
+        bool entity = self >= 0;
         var d = m.Row;
         bool track = !(d.TraceTargetDuration != 0f && m.State >= 2
             && (uint)(m.StateTick + MagicPathTable.Ms(d.TraceTargetDuration)) < (uint)nowMs);
@@ -277,6 +276,16 @@ public sealed class OwnTagMagics
         }
         Frame(m);
         return entity;
+    }
+
+    /// <summary>CMagic::GetTargetEntity @0x141464360: the owner in state 5, else the record's target (m_nCasterId) when not 0;
+    /// the index of that object in <paramref name="objects"/>, -1 when it is not there.</summary>
+    static int TargetEntity(Magic m, ReadOnlySpan<HitCandidate> objects)
+    {
+        if (m.State != 5 && m.TargetId == 0) return -1;
+        for (int i = 0; i < objects.Length; i++)
+            if (m.State == 5 ? objects[i].IsOwner : objects[i].Id == m.TargetId) return i;
+        return -1;
     }
 
     /// <summary>

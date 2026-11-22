@@ -19,10 +19,12 @@ public class OwnArrowMagicTests
         + "<range rangeType=\"box\" distance=\"200\" height=\"100\" width=\"100\" applyTarget=\"1\"/>"
         + "<arrow nonTarget=\"1\" rayPhysxTest=\"1\" collision=\"25,100,15\" collisionAdd=\"0,25,15\"" + arrow + "/></attack>";
 
-    static CastRecord Record(string arrow = "", string attack = "")
+    static CastRecord Record(string arrow = "", string attack = "", bool nonTarget = true)
     {
+        var xml = Arrow(arrow, attack);
+        if (!nonTarget) xml = xml.Replace("nonTarget=\"1\"", "nonTarget=\"0\"");
         var doc = XDocument.Parse("<ms2><skill id=\"100\"><basic mainType=\"1\"/><level value=\"1\"><motion sequenceName=\"A\">"
-            + Arrow(arrow, attack) + "</motion></level></skill></ms2>");
+            + xml + "</motion></level></skill></ms2>");
         var t = new SkillDataTable(() => new[] { doc }, (e, n, _) => e.Elements(n).ToList());
         var d = t.GetSkillData(100);
         return new CastRecord { Skill = d, Level = d.GetLevelData(1), CastId = 0x1122334455L, Motion = 0, SendCount = 3 };
@@ -59,6 +61,36 @@ public class OwnArrowMagicTests
         Assert.That(m.Add(r.Skill, SkillAttackFire.AttackAt(r, 0), r, OneRecord, T, paths, _ => Vector3.Zero, ownerId: 42,
             rayCast: ray), Is.EqualTo(1), "the bow's nonTarget record makes an arrow magic");
         return m;
+    }
+
+    [Test]
+    public void AnArrowAimsAtItsRecordsTargetOffTheFacingLine()
+    {
+        // UpdateTargetPosition (magicdata.cpp:1459) in FUN_1414609e0 and each flight: GetTargetEntity is the record's target
+        // (m_nCasterId), so the arrow flies at the mob 300 to the side of the facing (-y), and the fill (not nonTarget) sends it
+        var r = Record(nonTarget: false);
+        var m = new OwnTagMagics();
+        var objects = new[] { Me, Mob(9, 300, -250) };
+        var tags = new List<SkillDamageTarget> { new SkillDamageTarget(7, 9, 0, Array.Empty<SkillDamageLink>()) };
+        Assert.That(m.Add(r.Skill, SkillAttackFire.AttackAt(r, 0), r, tags, T, Paths(Linear), _ => Vector3.Zero, ownerId: 42,
+            objects: objects), Is.EqualTo(1));
+        Assert.That(m.Flight(0).Target.X, Is.EqualTo(objects[1].Body.Center.X).Within(1e-3f), "aimed at the mob from the start");
+        var sends = new List<SkillHitRequest>();
+        for (int t = 0; t <= 400; t += 100)
+            m.Tick(T + t, 0, Owner, objects, r, null, sends, () => 0, null);
+        Assert.That(sends.Single().Targets, Is.EqualTo(new[] { new SkillHitTarget(9, 0) }));
+    }
+
+    [Test]
+    public void AnArrowWhoseTargetIsGoneFliesAlongTheFacing()
+    {
+        // GetTargetEntity null (FindObjectById finds nothing): no tracking, the row's direction times distance stays the target
+        var r = Record(nonTarget: false);
+        var m = new OwnTagMagics();
+        var tags = new List<SkillDamageTarget> { new SkillDamageTarget(7, 9, 0, Array.Empty<SkillDamageLink>()) };
+        m.Add(r.Skill, SkillAttackFire.AttackAt(r, 0), r, tags, T, Paths(Linear), _ => Vector3.Zero, ownerId: 42,
+            objects: new[] { Me });
+        Assert.That(Vector3.Distance(m.Flight(0).Target, new Vector3(0, -810, 0)), Is.LessThan(1e-3f));
     }
 
     [Test]
