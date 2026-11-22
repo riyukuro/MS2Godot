@@ -17,7 +17,8 @@ namespace Ms2Godot.World;
 /// only, so the systems keep the world axes and fall straight down whichever way the camera looks.
 /// STILL-OPEN: the map effect's other parts (monochrome saturation, postShimmer), the game-event field effect that replaces
 /// mapEffectId (CGameEventValueFieldEffect), the weather a field property sets at run time (FieldPropertyWeather,
-/// fieldpropertycli.cpp:197; FUN_1411a7e80, effectservice.cpp:1934-1966), the rain drop system SetRainEnabled adds for fallType 3-4, and world-space
+/// fieldpropertycli.cpp:197; FUN_1411a7e80, effectservice.cpp:1934-1966: LiveSession.FieldProperties.Weather holds the
+/// value, nothing applies it yet), the rain drop system SetRainEnabled adds for fallType 3-4, and world-space
 /// particles: our systems simulate in the effect's own space, so the emitted flakes move with the camera.
 /// </summary>
 public sealed partial class FieldWeather : Node3D

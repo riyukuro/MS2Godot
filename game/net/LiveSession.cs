@@ -198,6 +198,8 @@ public partial class LiveSession : Node
     }
     /// <summary>The inventory dialog model over Items; a UI binds it. Only its Sort sends RequestItemInventory (the sort request, 0x14199c230); a tab switch sends nothing.</summary>
     public InventoryView Inventory { get; private set; }
+    /// <summary>The field properties 0xCA sets (FieldProperties); a new field clears them.</summary>
+    public readonly Ms2.Ui.Hud.FieldProperties FieldProperties = new();
     public readonly GlobalFactor Factors = new();   // CGloabalFactor: exp/meso rates of OnGlobalFactor
     /// <summary>CKeyTable's server side: the key bindings and quick slot pages (current page included) of OnKeyTable; live only.</summary>
     public readonly ServerKeyTable KeyTable = new();
@@ -863,7 +865,7 @@ public partial class LiveSession : Node
     public async Task<bool> EnterAsync(CharacterEntry chosen)
     {
         Busy = true;
-        regionSkills.Clear(); RegionSkillLog.Clear(); ClearFieldEffects();   // a new field: no region skill object survives it
+        regionSkills.Clear(); RegionSkillLog.Clear(); ClearFieldEffects(); FieldProperties.Clear();   // a new field: no region skill object or field property survives it
         try
         {
             var go = await GameClient.SelectAsync(login, chosen.User.CharacterId, BeginEnterGame());
@@ -1081,6 +1083,7 @@ public partial class LiveSession : Node
         }
         // a new field: no region skill or trigger object survives it (an error or the loading map again keeps the field)
         regionSkills.Clear(); RegionSkillLog.Clear(); ClearFieldEffects(); pendingTriggers.Clear(); triggerField = null;
+        FieldProperties.Clear();   // ClearFieldProperties on field leave (worldservice_1.cpp:5368)
         taxiCall = null;        // the call's state goes with the old field's own player (0x6a does not run on in the new field)
         // the old field's own player stops sending: SetMyPC(0) until the new field's FieldAddUser
         DropOwnPc();
@@ -1725,6 +1728,8 @@ public partial class LiveSession : Node
                 else if (m is Ms2.Net.Packets.RegionSkillMessage.Remove) regionSkills.Remove(m.Id);
                 if (m != null) { RegionSkillLog.Add(m); RegionSkillReceived?.Invoke(m); }
             }
+            else if (game.Is(p, Inbound.FieldProperty))
+                FieldProperties.Apply(Ms2.Net.Packets.FieldPropertyMessage.Read(p.Reader()));   // OnFieldProperty (scenestategame.cpp:3895)
             else if (game.Is(p, Inbound.SkillDamage))
             {
                 // The records that hit the own player; MasteryEvents applies the client's mode drops (3 needs its PC, 5 its
