@@ -74,20 +74,25 @@ public sealed class BeautyTalkCommand
         return true;
     }
 
-    /// <summary>OpenTalkDialog @0x141b1faa0 (uitalkcinematic.cpp:1366-1400).</summary>
+    /// <summary>OpenTalkDialog @0x141b1faa0 (uitalkcinematic.cpp:1366-1400). With a talking npc (FindNpcData) the window opens (the client's
+    /// sub scene "openDialog" message; the flows' Open stands in) and the enter request goes out when the shop mode is non-zero, whether or
+    /// not the window opened. SendNpcTalkMode0 (:1399) runs on every path. STILL-OPEN: the 0x4e24 branch without a local player (:1364),
+    /// which ends the talk before the open.</summary>
     void OpenTalkDialog(int mode, int dialogId)
     {
         int npc = TalkNpcId();
-        if (npc == 0) return;   // FindNpcData(npc) null: nothing opens and nothing is sent (the tail's SendNpcTalkMode0 is skipped too: STILL-OPEN)
-        bool opened = dialogId switch
+        if (npc != 0)
         {
-            ShopId => Shop?.Open() ?? false,
-            StyleId => Style?.Open() ?? false,
-            ItemColorId => Coloring?.Open() ?? false,
-            _ => false,   // 0x4e24 / 0: not ported
-        };
-        if (!opened) { Log($"beauty talk: dialog 0x{dialogId:x} did not open"); return; }
-        if (mode != 0) Send?.Invoke(BeautyEnterRequest.Create(npc, (byte)mode));
+            bool opened = dialogId switch
+            {
+                ShopId => Shop?.Open() ?? false,
+                StyleId => Style?.Open() ?? false,
+                ItemColorId => Coloring?.Open() ?? false,
+                _ => false,   // 0x4e24 / 0: not ported
+            };
+            if (!opened) Log($"beauty talk: dialog 0x{dialogId:x} did not open");
+            if (mode != 0) Send?.Invoke(BeautyEnterRequest.Create(npc, (byte)mode));
+        }
         EndTalk();
     }
 

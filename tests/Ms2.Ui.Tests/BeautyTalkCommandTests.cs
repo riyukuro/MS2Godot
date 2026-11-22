@@ -82,26 +82,47 @@ public class BeautyTalkCommandTests
     }
 
     [Test]
-    public void AnUnportedDialogOpensNothingAndSendsNothing()
+    public void AnUnportedDialogOpensNothingButTheTalkEndsAndTheEnterRequestGoesOut()
     {
         var r = new Rig();
         Assert.That(r.Cmd.Run("BeautyShopDialog", "mirror"), Is.True);
+        Assert.That(r.Sent, Is.EqualTo(new[] { new BeautyEnterRequest(77, 3) }));
         Assert.That(r.Cmd.Run("BeautyShopDialog", "nonsense"), Is.True);
         Assert.That(r.ShopShown + r.StyleShown, Is.EqualTo(0));
-        Assert.That(r.Sent, Is.Empty);
-        Assert.That(r.Ended, Is.EqualTo(0));
+        Assert.That(r.Sent.Count, Is.EqualTo(1), "dialog 0 has type 0: no request");
+        Assert.That(r.Ended, Is.EqualTo(2));
     }
 
     [Test]
-    public void WithoutATalkingNpcOrACustomizeNothingOpensOrIsSent()
+    public void AnAlreadyOpenWindowStillSendsTheEnterRequestAndEndsTheTalk()
+    {
+        var r = new Rig();
+        r.Cmd.Run("BeautyStyleDialog", "");
+        r.Cmd.Run("BeautyStyleDialog", "");
+        Assert.That(r.StyleShown, Is.EqualTo(1));
+        Assert.That(r.Sent.Count, Is.EqualTo(2));
+        Assert.That(r.Ended, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void TheItemColourActionWithoutACustomizeStillSendsTypeThreeAndEndsTheTalk()
+    {
+        var r = new Rig(customize: false);
+        r.Cmd.Coloring = new ItemColoringFlow { CreateCustomize = () => null, CreateController = () => new ItemColoringDialogController() };
+        r.Cmd.Run("BeautyShopDialog", "itemColor");
+        Assert.That(r.Sent, Is.EqualTo(new[] { new BeautyEnterRequest(77, 3) }));
+        Assert.That(r.Ended, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void WithoutATalkingNpcNothingOpensOrIsSentButTheTalkEnds()
     {
         var r = new Rig { Npc = 0 };
         r.Cmd.Run("BeautyStyleDialog", "");
-        Assert.That(r.StyleShown, Is.EqualTo(0));
+        Assert.That((r.StyleShown, r.Sent.Count, r.Ended), Is.EqualTo((0, 0, 1)));
         var q = new Rig(customize: false);
         q.Cmd.Run("BeautyStyleDialog", "");
-        Assert.That(q.Sent, Is.Empty);
-        Assert.That(q.Ended, Is.EqualTo(0));
+        Assert.That((q.Sent.Count, q.Ended), Is.EqualTo((1, 1)));
     }
 
     [Test]
