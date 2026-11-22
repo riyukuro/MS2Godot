@@ -437,6 +437,19 @@ public class GuideTests
         Assert.That(g.FindEntity(250).State, Is.EqualTo(0));
     }
 
+    /// <summary>The registry's names are each class's GetTypeName result; objects registered without RegisterDialog are no dialogs.</summary>
+    [Test]
+    public void RegisteredDialogNamesAreTheTypeNameResults()
+    {
+        foreach (var name in new[] { "InventoryDialog", "MyInfoDialog", "AdditionalEffectControlDialog", "HomeMenuDialog", "DynamicAction",
+                     "SkillCompactControl", "GuideMovieDialog", "CashAttendGiftDialog", "SkillBookTreeDialog", "SkillBookTreeDialog_jobchange01",
+                     "TriggerTimerDialog", "WebBrowser", "TencentUserReportDialog" })
+            Assert.That(RegisteredDialogs.Contains(name), Is.True, name);
+        foreach (var name in new[] { "AdditionalControlDialog", "PhotoStudioMenuDialog", "PCInfoDialog", "IGuideMovieDialog", "GuideEvent", "ExpBar", "ActionTooltip", "" })
+            Assert.That(RegisteredDialogs.Contains(name), Is.False, name);
+        Assert.That(GuideDialogLookup.Resolve("GuideEvent", _ => null), Is.Null);
+    }
+
     sealed class SlotWorld : GuideWorld
     {
         public bool Slotted;
