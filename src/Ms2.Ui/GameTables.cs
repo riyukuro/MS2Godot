@@ -1003,6 +1003,7 @@ public sealed class GameTables
                     : new StringReader(SkillText(files[i]))); });
     /// <summary>Reads <see cref="SkillDamage"/> and the skill table on a worker thread while the field builds, so the first hit's damage event
     /// (a skill damage with mode 1 reads the attack's damage) does not read every skilldata file on the frame.</summary>
+    /// <remarks>Named for the damage table it was made for; it reads the skill table too.</remarks>
     public System.Threading.Tasks.Task PrefetchSkillDamage() => System.Threading.Tasks.Task.Run(() => { try { Skills.Skills.Load(); } catch { } try { SkillDamage.Load(); } catch { } });
     /// <summary>CNametagSymbolTable (Table/nametagSymbol.xml), read on first use.</summary>
     public NametagSymbols NametagSymbols => nametagSymbols ??= packs == null ? NametagSymbols.Empty : new NametagSymbols(packs);

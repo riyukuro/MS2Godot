@@ -510,7 +510,13 @@ public sealed class SkillDataTable
     Dictionary<uint, SkillData> All()
     {
         if (Volatile.Read(ref skills) is { } done) return done;
-        lock (loadLock) return skills ??= Read();
+        lock (loadLock)
+        {
+            if (skills != null) return skills;
+            var d = Read();
+            Volatile.Write(ref skills, d);
+            return d;
+        }
     }
 
     Dictionary<uint, SkillData> Read()

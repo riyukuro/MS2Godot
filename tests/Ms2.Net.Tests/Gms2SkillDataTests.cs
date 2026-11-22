@@ -38,8 +38,21 @@ public class Gms2SkillDataTests {
         foreach (uint id in new uint[] { 10800001, 900021, 900022, 10400011 })
             Assert.That(t.Skills.Skills.GetSkillLevelData(id, 1), Is.Not.Null, "skill " + id);
         Assert.That(t.Skills.Skills.GetSkillLevelData(10800001, 1).Motions, Is.Not.Empty);
+        var attack = t.Skills.Skills.GetSkillLevelData(10800001, 1).Motions.SelectMany(m => m.Attacks).FirstOrDefault();
+        Assert.That(attack, Is.Not.Null, "the motion's attack points are read");
+        Assert.That(attack.Range.Distance, Is.EqualTo(800f), "the attack's range comes from its rangeProperty child");
+        Assert.That(t.SkillDamage.Get(10800001, 1, 0, 0).EffectHit, Does.Contain("LuckySeven_Hit"), "the hit effect comes from the damageProperty child");
         Assert.That(t.SkillDamage.Get(10800001, 1, 0, 0), Is.Not.Null, "the first attack of the assassin's basic skill has a damage row");
+        Assert.That(new Ms2.Formats.World.SkillTable(packs).Count, Is.GreaterThan(9000), "the replay and region skill table reads the per-skill files too");
         Assert.That(Ms2.Ui.Skills.PerSkillFile.UnwrappedCount, Is.EqualTo(unwrapped), "every per-skill file wraps");
+    }
+
+    [Test]
+    public void TheMotionPropertyChildMovesOntoTheMotion() {
+        string r = Ms2.Formats.World.SkillTable.ToSkillRows("<level><motion>\r\n\t<motionProperty sequenceName=\"a\" motionEffect=\"E.xml\" />\r\n<attack point=\"p0\"><rangeProperty distance=\"5\" /><arrowProperty x=\"1\" /><damageProperty rate=\"2\" /></attack></motion></level>");
+        Assert.That(r, Does.StartWith("<level><motion sequenceName=\"a\" motionEffect=\"E.xml\">").And.Contain("<range distance=\"5\" />").And.Contain("<arrow x=\"1\" />").And.Contain("<damage rate=\"2\" />"));
+        string kms = "<level><motion motionEffect=\"E.xml\"><attack><range distance=\"5\"/></attack></motion></level>";
+        Assert.That(Ms2.Formats.World.SkillTable.ToSkillRows(kms), Is.SameAs(kms), "rows without a Property child are left as they are");
     }
 
     [Test]

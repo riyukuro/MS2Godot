@@ -5,14 +5,7 @@ namespace Ms2.Ui.Skills;
 public static class PerSkillFile
 {
     /// <summary>The skill id of a per-skill file name (skill/&lt;nn&gt;/&lt;id&gt;.xml); null for another entry.</summary>
-    public static string Id(string entry)
-    {
-        if (!entry.StartsWith("skill/", StringComparison.OrdinalIgnoreCase) || !entry.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)) return null;
-        int slash = entry.IndexOf('/', 6);
-        if (slash < 0 || entry.IndexOf('/', slash + 1) >= 0) return null;
-        string id = entry.Substring(slash + 1, entry.Length - slash - 5);
-        return id.Length > 0 && id.All(char.IsAsciiDigit) ? id : null;
-    }
+    public static string Id(string entry) => Ms2.Formats.World.SkillTable.PerSkillId(entry);
 
     /// <summary>A per-skill file's text as the skilldata files hold a skill: its root &lt;ms2&gt; (basic, level...) becomes
     /// &lt;skill id="..."&gt; inside a &lt;ms2&gt; of its own; a skilldata file is returned as it is.</summary>
@@ -20,6 +13,7 @@ public static class PerSkillFile
     {
         string id = Id(entry);
         if (id == null) return xml;
+        xml = Ms2.Formats.World.SkillTable.ToSkillRows(xml);
         if (!RootStart(xml, out int open, out int close) || xml[close - 1] == '/') return Unwrapped(xml);
         int end = xml.LastIndexOf("</ms2", StringComparison.Ordinal);
         if (end < close) return Unwrapped(xml);

@@ -58,15 +58,40 @@ public sealed class SkillTable
     readonly Dictionary<int, SkillStateMove> stateMoves = new();
     public int Count => skills.Count;
 
+    /// <summary>A per-skill file's text in the shape the skilldata rows have: the recorded GMS2 data holds a motion's attributes in a child
+    /// &lt;motionProperty&gt; and names an attack's children rangeProperty, arrowProperty and damageProperty (skilldata: attributes on &lt;motion&gt;,
+    /// &lt;range&gt;, &lt;arrow&gt;, &lt;damage&gt;); the attribute names are the same.</summary>
+    public static string ToSkillRows(string xml)
+    {
+        if (xml.IndexOf("Property", StringComparison.Ordinal) < 0) return xml;
+        xml = MotionProperty.Replace(xml, "<motion $1>");
+        return xml.Replace("<rangeProperty", "<range").Replace("<arrowProperty", "<arrow").Replace("<damageProperty", "<damage");
+    }
+    static readonly System.Text.RegularExpressions.Regex MotionProperty = new(@"<motion>\s*<motionProperty\s([^>]*?)\s*/>");
+
+    /// <summary>The skill id (digits) of a per-skill file name, skill/&lt;nn&gt;/&lt;id&gt;.xml; null for any other entry.</summary>
+    public static string PerSkillId(string entry)
+    {
+        if (!entry.StartsWith("skill/", StringComparison.OrdinalIgnoreCase) || !entry.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)) return null;
+        int slash = entry.IndexOf('/', 6);
+        if (slash < 0 || entry.IndexOf('/', slash + 1) >= 0) return null;
+        string id = entry.Substring(slash + 1, entry.Length - slash - 5);
+        return id.Length > 0 && id.All(char.IsAsciiDigit) ? id : null;
+    }
+
     public SkillTable(PackSet packs)
     {
-        foreach (var entry in packs.List("Xml").Where(n => n.StartsWith("skilldata/", StringComparison.OrdinalIgnoreCase) && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)))
+        var entries = packs.List("Xml").Where(n => n.StartsWith("skilldata/", StringComparison.OrdinalIgnoreCase) && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).ToList();
+        // the recorded GMS2 client's data keeps one file per skill (skill/<nn>/<id>.xml): its root holds the rows, the id is the file name
+        if (entries.Count == 0) entries = packs.List("Xml").Where(n => PerSkillId(n) != null).ToList();
+        foreach (var entry in entries)
         {
             XDocument x;
-            try { x = PackXml.Parse(packs.Read("Xml", entry)); } catch { continue; }
-            foreach (var s in x.Descendants("skill"))
+            try { x = PerSkillId(entry) != null ? XDocument.Parse(ToSkillRows(PackXml.Text(packs.Read("Xml", entry)))) : PackXml.Parse(packs.Read("Xml", entry)); } catch { continue; }
+            string fileId = PerSkillId(entry);
+            foreach (var s in fileId != null ? new[] { x.Root } : x.Descendants("skill"))
             {
-                if (!int.TryParse((string)s.Attribute("id"), out int id)) continue;
+                if (s == null || !int.TryParse(fileId ?? (string)s.Attribute("id"), out int id)) continue;
                 if (s.Descendants("basic").Elements("combo").FirstOrDefault() is { } combo && Flag(combo, "chargingSkill")) charging.Add(id);
                 else charging.Remove(id);
                 var basic = s.Element("basic");
