@@ -60,6 +60,22 @@ public sealed record GemEquipRequest(long Uid, byte Slot) : IOutPacket {
     public void Write(Maple2.PacketLib.Tools.ByteWriter w) { w.WriteByte(0); w.WriteLong(Uid); w.WriteByte(Slot); }
 }
 
+/// <summary>Outbound 0x47 (SendOp::BadgeEquip) mode 1: UnequipGem (gemslot_2.cpp:496), u8 1 then FUN_1401fd250: u8 the gem slot.</summary>
+public sealed record GemUnequipRequest(byte Slot) : IOutPacket {
+    public Outbound Op => Outbound.BadgeEquip;
+    public void Write(Maple2.PacketLib.Tools.ByteWriter w) { w.WriteByte(1); w.WriteByte(Slot); }
+}
+
+/// <summary>Outbound 0x47 (SendOp::BadgeEquip) mode 3: the transparency gem setting (uigemsettingdialog.cpp:154), u8 3 then FUN_1401fd2e0:
+/// u8 the gem type, then ten u8 hidden flags (cap, eye, clothes, pants, mantle, ear, face hat, gloves, ring, shoes: the dialog's m_cp..m_sh boxes).</summary>
+public sealed record GemSettingRequest(byte Type, bool[] Hidden) : IOutPacket {
+    public Outbound Op => Outbound.BadgeEquip;
+    public void Write(Maple2.PacketLib.Tools.ByteWriter w) {
+        w.WriteByte(3); w.WriteByte(Type);
+        for (int i = 0; i < 10; i++) w.WriteByte((byte) (Hidden != null && i < Hidden.Length && Hidden[i] ? 1 : 0));
+    }
+}
+
 /// <summary>Outbound 0x19 (SendOp::RequestItemUse): Unk_Inventory::RequestUseItem (inventory.cpp:1201), the payload as FUN_1401fbc40
 /// writes it: i64 the item's uid, then the argument as a unicode string ("" from a plain use). The client uses up nothing itself:
 /// the server's item packets do.</summary>

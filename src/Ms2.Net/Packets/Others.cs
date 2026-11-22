@@ -123,10 +123,11 @@ public sealed record ItemPutOn(int ObjectId, byte Kind, EquipItem Item) {
 /// mode 4 an error: i16 code. Other modes carry nothing the client reads.
 /// </summary>
 public sealed record BadgeEquipMessage(byte Mode, int ObjectId, EquipItem Item, byte GemType, short Error) {
-    public static BadgeEquipMessage Read(ByteReader r) {
+    public static BadgeEquipMessage Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+    public static BadgeEquipMessage Read(ByteReader r, ProtocolProfile profile) {
         byte mode = r.ReadByte();
         switch (mode) {
-            case 0: { var (o, it) = ItemReader.ReadBadgeEquip(r); return new BadgeEquipMessage(0, o, it, it.GemType, 0); }
+            case 0: { var (o, it) = ItemReader.ReadBadgeEquip(r, profile); return new BadgeEquipMessage(0, o, it, it.GemType, 0); }
             case 1: return new BadgeEquipMessage(1, r.ReadInt(), null, r.ReadByte(), 0);
             case 4: return new BadgeEquipMessage(4, 0, null, 0, r.ReadShort());
             default: return new BadgeEquipMessage(mode, 0, null, 0, 0);

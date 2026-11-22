@@ -334,6 +334,17 @@ public static class ItemReader {
         return (obj, it);
     }
 
+    /// <summary><see cref="ReadBadgeEquip(ByteReader)"/> for a profile: the GMS2 head is the same, the item body after it is the GMS2 body
+    /// (recorded GMS2 0x81 mode 0, 268-317 bytes).</summary>
+    public static (int ObjectId, EquipItem Item) ReadBadgeEquip(ByteReader r, ProtocolProfile profile) {
+        if (!profile.IsGms2) return ReadBadgeEquip(r);
+        int obj = r.ReadInt();
+        var it = new EquipItem { IsBadge = true, Id = r.ReadInt(), Uid = r.ReadLong(), Rarity = r.ReadInt() };
+        it.BadgeSlot = r.ReadByte();
+        ReadBody(r, it, EquipSlot.Unknown, badge: true, gms2: true);
+        return (obj, it);
+    }
+
     public static EquipItem ReadBadge(ByteReader r) {
         var it = new EquipItem { IsBadge = true, BadgeSlot = r.ReadByte(), Id = r.ReadInt(), Uid = r.ReadLong(), Rarity = r.ReadInt() };
         ReadBody(r, it, EquipSlot.Unknown, badge: true);

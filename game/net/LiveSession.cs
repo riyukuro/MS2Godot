@@ -1500,7 +1500,7 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.BadgeEquip))
             {
-                var b = BadgeEquipMessage.Read(p.Reader());     // CSceneStateGame::OnBadgeEquip (scenestategame.cpp:11006); no ExpectEnd: the client ignores trailing bytes
+                var b = BadgeEquipMessage.Read(p.Reader(), game.Profile);     // CSceneStateGame::OnBadgeEquip (scenestategame.cpp:11006); no ExpectEnd: the client ignores trailing bytes
                 bool ownGems = Me.Apply(b);
                 if (b.Mode == 4) GemEquipError?.Invoke(b.Error);
                 else if (b.Mode is 0 or 1) BadgeEquipped?.Invoke(b);
