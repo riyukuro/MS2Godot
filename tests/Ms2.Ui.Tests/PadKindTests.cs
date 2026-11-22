@@ -91,4 +91,25 @@ public class PadKindTests
         Assert.That(k.LoadDefaultPadKeysIfUnset(1), Is.False, "the marker is set now: nothing loads again");
         Assert.That(sent, Is.EqualTo(1));
     }
+
+    [TestCase("s_gamepad_notice_search_gamepad")]
+    [TestCase("s_gameoption_input_reset_message")]
+    public void TheBoxTextsAreInTheCommonStringTable(string key)
+    {
+        var d = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
+        Assert.That(new Ms2.Formats.World.GameStrings(new PackSet(d), "en").Common()(key), Is.Not.Null.And.Not.Empty);
+    }
+
+    [Test]
+    public void TheFirstDefaultTableSendsTheKeysOnceWhenTheHandlerIsSubscribedBeforeIt()
+    {
+        var k = Keys();
+        int sent = 0; k.KeysSentToServer += _ => sent++;
+        k.Apply(UiFixture.NewCharacterKeyTable(), () => 1);
+        Assert.That(sent, Is.EqualTo(1), "the pad load sends once (keytable.cpp:560)");
+        var off = Keys(); sent = 0; off.KeysSentToServer += _ => sent++;
+        off.Apply(UiFixture.NewCharacterKeyTable());
+        Assert.That(sent, Is.EqualTo(0), "no pad load, nothing sent");
+    }
 }

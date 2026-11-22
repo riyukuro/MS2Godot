@@ -2566,6 +2566,12 @@ public partial class HudScene : Node, IUiStageHost
         // the server's key table when live (OnKeyTable), else the packet a new character gets
         hudModel.ServerKeys = Ms2Godot.Net.LiveSession.Instance?.KeyTable is { Loaded: true } live ? live
             : quickSlotShot != null ? QuickSlotShotTable(quickSlotShot) : UiFixture.NewCharacterKeyTable();
+        // the pad file load of the first table sends the keys (keytable.cpp:560): the sender is on before it
+        if (Ms2Godot.Net.LiveSession.Instance is { } keySender)
+        {
+            if (keysSentHandler != null) hudModel.Keys.KeysSentToServer -= keysSentHandler;
+            hudModel.Keys.KeysSentToServer += keysSentHandler = keySender.SendKeyTableSaveAll;
+        }
         hudModel.Keys.Apply(hudModel.ServerKeys, PadDefaultsKind());
         var p = hudModel.Player;
         p.Name = data.Player.Name; p.Level = data.Player.Level;
@@ -3325,6 +3331,8 @@ public partial class HudScene : Node, IUiStageHost
     Action unwatchQuickSlotState;
     Ms2.Ui.Skills.WeaponActionTable weaponActions;
 
+    Action<IReadOnlyList<Ms2.Net.Packets.KeyBinding>> keysSentHandler;   // KeysSentToServer -> SendKeyTableSaveAll, on from the first table
+
     /// <summary>
     /// The live events that change what the quick slots show. The client queues a gray refresh on a bag item added or
     /// removed (UIMainPlayerInfo::vfunc_21 / vfunc_22, uimainplayerinfo.cpp:839), after UpdateSlotForItem rebinds the item's
@@ -3351,13 +3359,11 @@ public partial class HudScene : Node, IUiStageHost
             playerInfo.RebindSlots();
         };
         Action<Ms2.Net.Packets.KeyBinding> onBind = live.SendKeyTableBind;
-        Action<IReadOnlyList<Ms2.Net.Packets.KeyBinding>> onSaveAll = live.SendKeyTableSaveAll;
         Action<int> onPageChanged = live.SendKeyTableSetPage;
         live.SkillBookChanged += onBook;
         live.Items.Changed += onBag;
         live.KeyTableChanged += onKeys;
         hudModel.Keys.KeyBindingChanged += onBind;
-        hudModel.Keys.KeysSentToServer += onSaveAll;
         playerInfo.QuickSlotPageChanged += onPageChanged;
         unwatchQuickSlotState = () =>
         {
@@ -3365,7 +3371,8 @@ public partial class HudScene : Node, IUiStageHost
             live.Items.Changed -= onBag;
             live.KeyTableChanged -= onKeys;
             hudModel.Keys.KeyBindingChanged -= onBind;
-            hudModel.Keys.KeysSentToServer -= onSaveAll;
+            hudModel.Keys.KeysSentToServer -= keysSentHandler;
+            keysSentHandler = null;
             playerInfo.QuickSlotPageChanged -= onPageChanged;
         };
     }
