@@ -1021,7 +1021,7 @@ public sealed class GameTables
 
     /// <summary>
     /// CStringTable::FUN_141811980(table, id) for the tables of table/string.xml the trophy dialog reads: 1 itemName,
-    /// 20 stringFieldEnterance, 24 achieveName, 29 stringFishName, 30 stringFishDesc, 31 stringFishDetailDesc, 59 petName, 74 achieveCategoryName, and 80
+    /// 20 stringFieldEnterance, 24 achieveName, 29 stringFishName, 30 stringFishDesc, 31 stringFishDetailDesc, 51 stringUgc, 59 petName, 74 achieveCategoryName, and 80
     /// specialQuestType (string/&lt;lang&gt;/specialquesttype.xml, the character ability dialog's); "" for an unknown id or
     /// another table.
     /// </summary>
@@ -1030,7 +1030,7 @@ public sealed class GameTables
         string file = table switch
         {
             1 => "itemname", 0x2f => "stringmasteryreceipename", 0x30 => "stringmasteryreceipedesc", 0x14 => "stringfieldenterance", 0x18 => "achievename", 0x1d => "stringfishname", 0x1e => "stringfishdesc", 0x1f => "stringfishdetaildesc",
-            0x3b => "petname", 0x4a => "achievecategoryname", 0x50 => "specialquesttype", _ => null,
+            0x3b => "petname", 0x33 => "stringugc", 0x4a => "achievecategoryname", 0x50 => "specialquesttype", _ => null,
         };
         if (file == null) return "";
         if (!numberedTables.TryGetValue(file, out var d)) numberedTables[file] = d = strings?.Table(file, "name") ?? new Dictionary<string, string>();
