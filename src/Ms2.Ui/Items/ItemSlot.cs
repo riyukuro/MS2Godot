@@ -4,14 +4,14 @@ namespace Ms2.Ui.Items;
 /// ASSlot's item path (ms2/client/ms2/asitemslot.cpp): the members ASSlot::FUN_1409c3860 (:1262) sets on a slot object
 /// for an item, in its order, as (name, value) pairs for <see cref="UiHost.Obj"/>. Ported: 1 (the item) and 0x10 (the count),
 /// which ItemInfoSlot's item slots use (ItemSlotBinder: 0x11), and the rest of the inventory's 0x1c01f (InvenSlot::vfunc_8,
-/// invenslot.cpp:1601): 2, 4, 8, 0x4000, 0x8000, 0x10000; and 0x400 (the npc shop's rows, 0x415). Any other flag throws until its branch is. The branches that read
+/// invenslot.cpp:1601): 2, 4, 8, 0x2000, 0x4000, 0x8000, 0x10000, 0x20000, 0x40000; and 0x400 (the npc shop's rows, 0x415). Any other flag throws until its branch is. The branches that read
 /// state not ported here take it from <see cref="Sources"/>; a null source sets nothing.
 /// </summary>
 public static class ItemSlot
 {
     /// <summary>The flags <see cref="Build"/> handles.</summary>
     /// <remarks>0x40 is not tested by FUN_1409c3860 (asitemslot.cpp:1262-1384); EquipSlot / GemSlot pass it (0x49).</remarks>
-    public const int Ported = 0x1 | 0x2 | 0x4 | 0x8 | 0x10 | 0x40 | 0x400 | 0x4000 | 0x8000 | 0x10000;
+    public const int Ported = 0x1 | 0x2 | 0x4 | 0x8 | 0x10 | 0x40 | 0x400 | 0x2000 | 0x4000 | 0x8000 | 0x10000 | 0x20000 | 0x40000;
     /// <summary>The feature FUN_1409c3860 tests for pet ranks (CFeatureManager::IsFeatureEnabled(0x8c)).</summary>
     public const int PetRankFeature = 0x8c;
 
@@ -109,6 +109,7 @@ public static class ItemSlot
         if ((flags & 8) != 0 && sources?.Color?.Invoke(item) is uint color) slot.Add(("itemColor", color));   // SetItemColor
         // SetItemCountFromItem (:873): "{0}" of the count for a stackable item, else ""
         if ((flags & 0x10) != 0) slot.Add(("itemCount", data.IsStackable ? item.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) : ""));
+        if ((flags & 0x2000) != 0) slot.Add(("dropShadowDisable", 1));              // DisableDropShadow (:1372)
         if ((flags & 0x4000) != 0 && sources?.QuestMark is { } quest)              // SetItemQuestMark (:1175)
             switch (quest(item))
             {
@@ -116,6 +117,8 @@ public static class ItemSlot
                 case 1: slot.Add(("questProgress", 1)); break;
             }
         if ((flags & 0x8000) != 0 && sources?.Sealed?.Invoke(item) == true) slot.Add(("itemSeal", 1));   // FUN_1409c34e0
+        if ((flags & 0x20000) != 0) slot.Add(("enchant", 0));                       // ClearEnchant (:1378)
+        if ((flags & 0x40000) != 0) slot.Add(("gradeBG", 0));                        // ClearGradeBG (:1380)
         return true;
     }
 

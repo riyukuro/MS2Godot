@@ -112,6 +112,18 @@ public class ItemSlotTests
     }
 
     [Test]
+    public void LapenshardPanelFlagsSetDropShadowEnchantAndGradeBg()
+    {
+        var model = NewModel();
+        var item = Item.Create(model.Tables.Items, 20300327, 0);
+        // asitemslot.cpp:1372-1381: 0x2000 DisableDropShadow, 0x20000 ClearEnchant, 0x40000 ClearGradeBG
+        var s = Slot(model, item, 0x11 | 0x2000 | 0x20000 | 0x40000);
+        Assert.That((s["dropShadowDisable"], s["enchant"], s["gradeBG"]), Is.EqualTo((1, 0, 0)));
+        var plain = Slot(model, item, 0x11);
+        Assert.That(plain.ContainsKey("dropShadowDisable") || plain.ContainsKey("enchant") || plain.ContainsKey("gradeBG"), Is.False);
+    }
+
+    [Test]
     public void UnportedFlagsThrow()
     {
         var model = NewModel();
