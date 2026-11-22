@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Godot;
 using Ms2Godot.Flow;
+using Ms2Godot.World;
 
 namespace Ms2Godot.Net;
 
@@ -41,7 +42,8 @@ public partial class LiveSession
         int lockId = 0;
         live.DamageNumbered += (n, npc, pc) => { if (npc != null) numbers++; };
         live.NpcExpShown += (npc, exp) => kills++;
-        live.NpcAdded += npc => npcs++;
+        FieldNpcs.Placed lastNpc = null;
+        live.NpcAdded += npc => { npcs++; lastNpc = npc; };
         live.MesoChanged += (delta, kind) => mesoDelta += delta;
         await frames(240);
         foreach (var step in steps.Split(','))
@@ -256,6 +258,28 @@ public partial class LiveSession
                     Check($"damage numbers came back ({numbers})", numbers > 0);
                     Check($"the kill reached the client ({kills} exp line(s), {presses} press(es))", kills > deadBefore);
                     Shot("attack_end.png");
+                    break;
+                }
+                case "aimattack":      // attack, the player turned to the mob before each press; hits (damage numbers) per press
+                {
+                    int mob = int.Parse(Env("MS2_LIVE_COMBAT_MOB", "0")), added = npcs;
+                    hud.SubmitChatLine("/npc " + mob);
+                    await until(() => npcs > added, 60 * 5); await frames(120);
+                    Check("the mob is in the field", npcs > added && lastNpc != null);
+                    int deadBefore = kills, hitPresses = 0, press = 0;
+                    for (; press < 12 && kills == deadBefore; press++)
+                    {
+                        float dist = lastNpc?.Root != null && GodotObject.IsInstanceValid(lastNpc.Root) ? hud.FaceScripted(lastNpc.Position) : -1;
+                        await frames(20);
+                        int before = numbers;
+                        hud.AttackScripted();
+                        await until(() => numbers > before, 60 * 2);
+                        bool hit = numbers > before;
+                        if (hit) { hitPresses++; await frames(6); Shot($"aim_dmg_in{press}.png"); }
+                        GD.Print($"live: combat aim press {press}: distance {dist:F0}, numbers {numbers - before}");
+                        await frames(60);
+                    }
+                    Check($"hits per press: {hitPresses} of {press}", hitPresses == press);
                     break;
                 }
                 case "death":

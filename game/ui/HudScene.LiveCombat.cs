@@ -46,4 +46,14 @@ public partial class HudScene
         live.Inventory.RequestUnequip(worn.Uid);
         return true;
     }
+
+    /// <summary>The player turned to face <paramref name="target"/> (a world position) on the flat, as a turn before a press.
+    /// Returns the distance to it, or -1 without a player.</summary>
+    public float FaceScripted(Vector3 target)
+    {
+        if (player == null) return -1;
+        var d = target - player.GlobalPosition; d.Y = 0;
+        player.Face(d);
+        return d.Length();
+    }
 }
