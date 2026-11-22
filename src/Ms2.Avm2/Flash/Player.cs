@@ -1591,16 +1591,21 @@ namespace Ms2.Avm2.Flash
             {
                 pressedBy[button] = t ?? Stage;     // SetMouseButtonDownEntity(activeEntitySafe)
                 mouseInsideEntityLast = true;       // :7271
-                MouseEv(t ?? (AsInteractiveObject)Stage, "mouseDown", button: button);     // activeEntitySafe, sfr_as3_17.cpp:7265
                 // a left press moves the focus to the top-most entity (MovieImpl's mouse handling, sfr_gfx_01i.cpp:3673; no
                 // ancestor of it is asked), and QueueSetFocusTo (:2672) takes NULL for one that is not focus enabled
                 // (IsFocusEnabled by mouse), so a press on nothing focusable, or on nothing, clears the focus; the change
-                // event names the entity pressed
+                // event names the entity pressed. QueueSetFocusTo sends the mouseFocusChange (NotifyOnFocusChange, :2688)
+                // before GenerateMouseEvents sends the mouseDown (:3681), and only queues the move itself: the change
+                // event's listeners run before the mouseDown's, the move with its focusOut/focusIn after them.
+                AsInteractiveObject focusTo = null;
+                bool moveFocus = false;
                 if (button == LeftButton)
                 {
-                    if (t != null && MouseFocusEnabled(t)) SetFocus(t, "mouse");
-                    else SetFocus(null, "mouse", t);
+                    focusTo = t != null && MouseFocusEnabled(t) ? t : null;
+                    moveFocus = AskFocusChange(focusTo, "mouse", focusTo == null ? t : null);
                 }
+                MouseEv(t ?? (AsInteractiveObject)Stage, "mouseDown", button: button);     // activeEntitySafe, sfr_as3_17.cpp:7265
+                if (moveFocus) MoveFocusTo(focusTo, "mouse");
             }
             else
             {
@@ -1845,9 +1850,16 @@ namespace Ms2.Avm2.Flash
         /// when given (the entity a press went to, QueueSetFocusTo's ch before IsFocusEnabled), else <paramref name="o"/>.</summary>
         public void SetFocus(AsInteractiveObject o, string how, AsInteractiveObject related = null)
         {
+            if (AskFocusChange(o, how, related)) MoveFocusTo(o, how);
+        }
+
+        /// <summary>The first half of <see cref="SetFocus"/>: whether the focus may move to <paramref name="o"/>, after the
+        /// change event when <paramref name="how"/> is given (false when it was cancelled or nothing would change).</summary>
+        bool AskFocusChange(AsInteractiveObject o, string how, AsInteractiveObject related)
+        {
             // QueueSetFocusTo (sfr_gfx_01i.cpp:2688) compares the entity it was given, before IsFocusEnabled, with the
             // focus: a press on something not focusable while nothing has the focus still sends the change event
-            if (ReferenceEquals(related ?? o, Focus)) return;
+            if (ReferenceEquals(related ?? o, Focus)) return false;
             var old = Focus as AsInteractiveObject;
             if (how != null)
             {
@@ -1861,9 +1873,16 @@ namespace Ms2.Avm2.Flash
                     e.relatedObject = related ?? o;
                     ok = from.Dispatch(e);
                 });
-                if (!ok) return;
+                if (!ok) return false;
             }
+            return true;
+        }
+
+        /// <summary>The second half of <see cref="SetFocus"/>: the move itself, with the focusOut and focusIn events.</summary>
+        void MoveFocusTo(AsInteractiveObject o, string how)
+        {
             if (ReferenceEquals(o, Focus)) return;
+            var old = Focus as AsInteractiveObject;
             Focus = o;
             // TextField::OnFocus @0x1425ba020 (sfr_gfx_03e.cpp:1057), selectable fields only: the field losing the focus drops
             // its selection unless alwaysShowSelection (EditorKit::ClearSelection), and the field getting it selects all of
