@@ -19,7 +19,7 @@ namespace Ms2Godot.Ui.Create;
 /// side (<see cref="CharacterCreateController"/>). Create asks for the name (a STAND-IN box: uimessagebox has no movie
 /// port yet) and builds the CharacterManagement request.
 /// A change of field reloads this scene (the page, job and gender carry over in static state).
-/// User args (after --): --page select|create, --job CODE, --gender male|female, --shots DIR (scripted shots, then quit).
+/// User args (after --): --page select|create, --job CODE, --gender male|female, --hair INDEX (the hair clicked in the scripted run), --shots DIR (scripted shots, then quit).
 /// </summary>
 public partial class CharacterCreateScene : LobbyFieldScene
 {
@@ -28,6 +28,7 @@ public partial class CharacterCreateScene : LobbyFieldScene
     static Page page = Page.Select;
     static int job, gender = -1;
     static bool argsRead;
+    static int hairIndex = 1;
     static readonly Random rng = new();
 
     // ---- entry and exit (the game flow's API; stable) ----
@@ -123,6 +124,7 @@ public partial class CharacterCreateScene : LobbyFieldScene
             {
                 if (args[i] == "--page") page = args[i + 1] == "create" ? Page.Create : Page.Select;
                 if (args[i] == "--job" && int.TryParse(args[i + 1], out int j)) job = j;
+                if (args[i] == "--hair" && int.TryParse(args[i + 1], out int h)) hairIndex = h;
                 if (args[i] == "--gender") gender = args[i + 1].StartsWith("m", StringComparison.OrdinalIgnoreCase) ? 0 : 1;
             }
         }
@@ -417,9 +419,9 @@ public partial class CharacterCreateScene : LobbyFieldScene
             if (frame is 59 or 89 or 349 or 399) { createVideo?.Sync(); createVideo?.Player.ShowFirstFrame(); }
             if (frame == 60) Save($"create_page_{job}.png");
             if (frame == 60) _ = SaveProfileShot($"create_profile_{job}.png");
-            if (frame == 61) { var hair = Renderer("m_editItemList", 1); ClickObj(hair); }
+            if (frame == 61) { var hair = Renderer("m_editItemList", hairIndex); ClickObj(hair); }
             if (frame == 66) ClickObj(Renderer("m_colorList", 3));
-            if (frame == 90) Save($"create_hair_{job}.png");
+            if (frame == 90) { Save($"create_hair_{job}.png"); }
             if (frame == 91) ClickObj(Content(create.Look.Gender == 0 ? "m_female" : "m_male"));
             if (frame == 120) Save($"create_gender_{job}.png");
             if (frame == 121) ClickObj(Content("m_random"));
