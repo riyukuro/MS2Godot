@@ -36,13 +36,12 @@ public class Gms2OutboundRewriteTests {
     }
 
     // Skill 0x20: the cast carries the hold-attack tail when the client has feature 174 on, so a cast is tried with and without it
-    static IOutPacket SkillCast(ByteReader r, bool hold, bool gms2 = true) {
+    static IOutPacket SkillCast(ByteReader r, bool hold) {
         r.ReadByte();
         long cast = r.ReadLong(); int tick = r.ReadInt(), skill = r.ReadInt(); short lv = r.ReadShort(); byte motion = r.ReadByte();
-        var p = V(r); var d = V(r); var rot = V(r); float dist = r.ReadFloat(); int el = r.ReadInt(); bool flag = r.ReadBool(); long item = r.ReadLong(), key = 0;
-        if (!gms2) key = r.ReadLong();
+        var p = V(r); var d = V(r); var rot = V(r); float dist = r.ReadFloat(); int el = r.ReadInt(); bool flag = r.ReadBool(); long item = r.ReadLong(), key = 0;   // GMS2 casts have no cooldown key
         int att = 0; string node = "";
-        if ((hold || gms2) && r.ReadBool()) { att = r.ReadInt(); node = r.ReadUnicodeString(); }
+        if (r.ReadBool()) { att = r.ReadInt(); node = r.ReadUnicodeString(); }
         return new SkillCastRequest(cast, tick, skill, lv, motion, p, d, rot, dist, el, flag, item, key, hold, att, node);
     }
 

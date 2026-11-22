@@ -48,7 +48,8 @@ public sealed record SkillCastRequest(long CastId, int ServerTick, int SkillId, 
     public void Write(ByteWriter w) => Write(w, ProtocolProfile.Kms2525);
 
     /// <summary>GMS2: all 15966 recorded casts are 74 bytes, the item uid then one bool, so no cooldown key and the attached bool
-    /// is always there (it was 0 in every recording; an attached cast is written as the KMS tail does).</summary>
+    /// is always there (it was 0 in every recording; an attached cast is written as the KMS tail does).
+    /// STILL-OPEN: no recording has an attached cast, so the GMS2 tail after a set bool (i32 id, string node) is the KMS one, unchecked; look at a recording before wiring feature 174.</summary>
     public void Write(ByteWriter w, ProtocolProfile profile)
     {
         w.WriteByte(0);
