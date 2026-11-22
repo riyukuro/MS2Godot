@@ -35,6 +35,11 @@ public static class LobbyFeatures
     /// </summary>
     public static string LocaleOf(PackSet packs) => packs == null ? "KR" : Load(packs).Locale;
 
+    /// <summary>The service region of the data (the client's DAT_143ab0248, set by its "-locale" argument through
+    /// SetRegionByCode localepath.cpp:293-301; GetRegionCode: 0 KR, 2 NA): the data's locale, so the KMS2 data is 0 and the
+    /// GMS2 data 2.</summary>
+    public static int RegionOf(PackSet packs) => Ms2.Formats.Options.GameOptionLocale.RegionId(LocaleOf(packs));
+
     /// <summary>CFeatureManager::IsLocaleInList: empty, or a comma list holding the client's locale.</summary>
     public static bool IsLocaleInList(PackSet packs, string list) => string.IsNullOrEmpty(list)
         || list.Split(',').Any(l => string.Equals(l.Trim(), LocaleOf(packs), StringComparison.OrdinalIgnoreCase));

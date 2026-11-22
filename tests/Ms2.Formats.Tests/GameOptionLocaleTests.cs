@@ -35,4 +35,17 @@ public class GameOptionLocaleTests
         // the Unk_LgState reset: language = region index; KR (0) -> "kr"
         Assert.That(GameOptionLocale.StringDirectory(new GameOption.Language(0).LanguageIndex), Is.EqualTo("kr"));
     }
+
+    [Test]
+    public void TheNaRegionPicksItsLanguageFromTheUiLanguage()
+    {
+        Assert.That(GameOptionLocale.LanguageFromLangId(0x407), Is.EqualTo(5));
+        Assert.That(GameOptionLocale.LanguageFromLangId(0x416), Is.EqualTo(6));
+        Assert.That(GameOptionLocale.LanguageFromLangId(0x409), Is.EqualTo(2));
+        Assert.That(GameOptionLocale.LanguageFromLangId(0x412), Is.EqualTo(2));
+        Assert.That(GameOptionLocale.WindowsLangId("de_DE.UTF-8"), Is.EqualTo(0x407));
+        Assert.That(GameOptionLocale.WindowsLangId("pt-BR"), Is.EqualTo(0x416));
+        Assert.That(GameOptionLocale.WindowsLangId("ko_KR"), Is.Zero);
+        Assert.That(GameOptionLocale.WindowsLangId(null), Is.Zero);
+    }
 }

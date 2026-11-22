@@ -33,8 +33,11 @@ public static class GameOptions
     }
     const string DefaultEntry = "table/default/defaultgameoption.xml";
 
-    /// <summary>The KMS2 client's region index, DAT_143ab0248 = 0 (KR, localepath.cpp:505-542).</summary>
-    public const int RegionIndex = 0;
+    /// <summary>The client's region index, DAT_143ab0248 (localepath.cpp:293-301, 597; 0 KR, 2 NA). The client takes it from its
+    /// "-locale" argument; here it is the data's own locale (<see cref="Ms2.Ui.LobbyFeatures.RegionOf"/>): 0 on the KMS2 data,
+    /// 2 on the GMS2 data, and 0 with no data.</summary>
+    public static int RegionIndex { get { EnsureLoaded(); return region; } }
+    static int region;
 
     // published last by Load (volatile): a thread that sees it sees the language, the voice and the document it came with
     static volatile GameOption current;
@@ -205,7 +208,8 @@ public static class GameOptions
     /// g_bLanguageSet) makes LoadLanguageOption return before the option file is read; ours is the user argument
     /// --language. Otherwise it is GameOption.xml's language/languageIndex, which defaults to the region's language (the
     /// Unk_LgState reset, gameoptionstruct.cpp:2466-2490: region KR gives 0, KR). The NA region's fresh-file pick from the
-    /// Windows UI language (gameoption.cpp:1840-1844) is not ported: <see cref="RegionIndex"/> is KR.
+    /// Windows UI language (gameoption.cpp:1840-1844, GetLanguageFromLangId localepath.cpp:433): the system locale's id picks DE
+    /// (German, Germany), PT (Portuguese, Brazil) or EN. The region is NA on GMS2 data and KR on KMS2 data (<see cref="RegionIndex"/>).
     /// IsNexonPlatform (unit_1406c3230_atlbytearrayglue.cpp:88) is taken as 0, so the argument wins over the file.
     /// </summary>
     public static int Language { get { EnsureLoaded(); return language; } }
@@ -237,7 +241,6 @@ public static class GameOptions
     static void LoadLocked()
     {
         System.Threading.Interlocked.Increment(ref Loads);
-        var o = new GameOption(RegionIndex);
         XDocument doc = null;
         var path = FilePath;
         var user = ReadFile(path);
@@ -246,6 +249,12 @@ public static class GameOptions
         try
         {
             if (Settings.DataDir is { } data && System.IO.File.Exists(System.IO.Path.Combine(data, "Xml.m2d"))) packs = PackSet.Shared(data);
+        }
+        catch (Exception ex) { GD.PushWarning("options: " + ex.Message); }
+        int regionIndex = packs == null ? 0 : Ms2.Ui.LobbyFeatures.RegionOf(packs);
+        var o = new GameOption(regionIndex);
+        try
+        {
             if (fromDefault)
             {
                 if (System.IO.File.Exists(path)) System.IO.File.Delete(path);
@@ -265,6 +274,9 @@ public static class GameOptions
             doc ??= new XDocument(new XElement("ms2"));
         }
         int voice = o.LanguageOption.VoiceIndex, lang = o.LanguageOption.LanguageIndex;
+        // gameoption.cpp:1840-1844: the NA region's fresh file takes the language of the system's UI language
+        if (regionIndex == 2 && fromDefault)
+            lang = o.LanguageOption.LanguageIndex = GameOptionLocale.LanguageFromLangId(GameOptionLocale.WindowsLangId(OS.GetLocale()));
         if (LanguageArgument() is { } code)
         {
             lang = GameOptionLocale.LanguageByCode(code, 0);    // DAT_143ab0240 starts at 0 (KR)
@@ -272,6 +284,7 @@ public static class GameOptions
         }
         Voice = voice;
         language = lang;
+        region = regionIndex;
         FromDefault = fromDefault;
         GameOptions.doc = doc;
         current = o;

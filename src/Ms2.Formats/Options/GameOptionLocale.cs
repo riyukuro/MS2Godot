@@ -37,6 +37,17 @@ public sealed class GameOptionLocale
         "KR" => 0, "JP" => 1, "EN" => 2, "CN" => 3, "FR)" => 4, "DE" => 5, "PT" => 6, "ES" => 7, _ => 0,
     };
 
+    /// <summary>GetLanguageFromLangId @0x1406518d0 (localepath.cpp:433): the NA region's pick from the Windows UI language id.
+    /// 0x407 (German, Germany) is DE, 0x416 (Portuguese, Brazil) is PT, any other is EN.</summary>
+    public static int LanguageFromLangId(int langId) => (langId & 0xffff) switch { 0x407 => 5, 0x416 => 6, _ => 2 };
+
+    /// <summary>The Windows language id of a POSIX locale name such as "de_DE" or "pt_BR" (0 when it has none of the two the
+    /// client tells apart: the plain "de" and "pt" are other ids, 0x0c07 and 0x816 among them, and fall to EN as there).</summary>
+    public static int WindowsLangId(string posixLocale) => (posixLocale ?? "").Replace('-', '_').Split('.')[0] switch
+    {
+        "de_DE" => 0x407, "pt_BR" => 0x416, _ => 0,
+    };
+
     /// <summary>FUN_140651b00 (localepath.cpp:459): region code to enum, 0 for an unknown code.</summary>
     public static int RegionId(string code) => code.ToUpperInvariant() switch
     {
