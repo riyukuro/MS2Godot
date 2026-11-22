@@ -12,7 +12,9 @@ namespace Ms2Godot.Tests;
 /// - a block puts the npc at its position (raised by the packet lift) and the block velocity moves it on every frame;
 /// - the rotate flag snaps the yaw;
 /// - on a Run_ sequence an npc 40 short of the block position stays put, and its velocity is scaled by the clamped catch-up ratio (1.2);
-/// - the Run_ animation plays at the row's anispeed times the unclamped catch-up ratio;
+/// - the Run_ animation plays at the row's anispeed times PCBase::vfunc_97 times the unclamped catch-up ratio; an npc made with the row's
+///   model scale at 1.5 (no scale buff) plays it at 2 - 1/1.5, and vfunc_97's four branches give the client's rates;
+/// - a block speed of 0 on another sequence is passed through, not taken as 1;
 /// - a jump sequence stops the velocity and keeps the yaw;
 /// - the yaw turns at most the row's rotationSpeed per second (CNpc::TurnTowardTargetYaw @0x141099170);
 /// - Process allocates nothing per frame.
@@ -35,8 +37,8 @@ public partial class NpcMoveCheck : Node3D
         npcs.Add(new NpcAddedEvent(0, new FieldAddNpc { ObjectId = 1, NpcId = npcId }));
         float lift = World.FieldNpcs.PacketLift;
         var row = table.Find(npcId);
-        void Block(short x, short vx, short seq = -1, bool rotates = false, float yaw = 0) =>
-            npcs.Move(new NpcMovedEvent(0, new NpcSync { ObjectId = 1, Flags = (byte)(rotates ? 1 : 0), Position = new Vector3S(x, 0, 0), Velocity = new Vector3S(vx, 0, 0), RotationZ = yaw, Sequence = seq, AnimSpeed = 1 }));
+        void Block(short x, short vx, short seq = -1, bool rotates = false, float yaw = 0, int obj = 1, float speed = 1) =>
+            npcs.Move(new NpcMovedEvent(0, new NpcSync { ObjectId = obj, Flags = (byte)(rotates ? 1 : 0), Position = new Vector3S(x, 0, 0), Velocity = new Vector3S(vx, 0, 0), RotationZ = yaw, Sequence = seq, AnimSpeed = speed }));
         float Yaw() => Mathf.RadToDeg(npcs.Info(1)?.yaw ?? float.NaN);
         Vector3 At() => npcs.Info(1)?.root.Position ?? new Vector3(float.NaN, 0, 0);
         bool Near(Vector3 a, float x) => (a - new Vector3(x, lift, 0)).Length() < 0.01f;
@@ -59,9 +61,31 @@ public partial class NpcMoveCheck : Node3D
             Block(40, 200, (short)run);
             Check(Near(At(), 0), $"the catch-up block placed the npc: {At()}");
             float anim = npcs.AnimSpeed(1);
-            Check(Mathf.Abs(anim - row.AniSpeed * (100f / 60f)) < 0.001f, $"the catch-up animation speed {anim} is not anispeed {row.AniSpeed} x ratio 1.67");
+            float rate = NpcLayer.ScaleRate(1f, row.Scale);
+            Check(Mathf.Abs(anim - row.AniSpeed * rate * (100f / 60f)) < 0.001f, $"the catch-up animation speed {anim} is not anispeed {row.AniSpeed} x vfunc_97 {rate} x ratio 1.67");
             npcs.Process(0.25f);
             Check(Near(At(), 60), $"the catch-up velocity is not 240: {At()} after 0.25 s");
+
+            // the same row with model scale 1.5 (m_fScaleAC) and no scale buff (m_fScaleA8 1): Run_ at anispeed x (2 - 1/1.5), on the block in place
+            float scale0 = row.Scale;
+            row.Scale = 1.5f;
+            npcs.Add(new NpcAddedEvent(0, new FieldAddNpc { ObjectId = 2, NpcId = npcId }));
+            row.Scale = scale0;
+            Block(0, 0, obj: 2);
+            Block(0, 100, (short)run, obj: 2);
+            float scaled = npcs.AnimSpeed(2);
+            Check(Mathf.Abs(scaled - row.AniSpeed * (2f - 1f / 1.5f)) < 0.001f, $"the scale 1.5 npc's Run_ speed {scaled} is not anispeed {row.AniSpeed} x 1.333");
+        }
+        // vfunc_97's branches (buff scale against model scale)
+        foreach (var (buff, model, rateWant) in new[] { (1f, 1f, 1f), (1f, 3f, 1.5f), (1f, 1.5f, 2f - 1f / 1.5f), (1f, 0.5f, 0.5f), (1f, 0.8f, 1f - 0.2f / 1.6f), (1f, 0.4f, 0.5f) })
+            Check(Mathf.Abs(NpcLayer.ScaleRate(buff, model) - rateWant) < 1e-5f, $"vfunc_97({buff}, {model}) is {NpcLayer.ScaleRate(buff, model)}, want {rateWant}");
+
+        // a block speed of 0 on a non-Run_ sequence: PlayAnimation passes it through (the sequence's frequency is 0)
+        int idle = npcs.SequenceId(1, "Idle_A");
+        if (idle >= 0)
+        {
+            Block(0, 0, (short)idle, speed: 0);
+            Check(npcs.AnimSpeed(1) == 0, $"a block speed of 0 played the sequence at {npcs.AnimSpeed(1)}");
         }
 
         // the turn: snapped to 0, then a target of 90 without the snap flag turns at the row's cap (or closes 10x the gap per second)
@@ -85,7 +109,7 @@ public partial class NpcMoveCheck : Node3D
         for (int k = 0; k < 100; k++) npcs.Process(0.016f);
         long alloc = System.GC.GetAllocatedBytesForCurrentThread() - a0;
         Check(alloc == 0, $"Process allocated {alloc} B in 100 frames");
-        GD.Print($"npc move: npc {npcId}, run {run}, anispeed {row.AniSpeed}, rotationSpeed {row.RotationSpeed}, {alloc} B per 100 frames, {(fails.Count == 0 ? "ok" : "FAIL " + string.Join("; ", fails))}");
+        GD.Print($"npc move: npc {npcId}, run {run}, anispeed {row.AniSpeed}, scale {row.Scale}, rotationSpeed {row.RotationSpeed}, {alloc} B per 100 frames, {(fails.Count == 0 ? "ok" : "FAIL " + string.Join("; ", fails))}");
         GetTree().Quit(fails.Count == 0 ? 0 : 1);
     }
 }

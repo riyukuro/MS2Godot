@@ -29,7 +29,7 @@ public sealed class NpcLayer
         public Godot.Vector3 Target; public float TargetYaw; public int Sequence = -1; public string Playing = "";
         public Godot.Vector3 Velocity;            // m_posD40: the last block's velocity, added to the position every frame (CNpc::vfunc_53)
         public bool Eases;                        // a jump arc or a dead body: eased toward the block position, no velocity
-        public float AniSpeed = 1f, TurnCap;      // the row's anispeed (Run_ sequences) and rotationSpeed (the turn cap, degrees per second)
+        public float AniSpeed = 1f, TurnCap;      // the Run_ speed (the row's anispeed times ScaleRate) and rotationSpeed (the turn cap, degrees per second)
         public bool Placeholder, Dead;
         public string DeadAction;                 // m_strED0: the death sequence picked at spawn (CNpc init, :539)
         public long Exp;                          // m_nE60: the exp the own PC got for this npc, shown when its death sequence ends
@@ -171,7 +171,7 @@ public sealed class NpcLayer
         if (row == null) { NoRow++; return; }
         var model = ModelFor(row);
         var root = new Node3D { Name = $"Npc{n.ObjectId}" };
-        var i = new Inst { Root = root, Model = model, NpcId = n.NpcId, Target = Placed(n.Position), TargetYaw = n.Rotation.Z, AniSpeed = row.AniSpeed, TurnCap = row.RotationSpeed };
+        var i = new Inst { Root = root, Model = model, NpcId = n.NpcId, Target = Placed(n.Position), TargetYaw = n.Rotation.Z, AniSpeed = row.AniSpeed * ScaleRate(1f, row.Scale), TurnCap = row.RotationSpeed };
         i.DeadAction = row.RandomDeadDefaultAction(crtRand);
         if (model != null)
         {
@@ -547,9 +547,9 @@ public sealed class NpcLayer
     /// (snapped when the rotate flag is set), and the block velocity moves it until the next block (<see cref="Process"/>). On a Run_ sequence
     /// an npc more than 30 off the block position does not jump to it: when the point 0.3 s ahead on the velocity is up to twice as far from the npc
     /// as from the block position, the ratio clamped to 0.8 - 1.2 scales the velocity so the npc catches up, unless that is within 3 % of 1.
-    /// The animation plays at the block's speed; a Run_ sequence at the row's anispeed times PCBase::vfunc_97 (taken as 1: the npc's scale is not
-    /// changed here), times the unclamped ratio while it catches up. As in CAnimationManager::PlayAnimation the speed only takes when the
-    /// sequence changes; a speed of 0 or less is taken as 1.
+    /// The animation plays at the block's speed, unclamped (CAnimationManager::PlayAnimation passes fScale through); a Run_ sequence at the
+    /// row's anispeed times PCBase::vfunc_97 (<see cref="ScaleRate"/>), times the unclamped ratio while it catches up. As in
+    /// CAnimationManager::PlayAnimation the speed only takes when the sequence changes.
     /// A jump block (-2/-3) starts the arc mover m_unkDB0, which keeps the yaw target and the snap from applying, as a dead body does here.
     /// STILL-OPEN: the arc mover is not ported; a jumping npc eases toward the block position.
     /// STILL-OPEN: in state 0xd the client keeps the npc's own height; the npc state is not tracked here.
@@ -580,7 +580,7 @@ public sealed class NpcLayer
                 }
             }
         }
-        if (i.Model != null && b.Sequence >= 0 && b.Sequence != i.Sequence) Play(i, b.Sequence, speed > 0 ? speed : 1f);
+        if (i.Model != null && b.Sequence >= 0 && b.Sequence != i.Sequence) Play(i, b.Sequence, speed);
         if (place) i.Root.Position = i.Target;
         i.TargetYaw = b.RotationZ;
         if (b.Rotates && !i.Placeholder) i.Visual.Rotation = new Godot.Vector3(0, Mathf.DegToRad(b.RotationZ), 0);
@@ -616,6 +616,22 @@ public sealed class NpcLayer
                 foreach (var m in i.BoostMaterials) m.SetShaderParameter(ShaderParam.ColorBoost, i.Boost.Scale);
             }
         }
+    }
+
+    /// <summary>
+    /// PCBase::vfunc_97 (@0x141671720, pcbase.cpp:2503-2518), which CNpc does not override: the Run_ speed factor from the buff scale
+    /// multiplier <paramref name="buff"/> (m_fScaleA8) against the row's model scale <paramref name="model"/> (m_fScaleAC, set from
+    /// m_model.m_fScale when the npc is made). 1 when they are equal; 1.5 below half the model scale, 2 - buff/model up to it,
+    /// 1 - (buff - model)/(2 model) up to twice it, 0.5 above.
+    /// STILL-OPEN: the buff scale is not tracked, so the caller passes 1 (AdditionalCliList::GetScaleMultiplier without a scale buff).
+    /// </summary>
+    public static float ScaleRate(float buff, float model)
+    {
+        if (buff == model) return 1f;
+        if (model / 2f > buff) return 1.5f;
+        if (buff < model) return 2f - buff / model;
+        if (model * 2f >= buff) return 1f - (buff - model) / (model * 2f);
+        return 0.5f;
     }
 
     /// <summary>
