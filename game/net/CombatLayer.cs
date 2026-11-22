@@ -101,6 +101,22 @@ void fragment() {
 
     /// <summary>The same turned by a full rotation (godot space), as an effect's NiTransform turns it.</summary>
     public void PlayEffect(string xmlPath, Godot.Vector3 at, Basis rotation, int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
+        => Play(xmlPath, at, rotation, casterKind, null);
+
+    /// <summary>An effect on an actor (CEffect SetActor, no transform of its own): the nif parts are children of
+    /// <paramref name="actor"/>, so they follow it and go with it; sound and light parts play at its place now. Nothing
+    /// when the actor is gone.</summary>
+    public void PlayEffectOn(string xmlPath, Node3D actor, int casterKind)
+    {
+        if (actor == null || !GodotObject.IsInstanceValid(actor)) return;
+        Play(xmlPath, actor.GlobalPosition, Basis.Identity, casterKind, actor);
+        EffectsOnActors++;
+    }
+
+    /// <summary>Effects played on an actor (<see cref="PlayEffectOn"/>).</summary>
+    public int EffectsOnActors;
+
+    void Play(string xmlPath, Godot.Vector3 at, Basis rotation, int casterKind, Node3D actor)
     {
         if (!ShowEffects || string.IsNullOrEmpty(xmlPath)) return;
         var parts = effects.Get(xmlPath);
@@ -121,7 +137,7 @@ void fragment() {
                 continue;
             }
             if (part.Type != "nif" || string.IsNullOrEmpty(part.FilePath)) { EffectsNotNif++; continue; }
-            if (Particles && TryScene(part, at, rotation)) continue;
+            if (Particles && TryScene(part, actor == null ? at : Godot.Vector3.Zero, rotation, actor)) continue;
             var e = Effect(part.FilePath);
             if (e == null) { EffectsNoNif++; MissingEffects.Add(part.FilePath); continue; }
             if (e.Value.particles) { EffectsWithParticles++; ParticleEffects.Add(part.FilePath); }
@@ -129,10 +145,10 @@ void fragment() {
             var root = mb.Build(e.Value.md, "Effect");
             float s = part.Scale <= 0 ? 1 : part.Scale;
             root.Scale = new Godot.Vector3(s, s, s);
-            var holder = new Node3D { Transform = new Transform3D(rotation, at), Visible = part.StartDelay <= 0 };
+            var holder = new Node3D { Transform = new Transform3D(rotation, actor == null ? at : Godot.Vector3.Zero), Visible = part.StartDelay <= 0 };
             root.Position = G(part.Translate[0], part.Translate[1], part.Translate[2]);
             holder.AddChild(root);
-            parent.AddChild(holder);
+            (actor ?? parent).AddChild(holder);
             float dur = part.Duration > 0 ? part.Duration : 0.6f;
             // Without the nif's alpha and texture controllers the meshes would sit solid; draw them additive and unlit and fade them out
             // over the duration, so dark or hidden parts vanish and light parts glow.
@@ -196,7 +212,7 @@ void fragment() {
     }
 
     /// <summary>Plays an effect part through the scene runtime (particles and controllers); false when the nif could not be read as a scene.</summary>
-    bool TryScene(EffectPart part, Godot.Vector3 at, Basis rotation)
+    bool TryScene(EffectPart part, Godot.Vector3 at, Basis rotation, Node3D actor)
     {
         var sc = Scene(part.FilePath);
         if (sc == null) return false;
@@ -205,7 +221,7 @@ void fragment() {
         float s = part.Scale <= 0 ? 1 : part.Scale;
         var q = new Godot.Quaternion(Godot.Vector3.Back, Mathf.DegToRad(part.Rotation[2])) * new Godot.Quaternion(Godot.Vector3.Up, Mathf.DegToRad(part.Rotation[1])) * new Godot.Quaternion(Godot.Vector3.Right, Mathf.DegToRad(part.Rotation[0]));
         inst.FileSpace = new Transform3D(new Basis(q).Scaled(new Godot.Vector3(s, s, s)), new Godot.Vector3(part.Translate[0], part.Translate[1], part.Translate[2]));
-        parent.AddChild(inst);
+        (actor ?? parent).AddChild(inst);
         SceneEffects++; EffectsSpawned++;
         if (sc.Systems.Count > 0) { ParticleSystemsRun += sc.Systems.Count; EffectsWithParticles++; ParticleEffects.Add(part.FilePath); }
         return true;
@@ -231,6 +247,7 @@ void fragment() {
         for (int i = live.Count - 1; i >= 0; i--)
         {
             var (n, born, start, end, mats) = live[i];
+            if (!GodotObject.IsInstanceValid(n)) { live.RemoveAt(i); continue; }   // its actor went and took it
             born += dt;
             if (born >= start) n.Visible = true;
             float a = Mathf.Clamp(1f - (born - start) / Mathf.Max(end - start, 0.05f), 0f, 1f) * 0.85f;

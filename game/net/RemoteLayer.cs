@@ -148,6 +148,12 @@ public sealed partial class RemoteLayer : Node3D
     public (System.Numerics.Vector3 Pos, float RotZ)? PoseOf(int objectId) =>
         users.TryGetValue(objectId, out var r) && r.Pc != null ? (r.Pc.Position, r.Pc.RotationZ) : npcs.PoseOf(objectId);
 
+    /// <summary>WorldService::FindObjectById's node: the local player's, a shown player's body or an npc's root; null when
+    /// none is here.</summary>
+    public Node3D NodeOf(int objectId) =>
+        objectId == Tracker.SelfObjectId ? LiveSession.Instance?.OwnPlayer
+        : users.TryGetValue(objectId, out var r) && r.Pc != null ? r.Pc.Body : npcs.RootOf(objectId);
+
     /// <summary>WorldService::FindPCById then GetEquipByUid (OnItemUpdate): whether the player is here, and its worn equip of the uid (null when none).</summary>
     public (bool PcKnown, Ms2.Net.Packets.EquipItem Equip) EquipOf(int objectId, long uid)
     {

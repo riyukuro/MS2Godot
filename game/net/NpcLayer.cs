@@ -481,6 +481,9 @@ public sealed class NpcLayer
 
     public bool IsDead(int id) => inst.TryGetValue(id, out var i) && i.Dead;
 
+    /// <summary>The npc's root node, dead or not; null when there is no npc of the id.</summary>
+    public Node3D RootOf(int id) => inst.TryGetValue(id, out var i) && i.Root != null && GodotObject.IsInstanceValid(i.Root) ? i.Root : null;
+
     /// <summary>The npc's position in the client's z-up coordinates (vfunc_18) and its rotation z in degrees (vfunc_20, the
     /// one the moves set, not the eased visual); null when there is no npc of the id.</summary>
     public (System.Numerics.Vector3 Pos, float RotZ)? PoseOf(int id)

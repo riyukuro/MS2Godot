@@ -91,8 +91,7 @@ public sealed partial class RemoteLayer
 
     /// <summary>
     /// FUN_14171cdf0's hit effects (<see cref="DamageHitEffects.Records"/>) over the field's objects now: the effectHit at its
-    /// transform, the effectRemain at the target. STILL-OPEN: the remain is placed at the target's position, not attached to
-    /// it (SetActor), and its end with the target is not ported.
+    /// transform, the effectRemain on the target (SetActor: it follows the target and goes with its node).
     /// </summary>
     void OnDamageHitEffects(SkillDamage d)
     {
@@ -114,11 +113,21 @@ public sealed partial class RemoteLayer
             hitEffects, (uint)Time.GetTicksMsec(), magicRand, damageHitEffects);
         foreach (var fx in damageHitEffects)
         {
-            var at = new Vector3(fx.At.X, fx.At.Z, -fx.At.Y);
-            combat.PlayEffect(fx.File, at, ClientBasis(fx.AxisX, fx.AxisY, fx.AxisZ), fx.CasterKind);
-            DamageHitEffectsPlayed++;
+            PlayDamageHitEffect(fx);
         }
         damageHitEffects.Clear();
+    }
+
+    /// <summary>One hit effect: on its actor when it has one (Records found that object, so a node is
+    /// missing only if the layers disagree; then nothing plays), else at its transform.</summary>
+    void PlayDamageHitEffect(in DamageHitEffect fx)
+    {
+        if (fx.ActorId != 0)
+            combat.PlayEffectOn(fx.File, NodeOf(fx.ActorId), fx.CasterKind);
+        else
+            combat.PlayEffect(fx.File, new Vector3(fx.At.X, fx.At.Z, -fx.At.Y), ClientBasis(fx.AxisX, fx.AxisY, fx.AxisZ),
+                fx.CasterKind);
+        DamageHitEffectsPlayed++;
     }
 
     /// <summary>
@@ -145,9 +154,7 @@ public sealed partial class RemoteLayer
             damageHitEffects);
         foreach (var fx in damageHitEffects)
         {
-            combat.PlayEffect(fx.File, new Vector3(fx.At.X, fx.At.Z, -fx.At.Y), ClientBasis(fx.AxisX, fx.AxisY, fx.AxisZ),
-                fx.CasterKind);
-            DamageHitEffectsPlayed++;
+            PlayDamageHitEffect(fx);
         }
         damageHitEffects.Clear();
     }
