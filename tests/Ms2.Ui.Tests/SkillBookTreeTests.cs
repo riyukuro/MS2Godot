@@ -229,6 +229,68 @@ public class SkillBookTreeTests
     }
 
     [Test]
+    public void ResetAsksFirstThenSendsTheRankAndWaitsForTheAnswer()
+    {
+        var (h, c, _) = Load();
+        h.Model.Player.Level = 20;
+        var sent = new List<Ms2.Net.Wire.IOutPacket>();
+        var boxes = new List<MessageBoxData>();
+        var lines = new List<(string, int)>();
+        c.Send = sent.Add;
+        c.ShowBox = boxes.Add;
+        c.ChatLine += (t, k) => lines.Add((t, k));
+        c.OnSkillBookTree(NoTabs());
+        c.OnLevelChanged(20);
+        // nothing pending: PromptReset returns before any box
+        Assert.That(c.OnCallback("onResetSkill", Array.Empty<object>()), Is.True);
+        Assert.That(boxes, Is.Empty);
+        c.OnCallback("onSkillPointUp", new object[] { 10500041u });
+        Assert.That(c.OnCallback("onResetSkill", Array.Empty<object>()), Is.True);
+        Assert.That(boxes.Count, Is.EqualTo(1));
+        Assert.That(sent, Is.Empty);                       // nothing is sent before the answer
+        // cancel: nothing sent
+        boxes[0].Callback(1, boxes[0]);
+        Assert.That(sent, Is.Empty);
+        Assert.That(boxes[0].Callback(0, boxes[0]), Is.True);
+        Assert.That(sent.Select(x => x.Op), Is.EqualTo(new[] { Ms2.Net.Outbound.RequestSkillBookTree, Ms2.Net.Outbound.Job }));
+        Assert.That(((JobResetRequest)sent[1]).Rank, Is.EqualTo(0));
+        Assert.That(((SkillBookTreeSave)sent[0]).Tabs.Single().Slots, Is.Empty);
+        Assert.That(c.WaitServer, Is.True);
+        Assert.That(lines.Single().Item2, Is.EqualTo(0x14));
+        // the answer is awaited
+        boxes.Clear();
+        Assert.That(c.OnCallback("onResetSkill", Array.Empty<object>()), Is.False);
+        Assert.That(boxes, Is.Empty);
+        c.RefreshSlotsIfShown();
+        Assert.That(c.WaitServer, Is.False);
+    }
+
+    [Test]
+    public void ResetInBattleShowsItsBoxAndAsksNothing()
+    {
+        var (h, c, _) = Load();
+        h.Model.Player.Level = 20;
+        var boxes = new List<MessageBoxData>();
+        c.Send = _ => { };
+        c.ShowBox = boxes.Add;
+        c.OnSkillBookTree(NoTabs());
+        c.OnLevelChanged(20);
+        c.OnCallback("onSkillPointUp", new object[] { 10500041u });
+        c.InBattle = () => true;
+        c.OnCallback("onResetSkill", Array.Empty<object>());
+        Assert.That(boxes.Count, Is.EqualTo(1));
+        Assert.That(boxes[0].Callback, Is.Null);
+    }
+
+    [Test]
+    public void ResetWritesTheClientsPacketLayout()
+    {
+        var w = new Maple2.PacketLib.Tools.ByteWriter();
+        new JobResetRequest(2).Write(w);
+        Assert.That(w.Buffer.AsSpan(0, w.Length).ToArray(), Is.EqualTo(new byte[] { 10, 2, 0, 0, 0 }));
+    }
+
+    [Test]
     public void ApplyWritesTheClientsPacketLayouts()
     {
         var w = new Maple2.PacketLib.Tools.ByteWriter();

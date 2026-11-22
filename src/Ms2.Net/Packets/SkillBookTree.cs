@@ -142,3 +142,10 @@ public sealed record JobSkillsRequest(int Mode, IReadOnlyList<(int SkillId, int 
         foreach (var (id, level, learned) in Skills) { w.WriteInt(id); w.WriteShort((short)level); w.WriteBool(learned); }
     }
 }
+
+/// <summary>Outbound 0x25 (SendOp::Job) mode 10 (reset): UISkillBookTreeDialog::OnResetConfirm @0x140eca480
+/// (uiskillbookautodistributedialog.cpp:950): u8 10, i32 rank. STILL-OPEN: the GMS2 number of SendOp::Job is not mapped.</summary>
+public sealed record JobResetRequest(int Rank) : IOutPacket {
+    public Outbound Op => Outbound.Job;
+    public void Write(ByteWriter w) { w.WriteByte(10); w.WriteInt(Rank); }
+}

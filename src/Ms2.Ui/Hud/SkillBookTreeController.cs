@@ -12,7 +12,7 @@ namespace Ms2.Ui.Hud;
 /// gives it the saved tabs, each skill's state and level text, the slot bindings ("skillTreeSlot.N"), the remaining points
 /// and the tooltips, through the client's own skill point preview (<see cref="SkillPointSimulator"/>).
 /// <para>The +/- buttons change only the preview, as in the client (SkillPointUp / SkillPointDown, :1355). Everything that
-/// sends a request (apply, reset, auto distribute, a tab add / rename / switch to the used tab, the sub job switch, the
+/// sends a request (apply and reset are sent; auto distribute, a tab add / rename / switch to the used tab, the sub job switch, the
 /// lapenshard button, the shortcut key registration) is raised as <see cref="Button"/> and left unsent. The close-time
 /// JobSystemCli::RequestReset (vfunc_67 :505) is not sent either.</para>
 /// </summary>
@@ -635,7 +635,7 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
     }
 
     /// <summary>vfunc_28 @0x140ec5e20 (:2109): only after the tab packet (m_n290). The preview's +/- (SkillPointUp / Down), the
-    /// required skill marks and a tab switch are local; the rest send requests and are raised unsent.</summary>
+    /// required skill marks and a tab switch are local; apply and reset send; the rest are raised unsent.</summary>
     public override bool OnCallback(string name, object[] args)
     {
         if (!ready) return false;
@@ -658,7 +658,11 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
                 if (WaitServer) return false;
                 ApplySkill();
                 return true;
-            case "onResetSkill": case "onUseTab": case "onAutoDistribute": case "OnRegisterShortcutkey":
+            case "onResetSkill":
+                if (WaitServer) return false;
+                PromptReset();
+                return true;
+            case "onUseTab": case "onAutoDistribute": case "OnRegisterShortcutkey":
             case "onRenameTab": case "onAddTab": case "onChangeSubJob": case "onRemoveTab": case "onLapenshardBtn":
                 Button?.Invoke(name);
                 return true;
@@ -700,7 +704,7 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
         ChatLine?.Invoke(Common("s_msg_skillbook_apply_skill"), 0x14);
     }
 
-    /// <summary>OnApplyConfirm @0x140ece840 (:992): button 0 reads the rank from the two checkboxes (both: 0, the first: 1, the
+    /// <summary>OnApplyConfirm @0x140eca690 (:992): button 0 reads the rank from the two checkboxes (both: 0, the first: 1, the
     /// second: 2; none: 0) when the box carries a sub job rank above 1, then RequestTree, RequestJob and the notice. The layer
     /// takes the next box after the callback.</summary>
     bool OnApplyConfirm(int result, MessageBoxData box)
@@ -720,7 +724,60 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
         return true;
     }
 
-    /// <summary>RequestTree @0x140eca8c0 (:1122), mode 1: with <paramref name="keep"/> 0 the tab (all with id 0) takes the used
+    /// <summary>PromptReset @0x140ec9610 (:1235): CanApply, then only with pending changes (CheckApply @0x140ecd6d0 is the platform
+    /// state, 0 here; STILL-OPEN: its notice box). With feature 0xca the box carries the sub job rank; a rank above 0 adds the two
+    /// rank checkboxes. OnResetConfirm answers it.</summary>
+    void PromptReset()
+    {
+        if (!CanApply()) return;
+        if (!HasPendingChanges()) return;
+        MessageBoxData box;
+        if (Feature(0xca))
+        {
+            if (Jobs == null) return;
+            int rank = JobTable.GetJobRank(Jobs.SubJob);
+            if (rank > 0)
+            {
+                box = MessageBoxQueue.CreateWithCallback(Common("s_msg_skillbook_reset_desc"), 0x19, OnResetConfirm);
+                box.SetButtonPreset(1);
+                box.MustCheck = true;
+                box.SetCheckbox0(Common("s_msg_skillbook_skill_level_0"), JobLevel == 1);
+                box.SetCheckbox1(Common("s_msg_skillbook_skill_level_1"), JobLevel == 2);
+            }
+            else box = MessageBoxQueue.CreateWithCallback(Common("s_msg_skillbook_reset_desc"), 1, OnResetConfirm);
+            box.Append(rank);
+        }
+        else box = MessageBoxQueue.CreateWithCallback(Common("s_msg_skillbook_reset_desc"), 1, OnResetConfirm);
+        ShowBox(box);
+    }
+
+    /// <summary>OnResetConfirm @0x140eca480 (:950): button 0 takes the rank from the checkboxes (feature 0xca, box argument above
+    /// 1: both 0, the first 1, the second 2), resets that rank in the preview, saves the tab, and for the tab in use sends Job
+    /// mode 10 and waits, else refreshes the slots; the notice s_msg_skillbook_reset_skill. The layer takes the next box.</summary>
+    bool OnResetConfirm(int result, MessageBoxData box)
+    {
+        if (result != 0 || sim == null) return true;
+        int rank = 0;
+        if (Feature(0xca) && box.ArgInt(0, 0) > 1)
+        {
+            bool first = CheckboxChecked(box, 0), second = CheckboxChecked(box, 1);
+            if (first && second) rank = 0;
+            else if (first) rank = 1;
+            else if (second) rank = 2;
+        }
+        sim.ResetRank(rank);
+        SaveTree(shownTabId, 0, rank);
+        if (shownTabId == tabId)
+        {
+            Send?.Invoke(new JobResetRequest(rank));
+            WaitServer = true;
+        }
+        else RefreshSlots(true);
+        ChatLine?.Invoke(Common("s_msg_skillbook_reset_skill"), 0x14);
+        return true;
+    }
+
+    /// <summary>RequestTree @0x140ec9c20 (:1122), mode 1: with <paramref name="keep"/> 0 the tab (all with id 0) takes the used
     /// points of its preview for the rank; then the tabs are saved, the tab in use first.</summary>
     void SaveTree(long id, int keep, int rank)
     {
