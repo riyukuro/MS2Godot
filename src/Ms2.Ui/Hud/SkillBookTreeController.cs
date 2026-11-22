@@ -716,7 +716,12 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
             case "onChangeSubJob":
                 if (WaitServer) return false;
                 return args.Length > 0 && ChangeSubJob((int)Rt.ToNumber(args[0]) + 1);      // SetArgsIfAny
-            case "onRemoveTab": case "onLapenshardBtn":
+            case "onRemoveTab":
+                // The client's dispatch (uiskillbookautodistributedialog.cpp:2211-2301) handles onChangeTab, onRenameTab, onAddTab,
+                // onChangeSubJob and onLapenshardBtn only; any other method ends at "return 0".
+                return false;
+            case "onLapenshardBtn":
+                // ToggleDialog(0x4f6d) (:2301). STILL-OPEN: the lapenshard dialog is not ported, so the host only logs the press.
                 Button?.Invoke(name);
                 return true;
         }

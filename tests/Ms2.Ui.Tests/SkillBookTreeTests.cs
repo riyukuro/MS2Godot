@@ -935,6 +935,20 @@ public class SkillBookTreeTests
     }
 
     [Test]
+    public void OnlyTheLapenshardButtonOfTheTwoLeftOverCallbacksIsRaisedToTheHost()
+    {
+        // The client's dispatch has no onRemoveTab; onLapenshardBtn is ToggleDialog(0x4f6d).
+        var (c, sent, _) = OpenForClose();
+        var pressed = new List<string>();
+        c.Button += pressed.Add;
+        Assert.That(c.OnCallback("onRemoveTab", new object[] { "x" }), Is.False);
+        Assert.That(pressed, Is.Empty);
+        Assert.That(c.OnCallback("onLapenshardBtn", Array.Empty<object>()), Is.True);
+        Assert.That(pressed, Is.EqualTo(new[] { "onLapenshardBtn" }));
+        Assert.That(sent, Is.Empty);
+    }
+
+    [Test]
     public void ChangeSubJobWithoutAnArgumentIsRefused()
     {
         var (c, _, _) = OpenForClose();
