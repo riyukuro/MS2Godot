@@ -340,6 +340,8 @@ public partial class LiveSession : Node
 
     /// <summary>Raised after ItemUse mode 6 sent the Beauty request.</summary>
     public event Action<BeautyReq> BeautyRequested;
+    /// <summary>OnItemUpdate (scenestategame.cpp:3214) for the local player's worn item: the item event dispatcher's vfunc_23 (the item's id), whose listeners (the item colour dialog, vfunc_24 @0x1419adf80) take it.</summary>
+    public event Action<int> OwnItemUpdated;
     /// <summary>CSceneStateGame::OnItemBox (@0x141739e40): the box result; the consumer checks the item's function (OpenItemBox / SelectItemBox) as the client does.</summary>
     public event Action<ItemBoxResult> ItemBoxResulted;
     /// <summary>Inbound 0x31 body: UIBeautyShopDialog::OnBeautyShopPacket (uibeautyshopdialog.cpp:1510) or UIBeautyShopStyleDialog's
@@ -1278,6 +1280,7 @@ public partial class LiveSession : Node
                     var (known, eq) = remote?.EquipOf(obj, uid) ?? (false, null);
                     return (known, false, eq);
                 });
+                if (u.Own && Me.EquipByUid(u.Uid) is { } worn) OwnItemUpdated?.Invoke(worn.Id);
                 if (u.Updated && u.ObjectId != selfObject) remote?.ItemUpdated(u.ObjectId, remote.EquipOf(u.ObjectId, u.Uid).Equip);
                 GD.Print($"live: item update object {u.ObjectId} uid {u.Uid}{(u.Updated ? " (read again)" : u.Own ? " (own, item event)" : "")}");
             }

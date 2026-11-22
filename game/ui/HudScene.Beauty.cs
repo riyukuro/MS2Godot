@@ -51,11 +51,14 @@ public partial class HudScene
         // Customize and the dialog stays shut.
         itemColoringFlow.CreateCustomize = () => null;
         void OnBeautyPacket(byte[] body) => BeautyPacketRouter.Route(body, beautyFlow, beautyStyleFlow, m => GD.Print(m), itemColoringFlow);
+        void OnOwnItem(int itemId) => itemColoringFlow.Current?.OnItemDyed(itemId);   // vfunc_24 of the item event listeners
         live.BeautyRequested += OnRequested;
+        live.OwnItemUpdated += OnOwnItem;
         live.BeautyPacketReceived += OnBeautyPacket;
         unwatchBeauty = () =>
         {
             live.BeautyRequested -= OnRequested;
+            live.OwnItemUpdated -= OnOwnItem;
             live.BeautyPacketReceived -= OnBeautyPacket;
             beautyFlow.Shutdown();
             beautyStyleFlow.Shutdown();

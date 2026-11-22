@@ -230,4 +230,14 @@ public class ItemColoringDialogTests
         r.C.Leave();
         Assert.That((r.C.Closing, flow.IsOpen, r.Closed), Is.EqualTo((true, false, 1)));
     }
+
+    [Test] public void TheItemEventAfterTheSendEndsThePendingAndUnlocksTheMovie() {
+        var r = new Rig();
+        r.C.OnPacket(Rig.Open());
+        r.C.AddCurrentItemToBasket(11100000);
+        r.C.TryPay();
+        Assert.That((r.C.Pending, r.C.InputLocked), Is.EqualTo((1, true)));
+        r.C.OnItemDyed(11100000);
+        Assert.That((r.C.Pending, r.C.InputLocked, r.C.Basket.Count), Is.EqualTo((0, false, 0)));
+    }
 }
