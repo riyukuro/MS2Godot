@@ -184,6 +184,21 @@ namespace Ms2.Avm2.Flash
                 // tooltips and modal canvases go into them)
                 if (InGame && RT.GetClass("scaleform.ms2.common.CommonDepth") is { } cd)
                     RT.CallProperty(cd, Name.Public("init"), new object[] { Stage });
+                // and the restrict sets the name boxes take (Main.addedToStage: CommonPath.flash = false, then CommonInit.init,
+                // which runs CommonTextField.init after CommonDepth.init). Common.init, first in CommonInit.init, has cleared
+                // Common.m_getFormatFunction, and main registers it only when its classMemberSendToClient call arrives later
+                // in addedToStage (GFxMovieMain::vfunc_4 @0x1422ef3c0, gfxmoviemain.cpp:106-114): initRestrictString reads ""
+                // for "$s_common_text_restrict" and leaves both sets null, so a name field takes any character. The host here
+                // has set the function already, so it is held back for the call. Not run, getCommonRestrictString hands out
+                // its initial "" and a name field given it takes none (an empty restrict lets no char in)
+                if (InGame && RT.GetClass("scaleform.ms2.common.CommonTextField") is { } ctf)
+                {
+                    var common = RT.GetClass("scaleform.ms2.common.Common");
+                    var format = common == null ? null : RT.GetProperty(common, Name.Public("m_getFormatFunction"));
+                    if (common != null) RT.SetProperty(common, Name.Public("m_getFormatFunction"), null);
+                    try { RT.CallProperty(ctf, Name.Public("init"), Array.Empty<object>()); }
+                    finally { if (common != null) RT.SetProperty(common, Name.Public("m_getFormatFunction"), format); }
+                }
                 // and starts the tooltip manager on the stage (Main.addedToStage: TooltipManager.init(stage)), so the dialogs'
                 // items register their tooltips with it; started with CommonPath.flash already off it keeps the game's
                 // MS2DataModel.getUserData instead of installing its authoring stand-in

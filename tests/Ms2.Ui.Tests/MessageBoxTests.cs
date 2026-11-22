@@ -49,7 +49,7 @@ public class MessageBoxTests
         Assert.That(l.Timed, Is.EqualTo(new[] { "leaveInField" }));
     }
 
-    static (UiHost, MessageBoxController) Load()
+    static (UiHost, MessageBoxController) Load(Func<string, string> translate = null)
     {
         if (packs == null)
         {
@@ -65,6 +65,7 @@ public class MessageBoxTests
         var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
         errors = rt.Errors;
         p.StageW = 1280; p.StageH = 720;
+        p.Translate = translate;
         var h = new UiHost(p, c, new UiModel(tables));
         Assert.That(h.Load(), Is.True, "load: " + string.Join("; ", rt.Errors));
         for (int i = 0; i < 10; i++) p.Tick();
@@ -310,6 +311,27 @@ public class MessageBoxTests
         Click(h, "m_button0");
         Assert.That(names, Is.EqualTo(new[] { "0:", "0:Tester01" }));
         Assert.That(c.IsIdle, Is.True);
+    }
+
+    /// <summary>The name box's field takes any character: CommonTextField.setInpuCharName gives it the restrict set
+    /// CommonTextField.init built, and the client runs that init (Main.addedToStage, CommonInit.init) after Common.init
+    /// cleared m_getFormatFunction and before main registers it (gfxmoviemain.cpp:106-114), so the translator's
+    /// "$s_common_text_restrict" is not read and the set is null. The name box's maxChars of 12 still holds.</summary>
+    [Test]
+    public void NameBoxTakesAnyCharacter()
+    {
+        var (h, _) = Load(k => k == "$s_common_text_restrict" ? "0-9a-zA-Z" : k);
+        var box = MessageBoxQueue.CreateWithCallback("Enter a name", 10, (n, d) => true);
+        box.SetInput(2, "", 12, 0, 0);
+        MessageBoxQueue.Show(box);
+        h.Player.Tick();
+        var input = h.Get(Box(h), "m_textInput");
+        var tf = (AsTextField)h.Get(input, "textField");
+        for (int i = 0; i < h.Player.FrameRate; i++) h.Player.Tick();
+        h.Player.TypeInto(tf, "ab1_C d");
+        h.Player.TypeInto(tf, "0123456789");
+        // GetInputText, what the create callback reads, is m_textInput's text
+        Assert.That((tf.restrict, tf.text, h.Get(input, "text")), Is.EqualTo(((string)null, "ab1_C d01234", "ab1_C d01234")));
     }
 
     [Test]
