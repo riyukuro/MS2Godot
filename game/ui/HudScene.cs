@@ -2327,24 +2327,44 @@ public partial class HudScene : Node, IUiStageHost
         else OpenLapenshard();
     }
 
+    /// <summary>The inventory's items of a tab as the bag's copies, by inventory slot.</summary>
+    List<Ms2.Ui.Items.Item> LapenshardBagItems(Ms2Godot.Net.LiveSession live, int cat)
+    {
+        var rows = new List<Ms2.Net.Packets.EquipItem>();
+        foreach (var e in live.Items.All) if (live.Items.TabOf?.Invoke(e.Id) == cat) rows.Add(e);   // perf-ok: once per bag build, not per frame
+        rows.Sort((x, y) => x.InventorySlot.CompareTo(y.InventorySlot));
+        var items = new List<Ms2.Ui.Items.Item>();
+        foreach (var e in rows)
+            if (Ms2.Ui.Hud.InventoryController.ToItem(e, hudModel.Tables.Items) is { } item) items.Add(item);
+        return items;
+    }
+
     /// <summary>--uigen-open lapenshard: the window offline with one lapenshard worn per colour and the rest in the bag (no session).</summary>
     void OpenLapenshardShot()
     {
         var t = hudModel.Tables;
         hudModel.Player.Level = 99; hudModel.Player.JobGroup = 10;
-        var usable = t.Lapenshards.ItemIds().Where(i => t.Items.Get(i) is { IsLapenshard: true } d && d.IsJobAllowed(10) && d.IsLevelAllowed(99)
-            && t.Lapenshards.Mask(i) is 1 or 2 or 4).OrderBy(i => i).ToList();
+        var usable = new List<int>();
+        foreach (int i in t.Lapenshards.ItemIds())
+            if (t.Items.Get(i) is { IsLapenshard: true } d && d.IsJobAllowed(10) && d.IsLevelAllowed(99) && t.Lapenshards.Mask(i) is 1 or 2 or 4) usable.Add(i);
+        usable.Sort();
         var worn = new List<(int, int)>();
         foreach (var (slot, mask) in new[] { (1, 1u), (3, 2u), (5, 4u) })
-            if (usable.FirstOrDefault(i => t.Lapenshards.Mask(i) == mask) is var id and not 0) worn.Add((slot, id));
-        hudModel.Player.Lapenshards.Apply(new Ms2.Net.Packets.LapenshardMessage.Worn(worn.ToArray()));
+            foreach (int i in usable)
+                if (t.Lapenshards.Mask(i) == mask) { worn.Add((slot, i)); break; }
+        hudModel.Player.Lapenshards.Apply(new Ms2.Net.Packets.LapenshardMessage.Worn(worn.ToArray()));   // perf-ok: shot hook, runs once
         OpenLapenshard();
         if (lapenshard == null) return;
-        var bag = usable.Where(i => worn.All(w => w.Item2 != i)).Take(24).Select((i, n) => { var it = Ms2.Ui.Items.Item.Create(t.Items, i, 1); it.Uid = 100 + n; return it; }).ToList();
+        var bag = new List<Ms2.Ui.Items.Item>();
+        foreach (int i in usable)
+        {
+            bool isWorn = false;
+            foreach (var w in worn) if (w.Item2 == i) isWorn = true;
+            if (isWorn || bag.Count == 24) continue;
+            var it = Ms2.Ui.Items.Item.Create(t.Items, i, 1); it.Uid = 100 + bag.Count; bag.Add(it);
+        }
         lapenshard.InventoryItems = _ => bag;
-        lapenshard.Close(); OpenLapenshard();
-        lapenshard.InventoryItems = _ => bag;
-        lapenshard.OnPacket(new Ms2.Net.Packets.LapenshardMessage.Worn(worn.ToArray()));
+        lapenshard.OnPacket(new Ms2.Net.Packets.LapenshardMessage.Worn(worn.ToArray()));   // perf-ok: shot hook, runs once
     }
 
     /// <summary>Opens the lapenshard window with its equip page when the feature (0xd3) allows; the worn table is the player state's
@@ -2359,11 +2379,21 @@ public partial class HudScene : Node, IUiStageHost
         c.AddTab(new Ms2.Ui.Hud.LapenshardEquipTabPage());
         c.InBattle = () => live?.SelfInBattle ?? false;
         if (live != null) c.Send = p => { live.SendTalk(p); return true; };
-        // FUN_140c60920's source: the inventory's category 0xd (the lapenshard tab), as the bag's own item copies
+        // FUN_140c60920's source: the inventory's category 0xd (the lapenshard tab), as the bag's own item copies, and its
+        // bCheckUse: PC::CanUseItem of the own player on each item's packet record (expired, VIP and bound items stay out)
         if (live != null)
-            c.InventoryItems = cat => live.Items.All.Where(e => live.Items.TabOf?.Invoke(e.Id) == cat)
-                .OrderBy(e => e.InventorySlot).Select(e => Ms2.Ui.Hud.InventoryController.ToItem(e, hudModel.Tables.Items)).Where(i => i != null).ToList();
+        {
+            c.InventoryItems = cat => LapenshardBagItems(live, cat);
+            var use = new Ms2.Ui.Hud.PcItemUse.Pc { ServerTime = () => live.ServerTime };
+            c.CanUseItem = Ms2.Ui.Hud.LapenshardSystemController.CanUseFrom(hudModel.Tables.Items, () =>
+            {
+                use.PcBangGrade = live.Me.User?.PcBangGrade ?? 0; use.PremiumTime = live.Me.PremiumTime;
+                use.WeddingState = live.Me.WeddingState; use.CharacterId = live.CharacterId;
+                return use;
+            });
+        }
         c.NoticeText += SystemNoticeText;
+        c.NoticeCode += id => Ms2.Ui.Hud.MessageBoxQueue.ShowCommon(id, 0, null, "");   // FUN_140d73bc0(id, 0, 0, "")
         Action<Ms2.Net.Packets.LapenshardMessage> onMsg = c.OnPacket;
         if (live != null) live.LapenshardReceived += onMsg;
         c.Unloaded += () =>

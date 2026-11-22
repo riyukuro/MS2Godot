@@ -85,7 +85,10 @@ public sealed class LapenshardSystemController : UiController, IDragSlotOwner
     public Action<MessageBoxData> ShowBox = MessageBoxQueue.Show;
 
     /// <summary>MyPC::GetLapenshardItemId: the item worn in a slot, 0 for none.</summary>
-    public int WornItemId(int slot) => Model?.Player.Lapenshards?.GetItemId(slot) ?? 0;
+    public int WornItemId(int slot) => Model?.Player.Lapenshards?.GetItemId(slot, HasTableRow) ?? 0;
+
+    /// <summary>Whether the lapenshard table has a row for the id (EquipLapenshard ignores an id without one).</summary>
+    bool HasTableRow(int itemId) => Model.Tables.Lapenshards.Mask(itemId) != null;
 
     /// <summary>The kind (red 1, blue 2, green 4) the player selected: m_nSlot (SelectSlot).</summary>
     public int SelectedKind { get; private set; }
@@ -113,21 +116,22 @@ public sealed class LapenshardSystemController : UiController, IDragSlotOwner
     public Func<int, IEnumerable<Item>> InventoryItems = _ => Array.Empty<Item>();
     /// <summary>PC::CanUseItem of a bag item (FUN_140c60920 with bCheckUse). Unset: usable.</summary>
     public Func<Item, bool> CanUseItem = _ => true;
+    /// <summary>The host's <see cref="CanUseItem"/>: PC::CanUseItem (<see cref="PcItemUse"/>) on the item's packet record, the owner's state
+    /// from <paramref name="pc"/>. An item without a record (never from the inventory) is not usable.</summary>
+    public static Func<Item, bool> CanUseFrom(ItemDataTable items, Func<PcItemUse.Pc> pc) =>
+        i => i?.Record is { } rec && PcItemUse.CanUseItem(rec, items.Get(rec.Id), pc());
+
     /// <summary>ShowSystemNotice: a common-string key's text.</summary>
     public event Action<string> NoticeText;
-    /// <summary>FUN_140d73bc0(id, ...): a numbered notice (0xd3, the kind mismatch of a drop). STILL-OPEN: its text.</summary>
+    /// <summary>FUN_140d73bc0(id, 0, 0, ""): a common-string message box by id (0xd3, the kind mismatch of a drop); the host shows it.</summary>
     public event Action<int> NoticeCode;
     public void ShowSystemNotice(string key) => NoticeText?.Invoke(T(key));
     public void ShowNoticeCode(int id) => NoticeCode?.Invoke(id);
 
-    /// <summary>MyPC::HasEquippedLapenshardOfSameGroup (mypc.cpp): a worn lapenshard has the group of the item.</summary>
-    public bool HasEquippedLapenshardOfSameGroup(int itemId)
-    {
-        int g = Model.Tables.Lapenshards.Group(itemId);
-        for (int slot = 1; slot <= LapenshardEquipTabPage.Slots; slot++)
-            if (WornItemId(slot) is int w and not 0 && Model.Tables.Lapenshards.Group(w) == g) return true;
-        return false;
-    }
+    /// <summary>MyPC::HasEquippedLapenshardOfSameGroup (@0x14152f8b0, mypc.cpp:4261): an id of the count table (m_map16f8) has the
+    /// group of the item. The table counts what EquipLapenshard saw, so a replaced id stays in it (see <see cref="LapenshardData"/>).</summary>
+    public bool HasEquippedLapenshardOfSameGroup(int itemId) =>
+        Model.Player.Lapenshards?.HasSameGroup(itemId, HasTableRow, Model.Tables.Lapenshards.Group) == true;
 
     /// <summary>MyPC::FindLapenSlotForItem(kind): the lowest empty slot of the kind, else the lowest slot of the kind; 0 for none.</summary>
     public int FindLapenSlotForItem(int kind)

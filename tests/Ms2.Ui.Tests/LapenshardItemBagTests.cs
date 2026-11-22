@@ -47,7 +47,7 @@ public class LapenshardItemBagTests
             var m = t.Lapenshards.Mask(id) ?? 0;
             var d = t.Items.Get(id);
             seen.Add($"{id}:g{g}:m{m}:{(d == null ? "nodata" : $"t{d.Type}:job{d.IsJobAllowed(10)}:lv{d.LevelLimit}")}");
-            if (id == 0 || g == 0 || d == null || !d.IsLapenshard || m is not (1 or 2 or 4)) continue;
+            if (id == 0 || g == 0 || d == null || !d.IsLapenshard || m == 0) continue;
             if (!d.IsJobAllowed(10) || !d.IsLevelAllowed(99)) continue;
             rows.Add((id, (int)m, g));
         }
@@ -61,7 +61,7 @@ public class LapenshardItemBagTests
         public List<Item> Bag = new(); public UiModel Model;
     }
 
-    static Rig Load(Func<GameTables, (int, int)[]> worn, Func<GameTables, IEnumerable<Item>> inventory, bool battle = false, Func<Item, bool> canUse = null)
+    static Rig Load(Func<GameTables, (int, int)[]> worn, Func<GameTables, IEnumerable<Item>> inventory, bool battle = false, Func<Item, bool> canUse = null, Func<GameTables, Func<Item, bool>> canUseFor = null)
     {
         var tables = new GameTables(Packs(), "en");
         var model = new UiModel(tables) { FeatureEnabledByName = f => LobbyFeatures.IsEnabled(Packs(), f), HasLocalPlayer = true };
@@ -73,7 +73,7 @@ public class LapenshardItemBagTests
             Text = k => k,
             Send = p => { r.Sent.Add(p); return true; },
             InBattle = () => battle,
-            CanUseItem = canUse ?? (_ => true),
+            CanUseItem = canUseFor?.Invoke(tables) ?? canUse ?? (_ => true),
             ShowBox = b => r.Boxes.Add(b.Msg),
             InventoryItems = cat => cat == 0xd ? r.Bag : Array.Empty<Item>(),
         };
@@ -216,5 +216,88 @@ public class LapenshardItemBagTests
         Assert.That(r.C.SelectedKind, Is.EqualTo(4));
         r.C.SlotDragDone("LapenshardItemSlotBag.0");
         Assert.That(r.C.SelectedKind, Is.EqualTo(0));
+    }
+
+    static Func<GameTables, Func<Item, bool>> HudFeed(long now) => t =>
+        LapenshardSystemController.CanUseFrom(t.Items, () => new PcItemUse.Pc { ServerTime = () => now });
+
+    static Item MakeRecord(GameTables t, int id, long uid, long expiry)
+    {
+        var it = Make(t, id, uid);
+        it.Record = new EquipItem { Id = id, Uid = uid, ExpiryTime = expiry };
+        return it;
+    }
+
+    [Test]
+    public void AnExpiredLapenshardIsNotListedAndADropOrRightClickSendsNothing()
+    {
+        // HudFeed is the factory the HUD hands to the controller (the window's CanUseItem)
+        var r = Load(_ => Array.Empty<(int, int)>(), t => new[] { MakeRecord(t, Pick(t, 1).Id, 61, expiry: 500), MakeRecord(t, Pick(t, 2).Id, 62, expiry: 0) },
+            canUseFor: HudFeed(1000));
+        Assert.That(r.Page.BagItems.Select(i => i.Uid), Is.EqualTo(new long[] { 62 }));
+        r.C.SlotDroppedOn("LapenshardEquipSlotBag.0", "LapenshardItemSlotBag.1", r.C);
+        r.C.OnCallback("notifySlotUse", new object[] { "LapenshardItemSlotBag.1", 1 });
+        Assert.That(r.Sent, Is.Empty);
+        var live = Load(_ => Array.Empty<(int, int)>(), t => new[] { MakeRecord(t, Pick(t, 1).Id, 63, expiry: 5000) }, canUseFor: HudFeed(1000));
+        Assert.That(live.Page.BagItems.Select(i => i.Uid), Is.EqualTo(new long[] { 63 }), "an unexpired item lists");
+    }
+
+    [Test]
+    public void AReplacedIdIsNeverCountedDownSoItsGroupStaysWorn()
+    {
+        // EquipLapenshard counts an id up and never counts a replaced id down (mypc.cpp:4195)
+        var pair = new Func<GameTables, ((int Id, int Mask, int Group) A, (int Id, int Mask, int Group) A2, (int Id, int Mask, int Group) B)>(t =>
+        {
+            var rs = Rows(t);
+            foreach (var a in rs) foreach (var a2 in rs) if (a.Mask == 1 && a2.Mask == 1 && a.Group == a2.Group && a.Id != a2.Id)
+                foreach (var b in rs) if (b.Mask == 1 && b.Group != a.Group) return (a, a2, b);
+            Assert.Ignore("the data has no two red lapenshards of one group and a third of another");
+            return default;
+        });
+        var r = Load(t => new[] { (1, pair(t).A.Id) }, t => new[] { Make(t, pair(t).A2.Id, 71) });
+        r.Model.Player.Lapenshards.Apply(new LapenshardMessage.Equipped(1, pair(r.Model.Tables).B.Id));
+        r.C.SlotDroppedOn("LapenshardEquipSlotBag.1", "LapenshardItemSlotBag.0", r.C);
+        Assert.That(r.Sent, Is.Empty, "the replaced id stays in the count map: its group still counts as worn");
+        Assert.That(r.Notices, Has.Count.EqualTo(1));
+    }
+
+    [Test]
+    public void AWornIdWithoutATableRowIsDropped()
+    {
+        var r = Load(t => new[] { (1, 1), (2, Pick(t, 1).Id) }, t => Array.Empty<Item>());
+        Assert.That(r.C.WornItemId(1), Is.EqualTo(0));
+        Assert.That(r.C.WornItemId(2), Is.Not.EqualTo(0));
+    }
+
+    [Test]
+    public void AMultiBitMaskItemDropsOnAWornSlotOfTheSameMask()
+    {
+        var pair = new Func<GameTables, ((int Id, int Mask, int Group) A, (int Id, int Mask, int Group) B)>(t =>
+        {
+            var rs = Rows(t);
+            foreach (var a in rs) foreach (var b in rs) if (a.Mask == 7 && b.Mask == 7 && a.Group != b.Group) return (a, b);
+            Assert.Ignore("the data has no two mask-7 lapenshards of different groups");
+            return default;
+        });
+        var r = Load(t => new[] { (1, pair(t).A.Id) }, t => new[] { Make(t, pair(t).B.Id, 81) });
+        r.C.SlotDroppedOn("LapenshardEquipSlotBag.0", "LapenshardItemSlotBag.0", r.C);
+        Assert.That(r.Codes, Is.Empty);
+        Assert.That(r.Sent, Is.EqualTo(new IOutPacket[] { new LapenshardEquip(1, 81) }));
+    }
+
+    [Test]
+    public void AnItemAboveThePlayersLevelIsRefusedWithoutANotice()
+    {
+        var r = Load(_ => Array.Empty<(int, int)>(), t =>
+        {
+            var hi = Rows(t).FirstOrDefault(x => x.Mask == 1 && t.Items.Get(x.Id).LevelLimit > 1);
+            if (hi.Id == 0) Assert.Ignore("the data has no red lapenshard above level 1");
+            return new[] { Make(t, hi.Id, 91) };
+        });
+        r.Model.Player.Level = 1;
+        r.C.SlotDroppedOn("LapenshardEquipSlotBag.0", "LapenshardItemSlotBag.0", r.C);
+        Assert.That(r.Sent, Is.Empty);
+        Assert.That(r.Notices, Is.Empty);
+        Assert.That(r.Codes, Is.Empty);
     }
 }

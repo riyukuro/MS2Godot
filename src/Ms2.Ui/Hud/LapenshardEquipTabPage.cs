@@ -10,8 +10,8 @@ namespace Ms2.Ui.Hud;
 /// setData{bindID "<bag>.<slot-1>", slotIndex, isEquip}; SetEquipEffect (@0x140c5d9c0) lights m_equipEffect of the slots
 /// whose kind is the selected one. OnUnmountEquipSlot (UILapenshardEquipTab::vfunc_6 @0x140c5e140) takes the worn lapenshard
 /// off (mode 2) behind the use check FUN_140c62520. Inbound modes 0 to 2 rebuild the panel (events 2, 0, 1).
-/// <para>STILL-OPEN: the item bag panel (LapenshardItemSlotBagPanel) and equip by drop or right-click; the slot tooltip's
-/// title strings (0x751, 0x75a).</para>
+/// <para>STILL-OPEN: the slot tooltip's title strings (0x751, 0x75a); PlayItemSoundByUid after a send and the drag sounds
+/// (LapenshardSlot vfunc_20/21, the item's material sound); the bag's refresh on inventory changes (the item events listener).</para>
 /// </summary>
 public sealed class LapenshardEquipTabPage : LapenshardTabPage
 {
@@ -149,9 +149,10 @@ public sealed class LapenshardEquipTabPage : LapenshardTabPage
     {
         if (name.Equals("notifySlotUse", StringComparison.OrdinalIgnoreCase) && args is { Length: > 1 } && args[0] is string sn
             && Rt.ToInt32(args[1]) == 1 && ParseItemSlot(sn, out _))
-            return Owner != null && Owner.Model != null && Owner.Model.HasLocalPlayer ? RightClickSlot(sn) : true;
+            return Owner != null && Owner.Model != null && Owner.Model.HasLocalPlayer && RightClickSlot(sn);   // no local player: vfunc_14 returns 0
         if (!name.Equals("OnUnmountEquipSlot", StringComparison.OrdinalIgnoreCase)) return false;
-        if (Owner == null || !Owner.CanUse()) return true;
+        if (Owner?.Model == null || !Owner.Model.HasLocalPlayer) return false;   // vfunc_6 returns 0 without a local player
+        if (!Owner.CanUse()) return true;
         int slot = args is { Length: > 0 } ? (int)Rt.ToUint32(args[0]) : 0;
         if (Owner.WornItemId(slot) != 0) Owner.Send?.Invoke(new LapenshardUnequip(slot));
         return true;
@@ -206,6 +207,10 @@ public sealed class LapenshardEquipTabPage : LapenshardTabPage
     public override void SlotDragDone(string name) { if (IsDragSlot(name)) Owner.ReleaseSlot(); }
 
     /// <summary>GetEquipMask of the item (0 for an id without a row).</summary>
+    /// <summary>FUN_140a6f880 of the target slot: the worn item's EquipMask when the slot holds one (a mask can have several bits),
+    /// else the slot's own part (red 1, blue 2, green 4).</summary>
+    int TargetKind(int slot) => Owner.WornItemId(slot) is not 0 and var w ? (int)(Owner.Model.Tables.Lapenshards.Mask(w) ?? 0) : KindOfSlot(slot);
+
     int KindOf(Item it) => (int)(Owner.Model.Tables.Lapenshards.Mask(it.ItemId) ?? 0);
 
     /// <summary>The same-group refusal both the drop and the right-click make before the send: a lapenshard of the group is
@@ -231,7 +236,7 @@ public sealed class LapenshardEquipTabPage : LapenshardTabPage
             if (!ParseItemSlot(source, out int si)) return;             // an equip slot as the source is refused
             if (ItemAtBag(si) is not { } item) return;
             int slot = di + 1;
-            if (KindOfSlot(slot) != KindOf(item)) { Owner.ShowNoticeCode(0xd3); return; }
+            if (TargetKind(slot) != KindOf(item)) { Owner.ShowNoticeCode(0xd3); return; }
             if (!item.Data.IsLevelAllowed(Owner.Model.Player.Level)) return;
             if (SameGroupRefused(item.ItemId, slot)) return;
             Owner.SendLapenshard(slot, item.Uid);

@@ -26,10 +26,13 @@ public class LapenshardEquipTabTests
         return packs;
     }
 
+    /// <summary>Table items of a kind: a worn id without a table row never reaches the client's tables (EquipLapenshard).</summary>
+    static int[] Ids(int mask) => new GameTables(Packs(), "en") is var t ? t.Lapenshards.ItemIds().Where(i => t.Lapenshards.Mask(i) == (uint)mask).OrderBy(i => i).Take(3).ToArray() : null;
+
     static (UiHost, LapenshardSystemController, List<IOutPacket> sent, List<string> boxes) Load(bool battle = false, bool fieldLimit = false)
     {
         var model = new UiModel(new GameTables(Packs(), "en")) { FeatureEnabledByName = f => LobbyFeatures.IsEnabled(Packs(), f), HasLocalPlayer = true };
-        model.Player.Lapenshards.Apply(new LapenshardMessage.Worn(new[] { (1, 70000001), (4, 70000002) }));
+        model.Player.Lapenshards.Apply(new LapenshardMessage.Worn(new[] { (1, Ids(1)[0]), (4, Ids(2)[0]) }));
         var sent = new List<IOutPacket>();
         var boxes = new List<string>();
         var c = new LapenshardSystemController
@@ -104,8 +107,8 @@ public class LapenshardEquipTabTests
     public void AnEquippedPacketRebuildsThePanel()
     {
         var (h, c, _, _) = Load();
-        c.Model.Player.Lapenshards.Apply(new LapenshardMessage.Equipped(2, 70000003));
-        c.OnPacket(new LapenshardMessage.Equipped(2, 70000003));
+        c.Model.Player.Lapenshards.Apply(new LapenshardMessage.Equipped(2, Ids(1)[1]));
+        c.OnPacket(new LapenshardMessage.Equipped(2, Ids(1)[1]));
         var slot = h.Get(((LapenshardEquipTabPage)c.Page).Root, "m_equipSlot2");
         Assert.That(Rt.ToBoolean(h.Get(slot, "m_equip")), Is.True);
     }
