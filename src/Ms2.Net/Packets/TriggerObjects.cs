@@ -26,6 +26,9 @@ public sealed record TriggerObjectEvent(int Id, TriggerObjectKind Kind, bool Kno
     public string Text { get; init; } = "";
     /// <summary>Mesh: the skin scale set with the swapped model (vfunc_5).</summary>
     public float Scale { get; init; }
+    /// <summary>The bSkipFx the object's vfunc_2 gets: set for a type 2 event (ReadTriggerEvents, triggerservice.cpp:429),
+    /// clear for type 3 (:435).</summary>
+    public bool SkipFx { get; init; }
 }
 
 /// <summary>
@@ -37,30 +40,46 @@ public sealed record TriggerObjectEvent(int Id, TriggerObjectKind Kind, bool Kno
 /// bool on, string animation; Rope (:738) bool, bool, i32 fade; Effect (:785) bool, u8, i32; Cube (:818) bool; Sound (:555)
 /// and Camera (:848) u8; a plain TriggerObject (:435) nothing. An id the service does not hold reads nothing more and is
 /// logged ("Trigger Object Sync Error"), so the client reads the next event from there; this does the same.
-/// The other types (camera, popups, effects, ...) are not read here.
+/// Type 5 (the camera objects to run) is read by <see cref="ReadCameraObjects"/>; the other types (popups, effects, ...) are not read here.
 /// The argument block at +8 of CInPacket (Unk_TrigArg, triggeractioncli.h:150) is CInputStream (commonfiles/stream.h:25):
 /// slot 0 ReadBool (bool), slot 1 ReadUInt8 (u8), slot 3 ReadInt32 (i32), slot 5 ReadFloat (float), and slot 6
 /// ReadUnicodeStringA (commonfiles/packet.cpp:537, which reads the UTF-16 string via ReadUnicodeString).
 /// </summary>
 public static class TriggerObjects
 {
-    public const byte Load = 2, Update = 3;
+    public const byte Load = 2, Update = 3, CameraObjects = 5;
 
     /// <summary>
     /// The object events of a Trigger packet of type 2 or 3 (an empty list for another type). <paramref name="kindOf"/>
     /// gives the kind of a trigger object the field holds, or null for an id it does not.
     /// </summary>
-    public static List<TriggerObjectEvent> Read(ByteReader r, Func<int, TriggerObjectKind?> kindOf)
+    public static List<TriggerObjectEvent> Read(ByteReader r, Func<int, TriggerObjectKind?> kindOf) => Read(r, kindOf, out _);
+
+    /// <summary>As <see cref="Read(ByteReader, Func{int, TriggerObjectKind?})"/>, giving the packet's type; the body of
+    /// another type is left unread.</summary>
+    public static List<TriggerObjectEvent> Read(ByteReader r, Func<int, TriggerObjectKind?> kindOf, out byte type)
     {
         var list = new List<TriggerObjectEvent>();
-        byte type = r.ReadByte();
+        type = r.ReadByte();
         if (type == Load)
         {
             int n = r.ReadInt();
-            for (int i = 0; i < n; i++) list.Add(ReadEvent(r, kindOf));
+            for (int i = 0; i < n; i++) list.Add(ReadEvent(r, kindOf) with { SkipFx = true });
         }
         else if (type == Update) list.Add(ReadEvent(r, kindOf));
         return list;
+    }
+
+    /// <summary>
+    /// The body of a type 5 Trigger packet (CTriggerService::OnCameraObjects @0x141861b00, triggerservice.cpp:439-448):
+    /// u8 count, count i32 camera object ids, u8 end.
+    /// </summary>
+    public static (List<int> Ids, bool End) ReadCameraObjects(ByteReader r)
+    {
+        int n = r.ReadByte();
+        var ids = new List<int>(n);
+        for (int i = 0; i < n; i++) ids.Add(r.ReadInt());
+        return (ids, r.ReadByte() != 0);
     }
 
     static TriggerObjectEvent ReadEvent(ByteReader r, Func<int, TriggerObjectKind?> kindOf)

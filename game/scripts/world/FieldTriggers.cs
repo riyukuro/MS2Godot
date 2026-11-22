@@ -47,6 +47,8 @@ public interface ITriggerSounds
 /// culls a Renderable entity whose IsVisible is cleared) and its colliders stay where they are.
 /// A sound event plays the BGM object's music or turns the AMB object's ambient sound on or off (<see cref="ApplySound"/>),
 /// through the field's sound, bound with <see cref="Bind(ITriggerSounds)"/>.
+/// A camera event queues the object's camera step (<see cref="QueueCameraStep"/>), and a type 5 packet a list of them
+/// (<see cref="QueueCameraSteps"/>); the steps drive the field's camera manager, bound with <see cref="Bind(TriggerCamera)"/>.
 /// An effect event starts or removes the entity's effect through the field's effect service (<see cref="ApplyEffect"/>),
 /// bound with <see cref="Bind(IRegionSkillEffects)"/>; the effects go with the field, as the object's dtor removes its handle.
 /// The fade (FadeEntity, Fade tenths of a second) runs in <see cref="TriggerFade"/>; a mesh without drawn instances to
@@ -74,6 +76,8 @@ public sealed class FieldTriggers
     IRegionSkillEffects effects;
     readonly Dictionary<int, int> soundHandles = new();
     ITriggerSounds sounds;
+    TriggerCamera camera;
+    readonly LinkedList<(int Id, bool Start)> cameraSteps = new();   // m_listCamera
 
     /// <summary>A drawn trigger actor: its entity, whether it is drawn (IsVisible) and the sequence it plays.</summary>
     public interface IActor
@@ -130,6 +134,17 @@ public sealed class FieldTriggers
     /// <summary>Binds the field's sound (CSoundEventMgr), which the sound objects play their music and ambient sounds through.</summary>
     public void Bind(ITriggerSounds service) => sounds = service;
 
+    /// <summary>Binds the field's camera manager (CameraMgr), which the camera objects' steps drive; its pending mode runs
+    /// the next step.</summary>
+    public void Bind(TriggerCamera c)
+    {
+        camera = c;
+        c.RunNextCameraStep = RunNextCameraStep;
+    }
+
+    /// <summary>The camera steps still queued: object id and whether it starts (vfunc_3) or ends (vfunc_4).</summary>
+    public IReadOnlyCollection<(int Id, bool Start)> CameraSteps => cameraSteps;
+
     /// <summary>The music cue the BGM sound object last played (m_nHandle; 0: none).</summary>
     public int SoundHandle(int id) => soundHandles.TryGetValue(id, out int h) ? h : 0;
 
@@ -159,9 +174,29 @@ public sealed class FieldTriggers
     public int Apply(ByteReader r)
     {
         int n = 0;
-        foreach (var ev in TriggerObjects.Read(r, KindOf))
+        var events = TriggerObjects.Read(r, KindOf, out byte type);
+        if (type == TriggerObjects.CameraObjects)
+        {
+            // CTriggerService::OnCameraObjects, triggerservice.cpp:439-448
+            cameraSteps.Clear();
+            var (ids, end) = TriggerObjects.ReadCameraObjects(r);
+            QueueCameraSteps(ids, end);
+            return ids.Count;
+        }
+        foreach (var ev in events)
         {
             if (!ev.Known) { GD.PushWarning($"Trigger Object Sync Error. ObjectID:{ev.Id}"); continue; }
+            if (ev.Kind == TriggerObjectKind.Camera)
+            {
+                // TriggerObjectCamera::vfunc_2 (@0x140de7d80, triggeractioncli.cpp:848-856): an off event of a type 2
+                // packet is skipped; otherwise the queue is cleared and the object's step queued
+                bool on = ev.Flag != 0;
+                if (!on && ev.SkipFx) continue;
+                ClearCameraSteps();
+                QueueCameraStep(ev.Id, on);
+                n++;
+                continue;
+            }
             if (ev.Kind == TriggerObjectKind.Effect) { if (ApplyEffect(ev)) n++; continue; }
             if (ev.Kind == TriggerObjectKind.Sound) { if (ApplySound(ev)) n++; continue; }
             if (ev.Kind == TriggerObjectKind.Actor)
@@ -249,6 +284,124 @@ public sealed class FieldTriggers
             return true;
         }
         return false;
+    }
+
+    /// <summary>CTriggerService::ClearCameraSteps (@0x1418631c0, triggerservice.cpp:801-804).</summary>
+    public void ClearCameraSteps() => cameraSteps.Clear();
+
+    /// <summary>CTriggerService::QueueCameraStep (@0x1418631f0, triggerservice.cpp:807-815): the step goes to the tail and,
+    /// unless a fly-by runs, the next step runs at once.</summary>
+    public void QueueCameraStep(int id, bool start)
+    {
+        cameraSteps.AddLast((id, start));
+        if (camera?.ModeType != TriggerCamera.FlyBy) RunNextCameraStep();
+    }
+
+    /// <summary>CTriggerService::RunNextCameraStep (@0x141863260, triggerservice.cpp:819-831): takes the head step and runs
+    /// its object's start (vfunc_3) or end (vfunc_4); an id the field does not hold does nothing. Only the camera object
+    /// overrides the two (TriggerObject's base ones do nothing).</summary>
+    public void RunNextCameraStep()
+    {
+        if (cameraSteps.Count == 0) return;
+        var (id, start) = cameraSteps.First.Value;
+        cameraSteps.RemoveFirst();
+        if (camera == null || !entities.TryGetValue(id, out var e) || kinds[id] != TriggerObjectKind.Camera) return;
+        if (start) CameraStart(e);
+        else CameraEnd(e);
+    }
+
+    /// <summary>CTriggerService::QueueCameraSteps (@0x141863340, triggerservice.cpp:834-855): the queue is cleared; the
+    /// single id 0 puts the camera back to the follow mode at once; else each id's start is queued, and with
+    /// <paramref name="end"/> the last id's end after them.</summary>
+    public void QueueCameraSteps(IReadOnlyList<int> ids, bool end)
+    {
+        cameraSteps.Clear();
+        if (ids.Count == 0) return;
+        if (ids.Count == 1 && ids[0] == 0)
+        {
+            camera?.SetMode(TriggerCamera.Target, false);
+            return;
+        }
+        foreach (int id in ids) QueueCameraStep(id, true);
+        if (end) QueueCameraStep(ids[^1], false);
+    }
+
+    /// <summary>The camera object's setting (triggeractioncli.cpp:862-872), from Unk_CameraSetting's defaults (fov 0,
+    /// near 250, far 18000, zero position and rotation, not orthographic; cameramode.h:56-64) where the entity has none.</summary>
+    public static CameraSetting CameraSettingOf(FieldEntity e)
+    {
+        var p = e.Vector("Position");
+        var q = e.Vector("Rotation");
+        return new CameraSetting
+        {
+            Fov = (float)e.Number("FOV", 0),
+            DofNear = (float)e.Number("DOFNear", 250),
+            DofFar = (float)e.Number("DOFFar", 18000),
+            Position = new Vector3((float)p.X, (float)p.Y, (float)p.Z),
+            Rotation = new Vector3((float)q.X, (float)q.Y, (float)q.Z),
+            Ortho = e.Bool("IsOrthographic"),
+        };
+    }
+
+    /// <summary>
+    /// TriggerObjectCamera::vfunc_3 (@0x140de7e00, triggeractioncli.cpp:858-953), the step's start. With a
+    /// StartInterpolationTime the camera flies from the current setting to the object's, eased by StartInterpolator
+    /// (MakeFlyBy, then SetFlyBy with that kind); without one m_setting takes the object's setting, each rotation axis above
+    /// 180 less 360. Then the lock mode is set (SetMode(4, 0)); without a fly-by it starts at once and the next step runs.
+    /// STILL-OPEN: an object with an XmlFilePath (mode 5, the action camera: its camera path row and NIF camera; none is
+    /// ported, so it does nothing); the depth of field (FUN_140af0b70), FUN_140af1a90 and FUN_140af7be0(EnableCameraEffect),
+    /// RememberSetting with FixedLocationAfterEffect, the camera effect state's EndInterpolationTime and SendNpcTalkMode0.
+    /// </summary>
+    void CameraStart(FieldEntity e)
+    {
+        if (!string.IsNullOrEmpty(e.Get("XmlFilePath"))) return;
+        var set = CameraSettingOf(e);
+        int kind = (int)(uint)e.Number("StartInterpolator", 1);
+        float speed = (float)e.Number("StartInterpolationTime", 0);
+        if (speed != 0f)
+        {
+            var fb = camera.MakeFlyBy(speed, set);
+            fb.Kind = kind;
+            camera.SetFlyBy(fb, kind, 1f);
+        }
+        else
+        {
+            if (set.Rotation.X > 180f) set.Rotation.X -= 360f;
+            if (set.Rotation.Y > 180f) set.Rotation.Y -= 360f;
+            if (set.Rotation.Z > 180f) set.Rotation.Z -= 360f;
+            camera.SetSetting(set);
+        }
+        camera.SetMode(TriggerCamera.Lock, false);
+        if (Mathf.IsZeroApprox(speed)) RunNextCameraStep();
+    }
+
+    /// <summary>
+    /// TriggerObjectCamera::vfunc_4 (@0x140de86b0, triggeractioncli.cpp:955-998), the step's end: unless the follow mode is
+    /// current, with an EndInterpolationTime the camera flies from the current setting (not orthographic) to the follow
+    /// mode's fov, near, far and rotation, eased by EndInterpolator, ending at the follow mode's position (SetMode(2, 1));
+    /// without one the follow mode starts at once.
+    /// STILL-OPEN: FUN_140af7be0(1), FUN_140aed1c0 and the depth of field (FUN_140af0b70(0, ...)); the action camera path
+    /// row's interpolation time.
+    /// </summary>
+    void CameraEnd(FieldEntity e)
+    {
+        if (camera.ModeType == TriggerCamera.Target) return;
+        float dur = (float)e.Number("EndInterpolationTime", 0);
+        int kind = (int)(uint)e.Number("EndInterpolator", 1);
+        if (dur != 0f)
+        {
+            var from = camera.Current;
+            from.Ortho = false;
+            var t = camera.TargetSetting;
+            var to = from;
+            to.Fov = t.Fov;
+            to.DofNear = t.DofNear;
+            to.DofFar = t.DofFar;
+            to.Rotation = t.Rotation;
+            camera.SetFlyBy(new CameraFlyBy { Duration = dur, Kind = kind, From = from, To = to }, kind, 1f);
+            camera.SetMode(TriggerCamera.Target, true);
+        }
+        else camera.SetMode(TriggerCamera.Target, false);
     }
 
     /// <summary>The CRT's atoi: leading white space, an optional sign, then decimal digits up to the first other character.</summary>

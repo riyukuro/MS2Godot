@@ -15,7 +15,7 @@ namespace Ms2Godot;
 /// pitch and target height that move with the zoom distance.
 /// User args (after --): --field XBLOCK, --shots DIR (scripted walk with screenshots, then quit), --nav (navmesh overlay on; F9 toggles).
 /// </summary>
-public partial class Field : Node3D
+public partial class Field : Node3D, World.ITargetCamera
 {
     /// <summary>The field a session opens in when nothing names another (Tria): the setup step builds its navmesh.</summary>
     public const string StartField = "02000001_tw_tria";
@@ -264,6 +264,8 @@ public partial class Field : Node3D
         SwitchPostProcess(hdrOn);
         AddChild(camera);
         if (player != null) { UpdateCamera(); AttachMovementOptions(builder); }
+        TriggerCamera = new World.TriggerCamera(this);
+        Triggers.Bind(TriggerCamera);   // the camera trigger objects' steps
         OnFieldBuilt(builder, map, fieldName);
         Built?.Invoke(this, builder);
         Audio = FieldAudio.Start(this, data, packs, fieldName, map, player, player?.Anim);   // sound: game/audio
@@ -921,6 +923,29 @@ public partial class Field : Node3D
         return (shownCam = new Transform3D(new Basis(side, up, view), shown.Origin + t * gap)).Value;
     }
 
+    /// <summary>The camera manager the camera trigger objects drive; while its mode is not the follow one it places the camera.</summary>
+    public World.TriggerCamera TriggerCamera { get; private set; }
+
+    /// <summary>The follow mode's setting as CameraMgr reads it: the camera's fov, the CCameraMode near and far
+    /// (cameramode.cpp:305-307), the placed eye and the camera's euler, in MS2 axes.</summary>
+    World.CameraSetting World.ITargetCamera.Setting => new()
+    {
+        Fov = cam.FovDeg, DofNear = 250, DofFar = 18000,
+        Position = placedEye is { } e ? new Vector3(e.X, -e.Z, e.Y) : default,
+        Rotation = player?.CameraEuler ?? default,
+    };
+
+    /// <summary>The follow mode's eye for the current distance and yaw, in MS2 axes.</summary>
+    Vector3 World.ITargetCamera.FlyToPosition
+    {
+        get
+        {
+            if (player == null) return default;
+            Place(camDist, Mathf.DegToRad(cam.HAngleDeg + 180f) + camYaw, out var eye, out _, out _);
+            return new Vector3(eye.X, -eye.Z, eye.Y);
+        }
+    }
+
     /// <summary>CTargetCameraMode m_6c: the camera's angle from the up axis in radians, as last placed.</summary>
     public float CameraPitch { get; private set; } = Mathf.Pi / 2;
     /// <summary>The camera mode's position (m_setting.m_c = m_c0.m_pos): the placed eye before the shown camera's easing.</summary>
@@ -1061,7 +1086,18 @@ public partial class Field : Node3D
                 if (Input.IsKeyPressed(Key.Up)) camPitch = Mathf.Clamp(pitch0 + step, 0.15f, 1.57f);
                 if (Input.IsKeyPressed(Key.Down)) camPitch = Mathf.Clamp(pitch0 - step, 0.15f, 1.57f);
             }
-            UpdateCamera(delta);
+            TriggerCamera?.Update((float)delta);
+            if (TriggerCamera?.Shown is { } s)
+            {
+                // a lock or fly-by mode (CameraMgr::Update, camera.cpp:819-825) places the camera; the follow mode waits
+                camera.GlobalTransform = s.Transform();
+                camera.Fov = s.Fov;
+            }
+            else
+            {
+                if (camera.Fov != cam.FovDeg) camera.Fov = cam.FovDeg;
+                UpdateCamera(delta);
+            }
         }
         // GFxMovieBackground::vfunc_8 (gfxmoviebackground.cpp:486-513): resize and setCameraDistance run without a local player too
         backdrop?.Update(camera, player);

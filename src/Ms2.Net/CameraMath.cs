@@ -18,6 +18,16 @@ public static class CameraMath
         rx /= n; ry /= n;
         double ux = ry * dz - rz * dy, uy = rz * dx - rx * dz, uz = rx * dy - ry * dx;   // right x dir
         double[,] m = { { dx, ux, rx }, { dy, uy, ry }, { dz, uz, rz } };   // NiMatrix3(dir, up, right) takes columns
+        return ToEuler(m);
+    }
+
+    /// <summary>
+    /// The camera rotation in degrees a matrix gives: Matrix3::ToEulerAnglesXYZ times the exe's -57.2957764
+    /// (cameramode.cpp:326-330, :356-360). The matrix's columns are the view direction, the up vector and the right
+    /// vector in MS2 axes.
+    /// </summary>
+    public static (float X, float Y, float Z) ToEuler(double[,] m)
+    {
         double ax, ay, az;
         // ToEulerAnglesXYZ (Matrix3_Win32.cpp:938-971): the pole cases start within EE_RIGHT_ANGLE_EPSILON (1e-3 rad) of +-90 deg, not only at exactly +-1.
         const double eps = 1e-3;
@@ -30,5 +40,60 @@ public static class CameraMath
         else { ax = Math.Atan2(m[1, 0], m[1, 1]); ay = Math.PI / 2; az = 0; }
         const double k = 57.2957764;
         return ((float)(ax * k), (float)(ay * k), (float)(az * k));
+    }
+
+    /// <summary>
+    /// The matrix of a camera rotation in degrees: Matrix3::FromEulerAnglesXYZ of the angles times -0.0174532924
+    /// (cameramode.cpp:339, :344). Gamebryo's axis rotations turn the other way, so with the angles negated this is the
+    /// right-handed Rx(x) Ry(y) Rz(z); its columns are the view direction, the up vector and the right vector in MS2 axes
+    /// (rotation (90, 0, 0) looks along +x with +z up). <see cref="ToEuler"/> takes it back.
+    /// </summary>
+    public static double[,] FromEuler(float x, float y, float z)
+    {
+        const double k = 0.0174532924;
+        double a = x * k, b = y * k, c = z * k;
+        double ca = Math.Cos(a), sa = Math.Sin(a), cb = Math.Cos(b), sb = Math.Sin(b), cc = Math.Cos(c), sc = Math.Sin(c);
+        return new double[,]
+        {
+            { cb * cc, -cb * sc, sb },
+            { sa * sb * cc + ca * sc, -sa * sb * sc + ca * cc, -sa * cb },
+            { -ca * sb * cc + sa * sc, ca * sb * sc + sa * cc, ca * cb },
+        };
+    }
+
+    /// <summary>
+    /// CCameraMode::FUN_140afdec0 (@0x140afdec0, cameramode.cpp:335-363): the rotation a fraction t of the way from a to b.
+    /// The view directions and the up vectors of the two matrices are each moved linearly and normalised; right = dir x up,
+    /// up = right x dir, both normalised, and the new matrix (dir, up, right) goes back to degrees.
+    /// </summary>
+    public static (float X, float Y, float Z) RotationLerp(float t, (float X, float Y, float Z) a, (float X, float Y, float Z) b)
+    {
+        var ma = FromEuler(a.X, a.Y, a.Z);
+        var mb = FromEuler(b.X, b.Y, b.Z);
+        var c0 = new double[3];
+        var c1 = new double[3];
+        for (int i = 0; i < 3; i++)
+        {
+            c0[i] = ma[i, 0] + t * (mb[i, 0] - ma[i, 0]);
+            c1[i] = ma[i, 1] + t * (mb[i, 1] - ma[i, 1]);
+        }
+        Unitize(c0);
+        Unitize(c1);
+        var c2 = Cross(c0, c1);
+        Unitize(c2);
+        c1 = Cross(c2, c0);
+        Unitize(c1);
+        return ToEuler(new double[,] { { c0[0], c1[0], c2[0] }, { c0[1], c1[1], c2[1] }, { c0[2], c1[2], c2[2] } });
+    }
+
+    static double[] Cross(double[] a, double[] b) =>
+        new[] { a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0] };
+
+    /// <summary>NiPoint3::Unitize: a vector shorter than 1e-6 becomes zero.</summary>
+    static void Unitize(double[] v)
+    {
+        double n = Math.Sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+        if (n > 1e-6) { v[0] /= n; v[1] /= n; v[2] /= n; }
+        else { v[0] = v[1] = v[2] = 0; }
     }
 }
