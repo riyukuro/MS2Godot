@@ -118,9 +118,8 @@ public sealed class FieldData
     /// The field table of the data: table/fielddata.xml, or where the pack has none (GMS2) one row per map/&lt;id&gt;.xml
     /// (<see cref="PerFileTable"/>); null when the data has neither. Read the file once through <see cref="Document"/>.
     /// </summary>
-    static XDocument Table(PackSet packs) => packs.Exists(Archive, Entry)
-        ? PackXml.Parse(packs.Read(Archive, Entry))
-        : PerFileTable.Rows(packs, "map/", "fieldData");
+    static XDocument Table(PackSet packs) => PerFileTable.Choose(packs.Exists(Archive, Entry),
+        () => PackXml.Parse(packs.Read(Archive, Entry)), () => PerFileTable.Rows(packs, "map/", "fieldData"));
 
     /// <summary>Whether the data has a field table, of either layout.</summary>
     public static bool Exists(PackSet packs) => Doc(packs).Root!.HasElements;

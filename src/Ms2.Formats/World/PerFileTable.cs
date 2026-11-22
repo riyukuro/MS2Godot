@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
 using Ms2.Formats.Text;
+using Ms2.Formats.Cache;
 using Ms2.Ui;
 
 namespace Ms2.Formats.World;
@@ -10,7 +11,10 @@ namespace Ms2.Formats.World;
 /// The data that keeps one file per row instead of one table: GMS2's Xml.m2d has map/&lt;id&gt;.xml and npc/&lt;aa&gt;/&lt;bb&gt;/&lt;id&gt;.xml
 /// where the KMS tables hold &lt;fieldData id&gt; / &lt;npc id&gt; rows. A file's &lt;ms2&gt; root holds the same &lt;environment&gt; children a
 /// table row holds, plus the locale and feature attributes the KMS rows of these tables do not carry.
-/// STILL-OPEN: the GMS2 client's own reader and path rule (its exe is packed, so unread); the id is the file name's number.
+/// A data-shape adapter: the client reads its own layout (single tables), and the GMS2 client's reader and path rule are
+/// not in the restored source (its exe is packed, so unread; STILL-OPEN). The id is the file name's number.
+/// Reading thousands of files is done once per install: <see cref="BuildCache"/> at setup writes the merged table into the
+/// install's cache store and a launch reads that one file (<see cref="Rows"/>), not the files.
 /// </summary>
 public static class PerFileTable
 {
@@ -21,15 +25,42 @@ public static class PerFileTable
     /// environment or a readable name or content has no row. Null when the pack has no such file, so a table that is absent
     /// in this data stays absent. Read only: the document is shared.
     /// </summary>
+    /// <summary>The KMS layout where the data has it (its file is read, the per-file folder never touched), else the per-file rows.</summary>
+    public static T Choose<T>(bool kmsHas, Func<T> kms, Func<T> perFile) => kmsHas ? kms() : perFile();
+
     public static XDocument Rows(PackSet packs, string folder, string row)
     {
-        // once per pack set and folder: a folder is thousands of files, and its readers only read the tree
+        // once per pack set and folder: the readers only read the tree
         var cache = built.GetOrCreateValue(packs);
         lock (cache)
-            return cache.TryGetValue(folder + "|" + row, out var d)
-                ? d
-                : cache[folder + "|" + row] = Build(Files(packs, folder), row, f => FeatureElements.SelectEnvironment(packs, f));
+        {
+            string key = folder + "|" + row;
+            if (cache.TryGetValue(key, out var d)) return d;
+            if (!Has(packs, folder)) return cache[key] = null;
+            var store = CacheStore.Of?.Invoke(packs);
+            if (store == null) return cache[key] = Parse(packs, folder, row);
+            var t = store.Get(Piece(folder), LobbyFeatures.Stamp(packs), Code, () => new Table(Parse(packs, folder, row)),
+                Write, Read, (a, b) => Text(a.Doc) == Text(b.Doc) ? null : "rows differ", out var outcome);
+            CacheStore.Logged?.Invoke(outcome);
+            return cache[key] = t.Doc;
+        }
     }
+
+    /// <summary>Writes the merged table of the folder into the install's cache store when it is missing (the setup step); true when written.</summary>
+    public static bool BuildCache(PackSet packs, CacheStore store, string folder, string row) =>
+        Has(packs, folder) && store.Ensure(Piece(folder), LobbyFeatures.Stamp(packs), Code, () => new Table(Parse(packs, folder, row)), Write);
+
+    sealed record Table(XDocument Doc);
+    static string Piece(string folder) => "perfile-" + folder.TrimEnd('/');
+    static string Code => CacheStore.Build(typeof(PerFileTable).Assembly);
+    static string Text(XDocument d) => d?.ToString(SaveOptions.DisableFormatting) ?? "";
+    static byte[] Write(Table t) => System.Text.Encoding.UTF8.GetBytes(Text(t.Doc));
+    static Table Read(byte[] body) => new(body.Length == 0 ? null : XDocument.Parse(System.Text.Encoding.UTF8.GetString(body)));
+
+    static bool Has(PackSet packs, string folder) => packs.List("Xml").Any(n => n.StartsWith(folder, StringComparison.Ordinal) && n.EndsWith(".xml", StringComparison.Ordinal));
+
+    static XDocument Parse(PackSet packs, string folder, string row) =>
+        Build(Files(packs, folder), row, f => FeatureElements.SelectEnvironment(packs, f));
 
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Dictionary<string, XDocument>> built = new();
 

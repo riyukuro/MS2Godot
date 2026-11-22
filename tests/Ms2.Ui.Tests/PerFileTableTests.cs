@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
@@ -58,7 +61,7 @@ public class PerFileTableTests
     {
         var packs = Packs();
         Assert.That(FieldData.Exists(packs), Is.True);
-        if (!packs.Exists("Xml", "map/02000001.xml")) return;                  // the KMS packs keep the table
+        if (!packs.Exists("Xml", "map/02000001.xml")) Assert.Ignore("the KMS packs keep the table");
         var f = FieldData.FindById(packs, 2000001);
         Assert.That(f?.XBlock, Is.EqualTo("02000001_TW_Tria"));
         Assert.That(f.Id, Is.EqualTo(2000001));
@@ -99,10 +102,21 @@ public class PerFileTableTests
     public void ThePresetsGiveTheModelsOfTheKmsItemModelFile()
     {
         var packs = Packs();
-        if (!packs.List("Xml").Any(n => n.StartsWith("itempreset/", StringComparison.Ordinal))) return;      // the KMS packs keep itemmodel/
+        if (!packs.List("Xml").Any(n => n.StartsWith("itempreset/", StringComparison.Ordinal))) Assert.Ignore("the KMS packs keep itemmodel/");
         var assets = new ItemModelTable(packs).GetAssets(11400016);
         Assert.That(assets, Is.Not.Empty);
         Assert.That(assets[0].SlotName, Is.EqualTo("CL"));
         Assert.That(assets.All(a => a.Name.StartsWith("Data/Resource/Model/Item/", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    // data-free: the choice between the layouts, as FieldData.Table, NpcTable and ItemModelTable make it
+    [Test]
+    public void TheKmsLayoutWinsAndThePerFileFolderIsNotReadWhenItIsThere()
+    {
+        int perFileReads = 0;
+        Assert.That(PerFileTable.Choose(true, () => "kms", () => { perFileReads++; return "files"; }), Is.EqualTo("kms"));
+        Assert.That(perFileReads, Is.Zero);
+        Assert.That(PerFileTable.Choose(false, () => "kms", () => { perFileReads++; return "files"; }), Is.EqualTo("files"));
+        Assert.That(perFileReads, Is.EqualTo(1));
     }
 }

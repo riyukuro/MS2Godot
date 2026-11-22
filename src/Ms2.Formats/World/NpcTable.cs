@@ -158,7 +158,7 @@ public sealed class NpcTable
     {
         var dummies = effectDummies?.Default ?? Array.Empty<EffectDummy>();
         var files = packs.List("Xml").Where(n => n.StartsWith("npcdata/", StringComparison.OrdinalIgnoreCase) && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).ToList();
-        if (files.Count == 0 && PerFileTable.Rows(packs, "npc/", "npc") is { } perFile)      // GMS2: npc/<aa>/<bb>/<id>.xml
+        if (PerFileTable.Choose(files.Count > 0, () => null, () => PerFileTable.Rows(packs, "npc/", "npc")) is { } perFile)      // GMS2: npc/<aa>/<bb>/<id>.xml
             foreach (var n in perFile.Root.Elements("npc"))
                 if (ParseRow(n, dummies) is { } row) rows[row.Id] = row;
         foreach (var entry in files)

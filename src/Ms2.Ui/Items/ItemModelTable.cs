@@ -151,7 +151,7 @@ public sealed class ItemModelTable
         var models = new Dictionary<int, Model>();
         string path = $"itemmodel/{file}.xml";
         if (packs == null) return models;
-        var doc = packs.Exists("Xml", path) ? GameStrings.Parse(packs.Read("Xml", path)) : PerFileTable.ItemModels(packs, file);    // GMS2: itempreset/
+        var doc = PerFileTable.Choose(packs.Exists("Xml", path), () => GameStrings.Parse(packs.Read("Xml", path)), () => PerFileTable.ItemModels(packs, file));    // GMS2: itempreset/
         if (doc == null) return models;
         foreach (var e in doc.Root.Elements("ItemModel"))
         {
@@ -177,7 +177,7 @@ public sealed class ItemModelTable
         var byId = new Dictionary<int, IReadOnlyList<Asset>>();
         string path = $"itemmodel/{file}.xml";
         if (packs == null) return byId;
-        var doc = packs.Exists("Xml", path) ? GameStrings.Parse(packs.Read("Xml", path)) : PerFileTable.ItemModels(packs, file);
+        var doc = PerFileTable.Choose(packs.Exists("Xml", path), () => GameStrings.Parse(packs.Read("Xml", path)), () => PerFileTable.ItemModels(packs, file));
         if (doc == null) return byId;
         foreach (var e in doc.Root.Elements("ItemModel"))
         {

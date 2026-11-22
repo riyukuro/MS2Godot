@@ -128,8 +128,8 @@ public static class PackIndex
     }
 
     /// <summary>The archives of a data folder: each .m2d with its .m2h, as the folder-relative name without extension. A folder
-    /// whose name starts with "!" (the GMS2 data's "!backup" holds an older Xml.m2d) is no pack the client opens: PackSet names
-    /// its archives by their own path ("Xml", "Resource/Exported"), so it is not walked.</summary>
+    /// whose name starts with "!" (the GMS2 data's "!backup" holds an older Xml.m2d) is skipped by our pack naming (PackSet names
+    /// its archives by their own path, "Xml", "Resource/Exported"; no KMS data has a "!" folder); it is not a rule of the client.</summary>
     public static IEnumerable<string> Archives(string dataDir) =>
         Directory.EnumerateFiles(dataDir, "*.m2h", new EnumerationOptions { RecurseSubdirectories = true, MatchCasing = MatchCasing.CaseInsensitive })
             .Where(h => File.Exists(Path.ChangeExtension(h, ".m2d")))
