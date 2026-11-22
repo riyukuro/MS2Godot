@@ -205,19 +205,19 @@ public class GameClientTests {
         Assert.That(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray()).ReadInt(), Is.EqualTo(3));
     }
 
-    /// <summary>Opt-in: MS2_LIVE_LOGIN=host:port, MS2_LIVE_ACCOUNT=user:password (without the region code), MS2_LIVE_EXPECT=characterId,mapId[,x,y,z]: id and map from the server database, the position only when known.</summary>
+    /// <summary>Opt-in: MS2_LIVE_ARGS="--ip=host --port=n" (the launcher's arguments; a test run has no command line of its own), MS2_LIVE_ACCOUNT=user:password (without the region code), MS2_LIVE_EXPECT=characterId,mapId[,x,y,z]: id and map from the server database, the position only when known.</summary>
     [Test] public async Task LiveServerReachesFieldEnter() {
-        var addr = Environment.GetEnvironmentVariable("MS2_LIVE_LOGIN"); var acct = Environment.GetEnvironmentVariable("MS2_LIVE_ACCOUNT");
-        if (string.IsNullOrEmpty(addr) || string.IsNullOrEmpty(acct)) Assert.Ignore("MS2_LIVE_LOGIN / MS2_LIVE_ACCOUNT not set");
-        var hp = addr.Split(':'); var up = acct.Split(':', 2);
+        var addr = LauncherArgs.Parse((Environment.GetEnvironmentVariable("MS2_LIVE_ARGS") ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries)); var acct = Environment.GetEnvironmentVariable("MS2_LIVE_ACCOUNT");
+        if (!addr.HasAddress || string.IsNullOrEmpty(acct)) Assert.Ignore("MS2_LIVE_ARGS / MS2_LIVE_ACCOUNT not set");
+        var up = acct.Split(':', 2);
         var machine = new byte[16];
         using var t = new TcpTransport();
-        var o = await new LoginClient(t).LoginAsync(hp[0], int.Parse(hp[1]), up[0] + "KR", up[1], machine);
+        var o = await new LoginClient(t).LoginAsync(addr.Host, addr.Port, up[0] + "KR", up[1], machine);
         Assert.That(o.Success, Is.True);
         var ch = o.Characters[0];
         var go = await GameClient.SelectAsync(t, ch.User.CharacterId);
         Assert.That(go.Ok, Is.True, go.Message);
-        var (e, game) = await GameClient.EnterAsync(go, o.Result.AccountId, machine, hp[0]);
+        var (e, game) = await GameClient.EnterAsync(go, o.Result.AccountId, machine, addr.Host);
         using (game) {
             TestContext.Out.WriteLine($"map {e.Field.MapId} pos {e.Field.Position} portal {e.Field.Portal} char {e.Enter.CharacterId} ch {e.Enter.Channel}");
             Assert.That(e.Enter.CharacterId, Is.EqualTo(ch.User.CharacterId));

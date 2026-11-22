@@ -13,7 +13,7 @@ public enum LaunchMode
 
 /// <summary>
 /// The start a launcher choice picks. <see cref="Server"/> is set when the address comes from the launcher's list; it is
-/// null when <c>MS2_LIVE_LOGIN</c> names the address, which the session reads itself as it did before the launcher.
+/// null when the command line's <c>--ip</c>/<c>--port</c> name the address, which the session reads itself.
 /// </summary>
 public readonly record struct LaunchDecision(LaunchMode Mode, ServerEntry Server = null)
 {
@@ -33,14 +33,15 @@ public static class LaunchRoute
     public const string FlowScene = "res://flow/flow.tscn";
 
     /// <summary>
-    /// The environment's live address: <c>MS2_LIVE_LOGIN</c> counts only together with <c>MS2_LIVE_ACCOUNT</c>, as it did
-    /// before the launcher (the account comes from the variable). Null when either is missing.
+    /// The live address of the command line (<c>--ip</c> and <c>--port</c>, the launcher's form): it counts only together with a
+    /// ticket (<c>--ticket</c>, the launcher's own start) or <c>MS2_LIVE_ACCOUNT</c> (the account comes from the variable), as the
+    /// address alone did before. An address alone leaves the launcher page in place. Null when the address is incomplete or alone.
     /// </summary>
-    public static string EnvironmentLive(string liveLogin, string liveAccount) =>
-        !string.IsNullOrEmpty(liveLogin) && !string.IsNullOrEmpty(liveAccount) ? liveLogin : null;
+    public static string LiveAddress(Ms2.Net.LauncherArgs args, string liveAccount) =>
+        args is { HasAddress: true } && (args.Ticket != null || !string.IsNullOrEmpty(liveAccount)) ? $"{args.Host}:{args.Port}" : null;
 
     /// <summary>
-    /// <paramref name="liveLogin"/> is <c>MS2_LIVE_LOGIN</c>; <paramref name="singlePlayer"/> is the launcher's Single
+    /// <paramref name="liveLogin"/> is the <see cref="LiveAddress"/> (null without one); <paramref name="singlePlayer"/> is the launcher's Single
     /// player choice; <paramref name="server"/> is a saved entry whose Connect was pressed. With the variable set the
     /// live mode wins over the launcher and the list (the override the headless runs use), and the session reads the
     /// address from it.

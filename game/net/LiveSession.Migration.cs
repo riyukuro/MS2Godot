@@ -61,7 +61,7 @@ public partial class LiveSession
     /// out unconnected, m_nRetry goes up and the next update connects again (the connect at the top runs whatever m_nRetry
     /// is, so the fifth failure still makes a sixth attempt, given up when its timer runs out). Each connect here is bounded by
     /// that 10 s (a connect not made by then is a failed attempt). The address is the packet's (DAT_143ab2a48,
-    /// networkservice.cpp:951), except that MS2_LIVE_LOGIN's host, when set, replaces it (<c>host</c>: a test setup whose
+    /// networkservice.cpp:951), except that the command line's --ip host, when set, replaces it (<c>host</c>: a test setup whose
     /// servers announce an address this machine cannot reach). Connected, the key check and the entry run as at login (GameClient.EnterAsync:
     /// OnRequestKey's ResponseKey with the GameToGame tokens, OnMoveResult, then the packets up to RequestFieldEnter).
     /// A MoveResult error shows GetFieldMoveErrorMessage's box (OnMoveResult, networkservice.cpp:905) and the state stays. The

@@ -354,10 +354,14 @@ MS2Godot's, built from native Godot controls (no client movie and no client art)
 - Keys: Tab moves between controls, Enter activates the focused one, Esc closes the add/edit dialog (and quits on the
   launcher itself).
 
-The launcher is skipped, and the run starts as it did before it existed, when `MS2_LIVE_LOGIN` (`host:port`) and
-`MS2_LIVE_ACCOUNT` (`user:password`) are both set, or the flow is scripted (`--flow-shots`); the test and perf scenes
-(`setup.tscn`, `hud.tscn`, `field.tscn`, `tests/*.tscn`) never show it. With both set the environment overrides the
-launcher and the dialog: the live mode runs against that address with that account. `MS2_LIVE_LOGIN` alone does nothing.
+The launcher is skipped, and the run starts as it did before it existed, when the command line names a server the way the Lith
+launcher does, `--ip=<host> --port=<n>`, together with `--ticket=<token>` (the launcher's own start) or with `MS2_LIVE_ACCOUNT`
+(`user:password`), or the flow is scripted (`--flow-shots`); the test and perf scenes (`setup.tscn`, `hud.tscn`, `field.tscn`,
+`tests/*.tscn`) never show it. Then the live mode runs against that address, with the ticket in the login or with that account.
+An address alone does nothing. The launcher's whole command line can be pasted: a leading bare port is the fallback for `--port`, and
+`--nxapp`, `--stage`, `--title`, `--console` and unknown arguments are ignored. The ticket is a login credential and is never logged.
+Godot reads the line from the engine's arguments (an exported executable takes it as is) and from the user arguments after `--`
+(a project run through the editor binary needs `godot --path game -- 1234 --ticket=... --ip=... --port=...`).
 
 ## Settings
 

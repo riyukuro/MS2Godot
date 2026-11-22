@@ -14,7 +14,7 @@ namespace Ms2Godot.Net;
 
 /// <summary>
 /// The opt-in live mode: the login, character list, select and field entry run against a real server instead of the offline
-/// stubs. The launcher's Connect picks the login server (<see cref="UseServer"/>); MS2_LIVE_LOGIN (host:port) overrides it
+/// stubs. The launcher's Connect picks the login server (<see cref="UseServer"/>); the command line's --ip and --port (the Lith launcher's own arguments, <see cref="LaunchArgs"/>) override it
 /// and starts the live mode without the launcher, and MS2_LIVE_ACCOUNT (user:password) overrides the id and password typed
 /// in the client's login dialog. Offline stays the default and nothing here runs then. MS2_LIVE_AUTO=1 drives the screens
 /// by itself (first character, no input), for a headless run. The transports only queue packets on their network thread;
@@ -25,16 +25,39 @@ public partial class LiveSession : Node
     static string launchHost;
     static int launchPort;
 
-    /// <summary>The launcher's picked login server; MS2_LIVE_LOGIN overrides it at login time.</summary>
+    /// <summary>The in-client launcher's picked login server; the command line's --ip/--port override it at login time.</summary>
     public static void UseServer(string host, int port) { launchHost = host; launchPort = port; }
+    /// <summary>
+    /// The command line the game was started with: the engine's own arguments and the user arguments (after "--"). The Lith launcher's
+    /// form (<c>1234 --ticket=.. --ip=.. --port=..</c>) is read from either: an exported exe takes it as is (OS.GetCmdlineArgs), and
+    /// a project run through the editor binary needs it after "--" (OS.GetCmdlineUserArgs). Parsed once per call; the ticket is never logged.
+    /// </summary>
+    public static Ms2.Net.LauncherArgs LaunchArgs() => Ms2.Net.LauncherArgs.Parse(OS.GetCmdlineArgs().Concat(OS.GetCmdlineUserArgs()).ToArray());
+
     /// <summary>Drops the launcher's server, so a later start does not inherit it.</summary>
     public static void ClearServer() { launchHost = null; launchPort = 0; }
 
-    /// <summary>MS2_LIVE_LOGIN, when MS2_LIVE_ACCOUNT is set with it (the environment route); null otherwise.</summary>
-    public static string EnvironmentLogin => Ms2.Ui.Launch.LaunchRoute.EnvironmentLive(
-        System.Environment.GetEnvironmentVariable("MS2_LIVE_LOGIN"), System.Environment.GetEnvironmentVariable("MS2_LIVE_ACCOUNT"));
+    /// <summary>The address from --ip/--port when it starts the live mode without the in-client launcher (with --ticket or MS2_LIVE_ACCOUNT); null otherwise.</summary>
+    public static string CommandLineLogin
+    {
+        get
+        {
+            var a = LaunchArgs();
+            if (a.Problem != null) { WarnArgs(a); return null; }
+            return Ms2.Ui.Launch.LaunchRoute.LiveAddress(a, System.Environment.GetEnvironmentVariable("MS2_LIVE_ACCOUNT"));
+        }
+    }
 
-    public static bool Enabled => EnvironmentLogin != null || (!string.IsNullOrEmpty(launchHost) && launchPort > 0);
+    static string warnedArgs;
+    /// <summary>Names the problem with the launcher arguments once; never the values (the ticket is a credential).</summary>
+    static void WarnArgs(Ms2.Net.LauncherArgs a)
+    {
+        if (warnedArgs == a.Problem) return;
+        warnedArgs = a.Problem;
+        GD.PushWarning("live: launcher arguments ignored, " + a.Problem);
+    }
+
+    public static bool Enabled => CommandLineLogin != null || (!string.IsNullOrEmpty(launchHost) && launchPort > 0);
     public static LiveSession Instance { get; private set; }
     /// <summary>A live session is running: the field's offline npcs, mobs and portal walking stay off; the server's replace them.</summary>
     public static bool Active => Instance != null;
@@ -662,19 +685,11 @@ public partial class LiveSession : Node
         LastLoginRefusal = null;
         try
         {
-            string envLogin = EnvironmentLogin;
+            var args = LaunchArgs();
+            if (args.Problem != null) { WarnArgs(args); return false; }
             int port;
-            if (!string.IsNullOrEmpty(envLogin))
-            {
-                var hp = envLogin.Split(':');
-                host = hp[0];
-                port = int.Parse(hp[1], System.Globalization.CultureInfo.InvariantCulture);
-            }
-            else
-            {
-                host = launchHost;
-                port = launchPort;
-            }
+            if (args.HasAddress) { host = args.Host; port = args.Port; }
+            else { host = launchHost; port = launchPort; }
             if (string.IsNullOrEmpty(host) || port <= 0) { GD.PushWarning("live: no login server"); return false; }
             string user = id, pass = password ?? "";
             string envAccount = System.Environment.GetEnvironmentVariable("MS2_LIVE_ACCOUNT");
@@ -689,7 +704,9 @@ public partial class LiveSession : Node
             login?.Dispose();
             login = new TcpTransport();
             // the real client appends its region code to the id
-            var o = await new LoginClient(login).LoginAsync(host, port, user + "KR", pass, machine);
+            // GMS2: the launcher ticket (--ticket) goes in the token field (the packet drops id and password); only a GMS2 profile uses it
+            string ticket = args.HasAddress ? args.Ticket : null;   // the ticket goes only to the server it was given with
+            var o = await new LoginClient(login) { Ticket = ticket, MachineIdPath = ticket != null ? ProjectSettings.GlobalizePath("user://machine-id") : null }.LoginAsync(host, port, user + "KR", pass, machine);
             if (!o.Success) { GD.PushWarning($"live: login refused, state {o.Result.State} {o.Result.Message}"); LastLoginRefusal = o.Result; return false; }
             accountId = o.Result.AccountId;
             if (o.Endpoint is { } ugc)

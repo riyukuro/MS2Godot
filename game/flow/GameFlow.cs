@@ -101,7 +101,8 @@ public partial class GameFlow : Node
         }
         // The launcher is MS2Godot's own pre-login page. A live address in the environment skips it, as do the test and
         // perf scenes and a scripted flow run, so those start exactly as they did before it existed.
-        string liveLogin = Net.LiveSession.EnvironmentLogin;
+        // --ip/--port with --ticket (the Lith launcher's own start) or MS2_LIVE_ACCOUNT start the live mode without the page
+        string liveLogin = Net.LiveSession.CommandLineLogin;
         var start = LaunchRoute.Decide(GetTree().CurrentScene?.SceneFilePath, liveLogin, shotDir != null, null);
         Go(start.Mode == LaunchMode.Launcher ? State.Launcher : State.Login);
         if (Net.LiveSession.Enabled) _ = Net.LiveSession.AutoDrive(this);

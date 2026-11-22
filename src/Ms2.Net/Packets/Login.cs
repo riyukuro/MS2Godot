@@ -29,16 +29,50 @@ public sealed record ResponseVersion(uint Version = 2525, ushort FeatureLevel = 
 /// <summary>Outbound 0x03, variant A (WriteLoginA), sent by the in-game login dialogs (UILoginDialog, UIServerListDialog) with the typed id and password and a region string: the variant for a private server. u8 type (1 server list, 2 char list), unicode user, unicode password, i16 login type, 16 byte machine id, i32, i32, narrow language.</summary>
 public sealed record ResponseLogin(byte Type, string User, string Password, short LoginType, byte[] MachineId, int MachineValue, int ClientValue, string Language) : IProfileOutPacket {
     public Outbound Op => Outbound.ResponseLogin;
-    /// <summary>GMS2 (upstream LoginHandler.cs:28-34): u8 command, unicode user, unicode password, i16 (1), 16 byte machine id; nothing after it.</summary>
+    /// <summary>GMS2 launcher ticket (the --ticket argument the Lith launcher hands the client). When set, the GMS2 form is the recorded official-client login.</summary>
+    public string Ticket { get; init; }
+    /// <summary>GMS2 recorded form: the i64 after the command byte (0 when unknown).</summary>
+    public long AccountId { get; init; }
+    /// <summary>GMS2 recorded form: the client's local IPv4 as 4 raw bytes in network order (null writes zeros).</summary>
+    public byte[] LocalIp { get; init; }
+    /// <summary>GMS2 recorded form: the per-login i32 before the language.</summary>
+    public int Nonce { get; init; }
+    /// <summary>GMS2 recorded form: the trailing byte (1 in the older recordings, 2 in the newer series; meaning unknown; the default is the newer 2).</summary>
+    public byte Trailer { get; init; } = 2;
+
+    /// <summary>
+    /// GMS2 without a ticket (upstream LoginHandler.cs:28-34): u8 command, unicode user, unicode password, i16, 16 byte machine id.
+    /// GMS2 with a ticket (the 62 byte login recorded from the official client): u8 command, i64, ascii token (u16 len), i16, i32 local ipv4,
+    /// 16 byte machine id, i32 0, i32 nonce, ascii "EN" (u16 len), u8 trailer.
+    /// </summary>
     public void Write(ByteWriter w, ProtocolProfile profile) {
         if (!profile.IsGms2) { Write(w); return; }
         if (MachineId.Length != 16) throw new ArgumentException("machine id must be 16 bytes");
-        w.WriteByte(Type); w.WriteUnicodeString(User); w.WriteUnicodeString(Password); w.WriteShort(LoginType); w.WriteBytes(MachineId);
+        if (Ticket == null) { w.WriteByte(Type); w.WriteUnicodeString(User); w.WriteUnicodeString(Password); w.WriteShort(LoginType); w.WriteBytes(MachineId); return; }
+        w.WriteByte(Type); w.WriteLong(AccountId); WriteAscii(w, Ticket); w.WriteShort(LoginType); WriteIp(w, LocalIp);
+        w.WriteBytes(MachineId); w.WriteInt(0); w.WriteInt(Nonce); WriteAscii(w, Language ?? "EN"); w.WriteByte(Trailer);
     }
+    static void WriteIp(ByteWriter w, byte[] ip) {
+        if (ip != null && ip.Length != 4) throw new ArgumentException("local ip must be 4 bytes");
+        w.WriteBytes(ip ?? new byte[4]);
+    }
+    static void WriteAscii(ByteWriter w, string s) {
+        if (s.Length > short.MaxValue) throw new ArgumentException("ascii string too long");
+        foreach (char c in s) if (c > 0x7F) throw new ArgumentException("string must be ASCII");
+        w.WriteShort((short) s.Length); w.WriteBytes(System.Text.Encoding.ASCII.GetBytes(s));
+    }
+    static string ReadAscii(ByteReader r) => System.Text.Encoding.ASCII.GetString(r.ReadBytes(r.ReadUShort()));
     public static ResponseLogin Read(ByteReader r, ProtocolProfile profile) {
         if (!profile.IsGms2) return Read(r);
         var p = new ResponseLogin(r.ReadByte(), r.ReadUnicodeString(), r.ReadUnicodeString(), r.ReadShort(), r.ReadBytes(16), 0, 0, null);
         r.ExpectEnd("ResponseLogin"); return p;
+    }
+    /// <summary>Reads the recorded ticket form (what Write emits for GMS2 when Ticket is set).</summary>
+    public static ResponseLogin ReadRecorded(ByteReader r) {
+        byte type = r.ReadByte(); long acc = r.ReadLong(); string tok = ReadAscii(r); short lt = r.ReadShort(); var ip = r.ReadBytes(4); var id = r.ReadBytes(16);
+        r.ReadInt(); int nonce = r.ReadInt(); string lang = ReadAscii(r); byte tr = r.ReadByte();
+        r.ExpectEnd("ResponseLogin");
+        return new ResponseLogin(type, null, null, lt, id, 0, 0, lang) { Ticket = tok, AccountId = acc, LocalIp = ip, Nonce = nonce, Trailer = tr };
     }
     public void Write(ByteWriter w) {
         w.WriteByte(Type); w.WriteUnicodeString(User); w.WriteUnicodeString(Password); w.WriteShort(LoginType);

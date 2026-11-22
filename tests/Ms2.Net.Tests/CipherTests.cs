@@ -13,19 +13,25 @@ public sealed class FakeServer {
     public readonly byte[] HelloFrame;
     public const uint Version = 2525, Block = 23;
 
-    public FakeServer(uint siv, uint riv) {
-        Send = new MapleCipher.Encryptor(Version, siv, Block);
-        Recv = new MapleCipher.Decryptor(Version, riv, Block);
+    readonly ProtocolProfile profile;
+    /// <param name="gms2">the hello says version 12 and the frames use the GMS2 opcode numbers</param>
+    public FakeServer(uint siv, uint riv, bool gms2 = false) {
+        uint ver = gms2 ? 12u : Version;
+        profile = gms2 ? ProtocolProfile.Gms2 : ProtocolProfile.Kms2525;
+        Send = new MapleCipher.Encryptor(ver, siv, Block);
+        Recv = new MapleCipher.Decryptor(ver, riv, Block);
         var w = new ByteWriter();
-        w.WriteShort((short) Inbound.RequestVersion);
-        w.WriteInt((int) Version); w.WriteInt((int) riv); w.WriteInt((int) siv); w.WriteInt((int) Block); w.WriteByte(2);
+        w.WriteShort((short) profile.Number(Inbound.RequestVersion));
+        w.WriteInt((int) ver); w.WriteInt((int) riv); w.WriteInt((int) siv); w.WriteInt((int) Block); w.WriteByte(2);
         var f = Send.WriteHeader(w.Buffer, 0, w.Length); // plain, and it advances the send iv like the real server
         HelloFrame = f.Buffer.AsSpan(0, f.Length).ToArray();
     }
 
+    short NumberOf(Inbound op) { try { return (short) profile.Number(op); } catch (KeyNotFoundException) { return (short) op; } }   // an opcode the profile does not list goes out raw
+
     public byte[] Frame(Inbound op, Action<ByteWriter> body = null) {
         var w = new ByteWriter();
-        w.WriteShort((short) op);
+        w.WriteShort(NumberOf(op));
         body?.Invoke(w);
         var e = Send.Encrypt(w);
         return e.Buffer.AsSpan(0, e.Length).ToArray();

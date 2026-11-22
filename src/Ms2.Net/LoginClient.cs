@@ -67,12 +67,30 @@ public sealed class LoginClient {
     }
 
     readonly TcpTransport transport;
+    /// <summary>GMS2: the launcher ticket (--ticket) sent in the login token field; null keeps the upstream user/password form.</summary>
+    public string Ticket { get; init; }
+    /// <summary>GMS2 with a ticket: the file that keeps the machine id; read after the connect (the profile is known then), never touched for KMS.</summary>
+    public string MachineIdPath { get; init; }
     public LoginClient(TcpTransport transport) { this.transport = transport; }
 
     /// <summary>Connects (when not yet connected) and logs in. <paramref name="user"/> is sent as given: the real client appends the region code ("KR") itself.</summary>
     public async Task<LoginOutcome> LoginAsync(string host, int port, string user, string password, byte[] machineId = null, CancellationToken ct = default) {
         if (transport.Session == null) await transport.ConnectAsync(host, port, ct);
-        return await RunAsync(user, password, machineId ?? new byte[16], ct);
+        machineId ??= new byte[16];
+        if (Ticket != null && MachineIdPath != null && transport.Profile.IsGms2 && machineId.Length == 16) MachineIdFile.LoadOrCreate(MachineIdPath, machineId);
+        return await RunAsync(user, password, machineId, ct);
+    }
+
+    /// <summary>
+    /// The login packet. KMS (or GMS2 without a ticket): the upstream/KMS form, language "en", login type 0. GMS2 with a ticket: the recorded form, where the login
+    /// type follows the command as in all 14 recorded logins (command 2 carries 1, command 1 carries 0), the language is "EN", the local IPv4 is the connected
+    /// socket's, the nonce is random per login and the trailer is 2 (the newer recorded series).
+    /// </summary>
+    ResponseLogin BuildLogin(string user, string password, byte[] machineId) {
+        if (Ticket == null || !transport.Profile.IsGms2) return new ResponseLogin(CharacterListType, user, password, 0, machineId, 0, 0, "en");
+        return new ResponseLogin(CharacterListType, user, password, (short) (CharacterListType == 2 ? 1 : 0), machineId, 0, 0, "EN") {
+            Ticket = Ticket, AccountId = 0, LocalIp = transport.LocalIPv4, Nonce = System.Security.Cryptography.RandomNumberGenerator.GetInt32(int.MinValue, int.MaxValue), Trailer = 2,
+        };
     }
 
     public async Task<LoginOutcome> RunAsync(string user, string password, byte[] machineId, CancellationToken ct = default, int timeoutMs = 15000) {
@@ -91,7 +109,7 @@ public sealed class LoginClient {
             }
             if (transport.OpOf(p) is Inbound lop) switch (lop) {
                 case Inbound.RequestLogin:
-                    await transport.SendAsync(new ResponseLogin(CharacterListType, user, password, 0, machineId, 0, 0, "en"), ct);
+                    await transport.SendAsync(BuildLogin(user, password, machineId), ct);
                     break;
                 case Inbound.LoginResult:
                     result = LoginResult.Read(p.Reader());

@@ -49,6 +49,10 @@ public sealed class TcpTransport : IDisposable {
     public Inbound? OpOf(RawPacket p) => Profile.TryInbound(p.Opcode, out var op) ? op : null;
     public bool Is(RawPacket p, Inbound op) => Profile.Is(p.Opcode, op);
 
+    /// <summary>The connected socket's local IPv4 as 4 bytes in network order; null when not connected or not IPv4.</summary>
+    public byte[] LocalIPv4 => (tcp.Client?.LocalEndPoint as System.Net.IPEndPoint)?.Address is { } a && a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork ? a.GetAddressBytes()
+        : (tcp.Client?.LocalEndPoint as System.Net.IPEndPoint)?.Address is { IsIPv4MappedToIPv6: true } m ? m.MapToIPv4().GetAddressBytes() : null;
+
     public ClientSession Session => session;
     public MapleChannel Channel => session?.Channel;
 

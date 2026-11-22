@@ -30,6 +30,57 @@ public class LoginClientTests {
         w.WriteByte(state); w.WriteInt(0); w.WriteUnicodeString(state == 0 ? "" : "bad"); w.WriteLong(42); w.WriteLong(0); w.WriteInt(0); w.WriteByte(0); w.WriteByte(0);
     });
 
+    // GMS2 hello (version 12): the ticket form carries "EN", the login type that goes with command 2 (1), the socket's local address and a non-zero nonce
+    [Test] public async Task LoginClientSendsTheRecordedTicketLoginOnGms2() {
+        var l = new TcpListener(IPAddress.Loopback, 0); l.Start();
+        var srv = new FakeServer(0x01020304, 0x0A0B0C0D, gms2: true);
+        var accept = l.AcceptTcpClientAsync();
+        var t = new TcpTransport();
+        var id = Enumerable.Range(1, 16).Select(i => (byte) i).ToArray();
+        var login = new LoginClient(t) { Ticket = "MST_0123456789ab" }.LoginAsync("127.0.0.1", ((IPEndPoint) l.LocalEndpoint).Port, "userKR", "pw", id);
+        var s = (await accept).GetStream();
+        await s.WriteAsync(srv.HelloFrame);
+        using (t) {
+            await ReadFrame(s, srv);   // ResponseVersion
+            await s.WriteAsync(srv.Frame(Inbound.RequestLogin));
+            var (op, body) = await ReadFrame(s, srv);
+            Assert.That(op, Is.EqualTo((ushort) ProtocolProfile.Gms2.Number(Outbound.ResponseLogin)));
+            Assert.That(body.Length, Is.EqualTo(62));
+            var r = ResponseLogin.ReadRecorded(new ByteReader(body));
+            Assert.That(r.Language, Is.EqualTo("EN"));
+            Assert.That(r.Type, Is.EqualTo(2));
+            Assert.That(r.LoginType, Is.EqualTo(1));
+            Assert.That(r.Ticket, Is.EqualTo("MST_0123456789ab"));
+            Assert.That(r.LocalIp, Is.EqualTo(new byte[] { 127, 0, 0, 1 }));
+            Assert.That(r.MachineId, Is.EqualTo(id));
+            Assert.That(r.Nonce, Is.Not.EqualTo(0));
+            await s.WriteAsync(LoginResultFrame(srv, 1));
+            Assert.That((await login).Success, Is.False);
+            l.Stop();
+        }
+    }
+
+    // a ticket on a KMS hello leaves the KMS login as it was: unicode id and password, language "en"
+    [Test] public async Task LoginClientIgnoresTheTicketOnKms() {
+        var l = new TcpListener(IPAddress.Loopback, 0); l.Start();
+        var srv = new FakeServer(0x01020304, 0x0A0B0C0D);
+        var accept = l.AcceptTcpClientAsync();
+        var t = new TcpTransport();
+        var login = new LoginClient(t) { Ticket = "MST_0123456789ab" }.LoginAsync("127.0.0.1", ((IPEndPoint) l.LocalEndpoint).Port, "userKR", "pw");
+        var s = (await accept).GetStream();
+        await s.WriteAsync(srv.HelloFrame);
+        using (t) {
+            await ReadFrame(s, srv);
+            await s.WriteAsync(srv.Frame(Inbound.RequestLogin));
+            var (_, body) = await ReadFrame(s, srv);
+            var r = ResponseLogin.Read(new ByteReader(body));
+            Assert.That((r.User, r.Password, r.LoginType, r.Language), Is.EqualTo(("userKR", "pw", (short) 0, "en")));
+            await s.WriteAsync(LoginResultFrame(srv, 1));
+            Assert.That((await login).Success, Is.False);
+            l.Stop();
+        }
+    }
+
     [Test] public async Task LoginClientSendsAnEmptyIdAsTyped() {
         var (s, l, srv, t, login) = await Start("");
         using (t) {
@@ -87,15 +138,15 @@ public class LoginClientTests {
         l.Stop();
     }
 
-    /// <summary>Opt-in: MS2_LIVE_LOGIN=host:port and MS2_LIVE_ACCOUNT=user:password (user without the region code; "KR" is appended like the client does).
+    /// <summary>Opt-in: MS2_LIVE_ARGS="--ip=host --port=n" (the launcher's arguments; a test run has no command line of its own) and MS2_LIVE_ACCOUNT=user:password (user without the region code; "KR" is appended like the client does).
     /// Optional MS2_LIVE_EXPECT=name1,name2 lists the character names the server's game db holds for the account.</summary>
     [Test] public async Task LiveServerCharacterList() {
-        var addr = Environment.GetEnvironmentVariable("MS2_LIVE_LOGIN"); var acct = Environment.GetEnvironmentVariable("MS2_LIVE_ACCOUNT");
-        if (string.IsNullOrEmpty(addr) || string.IsNullOrEmpty(acct)) Assert.Ignore("MS2_LIVE_LOGIN / MS2_LIVE_ACCOUNT not set");
-        var hp = addr.Split(':'); var up = acct.Split(':', 2);
-        Assert.That(int.Parse(hp[1]), Is.Not.EqualTo(20001), "never the shared server");
+        var addr = LauncherArgs.Parse((Environment.GetEnvironmentVariable("MS2_LIVE_ARGS") ?? "").Split(' ', StringSplitOptions.RemoveEmptyEntries)); var acct = Environment.GetEnvironmentVariable("MS2_LIVE_ACCOUNT");
+        if (!addr.HasAddress || string.IsNullOrEmpty(acct)) Assert.Ignore("MS2_LIVE_ARGS / MS2_LIVE_ACCOUNT not set");
+        var up = acct.Split(':', 2);
+        Assert.That(addr.Port, Is.Not.EqualTo(20001), "never the shared server");
         using var t = new TcpTransport();
-        var o = await new LoginClient(t).LoginAsync(hp[0], int.Parse(hp[1]), up[0] + "KR", up[1]);
+        var o = await new LoginClient(t).LoginAsync(addr.Host, addr.Port, up[0] + "KR", up[1]);
         Assert.That(o.Success, Is.True, o.Result.Message);
         TestContext.Out.WriteLine($"account {o.Result.AccountId}: " + string.Join(", ", o.Characters.Select(c => $"{c.User.CharacterId}:{c.User.Name}")));
         var expect = Environment.GetEnvironmentVariable("MS2_LIVE_EXPECT");

@@ -1,3 +1,4 @@
+using Ms2.Net;
 using Ms2.Ui.Launch;
 using NUnit.Framework;
 
@@ -48,13 +49,17 @@ public class LaunchRouteTests
     }
 
     [Test]
-    public void TheEnvironmentRouteNeedsTheAddressAndTheAccount()
+    public void TheCommandLineAddressNeedsATicketOrTheAccount()
     {
-        Assert.That(LaunchRoute.EnvironmentLive("192.0.2.1:6553", "id:pw"), Is.EqualTo("192.0.2.1:6553"));
-        Assert.That(LaunchRoute.EnvironmentLive("192.0.2.1:6553", null), Is.Null);
-        Assert.That(LaunchRoute.EnvironmentLive(null, "id:pw"), Is.Null);
-        // an address alone leaves the launcher in place
-        Assert.That(LaunchRoute.Decide(LaunchRoute.FlowScene, LaunchRoute.EnvironmentLive("192.0.2.1:6553", null), false, null).Mode,
-            Is.EqualTo(LaunchMode.Launcher));
+        var withTicket = LauncherArgs.Parse(new[] { "1234", "--ticket=t", "--ip=192.0.2.1", "--port=6553" });
+        var alone = LauncherArgs.Parse(new[] { "--ip=192.0.2.1", "--port=6553" });
+        Assert.That(LaunchRoute.LiveAddress(withTicket, null), Is.EqualTo("192.0.2.1:6553"));
+        Assert.That(LaunchRoute.LiveAddress(alone, "id:pw"), Is.EqualTo("192.0.2.1:6553"));
+        Assert.That(LaunchRoute.LiveAddress(alone, null), Is.Null);
+        Assert.That(LaunchRoute.LiveAddress(LauncherArgs.Parse(new[] { "--ticket=t", "--ip=h" }), "id:pw"), Is.Null);   // no port
+        Assert.That(LaunchRoute.LiveAddress(LauncherArgs.Parse(null), "id:pw"), Is.Null);
+        // an address alone leaves the launcher in place; with the ticket the page is skipped
+        Assert.That(LaunchRoute.Decide(LaunchRoute.FlowScene, LaunchRoute.LiveAddress(alone, null), false, null).Mode, Is.EqualTo(LaunchMode.Launcher));
+        Assert.That(LaunchRoute.Decide(LaunchRoute.FlowScene, LaunchRoute.LiveAddress(withTicket, null), false, null).Mode, Is.EqualTo(LaunchMode.Live));
     }
 }
