@@ -9,7 +9,12 @@ static class Gms2Sniffs {
     public static List<(string File, byte[] Data)> Inbound(string set, ushort opcode) {
         string root = Environment.GetEnvironmentVariable("MS2_SNIFFS");
         if (string.IsNullOrEmpty(root)) Assert.Ignore("MS2_SNIFFS needed");
-        string dir = Directory.Exists(Path.Combine(root, set + "-sniffs")) ? Path.Combine(root, set + "-sniffs") : root;
+        // MS2_SNIFFS is the folder that holds the <set>-sniffs folders. A root that holds the recordings directly is taken as the KMS2 set only: the GMS2 tests must never read KMS2 files.
+        string dir = Path.Combine(root, set + "-sniffs");
+        if (!Directory.Exists(dir)) {
+            if (set != "kms2" || !Directory.GetFiles(root, "*.msb").Any()) Assert.Ignore($"MS2_SNIFFS has no {set}-sniffs folder");
+            dir = root;
+        }
         var list = new List<(string, byte[])>();
         foreach (var path in Directory.GetFiles(dir, "*.msb")) {
             var f = MsbFile.Read(path);
