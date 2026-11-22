@@ -462,8 +462,9 @@ public sealed partial class ItemTooltip
     /// <summary>
     /// ASTooltip::FUN_1409d2cb0 (astooltip.cpp:2499), "customizeColor": with the local player, a customizable item's dye
     /// hint (s_msg_tooltip_customize_color, 0x9b7). With flag 4 and no default color the client first checks the
-    /// player's equipment for the item (unequipped: s_msg_tooltip_customize_buy_random_color, 0x9b8, above it); that
-    /// lookup is not ported, so the member is left out there. Returns whether the member was set.
+    /// player's equipment for the item (PC::GetEquipByUid, <see cref="OwnerWearsUid"/>): an item it does not wear puts
+    /// 0x9b8 (s_msg_tooltip_customize_buy_random_color) and a new line above it. Without that lookup the member is left
+    /// out there. Returns whether the member was set.
     /// </summary>
     public bool SetCustomizeColor(Item item)
     {
@@ -471,8 +472,13 @@ public sealed partial class ItemTooltip
         var d = item.Data;
         if (!IsCustomizable(d)) return false;
         bool defaultColor = Tables.ItemModels.Get(d.ItemPreset).DefaultColor(0) >= 0;   // CItemData::FUN_14053e2b0(0)
-        if ((Flags & 4) != 0 && !defaultColor) return false;
-        Data["customizeColor"] = Common("s_msg_tooltip_customize_color");
+        string text = Tables.Common(0x9b7);
+        if ((Flags & 4) != 0 && !defaultColor)
+        {
+            if (OwnerWearsUid == null) return false;
+            if (!OwnerWearsUid(item.Record?.Uid ?? 0)) text = Tables.Common(0x9b8) + "\n" + text;
+        }
+        Data["customizeColor"] = text;
         return true;
     }
 

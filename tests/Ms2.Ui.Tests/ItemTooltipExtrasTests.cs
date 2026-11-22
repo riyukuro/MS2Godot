@@ -240,6 +240,30 @@ public class ItemTooltipExtrasTests
     }
 
     [Test]
+    public void DyeLineWithFlag4AddsTheUnwornLine()
+    {
+        var m = NewModel();
+        m.HasLocalPlayer = true;
+        int id = FirstItem(m, d => d.ItemPreset != 0 && m.Tables.ItemModels.Get(d.ItemPreset) is { ColorEnabled: true, Palette: not 0, MultiColor: false } gm
+            && gm.DefaultColor(0) < 0);
+        if (id == 0) Assert.Ignore("no customizable item without a default colour");
+        var r = new EquipItem { Id = id, Uid = 11, Rarity = 1, Amount = 1 };
+        var item = Ms2.Ui.Hud.InventoryController.ToItem(r, m.Tables.Items);
+        string dye = m.Tables.Common(0x9b7);
+        // without the equipment lookup the member is left out
+        var none = new ItemTooltip(m, 4);
+        Assert.That(none.SetCustomizeColor(item), Is.False);
+        var unworn = new ItemTooltip(m, 4) { OwnerWearsUid = _ => false };
+        Assert.That(unworn.SetCustomizeColor(item), Is.True);
+        TestContext.WriteLine($"{id}: {unworn.Data["customizeColor"]}");
+        Assert.That(unworn.Data["customizeColor"], Is.EqualTo(m.Tables.Common(0x9b8) + "\n" + dye));
+        var worn = new ItemTooltip(m, 4) { OwnerWearsUid = uid => uid == 11 };
+        Assert.That(worn.SetCustomizeColor(item), Is.True);
+        Assert.That(worn.Data["customizeColor"], Is.EqualTo(dye));
+        Assert.That(m.Tables.Common(0x9b8), Is.Not.Empty);
+    }
+
+    [Test]
     public void RepackLineCountsWhatIsLeft()
     {
         var m = NewModel();
