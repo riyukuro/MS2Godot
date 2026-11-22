@@ -243,6 +243,7 @@ public sealed class SkillDamageTable
     }
 
     readonly Func<IEnumerable<TextReader>> files;
+    readonly Func<int, TextReader> whole;
     readonly Func<List<LevelRow>, IEnumerable<LevelRow>> pick;
     /// <summary>The read: every skill id with its highest level kept (0 for none), and each kept level's motions by
     /// <see cref="Key"/>; one map for all the skills' levels, not one per skill.</summary>
@@ -262,10 +263,14 @@ public sealed class SkillDamageTable
     /// <param name="files">The skilldata files' text, in load order (each reader is disposed when read; null for a missing
     /// file).</param>
     /// <param name="pick">FUN_14028faa0 over a skill's &lt;level&gt; rows, in the elements' order.</param>
-    public SkillDamageTable(Func<IEnumerable<TextReader>> files, Func<List<LevelRow>, IEnumerable<LevelRow>> pick)
+    /// <param name="whole">The i-th file's text by the whole-entry read, for a file whose streamed read failed (the pack
+    /// read that falls back to the package's reader); null for none.</param>
+    public SkillDamageTable(Func<IEnumerable<TextReader>> files, Func<List<LevelRow>, IEnumerable<LevelRow>> pick,
+        Func<int, TextReader> whole = null)
     {
         this.files = files;
         this.pick = pick;
+        this.whole = whole;
     }
 
     /// <summary>Reads the files now (on the calling thread), so the first <see cref="Get"/> finds them read; the field entry
@@ -285,26 +290,47 @@ public sealed class SkillDamageTable
         lock (loadLock)
         {
             if (skills != null) return skills;
-            var d = new Loaded();
-            // one name table for the read's files: each file's reader atomizes the same element and attribute names
-            var settings = Settings.Clone();
-            settings.NameTable = new NameTable();
-            var values = new AttributeValues(settings.NameTable);
-            var shared = new SkillAttackDamage.Shared();
-            var rows = new List<LevelRow>();
-            var motions = new List<SkillAttackDamage[]>();
-            var attacks = new List<SkillAttackDamage>();
-            foreach (var text in files())
+            // a file whose read throws is read again by the whole-entry route, from the start (the read so far holds part of
+            // it); when that fails too the table stays empty, stored, so no later hit reads the files again on the frame
+            var retry = new HashSet<int>();
+            Loaded d;
+            for (;;)
             {
-                if (text == null) continue;
-                using var r = XmlReader.Create(text, settings);
-                if (r.MoveToContent() != XmlNodeType.Element || !Is(r, "ms2") || r.IsEmptyElement) continue;
-                while (Child(r, 0))
-                    if (Is(r, "skill")) Levels(r, values, shared, d, SkillId(r, values), rows, motions, attacks);
+                int at = -1;
+                try { d = Read(retry, ref at); break; }
+                catch (Exception) when (whole != null && at >= 0 && retry.Add(at)) { }
+                catch (Exception) { d = new Loaded(); break; }
             }
             System.Threading.Volatile.Write(ref skills, d);
             return d;
         }
+    }
+
+    /// <summary>One read of every file, the files in <paramref name="retry"/> by the whole-entry route;
+    /// <paramref name="at"/> is the file being read when it throws.</summary>
+    Loaded Read(HashSet<int> retry, ref int at)
+    {
+        var d = new Loaded();
+        // one name table for the read's files: each file's reader atomizes the same element and attribute names
+        var settings = Settings.Clone();
+        settings.NameTable = new NameTable();
+        var values = new AttributeValues(settings.NameTable);
+        var shared = new SkillAttackDamage.Shared();
+        var rows = new List<LevelRow>();
+        var motions = new List<SkillAttackDamage[]>();
+        var attacks = new List<SkillAttackDamage>();
+        foreach (var streamed in files())
+        {
+            at++;
+            var text = streamed;
+            if (retry.Contains(at)) { streamed?.Dispose(); text = whole(at); }
+            if (text == null) continue;
+            using var r = XmlReader.Create(text, settings);
+            if (r.MoveToContent() != XmlNodeType.Element || !Is(r, "ms2") || r.IsEmptyElement) continue;
+            while (Child(r, 0))
+                if (Is(r, "skill")) Levels(r, values, shared, d, SkillId(r, values), rows, motions, attacks);
+        }
+        return d;
     }
 
     /// <summary>The skill's "id" (0 when missing), the reader left on the element.</summary>

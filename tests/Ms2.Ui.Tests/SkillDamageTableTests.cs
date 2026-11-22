@@ -35,6 +35,50 @@ public class SkillDamageTableTests
         Assert.That((reader.Result, reads), Is.EqualTo((7L, 1)));
     }
 
+    /// <summary>A text reader that gives <paramref name="prefix"/> and then throws, as the pack's streamed inflate does at the end
+    /// of an entry whose size does not match.</summary>
+    sealed class FailingReader(string prefix) : TextReader
+    {
+        int at;
+        public override int Peek() => at < prefix.Length ? prefix[at] : throw new InvalidDataException("size");
+        public override int Read() => at < prefix.Length ? prefix[at++] : throw new InvalidDataException("size");
+        public override int Read(char[] buffer, int index, int count)
+        {
+            if (at >= prefix.Length) throw new InvalidDataException("size");
+            int n = Math.Min(count, prefix.Length - at);
+            prefix.CopyTo(at, buffer, index, n);
+            at += n;
+            return n;
+        }
+    }
+
+    const string Skill5 = @"<ms2><skill id=""5""><basic/><level value=""1""><motion><attack><damage value=""7""/></attack></motion></level></skill></ms2>";
+    const string Skill6 = @"<ms2><skill id=""6""><basic/><level value=""1""><motion><attack><damage value=""9""/></attack></motion></level></skill></ms2>";
+
+    [Test]
+    public void AFileWhoseStreamedReadFailsIsReadWhole()
+    {
+        // the pack's whole-entry read falls back to the package's reader where the streamed one throws; the table reads that
+        // file again that way, and the files before it are not read twice into the result
+        int wholeReads = 0;
+        var t = new SkillDamageTable(() => new TextReader[] { new StringReader(Skill5), new FailingReader(Skill6[..60]) }, rows => rows,
+            i => { wholeReads++; return i == 1 ? new StringReader(Skill6) : null; });
+        Assert.That((t.Get(5, 1, 0, 0)?.Value, t.Get(6, 1, 0, 0)?.Value, wholeReads), Is.EqualTo(((long?)7, (long?)9, 1)));
+    }
+
+    [Test]
+    public void AReadThatFailsBothWaysIsStoredEmpty()
+    {
+        // the worker load swallows the error; the hits after it must not read every file again on the frame
+        int reads = 0;
+        var t = new SkillDamageTable(() => { reads++; return new TextReader[] { new FailingReader(Skill5[..60]) }; }, rows => rows,
+            _ => new FailingReader(Skill5[..30]));
+        Assert.DoesNotThrow(() => t.Load());
+        int afterLoad = reads;
+        Assert.That((t.Get(5, 1, 0, 0), t.Get(5, 1, 0, 0), t.HasLevel(5, 1)), Is.EqualTo(((SkillAttackDamage)null, (SkillAttackDamage)null, false)));
+        Assert.That(reads, Is.EqualTo(afterLoad), "no read after the failed one");
+    }
+
     [Test]
     public void AMissingAttributeKeepsTheCtorValue()
     {

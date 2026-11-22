@@ -810,7 +810,8 @@ public sealed class GameTables
     public Ms2.Ui.Skills.SkillDamageTable SkillDamage => System.Threading.LazyInitializer.EnsureInitialized(ref skillDamage, ref skillDamageLock,
         () => packs == null ? Ms2.Ui.Skills.SkillDamageTable.Empty
             : new Ms2.Ui.Skills.SkillDamageTable(() => SkillFiles(packs).Select(XmlText),
-                rows => FeatureElements.Collect(packs, rows, r => r.Value, r => r.Feature, r => r.Locale)));
+                rows => FeatureElements.Collect(packs, rows, r => r.Value, r => r.Feature, r => r.Locale),
+                i => Ms2.Formats.Text.PackXml.Reader(new MemoryStream(packs.Read("Xml", SkillFiles(packs)[i]), false))));
     /// <summary>Reads <see cref="SkillDamage"/> on a worker thread while the field builds, so the first hit's damage event
     /// (a skill damage with mode 1 reads the attack's damage) does not read every skilldata file on the frame.</summary>
     public System.Threading.Tasks.Task PrefetchSkillDamage() => System.Threading.Tasks.Task.Run(() => { try { SkillDamage.Load(); } catch { } });
