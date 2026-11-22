@@ -3309,6 +3309,7 @@ public partial class HudScene : Node, IUiStageHost
             else GD.Print($"inventory: dialog 0x{id:x} is not in this HUD");
         };
         c.Button += name => GD.Print($"inventory: {name} is not sent (display only)");
+        c.Diag += text => GD.Print($"inventory: {text}");
         c.SystemNotice += SystemNotice;
         // the trade path (InvenSlot::TryAddToTrade): the open trade dialog heads the right-click dialogs (DAT_143af2258)
         c.Trade = () => TradeOpen ? trade.Book : null;

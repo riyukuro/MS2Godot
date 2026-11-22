@@ -37,6 +37,32 @@ public partial class HudScene
         return true;
     }
 
+    /// <summary>The click on the bag cell of item <paramref name="itemId"/> as the movie raises it: notifySlotUse(slot, button), button 0 the
+    /// double click, 1 the right click. Opens the inventory (and leaves it open). False without the item or the inventory.</summary>
+    public bool SlotClickScripted(int itemId, int button)
+    {
+        if (inventory == null || inventory.IsClosed) OpenInventory();
+        if (inventory?.SlotNameOfItem(itemId) is not { } name) return false;
+        return inventory.OnCallback("notifySlotUse", new object[] { name, button });
+    }
+
+    /// <summary>The saved tutorial step (save id 110) set as the server's guide record would: the events up to it are cleared, the next start.</summary>
+    public bool GuideStepScripted(int step)
+    {
+        if (Ms2.Ui.Guide.GuideManager.Current is not { } g) return false;
+        g.ReceiveStates(new Ms2.Net.Packets.GuideRecordIn(new[] { (110, step) }, 0));
+        return true;
+    }
+
+    /// <summary>Opens the inventory (the guide's InventoryDialog occurrence) when it is shut; the character window through the same menu route.</summary>
+    public bool OpenInventoryScripted() { if (inventory == null || inventory.IsClosed) OpenInventory(); return inventory is { IsClosed: false }; }
+
+    /// <summary>Opens the character window through the menu's route (OpenMyInfo); whether it is up afterwards.</summary>
+    public bool OpenCharScripted() { OpenMyInfo(); return myInfoMovie != null; }
+
+    /// <summary>The guide's running events and held limits, for the log.</summary>
+    public string GuideStateText() => Ms2.Ui.Guide.GuideManager.Current?.DescribeState() ?? "no guide manager";
+
     /// <summary>The worn item <paramref name="itemId"/> taken off: the inventory view's unequip request, as the character window's
     /// take-off sends it. False when it is not worn.</summary>
     public bool UnequipScripted(int itemId)

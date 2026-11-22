@@ -73,6 +73,18 @@ public sealed class GuideManager
     /// client's controllers reach it through this (every client call site tests the pointer first).</summary>
     public static GuideManager Current { get; set; }
 
+    /// <summary>The events with a state other than 0, the limits held and the dialogs held shut: one log line.</summary>
+    public string DescribeState()
+    {
+        var sb = new System.Text.StringBuilder("guide events");
+        foreach (var e in entities.Values) if (e.State != 0) sb.Append($" {e.Id}:state{e.State}");
+        sb.Append("; limits");
+        for (int i = 0; i < limitCounts.Length; i++) if (limitCounts[i] > 0) sb.Append($" {(GuideLimit)i}x{limitCounts[i]}");
+        sb.Append("; dialog limits");
+        foreach (var kv in dialogLimits) if (kv.Value > 0) sb.Append($" {kv.Key}x{kv.Value}");
+        return sb.ToString();
+    }
+
     /// <summary>The events in id order.</summary>
     public IEnumerable<GuideEntity> Entities => entities.Values;
     public int EntityCount => entities.Count;

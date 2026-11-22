@@ -482,16 +482,28 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     /// the preview (vfunc_16, not ported: raised), else <see cref="RightClick"/>. Other names are raised (notifySlotUse). The
     /// client guards neither against a repeat: each call goes through.
     /// </summary>
+    public event Action<string> Diag;
+
+    /// <summary>The slot name of the shown bag's cell that holds item <paramref name="itemId"/>, null when none does.</summary>
+    public string SlotNameOfItem(int itemId)
+    {
+        if (View == null) return null;
+        for (int i = 0; i < slotCount; i++)
+            if (View.ItemAt(View.Tab, i) is { } e && e.Id == itemId) return SlotName(i);
+        return null;
+    }
+
     bool SlotUse(object[] args)
     {
         int i = args.Length > 0 ? SlotIndexOf(args[0]) : -1;
         int button = args.Length > 1 ? ArgInt(args[1]) : 0;
+        Diag?.Invoke($"slot use: slot {(args.Length > 0 ? args[0] : "-")} index {i} button {button} dialog head {DialogHead()} preview key {ActionKeyDown(0x49406)}");
         if (i >= 0 && button == 0)
         {
             if (!ShiftHeld()) DoubleClick(i);
             return true;
         }
-        if (i < 0 || button != 1 || ActionKeyDown(0x49406)) { Button?.Invoke("notifySlotUse"); return true; }
+        if (i < 0 || button != 1 || ActionKeyDown(0x49406)) { Diag?.Invoke($"slot use raised: index {i} button {button}"); Button?.Invoke("notifySlotUse"); return true; }
         RightClick(i);
         return true;
     }
@@ -510,6 +522,7 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         if (item == null) return;
         View.ClearNew(e.Uid);
         int mode = UseMode(item, false);
+        Diag?.Invoke($"right click: item {item.Data.Id} type {item.Data.Type} use mode {mode}");
         if (mode == 1) { TryAddToTrade(item); return; }
         if (mode == 2) { TrySellItem(item); return; }
         if (mode == 3 && BankDeposit != null) { BankDeposit(item); return; }

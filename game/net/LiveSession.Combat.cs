@@ -325,6 +325,46 @@ public partial class LiveSession
                     Shot("equipped.png");
                     break;
                 }
+                case "guidestep":     // MS2_LIVE_GUIDE_STEP: the saved tutorial step, then 6 s of guide ticks
+                {
+                    GD.Print($"live: combat guide step: {(hud.GuideStepScripted(int.Parse(Env("MS2_LIVE_GUIDE_STEP", "55"))) ? "set" : "no guide")}");
+                    await frames(60 * 8);
+                    GD.Print($"live: combat guide state: {hud.GuideStateText()}");
+                    break;
+                }
+                case "openchar":
+                {
+                    GD.Print($"live: combat char window: {(hud.OpenCharScripted() ? "open" : "refused")}");
+                    await frames(60 * 4);
+                    GD.Print($"live: combat guide state: {hud.GuideStateText()}");
+                    break;
+                }
+                case "openbag":
+                {
+                    GD.Print($"live: combat bag: {(hud.OpenInventoryScripted() ? "open" : "refused")}");
+                    await frames(60 * 4);
+                    GD.Print($"live: combat guide state: {hud.GuideStateText()}");
+                    break;
+                }
+                case "equipclick:right": case "equipclick:double":     // MS2_LIVE_COMBAT_STEP=equipclick:right|double — the real slot click on a fresh GM item
+                {
+                    int weapon = int.Parse(Env("MS2_LIVE_COMBAT_WEAPON", "0"));
+                    string arg = step[(step.IndexOf(':') + 1)..];
+                    int button = arg == "double" ? 0 : 1;
+                    if (!live.Items.All.Any(e => e.Id == weapon))
+                    {
+                        GD.Print($"live: combat weapon item: {(hud.SubmitChatLine($"/item {weapon}") ? "sent" : "no chat window")}");
+                        await until(() => live.Items.All.Any(e => e.Id == weapon), 60 * 10); await frames(60);
+                    }
+                    Check("the item is in the bag", live.Items.All.Any(e => e.Id == weapon));
+                    GD.Print($"live: combat guide state: {hud.GuideStateText()}");
+                    GD.Print($"live: combat slot click {arg}: {(hud.SlotClickScripted(weapon, button) ? "raised" : "no slot")}");
+                    await until(() => live.Me.Equips?.Any(e => e.Id == weapon) == true, 60 * 6); await frames(60);
+                    GD.Print($"live: combat guide state after: {hud.GuideStateText()}");
+                    Check("the item is worn after the click", live.Me.Equips?.Any(e => e.Id == weapon) == true);
+                    Shot("equipclick.png");
+                    break;
+                }
                 case "unequip":
                 {
                     int weapon = int.Parse(Env("MS2_LIVE_COMBAT_WEAPON", "0"));
