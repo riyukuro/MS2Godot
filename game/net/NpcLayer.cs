@@ -329,18 +329,26 @@ public sealed class NpcLayer
     }
 
     /// <summary>
-    /// CNpc::vfunc_33 (@0x141097c40, unit_14108e1e0_npcactorandvibrate.cpp:1840): a hit record on the npc. A total below 0
-    /// by the own player arms the npc's shake (<see cref="Ms2.Ui.Skills.NpcVibrate.OnHit"/>, :1869); <see cref="Process"/>
-    /// moves the body with it. True when it armed.
-    /// STILL-OPEN: the rest of vfunc_33 (PlayInvokeEffectsByEvent(1), the boss camera, FUN_141098fb0(1), the colour boost
-    /// AddColorBoost(damagedColorScale), MyPC::FUN_14152e240 for a boss, the hit sound, the knockback record, the hit basis
-    /// and the death at hp 0) is not ported here.
+    /// A hit record on the npc: CNpc::vfunc_33 for a cast's (<paramref name="cast"/>; @0x141097c40,
+    /// unit_14108e1e0_npcactorandvibrate.cpp:1840), vfunc_34 for a dot's (@0x141098390) and vfunc_35 for a splash's
+    /// (@0x141098940).
+    /// - A cast's total below 0 by the own player arms the npc's shake (<see cref="Ms2.Ui.Skills.NpcVibrate.OnHit"/>,
+    ///   :1869); <see cref="Process"/> moves the body with it. The dot and the splash do not shake.
+    /// - Then, all three: a living npc whose current hp stat is 0 (FUN_141670a00(4), PCBase m_unk_1c0[2][4], pcbase.cpp:1967)
+    ///   dies with its dead sound (vfunc_125(1), :1890-1892), whatever the hit's total.
+    /// True when the shake armed.
+    /// STILL-OPEN: the rest of the three (PlayInvokeEffectsByEvent(1), the boss camera, FUN_141098fb0(1), the colour boost
+    /// AddColorBoost(damagedColorScale), MyPC::FUN_14152e240 for a boss, the hit sound, the knockback record, the hit basis,
+    /// the cast's MakeDeadPhysXActor, the boss kill voices, the dps meter and vfunc_113) is not ported here.
     /// </summary>
-    public bool Hit(int id, long totalDamage, bool byLocalPlayer, Ms2.Ui.Skills.SkillAttackDamage attack)
+    public bool Hit(int id, bool cast, long totalDamage, bool byLocalPlayer, Ms2.Ui.Skills.SkillAttackDamage attack)
     {
         if (!inst.TryGetValue(id, out var i)) return false;
         var row = table.Find(i.NpcId);
-        return row != null && i.Vibrate.OnHit(Now, totalDamage, byLocalPlayer, row.DamagedVibrateDuration, row.DamagedVibrateAmp, attack);
+        bool armed = cast && row != null
+            && i.Vibrate.OnHit(Now, totalDamage, byLocalPlayer, row.DamagedVibrateDuration, row.DamagedVibrateAmp, attack);
+        if (!i.Dead && i.HpCur == 0) Die(id, true);
+        return armed;
     }
 
     /// <summary>The npc's body offset from its root by the shake (zero when none runs); null when there is no npc of the id.</summary>
@@ -365,8 +373,10 @@ public sealed class NpcLayer
         if (i.Bar != null) i.Bar.Stat(cur, max);
         else if (i.HpMat == null && Combat != null && cur < max && cur > 0) i.HpMat = Combat.HpBar(i.Root, i.Height);
         i.HpMat?.SetShaderParameter(ShaderParam.Fill, Mathf.Clamp((float)cur / max, 0f, 1f));
-        // STILL-OPEN: the client's OnStat only fills the bar; its npc dies on FieldDeadNpc or the add packet's flag
-        // (Die). The hp 0 death stays for the captures without the dead packet.
+        // STILL-OPEN: the client's OnStat only fills the bar; its npc dies on FieldDeadNpc, the add packet's flag (Die)
+        // or a hit record that finds the hp stat at 0 (Hit). Here a hit runs when its packet comes in, not when the cast's
+        // magic model lands it, so a stat packet after the damage packet would leave the npc standing: the hp 0 death
+        // stays here until the hit runs on the cast's landing.
         if (cur <= 0) Die(id, true);
     }
 

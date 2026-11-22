@@ -14,6 +14,8 @@ namespace Ms2Godot.Tests;
 /// - FieldRemoveNpc drops it.
 /// - FieldAddNpc for an object id already present raises the old npc's Removed before the new one replaces it.
 /// - the hold key's search (WorldService::FindNearestActor) finds a live npc's Hold_PointNN node and skips a dead one.
+/// - A hit record (CNpc::vfunc_33/34/35) kills a living npc whose current hp stat is 0, whatever the total, the owner or the
+///   hit kind; one with hp left stays alive.
 /// RemoteLayer's PlayCast returns for a dead npc on this flag. Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class NpcDeadCheck : Node3D
@@ -52,6 +54,20 @@ public partial class NpcDeadCheck : Node3D
         npcs.Add(new NpcAddedEvent(0, Npc(2, false)));
         Check(removed.Count == 1 && removed[0] == 2, $"the replaced npc's removal was not raised ({removed.Count})");
         Check(npcs.Count == 1 && !npcs.IsDead(2), "the replacing add did not keep one live npc");
+        // the hit's hp 0 check (vfunc_33 :1890, vfunc_34, vfunc_35): stat row 2 (current) is FieldAddNpc's Stats[2]
+        FieldAddNpc WithHp(int obj, long cur) { var n = Npc(obj, false); n.Stats[0].Health = 100; n.Stats[2].Health = cur; return n; }
+        npcs.Add(new NpcAddedEvent(0, WithHp(10, 40)));
+        npcs.Add(new NpcAddedEvent(0, WithHp(11, 0)));
+        npcs.Add(new NpcAddedEvent(0, WithHp(12, 0)));
+        int deaths0 = npcs.Deaths;
+        npcs.Hit(10, true, -60, true, null);
+        Check(!npcs.IsDead(10), "a hit on an npc with hp left killed it");
+        npcs.Hit(11, true, 0, false, null);
+        Check(npcs.IsDead(11), "a cast's hit on an npc at hp 0 did not kill it");
+        npcs.Hit(12, false, -5, false, null);
+        Check(npcs.IsDead(12), "a dot's or splash's hit on an npc at hp 0 did not kill it");
+        npcs.Hit(12, false, -5, false, null);
+        Check(npcs.Deaths == deaths0 + 2, $"deaths {npcs.Deaths - deaths0} from the hits, not 2");
         GD.Print($"npc dead: npc {npcId}, deaths {npcs.Deaths}, {(fails.Count == 0 ? "ok" : "FAIL " + string.Join("; ", fails))}");
         GetTree().Quit(fails.Count == 0 ? 0 : 1);
     }

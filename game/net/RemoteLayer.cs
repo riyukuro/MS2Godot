@@ -678,11 +678,14 @@ public sealed partial class RemoteLayer : Node3D
                         {
                             if (t.Hits.Length == 0) continue;
                             npcs.Damaged(t.TargetId, byLocal);
-                            // CNpc::vfunc_33, a cast's hit (mode 1; a dot's vfunc_34 and a splash's vfunc_35 do not shake).
-                            // STILL-OPEN: the client runs it when the cast's magic model lands the record
-                            // (CMagicService::FUN_14146b440, scenestategame.cpp:5649), not when the packet comes in
-                            if (dmg.Damage.Mode == 1) npcs.Hit(t.TargetId, Ms2.Ui.Skills.NpcVibrate.TotalDamage(t.Hits), byLocal,
-                                SkillDamage?.Get(dmg.Damage.SkillId, dmg.Damage.Level, dmg.Damage.Motion, dmg.Damage.AttackPoint));
+                            // CNpc::vfunc_33 for a cast's hit (mode 1), vfunc_34 for a dot's (3), vfunc_35 for a splash's (5, 6).
+                            // STILL-OPEN: the client runs a cast's when its magic model lands the record
+                            // (CMagicService::FUN_14146b440, scenestategame.cpp:5649), not when the packet comes in; and it
+                            // runs for every record whose skill and level are found (CDamageRecord::Init, skillrecord.cpp:483),
+                            // with no hits or without the attack's HasDamage too, which the gates above leave out
+                            bool cast = dmg.Damage.Mode == 1;
+                            npcs.Hit(t.TargetId, cast, Ms2.Ui.Skills.NpcVibrate.TotalDamage(t.Hits), byLocal,
+                                cast ? SkillDamage?.Get(dmg.Damage.SkillId, dmg.Damage.Level, dmg.Damage.Motion, dmg.Damage.AttackPoint) : null);
                             // PCBase::vfunc_112 goes through vfunc_80: a local hit makes the member's bar, then shows it
                             if (users.TryGetValue(t.TargetId, out var hit)) EnsureBar(hit)?.Hit(byLocal);
                         }
