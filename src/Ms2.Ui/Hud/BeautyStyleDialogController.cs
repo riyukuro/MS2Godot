@@ -33,8 +33,9 @@ public sealed class BeautyStyleDialogController : UiController
     public Func<long, EquipItem> CloneWorn = _ => null;
     /// <summary>The name of an item id (the string table's item name, FUN_141811980(1, id)).</summary>
     public Func<int, string> ItemName = _ => "";
-    /// <summary>ShowSystemNotice / FUN_1412752d0: a notice line.</summary>
-    public event Action<string> NoticeText;
+    /// <summary>FUN_1412752d0(key, type): a notice line and its type argument (1, or 3 for the apply, :1327). STILL-OPEN: what the
+    /// type changes in FUN_1412752d0 is not recovered; the host decides.</summary>
+    public event Action<string, int> NoticeText;
     /// <summary>FUN_14134a2e0 (not recovered): the "not enough" box of the payment.</summary>
     public Action NotEnough;
     /// <summary>FUN_14134a120(4, 0, 0) of result 0x14 (a purchase shortcut, not ported).</summary>
@@ -45,6 +46,15 @@ public sealed class BeautyStyleDialogController : UiController
     /// BeautyStyleMaxSlotCount (clientconstants.h:428-431), set from <see cref="GameTables"/>.</summary>
     public long ExpandSlotPrice = 790;
     public int ExpandSlotCount1Time = 3, DefaultSlotCount = 1, MaxExtendSlotCount = 12;
+
+    /// <summary>Takes the four constants from the loaded tables (the host calls it when it creates the dialog).</summary>
+    public void ApplyTables(GameTables t)
+    {
+        ExpandSlotPrice = t.BeautyStyleExpandSlotPrice;
+        ExpandSlotCount1Time = t.BeautyStyleExpandSlotCount1time;
+        DefaultSlotCount = t.BeautyStyleDefaultSlotCount;
+        MaxExtendSlotCount = t.BeautyStyleMaxSlotCount;
+    }
     /// <summary>The page was left (the close path, not ported here): the host runs it.</summary>
     public event Action Closed;
 
@@ -122,7 +132,11 @@ public sealed class BeautyStyleDialogController : UiController
                 OnExtended(p);
                 break;
             case 0xf:
-                foreach (var s in p.Styles) Saved.Add(s.Item);
+                foreach (var s in p.Styles)
+                {
+                    s.Item.Slot = (EquipSlot)s.StyleSlot;   // CItem::SetSlot(i32 style slot), :1205-1366
+                    Saved.Add(s.Item);
+                }
                 if (Saved.Count == ExpectedStyles) DataReady = true;   // InitData: its list build is STILL-OPEN (FUN_140f09810)
                 break;
         }
@@ -138,7 +152,7 @@ public sealed class BeautyStyleDialogController : UiController
                 OnRemoved(p);
                 break;
             case 0x15:
-                NoticeText?.Invoke(Model.Tables.Common("s_beauty_msg_complete_apply_saved_style"));
+                NoticeText?.Invoke(Model.Tables.Common("s_beauty_msg_complete_apply_saved_style"), 3);
                 PlayHairApplyEffect?.Invoke();
                 DropSelection();                          // FUN_140f092b0: m_2b0 = 0, FUN_140f08f70
                 break;
@@ -156,7 +170,7 @@ public sealed class BeautyStyleDialogController : UiController
         SetOpenSlots(p.ExtendedSlots + DefaultSlotCount);
         if (Host == null || !ListArrived) return;
         int added = Math.Max(0, OpenSlots - old);
-        if (added > 0) NoticeText?.Invoke(ClientFormat.Format(Model.Tables.Common("s_beauty_msg_complete_extend_style_slot"), added));
+        if (added > 0) NoticeText?.Invoke(ClientFormat.Format(Model.Tables.Common("s_beauty_msg_complete_extend_style_slot"), added), 1);
     }
 
     /// <summary>Modes 0x10 and 0x11: the worn item by uid is copied into the new saved slot with the packet's uid, slot and time; no
@@ -167,8 +181,9 @@ public sealed class BeautyStyleDialogController : UiController
         if (copy == null) return;
         copy.Uid = p.NewUid;
         copy.CreationTime = p.Time;
+        copy.Slot = (EquipSlot)p.Slot;   // CItem::SetSlot(byte slot)
         Saved.Add(copy);
-        NoticeText?.Invoke(Model.Tables.Common("s_beauty_msg_complete_save_hair_style"));
+        NoticeText?.Invoke(Model.Tables.Common("s_beauty_msg_complete_save_hair_style"), 1);
     }
 
     /// <summary>Mode 0x12: the item with the uid leaves the list (the first one), the notice shows and the selection drops.</summary>
@@ -176,7 +191,7 @@ public sealed class BeautyStyleDialogController : UiController
     {
         int at = Saved.FindIndex(s => s != null && s.Uid == p.Uid);
         if (at >= 0) Saved.RemoveAt(at);
-        NoticeText?.Invoke(Model.Tables.Common("s_beauty_msg_complete_remove_saved_hair_style"));
+        NoticeText?.Invoke(Model.Tables.Common("s_beauty_msg_complete_remove_saved_hair_style"), 1);
         DropSelection();
     }
 
@@ -188,8 +203,8 @@ public sealed class BeautyStyleDialogController : UiController
         {
             case 2: NotEnough?.Invoke(); break;
             case 0x14: Unavailable?.Invoke(); break;
-            case 0x18: NoticeText?.Invoke(Model.Tables.Common("s_beauty_msg_error_style_apply_already")); break;
-            case 0x19: NoticeText?.Invoke(Model.Tables.Common("s_beauty_msg_error_style_save_cant_not_beauty_day")); break;
+            case 0x18: NoticeText?.Invoke(Model.Tables.Common("s_beauty_msg_error_style_apply_already"), 1); break;
+            case 0x19: NoticeText?.Invoke(Model.Tables.Common("s_beauty_msg_error_style_save_cant_not_beauty_day"), 1); break;
             case 0x13: Plain("s_beauty_msg_error_style_slot_extend_max"); break;
             case 0x17: Plain("s_beauty_msg_error_style_disable_gender"); break;
             case 7: ShowData(MessageBoxQueue.CreateWithCallback(Model.Tables.Common(0x273), 0, CloseOnOk)); break;

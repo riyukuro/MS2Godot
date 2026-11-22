@@ -47,6 +47,7 @@ public class BeautyStyleDialogTests
         public List<IOutPacket> Sent = new();
         public List<MessageBoxData> Boxes = new();
         public List<string> Notices = new();
+        public List<int> NoticeTypes = new();
         public Dictionary<long, EquipItem> Worn = new();
 
         public Rig(bool load = true)
@@ -56,7 +57,7 @@ public class BeautyStyleDialogTests
             C.Customize = Cu;
             C.Send = Sent.Add;
             C.ShowData = Boxes.Add;
-            C.NoticeText += Notices.Add;
+            C.NoticeText += (t, ty) => { Notices.Add(t); NoticeTypes.Add(ty); };
             C.CloneWorn = uid => Worn.TryGetValue(uid, out var w) ? new EquipItem { Id = w.Id, Uid = w.Uid } : null;
             C.ItemName = id => "item" + id;
             if (!load) return;
@@ -187,6 +188,47 @@ public class BeautyStyleDialogTests
         Assert.That(effects, Is.EqualTo(1));
         Assert.That(r.Cu.Calls, Is.EqualTo(new[] { "restore1" }));
         Assert.That(r.Notices, Has.Count.EqualTo(1));
+        Assert.That(r.NoticeTypes, Is.EqualTo(new[] { 3 }), "FUN_1412752d0(..., 3) at :1327");
+    }
+
+    [Test]
+    public void TheOtherNoticesCarryTypeOne()
+    {
+        var r = new Rig();
+        r.Worn[5] = new EquipItem { Id = 900, Uid = 5 };
+        r.C.OnPacket(Rig.Shop(2));
+        r.List((1, 11));
+        r.C.OnPacket(new BeautyStylePacket(0x10) { Uid = 5, NewUid = 77, Slot = 2, Time = 1 });
+        r.C.OnPacket(new BeautyStylePacket(0x12) { Uid = 11 });
+        r.C.OnPacket(new BeautyStylePacket(8) { Result = 0x18 });
+        Assert.That(r.NoticeTypes, Is.EqualTo(new[] { 1, 1, 1 }));
+    }
+
+    [Test]
+    public void TheSavedItemsKeepTheirSlot()
+    {
+        var r = new Rig();
+        r.Worn[5] = new EquipItem { Id = 900, Uid = 5 };
+        r.C.OnPacket(new BeautyStylePacket(0xf)
+        {
+            Styles = new[] { new BeautyStyleItem(4, new EquipItem { Id = 1, Uid = 11 }), new BeautyStyleItem(9, new EquipItem { Id = 2, Uid = 12 }) },
+        });
+        Assert.That(r.C.Saved.Select(x => (int)x.Slot), Is.EqualTo(new[] { 4, 9 }), "CItem::SetSlot(i32) on every listed item");
+        r.C.OnPacket(new BeautyStylePacket(0x10) { Uid = 5, NewUid = 77, Slot = 6, Time = 1 });
+        Assert.That((int)r.C.Saved[2].Slot, Is.EqualTo(6), "CItem::SetSlot(byte) on the saved copy");
+    }
+
+    [Test]
+    public void ApplyTablesTakesTheTableValues()
+    {
+        Packs();
+        var t = new GameTables(packs, "en") { BeautyStyleExpandSlotPrice = 123, BeautyStyleExpandSlotCount1time = 5, BeautyStyleDefaultSlotCount = 2, BeautyStyleMaxSlotCount = 7 };
+        var c = new BeautyStyleDialogController();
+        c.ApplyTables(t);
+        Assert.That(c.ExpandSlotPrice, Is.EqualTo(123));
+        Assert.That(c.ExpandSlotCount1Time, Is.EqualTo(5));
+        Assert.That(c.DefaultSlotCount, Is.EqualTo(2));
+        Assert.That(c.MaxSlotCount, Is.EqualTo(9));
     }
 
     [Test]

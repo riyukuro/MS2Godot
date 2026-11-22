@@ -75,16 +75,9 @@ public partial class HudScene
     /// "not enough" box and the hair apply effect are unset, so the paths that need them do nothing.</summary>
     BeautyStyleDialogController CreateBeautyStyle(Ms2Godot.Net.LiveSession live)
     {
-        var t = hudModel.Tables;
-        var c = new BeautyStyleDialogController
-        {
-            Send = live.SendBeauty,
-            ExpandSlotPrice = t.BeautyStyleExpandSlotPrice,
-            ExpandSlotCount1Time = t.BeautyStyleExpandSlotCount1time,
-            DefaultSlotCount = t.BeautyStyleDefaultSlotCount,
-            MaxExtendSlotCount = t.BeautyStyleMaxSlotCount,
-        };
-        c.NoticeText += SystemNoticeText;
+        var c = new BeautyStyleDialogController { Send = live.SendBeauty };
+        c.ApplyTables(hudModel.Tables);
+        c.NoticeText += (text, _) => SystemNoticeText(text);   // STILL-OPEN: what the type argument of FUN_1412752d0 changes
         return c;
     }
 
