@@ -98,4 +98,24 @@ public class TextEditKeyTests
         Type(p, "Hi!");
         Assert.That(tf.text, Is.EqualTo("hi"), "an upper case char is retried in lower case, a char refused in both cases is dropped");
     }
+
+    [Test]
+    public void BackspaceWithNothingToDeleteStillSendsAChange()
+    {
+        // KeyAct_Backspace (sfr_gfx_07.cpp:780) sets needChangeNotify whether or not a char went
+        var (p, tf) = Field("hello");
+        var changes = CountChanges(p, tf);
+        tf.setSelection(0, 0);
+        Press(p, 8);
+        Assert.That((tf.text, tf.caretIndex, changes()), Is.EqualTo(("hello", 0, 1)));
+        (p, tf) = Field("");
+        changes = CountChanges(p, tf);
+        Press(p, 8);
+        Assert.That((tf.text, changes()), Is.EqualTo(("", 1)), "an empty field");
+        (p, tf) = Field("hello", type: "dynamic");
+        changes = CountChanges(p, tf);
+        tf.setSelection(0, 0);
+        Press(p, 8);
+        Assert.That((tf.text, changes()), Is.EqualTo(("hello", 0)), "a read-only field: no change");
+    }
 }

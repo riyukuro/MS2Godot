@@ -640,12 +640,17 @@ public class AsTextField : AsInteractiveObject
         Send("flash.events.Event", "change", true);
     }
 
+    /// <summary>
+    /// Backspace (KeyAct_Backspace, EditorKit's key handler, sfr_gfx_07.cpp:780), input fields only: the selection goes, or
+    /// with none the character before the caret. The field reports a change every time, also when nothing went (at the
+    /// start of the text or in an empty field): the handler sets needChangeNotify unconditionally.
+    /// </summary>
     public void Backspace()
     {
         if (type != "input") return;
         int b = SelBegin, e = SelEnd;
-        if (b == e) { if (b == 0) return; b--; }
-        Text = Text[..b] + Text[e..]; SelBegin = SelEnd = b; Html = null; Changed();
+        if (b == e && b > 0) b--;
+        if (b != e) { Text = Text[..b] + Text[e..]; SelBegin = SelEnd = b; CaretAtBegin = false; Html = null; Changed(); }
         Send("flash.events.Event", "change", true);
     }
 
