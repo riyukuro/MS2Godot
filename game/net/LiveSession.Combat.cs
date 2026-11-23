@@ -163,8 +163,8 @@ public partial class LiveSession
                 }
                 float dist = lastNpc?.Root != null && GodotObject.IsInstanceValid(lastNpc.Root) ? hud.FaceScripted(lastNpc.Position) : -1;
                 for (int walk = 0; walk < 60 * 25 && dist > 250 && lastNpc?.Root != null && GodotObject.IsInstanceValid(lastNpc.Root); walk++)
-                {      // the mob spawned far away: walk to it, facing it
-                    dist = hud.FaceScripted(lastNpc.Position); hud.DriveScripted(new Vector2(0, 1), false); await frames(1);
+                {      // the mob spawned far away: a run to it
+                    dist = hud.DriveTowardScripted(lastNpc.Position, false); await frames(1);
                 }
                 hud.DriveEnd(); await frames(20);
                 if (lastNpc?.Root != null && GodotObject.IsInstanceValid(lastNpc.Root)) dist = hud.FaceScripted(lastNpc.Position);
