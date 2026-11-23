@@ -144,6 +144,8 @@ public partial class LiveSession
     /// player's cube map (<see cref="Ms2.Ui.CubeCellMap.Apply"/>).
     /// The place answers' own-pc part (the guide, the place sound and an error's notice) is
     /// <see cref="Ms2.Ui.CubeCraftState.OnPlaceAnswer"/>, before the cube goes into the map as in the client.
+    /// The remove answer 0xc takes its cube out of the player's cube map (<see cref="Ms2.Ui.CubeCellMap.Apply(ResponseCubeRemove)"/>)
+    /// after its own-pc part (<see cref="Ms2.Ui.CubeCraftState.OnRemoveAnswer"/>: the guide shown, the remove sound).
     /// The home info mode 0x14 fills <see cref="Home"/>; the row modes 0x2a / 0x2b fill <see cref="HomeRows"/>.
     /// STILL-OPEN: the other modes; the cube map's weapon lookup for mode 0x11, so a 0x11 holds nothing yet.</summary>
     void OnResponseCube(Ms2.Net.Wire.RawPacket p)
@@ -168,6 +170,19 @@ public partial class LiveSession
                 bool added = player != null && IsInstanceValid(player) && player.Cubes.Cells.Apply(placed, id => ItemExists?.Invoke(id) ?? true);
                 GD.Print($"live: ResponseCube 0x{placed.Mode:x} error {placed.Error} cell 0x{placed.Cell:x} item {placed.Item?.ItemId ?? 0}{(added ? ", cube added" : "")}");
                 FieldCubesMade(added ? 1 : 0);   // CreateCube's cube waits for its entity too (f78, :2699)
+                return;
+            }
+            case ResponseCubeRemove.Mode:
+            {
+                var removed = ResponseCubeRemove.Read(p.Reader());
+                switch (CubeCraft.OnRemoveAnswer(removed, selfObject, Me.Dead))
+                {
+                    case Ms2.Ui.CubeCraftState.PlaceAnswer.Removed: FieldAudio.Instance?.PlayUi(Ms2.Ui.CubeCraftState.RemoveSound); break;
+                    case Ms2.Ui.CubeCraftState.PlaceAnswer.SameItemHeld: ShowSameItemHeld(); break;
+                    case Ms2.Ui.CubeCraftState.PlaceAnswer.BuildNotice: ShowBuildNotice(removed.Error); break;
+                }
+                bool gone = player != null && IsInstanceValid(player) && player.Cubes.Cells.Apply(removed);
+                GD.Print($"live: ResponseCube 0xc error {removed.Error} cell 0x{removed.Cell:x}{(gone ? ", cube removed" : "")}");
                 return;
             }
             case ResponseCubeHomeInfo.Mode: OnHomeInfo(ResponseCubeHomeInfo.Read(r, game.Profile)); return;
@@ -330,6 +345,9 @@ public partial class LiveSession
     public Ms2.Ui.CubeCraftState.PlacementStop ConfirmPlacement()
     {
         var stop = CubeCraft.ConfirmPlacement(Me.Dead, ItemDataOf, out var send);
+        GD.Print(send != null
+            ? $"live: RequestCube mode {send.Mode} cell 0x{send.CellKey:x} item {send.Item?.ItemId ?? 0} yaw {send.Yaw}"
+            : $"live: put-down stopped: {stop}");
         if (send != null) Send(send);
         int notice = Ms2.Ui.CubeCraftState.NoticeOf(stop);
         if (notice != 0) ShowBuildNotice(notice);

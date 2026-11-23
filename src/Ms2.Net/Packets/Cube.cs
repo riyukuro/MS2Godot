@@ -191,6 +191,34 @@ public sealed record ResponseCubePlace(byte Mode, byte Error, int CharacterId, i
 }
 
 /// <summary>
+/// ResponseCube 0xc, a cube leaves the map (CSceneStateGame::OnResponseCube, scenestategame.cpp:10037-10071): u8 error;
+/// error 0: i32 (unused), i32 character id, i32 the packed cell (FUN_1408a0400), u8 keep (1 when the byte is 1, the
+/// second argument of CubeMapInformationService::FUN_1410c4b50). An error (:10057-10069): i32, i32 character id. The server
+/// sends it when a placed cube is lifted again or consumed by a delivery.
+/// </summary>
+public sealed record ResponseCubeRemove(byte Error, int CharacterId, int Cell = 0, bool Keep = false)
+{
+    public const byte Mode = 0xc;
+
+    public static ResponseCubeRemove Read(ByteReader r)
+    {
+        if (r.ReadByte() != Mode) return null;
+        byte error = r.ReadByte();
+        r.ReadInt();
+        int character = r.ReadInt();
+        if (error != 0)
+        {
+            r.ExpectEnd("ResponseCube 0xc");
+            return new ResponseCubeRemove(error, character);
+        }
+        int cell = r.ReadInt();
+        bool keep = r.ReadByte() == 1;
+        r.ExpectEnd("ResponseCube 0xc");
+        return new ResponseCubeRemove(error, character, cell, keep);
+    }
+}
+
+/// <summary>
 /// Inbound LoadCubes mode 0 (RecvOp 0x6A, commonfiles/opcodes.h:114), the house's cubes: CSceneStateGame::OnLoadCubes
 /// (@0x141728110, scenestategame.cpp:10857-10897). u8 mode; mode 0: u8 the floor state (FUN_1410c3f50), i32 n, then n
 /// cubes of i32 the packed cell (FUN_1408a0400), i64 owner, the CubeItemInfo (CubeItemInfo(CInPacket), ugcmapoptions.cpp:91),

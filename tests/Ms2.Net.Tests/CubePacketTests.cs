@@ -294,6 +294,29 @@ public class CubePacketTests
     }
 
     [Test]
+    public void TheRemoveAnswerReadsTheCellAndTheKeepByte()
+    {
+        // scenestategame.cpp:10037-10054: u8 0xc, u8 error 0, i32, i32 pc id, i32 packed cell, u8 keep (== 1). The fields of
+        // the Knight tutorial's consumed cube (pc 5788958, cell 655105 = 0x000a0001, keep byte 0)
+        var m = ResponseCubeRemove.Read(Reader(w => { w.WriteByte(0xc); w.WriteByte(0); w.WriteInt(5788958); w.WriteInt(5788958); w.WriteInt(655105); w.WriteByte(0); }));
+        Assert.That(m, Is.EqualTo(new ResponseCubeRemove(0, 5788958, 655105, false)));
+        var keep = ResponseCubeRemove.Read(Reader(w => { w.WriteByte(0xc); w.WriteByte(0); w.WriteInt(0); w.WriteInt(1); w.WriteInt(2); w.WriteByte(1); }));
+        Assert.That(keep.Keep, Is.True);
+        var two = ResponseCubeRemove.Read(Reader(w => { w.WriteByte(0xc); w.WriteByte(0); w.WriteInt(0); w.WriteInt(1); w.WriteInt(2); w.WriteByte(2); }));
+        Assert.That(two.Keep, Is.False, "only a byte of 1 keeps (:10044)");
+        Assert.That(() => ResponseCubeRemove.Read(Reader(w => { w.WriteByte(0xc); w.WriteByte(0); w.WriteInt(0); w.WriteInt(1); w.WriteInt(2); w.WriteByte(0); w.WriteByte(0); })), Throws.Exception);   // ExpectEnd
+    }
+
+    [Test]
+    public void TheRemoveErrorIsTwoIntsAndOtherModesAreNotRemoves()
+    {
+        // :10057-10059: an error answer is i32, i32 pc id
+        var m = ResponseCubeRemove.Read(Reader(w => { w.WriteByte(0xc); w.WriteByte(9); w.WriteInt(0); w.WriteInt(77); }));
+        Assert.That(m, Is.EqualTo(new ResponseCubeRemove(9, 77)));
+        Assert.That(ResponseCubeRemove.Read(Reader(w => { w.WriteByte(0xa); w.WriteByte(0); })), Is.Null);
+    }
+
+    [Test]
     public void LoadCubesModeZeroReadsEachCubeAndItsNotice()
     {
         // commonfiles/opcodes.h:114 RecvOp::LoadCubes = 0x006A; OnLoadCubes (scenestategame.cpp:10857-10897) mode 0:

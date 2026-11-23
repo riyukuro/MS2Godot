@@ -269,6 +269,8 @@ public sealed class CubeCraftState
     public const int SameItemHeldText = 0x6c9;
     /// <summary>The system sound of a placed cube (PlaySystemSound(DAT_143ae79b8), scenestategame.cpp:1222).</summary>
     public const string PlaceSound = "ugc_setblock";
+    /// <summary>The system sound of a cube the remove answer takes away (PlaySystemSound(DAT_143ae79c8), scenestategame.cpp:1219).</summary>
+    public const string RemoveSound = "ugc_removeblock";
 
     /// <summary>What a place answer (ResponseCube 0xa / 0xf) does for the local pc (<see cref="OnPlaceAnswer"/>).</summary>
     public enum PlaceAnswer
@@ -282,6 +284,8 @@ public sealed class CubeCraftState
         SameItemHeld,
         /// <summary>An error otherwise: ShowBuildNotice with the answer's error.</summary>
         BuildNotice,
+        /// <summary>A remove answer's error 0: the guide shown again and <see cref="RemoveSound"/> played.</summary>
+        Removed,
     }
 
     /// <summary>
@@ -302,6 +306,24 @@ public sealed class CubeCraftState
             if (m.Mode == ResponseCubePlace.ModePlace && m.CharacterId == 0) return PlaceAnswer.None;
             Active(dead)?.SetGuideVisible(false);
             return PlaceAnswer.Placed;
+        }
+        return Current is { HoldsLift: true } ? PlaceAnswer.SameItemHeld : PlaceAnswer.BuildNotice;
+    }
+
+    /// <summary>
+    /// CSceneStateGame::OnResponseCube 0xc, the local pc's part (scenestategame.cpp:10037-10069), before the cube leaves the
+    /// map (<see cref="CubeCellMap.Apply(ResponseCubeRemove)"/>). Only when there is a pc and the answer's character is its object
+    /// id. Error 0: the active craft (none while dead or out of the cube mode) shows its guide again
+    /// (<see cref="Craft.SetGuideVisible"/>), then <see cref="RemoveSound"/>. An error: as a place answer's, the 0x6c9 notice
+    /// and the NoBuild sound when the pc's craft holds a lift, else the build notice of the error.
+    /// </summary>
+    public PlaceAnswer OnRemoveAnswer(ResponseCubeRemove m, int selfObject, bool dead)
+    {
+        if (m == null || selfObject == -1 || m.CharacterId != selfObject) return PlaceAnswer.None;
+        if (m.Error == 0)
+        {
+            Active(dead)?.SetGuideVisible(true);
+            return PlaceAnswer.Removed;
         }
         return Current is { HoldsLift: true } ? PlaceAnswer.SameItemHeld : PlaceAnswer.BuildNotice;
     }

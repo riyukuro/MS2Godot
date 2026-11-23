@@ -90,6 +90,25 @@ public class CubeCellMapTests
     }
 
     [Test]
+    public void ARemoveAnswerClearsThePlacedCubeAndItsEntity()
+    {
+        // ResponseCube 0xc (scenestategame.cpp:10043-10054) then FUN_1410c4b50: the cell is free again, so the next put-down
+        // there is a place, not the same-item stop
+        var m = new CubeCellMap();
+        var (x, y, z) = CubeCell.Unpack(655105);
+        int key = CubeCell.Key(x, y, z);
+        Assert.That(m.Place(key, Item(Known), Exists), Is.True);
+        Assert.That(m.EntityCount, Is.EqualTo(1));
+        Assert.That(m.Apply(new ResponseCubeRemove(9, 1, 655105)), Is.False, "an error removes nothing");
+        Assert.That(m.HasCubeAtKey(key), Is.True);
+        Assert.That(m.Apply(new ResponseCubeRemove(0, 1, 655105)), Is.True);
+        Assert.That(m.HasCubeAtKey(key), Is.False);
+        Assert.That(m.EntityCount, Is.Zero);
+        Assert.That(m.Apply(new ResponseCubeRemove(0, 1, 655105)), Is.False, "nothing left at the cell");
+        Assert.That(m.Place(key, Item(Known), Exists), Is.True, "the cell takes a cube again");
+    }
+
+    [Test]
     public void TheMapKeepsTheFirstMapCubeOfAKey()
     {
         var m = new CubeCellMap();

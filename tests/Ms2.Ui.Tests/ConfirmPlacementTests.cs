@@ -490,4 +490,22 @@ public class ConfirmPlacementTests
         }
         Assert.That(new CubeCraftState().OnPlaceAnswer(Answer(ResponseCubePlace.ModeReplace, 0x35, 9), 9, false), Is.EqualTo(CubeCraftState.PlaceAnswer.BuildNotice));
     }
+
+    [Test]
+    public void ARemoveAnswerForThePcShowsTheGuideAgain()
+    {
+        // scenestategame.cpp:10043-10051: the own pc's active craft shows its guide, then ugc_removeblock
+        var c = Craft(2, 0, new Owner());
+        c.OnPlaceAnswer(Answer(ResponseCubePlace.ModePlace, 0, 9), 9, dead: false);
+        Assert.That(c.Current.GuideVisible, Is.False);
+        Assert.That(c.OnRemoveAnswer(new ResponseCubeRemove(0, 8, 1), 9, dead: false), Is.EqualTo(CubeCraftState.PlaceAnswer.None));
+        Assert.That(c.OnRemoveAnswer(new ResponseCubeRemove(0, 9, 1), -1, dead: false), Is.EqualTo(CubeCraftState.PlaceAnswer.None));
+        Assert.That(c.Current.GuideVisible, Is.False);
+        Assert.That(c.OnRemoveAnswer(new ResponseCubeRemove(0, 9, 1), 9, dead: false), Is.EqualTo(CubeCraftState.PlaceAnswer.Removed));
+        Assert.That(c.Current.GuideVisible, Is.True);
+        // :10057-10068: an error is the lift notice or the build notice, as a place answer's
+        Assert.That(Craft(2, 2, new Owner()).OnRemoveAnswer(new ResponseCubeRemove(5, 9), 9, false), Is.EqualTo(CubeCraftState.PlaceAnswer.SameItemHeld));
+        Assert.That(Craft(2, 0, new Owner()).OnRemoveAnswer(new ResponseCubeRemove(5, 9), 9, false), Is.EqualTo(CubeCraftState.PlaceAnswer.BuildNotice));
+        Assert.That(new CubeCraftState().OnRemoveAnswer(new ResponseCubeRemove(0, 9, 1), 9, false), Is.EqualTo(CubeCraftState.PlaceAnswer.Removed), "the sound without a craft");
+    }
 }

@@ -136,6 +136,31 @@ public sealed class CubeCellMap : ICubeCells
     }
 
     /// <summary>
+    /// CSceneStateGame::OnResponseCube 0xc with error 0 (scenestategame.cpp:10037-10054): the answer's cell (FUN_1408a0400)
+    /// to <see cref="RemoveCube"/>. An error answer removes nothing. True when a cube left.
+    /// </summary>
+    public bool Apply(ResponseCubeRemove m)
+    {
+        if (m == null || m.Error != 0) return false;
+        var (x, y, z) = CubeCell.Unpack(m.Cell);
+        return RemoveCube(CubeCell.Key(x, y, z));
+    }
+
+    /// <summary>
+    /// FUN_1410c4b50 (@0x1410c4b50, cubemapinformationservice_3.cpp:2728-2748): the cube at the key leaves f98 with its entity
+    /// (FUN_1410c1910, :5190-5216; with the keep byte directly, without it through FUN_1410c2610, :1726-1747; both the same here). True when a
+    /// cube was at the key.
+    /// STILL-OPEN: the housing set and inventory counts a removed cube changes first (FUN_1410bec60, FUN_1410d4cb0 and
+    /// FUN_1410d54f0), and FUN_1410c2610's rebuild of a cell the map's f2b8 cells hold (FUN_1410be0c0), which ours does not keep.
+    /// </summary>
+    public bool RemoveCube(int key)
+    {
+        if (!cubes.ContainsKey(key)) return false;
+        Remove(key);
+        return true;
+    }
+
+    /// <summary>
     /// CSceneStateGame::OnLoadCubes mode 0 (@0x141728110, scenestategame.cpp:10857-10897): each loaded cube's cell
     /// (FUN_1408a0400, then FUN_1408a15b0 to a world point and HasCubeAtPoint's FUN_1408a13d0 back to its key) first loses a
     /// cube already there (FUN_1410c1910 with 0) unless FUN_1410b7da0 finds the cell among the map's 0xe34a6afd entities
