@@ -1794,7 +1794,7 @@ public partial class LiveSession : Node
                 if (m != null) { RegionSkillLog.Add(m); RegionSkillReceived?.Invoke(m); }
             }
             else if (game.Is(p, Inbound.FieldProperty))
-                FieldProperties.Apply(Ms2.Net.Packets.FieldPropertyMessage.Read(p.Reader()));   // OnFieldProperty (scenestategame.cpp:3895)
+                FieldProperties.Apply(Ms2.Net.Packets.FieldPropertyMessage.Read(p.Reader(), game.Profile));   // OnFieldProperty (scenestategame.cpp:3895)
             else if (game.Is(p, Inbound.SkillDamage))
             {
                 // The records that hit the own player; MasteryEvents applies the client's mode drops (3 needs its PC, 5 its
