@@ -164,6 +164,10 @@ public partial class SetupScreen : Control
         catch (System.Exception e) when (e is System.IO.IOException or System.UnauthorizedAccessException) { GD.PushWarning("table cache: " + e.Message); }
         try { packs = Ms2.Formats.Pack.PackSet.Shared(data); quests = DataCache.QuestConfig.Current(packs); }
         catch (System.Exception e) { GD.PushWarning("table cache: " + e.Message); }
+        // the worker makes no engine call: the per-install folder and the build folders are read here, its log lines go
+        // through EngineCalls
+        _ = UiCode.RootPath;
+        _ = Precompiled.AssemblyDirs();
         uiBuild = System.Threading.Tasks.Task.Run(() =>
         {
             void progress(string phase, double f) { uiPhase = phase; uiFrac = f; }
@@ -176,26 +180,26 @@ public partial class SetupScreen : Control
             {
                 uiPhase = "Compiling the UI code for this machine";
                 double? s = Precompiled.Compile(UiCode.DllPath(data));
-                if (s >= 0) GD.Print($"UI code precompiled in {s:F1} s");
+                if (s >= 0) EngineCalls.Print($"UI code precompiled in {s:F1} s");
             }
             // the client tables the UI reads, parsed once per install (after the code: a new code key starts a new folder)
             uiPhase = "Building the UI tables";
             try
             {
                 double s = UiCode.BuildTables(data);
-                if (s >= 0) GD.Print($"UI tables built: additional effects in {s:F1} s");
+                if (s >= 0) EngineCalls.Print($"UI tables built: additional effects in {s:F1} s");
             }
-            catch (System.Exception e) { GD.PushWarning("UI tables build failed: " + e.Message); }
+            catch (System.Exception e) { EngineCalls.Warn("UI tables build failed: " + e.Message); }
             // the client's tables the field and HUD read, once per install (UiCode.Prune keeps them with their client)
             if (packs != null)
                 try
                 {
                     var sw = System.Diagnostics.Stopwatch.StartNew();
                     var built = DataCache.Build(packs, quests, progress);
-                    if (built.Count > 0) { GD.Print($"table cache built: {string.Join(", ", built)} in {sw.Elapsed.TotalSeconds:F1} s"); if (r == null) UiCode.Prune(); }
-                    else if (Ui.PerfLog.On) GD.Print($"table cache: all current, checked in {sw.Elapsed.TotalMilliseconds:F0} ms");
+                    if (built.Count > 0) { EngineCalls.Print($"table cache built: {string.Join(", ", built)} in {sw.Elapsed.TotalSeconds:F1} s"); if (r == null) UiCode.Prune(); }
+                    else if (Ui.PerfLog.On) EngineCalls.Print($"table cache: all current, checked in {sw.Elapsed.TotalMilliseconds:F0} ms");
                 }
-                catch (System.Exception e) { GD.PushWarning("table cache build failed: " + e.GetBaseException().Message); }
+                catch (System.Exception e) { EngineCalls.Warn("table cache build failed: " + e.GetBaseException().Message); }
             // the start field's navmesh, once per install (NavConfig.Version): else the first session builds it while it plays
             if (packs != null)
                 try
@@ -204,10 +208,10 @@ public partial class SetupScreen : Control
                     var sw = System.Diagnostics.Stopwatch.StartNew();
                     long b0 = System.GC.GetTotalAllocatedBytes();
                     double s = NavDebug.BuildStart(packs, nif, navDir);
-                    if (s >= 0) GD.Print($"navmesh {Field.StartField} built in {s:F1} s");
-                    else if (Ui.PerfLog.On) GD.Print($"navmesh {Field.StartField}: current, checked in {sw.Elapsed.TotalMilliseconds:F1} ms, {(System.GC.GetTotalAllocatedBytes() - b0) >> 10} KB allocated");
+                    if (s >= 0) EngineCalls.Print($"navmesh {Field.StartField} built in {s:F1} s");
+                    else if (Ui.PerfLog.On) EngineCalls.Print($"navmesh {Field.StartField}: current, checked in {sw.Elapsed.TotalMilliseconds:F1} ms, {(System.GC.GetTotalAllocatedBytes() - b0) >> 10} KB allocated");
                 }
-                catch (System.Exception e) { GD.PushWarning("navmesh build failed: " + e.GetBaseException().Message); }
+                catch (System.Exception e) { EngineCalls.Warn("navmesh build failed: " + e.GetBaseException().Message); }
             return r;
             }
             finally { Ms2.Formats.Cache.CacheStore.CheckBodies = false; }

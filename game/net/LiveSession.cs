@@ -1220,7 +1220,7 @@ public partial class LiveSession : Node
     {
         var g = game;
         if (g == null) return;
-        g.SendAsync(pk).ContinueWith(t => GD.PushWarning($"live: send {pk.GetType().Name} failed: {t.Exception?.GetBaseException().Message}"),
+        g.SendAsync(pk).ContinueWith(t => EngineCalls.Warn($"live: send {pk.GetType().Name} failed: {t.Exception?.GetBaseException().Message}"),
             System.Threading.Tasks.TaskContinuationOptions.OnlyOnFaulted);
     }
 
@@ -2038,7 +2038,7 @@ public partial class LiveSession : Node
     {
         var l = login;
         if (l == null || game != null) return;
-        l.SendAsync(pk).ContinueWith(t => GD.PushWarning($"live: login send {pk.GetType().Name} failed: {t.Exception?.GetBaseException().Message}"),
+        l.SendAsync(pk).ContinueWith(t => EngineCalls.Warn($"live: login send {pk.GetType().Name} failed: {t.Exception?.GetBaseException().Message}"),
             System.Threading.Tasks.TaskContinuationOptions.OnlyOnFaulted);
     }
 

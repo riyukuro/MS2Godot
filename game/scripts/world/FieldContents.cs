@@ -184,9 +184,13 @@ public partial class FieldContents : Node3D
     static RegionSpawnTable regionTable;
     static RegionSpawnTable Regions(PackSet packs) { lock (tableLock) return regionTable ??= new RegionSpawnTable(packs); }
 
-    /// <summary>Parses the npc and region spawn tables on a worker thread while the field builds (pure data, no engine objects).</summary>
+    /// <summary>Parses the npc and region spawn tables on a worker thread while the field builds (pure data, no engine objects).
+    /// The language is read here first: the options' first load makes engine calls, which stay on the main thread.</summary>
     public static void Prefetch(PackSet packs)
-        => System.Threading.Tasks.Task.Run(() => { try { Npcs(packs); Regions(packs); } catch { } });
+    {
+        _ = GameOptions.StringLanguage;
+        System.Threading.Tasks.Task.Run(() => { try { Npcs(packs); Regions(packs); } catch { } });
+    }
 
     /// <summary>The field's portals (with the quest masks) and spawned npcs, for the HUD's minimap; null until Start.</summary>
     public FieldPortals Portals => portals;

@@ -38,7 +38,7 @@ public static class DataCache
 
     static void Log(CacheStore.Outcome outcome)
     {
-        if (outcome != null && (PerfLog.On || outcome.Diff != null)) GD.Print("table cache: " + outcome);
+        if (outcome != null && (PerfLog.On || outcome.Diff != null)) EngineCalls.Print("table cache: " + outcome);
     }
 
     /// <summary>The client archives the tables are read from.</summary>
@@ -64,7 +64,7 @@ public static class DataCache
             }
             catch (System.Exception e) when (e is System.IO.IOException or System.UnauthorizedAccessException)
             {
-                GD.PushWarning("table cache: " + e.Message);
+                EngineCalls.Warn("table cache: " + e.Message);
             }
             storeData = dataDir;
             return store = s;
@@ -168,7 +168,7 @@ public static class DataCache
         // the file as it is, so no session reads tables of other bytes
         if (built.Count > 0 && !InputsMatch(packs.DataDir, s.Dir))
         {
-            GD.PushWarning("table cache: the client's tables changed under their stamp; building them again");
+            EngineCalls.Warn("table cache: the client's tables changed under their stamp; building them again");
             try { System.IO.Directory.Delete(s.Dir, true); } catch (System.Exception e) when (e is System.IO.IOException or System.UnauthorizedAccessException) { }
             lock (gate) { storeData = null; store = null; }
             if (again) return Build(packs, quests, progress, again: false);

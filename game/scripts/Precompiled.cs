@@ -77,9 +77,14 @@ public static class Precompiled
 
     /// <summary>
     /// Where the game's own assemblies can be on disk (Godot loads them from memory, so they report no location): the editor
-    /// build output, then the folders next to the executable (an exported build's data_* folder).
+    /// build output, then the folders next to the executable (an exported build's data_* folder). Read from the engine once,
+    /// after the bind: the setup step's worker thread reads the list again and makes no engine call (<see cref="SetupScreen"/>
+    /// reads it first on the main thread).
     /// </summary>
-    public static IEnumerable<string> AssemblyDirs()
+    public static IReadOnlyList<string> AssemblyDirs() => assemblyDirs ??= FindAssemblyDirs().ToList();
+    static List<string> assemblyDirs;
+
+    static IEnumerable<string> FindAssemblyDirs()
     {
         if (AssemblyDir != null) yield return AssemblyDir;
         foreach (var c in new[] { "Debug", "ExportDebug", "ExportRelease", "Release" })
@@ -119,7 +124,7 @@ public static class Precompiled
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var mvid = typeof(Precompiled).Assembly.ManifestModule.ModuleVersionId;
         // this build's folder: the one whose copy of this assembly is the loaded one
-        foreach (var d in AssemblyDirs())
+        foreach (var d in FindAssemblyDirs())
             if (Mvid(Path.Combine(d, Self + ".dll")) is { } m && m.id == mvid) { AssemblyDir = d; break; }
         if (AssemblyDir == null) { summary = "no build folder"; return; }
         if (Off) { summary = "off"; return; }
@@ -184,7 +189,7 @@ public static class Precompiled
     public static double? Compile(string dll)
     {
         if (Off) return null;
-        if (AssemblyDir == null) { GD.PushWarning("precompiled code: no build folder"); return null; }
+        if (AssemblyDir == null) { EngineCalls.Warn("precompiled code: no build folder"); return null; }
         var rtDir = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
         // Cosmetic in a self-contained export where RuntimeDirectory == AssemblyDir (crossgen2 accepts a repeated -r pattern).
         var refs = string.Equals(Path.GetFullPath(rtDir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
@@ -193,7 +198,7 @@ public static class Precompiled
             ? new[] { Path.Combine(AssemblyDir, "*.dll") }
             : new[] { Path.Combine(rtDir, "*.dll"), Path.Combine(AssemblyDir, "*.dll") };
         return PrecompiledImage.Compile(Compiler(), dll, PrecompiledImage.Runtime, refs,
-            CompileTimeout, w => GD.PushWarning("precompiled code: " + w));
+            CompileTimeout, w => EngineCalls.Warn("precompiled code: " + w));
     }
 }
 

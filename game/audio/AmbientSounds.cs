@@ -87,7 +87,7 @@ public partial class AmbientSounds : Node3D
         if (!decoded.TryGetValue(key, out var task)) decoded[key] = task = Task.Run(() =>
         {
             var pcm = SafeDecode.Decode(clip, out var failure);
-            if (failure != null) started.Enqueue(() => GD.PushWarning(failure));
+            if (failure != null) EngineCalls.Warn(failure);
             return pcm;
         });
         task.ContinueWith(t => { if (t.IsFaulted || t.Result == null) return; var pcm = t.Result; var data = pcm.ToBytes(); started.Enqueue(() => Start(sound, pcm, data)); });

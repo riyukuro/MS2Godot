@@ -13,11 +13,21 @@ namespace Ms2Godot;
 /// crashed the exit (SIGSEGV, exit 139: one field run in 24, two Images and an ImageTexture pending).
 /// The tree's children leave it last-first, each before its own _exit_tree (node.cpp:421-427), so the first autoload's
 /// <see cref="_ExitTree"/> runs after every other node's, still before Main::cleanup frees anything.
+/// It also writes the worker threads' log lines on the main thread (<see cref="EngineCalls"/>) and closes their queue there.
 /// </summary>
 public partial class QuitFinalizers : Node
 {
+    public override void _EnterTree()
+    {
+        EngineCalls.Open();
+        ProcessMode = ProcessModeEnum.Always;   // a paused tree still writes the workers' lines
+    }
+
+    public override void _Process(double delta) => EngineCalls.Drain();
+
     public override void _ExitTree()
     {
+        EngineCalls.Close();
         GC.Collect();
         GC.WaitForPendingFinalizers();
     }

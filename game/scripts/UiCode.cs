@@ -15,7 +15,10 @@ namespace Ms2Godot;
 public static class UiCode
 {
     const string Root = "user://uigen";
-    public static string RootPath => ProjectSettings.GlobalizePath(Root);
+    /// <summary>The folder of <see cref="Root"/> on disk, read from the engine once (the setup step reads it again on its worker
+    /// thread, which makes no engine call: <see cref="SetupScreen"/> reads it first on the main thread).</summary>
+    public static string RootPath => rootPath ??= ProjectSettings.GlobalizePath(Root);
+    static string rootPath;
     static bool loaded;
 
     static readonly System.Lazy<Ms2.Formats.Cache.Stamps> stamps = new(() => new(System.IO.Path.Combine(RootPath, "stamps.tsv")));
@@ -58,7 +61,7 @@ public static class UiCode
         using (var packs = new Ms2.Formats.Pack.PackSet(dataDir)) Ms2.Ui.Skills.AdditionalCache.Build(packs, path);
         var dir = System.IO.Path.GetDirectoryName(path);
         foreach (var f in System.IO.Directory.GetFiles(dir, "additional-*"))
-            if (f != path) try { System.IO.File.Delete(f); } catch (System.Exception e) { GD.PushWarning($"UI tables: {f}: {e.Message}"); }
+            if (f != path) try { System.IO.File.Delete(f); } catch (System.Exception e) { EngineCalls.Warn($"UI tables: {f}: {e.Message}"); }
         return sw.Elapsed.TotalSeconds;
     }
 
@@ -110,7 +113,7 @@ public static class UiCode
             var name = System.IO.Path.GetFileName(d);
             bool keep = UiGenerator.HashOfKey(name) is { } gfx ? Known(gfx) : DataCache.InputsOf(d) is { } inputs && inputs.All(Known);
             if (!keep && !Ms2.Formats.Cache.CacheStore.RecentlyTouched(d, PruneGrace))
-                try { System.IO.Directory.Delete(d, true); } catch (System.Exception e) { GD.PushWarning($"per-install files: {d}: {e.Message}"); }
+                try { System.IO.Directory.Delete(d, true); } catch (System.Exception e) { EngineCalls.Warn($"per-install files: {d}: {e.Message}"); }
         }
         try { System.IO.File.Delete(System.IO.Path.Combine(RootPath, "gfx-stamp.txt")); } catch (System.IO.IOException) { }   // the stamp file of the first layout
     }
