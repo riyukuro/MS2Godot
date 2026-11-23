@@ -570,6 +570,7 @@ public partial class HudScene
     void EndOwnState()
     {
         CancelOwnMagics();
+        EndOwnTagEffects();
         ownCast = null;
         ownNext = null;
         ownEnded = false;
@@ -593,6 +594,8 @@ public partial class HudScene
     SkillFollow.Window ownWindow;                  // the combo flags the sequence's text keys set (m_b4a, m_b49, m_b114-m_b116)
     readonly SkillFollow.ComboKeys ownComboKeys = new();
     readonly Ms2.Net.Replay.SkillTagEffects.Keys ownTagKeys = new();   // the motion's m_mapTagEffects keys in the sequence
+    readonly Ms2.Net.Replay.SkillTagEffects.Handles ownTagIds = new();  // the record's m_map138: the tag effects' ids by key
+    Action<int> stopOwnTagEffect, releaseOwnTagEffect;
 
     // MyPC::FUN_141525580's view of the own pc, made once; its delegates read the live session and the buff list
     UseCheckWorld ownUseCheck;
@@ -722,6 +725,7 @@ public partial class HudScene
     void StartOwnAttacks(Player me, CastRecord r)
     {
         CancelOwnMagics();                         // the running skill state's exit
+        EndOwnTagEffects();
         ownCast = r;
         ownQueued = null;                          // StateSkill::vfunc_4 (stateskill.cpp:416)
         ownChainType = 0;                          // :412
@@ -855,8 +859,8 @@ public partial class HudScene
     /// <summary>
     /// StateSkill::TextKeyEvent's tag effects (stateskill.cpp:792-834) for the own sequence's tag keys at <paramref name="t"/>:
     /// each plays its effect on the player unless <see cref="Ms2.Net.Replay.SkillTagEffects.Plays"/> says no (the loop's
-    /// m_b117 and m_bLoop, the record's m_n9c).
-    /// STILL-OPEN: the effect's handle (m_map138), which the state's exit releases, is not kept.
+    /// m_b117 and m_bLoop, the record's m_n9c), kept on the player by its key (m_map138) for the state's exit
+    /// (<see cref="EndOwnTagEffects"/>).
     /// </summary>
     void OwnTagEffects(double t)
     {
@@ -867,9 +871,23 @@ public partial class HudScene
             float at = player.Anims?.TextKey(ownSequence, key) ?? -1;
             if (!Ms2.Net.Replay.SkillTagEffects.Plays(at, ownLoop.InLoop, ownCast.QueuedCharge, ownLoop.Loop, ownLoopStartKey,
                     ownLoopEndKey, ownChargingAttackKey)) continue;
-            Net.LiveSession.Instance?.PlayFieldEffect(path, player.GlobalPosition, player.Visual?.Rotation.Y ?? 0,
-                Ms2.Audio.SoundMusicEffectState.CasterMyPc);
+            ownTagIds.Set(key, Net.LiveSession.Instance?.SpawnKeptEffect(path, player.Visual,
+                Ms2.Audio.SoundMusicEffectState.CasterMyPc) ?? 0);
         }
+    }
+
+    /// <summary>
+    /// StateSkill::vfunc_5 (stateskill.cpp:515-524) for the own cast's tag effects (<see cref="Ms2.Net.Replay.SkillTagEffects.Handles.End"/>):
+    /// stopped at once when the player is dead, hit (the next state 0xd) or the skill has notKeepEffect, else released.
+    /// STILL-OPEN: the stun test (AdditionalCliList::IsStunned) is not made.
+    /// </summary>
+    void EndOwnTagEffects()
+    {
+        if (ownTagIds.Count == 0) return;
+        bool hard = player == null || player.DeadFlag || player.State is Player.MoveState.Dead or Player.MoveState.Hit
+            || (ownCast != null && castMotions?.NotKeepEffect((int)ownCast.Skill.Id) == true);
+        ownTagIds.End(hard, stopOwnTagEffect ??= h => Net.LiveSession.Instance?.StopKeptEffect(h),
+            releaseOwnTagEffect ??= h => Net.LiveSession.Instance?.ReleaseKeptEffect(h));
     }
 
     /// <summary>
@@ -1236,6 +1254,7 @@ public partial class HudScene
             GD.Print($"cast: skill {ownCast.Skill.Id} cancelled by the server");
             player.CancelSkillSequence();
             CancelOwnMagics();
+            EndOwnTagEffects();
             ownCast = null;
         };
         Action<Ms2.Net.Packets.SkillSync> sync = OwnSkillSync;

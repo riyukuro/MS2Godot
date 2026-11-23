@@ -93,6 +93,14 @@ public partial class LiveSession
     /// <summary>The own magics' scene effects (an arrow's "effect" while it flies) after their tick, in the field.</summary>
     public void SyncOwnMagicEffects(Ms2.Ui.Hud.OwnTagMagics own) => remote?.SyncOwnSceneEffects(own);
 
+    /// <summary>A kept effect on <paramref name="actor"/> (FUN_1411a49c0, SetActor) in the field's region skill node: its id,
+    /// 0 when it did not spawn.</summary>
+    public int SpawnKeptEffect(string effect, Node3D actor, int casterKind) => remote?.SpawnKeptEffect(effect, actor, casterKind) ?? 0;
+    /// <summary>A kept effect stopped at once (CEffectService::FUN_1411a6060).</summary>
+    public void StopKeptEffect(int id) => remote?.StopKeptEffect(id);
+    /// <summary>A kept effect released (CEffectService::FUN_1411a69e0).</summary>
+    public void ReleaseKeptEffect(int id) => remote?.ReleaseKeptEffect(id);
+
     /// <summary>The same turned by a full rotation (godot space), as an own magic's end effect.</summary>
     public void PlayFieldEffect(string effect, Vector3 at, Basis rotation, int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
         => remote?.PlayEffect(effect, at, rotation, casterKind);
