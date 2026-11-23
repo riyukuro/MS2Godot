@@ -277,8 +277,18 @@ public class SkillHitTests
     {
         var a = Attack("<attack point=\"Hit_01\" targetCount=\"5\"><range rangeType=\"hole_cylinder\" distance=\"0\" height=\"100\" width=\"300\" endWidth=\"600\" applyTarget=\"1\"/></attack>");
         Assert.That(a.Range.Shape, Is.EqualTo(4));
-        // the ring is 300 to 600 from the caster; a player body is a box about 30 wide
+        // the ring is 300 to 600 from the caster; a player body is a box 70 wide
         var hit = Detect(a, 0, Pc(10, 0, -450), Pc(11, 450, 0), Pc(13, 0, -100), Pc(14, 0, -900), Pc(15, 0, -310));
         Assert.That(hit, Is.EquivalentTo(new[] { 10, 11, 15 }), "inside the ring on any side; the hole and beyond the outer radius are out");
+    }
+
+    [Test]
+    public void TheHoleCylinderSegmentBranchAndTheCentredBody()
+    {
+        var a = Attack("<attack point=\"Hit_01\" targetCount=\"5\"><range rangeType=\"hole_cylinder\" distance=\"0\" height=\"100\" width=\"300\" endWidth=\"600\" applyTarget=\"1\"/></attack>");
+        // 640 and 660 from the ring centre: the body (70 wide) has no corner inside the 600 outer radius, so only the segment test
+        // can take it: 5 and 25 from the outer end, squared against min(150, 300) = 150
+        var hit = Detect(a, 0, Pc(20, 640, 0), Pc(21, 660, 0), Pc(22, 0, 0));
+        Assert.That(hit, Is.EquivalentTo(new[] { 20, 22 }), "the near body by the segment test, the centred body by the zero axis; 660 is out");
     }
 }

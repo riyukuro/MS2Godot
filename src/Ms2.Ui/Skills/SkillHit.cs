@@ -116,13 +116,14 @@ public struct HitBox
 
     /// <summary>NxSegmentOBBSqrDist: the squared distance from the segment a-b to this box's axes and extents placed at
     /// <paramref name="center"/>. The squared distance to a convex box is convex along the segment, so it is minimised by a
-    /// golden-section search.</summary>
+    /// ternary search. STILL-OPEN: the restored source does not hold NxSegmentOBBSqrDist; this is its defined result
+    /// (the minimum over the segment), not its code.</summary>
     public float SegmentSqrDist(Vector3 a, Vector3 b, Vector3 center)
     {
         var self = this;
         float At(float t) => self.PointSqrDist(a + (b - a) * t, center);
         float lo = 0f, hi = 1f;
-        for (int i = 0; i < 80; i++)
+        for (int i = 0; i < 40; i++)
         {
             float m1 = lo + (hi - lo) / 3f, m2 = hi - (hi - lo) / 3f;
             if (At(m1) <= At(m2)) hi = m2; else lo = m1;
@@ -352,9 +353,9 @@ public struct SkillHitShape
         if (!(box.MinZ < CylinderCenter.Z + Height && box.MaxZ > CylinderCenter.Z - AddZ)) return false;
         var center = new Vector3(CylinderCenter.X, CylinderCenter.Y, 0f);
         var boxCenter = new Vector3(box.Center.X, box.Center.Y, 0f);
-        var axis = boxCenter - center;
-        float len = axis.Length();
-        axis = len > 0f ? axis / len : Vector3.Zero;
+        // INFERRED: a body centred on the ring centre gives a zero axis (efd::Point3::Unitize of a zero vector is not in the
+        // restored source; a zero result is assumed), so the segment is the point at the ring centre, which is inside the box.
+        var axis = SkillHit.Unitize(boxCenter - center);
         float distSq = box.SegmentSqrDist(center + axis * Radius, center + axis * OuterRadius, boxCenter);
         return Math.Min(150f, OuterRadius - Radius) > distSq;
     }
