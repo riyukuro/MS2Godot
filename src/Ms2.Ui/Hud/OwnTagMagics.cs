@@ -174,7 +174,7 @@ public sealed class OwnTagMagics
     {
         if (attack == null || tags == null || paths == null) return 0;
         int control = skill?.MagicControlEnable ?? 0;
-        bool arrow = attack.AttackMethodType == 1;
+        bool arrow = attack.ArrowRecord;
         if (control == 2 || (arrow && control != 0)) return 0;
         // STILL-OPEN: FUN_1417ecce0's direction for a PC whose FUN_141489940 is 10 (stateskill.cpp:1335-1342: -x turned by the
         // record's euler rotation) is not ported; the record's z rotation's forward is used.
@@ -229,7 +229,7 @@ public sealed class OwnTagMagics
         ReadOnlySpan<HitCandidate> objects, List<(int Attack, Magic Model)> pending)
     {
         if (tags == null) return 0;
-        bool arrow = attack != null && paths != null && attack.AttackMethodType == 1 && (skill?.MagicControlEnable ?? 0) == 0;
+        bool arrow = attack != null && paths != null && attack.ArrowRecord && (skill?.MagicControlEnable ?? 0) == 0;
         int n = 0;
         foreach (var t in tags)
         {

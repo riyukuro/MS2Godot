@@ -147,10 +147,9 @@ public sealed class SkillArrow
     public int Explosion;
     /// <summary>"effect" (SkillArrow::Load, skillattackdata.cpp:114, m_strEffect; GetArrowEffect): the effect the magic shows
     /// on its own scene while it flies, from its start (CMagic::FUN_14145e960, magicdata.cpp:914-935).
-    /// STILL-OPEN: a GMS2 per-skill-file attack with an arrow but no attackMethodType (the Assassin's 900021/900022): how the
-    /// GMS2 client makes it fly is not recovered. The KMS client defaults the type to 0 (skillattackdata.cpp:491, read at
-    /// :582) and a type 0 attack does not fly: FUN_141461bd0 takes the arrow fill only for type 1 (FUN_141759090,
-    /// magicdata.cpp:2126-2129) and GetArrowEffect gives no effect for it (skillrecord.cpp:119).</summary>
+    /// A set effect also makes an attack of the GMS2 per-skill files an arrow record (<see cref="SkillAttackData.ArrowRecord"/>).
+    /// STILL-OPEN: the GMS2 client's GetArrowEffect (KMS: none unless attackMethodType is 1, skillrecord.cpp:119) is not
+    /// located; the effect is shown for every arrow record.</summary>
     public string Effect = "";
     /// <summary>"effectRemain" and "effectDestroy" (:115-116, row +0x148 and +0x150): the effect at the arrow's end, effectDestroy
     /// when its ray stopped it (magicdata.cpp:1071-1077).</summary>
@@ -197,6 +196,21 @@ public sealed class SkillAttackData
     public int Direction = 3;
     /// <summary>"attackMethodType" (an enum read as a number): 1 keeps the range at the caster (no rangeOffset).</summary>
     public int AttackMethodType;
+    /// <summary>The row comes from the GMS2 per-skill files (skill/&lt;nn&gt;/&lt;id&gt;.xml), read by that client's rule in
+    /// <see cref="ArrowRecord"/>.</summary>
+    public bool Gms2Row;
+    /// <summary>
+    /// SkillLevelData::FUN_1408043f0 @0x1408043f0 (skillleveldata.cpp:864) for this attack, the arrow record test behind the
+    /// magic's fill (SkillTargetRecord::FUN_141759090), the target-less records (CSkillRecord::FUN_141759f70) and the area's
+    /// offset (StateSkill::FUN_1417e95a0, stateskill.cpp:1165): attackMethodType 1. The GMS2 x64 client's test (@0x140467120,
+    /// called by its three record forwarders @0x140c35680, @0x140c37000 and @0x140c365b0) is attackMethodType 1 or a set
+    /// arrow effect (the attack's +0x148, which its loader @0x14045b7b0 fills from arrowProperty@effect at 0x14045bf5e;
+    /// the test is !CSimpleStringT::IsEmpty). Its loader stores attackMethodType (+0x1c) only when the attribute is there and
+    /// its ctor (@0x14045b4f0) zeroes it, as KMS does (skillattackdata.cpp:491, :582); the per-skill files carry no
+    /// attackMethodType, so their arrows are told by the effect. The KMS rule stays for skilldata rows: their 548
+    /// attackMethodType 2 attacks with an effect are no arrow records there.
+    /// </summary>
+    public bool ArrowRecord => AttackMethodType == 1 || (Gms2Row && Arrow.Effect.Length != 0);
     /// <summary>"brokenOffence" (m_nBrokenOffence, +0x40, skillattackdata.cpp:584): non-zero lets the attack's tag area hit
     /// tombs (WorldService::FUN_141bc3470).</summary>
     public int BrokenOffence;
@@ -221,9 +235,9 @@ public sealed class SkillAttackData
     public readonly SkillRange Range = new();
     public readonly SkillArrow Arrow = new();
 
-    internal static SkillAttackData Load(XElement e)
+    internal static SkillAttackData Load(XElement e, bool gms2Row = false)
     {
-        var a = new SkillAttackData { Point = (string)e.Attribute("point") ?? "", TargetCount = Xml.Int(e, "targetCount"), AttackMethodType = Xml.Int(e, "attackMethodType"), BrokenOffence = Xml.Int(e, "brokenOffence"), MagicPathId = Xml.UInt(e, "magicPathID"), PointGroupId = Xml.UInt(e, "pointGroupID"), CubeMagicPathId = Xml.Int(e, "cubeMagicPathID") };
+        var a = new SkillAttackData { Gms2Row = gms2Row, Point = (string)e.Attribute("point") ?? "", TargetCount = Xml.Int(e, "targetCount"), AttackMethodType = Xml.Int(e, "attackMethodType"), BrokenOffence = Xml.Int(e, "brokenOffence"), MagicPathId = Xml.UInt(e, "magicPathID"), PointGroupId = Xml.UInt(e, "pointGroupID"), CubeMagicPathId = Xml.Int(e, "cubeMagicPathID") };
         if (e.Attribute("direction") != null) a.Direction = Xml.Int(e, "direction");
         if (e.Element("damage") is { } damage) { a.StateHitIgnore = Xml.Int(damage, "stateHitIgnore"); a.EffectHit = (string)damage.Attribute("effectHit") ?? ""; a.AttackMaterial = Xml.Int(damage, "attackMaterial"); }
         a.Range.LoadElement(e);
@@ -350,7 +364,8 @@ public sealed class SkillData
     /// A level's &lt;motion&gt; rows keep the parts the cooldown key reads; the additional effect loads are not read here (they
     /// count as loaded).
     /// </summary>
-    public static SkillData Load(XElement e, Func<XElement, string, string, List<XElement>> collect)
+    /// <param name="gms2Row">The skill is from the GMS2 per-skill files (<see cref="SkillAttackData.Gms2Row"/>).</param>
+    public static SkillData Load(XElement e, Func<XElement, string, string, List<XElement>> collect, bool gms2Row = false)
     {
         var s = new SkillData { Id = Xml.UInt(e, "id"), OriginIdRaw = Xml.UInt(e, "originID") };
         var basic = e.Element("basic");
@@ -455,7 +470,7 @@ public sealed class SkillData
             {
                 var md = new SkillMotionData { SequenceName = (string)m.Attribute("sequenceName") ?? "", MoveType = Xml.Int(m, "movetype"), LoopCount = Xml.Int(m, "loopCount"), MoveDistance = Xml.Float(m, "movedistance"), SelfInputCombo = (string)m.Attribute("selfInputCombo") ?? "" };
                 if (m.Attribute("sequenceSpeed") != null) md.SequenceSpeed = Xml.Float(m, "sequenceSpeed");
-                foreach (var a in m.Elements("attack")) md.Attacks.Add(SkillAttackData.Load(a));
+                foreach (var a in m.Elements("attack")) md.Attacks.Add(SkillAttackData.Load(a, gms2Row));
                 lv.Motions.Add(md);
             }
             if (lv.Level < 1) return s;
@@ -526,14 +541,18 @@ public sealed class SkillDataTable
     /// <param name="collect">FUN_14028faa0 over the &lt;level&gt; elements.</param>
     /// <param name="each">Also given each &lt;skill&gt; element as it is read, before its row is made (another table of the
     /// same files reads its own rows from it, so the files are read once); may be null.</param>
-    public SkillDataTable(Func<IEnumerable<XDocument>> files, Func<XElement, string, string, List<XElement>> collect, Action<XElement> each = null)
+    /// <param name="gms2Rows">The files are the GMS2 per-skill files (<see cref="SkillAttackData.Gms2Row"/>).</param>
+    public SkillDataTable(Func<IEnumerable<XDocument>> files, Func<XElement, string, string, List<XElement>> collect, Action<XElement> each = null,
+        bool gms2Rows = false)
     {
         this.files = files;
         this.collect = collect;
         this.each = each;
+        this.gms2Rows = gms2Rows;
     }
 
     readonly Action<XElement> each;
+    readonly bool gms2Rows;
 
     readonly object loadLock = new();
 
@@ -568,7 +587,7 @@ public sealed class SkillDataTable
             foreach (var e in root.Elements("skill"))
             {
                 each?.Invoke(e);
-                var s = SkillData.Load(e, collect);
+                var s = SkillData.Load(e, collect, gms2Rows);
                 d[s.Id] = s;
             }
         }

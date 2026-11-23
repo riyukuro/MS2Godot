@@ -48,6 +48,31 @@ public class Gms2SkillDataTests {
     }
 
     [Test]
+    public void TheAssassinsThrownAttacksAreArrowRecordsByTheirEffect() {
+        // the GMS2 client's arrow record test (@0x140467120): attackMethodType 1 or a set arrowProperty effect; the per-skill
+        // files write no attackMethodType, so 900021/900022 read type 0 and fly by their effect
+        using var packs = Packs();
+        var t = Ms2.Ui.GameTables.Shared(packs, "en");
+        foreach (uint id in new uint[] { 900021, 900022 }) {
+            var a = t.Skills.Skills.GetSkillLevelData(id, 1).Motions[0].Attacks[0];
+            Assert.That((a.AttackMethodType, a.Arrow.Effect, a.Gms2Row, a.ArrowRecord),
+                Is.EqualTo((0, "CH/Weapon/Star/Eff_Star_Attack01_Ball_01.xml", true, true)), "skill " + id);
+        }
+    }
+
+    [Test]
+    public void OnlyAGms2RowTakesTheArrowEffectForAnArrowRecord() {
+        var e = System.Xml.Linq.XElement.Parse("<skill id=\"5\"><basic/><level value=\"1\"><motion>"
+            + "<attack point=\"p0\" attackMethodType=\"2\"><arrow effect=\"E.xml\"/></attack>"
+            + "<attack point=\"p1\"><arrow effect=\"\"/></attack>"
+            + "<attack point=\"p2\" attackMethodType=\"1\"/></motion></level></skill>");
+        foreach (bool gms in new[] { false, true }) {
+            var l = Ms2.Ui.Skills.SkillData.Load(e, (x, n, _) => x.Elements(n).ToList(), gms).GetLevelData(1);
+            Assert.That(l.Motions[0].Attacks.Select(a => a.ArrowRecord), Is.EqualTo(new[] { gms, false, true }), gms ? "GMS2 row" : "skilldata row");
+        }
+    }
+
+    [Test]
     public void TheMotionPropertyChildMovesOntoTheMotion() {
         string r = Ms2.Formats.World.SkillTable.ToSkillRows("<level><motion>\r\n\t<motionProperty sequenceName=\"a\" motionEffect=\"E.xml\" />\r\n<attack point=\"p0\"><rangeProperty distance=\"5\" /><arrowProperty x=\"1\" /><damageProperty rate=\"2\" /></attack></motion></level>");
         Assert.That(r, Does.StartWith("<level><motion sequenceName=\"a\" motionEffect=\"E.xml\">").And.Contain("<range distance=\"5\" />").And.Contain("<arrow x=\"1\" />").And.Contain("<damage rate=\"2\" />"));

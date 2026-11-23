@@ -487,7 +487,7 @@ public static class SkillHit
     {
         var offset = Vector3.Zero;
         var height = Vector3.Zero;
-        if (attack.AttackMethodType != 1)
+        if (!attack.ArrowRecord)
         {
             Axes(ownerRotDegrees.Z, out var f, out var r);
             var o = attack.Range.Offset;
@@ -648,13 +648,13 @@ public static class SkillHit
     /// StateSkill::PickAttackTargets @0x1417f3180 (stateskill.cpp:2565) after the area pick: the first targetCount hits
     /// (CSkillSystem::FUN_141769410 @0x141769410), with arrow overlap the rest of the count filled by random repeats; each gets a
     /// record with a new serial (GameObject::GenerateSerialId @0x14123cec0) and the next hit index. Then target-less records:
-    /// up to the count when <paramref name="attackMethodType"/> is 1 (CSkillRecord::FUN_141759f70 @0x141759f70,
-    /// skillrecord.cpp:346: the type of the record's m_nAttackIndex attack), else one for a nonTarget 1 arrow.
+    /// up to the count when <paramref name="arrowRecord"/> (CSkillRecord::FUN_141759f70 @0x141759f70, skillrecord.cpp:346:
+    /// <see cref="SkillAttackData.ArrowRecord"/> of the record's m_nAttackIndex attack), else one for a nonTarget 1 arrow.
     /// <paramref name="hits"/> is null when the arrow is nonTarget 1 (no area pick).
     /// Between the picked records and the target-less ones, an arrow with a bounceCount chains each picked record
     /// (<see cref="Chain"/>) over <paramref name="objects"/>, so the links take their serials in that order.
     /// </summary>
-    public static void PickTargets(SkillAttackData attack, int attackMethodType, IReadOnlyList<int> hits, Func<int> rand, Func<long> serial,
+    public static void PickTargets(SkillAttackData attack, bool arrowRecord, IReadOnlyList<int> hits, Func<int> rand, Func<long> serial,
         List<SkillDamageTarget> tags, ReadOnlySpan<HitCandidate> objects = default, bool pkMode = false)
     {
         tags.Clear();
@@ -677,7 +677,7 @@ public static class SkillHit
                 var links = Chain(attack, bounce, tags[i].TargetId, objects, rand, serial, pkMode);
                 if (links.Count != 0) tags[i] = tags[i] with { Links = links };
             }
-        if (attackMethodType == 1)
+        if (arrowRecord)
         {
             int rest = limit - used < 0 ? 0 : limit - used;
             for (int i = 0; i < rest; i++) tags.Add(new SkillDamageTarget(serial(), 0, (byte)hit++, Array.Empty<SkillDamageLink>()));

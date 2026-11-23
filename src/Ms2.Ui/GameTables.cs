@@ -149,7 +149,8 @@ public sealed class GameTables
         // build's prefetch reads the files once for both and the first cast does not read them again on its frame
         var motionRows = new Ms2.Formats.World.SkillTable();
         Skills = new Skills.SkillTables(r.Jobs, new Skills.SkillDataTable(() => skillFiles.Select(SkillXml), collect,
-            e => { if (int.TryParse((string)e.Attribute("id"), out int id)) motionRows.Add(id, e); }));
+            e => { if (int.TryParse((string)e.Attribute("id"), out int id)) motionRows.Add(id, e); },
+            skillFiles.Count != 0 && Ms2.Ui.Skills.PerSkillFile.Id(skillFiles[0]) != null));
         Ms2.Formats.World.SkillTable.SetSource(packs, FedRows(Skills.Skills, motionRows));
         additionalCache = packs.DataDir is { } dataDir ? Ms2.Ui.Skills.AdditionalCache.Open(AdditionalCacheOf(dataDir)) : null;
         Additional = NewAdditionalTable(packs, additionalCache);

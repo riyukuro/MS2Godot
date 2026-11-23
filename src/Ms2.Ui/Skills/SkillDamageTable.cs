@@ -53,7 +53,9 @@ public sealed class SkillAttackDamage
     public int InvokeEffectDisable { get; internal set; }
     /// <summary>The attack's "hitImmuneBreak" (m_nHitImmuneBreak :583, CDamageRecord::vfunc_1).</summary>
     public int HitImmuneBreak { get; internal set; }
-    /// <summary>The attack's "attackMethodType" (SkillAttackMethodType :582; FUN_14175acc0 tests 1).</summary>
+    /// <summary>The attack's "attackMethodType" (SkillAttackMethodType :582; FUN_14175acc0 tests 1).
+    /// STILL-OPEN: the GMS2 client's test also takes a set arrow effect (SkillAttackData.ArrowRecord); this row keeps no
+    /// arrow, so a GMS2 per-skill attack's damage record (its hit place and the record's direction) reads only the type.</summary>
     public int AttackMethodType { get; internal set; }
     /// <summary>The attack's "grabTargetType" (SkillGrabTargetType :595).</summary>
     public int GrabTargetType { get; internal set; }
