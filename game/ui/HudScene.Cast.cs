@@ -141,7 +141,23 @@ public partial class HudScene
         FillCastWorld(w, me);
         var res = SkillCast.ItemRequest(w, castWorld, req, (uint)skill, item.Uid);
         if (res.Record is { } r) RouteOwn(r);
-        else GD.Print($"cast: item skill {skill} refused, reason {res.Why}{(res.Notice != null ? " " + res.Notice : "")}");
+        else
+        {
+            GD.Print($"cast: item skill {skill} refused, reason {res.Why}{(res.Notice != null ? " " + res.Notice : "")}");
+            ShowCastRefusal(res.Why);
+        }
+    }
+
+    /// <summary>The center notice and system sound of a refused cast (FUN_141769440: FUN_141275260(id, 1, 0) and the sound),
+    /// the ids and sounds of <see cref="CastNotice.Of"/>; a reason without a notice shows nothing. Shared by the own cast, the
+    /// item cast and the compact pick.</summary>
+    void ShowCastRefusal(int why)
+    {
+        var (id, sound) = CastNotice.Of(why);
+        if (id == 0) return;
+        string text = Ms2.Ui.Hud.MessageBoxData.Common(id);
+        if (!string.IsNullOrEmpty(text)) ShowSystemText(text);
+        if (sound != null) FieldAudio.Instance?.PlayUi(sound);
     }
 
     /// <summary>A request of the own pc (the Unk_InventorySkillRequest ctor: a new cast id, the server tick) at the body's
@@ -216,6 +232,7 @@ public partial class HudScene
         if (res.Record is not { } r)
         {
             GD.Print($"cast: skill {skillId} refused, reason {res.Why}{(res.Notice != null ? " " + res.Notice : "")}");
+            ShowCastRefusal(res.Why);
             return null;
         }
         return r;

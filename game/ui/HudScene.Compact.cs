@@ -60,12 +60,8 @@ public partial class HudScene
         compactActionDown ??= CompactActionDown;
         compactNotice ??= why =>
         {
-            // FUN_141769440: the center notice (FUN_141275260(id, 1, 0)) and the system sound of the refusal
-            var (id, sound) = CastNotice.Of(why);
-            if (id == 0) { GD.Print($"compact: the held tab's skill refused, reason {why}"); return; }
-            string text = Ms2.Ui.Hud.MessageBoxData.Common(id);
-            if (!string.IsNullOrEmpty(text)) ShowSystemText(text);
-            if (sound != null) FieldAudio.Instance?.PlayUi(sound);
+            if (CastNotice.Of(why).StringId == 0) GD.Print($"compact: the held tab's skill refused, reason {why}");
+            ShowCastRefusal(why);
         };
         return compact.Pick(any, castAllowed, CompactOn, compactActionDown, CompactWorld(), (uint)Time.GetTicksMsec(), compactNotice);
     }
