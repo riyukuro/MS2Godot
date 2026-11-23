@@ -28,7 +28,8 @@ public sealed class CreateLook
 
     readonly PackSet packs;
     readonly ColorPalettes palettes;
-    readonly Dictionary<int, XElement> dataRoots = new(), modelRoots = new();
+    readonly Ms2.Ui.Items.ItemFiles files;
+    readonly Ms2.Ui.Items.ItemDataTable itemTable;
     readonly Dictionary<int, string> itemNames = new();
     // job code -> gender -> slot -> rows (TDefaultItems::m_mapSlotItems); base items per gender (ms_aMaps)
     readonly Dictionary<int, Dictionary<EquipSlot, List<Row>>[]> lists = new();
@@ -46,6 +47,7 @@ public sealed class CreateLook
     public CreateLook(PackSet packs, ColorPalettes palettes, string lang = null)
     {
         this.packs = packs; this.palettes = palettes;
+        files = new(packs); itemTable = new(packs);
         lang ??= GameOptions.StringLanguage;
         var names = Load($"string/{lang}/itemname.xml");
         if (names != null)
@@ -56,7 +58,7 @@ public sealed class CreateLook
 
     CreateLook(CreateLook o)
     {
-        packs = o.packs; palettes = o.palettes; dataRoots = o.dataRoots; modelRoots = o.modelRoots; itemNames = o.itemNames;
+        packs = o.packs; palettes = o.palettes; files = o.files; itemTable = o.itemTable; itemNames = o.itemNames;
         lists = o.lists; baseItems = o.baseItems; customizes = o.customizes; Rng = o.Rng;
         Gender = o.Gender; JobCode = o.JobCode; SkinRow = o.SkinRow;
         foreach (var (k, v) in o.Items) Items[k] = v;
@@ -80,15 +82,8 @@ public sealed class CreateLook
     XDocument Load(string entry) => packs.Exists("Xml", entry)
         ? PackXml.Parse(packs.Read("Xml", entry)) : null;
 
-    XElement Find(Dictionary<int, XElement> cache, string dir, int id, string element)
-    {
-        int prefix = id / 100000;
-        if (!cache.TryGetValue(prefix, out var root)) cache[prefix] = root = Load($"{dir}/{prefix}.xml")?.Root;
-        return root?.Elements(element).FirstOrDefault(e => (string)e.Attribute("id") == id.ToString());
-    }
-
-    XElement Data(int id) => Find(dataRoots, "itemdata", id, "item");
-    XElement Model(int id) => Find(modelRoots, "itemmodel", ModelId(id), "ItemModel");
+    XElement Data(int id) => files.Item(id);
+    XElement Model(int id) => files.Model(ModelId(id));
 
     /// <summary>
     /// CItemDefaultData load: each key's slots, each item that is visible or a base item (the rows carry no locale or
@@ -145,8 +140,7 @@ public sealed class CreateLook
     /// <summary>CItemData::GetEquipSubtype: the property subtype of an equip (type 1).</summary>
     public int Subtype(int id)
     {
-        var p = Data(id)?.Descendants("property").FirstOrDefault();
-        return (string)p?.Attribute("type") == "1" && int.TryParse((string)p.Attribute("subtype"), out int s) ? s : 0;
+        return itemTable.Get(id)?.EquipSubtype ?? 0;
     }
 
     /// <summary>CItemData::FUN_14053d2b0: an overall (top and bottom in one).</summary>
