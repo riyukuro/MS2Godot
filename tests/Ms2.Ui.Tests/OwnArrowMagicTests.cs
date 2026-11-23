@@ -19,13 +19,14 @@ public class OwnArrowMagicTests
         + "<range rangeType=\"box\" distance=\"200\" height=\"100\" width=\"100\" applyTarget=\"1\"/>"
         + "<arrow nonTarget=\"1\" rayPhysxTest=\"1\" collision=\"25,100,15\" collisionAdd=\"0,25,15\"" + arrow + "/>" + children + "</attack>";
 
-    static CastRecord Record(string arrow = "", string attack = "", bool nonTarget = true, string children = "")
+    static CastRecord Record(string arrow = "", string attack = "", bool nonTarget = true, string children = "", int attackMethodType = 1, bool gms2Rows = false)
     {
         var xml = Arrow(arrow, attack, children);
         if (!nonTarget) xml = xml.Replace("nonTarget=\"1\"", "nonTarget=\"0\"");
+        xml = xml.Replace("attackMethodType=\"1\"", "attackMethodType=\"" + attackMethodType + "\"");
         var doc = XDocument.Parse("<ms2><skill id=\"100\"><basic mainType=\"1\"/><level value=\"1\"><motion sequenceName=\"A\">"
             + xml + "</motion></level></skill></ms2>");
-        var t = new SkillDataTable(() => new[] { doc }, (e, n, _) => e.Elements(n).ToList());
+        var t = new SkillDataTable(() => new[] { doc }, (e, n, _) => e.Elements(n).ToList(), gms2Rows: gms2Rows);
         var d = t.GetSkillData(100);
         return new CastRecord { Skill = d, Level = d.GetLevelData(1), CastId = 0x1122334455L, Motion = 0, SendCount = 3 };
     }
@@ -728,6 +729,34 @@ public class OwnArrowMagicTests
         fx.Clear();
         m.SceneEffects(fx);
         Assert.That(fx, Is.Empty, "gone with the magic");
+    }
+
+    [Test]
+    public void AGms2ThrownAttacksMagicShowsItsArrowEffect()
+    {
+        // GMS2 SkillTargetRecord::GetArrowEffect (0x140c356c0) asks the level for the attack's effect string kind 2 (0x140467330,
+        // attack +0x148) with no attackMethodType test, and CMagic 0x140aed630 shows it as KMS FUN_14145e960 does
+        var r = Record(" effect=\"CH/Star.xml\"", attackMethodType: 0, gms2Rows: true);
+        var a = SkillAttackFire.AttackAt(r, 0);
+        Assert.That((a.AttackMethodType, a.ArrowRecord), Is.EqualTo((0, true)));
+        var m = Add(r, Paths(Linear));
+        m.Tick(T + 50, 0, Owner, new[] { Me }, r, null, new List<SkillHitRequest>(), () => 0, null);
+        var fx = new List<MagicSceneEffect>();
+        m.SceneEffects(fx);
+        Assert.That((fx.Count, fx[0].File), Is.EqualTo((1, "CH/Star.xml")));
+    }
+
+    [Test]
+    public void OnlyAGms2RowGivesTheArrowEffectOfAnAttackNotOfType1()
+    {
+        // KMS SkillTargetRecord::GetArrowEffect (skillrecord.cpp:119) gives none unless attackMethodType is 1 (548 skilldata
+        // attacks of type 2 carry an effect); the GMS2 one (@0x140c356c0) has no type test
+        var kms = SkillAttackFire.AttackAt(Record(" effect=\"CH/Star.xml\"", attackMethodType: 2), 0);
+        Assert.That((kms.ArrowRecord, kms.Arrow.Effect, OwnTagMagics.MagicEffect(kms)), Is.EqualTo((false, "CH/Star.xml", "")));
+        var gms = SkillAttackFire.AttackAt(Record(" effect=\"CH/Star.xml\"", attackMethodType: 2, gms2Rows: true), 0);
+        Assert.That((gms.ArrowRecord, OwnTagMagics.MagicEffect(gms)), Is.EqualTo((true, "CH/Star.xml")));
+        var bow = SkillAttackFire.AttackAt(Record(" effect=\"CH/Ball.xml\""), 0);
+        Assert.That(OwnTagMagics.MagicEffect(bow), Is.EqualTo("CH/Ball.xml"));
     }
 
     [Test]

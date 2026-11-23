@@ -57,6 +57,7 @@ public class Gms2SkillDataTests {
             var a = t.Skills.Skills.GetSkillLevelData(id, 1).Motions[0].Attacks[0];
             Assert.That((a.AttackMethodType, a.Arrow.Effect, a.Gms2Row, a.ArrowRecord),
                 Is.EqualTo((0, "CH/Weapon/Star/Eff_Star_Attack01_Ball_01.xml", true, true)), "skill " + id);
+            Assert.That(Ms2.Ui.Hud.OwnTagMagics.MagicEffect(a), Is.EqualTo(a.Arrow.Effect), "GetArrowEffect (@0x140c356c0) has no type test");
         }
     }
 

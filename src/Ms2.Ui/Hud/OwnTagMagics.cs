@@ -145,8 +145,15 @@ public sealed class OwnTagMagics
     public void SceneEffects(List<MagicSceneEffect> into)
     {
         foreach (var m in live)
-            if (m.SceneEffect) into.Add(new MagicSceneEffect(m.Key, m.Attack.Arrow.Effect, m.Current, m.SceneX, m.SceneY, m.SceneZ));
+            if (m.SceneEffect) into.Add(new MagicSceneEffect(m.Key, MagicEffect(m.Attack), m.Current, m.SceneX, m.SceneY, m.SceneZ));
     }
+
+    /// <summary>SkillTargetRecord::GetArrowEffect, the effect CMagic's start shows on the magic's scene (magicdata.cpp:917): the
+    /// attack's arrow effect. KMS gives it only for attackMethodType 1 (skillrecord.cpp:119); the GMS2 x64 client's
+    /// (@0x140c356c0: the level's effect string kind 2 @0x140467330, the attack's +0x148, read by CMagic @0x140aed630) has no
+    /// type test, so on a GMS2 per-skill row any attack gives it.</summary>
+    public static string MagicEffect(SkillAttackData attack) =>
+        attack.AttackMethodType == 1 || attack.Gms2Row ? attack.Arrow.Effect : "";
 
     /// <summary>The flight of the magic at <paramref name="index"/> (for the checks): its current and last points, state and target.</summary>
     internal (Vector3 Current, Vector3 Last, int State, Vector3 Target) Flight(int index) =>
@@ -637,10 +644,10 @@ public sealed class OwnTagMagics
         if ((uint)m.LastTick > (uint)nowMs) return false;
         if (m.State == 0)
         {
-            // FUN_14145e960: the arrow's effect on the magic scene (magicdata.cpp:917-934), shown when the effect file ignores
+            // FUN_14145e960: the arrow's effect on the magic scene (magicdata.cpp:917-934, GetArrowEffect), shown when the effect file ignores
             // the optimizer (HasIgnoreOptimizeParam) or the owner is not hidden by it (COptimizer::FUN_14161ce60 0, as for
             // every owner here); the piercing interval counts from here (m_n268)
-            m.SceneEffect = m.Attack.Arrow.Effect.Length != 0;
+            m.SceneEffect = MagicEffect(m.Attack).Length != 0;
             m.State = 1;
             m.StateTick = begin;
             m.LastTick = begin;
