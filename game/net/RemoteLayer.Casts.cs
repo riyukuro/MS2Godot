@@ -34,7 +34,7 @@ public sealed partial class RemoteLayer
     /// OnSkillSync @0x141718150 (:3361): another cast than the actor's running one is started as OnSkillUse starts it (serial 0,
     /// the packet's speed); the running one takes the record rotation (m_kRot), PCBase::vfunc_22(move) and, in StateSkill,
     /// FUN_1417ec630(A, B) (<see cref="RemotePcStates.SkillSync"/>).
-    /// STILL-OPEN: an npc has no cast record here, so each of its syncs plays.
+    /// STILL-OPEN: an npc's sync plays its sequence again even for the cast record it holds (<see cref="NpcLayer.BeginCast"/>).
     /// </summary>
     void OnSkillSync(SkillSync s)
     {
@@ -105,7 +105,12 @@ public sealed partial class RemoteLayer
         {
             if (npcs.IsDead(actorId)) return;
             at = n.root; yaw = n.yaw;
-            if (!string.IsNullOrEmpty(motion.SequenceName)) npcs.PlaySequence(actorId, motion.SequenceName);
+            if (!string.IsNullOrEmpty(motion.SequenceName))
+            {
+                string anim = npcs.PlaySequence(actorId, motion.SequenceName);
+                // FUN_141673ce0 then vfunc_59(0x10): the record and the skill state the force zones read
+                npcs.BeginCast(actorId, castUid, motionIndex, motionIndex + 1 >= skillMotions.MotionCount(skillId, level), motion, anim);
+            }
         }
         else return;
         if (!string.IsNullOrEmpty(motion.MotionEffect)) combat.PlayEffect(motion.MotionEffect, at.Position, yaw);

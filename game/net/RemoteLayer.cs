@@ -900,6 +900,7 @@ public sealed partial class RemoteLayer : Node3D
         if (TombTags.Count > 0) { RunMarkerTags(); RunTombTags(); }
         CodiTick(dt);
         npcs.Process(dt);
+        if (LiveSession.Instance?.OwnPlayer is { } own) npcs.ForceSources(own.ForceNpcs);   // FUN_141bc8420's npc zones
         combat.Process(dt);
     }
 }

@@ -675,8 +675,8 @@ public partial class Player : CharacterBody3D
 
     /// <summary>The field's region skill objects, the force zones WorldService::FUN_141bc8420 reads first; null without them.</summary>
     public Ms2.Formats.World.RegionSkillObjects ForceRegions;
-    /// <summary>The npc force zones FUN_141bc8420 reads next (npcs in the skill state with their cast's push cylinder).
-    /// STILL-OPEN: nothing fills it yet: the npcs' state (0x10) and their cast record are not tracked (NpcLayer).</summary>
+    /// <summary>The npc force zones FUN_141bc8420 reads next (npcs in the skill state with their cast's push cylinder), filled
+    /// each frame by the live field's npcs (NpcLayer.ForceSources).</summary>
     public readonly List<Ms2.Formats.World.ForceZone.Source> ForceNpcs = new();
 
     /// <summary>WorldService::FUN_141bc8420 for the own player: the frame's push in Godot axes (Y up), zero without a zone.

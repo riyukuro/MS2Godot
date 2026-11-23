@@ -43,6 +43,13 @@ public sealed class NpcLayer
         public readonly Ms2.Ui.Skills.ColorBoost Boost = new();   // PCBase m_colorBoost
         public List<ShaderMaterial> BoostMaterials;                // the body's character-shader materials, gathered on the first boost
         public int[] AnchorBones;                 // the skeleton's bone per <nodeCollisions> row (-1: none), found on the first hit
+        public byte State;                        // GetCurStateId(): the sync blocks' state (ApplySyncBlock), 0x10 on a cast, 0xc dead
+        public ushort Serial;                     // m_nDAC: the last block's state serial (0 at spawn, CNpc init :473)
+        public Ms2.Formats.World.SkillMotion Cast; // the head of PCBase m_unk_8e8: the cast record's motion (GetMotionData)
+        public long CastUid; public int CastMotion = -1;   // the record's cast uid and motion index, as FUN_141673bf0 finds it
+        public string CastAnim;                   // the cast's sequence as played here; null when the model has none
+        public bool CastLast;                     // CSkillRecord::FUN_141759e40: the record's motion is the level's last
+        public double CastEnded = -1;             // StateSkill m_fStartTime once the sequence ended (EndOfSequence); -1 while it plays
     }
 
     /// <summary>The CRT rand() the death pick draws from (0..0x7fff).</summary>
@@ -374,12 +381,15 @@ public sealed class NpcLayer
 
     /// <summary>Plays a named kfm sequence (a skill's motion) on an npc.
     /// STILL-OPEN: it plays at 1; the client's StateSkill plays the motion at its m_fSequenceSpeed through CalcNpcAsiR
-    /// (stateskill.cpp:1250-1252).</summary>
-    public void PlaySequence(int id, string name)
+    /// (stateskill.cpp:1250-1252).
+    /// Returns the animation's name on the body, null when it did not play.</summary>
+    public string PlaySequence(int id, string name)
     {
-        if (!inst.TryGetValue(id, out var i) || i.Model == null || i.Dead) return;
+        if (!inst.TryGetValue(id, out var i) || i.Model == null || i.Dead) return null;
         var seq = i.Model.Kfm.ByName(name);
-        if (seq != null) Play(i, seq.Id);
+        if (seq == null) return null;
+        Play(i, seq.Id);
+        return i.Sequence == seq.Id ? i.Playing : null;
     }
 
     /// <summary>PCBase::vfunc_112 on an npc (CNpc::vfunc_112 @0x141090740 returns early for a dead npc whose corpse is
@@ -568,6 +578,7 @@ public sealed class NpcLayer
     {
         if (!inst.TryGetValue(id, out var i) || i.Dead) return;
         i.Dead = true; Deaths++;
+        i.State = 0xc;                 // StateDeadNPC
         Tags?.Died(i.Root);
         if (i.Bar != null) { i.Bar.Dead = true; Bars?.Remove(i.Root); }      // vfunc_8: a dead npc's bar drops for good; its entry and clip go back to the pool
         var row = table.Find(i.NpcId);
@@ -612,7 +623,7 @@ public sealed class NpcLayer
     /// client's frequency 0 gives a NaN or infinite sequence time (NiControllerSequence.cpp:755).
     /// A jump block (-2/-3) starts the arc mover m_unkDB0, which keeps the yaw target and the snap from applying, as a dead body does here.
     /// STILL-OPEN: the arc mover is not ported; a jumping npc eases toward the block position.
-    /// STILL-OPEN: in state 0xd the client keeps the npc's own height; the npc state is not tracked here.
+    /// STILL-OPEN: in state 0xd the client keeps the npc's own height; the block's state is tracked (<see cref="SyncState"/>) but not applied to it.
     /// STILL-OPEN: a hit-state block (state 0xd) replays its sequence at the block speed even when it is the sequence already playing
     /// (unit_14108e1e0_npcactorandvibrate.cpp:1022); here the speed only takes when the sequence changes.
     /// STILL-OPEN: a jump block without the arc data plays its sequence (Jump_A/Jump_B) at the block speed
@@ -624,6 +635,7 @@ public sealed class NpcLayer
         if (!inst.TryGetValue(b.ObjectId, out var i)) return;
         i.Target = Placed(b.Position.ToVector3());
         i.Moves++;
+        SyncState(i, b.State, b.Serial);
         if (i.Dead || b.Sequence is -2 or -3) { i.Velocity = default; i.Eases = true; return; }       // a dead body keeps its last frame
         i.Eases = false;
         var vel = G(b.Velocity.ToVector3());
@@ -651,6 +663,74 @@ public sealed class NpcLayer
         i.Velocity = vel;
     }
 
+    /// <summary>
+    /// The state part of CNpc::ApplySyncBlock (unit_14108e1e0_npcactorandvibrate.cpp:973-1032): a block whose serial is the last one
+    /// (m_nDAC) changes nothing; otherwise the serial is kept and the block's state entered (vfunc_59), except 0x12 and gosNone (0).
+    /// The spawn (0x11), talk (0x16) and hit (0xd) branches enter their state too, with their data.
+    /// STILL-OPEN: the talk branch's two early returns (the own pc talking to it or not, :987-1004), the additional-list flag
+    /// (AdditionalCliList::FUN_1409709b0, :1025) and a refusal by vfunc_59 are not followed; the state is taken as entered.
+    /// </summary>
+    static void SyncState(Inst i, byte state, ushort serial)
+    {
+        if (serial == i.Serial) return;
+        i.Serial = serial;
+        if (state != 0 && state != 0x12 && !i.Dead) i.State = state;
+    }
+
+    /// <summary>The npc's state (GetCurStateId), 0 when there is no npc of the id.</summary>
+    public byte StateOf(int id) => inst.TryGetValue(id, out var i) ? i.State : (byte)0;
+
+    /// <summary>
+    /// StateSkill::PlayCastStartEffect (@0x1417ea750, stateskill.cpp:1820-1829) on an npc: a motion with a sequence goes to
+    /// PCBase::FUN_141673ce0, which replaces the record list (m_unk_8e8) unless it holds the uid and motion already, and a new
+    /// record enters StateSkill (0x10). False for a dead npc, a motion without a sequence or the record already there.
+    /// <paramref name="anim"/> is the sequence as played on the body (null when the model lacks it); <paramref name="last"/> is
+    /// whether the motion is the level's last (<see cref="Process"/> ends the state on it).
+    /// </summary>
+    public bool BeginCast(int id, long castUid, int motionIndex, bool last, Ms2.Formats.World.SkillMotion motion, string anim)
+    {
+        if (!inst.TryGetValue(id, out var i) || i.Dead || motion == null || string.IsNullOrEmpty(motion.SequenceName)) return false;
+        if (i.Cast != null && i.CastUid == castUid && i.CastMotion == motionIndex) return false;
+        i.Cast = motion; i.CastUid = castUid; i.CastMotion = motionIndex; i.CastAnim = anim; i.CastLast = last; i.CastEnded = -1;
+        i.State = 0x10;
+        return true;
+    }
+
+    /// <summary>
+    /// The npcs WorldService::FUN_141bc8420 takes as force zones (worldservice_1.cpp:5560-5600): in StateSkill (0x10) with a
+    /// cast record whose motion has a push cylinder, centred at the npc's position (client axes, z up). Fills
+    /// <paramref name="into"/> after clearing it.
+    /// </summary>
+    public void ForceSources(List<Ms2.Formats.World.ForceZone.Source> into)
+    {
+        into.Clear();
+        foreach (var i in inst.Values)
+        {
+            if (i.State != 0x10 || i.Cast?.PushCylinder is not { } cyl || i.Root == null) continue;
+            if (cyl.VelH == 0f && cyl.VelV == 0f) continue;   // a motion without a push cylinder: ForceZone skips it anyway
+            var g = i.Root.GlobalPosition;
+            into.Add(new Ms2.Formats.World.ForceZone.Source(new System.Numerics.Vector3(g.X, -g.Z, g.Y), cyl));
+        }
+    }
+
+    /// <summary>
+    /// StateSkill's own end for an npc (not the own pc, no rider): EndOfSequence (stateskill.cpp:1054) marks the cast's sequence
+    /// over and keeps its time, then FUN_1417ee120 (:2915-2992) ends the state through FUN_1417f0070 (StateIdle, 1) when the
+    /// record's motions are over (CSkillRecord::FUN_141759e40), and otherwise 5 s after that time.
+    /// STILL-OPEN: the record's extra (m_nB0) holds the actor (StateHold, 0x20) instead, and a looping motion (m_nRepeat) is
+    /// not followed; a cast whose sequence the model lacks stays in the state until a block changes it.
+    /// </summary>
+    void SkillEnd(Inst i)
+    {
+        if (i.CastAnim == null || i.Player == null) return;
+        if (i.CastEnded < 0)
+        {
+            if (i.Player.IsPlaying() && i.Player.CurrentAnimation == i.CastAnim) return;
+            i.CastEnded = Now;
+        }
+        if (i.CastLast || Now > i.CastEnded + 5.0) i.State = 1;
+    }
+
     /// <summary>Where the busiest npc is (the one that has had the most sync blocks), for a camera that follows the action.</summary>
     public Godot.Vector3? ActivePosition() => inst.Count == 0 ? null : inst.Values.MaxBy(i => i.Moves).Root.Position;
 
@@ -667,6 +747,7 @@ public sealed class NpcLayer
             }
             else i.Root.Position += i.Velocity * dt;          // CNpc::vfunc_53 (@0x1410952f0): pos += m_posD40 * time
             if (!i.Placeholder) Turn(i, dt);
+            if (i.State == 0x10) SkillEnd(i);
             // the CNpc update's shake (:2419-2424): the drawn point is the npc's own plus the offset, each frame anew
             if (i.Vibrate.Active)
             {
