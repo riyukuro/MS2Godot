@@ -14,12 +14,22 @@ public static class SafeDecode
 
     public static Pcm16 Decode(SoundClip clip)
     {
+        var pcm = Decode(clip, out var failure);
+        if (failure != null) GD.PushWarning(failure);
+        return pcm;
+    }
+
+    /// <summary>The form for a pool thread: no engine call; <paramref name="failure"/> is the warning to log (the first failure
+    /// of the clip only, else null), for the caller to push where an engine call is safe.</summary>
+    public static Pcm16 Decode(SoundClip clip, out string failure)
+    {
+        failure = null;
         try { return MpegDecoder.Decode(clip); }
         catch (Exception ex)
         {
             bool first;
             lock (warned) first = warned.Add(clip.Name ?? "");
-            if (first) GD.PushWarning($"audio: {clip.Name}: decode failed ({ex.GetType().Name}: {ex.Message}), playing silent");
+            if (first) failure = $"audio: {clip.Name}: decode failed ({ex.GetType().Name}: {ex.Message}), playing silent";
             return null;
         }
     }

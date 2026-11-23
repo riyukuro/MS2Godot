@@ -21,8 +21,15 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     /// plays nowhere instead of reaching the freed players.</summary>
     public static FieldAudio Instance { get; private set; }
 
+    public override void _EnterTree()
+    {
+        lock (poolGate) poolClosed = false;
+    }
+
     public override void _ExitTree()
     {
+        // close the pool side first: a decode that finishes after this point makes no engine call (see poolGate)
+        lock (poolGate) poolClosed = true;
         Unchain();
         if (Instance == this) Instance = null;
     }
@@ -40,10 +47,17 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     readonly AudioStreamPlayer[] musicPlayers = new AudioStreamPlayer[MusicCrossfade.SlotCount];
     readonly MusicCrossfade crossfade = new();
     readonly MusicPlaybackGuard playbackGuard = new();
-    /// <summary>The music segments decoded on the pool threads, as the main thread's steps (run first in <see cref="_Process"/>).
-    /// A pool thread makes no engine call (no stream, no deferred call): one still decoding at the quit finished into the
-    /// engine's teardown and crashed the exit (SIGSEGV, exit 139) about one run in three.</summary>
+    /// <summary>The music segments decoded and built on the pool threads, as the main thread's steps (run first in
+    /// <see cref="_Process"/>): the cue map and the play stay on the main thread.</summary>
     readonly System.Collections.Concurrent.ConcurrentQueue<Action> decodedSegments = new();
+    /// <summary>Guards every engine call a pool thread makes (the stream build, the decode warning): it runs under this lock
+    /// only while <see cref="poolClosed"/> is false, and <see cref="_ExitTree"/> sets the flag under the same lock. A decode
+    /// still running at the quit then never reaches the engine: before this, one finished into the engine's teardown and
+    /// crashed the exit (SIGSEGV, exit 139) about one run in three. Godot leaves the tree (SceneTree::finalize, from
+    /// OS_LinuxBSD::run) before Main::cleanup frees the script languages, the servers and the message queue, so once
+    /// the flag is set no pool call can follow them.</summary>
+    readonly object poolGate = new();
+    bool poolClosed;
     readonly SoundMusicEffectState soundMusicFade = new();
     readonly float[] slotSegmentVolume = { 1f, 1f };
     AudioStreamPlayer ui;
@@ -427,15 +441,21 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         bool selfLoop = MusicController.IsUnconditionalSelfLoop(seg);
         System.Threading.Tasks.Task.Run(() =>
         {
-            var pcm = SafeDecode.Decode(clip);
-            if (pcm == null) return;   // undecodable segment stays silent
-            var data = pcm.ToBytes();
-            decodedSegments.Enqueue(() =>
+            var pcm = SafeDecode.Decode(clip, out var failure);
+            var data = pcm?.ToBytes();
+            lock (poolGate)
             {
-                if (!playbackGuard.AcceptDecode(gen)) return;
-                cueSegments[seg.Id] = (clip, pcm, Stream(pcm, data, selfLoop));
-                PlaySegment(cue, seg, crossfadeMs);
-            });
+                if (poolClosed) return;
+                if (failure != null) GD.PushWarning(failure);
+                if (pcm == null) return;   // undecodable segment stays silent
+                var wav = Stream(pcm, data, selfLoop);
+                decodedSegments.Enqueue(() =>
+                {
+                    if (!playbackGuard.AcceptDecode(gen)) return;
+                    cueSegments[seg.Id] = (clip, pcm, wav);
+                    PlaySegment(cue, seg, crossfadeMs);
+                });
+            }
         });
     }
 
@@ -450,14 +470,20 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         bool selfLoop = MusicController.IsUnconditionalSelfLoop(next);
         System.Threading.Tasks.Task.Run(() =>
         {
-            var pcm = SafeDecode.Decode(clip);
-            if (pcm == null) return;
-            var data = pcm.ToBytes();
-            decodedSegments.Enqueue(() =>
+            var pcm = SafeDecode.Decode(clip, out var failure);
+            var data = pcm?.ToBytes();
+            lock (poolGate)
             {
-                if (!playbackGuard.AcceptDecode(gen)) return;
-                cueSegments[next.Id] = (clip, pcm, Stream(pcm, data, selfLoop));
-            });
+                if (poolClosed) return;
+                if (failure != null) GD.PushWarning(failure);
+                if (pcm == null) return;
+                var wav = Stream(pcm, data, selfLoop);
+                decodedSegments.Enqueue(() =>
+                {
+                    if (!playbackGuard.AcceptDecode(gen)) return;
+                    cueSegments[next.Id] = (clip, pcm, wav);
+                });
+            }
         });
     }
 

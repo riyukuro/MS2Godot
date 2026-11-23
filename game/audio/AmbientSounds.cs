@@ -84,7 +84,12 @@ public partial class AmbientSounds : Node3D
         Count++;
         Log.Add($"{e.Name} at {pos} -> {id} = {clip.Name} vol {clip.Volume:F2} range {min}..{max}");
         var key = clip.Name;
-        if (!decoded.TryGetValue(key, out var task)) decoded[key] = task = Task.Run(() => SafeDecode.Decode(clip));
+        if (!decoded.TryGetValue(key, out var task)) decoded[key] = task = Task.Run(() =>
+        {
+            var pcm = SafeDecode.Decode(clip, out var failure);
+            if (failure != null) started.Enqueue(() => GD.PushWarning(failure));
+            return pcm;
+        });
         task.ContinueWith(t => { if (t.IsFaulted || t.Result == null) return; var pcm = t.Result; var data = pcm.ToBytes(); started.Enqueue(() => Start(sound, pcm, data)); });
     }
 
