@@ -61,6 +61,13 @@ public sealed class NpcRow
     /// </summary>
     public float DamagedColorScale = 2f;
     /// <summary>
+    /// The environment's lookAtMyPCWhenTalking and useTalkMotion (CNpcData::LoadXml, npcdata.cpp:1496-1497, XmlGetAttr's bool;
+    /// true when absent, the ctor's, :653): a talking npc turns to the own PC (CNpc::ApplySyncBlock's talk branch,
+    /// unit_14108e1e0_npcactorandvibrate.cpp:998-1005) and plays its talk motion. GMS2's npc files keep them on
+    /// &lt;lookattarget&gt;; the environment's own attribute wins.
+    /// </summary>
+    public bool LookAtMyPcWhenTalking = true, UseTalkMotion = true;
+    /// <summary>
     /// &lt;dead defaultaction upaction&gt; (CNpcData::LoadXml, npcdata.cpp:1651-1659): XmlTokenList, the attribute split at ','
     /// by CString::Tokenize (achievedata.cpp:501), which skips empty tokens and trims nothing.
     /// </summary>
@@ -249,6 +256,9 @@ public sealed class NpcTable
         row.DamagedVibrateDuration = Flt(env, "damagedVibrateDuration", 0);
         row.DamagedVibrateAmp = Flt(env, "damagedVibrateAmp", 0);
         row.DamagedColorScale = Flt(env, "damagedColorScale", 2f);
+        var look = env.Element("lookattarget");
+        row.LookAtMyPcWhenTalking = EffectDummy.Bool(env, "lookAtMyPCWhenTalking", look == null || EffectDummy.Bool(look, "lookAtMyPCWhenTalking", true));
+        row.UseTalkMotion = EffectDummy.Bool(env, "useTalkMotion", look == null || EffectDummy.Bool(look, "useTalkMotion", true));
         if (env.Element("dead") is { } dead)
         {
             row.DeadDefaultActions = ((string)dead.Attribute("defaultaction") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);

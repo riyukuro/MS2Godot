@@ -104,6 +104,24 @@ public class PerFileTableTests
         Assert.That((none.RotationSpeed, none.WalkSpeed, none.RunSpeed, none.ShadowScale), Is.EqualTo((0f, 0f, 0f, 0f)));
     }
 
+    // CNpcData::LoadXml reads lookAtMyPCWhenTalking and useTalkMotion off the environment (npcdata.cpp:1496-1497; true when absent,
+    // :653); GMS2 keeps them on <lookattarget>, and the environment's own attribute wins
+    [Test]
+    public void TheTalkLookIsReadFromEitherLayout()
+    {
+        NpcRow Row(string env) => NpcTable.ParseRow(XElement.Parse($@"<npc id=""1""><environment {env}</environment></npc>"), Array.Empty<EffectDummy>());
+        var gms = Row(@"><lookattarget lookAtMyPCWhenTalking=""0"" useTalkMotion=""1"" />");
+        Assert.That((gms.LookAtMyPcWhenTalking, gms.UseTalkMotion), Is.EqualTo((false, true)));
+        var kms = Row(@"lookAtMyPCWhenTalking=""1"" useTalkMotion=""0"">");
+        Assert.That((kms.LookAtMyPcWhenTalking, kms.UseTalkMotion), Is.EqualTo((true, false)));
+        var both = Row(@"lookAtMyPCWhenTalking=""true""><lookattarget lookAtMyPCWhenTalking=""0"" useTalkMotion=""false"" />");
+        Assert.That((both.LookAtMyPcWhenTalking, both.UseTalkMotion), Is.EqualTo((true, false)));
+        var none = Row(">");
+        Assert.That((none.LookAtMyPcWhenTalking, none.UseTalkMotion), Is.EqualTo((true, true)));
+        // XmlGetAttr's bool keeps the value for a word it does not know
+        Assert.That(Row(@"lookAtMyPCWhenTalking=""2"">").LookAtMyPcWhenTalking, Is.True);
+    }
+
     [Test]
     public void TheNpcTableHasRowsInEitherLayout()
     {
