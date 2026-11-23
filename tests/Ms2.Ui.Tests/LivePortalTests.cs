@@ -16,7 +16,9 @@ public class LivePortalTests
         public bool HasPlayer { get; set; } = true;
         public bool InCubeMode { get; set; }
         public bool Restricted;
-        public bool IsRestricted(int kind) => Restricted && kind == 9;
+        /// <summary>Answer as the live host does: the session guide's limit.</summary>
+        public bool UseGuide;
+        public bool IsRestricted(int kind) => UseGuide ? Ms2.Ui.Guide.GuideManager.IsLimitActive(kind) : Restricted && kind == 9;
         public int FieldId { get; set; } = 1000;
         public long ServerTime { get; set; } = 5000;
         public readonly Dictionary<int, FieldData> Fields = new();
@@ -267,6 +269,33 @@ public class LivePortalTests
         host.Restricted = false; host.InCubeMode = true;
         Enter(action);
         Assert.That(host.Sent, Is.Empty);
+    }
+
+    /// <summary>The guide's PortalUse limit (kind 9) holds the portal action while an event holds it and frees it after
+    /// (PortalAction::vfunc_1, actionkeyobject.cpp:867).</summary>
+    [Test, NonParallelizable]
+    public void TheGuidePortalLimitHoldsThePortalWhileHeld()
+    {
+        var (host, action, portals) = Field(Xblock(7));
+        portals.Apply(Add(7));
+        host.UseGuide = true;
+        var g = new Ms2.Ui.Guide.GuideManager(new GuideTests.World());
+        try
+        {
+            Ms2.Ui.Guide.GuideManager.Current = g;
+            Assert.That(action.Poll(Origin), Is.True, "no limit held");
+            g.AddLimit(Ms2.Ui.Guide.GuideLimit.PortalUse);
+            Assert.That(action.Poll(Origin), Is.False, "the limit held");
+            g.AddLimit(Ms2.Ui.Guide.GuideLimit.PortalUse);
+            g.RemoveLimit(Ms2.Ui.Guide.GuideLimit.PortalUse);
+            Assert.That(action.Poll(Origin), Is.False, "held twice, released once");
+            g.RemoveLimit(Ms2.Ui.Guide.GuideLimit.PortalUse);
+            Assert.That(action.Poll(Origin), Is.True, "released");
+            Ms2.Ui.Guide.GuideManager.Current = null;
+            g.AddLimit(Ms2.Ui.Guide.GuideLimit.PortalUse);
+            Assert.That(action.Poll(Origin), Is.True, "no session guide");
+        }
+        finally { Ms2.Ui.Guide.GuideManager.Current = null; }
     }
 
     [Test]

@@ -542,6 +542,12 @@ public sealed class GuideManager
     /// <summary>IsRestricted (@0x14138c900) = IsLimitActive (@0x141383760).</summary>
     public bool IsRestricted(GuideLimit limit) => limitCounts[(int)limit] > 0;
 
+    /// <summary>A limit kind as a host asks it (PortalAction::vfunc_1 tests kind 9, actionkeyobject.cpp:867): the session's
+    /// guide holds it. No guide (offline, or before its tables load) holds none, as every client call site tests the
+    /// manager pointer first.</summary>
+    public static bool IsLimitActive(int kind) =>
+        Current is { } g && kind > (int)GuideLimit.None && kind < g.limitCounts.Length && g.limitCounts[kind] > 0;
+
     /// <summary>IsSkillRestricted (@0x14138c930): PlayerControl holds every skill, PlayerMove the move skills.</summary>
     public bool IsSkillRestricted(int skillId)
     {

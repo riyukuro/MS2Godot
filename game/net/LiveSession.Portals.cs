@@ -98,8 +98,8 @@ public partial class LiveSession
         public bool HasPlayer => s.selfObject >= 0 && s.player != null && IsInstanceValid(s.player);
         /// <summary>The cube (house build) mode is not ported: never on.</summary>
         public bool InCubeMode => false;
-        /// <summary>The guide manager is not ported: no limit is active.</summary>
-        public bool IsRestricted(int kind) => false;
+        /// <summary>The session guide's limit of this kind (kind 9 = PortalUse holds the portal action).</summary>
+        public bool IsRestricted(int kind) => Ms2.Ui.Guide.GuideManager.IsLimitActive(kind);
         public int FieldId => s.fieldEntry.Current?.MapId ?? 0;
         public long ServerTime => s.game?.Session.ServerTime ?? 0;
         public FieldData Field(int id)
