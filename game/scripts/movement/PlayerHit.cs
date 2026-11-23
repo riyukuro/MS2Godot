@@ -71,7 +71,7 @@ public partial class Player : IHitBody, IPushBody
     /// <param name="force">vfunc_59's bForce: vfunc_33 passes the data's duration above 0.</param>
     public void EnterHit(StateHitData data, bool force)
     {
-        if (DeadFlag) return;   // PC::vfunc_124 (pc.cpp:1199)
+        if (DeadFlag) return;   // PC::vfunc_124 (pc.cpp:1199); its HP-0 refusal (pc.cpp:1201) is open, as the Player holds no HP
         if (StateKept(MoveState.Hit, force)) return;
         CancelSkillSequence();
         StopInteractAnim();
@@ -100,7 +100,7 @@ public partial class Player : IHitBody, IPushBody
     /// state 0x2f, puts it in StateIdle; StateSkill's exit ends the own cast's sequence.</summary>
     public void ReactIdle()
     {
-        if (DeadFlag) return;   // PC::vfunc_124 (pc.cpp:1199)
+        if (DeadFlag) return;   // PC::vfunc_124 (pc.cpp:1199); its HP-0 refusal (pc.cpp:1201) is open, as the Player holds no HP
         if (StateKept(MoveState.Idle, false)) return;
         CancelSkillSequence();
         StopInteractAnim();
