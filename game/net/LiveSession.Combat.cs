@@ -120,9 +120,10 @@ public partial class LiveSession
                     var row = new System.Text.StringBuilder();
                     for (float x = c[0]; x <= c[2]; x += c[4])
                     {
-                        var hit = space.IntersectRay(PhysicsRayQueryParameters3D.Create(new Vector3(x, 6000, -y), new Vector3(x, -6000, -y)));
+                        using var query = PhysicsRayQueryParameters3D.Create(new Vector3(x, 6000, -y), new Vector3(x, -6000, -y));
+                        using var hit = space.IntersectRay(query);
                         if (hit.Count == 0) { row.Append('.'); continue; }
-                        int level = Mathf.RoundToInt((((Vector3)hit["position"]).Y - baseZ) / 150f);
+                        int level = Mathf.RoundToInt((((Vector3)hit[PhysicsKeys.Position]).Y - baseZ) / 150f);
                         row.Append(level < -9 ? '_' : level < 0 ? (char)('a' - 1 - level) : level > 9 ? '^' : (char)('0' + level));
                     }
                     GD.Print($"live: scan y {y,6:F0} {row}");
