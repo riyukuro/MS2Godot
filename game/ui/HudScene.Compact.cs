@@ -69,8 +69,8 @@ public partial class HudScene
     /// compact pick (mypc.cpp:1682), then vfunc_102 (<see cref="RouteOwn"/>). Without bAuto the key pick takes only a key
     /// just pressed, which comes as an event here (<see cref="CastKeys"/>), so only the compact pick is polled. 0 B/frame
     /// while no tab is held.
-    /// vfunc_104's refusals (:1671-1676) cannot hold here: cube (build) mode, the instrument state (0x2f) and the character
-    /// list scene (0x620000d, no HUD) are not ported. STILL-OPEN: the idle poll runs in the idle, walk, jump and fall states
+    /// vfunc_104's refusals (:1671-1676): cube mode holds the pick (<see cref="CubeModeHoldsPick"/>); the instrument state (0x2f)
+    /// and the character list scene (0x620000d, no HUD) are not ported. STILL-OPEN: the idle poll runs in the idle, walk, jump and fall states
     /// (the states without their own vfunc_8 here).
     /// </summary>
     void TickCompact()
@@ -82,7 +82,7 @@ public partial class HudScene
         compactActionDown ??= CompactActionDown;
         var w = CompactWorld();
         compact.Update(false, true, compactActionDown, w.Jobs?.JobGroupId ?? 0, w, hudModel.Tables.SkillCompactControl);
-        if (OwnSkillStateRuns() || player == null) return;
+        if (OwnSkillStateRuns() || player == null || CubeModeHoldsPick()) return;   // mypc.cpp:1673: before the compact pick
         if (player.State is not (Player.MoveState.Idle or Player.MoveState.Walk or Player.MoveState.Jump or Player.MoveState.Fall)) return;
         uint id = CompactPick(false, false);
         if (id == 0 || id != compactRefused) compactRefused = 0;
@@ -111,6 +111,7 @@ public partial class HudScene
     CastRecord CompactPress(in SkillFollow.Window window, out bool picked)
     {
         picked = false;
+        if (CubeModeHoldsPick()) return null;                // mypc.cpp:1673: before the compact pick
         uint id = CompactPick(false, true);
         if (id == 0) return null;
         picked = true;

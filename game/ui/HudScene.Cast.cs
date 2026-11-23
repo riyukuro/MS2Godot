@@ -89,7 +89,7 @@ public partial class HudScene
     int KeyRequest(int dik, out CastRecord r)
     {
         r = null;
-        if (hudModel?.Keys is not { } keys) return 0;
+        if (hudModel?.Keys is not { } keys || CubeModeHoldsPick()) return 0;
         var slots = hudModel.ServerKeys;
         castKeyWorld = QuickSlotWorld();
         castSlotItemUid ??= i => playerInfo?.SlotItemUid(i) ?? 0;
@@ -104,6 +104,10 @@ public partial class HudScene
         r = RequestOwn(castKeyWorld, (uint)id, castKeyHeld, dik);
         return 2;
     }
+
+    /// <summary>MyPC::vfunc_104 gives no skill in cube mode (mypc.cpp:1673, <see cref="Ms2.Ui.CubeCraftState.HoldsSkillPick"/>):
+    /// while a lifted object is carried the keys cast nothing.</summary>
+    static bool CubeModeHoldsPick() => Net.LiveSession.Instance is { } live && live.CubeCraft.HoldsSkillPick;
 
     // STILL-OPEN: the right-hand item's own skill (an action whose normalAttack is 0) is not read; 0 here
     Func<int> CastAttackSkill => castAttackSkill ??= () => (int)SkillCast.AttackKeySkill(castKeyWorld, castWorld, castKeyHeld, weaponActions, 0);

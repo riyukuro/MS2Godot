@@ -67,6 +67,10 @@ public sealed class CubeCraftState
     public int CubeMode { get; private set; }
     /// <summary>IsInCubeMode (pc.cpp:1845).</summary>
     public bool InCubeMode => CubeMode != 0;
+    /// <summary>MyPC::vfunc_104's first refusal (@0x1415219d0, mypc.cpp:1673): in cube mode (a lifted object carried, or
+    /// building) no skill is picked, so the attack and quick slot keys cast nothing; the compact pick (:1682) comes after it
+    /// and is held too. STILL-OPEN: its other refusals, the instrument state 0x2f and the character list scene (:1675-1678).</summary>
+    public bool HoldsSkillPick => InCubeMode;
     /// <summary>MyPC::SendCraftModeOff's gate (@0x141530200, mypc.cpp:4501): GetActiveCubeCraft (@0x141530290: not dead, in cube mode, the craft set)
     /// and the craft is not the lift's mode 2 (FUN_1410aa1f0).</summary>
     public bool CanSendCraftModeOff(bool dead) => !dead && InCubeMode && Current is { HoldsLift: false };

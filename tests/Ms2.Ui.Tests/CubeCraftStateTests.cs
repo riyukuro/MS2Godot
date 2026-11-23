@@ -163,4 +163,18 @@ public class CubeCraftStateTests
         c.Set(2, 2, Item, dead: true);
         Assert.That(changes, Is.EqualTo(2), "a dead pc takes no mode");
     }
+
+    [Test]
+    public void CarryingALiftHoldsTheSkillPickAndPuttingItDownFreesIt()
+    {
+        var c = Loaded();
+        Assert.That(c.HoldsSkillPick, Is.False, "no cube mode");
+        c.Set(1, 2, Item, dead: false);
+        Assert.That(c.HoldsSkillPick, Is.True, "the lift's craft");
+        c.Set(0, 0, null, dead: false);
+        Assert.That(c.HoldsSkillPick, Is.False, "put down");
+        var waiting = new CubeCraftState();
+        waiting.Set(1, 2, Item, dead: false);
+        Assert.That(waiting.HoldsSkillPick, Is.True, "the mode alone, before the craft is made");
+    }
 }
