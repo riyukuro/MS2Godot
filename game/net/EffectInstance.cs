@@ -24,6 +24,7 @@ public sealed partial class EffectInstance : Node3D
     sealed class MeshState
     {
         public EffectMesh Def; public MeshInstance3D Node; public ShaderMaterial Mat; public Texture2D[] Flip; public Variant[] FlipV; public Texture2D Base; public bool Add;
+        public bool NotFinite;                                   // hidden for a non-finite world transform (Place)
         public string BaseKey; public TexMap BaseMap, GlowMap, DetailMap;   // the base map's ModelMesh.Maps key ("base" or "shader0") and the drawn maps
         public TexTransform BaseT, GlowT, DetailT;                // working transforms the uv controllers write each frame
         public readonly float[] Rows = new float[6];             // their matrix rows, reused every frame (no per-frame allocation)
@@ -519,6 +520,20 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         return new Transform3D(basis.Scaled(new Vector3(scale, scale, scale)), origin);
     }
 
+    /// <summary>
+    /// A mesh's world transform for this frame. The client's key interpolation (Gamebryo's, not in the decompiled source) passes
+    /// a NaN key value on: the Wizard's Magic Claw cast effect (eff_wizard_magicclaw_cast_01_a.nif, KMS and GMS2 alike) has a
+    /// NaN scale key at 0.7 s on its sphere, so from its first key (0.333 s) the node's and its children's world transforms are
+    /// NaN there and their vertices draw nothing. Here such a mesh is hidden and keeps its last transform, as the renderer
+    /// takes no non-finite transform; it shows again when the transform is finite (a culled mesh stays hidden).
+    /// </summary>
+    void Place(MeshState ms, in Transform3D w)
+    {
+        bool finite = w.IsFinite();
+        if (finite) ms.Node.Transform = w;
+        if (finite == ms.NotFinite) { ms.NotFinite = !finite; ms.Node.Visible = finite && !scene.Nodes[ms.Def.Node].Culled; }
+    }
+
     Transform3D World(int i, float t, Vector3 camLocal)
     {
         if (i < 0) return Transform3D.Identity;
@@ -576,7 +591,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         foreach (var ms in meshes)
         {
             var d = ms.Def;
-            if (!ms.Static || !ms.Placed) { ms.Node.Transform = World(d.Node, t, camLocal); ms.Placed = true; }
+            if (!ms.Static || !ms.Placed) { Place(ms, World(d.Node, t, camLocal)); ms.Placed = true; }
             if (d.Colors.Count > 0) Shade(ms, t, false);
             if (d.Alpha != null) { float a = (float)d.Opacity(t); if (a != ms.LastAlpha) ms.Mat.SetShaderParameter(FxParam.Alpha, ms.LastAlpha = a); }
             if (d.Uv.Count > 0) AnimateUv(ms, t);
