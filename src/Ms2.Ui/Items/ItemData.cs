@@ -242,12 +242,15 @@ public sealed class ItemData
     /// armor reads the gloves item level factor, no enchant row and an empty slot name.
     /// A GMS2 client exe dump exists but is not decompiled, so its own reader of the kind is unread. STILL-OPEN.
     /// </summary>
-    public void FillEquipSubtype()
+    public void FillEquipSubtype() => Subtype = Gms2EquipSubtype(Id, Type, Subtype);
+
+    /// <summary>The kind FillEquipSubtype gives an item of the GMS2 per-item path (the rule above, one copy for every reader).</summary>
+    public static int Gms2EquipSubtype(int id, int type, int fileSubtype)
     {
-        if (Type != 1) return;
-        int group = Id / 100000;
-        if (group is (>= 130 and <= 134) or 140 or 141 or (>= 150 and <= 156) or (>= 180 and <= 183) or (>= 112 and <= 122)) Subtype = group % 100;
-        else if (Subtype == 16) Subtype = 0;
+        if (type != 1) return fileSubtype;
+        int group = id / 100000;
+        if (group is (>= 130 and <= 134) or 140 or 141 or (>= 150 and <= 156) or (>= 180 and <= 183) or (>= 112 and <= 122)) return group % 100;
+        return fileSubtype == 16 ? 0 : fileSubtype;
     }
 
     public int EquipSubtype => Type == 1 ? Subtype : 0;        // GetEquipSubtype @0x14053c620 (commonfiles/itemdata.cpp:509)

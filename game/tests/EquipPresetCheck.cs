@@ -39,6 +39,10 @@ public partial class EquipPresetCheck : Node
         applier.Apply(v, md, 0, items);
         for (int i = 0; i < 4; i++) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         if (applier.HungNodes(v) == 0) fails.Add("the sword and shield hung no node");
+        // the file of 15000041 (a 150 weapon) says subtype 16: the kind is its id group, 50, as the Ctrl attack reads it
+        foreach (var (id, kind) in new[] { (15000041, 50), (14100190, 41), (13200220, 32) })
+            if (packs.Exists("Xml", $"item/{id / 10000000}/{id / 100000 % 100}/{id}.xml") && applier.WeaponSubtype(id) != kind)
+                fails.Add($"item {id}: weapon kind {applier.WeaponSubtype(id)}, expected {kind}");
         if (applier.MissingItemIds != 0) fails.Add($"{applier.MissingItemIds} item ids had no item model");
     }
 }
