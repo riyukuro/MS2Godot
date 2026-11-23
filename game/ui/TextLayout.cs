@@ -218,6 +218,27 @@ public partial class TextNode
         return n;
     }
 
+    /// <summary>
+    /// The line this label draws from for a script field scrolled to the line starting at code point <paramref name="start"/>
+    /// of a text of <paramref name="total"/> code points. The script's line count is the AVM's wrap, the label's is Godot's: the
+    /// line holding that character, but never one below which fewer lines than the field holds would show; at the end of the
+    /// scroll range the first line from which the last line still fits, so the newest line is always the last one drawn.
+    /// </summary>
+    public int FirstLineFor(int start, int total, bool atEnd)
+    {
+        var all = Layout();
+        if (all.Count == 0) return 0;
+        var starts = new int[all.Count];
+        for (int i = 0; i < all.Count; i++) starts[i] = all[i].Start;
+        if (total != codePoints.Length && total > 0) start = (int)((long)start * codePoints.Length / total);
+        double room = Bounds.Size.Y > 0 ? Bounds.Size.Y - 4 + 1 : double.MaxValue;
+        return Ms2.Ui.ScrolledLines.FirstLine(starts, i =>
+        {
+            var (_, height, advance) = ClientLine(all[i].Start, all[i].End, codePoints.Length, j => SizeAt(j));
+            return (height, advance);
+        }, room, start, atEnd);
+    }
+
     /// <summary>True when the glyph is past the label's visible character count.</summary>
     public bool Hidden(in PlacedGlyph g) => Label.VisibleCharacters >= 0 && g.Index >= Label.VisibleCharacters;
 

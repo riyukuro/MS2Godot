@@ -1426,10 +1426,24 @@ public partial class FieldText : Node2D
             node.RecenterScaled(scale);
             node.Position = origin - origin * scale + new Vector2(0, (float)(tf.FirstLineTop(node.NumLines, scale) - (tf.Box.Y + 2)));
         }
-        else if (tf.FirstShownLine == node.FirstLine) return rebuilt;
-        node.FirstLine = tf.FirstShownLine;
+        else if (tf.FirstShownLine == shownLine && tf.AtScrollEnd == shownAtEnd) return rebuilt;
+        // the script's first line is its own wrap's: the label draws from the line that holds its character (TextNode.FirstLineFor)
+        shownLine = tf.FirstShownLine; shownAtEnd = tf.AtScrollEnd;
+        if (shownLine == 0) node.FirstLine = 0;
+        else node.ShowFrom(CodePoints(tf.Text, tf.FirstShownChar), CodePoints(tf.Text, tf.Text.Length), shownAtEnd);
         node.RefreshClip();
         return true;
+    }
+
+    int shownLine;
+    bool shownAtEnd;
+
+    /// <summary>The code points of the text before the UTF-16 index <paramref name="n"/>.</summary>
+    static int CodePoints(string t, int n)
+    {
+        int c = 0;
+        for (int i = 0; i < n && i < t.Length; i++) if (!char.IsLowSurrogate(t[i])) c++;
+        return c;
     }
 
     /// <summary>The field's filters as the layout writes them: the ones ActionScript set (angle in degrees), else the placement's.</summary>

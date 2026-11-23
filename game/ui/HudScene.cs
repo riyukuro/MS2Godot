@@ -4057,7 +4057,7 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "partysearchmenu" && frames == 260) partySearch?.RightClickChiefShot(102);
         if (openShot == "partysearchregister" && frames == 230) OpenPartySearchRegister();
         if (openShot == "partydps" && frames == 200) OpenPartyDpsShot();
-        if (openShot == "chatscroll" && frames is 200 or 215) ChatScrollShot(frames == 200 ? 0 : 1);
+        if (openShot is "chatscroll" or "chatend" && frames is 200 or 215) ChatScrollShot(frames == 200 ? 0 : 1);
         if (openShot == "guild" && frames == 200) ToggleGuild();
         if (openShot == "itemenchant" && frames == 200) OpenItemEnchantShot();
         if (openShot == "lapenshard" && frames == 200) OpenLapenshardShot();

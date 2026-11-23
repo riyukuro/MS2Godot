@@ -733,6 +733,12 @@ public class AsTextField : AsInteractiveObject
     /// common case and costs no layout.</summary>
     public int FirstShownLine => scrollTop <= 1 ? 0 : scrollV - 1;
 
+    /// <summary>The index in <see cref="Text"/> of the first shown line's first character (0 for a field never scrolled).</summary>
+    public int FirstShownChar { get { if (scrollTop <= 1) return 0; var sp = Spans(); return sp[Math.Min(FirstShownLine, sp.Count - 1)].Start; } }
+
+    /// <summary>The field is scrolled down and shows its last scroll position (a view that follows the newest line).</summary>
+    public bool AtScrollEnd => scrollTop > 1 && scrollV >= maxScrollV;
+
     /// <summary>TextField::OnMouseWheelEvent (@0x1425ba680, sfr_gfx_03e.cpp:915): when mouseWheelEnabled the wheel moves the first
     /// shown line up by the delta.</summary>
     public void OnMouseWheel(int delta)

@@ -325,6 +325,10 @@ public partial class TextNode : Node2D
         }
     }
 
+    /// <summary><see cref="FirstLine"/> for a script field scrolled to the line that starts at a character of a text of
+    /// <paramref name="total"/> code points (<see cref="FirstLineFor"/>).</summary>
+    public void ShowFrom(int start, int total, bool atEnd) => FirstLine = FirstLineFor(start, total, atEnd);
+
     /// <summary>The clip again for the node's place: a script field's node is moved without its text changing.</summary>
     public void RefreshClip() => UpdateClip(Layout());
 

@@ -9,6 +9,7 @@ namespace Ms2Godot.Ui;
 /// <summary>
 /// The <c>--uigen-open chatscroll</c> shot: the chat window with more lines than fit, then scrolled up with the wheel over the
 /// log (TextField::OnMouseWheelEvent, sfr_gfx_03e.cpp:915) so the scroll bar thumb leaves the end. No server.
+/// <c>--uigen-open chatend</c> leaves the log at its end, with long lines that wrap, to see the newest line is the last one drawn.
 /// </summary>
 public partial class HudScene
 {
@@ -19,9 +20,11 @@ public partial class HudScene
         var (m, _) = messengers[0];
         if (step == 0)
         {
-            for (int i = 1; i <= 60; i++) ChatLog.AddSystemLine("Chat line " + i + " of 60, long enough to be a line of its own in the log.", TalkKind.SystemNotice);
+            // every third line is long enough to wrap in the window, so the script's and the label's wraps can differ
+            for (int i = 1; i <= 60; i++) ChatLog.AddSystemLine("Chat line " + i + " of 60, long enough to be a line of its own in the log." + (i % 3 == 0 ? " It goes on and on, so that it needs a second and a third line in the window." : ""), TalkKind.SystemNotice);
             return;
         }
+        if (openShot == "chatend") return;      // the log as it stands at its end
         var h = m.Host;
         if (h.Child("m_textOutput") is not AsDisplayObject o) return;
         var b = o.GetBounds(o);
