@@ -40,6 +40,10 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     readonly AudioStreamPlayer[] musicPlayers = new AudioStreamPlayer[MusicCrossfade.SlotCount];
     readonly MusicCrossfade crossfade = new();
     readonly MusicPlaybackGuard playbackGuard = new();
+    /// <summary>The music segments decoded on the pool threads, as the main thread's steps (run first in <see cref="_Process"/>).
+    /// A pool thread makes no engine call (no stream, no deferred call): one still decoding at the quit finished into the
+    /// engine's teardown and crashed the exit (SIGSEGV, exit 139) about one run in three.</summary>
+    readonly System.Collections.Concurrent.ConcurrentQueue<Action> decodedSegments = new();
     readonly SoundMusicEffectState soundMusicFade = new();
     readonly float[] slotSegmentVolume = { 1f, 1f };
     AudioStreamPlayer ui;
@@ -346,6 +350,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
 
     public override void _Process(double delta)
     {
+        while (decodedSegments.TryDequeue(out var decoded)) decoded();
         audioClock += delta;
         bool gainDirty = false;
         if (soundMusicFade.IsFading)
@@ -424,13 +429,13 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         {
             var pcm = SafeDecode.Decode(clip);
             if (pcm == null) return;   // undecodable segment stays silent
-            var wav = Stream(pcm, selfLoop);
-            Callable.From(() =>
+            var data = pcm.ToBytes();
+            decodedSegments.Enqueue(() =>
             {
-                if (!IsInstanceValid(this) || !IsInsideTree() || !playbackGuard.AcceptDecode(gen)) return;
-                cueSegments[seg.Id] = (clip, pcm, wav);
+                if (!playbackGuard.AcceptDecode(gen)) return;
+                cueSegments[seg.Id] = (clip, pcm, Stream(pcm, data, selfLoop));
                 PlaySegment(cue, seg, crossfadeMs);
-            }).CallDeferred();
+            });
         });
     }
 
@@ -447,12 +452,12 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         {
             var pcm = SafeDecode.Decode(clip);
             if (pcm == null) return;
-            var wav = Stream(pcm, selfLoop);
-            Callable.From(() =>
+            var data = pcm.ToBytes();
+            decodedSegments.Enqueue(() =>
             {
-                if (!IsInstanceValid(this) || !IsInsideTree() || !playbackGuard.AcceptDecode(gen)) return;
-                cueSegments[next.Id] = (clip, pcm, wav);
-            }).CallDeferred();
+                if (!playbackGuard.AcceptDecode(gen)) return;
+                cueSegments[next.Id] = (clip, pcm, Stream(pcm, data, selfLoop));
+            });
         });
     }
 
@@ -618,18 +623,18 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     {
         var pcm = SafeDecode.Decode(clip);
         if (pcm == null) return;
-        ui.Stream = Stream(pcm, false);
+        ui.Stream = Stream(pcm, pcm.ToBytes(), false);
         ui.VolumeDb = Mathf.LinearToDb(clip.Volume);
         ui.Play();
     }
 
     // The banks hold MPEG layer II, which Godot's mp3 decoder rejects: play the decoded PCM.
-    static AudioStreamWav Stream(Pcm16 pcm, bool loop) => new()
+    static AudioStreamWav Stream(Pcm16 pcm, byte[] data, bool loop) => new()
     {
         Format = AudioStreamWav.FormatEnum.Format16Bits,
         Stereo = pcm.Channels == 2,
         MixRate = pcm.Rate,
-        Data = pcm.ToBytes(),
+        Data = data,
         LoopMode = loop ? AudioStreamWav.LoopModeEnum.Forward : AudioStreamWav.LoopModeEnum.Disabled,
         LoopBegin = 0,
         LoopEnd = pcm.Frames,

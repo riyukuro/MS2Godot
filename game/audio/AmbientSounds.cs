@@ -85,16 +85,25 @@ public partial class AmbientSounds : Node3D
         Log.Add($"{e.Name} at {pos} -> {id} = {clip.Name} vol {clip.Volume:F2} range {min}..{max}");
         var key = clip.Name;
         if (!decoded.TryGetValue(key, out var task)) decoded[key] = task = Task.Run(() => SafeDecode.Decode(clip));
-        task.ContinueWith(t => { if (t.IsFaulted || t.Result == null) return; var pcm = t.Result; Callable.From(() => Start(sound, pcm)).CallDeferred(); });
+        task.ContinueWith(t => { if (t.IsFaulted || t.Result == null) return; var pcm = t.Result; var data = pcm.ToBytes(); started.Enqueue(() => Start(sound, pcm, data)); });
     }
 
-    static void Start(Sound s, Pcm16 pcm)
+    /// <summary>The clips decoded on the pool threads, started on the main thread (<see cref="_Process"/>): a pool thread makes
+    /// no engine call, since one finishing during the quit reached the engine's teardown (see FieldAudio).</summary>
+    readonly System.Collections.Concurrent.ConcurrentQueue<Action> started = new();
+
+    public override void _Process(double delta)
+    {
+        while (started.TryDequeue(out var start)) start();
+    }
+
+    static void Start(Sound s, Pcm16 pcm, byte[] data)
     {
         var p = s.Player;
         if (!GodotObject.IsInstanceValid(p) || !p.IsInsideTree()) return;   // the field changed or quit while the clip decoded
         p.Stream = new AudioStreamWav
         {
-            Format = AudioStreamWav.FormatEnum.Format16Bits, Stereo = pcm.Channels == 2, MixRate = pcm.Rate, Data = pcm.ToBytes(),
+            Format = AudioStreamWav.FormatEnum.Format16Bits, Stereo = pcm.Channels == 2, MixRate = pcm.Rate, Data = data,
             LoopMode = AudioStreamWav.LoopModeEnum.Forward, LoopBegin = 0, LoopEnd = pcm.Frames,
         };
         if (s.On) p.Play();
