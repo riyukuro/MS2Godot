@@ -43,6 +43,8 @@ public partial class LiveSession
             guide = new GuideManager(new LiveGuideWorld(this));
             guide.Load(GuideTable.Load(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir)));
             GuideManager.Current = guide;
+            // MS2_GUIDE_DEBUG=1: the manager's debug log (m_nDebug, CGuideManager::ToggleDebug @0x14138d460) from the start: every trigger, open and close
+            guide.Debug = System.Environment.GetEnvironmentVariable("MS2_GUIDE_DEBUG") == "1";
             GD.Print($"live: guide {guide.EntityCount} events");
         }
         catch (Exception e) { GD.PushWarning($"live: guide tables unavailable ({e.Message})"); guide = null; }
@@ -119,7 +121,7 @@ public partial class LiveSession
         /// as the client's while no dialog object is there.</summary>
         public override GuideDialog FindDialog(string name) => s.FindDialogOf?.Invoke(name);
         public override void GuideLog(string text) => GD.Print(text);
-        public override void Send(Ms2.Net.Wire.IOutPacket packet) { GD.Print($"live: guide sends {packet.GetType().Name}"); s.Send(packet); }
+        public override void Send(Ms2.Net.Wire.IOutPacket packet) { GD.Print($"live: guide sends {packet.GetType().Name}{(packet is Ms2.Net.Packets.GuideServerTriggerEvent t ? " " + t.EventId : "")}"); s.Send(packet); }
 
         public override bool HasPlayer => s.Me.User != null && s.player != null && GodotObject.IsInstanceValid(s.player);
         /// <summary>The field's RegionSkills node, the effect service the guide's cube effects go through.</summary>

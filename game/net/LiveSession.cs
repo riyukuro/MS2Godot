@@ -957,6 +957,7 @@ public partial class LiveSession : Node
     /// </summary>
     void OnTrigger(byte[] body)
     {
+        if (LogPackets) GD.Print($"live: Trigger in {Convert.ToHexString(body, 0, Math.Min(body.Length, 24))}{(body.Length > 24 ? ".." : "")}");
         if (Ms2.Ui.Guide.TriggerGuide.Apply(body, game.Profile, GuidePane, Movie)) return;
         if (triggerField != null && GodotObject.IsInstanceValid(triggerField) && triggerField.Triggers != null) ApplyTrigger(triggerField, body);
         else pendingTriggers.Add(body);
@@ -1665,7 +1666,9 @@ public partial class LiveSession : Node
             {
                 var r = GuideRecordIn.Read(p.Reader());   // CSceneStateGame::OnGuideRecord (scenestategame.cpp:3878): CGuideManager::ReceiveStates
                 guide?.ReceiveStates(r);
-                GD.Print($"live: guide record {r.Steps.Count} step(s) bits 0x{r.Bits:x}");
+                var line = new System.Text.StringBuilder($"live: guide record {r.Steps.Count} step(s) bits 0x{r.Bits:x}");
+                for (int i = 0; i < r.Steps.Count; i++) line.Append(' ').Append(r.Steps[i].SaveId).Append(':').Append(r.Steps[i].Step);
+                GD.Print(line.ToString());
             }
             else if (game.Is(p, Inbound.Job))
             {

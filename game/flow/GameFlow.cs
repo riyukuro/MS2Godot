@@ -200,7 +200,7 @@ public partial class GameFlow : Node
                 if (GetTree().CurrentScene is Ui.LoginScene login) EnterLobbyFrom(login);
                 else Change(LobbyScene);
                 break;
-            case State.Create: CharacterCreateScene.Enter(GetTree()); break;
+            case State.Create: CharacterCreateScene.Enter(GetTree(), int.TryParse(System.Environment.GetEnvironmentVariable("MS2_LIVE_CREATE_JOB"), out int scriptedJob) ? scriptedJob : 0); break;   // scripted runs: the job page opens on this job code
             case State.Loading: BeginLoading(); break;
         }
     }

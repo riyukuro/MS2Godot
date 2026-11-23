@@ -379,6 +379,27 @@ public partial class LiveSession
                     Check($"hits per press: {hitPresses} of {press}", press >= need && hitPresses == press);
                     break;
                 }
+                case "hitlast":      // the npc the server added last (no spawn of our own), faced and attacked until it dies or the field changes; up to MS2_LIVE_COMBAT_PRESSES presses
+                {
+                    await until(() => lastNpc != null, 60 * int.Parse(Env("MS2_LIVE_NPC_WAIT", "0")));     // MS2_LIVE_NPC_WAIT: seconds to wait for the server's npc
+                    await frames(120);
+                    var target = lastNpc; int deadBefore = kills, press = 0, need = int.Parse(Env("MS2_LIVE_COMBAT_PRESSES", "20"));
+                    int? field = live.FieldId;
+                    Check($"a server npc to attack ({target?.Row?.Id})", target != null);
+                    for (; target != null && press < need && kills == deadBefore && live.FieldId == field && GodotObject.IsInstanceValid(target.Root); press++)
+                    {
+                        float dist = hud.FaceScripted(target.Position);
+                        await frames(20);
+                        int before = hitCount.GetValueOrDefault(target);
+                        hud.AttackScripted();
+                        await frames(90);
+                        GD.Print($"live: combat hitlast press {press}: distance {dist:F0}, numbers on the npc {hitCount.GetValueOrDefault(target) - before}");
+                    }
+                    await frames(60 * 10);
+                    bool gone = target != null && !GodotObject.IsInstanceValid(target.Root);
+                    Check($"the npc died ({kills - deadBefore} exp line(s), removed {gone}, {press} press(es), field {field} -> {live.FieldId})", kills > deadBefore || gone || live.FieldId != field);
+                    break;
+                }
                 case "death":
                 {
                     int mob = int.Parse(Env("MS2_LIVE_COMBAT_MOB", "0")), count = int.Parse(Env("MS2_LIVE_COMBAT_MOBS", "3"));
