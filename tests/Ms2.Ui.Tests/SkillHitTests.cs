@@ -231,4 +231,18 @@ public class SkillHitTests
         Assert.That(Links(tags[0]), Is.EqualTo(new[] { (3L, 11, (byte)1) }));
         Assert.That(Links(tags[1]), Is.EqualTo(new[] { (4L, 21, (byte)1) }));
     }
+
+    const string Frustum = "<attack point=\"Hit_01\" targetCount=\"5\"><range rangeType=\"frustum\" distance=\"800\" height=\"150\" width=\"150\" endWidth=\"300\" applyTarget=\"1\"/></attack>";
+
+    [Test]
+    public void TheFrustumHitsWhatIsAheadWithinItsConeAndNotWhatIsBehindOrBeside()
+    {
+        var a = Attack(Frustum);
+        Assert.That(a.Range.Shape, Is.EqualTo(3));
+        // a caster at rotation z 0 faces -y; the cone opens from half width 75 at the caster to 150 at 800 ahead
+        var hit = Detect(a, 0, Pc(10, 0, -70), Pc(11, 0, -700), Pc(12, 0, 70), Pc(13, 400, -300), Pc(14, 0, -900), Pc(15, 100, -400));
+        Assert.That(hit, Is.EquivalentTo(new[] { 10, 11, 15 }), "ahead on the line and inside the widening cone; behind, beside and beyond the depth are out");
+        Assert.That(Detect(a, 90, Pc(20, 70, 0), Pc(21, -70, 0)), Is.EqualTo(new[] { 20 }),
+            "turned a quarter, the cone follows the facing");
+    }
 }

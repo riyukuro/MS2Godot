@@ -129,15 +129,156 @@ public struct HitBox
 }
 
 /// <summary>
+/// A posed CFrustumCollision (frustumcollision.cpp): a truncated pyramid from a near width to a far width over a depth, twice
+/// the half height tall. CSkillCollisionManager::GetCached @0x141754580 (skillcollisionmanager.cpp:137) gives the near half
+/// width (width / 2), the half height (height / 2), the far half width (endWidth / 2) and the depth (distance + zOffset);
+/// vfunc_4 @0x141223bc0 adds rangeAdd (depth + add.y, half height + add.z / 2) and derives the cone, vfunc_3 @0x141222f50
+/// poses it at a position and a z rotation.
+/// </summary>
+public sealed class HitFrustum
+{
+    readonly Vector3[] corners = new Vector3[8];
+    Vector3 origin, apex, forward;
+    float depth, apexDist, cosHalfAngle;
+    // the two side faces' apex-to-far-corner edges (m_aEdgeA, m_aEdgeB) and the sides' ground projections (m_akEdge2)
+    Vector3 a0, a1, a2, b0, b1, b2;
+
+    public static HitFrustum Pose(SkillRangeShape r, float zOffset, Vector3 pos, Vector3 rotDegrees)
+    {
+        float near = r.Width * 0.5f, height = r.Height * 0.5f, far = r.EndWidth * 0.5f, depth = r.Distance + zOffset;
+        // vfunc_4 @0x141223bc0
+        depth += r.Add.Y;
+        height += r.Add.Z / 2f;
+        float apexDist = depth * near / (far - near);
+        float halfAngle = MathF.Atan2(far, depth + apexDist);
+        // vfunc_3 @0x141222f50
+        SkillHit.Axes(rotDegrees.Z, out var fwd, out var right);
+        fwd = Vector3.Normalize(fwd);
+        right = Vector3.Normalize(right);
+        var f = new HitFrustum { depth = depth, apexDist = apexDist, cosHalfAngle = MathF.Cos(halfAngle), forward = fwd };
+        f.origin = pos + fwd * -r.Add.Y + new Vector3(0, 0, -r.Add.Z);
+        f.apex = f.origin + fwd * -apexDist;
+        var o = f.origin;
+        var up = new Vector3(0, 0, height * 2f);
+        f.corners[0] = o + right * -near + up;
+        f.corners[1] = o + right * -near;
+        f.corners[2] = o + right * near;
+        f.corners[3] = o + right * near + up;
+        var farCenter = o + fwd * depth;
+        f.corners[4] = farCenter + right * -far + up;
+        f.corners[5] = farCenter + right * -far;
+        f.corners[6] = farCenter + right * far;
+        f.corners[7] = farCenter + right * far + up;
+        f.a0 = f.apex; f.a1 = f.corners[4]; f.a2 = f.corners[7];
+        f.b0 = f.apex; f.b1 = f.corners[5]; f.b2 = f.corners[6];
+        return f;
+    }
+
+    /// <summary>CFrustumCollision::GetMaxZ @0x141224820 / GetMinZ @0x1412248a0.</summary>
+    float MaxZ() { float m = float.MinValue; foreach (var c in corners) if (m < c.Z) m = c.Z; return m; }
+    float MinZ() { float m = float.MaxValue; foreach (var c in corners) if (c.Z < m) m = c.Z; return m; }
+
+    /// <summary>CFrustumCollision::ContainsPoint @0x141223d80: in front of the near plane and short of the depth, and the
+    /// ground direction from the apex within the half angle of the forward.</summary>
+    public bool Contains(Vector3 pt)
+    {
+        float d = Vector3.Dot(forward, pt - origin);
+        if (d <= 0f || depth <= d) return false;
+        var dir = pt - apex;
+        dir.Z = 0f;
+        float len = dir.Length();
+        if (len > 0f) dir /= len;
+        return Vector3.Dot(forward, dir) > cosHalfAngle;
+    }
+
+    /// <summary>The CBaseCollision::TestShape / Intersect frustum against box case (basecollision.cpp:607, :738): the z spans
+    /// overlap, then the box centre or a corner inside the frustum, a frustum corner inside the box, or a side edge crossing
+    /// the box's bottom face (<see cref="IntersectsBox"/>).</summary>
+    public bool Intersects(in HitBox box)
+    {
+        if (!(MaxZ() > box.MinZ)) return false;
+        if (!(MinZ() < box.MaxZ)) return false;
+        if (Contains(box.Center)) return true;
+        Span<Vector3> bc = stackalloc Vector3[8];
+        BoxCorners(box, bc);
+        foreach (var c in bc) if (Contains(c)) return true;
+        foreach (var c in corners) if (BoxContains(box, c)) return true;
+        return IntersectsBox(bc);
+    }
+
+    /// <summary>NxComputeBoxPoints: the corners (-,-,-) (+,-,-) (+,+,-) (-,+,-) then the same at +z.</summary>
+    static void BoxCorners(in HitBox b, Span<Vector3> into)
+    {
+        var x = b.AxisX * b.Extents.X; var y = b.AxisY * b.Extents.Y; var z = b.AxisZ * b.Extents.Z;
+        var c = b.Center;
+        into[0] = c - x - y - z; into[1] = c + x - y - z; into[2] = c + x + y - z; into[3] = c - x + y - z;
+        into[4] = c - x - y + z; into[5] = c + x - y + z; into[6] = c + x + y + z; into[7] = c - x + y + z;
+    }
+
+    /// <summary>CBoxCollision::FUN_140adacb0 @0x140adacb0: the point inside the oriented box.</summary>
+    static bool BoxContains(in HitBox b, Vector3 p)
+    {
+        var d = p - b.Center;
+        return MathF.Abs(Vector3.Dot(d, b.AxisX)) <= b.Extents.X && MathF.Abs(Vector3.Dot(d, b.AxisY)) <= b.Extents.Y
+            && MathF.Abs(Vector3.Dot(d, b.AxisZ)) <= b.Extents.Z;
+    }
+
+    /// <summary>CFrustumCollision::IntersectsBox @0x141223e70: each side's ground edge against the box's bottom face edges; a
+    /// crossing farther from the apex than the near plane counts when the side's top edge point there is not below the box
+    /// bottom and its bottom edge point not above the box top (both from the first side's edges, as the client reads them).</summary>
+    bool IntersectsBox(ReadOnlySpan<Vector3> bc)
+    {
+        var dirA = a1 - a0; float lenA = dirA.Length(); if (lenA > 0f) dirA /= lenA;
+        var dirB = b1 - b0; float lenB = dirB.Length(); if (lenB > 0f) dirB /= lenB;
+        for (int side = 0; side < 2; side++)
+        {
+            var s0 = new Vector2(a0.X, a0.Y);
+            var s1 = side == 0 ? new Vector2(a1.X, a1.Y) : new Vector2(a2.X, a2.Y);
+            float sideLen = (s1 - s0).Length();
+            for (int edge = 0; edge < 4; edge++)
+            {
+                var e0 = new Vector2(bc[edge].X, bc[edge].Y);
+                var e1 = new Vector2(bc[(edge + 1) & 3].X, bc[(edge + 1) & 3].Y);
+                if (!SegmentIntersect(s0, s1, e0, e1, out var hit)) continue;
+                float hitLen = (hit - s0).Length();
+                if (hitLen <= apexDist) continue;
+                float t = hitLen / sideLen;
+                var ptA = a0 + dirA * (lenA * t);
+                var ptB = b0 + dirB * (lenB * t);
+                if (!(ptA.Z < bc[0].Z) && !(ptB.Z > bc[4].Z)) return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>CFrustumCollision::SegmentIntersect @0x1412245a0.</summary>
+    static bool SegmentIntersect(Vector2 a1, Vector2 a2, Vector2 b1, Vector2 b2, out Vector2 hit)
+    {
+        hit = default;
+        float det = (b2.Y - b1.Y) * (a2.X - a1.X) - (b2.X - b1.X) * (a2.Y - a1.Y);
+        if (det == 0f) return false;
+        float numT = (b2.X - b1.X) * (a1.Y - b1.Y) - (b2.Y - b1.Y) * (a1.X - b1.X);
+        float numU = (a2.X - a1.X) * (a1.Y - b1.Y) - (a2.Y - a1.Y) * (a1.X - b1.X);
+        float t = numT / det, u = numU / det;
+        if (t < 0.0 || 1.0 < t || u < 0.0 || 1.0 < u) return false;
+        if (numT == 0f && numU == 0f) return false;
+        hit = new Vector2(a1.X + t * (a2.X - a1.X), a1.Y + t * (a2.Y - a1.Y));
+        return true;
+    }
+}
+
+/// <summary>
 /// A skill attack's posed area (CSkillCollisionManager::GetCached @0x141754580, skillcollisionmanager.cpp:121): a box of
 /// (width, distance + zOffset, height) or a cylinder of radius distance and the given height, both with rangeAdd as the extra
 /// size behind and below (m_ptSize).
-/// STILL-OPEN: frustum (3) and hole_cylinder (4) shapes are not ported; they hit nothing here.
+/// A frustum (rangeType 3) is a <see cref="HitFrustum"/> (CFrustumCollision, frustumcollision.cpp).
+/// STILL-OPEN: the hole_cylinder (4) shape is not ported; it hits nothing here.
 /// </summary>
 public struct SkillHitShape
 {
     public int Shape;
     public HitBox Box;
+    public HitFrustum Frustum;
     /// <summary>The cylinder: centre (the pose position, unit_141083230 vfunc_3 @0x1410833c0), radius, height, rangeAdd.z.</summary>
     public Vector3 CylinderCenter;
     public float Radius, Height, AddZ;
@@ -147,6 +288,7 @@ public struct SkillHitShape
         var s = new SkillHitShape { Shape = r.Shape };
         if (r.Shape == 1) s.Box = HitBox.Pose(new Vector3(r.Width, r.Distance + zOffset, r.Height), r.Add, pos, rotDegrees);
         else if (r.Shape == 2) { s.CylinderCenter = pos; s.Radius = r.Distance; s.Height = r.Height; s.AddZ = r.Add.Z; }
+        else if (r.Shape == 3) s.Frustum = HitFrustum.Pose(r, zOffset, pos, rotDegrees);
         return s;
     }
 
@@ -158,6 +300,7 @@ public struct SkillHitShape
     public readonly bool Intersects(in HitBox box)
     {
         if (Shape == 1) return HitBox.Intersect(Box, box);
+        if (Shape == 3) return Frustum != null && Frustum.Intersects(box);
         if (Shape != 2) return false;
         var c = box.Center;
         c.Z = CylinderCenter.Z;
@@ -173,9 +316,9 @@ public struct SkillHitShape
     public readonly bool Test(Vector3 pos, Vector3 right, Vector3 dir, in HitBox body, int mode, ref Vector3 metric)
     {
         bool hit = false;
-        if (Shape == 1)
+        if (Shape == 1 || Shape == 3)
         {
-            hit = HitBox.Intersect(Box, body);
+            hit = Shape == 1 ? HitBox.Intersect(Box, body) : Frustum != null && Frustum.Intersects(body);
             if (hit)
             {
                 // NiPlane(n, p).Distance(c) = n.c - n.p
