@@ -173,6 +173,81 @@ public sealed class GuildBook
     public Ms2.Formats.World.GuildEventTable Events;
     /// <summary>CGuildXmlData's raid table (LoadGuildRaid).</summary>
     public Ms2.Formats.World.GuildRaidTable Raids;
+    /// <summary>CSeasonDataTable's guild PvP category (SeasonData_GuildPvP.xml), the table CGuildInfo::UpdateSeason (@0x1404d31b0) reads.</summary>
+    public SeasonDataTable Seasons;
+    /// <summary>CMsTime::CalcZoneOffset, for the season's dates.</summary>
+    public Func<long> ZoneOffset = () => Ms2.Net.MsTime.CalcZoneOffset;
+
+    /// <summary>Unk_GuildSeason (guilddef_1.cpp:134-150): the season the guild's rating counts in, id, display name and the score where each of
+    /// the seven grades starts (points[1..7]).</summary>
+    public sealed class GuildSeason
+    {
+        public int Id;
+        public string Name = "";
+        public int[] Points = new int[8];
+
+        /// <summary>GetRankPoints (@0x1404c60e0): 0 outside 1..7.</summary>
+        public int GetRankPoints(int rank) => rank < 1 || rank >= 8 ? 0 : Points[rank];
+        /// <summary>GetRankForScore (@0x1404c6110): the grade below the first one whose points are above the score, else 7.</summary>
+        public int GetRankForScore(int score)
+        {
+            for (int i = 1; i < 8; i++) if (Points[i] > score) return i - 1;
+            return 7;
+        }
+    }
+
+    readonly GuildSeason season = new();
+
+    /// <summary>CGuildInfo::GetSeason (@0x1404d3190) with UpdateSeason (@0x1404d31b0, guilddef_1.cpp:2209): no current season resets it; a changed
+    /// season id copies the id, the display name and the seven grades.
+    /// STILL-OPEN: Unk_GuildSeason::Reset's values (taken as zero), and the season's begin and end (only FUN_1404c6160 reads them).</summary>
+    public GuildSeason GetSeason()
+    {
+        var cur = Seasons?.Current(ServerTime(), ZoneOffset());
+        if (cur == null) { season.Id = 0; season.Name = ""; Array.Clear(season.Points); return season; }
+        if (season.Id != cur.Id)
+        {
+            season.Id = cur.Id; season.Name = cur.DisplayName;
+            for (int i = 0; i < 7; i++) season.Points[i + 1] = cur.Grades[i];
+        }
+        return season;
+    }
+
+    // CGuildInfo f130 (PvpState), f134 (score), f138 (wins), f13c (losses): read from the guild info packet, set by modes 0x27 and 0x29.
+    public int PvpState { get; private set; }
+    public int Score { get; private set; }
+    public int WinCount { get; private set; }
+    public int LoseCount { get; private set; }
+
+    /// <summary>The open guild dialog's UpdateChampionshipRating (@0x14196fd20, uiguilddialog.cpp:1815) after the state or the score changed (modes 0x27, 0x29).</summary>
+    public event Action ChampionshipRatingRefresh;
+    /// <summary>The open guild dialog's FUN_141974240 (the battle rows, :2806) after mode 0x4a, and FUN_141974640 (the season rows, :2860) after 0x4b
+    /// or when the second request is not needed.</summary>
+    public event Action PvpHistoryRefresh;
+    public event Action PvpSeasonHistoryRefresh;
+
+    /// <summary>CGuildManager's m_pvpHistory (kept to 10, the oldest dropped), m_pvpSeasonHistory, m_lastPvpHistoryId (the newest entry's time) and
+    /// m_3e0 (the season history was asked for).</summary>
+    readonly List<GuildPvpHistory> pvpHistory = new();
+    readonly List<GuildPvpSeasonHistory> pvpSeasonHistory = new();
+    public long LastPvpHistoryId { get; private set; }
+    public bool PvpSeasonHistoryRequested { get; private set; }
+    /// <summary>GetPvpHistoryNewestFirst / GetPvpSeasonHistoryNewestFirst (@0x1413bbf70, @0x1413bbfe0).</summary>
+    public IEnumerable<GuildPvpHistory> PvpHistoryNewestFirst => Enumerable.Reverse(pvpHistory);
+    public IEnumerable<GuildPvpSeasonHistory> PvpSeasonHistoryNewestFirst => Enumerable.Reverse(pvpSeasonHistory);
+
+    /// <summary>RequestPvpHistoryAndSeason (@0x1413bbe80, guildmanager.cpp:1144): the battles after the last one held (op 0x4a); the first time the
+    /// season history too (0x4b), later the dialog's season rows are drawn again from what is held.</summary>
+    public void RequestPvpHistoryAndSeason()
+    {
+        Send(new GuildPvpHistoryRequest(LastPvpHistoryId));
+        if (!PvpSeasonHistoryRequested)
+        {
+            Send(new GuildPvpSeasonHistoryRequest());
+            PvpSeasonHistoryRequested = true;
+        }
+        else PvpSeasonHistoryRefresh?.Invoke();
+    }
     /// <summary>CGuildXmlData's guild houses (LoadGuildHouse) and guild npcs (LoadGuildNpc).</summary>
     public Ms2.Formats.World.GuildHouseTable Houses;
     public Ms2.Formats.World.GuildNpcTable Npcs;
@@ -511,6 +586,11 @@ public sealed class GuildBook
                 requests.Clear();
                 StorageHistoryReceived = false;   // m_400 = false after the Reset (guildmanager.cpp:253)
                 storageHistory.Clear();
+                if (Info != null)
+                {
+                    PvpState = Info.PvpState;
+                    if (Info.Counters.Length >= 3) { Score = Info.Counters[0]; WinCount = Info.Counters[1]; LoseCount = Info.Counters[2]; }
+                }
                 break;
             case 1:
                 // OnPacketCreateGuild (@0x1413bd8a0): a result is ShowGuildError(1, result, 0); else the sound, the box
@@ -747,6 +827,40 @@ public sealed class GuildBook
                 if (FindMemberByName(m.Name) is { } who) who.Raid[m.RaidId] = m.Value;
                 break;
             }
+            case 0x27:
+                // FUN_1413c2860 (@0x1413c2860, guildmanager.cpp:2372): the state is set, the dialog's UpdateChampionshipRating runs.
+                PvpState = m.PvpState;
+                ChampionshipRatingRefresh?.Invoke();
+                break;
+            case 0x29:
+            {
+                // FUN_1413c2c60 (@0x1413c2c60, :2416): score, wins and losses set, UpdateChampionshipRating, and a changed grade is a line
+                // (s_guild_notify... 0x3b8 with the grade's name from string table 0x2d, type 0xd).
+                int old = Score;
+                Score = m.Score; WinCount = m.Wins; LoseCount = m.Losses;
+                ChampionshipRatingRefresh?.Invoke();
+                var sn = GetSeason();
+                int oldTier = sn.GetRankForScore(old), newTier = sn.GetRankForScore(Score);
+                if (oldTier != newTier)
+                    ChatLine?.Invoke(ClientFormat.Format(Common(0x3b8), StringTableText(0x2d, newTier)), 0xd);
+                break;
+            }
+            case 0x4a:
+                // OnPacketPvpHistory (@0x1413c5000, :2810): each entry appended (the oldest dropped past 10), the last id the newest's time; no guild check.
+                foreach (var h in m.PvpHistory)
+                {
+                    pvpHistory.Add(h);
+                    if (pvpHistory.Count > 10) pvpHistory.RemoveAt(0);
+                    LastPvpHistoryId = h.Time;
+                }
+                PvpHistoryRefresh?.Invoke();
+                break;
+            case 0x4b:
+                // OnPacketPvpSeasonHistory (@0x1413c51c0, :2831): the list is replaced.
+                pvpSeasonHistory.Clear();
+                pvpSeasonHistory.AddRange(m.PvpSeasonHistory);
+                PvpSeasonHistoryRefresh?.Invoke();
+                break;
             case 0x3e:
                 // FUN_1413c4300 (@0x1413c4300, :2637): every member's raid counts are cleared (CGuildMemberRaid::Clear), then the dialog's
                 // UpdateRaidScore and FUN_141973220 run. Unlike the 0x25 packet this one has no in-guild check.
@@ -803,6 +917,8 @@ public sealed class GuildBook
         GuildId = 0;
         Info = null;
         storageHistory.Clear();   // the history deque belongs to the guild's storage, which goes with the CGuildInfo
+        PvpState = Score = WinCount = LoseCount = 0;
+        pvpHistory.Clear(); pvpSeasonHistory.Clear(); LastPvpHistoryId = 0; PvpSeasonHistoryRequested = false;
     }
 
     /// <summary>FUN_1413b6d10 (:405): create a guild. False in a guild or with an invite; a name shorter than

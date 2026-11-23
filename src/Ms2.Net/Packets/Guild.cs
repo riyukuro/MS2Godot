@@ -221,6 +221,15 @@ public sealed record GuildMessage(byte Type) {
     public int NpcKind { get; init; }
     public int NpcLevel { get; init; }
     public int RaidId { get; init; }
+    /// <summary>Type 0x27 (FUN_1413c2860 @0x1413c2860, guildmanager.cpp:2372): the new PvP state (u8). Type 0x29 (FUN_1413c2c60 @0x1413c2c60, :2416): the score, wins and losses.</summary>
+    public int PvpState { get; init; }
+    public int Score { get; init; }
+    public int Wins { get; init; }
+    public int Losses { get; init; }
+    /// <summary>Type 0x4a (OnPacketPvpHistory @0x1413c5000, :2810): the battles, those flagged present.</summary>
+    public IReadOnlyList<GuildPvpHistory> PvpHistory { get; init; } = Array.Empty<GuildPvpHistory>();
+    /// <summary>Type 0x4b (OnPacketPvpSeasonHistory @0x1413c51c0, :2831): the finished seasons, those flagged present.</summary>
+    public IReadOnlyList<GuildPvpSeasonHistory> PvpSeasonHistory { get; init; } = Array.Empty<GuildPvpSeasonHistory>();
     /// <summary>Type 0x6e (FUN_1413c3e50 @0x1413c3e50, guildmanager.cpp:2590): the storage entry that changed.</summary>
     public GuildStorageItem StorageItem { get; init; }
     /// <summary>Type 0x70 (OnPacketStorageHistory @0x1413c5dc0, :2963): the history lines.</summary>
@@ -250,7 +259,7 @@ public sealed record GuildMessage(byte Type) {
     public static GuildMessage Read(ByteReader r, ProtocolProfile profile) {
         var m = ReadBody(r, profile);
         // Types 7 and 0xf have no body, the others end with their fields.
-        if (m.Type is 1 or 2 or 3 or 4 or 5 or 6 or 7 or 0xf or 0x12 or 0x13 or 0x71 or 0x2d or 0x2e or 0x2f or 0x30 or 0x44 or 0x75 or 0x76 or 0x77 or 0x38 or 0x39 or 0x3b or 0x25 or 0x3e or 0x6d or 0x6e or 0x70 or 0x52 or 0x53 or 0x54 or 0x55 or 0x56 or 0x57) r.ExpectEnd($"Guild type {m.Type}");
+        if (m.Type is 1 or 2 or 3 or 4 or 5 or 6 or 7 or 0xf or 0x12 or 0x13 or 0x71 or 0x2d or 0x2e or 0x2f or 0x30 or 0x44 or 0x75 or 0x76 or 0x77 or 0x38 or 0x39 or 0x3b or 0x25 or 0x3e or 0x27 or 0x29 or 0x4a or 0x4b or 0x6d or 0x6e or 0x70 or 0x52 or 0x53 or 0x54 or 0x55 or 0x56 or 0x57) r.ExpectEnd($"Guild type {m.Type}");
         return m;
     }
 
@@ -332,6 +341,23 @@ public sealed record GuildMessage(byte Type) {
             case 0x3b: return Done(new(t) { Name = r.ReadUnicodeString(), NpcKind = r.ReadInt(), NpcLevel = r.ReadInt() }, r);
             // OnPacketMemberRaidCount (@0x1413c0e70, guildmanager.cpp:2120): the member's name, the raid id, the count
             case 0x25: return Done(new(t) { Name = r.ReadUnicodeString(), RaidId = r.ReadInt(), Value = r.ReadInt() }, r);
+            // FUN_1413c2860 (:2372): u8 state
+            case 0x27: return Done(new(t) { PvpState = r.ReadByte() }, r);
+            // FUN_1413c2c60 (:2416): i32 score, wins, losses
+            case 0x29: return Done(new(t) { Score = r.ReadInt(), Wins = r.ReadInt(), Losses = r.ReadInt() }, r);
+            // OnPacketPvpHistory (:2810) and OnPacketPvpSeasonHistory (:2831): i32 count, per entry u8 present (1), then the entry
+            case 0x4a:
+            {
+                int n = r.ReadInt(); var list = new List<GuildPvpHistory>();
+                for (int i = 0; i < n; i++) if (r.ReadByte() == 1) list.Add(GuildPvpHistory.Read(r));
+                return Done(new(t) { PvpHistory = list }, r);
+            }
+            case 0x4b:
+            {
+                int n = r.ReadInt(); var list = new List<GuildPvpSeasonHistory>();
+                for (int i = 0; i < n; i++) if (r.ReadByte() == 1) list.Add(GuildPvpSeasonHistory.Read(r));
+                return Done(new(t) { PvpSeasonHistory = list }, r);
+            }
             // FUN_1413c4300 (@0x1413c4300, :2637): the raid records were reset, the packet has no body
             case 0x3e: return Done(new(t), r);
             // FUN_1413c3e50 (:2590): ItemEntity::Read

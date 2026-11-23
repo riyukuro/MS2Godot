@@ -1,3 +1,5 @@
+using Maple2.PacketLib.Tools;
+using Ms2.Formats.World;
 using Ms2.Net.Packets;
 using Ms2.Net.Wire;
 using Ms2.Ui;
@@ -798,5 +800,71 @@ public class GuildBookTests {
         b.Apply(new GuildMessage((byte)0x25) { Name = "Ma", RaidId = 3, Value = 2 });
         b.Apply(new GuildMessage((byte)0x3e));
         Assert.That((b.TotalRaidCount, refresh), Is.EqualTo((0, 1)));
+    }
+
+    static SeasonDataTable PvpSeasons() => new(System.Xml.Linq.XDocument.Parse(
+        "<ms2><Season seasonID='4' eventStart='2022-1-1-0-0-0' eventEnd='2030-1-1-0-0-0' grade1='0' grade2='100' grade3='200' grade4='300' grade5='400' grade6='500' grade7='600'/></ms2>"), "GuildPvP",
+        System.Xml.Linq.XDocument.Parse("<ms2><season type='GuildPvP' id='4' name='S4'/></ms2>").Root.Elements("season"));
+
+    [Test]
+    public void TheSeasonIsTheCurrentOneOfTheTableAndAGradeIsTheOneBelowTheFirstPointsAboveTheScore() {
+        var b = GuildDialogTests.InGuild(); b.ZoneOffset = () => 0; b.ServerTime = () => SeasonDataTable.Time("2025-1-1-0-0-0");
+        Assert.That(b.GetSeason().GetRankForScore(0), Is.EqualTo(7), "no table: every grade starts at 0, so the top grade");
+        b.Seasons = PvpSeasons();
+        var s = b.GetSeason();
+        Assert.That((s.Id, s.Name, s.GetRankPoints(3), s.GetRankPoints(0), s.GetRankPoints(8)), Is.EqualTo((4, "S4", 200, 0, 0)));
+        Assert.That(new[] { -1, 0, 99, 100, 599, 600, 9999 }.Select(s.GetRankForScore), Is.EqualTo(new[] { 0, 1, 1, 2, 6, 7, 7 }));
+        b.ServerTime = () => SeasonDataTable.Time("2031-1-1-0-0-0");
+        Assert.That(b.GetSeason().Id, Is.EqualTo(0), "no current season resets it");
+    }
+
+    [Test]
+    public void ThePvpStateAndScoreComeFromTheInfoAndTheTypes0x27And0x29SetThemAndAGradeChangeIsALine() {
+        var info = GuildDialogTests.InGuild().Info; info.PvpState = 2; info.Counters = new[] { 150, 7, 3, 0, 0, 0, 0, 0 };
+        var b = new GuildBook { Common = id => id == 0x3b8 ? "grade {0}" : $"c{id:x}", CommonByKey = k => k, PlayerName = () => "Ma", ZoneOffset = () => 0, Seasons = PvpSeasons(),
+            ServerTime = () => SeasonDataTable.Time("2025-1-1-0-0-0"), StringTableText = (t, id) => $"t{t:x}.{id}" };
+        var lines = new List<(string, int)>(); int rating = 0;
+        b.ChatLine += (t, c) => lines.Add((t, c)); b.ChampionshipRatingRefresh += () => rating++;
+        b.Apply(new GuildMessage((byte)0) { GuildId = info.Id, Info = info });
+        Assert.That((b.PvpState, b.Score, b.WinCount, b.LoseCount), Is.EqualTo((2, 150, 7, 3)));
+        b.Apply(new GuildMessage((byte)0x27) { PvpState = 1 });
+        Assert.That((b.PvpState, rating), Is.EqualTo((1, 1)));
+        b.Apply(new GuildMessage((byte)0x29) { Score = 160, Wins = 8, Losses = 3 });
+        Assert.That((b.Score, b.WinCount, b.LoseCount, rating, lines.Count), Is.EqualTo((160, 8, 3, 2, 0)), "same grade: no line");
+        b.Apply(new GuildMessage((byte)0x29) { Score = 250, Wins = 9, Losses = 3 });
+        Assert.That((rating, lines.Count, lines[0].Item2), Is.EqualTo((3, 1, 0xd)));
+        Assert.That(lines[0].Item1, Does.Contain("t2d.3"), "the line names the new grade from string table 0x2d");
+    }
+
+    [Test]
+    public void ThePvpHistoryKeepsTheNewestTenAndTheLastIdIsTheNewestsTimeAndTheSeasonsAreReplaced() {
+        var sent = new List<IOutPacket>();
+        var b = GuildDialogTests.InGuild(); b.Send = sent.Add; int rows = 0, seasons = 0;
+        b.PvpHistoryRefresh += () => rows++; b.PvpSeasonHistoryRefresh += () => seasons++;
+        var list = Enumerable.Range(1, 12).Select(i => new GuildPvpHistory { Time = i * 10 }).ToList();
+        b.Apply(new GuildMessage((byte)0x4a) { PvpHistory = list });
+        Assert.That((b.PvpHistoryNewestFirst.Select(h => h.Time).ToArray(), b.LastPvpHistoryId, rows),
+            Is.EqualTo((new long[] { 120, 110, 100, 90, 80, 70, 60, 50, 40, 30 }, 120L, 1)));
+        b.Apply(new GuildMessage((byte)0x4b) { PvpSeasonHistory = new[] { new GuildPvpSeasonHistory { SeasonName = "a" }, new GuildPvpSeasonHistory { SeasonName = "b" } } });
+        b.Apply(new GuildMessage((byte)0x4b) { PvpSeasonHistory = new[] { new GuildPvpSeasonHistory { SeasonName = "c" } } });
+        Assert.That((b.PvpSeasonHistoryNewestFirst.Select(h => h.SeasonName).ToArray(), seasons), Is.EqualTo((new[] { "c" }, 2)));
+        b.Apply(new GuildMessage((byte)0x4a) { PvpHistory = Array.Empty<GuildPvpHistory>() });
+        Assert.That((b.LastPvpHistoryId, rows), Is.EqualTo((120L, 2)), "no entry: the id stays, the dialog is still told");
+    }
+
+    [Test]
+    public void TheHistoryRequestSendsTheLastIdAndAsksForTheSeasonsOnlyTheFirstTimeAndTheGuildChangeForgetsIt() {
+        var sent = new List<IOutPacket>(); int seasons = 0;
+        var b = GuildDialogTests.InGuild(); b.Send = sent.Add; b.PvpSeasonHistoryRefresh += () => seasons++;
+        b.Apply(new GuildMessage((byte)0x4a) { PvpHistory = new[] { new GuildPvpHistory { Time = 55 } } });
+        b.RequestPvpHistoryAndSeason();
+        Assert.That(sent, Is.EqualTo(new IOutPacket[] { new GuildPvpHistoryRequest(55), new GuildPvpSeasonHistoryRequest() }));
+        sent.Clear(); b.RequestPvpHistoryAndSeason();
+        Assert.That((sent.Single(), seasons), Is.EqualTo((new GuildPvpHistoryRequest(55), 1)), "second time: only the battles, the season rows are drawn again");
+        var w = new ByteWriter(); new GuildPvpHistoryRequest(0x0102030405060708).Write(w);
+        Assert.That(w.ToArray(), Is.EqualTo(new byte[] { 0x4a, 8, 7, 6, 5, 4, 3, 2, 1 }));
+        b.Apply(new GuildMessage((byte)0) { GuildId = b.Info.Id, Info = b.Info });   // a new guild info: the reset forgets the history
+        sent.Clear(); b.RequestPvpHistoryAndSeason();
+        Assert.That(sent, Is.EqualTo(new IOutPacket[] { new GuildPvpHistoryRequest(0), new GuildPvpSeasonHistoryRequest() }));
     }
 }

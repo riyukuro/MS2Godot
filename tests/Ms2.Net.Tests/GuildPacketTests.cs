@@ -265,4 +265,47 @@ public class GuildPacketTests {
         Assert.That(GuildMessage.Read(R(w => w.WriteByte(0x3e))).Type, Is.EqualTo(0x3e));
         Assert.Throws<PacketLayoutException>(() => GuildMessage.Read(R(w => { w.WriteByte(0x3e); w.WriteByte(0); })), "the reset has no body");
     }
+
+    static void WriteBattle(ByteWriter w, long time) {
+        w.WriteInt(1); w.WriteInt(2); w.WriteByte(1); w.WriteLong(11); w.WriteLong(12); w.WriteUnicodeString("A"); w.WriteUnicodeString("B");
+        for (int i = 0; i < 4; i++) w.WriteInt(20 + i);
+        for (int i = 0; i < 5; i++) { w.WriteUnicodeString("1,m:2,n"); w.WriteUnicodeString("3,o"); w.WriteByte(i % 2 == 0 ? (byte)'W' : (byte)'L'); }
+        w.WriteLong(77); w.WriteLong(time);
+    }
+
+    [Test]
+    public void ThePvpStateAndScoreTypesReadTheirFieldsAndEndWithThem() {
+        Assert.That(GuildMessage.Read(R(w => { w.WriteByte(0x27); w.WriteByte(3); })).PvpState, Is.EqualTo(3));
+        var m = GuildMessage.Read(R(w => { w.WriteByte(0x29); w.WriteInt(500); w.WriteInt(4); w.WriteInt(2); }));
+        Assert.That((m.Score, m.Wins, m.Losses), Is.EqualTo((500, 4, 2)));
+        Assert.Throws<PacketLayoutException>(() => GuildMessage.Read(R(w => { w.WriteByte(0x27); w.WriteByte(3); w.WriteByte(0); })));
+        Assert.Throws<PacketLayoutException>(() => GuildMessage.Read(R(w => { w.WriteByte(0x29); w.WriteInt(1); w.WriteInt(1); w.WriteInt(1); w.WriteByte(0); })));
+    }
+
+    [Test]
+    public void ThePvpHistoryKeepsTheEntriesFlaggedPresentInTheClientsFieldOrder() {
+        var m = GuildMessage.Read(R(w => {
+            w.WriteByte(0x4a); w.WriteInt(3);
+            w.WriteByte(1); WriteBattle(w, 1000);
+            w.WriteByte(0);
+            w.WriteByte(1); WriteBattle(w, 2000);
+        }));
+        Assert.That(m.PvpHistory.Select(h => h.Time), Is.EqualTo(new[] { 1000L, 2000L }));
+        var h0 = m.PvpHistory[0];
+        Assert.That((h0.Result, h0.FirstGuildId, h0.SecondGuildId, h0.FirstGuildName, h0.SecondGuildName, h0.Fb0), Is.EqualTo((1, 11L, 12L, "A", "B", 77L)));
+        Assert.That((h0.F48[3], h0.FirstMembers[4], h0.SecondMembers[0], (char)h0.RoundResults[1]), Is.EqualTo((23, "1,m:2,n", "3,o", 'L')));
+    }
+
+    [Test]
+    public void ThePvpSeasonHistoryReadsTheSeasonRows() {
+        var m = GuildMessage.Read(R(w => {
+            w.WriteByte(0x4b); w.WriteInt(2);
+            w.WriteByte(0);
+            w.WriteByte(1); w.WriteInt(1); w.WriteLong(2); w.WriteLong(3); w.WriteUnicodeString("S1"); w.WriteInt(4); w.WriteInt(5); w.WriteInt(6); w.WriteUnicodeString("x");
+            for (int i = 0; i < 7; i++) w.WriteInt(100 + i);
+        }));
+        var s = m.PvpSeasonHistory.Single();
+        Assert.That((s.SeasonName, s.Rank, s.Grade, s.Wins, s.Losses, s.F68), Is.EqualTo(("S1", 5, 6, 101, 102, 106)));
+        Assert.Throws<PacketLayoutException>(() => GuildMessage.Read(R(w => { w.WriteByte(0x4b); w.WriteInt(0); w.WriteByte(0); })));
+    }
 }

@@ -186,3 +186,15 @@ public sealed record GuildStorageHistoryRequest : IOutPacket {
     public Outbound Op => Outbound.Guild;
     public void Write(ByteWriter w) { w.WriteByte(0x70); }
 }
+
+/// <summary>CGuildManager::RequestPvpHistoryAndSeason (@0x1413bbe80, guildmanager.cpp:1144): the battles after the id (u8 0x4a, i64).</summary>
+public sealed record GuildPvpHistoryRequest(long LastId) : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) { w.WriteByte(0x4a); w.WriteLong(LastId); }
+}
+
+/// <summary>The same function's second send, the first time only: the season history (u8 0x4b).</summary>
+public sealed record GuildPvpSeasonHistoryRequest : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) { w.WriteByte(0x4b); }
+}
