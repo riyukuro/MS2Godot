@@ -21,8 +21,23 @@ public partial class LiveSession
     /// loot: an item (MS2_LIVE_COMBAT_ITEM) and meso (MS2_LIVE_COMBAT_MESO_ITEM, MS2_LIVE_COMBAT_MESO) dropped at the player by
     /// the GM item command, the pickup key held; checks: the drop appears, the item gain and the meso gain come back, the bag
     /// and the meso count change.
+    /// lift: a run to the lift at MS2_LIVE_LIFT_AT (its map point, x,y,z), then the action key; checks: the lift craft came
+    /// back, the carried model, the carry idle, then a few steps of the carry walk.
+    /// putdown: the action key in cube mode where the player stands; checks: the craft ended.
+    /// walkto:x y z[/x y z...] runs through map points in turn; faceto:x y z turns the player to a map point; scan:x0 y0 x1 y1 cell
+    /// logs the ground level under each cell (negative levels as a, b, ...); keys:N presses the action key N times.
     /// </summary>
     static long BagSum(LiveSession live) { long n = 0; foreach (var i in live.Items.All) n += i.Amount; return n; }
+
+    /// <summary>The action key pressed once through the engine's input (a Space key down, held a few frames so the field's
+    /// physics tick reads it, then the key up).</summary>
+    static async Task PressActionKey(Func<int, Task> frames)
+    {
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Space, PhysicalKeycode = Key.Space, Pressed = true });
+        await frames(6);
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Space, PhysicalKeycode = Key.Space, Pressed = false });
+        await frames(2);
+    }
 
     public static async Task CombatRun(GameFlow flow, Func<int, Task> frames, Func<Func<bool>, int, Task> until)
     {
@@ -73,6 +88,57 @@ public partial class LiveSession
                 await until(() => entered > 0, 60 * 90); await frames(240);
                 live.FieldEntered -= Entered;
                 Check($"the field entry after the warp (map {live.CurrentEntry?.MapId})", entered > 0);
+                continue;
+            }
+            if (step.StartsWith("walkto:"))      // walkto:x y z[/x y z...]: a run through the map points in turn, to within 40 of each
+            {
+                foreach (string point in step[7..].Split('/'))
+                {
+                    var c = point.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    var at = new Vector3(float.Parse(c[0]), float.Parse(c[2]), -float.Parse(c[1]));
+                    float dist = hud.DriveTowardScripted(at, false);
+                    int n = 0;
+                    for (; n < 60 * 25 && dist > 40; n++)
+                    {
+                        dist = hud.DriveTowardScripted(at, false); await frames(1);
+                        if (n % 120 == 119) GD.Print($"live: combat walkto {point}: distance {dist:F0}, at {FieldPortals.ToMs2(live.OwnPlayer.GlobalPosition)}");
+                    }
+                    hud.DriveEnd();
+                    GD.Print($"live: combat walkto {point}: distance {dist:F0} after {n} frames, at {FieldPortals.ToMs2(live.OwnPlayer.GlobalPosition)}");
+                }
+                await frames(60);
+                continue;
+            }
+            if (step.StartsWith("scan:"))      // scan:x0 y0 x1 y1 cell: the ground height under each cell centre (a ray down), one row per y
+            {
+                var c = step[5..].Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(float.Parse).ToArray();
+                var space = live.OwnPlayer.GetWorld3D().DirectSpaceState;
+                float baseZ = (float)FieldPortals.ToMs2(live.OwnPlayer.GlobalPosition).Z;
+                GD.Print($"live: combat scan {step[5..]}: one char per cell from x {c[0]}, the level above the player's ({baseZ:F0}) in cells of 150, '.' no ground");
+                for (float y = c[3]; y >= c[1]; y -= c[4])
+                {
+                    var row = new System.Text.StringBuilder();
+                    for (float x = c[0]; x <= c[2]; x += c[4])
+                    {
+                        var hit = space.IntersectRay(PhysicsRayQueryParameters3D.Create(new Vector3(x, 6000, -y), new Vector3(x, -6000, -y)));
+                        if (hit.Count == 0) { row.Append('.'); continue; }
+                        int level = Mathf.RoundToInt((((Vector3)hit["position"]).Y - baseZ) / 150f);
+                        row.Append(level < -9 ? '_' : level < 0 ? (char)('a' - 1 - level) : level > 9 ? '^' : (char)('0' + level));
+                    }
+                    GD.Print($"live: scan y {y,6:F0} {row}");
+                }
+                continue;
+            }
+            if (step.StartsWith("keys:"))      // keys:N: the action key pressed N times, a second apart (a talk's Next pages)
+            {
+                for (int i = int.Parse(step[5..]); i > 0; i--) { await PressActionKey(frames); await frames(60); }
+                continue;
+            }
+            if (step.StartsWith("faceto:"))      // faceto:x y z: the player turned to the map point where it stands
+            {
+                var c = step[7..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                hud.FaceScripted(new Vector3(float.Parse(c[0]), float.Parse(c[2]), -float.Parse(c[1])));
+                await frames(30);
                 continue;
             }
             if (step.StartsWith("chat:"))      // one chat line, no comma in it
@@ -483,6 +549,48 @@ public partial class LiveSession
                     await frames(120);
                     GD.Print($"live: combat worn: {string.Join(' ', live.Me.Equips?.Where(e => e.Id == weapon).Select(e => e.Slot.ToString()) ?? new string[0])}");
                     Shot("equipped2.png");
+                    break;
+                }
+                case "lift":      // MS2_LIVE_LIFT_AT=x,y,z (the lift's map point): a run to it, then the action key in its reach
+                {
+                    var p = Env("MS2_LIVE_LIFT_AT", "0,0,0").Split(';')[0].Split(',');
+                    var at = new Vector3(float.Parse(p[0]), float.Parse(p[2]), -float.Parse(p[1]));
+                    float dist = hud.FaceScripted(at);
+                    for (int walk = 0; walk < 60 * 25 && dist > 80; walk++)
+                    {
+                        dist = hud.DriveTowardScripted(at, false); await frames(1);
+                    }
+                    hud.DriveEnd(); hud.FaceScripted(at); await frames(60);
+                    GD.Print($"live: combat lift: distance {dist:F0}, polled lift '{live.Liftables.Polled}', text field focus {Ms2.Ui.InputBlock.Active}");
+                    Shot("lift_before.png");
+                    await PressActionKey(frames);
+                    await until(() => live.CubeCraft.InCubeMode, 60 * 5); await frames(90);
+                    var me = live.OwnPlayer;
+                    Check("the lift craft came back (cube mode, craft mode 2)", live.CubeCraft.InCubeMode && me.Craft.HoldsLift);
+                    Check("the carried model is on the body", me.Craft.HasGuide2);
+                    string idle = me.Anims.Name(Movement.ActionAnims.Act.CraftIdle);
+                    Check($"the carry idle plays ({me.Anim.CurrentAnimation}, CRAFT_IDLE is {idle})", idle != null && me.Anim.CurrentAnimation == idle);
+                    Shot("carry_idle.png");
+                    string walkName = me.Anims.Name(Movement.ActionAnims.Act.CraftWalk), seen = "";
+                    for (int i = 0; i < 50; i++) { hud.DriveScripted(new Vector2(0, 1), true); await frames(1); if (i == 40) seen = me.Anim.CurrentAnimation; }
+                    Check($"the carry walk plays ({seen}, CRAFT_WALK is {walkName})", walkName != null && seen == walkName);
+                    Shot("carry_walk.png");
+                    hud.DriveEnd(); await frames(90);
+                    break;
+                }
+                case "putdown":      // the action key in cube mode, where the player stands and faces
+                {
+                    Check("in cube mode before the put-down", live.CubeCraft.InCubeMode);
+                    GD.Print($"live: combat put-down poll: state id {live.InteractPlayerStateId()}, server state {live.Me.State}, move {live.OwnPlayer?.State}, craft holds lift {live.CubeCraft.Current?.HoldsLift}");
+                    await PressActionKey(frames);
+                    GD.Print($"live: combat put-down after the press: state id {live.InteractPlayerStateId()}, server state {live.Me.State}, move {live.OwnPlayer?.State}");
+                    await until(() => !live.CubeCraft.InCubeMode, 60 * 5); await frames(30);
+                    var me = live.OwnPlayer;
+                    Check("the craft ended after the put-down", !live.CubeCraft.InCubeMode && !me.Craft.HasGuide2);
+                    Shot("putdown.png");
+                    await frames(60 * 3);
+                    GD.Print($"live: combat put-down: idle plays {me.Anim.CurrentAnimation}");
+                    Shot("putdown_after.png");
                     break;
                 }
                 case "guidestep":     // MS2_LIVE_GUIDE_STEP: the saved tutorial step, then 6 s of guide ticks

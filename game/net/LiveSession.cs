@@ -2134,6 +2134,12 @@ public partial class LiveSession : Node
             UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnCreatePC);
             await Until(() => flow.Current == GameFlow.State.Create && tree.CurrentScene?.SceneFilePath == GameFlow.CreateScene, 600); await Frames(120);
             int before = Session.List().Count;
+            // MS2_LIVE_CREATE_JOB=<job code>: that job's tab first (the page opens on a random job)
+            if (int.TryParse(System.Environment.GetEnvironmentVariable("MS2_LIVE_CREATE_JOB"), out int createJob))
+            {
+                GD.Print($"live: create job {createJob} tab: {(Ms2Godot.Ui.Create.CharacterCreateScene.PickJobTabScripted(createJob) ? "clicked" : "none")}");
+                await Frames(90);
+            }
             Ms2Godot.Ui.Create.CharacterCreateScene.PickJobScripted();
             await Frames(10); await Until(() => Ms2Godot.Ui.Create.CharacterCreateScene.OnCreatePage, 600); await Frames(60);
             Ms2Godot.Ui.Create.CharacterCreateScene.ConfirmScripted(newName);

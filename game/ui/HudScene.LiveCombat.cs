@@ -111,6 +111,21 @@ public partial class HudScene
         return true;
     }
 
+    /// <summary>Harness: the camera-relative move input (the inverse of Player.WorldDir) that runs the player toward
+    /// <paramref name="target"/> (a world position) on the flat. Returns the flat distance, or -1 without a player.</summary>
+    public float DriveTowardScripted(Vector3 target, bool walk)
+    {
+        if (player == null) return -1;
+        var d = target - player.GlobalPosition; d.Y = 0;
+        float len = d.Length();
+        if (len < 1f) { DriveScripted(Vector2.Zero, walk); return len; }
+        d /= len;
+        var fwd = new Vector3(-Mathf.Sin(player.CameraYaw), 0, -Mathf.Cos(player.CameraYaw));
+        var right = new Vector3(-fwd.Z, 0, fwd.X);
+        DriveScripted(new Vector2(d.Dot(right), d.Dot(fwd)), walk);
+        return len;
+    }
+
     /// <summary>Harness: gives the player back to the keyboard.</summary>
     public void DriveEnd() { if (player != null) { player.Input2 = Vector2.Zero; player.ScriptDriven = false; } }
 }

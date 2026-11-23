@@ -67,6 +67,16 @@ public partial class CharacterCreateScene : LobbyFieldScene
     public static void OpenNameBoxScripted() => current?.create?.OnCallback("OnCreate", Array.Empty<object>());
     /// <summary>Scripted runs: the job page's Create button for its selected job (onClickCreate), which opens the look page.</summary>
     public static void PickJobScripted() { if (current?.select != null && page == Page.Select) current.ClickCreate(); }
+    /// <summary>Scripted runs: the job page's tab of <paramref name="jobCode"/> (10 the Knight), as a click on it; false when
+    /// the page is not up or has no such job.</summary>
+    public static bool PickJobTabScripted(int jobCode)
+    {
+        if (current?.select == null || page != Page.Select) return false;
+        int i = current.select.Jobs.FindIndex(j => j.JobCode == jobCode);
+        if (i < 0) return false;
+        current.ClickTab(i);
+        return true;
+    }
     /// <summary>Scripted runs: the job page's back button (CharacterCreateSelectDialog.onClickPrev), as a click on it.</summary>
     public static void ClickPrevScripted() { if (page == Page.Select && current?.selectDialog?.Host is { } h) h.Invoke(h.Entity, "onClickPrev", (object)null); }
     public static bool OnCreatePage => current != null && page == Page.Create && current.create?.State == 1;
