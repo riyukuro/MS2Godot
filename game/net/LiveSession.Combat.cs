@@ -383,6 +383,16 @@ public partial class LiveSession
                 {
                     await until(() => lastNpc != null, 60 * int.Parse(Env("MS2_LIVE_NPC_WAIT", "0")));     // MS2_LIVE_NPC_WAIT: seconds to wait for the server's npc
                     await frames(120);
+                    // MS2_LIVE_NPC_NEAR=<units>: the own pc placed that far from the npc on the line to it first (no walk; the
+                    // position goes out with the next sync, as the portal move step does)
+                    if (lastNpc?.Root != null && GodotObject.IsInstanceValid(lastNpc.Root) && float.TryParse(Env("MS2_LIVE_NPC_NEAR", ""), out float near)
+                        && live.player != null && GodotObject.IsInstanceValid(live.player))
+                    {
+                        var away = live.player.GlobalPosition - lastNpc.Position; away.Y = 0;
+                        live.player.GlobalPosition = lastNpc.Position + (away.LengthSquared() > 1e-6f ? away.Normalized() : Vector3.Forward) * near + new Vector3(0, 5, 0);
+                        live.player.Velocity = Vector3.Zero;
+                        await frames(90);
+                    }
                     var target = lastNpc; int deadBefore = kills, press = 0, need = int.Parse(Env("MS2_LIVE_COMBAT_PRESSES", "20"));
                     int? field = live.FieldId;
                     Check($"a server npc to attack ({target?.Row?.Id})", target != null);
