@@ -148,8 +148,9 @@ public sealed class SkillArrow
     /// <summary>"effect" (SkillArrow::Load, skillattackdata.cpp:114, m_strEffect; GetArrowEffect): the effect the magic shows
     /// on its own scene while it flies, from its start (CMagic::FUN_14145e960, magicdata.cpp:914-935).
     /// A set effect also makes an attack of the GMS2 per-skill files an arrow record (<see cref="SkillAttackData.ArrowRecord"/>).
-    /// STILL-OPEN: the GMS2 client's GetArrowEffect (KMS: none unless attackMethodType is 1, skillrecord.cpp:119) is not
-    /// located; the effect is shown for every arrow record.</summary>
+    /// KMS gives it only for attackMethodType 1 (skillrecord.cpp:119); the GMS2 client's GetArrowEffect (@0x140c356c0) calls the
+    /// level's effect getter @0x140467330 with kind 2 (the attack's +0x148) and has no attackMethodType test, so a GMS2 per-skill
+    /// row gives it for any attack (<see cref="Ms2.Ui.Hud.OwnTagMagics.MagicEffect"/>).</summary>
     public string Effect = "";
     /// <summary>"effectRemain" and "effectDestroy" (:115-116, row +0x148 and +0x150): the effect at the arrow's end, effectDestroy
     /// when its ray stopped it (magicdata.cpp:1071-1077).</summary>
