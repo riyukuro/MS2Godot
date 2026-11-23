@@ -4,7 +4,7 @@ namespace Ms2.Net;
 /// The GMS2 opcode numbers (client version 12), keyed by the same Inbound / Outbound members the KMS2 profile uses. Source: the
 /// Maple2 upstream server's SendOp table (server to client, our Inbound) and RecvOp table (client to server, our Outbound),
 /// Maple2.Server.Core/Constants. A member upstream has no row for stays unmapped, so the profile throws KeyNotFoundException for it
-/// exactly as for any unknown op: Inbound.UserChatItemLink, Inbound.UserSkinColor and Outbound.PersonalInfoAgreement.
+/// exactly as for any unknown op: Inbound.UserChatItemLink, Inbound.UserSkinColor, Inbound.StateConsumeEp and Outbound.PersonalInfoAgreement.
 /// </summary>
 static class Gms2Opcodes {
     public static readonly Dictionary<Inbound, ushort> InboundNumbers = new() {

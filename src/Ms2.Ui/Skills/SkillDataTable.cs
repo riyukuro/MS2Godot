@@ -358,7 +358,9 @@ public sealed class SkillData
     };
 
     /// <summary>The level's cooldown in ms: the KMS level@cooldown, else the GMS2 level/beginCondition@cooldownTime in seconds
-    /// (skill data stores seconds; the value is rounded to a whole millisecond). 0 when neither is present.</summary>
+    /// (seconds, rounded to a whole millisecond). 0 when neither is present.
+    /// INFERRED: the conversion rests on one data fact, GMS2 skill 10000001 level 1 has cooldownTime="0.4" where the KMS row has
+    /// cooldown="400"; the GMS2 exe's level reader is not in the decompiled source (no cooldownTime read found), so there is no client cite.</summary>
     static uint LevelCooldownMs(XElement l)
     {
         uint kms = Xml.UInt(l, "cooldown");

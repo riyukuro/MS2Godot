@@ -591,6 +591,15 @@ public sealed class MyCharacter {
         Changed?.Invoke();
     }
 
+    /// <summary>OnStateConsumeEp (scenestategame.cpp:5799-5810): SetCurrentStat(10, ep), the value taken as absolute and clamped to
+    /// [0, total] (pcbase.cpp:2375-2386); raises Changed like <see cref="Apply(PlayerStat)"/>. Returns the stored EP.</summary>
+    public long Apply(StateConsumeEp c) {
+        long ep = Math.Clamp((long) c.Ep, 0L, Stats0[PlayerStat.Stamina]);
+        Stats2[PlayerStat.Stamina] = ep;
+        Changed?.Invoke();
+        return ep;
+    }
+
     public void Apply(UserEnvMessage m) {
         switch (m) {
             case UserEnvMessage.TitleAdded a: Titles.Add((uint) a.Id); break;

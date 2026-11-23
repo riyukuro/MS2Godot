@@ -1627,6 +1627,11 @@ public partial class LiveSession : Node
                 if (effect) PlayOwnCommonEffect(RevivalPenaltyEndKey);     // InsertEffect of CommonResource +0x358 at the own PC
                 if (guideTrigger) guide?.AddTrigger(GuideTrigger.RevivalPanelty, 0, 0);
             }
+            else if (game.Is(p, Inbound.StateConsumeEp))
+            {
+                long ep = Me.Apply(StateConsumeEp.Read(p.Reader()));   // OnStateConsumeEp (scenestategame.cpp:5799): absolute EP
+                StubHudData.Instance.EpCurrent = (int)ep;
+            }
             else if (game.Is(p, Inbound.StateFallDamage))
             {
                 var fall = StateFallDamage.Read(p.Reader());

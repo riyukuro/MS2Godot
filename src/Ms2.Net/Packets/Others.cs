@@ -39,6 +39,12 @@ public sealed record UserBattle(int ObjectId, byte Emotion) {
     public static UserBattle Read(ByteReader r) { var p = new UserBattle(r.ReadInt(), r.ReadByte()); r.ExpectEnd("UserBattle"); return p; }
 }
 
+/// <summary>Inbound 0x64 (OnStateConsumeEp, scenestategame.cpp:5799-5810): one i32, the new absolute current EP (stat 10), not a delta.
+/// The layout is from the client read; no recording of the packet exists.</summary>
+public sealed record StateConsumeEp(int Ep) {
+    public static StateConsumeEp Read(ByteReader r) { var p = new StateConsumeEp(r.ReadInt()); r.ExpectEnd("StateConsumeEp"); return p; }
+}
+
 /// <summary>Inbound 0x65 (OnStateFallDamage): i32 object id, i32 amount.</summary>
 public sealed record StateFallDamage(int ObjectId, int Amount) {
     public static StateFallDamage Read(ByteReader r) { var p = new StateFallDamage(r.ReadInt(), r.ReadInt()); r.ExpectEnd("StateFallDamage"); return p; }
