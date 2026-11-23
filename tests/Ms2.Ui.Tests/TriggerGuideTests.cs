@@ -69,6 +69,36 @@ public class TriggerGuideTests
         Assert.That(left.Select(c => (c.Sub, c.Id, c.Text)), Is.EqualTo(new[] { ((byte)9, 11, "hello") }));
     }
 
+    /// <summary>Sub 7 (triggerservice.cpp:1013-1031) puts the own pc in the emotion state with the list played once
+    /// (mode 0, flag 0, value 0, bForce 0); sub 8 (:1033-1050) with the one name, its flag and duration (mode 1, bForce 1).
+    /// Without a local player both are read and left unapplied.</summary>
+    [TestCase((byte)9, false)]
+    [TestCase((byte)8, true)]
+    public void EmotionSubsEnterTheEmotionState(byte type, bool gms2)
+    {
+        var profile = gms2 ? ProtocolProfile.Gms2 : ProtocolProfile.Kms2525;
+        var got = new List<TriggerEmotionData>();
+        var left = new List<TriggerUiCommand>();
+        var w = new ByteWriter(); w.WriteByte(type); w.WriteByte(7); w.WriteInt(2); w.WriteUnicodeString("Emotion_A"); w.WriteUnicodeString("Idle_B");
+        byte[] list = w.Buffer.AsSpan(0, w.Length).ToArray();
+        w = new ByteWriter(); w.WriteByte(type); w.WriteByte(8); w.WriteByte(1); w.WriteInt(3000); w.WriteUnicodeString("Emotion_C");
+        byte[] timed = w.Buffer.AsSpan(0, w.Length).ToArray();
+
+        Assert.That(TriggerGuide.Apply(list, profile, null, null, null, null, left.Add, got.Add), Is.True);
+        Assert.That(TriggerGuide.Apply(timed, profile, null, null, null, null, left.Add, got.Add), Is.True);
+        Assert.That(left, Is.Empty);
+        Assert.That(got.Count, Is.EqualTo(2));
+        Assert.That(got[0].Emotions, Is.EqualTo(new[] { "Emotion_A", "Idle_B" }));
+        Assert.That((got[0].Mode, got[0].Flag, got[0].Value, got[0].Force), Is.EqualTo((0, 0, 0, false)));
+        Assert.That(got[1].Emotions, Is.EqualTo(new[] { "Emotion_C" }));
+        Assert.That((got[1].Mode, got[1].Flag, got[1].Value, got[1].Force), Is.EqualTo((1, 1, 3000, true)));
+
+        Assert.That(TriggerGuide.Apply(list, profile, null, null, null, null, left.Add, null), Is.True);
+        Assert.That(TriggerGuide.Apply(timed, profile, null, null, null, null, left.Add, null), Is.True);
+        Assert.That(left.Select(c => c.Sub), Is.EqualTo(new byte[] { 7, 8 }));
+        Assert.That(got.Count, Is.EqualTo(2));
+    }
+
     [Test]
     public void OtherTypesAndSubsAreNotTheGuides()
     {

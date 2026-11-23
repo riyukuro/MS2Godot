@@ -959,7 +959,8 @@ public partial class LiveSession : Node
     {
         if (LogPackets) GD.Print($"live: Trigger in {Convert.ToHexString(body, 0, Math.Min(body.Length, 24))}{(body.Length > 24 ? ".." : "")}");
         if (Ms2.Ui.Guide.TriggerGuide.Apply(body, game.Profile, GuidePane, Movie, guide,
-                z => { if (player != null && IsInstanceValid(player)) player.TurnToRotZ(z); }, c => TriggerNotApplied(TriggerObjects.Ui, c.Sub))) return;
+                z => { if (player != null && IsInstanceValid(player)) player.TurnToRotZ(z); }, c => TriggerNotApplied(TriggerObjects.Ui, c.Sub),
+                player != null && IsInstanceValid(player) ? player.EnterTriggerEmotion : null)) return;
         if (ReadUiTrigger(body)) return;
         if (triggerField != null && GodotObject.IsInstanceValid(triggerField) && triggerField.Triggers != null) ApplyTrigger(triggerField, body);
         else pendingTriggers.Add(body);
