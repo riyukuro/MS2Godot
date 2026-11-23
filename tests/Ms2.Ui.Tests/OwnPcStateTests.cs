@@ -1,3 +1,4 @@
+using Ms2.Net.Packets;
 using Ms2.Ui;
 using NUnit.Framework;
 
@@ -25,4 +26,22 @@ public class OwnPcStateTests
     [Test]
     public void AServerStateIsKept() =>
         Assert.That(OwnPcState.CurStateId(0xc, false, true, 6), Is.EqualTo(0xc));
+
+    /// <summary>The fall the server sends at every field entry held the state at 5 until the body's landing left it
+    /// (MyCharacter.LeaveFallOnGround): until then the gates that want the standing state refused, the interact objects
+    /// and npcs, the reactors and the ride item (StateAllowsInteraction) and the lift put-down (state 1).</summary>
+    [Test]
+    public void TheFieldEntryFallHoldsTheIdleGatesUntilTheBodyStands()
+    {
+        var me = new MyCharacter();
+        var u = new FieldAddUser { ObjectId = 9, User = new UserBlock { Name = "a" } };
+        u.Stats[0].Health = 500; u.Stats[2].Health = 500;
+        me.Apply(u);
+        me.ApplyUserState(9, 5);
+        int falling = OwnPcState.CurStateId(me.State, false, false, 1);
+        Assert.That((falling, LiveInteractObjects.StateAllowsInteraction(falling)), Is.EqualTo((5, false)), "the server's fall: refused");
+        me.LeaveFallOnGround(true);
+        int standing = OwnPcState.CurStateId(me.State, false, false, 1);
+        Assert.That((standing, LiveInteractObjects.StateAllowsInteraction(standing)), Is.EqualTo((1, true)), "on the ground: the body's idle");
+    }
 }
