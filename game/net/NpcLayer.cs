@@ -169,6 +169,7 @@ public sealed class NpcLayer
         // NotifyRemoveNpc, or a marker keyed by it outlives the npc
         if (inst.TryGetValue(n.ObjectId, out var old)) { inst.Remove(n.ObjectId); Removed?.Invoke(n.ObjectId); Tags?.Remove(old.Root); Bars?.Remove(old.Root); old.Root.QueueFree(); }
         var row = table.Find(n.NpcId);
+        Godot.GD.Print($"live: npc add object {n.ObjectId} npc {n.NpcId} row {(row == null ? "no" : "yes")}");
         if (row == null) { NoRow++; return; }
         var model = ModelFor(row);
         var root = new Node3D { Name = $"Npc{n.ObjectId}" };

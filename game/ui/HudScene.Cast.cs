@@ -324,7 +324,7 @@ public partial class HudScene
             if (picked)
             {
                 if (cr == null) OwnAutoPress();
-                else if (cr != ownQueued && (!OwnSkillStateRuns() || !OwnPress(cr))) RefusePoll(0, cr.Skill, cw);
+                else if (cr != ownQueued && (!OwnSkillStateRuns() || !OwnPress(cr, false))) RefusePoll(0, cr.Skill, cw);
                 return;
             }
         }
@@ -344,7 +344,7 @@ public partial class HudScene
             OwnAutoPress();
             return;
         }
-        if (!OwnSkillStateRuns() || !OwnPress(r)) RefusePoll(dik, s, w);
+        if (!OwnSkillStateRuns() || !OwnPress(r, false)) RefusePoll(dik, s, w);
     }
 
     readonly HeldKeyPoll heldKeys = new();          // MyPC m_map17c0, m_n15ec / m_n15f0
@@ -1037,7 +1037,23 @@ public partial class HudScene
         bool sent = req != null && (live?.SendDamage(req) ?? false);
         TickOwnTagMagics();
         GD.Print($"cast: skill {r.Skill.Id} attack {attack} targets {req?.Targets.Count ?? 0}{(sent ? " sent" : " (offline, not sent)")}"
+            + (req?.Targets.Count is null or 0 ? NoTargetDetail(pos) : "")
             + (req == null ? "" : $" [sub0 serial/target/hit/links: {string.Join(", ", req.Targets.Select(t => $"{t.Serial}/{t.TargetId}/{t.Hit}/{t.Links.Count}"))}]"));
+    }
+
+    /// <summary>The tail of an attack line with no target: how many candidates the pick had and the nearest npc (id, distance), built
+    /// only for that line.</summary>
+    string NoTargetDetail(System.Numerics.Vector3 pos)
+    {
+        int n = 0, nearest = 0; float best = float.MaxValue;
+        foreach (var h in hitObjects)
+        {
+            if (h.IsOwner) continue;
+            n++;
+            float d = System.Numerics.Vector3.Distance(h.Position, pos);
+            if (h.Kind == HitKind.Npc && d < best) { best = d; nearest = h.Id; }
+        }
+        return nearest == 0 ? $", candidates {n}, no npc" : $", candidates {n}, nearest npc object {nearest} dist {best:0}";
     }
 
     readonly OwnTagMagics ownTagMagics = new();
