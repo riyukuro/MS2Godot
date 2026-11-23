@@ -28,7 +28,9 @@ public class SkillCooltimesTests
         + "<level value=\"1\" cooldown=\"3000\"><motion sequenceName=\"B\"/></level></skill>"
         + "<skill id=\"111\"><basic mainType=\"1\"><kinds continue=\"1\"/></basic><level value=\"1\"><motion sequenceName=\"B\"/></level></skill>"
         + "<skill id=\"112\"><basic mainType=\"1\"><combo inputSkill=\"1\" outputSkill=\"112\" chargingSkill=\"1\"/></basic>"
-        + "<level value=\"1\"><motion sequenceName=\"B\"/></level></skill></ms2>") }, (e, n, _) => e.Elements(n).ToList());
+        + "<level value=\"1\"><motion sequenceName=\"B\"/></level></skill>"
+        // 120: a GMS2-shaped level (beginCondition cooldownTime 0.4 s) over a sequence whose combo key is 1.2 s
+        + "<skill id=\"120\"><basic mainType=\"1\"/><level value=\"1\"><beginCondition cooldownTime=\"0.4\"/><motion sequenceName=\"B\"/></level></skill></ms2>") }, (e, n, _) => e.Elements(n).ToList());
 
     static (SkillCooltimes C, List<string> Log) Make()
     {
@@ -192,6 +194,17 @@ public class SkillCooltimesTests
         Assert.That(CastGate.Cost(Gate(c, () => now), lv, false), Is.EqualTo(2), "FUN_14176a530: still cooling");
         now = 5500;
         Assert.That(CastGate.Cost(Gate(c, () => now), lv, false), Is.EqualTo(0));
+    }
+
+    /// <summary>A level cooldown of 0.4 s starts 400 ms, not the sequence's 1.2 s combo window. The seconds-to-ms mapping of the GMS2
+    /// beginCondition is a data shape, not a recording.</summary>
+    [Test]
+    public void ALevelCooldownWinsOverTheSequenceWindow()
+    {
+        var (c, _) = Make();
+        var t = Table();
+        c.StartCast(Record(t, 120, 1000), Seq((1.2, "combo")), 0f, 1000);
+        Assert.That(c.Get(120) is { Start: 1000, End: 1400 });
     }
 
     [Test]

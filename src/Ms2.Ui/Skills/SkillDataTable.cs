@@ -357,6 +357,15 @@ public sealed class SkillData
         _ => 0,
     };
 
+    /// <summary>The level's cooldown in ms: the KMS level@cooldown, else the GMS2 level/beginCondition@cooldownTime in seconds
+    /// (skill data stores seconds; the value is rounded to a whole millisecond). 0 when neither is present.</summary>
+    static uint LevelCooldownMs(XElement l)
+    {
+        uint kms = Xml.UInt(l, "cooldown");
+        if (kms != 0 || l.Element("beginCondition") is not { } bc) return kms;
+        return (uint)Math.Max(0, Math.Round(Xml.Float(bc, "cooldownTime") * 1000, MidpointRounding.AwayFromZero));
+    }
+
     /// <summary>
     /// SkillData::Load: id, originID; under &lt;basic&gt; mainType, &lt;ui&gt; icon / attackType / tooltip, &lt;kinds&gt; rangeType /
     /// element, &lt;condition&gt; weapons; then the levels FUN_14028faa0(skill, "level", "value") picks: a level below 1 ends the
@@ -460,7 +469,7 @@ public sealed class SkillData
                 Level = (ushort)Xml.Int(l, "value"),
                 Sp = Xml.Int(l, "sp"),
                 Ep = Xml.Int(l, "ep"),
-                CooldownMs = Xml.UInt(l, "cooldown"),
+                CooldownMs = LevelCooldownMs(l),
                 StringParam = (string)l.Attribute("stringParam") ?? "",
                 Meso = Xml.Int(l, "meso"),
                 Skill = s,
@@ -472,6 +481,14 @@ public sealed class SkillData
                 if (m.Attribute("sequenceSpeed") != null) md.SequenceSpeed = Xml.Float(m, "sequenceSpeed");
                 foreach (var a in m.Elements("attack")) md.Attacks.Add(SkillAttackData.Load(a, gms2Row));
                 lv.Motions.Add(md);
+            }
+            // the GMS2 per-skill files move the costs into level/consume (@money, stat@sp, stat@ep); the KMS attributes stay first
+            if (l.Element("consume") is { } consume)
+            {
+                var cs = consume.Element("stat");
+                if (lv.Sp == 0 && cs != null) lv.Sp = Xml.Int(cs, "sp");
+                if (lv.Ep == 0 && cs != null) lv.Ep = Xml.Int(cs, "ep");
+                if (lv.Meso == 0) lv.Meso = Xml.Int(consume, "money");
             }
             if (lv.Level < 1) return s;
             s.levels[lv.Level] = lv;
