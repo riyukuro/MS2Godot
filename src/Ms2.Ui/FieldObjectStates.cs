@@ -300,11 +300,13 @@ public sealed class BreakableObjects
 /// <para>The field's lifts (<see cref="AttachField"/>): the field load (worldservice_1.cpp:6771-6786) makes a CLiftableObject
 /// for every entity of model 0x32767dd (net hash of "MS2Liftable") with kind = property 0x3773e9e0 ("ItemStackCount").
 /// Updates that come before the field's lifts are attached wait for them (<see cref="Holding"/>).</para>
-/// STILL-OPEN: DestroyLiftByName on a lift without an entity (CMainSystem::DestroyEntity(0)) is not followed: such a lift is
-/// left in the list.
+/// <para>DestroyLiftByName on a lift without an entity is CMainSystem::DestroyEntity(0), which does nothing
+/// (mainsystem.cpp:432-439): such a lift stays in the list, as here. The client binds a mode 3 lift to its placed cube's
+/// entity (cubemapinformationservice_3.cpp:5689-5694, name "objCode_cellKey"); the placed cubes have no entity here
+/// (STILL-OPEN), so that lift keeps none.</para>
+/// <para>The host draws <see cref="ActiveSet"/> and <see cref="Removed"/> (world/FieldLiftables).</para>
 /// STILL-OPEN: the quest masks (ParseQuestMask, liftableobject.cpp:105), UpdateConditions (:356), the collision groups and
-/// the cube cell clear of a removed field lift (CubeMapInformationService::FUN_1410c4b50(cell, 0)) have no port; the host
-/// gets <see cref="Removed"/>.
+/// the cube cell clear of a removed field lift (CubeMapInformationService::FUN_1410c4b50(cell, 0)) have no port.
 /// </summary>
 public sealed class LiftableObjects
 {
@@ -317,9 +319,9 @@ public sealed class LiftableObjects
         public bool Enabled { get; internal set; }
         /// <summary>m_nState (SetState @0x141447b00).</summary>
         public int State { get; internal set; }
-        /// <summary>SetState: states 0 and 2 SetActive(1), state 1 SetActive(0), others leave it
-        /// (liftableobject.cpp:296-309; only with an entity).</summary>
-        public bool Active { get; internal set; }
+        /// <summary>m_bC1, SetActive's flag (@0x141447ec0, liftableobject.cpp:371-396): Init sets it (:171); SetState's
+        /// states 0 and 2 SetActive(1), state 1 SetActive(0), others leave it (:296-309; only with an entity).</summary>
+        public bool Active { get; internal set; } = true;
         /// <summary>The quest mask strings: FUN_1414477f0(A, B) and FUN_141447850(C, D).</summary>
         public string QuestA { get; internal set; }
         public string QuestB { get; internal set; }
@@ -345,12 +347,15 @@ public sealed class LiftableObjects
         /// <summary>CanLift (@0x141447340, liftableobject.cpp:155-164): enabled, a kind above 0, state 0.</summary>
         public bool CanLift => Enabled && Kind > 0 && State == 0;
 
-        internal void SetState(int state)
+        /// <summary>SetState (@0x141447b00): true when it ran SetActive (an entity and state 0, 1 or 2).</summary>
+        internal bool SetState(int state)
         {
             State = state;
-            if (!HasEntity) return;                          // liftableobject.cpp:295
+            if (!HasEntity) return false;                    // liftableobject.cpp:295
             if (state is 0 or 2) Active = true;
             else if (state == 1) Active = false;
+            else return false;
+            return true;
         }
     }
 
@@ -366,6 +371,11 @@ public sealed class LiftableObjects
     /// <summary>A field lift's entity was removed: its name.</summary>
     public Action<string> Removed;
 
+    /// <summary>A field lift's SetState ran SetActive (liftableobject.cpp:296-309): its name and the flag. SetActive(1) shows
+    /// the entity at alpha 1 (:375-381); SetActive(0) fades its alpha 1 to 0 over 500 ms (FUN_140ae1e80, :386-390), then
+    /// the 500 ms timer hides it (FUN_141447c10, :313-321). The host draws it (world/FieldLiftables).</summary>
+    public Action<string, bool> ActiveSet;
+
     public int Count => lifts.Count;
     public const string Model = "MS2Liftable";
 
@@ -378,7 +388,8 @@ public sealed class LiftableObjects
     /// <summary>A field lift: Init(entity, false, kind) with the entity's lowercased DataFileID as its name.</summary>
     public Lift AddFieldLift(string dataFileId, int kind)
     {
-        // Init (liftableobject.cpp:167-175): SetState(0) runs before BindEntity, so it finds no entity and leaves Active
+        // Init (liftableobject.cpp:167-175): m_bC1 set, then SetState(0) runs before BindEntity, so it finds no entity and
+        // does not SetActive
         var l = new Lift { Name = dataFileId.ToLowerInvariant(), Kind = kind };
         l.SetState(0);
         l.HasEntity = true;
@@ -517,7 +528,7 @@ public sealed class LiftableObjects
                     l.Kind = e.Kind;
                     l.Enabled = e.Enabled;
                     l.Flag = e.Flag;
-                    l.SetState(e.State);
+                    if (l.SetState(e.State)) ActiveSet?.Invoke(l.Name, l.Active);
                 }
                 // :11973-11991: the field lift entities whose name the list doesn't hold are removed
                 gone.Clear();
@@ -531,7 +542,7 @@ public sealed class LiftableObjects
                 if (!lifts.TryGetValue(e.Name, out var l)) break;
                 l.Kind = e.Kind;
                 l.Enabled = e.Enabled;
-                l.SetState(e.State);
+                if (l.SetState(e.State)) ActiveSet?.Invoke(l.Name, l.Active);
                 break;
             }
             case LiftableUpdate.ModeAdd:

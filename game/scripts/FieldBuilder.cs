@@ -149,11 +149,27 @@ public sealed class FieldBuilder
     /// <summary>A field breakable object (CBreakableObject, the MS2Breakable mixin).</summary>
     public static bool IsBreakable(FieldEntity e) => e.HasMixin("MS2Breakable");
 
+    /// <summary>
+    /// The instances (drawn and shadow-only) of every field lift (MS2Liftable), for world/FieldLiftables: a lift's
+    /// SetActive fades it out and shows it again (CLiftableObject::SetActive, liftableobject.cpp:371-396).
+    /// </summary>
+    public readonly Dictionary<FieldEntity, List<(MultiMesh Mm, int Index)>> LiftableMeshDraws = new();
+    /// <summary>The drawn instances of every field lift, which SetActive(0)'s 500 ms fade draws alone.</summary>
+    public readonly Dictionary<FieldEntity, List<FadeDraw>> LiftableFadeDraws = new();
+
+    /// <summary>A field lift (CLiftableObject, the MS2Liftable mixin; the field load's model 0x32767dd).</summary>
+    public static bool IsLiftable(FieldEntity e) => e.HasMixin(Ms2.Ui.LiftableObjects.Model);
+
     void AddTriggerDraw(FieldEntity e, MultiMesh mm, int index)
     {
         if (IsBreakable(e))
         {
             if (!BreakableMeshDraws.TryGetValue(e, out var own)) BreakableMeshDraws[e] = own = new List<(MultiMesh, int)>();
+            own.Add((mm, index));
+        }
+        if (IsLiftable(e))
+        {
+            if (!LiftableMeshDraws.TryGetValue(e, out var own)) LiftableMeshDraws[e] = own = new List<(MultiMesh, int)>();
             own.Add((mm, index));
         }
         if (!IsTriggerDrawn(e)) return;
@@ -167,6 +183,11 @@ public sealed class FieldBuilder
         if (IsBreakable(e))
         {
             if (!BreakableFadeDraws.TryGetValue(e, out var own)) BreakableFadeDraws[e] = own = new List<FadeDraw>();
+            own.Add(new FadeDraw { Mm = mm, Index = index, Mesh = mesh, Parent = parent, NotReceiving = notReceiving });
+        }
+        if (IsLiftable(e))
+        {
+            if (!LiftableFadeDraws.TryGetValue(e, out var own)) LiftableFadeDraws[e] = own = new List<FadeDraw>();
             own.Add(new FadeDraw { Mm = mm, Index = index, Mesh = mesh, Parent = parent, NotReceiving = notReceiving });
         }
         if (IsTriggerMesh(e))

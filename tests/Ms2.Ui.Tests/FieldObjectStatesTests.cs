@@ -165,11 +165,11 @@ public class FieldObjectStatesTests
     [Test]
     public void FieldLiftIsDisabledAtStateZeroUnderItsLowercasedId()
     {
-        // Init(entity, false, kind) (liftableobject.cpp:167-175), BindEntity's ToLower (:186-191); SetState(0) runs before
-        // BindEntity, with no entity yet, so it does not SetActive (:295)
+        // Init(entity, false, kind) (liftableobject.cpp:167-175): m_bC1 = 1 (:171), BindEntity's ToLower (:186-191); SetState(0)
+        // runs before BindEntity, with no entity yet, so it does not SetActive (:295)
         var l = new LiftableObjects();
         var lift = l.AddFieldLift("ABCdef", 7);
-        Assert.That((lift.Name, lift.Kind, lift.Enabled, lift.State, lift.Active), Is.EqualTo(("abcdef", 7, false, 0, false)));
+        Assert.That((lift.Name, lift.Kind, lift.Enabled, lift.State, lift.Active), Is.EqualTo(("abcdef", 7, false, 0, true)));
     }
 
     [Test]
@@ -199,6 +199,27 @@ public class FieldObjectStatesTests
         Assert.That(l.Find("drop"), Is.Null);
         Assert.That(l.Find("keep"), Is.Not.Null);
         Assert.That(l.Find("loose"), Is.Not.Null);
+    }
+
+    [Test]
+    public void AStateChangeOfAFieldLiftSetsItsActiveFlagAndSignalsIt()
+    {
+        // SetState (liftableobject.cpp:292-310): with an entity, states 0 and 2 SetActive(1), state 1 SetActive(0), others
+        // nothing; a lift without an entity (mode 3) never
+        var l = new LiftableObjects();
+        l.AddFieldLift("a", 1);
+        l.Apply(new LiftableUpdate(LiftableUpdate.ModeAdd, new[] { new LiftableEntry("4_655105", false, 1, 0) }));
+        var seen = new List<(string, bool)>();
+        l.ActiveSet = (n, on) => seen.Add((n, on));
+        l.Apply(new LiftableUpdate(LiftableUpdate.ModeUpdate, new[] { new LiftableEntry("a", true, 1, 1) }));
+        Assert.That(l.Find("a").Active, Is.False, "lifted");
+        l.Apply(new LiftableUpdate(LiftableUpdate.ModeUpdate, new[] { new LiftableEntry("a", true, 1, 3) }));
+        Assert.That(l.Find("a").Active, Is.False, "state 3 leaves it");
+        l.Apply(List(new LiftableEntry("a", true, 1, 0), new LiftableEntry("4_655105", false, 1, 1)));
+        Assert.That(l.Find("a").Active, Is.True, "back");
+        l.Apply(new LiftableUpdate(LiftableUpdate.ModeUpdate, new[] { new LiftableEntry("4_655105", false, 1, 2) }));
+        Assert.That(l.Find("4_655105").Active, Is.True, "no entity: Init's flag stays");
+        Assert.That(seen, Is.EqualTo(new[] { ("a", false), ("a", true) }));
     }
 
     [Test]

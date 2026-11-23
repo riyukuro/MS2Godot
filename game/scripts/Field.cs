@@ -51,6 +51,8 @@ public partial class Field : Node3D, World.ITargetCamera
     public World.FieldTriggers Triggers { get; private set; }
     /// <summary>The field's breakable objects as drawn (CBreakableObject::SetState), which the live session's Breakable packets drive.</summary>
     public World.FieldBreakables Breakables { get; private set; }
+    /// <summary>The field lifts' fades and removals (live only).</summary>
+    public World.FieldLiftables Liftables { get; private set; }
     Ms2.Ui.BreakableObjects devBreakables;    // offline only, with MS2_BREAKABLE_STATE
 
     /// <summary>Dev: MS2_BREAKABLE_STATE="name=state[,name=state]" (name * = every marker) gives an offline field breakable list for those states.</summary>
@@ -201,6 +203,11 @@ public partial class Field : Node3D, World.ITargetCamera
         AddChild(Triggers.Fader);
         Breakables = new World.FieldBreakables(Net.LiveSession.Instance?.Breakables ?? DevBreakables(), fb.BreakableMeshDraws, fb.BreakableFadeDraws);
         AddChild(Breakables.Fader);
+        Liftables = new World.FieldLiftables(Net.LiveSession.Instance?.Liftables, fb.LiftableMeshDraws, fb.LiftableFadeDraws);
+        AddChild(Liftables.Fader);
+        int liftsElsewhere = 0;
+        foreach (var e in fb.DrawnElsewhere) if (FieldBuilder.IsLiftable(e)) liftsElsewhere++;
+        if (Liftables.Count + liftsElsewhere > 0) GD.Print($"MS2Godot lifts: {Liftables.Count} drawn, {liftsElsewhere} drawn as props (no fade)");
         contents.Props.Entities.AddRange(fb.DrawnElsewhere);
         contents.Props.NotReceiving.UnionWith(fb.NotReceivingElsewhere);
         foreach (var (e, off) in fb.LightOffElsewhere) contents.Props.LightOff[e] = off;
@@ -379,6 +386,7 @@ public partial class Field : Node3D, World.ITargetCamera
     {
         if (Active == this) Active = null;
         Breakables?.Detach();
+        Liftables?.Detach();
         FieldLights.Clear(lightSet);
         if (began && !IsLoaded) World.FieldContents.AbandonLoad(this, loadMove);
         layers?.Stop();
