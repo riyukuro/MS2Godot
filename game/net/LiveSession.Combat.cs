@@ -24,7 +24,7 @@ public partial class LiveSession
     /// lift (or lift:x y z): a run to the lift at MS2_LIVE_LIFT_AT (its map point, x,y,z) or the given point, then the action key; checks: the lift craft came
     /// back, the carried model, the carry idle, then a few steps of the carry walk.
     /// putdown: the action key in cube mode where the player stands; checks: the craft ended.
-    /// walkto:x y z[/x y z...] runs through map points in turn; faceto:x y z turns the player to a map point; scan:x0 y0 x1 y1 cell
+    /// walkto:x y z[/x y z...] runs through map points in turn; jumpto:x y z runs to a point a level up, jumping on the way; faceto:x y z turns the player to a map point; scan:x0 y0 x1 y1 cell
     /// logs the ground level under each cell (negative levels as a, b, ...); keys:N presses the action key N times.
     /// </summary>
     static long BagSum(LiveSession live) { long n = 0; foreach (var i in live.Items.All) n += i.Amount; return n; }
@@ -106,6 +106,25 @@ public partial class LiveSession
                     hud.DriveEnd();
                     GD.Print($"live: combat walkto {point}: distance {dist:F0} after {n} frames, at {FieldPortals.ToMs2(live.OwnPlayer.GlobalPosition)}");
                 }
+                await frames(60);
+                continue;
+            }
+            if (step.StartsWith("jumpto:"))      // jumpto:x y z: a run to a map point a level up, the jump key pressed every 0.75 s on the way
+            {
+                var c = step[7..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                var at = new Vector3(float.Parse(c[0]), float.Parse(c[2]), -float.Parse(c[1]));
+                float dist = hud.DriveTowardScripted(at, false), up = at.Y - live.OwnPlayer.GlobalPosition.Y;
+                int n = 0;
+                for (; n < 60 * 25 && (dist > 40 || Math.Abs(up) > 60); n++)
+                {
+                    dist = hud.DriveTowardScripted(at, false);
+                    live.OwnPlayer.JumpHeld = n % 45 < 6;
+                    await frames(1);
+                    up = at.Y - live.OwnPlayer.GlobalPosition.Y;
+                }
+                live.OwnPlayer.JumpHeld = false;
+                hud.DriveEnd();
+                GD.Print($"live: combat jumpto {step[7..]}: distance {dist:F0}, height left {up:F0} after {n} frames, at {FieldPortals.ToMs2(live.OwnPlayer.GlobalPosition)}");
                 await frames(60);
                 continue;
             }
