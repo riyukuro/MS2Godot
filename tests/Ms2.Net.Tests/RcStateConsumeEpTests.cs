@@ -9,7 +9,7 @@ namespace Ms2.Net.Tests;
 /// <summary>
 /// StateConsumeEp (KMS 0x64): the client's handler is CSceneStateGame::OnStateConsumeEp (scenestategame.cpp:1606-1607 and
 /// :5799-5810): one i32, an absolute current stat 10 (EP), clamped to [0, total] (pcbase.cpp:2375-2386). No recording of it
-/// exists in the corpus, so the bytes here are the client read, not a sample. It has no GMS2 number.
+/// exists in the corpus, so the bytes here are the client read, not a sample. GMS2 numbers it 0x66 (the GMS2 exe's packet switch case reads the same i32 and sets stat 10).
 /// </summary>
 public class RcStateConsumeEpTests
 {

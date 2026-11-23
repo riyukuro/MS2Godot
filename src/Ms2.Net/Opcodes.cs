@@ -109,7 +109,7 @@ public enum Inbound : ushort {
     LoadCubes = 0x6A,       // RecvOp::LoadCubes (commonfiles/opcodes.h:114): CSceneStateGame::OnLoadCubes
     Buff = 0x47,
     UserMoveByPortal = 0x5F,
-    StateConsumeEp = 0x64,  // RecvOp::StateConsumeEp (commonfiles/opcodes.h:108): CSceneStateGame::OnStateConsumeEp (scenestategame.cpp:5799); KMS2 only: no GMS2 number is proven
+    StateConsumeEp = 0x64,  // RecvOp::StateConsumeEp (commonfiles/opcodes.h:108): CSceneStateGame::OnStateConsumeEp (scenestategame.cpp:5799); GMS2 0x66
     StateFallDamage = 0x65,
     Tombstone = 0x5D,           // RecvOp::Tombstone (commonfiles/opcodes.h:101): OnTombstone
     KeyTable = 0x6F,

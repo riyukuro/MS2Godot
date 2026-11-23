@@ -72,14 +72,14 @@ public class ProfileTests {
         Assert.That(p.Number(Outbound.Job), Is.EqualTo((ushort) 0x25));
         Assert.That(p.Has(Outbound.Job), Is.True);
         Assert.That(p.Has(Outbound.PersonalInfoAgreement), Is.False);
+        Assert.That(p.Number(Inbound.StateConsumeEp), Is.EqualTo((ushort) 0x66));
         // rows upstream lacks stay unmapped
         Assert.Throws<KeyNotFoundException>(() => p.Number(Inbound.UserChatItemLink));
-        Assert.Throws<KeyNotFoundException>(() => p.Number(Inbound.StateConsumeEp));   // no GMS2 number proven
         Assert.Throws<KeyNotFoundException>(() => p.Number(Inbound.UserSkinColor));   // STILL-OPEN: the GMS2 number is not recovered
         Assert.Throws<KeyNotFoundException>(() => p.Number(Outbound.PersonalInfoAgreement));
         // every other member is mapped, and the numbers stay unique per direction
         // (the failure message names the members to add a row for in Gms2Opcodes.cs)
-        Assert.That(Enum.GetValues<Inbound>().Where(o => o != Inbound.UserChatItemLink && o != Inbound.UserSkinColor && o != Inbound.StateConsumeEp && !TryNumber(p, o)).Select(o => "Inbound." + o), Is.Empty, "no GMS2 number for");
+        Assert.That(Enum.GetValues<Inbound>().Where(o => o != Inbound.UserChatItemLink && o != Inbound.UserSkinColor && !TryNumber(p, o)).Select(o => "Inbound." + o), Is.Empty, "no GMS2 number for");
         Assert.That(Enum.GetValues<Outbound>().Where(o => o != Outbound.PersonalInfoAgreement && !TryNumber(p, o)).Select(o => "Outbound." + o), Is.Empty, "no GMS2 number for");
     }
 
