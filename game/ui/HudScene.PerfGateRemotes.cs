@@ -25,8 +25,9 @@ public partial class HudScene
     GateMark gateSpawn;
     bool gateRemoteChurn;
     // the own player's place every 6 frames of the move window (packet coordinates): where its controller walked, so a
-    // record from it is one a live sender's controller could have sent (not a point inside a wall or a building)
-    readonly List<System.Numerics.Vector3> gatePath = new();
+    // record from it is one a live sender's controller could have sent (not a point inside a wall or a building). Sized
+    // for the whole window up front, so the move window's bytes do not include the list growing.
+    readonly List<System.Numerics.Vector3> gatePath = new(GateIdle / 6 + 1);
 
     void GateRemotesSpawn()
     {
