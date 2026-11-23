@@ -447,15 +447,28 @@ public partial class LiveSession
         Ms2.Ui.PutDownLiftable.Poll(CubeCraft, InteractPlayerStateId(), new System.Numerics.Vector3((float)at.X, (float)at.Y, (float)at.Z),
             rotZDegrees, cubes, LiftTargets);
 
-    /// <summary>The action key on the polled lift (LiftCubeAction::vfunc_2): Liftable (0x3C), or nothing.</summary>
+    /// <summary>The action key on the polled lift (LiftCubeAction::vfunc_2): a rider first sends RequestRide mode 1 with a
+    /// RideOffAction(0) (SendRequestRideMode1(0): a battle or object mount refuses it with s_action_cant_ride), then
+    /// Liftable (0x3C); or nothing.</summary>
     public void UseLift()
     {
         bool riding = player != null && IsInstanceValid(player) && player.Mount != null;
-        var req = Liftables.Use(riding, out bool rideOffOpen);
-        if (rideOffOpen) GD.Print("live: STILL-OPEN the ride off before a lift (MyPC::SendRequestRideMode1); nothing sent");
+        var req = Liftables.Use(riding ? (rideOffForLift ??= RideOffForLift) : null);
         if (req == null) return;
         GD.Print($"live: Liftable lift {req.Name}");
         Send(req);
+    }
+
+    Func<bool> rideOffForLift;
+
+    /// <summary>SendRequestRideMode1(0) before a lift: true when it was sent or there was nothing to ride off.</summary>
+    bool RideOffForLift()
+    {
+        var ride = player?.Mount?.Data;
+        var outcome = RideOff.Request(true, ride != null, ride?.Type ?? 0, ride?.EnableRideOffUI ?? false, 0, false, new RideOffRequest(), Send);
+        if (outcome == RideOff.Outcome.CantRide) SystemNoticeSink?.Invoke(MessageBoxData.Common(RideOff.CantRideNoticeId));
+        GD.Print($"live: ride off before a lift: {outcome}");
+        return outcome is RideOff.Outcome.Sent or RideOff.Outcome.NotRiding;
     }
 
     /// <summary>Per-frame tick for gathering respawns and active StateInteraction cast (0 B/frame).</summary>

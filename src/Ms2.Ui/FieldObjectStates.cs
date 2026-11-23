@@ -457,16 +457,15 @@ public sealed class LiftableObjects
 
     /// <summary>
     /// LiftCubeAction::vfunc_2 (@0x140957550, actionkeyobject.cpp:1297-1315), the action key on the polled lift: nothing
-    /// when the polled name finds no lift; when riding the client first sends the ride off (MyPC::SendRequestRideMode1,
-    /// mypc.cpp:3566) and goes on only when that is sent. Otherwise the lift loses its highlight and Liftable (0x3C) is sent.
-    /// STILL-OPEN: the ride off is not ported, so while riding nothing is sent and <paramref name="rideOffOpen"/> is true.
+    /// when the polled name finds no lift; when riding (GetRidee) the client first sends the ride off
+    /// (MyPC::SendRequestRideMode1(0), mypc.cpp:3566, <see cref="RideOff.Request"/>), <paramref name="rideOff"/> here, null
+    /// when not riding, and goes on only when it returns true. Then the lift loses its highlight and Liftable (0x3C) is sent.
     /// </summary>
-    public LiftableRequest Use(bool riding, out bool rideOffOpen)
+    public LiftableRequest Use(Func<bool> rideOff)
     {
-        rideOffOpen = false;
         var l = Find(Polled);
         if (l == null) return null;
-        if (riding) { rideOffOpen = true; return null; }
+        if (rideOff != null && !rideOff()) return null;
         SetHighlight(l, false);
         return new LiftableRequest(l.Name);
     }

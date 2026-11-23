@@ -343,21 +343,23 @@ public class FieldObjectStatesTests
     }
 
     [Test]
-    public void TheKeySendsLiftableForThePolledLiftAndNothingWhileRidingOrWithoutOne()
+    public void TheKeySendsLiftableForThePolledLiftAfterTheRideOffAndNothingWithoutOne()
     {
-        // vfunc_2 (actionkeyobject.cpp:1297-1315): FindLiftByName(m_str18); riding first needs the ride off (not ported)
+        // vfunc_2 (actionkeyobject.cpp:1297-1315): FindLiftByName(m_str18); riding, SendRequestRideMode1(0) must return 1
         var l = new LiftableObjects();
         var a = Liftable(l, "a", 0);
-        Assert.That(l.Use(false, out bool open), Is.Null, "nothing polled");
-        Assert.That(open, Is.False);
+        int asked = 0;
+        Assert.That(l.Use(() => { asked++; return true; }), Is.Null, "nothing polled");
+        Assert.That(asked, Is.Zero, "the lift is found before the ride off");
         l.Poll(new Vec3(0, 0, 0));
-        Assert.That(l.Use(true, out open), Is.Null, "riding: the ride off is STILL-OPEN, nothing is sent");
-        Assert.That((open, a.Highlighted), Is.EqualTo((true, true)));
-        var req = l.Use(false, out open);
-        Assert.That(req, Is.EqualTo(new LiftableRequest("a")));
-        Assert.That((open, a.Highlighted), Is.EqualTo((false, false)), "SetHighlight(0) before the send");
+        Assert.That(l.Use(() => { asked++; return false; }), Is.Null, "a refused ride off (a battle mount) sends nothing");
+        Assert.That((asked, a.Highlighted), Is.EqualTo((1, true)));
+        Assert.That(l.Use(() => { asked++; return true; }), Is.EqualTo(new LiftableRequest("a")), "the ride off sent, then the lift");
+        Assert.That((asked, a.Highlighted), Is.EqualTo((2, false)), "SetHighlight(0) before the send");
+        l.Poll(new Vec3(0, 0, 0));
+        Assert.That(l.Use(null), Is.EqualTo(new LiftableRequest("a")), "on foot");
         l.Apply(new LiftableUpdate(LiftableUpdate.ModeRemove, new LiftableEntry[0], "a"));
-        Assert.That(l.Use(false, out open), Is.Null, "the polled lift is gone");
+        Assert.That(l.Use(null), Is.Null, "the polled lift is gone");
     }
 
     [Test]
