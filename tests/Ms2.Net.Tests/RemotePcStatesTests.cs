@@ -80,6 +80,7 @@ public class RemotePcStatesTests {
         public float AirSpeedScale => 1f;
         public float TurnSpeed => 1800f;
         public bool BattleStance => false;
+        public bool CarriesGuide2 { get; set; }
         public HoldTarget Hold;
         public (int id, string node) HoldAsked;
         public HoldTarget FindHoldTarget(int id, string node) { HoldAsked = (id, node); return Hold; }
@@ -216,6 +217,44 @@ public class RemotePcStatesTests {
         sm.SequenceEnded(RemotePcStates.ActJumpLand);
         Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateIdle));
         // the jump went up about 2h (StartJump(h): v0 = sqrt(2 * 2h * -g))
+    }
+
+    [Test] public void APcCarryingAModelInCubeModeWalksJumpsAndLandsWithTheCraftSequences() {
+        // StateWalk::vfunc_9 (statewalk.cpp:344-353), StateJump::vfunc_9 (statejump.cpp:292-299), StateLand::vfunc_9 and
+        // EndOfSequence (stateland.cpp:138-143, :177): IsInCubeMode and HasGuide2 swap 0x1c/0x1d, 4/2 and 3 for 0x38-0x3c
+        var b = new Body { CarriesGuide2 = true };
+        var sm = new RemotePcStates(b);
+        sm.Spawn(); Run(sm, 0.1f);
+        Assert.That(b.Current, Is.EqualTo(RemotePcStates.ActCraftJumpLand));
+        sm.SequenceEnded(RemotePcStates.ActCraftJumpLand);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateIdle));
+        sm.Push(Rec(2, 0x18, b.Position, new Vector2(0, 1), 0f));
+        Run(sm, 0.3f);
+        Assert.That(b.Current, Is.EqualTo(RemotePcStates.ActCraftRun));
+        sm.Push(Rec(2, 0x19, b.Position, new Vector2(0, 1), 0f));
+        Run(sm, 0.3f);
+        Assert.That(b.Current, Is.EqualTo(RemotePcStates.ActCraftWalk));
+        sm.Push(Rec(6, 0x21, b.Position, Vector2.Zero, 0f));
+        Run(sm, 1.5f);
+        Assert.That(b.Played, Does.Contain(RemotePcStates.ActCraftJumpUp));
+        Assert.That(b.Played, Does.Contain(RemotePcStates.ActCraftJumpDown));
+        Assert.That(b.Played, Does.Not.Contain(RemotePcStates.ActJumpUp));
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateLand));
+        Assert.That(b.Current, Is.EqualTo(RemotePcStates.ActCraftJumpLand));
+        sm.SequenceEnded(RemotePcStates.ActCraftJumpLand);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateIdle));
+        // StateIdle subs 8 and 9 (stateidle.cpp:380-385): the held lift's idle 0x37 and the cube mode's idle 0x36
+        sm.Push(Rec(1, 8, b.Position, Vector2.Zero, 0f));
+        Run(sm, 0.1f);
+        Assert.That(b.Current, Is.EqualTo(RemotePcStates.ActCraftIdle));
+        sm.Push(Rec(1, 9, b.Position, Vector2.Zero, 0f));
+        Run(sm, 0.1f);
+        Assert.That(b.Current, Is.EqualTo(RemotePcStates.ActUgcCraftIdle));
+        // without the model the plain sequences play again
+        b.CarriesGuide2 = false;
+        sm.Push(Rec(2, 0x18, b.Position, new Vector2(0, 1), 0f));
+        Run(sm, 0.3f);
+        Assert.That(b.Current, Is.EqualTo(RemotePcStates.ActRun));
     }
 
     [Test] public void RemoteLandingOnWaterPlaysTheWaterLand() {

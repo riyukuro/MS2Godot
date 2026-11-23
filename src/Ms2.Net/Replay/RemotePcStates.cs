@@ -75,6 +75,9 @@ public interface IRemotePc : ISkillMotionOwner
     float TurnSpeed { get; }
     /// <summary>vfunc_65 (m_unk_160): the battle stance.</summary>
     bool BattleStance { get; }
+    /// <summary>IsInCubeMode() and the cube craft's HasGuide2 (a carried model is built): the craft sequences of
+    /// StateWalk (statewalk.cpp:344-353), StateJump (statejump.cpp:294-299) and StateLand (stateland.cpp:138-143).</summary>
+    bool CarriesGuide2 { get; }
     /// <summary>What StateHold reads of the held actor: WorldService::FUN_141bd1200(<paramref name="id"/>) and, on it,
     /// FUN_1416757c0(<paramref name="node"/>) (the node by name in its model).</summary>
     HoldTarget FindHoldTarget(int id, string node);
@@ -179,7 +182,9 @@ public sealed class RemotePcStates
     // action ids (ActionType, actioncontainer.cpp) the ported states play through vfunc_123
     public const int ActIdle = 0, ActBattleIdle = 1, ActJumpDown = 2, ActJumpLand = 3, ActJumpUp = 4, ActJumpFall = 5,
         ActRun = 0x1c, ActWalk = 0x1d, ActTalkIdle = 0x2e, ActSpecialJumpUp = 0x2a, ActSpecialJumpDown = 0x2b,
-        ActWaterIdle = 0x30, ActWaterSwim = 0x31, ActHoldIdle = 0x3e;
+        ActWaterIdle = 0x30, ActWaterSwim = 0x31, ActHoldIdle = 0x3e,
+        ActUgcCraftIdle = 0x36, ActCraftIdle = 0x37, ActCraftRun = 0x38, ActCraftWalk = 0x39, ActCraftJumpUp = 0x3a,
+        ActCraftJumpDown = 0x3b, ActCraftJumpLand = 0x3c;
 
     /// <summary>The ids PC::vfunc_10's RegisterState calls name (pc.cpp:668-721) and StateNone (statemanager.cpp:197):
     /// ChangeState returns on any other (statemanager.cpp:304).</summary>
@@ -1150,8 +1155,9 @@ public sealed class RemotePcStates
     /// <summary>
     /// StateIdle::vfunc_9 (stateidle.cpp:294-455): a PC not on water whose fall timer runs falls; the water sub is set by
     /// MyPC's branch only, so a remote keeps the sub it entered with or a record gave. Sub 1 plays the stand (the battle
-    /// idle in the battle stance), 7 the water idle, 6 the talk idle.
-    /// STILL-OPEN: the bore subs 2-5 (FUN_141679170), 8 / 9 (cube modes), 0xa-0x16 and the equip-change subs.
+    /// idle in the battle stance), 7 the water idle, 6 the talk idle, 8 the held lift's idle (0x37, FUN_1417ceca0,
+    /// stateidle.cpp:600-608) and 9 the cube mode idle (0x36, FUN_1417ced70, :610-618).
+    /// STILL-OPEN: the bore subs 2-5 (FUN_141679170), 0xa-0x16 and the equip-change subs.
     /// </summary>
     void IdleFrame()
     {
@@ -1170,6 +1176,12 @@ public sealed class RemotePcStates
                 break;
             case 6:
                 if (!pc.IsAction(ActTalkIdle)) pc.PlayAction(ActTalkIdle, pc.AnimSpeed, false);   // FUN_1417ce9f0 (stateidle.cpp:555-561)
+                break;
+            case 8:
+                if (!pc.IsAction(ActCraftIdle)) pc.PlayAction(ActCraftIdle, pc.AnimSpeed, false);
+                break;
+            case 9:
+                if (!pc.IsAction(ActUgcCraftIdle)) pc.PlayAction(ActUgcCraftIdle, pc.AnimSpeed, false);
                 break;
         }
     }
@@ -1212,8 +1224,9 @@ public sealed class RemotePcStates
     /// <summary>
     /// StateWalk::vfunc_9 (@0x141800580, statewalk.cpp:322-373): water goes to StateSwim; a fall timer past sqrt(3 / |g|) s
     /// falls; else the run (0x1c) or, at the walk sub or a walking gait, the walk (0x1d) sequence, restarting when vfunc_96
-    /// (MoveSpeedRate) or vfunc_97 (ScaleAnimRate) changed.
-    /// STILL-OPEN: the cube guide sequences (0x38 / 0x39) and the ride's 0x1f.
+    /// (MoveSpeedRate) or vfunc_97 (ScaleAnimRate) changed; carrying a model in cube mode the craft run (0x38) and walk
+    /// (0x39) instead (statewalk.cpp:344-353).
+    /// STILL-OPEN: the ride's 0x1f.
     /// </summary>
     void WalkFrame()
     {
@@ -1222,6 +1235,7 @@ public sealed class RemotePcStates
         if (pc.InAirFor(delay)) { ChangeState(StateFall); return; }
         if (subs[StateWalk] == 0x19 && walkRun != 0) { walkRun = 0; NotifyWeaponKey(); }
         int key = walkRun == 0 ? ActWalk : ActRun;
+        if (pc.CarriesGuide2) key = key == ActRun ? ActCraftRun : ActCraftWalk;
         bool changed = !(pc.MoveSpeedRate == walkSpeed1 && pc.ScaleAnimRate == walkSpeed2 && walkChanged == 0);
         if (!pc.IsAction(key) || changed)
         {
@@ -1237,18 +1251,20 @@ public sealed class RemotePcStates
     /// <summary>
     /// StateLand::vfunc_9 (stateland.cpp:127-162): the landing sequence (JUMP_LAND), or StateIdle when the body has none;
     /// StateLand::EndOfSequence (stateland.cpp:165-186) goes to StateIdle when it ends (<see cref="SequenceEnded"/>).
-    /// STILL-OPEN: StateLandData's own sequence name and the cube guide's 0x3c.
+    /// Carrying a model in cube mode it is the craft landing (0x3c, stateland.cpp:138-143).
+    /// STILL-OPEN: StateLandData's own sequence name.
     /// </summary>
     void LandFrame()
     {
-        if (!pc.HasAction(ActJumpLand)) { ChangeState(StateIdle); return; }
-        if (!pc.IsAction(ActJumpLand)) pc.PlayAction(ActJumpLand, 1f, false);
+        int key = pc.CarriesGuide2 ? ActCraftJumpLand : ActJumpLand;
+        if (!pc.HasAction(key)) { ChangeState(StateIdle); return; }
+        if (!pc.IsAction(key)) pc.PlayAction(key, 1f, false);
     }
 
     /// <summary>NiActorManager's end of sequence (PCBase -> CStateManager::OnEndOfSequence -> the state's EndOfSequence).</summary>
     public void SequenceEnded(int action)
     {
-        if (Cur == StateLand && action == ActJumpLand) ChangeState(StateIdle);   // stateland.cpp:165-186
+        if (Cur == StateLand && action is ActJumpLand or ActCraftJumpLand) ChangeState(StateIdle);   // stateland.cpp:165-186
     }
 
     /// <summary>
@@ -1296,7 +1312,8 @@ public sealed class RemotePcStates
     /// <summary>
     /// StateJump::vfunc_9 (statejump.cpp:273-341): on the ground it lands; past sqrt(12 / |g|) s plus the apex time of
     /// falling the fall sequence; else rising the jump up (the special one for subs 0x22 / 0x24 when the body has it) and
-    /// coming down the jump down. STILL-OPEN: the cube guide's 0x3a / 0x3b and the stunt subs' 0x46 / 0x47.
+    /// coming down the jump down; carrying a model in cube mode the craft jump up (0x3a) and down (0x3b) (statejump.cpp:
+    /// 292-299). STILL-OPEN: the stunt subs' 0x46 / 0x47.
     /// </summary>
     void JumpFrame()
     {
@@ -1306,7 +1323,7 @@ public sealed class RemotePcStates
         int sub = subs[StateJump];
         if (sub is not (0x21 or 0x22 or 0x23 or 0x24)) return;
         bool special = sub is 0x22 or 0x24;
-        int anim = pc.Rising
+        int anim = pc.CarriesGuide2 ? (pc.Rising ? ActCraftJumpUp : ActCraftJumpDown) : pc.Rising
             ? (special && pc.HasAction(ActSpecialJumpUp) ? ActSpecialJumpUp : ActJumpUp)
             : (special && pc.HasAction(ActSpecialJumpDown) ? ActSpecialJumpDown : ActJumpDown);
         if (!pc.IsAction(anim)) pc.PlayAction(anim, 1f, false);

@@ -33,6 +33,22 @@ public partial class Player : CharacterBody3D
     public bool WeaponsHeld => Weapons?.WeaponsHeld ?? false;
     /// <summary>PC::vfunc_60 (@0x141658a30, pc.cpp:1737-1749): the weapon animation prefix while weapons are held.</summary>
     public string WeaponPrefix => Weapons?.ActivePrefix ?? "";
+
+    /// <summary>The PC's cube state as the move states read it (the host sets it on every craft change).</summary>
+    public struct CraftStance
+    {
+        /// <summary>IsInCubeMode (pc.cpp:1845).</summary>
+        public bool InCubeMode;
+        /// <summary>IsCubeMode1 (pc.cpp:1848): building.</summary>
+        public bool CubeMode1;
+        /// <summary>PC::FUN_141659690 (pc.cpp:1854-1859): the craft holds a lift (craft mode 2).</summary>
+        public bool HoldsLift;
+        /// <summary>Unk_PCCubeCraft::HasGuide2 (cubecraft_2.cpp:583-586): the carried model was built.</summary>
+        public bool HasGuide2;
+        /// <summary>The carry gait (StateWalk, StateJump, StateLand): in cube mode with the carried model.</summary>
+        public readonly bool Carries => InCubeMode && HasGuide2;
+    }
+    public CraftStance Craft;
     float battleTimer = -1f;              // offline battle stance timeout (UserBattleDurationTick = 5000 ms); < 0 = indefinite
     bool prevAttackKey;
     public const float DefaultBattleStanceSeconds = 5f;
@@ -385,7 +401,7 @@ public partial class Player : CharacterBody3D
                 if (hasInput) { Enter(MoveState.Walk); break; }
                 if (grounded && JumpHeld) { StartJump(dir, hasInput, 0x25); break; }
                 // StateLand::EndOfSequence (or no landing sequence)
-                if (stateTime > 0.05f && (!Anim.IsPlaying() || CurrentAnim != Anims?.Name(Act.JumpLand))) Enter(MoveState.Idle);
+                if (stateTime > 0.05f && (!Anim.IsPlaying() || CurrentAnim != Anims?.Name(LandAct))) Enter(MoveState.Idle);
                 break;
 
             case MoveState.Ladder:
@@ -1037,13 +1053,17 @@ public partial class Player : CharacterBody3D
             case MoveState.Idle:
                 // StateIdle::PlayStandAnimation (@0x1417ce6f0, stateidle.cpp:518-531): BATTLE_IDLE (Attack_Idle_A) while
                 // in battle stance on land, IDLE (Idle_A) otherwise
-                PlayAct(OnWater ? Act.WaterIdle : InBattle ? Act.BattleIdle : Act.Idle);
+                // StateIdle::vfunc_9 (stateidle.cpp:320-334): on land, cube mode 1 takes substate 9 (UGC_CRAFT_IDLE,
+                // FUN_1417ced70) and a held lift substate 8 (CRAFT_IDLE, FUN_1417ceca0), before the battle stance
+                PlayAct(OnWater ? Act.WaterIdle : Craft.CubeMode1 ? Act.UgcCraftIdle : Craft.HoldsLift ? Act.CraftIdle
+                    : InBattle ? Act.BattleIdle : Act.Idle);
                 break;
             case MoveState.Walk:
             {
                 // StateWalk::vfunc_9 + PC::vfunc_115: walk or run sequence and its rate by the speed
                 float rate = ActionAnims.GaitRate(baseSpeed, MoveConfig.RunSpeed, MoveConfig.WalkSpeed, out bool run);
-                PlayAct(run ? Act.Run : Act.Walk, speed: rate);
+                // statewalk.cpp:344-353: in cube mode with the carried model, CRAFT_RUN / CRAFT_WALK
+                PlayAct(Craft.Carries ? (run ? Act.CraftRun : Act.CraftWalk) : run ? Act.Run : Act.Walk, speed: rate);
                 break;
             }
             case MoveState.Swim:
@@ -1054,6 +1074,8 @@ public partial class Player : CharacterBody3D
                 // StateJump::vfunc_9: up while rising, down after the apex, the fall loop after 12/|g| s + apex
                 bool special = jumpSub is 0x22 or 0x24;
                 if (airTime >= MoveConfig.JumpFallAnimDelay + Mathf.Round(jumpApex * 1000f) / 1000f) PlayAct(Act.JumpFall);
+                // statejump.cpp:290-298: in cube mode with the carried model, CRAFT_JUMP_UP while rising, else CRAFT_JUMP_DOWN
+                else if (Craft.Carries) PlayAct(jumpTime < jumpApex ? Act.CraftJumpUp : Act.CraftJumpDown);
                 else if (jumpTime < jumpApex) PlayAct(special && Anims.Has(Act.SpecialJumpUp) ? Act.SpecialJumpUp : Act.JumpUp);
                 else PlayAct(special && Anims.Has(Act.SpecialJumpDown) ? Act.SpecialJumpDown : Act.JumpDown);
                 break;
@@ -1062,7 +1084,7 @@ public partial class Player : CharacterBody3D
                 PlayAct(Act.JumpFall);
                 break;
             case MoveState.Land:
-                if (stateTime < 0.05f) PlayAct(Act.JumpLand, restart: CurrentAnim != Anims.Name(Act.JumpLand, WeaponPrefix));
+                if (stateTime < 0.05f) PlayAct(LandAct, restart: CurrentAnim != Anims.Name(LandAct, WeaponPrefix));
                 break;
             case MoveState.Ladder:
                 switch (lsub)
@@ -1086,6 +1108,9 @@ public partial class Player : CharacterBody3D
                 break;
         }
     }
+
+    /// <summary>StateLand::vfunc_9 (stateland.cpp:137-147): CRAFT_JUMP_LAND in cube mode with the carried model, else JUMP_LAND.</summary>
+    Act LandAct => Craft.Carries ? Act.CraftJumpLand : Act.JumpLand;
 
     void PlayAct(Act a, float speed = 1f, bool restart = false)
     {

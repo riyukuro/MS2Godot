@@ -32,6 +32,9 @@ public sealed partial class RemotePc : IRemotePc
     /// <summary>The job group (PC::GetJobGroupId) and battle stance (vfunc_65, m_unk_160) PlayEffects reads.</summary>
     public int JobGroup;
     public bool BattleStance { get; set; }
+    /// <summary>In cube mode with the craft's carried model built (IsInCubeMode, HasGuide2): the craft walk, jump and land
+    /// sequences.</summary>
+    public bool CarriesGuide2 { get; set; }
     /// <summary>A step's or landing's ground effects that passed PlayEffects' tests: action, ground material, feet (Godot)
     /// and facing (radians about up).</summary>
     public Action<string, string, Vector3, float> Effects;

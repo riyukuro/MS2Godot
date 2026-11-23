@@ -5,6 +5,7 @@ using Ms2.Net.Packets;
 using Ms2.Ui;
 using Ms2.Ui.Items;
 using Ms2Godot.Look;
+using Ms2Godot.Movement;
 
 namespace Ms2Godot.Tests;
 
@@ -12,8 +13,10 @@ namespace Ms2Godot.Tests;
 /// Headless check (res://tests/carried_model.tscn) of the carried model (Look.CarriedModel, Unk_PCCubeCraft::FUN_1410a9630):
 /// on the male and the female body, a lift craft (cube mode 2, craft mode 2) of the tutorial lift items 30000856 (an npc
 /// pack NIF) and 30000441 (a map pack NIF) hangs the item's install model, with meshes, at half scale on the body's
-/// Extra_Point01 bone; a craft of mode 1 and a craft dropped (cube mode 0) leave the body without it. With MS2_SHOT_DIR
-/// set and a window, saves carried.png (the female body carrying 30000856). Quits with 0 when all hold, else 1.
+/// Extra_Point01 bone; a craft of mode 1 and a craft dropped (cube mode 0) leave the body without it. Each body's action set
+/// resolves the cube mode's motions (UGC_CRAFT_IDLE, CRAFT_IDLE, CRAFT_RUN, CRAFT_WALK, CRAFT_JUMP_UP, CRAFT_JUMP_DOWN,
+/// CRAFT_JUMP_LAND) on demand. With MS2_SHOT_DIR set and a window, saves carried.png (the female body in CRAFT_IDLE
+/// carrying 30000856). Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class CarriedModelCheck : Node3D
 {
@@ -44,10 +47,22 @@ public partial class CarriedModelCheck : Node3D
         return c;
     }
 
+    readonly Dictionary<Node3D, ActionAnims> anims = new();
+
     Node3D Body(string dir, string nif)
     {
-        var body = builder.Build(builder.LoadModel($"{dir}/{nif}"), dir);
+        var md = builder.LoadModel($"{dir}/{nif}");
+        var body = builder.Build(md, dir);
         AddChild(body);
+        var player = body.GetNode<AnimationPlayer>("Model/AnimationPlayer");
+        var aa = anims[body] = ActionAnims.Load(packs, builder, md, player, dir);
+        foreach (var a in new[] { ActionAnims.Act.UgcCraftIdle, ActionAnims.Act.CraftIdle, ActionAnims.Act.CraftRun, ActionAnims.Act.CraftWalk,
+                     ActionAnims.Act.CraftJumpUp, ActionAnims.Act.CraftJumpDown, ActionAnims.Act.CraftJumpLand })
+        {
+            string name = aa.Name(a);
+            GD.Print($"carried model: {dir} {a} = {name ?? "(none)"}");
+            Expect(name != null && player.HasAnimation(name), $"{dir}: {a} does not resolve");
+        }
         return body;
     }
 
@@ -84,6 +99,7 @@ public partial class CarriedModelCheck : Node3D
                     female = Body("female", "f_body.nif");
                     Check("female", female);
                     CarriedModel.Sync(female, Craft(2, 2, 30000856).Current, builder, packs, items.Get);
+                    if (anims[female].Name(ActionAnims.Act.CraftIdle) is { } idle) female.GetNode<AnimationPlayer>("Model/AnimationPlayer").Play(idle);
                     if (ShotDir != null)
                     {
                         AddChild(new DirectionalLight3D { RotationDegrees = new Vector3(-50, 30, 0) });

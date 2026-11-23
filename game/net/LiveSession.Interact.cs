@@ -138,11 +138,16 @@ public partial class LiveSession
     }
 
     /// <summary>RebuildGuides' carried model (Unk_PCCubeCraft::FUN_1410a9630, cubecraft_2.cpp:467-531) for the own pc's
-    /// craft, on the bound body (<see cref="Look.CarriedModel"/>).</summary>
+    /// craft, on the bound body (<see cref="Look.CarriedModel"/>), and the body's carry stance (<see cref="Player.Craft"/>).</summary>
     void SyncCarriedModel()
     {
         if (player == null || !IsInstanceValid(player)) return;
         bool on = Look.CarriedModel.Sync(player.Visual, CubeCraft.Current, fieldBuilder, Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), ItemDataOf);
+        // the move states' cube tests: IsInCubeMode, IsCubeMode1, FUN_141659690 (a held lift) and HasGuide2
+        player.Craft = new Player.CraftStance
+        {
+            InCubeMode = CubeCraft.InCubeMode, CubeMode1 = CubeCraft.CubeMode == 1, HoldsLift = CubeCraft.Current is { HoldsLift: true }, HasGuide2 = on,
+        };
         if (on || CubeCraft.Current?.CarriesItemModel == true) GD.Print($"live: carried model of item {CubeCraft.Current?.Item?.ItemId ?? 0}: {(on ? "on the body" : "not built")}");
     }
 

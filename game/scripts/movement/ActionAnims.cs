@@ -22,7 +22,9 @@ public sealed class ActionAnims
         ClimbIdle = 17, ClimbLUp = 18, ClimbLCenter = 19, ClimbLDown = 20, ClimbRUp = 21, ClimbRCenter = 22,
         ClimbRDown = 23, ClimbUpLand = 24, ClimbUpTake = 25, ClimbDownLand = 26, ClimbDownTake = 27,
         Run = 28, Walk = 29, PoleUp = 34, PoleDown = 35, PoleIdle = 36, PoleTurn = 37, PoleTake = 38, SpecialJumpUp = 42, SpecialJumpDown = 43,
-        WaterIdle = 48, WaterSwim = 49, WaterDash = 50, Revival = 51, Dead = 52, Hit = 53, HoldIdle = 62, FallDamage = 63, ModePvpDead = 64,
+        WaterIdle = 48, WaterSwim = 49, WaterDash = 50, Revival = 51, Dead = 52, Hit = 53,
+        UgcCraftIdle = 54, CraftIdle = 55, CraftRun = 56, CraftWalk = 57, CraftJumpUp = 58, CraftJumpDown = 59, CraftJumpLand = 60,
+        HoldIdle = 62, FallDamage = 63, ModePvpDead = 64,
     }
 
     static readonly string[] TypeNames =
@@ -42,7 +44,8 @@ public sealed class ActionAnims
     };
 
     // sequences that cycle; the rest play once and hold their last frame
-    static readonly HashSet<Act> Looping = new() { Act.Idle, Act.BattleIdle, Act.Run, Act.Walk, Act.JumpFall, Act.WaterIdle, Act.WaterSwim, Act.WaterDash, Act.LadderIdle, Act.ClimbIdle, Act.PoleIdle, Act.HoldIdle };
+    static readonly HashSet<Act> Looping = new() { Act.Idle, Act.BattleIdle, Act.Run, Act.Walk, Act.JumpFall, Act.WaterIdle, Act.WaterSwim, Act.WaterDash, Act.LadderIdle, Act.ClimbIdle, Act.PoleIdle, Act.HoldIdle,
+        Act.UgcCraftIdle, Act.CraftIdle, Act.CraftRun, Act.CraftWalk };
 
     /// <summary>The pcactiondata type of action <paramref name="act"/> (IDLE, WALK, ...), null past the table.</summary>
     public static string TypeName(int act) => act >= 0 && act < TypeNames.Length ? TypeNames[act] : null;
@@ -197,7 +200,8 @@ public sealed class ActionAnims
             if (id >= TypeNames.Length || !table.TryGetValue(TypeNames[id], out var list) || list[0].Length == 0) continue;
             aa.lists[a] = list;
             string key = list[0].ToLowerInvariant();
-            if (a is Act.BattleIdle or Act.ModePvpDead) { aa.names[a] = key; continue; }   // loaded on demand (battle stance, NameAt)
+            // loaded on demand (battle stance, NameAt, the cube mode's carry and build motions)
+            if (a is Act.BattleIdle or Act.ModePvpDead or (>= Act.UgcCraftIdle and <= Act.CraftJumpLand)) { aa.names[a] = key; continue; }
             if (!lib.HasAnimation(key))
             {
                 KfAnimation kf;
