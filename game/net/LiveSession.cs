@@ -1717,8 +1717,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.Cinematic))
             {
                 var cine = CinematicPacket.Read(p.Reader());
-                Cinematic.Apply(cine);
-                if (cine is CinematicPacket.Caption) ReadNotApplied("Cinematic", CinematicPacket.CaptionType);   // OnPacketSetCaption (uicutscenecinematic.cpp:727): the caption is only an invoke on the pane's movie, which is not ported
+                Cinematic.Apply(cine);      // the HUD's pane (UICutSceneCinematic) runs the movie calls
             }
             else if (game.Is(p, Inbound.CameraInterpolation))
                 OnCameraInterpolation(CameraInterpolation.Read(p.Reader()));

@@ -269,6 +269,37 @@ public sealed partial class NpcEmoticons : CanvasLayer
         balloons.Start(b);
     }
 
+    /// <summary>The balloon entity of the field object with this id: the npc whose FieldAddNpc object id it is, else the PC
+    /// (WorldService's PC list by object id). Null when the object is not on the field or its balloon is not made yet.</summary>
+    ChatBalloonController.Entity ObjectBalloon(int objectId)
+    {
+        if (balloons == null) return null;
+        foreach (var kv in npcs)
+            if (kv.Key.ObjectId == objectId) return balloons.NpcBalloon(kv.Value.Balloon);
+        SyncPcs();
+        return pcs.TryGetValue(objectId, out var pc) ? balloons.PcBalloon(pc.Balloon) : null;
+    }
+
+    /// <summary>UICutSceneCinematic::UpdateBalloons (uicutscenecinematic.cpp, FUN_141908750): the actor of a balloon group is
+    /// on the field with a balloon to show it in.</summary>
+    public bool ObjectBalloonReady(int objectId) => ObjectBalloon(objectId) != null;
+
+    /// <summary>A cinematic balloon line: the object's balloon is kept (so the monologue leaves it alone), set to the line and
+    /// started, as <see cref="OnSpecialNpcBalloon"/>. STILL-OPEN: Start's own fixed duration, not the line's duration.</summary>
+    public void ShowObjectBalloon(int objectId, string text)
+    {
+        if (ObjectBalloon(objectId) is not { } b) return;
+        ChatBalloonController.Keep(b);
+        ChatBalloonController.SetText(b, text ?? "");
+        balloons.Start(b);
+    }
+
+    /// <summary>The cinematic balloon group's hide (m_nHide): the object's balloon stops.</summary>
+    public void HideObjectBalloon(int objectId)
+    {
+        if (ObjectBalloon(objectId) is { } b) balloons.Stop(b);
+    }
+
     void OnTalkPage(FieldNpcs.Placed n, int subMode)
     {
         if (npcs.TryGetValue(n, out var x)) controller?.TalkPageShown(x.Actor, subMode);
