@@ -731,11 +731,11 @@ public sealed partial class RemoteLayer : Node3D
                     EnsureBar(su)?.Stat(su.HpCur, su.HpMax);
                     break;
                 case UserBattleEvent bat:
-                    // OnUserBattle -> SetEmotion: the change guard (pcbase.cpp:1268) runs UpdateHpBar only on a change;
-                    // the state 0xe skip (scenestategame.cpp:3269) is not ported (no remote state here). STILL-OPEN: the
+                    // OnUserBattle -> SetEmotion, skipped in StateWaitingSelect (GetCurStateId() != 0xe, scenestategame.cpp:3276):
+                    // the change guard (pcbase.cpp:1268) runs UpdateHpBar only on a change. STILL-OPEN: the
                     // ridee's and the own target's emotion (spRidee / FUN_141bd3620) need ridees and pets.
                     if (!users.TryGetValue(bat.ObjectId, out var sb)) break;
-                    if (sb.Emotion == bat.Emotion) break;
+                    if (sb.Pc.States.Cur == 0xe || sb.Emotion == bat.Emotion) break;
                     sb.Emotion = bat.Emotion;
                     sb.InBattle = bat.Emotion != 0;
                     sb.Pc.BattleStance = sb.InBattle;   // vfunc_65 (m_unk_160), PlayEffects' run test

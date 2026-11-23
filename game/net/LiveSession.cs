@@ -69,6 +69,9 @@ public partial class LiveSession : Node
     GameEntry entry;
     string host;
     int selfObject = -1;     // the own FieldAddUser object id
+    /// <summary>StateWaitingSelect's id, which OnUserBattle leaves the emotion alone in.</summary>
+    const int StateWaitingSelect = 0xe;
+
     /// <summary>The own player's battle stance flag (FieldAddUser.InBattle and OnUserBattle 0x2F).</summary>
     public bool SelfInBattle { get; private set; }
     byte syncNumber;         // CNetworkService::OnSyncNumber: the number UserSync carries
@@ -1344,9 +1347,11 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.FieldAddItem)) { var item = FieldAddItem.Read(p.Reader(), game.Profile); drops?.Add(item); }
             else if (game.Is(p, Inbound.FieldRemoveItem)) drops?.OnRemovePacket(FieldRemoveItem.Read(p.Reader()).ObjectId);
             else if (game.Is(p, Inbound.FieldPickupItem) && drops != null) drops.OnPickupPacket(FieldPickupItem.Read(p.Reader(), drops.Describe));
-            else if (game.Is(p, Inbound.UserBattle) && p.Body.Length >= 5 && BitConverter.ToInt32(p.Body, 0) == selfObject)
+            else if (game.Is(p, Inbound.UserBattle) && p.Body.Length >= 5 && BitConverter.ToInt32(p.Body, 0) == selfObject
+                     && OwnCurStateId(OwnSkillStateRunsOf?.Invoke() ?? false) != StateWaitingSelect)
             {
-                // CSceneStateGame::OnUserBattle (@0x141717580, scenestategame.cpp:3269-3288): SetEmotion(nEmotion)
+                // CSceneStateGame::OnUserBattle (@0x141717580, scenestategame.cpp:3269-3288): SetEmotion(nEmotion), skipped
+                // while the actor is in StateWaitingSelect (GetCurStateId() != 0xe, scenestategame.cpp:3276)
                 int was = selfEmotion;
                 selfEmotion = p.Body[4];
                 SelfInBattle = selfEmotion != 0;
