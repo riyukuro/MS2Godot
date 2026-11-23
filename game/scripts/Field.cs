@@ -201,7 +201,7 @@ public partial class Field : Node3D, World.ITargetCamera
         AddChild(new AlphaSort(fb.AlphaEntries, fieldWorld));   // the client's alpha key on the field's blended draws
         Fade = new World.FieldFade(fb.FadeDraws, () => player?.GlobalPosition, () => camera);   // BGTransparencyMgr
         AddChild(Fade);
-        Triggers = new World.FieldTriggers(map.Entities, fb.TriggerMeshDraws, fb.TriggerColliders, fb.TriggerFadeDraws);
+        Triggers = new World.FieldTriggers(map.Entities, fb.TriggerMeshDraws, fb.TriggerColliders, fb.TriggerFadeDraws) { FieldName = fieldName };
         AddChild(Triggers.Fader);
         Breakables = new World.FieldBreakables(Net.LiveSession.Instance?.Breakables ?? DevBreakables(), fb.BreakableMeshDraws, fb.BreakableFadeDraws);
         AddChild(Breakables.Fader);

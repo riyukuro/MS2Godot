@@ -169,6 +169,12 @@ public sealed class FieldTriggers
     /// <summary>The kind of the object with this id, or null when the field holds none.</summary>
     public TriggerObjectKind? KindOf(int id) => kinds.TryGetValue(id, out var k) ? k : null;
 
+    /// <summary>The number of trigger objects the field holds (CTriggerService::m_mapObjects' count).</summary>
+    public int Count => kinds.Count;
+
+    /// <summary>The field's name (its xblock), for the log lines.</summary>
+    public string FieldName { get; init; } = "";
+
     /// <summary>Whether the mesh object is shown (null: no such drawn mesh); a fading one changes when its fade ends.</summary>
     public bool? MeshShown(int id) => meshes.TryGetValue(id, out var t) ? t.Shown : null;
 
@@ -177,6 +183,7 @@ public sealed class FieldTriggers
     {
         int n = 0;
         var events = TriggerObjects.Read(r, KindOf, out byte type);
+        if (type == TriggerObjects.Load) GD.Print($"trigger load: {events.Count} event(s) on {FieldName}, which holds {kinds.Count} trigger object(s)");
         if (type == TriggerObjects.CameraObjects)
         {
             // CTriggerService::OnCameraObjects, triggerservice.cpp:439-448
@@ -187,7 +194,9 @@ public sealed class FieldTriggers
         }
         foreach (var ev in events)
         {
-            if (!ev.Known) { GD.PushWarning($"Trigger Object Sync Error. ObjectID:{ev.Id}"); continue; }
+            // the client's line (FUN_141863a90, triggerservice.cpp:951-958) and, for the reader of the log, the packet's type,
+            // its event count and the field's table
+            if (!ev.Known) { GD.PushWarning($"Trigger Object Sync Error. ObjectID:{ev.Id} (type {type}, {events.Count} event(s); {FieldName} holds {kinds.Count} trigger object(s))"); continue; }
             if (ev.Kind == TriggerObjectKind.Camera)
             {
                 // TriggerObjectCamera::vfunc_2 (@0x140de7d80, triggeractioncli.cpp:848-856): an off event of a type 2
