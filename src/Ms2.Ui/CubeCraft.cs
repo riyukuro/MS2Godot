@@ -43,6 +43,11 @@ public sealed class CubeCraftState
         /// <summary>m_bVisible (true in the ctor, cubecraft_2.cpp:286): whether the guide is shown (CreateGuide hands it to
         /// the guide, :461).</summary>
         public bool GuideVisible { get; private set; } = true;
+        /// <summary>RebuildGuides' second guide (@0x1410a9cc0, cubecraft_2.cpp:523-531): in cube mode 2 (a lifted object
+        /// carried) with craft mode 0 or 2, FUN_1410a9630 (:467-520) makes m_spGuide2 from the craft's item, for any owner
+        /// (no local test): the item's install model at half scale on the owner's Extra_Point01 node. True when that branch
+        /// runs with an item (FUN_1410a9630 returns without m_spItem, :471); the host builds the model.</summary>
+        public bool CarriesItemModel { get; internal set; }
         public Craft(int mode, CubeItemInfo item) { Mode = mode; Item = item; }
 
         /// <summary>SetGuideVisible (@0x1410aa380, cubecraft_2.cpp:658-665): nothing in craft mode 1, else sets
@@ -68,6 +73,10 @@ public sealed class CubeCraftState
 
     /// <summary>m_pCubeCraft (GetCubeCraft, pc.cpp:1867).</summary>
     public Craft Current { get; private set; }
+    /// <summary><see cref="Current"/> was set, started or dropped (a new pc, a cube mode change, the model coming in): the
+    /// host rebuilds the craft's carried model (<see cref="Craft.CarriesItemModel"/>; RebuildGuides releases the old one first,
+    /// cubecraft_2.cpp:525).</summary>
+    public Action CraftChanged;
     /// <summary>The craft waiting for the model (FUN_141661880 with 1, pc.cpp:2627): m_n1000 set, m_n1018 and
     /// m_spCube1008.</summary>
     public Craft Pending { get; private set; }
@@ -83,6 +92,7 @@ public sealed class CubeCraftState
         Current = null;
         Pending = null;
         ModelLoaded = false;
+        CraftChanged?.Invoke();
     }
 
     /// <summary>MyPC::vfunc_135 (@0x1415238d0, mypc.cpp:1364-1397) around PC::vfunc_135 (@0x141659450, pc.cpp:3068):
@@ -131,9 +141,12 @@ public sealed class CubeCraftState
     void SetCraft(int craftMode, CubeItemInfo item)
     {
         Current = null;
-        if (!InCubeMode) return;
-        if (!ModelLoaded) Pending = new Craft(craftMode, item);
-        else Start(Current = new Craft(craftMode, item));
+        if (InCubeMode)
+        {
+            if (!ModelLoaded) Pending = new Craft(craftMode, item);
+            else Start(Current = new Craft(craftMode, item));
+        }
+        CraftChanged?.Invoke();
     }
 
     /// <summary>
@@ -157,6 +170,7 @@ public sealed class CubeCraftState
         }
         c.HasGuide = local && c.Mode is 0 or 1 or 2;
         if (c.HasGuide) c.GuideYaw = GuideYawOf(o.TargetYaw);
+        c.CarriesItemModel = CubeMode == 2 && c.Mode is 0 or 2 && c.Item != null;
     }
 
     /// <summary>FUN_1410aa6f0 (:922-925): the target yaw (PCBase::GetTargetYaw, m_f934) snapped up to 90 degrees,
@@ -430,6 +444,7 @@ public sealed class CubeCraftState
         Current = Pending;
         Pending = null;
         Start(Current);
+        CraftChanged?.Invoke();
     }
 }
 

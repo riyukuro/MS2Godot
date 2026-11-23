@@ -125,4 +125,42 @@ public class CubeCraftStateTests
         c.Set(1, 2, Item, dead: false);
         Assert.That(c.CanSendCraftModeOff(false), Is.False, "the lift's craft");
     }
+
+    [Test]
+    public void OnlyACarriedCraftOfModeZeroOrTwoWithAnItemBuildsTheCarriedModel()
+    {
+        // RebuildGuides (cubecraft_2.cpp:523-531): IsCubeMode2 and m_nMode 0 or 2; FUN_1410a9630 needs m_spItem (:471)
+        var c = Loaded();
+        int changes = 0;
+        c.CraftChanged = () => changes++;
+        c.Set(2, 2, Item, dead: false);
+        Assert.That(c.Current.CarriesItemModel, Is.True, "a lift");
+        c.Set(2, 0, Item, dead: false);
+        Assert.That(c.Current.CarriesItemModel, Is.True, "craft mode 0");
+        c.Set(2, 1, Item, dead: false);
+        Assert.That(c.Current.CarriesItemModel, Is.False, "craft mode 1");
+        c.Set(1, 2, Item, dead: false);
+        Assert.That(c.Current.CarriesItemModel, Is.False, "cube mode 1");
+        c.Set(2, 2, null, dead: false);
+        Assert.That(c.Current.CarriesItemModel, Is.False, "no item");
+        c.Set(0, 0, null, dead: false);
+        Assert.That(c.Current, Is.Null);
+        Assert.That(changes, Is.EqualTo(6), "every set signals");
+    }
+
+    [Test]
+    public void ACraftWaitingForTheModelSignalsWhenItStarts()
+    {
+        var c = new CubeCraftState();
+        c.NewPc();
+        int changes = 0;
+        c.CraftChanged = () => changes++;
+        c.Set(2, 2, Item, dead: false);
+        Assert.That((c.Current, changes), Is.EqualTo(((CubeCraftState.Craft)null, 1)));
+        c.ModelAttached();
+        Assert.That(c.Current.CarriesItemModel, Is.True);
+        Assert.That(changes, Is.EqualTo(2));
+        c.Set(2, 2, Item, dead: true);
+        Assert.That(changes, Is.EqualTo(2), "a dead pc takes no mode");
+    }
 }

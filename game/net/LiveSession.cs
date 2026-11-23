@@ -852,7 +852,7 @@ public partial class LiveSession : Node
     }
 
     /// <summary>FUN_14053f870: the item's data; null when unknown or the item data is missing.</summary>
-    static Ms2.Ui.Items.ItemData ItemDataOf(int itemId) {
+    internal static Ms2.Ui.Items.ItemData ItemDataOf(int itemId) {
         try { return (itemData ??= new Ms2.Ui.Items.ItemDataTable(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir))).Get(itemId); }
         catch (Exception e) { GD.Print($"live: item data unavailable ({e.Message})"); return null; }
     }
@@ -1182,6 +1182,7 @@ public partial class LiveSession : Node
         CubeCraft.ModelAttached();   // PC::vfunc_12 (pc.cpp:844-852): a craft that waited for the model is made
         if (found == player && player.Live) return;   // a repeat of the own FieldAddUser on the same field
         BindPlayer(found);
+        SyncCarriedModel();   // a new body: the craft's carried model goes on it
     }
 
     void SendSync(System.Collections.Generic.List<(StateSync Record, int Tick)> records, bool ride)
@@ -1264,6 +1265,7 @@ public partial class LiveSession : Node
                     selfObject = u.ObjectId; SelfInBattle = u.InBattle; selfEmotion = u.InBattle ? 1 : 0; Me.Apply(u); player?.SetBattleStance(u.InBattle);
                     // a new MyPC, then its cube mode (PC::vfunc_135, scenestategame.cpp:11189-11192) before its model is in (vfunc_12)
                     CubeCraft.ConstructionUnlockOnEnter ??= ConstructionUnlockOnEnter;
+                    CubeCraft.CraftChanged ??= SyncCarriedModel;
                     CubeCraft.NewPc(); CubeCraft.Set(u.CubeMode, u.CraftMode, u.CubeItem, Me.Dead);
                     bindPending = true; TryBindPlayer();   // OnAddUser builds the MyPC
                     // a new MyPC holds nothing; PC::vfunc_12 (pc.cpp:853-855) holds the AddUser i32 (scenestategame.cpp:11218)

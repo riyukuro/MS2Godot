@@ -104,6 +104,10 @@ public sealed class ItemData
     /// <summary>ItemInstallData attachable (itemdatastruct.cpp:1299, read as an int): ConfirmPlacement takes the attach
     /// path for a lifted cube when it is nonzero (cubecraft_2.cpp:971).</summary>
     public int InstallAttachable;
+    /// <summary>ItemInstallData asset and preset (&lt;install asset preset&gt;): the install model's NIF path
+    /// ("Data/Resource/Model/..."), and a KFM preset used instead of it when set (Unk_PCCubeCraft::FUN_1410a9630,
+    /// cubecraft_2.cpp:480-499).</summary>
+    public string InstallAsset, InstallPreset;
     /// <summary>ItemInstallData staticAngle (itemdatastruct.cpp:1306, QueryFloatAttribute): added to the construction
     /// guide's yaw in cube mode 1 (cubecraft_2.cpp:984, 1014).</summary>
     public float InstallStaticAngle;
@@ -207,6 +211,8 @@ public sealed class ItemData
             Int(inst, "objCode", ref d.InstallObjCode);
             Int(inst, "space", ref d.InstallSpace);
             Int(inst, "attachable", ref d.InstallAttachable);
+            d.InstallAsset = (string)inst.Attribute("asset");
+            d.InstallPreset = (string)inst.Attribute("preset");
             Guide.GuideXml.Float(inst, "staticAngle", ref d.InstallStaticAngle);
         }
         if (env.Element("fusion") is { } fu) Int(fu, "fusionable", ref d.Fusionable);
@@ -280,6 +286,18 @@ public sealed class ItemData
     public bool IsPetItem => Type == 0xb;                      // :675
     public bool IsScoreItem => Type == 0xc;                    // :695
     public bool IsInstallItem => Type == 6;                    // :657
+
+    /// <summary>A model path of the data ("Data/Resource/Model/Npc/11/x.nif", either slash) as its pack and entry
+    /// ("Resource/Model/Npc", "11/x.nif"); null when it is not under Resource/Model/&lt;pack&gt;/.</summary>
+    public static (string Pack, string Entry)? ModelPackEntry(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return null;
+        var parts = path.Replace('\\', '/').Trim('/').Split('/');
+        int at = parts.Length > 0 && parts[0].Equals("Data", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+        if (parts.Length - at < 4 || !parts[at].Equals("Resource", StringComparison.OrdinalIgnoreCase)
+            || !parts[at + 1].Equals("Model", StringComparison.OrdinalIgnoreCase)) return null;
+        return ($"Resource/Model/{parts[at + 2]}", string.Join('/', parts, at + 3, parts.Length - at - 3));
+    }
     /// <summary>FUN_14053cbc0 (:663): an equipment item.</summary>
     public bool IsEquipItem => Type == 1;
     /// <summary>GetShopId (:1181): param1 of a type 0x14 item, else 0.</summary>

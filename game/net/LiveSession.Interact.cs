@@ -137,6 +137,15 @@ public partial class LiveSession
         GD.Print($"live: SetCraftMode mode {m.CubeMode} craft {m.CraftMode} item {m.Item?.ItemId ?? 0}");
     }
 
+    /// <summary>RebuildGuides' carried model (Unk_PCCubeCraft::FUN_1410a9630, cubecraft_2.cpp:467-531) for the own pc's
+    /// craft, on the bound body (<see cref="Look.CarriedModel"/>).</summary>
+    void SyncCarriedModel()
+    {
+        if (player == null || !IsInstanceValid(player)) return;
+        bool on = Look.CarriedModel.Sync(player.Visual, CubeCraft.Current, fieldBuilder, Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), ItemDataOf);
+        if (on || CubeCraft.Current?.CarriesItemModel == true) GD.Print($"live: carried model of item {CubeCraft.Current?.Item?.ItemId ?? 0}: {(on ? "on the body" : "not built")}");
+    }
+
     /// <summary>CSceneStateGame::OnResponseCube (scenestategame.cpp:9876), the held-item modes (<see cref="HeldItem.ResponseCube"/>)
     /// and their errors' build notice for the local pc (<see cref="BuildNotice.OfHeldItemResponse"/>); another pc's go to
     /// <see cref="RemoteLayer.ResponseCube"/>.

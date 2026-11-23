@@ -551,6 +551,8 @@ public sealed partial class RemoteLayer : Node3D
         // OnAddUser (scenestategame.cpp:11189-11192): the new PC's PC::vfunc_135 before its model, after the dead flag (a dead
         // pc gets no mode); its StateFall is the spawn's own. PC::vfunc_12 (pc.cpp:844-855) on the model: the waiting craft is
         // made and the AddUser i32 is held.
+        // RebuildGuides' carried model (cubecraft_2.cpp:523-531) on every craft change
+        r.Cube.CraftChanged = () => Look.CarriedModel.Sync(r.Visual, r.Cube.Current, builder, packs, LiveSession.ItemDataOf);
         r.Cube.NewPc(); r.Cube.Set(u.CubeMode, u.CraftMode, u.CubeItem, pc.States.Dead); r.Cube.ModelAttached();
         r.Held.AddUser(u.HeldObject, ItemExists?.Invoke(u.HeldObject) ?? true);
         r.Weapons = EquipApplier.RigOf(visual);
