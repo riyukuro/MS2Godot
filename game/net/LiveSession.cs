@@ -142,6 +142,8 @@ public partial class LiveSession : Node
     bool ObjectInField(int id) => remote?.Tracker.HasObject(id) ?? (id == selfObject);
     /// <summary>DAT_143ab2884: the dungeon room id of the last field entry (FUN_140930ba0 of RequestFieldEnter's fifth int).</summary>
     int dungeonRoomId;
+    /// <summary>DAT_143ab2884: the dungeon room id of the field entered (0 outside a dungeon).</summary>
+    public int DungeonRoomId => dungeonRoomId;
     /// <summary>DungeonRoomTable::GetRoom over the HUD's room table; null before the HUD sets it or without the row.</summary>
     public Func<int, Ms2.Quest.DungeonRoom> DungeonRoomOf;
 

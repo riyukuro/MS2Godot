@@ -51,7 +51,7 @@ public sealed class RevivalEnvironment
     public Func<RevivalField> Field = () => null;
     /// <summary>WorldService::FUN_141bdb660(8) (FUN_141abcb90, uirevivaldialog.cpp:637): no paid revive at all.</summary>
     public Func<bool> PaidRevivalOffByWorld = () => false;
-    /// <summary>CFieldData::FUN_140374410(field id): the field revives with meso at no cost.</summary>
+    /// <summary>CFieldData::FUN_140374410(field id): the field's mapType is 3 (a home), where the meso revive costs nothing.</summary>
     public Func<int, bool> FieldRevivesForFree = _ => false;
     /// <summary>DAT_143ab2884 + DungeonRoomTable::GetRoom: the dungeon room (null outside one).</summary>
     public Func<RevivalRoom> Room = () => null;

@@ -21,6 +21,11 @@ public partial class HudScene
     /// <summary>Whether the revival dialog or the auto-revive countdown is open (the own death's dialogs).</summary>
     public bool RevivalUiUp() => RevivalOpen || (autoRevive is { IsClosed: false });
 
+    /// <summary>The open revival dialog's paid mode, its meso and merat costs and its two labels; null without the dialog.</summary>
+    public string RevivalState() => RevivalOpen
+        ? $"mode {revival.PaidMode}, meso cost {revival.MesoCost}, merat cost {revival.MeratCost}, labels \"{revival.Label1}\" / \"{revival.Label2}\""
+        : null;
+
     /// <summary>The revival dialog's "onRevival(button)" callback, as its movie raises it. False without the dialog.</summary>
     public bool ReviveScripted(int button) => RevivalOpen && revival.OnCallback("onRevival", new object[] { button });
 

@@ -220,11 +220,13 @@ public sealed class FieldData
         o.GlobalSplit = Flag(env.Element("split"), "globalSplit");
         o.CheckPartyObserve = Flag(prop, "checkPartyObserve");
         o.MinimapPing = BoolAttr(prop, "minimapPing", false);
-        o.RevivalReturnId = Int(prop, "revivalreturnid"); if (o.RevivalReturnId == 0) o.RevivalReturnId = o.Id;
-        o.DeathPenalty = prop?.Attribute("deathPenalty") != null ? Int(prop, "deathPenalty") : 1;
-        o.AutoRevivalType = Int(prop, "autoRevivalType"); o.AutoRevivalTime = Int(prop, "autoRevivalTime");
-        o.DoNotRevivalHere = Flag(prop, "doNotRevivalHere");
-        o.InfiniteMeratRevival = prop?.Attribute("infinityMeratRevival") == null || Flag(prop, "infinityMeratRevival");
+        // the death state's properties: XmlGetAttr of an int is QueryIntAttribute (tinyxmlhelper.cpp:151), so a value with no
+        // leading number keeps the ctor's default (GMS2 writes deathPenalty="" on 140 fields: the client keeps 1)
+        o.RevivalReturnId = QueryInt(prop, "revivalreturnid", 0); if (o.RevivalReturnId == 0) o.RevivalReturnId = o.Id;
+        o.DeathPenalty = QueryInt(prop, "deathPenalty", 1);
+        o.AutoRevivalType = QueryInt(prop, "autoRevivalType", 0); o.AutoRevivalTime = QueryInt(prop, "autoRevivalTime", 0);
+        o.DoNotRevivalHere = QueryInt(prop, "doNotRevivalHere", 0) != 0;
+        o.InfiniteMeratRevival = QueryInt(prop, "infinityMeratRevival", 1) != 0;
         o.PopupMenu = BoolAttr(prop, "popupMenu", true);
         o.GemSystem = BoolAttr(prop, "gemSystem", true);
         if ((string)env.Element("drop")?.Attribute("maplevel") is { } ml && int.TryParse(ml, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mli)) o.MapLevel = mli;
@@ -258,6 +260,21 @@ public sealed class FieldData
         IndexOf(packs).ById.TryGetValue(fieldId, out var fd) ? (string)DefaultEnvironment(fd).Element("xblock").Attribute("name") : null;
 
     /// <summary>XmlGetAttr of an int flag: nonzero when the element has the attribute with a nonzero number.</summary>
+    /// <summary>TiXmlElement::QueryIntAttribute (sscanf "%d", tinyxml.cpp:1160): the leading signed digits after white space; no
+    /// attribute, or a value with no leading number, keeps <paramref name="fallback"/>.</summary>
+    static int QueryInt(XElement e, string name, int fallback)
+    {
+        if ((string)e?.Attribute(name) is not { } s) return fallback;
+        int i = 0;
+        while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
+        int start = i;
+        if (i < s.Length && (s[i] == '-' || s[i] == '+')) i++;
+        int digits = i;
+        while (i < s.Length && s[i] >= '0' && s[i] <= '9') i++;
+        if (i == digits) return fallback;
+        return int.TryParse(s.AsSpan(start, i - start), NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) ? v : fallback;
+    }
+
     static bool Flag(XElement e, string name) =>
         (string)e?.Attribute(name) is { } v && int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n != 0;
 

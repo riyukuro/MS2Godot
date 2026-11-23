@@ -8,8 +8,8 @@ namespace Ms2Godot.Ui;
 /// The death state's dialog: UIRevivalDialog (0x4e38, movie uirevivaldialog) is up while the own player is dead and goes
 /// when the player is alive again. Its sends go through the session (Revival 0x1F, RequestMoveField). The environment reads
 /// what the Godot client has (level, meso, the dead flag, the field's revival flags, the merat wallet, the own buffs and the
-/// constants, RevivalWiring); the rest keeps the controller's defaults (STILL-OPEN: the dungeon room limits, the meso revival
-/// rule, the equipment's cost reductions and the revival coupon).
+/// constants, the dungeon room, RevivalWiring); the rest keeps the controller's defaults (STILL-OPEN: the meso revival rule,
+/// the equipment's cost reductions and the revival coupon).
 /// </summary>
 public partial class HudScene
 {
@@ -41,15 +41,13 @@ public partial class HudScene
         revivalLive = null;
     }
 
-    /// <summary>MyPC::vfunc_137's dead branch (mypc.cpp:1347-1355), each time it runs: ClosePopupMenu and open 0x4e38 only when
-    /// the field has neither auto-revival type 1 nor 2 (CFieldData::HasAutoRevivalType1 / 2, fielddata.cpp:827, 830). A field
-    /// without data opens it (the client always has the data; ours has none only on a failed table read).</summary>
+    /// <summary>MyPC::vfunc_137's dead branch (mypc.cpp:1347-1355), each time it runs: ClosePopupMenu and open 0x4e38 when the
+    /// field has no auto revival (RevivalWiring.OpensDialog).</summary>
     void OnOwnDied()
     {
         var live = revivalLive;
         if (live == null) return;
-        var fd = RevivalFieldData(live);
-        if (fd != null && (fd.HasAutoRevivalType1 || fd.HasAutoRevivalType2)) return;
+        if (!RevivalWiring.OpensDialog(RevivalFieldData(live))) return;
         if (popupMenu is { IsClosed: false }) popupMenu.Close();
         if (!RevivalOpen) OpenRevival(live);
     }
@@ -82,11 +80,18 @@ public partial class HudScene
         var e = c.Env;
         RevivalWiring.Connect(e, live.Me, () => live.FieldId, _ => RevivalFieldData(live),
             live.SendRevival, text => SystemNoticeText(text), id => hudModel.Tables.Common(id),
-            id => hudModel.Tables.MapName(id), PaidInputs());
+            id => hudModel.Tables.MapName(id), PaidInputs(), RoomInputs(live));
         c.Unloaded += () => { revivalMovie?.Host.Unload(); revivalMovie?.QueueFree(); revivalMovie = null; };
         revival = c;
         revivalMovie = new MovieDialog(assets, revival, hudModel, ScreenMode.PixelSize(GetWindow()));
         uiRoot.AddChild(revivalMovie);
+    }
+
+    /// <summary>The dungeon room's revival limits: the session's room id, the room table the HUD read at the field build, and
+    /// feature 0x5d (DungeonLimitMesoRevival).</summary>
+    RevivalRoomInputs RoomInputs(Ms2Godot.Net.LiveSession live)
+    {
+        return new RevivalRoomInputs(() => live.DungeonRoomId, id => dungeonRooms?.GetRoom(id), () => hudModel.IsFeatureEnabled(0x5d));
     }
 
     /// <summary>The paid revive's inputs: the merat wallet summed (DAT_143ab2978), the own buffs and the client constants; null

@@ -9,7 +9,7 @@ namespace Ms2.Ui.Tests;
 /// <summary>UIRevivalDialog: the buttons' sends (SendOp Revival 0x1F), the paid mode and the costs.</summary>
 public class RevivalDialogTests
 {
-    static byte[] Bytes(IOutPacket p) { var w = new ByteWriter(); p.Write(w); return w.Buffer.AsSpan(0, w.Length).ToArray(); }
+    internal static byte[] Bytes(IOutPacket p) { var w = new ByteWriter(); p.Write(w); return w.Buffer.AsSpan(0, w.Length).ToArray(); }
 
     sealed class Rig
     {

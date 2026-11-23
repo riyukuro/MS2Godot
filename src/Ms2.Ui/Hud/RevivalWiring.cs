@@ -2,6 +2,7 @@ using Ms2.Formats.World;
 using Ms2.Net;
 using Ms2.Net.Packets;
 using Ms2.Net.Wire;
+using Ms2.Quest;
 using Ms2.Ui.Skills;
 
 namespace Ms2.Ui.Hud;
@@ -11,10 +12,14 @@ namespace Ms2.Ui.Hud;
 /// (CFieldDataCli, uirevivaldialog.cpp:397, 412, 438, 493) and the string notices. The game scene calls this for the dialog it
 /// opens, so a test can run the same wiring. Without <see cref="RevivalPaidInputs"/> the paid revive (merat and meso) is refused,
 /// as the client sends only the free revive (mode 0) without them.
-/// STILL-OPEN (left at their defaults): CGameRule's meso revival rule (FUN_140477d10), the dungeon room (DungeonRoomTable), the
+/// STILL-OPEN (left at their defaults): CGameRule's meso revival rule (FUN_140477d10, the GameEventMesoRevival events), the
 /// revival coupon (FindItemByTag(4)), the equipment's cost reductions (GetAbilityRate 0x42 / 0xa4), and the platform's red-merat
 /// check (vfunc_41, feature 0x43 with the admin level DAT_143ab2914 at 52 or more; the port has no admin level).
 /// </summary>
+/// <param name="RoomId">DAT_143ab2884: the dungeon room id of the field (0 outside a dungeon).</param>
+/// <param name="RoomOf">DungeonRoomTable::GetRoom (null for an unknown id).</param>
+/// <param name="RoomLimitFeature">CFeatureManager::IsFeatureEnabled(0x5d), DungeonLimitMesoRevival (featuremanager.cpp:316).</param>
+public sealed record RevivalRoomInputs(Func<int> RoomId, Func<int, DungeonRoom> RoomOf, Func<bool> RoomLimitFeature);
 /// <param name="Merat">DAT_143ab2978 (FUN_1409304d0): the merat of the four wallet kinds summed.</param>
 /// <param name="Buffs">FUN_1416749a0(): the own player's additional effects.</param>
 /// <param name="Constants">The client constants (Constants +0x51d8, +0x8cc0, +0x90f8, +0xa278, +0xcfe0).</param>
@@ -24,7 +29,7 @@ public static class RevivalWiring
 {
     public static void Connect(RevivalEnvironment e, MyCharacter me, Func<int?> fieldId, Func<int, FieldData> fieldOf,
         Action<IOutPacket> send, Action<string> notice, Func<int, string> common, Func<int, string> mapName,
-        RevivalPaidInputs paid = null)
+        RevivalPaidInputs paid = null, RevivalRoomInputs room = null)
     {
         e.HasPlayer = () => me.ObjectId >= 0;
         e.IsDead = () => me.Dead;
@@ -35,6 +40,10 @@ public static class RevivalWiring
         e.FieldId = () => fieldId() ?? 0;
         e.Field = () => fieldId() is int id && fieldOf(id) is { } f
             ? new RevivalField(f.RevivalReturnId, f.DeathPenalty, f.DoNotRevivalHere, f.InfiniteMeratRevival) : null;
+        // CFieldData::FUN_140374410 (fielddata.h:75, @0x140374410): the field's mapType is 3 (a home); its meso revive is free
+        // (FUN_141abcb90 and RefreshMesoButton, uirevivaldialog.cpp:643, :727)
+        e.FieldRevivesForFree = id => fieldOf(id) is { MapType: 3 };
+        if (room != null) ConnectRoom(e, room);
         e.FieldName = mapName;                          // CStringTable table 3 (uirevivaldialog.cpp:363, :418)
         e.PaidRevivalWired = () => paid != null;
         if (paid != null) ConnectPaid(e, me, paid);
@@ -43,10 +52,36 @@ public static class RevivalWiring
         e.NoticeById = id => notice(common(id) ?? "");
     }
 
+    /// <summary>MyPC::vfunc_137's dead branch (mypc.cpp:1347-1355): 0x4e38 opens only when the field has neither auto-revival type 1
+    /// nor 2 (CFieldData::HasAutoRevivalType1 / 2, fielddata.cpp:827, 830). A field without data opens it (the client always has
+    /// the data; ours has none only on a failed table read).</summary>
+    public static bool OpensDialog(Ms2.Formats.World.FieldData field) =>
+        field == null || !(field.HasAutoRevivalType1 || field.HasAutoRevivalType2);
+
     /// <summary>MesoRevivalDailyMaxCount: Lua getMesoRevivalDailyMaxCount (MyPC::GetMesoRevivalRemainingCount, mypc.cpp:2169),
     /// whose body in Data/lua/Precompiled.m2d luapack64.o (source lines 333-335, the same chunk in both data sets) is
     /// <c>return 3</c> with no branch.</summary>
     public const int MesoRevivalDailyMax = 3;
+
+    /// <summary>The dungeon room the dialog reads (GetFirstButtonLabel, FUN_141abc7f0, FUN_141abc930; uirevivaldialog.cpp:574-581,
+    /// :595-600, :779-792): the room's row by DAT_143ab2884, none for 0 or an unknown id.</summary>
+    static void ConnectRoom(RevivalEnvironment e, RevivalRoomInputs inputs)
+    {
+        int lastId = 0;
+        RevivalRoom last = null;
+        e.Room = () =>
+        {
+            int id = inputs.RoomId();
+            if (id == 0) return null;
+            if (id != lastId)
+            {
+                lastId = id;
+                last = inputs.RoomOf(id) is { } r ? new RevivalRoom(r.LimitMesoRevival, r.LimitMeratRevival, r.DefaultRevivalLimitCount) : null;
+            }
+            return last;
+        };
+        e.RoomLimitFeature = inputs.RoomLimitFeature;
+    }
 
     static void ConnectPaid(RevivalEnvironment e, MyCharacter me, RevivalPaidInputs paid)
     {

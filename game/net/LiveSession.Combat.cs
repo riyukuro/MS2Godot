@@ -652,11 +652,15 @@ public partial class LiveSession
                 case "revivepaid":
                 {
                     Check("the revival dialog is open", hud.RevivalUiUp());
+                    long meso0 = live.Me.Meso;
+                    GD.Print($"live: combat paid revive dialog: {hud.RevivalState()}, meso {meso0}, meso revives used {live.Me.MesoRevivalsUsed}");
                     GD.Print($"live: combat paid revive: {(hud.ReviveScripted(2) ? "sent" : "no dialog")}");
                     bool alive = false;
                     await until(() => alive = !live.Me.Dead, 60 * 15);
                     Check("the character is alive again after the paid revive", alive);
                     await frames(30);
+                    GD.Print($"live: combat paid revived: meso {meso0} -> {live.Me.Meso}, meso revives used {live.Me.MesoRevivalsUsed}, " +
+                        $"penalty count {live.Me.RevivalConfirmCount}, end tick {live.Me.RevivalEndTick}");
                     Shot("revived_paid.png");
                     break;
                 }
