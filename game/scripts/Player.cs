@@ -630,7 +630,18 @@ public partial class Player : CharacterBody3D
     {
         var v = new Vector3(kVel.X, 0, kVel.Z);
         if (State is MoveState.Idle or MoveState.Land or MoveState.Dead or MoveState.Hit or MoveState.FallDamage) v = Vector3.Zero;
-        if (!jumping && lift.Active) v.Y = LiftStep(dt) / dt;   // FUN_1412407f0's lift branch: the step only
+        // PCBase::vfunc_68 (pcbase.cpp:1771-1775, 1780-1793): the force zone's move comes first; a rising zone sets
+        // bNoVelocity, which skips the controller's own step (FUN_1412407f0) whole: no gravity, and the jump clock
+        // (m_fJumpTime / m_fJumpHeight) and the lift's (m_fLiftTime / m_fLiftHeight, its falling switch) stand still. The fall
+        // time is a timer (GetFallTime) and runs on. The push is in field units here, as the body moves; the client's 0.01 is
+        // its PhysX scale.
+        // STILL-OPEN: in the jump and fall states the client's horizontal drift is part of that step too, and goes with it.
+        var push = ForcePush(dt, out bool lifted, out bool pushed);
+        if (lifted)
+        {
+            if (State == MoveState.Fall && !InAirFor(MoveConfig.IdleFallDelay)) { v.X = 0; v.Z = 0; }
+        }
+        else if (!jumping && lift.Active) v.Y = LiftStep(dt) / dt;   // FUN_1412407f0's lift branch: the step only
         else if (jumping)
         {
             jumpTime += dt;
@@ -647,18 +658,12 @@ public partial class Player : CharacterBody3D
             // ground and not touching down (pcbase.cpp:2544-2556). StopJump's timer reset holds a warp's first frames.
             if (State == MoveState.Fall && !InAirFor(MoveConfig.IdleFallDelay)) { v.X = 0; v.Z = 0; }
         }
-        // PCBase::vfunc_68 (pcbase.cpp:1771-1775, 1793): the force zone's move is added to the frame's; a rising zone sets
-        // bNoVelocity, which drops the controller's own step (FUN_1412407f0: the gravity, jump or lift step) while the
-        // state's move stays. The push is in field units here, as the body moves; the client's 0.01 is its PhysX scale.
-        // STILL-OPEN: in the jump and fall states the client's horizontal drift is part of that step too, and goes with it.
-        var push = ForcePush(dt, out bool lifted);
-        if (lifted) v.Y = 0f;
         Velocity = skillMove == Vector3.Zero ? v : v + skillMove / dt;
 
         // GameObjectController::Move: the controller's up / side / down move by the frame's displacement
         var delta = v * dt + skillMove + push;
         var firstHit = MoveStep(delta, dt);
-        if (push != Vector3.Zero && delta != Vector3.Zero) syncPushed = true;   // vfunc_68: a push that moved calls vfunc_110 (pcbase.cpp:1820-1823)
+        if (pushed && delta != Vector3.Zero) syncPushed = true;   // vfunc_68: a zone that acted, on a frame that moves, calls vfunc_110 (pcbase.cpp:1772-1775, 1820-1823)
 
         // m_unk_c68 is taken from the first move's flags, before the world box's slide (pcbase.cpp:1835-1840 vs 1844-1862)
         wallHit = (firstHit & NxController.Hit.Sides) != 0 && (firstHit & NxController.Hit.Down) == 0 && v.Y < 0;
@@ -675,15 +680,16 @@ public partial class Player : CharacterBody3D
     public readonly List<Ms2.Formats.World.ForceZone.Source> ForceNpcs = new();
 
     /// <summary>WorldService::FUN_141bc8420 for the own player: the frame's push in Godot axes (Y up), zero without a zone.
-    /// <paramref name="lifted"/> is vfunc_68's bNoVelocity set by a rising zone.
+    /// <paramref name="lifted"/> is vfunc_68's bNoVelocity set by a rising zone; <paramref name="pushed"/> is the routine's
+    /// result (bPushed), true for a zone that acted even with a zero move (held at a lift's top, at the outer radius).
     /// STILL-OPEN: only Integrate's states take it; the climb, ladder, rope, hold and revival moves add no push yet.</summary>
-    Vector3 ForcePush(float dt, out bool lifted)
+    Vector3 ForcePush(float dt, out bool lifted, out bool pushed)
     {
-        lifted = false;
-        if (ForceRegions == null && ForceNpcs.Count == 0) return Vector3.Zero;
+        lifted = pushed = false;
+        if ((ForceRegions == null || ForceRegions.Objects.Count == 0) && ForceNpcs.Count == 0) return Vector3.Zero;
         var g = GlobalPosition;
-        if (!Ms2.Formats.World.ForceZone.Step(new System.Numerics.Vector3(g.X, -g.Z, g.Y), DeadFlag, dt, ForceRegions, ForceNpcs, out var f, out lifted))
-            return Vector3.Zero;
+        pushed = Ms2.Formats.World.ForceZone.Step(new System.Numerics.Vector3(g.X, -g.Z, g.Y), DeadFlag, dt, ForceRegions, ForceNpcs, out var f, out lifted);
+        if (!pushed) return Vector3.Zero;
         return new Vector3(f.X, f.Z, -f.Y);
     }
 

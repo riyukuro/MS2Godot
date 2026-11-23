@@ -17,7 +17,9 @@ namespace Ms2Godot.Tests;
 ///   (MyPC::vfunc_110), more than the same second idle without a zone;
 /// - a pull zone moves the pc toward its centre until it is inside the inner radius;
 /// - a rising zone (pushCylinderVelV 200, height 300) lifts the pc to the cylinder's top and holds it there;
-/// - a zone more than 105 above the feet, and any zone on a dead pc, do not move it.
+/// - a zone more than 105 above the feet, and any zone on a dead pc, do not move it;
+/// - a pc at exactly the push zone's outer radius is not moved, but the zone acted (bPushed), so its frames force records too;
+/// - a jump held by a rising zone keeps its jump clock still (bNoVelocity skips FUN_1412407f0), and runs on from there once out.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
 public partial class PlayerForceCheck : Node3D
@@ -76,13 +78,19 @@ public partial class PlayerForceCheck : Node3D
     /// <summary>Field axes (x, y, z up) of the pc's feet.</summary>
     Vector3 Feet => new(pc.GlobalPosition.X, -pc.GlobalPosition.Z, pc.GlobalPosition.Y);
 
+    static RegionSkillObjects Zone(Vector3? centre, PushCylinder c)
+    {
+        var regions = new RegionSkillObjects();
+        if (centre is { } at)
+            regions.Add(new RegionSkillObject { Id = 1, Points = new[] { new Vec3(at.X, at.Y, at.Z) }, Attr = new SkillMotion { PushCylinder = c } });
+        return regions;
+    }
+
     /// <summary>The pc stood idle at field (x, y) on the floor, with one zone at <paramref name="centre"/> (field axes).</summary>
     void Place(float x, float y, Vector3? centre, PushCylinder c)
     {
         pc.DeadFlag = false;
-        var regions = new RegionSkillObjects();
-        if (centre is { } at)
-            regions.Add(new RegionSkillObject { Id = 1, Points = new[] { new Vec3(at.X, at.Y, at.Z) }, Attr = new SkillMotion { PushCylinder = c } });
+        var regions = Zone(centre, c);
         regionsField?.SetValue(pc, null);
         pc.GlobalPosition = new Vector3(x, 1, -y);
         pc.ResetMotion();
@@ -147,6 +155,37 @@ public partial class PlayerForceCheck : Node3D
         GD.Print($"player force: zone 110 above moved {high:0.##}, dead pc moved {dead:0.##}");
         Expect(Mathf.Abs(high) < 0.01f, $"a zone 110 above the feet moved the pc {high:0.##}");
         Expect(Mathf.Abs(dead) < 0.01f, $"a dead pc was moved {dead:0.##}");
+
+        // exactly at the outer radius: a zero push, but the routine acted
+        Place(3000, 0, Vector3.Zero, push);
+        sent.Clear();
+        x0 = Feet.X;
+        Steps(60);
+        float edge = Feet.X - x0;
+        int edgeRecords = sent.Count;
+        GD.Print($"player force: at the outer radius moved {edge:0.##}, {edgeRecords} sync records (idle {idleRecords})");
+        Expect(Mathf.Abs(edge) < 0.01f, $"a pc at the outer radius was moved {edge:0.##}");
+        Expect(edgeRecords > idleRecords + 30, $"a pc at the outer radius sent {edgeRecords} records, idle {idleRecords}: the acting zone forces them");
+
+        // a jump into a rising zone: the jump clock stands while held
+        var jumpTime = typeof(Player).GetField("jumpTime", BindingFlags.Instance | BindingFlags.NonPublic);
+        Place(100, 0, null, default);
+        pc.JumpHeld = true;
+        Steps(1);
+        pc.JumpHeld = false;
+        Steps(9);
+        float t0 = (float)jumpTime.GetValue(pc);
+        var state0 = pc.State;
+        regionsField?.SetValue(pc, Zone(new Vector3(Feet.X, Feet.Y, 0), new PushCylinder(0, 200, 500, 0, 1000)));
+        Steps(30);
+        float t1 = (float)jumpTime.GetValue(pc);
+        regionsField?.SetValue(pc, null);
+        Steps(1);
+        float t2 = (float)jumpTime.GetValue(pc);
+        GD.Print($"player force: jump clock {t0:0.###} ({state0}), {t1:0.###} after 0.5 s held, {t2:0.###} a frame out");
+        Expect(state0 == Player.MoveState.Jump && t0 > 0f, $"the jump did not start: state {state0}, clock {t0}");
+        Expect(Mathf.Abs(t1 - t0) < 1e-5f, $"the jump clock ran from {t0:0.###} to {t1:0.###} while held by the rising zone");
+        Expect(Mathf.Abs(t2 - t1 - Dt) < 1e-4f, $"out of the zone the jump clock went {t1:0.###} -> {t2:0.###}, not on by a frame");
         regionsField?.SetValue(pc, null);
     }
 }
