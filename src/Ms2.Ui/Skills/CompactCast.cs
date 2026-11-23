@@ -9,7 +9,7 @@ namespace Ms2.Ui.Skills;
 /// FUN_1417674a0 @0x1417674a0 (:2446-2508, <see cref="Pick"/>), FUN_141767990 @0x141767990 (:2512-2526, <see cref="Used"/>),
 /// SetCompactConfigs @0x141767d90 (:2551-2556, <see cref="SetConfigs"/>) and FUN_141767df0 @0x141767df0 (:2560-2567,
 /// <see cref="HotKeyCapture"/>). 0 B per call once the lists have grown.
-/// STILL-OPEN: the refusal notice (FUN_141769440) goes to the caller; IsShortKey (:2457) is always false here:
+/// The refusal notice (FUN_141769440) goes to the caller (<see cref="CastNotice"/> maps the EP reasons; STILL-OPEN: the others); IsShortKey (:2457) is always false here:
 /// the only adder of short keys is UICartoonDialog (uicameraeditdialog.cpp:621-640), which is not ported; the state flag 0x80 of the capture has no reader here.
 /// </summary>
 public sealed class CompactCast

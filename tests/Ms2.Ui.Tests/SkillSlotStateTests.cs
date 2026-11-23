@@ -45,6 +45,25 @@ public class SkillSlotStateTests
     }
 
     [Test]
+    public void TheEpRefusalsGiveTheirNotices()
+    {
+        var t = Skills(Attack.Replace("sp=\"3\"", "ep=\"30\""));
+        var w = World(t);
+        var lv = CastGate.LevelData(w, 100);
+        w.Ep = 30;
+        Assert.That(CastGate.Why(w, lv, true), Is.EqualTo(0), "EP equal to the cost casts");
+        w.Ep = 29;
+        Assert.That(CastGate.Why(w, lv, true), Is.EqualTo(7));
+        Assert.That(CastNotice.Of(7), Is.EqualTo((0x48, "system_notice_error_ep")), "skillslot.cpp:2918-2920");
+        w.Ep = 100;
+        w.Field = new SlotField { UseEPSkill = false };
+        Assert.That(CastGate.Why(w, lv, true), Is.EqualTo(3));
+        Assert.That(CastNotice.Of(3), Is.EqualTo((0x53, (string)null)), "skillslot.cpp:2907-2909");
+        Assert.That(CastNotice.Of(10), Is.EqualTo((0x52b, (string)null)), "skillslot.cpp:3002-3004; Why does not return 10 yet");
+        Assert.That(CastNotice.Of(4).StringId, Is.EqualTo(0), "no EP reason: not mapped here");
+    }
+
+    [Test]
     public void TheCastCheckGivesTheClientReasonCodes()
     {
         var t = Skills(Attack);

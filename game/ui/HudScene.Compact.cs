@@ -53,12 +53,20 @@ public partial class HudScene
 
     /// <summary>FUN_1417674a0(<paramref name="any"/>) (skillslot.cpp:2446-2508): the compact tab's skill to cast now, 0 for none.
     /// <paramref name="castAllowed"/> is m_nCastAllowed (1 inside the own skill state's poll and hold check, 0 outside).
-    /// The refusal notice (FUN_141769440) is logged (STILL-OPEN: its text). 0 B.</summary>
+    /// The refusal notice (FUN_141769440) shows for the EP reasons (<see cref="CastNotice"/>); the other reasons are logged (STILL-OPEN: their text). 0 B.</summary>
     uint CompactPick(bool any, bool castAllowed)
     {
         if (compact.Tab == null || hudModel == null) return 0;
         compactActionDown ??= CompactActionDown;
-        compactNotice ??= why => GD.Print($"compact: the held tab's skill refused, reason {why}");
+        compactNotice ??= why =>
+        {
+            // FUN_141769440: the center notice (FUN_141275260(id, 1, 0)) and the system sound of the refusal
+            var (id, sound) = CastNotice.Of(why);
+            if (id == 0) { GD.Print($"compact: the held tab's skill refused, reason {why}"); return; }
+            string text = Ms2.Ui.Hud.MessageBoxData.Common(id);
+            if (!string.IsNullOrEmpty(text)) ShowSystemText(text);
+            if (sound != null) FieldAudio.Instance?.PlayUi(sound);
+        };
         return compact.Pick(any, castAllowed, CompactOn, compactActionDown, CompactWorld(), (uint)Time.GetTicksMsec(), compactNotice);
     }
 
