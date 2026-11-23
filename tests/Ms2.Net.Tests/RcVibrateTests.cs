@@ -22,7 +22,6 @@ public class RcVibrateTests {
         "012000383961383934313063646632346262346133346138666537393731663036376206000000A82D37006BF4930301",
         "000100690FC3F40D0B2FC09D11000000");
 
-    [Ignore("GMS2 vibrate mode not read yet")]
     [Test] public void Gms2Mode1ReadsTheAttack() {
         Assert.That(Read(First, castUid: 56594784059394L, skill: 40015001, motion: 1, serial: 277656199,
             position: (2967, -109, 3749)));
@@ -30,6 +29,23 @@ public class RcVibrateTests {
             position: (640, 2448, 2700)));
         Assert.That(Read(Third, castUid: 15531323296841734L, skill: 60028011, motion: 1, serial: 295551023,
             position: (3945, -2877, 2829)));
+    }
+
+    [Test] public void Mode2AndOtherModes() {
+        byte[] bytes = { 2, 4, 0, (byte) 'd', (byte) 'o', (byte) 'o', (byte) 'r', 7, 0, (byte) 'm', (byte) 'o', (byte) 'd', (byte) 'e', (byte) 'l', (byte) '_', (byte) 'a', 1 };
+        foreach (var profile in new[] { ProtocolProfile.Kms2525, ProtocolProfile.Gms2 }) {
+            var r = new ByteReader(bytes);
+            var m = Vibrate.Read(r, profile);
+            Assert.That((m.Mode, m.Entity, m.Model, m.Flag), Is.EqualTo(((byte) 2, "door", "model_a", (byte) 1)));
+            Assert.That(r.Available, Is.EqualTo(0));
+        }
+        // a mode the client has no branch for reads nothing more
+        Assert.That(Vibrate.Read(new ByteReader(new byte[] { 9 }), ProtocolProfile.Gms2).Mode, Is.EqualTo((byte) 9));
+    }
+
+    [Test] public void NumberOnBothProfiles() {
+        Assert.That(ProtocolProfile.Kms2525.Number(Inbound.Vibrate), Is.EqualTo((ushort) 0x75));
+        Assert.That(ProtocolProfile.Gms2.Number(Inbound.Vibrate), Is.EqualTo((ushort) 0x77));
     }
 
     static bool Read(byte[] bytes, long castUid, int skill, byte motion, int serial, (short X, short Y, short Z) position) {

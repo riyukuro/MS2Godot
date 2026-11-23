@@ -41,6 +41,7 @@ public enum Inbound : ushort {
     PartySearch = 0xBB,     // RecvOp PartySearch (commonfiles/opcodes.h:194): CPartyManager::OnMatchParty (@0x1416310d0)
     Shop = 0x51,
     ItemMerge = 0x74,       // RecvOp ItemMerge (commonfiles/opcodes.h:124): CSceneStateGame::OnItemFusion
+    Vibrate = 0x75,         // RecvOp Vibrate (commonfiles/opcodes.h:125): CSceneStateGame::OnVibrate (@0x14172a1c0)
     ItemDismantle = 0x96,   // RecvOp ItemDismantle (commonfiles/opcodes.h:158): CItemBreakManager::OnItemDismantlePacket
     SystemShop = 0xA1,      // RecvOp SystemShop (commonfiles/opcodes.h:169): CSceneStateGame::OnSystemShop
     GlobalFactor = 0xD6,

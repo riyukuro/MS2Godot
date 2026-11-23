@@ -45,6 +45,7 @@ static class Gms2Opcodes {
         [Inbound.PartySearch] = 0xBD,     // RecvOp MatchParty
         [Inbound.Shop] = 0x52,
         [Inbound.ItemMerge] = 0x76,
+        [Inbound.Vibrate] = 0x77,
         [Inbound.ItemDismantle] = 0x98,
         [Inbound.SystemShop] = 0xA3,
         [Inbound.GlobalFactor] = 0xD8,

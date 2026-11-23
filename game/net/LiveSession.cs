@@ -1818,6 +1818,8 @@ public partial class LiveSession : Node
                 ReadNotApplied("FurnishingInventory", Ms2.Net.Packets.FurnishingInventory.Read(p.Reader(), game.Profile).Mode);   // OnFurnishingInventory (scenestategame.cpp:9373): the cube stock has no house editor here yet
             else if (game.Is(p, Inbound.FurnishingStorage))
                 ReadNotApplied("FurnishingStorage", Ms2.Net.Packets.FurnishingStorage.Read(p.Reader(), game.Profile).Mode);   // OnFurnishingStorage (scenestategame.cpp:2734): the house storage list has no dialog here yet
+            else if (game.Is(p, Inbound.Vibrate))
+                ReadNotApplied("Vibrate", Ms2.Net.Packets.Vibrate.Read(p.Reader(), game.Profile).Mode);   // OnVibrate (scenestategame.cpp:5981): a skill cast on a named world object; the world service's by-name skill hook is not ported
             else if (game.Is(p, Inbound.SkillDamage))
             {
                 // The records that hit the own player; MasteryEvents applies the client's mode drops (3 needs its PC, 5 its
