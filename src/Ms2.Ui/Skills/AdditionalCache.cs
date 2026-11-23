@@ -15,7 +15,7 @@ namespace Ms2.Ui.Skills;
 public sealed class AdditionalCache
 {
     /// <summary>The format and parse version: bump it with any change to what the build writes or how the XML is read.</summary>
-    public const int Version = 11;     // 2: the levels' EventBuffType; 3: PvpOnOff; 4: ForceApplyTarget, Hide; 5: SpecialEffect; 6: InvokeEffect; 7: SpecialAbility; 8: DisableRevivalHere; 9: Invincible, SuperArmor, SuperArmorApplyFieldType; 10: the GMS2 additionaleffect/ files; 11: the GMS2 koradditionaldescription files
+    public const int Version = 12;     // 2: the levels' EventBuffType; 3: PvpOnOff; 4: ForceApplyTarget, Hide; 5: SpecialEffect; 6: InvokeEffect; 7: SpecialAbility; 8: DisableRevivalHere; 9: Invincible, SuperArmor, SuperArmorApplyFieldType; 10: the GMS2 additionaleffect/ files; 11: the GMS2 koradditionaldescription files; 12: the GMS2 special abilities
     const uint Magic = 0x4441324D;     // "M2AD"
     const uint EndMagic = 0x444E4541;  // "AEND"
 

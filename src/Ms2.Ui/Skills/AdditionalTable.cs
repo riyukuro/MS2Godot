@@ -291,7 +291,7 @@ public sealed class AdditionalTable
     /// <summary>The GMS2 data's folder of per-effect files, additionaleffect/&lt;id&gt;.xml, read when the data has no additional/.</summary>
     public const string Gms2Folder = "additionaleffect/";
 
-    static bool IsGms2File(string name) => name.StartsWith(Gms2Folder, StringComparison.OrdinalIgnoreCase);
+    internal static bool IsGms2File(string name) => name.StartsWith(Gms2Folder, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// A GMS2 additionaleffect/&lt;id&gt;.xml root as the KMS &lt;additional&gt; row that <see cref="AdditionalData.Load"/> reads. The file
@@ -302,8 +302,9 @@ public sealed class AdditionalTable
     /// isDebuff 1 and buffType 2). The levels are put in level order (stable), since GetLevel searches them sorted and 214 GMS2
     /// files list them out of order. InvokeEffect values are written as floats ("1.000000"; all are whole numbers in the data)
     /// and become the integers the KMS row has.
-    /// STILL-OPEN: the GMS2 exe is not decompiled, so how it reads these files is not seen; the special abilities
-    /// (StatusProperty/SpecialAbility, one attribute per ability with a rate, not the KMS &lt;v type value&gt; list) are not read.
+    /// The special abilities (StatusProperty/Stat and /SpecialAbility, one attribute per ability, and the damage rates of
+    /// OffensiveProperty / DefensiveProperty) become the KMS &lt;SpecialAbility&gt; list: see <see cref="Gms2SpecialAbilities"/>.
+    /// STILL-OPEN: the GMS2 exe is not decompiled, so how it reads these files is not seen.
     /// </summary>
     internal static XElement FromGms2(uint id, XElement root)
     {
@@ -323,6 +324,7 @@ public sealed class AdditionalTable
                             ? ((long)f).ToString(CultureInfo.InvariantCulture) : v.Trim())));
                 lv.Add(e);
             }
+            if (Gms2SpecialAbilities.FromLevel(l) is { } sa) lv.Add(sa);
             levels.Add(lv);
         }
         levels = levels.OrderBy(l => Xml.Int(l, "level")).ToList();

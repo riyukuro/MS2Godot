@@ -554,12 +554,14 @@ public sealed class GameTables
     /// which FUN_14081c880 (specialability.cpp:101) fills from the rows 1-0xce of LoadSpecialAbilityStringTable (:131,
     /// table/specialAbilityStringTable.xml &lt;key id option valueType&gt;) by case-insensitive option name, a name's first row
     /// kept (std::map insert). The resolver gives 0 for an unknown name and for a row whose valueType is 0 (the
-    /// m_bAllowAdditional test, additionalactionadditional.cpp:1240).
+    /// m_bAllowAdditional test, additionalactionadditional.cpp:1240). A pack without the table (the GMS2 data) takes the
+    /// STAND-IN rows of <see cref="Ms2.Ui.Skills.Gms2SpecialAbilities.DefaultRows"/>.
     /// </summary>
     internal static Func<string, int> SpecialAbilityTypes(PackSet packs)
     {
         const string table = "table/specialabilitystringtable.xml";
-        return SpecialAbilityTypes(packs.Exists("Xml", table) ? GameStrings.Parse(packs.Read("Xml", table)) : null);
+        return SpecialAbilityTypes(packs.Exists("Xml", table) ? GameStrings.Parse(packs.Read("Xml", table))
+            : Ms2.Ui.Skills.Gms2SpecialAbilities.DefaultTable());
     }
 
     internal static Func<string, int> SpecialAbilityTypes(XDocument doc)
