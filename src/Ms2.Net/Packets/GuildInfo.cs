@@ -92,6 +92,8 @@ public sealed class GuildInfo {
     public List<(int Id, long Time, List<(int Item, int Rank, int Price, int Count)> Products)> Shops = new();
     /// <summary>CGuildStorage::ReadPacket (@0x1404cc210) entries: ItemEntity (i32 id, u16 rank, i32 count, 4 bool).</summary>
     public int StorageCount;
+    /// <summary>The same entries, kept (CGuildStorage f18, ItemEntity::Read @ commonstruct_wa.cpp:94).</summary>
+    public List<GuildStorageItem> StorageItems = new();
 
     public static GuildInfo Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
 
@@ -123,7 +125,7 @@ public sealed class GuildInfo {
         n = r.ReadByte(); for (int i = 0; i < n; i++) g.Npcs.Add((r.ReadInt(), r.ReadInt()));
         if (r.ReadBool()) ReadShops(r, g);
         g.StorageCount = r.ReadInt();
-        for (int i = 0; i < g.StorageCount; i++) { r.ReadInt(); r.ReadShort(); r.ReadInt(); r.ReadByte(); r.ReadByte(); r.ReadByte(); r.ReadByte(); }
+        for (int i = 0; i < g.StorageCount; i++) g.StorageItems.Add(GuildStorageItem.Read(r));
         r.ReadInt(); r.ReadUnicodeString(); r.ReadLong(); r.ReadLong();
         for (int i = 0; i < 7; i++) r.ReadInt();
         return g;
@@ -167,6 +169,27 @@ public sealed class GuildInfo {
         n = r.ReadByte(); for (int i = 0; i < n; i++) g.Npcs.Add((r.ReadInt(), r.ReadInt()));
         if (r.ReadBool()) ReadShops(r, g);
         g.StorageCount = r.ReadInt();
-        for (int i = 0; i < g.StorageCount; i++) { r.ReadInt(); r.ReadShort(); r.ReadInt(); r.ReadByte(); r.ReadByte(); r.ReadByte(); r.ReadByte(); }
+        for (int i = 0; i < g.StorageCount; i++) g.StorageItems.Add(GuildStorageItem.Read(r));
     }
 }
+
+/// <summary>ItemEntity::Read (commonstruct_wa.cpp:94) as the guild storage holds it: i32 item id, u16 rank, i32 count and four bytes
+/// (the flags, in the order read). The storage key is (item id, rank); a count of 0 removes the entry (SetStorageItem @0x1404d2cc0).</summary>
+public readonly record struct GuildStorageItem(int ItemId, int Rank, int Count, bool Flag1, bool Flag2, bool Flag3, bool Flag4) {
+    public static GuildStorageItem Read(ByteReader r) =>
+        new(r.ReadInt(), (ushort) r.ReadShort(), r.ReadInt(), r.ReadByte() != 0, r.ReadByte() != 0, r.ReadByte() != 0, r.ReadByte() != 0);
+
+    /// <summary>ItemEntity::Write (@0x14026b030): the same order.</summary>
+    public void Write(ByteWriter w) {
+        w.WriteInt(ItemId); w.WriteShort((short) Rank); w.WriteInt(Count);
+        w.WriteByte((byte) (Flag1 ? 1 : 0)); w.WriteByte((byte) (Flag2 ? 1 : 0)); w.WriteByte((byte) (Flag3 ? 1 : 0)); w.WriteByte((byte) (Flag4 ? 1 : 0));
+    }
+}
+
+/// <summary>Unk_GFRecord (gloabalfactor.cpp:219): i64, i64, unicode string - a party of a storage history line.</summary>
+public readonly record struct GuildStorageParty(long First, long Second, string Name) {
+    public static GuildStorageParty Read(ByteReader r) => new(r.ReadLong(), r.ReadLong(), r.ReadUnicodeString());
+}
+
+/// <summary>CGuildStroageHistory (@0x1404d2e90): from, to, the item and the time.</summary>
+public sealed record GuildStorageHistory(GuildStorageParty From, GuildStorageParty To, GuildStorageItem Item, long Time);

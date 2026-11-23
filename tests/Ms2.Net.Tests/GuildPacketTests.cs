@@ -230,4 +230,30 @@ public class GuildPacketTests {
         Assert.That((n.Name, n.NpcKind, n.NpcLevel), Is.EqualTo(("bo", 4, 5)));
         Assert.Throws<PacketLayoutException>(() => GuildMessage.Read(R(w => { w.WriteByte(0x39); w.WriteUnicodeString("bo"); w.WriteInt(3); w.WriteInt(2); w.WriteByte(0); })), "ExpectEnd");
     }
+
+    [Test]
+    public void TheStorageTypesReadTheirFields() {
+        void Item(ByteWriter w, int id, int rank, int count) { w.WriteInt(id); w.WriteShort((short) rank); w.WriteInt(count); w.WriteByte(1); w.WriteByte(0); w.WriteByte(1); w.WriteByte(0); }
+        var e = GuildMessage.Read(R(w => { w.WriteByte(0x6e); Item(w, 1001, -1, 5); }));
+        Assert.That(e.StorageItem, Is.EqualTo(new GuildStorageItem(1001, 65535, 5, true, false, true, false)), "the rank is unsigned");
+        var g = GuildMessage.Read(R(w => { w.WriteByte(0x6d); w.WriteByte(0); w.WriteUnicodeString("bo"); }));
+        Assert.That((g.Result, g.Name), Is.EqualTo((0, "bo")));
+        var f = GuildMessage.Read(R(w => { w.WriteByte(0x6d); w.WriteByte(0x36); }));
+        Assert.That((f.Result, f.Name), Is.EqualTo((0x36, "")));
+        var h = GuildMessage.Read(R(w => {
+            w.WriteByte(0x70); w.WriteInt(1);
+            w.WriteLong(1); w.WriteLong(2); w.WriteUnicodeString("a"); w.WriteLong(3); w.WriteLong(4); w.WriteUnicodeString("b");
+            Item(w, 7, 1, 2); w.WriteLong(99);
+        }));
+        Assert.That(h.StorageHistory.Single(), Is.EqualTo(new GuildStorageHistory(new(1, 2, "a"), new(3, 4, "b"), new GuildStorageItem(7, 1, 2, true, false, true, false), 99)));
+        Assert.Throws<PacketLayoutException>(() => GuildMessage.Read(R(w => { w.WriteByte(0x6d); w.WriteByte(0x36); w.WriteByte(0); })), "ExpectEnd");
+    }
+
+    [Test]
+    public void TheGuildInfoKeepsTheStorageItems() {
+        var info = new GuildInfo();
+        info.StorageItems.Add(new GuildStorageItem(5, 2, 9, false, true, false, true));
+        var w = new ByteWriter(); new GuildStorageItem(5, 2, 9, false, true, false, true).Write(w);
+        Assert.That(GuildStorageItem.Read(new ByteReader(w.ToArray())), Is.EqualTo(info.StorageItems[0]), "Write and Read agree");
+    }
 }

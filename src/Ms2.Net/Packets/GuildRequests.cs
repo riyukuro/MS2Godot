@@ -174,3 +174,15 @@ public sealed record GuildVsGameUnregisterRequest : IOutPacket {
     public Outbound Op => Outbound.Guild;
     public void Write(ByteWriter w) { w.WriteByte(0x74); }
 }
+
+/// <summary>CGuildManager::FUN_1413bb490 (@0x1413bb490, guildmanager.cpp:1046): send a storage item to a member (u8 0x6d, ItemEntity, the receiver's name).</summary>
+public sealed record GuildStorageGiftRequest(GuildStorageItem Item, string Receiver) : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) { w.WriteByte(0x6d); Item.Write(w); w.WriteUnicodeString(Receiver); }
+}
+
+/// <summary>CGuildManager::SendGuildMode112 (@0x1413bbb80, :1095): ask for the storage history (u8 0x70).</summary>
+public sealed record GuildStorageHistoryRequest : IOutPacket {
+    public Outbound Op => Outbound.Guild;
+    public void Write(ByteWriter w) { w.WriteByte(0x70); }
+}

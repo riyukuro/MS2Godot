@@ -708,4 +708,74 @@ public class GuildBookTests {
         Assert.That(lines.Count, Is.EqualTo(1), "only level 2 has a row");
         Assert.That(lines[0], Does.Contain("63:6"));
     }
+
+    static GuildItem Item(int id, int rank, int count) => new(id, rank, count);
+    record GuildItem(int Id, int Rank, int Count) { public static implicit operator GuildStorageItem(GuildItem i) => new(i.Id, i.Rank, i.Count, false, false, false, false); }
+
+    [Test]
+    public void AStorageEntryReplacesItsKeyAndACountOfZeroRemovesIt() {
+        var b = GuildDialogTests.InGuild(); int refresh = 0; b.StorageRefresh += () => refresh++;
+        b.Apply(new GuildMessage((byte)0x6e) { StorageItem = Item(1, 0, 5) });
+        b.Apply(new GuildMessage((byte)0x6e) { StorageItem = Item(1, 1, 2) });
+        b.Apply(new GuildMessage((byte)0x6e) { StorageItem = Item(1, 0, 3) });
+        Assert.That((b.StorageItemCount(1, 0), b.StorageItemCount(1, 1), b.Info.StorageItems.Count, refresh), Is.EqualTo((3, 2, 2, 3)));
+        b.Apply(new GuildMessage((byte)0x6e) { StorageItem = Item(1, 0, 0) });
+        Assert.That((b.StorageItemCount(1, 0), b.Info.StorageItems.Count), Is.EqualTo((0, 1)));
+    }
+
+    [Test]
+    public void TheHistoryIsKeptCappedAndAskedForOnce() {
+        var sent = new List<IOutPacket>(); var b = GuildDialogTests.InGuild(); b.Send = sent.Add; int refresh = 0; b.StorageHistoryRefresh += () => refresh++;
+        b.SendGuildMode112();
+        Assert.That(sent.Single(), Is.EqualTo(new GuildStorageHistoryRequest()));
+        var lines = Enumerable.Range(0, 0x40).Select(i => new GuildStorageHistory(new(0, 0, "a"), new(0, 0, "b"), Item(i, 0, 1), i)).ToList();
+        b.Apply(new GuildMessage((byte)0x70) { StorageHistory = lines });
+        Assert.That((b.StorageHistory.Count, b.StorageHistory[0].Time, b.StorageHistoryReceived, refresh), Is.EqualTo((0x32, 0x40 - 0x32, true, 1)));
+        b.SendGuildMode112();
+        Assert.That((sent.Count, refresh), Is.EqualTo((1, 2)), "received: no second send, the dialog refreshes");
+        b.Apply(new GuildMessage((byte)0x6e) { StorageItem = Item(1, 0, 1) });
+        b.SendGuildMode112();
+        Assert.That(sent.Count, Is.EqualTo(2), "an entry change asks for the history again");
+    }
+
+    [Test]
+    public void TheGiftResultSaysTheReceiverOrTheNeededPeriod() {
+        var b = GuildDialogTests.InGuild(); b.CommonByKey = k => k + " {0}";
+        var lines = new List<(string, int)>(); var notices = new List<string>();
+        b.ChatLine += (t, ty) => lines.Add((t, ty)); b.Notice += (t, _, _) => notices.Add(t);
+        b.Apply(new GuildMessage((byte)0x6d) { Result = 0, Name = "bo" });
+        Assert.That(lines.Single(), Is.EqualTo(("s_guild_storage_gift bo", 0xd)));
+        b.Apply(new GuildMessage((byte)0x6d) { Result = 0x36 });
+        Assert.That(notices.Single(), Is.EqualTo("s_guild_storage_not_enough_gift_need_period 7"));
+        b.Apply(new GuildMessage((byte)0x6d) { Result = 5 });
+        Assert.That((lines.Count, notices.Count), Is.EqualTo((1, 1)));
+    }
+
+    [Test]
+    public void TheStorageGiftChecksRunInTheClientsOrder() {
+        var sent = new List<IOutPacket>(); var b = GuildDialogTests.InGuild(); b.Send = sent.Add;
+        var notices = new List<string>(); b.Notice += (t, _, _) => notices.Add(t);
+        b.Info.Members.Add(new GuildMember { Mode = 3, Grade = 1, Name = "Bo", CharId = 13, Level = 5, Triple = (0, 0, 0) });
+        b.Apply(new GuildMessage((byte)0x6e) { StorageItem = Item(1, 0, 5) });
+        b.ItemSlotMax = _ => 4; b.ItemHasStringTag0xd7 = id => id == 2;
+        Assert.That(b.SendStorageGift(Item(1, 0, 1), ""), Is.False);
+        Assert.That(b.SendStorageGift(Item(1, 0, 1), "Zz"), Is.False);
+        Assert.That(b.SendStorageGift(Item(1, 0, 0), "Bo"), Is.False);
+        Assert.That(b.SendStorageGift(Item(1, 0, 5), "Bo"), Is.False, "over the slot max");
+        b.ItemSlotMax = _ => 9;
+        Assert.That(b.SendStorageGift(Item(1, 0, 6), "Bo"), Is.False, "more than stored");
+        b.Apply(new GuildMessage((byte)0x6e) { StorageItem = Item(2, 0, 1) });
+        Assert.That(b.SendStorageGift(Item(2, 0, 1), "Bo"), Is.False, "tagged: only to oneself");
+        Assert.That(notices, Is.EqualTo(new[] { "s_guild_err_empty_member", "c40d", "s_guild_err_empty_count", "s_guild_err_storage_over_slot_max_count", "s_guild_err_storage_not_enough_count", "s_guild_err_storage_send_only_to_me" }));
+        Assert.That(sent, Is.Empty);
+        Assert.That(b.SendStorageGift(Item(1, 0, 5), "Bo"), Is.True);
+        Assert.That(b.SendStorageGift(Item(2, 0, 1), "Ma"), Is.True);
+        Assert.That(sent.Count, Is.EqualTo(2));
+        b.ItemSlotMax = null;
+        Assert.That(b.SendStorageGift(Item(1, 0, 1), "Bo"), Is.False, "no item data: nothing");
+        Assert.That(sent.Count, Is.EqualTo(2));
+        b.PlayerName = () => "Bo";
+        Assert.That(b.SendStorageGift(Item(1, 0, 1), "Bo"), Is.False, "not the master");
+        Assert.That(notices.Last(), Is.EqualTo("c416"));
+    }
 }

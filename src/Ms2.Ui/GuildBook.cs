@@ -109,6 +109,64 @@ public sealed class GuildBook
     /// <summary>The open guild dialog's FUN_141971ac0 (the npc part of the House page) after a guild npc was upgraded (modes 0x39, 0x3b).</summary>
     public event Action NpcRefresh;
 
+    /// <summary>The open guild dialog's UpdateStoragePage (uiguilddialog.cpp:2640) after a storage entry changed (mode 0x6e).</summary>
+    public event Action StorageRefresh;
+    /// <summary>The open guild dialog's UpdateStorageHistory (@0x1419729d0) after the history came (mode 0x70) or was asked for again.</summary>
+    public event Action StorageHistoryRefresh;
+    /// <summary>CGuildStorage's history deque (f38, at most 0x32 lines, the oldest dropped first) and m_400: the history was received.</summary>
+    readonly List<GuildStorageHistory> storageHistory = new();
+    public IReadOnlyList<GuildStorageHistory> StorageHistory => storageHistory;
+    public bool StorageHistoryReceived { get; private set; }
+    /// <summary>The constant guildStorageGiftNeedPeriod (default 7, unit_1402ab440_constantsblocks.cpp:952).</summary>
+    public Func<int> GuildStorageGiftNeedPeriod = () => 7;
+    /// <summary>CItemData::GetSlotMax of an item id (FUN_14053f870 then GetSlotMax); null when there is no item data.
+    /// STILL-OPEN: without it <see cref="SendStorageGift"/> sends nothing.</summary>
+    public Func<int, int?> ItemSlotMax;
+    /// <summary>CItemData::HasStringTag(0xd7) of an item id. STILL-OPEN: without it <see cref="SendStorageGift"/> sends nothing.</summary>
+    public Func<int, bool> ItemHasStringTag0xd7;
+
+    /// <summary>CGuildInfo::GetStorageItemCount (@0x1404d2db0): the count of (item id, rank), 0 when absent.</summary>
+    public int StorageItemCount(int itemId, int rank) =>
+        Info?.StorageItems.Find(i => i.ItemId == itemId && i.Rank == rank).Count ?? 0;
+
+    /// <summary>CGuildInfo::SetStorageItem (@0x1404d2cc0): the entry of the key is replaced, a count of 0 removes it.</summary>
+    void SetStorageItem(GuildStorageItem item)
+    {
+        if (Info == null) return;
+        Info.StorageItems.RemoveAll(i => i.ItemId == item.ItemId && i.Rank == item.Rank);
+        if (item.Count != 0) Info.StorageItems.Add(item);
+    }
+
+    /// <summary>CGuildManager::SendGuildMode112 (@0x1413bbb80, guildmanager.cpp:1095): the history not received yet is asked for; else
+    /// the dialog's UpdateStorageHistory runs again.</summary>
+    public void SendGuildMode112()
+    {
+        if (!StorageHistoryReceived) Send(new GuildStorageHistoryRequest());
+        else StorageHistoryRefresh?.Invoke();
+    }
+
+    /// <summary>CGuildManager::FUN_1413bb490 (@0x1413bb490, guildmanager.cpp:1046): send a storage item to a member. Outside a guild
+    /// nothing; not the master common 0x416; no receiver s_guild_err_empty_member; unknown member common 0x40d; count 0
+    /// s_guild_err_empty_count; no item data nothing; over the slot max s_guild_err_storage_over_slot_max_count; more than stored
+    /// s_guild_err_storage_not_enough_count; an item with the string tag 0xd7 only to oneself s_guild_err_storage_send_only_to_me.
+    /// STILL-OPEN: SendPacketThrottled(0x6d, 1000)'s throttle is not ported (sent at once); the item data and tag hooks must be set.</summary>
+    public bool SendStorageGift(GuildStorageItem item, string receiver)
+    {
+        if (!InGuild) return false;
+        if (PlayerName() is not { } me || !IsMaster(me)) { NoticeId(0x416); return false; }
+        if (receiver.Length == 0) return NoticeKey("s_guild_err_empty_member");
+        if (FindMemberByName(receiver) == null) { NoticeId(0x40d); return false; }
+        if (item.Count == 0) return NoticeKey("s_guild_err_empty_count");
+        int stored = Math.Max(StorageItemCount(item.ItemId, item.Rank), 0);
+        if (ItemSlotMax?.Invoke(item.ItemId) is not { } slotMax) return false;
+        if ((uint) slotMax < (uint) item.Count) { Notice?.Invoke(ClientFormat.Format(CommonByKey("s_guild_err_storage_over_slot_max_count"), (uint) slotMax), 1, true); return false; }
+        if ((uint) stored < (uint) item.Count) return NoticeKey("s_guild_err_storage_not_enough_count");
+        if (ItemHasStringTag0xd7 == null) return false;
+        if (ItemHasStringTag0xd7(item.ItemId) && receiver != me) return NoticeKey("s_guild_err_storage_send_only_to_me");
+        Send(new GuildStorageGiftRequest(item, receiver));
+        return true;
+    }
+
     /// <summary>CGuildXmlData's guild events (LoadGuildEvent), for the notice of an opened event.</summary>
     public Ms2.Formats.World.GuildEventTable Events;
     /// <summary>CGuildXmlData's guild houses (LoadGuildHouse) and guild npcs (LoadGuildNpc).</summary>
@@ -444,6 +502,8 @@ public sealed class GuildBook
                 Info = m.Info;
                 myRequests.Clear();
                 requests.Clear();
+                StorageHistoryReceived = false;   // m_400 = false after the Reset (guildmanager.cpp:253)
+                storageHistory.Clear();
                 break;
             case 1:
                 // OnPacketCreateGuild (@0x1413bd8a0): a result is ShowGuildError(1, result, 0); else the sound, the box
@@ -672,6 +732,30 @@ public sealed class GuildBook
                     ChatLine?.Invoke(ClientFormat.Format(CommonByKey("s_guild_notify_upgrade_npc"), m.Name, StringTableText(0x3f, npc.StringKey), m.NpcLevel), 0xd);
                 break;
             }
+            case 0x6e:
+                // FUN_1413c3e50 (@0x1413c3e50, :2590): SetStorageItem, m_400 cleared (the history is asked for again), the dialog's
+                // UpdateStoragePage.
+                SetStorageItem(m.StorageItem);
+                StorageHistoryReceived = false;
+                StorageRefresh?.Invoke();
+                break;
+            case 0x6d:
+                // OnPacketStorageGiftResult (@0x1413c5c00): in a guild, result 0 the line s_guild_storage_gift of the receiver (type 0xd);
+                // result 0x36 the notice s_guild_storage_not_enough_gift_need_period of the constant guildStorageGiftNeedPeriod.
+                if (!InGuild) break;
+                if (m.Result == 0) ChatLine?.Invoke(ClientFormat.Format(CommonByKey("s_guild_storage_gift"), m.Name), 0xd);
+                else if (m.Result == 0x36) Notice?.Invoke(ClientFormat.Format(CommonByKey("s_guild_storage_not_enough_gift_need_period"), GuildStorageGiftNeedPeriod()), 1, true);
+                break;
+            case 0x70:
+                // OnPacketStorageHistory (@0x1413c5dc0, :2963): in a guild, m_400 set, the deque replaced by the lines (AddStorageHistory
+                // keeps the last 0x32), the dialog's UpdateStorageHistory.
+                if (!InGuild) break;
+                StorageHistoryReceived = true;
+                storageHistory.Clear();
+                foreach (var h in m.StorageHistory) storageHistory.Add(h);
+                if (storageHistory.Count > 0x32) storageHistory.RemoveRange(0, storageHistory.Count - 0x32);
+                StorageHistoryRefresh?.Invoke();
+                break;
             case 0x44:
                 // FUN_1413bf2a0 (guildmanager.cpp:1855): in a guild, the propensity focus and value.
                 if (!InGuild || Info == null) break;
@@ -697,6 +781,7 @@ public sealed class GuildBook
     {
         GuildId = 0;
         Info = null;
+        storageHistory.Clear();   // the history deque belongs to the guild's storage, which goes with the CGuildInfo
     }
 
     /// <summary>FUN_1413b6d10 (:405): create a guild. False in a guild or with an invite; a name shorter than
