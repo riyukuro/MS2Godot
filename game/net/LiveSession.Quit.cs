@@ -56,7 +56,10 @@ public partial class LiveSession
     {
         try
         {
-            var (o, next) = await LoginClient.ReturnWithRetriesAsync(host ?? m.Address.ToString(), m.Port, m.Token, accountId, machine,
+            // the packet's endpoint, as OnGameToLogin stores it (networkservice.cpp:928-937); the launch host only for 0.0.0.0
+            string to = GameClient.HostOf(m.Address, host);
+            GD.Print($"live: return connects to {GameClient.EndpointText(to, m.Port)}");
+            var (o, next) = await LoginClient.ReturnWithRetriesAsync(to, m.Port, m.Token, accountId, machine,
                 onMoveResult: () => Callable.From(() => { if (!exit.IsCancellationRequested) { Session.Characters = new(); ReturnedToCharacterSelect?.Invoke(); } }).CallDeferred(),
                 ct: exit);
             if (exit.IsCancellationRequested) { next.Dispose(); return; }

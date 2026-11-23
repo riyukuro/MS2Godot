@@ -878,6 +878,7 @@ public partial class LiveSession : Node
         try
         {
             var go = await GameClient.SelectAsync(login, chosen.User.CharacterId, BeginEnterGame());
+            GD.Print($"live: game entry connects to {GameClient.EndpointText(GameClient.HostOf(go.Address, host), go.Port)}");
             (entry, game) = await GameClient.EnterAsync(go, accountId, machine, host, requestGlobalFactor: !Factors.Applied);
             Quests.QuestInfo = QuestTable();
             ItemReader.SlotOf ??= ItemSlotTable();

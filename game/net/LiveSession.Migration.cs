@@ -81,6 +81,7 @@ public partial class LiveSession
             var clock = System.Diagnostics.Stopwatch.StartNew();
             try
             {
+                GD.Print($"live: GameToGame connects to {GameClient.EndpointText(GameClient.HostOf(m.Address, host), m.Port)} (attempt {attempt + 1})");
                 var (e, t) = await GameClient.EnterAsync(m, accountId, machine, host, ct: exit, requestGlobalFactor: !Factors.Applied);
                 // the session left the tree while the entry ran: nothing is taken, the connection goes
                 if (exit.IsCancellationRequested) { t.Dispose(); return; }

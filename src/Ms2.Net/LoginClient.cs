@@ -143,7 +143,7 @@ public sealed class LoginClient {
             using var connect = CancellationTokenSource.CreateLinkedTokenSource(ct);
             connect.CancelAfter(connectTimeoutMs);
             try { await transport.ConnectAsync(host, port, connect.Token); }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new TimeoutException("login connect timed out"); }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested) { throw new TimeoutException("login connect timed out (" + GameClient.EndpointText(host, port) + ")"); }
         }
         var list = new List<CharacterEntry>();
         int limit = 0, rows = 0;
@@ -151,8 +151,8 @@ public sealed class LoginClient {
         while (true) {
             ct.ThrowIfCancellationRequested();
             if (!transport.Incoming.TryDequeue(out var p)) {
-                if (transport.IsClosed) throw new IOException("login connection closed", transport.Failure);
-                if (Environment.TickCount64 > deadline) throw new TimeoutException("login return timed out");
+                if (transport.IsClosed) throw new IOException("login connection closed (" + GameClient.EndpointText(host, port) + ")", transport.Failure);
+                if (Environment.TickCount64 > deadline) throw new TimeoutException("login return timed out (" + GameClient.EndpointText(host, port) + (transport.Channel?.Ready == true ? ")" : ", no hello)"));
                 await Task.Delay(5, ct);
                 continue;
             }

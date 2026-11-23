@@ -164,6 +164,109 @@ public class LoginReturnTests {
         l.Stop();
     }
 
+    // OnGameToLogin @0x14153bc00 (networkservice.cpp:928-937) stores the packet's ip and port and the return connects there;
+    // the host the login was made to stands in only for a packet with no address (0.0.0.0)
+    [Test] public void TheReturnGoesToThePacketsAddressNotTheLaunchHost() {
+        var m = new GameToLogin(0, new byte[] { 203, 0, 113, 7 }, 20001, 1, 2);
+        Assert.That(GameClient.HostOf(m.Address, "127.0.0.1"), Is.EqualTo("203.0.113.7"));
+        Assert.That(GameClient.HostOf(m.Address, "example.org"), Is.EqualTo("203.0.113.7"));
+        Assert.That(GameClient.HostOf(new GameToLogin(0, new byte[4], 20001, 1, 2).Address, "example.org"), Is.EqualTo("example.org"), "0.0.0.0: the launch host");
+        Assert.That(GameClient.HostOf(new GameToLogin(0, new byte[4], 20001, 1, 2).Address, null), Is.EqualTo("127.0.0.1"));
+        Assert.That(GameClient.HostOf(new LoginToGame(0, new byte[] { 10, 0, 0, 5 }, 20002, 1, 2000001, "").Address, "127.0.0.1"), Is.EqualTo("10.0.0.5"));
+        Assert.That(GameClient.HostOf(new GameToGame(0, 1, 2, new byte[] { 10, 0, 0, 6 }, 20003, 2000001, 0).Address, "127.0.0.1"), Is.EqualTo("10.0.0.6"));
+        Assert.That(GameClient.EndpointText("203.0.113.7", 20001), Is.EqualTo("203.0.113.7:20001"));
+    }
+
+    static IPAddress NonLoopbackV4() =>
+        System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces()
+            .Where(n => n.OperationalStatus == System.Net.NetworkInformation.OperationalStatus.Up && n.NetworkInterfaceType != System.Net.NetworkInformation.NetworkInterfaceType.Loopback)
+            .SelectMany(n => n.GetIPProperties().UnicastAddresses).Select(u => u.Address)
+            .FirstOrDefault(a => a.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(a));
+
+    /// <summary>A login server for the return on <paramref name="bind"/>: it waits <paramref name="helloDelayMs"/> before the hello, and
+    /// with <paramref name="silent"/> says nothing after it. Each accepted connection's local address (where the client connected) is kept.</summary>
+    static (TcpListener l, int port, System.Collections.Concurrent.ConcurrentQueue<IPAddress> to) ReturnServer(IPAddress bind, int helloDelayMs = 0, bool silent = false) {
+        var l = new TcpListener(bind, 0); l.Start();
+        int port = ((IPEndPoint) l.LocalEndpoint).Port;
+        var to = new System.Collections.Concurrent.ConcurrentQueue<IPAddress>();
+        _ = Task.Run(async () => {
+            try {
+                while (true) {
+                    var c = await l.AcceptTcpClientAsync();
+                    to.Enqueue(((IPEndPoint) c.Client.LocalEndPoint).Address);
+                    _ = Task.Run(async () => {
+                        try {
+                            var srv = new FakeServer(5, 6); var s = c.GetStream();
+                            await Task.Delay(helloDelayMs);
+                            await s.WriteAsync(srv.HelloFrame); await ReadFrame(s, srv);
+                            if (silent) { await Task.Delay(Timeout.Infinite); return; }
+                            await s.WriteAsync(srv.Frame(Inbound.RequestKey)); await ReadFrame(s, srv);
+                            await s.WriteAsync(srv.Frame(Inbound.MoveResult, w => w.WriteByte(0))); await ReadFrame(s, srv);
+                            await s.WriteAsync(srv.Frame((Inbound) 0x0C, w => w.WriteByte((byte) CharacterListCommand.StartList)));
+                            await s.WriteAsync(srv.Frame((Inbound) 0x0C, w => { w.WriteByte((byte) CharacterListCommand.EndList); w.WriteByte(0); }));
+                            await Task.Delay(Timeout.Infinite);
+                        } catch (Exception) { }
+                    });
+                }
+            } catch (Exception) { }
+        });
+        return (l, port, to);
+    }
+
+    // the user's case: a login server on a public, non-loopback address, the launch host something else. The connect reaches the packet's address.
+    [Test] public async Task AReturnToANonLoopbackAddressConnectsThere() {
+        var lan = NonLoopbackV4();
+        if (lan == null) Assert.Ignore("no non-loopback IPv4 address on this machine");
+        var (l, port, to) = ReturnServer(IPAddress.Any);
+        var m = new GameToLogin(0, lan.GetAddressBytes(), (ushort) port, 1, 2);
+        var (o, t) = await LoginClient.ReturnWithRetriesAsync(GameClient.HostOf(m.Address, "127.0.0.1"), m.Port, m.Token, 1, null, waitMs: 2000).WaitAsync(TimeSpan.FromSeconds(20));
+        using var _ = t;
+        Assert.That(o.Characters, Is.Empty);
+        Assert.That(to.ToArray(), Is.EqualTo(new[] { lan }), "one connection, to the packet's address");
+        l.Stop();
+    }
+
+    // a slow hello is not a failed connect: ConnectTo's 10 s bound is the TCP connect, the 15 s wait is armed on the new connection
+    // (after its connect), so a hello late by more than the connect wait still ends at the list, on one connection
+    [Test] public async Task ALateHelloIsWaitedForOnTheSameConnection() {
+        var (l, port, to) = ReturnServer(IPAddress.Loopback, helloDelayMs: 1500);
+        var attempts = new List<int>();
+        var (o, t) = await LoginClient.ReturnWithRetriesAsync("127.0.0.1", (ushort) port, 1, 1, null, waitMs: 500, onAttempt: attempts.Add).WaitAsync(TimeSpan.FromSeconds(20));
+        using var _ = t;
+        Assert.That(o.Characters, Is.Empty);
+        Assert.That(attempts, Is.EqualTo(new[] { 1 }));
+        Assert.That(to.Count, Is.EqualTo(1));
+        l.Stop();
+    }
+
+    // a hello and then nothing: the timeout names the endpoint it waited on; with no hello at all it says so
+    [Test] public async Task AReturnTimeoutNamesTheEndpoint() {
+        var (l, port, _) = ReturnServer(IPAddress.Loopback, silent: true);
+        using (var t = new TcpTransport()) {
+            var e = Assert.ThrowsAsync<TimeoutException>(async () => await new LoginClient(t).ReturnAsync("127.0.0.1", (ushort) port, 1, 1, null, timeoutMs: 500));
+            Assert.That(e.Message, Is.EqualTo($"login return timed out (127.0.0.1:{port})"));
+        }
+        l.Stop();
+        var (l2, port2, _) = ReturnServer(IPAddress.Loopback, helloDelayMs: Timeout.Infinite);
+        using (var t = new TcpTransport()) {
+            var e = Assert.ThrowsAsync<TimeoutException>(async () => await new LoginClient(t).ReturnAsync("127.0.0.1", (ushort) port2, 1, 1, null, timeoutMs: 500));
+            Assert.That(e.Message, Is.EqualTo($"login return timed out (127.0.0.1:{port2}, no hello)"));
+        }
+        l2.Stop();
+        await Task.CompletedTask;
+    }
+
+    // a retry is a new transport: what the dropped attempt's connection still had queued is never read by the next one
+    [Test] public async Task ARetryReadsOnlyItsOwnConnection() {
+        var (l, port, accepted, _) = await FlakyServer(dropFirst: 1);
+        var (o, t) = await LoginClient.ReturnWithRetriesAsync("127.0.0.1", (ushort) port, 1, 1, null, waitMs: 100).WaitAsync(TimeSpan.FromSeconds(20));
+        using var _ = t;
+        Assert.That(accepted(), Is.EqualTo(2));
+        Assert.That(t.IsClosed, Is.False);
+        Assert.That(t.Reconnection.IsReconnecting, Is.False, "the return's connection is not in game: a drop closes it, no reconnect hides it");
+        l.Stop();
+    }
+
     static async Task<(ushort op, byte[] body)> ReadFrame(NetworkStream s, FakeServer srv) {
         var head = new byte[6]; await s.ReadExactlyAsync(head);
         var frame = new byte[6 + BitConverter.ToInt32(head, 2)]; head.CopyTo(frame, 0);

@@ -1,3 +1,4 @@
+using System.Net;
 using Ms2.Net.Packets;
 using Ms2.Net.Wire;
 
@@ -146,11 +147,23 @@ public sealed class GameClient {
         }
     }
 
-    /// <summary>Connects to the game endpoint (host overrides the address in the packet when given), answers RequestKey and reads up to RequestFieldEnter.
+    /// <summary>
+    /// The host a move connects to: the packet's address, as the client does. OnLoginToGame @0x14153b570, OnGameToLogin @0x14153bc00
+    /// and OnGameToGame @0x14153be30 store the packet's ip as text in DAT_143ab2a48 and its port in DAT_143ab2848
+    /// (networkservice.cpp:912, 928-937, 951), and the next ConnectTo uses them. <paramref name="fallback"/>, the host the login
+    /// was made to, is used only when the packet carries no address (0.0.0.0).
+    /// </summary>
+    public static string HostOf(IPAddress packet, string fallback) =>
+        packet == null || packet.Equals(IPAddress.Any) ? fallback ?? IPAddress.Loopback.ToString() : packet.ToString();
+
+    /// <summary>"ip:port" for the connect log line and the error messages.</summary>
+    public static string EndpointText(string host, int port) => host.Contains(':') ? $"[{host}]:{port}" : $"{host}:{port}";
+
+    /// <summary>Connects to the game endpoint (the packet's address, <paramref name="host"/> only when it carries 0.0.0.0: <see cref="HostOf"/>), answers RequestKey and reads up to RequestFieldEnter.
     /// The key is account id, then the token as the two i32 the client writes (WriteLoginEnter, classobject.cpp:260-266: token1 is the low half), the same 8 bytes as a little-endian u64.</summary>
     public static Task<(GameEntry entry, TcpTransport game)> EnterAsync(LoginToGame go, long accountId, byte[] machineId, string host = null, int timeoutMs = 20000, CancellationToken ct = default, bool requestGlobalFactor = false) {
         if (!go.Ok) throw new InvalidOperationException("LoginToGame error " + go.Error + " " + go.Message);
-        return EnterAsync(host ?? go.Address.ToString(), go.Port, go.Token, accountId, machineId, timeoutMs, ct, requestGlobalFactor);
+        return EnterAsync(HostOf(go.Address, host), go.Port, go.Token, accountId, machineId, timeoutMs, ct, requestGlobalFactor);
     }
 
     /// <summary>CSceneStateMove's connect wait: ConnectTo is non-blocking and m_timer.Start(10000) bounds it; when the timer runs out
@@ -160,11 +173,10 @@ public sealed class GameClient {
     /// <summary>The same entry after a GameToGame (CSceneStateMove::OnUpdate @0x14174cb70 connects to the stored address, OnRequestKey
     /// answers with the stored tokens, OnMoveResult 0 goes to the game state, networkservice.cpp:899-902). The connect is bounded by
     /// <paramref name="connectWaitMs"/> (the move's 10 s timer); one not made by then throws a SocketException (TimedOut), a failed
-    /// attempt. <paramref name="host"/>, when given, replaces the packet's address (the client connects to the packet's, DAT_143ab2a48,
-    /// networkservice.cpp:951).</summary>
+    /// attempt. The connect goes to the packet's address (<see cref="HostOf"/>; <paramref name="host"/> only for 0.0.0.0).</summary>
     public static Task<(GameEntry entry, TcpTransport game)> EnterAsync(GameToGame go, long accountId, byte[] machineId, string host = null, int timeoutMs = 20000, CancellationToken ct = default, bool requestGlobalFactor = false, int connectWaitMs = MoveConnectWaitMs) {
         if (!go.Ok) throw new InvalidOperationException("GameToGame error " + go.Error);
-        return EnterAsync(host ?? go.Address.ToString(), go.Port, go.Token, accountId, machineId, timeoutMs, ct, requestGlobalFactor, connectWaitMs);
+        return EnterAsync(HostOf(go.Address, host), go.Port, go.Token, accountId, machineId, timeoutMs, ct, requestGlobalFactor, connectWaitMs);
     }
 
     static async Task<(GameEntry entry, TcpTransport game)> EnterAsync(string address, ushort port, ulong token, long accountId, byte[] machineId, int timeoutMs, CancellationToken ct, bool requestGlobalFactor, int connectWaitMs = Timeout.Infinite) {
@@ -174,12 +186,15 @@ public sealed class GameClient {
                 if (connectWaitMs != Timeout.Infinite) wait.CancelAfter(connectWaitMs);
                 try { await game.ConnectAsync(address, port, wait.Token); }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested) {
-                    throw new System.Net.Sockets.SocketException((int) System.Net.Sockets.SocketError.TimedOut);
+                    throw new System.Net.Sockets.SocketException((int) System.Net.Sockets.SocketError.TimedOut, "game connect timed out (" + EndpointText(address, port) + ")");
                 }
             }
             ServerEnter enter = null; SyncNumber sync = null; var early = new List<Ms2.Net.Wire.RawPacket>(); int beforeEnter = -1; bool keyed = false;
             while (true) {
-                var p = await NextAsync(game, timeoutMs, ct);
+                RawPacket p;
+                try { p = await NextAsync(game, timeoutMs, ct); }
+                catch (TimeoutException) { throw new TimeoutException("game entry timed out (" + EndpointText(address, port) + (game.Channel?.Ready == true ? ")" : ", no hello)")); }
+                catch (IOException e) when (e is not MoveRefusedException) { throw new IOException("game connection closed (" + EndpointText(address, port) + ")", e.InnerException ?? e); }
                 if (game.OpOf(p) is Inbound gop) switch (gop) {
                     case Inbound.RequestKey:
                         await game.SendAsync(new ResponseKey(accountId, token, machineId), ct); break;
