@@ -47,7 +47,17 @@ public sealed record TriggerObjectEvent(int Id, TriggerObjectKind Kind, bool Kno
 /// </summary>
 public static class TriggerObjects
 {
-    public const byte Load = 2, Update = 3, CameraObjects = 5;
+    public const byte Load = 2, Update = 3, CameraObjects = 5, Guide = 9;
+
+    /// <summary>
+    /// The client's type (CTriggerService::FUN_141861840's switch, triggerservice.cpp:366) of a Trigger packet's type
+    /// byte. KMS2 sends the client's numbers. GMS2 sends types 2, 3 and 5 unchanged and every type from KMS2 9 upward one
+    /// lower (the upstream Maple2 server's Command: Ui 8, Dialog 14, SidePopup 18, SetVisibleUi 19; the recorded GMS2
+    /// bodies of 8, 0xe, 0x12, 0x13 and 0x14 have the layouts of KMS2 9, 0xf, 0x13, 0x14 and 0x15), so a GMS2 type
+    /// of 8 or more is one more here.
+    /// </summary>
+    public static byte ClientType(byte wire, ProtocolProfile profile) =>
+        profile != null && profile.IsGms2 && wire >= 8 ? (byte)(wire + 1) : wire;
 
     /// <summary>
     /// The object events of a Trigger packet of type 2 or 3 (an empty list for another type). <paramref name="kindOf"/>

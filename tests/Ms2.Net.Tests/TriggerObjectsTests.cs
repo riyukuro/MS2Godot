@@ -16,6 +16,19 @@ public class TriggerObjectsTests
     static TriggerObjectKind? KindOf(int id) => Field.TryGetValue(id, out var k) ? k : null;
 
     [Test]
+    public void Gms2TypesFromEightAreOneLower()
+    {
+        foreach (byte t in new byte[] { 2, 3, 5, 9, 0xf })
+            Assert.That(TriggerObjects.ClientType(t, ProtocolProfile.Kms2525), Is.EqualTo(t));
+        foreach (byte t in new byte[] { 0, 1, 2, 3, 5, 7 })
+            Assert.That(TriggerObjects.ClientType(t, ProtocolProfile.Gms2), Is.EqualTo(t));
+        Assert.That(TriggerObjects.ClientType(8, ProtocolProfile.Gms2), Is.EqualTo(TriggerObjects.Guide));
+        Assert.That(TriggerObjects.ClientType(0xe, ProtocolProfile.Gms2), Is.EqualTo(0xf));
+        Assert.That(TriggerObjects.ClientType(0x12, ProtocolProfile.Gms2), Is.EqualTo(0x13));
+        Assert.That(TriggerObjects.ClientType(0x14, ProtocolProfile.Gms2), Is.EqualTo(0x15));
+    }
+
+    [Test]
     public void LoadReadsEachObjectByItsKind()
     {
         var w = new ByteWriter();
