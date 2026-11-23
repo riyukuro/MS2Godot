@@ -145,7 +145,13 @@ public sealed class GameTables
         // :1352, not recursive), read on first use
         List<XElement> collect(XElement parent, string child, string key) => FeatureElements.Collect(packs, parent, child, key);
         var skillFiles = SkillFiles(packs);
-        Skills = new Skills.SkillTables(r.Jobs, new Skills.SkillDataTable(() => skillFiles.Select(SkillXml), collect));
+        // the cast motions' table (Ms2.Formats SkillTable: motions, effects, moves) is filled from the same read, so the field
+        // build's prefetch reads the files once for both and the first cast does not read them again on its frame
+        var motionRows = new Ms2.Formats.World.SkillTable();
+        Skills = new Skills.SkillTables(r.Jobs, new Skills.SkillDataTable(() => skillFiles.Select(SkillXml), collect,
+            e => { if (int.TryParse((string)e.Attribute("id"), out int id)) motionRows.Add(id, e); }));
+        var skillRows = Skills.Skills;
+        Ms2.Formats.World.SkillTable.SetSource(packs, () => { try { skillRows.Load(); return motionRows; } catch { return null; } });
         additionalCache = packs.DataDir is { } dataDir ? Ms2.Ui.Skills.AdditionalCache.Open(AdditionalCacheOf(dataDir)) : null;
         Additional = NewAdditionalTable(packs, additionalCache);
         foreach (var key in ChatTextColors.Keys.ToList()) ChatTextColors[key] = Rgb(k.Color(key, Unpack(ChatTextColors[key])));
@@ -1003,7 +1009,8 @@ public sealed class GameTables
                     : new StringReader(SkillText(files[i]))); });
     /// <summary>Reads <see cref="SkillDamage"/> and the skill table on a worker thread while the field builds, so the first hit's damage event
     /// (a skill damage with mode 1 reads the attack's damage) does not read every skilldata file on the frame.</summary>
-    /// <remarks>Named for the damage table it was made for; it reads the skill table too.</remarks>
+    /// <remarks>Named for the damage table it was made for; it reads the skill table too, and with it the cast motions' rows
+    /// (Ms2.Formats SkillTable.For).</remarks>
     public System.Threading.Tasks.Task PrefetchSkillDamage() => System.Threading.Tasks.Task.Run(() => { try { Skills.Skills.Load(); } catch { } try { SkillDamage.Load(); } catch { } });
     /// <summary>CNametagSymbolTable (Table/nametagSymbol.xml), read on first use.</summary>
     public NametagSymbols NametagSymbols => nametagSymbols ??= packs == null ? NametagSymbols.Empty : new NametagSymbols(packs);

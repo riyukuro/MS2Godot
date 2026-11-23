@@ -516,11 +516,16 @@ public sealed class SkillDataTable
 
     /// <param name="files">The skilldata documents, in load order.</param>
     /// <param name="collect">FUN_14028faa0 over the &lt;level&gt; elements.</param>
-    public SkillDataTable(Func<IEnumerable<XDocument>> files, Func<XElement, string, string, List<XElement>> collect)
+    /// <param name="each">Also given each &lt;skill&gt; element as it is read, before its row is made (another table of the
+    /// same files reads its own rows from it, so the files are read once); may be null.</param>
+    public SkillDataTable(Func<IEnumerable<XDocument>> files, Func<XElement, string, string, List<XElement>> collect, Action<XElement> each = null)
     {
         this.files = files;
         this.collect = collect;
+        this.each = each;
     }
+
+    readonly Action<XElement> each;
 
     readonly object loadLock = new();
 
@@ -547,6 +552,7 @@ public sealed class SkillDataTable
             if (doc?.Root is not { } root || root.Name != "ms2") continue;
             foreach (var e in root.Elements("skill"))
             {
+                each?.Invoke(e);
                 var s = SkillData.Load(e, collect);
                 d[s.Id] = s;
             }

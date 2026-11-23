@@ -112,8 +112,20 @@ public sealed class SkillTable
 
     /// <summary>The one table of a data set: the parse of every skilldata file (about 190 MB of XML nodes and 0.2 s) is paid
     /// once per PackSet, not again by each user (the own cast, the remote casts, the region skills, the replay). Nothing
-    /// changes a table after its build, so the users read the same one.</summary>
-    public static SkillTable For(PackSet packs) => shared.GetValue(packs, p => new Lazy<SkillTable>(() => new SkillTable(p))).Value;
+    /// changes a table after its build, so the users read the same one. With a <see cref="SetSource"/> the rows come from
+    /// that other read and the files are not read here.</summary>
+    public static SkillTable For(PackSet packs) => shared.GetValue(packs, p => new Lazy<SkillTable>(() =>
+        sources.TryGetValue(p, out var source) && source() is { } fed ? fed : new SkillTable(p))).Value;
+
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Func<SkillTable>> sources = new();
+
+    /// <summary>Gives <see cref="For"/> the table another reader of the same skilldata files fills (<see cref="Add"/> per
+    /// &lt;skill&gt; as it reads them), so one read of the files serves both; <paramref name="source"/> returns null when that
+    /// read failed, and For then reads the files itself. Has no effect once For has built the table of the set.</summary>
+    public static void SetSource(PackSet packs, Func<SkillTable> source) => sources.AddOrUpdate(packs, source);
+
+    /// <summary>An empty table, filled by <see cref="Add"/>.</summary>
+    public SkillTable() { }
 
     public SkillTable(PackSet packs)
     {
@@ -131,47 +143,50 @@ public sealed class SkillTable
             }
             catch { continue; }
             foreach (var s in fileId != null ? new[] { x.Root } : x.Descendants("skill"))
-            {
-                if (s == null || !int.TryParse(fileId ?? (string)s.Attribute("id"), out int id)) continue;
-                if (s.Descendants("basic").Elements("combo").FirstOrDefault() is { } combo && Flag(combo, "chargingSkill")) charging.Add(id);
-                else charging.Remove(id);
-                var basic = s.Element("basic");
-                var stateAttr = basic?.Element("stateAttr");
-                var move = new SkillStateMove(Int(stateAttr, "moveType"), stateAttr != null && Flag(stateAttr, "movingInMovekey"),
-                    Int(basic?.Element("magicControl"), "enable") != 0);
-                if (move != default) stateMoves[id] = move;
-                else stateMoves.Remove(id);
-                var levels = new List<SkillLevelRow>();
-                foreach (var l in s.Elements("level"))
-                {
-                    var row = new SkillLevelRow { Level = int.TryParse((string)l.Attribute("value"), out int lv) ? lv : 1 };
-                    foreach (var m in l.Elements("motion"))
-                    {
-                        var mo = new SkillMotion
-                        {
-                            SequenceName = (string)m.Attribute("sequenceName"), MotionEffect = (string)m.Attribute("motionEffect"),
-                            LoopEffect = (string)m.Attribute("loopEffect"), SplashInvokeEffect = (string)m.Attribute("splashInvokeEffect"),
-                            SplashEndEffect = (string)m.Attribute("splashEndEffect"), SplashDurationCastEffect = (string)m.Attribute("splashDurationCastEffect"),
-                            IgnoreOptimalHideCastEffect = Flag(m, "IgnoreOptimalHideCastEffect"), SplashCastEffectStartDelay = Flag(m, "splashCastEffectStartDelay"),
-                        };
-                        if (int.TryParse((string)m.Attribute("loopCount"), out int loops)) mo.LoopCount = loops;
-                        mo.MoveType = Int(m, "movetype");
-                        mo.KeyMove = Float(m, "keyMove");
-                        mo.MoveDistance = Float(m, "movedistance");
-                        mo.MoveAngle = Float(m, "moveangle");
-                        if (uint.TryParse((string)m.Attribute("ignoreCollisionGroups"), out uint ignore)) mo.IgnoreCollisionGroups = ignore;
-                        mo.PushCylinder = new PushCylinder(Float(m, "pushCylinderVelH"), Float(m, "pushCylinderVelV"), Float(m, "pushCylinderOuter"),
-                            Float(m, "pushCylinderInner"), Float(m, "pushCylinderHeight"));
-                        foreach (var a in m.Elements("attack")) mo.AttackPoints.Add((string)a.Attribute("point") ?? "");
-                        foreach (var d in m.Descendants("damage"))
-                            if ((string)d.Attribute("effectHit") is { Length: > 0 } eh) mo.HitEffects.Add(eh);
-                        row.Motions.Add(mo);
-                    }
-                    levels.Add(row);
-                }
-                skills[id] = levels;
-            }
+                if (s != null && int.TryParse(fileId ?? (string)s.Attribute("id"), out int id)) Add(id, s);
         }
+    }
+
+    /// <summary>Adds (or replaces) skill <paramref name="id"/>'s rows from its &lt;skill&gt; element, as the constructor does for each one it reads.</summary>
+    public void Add(int id, XElement s)
+    {
+        if (s.Descendants("basic").Elements("combo").FirstOrDefault() is { } combo && Flag(combo, "chargingSkill")) charging.Add(id);
+        else charging.Remove(id);
+        var basic = s.Element("basic");
+        var stateAttr = basic?.Element("stateAttr");
+        var move = new SkillStateMove(Int(stateAttr, "moveType"), stateAttr != null && Flag(stateAttr, "movingInMovekey"),
+            Int(basic?.Element("magicControl"), "enable") != 0);
+        if (move != default) stateMoves[id] = move;
+        else stateMoves.Remove(id);
+        var levels = new List<SkillLevelRow>();
+        foreach (var l in s.Elements("level"))
+        {
+            var row = new SkillLevelRow { Level = int.TryParse((string)l.Attribute("value"), out int lv) ? lv : 1 };
+            foreach (var m in l.Elements("motion"))
+            {
+                var mo = new SkillMotion
+                {
+                    SequenceName = (string)m.Attribute("sequenceName"), MotionEffect = (string)m.Attribute("motionEffect"),
+                    LoopEffect = (string)m.Attribute("loopEffect"), SplashInvokeEffect = (string)m.Attribute("splashInvokeEffect"),
+                    SplashEndEffect = (string)m.Attribute("splashEndEffect"), SplashDurationCastEffect = (string)m.Attribute("splashDurationCastEffect"),
+                    IgnoreOptimalHideCastEffect = Flag(m, "IgnoreOptimalHideCastEffect"), SplashCastEffectStartDelay = Flag(m, "splashCastEffectStartDelay"),
+                };
+                if (int.TryParse((string)m.Attribute("loopCount"), out int loops)) mo.LoopCount = loops;
+                mo.MoveType = Int(m, "movetype");
+                mo.KeyMove = Float(m, "keyMove");
+                mo.MoveDistance = Float(m, "movedistance");
+                mo.MoveAngle = Float(m, "moveangle");
+                if (uint.TryParse((string)m.Attribute("ignoreCollisionGroups"), out uint ignore)) mo.IgnoreCollisionGroups = ignore;
+        mo.PushCylinder = new PushCylinder(Float(m, "pushCylinderVelH"), Float(m, "pushCylinderVelV"), Float(m, "pushCylinderOuter"),
+            Float(m, "pushCylinderInner"), Float(m, "pushCylinderHeight"));
+                foreach (var a in m.Elements("attack")) mo.AttackPoints.Add((string)a.Attribute("point") ?? "");
+                foreach (var d in m.Descendants("damage"))
+                    if ((string)d.Attribute("effectHit") is { Length: > 0 } eh) mo.HitEffects.Add(eh);
+                row.Motions.Add(mo);
+            }
+            levels.Add(row);
+        }
+        skills[id] = levels;
     }
 
     /// <summary>The motion a cast plays: the level's row (the nearest level at or below, else the first) and the motion index from the packet.</summary>
@@ -195,6 +210,12 @@ public sealed class SkillTable
     }
 
     public bool Has(int skillId) => skills.ContainsKey(skillId);
+
+    /// <summary>Every skill id the table has rows for.</summary>
+    public IReadOnlyCollection<int> Ids => skills.Keys;
+
+    /// <summary>Skill <paramref name="skillId"/>'s level rows in file order; empty without rows.</summary>
+    public IReadOnlyList<SkillLevelRow> Levels(int skillId) => skills.TryGetValue(skillId, out var l) ? l : Array.Empty<SkillLevelRow>();
 
     /// <summary>&lt;basic&gt;&lt;combo chargingSkill&gt; (Unk_SkillBlockA4::Load @0x140802ef0, skillleveldata.cpp:493): SkillData
     /// +0xad, m_blockA4.m_bChargingSkill, which CStateManager::FUN_1417db550 tests for a record in StateSkill.</summary>
