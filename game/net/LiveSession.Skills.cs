@@ -30,6 +30,15 @@ public partial class LiveSession
         return true;
     }
 
+    /// <summary>The mode 4 send of the running own cast's id when the skill state is left for the walk or the jump
+    /// (StateSkill::SendSkillMode4 @0x1417f4e10, stateskill.cpp:1691; the swing cancel :1553, :1558). False offline.</summary>
+    public bool SendSkillStop(long castId)
+    {
+        if (game == null) return false;
+        Send(new Ms2.Net.Packets.SkillStopRequest(castId));
+        return true;
+    }
+
     /// <summary>The mode 1 sub-mode 0 send of an own attack's targets (StateSkill::FUN_1417ecce0, stateskill.cpp:1370). False offline.</summary>
     public bool SendDamage(Ms2.Net.Packets.SkillDamageRequest req)
     {

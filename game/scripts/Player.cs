@@ -311,6 +311,7 @@ public partial class Player : CharacterBody3D
         if (!ScriptDriven && MoveInput.GuideHoldsMove()) MouseInput = Vector2.Zero;
         bool skill = SkillHoldsMove();
         var skillInput = skill && !DeathHoldsMove ? (Input2 != Vector2.Zero ? Input2 : MouseInput) : Vector2.Zero;
+        ReadSwingInput(skill && !DeathHoldsMove, skillInput, JumpHeld);   // the swing cancel's input, before the skill holds it
         if (skill) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }   // the skill state (PlayerSkill)
         if (DeathHoldsMove) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }    // StateDead / StateRevival (PlayerDeath)
         // StateTaxiCall (0x25, statetaxicalldata.cpp:302-315): in phase 0x65 a move input leaves for the walk state, in the other phases the state holds the body
@@ -343,6 +344,7 @@ public partial class Player : CharacterBody3D
         {
             case MoveState.Idle:
                 kVel = Vector3.Zero;
+                if (SwingJump(skill)) break;
                 if (input.Y > 0 && upPressed && (TryLadder(1) || TryRope(1))) break;
                 if (input.Y < 0 && downPressed && TryLadder(2)) break;
                 if (grounded && JumpHeld) { StartJump(dir, hasInput, 0x25); break; }
@@ -354,6 +356,7 @@ public partial class Player : CharacterBody3D
                 // StateWalk::vfunc_3 sets the walk / run / ride speed before it moves (statewalk.cpp:171-201), and the
                 // transitions come after it in the frame
                 baseSpeed = Mount != null ? RideSpeed() : WalkMode ? MoveConfig.WalkSpeed : MoveConfig.RunSpeed;
+                if (SwingJump(skill)) break;
                 if (OnWater) { Enter(MoveState.Swim); break; }
                 if (InAirFor(MoveConfig.WalkFallDelay)) { Enter(MoveState.Fall); break; }
                 // StateWalk::vfunc_8 order: pressed up / down (ladder or rope), jump, then the held up / down key on a ladder

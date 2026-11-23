@@ -579,6 +579,7 @@ public partial class HudScene
     void TickOwnEnded()
     {
         if (!player.SkillSequenceHeld) { EndOwnState(); return; }
+        if (OwnSwingCancel()) return;
         if (!ownEndStepFrame.Take(Engine.GetProcessFrames())) return;   // the sequence's end ran this frame's step
         var running = ownCast;
         if (Time.GetTicksMsec() - ownEndMs > 5000 || (!OwnEndStep() && ownCast == running)) { player.CancelSkillSequence(); EndOwnState(); }
@@ -609,6 +610,7 @@ public partial class HudScene
     int ownChainType;                              // StateSkill m_nChainType, 0 from the enter (stateskill.cpp:412)
     CastRecord ownNext;                            // StateSkill m_spNext: the accepted press waiting for its chain
     SkillFollow.Window ownWindow;                  // the combo flags the sequence's text keys set (m_b4a, m_b49, m_b114-m_b116)
+    SkillSwingCancel ownSwing;                     // StateSkill m_ptPush / m_b110: the move and jump kept in the input window
     readonly SkillFollow.ComboKeys ownComboKeys = new();
     readonly Ms2.Net.Replay.SkillTagEffects.Keys ownTagKeys = new();   // the motion's m_mapTagEffects keys in the sequence
     readonly Ms2.Net.Replay.SkillTagEffects.Handles ownTagIds = new();  // the record's m_map138: the tag effects' ids by key
@@ -748,6 +750,7 @@ public partial class HudScene
         ownChainType = 0;                          // :412
         ownNext = null;                            // the enter clears m_spNext and the combo flags (:403-412)
         ownWindow = default;                       // m_b11c-m_b11e too (:413-415)
+        ownSwing.Reset();                          // the motion's start (FUN_1417f0940 :2215-2216)
         ownAuto.Clear();
         var motion = r.Motion < r.Level.Motions.Count ? r.Level.Motions[r.Motion] : null;
         Ms2.Formats.Model.KfAnimation kf = null;
@@ -806,7 +809,43 @@ public partial class HudScene
         PollOwnPress();
         if (!OwnSkillStateRuns() || ownEnded) return;
         if (!OwnKeys(pos)) return;
-        if (ownNext != null) TryChainOwn(ownCast);
+        var running = ownCast;
+        if (ownNext != null) TryChainOwn(running);
+        if (ownCast == running && OwnSkillStateRuns()) OwnSwingCancel();   // vfunc_8's last step (:725)
+    }
+
+    /// <summary>
+    /// StateSkill::FUN_1417ed7f0 @0x1417ed7f0 (stateskill.cpp:1505-1563), the swing cancel at the end of the own skill state's
+    /// frame (<see cref="SkillSwingCancel"/>): a move held or a jump pressed in the motion's input window leaves the attack
+    /// from its "combo" / "selfcombo" key or its end, with the attack key let go: SendSkillMode4
+    /// (<see cref="Net.LiveSession.SendSkillStop"/>), then the walk or the jump. True when the state ended.
+    /// STILL-OPEN: vfunc_63 (the PC's state flags, m_unk_158) is not ported, so the PC can always act here.
+    /// </summary>
+    bool OwnSwingCancel()
+    {
+        var me = player;
+        var r = ownCast;
+        var held = me.SwingHeld;
+        var pressed = me.TakeSwingPressed();
+        var i = new SwingInput
+        {
+            CanAct = true,
+            Falling = me.SwingFalling,
+            Held = new System.Numerics.Vector2(held.X, held.Y),
+            Pressed = new System.Numerics.Vector2(pressed.X, pressed.Y),
+            KeyIsDown = Player.CancelSwingKeyIsDown != 0,
+            JumpPressed = me.TakeSwingJumpPressed(),
+            ContinueKeyHeld = r.Skill.Continue && CastKeyDown(r.Key),           // :1533-1538
+            Charging = ownQueued != null,                                        // m_spCharge (:1539)
+            ExitKeyHeld = CastKeyDown(ownNext != null ? ownNext.Key : r.Key),    // :1543-1547
+            MagicControl = r.Skill.MagicControlEnable != 0,                      // m_n10 0x3c (vfunc_4 :496-497)
+        };
+        var exit = ownSwing.Step(ownWindow, i);
+        if (exit == SwingExit.None) return false;
+        Net.LiveSession.Instance?.SendSkillStop(r.CastId);
+        EndOwnState();
+        me.LeaveSkill(exit == SwingExit.Jump, new Vector2(ownSwing.Push.X, ownSwing.Push.Y));
+        return true;
     }
 
     /// <summary>

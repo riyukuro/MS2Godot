@@ -138,4 +138,61 @@ public partial class Player : ISkillMotionOwner
     }
     /// <summary>The own cast's sequence is cancelled (State::vfunc_7(1)): the movement animations take the body back.</summary>
     public void CancelSkillSequence() { skillSequence = null; skillHeld = false; }
+
+    /// <summary>Client::Constants CancelSwing_KeyIsDown (constantsblocks.cpp:859, defined 0; 1 in the KMS and the GMS2
+    /// table/constants.xml): the swing cancel keeps the held move direction, else only a pressed one.</summary>
+    public static int CancelSwingKeyIsDown;
+
+    // the swing cancel's input (StateSkill::FUN_1417ed7f0, stateskill.cpp:1519-1532), read while the skill holds the move
+    Vector2 swingHeld, swingPressed, swingPrevMove;
+    bool swingJumpPressed, swingPrevJump;
+    bool swingJump;          // the HUD's swing cancel left the skill for the jump: it starts in the next movement frame
+    Vector2 swingJumpPush;
+    ulong swingJumpFrame;    // the movement frame count when it was asked: it is dropped after the next movement frame
+
+    /// <summary>Unk_PCMove::GetMoveDirection while the skill state holds the move: the held move input (x left / right,
+    /// y forward / back), zero outside the skill state.</summary>
+    public Vector2 SwingHeld => swingHeld;
+
+    /// <summary>Unk_PCMove::GetPressedMoveDirection since the last call (the axes whose key went down), then cleared.</summary>
+    public Vector2 TakeSwingPressed() { var p = swingPressed; swingPressed = Vector2.Zero; return p; }
+
+    /// <summary>IsActionKeyPressed(0x493e1) since the last call: the jump key went down in the skill state, then cleared.</summary>
+    public bool TakeSwingJumpPressed() { bool j = swingJumpPressed; swingJumpPressed = false; return j; }
+
+    /// <summary>vfunc_99(0) (pcbase.cpp:2544): the body falls, in the air for over 100 ms.</summary>
+    public bool SwingFalling => fallTimerRunning && InAirFor(0.1f);
+
+    void ReadSwingInput(bool skill, Vector2 move, bool jump)
+    {
+        if (!skill) { swingHeld = swingPressed = Vector2.Zero; swingJumpPressed = false; swingPrevMove = Vector2.Zero; swingPrevJump = jump; return; }
+        swingHeld = move;
+        var pressed = new Vector2(move.X != swingPrevMove.X ? move.X : 0, move.Y != swingPrevMove.Y ? move.Y : 0);
+        if (pressed != Vector2.Zero) swingPressed = pressed;
+        if (jump && !swingPrevJump) swingJumpPressed = true;
+        swingPrevMove = move;
+        swingPrevJump = jump;
+    }
+
+    /// <summary>The swing cancel leaves the skill state (StateSkill::FUN_1417ed7f0 :1550-1560, after SendSkillMode4) with the
+    /// push <paramref name="push"/> (vfunc_22): for the walk (vfunc_7(2)) the held input then moves the body; for the jump
+    /// (vfunc_7(6) without data: StateJump sub 0x21) the jump starts in the next movement frame the push's way.</summary>
+    public void LeaveSkill(bool jump, Vector2 push)
+    {
+        CancelSkillSequence();
+        swingJump = jump;
+        swingJumpPush = push;
+        swingJumpFrame = Engine.GetPhysicsFrames();
+    }
+
+    /// <summary>The kept swing jump, once, in the idle or walk state's frame after the skill let go.</summary>
+    bool SwingJump(bool skill)
+    {
+        if (!swingJump) return false;
+        swingJump = false;
+        if (skill || Engine.GetPhysicsFrames() > swingJumpFrame + 1) return false;
+        prevJump = JumpHeld;
+        StartJump(WorldDir(swingJumpPush), swingJumpPush != Vector2.Zero, 0);
+        return true;
+    }
 }
