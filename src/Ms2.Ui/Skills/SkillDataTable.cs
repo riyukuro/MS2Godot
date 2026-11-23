@@ -146,7 +146,11 @@ public sealed class SkillArrow
     /// magicdata.cpp:1064).</summary>
     public int Explosion;
     /// <summary>"effect" (SkillArrow::Load, skillattackdata.cpp:114, m_strEffect; GetArrowEffect): the effect the magic shows
-    /// on its own scene while it flies, from its start (CMagic::FUN_14145e960, magicdata.cpp:914-935).</summary>
+    /// on its own scene while it flies, from its start (CMagic::FUN_14145e960, magicdata.cpp:914-935).
+    /// STILL-OPEN: a GMS2 per-skill-file attack with an arrow but no attackMethodType (the Assassin's 900021/900022): how the
+    /// GMS2 client makes it fly is not recovered. The KMS client defaults the type to 0 (skillattackdata.cpp:491, read at
+    /// :582) and a type 0 attack does not fly: FUN_141461bd0 takes the arrow fill only for type 1 (FUN_141759090,
+    /// magicdata.cpp:2126-2129) and GetArrowEffect gives no effect for it (skillrecord.cpp:119).</summary>
     public string Effect = "";
     /// <summary>"effectRemain" and "effectDestroy" (:115-116, row +0x148 and +0x150): the effect at the arrow's end, effectDestroy
     /// when its ray stopped it (magicdata.cpp:1071-1077).</summary>
