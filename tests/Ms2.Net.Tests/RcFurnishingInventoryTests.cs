@@ -6,7 +6,7 @@ using NUnit.Framework;
 
 namespace Ms2.Net.Tests;
 
-/// <summary>The housing cube inventory (0x24) has no Inbound member or reader on main. A1: u8 mode 0/1/2/3/4; mode 1 is
+/// <summary>The housing cube inventory (0x24), read by FurnishingInventory. A1: u8 mode 0/1/2/3/4; mode 1 is
 /// i32 item id, i64 uid, i64 expire-or-count, bool hasLook and, when set, the UgcItemLook. Layouts:
 /// the GMS2 packet layout notes §A1.</summary>
 public class RcFurnishingInventoryTests {
@@ -32,7 +32,6 @@ public class RcFurnishingInventoryTests {
         new object[] { r },
     });
 
-    [Ignore("GMS2 furnishing inventory mode not read yet")]
     [Test] public void Gms2StartListNeedsNoBody() {
         var r = new ByteReader(StartList);
         var m = RcPkt.CallAny("FurnishingInventory", new[] { "Read" }, new[] {
@@ -43,7 +42,6 @@ public class RcFurnishingInventoryTests {
         Assert.That(r.Available, Is.EqualTo(0));
     }
 
-    [Ignore("GMS2 furnishing inventory mode not read yet")]
     [Test] public void Gms2AddReadsTheItemAndUid() {
         var r = new ByteReader(Add);
         var m = Read(r);
@@ -55,7 +53,6 @@ public class RcFurnishingInventoryTests {
         Assert.That(r.Available, Is.EqualTo(0));
     }
 
-    [Ignore("GMS2 furnishing inventory mode not read yet")]
     [Test] public void Gms2AddReadsTheUgcLook() {
         var r = new ByteReader(AddLook);
         var m = Read(r);
@@ -75,5 +72,28 @@ public class RcFurnishingInventoryTests {
         Assert.That(RcPkt.MemberAny<string>(look, "Url"), Has.Length.EqualTo(80));
         Assert.That(RcPkt.MemberAny<byte>(look, "State"), Is.EqualTo((byte) 0));
         Assert.That(r.Available, Is.EqualTo(0), "the whole UgcItemLook must be read");
+    }
+
+    [Test] public void RemoveAndUpdateReadTheUid() {
+        var w = new ByteWriter();
+        w.WriteByte(2); w.WriteLong(77);
+        var m = FurnishingInventory.Read(new ByteReader(w.ToArray()), ProtocolProfile.Gms2);
+        Assert.That((m.Mode, m.Uid), Is.EqualTo(((byte) 2, 77L)));
+        w = new ByteWriter();
+        w.WriteByte(3); w.WriteLong(78); w.WriteInt(5);
+        m = FurnishingInventory.Read(new ByteReader(w.ToArray()), ProtocolProfile.Gms2);
+        Assert.That((m.Mode, m.Uid, m.Amount), Is.EqualTo(((byte) 3, 78L, 5)));
+    }
+
+    [Test] public void EndListNeedsNoBodyAndTheKmsReadIsTheSame() {
+        var m = FurnishingInventory.Read(new ByteReader(new byte[] { 4 }), ProtocolProfile.Gms2);
+        Assert.That(m.Mode, Is.EqualTo((byte) 4));
+        m = FurnishingInventory.Read(new ByteReader(Add));
+        Assert.That((m.Mode, m.ItemId, m.HasLook), Is.EqualTo(((byte) 1, 50100000, false)));
+    }
+
+    [Test] public void NumberOnBothProfiles() {
+        Assert.That(ProtocolProfile.Kms2525.Number(Inbound.FurnishingInventory), Is.EqualTo((ushort) 0x24));
+        Assert.That(ProtocolProfile.Gms2.Number(Inbound.FurnishingInventory), Is.EqualTo((ushort) 0x24));
     }
 }

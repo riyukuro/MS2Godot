@@ -966,6 +966,14 @@ public partial class LiveSession : Node
         else pendingTriggers.Add(body);
     }
 
+    readonly HashSet<(string, int)> packetsNotApplied = new();
+
+    /// <summary>A packet read whole but not applied (its client state has no home here yet): logged once per packet name and mode.</summary>
+    void ReadNotApplied(string name, int mode)
+    {
+        if (packetsNotApplied.Add((name, mode))) GD.Print($"live: {name} mode {mode} read, not applied");
+    }
+
     readonly HashSet<int> triggersNotApplied = new();
 
     /// <summary>The trigger's Ui sub 9 (FUN_1418641e0): the face emotion of the object of that id
@@ -1806,6 +1814,8 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.FieldProperty))
                 FieldProperties.Apply(Ms2.Net.Packets.FieldPropertyMessage.Read(p.Reader(), game.Profile));   // OnFieldProperty (scenestategame.cpp:3895)
+            else if (game.Is(p, Inbound.FurnishingInventory))
+                ReadNotApplied("FurnishingInventory", Ms2.Net.Packets.FurnishingInventory.Read(p.Reader(), game.Profile).Mode);   // OnFurnishingInventory (scenestategame.cpp:9373): the cube stock has no house editor here yet
             else if (game.Is(p, Inbound.SkillDamage))
             {
                 // The records that hit the own player; MasteryEvents applies the client's mode drops (3 needs its PC, 5 its

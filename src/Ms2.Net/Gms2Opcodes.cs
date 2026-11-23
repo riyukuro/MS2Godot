@@ -54,6 +54,7 @@ static class Gms2Opcodes {
         [Inbound.Emote] = 0x1F,
         [Inbound.ItemPutOnOrOff] = 0x20,
         [Inbound.ItemInventory] = 0x21,
+        [Inbound.FurnishingInventory] = 0x24,
         [Inbound.ItemEnchant] = 0x99,
         [Inbound.ItemLock] = 0xDD,
         [Inbound.StorageInventory] = 0x22,
