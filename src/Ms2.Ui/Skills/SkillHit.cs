@@ -114,6 +114,22 @@ public struct HitBox
         return true;
     }
 
+    /// <summary>NxSegmentOBBSqrDist: the squared distance from the segment a-b to this box's axes and extents placed at
+    /// <paramref name="center"/>. The squared distance to a convex box is convex along the segment, so it is minimised by a
+    /// golden-section search.</summary>
+    public float SegmentSqrDist(Vector3 a, Vector3 b, Vector3 center)
+    {
+        var self = this;
+        float At(float t) => self.PointSqrDist(a + (b - a) * t, center);
+        float lo = 0f, hi = 1f;
+        for (int i = 0; i < 80; i++)
+        {
+            float m1 = lo + (hi - lo) / 3f, m2 = hi - (hi - lo) / 3f;
+            if (At(m1) <= At(m2)) hi = m2; else lo = m1;
+        }
+        return Math.Min(At((lo + hi) * 0.5f), Math.Min(At(0f), At(1f)));
+    }
+
     /// <summary>NxPointOBBSqrDist(point, centre, extents, rot): the squared distance from a point to the box (0 inside).</summary>
     public float PointSqrDist(Vector3 p, Vector3 center)
     {
@@ -215,7 +231,7 @@ public sealed class HitFrustum
     }
 
     /// <summary>NxComputeBoxPoints: the corners (-,-,-) (+,-,-) (+,+,-) (-,+,-) then the same at +z.</summary>
-    static void BoxCorners(in HitBox b, Span<Vector3> into)
+    internal static void BoxCorners(in HitBox b, Span<Vector3> into)
     {
         var x = b.AxisX * b.Extents.X; var y = b.AxisY * b.Extents.Y; var z = b.AxisZ * b.Extents.Z;
         var c = b.Center;
@@ -280,7 +296,8 @@ public sealed class HitFrustum
 /// (width, distance + zOffset, height) or a cylinder of radius distance and the given height, both with rangeAdd as the extra
 /// size behind and below (m_ptSize).
 /// A frustum (rangeType 3) is a <see cref="HitFrustum"/> (CFrustumCollision, frustumcollision.cpp).
-/// STILL-OPEN: the hole_cylinder (4) shape is not ported; it hits nothing here.
+/// A hole cylinder (rangeType 4, CHoleCylinderCollision, holecylindercollision.cpp) is a ring: <see cref="Radius"/> is its inner
+/// radius and <see cref="OuterRadius"/> its outer (CSkillCollisionManager::GetCached @0x141754580: width and endWidth).
 /// </summary>
 public struct SkillHitShape
 {
@@ -290,12 +307,15 @@ public struct SkillHitShape
     /// <summary>The cylinder: centre (the pose position, unit_141083230 vfunc_3 @0x1410833c0), radius, height, rangeAdd.z.</summary>
     public Vector3 CylinderCenter;
     public float Radius, Height, AddZ;
+    /// <summary>The hole cylinder's outer radius (endWidth); <see cref="Radius"/> holds its inner radius (width).</summary>
+    public float OuterRadius;
 
     public static SkillHitShape Pose(SkillRangeShape r, float zOffset, Vector3 pos, Vector3 rotDegrees)
     {
         var s = new SkillHitShape { Shape = r.Shape };
         if (r.Shape == 1) s.Box = HitBox.Pose(new Vector3(r.Width, r.Distance + zOffset, r.Height), r.Add, pos, rotDegrees);
         else if (r.Shape == 2) { s.CylinderCenter = pos; s.Radius = r.Distance; s.Height = r.Height; s.AddZ = r.Add.Z; }
+        else if (r.Shape == 4) { s.CylinderCenter = pos; s.Radius = r.Width; s.OuterRadius = r.EndWidth; s.Height = r.Height; s.AddZ = r.Add.Z; }
         else if (r.Shape == 3) s.Frustum = HitFrustum.Pose(r, zOffset, pos, rotDegrees);
         return s;
     }
@@ -303,12 +323,13 @@ public struct SkillHitShape
     /// <summary>
     /// CBaseCollision::Intersect @0x1409ff0d0 (basecollision.cpp:671) of this area against a box: box and box by the separating
     /// axis test, a cylinder by the squared distance from its centre to the box (the box centre at the cylinder's height) within
-    /// the radius and the z spans overlapping. STILL-OPEN: hole_cylinder (4) against a box.
+    /// the radius and the z spans overlapping, a hole cylinder by <see cref="RingHit"/>.
     /// </summary>
     public readonly bool Intersects(in HitBox box)
     {
         if (Shape == 1) return HitBox.Intersect(Box, box);
         if (Shape == 3) return Frustum != null && Frustum.Intersects(box);
+        if (Shape == 4) return RingHit(box);
         if (Shape != 2) return false;
         var c = box.Center;
         c.Z = CylinderCenter.Z;
@@ -317,14 +338,54 @@ public struct SkillHitShape
     }
 
     /// <summary>
-    /// CBaseCollision::TestShape @0x1409fe460 (basecollision.cpp:518) for the box and cylinder shapes against a body box, with the
+    /// The hole cylinder against a box (basecollision.cpp:567 and :703): the box centre or a corner inside the ring
+    /// (CHoleCylinderCollision::ContainsPoint @0x140d039a0: z between the centre minus rangeAdd.z and the centre plus the height,
+    /// planar distance from inner to outer radius), else, with the z spans overlapping, the squared distance from the ring's
+    /// inner-to-outer segment toward the box centre (both on the ground) to the box under min(150, outer - inner).
+    /// </summary>
+    readonly bool RingHit(in HitBox box)
+    {
+        if (RingContains(box.Center)) return true;
+        Span<Vector3> bc = stackalloc Vector3[8];
+        HitFrustum.BoxCorners(box, bc);
+        foreach (var c in bc) if (RingContains(c)) return true;
+        if (!(box.MinZ < CylinderCenter.Z + Height && box.MaxZ > CylinderCenter.Z - AddZ)) return false;
+        var center = new Vector3(CylinderCenter.X, CylinderCenter.Y, 0f);
+        var boxCenter = new Vector3(box.Center.X, box.Center.Y, 0f);
+        var axis = boxCenter - center;
+        float len = axis.Length();
+        axis = len > 0f ? axis / len : Vector3.Zero;
+        float distSq = box.SegmentSqrDist(center + axis * Radius, center + axis * OuterRadius, boxCenter);
+        return Math.Min(150f, OuterRadius - Radius) > distSq;
+    }
+
+    readonly bool RingContains(Vector3 pt)
+    {
+        if (CylinderCenter.Z - AddZ > pt.Z || CylinderCenter.Z + Height < pt.Z) return false;
+        float dx = pt.X - CylinderCenter.X, dy = pt.Y - CylinderCenter.Y;
+        float dist = MathF.Sqrt(dx * dx + dy * dy);
+        return !(dist < Radius || dist > OuterRadius);
+    }
+
+    /// <summary>
+    /// CBaseCollision::TestShape @0x1409fe460 (basecollision.cpp:518) for the box, cylinder and hole cylinder shapes against a body box, with the
     /// sort metric: box hits keep the front plane distance (y) and side plane distance (x, absolute in modes 3 and 4) of the body
     /// centre; cylinder hits keep the squared distance (z).
     /// </summary>
     public readonly bool Test(Vector3 pos, Vector3 right, Vector3 dir, in HitBox body, int mode, ref Vector3 metric)
     {
         bool hit = false;
-        if (Shape == 1 || Shape == 3)
+        if (Shape == 4)
+        {
+            hit = RingHit(body);
+            if (hit)
+            {
+                // the planar distance from the ring centre to the body centre (GetPlanarDistance @0x140966ea0)
+                float dx = CylinderCenter.X - body.Center.X, dy = CylinderCenter.Y - body.Center.Y;
+                metric.Z = MathF.Sqrt(dx * dx + dy * dy);
+            }
+        }
+        else if (Shape == 1 || Shape == 3)
         {
             hit = Shape == 1 ? HitBox.Intersect(Box, body) : Frustum != null && Frustum.Intersects(body);
             if (hit)

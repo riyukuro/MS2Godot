@@ -271,4 +271,14 @@ public class SkillHitTests
         Assert.That(SkillHitShape.Pose(r, 0, Vector3.Zero, Vector3.Zero).Intersects(behind), Is.False);
         Assert.That(SkillHitShape.Pose(add, 0, Vector3.Zero, Vector3.Zero).Intersects(behind), Is.True);
     }
+
+    [Test]
+    public void TheHoleCylinderHitsTheRingAndNotTheHoleOrWhatIsOutside()
+    {
+        var a = Attack("<attack point=\"Hit_01\" targetCount=\"5\"><range rangeType=\"hole_cylinder\" distance=\"0\" height=\"100\" width=\"300\" endWidth=\"600\" applyTarget=\"1\"/></attack>");
+        Assert.That(a.Range.Shape, Is.EqualTo(4));
+        // the ring is 300 to 600 from the caster; a player body is a box about 30 wide
+        var hit = Detect(a, 0, Pc(10, 0, -450), Pc(11, 450, 0), Pc(13, 0, -100), Pc(14, 0, -900), Pc(15, 0, -310));
+        Assert.That(hit, Is.EquivalentTo(new[] { 10, 11, 15 }), "inside the ring on any side; the hole and beyond the outer radius are out");
+    }
 }
