@@ -579,10 +579,38 @@ public class InventoryTests
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1" });
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.9", 1 });
         Assert.That(sent.Count, Is.EqualTo(count), "the preview key, a double click or an empty cell send nothing");
-        Assert.That(raised.Count(r => r == "notifySlotUse"), Is.EqualTo(2), "the preview and the double click (no function) are raised");
+        Assert.That(raised.Count(r => r == "notifySlotUse"), Is.EqualTo(1), "the preview is raised; the double click of an equipment item with no shop open does nothing (invenslot.cpp:886)");
         model.HasLocalPlayer = false;
         c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1", 1 });
         Assert.That(sent.Count, Is.EqualTo(count), "no local player");
+    }
+
+    [Test]
+    public void AnEquipmentItemsDoubleClickPutsItOnOnlyWhileTheShopIsOpen()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var t = model.Tables;
+        // an equipment item (type 1) without a function, a shop id or a pet
+        Assert.That(t.Items.Get(11400001)?.Type, Is.EqualTo(1));
+        Assert.That(t.Items.Get(11400001).HasFunction, Is.False);
+        var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
+        book.Apply(new ItemMessage.LoadTab(1, new[] { new EquipItem { Id = 11400001, Uid = 11, InventorySlot = 0, Amount = 1, Rarity = 1 } }));
+        var (h, c, _) = Load(model, book);
+        c.View.ServerTime = () => 1000;
+        c.Wearer = () => new PcInfo { Level = 50, JobGroup = 10, Equips = Array.Empty<EquipItem>() };
+        h.Set(h.Child("m_tab"), "selectedIndex", c.Tabs.Select((x, i) => (x, i)).First(x => x.x.Tab == 1).i);
+        for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
+        var sent = new List<(long, byte, byte)>(); c.View.RequestEquip = (u, s, m) => sent.Add((u, s, m));
+        var raised = new List<string>(); c.Button += raised.Add;
+
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.0", 0 });
+        Assert.That((sent.Count, raised.Count), Is.EqualTo((0, 0)), "no shop dialog: nothing, not raised (invenslot.cpp:886-893)");
+        c.Shop = () => new Ms2.Ui.Shop.ShopController();
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.0", 0 });
+        Assert.That(sent.Select(x => x.Item1), Is.EqualTo(new[] { 11L }), "the shop dialog is open: put on as by the right click");
+        Assert.That(raised.Count, Is.EqualTo(0));
     }
 
     [Test]

@@ -560,8 +560,9 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     /// (always 1), FUN_14140dea0 (:2082) on the record: CItem::FUN_140528980 false (item.cpp:1717: expired, not a pet, no maid
     /// id): box 225 (0xe1) when expired; the level: ShowMessageBox(s_err_not_enough_level) (:2106, a box here: CanUseItem's
     /// notice comes after it); the job: s_item_err_disable_job; the gender: box 45. Then TryUseItem (:532) and
-    /// <see cref="UseItem"/>. An item without a function: a shop id, a pet, an emotion and an equipment item (type 1) are
-    /// not ported (raised); type 0x13 does nothing; others pass FUN_14140dea0 and go to <see cref="UseItemSkill"/>.
+    /// <see cref="UseItem"/>. An item without a function: a shop id, a pet and an emotion are
+    /// not ported (raised); an equipment item (type 1, :886) is put on as by the right click (FUN_1414056b0's layer) only while the
+    /// shop dialog 0x4e3b is open, else nothing; type 0x13 does nothing; others pass FUN_14140dea0 and go to <see cref="UseItemSkill"/>.
     /// STILL-OPEN: the cube craft placement (MyPC FUN_141659690), the PC bang (0xe2), VIP, wedding and owner-bind (0xfe)
     /// checks, TryUseItem's use cooldown (FUN_141409060, box 0x55). Without the wearer's record the requirement checks are
     /// skipped.
@@ -575,8 +576,16 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         if (d.HasCubeTextureMesh || d.IsScoreItem) { Button?.Invoke("notifySlotUse"); return; }
         if (!d.HasFunction)
         {
-            // :853-893: a shop id, a pet, an emotion (type 0x18) and a type 1 item have their own handlers (raised); type 0x13 none
-            if (d.ShopId > 0 || d.IsPetItem || d.Type is 0x18 or 1 or 0x13 || UseItemSkill == null) { Button?.Invoke("notifySlotUse"); return; }
+            // :853-893: a shop id, a pet and an emotion (type 0x18) have their own handlers (raised); type 0x13 none
+            if (d.ShopId > 0 || d.IsPetItem || d.Type is 0x18) { Button?.Invoke("notifySlotUse"); return; }
+            // :886-893 (FUN_14053cbc0, type 1): only while the shop dialog (0x4e3b) is open, the item is put on as by the right click
+            if (d.Type == 1)
+            {
+                if (Shop() != null) RequestEquip(item, 0, !d.HasSkinType ? 0 : !Feature(0x8e) ? 1 : ActionKeyDown(0x4940d) ? 1 : 2);
+                return;
+            }
+            if (d.Type == 0x13) return;
+            if (UseItemSkill == null) { Button?.Invoke("notifySlotUse"); return; }
             if (UseChecks(item)) UseItemSkill(item);    // :894-897, FUN_14053c8b0
             return;
         }
