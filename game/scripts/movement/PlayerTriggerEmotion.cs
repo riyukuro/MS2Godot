@@ -13,6 +13,9 @@ namespace Ms2Godot;
 public partial class Player
 {
     readonly TriggerEmotion triggerEmotion = new();
+    static readonly System.Collections.Generic.HashSet<string> MissingTriggerEmotions = new(System.StringComparer.OrdinalIgnoreCase);
+    /// <summary>The body/name pairs logged as missing so far (the scene check).</summary>
+    internal static int MissingTriggerEmotionsLogged => MissingTriggerEmotions.Count;
     double triggerEmotionLeft = -1;   // seconds until the played sequence ends (its EndOfSequence); below 0 none plays
 
     /// <summary>The state's m_nFlag while it runs (State::vfunc_16 of the current state).</summary>
@@ -37,13 +40,20 @@ public partial class Player
     }
 
     /// <summary>PCBase::PlayAnimation (@0x14166dd20, pcbase.cpp:1521-1527) of a body sequence by name; the time to its end
-    /// is kept for EndOfSequence. A name the body has no sequence for plays nothing and never ends.</summary>
+    /// is kept for EndOfSequence. A name the body has no sequence for plays nothing and never ends, as in the client: the
+    /// pc stays in the state until the server or a death moves it out. Such a name is logged once per body, so a name the
+    /// port fails to find shows up; the trigger data names two the bodies lack (Hello_A, Emotion_Surprise_A).</summary>
     void PlayTriggerEmotion(string name)
     {
         triggerEmotionLeft = -1;
         if (string.IsNullOrEmpty(name) || Anims == null || Anim == null) return;
         string key = Anims.Sequence(name, false);
-        if (key == null) return;
+        if (key == null)
+        {
+            if (MissingTriggerEmotions.Add($"{Anims.BodyDir}/{name}"))
+                Godot.GD.PushWarning($"trigger emotion: the {Anims.BodyDir} body has no sequence \"{name}\" ({Ms2.Formats.Model.BodySequences.Entry(Anims.BodyDir, name)}); the pc stays in the emotion state");
+            return;
+        }
         PlaySequence(key, 1f, restart: true);
         triggerEmotionLeft = Anim.GetAnimation(key).Length + System.Math.Max(blendHold, 0f);
     }

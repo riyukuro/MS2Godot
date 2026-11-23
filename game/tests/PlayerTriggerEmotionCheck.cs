@@ -62,7 +62,7 @@ public partial class PlayerTriggerEmotionCheck : Node3D
     public override void _Process(double delta)
     {
         if (++frames != 5) return;
-        try { List(); Timed(); }
+        try { List(); Timed(); Missing(); }
         catch (System.Exception e) { fails.Add($"{e.InnerException ?? e}"); }
         SetProcess(false);
         GD.Print($"player trigger emotion: {(fails.Count == 0 ? "ok" : "FAIL\n  " + string.Join("\n  ", fails))}");
@@ -122,5 +122,22 @@ public partial class PlayerTriggerEmotionCheck : Node3D
         Expect(pc.State != Player.MoveState.TriggerEmotion, "a dead pc entered the state");
         pc.DeadFlag = false;
         GD.Print($"player trigger emotion: timed {durationMs} ms, idle after {secs:0.###} s");
+    }
+    /// <summary>A name the body has no sequence for (Hello_A, named by trigger 52000132): the state is entered and stays,
+    /// as in the client, and the name is logged once per body.</summary>
+    void Missing()
+    {
+        int logged = Player.MissingTriggerEmotionsLogged;
+        pc.EnterTriggerEmotion(new TriggerEmotionData(new[] { "Hello_A" }, 0, 0, 0, false));
+        int n = StepsWhileInState(300);
+        Expect(pc.State == Player.MoveState.TriggerEmotion && n == 300, $"missing: {pc.State} after {n} frames");
+        Expect(Player.MissingTriggerEmotionsLogged == logged + 1, $"missing: {Player.MissingTriggerEmotionsLogged - logged} names logged, want 1");
+        pc.EnterTriggerEmotion(new TriggerEmotionData(new[] { "hello_a" }, 1, 0, 100, true));
+        Expect(Player.MissingTriggerEmotionsLogged == logged + 1, "missing: the name was logged again");
+        // a forced entry of a name the body has moves the pc on, and it goes back to idle as before
+        pc.EnterTriggerEmotion(new TriggerEmotionData(new[] { pc.Anims.Name(Act.JumpLand, "") }, 0, 0, 0, true));
+        StepsWhileInState(2000);
+        Expect(pc.State == Player.MoveState.Idle, $"missing: {pc.State} after a forced entry of a known name");
+        GD.Print($"player trigger emotion: missing name stays {n} frames, logged once");
     }
 }

@@ -222,6 +222,8 @@ public sealed class ActionAnims
     ModelData md;
     AnimationPlayer player;
     string bodyDir;
+    /// <summary>The body folder the sequences come from ("male" or "female").</summary>
+    public string BodyDir => bodyDir;
 
     /// <summary>A sequence by its name (the body's &lt;name&gt;.kf), loaded on first use; null when the body has none.</summary>
     public string Sequence(string seq, bool loop)
@@ -231,7 +233,7 @@ public sealed class ActionAnims
         var lib = player.GetAnimationLibrary("");
         if (lib.HasAnimation(key)) return key;
         KfAnimation kf;
-        try { kf = builder.LoadKf($"{bodyDir}/{key}.kf"); }
+        try { kf = builder.LoadKf(BodySequences.Entry(bodyDir, key)); }
         catch (Exception) { return null; }
         AppendXmlKeys(key, kf);
         var anim = ModelBuilder.BuildAnimation(kf, md);
