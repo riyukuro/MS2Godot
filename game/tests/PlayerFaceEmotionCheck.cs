@@ -14,6 +14,7 @@ namespace Ms2Godot.Tests;
 /// - the face model on, the first step rests the face on "default": the FA mesh shows the face item's idle frame (base
 ///   texture and control map from its item code's folder), and the blink frame follows at its time;
 /// - the trigger's Ui sub 9 with a name shows that face's frame; with an empty name the rest face comes back;
+/// - the body's Emotion_Angry_A throws its emo_angry key: the angry face shows, but not while a trigger's face holds;
 /// - an emotion with no texture animation puts the mesh's own material back.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
@@ -37,6 +38,7 @@ public partial class PlayerFaceEmotionCheck : Node3D
         var (visual, anim, md, bodyDir) = Ms2Godot.Look.PlayerLook.Build(builder, packs);
         pc = Player.Create(visual, anim, faceGrids);
         pc.Gender = bodyDir == "male" ? 0 : 1;
+        pc.Anims = ActionAnims.Load(packs, builder, md, anim, bodyDir);
         AddChild(pc);
         pc.SetProcess(false);
         pc.SetPhysicsProcess(false);
@@ -96,6 +98,24 @@ public partial class PlayerFaceEmotionCheck : Node3D
         Steps(1);
         Expect(fe.Current == "default" && Shown("base_tex") == idle, $"sub 9 empty: {fe.Current}");
         GD.Print("player face emotion: sub 9 Trigger_panic, then rest");
+
+        // the body's emo_ key: Emotion_Angry_A throws emo_angry at its start; the face rests again first
+        var angry = pc.Anims.Sequence("Emotion_Angry_A", false);
+        Expect(angry != null, "no Emotion_Angry_A sequence");
+        if (angry != null)
+        {
+            pc.PlaySequence(angry, 1, true);
+            Steps(1);
+            Expect(string.Equals(fe.Current, "angry", System.StringComparison.OrdinalIgnoreCase) && Shown("base_tex") == Frame(fe.Current, 0),
+                $"emo_angry: {fe.Current}");
+            pc.TriggerFace("Trigger_panic");
+            pc.PlaySequence(angry, 1, true);
+            Steps(1);
+            Expect(fe.Current == "Trigger_panic", $"emo_angry while a trigger's face holds the keys off: {fe.Current}");
+            pc.TriggerFace("");
+            Steps(1);
+            GD.Print("player face emotion: Emotion_Angry_A's emo_angry key, ignored under a trigger's face");
+        }
 
         var plain = fe.Group.Names.FirstOrDefault(n => fe.Group.Find(n).Texture == null);
         if (plain != null)

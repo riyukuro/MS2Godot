@@ -285,6 +285,7 @@ public partial class Player : CharacterBody3D
         // client source; only a frame longer than a quarter second (a field load) is cut to it
         float dt = (float)Math.Min(delta, MaxStepDt);
         gameTime += dt;
+        FaceTextKeys();                // the body's emo_ keys (PCBase::TextKeyEvent)
         FaceEmotion?.Tick(FaceMs);     // PCBase::vfunc_53 ticks the face (FUN_14166f940) before the states
         if (!ScriptDriven)
         {
@@ -1165,6 +1166,7 @@ public partial class Player : CharacterBody3D
         }
         else Anim.Play(name, tr.Duration, speed);
         if (restart) Anim.Seek(0, true);
+        if (restart || name != CurrentAnim) FaceKeysRestart();
         CurrentAnim = name;
     }
 

@@ -29,7 +29,7 @@ public interface IFaceTexture
 /// model is on (<see cref="SetGroup"/>).
 /// STILL-OPEN: the emotion's effects (the effect list played when nA is set, :3712-3720, and ClearEffects); the equip hide
 /// of PC::vfunc_71 / vfunc_72 (pc.cpp:1951-1962, FUN_141659770); FUN_141679fa0 (the FA_Skin floats the optimizer reads);
-/// the emo_ text keys of the body's sequences (:1032-1039); npcs and other pcs.
+/// npcs and other pcs.
 /// </summary>
 public sealed class FaceEmotion
 {
@@ -99,6 +99,18 @@ public sealed class FaceEmotion
     {
         TextKeys = true;
         Play(Rest, force, nowMs);
+    }
+
+    /// <summary>
+    /// The emo_ branch of PCBase::TextKeyEvent (@0x14166bf40, pcbase.cpp:1032-1039): a text key of the body's target
+    /// sequence longer than 4 that starts with "emo_" plays the rest of the key while the text keys are on
+    /// (FUN_14166ef10(name, 1, 0, in StateTriggerEmotion), so the emotion last played does not start over). Returns
+    /// whether it played. The caller passes only the target sequence's keys.
+    /// </summary>
+    public bool TextKey(string key, long nowMs)
+    {
+        if (!TextKeys || key == null || key.Length <= 4 || !key.StartsWith("emo_", StringComparison.Ordinal)) return false;
+        return Play(key[4..], false, nowMs);
     }
 
     /// <summary>

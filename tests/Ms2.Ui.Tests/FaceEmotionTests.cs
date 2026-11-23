@@ -140,4 +140,62 @@ public class FaceEmotionTests
 
     [Test]
     public void EveryGms2OwnFaceNameResolvesOnBothBaseFaces() => EveryOwnFaceNameResolves("MS2_GMS2_DATA");
+
+    /// <summary>The emo_ keys of the body's companion xml (&lt;bodyDir&gt;/&lt;bodyDir&gt;.xml), name without the prefix -> the
+    /// first sequence that has it.</summary>
+    static SortedDictionary<string, string> BodyEmoKeys(PackSet packs, string bodyDir)
+    {
+        var keys = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        var doc = PackXml.Parse(packs.Read("Resource/Model/Character", $"{bodyDir}/{bodyDir}.xml"));
+        foreach (var seq in doc.Root.Elements())
+            foreach (var k in seq.Elements("key"))
+                if ((string)k.Attribute("text") is { Length: > 4 } text && text.StartsWith("emo_", StringComparison.Ordinal))
+                    keys.TryAdd(text[4..], seq.Name.LocalName);
+        return keys;
+    }
+
+    static void EmoKeysPlayTheirFaces(string variable)
+    {
+        using var packs = new PackSet(RcGap.Data(variable));
+        var table = new EmotionTable(packs, EmotionTable.Item);
+        foreach (var (gender, bodyDir) in new[] { (0, "male"), (1, "female") })
+        {
+            var group = table.Group((uint)FaceEmotion.DefaultFace(packs, gender));
+            var keys = BodyEmoKeys(packs, bodyDir);
+            var found = keys.Keys.Where(n => group.Find(n) != null).ToList();
+            TestContext.WriteLine($"{variable} {bodyDir}: {keys.Count} emo_ names, {found.Count} in the base face's group; e.g. {string.Join(", ", found.Take(12))}");
+            Assert.That(keys, Has.Count.GreaterThan(500), "the body's sequences carry emo_ keys");
+            Assert.That(found, Has.Count.GreaterThan(keys.Count / 2));
+            Assert.That(found, Does.Contain("boreA").And.Contain("Dead"), "the idle bore and the death faces");
+        }
+
+        var face = new Face();
+        var fe = new FaceEmotion(face);
+        fe.SetGroup(table.Group((uint)FaceEmotion.DefaultFace(packs, 1)), 0);
+        fe.Tick(1);
+        Assert.That(fe.Current, Is.EqualTo("default"));
+        // not an emo_ key, the bare prefix, a name the group lacks: nothing plays
+        Assert.That(fe.TextKey("effect_angry", 10), Is.False);
+        Assert.That(fe.TextKey("emo_", 10), Is.False);
+        Assert.That(fe.TextKey("emo_no such face", 10), Is.False);
+        Assert.That(fe.Current, Is.EqualTo("default"));
+        // Emotion_Angry_A's key plays the angry face; the same key again does not start it over
+        Assert.That(fe.TextKey("emo_angry", 20), Is.True);
+        Assert.That(fe.Current, Is.EqualTo("angry").IgnoreCase);
+        int shows = face.Shows.Count;
+        Assert.That(fe.TextKey("emo_angry", 30), Is.False);
+        Assert.That(face.Shows, Has.Count.EqualTo(shows));
+        // a trigger's face turns the keys off until the face rests
+        fe.Trigger("Trigger_panic", 40);
+        Assert.That(fe.TextKey("emo_angry", 50), Is.False);
+        Assert.That(fe.Current, Is.EqualTo("Trigger_panic"));
+        fe.Trigger("", 60);
+        Assert.That(fe.TextKey("emo_angry", 70), Is.True);
+    }
+
+    [Test]
+    public void KmsEmoKeysPlayTheirFaces() => EmoKeysPlayTheirFaces("MS2_DATA");
+
+    [Test]
+    public void Gms2EmoKeysPlayTheirFaces() => EmoKeysPlayTheirFaces("MS2_GMS2_DATA");
 }

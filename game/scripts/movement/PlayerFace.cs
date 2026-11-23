@@ -25,4 +25,33 @@ public partial class Player
 
     /// <summary>The trigger's Ui sub 9 on the own pc: the named face, or the rest face for an empty name.</summary>
     public void TriggerFace(string name) => FaceEmotion?.Trigger(name, FaceMs);
+
+    // the body's key pass: the sequence it last read and the position it read to; FaceKeysFromStart makes the next pass
+    // throw the keys in [0, position], as an activated sequence throws its keys from 0 (m_bNeedFirstTextKey)
+    const double FaceKeysFromStart = -2;
+    string faceKeyAnim;
+    double faceKeyPos = FaceKeysFromStart;
+
+    /// <summary>
+    /// The keys the body's target sequence passed since the last step, handed to PCBase::TextKeyEvent's emo_ branch
+    /// (pcbase.cpp:1032-1039, <see cref="FaceEmotion.TextKey"/>): a sequence such as Emotion_Angry_A or Bore_A changes the
+    /// face at its key. The keys are the kf's and the body's companion xml's (<see cref="ActionAnims.Kf"/>).
+    /// </summary>
+    void FaceTextKeys()
+    {
+        if (FaceEmotion == null || Anims == null || Anim == null || string.IsNullOrEmpty(CurrentAnim) || !Anim.IsPlaying()) return;
+        if (faceKeyAnim != CurrentAnim) { faceKeyAnim = CurrentAnim; faceKeyPos = FaceKeysFromStart; }
+        double pos = Anim.CurrentAnimationPosition;
+        double from = faceKeyPos;
+        faceKeyPos = pos;
+        if (!Anims.Kf.TryGetValue(CurrentAnim, out var kf) || kf.TextKeys.Count == 0) return;
+        foreach (var (t, key) in kf.TextKeys)
+        {
+            bool crossed = from == FaceKeysFromStart ? t <= pos : pos >= from ? from < t && t <= pos : t > from || t <= pos;   // a loop's wrap
+            if (crossed) FaceEmotion.TextKey(key, FaceMs);
+        }
+    }
+
+    /// <summary>A sequence started again from its start throws its keys again.</summary>
+    void FaceKeysRestart() => faceKeyPos = FaceKeysFromStart;
 }
