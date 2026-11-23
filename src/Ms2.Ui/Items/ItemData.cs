@@ -183,7 +183,10 @@ public sealed class ItemData
             if ((string)l.Attribute("disableJobLimit") is { } dj)
                 foreach (var t in dj.Split(',', StringSplitOptions.RemoveEmptyEntries)) d.DisableJobLimit.Add(Atoi(t));
             if ((string)l.Attribute("recommendJobs") is { } jobs)
-                foreach (var t in jobs.Split(',', StringSplitOptions.RemoveEmptyEntries)) d.RecommendJobs.Add(Atoi(t));
+                foreach (var t in jobs.Split(',', StringSplitOptions.RemoveEmptyEntries))
+                    // INFERRED: the GMS2 files write recommendJobs="0" on 22,977 items where the KMS files leave it empty, and mean any job
+                    // (a job id 0 does not exist); STILL-OPEN: the GMS2 client's reader is not in the restored source
+                    if (Atoi(t) != 0) d.RecommendJobs.Add(Atoi(t));
         }
         if (env.Element("material") is { } mat) Int(mat, "attack", ref d.AttackMaterial);
         if (env.Element("option") is { } opt)
