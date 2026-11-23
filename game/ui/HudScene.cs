@@ -72,7 +72,7 @@ public partial class HudScene : Node, IUiStageHost
     int msgboxShot = -1;                    // --uigen-msgbox KIND: 1 the exit box (Esc, Exit Game); with --uigen-options, 2 the reset box, 3 the unsaved changes box
     int worldMapShot = -1;                  // --worldmap STEP: the shot opens the world map (M); 1 searches "Henesys", 2 clicks the result; 3 and 4 close it (3 by the key, 4 by its close button) after hovering a tile and the air taxi icon, three open/hover/close cycles
     int sysmenuShot = -1;                   // --uigen-sysmenu STATE: the shot opens the system menu with Esc; 1 shows the channel combo, 2 opens its list
-    string openShot;                        // --uigen-open inventory|myinfo|levelupguide|gamedictionary[:tab:text]|achieve: the shot opens that window, as I, P or Y does
+    string openShot;                        // --uigen-open inventory|myinfo|levelupguide|gamedictionary[:tab:text]|achieve|chatscroll: the shot opens that window, as I, P or Y does
     string guideShot;                       // --uigen-guide summary:TEXTID|tip:TEXTID|tutorial:TEXTID: the guide pane shows that text
     int arrowShot;                          // --uigen-arrow 170|200|60540|210|10012052: the shot points that table arrow (the rows' event ids)
     string dragShot;                        // --uigen-drag FROM>TO: both windows open, then a mouse drag from one slot binding to another (FROM "worn": the first worn equip slot)
@@ -4057,6 +4057,7 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "partysearchmenu" && frames == 260) partySearch?.RightClickChiefShot(102);
         if (openShot == "partysearchregister" && frames == 230) OpenPartySearchRegister();
         if (openShot == "partydps" && frames == 200) OpenPartyDpsShot();
+        if (openShot == "chatscroll" && frames is 200 or 215) ChatScrollShot(frames == 200 ? 0 : 1);
         if (openShot == "guild" && frames == 200) ToggleGuild();
         if (openShot == "itemenchant" && frames == 200) OpenItemEnchantShot();
         if (openShot == "lapenshard" && frames == 200) OpenLapenshardShot();

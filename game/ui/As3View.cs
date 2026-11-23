@@ -1409,17 +1409,24 @@ public partial class FieldText : Node2D
             built = key;
             version = -1;
         }
-        if (tf.Version == version) return rebuilt;
-        version = tf.Version;
-        if (tf.Html != null && !(tf.Html.Length > 1 && tf.Html[0] == '$')) node.SetHtml(tf.Html);
-        else node.Text = tf.Text;
-        // TextFieldEx.setTextAutoSize(SHRINK / FIT): LineBuffer::Scale (sfr_render_04d.cpp:394) scales every line's offsets and
-        // sizes and every glyph from the text rect's origin, keeping the lines' breaks
-        float scale = tf.TextAutoSize is "shrink" or "fit" ? node.TextAutoSizeScale(tf.TextAutoSize) : 1;
-        var origin = new Vector2((float)tf.Box.X + 2, (float)tf.Box.Y + 2);
-        node.Scale = new Vector2(scale, scale);
-        node.RecenterScaled(scale);
-        node.Position = origin - origin * scale + new Vector2(0, (float)(tf.FirstLineTop(node.NumLines, scale) - (tf.Box.Y + 2)));
+        // a scroll (TextField.scrollV, DocView::SetVScrollOffset) sets the first line the text is drawn from: it neither
+        // re-parses the text nor lays it out again
+        bool textChanged = tf.Version != version;
+        if (textChanged)
+        {
+            version = tf.Version;
+            if (tf.Html != null && !(tf.Html.Length > 1 && tf.Html[0] == '$')) node.SetHtml(tf.Html);
+            else node.Text = tf.Text;
+            // TextFieldEx.setTextAutoSize(SHRINK / FIT): LineBuffer::Scale (sfr_render_04d.cpp:394) scales every line's offsets and
+            // sizes and every glyph from the text rect's origin, keeping the lines' breaks
+            float scale = tf.TextAutoSize is "shrink" or "fit" ? node.TextAutoSizeScale(tf.TextAutoSize) : 1;
+            var origin = new Vector2((float)tf.Box.X + 2, (float)tf.Box.Y + 2);
+            node.Scale = new Vector2(scale, scale);
+            node.RecenterScaled(scale);
+            node.Position = origin - origin * scale + new Vector2(0, (float)(tf.FirstLineTop(node.NumLines, scale) - (tf.Box.Y + 2)));
+        }
+        else if (tf.FirstShownLine == node.FirstLine) return rebuilt;
+        node.FirstLine = tf.FirstShownLine;
         node.RefreshClip();
         return true;
     }

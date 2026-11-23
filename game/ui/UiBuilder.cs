@@ -309,6 +309,22 @@ public partial class TextNode : Node2D
     /// </summary>
     public bool PlacedInField;
 
+    /// <summary>
+    /// The first shown line (DocView::SetVScrollOffset, TextField.scrollV - 1): the label draws from its first unskipped line,
+    /// at most the lines that fit the field (FitLines), and the lines above it are neither drawn nor laid out again.
+    /// </summary>
+    public int FirstLine
+    {
+        get => Label.LinesSkipped;
+        set
+        {
+            int v = Math.Clamp(value, 0, Math.Max(0, Layout().Count - 1));
+            if (v == Label.LinesSkipped) return;
+            Label.LinesSkipped = v;
+            AlignLine();
+        }
+    }
+
     /// <summary>The clip again for the node's place: a script field's node is moved without its text changing.</summary>
     public void RefreshClip() => UpdateClip(Layout());
 
