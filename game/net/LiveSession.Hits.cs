@@ -35,7 +35,7 @@ public partial class LiveSession
     /// <summary>
     /// OnSkillDamage mode 1 (FUN_14171cdf0, scenestategame.cpp:5607) for the records on the own PC: each record goes to the
     /// magic service and on to PC::vfunc_33 (<see cref="HitReaction.OnSkillHit"/>). The record's position is the packet's,
-    /// its direction the packet's direction only for attackMethodType 1 (FUN_14175acc0; otherwise FUN_14145e1a0 aims a
+    /// its direction the packet's direction only for an arrow record (FUN_14175acc0, SkillAttackData.ArrowRecord; otherwise FUN_14145e1a0 aims a
     /// local copy and the record's stays zero) and its hit facing is the packet's direction short (Init's ptHit, :5624).
     /// The ground of GetPush is a map type of 9 or 3; the buffs' super armor counts as on map type 9 for type 9.
     /// STILL-OPEN: the magic service's delivery time (FUN_14146b440) is taken as at once; an npc caster with property tag
@@ -46,18 +46,23 @@ public partial class LiveSession
     {
         if (d.Mode != 1 || player == null || remote == null) return;
         SkillAttackDamage attack = null;
-        bool looked = false;
+        bool looked = false, arrowRecord = false;
         foreach (var t in d.Targets)
         {
             if (t.TargetId != selfObject) continue;
-            if (!looked) { attack = remote.AttackDamage(d.SkillId, d.Level, d.Motion, d.AttackPoint); looked = true; }
+            if (!looked)
+            {
+                attack = remote.AttackDamage(d.SkillId, d.Level, d.Motion, d.AttackPoint);
+                arrowRecord = remote.AttackData(d.SkillId, d.Level, d.Motion, d.AttackPoint)?.ArrowRecord ?? false;
+                looked = true;
+            }
             if (attack == null) return;
             long total = 0;
             foreach (var h in t.Hits) total += h.Damage;
             int mapType = HitMapType();
             bool ground = mapType is 9 or 3;
             uint armor = HitReaction.SuperArmor(player.ClientStateId, 0, OwnBuffSuperArmor(mapType == 9));
-            var recordDir = attack.AttackMethodType == 1 ? d.DirectionShort.ToVector3() : System.Numerics.Vector3.Zero;
+            var recordDir = arrowRecord ? d.DirectionShort.ToVector3() : System.Numerics.Vector3.Zero;
             (System.Numerics.Vector3, System.Numerics.Vector3)? attacker = null;
             if (remote.PoseOf(d.OwnerId) is { } pose)
             {

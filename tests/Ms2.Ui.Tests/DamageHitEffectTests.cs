@@ -41,10 +41,10 @@ public class DamageHitEffectTests
     static bool Find(int id, out DamageHitObject o) => Field.TryGetValue(id, out o);
 
     static List<DamageHitEffect> Run(SkillDamage d, SkillAttackDamage a, HitEffectThrottle t, uint now = 5000, int direction = 3,
-        float moveDistance = 0f, FieldSight sight = default)
+        float moveDistance = 0f, FieldSight sight = default, bool arrowRecord = false)
     {
         var into = new List<DamageHitEffect>();
-        DamageHitEffects.Records(d, a, direction, moveDistance, Find, t, now, RandMax, into, sight);
+        DamageHitEffects.Records(d, a, arrowRecord, direction, moveDistance, Find, t, now, RandMax, into, sight);
         return into;
     }
 
@@ -107,12 +107,28 @@ public class DamageHitEffectTests
     }
 
     [Test]
-    public void AttackMethodType1KeepsThePacketsPointAndDirection()
+    public void AnArrowRecordKeepsThePacketsPointAndDirection()
     {
-        var fx = Run(Damage(), Attack(method: 1), new HitEffectThrottle());
+        var fx = Run(Damage(), Attack(method: 1), new HitEffectThrottle(), arrowRecord: true);
         Assert.That(fx[0].At, Is.EqualTo(new Vector3(10, 20, 30)));
         OwnTagMagics.AlongAxes(new Vector3(1, 0, 0), out var ax, out var ay, out var az);
         Assert.That((fx[0].AxisX, fx[0].AxisY, fx[0].AxisZ), Is.EqualTo((ax, ay, az)));
+    }
+
+    [Test]
+    public void AGms2ArrowEffectAttackKeepsThePacketsPointAsAnArrowRecord()
+    {
+        // FUN_14175acc0 by the GMS2 rule (SkillAttackData.ArrowRecord): a per-skill attack of type 0 with an arrow effect is
+        // not aimed; the same attack in a skilldata row is
+        foreach (var (gms2, kept) in new[] { (true, true), (false, false) })
+        {
+            var doc = XDocument.Parse("<ms2><skill id=\"100\"><basic mainType=\"1\"/><level value=\"1\"><motion sequenceName=\"A\">"
+                + "<attack point=\"Hit_01\" targetCount=\"1\"><arrow effect=\"CH/Star.xml\"/></attack></motion></level></skill></ms2>");
+            var data = new SkillDataTable(() => new[] { doc }, (e, n, _) => e.Elements(n).ToList(), gms2Rows: gms2)
+                .GetSkillData(100).GetLevelData(1).Motions[0].Attacks[0];
+            var at = Run(Damage(), Attack(), new HitEffectThrottle(), arrowRecord: data.ArrowRecord)[0].At;
+            Assert.That(at == new Vector3(10, 20, 30), Is.EqualTo(kept), gms2 ? "a GMS2 row" : "a skilldata row");
+        }
     }
 
     [Test]

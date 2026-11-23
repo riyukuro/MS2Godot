@@ -194,7 +194,7 @@ public sealed partial class RemoteLayer
         var data = motion != null && d.AttackPoint < motion.Attacks.Count ? motion.Attacks[d.AttackPoint] : null;
         FillMagicObjects();
         damageHitEffects.Clear();
-        DamageHitEffects.Records(d, attack, data?.Direction ?? 3, motion?.MoveDistance ?? 0f, findHitObject ??= FindHitObject,
+        DamageHitEffects.Records(d, attack, data?.ArrowRecord ?? false, data?.Direction ?? 3, motion?.MoveDistance ?? 0f, findHitObject ??= FindHitObject,
             hitEffects, (uint)Time.GetTicksMsec(), magicRand, damageHitEffects, MagicSight());
         foreach (var fx in damageHitEffects)
         {

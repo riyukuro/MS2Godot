@@ -34,7 +34,7 @@ public delegate bool DamageHitAnchors(int id, List<Vector3> into);
 /// <summary>
 /// The hit effects of a mode 1 skill damage (CSceneStateGame::FUN_14171cdf0 @0x14171cdf0, scenestategame.cpp:5606). Per target
 /// a CDamageRecord; when the target is an object, the hit point and direction start as the packet's, FUN_14145e1a0 aims them
-/// unless attackMethodType is 1 (FUN_14175acc0), FUN_141467f60 turns them into the transform
+/// unless the attack is an arrow record (FUN_14175acc0: SkillAttackData.ArrowRecord of the same attack), FUN_141467f60 turns them into the transform
 /// (<see cref="OwnTagMagics.AlongAxes"/>), and CMagicService::FUN_14146b440 (magicdata.cpp:2736) with bTracked 1 and
 /// CContentShutdown 0x73 off plays them: for a record with hits, FUN_14146c990 (magicdata.cpp:2991) gives the pair
 /// (first, second) and the owner's kind; first plays the damage's effectHit at the transform, second its effectRemain on
@@ -55,7 +55,7 @@ public static class DamageHitEffects
     /// motion's "movedistance" (m_fB8), the aim's inputs. <paramref name="rand"/> is the CRT rand (0..32767) the aim's
     /// FUN_14109ace0 reads. Returns the number added.
     /// </summary>
-    public static int Records(SkillDamage d, SkillAttackDamage damage, int direction, float moveDistance, DamageHitFind find,
+    public static int Records(SkillDamage d, SkillAttackDamage damage, bool arrowRecord, int direction, float moveDistance, DamageHitFind find,
         HitEffectThrottle throttle, uint nowMs, Func<int> rand, List<DamageHitEffect> into, FieldSight sight = default)
     {
         if (d.Mode != 1 || damage == null || d.Targets == null) return 0;
@@ -68,7 +68,7 @@ public static class DamageHitEffects
             var pos = packetPos;
             var dir = packetDir;
             bool hasOwner = find(d.OwnerId, out var owner);
-            if (damage.AttackMethodType != 1)
+            if (!arrowRecord)
                 Aim(target, hasOwner, owner, direction, moveDistance, rand, ref pos, ref dir);
             // FUN_14146b440: the record keeps every hit (AddDamage); none, nothing
             if (t.Hits == null || t.Hits.Length == 0) continue;

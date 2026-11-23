@@ -303,6 +303,14 @@ public sealed partial class RemoteLayer : Node3D
     /// <summary>CDamageRecord::GetAttackData then m_damage (<see cref="Ms2.Ui.Skills.SkillDamageTable.Get"/>); null when none.</summary>
     public Ms2.Ui.Skills.SkillAttackDamage AttackDamage(int skillId, int level, int motion, int attack) =>
         SkillDamage.Get(skillId, level, motion, attack);
+    /// <summary>CDamageRecord::GetAttackData's attack (SkillLevelData's motion's attack); null when none. Its
+    /// <see cref="Ms2.Ui.Skills.SkillAttackData.ArrowRecord"/> is FUN_14175acc0's test.</summary>
+    public Ms2.Ui.Skills.SkillAttackData AttackData(int skillId, int level, int motion, int attack)
+    {
+        var motions = Ms2.Ui.GameTables.Shared(packs, Ms2Godot.GameOptions.StringLanguage).Skills.GetSkillData((uint)skillId)?.GetLevelData(level)?.Motions;
+        var m = motions != null && (uint)motion < (uint)motions.Count ? motions[motion] : null;
+        return m != null && (uint)attack < (uint)m.Attacks.Count ? m.Attacks[attack] : null;
+    }
 
     readonly Ms2.Ui.Skills.StateHitData remoteHitData = new();
     int hitMapId = -1, hitMapType;
@@ -334,18 +342,23 @@ public sealed partial class RemoteLayer : Node3D
     void ReactToHits(SkillDamage d)
     {
         Ms2.Ui.Skills.SkillAttackDamage attack = null;
-        bool looked = false;
+        bool looked = false, arrowRecord = false;
         foreach (var t in d.Targets)
         {
             if (!users.TryGetValue(t.TargetId, out var r) || r.Pc == null) continue;
-            if (!looked) { attack = AttackDamage(d.SkillId, d.Level, d.Motion, d.AttackPoint); looked = true; }
+            if (!looked)
+            {
+                attack = AttackDamage(d.SkillId, d.Level, d.Motion, d.AttackPoint);
+                arrowRecord = AttackData(d.SkillId, d.Level, d.Motion, d.AttackPoint)?.ArrowRecord ?? false;
+                looked = true;
+            }
             if (attack == null) return;
             long total = 0;
             foreach (var h in t.Hits) total += h.Damage;
             int mapType = HitMapType();
             bool ground = mapType is 9 or 3;
             uint armor = Ms2.Ui.Skills.HitReaction.SuperArmor(r.Pc.ClientStateId, 0, 0);
-            var recordDir = attack.AttackMethodType == 1 ? d.DirectionShort.ToVector3() : System.Numerics.Vector3.Zero;
+            var recordDir = arrowRecord ? d.DirectionShort.ToVector3() : System.Numerics.Vector3.Zero;
             (System.Numerics.Vector3, System.Numerics.Vector3)? attacker = null;
             if (PoseOf(d.OwnerId) is { } pose)
             {
