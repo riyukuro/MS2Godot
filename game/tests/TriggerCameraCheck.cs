@@ -20,6 +20,8 @@ namespace Ms2Godot.Tests;
 ///   frame from the fly-by's previous frame (FUN_14121f9f0 keeps the mode's last applied setting), and its end flies back
 ///   to the follow mode's fov and stored position (camera.cpp:2068). A type 5 packet queues the steps: they wait while a fly-by runs and the next
 ///   one runs when its pending mode is set; the single id 0 goes back to the follow mode.
+///   A path without its end stays in the lock mode until the camera reset (FUN_141863460), which drops the queue and goes
+///   back at once or by a fly-by.
 /// - 52000067: objects 8010 (StartInterpolator 2) and 8006 (StartInterpolator 3) ease by the log and exp curves
 ///   (FUN_141b6fdb0), while the rotation goes by the linear ratio (FUN_140afdec0).
 /// Also the setting's Godot transform for rotation (90, 0, 0) (looking along MS2 +x with +z up) and the rotation
@@ -164,6 +166,29 @@ public partial class TriggerCameraCheck : Node
         Mode("8001 on again", c, TriggerCamera.Lock);
         t.Apply(Steps(false, 0));
         Mode("steps: id 0", c, TriggerCamera.Target);
+
+        // the camera reset (FUN_141863460): a path sent without its end stays locked until it comes; 0 s goes back at once,
+        // else a kind 1 fly-by to the follow mode; the queued steps are dropped
+        t.Apply(Steps(false, 8001));
+        Mode("path without its end", c, TriggerCamera.Lock);
+        t.ResetCamera(0f);
+        Mode("reset 0 s", c, TriggerCamera.Target);
+        t.Apply(Steps(false, 8001));
+        t.ResetCamera(0.5f);
+        Mode("reset 0.5 s", c, TriggerCamera.FlyBy);
+        if (c.FlyByMode != TriggerCamera.Target) fails.Add($"reset 0.5 s: flies to mode {c.FlyByMode}");
+        c.Update(0.25f);
+        var lockedRot = new Vector3(a.Rotation.X, a.Rotation.Y, a.Rotation.Z - 360);
+        Near("reset at 0.25 s: rotation, half way to the follow mode's", c.Shown?.Rotation ?? default, (lockedRot + follow.Setting.Rotation) / 2);
+        c.Update(0.3f);
+        c.Update(0.01f);
+        Mode("reset 0.5 s done", c, TriggerCamera.Target);
+        t.Apply(Steps(true, 8014, 8001));
+        t.ResetCamera(0f);
+        if (t.CameraSteps.Count != 0) fails.Add($"reset: {t.CameraSteps.Count} step(s) left queued (want 0)");
+        c.Update(0.2f);
+        c.Update(0.01f);
+        Mode("reset during a fly-by, after it", c, TriggerCamera.Target);
         notes.Add($"8014 half fov {half}, landed {landed.Fov}");
 
         Eased();

@@ -152,6 +152,7 @@ public enum Inbound : ushort {
     CharacterInfo = 0x78,       // RecvOp::CharacterInfo (commonfiles/opcodes.h)
     InvincibleEffect = 0x83,    // RecvOp::InvincibleEffect (commonfiles/opcodes.h:139): CSceneStateGame::OnInvincibleEffect @0x1417316d0
     OneTimeEffect = 0xF1,       // RecvOp::OneTimeEffect (commonfiles/opcodes.h:244): CSceneStateGame::OnOneTimeEffect @0x14173a420
+    CameraInterpolation = 0xF2, // RecvOp::CameraInterpolation (commonfiles/opcodes.h:245): OnCameraInterpolation @0x14173a5b0, the trigger's camera reset
     TimeScale = 0xF3,           // RecvOp::TimeScale (commonfiles/opcodes.h:246): CSceneStateGame::OnTimeScale @0x14173a5e0
     Trade = 0x82,           // RecvOp Trade (commonfiles/opcodes.h): CSceneStateGame -> CTradeManagerEx::OnTrade
     GuideRecord = 0x89,     // RecvOp GuideRecord (commonfiles/opcodes.h): CGuideManager::ReceiveStates

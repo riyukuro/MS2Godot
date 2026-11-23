@@ -152,6 +152,7 @@ static class Gms2Opcodes {
         [Inbound.Trade] = 0x84,
         [Inbound.InvincibleEffect] = 0x85,
         [Inbound.OneTimeEffect] = 0xF3,
+        [Inbound.CameraInterpolation] = 0xF4,
         [Inbound.TimeScale] = 0xF5,
         [Inbound.GuideRecord] = 0x8B,
         [Inbound.DynamicChannel] = 0xA9,

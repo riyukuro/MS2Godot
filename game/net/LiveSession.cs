@@ -973,6 +973,15 @@ public partial class LiveSession : Node
         else pendingTriggers.Add(body);
     }
 
+    /// <summary>OnCameraInterpolation (@0x14173a5b0, scenestategame.cpp:4061-4064): the trigger service's camera reset on the
+    /// field's camera (<see cref="World.FieldTriggers.ResetCamera"/>).</summary>
+    void OnCameraInterpolation(CameraInterpolation m)
+    {
+        bool on = triggerField != null && GodotObject.IsInstanceValid(triggerField) && triggerField.Triggers != null;
+        if (on) triggerField.Triggers.ResetCamera(m.Seconds);
+        GD.Print($"live: camera reset over {m.Seconds:0.##} s{(on ? "" : " (no field yet, nothing to reset)")}");
+    }
+
     readonly HashSet<(string, int)> packetsNotApplied = new();
 
     /// <summary>A packet read whole but not applied (its client state has no home here yet): logged once per packet name and mode.</summary>
@@ -1469,6 +1478,8 @@ public partial class LiveSession : Node
                 Cinematic.Apply(cine);
                 if (cine is CinematicPacket.Caption) ReadNotApplied("Cinematic", CinematicPacket.CaptionType);   // OnPacketSetCaption (uicutscenecinematic.cpp:727): the caption is only an invoke on the pane's movie, which is not ported
             }
+            else if (game.Is(p, Inbound.CameraInterpolation))
+                OnCameraInterpolation(CameraInterpolation.Read(p.Reader()));
             else if (game.Is(p, Inbound.UserMoveByPortal))
             {
                 var m = UserMoveByPortal.Read(p.Reader());

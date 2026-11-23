@@ -418,8 +418,28 @@ public sealed class FieldTriggers
     void CameraEnd(FieldEntity e)
     {
         if (camera.ModeType == TriggerCamera.Target) return;
-        float dur = (float)e.Number("EndInterpolationTime", 0);
-        int kind = (int)(uint)e.Number("EndInterpolator", 1);
+        FlyToFollow((float)e.Number("EndInterpolationTime", 0), (int)(uint)e.Number("EndInterpolator", 1));
+    }
+
+    /// <summary>
+    /// CTriggerService::FUN_141863460 (@0x141863460, triggerservice.cpp:859-883), the camera reset (OnCameraInterpolation,
+    /// :508-512): the camera step queue is cleared, then the camera goes back to the follow mode, flying (kind 1) for
+    /// <paramref name="seconds"/> when it is not 0, from whatever mode is current. A trigger's camera paths sent without
+    /// their end (returnView 0) leave the lock mode on until this comes.
+    /// STILL-OPEN: FUN_140aed1c0 (m_248, the remembered setting).
+    /// </summary>
+    public void ResetCamera(float seconds)
+    {
+        cameraSteps.Clear();
+        if (camera == null) return;
+        FlyToFollow(seconds, 1);
+    }
+
+    /// <summary>The follow mode, flown to for <paramref name="dur"/> seconds by <paramref name="kind"/> when dur is not 0:
+    /// from the current setting (not orthographic) to the follow mode's fov, near, far and rotation, ending at the follow
+    /// mode's position (SetMode(2, 1)); else at once (SetMode(2, 0)).</summary>
+    void FlyToFollow(float dur, int kind)
+    {
         if (dur != 0f)
         {
             var from = camera.Current;

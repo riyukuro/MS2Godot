@@ -29,6 +29,16 @@ public class CombatEffectPacketTests
     }
 
     [Test]
+    public void CameraInterpolationIsOneFloat()
+    {
+        Assert.That(ProtocolProfile.Kms2525.Number(Inbound.CameraInterpolation), Is.EqualTo((ushort)0xF2));
+        Assert.That(ProtocolProfile.Gms2.Number(Inbound.CameraInterpolation), Is.EqualTo((ushort)0xF4));
+        Assert.That(CameraInterpolation.Read(R(w => w.WriteFloat(1f))).Seconds, Is.EqualTo(1f));
+        Assert.That(CameraInterpolation.Read(R(w => w.WriteFloat(0f))).Seconds, Is.EqualTo(0f));
+        Assert.Throws(Is.InstanceOf<Exception>(), () => CameraInterpolation.Read(R(w => { w.WriteFloat(1f); w.WriteByte(0); })));
+    }
+
+    [Test]
     public void OneTimeEffectReadsTheNameOnlyOnAdd()
     {
         var add = OneTimeEffect.Read(R(w => { w.WriteInt(7); w.WriteBool(true); w.WriteUnicodeString("Eff/Fx.xml"); }));

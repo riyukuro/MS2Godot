@@ -23,6 +23,16 @@ public sealed record OneTimeEffect(int Id, bool Add, string Name) {
 /// the start, float the scale at the end, float the length in ms, u8 the easing curve. Start calls WorldService::StartTimeScale
 /// (worldservice_1.cpp:8430), otherwise FUN_141bd9380 (:8445) ends a running change.
 /// </summary>
+/// <summary>CTriggerService::OnCameraInterpolation (@0x141861f60, triggerservice.cpp:508-512): one float, the seconds the
+/// camera takes back to the follow mode (0: at once). The server's trigger CameraReset sends it.</summary>
+public sealed record CameraInterpolation(float Seconds) {
+    public static CameraInterpolation Read(ByteReader r) {
+        var p = new CameraInterpolation(r.ReadFloat());
+        r.ExpectEnd("CameraInterpolation");
+        return p;
+    }
+}
+
 public sealed record TimeScale(bool Start, float From, float To, float DurationMs, byte Curve) {
     public static TimeScale Read(ByteReader r) {
         var p = new TimeScale(r.ReadBool(), r.ReadFloat(), r.ReadFloat(), r.ReadFloat(), r.ReadByte());
