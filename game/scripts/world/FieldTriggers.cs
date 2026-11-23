@@ -55,11 +55,13 @@ public interface ITriggerSounds
 /// fade switches at once. The collision switch does not wait for it. A mesh or rope / ladder event whose fade starts plays
 /// the entity's show or hide effect (<see cref="InsertShowHideEffect"/>).
 /// STILL-OPEN: the model swap a shown mesh with a model
-/// name gets (property 0x770e5fc6 and skin scale 0x2d7cad2d); whether the server's npc ground drops a hidden mesh
+/// name gets (triggeractioncli.cpp:643-705: the urn "urn:gamebryo-scenegraph:" + the name, property 0x770e5fc6 and skin
+/// scale 0x2d7cad2d); both servers send an empty name, so no live packet reaches it; whether the server's npc ground drops a hidden mesh
 /// (NpcGroundSpace keeps it; the client casts no npc ground: OnFieldAddNpc @0x141718cf0, scenestategame.cpp:3533-3584,
 /// and CNpc::ApplySyncBlock, npcactorandvibrate.cpp:913,965, place an npc at the packet's position + 4 z, so the
 /// server decides); the minimap mark of a mesh event (UIMinimapDialog::SetTriggerVisible, :702-704) and an actor event's
-/// (:724-726); the actor sequence's blend (PlayAnimation's 1.0f and false go to the client's own
+/// (:724-726), which needs the dialog's trigger marks first (AddTrigger @0x141a3e4e0, uiminimapentity.cpp:2818-2843: an
+/// entity with an icon property 0x6814a50e gets a "triggerobject" mark keyed by its id; our minimap has none yet); the actor sequence's blend (PlayAnimation's 1.0f and false go to the client's own
 /// NiActorManager::SetTargetAnimation, whose body is not in the recomp); a hidden cube's object weapon (IsObjectWeapon; PullObjectWeaponAction::FUN_140959eb0 takes only a cube whose IsVisible is set,
 /// actionkeyobject.cpp:1873-1875; not ported here); the sound Effect kind (<see cref="ApplySound"/>); the camera parts listed at <see cref="TriggerCamera"/>; a trigger mesh drawn as an animated prop (FieldProps); a hidden
 /// mesh that BGTransparencyMgr fades back in (FieldFade restores its transform).
