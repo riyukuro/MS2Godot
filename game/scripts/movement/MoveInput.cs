@@ -28,11 +28,25 @@ public static class MoveInput
     public static bool GamePad;
     static Vector2 lastStick;
 
+    /// <summary>
+    /// Unk_PCMove::GetMoveDirection (@0x141683290, unit_141682f80.cpp:313-317) gives no direction while the guide holds
+    /// PlayerControl or PlayerMove (CGuideManager::IsRestricted 0x15 / 0x14): no key, pad or click move.
+    /// </summary>
+    public static bool GuideHoldsMove() => Ms2.Ui.Guide.GuideManager.Current is { } g
+        && (g.IsRestricted(Ms2.Ui.Guide.GuideLimit.PlayerControl) || g.IsRestricted(Ms2.Ui.Guide.GuideLimit.PlayerMove));
+
+    /// <summary>The jump action (0x493e1) reads through Unk_PCMove::FUN_1416840c0 (unit_141682f80.cpp:528-536), which
+    /// CGuideManager::IsSkillRestricted (@0x14138c930, guideentity_1b.cpp:547-556) stops: PlayerControl holds it,
+    /// PlayerMove holds only the move actions.</summary>
+    static bool GuideHoldsJump() => Ms2.Ui.Guide.GuideManager.Current?.IsSkillRestricted(JumpAction) == true;
+
+    const int JumpAction = 0x493e1;
+
     public static State Read()
     {
         var s = new State();
         if (Blocked()) return s;
-        if (GamePad && ReadPad(ref s)) return s;
+        if (GamePad && ReadPad(ref s)) return Hold(s);
         static bool K(Key k) => Input.IsPhysicalKeyPressed(k);
         // Unk_PCMove::GetMoveDirection: left wins over right, up over down
         if (K(Key.Left) || K(Key.A)) s.Move.X = -1;
@@ -41,6 +55,14 @@ public static class MoveInput
         else if (K(Key.Down) || K(Key.S)) s.Move.Y = -1;
         s.Jump = K(Key.C) || K(Key.Alt);
         s.Walk = K(Key.Comma) || K(Key.Shift);
+        return Hold(s);
+    }
+
+    /// <summary>The guide's holds over a read (GuideHoldsMove, GuideHoldsJump).</summary>
+    static State Hold(State s)
+    {
+        if (GuideHoldsMove()) s.Move = Vector2.Zero;
+        if (s.Jump && GuideHoldsJump()) s.Jump = false;
         return s;
     }
 

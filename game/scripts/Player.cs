@@ -280,6 +280,8 @@ public partial class Player : CharacterBody3D
         }
         // under a field move's loading screen the client's MyPC is gone (Ms2.Ui.FieldMoveCover): no key, click or script moves it
         if (Ms2.Ui.FieldMoveCover.Up) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }
+        // the guide's PlayerControl / PlayerMove limit: Unk_PCMove::GetMoveDirection returns before the click move too (MoveInput.GuideHoldsMove)
+        if (!ScriptDriven && MoveInput.GuideHoldsMove()) MouseInput = Vector2.Zero;
         bool skill = SkillHoldsMove();
         var skillInput = skill && !DeathHoldsMove ? (Input2 != Vector2.Zero ? Input2 : MouseInput) : Vector2.Zero;
         if (skill) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }   // the skill state (PlayerSkill)
