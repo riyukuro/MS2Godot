@@ -55,6 +55,15 @@ public class CharacterCreateSelectTests
     }
 
     [Test]
+    public void EveryJobTabHasItsNameAndDescription()
+    {
+        var c = new CharacterCreateSelectController();
+        c.Load(Packs(), "en");
+        Assert.That(c.Jobs, Is.Not.Empty);
+        Assert.That(c.Jobs.Where(j => j.Name.Length == 0).Select(j => j.JobCode), Is.Empty, "tabs without a job name");
+    }
+
+    [Test]
     public void TabChangeThenCreateSelectsTheJobAfterThePopdown()
     {
         var (h, c) = Load(30);

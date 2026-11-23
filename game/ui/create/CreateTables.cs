@@ -16,10 +16,12 @@ public sealed class CreateTables
     readonly Dictionary<int, int> createMap = new(), selectMap = new();
     readonly List<int> selectMaps = new();
     readonly PackSet packs;
+    readonly Ms2.Ui.Skills.JobTable jobTable;
 
     public CreateTables(PackSet packs)
     {
         this.packs = packs;
+        jobTable = Ms2.Ui.Skills.JobTable.Load(packs);
         LoadLobbyField();
     }
 
@@ -47,12 +49,8 @@ public sealed class CreateTables
     /// <summary>LobbyFieldTable::GetSelectMap (job 0 counts as 1).</summary>
     public int SelectMap(int jobCode) => selectMap.TryGetValue(jobCode == 0 ? 1 : jobCode, out int m) ? m : selectMap.GetValueOrDefault(1);
 
-    /// <summary>JobTable::GetSubJob1: table/job.xml subJob1 of the job group (0 when the table has none).</summary>
-    public int SubJob1(int jobGroup)
-    {
-        var job = Xml("table/job.xml")?.Root.Descendants("job").FirstOrDefault(j => (string)j.Attribute("jobGroupID") == jobGroup.ToString(CultureInfo.InvariantCulture));
-        return int.TryParse((string)job?.Attribute("subJob1"), out int s) ? s : 0;
-    }
+    /// <summary>JobTable::GetSubJob1: the sub job 1 of the job group (0 when the table has none), from either layout of table/job.xml.</summary>
+    public int SubJob1(int jobGroup) => jobTable.GetSubJob1(jobGroup);
 
     /// <summary>The xblock name of a map id (table/fielddata.xml, the environment without a locale).</summary>
     public string XBlockOf(int mapId)

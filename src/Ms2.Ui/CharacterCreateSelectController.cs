@@ -178,10 +178,7 @@ public sealed class CharacterCreateSelectController : UiController
         var strings = new GameStrings(packs, languages);
         var names = strings.Table("jobname", "name");
         var descs = strings.Table("stringcharactercreateselect", "name");
-        var subJob1 = new Dictionary<int, int>();
-        foreach (var e in Xml(packs, "table/job.xml")?.Root.Descendants("job") ?? Enumerable.Empty<XElement>())
-            if (int.TryParse((string)e.Attribute("jobGroupID"), out int g))
-                subJob1.TryAdd(g, int.TryParse((string)e.Attribute("subJob1"), out int s) ? s : 0);
+        var jobTable = Skills.JobTable.Load(packs);           // JobTable::GetSubJob1: either layout of table/job.xml
 
         XElement data = null, display = null, displayAny = null;
         foreach (var g in x.Elements("group"))
@@ -214,7 +211,7 @@ public sealed class CharacterCreateSelectController : UiController
             int code = Int((string)row.Attribute("jobCode"));
             if (code == 0) continue;
             int descKey = Int((string)row.Attribute("descKey"));
-            string name = names.GetValueOrDefault(subJob1.GetValueOrDefault(code).ToString(CultureInfo.InvariantCulture)) ?? "";
+            string name = names.GetValueOrDefault(jobTable.GetSubJob1(code).ToString(CultureInfo.InvariantCulture)) ?? "";
             string desc = descKey != 0 ? descs.GetValueOrDefault(descKey.ToString(CultureInfo.InvariantCulture)) ?? "" : "";
             jobs[code] = new Job(code, name, desc, (string)row.Attribute("movie") ?? "");
         }

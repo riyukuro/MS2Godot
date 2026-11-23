@@ -197,6 +197,13 @@ public sealed class JobTable
         }
     }
 
+    /// <summary>JobTable::Load (jobtable.cpp:309) of the pack's table/job.xml (and table/jobgroup.xml where the data has it).</summary>
+    public static JobTable Load(Ms2.Formats.Pack.PackSet packs)
+    {
+        XDocument Doc(string path) => packs.Exists("Xml", path) ? Ms2.Formats.World.GameStrings.Parse(packs.Read("Xml", path)) : null;
+        return new JobTable(Doc("table/job.xml"), (parent, child, key) => FeatureElements.Collect(packs, parent, child, key), Doc("table/jobgroup.xml"));
+    }
+
     /// <summary>GetJobData @0x140644880 (:339).</summary>
     public JobData GetJobData(int jobGroup) => jobs.TryGetValue(jobGroup, out var j) ? j : null;
 
