@@ -166,14 +166,16 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
 
     public void Insert(string effect, Xform at, bool always, int randomIndex) => Play(effect, at, false, 0);
 
-    /// <summary>FUN_1411a49c0 with an actor target (m_nKind 0, SetActor): a kept effect that follows the actor; its handle, or
-    /// 0 when it did not spawn.
-    /// STILL-OPEN: the light parts of such an effect stay where the actor was at the spawn.</summary>
-    public int SpawnOn(string effect, Node3D actor)
+    /// <summary>FUN_1411a49c0 with an actor target (m_nKind 0, SetActor): a kept effect on the actor; its handle, or 0 when it
+    /// did not spawn. Its nif parts follow the actor except attach type 0 ones, which start at its node in the world
+    /// (CombatLayer.ActorPlace); soundMusic parts play for <paramref name="casterKind"/> (SoundMusicEffectState).
+    /// STILL-OPEN: the light parts of such an effect stay where the actor was at the spawn; the following parts hang on the
+    /// actor's root, not on their named node.</summary>
+    public int SpawnOn(string effect, Node3D actor, int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
     {
         if (actor == null || !IsInstanceValid(actor)) return 0;
         int h = nextHandle;
-        var nodes = Play(effect, Identity, true, h, actor);
+        var nodes = Play(effect, Identity, true, h, actor, casterKind);
         if (nodes == null) return 0;
         nextHandle++;
         kept[h] = nodes;
@@ -210,15 +212,16 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     }
 
     /// <summary>The effect xml's parts at a Gamebryo world transform: nif parts through the effect scene runtime (startDelay,
-    /// duration; a looping part stays until it is faded), light parts through FieldLights, sound events at the point. Null
+    /// duration; a looping part stays until it is faded), light parts through FieldLights, sound events at the point, soundMusic parts for <paramref name="casterKind"/>. Null
     /// when the xml is missing.</summary>
-    List<Node3D> Play(string xml, Xform at, bool keep, int handle, Node3D actor = null)
+    List<Node3D> Play(string xml, Xform at, bool keep, int handle, Node3D actor = null,
+        int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
     {
         var parts = table.Get(xml);
         if (parts == null) return null;
         var nodes = new List<Node3D>();
-        // an effect on an actor: the nif parts are its children (they follow it), at in the actor's own space; sounds and
-        // lights take its place at the spawn
+        // an effect on an actor: the nif parts but attach type 0 ones are its children (they follow it), at in the actor's
+        // own space; sounds and lights take its place at the spawn
         Xform world = at;
         if (actor != null)
         {
@@ -241,13 +244,24 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
                 if (keep && part.Loop) looping.Add(handle);
                 continue;
             }
+            if (string.Equals(part.Type, "soundMusic", StringComparison.OrdinalIgnoreCase))
+            {
+                FieldAudio.Instance?.PlayEffectSoundMusic(part, casterKind);
+                continue;
+            }
             if (part.Type != "nif" || string.IsNullOrEmpty(part.FilePath) || Scene(part.FilePath) is not { } sc) continue;
             var local = new Xform(new Vec3(part.Translate[0], part.Translate[1], part.Translate[2]),
                 DummyWorld.EulerXyz(part.Rotation[0], part.Rotation[1], part.Rotation[2]), part.Scale <= 0 ? 1 : part.Scale);
             float duration = part.Loop ? 1e7f : part.Duration;
             var fx = new EffectInstance(sc, builder, duration, seed++) { Name = "RegionSkill_" + seed, Delay = part.StartDelay };
             fx.FileSpace = ModelBuilder.ToGodot(at.Compose(local));
-            (actor ?? (Node)this).AddChild(fx);
+            if (actor != null && part.AttachKind == 0)
+            {
+                // AttachToOwnerNode (nifeffectparam.cpp:1044): in the world at the actor's node, not following it
+                fx.Transform = GlobalTransform.AffineInverse() * CombatLayer.ActorPlace(part, actor);
+                AddChild(fx);
+            }
+            else (actor ?? (Node)this).AddChild(fx);
             if (keep) nodes.Add(fx);
             if (keep && part.Loop) looping.Add(handle);
             Spawned++;

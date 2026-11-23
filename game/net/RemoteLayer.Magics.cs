@@ -112,10 +112,17 @@ public sealed partial class RemoteLayer
         st.SkillExited = () => remoteMagics.SkillExited(id, (int)Time.GetTicksMsec());
         st.AttackFired = a => remoteMagics.AttackFired(id, a, (int)Time.GetTicksMsec());
         // the cast's tag effects kept on the caster (an actor target, SetActor) and ended with its skill state
-        st.TagEffect = (_, fx) => RegionFx?.SpawnOn(fx, r.Visual) ?? 0;
-        st.StopEffect = h => RegionFx?.FadeOut(h, 0);
-        st.ReleaseEffect = h => RegionFx?.Release(h);
+        st.TagEffect = (_, fx) => SpawnKeptEffect(fx, r.Visual, Ms2.Audio.SoundMusicEffectState.CasterOther);
+        st.StopEffect = StopKeptEffect;
+        st.ReleaseEffect = ReleaseKeptEffect;
     }
+
+    /// <summary>A kept effect on an actor (FUN_1411a49c0, SetActor): its id, 0 when it did not spawn.</summary>
+    public int SpawnKeptEffect(string effect, Node3D actor, int casterKind) => RegionFx?.SpawnOn(effect, actor, casterKind) ?? 0;
+    /// <summary>CEffectService::FUN_1411a6060: a kept effect stops at once.</summary>
+    public void StopKeptEffect(int id) => RegionFx?.FadeOut(id, 0);
+    /// <summary>CEffectService::FUN_1411a69e0: a kept effect released.</summary>
+    public void ReleaseKeptEffect(int id) => RegionFx?.Release(id);
 
     /// <summary>
     /// CSceneStateGame::FUN_14171c1d0 (scenestategame.cpp:5511) for another player's mode 0: its skill level's attack, the

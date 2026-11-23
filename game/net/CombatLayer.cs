@@ -231,9 +231,12 @@ void fragment() {
     /// no transform from the actor at all: the remain's request has no transform (magicdata.cpp:2872), so it plays at the
     /// world origin. That is a client quirk, kept as is.
     /// </summary>
-    internal Transform3D WorldPlace(EffectPart part, Node3D actor)
+    internal Transform3D WorldPlace(EffectPart part, Node3D actor) => parent.GlobalTransform.AffineInverse() * ActorPlace(part, actor);
+
+    /// <summary>The world transform an attach type 0 part of an effect on <paramref name="actor"/> is put at (<see cref="WorldPlace"/>).</summary>
+    internal static Transform3D ActorPlace(EffectPart part, Node3D actor)
     {
-        if (!part.ApplyNodeTransform) return parent.GlobalTransform.AffineInverse();
+        if (!part.ApplyNodeTransform) return Transform3D.Identity;
         var w = NodeWorld(actor, part.ParentNode);
         if (!(part.ApplyTranslate && part.ApplyRotation && part.ApplyScale))
         {
@@ -241,7 +244,7 @@ void fragment() {
             var rot = part.ApplyRotation ? new Basis(w.Basis.GetRotationQuaternion()) : Basis.Identity;
             w = new Transform3D(rot.Scaled(new Godot.Vector3(s, s, s)), part.ApplyTranslate ? w.Origin : Godot.Vector3.Zero);
         }
-        return parent.GlobalTransform.AffineInverse() * w;
+        return w;
     }
 
     /// <summary>The world transform of the node <paramref name="name"/> under <paramref name="actor"/> (GetObjectByName on its
