@@ -1,5 +1,6 @@
 using Maple2.PacketLib.Tools;
 using Ms2.Net;
+using Ms2.Net.Packets;
 using Ms2.Ui.Guide;
 using NUnit.Framework;
 
@@ -44,6 +45,28 @@ public class TriggerGuideTests
         Assert.That(TriggerGuide.Apply(Body(8, 2, 3, 20002, 0), ProtocolProfile.Gms2, pane), Is.True);
         Assert.That(TriggerGuide.Apply(Body(8, 3, 3), ProtocolProfile.Gms2, pane), Is.True);
         Assert.That(pane.Calls, Is.EqualTo(new[] { "show 7 20001 5000", "hide 7", "show 3 20002 0", "hide 3" }));
+    }
+
+    /// <summary>Sub 1 adds a ServerTriggerEvent guide trigger with the id (AddGuideTrigger, triggerservice.cpp:1006-1011);
+    /// sub 0xa turns the own pc to the point's z (:1072-1083); a sub not applied here reaches the unapplied hook read whole.</summary>
+    [Test]
+    public void GuideTriggerTurnAndUnappliedSubs()
+    {
+        var g = new GuideManager(new GuideTests.World());
+        var left = new List<TriggerUiCommand>();
+        float? yaw = null;
+        Assert.That(TriggerGuide.Apply(Body(8, 1, 260), ProtocolProfile.Gms2, null, null, g, z => yaw = z, left.Add), Is.True);
+        Assert.That(g.CheckTrigger(GuideTrigger.ServerTriggerEvent, 260, null), Is.True);
+        Assert.That(g.CheckTrigger(GuideTrigger.ServerTriggerEvent, 261, null), Is.False);
+
+        var w = new ByteWriter(); w.WriteByte(9); w.WriteByte(0xa); w.WriteShort(10); w.WriteShort(20); w.WriteShort(-90); w.WriteBool(false);
+        Assert.That(TriggerGuide.Apply(w.Buffer.AsSpan(0, w.Length).ToArray(), ProtocolProfile.Kms2525, null, null, g, z => yaw = z, left.Add), Is.True);
+        Assert.That(yaw, Is.EqualTo(-90f));
+        Assert.That(left, Is.Empty);
+
+        w = new ByteWriter(); w.WriteByte(9); w.WriteByte(9); w.WriteInt(11); w.WriteString("hello");
+        Assert.That(TriggerGuide.Apply(w.Buffer.AsSpan(0, w.Length).ToArray(), ProtocolProfile.Kms2525, null, null, g, null, left.Add), Is.True);
+        Assert.That(left.Select(c => (c.Sub, c.Id, c.Text)), Is.EqualTo(new[] { ((byte)9, 11, "hello") }));
     }
 
     [Test]

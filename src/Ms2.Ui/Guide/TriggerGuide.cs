@@ -6,50 +6,57 @@ using Ms2.Ui.Hud;
 namespace Ms2.Ui.Guide;
 
 /// <summary>
-/// The guide part of a Trigger packet (RecvOp 0x4E), type 9: CTriggerService::FUN_1418627c0 (@0x1418627c0,
-/// triggerservice.cpp:631-672) reads a u8 sub. Sub 2 (FUN_141863cc0 @0x141863cc0, :986-995) reads three i32, the guide
-/// entity, the text and the duration in ms, and calls the guide event pane's (UIGuideEvent 0x4e53) ShowSummary with
-/// them; sub 3 (FUN_141863d80 @0x141863d80, :997-1004) reads one i32 and calls HideSummary. Without the pane
-/// (FindGuideEvent gives 0) the packet does nothing.
-/// Subs 4 and 5 (FUN_141863b70, StopCutScene) go to the cut scene movie (<see cref="CutSceneMovie"/>).
-/// STILL-OPEN: the other subs: 1 AddGuideTrigger, 7 and 8 the emotion state, 9 the face
-/// emotion, 0xa and 0xb the own pc's turn and look, 0xc the typing game.
+/// The Ui part of a Trigger packet (RecvOp 0x4E), type 9: CTriggerService::FUN_1418627c0 (@0x1418627c0,
+/// triggerservice.cpp:631-672) reads a u8 sub (<see cref="TriggerObjects.ReadUi"/>). Sub 1 (AddGuideTrigger @0x141863df0,
+/// :1006-1011) adds a guide trigger of type 0x15 (ServerTriggerEvent) with the id. Sub 2 (FUN_141863cc0, :986-995) calls the
+/// guide event pane's (UIGuideEvent 0x4e53) ShowSummary with the entity, the text and the duration in ms; sub 3
+/// (FUN_141863d80, :997-1004) HideSummary. Without the pane (FindGuideEvent gives 0) they do nothing. Subs 4 and 5
+/// (FUN_141863b70, StopCutScene) go to the cut scene movie (<see cref="CutSceneMovie"/>). Sub 0xa (FUN_1418642e0, :1072-1083)
+/// turns the own pc to the point's z as its target yaw (PCBase::SetTargetYaw), through the host's hook.
+/// STILL-OPEN: sub 0xa's move to the point (vfunc_21); sub 0xb, the own pc's LookAtPoint; subs 7 and 8, the emotion state
+/// 0x35; sub 9, an npc's talk line; sub 0xc, the typing game. These are read and left to <paramref name="unapplied"/>.
 /// </summary>
 public static class TriggerGuide
 {
-    public const byte ShowSummary = 2, HideSummary = 3, StartMovie = 4, StopMovie = 5;
+    public const byte ShowSummary = TriggerObjects.UiShowSummary, HideSummary = TriggerObjects.UiHideSummary,
+        StartMovie = TriggerObjects.UiStartMovie, StopMovie = TriggerObjects.UiStopMovie;
 
     /// <summary>
-    /// Applies a Trigger packet's body if its type is the guide type (<see cref="TriggerObjects.Guide"/>, after
+    /// Applies a Trigger packet's body if its type is the Ui type (<see cref="TriggerObjects.Ui"/>, after
     /// <see cref="TriggerObjects.ClientType"/>), returning whether it was; a packet of another type is left to the
-    /// field's trigger objects.
+    /// field's trigger objects. <paramref name="guide"/> takes sub 1 (null: the session's, <see cref="GuideManager.Current"/>);
+    /// <paramref name="turnTo"/> gets sub 0xa's yaw (MS2 Z rotation, degrees); <paramref name="unapplied"/> gets every sub
+    /// this does not apply.
     /// </summary>
-    public static bool Apply(byte[] body, ProtocolProfile profile, IGuideEventPane pane, CutSceneMovie movie = null)
+    public static bool Apply(byte[] body, ProtocolProfile profile, IGuideEventPane pane, CutSceneMovie movie = null,
+        GuideManager guide = null, System.Action<float> turnTo = null, System.Action<TriggerUiCommand> unapplied = null)
     {
         var r = new ByteReader(body);
-        if (r.Available < 1 || TriggerObjects.ClientType(r.ReadByte(), profile) != TriggerObjects.Guide) return false;
-        switch (r.ReadByte())
+        if (r.Available < 1 || TriggerObjects.ClientType(r.ReadByte(), profile) != TriggerObjects.Ui) return false;
+        var c = TriggerObjects.ReadUi(r);
+        switch (c.Sub)
         {
+            case TriggerObjects.UiGuideTrigger:
+                (guide ?? GuideManager.Current)?.AddTrigger(GuideTrigger.ServerTriggerEvent, c.Id, 0);
+                break;
             case ShowSummary:
-            {
-                int entity = r.ReadInt(), text = r.ReadInt(), duration = r.ReadInt();
-                pane?.ShowSummary(entity, text, duration);
+                pane?.ShowSummary(c.Id, c.Value, c.Duration);
                 break;
-            }
             case HideSummary:
-            {
-                int entity = r.ReadInt();
-                pane?.HideSummary(entity);
+                pane?.HideSummary(c.Id);
                 break;
-            }
             case StartMovie:
-            {
-                string path = r.ReadString();       // FUN_141863b70: a narrow string, then the cut scene id
-                movie?.Start(path, r.ReadInt());
+                movie?.Start(c.Path, c.Id);
                 break;
-            }
             case StopMovie:
-                movie?.StopIfCutScene(r.ReadInt());   // StopCutScene @0x141863c50
+                movie?.StopIfCutScene(c.Id);   // StopCutScene @0x141863c50
+                break;
+            case TriggerObjects.UiTurn when turnTo != null:
+                turnTo(c.Point.Z);
+                if (c.Move) unapplied?.Invoke(c);
+                break;
+            default:
+                unapplied?.Invoke(c);
                 break;
         }
         return true;

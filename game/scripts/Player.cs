@@ -227,6 +227,10 @@ public partial class Player : CharacterBody3D
         targetYawDeg = Mathf.RadToDeg(Mathf.Atan2(dir.X, dir.Z));
     }
 
+    /// <summary>PCBase::SetTargetYaw (pcbase.cpp:1431) with the yaw itself (MS2 Z rotation, degrees), as the trigger's turn
+    /// (CTriggerService FUN_1418642e0, triggerservice.cpp:1072-1083) passes it.</summary>
+    public void TurnToRotZ(float rotZ) => targetYawDeg = rotZ;
+
     /// <summary>PCBase::GetTargetYaw (m_f934, pcbase.cpp:1469): the yaw <see cref="TurnTo"/> set, in the
     /// <see cref="FacingRotZ"/> convention (MS2 Z rotation, degrees).</summary>
     public float TargetRotZ => targetYawDeg;

@@ -958,9 +958,44 @@ public partial class LiveSession : Node
     void OnTrigger(byte[] body)
     {
         if (LogPackets) GD.Print($"live: Trigger in {Convert.ToHexString(body, 0, Math.Min(body.Length, 24))}{(body.Length > 24 ? ".." : "")}");
-        if (Ms2.Ui.Guide.TriggerGuide.Apply(body, game.Profile, GuidePane, Movie)) return;
+        if (Ms2.Ui.Guide.TriggerGuide.Apply(body, game.Profile, GuidePane, Movie, guide,
+                z => { if (player != null && IsInstanceValid(player)) player.TurnToRotZ(z); }, c => TriggerNotApplied(TriggerObjects.Ui, c.Sub))) return;
+        if (ReadUiTrigger(body)) return;
         if (triggerField != null && GodotObject.IsInstanceValid(triggerField) && triggerField.Triggers != null) ApplyTrigger(triggerField, body);
         else pendingTriggers.Add(body);
+    }
+
+    readonly HashSet<int> triggersNotApplied = new();
+
+    /// <summary>A UI trigger command read but not applied: logged once per type and sub.</summary>
+    void TriggerNotApplied(byte type, byte sub)
+    {
+        if (triggersNotApplied.Add(type << 8 | sub)) GD.Print($"live: Trigger type 0x{type:x} sub {sub} read, not applied");
+    }
+
+    /// <summary>
+    /// The Trigger types whose dialogs are not ported, read whole (CTriggerService::FUN_141861840, triggerservice.cpp:366):
+    /// Dialog 0xf (the timer 0x4e95, the PvP observer 0x4e96, 0x4e99/0x4e9a, 0x4ed3), the side popup talk 0x13
+    /// (UISidePopupTalk 0x4f57), the set-visible list 0x14 (FindObjectByName, the object's state) and the npc duel bar
+    /// 0x15 (UINpcDuelHPBarDialog 0x4f62). STILL-OPEN: applying them; each is logged once per type and kind.
+    /// </summary>
+    bool ReadUiTrigger(byte[] body)
+    {
+        if (body.Length < 1) return false;
+        var r = new Maple2.PacketLib.Tools.ByteReader(body);
+        byte type = TriggerObjects.ClientType(r.ReadByte(), game.Profile);
+        try
+        {
+            switch (type)
+            {
+                case TriggerObjects.Dialog: TriggerNotApplied(type, TriggerObjects.ReadDialog(r).Kind); return true;
+                case TriggerObjects.SidePopup: TriggerNotApplied(type, TriggerObjects.ReadSidePopup(r).Kind); return true;
+                case TriggerObjects.SetVisibleUi: TriggerNotApplied(type, TriggerObjects.ReadSetVisibleUi(r).State); return true;
+                case TriggerObjects.DuelHpBar: TriggerNotApplied(type, TriggerObjects.ReadDuelHpBar(r).Show ? (byte)1 : (byte)0); return true;
+                default: return false;
+            }
+        }
+        catch (Exception e) { GD.PushWarning($"live: Trigger type 0x{type:x}: {e.Message}"); return true; }
     }
 
     static void ApplyTrigger(Field field, byte[] body)
