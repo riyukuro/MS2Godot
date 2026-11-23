@@ -50,6 +50,9 @@ public sealed class EquipApplier
         public readonly Dictionary<int, int> Subtypes = new();                         // item -> limit type==1 subtype (weapon kind)
         public readonly Dictionary<int, string> CharacterIdle = new();                 // item -> its <effect characterIdle>
         public Ms2.Ui.Skills.WeaponActionTable WeaponActions;                          // table/weaponaction.xml
+        public readonly HashSet<int> RowsRead = new();                                 // GMS2: items whose per-item file was read
+        Ms2.Ui.Items.ItemFiles files;
+        public Ms2.Ui.Items.ItemFiles Files(PackSet packs) => files ??= new Ms2.Ui.Items.ItemFiles(packs);
     }
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, ItemTables> tables = new();
     readonly ItemTables shared;
@@ -74,21 +77,27 @@ public sealed class EquipApplier
             {
                 var x = PackXml.Parse(packs.Read("Xml", entry));
                 foreach (var e in x.Root.Elements("item"))
-                {
-                    if (!int.TryParse((string)e.Attribute("id"), out int i)) continue;
-                    if (int.TryParse((string)e.Descendants("tool").FirstOrDefault()?.Attribute("itemPreset"), out int p) && p != 0)
-                        byItem[i] = p;
-                    var prop = e.Descendants("property").FirstOrDefault();
-                    if ((string)prop?.Attribute("type") == "1" && int.TryParse((string)prop.Attribute("subtype"), out int st))
-                        shared.Subtypes[i] = st;
-                    // ItemEffect::Load (itemdatastruct.cpp:1609-1625): <effect characterIdle> of the item itself
-                    if ((string)e.Descendants("effect").FirstOrDefault()?.Attribute("characterIdle") is { Length: > 0 } fx)
-                        characterIdle[i] = fx;
-                }
+                    if (int.TryParse((string)e.Attribute("id"), out int i)) ReadItemRow(i, e, byItem);
             }
             presets[prefix] = byItem;
         }
+        // GMS2 keeps one file per item (item/{a}/{bb}/{id}.xml), no itemdata/{prefix}.xml: read the row of this item once.
+        if (!packs.Exists("Xml", $"itemdata/{prefix}.xml") && shared.RowsRead.Add(id) && shared.Files(packs).Item(id) is { } row)
+            ReadItemRow(id, row, byItem);
         return FindModel(byItem.TryGetValue(id, out int preset) ? preset : id);
+    }
+
+    /// <summary>The tool itemPreset redirect, the weapon subtype and the characterIdle effect of one item row.</summary>
+    void ReadItemRow(int i, XElement e, Dictionary<int, int> byItem)
+    {
+        if (int.TryParse((string)e.Descendants("tool").FirstOrDefault()?.Attribute("itemPreset"), out int p) && p != 0)
+            byItem[i] = p;
+        var prop = e.Descendants("property").FirstOrDefault();
+        if ((string)prop?.Attribute("type") == "1" && int.TryParse((string)prop.Attribute("subtype"), out int st))
+            shared.Subtypes[i] = st;
+        // ItemEffect::Load (itemdatastruct.cpp:1609-1625): <effect characterIdle> of the item itself
+        if ((string)e.Descendants("effect").FirstOrDefault()?.Attribute("characterIdle") is { Length: > 0 } fx)
+            characterIdle[i] = fx;
     }
 
     int WeaponSubtype(int id)
