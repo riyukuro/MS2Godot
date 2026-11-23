@@ -247,6 +247,7 @@ public sealed class AdditionalTable
     readonly HashSet<string> loaded = new(StringComparer.Ordinal);
     readonly AdditionalCache cache;
     bool all;
+    Dictionary<string, string> gms2Files;     // GMS2: the file of each id stem
 
     public static readonly AdditionalTable Empty = new(() => Array.Empty<string>(), _ => null, _ => true);
 
@@ -277,8 +278,57 @@ public sealed class AdditionalTable
     {
         if (!loaded.Add(name)) return;
         if (read(name)?.Root is not { } root || root.Name != "ms2") return;
+        if (IsGms2File(name))
+        {
+            if (uint.TryParse(Path.GetFileNameWithoutExtension(name), NumberStyles.None, CultureInfo.InvariantCulture, out uint id)
+                && AdditionalData.Load(FromGms2(id, root), featureEnabled, saType) is { } g) data[g.Id] = g;
+            return;
+        }
         foreach (var e in root.Elements("additional"))
             if (AdditionalData.Load(e, featureEnabled, saType) is { } d) data[d.Id] = d;
+    }
+
+    /// <summary>The GMS2 data's folder of per-effect files, additionaleffect/&lt;id&gt;.xml, read when the data has no additional/.</summary>
+    public const string Gms2Folder = "additionaleffect/";
+
+    static bool IsGms2File(string name) => name.StartsWith(Gms2Folder, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// A GMS2 additionaleffect/&lt;id&gt;.xml root as the KMS &lt;additional&gt; row that <see cref="AdditionalData.Load"/> reads. The file
+    /// has no row: the id is the file name, and each &lt;level&gt; holds the KMS level's children named with a "Property" suffix
+    /// (BasicProperty, MotionProperty, UIProperty, DefensiveProperty, InvokeEffectProperty, SpecialEffectProperty, ...), so the
+    /// suffix is dropped. The level number is BasicProperty@level (beginCondition@level is a requirement). There is no isDebuff:
+    /// the first level's BasicProperty@buffType 2 is a debuff (in the KMS data, every row that also has an additionaleffect file is
+    /// isDebuff 1 and buffType 2). The levels are put in level order (stable), since GetLevel searches them sorted and 214 GMS2
+    /// files list them out of order. InvokeEffect values are written as floats ("1.000000"; all are whole numbers in the data)
+    /// and become the integers the KMS row has.
+    /// STILL-OPEN: the GMS2 exe is not decompiled, so how it reads these files is not seen; the special abilities
+    /// (StatusProperty/SpecialAbility, one attribute per ability with a rate, not the KMS &lt;v type value&gt; list) are not read.
+    /// </summary>
+    internal static XElement FromGms2(uint id, XElement root)
+    {
+        var levels = new List<XElement>();
+        foreach (var l in root.Elements("level"))
+        {
+            var lv = new XElement("level", l.Attributes());
+            lv.SetAttributeValue("level", (string)l.Element("BasicProperty")?.Attribute("level") ?? "1");
+            foreach (var c in l.Elements())
+            {
+                string n = c.Name.LocalName;
+                if (n.EndsWith("Property", StringComparison.Ordinal)) n = n[..^"Property".Length];
+                var e = new XElement(n, c.Attributes(), c.Nodes());
+                if (n == "InvokeEffect" && (string)e.Attribute("values") is { Length: > 0 } values)
+                    e.SetAttributeValue("values", string.Join(",", values.Split(',').Select(v =>
+                        double.TryParse(v.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out double f) && f == Math.Floor(f)
+                            ? ((long)f).ToString(CultureInfo.InvariantCulture) : v.Trim())));
+                lv.Add(e);
+            }
+            levels.Add(lv);
+        }
+        levels = levels.OrderBy(l => Xml.Int(l, "level")).ToList();
+        var first = levels.Count > 0 ? levels[0].Element("Basic") : null;
+        return new XElement("additional", new XAttribute("id", id),
+            new XAttribute("isDebuff", (string)first?.Attribute("buffType") == "2" ? "1" : "0"), levels);
     }
 
     /// <summary>GetAdditional: null for 0 or an unknown id.</summary>
@@ -290,6 +340,13 @@ public sealed class AdditionalTable
         if (all) return null;
         string key = id.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var files = names();
+        if (files.Count > 0 && IsGms2File(files[0]))
+        {
+            // one file per id: only that file can hold it
+            gms2Files ??= files.GroupBy(n => Path.GetFileNameWithoutExtension(n), StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+            if (gms2Files.TryGetValue(key, out var file)) LoadFile(file);
+            return data.TryGetValue(id, out d) ? d : null;
+        }
         foreach (var n in files)
         {
             string stem = Path.GetFileNameWithoutExtension(n);

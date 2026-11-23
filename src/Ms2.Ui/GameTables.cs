@@ -536,13 +536,15 @@ public sealed class GameTables
     /// null = none, the additional tables parse their XML on first use.</summary>
     public static Func<string, string> AdditionalCacheOf = _ => null;
 
-    /// <summary>SkillDataTableCli's additional effects: ./Data/Xml/Additional/*.xml (not recursive), feature selected.</summary>
+    /// <summary>SkillDataTableCli's additional effects: ./Data/Xml/Additional/*.xml (not recursive), feature selected.
+    /// The GMS2 data has no additional/: its effects are one file per id in additionaleffect/ (<see cref="Ms2.Ui.Skills.AdditionalTable.Gms2Folder"/>).</summary>
     internal static Ms2.Ui.Skills.AdditionalTable NewAdditionalTable(PackSet packs, Ms2.Ui.Skills.AdditionalCache cache = null)
     {
         List<string> files = null;
+        List<string> In(string folder) => packs.List("Xml").Where(n => n.StartsWith(folder, StringComparison.OrdinalIgnoreCase)
+            && n.IndexOf('/', folder.Length) < 0 && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).OrderBy(n => n, StringComparer.Ordinal).ToList();
         return new Ms2.Ui.Skills.AdditionalTable(
-            () => files ??= packs.List("Xml").Where(n => n.StartsWith("additional/", StringComparison.OrdinalIgnoreCase)
-                && n.IndexOf('/', 11) < 0 && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).OrderBy(n => n, StringComparer.Ordinal).ToList(),
+            () => files ??= In("additional/") is { Count: > 0 } kms ? kms : In(Ms2.Ui.Skills.AdditionalTable.Gms2Folder),
             path => packs.Exists("Xml", path) ? GameStrings.Parse(packs.Read("Xml", path)) : null,
             e => LobbyFeatures.IsEnabledByName(packs, (string)e.Attribute("feature")), cache, SpecialAbilityTypes(packs));
     }
