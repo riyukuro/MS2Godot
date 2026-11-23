@@ -945,10 +945,12 @@ public partial class LiveSession : Node
     /// <summary>
     /// Trigger (RecvOp 0x4E): CSceneStateGame::OnTrigger (@0x141721270, scenestategame.cpp:3653) hands it to
     /// CTriggerService::FUN_141861840; the object events of types 2 and 3 go to the field's trigger objects
-    /// (World.FieldTriggers). A packet before the field is built waits for it.
+    /// (World.FieldTriggers). A packet before the field is built waits for it. The guide type (9) goes to the guide event
+    /// pane at once (Ms2.Ui.Guide.TriggerGuide), as it needs no field.
     /// </summary>
     void OnTrigger(byte[] body)
     {
+        if (Ms2.Ui.Guide.TriggerGuide.Apply(body, game.Profile, GuidePane)) return;
         if (triggerField != null && GodotObject.IsInstanceValid(triggerField) && triggerField.Triggers != null) ApplyTrigger(triggerField, body);
         else pendingTriggers.Add(body);
     }
