@@ -452,7 +452,13 @@ public sealed partial class NpcTalk : Node
         }
         side.SendNext += _ => subMode = 0;              // SendNpcTalkMode2 (uitalkcinematic.cpp:1675)
         side.PageShown += () => { if (talking != null) TalkPageShown?.Invoke(talking, subMode); };
-        side.TalkReset += () => Sound(talking?.Row.SoundEnd, talking?.Position ?? Vector3.Zero);
+        side.TalkReset += () =>
+        {
+            // UITalkManager::ResetTalk (uitalkcinematic.cpp:1507) finds the npc again by id (FindNpcById, :1523) and plays its end
+            // sound only if it is still there; a talk that ended because the npc left has no one to play it
+            var npc = ResetTalkNpc(talking, live == null ? null : LiveNpc);
+            if (npc != null) Sound(npc.Row.SoundEnd, npc.Position);
+        };
         side.PlayVoice += v => Sound(v, talking?.Position ?? Vector3.Zero);
         side.PlaySystemSound += key => FieldAudio.Instance?.PlayUi(key);
         side.CloseComplete += () => CallDeferred(nameof(Teardown));
@@ -497,6 +503,13 @@ public sealed partial class NpcTalk : Node
         GD.Print($"talk: NpcTalk 1 sent to npc {npc.Row.Id} (object {npc.ObjectId})");
         return true;
     }
+
+    /// <summary>
+    /// The npc ResetTalk (uitalkcinematic.cpp:1507) plays PlayEndSound on: FindNpcById(m_nNpcId) (:1523), so null when the npc has
+    /// left the field. Offline (<paramref name="find"/> null) the sandbox's npcs never leave and the talked-to npc is used.
+    /// </summary>
+    public static FieldNpcs.Placed ResetTalkNpc(FieldNpcs.Placed talking, Func<int, FieldNpcs.Placed> find)
+        => talking == null ? null : find == null ? talking : find(talking.ObjectId);
 
     FieldNpcs.Placed LiveNpc(int objectId) => live.TalkNpcs.FirstOrDefault(x => x.ObjectId == objectId);
 
