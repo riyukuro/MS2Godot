@@ -61,4 +61,19 @@ public class TextScrollTests
         p.Wheel(5);
         Assert.That(tf.scrollV, Is.EqualTo(tf.maxScrollV - 2), "mouseWheelEnabled = false: the wheel is not taken");
     }
+
+    [Test]
+    public void TheFieldScrollsBeforeTheMouseWheelEventIsSent()
+    {
+        // MovieImpl::ProcessMouse (sfr_gfx_01i.cpp:3668): OnMouseWheelEvent first, GenerateMouseEvents (:3681) after
+        var (p, tf, _) = Field(30);
+        tf.scrollV = tf.maxScrollV;
+        int seen = -1;
+        var rt = Runtime.Current;
+        tf.addEventListener("mouseWheel", new AsPlainFunction(rt, new NativeMethod("w", (t, a) => { seen = tf.scrollV; return Rt.Undef; })));
+        p.MouseMove(10, 10);
+        int before = tf.scrollV;
+        p.Wheel(2);
+        Assert.That(seen, Is.EqualTo(before - 2), "the handler sees the field already scrolled");
+    }
 }
