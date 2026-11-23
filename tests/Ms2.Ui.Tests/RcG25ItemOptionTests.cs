@@ -25,7 +25,6 @@ public class RcG25ItemOptionTests
     }
 
     [Test]
-    [Ignore("G25: ItemOptionTables reads table/itemoption{random,constant,variation}.xml only; the GMS2 itemoption/ and itemoptionpick tables are unread")]
     public void TheGms2ConstantAndRandomOptionsLoad()
     {
         using var packs = new PackSet(RcGap.Data("MS2_GMS2_DATA"));

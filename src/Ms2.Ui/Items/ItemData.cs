@@ -193,6 +193,11 @@ public sealed class ItemData
         {
             Int(opt, "constantID", ref d.ConstantId);
             Int(opt, "randomID", ref d.RandomId);
+            // the GMS2 item files name them "constant" and "random" (<option static random constant ...>; no KMS row has either):
+            // the codes of itemoption/constant/ and itemoption/option/random/ (ItemOptionTables). STILL-OPEN: the GMS2 client's
+            // reader is not in the restored source.
+            if (opt.Attribute("constantID") == null) Int(opt, "constant", ref d.ConstantId);
+            if (opt.Attribute("randomID") == null) Int(opt, "random", ref d.RandomId);
         }
         if (env.Element("AdditionalEffect") is { } ae)
             d.AdditionalEffectIds.AddRange(((string)ae.Attribute("id") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries));
