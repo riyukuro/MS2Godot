@@ -362,4 +362,47 @@ public class BuffStripTests
         Assert.That(buffs.Children, Is.Empty);
         Assert.That(rt.Errors, Is.Empty);
     }
+
+    /// <summary>PC::FUN_1416619d0 (pc.cpp:2018-2031): a revival end tick above 0 shows the revival penalty's custom buff (0x5f5e103) on
+    /// the player info, 0 removes it. Its effect is in the KMS data (MS2_DATA) and in the GMS2 data (MS2_GMS2_DATA).</summary>
+    [TestCase("MS2_DATA")]
+    [TestCase("MS2_GMS2_DATA")]
+    public void TheRevivalPenaltyShowsItsCustomBuffIcon(string dataVar)
+    {
+        var d = Environment.GetEnvironmentVariable(dataVar);
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore($"{dataVar} is not set");
+        var packs = new PackSet(d);
+        var src = new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
+        var tables = new GameTables(packs, "en");
+        var m = new UiModel(tables) { Keys = new KeyTable(packs, "en"), HasLocalPlayer = true };
+        UiFixture.Apply(m);
+        var c = new MainPlayerInfoController();
+        uint server = 1000;
+        var list = new AdditionalBuffList(tables.Additional.GetLevel) { UpperTargetId = 1, Strip = c, ServerTick = () => server };
+        c.IsUpperTargetId = list.IsUpperTargetId;
+        c.OwnBuffs = list;
+        c.LocalObjectId = () => 1;
+        var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
+        p.StageW = 1280; p.StageH = 720;
+        var h = new UiHost(p, c, m);
+        Assert.That(h.Load(), Is.True);
+        uint tick = 0;
+        c.TickMs = () => tick;
+        void Run() { for (int i = 0; i < 10; i++) { tick += 33; c.UpdateEffects(); p.Tick(); } }
+        var rows = (h.Child("m_effectManager") as AsContainer).Children;
+        AsContainer buffs = rows[^2] as AsContainer, debuffs = rows[^1] as AsContainer;
+        Assert.That(MainPlayerInfoController.RevivalPenaltyBuffId, Is.EqualTo(0x5f5e103));
+        Assert.That(tables.Additional.GetLevel(MainPlayerInfoController.RevivalPenaltyBuffId, 1), Is.Not.Null, "the revival penalty's effect");
+        Assert.That(tables.Additional.GetLevel(MainPlayerInfoController.RevivalPenaltyBuffId, 1).IsBuff, Is.False, "a debuff");
+        c.RevivalPenaltyBuff(1000 + 3600000);
+        Run();
+        Assert.That((buffs.Children.Count, debuffs.Children.Count), Is.EqualTo((0, 1)), "on the debuff row");
+        c.RevivalPenaltyBuff(1000 + 3600000);
+        Run();
+        Assert.That(debuffs.Children, Has.Count.EqualTo(1), "set again: the old one removed first");
+        c.RevivalPenaltyBuff(0);
+        Run();
+        Assert.That(debuffs.Children, Is.Empty);
+        Assert.That(rt.Errors, Is.Empty);
+    }
 }

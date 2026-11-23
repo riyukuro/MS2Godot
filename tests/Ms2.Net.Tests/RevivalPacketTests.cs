@@ -210,4 +210,44 @@ public class RevivalPacketTests {
         me.Apply(u);
         Assert.That((me.RevivalEndTick, me.RevivalConfirmCount, me.RevivalFlag), Is.EqualTo((9000u, 3, true)));
     }
+
+    static ByteReader Hex(string h) => new(Convert.FromHexString(h));
+
+    /// <summary>A recorded GMS2 field session with two deaths (server ticks from its time sync). The first revival's RevivalConfirm
+    /// (tick 126354039) sets the penalty end an hour later with count 3; the next DeadUser (tick 126414478) has flag 0 but the count
+    /// is still above 0, so the death sets the revival flag (pc.cpp:4598-4599) and IsRevivalBlocked gives the metal tomb
+    /// (MS2TombStoneDark, pc.cpp:4043-4047). Each end tick set raises RevivalEndTickSet (PC::FUN_1416619d0, pc.cpp:2018-2031: the
+    /// own player's penalty icon), the expiry with 0.</summary>
+    [Test]
+    public void ARecordedRepeatDeathInThePenaltyIsBlockedAndEachEndTickReachesThePenaltyIcon() {
+        var me = new MyCharacter();
+        var u = new FieldAddUser { ObjectId = 481931, User = new UserBlock { Name = "a" }, RevivalEndTick = 129803332, RevivalCount = 2 };
+        u.Stats[0].Health = 500; u.Stats[1].Health = 400; u.Stats[2].Health = 480;
+        var ends = new List<uint>();
+        me.RevivalEndTickSet += ends.Add;
+        me.Apply(u);
+        Assert.That(ends, Is.EqualTo(new[] { 129803332u }), "FieldAddUser: FUN_141661b20 sets the end tick (pc.cpp:2646)");
+        void Death(string dead, string confirm, string revival) {
+            me.Apply(new PlayerStat(481931, new Dictionary<byte, long[]> { [PlayerStat.Health] = new long[] { 500, 400, 0 } }));
+            var d = DeadUser.Read(Hex(dead));
+            me.Die(d.ObjectId, d.Flag);
+            me.ApplyRevivalConfirm(RevivalConfirm.Read(Hex(confirm)));
+            me.Revive(Revival.Read(Hex(revival)).ObjectId, 0);
+            me.Apply(new PlayerStat(481931, new Dictionary<byte, long[]> { [PlayerStat.Health] = new long[] { 500, 400, 480 } }));
+        }
+        Death("8b5a070000", "8b5a0700f7f0be0703000000", "8b5a070000");
+        Assert.That((me.RevivalEndTick, me.RevivalConfirmCount, me.RevivalBlocked), Is.EqualTo((129954039u, 3, true)));
+        Assert.That(me.RevivalEndTick - 126354039u, Is.EqualTo(3600000u), "an hour from the revival");
+        Assert.That(me.ExpireRevival(126414478), Is.False);
+        me.Apply(new PlayerStat(481931, new Dictionary<byte, long[]> { [PlayerStat.Health] = new long[] { 500, 400, 0 } }));
+        var again = DeadUser.Read(Hex("8b5a070000"));
+        Assert.That(again.Flag, Is.False);
+        me.Die(again.ObjectId, again.Flag);
+        Assert.That((me.Dead, me.RevivalFlag, me.RevivalBlocked), Is.EqualTo((true, true, true)), "the repeat death: the metal tomb");
+        me.ApplyRevivalConfirm(RevivalConfirm.Read(Hex("8b5a07000be4bf0704000000")));
+        Assert.That(ends, Is.EqualTo(new[] { 129803332u, 129954039u, 130016267u }));
+        Assert.That(me.ExpireRevival(130016267), Is.True);
+        Assert.That(ends[^1], Is.EqualTo(0u), "the expiry removes the icon");
+        Assert.That(me.RevivalConfirmCount, Is.EqualTo(0));
+    }
 }

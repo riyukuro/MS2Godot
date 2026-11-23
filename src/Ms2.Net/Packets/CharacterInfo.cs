@@ -289,7 +289,7 @@ public sealed class MyCharacter {
         Pet = u.HasPet ? u.Pet : null;
         for (int i = 0; i < 3; i++) StatsOf(i)[PlayerStat.Health] = u.Stats[i].Health;   // MyPC::vfunc_91 = PC::vfunc_90 (pc.cpp:1644): SetStat(kind, 4, health)
         State = 0;
-        RevivalEndTick = u.RevivalEndTick; RevivalConfirmCount = u.RevivalCount; RevivalFlag = u.RevivalFlag;   // scenestategame.cpp:11280-11281
+        SetRevivalEndTick(u.RevivalEndTick); RevivalConfirmCount = u.RevivalCount; RevivalFlag = u.RevivalFlag;   // scenestategame.cpp:11280-11281
         Dead = u.Stats[2].Health == 0;                                  // scenestategame.cpp:11185: FUN_141670a00(4) == 0 -> FUN_14166ce50(1)
         Changed?.Invoke();
     }
@@ -405,16 +405,26 @@ public sealed class MyCharacter {
     /// <summary>OnRevivalConfirm (scenestategame.cpp:7356) for the local player: the end tick, then the count. Returns the client's
     /// follow-up: <c>Effect</c> when the count was set and falls to 0 (the revival effect of the common resource), <c>Guide</c> when
     /// the new count is not 0 (guide trigger RevivalPanelty). Other objects: nothing.
-    /// STILL-OPEN: pc.cpp:2019-2031 also adds (end tick above 0) or removes the custom buff 0x5f5e103 on the player-info UI 0x4e5f,
-    /// here and in ExpireRevival; the buff list of that UI is not ported.</summary>
+    /// The end tick goes through <see cref="SetRevivalEndTick"/>, which raises <see cref="RevivalEndTickSet"/> for the penalty icon.</summary>
     public (bool Effect, bool Guide) ApplyRevivalConfirm(RevivalConfirm c) {
         if (c.ObjectId != ObjectId || User == null) return (false, false);
         bool effect = RevivalConfirmCount != 0 && c.Count == 0;
         RevivalConfirmCount = c.Count;
-        RevivalEndTick = c.EndTick;
+        SetRevivalEndTick(c.EndTick);
         Changed?.Invoke();
         return (effect, !effect && c.Count != 0);
     }
+
+    /// <summary>PC::FUN_1416619d0 (pc.cpp:2018) for the local player: m_n10e8 set, then <see cref="RevivalEndTickSet"/> with it, for
+    /// the MyPC part (pc.cpp:2021-2030: the player-info UI 0x4e5f adds the custom buff 0x5f5e103 ending at it when above 0, else
+    /// removes it). Run by FieldAddUser (FUN_141661b20), OnRevivalConfirm and the expiry (FUN_141661ac0).</summary>
+    void SetRevivalEndTick(uint endTick) {
+        RevivalEndTick = endTick;
+        RevivalEndTickSet?.Invoke(endTick);
+    }
+
+    /// <summary>Raised with each revival end tick set (<see cref="SetRevivalEndTick"/>), also an unchanged one or 0.</summary>
+    public Action<uint> RevivalEndTickSet;
 
     /// <summary>
     /// OnStateFallDamage (scenestategame.cpp:5815 @0x141723050) for the local player: vfunc_59(0x1f) when not dead, then the guide
@@ -455,7 +465,7 @@ public sealed class MyCharacter {
     /// <summary>PC::FUN_141661ac0 (pc.cpp:2043): once the server tick passes the end tick, both are cleared. Returns whether they were.</summary>
     public bool ExpireRevival(uint serverTick) {
         if (RevivalEndTick == 0 || serverTick < RevivalEndTick) return false;
-        RevivalConfirmCount = 0; RevivalEndTick = 0;
+        RevivalConfirmCount = 0; SetRevivalEndTick(0);
         Changed?.Invoke();
         return true;
     }

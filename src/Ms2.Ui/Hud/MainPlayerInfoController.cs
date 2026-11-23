@@ -181,6 +181,17 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         if (timerId != 0 && endTick != 0) AddCustomBuffEffect(timerId, endTick);
     }
 
+    /// <summary>The custom buff id of the revival penalty (0x5f5e103, pc.cpp:2027).</summary>
+    public const int RevivalPenaltyBuffId = 100000003;
+
+    /// <summary>The MyPC part of PC::FUN_1416619d0 (pc.cpp:2021-2030): with an end tick above 0 the revival penalty's custom buff is
+    /// added, ending at it; with 0 it is removed.</summary>
+    public void RevivalPenaltyBuff(uint endTick)
+    {
+        if (endTick > 0) AddCustomBuffEffect(RevivalPenaltyBuffId, unchecked((int)endTick));
+        else RemoveCustomBuffEffect(RevivalPenaltyBuffId);
+    }
+
     /// <summary>The effect part of vfunc_15 @0x1419ef820, every frame with a local player: m_effectManager-&gt;Update().</summary>
     public void UpdateEffects()
     {

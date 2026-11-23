@@ -3444,10 +3444,15 @@ public partial class HudScene : Node, IUiStageHost
         Action<int, int, int> onInvincibleBuff = playerInfo.InvincibleBuff;
         if (live.Invincible.Active) playerInfo.InvincibleBuff(0, live.Invincible.TimerId, live.InvincibleBuffEnd);
         live.InvincibleBuffChanged += onInvincibleBuff;
+        // PC::FUN_1416619d0's revival penalty icon (pc.cpp:2021-2030); a penalty set before the HUD shows now
+        Action<uint> onRevivalEnd = playerInfo.RevivalPenaltyBuff;
+        if (live.Me.RevivalEndTick != 0) playerInfo.RevivalPenaltyBuff(live.Me.RevivalEndTick);
+        live.Me.RevivalEndTickSet += onRevivalEnd;
         unwatchBuffs = () =>
         {
             live.BuffReceived -= onBuff;
             live.InvincibleBuffChanged -= onInvincibleBuff;
+            live.Me.RevivalEndTickSet -= onRevivalEnd;
             live.Me.EquipChanged -= onEquip;
             live.Me.Changed -= onMe;
             live.Me.PutOnOrOff -= onPutOnOrOff;
