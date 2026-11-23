@@ -63,6 +63,20 @@ public partial class CharacterListScene : LobbyFieldScene
         h.Set(list, "selectedIndex", row);
     }
 
+    /// <summary>The window point at the middle of row <paramref name="row"/>'s renderer (stage origin at UiScale.MovieOrigin, the
+    /// stage at UiScale.For of the window), for a scripted mouse click; null without that row.</summary>
+    public Vector2? RowPoint(int row)
+    {
+        if (controller?.Host is not { } h || h.Invoke(h.Entity, "getCharacterRenderer", row) is not Ms2.Avm2.Flash.AsDisplayObject r) return null;
+        var b = r.GetBounds(null);
+        return UiScale.MovieOrigin + new Vector2((float)(b.X + b.W / 2), (float)(b.Y + b.H / 2)) * UiScale.For(GetViewport().GetVisibleRect().Size);
+    }
+
+    /// <summary>The movie's OnGameStart for character <paramref name="sn"/>, as its Start button sends it (clickStart), for scripted
+    /// runs: also while a selection is being handled, when the movie's own button takes no mouse. False while the scene has no
+    /// dialog yet (its field still loading).</summary>
+    public bool SendGameStart(string sn) => controller?.Host?.Entity != null && controller.OnCallback("OnGameStart", new object[] { sn });
+
     /// <summary>The movie's Start button (onClickStart), as a click on it.</summary>
     public void ClickStart() { if (controller?.Host is { } h) h.Invoke(h.Entity, "onClickStart", (object)null); }
 
@@ -180,8 +194,14 @@ public partial class CharacterListScene : LobbyFieldScene
             if (a < list.Count && b < list.Count) (list[a], list[b]) = (list[b], list[a]);
         };
         dialog = OpenList(assets, controller, GetViewport().GetVisibleRect().Size);
+        // FUN_1412761e0(m_30, 0) (HidePopups, OnSelectCharacter) takes the mouse from the whole dialog; the runtime's hit test still
+        // targets a mouse-enabled child under a root with mouseChildren and mouseEnabled off (as3-runtime-gaps.md), so the view
+        // takes no mouse while the dialog's input is off: a row click after Start would move the list's highlight
+        var c = controller;
+        dialog.View.Blocked = () => c.Host?.Entity != null && !c.InputOn;
         layer.AddChild(dialog);
         if (!popupPlays) dialog.Step(PopupFrames);
+        controller.ResumeGameStart();   // the preview came with the field (PreviewCharacter -> FUN_1418f1d00): a Start made meanwhile goes on
     }
 
     /// <summary>

@@ -120,10 +120,71 @@ public class CharacterListTests
         p.Tick();
         Assert.That(started, Is.Empty, "clicks 400 ms apart do not start");
 
-        // then a click within 300 ms of the last one: a double click on that row
+        // then a click within 300 ms of the last one: a double click on that row; the enter request goes once the list has popped
+        // down (FUN_1418f13f0 -> HidePopups, OnEndPopdown -> FUN_1418f1790)
         Wait(200);
         Press();
         p.Tick();
-        Assert.That(started, Is.EqualTo(new[] { "12" }), "the double click starts the game with that row");
+        Assert.That(c.Starting, Is.True, "the double click starts the game");
+        Wait(2000);
+        Assert.That(started, Is.EqualTo(new[] { "12" }), "the popdown's end sends the start with that row");
+    }
+
+    [Test]
+    public void ARowClickAfterStartDoesNothing()
+    {
+        // OnGameStart -> FUN_1418f13f0 (uicharacterlistdialog.cpp:1470-1499): HidePopups (popdown, mouseChildren off) and m_1d4 =
+        // 0x620000c; OnSelectCharacter returns while m_1d4 is set with a character chosen (:2271-2276). The enter request goes
+        // only at the popdown's end (OnEndPopdown :1654 -> FUN_1418f1790 -> EnterGame), once.
+        var (h, c) = Load(Row("A", "11", "d.png"), Row("B", "12", "d.png"));
+        var started = new List<string>();
+        var selected = new List<string>();
+        c.GameStart += started.Add;
+        c.SelectCharacter += selected.Add;
+        var p = h.Player;
+        c.Previewed("11");
+        c.FadeInComplete();
+        Assert.That(c.InputOn, Is.True, "the list takes the mouse before Start");
+
+        h.Invoke(h.Entity, "onEnterKey");   // Enter: onEnterKey -> clickStart -> OnGameStart("11")
+        p.Tick();
+        Assert.That(c.Starting, Is.True, "Start took the selected row");
+        Assert.That(c.InputOn, Is.False, "HidePopups turned the list's mouse off");
+        Assert.That(started, Is.Empty, "nothing is sent before the popdown ends");
+
+        // the movie's OnSelectCharacter for the other row (a click that reached the list) is refused while m_1d4 is set. The click
+        // itself is kept from the movie by the scene (the view takes no mouse while the input is off): the runtime's hit test
+        // still reaches a child under a root with mouseChildren and mouseEnabled off (as3-runtime-gaps.md)
+        Assert.That(c.OnCallback("OnSelectCharacter", new object[] { "12" }), Is.True);
+        Assert.That(selected, Is.Empty, "no selection after Start");
+
+        for (int i = 0; i < 240 && started.Count == 0; i++) p.Tick();
+        Assert.That(started, Is.EqualTo(new[] { "11" }), "the popdown's end sends the start once, with the started row");
+        for (int i = 0; i < 60; i++) p.Tick();
+        Assert.That(started, Has.Count.EqualTo(1));
+        Assert.That(c.InputOn, Is.False, "the input stays off after the request (only a failed EnterGame shows the list again)");
+    }
+
+    [Test]
+    public void AStartDuringASelectionGoesOnAfterThePreview()
+    {
+        // FUN_1418f13f0 under m_180 (a selection being handled): no HidePopups, m_1d4 = 0x620000c. The preview of the new select map
+        // (PreviewCharacter -> FUN_1418f1d00) runs it again: the popdown, then the enter at its end. The host builds the dialog
+        // again over the map load, so the game start is carried with it (CarryFrom).
+        var (_, a) = Load(Row("A", "11", "d.png"), Row("B", "12", "d.png"));
+        a.Previewed("11");
+        a.FadeInComplete();
+        Assert.That(a.OnCallback("OnSelectCharacter", new object[] { "12" }), Is.True);
+        Assert.That(a.Selecting, Is.True);
+        Assert.That(a.OnCallback("OnGameStart", new object[] { "12" }), Is.True);
+        Assert.That(a.Starting, Is.True, "the start waits for the preview");
+        var started = new List<string>();
+        var (h, b) = Load(c => { c.CarryFrom(a); c.Previewed("12"); c.GameStart += started.Add; }, Row("A", "11", "d.png"), Row("B", "12", "d.png"));
+        TestContext.WriteLine($"popdown state: label {Rt.ToString(h.Get(h.Entity, "currentLabel"))} frame {h.Get(h.Entity, "currentFrame")}");
+        b.ResumeGameStart();
+        Assert.That(b.InputOn, Is.False, "HidePopups after the preview");
+        for (int i = 0; i < 240 && started.Count == 0; i++) h.Player.Tick();
+        TestContext.WriteLine($"after: label {Rt.ToString(h.Get(h.Entity, "currentLabel"))} frame {h.Get(h.Entity, "currentFrame")}");
+        Assert.That(started, Is.EqualTo(new[] { "12" }), "the popdown's end sends the start");
     }
 }

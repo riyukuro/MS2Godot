@@ -54,8 +54,14 @@ public sealed class CharacterListController : UiController
     string previewedSn;
     /// <summary>m_220: the select scene's fade-in finished (FUN_1418f1fd0).</summary>
     bool fadedIn;
-    /// <summary>m_1d4: the scene the dialog pops down for (FUN_1418f11c0 :1418-1426), 0 for none.</summary>
+    /// <summary>m_1d4: the scene the dialog pops down for (FUN_1418f11c0 :1418-1426, FUN_1418f13f0 :1498), 0 for none.</summary>
     int popdownScene;
+
+    /// <summary>m_1d4 for a game start (FUN_1418f13f0 :1498): the popdown ends in the enter request (OnEndPopdown :1654).</summary>
+    const int GameStartScene = 0x620000c;
+
+    /// <summary>A game start is under way (m_1d4 = 0x620000c): the list pops down and takes no selection until the scene changes.</summary>
+    public bool Starting => popdownScene == GameStartScene;
 
     /// <summary>
     /// The client keeps this dialog open while the select map loads again; the host builds it anew, so it carries the
@@ -69,6 +75,7 @@ public sealed class CharacterListController : UiController
         // the map change is what the client's vfunc_58 fade-in follows (m_220 set); the rebuilt dialog's own OnSelectCharacter("") on an
         // empty list would otherwise load the map again, for ever
         fadedIn = true;
+        popdownScene = old.popdownScene;   // m_1d4 lives with the dialog, which the client keeps open over the map load
         KeepRow = old.ListIndex;
     }
 
@@ -77,7 +84,10 @@ public sealed class CharacterListController : UiController
 
     /// <summary>OnSelectCharacter went through (vfunc_28 :2263-2313): the character's id, "" for an empty slot. The input is off.</summary>
     public event Action<string> SelectCharacter;
-    /// <summary>OnGameStart with a character not waiting for deletion (vfunc_28 :2246-2261 -> FUN_1418f13f0).</summary>
+    /// <summary>
+    /// The game start's popdown ended (OnEndPopdown with m_1d4 0x620000c, :1654 -> FUN_1418f1790): UIServerListDialog::EnterGame
+    /// with the character m_188. Raised once per Start, after the list has slid away with its input off.
+    /// </summary>
     public event Action<string> GameStart;
     /// <summary>OnCreatePC (FUN_1418f1260 :1441) under the limit: the create dialog 0x4eea opens.</summary>
     public event Action CreateCharacter;
@@ -176,7 +186,8 @@ public sealed class CharacterListController : UiController
             var found = Find(Arg(args));
             selectedSn = found?.CharSN;
             if (found == null) return false;
-            GameStart?.Invoke(found.CharSN);
+            // STILL-OPEN: the deletion wait (spFound->FUN_1418ea020() > 0 returns 0, :2259) is not in the row data
+            BeginGameStart();
             return true;
         }
         if (Is(name, "OnSelectCharacter"))
@@ -218,8 +229,50 @@ public sealed class CharacterListController : UiController
             }
             return true;
         }
-        if (Is(name, "OnEndPopdown")) { EndPopdown?.Invoke(); return true; }
+        if (Is(name, "OnEndPopdown")) { OnEndPopdown(); return true; }
         return false;
+    }
+
+    /// <summary>
+    /// FUN_1418f13f0 (uicharacterlistdialog.cpp:1470-1499), OnGameStart's body: HidePopups (popdown, input off) unless a
+    /// selection is being handled (m_180), and m_1d4 = 0x620000c, which stops every OnSelectCharacter while the character
+    /// is set (:2271-2276) and makes the popdown's end send the enter request (<see cref="OnEndPopdown"/>). With m_180 set
+    /// the popdown waits for the preview (FUN_1418f1d00 from PreviewCharacter, <see cref="Previewed"/>).
+    /// STILL-OPEN: the m_1e8 rename check before it (CBanTextChecker FUN_140225210 == 2 -> the s_char_rename_input box) is
+    /// not ported; m_1e8's setter is not identified.
+    /// </summary>
+    void BeginGameStart()
+    {
+        if (Host?.Entity != null && !Selecting) Popdown();
+        popdownScene = GameStartScene;
+    }
+
+    /// <summary>
+    /// OnEndPopdown (uicharacterlistdialog.cpp:1635-1663): the scene m_1d4 names, then m_1d4 = 0. A game start sends the
+    /// enter request (FUN_1418f1790 -> EnterGame, <see cref="GameStart"/>); the input stays off (only a failed EnterGame
+    /// calls ShowPopup). The other scenes' popdowns raise <see cref="EndPopdown"/> as before.
+    /// </summary>
+    void OnEndPopdown()
+    {
+        int scene = popdownScene;
+        popdownScene = 0;
+        if (scene == GameStartScene)
+        {
+            if (selectedSn != null) GameStart?.Invoke(selectedSn);
+            return;
+        }
+        EndPopdown?.Invoke();
+    }
+
+    /// <summary>
+    /// FUN_1418f1d00 (uicharacterlistdialog.cpp:1615-1631) for a game start, run when a preview is done (PreviewCharacter
+    /// :1056, FUN_1418ee5c0 :1077): a Start that came while a selection was being handled pops the list down now. The host
+    /// that builds the dialog again over a map load (the client keeps it open) calls it once the rebuilt movie stands where
+    /// the kept one was (its popup stepped to the end); before the movie is loaded it does nothing.
+    /// </summary>
+    public void ResumeGameStart()
+    {
+        if (popdownScene == GameStartScene && Host?.Entity != null) BeginGameStart();
     }
 
     /// <summary>
@@ -241,10 +294,11 @@ public sealed class CharacterListController : UiController
     public void Previewed(string sn)
     {
         Selecting = false;
-        if (sn == null) { previewedSn = null; return; }
+        if (sn == null) { previewedSn = null; ResumeGameStart(); return; }
         SavedSn = sn;
         SavedName = "";
         previewedSn = sn;
+        ResumeGameStart();
     }
 
     /// <summary>FUN_1412761e0 (unit_141274d10_uihelpers.cpp:613-622): mouseChildren and mouseEnabled of the dialog.</summary>
