@@ -66,7 +66,18 @@ public static class PerFileTable
     static XDocument Parse(PackSet packs, string folder, string row) =>
         Build(Files(packs, folder), row, folder == "quest/"
             ? f => FeatureElements.SelectEnvironment(packs, f) ?? FeatureElements.SelectEnvironment(packs, FeatureInLocale(f))
-            : f => FeatureElements.SelectEnvironment(packs, f));
+            : f => FeatureElements.SelectEnvironment(packs, f), folder == "npc/" ? NpcEffectDummy : null);
+
+    /// <summary>
+    /// GMS2's npc file keeps its &lt;effectdummy&gt; on the &lt;ms2&gt; root next to the environments (11,325 of 11,343 files, one each,
+    /// no locale or feature), where the KMS npcdata row has it inside its &lt;environment&gt; (CNpcData::LoadXml reads it from there,
+    /// EffectDummyTable.MergeNpc): the root's goes into the row's environment copy, unless that copy has its own.
+    /// STILL-OPEN: the GMS2 client's npc reader is not in the restored source; the placement is read from the data.
+    /// </summary>
+    internal static void NpcEffectDummy(XElement file, XElement environment)
+    {
+        if (environment.Element("effectdummy") == null && file.Element("effectdummy") is { } dummies) environment.Add(new XElement(dummies));
+    }
 
     static readonly string[] Regions = { "KR", "CN", "JP", "NA", "TH", "TW" };
     static bool IsRegion(string s) => Regions.Contains(s, StringComparer.OrdinalIgnoreCase);
@@ -109,8 +120,10 @@ public static class PerFileTable
         return long.TryParse(name.AsSpan(slash + 1, name.Length - slash - 5), NumberStyles.None, CultureInfo.InvariantCulture, out long id) ? id : null;
     }
 
-    /// <summary>The rows of the files (entry name, parsed root or null), each file's environment picked by <paramref name="pick"/>.</summary>
-    internal static XDocument Build(IEnumerable<(string Name, XElement Root)> files, string row, Func<XElement, XElement> pick)
+    /// <summary>The rows of the files (entry name, parsed root or null), each file's environment picked by <paramref name="pick"/>;
+    /// <paramref name="fromFile"/> (file, environment copy) adds what the file keeps outside its environments.</summary>
+    internal static XDocument Build(IEnumerable<(string Name, XElement Root)> files, string row, Func<XElement, XElement> pick,
+        Action<XElement, XElement> fromFile = null)
     {
         XElement root = null;
         foreach (var (name, file) in files)
@@ -121,6 +134,7 @@ public static class PerFileTable
             var copy = new XElement(env);
             copy.SetAttributeValue("locale", null);
             copy.SetAttributeValue("feature", null);
+            fromFile?.Invoke(file, copy);
             root.Add(new XElement(row, new XAttribute("id", id.ToString(CultureInfo.InvariantCulture)), copy));
         }
         return root == null ? null : new XDocument(root);

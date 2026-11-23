@@ -185,6 +185,8 @@ public sealed class NpcTable
         if (env.Element("basic") is { } basic)
             foreach (var at in basic.Attributes().ToList()) if (env.Attribute(at.Name) == null) env.SetAttributeValue(at.Name, at.Value);
         var model = env.Element("model");
+        var speed = env.Element("speed");
+        var shadow = env.Element("shadow");
         var row = new NpcRow
         {
             Id = id,
@@ -196,11 +198,17 @@ public sealed class NpcTable
             DeadEffect = (string)env.Attribute("deadEffect"), DamageEffect = (string)env.Attribute("damageEffect"),
             Kfm = (string)model?.Attribute("kfm"),
             Scale = Flt(model, "scale", 1f),
-            ShadowScale = Flt(model, "shadowScale", 0f),
-            WalkSpeed = Flt(model, "walkSpeed", 0),
-            RunSpeed = Flt(model, "runSpeed", 0),
+            // CNpcData::LoadXml reads these four off <model> (npcdata.cpp:1524-1527, 0 when absent). GMS2's npc files keep them in
+            // <shadow scale> and <speed rotation walk run> (no GMS2 file has them on <model>, no KMS row has those children; over the
+            // 10,641 npcs both sets hold, rotation agrees on all 10,266 the KMS rows set, walk, run and shadow on all but 2 or 3):
+            // those are read when <model> has none.
+            // Without them every GMS2 npc has rotationSpeed 0 and never turns toward a sync block's yaw (NpcLayer.Turn).
+            // STILL-OPEN: the GMS2 client's npc reader is not in the restored source; the mapping is read from the data.
+            ShadowScale = Flt(model, "shadowScale", Flt(shadow, "scale", 0f)),
+            WalkSpeed = Flt(model, "walkSpeed", Flt(speed, "walk", 0)),
+            RunSpeed = Flt(model, "runSpeed", Flt(speed, "run", 0)),
             AniSpeed = Flt(model, "anispeed", 1f),
-            RotationSpeed = Flt(model, "rotationSpeed", 0),
+            RotationSpeed = Flt(model, "rotationSpeed", Flt(speed, "rotation", 0)),
             CapsuleHeight = Flt(env.Element("capsule"), "height", 150f),
             CapsuleRadius = Flt(env.Element("capsule"), "radius", 25f),
             CapsuleIgnore = Int(env.Element("capsule"), "ignore") != 0,

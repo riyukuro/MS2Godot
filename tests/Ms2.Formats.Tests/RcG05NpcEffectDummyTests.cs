@@ -6,7 +6,7 @@ namespace Ms2.Formats.Tests;
 
 /// <summary>
 /// G05 — NPC &lt;effectdummy&gt; (D4): GMS2 puts it as a sibling of &lt;environment&gt; under &lt;ms2&gt;; PerFileTable.Build
-/// copies only the environment, so NpcTable's MergeNpc never sees the 8 dummies. Fixtures: gms/npc/22/00/22000052.xml
+/// copies it into the row's environment (PerFileTable.NpcEffectDummy), so NpcTable's MergeNpc sees the 8 dummies. Fixtures: gms/npc/22/00/22000052.xml
 /// (Eff_Head on Bip01 Head, scale 0.9, plus Eff_UI) and kms/npcdata/220.xml (inside the npc row's environment).
 /// </summary>
 public class RcG05NpcEffectDummyTests
@@ -21,7 +21,6 @@ public class RcG05NpcEffectDummyTests
     }
 
     [Test]
-    [Ignore("G05: GMS2 ms2/effectdummy is dropped by PerFileTable.Build")]
     public void TheGms2NpcReadsItsEightDummies()
     {
         using var packs = new PackSet(RcGap.Data("MS2_GMS2_DATA"));

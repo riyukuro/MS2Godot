@@ -5,8 +5,8 @@ using NUnit.Framework;
 namespace Ms2.Formats.Tests;
 
 /// <summary>
-/// G04 — NPC core fields (D3, C9-C13): GMS2 keeps shadow/speed in &lt;environment&gt;&lt;shadow&gt;/&lt;speed&gt;, the talk and
-/// shop flags on &lt;basic&gt;, and sight/corpse/lookattarget in their own children; NpcTable reads &lt;model shadowScale&gt; only.
+/// G04 — NPC core fields (D3, C9-C13): GMS2 keeps shadow/speed in &lt;environment&gt;&lt;shadow&gt;/&lt;speed&gt; (read), the talk and
+/// shop flags on &lt;basic&gt;, and sight/corpse/lookattarget in their own children (not read yet).
 /// Fixtures: gms/npc/22/00/22000052.xml (env EliteRenewal: shadow 380, speed 250/500, sight 400/300/0,
 /// talkAni 1, hitImmune 99, npcAttackGroup 1, regenEffect BG/Common/Eff_Test_Regen.xml, corpse hitAble 0,
 /// lookAtMyPCWhenTalking 0, useTalkMotion 1) and kms/npcdata/220.xml (the same values on &lt;model&gt;).
@@ -19,11 +19,26 @@ public class RcG04NpcCoreFieldsTests
         using var packs = new PackSet(RcGap.Data("MS2_DATA"));
         var r = new NpcTable(packs).Find(22000052);
         Assert.That(r, Is.Not.Null, "kms/npcdata/220.xml npc 22000052");
-        Assert.That((r.ShadowScale, r.WalkSpeed, r.RunSpeed), Is.EqualTo((380f, 250f, 500f)));
+        Assert.That((r.ShadowScale, r.WalkSpeed, r.RunSpeed, r.RotationSpeed), Is.EqualTo((380f, 250f, 500f, 720f)));
+    }
+
+    // the turn cap: 0 makes NpcLayer.Turn leave the npc at its spawn yaw whatever the sync blocks say
+    [Test]
+    public void TheGms2NpcReadsShadowAndSpeeds()
+    {
+        using var packs = new PackSet(RcGap.Data("MS2_GMS2_DATA"));
+        var t = new NpcTable(packs);
+        var r = t.Find(22000052);
+        Assert.That(r, Is.Not.Null, "gms/npc/22/00/22000052.xml npc 22000052");
+        Assert.That((r.ShadowScale, r.WalkSpeed, r.RunSpeed, r.RotationSpeed), Is.EqualTo((380f, 250f, 500f, 720f)),
+            "<shadow scale=\"380\"> <speed rotation=\"720\" walk=\"250\" run=\"500\">");
+        // gms/npc/11/00/11000169.xml, the Tria guard the town's spawn points place: <speed rotation="500" walk="120" run="0">
+        Assert.That(t.Find(11000169)?.RotationSpeed, Is.EqualTo(500f));
+        Assert.That(t.Rows.Count(n => n.RotationSpeed > 0), Is.GreaterThan(9000), "the npcs that turn (9,764)");
     }
 
     [Test]
-    [Ignore("G04: GMS2 npc <shadow>/<speed>/<distance>/<corpse>/<lookattarget> and basic talk/shop/regen not read yet")]
+    [Ignore("G04: GMS2 npc <distance>/<corpse>/<lookattarget> and basic talk/shop/regen not read yet")]
     public void TheGms2NpcReadsShadowSpeedSightCorpseAndTalk()
     {
         using var packs = new PackSet(RcGap.Data("MS2_GMS2_DATA"));

@@ -82,6 +82,28 @@ public class PerFileTableTests
         Assert.That(row.CapsuleHeight, Is.EqualTo(210f));
     }
 
+    const string GmsNpcFile = @"<ms2><environment feature="""" locale=""""><model kfm=""11000144_Tristan"" scale=""1"" />
+      <speed rotation=""720"" walk=""200"" run=""400"" /><shadow scale=""180"" bias=""1"" /></environment>
+      <effectdummy><dummy name=""Eff_UI""><transform translate=""0, 0, 230"" rotation=""0, 0, 90"" scale=""1"" /></dummy></effectdummy></ms2>";
+
+    // GMS2: <speed>/<shadow> in the environment and <effectdummy> on the file root, where the KMS row has <model rotationSpeed
+    // walkSpeed runSpeed shadowScale> and the dummies inside its environment
+    [Test]
+    public void AGms2NpcFileReadsItsSpeedsShadowAndRootDummies()
+    {
+        var doc = PerFileTable.Build(new[] { ("npc/21/89/21890144.xml", XElement.Parse(GmsNpcFile)) }, "npc", f => f.Element("environment"),
+            PerFileTable.NpcEffectDummy);
+        var row = NpcTable.ParseRow(doc.Root.Element("npc"), Array.Empty<EffectDummy>());
+        Assert.That((row.RotationSpeed, row.WalkSpeed, row.RunSpeed, row.ShadowScale), Is.EqualTo((720f, 200f, 400f, 180f)));
+        Assert.That(row.Dummy("Eff_UI"), Is.Not.Null, "the root <effectdummy>");
+        // the KMS row: <model> holds them, and it wins where both are present
+        var kms = NpcTable.ParseRow(XElement.Parse(@"<npc id=""1""><environment><model rotationSpeed=""540"" walkSpeed=""100"" runSpeed=""300"" shadowScale=""90"" />
+            <speed rotation=""1"" walk=""2"" run=""3"" /><shadow scale=""4"" /></environment></npc>"), Array.Empty<EffectDummy>());
+        Assert.That((kms.RotationSpeed, kms.WalkSpeed, kms.RunSpeed, kms.ShadowScale), Is.EqualTo((540f, 100f, 300f, 90f)));
+        var none = NpcTable.ParseRow(XElement.Parse(@"<npc id=""2""><environment /></npc>"), Array.Empty<EffectDummy>());
+        Assert.That((none.RotationSpeed, none.WalkSpeed, none.RunSpeed, none.ShadowScale), Is.EqualTo((0f, 0f, 0f, 0f)));
+    }
+
     [Test]
     public void TheNpcTableHasRowsInEitherLayout()
     {
