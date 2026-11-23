@@ -36,7 +36,6 @@ public class RcCinematicLayoutTests {
         Assert.That(start.Text, Is.Empty);
     }
 
-    [Ignore("GMS2 type 4 skip state not read yet")]
     [Test] public void Gms2Type4ReadsTheSkipState() {
         var scene = ReadSkip(Type4Scene, kind: 1, valueLength: 9);
         Assert.That(scene);
@@ -48,8 +47,8 @@ public class RcCinematicLayoutTests {
         var r = new ByteReader(bytes);
         var p = RcPkt.Read("CinematicPacket", r);
         RcPkt.NotType(p, "Other", "SetSkip");
-        Assert.That(RcPkt.MemberAny<int>(p, "Kind"), Is.EqualTo(kind));
-        Assert.That(RcPkt.MemberAny<string>(p, "Value"), Has.Length.EqualTo(valueLength));
+        Assert.That(RcPkt.MemberAny<byte>(p, "Kind"), Is.EqualTo(kind));
+        Assert.That(RcPkt.MemberAny<string>(p, "Message"), Has.Length.EqualTo(valueLength));
         Assert.That(r.Available, Is.EqualTo(0), "the type-4 body must be read, not left after the type byte");
         return true;
     }

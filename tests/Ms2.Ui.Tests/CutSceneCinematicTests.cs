@@ -44,9 +44,32 @@ public class CutSceneCinematicTests
         var c = new CutSceneCinematic();
         c.Apply(CinematicPacket.Read(R(w => { w.WriteByte(3); w.WriteInt(0); w.WriteUnicodeString("t"); w.WriteUnicodeString("") ; })));
         Assert.That(c.IsShowing, Is.False);
-        var other = CinematicPacket.Read(R(w => { w.WriteByte(6); w.WriteInt(1); }));
-        Assert.That(other, Is.EqualTo(new CinematicPacket.Other(6)));
+        var other = CinematicPacket.Read(R(w => { w.WriteByte(13); w.WriteInt(1); }));
+        Assert.That(other, Is.EqualTo(new CinematicPacket.Other(13)));
         c.Apply(other);
         Assert.That(c.IsShowing, Is.False);
+    }
+
+    [Test]
+    public void SkipTalksBalloonsAndTheOpeningKeepTheClientsLists()
+    {
+        var c = new CutSceneCinematic();
+        c.Apply(CinematicPacket.Read(R(w => { w.WriteByte(4); w.WriteByte(1); w.WriteString("next"); })));
+        Assert.That((c.SkipState, c.SkipMessage), Is.EqualTo((1, "next")));
+        c.Apply(CinematicPacket.Read(R(w => { w.WriteByte(6); w.WriteInt(11); w.WriteString(""); w.WriteUnicodeString("hi"); w.WriteInt(3000); w.WriteByte(0); })));
+        c.Apply(CinematicPacket.Read(R(w => { w.WriteByte(6); w.WriteInt(11); w.WriteString(""); w.WriteUnicodeString(""); w.WriteInt(3000); w.WriteByte(0); })));
+        Assert.That(c.Talks, Has.Count.EqualTo(1), "a talk with no text is not queued");
+        c.Apply(CinematicPacket.Read(R(w => { w.WriteByte(8); w.WriteByte(0); w.WriteInt(5); w.WriteUnicodeString("yo"); w.WriteInt(1000); w.WriteInt(0); })));
+        Assert.That(c.BalloonGroups[5], Has.Count.EqualTo(1));
+        c.Apply(CinematicPacket.Read(R(w => { w.WriteByte(9); w.WriteInt(5); })));
+        Assert.That(c.BalloonGroups[5], Is.Empty);
+        c.Apply(CinematicPacket.Read(R(w => w.WriteByte(7))));
+        Assert.That(c.Talks, Is.Empty);
+        c.Apply(CinematicPacket.Read(R(w => { w.WriteByte(11); w.WriteUnicodeString("open"); w.WriteBool(true); })));
+        Assert.That((c.Mode, c.Text, c.IsOpening, c.KeyMode), Is.EqualTo((2, "open", true, true)));
+        c.Apply(CinematicPacket.Read(R(w => w.WriteByte(5))));
+        Assert.That((c.SkipState, c.SkipMessage), Is.EqualTo((0, "")));
+        c.Apply(CinematicPacket.Read(R(w => { w.WriteByte(12); w.WriteUnicodeString("intro"); })));
+        Assert.That((c.Mode, c.Text), Is.EqualTo((3, "intro")));
     }
 }

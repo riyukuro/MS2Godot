@@ -1454,7 +1454,11 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.Trigger))
                 OnTrigger(p.Body);
             else if (game.Is(p, Inbound.Cinematic))
-                Cinematic.Apply(CinematicPacket.Read(p.Reader()));
+            {
+                var cine = CinematicPacket.Read(p.Reader());
+                Cinematic.Apply(cine);
+                if (cine is CinematicPacket.Caption) ReadNotApplied("Cinematic", CinematicPacket.CaptionType);   // OnPacketSetCaption (uicutscenecinematic.cpp:727): the caption is only an invoke on the pane's movie, which is not ported
+            }
             else if (game.Is(p, Inbound.UserMoveByPortal))
             {
                 var m = UserMoveByPortal.Read(p.Reader());
