@@ -65,6 +65,10 @@ public sealed class ColorPalettes
 /// (0 male, 1 female, 2 both). The first fitting face, hair and ears of job 0 and the first fitting job outfit
 /// (CL, PA, SH; job 0 when the job lists none) are picked, plus the job's start weapons (table/job.xml startItems). Colours: each item's itemmodel customize defaultColorIndex
 /// in its colorPalette (row 0 without one) unless colorRows names a row for the slot; skin: skinRow of the skin palette.
+/// The item and model rows come through <see cref="Ms2.Ui.Items.ItemFiles"/>, which reads either data layout: KMS's
+/// itemdata/&lt;id / 100000&gt;.xml rows or GMS2's one file per item. Before, only the KMS files were read, so on GMS2 data every
+/// item had no genderLimit, counted as both genders' and the female look took the first face and hair of the list, the
+/// male base face 10300001 and hair 10200001.
 /// </summary>
 public static class StarterLook
 {
@@ -76,21 +80,26 @@ public static class StarterLook
         var items = new List<EquipItem>();
         if (!packs.Exists("Xml", "table/defaultitems.xml")) return (items, palettes.Skin(0));
         var doc = PackXml.Parse(packs.Read("Xml", "table/defaultitems.xml"));
-        var genders = ItemFiles(packs, "itemdata");      // itemdata file prefix -> root
-        var models = ItemFiles(packs, "itemmodel");
+        var files = FilesOf(packs);
+        lock (files) return Build(packs, files, doc, palettes, gender, jobCode, colorRows, skinRow);
+    }
 
+    static (List<EquipItem> items, SkinColor? skin) Build(PackSet packs, Ms2.Ui.Items.ItemFiles files, XDocument doc, ColorPalettes palettes,
+        int gender, int jobCode, IReadOnlyDictionary<string, int> colorRows, int skinRow)
+    {
+        var items = new List<EquipItem>();
         int GenderOf(int id)
         {
-            var e = Find(packs, genders, "itemdata", id, "item");
+            var e = files.Item(id);
             var limit = e?.Element("environment")?.Element("limit") ?? e?.Descendants("limit").FirstOrDefault();
             return int.TryParse((string)limit?.Attribute("genderLimit"), out int g) ? g : 2;
         }
 
         EquipColor ColorOf(int id, string slot)
         {
-            var data = Find(packs, genders, "itemdata", id, "item");
+            var data = files.Item(id);
             int modelId = int.TryParse((string)data?.Descendants("tool").FirstOrDefault()?.Attribute("itemPreset"), out int pre) && pre != 0 ? pre : id;
-            var cust = Find(packs, models, "itemmodel", modelId, "ItemModel")?.Element("customize");
+            var cust = files.Model(modelId)?.Element("customize");
             if (cust == null || (string)cust.Attribute("color") != "1" || !int.TryParse((string)cust.Attribute("colorPalette"), out int pal)) return default;
             int.TryParse((string)cust.Attribute("defaultColorIndex"), out int idx);
             if (colorRows != null && colorRows.TryGetValue(slot, out int row)) idx = row;
@@ -127,7 +136,7 @@ public static class StarterLook
             foreach (var part in ((string)job?.Attribute("startItems") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
             {
                 if (!int.TryParse(part, out int id)) continue;
-                var category = (string)Find(packs, genders, "itemdata", id, "item")?.Descendants("property").FirstOrDefault()?.Attribute("category");
+                var category = (string)files.Item(id)?.Descendants("property").FirstOrDefault()?.Attribute("category");
                 EquipSlot slot;
                 if (category is "RH" or "BH") slot = EquipSlot.RH;
                 else if (category == "LH") slot = EquipSlot.LH;
@@ -140,29 +149,16 @@ public static class StarterLook
         return (items, palettes.Skin(skinRow));
     }
 
-    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Dictionary<string, Dictionary<int, XElement>>> files = new();
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Ms2.Ui.Items.ItemFiles> shared = new();
 
-    /// <summary>The parsed {dir}/{prefix}.xml roots of a pack set, kept across calls: a pack entry never changes and callers only read the trees.</summary>
-    static Dictionary<int, XElement> ItemFiles(PackSet packs, string dir)
-    {
-        var all = files.GetValue(packs, _ => new());
-        lock (all) { if (!all.TryGetValue(dir, out var d)) all[dir] = d = new(); return d; }
-    }
+    /// <summary>The pack set's item and model reader, kept across calls (a pack entry never changes; the reader caches the
+    /// parsed files and is used under its own lock).</summary>
+    static Ms2.Ui.Items.ItemFiles FilesOf(PackSet packs) => shared.GetValue(packs, p => new Ms2.Ui.Items.ItemFiles(p));
 
-    /// <summary>An element with the given id in Xml.m2d {dir}/{id / 100000}.xml (itemdata and itemmodel are split that way).</summary>
-    static XElement Find(PackSet packs, Dictionary<int, XElement> cache, string dir, int id, string element)
+    /// <summary>The item model row (&lt;ItemModel id&gt;) of a model id, as the look reads it (either data layout); null when the data has none.</summary>
+    internal static XElement Model(PackSet packs, int id)
     {
-        int prefix = id / 100000;
-        XElement root;
-        lock (cache)
-        if (!cache.TryGetValue(prefix, out root))
-        {
-            string entry = $"{dir}/{prefix}.xml";
-            root = packs.Exists("Xml", entry)
-                ? PackXml.Parse(packs.Read("Xml", entry)).Root
-                : null;
-            cache[prefix] = root;
-        }
-        return root?.Elements(element).FirstOrDefault(e => (string)e.Attribute("id") == id.ToString());
+        var files = FilesOf(packs);
+        lock (files) return files.Model(id);
     }
 }
