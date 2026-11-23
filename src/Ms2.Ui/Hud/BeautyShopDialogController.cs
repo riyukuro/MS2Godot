@@ -105,10 +105,64 @@ public sealed class BeautyShopDialogController : UiController
     public int NewItemId;
     /// <summary>FUN_141655e10(FUN_140f01070(kind)): the id of the item worn in a slot (0 = none); null = no local player, m_2b8 stays.</summary>
     public Func<int, int?> WornItemId;
-    /// <summary>OpenStyleSelectDialog (@0x1418cb000) of the old and the new item id, raised by mode 0xb when both match the kept ones.
-    /// STILL-OPEN: the dialog itself (its item rows with WriteItemInfo, the random select and the selected-index callbacks) is not
-    /// ported and the host leaves this unset, so the answer opens nothing.</summary>
-    public event Action<int, int> StyleSelectRequested;
+    /// <summary>WriteItemInfo (@0x140f324f0) of an item id: the movie members of its row (icon, flags), from the item data. Host-set;
+    /// unset = the item data is not reachable and the style select dialog does not open. STILL-OPEN: the host's source of the item data.</summary>
+    public Func<int, IReadOnlyList<(string Name, object Value)>> ItemInfo;
+    /// <summary>FUN_14053f870 then FUN_1418fe870(2, 0, id): the icon text of the return coupon, null when the coupon has no item data.</summary>
+    public Func<int, string> CouponIcon = _ => null;
+    /// <summary>Customize::EquipItem (@0x140cd1c90) of an item id: the preview equip of the kept item. Host-set; unset = nothing is equipped.</summary>
+    public Action<int> EquipPreview;
+
+    /// <summary>OpenStyleSelectDialog (@0x1418cb000, uibeautyshopdialog.cpp:2013) of the kept old and new item ids: only on the special
+    /// page with the movie attached. The old row carries the "current hair" text, plus the return coupon line when the shop has a
+    /// return coupon (the row's itemname is only set then, :2043); the new row the "new hair" text. m_2b5 = 1.</summary>
+    public void OpenStyleSelectDialog(int curId, int newId)
+    {
+        if (Host?.Entity == null || curId == 0 || newId == 0 || Page != PageSpecial || ItemInfo == null) return;
+        string Name(int id) => ItemName(id);
+        var cur = new List<(string, object)>(ItemInfo(curId));
+        string strCur = ClientFormat.Format(Model?.Tables.Common("s_beauty_fmt_style_select_cur_hair"), Name(curId));
+        int coupon = Shop?.ReturnCouponId ?? 0;
+        if (coupon > 0)
+        {
+            if (CouponIcon(coupon) is { } icon)
+            {
+                string img = ClientFormat.Format("<img src='{0}' vspace='{1}'>", icon, "0");
+                string line = ClientFormat.Format(Model?.Tables.Common("s_beauty_fmt_return_coupon"), img, Name(coupon), "1");
+                if (!string.IsNullOrEmpty(line)) strCur += "\n" + line;
+            }
+            cur.Add(("itemname", strCur));
+        }
+        var nw = new List<(string, object)>(ItemInfo(newId))
+        {
+            ("itemname", ClientFormat.Format(Model?.Tables.Common("s_beauty_fmt_style_select_new_hair"), Name(newId)))
+        };
+        Host.Invoke(Host.Entity, "openStyleSelectDialog", Host.Obj(("item0", Host.Obj(cur.ToArray())), ("item1", Host.Obj(nw.ToArray()))));
+        StyleSelectOpen = true;
+    }
+
+    /// <summary>SendBeautyMode12 (uibeautyshopdialog.cpp:1472): slot -1 asks (0x272) and leaves on the first button; else the worn slot
+    /// is restored and, on the special page, the slot is sent (mode 0xc). STILL-OPEN: slot 1's FUN_1418cb6a0 does nothing in the client.</summary>
+    void SendBeautyMode12(int slot)
+    {
+        if (Host?.Entity == null) return;
+        if (slot == -1)
+        {
+            ShowData(MessageBoxQueue.CreateWithCallback(Model.Tables.Common(0x272), 0, (button, _) => { if (button == 0) Leave(); return true; }));
+            return;
+        }
+        Customize?.RestoreSlot(WornSlot());
+        if (Page == PageSpecial) Send(new BeautySlotRequest((byte)slot));
+    }
+
+    /// <summary>FUN_1418c7fe0: the preview equip of the kept old (0) or new (other) item; -1 does nothing.</summary>
+    void ChangeSelectedIndex(int index)
+    {
+        if (Host?.Entity == null || index == -1) return;
+        int id = index == 0 ? OldItemId : NewItemId;
+        EquipPreview?.Invoke(id);
+    }
+
     /// <summary>The Customize's commit sends (SendColors, SendAdded, SendModified) behind CommitSlot on the items, colour and skin pages are
     /// ported. STILL-OPEN: they are not, so without this the buy on those pages does nothing (no local commit, no send).</summary>
     public bool CommitSendsPorted;
@@ -177,7 +231,7 @@ public sealed class BeautyShopDialogController : UiController
             case 0xb:
                 // :1541-1548: the two ids of the packet must be the kept ones (m_2b8, m_2c8), as the items are not null
                 if (OldItemId != 0 && OldItemId == p.OldItemId && NewItemId != 0 && NewItemId == p.NewItemId)
-                    StyleSelectRequested?.Invoke(OldItemId, NewItemId);
+                    OpenStyleSelectDialog(OldItemId, NewItemId);
                 break;
             case 0xc:
                 NoticeText?.Invoke(CouponNotice(p.CouponId, p.Mailed));
@@ -508,6 +562,16 @@ public sealed class BeautyShopDialogController : UiController
         {
             case "onclickclose": RequestClose(); return true;
             case "onclicksave": ClickSave(); return true;
+            case "onclickrandomselect":
+                if (args is { Length: >= 1 })
+                {
+                    SendBeautyMode12(Ms2.Avm2.Rt.ToInt32(args[0]));
+                    StyleSelectOpen = false;
+                }
+                return true;
+            case "onchangeselectedindexitem":
+                if (args is { Length: >= 1 }) ChangeSelectedIndex(Ms2.Avm2.Rt.ToInt32(args[0]));
+                return true;
             case "onclickreset":
                 Customize?.RestoreSlot(WornSlot());
                 RefreshButtons();

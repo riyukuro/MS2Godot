@@ -355,8 +355,8 @@ public class BeautyShopDialogTests
     public void TheStyleAnswerOpensOnlyForTheKeptItems()
     {
         var r = new Rig();
-        var opened = new List<(int, int)>();
-        r.C.StyleSelectRequested += (a, b) => opened.Add((a, b));
+        var opened = new List<int>();
+        r.C.ItemInfo = id => { opened.Add(id); return new List<(string, object)> { ("iconPath", "x") }; };
         r.C.WornItemId = _ => 400;
         var bills = new List<BillData>();
         r.C.OpenBill = bills.Add;
@@ -370,7 +370,37 @@ public class BeautyShopDialogTests
         r.C.OnPacket(new BeautyShopPacket(0xb) { OldItemId = 401, NewItemId = 501 });
         Assert.That(opened, Is.Empty, "the old id differs");
         r.C.OnPacket(new BeautyShopPacket(0xb) { OldItemId = 400, NewItemId = 501 });
-        Assert.That(opened, Is.EqualTo(new[] { (400, 501) }));
+        Assert.That(opened, Is.EqualTo(new[] { 400, 501 }));
+        Assert.That(r.C.StyleSelectOpen, Is.True, "m_2b5 = 1");
+    }
+
+    /// <summary>OnClickRandomSelect (:828): slot -1 asks the 0x272 box (the first button leaves); another slot restores the worn slot and,
+    /// on the special page, sends mode 0xc with it; the dialog is closed after. onChangeSelectedIndexItem (:839) previews the kept item.</summary>
+    [Test]
+    public void TheStyleSelectCallbacksSendTheSlotAndPreviewTheKeptItem()
+    {
+        var r = new Rig();
+        r.C.OnPacket(Rig.Open(BeautyShopDialogController.PageSpecial));
+        r.C.OldItemId = 400; r.C.NewItemId = 501;
+        var eq = new List<int>();
+        r.C.EquipPreview = eq.Add;
+        r.C.StyleSelectOpen = true;
+        r.C.OnCallback("onChangeSelectedIndexItem", new object[] { 0 });
+        r.C.OnCallback("onChangeSelectedIndexItem", new object[] { 1 });
+        r.C.OnCallback("onChangeSelectedIndexItem", new object[] { -1 });
+        Assert.That(eq, Is.EqualTo(new[] { 400, 501 }));
+        r.C.OnCallback("OnClickRandomSelect", new object[] { -1 });
+        Assert.That(r.Sent, Is.Empty);
+        Assert.That(r.Boxes, Has.Count.EqualTo(1));
+        Assert.That(r.C.StyleSelectOpen, Is.False);
+        r.Cu.Calls.Clear();
+        r.C.OnCallback("OnClickRandomSelect", new object[] { 1 });
+        Assert.That(r.Cu.Calls, Is.EqualTo(new[] { "restore41" }));
+        Assert.That(r.Sent.Single(), Is.EqualTo(new BeautySlotRequest(1)));
+        r.Sent.Clear();
+        r.C.OnPacket(Rig.Open(1));
+        r.C.OnCallback("OnClickRandomSelect", new object[] { 1 });
+        Assert.That(r.Sent, Is.Empty, "mode 0xc only on the special page");
     }
 
     [Test]
