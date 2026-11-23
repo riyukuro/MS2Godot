@@ -47,9 +47,10 @@ public sealed class NpcLayer
         public ushort Serial;                     // m_nDAC: the last block's state serial (0 at spawn, CNpc init :473)
         public Ms2.Formats.World.SkillMotion Cast; // the head of PCBase m_unk_8e8: the cast record's motion (GetMotionData)
         public long CastUid; public int CastMotion = -1;   // the record's cast uid and motion index, as FUN_141673bf0 finds it
-        public string CastAnim;                   // the cast's sequence as played here; null when the model has none
+        public int CastSeq = -1;                  // the cast's sequence id as played here; -1 when the body has none
         public bool CastLast;                     // CSkillRecord::FUN_141759e40: the record's motion is the level's last
         public double CastEnded = -1;             // StateSkill m_fStartTime once the sequence ended (EndOfSequence); -1 while it plays
+        public double PlayEnds;                   // the layer time the sequence Play last started is over; +inf for a looping one
     }
 
     /// <summary>The CRT rand() the death pick draws from (0..0x7fff).</summary>
@@ -258,8 +259,12 @@ public sealed class NpcLayer
         i.Player.Play(name, 0.12);
         i.Player.SpeedScale = speed;
         i.Playing = name; i.Sequence = seqId; SequencesPlayed++;
+        // kept once per play, so the skill state's end (SkillEnd) reads no animation state each frame; from the player's
+        // position, since a Play of the animation already playing goes on from where it is rather than from its start
+        i.PlayEnds = double.PositiveInfinity;
         if (a.LoopMode == Godot.Animation.LoopModeEnum.None)
         {
+            i.PlayEnds = Now + Math.Max(i.Player.CurrentAnimationLength - i.Player.CurrentAnimationPosition, 0) / Math.Max(speed, 0.01f);
             var idle = i.Model.Kfm.ByName("Idle_A");
             if (idle != null && idle.Id != seqId)
             {
@@ -684,22 +689,23 @@ public sealed class NpcLayer
     /// StateSkill::PlayCastStartEffect (@0x1417ea750, stateskill.cpp:1820-1829) on an npc: a motion with a sequence goes to
     /// PCBase::FUN_141673ce0, which replaces the record list (m_unk_8e8) unless it holds the uid and motion already, and a new
     /// record enters StateSkill (0x10). False for a dead npc, a motion without a sequence or the record already there.
-    /// <paramref name="anim"/> is the sequence as played on the body (null when the model lacks it); <paramref name="last"/> is
-    /// whether the motion is the level's last (<see cref="Process"/> ends the state on it).
+    /// <paramref name="anim"/> is the sequence as played on the body by <see cref="PlaySequence"/> just before (null when the
+    /// body lacks it); <paramref name="last"/> is whether the motion is the level's last (<see cref="Process"/> ends the state
+    /// on it).
     /// </summary>
     public bool BeginCast(int id, long castUid, int motionIndex, bool last, Ms2.Formats.World.SkillMotion motion, string anim)
     {
         if (!inst.TryGetValue(id, out var i) || i.Dead || motion == null || string.IsNullOrEmpty(motion.SequenceName)) return false;
         if (i.Cast != null && i.CastUid == castUid && i.CastMotion == motionIndex) return false;
-        i.Cast = motion; i.CastUid = castUid; i.CastMotion = motionIndex; i.CastAnim = anim; i.CastLast = last; i.CastEnded = -1;
+        i.Cast = motion; i.CastUid = castUid; i.CastMotion = motionIndex; i.CastSeq = anim != null ? i.Sequence : -1; i.CastLast = last; i.CastEnded = -1;
         i.State = 0x10;
         return true;
     }
 
     /// <summary>
-    /// The npcs WorldService::FUN_141bc8420 takes as force zones (worldservice_1.cpp:5560-5600): in StateSkill (0x10) with a
-    /// cast record whose motion has a push cylinder, centred at the npc's position (client axes, z up). Fills
-    /// <paramref name="into"/> after clearing it.
+    /// The npcs WorldService::FUN_141bc8420 takes as force zones (worldservice_1.cpp:5535-5570, the state test at :5542): in
+    /// StateSkill (0x10) with a cast record whose motion has a push cylinder, centred at the npc's position (client axes, z
+    /// up). Fills <paramref name="into"/> after clearing it.
     /// </summary>
     public void ForceSources(List<Ms2.Formats.World.ForceZone.Source> into)
     {
@@ -714,18 +720,26 @@ public sealed class NpcLayer
     }
 
     /// <summary>
-    /// StateSkill's own end for an npc (not the own pc, no rider): EndOfSequence (stateskill.cpp:1054) marks the cast's sequence
-    /// over and keeps its time, then FUN_1417ee120 (:2915-2992) ends the state through FUN_1417f0070 (StateIdle, 1) when the
-    /// record's motions are over (CSkillRecord::FUN_141759e40), and otherwise 5 s after that time.
-    /// STILL-OPEN: the record's extra (m_nB0) holds the actor (StateHold, 0x20) instead, and a looping motion (m_nRepeat) is
-    /// not followed; a cast whose sequence the model lacks stays in the state until a block changes it.
+    /// StateSkill's own end for an npc (not the own pc, no rider), FUN_1417ee120 (stateskill.cpp:2885-2992):
+    /// - it returns while the cast's sequence plays (!m_b48, :2889-2893); EndOfSequence (:1054-1070) sets m_b48 and keeps the
+    ///   sequence's event time in m_fStartTime. Here the sequence is over when the time its Play kept has passed or another
+    ///   sequence took the body, and the time kept is the layer's at the first frame that sees it, not the animation's event
+    ///   time: the two are taken as one clock (inferred);
+    /// - the record's motions over (CSkillRecord::FUN_141759e40, skillrecord.cpp:315) go to StateIdle through vfunc_59(1)
+    ///   (:2951-2958) when the level's doesPlayIdleOnSkillEnd is set, its default (skillleveldata.cpp:1017, :1203);
+    /// - otherwise, 5 s after m_fStartTime (:2990), FUN_1417f0070 goes to StateIdle.
+    /// A cast whose sequence did not play here (a placeholder body without a model, or a model without the sequence) counts as
+    /// over at its start, so those two rules end it. The client has no such case for a placeholder, and for a model without
+    /// the sequence it waits for EndOfSequence; a bound of the port, so a push cylinder does not act without end.
+    /// STILL-OPEN: doesPlayIdleOnSkillEnd is not read (a level that clears it holds the state to the 5 s check, which
+    /// changes no zone: vfunc_103 has no record past the last motion, pcbase.cpp:2703-2712); FUN_1417f0070's StateHold
+    /// (0x20) for the record's extra (m_nB0) and a looping motion (m_nRepeat) are not followed.
     /// </summary>
     void SkillEnd(Inst i)
     {
-        if (i.CastAnim == null || i.Player == null) return;
         if (i.CastEnded < 0)
         {
-            if (i.Player.IsPlaying() && i.Player.CurrentAnimation == i.CastAnim) return;
+            if (i.CastSeq >= 0 && i.Sequence == i.CastSeq && Now < i.PlayEnds) return;
             i.CastEnded = Now;
         }
         if (i.CastLast || Now > i.CastEnded + 5.0) i.State = 1;

@@ -18,6 +18,10 @@ namespace Ms2Godot.Tests;
 /// - the zone is centred at the npc and pushes a point near it outward (ForceZone.Step);
 /// - the last motion's sequence end leaves the state for StateIdle; a motion with more to come holds it 5 s after its end
 ///   (StateSkill::FUN_1417ee120);
+/// - a casting npc's frame (NpcLayer.Process) allocates nothing: the end reads no animation name;
+/// - a last motion replayed over its own playing sequence ends with that sequence, which goes on from where it was;
+/// - a cast whose sequence did not play (a model without it; a placeholder body takes the same path) counts as over at its
+///   start: the last motion leaves the state the next frame, a motion with more to come 5 s later;
 /// - a dead npc is in 0xc, has no zone and takes no cast.
 /// Quits with 0 when all hold, else 1.
 /// </summary>
@@ -87,6 +91,18 @@ public partial class NpcForceCheck : Node3D
         bool pushed = ForceZone.Step(feet, false, 1f, null, zones, out var vel, out _);
         Check(pushed && vel.X > 299f && System.MathF.Abs(vel.Y) < 0.01f, $"a point 500 off was pushed {pushed} by {vel}, not 300 outward");
 
+        // the casting npc's frame: managed bytes and time over 1000 frames of no time (the cast stays on)
+        npcs.Process(0f);
+        var sw = new System.Diagnostics.Stopwatch();
+        long b0 = System.GC.GetAllocatedBytesForCurrentThread();
+        sw.Start();
+        for (int k = 0; k < 1000; k++) npcs.Process(0f);
+        sw.Stop();
+        long castBytes = System.GC.GetAllocatedBytesForCurrentThread() - b0;
+        double castUs = sw.Elapsed.TotalMilliseconds;
+        Check(npcs.StateOf(obj) == 0x10, $"the cast left the state in {npcs.StateOf(obj)} over frames of no time");
+        Check(castBytes == 0, $"1000 frames of a casting npc allocated {castBytes} B");
+
         Check(!npcs.BeginCast(obj, 77, 0, true, motion, anim), "the same uid and motion entered the skill state again");
         Block(obj, 2, 1);
         Check(npcs.StateOf(obj) == 0x10, $"a block of the last serial changed the state to {npcs.StateOf(obj)}");
@@ -109,6 +125,20 @@ public partial class NpcForceCheck : Node3D
         // the last motion's end: StateIdle
         bool ended = await Until(() => npcs.StateOf(obj) != 0x10, 15f);
         Check(ended && npcs.StateOf(obj) == 1, $"the last motion's end left the npc in {npcs.StateOf(obj)}, not 1");
+        // a replay of the sequence while it plays goes on from where it is (AnimationPlayer.Play): the last motion ends with it
+        await Until(() => npcs.CurrentAnimation(obj) != anim, 2f);   // the last cast's sequence played out (its state ends up to a frame early)
+        string anim3 = npcs.PlaySequence(obj, seq);
+        float p0 = npcs.Now;
+        await Until(() => npcs.Now - p0 > 0.15f, 2f);
+        Check(npcs.CurrentAnimation(obj) == anim3, $"{seq} was over 0.15 s into it, too short for the replay check");
+        float r0 = npcs.Now;
+        Check(npcs.BeginCast(obj, 80, 0, true, motion, npcs.PlaySequence(obj, seq)), "a cast over its own sequence was not taken");
+        float fr = 0f;
+        while (npcs.CurrentAnimation(obj) == anim3 && npcs.Now - r0 < 5f) { float f0 = npcs.Now; await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame); fr = Mathf.Max(fr, npcs.Now - f0); }
+        float shown = npcs.Now;
+        Check(npcs.StateOf(obj) != 0x10 || await Until(() => npcs.StateOf(obj) != 0x10, 2f * fr + 0.02f),
+            $"a last motion replayed over its playing sequence held the state past the sequence's end ({shown - r0:0.00} s after the replay)");
+        await Until(() => npcs.StateOf(obj) != 0x10, 5f);
         // a motion with more to come: held after its end, then idle 5 s later
         string anim2 = npcs.PlaySequence(obj, seq);
         Check(npcs.BeginCast(obj, 79, 0, false, motion, anim2), "a cast with motions left was not taken");
@@ -121,6 +151,23 @@ public partial class NpcForceCheck : Node3D
         Check(left && npcs.StateOf(obj) == 1, $"a motion with more to come left the npc in {npcs.StateOf(obj)}");
         Check(held > 4.9f && held < 5.3f, $"a motion with more to come left the state {held:0.00} s after its end, not 5 s");
 
+        // a sequence the body lacks: over at the cast's start
+        var lacking = new SkillMotion { SequenceName = "NoSuchSequence_Z", PushCylinder = push };
+        string missing = npcs.PlaySequence(obj, lacking.SequenceName);
+        Check(missing == null, $"a sequence the model lacks played as {missing}");
+        Check(npcs.BeginCast(obj, 82, 0, true, lacking, missing), "a last motion without a played sequence was not taken");
+        npcs.ForceSources(zones);
+        Check(zones.Count == 1, $"a cast without a played sequence gave {zones.Count} zones at its start");
+        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        Check(npcs.StateOf(obj) == 1, $"a last motion without a played sequence left the npc in {npcs.StateOf(obj)} two frames on, not 1");
+        Check(npcs.BeginCast(obj, 83, 0, false, lacking, missing), "a motion with more to come without a played sequence was not taken");
+        float start = npcs.Now;
+        bool gone = await Until(() => npcs.StateOf(obj) != 0x10, 8f);
+        float missingHeld = npcs.Now - start;
+        Check(gone && npcs.StateOf(obj) == 1 && missingHeld > 4.9f && missingHeld < 5.3f,
+            $"a motion with more to come without a played sequence left the state ({npcs.StateOf(obj)}) {missingHeld:0.00} s after its start, not 5 s");
+
         Check(npcs.BeginCast(obj, 80, 0, true, motion, npcs.PlaySequence(obj, seq)), "a cast before the death was not taken");
         npcs.Die(obj, false);
         Check(npcs.StateOf(obj) == 0xc, $"a dead npc is in {npcs.StateOf(obj)}, not 0xc");
@@ -129,7 +176,7 @@ public partial class NpcForceCheck : Node3D
         Check(!npcs.BeginCast(obj, 81, 0, true, motion, seq), "a dead npc took a cast");
         Block(obj, 1, 9);
         Check(npcs.StateOf(obj) == 0xc, $"a block moved the dead npc to {npcs.StateOf(obj)}");
-        Done($"npc {npcId} {seq}, push {vel}, held {held:0.00} s");
+        Done($"npc {npcId} {seq}, push {vel}, held {held:0.00} s, no sequence held {missingHeld:0.00} s; 1000 casting frames {castBytes} B, {castUs:0.000} ms");
     }
 
     void Done(string head)
