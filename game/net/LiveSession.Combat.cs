@@ -21,7 +21,7 @@ public partial class LiveSession
     /// loot: an item (MS2_LIVE_COMBAT_ITEM) and meso (MS2_LIVE_COMBAT_MESO_ITEM, MS2_LIVE_COMBAT_MESO) dropped at the player by
     /// the GM item command, the pickup key held; checks: the drop appears, the item gain and the meso gain come back, the bag
     /// and the meso count change.
-    /// lift: a run to the lift at MS2_LIVE_LIFT_AT (its map point, x,y,z), then the action key; checks: the lift craft came
+    /// lift (or lift:x y z): a run to the lift at MS2_LIVE_LIFT_AT (its map point, x,y,z) or the given point, then the action key; checks: the lift craft came
     /// back, the carried model, the carry idle, then a few steps of the carry walk.
     /// putdown: the action key in cube mode where the player stands; checks: the craft ended.
     /// walkto:x y z[/x y z...] runs through map points in turn; faceto:x y z turns the player to a map point; scan:x0 y0 x1 y1 cell
@@ -128,6 +128,11 @@ public partial class LiveSession
                     }
                     GD.Print($"live: scan y {y,6:F0} {row}");
                 }
+                continue;
+            }
+            if (step.StartsWith("wait:"))      // wait:N: N seconds of frames (a trigger's timed states)
+            {
+                await frames(60 * int.Parse(step[5..]));
                 continue;
             }
             if (step.StartsWith("keys:"))      // keys:N: the action key pressed N times, a second apart (a talk's Next pages)
@@ -408,7 +413,7 @@ public partial class LiveSession
                 }
                 continue;
             }
-            switch (step)
+            switch (step.StartsWith("lift:") ? "lift" : step)
             {
                 case "attack":
                 {
@@ -554,7 +559,7 @@ public partial class LiveSession
                 }
                 case "lift":      // MS2_LIVE_LIFT_AT=x,y,z (the lift's map point): a run to it, then the action key in its reach
                 {
-                    var p = Env("MS2_LIVE_LIFT_AT", "0,0,0").Split(';')[0].Split(',');
+                    var p = step.StartsWith("lift:") ? step[5..].Split(' ') : Env("MS2_LIVE_LIFT_AT", "0,0,0").Split(';')[0].Split(',');
                     var at = new Vector3(float.Parse(p[0]), float.Parse(p[2]), -float.Parse(p[1]));
                     float dist = hud.FaceScripted(at);
                     for (int walk = 0; walk < 60 * 25 && dist > 80; walk++)
@@ -562,7 +567,8 @@ public partial class LiveSession
                         dist = hud.DriveTowardScripted(at, false); await frames(1);
                     }
                     hud.DriveEnd(); hud.FaceScripted(at); await frames(60);
-                    GD.Print($"live: combat lift: distance {dist:F0}, polled lift '{live.Liftables.Polled}', text field focus {Ms2.Ui.InputBlock.Active}");
+                    var mp = live.OwnPlayer.GlobalPosition;
+                    GD.Print($"live: combat lift: distance {dist:F0} (3D {mp.DistanceTo(at):F0}) at {mp.X:F0} {-mp.Z:F0} {mp.Y:F0}, polled lift '{live.Liftables.Polled}', text field focus {Ms2.Ui.InputBlock.Active}");
                     Shot("lift_before.png");
                     await PressActionKey(frames);
                     await until(() => live.CubeCraft.InCubeMode, 60 * 5); await frames(90);
