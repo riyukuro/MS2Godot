@@ -318,6 +318,24 @@ public sealed class SkillData
     readonly Dictionary<ushort, SkillLevelData> levels = new();
 
     /// <summary>
+    /// GMS2 per-skill files have no basic@mainType (the client's SkillData::Load reads it, skilloverlapcompare.cpp:821); they write
+    /// &lt;kinds type subType&gt; instead. INFERRED from the two data sets, 9391 skills in both (KMS2_DEV skilldata against GMS2 skill/):
+    /// the pair is one-to-one with the KMS main type where it is not 0: (0,1) is 1 (64 of 64, the basic attacks), (0,2) 2, (3,3) 3,
+    /// (0,4) 4, (3,5) 5, (1,x) 6 (passives, 141 of 141), (3,7) 7, (3,0) 10, (3,8) 17, (3,9) 18 or 19. KMS (0,0) rows are the main
+    /// types 0, 14, 15 and 30, told apart by nothing in the GMS2 file, so they stay 0; (0,6) is 11, 12 or 13 in KMS (one sample each)
+    /// and is read as 11, and 18 / 19 as 18; the item-kind and not-a-book-skill tests treat those alike except for 11 / 12 (STILL-OPEN).
+    /// Without it every GMS2 skill reads main type 0, a book skill kind, and the not-learnt check (JobSystemCli::vfunc_2) refuses
+    /// the basic attacks, which are never in the book.
+    /// </summary>
+    internal static int GmsMainType(int type, int subType) => (type, subType) switch
+    {
+        (0, 1) => 1, (0, 2) => 2, (0, 4) => 4, (0, 6) => 11,
+        (1, _) => 6,
+        (3, 0) => 10, (3, 3) => 3, (3, 5) => 5, (3, 7) => 7, (3, 8) => 17, (3, 9) => 18,
+        _ => 0,
+    };
+
+    /// <summary>
     /// SkillData::Load: id, originID; under &lt;basic&gt; mainType, &lt;ui&gt; icon / attackType / tooltip, &lt;kinds&gt; rangeType /
     /// element, &lt;condition&gt; weapons; then the levels FUN_14028faa0(skill, "level", "value") picks: a level below 1 ends the
     /// load (SkillLevelData::Load returns 0, the skill keeps the levels read so far), and the max level is the highest.
@@ -329,7 +347,9 @@ public sealed class SkillData
         var s = new SkillData { Id = Xml.UInt(e, "id"), OriginIdRaw = Xml.UInt(e, "originID") };
         var basic = e.Element("basic");
         if (basic == null) return s;
-        s.MainType = Xml.Int(basic, "mainType");
+        s.MainType = basic.Attribute("mainType") == null && basic.Element("kinds") is { } k0 && k0.Attribute("type") != null
+            ? GmsMainType(Xml.Int(k0, "type"), Xml.Int(k0, "subType"))
+            : Xml.Int(basic, "mainType");
         if (basic.Element("ui") is { } ui)
         {
             s.Icon = (string)ui.Attribute("icon") ?? "";
