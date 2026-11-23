@@ -37,6 +37,21 @@ public partial class LiveSession
         }
         void Check(string what, bool ok) => GD.Print($"live: combat {(ok ? "PASS" : "FAIL")}: {what}");
         string Env(string k, string d) => System.Environment.GetEnvironmentVariable(k) is { Length: > 0 } v ? v : d;
+        // MS2_LIVE_EQUIP_DIRECT=1: when the bag refuses (the tutorial guide keeps it shut and holds the put on), the equip request
+        // goes out as the bag would send it, right hand first and the second copy to the left; for a start that has the weapon
+        // worn already, as a created character of another server's data
+        bool EquipDirect(int itemId, bool another)
+        {
+            if (Env("MS2_LIVE_EQUIP_DIRECT", "0") != "1" || live.Inventory?.RequestEquip is not { } send) return false;
+            var worn = live.Me.Equips;
+            foreach (var e in live.Items.All)
+            {
+                if (e.Id != itemId || worn?.Any(w => w.Uid == e.Uid) == true) continue;
+                send(e.Uid, (byte)(another ? Ms2.Net.Packets.EquipSlot.LH : Ms2.Net.Packets.EquipSlot.RH), 0);
+                return true;
+            }
+            return false;
+        }
         int aimMobs = 0, aimKills = 0, numbers = 0, kills = 0, npcs = 0, storeItem = int.Parse(Env("MS2_LIVE_STORE_ITEM", "0").Split(';')[0]);
         long mesoDelta = 0, lockUid = 0;
         int lockId = 0;
@@ -438,7 +453,7 @@ public partial class LiveSession
                     GD.Print($"live: combat weapon item: {(hud.SubmitChatLine($"/item {weapon}") ? "sent" : "no chat window")}");
                     await until(() => live.Items.All.Any(e => e.Id == weapon), 60 * 10); await frames(60);
                     Check("the weapon is in the bag", live.Items.All.Any(e => e.Id == weapon));
-                    GD.Print($"live: combat equip: {(hud.EquipScripted(weapon) ? "sent" : "not sent")}");
+                    GD.Print($"live: combat equip: {(hud.EquipScripted(weapon) || EquipDirect(weapon, false) ? "sent" : "not sent")}");
                     await until(() => live.Me.Equips?.Any(e => e.Id == weapon) == true, 60 * 10); await frames(60);
                     Check("the weapon is worn", live.Me.Equips?.Any(e => e.Id == weapon) == true);
                     Shot("equipped.png");
@@ -449,7 +464,7 @@ public partial class LiveSession
                     int weapon = int.Parse(Env("MS2_LIVE_COMBAT_WEAPON", "0"));
                     GD.Print($"live: combat weapon item 2: {(hud.SubmitChatLine($"/item {weapon}") ? "sent" : "no chat window")}");
                     await frames(120);
-                    GD.Print($"live: combat equip 2: {(hud.EquipScripted(weapon, true) ? "sent" : "not sent")}");
+                    GD.Print($"live: combat equip 2: {(hud.EquipScripted(weapon, true) || EquipDirect(weapon, true) ? "sent" : "not sent")}");
                     await frames(120);
                     GD.Print($"live: combat worn: {string.Join(' ', live.Me.Equips?.Where(e => e.Id == weapon).Select(e => e.Slot.ToString()) ?? new string[0])}");
                     Shot("equipped2.png");
