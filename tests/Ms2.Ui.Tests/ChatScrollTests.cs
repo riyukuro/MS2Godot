@@ -196,4 +196,24 @@ public class ChatScrollTests
         Assert.That(N(h, bar, "position"), Is.EqualTo(at));
         Assert.That(h.RT.Errors, Is.Empty);
     }
+
+    [Test]
+    public void TheBarsRangeFollowsALineAddedWhileScrolledUp()
+    {
+        // DocView::Format -> View_OnMaxScrollChanged (sfr_gfx_03f.cpp:1050): the field sends scroll, the bar reads the new range
+        var (c, h, output, tf, bar) = Filled();
+        var (gx, gy) = ((AsDisplayObject)output).LocalToGlobal(20, 20);
+        h.Player.MouseMove(gx, gy);
+        for (int i = 0; i < 5; i++) h.Player.Wheel(3);
+        h.Player.Tick();
+        double at = ScrollV(h, tf), max = N(h, tf, "maxScrollV");
+        Assert.That(at, Is.LessThan(max));
+        double thumb = N(h, h.Get(bar, "thumb"), "height");
+        for (int i = 0; i < 4; i++) c.AppendLine("more " + i + "<br>", 0);
+        for (int i = 0; i < 3; i++) h.Player.Tick();
+        Assert.That(N(h, tf, "maxScrollV"), Is.EqualTo(max + 4));
+        Assert.That(N(h, h.Get(bar, "thumb"), "height"), Is.LessThan(thumb), "the bar's range follows: the thumb is smaller");
+        Assert.That(ScrollV(h, tf), Is.EqualTo(at), "the view stays");
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
 }

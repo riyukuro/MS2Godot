@@ -100,14 +100,14 @@ public class AsTextField : AsInteractiveObject
     public RectD Box
     {
         get { if (autoSizePending) { autoSizePending = false; if (autoSizeMode != "none") AutoSize(); } return box; }
-        set { autoSizePending = false; if (!box.Equals(value)) { box = value; MarkChanged(); } }
+        set { autoSizePending = false; if (!box.Equals(value)) { box = value; MarkChanged(); WatchScroll(); } }
     }
     bool autoSizePending;
     public AsTextFormat Format { get => format; set { if (format != value) { format = value; MarkChanged(); } } }
     public string Variable;
     public int SelBegin, SelEnd;
     /// <summary>Bumped on each change (renderer refresh).</summary>
-    public int Version { get => version; set { version = value; MarkChanged(); } }
+    public int Version { get => version; set { version = value; MarkChanged(); WatchScroll(); } }
     public string VerticalAlign { get => verticalAlign; set { if (verticalAlign != value) { verticalAlign = value; MarkChanged(); } } }
     public string TextAutoSize { get => textAutoSize; set { if (textAutoSize != value) { textAutoSize = value; MarkChanged(); } } }
 
@@ -692,7 +692,7 @@ public class AsTextField : AsInteractiveObject
     /// </summary>
     [As] public int scrollV
     {
-        get { if (scrollTop <= 1) return 1; int max = maxScrollV; if (scrollTop > max) scrollTop = max; return scrollTop; }
+        get { if (scrollTop <= 1) return 1; return Math.Min(scrollTop, maxScrollV); }
         set
         {
             int v = Math.Clamp(value, 1, maxScrollV);
@@ -701,6 +701,32 @@ public class AsTextField : AsInteractiveObject
             MarkChanged();      // the view moves the text (FieldText.Sync)
             Send("flash.events.Event", "scroll");
         }
+    }
+
+    int lastMaxScroll = 1;
+    bool scrollWatched;
+
+    /// <summary>Called when the text, its size or its format changed: a field somebody can see scroll (a scroll listener, or
+    /// scrolled down already) is checked after the frame's scripts (<see cref="CheckScroll"/>), where Scaleform reformats.</summary>
+    void WatchScroll()
+    {
+        if (scrollWatched || (scrollTop <= 1 && !hasEventListener("scroll"))) return;
+        if (Class?.Runtime?.Player is { } p) { scrollWatched = true; p.WatchScroll(this); }
+    }
+
+    /// <summary>The reformat's end (DocView::Format, sfr_render_03b.cpp:2497-2502, :2579-2583): a first line beyond the new last
+    /// scroll position is moved to it through SetVScrollOffset, which sends the field's scroll event; else a changed
+    /// maxScrollV is told to the listener (View_OnMaxScrollChanged, sfr_gfx_03f.cpp:1050), which sends the same event
+    /// (OnScroll sfr_gfx_03e.cpp:895), so a scroll bar follows the new range.</summary>
+    internal void CheckScroll()
+    {
+        scrollWatched = false;
+        int max = maxScrollV;
+        bool clamped = scrollTop > max;
+        if (clamped) { scrollTop = max; MarkChanged(); }
+        bool maxChanged = max != lastMaxScroll;
+        lastMaxScroll = max;
+        if (clamped || maxChanged) Send("flash.events.Event", "scroll");
     }
 
     /// <summary>The 0-based first shown line the view draws from (scrollV - 1). 0 for a field that was never scrolled, which is the

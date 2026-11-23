@@ -76,4 +76,43 @@ public class TextScrollTests
         p.Wheel(2);
         Assert.That(seen, Is.EqualTo(before - 2), "the handler sees the field already scrolled");
     }
+
+    [Test]
+    public void ARangeChangeSendsScrollAtTheFramesReformat()
+    {
+        // DocView::Format (sfr_render_03b.cpp:2497-2583): a changed last scroll position is told to the listener, which sends scroll
+        var (p, tf, events) = Field(30);
+        p.Tick();
+        events.Clear();
+        tf.scrollV = 5;
+        events.Clear();
+        p.Tick();
+        Assert.That(events, Is.Empty, "nothing changed: nothing sent");
+        int max = tf.maxScrollV;
+        tf.text += "\nmore\nmore";
+        Assert.That(events, Is.Empty, "the event comes with the reformat, not inside the setter");
+        p.Tick();
+        Assert.That(tf.maxScrollV, Is.EqualTo(max + 2));
+        Assert.That(events.Count, Is.EqualTo(1), "the range moved: the bar must learn it");
+        Assert.That(tf.scrollV, Is.EqualTo(5), "the view stays where it was");
+        p.Tick();
+        Assert.That(events.Count, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void AViewPastTheNewRangeIsMovedToItsEnd()
+    {
+        var (p, tf, events) = Field(30);
+        tf.scrollV = tf.maxScrollV;
+        p.Tick();
+        events.Clear();
+        tf.text = string.Join("\n", Enumerable.Range(0, 12).Select(i => "line " + i));
+        p.Tick();
+        Assert.That(tf.scrollV, Is.EqualTo(tf.maxScrollV));
+        Assert.That(events.Count, Is.EqualTo(1));
+        tf.height = 400;
+        p.Tick();
+        Assert.That(tf.scrollV, Is.EqualTo(1));
+        Assert.That(events.Count, Is.EqualTo(2), "a resize that changes the range is told too");
+    }
 }

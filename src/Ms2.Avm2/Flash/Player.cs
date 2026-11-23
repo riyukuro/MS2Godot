@@ -88,6 +88,8 @@ namespace Ms2.Avm2.Flash
         readonly Dictionary<string, (SymbolScope Scope, int Id)> classSymbols = new();
         readonly Dictionary<string, List<AsEventDispatcher>> broadcast = new();
         readonly List<AsTimer> timers = new();
+        readonly List<AsTextField> scrollWatch = new();
+        internal void WatchScroll(AsTextField f) => scrollWatch.Add(f);
         readonly List<Action> later = new();
         readonly List<AsMovieClip> scriptQueue = new();     // clips whose frame needs its script (Flag_NeedExecuteFrame)
         readonly List<FrameAction> frameActions = new();    // the action queue's AL_Frame level, run from frameHead on
@@ -769,6 +771,12 @@ namespace Ms2.Avm2.Flash
                 for (int i = 0; i < nt; i++) ts[i] = timers[i];
                 try { for (int i = 0; i < nt; i++) RT.Guard("timer", null, ts[i], static t => t.Pump()); }
                 finally { Array.Clear(ts, 0, nt); System.Buffers.ArrayPool<AsTimer>.Shared.Return(ts); }
+            }
+            if (scrollWatch.Count > 0)
+            {
+                // the reformat of the fields changed this frame (DocView::Format): each sends its scroll event if its range moved
+                var fs = scrollWatch.ToArray(); scrollWatch.Clear();
+                foreach (var f in fs) RT.Guard("scroll", null, f, static t => t.CheckScroll());
             }
             // MovieRoot::AdvanceFrame (@0x1424eb2f0, sfr_as3_16z.cpp:607-611), at the end of every MovieImpl::Advance
             // (sfr_gfx_01i.cpp:3869): with StageInvalidated (+0x6e0, set only by Stage::invalidate) the render event chain
