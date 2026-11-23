@@ -20,22 +20,29 @@ public class RcStateSkillTests {
     static readonly byte[] Third = RcPkt.Hex(
         "06D58C110000000000750E3D8D7335000043DBC4041E00000067337A07");
 
-    [Ignore("GMS2 state-skill order not read yet")]
     [Test] public void Gms2Type6ReadsTheGms2Order() {
         Assert.That(Read(First, actor: 1150165, castUid: 58770407100020L, skill: 80010087, state: 30, tick: 125448912));
         Assert.That(Read(Second, actor: 2877600, castUid: 12359197890969608L, skill: 20000011, state: 29, tick: 1046762454));
         Assert.That(Read(Third, actor: 1150165, castUid: 58770407100021L, skill: 80010051, state: 30, tick: 125449063));
     }
 
+    [Test] public void KmsOrderIsUnchangedAndOtherTypesReadNothing() {
+        var w = new ByteWriter();
+        w.WriteByte(6); w.WriteInt(77); w.WriteLong(9); w.WriteInt(10200001); w.WriteInt(4);
+        var m = StateSkill.Read(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray()), ProtocolProfile.Kms2525);
+        Assert.That((m.ActorId, m.CastUid, m.SkillId, m.Level, m.ItemId, m.Tick), Is.EqualTo((77, 9L, 10200001, 4, 0, 0)));
+        Assert.That(StateSkill.Read(new ByteReader(new byte[] { 2, 1, 2, 3 }), ProtocolProfile.Gms2).Type, Is.EqualTo((byte) 2));
+    }
+
     static bool Read(byte[] bytes, int actor, long castUid, int skill, int state, int tick) {
         var r = new ByteReader(bytes);
-        var m = StateSkill.Read(r);
+        var m = StateSkill.Read(r, ProtocolProfile.Gms2);
         Assert.That(m.Type, Is.EqualTo((byte) 6));
         Assert.That(m.ActorId, Is.EqualTo(actor));
-        Assert.That(m.CastUid, Is.EqualTo(castUid), "main reads the KMS order, so the cast uid is misaligned");
+        Assert.That(m.CastUid, Is.EqualTo(castUid), "GMS2 puts the item id before the cast uid");
         Assert.That(RcPkt.MemberAny<int>(m, "ItemId"), Is.EqualTo(0));
         Assert.That(m.SkillId, Is.EqualTo(skill));
-        Assert.That(RcPkt.MemberAny<int>(m, "State", "Level"), Is.EqualTo(state), "main calls the GMS2 state a level");
+        Assert.That(RcPkt.MemberAny<int>(m, "State", "Level"), Is.EqualTo(state), "the state sits in the level's place");
         Assert.That(RcPkt.MemberAny<int>(m, "Tick", "TrailingTick", "ServerTick"), Is.EqualTo(tick));
         Assert.That(r.Available, Is.EqualTo(0));
         return true;

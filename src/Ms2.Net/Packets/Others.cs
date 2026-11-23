@@ -108,12 +108,25 @@ public sealed record SkillCooldown(SkillCooldownEntry[] Entries) {
     }
 }
 
-/// <summary>Inbound 0x41 (OnStateSkill): u8 type; the client acts only on type 6 (i32 actor, i64 cast uid, i32 skill id, i32 level). Bytes beyond what the client reads are kept in Rest.</summary>
-public sealed record StateSkill(byte Type, int ActorId, long CastUid, int SkillId, int Level, byte[] Rest) {
-    public static StateSkill Read(ByteReader r) {
+/// <summary>
+/// Inbound 0x41 (GMS2 0x42) OnStateSkill (@0x141718b80, scenestategame.cpp:3476): u8 type; the client acts only on type 6.
+/// KMS type 6: i32 actor, i64 cast uid, i32 skill id, i32 level. GMS2 type 6: i32 actor, i32 item id, i64 cast uid, i32 skill id,
+/// i32 state (in the level's place) and a trailing i32 tick the client does not read. Bytes beyond what the client reads are kept in Rest.
+/// </summary>
+public sealed record StateSkill(byte Type, int ActorId, long CastUid, int SkillId, int Level, byte[] Rest, int ItemId = 0, int Tick = 0) {
+    /// <summary>The GMS2 name of <see cref="Level"/>: the i32 after the skill id.</summary>
+    public int State => Level;
+
+    public static StateSkill Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    public static StateSkill Read(ByteReader r, ProtocolProfile profile) {
         byte type = r.ReadByte();
         if (type != 6) return new StateSkill(type, 0, 0, 0, 0, r.ReadBytes(r.Available));
-        return new StateSkill(type, r.ReadInt(), r.ReadLong(), r.ReadInt(), r.ReadInt(), r.ReadBytes(r.Available));
+        if (!profile.IsGms2) return new StateSkill(type, r.ReadInt(), r.ReadLong(), r.ReadInt(), r.ReadInt(), r.ReadBytes(r.Available));
+        int actor = r.ReadInt(), itemId = r.ReadInt();
+        long castUid = r.ReadLong();
+        int skillId = r.ReadInt(), state = r.ReadInt(), tick = r.ReadInt();
+        return new StateSkill(type, actor, castUid, skillId, state, r.ReadBytes(r.Available), itemId, tick);
     }
 }
 
