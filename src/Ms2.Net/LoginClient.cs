@@ -157,7 +157,12 @@ public sealed class LoginClient {
                 continue;
             }
             if (transport.OpOf(p) is Inbound lop) switch (lop) {
+                // CNetworkService::OnRequestKey @0x14153b010 (networkservice.cpp:859-866) and, from the game scene state the return
+                // runs in, CSceneStateGame::OnRequestLogin @0x14170dc90 (scenestategame.cpp:2054-2064): both send ResponseKey with the
+                // account, the GameToLogin tokens and the machine id. A login server that asks with RequestLogin after the version
+                // check gets the key the same way.
                 case Inbound.RequestKey:
+                case Inbound.RequestLogin:
                     await transport.SendAsync(new ResponseKey(accountId, token, machineId ?? new byte[16]), ct);
                     break;
                 case Inbound.MoveResult: {

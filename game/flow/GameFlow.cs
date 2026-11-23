@@ -91,14 +91,7 @@ public partial class GameFlow : Node
         Ui.MessageBoxLayer.GameExit += onGameExit;
 
         Net.LiveSession.Attach(this);
-        if (Net.LiveSession.Instance is { } liveSession)
-        {
-            // GameToLogin: OnMoveResult 0 switches to character select at once (LiveSession.ReturnAsync); the login server's list fills it in when it arrives
-            onGameToLogin = () => { if (Ms2.Ui.Launch.CharacterSelectReturn.Applies(Current == State.Game)) Go(State.Lobby); };
-            liveSession.ReturnedToCharacterSelect += onGameToLogin;
-            onListReturned = () => { if (Current == State.Lobby && GetTree().CurrentScene is CharacterListScene list) list.ReplaceList(); };
-            liveSession.CharacterListReturned += onListReturned;
-        }
+        WireLive();
         // The launcher is MS2Godot's own pre-login page. A live address in the environment skips it, as do the test and
         // perf scenes and a scripted flow run, so those start exactly as they did before it existed.
         // --ip/--port with --ticket (the Lith launcher's own start) or MS2_LIVE_ACCOUNT start the live mode without the page
@@ -107,6 +100,21 @@ public partial class GameFlow : Node
         Go(start.Mode == LaunchMode.Launcher ? State.Launcher : State.Login);
         if (Net.LiveSession.Enabled) _ = Net.LiveSession.AutoDrive(this);
         if (shotDir != null) { DirAccess.MakeDirRecursiveAbsolute(shotDir); _ = boxScript ? BoxScript() : Script(); }
+    }
+
+    /// <summary>
+    /// The live session's way back to character select, wired once a session is attached: at start (the command line's address)
+    /// or later by the launcher's Connect (<see cref="OnLauncherConnect"/>). GameToLogin's OnMoveResult 0 switches to character
+    /// select at once (LiveSession.ReturnAsync); the login server's list fills it in when it arrives. A session attached after
+    /// start had neither, so the system menu's character select sent RequestQuit and the game stayed on screen.
+    /// </summary>
+    void WireLive()
+    {
+        if (onGameToLogin != null || Net.LiveSession.Instance is not { } liveSession) return;
+        onGameToLogin = () => { if (Ms2.Ui.Launch.CharacterSelectReturn.Applies(Current == State.Game)) Go(State.Lobby); };
+        liveSession.ReturnedToCharacterSelect += onGameToLogin;
+        onListReturned = () => { if (Current == State.Lobby && GetTree().CurrentScene is CharacterListScene list) list.ReplaceList(); };
+        liveSession.CharacterListReturned += onListReturned;
     }
 
     static int SceneIdFor(State state) => state switch
@@ -291,6 +299,7 @@ public partial class GameFlow : Node
         if (Current != State.Launcher) return;
         Net.LiveSession.UseServer(host, port);
         Net.LiveSession.Attach(this);
+        WireLive();
         Go(State.Login);
     }
 

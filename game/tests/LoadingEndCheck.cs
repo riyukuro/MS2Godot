@@ -11,7 +11,8 @@ namespace Ms2Godot.Tests;
 /// flow from the login to character select, Start on the selected character, and, while the field loads, the case after
 /// `--` (--case resize: the window is resized at several points of the load; --case click: another row of the list is
 /// clicked at several points; --case late: the movie's Start `--delay N` frames after a click on another row,
-/// while that row's select scene still reloads; --case none). Once the game state is reached and the loading screen's fade has had its time,
+/// while that row's select scene still reloads; --case switch, or --then-switch after another case: then the
+/// system menu's character select and a second Start; --case none). Once the game state is reached and the loading screen's fade has had its time,
 /// no loading screen may be up or drawn, the HUD scene's field must be the chosen character's, and the scene must not have
 /// gone back to character select. --le-shots DIR saves a picture at each step. Quits with 0 when all of that holds, else 1.
 /// </summary>
@@ -29,6 +30,7 @@ public partial class LoadingEndCheck : Node
 public partial class LoadingEndDriver : Node
 {
     string mode = "none", shotDir;
+    bool thenSwitch;
     int failures;
     readonly List<string> log = new();
 
@@ -65,6 +67,7 @@ public partial class LoadingEndDriver : Node
     public override async void _Ready()
     {
         var args = OS.GetCmdlineUserArgs();
+        thenSwitch = System.Array.IndexOf(args, "--then-switch") >= 0;
         for (int i = 0; i + 1 < args.Length; i++)
         {
             if (args[i] == "--case") mode = args[i + 1];
@@ -73,7 +76,9 @@ public partial class LoadingEndDriver : Node
         if (!await Until(() => Flow?.Current == GameFlow.State.Login && GetTree().CurrentScene is LoginScene, 3000)) { Done("no login scene"); return; }
         await Frames(30);
         UiBridge.Raise(UILoginDialogContract.Movie, UILoginDialogContract.ToHost.OnConnect);
+        var open = System.Diagnostics.Stopwatch.StartNew();
         if (!await Until(() => GetTree().CurrentScene is CharacterListScene { ListReady: true }, 6000)) { Done("character select never took input"); return; }
+        GD.Print($"loading end: character select took input {open.ElapsedMilliseconds} ms after the login, {Time.GetTicksMsec()} ms after the start");
         await Frames(30);
         var list = (CharacterListScene)GetTree().CurrentScene;
         int chosen = list.ListIndex;
@@ -154,7 +159,44 @@ public partial class LoadingEndDriver : Node
         else if (fc.FieldId != chosenMap) Fail($"the game field is {fc.FieldId}, not the chosen character's {chosenMap}");
         if (Session.Chosen?.User.CharacterId != chosenId) Fail($"the chosen character changed: {Session.Chosen?.User.CharacterId} not {chosenId}");
         if (Flow.Current != GameFlow.State.Game) Fail($"the flow left the game state: {Flow.Current}");
+        if (mode == "switch" || thenSwitch) await SwitchCharacter(chosen, chosenId);
         Done(null);
+    }
+
+    /// <summary>
+    /// --case switch: the system menu's character select (UISystemMenuDialog::OnSelectCharacter) from the game, back to the list
+    /// with the same characters and the played one selected, then Start again into the game.
+    /// </summary>
+    async System.Threading.Tasks.Task SwitchCharacter(int chosen, long chosenId)
+    {
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, PhysicalKeycode = Key.Escape, Pressed = true });
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Escape, PhysicalKeycode = Key.Escape, Pressed = false });
+        await Frames(30);
+        if (GetTree().CurrentScene is not HudScene hud) { Fail("no HUD for the system menu"); return; }
+        // the button clicked through the window's input, so a layer over the menu that takes the mouse would stop it as it
+        // stops a hand click
+        if (!await Until(() => hud.SystemMenuPoint("m_selectCharacter") != null, 120)) { Fail("the system menu has no character select button"); return; }
+        var at = hud.SystemMenuPoint("m_selectCharacter").Value;
+        Click(at);
+        var back = System.Diagnostics.Stopwatch.StartNew();
+        GD.Print($"loading end: character select clicked at {at}");
+        if (!await Until(() => GetTree().CurrentScene is CharacterListScene { ListReady: true } && Flow.Current == GameFlow.State.Lobby, 6000))
+        { Fail($"character select did not come back (flow {Flow.Current}, scene {GetTree().CurrentScene?.Name})"); return; }
+        GD.Print($"loading end: character select took input {back.ElapsedMilliseconds} ms after its button in the game");
+        await Frames(30);
+        Shot("05_back_at_select.png");
+        var list = (CharacterListScene)GetTree().CurrentScene;
+        if (list.ListIndex != chosen) Fail($"the list selects row {list.ListIndex}, not the played character's {chosen}");
+        if (World.FieldContents.CoverUp) Fail("a loading screen is up over character select");
+        if (GetTree().Root.FindChildren("*", nameof(HudScene), true, false).Count > 0) Fail("a HUD is still in the tree");
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Enter, PhysicalKeycode = Key.Enter, Pressed = true });
+        Input.ParseInputEvent(new InputEventKey { Keycode = Key.Enter, PhysicalKeycode = Key.Enter, Pressed = false });
+        if (!await Until(() => Flow.Current == GameFlow.State.Game, 6000)) { Fail("the second Start did not reach the game"); return; }
+        await Until(() => CoversUp().Count == 0, 600);
+        await Frames(10);
+        Shot("06_second_entry.png");
+        foreach (var c in CoversUp()) Fail("a loading screen is still up after the second entry: " + c);
+        if (Session.Chosen?.User.CharacterId != chosenId) Fail("the second entry is another character");
     }
 
     static int other0(int chosen) => chosen == 0 ? 1 : 0;

@@ -36,6 +36,32 @@ public class LoginReturnTests {
         l.Stop();
     }
 
+    // CSceneStateGame::OnRequestLogin @0x14170dc90 (scenestategame.cpp:2054-2064): the game scene state answers the login server's
+    // RequestLogin with ResponseKey, as OnRequestKey does; the return runs in that state
+    [Test] public async Task ARequestLoginGetsTheKeyAsARequestKeyDoes() {
+        var l = new TcpListener(IPAddress.Loopback, 0); l.Start();
+        int port = ((IPEndPoint) l.LocalEndpoint).Port;
+        var srv = new FakeServer(5, 6);
+        var accept = l.AcceptTcpClientAsync();
+        var machine = Enumerable.Range(1, 16).Select(i => (byte) i).ToArray();
+        using var t = new TcpTransport();
+        var ret = new LoginClient(t).ReturnAsync("127.0.0.1", (ushort) port, 0x0506070801020304UL, 10000000000, machine);
+        var s = (await accept).GetStream();
+        await s.WriteAsync(srv.HelloFrame);
+        await ReadFrame(s, srv);   // ResponseVersion
+        await s.WriteAsync(srv.Frame(Inbound.RequestLogin));
+        var (op, body) = await ReadFrame(s, srv).WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.That(op, Is.EqualTo((ushort) Outbound.ResponseKey));
+        var key = ResponseKey.Read(new ByteReader(body));
+        Assert.That(key.AccountId, Is.EqualTo(10000000000)); Assert.That(key.Token, Is.EqualTo(0x0506070801020304UL)); Assert.That(key.MachineId, Is.EqualTo(machine));
+        await s.WriteAsync(srv.Frame(Inbound.MoveResult, w => w.WriteByte(0)));
+        Assert.That((await ReadFrame(s, srv)).op, Is.EqualTo((ushort) Outbound.ServerEnter));
+        await s.WriteAsync(srv.Frame((Inbound) 0x0C, w => w.WriteByte((byte) CharacterListCommand.StartList)));
+        await s.WriteAsync(srv.Frame((Inbound) 0x0C, w => { w.WriteByte((byte) CharacterListCommand.EndList); w.WriteByte(0); }));
+        Assert.That((await ret.WaitAsync(TimeSpan.FromSeconds(10))).Characters, Is.Empty);
+        l.Stop();
+    }
+
     [Test] public async Task ARefusedKeyThrowsTheMoveError() {
         var l = new TcpListener(IPAddress.Loopback, 0); l.Start();
         int port = ((IPEndPoint) l.LocalEndpoint).Port;
