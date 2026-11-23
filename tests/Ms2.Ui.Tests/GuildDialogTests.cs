@@ -675,4 +675,72 @@ public class GuildDialogTests
         c.OnCallback("onChageGradeError", new object[] { 1 });
         Assert.That(notices.Last(), Is.EqualTo(t.Common(999)));
     }
+
+    static (GuildDialogController c, List<string> text) StoragePage(GuildBook b)
+    {
+        var c = Load(b);
+        c.StringTableText = (t, id) => $"{t}:{id}";
+        c.CommonByKey = k => k == "s_common_date_month_min" ? "{0}-{1}-{2} {3}:{4}" : k + "|{0}|{1}|{2}|{3}|{4}";
+        c.ItemTextColor = g => 0x10 + (uint)g;
+        var text = new List<string>(); c.StorageHistoryTextBuilt += text.Add;
+        return (c, text);
+    }
+
+    static GuildStorageHistory Line(string from, string to, int item, int rank, int count, long time) =>
+        new(new(0, 0, from), new(0, 0, to), new GuildStorageItem(item, rank, count, false, false, false, false), time);
+
+    /// <summary>CreateStoragePage / UpdateStorageHistory: the Storage category makes the page, the others hide it, the history shows newest
+    /// first and only the last 7 days, with the item in its grade colour.</summary>
+    [Test]
+    public void TheStorageHistoryListsTheLast7DaysNewestFirst()
+    {
+        var b = InGuild();
+        long now = 1_700_000_000;
+        b.ServerTime = () => now;
+        var (c, text) = StoragePage(b);
+        c.ServerTime = () => now;
+        c.OpenCategoryPage("Storage");
+        Assert.That(c.StoragePage, Is.Not.Null);
+        Assert.That(Rt.ToBoolean(c.Host.Get(c.StoragePage, "visible")), Is.True);
+        Assert.That(text, Is.Empty, "no history received yet: no text built");
+        b.Apply(new GuildMessage((byte)0x70) { StorageHistory = new[] {
+            Line("old", "x", 1, 1, 1, now - 7 * 86400 - 1),
+            Line("a", "b", 5, 2, 3, now - 100),
+            Line("c", "d", 6, 3, 4, now - 50) } });
+        var t = Ms2.Net.MsTime.LocalTm(now - 50);
+        string date = $"{t.Year}-{t.Month}-{t.Day} {t.Hour}:{t.Minute}";
+        var lines = text.Single().Split('\n');
+        Assert.That(lines.Length, Is.EqualTo(2), "the line older than 7 days is skipped");
+        Assert.That(lines[0], Is.EqualTo($"s_guild_storage_history_gift|c|<FONT color='#13'>1:6</FONT>|4|d|{date}"));
+        Assert.That(lines[1], Does.StartWith("s_guild_storage_history_gift|a|<FONT color='#12'>1:5</FONT>|3|b|"));
+        c.OpenCategoryPage("Event");
+        Assert.That(Rt.ToBoolean(c.Host.Get(c.StoragePage, "visible")), Is.False);
+    }
+
+    [Test]
+    public void TheStorageHistoryDoesNothingWithoutThePage()
+    {
+        var b = InGuild();
+        var (c, text) = StoragePage(b);
+        b.Apply(new GuildMessage((byte)0x70) { StorageHistory = new[] { Line("a", "b", 5, 2, 3, b.ServerTime()) } });
+        Assert.That(text, Is.Empty);
+        Assert.That(c.StoragePage, Is.Null);
+    }
+
+    [Test]
+    public void TheStorageCallbacksSendTheGiftAndAskForTheHistory()
+    {
+        var sent = new List<IOutPacket>(); var b = InGuild(); b.Send = sent.Add;
+        b.Info.Members.Add(new GuildMember { Mode = 3, Grade = 1, Name = "Bo", CharId = 13, Level = 5, Triple = (0, 0, 0) });
+        b.Apply(new GuildMessage((byte)0x6e) { StorageItem = new GuildStorageItem(9, 1, 5, false, false, false, false) });
+        b.ItemSlotMax = _ => 99; b.ItemHasStringTag0xd7 = _ => false;
+        var (c, _) = StoragePage(b);
+        c.OpenCategoryPage("Storage");
+        Assert.That(c.OnCallback("requestStorageHistory", new object[0]), Is.True);
+        Assert.That(sent.Single(), Is.EqualTo(new GuildStorageHistoryRequest()));
+        Assert.That(c.OnCallback("onGiftGuildItem", new object[] { "Bo", 9.0, 1.0, 2.0 }), Is.True);
+        Assert.That(sent.Last(), Is.EqualTo(new GuildStorageGiftRequest(new GuildStorageItem(9, 1, 2, false, false, false, false), "Bo")));
+        Assert.That(c.OnCallback("onGiftGuildItem", new object[] { "Bo", 9.0, 1.0, 50.0 }), Is.True);
+        Assert.That(sent.Count, Is.EqualTo(2), "more than stored: nothing sent");
+    }
 }

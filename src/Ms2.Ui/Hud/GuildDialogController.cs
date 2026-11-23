@@ -52,6 +52,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     object eventPage;           // m_eventPage
     object managePage;          // m_managePage
     object housePage;           // m_housePage
+    object storagePage;         // m_storagePage
     object eventVsGame;         // m_eventVsGame
     object eventRegisterButton, eventUnregisterButton, eventImageArea, eventLoader;   // m_button368, m_button378, m_eventImageArea, m_eventLoader
     /// <summary>m_requests (a multimap of the tick an open event stops being shown → the event id): kept in key order, equal keys in the order added.</summary>
@@ -184,6 +185,10 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         Book.HouseRefresh += SetHouseInfo;
         Book.NpcRefresh -= SetNpcInfo;
         Book.NpcRefresh += SetNpcInfo;
+        Book.StorageRefresh -= UpdateStoragePage;
+        Book.StorageRefresh += UpdateStoragePage;
+        Book.StorageHistoryRefresh -= UpdateStorageHistory;
+        Book.StorageHistoryRefresh += UpdateStorageHistory;
         Book.MemberRefresh -= OnMemberRefresh;
         Book.MemberRefresh += OnMemberRefresh;
         Book.MemberRemoved -= OnMemberRemoved;
@@ -223,6 +228,8 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         Book.EventsRefresh -= BuildEvents;
         Book.HouseRefresh -= SetHouseInfo;
         Book.NpcRefresh -= SetNpcInfo;
+        Book.StorageRefresh -= UpdateStoragePage;
+        Book.StorageHistoryRefresh -= UpdateStorageHistory;
         Book.MemberRefresh -= OnMemberRefresh;
         Book.MemberRemoved -= OnMemberRemoved;
         Book.ClearSearchResults();
@@ -232,6 +239,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         memberPage = null;
         managePage = null;
         housePage = null;
+        storagePage = null;
         acceptRequestPage = null;
     }
 
@@ -270,7 +278,8 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         else if (category == "Event") CreateEventPage();
         else if (category == "Manager") CreateManagePage();
         else if (category == "House") CreateHousePage();
-        // Storage, Raid, ChampionShip, ChampionShipHistroy: STILL-OPEN
+        else if (category == "Storage") CreateStoragePage();
+        // Raid, ChampionShip, ChampionShipHistroy: STILL-OPEN
         if (category == "Join") SetPageVisible(joinPage, true);              // ShowCategoryPage (@0x141969290)
         else if (category == "Create") SetPageVisible(createPage, true);
         else if (category == "Info") SetPageVisible(infoPage, true);
@@ -281,6 +290,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         else if (category == "Event") SetPageVisible(eventPage, true);
         else if (category == "Manager") SetPageVisible(managePage, true);
         else if (category == "House") SetPageVisible(housePage, true);
+        else if (category == "Storage") SetPageVisible(storagePage, true);
     }
 
     /// <summary>HideAllPages (@0x1419698f0).</summary>
@@ -296,7 +306,8 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         SetPageVisible(eventPage, false);
         SetPageVisible(managePage, false);
         SetPageVisible(housePage, false);
-        // m_storagePage, m_raidPage,
+        SetPageVisible(storagePage, false);
+        // m_raidPage,
         // m_championshipPage, m_pvpHistoryPage: STILL-OPEN
     }
 
@@ -338,6 +349,57 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         if (!EnsurePageCreated("guild_house_page", ref housePage)) return;
         SetHouseInfo();
         SetNpcInfo();
+    }
+
+    /// <summary>CreateStoragePage (@0x14196b160, uiguilddialog.cpp:1698): made now, then UpdateStoragePage.</summary>
+    void CreateStoragePage()
+    {
+        if (EnsurePageCreated("guild_storage_page", ref storagePage)) UpdateStoragePage();
+    }
+
+    /// <summary>The Storage page (m_storagePage) once made.</summary>
+    public object StoragePage => storagePage;
+
+    /// <summary>UpdateStoragePage (@0x141972520, uiguilddialog.cpp:2640): nothing without the page.
+    /// STILL-OPEN: the item slot bag. The client lists the storage's items (CItem of the id and rank, the count), destroys and creates the
+    /// ItemSlotBag of m_strStorageName (icon type 0xc15, flags 0x800, the slot callback UpdateStorageSlotCount) and calls the page's
+    /// initItemData with bagId; the port has no ItemSlotBag for a dialog, so the item grid is not filled.</summary>
+    void UpdateStoragePage()
+    {
+        if (storagePage == null) return;
+    }
+
+    /// <summary>The last history text handed to the page's text area, raised just before it is set.</summary>
+    public event Action<string> StorageHistoryTextBuilt;
+
+    /// <summary>The grade's name colour (CItemDataTable::GetTextColorString: "#" and the colour in hex).</summary>
+    public Func<int, uint> ItemTextColor = _ => 0xffffff;
+
+    /// <summary>UpdateStorageHistory (@0x1419729d0, uiguilddialog.cpp:2692): the history newest first, the lines of the last 7 days only
+    /// (older ones skipped), each s_guild_storage_history_gift of the giver, the item (its name in its grade's colour), the count, the
+    /// receiver and the date (s_common_date_month_min of the local year, month, day, hour, minute), joined by newlines, into
+    /// m_history.m_textArea as HTML. Nothing without the page.</summary>
+    void UpdateStorageHistory()
+    {
+        if (storagePage == null) return;
+        long since = ServerTime() - 7L * 86400;
+        var sb = new System.Text.StringBuilder();
+        var history = Book.StorageHistory;
+        for (int i = history.Count - 1; i >= 0; i--)
+        {
+            var h = history[i];
+            if (h.Time < since) continue;
+            var t = Ms2.Net.MsTime.LocalTm(h.Time);
+            string date = ClientFormat.Format(CommonByKey("s_common_date_month_min"), t.Year, t.Month, t.Day, t.Hour, t.Minute);
+            string item = "<FONT color='#" + ItemTextColor(h.Item.Rank).ToString("x", System.Globalization.CultureInfo.InvariantCulture) + "'>" + StringTableText(1, h.Item.ItemId) + "</FONT>";
+            string line = ClientFormat.Format(CommonByKey("s_guild_storage_history_gift"), h.From.Name, item, (uint)h.Item.Count, h.To.Name, date);
+            if (sb.Length > 0) sb.Append('\n');
+            sb.Append(line);
+        }
+        StorageHistoryTextBuilt?.Invoke(sb.ToString());
+        if (Host.Child("m_history", storagePage) is not { } clip) return;
+        if (Host.Child("m_textArea", clip) is not { } area) return;
+        Host.Set(area, "htmlText", sb.ToString());
     }
 
     /// <summary>The rows handed to setHouseFacility, raised just before the call.</summary>
@@ -1186,6 +1248,17 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
                 ShowBox(box);
                 return true;
             }
+            case "ongiftguilditem":
+            {
+                // :1210: the receiver, the item id, the rank and the count; the gift sent (all checks passed) and the page made: onGiftPopDown
+                if (args.Length == 0) return true;
+                var item = new GuildStorageItem(Int(1), (ushort)Int(2), Int(3), false, false, false, false);
+                if (Book.SendStorageGift(item, Str(0)) && storagePage != null && !NoMovie) Host.Invoke(storagePage, "onGiftPopDown");
+                return true;
+            }
+            case "requeststoragehistory":
+                Book.SendGuildMode112();                // :1223
+                return true;
             case "onchangenotify":
             {
                 // :766: CreateMessageBox(0xb, BlockFormat(0x3dc), "changeNotify"), SetInput(0, GetNotice(), 300, 1, 0x14)

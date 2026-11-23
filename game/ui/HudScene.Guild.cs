@@ -122,6 +122,7 @@ public partial class HudScene
                 JobName = t.JobName,
                 MapName = id => t.MapName(id) ?? id.ToString(),
                 StringTableText = t.StringTableText,
+                ItemTextColor = grade => t.Items.TextColor(grade),   // CItemDataTable::GetTextColorString
                 FieldCapacity = id => Ms2.Formats.World.FieldData.FindById(assets.Packs, id)?.Capacity,   // CFieldDataCli::Find(id)->vfunc_2
                 Events = book.Events,
                 ServerTime = GuildServerTime,
