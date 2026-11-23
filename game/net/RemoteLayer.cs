@@ -361,18 +361,27 @@ public sealed partial class RemoteLayer : Node3D
     /// <summary>
     /// PCBase::FUN_141671c20's vfunc_111 per hit (<see cref="Ms2.Ui.Hud.DamageNumbers.Records"/>) through UIDamageText's
     /// show test (FUN_141913bd0) with the battle options; the party mask is IsMemberByCharId on a player's character.
+    /// A player target outside the field's sight range gives none (pcbase.cpp:3930); the local player is never outside.
     /// </summary>
     void ShowNumbers(SkillDamage d)
     {
         numbers.Clear();
         pcMask ??= PcMask;
         isObject ??= Tracker.HasObject;
-        Ms2.Ui.Hud.DamageNumbers.Records(d, numbers, isObject, SkillDamage);
+        UpdateMagicPlayerPos();
+        pcPosition ??= PcPosition;
+        Ms2.Ui.Hud.DamageNumbers.Records(d, numbers, isObject, SkillDamage, pcPosition, MagicSight());
         var o = GameOptions.Current?.BattleOption ?? defaultBattle;
         foreach (var n in numbers)
             if (Ms2.Ui.Hud.DamageNumbers.Shows(o, n.Grade, n.TargetId, n.CasterId, Tracker.SelfObjectId, pcMask))
                 Numbered(n, npcs.Placed(n.TargetId), users.TryGetValue(n.TargetId, out var r) ? r.Damage : null);
     }
+
+    Func<int, System.Numerics.Vector3?> pcPosition;
+
+    /// <summary>A player's position in client space (vfunc_18), the local player's too; null for any other id.</summary>
+    System.Numerics.Vector3? PcPosition(int id) =>
+        users.TryGetValue(id, out var r) && r.Pc != null ? r.Pc.Position : id == Tracker.SelfObjectId ? magicPlayerPos : null;
 
     /// <summary>One number on an actor of the field (CSceneStateGame::FUN_141731190's vfunc_111 call), through the same show
     /// test as a damage record's numbers; false when the id is no npc or player of the field.</summary>

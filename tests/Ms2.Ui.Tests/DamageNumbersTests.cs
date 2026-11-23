@@ -46,6 +46,41 @@ public class DamageNumbersTests
         Assert.That(list, Is.Empty, "the object hit is none: the handler returns");
     }
 
+    [Test]
+    public void APlayerTargetOutsideTheSightRangeGivesNoNumbers()
+    {
+        var d = new SkillDamage { Mode = 1, OwnerId = 77, SkillId = 100, Level = 1, Motion = 0, AttackPoint = 0 };
+        d.Targets.Add(new HitTarget(5, new[] { new Hit(0, 120) }, default, default));
+        d.Targets.Add(new HitTarget(6, new[] { new Hit(0, 40) }, default, default));
+        d.Targets.Add(new HitTarget(9, new[] { new Hit(0, 10) }, default, default));
+        // 5 and 6 are players 1000 and 999 away from the local player; 9 is an npc far away
+        System.Func<int, System.Numerics.Vector3?> pc = id => id == 5 ? new System.Numerics.Vector3(1000, 0, 0)
+            : id == 6 ? new System.Numerics.Vector3(0, 999, 0) : null;
+        var list = new List<DamageNumber>();
+        DamageNumbers.Records(d, list, null, Damage, pc, new FieldSight(999f, System.Numerics.Vector3.Zero));
+        Assert.That(list, Is.EqualTo(new[] { new DamageNumber(6, 40, 0, 77), new DamageNumber(9, 10, 0, 77) }),
+            "a player farther than the range gives none, one at the range and an npc do");
+        foreach (var sight in new[] { new FieldSight(null, System.Numerics.Vector3.Zero), new FieldSight(999f, null), default })
+        {
+            list.Clear();
+            DamageNumbers.Records(d, list, null, Damage, pc, sight);
+            Assert.That(list, Has.Count.EqualTo(3), "no range or no local player culls nothing");
+        }
+        list.Clear();
+        DamageNumbers.Records(d, list, null, Damage, pc, new FieldSight(1000f, System.Numerics.Vector3.Zero));
+        Assert.That(list, Has.Count.EqualTo(3), "at exactly the range is inside");
+        // a dot on a player outside the range (OnDotDamageRecord, pcbase.cpp:3962), none on an npc there
+        var dot = new SkillDamage { Mode = 3, OwnerId = 77, TargetId = 5, DotHit = new Hit(0, 50) };
+        list.Clear();
+        DamageNumbers.Records(dot, list, id => true, Damage, pc, new FieldSight(999f, System.Numerics.Vector3.Zero));
+        Assert.That(list, Is.Empty, "a dot on a player outside the range");
+        dot.TargetId = 6;
+        DamageNumbers.Records(dot, list, id => true, Damage, pc, new FieldSight(999f, System.Numerics.Vector3.Zero));
+        dot.TargetId = 9;
+        DamageNumbers.Records(dot, list, id => true, Damage, pc, new FieldSight(999f, System.Numerics.Vector3.Zero));
+        Assert.That(list, Is.EqualTo(new[] { new DamageNumber(6, 50, 0, 77), new DamageNumber(9, 50, 0, 77) }), "inside, and an npc");
+    }
+
     /// <summary>Skill 100: level 1 with one motion of two attacks, the first with rate 1.5 and the second with a &lt;damage&gt; of no
     /// value; level 2 with an attack of no &lt;damage&gt;. Skill 101 has no &lt;basic&gt;, so no levels.</summary>
     internal static readonly SkillDamageTable Damage = new(() => new TextReader[] { new StringReader(@"<ms2>

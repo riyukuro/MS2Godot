@@ -25,8 +25,12 @@ public static class DamageNumbers
     /// (pcbase.cpp:2844). The record's hit point (+0x78) stays zero (the number goes to the target's anchor) unless the
     /// caster is an npc with property tag 0x11.
     /// Nothing unless the packet's attack has damage (<see cref="HasDamage"/>).
+    /// A PC target (<paramref name="pcPosition"/> gives its position; null for an npc or an unknown id) outside the field's
+    /// sight range gives no numbers: FUN_141671c20 returns when IsOutsideSightRange(vfunc_18()) (pcbase.cpp:3930,
+    /// worldservice_1.cpp:7956) after the HasDamage test, whoever the owner is, and so does a dot's OnDotDamageRecord
+    /// (pcbase.cpp:3962). An npc target has no such test.
     /// STILL-OPEN: main type 0x12's miss effect when it has none (Constants m_8350 per type 2 hit, pcbase.cpp:3942), the
-    /// sight-range test, the tag 0x11 hit point, and the magic service's delivery of the hit (FUN_14146b440, only with a
+    /// tag 0x11 hit point, and the magic service's delivery of the hit (FUN_14146b440, only with a
     /// caster object; the numbers are made when the packet comes); modes 0, 5 and 6 are not listed here (mode 3 is the dot number).
     /// <para>Mode 4 (CSceneStateGame::FUN_14171d820 @0x14171d820, scenestategame.cpp:5685-5726): nothing when the owner is
     /// no object of the field (FUN_141bd1200, <paramref name="isObject"/>; a null test means none is); with the show byte,
@@ -35,7 +39,8 @@ public static class DamageNumbers
     /// buff's invoke effect on the owner (FUN_14096fc00, additionalcli_2.cpp:325), the DPS meter's AddStat / AddHealTarget
     /// and CNpc::vfunc_111's skip of a dead npc whose data has CorpseHitAble (@0x141090620).</para>
     /// </summary>
-    public static void Records(SkillDamage d, List<DamageNumber> into, System.Func<int, bool> isObject, SkillDamageTable damage)
+    public static void Records(SkillDamage d, List<DamageNumber> into, System.Func<int, bool> isObject, SkillDamageTable damage,
+        System.Func<int, System.Numerics.Vector3?> pcPosition = null, FieldSight sight = default)
     {
         if (d.Mode == 4)
         {
@@ -49,19 +54,24 @@ public static class DamageNumbers
         {
             // OnDotDamage (scenestategame.cpp:5663) returns when the object hit (the second int) is none; the record then reaches
             // PCBase::OnDotDamageRecord (pcbase.cpp:3958): vfunc_111(total damage, first type, the attacker). The i64 damage is
-            // kept whole. STILL-OPEN: IsOutsideSightRange, the magic service's delivery (FUN_14146bc20) and CNpc::vfunc_111's skip of a dead
+            // kept whole. A PC hit outside the sight range gives none (OnDotDamageRecord's IsOutsideSightRange, pcbase.cpp:3962;
+            // no HasDamage test here). STILL-OPEN: the magic service's delivery (FUN_14146bc20) and CNpc::vfunc_111's skip of a dead
             // NPC whose data has CorpseHitAble (unit_14108e1e0_npcactorandvibrate.cpp:768).
             if (isObject == null || !isObject(d.TargetId)) return;
+            if (pcPosition?.Invoke(d.TargetId) is System.Numerics.Vector3 dotAt && sight.IsOutside(dotAt)) return;
             into.Add(new DamageNumber(d.TargetId, d.DotHit.Damage < 0 ? -d.DotHit.Damage : d.DotHit.Damage, d.DotHit.Flag, d.OwnerId));
             return;
         }
         if (d.Mode != 1 || !HasDamage(d, damage)) return;
         foreach (var t in d.Targets)
+        {
+            if (pcPosition?.Invoke(t.TargetId) is System.Numerics.Vector3 at && sight.IsOutside(at)) continue;
             foreach (var h in t.Hits)
             {
                 int type = h.Flag == 8 ? 3 : h.Flag;
                 into.Add(new DamageNumber(t.TargetId, h.Damage < 0 ? -h.Damage : h.Damage, type, d.OwnerId));
             }
+        }
     }
 
     /// <summary>

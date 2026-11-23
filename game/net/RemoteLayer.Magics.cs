@@ -194,14 +194,20 @@ public sealed partial class RemoteLayer
     {
         magicObjects.Clear();
         HitCandidates(magicObjects);
-        magicPlayerPos = null;
-        if (magicPlayer == null || !IsInstanceValid(magicPlayer)) magicPlayer = GetTree().GetFirstNodeInGroup(PlayerGroup) as Player;
-        if (magicPlayer == null) return;
-        var g = magicPlayer.GlobalPosition;
-        var pos = new System.Numerics.Vector3(g.X, -g.Z, g.Y);
-        magicPlayerPos = pos;
+        if (UpdateMagicPlayerPos() is not System.Numerics.Vector3 pos) return;
         magicObjects.Add(new HitCandidate { Id = Tracker.SelfObjectId, Position = pos, Body = SkillHit.PlayerBody(pos, magicPlayer.FacingRotZ),
             Kind = HitKind.Pc, Team = 1, Hp = 1 });
+    }
+
+    /// <summary>The local player's position in client space into <see cref="magicPlayerPos"/>; null without a local player.</summary>
+    System.Numerics.Vector3? UpdateMagicPlayerPos()
+    {
+        magicPlayerPos = null;
+        if (magicPlayer == null || !IsInstanceValid(magicPlayer)) magicPlayer = GetTree().GetFirstNodeInGroup(PlayerGroup) as Player;
+        if (magicPlayer == null) return null;
+        var g = magicPlayer.GlobalPosition;
+        magicPlayerPos = new System.Numerics.Vector3(g.X, -g.Z, g.Y);
+        return magicPlayerPos;
     }
 
     /// <summary>The objects with <paramref name="ownerId"/>'s the <see cref="HitCandidate.IsOwner"/> one.</summary>
