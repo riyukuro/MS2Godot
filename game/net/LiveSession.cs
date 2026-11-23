@@ -1026,6 +1026,7 @@ public partial class LiveSession : Node
         if (entry == null) return;
         triggerField = field;
         fieldBuilder = builder;
+        FieldProperties.Lights = field;   // the field's ambient and sun light entities: stored light records apply now
         foreach (var body in pendingTriggers) ApplyTrigger(field, body);
         pendingTriggers.Clear();
         regionSkills.Clear(); RegionSkillLog.Clear();
@@ -1265,6 +1266,7 @@ public partial class LiveSession : Node
 
     public override void _Process(double delta)
     {
+        FieldProperties.StepLights((float)delta);   // WorldService::UpdateAmbientLight/UpdateDirectionalLight (worldservice_1.cpp:9736-9737)
         TickTimeScale();   // before the game check: a ramp started in the game still ends when the link is gone
         if (game == null) { PumpLogin(); return; }
         while (game != null && game.Incoming.TryDequeue(out var p)) { Handle(p); SyncDeadFlag(); }

@@ -15,7 +15,7 @@ namespace Ms2Godot;
 /// pitch and target height that move with the zoom distance.
 /// User args (after --): --field XBLOCK, --shots DIR (scripted walk with screenshots, then quit), --nav (navmesh overlay on; F9 toggles).
 /// </summary>
-public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView
+public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2.Ui.Hud.IFieldLights
 {
     /// <summary>The field a session opens in when nothing names another (Tria): the setup step builds its navmesh.</summary>
     public const string StartField = "02000001_tw_tria";
@@ -43,7 +43,7 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView
     GlowPass glow;
     Godot.Environment environment;
     DirectionalLight3D sunLight;
-    float baseAmbient, baseSunDim;
+    float baseAmbient, baseSunDim, lightScale = 1f;
     Color ambientColor, sunColor, sunAmbient, sunSpecular;
     /// <summary>The prop fade between the player and the camera (BGTransparencyMgr).</summary>
     public World.FieldFade Fade { get; private set; }
@@ -468,9 +468,38 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView
         FieldLights.Rescale(k);
     }
 
+    /// <summary>The ambient light's AmbientColor (entity property 0xb086f4a8), which the field property of kind 8 sets
+    /// (FieldPropertyAmbientLightCli::vfunc_4, fieldpropertycli.cpp:202; the fade, WorldService::UpdateAmbientLight,
+    /// worldservice_1.cpp:4362). The Dimmer stays the field's own.</summary>
+    System.Numerics.Vector3 Ms2.Ui.Hud.IFieldLights.Ambient
+    {
+        get => new(ambientColor.R, ambientColor.G, ambientColor.B);
+        set
+        {
+            ambientColor = new Color(value.X, value.Y, value.Z);
+            if (environment != null) environment.AmbientLightColor = ambientColor;
+            SetSunAndAmbient(lightScale);
+        }
+    }
+
+    /// <summary>The directional light's DiffuseColor (0x2d8cf386); setting it sets its SpecularColor (0xc3f0329e) too, as the field
+    /// property of kind 9 does (fieldpropertycli.cpp:222-237, UpdateDirectionalLight, worldservice_1.cpp:4396). Its AmbientColor
+    /// is untouched.</summary>
+    System.Numerics.Vector3 Ms2.Ui.Hud.IFieldLights.Sun
+    {
+        get => new(sunColor.R, sunColor.G, sunColor.B);
+        set
+        {
+            sunColor = sunSpecular = new Color(value.X, value.Y, value.Z);
+            if (sunLight != null) sunLight.LightColor = sunColor;
+            SetSunAndAmbient(lightScale);
+        }
+    }
+
     /// <summary>The ambient and directional lights' Dimmer, times the HDR light scale <paramref name="k"/>.</summary>
     void SetSunAndAmbient(float k)
     {
+        lightScale = k;
         float ambient = baseAmbient * k, sunDim = baseSunDim * k;
         if (environment != null) environment.AmbientLightEnergy = ambient;
         if (sunLight != null) sunLight.LightEnergy = sunDim;
