@@ -148,8 +148,12 @@ public partial class LiveSession : Node
     /// <summary>CubeMapInformationService::FUN_1410d0310: the cube map's values and the home option rows go together (<see cref="Ms2.Ui.HomeOptionRows.ResetService"/>).</summary>
     void ResetCubeService() => HomeRows.ResetService(fieldEntry.CubeMap);
 
+    /// <summary>The cut scene movie pane's state (UICutSceneMovie 0x4e7e): the Trigger UI's start and stop reach it, its skip sends the exit.</summary>
+    public Ms2.Ui.Hud.CutSceneMovie Movie { get; }
+
     public LiveSession()
     {
+        Movie = new Ms2.Ui.Hud.CutSceneMovie(Send);
         fieldEntry.CubeServiceCleared += ResetCubeService;   // FUN_1410b76a0 at each field teardown (worldservice_1.cpp:10015)
         Party.BattleRecords = BattleRecords;
         BattleRecords.CharacterIdOf = id => remote?.Tracker.CharacterIdOf(id) ?? (id == selfObject ? CharacterId : 0);
@@ -950,7 +954,7 @@ public partial class LiveSession : Node
     /// </summary>
     void OnTrigger(byte[] body)
     {
-        if (Ms2.Ui.Guide.TriggerGuide.Apply(body, game.Profile, GuidePane)) return;
+        if (Ms2.Ui.Guide.TriggerGuide.Apply(body, game.Profile, GuidePane, Movie)) return;
         if (triggerField != null && GodotObject.IsInstanceValid(triggerField) && triggerField.Triggers != null) ApplyTrigger(triggerField, body);
         else pendingTriggers.Add(body);
     }

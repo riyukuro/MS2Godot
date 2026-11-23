@@ -575,7 +575,7 @@ public partial class HudScene : Node, IUiStageHost
     /// <summary>
     /// Esc in the field, FUN_1418fcb70 (uichatballoon.cpp:523-555), in its order as far as this HUD has its parts
     /// (<see cref="Ms2.Ui.Hud.FieldEsc.Run"/> holds the UI's own three): the game option dialog takes it first, the
-    /// shown tooltips close (GFxManager::CloseTooltips), the cut-scene movie and fishing are not in it, then the
+    /// shown tooltips close (GFxManager::CloseTooltips), the cut-scene movie (CutSceneMovie.SkipOnEsc, between the tooltips and the tip), fishing is not in it, then the
     /// guide's text tip takes Esc (SkipTextTip); a focused text field keeps Esc (the chat input takes it in _Input), and
     /// an NPC talk takes it itself (FUN_141275080 is 0 while talking). With a closable dialog open
     /// (FUN_141274ff0, unit_141274d10_uihelpers.cpp) Esc closes all of them when the interface option EnableCloseAllDlg is
@@ -589,7 +589,8 @@ public partial class HudScene : Node, IUiStageHost
         if (Ms2.Ui.Hud.FieldEsc.Run(
                 () => optionDialog != null && optionDialog.OnKey(true),            // UIGameOptionDialog::vfunc_13 @0x141942b10 takes Esc
                 () => TooltipLayer.Instance?.Controller?.DestroyTooltips() == true,  // CloseTooltips, the first step
-                () => GuideEvent?.SkipTextTip() == true))                            // the guide's text tip (FUN_1418fcb70, uichatballoon.cpp:531)
+                () => GuideEvent?.SkipTextTip() == true,                            // the guide's text tip (FUN_1418fcb70, uichatballoon.cpp:531)
+                () => Ms2Godot.Net.LiveSession.Instance?.Movie.SkipOnEsc() == true))   // UICutSceneMovie plays: Exit (sends the stop request)
             return;
         if (AnyClosableDialogOpen())
         {
@@ -3918,9 +3919,28 @@ public partial class HudScene : Node, IUiStageHost
         if (t == 1300 && System.Environment.GetEnvironmentVariable("MS2_PERF_QUIT") != null) PerfQuit();
     }
 
+    Label movieLabel;      // STILL-OPEN: the cut scene movie's pane; the usm/swf player is not ported, a label stands for it
+
+    /// <summary>UICutSceneMovie (0x4e7e): shows the playing movie's path as a label while it plays.</summary>
+    void TickCutSceneMovie()
+    {
+        var movie = Ms2Godot.Net.LiveSession.Instance?.Movie;
+        bool on = movie?.IsPlaying == true;
+        if (!on && movieLabel == null) return;
+        if (movieLabel == null)
+        {
+            if (systemMenuLayer == null) AddChild(systemMenuLayer = new CanvasLayer { Layer = 11 });
+            movieLabel = new Label { Position = new Vector2(16, 16), Visible = false };
+            systemMenuLayer.AddChild(movieLabel);
+        }
+        movieLabel.Visible = on;
+        if (on) movieLabel.Text = $"[cut scene movie {movie.CutSceneId}: {movie.Path}] Esc skips";
+    }
+
     public override void _Process(double delta)
     {
         PerfLog.Frame(perfState);
+        TickCutSceneMovie();                                  // UICutSceneMovie's pane (STILL-OPEN: the movie)
         rewardNotify?.Update();                               // UIRewardNotify::vfunc_15: the held toasts
         TickOwnQueued();                                      // StateSkill::FUN_1417f11d0: the queued press
         TickOwnAttacks();                                     // StateSkill::TextKeyEvent: the own cast's attack points

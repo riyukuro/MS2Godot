@@ -1,6 +1,7 @@
 using Maple2.PacketLib.Tools;
 using Ms2.Net;
 using Ms2.Net.Packets;
+using Ms2.Ui.Hud;
 
 namespace Ms2.Ui.Guide;
 
@@ -10,19 +11,20 @@ namespace Ms2.Ui.Guide;
 /// entity, the text and the duration in ms, and calls the guide event pane's (UIGuideEvent 0x4e53) ShowSummary with
 /// them; sub 3 (FUN_141863d80 @0x141863d80, :997-1004) reads one i32 and calls HideSummary. Without the pane
 /// (FindGuideEvent gives 0) the packet does nothing.
-/// STILL-OPEN: the other subs: 1 AddGuideTrigger, 4 and 5 the cut scene movie, 7 and 8 the emotion state, 9 the face
+/// Subs 4 and 5 (FUN_141863b70, StopCutScene) go to the cut scene movie (<see cref="CutSceneMovie"/>).
+/// STILL-OPEN: the other subs: 1 AddGuideTrigger, 7 and 8 the emotion state, 9 the face
 /// emotion, 0xa and 0xb the own pc's turn and look, 0xc the typing game.
 /// </summary>
 public static class TriggerGuide
 {
-    public const byte ShowSummary = 2, HideSummary = 3;
+    public const byte ShowSummary = 2, HideSummary = 3, StartMovie = 4, StopMovie = 5;
 
     /// <summary>
     /// Applies a Trigger packet's body if its type is the guide type (<see cref="TriggerObjects.Guide"/>, after
     /// <see cref="TriggerObjects.ClientType"/>), returning whether it was; a packet of another type is left to the
     /// field's trigger objects.
     /// </summary>
-    public static bool Apply(byte[] body, ProtocolProfile profile, IGuideEventPane pane)
+    public static bool Apply(byte[] body, ProtocolProfile profile, IGuideEventPane pane, CutSceneMovie movie = null)
     {
         var r = new ByteReader(body);
         if (r.Available < 1 || TriggerObjects.ClientType(r.ReadByte(), profile) != TriggerObjects.Guide) return false;
@@ -40,6 +42,15 @@ public static class TriggerGuide
                 pane?.HideSummary(entity);
                 break;
             }
+            case StartMovie:
+            {
+                string path = r.ReadString();       // FUN_141863b70: a narrow string, then the cut scene id
+                movie?.Start(path, r.ReadInt());
+                break;
+            }
+            case StopMovie:
+                movie?.StopIfCutScene(r.ReadInt());   // StopCutScene @0x141863c50
+                break;
         }
         return true;
     }

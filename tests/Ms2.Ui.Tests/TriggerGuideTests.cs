@@ -61,4 +61,58 @@ public class TriggerGuideTests
         Assert.That(TriggerGuide.Apply(Body(9, 2, 7, 20001, 0), ProtocolProfile.Kms2525, null), Is.True);
         Assert.That(pane.Calls, Is.Empty);
     }
+
+    static byte[] MovieStart(byte type, string path, int id)
+    {
+        var w = new ByteWriter();
+        w.WriteByte(type);
+        w.WriteByte(4);
+        w.WriteString(path);
+        w.WriteInt(id);
+        return w.Buffer.AsSpan(0, w.Length).ToArray();
+    }
+
+    /// <summary>Start movie (sub 4) opens the pane; the skip (Esc, UICutSceneMovie::Exit) sends the Trigger request with
+    /// the client's type (9, GMS2 8) and the id; nothing is sent before the skip, and the server's sub 5 stops it.</summary>
+    [TestCase(9, 9, false)]
+    [TestCase(8, 8, true)]
+    public void StartMovieOpensThePaneAndOnlyTheSkipSends(byte inType, byte sentType, bool gms2)
+    {
+        var profile = gms2 ? ProtocolProfile.Gms2 : ProtocolProfile.Kms2525;
+        var sent = new List<byte[]>();
+        var movie = new Ms2.Ui.Hud.CutSceneMovie(pk =>
+        {
+            var w = new ByteWriter();
+            ((Ms2.Net.Wire.IProfileOutPacket) pk).Write(w, profile);
+            sent.Add(w.Buffer.AsSpan(0, w.Length).ToArray());
+        });
+        Assert.That(TriggerGuide.Apply(MovieStart(inType, "cut/intro.usm", 1), profile, null, movie), Is.True);
+        Assert.That(movie.IsPlaying, Is.True);
+        Assert.That(movie.Path, Is.EqualTo("cut/intro.usm"));
+        Assert.That(sent, Is.Empty, "no send without the skip");
+        Assert.That(Ms2.Ui.Hud.FieldEsc.Run(() => false, () => false, () => false, movie.SkipOnEsc), Is.True);
+        Assert.That(sent.Count, Is.EqualTo(1));
+        Assert.That(sent[0], Is.EqualTo(new byte[] { sentType, 5, 1, 0, 0, 0 }));
+        Assert.That(movie.IsPlaying, Is.True, "it plays on until the server's stop");
+        Assert.That(TriggerGuide.Apply(Body(inType, 5, 2), profile, null, movie), Is.True);
+        Assert.That(movie.IsPlaying, Is.True, "another cut scene's stop is not this one's");
+        Assert.That(TriggerGuide.Apply(Body(inType, 5, 1), profile, null, movie), Is.True);
+        Assert.That(movie.IsPlaying, Is.False);
+        Assert.That(movie.SkipOnEsc(), Is.False, "Esc is not taken without a movie");
+        Assert.That(sent.Count, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void ASecondStartStopsTheFirstAndAZeroIdSkipStopsAtOnce()
+    {
+        var sent = new List<Ms2.Net.Wire.IOutPacket>();
+        var movie = new Ms2.Ui.Hud.CutSceneMovie(sent.Add);
+        TriggerGuide.Apply(MovieStart(9, "a.usm", 0), ProtocolProfile.Kms2525, null, movie);
+        TriggerGuide.Apply(MovieStart(9, "b.usm", 4), ProtocolProfile.Kms2525, null, movie);
+        Assert.That((movie.Path, movie.CutSceneId), Is.EqualTo(("b.usm", 4)));
+        TriggerGuide.Apply(MovieStart(9, "c.usm", 0), ProtocolProfile.Kms2525, null, movie);
+        movie.Exit();
+        Assert.That(movie.IsPlaying, Is.False, "id 0: Exit stops without a request");
+        Assert.That(sent, Is.Empty);
+    }
 }
