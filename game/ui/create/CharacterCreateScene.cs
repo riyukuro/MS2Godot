@@ -567,11 +567,7 @@ public partial class CharacterCreateScene : LobbyFieldScene
 
         var vp = new SubViewport { Size = (Vector2I)size, World3D = main.World3D, RenderTargetUpdateMode = SubViewport.UpdateMode.Once, TransparentBg = false };
         var c = s.camera;
-        var cam = new Camera3D
-        {
-            Projection = c.Projection, Fov = c.Fov, Size = c.Size, FrustumOffset = c.FrustumOffset, Near = c.Near, Far = c.Far,
-            KeepAspect = c.KeepAspect, Environment = c.Environment, Attributes = c.Attributes, CullMask = c.CullMask,
-        };
+        var cam = ProfileCamera(c);
         vp.AddChild(cam);
         s.AddChild(vp);
         cam.GlobalTransform = c.GlobalTransform;
@@ -590,6 +586,17 @@ public partial class CharacterCreateScene : LobbyFieldScene
         }
         finally { vp.QueueFree(); }
     }
+
+    /// <summary>
+    /// The camera of the profile shot: the page camera's projection, environment and attributes, with the conversion every
+    /// other 3D view has (the character shader writes gamma values, Ms2Bloom.GammaOut converts them).
+    /// </summary>
+    internal static Camera3D ProfileCamera(Camera3D c) => new()
+    {
+        Projection = c.Projection, Fov = c.Fov, Size = c.Size, FrustumOffset = c.FrustumOffset, Near = c.Near, Far = c.Far,
+        KeepAspect = c.KeepAspect, Environment = c.Environment, Attributes = c.Attributes, CullMask = c.CullMask,
+        Compositor = Ms2Bloom.GammaOut(),
+    };
 
     async System.Threading.Tasks.Task SaveProfileShot(string name)
     {
