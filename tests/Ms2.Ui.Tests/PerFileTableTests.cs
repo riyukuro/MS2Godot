@@ -134,4 +134,19 @@ public class PerFileTableTests
         Assert.That(PerFileTable.Choose(false, () => "kms", () => { perFileReads++; return "files"; }), Is.EqualTo("files"));
         Assert.That(perFileReads, Is.EqualTo(1));
     }
+
+    [Test]
+    public void AFeatureNameInTheLocaleIsReadAsTheFeature()
+    {
+        var f = PerFileTable.FeatureInLocale(XElement.Parse(@"<ms2><environment feature="""" locale=""Fishing""><quest/></environment>
+            <environment feature=""KR"" locale=""KatvanDungeon""><quest/></environment><environment feature=""Season1"" locale=""NA""><quest/></environment>
+            <environment feature=""x"" locale=""""><quest/></environment></ms2>"));
+        var e = f.Elements("environment").ToList();
+        Assert.That((string)e[0].Attribute("locale"), Is.EqualTo(""));
+        Assert.That((string)e[0].Attribute("feature"), Is.EqualTo("Fishing"));
+        Assert.That((string)e[1].Attribute("locale"), Is.EqualTo("KR"));
+        Assert.That((string)e[1].Attribute("feature"), Is.EqualTo("KatvanDungeon"));
+        Assert.That((string)e[2].Attribute("locale"), Is.EqualTo("NA"), "a region locale stays");
+        Assert.That((string)e[3].Attribute("feature"), Is.EqualTo("x"));
+    }
 }

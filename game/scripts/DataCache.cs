@@ -157,6 +157,7 @@ public static class DataCache
         if (Ms2.Ui.GameTables.BuildCache(packs, quests.Language, s)) built.Add("gametables");
         if (PerFileTable.BuildCache(packs, s, "map/", "fieldData")) built.Add("map files");
         if (PerFileTable.BuildCache(packs, s, "npc/", "npc")) built.Add("npc files");
+        if (PerFileTable.BuildCache(packs, s, "quest/", "quest")) built.Add("quest files");
         progress?.Invoke(phase, 0.95);
         if (Ms2.Ui.Guide.GuideTable.BuildCache(packs, s)) built.Add("guide events");
         progress?.Invoke(phase, 0.97);

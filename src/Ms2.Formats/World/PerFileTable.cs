@@ -64,7 +64,30 @@ public static class PerFileTable
     static bool Has(PackSet packs, string folder) => packs.List("Xml").Any(n => n.StartsWith(folder, StringComparison.Ordinal) && n.EndsWith(".xml", StringComparison.Ordinal));
 
     static XDocument Parse(PackSet packs, string folder, string row) =>
-        Build(Files(packs, folder), row, f => FeatureElements.SelectEnvironment(packs, f));
+        Build(Files(packs, folder), row, folder == "quest/"
+            ? f => FeatureElements.SelectEnvironment(packs, f) ?? FeatureElements.SelectEnvironment(packs, FeatureInLocale(f))
+            : f => FeatureElements.SelectEnvironment(packs, f));
+
+    static readonly string[] Regions = { "KR", "CN", "JP", "NA", "TH", "TW" };
+    static bool IsRegion(string s) => Regions.Contains(s, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The file with the environments whose locale holds a feature name read as a feature: 55 of the GMS2 quest files write
+    /// locale="Fishing" (and two, locale="KatvanDungeon" feature="KR"), which no locale test passes. INFERRED from the data
+    /// (the GMS2 reader is not in the restored source): the name that is not a region is the feature, the region the locale.
+    /// </summary>
+    internal static XElement FeatureInLocale(XElement file)
+    {
+        var copy = new XElement(file);
+        foreach (var e in copy.Elements("environment"))
+        {
+            string loc = (string)e.Attribute("locale") ?? "", feat = (string)e.Attribute("feature") ?? "";
+            if (loc.Length == 0 || IsRegion(loc)) continue;
+            e.SetAttributeValue("locale", IsRegion(feat) ? feat : "");
+            e.SetAttributeValue("feature", loc);
+        }
+        return copy;
+    }
 
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Dictionary<string, XDocument>> built = new();
 

@@ -2,6 +2,7 @@ using Ms2.Formats.Text;
 using System.Text;
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
+using Ms2.Formats.World;
 
 namespace Ms2.Quest;
 
@@ -206,6 +207,7 @@ public sealed partial class QuestTable
         var entries = packs.List("Xml").ToList();
         if (packs.Exists("Xml", QuestDataFile))
             try { t.AddQuests(Parse(PackXml.Text(packs.Read("Xml", QuestDataFile)))); } catch (System.Xml.XmlException) { }
+        else if (PerFileTable.Rows(packs, "quest/", "quest") is { } perFile) t.AddQuests(PerFileQuests(perFile));      // GMS2: quest/<id>.xml
         t.BuildIndexes();
         if (packs.Exists("Xml", "table/questgrouptable.xml"))
             try { t.AddGroups(Parse(PackXml.Text(packs.Read("Xml", "table/questgrouptable.xml")))); } catch (System.Xml.XmlException) { }
@@ -259,6 +261,20 @@ public sealed partial class QuestTable
         return t;
     }
 
+    /// <summary>
+    /// GMS2 keeps a file per quest: quest/&lt;id&gt;.xml holds &lt;environment&gt; blocks whose &lt;quest&gt; has the children of the KMS
+    /// &lt;quest id&gt; row. The rows of <see cref="PerFileTable.Rows"/> (the environment the client picks) become &lt;quest id&gt; rows of
+    /// that shape. A data-shape adapter; the GMS2 client's own reader is not in the restored source (STILL-OPEN).
+    /// </summary>
+    static XDocument PerFileQuests(XDocument rows)
+    {
+        var root = new XElement("ms2");
+        foreach (var row in rows.Root.Elements("quest"))
+            if (row.Element("environment")?.Element("quest") is { } q)
+                root.Add(new XElement("quest", row.Attribute("id"), q.Elements()));
+        return new XDocument(root);
+    }
+
     /// <summary>QuestDataTable::LoadQuestData's file (GetXmlPath("QuestData", "QuestData.xml"), questdata.cpp:1800).</summary>
     const string QuestDataFile = "questdata/questdata.xml";
 
@@ -303,7 +319,7 @@ public sealed partial class QuestTable
         QueryInt(basic, "chapterID", ref d.Chapter);
         QueryInt(basic, "standardLevel", ref d.Level);
         QueryBool(basic, "exceptChapterClear", ref d.ExceptChapterClear);
-        QueryBool(basic, "account", ref d.Account);
+        QueryAccount(basic, ref d.Account);
         QueryInt(basic, "repeatable", ref d.Repeat);
         QueryInt(basic, "questType", ref d.Type);
         QueryBool(basic, "locking", ref d.Locking);
@@ -397,25 +413,60 @@ public sealed partial class QuestTable
             foreach (var v in reward.Elements("v"))
             {
                 if ((string)v.Attribute("feature") is { Length: > 0 } f && !featureOn(f)) continue;
-                int code = 0, itemRank = 0, count = 0;
-                QueryInt(v, "code", ref code);
-                QueryInt(v, "rank", ref itemRank);
-                QueryInt(v, "count", ref count);
-                c.ChoiceRewards.Add(new QuestRewardItem(code, itemRank, count));
+                c.ChoiceRewards.Add(RewardItem(v));
             }
+            c.ChoiceRewards.AddRange(Gms2Rewards(reward, global: true));
         }
         // <acceptReward>'s <v> rows into m_rewards (questdata.cpp:1432), loaded as the complete reward's are
         if (q.Element("acceptReward") is { } accept)
+        {
             foreach (var v in accept.Elements("v"))
             {
                 if ((string)v.Attribute("feature") is { Length: > 0 } f && !featureOn(f)) continue;
-                int code = 0, itemRank = 0, count = 0;
-                QueryInt(v, "code", ref code);
-                QueryInt(v, "rank", ref itemRank);
-                QueryInt(v, "count", ref count);
-                d.AcceptRewards.Add(new QuestRewardItem(code, itemRank, count));
+                d.AcceptRewards.Add(RewardItem(v));
             }
+            d.AcceptRewards.AddRange(Gms2Rewards(accept, global: false));
+        }
         return d;
+    }
+
+    static QuestRewardItem RewardItem(XElement v)
+    {
+        int code = 0, itemRank = 0, count = 0;
+        QueryInt(v, "code", ref code);
+        QueryInt(v, "rank", ref itemRank);
+        QueryInt(v, "count", ref count);
+        return new QuestRewardItem(code, itemRank, count);
+    }
+
+    /// <summary>
+    /// The reward rows of GMS2's quest files: &lt;essentialItem&gt; and &lt;essentialJobItem&gt; (code, rank, count) in place of the KMS
+    /// &lt;v&gt; rows, and in a complete reward &lt;globalEssentialItem&gt; and &lt;globalEssentialJobItem&gt; as well. A row with code 0 is an
+    /// empty slot and is skipped. INFERRED from the data (the GMS2 reader is not in the restored source): where a complete reward
+    /// has global rows with a code, they replace the essential rows (a quest that has both lists them twice, e.g. the same twelve
+    /// job weapons in both), otherwise the essential rows are the reward. STILL-OPEN: which of the two the GMS2 client reads.
+    /// </summary>
+    static IEnumerable<QuestRewardItem> Gms2Rewards(XElement reward, bool global)
+    {
+        static List<QuestRewardItem> Rows(XElement e, string a, string b) => e.Elements().Where(x => x.Name.LocalName == a || x.Name.LocalName == b)
+            .Select(x => RewardItem(x)).Where(r => r.ItemId != 0).ToList();
+        if (global)
+        {
+            var g = Rows(reward, "globalEssentialItem", "globalEssentialJobItem");
+            if (g.Count > 0) return g;
+        }
+        return Rows(reward, "essentialItem", "essentialJobItem");
+    }
+
+    /// <summary>
+    /// basic@account: the KMS data writes 1, GMS2's 2 (1,956 quests) and 1 (two). The client reads a bool (a value that is not
+    /// one leaves the default, false), which would drop every GMS2 account quest, so a number reads as not 0.
+    /// INFERRED: the GMS2 reader is not in the restored source; 2 is read as an account quest.
+    /// </summary>
+    static void QueryAccount(XElement basic, ref bool v)
+    {
+        if (int.TryParse((string)basic.Attribute("account"), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int n)) v = n != 0;
+        else QueryBool(basic, "account", ref v);
     }
 
     /// <summary>The &lt;require&gt; attributes (CQuestData::Load); groupID is kept only for a quest that is not locked.</summary>
