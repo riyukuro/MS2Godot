@@ -443,10 +443,11 @@ public sealed partial class RemotePc : IRemotePc
     /// </summary>
     public void PlaySkill(string name, float speed, int skillId, bool chargingSkill, System.Numerics.Vector3 pos, float rotZ,
         int holdId = 0, string holdNode = "", int motion = 0, int motionCount = 1, int loopCount = 0,
-        IReadOnlyList<string> attackPoints = null, CastMove move = default, IReadOnlyDictionary<string, string> tagEffects = null)
+        IReadOnlyList<string> attackPoints = null, CastMove move = default, IReadOnlyDictionary<string, string> tagEffects = null,
+        bool notKeepEffect = false)
     {
         States.Cast(skillId, chargingSkill, pos, rotZ, holdId, holdNode, motion, motionCount, speed, loopCount, attackPoints, move,
-            tagEffects);
+            tagEffects, notKeepEffect);
         bool again = name == currentName;
         Anim.Play(name, 0.05, speed);
         if (again) Anim.Seek(0, true);           // the same sequence again (a forced re-entry): Play alone would go on

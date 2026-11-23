@@ -111,8 +111,10 @@ public sealed partial class RemoteLayer
         st.SkillEntered = () => remoteMagics.SkillEntered(id);
         st.SkillExited = () => remoteMagics.SkillExited(id, (int)Time.GetTicksMsec());
         st.AttackFired = a => remoteMagics.AttackFired(id, a, (int)Time.GetTicksMsec());
-        // the cast's tag effects on the caster, where the motion's own effect plays (PlayCast)
-        st.TagEffect = (_, fx) => combat.PlayEffect(fx, r.Root.Position, r.Visual.Rotation.Y);
+        // the cast's tag effects kept on the caster (an actor target, SetActor) and ended with its skill state
+        st.TagEffect = (_, fx) => RegionFx?.SpawnOn(fx, r.Visual) ?? 0;
+        st.StopEffect = h => RegionFx?.FadeOut(h, 0);
+        st.ReleaseEffect = h => RegionFx?.Release(h);
     }
 
     /// <summary>

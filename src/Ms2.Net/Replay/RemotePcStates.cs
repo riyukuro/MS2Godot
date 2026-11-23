@@ -246,8 +246,12 @@ public sealed class RemotePcStates
     /// <summary>FUN_1417ecce0 for each attack FireAttacksAtPoint fires (the attack's index in the motion).</summary>
     public Action<int> AttackFired;
     /// <summary>A tag effect of the cast's motion plays on the caster (StateSkill::TextKeyEvent, stateskill.cpp:792-834): the
-    /// key and the effect xml (<see cref="CastTextKey"/>).</summary>
-    public Action<string, string> TagEffect;
+    /// key and the effect xml (<see cref="CastTextKey"/>); the kept effect's id (CEffectService::FUN_1411a49c0), 0 for none.</summary>
+    public Func<string, string, int> TagEffect;
+    /// <summary>CEffectService::FUN_1411a6060: a kept effect stops at once (the cast's tag effects at a hard exit).</summary>
+    public Action<int> StopEffect;
+    /// <summary>CEffectService::FUN_1411a69e0: a kept effect is released (the cast's tag effects at the skill state's exit).</summary>
+    public Action<int> ReleaseEffect;
     /// <summary>StateHit::vfunc_4 past State::vfunc_4 (@0x1417ca370, statehit.cpp:65-114): the hit's data, the lift and the
     /// sequence (the host's StateHit body, which keeps the data the reaction handed it).</summary>
     public Action HitEntered;
@@ -298,6 +302,8 @@ public sealed class RemotePcStates
     int castRepeat, castAttack, castLoopCount; bool castCharging, castLoop, castLoopEnded;
     bool castInLoop;   // m_b117: inside the loop (a "loopstart" passed, no "loopend" since or a next round's)
     IReadOnlyDictionary<string, string> castTags;   // the motion's m_mapTagEffects
+    readonly SkillTagEffects.Handles castTagIds = new();   // the record's m_map138
+    bool castNotKeepEffect, nextNotKeepEffect;   // the running record's skill's notKeepEffect; the next cast's
     float castLoopStart; double castLoopMs;
     IReadOnlyList<string> castPoints = System.Array.Empty<string>();
     // the record's motion data and move time, the move phases and the motion controller (shared with the own PC)
@@ -541,14 +547,16 @@ public sealed class RemotePcStates
     /// <paramref name="speed"/> is GetMotionSpeedScale (the record's speed, StateSkill::m_fSpeed); <paramref name="loopCount"/>
     /// and <paramref name="attackPoints"/> are the motion's SkillMotionData::m_nLoopCount and its attacks' m_strPoint.
     /// <paramref name="move"/> is what the motion controller reads (<see cref="CastMove"/>); <paramref name="tagEffects"/> the
-    /// motion's tag effects (<see cref="CastTextKey"/>). The new record
+    /// motion's tag effects (<see cref="CastTextKey"/>), <paramref name="notKeepEffect"/> its skill's stateAttr notKeepEffect
+    /// (skilloverlapcompare.cpp:861), read as the state ends. The new record
     /// (CSkillRecord's constructor, skillrecord.cpp:164) starts at m_fDuration = m_fElapsed = 0.
     public void Cast(int skillId, bool chargingSkill, Vector3 pos, float rotZ, int holdId = 0, string holdNode = "",
         int motion = 0, int motionCount = 1, float speed = 1f, int loopCount = 0, IReadOnlyList<string> attackPoints = null,
-        CastMove move = default, IReadOnlyDictionary<string, string> tagEffects = null)
+        CastMove move = default, IReadOnlyDictionary<string, string> tagEffects = null, bool notKeepEffect = false)
     {
         skillMotion.Record(move, speed, rotZ);
         castTags = tagEffects;
+        nextNotKeepEffect = notKeepEffect;   // the running record's effects end with its own flag (ChangeState)
         castInLoop = false;   // vfunc_4 (stateskill.cpp:411) and the sequence start (FUN_1417f0940 :2223)
         castLoopCount = loopCount;
         castPoints = attackPoints ?? System.Array.Empty<string>();
@@ -596,8 +604,8 @@ public sealed class RemotePcStates
     /// First of all a key the motion's tag effects name (m_mapTagEffects, :792-834) plays its effect on the caster
     /// (<see cref="TagEffect"/>) unless <see cref="SkillTagEffects.Plays"/> says no; m_b117 follows the keys ("loopstart" on,
     /// "loopend" off then on again for a next round, a charging skill's "charging_attack" off).
-    /// STILL-OPEN: the loop effect (record m_n88, FUN_1417598e0), the tag effect's handle (m_map138, kept for the state's
-    /// exit), its sight range test (FUN_1417f4bc0, object kind 3), FireCurrentAttack's hits and the weapon sync
+    /// The effect's id is kept by its key (m_map138) for the state's exit (<see cref="ChangeState"/>).
+    /// STILL-OPEN: the loop effect (record m_n88, FUN_1417598e0), the tag effect's sight range test (FUN_1417f4bc0, object kind 3), FireCurrentAttack's hits and the weapon sync
     /// (FUN_141663be0) are not ported.
     /// </summary>
     public void CastTextKey(string key, float time)
@@ -605,7 +613,7 @@ public sealed class RemotePcStates
         if (Cur != StateSkill) return;
         if (castTags != null && castTags.TryGetValue(key, out var fx) && SkillTagEffects.Plays(pc.CastKeyTime(key), castInLoop,
                 false, castLoop, pc.CastKeyTime("loopstart"), pc.CastKeyTime("loopend"), pc.CastKeyTime("charging_attack")))
-            TagEffect?.Invoke(key, fx);   // the record's m_n9c stays 0 for this PC
+            castTagIds.Set(key, TagEffect?.Invoke(key, fx) ?? 0);   // the record's m_n9c stays 0 for this PC
         if (key == "loopstart") castInLoop = true;   // :844, before the m_bLoop test
         if (key == "loopstart" && !castLoop)
         {
@@ -812,13 +820,25 @@ public sealed class RemotePcStates
             return;
         }
         if (state == StateSkill) FlushRequests();
-        if (Cur == StateSkill) SkillExited?.Invoke();
+        if (Cur == StateSkill)
+        {
+            // StateSkill::vfunc_5(n) (stateskill.cpp:515-524): the record's tag effects stop at once when the owner is dead,
+            // the next state is StateHit (0xd) or the skill keeps no effect, else they are released
+            // STILL-OPEN: the stun test (AdditionalCliList::IsStunned) has no buff list here; the record's cast and loop
+            // effects (m_n84, m_n88) are not kept
+            castTagIds.End(Dead || state == StateHit || castNotKeepEffect, StopEffect, ReleaseEffect);
+            SkillExited?.Invoke();
+        }
         Exit(Cur, state);
         Prev = Cur;
         if (sub != 0) subs[state] = sub;
         Cur = state;
         StateChanged?.Invoke(state);
-        if (state == StateSkill) SkillEntered?.Invoke();
+        if (state == StateSkill)
+        {
+            castNotKeepEffect = nextNotKeepEffect;
+            SkillEntered?.Invoke();
+        }
         Enter(state);
         NotifyWeaponKey();
     }

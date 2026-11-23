@@ -35,6 +35,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     readonly float fadeSeconds;
     readonly Dictionary<string, EffectScene> scenes = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<int, List<Node3D>> kept = new();
+    readonly HashSet<int> looping = new();   // kept effects with a part whose param loops (CEffect m_b2c, the "loop" attribute)
 
     /// <summary>An effect xml's light part (CLightEffect, lighteffectparam.cpp:363-377): it adds its light at its start delay
     /// and the effect's end destroys it (FieldLights.Start / End), as CombatLayer's lights. The light entity is added at Init
@@ -181,8 +182,22 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
 
     static readonly Xform Identity = new(new Vec3(0, 0, 0), new double[] { 1, 0, 0, 0, 1, 0, 0, 0, 1 }, 1);
 
+    /// <summary>
+    /// CEffectService::FUN_1411a69e0 (@0x1411a69e0, effectservice.cpp:1510-1528): a kept effect released. A part whose param
+    /// loops (CEffect::vfunc_11 returns 0 for m_b2c, :427-431) stops the whole effect at once (FUN_1411a6060); otherwise its
+    /// parts play to their own ends and the handle goes.
+    /// STILL-OPEN: CNifEffect::vfunc_11 (nifeffectparam.cpp:946-967) moves an attach type 1 part still inside its duration
+    /// to the world root, keeping its place; here the parts on an actor stay under it.
+    /// </summary>
+    public void Release(int handle)
+    {
+        if (looping.Contains(handle)) { FadeOut(handle, 0); return; }
+        kept.Remove(handle);
+    }
+
     public void FadeOut(int handle, float seconds)
     {
+        looping.Remove(handle);
         foreach (var l in lights)
             if (l.Handle == handle) l.End = Math.Min(l.End, l.Born + Math.Max(seconds, 0));
         if (!kept.Remove(handle, out var nodes)) return;
@@ -223,6 +238,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
                 var pos = world.Apply(new Vec3(part.Translate[0], part.Translate[1], part.Translate[2]));   // the part's place in the effect's space
                 float dur = part.Loop ? 1e7f : part.Duration > 0 ? part.Duration : 0.6f;
                 lights.Add(new LiveLight { Param = part.Light, Pos = pos, Start = part.StartDelay, End = part.StartDelay + dur, Handle = keep ? handle : 0 });
+                if (keep && part.Loop) looping.Add(handle);
                 continue;
             }
             if (part.Type != "nif" || string.IsNullOrEmpty(part.FilePath) || Scene(part.FilePath) is not { } sc) continue;
@@ -233,6 +249,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
             fx.FileSpace = ModelBuilder.ToGodot(at.Compose(local));
             (actor ?? (Node)this).AddChild(fx);
             if (keep) nodes.Add(fx);
+            if (keep && part.Loop) looping.Add(handle);
             Spawned++;
         }
         return nodes;

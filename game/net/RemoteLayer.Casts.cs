@@ -97,7 +97,8 @@ public sealed partial class RemoteLayer
                 // FUN_141673ce0 before the state is entered: the record list replaced unless the uid and motion are there
                 remoteMagics.BeginCast(actorId, castUid, motionIndex);
                 r.Pc.PlaySkill(sk.name, Math.Max(speed, 0.1f), skillId, skillMotions.ChargingSkill(skillId), pos, rotZ, holdId, holdNode,
-                    motionIndex, skillMotions.MotionCount(skillId, level), motion.LoopCount, motion.AttackPoints, move, motion.TagEffects);
+                    motionIndex, skillMotions.MotionCount(skillId, level), motion.LoopCount, motion.AttackPoints, move, motion.TagEffects,
+                    skillMotions.NotKeepEffect(skillId));
                 CastsPlayed++;
             }
         }

@@ -837,7 +837,7 @@ public class RemotePcStatesTests {
         foreach (var (k, t) in new[] { ("e0", 0.1f), ("loopstart", 0.2f), ("e1", 0.3f), ("loopend", 0.7f), ("e2", 0.8f) }) b.CastKeys[k] = t;
         var sm = new RemotePcStates(b);
         var played = new List<string>();
-        sm.TagEffect = (k, fx) => played.Add(k + "=" + fx);
+        sm.TagEffect = (k, fx) => { played.Add(k + "=" + fx); return 0; };
         sm.Spawn(); Run(sm, 0.5f);
         var tags = new Dictionary<string, string> { ["e0"] = "a.xml", ["e1"] = "b.xml", ["e2"] = "c.xml" };
         sm.Cast(10200001, false, Vector3.Zero, 90f, loopCount: 1, tagEffects: tags);
@@ -864,7 +864,7 @@ public class RemotePcStatesTests {
         foreach (var (k, t) in new[] { ("e0", 0.1f), ("charging_attack", 0.5f), ("e1", 0.6f) }) b.CastKeys[k] = t;
         var sm = new RemotePcStates(b);
         var played = new List<string>();
-        sm.TagEffect = (k, _) => played.Add(k);
+        sm.TagEffect = (k, _) => { played.Add(k); return 0; };
         sm.Spawn(); Run(sm, 0.5f);
         sm.Cast(10200001, true, Vector3.Zero, 90f, tagEffects: new Dictionary<string, string> { ["e0"] = "a", ["e1"] = "b" });
         sm.CastTextKey("e0", 0.1f);
@@ -872,6 +872,31 @@ public class RemotePcStatesTests {
         sm.CastTextKey("e0", 0.1f);
         sm.CastTextKey("e1", 0.6f);
         Assert.That(played, Is.EqualTo(new[] { "e0", "e1" }));
+    }
+
+    [Test] public void TheCastsKeptTagEffectsEndWithItsSkillState() {
+        // StateSkill::vfunc_5(n) (stateskill.cpp:515-524): released on a plain exit; stopped at once for the next state
+        // StateHit (0xd), a dead owner or a notKeepEffect skill
+        foreach (var (how, hard) in new[] { ("idle", false), ("hit", true), ("dead", true), ("notKeep", true) })
+        {
+            var b = new Body();
+            b.CastKeys["e0"] = 0.1f;
+            var sm = new RemotePcStates(b);
+            var stopped = new List<int>(); var released = new List<int>();
+            int next = 40;
+            sm.TagEffect = (_, _) => ++next;
+            sm.StopEffect = stopped.Add;
+            sm.ReleaseEffect = released.Add;
+            sm.Spawn(); Run(sm, 0.5f);
+            sm.Cast(10200001, false, Vector3.Zero, 90f, tagEffects: new Dictionary<string, string> { ["e0"] = "a.xml" },
+                notKeepEffect: how == "notKeep");
+            sm.CastTextKey("e0", 0.1f);
+            sm.CastTextKey("e0", 0.1f);              // played again: the key's id is replaced (41 left running)
+            if (how == "dead") sm.SetDead(true);
+            sm.ChangeState(how == "hit" ? RemotePcStates.StateHit : RemotePcStates.StateIdle);
+            Assert.That(hard ? stopped : released, Is.EqualTo(new[] { 42 }), how);
+            Assert.That(hard ? released : stopped, Is.Empty, how);
+        }
     }
 
     [Test] public void ACastOnWaterGivesWayToTheSwim() {

@@ -28,6 +28,55 @@ public static class SkillTagEffects
     }
 
     /// <summary>
+    /// A record's kept tag effects (CSkillRecord m_map138, a CRBMap of the text key to the effect id): TextKeyEvent sets the
+    /// id a tag key's effect got (SetAt, stateskill.cpp:829: a key played again replaces its id, the old effect left running).
+    /// <see cref="End"/> is StateSkill::vfunc_5's part for them (:515-524). No allocation past the list's growth.
+    /// </summary>
+    public sealed class Handles
+    {
+        readonly List<(string key, int id)> map = new();
+
+        public int Count => map.Count;
+
+        /// <summary>The id kept for <paramref name="key"/>, 0 without one.</summary>
+        public int this[string key]
+        {
+            get
+            {
+                foreach (var (k, id) in map) if (k == key) return id;
+                return 0;
+            }
+        }
+
+        /// <summary>CRBMap::SetAt.</summary>
+        public void Set(string key, int id)
+        {
+            for (int i = 0; i < map.Count; i++)
+                if (map[i].key == key) { map[i] = (key, id); return; }
+            map.Add((key, id));
+        }
+
+        /// <summary>
+        /// The state's exit (StateSkill::vfunc_5, stateskill.cpp:515-524): when <paramref name="hard"/> (the owner dead or
+        /// stunned, the next state 0xd, or the skill's notKeepEffect) StopRecordEffects (:2296-2310) stops each kept effect
+        /// at once (CEffectService::FUN_1411a6060, <paramref name="stop"/>) and zeroes its id; then each id left is released
+        /// (FUN_1411a69e0, <paramref name="release"/>; nothing for an id 0). The record goes with the state here, so the map
+        /// is emptied.
+        /// </summary>
+        public void End(bool hard, Action<int> stop, Action<int> release)
+        {
+            for (int i = 0; i < map.Count; i++)
+            {
+                var (k, id) = map[i];
+                if (id == 0) continue;
+                if (hard) { stop?.Invoke(id); map[i] = (k, 0); }
+                else release?.Invoke(id);
+            }
+            map.Clear();
+        }
+    }
+
+    /// <summary>
     /// The tag keys of one cast's sequence in time order (each occurrence of a key the motion names), for a walk that reads
     /// the keys passed since the last frame. Built once per cast (<see cref="Set"/>); <see cref="Next"/> allocates nothing.
     /// </summary>

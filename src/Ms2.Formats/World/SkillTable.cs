@@ -82,6 +82,7 @@ public sealed class SkillTable
 {
     readonly Dictionary<int, List<SkillLevelRow>> skills = new();
     readonly HashSet<int> charging = new();
+    readonly HashSet<int> notKeepEffect = new();
     readonly Dictionary<int, SkillStateMove> stateMoves = new();
     public int Count => skills.Count;
 
@@ -187,6 +188,8 @@ public sealed class SkillTable
             Int(basic?.Element("magicControl"), "enable") != 0);
         if (move != default) stateMoves[id] = move;
         else stateMoves.Remove(id);
+        if (stateAttr != null && Flag(stateAttr, "notKeepEffect")) notKeepEffect.Add(id);
+        else notKeepEffect.Remove(id);
         var levels = new List<SkillLevelRow>();
         foreach (var l in s.Elements("level"))
         {
@@ -250,6 +253,9 @@ public sealed class SkillTable
     /// <summary>&lt;basic&gt;&lt;combo chargingSkill&gt; (Unk_SkillBlockA4::Load @0x140802ef0, skillleveldata.cpp:493): SkillData
     /// +0xad, m_blockA4.m_bChargingSkill, which CStateManager::FUN_1417db550 tests for a record in StateSkill.</summary>
     public bool ChargingSkill(int skillId) => charging.Contains(skillId);
+    /// <summary>SkillData m_bNotKeepEffect (basic/stateAttr "notKeepEffect", skilloverlapcompare.cpp:861): the cast's kept
+    /// effects stop at once when its skill state ends (StateSkill::vfunc_5 :518, vfunc_7 :580).</summary>
+    public bool NotKeepEffect(int skillId) => notKeepEffect.Contains(skillId);
 
     /// <summary>The skill's <see cref="SkillStateMove"/>; all zero without the elements.</summary>
     public SkillStateMove StateMove(int skillId) => stateMoves.TryGetValue(skillId, out var m) ? m : default;

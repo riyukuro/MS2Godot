@@ -67,4 +67,17 @@ public class SkillTagEffectsTests {
         var m = new SkillTable(PackSet.Shared(data)).Motion(1, 1, 0);
         Assert.That(m?.TagEffects, Is.EqualTo(new Dictionary<string, string> { ["e0"] = "CH/Weapon/Hand/Eff_Hand_Attack01_Cast_01.xml" }));
     }
+    [Test] public void TheHandleMapReplacesAKeysIdAndEndsSoftOrHard() {
+        // m_map138: SetAt replaces (the old effect left running); vfunc_5: StopRecordEffects then the release of what is left
+        var h = new SkillTagEffects.Handles();
+        h.Set("e0", 5); h.Set("e1", 0); h.Set("e0", 7); h.Set("e2", 9);
+        Assert.That((h.Count, h["e0"], h["e1"], h["x"]), Is.EqualTo((3, 7, 0, 0)));
+        var stopped = new List<int>(); var released = new List<int>();
+        h.End(false, stopped.Add, released.Add);
+        Assert.That((stopped, released, h.Count), Is.EqualTo((new List<int>(), new List<int> { 7, 9 }, 0)));
+        h.Set("e0", 3); h.Set("e1", 4);
+        h.End(true, stopped.Add, released.Add);
+        Assert.That(stopped, Is.EqualTo(new[] { 3, 4 }));
+        Assert.That(released, Is.EqualTo(new[] { 7, 9 }), "a hard end releases nothing more: the ids are zeroed");
+    }
 }
