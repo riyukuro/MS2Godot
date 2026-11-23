@@ -445,6 +445,8 @@ public partial class LiveSession
                     Check("the own character is dead", live.Me.Dead);
                     Check("the tombstone exists", live.Tomb != null);
                     Check("the revival dialog or the auto-revive countdown is up", hud.RevivalUiUp());
+                    // the tomb's model: MS2TombStoneDark while the revival is blocked (PC::FUN_14165cac0, pc.cpp:4043)
+                    GD.Print($"live: combat death: revival blocked {live.OwnRevivalBlocked} (count {live.Me.RevivalConfirmCount}, flag {live.Me.RevivalFlag}, end tick {live.Me.RevivalEndTick})");
                     Shot("death.png");
                     break;
                 }
@@ -456,6 +458,7 @@ public partial class LiveSession
                     await until(() => alive = !live.Me.Dead, 60 * 15);
                     Check("the character is alive again", alive);
                     await frames(30);
+                    GD.Print($"live: combat revived: penalty count {live.Me.RevivalConfirmCount}, end tick {live.Me.RevivalEndTick}");
                     Shot("revived.png");
                     break;
                 }
