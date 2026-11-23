@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
+using Ms2.Ui;
 
 namespace Ms2.Formats.World;
 
@@ -71,6 +72,7 @@ public sealed class NpcScriptTable
     readonly Dictionary<int, List<Script>> monologues = new();     // s_npcAlt
     readonly Dictionary<long, string> strings = new();
     public int Count => npcs.Count;
+    public IEnumerable<Npc> AllNpcs() => npcs.Values;
     public int StringCount => strings.Count;
     readonly GameStrings gameText;
     ReservedWords words;
@@ -82,40 +84,64 @@ public sealed class NpcScriptTable
     public NpcScriptTable(PackSet packs, GameStrings text, Func<XElement, bool> available = null)
     {
         gameText = text;
-        foreach (var entry in packs.List("Xml").Where(n => n.StartsWith("script/npc/npcscript", StringComparison.OrdinalIgnoreCase)
-                                                             && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).OrderBy(n => n))
+        var all = packs.List("Xml").Where(n => n.StartsWith("script/npc/", StringComparison.OrdinalIgnoreCase)
+                                               && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)).OrderBy(n => n).ToList();
+        var tables = all.Where(n => n.StartsWith("script/npc/npcscript", StringComparison.OrdinalIgnoreCase)).ToList();
+        foreach (var entry in tables)
         {
             XDocument x;
             try { x = GameStrings.Parse(packs.Read("Xml", entry)); } catch { continue; }
             foreach (var n in x.Root?.Elements("npc") ?? Enumerable.Empty<XElement>())
-            {
-                if (!int.TryParse((string)n.Attribute("id"), out int id)) continue;
-                if (!npcs.TryGetValue(id, out var npc)) npcs[id] = npc = new Npc { Id = id };
-                List<Script> alt = new();
-                foreach (var s in n.Elements())
-                {
-                    bool mono = s.Name.LocalName == "monologue";
-                    if (mono && available != null && !available(s)) continue;
-                    var sc = new Script { Kind = s.Name.LocalName, Id = Int(s, "id"), RandomPick = Int(s, "randomPick") != 0 };
-                    if (mono)
-                    {
-                        // FUN_140859320: QueryIntAttribute only when the attribute is there
-                        if (int.TryParse((string)s.Attribute("popupProp"), out int prop)) sc.PopupProp = prop;
-                        if (int.TryParse((string)s.Attribute("popupState"), out int state)) sc.PopupState = state;
-                        alt.Add(sc);
-                    }
-                    foreach (var c in s.Elements("content")) sc.Contents.Add(Content.Parse(c));
-                    npc.Scripts.Add(sc);
-                }
-                // s_npcAlt.SetAt per <npc>, when it has any (talkscript.cpp:714): a later file's npc replaces the list
-                if (alt.Count > 0) monologues[id] = alt;
-            }
+                if (int.TryParse((string)n.Attribute("id"), out int id)) AddNpc(packs, id, n, available);
         }
+        // GMS2 has no npcscript table: script/npc/<id>.xml per npc, the scripts directly under <ms2>, the id the file's number.
+        // A data-shape adapter; the GMS2 client's reader is not in the restored source (STILL-OPEN)
+        if (tables.Count == 0)
+            foreach (var entry in all)
+            {
+                string stem = entry[(entry.LastIndexOf('/') + 1)..^4];
+                if (!int.TryParse(stem, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int id)) continue;
+                XDocument x;
+                try { x = GameStrings.Parse(packs.Read("Xml", entry)); } catch { continue; }
+                if (x.Root != null) AddNpc(packs, id, x.Root, available);
+            }
         // the $script:N$ words: npc scripts' text in scriptnpc*.xml, quest scripts' (QuestScriptTable) in scriptquest_*.xml,
         // one id space (the ids are unique stamps, e.g. 0831180104000004 for quest 90000000's complete talk)
         foreach (var prefix in new[] { "scriptnpc", "scriptquest" })
             foreach (var k in text.Rows(prefix))
                 if (long.TryParse((string)k.Attribute("id"), out long sid) && !strings.ContainsKey(sid)) strings[sid] = (string)k.Attribute("name");
+    }
+
+    /// <summary>
+    /// One &lt;npc&gt;'s scripts (LoadNpcTalks, talkscript.cpp:694..739): the &lt;select&gt;, &lt;script&gt; and &lt;job&gt; elements the client
+    /// takes one of per id among the available ones (FeatureElements.Collect, FUN_14028faa0: a later element of the same id replaces
+    /// the kept one when its locale and feature win), and each available &lt;monologue&gt;. GMS2 writes a locale and a feature on every
+    /// one of them, with up to 628 script ids repeated by locale or feature.
+    /// </summary>
+    void AddNpc(PackSet packs, int id, XElement n, Func<XElement, bool> available)
+    {
+        if (!npcs.TryGetValue(id, out var npc)) npcs[id] = npc = new Npc { Id = id };
+        var kept = new HashSet<XElement>();
+        foreach (var kind in new[] { "select", "script", "job" })
+            foreach (var e in FeatureElements.Collect(packs, n, kind, "id")) kept.Add(e);
+        List<Script> alt = new();
+        foreach (var s in n.Elements())
+        {
+            bool mono = s.Name.LocalName == "monologue";
+            if (mono ? available != null && !available(s) : s.Name.LocalName is "select" or "script" or "job" && !kept.Contains(s)) continue;
+            var sc = new Script { Kind = s.Name.LocalName, Id = Int(s, "id"), RandomPick = Int(s, "randomPick") != 0 };
+            if (mono)
+            {
+                // FUN_140859320: QueryIntAttribute only when the attribute is there
+                if (int.TryParse((string)s.Attribute("popupProp"), out int prop)) sc.PopupProp = prop;
+                if (int.TryParse((string)s.Attribute("popupState"), out int state)) sc.PopupState = state;
+                alt.Add(sc);
+            }
+            foreach (var c in s.Elements("content")) sc.Contents.Add(Content.Parse(c));
+            npc.Scripts.Add(sc);
+        }
+        // s_npcAlt.SetAt per <npc>, when it has any (talkscript.cpp:714): a later file's npc replaces the list
+        if (alt.Count > 0) monologues[id] = alt;
     }
 
     static int Int(XElement e, string a) => int.TryParse((string)e.Attribute(a), out int v) ? v : 0;
