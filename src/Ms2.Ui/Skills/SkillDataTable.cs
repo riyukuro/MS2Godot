@@ -145,6 +145,9 @@ public sealed class SkillArrow
     /// <summary>"explosion" (:105, row +0x104): non-zero adds the damage's effectHit at the arrow's end (CMagic::FUN_14145f570,
     /// magicdata.cpp:1064).</summary>
     public int Explosion;
+    /// <summary>"effect" (SkillArrow::Load, skillattackdata.cpp:114, m_strEffect; GetArrowEffect): the effect the magic shows
+    /// on its own scene while it flies, from its start (CMagic::FUN_14145e960, magicdata.cpp:914-935).</summary>
+    public string Effect = "";
     /// <summary>"effectRemain" and "effectDestroy" (:115-116, row +0x148 and +0x150): the effect at the arrow's end, effectDestroy
     /// when its ray stopped it (magicdata.cpp:1071-1077).</summary>
     public string EffectRemain = "", EffectDestroy = "";
@@ -169,6 +172,7 @@ public sealed class SkillArrow
         Collision = MagicPathTable.Point3((string)a.Attribute("collision"));
         CollisionAdd = MagicPathTable.Point3((string)a.Attribute("collisionAdd"));
         Explosion = Xml.Int(a, "explosion");
+        Effect = (string)a.Attribute("effect") ?? "";
         EffectRemain = (string)a.Attribute("effectRemain") ?? "";
         EffectDestroy = (string)a.Attribute("effectDestroy") ?? "";
         EffectInvoke = (string)a.Attribute("effectInvoke") ?? "";

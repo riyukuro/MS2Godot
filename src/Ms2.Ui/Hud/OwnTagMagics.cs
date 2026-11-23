@@ -31,6 +31,15 @@ public delegate bool MagicRayBlocked(Vector3 from, Vector3 dir, float length);
 /// </summary>
 public readonly record struct MagicEndEffect(string File, bool Along, Vector3 At, Vector3 AxisX, Vector3 AxisY, Vector3 AxisZ);
 
+/// <summary>
+/// The effect a magic keeps on its own scene (CMagic m_nEffectId: the arrow's "effect", FUN_14145e960 @0x14145e960,
+/// magicdata.cpp:914-935, the request's node m_spScene): <paramref name="Key"/> names the magic while it lives;
+/// <paramref name="At"/> is the scene's translation (SetPosition, magicdata.cpp:2194-2199: the current point) and the axes its
+/// rotation columns (UpdateLookAtRotation), client space. The effect goes with the magic (FUN_141460640 :1367-1376 at the
+/// destroy state, the dtor :400).
+/// </summary>
+public readonly record struct MagicSceneEffect(int Key, string File, Vector3 At, Vector3 AxisX, Vector3 AxisY, Vector3 AxisZ);
+
 public delegate bool MagicRayCast(Vector3 from, Vector3 dir, float length, out Vector3 hit);
 
 /// <summary>
@@ -71,6 +80,10 @@ public sealed class OwnTagMagics
 {
     internal sealed class Magic
     {
+        // names the magic for its scene effect (MagicSceneEffect.Key)
+        public readonly int Key = System.Threading.Interlocked.Increment(ref nextKey);
+        // FUN_14145e960 started the arrow's effect (m_nEffectId)
+        public bool SceneEffect;
         public TagRecord Tag;
         public SkillAttackData Attack;
         public int Start, Delay, Spawn, Life;
@@ -113,6 +126,7 @@ public sealed class OwnTagMagics
     }
 
     readonly List<Magic> live = new();
+    static int nextKey;
     readonly List<HitCandidate> queried = new();
     readonly List<int> detected = new(), kept = new(), others = new();
     /// <summary>The hit effect throttle's state of the objects (FUN_14146c990), the field's one when the caller shares it
@@ -121,6 +135,18 @@ public sealed class OwnTagMagics
 
     /// <summary>The magics that may still fill or register.</summary>
     public int Count => live.Count;
+
+    /// <summary>Adds the scene effect of each magic that shows one now (<see cref="MagicSceneEffect"/>) to
+    /// <paramref name="into"/>. Allocates nothing past the list's growth.
+    /// STILL-OPEN: the client keeps the effect through the destroy state (state 3 for destroyTime, FUN_141460640 at state 4);
+    /// here the magic, and so its effect, goes at state 3. Only arrow records start it (the client's state 0 runs for every
+    /// magic, but here only arrow records keep a tick state), and the path segment effects (m_slots, magicdata.cpp:1287-1305)
+    /// are not ported.</summary>
+    public void SceneEffects(List<MagicSceneEffect> into)
+    {
+        foreach (var m in live)
+            if (m.SceneEffect) into.Add(new MagicSceneEffect(m.Key, m.Attack.Arrow.Effect, m.Current, m.SceneX, m.SceneY, m.SceneZ));
+    }
 
     /// <summary>The flight of the magic at <paramref name="index"/> (for the checks): its current and last points, state and target.</summary>
     internal (Vector3 Current, Vector3 Last, int State, Vector3 Target) Flight(int index) =>
@@ -611,7 +637,10 @@ public sealed class OwnTagMagics
         if ((uint)m.LastTick > (uint)nowMs) return false;
         if (m.State == 0)
         {
-            // FUN_14145e960: the piercing interval counts from here (m_n268)
+            // FUN_14145e960: the arrow's effect on the magic scene (magicdata.cpp:917-934), shown when the effect file ignores
+            // the optimizer (HasIgnoreOptimizeParam) or the owner is not hidden by it (COptimizer::FUN_14161ce60 0, as for
+            // every owner here); the piercing interval counts from here (m_n268)
+            m.SceneEffect = m.Attack.Arrow.Effect.Length != 0;
             m.State = 1;
             m.StateTick = begin;
             m.LastTick = begin;

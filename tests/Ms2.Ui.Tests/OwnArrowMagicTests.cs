@@ -699,4 +699,69 @@ public class OwnArrowMagicTests
         Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(64));
         Assert.That(m.Count, Is.EqualTo(1));
     }
+    [Test]
+    public void TheArrowShowsItsEffectOnItsSceneFromItsStartToItsEnd()
+    {
+        // SkillArrow::Load "effect" (skillattackdata.cpp:114); CMagic::FUN_14145e960 (magicdata.cpp:914-935) keeps it on the
+        // magic scene from state 0 (start + delay), the scene at the current point (SetPosition :2194-2199); it goes with the magic
+        var r = Record(" effect=\"CH/Ball.xml\"");
+        Assert.That(SkillAttackFire.AttackAt(r, 0).Arrow.Effect, Is.EqualTo("CH/Ball.xml"));
+        var m = Add(r, Paths("vel=\"1000\" distance=\"300\" delayTime=\"0.1\""));
+        var objects = new[] { Me };
+        var fx = new List<MagicSceneEffect>();
+        m.Tick(T + 50, 0, Owner, objects, r, null, new List<SkillHitRequest>(), () => 0, null);
+        m.SceneEffects(fx);
+        Assert.That(fx, Is.Empty, "before the delay");
+        m.Tick(T + 100, 0, Owner, objects, r, null, new List<SkillHitRequest>(), () => 0, null);
+        m.Tick(T + 150, 0, Owner, objects, r, null, new List<SkillHitRequest>(), () => 0, null);
+        m.SceneEffects(fx);
+        Assert.That(fx.Count, Is.EqualTo(1));
+        Assert.That((fx[0].File, fx[0].At), Is.EqualTo(("CH/Ball.xml", m.Flight(0).Current)));
+        Assert.That(fx[0].At.Y, Is.LessThan(0f), "flown along the facing (-y)");
+        int key = fx[0].Key;
+        fx.Clear();
+        m.Tick(T + 200, 0, Owner, objects, r, null, new List<SkillHitRequest>(), () => 0, null);
+        m.SceneEffects(fx);
+        Assert.That((fx[0].Key, fx[0].At.Y < -40f), Is.EqualTo((key, true)), "the same magic, further on");
+        for (int t = 250; t <= 1000; t += 50) m.Tick(T + t, 0, Owner, objects, r, null, new List<SkillHitRequest>(), () => 0, null);
+        Assert.That(m.Count, Is.Zero);
+        fx.Clear();
+        m.SceneEffects(fx);
+        Assert.That(fx, Is.Empty, "gone with the magic");
+    }
+
+    [Test]
+    public void AnArrowWithoutAnEffectShowsNone()
+    {
+        var r = Record();
+        var m = Add(r, Paths(Linear));
+        m.Tick(T + 50, 0, Owner, new[] { Me }, r, null, new List<SkillHitRequest>(), () => 0, null);
+        var fx = new List<MagicSceneEffect>();
+        m.SceneEffects(fx);
+        Assert.That((m.Count, fx.Count), Is.EqualTo((1, 0)));
+    }
+
+    [Test]
+    public void TheSceneEffectListAllocatesNothing()
+    {
+        var r = Record(" effect=\"CH/Ball.xml\"");
+        var m = Add(r, Paths("vel=\"1\" distance=\"100000\""));
+        m.Tick(T + 50, 0, Owner, new[] { Me }, r, null, new List<SkillHitRequest>(), () => 0, null);
+        var fx = new List<MagicSceneEffect>(4);
+        m.SceneEffects(fx);
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 1000; i++) { fx.Clear(); m.SceneEffects(fx); }
+        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.Zero);
+        Assert.That(fx.Count, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void TheDataNamesTheStarsBall()
+    {
+        // skill 900021 (the assassin's star attack) attack 0: arrow effect="CH/Weapon/Star/Eff_Star_Attack01_Ball_01.xml"
+        string data = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(data)) Assert.Ignore("MS2_DATA not set (skill data)");
+        var s = new GameTables(Ms2.Formats.Pack.PackSet.Shared(data), "en").Skills.GetSkillData(900021);
+        Assert.That(s?.GetLevelData(1)?.Motions[0].Attacks[0].Arrow.Effect, Is.EqualTo("CH/Weapon/Star/Eff_Star_Attack01_Ball_01.xml"));
+    }
 }

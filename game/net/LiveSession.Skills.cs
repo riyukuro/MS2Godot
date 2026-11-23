@@ -90,6 +90,9 @@ public partial class LiveSession
     public void PlayFieldEffect(string effect, Vector3 at, float yawRadians, int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
         => remote?.PlayEffect(effect, at, yawRadians, casterKind);
 
+    /// <summary>The own magics' scene effects (an arrow's "effect" while it flies) after their tick, in the field.</summary>
+    public void SyncOwnMagicEffects(Ms2.Ui.Hud.OwnTagMagics own) => remote?.SyncOwnSceneEffects(own);
+
     /// <summary>The same turned by a full rotation (godot space), as an own magic's end effect.</summary>
     public void PlayFieldEffect(string effect, Vector3 at, Basis rotation, int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
         => remote?.PlayEffect(effect, at, rotation, casterKind);

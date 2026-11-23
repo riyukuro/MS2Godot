@@ -3949,6 +3949,7 @@ public partial class HudScene : Node, IUiStageHost
         TickOwnAttacks();                                     // StateSkill::TextKeyEvent: the own cast's attack points
         TickOwnSync();                                        // StateSkill::SendChargeState: the mode 2 sync
         TickOwnTagMagics();                                   // CMagic::FUN_14145de80: the own magics' tag areas
+        Net.LiveSession.Instance?.SyncOwnMagicEffects(ownTagMagics);   // CMagic m_nEffectId: their scene effects
         TickCooltimes();                                      // CSkillSystem::Update: the cooldowns
         TickCompact();                                        // CSkillSystem::Update's compact lists, State::vfunc_8's pick
         ChatLog.Process();                                    // UIMessengerBrowser::vfunc_15

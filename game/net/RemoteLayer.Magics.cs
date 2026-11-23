@@ -28,6 +28,66 @@ public sealed partial class RemoteLayer
     // after FillMagicObjects: IsOutsideSightRange's range and local player (worldservice_1.cpp:7956)
     FieldSight MagicSight() => new(SightRange?.Invoke(), magicPlayerPos);
     public int MagicsMade;
+    readonly MagicSceneEffects remoteSceneEffects = new(), ownSceneEffects = new();
+
+    /// <summary>
+    /// The magics' scene effects in the field (CMagic m_nEffectId, <see cref="MagicSceneEffect"/>): a holder node per magic
+    /// posed at its scene each frame, the effect kept on it by the effect service (FUN_1411a49c0 with the magic scene as the
+    /// request's node: <see cref="World.RegionSkills.SpawnOn"/>), stopped with the node once the magic is gone (FUN_1411a6060).
+    /// A spawn that failed is not tried again. 0 B per frame past the lists' growth.
+    /// STILL-OPEN: FUN_1411a68f0(m_nEffectId, bHidden) after the spawn (the scene's app-culled flag; CEffect::vfunc_10).
+    /// </summary>
+    sealed class MagicSceneEffects
+    {
+        public readonly List<MagicSceneEffect> Now = new();
+        readonly List<(int Key, Node3D Node, int Handle)> shown = new();
+        public int Count => shown.Count;
+
+        public void Sync(World.RegionSkills fx)
+        {
+            for (int i = shown.Count - 1; i >= 0; i--)
+            {
+                if (IndexOf(Now, shown[i].Key) >= 0) continue;
+                var (_, node, h) = shown[i];
+                if (h != 0 && fx != null) fx.FadeOut(h, 0);
+                if (node != null && GodotObject.IsInstanceValid(node)) node.QueueFree();
+                shown.RemoveAt(i);
+            }
+            foreach (var e in Now)
+            {
+                var pose = new Transform3D(ClientBasis(e.AxisX, e.AxisY, e.AxisZ), new Vector3(e.At.X, e.At.Z, -e.At.Y));
+                int k = -1;
+                for (int i = 0; i < shown.Count; i++) if (shown[i].Key == e.Key) { k = i; break; }
+                if (k >= 0)
+                {
+                    var n = shown[k].Node;
+                    if (n != null && GodotObject.IsInstanceValid(n)) n.GlobalTransform = pose;
+                    continue;
+                }
+                if (fx == null) continue;
+                var node = new Node3D();
+                fx.AddChild(node);
+                node.GlobalTransform = pose;
+                int h = fx.SpawnOn(e.File, node);
+                if (h == 0) { node.QueueFree(); node = null; }
+                shown.Add((e.Key, node, h));
+            }
+            Now.Clear();
+        }
+
+        static int IndexOf(List<MagicSceneEffect> list, int key)
+        {
+            for (int i = 0; i < list.Count; i++) if (list[i].Key == key) return i;
+            return -1;
+        }
+    }
+
+    /// <summary>The own player's magics' scene effects this frame (<see cref="MagicSceneEffects"/>), after their tick.</summary>
+    public void SyncOwnSceneEffects(OwnTagMagics own)
+    {
+        own.SceneEffects(ownSceneEffects.Now);
+        if (ownSceneEffects.Now.Count != 0 || ownSceneEffects.Count != 0) ownSceneEffects.Sync(RegionFx);
+    }
     HitEffectThrottle hitEffects = new();
     readonly List<DamageHitEffect> damageHitEffects = new();
     DamageHitFind findHitObject;
@@ -77,10 +137,14 @@ public sealed partial class RemoteLayer
 
     /// <summary>One frame of every other player's magics (CMagic::FUN_14145de80 for an owner other than MyPC: no send, no
     /// registration, no hit sound), posed from the owner now; the end effects play in the field as another's
-    /// (CEffectService::InsertEffect).</summary>
+    /// (CEffectService::InsertEffect), then the magics' scene effects (<see cref="MagicSceneEffects"/>).</summary>
     void TickRemoteMagics(uint now)
     {
-        if (!remoteMagics.Any) return;
+        if (!remoteMagics.Any)
+        {
+            if (remoteSceneEffects.Count != 0) remoteSceneEffects.Sync(RegionFx);   // the last ones went
+            return;
+        }
         FillMagicObjects();
         remoteMagicRayCast ??= RemoteMagicRayCast;
         var sight = MagicSight();
@@ -97,6 +161,8 @@ public sealed partial class RemoteLayer
                     Ms2.Audio.SoundMusicEffectState.CasterOtherPc);   // PCBase::vfunc_58 (pcbase.cpp:1092)
         }
         magicEndEffects.Clear();
+        remoteMagics.SceneEffects(remoteSceneEffects.Now);
+        if (remoteSceneEffects.Now.Count != 0 || remoteSceneEffects.Count != 0) remoteSceneEffects.Sync(RegionFx);
     }
 
     /// <summary>

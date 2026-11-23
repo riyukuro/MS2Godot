@@ -64,6 +64,12 @@ public sealed class RemoteTagMagics
     /// <summary>The models of the owner's skill state record still waiting for a start tick (for the checks).</summary>
     public int Pending(int ownerId) => owners.TryGetValue(ownerId, out var o) && o.State != null ? o.State.Models.Count : 0;
 
+    /// <summary>Every owner's magic scene effects shown now (<see cref="OwnTagMagics.SceneEffects"/>).</summary>
+    public void SceneEffects(List<MagicSceneEffect> into)
+    {
+        foreach (var o in owners.Values) o.Magics.SceneEffects(into);
+    }
+
     /// <summary>The owner's magics (for the checks).</summary>
     internal OwnTagMagics MagicsOf(int ownerId) => owners.TryGetValue(ownerId, out var o) ? o.Magics : null;
 
