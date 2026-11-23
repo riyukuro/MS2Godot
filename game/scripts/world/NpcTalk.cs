@@ -451,15 +451,17 @@ public sealed partial class NpcTalk : Node
             side.SystemNotice += id => GD.Print($"talk: system notice {tables.Common(id)}");
         }
         side.SendNext += _ => subMode = 0;              // SendNpcTalkMode2 (uitalkcinematic.cpp:1675)
-        side.PageShown += () => { if (talking != null) TalkPageShown?.Invoke(talking, subMode); };
+        // UITalkManager::GetTalkNpc (uitalkcinematic.cpp:1778) is FindNpcById each time; ShowPage's voice (:467) and the page's
+        // emoticon (:1559-1563) need that npc and do nothing when it has left
+        side.PageShown += () => { if (TalkNpcNow() is { } npc) TalkPageShown?.Invoke(npc, subMode); };
         side.TalkReset += () =>
         {
             // UITalkManager::ResetTalk (uitalkcinematic.cpp:1507) finds the npc again by id (FindNpcById, :1523) and plays its end
             // sound only if it is still there; a talk that ended because the npc left has no one to play it
-            var npc = ResetTalkNpc(talking, live == null ? null : LiveNpc);
+            var npc = TalkNpcNow();
             if (npc != null) Sound(npc.Row.SoundEnd, npc.Position);
         };
-        side.PlayVoice += v => Sound(v, talking?.Position ?? Vector3.Zero);
+        side.PlayVoice += v => { if (TalkNpcNow() is { } npc) Sound(v, npc.Position); };
         side.PlaySystemSound += key => FieldAudio.Instance?.PlayUi(key);
         side.CloseComplete += () => CallDeferred(nameof(Teardown));
         layer = new CanvasLayer { Layer = 20, Name = "TalkCinematic" };
@@ -505,11 +507,14 @@ public sealed partial class NpcTalk : Node
     }
 
     /// <summary>
-    /// The npc ResetTalk (uitalkcinematic.cpp:1507) plays PlayEndSound on: FindNpcById(m_nNpcId) (:1523), so null when the npc has
+    /// The npc ResetTalk (uitalkcinematic.cpp:1507) plays PlayEndSound on, and GetTalkNpc (:1778) returns: FindNpcById(m_nNpcId) (:1523), so null when the npc has
     /// left the field. Offline (<paramref name="find"/> null) the sandbox's npcs never leave and the talked-to npc is used.
     /// </summary>
     public static FieldNpcs.Placed ResetTalkNpc(FieldNpcs.Placed talking, Func<int, FieldNpcs.Placed> find)
         => talking == null ? null : find == null ? talking : find(talking.ObjectId);
+
+    /// <summary>UITalkManager::GetTalkNpc (uitalkcinematic.cpp:1778): the talk's npc found again by its id, null when it has left.</summary>
+    FieldNpcs.Placed TalkNpcNow() => ResetTalkNpc(talking, live == null ? null : LiveNpc);
 
     FieldNpcs.Placed LiveNpc(int objectId) => live.TalkNpcs.FirstOrDefault(x => x.ObjectId == objectId);
 
