@@ -224,17 +224,24 @@ public sealed class ItemData
     }
 
     /// <summary>
-    /// GMS2 item files write subtype="0" on the weapon equips, and no other field of the GMS2 item file, itemdefine or itemdata
-    /// names the hand kind (blackMarketCategory carries only the same id group, "134_equip"). The weaponaction.xml rows key on
-    /// 30..34, 40, 41, 50..56 and 80..83, the KMS subtype of the 130xxxxx..134xxxxx, 140/141xxxxx, 150..156xxxxx and 180..183xxxxx items (id / 100000 % 100).
-    /// With 0 the held weapon's kind is 0 and PC::GetNormalAttackSkillId (pc.cpp:2877) takes the bare-hand row, skill 1.
-    /// The id rule is INFERRED: a GMS2 client exe dump exists but is not decompiled, so its own reader of the kind is unread.
-    /// STILL-OPEN. The non-weapon subtype users are left as the file says.
+    /// GMS2 item files do not carry the KMS equip subtype: a type 1 file writes subtype="0" or "16" (and three "13"), whatever its
+    /// kind (15000041, a 150 weapon, and 11400413, a 114 top, both say 16; 11150032, a 111 skin, says 16 where KMS says 0).
+    /// No other field of the GMS2 item file, itemdefine or itemdata names the kind (blackMarketCategory carries only the id group).
+    /// The GMS2 tables key on the KMS numbers: weaponaction.xml on 30..34, 40, 41, 50..56 and 80..83, and enchantlimittable.xml,
+    /// slotname.xml and the item level factors on 12..22.
+    /// INFERRED from KMS2_DEV itemdata: all 5006 type 1 items of the groups 130..134, 140, 141, 150..156
+    /// and 180..183 and all 13118 of 112..122 have subtype == id / 100000 % 100, 0 mismatches; 101..105, 110 and 111 have 0.
+    /// So in those groups the kind is the id group whatever the file says, and in every other type 1 group the file's 16 is read as 0.
+    /// With a wrong kind the held weapon reads the bare-hand row (PC::GetNormalAttackSkillId, pc.cpp:2877, skill 1), and the
+    /// armor reads the gloves item level factor, no enchant row and an empty slot name.
+    /// A GMS2 client exe dump exists but is not decompiled, so its own reader of the kind is unread. STILL-OPEN.
     /// </summary>
     public void FillEquipSubtype()
     {
+        if (Type != 1) return;
         int group = Id / 100000;
-        if (Type == 1 && Subtype == 0 && group is (>= 130 and <= 134) or 140 or 141 or (>= 150 and <= 156) or (>= 180 and <= 183)) Subtype = group % 100;
+        if (group is (>= 130 and <= 134) or 140 or 141 or (>= 150 and <= 156) or (>= 180 and <= 183) or (>= 112 and <= 122)) Subtype = group % 100;
+        else if (Subtype == 16) Subtype = 0;
     }
 
     public int EquipSubtype => Type == 1 ? Subtype : 0;        // GetEquipSubtype @0x14053c620 (commonfiles/itemdata.cpp:509)
