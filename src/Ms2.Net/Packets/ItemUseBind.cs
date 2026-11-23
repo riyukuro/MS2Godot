@@ -12,12 +12,15 @@ namespace Ms2.Net.Packets;
 public sealed class BindItem {
     public long Uid; public bool Found, Worn; public EquipItem Item;
 
-    public static BindItem Read(ByteReader r, Func<long, EquipItem> findBag, Func<long, EquipItem> findWorn) {
+    public static BindItem Read(ByteReader r, Func<long, EquipItem> findBag, Func<long, EquipItem> findWorn) => Read(r, findBag, findWorn, ProtocolProfile.Kms2525);
+
+    /// <summary>The same read for <paramref name="profile"/>: the found item's body in the GMS2 layout on GMS2.</summary>
+    public static BindItem Read(ByteReader r, Func<long, EquipItem> findBag, Func<long, EquipItem> findWorn, ProtocolProfile profile) {
         var b = new BindItem { Uid = r.ReadLong() };
         var it = findBag(b.Uid);
         if (it == null) { it = findWorn(b.Uid); b.Worn = it != null; }
         if (it == null) return b;
-        ItemReader.ReadBodyInto(r, it);
+        ItemReader.ReadBodyInto(r, it, profile);
         b.Found = true; b.Item = it;
         return b;
     }

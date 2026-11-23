@@ -1,3 +1,4 @@
+using Ms2.Net.Packets;
 using Ms2.Net.Replay;
 using NUnit.Framework;
 
@@ -27,5 +28,18 @@ static class Gms2Sniffs {
             foreach (var p in f.Packets) if (p.ServerToClient == serverToClient && p.Opcode == opcode) list.Add((Path.GetFileName(path), p.Data));
         }
         return list;
+    }
+
+    /// <summary>Runs <paramref name="body"/> with the item hooks (model slot, body kind, every id read) from the GMS2 item data in MS2_DATA, then restores them; ignores the test when MS2_DATA is not a GMS2 data folder with the per-item files.</summary>
+    public static void WithGms2ItemData(Action body) {
+        string data = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(data)) Assert.Ignore("MS2_DATA not set: item bodies need the data hooks");
+        using var packs = new Ms2.Formats.Pack.PackSet(data);
+        if (!packs.Exists("Xml", "item/1/13/11320388.xml")) Assert.Ignore("MS2_DATA has no per-item GMS2 files");
+        var (s, e, k) = (ItemReader.SlotOf, ItemReader.ExtraOf, ItemReader.Known);
+        try {
+            ItemReader.SlotOf = new Ms2Godot.Net.ItemModelSlots(packs).SlotOf; ItemReader.ExtraOf = new Ms2Godot.Net.ItemKinds(packs).ExtraOf; ItemReader.Known = null;
+            body();
+        } finally { ItemReader.SlotOf = s; ItemReader.ExtraOf = e; ItemReader.Known = k; }
     }
 }

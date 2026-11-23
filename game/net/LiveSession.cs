@@ -1326,7 +1326,7 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.BindItem))
             {
-                var b = BindItem.Read(p.Reader(), Items.Get, Me.EquipByUid);   // CSceneStateGame::OnBindItem (scenestategame.cpp:8542)
+                var b = BindItem.Read(p.Reader(), Items.Get, Me.EquipByUid, game.Profile);   // CSceneStateGame::OnBindItem (scenestategame.cpp:8542)
                 if (b.Found && !b.Worn) Items.Apply(new ItemMessage.Update(b.Uid, b.Item));   // the bag's item read again: the inventory redraws
                 GD.Print($"live: bind item uid {b.Uid}{(b.Found ? (b.Worn ? " (worn)" : " (bag)") : " (unknown)")}");
             }
