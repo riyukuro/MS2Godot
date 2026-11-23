@@ -524,6 +524,7 @@ public partial class Player : CharacterBody3D
         prevState = old;
         State = s;
         stateTime = 0;
+        if (old != s) MoveStateEntered?.Invoke(StateId(s));
         // StateWalk::vfunc_4 0x17 (statewalk.cpp:116-117), StateLand::vfunc_4 0x87 (stateland.cpp:78-79) with the RunX flag
         walkRunX = s == MoveState.Walk && RunX;
         landRunX = s == MoveState.Land && RunX;

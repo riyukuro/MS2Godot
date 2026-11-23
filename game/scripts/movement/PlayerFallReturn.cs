@@ -104,6 +104,9 @@ public partial class Player
     public Func<int> ServerTick;
     /// <summary>MyPC::SendStateChange (mypc.cpp:3655-3666): mode, argument and the feet position in field units (live only).</summary>
     public event Action<byte, byte, Vector3> StateChangeOut;
+    /// <summary>The body entered another move state: its client state id (<see cref="StateId"/>). CStateManager::ChangeState
+    /// (statemanager.cpp:291) replaces whatever state the server put the player into (<see cref="Ms2.Net.Packets.MyCharacter.LeaveForBodyState"/>).</summary>
+    public event Action<int> MoveStateEntered;
     /// <summary>A state whose vfunc_4 starts with PC::SendRequestCube was entered (<see cref="Ms2.Ui.HeldItem.EnterState"/>).</summary>
     public event Action<Ms2.Ui.HeldItemState> HeldStateEntered;
 

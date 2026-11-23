@@ -1266,6 +1266,7 @@ public partial class LiveSession : Node
         player.StateSyncOut += records => SendSync(records, false);
         player.RideSyncOut += records => SendSync(records, true);   // StateRideeController::vfunc_0 (state.cpp:537-562)
         player.HeldStateEntered += st => HeldItem.EnterState(st, Send);
+        player.MoveStateEntered += id => Me.LeaveForBodyState(id);     // ChangeState: the body's own state replaces the server's
         player.HoldLookup = (id, node) => remote?.FindHoldTarget(selfObject, id, node) ?? default;
         WireRunX(player);
         player.HoldLeft += () => { if (game != null) Send(new RideLeaveRequest()); };   // MyPC::SendRequestRideMode4

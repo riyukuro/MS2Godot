@@ -301,8 +301,9 @@ public sealed class MyCharacter {
     public bool Dead;
     /// <summary>
     /// CStateManager m_nCur (GetCurStateId) of the local player as the inbound packets set it: 0 after FieldAddUser (a new
-    /// MyPC, scenestategame.cpp:11119), then <see cref="EnterState"/>. STILL-OPEN: the state changes the client makes on its
-    /// own (moving, skills, the spawn state) are not modelled, so a state left that way is still the one here.
+    /// MyPC, scenestategame.cpp:11119), then <see cref="EnterState"/>; left for the body's own state by
+    /// <see cref="LeaveFallOnGround"/> and <see cref="LeaveForBodyState"/>. STILL-OPEN: a server state the body has no move
+    /// state for (emotion, react, talk ...) is left only when the body itself changes state, not at the end of its sequence.
     /// </summary>
     public int State { get; private set; }
     /// <summary>The server put the player into <see cref="State"/> (the client's state manager left the one it was in).</summary>
@@ -362,6 +363,20 @@ public sealed class MyCharacter {
     /// </summary>
     public bool LeaveFallOnGround(bool grounded) {
         if (State != 5 || !grounded) return false;
+        State = 0;
+        return true;
+    }
+
+    /// <summary>
+    /// CStateManager::ChangeState (statemanager.cpp:291) replaces the current state whoever asks, so a state the server put
+    /// the player into (other than the spawn, idle and walk ids 0, 1, 2) is left once the body enters a move state of another
+    /// id (<paramref name="bodyStateId"/>): the client's own exits to StateIdle (StateFallDamage::EndOfSequence
+    /// statefalldamage.cpp:108, StateRevival::EndOfSequence statedead.cpp:337, StateHold's let go), StateFall's landing
+    /// (statefall.cpp:220) and a move the input starts. From then the body's move state is the state (0 here). Returns whether
+    /// the state was left.
+    /// </summary>
+    public bool LeaveForBodyState(int bodyStateId) {
+        if (State is 0 or 1 or 2 || State == bodyStateId) return false;
         State = 0;
         return true;
     }
