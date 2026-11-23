@@ -471,4 +471,61 @@ public class GuideTests
         w.Slotted = false;
         Assert.That(bare.Check(g), Is.Not.EqualTo(met), "an empty quick bar does not meet it");
     }
+
+    sealed class FieldWorld : GuideWorld
+    {
+        readonly Pane pane = new();
+        public uint Time = 1000;
+        public bool Entered, Bound;
+        public readonly List<Ms2.Net.Wire.IOutPacket> Sent = new();
+        public override uint Now => Time;
+        public override IGuideEventPane Pane => pane;
+        public override int GuideMode => 1;
+        public override int SceneId => Entered ? 0x620000c : 0;
+        public override bool HasPlayer => Bound;
+        public override int FieldId => 52000065;
+        public override void Send(Ms2.Net.Wire.IOutPacket packet) => Sent.Add(packet);
+    }
+
+    /// <summary>The guide ticks from the own pc's update (MyPC::vfunc_53, mypc.cpp:2976). The tutorial field's server
+    /// trigger event (guide_tutorial_100's event 251 shape: the field and a cleared event) opens only once the own pc is in
+    /// the entered field. The recordings send it after ResponseFieldEnter; an earlier send reaches a field whose trigger
+    /// has not made its guide widget yet.</summary>
+    [Test]
+    public void ServerTriggerEventWaitsForTheOwnPcInTheEnteredField()
+    {
+        var w = new FieldWorld();
+        var g = new GuideManager(w);
+        var table = new GuideTable();
+        table.Files.Add(new GuideTableFile("table/test.xml", XElement.Parse("""
+            <ms2>
+              <event id="250" saveId="110" saveStep="150"><open><condition type="false" /></open></event>
+              <event id="251" isForce="1" isNoSave="1">
+                <open>
+                  <condition type="fieldId" value="52000065" />
+                  <condition type="anyOne"><condition type="guideClear" id="250" /></condition>
+                </open>
+                <close />
+                <openAction><action type="ServerTriggerEvent" eventID="251" /></openAction>
+              </event>
+            </ms2>
+            """).Elements("event").ToList()));
+        g.Load(table);
+        Assert.That(g.LoadErrors, Is.Empty);
+        g.SetInitialState();
+        g.QueueOccurrence(GuideOccurrence.FieldId, 52000065);
+
+        // the field loads: no own pc, then a bound pc before the field entry is answered
+        for (int i = 0; i < 4; i++) { w.Time += 300; g.OwnPcTick(); }
+        w.Bound = true;
+        for (int i = 0; i < 4; i++) { w.Time += 300; g.OwnPcTick(); }
+        Assert.That(w.Sent, Is.Empty);
+
+        // entered with the own pc: one send of the event id
+        w.Entered = true;
+        for (int i = 0; i < 4; i++) { w.Time += 300; g.OwnPcTick(); }
+        Assert.That(w.Sent, Has.Count.EqualTo(1));
+        Assert.That(w.Sent[0], Is.TypeOf<GuideServerTriggerEvent>());
+        Assert.That(((GuideServerTriggerEvent)w.Sent[0]).EventId, Is.EqualTo(251));
+    }
 }

@@ -1224,7 +1224,7 @@ public partial class LiveSession : Node
         if (game == null) { PumpLogin(); return; }
         while (game != null && game.Incoming.TryDequeue(out var p)) { Handle(p); SyncDeadFlag(); }
         if (game == null) return;   // a GameToGame let the connection go: the next server's comes with the migration
-        guide?.Tick();
+        guide?.OwnPcTick();   // MyPC::vfunc_53 (mypc.cpp:2976): only once the own pc is in the entered field
         LogGuideStatus();
         TickTaxi(delta);
         Me.ExpireRevival((uint)game.Session.ServerTick);   // PC::FUN_141661ac0 (pc.cpp:2043), in PC's per-frame update

@@ -193,6 +193,17 @@ public sealed class GuideManager
         }
     }
 
+    /// <summary>
+    /// The guide's one Tick caller: MyPC::vfunc_53 (@0x141530950, mypc.cpp:2950-2976), the own pc's per-frame update, calls
+    /// Tick after the fishing update. So the guide does not tick while no own pc is in the game scene (0x620000c), e.g.
+    /// while a field loads: an event opened then would answer the server before the field is entered.
+    /// </summary>
+    public void OwnPcTick()
+    {
+        if (World.SceneId != 0x620000c || !World.HasPlayer) return;
+        Tick();
+    }
+
     /// <summary>StopAndUpdate (@0x14138b140).</summary>
     public void StopAndUpdate()
     {
