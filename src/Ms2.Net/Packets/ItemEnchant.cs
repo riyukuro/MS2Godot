@@ -49,10 +49,11 @@ public abstract record ItemEnchantMessage {
     }
 
     /// <summary>CEnchantOption::ReadOptions (unit_14058d5c0_enchantoption.cpp:23): i32 count, each u16 key and the i32 BaseOption value.</summary>
-    public static Dictionary<int, int> ReadOptions(ByteReader r) {
+    public static Dictionary<int, int> ReadOptions(ByteReader r, ProtocolProfile profile = null) {
         int n = r.ReadInt();
         var d = new Dictionary<int, int>();
-        for (int i = 0; i < n; i++) { int k = (ushort) r.ReadShort(); d[k] = r.ReadInt(); }
+        // GMS2 (recorded, 32 of 32 mode-5 packets): each option carries a trailing f32 after the i32 value.
+        for (int i = 0; i < n; i++) { int k = (ushort) r.ReadShort(); d[k] = r.ReadInt(); if (profile != null && profile.IsGms2) r.ReadFloat(); }
         return d;
     }
 
@@ -66,21 +67,24 @@ public abstract record ItemEnchantMessage {
     }
 
     /// <summary>UIItemEnchantDialog::UpdateItemFromPacket: the body re-read into the item found by uid; null when unknown.</summary>
-    static EquipItem ReadItemBody(ByteReader r, long uid, Func<long, EquipItem> find) {
+    static EquipItem ReadItemBody(ByteReader r, long uid, Func<long, EquipItem> find, ProtocolProfile profile) {
         var it = find(uid);
         if (it == null) return null;
         var copy = new EquipItem { Id = it.Id, Uid = it.Uid, Rarity = it.Rarity, Slot = it.Slot, InventorySlot = it.InventorySlot };
-        ItemReader.ReadBodyInto(r, copy);
+        ItemReader.ReadBodyInto(r, copy, profile);
         return copy;
     }
 
     /// <summary>Reads one message. <paramref name="find"/> gives the inventory item of an uid (modes 10, 11 and 15 read its body).</summary>
-    public static ItemEnchantMessage Read(ByteReader r, Func<long, EquipItem> find) {
+    public static ItemEnchantMessage Read(ByteReader r, Func<long, EquipItem> find) => Read(r, find, ProtocolProfile.Kms2525);
+
+    /// <summary>The same read for a protocol profile (GMS2: the item body layout and the f32 per enchant option differ).</summary>
+    public static ItemEnchantMessage Read(ByteReader r, Func<long, EquipItem> find, ProtocolProfile profile) {
         int mode = r.ReadByte();
         switch (mode) {
             case 5: {
                 short exp = r.ReadShort(); long uid = r.ReadLong();
-                var ing = ReadIngredients(r); ushort n2b0 = (ushort) r.ReadShort(); var opt = ReadOptions(r);
+                var ing = ReadIngredients(r); ushort n2b0 = (ushort) r.ReadShort(); var opt = ReadOptions(r, profile);
                 EnchantRates rates = default; long p0 = 0, p1 = 0; byte fs = 0; int rid = 0; short rank = 0; int cnt = 0;
                 if (exp == 1) {
                     rates = ReadRates(r); p0 = r.ReadLong(); p1 = r.ReadLong(); fs = r.ReadByte();
@@ -96,16 +100,16 @@ public abstract record ItemEnchantMessage {
             case 8: { int n2bc = r.ReadInt(); return new FailStackList(n2bc, ReadUids(r)); }
             case 9: return new Refunded();
             case 10: {
-                long uid = r.ReadLong(); var it = ReadItemBody(r, uid, find);
-                return new Success(uid, it, it == null ? new Dictionary<int, int>() : ReadOptions(r));
+                long uid = r.ReadLong(); var it = ReadItemBody(r, uid, find, profile);
+                return new Success(uid, it, it == null ? new Dictionary<int, int>() : ReadOptions(r, profile));
             }
             case 11: {
-                long uid = r.ReadLong(); var it = ReadItemBody(r, uid, find);
+                long uid = r.ReadLong(); var it = ReadItemBody(r, uid, find, profile);
                 if (it == null) return new Failure(uid, null, 0, 0, 0, 0);
                 return new Failure(uid, it, r.ReadInt(), r.ReadInt(), r.ReadLong(), r.ReadInt());
             }
             case 12: return new Error(r.ReadShort());
-            case 15: { long uid = r.ReadLong(); return new ItemUpdate(uid, ReadItemBody(r, uid, find)); }
+            case 15: { long uid = r.ReadLong(); return new ItemUpdate(uid, ReadItemBody(r, uid, find, profile)); }
             case 16: return new IngredientCounts();
             default: return new Other(mode);
         }

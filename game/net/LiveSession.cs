@@ -1499,7 +1499,7 @@ public partial class LiveSession : Node
                 {
                     EnchantBook.Send = SendEnchant;
                     EnchantBook.StoreItem = i => Items.Apply(new ItemMessage.Update(i.Uid, i));
-                    var m = ItemEnchantMessage.Read(p.Reader(), Items.Get);   // CSceneStateGame::OnItemEnchant (scenestategame.cpp:6101)
+                    var m = ItemEnchantMessage.Read(p.Reader(), Items.Get, game.Profile);   // CSceneStateGame::OnItemEnchant (scenestategame.cpp:6101)
                     EnchantBook.Apply(m);
                     GD.Print($"live: item enchant {m.GetType().Name}");
                 }
