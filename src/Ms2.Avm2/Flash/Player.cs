@@ -1729,7 +1729,17 @@ namespace Ms2.Avm2.Flash
             Listen("doubleClick", "rightDoubleClick");
         }
 
-        public void Wheel(int delta) => MouseEv(MouseTarget(MouseX, MouseY) ?? (AsInteractiveObject)Stage, "mouseWheel", null, delta);
+        /// <summary>
+        /// A wheel step over the mouse position (MovieImpl::ProcessMouse, sfr_gfx_01i.cpp:3667): the AS3 mouseWheel event goes to
+        /// the top-most entity, then its OnMouseWheelEvent: a text field scrolls its text (TextField::OnMouseWheelEvent,
+        /// sfr_gfx_03e.cpp:915), anything else does not (InteractiveObject, sfr_as3_18.cpp:8911).
+        /// </summary>
+        public void Wheel(int delta)
+        {
+            var t = MouseTarget(MouseX, MouseY) ?? (AsInteractiveObject)Stage;
+            MouseEv(t, "mouseWheel", null, delta);
+            if (t is AsTextField tf) tf.OnMouseWheel(delta);
+        }
 
         /// <summary>A key from the host: keyDown/keyUp to the focus (or the stage); Tab moves focus; typed characters go to an input field.</summary>
         public void Key(uint keyCode, uint charCode, bool down, bool shift = false, bool ctrl = false)

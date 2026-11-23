@@ -669,7 +669,38 @@ public class AsTextField : AsInteractiveObject
     [As] public int selectionBeginIndex => SelBegin;
     [As] public int selectionEndIndex => SelEnd;
     [As] public int caretIndex => CaretAtBegin ? SelBegin : SelEnd;
-    [As] public int scrollV { get; set; } = 1;
+    int scrollTop = 1;
+    /// <summary>
+    /// The first shown line, 1-based. TextField::scrollVSet (sfr_as3_13.cpp:1446): below 1 is 1, and DocView::SetVScrollOffset
+    /// (sfr_render_03b.cpp:572) keeps it within the last scroll position (maxScrollV) and, only when the line really changes,
+    /// tells the listener (OnScroll, sfr_gfx_03e.cpp:895), which sends the field's scroll event (AvmTextField::OnScroll,
+    /// sfr_as3_18.cpp:5131). A view that shrank below the line keeps the last position (DocView::ForceReformat, :1020).
+    /// </summary>
+    [As] public int scrollV
+    {
+        get { int max = maxScrollV; if (scrollTop > max) scrollTop = max; return scrollTop; }
+        set
+        {
+            int v = Math.Clamp(Math.Max(value, 1), 1, maxScrollV);
+            if (v == scrollV) return;
+            scrollTop = v;
+            MarkChanged();      // the view moves the text (FieldText.Sync)
+            Send("flash.events.Event", "scroll");
+        }
+    }
+
+    /// <summary>The 0-based first shown line the view draws from (scrollV - 1). 0 for a field that was never scrolled, which is the
+    /// common case and costs no layout.</summary>
+    public int FirstShownLine => scrollTop <= 1 ? 0 : scrollV - 1;
+
+    /// <summary>TextField::OnMouseWheelEvent (@0x1425ba680, sfr_gfx_03e.cpp:915): when mouseWheelEnabled the wheel moves the first
+    /// shown line up by the delta; true = the wheel was taken.</summary>
+    public bool OnMouseWheel(int delta)
+    {
+        if (!mouseWheelEnabled) return false;
+        scrollV = scrollV - delta;
+        return true;
+    }
     [As] public int scrollH { get; set; }
     [As] public int maxScrollV { get { int vis = Math.Max(1, (int)((Box.H - 4) / TextMeasure.LineHeight(FontName, Size, Leading))); return Math.Max(1, numLines - vis + 1); } }
     [As] public int maxScrollH => 0;
