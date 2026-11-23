@@ -1345,9 +1345,9 @@ public partial class FieldNode : Node2D
 /// A text field of the movie's layout, drawn by the layout's text node (<see cref="TextNode"/>: Scaleform's line layout,
 /// glyph-cache raster, html runs with their colours, sizes and underlines, drop shadows and glows) from the field's
 /// current state: its box and text format as the ActionScript left them, its text or html text, and its filters (the ones
-/// ActionScript set, else its timeline placement's). The node is built again when the box, the format or the screen
-/// scale changes; the text is set again when the field changes. The first line starts where DocView::Format's vertical
-/// alignment puts it (<see cref="AsTextField.FirstLineTop"/>).
+/// ActionScript set, else its timeline placement's). The node is built again when the format or the screen scale
+/// changes, placed and sized again when the box changes (it keeps its text), and the text is set again when the text changes.
+/// The first line starts where DocView::Format's vertical alignment puts it (<see cref="AsTextField.FirstLineTop"/>).
 /// </summary>
 public partial class FieldText : Node2D
 {
@@ -1355,12 +1355,19 @@ public partial class FieldText : Node2D
     readonly UiScope scope;
     TextNode node;
 
+    /// <summary>What the text node is built from, less its box.</summary>
+    readonly record struct Look(object Font, object Size, object Color, object Align, object Leading, bool WordWrap, bool Multiline,
+        int Sx, int Sy, string Filters, string AntiAlias, string AutoSize, string Type, string AutoSizeMode);
+
+    Look built;
+    bool hasBuilt;
+    RectD builtBox;
+
     /// <summary>The text node the field is drawn with, null until it is built.</summary>
     public TextNode Node => node;
 
     /// <summary>The text node was built (a field made in a sync pass builds once it is in the tree).</summary>
-    public bool Built => built != null;
-    string built;
+    public bool Built => hasBuilt;
     int version = -1;
 
     public FieldText(AsTextField tf, UiScope scope)
@@ -1377,12 +1384,15 @@ public partial class FieldText : Node2D
         var gs = GetGlobalTransform().Scale;
         float sx = Math.Max(0.001f, Math.Abs(gs.X)), sy = Math.Max(0.001f, Math.Abs(gs.Y));
         var f = tf.Format;
-        string D(object v) => v == null || Rt.IsNullish(v) ? "" : Rt.ToString(v);
         var filters = Filters();
-        string key = string.Join("|", tf.Box.X, tf.Box.Y, tf.Box.W, tf.Box.H, D(f?.font), D(f?.size), D(f?.color), D(f?.align),
-            D(f?.leading), tf.wordWrap, tf.multiline, MathF.Round(sx * 1000), MathF.Round(sy * 1000), filters?.ToJsonString(), tf.antiAliasType, tf.TextAutoSize,
+        object N(object v) => v == null || Rt.IsNullish(v) ? null : v;
+        // what the node is built from; the box is not in it: a box that changed moves and resizes the node
+        var key = new Look(N(f?.font), N(f?.size), N(f?.color), N(f?.align), N(f?.leading), tf.wordWrap, tf.multiline,
+            (int)MathF.Round(sx * 1000), (int)MathF.Round(sy * 1000), filters?.ToJsonString(), tf.antiAliasType, tf.TextAutoSize,
             tf.type, tf.autoSizeMode);
-        bool rebuilt = key != built;
+        bool rebuilt = !hasBuilt || key != built;
+        var box = tf.Box;
+        bool moved = false;
         if (rebuilt)
         {
             node?.QueueFree();
@@ -1401,23 +1411,33 @@ public partial class FieldText : Node2D
             def["autoSize"] = tf.autoSizeMode != "none";
             var sym = new JsonObject
             {
-                ["bounds"] = new JsonObject { ["x"] = tf.Box.X, ["y"] = tf.Box.Y, ["w"] = tf.Box.W, ["h"] = tf.Box.H },
+                ["bounds"] = new JsonObject { ["x"] = box.X, ["y"] = box.Y, ["w"] = box.W, ["h"] = box.H },
                 ["text"] = def,
             };
             node = new TextNode(scope, sym, sx, sy) { PlacedInField = true };
             AddChild(node);
             if (filters != null) node.ApplyFilters(filters, sy);
-            built = key;
+            built = key; hasBuilt = true; builtBox = box;
             version = -1;
+        }
+        else if (box.X != builtBox.X || box.Y != builtBox.Y || box.W != builtBox.W || box.H != builtBox.H)
+        {
+            // the script set the box: the client formats the text it holds in the new view rect, it does not parse it again
+            builtBox = box;
+            node.Resize(new Rect2((float)box.X, (float)box.Y, (float)box.W, (float)box.H));
+            moved = true;
         }
         // a scroll (TextField.scrollV, DocView::SetVScrollOffset) sets the first line the text is drawn from: it neither
         // re-parses the text nor lays it out again
-        bool textChanged = tf.Version != version;
-        if (textChanged)
+        bool textChanged = tf.TextVersion != version;
+        if (textChanged || moved)
         {
-            version = tf.Version;
-            if (tf.Html != null && !(tf.Html.Length > 1 && tf.Html[0] == '$')) node.SetHtml(tf.Html);
-            else node.Text = tf.Text;
+            if (textChanged)
+            {
+                version = tf.TextVersion;
+                if (tf.Html != null && !(tf.Html.Length > 1 && tf.Html[0] == '$')) node.SetHtml(tf.Html);
+                else node.Text = tf.Text;
+            }
             // TextFieldEx.setTextAutoSize(SHRINK / FIT): LineBuffer::Scale (sfr_render_04d.cpp:394) scales every line's offsets and
             // sizes and every glyph from the text rect's origin, keeping the lines' breaks
             float scale = tf.TextAutoSize is "shrink" or "fit" ? node.TextAutoSizeScale(tf.TextAutoSize) : 1;

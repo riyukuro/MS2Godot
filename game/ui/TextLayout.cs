@@ -51,6 +51,10 @@ public partial class TextNode
         /// <summary>The x the label puts the line at (Label::_get_line_rect), label pixels.</summary>
         public float LabelX;
         public (float Width, float Ratio) Width;
+        /// <summary>The line's width as shaped, before its alignment (what <see cref="LabelX"/> is placed from), and its pitch without
+        /// the paragraph spacing: a line kept for another width of the label is placed and spaced again from them.</summary>
+        public float RawWidth;
+        public double BasePitch;
         public string Text;
         /// <summary>The label's own glyphs of the line (its paragraph's shaped line), pens from the line's x; LineFace and
         /// GlyphShadow draw these as the label does (Label::draw_glyph: each glyph repeat times, one advance apart).</summary>
@@ -58,6 +62,8 @@ public partial class TextNode
     }
 
     List<LayoutLine> layout;
+    System.Collections.Generic.Dictionary<(int Start, int End), LayoutLine> lineCache;
+    (string, float, int, TextServer.AutowrapMode, HorizontalAlignment, Font, GlyphStyle[]) linesKey;
     (string Text, float Width, float Spacing, int FontSize, TextServer.AutowrapMode Wrap, HorizontalAlignment Align, Font Font, GlyphStyle[] Styles) layoutKey;
 
     /// <summary>True when some run has a FONT size other than the field's.</summary>
@@ -78,6 +84,10 @@ public partial class TextNode
         var key = (Label.Text, Label.Size.X, ls.LineSpacing, ls.FontSize, Label.AutowrapMode, Label.HorizontalAlignment, ls.Font, runStyles);
         if (layout != null && key == layoutKey) return layout;
         layoutKey = key;
+        // the lines are kept for the next width: a line of the same code points at the same text, font and spacing is the same
+        // line (a break moves, the shaping and metrics of what is between two breaks do not)
+        var kept = (key.Text, key.LineSpacing, key.FontSize, key.AutowrapMode, key.HorizontalAlignment, key.Font, key.runStyles);
+        if (!kept.Equals(linesKey)) { lineCache = null; linesKey = kept; }
         return layout = BuildLayout();
     }
 
@@ -113,6 +123,8 @@ public partial class TextNode
         }) | Label.AutowrapTrimFlags;
         // Label::get_layout_data / get_character_bounds: whole-pixel font height and line spacing
         int fontH = (int)font.GetHeight(ramp), spacing = (int)ls.LineSpacing, paraSpacing = (int)ls.ParagraphSpacing;
+        var before = lineCache;
+        lineCache = new();
         int pstart = 0;
         while (pstart <= cps.Count)
         {
@@ -141,8 +153,16 @@ public partial class TextNode
             var breaks = ts.ShapedTextGetLineBreaks(rid, (int)Label.Size.X, 0, flags);
             for (int i = 0; i + 1 < breaks.Length; i += 2)
             {
-                var lrid = ts.ShapedTextSubstr(rid, breaks[i], breaks[i + 1] - breaks[i]);
                 int start = pstart + breaks[i], end = Math.Min(pstart + breaks[i + 1], pend);
+                if (before != null && before.TryGetValue((start, end), out var kept))
+                {
+                    kept.Pitch = kept.BasePitch;
+                    kept.LabelX = LabelLineX(kept.RawWidth);
+                    lineCache[(start, end)] = kept;
+                    res.Add(kept);
+                    continue;
+                }
+                var lrid = ts.ShapedTextSubstr(rid, breaks[i], breaks[i + 1] - breaks[i]);
                 var line = new LayoutLine { Start = start, End = end, Text = t.Substring(Utf16(start), Utf16(Math.Max(start, end)) - Utf16(start)) };
                 // the line as the label places it: as tall as its ascent and descent, at least the font height, centred in it,
                 // measured with every run at the field's size
@@ -158,7 +178,10 @@ public partial class TextNode
                 line.Ascent = fasc + ascMove;
                 line.Pitch = asc + dsc + spacing + advMove;
                 line.Width = PlaceGlyphs(line, ts, lrid, ramp, pstart);
-                line.LabelX = LabelLineX((float)ts.ShapedTextGetSize(lrid).X * line.Width.Ratio);
+                line.BasePitch = line.Pitch;
+                line.RawWidth = (float)ts.ShapedTextGetSize(lrid).X * line.Width.Ratio;
+                line.LabelX = LabelLineX(line.RawWidth);
+                lineCache[(start, end)] = line;
                 res.Add(line);
                 ts.FreeRid(lrid);
 

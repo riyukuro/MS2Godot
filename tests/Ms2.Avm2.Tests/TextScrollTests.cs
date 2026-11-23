@@ -115,4 +115,21 @@ public class TextScrollTests
         Assert.That(tf.scrollV, Is.EqualTo(1));
         Assert.That(events.Count, Is.EqualTo(2), "a resize that changes the range is told too");
     }
+
+    [Test]
+    public void ASizeSetKeepsTheTextVersionButAnEditBumpsIt()
+    {
+        var (_, tf, _) = Field(30);
+        int text = tf.TextVersion, version = tf.Version;
+        tf.width = 300;
+        tf.height = 90;
+        Assert.That(tf.Version, Is.GreaterThan(version), "a size set still marks the field changed");
+        Assert.That(tf.TextVersion, Is.EqualTo(text), "its text and format did not change, so a renderer keeps the text it holds");
+        tf.text = "other";
+        Assert.That(tf.TextVersion, Is.GreaterThan(text), "an edit changes the text version");
+        int after = tf.TextVersion;
+        tf.width = 200;
+        tf.text = "again";
+        Assert.That(tf.TextVersion, Is.GreaterThan(after), "an edit after a size set is not lost");
+    }
 }

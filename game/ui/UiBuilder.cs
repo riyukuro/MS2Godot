@@ -263,17 +263,8 @@ public partial class TextNode : Node2D
         // its line box: the line is as tall as the whole fallback chain and the primary font's line sits centred in it (whole
         // pixels of the label's raster size; measured on rendered labels). The label is moved by the difference.
         BaselineShift = 2 + scope.Assets.AscentRatio((string)Def["fontClass"]) * size - GodotBaseline(font, (int)ramp) * RasterScale / asy;
-        Label.Position = new Vector2(Bounds.Position.X, Bounds.Position.Y + BaselineShift);
-        // Scaleform lays every line out in the field less its 2 px gutters (DocView::SetViewRect / Format:
-        // textRect.Contract(GFX_TEXT_GUTTER, GFX_TEXT_GUTTER)): a word-wrapped field wraps inside them, a left-aligned line
-        // starts 2 px in and a right-aligned one ends 2 px in. A centred unwrapped line has the same centre either way, so
-        // it keeps the whole field.
-        if (Label.AutowrapMode != TextServer.AutowrapMode.Off || Label.HorizontalAlignment != HorizontalAlignment.Center)
-        {
-            Label.Position += new Vector2(2, 0);
-            Label.Size = new Vector2(Math.Max(1, Bounds.Size.X - 4) * asx, Bounds.Size.Y * asy) / RasterScale;
-        }
-        else Label.Size = new Vector2(Bounds.Size.X * asx, Bounds.Size.Y * asy) / RasterScale;
+        placeScale = new Vector2(asx, asy);
+        Place();
         Label.PivotOffset = Vector2.Zero;
         ApplyLineAdvance();
         // a timeline field's static text is never clipped; an auto-sized field grows to its text (TextClip)
@@ -290,6 +281,39 @@ public partial class TextNode : Node2D
     }
 
     public TextNode() { }
+
+    Vector2 placeScale;
+
+    /// <summary>
+    /// The label's place and size in the field's box (<see cref="Bounds"/>). Scaleform lays every line out in the field less its
+    /// 2 px gutters (DocView::SetViewRect / Format: textRect.Contract(GFX_TEXT_GUTTER, GFX_TEXT_GUTTER)): a word-wrapped field
+    /// wraps inside them, a left-aligned line starts 2 px in and a right-aligned one ends 2 px in. A centred unwrapped line has
+    /// the same centre either way, so it keeps the whole field.
+    /// </summary>
+    void Place()
+    {
+        float asx = placeScale.X, asy = placeScale.Y;
+        scaledFrom = null;
+        Label.Position = new Vector2(Bounds.Position.X, Bounds.Position.Y + BaselineShift);
+        if (Label.AutowrapMode != TextServer.AutowrapMode.Off || Label.HorizontalAlignment != HorizontalAlignment.Center)
+        {
+            Label.Position += new Vector2(2, 0);
+            Label.Size = new Vector2(Math.Max(1, Bounds.Size.X - 4) * asx, Bounds.Size.Y * asy) / RasterScale;
+        }
+        else Label.Size = new Vector2(Bounds.Size.X * asx, Bounds.Size.Y * asy) / RasterScale;
+    }
+
+    /// <summary>
+    /// The field's box changed (a script set its size or place): the label is placed and sized again and keeps its text. The
+    /// client's TextField::SetViewRect / DocView::SetViewRect formats the document it holds again; nothing is parsed again.
+    /// The caller sets the text auto size scale and the first line again (<see cref="RecenterScaled"/>, <see cref="RefreshClip"/>).
+    /// </summary>
+    public void Resize(Rect2 bounds)
+    {
+        if (bounds == Bounds) return;
+        Bounds = bounds;
+        Place();
+    }
 
     readonly Node2D lineShift = new();
     readonly Node2D snap = new();

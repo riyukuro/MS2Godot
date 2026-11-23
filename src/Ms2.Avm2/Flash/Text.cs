@@ -108,6 +108,11 @@ public class AsTextField : AsInteractiveObject
     public int SelBegin, SelEnd;
     /// <summary>Bumped on each change (renderer refresh).</summary>
     public int Version { get => version; set { version = value; MarkChanged(); WatchScroll(); } }
+    int boxBumps;
+    /// <summary><see cref="Version"/> less the bumps of a width / height set: what changes when the text or its format does, not
+    /// when only the box does. A renderer re-sets its text from this one; a new box is placed over the text it holds (the client's
+    /// TextField::SetViewRect formats the document again, it does not parse it again).</summary>
+    public int TextVersion => version - boxBumps;
     public string VerticalAlign { get => verticalAlign; set { if (verticalAlign != value) { verticalAlign = value; MarkChanged(); } } }
     public string TextAutoSize { get => textAutoSize; set { if (textAutoSize != value) { textAutoSize = value; MarkChanged(); } } }
 
@@ -632,8 +637,8 @@ public class AsTextField : AsInteractiveObject
     // DisplayObject.widthSet / heightSet call the object's SetWidth / SetHeight; TextField's (sfr_gfx_03f.cpp:792 / :364)
     // set the view rectangle's width / height to the value from its left / top, in the field's own pixels: the field's
     // scale is not divided out (CLIK's Constraints.update relies on it: a counter-scaled TextField gets the width unadjusted)
-    [As] public new double width { get => Box.W * scaleX; set { if (double.IsNaN(value)) return; Box = new RectD(Box.X, Box.Y, value, Box.H); needGeom = true; Version++; } }
-    [As] public new double height { get => Box.H * scaleY; set { if (double.IsNaN(value)) return; Box = new RectD(Box.X, Box.Y, Box.W, value); needGeom = true; Version++; } }
+    [As] public new double width { get => Box.W * scaleX; set { if (double.IsNaN(value)) return; Box = new RectD(Box.X, Box.Y, value, Box.H); needGeom = true; boxBumps++; Version++; } }
+    [As] public new double height { get => Box.H * scaleY; set { if (double.IsNaN(value)) return; Box = new RectD(Box.X, Box.Y, Box.W, value); needGeom = true; boxBumps++; Version++; } }
 
     public string autoSizeMode = "none";
     [As] public string autoSize { get => autoSizeMode; set { autoSizeMode = value is "left" or "right" or "center" ? value : "none"; Version++; autoSizePending = true; needGeom = true; } }
