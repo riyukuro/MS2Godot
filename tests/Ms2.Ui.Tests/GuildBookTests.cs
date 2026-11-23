@@ -778,4 +778,25 @@ public class GuildBookTests {
         Assert.That(b.SendStorageGift(Item(1, 0, 1), "Bo"), Is.False, "not the master");
         Assert.That(notices.Last(), Is.EqualTo("c416"));
     }
+
+    [Test]
+    public void ARaidCountSetsTheMembersCountAndTheResetClearsEveryMember() {
+        var b = GuildDialogTests.InGuild(); int refresh = 0; b.RaidRefresh += () => refresh++;
+        b.Info.Members.Add(new GuildMember { Mode = 3, Grade = 1, Name = "Bo", CharId = 13, Level = 5, Triple = (0, 0, 0) });
+        b.Apply(new GuildMessage((byte)0x25) { Name = "Ma", RaidId = 3, Value = 2 });
+        b.Apply(new GuildMessage((byte)0x25) { Name = "Ma", RaidId = 3, Value = 4 });
+        b.Apply(new GuildMessage((byte)0x25) { Name = "Bo", RaidId = 5, Value = 1 });
+        b.Apply(new GuildMessage((byte)0x25) { Name = "Nobody", RaidId = 5, Value = 7 });
+        Assert.That((b.FindMemberByName("Ma").Raid[3], b.Me.RaidTotal, b.TotalRaidCount, refresh), Is.EqualTo((4, 4, 5, 0)), "the count is set, not added; the dialog is not told");
+        b.Apply(new GuildMessage((byte)0x3e));
+        Assert.That((b.Me.RaidTotal, b.TotalRaidCount, refresh), Is.EqualTo((0, 0, 1)));
+    }
+
+    [Test]
+    public void ARaidCountOutsideAGuildDoesNothingButTheResetStillRefreshes() {
+        var b = new GuildBook { Common = id => $"c{id:x}", CommonByKey = k => k, PlayerName = () => "Ma" }; int refresh = 0; b.RaidRefresh += () => refresh++;
+        b.Apply(new GuildMessage((byte)0x25) { Name = "Ma", RaidId = 3, Value = 2 });
+        b.Apply(new GuildMessage((byte)0x3e));
+        Assert.That((b.TotalRaidCount, refresh), Is.EqualTo((0, 1)));
+    }
 }

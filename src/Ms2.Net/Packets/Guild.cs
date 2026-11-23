@@ -220,6 +220,7 @@ public sealed record GuildMessage(byte Type) {
     public int HouseTheme { get; init; }
     public int NpcKind { get; init; }
     public int NpcLevel { get; init; }
+    public int RaidId { get; init; }
     /// <summary>Type 0x6e (FUN_1413c3e50 @0x1413c3e50, guildmanager.cpp:2590): the storage entry that changed.</summary>
     public GuildStorageItem StorageItem { get; init; }
     /// <summary>Type 0x70 (OnPacketStorageHistory @0x1413c5dc0, :2963): the history lines.</summary>
@@ -249,7 +250,7 @@ public sealed record GuildMessage(byte Type) {
     public static GuildMessage Read(ByteReader r, ProtocolProfile profile) {
         var m = ReadBody(r, profile);
         // Types 7 and 0xf have no body, the others end with their fields.
-        if (m.Type is 1 or 2 or 3 or 4 or 5 or 6 or 7 or 0xf or 0x12 or 0x13 or 0x71 or 0x2d or 0x2e or 0x2f or 0x30 or 0x44 or 0x75 or 0x76 or 0x77 or 0x38 or 0x39 or 0x3b or 0x6d or 0x6e or 0x70 or 0x52 or 0x53 or 0x54 or 0x55 or 0x56 or 0x57) r.ExpectEnd($"Guild type {m.Type}");
+        if (m.Type is 1 or 2 or 3 or 4 or 5 or 6 or 7 or 0xf or 0x12 or 0x13 or 0x71 or 0x2d or 0x2e or 0x2f or 0x30 or 0x44 or 0x75 or 0x76 or 0x77 or 0x38 or 0x39 or 0x3b or 0x25 or 0x3e or 0x6d or 0x6e or 0x70 or 0x52 or 0x53 or 0x54 or 0x55 or 0x56 or 0x57) r.ExpectEnd($"Guild type {m.Type}");
         return m;
     }
 
@@ -329,6 +330,10 @@ public sealed record GuildMessage(byte Type) {
             case 0x39: return Done(new(t) { Name = r.ReadUnicodeString(), HouseLevel = r.ReadInt(), HouseTheme = r.ReadInt() }, r);
             // FUN_1413c3ef0 (:2603): the user, then CGuildNpc::ReadPacket (guilddef_1.cpp:1036: i32 kind, i32 level)
             case 0x3b: return Done(new(t) { Name = r.ReadUnicodeString(), NpcKind = r.ReadInt(), NpcLevel = r.ReadInt() }, r);
+            // OnPacketMemberRaidCount (@0x1413c0e70, guildmanager.cpp:2120): the member's name, the raid id, the count
+            case 0x25: return Done(new(t) { Name = r.ReadUnicodeString(), RaidId = r.ReadInt(), Value = r.ReadInt() }, r);
+            // FUN_1413c4300 (@0x1413c4300, :2637): the raid records were reset, the packet has no body
+            case 0x3e: return Done(new(t), r);
             // FUN_1413c3e50 (:2590): ItemEntity::Read
             case 0x6e: return Done(new(t) { StorageItem = GuildStorageItem.Read(r) }, r);
             // OnPacketStorageGiftResult (@0x1413c5c00, :2985): u8 result, and for 0 the receiver's name

@@ -743,4 +743,56 @@ public class GuildDialogTests
         Assert.That(c.OnCallback("onGiftGuildItem", new object[] { "Bo", 9.0, 1.0, 50.0 }), Is.True);
         Assert.That(sent.Count, Is.EqualTo(2), "more than stored: nothing sent");
     }
+
+    const string RaidTableXml = "<ms2><guildRaid dungeonRoomID=\"7\"/><guildRaid dungeonRoomID=\"3\"/></ms2>";
+
+    static (GuildDialogController c, List<IReadOnlyList<object>> history) RaidPage(GuildBook b)
+    {
+        b.Raids = new Ms2.Formats.World.GuildRaidTable(System.Xml.Linq.XDocument.Parse(RaidTableXml));
+        var c = Load(b);
+        c.StringTableText = (t, id) => $"{t}:{id}";
+        c.CommonByKey = k => k == "s_guild_raid_info_score" ? k + "|{0}|{1}" : k + "|{0}|{1}|{2}";
+        var history = new List<IReadOnlyList<object>>(); c.RaidHistoryRowsBuilt += r => history.Add(r.ToList());
+        return (c, history);
+    }
+
+    /// <summary>CreateRaidPage / UpdateRaidScore / FUN_141973220: the Raid category makes the page, the score text has the member's and the
+    /// guild's totals, the history a row per raid of the table (ids ascending) saying whether the member cleared it.</summary>
+    [Test]
+    public void TheRaidPageShowsTheScoreAndOneHistoryRowPerRaid()
+    {
+        var b = InGuild();
+        b.Info.Members.Add(new GuildMember { Mode = 3, Grade = 1, Name = "Bo", CharId = 13, Level = 5, Triple = (0, 0, 0) });
+        b.Apply(new GuildMessage((byte)0x25) { Name = "Ma", RaidId = 7, Value = 3 });
+        b.Apply(new GuildMessage((byte)0x25) { Name = "Bo", RaidId = 3, Value = 5 });
+        var (c, history) = RaidPage(b);
+        c.OpenCategoryPage("Raid");
+        Assert.That(c.RaidPage, Is.Not.Null);
+        Assert.That(Rt.ToBoolean(c.Host.Get(c.RaidPage, "visible")), Is.True);
+        var score = c.Host.Get(c.Host.Child("m_scoreText", c.Host.Child("m_info", c.RaidPage)), "text");
+        Assert.That(score, Is.EqualTo("s_guild_raid_info_score|3|8"));
+        var rows = history.Single();
+        Assert.That(rows.Count, Is.EqualTo(2));
+        Assert.That((c.Host.Get(rows[0], "isComplete"), c.Host.Get(rows[0], "text")), Is.EqualTo((false, "s_guild_raid_history_desc|20:3|Ma|0")));
+        Assert.That((c.Host.Get(rows[1], "isComplete"), c.Host.Get(rows[1], "text")), Is.EqualTo((true, "s_guild_raid_history_desc|20:7|Ma|3")));
+        c.OpenCategoryPage("Event");
+        Assert.That(Rt.ToBoolean(c.Host.Get(c.RaidPage, "visible")), Is.False);
+    }
+
+    [Test]
+    public void TheRaidResetPacketUpdatesTheOpenPageAndNothingWithoutIt()
+    {
+        var b = InGuild();
+        b.Apply(new GuildMessage((byte)0x25) { Name = "Ma", RaidId = 7, Value = 3 });
+        var (c, history) = RaidPage(b);
+        b.Apply(new GuildMessage((byte)0x3e));
+        Assert.That(history, Is.Empty, "no page yet");
+        b.Apply(new GuildMessage((byte)0x25) { Name = "Ma", RaidId = 7, Value = 3 });
+        c.OpenCategoryPage("Raid");
+        Assert.That(c.Host.Get(history.Single()[1], "isComplete"), Is.EqualTo(true));
+        b.Apply(new GuildMessage((byte)0x3e));
+        Assert.That(history.Count, Is.EqualTo(2));
+        Assert.That(c.Host.Get(history[1][1], "isComplete"), Is.EqualTo(false));
+        Assert.That(c.Host.Get(c.Host.Child("m_scoreText", c.Host.Child("m_info", c.RaidPage)), "text"), Is.EqualTo("s_guild_raid_info_score|0|0"));
+    }
 }

@@ -53,6 +53,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     object managePage;          // m_managePage
     object housePage;           // m_housePage
     object storagePage;         // m_storagePage
+    object raidPage;            // m_raidPage
     object eventVsGame;         // m_eventVsGame
     object eventRegisterButton, eventUnregisterButton, eventImageArea, eventLoader;   // m_button368, m_button378, m_eventImageArea, m_eventLoader
     /// <summary>m_requests (a multimap of the tick an open event stops being shown → the event id): kept in key order, equal keys in the order added.</summary>
@@ -189,6 +190,8 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         Book.StorageRefresh += UpdateStoragePage;
         Book.StorageHistoryRefresh -= UpdateStorageHistory;
         Book.StorageHistoryRefresh += UpdateStorageHistory;
+        Book.RaidRefresh -= UpdateRaid;
+        Book.RaidRefresh += UpdateRaid;
         Book.MemberRefresh -= OnMemberRefresh;
         Book.MemberRefresh += OnMemberRefresh;
         Book.MemberRemoved -= OnMemberRemoved;
@@ -230,6 +233,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         Book.NpcRefresh -= SetNpcInfo;
         Book.StorageRefresh -= UpdateStoragePage;
         Book.StorageHistoryRefresh -= UpdateStorageHistory;
+        Book.RaidRefresh -= UpdateRaid;
         Book.MemberRefresh -= OnMemberRefresh;
         Book.MemberRemoved -= OnMemberRemoved;
         Book.ClearSearchResults();
@@ -240,6 +244,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         managePage = null;
         housePage = null;
         storagePage = null;
+        raidPage = null;
         acceptRequestPage = null;
     }
 
@@ -279,7 +284,8 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         else if (category == "Manager") CreateManagePage();
         else if (category == "House") CreateHousePage();
         else if (category == "Storage") CreateStoragePage();
-        // Raid, ChampionShip, ChampionShipHistroy: STILL-OPEN
+        else if (category == "Raid") CreateRaidPage();
+        // ChampionShip, ChampionShipHistroy: STILL-OPEN
         if (category == "Join") SetPageVisible(joinPage, true);              // ShowCategoryPage (@0x141969290)
         else if (category == "Create") SetPageVisible(createPage, true);
         else if (category == "Info") SetPageVisible(infoPage, true);
@@ -291,6 +297,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         else if (category == "Manager") SetPageVisible(managePage, true);
         else if (category == "House") SetPageVisible(housePage, true);
         else if (category == "Storage") SetPageVisible(storagePage, true);
+        else if (category == "Raid") SetPageVisible(raidPage, true);
     }
 
     /// <summary>HideAllPages (@0x1419698f0).</summary>
@@ -307,7 +314,7 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         SetPageVisible(managePage, false);
         SetPageVisible(housePage, false);
         SetPageVisible(storagePage, false);
-        // m_raidPage,
+        SetPageVisible(raidPage, false);
         // m_championshipPage, m_pvpHistoryPage: STILL-OPEN
     }
 
@@ -400,6 +407,55 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         if (Host.Child("m_history", storagePage) is not { } clip) return;
         if (Host.Child("m_textArea", clip) is not { } area) return;
         Host.Set(area, "htmlText", sb.ToString());
+    }
+
+    /// <summary>CreateRaidPage (@0x14196b1d0, uiguilddialog.cpp:1706): made now, then UpdateRaidScore and the raid history (FUN_141973220).</summary>
+    void CreateRaidPage()
+    {
+        if (!EnsurePageCreated("guild_raid_page", ref raidPage)) return;
+        UpdateRaid();
+    }
+
+    /// <summary>The Raid page (m_raidPage) once made.</summary>
+    public object RaidPage => raidPage;
+
+    /// <summary>UpdateRaidScore then FUN_141973220 (the order of the page's creation and of the raid reset packet).</summary>
+    void UpdateRaid()
+    {
+        UpdateRaidScore();
+        UpdateRaidHistory();
+    }
+
+    /// <summary>UpdateRaidScore (@0x141972fc0, uiguilddialog.cpp:2718): the local member's total raid count and the guild's total
+    /// (s_guild_raid_info_score) into the m_scoreText of the page's m_info clip. Nothing without the page, the member or the clip.</summary>
+    void UpdateRaidScore()
+    {
+        if (raidPage == null) return;
+        if (Book.Me is not { } me) return;
+        if (Host.Child("m_info", raidPage) is not { } info) return;
+        SetChildText(info, "m_scoreText", ClientFormat.Format(CommonByKey("s_guild_raid_info_score"), me.RaidTotal, Book.TotalRaidCount));
+    }
+
+    /// <summary>The rows handed to setHistory, raised just before the call.</summary>
+    public event Action<IReadOnlyList<object>> RaidHistoryRowsBuilt;
+
+    /// <summary>FUN_141973220 (@0x141973220, uiguilddialog.cpp:2100): a row per raid of the table (ids ascending) to setHistory: whether the local
+    /// member cleared it (a count above 0) and s_guild_raid_history_desc of the raid's name (string table 0x14), the member's name and the count.
+    /// Nothing without the page or the member.</summary>
+    void UpdateRaidHistory()
+    {
+        if (raidPage == null) return;
+        if (Book.Me is not { } me) return;
+        var rows = new List<object>();
+        foreach (uint id in Book.Raids?.Ids() ?? Enumerable.Empty<uint>())
+        {
+            if (Book.Raids.Get(id) is not { } raid) continue;
+            int count = me.Raid.TryGetValue((int)raid.DungeonRoomId, out var c) ? c : 0;
+            string text = ClientFormat.Format(CommonByKey("s_guild_raid_history_desc"), StringTableText(0x14, raid.DungeonRoomId), Book.PlayerName(), count);
+            rows.Add(Host.Obj(("isComplete", count > 0), ("text", text)));
+        }
+        RaidHistoryRowsBuilt?.Invoke(rows);
+        Host.Invoke(raidPage, "setHistory", rows);
     }
 
     /// <summary>The rows handed to setHouseFacility, raised just before the call.</summary>

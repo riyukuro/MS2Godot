@@ -111,6 +111,8 @@ public sealed class GuildBook
 
     /// <summary>The open guild dialog's UpdateStoragePage (uiguilddialog.cpp:2640) after a storage entry changed (mode 0x6e).</summary>
     public event Action StorageRefresh;
+    /// <summary>The open guild dialog's UpdateRaidScore (@0x141972fc0) and FUN_141973220 (@0x141973220) after the raid records were reset (mode 0x3e).</summary>
+    public event Action RaidRefresh;
     /// <summary>The open guild dialog's UpdateStorageHistory (@0x1419729d0) after the history came (mode 0x70) or was asked for again.</summary>
     public event Action StorageHistoryRefresh;
     /// <summary>CGuildStorage's history deque (f38, at most 0x32 lines, the oldest dropped first) and m_400: the history was received.</summary>
@@ -169,6 +171,8 @@ public sealed class GuildBook
 
     /// <summary>CGuildXmlData's guild events (LoadGuildEvent), for the notice of an opened event.</summary>
     public Ms2.Formats.World.GuildEventTable Events;
+    /// <summary>CGuildXmlData's raid table (LoadGuildRaid).</summary>
+    public Ms2.Formats.World.GuildRaidTable Raids;
     /// <summary>CGuildXmlData's guild houses (LoadGuildHouse) and guild npcs (LoadGuildNpc).</summary>
     public Ms2.Formats.World.GuildHouseTable Houses;
     public Ms2.Formats.World.GuildNpcTable Npcs;
@@ -451,6 +455,9 @@ public sealed class GuildBook
         return true;
     }
 
+    /// <summary>GetTotalRaidCount (@0x1404d0ee0, guilddef_1.cpp:1713): the sum of every member's raid counts (CGuildMemberRaid::GetTotalCount).</summary>
+    public int TotalRaidCount => Info?.Members.Sum(m => m.RaidTotal) ?? 0;
+
     /// <summary>IsInGuild (@0x1413b6160): the guild id above 0 (unsigned).</summary>
     public bool InGuild => GuildId != 0;
 
@@ -732,6 +739,20 @@ public sealed class GuildBook
                     ChatLine?.Invoke(ClientFormat.Format(CommonByKey("s_guild_notify_upgrade_npc"), m.Name, StringTableText(0x3f, npc.StringKey), m.NpcLevel), 0xd);
                 break;
             }
+            case 0x25:
+            {
+                // OnPacketMemberRaidCount (@0x1413c0e70, guildmanager.cpp:2120): in a guild, the member of the name has the raid's count set
+                // (CGuildMemberRaid::SetRaidCount, guilddef_1.cpp:761); no such member: nothing. The dialog is not told.
+                if (!InGuild) break;
+                if (FindMemberByName(m.Name) is { } who) who.Raid[m.RaidId] = m.Value;
+                break;
+            }
+            case 0x3e:
+                // FUN_1413c4300 (@0x1413c4300, :2637): every member's raid counts are cleared (CGuildMemberRaid::Clear), then the dialog's
+                // UpdateRaidScore and FUN_141973220 run. Unlike the 0x25 packet this one has no in-guild check.
+                if (Info != null) foreach (var member in Info.Members) member.Raid.Clear();
+                RaidRefresh?.Invoke();
+                break;
             case 0x6e:
                 // FUN_1413c3e50 (@0x1413c3e50, :2590): SetStorageItem, m_400 cleared (the history is asked for again), the dialog's
                 // UpdateStoragePage.

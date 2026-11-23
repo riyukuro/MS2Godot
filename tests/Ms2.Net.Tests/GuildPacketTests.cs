@@ -256,4 +256,13 @@ public class GuildPacketTests {
         var w = new ByteWriter(); new GuildStorageItem(5, 2, 9, false, true, false, true).Write(w);
         Assert.That(GuildStorageItem.Read(new ByteReader(w.ToArray())), Is.EqualTo(info.StorageItems[0]), "Write and Read agree");
     }
+
+    [Test]
+    public void TheRaidTypesReadTheirFieldsAndEndWithThem() {
+        var m = GuildMessage.Read(R(w => { w.WriteByte(0x25); w.WriteUnicodeString("bo"); w.WriteInt(3); w.WriteInt(9); }));
+        Assert.That((m.Name, m.RaidId, m.Value), Is.EqualTo(("bo", 3, 9)));
+        Assert.Throws<PacketLayoutException>(() => GuildMessage.Read(R(w => { w.WriteByte(0x25); w.WriteUnicodeString("bo"); w.WriteInt(3); w.WriteInt(9); w.WriteByte(0); })), "ExpectEnd");
+        Assert.That(GuildMessage.Read(R(w => w.WriteByte(0x3e))).Type, Is.EqualTo(0x3e));
+        Assert.Throws<PacketLayoutException>(() => GuildMessage.Read(R(w => { w.WriteByte(0x3e); w.WriteByte(0); })), "the reset has no body");
+    }
 }
