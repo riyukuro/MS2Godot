@@ -594,12 +594,17 @@ public sealed class GameTables
     }
 
     /// <summary>One language's stringAdditionalDescription.xml as LoadLevelDescFiles reads it (see
-    /// <see cref="AdditionalDescription"/>): per id, per level, the ParseSkillDesc tags; null without the file.</summary>
+    /// <see cref="AdditionalDescription"/>): per id, per level, the ParseSkillDesc tags; null without the file.
+    /// The GMS2 data (its effects in additionaleffect/, no additional/) has no such file: its rows are split over
+    /// string/&lt;lang&gt;/koradditionaldescription*.xml (13 files), read as one file.</summary>
     internal static Dictionary<uint, SortedDictionary<ushort, Dictionary<string, string>>> LevelDescFile(PackSet packs, string lang)
     {
         string entry = $"string/{lang}/stringadditionaldescription.xml";
-        if (!packs.Exists("Xml", entry)) return null;
-        var root = GameStrings.Parse(packs.Read("Xml", entry)).Root;
+        XElement root;
+        if (packs.Exists("Xml", entry)) root = GameStrings.Parse(packs.Read("Xml", entry)).Root;
+        else if (Gms2AdditionalDescFiles(packs, lang) is { Count: > 0 } split)
+            root = new XElement("ms2", split.SelectMany(n => GameStrings.Parse(packs.Read("Xml", n)).Root?.Elements() ?? Enumerable.Empty<XElement>()));
+        else return null;
         if (root?.Name != "ms2") return null;
         var file = new Dictionary<uint, SortedDictionary<ushort, Dictionary<string, string>>>();
         foreach (var e in FeatureElements.Collect(packs, root, "key", "id", "level"))
@@ -613,6 +618,17 @@ public sealed class GameTables
             levels[lv] = desc;
         }
         return file;
+    }
+
+    /// <summary>The GMS2 data's split additional descriptions of a language (string/&lt;lang&gt;/koradditionaldescription*.xml), in
+    /// name order; empty for data with an additional/ folder (the KMS data, whose koradditionaldescription files are not read).</summary>
+    internal static List<string> Gms2AdditionalDescFiles(PackSet packs, string lang)
+    {
+        var names = packs.List("Xml");
+        if (names.Any(n => n.StartsWith("additional/", StringComparison.OrdinalIgnoreCase))) return new List<string>();
+        string prefix = $"string/{lang}/koradditionaldescription";
+        return names.Where(n => n.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)
+            && n.IndexOf('/', prefix.Length) < 0).OrderBy(n => n, StringComparer.Ordinal).ToList();
     }
 
     /// <summary>

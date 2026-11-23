@@ -81,6 +81,18 @@ public class Gms2AdditionalEffectTests
                 Assert.That(b, Is.Not.Null, $"{id}");
                 Assert.That((b.Level, b.IsBuff, b.DurationTick, b.Icon, b.IconOnOff), Is.EqualTo((a.Level, a.IsBuff, a.DurationTick, a.Icon, a.IconOnOff)), $"{id}");
             }
+            // the names and tooltips from the split koradditionaldescription files, the same from the cache
+            var keep = GameTables.AdditionalCacheOf;
+            try
+            {
+                var fromXml = new GameTables(packs, "en");
+                GameTables.AdditionalCacheOf = _ => path;
+                var fromCache = new GameTables(packs, "en");
+                foreach (var (id, lv) in new (uint, ushort)[] { (100000003, 1), (120020133, 7), (100000001, 1) })
+                    foreach (var tag in new[] { "name", "tooltipDescription" })
+                        Assert.That(fromCache.AdditionalDescription(id, lv, tag), Is.Not.Empty.And.EqualTo(fromXml.AdditionalDescription(id, lv, tag)), $"{id} {tag}");
+            }
+            finally { GameTables.AdditionalCacheOf = keep; }
         }
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }

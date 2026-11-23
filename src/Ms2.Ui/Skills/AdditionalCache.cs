@@ -15,7 +15,7 @@ namespace Ms2.Ui.Skills;
 public sealed class AdditionalCache
 {
     /// <summary>The format and parse version: bump it with any change to what the build writes or how the XML is read.</summary>
-    public const int Version = 10;     // 2: the levels' EventBuffType; 3: PvpOnOff; 4: ForceApplyTarget, Hide; 5: SpecialEffect; 6: InvokeEffect; 7: SpecialAbility; 8: DisableRevivalHere; 9: Invincible, SuperArmor, SuperArmorApplyFieldType; 10: the GMS2 additionaleffect/ files
+    public const int Version = 11;     // 2: the levels' EventBuffType; 3: PvpOnOff; 4: ForceApplyTarget, Hide; 5: SpecialEffect; 6: InvokeEffect; 7: SpecialAbility; 8: DisableRevivalHere; 9: Invincible, SuperArmor, SuperArmorApplyFieldType; 10: the GMS2 additionaleffect/ files; 11: the GMS2 koradditionaldescription files
     const uint Magic = 0x4441324D;     // "M2AD"
     const uint EndMagic = 0x444E4541;  // "AEND"
 
@@ -74,6 +74,12 @@ public sealed class AdditionalCache
             .Where(p => p.Length == 3 && p[0].Equals("string", StringComparison.OrdinalIgnoreCase)
                         && p[2].Equals("stringadditionaldescription.xml", StringComparison.OrdinalIgnoreCase))
             .Select(p => p[1].ToLowerInvariant()).Distinct().OrderBy(l => l, StringComparer.Ordinal).ToList();
+        if (langs.Count == 0)   // the GMS2 data: string/<lang>/koradditionaldescription*.xml (GameTables.LevelDescFile)
+            langs = packs.List("Xml").Select(n => n.Split('/'))
+                .Where(p => p.Length == 3 && p[0].Equals("string", StringComparison.OrdinalIgnoreCase)
+                            && p[2].StartsWith("koradditionaldescription", StringComparison.OrdinalIgnoreCase))
+                .Select(p => p[1].ToLowerInvariant()).Distinct().Where(l => GameTables.Gms2AdditionalDescFiles(packs, l).Count > 0)
+                .OrderBy(l => l, StringComparer.Ordinal).ToList();
 
         Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path)));
         string tmp = path + ".tmp";

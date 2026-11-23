@@ -25,7 +25,6 @@ public class RcG23AdditionalEffectTests
     }
 
     [Test]
-    [Ignore("G23: GameTables lists additional/ and AdditionalTable expects <additional>/<Basic>; GMS2 additionaleffect/*Property and koradditionaldescription* are unread")]
     public void TheGms2AdditionalEffectAndItsTextLoad()
     {
         using var packs = new PackSet(RcGap.Data("MS2_GMS2_DATA"));
