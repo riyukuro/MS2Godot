@@ -6,7 +6,7 @@ using NUnit.Framework;
 
 namespace Ms2.Net.Tests;
 
-/// <summary>The housing storage (0x23) has no Inbound member or reader on main. A2: mode 1 StartList, 3 Add
+/// <summary>The housing storage (0x23) is read by FurnishingStorage. A2: mode 1 StartList, 3 Add
 /// (i32 itemId, i64 uid, u8 rarity, i32 slot, the item body), 4 Remove, 5/7 amount, 8 EndList. Layouts:
 /// the GMS2 packet layout notes §A2.</summary>
 public class RcFurnishingStorageTests {
@@ -43,7 +43,6 @@ public class RcFurnishingStorageTests {
         new object[] { r },
     });
 
-    [Ignore("GMS2 furnishing storage mode not read yet")]
     [Test] public void Gms2StartListNeedsNoBody() {
         var r = new ByteReader(StartList);
         var m = Read(r);
@@ -51,7 +50,6 @@ public class RcFurnishingStorageTests {
         Assert.That(r.Available, Is.EqualTo(0));
     }
 
-    [Ignore("GMS2 furnishing storage mode not read yet")]
     [Test] public void Gms2AddReadsTheItemHeader() {
         var r = new ByteReader(Add);
         var m = Read(r);
@@ -63,8 +61,11 @@ public class RcFurnishingStorageTests {
         Assert.That(r.Available, Is.EqualTo(0), "the 232-byte item body must be read");
     }
 
-    [Ignore("GMS2 furnishing storage mode not read yet")]
     [Test] public void Gms2AddReadsTheTemplateVariant() {
+        // the live session tells the UGC block from the item table (ExtraOf); the recorded file name is masked, so the bytes alone cannot
+        var old = ItemReader.ExtraOf;
+        ItemReader.ExtraOf = id => id == 50100189 ? ItemExtra.Ugc : ItemExtra.None;
+        try {
         var r = new ByteReader(AddTemplate);
         var m = Read(r);
         Assert.That(RcPkt.MemberAny<byte>(m, "Mode"), Is.EqualTo((byte) 3));
@@ -73,5 +74,25 @@ public class RcFurnishingStorageTests {
         Assert.That(RcPkt.MemberAny<byte>(m, "Rarity"), Is.EqualTo((byte) 1));
         Assert.That(RcPkt.MemberAny<int>(m, "Slot"), Is.EqualTo(73));
         Assert.That(r.Available, Is.EqualTo(0), "the 624-byte template/socket item body must be read by length");
+        } finally { ItemReader.ExtraOf = old; }
+    }
+
+    [Test] public void OtherModesAndTheKmsRead() {
+        var w = new ByteWriter();
+        w.WriteByte(2); w.WriteInt(9);
+        Assert.That(FurnishingStorage.Read(new ByteReader(w.ToArray()), ProtocolProfile.Gms2).Count, Is.EqualTo(9));
+        w = new ByteWriter();
+        w.WriteByte(7); w.WriteLong(5); w.WriteInt(4);
+        var m = FurnishingStorage.Read(new ByteReader(w.ToArray()), ProtocolProfile.Gms2);
+        Assert.That((m.Mode, m.Uid, m.Amount), Is.EqualTo(((byte) 7, 5L, 4)));
+        w = new ByteWriter();
+        w.WriteByte(4); w.WriteLong(6);
+        Assert.That(FurnishingStorage.Read(new ByteReader(w.ToArray())).Uid, Is.EqualTo(6L));
+        Assert.That(FurnishingStorage.Read(new ByteReader(new byte[] { 8 }), ProtocolProfile.Gms2).Mode, Is.EqualTo((byte) 8));
+    }
+
+    [Test] public void NumberOnBothProfiles() {
+        Assert.That(ProtocolProfile.Kms2525.Number(Inbound.FurnishingStorage), Is.EqualTo((ushort) 0x23));
+        Assert.That(ProtocolProfile.Gms2.Number(Inbound.FurnishingStorage), Is.EqualTo((ushort) 0x23));
     }
 }

@@ -51,6 +51,7 @@ public enum Inbound : ushort {
     Emote = 0x1F,           // RecvOp::Emote (commonfiles/opcodes.h:39): CSceneStateGame::OnEmote
     ItemPutOnOrOff = 0x20,
     ItemInventory = 0x21,
+    FurnishingStorage = 0x23,     // RecvOp FurnishingStorage: CSceneStateGame::OnFurnishingStorage (scenestategame.cpp:2734)
     FurnishingInventory = 0x24,   // RecvOp FurnishingInventory: CSceneStateGame::OnFurnishingInventory (scenestategame.cpp:9373)
     ItemEnchant = 0x97,   // RecvOp::ItemEnchant: CSceneStateGame::OnItemEnchant (scenestategame.cpp:6101, @0x141732B20) -> UIItemEnchantDialog
     ItemLock = 0xDB,   // RecvOp::ItemLock: CItemLockManager::OnItemLockPacket (scenestategame.cpp:3724)

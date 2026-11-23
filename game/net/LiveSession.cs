@@ -1816,6 +1816,8 @@ public partial class LiveSession : Node
                 FieldProperties.Apply(Ms2.Net.Packets.FieldPropertyMessage.Read(p.Reader(), game.Profile));   // OnFieldProperty (scenestategame.cpp:3895)
             else if (game.Is(p, Inbound.FurnishingInventory))
                 ReadNotApplied("FurnishingInventory", Ms2.Net.Packets.FurnishingInventory.Read(p.Reader(), game.Profile).Mode);   // OnFurnishingInventory (scenestategame.cpp:9373): the cube stock has no house editor here yet
+            else if (game.Is(p, Inbound.FurnishingStorage))
+                ReadNotApplied("FurnishingStorage", Ms2.Net.Packets.FurnishingStorage.Read(p.Reader(), game.Profile).Mode);   // OnFurnishingStorage (scenestategame.cpp:2734): the house storage list has no dialog here yet
             else if (game.Is(p, Inbound.SkillDamage))
             {
                 // The records that hit the own player; MasteryEvents applies the client's mode drops (3 needs its PC, 5 its
