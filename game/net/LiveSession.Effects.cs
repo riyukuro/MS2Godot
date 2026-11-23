@@ -31,6 +31,8 @@ public partial class LiveSession
     public event Action<int, int, int> InvincibleBuffChanged;
     /// <summary>The running timer's icon end tick, for a HUD made after the start.</summary>
     public int InvincibleBuffEnd { get; private set; }
+    /// <summary>The field's effect service (its <see cref="RegionSkills"/> node) while it is in the tree; null otherwise.</summary>
+    public RegionSkills FieldEffects { get; set; }
     /// <summary>The own player's node, once the field is built.</summary>
     public Player OwnPlayer => player;
 

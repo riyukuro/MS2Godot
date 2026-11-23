@@ -122,6 +122,8 @@ public partial class LiveSession
         public override void Send(Ms2.Net.Wire.IOutPacket packet) { GD.Print($"live: guide sends {packet.GetType().Name}"); s.Send(packet); }
 
         public override bool HasPlayer => s.Me.User != null && s.player != null && GodotObject.IsInstanceValid(s.player);
+        /// <summary>The field's RegionSkills node, the effect service the guide's cube effects go through.</summary>
+        public override Ms2.Formats.World.IRegionSkillEffects Effects => s.FieldEffects;
 
         /// <summary>The player's field position: Godot (x, y, z) is the field's (x, -z, y).</summary>
         public override System.Numerics.Vector3 PlayerPosition

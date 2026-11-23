@@ -185,10 +185,16 @@ public class GuideWorld
 
     /// <summary>The minimap (0x4e29): SetMax and OnTabKeyDown / OnTabKeyUp.</summary>
     public virtual void SetMinimapMaximized(bool on) { }
-    /// <summary>CEffectService FUN_1411a49c0: plays an effect at a transform (translate, rotation
-    /// NiMatrix3::FromEulerAnglesXYZ of <paramref name="eulerRadians"/>, scale); a handle (0 none).</summary>
-    public virtual int PlayEffect(string path, Vector3 translate, Vector3 eulerRadians, float scale) => 0;
-    public virtual void StopEffect(int handle) { }
+    /// <summary>The field's effect service (CEffectService); null while there is none, and no effect plays.</summary>
+    public virtual Ms2.Formats.World.IRegionSkillEffects Effects => null;
+    /// <summary>CEffectService FUN_1411a49c0 (guideaction.cpp:447) of a target with no object, the path and the transform
+    /// (translate, rotation NiMatrix3::FromEulerAnglesXYZ of <paramref name="eulerRadians"/>, scale): a kept effect's handle
+    /// (0 none).</summary>
+    public virtual int PlayEffect(string path, Vector3 translate, Vector3 eulerRadians, float scale) =>
+        Effects?.Spawn(path, new Ms2.Formats.Model.Xform(new Ms2.Formats.Model.Vec3(translate.X, translate.Y, translate.Z),
+            Ms2.Formats.World.RegionSkillObject.EulerXyzRadians(eulerRadians.X, eulerRadians.Y, eulerRadians.Z), scale), false, 0) ?? 0;
+    /// <summary>CEffectService FUN_1411a6060 (guideaction.cpp:457, effectservice.cpp:1446-1459): the kept effect ends at once.</summary>
+    public virtual void StopEffect(int handle) => Effects?.FadeOut(handle, 0);
     /// <summary>The inventory's align mode and open animation (EquipWeaponTutorial).</summary>
     public virtual void SetInventoryTutorial(bool on) { }
     /// <summary>The camera mode (SequenceCamera skips the interpolation in mode 2).</summary>

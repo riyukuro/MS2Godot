@@ -62,6 +62,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     public override void _EnterTree()
     {
         if (LiveSession.Instance is not { } ls) return;
+        ls.FieldEffects = this;
         foreach (var m in ls.RegionSkillLog) Apply(m);
         ls.RegionSkillReceived += Apply;
         foreach (var m in ls.OneTimeEffectLog) ApplyOneTime(m);
@@ -75,6 +76,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     {
         if (LiveSession.Instance is { } ls)
         {
+            if (ls.FieldEffects == this) ls.FieldEffects = null;
             ls.RegionSkillReceived -= Apply;
             ls.OneTimeEffectReceived -= ApplyOneTime;
             ls.InvincibleChanged -= OnInvincible;
