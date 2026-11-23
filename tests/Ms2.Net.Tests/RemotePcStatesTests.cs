@@ -791,6 +791,50 @@ public class RemotePcStatesTests {
         Assert.That(b.Position.X, Is.EqualTo(200f).Within(0.01f));
     }
 
+    [Test] public void TheCastsTagKeysPlayTheirEffectsOutsideAndInsideTheLoop() {
+        // StateSkill::TextKeyEvent (stateskill.cpp:792-834): a tag key plays its effect; inside the loop (m_b117) only a key
+        // between "loopstart" and "loopend" does, and again each round
+        var b = new Body();
+        foreach (var (k, t) in new[] { ("e0", 0.1f), ("loopstart", 0.2f), ("e1", 0.3f), ("loopend", 0.7f), ("e2", 0.8f) }) b.CastKeys[k] = t;
+        var sm = new RemotePcStates(b);
+        var played = new List<string>();
+        sm.TagEffect = (k, fx) => played.Add(k + "=" + fx);
+        sm.Spawn(); Run(sm, 0.5f);
+        var tags = new Dictionary<string, string> { ["e0"] = "a.xml", ["e1"] = "b.xml", ["e2"] = "c.xml" };
+        sm.Cast(10200001, false, Vector3.Zero, 90f, loopCount: 1, tagEffects: tags);
+        sm.CastTextKey("e0", 0.1f);
+        sm.CastTextKey("loopstart", 0.2f);
+        sm.CastTextKey("e1", 0.3f);
+        sm.CastTextKey("loopend", 0.7f);            // a loop left: the next round, inside the loop again
+        sm.CastTextKey("e1", 0.3f);
+        sm.CastTextKey("loopend", 0.7f);            // the last round: out of the loop
+        sm.CastTextKey("e2", 0.8f);
+        Assert.That(played, Is.EqualTo(new[] { "e0=a.xml", "e1=b.xml", "e1=b.xml", "e2=c.xml" }));
+        played.Clear();
+        sm.Cast(10200001, false, Vector3.Zero, 90f, loopCount: 0, tagEffects: tags);
+        sm.CastTextKey("loopstart", 0.2f);
+        sm.CastTextKey("e2", 0.8f);                 // inside the loop, after "loopend": none
+        sm.CastTextKey("e0", 0.1f);                 // before "loopstart": none
+        Assert.That(played, Is.Empty);
+    }
+
+    [Test] public void AChargingCastsTagKeyBeforeTheAttackPlaysNoMoreAfterTheLoop() {
+        // m_bLoop, here set by the sync's release (FUN_1417ec630, the sequence from "charging_attack"): a key before that key
+        // plays nothing after, a key after it plays (TextKeyEvent :812-818)
+        var b = new Body();
+        foreach (var (k, t) in new[] { ("e0", 0.1f), ("charging_attack", 0.5f), ("e1", 0.6f) }) b.CastKeys[k] = t;
+        var sm = new RemotePcStates(b);
+        var played = new List<string>();
+        sm.TagEffect = (k, _) => played.Add(k);
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Cast(10200001, true, Vector3.Zero, 90f, tagEffects: new Dictionary<string, string> { ["e0"] = "a", ["e1"] = "b" });
+        sm.CastTextKey("e0", 0.1f);
+        sm.SkillSync(90f, Vector2.Zero, false, true);
+        sm.CastTextKey("e0", 0.1f);
+        sm.CastTextKey("e1", 0.6f);
+        Assert.That(played, Is.EqualTo(new[] { "e0", "e1" }));
+    }
+
     [Test] public void ACastOnWaterGivesWayToTheSwim() {
         // StateSkill::vfunc_3: FUN_141675ed0 (the hit report's entity is water) -> vfunc_7(0x1b)
         var b = new Body();

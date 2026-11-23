@@ -51,6 +51,8 @@ public sealed partial class RemoteLayer
         st.SkillEntered = () => remoteMagics.SkillEntered(id);
         st.SkillExited = () => remoteMagics.SkillExited(id, (int)Time.GetTicksMsec());
         st.AttackFired = a => remoteMagics.AttackFired(id, a, (int)Time.GetTicksMsec());
+        // the cast's tag effects on the caster, where the motion's own effect plays (PlayCast)
+        st.TagEffect = (_, fx) => combat.PlayEffect(fx, r.Root.Position, r.Visual.Rotation.Y);
     }
 
     /// <summary>

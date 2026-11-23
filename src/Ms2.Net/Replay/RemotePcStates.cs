@@ -240,6 +240,9 @@ public sealed class RemotePcStates
     public Action SkillExited;
     /// <summary>FUN_1417ecce0 for each attack FireAttacksAtPoint fires (the attack's index in the motion).</summary>
     public Action<int> AttackFired;
+    /// <summary>A tag effect of the cast's motion plays on the caster (StateSkill::TextKeyEvent, stateskill.cpp:792-834): the
+    /// key and the effect xml (<see cref="CastTextKey"/>).</summary>
+    public Action<string, string> TagEffect;
     /// <summary>StateHit::vfunc_4 past State::vfunc_4 (@0x1417ca370, statehit.cpp:65-114): the hit's data, the lift and the
     /// sequence (the host's StateHit body, which keeps the data the reaction handed it).</summary>
     public Action HitEntered;
@@ -288,6 +291,8 @@ public sealed class RemotePcStates
     // the loop of a motion (StateSkill m_nRepeat, m_bCharging, m_bLoop, m_nAttack, m_fLoopStart, m_fChargeTime != 0,
     // m_fSpeed) and the time since its "loopstart" (GetTickCountMs2() - m_n138, ms); the motion's loopCount and attack points
     int castRepeat, castAttack, castLoopCount; bool castCharging, castLoop, castLoopEnded;
+    bool castInLoop;   // m_b117: inside the loop (a "loopstart" passed, no "loopend" since or a next round's)
+    IReadOnlyDictionary<string, string> castTags;   // the motion's m_mapTagEffects
     float castLoopStart; double castLoopMs;
     IReadOnlyList<string> castPoints = System.Array.Empty<string>();
     // the record's motion data and move time, the move phases and the motion controller (shared with the own PC)
@@ -530,13 +535,16 @@ public sealed class RemotePcStates
     /// GetMotionCount, which <see cref="CastSequenceEnded"/> compares.
     /// <paramref name="speed"/> is GetMotionSpeedScale (the record's speed, StateSkill::m_fSpeed); <paramref name="loopCount"/>
     /// and <paramref name="attackPoints"/> are the motion's SkillMotionData::m_nLoopCount and its attacks' m_strPoint.
-    /// <paramref name="move"/> is what the motion controller reads (<see cref="CastMove"/>); the new record
+    /// <paramref name="move"/> is what the motion controller reads (<see cref="CastMove"/>); <paramref name="tagEffects"/> the
+    /// motion's tag effects (<see cref="CastTextKey"/>). The new record
     /// (CSkillRecord's constructor, skillrecord.cpp:164) starts at m_fDuration = m_fElapsed = 0.
     public void Cast(int skillId, bool chargingSkill, Vector3 pos, float rotZ, int holdId = 0, string holdNode = "",
         int motion = 0, int motionCount = 1, float speed = 1f, int loopCount = 0, IReadOnlyList<string> attackPoints = null,
-        CastMove move = default)
+        CastMove move = default, IReadOnlyDictionary<string, string> tagEffects = null)
     {
         skillMotion.Record(move, speed, rotZ);
+        castTags = tagEffects;
+        castInLoop = false;   // vfunc_4 (stateskill.cpp:411) and the sequence start (FUN_1417f0940 :2223)
         castLoopCount = loopCount;
         castPoints = attackPoints ?? System.Array.Empty<string>();
         castMotion = motion;
@@ -580,12 +588,20 @@ public sealed class RemotePcStates
     /// length at m_fSpeed, at most the length - 5 ms); the current attack's point and "charging_attack" (:980-998) end a
     /// charging skill's loop once no loop is left (m_bLoop), the point also takes the attacks of that point
     /// (FireAttacksAtPoint, @0x1417f0f10, stateskill.cpp:2272-2292, m_nAttack). Nothing outside StateSkill.
-    /// STILL-OPEN: the loop effect (record m_n88, FUN_1417598e0), the tag effects (m_mapTagEffects), FireCurrentAttack's
-    /// hits and the weapon sync (FUN_141663be0) are not ported.
+    /// First of all a key the motion's tag effects name (m_mapTagEffects, :792-834) plays its effect on the caster
+    /// (<see cref="TagEffect"/>) unless <see cref="SkillTagEffects.Plays"/> says no; m_b117 follows the keys ("loopstart" on,
+    /// "loopend" off then on again for a next round, a charging skill's "charging_attack" off).
+    /// STILL-OPEN: the loop effect (record m_n88, FUN_1417598e0), the tag effect's handle (m_map138, kept for the state's
+    /// exit), its sight range test (FUN_1417f4bc0, object kind 3), FireCurrentAttack's hits and the weapon sync
+    /// (FUN_141663be0) are not ported.
     /// </summary>
     public void CastTextKey(string key, float time)
     {
         if (Cur != StateSkill) return;
+        if (castTags != null && castTags.TryGetValue(key, out var fx) && SkillTagEffects.Plays(pc.CastKeyTime(key), castInLoop,
+                false, castLoop, pc.CastKeyTime("loopstart"), pc.CastKeyTime("loopend"), pc.CastKeyTime("charging_attack")))
+            TagEffect?.Invoke(key, fx);   // the record's m_n9c stays 0 for this PC
+        if (key == "loopstart") castInLoop = true;   // :844, before the m_bLoop test
         if (key == "loopstart" && !castLoop)
         {
             castLoopStart = time;
@@ -595,9 +611,11 @@ public sealed class RemotePcStates
         if (key == "loopend")
         {
             castLoopEnded = true;
+            castInLoop = false;   // :875
             if (castCharging || castRepeat > 0)
             {
                 if (castRepeat > 0) castRepeat--;
+                castInLoop = true;   // :905
                 TargetYaw = castRotZ;
                 pc.RotationZ = castRotZ;
                 castAttack = 0;
@@ -631,7 +649,11 @@ public sealed class RemotePcStates
             }
             return;
         }
-        if (key == "charging_attack" && ChargingSkill && !castLoop && castRepeat == 0) castLoop = true;
+        if (key == "charging_attack" && ChargingSkill && !castLoop && castRepeat == 0)
+        {
+            castLoop = true;
+            castInLoop = false;   // :996
+        }
     }
 
     /// <summary>ClampedElapsedAfter16ms (stateskill.cpp): the time <paramref name="now"/> is past <paramref name="start"/>,
@@ -665,6 +687,7 @@ public sealed class RemotePcStates
             castAttack = 0;
             castLoopEnded = false;
             castCharging = false;
+            castInLoop = true;   // :1445
             pc.SeekCast(castLoopStart);
             skillMotion.ArmMovePhases(pc);
         }

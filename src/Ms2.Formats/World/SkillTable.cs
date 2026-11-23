@@ -9,6 +9,30 @@ public sealed class SkillMotion
 {
     public string SequenceName;          // e.g. Attack_01_A; the sequence of the actor's kfm / the player's kf
     public string MotionEffect;          // effect xml path (Xml pack effect/...), may be null
+    /// <summary>
+    /// SkillMotionData::m_mapTagEffects ("strTagEffects", skillleveldata.cpp:1180-1188): a text key of the motion's sequence to
+    /// the effect xml StateSkill::TextKeyEvent plays on the caster when the key comes (stateskill.cpp:795-834). Null without
+    /// any. See <see cref="ParseTagEffects"/>.
+    /// </summary>
+    public Dictionary<string, string> TagEffects;
+
+    /// <summary>
+    /// The tag effect list as SkillMotionData::Load splits it: the attribute's "," tokens (CString::Tokenize, empty ones
+    /// skipped, nothing trimmed), each split on "=" the same way; a token of exactly two parts maps its first to its second
+    /// (CRBMap::SetAt, so a later key replaces an earlier one; keys compare case-sensitively). Null for no pairs.
+    /// </summary>
+    public static Dictionary<string, string> ParseTagEffects(string attr)
+    {
+        if (string.IsNullOrEmpty(attr)) return null;
+        Dictionary<string, string> map = null;
+        foreach (var tag in attr.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var pair = tag.Split('=', StringSplitOptions.RemoveEmptyEntries);
+            if (pair.Length != 2) continue;
+            (map ??= new Dictionary<string, string>(StringComparer.Ordinal))[pair[0]] = pair[1];
+        }
+        return map;
+    }
     public List<string> HitEffects = new();   // damage effectHit paths of its attack points
     /// <summary>SkillMotionData::m_nLoopCount ("loopCount", skillleveldata.cpp:1196): the loops StateSkill repeats between
     /// the sequence's "loopstart" and "loopend" keys (FUN_1417f0940 takes it as m_nRepeat).</summary>
@@ -177,6 +201,7 @@ public sealed class SkillTable
                     IgnoreOptimalHideCastEffect = Flag(m, "IgnoreOptimalHideCastEffect"), SplashCastEffectStartDelay = Flag(m, "splashCastEffectStartDelay"),
                 };
                 if (int.TryParse((string)m.Attribute("loopCount"), out int loops)) mo.LoopCount = loops;
+                mo.TagEffects = SkillMotion.ParseTagEffects((string)m.Attribute("strTagEffects"));
                 mo.MoveType = Int(m, "movetype");
                 mo.KeyMove = Float(m, "keyMove");
                 mo.MoveDistance = Float(m, "movedistance");

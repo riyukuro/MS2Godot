@@ -588,6 +588,7 @@ public partial class HudScene
     CastRecord ownNext;                            // StateSkill m_spNext: the accepted press waiting for its chain
     SkillFollow.Window ownWindow;                  // the combo flags the sequence's text keys set (m_b4a, m_b49, m_b114-m_b116)
     readonly SkillFollow.ComboKeys ownComboKeys = new();
+    readonly Ms2.Net.Replay.SkillTagEffects.Keys ownTagKeys = new();   // the motion's m_mapTagEffects keys in the sequence
 
     // MyPC::FUN_141525580's view of the own pc, made once; its delegates read the live session and the buff list
     UseCheckWorld ownUseCheck;
@@ -727,6 +728,8 @@ public partial class HudScene
         Ms2.Formats.Model.KfAnimation kf = null;
         if (me.SkillSequence != null) me.Anims?.Kf.TryGetValue(me.SkillSequence, out kf);
         ownComboKeys.Set(kf?.TextKeys, motion?.SelfInputCombo);
+        castMotions ??= Ms2.Formats.World.SkillTable.For(assets.Packs);
+        ownTagKeys.Set(kf?.TextKeys, castMotions.Motion((int)r.Skill.Id, r.Level.Level, r.Motion)?.TagEffects);
         ownSequenceLength = kf?.Duration ?? 0;
         ownEnded = false;
         ownPollWorld = null;
@@ -791,8 +794,10 @@ public partial class HudScene
     /// for m_b111, the charging skill flag :766, with m_b112 or repeats left) with the accepted press's chain at "combo" and
     /// "selfcombo" (FUN_1417ef4a0, :1004, :1027), so an attack point before the key fires (and sends) first. False when the
     /// state stopped reading on: a point ended it, a chain took over, or a loopend sought the next round.
-    /// The move0-3 keys go to the body's skill motion (Player.SkillMotionMove).
-    /// STILL-OPEN: charging_combo's m_b112 (:952) is not kept in the window.
+    /// The move0-3 keys go to the body's skill motion (Player.SkillMotionMove). A key the motion's tag effects name plays its
+    /// effect first (<see cref="OwnTagEffects"/>, :792-834).
+    /// STILL-OPEN: charging_combo's m_b112 (:952) is not kept in the window. A tag key at the same time as one of the keys
+    /// above is taken before it here; the client takes them in the sequence's key order.
     /// </summary>
     bool OwnKeys(double pos)
     {
@@ -805,8 +810,11 @@ public partial class HudScene
             double tk = SkillLoop.NextTextKey(prev, pos, ownLoopStartKey, ownChargingComboKey, ownPointTime, ownChargingAttackKey,
                 ownLoopEndKey);
             double tc = ownComboKeys.Next(prev, pos);
+            double tt = ownTagKeys.Next(prev, pos);
             double t = tk < 0 ? tc : tc < 0 ? tk : Math.Min(tk, tc);
+            if (tt >= 0 && (t < 0 || tt < t)) t = tt;
             if (t < 0) return true;
+            if (tt == t) OwnTagEffects(t);
             if (tk == t)
             {
                 if (ownLoopStartKey == t) ownLoop.OnLoopStart(ownLoopStartKey, now);
@@ -837,6 +845,26 @@ public partial class HudScene
                 }
             }
             prev = t;
+        }
+    }
+
+    /// <summary>
+    /// StateSkill::TextKeyEvent's tag effects (stateskill.cpp:792-834) for the own sequence's tag keys at <paramref name="t"/>:
+    /// each plays its effect on the player unless <see cref="Ms2.Net.Replay.SkillTagEffects.Plays"/> says no (the loop's
+    /// m_b117 and m_bLoop, the record's m_n9c).
+    /// STILL-OPEN: the effect's handle (m_map138), which the state's exit releases, is not kept.
+    /// </summary>
+    void OwnTagEffects(double t)
+    {
+        for (int i = 0; i < ownTagKeys.Count; i++)
+        {
+            var (time, key, path) = ownTagKeys[i];
+            if (time != t) continue;
+            float at = player.Anims?.TextKey(ownSequence, key) ?? -1;
+            if (!Ms2.Net.Replay.SkillTagEffects.Plays(at, ownLoop.InLoop, ownCast.QueuedCharge, ownLoop.Loop, ownLoopStartKey,
+                    ownLoopEndKey, ownChargingAttackKey)) continue;
+            Net.LiveSession.Instance?.PlayFieldEffect(path, player.GlobalPosition, player.Visual?.Rotation.Y ?? 0,
+                Ms2.Audio.SoundMusicEffectState.CasterMyPc);
         }
     }
 
