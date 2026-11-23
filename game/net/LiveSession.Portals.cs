@@ -66,11 +66,16 @@ public partial class LiveSession
         _ => QuestMaskTable.QuestStatus.Absent,
     };
 
+    /// <summary>OnFieldPortal (0x48). Every message applies, as in the client; a mode 2 that leaves the portal's flags as they
+    /// were is not logged (a field script can send the same flags every frame).</summary>
     void OnFieldPortal(FieldPortalMessage m)
     {
         if (Portals == null) return;
-        Portals.Apply(m);
         var p = Portals.ById(m.Id);
+        var before = p == null ? default : (p.Shown, p.Glow, p.Minimap, p.Extra);
+        Portals.Apply(m);
+        p = Portals.ById(m.Id);
+        if (m.Mode == 2 && p != null && Portals.Attached && before == (p.Shown, p.Glow, p.Minimap, p.Extra)) return;
         GD.Print($"live: FieldPortal mode {m.Mode} portal {m.Id}" + (p == null ? "" :
             $" type {p.Type} target {p.TargetMap} shown {p.Shown} glow {p.Glow}{(p.HasEntity ? "" : " (no entity)")}{(Portals.Attached ? "" : " (held)")}"));
     }
