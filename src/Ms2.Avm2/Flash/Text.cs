@@ -162,8 +162,22 @@ public class AsTextField : AsInteractiveObject
 
     public List<string> Lines() => Spans().Select(l => l.Line).ToList();
 
-    /// <summary>The lines and the index in <see cref="Text"/> of each line's first character.</summary>
+    /// <summary>The lines and the index in <see cref="Text"/> of each line's first character. Kept for what they were made from
+    /// (the text, the width, the font and the wrap): the AS-visible metrics (numLines, maxScrollV, scrollV) ask for
+    /// them again and again, a wheel notch several times. A field with IMG chars is laid out each time (an image's size can
+    /// arrive after the text did). Callers read the list only.</summary>
     List<(string Line, int Start)> Spans()
+    {
+        var key = (Text, Box.W, wordWrapFlag, displayAsPassword, FontName, Size, Leading);
+        if (spans != null && key == spansKey && !HasImages) return spans;
+        spansKey = key;
+        return spans = MakeSpans();
+    }
+
+    List<(string Line, int Start)> spans;
+    (string, double, bool, bool, string, double, double) spansKey;
+
+    List<(string Line, int Start)> MakeSpans()
     {
         // CR LF and LF are paragraph ends as CR; map: index in that text -> index in Text
         string raw = displayAsPassword ? new string('*', Text.Length) : Text;
@@ -678,10 +692,10 @@ public class AsTextField : AsInteractiveObject
     /// </summary>
     [As] public int scrollV
     {
-        get { int max = maxScrollV; if (scrollTop > max) scrollTop = max; return scrollTop; }
+        get { if (scrollTop <= 1) return 1; int max = maxScrollV; if (scrollTop > max) scrollTop = max; return scrollTop; }
         set
         {
-            int v = Math.Clamp(Math.Max(value, 1), 1, maxScrollV);
+            int v = Math.Clamp(value, 1, maxScrollV);
             if (v == scrollV) return;
             scrollTop = v;
             MarkChanged();      // the view moves the text (FieldText.Sync)
@@ -694,12 +708,10 @@ public class AsTextField : AsInteractiveObject
     public int FirstShownLine => scrollTop <= 1 ? 0 : scrollV - 1;
 
     /// <summary>TextField::OnMouseWheelEvent (@0x1425ba680, sfr_gfx_03e.cpp:915): when mouseWheelEnabled the wheel moves the first
-    /// shown line up by the delta; true = the wheel was taken.</summary>
-    public bool OnMouseWheel(int delta)
+    /// shown line up by the delta.</summary>
+    public void OnMouseWheel(int delta)
     {
-        if (!mouseWheelEnabled) return false;
-        scrollV = scrollV - delta;
-        return true;
+        if (mouseWheelEnabled) scrollV = scrollV - delta;
     }
     [As] public int scrollH { get; set; }
     [As] public int maxScrollV { get { int vis = Math.Max(1, (int)((Box.H - 4) / TextMeasure.LineHeight(FontName, Size, Leading))); return Math.Max(1, numLines - vis + 1); } }
