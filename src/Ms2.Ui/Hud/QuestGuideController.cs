@@ -71,7 +71,7 @@ public sealed class QuestGuideController : UiController
         var list = new List<object>();
         foreach (var r in State.Records)
         {
-            if (r.State != 1 || TrackingState(r) == 0) continue;
+            if (r.State != 1 || TrackingState(r) == 0 || !QuestCommon.InMainQuestMap(Table.Quest(r.Id))) continue;
             list.Add(QuestEntity(r));
         }
         recommendQuest = RecommendedQuest();
@@ -183,7 +183,7 @@ public sealed class QuestGuideController : UiController
     {
         int count = Table.QuestIdsByChapter(chapter).Count;
         int index = -1, n = 0;
-        foreach (var q in State.Records.Where(q => Table.Quest(q.Id)?.Chapter == chapter).OrderBy(q => q.StartTime))
+        foreach (var q in State.Records.Where(q => Table.Quest(q.Id) is { } qd && qd.Chapter == chapter && QuestCommon.InMainQuestMap(qd)).OrderBy(q => q.StartTime))
         {
             ++n;
             if (q.Id == id) { index = n; break; }

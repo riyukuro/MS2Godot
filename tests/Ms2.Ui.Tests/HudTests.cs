@@ -1578,6 +1578,45 @@ public class HudTests
     }
 
     [Test]
+    public void QuestGuideSkipsMissionTypeQuests()
+    {
+        // CQuestManager::AddQuest (questmanager_2.cpp:843) keeps quest types 3, 4, 5, 7 and 10 (the missions, which includes the
+        // level-up package's type 3) in their own maps; the guide lists m_quests20 only (GetQuestsFiltered, :915)
+        var m = Model();
+        var t = new Ms2.Quest.QuestTable("KR", _ => true) { Common = k => k == "s_quest_name_with_level" ? "{0} (Lv. {1})" : "" };
+        t.AddQuests(System.Xml.Linq.XDocument.Parse(@"<ms2>
+            <quest id=""1""><basic questType=""0"" standardLevel=""3"" /><condition type=""npc"" code=""7"" value=""1"" /></quest>
+            <quest id=""70000001""><basic questType=""3"" standardLevel=""0"" /><condition type=""level"" value=""78"" /></quest></ms2>"));
+        t.BuildIndexes();
+        t.AddDescriptions(System.Xml.Linq.XDocument.Parse(@"<ms2><quest questID=""1"" name=""First"" /><quest questID=""70000001"" name=""Reach Level 78"" /></ms2>"));
+        var state = new Ms2.Quest.QuestShotState(t, 10, new[] { 1, 70000001 }, tracking: 1);
+        var c = new QuestGuideController { Table = t, State = state };
+        var h = Load(c, m);
+        var container = (AsContainer)h.Get(h.Entity, "m_dragContainer");
+        Assert.That(container.Children.Count, Is.EqualTo(1));
+        var texts = AllTexts(container);
+        Assert.That(texts, Has.Some.Contains("First (Lv. 3)"));
+        Assert.That(texts, Has.None.Contains("Reach Level"));
+    }
+
+    [Test]
+    public void QuestGuideSkipsTheGms2LevelUpPackageQuests()
+    {
+        // the GMS2 quest files hold the level-up package as type 3 quests (70000001 and up, chapter 0, standardLevel 0)
+        var data = System.Environment.GetEnvironmentVariable("MS2_GMS2_DATA");
+        if (string.IsNullOrEmpty(data) || !System.IO.Directory.Exists(data)) Assert.Ignore("MS2_GMS2_DATA is not set");
+        var t = Ms2.Quest.QuestTable.Load(new Ms2.Formats.Pack.PackSet(data), new[] { "en" }, "NA", _ => true);
+        Assert.That(t.Quest(70000001)?.Type, Is.EqualTo(3));
+        Assert.That(Ms2.Quest.QuestCommon.InMainQuestMap(t.Quest(70000001)), Is.False);
+        Assert.That(Ms2.Quest.QuestCommon.InMainQuestMap(t.Quest(10001172)), Is.True);
+        var state = new Ms2.Quest.QuestShotState(t, 10, new[] { 10001172, 70000001 }, tracking: 1);
+        var c = new QuestGuideController { Table = t, State = state };
+        var h = Load(c, Model());
+        var container = (AsContainer)h.Get(h.Entity, "m_dragContainer");
+        Assert.That(container.Children.Count, Is.EqualTo(1));
+    }
+
+    [Test]
     public void MessengerTabsTargetsAndKeys()
     {
         var m = Model();

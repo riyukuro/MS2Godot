@@ -121,6 +121,12 @@ public static class QuestCommon
     public static int ClubBuffTypeOf(int n) => n switch { 1 or 2 => 1, 8 => 2, 11 => 3, 5 => 4, _ => 0 };
 
     /// <summary>
+    /// CQuestManager::AddQuest (questmanager_2.cpp:843): quest types 3 (daily missions, with the level-up package), 4, 5, 7 and 10 are
+    /// kept in their own maps; every other record is in m_quests20, the map GetQuestsFiltered (:915) walks.
+    /// </summary>
+    public static bool InMainQuestMap(QuestData d) => d == null || d.Type is not (3 or 4 or 5 or 7 or 10);
+
+    /// <summary>
     /// FUN_14074b090 (questdata.cpp:1549): a quest with a duration, a term tag (eventTag) or a reset weekday has an end.
     /// QuestProgressStory shows the end time line only for these (uiquestdialog.cpp:1032).
     /// </summary>
