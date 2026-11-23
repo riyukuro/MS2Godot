@@ -122,7 +122,12 @@ public sealed class SkillTable
     /// <summary>Gives <see cref="For"/> the table another reader of the same skilldata files fills (<see cref="Add"/> per
     /// &lt;skill&gt; as it reads them), so one read of the files serves both; <paramref name="source"/> returns null when that
     /// read failed, and For then reads the files itself. Has no effect once For has built the table of the set.</summary>
-    public static void SetSource(PackSet packs, Func<SkillTable> source) => sources.AddOrUpdate(packs, source);
+    /// <remarks>The first source given for a set stays: a second reader of the same set's files (another language's tables)
+    /// would give the same rows, and replacing the first, already read, with it would put its whole read on the first cast's
+    /// frame. A source belongs to the PackSet object it was given for (the table compares keys by reference, not by Equals),
+    /// so another set (another Data folder: KMS2 and GMS2, which PackSet.Shared opens as a new set) has its own source and
+    /// its own table, never this one's.</remarks>
+    public static void SetSource(PackSet packs, Func<SkillTable> source) => sources.TryAdd(packs, source);
 
     /// <summary>An empty table, filled by <see cref="Add"/>.</summary>
     public SkillTable() { }
@@ -177,8 +182,8 @@ public sealed class SkillTable
                 mo.MoveDistance = Float(m, "movedistance");
                 mo.MoveAngle = Float(m, "moveangle");
                 if (uint.TryParse((string)m.Attribute("ignoreCollisionGroups"), out uint ignore)) mo.IgnoreCollisionGroups = ignore;
-        mo.PushCylinder = new PushCylinder(Float(m, "pushCylinderVelH"), Float(m, "pushCylinderVelV"), Float(m, "pushCylinderOuter"),
-            Float(m, "pushCylinderInner"), Float(m, "pushCylinderHeight"));
+                mo.PushCylinder = new PushCylinder(Float(m, "pushCylinderVelH"), Float(m, "pushCylinderVelV"), Float(m, "pushCylinderOuter"),
+                    Float(m, "pushCylinderInner"), Float(m, "pushCylinderHeight"));
                 foreach (var a in m.Elements("attack")) mo.AttackPoints.Add((string)a.Attribute("point") ?? "");
                 foreach (var d in m.Descendants("damage"))
                     if ((string)d.Attribute("effectHit") is { Length: > 0 } eh) mo.HitEffects.Add(eh);

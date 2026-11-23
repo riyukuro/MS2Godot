@@ -150,8 +150,7 @@ public sealed class GameTables
         var motionRows = new Ms2.Formats.World.SkillTable();
         Skills = new Skills.SkillTables(r.Jobs, new Skills.SkillDataTable(() => skillFiles.Select(SkillXml), collect,
             e => { if (int.TryParse((string)e.Attribute("id"), out int id)) motionRows.Add(id, e); }));
-        var skillRows = Skills.Skills;
-        Ms2.Formats.World.SkillTable.SetSource(packs, () => { try { skillRows.Load(); return motionRows; } catch { return null; } });
+        Ms2.Formats.World.SkillTable.SetSource(packs, FedRows(Skills.Skills, motionRows));
         additionalCache = packs.DataDir is { } dataDir ? Ms2.Ui.Skills.AdditionalCache.Open(AdditionalCacheOf(dataDir)) : null;
         Additional = NewAdditionalTable(packs, additionalCache);
         foreach (var key in ChatTextColors.Keys.ToList()) ChatTextColors[key] = Rgb(k.Color(key, Unpack(ChatTextColors[key])));
@@ -1007,6 +1006,14 @@ public sealed class GameTables
                 i => Ms2.Ui.Skills.PerSkillFile.Id(files[i]) == null
                     ? Ms2.Formats.Text.PackXml.Reader(new MemoryStream(packs.Read("Xml", files[i]), false))
                     : new StringReader(SkillText(files[i]))); });
+    /// <summary>The source SkillTable.For takes <paramref name="rows"/> from: they are full once <paramref name="read"/> has read
+    /// the files (For waits for a read under way). A read that failed (the prefetch's) is not tried again here, on the cast's
+    /// frame: null, and For reads the files itself.</summary>
+    internal static Func<Ms2.Formats.World.SkillTable> FedRows(Skills.SkillDataTable read, Ms2.Formats.World.SkillTable rows) => () =>
+    {
+        if (read.Failed) return null;
+        try { read.Load(); return rows; } catch { return null; }
+    };
     /// <summary>Reads <see cref="SkillDamage"/> and the skill table on a worker thread while the field builds, so the first hit's damage event
     /// (a skill damage with mode 1 reads the attack's damage) does not read every skilldata file on the frame.</summary>
     /// <remarks>Named for the damage table it was made for; it reads the skill table too, and with it the cast motions' rows

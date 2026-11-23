@@ -532,13 +532,20 @@ public sealed class SkillDataTable
     /// <summary>Reads every skill file now (a worker thread may do it ahead of the first lookup); a lookup that comes while it reads waits for the one read.</summary>
     public void Load() => All();
 
+    volatile bool failed;
+    /// <summary>The last read of the files threw (a later lookup reads them again; one that succeeds clears it).</summary>
+    public bool Failed => failed;
+
     Dictionary<uint, SkillData> All()
     {
         if (Volatile.Read(ref skills) is { } done) return done;
         lock (loadLock)
         {
             if (skills != null) return skills;
-            var d = Read();
+            Dictionary<uint, SkillData> d;
+            try { d = Read(); }
+            catch { failed = true; throw; }
+            failed = false;
             Volatile.Write(ref skills, d);
             return d;
         }
