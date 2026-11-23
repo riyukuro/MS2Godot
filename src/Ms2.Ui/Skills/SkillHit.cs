@@ -171,12 +171,20 @@ public sealed class HitFrustum
         f.corners[7] = farCenter + right * far + up;
         f.a0 = f.apex; f.a1 = f.corners[4]; f.a2 = f.corners[7];
         f.b0 = f.apex; f.b1 = f.corners[5]; f.b2 = f.corners[6];
+        f.SetZSpan();
         return f;
     }
 
-    /// <summary>CFrustumCollision::GetMaxZ @0x141224820 / GetMinZ @0x1412248a0.</summary>
-    float MaxZ() { float m = float.MinValue; foreach (var c in corners) if (m < c.Z) m = c.Z; return m; }
-    float MinZ() { float m = float.MaxValue; foreach (var c in corners) if (c.Z < m) m = c.Z; return m; }
+    float maxZ, minZ;
+
+    /// <summary>CFrustumCollision::GetMaxZ @0x141224820 (frustumcollision.cpp:204) seeds with FLT_MIN, the smallest positive
+    /// float, so a frustum wholly below z 0 reads a max of about 0; GetMinZ @0x1412248a0 seeds with FLT_MAX.</summary>
+    void SetZSpan()
+    {
+        maxZ = 1.17549435e-38f;
+        minZ = float.MaxValue;
+        foreach (var c in corners) { if (maxZ < c.Z) maxZ = c.Z; if (c.Z < minZ) minZ = c.Z; }
+    }
 
     /// <summary>CFrustumCollision::ContainsPoint @0x141223d80: in front of the near plane and short of the depth, and the
     /// ground direction from the apex within the half angle of the forward.</summary>
@@ -196,8 +204,8 @@ public sealed class HitFrustum
     /// the box's bottom face (<see cref="IntersectsBox"/>).</summary>
     public bool Intersects(in HitBox box)
     {
-        if (!(MaxZ() > box.MinZ)) return false;
-        if (!(MinZ() < box.MaxZ)) return false;
+        if (!(maxZ > box.MinZ)) return false;
+        if (!(minZ < box.MaxZ)) return false;
         if (Contains(box.Center)) return true;
         Span<Vector3> bc = stackalloc Vector3[8];
         BoxCorners(box, bc);

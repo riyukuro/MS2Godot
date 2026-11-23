@@ -245,4 +245,30 @@ public class SkillHitTests
         Assert.That(Detect(a, 90, Pc(20, 70, 0), Pc(21, -70, 0)), Is.EqualTo(new[] { 20 }),
             "turned a quarter, the cone follows the facing");
     }
+
+    [Test]
+    public void TheFrustumsZSpanSeedsItsMaxWithTheSmallestPositiveFloat()
+    {
+        var r = Attack(Frustum).Range;
+        // posed 1000 below z 0 with a body at 0: every frustum corner is below zero, the client's GetMaxZ reads FLT_MIN
+        // there (above the body's bottom at 0) and the z test passes
+        var shape = SkillHitShape.Pose(r, 0, new Vector3(0, 0, -1000), Vector3.Zero);
+        Assert.That(shape.Intersects(SkillHit.PlayerBody(new Vector3(0, -70, 0), 0)), Is.True);
+    }
+
+    [Test]
+    public void TheFrustumTakesRangeAddAndMissesABodyAboveOrBelowItsHeight()
+    {
+        var r = Attack(Frustum).Range;
+        var body = SkillHit.PlayerBody(new Vector3(0, -70, 0), 0);
+        Assert.That(SkillHitShape.Pose(r, 0, Vector3.Zero, Vector3.Zero).Intersects(body), Is.True);
+        Assert.That(SkillHitShape.Pose(r, 0, new Vector3(0, 0, 1000), Vector3.Zero).Intersects(body), Is.False, "the frustum is far above the body");
+        Assert.That(SkillHitShape.Pose(r, 0, new Vector3(0, 0, -1000), Vector3.Zero).Intersects(body), Is.True,
+            "below z 0 the client's max z is FLT_MIN, still above the body's bottom at 0: the z test passes, as in the client");
+        // rangeAdd.y moves the near plane back by 200: a body 100 behind the caster is inside now, and not without it
+        var behind = SkillHit.PlayerBody(new Vector3(0, 100, 0), 0);
+        var add = Attack(Frustum.Replace("applyTarget", "rangeAdd=\"0,200,0\" applyTarget")).Range;
+        Assert.That(SkillHitShape.Pose(r, 0, Vector3.Zero, Vector3.Zero).Intersects(behind), Is.False);
+        Assert.That(SkillHitShape.Pose(add, 0, Vector3.Zero, Vector3.Zero).Intersects(behind), Is.True);
+    }
 }
