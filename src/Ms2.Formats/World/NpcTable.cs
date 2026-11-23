@@ -180,6 +180,10 @@ public sealed class NpcTable
         if (!int.TryParse((string)n.Attribute("id"), out int id)) return null;
         var env = n.Element("environment");
         if (env == null) return null;
+        // the recorded GMS2 data keeps the npc's basic attributes (friendly, class, hpBar, defenceMaterial, level, portrait ...) in a child
+        // <basic>; the npcdata rows carry them on <environment>. The environment's own attributes win.
+        if (env.Element("basic") is { } basic)
+            foreach (var at in basic.Attributes().ToList()) if (env.Attribute(at.Name) == null) env.SetAttributeValue(at.Name, at.Value);
         var model = env.Element("model");
         var row = new NpcRow
         {

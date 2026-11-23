@@ -147,6 +147,21 @@ public class EffectDummyTests
         Assert.That(NpcTable.ParseRow(XElement.Parse("<npc id='9' />"), DefaultRows()), Is.Null);
     }
 
+    /// <summary>The recorded GMS2 npc file keeps friendly, class, hpBar, defenceMaterial and level in a child &lt;basic&gt;; the row reads them
+    /// as the npcdata rows' &lt;environment&gt; attributes, which win when both are present.</summary>
+    [Test]
+    public void NpcRowReadsTheBasicChildOfThePerFileNpc()
+    {
+        var row = NpcTable.ParseRow(XElement.Parse("""
+            <npc id="29000128"><environment feature="ContentsGuide01"><model kfm="Dummy" />
+              <basic friendly="2" class="5" hpBar="1" defenceMaterial="1" level="20" />
+              <stat hp="5" /></environment></npc>
+            """), DefaultRows());
+        Assert.That((row.Friendly, row.Class, row.HpBar, row.DefenceMaterial, row.Level, row.Hp), Is.EqualTo((2, 5, true, 1, (ushort)20, 5L)));
+        var own = NpcTable.ParseRow(XElement.Parse("<npc id='1'><environment friendly='1'><basic friendly='2' /></environment></npc>"), DefaultRows());
+        Assert.That(own.Friendly, Is.EqualTo(1));
+    }
+
     /// <summary>
     /// The vibrate pair and the dead actions (npcdata.cpp:1465-1466, 1651-1659); the death pick (GetRandomDefaultAction,
     /// StateDeadNPC::vfunc_4): "Dead_A" for no list, list[rand % count], and "Dead_Idle_A" for a boss that dies unseen.
