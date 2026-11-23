@@ -19,6 +19,12 @@ namespace Ms2Godot.Ui.Create;
 public sealed class CreateLook
 {
     public const int SkinItem = 0x9a1d21;              // CItemData::IsAvatarColorItem (10100001)
+
+    /// <summary>
+    /// The item whose palette row is the skin colour: the avatar colour item where the data has it (KMS), else the gender's
+    /// skin base item (GMS2 defaultitems slot SK: 1 male, 2 female). 0 when the data has neither.
+    /// </summary>
+    public int SkinOwner => Data(SkinItem) != null || Model(SkinItem) != null ? SkinItem : baseItems[Gender is 1 ? 1 : 0].GetValueOrDefault(EquipSlot.SK);
     const int OverallSubtype = 0x16;                   // CItemData::FUN_14053d2b0
     /// <summary>CItemDefaultData s_aSlots that hold lists (the rest stay empty in the table).</summary>
     static readonly EquipSlot[] ListSlots = { EquipSlot.HR, EquipSlot.FA, EquipSlot.FD, EquipSlot.CL, EquipSlot.PA, EquipSlot.SH };
@@ -185,6 +191,8 @@ public sealed class CreateLook
     public (int Palette, int DefaultRow) Palette(int id)
     {
         var cust = Model(id)?.Element("customize");
+        // GMS2: the skin item's preset has no palette; its item row carries it (STILL-OPEN: the GMS2 exe's own avatar-colour test)
+        if (id == SkinOwner && cust?.Attribute("colorPalette") == null) cust = Data(id)?.Descendants("customize").FirstOrDefault();
         if (cust == null || (string)cust.Attribute("color") != "1" || !int.TryParse((string)cust.Attribute("colorPalette"), out int pal)) return (0, -1);
         var first = ((string)cust.Attribute("defaultColorIndex") ?? "-1").Split(',')[0];
         return (pal, int.TryParse(first, out int idx) ? idx : -1);
@@ -227,7 +235,7 @@ public sealed class CreateLook
     {
         Gender = gender; JobCode = jobCode;
         Items.Clear(); Rows.Clear(); Custom.Clear();
-        SkinRow = NewRow(SkinItem);
+        SkinRow = NewRow(SkinOwner);
         int top = 0, bottom = 0;
         foreach (var slot in ListSlots)
         {
@@ -256,7 +264,7 @@ public sealed class CreateLook
         }
         // the gender's base items fill the slots the lists left empty (the ears)
         foreach (var (slot, id) in baseItems[gender])
-            if (!Items.ContainsKey(slot)) { Items[slot] = id; Rows[slot] = NewRow(id); }
+            if (slot != EquipSlot.SK && !Items.ContainsKey(slot)) { Items[slot] = id; Rows[slot] = NewRow(id); }
     }
 
     void Wear(int id)
@@ -294,7 +302,7 @@ public sealed class CreateLook
     }
 
     /// <summary>The skin colour pair (ch0 lit, ch2 shade) of the avatar colour item's palette row.</summary>
-    public SkinColor? Skin => palettes.Get(Palette(SkinItem).Palette, SkinRow) is { } c ? new SkinColor(c.c0, c.c2) : null;
+    public SkinColor? Skin => palettes.Get(Palette(SkinOwner).Palette, SkinRow) is { } c ? new SkinColor(c.c0, c.c2) : null;
 
     /// <summary>The worn items as EquipApplier takes them.</summary>
     public List<EquipItem> Equips()
