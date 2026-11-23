@@ -1032,17 +1032,29 @@ public sealed class ModelBuilder
             // the process's texture cache (NifCache, the client's CNifLoadingService): a texture a field, an effect or
             // a character view loaded before is not read and decoded again; class 5 (DependTime) as the field's
             // palette textures and the item and effect texture loads take it
-            tex = NifCache.Texture(packs, (archive + "/" + entry).ToLowerInvariant(), NifCache.CacheClass.DependTime, () =>
-            {
-                var img = new Image();
-                var err = img.LoadDdsFromBuffer(packs.Read(archive, entry));
-                if (err == Error.Ok) return ImageTexture.CreateFromImage(img);
-                GD.PushWarning($"texture {entry}: {err}");
-                return null;
-            });
+            tex = Dds(archive, entry);
         textures[fileName] = tex;
         return tex;
     }
+
+    /// <summary>A texture by its entry in an archive, folder and all (an emotion's texture animation names its frames by
+    /// path, CTextureAnimationData::GetBaseTexturePath); null when the archive lacks it.</summary>
+    public Texture2D TextureEntry(string archive, string entry)
+    {
+        if (string.IsNullOrEmpty(entry) || !packs.Exists(archive, entry)) return null;
+        keep?.Use("tex:" + entry);
+        return Dds(archive, entry);
+    }
+
+    Texture2D Dds(string archive, string entry) =>
+        NifCache.Texture(packs, (archive + "/" + entry).ToLowerInvariant(), NifCache.CacheClass.DependTime, () =>
+        {
+            var img = new Image();
+            var err = img.LoadDdsFromBuffer(packs.Read(archive, entry));
+            if (err == Error.Ok) return ImageTexture.CreateFromImage(img);
+            GD.PushWarning($"texture {entry}: {err}");
+            return null;
+        });
 
     /// <summary>Samples a KF sequence into a looping Godot animation on the model's skeleton bones.</summary>
     public static Animation BuildAnimation(KfAnimation kf, ModelData md, double fps = 30.0)

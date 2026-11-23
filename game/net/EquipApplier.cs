@@ -222,6 +222,11 @@ public sealed class EquipApplier
     /// <summary>Models hung on a character (and their idle effects) that the last Apply / Reapply left: for the leak checks.</summary>
     public int HungNodes(Node3D visual) => looks.TryGetValue(visual, out var l) ? l.Parts.Values.Sum(p => p.Meshes.Count) : 0;
 
+    /// <summary>The worn face item (slot FA) when its model hung parts on the look (PC::vfunc_69's test, pc.cpp:3096-3101),
+    /// else 0.</summary>
+    public int FaceItem(Node3D visual) =>
+        looks.TryGetValue(visual, out var l) && l.Parts.TryGetValue(EquipSlot.FA, out var p) && p.Meshes.Count > 0 ? p.Item.Id : 0;
+
     public void Apply(Node3D visual, ModelData body, int gender, IEnumerable<EquipItem> items, Rgba? skinColor = null, Rgba? skinShade = null)
     {
         var skel = visual.GetNode<Skeleton3D>("Model/" + ModelBuilder.SkeletonName);

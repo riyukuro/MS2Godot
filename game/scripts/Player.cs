@@ -62,6 +62,7 @@ public partial class Player : CharacterBody3D
         InBattle = inBattle;
         battleTimer = inBattle ? durationSeconds : -1f;
         UpdateWeaponStance();
+        FaceEmotion?.SetBattle(inBattle, FaceMs);      // PC::vfunc_66: the rest face
     }
 
     /// <summary>The client state id (gostate.h) of the current move state (<see cref="StateId(MoveState)"/>).</summary>
@@ -284,6 +285,7 @@ public partial class Player : CharacterBody3D
         // client source; only a frame longer than a quarter second (a field load) is cut to it
         float dt = (float)Math.Min(delta, MaxStepDt);
         gameTime += dt;
+        FaceEmotion?.Tick(FaceMs);     // PCBase::vfunc_53 ticks the face (FUN_14166f940) before the states
         if (!ScriptDriven)
         {
             var k = MoveInput.Read();

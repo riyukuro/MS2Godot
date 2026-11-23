@@ -10,7 +10,7 @@ namespace Ms2.Net.Packets;
 public sealed record TriggerUiCommand(byte Sub)
 {
     /// <summary>Sub 1: the guide trigger id (AddGuideTrigger, :1007); 2 and 3: the guide entity (:987, :998); 4 and 5: the cut
-    /// scene id (:963, :978); 9: the npc object (:1053); 0xc: the start tick (OnTypingGame, :769).</summary>
+    /// scene id (:963, :978); 9: the pc or npc object (:1053); 0xc: the start tick (OnTypingGame, :769).</summary>
     public int Id { get; init; }
     /// <summary>Sub 2: the summary text id; 8: the emotion's value (m_nValue); 0xc: the time limit in ms.</summary>
     public int Value { get; init; }
@@ -18,7 +18,7 @@ public sealed record TriggerUiCommand(byte Sub)
     public int Duration { get; init; }
     /// <summary>Sub 4: the cut scene movie's path (a narrow string).</summary>
     public string Path { get; init; } = "";
-    /// <summary>Sub 9: the npc's line (a narrow string; empty stops the talk).</summary>
+    /// <summary>Sub 9: the face emotion's name (a narrow string; empty rests the face).</summary>
     public string Text { get; init; } = "";
     /// <summary>Sub 7: the emotions played in turn; 8: the one emotion (ReadUnicodeStringA: UTF-16 on the wire).</summary>
     public IReadOnlyList<string> Emotions { get; init; } = Array.Empty<string>();
@@ -77,7 +77,7 @@ public static partial class TriggerObjects
     public const byte Ui = Guide, Dialog = 0xf, SidePopup = 0x13, SetVisibleUi = 0x14, DuelHpBar = 0x15;
 
     public const byte UiGuideTrigger = 1, UiShowSummary = 2, UiHideSummary = 3, UiStartMovie = 4, UiStopMovie = 5,
-        UiEmotions = 7, UiEmotion = 8, UiNpcTalk = 9, UiTurn = 0xa, UiLookAt = 0xb, UiTypingGame = 0xc;
+        UiEmotions = 7, UiEmotion = 8, UiFaceEmotion = 9, UiTurn = 0xa, UiLookAt = 0xb, UiTypingGame = 0xc;
 
     /// <summary>The body of a type 9 packet after its type byte; a sub the client has no case for reads nothing more.</summary>
     public static TriggerUiCommand ReadUi(ByteReader r)
@@ -103,7 +103,7 @@ public static partial class TriggerObjects
                 byte flag = r.ReadByte(); int value = r.ReadInt();
                 return c with { Flag = flag, Value = value, Emotions = new[] { r.ReadUnicodeString() } };
             }
-            case UiNpcTalk: return c with { Id = r.ReadInt(), Text = r.ReadString() };
+            case UiFaceEmotion: return c with { Id = r.ReadInt(), Text = r.ReadString() };
             case UiTurn:
             case UiLookAt: return c with { Point = new Vector3(r.ReadShort(), r.ReadShort(), r.ReadShort()), Move = r.ReadBool() };
             case UiTypingGame: return c with { Id = r.ReadInt(), Value = r.ReadInt() };

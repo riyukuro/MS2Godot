@@ -648,6 +648,7 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         player.Gender = bodyDir == "male" ? 0 : 1;
         player.RootName = md.RootName;
         player.Weapons = Net.EquipApplier.RigOf(visual);
+        player.SetFace(Look.FaceTexture.For(visual, builder, packs, player.Gender));
         BlobShadow.Load(packs);
         // the player's CObjectShadow, of the myPC row (MyPC::vfunc_49, mypc.cpp:2879-2887)
         FieldShadows.Character(player, visual, Ms2.Formats.Options.GraphicOptionTable.MyPC, 100f, 3f);
