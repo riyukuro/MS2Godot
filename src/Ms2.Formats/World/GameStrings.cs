@@ -32,21 +32,62 @@ public sealed class GameStrings
             }
     }
 
-    /// <summary>One table as id -> attribute (first language that has the id wins).</summary>
+    /// <summary>
+    /// One table as id -> attribute (first language that has the id wins). In each language the table is
+    /// string/&lt;lang&gt;/&lt;name&gt;.xml and then its parts &lt;name&gt;_&lt;n&gt;.xml in number order: the GMS2 data
+    /// keeps most skill names in skillname_&lt;job&gt;.xml next to a skillname.xml without them (no id in both). In the
+    /// KMS data no table read here has such parts (only the kor*description tables, which are not), so its tables read
+    /// as before. STILL-OPEN: the GMS2 exe is packed, so how its string table load finds the parts is not read; the
+    /// order here only matters for an id in two files, which the data does not have.
+    /// </summary>
     public Dictionary<string, string> Table(string name, string valueAttr, string idAttr = "id")
     {
         var d = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var lang in Languages)
         {
             string entry = $"string/{lang}/{name}.xml";
-            if (!packs.Exists("Xml", entry)) continue;
-            foreach (var r in Text.XmlRows.Elements(packs.Read("Xml", entry), "key"))    // Descendants("key"), streamed
-            {
-                var id = r.GetAttribute(idAttr);
-                if (id != null && !d.ContainsKey(id)) d[id] = r.GetAttribute(valueAttr);
-            }
+            if (packs.Exists("Xml", entry)) AddRows(d, entry, valueAttr, idAttr);
+            foreach (var part in Parts(lang, name)) AddRows(d, part, valueAttr, idAttr);
         }
         return d;
+    }
+
+    void AddRows(Dictionary<string, string> d, string entry, string valueAttr, string idAttr)
+    {
+        foreach (var r in Text.XmlRows.Elements(packs.Read("Xml", entry), "key"))    // Descendants("key"), streamed
+        {
+            var id = r.GetAttribute(idAttr);
+            if (id != null && !d.ContainsKey(id)) d[id] = r.GetAttribute(valueAttr);
+        }
+    }
+
+    Dictionary<string, List<(long N, string Entry)>> parts;   // "lang/name" (lower case) -> its parts, built on first use
+
+    /// <summary>The entries string/&lt;lang&gt;/&lt;name&gt;_&lt;n&gt;.xml (n decimal digits) in the order of n; one scan of
+    /// the archive's string entries finds the parts of every table.</summary>
+    internal IReadOnlyList<string> Parts(string lang, string name)
+    {
+        if (parts == null)
+        {
+            var index = new Dictionary<string, List<(long N, string Entry)>>(StringComparer.Ordinal);
+            foreach (var e in packs.List("Xml"))
+            {
+                if (!e.StartsWith("string/", StringComparison.OrdinalIgnoreCase) || !e.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)) continue;
+                int us = e.LastIndexOf('_'), dot = e.Length - 4;
+                if (us < 0 || dot - us - 1 is < 1 or > 9 || e.IndexOf('/', 7) is var slash && (slash < 0 || slash > us)) continue;
+                long n = 0;
+                bool digits = true;
+                for (int i = us + 1; i < dot && digits; i++)
+                    if (e[i] is >= '0' and <= '9') n = n * 10 + (e[i] - '0'); else digits = false;
+                if (!digits) continue;
+                string key = e.Substring(7, us - 7).ToLowerInvariant();
+                if (!index.TryGetValue(key, out var list)) index[key] = list = new();
+                list.Add((n, e));
+            }
+            foreach (var list in index.Values) list.Sort((x, y) => x.N != y.N ? x.N.CompareTo(y.N) : string.CompareOrdinal(x.Entry, y.Entry));
+            parts = index;
+        }
+        return parts.TryGetValue($"{lang}/{name}".ToLowerInvariant(), out var found) ? found.ConvertAll(p => p.Entry) : Array.Empty<string>();
     }
 
     /// <summary>Common UI strings (stringcommon.xml: key id -> value) with the client's $key:N$ action key names replaced.</summary>
