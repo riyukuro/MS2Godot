@@ -249,16 +249,15 @@ public class BattleRecordTests {
     }
 
     [Test]
-    public void OnGms2ModesFourSevenAndEightStayRaw() {
-        // their GMS2 layouts are not known: a read that guesses could throw, and a replay has no per-packet catch
+    public void OnGms2ModesSevenAndEightStayRaw() {
+        // their GMS2 layouts are not known (mode 4 is the KMS heal on GMS2, see RcSkillDamageLayoutTests): a read that guesses could throw, and a replay has no per-packet catch
         static SkillDamage Gms(Action<ByteWriter> write) {
             var w = new ByteWriter(); write(w);
             return SkillDamage.Read(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray()), ProtocolProfile.Gms2);
         }
-        var h = Gms(w => { w.WriteByte(4); w.WriteInt(31); w.WriteInt(10); });
         var g = Gms(w => { w.WriteByte(7); w.WriteInt(40); w.WriteInt(2); w.WriteInt(41); w.WriteInt(42); });
         var c = Gms(w => { w.WriteByte(8); w.WriteLong(9001); w.WriteByte(0); w.WriteByte(0); });
-        Assert.That((h.Mode, h.Raw?.Length, g.Mode, g.Raw?.Length, c.Mode, c.Raw?.Length), Is.EqualTo(((byte) 4, (int?) 8, (byte) 7, (int?) 16, (byte) 8, (int?) 10)));
+        Assert.That((g.Mode, g.Raw?.Length, c.Mode, c.Raw?.Length), Is.EqualTo(((byte) 7, (int?) 16, (byte) 8, (int?) 10)));
         Assert.That((g.Released, c.Create), Is.EqualTo(((List<int>) null, false)));
     }
 

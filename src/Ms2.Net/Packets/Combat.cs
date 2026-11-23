@@ -81,11 +81,12 @@ public sealed class SkillDamage {
     /// Mode 3 on GMS2 reads the damage at the width the packet carries (the client reads an i64, scenestategame.cpp:5663): 8 bytes left
     /// after the flag -> i64, otherwise i32 widened to long (any other size keeps the leftover warning). Recorded GMS2 servers send i32;
     /// some servers send i64, so a tick above 2^31 shows exactly.
-    /// STILL-OPEN: the GMS2 layouts of modes 4, 7 and 8 are not known; they stay Raw there, so a different layout cannot throw.</summary>
+    /// Mode 4 (the heal, OnHeal scenestategame.cpp:5685) has the KMS layout on GMS2: 26 bytes in every recording.
+    /// STILL-OPEN: the GMS2 layouts of modes 7 and 8 are not known (no recording); they stay Raw there, so a different layout cannot throw.</summary>
     public static SkillDamage Read(ByteReader r, ProtocolProfile profile) {
         bool gms = profile.IsGms2;
         var d = new SkillDamage { Mode = r.ReadByte() };
-        if (gms && d.Mode is 4 or 7 or 8) {
+        if (gms && d.Mode is 7 or 8) {
             d.Raw = r.ReadBytes(r.Available);
             return d;
         }

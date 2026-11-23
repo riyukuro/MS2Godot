@@ -22,7 +22,6 @@ public class RcSkillDamageLayoutTests {
     static readonly byte[] KmsMode3I32 = RcPkt.Hex(
         "03585322020D5622021C335509000EA0FDFF");
 
-    [Ignore("GMS2 mode 4 heal values not read yet")]
     [Test] public void Gms2Mode4ReadsTheHealValues() {
         foreach (var (bytes, target, owner, buff, v1, v2, v3, show) in new[] {
             (Gms2Mode4a, 3639778, 3639778, 3494349, 600U, 0U, 0U, true),
@@ -37,6 +36,13 @@ public class RcSkillDamageLayoutTests {
             Assert.That(d.ShowValues, Is.EqualTo(show));
             Assert.That(r.Available, Is.EqualTo(0), "mode 4's 25 body bytes must be decoded, not kept as Raw");
         }
+    }
+
+    [Test] public void Gms2Modes7And8StayRawAndModeFourOnKmsReadsTheSameFields() {
+        var d = SkillDamage.Read(new ByteReader(new byte[] { 7, 1, 2, 3 }), ProtocolProfile.Gms2);
+        Assert.That(d.Raw, Is.EqualTo(new byte[] { 1, 2, 3 }));
+        var k = SkillDamage.Read(new ByteReader(Gms2Mode4a), ProtocolProfile.Kms2525);
+        Assert.That((k.TargetId, k.BuffId, k.Value1), Is.EqualTo((3639778, 3494349, 600L)));
     }
 
     [Ignore("KMS 18-byte mode 3 not read yet")]
