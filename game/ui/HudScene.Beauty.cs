@@ -88,7 +88,8 @@ public partial class HudScene
     // SlotOfKind (FUN_140f01070) is the controller's default.
     BeautyShopDialogController CreateBeauty(Ms2Godot.Net.LiveSession live)
     {
-        var c = new BeautyShopDialogController
+        BeautyShopDialogController cRef = null;
+        var c = cRef = new BeautyShopDialogController
         {
             Sales = live.BeautySales,
             PlayerLevel = () => live.Me.User?.Level ?? 0,
@@ -103,6 +104,31 @@ public partial class HudScene
             // choice (the client dereferences the null item at uibeautyshopdialog.cpp:1848); no local player = null, as the `if (pPc)` guard at :1845.
             WornItemId = slot => live.Me.User == null ? null
                 : (live.Me.Outfit2?.LastOrDefault(e => (int)e.Slot == slot) ?? live.Me.Equips?.LastOrDefault(e => (int)e.Slot == slot))?.Id ?? 0,
+            // WriteItemInfo @0x140f324f0 (charactercustomizepayloadwriters.cpp:128-146). STILL-OPEN: "editable" (the model head's rotation,
+            // translation and scale) has no source in the port's item model table, so it is not sent; "itemmovie" is empty as with bMovie false.
+            ItemInfo = id =>
+            {
+                var t = hudModel.Tables;
+                var d = t.Items.Get(id);
+                if (d == null) return null;
+                int group = t.ItemModels.Get(d.ItemPreset)?.FirstSlotType ?? 0;
+                return new (string, object)[]
+                {
+                    ("itemname", t.ItemName(id)), ("itemid", id.ToString()), ("iconpath", Ms2.Net.Packets.ItemIcon.Path(id, d.SlotIcon)),
+                    ("isSkinBg", group is 2 or 3), ("isHideSlot", id == WornEquipment.AvatarColorItemId), ("itemmovie", ""),
+                };
+            },
+            HasItemData = id => hudModel.Tables.Items.Get(id) != null,   // FUN_14053f870
+            // FUN_1418c7fe0 (uibeautyshopdialog.cpp): Customize::EquipItem @0x140cd1c90 (customize.cpp:1668) checks the gender, then equips.
+            // STILL-OPEN: the client equips the kept CItem with its colours; the port holds ids only, so the preview has the default colours.
+            EquipPreview = id =>
+            {
+                var d = hudModel.Tables.Items.Get(id);
+                if (d == null || live.Me.User == null || !d.IsGenderAllowed(live.Me.User.Gender)) return;
+                if (cRef.Customize is not BeautyCustomize cust) return;
+                var item = cust.CreateItem(id);
+                if (item != null) cust.Apply(item, cRef.SlotOfKind(cRef.ShopKind));
+            },
             OpenBill = data => ShowBill(live, data),
             BillIsOpen = () => BillOpen,
             CloseBill = () => { if (BillOpen) billDialog.Close(); },

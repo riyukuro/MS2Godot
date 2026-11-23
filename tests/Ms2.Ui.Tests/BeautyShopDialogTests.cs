@@ -374,6 +374,36 @@ public class BeautyShopDialogTests
         Assert.That(r.C.StyleSelectOpen, Is.True, "m_2b5 = 1");
     }
 
+    /// <summary>The style select rows (:2019-2054): the old row's itemname is rewritten only when the shop has a return coupon; the coupon
+    /// line is the item icon with vspace -6 (FUN_1418fe870 writes the offset it is handed), added only with item data for the coupon.</summary>
+    [Test]
+    public void TheStyleSelectRowsCarryTheCouponLineOnlyWithACoupon()
+    {
+        var r = new Rig();
+        r.C.ItemName = id => "n" + id;
+        r.C.ItemInfo = id => new List<(string, object)> { ("itemname", "raw"), ("itemid", id.ToString()) };
+        var open = Rig.Open(BeautyShopDialogController.PageSpecial);
+        r.C.OnPacket(open);
+        var (cur, nw) = r.C.StyleSelectRows(400, 501);
+        Assert.That(cur.Single(m => m.Name == "itemname").Value, Is.EqualTo("raw"), "no return coupon: the row keeps WriteItemInfo's name");
+        Assert.That((string)nw.Single(m => m.Name == "itemname").Value, Is.Not.EqualTo("raw"));
+        Assert.That(nw.Single(m => m.Name == "itemid").Value, Is.EqualTo("501"));
+
+        open.Shop = open.Shop with { ReturnCouponId = 9 };
+        r.C.OnPacket(open);
+        (cur, _) = r.C.StyleSelectRows(400, 501);
+        string plain = (string)cur.Single(m => m.Name == "itemname").Value;
+        Assert.That(plain, Is.Not.EqualTo("raw"));
+        Assert.That(plain, Does.Not.Contain("export_common_icon_item_9"), "no item data for the coupon: no coupon line");
+
+        r.C.HasItemData = id => id == 9;
+        (cur, _) = r.C.StyleSelectRows(400, 501);
+        string withLine = (string)cur.Single(m => m.Name == "itemname").Value;
+        Assert.That(withLine, Does.Contain("export_common_icon_item_9"));
+        Assert.That(withLine, Does.Contain("vspace='-6'"));
+        Assert.That(withLine, Does.StartWith(plain));
+    }
+
     /// <summary>OnClickRandomSelect (:828): slot -1 asks the 0x272 box (the first button leaves); another slot restores the worn slot and,
     /// on the special page, sends mode 0xc with it; the dialog is closed after. onChangeSelectedIndexItem (:839) previews the kept item.</summary>
     [Test]

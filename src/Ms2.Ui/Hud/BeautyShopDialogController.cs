@@ -106,10 +106,10 @@ public sealed class BeautyShopDialogController : UiController
     /// <summary>FUN_141655e10(FUN_140f01070(kind)): the id of the item worn in a slot (0 = none); null = no local player, m_2b8 stays.</summary>
     public Func<int, int?> WornItemId;
     /// <summary>WriteItemInfo (@0x140f324f0) of an item id: the movie members of its row (icon, flags), from the item data. Host-set;
-    /// unset = the item data is not reachable and the style select dialog does not open. STILL-OPEN: the host's source of the item data.</summary>
+    /// unset = the item data is not reachable and the style select dialog does not open.</summary>
     public Func<int, IReadOnlyList<(string Name, object Value)>> ItemInfo;
-    /// <summary>FUN_14053f870 then FUN_1418fe870(2, 0, id): the icon text of the return coupon, null when the coupon has no item data.</summary>
-    public Func<int, string> CouponIcon = _ => null;
+    /// <summary>FUN_14053f870: the item data of an id exists (the return coupon's line needs it). Host-set; unset = no item data.</summary>
+    public Func<int, bool> HasItemData = _ => false;
     /// <summary>Customize::EquipItem (@0x140cd1c90) of an item id: the preview equip of the kept item. Host-set; unset = nothing is equipped.</summary>
     public Action<int> EquipPreview;
 
@@ -119,26 +119,38 @@ public sealed class BeautyShopDialogController : UiController
     public void OpenStyleSelectDialog(int curId, int newId)
     {
         if (Host?.Entity == null || curId == 0 || newId == 0 || Page != PageSpecial || ItemInfo == null) return;
+        var (cur, nw) = StyleSelectRows(curId, newId);
+        Host.Invoke(Host.Entity, "openStyleSelectDialog", Host.Obj(("item0", Host.Obj(cur.ToArray())), ("item1", Host.Obj(nw.ToArray()))));
+        StyleSelectOpen = true;
+    }
+
+    /// <summary>The two rows OpenStyleSelectDialog hands the movie (:2019-2054). The return coupon line is the coupon's icon
+    /// (FUN_1418fe870(2, &amp;vspace, id): "export_common_icon_item_{id}", vspace -6) in an img tag, then the coupon format; it is added only
+    /// when the coupon has item data and the text is not empty, and the old row's itemname is set only when the shop has a return coupon.</summary>
+    public (List<(string Name, object Value)> Cur, List<(string Name, object Value)> New) StyleSelectRows(int curId, int newId)
+    {
         string Name(int id) => ItemName(id);
-        var cur = new List<(string, object)>(ItemInfo(curId));
+        static void Set(List<(string Name, object Value)> row, string name, object value)   // SetWStringMember: a member set twice keeps the last
+        {
+            int i = row.FindIndex(m => m.Name == name);
+            if (i >= 0) row[i] = (name, value); else row.Add((name, value));
+        }
+        var cur = new List<(string Name, object Value)>(ItemInfo(curId));
         string strCur = ClientFormat.Format(Model?.Tables.Common("s_beauty_fmt_style_select_cur_hair"), Name(curId));
         int coupon = Shop?.ReturnCouponId ?? 0;
         if (coupon > 0)
         {
-            if (CouponIcon(coupon) is { } icon)
+            if (HasItemData(coupon))
             {
-                string img = ClientFormat.Format("<img src='{0}' vspace='{1}'>", icon, "0");
+                string img = ClientFormat.Format("<img src='{0}' vspace='{1}'>", "export_common_icon_item_" + coupon, "-6");
                 string line = ClientFormat.Format(Model?.Tables.Common("s_beauty_fmt_return_coupon"), img, Name(coupon), "1");
                 if (!string.IsNullOrEmpty(line)) strCur += "\n" + line;
             }
-            cur.Add(("itemname", strCur));
+            Set(cur, "itemname", strCur);
         }
-        var nw = new List<(string, object)>(ItemInfo(newId))
-        {
-            ("itemname", ClientFormat.Format(Model?.Tables.Common("s_beauty_fmt_style_select_new_hair"), Name(newId)))
-        };
-        Host.Invoke(Host.Entity, "openStyleSelectDialog", Host.Obj(("item0", Host.Obj(cur.ToArray())), ("item1", Host.Obj(nw.ToArray()))));
-        StyleSelectOpen = true;
+        var nw = new List<(string Name, object Value)>(ItemInfo(newId));
+        Set(nw, "itemname", ClientFormat.Format(Model?.Tables.Common("s_beauty_fmt_style_select_new_hair"), Name(newId)));
+        return (cur, nw);
     }
 
     /// <summary>SendBeautyMode12 (uibeautyshopdialog.cpp:1472): slot -1 asks (0x272) and leaves on the first button; else the worn slot
