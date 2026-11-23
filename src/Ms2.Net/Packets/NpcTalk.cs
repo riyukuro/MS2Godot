@@ -115,7 +115,10 @@ public abstract record NpcTalkMessage {
         _ => null,
     };
 
-    public static NpcTalkMessage Read(ByteReader r) {
+    public static NpcTalkMessage Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    /// <summary>The same read for a protocol profile (the mode 3 sub 5 reward items use the profile's item body layout).</summary>
+    public static NpcTalkMessage Read(ByteReader r, ProtocolProfile profile) {
         int mode = r.ReadByte();
         switch (mode) {
             case 0: return new Close();
@@ -135,7 +138,7 @@ public abstract record NpcTalkMessage {
                         for (int i = 0; i < n; i++) {
                             int id = r.ReadInt(), rarity = r.ReadByte(), amount = r.ReadInt();
                             if (ItemReader.Known != null && !ItemReader.Known(id)) continue;
-                            ItemReader.ReadBodyInto(r, new EquipItem { Id = id, Rarity = rarity, Slot = ItemReader.SlotOf?.Invoke(id) ?? EquipSlot.Unknown });
+                            ItemReader.ReadBodyInto(r, new EquipItem { Id = id, Rarity = rarity, Slot = ItemReader.SlotOf?.Invoke(id) ?? EquipSlot.Unknown }, profile);
                             items.Add((id, rarity, amount));
                         }
                         return new RewardItems(items);

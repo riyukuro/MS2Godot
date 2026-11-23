@@ -1405,7 +1405,7 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.NpcTalk))
             {
-                var t = NpcTalkMessage.Read(p.Reader());   // UITalkManager::OnTalkPacket (uitalkcinematic.cpp:971)
+                var t = NpcTalkMessage.Read(p.Reader(), game.Profile);   // UITalkManager::OnTalkPacket (uitalkcinematic.cpp:971)
                 GD.Print($"live: npc talk {t}");
                 NpcTalkReceived?.Invoke(t);
             }
