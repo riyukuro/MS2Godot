@@ -13,6 +13,8 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../Shared/ExclusiveFixtures.cs" Link="ExclusiveFixtures.cs" />
+    <Compile Include="../../game/scripts/movement/RideData.cs" Link="game/RideData.cs" />
+    <Compile Include="../../game/scripts/character/ItemLook.cs" Link="game/ItemLook.cs" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.8.0" />
     <PackageReference Include="NUnit" Version="3.14.0" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
