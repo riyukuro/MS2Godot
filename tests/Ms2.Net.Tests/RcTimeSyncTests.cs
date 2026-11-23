@@ -61,7 +61,6 @@ public class RcTimeSyncTests {
         } finally { MsTime.SetTimeZone(0, 0); }
     }
 
-    [Ignore("GMS2 command 0 body not read yet")]
     [Test] public void Gms2Command0ReadsTheLatencySequence() {
         foreach (var (bytes, serverTime) in new[] { (Gms2Cmd0, 1587694000L), (Gms2Cmd0b, 1589311195L) }) {
             var session = new ClientSession(new MapleChannel(new MemoryStream()));
@@ -75,7 +74,6 @@ public class RcTimeSyncTests {
         }
     }
 
-    [Ignore("KMS 22-byte command 0 body not read yet")]
     [Test] public void KmsCommand0ReadsTheLatencySequence() {
         var session = new ClientSession(new MapleChannel(new MemoryStream()));
         var r = new ByteReader(KmsCmd0);
@@ -88,7 +86,6 @@ public class RcTimeSyncTests {
         } finally { MsTime.SetTimeZone(0, 0); }
     }
 
-    [Ignore("GMS2 command 2 body not read yet")]
     [Test] public void Gms2Command2IgnoresTheBody() {
         foreach (var bytes in new[] { Gms2Cmd2, Gms2Cmd2b }) {
             var session = new ClientSession(new MapleChannel(new MemoryStream()));
@@ -99,14 +96,15 @@ public class RcTimeSyncTests {
         }
     }
 
-    [Ignore("GMS2 command 3 server time not read yet")]
     [Test] public void Gms2Command3ReadsTheServerTime() {
         foreach (var (bytes, serverTime) in new[] { (Gms2Cmd3, 1587694000L), (Gms2Cmd3b, 1587704059L) }) {
             var session = new ClientSession(new MapleChannel(new MemoryStream()));
             var r = new ByteReader(bytes);
+            long before = session.ServerTime;
             session.ApplyTimeSync(r);
-            Assert.That(session.ServerTime, Is.EqualTo(serverTime));
-            Assert.That(r.Available, Is.EqualTo(0), "cmd 3 carries an i64 server time");
+            Assert.That(session.SetTime, Is.EqualTo(serverTime), "cmd 3 sets m_tA0, not the server clock (FUN_141473530)");
+            Assert.That(session.ServerTime, Is.EqualTo(before));
+            Assert.That(r.Available, Is.EqualTo(0), "cmd 3 carries an i64 time");
         }
     }
 }

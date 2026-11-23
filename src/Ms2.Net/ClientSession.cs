@@ -53,18 +53,54 @@ public sealed class ClientSession {
     /// </summary>
     public long ServerTime => DateTimeOffset.UtcNow.ToUnixTimeSeconds() + Interlocked.Read(ref serverTimeOffset);
 
-    /// <summary>Applies a time sync command (ResponseTimeSync body); returns true when the client must answer with a RequestTimeSync.</summary>
+    /// <summary>
+    /// m_tA0 (CMainSystem::FUN_141473530, mainsystem.cpp:360): the time a command 3 time sync sets. CMainSystem::FUN_141473560 counts down
+    /// from it to the next day start. 0 until the server sends one.
+    /// </summary>
+    public long SetTime => Interlocked.Read(ref setTime);
+    long setTime;
+
+    /// <summary>
+    /// The version time a command 4 time sync carried (UIUpperHudDialog::SetVersionText, networkservice.cpp:783). 0 until one arrives.
+    /// STILL-OPEN: the version text itself is not drawn.
+    /// </summary>
+    public long VersionTime => Interlocked.Read(ref versionTime);
+    long versionTime;
+
+    /// <summary>
+    /// Applies a time sync command (ResponseTimeSync body, CNetworkService::OnTimeSyncResponse @0x14153a380, networkservice.cpp:756);
+    /// returns true when the client must answer with a RequestTimeSync. The wire is the same on KMS and GMS2.
+    /// Command 0: i32 tick, i64 server time, i32 zone, u8 flag, i32 latency sequence; sets the bases, no answer.
+    /// Command 1: the same without the sequence; sets the bases and answers. Command 2: reads nothing (the GMS2 server appends a
+    /// 17-byte body the client ignores) and answers. Commands 3 and 4: an i64 time.
+    /// STILL-OPEN: the latency statistics (m_latency.Received(sequence), the min/max/average given to SetServerTickBase) are not kept.
+    /// </summary>
     public bool ApplyTimeSync(ByteReader r) {
         byte cmd = r.ReadByte();
-        if (cmd == 2) return true;
-        if (cmd > 1) return false;
-        int time = r.ReadInt();
-        long serverTime = r.ReadLong();
-        Interlocked.Exchange(ref serverTimeOffset, serverTime - DateTimeOffset.UtcNow.ToUnixTimeSeconds());   // SyncServerTime
-        int zone = r.ReadInt(); byte flag = r.ReadByte();
-        MsTime.SetTimeZone(zone, flag);                  // CMsTime::SetTimeZone(zone, flag) for kinds 0 and 1 (networkservice.cpp:756-779)
-        serverTickBase = time; localTickBase = ElapsedMs; hasServerTick = true;   // volatile write publishes the bases
-        return cmd == 1;
+        switch (cmd) {
+            case 0:
+            case 1: {
+                int time = r.ReadInt();
+                long serverTime = r.ReadLong();
+                int zone = r.ReadInt(); byte flag = r.ReadByte();
+                if (cmd == 0) r.ReadInt();                // the sequence of the request this answers (m_latency.Received)
+                Interlocked.Exchange(ref serverTimeOffset, serverTime - DateTimeOffset.UtcNow.ToUnixTimeSeconds());   // SyncServerTime
+                MsTime.SetTimeZone(zone, flag);           // CMsTime::SetTimeZone(zone, flag) (networkservice.cpp:756-779)
+                serverTickBase = time; localTickBase = ElapsedMs; hasServerTick = true;   // volatile write publishes the bases
+                return cmd == 1;
+            }
+            case 2:
+                r.ReadBytes(r.Available);                 // the client reads nothing here; the appended body is dropped
+                return true;
+            case 3:
+                Interlocked.Exchange(ref setTime, r.ReadLong());
+                return false;
+            case 4:
+                Interlocked.Exchange(ref versionTime, r.ReadLong());
+                return false;
+            default:
+                return false;
+        }
     }
 
     public ClientSession(MapleChannel channel) { this.channel = channel; }
