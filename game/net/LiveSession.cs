@@ -1509,7 +1509,7 @@ public partial class LiveSession : Node
             {
                 try
                 {
-                    var m = StorageMessage.Read(p.Reader(), Storage.Id);   // CStore::Dispatch (store.cpp, 0x140de3480)
+                    var m = StorageMessage.Read(p.Reader(), Storage.Id, game.Profile);   // CStore::Dispatch (store.cpp, 0x140de3480)
                     Storage.Apply(m);
                     GD.Print($"live: storage {m.GetType().Name} ({Storage.Count} items)");
                 }

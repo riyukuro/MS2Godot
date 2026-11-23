@@ -28,7 +28,10 @@ public abstract record StorageMessage {
     public sealed record Other(int Type) : StorageMessage;
 
     /// <summary>Reads one message. <paramref name="storeId"/> is the book's current id (CStore::Id()).</summary>
-    public static StorageMessage Read(ByteReader r, long storeId = 0) {
+    public static StorageMessage Read(ByteReader r, long storeId = 0) => Read(r, storeId, ProtocolProfile.Kms2525);
+
+    /// <summary>The same read for <paramref name="profile"/>: a GMS2 item record has the GMS2 item body (no add slot name).</summary>
+    public static StorageMessage Read(ByteReader r, long storeId, ProtocolProfile profile) {
         int type = r.ReadByte();
         StorageMessage m;
         switch (type) {
@@ -40,12 +43,12 @@ public abstract record StorageMessage {
             case 5: {
                 long id = r.ReadLong(); if (id != storeId) return new IdMismatch(type, id);
                 int n = (ushort) r.ReadShort();
-                var l = ReadItems(r, n, out bool whole);
+                var l = ReadItems(r, n, profile, out bool whole);
                 m = new ItemBatch(id, l); if (!whole) return m; break;
             }
             case 0: {
                 long id = r.ReadLong(); if (id != storeId) return new IdMismatch(type, id);
-                var it = ReadItem(r);
+                var it = ReadItem(r, profile);
                 m = new Add(id, it); if (it == null) return m; break;
             }
             case 1: {
@@ -67,7 +70,7 @@ public abstract record StorageMessage {
             case 8: {
                 long id = r.ReadLong(); if (id != storeId) return new IdMismatch(type, id);
                 int n = (ushort) r.ReadShort();
-                var l = ReadItems(r, n, out bool whole);
+                var l = ReadItems(r, n, profile, out bool whole);
                 m = new ListLoad(id, l); if (!whole) return m; break;
             }
             case 0xe: m = new Reset(); break;
@@ -80,13 +83,13 @@ public abstract record StorageMessage {
 
     /// <summary>CStore::ReadItem (@0x140de4690): i32 item id, i64 uid, i16 slot, i32 amount (the item's rarity argument), then the item body.
     /// Null for an id the item data does not know: the client's create fails, no body is read and the add is skipped.</summary>
-    static EquipItem ReadItem(ByteReader r) => ItemReader.ReadInventory(r);
+    static EquipItem ReadItem(ByteReader r, ProtocolProfile profile) => ItemReader.ReadInventory(r, profile, false);
 
-    static List<EquipItem> ReadItems(ByteReader r, int n, out bool whole) {
+    static List<EquipItem> ReadItems(ByteReader r, int n, ProtocolProfile profile, out bool whole) {
         var l = new List<EquipItem>(n);
         whole = true;
         for (int i = 0; i < n; i++) {
-            var it = ReadItem(r);
+            var it = ReadItem(r, profile);
             if (it == null) { whole = false; break; }   // the rest of the records is read as garbage by the client; stop
             l.Add(it);
         }
