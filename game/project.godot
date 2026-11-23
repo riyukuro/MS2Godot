@@ -8,6 +8,7 @@ config/features=PackedStringArray("4.7", "C#", "Forward Plus")
 
 [autoload]
 
+QuitFinalizers="*res://scripts/QuitFinalizers.cs"
 GammaGuard="*res://scripts/GammaGuard.cs"
 
 [display]
