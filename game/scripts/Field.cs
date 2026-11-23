@@ -15,7 +15,7 @@ namespace Ms2Godot;
 /// pitch and target height that move with the zoom distance.
 /// User args (after --): --field XBLOCK, --shots DIR (scripted walk with screenshots, then quit), --nav (navmesh overlay on; F9 toggles).
 /// </summary>
-public partial class Field : Node3D, World.ITargetCamera
+public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView
 {
     /// <summary>The field a session opens in when nothing names another (Tria): the setup step builds its navmesh.</summary>
     public const string StartField = "02000001_tw_tria";
@@ -77,9 +77,8 @@ public partial class Field : Node3D, World.ITargetCamera
     }
     FieldCamera cam = new();
     float camYaw;                         // Ctrl + left/right arrows turn the camera round the player
-    float? camPitch;                      // Ctrl + up/down arrows set the angle (0.15..1.57); a distance change goes back to the distance's own
-    float camDist;                        // m_50: zoom distance, MinCameraDistance .. cam.Distance + PlayerHeight
-    public const float MinCameraDistance = 400f; // CCameraMode default nearest zoom (m_58)
+    readonly TargetCameraZoom zoom = new();   // CTargetCameraMode's distance, angle and passes
+    public const float MinCameraDistance = TargetCameraZoom.Nearest; // CCameraMode default nearest zoom (m_58)
     string shotDir;
     // scripted steps: seconds, input (right, forward), walk, shot file at the end
     readonly Queue<(float secs, Vector2 input, bool walk, string shot)> script = new();
@@ -251,7 +250,8 @@ public partial class Field : Node3D, World.ITargetCamera
         hdr = fd?.Hdr ?? hdr;
         if (fd != null) BlobShadow.Strength = fd.SimpleShadow;
         if (player != null && fd != null) player.CheckClimb = fd.CheckClimb;
-        camDist = cam.Distance;
+        zoom.Setting = cam;
+        zoom.Reset();
         try
         {
             var k = Ms2.Ui.FeatureElements.Constants(packs);
@@ -730,134 +730,44 @@ public partial class Field : Node3D, World.ITargetCamera
     }
     Vector4 fogParams;   // ms2_fog: near, far, bias, unused
 
-    /// <summary>
-    /// CTargetCameraMode: with t = (distance - nearest) / (farthest - nearest), the angle from the up axis goes from
-    /// 90 (level) at the nearest zoom to vangle at the farthest, and the target height from zoomInHeightOffset to
-    /// zoomOutHeightOffset. Eye = target + (d sin yaw, d cos yaw, d cos pitch) in MS2 axes, yaw = hangle + 180.
-    /// </summary>
+    /// <summary>CTargetCameraMode::vfunc_8: the distance, coast and passes run in <see cref="TargetCameraZoom"/>; each pass shows
+    /// the camera through <see cref="ITargetCameraView.Show"/>.</summary>
     void UpdateCamera(double dt = 0)
     {
         if (player == null || !player.IsInsideTree()) return;   // a player that failed to build never entered the tree
         var ms2yaw = Mathf.DegToRad(cam.HAngleDeg + 180f) + camYaw;
         CameraYaw = ms2yaw;
-        Vector3 eye, look, offset;
-        Vector3? prevLook = camLook, prevEye = placedEye;
-        // CTargetCameraMode::vfunc_8: one pass, plus another while the target outruns the eye's step or while the shown
-        // view is blocked, at most 100; every pass eases the shown camera again with the frame's time.
-        int passes = 1;
-        for (int i = 0; i < passes && i < 100; i++)
-        {
-            Place(camDist, ms2yaw, out eye, out look, out offset);
-            if (!camVelActive || placedEye == null) placedEye = eye;
-            if (Mathf.Abs(camVel) >= 5f)
-            {
-                camVelActive = true;
-                // the client's pass (targetcameramode.cpp:219-228) decays m_84 by 0.9 and then moves the eye by m_84 along
-                // the eye-to-target line, once a frame at its 60 fps, until |m_84| < 5. The pitch follows the distance, so
-                // the path depends on the step size: the coast runs on its own 1/60 s grid with the client's step
-                // (CoastStep), and a drawn frame shows the distance between two grid steps at its phase. The path at the
-                // grid times and the settled distance are the 60 fps ones at any frame rate.
-                float frames = dt > 0 ? FrameRate.Frames((float)dt) : 1f;
-                if (camBlocked)
-                {
-                    // the blocked view's -10 (no decay) moves by m_84 each 60 fps frame
-                    var pos = placedEye.Value + (look - placedEye.Value).Normalized() * camVel * frames;
-                    if (Planar(prevLook ?? look, look) > Planar(prevEye ?? pos, pos)) passes++;
-                    float maxDist = cam.Distance + PlayerHeight;
-                    bool outside = camDist < MinCameraDistance || camDist > maxDist;
-                    SetCameraDistance(pos, look, !(outside && ((camVel > 0 && camDist > maxDist) || (camVel < 0 && camDist < MinCameraDistance))));
-                    coastDist = camDist;
-                    coastPhase = 0;
-                }
-                else
-                {
-                    coastPhase += frames;
-                    while (coastPhase >= 1f - 1e-4f && camCoastLeft > 0)
-                    {
-                        coastDist = CoastStep(coastDist, ms2yaw, ref camVel);
-                        camPitch = null;
-                        coastPhase -= 1f;
-                        if (--camCoastLeft <= 0 || camVel == 0) { camCoastLeft = 0; break; }
-                    }
-                    if (camCoastLeft <= 0) { camDist = coastDist; camVel = 0; coastPhase = 0; }   // |m_84| is under 5 now
-                    else
-                    {
-                        float v = camVel;
-                        camDist = Mathf.Lerp(coastDist, CoastStep(coastDist, ms2yaw, ref v), Mathf.Clamp(coastPhase, 0f, 1f));
-                    }
-                }
-                Place(camDist, ms2yaw, out eye, out look, out offset);
-                if (!camBlocked && Planar(prevLook ?? look, look) > Planar(prevEye ?? eye, eye)) passes++;
-                placedEye = eye;
-            }
-            else if (camVelActive)
-            {
-                camVel = 0;
-                camVelActive = false;
-                placedEye = eye;                               // vfunc_37
-            }
-            // the zoom action (one frame per wheel step): m_84 += x * min(dt, 1/15) * 2000, within +-150. The impulse is
-            // the client's at a 1/60 s frame, per notch, so a notch zooms as far at any frame rate (the coast above
-            // counts 60 fps frames)
-            if (i == 0 && zoomInput != 0)
-            {
-                camVel = Mathf.Clamp(camVel + zoomInput * (1f / FrameRate.Reference) * 2000f, -150f, 150f);
-                camCoastLeft = CoastFrames(camVel);
-                coastDist = camDist;
-                coastPhase = 0;
-                zoomInput = 0;
-            }
-            player.CameraYaw = Mathf.Atan2(offset.X, offset.Z);   // movement is camera relative
-            {   // the sync record's camera field: FUN_140afdd40 over the placed eye and look, in MS2 axes (x, -z, y)
-                var e = placedEye.Value;
-                var (ex, ey, ez) = Ms2.Net.CameraMath.Euler(e.X, -e.Z, e.Y, look.X, -look.Z, look.Y);
-                player.CameraEuler = new Vector3(ex, ey, ez);
-                if (!eulerLogged) { eulerLogged = true; GD.Print($"field: camera hAngle {cam.HAngleDeg} vAngle {cam.VAngleDeg} eye {e} look {look} -> CameraEuler ({ex:F2}, {ey:F2}, {ez:F2})"); }
-            }
-            var ideal = Transform3D.Identity.LookingAt(look - placedEye.Value, Vector3.Up);
-            ideal.Origin = placedEye.Value;
-            var shown = EaseCamera(ideal, (float)dt);
-            camera.GlobalTransform = shown;
-            // vfunc_39: the near plane of the SHOWN camera; while blocked the next pass pushes the eye out by 10
-            camBlocked = NearPlaneBlocked(shown, look);
-            if (camBlocked) { camVel = -10f; camCoastLeft = CoastFrames(camVel); coastDist = camDist; coastPhase = 0; passes++; }
-            camLook = look;
-        }
-        SetFogBias(camDist);
+        var p = player.GlobalPosition;
+        zoom.Update(new System.Numerics.Vector3(p.X, p.Y, p.Z), ms2yaw, (float)dt, zoomInput, this);
+        zoomInput = 0;
+        SetFogBias(zoom.Distance);
     }
 
-    // CTargetCameraMode distance state: camDist is m_50 (the eye's distance from the target in the ground plane), camVel
-    // m_84 (+ toward the target), camVelActive m_88, camBlocked m_f4; placedEye is m_d8's position, camLook m_78.
-    bool eulerLogged;
-    float camVel;
-    // 60 fps frames left in the zoom coast: the client moves while |m_84| >= 5 at the frame's start, so from v that is
-    // floor(ln(5 / |v|) / ln 0.9) + 1 frames
-    float camCoastLeft;
-    float coastDist, coastPhase;   // the coast's distance at its last 1/60 s grid step, and the frames since it
-
-    /// <summary>
-    /// One client coast frame from distance d (targetcameramode.cpp:219-247): m_84 *= 0.9, the eye moves by m_84 toward
-    /// the target, and the distance is clamped and snapped as <see cref="SetCameraDistance"/> does.
-    /// </summary>
-    float CoastStep(float d, float yaw, ref float v)
+    /// <summary>One pass's shown camera (vfunc_39): the player turns with the placed camera, the sync record's camera field is
+    /// set, and the shown camera eases to the placed one; returns whether its near plane is blocked.</summary>
+    bool ITargetCameraView.Show(System.Numerics.Vector3 placed, System.Numerics.Vector3 at, System.Numerics.Vector3 offset, float dt)
     {
-        v *= 0.9f;
-        Place(d, yaw, out var eye, out var look, out _);
-        var pos = eye + (look - eye).Normalized() * v;
-        float maxDist = cam.Distance + PlayerHeight, nd = Planar(look, pos);
-        bool outside = d < MinCameraDistance || d > maxDist;
-        if (!(outside && ((v > 0 && d > maxDist) || (v < 0 && d < MinCameraDistance)))) nd = Mathf.Clamp(nd, MinCameraDistance, maxDist);
-        if ((v < 0 && nd > cam.Distance && d < cam.Distance) || (v > 0 && d > cam.Distance && nd < cam.Distance)) { nd = cam.Distance; v = 0; }
-        return nd;
+        player.CameraYaw = Mathf.Atan2(offset.X, offset.Z);   // movement is camera relative
+        var look = new Vector3(at.X, at.Y, at.Z);
+        var e = new Vector3(placed.X, placed.Y, placed.Z);
+        {   // the sync record's camera field: FUN_140afdd40 over the placed eye and look, in MS2 axes (x, -z, y)
+            var (ex, ey, ez) = Ms2.Net.CameraMath.Euler(e.X, -e.Z, e.Y, look.X, -look.Z, look.Y);
+            player.CameraEuler = new Vector3(ex, ey, ez);
+            if (!eulerLogged) { eulerLogged = true; GD.Print($"field: camera hAngle {cam.HAngleDeg} vAngle {cam.VAngleDeg} eye {e} look {look} -> CameraEuler ({ex:F2}, {ey:F2}, {ez:F2})"); }
+        }
+        var ideal = Transform3D.Identity.LookingAt(look - e, Vector3.Up);
+        ideal.Origin = e;
+        var shown = EaseCamera(ideal, dt);
+        camera.GlobalTransform = shown;
+        return NearPlaneBlocked(shown, look);
     }
 
-    static float CoastFrames(float v) => Mathf.Abs(v) < 5f ? 0f : Mathf.Floor(Mathf.Log(5f / Mathf.Abs(v)) / Mathf.Log(0.9f) + 1e-4f) + 1f;
-    bool camVelActive, camBlocked;
+    bool eulerLogged;
     int zoomInput;
     /// <summary>A wheel notch, as the mouse handler sets it (+1 in, -1 out), for scripted runs (MoveProof wheel).</summary>
     public void Wheel(int notch) => zoomInput = notch;
     /// <summary>The zoom distance (m_50), for scripted runs (MoveProof cam).</summary>
-    public float CameraDistance => camDist;
+    public float CameraDistance => zoom.Distance;
     /// <summary>
     /// Scripted runs (MoveProof view): the zoom distance (m_50, clamped to MinCameraDistance .. farthest + player height),
     /// the angle from the up axis in degrees as Ctrl + up/down sets it (null: the distance's own), and the Ctrl + left/right
@@ -865,31 +775,8 @@ public partial class Field : Node3D, World.ITargetCamera
     /// </summary>
     public void SetCameraView(float dist, float? pitchDeg, float? turnDeg)
     {
-        camVel = 0;
-        camCoastLeft = 0;
-        coastPhase = 0;
-        camDist = coastDist = Mathf.Clamp(dist, MinCameraDistance, cam.Distance + PlayerHeight);
-        camPitch = pitchDeg is float p ? Mathf.Clamp(Mathf.DegToRad(p), 0.15f, 1.57f) : null;
+        zoom.SetView(dist, pitchDeg is float d ? Mathf.DegToRad(d) : null);
         if (turnDeg is float t) camYaw += Mathf.DegToRad(t);
-    }
-    Vector3? placedEye, camLook;
-
-    static float Planar(Vector3 a, Vector3 b) => new Vector2(a.X - b.X, a.Z - b.Z).Length();
-
-    /// <summary>CTargetCameraMode::FUN_14183bfd0: the distance becomes the eye's ground-plane distance from the target,
-    /// within nearest .. farthest + player height when clamped. A step that crosses the farthest zoom (m_54) stops on it
-    /// and ends the motion; the angle and height then follow the distance.</summary>
-    void SetCameraDistance(Vector3 pos, Vector3 look, bool clamp)
-    {
-        float prev = camDist;
-        camDist = Planar(look, pos);
-        if (clamp) camDist = Mathf.Clamp(camDist, MinCameraDistance, cam.Distance + PlayerHeight);
-        if ((camVel < 0 && camDist > cam.Distance && prev < cam.Distance) || (camVel > 0 && prev > cam.Distance && camDist < cam.Distance))
-        {
-            camDist = cam.Distance;
-            camVel = 0;
-        }
-        camPitch = null;
     }
 
     // CTargetCameraMode::vfunc_39: the shown camera (m_c0) follows the one placed above (m_d8). Each frame it closes
@@ -944,34 +831,17 @@ public partial class Field : Node3D, World.ITargetCamera
     World.CameraSetting World.ITargetCamera.Setting => new()
     {
         Fov = cam.FovDeg, DofNear = 250, DofFar = 18000,
-        Position = placedEye is { } e ? new Vector3(e.X, -e.Z, e.Y) : default,
+        Position = zoom.PlacedEye is { } e ? new Vector3(e.X, -e.Z, e.Y) : default,
         Rotation = player?.CameraEuler ?? default,
     };
 
     /// <summary>CTargetCameraMode m_6c: the camera's angle from the up axis in radians, as last placed.</summary>
-    public float CameraPitch { get; private set; } = Mathf.Pi / 2;
+    public float CameraPitch => zoom.PlacedPitch;
     /// <summary>The camera mode's position (m_setting.m_c = m_c0.m_pos): the placed eye before the shown camera's easing.</summary>
-    public Vector3? CameraEye => placedEye;
+    public Vector3? CameraEye => zoom.PlacedEye is { } e ? new Vector3(e.X, e.Y, e.Z) : null;
     /// <summary>CTargetCameraMode m_68: the camera's yaw in radians (hangle + 180 plus the Ctrl+arrow turn); the eye sits at
     /// (d sin yaw, d cos yaw) from the target in MS2 axes.</summary>
     public float CameraYaw { get; private set; }
-
-    const float PlayerHeight = 150f;            // CTargetCameraMode m_b4 (the player's height, added to the farthest zoom)
-
-    void Place(float dist, float yaw, out Vector3 eye, out Vector3 look, out Vector3 offset)
-    {
-        float range = cam.Distance - MinCameraDistance;
-        float t = range > 0 ? Mathf.Min((dist - MinCameraDistance) / range, 1f) : 1f;
-        float pitch = camPitch ?? Mathf.DegToRad(90f + (cam.VAngleDeg - 90f) * t);
-        CameraPitch = pitch;
-        // vfunc_27: the height follows the distance past the farthest zoom too (only the angle is capped)
-        float th = range > 0 ? (dist - MinCameraDistance) / range : 1f;
-        float height = cam.ZoomInHeightOffset + (cam.ZoomOutHeightOffset - cam.ZoomInHeightOffset) * th;
-        var ms2 = new Vec3(dist * Math.Sin(yaw), dist * Math.Cos(yaw), dist * Math.Cos(pitch));
-        offset = FieldBuilder.ToGodotPoint(ms2);
-        look = player.GlobalPosition + new Vector3(0, height, 0);
-        eye = look + offset;
-    }
 
     /// <summary>
     /// The client draws the world with D3D9 (NiDX9Renderer::Do_SetCameraData: CameraService's symmetric frustum, vertical FOV,
@@ -1084,9 +954,9 @@ public partial class Field : Node3D, World.ITargetCamera
                 float step = (float)Math.Min(delta, 1.0 / 15);
                 if (Input.IsKeyPressed(Key.Left)) camYaw += step;
                 if (Input.IsKeyPressed(Key.Right)) camYaw -= step;
-                float pitch0 = camPitch ?? Mathf.DegToRad(90f + (cam.VAngleDeg - 90f) * Mathf.Min((camDist - MinCameraDistance) / Math.Max(cam.Distance - MinCameraDistance, 1f), 1f));
-                if (Input.IsKeyPressed(Key.Up)) camPitch = Mathf.Clamp(pitch0 + step, 0.15f, 1.57f);
-                if (Input.IsKeyPressed(Key.Down)) camPitch = Mathf.Clamp(pitch0 - step, 0.15f, 1.57f);
+                float pitch0 = zoom.Pitch ?? zoom.PitchOf(zoom.Distance);
+                if (Input.IsKeyPressed(Key.Up)) zoom.Pitch = Mathf.Clamp(pitch0 + step, 0.15f, 1.57f);
+                if (Input.IsKeyPressed(Key.Down)) zoom.Pitch = Mathf.Clamp(pitch0 - step, 0.15f, 1.57f);
             }
             TriggerCamera?.Update((float)delta);
             if (TriggerCamera?.Shown is { } s)
