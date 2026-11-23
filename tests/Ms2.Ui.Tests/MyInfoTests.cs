@@ -701,6 +701,18 @@ public class MyInfoTests
         Assert.That(t.UgcCubeCategoryName(0), Is.Empty);
     }
 
+    /// <summary>The item ids of the housing price tables (shop_maid.xml, shop_ugcall.xml), as HousingTable reads them.</summary>
+    static List<int> PriceTableItems(PackSet packs)
+    {
+        var ids = new List<int>();
+        foreach (var file in HousingTable.PriceFiles)
+            if (HousingTable.EntryOf(packs, file) is { } e
+                && Ms2.Formats.Text.PackXml.Parse(packs.Read("Xml", e)).Root is { } root)
+                foreach (var k in root.Elements("key"))
+                    if (int.TryParse((string)k.Attribute("id"), out int id)) ids.Add(id);
+        return ids;
+    }
+
     [Test]
     public void GuideDescriptionByIdHasAnInstallItemsRightsHousingLevelAndTrophy()
     {
@@ -726,10 +738,13 @@ public class MyInfoTests
         // the rights (FormatStringId 0xafa, then 0xaf9) with every trophy cleared and feature 0xdb off: nothing appended
         m.IsAchieveGradeCleared = (_, _) => true;
         m.RequireAchieveText = (id, grade) => $"trophy {id}/{grade}";
+        // the housing rows' items; the GMS2 data has no housing.xml, so there the price tables' items
+        var installs = t.Housing.Count != 0 ? t.Housing.Rows.Select(r => r.ItemId).ToList() : PriceTableItems(Packs());
+        Assert.That(installs, Is.Not.Empty);
         int both = 0, rights = 0;
-        foreach (var row in t.Housing.Rows.OrderBy(r => r.ItemId))
+        foreach (var id in installs.Distinct().OrderBy(i => i))
         {
-            var d = t.Items.Get(row.ItemId);
+            var d = t.Items.Get(id);
             if (d == null || d.InstallObjCode == 0) continue;
             var r = t.ObjectCubeRights(d.InstallObjCode);
             if (!r.StateChange && !r.TriggerControl) continue;
@@ -737,12 +752,25 @@ public class MyInfoTests
             {
                 string guide = Guide(d.Id);
                 TestContext.WriteLine($"{d.Id} (object {d.InstallObjCode}, {r}): {guide}");
-                Assert.That(guide, Is.EqualTo(Rights(d, t.ItemDescription(d.Id, "guideDescription"))));
+                // an install item without a housing row has no member (the GMS2 data has no housing.xml)
+                string expected = d.IsInstallItem && t.Housing.Get(d.Id) == null ? null : Rights(d, t.ItemDescription(d.Id, "guideDescription"));
+                Assert.That(guide, Is.EqualTo(expected));
             }
         }
         TestContext.WriteLine($"items with rights: {rights}, with both: {both}");
         Assert.That(rights, Is.GreaterThan(0));
         Assert.That(t.ObjectCubeRights(0), Is.EqualTo((false, false)));
+
+        if (t.Housing.Count == 0)
+        {
+            // no housing row (ItemHousing is empty): an install item's member is left out, with feature 0xdb as well
+            var plainItem = installs.Select(t.Items.Get).First(d => d is { IsInstallItem: true } && t.ObjectCubeRights(d.InstallObjCode) == (false, false));
+            Assert.That(Guide(plainItem.Id), Is.Null);
+            m.Features.Add(0xdb);
+            Assert.That(Guide(plainItem.Id), Is.Null);
+            m.Features.Remove(0xdb);
+            return;
+        }
 
         // feature 0xdb, an interiorLevel above 0 and priceCount 1: BlockFormat(0x6fa, the level raised to the category's
         // interior requireLevel) above the own housing grade (0 with no housing state)

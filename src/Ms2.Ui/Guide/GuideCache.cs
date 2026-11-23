@@ -20,6 +20,10 @@ public static class GuideCache
     const uint EndMagic = 0x444E4547;  // "GEND"
     const uint StringsMagic = 0x5347324D;     // "M2GS"
     const uint StringsEndMagic = 0x534E4547;  // "GENS"
+    /// <summary>The strings body's format: 2 keeps a flag per id for the text and the voice, so a text the object
+    /// words leave empty stays a row of its id, as LoadGuideStrings stores it (SetAt after ReplaceObjectWords,
+    /// uiguideeventarrow.cpp:323-326).</summary>
+    const int StringsVersion = 2;
 
     const byte NodeElement = 0, NodeText = 1, NodeCData = 2, NodeComment = 3;
 
@@ -175,7 +179,8 @@ public static class GuideCache
     // ---- the guide strings (GuideStrings) --------------------------------------------------------------------------
 
     /// <summary>The strings cache body of <paramref name="strings"/> (the store's file wraps it): the texts and
-    /// voices as loaded, over the union of their ids, in id order.</summary>
+    /// voices as loaded, over the union of their ids, in id order, each id with a flag byte (1 a text, 2 a voice): an
+    /// empty text is still a text.</summary>
     public static byte[] WriteStringsBody(GuideStrings strings)
     {
         var texts = strings.TextMap;
@@ -185,13 +190,15 @@ public static class GuideCache
         var w = new MemoryStream();
         var b = new BinaryWriter(w, Encoding.UTF8);
         b.Write(StringsMagic);
-        b.Write(Version);
+        b.Write(StringsVersion);
         b.Write(ids.Count);
         foreach (var id in ids)
         {
+            bool hasText = texts.TryGetValue(id, out var t), hasVoice = voices.TryGetValue(id, out var v);
             b.Write(id);
-            b.Write(texts.TryGetValue(id, out var t) ? t : "");
-            b.Write(voices.TryGetValue(id, out var v) ? v : "");
+            b.Write((byte)((hasText ? 1 : 0) | (hasVoice ? 2 : 0)));
+            b.Write(t ?? "");
+            b.Write(v ?? "");
         }
         b.Write(StringsEndMagic);
         b.Flush();
@@ -204,7 +211,7 @@ public static class GuideCache
         try
         {
             var r = new BinaryReader(new MemoryStream(bytes, false), Encoding.UTF8);
-            if (r.ReadUInt32() != StringsMagic || r.ReadInt32() != Version) return null;
+            if (r.ReadUInt32() != StringsMagic || r.ReadInt32() != StringsVersion) return null;
             int count = r.ReadInt32();
             if (count < 0 || (long)count * 4 > bytes.Length) return null;
             var s = new GuideStrings();
@@ -213,10 +220,11 @@ public static class GuideCache
             for (int i = 0; i < count; i++)
             {
                 uint id = r.ReadUInt32();
+                byte has = r.ReadByte();
                 string text = r.ReadString();
                 string voice = r.ReadString();
-                if (text.Length != 0) texts[id] = text;
-                if (voice.Length != 0) voices[id] = voice;
+                if ((has & 1) != 0) texts[id] = text;
+                if ((has & 2) != 0) voices[id] = voice;
             }
             if (r.ReadUInt32() != StringsEndMagic || r.BaseStream.Position != bytes.Length) return null;
             return s;

@@ -139,7 +139,7 @@ public class GuideCacheTests
             var parsedStrings = GuideStrings.Parse(packs, "en");
             Assert.That(GuideCache.FirstDifference(parsedTable, cachedTable), Is.Null);
             Assert.That(GuideCache.FirstStringsDifference(parsedStrings, cachedStrings), Is.Null);
-            Assert.That(cachedStrings.Text(420), Is.Empty, "the SurvivalTutorial key is skipped either way");
+            Assert.That(cachedStrings.Text(420), Is.EqualTo(parsedStrings.Text(420)), "the SurvivalTutorial key (off in the KMS data) as parsed");
 
             // =check reads both and reports the first difference; the table stays the cache's
             Environment.SetEnvironmentVariable("MS2_UICACHE", "check");

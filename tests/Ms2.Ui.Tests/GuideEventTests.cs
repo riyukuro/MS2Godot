@@ -76,9 +76,28 @@ public class GuideEventTests
         // the voices are kept apart from the texts
         Assert.That(s.Voice(1030), Is.Not.Empty);
         Assert.That(s.Voice(5), Is.Empty);
-        Assert.That(s.Text(420), Is.Empty, "a key of an off feature (SurvivalTutorial) is skipped");
+        // key 420 has feature="SurvivalTutorial": off in the KMS data, so the key is skipped; on in the GMS2 data
+        bool survival = Ms2.Ui.FeatureElements.IsAvailable(packs, "", "SurvivalTutorial");
+        Assert.That(s.Text(420), survival ? Is.Not.Empty : Is.Empty, "a key of an off feature is skipped");
         // the shared table is built once per language
         Assert.That(GuideStrings.Shared(packs, "en"), Is.SameAs(GuideStrings.Shared(packs, "en")));
+    }
+
+    [Test]
+    public void TheStringsCacheKeepsATextTheObjectWordsLeftEmpty()
+    {
+        // LoadGuideStrings stores the name after ReplaceObjectWords even when that leaves it empty (an object word of an
+        // id the data does not name): the id is still a row, and the cache gives it back as one
+        var s = new GuideStrings();
+        s.TextMap[7] = "";
+        s.TextMap[8] = "text";
+        s.VoiceMap[8] = "voice";
+        s.VoiceMap[9] = "voice only";
+        var cached = GuideCache.ReadStringsBody(GuideCache.WriteStringsBody(s));
+        Assert.That(cached, Is.Not.Null);
+        Assert.That(GuideCache.FirstStringsDifference(s, cached), Is.Null);
+        Assert.That(cached.Ids, Is.EqualTo(new uint[] { 7, 8 }));
+        Assert.That(cached.Voice(9), Is.EqualTo("voice only"));
     }
 
     [Test]
