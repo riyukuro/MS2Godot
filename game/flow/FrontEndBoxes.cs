@@ -17,10 +17,6 @@ public static class FrontEndBoxes
     {
         [1] = "s_char_input_name", [4] = "s_char_ask_delete", [5] = "s_char_ask_delete_with_wait",
         [7] = "s_char_ask_delete_confirm_checkbox", [0x18] = "s_char_err_delete_name",
-        [0x210] = "s_login_err_id", [0x211] = "s_login_err_pwd", [0x213] = "s_login_err_full_server",
-        [0x215] = "s_login_err_full_ch", [0x216] = "s_login_err_db", [0x217] = "s_login_err_unknown",
-        [0x218] = "s_login_err_check_passport", [0x224] = "s_login_err_tencent_signature",
-        [0xace] = "s_alreadyloginuser_response_kick",
         [0x97b] = "s_common_sec", [0x97c] = "s_common_min", [0x97d] = "s_common_hour",
         [0x97e] = "s_common_min_sec", [0x97f] = "s_common_hour_min", [0x980] = "s_common_hour_min_sec",
     };
@@ -28,23 +24,18 @@ public static class FrontEndBoxes
     public static string Common(int id) => Keys.TryGetValue(id, out var k) ? MessageBoxData.CommonByKey(k) ?? "" : "";
     static string Format(int id, params object[] args) => ClientFormat.Format(Common(id), args);
 
-    /// <summary>FUN_140cc1fb0 @0x140cc1fb0: the common string of a login refusal.</summary>
-    public static int LoginRefusalString(int result) => result switch
-    {
-        1 or 2 => 0x210, 3 => 0x211, 4 or 5 => 0xace, 6 => 0x213, 8 => 0x216, 10 => 0x215, 16 => 0x218, 22 => 0x224,
-        _ => 0x217,
-    };
-
     /// <summary>
-    /// CNetworkService::OnLoginResult (networkservice.cpp:991), the refusals that end in the last branch: a one-button notice
-    /// with the result's string (0x218 formats the error number into it). Results 7, 11, 12, 0x12-0x15, 0x18-0x1a, 0xe and
-    /// 0xf have their own titled boxes in the client; they are not ported here and get this notice.
+    /// CNetworkService::OnLoginResult (networkservice.cpp:991-1066): the refused result's box (<see cref="LoginRefusalBox.Build"/>),
+    /// shown now (FUN_140d73c60). Result 7's start and end are the two i64 after the block type and an i32 and an i64
+    /// (LoginResultPacket.Restricted); result 0x1a's buy button opens the founders page (OnFoundersMsgBoxResult). STILL-OPEN:
+    /// result 7's CMsTime::SetTimeZone and 0x1a's scene change (FUN_1417e25a0(0x6200085)) are not ported.
     /// </summary>
-    public static void LoginRefused(int result, int error)
+    public static void LoginRefused(LoginResult r)
     {
-        int message = LoginRefusalString(result);
-        var text = message == 0x218 ? Format(message, error) : Common(message);
-        MessageBoxQueue.ShowMessageBox(text, 0, null, "");   // ShowMessageBox / FUN_140d73bc0(message, 0, 0, "")
+        long start = 0, end = 0;
+        if (r.State == 7 && r.Tail is { Length: >= 28 } t) { start = System.BitConverter.ToInt64(t, 12); end = System.BitConverter.ToInt64(t, 20); }
+        MessageBoxQueue.Show(LoginRefusalBox.Build(r.State, r.Const1, r.Message, start, end, r.TimeBase,
+            (button, _) => { if (button == 0) Godot.OS.ShellOpen(LoginRefusalBox.FoundersUrl); return true; }));
     }
 
     /// <summary>FUN_141b708a0 @0x141b708a0 (util.cpp:999): a time span as text.</summary>

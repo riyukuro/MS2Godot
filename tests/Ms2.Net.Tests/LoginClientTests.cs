@@ -128,6 +128,39 @@ public class LoginClientTests {
         l.Stop();
     }
 
+    /// <summary>
+    /// A refusal (state 4, the account still logged in), then the next try: the client connects again for it (the login
+    /// dialog's OnEndPopdown -> ConnectTo, uilogindialog.cpp:190-201; LiveSession.LoginAsync makes a new transport), and the
+    /// new connection sends a second ResponseLogin, which the server accepts.
+    /// </summary>
+    [Test] public async Task ARefusedLoginIsTriedAgainOnANewConnection() {
+        var (s, l, srv, t, login) = await Start();
+        using (t) {
+            await ReadFrame(s, srv);
+            await s.WriteAsync(srv.Frame(Inbound.RequestLogin));
+            Assert.That((await ReadFrame(s, srv)).op, Is.EqualTo((ushort) Outbound.ResponseLogin));
+            await s.WriteAsync(LoginResultFrame(srv, 4));
+            var o = await login.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.That(o.Success, Is.False); Assert.That(o.Result.State, Is.EqualTo(4));
+            s.Socket.Close();   // the server drops the refused connection
+        }
+        l.Stop();
+        var (s2, l2, srv2, t2, login2) = await Start();
+        using (t2) {
+            await ReadFrame(s2, srv2);
+            await s2.WriteAsync(srv2.Frame(Inbound.RequestLogin));
+            var (op, body) = await ReadFrame(s2, srv2);
+            Assert.That(op, Is.EqualTo((ushort) Outbound.ResponseLogin), "the second try sends a second login");
+            Assert.That(ResponseLogin.Read(new ByteReader(body)).User, Is.EqualTo("userKR"));
+            await s2.WriteAsync(LoginResultFrame(srv2, 0));
+            await s2.WriteAsync(srv2.Frame((Inbound) 0x0C, w => w.WriteByte((byte) CharacterListCommand.StartList)));
+            await s2.WriteAsync(srv2.Frame((Inbound) 0x0C, w => { w.WriteByte((byte) CharacterListCommand.EndList); w.WriteByte(0); }));
+            var o2 = await login2.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.That(o2.Success, "the second try logs in");
+        }
+        l2.Stop();
+    }
+
     [Test] public async Task ClosedBeforeListThrows() {
         var (s, l, srv, t, login) = await Start();
         using (t) {

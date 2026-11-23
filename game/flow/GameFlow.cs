@@ -41,7 +41,8 @@ public partial class GameFlow : Node
     string shotDir;
     bool boxScript;
     Action onSelectCharacter;
-    Action onGameExit;
+    Action onGameExit, onAlreadyReconnect;
+    Action<string, bool> onExternalBlock;
     Action onGameToLogin, onListReturned;
 
     /// <summary>Returns the flow to the login scene (e.g. forced-quit notice, scenestategame.cpp:9268).</summary>
@@ -89,6 +90,13 @@ public partial class GameFlow : Node
         // SendRequestQuitAndDisconnect (RequestQuit(1) + close socket), restore display mode, then exit.
         onGameExit = QuitNow;
         Ui.MessageBoxLayer.GameExit += onGameExit;
+        Ui.MessageBoxLayer.MaintenanceExit += onGameExit;   // HandleMaintenanceExitButton: the same quit (uimessagebox.cpp:1515-1519)
+        // HandleAlreadyReconnectButton: ConnectToConfiguredServer, and the login server's RequestLogin gets the login again
+        onAlreadyReconnect = () => { if (Current == State.Login && Net.LiveSession.Instance is { Busy: false } live) LoginLive(live); };
+        Ui.MessageBoxLayer.AlreadyReconnect += onAlreadyReconnect;
+        // HandleExternalBlockButton: ShellExecuteEx of the page; type 0 then quits as the maintenance exit does
+        onExternalBlock = (url, quit) => { OS.ShellOpen(url); if (quit) QuitNow(); };
+        Ui.MessageBoxLayer.ExternalBlock += onExternalBlock;
 
         Net.LiveSession.Attach(this);
         WireLive();
@@ -181,7 +189,9 @@ public partial class GameFlow : Node
         Ui.LauncherScene.Connect -= OnLauncherConnect;
         Net.LiveSession.ClearServer();
         if (onSelectCharacter != null) { Ui.HudScene.SystemMenuSelectCharacter -= onSelectCharacter; onSelectCharacter = null; }
-        if (onGameExit != null) { Ui.MessageBoxLayer.GameExit -= onGameExit; onGameExit = null; }
+        if (onGameExit != null) { Ui.MessageBoxLayer.GameExit -= onGameExit; Ui.MessageBoxLayer.MaintenanceExit -= onGameExit; onGameExit = null; }
+        if (onAlreadyReconnect != null) { Ui.MessageBoxLayer.AlreadyReconnect -= onAlreadyReconnect; onAlreadyReconnect = null; }
+        if (onExternalBlock != null) { Ui.MessageBoxLayer.ExternalBlock -= onExternalBlock; onExternalBlock = null; }
         if (onGameToLogin != null && Net.LiveSession.Instance is { } liveSession) { liveSession.ReturnedToCharacterSelect -= onGameToLogin; onGameToLogin = null; }
         if (onListReturned != null && Net.LiveSession.Instance is { } liveSession2) { liveSession2.CharacterListReturned -= onListReturned; onListReturned = null; }
         Session.GameScene = null;
@@ -356,12 +366,18 @@ public partial class GameFlow : Node
         // MS2_LIVE_ACCOUNT overrides them when the run set it.
         var login = GetTree().CurrentScene as Ui.LoginScene;
         if (await live.LoginAsync(login?.Controller.Id, login?.Controller.Password)) { Go(State.Lobby); return; }
+        var scene = GetTree().CurrentScene as Ui.LoginScene;
         if (live.LastLoginRefusal is { } r)
         {
+            // the refusal's box, then the dialog back up for the next try (CNetworkService::OnLoginResult ends every refusal on
+            // the login scene with UISceneLogin::FUN_141acf470). Before, the dialog stayed popped down after the box and the
+            // login could not be tried again.
+            GD.Print($"login: refused, state {r.State}; the dialog shows its failure state");
             Ui.MessageBoxLayer.Ensure(this);
-            FrontEndBoxes.LoginRefused(r.State, r.Const1);
+            Ms2.Ui.LoginConnectFailure.AfterRefusal(() => FrontEndBoxes.LoginRefused(r),
+                scene?.Controller != null ? scene.Controller.ShowConnectFailure : null, scene?.Controller != null ? scene.Scene.FailConnect : null);
         }
-        else if (GetTree().CurrentScene is Ui.LoginScene shown && shown.Controller != null)
+        else if (scene is { } shown && shown.Controller != null)
         {
             // Catches only a login attempt that failed without a server answer (connection refused or timed out), which is what the
             // client sends through UISceneLogin::vfunc_64. STILL-OPEN: a connection that drops after the connect is the client's
@@ -572,7 +588,7 @@ public partial class GameFlow : Node
     {
         var layer = Ui.MessageBoxLayer.Instance;
         await Until(() => InScene(LoginScene)); await Frames(90);
-        FrontEndBoxes.LoginRefused(3, 0); await Frames(30);                      // LoginResult state 3: s_login_err_pwd
+        FrontEndBoxes.LoginRefused(new Ms2.Net.Packets.LoginResult(3, 0, "", 0, 0, 0, 0, 0, null)); await Frames(30);                      // LoginResult state 3: s_login_err_pwd
         Shot("mb_login_pwd.png");
         layer?.Click(0); await Frames(30);
         UiBridge.Raise(UILoginDialogContract.Movie, UILoginDialogContract.ToHost.OnConnect);

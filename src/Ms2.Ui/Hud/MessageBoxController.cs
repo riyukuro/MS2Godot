@@ -452,7 +452,7 @@ public sealed class MessageBoxController : UiController
     /// "useBindGemEquipItem" branches (:1052-1064); FUN_1419fa910 ("tag,arg") and the other plain tags are reported as
     /// unported, except on a box with a listener: its tags (the slot menu's "expelMember:name", "changeChief:name") are the
     /// listener's, which OnClick has already called, and no plain tag handler takes them.</summary>
-    bool HandlePlainTag(int button, string tag)
+    internal bool HandlePlainTag(int button, string tag)
     {
         if (tag == "gameexit")
             return HandleGameexitButton(button);
@@ -470,6 +470,12 @@ public sealed class MessageBoxController : UiController
             return HandleRequestTradeExButton(button);
         if (tag == "sell")
             return HandleSellButton(button, 1);
+        if (tag == LoginRefusalBox.MaintenanceExitTag)
+            return HandleMaintenanceExitButton(button);
+        if (tag == LoginRefusalBox.AlreadyReconnectTag)
+            return HandleAlreadyReconnectButton(button);
+        if (tag == LoginRefusalBox.ExternalBlockTag || tag == LoginRefusalBox.AutoExternalBlockTag)
+            return HandleExternalBlockButton(button);
         if (tag.IndexOf(',') < 0 && data?.Listener == null) UnportedTag?.Invoke(button, tag);
         return false;
     }
@@ -583,6 +589,39 @@ public sealed class MessageBoxController : UiController
     }
 
     /// <summary>HandleGameexitButton @0x1419fb480.</summary>
+    /// <summary>HandleMaintenanceExitButton @0x1419fc7d0 (uimessagebox.cpp:1513-1522): button 0 sends RequestQuit and closes the
+    /// socket (SendRequestQuitAndDisconnect), restores the display mode (FUN_1416a0e70) and ends the process (PostQuitMessage(0)); 1.</summary>
+    bool HandleMaintenanceExitButton(int button)
+    {
+        if (button == 0) MaintenanceExit?.Invoke();
+        return true;
+    }
+    /// <summary>The maintenanceExit tag's OK (<see cref="HandleMaintenanceExitButton"/>).</summary>
+    public event Action MaintenanceExit;
+
+    /// <summary>HandleAlreadyReconnectButton @0x1419fcc70 (uimessagebox.cpp:1572-1577): button 0 connects to the configured server
+    /// again (CNetworkService::ConnectToConfiguredServer, networkservice.cpp:458-463), whose RequestLogin sends the login again; 1.</summary>
+    bool HandleAlreadyReconnectButton(int button)
+    {
+        if (button == 0) AlreadyReconnect?.Invoke();
+        return true;
+    }
+    /// <summary>The alreadyReconnect tag's OK: the login again.</summary>
+    public event Action AlreadyReconnect;
+
+    /// <summary>HandleExternalBlockButton @0x1419fccb0 (uimessagebox.cpp:1581-1611): button 0 reads argument 0 (FUN_141a00450) and
+    /// opens its page: 0 the certify page, then the quit as <see cref="HandleMaintenanceExitButton"/>; 1 the identification page; 1.</summary>
+    bool HandleExternalBlockButton(int button)
+    {
+        if (button != 0) return true;
+        int type = data?.ArgInt(0, -1) ?? -1;
+        if (type == 0) ExternalBlock?.Invoke("http://maplestory2.nexon.com/Auth/Certify", true);
+        else if (type == 1) ExternalBlock?.Invoke("http://maplestory2.nexon.com/auth/identification", false);
+        return true;
+    }
+    /// <summary>The externalBlock tags' OK: the page to open, and whether the client quits after it.</summary>
+    public event Action<string, bool> ExternalBlock;
+
     bool HandleGameexitButton(int button)
     {
         if (button == 0)

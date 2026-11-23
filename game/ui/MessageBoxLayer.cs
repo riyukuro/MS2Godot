@@ -22,6 +22,12 @@ public partial class MessageBoxLayer : CanvasLayer
     /// STILL-OPEN: when the game has not begun (DAT_143ab2942) the client first calls GetClientPlatform()->vfunc_22(0x3f2, "GameEnd")
     /// (uimessagebox.cpp:1229-1230; UICharacterListDialog::QuitGame :1284-1285 does the same).</summary>
     public static event Action GameExit;
+    /// <summary>A maintenanceExit box's OK (UIMessageBox::HandleMaintenanceExitButton): the quit.</summary>
+    public static event Action MaintenanceExit;
+    /// <summary>An alreadyReconnect box's OK (UIMessageBox::HandleAlreadyReconnectButton): the login again.</summary>
+    public static event Action AlreadyReconnect;
+    /// <summary>An externalBlock box's OK (UIMessageBox::HandleExternalBlockButton): the page, and whether the client quits after it.</summary>
+    public static event Action<string, bool> ExternalBlock;
 
     MessageBoxController controller;
     MovieDialog movie;
@@ -50,6 +56,9 @@ public partial class MessageBoxLayer : CanvasLayer
         MessageBoxData.CommonByKey = strings.Common();
         controller = new MessageBoxController();
         controller.GameExit += () => GameExit?.Invoke();
+        controller.MaintenanceExit += () => MaintenanceExit?.Invoke();
+        controller.AlreadyReconnect += () => AlreadyReconnect?.Invoke();
+        controller.ExternalBlock += (url, quit) => ExternalBlock?.Invoke(url, quit);
         controller.AnswerPartyInvite = a => Ms2Godot.Net.LiveSession.Instance?.AnswerPartyInvite(a);
         controller.AnswerGuildInvite = a => Ms2Godot.Net.LiveSession.Instance?.Guilds.AnswerInvite(a);
         controller.UnportedTag += (b, t) => GD.Print($"message box: button {b} of tag {t}: its handler is not ported");
