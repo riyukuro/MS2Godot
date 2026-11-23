@@ -87,6 +87,18 @@ public class CharacterInfoTests {
         Assert.That((me.ApplyUserState(8, 12), me.State), Is.EqualTo((false, 1)), "another object");
     }
 
+    [Test] public void TheServersFallIsLeftOnceTheBodyStands() {
+        var me = new MyCharacter();
+        var u = new FieldAddUser { ObjectId = 9, User = new UserBlock { Name = "a" } };
+        u.Stats[0].Health = 500; u.Stats[2].Health = 500;
+        me.Apply(u);
+        Assert.That((me.ApplyUserState(9, 5), me.State), Is.EqualTo((false, 5)), "the field entry's fall");
+        Assert.That((me.LeaveFallOnGround(false), me.State), Is.EqualTo((false, 5)), "in the air: still falling");
+        Assert.That((me.LeaveFallOnGround(true), me.State), Is.EqualTo((true, 0)), "on the ground: land, then the body's own state");
+        me.ApplyUserState(9, 0x18);
+        Assert.That((me.LeaveFallOnGround(true), me.State), Is.EqualTo((false, 0x18)), "only the fall is left on the ground");
+    }
+
     [Test] public void TheRecordIsTheOwnPlayersPackets() {
         var me = new MyCharacter();
         Assert.That(me.ToPcInfo(0), Is.Null, "before the own FieldAddUser");

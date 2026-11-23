@@ -1273,6 +1273,7 @@ public partial class LiveSession : Node
         LogGuideStatus();
         TickTaxi(delta);
         Me.ExpireRevival((uint)game.Session.ServerTick);   // PC::FUN_141661ac0 (pc.cpp:2043), in PC's per-frame update
+        if (player != null && IsInstanceValid(player)) Me.LeaveFallOnGround(player.Grounded);   // StateFall::vfunc_9, the state's update
         if (bindPending) TryBindPlayer();
         CubeCraft.Owner ??= cubeCraftOwner ??= new CubeCraftOwner(this);
         CubeCraft.Update();          // MyPC::vfunc_53 (mypc.cpp:2969-2970): the craft's Update while in cube mode

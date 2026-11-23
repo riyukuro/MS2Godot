@@ -353,6 +353,20 @@ public sealed class MyCharacter {
     }
 
     /// <summary>
+    /// The fall (5) the server put the player into is left by the client on its own once the body stands: StateFall::vfunc_9
+    /// (statefall.cpp:192-221) enters StateLand (4) when the owner is on the ground (FUN_141671a30), and StateLand goes on to
+    /// StateIdle; from then the body's own move state is the state (0 here, as after FieldAddUser). The server sends this fall
+    /// at every field entry (OnUserState), so without it the put-down and the other polls that want the standing state (1)
+    /// never see it. Returns whether the fall was left.
+    /// STILL-OPEN: the chair, bed and ride-off take at the touchdown (statefall.cpp:200-216) is not modelled here.
+    /// </summary>
+    public bool LeaveFallOnGround(bool grounded) {
+        if (State != 5 || !grounded) return false;
+        State = 0;
+        return true;
+    }
+
+    /// <summary>
     /// vfunc_137 for the local player (OnUserState state 12; OnDeadUser, scenestategame.cpp:6532): PC::vfunc_137 (pc.cpp:4593)
     /// not in the death state and with no current health (FUN_141670a00(4) = m_unk_1c0[2][4]): FUN_14166ce50(1); then
     /// MyPC::vfunc_137 (mypc.cpp:1343) with the dead flag set enters the death state (vfunc_59(0xc)). Other objects: nothing.
