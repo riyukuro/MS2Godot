@@ -3938,14 +3938,15 @@ public partial class HudScene : Node, IUiStageHost
         if (t == 1300 && System.Environment.GetEnvironmentVariable("MS2_PERF_QUIT") != null) PerfQuit();
     }
 
-    Label movieLabel;      // STILL-OPEN: the cut scene movie's pane; the usm/swf player is not ported, a label stands for it
+    Label movieLabel;      // STILL-OPEN: a swf cut scene movie and the cinematic pane; a label stands for them
 
-    /// <summary>UICutSceneMovie (0x4e7e): shows the playing movie's path as a label while it plays.</summary>
+    /// <summary>UICutSceneMovie (0x4e7e): a usm movie plays full screen (<see cref="TickCutSceneVideo"/>); a swf movie and the
+    /// cinematic pane show a label while they play.</summary>
     void TickCutSceneMovie()
     {
         var movie = Ms2Godot.Net.LiveSession.Instance?.Movie;
         var cine = Ms2Godot.Net.LiveSession.Instance?.Cinematic;
-        bool on = movie?.IsPlaying == true;
+        bool on = movie?.IsPlaying == true && !TickCutSceneVideo(movie);
         bool cineOn = cine?.IsShowing == true;
         if (!on && !cineOn && movieLabel == null) return;
         if (movieLabel == null)
@@ -3955,7 +3956,7 @@ public partial class HudScene : Node, IUiStageHost
             systemMenuLayer.AddChild(movieLabel);
         }
         movieLabel.Visible = on || cineOn;
-        if (on) movieLabel.Text = $"[cut scene movie {movie.CutSceneId}: {movie.Path}] Esc skips";
+        if (on) movieLabel.Text = $"[cut scene movie {movie.CutSceneId}: {movie.Path}] Esc skips";   // a swf movie
         else if (cineOn) movieLabel.Text = $"[cinematic {cine.Id}] {cine.Text}";    // STILL-OPEN: the cinematic pane's swf
     }
 

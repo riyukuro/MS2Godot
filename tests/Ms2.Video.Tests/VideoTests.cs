@@ -267,6 +267,26 @@ public class VideoTests
         Assert.That(rough, Is.LessThan(20), "picture, not noise");
     }
 
+    /// <summary>The cut scene movies the new characters' first fields play (trigger PlaySceneMovie, the folder and case as the
+    /// scripts write them; UICutSceneMovie::PlayUsm opens them by the path under the movie folder): each opens and decodes
+    /// its first second.</summary>
+    [TestCase(@"common\Common_Opening.usm")]
+    [TestCase(@"common\JobIntro_Assassin.usm")]
+    public void TutorialCutSceneMovieDecodes(string path)
+    {
+        using var packs = Packs();
+        var v = OpenMovie(packs, path);
+        Assert.That(v, Is.Not.Null);
+        Assert.That(v.Width, Is.GreaterThan(0));
+        Assert.That(v.FrameCount, Is.GreaterThan(v.FrameRate), "longer than a second");
+        for (int i = 0; i < v.FrameRate; i++)
+        {
+            var f = v.Next();
+            Assert.That(f, Is.Not.Null, $"frame {i}");
+            Assert.That((f.Width, f.Height), Is.EqualTo((v.Width, v.Height)));
+        }
+    }
+
     [Test]
     public void WholeMovieHasTheHeaderFrameCount()
     {

@@ -17,8 +17,9 @@ namespace Ms2.Ui.Hud;
 /// its own time when the player does not skip. In the client the skip is the movie's exit button: onExit (:296-298) asks
 /// box 0x88c, whose OK (:312-322) runs Exit, hides the button and logs "cut_scene_stop"; the field's Esc does not skip
 /// (FUN_1418fcb70 returns at the playing movie, uichatballoon.cpp:528-530).
-/// STILL-OPEN: the movie itself (the usm player and the swf movie are not ported, so the pane shows only a label with the
-/// path and never reaches the usm's end), the exit button and its timing, and box 0x88c: the port's Esc
+/// The HUD plays a usm path (<see cref="IsUsm"/>, UICutSceneMovie::Play @0x14190fef0 picks the player by the extension) and
+/// stops the pane at its end or on a load error (<see cref="Stop"/>).
+/// STILL-OPEN: the swf movies (PlaySwf), the exit button and its timing, and box 0x88c: the port's Esc
 /// (<see cref="SkipOnEsc"/>) stands in for the button's OK.
 /// </summary>
 public sealed class CutSceneMovie
@@ -39,6 +40,10 @@ public sealed class CutSceneMovie
         CutSceneId = cutSceneId;
         Path = path;
     }
+
+    /// <summary>UICutSceneMovie::Play (@0x14190fef0, uicutscenemovie.cpp:377-389): PathFindExtension ".usm" plays in the
+    /// VideoPlayer (PlayUsm), ".swf" in the pane's movie (PlaySwf).</summary>
+    public static bool IsUsm(string path) => path != null && path.EndsWith(".usm", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>vfunc_53 (@0x14190ed50): stops the movie and clears the cut scene id (m_nCutSceneId = 0, uicutscenemovie.cpp:124).</summary>
     public void Stop()
