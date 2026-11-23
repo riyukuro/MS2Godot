@@ -11,8 +11,15 @@ namespace Ms2.Ui.Hud;
 /// (StopCutScene @0x141863c50) calls StopIfCutScene (@0x14190f0d0): stop when the id is the playing one. The player's skip
 /// calls <see cref="Exit"/> (UICutSceneMovie::Exit @0x141910220): with a cut scene id it sends the Trigger request
 /// (type 9, sub 5, the id) and waits for the server's sub 5 to stop it; without one it stops at once.
+/// The skip is the only send: a usm that plays to its end stops itself with nothing sent (vfunc_31 @0x14190f7d0 takes the
+/// player's "end" to vfunc_53, uicutscenemovie.cpp:279-284), and so does a load error (vfunc_30, :271-275); only a swf
+/// movie's own stop (onSwfStop, :300-301) goes through Exit. A server that waits for the movie's stop therefore waits
+/// its own time when the player does not skip. In the client the skip is the movie's exit button: onExit (:296-298) asks
+/// box 0x88c, whose OK (:312-322) runs Exit, hides the button and logs "cut_scene_stop"; the field's Esc does not skip
+/// (FUN_1418fcb70 returns at the playing movie, uichatballoon.cpp:528-530).
 /// STILL-OPEN: the movie itself (the usm player and the swf movie are not ported, so the pane shows only a label with the
-/// path), the skip button's timing and the confirm message box (0x88c) in front of the skip.
+/// path and never reaches the usm's end), the exit button and its timing, and box 0x88c: the port's Esc
+/// (<see cref="SkipOnEsc"/>) stands in for the button's OK.
 /// </summary>
 public sealed class CutSceneMovie
 {
@@ -33,10 +40,14 @@ public sealed class CutSceneMovie
         Path = path;
     }
 
-    /// <summary>vfunc_53: stops the movie.</summary>
-    public void Stop() => Path = null;
+    /// <summary>vfunc_53 (@0x14190ed50): stops the movie and clears the cut scene id (m_nCutSceneId = 0, uicutscenemovie.cpp:124).</summary>
+    public void Stop()
+    {
+        Path = null;
+        CutSceneId = 0;
+    }
 
-    /// <summary>UICutSceneMovie::StopIfCutScene (@0x14190f0d0): the id has to be the stored one (it stays after a stop, as in the client).</summary>
+    /// <summary>UICutSceneMovie::StopIfCutScene (@0x14190f0d0): the id has to be the stored one.</summary>
     public void StopIfCutScene(int cutSceneId)
     {
         if (CutSceneId == cutSceneId) Stop();
@@ -49,7 +60,8 @@ public sealed class CutSceneMovie
         else send(new CutSceneExitTrigger(CutSceneId));
     }
 
-    /// <summary>The field's Esc step for the movie (FUN_1419102c0 = it plays): skips it, taking the key.</summary>
+    /// <summary>The port's Esc step for the movie (FUN_1419102c0 = it plays): skips it, taking the key, in place of the movie's
+    /// exit button and its box 0x88c (the client's field Esc only stops at a playing movie).</summary>
     public bool SkipOnEsc()
     {
         if (!IsPlaying) return false;

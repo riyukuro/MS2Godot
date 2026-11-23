@@ -394,6 +394,18 @@ public partial class LiveSession
                     Check($"hits per press: {hitPresses} of {press}", press >= need && hitPresses == press);
                     break;
                 }
+                case "skipmovie":    // a playing cut scene movie skipped by the HUD's Esc (the port's stand-in for the movie's exit button), then until the server's stop
+                {
+                    await until(() => live.Movie.IsPlaying, 60 * 30);
+                    int id = live.Movie.CutSceneId;
+                    Check("a cut scene movie plays", live.Movie.IsPlaying);
+                    if (!live.Movie.IsPlaying) break;
+                    hud.Escape();
+                    GD.Print($"live: combat skip movie {id}: Esc pressed");
+                    await until(() => !live.Movie.IsPlaying, 60 * 15);
+                    Check("the server stopped the movie", !live.Movie.IsPlaying);
+                    break;
+                }
                 case "hitlast":      // the npc the server added last (no spawn of our own), faced and attacked until it dies or the field changes; up to MS2_LIVE_COMBAT_PRESSES presses
                 {
                     await until(() => lastNpc != null, 60 * int.Parse(Env("MS2_LIVE_NPC_WAIT", "0")));     // MS2_LIVE_NPC_WAIT: seconds to wait for the server's npc

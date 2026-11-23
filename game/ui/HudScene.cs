@@ -580,8 +580,9 @@ public partial class HudScene : Node, IUiStageHost
     /// an NPC talk takes it itself (FUN_141275080 is 0 while talking). With a closable dialog open
     /// (FUN_141274ff0, unit_141274d10_uihelpers.cpp) Esc closes all of them when the interface option EnableCloseAllDlg is
     /// on and is otherwise left; with none it toggles the system menu: ToggleDialog(0x4e21) = FUN_1419246f0, open when
-    /// vfunc_55 (closed and unloaded), else vfunc_67 (close). STILL-OPEN: the cut-scene movie (0x4e7e,
-    /// UICutSceneMovie::FUN_1419102c0) between the tooltips and the guide's tip.
+    /// vfunc_55 (closed and unloaded), else vfunc_67 (close). STILL-OPEN: at a playing cut-scene movie (0x4e7e,
+    /// UICutSceneMovie::FUN_1419102c0) the client's Esc stops without a skip (uichatballoon.cpp:528-530), as the movie's own
+    /// exit button skips; the pane has no button, so the port's Esc skips there (CutSceneMovie.SkipOnEsc).
     /// </summary>
     public void Escape()
     {

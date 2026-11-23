@@ -43,7 +43,7 @@ public sealed record GuideServerTriggerEvent(int EventId) : IProfileOutPacket {
     public void Write(ByteWriter w, ProtocolProfile profile) { w.WriteByte(profile.IsGms2 ? (byte) 8 : (byte) 9); w.WriteByte(1); w.WriteInt(EventId); }
 }
 
-/// <summary>UICutSceneMovie::Exit (@0x141910220, uicutscenemovie.cpp:420): Trigger (0x2F) with u8 9 (GMS2 8), u8 5 and i32 the cut scene id, when a cut scene movie ends.</summary>
+/// <summary>UICutSceneMovie::Exit (@0x141910220, uicutscenemovie.cpp:420): Trigger (0x2F) with u8 9 (GMS2 8), u8 5 and i32 the cut scene id, when a cut scene movie is skipped (or a swf movie stops itself); a usm that plays to its end sends nothing.</summary>
 public sealed record CutSceneExitTrigger(int CutSceneId) : IProfileOutPacket {
     public Outbound Op => Outbound.Trigger;
     public void Write(ByteWriter w) => Write(w, ProtocolProfile.Kms2525);

@@ -121,8 +121,11 @@ public class TriggerGuideTests
         Assert.That(movie.IsPlaying, Is.True, "another cut scene's stop is not this one's");
         Assert.That(TriggerGuide.Apply(Body(inType, 5, 1), profile, null, movie), Is.True);
         Assert.That(movie.IsPlaying, Is.False);
+        Assert.That(movie.CutSceneId, Is.Zero, "vfunc_53 clears the cut scene id");
         Assert.That(movie.SkipOnEsc(), Is.False, "Esc is not taken without a movie");
-        Assert.That(sent.Count, Is.EqualTo(1));
+        movie.Exit();
+        Assert.That(TriggerGuide.Apply(Body(inType, 5, 1), profile, null, movie), Is.True);
+        Assert.That(sent.Count, Is.EqualTo(1), "after the stop neither an Exit nor the id's stop sends again");
     }
 
     [Test]
