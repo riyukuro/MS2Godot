@@ -14,7 +14,9 @@ namespace Ms2Godot.Tests;
 /// while that row's select scene still reloads; --case switch, or --then-switch after another case: then the
 /// system menu's character select and a second Start; --case none). Once the game state is reached and the loading screen's fade has had its time,
 /// no loading screen may be up or drawn, the HUD scene's field must be the chosen character's, and the scene must not have
-/// gone back to character select. --le-shots DIR saves a picture at each step. Quits with 0 when all of that holds, else 1.
+/// gone back to character select. While the field loads, from the first frame a loading screen is up until the load end,
+/// the screen must stay shown with no canvas layer drawn over it, and fit the window 2 frames after each resize
+/// (<see cref="LoadingEndDriver.CheckCover"/>). --le-shots DIR saves a picture at each step. Quits with 0 when all of that holds, else 1.
 /// </summary>
 public partial class LoadingEndCheck : Node
 {
@@ -31,7 +33,7 @@ public partial class LoadingEndDriver : Node
 {
     string mode = "none", shotDir;
     bool thenSwitch;
-    int failures;
+    int failures, coveredFrames, sizeChecks;
     readonly List<string> log = new();
 
     void Fail(string what) { failures++; GD.Print("loading end: FAIL " + what); }
@@ -113,10 +115,12 @@ public partial class LoadingEndDriver : Node
         // the load: the flow's Loading state, the select scene still up for a few frames, then the HUD scene's field build
         int other = chosen == 0 ? 1 : 0;
         var sizes = new[] { new Vector2I(1600, 900), new Vector2I(1024, 640), new Vector2I(1440, 810) };
-        int n = 0;
+        int n = 0, sinceResize = -1;
         Node loadingFrom = null;
+        bool covered = false;
         for (int f = 0; f < 3000 && Flow.Current != GameFlow.State.Game; f++)
         {
+            covered |= CheckCover(f, covered, sinceResize);
             // no select scene may come into the tree once the load has started (a reload over the load start)
             if (Flow.Current == GameFlow.State.Loading && loadingFrom == null) loadingFrom = GetTree().CurrentScene ?? this;
             if (loadingFrom != null && GetTree().CurrentScene is CharacterListScene again && again != loadingFrom)
@@ -127,6 +131,7 @@ public partial class LoadingEndDriver : Node
             {
                 var size = sizes[n++ % sizes.Length];
                 GetWindow().Size = size;
+                sinceResize = 0;
                 log.Add($"frame {f}: resize to {size} ({GetTree().CurrentScene?.Name}, field loaded {Field.LoadComplete})");
             }
             if (mode == "click" && GetTree().CurrentScene is CharacterListScene s && s.RowPoint(other) is { } at)
@@ -137,7 +142,10 @@ public partial class LoadingEndDriver : Node
             }
             if (f == 20) Shot("02_loading.png");
             await Frames(1);
+            if (sinceResize >= 0) sinceResize++;
         }
+        if (!covered) Fail("no loading screen came up during the load");
+        GD.Print($"loading end: the loading screen was checked on {coveredFrames} frames of the load, its size on {sizeChecks}");
         foreach (var l in log) GD.Print("loading end: " + l);
         if (Flow.Current != GameFlow.State.Game) { Done("the game state was never reached"); return; }
         // StopProgress after the field's settle frames, then the movie's 500 ms fade answers OnFadeInComplete
@@ -197,6 +205,66 @@ public partial class LoadingEndDriver : Node
         Shot("06_second_entry.png");
         foreach (var c in CoversUp()) Fail("a loading screen is still up after the second entry: " + c);
         if (Session.Chosen?.User.CharacterId != chosenId) Fail("the second entry is another character");
+    }
+
+    /// <summary>
+    /// One frame of the load, from the first frame a loading screen is up until the field's load end: the client switches the
+    /// scene, puts the loading screen over the whole window, and shows the field and the HUD only after the load end
+    /// (CNetworkService::OnLoginToGame -> StartProgress on the lobby scene, networkservice.cpp:907-914). So an active loading
+    /// screen is shown, no other visible canvas layer is drawn at or above its layer, and 2 frames after a window resize the
+    /// movie's stage is the new window's (GFxMovie::vfunc_7's viewport (w + 2, h + 2), UiScale.MovieStage). True when a
+    /// loading screen is up this frame.
+    /// </summary>
+    bool CheckCover(int f, bool wasCovered, int sinceResize)
+    {
+        // (the caller stops at the game state, which the flow takes at the game scene's load end: Field.LoadComplete is
+        // already true for the select scene's own field before the scene change)
+        LoadingMovie cover = null;
+        void Find(Node n)
+        {
+            if (cover == null && n is LoadingMovie m && m.IsVisibleInTree() && m.Active) cover = m;
+            for (int i = 0; cover == null && i < n.GetChildCount(); i++) Find(n.GetChild(i));
+        }
+        Find(GetTree().Root);
+        if (cover == null)
+        {
+            if (wasCovered) Fail($"frame {f}: no loading screen is shown before the field's load end ({GetTree().CurrentScene?.Name})");
+            return false;
+        }
+        var own = cover.GetCanvasLayerNode();
+        int layer = own?.Layer ?? 0;
+        // a field's own loading layer stays in the tree after its movie's fade, which leaves nothing drawn (the field shows
+        // through it once the load ends): a loading movie that is not active does not count as drawn
+        static CanvasItem Drawn(Node n)
+        {
+            if (n is LoadingMovie { Active: false }) return null;
+            if (n is CanvasItem ci && !ci.Visible) return null;
+            if (n is CanvasItem && n is not LoadingMovie && n.GetChildCount() == 0) return (CanvasItem)n;
+            foreach (var ch in n.GetChildren()) if (Drawn(ch) is { } d) return d;
+            return null;
+        }
+        void Over(Node n)
+        {
+            if (n == own) return;
+            if (n is CanvasLayer c)
+            {
+                if (!c.Visible) return;
+                if (c.Layer >= layer && Drawn(c) is { } d)
+                    Fail($"frame {f}: {d.GetPath()} in canvas layer {c.Layer} is shown at or above the loading screen's {layer}");
+            }
+            foreach (var ch in n.GetChildren()) Over(ch);
+        }
+        Over(GetTree().Root);
+        coveredFrames++;
+        if (sinceResize >= 2)
+        {
+            sizeChecks++;
+            var want = UiScale.MovieStage(ScreenMode.PixelSize(GetTree().Root));
+            var p = cover.Dialog.Player;
+            if (p.StageW != want.X || p.StageH != want.Y)
+                Fail($"frame {f}: the loading screen's stage is {p.StageW} x {p.StageH} {sinceResize} frames after a resize, not {want.X} x {want.Y} for {ScreenMode.PixelSize(GetTree().Root)}");
+        }
+        return true;
     }
 
     static int other0(int chosen) => chosen == 0 ? 1 : 0;
