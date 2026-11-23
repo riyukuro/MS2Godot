@@ -45,7 +45,7 @@ public sealed record TriggerObjectEvent(int Id, TriggerObjectKind Kind, bool Kno
 /// slot 0 ReadBool (bool), slot 1 ReadUInt8 (u8), slot 3 ReadInt32 (i32), slot 5 ReadFloat (float), and slot 6
 /// ReadUnicodeStringA (commonfiles/packet.cpp:537, which reads the UTF-16 string via ReadUnicodeString).
 /// </summary>
-public static class TriggerObjects
+public static partial class TriggerObjects
 {
     public const byte Load = 2, Update = 3, CameraObjects = 5, Guide = 9;
 

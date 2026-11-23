@@ -85,4 +85,71 @@ public class TriggerObjectsTests
         Assert.That(TriggerObjects.KindOf(Has("MS2TriggerSound")), Is.Null);
         Assert.That(TriggerObjects.KindOf(Has("MS2TriggerMesh")), Is.Null);
     }
+
+    /// <summary>Each Ui sub reads exactly the fields its handler reads (triggerservice.cpp:632-671, :963-1096).</summary>
+    [Test]
+    public void TheUiSubsReadTheirFields()
+    {
+        TriggerUiCommand Read(System.Action<ByteWriter> body)
+        {
+            var w = new ByteWriter(); body(w);
+            var r = R(w); var c = TriggerObjects.ReadUi(r);
+            Assert.That(r.Available, Is.Zero, $"sub {c.Sub} left bytes");
+            return c;
+        }
+        Assert.That(Read(w => { w.WriteByte(1); w.WriteInt(260); }).Id, Is.EqualTo(260));
+        var show = Read(w => { w.WriteByte(2); w.WriteInt(7); w.WriteInt(8); w.WriteInt(6000); });
+        Assert.That((show.Id, show.Value, show.Duration), Is.EqualTo((7, 8, 6000)));
+        var movie = Read(w => { w.WriteByte(4); w.WriteString("a.usm"); w.WriteInt(3); });
+        Assert.That((movie.Path, movie.Id), Is.EqualTo(("a.usm", 3)));
+        var list = Read(w => { w.WriteByte(7); w.WriteInt(2); w.WriteUnicodeString("Bore_A"); w.WriteUnicodeString("Bore_B"); });
+        Assert.That(list.Emotions, Is.EqualTo(new[] { "Bore_A", "Bore_B" }));
+        var one = Read(w => { w.WriteByte(8); w.WriteByte(1); w.WriteInt(5000); w.WriteUnicodeString("Sit_Down_A"); });
+        Assert.That((one.Flag, one.Value, one.Emotions[0]), Is.EqualTo(((byte)1, 5000, "Sit_Down_A")));
+        var talk = Read(w => { w.WriteByte(9); w.WriteInt(11); w.WriteString("down_Idle"); });
+        Assert.That((talk.Id, talk.Text), Is.EqualTo((11, "down_Idle")));
+        var turn = Read(w => { w.WriteByte(10); w.WriteShort(1); w.WriteShort(-2); w.WriteShort(90); w.WriteBool(true); });
+        Assert.That((turn.Point, turn.Move), Is.EqualTo((new System.Numerics.Vector3(1, -2, 90), true)));
+        var game = Read(w => { w.WriteByte(12); w.WriteInt(1000); w.WriteInt(30000); });
+        Assert.That((game.Id, game.Value), Is.EqualTo((1000, 30000)));
+        Assert.That(Read(w => w.WriteByte(6)).Sub, Is.EqualTo(6), "a sub without a case reads nothing more");
+    }
+
+    /// <summary>The Dialog kinds (triggerservice.cpp:527-629) and the PvP match blocks (pvpinfo.cpp:193, :222).</summary>
+    [Test]
+    public void TheDialogKindsReadTheTimerAndTheirBlock()
+    {
+        TriggerDialogCommand Read(System.Action<ByteWriter> body)
+        {
+            var w = new ByteWriter(); body(w);
+            var r = R(w); var c = TriggerObjects.ReadDialog(r);
+            Assert.That(r.Available, Is.Zero, $"kind {c.Kind} left bytes");
+            return c;
+        }
+        void Timer(ByteWriter w, byte kind) { w.WriteByte(kind); w.WriteInt(100); w.WriteInt(60000); w.WriteByte(1); }
+        void Side(ByteWriter w, long id, bool duel) { w.WriteLong(id); w.WriteInt(5); w.WriteInt(9); w.WriteByte(2); if (duel) w.WriteInt(40); }
+        var t = Read(w => { Timer(w, 1); w.WriteInt(-30); w.WriteUnicodeString("TR"); });
+        Assert.That((t.Start, t.Duration, t.AutoRemove, t.OffsetY, t.Align), Is.EqualTo((100, 60000, (byte)1, -30, "TR")));
+        var normal = Read(w => { Timer(w, 2); Side(w, 1, false); Side(w, 2, false); });
+        Assert.That((normal.Match.First.CharacterId, normal.Match.Second.CharacterId, normal.Match.Second.Wins), Is.EqualTo((1L, 2L, (byte)2)));
+        var duel = Read(w => { Timer(w, 5); Side(w, 1, true); Side(w, 2, true); w.WriteInt(77); });
+        Assert.That((duel.Match.First.Points, duel.Match.Last), Is.EqualTo((40, 77)));
+        Assert.That(Read(w => Timer(w, 3)).Duration, Is.EqualTo(60000));
+        Assert.That(Read(w => Timer(w, 4)).Start, Is.EqualTo(100));
+        Assert.That(Read(w => w.WriteByte(9)).Kind, Is.EqualTo(9), "an unknown kind reads nothing more");
+    }
+
+    [Test]
+    public void TheSetVisibleUiAndDuelBarRead()
+    {
+        var w = new ByteWriter(); w.WriteByte(1); w.WriteString("GuideEventDialog,QuestDialog");
+        var r = R(w); var v = TriggerObjects.ReadSetVisibleUi(r);
+        Assert.That((v.State, v.Names, r.Available), Is.EqualTo(((byte)1, "GuideEventDialog,QuestDialog", 0)));
+        w = new ByteWriter(); w.WriteBool(true); w.WriteInt(50); w.WriteInt(90000); w.WriteInt(3);
+        r = R(w); var on = TriggerObjects.ReadDuelHpBar(r);
+        Assert.That((on.Show, on.ObjectId, on.DurationMs, on.BarCount, r.Available), Is.EqualTo((true, 50, 90000, 3, 0)));
+        w = new ByteWriter(); w.WriteBool(false);
+        r = R(w);
+        Assert.That((TriggerObjects.ReadDuelHpBar(r).Show, r.Available), Is.EqualTo((false, 0)));
+    }
 }

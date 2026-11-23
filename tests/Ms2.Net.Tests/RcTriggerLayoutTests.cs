@@ -54,7 +54,6 @@ public class RcTriggerLayoutTests {
         Assert.That(r.Available, Is.EqualTo(0));
     }
 
-    [Ignore("GMS2 trigger type not read yet")]
     [Test] public void Gms2Type8ReadsTheUiCommand() {
         var movie = ReadUi(Type8Movie, 4);
         Assert.That(movie, Is.Not.Null);
@@ -66,6 +65,7 @@ public class RcTriggerLayoutTests {
 
     static object ReadUi(byte[] bytes, byte sub) {
         var r = new ByteReader(bytes);
+        Assert.That(TriggerObjects.ClientType(r.ReadByte(), ProtocolProfile.Gms2), Is.EqualTo(TriggerObjects.Ui), "GMS2 wire 8 is the client's Ui type");
         var ui = RcPkt.CallAny("TriggerObjects", new[] { "ReadUi", "ReadUiCommand", "ReadType8" },
             new[] { new object[] { r } });
         Assert.That(RcPkt.MemberAny<byte>(ui, "Sub", "Command"), Is.EqualTo(sub));
@@ -73,15 +73,16 @@ public class RcTriggerLayoutTests {
         return ui;
     }
 
-    [Ignore("GMS2 trigger type not read yet")]
     [Test] public void Gms2Type12ReadsTheSidePopup() {
         var talk = ReadPopup(SidePopupTalk, kind: 0, duration: 5000, name: 0, icon: 14, sound: 15, script: 0, text: 22);
         Assert.That(talk, Is.Not.Null);
-        ReadPopup(SidePopupMovie, kind: 1, duration: 0, name: 0, icon: 30, sound: 0, script: 0, text: 0);
+        // the movie popup's path is the first narrow string, which OnSidePopupTalk reads as the name (triggerservice.cpp:687)
+        ReadPopup(SidePopupMovie, kind: 1, duration: 0, name: 30, icon: 0, sound: 0, script: 0, text: 0);
     }
 
     static object ReadPopup(byte[] bytes, int kind, int duration, int name, int icon, int sound, int script, int text) {
         var r = new ByteReader(bytes);
+        Assert.That(TriggerObjects.ClientType(r.ReadByte(), ProtocolProfile.Gms2), Is.EqualTo(TriggerObjects.SidePopup), "GMS2 wire 0x12 is the client's 0x13");
         var p = RcPkt.CallAny("TriggerObjects", new[] { "ReadSidePopup", "ReadSidePopupCommand", "ReadType18" },
             new[] { new object[] { r } });
         Assert.That(RcPkt.MemberAny<byte>(p, "Kind"), Is.EqualTo(kind));
