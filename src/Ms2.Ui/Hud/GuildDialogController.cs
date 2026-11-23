@@ -54,6 +54,9 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
     object housePage;           // m_housePage
     object storagePage;         // m_storagePage
     object raidPage;            // m_raidPage
+    object championshipPage;    // m_championshipPage
+    object pvpHistoryPage;      // m_pvpHistoryPage
+    bool loadingSeasons;        // m_bLoading: the season rows wait for the page's first info
     object eventVsGame;         // m_eventVsGame
     object eventRegisterButton, eventUnregisterButton, eventImageArea, eventLoader;   // m_button368, m_button378, m_eventImageArea, m_eventLoader
     /// <summary>m_requests (a multimap of the tick an open event stops being shown → the event id): kept in key order, equal keys in the order added.</summary>
@@ -192,6 +195,12 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         Book.StorageHistoryRefresh += UpdateStorageHistory;
         Book.RaidRefresh -= UpdateRaid;
         Book.RaidRefresh += UpdateRaid;
+        Book.ChampionshipRatingRefresh -= UpdateChampionshipRating;
+        Book.ChampionshipRatingRefresh += UpdateChampionshipRating;
+        Book.PvpHistoryRefresh -= UpdatePvpHistory;
+        Book.PvpHistoryRefresh += UpdatePvpHistory;
+        Book.PvpSeasonHistoryRefresh -= UpdatePvpSeasonHistory;
+        Book.PvpSeasonHistoryRefresh += UpdatePvpSeasonHistory;
         Book.MemberRefresh -= OnMemberRefresh;
         Book.MemberRefresh += OnMemberRefresh;
         Book.MemberRemoved -= OnMemberRemoved;
@@ -234,6 +243,9 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         Book.StorageRefresh -= UpdateStoragePage;
         Book.StorageHistoryRefresh -= UpdateStorageHistory;
         Book.RaidRefresh -= UpdateRaid;
+        Book.ChampionshipRatingRefresh -= UpdateChampionshipRating;
+        Book.PvpHistoryRefresh -= UpdatePvpHistory;
+        Book.PvpSeasonHistoryRefresh -= UpdatePvpSeasonHistory;
         Book.MemberRefresh -= OnMemberRefresh;
         Book.MemberRemoved -= OnMemberRemoved;
         Book.ClearSearchResults();
@@ -245,6 +257,9 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         housePage = null;
         storagePage = null;
         raidPage = null;
+        championshipPage = null;
+        pvpHistoryPage = null;
+        loadingSeasons = false;
         acceptRequestPage = null;
     }
 
@@ -285,7 +300,8 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         else if (category == "House") CreateHousePage();
         else if (category == "Storage") CreateStoragePage();
         else if (category == "Raid") CreateRaidPage();
-        // ChampionShip, ChampionShipHistroy: STILL-OPEN
+        else if (category == "ChampionShip") CreateChampionshipPage();
+        else if (category == "ChampionShipHistroy") CreatePvpHistoryPage();
         if (category == "Join") SetPageVisible(joinPage, true);              // ShowCategoryPage (@0x141969290)
         else if (category == "Create") SetPageVisible(createPage, true);
         else if (category == "Info") SetPageVisible(infoPage, true);
@@ -298,6 +314,8 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         else if (category == "House") SetPageVisible(housePage, true);
         else if (category == "Storage") SetPageVisible(storagePage, true);
         else if (category == "Raid") SetPageVisible(raidPage, true);
+        else if (category == "ChampionShip") SetPageVisible(championshipPage, true);
+        else if (category == "ChampionShipHistroy") SetPageVisible(pvpHistoryPage, true);
     }
 
     /// <summary>HideAllPages (@0x1419698f0).</summary>
@@ -315,7 +333,8 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         SetPageVisible(housePage, false);
         SetPageVisible(storagePage, false);
         SetPageVisible(raidPage, false);
-        // m_championshipPage, m_pvpHistoryPage: STILL-OPEN
+        SetPageVisible(championshipPage, false);
+        SetPageVisible(pvpHistoryPage, false);
     }
 
     /// <summary>CreateInfoPage (@0x141969f60): made now, UpdateGuildInfo, SetMasterInfo, UpdateGuildExp, the fund and the
@@ -456,6 +475,210 @@ public sealed class GuildDialogController : UiController, IMessageBoxListener
         }
         RaidHistoryRowsBuilt?.Invoke(rows);
         Host.Invoke(raidPage, "setHistory", rows);
+    }
+
+    /// <summary>CGameRule::IsGuildChampionshipOpen (@0x14047e880), the flag GameEventGuildChampionship::OnStart (@0x1403c6a10, gameevent.cpp:3109) sets
+    /// when feature 0x110 is on and vfunc_6 (@0x1403c6a50) clears. STILL-OPEN: the game event that raises it is not ported, so the host leaves it false.</summary>
+    public Func<bool> GuildChampionshipOpen = () => false;
+    /// <summary>The game option's etc flag m_n00 (SetInformArena). STILL-OPEN: the option is not in the host.</summary>
+    public Func<bool> InformArena = () => false;
+    /// <summary>CGuildManager::GetTargetGuildName (the guild the championship is set against, UpdateBelongGuildText). STILL-OPEN: the target
+    /// guild (SetTargetGuildAndNotify, @0x1413bc250) is not ported, so the host leaves it empty.</summary>
+    public Func<string> TargetGuildName = () => "";
+    /// <summary>FUN_14083bdc0(CMsTime, true, "/", ":"): the date and time text of an instant.</summary>
+    public Func<long, string> DateText = unix => MailTexts.DateString(unix, 0);
+
+    /// <summary>The ChampionShip page (m_championshipPage) and the battle history page (m_pvpHistoryPage) once made.</summary>
+    public object ChampionshipPage => championshipPage;
+    public object PvpHistoryPage => pvpHistoryPage;
+
+    /// <summary>The rating handed to setRating (score, fill rate, grade, text), raised just before the call.</summary>
+    public event Action<int, float, int, string> ChampionshipRatingBuilt;
+    /// <summary>The rows handed to buildHistory and buildPrevHistory, raised just before the call.</summary>
+    public event Action<IReadOnlyList<object>> PvpHistoryRowsBuilt;
+    public event Action<IReadOnlyList<object>> PvpSeasonRowsBuilt;
+
+    /// <summary>CreateChampionshipPage (@0x14196a320, uiguilddialog.cpp:1611): only while the championship is open; made now, then
+    /// UpdateChampionshipInfo and UpdateChampionshipRating.</summary>
+    void CreateChampionshipPage()
+    {
+        if (!GuildChampionshipOpen()) return;
+        if (!EnsurePageCreated("guild_champion_ship_page", ref championshipPage)) return;
+        UpdateChampionshipInfo();
+        UpdateChampionshipRating();
+    }
+
+    /// <summary>CreatePvpHistoryPage (@0x14196a3b0, :1620): only while the championship is open; made now, then RequestPvpHistoryAndSeason.</summary>
+    void CreatePvpHistoryPage()
+    {
+        if (!GuildChampionshipOpen()) return;
+        if (!EnsurePageCreated("guild_pvp_history_page", ref pvpHistoryPage)) return;
+        Book.RequestPvpHistoryAndSeason();
+    }
+
+    /// <summary>UpdateChampionshipInfo (@0x141973610, :2130): with feature 0x110, SetInformArena, the season's name and its period
+    /// ("{begin} ~ {end}", both empty without a season), UpdateBelongGuildText, then the season rows deferred by m_bLoading.</summary>
+    void UpdateChampionshipInfo()
+    {
+        if (!FeatureEnabled(ChampionshipFeature) || championshipPage == null) return;
+        Host.Invoke(championshipPage, "SetInformArena", InformArena());
+        string title = "", period = "";
+        var season = Book.GetSeason();
+        if (season.Id != 0)
+        {
+            title = season.Name;
+            period = ClientFormat.Format("{0} ~ {1}", DateText(season.Begin), DateText(season.End));
+        }
+        SetChildText(championshipPage, "m_titleText", title);
+        SetChildText(championshipPage, "m_periodText", period);
+        UpdateBelongGuildText();
+        if (loadingSeasons)
+        {
+            UpdatePvpSeasonHistory();
+            loadingSeasons = false;
+        }
+    }
+
+    /// <summary>UpdateBelongGuildText (@0x14196cf80, :1904): string 0x3fb of the target guild's name, empty without one.</summary>
+    void UpdateBelongGuildText()
+    {
+        if (championshipPage == null) return;
+        string guild = TargetGuildName() ?? "";
+        SetChildText(championshipPage, "m_belongGuildText", guild.Length < 1 ? "" : ClientFormat.Format(Common(0x3fb), guild));
+    }
+
+    /// <summary>UpdateChampionshipRating (@0x14196c1d0, :1815): the PvP state, the grade of the score (string table 0x2d) and how far the
+    /// score is to the next grade's points (1 at the top) to setRating, the season's result (0x3ee: total, wins, losses), the member's
+    /// participation count (0x3f5) and the result on the battle page. Nothing without the page.</summary>
+    void UpdateChampionshipRating()
+    {
+        if (championshipPage == null) return;
+        int score = Book.Score;
+        Host.Invoke(championshipPage, "SetPvPState", Book.PvpState);
+        var season = Book.GetSeason();
+        int grade = season.GetRankForScore(score);
+        string strGrade = StringTableText(0x2d, grade);
+        float rate = 1.0f;
+        int min = season.GetRankPoints(grade), next;
+        if (grade < 7 && min != (next = season.GetRankPoints(grade + 1)))
+            rate = (float)(score - min) / (float)(next - min);
+        if (GuildChampionshipOpen())
+        {
+            grade = season.GetRankForScore(score);
+            strGrade = StringTableText(0x2d, grade);
+            int min2 = season.GetRankPoints(grade), next2;
+            if (grade < 7 && min2 != (next2 = season.GetRankPoints(grade + 1)))
+                rate = (float)(score - min2) / (float)(next2 - min2);
+        }
+        string strScore = ClientFormat.Format(Common(0x3ed), strGrade, score);
+        ChampionshipRatingBuilt?.Invoke(score, rate, grade, strScore);
+        Host.Invoke(championshipPage, "setRating", score, (double)rate, grade, strScore);
+        int win = Book.WinCount, lose = Book.LoseCount;
+        string result = ClientFormat.Format(Common(0x3ee), win + lose, win, lose);
+        SetChildText(championshipPage, "m_seasonResult", result);
+        if (Book.Me is { } me) SetChildText(championshipPage, "m_participate", ClientFormat.Format(Common(0x3f5), me.Fe0));
+        if (pvpHistoryPage != null) Host.Invoke(pvpHistoryPage, "setSeasonResult", result);
+    }
+
+    /// <summary>FUN_141974240 (@0x141974240, :2806): the battle rows, newest first, to buildHistory. Nothing without the battle page.
+    /// STILL-OPEN: the guild marks of the rows' guilds are fetched from the web (RequestHistoryGuildMarkToWeb) and handed to the page afterwards.</summary>
+    void UpdatePvpHistory()
+    {
+        if (pvpHistoryPage == null) return;
+        var rows = new List<object>();
+        foreach (var h in Book.PvpHistoryNewestFirst) rows.Add(PvpHistoryRow(h));
+        PvpHistoryRowsBuilt?.Invoke(rows);
+        Host.Invoke(pvpHistoryPage, "buildHistory", rows);
+    }
+
+    /// <summary>FUN_141974640 (@0x141974640, :2847): the finished seasons, newest first, to buildPrevHistory and their summed result to
+    /// setPrevSeasonResult. Without the dialog's movie it only sets m_bLoading, and the first UpdateChampionshipInfo runs it.</summary>
+    void UpdatePvpSeasonHistory()
+    {
+        if (NoMovie) { loadingSeasons = true; return; }
+        if (pvpHistoryPage == null) return;
+        var rows = new List<object>();
+        int win = 0, lose = 0;
+        foreach (var h in Book.PvpSeasonHistoryNewestFirst)
+        {
+            rows.Add(Host.Obj(("seasonName", h.SeasonName), ("combatHistory", ClientFormat.Format(Common(0x3ee), h.Wins + h.Losses, h.Wins, h.Losses)),
+                ("rank", ClientFormat.Format(Common(0x3ef), h.Rank)), ("grade", h.Grade)));
+            win += h.Wins; lose += h.Losses;
+        }
+        PvpSeasonRowsBuilt?.Invoke(rows);
+        Host.Invoke(pvpHistoryPage, "buildPrevHistory", rows);
+        Host.Invoke(pvpHistoryPage, "setPrevSeasonResult", ClientFormat.Format(Common(0x3ee), win + lose, win, lose));
+    }
+
+    /// <summary>FUN_141977050 (@0x141977050): "id,mark:id,mark" into the marks, an entry not of two parts left out, joined with ",".</summary>
+    public static string MemberMarks(string text)
+    {
+        var marks = new List<string>();
+        foreach (var entry in (text ?? "").Split(':'))
+        {
+            if (entry.Length < 1) continue;
+            var parts = entry.Split(',');
+            if (parts.Length != 2) continue;
+            marks.Add(parts[1]);
+        }
+        return string.Join(",", marks);
+    }
+
+    /// <summary>FillPvpHistoryRow (@0x141977b70, :3301): the battle seen from the local guild on the left (a battle of another guild mirrored:
+    /// the second guild left, the rounds' wins the 'L's). The time is the days, hours or minutes since (0x3d2-0x3d4, else 0x3d5, empty when not past).</summary>
+    object PvpHistoryRow(GuildPvpHistory h)
+    {
+        string time = "";
+        long elapsed = ServerTime() - h.Time;
+        if (elapsed > 0)
+        {
+            var span = TimeSpan.FromSeconds(elapsed);
+            if (span.Days > 0) time = ClientFormat.Format(Common(0x3d2), (long)span.Days);
+            else if (span.Hours > 0) time = ClientFormat.Format(Common(0x3d3), span.Hours);
+            else if (span.Minutes > 0) time = ClientFormat.Format(Common(0x3d4), span.Minutes);
+            else time = Common(0x3d5);
+        }
+        int win = 0, lose = 0;
+        for (int i = 0; i < 5; i++)
+        {
+            if (h.RoundResults[i] == 'W') win++;
+            else if (h.RoundResults[i] == 'L') lose++;
+        }
+        bool own = h.FirstGuildId == Book.GuildId;
+        var fields = new List<(string, object)>();
+        bool noFight = false, isWin = true;
+        string score;
+        if (own)
+        {
+            score = ClientFormat.Format(Common(0x3e9), win, lose);
+            if (win == 0 && lose == 0)
+            {
+                noFight = true;
+                score = Common(0x3ea);
+                if (h.Result == 1) { score = Common(0x3eb); isWin = false; }
+            }
+        }
+        else
+        {
+            isWin = false;
+            score = ClientFormat.Format(Common(0x3e9), lose, win);
+            if (win == 0 && lose == 0) { noFight = true; score = Common(0x3eb); }
+        }
+        fields.Add(("leftSn", (own ? h.FirstGuildId : h.SecondGuildId).ToString()));
+        fields.Add(("rightSn", (own ? h.SecondGuildId : h.FirstGuildId).ToString()));
+        fields.Add(("isWin", isWin));
+        fields.Add(("leftGuildName", own ? h.FirstGuildName : h.SecondGuildName));
+        fields.Add(("rightGuildName", own ? h.SecondGuildName : h.FirstGuildName));
+        fields.Add(("score", score));
+        fields.Add(("isNofight", noFight));
+        for (int i = 0; i < 5; i++)
+        {
+            fields.Add(("left" + (i + 1), MemberMarks(own ? h.FirstMembers[i] : h.SecondMembers[i])));
+            fields.Add(("right" + (i + 1), MemberMarks(own ? h.SecondMembers[i] : h.FirstMembers[i])));
+            fields.Add(("result" + (i + 1), h.RoundResults[i] == (own ? 'W' : 'L')));
+        }
+        fields.Add(("time", time));
+        return Host.Obj(fields.ToArray());
     }
 
     /// <summary>The rows handed to setHouseFacility, raised just before the call.</summary>

@@ -795,4 +795,119 @@ public class GuildDialogTests
         Assert.That(c.Host.Get(history[1][1], "isComplete"), Is.EqualTo(false));
         Assert.That(c.Host.Get(c.Host.Child("m_scoreText", c.Host.Child("m_info", c.RaidPage)), "text"), Is.EqualTo("s_guild_raid_info_score|0|0"));
     }
+
+    // ---- the ChampionShip and battle history pages ----
+
+    const string SeasonXml = "<ms2><Season seasonID=\"4\" seasonName=\"s\" eventStart=\"2022-1-1-0-0-0\" eventEnd=\"2099-1-1-0-0-0\" grade1=\"0\" grade2=\"100\" grade3=\"200\" grade4=\"300\" grade5=\"400\" grade6=\"500\" grade7=\"600\"/></ms2>";
+
+    static (GuildDialogController c, GuildBook b, List<(int score, float rate, int grade, string text)> rating, List<IReadOnlyList<object>> battles, List<IReadOnlyList<object>> seasons) ChampionPage(bool open = true)
+    {
+        var b = InGuild();
+        b.Seasons = new Ms2.Formats.World.SeasonDataTable(System.Xml.Linq.XDocument.Parse(SeasonXml), "GuildPvP");
+        b.ServerTime = () => 4_000_000_000;
+        b.ZoneOffset = () => 0;
+        b.Common = id => $"c{id:x}|{{0}}|{{1}}|{{2}}";
+        b.StringTableText = (t, id) => $"t{t:x}.{id}";
+        var c = Load(b);
+        c.Common = b.Common;
+        c.StringTableText = b.StringTableText;
+        c.ServerTime = () => 4_000_000_000;
+        c.FeatureEnabled = id => id == 0x110;
+        c.GuildChampionshipOpen = () => open;
+        c.DateText = u => "d" + u;
+        c.TargetGuildName = () => "Tg";
+        var rating = new List<(int, float, int, string)>(); c.ChampionshipRatingBuilt += (a, r, g, t) => rating.Add((a, r, g, t));
+        var battles = new List<IReadOnlyList<object>>(); c.PvpHistoryRowsBuilt += r => battles.Add(r.ToList());
+        var seasons = new List<IReadOnlyList<object>>(); c.PvpSeasonRowsBuilt += r => seasons.Add(r.ToList());
+        return (c, b, rating, battles, seasons);
+    }
+
+    /// <summary>CreateChampionshipPage / UpdateChampionshipInfo / UpdateChampionshipRating (uiguilddialog.cpp:1611, :2130, :1815): the page is made
+    /// only while the championship is open; the season's name and period, the belonging guild, the grade of the score with the share to the next
+    /// grade, the result and the member's participation fill the page.</summary>
+    [Test]
+    public void TheChampionShipPageShowsTheSeasonTheGradeTheShareAndTheResult()
+    {
+        var (c, b, rating, _, _) = ChampionPage();
+        b.Info.Members[0].Fe0 = 6;
+        b.Apply(new GuildMessage((byte)0x29) { Score = 250, Wins = 3, Losses = 2 });
+        c.OpenCategoryPage("ChampionShip");
+        Assert.That(c.ChampionshipPage, Is.Not.Null);
+        Assert.That(Rt.ToBoolean(c.Host.Get(c.ChampionshipPage, "visible")), Is.True);
+        Assert.That(c.Host.Get(c.Host.Child("m_titleText", c.ChampionshipPage), "text"), Is.EqualTo(b.GetSeason().Name));
+        Assert.That(c.Host.Get(c.Host.Child("m_periodText", c.ChampionshipPage), "text"), Is.EqualTo($"d{b.GetSeason().Begin} ~ d{b.GetSeason().End}"));
+        Assert.That(c.Host.Get(c.Host.Child("m_belongGuildText", c.ChampionshipPage), "text"), Is.EqualTo("c3fb|Tg|{1}|{2}"));
+        var r = rating.Last();
+        Assert.That((r.score, r.grade, r.rate, r.text), Is.EqualTo((250, 3, 0.5f, "c3ed|t2d.3|250|{2}")));
+        Assert.That(c.Host.Get(c.Host.Child("m_seasonResult", c.ChampionshipPage), "text"), Is.EqualTo("c3ee|5|3|2"));
+        Assert.That(c.Host.Get(c.Host.Child("m_participate", c.ChampionshipPage), "text"), Is.EqualTo("c3f5|6|{1}|{2}"));
+        b.Apply(new GuildMessage((byte)0x29) { Score = 900, Wins = 3, Losses = 2 });
+        Assert.That(rating.Last().rate, Is.EqualTo(1.0f), "the top grade is full");
+        c.OpenCategoryPage("Event");
+        Assert.That(Rt.ToBoolean(c.Host.Get(c.ChampionshipPage, "visible")), Is.False);
+    }
+
+    [Test]
+    public void TheChampionShipPagesAreNotMadeWhileTheChampionshipIsNotOpen()
+    {
+        var (c, b, rating, _, _) = ChampionPage(open: false);
+        c.OpenCategoryPage("ChampionShip");
+        c.OpenCategoryPage("ChampionShipHistroy");
+        Assert.That((c.ChampionshipPage, c.PvpHistoryPage), Is.EqualTo(((object)null, (object)null)));
+        b.Apply(new GuildMessage((byte)0x29) { Score = 250 });
+        Assert.That(rating, Is.Empty);
+    }
+
+    static GuildPvpHistory Battle(long first, long second, string rounds, long time, byte result = 0) => new()
+    {
+        FirstGuildId = first, SecondGuildId = second, FirstGuildName = "A", SecondGuildName = "B", Result = result, Time = time,
+        RoundResults = rounds.Select(ch => (byte)ch).ToArray(),
+        FirstMembers = new[] { "1,m1:2,m2", "", "bad", "", "" }, SecondMembers = new[] { "3,x", "", "", "", "" },
+    };
+
+    /// <summary>FillPvpHistoryRow (@0x141977b70, :3301): the local guild's battle on the left, another guild's mirrored; the time is days, hours,
+    /// minutes since; no round fought is a "no fight" row, a loss when the result flag is 1.</summary>
+    [Test]
+    public void TheBattleRowsPutTheLocalGuildOnTheLeftAndMirrorTheOthers()
+    {
+        var (c, b, _, battles, _) = ChampionPage();
+        b.Apply(new GuildMessage((byte)0x4a) { PvpHistory = new[] { Battle(7, 9, "WWLWL", 4_000_000_000 - 90000), Battle(8, 7, "WLLWW", 4_000_000_000 - 7300), Battle(7, 9, "\0\0\0\0\0", 4_000_000_000 - 30, 1) } });
+        c.OpenCategoryPage("ChampionShipHistroy");
+        battles.Clear();
+        b.Apply(new GuildMessage((byte)0x4a) { PvpHistory = new GuildPvpHistory[0] });
+        var rows = battles.Last();
+        Assert.That(rows.Count, Is.EqualTo(3));
+        object G(int i, string k) => c.Host.Get(rows[i], k);
+        // newest first: the third battle was added last
+        Assert.That((G(0, "isNofight"), G(0, "isWin"), G(0, "score"), G(0, "time")), Is.EqualTo((true, false, "c3eb|{0}|{1}|{2}", "c3d5|{0}|{1}|{2}")));
+        Assert.That((G(1, "leftSn"), G(1, "rightSn"), G(1, "leftGuildName"), G(1, "isWin"), G(1, "score"), G(1, "time")),
+            Is.EqualTo(("7", "8", "B", false, "c3e9|2|3|{2}", "c3d3|2|{1}|{2}")));
+        Assert.That((G(1, "result1"), G(1, "result2"), G(1, "left1"), G(1, "right1")), Is.EqualTo((false, true, "x", "m1,m2")));
+        Assert.That((G(2, "leftSn"), G(2, "isWin"), G(2, "score"), G(2, "result1"), G(2, "result3"), G(2, "left1"), G(2, "right1"), G(2, "left3"), G(2, "time")),
+            Is.EqualTo(("7", true, "c3e9|3|2|{2}", true, false, "m1,m2", "x", "", "c3d2|1|{1}|{2}")));
+    }
+
+    /// <summary>FUN_141974640 / FillPvpSeasonHistoryRow (@0x141974640, @0x141978bb0): a row per finished season, newest first, and the summed result.</summary>
+    [Test]
+    public void TheSeasonRowsListTheFinishedSeasonsAndSumTheirResults()
+    {
+        var (c, b, _, _, seasons) = ChampionPage();
+        c.OpenCategoryPage("ChampionShipHistroy");
+        b.Apply(new GuildMessage((byte)0x4b) { PvpSeasonHistory = new[]
+        {
+            new GuildPvpSeasonHistory { SeasonName = "S1", Rank = 3, Grade = 5, Wins = 4, Losses = 1 },
+            new GuildPvpSeasonHistory { SeasonName = "S2", Rank = 1, Grade = 6, Wins = 2, Losses = 2 },
+        } });
+        var rows = seasons.Last();
+        Assert.That(rows.Select(r => (c.Host.Get(r, "seasonName"), c.Host.Get(r, "combatHistory"), c.Host.Get(r, "rank"), c.Host.Get(r, "grade"))),
+            Is.EqualTo(new[] { ("S2", "c3ee|4|2|2", "c3ef|1|{1}|{2}", (object)6), ("S1", "c3ee|5|4|1", "c3ef|3|{1}|{2}", 5) }.Select(x => ((object)x.Item1, (object)x.Item2, (object)x.Item3, x.Item4))));
+    }
+
+    [Test]
+    public void TheMemberMarksAreTheSecondPartOfEachIdAndMarkPairAndAnOddEntryIsLeftOut()
+    {
+        Assert.That(GuildDialogController.MemberMarks("1,a:2,b"), Is.EqualTo("a,b"));
+        Assert.That(GuildDialogController.MemberMarks("1,a::bad:3,c,d:4,e"), Is.EqualTo("a,e"));
+        Assert.That(GuildDialogController.MemberMarks(""), Is.EqualTo(""));
+    }
 }

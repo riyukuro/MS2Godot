@@ -185,6 +185,8 @@ public sealed class GuildBook
         public int Id;
         public string Name = "";
         public int[] Points = new int[8];
+        /// <summary>The season's begin and end (the instants, UpdateChampionshipInfo's period text).</summary>
+        public long Begin, End;
 
         /// <summary>GetRankPoints (@0x1404c60e0): 0 outside 1..7.</summary>
         public int GetRankPoints(int rank) => rank < 1 || rank >= 8 ? 0 : Points[rank];
@@ -200,14 +202,15 @@ public sealed class GuildBook
 
     /// <summary>CGuildInfo::GetSeason (@0x1404d3190) with UpdateSeason (@0x1404d31b0, guilddef_1.cpp:2209): no current season resets it; a changed
     /// season id copies the id, the display name and the seven grades.
-    /// STILL-OPEN: Unk_GuildSeason::Reset's values (taken as zero), and the season's begin and end (only FUN_1404c6160 reads them).</summary>
+    /// STILL-OPEN: Unk_GuildSeason::Reset's values (taken as zero); the begin and end are copied with the id (UpdateChampionshipInfo reads them).</summary>
     public GuildSeason GetSeason()
     {
         var cur = Seasons?.Current(ServerTime(), ZoneOffset());
-        if (cur == null) { season.Id = 0; season.Name = ""; Array.Clear(season.Points); return season; }
+        if (cur == null) { season.Id = 0; season.Name = ""; season.Begin = season.End = 0; Array.Clear(season.Points); return season; }
         if (season.Id != cur.Id)
         {
             season.Id = cur.Id; season.Name = cur.DisplayName;
+            long zone = ZoneOffset(); season.Begin = cur.Start(zone); season.End = cur.End(zone);
             for (int i = 0; i < 7; i++) season.Points[i + 1] = cur.Grades[i];
         }
         return season;
