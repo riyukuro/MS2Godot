@@ -39,6 +39,7 @@ static class Gms2Opcodes {
         [Inbound.RegionSkill] = 0x4D,
         [Inbound.FieldProperty] = 0xCC,
         [Inbound.Trigger] = 0x4F,
+        [Inbound.Cinematic] = 0x68,       // recorded: 4 packets on the tutorial map (KeyMode, StartCinematic, Close)
         [Inbound.Quest] = 0x53,
         [Inbound.Party] = 0x54,
         [Inbound.PartySearch] = 0xBD,     // RecvOp MatchParty

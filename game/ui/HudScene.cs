@@ -3925,16 +3925,19 @@ public partial class HudScene : Node, IUiStageHost
     void TickCutSceneMovie()
     {
         var movie = Ms2Godot.Net.LiveSession.Instance?.Movie;
+        var cine = Ms2Godot.Net.LiveSession.Instance?.Cinematic;
         bool on = movie?.IsPlaying == true;
-        if (!on && movieLabel == null) return;
+        bool cineOn = cine?.IsShowing == true;
+        if (!on && !cineOn && movieLabel == null) return;
         if (movieLabel == null)
         {
             if (systemMenuLayer == null) AddChild(systemMenuLayer = new CanvasLayer { Layer = 11 });
             movieLabel = new Label { Position = new Vector2(16, 16), Visible = false };
             systemMenuLayer.AddChild(movieLabel);
         }
-        movieLabel.Visible = on;
+        movieLabel.Visible = on || cineOn;
         if (on) movieLabel.Text = $"[cut scene movie {movie.CutSceneId}: {movie.Path}] Esc skips";
+        else if (cineOn) movieLabel.Text = $"[cinematic {cine.Id}] {cine.Text}";    // STILL-OPEN: the cinematic pane's swf
     }
 
     public override void _Process(double delta)

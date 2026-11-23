@@ -151,6 +151,9 @@ public partial class LiveSession : Node
     /// <summary>The cut scene movie pane's state (UICutSceneMovie 0x4e7e): the Trigger UI's start and stop reach it, its skip sends the exit.</summary>
     public Ms2.Ui.Hud.CutSceneMovie Movie { get; }
 
+    /// <summary>The cut scene cinematic pane's state (UICutSceneCinematic 0x4e52): the Cinematic packet drives it.</summary>
+    public Ms2.Ui.Hud.CutSceneCinematic Cinematic { get; } = new();
+
     public LiveSession()
     {
         Movie = new Ms2.Ui.Hud.CutSceneMovie(Send);
@@ -1392,6 +1395,8 @@ public partial class LiveSession : Node
                 OnRequestFieldEnter(RequestFieldEnter.Read(p.Reader()));
             else if (game.Is(p, Inbound.Trigger))
                 OnTrigger(p.Body);
+            else if (game.Is(p, Inbound.Cinematic))
+                Cinematic.Apply(CinematicPacket.Read(p.Reader()));
             else if (game.Is(p, Inbound.UserMoveByPortal))
             {
                 var m = UserMoveByPortal.Read(p.Reader());

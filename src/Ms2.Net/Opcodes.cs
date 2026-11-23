@@ -35,6 +35,7 @@ public enum Inbound : ushort {
     RegionSkill = 0x4C,         // RecvOp RegionSkill (commonfiles/opcodes.h): CSceneStateGame::OnRegionSkill
     FieldProperty = 0xCA,       // RecvOp FieldProperty (commonfiles/opcodes.h:209): CSceneStateGame::OnFieldProperty (scenestategame.cpp:3895)
     Trigger = 0x4E,             // RecvOp Trigger (commonfiles/opcodes.h:86): CSceneStateGame::OnTrigger
+    Cinematic = 0x66,           // RecvOp Cinematic (commonfiles/opcodes.h:110): CSceneStateGame::OnCinematic (scenestategame.cpp:3867) -> UICutSceneCinematic::OnPacket
     Quest = 0x52,
     Party = 0x53,
     PartySearch = 0xBB,     // RecvOp PartySearch (commonfiles/opcodes.h:194): CPartyManager::OnMatchParty (@0x1416310d0)
