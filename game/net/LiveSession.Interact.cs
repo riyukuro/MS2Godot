@@ -122,8 +122,9 @@ public partial class LiveSession
     /// CSceneStateGame::OnSetCraftMode (@0x141723410, scenestategame.cpp:7827-7851): the pc by id, nothing if it is missing or
     /// dead (:7832-7835), then PC::vfunc_135 with the cube mode, the craft mode and the item (0, 0 and none with mode 0).
     /// Another pc's goes to <see cref="RemoteLayer.SetCraftMode"/>.
-    /// STILL-OPEN: MyPC's target refresh after it (FUN_141bd3620()-&gt;vfunc_149, :7846-7851); the own pc's StateIdle on
-    /// entering the cube mode (PC::vfunc_135's vfunc_59, pc.cpp:3072-3078).
+    /// A pc not in the cube mode yet goes to StateIdle, or StateFall while its model is not in (PC::vfunc_135's vfunc_59,
+    /// pc.cpp:3072-3078), which also ends a taxi call (ChangeState's vfunc_5).
+    /// STILL-OPEN: MyPC's target refresh after it (FUN_141bd3620()-&gt;vfunc_149, :7846-7851).
     /// </summary>
     void OnSetCraftMode(SetCraftMode m)
     {
@@ -132,6 +133,11 @@ public partial class LiveSession
             if (remote?.SetCraftMode(m.Id, m.CubeMode, m.CraftMode, m.Item) == true)
                 GD.Print($"live: SetCraftMode pc {m.Id} mode {m.CubeMode} craft {m.CraftMode}");
             return;
+        }
+        if (!Me.Dead && !CubeCraft.InCubeMode)
+        {
+            if (player != null && IsInstanceValid(player)) player.EnterIdleOrFall(!CubeCraft.ModelLoaded);
+            EndTaxiCall();
         }
         CubeCraft.Set(m.CubeMode, m.CraftMode, m.Item, Me.Dead);
         GD.Print($"live: SetCraftMode mode {m.CubeMode} craft {m.CraftMode} item {m.Item?.ItemId ?? 0}");

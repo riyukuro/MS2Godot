@@ -212,6 +212,11 @@ public partial class Player : CharacterBody3D
         Enter(MoveState.Idle);
     }
 
+    /// <summary>PCBase::vfunc_59 (pcbase.cpp:1098) with state 1 (StateIdle) or, with <paramref name="fall"/>, 5 (StateFall),
+    /// from outside the move states: CStateManager::ChangeState runs the old state's exit and enters the new one; the motion
+    /// is kept.</summary>
+    public void EnterIdleOrFall(bool fall) => Enter(fall ? MoveState.Fall : MoveState.Idle);
+
     /// <summary>
     /// PCBase::SetTargetYaw (pcbase.cpp:1431): only the yaw to turn to (m_f934); <see cref="TurnTowardTargetYaw"/> turns the
     /// facing there over the next frames. <see cref="Face"/> snaps.
