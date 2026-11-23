@@ -131,11 +131,13 @@ void fragment() {
         if (!ShowEffects || string.IsNullOrEmpty(xmlPath)) return;
         var parts = effects.Get(xmlPath);
         if (parts == null) { EffectsNoXml++; MissingEffects.Add(xmlPath); return; }
+        var owner = EffectOwners.Of(casterKind, actor);
         foreach (var part in parts)
         {
+            if (part.SkippedFor(owner)) continue;   // CEffectParam::vfunc_7 (effectservice.cpp:245-259)
             if (part.Type == "soundEvent" && part.SoundEvent != null)
             {
-                FieldAudio.Instance?.PlayEventAt(part.SoundGroup == null ? part.SoundEvent : part.SoundGroup + "/" + part.SoundEvent, at, part.StartDelay);
+                FieldAudio.Instance?.PlayEffectSound(part, owner, at);
                 EffectSounds++;
                 continue;
             }

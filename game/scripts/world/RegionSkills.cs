@@ -272,12 +272,13 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
             var g = actor.GlobalPosition;
             world = new Xform(new Vec3(g.X, -g.Z, g.Y), at.R, at.S);
         }
+        var owner = EffectOwners.Of(casterKind, actor);
         foreach (var part in parts)
         {
+            if (part.SkippedFor(owner)) continue;   // CEffectParam::vfunc_7 (effectservice.cpp:245-259)
             if (part.Type == "soundEvent" && part.SoundEvent != null)
             {
-                FieldAudio.Instance?.PlayEventAt(part.SoundGroup == null ? part.SoundEvent : part.SoundGroup + "/" + part.SoundEvent,
-                    FieldBuilder.ToGodotPoint(world.T), part.StartDelay);
+                FieldAudio.Instance?.PlayEffectSound(part, owner, FieldBuilder.ToGodotPoint(world.T));
                 continue;
             }
             if (part.Type == "light" && part.Light != null)

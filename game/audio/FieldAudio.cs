@@ -618,6 +618,20 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     public int PositionalPlayed;
 
     /// <summary>
+    /// An effect's soundEvent part (CSoundEventEffect::vfunc_3 @0x141776760, soundeventmgr.cpp:456-574) for
+    /// <paramref name="owner"/> at <paramref name="at"/>: the event of the owner's job when the part is byJob
+    /// (<see cref="EffectPart.SoundEventFor"/>; the character's disableJobSound option keeps the plain event), none when that
+    /// is empty, after the job's start delay (<see cref="EffectPart.SoundStartDelayFor"/>). The caller has made the owner tests
+    /// (<see cref="EffectPart.SkippedFor"/>). STILL-OPEN: the voice pitch of SoundPropertyMgr::FindPitch (:483-485) is not applied.
+    /// </summary>
+    public bool PlayEffectSound(EffectPart part, EffectOwner owner, Vector3 at)
+    {
+        string ev = part.SoundEventFor(owner.JobCode, GameOptions.SoundFlag.DisableJobSound);
+        if (string.IsNullOrEmpty(ev)) return false;
+        return PlayEventAt(part.SoundGroup == null ? ev : part.SoundGroup + "/" + ev, at, part.SoundStartDelayFor(owner.JobCode));
+    }
+
+    /// <summary>
     /// Play a sound event at a world position (effect soundEvent parts, npc sounds). <paramref name="path"/> is the event name or
     /// "group/name"; <paramref name="delay"/> seconds later, at <paramref name="volume"/> times the event's own volume
     /// (CreateSoundEventEffectParam's volume). Attenuation follows the event's 3D distances.

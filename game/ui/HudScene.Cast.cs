@@ -711,7 +711,8 @@ public partial class HudScene
         // :1232: PCBase::FUN_141675ed0 is 0 without a ridee (STILL-OPEN: rides), so the charge use counts
         live?.Cooltimes.OnRechargeSkillUsed(r.Skill, now);
         castMotions ??= Ms2.Formats.World.SkillTable.For(assets.Packs);
-        if (castMotions.Motion((int)r.Skill.Id, r.Level.Level, r.Motion)?.MotionEffect is { } fx) live?.PlayFieldEffect(fx, g, me.Visual?.Rotation.Y ?? 0);
+        if (castMotions.Motion((int)r.Skill.Id, r.Level.Level, r.Motion)?.MotionEffect is { } fx)
+            live?.PlayFieldEffect(fx, g, me.Visual?.Rotation.Y ?? 0, Ms2.Audio.SoundMusicEffectState.CasterMyPc);
         GD.Print($"cast: skill {r.Skill.Id} level {r.Level.Level} motion {r.Motion}{(sent ? " sent" : " (offline, not sent)")}");
         return true;
     }
@@ -1349,7 +1350,8 @@ public partial class HudScene
                 OwnCastMove(s.SkillId, s.Level, s.Motion, new System.Numerics.Vector3(MathF.Sin(rad), -MathF.Cos(rad), 0)), rotZ);
         }
         var g = player.GlobalPosition;
-        if (!string.IsNullOrEmpty(motion.MotionEffect)) Net.LiveSession.Instance?.PlayFieldEffect(motion.MotionEffect, g, player.Visual?.Rotation.Y ?? 0);
+        if (!string.IsNullOrEmpty(motion.MotionEffect))
+            Net.LiveSession.Instance?.PlayFieldEffect(motion.MotionEffect, g, player.Visual?.Rotation.Y ?? 0, Ms2.Audio.SoundMusicEffectState.CasterMyPc);
         GD.Print($"cast: skill {s.SkillId} motion {s.Motion} started by the server");
     }
 
