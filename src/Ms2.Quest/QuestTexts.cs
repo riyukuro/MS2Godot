@@ -53,6 +53,16 @@ public sealed class ConditionParam
     /// <summary>GetIdCount: the ids, 0 without the ids flag.</summary>
     public int IdCount => (Flags & 2) != 0 ? Ids.Count : 0;
 
+    /// <summary>CConditionParam::Matches (@0x14029e600, conditionutil.cpp:177-189): a range holding the value (both ends
+    /// in), else, with the ids flag, whether the ids hold it.</summary>
+    public bool Matches(long value)
+    {
+        if ((Flags & 1) != 0)
+            foreach (var (start, end) in Ranges)
+                if (start <= value && value <= end) return true;
+        return (Flags & 2) != 0 && Ids.Contains(value);
+    }
+
     /// <summary>GetFirstValue: the first range's start, else the first id, else 0.</summary>
     public long FirstValue => (Flags & 1) != 0 && Ranges.Count > 0 ? Ranges[0].Start : (Flags & 2) != 0 && Ids.Count > 0 ? Ids[0] : 0;
 }

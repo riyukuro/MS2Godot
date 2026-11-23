@@ -53,6 +53,8 @@ public partial class Field : Node3D, World.ITargetCamera
     public World.FieldBreakables Breakables { get; private set; }
     /// <summary>The field lifts' fades and removals (live only).</summary>
     public World.FieldLiftables Liftables { get; private set; }
+    /// <summary>The lift target boxes' quest markers (CLiftableTarget's effect).</summary>
+    public World.LiftTargetMarkers LiftMarkers { get; private set; }
     Ms2.Ui.BreakableObjects devBreakables;    // offline only, with MS2_BREAKABLE_STATE
 
     /// <summary>Dev: MS2_BREAKABLE_STATE="name=state[,name=state]" (name * = every marker) gives an offline field breakable list for those states.</summary>
@@ -218,6 +220,7 @@ public partial class Field : Node3D, World.ITargetCamera
         var regionSkills = new World.RegionSkills(packs, builder);   // WorldService's region skill objects (OnRegionSkill 0x4C)
         AddChild(regionSkills);
         Triggers.Bind(regionSkills);   // the effect trigger objects' effects go through the same effect service
+        LiftMarkers = new World.LiftTargetMarkers(Net.LiveSession.Instance?.LiftTargets, regionSkills);   // and the lift target markers
         long tBuild = sw.ElapsedMilliseconds;
         await Budget();
         GD.Print($"MS2Godot load count {contents.Load.Count} / {contents.Load.Total} entities placed");
@@ -387,6 +390,7 @@ public partial class Field : Node3D, World.ITargetCamera
         if (Active == this) Active = null;
         Breakables?.Detach();
         Liftables?.Detach();
+        LiftMarkers?.Detach();
         FieldLights.Clear(lightSet);
         if (began && !IsLoaded) World.FieldContents.AbandonLoad(this, loadMove);
         layers?.Stop();

@@ -614,8 +614,10 @@ public static class FieldEnter
 /// <para>GetLiftableTargetBoxes (@0x141bc5980, worldservice_1.cpp:889-896) returns every box in the map's order: ascending
 /// id, and among equal ids the last inserted first (CRBTree::InsertImpl sends an equal key left, atlcoll.h).</para>
 /// <para>The field reset (FUN_141bbc580, worldservice_1.cpp:10062) empties the map with the lifts.</para>
-/// STILL-OPEN: the box's quest-condition effect (CLiftableTarget FUN_1414483e0, effect type 0x9c) and the target guides
-/// (model 0x14e880f6, m_570) have no port.
+/// <para>Each box's marker (<see cref="RefreshMarkers"/>): CLiftableTarget::FUN_1414483e0 for every box, run by
+/// WorldService::FUN_141bd3920 (worldservice_1.cpp:7117-7131) at the end of every craft start or stop
+/// (Unk_PCCubeCraft::FUN_1410a8af0, cubecraft_2.cpp:416), any pc's.</para>
+/// STILL-OPEN: the target guides (model 0x14e880f6, m_570) have no port.
 /// </summary>
 public sealed class LiftableTargetBoxes
 {
@@ -628,7 +630,59 @@ public sealed class LiftableTargetBoxes
         /// <summary>m_vRot: property 0x68c7c29d ("Rotation").</summary>
         public Vec3 Rotation { get; internal set; }
         public FieldEntity Entity { get; internal set; }
+        /// <summary>m_nFx != 0: the box's marker effect runs.</summary>
+        public bool Marked { get; internal set; }
     }
+
+    /// <summary>CLiftableTargetBox::vfunc_2 (liftabletarget.cpp:162-165): CommonResource +0x348,
+    /// EFFECT_LIFTABLE_CUBE_MARKER, the same in the KR and the restored data.</summary>
+    public const string MarkerEffect = "BG/Common/Eff_co_targetBox.xml";
+
+    /// <summary>CreateEffect (true) or DestroyEffect (false) of a box (liftabletarget.cpp:137-160); the host plays the
+    /// effect at <see cref="MarkerAt"/>.</summary>
+    public Action<Box, bool> MarkerSet;
+
+    /// <summary>
+    /// FUN_1414483e0 (@0x1414483e0, liftabletarget.cpp:99-134) for every box: outside the cube mode no marker; else a
+    /// box is marked when a quest in progress (GetQuestIdsFiltered(1, 0xb, -1)) that is not complete (IsComplete,
+    /// QuestRules.IsComplete) has an item_move condition (0x9c) whose target names one id, matches the box id, and whose
+    /// code matches the active craft's item. A box changes only on a change (CreateEffect returns when the effect runs,
+    /// DestroyEffect when none does). <paramref name="quest"/> is the quest data; it is read only in the cube mode.
+    /// </summary>
+    public void RefreshMarkers(bool inCubeMode, int craftItemId, IEnumerable<QuestRecord> quests, Func<int, Ms2.Quest.QuestData> quest)
+    {
+        foreach (var b in boxes)
+        {
+            bool on = inCubeMode && QuestWants(b.Id, craftItemId, quests, quest);
+            if (on == b.Marked) continue;
+            b.Marked = on;
+            MarkerSet?.Invoke(b, on);
+        }
+    }
+
+    /// <summary>The quest match of FUN_1414483e0 (liftabletarget.cpp:108-131).</summary>
+    public static bool QuestWants(int boxId, int craftItemId, IEnumerable<QuestRecord> quests, Func<int, Ms2.Quest.QuestData> quest)
+    {
+        if (quests == null || quest == null) return false;
+        foreach (var r in quests)
+        {
+            if (r.State != 1) continue;
+            var data = quest(r.Id);
+            if (data == null || Ms2.Quest.QuestRules.IsComplete(data, r.State, r.Progress)) continue;
+            foreach (var c in data.Conditions)
+                if (c.Type == ItemMoveCondition && c.Target.IdCount == 1 && c.Target.Matches(boxId) && c.Code.Matches((uint)craftItemId))
+                    return true;
+        }
+        return false;
+    }
+
+    /// <summary>The condition type item_move (Ms2.Quest.ConditionTypes).</summary>
+    public const int ItemMoveCondition = 0x9c;
+
+    /// <summary>CreateEffect's transform (liftabletarget.cpp:140-144): the box position raised by 1, FromEulerAnglesXYZ of
+    /// the box rotation's degrees, scale 1.</summary>
+    public static Xform MarkerAt(Box b) =>
+        new(b.Position + new Vec3(0, 0, 1), DummyWorld.EulerXyz(b.Rotation.X, b.Rotation.Y, b.Rotation.Z), 1);
 
     public const string Model = "MS2LiftableTargetBox";
     public const string IdProperty = "liftableTarget";

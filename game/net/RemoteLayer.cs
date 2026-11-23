@@ -556,6 +556,7 @@ public sealed partial class RemoteLayer : Node3D
         {
             bool built = Look.CarriedModel.Sync(r.Visual, r.Cube.Current, builder, packs, LiveSession.ItemDataOf);
             pc.CarriesGuide2 = r.Cube.InCubeMode && built;
+            LiveSession.Instance?.RefreshLiftMarkers();   // cubecraft_2.cpp:416, any pc's craft
         };
         r.Cube.NewPc(); r.Cube.Set(u.CubeMode, u.CraftMode, u.CubeItem, pc.States.Dead); r.Cube.ModelAttached();
         r.Held.AddUser(u.HeldObject, ItemExists?.Invoke(u.HeldObject) ?? true);

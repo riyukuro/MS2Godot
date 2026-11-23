@@ -155,6 +155,18 @@ public partial class LiveSession
             InCubeMode = CubeCraft.InCubeMode, CubeMode1 = CubeCraft.CubeMode == 1, HoldsLift = CubeCraft.Current is { HoldsLift: true }, HasGuide2 = on,
         };
         if (on || CubeCraft.Current?.CarriesItemModel == true) GD.Print($"live: carried model of item {CubeCraft.Current?.Item?.ItemId ?? 0}: {(on ? "on the body" : "not built")}");
+        RefreshLiftMarkers();
+    }
+
+    /// <summary>WorldService::FUN_141bd3920 (worldservice_1.cpp:7117-7131) at the end of a craft start or stop
+    /// (cubecraft_2.cpp:416), the own pc's or another's: each lift target box's marker by the own pc's cube mode and craft
+    /// item (<see cref="Ms2.Ui.LiftableTargetBoxes.RefreshMarkers"/>).</summary>
+    internal void RefreshLiftMarkers()
+    {
+        if (LiftTargets.Count == 0) return;
+        var packs = Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir);
+        LiftTargets.RefreshMarkers(CubeCraft.InCubeMode, CubeCraft.Current?.Item?.ItemId ?? 0, Quests.All,
+            id => World.NpcTalk.ClientQuests(packs).Quest(id));
     }
 
     /// <summary>CSceneStateGame::OnResponseCube (scenestategame.cpp:9876), the held-item modes (<see cref="HeldItem.ResponseCube"/>)

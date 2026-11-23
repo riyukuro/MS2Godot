@@ -522,4 +522,45 @@ public class FieldObjectStatesTests
         Assert.That(t.Count, Is.Zero);
         Assert.That(t.AttachField(null), Is.Zero);
     }
+    [Test]
+    public void ABoxIsMarkedOnlyWhileTheCraftCarriesTheItemAnOpenItemMoveQuestWantsThere()
+    {
+        // CLiftableTarget::FUN_1414483e0 (liftabletarget.cpp:99-134): in cube mode, a quest in progress and not complete
+        // whose item_move (0x9c) condition names the box as its one target id and the craft's item in its code
+        var t = new LiftableTargetBoxes();
+        t.AttachField(new List<FieldEntity> { TargetBox("a", "404", pos: "100, 200, 300", rot: "0, 0, 90"), TargetBox("b", "405") });
+        var data = new Ms2.Quest.QuestData { Id = 7 };
+        data.Conditions.Add(new Ms2.Quest.QuestCondition { Type = 0x9c, Goal = 1, Target = Ms2.Quest.ConditionParam.Parse("404"), Code = Ms2.Quest.ConditionParam.Parse("30000856") });
+        var other = new Ms2.Quest.QuestData { Id = 8 };   // two target ids: GetIdCount != 1, never a match
+        other.Conditions.Add(new Ms2.Quest.QuestCondition { Type = 0x9c, Goal = 1, Target = Ms2.Quest.ConditionParam.Parse("404,405"), Code = Ms2.Quest.ConditionParam.Parse("30000856") });
+        Ms2.Quest.QuestData Quest(int id) => id == 7 ? data : id == 8 ? other : null;
+        var open = new QuestRecord { Id = 7, State = 1, Progress = new long[] { 0 } };
+        var quests = new List<QuestRecord> { open, new QuestRecord { Id = 8, State = 1, Progress = new long[] { 0 } } };
+        var log = new List<(int, bool)>();
+        t.MarkerSet = (b, on) => log.Add((b.Id, on));
+
+        t.RefreshMarkers(true, 30000856, quests, Quest);
+        Assert.That(log, Is.EqualTo(new[] { (404, true) }));
+        t.RefreshMarkers(true, 30000856, quests, Quest);     // CreateEffect returns while the effect runs
+        Assert.That(log, Has.Count.EqualTo(1));
+        t.RefreshMarkers(true, 30000441, quests, Quest);     // another item
+        Assert.That(log[^1], Is.EqualTo((404, false)));
+        t.RefreshMarkers(true, 30000856, quests, Quest);
+        t.RefreshMarkers(false, 30000856, quests, Quest);    // out of the cube mode
+        Assert.That(log[^1], Is.EqualTo((404, false)));
+        open.Progress[0] = 1;                                // complete: IsComplete skips it
+        t.RefreshMarkers(true, 30000856, quests, Quest);
+        Assert.That(log, Has.Count.EqualTo(4));
+        open.Progress[0] = 0; open.State = 2;                // rewarded: not in progress
+        t.RefreshMarkers(true, 30000856, quests, Quest);
+        Assert.That(log, Has.Count.EqualTo(4));
+        // the marker's place: the box raised by 1, the box rotation's degrees, scale 1 (liftabletarget.cpp:140-144)
+        var at = LiftableTargetBoxes.MarkerAt(t.All[0]);
+        Assert.That(at.T, Is.EqualTo(new Vec3(100, 200, 301)));
+        Assert.That(at.R, Is.EqualTo(DummyWorld.EulerXyz(0, 0, 90)));
+        Assert.That(at.S, Is.EqualTo(1));
+        // CConditionParam::Matches: ranges hold both ends, then the ids
+        var p = Ms2.Quest.ConditionParam.Parse("10-20, 30");
+        Assert.That(new[] { 9L, 10, 20, 21, 30, 31 }.Select(p.Matches), Is.EqualTo(new[] { false, true, true, false, true, false }));
+    }
 }
