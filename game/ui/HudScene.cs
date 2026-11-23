@@ -817,6 +817,7 @@ public partial class HudScene : Node, IUiStageHost
                 guideDialogLookup = name => Ms2.Ui.Guide.GuideDialogLookup.Resolve(name, open);
             }
             live.FindDialogOf = guideDialogLookup;      // the guide's dialog conditions over the HUD's dialogs
+            live.OwnSkillStateRunsOf = OwnSkillStateRuns;      // the guide's state id while the own cast runs (this HUD)
             // the room table read here at the field's HUD build, on the main thread: no parse on the packet path
             var rooms = dungeonRooms ??= DungeonRooms.Load(assets.Packs, e => Ms2.Ui.FeatureElements.IsAvailable(assets.Packs, e));
             live.DungeonRoomOf = rooms.GetRoom;

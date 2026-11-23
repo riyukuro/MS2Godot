@@ -34,6 +34,8 @@ public partial class LiveSession
     /// tables hold names the dialog by, an id always with its name.
     /// </summary>
     public Func<string, GuideDialog> FindDialogOf { get; set; }
+    /// <summary>Whether the own skill state runs (the HUD's cast), for the guide's state id (<see cref="OwnCurStateId"/>).</summary>
+    public Func<bool> OwnSkillStateRunsOf { get; set; }
 
     void StartGuide()
     {
@@ -144,7 +146,9 @@ public partial class LiveSession
         /// <summary>STILL-OPEN: the client's sub job is PC m_spJobFB8 (pc.cpp:1275); the user block's job, which the Job packet does not refresh here.</summary>
         public override int SubJob => s.Me.User?.Job ?? 0;
         public override int Level => s.Me.User?.Level ?? 0;
-        public override int PlayerState => s.Me.State;
+        /// <summary>MyPC::GetCurStateId (CStateCondition): the client's state id as <see cref="OwnCurStateId"/> gives it, 1 while
+        /// the body stands, not the last state the server set.</summary>
+        public override int PlayerState => s.OwnCurStateId(s.OwnSkillStateRunsOf?.Invoke() ?? false);
 
         /// <summary>
         /// CEquipment::GetItemAt(FUN_1405451c0(slot name), layer) (equipment.cpp:806): the item at the slot's layer, null

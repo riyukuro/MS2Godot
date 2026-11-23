@@ -1,5 +1,6 @@
 using Ms2.Net.Packets;
 using Ms2.Ui;
+using Ms2.Ui.Guide;
 using NUnit.Framework;
 
 namespace Ms2.Ui.Tests;
@@ -43,5 +44,30 @@ public class OwnPcStateTests
         me.LeaveFallOnGround(true);
         int standing = OwnPcState.CurStateId(me.State, false, false, 1);
         Assert.That((standing, LiveInteractObjects.StateAllowsInteraction(standing)), Is.EqualTo((1, true)), "on the ground: the body's idle");
+    }
+
+    sealed class StateWorld(int state) : GuideWorld
+    {
+        public override bool HasPlayer => true;
+        public override int PlayerState => state;
+    }
+
+    /// <summary>CStateCondition reads MyPC::GetCurStateId: 1 while the body stands. The guide now reads the state id the
+    /// client has (the session's OwnCurStateId over <see cref="OwnPcState.CurStateId"/>), not the last state the server
+    /// set, which is 0 after the field entry and never matched a "state 1" condition.</summary>
+    [Test]
+    public void AStateOneGuideConditionMatchesWhileIdle()
+    {
+        var me = new MyCharacter();
+        var u = new FieldAddUser { ObjectId = 9, User = new UserBlock { Name = "a" } };
+        u.Stats[0].Health = 500; u.Stats[2].Health = 500;
+        me.Apply(u);
+        var condition = new StateCondition { Value = 1 };
+        var idle = new GuideManager(new StateWorld(OwnPcState.CurStateId(me.State, false, false, 1)));
+        Assert.That(condition.Check(idle), Is.EqualTo(1), "idle: state 1");
+        var raw = new GuideManager(new StateWorld(me.State));
+        Assert.That((me.State, condition.Check(raw)), Is.EqualTo((0, 0)), "the server's state after the field entry is 0: no match");
+        var walking = new GuideManager(new StateWorld(OwnPcState.CurStateId(me.State, false, false, 2)));
+        Assert.That(condition.Check(walking), Is.EqualTo(0), "walking: state 2");
     }
 }
