@@ -72,6 +72,8 @@ public sealed partial class RemoteLayer : Node3D
 
     /// <summary>CItem::FUN_140523c40's outcome for an item id: false when the item data has no such item (no function = true).</summary>
     public Func<int, bool> ItemExists;
+    /// <summary>The pc whose npc force zones (Player.ForceNpcs) the layer fills each frame: the live session's own player.</summary>
+    public Func<Player> ForcedPc = static () => LiveSession.Instance?.OwnPlayer;
 
     readonly ModelBuilder builder;
     readonly EquipApplier equip;
@@ -900,7 +902,7 @@ public sealed partial class RemoteLayer : Node3D
         if (TombTags.Count > 0) { RunMarkerTags(); RunTombTags(); }
         CodiTick(dt);
         npcs.Process(dt);
-        if (LiveSession.Instance?.OwnPlayer is { } own) npcs.ForceSources(own.ForceNpcs);   // FUN_141bc8420's npc zones
+        if (ForcedPc() is { } own) npcs.ForceSources(own.ForceNpcs);   // FUN_141bc8420's npc zones
         combat.Process(dt);
     }
 }
