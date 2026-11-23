@@ -263,12 +263,12 @@ public partial class HudScene
     /// (stateskill.cpp:2996-3016) makes it the state's next cast (<see cref="OwnPress"/>); after the sequence's end, while the
     /// state holds on, FUN_1417ee120 takes it at its next step (m_spNext); else MyPC::vfunc_102 (<see cref="UseOwnRecord"/>).
     /// </summary>
-    void RouteOwn(CastRecord r)
+    void RouteOwn(CastRecord r, bool log = true)
     {
         if (OwnSkillStateRuns())
         {
             if (ownEnded) ownNext = r;
-            else OwnPress(r);
+            else OwnPress(r, log);
             return;
         }
         if (GetTree().GetFirstNodeInGroup(Player.Group) is Player me) UseOwnRecord(me, r);

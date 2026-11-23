@@ -87,7 +87,7 @@ public partial class HudScene
         uint id = CompactPick(false, false);
         if (id == 0 || id != compactRefused) compactRefused = 0;
         if (id == 0 || id == compactRefused) return;
-        if (RequestOwn(w, id, compactHeld, 0) is { } r) RouteOwn(r);
+        if (RequestOwn(w, id, compactHeld, 0) is { } r) RouteOwn(r, false);   // the per-frame poll: a held key re-press is dropped silently, as the client does (FUN_1417eed70)
         else compactRefused = id;
     }
 
