@@ -57,10 +57,13 @@ public partial class HudScene
             gameMenu?.OnQuestStarted(id);
         };
         live.Quests.Started += onStarted;
-        // OnJob mode 2 for the local player (scenestategame.cpp:7489-7497): with feature 0xca, UIChangeJobEffect when the new
-        // sub job is a job change's target
+        // OnJob for the local player: the menu's skill book count; mode 2 (scenestategame.cpp:7489-7497): with feature 0xca,
+        // UIChangeJobEffect when the new sub job is a job change's target
         Action<int> onJob = mode =>
         {
+            // any mode (scenestategame.cpp:7567-7569): the menu's FUN_141937e00, the skill book count (FUN_141938ae0(0x4f2d));
+            // STILL-OPEN: its UpdateSkillUpgradeNotify
+            if (mode >= 0) gameMenu?.UpdateNotifyCount(0x4f2d);
             if (mode != 2 || !hudModel.IsFeatureEnabled(0xca)) return;
             int sub = LocalJobs().SubJob;
             if (ChangeJobs().IsChangeTarget(sub)) ShowChangeJobEffect(sub);

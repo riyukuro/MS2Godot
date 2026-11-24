@@ -208,6 +208,29 @@ public class ChangeJobTests
         Assert.That(bad, Is.Empty);
     }
 
+    /// <summary>The game menu's skill book count (FUN_141938ae0(0x4f2d), refreshed on every Job packet):
+    /// JobSystemCli::ChangedMainSkills, the changed skills with a skill row that are not sub skills.</summary>
+    [Test]
+    public void TheSkillBookCountIsTheChangedMainSkills()
+    {
+        using var packs = new PackSet(RcGap.Data("MS2_DATA"));
+        var t = new GameTables(packs, "en").Skills;
+        var rows = t.Jobs.GetJobData(30).Skills.ToList();
+        var main = rows.Where(r => r.SubSkillIds.Count == 0).Take(3).Select(r => r.SkillId).ToList();
+        uint sub = rows.First(r => r.SubSkillIds.Count > 0).SubSkillIds[0];
+        Assert.That(main, Has.Count.EqualTo(3));
+        var jobs = new JobSystem(t);
+        jobs.Read(1, 30, new[]
+        {
+            new Ms2.Net.Packets.BookSkill((int)main[0], 1, true, true, false),
+            new Ms2.Net.Packets.BookSkill((int)main[1], 1, true, false, false),
+            new Ms2.Net.Packets.BookSkill((int)main[2], 1, false, true, false),
+            new Ms2.Net.Packets.BookSkill((int)sub, 1, true, true, false),
+        });
+        Assert.That(jobs.FindSkill(sub)?.IsSubSkill, Is.True);
+        Assert.That(jobs.ChangedMainSkills(), Is.EqualTo(2), "the two changed main skills; the unchanged one and the sub skill are not counted");
+    }
+
     /// <summary>The menu's FUN_14193b4a0: a started quest marks the menu dirty only when it is the sub job's start quest.</summary>
     [Test]
     public void TheStartQuestOfTheSubJobRefreshesTheMenu()

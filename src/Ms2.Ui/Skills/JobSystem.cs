@@ -148,6 +148,16 @@ public sealed class JobSystem
         }
     }
 
+    /// <summary>JobSystemCli::ChangedMainSkills @0x140a6e4d0 (jobsystemcli.cpp:226): the skills the server flagged changed
+    /// (m_bChanged) that have a skill table row and are not sub skills; the game menu's skill book count.</summary>
+    public int ChangedMainSkills()
+    {
+        int n = 0;
+        foreach (var s in skills.Values)
+            if (s.Changed && t.GetSkillData(s.Id) != null && !s.IsSubSkill) n++;
+        return n;
+    }
+
     /// <summary>GetUsedPoint @0x140639b40 (:427).</summary>
     public int GetUsedPoint(int jobLevel) => usedPoints.GetValueOrDefault(jobLevel);
 
