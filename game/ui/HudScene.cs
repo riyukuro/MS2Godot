@@ -1730,8 +1730,8 @@ public partial class HudScene : Node, IUiStageHost
         if (a.Kind == Ms2.Net.Packets.ItemAnswerKind.Service) NotApplied.Print("inventory: the meret purchase dialog (CUIService::FUN_141add1f0) is not ported");
         else if (Ms2.Ui.Hud.InventoryController.AnswerIsBox(a)) MessageBoxQueue.ShowMessageBox(text, 0, null, "");
         else SystemNoticeText(text);
-        if (a.Sound != null && FieldAudio.Instance?.PlayUi(a.Sound) != true) GD.Print($"inventory: system sound {a.Sound} is not played");
-        GD.Print($"inventory: answer {a.Kind} 0x{a.StringId:x}{(a.Key != null ? " " + a.Key : "")} \"{text}\"");
+        if (a.Sound != null && FieldAudio.Instance?.PlayUi(a.Sound) != true) NotApplied.Print($"inventory: system sound {a.Sound} is not played");
+        if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"inventory: answer {a.Kind} 0x{a.StringId:x}{(a.Key != null ? " " + a.Key : "")} \"{text}\"");
     }
 
     /// <summary>PlayItemSound (@0x1414047c0, invenslot.cpp:417): the item's material sound (GetMaterialSoundName) from
@@ -1739,7 +1739,7 @@ public partial class HudScene : Node, IUiStageHost
     void PlayItemSound(Ms2.Ui.Items.ItemData data)
     {
         if (hudModel.Tables.Items.MaterialSoundEvent(data) is not { } ev) return;
-        if (FieldAudio.Instance?.PlayEvent(ev) != true) GD.Print($"inventory: item sound {ev} is not played");
+        if (FieldAudio.Instance?.PlayEvent(ev) != true) NotApplied.Print($"inventory: item sound {ev} is not played");
     }
 
     /// <summary>HandleDestroyItemButton's sound (uimessagebox.cpp:1365-1374): GetDefaultUiMaterialSound at the local player's

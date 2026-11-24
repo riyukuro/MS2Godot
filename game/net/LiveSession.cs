@@ -1867,7 +1867,7 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.ItemScript))
             {
-                if (ItemScriptCoupon.TryRead(p.Reader(), out int coupon)) { CashCouponSink?.Invoke(coupon); GD.Print($"live: item script cash coupon {coupon}"); }
+                if (ItemScriptCoupon.TryRead(p.Reader(), out int coupon)) { CashCouponSink?.Invoke(coupon); if (LiveCheck) GD.Print($"live: item script cash coupon {coupon}"); }
             }
             else if (game.Is(p, Inbound.ItemUse))
             {
