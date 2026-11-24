@@ -226,9 +226,9 @@ public class EmotionCastTests
     /// refuse). Items of other types whose skill is an emotion are counted by type: GMS2's emotion items are type 2, which
     /// the KMS client's double click casts as an item skill, not the learn box (no GMS2 client code to say otherwise).
     /// </summary>
-    static void EveryEmotionItemTeachesAnEmotion(string variable, bool typed)
+    static void EveryEmotionItemTeachesAnEmotion(string path, string label, bool typed)
     {
-        using var packs = new PackSet(RcGap.Data(variable));
+        using var packs = new PackSet(path);
         var tables = new GameTables(packs, "en");
         var all = ItemIds(packs).Distinct().Select(tables.Items.Get).Where(d => d != null).ToList();
         var items = all.Where(d => d.Type == EmotionList.EmotionItemType).ToList();
@@ -238,7 +238,7 @@ public class EmotionCastTests
         int couple = items.Count(d => tables.Skills.GetSkillData((uint)d.SkillId)?.MainType == EmotionCast.MainTypeCouple);
         var byType = all.Where(d => d.SkillId != 0 && tables.Skills.GetSkillData((uint)d.SkillId) is { IsEmotion: true })
             .GroupBy(d => d.Type).OrderBy(g => g.Key).Select(g => $"type {g.Key}: {g.Count()}");
-        TestContext.WriteLine($"{variable}: {all.Count} items, {items.Count} emotion items (type 24; {couple} teach a couple emotion), "
+        TestContext.WriteLine($"{label}: {all.Count} items, {items.Count} emotion items (type 24; {couple} teach a couple emotion), "
             + $"first {items.FirstOrDefault()?.Id}; skill 0: {(noSkill.Count == 0 ? "none" : string.Join(", ", noSkill))}; "
             + $"not an emotion skill: {(bad.Count == 0 ? "none" : string.Join(", ", bad))}; items with an emotion skill by type: {string.Join(", ", byType)}");
         Assert.That(bad, Is.Empty);
@@ -246,10 +246,10 @@ public class EmotionCastTests
     }
 
     [Test]
-    public void EveryKmsEmotionItemTeachesAnEmotion() => EveryEmotionItemTeachesAnEmotion("MS2_DATA", true);
+    public void EveryKmsEmotionItemTeachesAnEmotion() => EveryEmotionItemTeachesAnEmotion(RcGap.KmsData(), "MS2_DATA", true);
 
     [Test]
-    public void EveryGms2EmotionItemTeachesAnEmotion() => EveryEmotionItemTeachesAnEmotion("MS2_GMS2_DATA", false);
+    public void EveryGms2EmotionItemTeachesAnEmotion() => EveryEmotionItemTeachesAnEmotion(RcGap.Data("MS2_GMS2_DATA"), "MS2_GMS2_DATA", false);
 
     static string NifXmlPath()
     {
