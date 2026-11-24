@@ -76,7 +76,7 @@ public partial class HudScene
         if (frames == 280)
         {
             h.Player.MouseButton(false);
-            GD.Print($"CHATRESIZE moves={resizeMoves} as3={resizeAs3 / resizeMoves:F2} ms/move sync={resizeSync / resizeMoves:F2} ms/move objectsEnd-Start={Performance.GetMonitor(Performance.Monitor.ObjectCount) - resizeObjects0} nodesEnd-Start={Performance.GetMonitor(Performance.Monitor.ObjectNodeCount) - resizeNodes0}");
+            GD.Print($"CHATRESIZE moves={resizeMoves} as3={resizeAs3 / Math.Max(1, resizeMoves):F2} ms/move sync={resizeSync / Math.Max(1, resizeMoves):F2} ms/move objectsEnd-Start={Performance.GetMonitor(Performance.Monitor.ObjectCount) - resizeObjects0} nodesEnd-Start={Performance.GetMonitor(Performance.Monitor.ObjectNodeCount) - resizeNodes0}");
             foreach (var row in resizeRows) GD.Print("CHATRESIZE " + row);
         }
     }

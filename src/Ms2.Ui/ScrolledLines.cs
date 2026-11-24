@@ -52,17 +52,17 @@ public static class ScrolledLines
         return first;
     }
 
-    /// <summary>The line to draw from. <paramref name="starts"/> are the lines' first character indexes; <paramref name="start"/>
-    /// is the character the script's first line starts at. Not below the line holding it and not past the last position; at the
-    /// end of the script's range exactly the last position.</summary>
-    public static int FirstLine(IReadOnlyList<int> starts, Func<int, (double Height, double Advance)> metrics, double room,
+    /// <summary>The line to draw from. <paramref name="startOf"/> gives line i's first character index (no array is built for it);
+    /// <paramref name="start"/> is the character the script's first line starts at. Not below the line holding it and not past
+    /// the last position; at the end of the script's range exactly the last position.</summary>
+    public static int FirstLine(int count, Func<int, int> startOf, Func<int, (double Height, double Advance)> metrics, double room,
         int start, bool atEnd)
     {
-        if (starts.Count == 0) return 0;
-        int pinned = LastPosition(starts.Count, metrics, room);
+        if (count == 0) return 0;
+        int pinned = LastPosition(count, metrics, room);
         if (atEnd) return pinned;
         int line = 0;
-        for (int i = 0; i < starts.Count && starts[i] <= start; i++) line = i;
+        for (int i = 0; i < count && startOf(i) <= start; i++) line = i;
         return Math.Min(line, pinned);
     }
 }

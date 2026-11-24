@@ -229,16 +229,9 @@ public partial class TextNode
     int FitLines(List<LayoutLine> all)
     {
         if (!(Bounds.Size.Y > 0)) return all.Count - Label.LinesSkipped;
-        double room = Bounds.Size.Y - 4 + 1, top = 0;
-        int n = 0;
-        for (int i = Label.LinesSkipped; i < all.Count; i++)
-        {
-            var (_, height, advance) = ClientLine(all[i].Start, all[i].End, codePoints.Length, j => SizeAt(j));
-            if (i > Label.LinesSkipped && top + height > room) break;
-            n++;
-            top += advance;
-        }
-        return n;
+        // the one sum the scrolled field's first line is chosen by (ScrolledLines.Fit), so the cap and the first line agree
+        // when the text exactly fills the box; `all` is the current layout (every caller read it with Layout() just before)
+        return Ms2.Ui.ScrolledLines.Fit(all.Count, lineHeightAdvance ??= LineHeightAdvance, Bounds.Size.Y - 4 + 1, Label.LinesSkipped);
     }
 
     /// <summary>
@@ -251,18 +244,24 @@ public partial class TextNode
     {
         var all = Layout();
         if (all.Count == 0) return 0;
-        var starts = new int[all.Count];
-        for (int i = 0; i < all.Count; i++) starts[i] = all[i].Start;
         if (total != codePoints.Length && total > 0) start = (int)((long)start * codePoints.Length / total);
         double room = Bounds.Size.Y > 0 ? Bounds.Size.Y - 4 + 1 : double.MaxValue;
-        return Ms2.Ui.ScrolledLines.FirstLine(starts, LineHeightAdvance, room, start, atEnd);
+        return Ms2.Ui.ScrolledLines.FirstLine(all.Count, lineStart ??= LineStart, lineHeightAdvance ??= LineHeightAdvance, room, start, atEnd);
     }
 
-    /// <summary>A layout line's client height and advance (the metrics <see cref="FirstLineFor"/> measures lines by).</summary>
+    // the delegates over the current layout, made once (a method group converted per call is a new object each time)
+    Func<int, (double Height, double Advance)> lineHeightAdvance;
+    Func<int, int> lineStart;
+
+    int LineStart(int i) => layout[i].Start;
+
+    /// <summary>A layout line's client height and advance (the metrics <see cref="FirstLineFor"/> and <see cref="FitLines"/> measure
+    /// lines by). Reads the layout field, not <see cref="Layout"/>: that rebuilds its key from the label's properties (a copy of
+    /// the whole text) on every call, and both callers have just read it.</summary>
     (double Height, double Advance) LineHeightAdvance(int i)
     {
-        var line = Layout()[i];
-        var (_, height, advance) = ClientLine(line.Start, line.End, codePoints.Length, SizeAt);
+        var line = layout[i];
+        var (_, height, advance) = ClientLine(line.Start, line.End, codePoints.Length, sizeAt ??= SizeAt);
         return (height, advance);
     }
 
