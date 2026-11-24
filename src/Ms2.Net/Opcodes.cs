@@ -53,6 +53,7 @@ public enum Inbound : ushort {
     ItemPutOnOrOff = 0x20,
     ItemInventory = 0x21,
     FieldEntrance = 0x19,         // RecvOp FieldEntrance: CSceneStateGame::OnFieldEntrance (scenestategame.cpp:2366, @0x14170fc70)
+    RoomDungeon = 0x1A,           // RecvOp RoomDungeon: CSceneStateGame::OnRoomDungeon (scenestategame.cpp:4531, @0x141737360) -> DungeonRecordManagerCli::OnPacket (@0x140b20be0)
     FurnishingStorage = 0x23,     // RecvOp FurnishingStorage: CSceneStateGame::OnFurnishingStorage (scenestategame.cpp:2734)
     FurnishingInventory = 0x24,   // RecvOp FurnishingInventory: CSceneStateGame::OnFurnishingInventory (scenestategame.cpp:9373)
     ItemEnchant = 0x97,   // RecvOp::ItemEnchant: CSceneStateGame::OnItemEnchant (scenestategame.cpp:6101, @0x141732B20) -> UIItemEnchantDialog
