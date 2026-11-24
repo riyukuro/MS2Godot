@@ -192,6 +192,7 @@ public class ReconnectSessionTests {
         // fatal / disabled ends the reconnect and raises ReconnectGaveUp with the initial drop code (0x2745)
         t.Reconnection.Disable();
         await WaitFor(() => gaveUpCode == ReconnectionManager.ErrorSocketClosed);
+        Assert.That(t.IsClosed && t.ReconnectEnded, "the close is the gave-up's: its 0x465 code went out with ReconnectGaveUp");
     }
 
     [Test] public void MachineIdTextFormatsSixteenBytesAsUppercaseDashedHex() {

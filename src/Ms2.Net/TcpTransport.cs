@@ -43,6 +43,8 @@ public sealed class TcpTransport : IDisposable {
     /// <see cref="IsClosed"/> is true after either, and as soon as Dispose is called.</summary>
     public Exception Failure { get; private set; }
     public bool IsClosed => Volatile.Read(ref closed) != 0;
+    /// <summary>The connection closed because a reconnect gave up (<see cref="ReconnectGaveUp"/> already carried its 0x465 code).</summary>
+    public bool ReconnectEnded { get; private set; }
     public event Action Closed;
 
     /// <summary>The opcode numbers this connection speaks (the channel's profile).</summary>
@@ -121,6 +123,7 @@ public sealed class TcpTransport : IDisposable {
 
     /// <summary>The reconnect gave up (window message 0x465): the connection is closed for the owner now.</summary>
     void GaveUp(int code) {
+        ReconnectEnded = true;
         Failure ??= new IOException($"reconnect gave up (code {code})");
         Volatile.Write(ref closed, 1);
         try { ReconnectGaveUp?.Invoke(code); } catch { }

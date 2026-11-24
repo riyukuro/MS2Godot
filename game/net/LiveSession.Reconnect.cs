@@ -94,6 +94,25 @@ public partial class LiveSession
     void OnReconnectGaveUp(int code)
     {
         GD.PushWarning($"live: reconnect gave up, code {code}");
+        ShowDisconnect(code);
+    }
+
+    /// <summary>
+    /// CGameSocket::OnClose (@0x1412651a0, gamesocket.cpp:219-230): a game socket closed with an error the client did not cause posts
+    /// uMsg 0x465 with the error; a close with error 0 posts nothing. When no reconnect takes it (ShouldReconnect false, which is
+    /// the case whenever the server never sent its reconnect context; a reconnect in progress keeps the transport open), WindowService
+    /// goes to scene 0x6200009 and shows the 0x20f / 0xc69 disconnect box with the reason and the code (windowservice.cpp:453-553).
+    /// </summary>
+    void OnGameConnectionLost(int code)
+    {
+        if (code == 0) return;
+        GD.PushWarning($"live: game connection lost, socket error {code}");
+        ShowDisconnect(code);
+    }
+
+    /// <summary>WindowService uMsg 0x465's unhandled branch (windowservice.cpp:482-553): scene 0x6200009, then the disconnect box.</summary>
+    void ShowDisconnect(int code)
+    {
         ReconnectProgressHidden?.Invoke();
         GameFlow.ReturnToLogin();
         string text = Ms2.Ui.DisconnectNotice.FormatDisconnect(code, Ms2.Ui.Hud.MessageBoxData.Common);

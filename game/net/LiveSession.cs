@@ -1811,7 +1811,7 @@ public partial class LiveSession : Node
         TickCombatEffects();
         inGame ??= () => player != null && player.Live;   // IReconnectHost.InGame: the field was entered
         if (game.InGame != inGame) game.InGame = inGame;
-        if (game.IsClosed) { StopCombatEffects(); GameLinkLost?.Invoke(); GD.PushWarning("live: game connection closed" + (game.Failure != null ? ": " + game.Failure.Message : "")); game.Dispose(); game = null; if (player != null) { player.Live = false; player.DeadFlag = false; } }   // offline fall-return emulation comes back
+        if (game.IsClosed) { StopCombatEffects(); GameLinkLost?.Invoke(); GD.PushWarning("live: game connection closed" + (game.Failure != null ? ": " + game.Failure.Message : "")); int lost = game.ReconnectEnded ? 0 : Ms2.Ui.FrontEndConnection.CodeOf(game.Failure); game.Dispose(); game = null; if (player != null) { player.Live = false; player.DeadFlag = false; } OnGameConnectionLost(lost); }   // offline fall-return emulation comes back
     }
 
     /// <summary>One game server packet: the read loop's, and at the entry the ones that came before the field enter
