@@ -3064,6 +3064,10 @@ public partial class LiveSession : Node
         await Frames(60 * hold);
         bool ok = flow.Current == GameFlow.State.Game;
         GD.Print(ok ? "live: auto run done" : "live: auto run failed");
+        // the end of the run quits as the system menu does (GameFlow.QuitNow): RequestQuit(1) is written, and the connection closed, before the process ends,
+        // so the server frees the session; a stuck socket holds the end for a second
+        if (ok && Instance?.SendRequestQuitAndDisconnect() is { } flushed)
+            await System.Threading.Tasks.Task.WhenAny(flushed, System.Threading.Tasks.Task.Delay(1000));
         tree.Quit(ok ? 0 : 1);
         return;
 
