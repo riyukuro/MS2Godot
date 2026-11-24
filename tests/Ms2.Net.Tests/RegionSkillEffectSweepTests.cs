@@ -13,8 +13,9 @@ namespace Ms2.Net.Tests;
 /// splashCastEffectStartDelay; then PlayLateEffect :405-433, the duration effect at every point once the start tick has
 /// come), OnRegionSkillDamage mode 5's PlayHitEffect (:224-252, the invoke effect at every point, every hit), and
 /// RemoveRegionSkillObject (worldservice_1.cpp:4180-4189: Reset :255-285, the end effect at every point, then the motion
-/// effects fade). The effect calls must be exactly those. The loop effect is STILL-OPEN (see
-/// <see cref="RegionSkillObject"/>): its rows are counted, not played.
+/// effects fade). The loop effect (:139-171) spawns after the motion effects for a local owner, hidden, then StopLoopEffects
+/// shows it; each hit hides it first (:229-230); OnRegionSkill mode 2 shows it again (StopLoopEffects); the remove fades it
+/// with the motion effects. The effect calls must be exactly those.
 /// </summary>
 public class RegionSkillEffectSweepTests
 {
@@ -27,6 +28,7 @@ public class RegionSkillEffectSweepTests
         public int Spawn(string effect, Xform at, bool always, int randomIndex) { Log.Add("spawn " + effect); return next++; }
         public void Insert(string effect, Xform at, bool always, int randomIndex) => Log.Add("insert " + effect);
         public void FadeOut(int handle, float seconds) => Log.Add("fade " + handle);
+        public void SetVisible(int handle, bool visible) => Log.Add($"show {handle} {visible}");
     }
 
     static readonly Vec3[] Points = { new(0, 0, 0), new(150, 0, 0), new(0, 150, 0) };
@@ -43,9 +45,10 @@ public class RegionSkillEffectSweepTests
         var known = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         bool Exists(string e) => known.TryGetValue(e, out var k) ? k : known[e] = effects.Get(e) != null;
 
-        int rows = 0, motion = 0, late = 0, invoke = 0, end = 0, loop = 0, missingInvoke = 0;
+        int rows = 0, motion = 0, late = 0, invoke = 0, end = 0, loop = 0, missingInvoke = 0, missingLoop = 0;
         var bad = new List<string>();
         var missing = new List<string>();
+        var jobLoops = new List<string>();   // the job skills' (ids below 20000000) loop effects, level 1, for the log
         foreach (int id in skills.Ids.Order())
             foreach (var row in skills.Levels(id))
             {
@@ -62,20 +65,29 @@ public class RegionSkillEffectSweepTests
                 if (hasEnd) end++;
                 if (hasLoop) loop++;
                 if (hasInvoke && !Exists(a.SplashInvokeEffect)) { missingInvoke++; missing.Add($"{id}/{row.Level} {a.SplashInvokeEffect}"); }
+                if (hasLoop && !Exists(a.LoopEffect)) { missingLoop++; missing.Add($"{id}/{row.Level} {a.LoopEffect}"); }
+                if (hasLoop && id < 20000000 && row.Level == 1) jobLoops.Add($"{id} {a.LoopEffect}");
 
                 var fx = new Fx { Exists = Exists };
                 var expect = new List<string>();
                 int spawned = 0;
                 if (hasMotion && Exists(a.MotionEffect) && !a.SplashCastEffectStartDelay)
                     foreach (var _ in Points) { expect.Add("spawn " + a.MotionEffect); spawned++; }
+                var loops = new List<int>();
+                if (hasLoop && Exists(a.LoopEffect))
+                    foreach (var _ in Points) { expect.Add("spawn " + a.LoopEffect); loops.Add(++spawned); expect.Add($"show {spawned} False"); }
+                foreach (int h in loops) expect.Add($"show {h} True");
                 if (hasLate) foreach (var _ in Points) expect.Add("insert " + a.SplashDurationCastEffect);
                 var o = RegionSkillObject.Init(id, 1, Points, a, 0, 30, 0, true, 0, fx);
                 o.UpdateEffects(1000, fx);   // the late effect only once
                 for (int hit = 0; hit < 2; hit++)
                 {
                     o.PlayHitEffect(fx);
+                    foreach (int h in loops) expect.Add($"show {h} False");
                     if (hasInvoke) foreach (var _ in Points) expect.Add("insert " + a.SplashInvokeEffect);
                 }
+                o.StopLoopEffects(fx);   // mode 2
+                foreach (int h in loops) expect.Add($"show {h} True");
                 var objs = new RegionSkillObjects();
                 objs.Add(o);
                 objs.Remove(id, 0.5f, fx);
@@ -85,8 +97,9 @@ public class RegionSkillEffectSweepTests
             }
 
         TestContext.Out.WriteLine($"{env}: {rows} region skill levels; motion effect {motion}, splashDurationCastEffect {late}, " +
-            $"splashInvokeEffect {invoke} ({missingInvoke} naming no effect xml), splashEndEffect {end}, loopEffect {loop} (STILL-OPEN, not played)");
+            $"splashInvokeEffect {invoke} ({missingInvoke} naming no effect xml), splashEndEffect {end}, loopEffect {loop} ({missingLoop} naming no effect xml)");
         foreach (var m in missing.Take(20)) TestContext.Out.WriteLine("  no xml: " + m);
+        TestContext.Out.WriteLine($"  job skills with a loopEffect: {string.Join("; ", jobLoops.Distinct())}");
         Assert.That(rows, Is.GreaterThan(0));
         Assert.That(bad, Is.Empty, string.Join("\n", bad.Take(20)));
     }

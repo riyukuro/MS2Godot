@@ -16,6 +16,11 @@ public interface IRegionSkillEffects
     void Insert(string effect, Xform at, bool always, int randomIndex);
     /// <summary>FUN_1411a67f0 (@0x1411a67f0, effectservice.cpp:1480-1492): fades a kept effect out over the seconds.</summary>
     void FadeOut(int handle, float seconds);
+    /// <summary>FUN_1411a68f0 (@0x1411a68f0, effectservice.cpp:1496-1506): CEffect::vfunc_10 on every part of a kept effect,
+    /// show or hide (CNifEffect: SetAppCulled(!visible), nifeffectparam.cpp:976-979; CLightEffect: the dimmer or 0,
+    /// lighteffectparam.cpp:451-456; CRandomEffect: its chosen effect's). The base CEffect::vfunc_10 does nothing
+    /// (effectservice.cpp:422), so by default nothing changes.</summary>
+    void SetVisible(int handle, bool visible) { }
 }
 
 /// <summary>
@@ -23,13 +28,14 @@ public interface IRegionSkillEffects
 /// effect at every point with one rotation.
 /// <para>Ported: <see cref="Init"/> (@0x1416f5a20, :83-207) for the motion effect (+0x28), <see cref="PlayLateEffect"/>
 /// (@0x1416f7790, :405-433), <see cref="Reset"/> (@0x1416f6b90, :255-285), <see cref="FadeOutEffects"/> (@0x1416f6860,
-/// :217-221), <see cref="PlayHitEffect"/> (@0x1416f6900, :224-252) and <see cref="UpdateEffects"/>'s late call (@0x1416f6f50,
-/// :309-401).</para>
-/// STILL-OPEN: the second loop effect (loopEffect, +0x38: Init spawns it for a local owner, then FUN_1411a68f0(e, false) and
-/// StopLoopEffects' FUN_1411a68f0(e, true), CEffect::vfunc_10, whose meaning has no port), so it is not spawned, and mode 2
-/// (StopLoopEffects) has nothing to stop.
-/// STILL-OPEN: the pending points (spawn failed, or SplashCastEffectStartDelay) spawn in UpdateEffects only when
-/// EffectSkipMgr::ShouldSkipByView passes; that test has no port, so pending points stay unspawned.
+/// :217-221), <see cref="PlayHitEffect"/> (@0x1416f6900, :224-252), <see cref="StopLoopEffects"/> (@0x1416f6e40, :294-298)
+/// and <see cref="UpdateEffects"/>'s late call (@0x1416f6f50, :309-401).</para>
+/// The loop effect (loopEffect, +0x38) is the region's look while it waits: Init spawns it for a local owner, hidden
+/// (FUN_1411a68f0(e, false)), then StopLoopEffects shows it; each hit (PlayHitEffect) hides it and OnRegionSkill mode 2
+/// (StopLoopEffects) shows it again. It is kept with the motion effects, so the remove fades it too.
+/// STILL-OPEN: the pending points (spawn failed, or SplashCastEffectStartDelay) and the waiting loop effect points (spawn
+/// failed) spawn in UpdateEffects only when EffectSkipMgr::ShouldSkipByView passes; that test has no port, so they stay
+/// unspawned.
 /// STILL-OPEN: the collision shapes (DAT_143ae95e1/e0) are not ported.
 /// STILL-OPEN: m_bLocal is COptimizer::FUN_14161ce60(owner) == 0 (optimizer.cpp:559-573), nonzero only in the optimizer's
 /// preload mode for a PC; that mode has no port, so the caller passes true.
@@ -43,6 +49,8 @@ public sealed class RegionSkillObject
     public SkillMotion Attr;
     public bool Local = true;
     public readonly List<int> Effects = new();                       // m_effects
+    public readonly List<int> LoopEffects = new();                   // m_loopEffects
+    public readonly List<Vec3> Waiting = new();                      // m_waiting: loop effect points not spawned
     public readonly List<(Vec3 Point, uint Time)> Pending = new();    // m_pending
     bool lateDone;                                                    // m_bLateDone
 
@@ -84,6 +92,23 @@ public sealed class RegionSkillObject
                 else o.Pending.Add((p, attr.SplashCastEffectStartDelay ? startTick : serverTick));
             }
         }
+        // the loop effect (:139-168): a local owner only (no IgnoreOptimalHideCastEffect test, m_b31 not set), kept in both
+        // lists and hidden; a point it did not spawn at waits
+        if (!string.IsNullOrEmpty(attr.LoopEffect) && fx.Has(attr.LoopEffect))
+        {
+            foreach (var p in points)
+            {
+                int e = local ? fx.Spawn(attr.LoopEffect, PointTransform(p, rotX, rotY), false, id) : 0;
+                if (e != 0)
+                {
+                    o.Effects.Add(e);
+                    o.LoopEffects.Add(e);
+                    fx.SetVisible(e, false);
+                }
+                else o.Waiting.Add(p);
+            }
+        }
+        o.StopLoopEffects(fx);   // :171
         o.PlayLateEffect(serverTick, fx);
         return o;
     }
@@ -103,14 +128,22 @@ public sealed class RegionSkillObject
     public void UpdateEffects(uint serverTick, IRegionSkillEffects fx) => PlayLateEffect(serverTick, fx);
 
     /// <summary>PlayHitEffect (@0x1416f6900, :224-252), run by OnRegionSkillDamage (0x3D mode 5, scenestategame.cpp:7773-7776) once
-    /// the region is found and before its targets are read, so with no target too: SplashInvokeEffect (+0x30) once at every point
-    /// (local or IgnoreOptimalHideCastEffect), the random index the region's id. The loop effects' FUN_1411a68f0(e, false) before
-    /// it is STILL-OPEN with the loop effect (see the class).</summary>
+    /// the region is found and before its targets are read, so with no target too: the loop effects hidden (:229-230), then
+    /// SplashInvokeEffect (+0x30) once at every point (local or IgnoreOptimalHideCastEffect), the random index the region's
+    /// id.</summary>
     public void PlayHitEffect(IRegionSkillEffects fx)
     {
+        foreach (int e in LoopEffects) fx.SetVisible(e, false);
         if (string.IsNullOrEmpty(Attr.SplashInvokeEffect)) return;
         if (Local || Attr.IgnoreOptimalHideCastEffect)
             foreach (var p in Points) fx.Insert(Attr.SplashInvokeEffect, PointTransform(p, RotX, RotY), Attr.IgnoreOptimalHideCastEffect, Id);
+    }
+
+    /// <summary>StopLoopEffects (@0x1416f6e40, :294-298), Init's last spawn step and OnRegionSkill mode 2: every loop effect
+    /// shown (FUN_1411a68f0(e, true)).</summary>
+    public void StopLoopEffects(IRegionSkillEffects fx)
+    {
+        foreach (int e in LoopEffects) fx.SetVisible(e, true);
     }
 
     /// <summary>Reset (@0x1416f6b90, :255-285): SplashEndEffect once at every point (local or IgnoreOptimalHideCastEffect).

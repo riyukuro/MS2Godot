@@ -79,6 +79,15 @@ public static class FieldLights
         Refresh();
     }
 
+    /// <summary>An effect light's dimmer changed (CLightEffect::vfunc_10, lighteffectparam.cpp:451-456: its own or 0). One
+    /// texture write.</summary>
+    public static void SetDimmer(FieldLight l, float dimmer)
+    {
+        if (current == null || l == null || l.Dimmer == dimmer) return;
+        l.Dimmer = dimmer;
+        Refresh();
+    }
+
     /// <summary>ScaleLightIntensity @0x1414c0820 (ms2lightservice.cpp:395-403): every light's own dimmer times
     /// <paramref name="dimmerScale"/>. Rewrites the field lights' columns and the effect columns into the same buffers.</summary>
     public static void Rescale(float dimmerScale)

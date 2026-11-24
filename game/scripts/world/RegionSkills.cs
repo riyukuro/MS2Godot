@@ -44,6 +44,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     sealed class LiveLight
     {
         public EffectLightParam Param; public Vec3 Pos; public float Born, Start, End; public FieldLight Light; public int Handle;
+        public bool Hidden;   // CLightEffect::vfunc_10(false): the dimmer 0 (lighteffectparam.cpp:451-456)
     }
     readonly List<LiveLight> lights = new();
     public readonly RegionSkillObjects Objects = new();
@@ -96,7 +97,11 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
         {
             var l = lights[i];
             l.Born += (float)delta;
-            if (l.Light == null && l.Born >= l.Start && l.Born < l.End) l.Light = FieldLights.Start(l.Param, l.Pos);
+            if (l.Light == null && l.Born >= l.Start && l.Born < l.End)
+            {
+                l.Light = FieldLights.Start(l.Param, l.Pos);
+                if (l.Hidden) FieldLights.SetDimmer(l.Light, 0);
+            }
             if (l.Born >= l.End) { FieldLights.End(l.Light); lights.RemoveAt(i); }
         }
     }
@@ -149,6 +154,9 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
                 break;
             }
             case RegionSkillMessage.Remove r: Objects.Remove(r.Id, fadeSeconds, this); break;
+            case RegionSkillMessage.StopLoop l:   // OnRegionSkill mode 2 (scenestategame.cpp:7743-7748): StopLoopEffects
+                if (Objects.Objects.TryGetValue(l.Id, out var o2)) o2.StopLoopEffects(this);
+                break;
         }
     }
 
@@ -195,6 +203,21 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     {
         if (looping.Contains(handle)) { FadeOut(handle, 0); return; }
         kept.Remove(handle);
+    }
+
+    /// <summary>FUN_1411a68f0 on a kept effect: its nif parts shown or hidden (CNifEffect SetAppCulled(!visible)), its lights at
+    /// their dimmer or 0 (CLightEffect); sound parts have no vfunc_10 and play on.</summary>
+    public void SetVisible(int handle, bool visible)
+    {
+        if (kept.TryGetValue(handle, out var nodes))
+            foreach (var n in nodes)
+                if (IsInstanceValid(n)) n.Visible = visible;
+        foreach (var l in lights)
+        {
+            if (l.Handle != handle || l.Hidden == !visible) continue;
+            l.Hidden = !visible;
+            if (l.Light != null) FieldLights.SetDimmer(l.Light, visible ? l.Param.Dimmer : 0);
+        }
     }
 
     public void FadeOut(int handle, float seconds)

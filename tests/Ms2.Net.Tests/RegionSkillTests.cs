@@ -55,6 +55,7 @@ public class RegionSkillTests {
         }
         public void Insert(string effect, Xform at, bool always, int randomIndex) { Log.Add($"insert {effect}"); At.Add(at); }
         public void FadeOut(int handle, float seconds) => Log.Add($"fade {handle} {seconds}");
+        public void SetVisible(int handle, bool visible) => Log.Add($"show {handle} {visible}");
     }
 
     static readonly Vec3[] Two = { new(-900, 0, 1200), new(10, 20, 30) };
@@ -181,6 +182,43 @@ public class RegionSkillTests {
         fx.Log.Clear();
         o.PlayHitEffect(fx);
         Assert.That(fx.Log, Is.EqualTo(new[] { "insert " + attr.SplashInvokeEffect }));
+    }
+
+    [Test] public void LoopEffectSpawnsHiddenThenShownHidesOnAHitAndModeTwoShowsIt() {
+        // Init :139-171: the loop effect for a local owner, kept in both lists, hidden, then StopLoopEffects shows it;
+        // PlayHitEffect :229-230 hides it; mode 2 (StopLoopEffects) shows it again; the remove fades it with the others
+        var fx = new Fx();
+        var attr = new SkillMotion { MotionEffect = "a.xml", LoopEffect = "loop.xml", SplashInvokeEffect = "invoke.xml" };
+        var o = RegionSkillObject.Init(5, 2, Two, attr, 0, 0, 0, true, 0, fx);
+        Assert.That(fx.Log, Is.EqualTo(new[] { "spawn a.xml", "spawn a.xml", "spawn loop.xml", "show 3 False", "spawn loop.xml", "show 4 False",
+            "show 3 True", "show 4 True" }));
+        Assert.That(o.LoopEffects, Is.EqualTo(new[] { 3, 4 }));
+        Assert.That(o.Effects, Is.EqualTo(new[] { 1, 2, 3, 4 }));
+        fx.Log.Clear();
+        o.PlayHitEffect(fx);
+        Assert.That(fx.Log, Is.EqualTo(new[] { "show 3 False", "show 4 False", "insert invoke.xml", "insert invoke.xml" }));
+        fx.Log.Clear();
+        o.StopLoopEffects(fx);
+        Assert.That(fx.Log, Is.EqualTo(new[] { "show 3 True", "show 4 True" }));
+        var objs = new RegionSkillObjects();
+        objs.Add(o);
+        fx.Log.Clear();
+        objs.Remove(5, 0.3f, fx);
+        Assert.That(fx.Log, Is.EqualTo(new[] { "fade 1 0.3", "fade 2 0.3", "fade 3 0.3", "fade 4 0.3" }));
+    }
+
+    [Test] public void LoopEffectNeedsALocalOwnerEvenWithIgnoreHide() {
+        // :156 tests m_bLocal only (the target's m_b31 is not set for it): another owner's points wait (m_waiting)
+        var fx = new Fx();
+        var attr = new SkillMotion { LoopEffect = "loop.xml", IgnoreOptimalHideCastEffect = true };
+        var o = RegionSkillObject.Init(5, 2, Two, attr, 0, 0, 0, false, 0, fx);
+        Assert.That(fx.Log, Is.Empty);
+        Assert.That(o.Waiting, Is.EqualTo(Two));
+        fx = new Fx { FailSpawn = true };
+        o = RegionSkillObject.Init(5, 2, Two, attr, 0, 0, 0, true, 0, fx);
+        Assert.That(o.Waiting, Has.Count.EqualTo(2), "a spawn that failed waits too");
+        Assert.That(RegionSkillObject.Init(5, 2, Two, new SkillMotion { LoopEffect = "missing.xml" }, 0, 0, 0, true, 0, new Fx()).Waiting, Is.Empty,
+            "no effect data: nothing waits");
     }
 
     static PackSet Data() {
