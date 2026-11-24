@@ -3391,6 +3391,7 @@ public partial class HudScene : Node, IUiStageHost
         c.BlueprintOpenAnswer = (answer, uid) => liveHome?.Bill.OnBlueprintOpenBox(answer, uid) ?? true;   // FUN_140ee8000
         c.SelectBoxOpen = () => SelectItemBoxOpen;
         c.OpenMultiBox = OpenItemMultiOpen;
+        c.CallAirTaxi = () => { if (!WorldMapOpen) OpenWorldMap(); };   // CallAirTaxi @0x140d24e10: the world map 0x4e42 opens when closed
         c.LockSlotDropped = (uid, mine) => itemLock?.DroppedOnInventory(uid, mine);
         c.LockOrBreakDialogExists = () => InventoryController.LockOrBreakExists(itemLock, itemBreak);   // the controllers stay set after a close
         c.LockDialogOpen = () => ItemLockOpen;                       // UpdateButtonState: pLock->vfunc_55() == 0

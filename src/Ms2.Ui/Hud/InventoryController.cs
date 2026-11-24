@@ -548,7 +548,7 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
 
     /// <summary>
     /// The functions with a handler of their own (RegisterItemUseFuncs, unit_140d1ae30_itemfunctiondispatch.cpp:373): UseItem
-    /// runs it in place of the plain use request. None is ported: such an item's use is raised.
+    /// runs it in place of the plain use request. Those <see cref="UseItem"/> runs are ported; the others' use is raised.
     /// </summary>
     public static readonly IReadOnlySet<string> OwnUseFunctions = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -677,6 +677,8 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         if (item.Data.FunctionName == "SelectItemBox" && OpenSelectBox != null) return SelectItemBox(item);          // @0x140d22430
         if (item.Data.FunctionName == "BlueprintImport" && BlueprintOpenAnswer != null && BlueprintUgcUid(item) is long and not 0)
             return BlueprintImport(item);                                                                             // @0x140d1f6d0
+        if (item.Data.FunctionName == "CallAirTaxi" && CallAirTaxi != null) { CallAirTaxi(); return true; }          // @0x140d24e10
+        if (item.Data.FunctionName == "RecallParty") return true;                                                     // @0x140d1df70: 1, nothing
         if (OwnUseFunctions.Contains(item.Data.FunctionName)) { Button?.Invoke("notifySlotUse"); return true; }
         RequestUseItem(item, "");
         return true;
@@ -697,6 +699,10 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         View.RequestUse?.Invoke(item.Uid, argument);
         return true;
     }
+
+    /// <summary>CallAirTaxi (@0x140d24e10, unit_140d1ae30_itemfunctiondispatch.cpp): the world map (0x4e42) opened when it is
+    /// closed (IsDialogClosed, OpenDialog); 1. Nothing is sent: the world map's air taxi asks the server. Null: raised as unported.</summary>
+    public Action CallAirTaxi;
 
     /// <summary>RequestUseItem's functions that skip the player state check (checkState 0, inventory.cpp:1205-1207).</summary>
     public static readonly HashSet<string> NoStateCheckFunctions = new(StringComparer.Ordinal) { "OpenItemBox", "OpenItemBoxLullu", "OpenItemBoxLulluSimple" };

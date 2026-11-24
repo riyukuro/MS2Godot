@@ -894,6 +894,35 @@ public class InventoryTests
     }
 
     [Test]
+    public void CallAirTaxiOpensTheWorldMapAndRecallPartyDoesNothingNeitherSends()
+    {
+        // CallAirTaxi (@0x140d24e10): OpenDialog(0x4e42) when closed, 1; RecallParty (@0x140d1df70): 1 and nothing
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var d = model.Tables.Items.Get(20300327);
+        var (savedName, savedArgs) = (d.FunctionName, d.FunctionArgs.ToList());
+        try
+        {
+            var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
+            book.Apply(new ItemMessage.LoadTab(2, new[] { new EquipItem { Id = 20300327, Uid = 30, InventorySlot = 0, Amount = 1, Rarity = 1 } }));
+            var (h, c, _) = Load(model, book);
+            c.Wearer = () => new PcInfo { Level = 50, JobGroup = 10, Equips = Array.Empty<EquipItem>() };
+            var sent = new List<(long, string)>(); c.View.RequestUse = (u, a) => sent.Add((u, a));
+            var boxes = new List<MessageBoxData>(); c.ShowBox = boxes.Add;
+            int maps = 0; c.CallAirTaxi = () => maps++;
+            var raised = new List<string>(); c.Button += raised.Add;                // an unported own-use function is raised
+            d.FunctionName = "CallAirTaxi";
+            Assert.That(c.UseItem(c.FindItem(30), true), Is.True);
+            Assert.That((maps, sent.Count, boxes.Count, raised.Count), Is.EqualTo((1, 0, 0, 0)), "the world map opens, nothing sent");
+            d.FunctionName = "RecallParty";
+            Assert.That(c.UseItem(c.FindItem(30), true), Is.True);
+            Assert.That((maps, sent.Count, boxes.Count, raised.Count), Is.EqualTo((1, 0, 0, 0)), "nothing at all, not raised as unported");
+        }
+        finally { d.FunctionName = savedName; d.FunctionArgs.Clear(); d.FunctionArgs.AddRange(savedArgs); }
+    }
+
+    [Test]
     public void AnOpenItemBoxAsksThenOpensOnlyOnTheServerAnswer()
     {
         Packs();
