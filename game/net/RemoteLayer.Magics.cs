@@ -205,8 +205,6 @@ public sealed partial class RemoteLayer
 
     /// <summary>One hit effect: on its actor when it has one (Records found that object, so a node is
     /// missing only if the layers disagree; then nothing plays), else at its transform.</summary>
-    /// <summary>The region hits whose PlayHitEffect ran (mode 5 with the region known).</summary>
-    public int RegionHitEffectsPlayed;
 
     void PlayDamageHitEffect(in DamageHitEffect fx)
     {
@@ -221,16 +219,13 @@ public sealed partial class RemoteLayer
     /// <summary>
     /// OnSplashDamage (mode 6) and OnRegionSkillDamage (mode 5)'s hit effects (<see cref="DamageHitEffects.SplashRecords"/>):
     /// the records' attack damage is the packet's skill at motion 0, attack 0 (mode 6), or the region skill object's skill and
-    /// level at motion 0 and the packet's attack (mode 5, nothing without the object). Mode 5 first plays the region's
-    /// PlayHitEffect (scenestategame.cpp:7773-7776, <see cref="Ms2.Formats.World.RegionSkillObject.PlayHitEffect"/>), with no target too.
+    /// level at motion 0 and the packet's attack (mode 5, nothing without the object). The region's own hit effect, which
+    /// mode 5 plays first, plays when the packet is read (<see cref="Ms2Godot.World.RegionSkills.PlayHit"/>).
+    /// STILL-OPEN: the region is looked up when the queue is drained, so a region removed in the same read as its damage
+    /// gives no per-target effectHit here; the client reads both in order.
     /// </summary>
     void OnSplashHitEffects(SkillDamage d)
     {
-        if (d.Mode == 5 && RegionFx is { } regions && regions.Objects.Objects.TryGetValue(d.RegionId, out var hit))
-        {
-            hit.PlayHitEffect(regions);
-            RegionHitEffectsPlayed++;
-        }
         if (d.Targets.Count == 0) return;
         int skillId = d.SkillId, attackPoint = 0;
         short level = d.Level;

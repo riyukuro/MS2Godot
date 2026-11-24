@@ -160,6 +160,27 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
         }
     }
 
+    /// <summary>The region hits whose hit effect played (<see cref="PlayHit"/>).</summary>
+    public int HitEffectsPlayed;
+
+    /// <summary>
+    /// OnRegionSkillDamage (0x3D mode 5, scenestategame.cpp:7766-7776): the region skill object of the id, when there is one,
+    /// plays its hit effect (<see cref="RegionSkillObject.PlayHitEffect"/>) before the targets are read, so with no target
+    /// too. It runs as the packet is read, in order with the region's add and remove (<see cref="Apply"/>): a server can
+    /// send the add, the damage and the remove together.
+    /// </summary>
+    /// <returns>What it played, for the log: the effect, or why nothing.</returns>
+    public string PlayHit(int regionId)
+    {
+        if (!Objects.Objects.TryGetValue(regionId, out var o)) return "none (no region of the id)";
+        o.PlayHitEffect(this);
+        HitEffectsPlayed++;
+        var e = o.Attr.SplashInvokeEffect;
+        if (string.IsNullOrEmpty(e)) return "none (no splashInvokeEffect)";
+        if (!o.Local && !o.Attr.IgnoreOptimalHideCastEffect) return "none (not the own region)";
+        return $"{e} at {o.Points.Length} point(s)" + (Has(e) ? "" : " (no such effect xml)");
+    }
+
     public bool Has(string effect) => table.Get(effect) != null;
 
     public int Spawn(string effect, Xform at, bool always, int randomIndex)

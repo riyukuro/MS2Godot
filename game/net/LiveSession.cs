@@ -1819,6 +1819,8 @@ public partial class LiveSession : Node
                 if (m is Ms2.Net.Packets.RegionSkillMessage.Add add) regionSkills[m.Id] = (add.SkillId, add.Level);
                 else if (m is Ms2.Net.Packets.RegionSkillMessage.Remove) regionSkills.Remove(m.Id);
                 if (m != null) { RegionSkillLog.Add(m); RegionSkillReceived?.Invoke(m); }
+                if (m is Ms2.Net.Packets.RegionSkillMessage.Add ra) GD.Print($"live: region {ra.Id} add, skill {ra.SkillId} level {ra.Level}, owner {ra.OwnerId}, {ra.Points.Length} point(s), first {(ra.Points.Length > 0 ? ra.Points[0] : default)}");
+                else if (m != null) GD.Print($"live: region {m.Id} {m.GetType().Name}");
             }
             else if (game.Is(p, Inbound.FieldProperty))
                 FieldProperties.Apply(Ms2.Net.Packets.FieldPropertyMessage.Read(p.Reader(), game.Profile));   // OnFieldProperty (scenestategame.cpp:3895)
@@ -1833,6 +1835,13 @@ public partial class LiveSession : Node
                 // The records that hit the own player; MasteryEvents applies the client's mode drops (3 needs its PC, 5 its
                 // region skill object). One event per target record (MyPC::vfunc_113 posts each).
                 var d = SkillDamage.Read(p.Reader(), game.Profile);
+                // OnRegionSkillDamage's region hit effect, here in packet order: the remote layer's queue takes only damage
+                // with targets, and is drained after the region's remove when both came in one read
+                if (d.Mode == 5 && d.Raw == null)
+                {
+                    var hit = FieldEffects?.PlayHit(d.RegionId);
+                    GD.Print($"live: region {d.RegionId} damage, {d.Targets.Count} target(s), hit effect {hit ?? "no field"}");
+                }
                 // mode 3's caster test is PCBase (players, npcs and pets; the tracker keeps the first two, and a pet
                 // is a PCBase in the client, so a pet's DoT on the own player cancels there but not here yet)
                 foreach (var total in Ms2.Ui.Hud.MasteryEvents.SelfRecords(d, selfObject,
