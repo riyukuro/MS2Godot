@@ -25,6 +25,7 @@ public partial class Player : ISkillMotionOwner
         if (key == null || Anim == null) return false;
         PlaySequence(key, speed, true);
         skillSequence = key;
+        skillSpeed = speed;
         skillHeld = false;
         kVel = Vector3.Zero;   // the state's enter, vfunc_4 (stateskill.cpp:437): the owner's velocity 0 (the vertical one is kept here)
         skillMotion.Record(move, speed, rotZ);
@@ -96,6 +97,12 @@ public partial class Player : ISkillMotionOwner
     public void SeekSkillSequence(double time, bool loopRestart)
     {
         if (SkillSequencePosition < 0) return;
+        if (skillHeld)
+        {
+            // the held end (EndOfSequence while charging or with a repeat left): the forced SetTargetAnimation plays it again
+            skillHeld = false;
+            Anim.Play(skillSequence, 0, skillSpeed);
+        }
         Anim.Seek(time, true);
         skillMotion.Restarted(this, loopRestart);
     }
@@ -108,6 +115,7 @@ public partial class Player : ISkillMotionOwner
     public System.Func<bool> SkillSequenceEnding;
     bool skillHeld;         // the ended sequence's last frame held: the skill state lasts past its sequence (HoldSkillSequence)
     bool skillEnding;       // SkillSequenceEnding runs
+    float skillSpeed;       // the own cast's sequenceSpeed (PlaySkillSequence), for the held end's restart
 
     /// <summary>The skill state stays after its sequence ended (a cooling next cast queued, FUN_1417ee120's per-frame poll):
     /// the body keeps the last frame and the movement input stays held until <see cref="CancelSkillSequence"/>.</summary>

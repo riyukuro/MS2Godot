@@ -362,7 +362,8 @@ public class SkillSequenceSweepTests
                     prev = tk;
                 }
                 if (seeked) continue;
-                if (finished)
+                // OwnSequenceEnding: while charging or with a repeat left the end holds (EndOfSequence :1056-1060, no 5 s end)
+                if (finished && !loop.HoldsEnd)
                 {
                     // OwnSequenceEnding -> OwnEndStep: an earlier motion goes on to the next record, the last one to idle
                     ended = true;
@@ -460,18 +461,13 @@ public class SkillSequenceSweepTests
                 }
             }
         }
-        // known gap A: the own PC's end does not hold while repeats are left (HudScene.Cast.cs OwnSequenceEnding,
-        // SkillLoop.HoldsEnd STILL-OPEN); only a motion with a loopCount and no loop keys in its sequence reaches it
-        foreach (var r in list)
-            if (r.Verdict != "ok" && r.Side == "own" && r.Expected.Contains("stuck") && r.Played == r.Expected.Replace("stuck", "end"))
-                r.Verdict = "gap A";
         var fails = list.Where(r => r.Verdict == "FAIL").ToList();
         var outPath = Environment.GetEnvironmentVariable("MS2_SKILLSEQ_OUT");
         if (!string.IsNullOrEmpty(outPath))
         {
             var sb = new StringBuilder();
             sb.AppendLine($"# {variable} {data}");
-            sb.AppendLine($"skills {skills}, job-related {job.Count}, npc-body skills not swept {npcSkills}, levels swept {levelsSwept}, rows {list.Count}, fails {fails.Count}, gap A {list.Count(r => r.Verdict == "gap A")}, job sequences missing {missingJob.Count}, own/remote row mismatches {rowMismatch.Count}");
+            sb.AppendLine($"skills {skills}, job-related {job.Count}, npc-body skills not swept {npcSkills}, levels swept {levelsSwept}, rows {list.Count}, fails {fails.Count}, job sequences missing {missingJob.Count}, own/remote row mismatches {rowMismatch.Count}");
             sb.AppendLine();
             sb.AppendLine("## missing job sequences");
             foreach (var m in missingJob) sb.AppendLine("- " + m);
@@ -486,7 +482,7 @@ public class SkillSequenceSweepTests
                 sb.AppendLine($"| {r.Skill} | {r.Kind} | {r.Level} | {r.Body} | {r.Side} | {r.Expected} | {r.Played} | {r.Verdict} |");
             File.AppendAllText(outPath, sb.ToString());
         }
-        TestContext.Progress.WriteLine($"{variable}: skills {skills}, levels swept {levelsSwept}, rows {list.Count}, fails {fails.Count}, gap A {list.Count(r => r.Verdict == "gap A")}, missing job sequences {missingJob.Count}, row mismatches {rowMismatch.Count}");
+        TestContext.Progress.WriteLine($"{variable}: skills {skills}, levels swept {levelsSwept}, rows {list.Count}, fails {fails.Count}, missing job sequences {missingJob.Count}, row mismatches {rowMismatch.Count}");
         Assert.That(levelsSwept, Is.GreaterThan(100), "the data has job skills");
         Assert.That(fails.Select(f => $"{f.Skill} {f.Level} {f.Body} {f.Side}: expected [{f.Expected}] played [{f.Played}]").Take(40), Is.Empty);
     }

@@ -450,12 +450,17 @@ public partial class HudScene
     /// The own sequence reached its end (<see cref="Player.SkillSequenceEnding"/>, before any movement frame): the text keys
     /// left up to the end, EndOfSequence @0x1417e9130 (stateskill.cpp:1062-1070: m_b48, m_b49, m_b112, m_b116, m_fStartTime),
     /// then FUN_1417ee120's end step (<see cref="OwnEndStep"/>) while still in the skill state. True when the state goes on.
-    /// STILL-OPEN: EndOfSequence's hold while charging or with a repeat left (<see cref="SkillLoop.HoldsEnd"/>) ends here.
+    /// While charging or with a repeat left (<see cref="SkillLoop.HoldsEnd"/>: a loopCount motion without loopstart / loopend
+    /// keys) EndOfSequence returns before any of that (:1056-1060), so m_b48 stays clear and FUN_1417ee120 only chains
+    /// (FUN_1417ef4a0) and returns before its 5 s end (0x1417ee162 jumps past the test at 0x1417eeaa6): the body holds the
+    /// last frame and the state stays until a chain, the charge release (<see cref="SeekOwnRelease"/>), a hit, death or a
+    /// cancel.
     /// </summary>
     bool OwnSequenceEnding()
     {
         if (ownCast == null || ownEnded || player == null || (object)player.SkillSequence != ownSequence) return false;
         if (!OwnKeys(Math.Max(ownKeyPos, ownSequenceLength))) return ownCast != null;
+        if (ownLoop.HoldsEnd) { player.HoldSkillSequence(); return true; }   // EndOfSequence :1056-1060
         ownWindow.EndOfSequence();
         ownEnded = true;
         ownEndMs = Time.GetTicksMsec();
