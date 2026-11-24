@@ -18,6 +18,14 @@ public sealed class JobSkillData
     public bool IsLearn;
     /// <summary>GMS2 only: the level of the &lt;learn&gt; block that lists the skill (0 = none; the KMS table has no such value).</summary>
     public int LearnLevel;
+    /// <summary>
+    /// GMS2 only: a row without a uiPosition, a job skill the skill window's tree leaves out. INFERRED (the GMS2 exe is not
+    /// decompiled; every KMS row has a uiPosition): in the GMS2 table/job.xml the rows without one are 20000001 and 20000011
+    /// (Swift Swim, Wall Climbing) in every job, 11000082 in job 100, 11100001 in job 110, and 01000001, 01000011 (job 090),
+    /// 01200001, 01200011 (job 110), which have no skill file; each of these with a skill file has ui@exceptUI 1 there, and none
+    /// of the 345 positioned skills has. Placed at the default (0, 0) they covered the first tree skill.
+    /// </summary>
+    public bool OutOfTree;
     public readonly List<ushort> RequireLevel = new();
     public readonly List<uint> RequireSkillIds = new();
     public readonly List<ushort> RequireSkillLevels = new();
@@ -57,6 +65,7 @@ public sealed class JobSkillData
             SkillId = Xml.UInt(e, "main"),
             UiHighlight = Xml.Bool(e, "uiHighlight"),
             JobLevel = e.Attribute("subJobCode") != null ? 2 : 1,
+            OutOfTree = e.Attribute("uiPosition") == null,
         };
         if (e.Attribute("uiPosition") is { } p)
         {

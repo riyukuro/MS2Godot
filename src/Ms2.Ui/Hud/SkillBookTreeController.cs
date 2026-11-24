@@ -464,25 +464,26 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
     }
 
     /// <summary>RefreshAll @0x140ecc8b0 (:1743): resetSkillTree, then setSkill for each skill of the shown rank (not extra, with
-    /// skill data).</summary>
+    /// skill data). A GMS2 row without a uiPosition is left out (<see cref="JobSkillData.OutOfTree"/>).</summary>
     void RefreshAll()
     {
         if (sim == null) return;
         Host.Invoke("resetSkillTree");
         foreach (var s in sim.EditSkills)
         {
-            if (s.Extra || s.JobLevel != JobLevel || T.GetSkillData(s.Id) == null) continue;
+            if (s.Extra || s.JobLevel != JobLevel || T.GetSkillData(s.Id) == null || s.Data?.OutOfTree == true) continue;
             if (FillSkill(s) is { } info) Host.Invoke("setSkill", info);
         }
     }
 
-    /// <summary>RefreshTree @0x140eccbb0 (:1773): updateSkill for each skill (not extra, with skill data).</summary>
+    /// <summary>RefreshTree @0x140eccbb0 (:1773): updateSkill for each skill (not extra, with skill data; not a GMS2 row out of
+    /// the tree).</summary>
     void RefreshTree()
     {
         if (sim == null) return;
         foreach (var s in sim.EditSkills)
         {
-            if (s.Extra || T.GetSkillData(s.Id) == null) continue;
+            if (s.Extra || T.GetSkillData(s.Id) == null || s.Data?.OutOfTree == true) continue;
             if (FillSkill(s) is { } info) Host.Invoke("updateSkill", info);
         }
     }

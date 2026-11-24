@@ -38,6 +38,19 @@ public class Gms2JobTableTests
         Assert.That((j.FindSkill(10100061).IsLearn, j.FindSkill(10100061).LearnLevel, a.LearnLevel), Is.EqualTo((false, 2, 1)));
     }
 
+    /// <summary>A row without a uiPosition (Swift Swim here) stays a job skill but is out of the skill window's tree; a
+    /// positioned row and every KMS row are in it.</summary>
+    [Test]
+    public void ARowWithoutAPositionIsOutOfTheTree()
+    {
+        var j = new JobTable(XDocument.Parse(Job), All, XDocument.Parse(Group)).GetJobData(10);
+        Assert.That(j.FindSkill(20000001), Is.Not.Null, "still a job skill");
+        Assert.That(j.FindSkill(20000001).OutOfTree, Is.True);
+        Assert.That(new[] { 10100061u, 10100001u, 10100171u }.Select(id => j.FindSkill(id).OutOfTree), Is.All.False);
+        var kms = JobSkillData.Load(XElement.Parse(@"<v skillID=""10000041"" jobLevel=""1"" isLearn=""1"" />"));
+        Assert.That(kms.OutOfTree, Is.False, "the KMS rows are read as the client reads them");
+    }
+
     [Test]
     public void TheKmsShapeIsReadAsBefore()
     {
