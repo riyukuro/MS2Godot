@@ -9,7 +9,9 @@ namespace Ms2Godot.Tests;
 /// log in through the login dialog (MS2_RETRY_ACCOUNT=user:password), start the selected character, then the system menu's
 /// character select (UISystemMenuDialog::OnSelectCharacter, RequestQuit(0)) back to the list and into the game again,
 /// --rounds N times (default 2). Each GameToLogin return and each game entry connects to the endpoint in its packet; the
-/// session prints it. Quits with 0 when every round got back to the list and into the game, else 1.
+/// session prints it. Each return puts the loading screen up for map 2 with the server move's line (showMove) before the list
+/// comes (OnGameToLogin's FUN_141bbc580(0, 2)), and the list takes input with the move's cover down. Quits with 0 when every
+/// round got back to the list and into the game, else 1.
 /// </summary>
 public partial class SwitchCharacterCheck : Node
 {
@@ -68,8 +70,16 @@ public partial class SwitchCharacterDriver : Node
         for (int r = 1; r <= rounds; r++)
         {
             Net.LiveSession.Instance?.SendRequestQuit();   // the system menu's character select
-            if (!await Until(() => Flow.Current == GameFlow.State.Lobby, 1800)) { Done($"round {r}: the return never reached character select (flow {Flow.Current})"); return; }
-            GD.Print($"switch character: round {r} back at character select");
+            bool cover = false, showMove = false;
+            if (!await Until(() =>
+                {
+                    if (World.FieldContents.CoverUp) { cover = true; showMove |= World.FieldContents.CoverShowsMove; }
+                    return Flow.Current == GameFlow.State.Lobby;
+                }, 1800)) { Done($"round {r}: the return never reached character select (flow {Flow.Current})"); return; }
+            GD.Print($"switch character: round {r} back at character select (loading screen {(cover ? "up" : "not seen")}, showMove {showMove}, move cover {(Ms2.Ui.FieldMoveCover.Up ? "up" : "down")})");
+            if (!cover || !showMove) { Done($"round {r}: no server-move loading screen before character select"); return; }
+            if (Ms2.Ui.FieldMoveCover.Up) { Done($"round {r}: the move's cover is still up at character select"); return; }
+            if (r == 1) GD.Print($"switch character: retry line 1: {Net.LiveSession.RetryLine(1)}");
             if (!await IntoGame(r)) return;
         }
         Done(null);

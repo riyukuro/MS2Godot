@@ -39,17 +39,21 @@ public partial class LoadingMovie : Node2D
     /// <summary>Between StartProgress and the movie's OnFadeInComplete.</summary>
     public bool Active { get; private set; }
 
+    /// <summary>The last start's showMove: the screen is a server move's (Travel.ProgressMap).</summary>
+    public bool ShowsMove { get; private set; }
+
     /// <summary>
     /// StartProgress (uiloadingprogress.cpp:85-111). <paramref name="picture"/> is the table's picture (GetLoadingImagePath,
     /// an entry of LoadingImageTable.ImageArchive), or null for none: the movie then shows <paramref name="screenShot"/>.
     /// </summary>
-    public void Start(string picture, Texture2D screenShot, string tip, bool showGuide, bool showFrame)
+    public void Start(string picture, Texture2D screenShot, string tip, bool showGuide, bool showFrame, bool showMove = false)
     {
         ScreenShot = picture == null ? screenShot : null;
         Active = true;
+        ShowsMove = showMove;
         Controller.StartProgress(new LoadingProgressController.StartInfo
         {
-            FilePath = picture ?? "", Tip = tip ?? "", ShowGuide = showGuide ? 1 : 0, ShowFrame = showFrame,
+            FilePath = picture ?? "", Tip = tip ?? "", ShowGuide = showGuide ? 1 : 0, ShowFrame = showFrame, ShowMove = showMove ? 1 : 0,
         });
     }
 

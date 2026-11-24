@@ -245,6 +245,8 @@ public partial class FieldContents : Node3D
     static LoadingMovie shownCover;
     /// <summary>True while a field's loading screen covers the screen (GameFlow hands its first-entry picture over to it).</summary>
     public static bool CoverUp => shownCover != null && GodotObject.IsInstanceValid(shownCover) && shownCover.Active && shownCover.IsVisibleInTree();
+    /// <summary>The loading screen up is a server move's (showMove: GameToLogin, GameToGame, the login entry).</summary>
+    public static bool CoverShowsMove => CoverUp && shownCover.ShowsMove;
 
     /// <summary>
     /// The start of a field load: the loading screen comes up before the field is built (WorldService::FUN_141bbc1d0 puts
@@ -274,7 +276,7 @@ public partial class FieldContents : Node3D
         // so the screen is the framed one (vfunc_52 is true on the lobby scene), not UILoadingProgressLobby's
         var picture = Picture(packs, Travel.LoadingImage);
         cover.Start(picture, picture == null ? screenShot ?? ImageTexture.CreateFromImage(root.GetViewport().GetTexture().GetImage()) : null,
-                    Travel.LoadingTip, ShowInputGuide, true);
+                    Travel.LoadingTip, ShowInputGuide, true, Travel.ProgressMap != 0);
         shownCover = cover;
         carried = (overlay, cover);
         return true;
@@ -360,7 +362,7 @@ public partial class FieldContents : Node3D
     {
         if (loading == null) return;
         var picture = Picture(packs, image);
-        loading.Start(picture, picture == null ? screenShot ?? Capture() : null, tip, ShowInputGuide, true);
+        loading.Start(picture, picture == null ? screenShot ?? Capture() : null, tip, ShowInputGuide, true, Travel.ProgressMap != 0);
         shownCover = loading;
     }
 
@@ -476,6 +478,7 @@ public partial class FieldContents : Node3D
         moveReady = ready;
         if (moving) return;
         moving = true;
+        Travel.ProgressMap = ready != null ? target : 0;   // a GameToGame's screen is started for its field, a field move's for 0
         Ms2.Ui.FieldMoveCover.Raise();      // the field and MyPC go at the move (FUN_141bbc580): no input reaches them from now
         talk?.End();
         // UILoadingProgress::GetLoadingImagePath: a picture of the target map, or a screenshot of this field (see PickForMove)
@@ -529,6 +532,42 @@ public partial class FieldContents : Node3D
     }
 
     /// <summary>
+    /// GameToLogin 0 (CNetworkService::OnGameToLogin @0x14153bc00, networkservice.cpp:935): WorldService FUN_141bbc580(0, 2)
+    /// takes the field down and starts the loading screen for map 2 (CUIService FUN_141adb900 -> UILoadingProgress::StartProgress(2),
+    /// uiservice.cpp:1317-1324): the picture of map 2 when the table has one (GetLoadingImagePath, PickForMove), else a
+    /// screenshot of the field being left, at 0%, with a tip. No field is built after it: the login server's MoveResult
+    /// switches the scene to character select, which frees this one. Until then the field is under the screen and takes no
+    /// input (FieldMoveCover). No field up: nothing to cover.
+    /// </summary>
+    public static void LeaveForLogin(SceneTree tree, int map)
+    {
+        Ms2.Ui.FieldMoveCover.Raise();
+        if (tree.GetFirstNodeInGroup(Group) is FieldContents here && here.IsInsideTree()) here.CoverLeave(map);
+    }
+
+    void CoverLeave(int target)
+    {
+        if (moving) return;
+        moving = true;
+        Travel.ProgressMap = target;
+        talk?.End();
+        string image = new LoadingImageTable(packs, Ms2.Ui.LobbyFeatures.LocaleOf(packs)).PickForMove(target, fieldId, new Random());
+        string tip = PickTip();
+        GD.Print($"field left for the login server, loading picture {image ?? "(screenshot)"}");
+        if (image != null) ShowLoading(image, tip);
+        else ShowLoadingOverField(tip, () => { });
+    }
+
+    /// <summary>
+    /// UILoadingProgress::SetMoveChannelMessage (uiloadingprogress.cpp:149) on the loading screen up, if any: the reconnect
+    /// line CSceneStateGame::OnUpdate puts there at each retry (scenestategame.cpp:1336-1342).
+    /// </summary>
+    public static void MoveChannelMessage(string text)
+    {
+        if (CoverUp) shownCover.Controller.SetMoveChannelMessage(text);
+    }
+
+    /// <summary>
     /// The server's field entry in game (LiveSession, RequestFieldEnter error 0): the same move a portal walk takes, to the
     /// entry's map, arriving where the entry says (LiveSession.Decorate), no portal of ours. The login entry builds its
     /// field through the same scene and Travel.Pending (GameFlow.BeginLoading). A map the data does not have loads the
@@ -559,6 +598,7 @@ public partial class FieldContents : Node3D
         }
         Travel.LoadingImage = null;
         Travel.LoadingTip = PickTip(packs);
+        Travel.ProgressMap = ready != null ? map : 0;
         Travel.Pending = Build();
         ChangeField(tree);
     }

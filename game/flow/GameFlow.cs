@@ -508,6 +508,7 @@ public partial class GameFlow : Node
         catch (Exception ex) { GD.PushWarning("flow loading: " + ex.Message); }
         Travel.LoadingImage = null;
         Travel.LoadingTip = tip;
+        Travel.ProgressMap = map;   // OnLoginToGame's FUN_141bbc580(0, field): the screen is a server move's (showMove)
         // the field scene reads this: the chosen character's field (Tria when the data has no such map), no portal
         Travel.Pending = xblock == null ? null : new Travel.Move(map, xblock, 0, 0);
         Travel.Pending = Net.LiveSession.Decorate(Travel.Pending);

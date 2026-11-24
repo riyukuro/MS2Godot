@@ -24,6 +24,16 @@ public static class Travel
     /// <summary>The loading tip the transition shows, kept over the reload.</summary>
     public static string LoadingTip;
 
+    /// <summary>
+    /// The map the transition's loading screen was started for (UILoadingProgress m_74, StartProgress's argument): the map
+    /// WorldService FUN_141bbc580 passes to CUIService FUN_141adb900 (worldservice_1.cpp:10019). It is the entry's field at
+    /// OnLoginToGame and OnGameToGame and 2 at OnGameToLogin (networkservice.cpp:913, 953, 935), and 0 for a field move
+    /// (WorldService::LoadMap -> FUN_141bbc1d0 -> FUN_141bbc580(arg, 0), worldservice_1.cpp:3353) and RelocateWorld (:969).
+    /// Not 0: the screen is a server move's (FUN_1419e0630 -> showMove), whose line reads $s_loading_movechannel_message
+    /// in place of the tip.
+    /// </summary>
+    public static int ProgressMap;
+
     /// <summary>Scripted proof run state (--sandbox-shots): which leg of the walk runs next.</summary>
     public static int ShotLeg;
 }

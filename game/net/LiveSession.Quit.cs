@@ -21,13 +21,17 @@ public partial class LiveSession
     /// <summary>
     /// CNetworkService::OnGameToLogin @0x14153bc00 (networkservice.cpp:928). An error shows GetFieldMoveErrorMessage's box and
     /// changes nothing. On 0 the client tears the field down at once (WorldService FUN_141bbc580(0, 2): every object and the own
-    /// MyPC go), keeps the address, port and tokens (DAT_143ab2a48/2848/284c/2850), sets DAT_1439f4a78 to 1 (the login server is the
+    /// MyPC go, and the loading screen starts for map 2, <see cref="World.FieldContents.LeaveForLogin"/>), keeps the address, port and tokens (DAT_143ab2a48/2848/284c/2850), sets DAT_1439f4a78 to 1 (the login server is the
     /// target) and connects there (CSceneStateGame OnUpdate, scenestategame.cpp:1327: a 10 s timer, five ConnectTo calls; after the
     /// fifth timer the 0x20f / 7 box and the process ends, <see cref="GiveUp"/>). The good MoveResult switches to character select at
     /// once (<see cref="ReturnedToCharacterSelect"/>), then ServerEnter and the list follow (<see cref="LoginClient.ReturnWithRetriesAsync"/>).
-    /// STILL-OPEN: (1) the field teardown (FUN_141bbc580(0, 2)): the field scene stays up, offline, until the MoveResult switches the scene.
-    /// (2) The retry text on the loading screen (s_reconnect_to_server with the attempt number, SetMoveChannelMessage). (3) The
-    /// MyPC::FUN_1415308d0 debug switch reset (none is ported).
+    /// Each retry after the first connect puts s_reconnect_to_server with the retry count on the loading screen
+    /// (scenestategame.cpp:1336-1342; <see cref="RetryLine"/>). MyPC::FUN_1415308d0 (mypc.cpp:4528) resets five debug switches,
+    /// none of which this client has: DAT_143ae0fb0 the SetDebugMode key's mode, DAT_143ae0fb8 the world map's show-all key
+    /// (uiscenegame.cpp:1215-1226), DAT_143ae0fb4 the god mode the housing and god mode tooltips read, DAT_143ae0fbc the user
+    /// command that skips skill cooldowns (usercommandcli.cpp:2110, mypc.cpp:2543), g_nDebugUI the UI debug info
+    /// (uiobject.cpp:202); so nothing is reset here.
+    /// The field's nodes stay under the loading screen, out of input, until the scene switch frees them; the client's objects go at once.
     /// </summary>
     void OnGameToLogin(GameToLogin m)
     {
@@ -46,6 +50,7 @@ public partial class LiveSession
         ResetCubeService();   // the game scene's services shut down: CubeMapInformationService::OnShutdown @0x1410cef40 -> FUN_1410d0310 (cubemapinformationservice_3.cpp:1107, 5455-5475)
         bindPending = false;
         PortalAction.Current = null;
+        World.FieldContents.LeaveForLogin(GetTree(), LoginProgressMap);
         var old = game;
         game = null;
         old?.Dispose();
@@ -60,8 +65,15 @@ public partial class LiveSession
             string to = GameClient.HostOf(m.Address, host);
             GD.Print($"live: return connects to {GameClient.EndpointText(to, m.Port)}");
             var (o, next) = await LoginClient.ReturnWithRetriesAsync(to, m.Port, m.Token, accountId, machine,
-                onMoveResult: () => Callable.From(() => { if (!exit.IsCancellationRequested) { Session.Characters = new(); ReturnedToCharacterSelect?.Invoke(); } }).CallDeferred(),
-                ct: exit);
+                onMoveResult: () => Callable.From(() => { if (!exit.IsCancellationRequested) { Session.Characters = new(); Ms2.Ui.FieldMoveCover.Lower(); ReturnedToCharacterSelect?.Invoke(); } }).CallDeferred(),
+                ct: exit,
+                onAttempt: n =>
+                {
+                    if (n < 2) return;   // the first connect is vfunc_4's (scenestategame.cpp:2023), which sets no text
+                    string line = RetryLine(n - 1);
+                    GD.Print($"live: return attempt {n}: {line}");
+                    Callable.From(() => { if (!exit.IsCancellationRequested) World.FieldContents.MoveChannelMessage(line); }).CallDeferred();
+                });
             if (exit.IsCancellationRequested) { next.Dispose(); return; }
             login?.Dispose();
             login = next;
@@ -86,6 +98,14 @@ public partial class LiveSession
         catch (System.OperationCanceledException) when (exit.IsCancellationRequested) { }
         catch (System.Exception e) { GD.PushError($"live: return to character select failed: {e.Message}"); }
     }
+
+    /// <summary>The map OnGameToLogin's FUN_141bbc580 starts the loading screen for (networkservice.cpp:935).</summary>
+    public const int LoginProgressMap = 2;
+
+    /// <summary>The loading screen's line at retry <paramref name="retry"/> (m_nRetry after its increment, 1 to 5):
+    /// FUN_14028dfa0(L"s_reconnect_to_server", m_nRetry), the common string formatted with the count.</summary>
+    public static string RetryLine(int retry) =>
+        Ms2.Quest.ClientFormat.Format(Ms2.Ui.Hud.MessageBoxData.CommonByKey("s_reconnect_to_server") ?? "", retry);
 
     /// <summary>
     /// The client's give-up after the last reconnect timer (CSceneStateGame::OnUpdate, scenestategame.cpp:1348-1357): BlockFormat(0x20f, 7)
