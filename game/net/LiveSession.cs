@@ -2127,6 +2127,8 @@ public partial class LiveSession : Node
                 ReadNotApplied("WorldShareInfo", Ms2.Net.Packets.WorldShareInfo.Read(p.Reader()).Mode);   // OnWorldShareInfo (scenestategame.cpp:9756): the boss-notify npc flag, the world map tile and the world share event dialog are not ported
             else if (game.Is(p, Inbound.BannerList))
                 { Ms2.Net.Packets.BannerList.Read(p.Reader()); ReadNotApplied("BannerList", 0); }   // CAdBannerManagerCli::OnBannerList (adbannermanagercli.cpp:31): the ad banner manager and its consumers (cash shop, title) are not ported
+            else if (game.Is(p, Inbound.ResponsePet))
+                ReadNotApplied("ResponsePet", Ms2.Net.Packets.PetResponse.Read(p.Reader(), game.Profile).Mode);   // CPetManager::OnResponsePet (petmanager.cpp:722): the pet system (summon, pet window, counts) is not ported
             else if (game.Is(p, Inbound.FunctionCube))
                 ReadNotApplied("FunctionCube", Ms2.Net.Packets.FunctionCubeReply.Read(p.Reader(), game.Profile).Mode);   // OnFunctionCube (scenestategame.cpp:3660): the cube service (CFunctionCubeService: cube objects, state switch, owner checks) is not ported
             else if (game.Is(p, Inbound.FurnishingInventory))
