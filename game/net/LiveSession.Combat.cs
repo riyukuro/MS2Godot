@@ -211,6 +211,8 @@ public partial class LiveSession
                 var c = step[7..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 hud.FaceScripted(new Vector3(float.Parse(c[0]), float.Parse(c[2]), -float.Parse(c[1])));
                 await frames(30);
+                continue;
+            }
             if (step.StartsWith('~') && int.TryParse(step.AsSpan(1), out int waitSecs))      // ~N: N seconds
             {
                 await frames(60 * waitSecs);
