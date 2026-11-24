@@ -735,7 +735,7 @@ public sealed partial class RemoteLayer : Node3D
                     if (add.User.Ride != null) Ms2.Ui.RidePassengers.Load(add.User.Passengers, added.Passengers);
                     RideOn(added, add.User.Ride);
                     PcShown?.Invoke(Shown(added));
-                    GD.Print($"live: other player '{add.User.User.Name}' object {add.User.ObjectId} shown at {add.User.Position}");
+                    if (LiveSession.LiveCheck) GD.Print($"live: other player '{add.User.User.Name}' object {add.User.ObjectId} shown at {add.User.Position}");
                     break;
                 case UserRemovedEvent rem:
                     // PCBase::vfunc_14 rides a riding PC off (vfunc_121(null), pcbase.cpp:855-859), whose ride-off effect
@@ -749,7 +749,7 @@ public sealed partial class RemoteLayer : Node3D
                         hitEffects.Remove(rem.ObjectId);
                         tags.Remove(gone.Root); bars.Remove(gone.Root); gone.Death.Free(); FreeRidee(gone); gone.Pc.Free();
                         PcLeft?.Invoke(gone.ObjectId);
-                        GD.Print($"live: other player {gone.Name} (object {rem.ObjectId}) left");
+                        if (LiveSession.LiveCheck) GD.Print($"live: other player {gone.Name} (object {rem.ObjectId}) left");
                     }
                     break;
                 case UserMovedEvent mv:
@@ -760,7 +760,7 @@ public sealed partial class RemoteLayer : Node3D
                     var to = mv.Ride ? r.Ridee : r.Pc;
                     if (to == null) break;
                     to.States.Push(SyncRecord.From(mv.Record, Tracker.Profile));
-                    if (++movedSeen <= 3 || movedSeen % 100 == 0)
+                    if (++movedSeen <= 3 || movedSeen % 100 == 0) if (LiveSession.LiveCheck)
                         GD.Print($"live: other player {r.Name} moved #{movedSeen} to {mv.Position} yaw {mv.YawDegrees}, state {to.States.Cur}, {to.States.Snaps} snap(s) (last {to.States.LastSnap:0})");
                     break;
                 case UserStatEvent st:
@@ -961,7 +961,7 @@ public sealed partial class RemoteLayer : Node3D
         float volume = Ms2.Ui.Hud.Tombstone.HitVolume(1, World.FieldContents.Constants(packs));
         var at = new Vector3(clientPosition.X, clientPosition.Z, -clientPosition.Y);
         bool played = FieldAudio.Instance?.PlayHitSound(1, soundMaterial, 1, at, volume, ViewerPosition, HitSoundRand) ?? false;
-        GD.Print($"tomb tags: hit sound attack 1 defence {soundMaterial} relation 1 volume {volume:F2} played {played}");
+        if (LiveSession.LiveCheck) GD.Print($"tomb tags: hit sound attack 1 defence {soundMaterial} relation 1 volume {volume:F2} played {played}");
     }
 
     public override void _Process(double delta)

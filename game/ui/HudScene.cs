@@ -1012,7 +1012,7 @@ public partial class HudScene : Node, IUiStageHost
         ChatLog.ServerTime = () => live.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         ChatLog.SendPacket = chat =>
         {
-            GD.Print($"chat: send kind {chat.Kind} ({chat.Message.Length} chars)");
+            if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"chat: send kind {chat.Kind} ({chat.Message.Length} chars)");
             live.SendChat(chat);
         };
         ChatLog.SendSticker = sticker =>       // the chat window's emoticon sends (ChatSticker 0xB7)

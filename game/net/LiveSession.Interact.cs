@@ -115,9 +115,9 @@ public partial class LiveSession
         if (InteractObjects == null) return;
         InteractObjects.Apply(m);
         if (m.Mode == InteractObjectMessage.ModeStates)
-            GD.Print($"live: InteractObject mode 8 ({m.Entries?.Count ?? 0} states)");
+            if (LiveCheck) GD.Print($"live: InteractObject mode 8 ({m.Entries?.Count ?? 0} states)");
         else if (m.Mode is InteractObjectMessage.ModeState or InteractObjectMessage.ModeAdd or InteractObjectMessage.ModeRemove or InteractObjectMessage.ModeResult or InteractObjectMessage.ModeMessage)
-            GD.Print($"live: InteractObject mode {m.Mode} name '{m.Name}' kind {m.Kind} state {m.State} result {m.Result}");
+            if (LiveCheck) GD.Print($"live: InteractObject mode {m.Mode} name '{m.Name}' kind {m.Kind} state {m.State} result {m.Result}");
     }
 
     /// <summary>
@@ -133,7 +133,7 @@ public partial class LiveSession
         if (m.Id != selfObject)
         {
             if (remote?.SetCraftMode(m.Id, m.CubeMode, m.CraftMode, m.Item) == true)
-                GD.Print($"live: SetCraftMode pc {m.Id} mode {m.CubeMode} craft {m.CraftMode}");
+                if (LiveCheck) GD.Print($"live: SetCraftMode pc {m.Id} mode {m.CubeMode} craft {m.CraftMode}");
             return;
         }
         if (!Me.Dead && !CubeCraft.InCubeMode)
@@ -202,7 +202,7 @@ public partial class LiveSession
                     case Ms2.Ui.CubeCraftState.PlaceAnswer.BuildNotice: ShowBuildNotice(placed.Error); break;
                 }
                 bool added = player != null && IsInstanceValid(player) && player.Cubes.Cells.Apply(placed, id => ItemExists?.Invoke(id) ?? true);
-                GD.Print($"live: ResponseCube 0x{placed.Mode:x} error {placed.Error} cell 0x{placed.Cell:x} item {placed.Item?.ItemId ?? 0}{(added ? ", cube added" : "")}");
+                if (LiveCheck) GD.Print($"live: ResponseCube 0x{placed.Mode:x} error {placed.Error} cell 0x{placed.Cell:x} item {placed.Item?.ItemId ?? 0}{(added ? ", cube added" : "")}");
                 FieldCubesMade(added ? 1 : 0);   // CreateCube's cube waits for its entity too (f78, :2699)
                 return;
             }
@@ -216,7 +216,7 @@ public partial class LiveSession
                     case Ms2.Ui.CubeCraftState.PlaceAnswer.BuildNotice: ShowBuildNotice(removed.Error); break;
                 }
                 bool gone = player != null && IsInstanceValid(player) && player.Cubes.Cells.Apply(removed);
-                GD.Print($"live: ResponseCube 0xc error {removed.Error} cell 0x{removed.Cell:x}{(gone ? ", cube removed" : "")}");
+                if (LiveCheck) GD.Print($"live: ResponseCube 0xc error {removed.Error} cell 0x{removed.Cell:x}{(gone ? ", cube removed" : "")}");
                 return;
             }
             case ResponseCubeHomeInfo.Mode: OnHomeInfo(ResponseCubeHomeInfo.Read(r, game.Profile)); return;
@@ -237,7 +237,7 @@ public partial class LiveSession
         else remote?.ResponseCube(m, null);
         int notice = BuildNotice.OfHeldItemResponse(m, selfObject);
         if (notice != 0) ShowBuildNotice(notice);
-        GD.Print($"live: ResponseCube 0x{m.Mode:x} error {m.Error} id {m.Id}");
+        if (LiveCheck) GD.Print($"live: ResponseCube 0x{m.Mode:x} error {m.Error} id {m.Id}");
     }
 
     /// <summary>LoadCubes (RecvOp 0x6A), CSceneStateGame::OnLoadCubes (@0x141728110, scenestategame.cpp:10857): mode 0's

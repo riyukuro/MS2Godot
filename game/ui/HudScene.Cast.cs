@@ -143,7 +143,7 @@ public partial class HudScene
         if (res.Record is { } r) RouteOwn(r);
         else
         {
-            GD.Print($"cast: item skill {skill} refused, reason {res.Why}{(res.Notice != null ? " " + res.Notice : "")}");
+            if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"cast: item skill {skill} refused, reason {res.Why}{(res.Notice != null ? " " + res.Notice : "")}");
             ShowCastRefusal(res.Why);
         }
     }
@@ -220,7 +220,7 @@ public partial class HudScene
                 (uint)slotConstants.Int("KeyIsDownSkill_MaxDurationTick", 30000))) return null;
         // mypc.cpp:1728: MyPC::FUN_141526c80, the changeSkill swap, before CSkillSystem::FUN_141764e30
         if (SkillCast.OwnSkill(w, ref skillId, ref level, out bool hasSequence))
-            GD.Print($"cast: skill {d.Id} level {lv.Level} changed to skill {skillId} level {level}");
+            if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"cast: skill {d.Id} level {lv.Level} changed to skill {skillId} level {level}");
         var req = OwnCastRequest(me, skillId, level, key);
         req.HasSequence = hasSequence;
         FillCastWorld(w, me);
@@ -231,7 +231,7 @@ public partial class HudScene
             key != 0 ? castKeyItemUid : null, castItemAtLevel);
         if (res.Record is not { } r)
         {
-            GD.Print($"cast: skill {skillId} refused, reason {res.Why}{(res.Notice != null ? " " + res.Notice : "")}");
+            if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"cast: skill {skillId} refused, reason {res.Why}{(res.Notice != null ? " " + res.Notice : "")}");
             ShowCastRefusal(res.Why);
             return null;
         }
@@ -649,7 +649,7 @@ public partial class HudScene
         switch (SkillUseCheck.Check(r, w, out var rideOff))
         {
             case SkillUseCheck.Result.Refused:
-                GD.Print($"cast: skill {r.Skill.Id} refused");
+                if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"cast: skill {r.Skill.Id} refused");
                 return false;
             case SkillUseCheck.Result.RideOff:
                 live?.RideOffForSkill(rideOff);
@@ -681,7 +681,7 @@ public partial class HudScene
             if (gate == CoolGate.Queued) { ownQueued = r; r.QueuedCharge = true; }
             if (gate != CoolGate.Cast)
             {
-                GD.Print($"cast: skill {r.Skill.Id} cooling, {(gate == CoolGate.Queued ? "queued" : "refused")}");
+                if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"cast: skill {r.Skill.Id} cooling, {(gate == CoolGate.Queued ? "queued" : "refused")}");
                 return gate == CoolGate.Queued;
             }
         }
@@ -722,7 +722,7 @@ public partial class HudScene
             else if ((object)ownCast == r && (object)me.SkillSequence == ownSequence && ownTagIds.Motion == 0)
                 ownTagIds.Motion = live.SpawnKeptEffect(fx, me.Visual, Ms2.Audio.SoundMusicEffectState.CasterMyPc);
         }
-        GD.Print($"cast: skill {r.Skill.Id} level {r.Level.Level} motion {r.Motion}{(sent ? " sent" : " (offline, not sent)")}");
+        if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"cast: skill {r.Skill.Id} level {r.Level.Level} motion {r.Motion}{(sent ? " sent" : " (offline, not sent)")}");
         return true;
     }
 
@@ -1019,7 +1019,7 @@ public partial class HudScene
                 SkillLoop.RoundCooldown(ownLoopStartKey, ownLoopEndKey, ownLoop.Speed, ownLoop.ChargeTick), 0f, true, now);
         CompactUsed(r);
         live.Cooltimes.OnRechargeSkillUsed(r.Skill, now);
-        GD.Print($"cast: skill {r.Skill.Id} round {r.SendCount}");
+        if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"cast: skill {r.Skill.Id} round {r.SendCount}");
     }
 
     /// <summary>
@@ -1168,7 +1168,7 @@ public partial class HudScene
         }
         bool sent = req != null && (live?.SendDamage(req) ?? false);
         TickOwnTagMagics();
-        GD.Print($"cast: skill {r.Skill.Id} attack {attack} targets {req?.Targets.Count ?? 0}{(sent ? " sent" : " (offline, not sent)")}"
+        if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"cast: skill {r.Skill.Id} attack {attack} targets {req?.Targets.Count ?? 0}{(sent ? " sent" : " (offline, not sent)")}"
             + (req?.Targets.Count is null or 0 ? NoTargetDetail(pos) : "")
             + (req == null ? "" : $" [sub0 serial/target/hit/links: {string.Join(", ", req.Targets.Select(t => $"{t.Serial}/{t.TargetId}/{t.Hit}/{t.Links.Count}"))}]"));
     }
@@ -1246,12 +1246,12 @@ public partial class HudScene
                 new Vector3(hs.At.X, hs.At.Z, -hs.At.Y), hs.Volume, player.GlobalPosition, hitSoundRand);
         foreach (var req in ownHitSends)
         {
-            GD.Print($"cast: sub1 hit attack {req.Attack} serial {req.Serial} targets {req.Targets.Count} [{string.Join(", ", req.Targets.Select(t => $"{t.Id}/{t.Hit}"))}]");
+            if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"cast: sub1 hit attack {req.Attack} serial {req.Serial} targets {req.Targets.Count} [{string.Join(", ", req.Targets.Select(t => $"{t.Id}/{t.Hit}"))}]");
             live.SendHit(req);
         }
         foreach (var req in ownSplashSends)
         {
-            GD.Print($"cast: sub2 splash attack {req.Attack} hit {req.Hit}");
+            if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"cast: sub2 splash attack {req.Attack} hit {req.Hit}");
             live.SendSplash(req);
         }
         foreach (var fx in ownEndEffects)
@@ -1379,7 +1379,7 @@ public partial class HudScene
             else if (string.IsNullOrEmpty(motion.SequenceName))
                 live.ReleaseKeptEffect(live.SpawnKeptEffect(motion.MotionEffect, player.Visual, Ms2.Audio.SoundMusicEffectState.CasterMyPc));
         }
-        GD.Print($"cast: skill {s.SkillId} motion {s.Motion} started by the server");
+        if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"cast: skill {s.SkillId} motion {s.Motion} started by the server");
     }
 
     /// <summary>Each frame: CSkillSystem::Update's cooldown part at the server tick (0 B/frame).</summary>

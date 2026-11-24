@@ -252,7 +252,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         float v = Ms2.Formats.World.EffectSkipTable.SoundEventVolume(effectSkip, objectKind, ToNumerics(position), viewer is { } e ? ToNumerics(e) : null,
             1f, volumeOtherPc, status?.DisplayShowOnlyMyPet ?? false, status?.DisplayHideMyPet ?? false);
         bool played = v >= 0 && PlayEventAt(path, position, 0, v);
-        GD.Print($"audio: event voice {type} -> {path} played {played}");
+        if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"audio: event voice {type} -> {path} played {played}");
         return path;
     }
 
@@ -628,7 +628,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         var clip = library?.ResolveEvent(eventName);
         if (clip == null) return false;
         PlayClip(clip);
-        GD.Print($"audio: event {eventName} -> {clip.Name} volume {clip.Volume:F2}");
+        if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"audio: event {eventName} -> {clip.Name} volume {clip.Volume:F2}");
         return true;
     }
 
@@ -638,7 +638,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         var clip = library?.ResolveVoiceTag(tag);
         if (clip == null) return false;
         PlayClip(clip);
-        GD.Print($"audio: voice tag {tag} -> {clip.Name} ({library.LanguageName})");
+        if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"audio: voice tag {tag} -> {clip.Name} ({library.LanguageName})");
         return true;
     }
 

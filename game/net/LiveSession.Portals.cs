@@ -76,7 +76,7 @@ public partial class LiveSession
         Portals.Apply(m);
         p = Portals.ById(m.Id);
         if (m.Mode == 2 && p != null && Portals.Attached && before == (p.Shown, p.Glow, p.Minimap, p.Extra)) return;
-        GD.Print($"live: FieldPortal mode {m.Mode} portal {m.Id}" + (p == null ? "" :
+        if (LiveCheck) GD.Print($"live: FieldPortal mode {m.Mode} portal {m.Id}" + (p == null ? "" :
             $" type {p.Type} target {p.TargetMap} shown {p.Shown} glow {p.Glow}{(p.HasEntity ? "" : " (no entity)")}{(Portals.Attached ? "" : " (held)")}"));
     }
 

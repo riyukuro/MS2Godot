@@ -1163,7 +1163,7 @@ public partial class LiveSession : Node
     {
         bool on = triggerField != null && GodotObject.IsInstanceValid(triggerField) && triggerField.Triggers != null;
         if (on) triggerField.Triggers.ResetCamera(m.Seconds);
-        GD.Print($"live: camera reset over {m.Seconds:0.##} s{(on ? "" : " (no field yet, nothing to reset)")}");
+        if (LiveCheck) GD.Print($"live: camera reset over {m.Seconds:0.##} s{(on ? "" : " (no field yet, nothing to reset)")}");
     }
 
     /// <summary>
@@ -1231,7 +1231,7 @@ public partial class LiveSession : Node
     {
         if (field.Triggers == null) return;
         int n = field.Triggers.Apply(new Maple2.PacketLib.Tools.ByteReader(body));
-        if (n > 0) GD.Print($"live: Trigger applied {n} object event(s)");
+        if (n > 0 && LiveCheck) GD.Print($"live: Trigger applied {n} object event(s)");
     }
 
     /// <summary>A node's position in the client's z-up coordinates (the inverse of the field's G); null without a live node.</summary>
@@ -1530,6 +1530,17 @@ public partial class LiveSession : Node
     /// field tracker; in a town, NpcControl alone arrives about a thousand times a second).</summary>
     internal static readonly bool LogPackets = System.Environment.GetEnvironmentVariable("MS2_LIVE_PACKETS") == "1";
 
+    /// <summary>The lines a scripted live check reads that fire per packet or per event in play (regions, other players and
+    /// npcs, own casts, chat, items, exp and meso, quests, notices, event sounds): on with MS2_LIVE_AUTO=1, the switch every
+    /// scripted live run sets, or with MS2_LIVE_PACKETS=1; off in a normal run, where a map's trap region alone prints its
+    /// damage line many times a minute. MS2_LIVE_CHECK_LOG=0 or 1 overrides it (0 shows a scripted run what a normal run
+    /// prints).</summary>
+    internal static readonly bool LiveCheck = LiveCheckOn(System.Environment.GetEnvironmentVariable("MS2_LIVE_CHECK_LOG"),
+        System.Environment.GetEnvironmentVariable("MS2_LIVE_AUTO"), LogPackets);
+
+    internal static bool LiveCheckOn(string forced, string auto, bool packets) =>
+        forced == "0" ? false : forced == "1" || auto == "1" || packets;
+
     public override void _Process(double delta)
     {
         FieldProperties.StepLights((float)delta);   // WorldService::UpdateAmbientLight/UpdateDirectionalLight (worldservice_1.cpp:9736-9737)
@@ -1585,7 +1596,7 @@ public partial class LiveSession : Node
                     foreach (var b in u.Buffs) OwnBuff(BuffPacket.FromAdd(b) with { FromList = true });
                 }
                 if (self && u.Book != null) { SkillBook = u.Book; SkillBookChanged?.Invoke(-1); }
-                GD.Print($"live: FieldAddUser object {u.ObjectId} {(self ? "SELF" : "other")} char {u.User.CharacterId} '{u.User.Name}' pos {u.Position}");
+                if (self || LiveCheck) GD.Print($"live: FieldAddUser object {u.ObjectId} {(self ? "SELF" : "other")} char {u.User.CharacterId} '{u.User.Name}' pos {u.Position}");
             }
             else if (game.Is(p, Inbound.FieldAddItem))
             {
@@ -1633,7 +1644,7 @@ public partial class LiveSession : Node
                 if (e.Mode == 0 && e.Gained > 0 && remote?.AddNpcExp(e.NpcId, e.Gained) != true) ExpGained?.Invoke(e.Gained, e.Type);
                 // :4174: the own character's exp tally for any mode 0 gain, whoever kept the number (with a local player)
                 if (e.Mode == 0 && e.Gained > 0 && selfObject > 0) BattleRecords.RecordExp(CharacterId, e.Gained);
-                GD.Print($"live: exp up mode {e.Mode} +{e.Gained} exp {Me.Exp} rest {Me.RestExp}");
+                if (LiveCheck) GD.Print($"live: exp up mode {e.Mode} +{e.Gained} exp {Me.Exp} rest {Me.RestExp}");
             }
             else if (game.Is(p, Inbound.ItemDrop)) { }   // CSceneStateGame::FUN_141717560 (scenestategame.cpp:3262) has an empty body: the client does nothing with it
             else if (game.Is(p, Inbound.ItemUpdate))
@@ -1646,13 +1657,13 @@ public partial class LiveSession : Node
                 });
                 if (u.Own && Me.EquipByUid(u.Uid) is { } worn) OwnItemUpdated?.Invoke(worn.Id);
                 if (u.Updated && u.ObjectId != selfObject) remote?.ItemUpdated(u.ObjectId, remote.EquipOf(u.ObjectId, u.Uid).Equip);
-                GD.Print($"live: item update object {u.ObjectId} uid {u.Uid}{(u.Updated ? " (read again)" : u.Own ? " (own, item event)" : "")}");
+                if (LiveCheck) GD.Print($"live: item update object {u.ObjectId} uid {u.Uid}{(u.Updated ? " (read again)" : u.Own ? " (own, item event)" : "")}");
             }
             else if (game.Is(p, Inbound.UserSkinColor))
             {
                 var c = UserSkinColor.Read(p.Reader());   // CSceneStateGame::OnUserSkinColor (scenestategame.cpp:3239)
                 if (c.ObjectId == selfObject && selfObject > 0) OwnSkinColor?.Invoke();   // :3252-3257: only the own player raises the item event hub's slot 0
-                GD.Print($"live: skin colour object {c.ObjectId}");
+                if (LiveCheck) GD.Print($"live: skin colour object {c.ObjectId}");
             }
             else if (game.Is(p, Inbound.BindItem))
             {
@@ -1681,14 +1692,14 @@ public partial class LiveSession : Node
             {
                 var n = ItemDropNotice.Read(p.Reader());   // CSceneStateGame::OnItemDropNotice (scenestategame.cpp:8023)
                 ItemDropNoticed?.Invoke(n);
-                GD.Print($"live: item drop notice item {n.ItemId} uid {n.Uid}");
+                if (LiveCheck) GD.Print($"live: item drop notice item {n.ItemId} uid {n.Uid}");
             }
             else if (game.Is(p, Inbound.Meso))
             {
                 var m = MesoUpdate.Read(p.Reader());
                 long delta = Me.Apply(m);
                 if (delta > 0 && selfObject > 0) BattleRecords.RecordMeso(CharacterId, delta);   // :7016, with a local player
-                GD.Print($"live: meso {m.Balance} ({delta:+#;-#;0}, kind {m.Kind})");
+                if (LiveCheck) GD.Print($"live: meso {m.Balance} ({delta:+#;-#;0}, kind {m.Kind})");
                 MesoChanged?.Invoke(delta, m.Kind);
             }
             else if (game.Is(p, Inbound.Meret)) MeretReceived?.Invoke(MeretUpdate.Read(p.Reader()));
@@ -1716,7 +1727,7 @@ public partial class LiveSession : Node
                 int? oldLevel = selfLevel ? selfOld : remote?.LevelUp(l.ObjectId, l.Level);
                 if (oldLevel is { } was && l.Raises(was)) GameMenuDirty?.Invoke();   // :9537-9539 FindGameMenuDialog(0x4e28)->MarkDirty()
                 if (selfLevel) guide?.OnChangeMyLevel();   // NotifyChangeMyLevel (CGuideManager::OnChangeMyLevel)
-                GD.Print($"live: level up object {l.ObjectId} level {l.Level}{(selfLevel ? " SELF" : "")}");
+                if (selfLevel || LiveCheck) GD.Print($"live: level up object {l.ObjectId} level {l.Level}{(selfLevel ? " SELF" : "")}");
             }
             else if (game.Is(p, Inbound.SyncNumber))
             {
@@ -1739,7 +1750,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.UserMoveByPortal))
             {
                 var m = UserMoveByPortal.Read(p.Reader());
-                GD.Print($"live: MoveByPortal object {m.ObjectId} pos {m.Position} rot {m.Rotation} portal {m.IsPortal}");
+                if (LiveCheck) GD.Print($"live: MoveByPortal object {m.ObjectId} pos {m.Position} rot {m.Rotation} portal {m.IsPortal}");
                 if (m.ObjectId == selfObject) player?.ServerMoveByPortal(new Vector3(m.Position.X, m.Position.Y, m.Position.Z), m.Rotation.Z, m.IsPortal);
             }
             else if (game.Is(p, Inbound.NpcTalk))
@@ -1792,7 +1803,7 @@ public partial class LiveSession : Node
                 bool known = GuideQuests.KnownBefore(Quests, q);   // RemoveQuest's early return on an unknown quest
                 Quests.Apply(q);
                 GuideOnQuest(q, known);
-                GD.Print($"live: quest {q.GetType().Name} ({Quests.All.Count} quests)");
+                if (LiveCheck) GD.Print($"live: quest {q.GetType().Name} ({Quests.All.Count} quests)");
             }
             else if (game.Is(p, Inbound.Party))
             {
@@ -1800,7 +1811,7 @@ public partial class LiveSession : Node
                 Party.Apply(m, CharacterId, PartyWindowOpen());
                 if (m is PartyInvite invite)        // OnPartyInvite (partymanager.cpp:968); no PvP state yet, so no PvP point
                     Ms2.Ui.Hud.PartyInviteBox.OnInvite(invite, GameOptions.AccountCommunity.DisablePartyRequest, false, AnswerPartyInvite);
-                GD.Print($"live: party {m.GetType().Name} ({Party.Members.Count} members)");
+                if (LiveCheck) GD.Print($"live: party {m.GetType().Name} ({Party.Members.Count} members)");
             }
             else if (game.Is(p, Inbound.PartySearch))
             {
@@ -1813,12 +1824,12 @@ public partial class LiveSession : Node
                 var m = GroupChatMessage.Read(p.Reader());   // CGroupChatManager::OnGroupChat (@0x14137f2f0, groupchatmanager.cpp:577)
                 GroupChats.Apply(m);
                 groupChatPackets++;
-                GD.Print($"live: group chat {m.GetType().Name} ({GroupChats.ChatCount} chats)");
+                if (LiveCheck) GD.Print($"live: group chat {m.GetType().Name} ({GroupChats.ChatCount} chats)");
             }
             else if (game.Is(p, Inbound.ItemInventory))
             {
                 ApplyItems(p);
-                GD.Print($"live: item packet ({Items.All.Count} items)");
+                if (LiveCheck) GD.Print($"live: item packet ({Items.All.Count} items)");
             }
             else if (game.Is(p, Inbound.ItemLock))
             {
@@ -1859,33 +1870,33 @@ public partial class LiveSession : Node
                 var o = ItemPutOn.Read(p.Reader(), game.Profile);        // CSceneStateGame::OnItemPutOn (scenestategame.cpp:3080); display only, no c2s answer
                 bool ownEquipment = Me.Apply(o, WornLayer, ItemExists);
                 if (!ownEquipment && o.ObjectId != selfObject) remote?.PutOn(o, WornLayer, ItemExists);
-                GD.Print($"live: item put on {o.Item.Id} uid {o.Item.Uid} slot {o.Item.Slot} kind {o.Kind} by {o.ObjectId}{(ownEquipment ? " (own equipment)" : "")}");
+                if (LiveCheck) GD.Print($"live: item put on {o.Item.Id} uid {o.Item.Uid} slot {o.Item.Slot} kind {o.Kind} by {o.ObjectId}{(ownEquipment ? " (own equipment)" : "")}");
             }
             else if (game.Is(p, Inbound.ItemPutOff))
             {
                 var o = ItemPutOff.Read(p.Reader());       // CSceneStateGame::OnItemPutOff (scenestategame.cpp:3144)
                 bool ownEquipment = Me.Apply(o, WornLayer);
                 if (!ownEquipment && o.ObjectId != selfObject) remote?.PutOff(o, WornLayer);
-                GD.Print($"live: item put off uid {o.ItemUid} by {o.ObjectId}{(ownEquipment ? " (own equipment)" : "")}");
+                if (LiveCheck) GD.Print($"live: item put off uid {o.ItemUid} by {o.ObjectId}{(ownEquipment ? " (own equipment)" : "")}");
             }
             else if (game.Is(p, Inbound.Notice))
             {
                 var n = NoticeMessage.Read(p.Reader());     // CSceneStateGame::OnNotice (scenestategame.cpp:9216); no ExpectEnd: the client ignores trailing bytes
                 Notice?.Invoke(n);
-                GD.Print($"live: notice kind {n.Kind} flags 0x{n.Flags:x} text kind {n.Text.Kind}{(n.Text.Formatted ? $" id {n.Text.Id} args {n.Text.Args.Length}" : $" \"{n.Text.Text}\"")}");
+                if (LiveCheck) GD.Print($"live: notice kind {n.Kind} flags 0x{n.Flags:x} text kind {n.Text.Kind}{(n.Text.Formatted ? $" id {n.Text.Id} args {n.Text.Args.Length}" : $" \"{n.Text.Text}\"")}");
             }
             else if (game.Is(p, Inbound.UserChat))
             {
                 var r = p.Reader();
                 var c = ChatMessage.Read(r);                // UIMessengerBrowser::vfunc_84 (uimessenger.cpp:2829); no ExpectEnd: the client ignores trailing bytes
                 UserChat?.Invoke(c, () => WeddingChatHall.Read(r));
-                GD.Print($"live: chat type 0x{c.Type:x} from {c.Name}{(c.Common ? $" common {c.CommonId}" : "")}");
+                if (LiveCheck) GD.Print($"live: chat type 0x{c.Type:x} from {c.Name}{(c.Common ? $" common {c.CommonId}" : "")}");
             }
             else if (game.Is(p, Inbound.UserChatItemLink))
             {
                 var links = ChatItemLinks.Read(p.Reader());  // UIMessengerBrowser::vfunc_85 (uimessenger.cpp:2963); no ExpectEnd: the client ignores trailing bytes
                 UserChatItemLink?.Invoke(links);
-                GD.Print($"live: chat item links {links.Items.Count}");
+                if (LiveCheck) GD.Print($"live: chat item links {links.Items.Count}");
             }
             else if (game.Is(p, Inbound.BadgeEquip))
             {
@@ -1893,7 +1904,7 @@ public partial class LiveSession : Node
                 bool ownGems = Me.Apply(b);
                 if (b.Mode == 4) GemEquipError?.Invoke(b.Error);
                 else if (b.Mode is 0 or 1) BadgeEquipped?.Invoke(b);
-                GD.Print($"live: badge equip mode {b.Mode} by {b.ObjectId}{(b.Mode == 4 ? $" error {b.Error}" : "")}{(ownGems ? " (own gems)" : "")}");
+                if (LiveCheck) GD.Print($"live: badge equip mode {b.Mode} by {b.ObjectId}{(b.Mode == 4 ? $" error {b.Error}" : "")}{(ownGems ? " (own gems)" : "")}");
             }
             else if (game.Is(p, Inbound.Taxi))
             {
@@ -2024,7 +2035,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.ItemPutOnOrOff))
             {
                 var o = ItemPutOnOrOff.Read(p.Reader());   // CSceneStateGame::OnItemPutOnOrOff (scenestategame.cpp:2575); read only, no c2s answer
-                GD.Print($"live: item put on/off {o}");
+                if (LiveCheck) GD.Print($"live: item put on/off {o}");
             }
             else if (game.Is(p, Inbound.KeyTable))
             {
@@ -2059,7 +2070,7 @@ public partial class LiveSession : Node
                 var m = AchieveMessage.Read(p.Reader());          // CAchieveManager::OnPacket (achievemanager.cpp:499, via networkservice.cpp:679)
                 bool refresh = m != null && Achieves.Apply(m);
                 if (refresh) AchievesChanged?.Invoke();
-                GD.Print($"live: achieve {m?.GetType().Name ?? "other mode"} (tally {Achieves.Sum})");
+                if (LiveCheck) GD.Print($"live: achieve {m?.GetType().Name ?? "other mode"} (tally {Achieves.Sum})");
             }
             else if (game.Is(p, Inbound.Mail))
             {
@@ -2083,13 +2094,13 @@ public partial class LiveSession : Node
             {
                 var m = BuddyMessage.Read(p.Reader());            // CSceneStateGame::OnBuddy -> CBuddyManager::OnBuddy (buddymanager.cpp:95)
                 if (m != null) { Buddies.Apply(m); BuddyPacket?.Invoke(m); }
-                GD.Print($"live: buddy protocol {m?.Protocol.ToString() ?? "?"} ({Buddies.Count} entries, {Buddies.ReceivedCount} received)");
+                if (LiveCheck) GD.Print($"live: buddy protocol {m?.Protocol.ToString() ?? "?"} ({Buddies.Count} entries, {Buddies.ReceivedCount} received)");
             }
             else if (game.Is(p, Inbound.Guild))
             {
                 var m = GuildMessage.Read(p.Reader(), game.Profile);            // CGuildManager::FUN_1413b6370 (guildmanager.cpp:301)
                 Guilds.Apply(m);
-                GD.Print($"live: guild type 0x{m.Type:x2} (guild {Guilds.GuildId}, {Guilds.MyRequests.Count} mine, {Guilds.RequestsForGuild.Count} for the guild, {Guilds.SearchResults.Count} results)");
+                if (LiveCheck) GD.Print($"live: guild type 0x{m.Type:x2} (guild {Guilds.GuildId}, {Guilds.MyRequests.Count} mine, {Guilds.RequestsForGuild.Count} for the guild, {Guilds.SearchResults.Count} results)");
             }
             else if (game.Is(p, Inbound.Prestige))
             {
@@ -2126,7 +2137,8 @@ public partial class LiveSession : Node
                 if (m is Ms2.Net.Packets.RegionSkillMessage.Add add) regionSkills[m.Id] = (add.SkillId, add.Level);
                 else if (m is Ms2.Net.Packets.RegionSkillMessage.Remove) regionSkills.Remove(m.Id);
                 if (m != null) { RegionSkillLog.Add(m); RegionSkillReceived?.Invoke(m); }
-                if (m is Ms2.Net.Packets.RegionSkillMessage.Add ra) GD.Print($"live: region {ra.Id} add, skill {ra.SkillId} level {ra.Level}, owner {ra.OwnerId}, {ra.Points.Length} point(s), first {(ra.Points.Length > 0 ? ra.Points[0] : default)}");
+                if (!LiveCheck) { }
+                else if (m is Ms2.Net.Packets.RegionSkillMessage.Add ra) GD.Print($"live: region {ra.Id} add, skill {ra.SkillId} level {ra.Level}, owner {ra.OwnerId}, {ra.Points.Length} point(s), first {(ra.Points.Length > 0 ? ra.Points[0] : default)}");
                 else if (m != null) GD.Print($"live: region {m.Id} {m.GetType().Name}");
             }
             else if (game.Is(p, Inbound.FieldProperty))
@@ -2173,7 +2185,7 @@ public partial class LiveSession : Node
                 if (d.Mode == 5 && d.Raw == null)
                 {
                     var hit = FieldEffects?.PlayHit(d.RegionId);
-                    GD.Print($"live: region {d.RegionId} damage, {d.Targets.Count} target(s), hit effect {hit ?? "no field"}");
+                    if (LiveCheck) GD.Print($"live: region {d.RegionId} damage, {d.Targets.Count} target(s), hit effect {hit ?? "no field"}");
                 }
                 // mode 3's caster test is PCBase (players, npcs and pets; the tracker keeps the first two, and a pet
                 // is a PCBase in the client, so a pet's DoT on the own player cancels there but not here yet)
@@ -2201,14 +2213,14 @@ public partial class LiveSession : Node
                     else if (m is MasteryMessage.RewardReceived r) Mastery.MarkReceived(r.RewardId);
                     MasteryReceived?.Invoke(m, gain, oldGrade, up);
                 }
-                GD.Print($"live: mastery {m?.GetType().Name ?? "other mode"}");
+                if (LiveCheck) GD.Print($"live: mastery {m?.GetType().Name ?? "other mode"}");
             }
             else if (game.Is(p, Inbound.Fishing))
             {
                 var m = FishingBook.Receive(p.Reader(), FishingFeature(), out var changed);   // feature 0xb, then modes 7 (the list) and 8 (a catch); the others are not the book's
                 if (changed)
                     FishingReceived?.Invoke(m);
-                GD.Print($"live: fishing {m?.GetType().Name ?? "other mode"} ({FishingBook.Count} fish)");
+                if (LiveCheck) GD.Print($"live: fishing {m?.GetType().Name ?? "other mode"} ({FishingBook.Count} fish)");
             }
             else if (game.Is(p, Inbound.Breakable))
                 Breakables.Apply(BreakableUpdate.Read(p.Reader()));     // OnBreakable (scenestategame.cpp:3667)
@@ -2308,7 +2320,7 @@ public partial class LiveSession : Node
         string key = images.Mode == 1 ? "" : pi.Key ?? "";
         long id = pi.ObjectId == selfObject ? CharacterId
             : remote?.Tracker.Snapshot().FirstOrDefault(a => a.Add?.ObjectId == pi.ObjectId)?.Add?.User?.CharacterId ?? 0;
-        GD.Print($"live: profile picture object {pi.ObjectId} char {pi.CharacterId} '{key}'{(id == 0 ? " (no such PC)" : "")}");
+        if (LiveCheck) GD.Print($"live: profile picture object {pi.ObjectId} char {pi.CharacterId} '{key}'{(id == 0 ? " (no such PC)" : "")}");
         if (id == 0) return;
         images.Path(id, key, false);
         images.Changed(pi.CharacterId, key);

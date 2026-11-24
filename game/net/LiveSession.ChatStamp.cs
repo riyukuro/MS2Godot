@@ -30,6 +30,6 @@ public partial class LiveSession
     {
         if (m == null || selfObject < 0) return;
         ChatEmoticons.Apply(m);
-        GD.Print($"live: ChatStamp {m.GetType().Name}");
+        if (LiveCheck) GD.Print($"live: ChatStamp {m.GetType().Name}");
     }
 }
