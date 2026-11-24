@@ -52,7 +52,9 @@ public partial class DevEndpoint
         return res;
     }
 
-    static readonly Regex RenderModeRx = new(@"render_mode\s+([^;]+);", RegexOptions.Compiled);
+    // generated at build time: a RegexOptions.Compiled field was parsed and emitted as IL by this class's static
+    // constructor at every start, with the endpoint off too
+    [GeneratedRegex(@"render_mode\s+([^;]+);")] private static partial Regex RenderModeRx();
 
     JsonObject DescribeMaterial(string where, Material m, GeometryInstance3D owner)
     {
@@ -70,7 +72,7 @@ public partial class DevEndpoint
                 if (shader == null) { j["shader"] = null; break; }
                 j["shader"] = string.IsNullOrEmpty(shader.ResourcePath) ? "<inline>" : shader.ResourcePath;
                 j["shaderMode"] = shader.GetMode().ToString();
-                if (RenderModeRx.Match(shader.Code ?? "") is { Success: true } rm)
+                if (RenderModeRx().Match(shader.Code ?? "") is { Success: true } rm)
                     j["renderMode"] = rm.Groups[1].Value.Trim();
                 var inst = new HashSet<string>();
                 if (owner != null)

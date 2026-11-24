@@ -108,4 +108,38 @@ public class NifScopeTests
         Assert.That(n, Is.GreaterThan(0));
         Assert.That(differ, Is.Zero);
     }
+    /// <summary>
+    /// The expression tokenizer's patterns are generated at build time (no runtime parse or IL emit): over every
+    /// expression nif.xml has for this version, the generated regexes split and match each part as a run-time Regex of
+    /// the same pattern does.
+    /// </summary>
+    [Test]
+    public void GeneratedPatternsTokenizeEveryExpressionAsRuntimeRegex()
+    {
+        var nx = NifEnv.NifXml();
+        var spec = new NifSpec(nx, NifSpec.V30_2_0_3, 0, 0);
+        var root = System.Xml.Linq.XDocument.Load(nx).Root!;
+        var sources = new HashSet<string>();
+        foreach (var n in root.Elements().Where(e => e.Name.LocalName is "struct" or "niobject").Select(e => (string)e.Attribute("name")).Where(n => n != null).Distinct())
+            foreach (var f in spec.Fields(n))
+                foreach (var x in new[] { f.Cond, f.Length, f.Width }.Concat(f.Args.Select(a => a.expr)))
+                    if (x?.Source != null) sources.Add(x.Source);
+        Assert.That(sources, Has.Count.GreaterThan(100));
+        var ops = new System.Text.RegularExpressions.Regex(NifExpr.Ops().ToString());
+        var ver = new System.Text.RegularExpressions.Regex(NifExpr.VerLit().ToString());
+        var num = new System.Text.RegularExpressions.Regex(NifExpr.NumLit().ToString());
+        int parts = 0;
+        foreach (var src in sources)
+        {
+            Assert.That(NifExpr.Ops().Split(src), Is.EqualTo(ops.Split(src)), src);
+            foreach (var part in ops.Split(src).Select(p => p.Trim()).Where(p => p.Length > 0))
+            {
+                parts++;
+                Assert.That(NifExpr.Ops().Match(part).Length, Is.EqualTo(ops.Match(part).Length), part);
+                Assert.That(NifExpr.VerLit().IsMatch(part), Is.EqualTo(ver.IsMatch(part)), part);
+                Assert.That(NifExpr.NumLit().IsMatch(part), Is.EqualTo(num.IsMatch(part)), part);
+            }
+        }
+        TestContext.WriteLine($"{sources.Count} expressions, {parts} parts");
+    }
 }

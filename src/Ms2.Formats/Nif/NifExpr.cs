@@ -9,11 +9,13 @@ namespace Ms2.Formats.Nif;
 /// || &lt; &amp;&amp; &lt; ! &lt; comparisons &lt; | &lt; &amp; &lt; shifts &lt; + - &lt; * / &lt; unary - ~.
 /// All values are doubles; bitwise operators work on the integer part.
 /// </summary>
-public sealed class NifExpr
+public sealed partial class NifExpr
 {
-    static readonly Regex Ops = new(@"(\|\||&&|==|!=|<=|>=|<<|>>|[-+*/()<>!&|~])", RegexOptions.Compiled);
-    static readonly Regex VerLit = new(@"^\d+\.\d+\.\d+\.\d+$", RegexOptions.Compiled);
-    static readonly Regex NumLit = new(@"^(0x[0-9a-fA-F]+|\d+(\.\d*)?([eE][-+]?\d+)?)$", RegexOptions.Compiled);
+    // generated at build time, so this library's precompiled image holds them: a RegexOptions.Compiled pattern is parsed
+    // and emitted as IL at run time, and its methods compiled by the JIT, at every start
+    [GeneratedRegex(@"(\|\||&&|==|!=|<=|>=|<<|>>|[-+*/()<>!&|~])")] internal static partial Regex Ops();
+    [GeneratedRegex(@"^\d+\.\d+\.\d+\.\d+$")] internal static partial Regex VerLit();
+    [GeneratedRegex(@"^(0x[0-9a-fA-F]+|\d+(\.\d*)?([eE][-+]?\d+)?)$")] internal static partial Regex NumLit();
 
     abstract class Node
     {
@@ -112,13 +114,13 @@ public sealed class NifExpr
     public static NifExpr Compile(string expanded)
     {
         var toks = new List<(char, string, double)>();
-        foreach (var part in Ops.Split(expanded))
+        foreach (var part in Ops().Split(expanded))
         {
             var q = part.Trim();
             if (q.Length == 0) continue;
-            if (Ops.IsMatch(q) && Ops.Match(q).Length == q.Length) toks.Add(('o', q, 0));
-            else if (VerLit.IsMatch(q)) toks.Add(('n', q, ParseVersion(q)));
-            else if (NumLit.IsMatch(q))
+            if (Ops().IsMatch(q) && Ops().Match(q).Length == q.Length) toks.Add(('o', q, 0));
+            else if (VerLit().IsMatch(q)) toks.Add(('n', q, ParseVersion(q)));
+            else if (NumLit().IsMatch(q))
                 toks.Add(('n', q, q.StartsWith("0x") ? Convert.ToInt64(q[2..], 16) : double.Parse(q, CultureInfo.InvariantCulture)));
             else if (q == "INFINITY") toks.Add(('n', q, double.PositiveInfinity));
             else toks.Add(('i', q, 0));
