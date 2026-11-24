@@ -140,6 +140,7 @@ public sealed class GameTables
         StoreExpandPrice1Row = (int)whole("StoreExpandPrice1Row", StoreExpandPrice1Row);
         StoreDepositMax = (int)whole("StoreDepositMax", StoreDepositMax);
         StoreWithdrawMax = (int)whole("StoreWithdrawMax", StoreWithdrawMax);
+        InventoryExpandPrice1Row = whole("InventoryExpandPrice1Row", InventoryExpandPrice1Row);
         ItemUnLockTime = (uint)whole("ItemUnLockTime", ItemUnLockTime);
         // SkillDataTable::LoadSkillData (skilloverlapcompare.cpp:1195): every ./Data/Xml/SkillData/*.xml (FindSkillFiles
         // :1352, not recursive), read on first use
@@ -524,6 +525,9 @@ public sealed class GameTables
     /// StoreWithdrawMax (+0x45b0), all Define default 0 (unit_1402ab440_constantsblocks.cpp:929-932): the bank's most extra slots,
     /// the price of an expansion and the most mesos one deposit / withdrawal moves.</summary>
     public int StoreExpandMaxSlotCount, StoreExpandPrice1Row, StoreDepositMax, StoreWithdrawMax;
+    /// <summary>Client::Constants InventoryExpandPrice1Row (+0x6ee8, Define default 390: unit_1402ab440_constantsblocks.cpp:1055):
+    /// the merets of a bag expand (Unk_Inventory::FUN_140a5d0f0).</summary>
+    public long InventoryExpandPrice1Row = 390;
     /// <summary>Client::Constants ItemUnLockTime (Define default 259200, constantsblocks.cpp:1027): seconds an unlock request waits; the lock dialog shows it in hours.</summary>
     public uint ItemUnLockTime = 259200;
     /// <summary>table/job.xml and skilldata/*.xml (JobTable, SkillDataTable); empty without data.</summary>

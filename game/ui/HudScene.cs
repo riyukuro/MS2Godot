@@ -1591,7 +1591,21 @@ public partial class HudScene : Node, IUiStageHost
                         ChatLog.AddItemLine(item, (uint)count);
                 };
                 live.Items.NotifiedNew += onNew;
-                unwatchNewItems = () => live.Items.NotifiedNew -= onNew;
+                // OnItemInventory's answers (scenestategame.cpp:2951-3027): mode 0xd's error, mode 0xa's expand done, and mode 0xc's
+                // expand effect while the inventory is open
+                Action<int, int, int> onError = (code, id, value) => ShowItemAnswer(Ms2.Net.Packets.ItemInventoryAnswer.Error(code, id, value));
+                Action onExpandDone = () => ShowItemAnswer(Ms2.Net.Packets.ItemInventoryAnswer.ExpandDone);
+                Action<int> onExtraSlots = _ => { if (inventory != null && !inventory.IsClosed) inventory.PlayExpandEffect(); };
+                live.Items.ErrorReceived += onError;
+                live.Items.ExpandCompleted += onExpandDone;
+                live.Items.ExtraSlotsSet += onExtraSlots;
+                unwatchNewItems = () =>
+                {
+                    live.Items.NotifiedNew -= onNew;
+                    live.Items.ErrorReceived -= onError;
+                    live.Items.ExpandCompleted -= onExpandDone;
+                    live.Items.ExtraSlotsSet -= onExtraSlots;
+                };
             }
         }
         foreach (var (m, _) in messengers) ui.AddChild(m);
@@ -1704,6 +1718,18 @@ public partial class HudScene : Node, IUiStageHost
     }
 
     Action unwatchNewItems;
+
+    /// <summary>An ItemInventory answer shown as OnItemInventory shows it: a message box, or the system notice (FUN_141275260(id, 1, 1)),
+    /// then its system sound.</summary>
+    void ShowItemAnswer(Ms2.Net.Packets.ItemInventoryAnswer a)
+    {
+        string text = Ms2.Ui.Hud.InventoryController.AnswerText(a, hudModel.Tables);
+        if (a.Kind == Ms2.Net.Packets.ItemAnswerKind.Service) NotApplied.Print("inventory: the meret purchase dialog (CUIService::FUN_141add1f0) is not ported");
+        else if (Ms2.Ui.Hud.InventoryController.AnswerIsBox(a)) MessageBoxQueue.ShowMessageBox(text, 0, null, "");
+        else SystemNoticeText(text);
+        if (a.Sound != null && FieldAudio.Instance?.PlayUi(a.Sound) != true) GD.Print($"inventory: system sound {a.Sound} is not played");
+        GD.Print($"inventory: answer {a.Kind} 0x{a.StringId:x}{(a.Key != null ? " " + a.Key : "")} \"{text}\"");
+    }
 
     const int PickupAction = 0x493e3;   // the "get" action (MyPC::FUN_141530db0's IsActionKeyDown)
 
@@ -3300,14 +3326,17 @@ public partial class HudScene : Node, IUiStageHost
         // HandleRequestTradeExButton -> FUN_14185b8e0 (the answer); HandleTradeInButton -> the inventory's count check and add
         Action<long, bool> tradeAnswer = (id, yes) => Trades?.SendAnswer(id, yes);
         Action<long, int> tradeIn = (uid, n) => inventory?.TradeIn(uid, n);
-        Func<long, int, bool> sellValid = (uid, n) => inventory?.IsSellCountValid(uid, n) ?? true;
+        Func<long, int, bool> sellValid = (uid, n) => inventory?.IsItemCountValid(uid, n) ?? true;
+        Action<long, int> drop = (uid, n) => inventory?.ConfirmDrop(uid, n);
+        Action<long> destroy = uid => { if (Ms2Godot.Net.LiveSession.Instance?.Me != null) inventory?.ConfirmDestroy(uid); };   // no local player: nothing (uimessagebox.cpp:1357)
         Action<long, int> sellItem = (uid, n) => inventory?.SellCountStep(uid, n);
         Action<long, int> sellConfirm = (uid, n) => inventory?.SellConfirmStep(uid, n);
         boxes.RequestTradeAnswer = tradeAnswer; boxes.TradeIn = tradeIn;
         Action<long, int> storeIn = (uid, n) => store?.UseStoreIn(uid, n), storeOut = (uid, n) => store?.UseStoreOut(uid, n);
         Action<long, int, int> swapIn = (uid, slot, n) => store?.SwapStoreIn(uid, slot, n);
         boxes.UseStoreIn = storeIn; boxes.UseStoreOut = storeOut; boxes.SwapStoreIn = swapIn;
-        boxes.SellCountValid = sellValid; boxes.SellItem = sellItem; boxes.SellConfirm = sellConfirm;
+        boxes.ItemCountValid = sellValid; boxes.SellItem = sellItem; boxes.SellConfirm = sellConfirm;
+        boxes.DropItem = drop; boxes.DestroyItem = destroy;
         boundBoxes = boxes;
         unbindBoxAnswers = () =>
         {
@@ -3319,7 +3348,9 @@ public partial class HudScene : Node, IUiStageHost
             if (boxes.UseStoreIn == storeIn) boxes.UseStoreIn = null;
             if (boxes.UseStoreOut == storeOut) boxes.UseStoreOut = null;
             if (boxes.SwapStoreIn == swapIn) boxes.SwapStoreIn = null;
-            if (boxes.SellCountValid == sellValid) boxes.SellCountValid = null;
+            if (boxes.ItemCountValid == sellValid) boxes.ItemCountValid = null;
+            if (boxes.DropItem == drop) boxes.DropItem = null;
+            if (boxes.DestroyItem == destroy) boxes.DestroyItem = null;
             if (boxes.SellItem == sellItem) boxes.SellItem = null;
             if (boxes.SellConfirm == sellConfirm) boxes.SellConfirm = null;
             boundBoxes = null;
@@ -3403,6 +3434,14 @@ public partial class HudScene : Node, IUiStageHost
         c.BreakSlotDropped = (uid, mine) => itemBreak?.DroppedOnInventory(uid, mine);
         c.ItemSound += item => GD.Print($"inventory: item sound {item?.ItemId} (the material sounds are not ported)");
         c.NoticeText += SystemNoticeText;
+        // an item dragged off the bag (InvenSlot::vfunc_17 / vfunc_26) and the bag expand (RequestExpandSlots)
+        c.CursorOverUi = () => As3View.AnyMouseOverUi(GetViewport());
+        c.IsSummoned = uid => live?.Me?.Pet is { } pet && pet.Uid == uid;
+        c.CharacterId = () => live?.CharacterId ?? 0;
+        c.ItemUseError = item => itemUse?.Error(item) ?? 0;
+        c.OpenDialog = id => GD.Print($"inventory: dialog 0x{id:x} is not in this HUD");
+        c.MeratBalance = () => Ms2.Ui.Shop.CurrencyWallet.Merat(hudModel.Player);
+        c.MeretPurchase = () => NotApplied.Print("inventory: the meret purchase dialog (CUIService::FUN_141add1f0) is not ported");
         BindBoxAnswers();
         var m = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
         c.Unloaded += () =>

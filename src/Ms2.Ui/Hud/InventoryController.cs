@@ -352,8 +352,9 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
             case "notifyslotshiftclick": return SlotShiftClick(args);
             case "onclickitemmerge": OnClickItemMerge(); return true;
             case "onclickitemoption": case "onclickitemenchanttransform": case "onclickunlimitedenchant":
-            case "onitemsearch": case "onclickslotexpand":
+            case "onitemsearch":
                 Button?.Invoke(name); return true;
+            case "onclickslotexpand": OnClickSlotExpand(args); return true;
             // these two fall through to "return 0" in the client (:945-951, :979-981)
             case "onclickitemremakeoption": case "onclickopenbank":
                 Button?.Invoke(name); return false;
@@ -439,13 +440,261 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     }
 
     /// <summary>
-    /// The branch NotifyDragSlot::SlotDragEnd picks by FUN_1422aeed0(2), vfunc_12 or vfunc_17 (InvenSlot::vfunc_17,
-    /// invenslot.cpp:1109, the drop-the-item path), is open: the slot is pushed again and the callback raised.
+    /// NotifyDragSlot::SlotDragEnd (notifydragslot.cpp:113-118) for a drag that ended on no drag slot: GFxManager::FUN_1422aeed0(2),
+    /// the UI movie's cursor hit flag (CUIService::FUN_141aec760 sets it from the UI movie's hit test every 50 ms,
+    /// uiservice.cpp:2896-2910), picks vfunc_12 (over the UI: the slot pushed again) or vfunc_17 (over the world: the item
+    /// leaves the bag, <see cref="DragOut"/>).
     /// </summary>
     public void SlotDropUnresolved(string name)
     {
+        if (CursorOverUi()) { RefreshSlot(name); return; }
+        DragOut(name);
+    }
+
+    // ---- an item dragged off the bag (InvenSlot::vfunc_17 @0x141407ab0, vfunc_26 @0x1414092c0, invenslot.cpp:1109, :1379) ----
+
+    /// <summary>The drop and destroy boxes' tags (s_strDrop "drop", s_strDestroyItem "destroy_item", uimessagebox.cpp:57-58),
+    /// answered by UIMessageBox::HandleDropButton / HandleDestroyItemButton.</summary>
+    public const string DropBox = "drop", DestroyBox = "destroy_item";
+    /// <summary>ItemTagKey 0xd8 (CItemDataTable::AddItemTag, itemdatatable.cpp:1459): the stringTag vfunc_26 refuses while the pet dialog is open.</summary>
+    public const string PetExpTag = "PetEXP";
+    /// <summary>The pet dialog (0x4f38) and the VIP dialog vfunc_26 opens for a VIP item (0x4f1b).</summary>
+    public const int PetDialogId = 0x4f38, VipDialogId = 0x4f1b;
+    /// <summary>FUN_141275260(0x88a, 1, 1): common 2186 (commonstringtable.cpp:3799), the guide's item drop limit.</summary>
+    public const string ItemDropLimitNotice = "s_tutorial_itemdrop_limit";
+    /// <summary>PCBase::FUN_141656a80: the local player's character id (GetBindingOwnerName gives its own name for its binding).</summary>
+    public Func<long> CharacterId = () => 0;
+
+    /// <summary>GFxManager::FUN_1422aeed0(2): the cursor is over the UI, as last sampled. True by default: a drag off a slot
+    /// returns the item.</summary>
+    public Func<bool> CursorOverUi = () => true;
+    /// <summary>MyPC::FUN_141676a10()->GetMaidUid(): the maid item uid of the ride, 0 with none.</summary>
+    public Func<long> RideMaidUid = () => 0;
+    /// <summary>MyPC::FUN_141676b00(uid): the item is summoned (the summoned pet's item).</summary>
+    public Func<long, bool> IsSummoned = _ => false;
+    /// <summary>CUIService::IsDialogOpen(id).</summary>
+    public Func<int, bool> IsDialogOpen = _ => false;
+    /// <summary>CUIService::OpenDialog(id).</summary>
+    public Action<int> OpenDialog;
+    /// <summary>CPhysXHelper::CastRay from the player straight down (groups 0x389): a floor under the player. True by default.</summary>
+    public Func<bool> FloorBelow = () => true;
+    /// <summary>Unk_Inventory::GetItemUseError (inventory.cpp:1578) for the local player; 0 by default.</summary>
+    public Func<Item, int> ItemUseError = _ => 0;
+    /// <summary>FUN_1409e4950 (astooltip.cpp:5272): the high option text of an item, null without. STILL-OPEN: not ported,
+    /// so no host sets it and the destroy box has no option line.</summary>
+    public Func<Item, string> HighOptionText = _ => null;
+
+    /// <summary>The quests that use the item (CQuestManager::GetQuestItemLinks, <see cref="UiModel.QuestItemLinks"/>).</summary>
+    IReadOnlyList<QuestItemLink> QuestLinks(Item item) => Model?.QuestItemLinks?.Invoke(item) ?? Array.Empty<QuestItemLink>();
+
+    /// <summary>FUN_14140c2b0 (invenslot.cpp:1819): the names of the quests that use the item, one per line
+    /// (GetQuestNameWithLevel with s_msg_tooltip_quest_name).</summary>
+    string QuestNames(Item item)
+    {
+        var links = QuestLinks(item);
+        if (links.Count == 0) return "";
+        var t = new ItemTooltip(Model, 0);
+        return string.Join("\n", links.Select(l => t.QuestNameWithLevel(l.QuestId, "s_msg_tooltip_quest_name")));
+    }
+
+    /// <summary>
+    /// InvenSlot::vfunc_17: the slot's item through vfunc_26; the slot is pushed again (vfunc_12) whatever the result, and
+    /// result 1 drops the item (FUN_14140c4d0). STILL-OPEN: the blocked action 0x14 (CBlockManager::FindBlockedAction) is not
+    /// ported, so no drop is blocked by it.
+    /// </summary>
+    public void DragOut(string name)
+    {
+        Item item = FindSlotItem(name);
+        int result = CanDragOut(item);
         RefreshSlot(name);
-        Button?.Invoke("notifySlotDragEnd");
+        if (result == 1) DropItem(item.Uid, (int)item.Count, (int)item.Data.SlotMax);
+    }
+
+    /// <summary>
+    /// InvenSlot::vfunc_26, in the client's order: no item or data, 0. The guide restriction 6 (item drop): notice 0x88a. A dead
+    /// player: box 0x42. The ride's maid or a summoned item: box 0x71. CItemLockManager::CanUseItem refuses (its box). A
+    /// socketed gem (CItemSocket::FUN_140622750): box s_itembreak_usedgemstone_item. A pet item, or a PetEXP item, while the
+    /// pet dialog is open: box s_err_cannot_destroy_petsystem_opendialog. The score being played: box
+    /// s_play_instrument_cant_destroy_score. An item that cannot go on the ground (CanDestroyItem) shows the destroy box
+    /// (<see cref="ShowDestroyBox"/>) and gives 0 when it has a reason. No floor under the player: 0. Else 1.
+    /// </summary>
+    public int CanDragOut(Item item)
+    {
+        if (item?.Data == null || Model == null) return 0;
+        if (Guide.GuideManager.Current?.IsRestricted(Guide.GuideLimit.ItemDrop) == true)
+        {
+            SystemNotice?.Invoke(ItemDropLimitNotice);
+            return 0;
+        }
+        if (LocalPlayerDead()) { ShowBox(MessageBoxQueue.Create(0, Model.Tables.Common(0x42), null, "")); return 0; }
+        long ride = RideMaidUid();
+        if ((ride != 0 && ride == item.Uid) || IsSummoned(item.Uid)) { ShowBox(MessageBoxQueue.Create(0, Model.Tables.Common(0x71), null, "")); return 0; }
+        if (!LockAllows(item)) return 0;
+        if (!ItemTradeRules.NoSetGem(item.Record?.Socket, GemData)) { ShowCommonBox("s_itembreak_usedgemstone_item"); return 0; }
+        if ((item.Data.IsPetItem || string.Equals(item.Data.StringTag, PetExpTag, StringComparison.OrdinalIgnoreCase)) && IsDialogOpen(PetDialogId))
+        {
+            ShowCommonBox("s_err_cannot_destroy_petsystem_opendialog");
+            return 0;
+        }
+        if (item.Data.IsScoreItem && PlayingScoreUid() == item.Uid) { ShowCommonBox("s_play_instrument_cant_destory_score"); return 0; }
+        if (!ItemTradeRules.CanDrop(item, GemData, Now) && ShowDestroyBox(item)) return 0;
+        return FloorBelow() ? 1 : 0;
+    }
+
+    /// <summary>CItemTransfer::GetBindingOwnerName (itemsocketsystemutil.cpp:2865): the local player's name when the binding is
+    /// its own character id, else the binding's name.</summary>
+    string BindingOwnerName(ItemTransfer t) => Model.HasLocalPlayer && CharacterId() == t.BindingId ? Pc.Name : t.BindingName;
+
+    /// <summary>CItemLockManager::CanUseItem (unit_1406125d0_itemlockmanager.cpp:230): a locked item or gem shows the box 0x22
+    /// (for a gem with confirmMsg = "$s_itemlock_msgbox_lock_gemstone_notice") and refuses.</summary>
+    bool LockAllows(Item item)
+    {
+        if (ItemTradeRules.NotLocked(item, Now, out int lockReason)) return true;
+        var box = MessageBoxQueue.Create(0x22, "", null, "");
+        if (lockReason == 2) box.Values["confirmMsg"] = "$s_itemlock_msgbox_lock_gemstone_notice";
+        ShowBox(box);
+        return false;
+    }
+
+    /// <summary>
+    /// vfunc_26's CanDestroyItem branch (invenslot.cpp:1433-1488): the reason, in order: a quest uses the item
+    /// (s_item_err_questitem_destroy with the quest names); a bound item (common 0xd9 with the binding's owner name,
+    /// CItemTransfer::GetBindingOwnerName); a bound gem (FindFirstBoundGem) with a bind name
+    /// (s_item_err_cannot_drop_if_binding_in_socket; a bound gem without a name gives no reason); a VIP item (GetItemUseError
+    /// 7: s_item_err_cannot_vip_drop, and the VIP dialog opens); else common 0xd8 with the item's name. With a reason, the box
+    /// (type 0x11, tag "destroy_item", the item uid, Enter does not answer, the item entry with its count, buttons 0x475 /
+    /// 0x476) shows the high option text (FUN_1409e4950) on a line before it, and true; without one, false.
+    /// </summary>
+    bool ShowDestroyBox(Item item)
+    {
+        string error = "";
+        var t = Model.Tables;
+        if (QuestLinks(item).Count != 0)
+            error = Ms2.Quest.ClientFormat.Format(t.Common("s_item_err_questitem_destroy") ?? "", QuestNames(item));
+        else if (item.Record?.Transfer is { HasBinding: true } tr)
+            error = Ms2.Quest.ClientFormat.Format(t.Common(0xd9), BindingOwnerName(tr));
+        else if (item.Record?.Socket?.Gems.FirstOrDefault(g => g != null && ItemTradeRules.GemBound(g)) is { } gem)
+        {
+            if (!string.IsNullOrEmpty(gem.BindName))
+                error = Ms2.Quest.ClientFormat.Format(t.Common("s_item_err_cannot_drop_if_binding_in_socket") ?? "", gem.BindName);
+        }
+        else if (ItemUseError(item) == 7)
+        {
+            error = t.Common("s_item_err_cannot_vip_drop") ?? "";
+            OpenDialog?.Invoke(VipDialogId);
+        }
+        else error = Ms2.Quest.ClientFormat.Format(t.Common(0xd8), t.ItemName(item.ItemId));
+        if (error.Length == 0) return false;
+        string prefix = HighOptionText(item);
+        string text = string.IsNullOrEmpty(prefix) ? error : prefix + "\n" + error;
+        var box = MessageBoxQueue.Create(0x11, text, null, DestroyBox);
+        box.ItemUid = item.Uid;
+        box.EnterAllowed = false;
+        box.SetItemEntry(item, new ItemTooltip(Model, 0).Name(item), 1, (int)item.Count, -1, -1, 1, t.Items.TextColor);
+        box.SetButtonLabelIds(0x475, 0x476, 0);
+        ShowBox(box);
+        return true;
+    }
+
+    /// <summary>
+    /// FUN_14140c4d0 (invenslot.cpp:1840): one item no quest uses goes at once (SendRequestItemInventoryMode4(uid, count)); else
+    /// a box asks, tag "drop": a stack, type 0xd with s_msg_item_drop (s_msg_quest_item_drop_stack with the quest names when a
+    /// quest uses it); one quest item, type 0x11 with s_msg_quest_item_drop. The box has the item uid, the count input (mode 1,
+    /// the count, as many digits as the slot max has), the item entry, buttons 0x477 / 0x478.
+    /// </summary>
+    public void DropItem(long uid, int count, int max)
+    {
+        var item = FindItem(uid);
+        bool quest = item != null && QuestLinks(item).Count != 0;
+        if (count > 1 || quest)
+        {
+            var t = Model.Tables;
+            int type;
+            string text;
+            if (count > 1)
+            {
+                type = 0xd;
+                text = quest ? Ms2.Quest.ClientFormat.Format(t.Common("s_msg_quest_item_drop_stack") ?? "", QuestNames(item)) : t.Common("s_msg_item_drop") ?? "";
+            }
+            else
+            {
+                type = 0x11;
+                text = Ms2.Quest.ClientFormat.Format(t.Common("s_msg_quest_item_drop") ?? "", QuestNames(item));
+            }
+            if (item == null) return;
+            var box = MessageBoxQueue.Create(type, text, null, DropBox);
+            box.ItemUid = uid;
+            box.SetInput(1, count.ToString(System.Globalization.CultureInfo.InvariantCulture), DigitCount(max), 0, 0);
+            box.SetItemEntry(item, new ItemTooltip(Model, 0).Name(item), 1, 0, -1, -1, 1, t.Items.TextColor);
+            box.SetButtonLabelIds(0x477, 0x478, 0);
+            ShowBox(box);
+        }
+        else View?.RequestDrop?.Invoke(uid, count);
+    }
+
+    /// <summary>UIMessageBox::HandleDropButton @0x1419fe790 (uimessagebox.cpp:2008), the yes: the count check (FUN_141a002b0,
+    /// <see cref="IsItemCountValid"/>), then SendRequestItemInventoryMode4(uid, count).</summary>
+    public void ConfirmDrop(long uid, int count)
+    {
+        if (!IsItemCountValid(uid, count)) return;
+        View?.RequestDrop?.Invoke(uid, count);
+    }
+
+    /// <summary>UIMessageBox::HandleDestroyItemButton @0x1419fba50 (uimessagebox.cpp:1352), the yes: the box's item still in the
+    /// bag, SendRequestItemInventoryMode5(uid). STILL-OPEN: the default UI material sound at the player
+    /// (CItemDataTable::GetDefaultUiMaterialSound, "ms2sound/sound/item") is not played; the item material sounds are not ported.</summary>
+    public void ConfirmDestroy(long uid)
+    {
+        if (FindItem(uid) is not { } item) return;
+        View?.RequestDestroy?.Invoke(item.Uid);
+    }
+
+    // ---- the bag expand (vfunc_28 "onClickSlotExpand" :959, OnMessage "expandSlot" :779, RequestExpandSlots :1874) --------
+
+    /// <summary>The expand box's tag (vfunc_28 :966), answered by OnMessage (the dialog is the box's listener).</summary>
+    public const string ExpandSlotBox = "expandSlot";
+    /// <summary>CClientPlatformBase::GetMeratBalance (vfunc_40's balance, ms2clientplatformbase.cpp:316).</summary>
+    public Func<long> MeratBalance = () => 0;
+    /// <summary>CUIService::FUN_141add1f0: the meret purchase dialog. Null: not shown.</summary>
+    public Action MeretPurchase;
+
+    /// <summary>Unk_Inventory::FUN_140a5d0f0: Client::Constants InventoryExpandPrice1Row (+0x6ee8).</summary>
+    long ExpandPrice => Model?.Tables.InventoryExpandPrice1Row ?? 0;
+
+    /// <summary>CanExpandTab @0x14199d980: not IsExtraSlotsMaxed(m_194) (inventory.cpp:461: the tab's extra slots equal FUN_140a66750).</summary>
+    public bool CanExpandTab()
+    {
+        if (View == null) return false;
+        int tab = View.Tab;
+        int extra = View.Capacity(tab) - BaseSlots(tab);
+        return extra != MaxSlots(tab);
+    }
+
+    /// <summary>
+    /// "onClickSlotExpand" (vfunc_28 :959-975), with an argument: CanExpandTab, a yes/no box (type 1, this dialog its listener,
+    /// tag "expandSlot") of common 0x266 formatted with the price, the argument and 6 (FUN_14028dee0); else a box of BlockFormat(0x267).
+    /// </summary>
+    public void OnClickSlotExpand(object[] args)
+    {
+        if (args == null || args.Length == 0 || Model == null) return;
+        string arg = Rt.ToString(args[0]);
+        if (CanExpandTab())
+        {
+            string text = Ms2.Quest.ClientFormat.Format(Model.Tables.Common(0x266), ExpandPrice, arg, 6);
+            var box = MessageBoxQueue.Create(1, text, null, ExpandSlotBox);
+            box.Callback = (result, _) => { if (result == 0) RequestExpandSlots(); return true; };
+            ShowBox(box);
+        }
+        else ShowBox(MessageBoxQueue.Create(0, Model.Tables.Common(0x267), null, ""));
+    }
+
+    /// <summary>RequestExpandSlots @0x14199e2a0: the platform's vfunc_40 (GetMeratBalance() - price &gt;= 0) fails, the meret
+    /// purchase dialog (FUN_141add1f0); else SendRequestItemInventory(m_194), the expand request.</summary>
+    public void RequestExpandSlots()
+    {
+        if (View == null) return;
+        if (MeratBalance() - ExpandPrice < 0) { MeretPurchase?.Invoke(); return; }
+        View.RequestExpand?.Invoke(View.Tab);
     }
 
 
@@ -755,6 +1004,40 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     /// notice, by its key.</summary>
     public event Action<string> SystemNotice;
 
+    // ---- the item inventory's answers (CSceneStateGame::OnItemInventory modes 0xa and 0xd, scenestategame.cpp:2973-3027) --------
+
+    /// <summary>The text of an ItemInventory answer (<see cref="Ms2.Net.Packets.ItemInventoryAnswer"/>): the common string by id or
+    /// key, formatted with the item's name (FUN_141811980(1, id)) and the count, or with the code (BlockFormat(0xcd, code)); "" for
+    /// the service answer, which has no text.</summary>
+    public static string AnswerText(Ms2.Net.Packets.ItemInventoryAnswer a, GameTables t)
+    {
+        if (t == null) return "";
+        return a.Kind switch
+        {
+            Ms2.Net.Packets.ItemAnswerKind.BoxKey => t.Common(a.Key) ?? "",
+            Ms2.Net.Packets.ItemAnswerKind.BoxItem or Ms2.Net.Packets.ItemAnswerKind.NoticeItem =>
+                Ms2.Quest.ClientFormat.Format(t.Common(a.StringId), t.ItemName(a.ItemId), a.Number),
+            Ms2.Net.Packets.ItemAnswerKind.BoxCode => Ms2.Quest.ClientFormat.Format(t.Common(a.StringId), a.Number),
+            Ms2.Net.Packets.ItemAnswerKind.Service => "",
+            _ => t.Common(a.StringId),
+        };
+    }
+
+    /// <summary>Whether the answer shows a message box (else a system notice, or the service dialog).</summary>
+    public static bool AnswerIsBox(Ms2.Net.Packets.ItemInventoryAnswer a) => a.Kind is Ms2.Net.Packets.ItemAnswerKind.Box
+        or Ms2.Net.Packets.ItemAnswerKind.BoxKey or Ms2.Net.Packets.ItemAnswerKind.BoxItem or Ms2.Net.Packets.ItemAnswerKind.BoxCode;
+
+    /// <summary>
+    /// PlayExpandEffect @0x141999e50 (uiinventorydialog.cpp:1116), called by OnItemInventory mode 0xc while the dialog is open
+    /// (vfunc_55() == 0): m_19c = 7 (the new marks, the expand label and the tab rebuilt on the next update), then m_expandEff
+    /// gotoAndPlay(1) (ASMovieClip vfunc_12).
+    /// </summary>
+    public void PlayExpandEffect()
+    {
+        View?.MarkAllPending();
+        if (Host?.Child("m_expandEff") is { } eff) Host.Invoke(eff, "gotoAndPlay", 1);
+    }
+
     // ---- trade (InvenSlot::TryAddToTrade, invenslot.cpp:1678) -------------------------------------------------------------
 
     /// <summary>The trade dialog (0x4e83, Unk_InvGetDialogById&lt;UITradeDialogEx&gt;): its book while it is open, else null.</summary>
@@ -977,9 +1260,9 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         }
     }
 
-    /// <summary>FUN_141a002b0 (uimessagebox.cpp:2031, :2077, :2390): uid 0 passes; otherwise 1 &lt;= count &lt;= item.Count,
-    /// else notice 0xee formatted with (1, have) and returns false.</summary>
-    public bool IsSellCountValid(long uid, int count)
+    /// <summary>FUN_141a002b0 (uimessagebox.cpp:2390; the sell, sell confirm and drop boxes' yes): uid 0 passes; otherwise
+    /// 1 &lt;= count &lt;= item.Count, else notice 0xee formatted with (1, have) and returns false.</summary>
+    public bool IsItemCountValid(long uid, int count)
     {
         if (Model == null) return false;
         if (uid != 0 && FindItem(uid) is { } item && (count <= 0 || count > (int)item.Count))

@@ -279,7 +279,7 @@ public class InventoryTests
         Assert.That(c.OnCallback("onClickOpenBank", Array.Empty<object>()), Is.False, "the client returns 0");
         Assert.That(c.OnCallback("onClickMesoDrop", Array.Empty<object>()), Is.False, "no branch in the client: 0");
         Assert.That(c.OnCallback("OnSelected", new object[] { "Elixir" }), Is.False, "no branch in the client: 0");
-        Assert.That(raised, Is.EqualTo(new[] { "onClickSlotExpand", "onClickItemRemakeOption", "onClickOpenBank" }), "the two unhandled ones raise nothing");
+        Assert.That(raised, Is.EqualTo(new[] { "onClickItemRemakeOption", "onClickOpenBank" }), "the expand is the dialog's own; the two unhandled ones raise nothing");
         Assert.That(toggled, Is.EqualTo(0x4e8d));
 
         // an expired item: box 0x2a1, the answer sends (0 = stack)
@@ -465,7 +465,7 @@ public class InventoryTests
         NotifyDragSlot.SlotDragEnd(h.DragSlots, new object[] { "QuickSlot.1", "InventoryDialog.4" });
         Assert.That(sent, Has.Count.EqualTo(1), "the same slot, one argument or a source that is no drag slot send nothing");
         NotifyDragSlot.SlotDragEnd(h.DragSlots, new object[] { "InventoryDialog.0", null });
-        Assert.That((sent.Count, raised.Last()), Is.EqualTo((1, "notifySlotDragEnd")), "a drop off the bag is not ported: raised");
+        Assert.That((sent.Count, raised), Is.EqualTo((1, new List<string>())), "a drop off the bag over the UI: the item returns (the drop on the ground is SlotDropUnresolved's)");
     }
 
     [Test]
@@ -1024,5 +1024,214 @@ public class InventoryTests
         Assert.That(box.EnterAllowed, Is.False);   // FUN_141a024a0(0) (:1015)
         box.InvokeCallback(0, box);
         Assert.That(answers, Is.EqualTo(new[] { (0, 41L) }));
+    }
+
+    // ---- the bag expand (vfunc_28 "onClickSlotExpand" :959, RequestExpandSlots :1874) and the answers (OnItemInventory :2973) ----
+
+    [Test]
+    public void TheExpandButtonAsksWithThePriceAndSendsOnlyWithTheMerets()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var (h, c, book) = Load(model);
+        c.BaseSlots = _ => 48; c.MaxSlots = _ => 36;
+        var boxes = new List<MessageBoxData>(); c.ShowBox = boxes.Add;
+        var sent = new List<int>(); c.View.RequestExpand = sent.Add;
+        int purchase = 0; c.MeretPurchase = () => purchase++;
+        var raised = new List<string>(); c.Button += raised.Add;
+
+        Assert.That(c.OnCallback("onClickSlotExpand", new object[] { "Equip" }), Is.True);
+        Assert.That(raised, Is.Empty, "the dialog answers it itself");
+        var box = boxes.Single();
+        Assert.That((box.Type, box.Extra), Is.EqualTo((1, InventoryController.ExpandSlotBox)));
+        Assert.That(box.Msg, Is.EqualTo(Ms2.Quest.ClientFormat.Format(model.Tables.Common(0x266), model.Tables.InventoryExpandPrice1Row, "Equip", 6)));
+        Assert.That(box.Msg, Does.Contain(model.Tables.InventoryExpandPrice1Row.ToString()), "the price is in the text");
+
+        box.Callback(1, box);
+        Assert.That((sent.Count, purchase), Is.EqualTo((0, 0)), "no: nothing");
+        c.MeratBalance = () => model.Tables.InventoryExpandPrice1Row - 1;
+        box.Callback(0, box);
+        Assert.That((sent.Count, purchase), Is.EqualTo((0, 1)), "too few merets: the purchase dialog, nothing sent");
+        c.MeratBalance = () => model.Tables.InventoryExpandPrice1Row;
+        box.Callback(0, box);
+        Assert.That(sent, Is.EqualTo(new[] { 0 }), "the shown tab");
+
+        // the tab at its most extra slots: box BlockFormat(0x267), no ask
+        book.Apply(new ItemMessage.ExpandCount(0, 36));
+        boxes.Clear();
+        c.OnCallback("onClickSlotExpand", new object[] { "Equip" });
+        Assert.That((boxes.Single().Type, boxes.Single().Extra, boxes.Single().Msg), Is.EqualTo((0, "", model.Tables.Common(0x267))));
+    }
+
+    [Test]
+    public void TheExpandPriceIsTheConstantsRow()
+    {
+        Packs();
+        var t = NewModel().Tables;
+        Assert.That(t.InventoryExpandPrice1Row, Is.GreaterThan(0));
+        TestContext.WriteLine($"InventoryExpandPrice1Row {t.InventoryExpandPrice1Row}");
+    }
+
+    [Test]
+    public void EveryAnswerHasTheClientsText()
+    {
+        Packs();
+        var t = NewModel().Tables;
+        int item = Enumerable.Range(20000000, 100000).First(i => !string.IsNullOrEmpty(t.ItemName(i)));
+        foreach (int code in new[] { 0xc, 0xd, 0x1f, 0x23, 0x24, 0x25, 0x26, 0x28, 0x29, 0x2a, 17 })
+        {
+            var a = ItemInventoryAnswer.Error(code, item, 3);
+            string text = InventoryController.AnswerText(a, t);
+            TestContext.WriteLine($"0x{code:x}: {a.Kind} {text}");
+            if (a.Kind == ItemAnswerKind.BoxKey)
+            {
+                // GetStringCommonByKey: GMS2's common strings have no s_item_err_Invalid_slot_codi, so its box is empty there
+                Assert.That(text, Is.EqualTo(t.Common(a.Key) ?? ""), $"code 0x{code:x}");
+                if (text.Length == 0) TestContext.WriteLine($"  this data has no {a.Key}");
+                continue;
+            }
+            Assert.That(text, Is.Not.Empty, $"code 0x{code:x}");
+            Assert.That(text, Does.Not.Contain("{"), $"code 0x{code:x} is formatted");
+        }
+        Assert.That(InventoryController.AnswerText(ItemInventoryAnswer.Error(0x28, item, 3), t), Does.Contain(t.ItemName(item)));
+        Assert.That(InventoryController.AnswerText(ItemInventoryAnswer.Error(17, item, 3), t), Does.Contain("17"));
+        Assert.That(InventoryController.AnswerText(ItemInventoryAnswer.ExpandDone, t), Is.EqualTo(t.Common(0x2a2)));
+        Assert.That(InventoryController.AnswerText(ItemInventoryAnswer.Error(0x22, item, 3), t), Is.Empty, "the purchase dialog has no text");
+        Assert.That(InventoryController.AnswerIsBox(ItemInventoryAnswer.Error(0xd, 0, 0)), Is.False);
+        Assert.That(InventoryController.AnswerIsBox(ItemInventoryAnswer.Error(0x29, 0, 0)), Is.False);
+        Assert.That(InventoryController.AnswerIsBox(ItemInventoryAnswer.Error(0x28, 0, 0)), Is.True);
+    }
+
+    // ---- an item dragged off the bag (SlotDragEnd's FUN_1422aeed0(2), InvenSlot::vfunc_17 / vfunc_26, FUN_14140c4d0) ----
+
+    /// <summary>A stackable item of the data that no rule of vfunc_26 other than the transfer refuses, in tab 2.</summary>
+    static int Droppable(UiModel model) => Enumerable.Range(20000000, 1000000).FirstOrDefault(i => model.Tables.Items.Get(i) is { } d
+        && d.SlotMax > 1 && !d.IsPetItem && !d.IsScoreItem && !string.Equals(d.StringTag, InventoryController.PetExpTag, StringComparison.OrdinalIgnoreCase)
+        && !string.IsNullOrEmpty(model.Tables.ItemName(i)));
+
+    static (UiHost, InventoryController) DragBag(UiModel model, params EquipItem[] items)
+    {
+        var book = new ItemBook { TabOf = i => i / 10000000, BaseSlots = _ => 48 };
+        book.Apply(new ItemMessage.LoadTab(2, items));
+        var (h, c, _) = Load(model, book);
+        Assert.That(c.ShowTab(2), Is.True);
+        for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
+        return (h, c);
+    }
+
+    static EquipItem Bag(int id, long uid, short slot, int amount, int rule = 4) =>
+        new() { Id = id, Uid = uid, InventorySlot = slot, Amount = amount, Rarity = 1, Transfer = { Rule = rule } };
+
+    [Test]
+    public void ADragThatEndsOverTheUiReturnsTheItem()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        int id = Droppable(model);
+        if (id == 0) Assert.Ignore("no stackable item in this data");
+        var (h, c) = DragBag(model, Bag(id, 50, 0, 1));
+        var drops = new List<(long, int)>(); c.View.RequestDrop = (u, n) => drops.Add((u, n));
+        var boxes = new List<MessageBoxData>(); c.ShowBox = boxes.Add;
+        c.CursorOverUi = () => true;
+        c.SlotDropUnresolved("InventoryDialog.0");
+        Assert.That((drops.Count, boxes.Count), Is.EqualTo((0, 0)));
+        c.CursorOverUi = () => false;
+        c.SlotDropUnresolved("InventoryDialog.0");
+        Assert.That(drops, Is.EqualTo(new[] { (50L, 1) }), "over the world: one item goes at once");
+        Assert.That(boxes, Is.Empty);
+    }
+
+    [Test]
+    public void AStackDroppedOnTheGroundAsksTheCountAndTheBoxSendsIt()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        int id = Droppable(model);
+        if (id == 0) Assert.Ignore("no stackable item in this data");
+        var (h, c) = DragBag(model, Bag(id, 51, 0, 5));
+        var drops = new List<(long, int)>(); c.View.RequestDrop = (u, n) => drops.Add((u, n));
+        var boxes = new List<MessageBoxData>(); c.ShowBox = boxes.Add;
+        var notices = new List<string>(); c.NoticeText += notices.Add;
+        c.CursorOverUi = () => false;
+        c.SlotDropUnresolved("InventoryDialog.0");
+        Assert.That(drops, Is.Empty, "the box asks first");
+        var box = boxes.Single();
+        Assert.That((box.Type, box.Extra, box.ItemUid, box.InputType, box.InputDefault), Is.EqualTo((0xd, InventoryController.DropBox, 51L, 1, "5")));
+        Assert.That(box.Msg, Is.EqualTo(model.Tables.Common("s_msg_item_drop")));
+        Assert.That(box.InputMaxChars, Is.EqualTo(model.Tables.Items.Get(id).SlotMax.ToString().Length), "as many digits as the slot max");
+
+        var mb = new MessageBoxController { DropItem = c.ConfirmDrop, data = box };
+        Assert.That(mb.HandleArgTag(0, "drop,3"), Is.True);
+        Assert.That(drops, Is.EqualTo(new[] { (51L, 3) }));
+        mb.HandleArgTag(0, "drop,9");
+        Assert.That(drops.Count, Is.EqualTo(1), "more than the stack: the count notice, nothing sent");
+        Assert.That(notices, Has.Count.EqualTo(1));
+        mb.HandleArgTag(1, "drop,2");
+        Assert.That(drops.Count, Is.EqualTo(1), "the other button: nothing");
+        mb.HandlePlainTag(0, "drop");
+        Assert.That(drops.Last(), Is.EqualTo((51L, 1)), "the plain tag drops one");
+    }
+
+    [Test]
+    public void AnItemThatCannotGoOnTheGroundAsksToDestroyIt()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        int id = Droppable(model);
+        if (id == 0) Assert.Ignore("no stackable item in this data");
+        var bound = Bag(id, 53, 1, 1);
+        bound.Transfer.HasBinding = true; bound.Transfer.BindingId = 99; bound.Transfer.BindingName = "Owner";
+        var (h, c) = DragBag(model, Bag(id, 52, 0, 2, rule: 0), bound);
+        var drops = new List<(long, int)>(); c.View.RequestDrop = (u, n) => drops.Add((u, n));
+        var destroyed = new List<long>(); c.View.RequestDestroy = destroyed.Add;
+        var boxes = new List<MessageBoxData>(); c.ShowBox = boxes.Add;
+        c.CursorOverUi = () => false;
+
+        c.SlotDropUnresolved("InventoryDialog.0");
+        var box = boxes.Single();
+        Assert.That((box.Type, box.Extra, box.ItemUid, box.EnterAllowed), Is.EqualTo((0x11, InventoryController.DestroyBox, 52L, false)));
+        Assert.That(box.Msg, Is.EqualTo(Ms2.Quest.ClientFormat.Format(model.Tables.Common(0xd8), model.Tables.ItemName(id))), "no other reason: 0xd8 with the name");
+        c.SlotDropUnresolved("InventoryDialog.1");
+        Assert.That(boxes[1].Msg, Is.EqualTo(Ms2.Quest.ClientFormat.Format(model.Tables.Common(0xd9), "Owner")), "bound: 0xd9 with the owner");
+        Assert.That(drops, Is.Empty);
+
+        var mb = new MessageBoxController { DestroyItem = c.ConfirmDestroy, data = boxes[1] };
+        mb.HandlePlainTag(1, "destroy_item");
+        Assert.That(destroyed, Is.Empty, "the other button: nothing");
+        Assert.That(mb.HandlePlainTag(0, "destroy_item"), Is.True);
+        Assert.That(destroyed, Is.EqualTo(new[] { 53L }));
+    }
+
+    [Test]
+    public void TheDragOutRefusalsComeFirstInTheClientsOrder()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        int id = Droppable(model);
+        if (id == 0) Assert.Ignore("no stackable item in this data");
+        var (h, c) = DragBag(model, Bag(id, 54, 0, 1, rule: 0));
+        var drops = new List<(long, int)>(); c.View.RequestDrop = (u, n) => drops.Add((u, n));
+        var boxes = new List<MessageBoxData>(); c.ShowBox = boxes.Add;
+        c.CursorOverUi = () => false;
+        c.LocalPlayerDead = () => true;
+        c.IsSummoned = _ => true;
+        c.SlotDropUnresolved("InventoryDialog.0");
+        Assert.That(boxes.Single().Msg, Is.EqualTo(model.Tables.Common(0x42)), "dead first");
+        c.LocalPlayerDead = () => false;
+        c.SlotDropUnresolved("InventoryDialog.0");
+        Assert.That(boxes[1].Msg, Is.EqualTo(model.Tables.Common(0x71)), "a summoned item before the destroy box");
+        c.IsSummoned = _ => false;
+        c.RideMaidUid = () => 54;
+        c.SlotDropUnresolved("InventoryDialog.0");
+        Assert.That(boxes[2].Msg, Is.EqualTo(model.Tables.Common(0x71)), "the ride's maid");
+        c.RideMaidUid = () => 0;
+        c.SlotDropUnresolved("InventoryDialog.0");
+        Assert.That(boxes[3].Extra, Is.EqualTo(InventoryController.DestroyBox));
+        Assert.That(drops, Is.Empty);
     }
 }

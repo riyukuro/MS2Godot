@@ -253,8 +253,33 @@ public sealed class MessageBoxController : UiController
     /// the count typed (_wtoi of the tag's second token). The handler does the count check (FUN_141a002b0) and the add.</summary>
     public Action<long, int> TradeIn;
 
-    /// <summary>FUN_141a002b0 (uimessagebox.cpp:2031, :2077): validates the item count for sell/sellconfirm; when unset, true.</summary>
-    public Func<long, int, bool> SellCountValid;
+    /// <summary>FUN_141a002b0 (uimessagebox.cpp:2390): validates the item count of the sell, sell confirm and drop boxes; when unset, true.</summary>
+    public Func<long, int, bool> ItemCountValid;
+
+    /// <summary>HandleDropButton @0x1419fe790 (uimessagebox.cpp:2008), the drop box's yes: the item uid and the count typed (the
+    /// plain "drop" tag gives 1). The handler does the count check and the request.</summary>
+    public Action<long, int> DropItem;
+
+    /// <summary>HandleDestroyItemButton @0x1419fba50 (uimessagebox.cpp:1352), the destroy box's yes: the box's item uid.</summary>
+    public Action<long> DestroyItem;
+
+    /// <summary>HandleDropButton @0x1419fe790 (uimessagebox.cpp:2008): no record, 1; the yes passes the box's item uid and the
+    /// count on (the handler checks the count, FUN_141a002b0, and sends SendRequestItemInventoryMode4); 1.</summary>
+    bool HandleDropButton(int button, int count)
+    {
+        if (data == null) return true;
+        if (button == 0) DropItem?.Invoke(data.ItemUid, count);
+        return true;
+    }
+
+    /// <summary>HandleDestroyItemButton @0x1419fba50 (uimessagebox.cpp:1352): no record, 1; the yes passes the box's item uid on
+    /// (the handler finds the item and sends SendRequestItemInventoryMode5); 1. The local player check (none: 1) is the host's.</summary>
+    bool HandleDestroyItemButton(int button)
+    {
+        if (data == null) return true;
+        if (button == 0) DestroyItem?.Invoke(data.ItemUid);
+        return true;
+    }
 
     /// <summary>HandleSellButton @0x1419fe830 (uimessagebox.cpp:2024), the sell quantity box's yes (after closing the box):
     /// the item uid and count to pass to SellItem (:670).</summary>
@@ -479,6 +504,10 @@ public sealed class MessageBoxController : UiController
             return HandleRecallscrollconfirmButton(button);
         if (tag == "sell")
             return HandleSellButton(button, 1);
+        if (tag == "drop")
+            return HandleDropButton(button, 1);
+        if (tag == "destroy_item")
+            return HandleDestroyItemButton(button);
         if (tag == LoginRefusalBox.MaintenanceExitTag)
             return HandleMaintenanceExitButton(button);
         if (tag == LoginRefusalBox.AlreadyReconnectTag)
@@ -490,7 +519,7 @@ public sealed class MessageBoxController : UiController
     }
 
     /// <summary>FUN_1419fa910 (uimessagebox.cpp:1092): a tag of exactly two tokens split by "," (FUN_14028cb70(tag, tokens,
-    /// L",", 2)); 0 otherwise. Of its tags "tradein", "sell" and "sellconfirm" are ported; the others are reported as unported.</summary>
+    /// L",", 2)); 0 otherwise. Of its tags "tradein", "drop", "sell" and "sellconfirm" are ported; the others are reported as unported.</summary>
     internal bool HandleArgTag(int button, string tag)
     {
         var tokens = tag.Split(',');
@@ -499,6 +528,7 @@ public sealed class MessageBoxController : UiController
         if (tokens[0] == "usestorein") return HandleUseStoreButton(false, button, MessageBoxData.WToI(tokens[1]));
         if (tokens[0] == "usestoreout") return HandleUseStoreButton(true, button, MessageBoxData.WToI(tokens[1]));
         if (tokens[0] == "swapstorein") return HandleSwapStoreInButton(button, MessageBoxData.WToI(tokens[1]));
+        if (tokens[0] == "drop") return HandleDropButton(button, MessageBoxData.WToI(tokens[1]));
         if (tokens[0] == "sell") return HandleSellButton(button, MessageBoxData.WToI(tokens[1]));
         if (tokens[0] == "sellconfirm") return HandleSellConfirmButton(button, MessageBoxData.WToI(tokens[1]));
         if (tokens[0] == InvalidNameRename.Tag) return HandleChangeInvalidCharNameButton(button, tokens[1]);
@@ -593,7 +623,7 @@ public sealed class MessageBoxController : UiController
         if (button == 0)
         {
             long uid = data.ItemUid;
-            if (SellCountValid != null && !SellCountValid(uid, count)) return true;
+            if (ItemCountValid != null && !ItemCountValid(uid, count)) return true;
             MessageBoxQueue.Next();
             SellItem?.Invoke(uid, count);
         }
@@ -608,7 +638,7 @@ public sealed class MessageBoxController : UiController
         if (button == 0)
         {
             long uid = data.ItemUid;
-            if (SellCountValid != null && !SellCountValid(uid, count)) return true;
+            if (ItemCountValid != null && !ItemCountValid(uid, count)) return true;
             SellConfirm?.Invoke(uid, count);
         }
         return true;

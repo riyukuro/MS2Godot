@@ -56,6 +56,26 @@ public static class ItemTradeRules
     public static bool GemsTradeable(ItemSocket s, Func<int, ItemData> data, long now) =>
         AllGemsPass(s, data, (g, d) => !GemBound(g) && !GemLocked(g, now) && (ComputeRule(d.TransferType) & 4) != 0);
 
+    /// <summary>CItemSocket::FUN_140622750 (itemsocket.cpp:789) -> FUN_1406220f0 (:698): a set gem (TSocketGemStoneInfo not
+    /// IsEmpty) fails, so only a socket with no gem passes.</summary>
+    public static bool NoSetGem(ItemSocket s, Func<int, ItemData> data) => AllGemsPass(s, data, (_, _) => false);
+
+    /// <summary>
+    /// CanDestroyItem @0x140633700 (itemsocketsystemutil.cpp:2305), the drop on the ground: the transfer's CanDestroy (:2918: not
+    /// bound, FUN_140634cc0 always 1, not locked (FUN_140635870), and the rule bit 4), no set gem, and the enchant's IsEnabled.
+    /// An item without a record has none of the three parts, which pass.
+    /// </summary>
+    public static bool CanDrop(Item item, Func<int, ItemData> data, long now)
+    {
+        if (item == null) return false;
+        var r = item.Record;
+        if (r == null) return true;
+        if (r.Transfer is { } t && (t.HasBinding || IsLocked(item, now) || (t.Rule & 4) == 0)) return false;
+        if (!NoSetGem(r.Socket, data)) return false;
+        if (r.Enchant != null && !r.Enchant.HistoryEnabled) return false;
+        return true;
+    }
+
     /// <summary>CItemSocket::CheckNoLockedGem (itemsocket.cpp): no gem locked (HasLockedGem).</summary>
     public static bool NoLockedGem(ItemSocket s, long now) => s == null || !s.Gems.Any(g => g != null && g.GemId != 0 && GemLocked(g, now));
 

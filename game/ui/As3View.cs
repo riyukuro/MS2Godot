@@ -776,6 +776,15 @@ public partial class As3View : Node2D
     public bool MouseOverUi { get; private set; }
     ulong lastMouseTest;
 
+    /// <summary>GFxManager::FUN_1422aeed0(2): the UI movie's hit flag, here any view in the tree on the viewport that takes the
+    /// mouse and had its shapes under the cursor at its last 50 ms sample (the client's dialogs are all in that one movie).</summary>
+    public static bool AnyMouseOverUi(Viewport vp)
+    {
+        foreach (var v in inTree)
+            if (v.MouseOverUi && v.TakesMouse && v.GetViewport() == vp) return true;
+        return false;
+    }
+
     void SampleMouseOver()
     {
         ulong now = Time.GetTicksMsec();

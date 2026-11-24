@@ -758,9 +758,9 @@ public class ShopTests
         Assert.That(sent, Is.Empty);
         Assert.That(boxes, Has.Count.EqualTo(1));
         Assert.That((boxes[0].Type, boxes[0].Extra, boxes[0].ItemUid), Is.EqualTo((0x12, "sell", 5003L)));
-        Assert.That(inv.IsSellCountValid(5003, 0), Is.False);
-        Assert.That(inv.IsSellCountValid(5003, 6), Is.False);
-        Assert.That(inv.IsSellCountValid(5003, 3), Is.True);
+        Assert.That(inv.IsItemCountValid(5003, 0), Is.False);
+        Assert.That(inv.IsItemCountValid(5003, 6), Is.False);
+        Assert.That(inv.IsItemCountValid(5003, 3), Is.True);
         inv.SellCountStep(5003, 3);
         Assert.That(sent, Is.EqualTo(new[] { new ShopSellRequest(5003, 3) }));
     }

@@ -86,7 +86,7 @@ public sealed partial class ItemTooltip
 
     /// <summary>GetQuestNameWithLevel (questuidata.cpp:256): the key's string with GetQuestName and the quest level, or the
     /// bare name when the quest has no data.</summary>
-    string QuestNameWithLevel(int questId, string key)
+    public string QuestNameWithLevel(int questId, string key)
     {
         var table = model.Quests;
         if (table == null) return "";
