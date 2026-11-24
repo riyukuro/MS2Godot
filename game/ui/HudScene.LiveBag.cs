@@ -51,6 +51,30 @@ public partial class HudScene
     /// <summary>The expand button (onClickSlotExpand) with the shown tab's name; its box is answered by <see cref="BagBoxAnswerScripted"/>.</summary>
     public bool BagExpandScripted() => inventory is { IsClosed: false } && inventory.OnCallback("onClickSlotExpand", new object[] { "tab" });
 
+    /// <summary>The search button with <paramref name="text"/> in the input (OnItemSearch with the input's text).</summary>
+    public bool BagSearchScripted(string text)
+    {
+        if (inventory is not { IsClosed: false } || inventoryMovie.Host.Child("m_inputSearch") is not { } input) return false;
+        inventoryMovie.Host.Set(input, "text", text);
+        return inventory.OnCallback("OnItemSearch", new object[] { text });
+    }
+
+    /// <summary>The name the bag shows for the item in <paramref name="slot"/> (CItem::FUN_140527b10), null for none.</summary>
+    public string BagItemName(string slot)
+    {
+        if (slot == null || inventory?.View is not { } view || !int.TryParse(slot.AsSpan(slot.LastIndexOf('.') + 1), out int i)) return null;
+        return view.ItemAt(view.Tab, i) is { } e && inventory.FindItem(e.Uid) is { } item ? new Ms2.Ui.Items.ItemTooltip(hudModel, 0).Name(item) : null;
+    }
+
+    /// <summary>The slot's updateIconSearchOn as its binding has it, and m_itemBagEx's scrollPosition (-1 without it).</summary>
+    public (bool Marked, int Scroll) BagSearchState(string slot)
+    {
+        var host = inventoryMovie.Host;
+        bool marked = Ms2.Avm2.Rt.ToBoolean(host.Get(inventory.GetBinding(slot), "updateIconSearchOn"));
+        int scroll = host.Child("m_itemBagEx") is { } list ? (int)Ms2.Avm2.Rt.ToNumber(host.Get(list, "scrollPosition")) : -1;
+        return (marked, scroll);
+    }
+
     System.Action<Ms2.Ui.Hud.MessageBoxData> bagBoxWatch;
     Ms2.Ui.Hud.InventoryController bagBoxWrapped;
 
@@ -63,6 +87,12 @@ public partial class HudScene
         inventory.ShowBox = b => { bagBoxWatch?.Invoke(b); show(b); };
         bagBoxWrapped = inventory;
     }
+
+    /// <summary>The message box on screen, null when none.</summary>
+    public Ms2.Ui.Hud.MessageBoxData ShownBoxScripted() => MessageBoxLayer.Instance?.Controller?.CurrentBox;
+
+    /// <summary>A common string as the boxes show it.</summary>
+    public string CommonText(int id) => hudModel.Tables.Common(id) ?? "";
 
     public long WalletMerat => hudModel.HasLocalPlayer ? Ms2.Ui.Shop.CurrencyWallet.Merat(hudModel.Player) : 0;
 }

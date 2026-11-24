@@ -876,6 +876,25 @@ public partial class LiveSession
                         Check($"the item is gone ({n0} -> {Count(id)})", Count(id) == n0 - (held?.Amount ?? 0));
                         break;
                     }
+                    case "bagsearch":      // the search of MS2_LIVE_BAG_ITEM's name in another case, then of a name no item has
+                    {
+                        int id = int.Parse(Env("MS2_LIVE_BAG_ITEM", "0"));
+                        string slot = hud.BagSlotScripted(id, live.Items.TabOf(id));
+                        string itemName = hud.BagItemName(slot) ?? "";
+                        string query = new string(itemName.Select(ch => ch >= 'a' && ch <= 'z' ? (char)(ch - 32) : ch).ToArray());
+                        GD.Print($"live: combat bag search \"{query}\": {(hud.BagSearchScripted(query) ? "searched" : "no dialog")}");
+                        await frames(10);
+                        var (marked, scroll) = hud.BagSearchState(slot);
+                        Check($"the search finds {slot}, marked {marked}, the list at row {scroll}, no box ({Tags()})", slot != null && marked && boxes.Count == 0);
+                        Shot("bag_search.png");
+                        hud.BagSearchScripted("zzzz");
+                        await frames(10);
+                        var none = boxes.LastOrDefault();
+                        Check($"a name no item has says so: {none?.Msg}", none != null && none.Msg == hud.CommonText(0x937) && !hud.BagSearchState(slot).Marked);
+                        GD.Print($"live: combat bag search box: {(hud.BagBoxAnswerScripted(none, 0, none?.Extra ?? "") ? "answered" : "no box")}");
+                        await frames(10);
+                        break;
+                    }
                     case "bagexpand":      // bagexpand[:item id], as bagsort
                     {
                         int id = arg.Length > 0 ? int.Parse(arg) : int.Parse(Env("MS2_LIVE_BAG_ITEM", "0")); int tab = live.Items.TabOf(id);
@@ -892,8 +911,13 @@ public partial class LiveSession
                         GD.Print($"live: combat bag expand box: {(hud.BagBoxAnswerScripted(expandBox, 0, Ms2.Ui.Hud.InventoryController.ExpandSlotBox) ? "answered" : "no box")}");
                         await until(() => (live.Items.ExtraSlots.TryGetValue(tab, out var e) ? e : 0) != extra0, 60 * 5); await frames(90);
                         int extra1 = live.Items.ExtraSlots.TryGetValue(tab, out var e1) ? e1 : 0;
-                        Check($"tab {tab} has 6 more slots ({extra0} -> {extra1}), the merets paid ({merat1} -> {hud.WalletMerat})", extra1 == extra0 + 6);
+                        Check($"tab {tab} has 6 more slots ({extra0} -> {extra1})", extra1 == extra0 + 6);
+                        Check($"the server took the price ({merat1} -> {hud.WalletMerat})", hud.WalletMerat == merat1 - 390);
                         Shot("bag_expand.png");
+                        var done = hud.ShownBoxScripted();      // the answer (mode 0xa): box 0x2a2, closed as its OK closes it
+                        Check($"the expand's answer box shows: {done?.Msg}", done != null && done.Msg == hud.CommonText(0x2a2));
+                        GD.Print($"live: combat bag expand answer: {(hud.BagBoxAnswerScripted(done, 0, done?.Extra ?? "") ? "answered" : "no box")}");
+                        await frames(30);
                         break;
                     }
                     default: GD.Print($"live: combat: unknown step {step}"); break;
