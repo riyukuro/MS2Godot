@@ -160,7 +160,11 @@ public partial class LiveSession
         public override void GuideLog(string text) => GD.Print(text);
         public override void Send(Ms2.Net.Wire.IOutPacket packet) { GD.Print($"live: guide sends {packet.GetType().Name}{(packet is Ms2.Net.Packets.GuideServerTriggerEvent t ? " " + t.EventId : "")}"); s.Send(packet); }
 
-        public override bool HasPlayer => s.Me.User != null && s.player != null && GodotObject.IsInstanceValid(s.player);
+        /// <summary>The own PC is in the field: bound, alive as an object and in the tree. The map unload's StopAndUpdate
+        /// runs from the field's TreeExiting, which Godot emits after the field's children left the tree; on a field change
+        /// the PC is dropped before that (SetMyPC(0), <see cref="DropOwnPc"/>), but when the process quits it is still bound,
+        /// and its position (a global transform) cannot be read out of the tree.</summary>
+        public override bool HasPlayer => s.Me.User != null && s.player != null && GodotObject.IsInstanceValid(s.player) && s.player.IsInsideTree();
         /// <summary>The field's RegionSkills node, the effect service the guide's cube effects go through.</summary>
         public override Ms2.Formats.World.IRegionSkillEffects Effects => s.FieldEffects;
 
