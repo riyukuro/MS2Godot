@@ -327,6 +327,9 @@ public partial class LiveSession
                     double sx = p.X - target.Position.X, sy = p.Y - target.Position.Y;
                     return (System.Math.Sqrt(sx * sx + sy * sy), p.Z);
                 }
+                // a dead pc (a mob on the way) can neither push nor attack: the rest of the step would prove nothing
+                Check("the pc is alive at the breakable's side", !live.Me.Dead);
+                if (live.Me.Dead) continue;
                 var before = Stood();
                 GD.Print($"live: combat {step}: at its side {before.Flat:F0} from its centre, z {before.Z:F0} (box {(target.HasBox ? "up" : "none")}, half side {side:F0}, top {top:F0})");
                 if (target.HasBox)
