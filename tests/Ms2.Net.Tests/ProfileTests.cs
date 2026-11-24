@@ -73,6 +73,8 @@ public class ProfileTests {
         Assert.That(p.Has(Outbound.Job), Is.True);
         Assert.That(p.Has(Outbound.PersonalInfoAgreement), Is.False);
         Assert.That(p.Number(Inbound.StateConsumeEp), Is.EqualTo((ushort) 0x66));
+        Assert.That(p.Number(Inbound.MassiveEvent), Is.EqualTo((ushort) 0x62));   // upstream SendOp MassiveEvent; KMS2 0x60
+        Assert.That(ProtocolProfile.Kms2525.Number(Inbound.MassiveEvent), Is.EqualTo((ushort) 0x60));
         // rows upstream lacks stay unmapped
         Assert.Throws<KeyNotFoundException>(() => p.Number(Inbound.UserChatItemLink));
         Assert.Throws<KeyNotFoundException>(() => p.Number(Inbound.UserSkinColor));   // STILL-OPEN: the GMS2 number is not recovered

@@ -150,6 +150,7 @@ static class Gms2Opcodes {
         [Inbound.Buddy] = 0x63,
         [Inbound.Fishing] = 0xC6,
         [Inbound.Breakable] = 0x50,
+        [Inbound.MassiveEvent] = 0x62,
         [Inbound.Liftable] = 0x75,
         [Inbound.Reactor] = 0x117,
         [Inbound.MeretMarket] = 0x6E,

@@ -689,6 +689,7 @@ public partial class LiveSession : Node
     Ms2.Ui.GuildBook guilds;
     /// <summary>OnMinimapPing @0x14173de10 (scenestategame.cpp:6806-6815): the ping for the minimap dialog's AddPing (set by the HUD).</summary>
     public event Action<MinimapPingMessage> MinimapPinged;
+    public event Action<MassiveEventMessage> MassiveEventReceived;
     /// <summary>The minimap dialog's ping send (MinimapPing 0xB1).</summary>
     public void SendMinimapPing(Ms2.Net.Wire.IOutPacket packet)
     {
@@ -2226,6 +2227,8 @@ public partial class LiveSession : Node
                 Breakables.Apply(BreakableUpdate.Read(p.Reader()));     // OnBreakable (scenestategame.cpp:3667)
             else if (game.Is(p, Inbound.Liftable))
                 Liftables.Apply(LiftableUpdate.Read(p.Reader()));       // OnLiftable (scenestategame.cpp:11941)
+            else if (game.Is(p, Inbound.MassiveEvent))
+                MassiveEventReceived?.Invoke(MassiveEventMessage.Read(p.Reader()));     // OnMassiveEvent (scenestategame.cpp:3858): the pane 0x4e4c reads it
             else if (game.Is(p, Inbound.MinimapPing))
                 MinimapPinged?.Invoke(MinimapPingMessage.Read(p.Reader()));     // OnMinimapPing (scenestategame.cpp:6806)
             else if (game.Is(p, Inbound.UserEnv))

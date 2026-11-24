@@ -207,6 +207,7 @@ public partial class HudScene : Node, IUiStageHost
         unwatchDamage = null;
         unwatchMinimapPing?.Invoke();
         unwatchMinimapPing = null;
+        MassiveEventUnwatch();
         CloseQuestNavigation();
         unwatchMinimapPcs?.Invoke();
         unwatchMinimapPcs = null;
@@ -418,6 +419,7 @@ public partial class HudScene : Node, IUiStageHost
         if (unwatchMeso == null) WatchMeso();
         Mastery();
         SystemMenuFacts();
+        MassiveEventPane();
         MessageBoxLayer.Ensure(this);       // the client's one message box layer (CUIService::CreateAllDialogs)
         BindBoxAnswers();
         TooltipLayer.Ensure(this);          // and its one tooltip movie (GFxManager LoadTooltipMovie)
@@ -1437,6 +1439,7 @@ public partial class HudScene : Node, IUiStageHost
     {
         if (screenMask != null) { screenMask.Host.Unload(); screenMaskLayer.QueueFree(); }
         screenMask = null; screenMaskLayer = null;
+        massiveEvent?.ClearStage();         // UISceneGamePlay::vfunc_56 (@0x141aca500): FindMassiveEvent(0x4e4c)->ClearStage
         if (systemText != null) { systemText.Host.Unload(); systemText.GetParent()?.RemoveChild(systemText); systemText.QueueFree(); }
         systemText = null;
         SystemText?.ForgetParked();
@@ -3968,6 +3971,7 @@ public partial class HudScene : Node, IUiStageHost
         PerfLog.Frame(perfState);
         TickCutSceneMovie();                                  // UICutSceneMovie's pane (STILL-OPEN: the movie)
         CinematicTick();                                      // UICutSceneCinematic's pane (0x4e52)
+        MassiveEventTick();                                   // UIMassiveEvent::vfunc_15: the step countdown
         rewardNotify?.Update();                               // UIRewardNotify::vfunc_15: the held toasts
         gameMenu?.Update();                                   // UIGameMenuDialog::vfunc_15: a dirty menu refreshed
         TickOwnQueued();                                      // StateSkill::FUN_1417f11d0: the queued press
