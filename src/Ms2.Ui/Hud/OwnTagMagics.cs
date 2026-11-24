@@ -289,7 +289,7 @@ public sealed class OwnTagMagics
         long serial, int targetId, int hit, int startMs, Vector3 dir, Func<string, Vector3> nodePosition, Action onHit,
         TagIdentity id) => new()
     {
-        Tag = new TagRecord { BrokenOffence = attack.BrokenOffence, Hit = onHit, Id = id },
+        Tag = new TagRecord { BrokenOffence = attack.BrokenOffence, Hit = onHit, Id = id with { SendCount = sendCount } },
         Attack = attack, Start = startMs,
         Delay = MagicPathTable.Ms(d.DelayTime), Spawn = MagicPathTable.Ms(d.SpawnTime), Life = MagicPathTable.Ms(d.LifeTime),
         CastId = castId, Serial = serial, TargetId = targetId, SendCount = sendCount, AttackIndex = attackIndex,

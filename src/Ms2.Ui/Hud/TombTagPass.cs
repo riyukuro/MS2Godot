@@ -22,9 +22,13 @@ public sealed class TagRecord
 
 /// <summary>
 /// The SkillTargetRecord values WriteBreakableInfo sends: the tag id (+0x18, the cast id), the skill (+0x38, GetId), the skill
-/// level (+0x48, GetLevel), +0x58 the cast's motion and +0x5c its attack index.
+/// level (+0x48, GetLevel), +0x58 the cast's motion and +0x5c its attack index; WriteVibrateInfo adds +0x8c (m_n8c, the
+/// record's send count, skillrecord.h:80).
 /// </summary>
-public readonly record struct TagIdentity(long CastId, int SkillId, short Level, byte Motion, byte Attack);
+public readonly record struct TagIdentity(long CastId, int SkillId, short Level, byte Motion, byte Attack, int SendCount = 0);
+
+/// <summary>A vibrate object the pass hit: the request it sent, the hit sound PlayHitSound plays and where.</summary>
+public readonly record struct VibrateHit(VibrateRequest Request, int HitSound, Vector3 Position);
 
 /// <summary>A field breakable the pass hit: the request it sent, the hit sound FUN_140ade030(1, 1) plays and where.</summary>
 public readonly record struct BreakableHit(BreakableRequest Request, int HitSound, Vector3 Position);
@@ -84,6 +88,40 @@ public sealed class TombTagPass
     /// compare are not fed, as in LiveNameTags.
     /// </summary>
     public static bool HostileInField(int pkMode) => pkMode != 0;
+
+    /// <summary>
+    /// The vibrate objects' loop (worldservice_1.cpp:9181-9240), the first of the pass, with the same areas (not emptied here):
+    /// each registered object in key order (m_5e8) whose vibrator is not broken (FUN_1411cd550) takes the first area whose
+    /// record has not entered the object and that intersects its box (m_420). The record keeps the entity id, the Vibrate
+    /// request goes out (the object's name, the record's <see cref="TagIdentity"/> and <paramref name="playerPosition"/>), the
+    /// hit sound plays at the object (the host plays <see cref="VibrateHit.HitSound"/>), and the record's FUN_1417591b0 runs when
+    /// the box has its notify flag. Hits go to <paramref name="hits"/> (cleared first). With no area registered nothing is read.
+    /// STILL-OPEN: the object weapon's respawn tick (FindCubeByEntityRef, :9194-9199) and the hit sound's level (the area's,
+    /// else the equipped item's tagLevel).
+    /// </summary>
+    public int RunVibrates(FieldVibrates objects, Vector3 playerPosition, List<VibrateHit> hits)
+    {
+        hits.Clear();
+        if (areas.Count == 0 || objects == null) return 0;
+        var list = objects.Sorted;
+        for (int i = 0; i < list.Count; i++)
+        {
+            var o = list[i];
+            if (objects.VibratorOf(o) is { Broken: true }) continue;
+            var box = o.Box();
+            foreach (var (tag, area) in areas)
+            {
+                if (tag.Entered.Contains(o.EntityId) || !area.Intersects(box)) continue;
+                tag.Entered.Add(o.EntityId);
+                var id = tag.Id;
+                hits.Add(new VibrateHit(new VibrateRequest(o.Name, id.CastId, id.SkillId, id.Level, id.Motion, id.Attack, id.SendCount,
+                    playerPosition), o.HitSound, new Vector3((float)o.Position.X, (float)o.Position.Y, (float)o.Position.Z)));
+                if (o.SkillPauseFeedback) tag.Hit?.Invoke();
+                break;
+            }
+        }
+        return hits.Count;
+    }
 
     /// <summary>
     /// The named sensors' loop (worldservice_1.cpp:9262-9316), before the tombs' and with the same areas (not emptied here):

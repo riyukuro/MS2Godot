@@ -593,13 +593,15 @@ public static class FieldEnter
 {
     /// <summary>Takes <paramref name="f"/> into <paramref name="entry"/>; the map still loading again
     /// (<see cref="Ms2.Net.FieldEntry.LoadingAlready"/>) keeps the field.</summary>
-    public static FieldEnterResult Take(Ms2.Net.FieldEntry entry, RequestFieldEnter f, BreakableObjects breakables, LiftableObjects lifts, LiftableTargetBoxes targets)
+    public static FieldEnterResult Take(Ms2.Net.FieldEntry entry, RequestFieldEnter f, BreakableObjects breakables, LiftableObjects lifts, LiftableTargetBoxes targets,
+        FieldVibrates vibrates = null)
     {
         if (!entry.Enter(f)) return FieldEnterResult.Refused;
         if (entry.LoadingAlready) return FieldEnterResult.LoadingAlready;
         breakables.ClearMarkers();
         lifts.FieldLeft();
         targets.Clear();
+        vibrates?.Clear();   // the field reset's m_420, m_468 and m_5e8 RemoveAll (worldservice_1.cpp:10066-10076)
         return FieldEnterResult.NewField;
     }
 }

@@ -52,6 +52,8 @@ public enum Inbound : ushort {
     Shop = 0x51,
     ItemMerge = 0x74,       // RecvOp ItemMerge (commonfiles/opcodes.h:124): CSceneStateGame::OnItemFusion
     Vibrate = 0x75,         // RecvOp Vibrate (commonfiles/opcodes.h:125): CSceneStateGame::OnVibrate (@0x14172a1c0)
+    HideVibrate = 0x76,     // RecvOp HideVibrate (commonfiles/opcodes.h:126): CSceneStateGame::OnHideVibrate (@0x14172a7b0)
+    ShowVibrate = 0x77,     // RecvOp ShowVibrate (commonfiles/opcodes.h:127): CSceneStateGame::OnShowVibrate (@0x14172a850)
     ItemDismantle = 0x96,   // RecvOp ItemDismantle (commonfiles/opcodes.h:158): CItemBreakManager::OnItemDismantlePacket
     SystemShop = 0xA1,      // RecvOp SystemShop (commonfiles/opcodes.h:169): CSceneStateGame::OnSystemShop
     GlobalFactor = 0xD6,
@@ -185,6 +187,7 @@ public enum Outbound : ushort {
     CharacterManagement = 0x09,
     ResponseHeartbeat = 0x0A,
     ItemEquip = 0x16,
+    Vibrate = 0x26,             // SendOp::Vibrate (commonfiles/opcodes.h:343): WorldService::FUN_141bc3560, WriteVibrateInfo
     Breakable = 0x27,           // SendOp::Breakable (commonfiles/opcodes.h:344): WorldService::FUN_141bc3560, WriteBreakableInfo
     Tombstone = 0x2A,           // SendOp::Tombstone (commonfiles/opcodes.h:347): WorldService::FUN_141bc3560
     Liftable = 0x3C,            // SendOp::Liftable (commonfiles/opcodes.h:365): LiftCubeAction::vfunc_2, the action key on a liftable cube

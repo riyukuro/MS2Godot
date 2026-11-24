@@ -56,6 +56,8 @@ static class Gms2Opcodes {
         [Inbound.Shop] = 0x52,
         [Inbound.ItemMerge] = 0x76,
         [Inbound.Vibrate] = 0x77,
+        [Inbound.HideVibrate] = 0x78,
+        [Inbound.ShowVibrate] = 0x79,
         [Inbound.ItemDismantle] = 0x98,
         [Inbound.SystemShop] = 0xA3,
         [Inbound.GlobalFactor] = 0xD8,
@@ -180,6 +182,7 @@ static class Gms2Opcodes {
         [Outbound.NewsNotification] = 0x64,   // upstream RecvOp NewsNotification
         [Outbound.SmartPush] = 0x84,          // upstream RecvOp SmartPush
         [Outbound.ChatSticker] = 0xB9,
+        [Outbound.Vibrate] = 0x26,
         [Outbound.Breakable] = 0x27,
         [Outbound.Liftable] = 0x3D,
         [Outbound.StateReact] = 0xAA,
