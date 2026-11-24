@@ -106,6 +106,34 @@ public class NpcQuestMarksTests
     }
 
     [Test]
+    public void AQuestOnlyNpcTalksThroughItsQuests()
+    {
+        // TalkAction::vfunc_1 (actionkeyobject.cpp:1385-1398): npc 500 has no kind and no npc talks, only quests
+        var t = Table(Quest(1, 0, 1, 500, 600), Quest(2, 1, 1, 700, 600));
+        var marks = new NpcQuestMarks(t);
+        var ctx = new Ctx { Level = 1 };
+        var rules = new QuestRules(t, ctx);
+        bool NoTalk(int q, int s) => false;
+        // quest 1 can start at 500: its mark talks (the job tutorial's first quest giver)
+        Assert.That(marks.HasTalk(500, 0, false, ctx, rules, NoTalk), Is.True);
+        // taken and not done: no mark at 500 (it completes at 600) and no talk 200 for it, so no talk
+        ctx.Records[1] = Active(1, false);
+        Assert.That(marks.HasTalk(500, 0, false, ctx, rules, NoTalk), Is.False);
+        // HasTalkScriptForNpc: the started quest's start npc with a quest talk 200
+        Assert.That(marks.HasTalk(500, 0, false, ctx, rules, (q, s) => q == 1 && s == 200), Is.True);
+        Assert.That(marks.HasTalkScriptForNpc(600, ctx, (q, s) => true), Is.False, "600 completes it; it does not start it");
+        // a function kind or npc talks talk on their own
+        Assert.That(marks.HasTalk(500, 1, false, ctx, rules, NoTalk), Is.True);
+        Assert.That(marks.HasTalk(500, 0, true, ctx, rules, NoTalk), Is.True);
+        // the hidden kinds still count (GetNpcQuestState with all = 1)
+        var hidden = new NpcQuestMarks(t) { DisplayEpic = false };
+        ctx.Records.Clear();
+        Assert.That(hidden.HasTalk(500, 0, false, ctx, rules, NoTalk), Is.True);
+        // nothing at all: no talk
+        Assert.That(marks.HasTalk(800, 0, false, ctx, rules, NoTalk), Is.False);
+    }
+
+    [Test]
     public void TheIconSuffixFollowsTheQuestKind()
     {
         Assert.That(NpcQuestMarks.Suffix(new QuestData { Type = 0 }), Is.EqualTo("_epic"));

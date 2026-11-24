@@ -101,6 +101,31 @@ public sealed class NpcQuestMarks
         return flags;
     }
 
+    /// <summary>
+    /// TalkAction::vfunc_1's talk check on the npc FindTalkableNpc found (actionkeyobject.cpp:1385-1398, @0x140957bb0): the
+    /// key talks to it when GetNpcQuestState(npc, state, 1) gives a quest (icon not 0xb), when its kind is not 0, when it has
+    /// npc talks (HasNpcTalks, talkscript.cpp:345), or when <see cref="HasTalkScriptForNpc"/>. A quest-only npc (no kind,
+    /// no npc script, e.g. a job tutorial's first quest giver) talks through its quests.
+    /// </summary>
+    public bool HasTalk(int npc, int kind, bool hasNpcTalks, IQuestContext ctx, QuestRules rules, Func<int, int, bool> hasQuestTalk)
+    {
+        if (Get(npc, ctx, rules, all: true).Icon != Mark.None.Icon) return true;
+        if (kind != 0) return true;
+        if (hasNpcTalks) return true;
+        return HasTalkScriptForNpc(npc, ctx, hasQuestTalk);
+    }
+
+    /// <summary>
+    /// CQuestManager::HasTalkScriptForNpc (questmanager_2.cpp:1342, @0x1416cebf0): a started quest (GetQuestsFiltered state 1,
+    /// any type, any group) whose start npc (m_2e8) is the npc and that has a quest talk 200 (FindQuestTalk(quest, 200)).
+    /// </summary>
+    public bool HasTalkScriptForNpc(int npc, IQuestContext ctx, Func<int, int, bool> hasQuestTalk)
+    {
+        foreach (int id in Quests(npc))
+            if (table.Quest(id)?.StartNpc == npc && ctx.Get(id) is { State: 1 } && hasQuestTalk(id, 200)) return true;
+        return false;
+    }
+
     /// <summary>IsQuestDisplayed: epic by DisplayEpic, event always, repeatable by DisplayRepeat, world by DisplayWorld,
     /// others always; a quest with no data never.</summary>
     public bool IsDisplayed(int questId)

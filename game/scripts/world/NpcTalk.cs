@@ -13,8 +13,8 @@ namespace Ms2Godot.World;
 /// <summary>
 /// Talking to an npc in the offline sandbox (the client's TalkAction + UITalkManager, with the sandbox answering the server's part).
 /// - Who: MyPC::FindTalkableNpc -> WorldService::FindNearestNpc, friendly 2 first, then friendly 1: within TalkableDistance plus
-///   the npc's capsule radius, in front of the player (TalkableFrontOnly), nearest first; the npc must have something to say (a
-///   function kind or an npc script).
+///   the npc's capsule radius, in front of the player (TalkableFrontOnly), nearest first; then TalkAction's check on that npc
+///   (<see cref="NpcQuestMarks.HasTalk"/>): a quest for it, a function kind, an npc script, or a started quest's talk.
 /// - The window: uitalkcinematic run by its own ActionScript (<see cref="MovieDialog"/>) with UITalkCinematic's C++ side
 ///   (<see cref="TalkCinematicController"/>), the movie a plain talk opens (UITalkManager::OnTalkPacket mode 1 -> FUN_141b1ff80,
 ///   uitalkcinematic.cpp:1456: sub scene 0x6200031).
@@ -282,31 +282,43 @@ public sealed partial class NpcTalk : Node
         return r;
     }
 
-    bool HasTalk(NpcRow r) => r.Kind != 0 || Scripts(packs).Find(r.Id) != null;
+    /// <summary>TalkAction::vfunc_1's check (actionkeyobject.cpp:1385-1398) on the found npc, on the character's quest records.</summary>
+    bool HasTalk(NpcRow r) => QuestMarks(packs).HasTalk(r.Id, r.Kind, Scripts(packs).Find(r.Id) != null, QuestContext, Rules,
+        (quest, script) => QuestScripts(packs).Find(quest, script) != null);
 
-    /// <summary>WorldService::FindNearestNpc for the talk action: friendly 2 first, then 1.</summary>
+    /// <summary>
+    /// MyPC::FindTalkableNpc (mypc.cpp:2825, @0x141529640): WorldService::FindNearestNpc friendly 2, else friendly 1; then
+    /// TalkAction::vfunc_1 (actionkeyobject.cpp:1382-1405) talks to that npc only if it has something to say. The nearest npc
+    /// is picked first: one with nothing to say keeps the key from a talkable npc further away, as in the client.
+    /// STILL-OPEN: FindNearestNpc skips the front test for an npc with property tag 8 (worldservice_1.cpp:6467) and
+    /// TalkAction refuses an npc whose GameObject m_unk_b0 is set (FUN_14123c660, :1385); neither is ported. The visible test
+    /// here is ours (a trigger-hidden npc), not FindNearestNpc's.
+    /// </summary>
     public FieldNpcs.Placed FindTalkable()
     {
         if (player == null) return null;
+        var n = FindNearestNpc(2) ?? FindNearestNpc(1);
+        return n != null && HasTalk(n.Row) ? n : null;
+    }
+
+    /// <summary>WorldService::FindNearestNpc(friendly, TalkableDistance, TalkableFrontOnly, 1) (worldservice_1.cpp:6438).</summary>
+    FieldNpcs.Placed FindNearestNpc(int friendly)
+    {
         float range = constants.Float("TalkableDistance", 300);
         bool frontOnly = constants.Float("TalkableFrontOnly", 1) != 0;
         var me = player.GlobalPosition;
         var face = new Vector3(Mathf.Sin(player.Visual.Rotation.Y), 0, Mathf.Cos(player.Visual.Rotation.Y));
-        foreach (int friendly in new[] { 2, 1 })
+        FieldNpcs.Placed best = null; float bestD = float.MaxValue;
+        foreach (var n in live != null ? live.TalkNpcs : npcs)
         {
-            FieldNpcs.Placed best = null; float bestD = float.MaxValue;
-            foreach (var n in live != null ? live.TalkNpcs : npcs)
-            {
-                if (n.Row.Friendly != friendly || !HasTalk(n.Row) || !n.Root.Visible) continue;
-                var to = n.Position - me;
-                float d = to.Length();
-                if (d > range + n.Row.CapsuleRadius) continue;
-                if (frontOnly && new Vector3(to.X, 0, to.Z).Dot(face) < 0) continue;
-                if (d < bestD) { bestD = d; best = n; }
-            }
-            if (best != null) return best;
+            if (n.Row.Friendly != friendly || !n.Root.Visible) continue;
+            var to = n.Position - me;
+            float d = to.Length();
+            if (d > range + n.Row.CapsuleRadius) continue;
+            if (frontOnly && new Vector3(to.X, 0, to.Z).Dot(face) < 0) continue;
+            if (d < bestD) { bestD = d; best = n; }
         }
-        return null;
+        return best;
     }
 
     /// <summary>The script the server opens a plain talk with (see the class summary).</summary>
