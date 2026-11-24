@@ -786,6 +786,121 @@ public partial class LiveSession
                 }
                 continue;
             }
+            if (step.StartsWith("bag"))      // the bag steps: baggive:N (MS2_LIVE_BAG_ITEM), bagkeep (MS2_LIVE_BAG_KEEP, one item), bagsort[:id], bagui, bagdrop:N, bagdestroy, bagexpand[:id]
+            {
+                string arg = step.Contains(':') ? step[(step.IndexOf(':') + 1)..] : "";
+                string name = step.Contains(':') ? step[..step.IndexOf(':')] : step;
+                long Count(int id) { long n = 0; foreach (var e in live.Items.All) if (e.Id == id) n += e.Amount; return n; }
+                var boxes = new System.Collections.Generic.List<Ms2.Ui.Hud.MessageBoxData>();
+                hud.WatchBagBoxes(boxes.Add);
+                string Tags() => string.Join(";", boxes.Select(b => b.Extra));
+                Ms2.Ui.Hud.MessageBoxData Box(string tag) => boxes.LastOrDefault(b => b.Extra == tag);
+                async Task<bool> Pointer(bool overUi)      // the mouse moved over the open bag, or onto the field away from every window
+                {
+                    var points = new System.Collections.Generic.List<Vector2>();
+                    if (overUi) { if (hud.BagScreenPoint() is { } p) points.Add(p); }
+                    else points.AddRange(new[] { new Vector2(120, 330), new Vector2(240, 220), new Vector2(400, 420), new Vector2(640, 300) });
+                    foreach (var p in points)
+                    {
+                        Input.WarpMouse(p); await frames(12);
+                        if (hud.CursorOverUiNow() == overUi) { GD.Print($"live: combat bag pointer at {p} over the UI {overUi}"); return true; }
+                    }
+                    return false;
+                }
+                switch (name)
+                {
+                    case "baggive": case "bagkeep":
+                    {
+                        int id = int.Parse(Env(name == "baggive" ? "MS2_LIVE_BAG_ITEM" : "MS2_LIVE_BAG_KEEP", "0"));
+                        long n0 = Count(id);
+                        hud.SubmitChatLine(name == "baggive" ? $"/item {id} --amount {arg}" : $"/item {id}");
+                        await until(() => Count(id) != n0, 60 * 5); await frames(30);
+                        Check($"the bag holds item {id} ({n0} -> {Count(id)})", Count(id) == n0 + (name == "baggive" ? long.Parse(arg) : 1));
+                        break;
+                    }
+                    case "bagsort":      // bagsort[:item id]: the tab of that item, else of MS2_LIVE_BAG_ITEM
+                    {
+                        int id = arg.Length > 0 ? int.Parse(arg) : int.Parse(Env("MS2_LIVE_BAG_ITEM", "0")); int tab = live.Items.TabOf(id);
+                        long n0 = Count(id); int changed = 0;
+                        System.Action<long> onChanged = _ => changed++;
+                        live.Items.Changed += onChanged;
+                        Check($"the bag shows tab {tab}", hud.BagSlotScripted(id, tab) != null);
+                        GD.Print($"live: combat bag sort: {(hud.BagSortScripted() ? "clicked" : "not clicked")}");
+                        await until(() => changed > 0, 60 * 5); await frames(60);
+                        live.Items.Changed -= onChanged;
+                        Check($"the server answered the sort of tab {tab} ({changed} change(s)), the item kept ({n0} -> {Count(id)})", changed > 0 && Count(id) == n0);
+                        Shot("bag_sort.png");
+                        break;
+                    }
+                    case "bagui":
+                    {
+                        int id = int.Parse(Env("MS2_LIVE_BAG_ITEM", "0")); long n0 = Count(id);
+                        string slot = hud.BagSlotScripted(id, live.Items.TabOf(id));
+                        Check("the pointer is over the bag", await Pointer(true));
+                        Check($"the drag ended on no slot ({slot})", slot != null && hud.BagDragEndScripted(slot));
+                        await frames(120);
+                        Check($"over the UI the item returns: no box ({Tags()}), the bag kept it ({n0} -> {Count(id)})", boxes.Count == 0 && Count(id) == n0);
+                        break;
+                    }
+                    case "bagdrop":
+                    {
+                        int id = int.Parse(Env("MS2_LIVE_BAG_ITEM", "0")); long n0 = Count(id); int n = int.Parse(arg);
+                        string slot = hud.BagSlotScripted(id, live.Items.TabOf(id));
+                        var held = live.Items.All.FirstOrDefault(e => e.Id == id);
+                        Check("the pointer is over the field", await Pointer(false));
+                        Check($"the drag ended on no slot ({slot})", slot != null && hud.BagDragEndScripted(slot));
+                        await frames(30);
+                        var dropBox = Box(Ms2.Ui.Hud.InventoryController.DropBox);
+                        Check($"the stack asks in the drop box ({Tags()}), its count {dropBox?.InputDefault}", dropBox != null && dropBox.InputDefault == n0.ToString());
+                        Shot("bag_dropbox.png");
+                        GD.Print($"live: combat bag drop {n}: {(hud.BagBoxAnswerScripted(dropBox, 0, $"drop,{n}") ? "answered" : "no box")}");
+                        await until(() => Count(id) != n0, 60 * 5); await frames(60);
+                        Check($"the bag lost the drop ({n0} -> {Count(id)})", Count(id) == n0 - n);
+                        Shot("bag_drop.png");
+                        break;
+                    }
+                    case "bagdestroy":
+                    {
+                        int id = int.Parse(Env("MS2_LIVE_BAG_KEEP", "0")); long n0 = Count(id);
+                        string slot = hud.BagSlotScripted(id, live.Items.TabOf(id));
+                        var held = live.Items.All.FirstOrDefault(e => e.Id == id);
+                        GD.Print($"live: combat bag destroy target {held?.Uid} rule {held?.Transfer.Rule}");
+                        Check("the pointer is over the field", await Pointer(false));
+                        Check($"the drag ended on no slot ({slot})", slot != null && hud.BagDragEndScripted(slot));
+                        await frames(30);
+                        var destroyBox = Box(Ms2.Ui.Hud.InventoryController.DestroyBox);
+                        Check($"an item that cannot go on the ground asks in the destroy box ({Tags()}): {destroyBox?.Msg}", destroyBox != null);
+                        Shot("bag_destroybox.png");
+                        GD.Print($"live: combat bag destroy: {(hud.BagBoxAnswerScripted(destroyBox, 0, Ms2.Ui.Hud.InventoryController.DestroyBox) ? "answered" : "no box")}");
+                        await until(() => Count(id) != n0, 60 * 5); await frames(60);
+                        Check($"the item is gone ({n0} -> {Count(id)})", Count(id) == n0 - (held?.Amount ?? 0));
+                        break;
+                    }
+                    case "bagexpand":      // bagexpand[:item id], as bagsort
+                    {
+                        int id = arg.Length > 0 ? int.Parse(arg) : int.Parse(Env("MS2_LIVE_BAG_ITEM", "0")); int tab = live.Items.TabOf(id);
+                        hud.BagSlotScripted(id, tab);
+                        long merat0 = hud.WalletMerat;
+                        if (merat0 < 390) { hud.SubmitChatLine("/player currency meret 390"); await until(() => hud.WalletMerat >= 390, 60 * 5); await frames(30); }
+                        long merat1 = hud.WalletMerat;
+                        int extra0 = live.Items.ExtraSlots.TryGetValue(tab, out var e0) ? e0 : 0;
+                        GD.Print($"live: combat bag expand tab {tab} (extra {extra0}, merets {merat0} -> {merat1}): {(hud.BagExpandScripted() ? "clicked" : "no dialog")}");
+                        await frames(30);
+                        var expandBox = Box(Ms2.Ui.Hud.InventoryController.ExpandSlotBox);
+                        Check($"the expand asks ({Tags()}): {expandBox?.Msg}", expandBox != null);
+                        Shot("bag_expandbox.png");
+                        GD.Print($"live: combat bag expand box: {(hud.BagBoxAnswerScripted(expandBox, 0, Ms2.Ui.Hud.InventoryController.ExpandSlotBox) ? "answered" : "no box")}");
+                        await until(() => (live.Items.ExtraSlots.TryGetValue(tab, out var e) ? e : 0) != extra0, 60 * 5); await frames(90);
+                        int extra1 = live.Items.ExtraSlots.TryGetValue(tab, out var e1) ? e1 : 0;
+                        Check($"tab {tab} has 6 more slots ({extra0} -> {extra1}), the merets paid ({merat1} -> {hud.WalletMerat})", extra1 == extra0 + 6);
+                        Shot("bag_expand.png");
+                        break;
+                    }
+                    default: GD.Print($"live: combat: unknown step {step}"); break;
+                }
+                hud.WatchBagBoxes(null);
+                continue;
+            }
             if (step.StartsWith("lock"))      // the item lock steps: lockgive, lockopen, lockselect, lockconfirm, lockcheck, lockunlock, lockclose
             {
                 string lname = step;
