@@ -695,6 +695,8 @@ public partial class LiveSession : Node
     /// <summary>Trigger 0xf kind 1 (triggerservice.cpp:531): the trigger timer dialog (0x4e95) opens or closes.</summary>
     public event Action<TriggerDialogCommand> TriggerTimerReceived;
     public event Action<RoomTimerMessage> RoomTimerReceived;
+    /// <summary>Trigger 0x13 (OnSidePopupTalk, triggerservice.cpp:683): a side popup talk for UISidePopupTalk (0x4f57).</summary>
+    public event Action<TriggerSidePopup> SidePopupReceived;
     /// <summary>The minimap dialog's ping send (MinimapPing 0xB1).</summary>
     public void SendMinimapPing(Ms2.Net.Wire.IOutPacket packet)
     {
@@ -1211,7 +1213,7 @@ public partial class LiveSession : Node
     /// <summary>
     /// The Trigger types whose dialogs are not ported, read whole (CTriggerService::FUN_141861840, triggerservice.cpp:366):
     /// Dialog 0xf (the PvP observer 0x4e96, 0x4e99/0x4e9a, 0x4ed3; kind 1's timer 0x4e95 goes to the HUD), the side popup talk 0x13
-    /// (UISidePopupTalk 0x4f57), the set-visible list 0x14 (FindObjectByName, the object's state) and the npc duel bar
+    /// (UISidePopupTalk 0x4f57, the HUD's when it listens), the set-visible list 0x14 (FindObjectByName, the object's state) and the npc duel bar
     /// 0x15 (UINpcDuelHPBarDialog 0x4f62). STILL-OPEN: applying them; each is logged once per type and kind.
     /// </summary>
     bool ReadUiTrigger(byte[] body)
@@ -1231,7 +1233,12 @@ public partial class LiveSession : Node
                     else TriggerNotApplied(type, d.Kind);
                     return true;
                 }
-                case TriggerObjects.SidePopup: TriggerNotApplied(type, TriggerObjects.ReadSidePopup(r).Kind); return true;
+                case TriggerObjects.SidePopup:
+                {
+                    var popup = TriggerObjects.ReadSidePopup(r);
+                    if (SidePopupReceived != null) SidePopupReceived(popup); else TriggerNotApplied(type, popup.Kind);
+                    return true;
+                }
                 case TriggerObjects.SetVisibleUi: TriggerNotApplied(type, TriggerObjects.ReadSetVisibleUi(r).State); return true;
                 case TriggerObjects.DuelHpBar: TriggerNotApplied(type, TriggerObjects.ReadDuelHpBar(r).Show ? (byte)1 : (byte)0); return true;
                 default: return false;

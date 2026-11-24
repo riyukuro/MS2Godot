@@ -210,6 +210,7 @@ public partial class HudScene : Node, IUiStageHost
         MassiveEventUnwatch();
         TriggerTimerUnwatch();
         RoomTimerUnwatch();
+        SidePopupUnwatch();
         CloseQuestNavigation();
         unwatchMinimapPcs?.Invoke();
         unwatchMinimapPcs = null;
@@ -424,6 +425,7 @@ public partial class HudScene : Node, IUiStageHost
         MassiveEventPane();
         if (unwatchTriggerTimer == null) WatchTriggerTimer();
         if (unwatchRoomTimer == null) RoomTimerPane();
+        if (unwatchSidePopup == null) SidePopupPane();
         MessageBoxLayer.Ensure(this);       // the client's one message box layer (CUIService::CreateAllDialogs)
         BindBoxAnswers();
         TooltipLayer.Ensure(this);          // and its one tooltip movie (GFxManager LoadTooltipMovie)
