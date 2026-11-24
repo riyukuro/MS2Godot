@@ -28,7 +28,7 @@ public sealed class PartyUser {
     public (int, int, int) Trophy;  // m_d4 (Unk_IntTriple): the trophy counts; the popup menu shows their sum
     public string Picture = ""; // SetImage
     public byte ReturnUserKind; // m_180: 2 = a returning user (the return icon)
-    public bool IsDead;         // m_184: FUN_141637c40's state 2
+    public bool IsSleeping;     // m_184: FUN_141637c40's state 2 (the movie's kStateSleep: the member's sleep icon)
 
     /// <summary>GetTombType @0x1408f1cf0 (userproxy.cpp:1895): m_4c &amp; 3 is 1 or 2, else 0.</summary>
     public int TombType => (TombFlags & 3) is 1 or 2 ? TombFlags & 3 : 0;
@@ -74,7 +74,7 @@ public sealed class PartyUser {
         int set = r.ReadInt();                         // FUN_1408f1110 per value
         for (int i = 0; i < set; i++) r.ReadLong();
         u.ReturnUserKind = r.ReadByte();
-        u.IsDead = r.ReadBool();
+        u.IsSleeping = r.ReadBool();
         r.ReadLong(); r.ReadInt(); r.ReadInt(); r.ReadLong(); r.ReadInt(); r.ReadLong();   // m_188 .. m_1b0
         int a = r.ReadInt(); for (int i = 0; i < a; i++) r.ReadLong();   // m_1b8
         int b = r.ReadInt(); for (int i = 0; i < b; i++) r.ReadLong();   // m_1e8
@@ -110,7 +110,7 @@ public sealed class PartyUser {
         for (int i = 0; i < 12; i++) w.WriteInt(0);
         w.WriteUnicodeString(""); w.WriteLong(0);
         w.WriteInt(0);
-        w.WriteByte(ReturnUserKind); w.WriteBool(IsDead);
+        w.WriteByte(ReturnUserKind); w.WriteBool(IsSleeping);
         w.WriteLong(0); w.WriteInt(0); w.WriteInt(0); w.WriteLong(0); w.WriteInt(0); w.WriteLong(0);
         w.WriteInt(0); w.WriteInt(0); w.WriteShort(0); w.WriteLong(0);
     }
@@ -364,7 +364,7 @@ public sealed class PartyMember {
     public long CharacterId => User.CharacterId;
 
     /// <summary>FUN_141637c40 (:115): 0 offline, 2 when m_184 is set, else 1.</summary>
-    public int State => Offline ? 0 : User.IsDead ? 2 : 1;
+    public int State => Offline ? 0 : User.IsSleeping ? 2 : 1;
     /// <summary>GetReadyState (:125): 0 offline, else the ready state.</summary>
     public int ShownReadyState => Offline ? 0 : ReadyState;
 }
@@ -673,6 +673,14 @@ public sealed partial class PartyBook {
         if (Find(characterId) is not { } m) return;
         m.User.Hp = hp; m.User.MaxHp = maxHp;
         MemberUpdated?.Invoke(m, 2);
+    }
+
+    /// <summary>UpdateMemberJob (:489): the member's job group (m_3c) from its actor, then the window's flag 4 (the movie's job
+    /// icon reads m_40, the job, which this does not change).</summary>
+    public void SetJobGroup(long characterId, int jobGroup) {
+        if (Find(characterId) is not { } m) return;
+        m.User.JobGroup = jobGroup;
+        MemberUpdated?.Invoke(m, 4);
     }
 
     /// <summary>UpdateMemberLevel (:511).</summary>

@@ -279,7 +279,7 @@ public sealed class PartyController : UiController
         if (Field == null || !Field.GlobalSplit || !Field.CheckPartyObserve) return 0;
         var me = mine.User; var u = m.User;
         if (u.Channel != me.Channel || u.MapId != me.MapId || u.MapInstanceId != me.MapInstanceId) return 0;
-        return 0;   // pMember->role: not in the party packets read here (STILL-OPEN)
+        return 0;   // pMember->role: STILL-OPEN, set only by CPartyManager::SetLeaderByName (partymanager.cpp:681, role 1 / 2) from MyPC::StartObserving (mypc.cpp:3698), the observe camera, which is not ported; no party packet carries it
     }
 
     /// <summary>ASPartyVotePage::OnInit @0x141a73a70 (:310) on m_partyVote: the page hidden, its yes / no buttons' clicks.</summary>

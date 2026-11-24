@@ -3560,7 +3560,8 @@ public partial class LiveSession : Node
         if (!string.IsNullOrEmpty(partyRun) && Instance is { } pl && tree.CurrentScene is Ui.HudScene ph)
         {
             var pp = partyRun.Split(':');
-            bool asker = pp[0] == "ask";
+            bool frames = pp[0] is "askframes" or "answerframes";       // the member frames run: levels, deaths and a quit seen in the window
+            bool asker = pp[0] is "ask" or "askframes";
             string partner = asker && pp.Length > 1 ? pp[1] : "";
             string role = asker ? "A" : "B";
             string partyShots = System.Environment.GetEnvironmentVariable("MS2_LIVE_PARTY_SHOTS");
@@ -3600,7 +3601,57 @@ public partial class LiveSession : Node
                 await Until(() => !pl.Movie.IsPlaying, 60 * 15);
                 await Frames(120);
             }
-            if (asker)
+            if (frames)
+            {
+                // MS2_LIVE_PARTY "askframes:<name>" / "answerframes": the asker invites and the answerer accepts (no ready check, no kick);
+                // then the asker sets its level (GM command: the own Level status event -> UpdateMemberLevel), kills the answerer and
+                // itself (server's mode 0x13 for the member, the own Hp event for the asker) and watches the answerer's frame go
+                // offline when the answerer quits: each step is logged with the party book and shot.
+                if (asker)
+                {
+                    UserBlock who = null;
+                    await Until(() => (who = pl.FieldUsers().FirstOrDefault(u => u.Name == partner)) != null, 60 * 120);
+                    GD.Print($"live: party A: {partner} {(who != null ? "is in the field" : "never came")}");
+                    await Frames(120);
+                    ph.PartyLinkClick("inviteParty," + partner);
+                    bool joined = await Joined(true, 60);
+                    GD.Print($"live: party A: invite answered, in party {joined}, window {ph.PartyWindowShown}");
+                    await Frames(60 * 3);
+                    PShot("party");
+                    string own = System.Environment.GetEnvironmentVariable("MS2_LIVE_CHAR") ?? "";
+                    short level0 = pl.Party.Find(pl.CharacterId)?.User.Level ?? 0;
+                    ph.SubmitChatLine("/player level " + (level0 + 7));
+                    await Until(() => (pl.Party.Find(pl.CharacterId)?.User.Level ?? 0) != level0, 60 * 10);
+                    await Frames(60 * 2);
+                    PShot("own_level");
+                    ph.SubmitChatLine("/kill player " + partner);
+                    await Until(() => Other() != 0 && pl.Party.Find(Other()).User.TombType != 0, 60 * 10);
+                    await Frames(60 * 2);
+                    PShot("other_dead");
+                    ph.SubmitChatLine("/kill player " + own);
+                    await Until(() => (pl.Party.Find(pl.CharacterId)?.User.Hp ?? 1) == 0, 60 * 10);
+                    await Frames(60 * 2);
+                    PShot("own_dead");
+                    await Until(() => pl.Party.Members.Any(m => m.Offline), 60 * 120);
+                    await Frames(60 * 2);
+                    GD.Print($"live: party A: a member went offline: {pl.Party.Members.Any(m => m.Offline)}");
+                    PShot("other_offline");
+                }
+                else
+                {
+                    await Box("invite", 120);
+                    bool joined = await Joined(true, 60);
+                    GD.Print($"live: party B: joined {joined}, window {ph.PartyWindowShown}");
+                    await Frames(60 * 3);
+                    PShot("party");
+                    await Frames(60 * 20);
+                    PShot("after_kills");
+                    await Frames(60 * 10);
+                    PShot("before_quit");
+                    GD.Print("live: party B: quitting");
+                }
+            }
+            else if (asker)
             {
                 UserBlock who = null;
                 await Until(() => (who = pl.FieldUsers().FirstOrDefault(u => u.Name == partner)) != null, 60 * 120);

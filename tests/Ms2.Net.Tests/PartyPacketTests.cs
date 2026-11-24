@@ -8,7 +8,7 @@ namespace Ms2.Net.Tests;
 public class PartyPacketTests {
     static PartyUser User(long id, string name, short channel = 1) => new() {
         AccountId = id + 100, CharacterId = id, Name = name, MapId = 2000001, MapInstanceId = 7, Level = 30, Channel = (ushort) channel,
-        JobGroup = 50, Job = 500, Trophy = (1, 2, 3), MaxHp = 2000, Hp = 1500, TombFlags = 2, GearScore = 1234, Picture = "pic", ReturnUserKind = 2, IsDead = true,
+        JobGroup = 50, Job = 500, Trophy = (1, 2, 3), MaxHp = 2000, Hp = 1500, TombFlags = 2, GearScore = 1234, Picture = "pic", ReturnUserKind = 2, IsSleeping = true,
     };
 
     static PartyMessage Read(byte[] body) {
@@ -31,7 +31,7 @@ public class PartyPacketTests {
         Assert.That(info.Members, Has.Count.EqualTo(2));
         var u = info.Members[0].User;
         Assert.That((u.AccountId, u.CharacterId, u.Name, u.MapId, u.MapInstanceId, u.Level, u.Channel), Is.EqualTo((111L, 11L, "Lead", 2000001, 7, (short) 30, (ushort) 1)));
-        Assert.That((u.Job, u.MaxHp, u.Hp, u.TombType, u.GearScore, u.Picture, u.ReturnUserKind, u.IsDead), Is.EqualTo((500, 2000, 1500, 2, 1234, "pic", (byte) 2, true)));
+        Assert.That((u.Job, u.MaxHp, u.Hp, u.TombType, u.GearScore, u.Picture, u.ReturnUserKind, u.IsSleeping), Is.EqualTo((500, 2000, 1500, 2, 1234, "pic", (byte) 2, true)));
         Assert.That((u.JobGroup, u.Trophy), Is.EqualTo((50, (1, 2, 3))));
         Assert.That(info.Members[1].Offline, Is.True);
         Assert.That(info.Members[1].User.Channel, Is.Zero);

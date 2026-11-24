@@ -676,6 +676,60 @@ public class HudTests
     }
 
     [Test]
+    public void TheOwnStatusEventsReachThePartyFrame()
+    {
+        // NotifyStatusChanged (uistatuseventlistener.cpp:257) -> UpdateMemberHp / UpdateMemberJob / UpdateMemberLevel: the own member's
+        // value changes and the window gets its flag (2 / 4 / 8)
+        var m = Model();
+        var book = PartyFixture.Book(2000062, m.Player);
+        var seen = new List<(long Id, int Flags)>();
+        book.MemberUpdated += (mem, f) => seen.Add((mem.CharacterId, f));
+        var self = PartyFixture.SelfCharacterId;
+        var p = m.Player;
+        p.HpCur = 321; p.HpMax = 654; p.Level = 41; p.JobGroup = 20;
+        PartyOwnStatus.Apply(book, self, p, StatusEvent.Hp);
+        PartyOwnStatus.Apply(book, self, p, StatusEvent.Job);
+        PartyOwnStatus.Apply(book, self, p, StatusEvent.Level);
+        PartyOwnStatus.Apply(book, self, p, StatusEvent.Sp);        // not a party event
+        Assert.That(seen, Is.EqualTo(new[] { (self, 2), (self, 4), (self, 8) }));
+        var u = book.Find(self).User;
+        Assert.That((u.Hp, u.MaxHp, u.Level, u.JobGroup), Is.EqualTo((321, 654, (short)41, 20)));
+        var c = new PartyController { Party = book, SelfCharacterId = self };
+        Assert.That(c.MemberObject(book.Find(self), 2)["hp"], Is.EqualTo(321));
+        Assert.That(c.MemberObject(book.Find(self), 2)["maxhp"], Is.EqualTo(654));
+        Assert.That(c.MemberObject(book.Find(self), 8)["level"], Is.EqualTo(41));
+        // no party, or an id that is not a member: nothing
+        seen.Clear();
+        PartyOwnStatus.Apply(book, 999, p, StatusEvent.Hp);
+        PartyOwnStatus.Apply(new PartyBook(), self, p, StatusEvent.Level);
+        Assert.That(seen, Is.Empty);
+    }
+
+    [Test]
+    public void TheMemberFrameShowsOfflineSleepAndTombStates()
+    {
+        // FillMemberObject (:975): state 0 offline (tombType 0), 2 the sleep state (m_184), else 1; tombType from the HP flags
+        var m = Model();
+        var book = PartyFixture.Book(2000062, m.Player);
+        var c = new PartyController { Party = book, SelfCharacterId = PartyFixture.SelfCharacterId };
+        var archer = book.Find(3);
+        Assert.That(c.MemberObject(archer, 1)["state"], Is.EqualTo(1));
+        book.Apply(new PartyMemberFlags(3, archer.User.AccountId, 1800, 0, 2), PartyFixture.SelfCharacterId, true);
+        Assert.That(c.MemberObject(archer, 2)["tombType"], Is.EqualTo(2));
+        Assert.That(c.MemberObject(archer, 2)["hp"], Is.EqualTo(0));
+        archer.User.IsSleeping = true;
+        Assert.That(c.MemberObject(archer, 1)["state"], Is.EqualTo(2));
+        // offline wins over both: state 0 and the tomb hidden
+        book.Apply(new PartyOffline(3), PartyFixture.SelfCharacterId, true);
+        var off = c.MemberObject(archer, 3);
+        Assert.That((off["state"], off["tombType"]), Is.EqualTo((0, 0)));
+        // coming online again shows the frame as it was
+        book.Apply(new PartyOnline(archer.User), PartyFixture.SelfCharacterId, true);
+        Assert.That(c.MemberObject(archer, 3)["state"], Is.EqualTo(2));
+        Assert.That(c.MemberObject(archer, 3)["tombType"], Is.EqualTo(2));
+    }
+
+    [Test]
     public void PartyWindowShowsTheFixtureParty()
     {
         // UIPartyDialog: RefreshAll's initMembers with each member's FillMemberObject, then the party packets' window calls

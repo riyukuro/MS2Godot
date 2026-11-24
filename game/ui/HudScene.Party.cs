@@ -41,7 +41,7 @@ public partial class HudScene
     {
         if (partyBook == null || !partyBook.IsInParty) return "not in a party";
         return $"party {partyBook.PartyId} leader {partyBook.LeaderId}: " + string.Join(", ",
-            partyBook.Members.Select(m => $"{m.User.Name}({m.User.CharacterId}) hp {m.User.Hp}/{m.User.MaxHp}{(m.Offline ? " offline" : "")}{(m.User.IsDead ? " dead" : "")}"));
+            partyBook.Members.Select(m => $"{m.User.Name}({m.User.CharacterId}) hp {m.User.Hp}/{m.User.MaxHp}{(m.Offline ? " offline" : "")}{(m.User.IsSleeping ? " sleeping" : "")}{(m.User.TombType != 0 ? $" tomb{m.User.TombType}" : "")}"));
     }
 
     /// <summary>FUN_140710590 for the party window and the popup menu: the session's send; offline the packet is logged.</summary>

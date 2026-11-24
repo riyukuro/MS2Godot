@@ -2956,6 +2956,9 @@ public partial class HudScene : Node, IUiStageHost
             var changed = model.Player.Apply(live.Me, Ms2Godot.Flow.Session.Chosen?.User);
             foreach (var e in changed) model.Notify(e);
             if (model != hudModel) return;
+            // the party manager's own-member update follows the listeners (NotifyStatusChanged, uistatuseventlistener.cpp:257)
+            if (partyBook != null)
+                foreach (var e in changed) Ms2.Ui.Hud.PartyOwnStatus.Apply(partyBook, live.CharacterId, model.Player, e);
             OwnMinimapPicture(live);
             if (changed.Contains(Ms2.Ui.StatusEvent.Name)) playerNameTag?.SetName(OwnTagName());
             if (changed.Contains(Ms2.Ui.StatusEvent.Hp))
