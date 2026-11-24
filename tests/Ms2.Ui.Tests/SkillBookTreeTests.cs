@@ -30,9 +30,26 @@ public class SkillBookTreeTests
         return packs;
     }
 
-    static (UiHost, SkillBookTreeController, int Requests) Load()
+    static PackSet gms2Packs;
+    static MovieSource gms2Src;
+
+    /// <summary>The GMS2 data set (MS2_GMS2_DATA) and its movies.</summary>
+    static (PackSet, MovieSource) Gms2()
     {
-        var model = new UiModel(new GameTables(Packs(), "en")) { FeatureEnabledByName = f => LobbyFeatures.IsEnabled(Packs(), f), HasLocalPlayer = true };
+        if (gms2Packs == null)
+        {
+            var p = new PackSet(RcGap.Data("MS2_GMS2_DATA"));
+            gms2Src = new MovieSource(k => p.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? p.Read("Resource/Gfx", e) : null);
+            gms2Packs = p;
+        }
+        return (gms2Packs, gms2Src);
+    }
+
+    static (UiHost, SkillBookTreeController, int Requests) Load() => Load(Packs(), src);
+
+    static (UiHost, SkillBookTreeController, int Requests) Load(PackSet packs, MovieSource src)
+    {
+        var model = new UiModel(new GameTables(packs, "en")) { FeatureEnabledByName = f => LobbyFeatures.IsEnabled(packs, f), HasLocalPlayer = true };
         model.Player.Level = 1;
         var t = model.Tables.Skills;
         var jobs = new JobSystem(t);
@@ -118,6 +135,39 @@ public class SkillBookTreeTests
         Assert.That((tip["skillID"], tip["level"]), Is.EqualTo(((object)10500001u, (object)1)));
         Assert.That(c.GetUserData("getTooltipFromPrevLevel", new object[] { 10500001u }), Is.Null);
         Assert.That(c.GetUserData("getTooltipFromNextLevel", new object[] { 10500001u })["tooltipAlign"], Is.EqualTo(7));
+    }
+
+    /// <summary>
+    /// The GMS2 data's level 1 archer: the requirements come from the skill files (skill/&lt;nn&gt;/&lt;id&gt;.xml &lt;upgrade&gt;), so
+    /// IsDisabled (CheckRequirements) locks the skills whose level 1 needs a player level or other skills (10500041: level 10;
+    /// 10500021: level 16, 10500001 3 and 10500011 3), and not the ones learnt with the rank. The old reader had no requirement
+    /// on GMS2, so every slot was open.
+    /// </summary>
+    [Test]
+    public void TheGms2TreeLocksTheGatedSkillsOfALevelOneArcher()
+    {
+        var (p, s) = Gms2();
+        var (h, c, _) = Load(p, s);
+        c.OnSkillBookTree(NoTabs());
+        var tree = h.Child("m_treeSkills");
+        int n = (int)Rt.ToNumber(h.Get(tree, "numChildren"));
+        var byId = Enumerable.Range(0, n).Select(i => h.Invoke(tree, "getChildAt", i)).ToDictionary(x => (uint)Rt.ToNumber(h.Get(x, "m_skillID")));
+        bool Disabled(uint id) => Rt.ToBoolean(h.Get(h.Get(byId[id], "m_skillSlot"), "m_disabled"));
+        var job = c.Jobs.Job;
+        int locked = 0, gated = 0;
+        foreach (var (id, _) in byId)
+        {
+            var row = job.FindSkill(id);
+            // unmet at level 1: a player level above 1, a required skill not learnt at its level, a quest (none rewarded)
+            bool needs = row != null && (row.GetRequireLevel(1) > 1 || row.RequireQuestId != 0 || row.RequireSkillIds.Select((r, i) =>
+                c.Jobs.FindSkill(r) is not { Learned: true } have || have.Level < row.RequireSkillLevel(i)).Any(x => x));
+            if (needs) gated++;
+            if (Disabled(id)) locked++;
+            Assert.That(Disabled(id), Is.EqualTo(needs), $"{id}");
+        }
+        TestContext.WriteLine($"{n} skills in the tree, {gated} gated, {locked} locked");
+        Assert.That((Disabled(10500041), Disabled(10500021), Disabled(10500001)), Is.EqualTo((true, true, false)));
+        Assert.That(gated, Is.GreaterThan(5));
     }
 
     [Test]

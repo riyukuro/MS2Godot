@@ -78,6 +78,38 @@ public sealed class JobSkillData
         return d;
     }
 
+    /// <summary>
+    /// The GMS2 requirements: that data has no require lists in table/job.xml; each skill's own file skill/&lt;nn&gt;/&lt;id&gt;.xml
+    /// has them per skill level, &lt;level value=N&gt;&lt;upgrade level skillIDs skillLevels questIDs/&gt;, where the KMS row has
+    /// requireLevel (one entry per skill level), requireSkillIDs, requireSkillLevels and requireQuestID. Read from the levels
+    /// <paramref name="collect"/> picks (FUN_14028faa0(skill, "level", "value"), as SkillData reads them): the upgrade level of
+    /// level N is RequireLevel[N - 1] (a level with none is 0; no list when no level has one), the skills, their levels and the
+    /// quest are those of the lowest level that has them. Which file field is which KMS field is inferred from the data, not
+    /// from a client source (the KMS client reads no &lt;upgrade&gt;): over every job skill both data sets have, the reading gives
+    /// the KMS job.xml requirement (GetRequireLevel of each level, the skills, their levels, the quest), except where the GMS2
+    /// data picks another feature's level (10500021: its CharacterBalance_01 levels, which the KMS row has, are off in GMS2).
+    /// </summary>
+    internal void LoadGms2Upgrade(XElement skill, Func<XElement, string, string, List<XElement>> collect)
+    {
+        bool anyLevel = false, skills = false, quest = false;
+        var levels = new List<ushort>();
+        foreach (var l in collect(skill, "level", "value"))
+        {
+            int value = Xml.Int(l, "value");
+            if (value < 1 || l.Element("upgrade") is not { } u) continue;
+            while (levels.Count < value) levels.Add(0);
+            if (u.Attribute("level") != null) { levels[value - 1] = (ushort)Xml.Int(u, "level"); anyLevel = true; }
+            if (!skills && u.Attribute("skillIDs") != null)
+            {
+                skills = true;
+                foreach (var t in Xml.Tokens((string)u.Attribute("skillIDs"))) RequireSkillIds.Add((uint)Xml.Atoi(t));
+                foreach (var t in Xml.Tokens((string)u.Attribute("skillLevels"))) RequireSkillLevels.Add((ushort)Xml.Atoi(t));
+            }
+            if (!quest && Xml.Tokens((string)u.Attribute("questIDs")) is { Count: > 0 } q) { quest = true; RequireQuestId = (uint)Xml.Atoi(q[0]); }
+        }
+        if (anyLevel) RequireLevel.AddRange(levels);
+    }
+
     /// <summary>HasRequirement @0x140643880 (:114).</summary>
     public bool HasRequirement => RequireLevel.Count > 0 || RequireSkillIds.Count > 0 || RequireQuestId != 0;
 
@@ -178,7 +210,9 @@ public sealed class JobTable
 
     /// <param name="collect">FUN_14028faa0(root, "job", "jobGroupID"): the available &lt;job&gt; elements, one per group.</param>
     /// <param name="jobGroup">GMS2 table/jobgroup.xml (the sub jobs of each group); unused for the KMS shape.</param>
-    public JobTable(XDocument doc, Func<XElement, string, string, List<XElement>> collect, XDocument jobGroup = null)
+    /// <param name="skillFile">GMS2: the skill's own file (skill/&lt;nn&gt;/&lt;id&gt;.xml, null when none), read for the
+    /// requirements of each job skill (<see cref="JobSkillData.LoadGms2Upgrade"/>); null leaves them empty. Unused for the KMS shape.</param>
+    public JobTable(XDocument doc, Func<XElement, string, string, List<XElement>> collect, XDocument jobGroup = null, Func<uint, XDocument> skillFile = null)
     {
         var root = doc?.Root;
         if (root == null || root.Name != "ms2") return;
@@ -191,10 +225,16 @@ public sealed class JobTable
                 // a subJobLevel other than 0 and 1 has no SubJob field and is dropped (the file has none)
                 if (level is 0 or 1) { if (!subJobs.TryGetValue(code, out var a)) subJobs[code] = a = new int[2]; a[level] = Xml.Int(g, "subJobCode"); }
             }
+            var files = new Dictionary<uint, XElement>();
             foreach (var e in collect(root, "job", "code"))
             {
                 var j = JobData.LoadGms2(e, maxLevels, subJobs);
-                jobs.TryAdd(j.JobGroupId, j);
+                if (!jobs.TryAdd(j.JobGroupId, j) || skillFile == null) continue;
+                foreach (var d in j.Skills)
+                {
+                    if (!files.TryGetValue(d.SkillId, out var f)) files[d.SkillId] = f = skillFile(d.SkillId)?.Root is { Name.LocalName: "ms2" } r ? r : null;
+                    if (f != null) d.LoadGms2Upgrade(f, collect);
+                }
             }
             return;
         }
@@ -209,7 +249,12 @@ public sealed class JobTable
     public static bool IsCodeShape(XElement root) => root != null
         && !root.Elements("job").Any(e => e.Attribute("jobGroupID") != null) && root.Elements("job").Any(e => e.Attribute("code") != null);
 
-    /// <summary>JobTable::Load (jobtable.cpp:309) of the pack's table/job.xml (and table/jobgroup.xml where the data has it).</summary>
+    /// <summary>The GMS2 per-skill file of a skill id: skill/&lt;the id's millions, two digits at least&gt;/&lt;the id, eight digits
+    /// at least&gt;.xml (job.xml's 01000001 is skill/01/01000001.xml).</summary>
+    public static string Gms2SkillFile(uint id) => $"skill/{id / 1000000:00}/{id:00000000}.xml";
+
+    /// <summary>JobTable::Load (jobtable.cpp:309) of the pack's table/job.xml (and table/jobgroup.xml where the data has it).
+    /// The GMS2 skill requirements are not read (<see cref="GameTables"/> reads them; the create screen reads the sub jobs only).</summary>
     public static JobTable Load(Ms2.Formats.Pack.PackSet packs)
     {
         XDocument Doc(string path) => packs.Exists("Xml", path) ? Ms2.Formats.World.GameStrings.Parse(packs.Read("Xml", path)) : null;

@@ -291,7 +291,9 @@ public sealed class GameTables
                 r.GuildProperties[level] = new GuildProperty(fundMax, donationMax);
             }
         // JobTable::Load (jobtable.cpp:309): table/job.xml
-        r.Jobs = new Skills.JobTable(Xml("table/job.xml"), (parent, child, key) => FeatureElements.Collect(packs, parent, child, key), Xml("table/jobgroup.xml"));
+        // (GMS2: and each job skill's requirements from its skill/<nn>/<id>.xml)
+        r.Jobs = new Skills.JobTable(Xml("table/job.xml"), (parent, child, key) => FeatureElements.Collect(packs, parent, child, key), Xml("table/jobgroup.xml"),
+            id => Xml(Ms2.Ui.Skills.JobTable.Gms2SkillFile(id)));
         return r;
     }
 
