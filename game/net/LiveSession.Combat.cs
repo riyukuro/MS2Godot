@@ -1699,6 +1699,35 @@ public partial class LiveSession
                     Check("the change button closes the window", pressed && hud.ChangeJobWindowState() == null);
                     break;
                 }
+                case "skillgate":     // an archer's skill window: the gated slots locked, no point into a gated skill (at level 10+, one into a skill it opens)
+                {
+                    const uint Stream = 10500001, Barrage = 10500021, Gate10 = 10500041;
+                    int level = live.Me.User.Level;
+                    bool open = hud.SkillBookOpenScripted();
+                    await until(() => hud.SkillBookTreeShown, 60 * 10); await frames(60);
+                    GD.Print($"live: combat skill gate at level {level}: window {(open ? "open" : "refused")}, tree {hud.SkillBookTreeShown}");
+                    foreach (var id in new[] { Stream, Gate10, Barrage }) GD.Print($"live: combat skill gate {id}: {hud.SkillBookSlotState(id) ?? "not in the tree"}");
+                    string req = hud.SkillBookRequireText(Barrage);
+                    GD.Print($"live: combat skill gate {Barrage} requirements: {req}");
+                    Shot($"skillgate-{level}.png");
+                    Check($"the tree is shown at level {level}", hud.SkillBookTreeShown);
+                    Check($"{Barrage} (level 16, {Stream} 3) is locked", hud.SkillBookSlotState(Barrage)?.StartsWith("disabled True", StringComparison.Ordinal) == true);
+                    Check($"{Stream} (learnt with the rank) is open", hud.SkillBookSlotState(Stream)?.StartsWith("disabled False", StringComparison.Ordinal) == true);
+                    Check($"{Gate10} (level 10) is {(level >= 10 ? "open" : "locked")}", hud.SkillBookSlotState(Gate10)?.StartsWith($"disabled {level < 10}", StringComparison.Ordinal) == true);
+                    Check($"the {Barrage} tooltip's requirement shows level 16 unmet", req?.Contains("16", StringComparison.Ordinal) == true && req.Contains("ff4040", StringComparison.Ordinal));
+                    bool up = hud.SkillBookPointUpScripted(Barrage);
+                    await frames(30);
+                    GD.Print($"live: combat skill gate {Barrage} point up ({(up ? "taken" : "refused")}): {hud.SkillBookSlotState(Barrage)}");
+                    Check($"no point goes into {Barrage}", hud.SkillBookSlotState(Barrage)?.Contains("learnt False", StringComparison.Ordinal) == true);
+                    if (level >= 10)
+                    {
+                        hud.SkillBookPointUpScripted(Gate10);
+                        await frames(30);
+                        GD.Print($"live: combat skill gate {Gate10} point up: {hud.SkillBookSlotState(Gate10)}");
+                        Check($"a point goes into {Gate10} at level {level}", hud.SkillBookSlotState(Gate10)?.Contains("learnt True", StringComparison.Ordinal) == true);
+                    }
+                    break;
+                }
                 case "openchar":
                 {
                     GD.Print($"live: combat char window: {(hud.OpenCharScripted() ? "open" : "refused")}");
