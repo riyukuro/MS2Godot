@@ -309,6 +309,10 @@ public partial class TextNode
             }
             var lines = new List<LayoutLine>();
             var breaks = ts.ShapedTextGetLineBreaks(rid, (int)Label.Size.X, 0, flags);
+            // a space hangs past the text rect instead of wrapping (CheckWordWrap, sfr_render_03b.cpp:1918: `!isSpace`), the engine counts it
+            if (breaks.Length > 2 && Label.AutowrapMode != TextServer.AutowrapMode.Off)
+                breaks = Ms2.Ui.HangingSpaces.Fit(breaks, i => pstart + i < pend && codePoints[pstart + i] == ' ',
+                    (a, b) => { var sub = ts.ShapedTextSubstr(rid, a, b - a); double w = ts.ShapedTextGetSize(sub).X; ts.FreeRid(sub); return w; }, (int)Label.Size.X);
             for (int i = 0; i + 1 < breaks.Length; i += 2)
             {
                 int start = pstart + breaks[i], end = Math.Min(pstart + breaks[i + 1], pend);
