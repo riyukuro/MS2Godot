@@ -29,7 +29,7 @@ public class RcG16MergeOptionsTests
     [Test]
     public void TheKmsMergeOptionKeepsItsFirstRange()
     {
-        using var packs = new PackSet(RcGap.Data("MS2_DATA"));
+        using var packs = new PackSet(RcGap.KmsData());
         var g = new GameTables(packs, "en");
         var options = g.MergeOptions.Find(Equip(13), Material(37000013));
         Assert.That(PapRange(g, options), Is.EqualTo((3, 19)), "kms 37000013 min=2 idx0_max=4 .. idx9_max=19");

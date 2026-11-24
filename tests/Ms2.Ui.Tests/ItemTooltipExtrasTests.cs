@@ -614,11 +614,13 @@ public class ItemTooltipExtrasTests
     [Test]
     public void GachaCoinTooltipShowsItsBoxSeason()
     {
-        // 22201001 is box 1001001's coin; the box shows its season on the icon
+        // KR: 22201001 is box 1001001's coin; other locales use their own randomBoxSeason<Locale> column (GMS2 NA box 1001001 has none)
         var m = NewModel();
+        var (coin, box, season) = UiDataRows.SeasonCoin(Packs()) ?? throw new AssertionException("no gacha box shows a season in this data");
+        if (UiDataRows.IsKr(Packs())) Assert.That((coin, box), Is.EqualTo((22201001, 1001001)));
         var tip = new ItemTooltip(m, 0x200);
-        tip.Fill(Item.Create(m.Tables.Items, 22201001, 0));
-        Assert.That(tip.Data["itemSeason"], Is.EqualTo(m.Tables.GachaBoxes.SeasonText(1001001)).And.Not.Empty);
+        tip.Fill(Item.Create(m.Tables.Items, coin, 0));
+        Assert.That(tip.Data["itemSeason"], Is.EqualTo(season).And.EqualTo(m.Tables.GachaBoxes.SeasonText(box)).And.Not.Empty);
         var plain = new ItemTooltip(m, 0x200);
         plain.Fill(Item.Create(m.Tables.Items, 20300327, 0));
         Assert.That(plain.Data.ContainsKey("itemSeason"), Is.False);
@@ -703,10 +705,12 @@ public class ItemTooltipExtrasTests
         Assert.That(tip.Data["itemMovie"], Is.EqualTo(d.Movie));
         Assert.That(tip.Data.ContainsKey("extraDescription"), Is.True);         // with a local player
         Assert.That(tip.Data.ContainsKey("itemDescription") && tip.Data.ContainsKey("itemGuideDescription"), Is.True);
-        // the same rows as the item tooltip of a new item where the two agree (Item.Create takes the data's rank, 4 here;
-        // the by-id tooltip shows the rank it is given)
+        // the same rows as the item tooltip of a new item where the two agree (Item.Create takes the data's rank when nonzero:
+        // KR 4, GMS2 has no property@rank so the given 3 stays; the by-id tooltip shows the rank it is given)
+        int dataRank = UiDataRows.Int(UiDataRows.ItemPart(Packs(), 11300451, "property"), "rank");
+        if (UiDataRows.IsKr(Packs())) Assert.That(dataRank, Is.EqualTo(4));
         var it = Item.Create(m.Tables.Items, 11300451, 3);
-        Assert.That(it.Rarity, Is.EqualTo(4));
+        Assert.That(it.Rarity, Is.EqualTo(dataRank != 0 ? dataRank : 3));
         tip = new ItemTooltip(m, 0);
         tip.FillById(11300451, it.Rarity);
         var full = new ItemTooltip(m, 0);
@@ -720,7 +724,9 @@ public class ItemTooltipExtrasTests
         Assert.That(tip.Data["itemGrade"], Is.EqualTo(1));                      // rank 0 shows grade 1
         Assert.That(tip.Data.ContainsKey("itemMovie"), Is.False);               // flag 0x40: no movie
         Assert.That(tip.Data["tooltipAlign"], Is.EqualTo(7));
-        Assert.That(new ItemTooltip(m, 0).FillById(1, 1), Is.False);            // no data
+        int missing = UiDataRows.MissingItemId(m.Tables.Items);
+        if (UiDataRows.IsKr(Packs())) Assert.That(missing, Is.EqualTo(1));
+        Assert.That(new ItemTooltip(m, 0).FillById(missing, 1), Is.False);      // no data
     }
 
     static string Json(object v) => System.Text.Json.JsonSerializer.Serialize(v);

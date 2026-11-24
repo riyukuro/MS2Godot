@@ -20,7 +20,7 @@ public class RcG07SkillBeginConditionTests
     [Test]
     public void TheKmsSkillKeepsItsCooldownAndWeapons()
     {
-        using var packs = new PackSet(RcGap.Data("MS2_DATA"));
+        using var packs = new PackSet(RcGap.KmsData());
         var lv = new GameTables(packs, "en").Skills.Skills.GetSkillLevelData(10000001, 1);
         Assert.That(lv, Is.Not.Null, "kms skilldata/100.xml skill 10000001 level 1");
         Assert.That(lv.CooldownMs, Is.EqualTo(400u), "level@cooldown=400");

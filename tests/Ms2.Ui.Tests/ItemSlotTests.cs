@@ -35,9 +35,15 @@ public class ItemSlotTests
     [Test]
     public void ItemDataReadsPropertyLimitAndFunction()
     {
-        var d = new GameTables(Packs(), "en").Items.Get(20300327);
+        var t = new GameTables(Packs(), "en");
+        var d = t.Items.Get(20300327);
         Assert.That(d, Is.Not.Null);
-        Assert.That((d.Type, d.Rank, d.ItemGroup, d.SlotMax, d.Category), Is.EqualTo((25, 1, 2, 999u, "Package")));
+        // the property row as the data has it (GMS2 uses type 10 and has no property@rank)
+        var p = UiDataRows.ItemPart(Packs(), 20300327, "property");
+        Assert.That((d.Type, d.Rank, d.ItemGroup, d.SlotMax, d.Category), Is.EqualTo((UiDataRows.Int(p, "type"), UiDataRows.Int(p, "rank"),
+            UiDataRows.Int(p, "itemGroup"), (uint)UiDataRows.Int(p, "slotMax"), (string)p.Attribute("category"))));
+        if (UiDataRows.IsKr(Packs()))
+            Assert.That((d.Type, d.Rank, d.ItemGroup, d.SlotMax, d.Category), Is.EqualTo((25, 1, 2, 999u, "Package")));
         Assert.That(d.RecommendJobs, Is.EqualTo(new[] { 1, 10 }));
         Assert.That(d.FunctionName, Is.EqualTo("OpenItemBox"));
         // IsJobRecommended: job 1 counts as 10
@@ -45,7 +51,9 @@ public class ItemSlotTests
         Assert.That(d.IsJobRecommended(10), Is.True);
         Assert.That(d.IsJobRecommended(20), Is.False);
         Assert.That(d.IconPath, Is.EqualTo("./Data/Resource/Image/item/icon/20300327.png"));
-        Assert.That(new GameTables(Packs(), "en").Items.Get(1), Is.Null);
+        int missing = UiDataRows.MissingItemId(t.Items);
+        if (UiDataRows.IsKr(Packs())) Assert.That(missing, Is.EqualTo(1));
+        Assert.That(t.Items.Get(missing), Is.Null);
     }
 
     [Test]
@@ -75,17 +83,22 @@ public class ItemSlotTests
         Assert.That(name, Is.EqualTo("LevelUpPackageWidget_1"));
         var slot = model.ItemSlots[name];
         Assert.That((slot.IconType, slot.Flags), Is.EqualTo((0x11, 0x800)));
-        Assert.That(slot.Item.Rarity, Is.EqualTo(1));         // the data's rank over the given 0
+        // the data's rank over the given 0 (KR: 1; GMS2 item rows omit rank, so the given 0 stays)
+        int rank = UiDataRows.Int(UiDataRows.ItemPart(Packs(), 20300327, "property"), "rank");
+        Assert.That(slot.Item.Rarity, Is.EqualTo(rank));
+        if (UiDataRows.IsKr(Packs())) Assert.That(rank, Is.EqualTo(1));
         var s = Slot(model, slot.Item, slot.IconType);
         Assert.That(s["itemID"], Is.EqualTo(20300327u));
-        Assert.That(s["itemGrade"], Is.EqualTo(1));
+        Assert.That(s["itemGrade"], Is.EqualTo(rank));
         Assert.That(s["index"], Is.EqualTo(-1));
         Assert.That(s["iconPath"], Is.EqualTo("./Data/Resource/Image/item/icon/20300327.png"));
         Assert.That((s["itemCash"], s["itemSkin"], s["itemPcBang"], s["itemVIP"], s["itemWedding"], s["itemPiece"]), Is.EqualTo((0, 0, 0, 0, 0, 0)));
         Assert.That((s["itemIconLock"], s["itemIconUnLock"]), Is.EqualTo((false, false)));
         Assert.That(s["itemCount"], Is.EqualTo("2"));
         Assert.That(s.ContainsKey("enchant") || s.ContainsKey("ugctag") || s.ContainsKey("itemSeason"), Is.False);
-        Assert.That(binder.BindNewItem(1, 0, 1), Is.EqualTo(""));
+        int missing = UiDataRows.MissingItemId(model.Tables.Items);
+        if (UiDataRows.IsKr(Packs())) Assert.That(missing, Is.EqualTo(1));
+        Assert.That(binder.BindNewItem(missing, 0, 1), Is.EqualTo(""));
         binder.Clear();
         Assert.That(model.ItemSlots, Is.Empty);
     }
@@ -102,13 +115,22 @@ public class ItemSlotTests
     [Test]
     public void GachaCoinShowsItsBoxSeason()
     {
-        // 22201001 is box 1001001's coin; the box shows its season (KR 1) on the icon; its slot icon is a bare name
+        // KR: 22201001 is box 1001001's coin; the box shows its season (1) on the icon; its slot icon is a bare name. Other
+        // locales use their own randomBoxSeason<Locale> column (GMS2 NA box 1001001 has none), so pick the locale's first box
+        // with a season on its icon from table/gacha_info.xml
         var model = NewModel();
-        var item = Item.Create(model.Tables.Items, 22201001, 0);
+        var (coin, box, season) = UiDataRows.SeasonCoin(Packs()) ?? throw new AssertionException("no gacha box shows a season in this data");
+        var item = Item.Create(model.Tables.Items, coin, 0);
         var s = Slot(model, item, 0x11);
-        Assert.That(s["itemSeason"], Is.EqualTo("1"));
-        Assert.That(s["iconPath"], Is.EqualTo("./Data/Resource/Image/item/icon/newGacha_coin_ducky.png"));
-        Assert.That(s["itemGrade"], Is.EqualTo(4));
+        Assert.That(s["itemSeason"], Is.EqualTo(season));
+        Assert.That(s["iconPath"], Is.EqualTo(model.Tables.Items.Get(coin).IconPath));
+        Assert.That(s["itemGrade"], Is.EqualTo(UiDataRows.Int(UiDataRows.ItemPart(Packs(), coin, "property"), "rank")));
+        if (UiDataRows.IsKr(Packs()))
+        {
+            Assert.That((coin, box, season), Is.EqualTo((22201001, 1001001, "1")));
+            Assert.That(s["iconPath"], Is.EqualTo("./Data/Resource/Image/item/icon/newGacha_coin_ducky.png"));
+            Assert.That(s["itemGrade"], Is.EqualTo(4));
+        }
     }
 
     [Test]

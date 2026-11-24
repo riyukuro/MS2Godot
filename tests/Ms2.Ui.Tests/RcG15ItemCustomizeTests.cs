@@ -23,7 +23,7 @@ public class RcG15ItemCustomizeTests
     [Test]
     public void TheKmsModelKeepsItsCustomizeScaleAttribute()
     {
-        using var packs = new PackSet(RcGap.Data("MS2_DATA"));
+        using var packs = new PackSet(RcGap.KmsData());
         var doc = GameStrings.Parse(packs.Read("Xml", "itemmodel/102.xml"));
         var cust = doc.Root.Elements("ItemModel").First(e => (string)e.Attribute("id") == "10200001").Element("customize");
         Assert.That(cust, Is.Not.Null);

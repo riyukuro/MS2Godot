@@ -20,6 +20,22 @@ static class RcGap
         return d;
     }
 
+    /// <summary>
+    /// The KMS data for a gap's KMS-only half: MS2_DATA when it is KMS data (locale KR), else MS2_KMS_DATA when set;
+    /// otherwise inconclusive via Assume.That because these tests assert KMS-only files or rows that GMS2 does not ship
+    /// (the companion GMS2 test covers MS2_GMS2_DATA).
+    /// </summary>
+    public static string KmsData()
+    {
+        var d = Data("MS2_DATA");
+        using (var packs = new Ms2.Formats.Pack.PackSet(d))
+            if (Ms2.Ui.LobbyFeatures.LocaleOf(packs) == "KR") return d;
+        var kms = Environment.GetEnvironmentVariable("MS2_KMS_DATA");
+        if (!string.IsNullOrEmpty(kms) && Directory.Exists(kms)) return kms;
+        Assume.That(false, "MS2_DATA is not KMS data (and MS2_KMS_DATA is not set): KMS-only file/row check");
+        return null;
+    }
+
     /// <summary>A public field or property the gap asks a later change to add. Fails, not throws a null reference, when it is absent.</summary>
     public static object Member(object o, string name)
     {

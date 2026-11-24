@@ -117,7 +117,9 @@ public class ItemMergeOptionDialogTests
         var byId = r.C.GetUserData("getTooltipByID", new object[] { (uint)it.ItemId, 2u });
         Assert.That(byId["itemName"], Is.EqualTo(r.Model.Tables.ItemName(it.ItemId)));
         Assert.That(byId["itemGrade"], Is.EqualTo(2));
-        Assert.That(r.C.GetUserData("getTooltipByID", new object[] { 1u, 2u }), Is.Null);
+        int missing = UiDataRows.MissingItemId(r.Model.Tables.Items);
+        if (UiDataRows.IsKr(packs)) Assert.That(missing, Is.EqualTo(1));
+        Assert.That(r.C.GetUserData("getTooltipByID", new object[] { (uint)missing, 2u }), Is.Null);
         Assert.That(r.C.GetUserValue("isMergeable", Array.Empty<object>()), Is.EqualTo(true));
     }
 

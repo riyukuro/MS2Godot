@@ -14,7 +14,7 @@ public class RcG17IndividualDropTests
     [Test]
     public void TheKmsDropBoxKeepsItsItems()
     {
-        using var packs = new PackSet(RcGap.Data("MS2_DATA"));
+        using var packs = new PackSet(RcGap.KmsData());
         var t = new IndividualDropTable(packs);
         Assert.That(t.Has(20001001), Is.True, "kms table/individualitemdrop_final.xml");
         var list = new List<ItemDropEntry>();

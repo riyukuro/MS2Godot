@@ -14,7 +14,7 @@ public class RcG13JobLearnLevelTests
     [Test]
     public void TheKmsJobKeepsItsLearntSkills()
     {
-        using var packs = new PackSet(RcGap.Data("MS2_DATA"));
+        using var packs = new PackSet(RcGap.KmsData());
         var j = new GameTables(packs, "en").Skills.Jobs.GetJobData(1);
         Assert.That(j, Is.Not.Null, "kms table/job.xml job 1");
         var s = j.FindSkill(10000001);

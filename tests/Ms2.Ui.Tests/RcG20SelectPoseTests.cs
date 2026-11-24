@@ -15,7 +15,7 @@ public class RcG20SelectPoseTests
     [Test]
     public void TheKmsAnikeyInfoKeepsItsBoreKeys()
     {
-        using var packs = new PackSet(RcGap.Data("MS2_DATA"));
+        using var packs = new PackSet(RcGap.KmsData());
         Assert.That(packs.Exists("Xml", "anikeyinfo/male.xml"), Is.True, "kms anikeyinfo/male.xml");
         var doc = GameStrings.Parse(packs.Read("Xml", "anikeyinfo/male.xml"));
         Assert.That(doc.Descendants("key").Any(k => ((string)k.Attribute("name") ?? "").Contains("Bore_A")), Is.True);

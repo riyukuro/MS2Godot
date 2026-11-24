@@ -14,7 +14,7 @@ public class RcG01ItemRankTests
     [Test]
     public void TheKmsItemKeepsItsRank()
     {
-        using var packs = new PackSet(RcGap.Data("MS2_DATA"));
+        using var packs = new PackSet(RcGap.KmsData());
         var items = new ItemDataTable(packs);
         Assert.That(items.Get(11200001)?.Rank, Is.EqualTo(3), "kms itemdata/112.xml property@rank=3");
         Assert.That(ItemTooltip.ItemRank(items, 11200001), Is.EqualTo(3));

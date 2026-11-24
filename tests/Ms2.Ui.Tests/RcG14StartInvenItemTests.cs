@@ -14,7 +14,7 @@ public class RcG14StartInvenItemTests
     [Test]
     public void TheKmsJobKeepsItsStartItems()
     {
-        using var packs = new PackSet(RcGap.Data("MS2_DATA"));
+        using var packs = new PackSet(RcGap.KmsData());
         Assert.That(WeaponStance.StartItemIds(packs, 10), Is.EqualTo(new[] { 13200220, 14100190 }));
     }
 

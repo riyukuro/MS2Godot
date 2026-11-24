@@ -30,7 +30,7 @@ public class RcG03DropLookTests
     [Test]
     public void TheKmsMesoStillTakesItsDropRow()
     {
-        using var packs = new PackSet(RcGap.Data("MS2_DATA"));
+        using var packs = new PackSet(RcGap.KmsData());
         var look = new ItemDropTable(packs).Look(0x55d4a81, 20, 3, false);
         Assert.That(look, Is.Not.Null, "kms table/itemdata.xml dropItemAsset 90000001 min 20");
         Assert.That(look.Style.TypeId, Is.EqualTo(12));

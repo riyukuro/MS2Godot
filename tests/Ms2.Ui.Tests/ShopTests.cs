@@ -932,9 +932,11 @@ public class ShopTests
 
         var row = h.Obj(("serialID", 1), ("productType", 0), ("itemID", 11300001));
 
-        // OnUseLink links shop item (kind 0)
+        // OnUseLink links shop item (kind 0); Item.Create takes the item's property@rank over the product's rarity 1 (KR: 2; GMS2 omits rank, keeping 1)
+        int dataRank = UiDataRows.Int(UiDataRows.ItemPart(Packs(), 11300001, "property"), "rank");
+        if (UiDataRows.IsKr(Packs())) Assert.That(dataRank, Is.EqualTo(2));
         Assert.That(c.OnCallback("OnUseLink", new object[] { row }), Is.True);
-        Assert.That(linkedShop, Is.EqualTo(new[] { (11300001, 2, 106, 1) }));
+        Assert.That(linkedShop, Is.EqualTo(new[] { (11300001, dataRank != 0 ? dataRank : 1, 106, 1) }));
 
         // OnRightClick does nothing when preview HUD is off, previews when on
         Assert.That(c.OnCallback("OnRightClick", new object[] { row }), Is.True);

@@ -400,11 +400,28 @@ public class MyInfoTests
         TestContext.WriteLine("drawn: " + string.Join(" | ", shown));
         Assert.That(shown, Has.Some.Contains("Bound to Solo"));
 
-        // without the socket transfer flag the client adds its line; a binding to someone else keeps the binding's name
+        // without the socket transfer flag the client adds its line when feature 0xa7 (ItemSocketTransfer01) is on (KR: on, GMS2 NA: off);
+        // a binding to someone else keeps the binding's name
         r.Transfer.SocketTransferEnabled = false; r.Transfer.BindingId = 5; r.Transfer.BindingName = "Other";
+        bool socketTransferFeature = m.IsFeatureEnabled(0xa7);
+        if (UiDataRows.IsKr(Packs())) Assert.That(socketTransferFeature, Is.True);
         tip = new ItemTooltip(m, 0x200) { Owner = (2, "Solo") };
         tip.Fill(Ms2.Ui.Hud.InventoryController.ToItem(r, m.Tables.Items));
-        Assert.That(tip.Data["notExchange"], Is.EqualTo("Untradable, Unsellable\nBound to Other\nThis outfit cannot be dismantled\nSocket cannot be transferred."));
+        string boundOther = "Untradable, Unsellable\nBound to Other\nThis outfit cannot be dismantled";
+        Assert.That(tip.Data["notExchange"], Is.EqualTo(socketTransferFeature ? boundOther + "\nSocket cannot be transferred." : boundOther));
+        if (!socketTransferFeature)
+        {
+            var prev = m.FeatureEnabledByName;
+            string fName = FeatureTable.Names[0xa7 - 1];
+            m.FeatureEnabledByName = f => f == fName || prev(f);
+            try
+            {
+                tip = new ItemTooltip(m, 0x200) { Owner = (2, "Solo") };
+                tip.Fill(Ms2.Ui.Hud.InventoryController.ToItem(r, m.Tables.Items));
+                Assert.That(tip.Data["notExchange"], Is.EqualTo(boundOther + "\nSocket cannot be transferred."));
+            }
+            finally { m.FeatureEnabledByName = prev; }
+        }
 
         // unbound, tradable 3 times, a weapon (not skin): the count line, then "Binds to character" for type 1
         var w = new EquipItem { Id = 15000001, Uid = 10, Rarity = 2, Amount = 1 };
@@ -891,10 +908,13 @@ public class MyInfoTests
             tip.Fill(item);
             return tip.Data.TryGetValue("itemUsePeriod", out var v) ? (string)v : null;
         }
-        // itemdata 203: <life usePeriod="1440">, expirationType 2 with 2 months, expirationType 1 without a count,
-        // expirationPeriod 2016-02-25-07-00-00
+        // itemdata 203: <life usePeriod="1440">, expirationType 2 with 2 months (KR 20300043; GMS2 lacks 20300043 and uses 20301610),
+        // expirationType 1 without a count, expirationPeriod 2016-02-25-07-00-00
         Assert.That(Period(20300008), Is.EqualTo("This is a temporary item. (1 d)"));
-        Assert.That(Period(20300043), Is.EqualTo("This item expires 2 month(s) after you obtain it."));
+        int monthlyId = UiDataRows.IsKr(Packs()) ? 20300043 : 20301610;
+        var monthlyLife = UiDataRows.ItemPart(Packs(), monthlyId, "life");
+        Assert.That((UiDataRows.Int(monthlyLife, "expirationType"), UiDataRows.Int(monthlyLife, "numberOfWeeksMonths")), Is.EqualTo((2, 2)));
+        Assert.That(Period(monthlyId), Is.EqualTo("This item expires 2 month(s) after you obtain it."));
         Assert.That(Period(20301428), Is.EqualTo("This item expires 1 week(s) after you obtain it."));
         // the fields come back as written (the zone offset is added and taken off again)
         Assert.That(Period(20300081), Is.EqualTo("This is a temporary item.\n(Expires 2/25/2016 07:00)"));
@@ -962,14 +982,47 @@ public class MyInfoTests
             tip.Fill(Item.Create(m.Tables.Items, id, 1));
             return tip.Data.TryGetValue("extraComment", out var v) ? (string)v : null;
         }
-        // 33000014 (type 0x10) is an ingredient of eight recipes, in file order; the count turns red below each need
+        // 33000014 (type 0x10) is an ingredient of recipes in masteryreceipe.xml (KR: 8, GMS2 NA: 7), in file order; the count turns red below each need
         Assert.That(m.Tables.Items.Get(33000014).Type, Is.EqualTo(0x10));
         var lines = Comment(33000014, 30).Split('\n');
-        Assert.That(lines, Has.Length.EqualTo(8));
-        Assert.That(lines[0], Is.EqualTo("<FONT color='#FFD200'>[Smithing]</FONT> Used to craft Opal Smithing Slate (30/2)"));
-        Assert.That(lines[1], Is.EqualTo("<FONT color='#FFD200'>[Smithing]</FONT> Used to craft Tin Whetstone (30/30)"));
-        Assert.That(lines[3], Is.EqualTo("<FONT color='#FFD200'>[Smithing]</FONT> Used to craft Tier 1 Gemstone Box (<FONT color='#FF5F5F' >30</FONT>/160)"));
-        Assert.That(lines[4], Does.StartWith("<FONT color='#FFD200'>[Handicrafts]</FONT> Used to craft Snail Shell Handicraft Slate ("));
+        if (UiDataRows.IsKr(Packs()))
+        {
+            Assert.That(lines, Has.Length.EqualTo(8));
+            Assert.That(lines[0], Is.EqualTo("<FONT color='#FFD200'>[Smithing]</FONT> Used to craft Opal Smithing Slate (30/2)"));
+            Assert.That(lines[1], Is.EqualTo("<FONT color='#FFD200'>[Smithing]</FONT> Used to craft Tin Whetstone (30/30)"));
+            Assert.That(lines[3], Is.EqualTo("<FONT color='#FFD200'>[Smithing]</FONT> Used to craft Tier 1 Gemstone Box (<FONT color='#FF5F5F' >30</FONT>/160)"));
+            Assert.That(lines[4], Does.StartWith("<FONT color='#FFD200'>[Handicrafts]</FONT> Used to craft Snail Shell Handicraft Slate ("));
+        }
+        else
+        {
+            string entry = TablePath.Resolve(Packs(), "masteryreceipe.xml");
+            Assert.That(entry, Is.Not.Null);
+            var doc = GameStrings.Parse(Packs().Read("Xml", entry));
+            var types = new Dictionary<int, int>();
+            var pairs = new List<(int RecipeId, int Need)>();
+            foreach (var e in doc.Root.Elements("receipe"))
+            {
+                if (!FeatureElements.IsAvailable(Packs(), e)) continue;
+                int rid = ItemData.Atoi((string)e.Attribute("id") ?? "0");
+                types[rid] = ItemData.Atoi((string)e.Attribute("masteryType") ?? "0");
+                for (int i = 1; i <= 5; i++)
+                    if (MasteryRecipeTable.ParseIngredient((string)e.Attribute("requireItem" + i)) is { ItemId: 33000014 } ing)
+                        pairs.Add((rid, ing.Count));
+            }
+            var expected = pairs.Select(p =>
+            {
+                string type = MasteryRecipeTable.TypeKey(types[p.RecipeId]) is { } k ? m.Tables.Common(k) : "";
+                string name = m.Tables.MasteryRecipeName(p.RecipeId);
+                string key = 30 < p.Need ? "s_msg_tooltip_mastery_recipe_count_lack" : "s_msg_tooltip_mastery_recipe_count";
+                string count = Ms2.Quest.ClientFormat.Format(m.Tables.Common(key), 30, p.Need);
+                return Ms2.Quest.ClientFormat.Format(m.Tables.Common("s_msg_tooltip_mastery_recipe_info"), type, name, count);
+            }).ToArray();
+            Assert.That(expected, Is.Not.Empty);
+            Assert.That(lines, Is.EqualTo(expected));
+            Assert.That(lines, Has.Some.Contains("(30/2)"));
+            Assert.That(lines, Has.Some.Contains("(30/30)"));
+            Assert.That(lines, Has.Some.Contains("(<FONT color='#FF5F5F' >30</FONT>/160)"));
+        }
         Assert.That(Comment(33000014, 0).Split('\n')[0], Does.EndWith("(<FONT color='#FF5F5F' >0</FONT>/2)"));
         // a type 0x10 item no recipe uses, and a non-ingredient, have none
         Assert.That(Comment(12200398, 0), Is.Null);
@@ -1143,12 +1196,15 @@ public class MyInfoTests
             tip.Fill(item);
             return tip;
         }
-        // lv10_tooltip_gemstone.png: "Shop Sales Price : 1" with the meso icon
+        // lv10_tooltip_gemstone.png: "Shop Sales Price : 1" on KR (GMS2 40200003 has sell price 100) with the meso icon
+        long gemPrice = UiDataRows.SellPrice(Packs(), 40200003, 4);
+        if (UiDataRows.IsKr(Packs())) Assert.That(gemPrice, Is.EqualTo(1L));
+        string gemPriceText = NumberText.MesoText(gemPrice.ToString(System.Globalization.CultureInfo.InvariantCulture));
         var gem = Tip(40200003, 4);
-        Assert.That(gem.Data["itemSellPrice"], Is.EqualTo("Shop Sales Price : 1 <Img Src='export_common_icon_meso_h21' vspace='-6'/> "));
+        Assert.That(gem.Data["itemSellPrice"], Is.EqualTo($"Shop Sales Price : {gemPriceText} <Img Src='export_common_icon_meso_h21' vspace='-6'/> "));
         var shown = TooltipTests.Draw(gem.Data);
         TestContext.WriteLine("drawn: " + string.Join(" | ", shown));
-        Assert.That(shown, Has.Some.Contains("Shop Sales Price : 1"));
+        Assert.That(shown, Has.Some.Contains($"Shop Sales Price : {gemPriceText}"));
         // locked: not sellable; the Green Hood has no shopSell
         Assert.That(Tip(40200003, 4, lockState: 1).Data.ContainsKey("itemSellPrice"), Is.False);
         Assert.That(Tip(12200398, 1).Data.ContainsKey("itemSellPrice"), Is.False);
@@ -1165,7 +1221,9 @@ public class MyInfoTests
     {
         var t = new GameTables(Packs(), "en");
         Func<int, int?> layer = t.Items.WornLayer;
-        Assert.That((layer(15000001), layer(11400021), layer(12200398), layer(1)), Is.EqualTo(((int?)0, (int?)1, (int?)1, (int?)null)));
+        int missing = UiDataRows.MissingItemId(t.Items);
+        if (UiDataRows.IsKr(Packs())) Assert.That(missing, Is.EqualTo(1));
+        Assert.That((layer(15000001), layer(11400021), layer(12200398), layer(missing)), Is.EqualTo(((int?)0, (int?)1, (int?)1, (int?)null)));
         var me = UiFixture.Character();
         int changes = 0;
         me.Changed += () => changes++;
@@ -1182,7 +1240,7 @@ public class MyInfoTests
         // another object, a kind above 2 and an unknown item are not applied
         Assert.That(me.Apply(new ItemPutOn(7, 0, hood), layer), Is.False);
         Assert.That(me.Apply(new ItemPutOn(1, 3, hood), layer), Is.False);
-        Assert.That(me.Apply(new ItemPutOn(1, 0, new EquipItem { Id = 1, Uid = 3003, Slot = EquipSlot.CL }), layer), Is.False);
+        Assert.That(me.Apply(new ItemPutOn(1, 0, new EquipItem { Id = missing, Uid = 3003, Slot = EquipSlot.CL }), layer), Is.False);
         // put-off by uid, from either list
         Assert.That(me.Apply(new ItemPutOff(1, 3002), layer), Is.True);
         Assert.That(me.Apply(new ItemPutOff(1, 2001), layer), Is.True);

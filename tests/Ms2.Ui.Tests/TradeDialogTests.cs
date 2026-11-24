@@ -189,7 +189,9 @@ public class TradeDialogTests
         Assert.That((events.Count, book.Items.Find(12), dlg.Calls.Last()), Is.EqualTo((1, (Item)null, $"set False 1 12 1 {count}")),
             "the partner's: the slot only");
         Assert.That(dlg.Closed, Is.False);
-        book.OnTrade(Added(1, 13, 1, 3));
+        int missing = UiDataRows.MissingItemId(book.ItemData);
+        if (UiDataRows.IsKr(Packs())) Assert.That(missing, Is.EqualTo(1));
+        book.OnTrade(Added(1, 13, missing, 3));
         Assert.That((dlg.Closed, dlg.Calls.Count, events.Count, book.Items.Find(13)), Is.EqualTo((true, 2, 1, (Item)null)),
             "an item the data does not know closes the dialog");
         dlg.Closed = false;
