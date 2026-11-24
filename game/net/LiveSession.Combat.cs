@@ -1055,7 +1055,7 @@ public partial class LiveSession
                 }
                 continue;
             }
-            if (step.StartsWith("bag"))      // the bag steps: baggive:N (MS2_LIVE_BAG_ITEM), bagkeep (MS2_LIVE_BAG_KEEP, one item), bagopen, bagsort[:id], bagui, bagdrop:N, bagdestroy, bagexpand[:id], baguse:id[:box|yes|notice], bagmove:id, bagmerge:id:N, baggemon:id, baggemoff:id[:drag]
+            if (step.StartsWith("bag"))      // the bag steps: baggive:N (MS2_LIVE_BAG_ITEM), bagkeep (MS2_LIVE_BAG_KEEP, one item), bagopen, bagsort[:id], bagui, bagdrop:N, bagdestroy, bagexpand[:id], baguse:id[:box|yes|notice], bagmove:id, bagmerge:id:N, baggemon:id, baggemoff:id[:drag], bagnamecheck:id:name[:used]
             {
                 string arg = step.Contains(':') ? step[(step.IndexOf(':') + 1)..] : "";
                 string name = step.Contains(':') ? step[..step.IndexOf(':')] : step;
@@ -1234,7 +1234,7 @@ public partial class LiveSession
                         await frames(30);
                         break;
                     }
-                    case "namecheck":    // namecheck:<item id>:<name>[:used]: the name change item used, the name sent, the answer's box checked and closed
+                    case "bagnamecheck": // bagnamecheck:<item id>:<name>[:used]: the name change item used, the name sent, the answer's box checked and closed
                     {
                         var parts = arg.Split(':');
                         int id = int.Parse(parts[0]); string newName = parts[1]; bool expectUsed = parts.Length > 2 && parts[2] == "used";
