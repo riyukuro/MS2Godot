@@ -80,7 +80,14 @@ public partial class HudScene
         mgr.ItemName = item => hudModel.Tables.ItemName(item.ItemId) ?? "";
         mgr.CanUseItem = item => ItemTradeRules.NotLocked(item, mgr.ServerTime(), out _);
         mgr.SkinFeature = () => hudModel.IsFeatureEnabled(0x3a);
-        var c = new ItemBreakDialogController(donation) { Mgr = mgr };
+        var c = new ItemBreakDialogController(donation)
+        {
+            Mgr = mgr,
+            ShiftHeld = () => Input.IsKeyPressed(Key.Shift),
+            ActionKeyDown = ActionKeyDown,
+            LinkItem = ChatLog.LinkItem,
+        };
+        c.Button += name => GD.Print($"item break: {name} is not ported");
         void OnPacket(ItemDismantlePacket p) => mgr.OnPacket(p);
         live.ItemDismantleReceived += OnPacket;
         c.Sound += key => FieldAudio.Instance?.PlayUi(key);

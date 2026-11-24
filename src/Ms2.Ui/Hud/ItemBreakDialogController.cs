@@ -61,6 +61,14 @@ public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, II
     public event Action InventoryButtons;
     /// <summary>The inventory's AddFlags(7) after a reset (onResetBreak).</summary>
     public event Action InventoryReset;
+    /// <summary>A callback this port does not handle (the slot preview), raised by name.</summary>
+    public event Action<string> Button;
+    /// <summary>The key action held (the preview action 0x49406).</summary>
+    public Func<int, bool> ActionKeyDown = _ => false;
+    /// <summary>Shift held (DragSlot::vfunc_13's check).</summary>
+    public Func<bool> ShiftHeld = () => false;
+    /// <summary>FUN_140d2cfc0: the item linked into the chat input.</summary>
+    public Action<Item> LinkItem;
 
     /// <summary>m_1f8: the bundle type; m_1fc: the bundle rank (selected index = rank - 1).</summary>
     public int BundleType, BundleRank = 2;
@@ -345,7 +353,8 @@ public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, II
     // ---- callbacks ---------------------------------------------------------------------------------------------------
 
     /// <summary>vfunc_28: onClickBreak (the rarity confirms), onSendBreak, and the break dialog's onResetBreak,
-    /// OnBundleType, OnBundleRank, OnBundleRegister.</summary>
+    /// OnBundleType, OnBundleRank, OnBundleRegister. The slots' NotifyDragSlot callbacks: <see cref="SlotUse"/> and
+    /// <see cref="SlotShiftClick"/>.</summary>
     public override bool OnCallback(string name, object[] args)
     {
         if (Mgr == null) return false;
@@ -353,6 +362,8 @@ public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, II
         {
             case "onclickbreak": ClickBreak(); return true;
             case "onsendbreak": Mgr.SendMode3(); return true;
+            case "notifyslotuse": return SlotUse(args);
+            case "notifyslotshiftclick": return SlotShiftClick(args);
         }
         if (donation) return false;
         switch (name.ToLowerInvariant())
@@ -404,6 +415,34 @@ public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, II
 
     // ---- the slots (ItemBreakSlot) -----------------------------------------------------------------------------------
 
+    /// <summary>
+    /// NotifyDragSlot::SlotUse for a break slot: button 0 without Shift, DragSlot::vfunc_13 (pushed again); button 1, the
+    /// preview key held (MS2DragSlot::vfunc_19, the slot enabled by its ctor) the preview (not ported: raised), else
+    /// ItemBreakSlot::vfunc_14 (itembreakslot.cpp:95): <see cref="RemoveFromSlot"/>.
+    /// </summary>
+    bool SlotUse(object[] args)
+    {
+        if (args.Length < 1 || !ParseSlot(args[0], out int i)) return false;
+        int button = args.Length > 1 ? InventoryController.ArgInt(args[1]) : 0;
+        if (button == 0) { if (!ShiftHeld()) Host.Push(SlotName(i)); }
+        else if (button == 1)
+        {
+            if (ActionKeyDown(0x49406)) Button?.Invoke("notifySlotUse");
+            else RemoveFromSlot(i);
+        }
+        return true;
+    }
+
+    /// <summary>NotifyDragSlot::SlotShiftClick, ItemBreakSlot::vfunc_15 (itembreakslot.cpp:105): the item linked
+    /// (FUN_140d2cfc0), then DragSlot::vfunc_15 (pushed again).</summary>
+    bool SlotShiftClick(object[] args)
+    {
+        if (args.Length < 1 || !ParseSlot(args[0], out int i)) return false;
+        if (ItemOf(i) is { } item) LinkItem?.Invoke(item);
+        Host.Push(SlotName(i));
+        return true;
+    }
+
     public override IEnumerable<string> GetBagSlotBindings(string bag)
     {
         if (bag != Bag) return Array.Empty<string>();
@@ -414,7 +453,7 @@ public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, II
     {
         if (!ParseSlot(name, out int i)) return base.GetBinding(name);
         var item = ItemOf(i);
-        if (item == null || Model == null) return null;
+        if (item == null || Model == null || !Model.HasLocalPlayer) return null;      // vfunc_8: no local player, none
         var slot = new List<(string, object)>();
         return ItemSlot.Build(slot, item, Model.HasLocalPlayer, SlotFlags, Model, Model.ItemSlotSources) ? Host.Obj(slot.ToArray()) : null;
     }
@@ -423,8 +462,11 @@ public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, II
     {
         if (!ParseSlot(name, out int i)) return base.GetSlotTooltip(name);
         var item = ItemOf(i);
+        if (Model == null || !Model.HasLocalPlayer) return new AsTooltip();           // vfunc_0: no local player, none
         var tip = new ItemTooltip(Model, TooltipFlags) { Localize = k => Host.Player.Translate?.Invoke(k) ?? k };
-        return item != null && tip.Fill(item) ? tip.Data : new AsTooltip();
+        if (item == null || !tip.Fill(item)) return new AsTooltip();
+        tip.SetEnablePreview(item);                                                    // the slot is enabled (its ctor)
+        return tip.Data;
     }
 
     /// <summary>ItemBreakSlot::vfunc_25: GetSlotItemClone(index), the listed item (an empty slot has none).</summary>
