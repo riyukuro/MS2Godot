@@ -293,6 +293,16 @@ public sealed record PartyDungeonRoomCreate(int DungeonId) : PartyMessage(0x38);
 /// <summary>A mode this reader does not decode; its body is left unread (no ExpectEnd).</summary>
 public sealed record PartyOtherMode(int OtherMode) : PartyMessage(OtherMode);
 
+/// <summary>A chat line the party handlers raise on their own, with the state they have just changed (see
+/// <see cref="PartyBook.Noted"/>).</summary>
+public abstract record PartyNote;
+/// <summary>FUN_1412751b0(text, 0xe) (partymanager.cpp:1015 and the other handlers): the party notice line of a common string
+/// id (GetStringCommon), or with <paramref name="Name"/> its {0} (FormatStringId).</summary>
+public sealed record PartyChatNote(int CommonId, string Name) : PartyNote;
+/// <summary>OnPartyMatchDungeonChange (:1300): ShowSystemNotice of s_party_change_help_dungeon with the dungeon's name (string table
+/// 0x14 of the new id), when the party's matching dungeon changed to another one.</summary>
+public sealed record PartyDungeonChangeNote(int DungeonId) : PartyNote;
+
 /// <summary>One member of mode 9: the offline flag, the record (its counters are read past).</summary>
 public sealed record PartyInfoMember(bool Offline, PartyUser User);
 
@@ -398,6 +408,35 @@ public sealed partial class PartyBook {
     public event Action<PartyMember, PartyMember> ChiefChanged;
     /// <summary>OnPartyInvite's answer or box, after <see cref="PartyName"/> and <see cref="PartyKind"/> are kept.</summary>
     public event Action<PartyInvite> Invited;
+    /// <summary>The chat lines the handlers write (FUN_1412751b0(text, 0xe), partymanager.cpp:1015, :1030, :1036, :1052, :1059, :1071, :1098,
+    /// :1140, :1161, :1174, :1190, :1262), raised after the handler's own changes in the client's order.</summary>
+    public event Action<PartyNote> Noted;
+    void Note(int commonId, string name = null) => Noted?.Invoke(new PartyChatNote(commonId, name));
+
+    /// <summary>invitations (partymanager.h): the names OnPartyInviteSent showed an invite line for, each with its expiry.</summary>
+    readonly Dictionary<string, DateTime> invitations = new(StringComparer.Ordinal);
+    /// <summary>GetServerTime (UTC), a test can set it.</summary>
+    public Func<DateTime> ServerNow { get; set; } = () => DateTime.UtcNow;
+    /// <summary>PurgeExpiredInvitations @0x141630cb0 (:1529): the entries whose expiry is still ahead stay.</summary>
+    void PurgeExpiredInvitations()
+    {
+        var now = ServerNow();
+        foreach (var name in invitations.Where(e => !(now < e.Value)).Select(e => e.Key).ToList()) invitations.Remove(name);
+    }
+    /// <summary>OnPartyInviteSent @0x1416303b0 (:1434) up to the messenger: the expired entries go; true when the name has no
+    /// pending entry, so the line is shown. The entry is only made by <see cref="InviteLineShown"/>, since the client makes it
+    /// only when the messenger browser (0x4e61) exists.</summary>
+    public bool InviteSentIsNew(string name) { PurgeExpiredInvitations(); return !invitations.ContainsKey(name ?? ""); }
+    /// <summary>The entry OnPartyInviteSent makes after the line (AddMinutes(expiry, 1)).</summary>
+    public void InviteLineShown(string name) => invitations[name ?? ""] = ServerNow().AddMinutes(1);
+
+    /// <summary>OnDungeonRoomMsgBoxAnswer @0x141630c70 (:1519): any button but the first (result 0) does nothing; the first sends
+    /// SendRoomDungeon(0). Always true (the box closes).</summary>
+    public bool AnswerDungeonRoom(int result)
+    {
+        if (result == 0) Send(new RoomDungeonEnterRequest(0));
+        return true;
+    }
 
     /// <summary>IsInParty (:526): more than one member.</summary>
     public bool IsInParty => members.Count > 1;
@@ -456,7 +495,7 @@ public sealed partial class PartyBook {
     }
 
     /// <summary>OnParty (partymanager.cpp:447) for the modes the window shows; <paramref name="self"/> is DAT_143ab2828, the own
-    /// character id. The chat notices (FUN_1412751b0) are not raised.</summary>
+    /// character id. The party chat lines (kind 0xe) are raised as <see cref="Noted"/>; the lines of the other kinds are the UI's.</summary>
     public void Apply(PartyMessage message, long self, bool windowOpen) {
         ApplyMessage(message, self, windowOpen);
         Applied?.Invoke(message);
@@ -480,6 +519,7 @@ public sealed partial class PartyBook {
                 Matchmaking = info.Matchmaking; DungeonId = info.DungeonId;
                 SearchBits = info.SearchBits; SurvivalSquadRegistered = info.SurvivalSquad;     // :1129, :1130
                 if (IsInParty) Opened?.Invoke();
+                if (info.Announce && members.Count > 1) Note(0x31b);                              // :1141
                 ApplyInfoRecruit(info.Recruit);
                 break;
             }
@@ -492,20 +532,30 @@ public sealed partial class PartyBook {
                 members.Add(m);
                 if (windowOpen) MemberAdded?.Invoke(m); else Opened?.Invoke();
                 BattleRecords?.AddPartyMemberRecord(m.CharacterId);             // :1013
+                Note(0x31c, m.User.Name);                                       // :1016
                 break;
             }
             case PartyLeave leave: {                        // :1020
                 var m = Find(leave.CharacterId);
                 if (m == null) return;
-                if (leave.Disband) { Clear(); ClearRecruitment(); Closed?.Invoke(); }
-                else RemoveAt(members.IndexOf(m));
+                if (leave.Disband) { Clear(); ClearRecruitment(); Closed?.Invoke(); Note(0x31d); }
+                else {
+                    string name = m.User.Name;
+                    int at = members.IndexOf(m);
+                    RemoveAt(at);
+                    Note(0x31e, name);
+                }
                 break;
             }
             case PartyKick kick: {                          // :1043
                 var m = Find(kick.CharacterId);
                 if (m == null) return;
-                if (m.CharacterId == self) { Clear(); ClearRecruitment(); Closed?.Invoke(); }
-                else RemoveAt(members.IndexOf(m));
+                if (m.CharacterId == self) { Clear(); ClearRecruitment(); Closed?.Invoke(); Note(799); }
+                else {
+                    string name = m.User.Name;
+                    RemoveAt(members.IndexOf(m));
+                    Note(800, name);
+                }
                 break;
             }
             case PartyInvite invite:                        // :968
@@ -513,27 +563,31 @@ public sealed partial class PartyBook {
                 Invited?.Invoke(invite);
                 break;
             case PartyDisband:                              // :1066
-                Clear(); ClearRecruitment(); Closed?.Invoke();
+                Clear(); ClearRecruitment(); Closed?.Invoke(); Note(0x321);
                 break;
             case PartyLeaderChange lc: {                    // :1076
-                if (lc.CharacterId == 0 || lc.CharacterId == LeaderId) return;
-                var old = Find(LeaderId);
-                if (old != null) old.Leader = false;
-                var now = Find(lc.CharacterId);
-                if (now != null) now.Leader = true;
-                LeaderId = lc.CharacterId;
-                ChiefChanged?.Invoke(old, now);
+                string name = "";
+                if (lc.CharacterId != 0 && lc.CharacterId != LeaderId) {
+                    var old = Find(LeaderId);
+                    if (old != null) old.Leader = false;
+                    var now = Find(lc.CharacterId);
+                    if (now != null) { now.Leader = true; name = now.User.Name; }
+                    LeaderId = lc.CharacterId;
+                    ChiefChanged?.Invoke(old, now);
+                }
+                if (members.Count > 1) { if (self == LeaderId) Note(0x324); else Note(0x325, name); }    // :1096
                 break;
             }
             case PartyOnline on: {                          // :1151
                 var m = Find(on.User.CharacterId);
-                if (m != null) { m.Offline = false; MemberUpdated?.Invoke(m, 0x1ff); }
+                if (m != null) { m.Offline = false; MemberUpdated?.Invoke(m, 0x1ff); Note(0x322, on.User.Name); }
                 else {
                     if (members.Count == MaxMembers) return;
                     m = new PartyMember { User = on.User, Index = members.Count };
                     members.Add(m);
                     BattleRecords?.AddPartyMemberRecord(m.CharacterId);         // :1170
                     MemberAdded?.Invoke(m);
+                    Note(0x31c, on.User.Name);
                 }
                 break;
             }
@@ -545,6 +599,7 @@ public sealed partial class PartyBook {
                     v.Participants.Remove(m.CharacterId); v.Yes.Remove(m.CharacterId); v.No.Remove(m.CharacterId);
                 }
                 MemberUpdated?.Invoke(m, 1);
+                Note(0x323, m.User.Name);
                 break;
             }
             case PartyMemberUpdate up: {                    // :1215
@@ -586,15 +641,23 @@ public sealed partial class PartyBook {
                 Vote = null;
                 break;
             }
-            case PartyMatchDungeonChange change:            // :1293
+            case PartyMatchDungeonChange change: {          // :1293
+                int previous = DungeonId;
                 Matchmaking = change.Matchmaking; DungeonId = change.DungeonId;
+                if (!Matchmaking && IsInParty && previous != 0 && DungeonId != 0 && previous != DungeonId)
+                    Noted?.Invoke(new PartyDungeonChangeNote(DungeonId));
                 break;
+            }
             case PartyDungeonMatchRegister reg:             // :1318
                 SearchBits = reg.SearchBits;
                 break;
             case PartySurvivalSquadRegister squad:          // :1481
                 SurvivalSquadRegistered = squad.Registered;
                 break;
+            case PartyMemberResult res: {                   // :1255
+                if (Find(res.CharacterId) is { } m && m.CharacterId != self) Note(res.Result != 0 ? 0x327 : 0x326, m.User.Name);
+                break;
+            }
             case PartyGearScore g: {                        // :1245
                 if (Find(g.CharacterId) is { } m) m.User.GearScore = g.Value;
                 break;

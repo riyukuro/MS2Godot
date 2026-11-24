@@ -1,5 +1,6 @@
 using Maple2.PacketLib.Tools;
 using Ms2.Net.Packets;
+using Ms2.Net.Wire;
 using NUnit.Framework;
 
 namespace Ms2.Net.Tests;
@@ -216,5 +217,135 @@ public class PartyPacketTests {
         Assert.That((book.Matchmaking, book.DungeonId), Is.EqualTo((true, 31)));
         book.Apply(new PartyDisband(), self, true);
         Assert.That((book.SearchBits, book.IsAnySearching, book.SurvivalSquadRegistered), Is.EqualTo((0, false, false)));
+    }
+
+    // ---- the chat lines the handlers write (kind 0xe) ---------------------------------------------------------------------------
+
+    static (PartyBook Book, List<PartyNote> Notes) Party(bool announce = false) {
+        var book = new PartyBook();
+        var notes = new List<PartyNote>();
+        var info = new PartyInfo(announce, 9, 11, new[] { new PartyInfoMember(false, User(11, "Lead")), new PartyInfoMember(false, User(12, "Other")) }, false, 0);
+        book.Apply((PartyInfo) Read(info.Write()), 11, false);
+        book.Noted += notes.Add;
+        return (book, notes);
+    }
+    static PartyChatNote Chat(int id, string name = null) => new(id, name);
+
+    [Test]
+    public void TheMembersComingAndGoingWriteTheirPartyLines() {
+        var (book, notes) = Party();
+        book.Apply(new PartyJoin(User(13, "Newcomer")), 11, true);
+        book.Apply(new PartyOffline(13), 11, true);
+        book.Apply(new PartyOnline(User(13, "Newcomer")), 11, true);
+        book.Apply(new PartyOnline(User(14, "Stranger")), 11, true);       // not in the party: added, then the join line
+        book.Apply(new PartyLeave(13, false), 11, true);
+        book.Apply(new PartyKick(14), 11, true);
+        Assert.That(notes, Is.EqualTo(new[] {
+            Chat(0x31c, "Newcomer"), Chat(0x323, "Newcomer"), Chat(0x322, "Newcomer"), Chat(0x31c, "Stranger"), Chat(0x31e, "Newcomer"), Chat(800, "Stranger") }));
+    }
+
+    [Test]
+    public void TheClosingModesWriteTheirLineAfterTheWindowCloses() {
+        foreach (var (message, expected) in new (PartyMessage, PartyChatNote)[] {
+            (new PartyDisband(), Chat(0x321)), (new PartyLeave(12, true), Chat(0x31d)), (new PartyKick(11), Chat(799)) }) {
+            var (book, notes) = Party();
+            var order = new List<string>();
+            book.Closed += () => order.Add("closed");
+            book.Noted += _ => order.Add("note");
+            book.Apply(message, 11, true);
+            Assert.That(notes, Is.EqualTo(new[] { expected }), message.GetType().Name);
+            Assert.That(order, Is.EqualTo(new[] { "closed", "note" }), message.GetType().Name);
+            Assert.That(book.IsInParty, Is.False);
+        }
+    }
+
+    [Test]
+    public void ALeaderChangeWritesItsLineEvenWhenTheLeaderStays() {
+        var (book, notes) = Party();
+        book.Apply(new PartyLeaderChange(12), 11, true);        // the other player leads: the name
+        book.Apply(new PartyLeaderChange(12), 11, true);        // the same leader again: the line anyway
+        book.Apply(new PartyLeaderChange(0), 11, true);         // no id: nothing changes, the line is made with an empty name
+        book.Apply(new PartyLeaderChange(11), 11, true);        // the own character: the "you lead" line
+        Assert.That(notes, Is.EqualTo(new[] { Chat(0x325, "Other"), Chat(0x325, ""), Chat(0x325, ""), Chat(0x324) }));
+        Assert.That(book.LeaderId, Is.EqualTo(11));
+    }
+
+    [Test]
+    public void ALoneMemberGetsNoLeaderLine() {
+        var book = new PartyBook();
+        var notes = new List<PartyNote>();
+        book.Noted += notes.Add;
+        book.Apply(new PartyLeaderChange(5), 11, false);
+        Assert.That(notes, Is.Empty);
+    }
+
+    [Test]
+    public void TheInfoAnnouncesOnlyWithAnnounceAndMoreThanOneMember() {
+        var book = new PartyBook();
+        var notes = new List<PartyNote>();
+        book.Noted += notes.Add;
+        var two = new[] { new PartyInfoMember(false, User(11, "Lead")), new PartyInfoMember(false, User(12, "Other")) };
+        book.Apply((PartyInfo) Read(new PartyInfo(false, 1, 11, two, false, 0).Write()), 11, false);
+        Assert.That(notes, Is.Empty);
+        book.Apply((PartyInfo) Read(new PartyInfo(true, 1, 11, two, false, 0).Write()), 11, false);
+        Assert.That(notes, Is.EqualTo(new[] { Chat(0x31b) }));
+        notes.Clear();
+        book.Apply((PartyInfo) Read(new PartyInfo(true, 1, 11, two.Take(1).ToArray(), false, 0).Write()), 11, false);
+        Assert.That(notes, Is.Empty);
+    }
+
+    [Test]
+    public void ThePartyMemberResultNamesTheOtherMemberOnly() {
+        var (book, notes) = Party();
+        book.Apply(new PartyMemberResult(12, 0), 11, true);
+        book.Apply(new PartyMemberResult(12, 1), 11, true);
+        book.Apply(new PartyMemberResult(11, 1), 11, true);      // the own character: nothing
+        book.Apply(new PartyMemberResult(99, 1), 11, true);      // not a member: nothing
+        Assert.That(notes, Is.EqualTo(new[] { Chat(0x326, "Other"), Chat(0x327, "Other") }));
+    }
+
+    [Test]
+    public void ADungeonChangeIsNotedOnlyForAMatchedPartyMovingToAnotherDungeon() {
+        var (book, notes) = Party();
+        book.Apply(new PartyMatchDungeonChange(false, 20), 11, true);   // from no dungeon
+        Assert.That(notes, Is.Empty);
+        book.Apply(new PartyMatchDungeonChange(false, 20), 11, true);   // the same one
+        book.Apply(new PartyMatchDungeonChange(true, 21), 11, true);    // matchmaking
+        Assert.That(notes, Is.Empty);
+        book.Apply(new PartyMatchDungeonChange(false, 22), 11, true);
+        Assert.That(notes, Is.EqualTo(new PartyNote[] { new PartyDungeonChangeNote(22) }));
+        var alone = new PartyBook();
+        var aloneNotes = new List<PartyNote>();
+        alone.Noted += aloneNotes.Add;
+        alone.Apply(new PartyMatchDungeonChange(false, 20), 11, false);
+        alone.Apply(new PartyMatchDungeonChange(false, 22), 11, false);
+        Assert.That(aloneNotes, Is.Empty);
+    }
+
+    [Test]
+    public void TheDungeonRoomAnswerSendsOnlyForTheFirstButton() {
+        var book = new PartyBook();
+        var sent = new List<IOutPacket>();
+        book.Send = sent.Add;
+        Assert.That(book.AnswerDungeonRoom(1), Is.True);
+        Assert.That(sent, Is.Empty);
+        Assert.That(book.AnswerDungeonRoom(0), Is.True);
+        Assert.That(sent, Is.EqualTo(new IOutPacket[] { new RoomDungeonEnterRequest(0) }));
+    }
+
+    [Test]
+    public void AnInviteLineIsShownOncePerMinutePerName() {
+        var book = new PartyBook();
+        var now = new DateTime(2026, 11, 24, 12, 0, 0, DateTimeKind.Utc);
+        book.ServerNow = () => now;
+        Assert.That(book.InviteSentIsNew("Guest"), Is.True);
+        Assert.That(book.InviteSentIsNew("Guest"), Is.True, "no entry before the line is shown (the client needs the messenger first)");
+        book.InviteLineShown("Guest");
+        Assert.That(book.InviteSentIsNew("Guest"), Is.False);
+        Assert.That(book.InviteSentIsNew("guest"), Is.True, "the name is compared as written (std::map of CStringW)");
+        now = now.AddSeconds(59);
+        Assert.That(book.InviteSentIsNew("Guest"), Is.False);
+        now = now.AddSeconds(1);
+        Assert.That(book.InviteSentIsNew("Guest"), Is.True, "now < expiry fails at the expiry");
     }
 }
