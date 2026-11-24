@@ -10,15 +10,20 @@ namespace Ms2.Net.Packets;
 /// entity id; StateInteraction::SendInteractObjectMode11 (@0x1417d1ed0, stateinteractdata.cpp:432-446) sends all
 /// usable gathering objects in reach. Wire: u8 0x0b, i32 count, count x str (ASCII/UTF-8, COutPacket::WriteString).
 /// </summary>
-public sealed record InteractObjectStartRequest(IReadOnlyList<string> Names) : IOutPacket
+public sealed record InteractObjectStartRequest(IReadOnlyList<string> Names) : IProfileOutPacket
 {
     public Outbound Op => Outbound.InteractObject;
 
     public InteractObjectStartRequest(string name) : this(new[] { name }) { }
 
-    public void Write(ByteWriter w)
+    public void Write(ByteWriter w) => Write(w, ProtocolProfile.Kms2525);
+
+    /// <summary>GMS2 has no count: u8 mode, then one name (every recorded request). STILL-OPEN: a GMS2 request for several
+    /// gathering objects at once is not in the recordings; the GMS2 form writes the first name.</summary>
+    public void Write(ByteWriter w, ProtocolProfile profile)
     {
         w.WriteByte(0x0b);
+        if (profile.IsGms2) { w.WriteString(Names.Count > 0 ? Names[0] ?? "" : ""); return; }
         w.WriteInt(Names.Count);
         for (int i = 0; i < Names.Count; i++) w.WriteString(Names[i] ?? "");
     }
@@ -30,15 +35,20 @@ public sealed record InteractObjectStartRequest(IReadOnlyList<string> Names) : I
 /// reactTime == 0 or on cast completion); StateInteraction::SendInteractObjectMode12 (@0x1417d2070,
 /// stateinteractdata.cpp:449-464) sends all still-usable gathering objects. Wire: u8 0x0c, i32 count, count x str.
 /// </summary>
-public sealed record InteractObjectCompleteRequest(IReadOnlyList<string> Names) : IOutPacket
+public sealed record InteractObjectCompleteRequest(IReadOnlyList<string> Names) : IProfileOutPacket
 {
     public Outbound Op => Outbound.InteractObject;
 
     public InteractObjectCompleteRequest(string name) : this(new[] { name }) { }
 
-    public void Write(ByteWriter w)
+    public void Write(ByteWriter w) => Write(w, ProtocolProfile.Kms2525);
+
+    /// <summary>GMS2 has no count: u8 mode, then one name (every recorded request). STILL-OPEN: a GMS2 request for several
+    /// gathering objects at once is not in the recordings; the GMS2 form writes the first name.</summary>
+    public void Write(ByteWriter w, ProtocolProfile profile)
     {
         w.WriteByte(0x0c);
+        if (profile.IsGms2) { w.WriteString(Names.Count > 0 ? Names[0] ?? "" : ""); return; }
         w.WriteInt(Names.Count);
         for (int i = 0; i < Names.Count; i++) w.WriteString(Names[i] ?? "");
     }
