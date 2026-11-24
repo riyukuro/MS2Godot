@@ -120,11 +120,14 @@ public sealed partial class RemoteLayer
     public Ms2.Ui.SpecialAbilityHotTimes HotTimes;
 
     /// <summary>OnLevelUp (scenestategame.cpp:9511) for another player: its level, and its worn abilities again.</summary>
-    public void LevelUp(int objectId, int level)
+    /// <summary>OnLevelUp for another PC: vfunc_131(level). Returns its old level (vfunc_78), null when it is not here.</summary>
+    public int? LevelUp(int objectId, int level)
     {
-        if (!users.TryGetValue(objectId, out var r)) return;
+        if (!users.TryGetValue(objectId, out var r)) return null;
+        int old = r.Level;
         r.Level = (short)level;
         r.WornAbilities = null;
+        return old;
     }
 
     /// <summary>RideOffAction type 24, UnRideSkill.</summary>

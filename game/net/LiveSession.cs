@@ -1260,12 +1260,12 @@ public partial class LiveSession : Node
         var dropLayer = drops = new DropLayer(field, builder, entry.Enter.CharacterId, kinds.Known,
             id => kinds.ExtraOf(id) is { } x && x.HasFlag(ItemExtra.Pet), kinds.IconPath);
         dropLayer.Send = Send;
-        dropLayer.Reached = (item, picker) =>
+        dropLayer.Reached = (item, picker, meso) =>
         {
             // the picker must be a PC (kind 0x6200004)
             Ui.DamageTarget pc = picker == selfObject ? null : remote?.DamageOf(picker);
             if (picker != selfObject && pc == null) return;
-            if (item.IsMeso) MesoGained?.Invoke(pc, item.Amount);
+            if (item.IsMeso) MesoGained?.Invoke(pc, meso);
             else if (kinds.TypeOf(item.ItemId) == 3) ItemGained?.Invoke(pc, item.Amount, kinds.IconPath(item.ItemId));
         };
         dropLayer.GetKeyDown = () => PickupKeyHeld;
@@ -1275,6 +1275,14 @@ public partial class LiveSession : Node
         dropLayer.TabOf = id => Inventory?.TabOfItem(id) ?? 7;
         dropLayer.HasEmptyCell = tab => Inventory?.HasEmptyCell(tab) ?? true;
         dropLayer.CanStack = DropCanStack;
+        dropLayer.Effects = () => FieldEffects;
+        dropLayer.ObjectKind = id => remote?.ObjectKind(id, selfObject) ?? (id == selfObject && selfObject != 0 ? 1 : 0);
+        dropLayer.Sound = (path, kind, at) => FieldAudio.Instance?.PlaySoundEvent(path, kind, new Vector3(at.X, at.Z, -at.Y),
+            player != null && IsInstanceValid(player) ? player.GlobalPosition : null);
+        dropLayer.SelfObjectId = () => selfObject;
+        dropLayer.PickedByMe = DropPickedByMe;
+        dropLayer.Notice = id => { string text = Ms2.Ui.Hud.MessageBoxData.Common(id); if (!string.IsNullOrEmpty(text)) SystemNoticeSink?.Invoke(text); };
+        dropLayer.SystemSound = key => FieldAudio.Instance?.PlayUi(key);
         field.TreeExiting += () => { if (drops == dropLayer) { drops = null; PickupKeyHeld = false; } };
         // the field is freed: its tracker stops filling Events (a newer field's layer is left alone); the guide stops and
         // updates on the map's unload (worldservice_1.cpp:10021)
@@ -1366,6 +1374,28 @@ public partial class LiveSession : Node
     /// <summary>What the field's LoadUgcMap stored (CubeMapInformationService: the owner FUN_1410c3180, the plot mode f330
     /// FUN_1410c3650, the house setting, permissions and layouts); cleared on each new field load.</summary>
     public Ms2.Net.CubeMapInfo CubeMap => fieldEntry.CubeMap;
+
+    /// <summary>UIGameMenuDialog::MarkDirty: the game menu runs RefreshMenu on its next frame (ItemUse modes 4 and 7, a raised level).</summary>
+    public Action GameMenuDirty;
+
+    /// <summary>The picked-up item's reward toast (UIRewardNotify::FUN_141abfa10): item id and grade.</summary>
+    public Action<int, int> PickupRewardSink;
+
+    /// <summary>
+    /// CDropItem::OnPickedUp with the local player as picker (dropitem.cpp:1007-1020), after the get sound: the reward toast for an
+    /// item of rarity 1 or more that is not a meso, a token or a merat (<see cref="DropPickup.Toasts"/>), then guide trigger 0xc with
+    /// the item id when the item is valid (<see cref="DropPickup.GuideCounts"/>).
+    /// </summary>
+    void DropPickedByMe(FieldAddItem item)
+    {
+        bool toast = DropPickup.Toasts(item.ItemId, item.Rarity, item.IsMeso);
+        if (toast) PickupRewardSink?.Invoke(item.ItemId, item.Rarity);
+        var k = Kinds();
+        bool pet = k.ExtraOf(item.ItemId) is { } x && x.HasFlag(ItemExtra.Pet);
+        bool counts = DropPickup.GuideCounts(item.Item?.ExpiryTime ?? 0, ServerTime, pet, k.HasMaidId(item.ItemId));
+        if (counts) guide?.AddTrigger(GuideTrigger.ItemPickup, item.ItemId, 0);
+        GD.Print($"live: picked up item {item.ItemId} rarity {item.Rarity}: toast {toast} guide {counts}");
+    }
 
     /// <summary>The own Stat (0x2E; CSceneStateGame::OnStat, scenestategame.cpp:9424): health, spirit and stamina reach the HUD data.</summary>
     void ApplyStat(PlayerStat st)
@@ -1538,7 +1568,18 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.FieldAddItem)) { var item = FieldAddItem.Read(p.Reader(), game.Profile); drops?.Add(item); }
             else if (game.Is(p, Inbound.FieldRemoveItem)) drops?.OnRemovePacket(FieldRemoveItem.Read(p.Reader()).ObjectId);
-            else if (game.Is(p, Inbound.FieldPickupItem) && drops != null) drops.OnPickupPacket(FieldPickupItem.Read(p.Reader(), drops.Describe));
+            else if (game.Is(p, Inbound.FieldPickupItem) && drops != null)
+            {
+                var pick = FieldPickupItem.Read(p.Reader(), drops.Describe);
+                if (pick.Picked && pick.EpBall && pick.PickerId == selfObject && selfObject > 0)
+                {
+                    // scenestategame.cpp:2438-2446: the own EP gauge, not the stat
+                    var (ep, epMax) = pick.EpGauge(Me.Stats2[PlayerStat.Stamina], Me.Stats0[PlayerStat.Stamina]);
+                    StubHudData.Instance.EpCurrent = (int)ep; StubHudData.Instance.EpMax = (int)epMax;
+                }
+                drops.OnPickupPacket(pick);
+                if (LogPackets || pick.Picked) GD.Print($"live: pickup object {pick.ObjectId} picked {pick.Picked} by {pick.PickerId}{(pick.Picked ? "" : " mode " + pick.Mode)}{(pick.Meso != 0 ? " meso " + pick.Meso : "")}{(pick.EpBall ? " ep +" + pick.Ep : "")}");
+            }
             else if (game.Is(p, Inbound.UserBattle) && p.Body.Length >= 5 && BitConverter.ToInt32(p.Body, 0) == selfObject
                      && OwnCurStateId(OwnSkillStateRunsOf?.Invoke() ?? false) != StateWaitingSelect)
             {
@@ -1594,6 +1635,7 @@ public partial class LiveSession : Node
             {
                 var n = ItemUseNotice.Read(p.Reader());   // CSceneStateGame::OnItemUse (scenestategame.cpp:8603)
                 if (n.Mode == 4) ItemUseNotify(n.ItemId);
+                if (n.MarksDialogDirty) GameMenuDirty?.Invoke();   // FindGameMenuDialog(0x4e28)->MarkDirty()
                 if (n.NoticeStringId != 0)
                     Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(Ms2.Ui.Hud.MessageBoxData.Common(n.NoticeStringId), 0, null, "");   // FUN_140d73bc0(id, 0, 0, "")
                 if (n.Codi is { } codi) ActiveCodiTab(codi);
@@ -1640,8 +1682,10 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.LevelUp))
             {
                 var l = LevelUp.Read(p.Reader());  // CSceneStateGame::OnLevelUp (scenestategame.cpp:9511)
+                int selfOld = Me.User?.Level ?? 0;
                 bool selfLevel = Me.Apply(l);
-                if (!selfLevel) remote?.LevelUp(l.ObjectId, l.Level);
+                int? oldLevel = selfLevel ? selfOld : remote?.LevelUp(l.ObjectId, l.Level);
+                if (oldLevel is { } was && l.Raises(was)) GameMenuDirty?.Invoke();   // :9537-9539 FindGameMenuDialog(0x4e28)->MarkDirty()
                 if (selfLevel) guide?.OnChangeMyLevel();   // NotifyChangeMyLevel (CGuideManager::OnChangeMyLevel)
                 GD.Print($"live: level up object {l.ObjectId} level {l.Level}{(selfLevel ? " SELF" : "")}");
             }

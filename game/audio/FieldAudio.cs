@@ -223,6 +223,19 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     static System.Numerics.Vector3 ToNumerics(Vector3 v) => new(v.X, v.Y, v.Z);
 
     /// <summary>
+    /// CEffectService::FUN_1411a5110 @0x1411a5110 (effectservice.cpp:1321) at volume 1: the event <paramref name="path"/>
+    /// ("group/name") at <paramref name="position"/> through the checks of the object kind <paramref name="kind"/>
+    /// (<see cref="Ms2.Formats.World.EffectSkipTable.SoundEventVolume"/>). Returns whether a sound played.
+    /// </summary>
+    public bool PlaySoundEvent(string path, int kind, Vector3 position, Vector3? viewer)
+    {
+        var status = GameOptions.Current?.StatusOption;
+        float v = Ms2.Formats.World.EffectSkipTable.SoundEventVolume(effectSkip, kind, ToNumerics(position), viewer is { } e ? ToNumerics(e) : null,
+            1f, volumeOtherPc, status?.DisplayShowOnlyMyPet ?? false, status?.DisplayHideMyPet ?? false);
+        return v >= 0 && PlayEventAt(path, position, 0, v);
+    }
+
+    /// <summary>
     /// CEffectService::PlayEventVoice @0x1411a5770 (effectservice.cpp:1371): the event voice of <paramref name="type"/> for a
     /// PC of <paramref name="gender"/> and <paramref name="jobGroup"/> (<see cref="EventSoundTable.VoicePath"/>; the job sound
     /// is off with the KR region and the character option's disableJobSound, IsJobSoundDisabled @0x141260470), played through

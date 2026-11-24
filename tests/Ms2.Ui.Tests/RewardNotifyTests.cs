@@ -213,4 +213,16 @@ public class RewardNotifyTests
         c.ShowItemReward(5, 2);
         Assert.That(c.Pending, Is.EqualTo(1));
     }
+
+    [Test]
+    public void APickedUpSpecialIdHasNoToast()
+    {
+        var (_, c, _) = Load();
+        c.ItemOf = id => new Ms2.Ui.Items.ItemData { Id = id };
+        c.Block = true;
+        c.ShowPickedItem(90000010, 1);
+        Assert.That(c.Pending, Is.EqualTo(0), "FUN_141abfa10: the EP ball (FUN_14053f900) returns");
+        c.ShowPickedItem(20000001, 1);
+        Assert.That(c.Pending, Is.EqualTo(1));
+    }
 }

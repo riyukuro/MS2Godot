@@ -137,6 +137,19 @@ public sealed partial class RemoteLayer : Node3D
     /// <summary>WorldService::FindPCById: a shown player as a damage number's target; null when it is not a player here.</summary>
     public Ui.DamageTarget DamageOf(int objectId) => users.TryGetValue(objectId, out var r) ? r.Damage : null;
 
+    /// <summary>
+    /// WorldService::FUN_141bd19d0 (GetObjectKind, worldservice_1.cpp:6304) of an object id (DamageHitEffects.KindOf's
+    /// kinds): 1 the own PC, 3 another player, 6 a boss npc, 5 any other npc, 0 none here.
+    /// STILL-OPEN: a pet (4, or 2 for the own player's) is 0 here; the field's pets are not looked up by object id.
+    /// </summary>
+    public int ObjectKind(int objectId, int selfObjectId)
+    {
+        if (objectId == selfObjectId && selfObjectId != 0) return 1;
+        if (users.ContainsKey(objectId)) return 3;
+        if (npcs.Placed(objectId) == null) return 0;
+        return Tracker.NpcLayoutOf(Tracker.NpcIdOf(objectId)).IsBoss ? 6 : 5;
+    }
+
     /// <summary>WorldService::FindNpcById: whether an npc of the object id is here.</summary>
     public bool HasNpc(int objectId) => npcs.Placed(objectId) != null;
 

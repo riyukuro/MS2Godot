@@ -200,6 +200,9 @@ public sealed record ExpUp(byte Mode, long Gained, int Type, long Total, long Re
 
 /// <summary>Inbound 0x38 (CSceneStateGame::OnLevelUp, scenestategame.cpp:9511): i32 object id, u16 the new level.</summary>
 public sealed record LevelUp(int ObjectId, int Level) {
+    /// <summary>OnLevelUp's raise branch (scenestategame.cpp:9520): the new level above the PC's old one (the level-up effect, the
+    /// inventory's button state and the game menu's MarkDirty).</summary>
+    public bool Raises(int oldLevel) => Level > oldLevel;
     public static LevelUp Read(ByteReader r) {
         var l = new LevelUp(r.ReadInt(), (ushort) r.ReadShort());
         // The client stops after the i16 level (OnLevelUp, scenestategame.cpp:9511); the KMS2 server sends the level as an i32 (2 more bytes, high half 0).

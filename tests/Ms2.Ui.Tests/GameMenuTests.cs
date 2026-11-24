@@ -46,6 +46,17 @@ public class GameMenuTests
     }
 
     [Test]
+    public void AMarkedMenuRefreshesOnceOnItsNextFrame()
+    {
+        var c = new GameMenuController();
+        Assert.That(c.Update(), Is.False, "vfunc_15: not dirty");
+        c.MarkDirty();
+        c.MarkDirty();
+        Assert.That(c.Update(), Is.True, "m_nDirty: RefreshMenu");
+        Assert.That(c.Update(), Is.False, "m_nDirty cleared");
+    }
+
+    [Test]
     public void TableHasTheKrGameSet()
     {
         var t = GameMenuTable.Load(Packs(), FeatureOn);

@@ -144,6 +144,8 @@ public partial class HudScene : Node, IUiStageHost
             livePortals.CommonBoxSink = id => MessageBoxQueue.ShowCommon(id, 0, null, "");
             livePortals.TaxiKey = TaxiKey;
             livePortals.ReactorRewardSink = (id, grade) => EnsureRewardNotify()?.ShowItemReward(id, grade);
+            livePortals.PickupRewardSink = (id, grade) => EnsureRewardNotify()?.ShowPickedItem(id, grade);
+            livePortals.GameMenuDirty = () => gameMenu?.MarkDirty();
         }
         sizeSource = GetViewport();
         sizeSource.SizeChanged += QueueRelayout;
@@ -3968,6 +3970,7 @@ public partial class HudScene : Node, IUiStageHost
         PerfLog.Frame(perfState);
         TickCutSceneMovie();                                  // UICutSceneMovie's pane (STILL-OPEN: the movie)
         rewardNotify?.Update();                               // UIRewardNotify::vfunc_15: the held toasts
+        gameMenu?.Update();                                   // UIGameMenuDialog::vfunc_15: a dirty menu refreshed
         TickOwnQueued();                                      // StateSkill::FUN_1417f11d0: the queued press
         TickOwnAttacks();                                     // StateSkill::TextKeyEvent: the own cast's attack points
         TickOwnSync();                                        // StateSkill::SendChargeState: the mode 2 sync

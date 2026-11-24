@@ -108,3 +108,51 @@ public class DropPickupTests {
 
     [Test] public void EveryCreatedDropRestartsTheSharedTimerAtTenMilliseconds() => Assert.That(DropPickup.AfterCreateMs, Is.EqualTo(10u));
 }
+
+/// <summary>FUN_141190900's bag test, OnPickedUp's toast and guide tests, the item id kinds and OnFieldRemoveItem's fade.</summary>
+public class DropPickupRulesTests {
+    [Test] public void TheIdKindsAreTheClientsLists() {
+        Assert.That(new[] { 90000001, 90000002, 90000003 }.All(DropPickup.IsMesoId), Is.True);
+        Assert.That(new[] { 90000008, 90000009, 90000010, 90000019 }.All(DropPickup.IsSpecialId), Is.True, "FUN_14053f900");
+        Assert.That(new[] { 90000004, 90000011, 90000015, 90000016 }.All(DropPickup.IsMeratId), Is.True, "FUN_14053f940");
+        Assert.That(DropPickup.IsTokenId(90000013), Is.True);
+        Assert.That(DropPickup.IsTokenId(90000012), Is.False);
+        Assert.That(DropPickup.IsCurrencyId(90000013) && DropPickup.IsCurrencyId(90000001) && DropPickup.IsCurrencyId(90000004), Is.True);
+        Assert.That(DropPickup.IsCurrencyId(90000008), Is.False, "the EP ball is special, not currency");
+        Assert.That(DropPickup.IsCurrencyId(20000001), Is.False);
+    }
+
+    [Test] public void TheBagFullRefusalNeedsNoRoomNoStackAndAnOrdinaryItem() {
+        Assert.That(DropPickup.BagFull(20000001, tabHasRoom: false, canStack: false), Is.True);
+        Assert.That(DropPickup.BagFull(20000001, tabHasRoom: true, canStack: false), Is.False);
+        Assert.That(DropPickup.BagFull(20000001, tabHasRoom: false, canStack: true), Is.False);
+        Assert.That(DropPickup.BagFull(90000010, false, false), Is.False, "an EP ball is sent with no bag test");
+        Assert.That(DropPickup.BagFull(90000013, false, false), Is.False, "a token is currency");
+        Assert.That(DropPickup.BagFull(90000004, false, false), Is.False, "a merat is currency");
+        Assert.That((DropPickup.BagFullNotice, DropPickup.TooFarNotice, DropPickup.BagFullSound), Is.EqualTo((0x43, 0x45, "system_notice_error_warningBag")));
+    }
+
+    [Test] public void TheToastIsForGradedItemsThatAreNoCurrencyNorSpecial() {
+        Assert.That(DropPickup.Toasts(20000001, 1, false), Is.True);
+        Assert.That(DropPickup.Toasts(20000001, 0, false), Is.False, "rarity 0");
+        Assert.That(DropPickup.Toasts(90000001, 1, true), Is.False, "a meso");
+        Assert.That(DropPickup.Toasts(90000013, 4, false), Is.False, "a token");
+        Assert.That(DropPickup.Toasts(90000004, 4, false), Is.False, "a merat");
+        Assert.That(DropPickup.Toasts(90000010, 1, false), Is.False, "the EP ball (FUN_141abfa10 returns)");
+    }
+
+    [Test] public void TheGuideTriggerSkipsAnExpiredItemUnlessPetOrMaid() {
+        Assert.That(DropPickup.GuideCounts(0, 1000, false, false), Is.True, "no expiry");
+        Assert.That(DropPickup.GuideCounts(2000, 1000, false, false), Is.True, "not yet expired");
+        Assert.That(DropPickup.GuideCounts(1000, 1000, false, false), Is.False, "IsExpired: expiry <= now");
+        Assert.That(DropPickup.GuideCounts(500, 1000, true, false), Is.True, "a pet");
+        Assert.That(DropPickup.GuideCounts(500, 1000, false, true), Is.True, "a maid id");
+    }
+
+    [Test] public void ARemovedDropFadesOutOverHalfASecond() {
+        Assert.That(DropPickup.RemoveAlpha(0), Is.EqualTo(1f));
+        Assert.That(DropPickup.RemoveAlpha(0.25f), Is.EqualTo(0.5f).Within(1e-6));
+        Assert.That(DropPickup.RemoveAlpha(0.5f), Is.EqualTo(0f));
+        Assert.That(DropPickup.RemoveAlpha(2f), Is.EqualTo(0f));
+    }
+}

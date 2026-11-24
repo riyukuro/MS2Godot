@@ -54,6 +54,27 @@ public class DropPickupPacketTests {
         Assert.That(d.Ep, Is.EqualTo(42u));
     }
 
+    [Test] public void ThePickedMesoValueReplacesTheAddedAmount() {
+        var w = new ByteWriter(); w.WriteBool(true); w.WriteInt(9); w.WriteInt(77); w.WriteLong(5000);
+        var d = FieldPickupItem.Read(Reader(w), _ => (true, true, false));
+        Assert.That(d.MesoShown(120, true), Is.EqualTo(5000L), "SetMeso(nValue)");
+        var refused = new ByteWriter(); refused.WriteBool(false); refused.WriteInt(9); refused.WriteInt(1);
+        Assert.That(FieldPickupItem.Read(Reader(refused), _ => (true, true, false)).MesoShown(120, true), Is.EqualTo(120L));
+    }
+
+    [Test] public void AnEpBallSetsTheGaugeToTheStatPlusTheGain() {
+        var w = new ByteWriter(); w.WriteBool(true); w.WriteInt(9); w.WriteInt(77); w.WriteInt(30);
+        var d = FieldPickupItem.Read(Reader(w), _ => (true, false, true));
+        Assert.That(d.EpBall, Is.True);
+        Assert.That(d.EpGauge(50, 120), Is.EqualTo((80L, 120L)), "SetEp(FUN_141670a00(10) + nAdd, FUN_141670a30(10))");
+    }
+
+    [Test] public void OnlyARaisedLevelMarksTheMenu() {
+        Assert.That(new LevelUp(1, 11).Raises(10), Is.True);
+        Assert.That(new LevelUp(1, 10).Raises(10), Is.False);
+        Assert.That(new LevelUp(1, 9).Raises(10), Is.False);
+    }
+
     [Test] public void ARefusedPickupCarriesAMode() {
         var w = new ByteWriter(); w.WriteBool(false); w.WriteInt(9); w.WriteInt(0x43);
         var d = FieldPickupItem.Read(Reader(w), _ => (true, false, false));

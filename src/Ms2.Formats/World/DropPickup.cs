@@ -53,6 +53,54 @@ public static class DropPickup
     /// has disablePickUp set.
     /// </summary>
     public static bool PickupAllowed(bool dead, bool rideDisablesPickup) => !dead && !rideDisablesPickup;
+
+    /// <summary>The system notice FUN_141190900 shows when the bag has no room (FUN_141275260(0x43, 1, 1)).</summary>
+    public const int BagFullNotice = 0x43;
+    /// <summary>The notice the get key shows when the only drop near is out of reach (mypc.cpp:4750: FUN_141275260(0x45, 1, 1)).</summary>
+    public const int TooFarNotice = 0x45;
+    /// <summary>s_strWarningBag: the system sound of the bag-full refusal.</summary>
+    public const string BagFullSound = "system_notice_error_warningBag";
+    /// <summary>OnFieldRemoveItem's fade: vfunc_40(1, 0, 0, 0.5), alpha 1 to 0 over half a second before the drop is freed.</summary>
+    public const float RemoveFadeSeconds = 0.5f;
+
+    /// <summary>The alpha of a removed drop <paramref name="seconds"/> into its fade.</summary>
+    public static float RemoveAlpha(float seconds) => seconds >= RemoveFadeSeconds ? 0 : 1 - Math.Max(seconds, 0) / RemoveFadeSeconds;
+
+    /// <summary>FUN_14053f8c0: the three meso ids.</summary>
+    public static bool IsMesoId(int id) => id is 0x55d4a81 or 0x55d4a82 or 0x55d4a83;
+    /// <summary>FUN_14053f900: the special ids (EP and SP balls and the like) that skip the bag test and the toast.</summary>
+    public static bool IsSpecialId(int id) => id is 0x55d4a88 or 0x55d4a89 or 0x55d4a8a or 0x55d4a93;
+    /// <summary>FUN_14053f940: the merat ids.</summary>
+    public static bool IsMeratId(int id) => id is 0x55d4a84 or 0x55d4a8b or 0x55d4a8f or 0x55d4a90;
+    /// <summary>FUN_14053f990 through FUN_1403ba790: the token ids (the currency kinds it maps to a non-zero type).</summary>
+    public static bool IsTokenId(int id) => id is 90000001 or 90000002 or 90000003 or 90000004 or 90000006 or 90000011 or 90000013
+        or 90000014 or 90000015 or 90000016 or 90000017 or 90000018 or 90000020 or 90000022 or 90000023 or 90000024 or 90000025 or 90000027;
+    /// <summary>CItem::IsCurrency: a meso, a merat or a token.</summary>
+    public static bool IsCurrencyId(int id) => IsMesoId(id) || IsMeratId(id) || IsTokenId(id);
+
+    /// <summary>
+    /// FUN_141190900: whether the bag-full refusal (notice 0x43, the warning sound, the hop) comes before the request. A currency or
+    /// special id is sent with no test; otherwise room in the item's tab sends it, and with no room a stack to add to does. The
+    /// request is sent in every case.
+    /// </summary>
+    public static bool BagFull(int itemId, bool tabHasRoom, bool canStack) =>
+        !IsCurrencyId(itemId) && !IsSpecialId(itemId) && !tabHasRoom && !canStack;
+
+    /// <summary>
+    /// OnPickedUp's reward toast (dropitem.cpp:1007-1016 and UIRewardNotify::FUN_141abfa10): the local player picked up an item of
+    /// rarity 1 or more that is not a meso (<paramref name="meso"/>: CDropItem::IsMeso, a meso id with an amount), a token, a merat
+    /// or a special id.
+    /// </summary>
+    public static bool Toasts(int itemId, int rarity, bool meso) =>
+        rarity >= 1 && !meso && !IsTokenId(itemId) && !IsMeratId(itemId) && !IsSpecialId(itemId);
+
+    /// <summary>
+    /// CItem::FUN_140528980 (item.cpp:1717), OnPickedUp's test before guide trigger 0xc (ItemPickup): false for an expired item
+    /// (IsExpired: an expiry above 0 and not after the server's now) that is neither a pet nor one with a maid id.
+    /// STILL-OPEN: a score item's tests (its notes and its custom score's state) are taken as passed.
+    /// </summary>
+    public static bool GuideCounts(long expiry, long now, bool pet, bool hasMaidId) =>
+        !(expiry > 0 && expiry <= now && !pet && !hasMaidId);
 }
 
 /// <summary>One drop as the key handler sees it.</summary>

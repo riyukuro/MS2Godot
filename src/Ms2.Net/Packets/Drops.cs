@@ -109,6 +109,8 @@ public sealed record RequestMesoPickup(IReadOnlyList<int> ObjectIds) : Ms2.Net.W
 /// </summary>
 public sealed class FieldPickupItem {
     public bool Picked, DropKnown;
+    /// <summary>The drop is the EP ball (FUN_14118ff10), so a pickup carries <see cref="Ep"/>.</summary>
+    public bool EpBall;
     public int ObjectId, PickerId, Mode;
     public long Meso;
     public uint Ep;
@@ -118,7 +120,7 @@ public sealed class FieldPickupItem {
     public static FieldPickupItem Read(ByteReader r, Func<int, (bool Known, bool IsMeso, bool IsEp)> find) {
         var d = new FieldPickupItem { Picked = r.ReadBool(), ObjectId = r.ReadInt() };
         var (known, meso, ep) = find(d.ObjectId);
-        d.DropKnown = known;
+        d.DropKnown = known; d.EpBall = ep;
         if (!known) return d;
         if (d.Picked) {
             d.PickerId = r.ReadInt();
@@ -127,6 +129,16 @@ public sealed class FieldPickupItem {
         } else d.Mode = r.ReadInt();
         return d;
     }
+
+    /// <summary>The meso value the drop shows when it reaches its picker: SetMeso(nValue) of a picked meso (scenestategame.cpp:2433),
+    /// else the add packet's <paramref name="added"/>.</summary>
+    public long MesoShown(long added, bool isMeso) => Picked && isMeso ? Meso : added;
+
+    /// <summary>
+    /// The picked EP ball (scenestategame.cpp:2438-2446): the own player's EP gauge set to the stat's current value plus the packet's
+    /// add, over the stat's total (SetEp(FUN_141670a00(10) + nAdd, FUN_141670a30(10))). The stat itself is not changed.
+    /// </summary>
+    public (long Current, long Max) EpGauge(long current, long total) => (current + Ep, total);
 }
 
 /// <summary>

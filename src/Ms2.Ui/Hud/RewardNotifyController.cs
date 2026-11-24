@@ -96,6 +96,15 @@ public sealed class RewardNotifyController : UiController
         ShowItem(itemId, grade, Model.Tables.Items.TextColor(grade), Model.Tables.ItemName(itemId), d.IconPath, d.IsPieceItem);
     }
 
+    /// <summary>FUN_141abfa10 (uirewardnotify.cpp:358), a picked-up drop's toast: nothing for the special ids (FUN_14053f900, the EP
+    /// and SP balls), else as <see cref="ShowItemReward"/>. STILL-OPEN: the name of a UGC, score or pet item (CItem::FUN_140527b10)
+    /// is the table name here.</summary>
+    public void ShowPickedItem(int itemId, int grade)
+    {
+        if (Ms2.Formats.World.DropPickup.IsSpecialId(itemId)) return;
+        ShowItemReward(itemId, grade);
+    }
+
     /// <summary>FUN_141abfdc0 (@0x141abfdc0): the achievement toast; emblem when the achievement's type is 9.</summary>
     public void ShowAchieve(string name, string icon, int achieveType) =>
         AppendReward(Host.Obj(("type", "achieve"), ("msg", name), ("icon", icon), ("emblem", achieveType == 9)));

@@ -255,6 +255,23 @@ public sealed class GameMenuController : UiController
         if (MenuItem(MenuName(Table.FindTopId(id))) is { } b && Host.Has(b, "setNotifyRedCircle")) Host.Invoke(b, "setNotifyRedCircle", MenuName(id), on);
     }
 
+    bool dirty;
+    /// <summary>MarkDirty (m_nDirty = 1, scenestategame.cpp:900): the next <see cref="Update"/> refreshes the menu.</summary>
+    public void MarkDirty() => dirty = true;
+
+    /// <summary>
+    /// vfunc_15 @0x141937980 (uigamemenudialog.cpp:1066), each frame: a dirty menu runs RefreshMenu once. Returns whether it ran.
+    /// The vfunc_55 test (a closing dialog) never holds for this always-on dialog without a tween.
+    /// STILL-OPEN: the m_bPetUpdate step (the merat market's ad product mark, FUN_14193daf0).
+    /// </summary>
+    public bool Update()
+    {
+        if (!dirty) return false;
+        dirty = false;
+        RefreshMenu();
+        return true;
+    }
+
     /// <summary>vfunc_oa0_9 @0x141937d70 (the level change): the character ability mark, the learning quest count.
     /// STILL-OPEN: its UpdateQuestMenu (the quest button) is not ported.</summary>
     public void OnChangeMyLevel()

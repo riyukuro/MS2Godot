@@ -86,6 +86,9 @@ public sealed class ItemKinds
     /// <summary>Whether the item id has item data (CItem::FUN_140523c40 fails without it).</summary>
     public bool Known(int id) => Row(id) != null;
 
+    /// <summary>CItemData::HasMaidId (itemdata.cpp:1163): a type 6 subtype 7 item with a maid id.</summary>
+    public bool HasMaidId(int id) => perItem.Get(id)?.HasMaidId == true;
+
     /// <summary>CItem::GetSlotMax: the max stack of an item; 0 for an unknown item.</summary>
     public uint SlotMax(int id) => Row(id)?.SlotMax ?? 0;
 

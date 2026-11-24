@@ -26,6 +26,11 @@ public sealed partial class DropLayer : Node3D
         public uint FadeUntil;       // CDropItem m_nFadeTime
         public bool Held;            // state 6 kept until FadeUntil (vfunc_53, dropitem.cpp:1137-1150): not launched yet
         public bool Hidden;          // vfunc_23(1) until FadeUntil
+        public DropStyle Style;      // m_spEffect, the drop style row
+        public DropEffects Effects;  // m_nEffectIdA / m_nEffectIdB and the two sounds
+        public long Meso;            // m_n64Meso: the add packet's amount, then the pickup's value (SetMeso)
+        public float Faded;          // seconds into the removal fade (vfunc_40(1, 0, 0, 0.5))
+        public List<GeometryInstance3D> Meshes;   // the drop's meshes the fade sets
     }
 
     readonly PackSet packs;
@@ -40,6 +45,7 @@ public sealed partial class DropLayer : Node3D
     readonly Dictionary<string, Texture2D> icons = new();
     readonly Func<System.Numerics.Vector3, float?> ground;
     readonly List<Drop> gone = new();
+    readonly List<Drop> fading = new();
     PhysicsRayQueryParameters3D ray;
     readonly PickupPlanner planner = new();
     readonly List<Drop> planned = new();
@@ -52,8 +58,9 @@ public sealed partial class DropLayer : Node3D
     /// <summary>An actor's position by object id (the picker a drop flies to); null when it is gone.</summary>
     public Func<int, System.Numerics.Vector3?> ActorPosition = _ => null;
     public Action<Ms2.Net.Wire.IOutPacket> Send = _ => { };
-    /// <summary>A drop reached its picker (CDropItem::SetState(3), the hover's start): the drop's packet and the picker's object id.</summary>
-    public Action<FieldAddItem, int> Reached;
+    /// <summary>A drop reached its picker (CDropItem::SetState(3), the hover's start): the drop's packet, the picker's object id and the
+    /// meso value it shows (m_n64Meso).</summary>
+    public Action<FieldAddItem, int, long> Reached;
     /// <summary>The "get" action key is held.</summary>
     public Func<bool> GetKeyDown = () => false;
     public Func<int, int> TabOf = _ => 7;
@@ -62,6 +69,20 @@ public sealed partial class DropLayer : Node3D
     /// <summary>The player cannot pick up (dead, or riding a mount that disables it): MyPC::FUN_141530db0's first tests.</summary>
     public Func<bool> PickupBlocked = () => false;
     public Func<uint> Clock = () => (uint)Time.GetTicksMsec();
+    /// <summary>The field's effect service (CEffectService) the rest effects run in; none when null.</summary>
+    public Func<IRegionSkillEffects> Effects = () => null;
+    /// <summary>WorldService::FUN_141bd19d0: the object kind of an object id (1 the own PC, 3 another PC, 5 an npc, 6 a boss, 0 none).</summary>
+    public Func<int, int> ObjectKind = _ => 0;
+    /// <summary>CEffectService::FUN_1411a5110: a sound "group/name" of an object kind at a client position.</summary>
+    public Action<string, int, System.Numerics.Vector3> Sound;
+    /// <summary>The local player's object id (OnPickedUp's cast of the picker to MyPC).</summary>
+    public Func<int> SelfObjectId = () => 0;
+    /// <summary>OnPickedUp with the local player as picker, after the get sound: the reward toast and the guide trigger.</summary>
+    public Action<FieldAddItem> PickedByMe;
+    /// <summary>FUN_141275260(id, 1, 1): a common system notice.</summary>
+    public Action<int> Notice;
+    /// <summary>PlaySystemSound: a system ui sound by its name.</summary>
+    public Action<string> SystemSound;
     public int Count => drops.Count;
     /// <summary>FieldAddItems the client would not make a drop of (not the owner, no item data, no style, no model).</summary>
     public int Skipped, NoModel;
@@ -109,25 +130,43 @@ public sealed partial class DropLayer : Node3D
         AddChild(root);
         var motion = new DropMotion(constants, look.Style, d.ObjectId, pet);
         uint fade = DropPickup.FadeUntil(Clock(), d.DropKind, pet, d.PetTrap, constants.PetTrapVisibleDelayMs);
-        var drop = new Drop { Root = root, Motion = motion, Packet = d, FadeUntil = fade, Held = fade != 0 && !pet, Hidden = fade != 0 };
+        var drop = new Drop { Root = root, Motion = motion, Packet = d, FadeUntil = fade, Held = fade != 0 && !pet, Hidden = fade != 0,
+            Style = look.Style, Effects = new DropEffects(Effects(), PlaySound), Meso = d.Amount };
         root.Visible = !drop.Hidden;
         if (drop.Held) root.Position = G(DropMotion.Created70(d.Position));
         else LaunchDrop(drop);
         drops[d.ObjectId] = drop;
     }
 
-    /// <summary>SetState(1): the throw from the packet position raised by 70.</summary>
+    /// <summary>SetState(1): the throw from the packet position raised by 70; the drop sound when it found the ground.</summary>
     void LaunchDrop(Drop drop)
     {
-        drop.Motion.Launch(DropMotion.Created70(drop.Packet.Position), DropLaunch.Default, drop.Packet.FixedThrow, drop.Packet.IsMeso, ground);
+        var from = DropMotion.Created70(drop.Packet.Position);
+        drop.Motion.Launch(from, DropLaunch.Default, drop.Packet.FixedThrow, drop.Packet.IsMeso, ground);
         drop.Root.Position = G(drop.Motion.Position);
+        if (drop.Motion.State == DropMotion.FlyOut) drop.Effects.Thrown(drop.Style, ObjectKind(drop.Packet.SourceObjectId), from);
     }
 
-    /// <summary>OnFieldRemoveItem (scenestategame.cpp:2402): a drop being picked up is kept, any other leaves.</summary>
+    void PlaySound(string group, string name, int kind, System.Numerics.Vector3 at) => Sound?.Invoke(group + "/" + name, kind, at);
+
+    /// <summary>
+    /// OnFieldRemoveItem (scenestategame.cpp:2402): a drop being picked up is kept; any other fades from alpha 1 to 0 over half a
+    /// second (vfunc_40(1, 0, 0, 0.5)) out of the field's maps (FUN_141bbbcf0(id, 1)), then is freed with its effects.
+    /// </summary>
     public void OnRemovePacket(int objectId)
     {
-        if (drops.TryGetValue(objectId, out var d) && DropPickup.KeepsOnRemove(d.PickerId, d.Motion.State)) return;
-        Remove(objectId);
+        if (!drops.TryGetValue(objectId, out var d) || DropPickup.KeepsOnRemove(d.PickerId, d.Motion.State)) return;
+        drops.Remove(objectId);
+        d.Meshes = new List<GeometryInstance3D>();
+        CollectMeshes(d.Root, d.Meshes);
+        d.Faded = 0;
+        fading.Add(d);
+    }
+
+    static void CollectMeshes(Node n, List<GeometryInstance3D> into)
+    {
+        if (n is GeometryInstance3D g) into.Add(g);
+        for (int i = 0, count = n.GetChildCount(); i < count; i++) CollectMeshes(n.GetChild(i), into);
     }
 
     /// <summary>What OnFieldPickupItem reads the packet by: whether the field has the drop, and its kind.</summary>
@@ -141,17 +180,31 @@ public sealed partial class DropLayer : Node3D
     public void OnPickupPacket(FieldPickupItem p)
     {
         if (!p.DropKnown || !p.Picked || !drops.TryGetValue(p.ObjectId, out var d)) return;
+        d.Meso = p.MesoShown(d.Meso, d.Packet.IsMeso);
+        var at = ActorPosition(p.PickerId);
+        if (p.PickerId == SelfObjectId() && at is { } mine)
+        {
+            d.Effects.PickedUp(d.Style, mine);
+            PickedByMe?.Invoke(d.Packet);
+        }
+        if (d.Motion.State == DropMotion.Created) { d.Hidden = false; d.Root.Visible = true; }   // vfunc_23(0): shown, still held
         if (d.Motion.State != DropMotion.Rest) return;
         d.PickerId = p.PickerId;
         globalUntil = Clock() + DropPickup.AfterPickupMs;
-        var at = ActorPosition(p.PickerId) ?? d.Motion.Position;
-        d.Motion.PickedUp(at, (uint)Random.Shared.NextInt64(0, uint.MaxValue));
+        d.Motion.PickedUp(at ?? d.Motion.Position, (uint)Random.Shared.NextInt64(0, uint.MaxValue));
+        d.Effects.Stop();   // SetState(2)
     }
 
-    /// <summary>OnFieldRemoveItem (also the internal removal): the object leaves the world.</summary>
+    /// <summary>The internal removal (WorldService::FUN_141bbb7f0, also a drop of a reused id): the object and its effects go at once.</summary>
     public void Remove(int objectId)
     {
         if (!drops.Remove(objectId, out var drop)) return;
+        Free(drop);
+    }
+
+    static void Free(Drop drop)
+    {
+        drop.Effects.Stop();   // the dtor
         drop.Root.QueueFree();
     }
 
@@ -212,9 +265,10 @@ public sealed partial class DropLayer : Node3D
         float dt = (float)delta;
         foreach (var d in drops.Values)
         {
-            if (d.Hidden)
+            if (d.Hidden || d.Held)
             {
-                // a pet trap's drop: hidden, and a non-pet one not even thrown, until its delay ends (vfunc_53)
+                // a pet trap's drop: hidden, and a non-pet one not even thrown, until its delay ends (vfunc_53); a pickup shows a
+                // held one early, which still waits to be thrown
                 if (DropPickup.StillHidden(Clock(), d.FadeUntil)) { if (d.Held) continue; }
                 else { d.Hidden = false; d.Root.Visible = true; if (d.Held) { d.Held = false; LaunchDrop(d); } }
             }
@@ -222,7 +276,10 @@ public sealed partial class DropLayer : Node3D
                 ? ActorPosition(d.PickerId) : null;
             int was = d.Motion.State;
             d.Motion.Advance(dt, picker);
-            if (was != DropMotion.Hover && d.Motion.State == DropMotion.Hover && d.PickerId != 0) Reached?.Invoke(d.Packet, d.PickerId);
+            if (was != DropMotion.Hover && d.Motion.State == DropMotion.Hover && d.PickerId != 0) Reached?.Invoke(d.Packet, d.PickerId, d.Meso);
+            // SetState(0) at the end of the throw (the no-ground throw and the regrow set the state without it)
+            if (was == DropMotion.FlyOut && d.Motion.State == DropMotion.Rest)
+                d.Effects.Rested(table.GradeEffect(d.Packet.Rarity), d.Style, d.Motion.Position);
             if (d.Motion.Done) { gone.Add(d); continue; }
             d.Root.Position = G(d.Motion.Position);
             var s = d.Motion.Spin;
@@ -231,9 +288,23 @@ public sealed partial class DropLayer : Node3D
         bool down = GetKeyDown();
         if (down && drops.Count > 0) TryPickup(!keyWasDown);
         keyWasDown = down;
+        if (fading.Count > 0) Fade(dt);
         if (gone.Count == 0) return;
         foreach (var d in gone) Remove(d.Packet.ObjectId);
         gone.Clear();
+    }
+
+    /// <summary>The removed drops' alpha (<see cref="DropPickup.RemoveAlpha"/>) as the meshes' transparency; freed at 0.</summary>
+    void Fade(float dt)
+    {
+        for (int i = fading.Count - 1; i >= 0; i--)
+        {
+            var d = fading[i];
+            d.Faded += dt;
+            float alpha = DropPickup.RemoveAlpha(d.Faded);
+            if (alpha <= 0 || !IsInstanceValid(d.Root)) { Free(d); fading.RemoveAt(i); continue; }
+            foreach (var m in d.Meshes) if (IsInstanceValid(m)) m.Transparency = 1 - alpha;
+        }
     }
 
     /// <summary>
@@ -266,15 +337,27 @@ public sealed partial class DropLayer : Node3D
             var nearest = planned[planner.Nearest];
             if (DropPickup.BagAllows(HasEmptyCell(0), CanStack(nearest.Packet), pressed)) Request(nearest, now);
         }
-        else if (planner.Hop >= 0) planned[planner.Hop].Motion.PickFailed();   // FUN_1411911a0 (the 0x45 notice is not ported)
+        else if (planner.Hop >= 0)
+        {
+            Notice?.Invoke(DropPickup.TooFarNotice);   // FUN_141275260(0x45, 1, 1)
+            planned[planner.Hop].Motion.PickFailed();  // FUN_1411911a0
+        }
     }
 
-    /// <summary>CDropItem::FUN_141190900 (dropitem.cpp:950): the request, the drop hopping back when the bag cannot take it.</summary>
+    /// <summary>
+    /// CDropItem::FUN_141190900 (dropitem.cpp:950): the request; when the bag cannot take it, notice 0x43, the warning sound and the
+    /// drop hopping back first. STILL-OPEN: the blocked action 0x13's notice (the block manager is not ported).
+    /// </summary>
     void Request(Drop d, uint now)
     {
         d.LastRequest = now;
-        // a meso id with no amount still takes the client's currency branch: no hop
-        if (!FieldAddItem.IsMesoId(d.Packet.ItemId) && !HasEmptyCell(TabOf(d.Packet.ItemId)) && !CanStack(d.Packet)) d.Motion.PickFailed();
+        int id = d.Packet.ItemId;
+        if (DropPickup.BagFull(id, HasEmptyCell(TabOf(id)), CanStack(d.Packet)))
+        {
+            Notice?.Invoke(DropPickup.BagFullNotice);
+            SystemSound?.Invoke(DropPickup.BagFullSound);
+            d.Motion.PickFailed();
+        }
         Send(new RequestItemPickup(d.Packet.ObjectId, 0));
     }
 }
