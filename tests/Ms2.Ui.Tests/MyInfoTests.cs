@@ -61,11 +61,20 @@ public class MyInfoTests
         var labels = tabs.Select(t => Rt.ToString(h.Get(t, "label"))).ToList();
         TestContext.WriteLine(string.Join(", ", labels));
         bool codi = c.Model.IsFeatureEnabled(0x8e);
+        if (UiDataRows.IsKr(Packs())) Assert.That(codi, Is.True);
         var expect = new List<string> { "$s_myInfo_game", "$s_myInfo_skin" };
         if (codi) expect.Add("$s_myInfo_codi");
         expect.Add("$s_myInfo_badge");
         Assert.That(labels, Is.EqualTo(expect));
-        Assert.That(tabs.Select(t => (int)Rt.ToNumber(h.Get(t, "tabIndex"))), Is.EqualTo(codi ? new[] { 0, 1, 3, 2 } : new[] { 0, 1, 2 }));
+        // uimyinfodialog.gfx initData returns early when feature "Skin2tab" (0x8e) is off, keeping configUI's 3 built-in tab
+        // rows (which set equipFrame and omit tabIndex); when Skin2tab is on (KR), initData sets dpTab with tabIndex [0,1,3,2]
+        if (codi)
+            Assert.That(tabs.Select(t => (int)Rt.ToNumber(h.Get(t, "tabIndex"))), Is.EqualTo(new[] { 0, 1, 3, 2 }));
+        else
+        {
+            Assert.That(tabs.Select(t => h.Get(t, "tabIndex")), Is.All.EqualTo(Undefined.Value));
+            Assert.That(tabs.Select(t => Rt.ToString(h.Get(t, "equipFrame"))), Is.EqualTo(new[] { "equip", "equip", "gem" }));
+        }
         Assert.That(c.ShownBag, Is.EqualTo(MyInfoController.EquipBag));
         c.OnCallback("onChangeTab", new object[] { 2 });
         Assert.That(c.ShownBag, Is.EqualTo(MyInfoController.GemBag));
@@ -336,7 +345,19 @@ public class MyInfoTests
         Assert.That((Cell(0, 0, "m_statName"), Cell(0, 0, "m_statValue")), Is.EqualTo((c.Model.Tables.StatName(4), "2100")));
         Assert.That((Cell(0, 3, "m_statName"), Cell(0, 3, "m_statValue")), Is.EqualTo((c.Model.Tables.StatName(0), "48")));
         Assert.That(Cell(0, 7, "m_statValue"), Is.EqualTo(c.Model.Tables.Common("s_common_percent").Replace("{0}", "120.0")), "a rate stat");
-        Assert.That(Cell(0, 8, "m_statName"), Is.EqualTo(c.Model.Tables.Common("s_pc_info_name_shield")));
+        // container 0 child 0 is m_background; KR uimyinfodialog has 9 stat labels (row 8 = shield), GMS2 has 8 (no shield row)
+        int labels0 = (int)Rt.ToNumber(h.Get(h.Invoke(manager, "getChildAt", 0), "numChildren")) - 1;
+        if (UiDataRows.IsKr(Packs()))
+        {
+            Assert.That(labels0, Is.EqualTo(9));
+            Assert.That(Cell(0, 8, "m_statName"), Is.EqualTo(c.Model.Tables.Common("s_pc_info_name_shield")));
+        }
+        else
+        {
+            Assert.That(labels0, Is.EqualTo(8));
+            Assert.That(c.Model.Tables.Common("s_pc_info_name_shield"), Is.Null);
+            Assert.That(Cell(0, 7, "m_statName"), Is.EqualTo(c.Model.Tables.StatName(14)));
+        }
         Assert.That(Cell(2, 0, "m_statValue"), Is.EqualTo("41"), "defense");
     }
 
@@ -540,10 +561,21 @@ public class MyInfoTests
         Assert.That(Desc(robe), Is.Null);
         robe.Options.Stat[0][0x14] = 5;
         Assert.That(Desc(robe), Is.EqualTo("type:2,title:" + t.StatName(0x14) + ",extraup:0,min:5,max:5"));
-        // a top without a constantID: nothing
+        // a top without a constantID: nothing (KR 11400021 has constantID 0; GMS2 11400021 has <option constant="1">)
+        var topOpt = UiDataRows.ItemPart(Packs(), 11400021, "option");
+        int topConst = topOpt?.Attribute("constantID") != null ? UiDataRows.Int(topOpt, "constantID") : UiDataRows.Int(topOpt, "constant");
+        if (UiDataRows.IsKr(Packs())) Assert.That(topConst, Is.EqualTo(0));
         var top = Rec(11400021);
         top.Options.Stat[0][0x14] = 5;
-        Assert.That(Desc(top), Is.Null);
+        Assert.That(Desc(top), topConst == 0 ? Is.Null : Is.EqualTo("type:2,title:" + t.StatName(0x14) + ",extraup:0,min:5,max:5"));
+        if (topConst != 0)
+        {
+            var noConst = Item.Create(new ItemData { Id = 11400021, Type = 1, Subtype = 0x0e, ConstantId = 0 }, 1);
+            noConst.Record = top;
+            var noConstTip = new ItemTooltip(m, 0x80);
+            noConstTip.Fill(noConst);
+            Assert.That(noConstTip.Data.ContainsKey("statDescription"), Is.False, "ConstantId == 0 leaves statDescription unset");
+        }
 
         // a gemstone: the first special (a rate), then the first stat replaces it; stat 0x11 and 0 share bin 0, the newest first
         var gem = Rec(40200001);
