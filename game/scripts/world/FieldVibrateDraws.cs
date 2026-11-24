@@ -19,8 +19,15 @@ namespace Ms2Godot.World;
 /// entityvibrator.cpp:190); an empty name plays nothing.</item>
 /// </list>
 /// Nothing runs per frame: the session's vibrators call in from the world tick, and the fader runs only while a fade does.
-/// STILL-OPEN: the collider body stays at the rest position while the entity shakes or drops (the client's actor moves with
-/// the entity's Position); a fade copy does not move with the offset.
+/// The collider body stays at the rest position, as the client's does: the vibrator sets only the entity's Position while it
+/// shakes or drops, and MS2PropService::OnPropertyUpdate (ms2propservice.cpp:163-245) moves a prop's static actors only for
+/// a Rotation change, never one in group 5 (a broken or dropping object's); a Position change only keeps the new place for
+/// the next time the prop is added (PropService::PropData::UpdateProp, NiPhysXProp::SetXform).
+/// No fade starts away from rest in the ported paths: a HideVibrate puts the running vibrator back at rest before StartFall
+/// (FUN_141bc92e0, worldservice_1.cpp:5067), a broken object does not shake, and the return's fade-in is at once, before its
+/// drop; so a fade copy stands at the rest position.
+/// STILL-OPEN: with the debris actor (FieldVibrates' STILL-OPEN) the entity fades out where the flight left it, and an object
+/// whose collision group stays (m_a8) has its actors moved by the flight's Rotation updates.
 /// </summary>
 public sealed class FieldVibrateDraws
 {
