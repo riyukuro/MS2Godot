@@ -1243,7 +1243,9 @@ public partial class LiveSession : Node
     /// </summary>
     void CheckSkippedUpdate(Maple2.PacketLib.Tools.ByteReader r, long uid) {
         int skipped = r.Available;
-        var known = lastRemovedItem?.Uid == uid ? lastRemovedItem : Me.EquipByUid(uid) ?? Me.Gems?.FirstOrDefault(g => g.Uid == uid);
+        var known = lastRemovedItem?.Uid == uid ? lastRemovedItem : Me.EquipByUid(uid);
+        if (known == null && Me.Gems is { } gems)
+            for (int i = 0; i < gems.Count && known == null; i++) if (gems[i].Uid == uid) known = gems[i];
         if (known == null) { GD.Print($"live: item Update of {uid}: not in the bag, {skipped} bytes skipped as the client does (no item to check them with)"); return; }
         var copy = new EquipItem { Id = known.Id, Uid = known.Uid, Rarity = known.Rarity, Slot = known.Slot, InventorySlot = known.InventorySlot };
         try { ItemReader.ReadBodyInto(r, copy, game.Profile); }
