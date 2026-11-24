@@ -3560,8 +3560,10 @@ public partial class LiveSession : Node
         if (!string.IsNullOrEmpty(partyRun) && Instance is { } pl && tree.CurrentScene is Ui.HudScene ph)
         {
             var pp = partyRun.Split(':');
+            bool typedChat = pp[0] is "askchat" or "answerchat";               // the party chat run: typed party lines in both directions
             bool frames = pp[0] is "askframes" or "answerframes";       // the member frames run: levels, deaths and a quit seen in the window
-            bool asker = pp[0] is "ask" or "askframes";
+            bool voteRun = pp[0] is "askvote" or "answervote";                   // the vote kick run: four clients
+            bool asker = pp[0] is "ask" or "askframes" or "askchat" or "askvote";
             string partner = asker && pp.Length > 1 ? pp[1] : "";
             string role = asker ? "A" : "B";
             string partyShots = System.Environment.GetEnvironmentVariable("MS2_LIVE_PARTY_SHOTS");
@@ -3601,7 +3603,133 @@ public partial class LiveSession : Node
                 await Until(() => !pl.Movie.IsPlaying, 60 * 15);
                 await Frames(120);
             }
-            if (frames)
+            if (typedChat)
+            {
+                // MS2_LIVE_PARTY "askchat:<name>" / "answerchat": after the invite and the join the asker selects the party target with
+                // the party command and types a line, the answerer answers with one; the asker then leaves and types again: no party,
+                // so the client sends nothing and shows notice 0x335 (SendChat's party case).
+                string partyCmd = System.Environment.GetEnvironmentVariable("MS2_LIVE_PARTY_CMD") ?? "/p";
+                if (asker)
+                {
+                    UserBlock who = null;
+                    await Until(() => (who = pl.FieldUsers().FirstOrDefault(u => u.Name == partner)) != null, 60 * 120);
+                    await Frames(120);
+                    ph.PartyLinkClick("inviteParty," + partner);
+                    bool joined = await Joined(true, 60);
+                    GD.Print($"live: party A: in party {joined}");
+                    await Frames(60 * 3);
+                    GD.Print($"live: party A: select {partyCmd}: {ph.SubmitChatLine(partyCmd)}");
+                    await Frames(60);
+                    GD.Print($"live: party A: line sent: {ph.SubmitChatLine("party line one from the asker")}");
+                    await Frames(60 * 3);
+                    PShot("chat_sent");
+                    await Frames(60 * 8);
+                    PShot("chat_both");
+                    pl.SendParty(new Ms2.Net.Packets.PartyLeaveRequest());
+                    await Joined(false, 30);
+                    GD.Print($"live: party A: left, in party {pl.Party.IsInParty}");
+                    GD.Print($"live: party A: line outside a party: {ph.SubmitChatLine("party line outside")}");
+                    await Frames(60 * 3);
+                    PShot("chat_no_party");
+                }
+                else
+                {
+                    await Box("invite", 120);
+                    bool joined = await Joined(true, 60);
+                    GD.Print($"live: party B: joined {joined}");
+                    await Frames(60 * 8);
+                    PShot("chat_recv");
+                    GD.Print($"live: party B: select {partyCmd}: {ph.SubmitChatLine(partyCmd)}");
+                    await Frames(60);
+                    GD.Print($"live: party B: line sent: {ph.SubmitChatLine("party line two from the answerer")}");
+                    await Frames(60 * 4);
+                    PShot("chat_both");
+                    await Until(() => !pl.Party.IsInParty, 60 * 30);
+                    await Frames(60 * 3);
+                    PShot("chat_after_leave");
+                }
+            }
+            else if (voteRun)
+            {
+                // MS2_LIVE_PARTY "askvote:<b>:<c>:<d>" (the leader) and "answervote:yes|no|target" (b and c vote, d is the one voted
+                // out): the leader invites the three, the four are in one party; the leader picks "vote to kick" on d's slot menu
+                // and answers the confirm box; b and c see the vote page and answer; the kick follows the votes (server's rule) and
+                // d's window closes. Each step is logged with the party book and shot.
+                string voteMode = pp.Length > 1 ? pp[1] : "";
+                if (asker)
+                {
+                    string[] names = pp.Skip(1).ToArray();
+                    foreach (var n in names)
+                    {
+                        UserBlock who = null;
+                        await Until(() => (who = pl.FieldUsers().FirstOrDefault(u => u.Name == n)) != null, 60 * 180);
+                        GD.Print($"live: party A: {n} {(who != null ? "is in the field" : "never came")}");
+                    }
+                    await Frames(120);
+                    for (int i = 0; i < names.Length; i++)
+                    {
+                        ph.PartyLinkClick("inviteParty," + names[i]);
+                        await Until(() => pl.Party.IsInParty && pl.Party.Members.Count == i + 2, 60 * 90);
+                        GD.Print($"live: party A: invited {names[i]}, members {pl.Party.Members.Count}");
+                        await Frames(60 * 3);
+                    }
+                    PShot("four");
+                    long target = pl.Party.FindByName(names[^1])?.CharacterId ?? 0;
+                    GD.Print($"live: party A: slot menu of {names[^1]}: {ph.PartySlotMenuOpen(target)}");
+                    await Frames(60 * 3);
+                    PShot("slot_menu");
+                    GD.Print($"live: party A: vote to kick picked: {ph.PartySlotMenuPick(Ms2.Ui.Hud.PopupMenuController.VoteToKick)}");
+                    await Box("kick_confirm", 20);
+                    await Until(() => pl.Party.Vote != null, 60 * 20);
+                    await Frames(60 * 3);
+                    GD.Print($"live: party A: vote running {pl.Party.Vote != null}");
+                    PShot("vote_started");
+                    await Until(() => pl.Party.Vote != null && pl.Party.Vote.Yes.Count + pl.Party.Vote.No.Count >= 1, 60 * 90);
+                    await Frames(60 * 2);
+                    PShot("first_answer");
+                    await Until(() => pl.Party.Members.Count < 4 || pl.Party.Vote == null, 60 * 90);
+                    await Frames(60 * 3);
+                    GD.Print($"live: party A: after the votes: members {pl.Party.Members.Count}, vote {(pl.Party.Vote != null ? "running" : "none")}");
+                    PShot("vote_end");
+                    await Frames(60 * 10);
+                    PShot("vote_after");
+                }
+                else if (voteMode == "target")
+                {
+                    await Box("invite", 180);
+                    bool joined = await Joined(true, 60);
+                    GD.Print($"live: party D: joined {joined}, window {ph.PartyWindowShown}");
+                    await Frames(60 * 3);
+                    PShot("party");
+                    await Until(() => pl.Party.Vote != null, 60 * 240);
+                    await Frames(60 * 3);
+                    GD.Print($"live: party D: a vote is running: {pl.Party.Vote != null}");
+                    PShot("vote_seen");
+                    await Until(() => !pl.Party.IsInParty, 60 * 240);
+                    await Frames(60 * 3);
+                    GD.Print($"live: party D: kicked, in party {pl.Party.IsInParty}, window {ph.PartyWindowShown}");
+                    PShot("kicked");
+                }
+                else
+                {
+                    bool yes = voteMode == "yes";
+                    await Box("invite", 180);
+                    bool joined = await Joined(true, 60);
+                    GD.Print($"live: party {role}: joined {joined}, window {ph.PartyWindowShown}");
+                    await Until(() => pl.Party.Vote != null, 60 * 240);
+                    await Frames(20);                                   // the vote runs out in seconds: answer at once
+                    GD.Print($"live: party {role}: vote page: {pl.Party.Vote?.ShowsPage}");
+                    PShot("vote_page");
+                    await Frames(yes ? 10 : 40);
+                    GD.Print($"live: party {role}: answer {(yes ? "yes" : "no")}: {ph.PartyVoteAnswer(yes)}");
+                    await Frames(60 * 3);
+                    PShot("answered");
+                    await Until(() => pl.Party.Vote == null || pl.Party.Members.Count < 4, 60 * 120);
+                    await Frames(60 * 3);
+                    PShot("vote_end");
+                }
+            }
+            else if (frames)
             {
                 // MS2_LIVE_PARTY "askframes:<name>" / "answerframes": the asker invites and the answerer accepts (no ready check, no kick);
                 // then the asker sets its level (GM command: the own Level status event -> UpdateMemberLevel), kills the answerer and

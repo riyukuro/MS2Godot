@@ -76,4 +76,18 @@ public class PartyVoteUiTests
         ui.OnEnded(new PartyBook(), v);
         Assert.That((chat.Single().Item2, boxes.Count, notices.Count), Is.EqualTo((2, 0, 0)));
     }
+
+    /// <summary>The vote page's title and timer are StringFormat texts with "{0:02d}" style fields; none may reach the page raw.</summary>
+    [Test]
+    public void TheKickVoteTitleAndTimerFillTheirSpecFields()
+    {
+        var d = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
+        var tables = new Ms2.Ui.GameTables(new Ms2.Formats.Pack.PackSet(d), "en");
+        var v = PartyVote.Create(PartyVote.KickUser);
+        v.Name = "Target"; v.Reason = 2; v.Expires = 1000 + 65;
+        Assert.That(PartyController.RemainingTimeText(tables, v.Expires, 1000), Does.Not.Contain("{").And.Contain("01").And.Contain("05"));
+        string title = PartyController.VoteTitle(tables, v, 1000);
+        Assert.That(title, Does.Not.Contain("{").And.Not.Contain("}").And.Contain("Target"));
+    }
 }

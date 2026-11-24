@@ -290,7 +290,7 @@ public sealed class PartyController : UiController
         foreach (var (name, yes) in new[] { ("m_yesButton", true), ("m_noButton", false) })
             if (Host.FindNamed(name, page as Avm2.Flash.AsDisplayObject) is { } b)
             {
-                Func<object[], object> f = _ => { Vote?.Invoke(yes); SendVote(yes); return null; };
+                Func<object[], object> f = _ => { AnswerVote(yes); return null; };
                 Host.Invoke(b, "addEventListener", "buttonClick", f, false, 0, false);
             }
     }
@@ -298,6 +298,9 @@ public sealed class PartyController : UiController
     /// <summary>The vote page's yes / no (OnYesButtonClick / OnNoButtonClick @0x141a74a60 / @0x141a74a90): SendVote
     /// @0x141a74ac0, PartyVoteCli::SendParty of the running vote; nothing without one.</summary>
     public event Action<bool> Vote;
+
+    /// <summary>The yes / no buttons' click (OnYesButtonClick / OnNoButtonClick); scripted runs call it for the button.</summary>
+    public void AnswerVote(bool yes) { Vote?.Invoke(yes); SendVote(yes); }
 
     void SendVote(bool yes)
     {
@@ -459,12 +462,8 @@ public sealed class PartyController : UiController
 
     string Common(string key) => Model.Tables.Common(key) ?? "";
 
-    /// <summary>StringFormat: "{n}" replaced by the n-th argument.</summary>
-    static string Format(string f, params object[] args)
-    {
-        for (int i = 0; i < args.Length; i++) f = f.Replace("{" + i + "}", Convert.ToString(args[i], CultureInfo.InvariantCulture));
-        return f;
-    }
+    /// <summary>StringFormat: "{n}" and "{n:spec}" (e.g. "{0:02d}") replaced by the n-th argument.</summary>
+    static string Format(string f, params object[] args) => ClientFormat.Format(f, args);
 
     static bool Is(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 }

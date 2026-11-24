@@ -44,6 +44,30 @@ public partial class HudScene
             partyBook.Members.Select(m => $"{m.User.Name}({m.User.CharacterId}) hp {m.User.Hp}/{m.User.MaxHp}{(m.Offline ? " offline" : "")}{(m.User.IsSleeping ? " sleeping" : "")}{(m.User.TombType != 0 ? $" tomb{m.User.TombType}" : "")}"));
     }
 
+    /// <summary>Scripted runs: the vote page's yes / no button.</summary>
+    public bool PartyVoteAnswer(bool yes)
+    {
+        if (!PartyWindowOpen) return false;
+        party.AnswerVote(yes);
+        return true;
+    }
+
+    /// <summary>Scripted runs: the party slot menu of a member, opened as a right click on its slot opens it.</summary>
+    public bool PartySlotMenuOpen(long characterId)
+    {
+        if (!PartyWindowOpen || partyBook?.Find(characterId) == null) return false;
+        OpenPartySlotMenu(0, 0, characterId);
+        return popupMenu != null && !popupMenu.IsClosed;
+    }
+
+    /// <summary>Scripted runs: an item of the open menu picked, as the movie's MenuItemClick does.</summary>
+    public bool PartySlotMenuPick(int itemId)
+    {
+        if (popupMenu == null || popupMenu.IsClosed) return false;
+        popupMenu.ItemClick(itemId);
+        return true;
+    }
+
     /// <summary>FUN_140710590 for the party window and the popup menu: the session's send; offline the packet is logged.</summary>
     void PartySend(Ms2.Net.Wire.IOutPacket packet)
     {
