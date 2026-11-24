@@ -11,6 +11,9 @@ namespace Ms2.Ui;
 /// </summary>
 public static class ScrolledLines
 {
+    /// <summary>Sums of the same line sizes taken in another order differ in the last bits; a line that fits exactly still fits.</summary>
+    const double Eps = 1e-9;
+
     /// <summary>How many of <paramref name="count"/> lines from <paramref name="first"/> fit <paramref name="room"/>
     /// (LineBuffer::IsLineVisible, sfr_render_04d.cpp:365): the first always, each other one when its bottom (the advances before
     /// it plus its height) is within the room. <paramref name="metrics"/> gives a line's height and advance.</summary>
@@ -21,21 +24,32 @@ public static class ScrolledLines
         for (int i = first; i < count; i++)
         {
             var (height, advance) = metrics(i);
-            if (i > first && top + height > room) break;
+            if (i > first && top + height > room + Eps) break;
             n++;
             top += advance;
         }
         return n;
     }
 
-    /// <summary>The smallest first line from which every line to the last one fits. Only the lines at the end are measured.</summary>
+    /// <summary>The smallest first line from which every line to the last one fits. One pass from the last line up, measuring each
+    /// line once and keeping nothing (no collection: it runs when a line arrives in a field scrolled to its end). Moving the first
+    /// line up by one line adds that line's advance above every other line, so what is kept is the room left below the
+    /// tightest line, <c>slack</c>, and the height of the line that was first before it.</summary>
     public static int LastPosition(int count, Func<int, (double Height, double Advance)> metrics, double room)
     {
-        var memo = new Dictionary<int, (double, double)>();
-        (double, double) M(int i) { if (!memo.TryGetValue(i, out var m)) memo[i] = m = metrics(i); return m; }
-        int pinned = Math.Max(0, count - 1);
-        while (pinned > 0 && Fit(count, M, room, pinned - 1) == count - (pinned - 1)) pinned--;
-        return pinned;
+        int first = Math.Max(0, count - 1);
+        if (first == 0) return 0;
+        double slack = double.MaxValue, belowHeight = metrics(first).Height;
+        while (first > 0)
+        {
+            var (height, advance) = metrics(first - 1);
+            // the old first line is now one of the others, below the new one: its bottom is the new line's advance plus its height
+            double s = Math.Min(slack - advance, room - advance - belowHeight);
+            if (s < -Eps) break;
+            slack = s; belowHeight = height;
+            first--;
+        }
+        return first;
     }
 
     /// <summary>The line to draw from. <paramref name="starts"/> are the lines' first character indexes; <paramref name="start"/>

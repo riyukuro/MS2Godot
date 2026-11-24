@@ -255,11 +255,15 @@ public partial class TextNode
         for (int i = 0; i < all.Count; i++) starts[i] = all[i].Start;
         if (total != codePoints.Length && total > 0) start = (int)((long)start * codePoints.Length / total);
         double room = Bounds.Size.Y > 0 ? Bounds.Size.Y - 4 + 1 : double.MaxValue;
-        return Ms2.Ui.ScrolledLines.FirstLine(starts, i =>
-        {
-            var (_, height, advance) = ClientLine(all[i].Start, all[i].End, codePoints.Length, j => SizeAt(j));
-            return (height, advance);
-        }, room, start, atEnd);
+        return Ms2.Ui.ScrolledLines.FirstLine(starts, LineHeightAdvance, room, start, atEnd);
+    }
+
+    /// <summary>A layout line's client height and advance (the metrics <see cref="FirstLineFor"/> measures lines by).</summary>
+    (double Height, double Advance) LineHeightAdvance(int i)
+    {
+        var line = Layout()[i];
+        var (_, height, advance) = ClientLine(line.Start, line.End, codePoints.Length, SizeAt);
+        return (height, advance);
     }
 
     /// <summary>True when the glyph is past the label's visible character count.</summary>

@@ -54,4 +54,31 @@ public class ScrolledLinesTests
         Assert.That(ScrolledLines.FirstLine(starts, Line, Room, 0, atEnd: true), Is.EqualTo(0));
         Assert.That(ScrolledLines.FirstLine(Array.Empty<int>(), Line, Room, 0, atEnd: true), Is.EqualTo(0));
     }
+
+    [Test]
+    public void LastPositionIsTheSmallestFirstLineFromWhichEveryLineFits()
+    {
+        // against the definition (Fit from each candidate), with sizes that are not whole: heights and advances in 0.05 steps
+        var rnd = new Random(7);
+        for (int round = 0; round < 500; round++)
+        {
+            int count = rnd.Next(1, 40);
+            var h = new double[count]; var a = new double[count];
+            for (int i = 0; i < count; i++) { h[i] = rnd.Next(100, 500) * 0.05; a[i] = h[i] + rnd.Next(0, 4) * 0.05; }
+            double room = rnd.Next(100, 2000) * 0.05;
+            (double, double) M(int i) => (h[i], a[i]);
+            int expect = count - 1;
+            while (expect > 0 && ScrolledLines.Fit(count, M, room, expect - 1) == count - (expect - 1)) expect--;
+            Assert.That(ScrolledLines.LastPosition(count, M, room), Is.EqualTo(expect), $"round {round}: {count} lines in {room}");
+        }
+    }
+
+    [Test]
+    public void LastPositionMeasuresOnlyTheLinesAtTheEnd()
+    {
+        int measured = 0;
+        (double, double) M(int i) { measured++; return (10, 10); }
+        Assert.That(ScrolledLines.LastPosition(100000, M, Room), Is.EqualTo(99995));
+        Assert.That(measured, Is.LessThanOrEqualTo(8));
+    }
 }
