@@ -115,21 +115,30 @@ public class ItemSlotTests
     [Test]
     public void GachaCoinShowsItsBoxSeason()
     {
-        // KR: 22201001 is box 1001001's coin; the box shows its season (1) on the icon; its slot icon is a bare name. Other
-        // locales use their own randomBoxSeason<Locale> column (GMS2 NA box 1001001 has none), so pick the locale's first box
-        // with a season on its icon from table/gacha_info.xml
+        // KR: 22201001 is box 1001001's coin; the box shows its season (1) on the icon; its slot icon is a bare name.
+        // GMS2 NA: box 1001001 has no randomBoxSeasonNA; box 1001004 (coin 22201004, season 1) is the first with a season on its icon.
         var model = NewModel();
         var (coin, box, season) = UiDataRows.SeasonCoin(Packs()) ?? throw new AssertionException("no gacha box shows a season in this data");
+        var prop = UiDataRows.ItemPart(Packs(), coin, "property");
+        string rawIcon = (string)prop?.Attribute("slotIcon") ?? "";
+        string expectedIcon = rawIcon.Length == 0 ? $"./Data/Resource/Image/item/icon/{coin}.png"
+            : rawIcon[0] == '.' ? rawIcon : $"./Data/Resource/Image/item/icon/{rawIcon}.png";
         var item = Item.Create(model.Tables.Items, coin, 0);
         var s = Slot(model, item, 0x11);
         Assert.That(s["itemSeason"], Is.EqualTo(season));
-        Assert.That(s["iconPath"], Is.EqualTo(model.Tables.Items.Get(coin).IconPath));
-        Assert.That(s["itemGrade"], Is.EqualTo(UiDataRows.Int(UiDataRows.ItemPart(Packs(), coin, "property"), "rank")));
+        Assert.That(s["iconPath"], Is.EqualTo(expectedIcon));
+        Assert.That(s["itemGrade"], Is.EqualTo(UiDataRows.Int(prop, "rank")));
         if (UiDataRows.IsKr(Packs()))
         {
             Assert.That((coin, box, season), Is.EqualTo((22201001, 1001001, "1")));
             Assert.That(s["iconPath"], Is.EqualTo("./Data/Resource/Image/item/icon/newGacha_coin_ducky.png"));
             Assert.That(s["itemGrade"], Is.EqualTo(4));
+        }
+        else
+        {
+            Assert.That((coin, box, season), Is.EqualTo((22201004, 1001004, "1")));
+            Assert.That(s["iconPath"], Is.EqualTo("./Data/Resource/Image/item/icon/newGacha_coin_ducky.png"));
+            Assert.That(s["itemGrade"], Is.EqualTo(0));
         }
     }
 

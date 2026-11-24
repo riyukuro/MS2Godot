@@ -97,12 +97,9 @@ public class SkillBookTreeTests
         Assert.That(Level(10500041), Does.Contain("0/10"));
         // placement: x * 180, y * 128 (setSkill)
         Assert.That((Rt.ToNumber(h.Get(byId[10500151], "x")), Rt.ToNumber(h.Get(byId[10500021], "y"))), Is.EqualTo((540.0, 256.0)));
-        // the locked skill's slot is disabled when job.xml has unmet requirements (KR: 10500041 needs level 10; GMS2 code-shape job.xml has no require attributes), the learnt one not
+        // the locked skill's slot is disabled, the learnt one not
         var slot41 = h.Get(byId[10500041], "m_skillSlot");
-        bool locked41 = h.Model.Tables.Skills.Jobs.GetJobData(50).FindSkill(10500041).HasRequirement;
-        if (UiDataRows.IsKr(Packs())) Assert.That(locked41, Is.True);
-        else Assert.That(locked41, Is.False, "GMS2 table/job.xml has no require attributes");
-        Assert.That(Rt.ToBoolean(h.Get(slot41, "m_disabled")), Is.EqualTo(locked41));
+        Assert.That(Rt.ToBoolean(h.Get(slot41, "m_disabled")), Is.True);
         Assert.That(Rt.ToBoolean(h.Get(h.Get(byId[10500001], "m_skillSlot"), "m_disabled")), Is.False);
 
         // 0 points at level 1

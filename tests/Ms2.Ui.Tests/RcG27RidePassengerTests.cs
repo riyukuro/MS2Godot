@@ -15,7 +15,7 @@ public class RcG27RidePassengerTests
     [Test]
     public void TheKmsPassengerIsUnchanged()
     {
-        using var packs = new PackSet(RcGap.KmsData());
+        using var packs = new PackSet(RcGap.Data("MS2_DATA"));
         var seat = RideData.Load(packs, 50600208).Passenger(0);
         Assert.That(seat, Is.Not.Null, "kms riding/50600208.xml <passengers>");
         Assert.That((seat.RideBone, seat.Translation, seat.Rotation),

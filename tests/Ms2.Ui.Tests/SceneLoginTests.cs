@@ -56,24 +56,14 @@ public class SceneLoginTests
     }
 
     /// <summary>
-    /// The age rating marks: export_use_grade (component_v1) places the class "grade" of the locale's CommonImage, whose
-    /// timeline on KR places two sub-images of its atlas directly (each a Bitmap of the sub-image's size); GMS2's
-    /// na/commonimage.gfx defines class "grade" with an empty timeline (no Korean age rating marks).
+    /// The age rating marks: export_use_grade (component_v1) places the class "grade" of the locale's CommonImage. On KR
+    /// (kr/commonimage.gfx symbol id 67, class "grade") its timeline places two 99x117 sub-images of the CommonImage_I atlas;
+    /// on GMS2 (na/commonimage.gfx symbol id 72, class "grade") its timeline has 0 children (no Korean GRAC age rating marks).
     /// </summary>
     [Test]
     public void TheGradeMarksAreBitmapsOfTheCommonImageAtlas()
     {
         var (h, _, _, _) = Load(true);
-        var commonEntry = Packs().FindByFileName("Resource/Gfx", "CommonImage.gfx");
-        Assert.That(commonEntry, Is.Not.Null);
-        var commonLayout = Ms2.Swf.LayoutJson.Build(Ms2.Swf.SwfMovie.Parse(Packs().Read("Resource/Gfx", commonEntry)), "CommonImage");
-        var gradeSym = (commonLayout["symbols"] as JsonObject)?.Select(kv => kv.Value as JsonObject)
-            .FirstOrDefault(o => (string)o?["class"] == "grade");
-        Assert.That(gradeSym, Is.Not.Null, "CommonImage.gfx defines class grade");
-        int expected = (gradeSym["timeline"]?["children"] as JsonArray)?.OfType<JsonObject>()
-            .Count(c => J.Iv(c["first"]) == 0 && (string)c["kind"] == "subimage") ?? 0;
-        if (UiDataRows.IsKr(Packs())) Assert.That(expected, Is.EqualTo(2));
-
         var grade = (AsContainer)h.Get(h.Entity, "m_grade");
         Assert.That(grade.numChildren, Is.EqualTo(1), "export_use_grade places the CommonImage grade symbol");
         var bitmaps = new List<AsBitmap>();
@@ -83,7 +73,8 @@ public class SceneLoginTests
             if (d is AsContainer dc) for (int i = 0; i < dc.numChildren; i++) Walk(dc.getChildAt(i));
         }
         Walk(grade);
-        Assert.That(bitmaps, Has.Count.EqualTo(expected));
+        // kr/commonimage.gfx class "grade" places 2 GRAC rating sub-images; na/commonimage.gfx class "grade" has children: []
+        Assert.That(bitmaps, Has.Count.EqualTo(UiDataRows.IsKr(Packs()) ? 2 : 0));
         foreach (var b in bitmaps)
         {
             // the image resource the Bitmap stands for: a DefineSubImage of the CommonImage_I atlas

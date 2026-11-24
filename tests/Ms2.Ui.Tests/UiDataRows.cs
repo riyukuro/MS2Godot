@@ -6,14 +6,18 @@ using Ms2.Ui.Items;
 namespace Ms2.Ui.Tests;
 
 /// <summary>
-/// Helpers that read the active data set's own XML rows for tests that run on either KMS (locale KR,
-/// itemdata/&lt;prefix&gt;.xml) or GMS2 (locale NA, one file per item). Each test keeps its exact KR assertions on KR data
-/// and asserts the same rule against the active data set's rows on GMS2.
+/// Raw-XML helpers for tests that run on either KMS (region "kr", itemdata/&lt;prefix&gt;.xml) or GMS2 (region "na",
+/// one file per item). Each test keeps its exact KR assertions on KR data and asserts the same rule against the active
+/// data set's own XML rows on GMS2.
 /// </summary>
 static class UiDataRows
 {
-    /// <summary>True when the pack's locale is KR (the KMS data).</summary>
-    public static bool IsKr(PackSet packs) => LobbyFeatures.LocaleOf(packs) == "KR";
+    /// <summary>True when the pack's region folder is "kr" (the KMS data; same TablePath.Region check as Formats.Tests). Throws on null.</summary>
+    public static bool IsKr(PackSet packs)
+    {
+        ArgumentNullException.ThrowIfNull(packs);
+        return TablePath.Region(e => packs.Exists("Xml", e)) == "kr";
+    }
 
     /// <summary>The item's raw XML row (KMS &lt;item&gt;, GMS2 the file's selected environment); null when absent.</summary>
     public static XElement Item(PackSet packs, int id) => new ItemFiles(packs).Item(id);
@@ -21,7 +25,7 @@ static class UiDataRows
     /// <summary>The first &lt;<paramref name="name"/>&gt; descendant under the item's raw XML row.</summary>
     public static XElement ItemPart(PackSet packs, int id, string name) => Item(packs, id)?.Descendants(name).FirstOrDefault();
 
-    /// <summary>An integer attribute as the table readers parse it: absent or empty returns <paramref name="fallback"/>.</summary>
+    /// <summary>Raw integer attribute read: absent or non-integer returns <paramref name="fallback"/>.</summary>
     public static int Int(XElement e, string name, int fallback = 0) =>
         int.TryParse((string)e?.Attribute(name), NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) ? v : fallback;
 
@@ -33,28 +37,28 @@ static class UiDataRows
         return id;
     }
 
-    /// <summary>
-    /// The item's sell price for <paramref name="rarity"/> read from its raw &lt;property&gt;&lt;sell price&gt; attribute
-    /// following ItemProperty::GetSellPrice (one entry for every rarity, six entries indexed by rarity - 1, else 0).
-    /// </summary>
+    /// <summary>Raw &lt;property&gt;&lt;sell price&gt; list from the item's XML, returning the single price or the 1-based rarity entry.</summary>
     public static long SellPrice(PackSet packs, int id, int rarity)
     {
         var attr = (string)ItemPart(packs, id, "property")?.Element("sell")?.Attribute("price") ?? "";
-        var prices = attr.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(t => (long)ItemData.Atoi(t)).ToList();
+        var prices = attr.Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(t => long.TryParse(t.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long v) ? v : 0L).ToList();
         return prices.Count == 1 ? prices[0] : prices.Count == 6 && rarity is >= 1 and <= 6 ? prices[rarity - 1] : 0;
     }
 
     /// <summary>
-    /// The first gacha coin (by box id) in table/gacha_info.xml whose available &lt;randomBox&gt; shows a season on its icon
-    /// in the pack's locale, is that coin's first box, and has an item row. Null when none exists.
+    /// Raw &lt;randomBox&gt; scan of table/gacha_info.xml: the first box (by id) with a positive locale season attribute
+    /// and seasonNumberOnIcon enabled that is its coin's first box and whose coin has an item XML row.
     /// </summary>
     public static (int Coin, int Box, string Season)? SeasonCoin(PackSet packs)
     {
+        ArgumentNullException.ThrowIfNull(packs);
         if (!packs.Exists("Xml", "table/gacha_info.xml")) return null;
+        string locale = TablePath.Region(e => packs.Exists("Xml", e)).ToUpperInvariant();
         var root = Ms2.Formats.World.GameStrings.Parse(packs.Read("Xml", "table/gacha_info.xml")).Root;
         var rows = FeatureElements.Collect(packs, root, "randomBox", "randomBoxID")
             .Select(e => (Box: Int(e, "randomBoxID"), Coin: Int(e, "coinItemID"),
-                Season: Int(e, "randomBoxSeason" + LobbyFeatures.LocaleOf(packs)),
+                Season: Int(e, "randomBoxSeason" + locale),
                 OnIcon: (string)e.Attribute("seasonNumberOnIcon") is "1" or "true" or "TRUE" or "yes"))
             .OrderBy(r => r.Box).ToList();
         foreach (var r in rows)

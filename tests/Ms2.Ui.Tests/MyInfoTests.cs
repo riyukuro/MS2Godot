@@ -66,8 +66,10 @@ public class MyInfoTests
         if (codi) expect.Add("$s_myInfo_codi");
         expect.Add("$s_myInfo_badge");
         Assert.That(labels, Is.EqualTo(expect));
-        // uimyinfodialog.gfx initData returns early when feature "Skin2tab" (0x8e) is off, keeping configUI's 3 built-in tab
-        // rows (which set equipFrame and omit tabIndex); when Skin2tab is on (KR), initData sets dpTab with tabIndex [0,1,3,2]
+        // uimyinfodialog.gfx UIMyInfoDialog.configUI / initData both check Common.isEnableFeature(null, "Skin2tab") (feature 0x8e):
+        // when Skin2tab is on (KR), initData sets m_tab.dataProvider = a1.dpTab with tabIndex [0, 1, 3, 2];
+        // when Skin2tab is off (GMS2 NA), initData returns early and configUI pushes 3 built-in tab objects with equipFrame
+        // ("equip", "equip", "gem") and no tabIndex property (Undefined.Value).
         if (codi)
             Assert.That(tabs.Select(t => (int)Rt.ToNumber(h.Get(t, "tabIndex"))), Is.EqualTo(new[] { 0, 1, 3, 2 }));
         else
@@ -345,7 +347,8 @@ public class MyInfoTests
         Assert.That((Cell(0, 0, "m_statName"), Cell(0, 0, "m_statValue")), Is.EqualTo((c.Model.Tables.StatName(4), "2100")));
         Assert.That((Cell(0, 3, "m_statName"), Cell(0, 3, "m_statValue")), Is.EqualTo((c.Model.Tables.StatName(0), "48")));
         Assert.That(Cell(0, 7, "m_statValue"), Is.EqualTo(c.Model.Tables.Common("s_common_percent").Replace("{0}", "120.0")), "a rate stat");
-        // container 0 child 0 is m_background; KR uimyinfodialog has 9 stat labels (row 8 = shield), GMS2 has 8 (no shield row)
+        // uimyinfodialog.gfx scaleform.ms2.controls.StatLabelManager: m_cntIndex0 = 9 on KR (label 8 = s_pc_info_name_shield),
+        // m_cntIndex0 = 8 on GMS2 (no shield row; GMS2 string/en/stringcommon.xml has no s_pc_info_name_shield). Child 0 is m_background.
         int labels0 = (int)Rt.ToNumber(h.Get(h.Invoke(manager, "getChildAt", 0), "numChildren")) - 1;
         if (UiDataRows.IsKr(Packs()))
         {
@@ -1027,6 +1030,7 @@ public class MyInfoTests
         }
         else
         {
+            // GMS2 table/na/masteryreceipe.xml has 7 available recipes using 33000014 (read directly from raw XML, no product parser)
             string entry = TablePath.Resolve(Packs(), "masteryreceipe.xml");
             Assert.That(entry, Is.Not.Null);
             var doc = GameStrings.Parse(Packs().Read("Xml", entry));
@@ -1035,25 +1039,37 @@ public class MyInfoTests
             foreach (var e in doc.Root.Elements("receipe"))
             {
                 if (!FeatureElements.IsAvailable(Packs(), e)) continue;
-                int rid = ItemData.Atoi((string)e.Attribute("id") ?? "0");
-                types[rid] = ItemData.Atoi((string)e.Attribute("masteryType") ?? "0");
+                int rid = UiDataRows.Int(e, "id");
+                types[rid] = UiDataRows.Int(e, "masteryType");
                 for (int i = 1; i <= 5; i++)
-                    if (MasteryRecipeTable.ParseIngredient((string)e.Attribute("requireItem" + i)) is { ItemId: 33000014 } ing)
-                        pairs.Add((rid, ing.Count));
+                {
+                    var parts = ((string)e.Attribute("requireItem" + i) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length != 3) continue;
+                    var itemPart = parts[0].Split(':', StringSplitOptions.RemoveEmptyEntries);
+                    if (itemPart.Length > 0 && int.TryParse(itemPart[0], out int ingId) && ingId == 33000014
+                        && int.TryParse(parts[2], out int need))
+                        pairs.Add((rid, need));
+                }
             }
+            string TypeName(int mt) => mt switch
+            {
+                7 => m.Tables.Common("s_mastery_blacksmithing"),
+                8 => m.Tables.Common("s_mastery_engraving"),
+                9 => m.Tables.Common("s_mastery_alchemist"),
+                10 => m.Tables.Common("s_mastery_cooking"),
+                _ => throw new AssertionException("unexpected masteryType " + mt),
+            };
             var expected = pairs.Select(p =>
             {
-                string type = MasteryRecipeTable.TypeKey(types[p.RecipeId]) is { } k ? m.Tables.Common(k) : "";
-                string name = m.Tables.MasteryRecipeName(p.RecipeId);
-                string key = 30 < p.Need ? "s_msg_tooltip_mastery_recipe_count_lack" : "s_msg_tooltip_mastery_recipe_count";
-                string count = Ms2.Quest.ClientFormat.Format(m.Tables.Common(key), 30, p.Need);
-                return Ms2.Quest.ClientFormat.Format(m.Tables.Common("s_msg_tooltip_mastery_recipe_info"), type, name, count);
+                string count = 30 < p.Need ? $"<FONT color='#FF5F5F' >30</FONT>/{p.Need}" : $"30/{p.Need}";
+                return $"<FONT color='#FFD200'>[{TypeName(types[p.RecipeId])}]</FONT> Used to craft {m.Tables.MasteryRecipeName(p.RecipeId)} ({count})";
             }).ToArray();
-            Assert.That(expected, Is.Not.Empty);
+            Assert.That(lines, Has.Length.EqualTo(7));
             Assert.That(lines, Is.EqualTo(expected));
-            Assert.That(lines, Has.Some.Contains("(30/2)"));
-            Assert.That(lines, Has.Some.Contains("(30/30)"));
-            Assert.That(lines, Has.Some.Contains("(<FONT color='#FF5F5F' >30</FONT>/160)"));
+            Assert.That(lines[0], Is.EqualTo("<FONT color='#FFD200'>[Smithing]</FONT> Used to craft Opal Smithing Slate (30/2)"));
+            Assert.That(lines[1], Is.EqualTo("<FONT color='#FFD200'>[Smithing]</FONT> Used to craft Tin Whetstone (30/30)"));
+            Assert.That(lines[3], Does.StartWith("<FONT color='#FFD200'>[Handicrafts]</FONT> Used to craft Snail Shell Handicraft Slate ("));
+            Assert.That(lines[6], Does.EndWith("(<FONT color='#FF5F5F' >30</FONT>/160)"));
         }
         Assert.That(Comment(33000014, 0).Split('\n')[0], Does.EndWith("(<FONT color='#FF5F5F' >0</FONT>/2)"));
         // a type 0x10 item no recipe uses, and a non-ingredient, have none
