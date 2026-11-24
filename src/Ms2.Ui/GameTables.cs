@@ -60,6 +60,7 @@ public sealed class GameTables
         ItemModels = new Items.ItemModelTable(packs);
         GemstoneUpgrades = new Items.GemstoneUpgradeTable(packs);
         Lapenshards = new Items.LapenshardTable(packs);
+        CoupleEmotions = new Skills.CoupleEmotionTable(packs);
         MasteryRecipes = new Items.MasteryRecipeTable(packs);
         var s = strings = new GameStrings(packs, languages);
         var r = read = CacheStore.Load(packs, CachePiece, CacheConfig(packs, s.Languages), CacheBuild, () => Parse(packs, s), _ => { });
@@ -402,6 +403,8 @@ public sealed class GameTables
     public readonly Items.MasteryRecipeTable MasteryRecipes = Ms2.Ui.Items.MasteryRecipeTable.Empty;
     /// <summary>Table/itemLapenshardUpgrade.xml (CItemLapenshardTable); empty without data.</summary>
     public readonly Items.LapenshardTable Lapenshards = Ms2.Ui.Items.LapenshardTable.Empty;
+    /// <summary>Table/coupleEmotion.xml (CCoupleEmotionTable); empty without data.</summary>
+    public readonly Skills.CoupleEmotionTable CoupleEmotions = Ms2.Ui.Skills.CoupleEmotionTable.Empty;
     /// <summary>Client::Constants AdventureLevelLvUpExp / AdventureLevelStartLevel (table/constants.xml; the Define defaults
     /// 15000 and 50, unit_1402ab440_constantsblocks.cpp:1155, :1157).</summary>
     public long AdventureLevelLvUpExp = 15000;

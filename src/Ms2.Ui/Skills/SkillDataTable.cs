@@ -319,6 +319,9 @@ public sealed class SkillData
     /// <summary>&lt;basic paramStr&gt; (m_strParamStr, skilloverlapcompare.cpp:823, GetParamStr): an emotion skill's emotion name,
     /// which its state plays (StateEmotion::vfunc_4, stateemotionidle.cpp:225) and the Emote mode 2 send carries.</summary>
     public string ParamStr = "";
+    /// <summary>&lt;basic param1&gt; (m_nParam1, skilloverlapcompare.cpp:822, GetParam1 @0x1407e9c90): a couple emotion's
+    /// (main type 0xf) coupleEmotion.xml code (StateCoupleEmotion, statecoupleemotion.cpp:441); 0 when absent.</summary>
+    public int Param1;
     /// <summary>&lt;kinds offsetNameTag&gt; (m_nOffsetNameTag, skilloverlapcompare.cpp:844): how far an emotion's states move the
     /// name tag (PCBase::FUN_141670330 / FUN_141670360, stateemotionidle.cpp:226-227).</summary>
     public int OffsetNameTag;
@@ -404,6 +407,7 @@ public sealed class SkillData
         s.MainType = basic.Attribute("mainType") == null && basic.Element("kinds") is { } k0 && k0.Attribute("type") != null
             ? GmsMainType(Xml.Int(k0, "type"), Xml.Int(k0, "subType"))
             : Xml.Int(basic, "mainType");
+        s.Param1 = Xml.Int(basic, "param1");
         s.ParamStr = (string)basic.Attribute("paramStr") ?? "";
         if (basic.Attribute("mainType") == null && basic.Element("kinds") is { } ek && Xml.Int(ek, "emotionType") is int emotionType && emotionType is 1 or 2)
         {
@@ -412,6 +416,9 @@ public sealed class SkillData
             // paramStr equal to emotion, and all 33 with emotionType 2 are mainType 15 (whose KMS paramStr is empty).
             s.MainType = emotionType == 1 ? 14 : 15;
             if (emotionType == 1) s.ParamStr = (string)ek.Attribute("emotion") ?? "";
+            // INFERRED likewise: emotionType 2's emotion is the coupleEmotion.xml code the KMS row keeps in param1
+            // (CoupleEmotionSweepTests compares the two data sets' rows)
+            else s.Param1 = Xml.Int(ek, "emotion");
         }
         if (basic.Element("ui") is { } ui)
         {
