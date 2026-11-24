@@ -7,6 +7,7 @@ using Ms2.Swf.Abc;
 //   AbcProbe stats [--data DIR]                 opcode histogram, classes, external references, shared code over every movie
 //   AbcProbe dump <movie> [--class SUBSTR] [--out FILE]   pseudo C# for the classes of one movie
 //   AbcProbe classes <movie>                    class list with super classes
+//   AbcProbe members [--out FILE]              member use on TextField / TextArea receivers over every movie (TSV: member, uses, movies)
 //   AbcProbe contract [--out FILE]              TSV over every movie: classes, method signatures, ExternalInterface.call and getUserData sites
 string data = Environment.GetEnvironmentVariable("MS2_DATA");
 bool dyn = false; var pos = new List<string>(); string classFilter = null, outFile = null;
@@ -57,6 +58,59 @@ switch (pos[0])
         return 0;
     }
     case "stats": return Stats.Run(packs);
+    case "members":
+    {
+        // Which members the movies use on a TextField / TextArea. The decompiler types fields and parameters but not locals, so a
+        // receiver counts when it is a field or parameter declared TextField / TextArea (or the TextFieldEx static helpers);
+        // a call is a row of its own by argument count.
+        var rxField = new System.Text.RegularExpressions.Regex(@"^\s+(?:public|private|protected|internal)\s+(?:static\s+)?(?:TextField|TextArea)\s+(\w+)\s*[;=]");
+        var rxHead = new System.Text.RegularExpressions.Regex(@"^  [^/\s].*\((.*)\)\s*\{\s*$");
+        var rxParam = new System.Text.RegularExpressions.Regex(@"(?:TextField|TextArea)\s+(a\d+)");
+        var rxEx = new System.Text.RegularExpressions.Regex(@"TextFieldEx\.(\w+)");
+        var uses = new SortedDictionary<string, (int N, HashSet<string> Movies)>();
+        // a call is a row of its own by argument count: getTextFormat() and getTextFormat(b, e) differ
+        static string Call(string open, string l, int end)
+        {
+            if (open != "(" && open != "()") return "";
+            if (open == "()") return "(0)";
+            int depth = 1, n = 1;
+            for (int i = end; i < l.Length && depth > 0; i++) { char ch = l[i]; if (ch is '(' or '[' or '{') depth++; else if (ch is ')' or ']' or '}') depth--; else if (ch == ',' && depth == 1) n++; }
+            return "(" + n + ")";
+        }
+        void Hit(string m, string movie) { uses.TryGetValue(m, out var c); (c.Movies ??= new()).Add(movie); uses[m] = (c.N + 1, c.Movies); }
+        foreach (var e in packs.List("Resource/Gfx").Where(e => e.EndsWith(".gfx", StringComparison.OrdinalIgnoreCase)).OrderBy(e => e))
+        {
+            SwfMovie sm;
+            try { sm = SwfMovie.Parse(packs.Read("Resource/Gfx", e)); } catch (FormatException) { continue; }
+            var movie = Path.GetFileNameWithoutExtension(e).ToLowerInvariant();
+            foreach (var (_, raw) in sm.AbcBlocks)
+            {
+                var abc = AbcFile.Parse(raw);
+                var d = new Decompiler(abc);
+                var text = new List<string>();
+                for (int ci = 0; ci < abc.Instances.Length; ci++) text.AddRange(d.Class(ci).Split('\n'));
+                var names = new HashSet<string>();
+                foreach (var l in text) { var m = rxField.Match(l); if (m.Success) names.Add(m.Groups[1].Value); }
+                var paramNames = new HashSet<string>();
+                foreach (var l in text)
+                {
+                    var h = rxHead.Match(l);
+                    if (h.Success) { paramNames.Clear(); foreach (System.Text.RegularExpressions.Match pm in rxParam.Matches(h.Groups[1].Value)) paramNames.Add(pm.Groups[1].Value); }
+                    foreach (System.Text.RegularExpressions.Match em in rxEx.Matches(l)) Hit("TextFieldEx." + em.Groups[1].Value, movie);
+                    foreach (var n in names)
+                        foreach (System.Text.RegularExpressions.Match mm in System.Text.RegularExpressions.Regex.Matches(l, @"(?<![\w])(?:\w+\.)*" + System.Text.RegularExpressions.Regex.Escape(n) + @"\.(\w+)(\(\)|\()?"))
+                            Hit(mm.Groups[1].Value + Call(mm.Groups[2].Value, l, mm.Index + mm.Length), movie);
+                    foreach (var n in paramNames)
+                        foreach (System.Text.RegularExpressions.Match mm in System.Text.RegularExpressions.Regex.Matches(l, @"(?<![\w.])" + n + @"\.(\w+)(\(\)|\()?"))
+                            Hit(mm.Groups[1].Value + Call(mm.Groups[2].Value, l, mm.Index + mm.Length), movie);
+                }
+            }
+        }
+        var sbm = new StringBuilder();
+        foreach (var (m, c) in uses) sbm.Append(m).Append('\t').Append(c.N).Append('\t').Append(c.Movies.Count).Append('\t').AppendLine(string.Join(",", c.Movies.Take(6)));
+        File.WriteAllText(outFile ?? "members.tsv", sbm.ToString());
+        return 0;
+    }
     case "contract":
     {
         // TSV over every movie: class rows, instance method signatures, ExternalInterface.call sites (one line of

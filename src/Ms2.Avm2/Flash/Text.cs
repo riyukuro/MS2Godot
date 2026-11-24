@@ -520,7 +520,7 @@ public class AsTextField : AsInteractiveObject
             SetHtml(whole);
             return;
         }
-        SetHtml((Html ?? System.Net.WebUtility.HtmlEncode(Text)) + add);
+        SetHtml((Html ?? (Formats != null ? GetHtml() : System.Net.WebUtility.HtmlEncode(Text))) + add);
     }
 
     /// <summary>The chars' html formats (<see cref="SetHtml"/>), for <see cref="Text"/> while it is the html's text;
@@ -554,6 +554,10 @@ public class AsTextField : AsInteractiveObject
             Opt(Format?.leftMargin), Opt(Format?.rightMargin), Opt(Format?.indent), Opt(Format?.leading));
         return HtmlText.Build(doc, Formats, d);
     }
+
+    /// <summary>The html the renderer draws the text from: the last html set, or, once the chars' formats were edited
+    /// (setTextFormat on a range, replaceText), the html those formats make; null for text with no formats.</summary>
+    public string RenderHtml => Html ?? (Formats != null ? GetHtml() : null);
 
     public override RectD LocalBounds() => Box;
 
@@ -698,9 +702,7 @@ public class AsTextField : AsInteractiveObject
         int col = Math.Clamp(i - start, 0, line.Length);
         double lineW = LineWidth(line, start);
         double x = 2 + LineWidth(line[..col], start);
-        // the field's paragraph align moves the line inside the box (the 2 px gutter either side)
-        double free = Math.Max(0, Box.W - 4 - lineW);
-        switch ((Format?.align as string)?.ToLowerInvariant()) { case "center": x += free / 2; break; case "right": x += free; break; }   // HtmlText.Build maps right/center/justify, anything else is left
+        x += AlignOffset(lineW);
         double w = col < line.Length ? TextMeasure.Width(FontName, Size, line[col].ToString()) : TextMeasure.Width(FontName, Size, Text[i].ToString());
         // the first line sits at the vertical align's top, a line with IMG chars has its own height (ImageTextH)
         double top = FirstLineTop(spans.Count) - Box.Y, y = top + k * (lh + Leading);
@@ -711,6 +713,14 @@ public class AsTextField : AsInteractiveObject
             lh = il[k].H / 20;
         }
         return AsRectangle.New(R, x, y, w, lh);
+    }
+
+    /// <summary>The field's paragraph align moves a line inside the box (the 2 px gutter either side); HtmlText.Build maps
+    /// right / center / justify, anything else is left.</summary>
+    double AlignOffset(double lineW)
+    {
+        double free = Math.Max(0, Box.W - 4 - lineW);
+        return (Format?.align as string)?.ToLowerInvariant() switch { "center" => free / 2, "right" => free, _ => 0 };
     }
 
     static int LineOfChar(List<(string Line, int Start)> spans, int i)
@@ -724,13 +734,37 @@ public class AsTextField : AsInteractiveObject
     [As] public AsTextLineMetrics getLineMetrics(int i)
     {
         var m = (AsTextLineMetrics)R.GetClass("flash.text.TextLineMetrics").Construct();
-        var l = Lines(); var s = i >= 0 && i < l.Count ? l[i] : "";
-        m.width = TextMeasure.Width(FontName, Size, s); m.height = TextMeasure.LineHeight(FontName, Size, 0);
-        m.ascent = Size * 0.9; m.descent = Size * 0.25; m.leading = Leading; m.x = 2;
+        var l = Spans(); var (s, start) = i >= 0 && i < l.Count ? l[i] : ("", 0);
+        double w = LineWidth(s, start);
+        m.width = w; m.height = TextMeasure.LineHeight(FontName, Size, 0);
+        m.ascent = Size * 0.9; m.descent = Size * 0.25; m.leading = Leading;
+        m.x = 2 + AlignOffset(w);       // FirstCharXOff: the gutter and the align's shift (the same x getCharBoundaries starts a line at)
         return m;
     }
-    [As] public int getFirstCharInParagraph(int c) => 0;
-    [As] public int getParagraphLength(int c) => Text.Length;
+
+    /// <summary>The paragraph of char <paramref name="c"/>: where it starts and how long it is, its end mark kept in the length
+    /// (StyledText paragraphs hold their closing line break, so the lengths add up to <see cref="Text"/>'s). A char index
+    /// one past the text is the last paragraph's; further out there is none (DocView::GetParagraphByIndex finishes).</summary>
+    (int Start, int Length)? ParagraphOf(int c)
+    {
+        var t = Text;
+        if (c < 0 || c > t.Length) return null;
+        int start = 0;
+        for (int i = 0; i < t.Length; i++)
+        {
+            if (t[i] != '\r' && t[i] != '\n') continue;
+            int end = i + 1;
+            if (t[i] == '\r' && end < t.Length && t[end] == '\n') { end++; i++; }
+            if (c < end) return (start, end - start);
+            start = end;
+        }
+        return (start, t.Length - start);
+    }
+    // TextField::getFirstCharInParagraph (sfr_as3_13.cpp:1303: -1 for a negative index or none) from
+    // DocView::GetFirstCharInParagraph (sfr_render_03b.cpp:688); getParagraphLength (:1394) from DocView::GetParagraphLength
+    // (:656, -1 when no paragraph holds the index)
+    [As] public int getFirstCharInParagraph(int c) => c >= 0 && ParagraphOf(c) is { } p ? p.Start : -1;
+    [As] public int getParagraphLength(int c) => c >= 0 && ParagraphOf(c) is { } p ? p.Length : -1;
 
     // DisplayObject.widthSet / heightSet call the object's SetWidth / SetHeight; TextField's (sfr_gfx_03f.cpp:792 / :364)
     // set the view rectangle's width / height to the value from its left / top, in the field's own pixels: the field's
@@ -777,8 +811,73 @@ public class AsTextField : AsInteractiveObject
         get => (Format ?? (AsTextFormat)R.GetClass("flash.text.TextFormat").Construct()).Copy(R);
         set { Format ??= (AsTextFormat)R.GetClass("flash.text.TextFormat").Construct(); Format.MergeFrom(value); Version++; }
     }
-    [As] public void setTextFormat(AsTextFormat f, int b = -1, int e = -1) { Format ??= (AsTextFormat)R.GetClass("flash.text.TextFormat").Construct(); Format.MergeFrom(f); Changed(); }
-    [As] public AsTextFormat getTextFormat(int b = -1, int e = -1) => defaultTextFormat;
+
+    /// <summary>
+    /// TextField::setTextFormat (sfr_as3_13.cpp:2847): the format goes on the chars from b (a missing one is 0) to e (missing: the
+    /// end), an empty or reversed range nothing; a missing range is the whole text, which here also becomes the field's own format.
+    /// What the format sets (color, size, bold, italic, underline, url) is kept per char, over the chars' html formats.
+    /// </summary>
+    [As] public void setTextFormat(AsTextFormat f, int b = -1, int e = -1)
+    {
+        if (f == null) return;
+        int begin = b != -1 ? b : 0; long end = e != -1 ? e : int.MaxValue;
+        if (begin > end) return;
+        bool whole = b == -1 && e == -1;
+        if (whole) { Format ??= (AsTextFormat)R.GetClass("flash.text.TextFormat").Construct(); Format.MergeFrom(f); }
+        if (!whole || Formats != null) ApplyCharFormat(f, begin, (int)Math.Min(end, Text.Length));
+        Changed();
+    }
+
+    void ApplyCharFormat(AsTextFormat f, int begin, int end)
+    {
+        int n = Text.Length; begin = Math.Max(0, begin);
+        if (begin >= end || begin >= n) return;
+        bool Set(object v) => v != null && !Rt.IsNullish(v);
+        if (!(Set(f.color) || Set(f.size) || Set(f.bold) || Set(f.italic) || Set(f.underline) || Set(f.url))) return;
+        var src = Formats;
+        bool own = src != null;
+        var nf = new HtmlFormat[Math.Max(n, src?.Length ?? 0)];
+        if (own) Array.Copy(src, nf, src.Length);
+        for (int i = begin; i < end; i++)
+        {
+            var c = nf[i];
+            if (Set(f.color)) c = c with { Color = Rt.ToUint32(f.color) };
+            if (Set(f.size)) c = c with { Size = (int)Rt.ToNumber(f.size) };
+            if (Set(f.bold)) c = c with { Bold = Rt.ToBoolean(f.bold) };
+            if (Set(f.italic)) c = c with { Italic = Rt.ToBoolean(f.italic) };
+            if (Set(f.underline)) c = c with { Underline = Rt.ToBoolean(f.underline) };
+            if (Set(f.url)) c = c with { Url = Rt.ToString(f.url) is { Length: > 0 } u ? u : null };
+            nf[i] = c;
+        }
+        SetFormats(nf, own && formatsBreak);
+        // the html the formats were parsed from no longer says what the chars look like: the renderer and htmlText build it from them
+        Html = null; htmlParser = null;
+    }
+
+    /// <summary>
+    /// TextField::getTextFormat (sfr_as3_13.cpp:2828): the format of the chars from b to e, a property they do not all share
+    /// null. With no per-char formats (plain text) every char has the field's own format.
+    /// </summary>
+    [As] public AsTextFormat getTextFormat(int b = -1, int e = -1)
+    {
+        int begin = b != -1 ? b : 0; long end = e != -1 ? e : int.MaxValue;
+        if (begin > end) return (AsTextFormat)R.GetClass("flash.text.TextFormat").Construct();
+        var f = defaultTextFormat;
+        var fm = Formats;
+        int last = (int)Math.Min(end, Text.Length);
+        if (fm == null || begin < 0 || begin >= last) return f;
+        bool Same<T>(Func<HtmlFormat, T> get) { var first = get(fm[begin]); for (int i = begin + 1; i < last; i++) if (!EqualityComparer<T>.Default.Equals(get(fm[i]), first)) return false; return true; }
+        uint dc = textColor; double ds = Size;
+        bool db = f.bold != null && Rt.ToBoolean(f.bold), di = f.italic != null && Rt.ToBoolean(f.italic), du = f.underline != null && Rt.ToBoolean(f.underline);
+        var c0 = fm[begin];
+        f.color = Same(c => c.Color ?? dc) ? Rt.Uint(c0.Color ?? dc) : null;
+        f.size = Same(c => c.Size ?? ds) ? Rt.Num(c0.Size ?? ds) : null;
+        f.bold = Same(c => c.Bold || db) ? c0.Bold || db : null;
+        f.italic = Same(c => c.Italic || di) ? c0.Italic || di : null;
+        f.underline = Same(c => c.Underline || du) ? c0.Underline || du : null;
+        if (!Same(c => c.Url)) f.url = null; else if (c0.Url != null) f.url = c0.Url;
+        return f;
+    }
     /// <summary>Both ends clamped into the text, the order kept: the caret goes to <paramref name="e"/> and
     /// <paramref name="b"/> is the anchor a Shift key extends from (TextField::SetSelection @0x1425bcfc0, which calls
     /// EditorKit::SetSelection: SetCursorPos(e), then DocView::SetSelection(b, e) as given).</summary>

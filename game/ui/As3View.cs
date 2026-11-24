@@ -1435,7 +1435,7 @@ public partial class FieldText : Node2D
             if (textChanged)
             {
                 version = tf.TextVersion;
-                if (tf.Html != null && !(tf.Html.Length > 1 && tf.Html[0] == '$')) node.SetHtml(tf.Html);
+                if (tf.RenderHtml is { } html && !(html.Length > 1 && html[0] == '$')) node.SetHtml(html);
                 else node.Text = tf.Text;
             }
             // TextFieldEx.setTextAutoSize(SHRINK / FIT): LineBuffer::Scale (sfr_render_04d.cpp:394) scales every line's offsets and
