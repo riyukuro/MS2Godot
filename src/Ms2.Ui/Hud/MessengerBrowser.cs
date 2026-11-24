@@ -336,14 +336,21 @@ public sealed class MessengerBrowser
         pending.Clear();
     }
 
-    /// <summary>FUN_141a23c20 (:3114): the log, the linked items, the pending lines and the shown count cleared (of what
-    /// it clears, the rest is not ported).</summary>
+    /// <summary>FUN_141a23c20 (:3114): the whisper and talk targets and the last channel, the shown count, the log, the
+    /// linked items, the pending lines, the reports and the input history (with its position) cleared (of what it
+    /// clears, the rest is not ported).</summary>
     public void Clear()
     {
+        WhisperTarget = "";
+        TalkTarget = "";
+        LastChannel = 0;
         shown = 0;
         logs.Clear();
         linkedItems.Clear();
         pending.Clear();
+        reports.Clear();
+        history.Clear();
+        historyAt = 0;
     }
 
     // ---- RecvOp 0x1e: the linked items ------------------------------------------------------------------------------

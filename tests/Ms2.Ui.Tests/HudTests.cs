@@ -1867,6 +1867,25 @@ public class HudTests
     }
 
     [Test]
+    public void ClearingTheChatBrowserClearsTheInputHistoryAndTheTargets()
+    {
+        // FUN_141a23c20 (:3114): m_history and m_itHistory, the whisper target, the talk target, m_1b0 and m_reports go with the log
+        var (c, h, m, sent, _) = ChatWindow();
+        c.Browser.RecordHistory("one", System.Array.Empty<string>());
+        c.Browser.RecordHistory("two", System.Array.Empty<string>());
+        c.Browser.WhisperTarget = "Bob";
+        c.Browser.TalkTarget = "Club";
+        c.Browser.LastChannel = 4;
+        c.Browser.Clear();
+        Assert.That(c.Browser.History, Is.Empty);
+        Assert.That(c.Browser.GetHistoryEntry(true, out _), Is.False, "Up on an empty history");
+        Assert.That(c.Browser.WhisperTarget, Is.EqualTo(""));
+        Assert.That(c.Browser.TalkTarget, Is.EqualTo(""));
+        Assert.That(c.Browser.LastChannel, Is.EqualTo(0));
+        Assert.That(c.Browser.Reports, Is.Empty);
+    }
+
+    [Test]
     public void ChatInputHistoryKeepsTheLinksAndTheCommands()
     {
         var (c, h, m, sent, _) = ChatWindow();
