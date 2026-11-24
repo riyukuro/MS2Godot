@@ -40,21 +40,21 @@ public class SkillSequenceSweepTests
     const float Dt = 1f / 60f;
     const double KeysFromStart = Ms2.Net.Replay.SkillMotion.KeysFromStart;
     const float StuckSeconds = 60f;
-    static readonly string[] Bodies = { "male", "female" };
+    internal static readonly string[] Bodies = { "male", "female" };
 
     [Test] public void KmsSkillSequencesPlayInTheClientsOrder() => Sweep("MS2_DATA");
     [Test] public void Gms2SkillSequencesPlayInTheClientsOrder() => Sweep("MS2_GMS2_DATA");
 
     // ---- the data -------------------------------------------------------------------------------------------------
 
-    static string DataDir(string variable)
+    internal static string DataDir(string variable)
     {
         var d = Environment.GetEnvironmentVariable(variable);
         if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore($"{variable} is not set");
         return d;
     }
 
-    static string NifXml()
+    internal static string NifXml()
     {
         var nx = Environment.GetEnvironmentVariable("MS2_NIFXML");
         if (string.IsNullOrEmpty(nx))
@@ -66,7 +66,7 @@ public class SkillSequenceSweepTests
 
     /// <summary>A body's cast sequences as the port loads them: the body's &lt;name&gt;.kf (BodySequences) with the body xml's keys
     /// of that name added (ActionAnims.AppendXmlKeys), in time order (ActionAnims.AddSequenceKeys).</summary>
-    sealed class BodyKfs
+    internal sealed class BodyKfs
     {
         readonly PackSet packs; readonly NifSpec spec; readonly string body;
         readonly Dictionary<string, KfAnimation> kfs = new(StringComparer.OrdinalIgnoreCase);
@@ -111,7 +111,7 @@ public class SkillSequenceSweepTests
         }
     }
 
-    static float Key(KfAnimation kf, string text)
+    internal static float Key(KfAnimation kf, string text)
     {
         foreach (var (t, s) in kf.TextKeys)
             if (string.Equals(s, text, StringComparison.OrdinalIgnoreCase)) return (float)t;
@@ -119,7 +119,7 @@ public class SkillSequenceSweepTests
     }
 
     /// <summary>The skills job.xml names (skills and sub skills of every job) and the skills they change or combo into.</summary>
-    static HashSet<uint> JobSkills(Ms2.Ui.GameTables t)
+    internal static HashSet<uint> JobSkills(Ms2.Ui.GameTables t)
     {
         var ids = new HashSet<uint>();
         var todo = new Stack<uint>();
@@ -142,7 +142,7 @@ public class SkillSequenceSweepTests
     /// <summary>
     /// The tokens the client plays for one cast of a level, no key held after the press and nothing queued: per motion
     /// "play:&lt;seq&gt;", "skip" (the own charging skill's release to "charging_attack"), one "loop" per round, then "next"
-    /// (an earlier motion's end goes on to the next) or "end" (the last motion's end leaves the state); "stuck" when
+    /// (an earlier motion's end goes on to the next) or "end" (the last motion's end leaves the state); "held-no-timer" when
     /// EndOfSequence never takes the end (repeats left without loop keys); "noseq" for a motion without a sequence.
     /// </summary>
     static List<string> Expected(SkillData skill, SkillLevelData level, BodyKfs body, bool own)
@@ -163,7 +163,7 @@ public class SkillSequenceSweepTests
                 if (!skill.DisableChargingAttackSkipFrame) o.Add("skip");     // :704-719
             }
             if (loopKeys) for (int i = 0; i < repeat; i++) o.Add("loop");
-            else if (repeat > 0) { o.Add("stuck"); return o; }                // EndOfSequence :1058
+            else if (repeat > 0) { o.Add("held-no-timer"); return o; }                // EndOfSequence :1058
             o.Add(m + 1 < level.Motions.Count ? "next" : "end");
             // the own next motion: a level cooldown the row does not show starts at the cast (FUN_141525ff0, mypc.cpp
             // :2570-2575, over the motion speed) and MyPC::vfunc_102 (:1152-1166) queues the next motion while it runs;
@@ -182,7 +182,7 @@ public class SkillSequenceSweepTests
 
     // ---- another PC: RemotePcStates as RemotePc drives it ----------------------------------------------------------
 
-    sealed class Pc : IRemotePc
+    internal sealed class Pc : IRemotePc
     {
         public KfAnimation Kf; public double Pos, LastPos; public float Rate = 1f; public bool Seeked; public string Name;
         public readonly List<string> Out = new();
@@ -228,7 +228,7 @@ public class SkillSequenceSweepTests
         public void SeekCast(float time)
         {
             if (Kf == null) return;
-            Out.Add(Math.Abs(time - CastKeyTime("loopstart")) < 0.06f ? "loop" : "seek");
+            Out.Add(Math.Abs(time - CastKeyTime("loopstart")) < 0.06f ? "loop" : Math.Abs(time - CastKeyTime("charging_attack")) < 0.001f ? "skip" : "seek");
             Pos = Math.Max(time, 0f);
             Seeked = true;
         }
@@ -270,7 +270,7 @@ public class SkillSequenceSweepTests
                 // EndOfSequence refused (m_nRepeat > 0, :1058): the sequence holds its last frame and the state stays
                 if (finished && !pc.Seeked && sm.CastRepeat <= 0) { ended = true; break; }
             }
-            if (!ended) { pc.Out.Add("stuck"); return pc.Out; }
+            if (!ended) { pc.Out.Add("held-no-timer"); return pc.Out; }
             pc.Out.Add("next");   // the state waits for OnSkillUse's next motion, which comes now
         }
         // past the last motion still in StateSkill: the state did not end
@@ -382,7 +382,7 @@ public class SkillSequenceSweepTests
                     }
                 }
             }
-            if (!ended) { o.Add("stuck"); return o; }
+            if (!ended) { o.Add("held-no-timer"); return o; }
             endTick = clock;
             if (!SkillFollow.IsLastMotion(r))
             {
