@@ -80,7 +80,7 @@ public partial class HudScene
         var e = c.Env;
         RevivalWiring.Connect(e, live.Me, () => live.FieldId, _ => RevivalFieldData(live),
             live.SendRevival, text => SystemNoticeText(text), id => hudModel.Tables.Common(id),
-            id => hudModel.Tables.MapName(id), PaidInputs(), RoomInputs(live));
+            id => hudModel.Tables.MapName(id), PaidInputs(live), RoomInputs(live));
         c.Unloaded += () => { revivalMovie?.Host.Unload(); revivalMovie?.QueueFree(); revivalMovie = null; };
         revival = c;
         revivalMovie = new MovieDialog(assets, revival, hudModel, ScreenMode.PixelSize(GetWindow()));
@@ -94,18 +94,30 @@ public partial class HudScene
         return new RevivalRoomInputs(() => live.DungeonRoomId, id => dungeonRooms?.GetRoom(id), () => hudModel.IsFeatureEnabled(0x5d));
     }
 
-    /// <summary>The paid revive's inputs: the merat wallet summed (DAT_143ab2978), the own buffs and the client constants; null
-    /// before the own buff list exists (the paid buttons then send nothing).</summary>
-    RevivalPaidInputs PaidInputs()
+    /// <summary>The paid revive's inputs: the merat wallet summed (DAT_143ab2978), the own buffs, the client constants, the game
+    /// events' meso revival rule (with the PC bang events for a PC bang grade above 0, PC::FUN_141658f30), the own ability rates
+    /// (<see cref="Ms2Godot.Net.LiveSession.OwnAbilityRate"/>) and the bag's tagged items the player can use (PC::CanUseItem);
+    /// null before the own buff list exists (the paid buttons then send nothing).</summary>
+    RevivalPaidInputs PaidInputs(Ms2Godot.Net.LiveSession live)
     {
         if (ownBuffs == null) return null;
         slotConstants ??= Ms2.Ui.FeatureElements.Constants(assets.Packs);
         var wallet = hudModel.Player;
+        var use = new Ms2.Ui.Hud.PcItemUse.Pc { ServerTime = () => live.ServerTime };
         return new RevivalPaidInputs(() =>
         {
             long sum = 0;
             if (wallet.MeratWallet != null) foreach (var m in wallet.MeratWallet) sum += m;
             return sum;
-        }, ownBuffs, slotConstants);
+        }, ownBuffs, slotConstants,
+            () => live.MesoRevivals.Rule((live.Me.User?.PcBangGrade ?? 0) > 0),
+            type => live.OwnAbilityRate(type),
+            tag =>
+            {
+                use.PcBangGrade = live.Me.User?.PcBangGrade ?? 0; use.PremiumTime = live.Me.PremiumTime;
+                use.WeddingState = live.Me.WeddingState; use.CharacterId = live.CharacterId;
+                return Ms2.Ui.Items.InventoryCount.HasItemWithTag(live.Items.All, hudModel.Tables.Items, tag,
+                    (item, data) => Ms2.Ui.Hud.PcItemUse.CanUseItem(item, data, use));
+            });
     }
 }

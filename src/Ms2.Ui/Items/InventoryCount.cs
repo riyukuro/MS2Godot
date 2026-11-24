@@ -28,6 +28,22 @@ public static class InventoryCount
         return count;
     }
 
+    /// <summary>Unk_Inventory::FindItemByTag (@0x140a5e040, inventory.cpp:630) found an item: <paramref name="tag"/> is not 0
+    /// and a bag item's data has that string tag (CItem::HasStringTag, the data's stringTag through
+    /// <see cref="ItemTags.ByName"/>) and passes <paramref name="canUse"/> (PC::CanUseItem). Which of them the sort
+    /// (FUN_140a5c650) puts first is not needed for whether one is found.</summary>
+    public static bool HasItemWithTag(IEnumerable<EquipItem> items, ItemDataTable table, int tag, Func<EquipItem, ItemData, bool> canUse)
+    {
+        if (tag == 0 || items == null || table == null) return false;
+        foreach (var e in items)
+        {
+            if (e == null || table.Get(e.Id) is not { } data) continue;
+            if (ItemTags.ByName(data.StringTag) != tag) continue;
+            if (canUse(e, data)) return true;
+        }
+        return false;
+    }
+
     /// <summary>
     /// PC::CanUseItem (@0x14165c720): the part this port can decide — CItem::FUN_140528980 (an expired item is unusable
     /// unless it is a pet or its data HasMaidId) and an item bound to another character (CItemTransfer's binding and the

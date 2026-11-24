@@ -20,6 +20,10 @@ public sealed record PremiumMarketSaleEvent(int Id, int Rate, IReadOnlyList<int>
 /// 1 when it is 0 and list 0 otherwise (SetBeautyShopSaleEvent, RemoveBeautyShopSaleEvent).</summary>
 public sealed record BeautyShopSaleEvent(int Id, int SaleEventId, int Rate, byte Flag);
 
+/// <summary>One GameEventMesoRevival (commonfiles/gameevent.cpp:869-913): the event id and the bool m_d0 (vfunc_4 :901-905)
+/// OnStart (:908-913) puts in the game rule's MesoRevivalEventContext m_18.</summary>
+public sealed record MesoRevivalEvent(int Id, bool Flag);
+
 /// <summary>One GameEventMassiveConstructionEvent (commonfiles/gameevent.cpp:2926-2944): the event id, the field ids (m_d0),
 /// the channel (m_f0) and the account ids (m_f8) OnStart (:2946-2958) puts in the game rule.</summary>
 public sealed record MassiveConstructionEvent(int Id, IReadOnlyList<uint> FieldIds, int Channel, IReadOnlyList<long> AccountIds);
@@ -66,6 +70,9 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
     /// <summary>The Reactor events of a kind 0, 1 or 3 message, in packet order.</summary>
     public IReadOnlyList<ReactorEvent> ReactorEvents { get; init; } = Array.Empty<ReactorEvent>();
 
+    /// <summary>The MesoRevival events of a kind 0, 1 or 3 message, in packet order.</summary>
+    public IReadOnlyList<MesoRevivalEvent> MesoRevivalEvents { get; init; } = Array.Empty<MesoRevivalEvent>();
+
     public static GameEventMessage Read(ByteReader r)
     {
         byte kind = r.ReadByte();
@@ -76,6 +83,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
         var construction = new List<object>();
         var beautySales = new List<BeautyShopSaleEvent>();
         var reactors = new List<ReactorEvent>();
+        var mesoRevivals = new List<MesoRevivalEvent>();
         bool truncated = false;
         switch (kind)
         {
@@ -87,7 +95,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
                 for (int i = 0; i < n; i++)
                 {
                     string name = r.ReadUnicodeString();
-                    if (!ReadBody(name, r, shutdowns, hotTimes, saleEvents, construction, beautySales, reactors))
+                    if (!ReadBody(name, r, shutdowns, hotTimes, saleEvents, construction, beautySales, reactors, mesoRevivals))
                     {
                         truncated = true;     // Create failed (:144-147): the client returns here
                         break;
@@ -104,7 +112,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
         }
         if (!truncated) r.ExpectEnd("GameEvent");
         return new GameEventMessage(kind, shutdowns, removed, truncated) { HotTimes = hotTimes, SaleEvents = saleEvents, ConstructionEvents = construction, BeautySaleEvents = beautySales,
-            ReactorEvents = reactors };
+            ReactorEvents = reactors, MesoRevivalEvents = mesoRevivals };
     }
 
     /// <summary>
@@ -116,7 +124,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
     internal static bool ReadBody(string name, ByteReader r, List<ShutdownInteractObjectEvent> shutdowns,
                                   List<SpecialAbilityHotTimeEvent> hotTimes = null, List<PremiumMarketSaleEvent> saleEvents = null,
                                   List<object> construction = null, List<BeautyShopSaleEvent> beautySales = null,
-                                  List<ReactorEvent> reactors = null)
+                                  List<ReactorEvent> reactors = null, List<MesoRevivalEvent> mesoRevivals = null)
     {
         switch (name)
         {
@@ -218,8 +226,14 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
             case "SaleRemake":          // :1995: id, I, B
                 r.ReadInt(); r.ReadInt(); r.ReadByte();
                 return true;
-            // id, B: MesoRevival (:900), TransferItemBound (:3823), DeleteUrlCache (:3984)
-            case "MesoRevival": case "TransferItemBound": case "DeleteUrlCache":
+            case "MesoRevival":         // :900: id, B (ReadBool: nonzero is true)
+            {
+                int id = r.ReadInt();
+                mesoRevivals?.Add(new MesoRevivalEvent(id, r.ReadByte() != 0));
+                return true;
+            }
+            // id, B: TransferItemBound (:3823), DeleteUrlCache (:3984)
+            case "TransferItemBound": case "DeleteUrlCache":
                 r.ReadInt(); r.ReadByte();
                 return true;
             case "DungeonBonusReward":  // :1019, DungeonBonusRewardCtx::Read: id, I, B, F, F, I, i32 n x I

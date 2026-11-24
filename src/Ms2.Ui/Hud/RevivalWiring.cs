@@ -12,9 +12,8 @@ namespace Ms2.Ui.Hud;
 /// (CFieldDataCli, uirevivaldialog.cpp:397, 412, 438, 493) and the string notices. The game scene calls this for the dialog it
 /// opens, so a test can run the same wiring. Without <see cref="RevivalPaidInputs"/> the paid revive (merat and meso) is refused,
 /// as the client sends only the free revive (mode 0) without them.
-/// STILL-OPEN (left at their defaults): CGameRule's meso revival rule (FUN_140477d10, the GameEventMesoRevival events), the
-/// revival coupon (FindItemByTag(4)), the equipment's cost reductions (GetAbilityRate 0x42 / 0xa4), and the platform's red-merat
-/// check (vfunc_41, feature 0x43 with the admin level DAT_143ab2914 at 52 or more; the port has no admin level).
+/// STILL-OPEN (left at its default): the platform's red-merat check (vfunc_41, feature 0x43 with the admin level DAT_143ab2914
+/// at 52 or more; the port has no admin level).
 /// </summary>
 /// <param name="RoomId">DAT_143ab2884: the dungeon room id of the field (0 outside a dungeon).</param>
 /// <param name="RoomOf">DungeonRoomTable::GetRoom (null for an unknown id).</param>
@@ -23,7 +22,22 @@ public sealed record RevivalRoomInputs(Func<int> RoomId, Func<int, DungeonRoom> 
 /// <param name="Merat">DAT_143ab2978 (FUN_1409304d0): the merat of the four wallet kinds summed.</param>
 /// <param name="Buffs">FUN_1416749a0(): the own player's additional effects.</param>
 /// <param name="Constants">The client constants (Constants +0x51d8, +0x8cc0, +0x90f8, +0xa278, +0xcfe0).</param>
-public sealed record RevivalPaidInputs(Func<long> Merat, AdditionalBuffList Buffs, ClientConstants Constants);
+/// <param name="MesoRevivalRule">CGameRule::FUN_140477d10(PC::FUN_141658f30()) (uirevivaldialog.cpp:566, :721): the game
+/// events' flat meso revive rule (<see cref="Ms2.Ui.MesoRevivalRule.Rule"/>); null is 0.</param>
+/// <param name="AbilityRate">CEquipment::GetAbilityRate(type) of the own player (uirevivaldialog.cpp:510, :687, :723): read for
+/// <see cref="MeratFeeAbility"/> and <see cref="MesoFeeAbility"/>; null is 0.</param>
+/// <param name="HasItemWithTag">Unk_Inventory::FindItemByTag(tag) found an item (uirevivaldialog.cpp:449, :503, :754): read for
+/// <see cref="CouponTag"/>; null finds none.</param>
+public sealed record RevivalPaidInputs(Func<long> Merat, AdditionalBuffList Buffs, ClientConstants Constants,
+    Func<int> MesoRevivalRule = null, Func<int, float> AbilityRate = null, Func<int, bool> HasItemWithTag = null)
+{
+    /// <summary>SAType 0x42, reduce_merat_revival_fee (the special ability string table's row 66).</summary>
+    public const int MeratFeeAbility = 0x42;
+    /// <summary>SAType 0xa4, reduce_meso_revival_fee (row 164).</summary>
+    public const int MesoFeeAbility = 0xa4;
+    /// <summary>The item tag FindItemByTag looks for: 4, FreeReviveCoupon (InitItemTags' fourth name).</summary>
+    public const int CouponTag = 4;
+}
 
 public static class RevivalWiring
 {
@@ -101,5 +115,12 @@ public static class RevivalWiring
         e.MesoRateCap = () => mesoCap;
         e.MeratRevivalOff = () => meratOff;
         e.LeaveBoxSeconds = () => leave;
+        if (paid.MesoRevivalRule is { } rule) e.MesoRevivalRule = rule;
+        if (paid.AbilityRate is { } rate)
+        {
+            e.MeratAbilityRate = () => rate(RevivalPaidInputs.MeratFeeAbility);
+            e.MesoAbilityRate = () => rate(RevivalPaidInputs.MesoFeeAbility);
+        }
+        if (paid.HasItemWithTag is { } has) e.HasCoupon = () => has(RevivalPaidInputs.CouponTag);
     }
 }

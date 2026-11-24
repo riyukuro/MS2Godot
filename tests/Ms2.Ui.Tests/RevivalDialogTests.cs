@@ -222,7 +222,7 @@ public class RevivalDialogTests
         Assert.That(sent, Is.Empty);
     }
 
-    sealed class PaidRig
+    internal sealed class PaidRig
     {
         public readonly Ms2.Net.Packets.MyCharacter Me = DeadPlayer();
         public readonly List<string> Sent = new(), Notices = new();
@@ -230,22 +230,34 @@ public class RevivalDialogTests
         public readonly Ms2.Ui.Skills.AdditionalBuffList Buffs;
         public readonly RevivalDialogController C = new() { CommonById = id => $"#{id:x}", CommonByKey = k => k + "|{0}" };
         public long Merat;
-        public int Short;
+        public int Short, Rule;
+        public readonly Dictionary<int, float> Rates = new();
+        public readonly HashSet<int> Tags = new();
         public static readonly Ms2.Ui.Skills.AdditionalLevelData Plain = new() { Level = 1 }, Disable = new() { Level = 1, DisableRevivalHere = true };
 
-        public PaidRig(params (string, string)[] constants)
+        public PaidRig(params (string, string)[] constants) : this(null, null, constants) { }
+
+        /// <summary>With the buff list's level lookup (the sweep's real levels) instead of the plain one.</summary>
+        public PaidRig(Ms2.Ui.Skills.AdditionalBuffList buffs) : this(buffs, null) { }
+
+        /// <summary>With FindItemByTag over a bag instead of <see cref="Tags"/>.</summary>
+        public PaidRig(Func<int, bool> hasItemWithTag) : this(null, hasItemWithTag) { }
+
+        PaidRig(Ms2.Ui.Skills.AdditionalBuffList buffs, Func<int, bool> hasItemWithTag, params (string, string)[] constants)
         {
-            Buffs = new Ms2.Ui.Skills.AdditionalBuffList((id, lv) => id == 7 ? Disable : Plain);
+            Buffs = buffs ?? new Ms2.Ui.Skills.AdditionalBuffList((id, lv) => id == 7 ? Disable : Plain);
             var k = new Ms2.Formats.World.ClientConstants(constants.Select(p => new KeyValuePair<string, string>(p.Item1, p.Item2)));
             RevivalWiring.Connect(C.Env, Me, () => 100, id => new Ms2.Formats.World.FieldData { Id = id, RevivalReturnId = id, InfiniteMeratRevival = false },
                 p => Sent.Add($"{p.Op}:{Convert.ToHexString(Bytes(p))}"), Notices.Add, id => $"notice {id:x}", id => $"map {id}",
-                new RevivalPaidInputs(() => Merat, Buffs, k));
+                new RevivalPaidInputs(() => Merat, Buffs, k, () => Rule,
+                    type => Rates.TryGetValue(type, out float v) ? v : Ms2.Ui.Items.WornEquipment.AbilityRate(Ms2.Ui.Items.WornEquipment.AbilityTotal(0, type, Buffs, null, false)),
+                    hasItemWithTag ?? Tags.Contains));
             C.Env.ShowBox = Boxes.Add;
             C.Env.PaymentShort = () => Short++;
         }
 
-        public void Buff(int key, uint id, int overlap, byte enabled) =>
-            Buffs.Apply(new Ms2.Net.Packets.BuffPacket(Ms2.Net.Packets.BuffPacket.Add, 9, key, 9, 0, new Ms2.Net.Packets.BuffState(0, 1000, id, 1, overlap, enabled), 0));
+        public void Buff(int key, uint id, int overlap, byte enabled, ushort level = 1) =>
+            Buffs.Apply(new Ms2.Net.Packets.BuffPacket(Ms2.Net.Packets.BuffPacket.Add, 9, key, 9, 0, new Ms2.Net.Packets.BuffState(0, 1000, id, level, overlap, enabled), 0));
     }
 
     /// <summary>With RevivalPaidInputs the meso revive sends while a daily count is left (max(3 - used, 0), mypc.cpp:2169), then
@@ -275,6 +287,45 @@ public class RevivalDialogTests
         r.C.OnRevival(2);
         Assert.That((r.Short, r.Boxes.Count), Is.EqualTo((1, 1)));
         Assert.That(r.Sent, Is.Empty, "the merat revive asks first");
+    }
+
+    /// <summary>The paid inputs' game event rule, fee reductions and coupon: rule 1 (FUN_140477d10) gives the meso revive with no
+    /// daily count left at CalcRevivalMeso's flat 10000 and the 0x286 label (RefreshMesoButton, uirevivaldialog.cpp:721-732);
+    /// GetAbilityRate(0xa4) and (0x42) scale the meso and merat costs by 1 - min(cap, rate) (:723, :687); FindItemByTag(4) finds
+    /// the coupon, which selects the check box (FUN_141abd640, :754-761) and pays the paid revive with the coupon byte.</summary>
+    [Test]
+    public void ThePaidInputsReadTheEventRuleTheFeeRatesAndTheCoupon()
+    {
+        var r = new PaidRig();
+        r.Me.Meso = 1_000_000;
+        r.Me.MesoRevivalsUsed = 3;
+        r.C.Refresh();
+        Assert.That((r.C.PaidMode, r.C.MeratCost), Is.EqualTo((1, 20)), "no daily count left and no rule: the merat revive");
+
+        r.Rates[RevivalPaidInputs.MeratFeeAbility] = 0.3f;
+        r.C.Refresh();
+        Assert.That(r.C.MeratCost, Is.EqualTo((long)(20 * (double)(1f - 0.3f))), "ScaleValue truncates: 13");
+        Assert.That(r.C.MeratCost, Is.EqualTo(13));
+
+        r.Rule = 1;
+        r.C.Refresh();
+        Assert.That((r.C.PaidMode, r.C.MesoCost, r.C.Label2), Is.EqualTo((2, 10000L, "#286")));
+        r.Rates[RevivalPaidInputs.MesoFeeAbility] = 0.2f;
+        r.C.Refresh();
+        Assert.That(r.C.MesoCost, Is.EqualTo((long)(10000 * (double)(1f - 0.2f))));
+        r.Rates[RevivalPaidInputs.MesoFeeAbility] = 0.9f;
+        r.C.Refresh();
+        Assert.That(r.C.MesoCost, Is.EqualTo(5000), "MesoRevivalFeeReduceLimit 0.5 caps the rate");
+        Assert.That(r.C.CouponSelected, Is.False);
+
+        r.Tags.Add(3);
+        r.C.Refresh();
+        Assert.That(r.C.CouponSelected, Is.False, "FreeSuperChatCoupon is tag 3");
+        r.Tags.Add(RevivalPaidInputs.CouponTag);
+        r.C.Refresh();
+        Assert.That(r.C.CouponSelected, Is.True);
+        r.C.OnRevival(2);
+        Assert.That(r.Sent, Is.EqualTo(new[] { "Revival:0201" }), "the meso button (FUN_141abc080) sends mode 2 with the coupon byte");
     }
 
     /// <summary>The paid inputs' buff checks: an enabled effect of the debuff code stops a paid revive (0x281, FUN_140970020 with

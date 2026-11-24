@@ -223,6 +223,21 @@ public class GameEventPacketTests
     }
 
     [Test]
+    public void MesoRevivalEventsKeepTheirIdAndFlag()
+    {
+        // GameEventMesoRevival::vfunc_4 (gameevent.cpp:901-905): id, then ReadBool m_d0; the other id, B types around it
+        var m = GameEventMessage.Read(Reader(w =>
+        {
+            w.WriteByte(3); w.WriteInt(3);
+            w.WriteUnicodeString("MesoRevival"); w.WriteInt(40); w.WriteByte(0);
+            w.WriteUnicodeString("TransferItemBound"); w.WriteInt(41); w.WriteByte(1);
+            w.WriteUnicodeString("MesoRevival"); w.WriteInt(42); w.WriteByte(2);
+        }));
+        Assert.That(m.Truncated, Is.False);
+        Assert.That(m.MesoRevivalEvents, Is.EqualTo(new[] { new MesoRevivalEvent(40, false), new MesoRevivalEvent(42, true) }));
+    }
+
+    [Test]
     public void ConstructionEventsKeepTheirListsInPacketOrder()
     {
         // GameEventMassiveConstructionEvent::vfunc_4 (gameevent.cpp:2926-2944): id, n x u32 field id, i32 channel,

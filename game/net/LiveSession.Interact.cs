@@ -65,6 +65,8 @@ public partial class LiveSession
     public readonly Ms2.Ui.Shop.ShopSaleEvents SaleEvents = new();
     /// <summary>The running beauty shop sale events (GameEventSaleBeautyShop into CGameRule m_158), for the beauty shop's fee.</summary>
     public readonly Ms2.Ui.BeautyShopSales BeautySales = new();
+    /// <summary>The game rule's meso revival events and flags (CGameRule m_2f0, m_368, m_36c), the revival dialog's flat meso rule.</summary>
+    public readonly Ms2.Ui.MesoRevivalRule MesoRevivals = new();
     public readonly SpecialAbilityHotTimes HotTimes = new(PerMilleAbility);
     static Func<int, bool> perMilleAbility;
     static bool PerMilleAbility(int type)
@@ -340,6 +342,7 @@ public partial class LiveSession
         HotTimes.Apply(m);
         SaleEvents.Apply(m);
         BeautySales.Apply(m);
+        MesoRevivals.Apply(m);
         GD.Print($"live: GameEvent kind {m.Kind}: {m.Shutdowns.Count} shutdown events, {m.HotTimes.Count} hot times, {m.RemovedIds.Count} removed{(m.Truncated ? ", stopped at an unregistered type" : "")}");
     }
 
