@@ -3040,12 +3040,57 @@ public partial class HudScene : Node, IUiStageHost
     MovieDialog gameMenuMovie;
     static Ms2.Ui.Hud.GameMenuTable gameMenuTable;    // CGameMenuTable, read once
 
+    /// <summary>The game scene's HUD set opens with a local player (<see cref="Ms2.Ui.Hud.GameSceneHudOpen"/>): live, the field
+    /// scene loads before the own FieldAddUser, whose MyPC opens it; offline the fixture is the player.</summary>
+    Ms2.Ui.Hud.GameSceneHudOpen hudOpen;
+
+    Ms2.Ui.Hud.GameSceneHudOpen HudOpen()
+    {
+        if (hudOpen != null) return hudOpen;
+        if (Ms2Godot.Net.LiveSession.Instance is not { } live) return hudOpen = new(true);
+        var open = hudOpen = new(live.SelfObjectId >= 0);
+        if (!open.HasLocalPlayer)
+        {
+            live.OwnPcCreated += open.OnLocalPlayerCreated;
+            TreeExiting += () => live.OwnPcCreated -= open.OnLocalPlayerCreated;
+        }
+        return open;
+    }
+
     /// <summary>
-    /// UIGameMenuDialog: its movie (uigamemenudialog) with its C++ side (GameMenuController). The movie loads the face
-    /// portrait as "img://&lt;movie&gt;:faceView/92/106" (loadRenderTarget), which vfunc_25 fills with CreatePortrait(92, 106):
-    /// the portrait view's image here.
+    /// The game menu: the live counts' watchers at the HUD's load, and UIGameMenuDialog (0x4e28, CUIService::FUN_141ad9e50,
+    /// uiservice.cpp:738) when the set opens, so its first RefreshMenu (OnLoadComplete, uigamemenudialog.cpp:855) asks its
+    /// entries' m_isEnabled (the jobchange entry's CanChangeJob) of the local player. Until then the slot keeps its place
+    /// among the HUD's movies.
     /// </summary>
     void GameMenu(Control ui)
+    {
+        WatchAchieves();
+        WatchMails();
+        WatchTrades();
+        WatchStorage();
+        WatchBlackMarket();
+        WatchShop();
+        WatchBeauty();
+        WatchBuddies();
+        WatchGuild();
+        WatchChangeJob();
+        var slot = new Control { Name = "GameMenuSlot", MouseFilter = Control.MouseFilterEnum.Ignore };
+        ui.AddChild(slot);
+        HudOpen().Open(() =>
+        {
+            if (!IsInstanceValid(slot)) return;
+            OpenGameMenu(slot);
+            slot.QueueFree();
+        });
+    }
+
+    /// <summary>
+    /// UIGameMenuDialog: its movie (uigamemenudialog) with its C++ side (GameMenuController), put after the slot. The movie
+    /// loads the face portrait as "img://&lt;movie&gt;:faceView/92/106" (loadRenderTarget), which vfunc_25 fills with
+    /// CreatePortrait(92, 106): the portrait view's image here.
+    /// </summary>
+    void OpenGameMenu(Control slot)
     {
         gameMenuTable ??= Ms2.Ui.Hud.GameMenuTable.Load(assets.Packs, hudModel.IsFeatureEnabled);
         var c = gameMenu = new Ms2.Ui.Hud.GameMenuController
@@ -3055,27 +3100,18 @@ public partial class HudScene : Node, IUiStageHost
         };
         c.SetNotifyRedCircle7Flag(agreementReminder);
         c.ToggleDialog += GameMenuToggle;
-        WatchAchieves();
-        WatchMails();
-        WatchTrades();
-        WatchStorage();
-        WatchBlackMarket();
-        WatchShop();
-        WatchBeauty();
         c.MenuAction += def =>
         {
             if (def.Action == GameMenuActions.OpenLearningQuest) OpenLearningQuest();
             else if (def.Action == GameMenuActions.ToggleSystemShop) ToggleShopTab(9);   // uigamemenudialog.cpp:2209
             else if (def.Action == GameMenuActions.ToggleChangeJob) ToggleChangeJob();   // FUN_14193d590, uigamemenudialog.cpp:2200
         };
-        WatchBuddies();
-        WatchGuild();
-        WatchChangeJob();
         if (portrait == null && (portrait = PortraitView.Create(assets.Packs, Settings.NifXml)) != null) AddChild(portrait);
-        ui.AddChild(gameMenuMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow())));
+        slot.AddSibling(gameMenuMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow())));
         string face = "img://" + gameMenuMovie.Host.Id + ":faceView/";
         foreach (var n in gameMenuMovie.GetChildren())
             if (n is As3View v) v.ImageLookup = url => url.StartsWith(face, StringComparison.OrdinalIgnoreCase) ? portrait?.Image : null;
+        GD.Print($"game menu: opened, jobchange {(c.Listed.Contains(54) ? "listed" : "not listed")}");
     }
 
     /// <summary>CUIService::ToggleDialog for a game menu entry, for the dialogs this HUD has: the system menu (0x4e21, as

@@ -444,6 +444,10 @@ public partial class LiveSession : Node
     /// <summary>The local player's skill book (JobSystem): the own FieldAddUser's block (OnAddUser, scenestategame.cpp:11135) and the
     /// Job packets (OnJob); null before one arrives.</summary>
     public SkillBook SkillBook { get; private set; }
+    /// <summary>WorldService::OnObjectCreated for the MyPC (OnAddUser, scenestategame.cpp:11214): the own FieldAddUser, after its
+    /// stats and skill book are in; the game scene's HUD dialogs that wait for a local player open from it
+    /// (<see cref="Ms2.Ui.Hud.GameSceneHudOpen"/>).</summary>
+    public event Action OwnPcCreated;
     /// <summary>The skill point state of OnSkillPoint (0x44, scenestategame.cpp:4241).</summary>
     public readonly Ms2.Ui.Skills.SkillPoints SkillPoints = new();
     /// <summary>A SkillBookTree (0x10C) packet, for the skill window's vfunc_79.</summary>
@@ -1917,6 +1921,7 @@ public partial class LiveSession : Node
                     foreach (var b in u.Buffs) OwnBuff(BuffPacket.FromAdd(b) with { FromList = true });
                 }
                 if (self && u.Book != null) { SkillBook = u.Book; SkillBookChanged?.Invoke(-1); }
+                if (self) OwnPcCreated?.Invoke();
                 if (self || LiveCheck) GD.Print($"live: FieldAddUser object {u.ObjectId} {(self ? "SELF" : "other")} char {u.User.CharacterId} '{u.User.Name}' pos {u.Position}");
             }
             else if (game.Is(p, Inbound.FieldAddItem))

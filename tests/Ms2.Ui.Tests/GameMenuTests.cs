@@ -28,9 +28,10 @@ public class GameMenuTests
     static UiModel NewModel() => new(new GameTables(Packs(), "en")) { FeatureEnabledByName = f => LobbyFeatures.IsEnabled(Packs(), f) };
     static bool FeatureOn(int id) => NewModel().IsFeatureEnabled(id);
 
-    static (UiHost, GameMenuController) Load(UiModel model = null)
+    static (UiHost, GameMenuController) Load(UiModel model = null, Func<GameMenuDef, bool> enabledBy = null)
     {
         var c = new GameMenuController { Table = GameMenuTable.Load(Packs(), FeatureOn) };
+        if (enabledBy != null) c.EnabledBy = enabledBy;
         var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
         p.StageW = 1280; p.StageH = 720;
         var strs = new Dictionary<string, string>();
@@ -241,5 +242,36 @@ public class GameMenuTests
         model.HasLocalPlayer = true;
         c.OnQuestRewarded(1);
         Assert.That(asked, Is.EqualTo(new[] { 0x4f18 }));
+    }
+
+    /// <summary>
+    /// The game scene's HUD set waits for the local player (CUIService::FUN_141ad9e50, uiservice.cpp:722-738): a character
+    /// already at the job change level at login gets the jobchange entry (54) from the menu's first RefreshMenu, because the
+    /// menu opens at the MyPC's OnObjectCreated, after its level and job are read. Opened before the MyPC (the HUD's own
+    /// load, the old order) the first RefreshMenu has no player, lists no entry 54, and nothing later refreshes it.
+    /// </summary>
+    [Test]
+    public void TheMenuOpensWithTheLocalPlayerSoItsFirstBuildListsTheJobChange()
+    {
+        bool player = false;
+        bool canChangeJob(GameMenuDef d) => d.EnabledBy == "UIChangeJobDialog::CanChangeJob" && player;   // a level 60 first job
+
+        var open = new GameSceneHudOpen(false);
+        GameMenuController menu = null;
+        open.Open(() => menu = Load(enabledBy: canChangeJob).Item2);
+        Assert.That(menu, Is.Null, "no local player: the set waits");
+        player = true;
+        open.OnLocalPlayerCreated();
+        Assert.That(menu, Is.Not.Null);
+        Assert.That(menu.Listed, Does.Contain(54), "the first RefreshMenu sees the MyPC");
+        bool late = false;
+        open.Open(() => late = true);
+        Assert.That(late, Is.True, "with a local player a dialog of the set opens at once");
+
+        player = false;
+        var early = Load(enabledBy: canChangeJob).Item2;   // the old order: built at the HUD's load
+        player = true;
+        Assert.That(early.Update(), Is.False, "no dirty mark: the menu is not built again");
+        Assert.That(early.Listed, Does.Not.Contain(54));
     }
 }
