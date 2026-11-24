@@ -152,4 +152,22 @@ public class TriggerObjectsTests
         r = R(w);
         Assert.That((TriggerObjects.ReadDuelHpBar(r).Show, r.Available), Is.EqualTo((false, 0)));
     }
+
+    /// <summary>CTriggerService::FUN_141861840's switch (triggerservice.cpp:366): every type 0-0x1f is a case the port applies,
+    /// one it logs as not ported, or one without a client case.</summary>
+    [Test]
+    public void EveryClientTypeIsAppliedLoggedOrIgnoredAsTheClientsSwitch()
+    {
+        var applied = new byte[] { 2, 3, 5, 7, 9, 0xf, 0x13, 0x14, 0x15 };
+        var notPorted = new byte[] { 6, 0xc, 0x10, 0x11, 0x12, 0x16, 0x17, 0x18, 0x19 };
+        for (int t = 0; t < 0x20; t++)
+        {
+            byte b = (byte)t;
+            bool ignored = !applied.Contains(b) && !notPorted.Contains(b);
+            Assert.That(TriggerObjects.NotPorted(b), Is.EqualTo(notPorted.Contains(b)), $"type 0x{t:x}");
+            Assert.That(TriggerObjects.ClientIgnores(b), Is.EqualTo(ignored), $"type 0x{t:x}");
+        }
+        // GMS2 sends 0x15 as 0x14 and 0x16 as 0x15: the box result is logged, its wire 0x15 is not the duel bar
+        Assert.That(TriggerObjects.NotPorted(TriggerObjects.ClientType(0x15, ProtocolProfile.Gms2)), Is.True);
+    }
 }

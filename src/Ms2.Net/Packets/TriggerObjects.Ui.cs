@@ -76,6 +76,26 @@ public static partial class TriggerObjects
     /// <summary>The client types of the UI commands (CTriggerService::FUN_141861840's switch, triggerservice.cpp:366).</summary>
     public const byte Ui = Guide, Dialog = 0xf, SidePopup = 0x13, SetVisibleUi = 0x14, DuelHpBar = 0x15;
 
+    /// <summary>The other client types of FUN_141861840's switch: 6 OnTargetLookCenterCamera (:438, the camera mode 0x13), 7
+    /// OnCameraFadeOff (:485, the camera reset of fade 0, FUN_141863460(0)), 0xc OnTextPopup (:498, the trigger editor
+    /// 0x4e6b), 0x10 / 0x11 / 0x12 WorldService's FUN_141bd42f0 / AddEffect / RemoveEffect, 0x16 FUN_141862930 (a result
+    /// of 0 shows box 0xb03) and 0x17-0x19 WorldService::FUN_141bdad00 (CRandomTargetEffectController, worldservice_1.cpp:8894).</summary>
+    public const byte TargetLookCenterCamera = 6, CameraFadeOff = 7, TextPopup = 0xc, LoadEffects = 0x10, AddEffect = 0x11,
+        RemoveEffect = 0x12, BoxResult = 0x16, RandomTargetSequence = 0x17, RandomTargetFlicker = 0x18, RandomTarget3 = 0x19;
+
+    /// <summary>A client type the switch has no case for (0, 1, 4, 8, 0xa, 0xb, 0xd, 0xe and above 0x19): the client reads
+    /// nothing more and does nothing.</summary>
+    public static bool ClientIgnores(byte clientType) => clientType switch
+    {
+        Load or Update or CameraObjects or TargetLookCenterCamera or CameraFadeOff or Guide or TextPopup or Dialog => false,
+        >= LoadEffects and <= RandomTarget3 => false,
+        _ => true,
+    };
+
+    /// <summary>The client types the client applies and this port does not: they are logged once per type.</summary>
+    public static bool NotPorted(byte clientType) => clientType is TargetLookCenterCamera or TextPopup or LoadEffects or AddEffect
+        or RemoveEffect or BoxResult or RandomTargetSequence or RandomTargetFlicker or RandomTarget3;
+
     public const byte UiGuideTrigger = 1, UiShowSummary = 2, UiHideSummary = 3, UiStartMovie = 4, UiStopMovie = 5,
         UiEmotions = 7, UiEmotion = 8, UiFaceEmotion = 9, UiTurn = 0xa, UiLookAt = 0xb, UiTypingGame = 0xc;
 

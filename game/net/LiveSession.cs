@@ -1161,6 +1161,11 @@ public partial class LiveSession : Node
                 z => { if (player != null && IsInstanceValid(player)) player.TurnToRotZ(z); }, c => TriggerNotApplied(TriggerObjects.Ui, c.Sub),
                 player != null && IsInstanceValid(player) ? player.EnterTriggerEmotion : null, TriggerFace)) return;
         if (ReadUiTrigger(body)) return;
+        if (body.Length > 0 && TriggerObjects.ClientType(body[0], game.Profile) is var ct && (TriggerObjects.NotPorted(ct) || TriggerObjects.ClientIgnores(ct)))
+        {
+            if (TriggerObjects.NotPorted(ct)) TriggerNotApplied(ct, 0);     // the client applies it; this port does not (logged once)
+            return;                                                          // a type without a client case does nothing
+        }
         if (triggerField != null && GodotObject.IsInstanceValid(triggerField) && triggerField.Triggers != null) ApplyTrigger(triggerField, body);
         else pendingTriggers.Add(body);
     }

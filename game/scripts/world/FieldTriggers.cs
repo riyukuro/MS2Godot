@@ -190,6 +190,12 @@ public sealed class FieldTriggers
         int n = 0;
         var events = TriggerObjects.Read(r, KindOf, out byte type);
         if (type == TriggerObjects.Load) GD.Print($"trigger load: {events.Count} event(s) on {FieldName}, which holds {kinds.Count} trigger object(s)");
+        if (type == TriggerObjects.CameraFadeOff)
+        {
+            // CTriggerService::OnCameraFadeOff (@0x141861f30, triggerservice.cpp:485): FUN_141863460(0), the reset at once
+            ResetCamera(0f);
+            return 1;
+        }
         if (type == TriggerObjects.CameraObjects)
         {
             // CTriggerService::OnCameraObjects, triggerservice.cpp:439-448
