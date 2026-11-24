@@ -64,6 +64,8 @@ public partial class Player
         FaceEmotion?.Play(emotionAnim, false, FaceMs);
         emotionLoop = EmotionAnimation(0);
         if (emotionLoop != null) PlayEmotion(emotionLoop, true);
+        if (Ms2Godot.Net.LiveSession.LiveCheck)
+            GD.Print($"emotion: enter {row.Id} at {gameTime:0.00} \"{emotionAnim}\" group {(FaceEmotion?.Group != null ? "set" : "none")} anim {emotionLoop ?? "none"} idle {EmotionAnimation(1) ?? "none"} left {emotionLeft:0.00}");
     }
 
     string emotionLoop;                // StateEmotion's m_strLoop, null when the emotion has no anim
@@ -166,6 +168,8 @@ public partial class Player
     /// and anim cleared, the face rests, the offsets 0.</summary>
     void EmotionExit(MoveState old, MoveState next)
     {
+        if (Ms2Godot.Net.LiveSession.LiveCheck)
+            GD.Print($"emotion: exit {old} -> {next} at {gameTime:0.00}, learned {(emotionRow == null || EmotionLearned == null ? "-" : EmotionLearned((int)emotionRow.Id).ToString())} anim {emotionLoop ?? "none"} left {emotionLeft:0.00}");
         NameTagOffset = HpBarOffset = 0;
         emotionLeft = -1;
         if (old == MoveState.EmotionIdle || next != MoveState.EmotionIdle) FaceEmotion?.ToRest(true, FaceMs);

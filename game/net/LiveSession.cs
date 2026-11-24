@@ -3153,6 +3153,106 @@ public partial class LiveSession : Node
                 n++;
             }
         }
+        // MS2_LIVE_EMOTE="step|step|...": "dialog" opens the dynamic action dialog; "use:<id>" clicks that emotion in it
+        // ("use:first" the first valid learned one with a row, "use:idle" the first with an idleAnim too); "/<word>" types that line in the first chat window ("word:first"
+        // the first reserved word of a valid emotion other than the one playing); "sticker"
+        // opens the sticker dialog and sends its first usable sticker from the preview; "useitem:<id>" double clicks that bag
+        // item and answers its box yes; "close" closes both dialogs; "~N" waits N s.
+        // The own state and emotion are logged each half second for 6 s after a use; with MS2_LIVE_EMOTE_SHOTS=<dir> a shot after each
+        // step as emote_<n>.png.
+        string emoteRun = System.Environment.GetEnvironmentVariable("MS2_LIVE_EMOTE");
+        if (!string.IsNullOrEmpty(emoteRun) && tree.CurrentScene is Ui.HudScene eh)
+        {
+            string emoteShots = System.Environment.GetEnvironmentVariable("MS2_LIVE_EMOTE_SHOTS");
+            if (!string.IsNullOrEmpty(emoteShots)) DirAccess.MakeDirRecursiveAbsolute(emoteShots);
+            await Frames(240);
+            GD.Print($"live: emote: {Instance?.Emotions.All.Count ?? 0} learned, {Instance?.ChatEmoticons.Groups.Count ?? 0} sticker groups");
+            int n = 0;
+            foreach (var step in emoteRun.Split('|'))
+            {
+                if (step.StartsWith('~') && int.TryParse(step.AsSpan(1), out int wait)) await Frames(60 * wait);
+                else if (step == "dialog")
+                {
+                    eh.OpenEmotionDialogScripted();
+                    await Frames(180);
+                    GD.Print($"live: emote dialog {n}: {eh.EmotionDialogListed} listed");
+                }
+                else if (step.StartsWith("use:"))
+                {
+                    uint id = 0;
+                    if (step == "use:first") id = eh.FirstValidEmotionScripted(false);
+                    else if (step == "use:idle") id = eh.FirstValidEmotionScripted(true);
+                    else uint.TryParse(step.AsSpan(4), out id);
+                    GD.Print($"live: emote use {n}: {id} {(eh.SelectEmotionScripted(id) ? "clicked" : "dialog closed")}");
+                    // the state each half second for 6 s (wall clock: the frame rate of a two-client run is low)
+                    var clock = System.Diagnostics.Stopwatch.StartNew();
+                    string seen = "";
+                    for (int half = 1; half <= 12; half++)
+                    {
+                        while (clock.ElapsedMilliseconds < half * 500) await Frames(1);
+                        var (st, em) = eh.OwnEmotionState();
+                        seen += $" {half * 0.5:0.0}s:{st:x}/{em}";
+                    }
+                    GD.Print($"live: emote use {n}: state/emotion{seen}");
+                }
+                else if (step.StartsWith('/') || step == "word:first")
+                {
+                    string line = step;
+                    if (step == "word:first") line = eh.FirstEmotionWordScripted((uint)eh.OwnEmotionState().Emotion) ?? "";
+                    GD.Print($"live: emote word {n}: {line} {(line.Length > 0 && eh.SubmitChatLine(line) ? "typed" : "not typed")}");
+                    await Frames(60);
+                    var (st, em) = eh.OwnEmotionState();
+                    GD.Print($"live: emote word {n}: after 1 s state {st:x} emotion {em}");
+                }
+                else if (step == "sticker" && Instance != null)
+                {
+                    bool back = false;
+                    void Stamp(Ms2.Net.Packets.ChatMessage m, Func<Ms2.Net.Packets.WeddingChatHall> _) => back = true;
+                    uint id = eh.OpenStickerDialogScripted();
+                    await Frames(180);
+                    Instance.UserChat += Stamp;
+                    GD.Print($"live: emote sticker {n}: {id} {(id != 0 && eh.SendStickerScripted(id) ? "sent" : "not sent")}");
+                    await Until(() => back, 60 * 5);
+                    Instance.UserChat -= Stamp;
+                    GD.Print($"live: emote sticker {n}: chat line {(back ? "came back" : "did not come back")}");
+                    await Frames(60);
+                }
+                else if (step == "close") { eh.CloseEmoteDialogsScripted(); await Frames(60); }
+                else if (step.StartsWith("useitem:") && int.TryParse(step.AsSpan(8), out int itemId))
+                {
+                    // "useitem:<item id>": that item double clicked in the bag; a box that comes up is shot and answered yes
+                    long uid = 0;
+                    for (int i = 0; i < 300 && (uid = eh.UseItemScripted(itemId)) <= 0; i++) await Frames(uid < 0 ? 10 : 60);
+                    GD.Print($"live: emote useitem {n}: {itemId} {(uid > 0 ? $"double clicked ({uid})" : "not in the bag")}");
+                    await Until(() => MessageBoxLayer.Instance?.Shown == true, 60 * 3);
+                    bool boxed = MessageBoxLayer.Instance?.Shown == true;
+                    GD.Print($"live: emote useitem {n}: box {(boxed ? "shown" : "not shown")}");
+                    if (boxed) await Frames(120);                       // the box movie loads before its buttons take a click
+                    if (boxed && !string.IsNullOrEmpty(emoteShots))
+                        flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(emoteShots, $"emote_{n}_box.png"));
+                    int groups = Instance?.ChatEmoticons.Groups.Count ?? 0;
+                    if (boxed && Instance?.Inventory is { } bag)
+                    {
+                        var send = bag.RequestUse;
+                        string sent = "no use request";
+                        bag.RequestUse = (u, arg) => { sent = $"use request {u} \"{arg}\" sent"; send?.Invoke(u, arg); };
+                        MessageBoxLayer.Instance.Click(0);
+                        await Frames(30);
+                        bag.RequestUse = send;
+                        GD.Print($"live: emote useitem {n}: yes clicked, box {(MessageBoxLayer.Instance?.Shown == true ? "still shown" : "closed")}, {sent}");
+                    }
+                    await Until(() => (Instance?.ChatEmoticons.Groups.Count ?? 0) > groups, 60 * 5);
+                    GD.Print($"live: emote useitem {n}: sticker groups {groups} -> {Instance?.ChatEmoticons.Groups.Count ?? 0}");
+                    await Frames(60);
+                }
+                if (!string.IsNullOrEmpty(emoteShots))
+                {
+                    flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(emoteShots, $"emote_{n}.png"));
+                    GD.Print($"live: shot emote_{n}.png");
+                }
+                n++;
+            }
+        }
         // MS2_LIVE_TRADE: "ask:<name>[:<mesos>]" waits for that player in the field and asks through the popup menu's Trade;
         // "answer[:<mesos>]" accepts the request box. Round one: the asker adds its first two bag items and takes the first
         // back off, the answerer adds its first; both lock with the mesos and confirm after both locks. Round two: the asker
