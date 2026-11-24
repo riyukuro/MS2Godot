@@ -1586,10 +1586,12 @@ public partial class HudScene : Node, IUiStageHost
             }
             if (Ms2Godot.Net.LiveSession.Instance is { } live)
             {
+                // mode 7 (scenestategame.cpp:2836): a cash item's material sound (PlayItemSound), then the item hub's new item line
                 Action<long, int> onNew = (uid, count) =>
                 {
-                    if (live.Items.Get(uid) is { } e && Ms2.Ui.Hud.InventoryController.ToItem(e, hudModel.Tables.Items) is { } item)
-                        ChatLog.AddItemLine(item, (uint)count);
+                    if (live.Items.Get(uid) is not { } e || Ms2.Ui.Hud.InventoryController.ToItem(e, hudModel.Tables.Items) is not { } item) return;
+                    if (item.Data?.IsCashItem == true) PlayItemSound(item.Data);
+                    ChatLog.AddItemLine(item, (uint)count);
                 };
                 live.Items.NotifiedNew += onNew;
                 // OnItemInventory's answers (scenestategame.cpp:2951-3027): mode 0xd's error, mode 0xa's expand done, and mode 0xc's
@@ -1730,6 +1732,25 @@ public partial class HudScene : Node, IUiStageHost
         else SystemNoticeText(text);
         if (a.Sound != null && FieldAudio.Instance?.PlayUi(a.Sound) != true) GD.Print($"inventory: system sound {a.Sound} is not played");
         GD.Print($"inventory: answer {a.Kind} 0x{a.StringId:x}{(a.Key != null ? " " + a.Key : "")} \"{text}\"");
+    }
+
+    /// <summary>PlayItemSound (@0x1414047c0, invenslot.cpp:417): the item's material sound (GetMaterialSoundName) from
+    /// "ms2sound/sound/item", not placed (no transform), at volume 1.</summary>
+    void PlayItemSound(Ms2.Ui.Items.ItemData data)
+    {
+        if (hudModel.Tables.Items.MaterialSoundEvent(data) is not { } ev) return;
+        if (FieldAudio.Instance?.PlayEvent(ev) != true) GD.Print($"inventory: item sound {ev} is not played");
+    }
+
+    /// <summary>HandleDestroyItemButton's sound (uimessagebox.cpp:1365-1374): GetDefaultUiMaterialSound at the local player's
+    /// position (effect kind 1).</summary>
+    void PlayDestroySound()
+    {
+        if (player == null) player = FindPlayer(this);
+        if (player == null) return;
+        string ev = Ms2.Ui.Items.ItemDataTable.SoundGroup + "/" + Ms2.Ui.Items.ItemDataTable.DefaultUiMaterialSound;
+        bool played = FieldAudio.Instance?.PlayEventAt(ev, player.GlobalPosition) == true;
+        if (!played || Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"inventory: destroy sound {ev} {(played ? "played" : "is not played")}");
     }
 
     const int PickupAction = 0x493e3;   // the "get" action (MyPC::FUN_141530db0's IsActionKeyDown)
@@ -3434,7 +3455,8 @@ public partial class HudScene : Node, IUiStageHost
         c.BreakCanBreak = item => itemBreak?.Mgr?.CanBreakItem(item) ?? false;
         c.BreakAdd = item => itemBreak?.AddFromInventory(item);
         c.BreakSlotDropped = (uid, mine) => itemBreak?.DroppedOnInventory(uid, mine);
-        c.ItemSound += item => GD.Print($"inventory: item sound {item?.ItemId} (the material sounds are not ported)");
+        c.ItemSound += item => PlayItemSound(item?.Data);
+        c.DestroySound += PlayDestroySound;
         c.NoticeText += SystemNoticeText;
         // an item dragged off the bag (InvenSlot::vfunc_17 / vfunc_26) and the bag expand (RequestExpandSlots)
         c.CursorOverUi = () => As3View.AnyMouseOverUi(GetViewport());

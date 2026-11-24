@@ -411,7 +411,7 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     /// request (mode 3: the source slot's item uid, 0 for an empty cell as m_nItemUid, and this slot's index), then the
     /// source's vfunc_10 (pushed again: nothing moves until the server's item packets do). The character window's equip
     /// slot (EquipSlot, FUN_14120d560): <see cref="WornDroppedOnBag"/>. Any other source (the store slot branch and the
-    /// rest) is not ported: raised. The item sound (PlayItemSoundByUid) is not here.
+    /// rest) is not ported: raised. A bag move plays the item's sound (PlayItemSoundByUid, :1150).
     /// </summary>
     public void SlotDroppedOn(string name, string source, IDragSlotOwner sourceOwner)
     {
@@ -421,6 +421,7 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         {
             long uid = View?.ItemAt(View.Tab, from)?.Uid ?? 0;
             View?.RequestMove?.Invoke(uid, (short)to);
+            if (FindItem(uid) is { } moved) ItemSound?.Invoke(moved);      // PlayItemSoundByUid, :1150
             RefreshSlot(source);
         }
         else if (sourceOwner is IEquipSlotOwner equips && equips.IsEquipSlot(source))
@@ -644,12 +645,13 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     }
 
     /// <summary>UIMessageBox::HandleDestroyItemButton @0x1419fba50 (uimessagebox.cpp:1352), the yes: the box's item still in the
-    /// bag, SendRequestItemInventoryMode5(uid). STILL-OPEN: the default UI material sound at the player
-    /// (CItemDataTable::GetDefaultUiMaterialSound, "ms2sound/sound/item") is not played; the item material sounds are not ported.</summary>
+    /// bag, SendRequestItemInventoryMode5(uid), then the default UI material sound at the local player's position
+    /// (GetDefaultUiMaterialSound, <see cref="DestroySound"/>).</summary>
     public void ConfirmDestroy(long uid)
     {
         if (FindItem(uid) is not { } item) return;
         View?.RequestDestroy?.Invoke(item.Uid);
+        DestroySound?.Invoke();
     }
 
     // ---- the bag expand (vfunc_28 "onClickSlotExpand" :959, OnMessage "expandSlot" :779, RequestExpandSlots :1874) --------
@@ -939,7 +941,8 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     /// <summary>
     /// Unk_Inventory::RequestUseItem (inventory.cpp:1201): a dead local player gets box 66
     /// (<see cref="MyInfoController.DeadKey"/>) unless the function is one of <see cref="NoStateCheckFunctions"/>;
-    /// FUN_140a65e30's GetItemUseError (expired without a maid id: box 225); then the use request with the argument.
+    /// FUN_140a65e30's GetItemUseError (expired without a maid id: box 225); then the use request with the argument and the
+    /// item's material sound.
     /// Returns whether it was sent. The exemption is for the item box handlers (<see cref="OwnUseFunctions"/> holds them),
     /// which reach this later with their own argument; plain uses never have those functions.
     /// </summary>
@@ -949,6 +952,7 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         bool expired = item.ExpiryTime > 0 && item.ExpiryTime <= View.ServerTime();
         if (expired && !item.Data.HasMaidId) { ShowCommonBox(ExpiredKey); return false; }       // GetItemUseError 5 (an expired pet)
         View.RequestUse?.Invoke(item.Uid, argument);
+        ItemSound?.Invoke(item);      // the material sound, inventory.cpp:1223
         return true;
     }
 
@@ -1072,6 +1076,8 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     public Func<long> PlayingScoreUid = () => 0;
     /// <summary>PlayItemSoundByUid: the item's sound.</summary>
     public event Action<Item> ItemSound;
+    /// <summary>HandleDestroyItemButton's sound: <see cref="ItemDataTable.DefaultUiMaterialSound"/> at the local player.</summary>
+    public event Action DestroySound;
     /// <summary>ShowSystemNotice(text, 1, 1) of a resolved text (FUN_141275460 with its arguments).</summary>
     public event Action<string> NoticeText;
 

@@ -1353,4 +1353,44 @@ public class InventoryTests
         Assert.That((c.SearchText, boxes.Count, Rt.ToNumber(h.Get(input, "focused"))), Is.EqualTo((Ms2.Formats.Text.JamoSearchText.Of(name), 0, 0.0)));
         Assert.That(SearchOn(h, c, 0), Is.True);
     }
+
+    // ---- the item sounds (PlayItemSound: the material sound of GetUiMaterialSound; the destroy's default sound) ----
+
+    [Test]
+    public void TheMaterialSoundIsTheTablesRowElseTheNoMaterialSound()
+    {
+        var items = NewModel().Tables.Items;
+        Assert.That((items.UiMaterialSound(0), items.UiMaterialSound(-7)), Is.EqualTo(("09300001", "09300001")));
+        var rows = items.UiMaterialRows;
+        TestContext.WriteLine($"uiMaterialSound rows {rows.Count}: {string.Join(" ", rows.Select(r => $"{r.Key}={r.Value}"))}");
+        Assert.That(rows, Is.Not.Empty, "Table/uiMaterialSound.xml has rows");
+        foreach (var (id, sound) in rows) Assert.That(items.UiMaterialSound(id), Is.EqualTo(sound));
+        int withMaterial = Enumerable.Range(20000000, 200000).Count(i => items.Get(i) is { UiMaterial: not 0 });
+        TestContext.WriteLine($"items 20000000-20199999 with <material ui>: {withMaterial}");
+        Assert.That(withMaterial, Is.GreaterThan(0), "the item files carry <material ui>");
+        var d = Enumerable.Range(20000000, 200000).Select(items.Get).First(x => x is { UiMaterial: not 0 });
+        Assert.That(items.MaterialSoundEvent(d), Is.EqualTo("ms2sound/sound/item/" + items.UiMaterialSound(d.UiMaterial)));
+    }
+
+    [Test]
+    public void ABagMoveAndAUsePlayTheItemsSoundAndADestroyTheDefaultOne()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        int id = Droppable(model);
+        if (id == 0) Assert.Ignore("no stackable item in this data");
+        var (h, c) = DragBag(model, Bag(id, 70, 0, 3));
+        var sounds = new List<long>(); c.ItemSound += i => sounds.Add(i.Uid);
+        int destroySounds = 0; c.DestroySound += () => destroySounds++;
+        c.View.RequestMove = (_, _) => { };
+        NotifyDragSlot.SlotDragEnd(h.DragSlots, new object[] { "InventoryDialog.0", "InventoryDialog.4" });
+        Assert.That(sounds, Is.EqualTo(new[] { 70L }), "the move: PlayItemSoundByUid");
+        var used = new List<long>(); c.View.RequestUse = (u, _) => used.Add(u);
+        Assert.That(c.RequestUseItem(c.FindItem(70), ""), Is.True);
+        Assert.That((used.Single(), sounds.Count), Is.EqualTo((70L, 2)), "the use: the material sound after the request");
+        var destroyed = new List<long>(); c.View.RequestDestroy = destroyed.Add;
+        c.ConfirmDestroy(70);
+        Assert.That((destroyed.Single(), destroySounds, sounds.Count), Is.EqualTo((70L, 1, 2)), "the destroy: the default sound, not the item's");
+    }
 }

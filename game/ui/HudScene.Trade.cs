@@ -9,8 +9,8 @@ namespace Ms2Godot.Ui;
 /// <summary>
 /// The trade: CTradeManagerEx (the session's <see cref="TradeBook"/>, the Trade packets 0x82 and sends 0x49) and its dialog
 /// UITradeDialogEx (0x4e83, movie uitradedialogex) with its C++ side as <see cref="TradeDialogController"/>. Live only: with
-/// no session there is no partner, so nothing opens. STILL-OPEN: the item material sounds (TradeSlot::PlayItemSound,
-/// PlayItemSoundByUid) and the item event dispatcher's listeners (UIItemEventDispatcher vfunc_17/18) are logged; the dialogs
+/// no session there is no partner, so nothing opens. The item material sounds (TradeSlot::PlayItemSound, PlayItemSoundByUid)
+/// play. STILL-OPEN: the item event dispatcher's listeners (UIItemEventDispatcher vfunc_17/18) are logged; the dialogs
 /// the start closes (0x4e3b, 0x4ec1, 0x4e47) are not in this HUD.
 /// </summary>
 public partial class HudScene
@@ -108,7 +108,7 @@ public partial class HudScene
             if (key == "trade_lock") TradeLocksHeard++;
             FieldAudio.Instance?.PlayUi(key);
         };
-        c.ItemSound += item => GD.Print($"trade: item sound {item?.ItemId} (the material sounds are not ported)");
+        c.ItemSound += item => PlayItemSound(item?.Data);
         c.InventoryWindowPos += id =>
         {
             // the inventory's "openWindowPos": it opens beside the asking dialog

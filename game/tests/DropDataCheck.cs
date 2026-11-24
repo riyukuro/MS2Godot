@@ -134,6 +134,16 @@ public partial class DropDataCheck : Node
         foreach (int n in new[] { DropPickup.BagFullNotice, DropPickup.TooFarNotice })
             if (Ms2.Formats.Text.CommonStringIds.Key(n) is not { } key || string.IsNullOrEmpty(strings.Common(key))) fails.Add($"notice 0x{n:x} has no common string");
 
+        // the item material sounds (PlayItemSound, GetUiMaterialSound): every row of Table/uiMaterialSound.xml, the sound of no
+        // material and the destroy's, each an event of "ms2sound/sound/item" with a wave; every item's <material ui> counted below
+        var itemData = new Ms2.Ui.Items.ItemDataTable(packs);
+        var materialSounds = new SortedSet<string>(itemData.UiMaterialRows.Values) { itemData.UiMaterialSound(0), Ms2.Ui.Items.ItemDataTable.DefaultUiMaterialSound };
+        int materialSoundOk = 0;
+        foreach (var snd in materialSounds)
+            if (sounds?.ResolveEvent(Ms2.Ui.Items.ItemDataTable.SoundGroup + "/" + snd) != null) materialSoundOk++; else fails.Add($"item material sound {snd} has no event with a wave");
+        var materialUse = new SortedDictionary<int, int>();
+        int materialNoRow = 0;
+
         // every item with data: its look and its icon
         var kinds = new ItemKinds(packs);
         var ids = new SortedSet<int>();
@@ -152,6 +162,11 @@ public partial class DropDataCheck : Node
         {
             if (!kinds.Known(id)) continue;
             known++;
+            if (itemData.Get(id) is { } d)
+            {
+                materialUse[d.UiMaterial] = materialUse.GetValueOrDefault(d.UiMaterial) + 1;
+                if (d.UiMaterial != 0 && !itemData.UiMaterialRows.ContainsKey(d.UiMaterial)) materialNoRow++;
+            }
             bool meso = FieldAddItemIsMeso(id);
             bool pet = !meso && kinds.ExtraOf(id) is { } x && x.HasFlag(Ms2.Net.Packets.ItemExtra.Pet);
             if (pet) pets++;
@@ -179,6 +194,7 @@ public partial class DropDataCheck : Node
         GD.Print($"  dropItemAsset rows {rowsOk}/{assetRows.Count} load; meso piles {string.Join(" ", mesoPiles)}");
         GD.Print($"  grade effects {gradeFx}/{gradeFxNamed} named; beEffects {beFx}/{beFxNamed}");
         GD.Print($"  item sounds {soundOk}/{soundIds.Count} ({string.Join(" ", soundIds)}); bag-full sound {(warnOk ? warn : "MISSING")}");
+        GD.Print($"  item material sounds {materialSoundOk}/{materialSounds.Count} with a wave ({itemData.UiMaterialRows.Count} rows); items by <material ui>: {string.Join(" ", materialUse.Select(m => $"{m.Key}:{m.Value}"))}; {materialNoRow} with a material that has no row (the no-material sound)");
         GD.Print($"  items {ids.Count} ids, {known} with data ({pets} pets, {mesos} meso ids), looks {looks}, icons {icons} by path + {iconByName} by name only, {noIconPath} with no icon path, {noIcon} whose file is not in the pack{(noIconSample.Count > 0 ? " e.g. " + string.Join(" ", noIconSample) : "")}");
         GD.Print($"  no icon file by id prefix (id / 100000): {string.Join(" ", noIconGroups.OrderByDescending(g => g.Value).Take(15).Select(g => $"{g.Key}:{g.Value}"))}");
         // an icon missing from the pack: the client shows the drop with the grade nif's own texture (SetIconTexture loads nothing); reported, not failed

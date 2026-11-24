@@ -128,6 +128,9 @@ public sealed class ItemData
     /// <summary>ItemMaterial::Load @0x1405473c0 (itemdatastruct.cpp:1086): &lt;material attack&gt;, the CItemData +0x10c a worn
     /// weapon gives a hit sound whose attack has no attackMaterial (CMagic::PlayHitEffects, magicdata.cpp:1709).</summary>
     public int AttackMaterial;
+    /// <summary>&lt;material ui&gt; (ItemMaterial::Load, itemdatastruct.cpp:1092; CItemData +0x108): the row of
+    /// table/uiMaterialSound.xml whose sound GetMaterialSoundName gives (<see cref="ItemDataTable.UiMaterialSound"/>).</summary>
+    public int UiMaterial;
 
     public static ItemData Load(int id, XElement env, bool globalTransferType = false)
     {
@@ -188,7 +191,7 @@ public sealed class ItemData
                     // (a job id 0 does not exist); STILL-OPEN: the GMS2 client's reader is not in the restored source
                     if (Atoi(t) != 0) d.RecommendJobs.Add(Atoi(t));
         }
-        if (env.Element("material") is { } mat) Int(mat, "attack", ref d.AttackMaterial);
+        if (env.Element("material") is { } mat) { Int(mat, "attack", ref d.AttackMaterial); Int(mat, "ui", ref d.UiMaterial); }
         if (env.Element("option") is { } opt)
         {
             Int(opt, "constantID", ref d.ConstantId);
@@ -564,6 +567,45 @@ public sealed class ItemDataTable
         }
         return textColors.TryGetValue(grade, out var c) ? c : 0xffffff;
     }
+
+    Dictionary<int, string> uiMaterialSounds;
+
+    /// <summary>The sound group of the item sounds (PlayItemSound's CEffectService::FUN_1411a5110 category).</summary>
+    public const string SoundGroup = "ms2sound/sound/item";
+    /// <summary>GetDefaultUiMaterialSound (@0x1405596f0, itemdatatable.cpp:956): the destroy's sound.</summary>
+    public const string DefaultUiMaterialSound = "09600011";
+    const string NoUiMaterialSound = "09300001";
+
+    /// <summary>
+    /// GetUiMaterialSound (itemdatatable.cpp:775): material 0 and a material without a row give "09300001"; else the row's
+    /// sound. LoadUiMaterialSound (:1107) reads Table/uiMaterialSound.xml's &lt;ms2&gt;&lt;uiMaterial id sound&gt;, a row with an
+    /// empty sound skipped, a later id replacing an earlier one (SetAt).
+    /// </summary>
+    public string UiMaterialSound(int material)
+    {
+        if (uiMaterialSounds == null)
+        {
+            var map = new Dictionary<int, string>();
+            const string entry = "table/uimaterialsound.xml";
+            if (packs != null && packs.Exists("Xml", entry) && GameStrings.Parse(packs.Read("Xml", entry))?.Root is { Name.LocalName: "ms2" } root)
+                foreach (var e in root.Elements("uiMaterial"))
+                {
+                    int.TryParse((string)e.Attribute("id"), out int id);
+                    // INFERRED: the GMS2 file has no "sound" but invenPickSound and invenDropSound, equal on all of its 16 rows;
+                    // the drop one is taken (the GMS2 client's reader is not in the restored source)
+                    string sound = (string)e.Attribute("sound") ?? (string)e.Attribute("invenDropSound") ?? (string)e.Attribute("invenPickSound") ?? "";
+                    if (sound.Length > 0) map[id] = sound;
+                }
+            uiMaterialSounds = map;
+        }
+        return material != 0 && uiMaterialSounds.TryGetValue(material, out var s) ? s : NoUiMaterialSound;
+    }
+
+    /// <summary>The rows of Table/uiMaterialSound.xml (material id to sound).</summary>
+    public IReadOnlyDictionary<int, string> UiMaterialRows { get { UiMaterialSound(0); return uiMaterialSounds; } }
+
+    /// <summary>CItemData::GetMaterialSoundName's event in the item sound group; null for no item.</summary>
+    public string MaterialSoundEvent(ItemData d) => d == null ? null : SoundGroup + "/" + UiMaterialSound(d.UiMaterial);
 
     Dictionary<int, int> tagItemIds;
 
