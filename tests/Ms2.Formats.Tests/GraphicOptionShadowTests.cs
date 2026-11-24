@@ -41,7 +41,8 @@ public class GraphicOptionShadowTests
         Assert.That((t.ShadowOptionOffset(GraphicOptionTable.MyPC), t.ShadowOption(GraphicOptionTable.MyPC)), Is.EqualTo((1, 3)));
         Assert.That(FieldData.FindByXBlock(packs, "02000001_tw_tria").ShadowOptionHighLevel, Is.EqualTo(0));
         // KMS table/fielddata.xml id 61000023 (61000023_ME) sets <shadow optionHighLevel="3"/>;
-        // GMS2 map/61000023.xml has <shadow intensity="0.3" simpleshadow="0.5"/> (no map/*.xml in GMS2 sets optionHighLevel).
+        // GMS2 map/61000023.xml has <shadow intensity="0.3" simpleshadow="0.5"/> (searched all 1686 map/*.xml files
+        // and all 115322 entries in GMS2 Xml.m2d for optionHighLevel: 0 matches; <shadow> only has intensity/simpleshadow).
         Assert.That(FieldData.XBlockOf(packs, 61000023) is { } xb ? FieldData.FindByXBlock(packs, xb).ShadowOptionHighLevel : -1,
             Is.EqualTo(RcGap.IsKr(packs) ? 3 : 0));
     }
