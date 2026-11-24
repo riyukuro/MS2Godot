@@ -1110,9 +1110,11 @@ public class InventoryTests
         && d.SlotMax > 1 && !d.IsPetItem && !d.IsScoreItem && !string.Equals(d.StringTag, InventoryController.PetExpTag, StringComparison.OrdinalIgnoreCase)
         && !string.IsNullOrEmpty(model.Tables.ItemName(i)));
 
-    static (UiHost, InventoryController) DragBag(UiModel model, params EquipItem[] items)
+    static (UiHost, InventoryController) DragBag(UiModel model, params EquipItem[] items) => DragBag(model, 48, items);
+
+    static (UiHost, InventoryController) DragBag(UiModel model, int slots, params EquipItem[] items)
     {
-        var book = new ItemBook { TabOf = i => i / 10000000, BaseSlots = _ => 48 };
+        var book = new ItemBook { TabOf = i => i / 10000000, BaseSlots = _ => slots };
         book.Apply(new ItemMessage.LoadTab(2, items));
         var (h, c, _) = Load(model, book);
         Assert.That(c.ShowTab(2), Is.True);
@@ -1233,5 +1235,122 @@ public class InventoryTests
         c.SlotDropUnresolved("InventoryDialog.0");
         Assert.That(boxes[3].Extra, Is.EqualTo(InventoryController.DestroyBox));
         Assert.That(drops, Is.Empty);
+    }
+
+    // ---- the item search (OnItemSearch / Enter -> FUN_14199b800 -> FUN_14199c2b0, OnSearchTextChanged) ----
+
+    /// <summary>Items of tab 2 (ids 20000000+) with names of their own, as many as asked; empty when the data has too few.</summary>
+    static int[] Named(UiModel model, int n)
+    {
+        var t = new ItemTooltip(model, 0);
+        var seen = new HashSet<string>(); var ids = new List<int>();
+        for (int i = 20000000; i < 21000000 && ids.Count < n; i++)
+        {
+            if (model.Tables.Items.Get(i) is not { } d || d.IsPetItem || d.IsScoreItem) continue;
+            string name = model.Tables.ItemName(i);
+            if (string.IsNullOrEmpty(name) || name.Contains('?') || !seen.Add(name)) continue;
+            ids.Add(i);
+        }
+        return ids.Count == n ? ids.ToArray() : Array.Empty<int>();
+    }
+
+    static string Name(UiModel model, InventoryController c, long uid) => new ItemTooltip(model, 0).Name(c.FindItem(uid));
+
+    /// <summary>A-Z of a text upper-cased (what MakeLower undoes).</summary>
+    static string AsciiUpper(string s) => new(s.Select(ch => ch >= 'a' && ch <= 'z' ? (char)(ch - 32) : ch).ToArray());
+
+    static bool SearchOn(UiHost h, InventoryController c, int slot) => Rt.ToBoolean(h.Get(c.GetBinding(InventoryController.SlotName(slot)), "updateIconSearchOn"));
+
+    [Test]
+    public void TheSearchButtonScrollsToTheFirstSlotWithTheNameAndMarksEachOne()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var ids = Named(model, 2);
+        if (ids.Length == 0) Assert.Ignore("too few named items in this data");
+        var (h, c) = DragBag(model, 96, Bag(ids[1], 60, 0, 1), Bag(ids[0], 61, 43, 1), Bag(ids[0], 62, 31, 1));
+        var boxes = new List<MessageBoxData>(); c.ShowBox = boxes.Add;
+        string name = Name(model, c, 61);
+        Assert.That(c.OnCallback("OnItemSearch", new object[] { AsciiUpper(name) }), Is.True);
+        Assert.That(boxes, Is.Empty, "found: no box");
+        Assert.That(c.SearchText, Is.EqualTo(Ms2.Formats.Text.JamoSearchText.Of(AsciiUpper(name))), "m_1d8 is the text form");
+        if (h.Child("m_itemBagEx") is { } list) Assert.That(Rt.ToNumber(h.Get(list, "scrollPosition")), Is.EqualTo(5), "slot 31 is on row 31 / 6");
+        Assert.That((SearchOn(h, c, 31), SearchOn(h, c, 43), SearchOn(h, c, 0)), Is.EqualTo((true, true, false)));
+        c.ShowTab(0);
+        for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
+        Assert.That(c.SearchText, Is.Empty, "a bag rebuild clears the search");
+    }
+
+    [Test]
+    public void ASearchWithNoSlotEmptiesTheInputAndSaysNoItemThenGivesTheFocusBack()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var ids = Named(model, 1);
+        if (ids.Length == 0) Assert.Ignore("no named item in this data");
+        var (h, c) = DragBag(model, Bag(ids[0], 63, 0, 1));
+        var boxes = new List<MessageBoxData>(); c.ShowBox = boxes.Add;
+        var input = h.Child("m_inputSearch");
+        Assert.That(input, Is.Not.Null);
+        h.Set(input, "text", "zzzz");
+        c.OnCallback("OnItemSearch", new object[] { "zzzz" });
+        var box = boxes.Single();
+        Assert.That((box.Type, box.Msg), Is.EqualTo((0, model.Tables.Common(0x937))));
+        Assert.That((Rt.ToString(h.Get(input, "text")), Rt.ToNumber(h.Get(input, "focused"))), Is.EqualTo(("", 0.0)));
+        Assert.That(SearchOn(h, c, 0), Is.False);
+        model.TopLayer = "other";
+        box.Callback(0, box);
+        Assert.That((model.TopLayer, Rt.ToNumber(h.Get(input, "focused"))), Is.EqualTo((h.Id, 1.0)), "OK: this dialog on top, the input focused");
+        c.OnCallback("OnItemSearch", new object[] { "" });
+        Assert.That(boxes.Count, Is.EqualTo(2), "an empty search finds no slot either");
+    }
+
+    [Test]
+    public void TypingListsTheTabsMatchingNamesOnceAsCandidates()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var ids = Named(model, 2);
+        if (ids.Length == 0) Assert.Ignore("too few named items in this data");
+        var (h, c) = DragBag(model, Bag(ids[0], 64, 0, 1), Bag(ids[0], 65, 1, 1), Bag(ids[1], 66, 2, 1));
+        string name = Name(model, c, 64);
+        var input = h.Child("m_inputSearch");
+        h.Set(input, "text", name + "  ");
+        h.Set(input, "focused", 0);
+        c.OnSearchTextChanged();
+        Assert.That(Rt.IsNullish(h.Get(input, "m_candidate")), Is.True, "not focused: nothing");
+        h.Set(input, "focused", 1);
+        var change = h.RT.Construct(h.RT.GetClass("flash.events.Event"), new object[] { "change" });
+        h.Invoke(input, "dispatchEvent", change);
+        var dp = h.Get(input, "m_candidate");
+        Assert.That(Rt.ToNumber(h.Get(dp, "length")), Is.EqualTo(1), "the trailing blanks trimmed; the name once");
+        Assert.That(Rt.ToString(h.Get(h.Get(dp, "0"), "label")), Is.EqualTo(name));
+        Assert.That((c.CandidateRows, Rt.ToNumber(h.Get(input, "m_rowCount"))), Is.EqualTo((1, 1.0)));
+        Assert.That(c.FindMatchingItemNames(Ms2.Formats.Text.JamoSearchText.Of(name.Substring(0, 1))), Does.Contain(name), "a part of the name");
+    }
+
+    [Test]
+    public void EnterWithTheInputFocusedSearchesAndTakesTheKey()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var ids = Named(model, 1);
+        if (ids.Length == 0) Assert.Ignore("no named item in this data");
+        var (h, c) = DragBag(model, Bag(ids[0], 67, 0, 1));
+        var boxes = new List<MessageBoxData>(); c.ShowBox = boxes.Add;
+        var input = h.Child("m_inputSearch");
+        string name = Name(model, c, 67);
+        h.Set(input, "text", name);
+        h.Set(input, "focused", 0);
+        Assert.That(c.EnterKey(), Is.False, "the input not focused: not taken");
+        Assert.That(c.SearchText, Is.Empty);
+        h.Set(input, "focused", 1);
+        Assert.That(c.EnterKey(), Is.True);
+        Assert.That((c.SearchText, boxes.Count, Rt.ToNumber(h.Get(input, "focused"))), Is.EqualTo((Ms2.Formats.Text.JamoSearchText.Of(name), 0, 0.0)));
+        Assert.That(SearchOn(h, c, 0), Is.True);
     }
 }

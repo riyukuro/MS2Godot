@@ -61,7 +61,7 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     public event Action<int> ToggleDialog;
     /// <summary>A button whose client path sends a request or opens a part not here (by its callback name): OnClickSort,
     /// onClickSlotExpand, onClickOpenBank, onClickItemOption, onClickItemMerge, onClickItemEnchantTransform,
-    /// onClickUnlimitedEnchant, onClickItemRemakeOption, OnItemSearch, notifySlotUse (the double click, the preview and the
+    /// onClickUnlimitedEnchant, onClickItemRemakeOption, notifySlotUse (the double click, the preview and the
     /// right-click modes other than put-on), notifySlotDragEnd (a drop off the bag, a drop from a kind of slot not ported).</summary>
     public event Action<string> Button;
 
@@ -83,7 +83,7 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         base.OnLoadComplete();
         if (SlotList() == null) { Host.RT.NoteMissing("inventory: m_itemBagEx"); return; }
         UpdateButtonState();
-        // the search input's change handler (OnSearchTextChanged @0x14199a620) lists the tab's item names: needs the item names
+        BindSearchInput();
         BuildTabs();
         if (View != null)
         {
@@ -352,8 +352,11 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
             case "notifyslotshiftclick": return SlotShiftClick(args);
             case "onclickitemmerge": OnClickItemMerge(); return true;
             case "onclickitemoption": case "onclickitemenchanttransform": case "onclickunlimitedenchant":
-            case "onitemsearch":
                 Button?.Invoke(name); return true;
+            // :952: with an argument (ASData::SetArgsIfAny) the search of its text (FUN_1422b8f40); answered 1 either way
+            case "onitemsearch":
+                if (args is { Length: > 0 }) Search(Rt.ToString(args[0]) ?? "");
+                return true;
             case "onclickslotexpand": OnClickSlotExpand(args); return true;
             // these two fall through to "return 0" in the client (:945-951, :979-981)
             case "onclickitemremakeoption": case "onclickopenbank":
@@ -1415,11 +1418,12 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         Host.Invoke(l, "validateNow");
     }
 
-    /// <summary>FUN_14199ba10: the bag made again with GetSlotCount(m_194) slots (CreateSlotBag), m_itemBagEx's dataProvider
+    /// <summary>FUN_14199ba10: the search text cleared (m_1d8), the bag made again with GetSlotCount(m_194) slots (CreateSlotBag), m_itemBagEx's dataProvider
     /// its slot names (GetSlotNames, ASCoreList::vfunc_25), then invalidate + validateNow.</summary>
     void IInventoryBinding.bindSlotBag(int tab, IReadOnlyList<BagCell> cells)
     {
         if (SlotList() is not { } list) return;
+        searchText = "";
         slotCount = cells.Count;
         if (Host.Child("m_itemBagEx") == null)
         {
@@ -1448,8 +1452,7 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     /// <summary>
     /// The slot "InventoryDialog.&lt;i&gt;" of the shown tab: InvenSlot::vfunc_8 (invenslot.cpp:1592): null for an empty
     /// cell, an unknown item or no local player; else an ASSlot(2) object built by ASSlot::FUN_1409c3860 with flags 0x1c01f
-    /// and updateIconSearchOn (FUN_14140c180: the item's name equal to the search text, false while it is empty; the search
-    /// is not ported, so it is empty). Other names go to the base (the item slot table).
+    /// and updateIconSearchOn (FUN_14140c180, <see cref="SearchOn"/>). Other names go to the base (the item slot table).
     /// </summary>
     public override object GetBinding(string name)
     {
@@ -1460,7 +1463,7 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         if (item == null) return null;
         var slot = new List<(string, object)>();
         if (!ItemSlot.Build(slot, item, true, SlotFlags, Model, Model.ItemSlotSources)) return null;
-        slot.Add(("updateIconSearchOn", false));
+        slot.Add(("updateIconSearchOn", SearchOn(item)));
         return Host.Obj(slot.ToArray());
     }
 
