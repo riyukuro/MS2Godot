@@ -5,7 +5,9 @@ namespace Ms2Godot.Movement;
 /// <summary>
 /// Keyboard state for the local player, by the client's key actions (guideentity: moveUp 0x30d41 ... jump 0x493e1,
 /// walkPress 0x493ea). Default keys from table/default/defaultkey.xml: arrows move, C and Alt jump, comma holds walk.
-/// WASD and Shift are kept as extra bindings.
+/// Nothing else moves: in that table W, A, S and D are skill slot keys (500002, 500005, 500006, 500007) and Shift is
+/// action 300038, so a skill on one of them is not also a move (a move held in the skill's input window would cancel it at
+/// "combo", <see cref="Ms2.Ui.Skills.SkillSwingCancel"/>).
 /// </summary>
 public static class MoveInput
 {
@@ -49,12 +51,12 @@ public static class MoveInput
         if (GamePad && ReadPad(ref s)) return Hold(s);
         static bool K(Key k) => Input.IsPhysicalKeyPressed(k);
         // Unk_PCMove::GetMoveDirection: left wins over right, up over down
-        if (K(Key.Left) || K(Key.A)) s.Move.X = -1;
-        else if (K(Key.Right) || K(Key.D)) s.Move.X = 1;
-        if (K(Key.Up) || K(Key.W)) s.Move.Y = 1;
-        else if (K(Key.Down) || K(Key.S)) s.Move.Y = -1;
+        if (K(Key.Left)) s.Move.X = -1;
+        else if (K(Key.Right)) s.Move.X = 1;
+        if (K(Key.Up)) s.Move.Y = 1;
+        else if (K(Key.Down)) s.Move.Y = -1;
         s.Jump = K(Key.C) || K(Key.Alt);
-        s.Walk = K(Key.Comma) || K(Key.Shift);
+        s.Walk = K(Key.Comma);
         return Hold(s);
     }
 

@@ -10,7 +10,7 @@ namespace Ms2Godot;
 
 /// <summary>
 /// Field-walk slice: loads one field (default Tria, 02000001_tw_tria) from the player's data, places the female
-/// character at SpawnPointPC and lets her walk. WASD / arrows move (camera relative), Shift walks, the wheel zooms.
+/// character at SpawnPointPC and lets her walk. The arrows move (camera relative), comma walks, the wheel zooms.
 /// The camera follows the client's default field camera (CTargetCameraMode): a fixed yaw from the field data, and
 /// pitch and target height that move with the zoom distance.
 /// User args (after --): --field XBLOCK, --shots DIR (scripted walk with screenshots, then quit), --nav (navmesh overlay on; F9 toggles).

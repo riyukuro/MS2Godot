@@ -46,7 +46,7 @@ system menu (`uisystemmenudialog`): channel (one channel offline), switch charac
 (asks, then quits) and resume; graphics and options log that the options dialog is not available yet; the field is
 not paused. `--flow-shots DIR` runs the whole flow by script with a shot per step. Each scene still runs alone.
 
-Controls: the arrow keys (or WASD) move relative to the camera, C or Alt jumps, comma (or Shift) holds walk, and
+Controls: the arrow keys move relative to the camera, C or Alt jumps, comma holds walk, and
 the wheel zooms. Keys are ignored while a text field has focus. The movement follows the client; see
 [Movement](#movement).
 
