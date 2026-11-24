@@ -582,6 +582,8 @@ public sealed class ItemDataTable
             d = ItemData.Load(id, env, globalTransferType ??= LobbyFeatures.IsEnabled(packs, "GlobalTransferType"));
         d?.FillEquipSubtype();
         d?.FillBoxType();
+        // the GMS2 files have no rank: the one grade of the item's constant option code (ItemOptionTables.SingleGrade)
+        if (d != null && d.Rank == 0 && Gms2RankOf != null) d.Rank = Gms2RankOf(d.ConstantId);
         perItemRows[id] = d;
         return d;
     }
@@ -591,6 +593,10 @@ public sealed class ItemDataTable
     internal static Dictionary<int, string> PerItemIndex(IEnumerable<string> names) => PerItemFiles.Index(names);
 
     internal int PerItemIndexCount => perItemIndex?.Count ?? 0;
+
+    /// <summary>The rank of a per-item file's item, by its constant option code (GameTables sets it to
+    /// <see cref="ItemOptionTables.SingleGrade"/>); null leaves the rank 0.</summary>
+    public Func<int, int> Gms2RankOf;
     Dictionary<int, string> perItemIndex;
     readonly Dictionary<int, ItemData> perItemRows = new();
     bool? globalTransferType;

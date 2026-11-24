@@ -79,6 +79,7 @@ public sealed class GameTables
         statOptions = r.StatOptions;
         specialNames = r.SpecialNames;
         ItemOptions = new Items.ItemOptionTables(packs, r.StatValueNames, r.SpecialValueNames);
+        Items.Gms2RankOf = ItemOptions.SingleGrade;
         Fishing = r.Fishing;
         XDocument Xml(string path) => packs.Exists("Xml", path) ? GameStrings.Parse(packs.Read("Xml", path)) : null;
         Fame = r.Fame;

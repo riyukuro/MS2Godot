@@ -66,4 +66,40 @@ public class Gms2ItemFileTests
         Assert.That(maids.Count, Is.GreaterThan(30));
         Assert.That(withInfo, Is.GreaterThan(25));
     }
+
+    /// <summary>
+    /// On the GMS2 data, whole list: every item file without a rank whose constant option code has one grade gets that
+    /// grade as its rank, and the gemstones (type 13) get their constant options at that rank (the socket stats; a gem whose
+    /// only values are rates of flat stats, wapmin/wapmax_rate_base, keeps none, as ItemOptionTables.Gms2Values drops
+    /// those). Before, every GMS2 item was rank 0, which no constant row reaches.
+    /// </summary>
+    [Test]
+    public void TheGms2RankIsTheConstantCodesOneGrade()
+    {
+        var t = Gms2();
+        var packs = gms2Packs;
+        int ranked = 0, gems = 0, socketStats = 0;
+        foreach (var (id, _) in ItemDataTable.PerItemIndex(packs.List("Xml")))
+        {
+            var d = t.Items.Get(id);
+            if (d == null) continue;
+            int grade = t.ItemOptions.SingleGrade(d.ConstantId);
+            Assert.That(d.Rank, Is.EqualTo(grade), $"item {id} constant {d.ConstantId}");
+            if (grade > 0) ranked++;
+            if (d.Type == 13 && d.ConstantId != 0 && grade > 0)
+            {
+                gems++;
+                var c = t.ItemOptions.ConstantOptions(d, d.Rank);
+                Assert.That(c, Is.Not.Null, $"gem {id}");
+                if (c.Value.Stat.Count + c.Value.Special.Count > 0) socketStats++;
+            }
+        }
+        TestContext.Out.WriteLine($"{ranked} ranked items, {gems} ranked gems, {socketStats} with socket stats");
+        Assert.That(ranked, Is.GreaterThan(20000));
+        Assert.That(socketStats, Is.GreaterThan(100));
+        var gem = t.Items.Get(40200001);
+        Assert.That(gem.Rank, Is.EqualTo(4), "itemoptionconstant_gemstone.xml code 40200001 grade 4");
+        // its int_value_base 2
+        Assert.That(t.ItemOptions.ConstantOptions(gem, gem.Rank)!.Value.Stat.Values, Is.EqualTo(new[] { 2 }));
+    }
 }

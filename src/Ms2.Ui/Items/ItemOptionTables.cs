@@ -398,6 +398,33 @@ public sealed class ItemOptionTables
     /// the filter: an empty name is skipped, a stat name (FindStatByName) or else a special name (FUN_14081d260) keeps its
     /// "value" when it is not 0.
     /// </summary>
+    Dictionary<int, int> singleGrades;
+
+    /// <summary>
+    /// The rank of a GMS2 item, whose file has no rank attribute: the grade of its constant option code when the code's
+    /// rows (itemoption/constant/ and itemoption/rank/, feature on) all have one grade; else 0, as for a code without rows
+    /// (the equips, whose codes have a row per grade 1..5, and the KMS data, which has its rank). itemoption/rank/
+    /// itemoptionconstant_etc_rank.xml gives the codes 1..6 the grades 1..6, and the gem codes have one grade each.
+    /// INFERRED from the data: over the 31428 ids both data sets have, the one grade is the KMS rank for 23469 of 23663
+    /// items. STILL-OPEN: the GMS2 client's reader is packed, so unread.
+    /// </summary>
+    public int SingleGrade(int code)
+    {
+        if (singleGrades == null)
+        {
+            var grades = new Dictionary<int, int>();
+            if (packs != null && !packs.Exists("Xml", "table/itemoptionconstant.xml"))
+                foreach (var e in Gms2Rows("itemoption/constant/").Concat(Gms2Rows("itemoption/rank/")))
+                {
+                    int c = Int(e, "code"), g = Int(e, "grade");
+                    if (c == 0 || !FeatureOn(e)) continue;
+                    grades[c] = !grades.TryGetValue(c, out int had) || had == g ? g : -1;   // -1: several grades
+                }
+            singleGrades = grades;
+        }
+        return singleGrades.TryGetValue(code, out int grade) && grade > 0 ? grade : 0;
+    }
+
     Dictionary<int, List<Constant>> Constants()
     {
         if (constants != null) return constants;
