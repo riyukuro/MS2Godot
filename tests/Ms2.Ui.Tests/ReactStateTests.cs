@@ -237,7 +237,7 @@ public class ReactStateTests
         raw.Props["interactID"] = rowId.ToString();
         raw.Props["Position"] = "0, 0, 0";
         raw.Props["Rotation"] = "0, 0, 0";
-        var flat = new FlatModel { Name = "MS2InteractObject" };
+        var flat = new FlatModel { Name = "MS2InteractMesh" };
         flat.Mixins.Add("MS2InteractObject");
         return new FieldEntity { Raw = raw, Flat = flat };
     }

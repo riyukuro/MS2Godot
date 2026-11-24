@@ -80,10 +80,24 @@ public interface IInteractHost
 
     /// <summary>CInteractMeshObject::vfunc_3 (@0x1413fef20): object state changed (visibility / asset / collision).</summary>
     void OnObjectStateChanged(LiveInteractObject obj);
+    /// <summary>WorldService::FUN_141bc5d60 (@0x141bc5d60, worldservice_1.cpp:4511-4522): the object leaves the field's maps and its
+    /// entity is destroyed (CMainSystem::DestroyEntityById); its release runs ~CInteractObject (interactobject.cpp:344-351:
+    /// ClearStateEffect, the success particle removed) and ~CInteractMeshObject (ReleaseActor, the box).</summary>
+    void OnObjectRemoved(LiveInteractObject obj) { }
+    /// <summary>SSG_INTERACT_REMOVE's effect (scenestategame.cpp:6415-6426): CEffectService::InsertEffect, one-shot, at the
+    /// object's position with no rotation, object kind 0, before the object is removed.</summary>
+    void OnObjectRemoveEffect(LiveInteractObject obj, string effect) { }
     /// <summary>CInteractObject::vfunc_12 (@0x1413fe5d0): success particle effect at object pose.</summary>
     void OnObjectSuccessEffect(LiveInteractObject obj, string effectAsset);
-    /// <summary>CInteractUIObject::vfunc_2 (@0x141400260): open UI dialog by swf name and value.</summary>
-    void OnOpenUiDialog(string swf, string value);
+    /// <summary>CInteractUIObject::vfunc_2 (@0x141400260, interactobject.cpp:1045-1056): the dialog the swf name finds
+    /// (UISwfEntityManager::GetUISwfEntity, the name trimmed and its type name compared without case), given the value when
+    /// it is not empty (UIDialog::FUN_1419265e0, m_170) and opened (CUIService::OpenDialog). Its ui class id, or 0 when no
+    /// dialog is found (nothing opens).</summary>
+    int OnOpenUiDialog(string swf, string value);
+    /// <summary>CUIService::IsDialogClosed(id).</summary>
+    bool IsDialogClosed(int dialogId) => true;
+    /// <summary>CUIService::CloseDialog(id).</summary>
+    void CloseDialog(int dialogId) { }
     /// <summary>CGuideManager::AddTrigger(9, rowId, 0) (stateinteractdata.cpp:484).</summary>
     void OnGuideTrigger(int triggerType, int rowId);
     void StillOpen(string what);
@@ -104,12 +118,21 @@ public sealed class LiveInteractObject
     public Vec3 Position, Rotation;
     public float Scale = 1f;
     public string Model = "", Anim = "", AssetA = "", AssetB = "";
+    /// <summary>CInteractMeshObject::m_nAssetType (@0x1413febf0, interactobject.cpp:752-777): 1 for an MS2InteractMesh entity
+    /// (<see cref="AssetA"/> and <see cref="AssetB"/> are NifAsset urns, set on NifAsset 0x770e5fc6), 2 for an MS2InteractActor
+    /// (they are sequence names, played on the actor), 0 for the kinds that are not mesh objects (telescope, UI, web, display
+    /// image, guild poster).</summary>
+    public byte AssetType;
     public long BoardOwner;
     public string BoardText = "";
     /// <summary>CInteractGatheringObject::m_nRespawnTick (ms timestamp, 0 when not cooling down).</summary>
     public long RespawnTickMs;
     public bool Spawned;
     public bool Highlighted;
+    /// <summary>CInteractObject::m_nShownState: the state whose effect is up (3: none, ClearStateEffect).</summary>
+    public byte ShownState = 3;
+    /// <summary>CInteractUIObject::m_nDialogId: the ui class id of the dialog its message opened (0: none).</summary>
+    public int DialogId;
     public FieldEntity Entity;
     public InteractObjectRow Row;
 }
@@ -199,6 +222,10 @@ public sealed class LiveInteractObjects : ICastingEventListener
                 if (string.IsNullOrEmpty(rawId)) continue;
                 string name = rawId.ToLowerInvariant();
                 if (byName.ContainsKey(name)) continue;
+                var (assetType, assetA, assetB) = MeshAssets(e);
+                // CInteractMeshObject::vfunc_1 returns 0 for an entity of neither model before CInteractObject::vfunc_1 sets
+                // the row and the name, so no mesh-kind object of another model is reachable by name.
+                if (IsMeshKind(row.Type) && assetType == 0) continue;
                 var obj = new LiveInteractObject
                 {
                     Name = name,
@@ -208,17 +235,82 @@ public sealed class LiveInteractObjects : ICastingEventListener
                     Position = e.Position,
                     Rotation = e.Vector("Rotation"),
                     Scale = (float)e.Number("Scale", 1),
-                    AssetA = e.Get("NifAsset") ?? e.Get("NormalAnimation") ?? "",
-                    AssetB = e.Get("ReactableNifAsset") ?? e.Get("ReactableAnimation") ?? "",
+                    AssetType = IsMeshKind(row.Type) ? assetType : (byte)0,
+                    AssetA = IsMeshKind(row.Type) ? assetA : "",
+                    AssetB = IsMeshKind(row.Type) ? assetB : "",
                     Entity = e,
                     Row = row,
                 };
                 byName[name] = obj;
                 list.Add(obj);
+                host.OnObjectStateChanged(obj);   // CInteractObject::vfunc_1 ends with vfunc_3(nState), here 0 (interactobject.cpp:369)
             }
         }
         for (int i = 0; i < pending.Count; i++) Apply(pending[i]);
         pending.Clear();
+    }
+
+    /// <summary>The kinds the factory makes a CInteractMeshObject or a subclass of it for (worldservice_1.cpp:6884-6902):
+    /// mesh, gathering, bill board and watch tower.</summary>
+    public static bool IsMeshKind(int kind) =>
+        kind == InteractObjectMessage.KindMesh || kind == InteractObjectMessage.KindGathering ||
+        kind == InteractObjectMessage.KindBillBoard || kind == InteractObjectMessage.KindWatchTower;
+
+    /// <summary>CInteractMeshObject::vfunc_1 (@0x1413febf0, interactobject.cpp:752-777): an MS2InteractMesh entity's assets are
+    /// NifAsset (0x770e5fc6) and reactableAssetName (0xae1cf70e), an MS2InteractActor's are InitialSequence (0x3ff293c8) and
+    /// reactableSequenceName (0x63c7b14a); any other model has none (type 0).</summary>
+    public static (byte Type, string A, string B) MeshAssets(FieldEntity e)
+    {
+        if (e.HasMixin("MS2InteractMesh")) return (1, e.Get("NifAsset") ?? "", e.Get("reactableAssetName") ?? "");
+        if (e.HasMixin("MS2InteractActor")) return (2, e.Get("InitialSequence") ?? "", e.Get("reactableSequenceName") ?? "");
+        return (0, "", "");
+    }
+
+    /// <summary>What CInteractMeshObject::vfunc_3 (@0x1413fef20, interactobject.cpp:781-819) does to a mesh object's entity
+    /// for its state. State 2 sets IsVisible (0xa0b6b179) false and returns: <paramref name="asset"/> is null and
+    /// <paramref name="collision"/> -1, the asset and the box stay as they were. Any other state sets IsVisible, applies asset A
+    /// (state 0) or B (FUN_1413ff690: an MS2InteractMesh's NifAsset, an MS2InteractActor's sequence played once, PlayAnimation
+    /// 1.0f, false) and SetCollision of the row's NormalCollision (state 0) or ReactableCollision: non-zero makes the box
+    /// (MakeNxBoxController), zero releases it (ReleaseActor).
+    /// False for an object that is not a mesh object, and for a watch tower, whose own vfunc_3 (@0x1414034e0, :1721-1734)
+    /// applies the asset only while the player is near (STILL-OPEN: m_bNear, vfunc_11's 2000 distance, is not ported).</summary>
+    public static bool MeshDraw(LiveInteractObject o, out bool visible, out string asset, out int collision)
+    {
+        visible = true; asset = null; collision = -1;
+        if (o?.Row == null || o.AssetType == 0 || !IsMeshKind(o.Kind) || o.Kind == InteractObjectMessage.KindWatchTower) return false;
+        if (o.State == 2) { visible = false; return true; }
+        bool first = o.State == 0;
+        asset = first ? o.AssetA : o.AssetB;
+        collision = first ? o.Row.NormalCollision : o.Row.ReactableCollision;
+        return true;
+    }
+
+    /// <summary>CInteractObject::UpdateStateEffect (@0x1413fe500, interactobject.cpp:627-634) for the object's state: the
+    /// effect to show (vfunc_13, @0x1413fe7d0: state 0 the row's normal effect, 1 its reactable effect, else none), or null to
+    /// clear it, when the row's use mask (FUN_1413fdfc0) or the state's mask (GetStateQuestMask) fails. ShowStateEffect
+    /// (@0x1413fda50, :451-471) keeps an effect up while the shown state is the same and sets the shown state only when it
+    /// plays one, at the object's position + 1 z with its rotation; ClearStateEffect resets it to 3. The host plays and
+    /// removes it (<see cref="IInteractHost.OnObjectStateChanged"/>); this sets <see cref="LiveInteractObject.ShownState"/>.
+    /// Returns whether the shown effect changes, and the effect to show (empty: none).
+    /// STILL-OPEN: a gathering object's vfunc_13 (@0x141402880, :1504-1509) shows its effect only when the mastery manager's
+    /// FUN_140b6d470(recipe) is zero, which has no port; a gathering object shows none.</summary>
+    /// <summary>DAT_143aacd50, the empty mask GetStateQuestMask gives a state other than 0 and 1 (it passes).</summary>
+    static readonly QuestMaskTable.Mask EmptyMask = new();
+
+    public bool StateEffect(LiveInteractObject o, out string effect)
+    {
+        effect = "";
+        if (o?.Row == null) return false;
+        string want = null;
+        if (CheckQuestMask(o) && QuestMaskTable.Check(o.State == 0 ? o.Row.MaskNormal : o.State == 1 ? o.Row.MaskReactable : EmptyMask, questLookup))
+        {
+            if (o.ShownState == o.State) return false;
+            want = o.Kind == InteractObjectMessage.KindGathering ? "" : o.State == 0 ? o.Row.EffectNormal : o.State == 1 ? o.Row.EffectReactable : "";
+        }
+        bool wasUp = o.ShownState != 3;
+        o.ShownState = 3;
+        if (!string.IsNullOrEmpty(want)) { o.ShownState = o.State; effect = want; return true; }
+        return wasUp;
     }
 
     static bool IsInteractEntity(FieldEntity e) =>
@@ -324,7 +416,10 @@ public sealed class LiveInteractObjects : ICastingEventListener
             case InteractObjectMessage.KindUi:
                 // CInteractUIObject::vfunc_2 (@0x141400260, interactobject.cpp:1045-1056)
                 if (obj.Row != null && !string.IsNullOrEmpty(obj.Row.UiSwf))
-                    host.OnOpenUiDialog(obj.Row.UiSwf, obj.Row.UiValue);
+                {
+                    int id = host.OnOpenUiDialog(obj.Row.UiSwf, obj.Row.UiValue ?? "");
+                    if (id != 0) obj.DialogId = id;
+                }
                 break;
             case InteractObjectMessage.KindTelescope:
                 // CInteractTelescopeObject::vfunc_2 (@0x1413ff980, interactobject.cpp:964-1009)
@@ -349,6 +444,21 @@ public sealed class LiveInteractObjects : ICastingEventListener
             list.Remove(existing);
             byName.Remove(key);
         }
+        // the entity's assets (:6332-6367): an MS2InteractMesh gets NifAsset and reactableAssetName only when both urns are
+        // sent, each as "urn:gamebryo-scenegraph:" + the name; an MS2InteractActor gets its KfmAsset and the two sequence
+        // names only when an animation file is sent. Otherwise the factory's empty values stay.
+        byte assetType = m.Model == "MS2InteractMesh" ? (byte)1 : (byte)2;
+        string assetA = "", assetB = "";
+        if (assetType == 1 && !string.IsNullOrEmpty(m.AssetA) && !string.IsNullOrEmpty(m.AssetB))
+        {
+            assetA = "urn:gamebryo-scenegraph:" + m.AssetA;
+            assetB = "urn:gamebryo-scenegraph:" + m.AssetB;
+        }
+        else if (assetType == 2 && !string.IsNullOrEmpty(m.Anim))
+        {
+            assetA = m.AssetA ?? "";
+            assetB = m.AssetB ?? "";
+        }
         var obj = new LiveInteractObject
         {
             Name = key,
@@ -360,8 +470,9 @@ public sealed class LiveInteractObjects : ICastingEventListener
             Scale = m.Scale,
             Model = m.Model,
             Anim = m.Anim,
-            AssetA = m.AssetA,
-            AssetB = m.AssetB,
+            AssetType = assetType,
+            AssetA = assetA,
+            AssetB = assetB,
             BoardOwner = m.BoardOwner,
             BoardText = m.BoardText,
             Spawned = true,
@@ -377,11 +488,12 @@ public sealed class LiveInteractObjects : ICastingEventListener
     {
         var obj = ByName(m.Name);
         if (obj == null) return;
-        if (!string.IsNullOrEmpty(m.Effect)) host.OnObjectSuccessEffect(obj, m.Effect);
+        if (!string.IsNullOrEmpty(m.Effect)) host.OnObjectRemoveEffect(obj, m.Effect);
         if (polled == obj) polled = null;
         if (castingTarget == obj) CancelCast();
         byName.Remove(obj.Name);
         list.Remove(obj);
+        host.OnObjectRemoved(obj);
     }
 
     /// <summary>SSG_INTERACT_RESULT (mode 13, scenestategame.cpp:6236-6309).</summary>
@@ -791,6 +903,7 @@ public sealed class LiveInteractObjects : ICastingEventListener
                 o.RespawnTickMs = 0;
                 SetState(o, 1);
             }
+            else if (o.DialogId != 0) TickDialog(o, playerPos);
         }
 
         if (!castingActive) return;
@@ -806,6 +919,16 @@ public sealed class LiveInteractObjects : ICastingEventListener
         }
         if (playerMoved || Distance(playerPos, obj.Position) > obj.Row.InteractionDistance)
             CancelCast();
+    }
+
+    /// <summary>CInteractUIObject::vfunc_11 (@0x1414003c0, interactobject.cpp:1059-1077): a closed dialog lets the object go;
+    /// with no local player it is closed; one farther than the row's interactionDistance from the object (3D) is closed
+    /// (the id is let go on the next frame, when it shows closed).</summary>
+    void TickDialog(LiveInteractObject o, Vec3 playerPos)
+    {
+        if (host.IsDialogClosed(o.DialogId)) { o.DialogId = 0; return; }
+        if (!host.HasPlayer) { host.CloseDialog(o.DialogId); return; }
+        if (o.Row != null && Distance(playerPos, o.Position) > o.Row.InteractionDistance) host.CloseDialog(o.DialogId);
     }
 
     void CompleteCast(LiveInteractObject obj)

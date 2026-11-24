@@ -93,10 +93,25 @@ public class LiveInteractObjectsTests
 
         public readonly List<(string name, byte state)> StateChanges = new();
         public void OnObjectStateChanged(LiveInteractObject obj) => StateChanges.Add((obj.Name, obj.State));
+        public readonly List<(string name, string effect)> RemoveEffects = new();
+        public void OnObjectRemoveEffect(LiveInteractObject obj, string effect) => RemoveEffects.Add((obj.Name, effect));
+        public readonly List<string> Removed = new();
+        public void OnObjectRemoved(LiveInteractObject obj) => Removed.Add(obj.Name);
         public readonly List<(string name, string fx)> SuccessEffects = new();
         public void OnObjectSuccessEffect(LiveInteractObject obj, string effectAsset) => SuccessEffects.Add((obj.Name, effectAsset));
         public readonly List<(string swf, string value)> OpenedUis = new();
-        public void OnOpenUiDialog(string swf, string value) => OpenedUis.Add((swf, value));
+        /// <summary>The ui class id the swf name finds (0: none); an opened one is open until closed.</summary>
+        public int DialogFound = 0x4e8d;
+        public readonly HashSet<int> OpenDialogs = new();
+        public readonly List<int> ClosedDialogs = new();
+        public int OnOpenUiDialog(string swf, string value)
+        {
+            OpenedUis.Add((swf, value));
+            if (DialogFound != 0) OpenDialogs.Add(DialogFound);
+            return DialogFound;
+        }
+        public bool IsDialogClosed(int dialogId) => !OpenDialogs.Contains(dialogId);
+        public void CloseDialog(int dialogId) { ClosedDialogs.Add(dialogId); OpenDialogs.Remove(dialogId); }
         public readonly List<(int type, int rowId)> GuideTriggers = new();
         public void OnGuideTrigger(int triggerType, int rowId) => GuideTriggers.Add((triggerType, rowId));
         public readonly List<string> Open = new();
@@ -109,7 +124,8 @@ public class LiveInteractObjectsTests
         raw.Props["interactID"] = rowId.ToString();
         raw.Props["Position"] = $"{pos.X}, {pos.Y}, {pos.Z}";
         raw.Props["Rotation"] = "0, 0, 0";
-        var flat = new FlatModel { Name = "MS2InteractObject" };
+        // the map's interact entities are MS2InteractMesh or MS2InteractActor (a mesh kind of any other model does not register)
+        var flat = new FlatModel { Name = "MS2InteractMesh" };
         flat.Mixins.Add("MS2InteractObject");
         return new FieldEntity { Raw = raw, Flat = flat };
     }
@@ -160,6 +176,48 @@ public class LiveInteractObjectsTests
         Assert.That(obj.State, Is.EqualTo(1));
         Assert.That(live.Poll(new Vec3(50, 0, 0)), Is.True);
         Assert.That(live.Current, Is.SameAs(obj));
+    }
+
+    [Test]
+    public void AUiObjectsDialogClosesWhenThePlayerWalksAwayOrLeaves()
+    {
+        // CInteractUIObject::vfunc_2 keeps the opened dialog's id; vfunc_11 closes it past the row's interactionDistance (3D)
+        // or with no player, and lets it go once it shows closed
+        var host = new Host();
+        var tbl = MakeTable(new InteractObjectRow { Id = 400, Type = InteractObjectMessage.KindUi, InteractionDistance = 300, UiSwf = "ItemBreakDialog" });
+        var live = new LiveInteractObjects(host, tbl);
+        live.Attach(new[] { XblockEntity("ui-1", 400, new Vec3(0, 0, 0)) });
+        var msg = new InteractObjectMessage { Mode = InteractObjectMessage.ModeMessage, Name = "ui-1", Kind = InteractObjectMessage.KindUi };
+        live.Apply(msg);
+        var obj = live.All.Single();
+        Assert.That(host.OpenedUis, Is.EqualTo(new[] { ("ItemBreakDialog", "") }));
+        Assert.That(obj.DialogId, Is.EqualTo(0x4e8d));
+
+        live.Tick(new Vec3(0, 200, 200), false);      // 283 away: within 300
+        Assert.That(host.ClosedDialogs, Is.Empty);
+        live.Tick(new Vec3(0, 250, 200), false);      // 320 away: the 3D length, not the 2D (250)
+        Assert.That(host.ClosedDialogs, Is.EqualTo(new[] { 0x4e8d }));
+        Assert.That(obj.DialogId, Is.EqualTo(0x4e8d), "the id goes on the next frame, when the dialog shows closed");
+        live.Tick(new Vec3(0, 250, 200), false);
+        Assert.That(obj.DialogId, Is.Zero);
+        Assert.That(host.ClosedDialogs, Has.Count.EqualTo(1));
+
+        live.Apply(msg);
+        host.HasPlayer = false;
+        live.Tick(new Vec3(0, 0, 0), false);
+        Assert.That(host.ClosedDialogs, Has.Count.EqualTo(2), "no player: closed");
+
+        host.HasPlayer = true;
+        host.OpenDialogs.Clear();
+        live.Apply(msg);
+        host.OpenDialogs.Clear();                     // closed by its own button
+        live.Tick(new Vec3(0, 0, 0), false);
+        Assert.That(obj.DialogId, Is.Zero);
+        Assert.That(host.ClosedDialogs, Has.Count.EqualTo(2));
+
+        host.DialogFound = 0;                         // no dialog for the name: nothing kept
+        live.Apply(msg);
+        Assert.That(obj.DialogId, Is.Zero);
     }
 
     [Test]
@@ -385,7 +443,8 @@ public class LiveInteractObjectsTests
         // mode 10 remove
         live.Apply(new InteractObjectMessage { Mode = InteractObjectMessage.ModeRemove, Name = "dyn-1", Effect = "fx_gone.nif" });
         Assert.That(live.ByName("dyn-1"), Is.Null);
-        Assert.That(host.SuccessEffects[^1], Is.EqualTo(("dyn-1", "fx_gone.nif")));
+        Assert.That(host.RemoveEffects, Is.EqualTo(new[] { ("dyn-1", "fx_gone.nif") }), "the remove's own one-shot, not the success effect");
+        Assert.That(host.Removed, Is.EqualTo(new[] { "dyn-1" }));
     }
 
     // Unk_ActionKeyManager::Update polls its CRBMap by ascending key: GatheringAction (4) before InteractAction (0x12);
