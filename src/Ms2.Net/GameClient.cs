@@ -173,12 +173,19 @@ public sealed class GameClient {
         }
     }
 
-    /// <summary>On the logged-in login connection: select a character and return the game endpoint. The login connection is left to the caller (the server closes it).</summary>
+    /// <summary>On the logged-in login connection: select a character and return the game endpoint. On LoginToGame 0, UICharacterListDialog::vfunc_79 (@0x1418ea860, uicharacterlistdialog.cpp:599-601) sends RequestServerList (0x14), releasing the login session's character-list lock.</summary>
     public static async Task<LoginToGame> SelectAsync(TcpTransport login, long characterId, short channel = 0, int timeoutMs = 15000, CancellationToken ct = default) {
         await login.SendAsync(new SelectCharacter(characterId, channel), ct);
         while (true) {
             var p = await NextAsync(login, timeoutMs, ct);
-            if (login.Is(p, Inbound.LoginToGame)) return LoginToGame.Read(p.Reader());
+            if (login.Is(p, Inbound.LoginToGame)) {
+                var go = LoginToGame.Read(p.Reader());
+                if (go.Ok && login.Profile.Has(Outbound.RequestServerList)) {
+                    try { await login.SendAsync(new RequestServerList(), ct); }
+                    catch (IOException) { }
+                }
+                return go;
+            }
             if (login.Is(p, Inbound.MoveResult)) throw new InvalidDataException("select refused, move error " + MoveResult.Read(p.Reader()).Error);
         }
     }
