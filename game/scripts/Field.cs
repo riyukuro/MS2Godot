@@ -34,6 +34,10 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
     protected PackSet packs;
     protected Player player;
     protected Camera3D camera;
+    /// <summary>Where the field's 3D sounds are heard. CSoundService's update (soundservice.cpp:975-999) sets the FMOD listener
+    /// at the camera target's position (CameraMgr::FUN_140a38d60, bosstargetcamera.cpp:438: the own PC) with the camera's
+    /// forward and up; Godot's default listener is the camera itself, about 1500 units back.</summary>
+    AudioListener3D listener;
     FieldBackdrop backdrop;      // the sky picture, moved each frame as the client's background movie (FieldBackdrop)
     /// <summary>The field in the tree (the one the option dialog's HDR switch reaches, as the client's SetHdr reaches the
     /// running post-processing service and light service).</summary>
@@ -274,6 +278,9 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         Active = this;
         SwitchPostProcess(hdrOn);
         AddChild(camera);
+        listener = new AudioListener3D();
+        AddChild(listener);
+        listener.MakeCurrent();
         if (player != null) { UpdateCamera(); AttachMovementOptions(builder); }
         TriggerCamera = new World.TriggerCamera(this);
         Triggers.Bind(TriggerCamera);   // the camera trigger objects' steps
@@ -1003,6 +1010,9 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
                 if (triggerCameraShown) { camera.Fov = cam.FovDeg; triggerCameraShown = false; }
                 UpdateCamera(delta);
             }
+            // the listener at the camera target, turned as the camera (soundservice.cpp:975-999); without a target the client
+            // leaves the listener where it was
+            if (player.IsInsideTree()) listener.GlobalTransform = new Transform3D(camera.GlobalBasis, player.GlobalPosition);
         }
         // GFxMovieBackground::vfunc_8 (gfxmoviebackground.cpp:486-513): resize and setCameraDistance run without a local player too
         backdrop?.Update(camera, player);
