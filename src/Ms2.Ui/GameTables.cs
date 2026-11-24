@@ -879,10 +879,12 @@ public sealed class GameTables
     public Ms2.Ui.Items.ItemExtractionTable Extraction => extraction ??= packs == null ? Ms2.Ui.Items.ItemExtractionTable.Empty
         : new Ms2.Ui.Items.ItemExtractionTable(Xml(TablePath.Resolve(packs, "itemextraction.xml") ?? "table/itemextraction.xml"));
     Ms2.Ui.Items.SetItemTable setItems;
-    /// <summary>SetItemTable (GetXmlPath("Table", "SetItemInfo.xml"), the locale folder first), read on first use.</summary>
+    /// <summary>SetItemTable (GetXmlPath("Table", "SetItemInfo.xml"), the locale folder first), read on first use, with GMS2's
+    /// table/setitemoption.xml parts.</summary>
     public Ms2.Ui.Items.SetItemTable SetItems => setItems ??= packs == null ? Ms2.Ui.Items.SetItemTable.Empty
         : new Ms2.Ui.Items.SetItemTable(Xml(TablePath.Resolve(packs, "setiteminfo.xml") ?? "table/setiteminfo.xml"),
-            (p, c, k) => FeatureElements.Collect(packs, p, c, k), e => FeatureElements.IsAvailable(packs, e), StatOption, k => ItemOptions.SpecialOption(k));
+            (p, c, k) => FeatureElements.Collect(packs, p, c, k), e => FeatureElements.IsAvailable(packs, e), StatOption, k => ItemOptions.SpecialOption(k),
+            Xml(TablePath.Resolve(packs, "setitemoption.xml") ?? "table/setitemoption.xml"));
     HousingTable housing;
     /// <summary>CItemDataTable::GetHousing: the install items' housing rows (<see cref="HousingTable"/>), read on first use;
     /// null without packs.</summary>

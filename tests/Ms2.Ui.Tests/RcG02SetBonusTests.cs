@@ -26,7 +26,6 @@ public class RcG02SetBonusTests
     }
 
     [Test]
-    [Ignore("G02: SetItemTable reads only setiteminfo/set/part; GMS2 moved the parts to table/setitemoption.xml")]
     public void TheGms2SetReadsItsOptionParts()
     {
         using var packs = new PackSet(RcGap.Data("MS2_GMS2_DATA"));
