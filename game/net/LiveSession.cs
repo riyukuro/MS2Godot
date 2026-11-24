@@ -1220,8 +1220,36 @@ public partial class LiveSession : Node
 
     void ApplyItems(Ms2.Net.Wire.RawPacket p) {
         if (System.Environment.GetEnvironmentVariable("MS2_LIVE_DUMP") == "1") GD.Print("live: item raw " + Convert.ToHexString(p.Body));
-        try { var r = p.Reader(); var m = ItemMessage.Read(r, Items.Get, game.Profile); Items.Apply(m); if (r.Available != 0) GD.PushWarning($"live: item {Describe(m)} !! {r.Available} bytes left"); else if (LogPackets) GD.Print("live: item " + Describe(m)); }
+        try {
+            var r = p.Reader(); var m = ItemMessage.Read(r, Items.Get, game.Profile);
+            if (m is ItemMessage.Remove rm) lastRemovedItem = Items.Get(rm.Uid);
+            Items.Apply(m);
+            if (m is ItemMessage.Update { Item: null, Uid: not 0 } u && r.Available != 0) CheckSkippedUpdate(r, u.Uid);
+            else if (r.Available != 0) GD.PushWarning($"live: item {Describe(m)} !! {r.Available} bytes left");
+            else if (LogPackets) GD.Print("live: item " + Describe(m));
+        }
         catch (Exception e) { GD.PushWarning($"live: item packet: {e.Message}"); }
+    }
+
+    /// <summary>The bag item the last Remove took out, for <see cref="CheckSkippedUpdate"/>.</summary>
+    EquipItem lastRemovedItem;
+
+    /// <summary>
+    /// OnItemInventory mode 0xe (scenestategame.cpp:2960) reads the body only for an uid that Unk_Inventory::FindItemByUid
+    /// (inventory.cpp:561) finds in the bag's item map, which the Remove packet (RemoveItem, inventory.cpp:532) took the item
+    /// out of. An equip removes the item from the bag and then sends its bind update before the item is worn, so the client,
+    /// and the port, skip that body. This reads the skipped body against the item last taken out of the bag (or a worn one)
+    /// as a check of the item layout only; nothing is applied.
+    /// </summary>
+    void CheckSkippedUpdate(Maple2.PacketLib.Tools.ByteReader r, long uid) {
+        int skipped = r.Available;
+        var known = lastRemovedItem?.Uid == uid ? lastRemovedItem : Me.EquipByUid(uid) ?? Me.Gems?.FirstOrDefault(g => g.Uid == uid);
+        if (known == null) { GD.Print($"live: item Update of {uid}: not in the bag, {skipped} bytes skipped as the client does (no item to check them with)"); return; }
+        var copy = new EquipItem { Id = known.Id, Uid = known.Uid, Rarity = known.Rarity, Slot = known.Slot, InventorySlot = known.InventorySlot };
+        try { ItemReader.ReadBodyInto(r, copy, game.Profile); }
+        catch (Exception e) { GD.PushWarning($"live: item Update of {uid} ({known.Id}): the skipped body does not read: {e.Message}"); return; }
+        if (r.Available != 0) GD.PushWarning($"live: item Update of {uid} ({known.Id}): the skipped body of {skipped} bytes reads with {r.Available} bytes left");
+        else GD.Print($"live: item Update of {uid} ({known.Id}): not in the bag, {skipped} bytes skipped as the client does; they read as the item's body with 0 bytes left");
     }
 
     /// <summary>The first model slot of an item for the body layout; Unknown when the item data is missing.</summary>
