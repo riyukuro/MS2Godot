@@ -138,6 +138,8 @@ public class ChangeJobTests
         Assert.That(Rt.ToString(h.Get(name, "text")), Is.EqualTo(d.JobName));
         var slots = h.Get(content, "m_skillSlotContainer");
         Assert.That((int)Rt.ToNumber(h.Get(slots, "numChildren")), Is.GreaterThanOrEqualTo(8), "the 4 + 4 skill slots");
+        Assert.That(d.Movie, Does.EndWith(".usm"));
+        Assert.That(h.Get(content, "m_moviePlayer"), Is.InstanceOf<Ms2.Avm2.Flash.AsVideo>(), "setData's moviepath makes the preview's VideoPlayer");
         Assert.That(rt.Errors, Is.Empty);
         Assert.That(c.OnCallback("onChangeJob", Array.Empty<object>()), Is.True);
         Assert.That(notices, Is.EqualTo(new[] { d.StartQuestId }));

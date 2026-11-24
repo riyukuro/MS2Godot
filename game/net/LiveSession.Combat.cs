@@ -1460,7 +1460,8 @@ public partial class LiveSession
                     string win = hud.ChangeJobWindowState();
                     GD.Print($"live: combat job change window: click {clicked}, {win ?? "not open"}");
                     Shot("jobchange-window.png");
-                    Check("the entry opens the job change window with the sub job's row", win != null && !win.EndsWith("name \"\"", StringComparison.Ordinal));
+                    Check("the entry opens the job change window with the sub job's row", win != null && !win.Contains("name \"\"", StringComparison.Ordinal));
+                    Check("the window plays the row's preview movie", win != null && !win.EndsWith("video none", StringComparison.Ordinal));
                     bool pressed = hud.ChangeJobPressScripted();
                     await until(() => hud.ChangeJobWindowState() == null, 60 * 3);
                     Check("the change button closes the window", pressed && hud.ChangeJobWindowState() == null);

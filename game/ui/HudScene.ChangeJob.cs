@@ -90,6 +90,8 @@ public partial class HudScene
         GD.Print($"change job: effect for sub job {subJob}");
     }
 
+    MovieVideo changeJobVideo;
+
     bool ChangeJobOpen => changeJobMovie != null && changeJob?.Host?.Entity != null;
 
     /// <summary>CUIService::ToggleDialog(0x4f6b).</summary>
@@ -110,8 +112,11 @@ public partial class HudScene
         };
         c.JobChangeNotice += quest => GD.Print($"change job: the start quest {quest}'s talk (BeginTalkWithoutNpc) is not ported");
         c.Unloaded += () => { changeJobMovie?.Host.Unload(); changeJobMovie?.QueueFree(); changeJobMovie = null; };
-        changeJobMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
-        uiRoot.AddChild(changeJobMovie);
+        var m = changeJobMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow()));
+        // setData's moviepath: ChangeJobContent.setMovieAndPlay puts a VideoPlayer (m_moviePlayer) in m_movie.m_movie and
+        // plays the row's preview (Common/jobChangePreview_<job>.usm), looped; the host draws its picture
+        m.AddChild(changeJobVideo = new MovieVideo(m, assets.Packs, () => m.Host.Child("m_content") is { } content ? m.Host.Get(content, "m_moviePlayer") : null));
+        uiRoot.AddChild(m);
         GD.Print($"change job: open for sub job {jobs.SubJob} ({(c.Table.Get(jobs.SubJob) is { } d ? $"to {d.ChangeSubJobCode}, {d.Skills1.Count}+{d.Skills2.Count} skills" : "no row")})");
     }
 
@@ -132,7 +137,8 @@ public partial class HudScene
         var h = changeJob.Host;
         string name = h.Child("m_content") is { } content && h.Get(h.Get(content, "m_jobName"), "textField") is { } tf
             ? Ms2.Avm2.Rt.ToString(h.Get(tf, "text")) : "?";
-        return $"sub job {changeJob.JobCode}, name \"{name}\"";
+        var video = changeJobVideo?.Player;
+        return $"sub job {changeJob.JobCode}, name \"{name}\", video {(video is { Playing: true } ? video.MovieName : "none")}";
     }
 
     /// <summary>The window's change button (onChangeJob).</summary>
