@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Numerics;
+using System.Xml.Linq;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
 using NUnit.Framework;
@@ -150,5 +152,111 @@ public class EffectSkipTableTests
         Assert.That(t.PartOutOfView(Part("soundEvent", hear: 10), 3, new Vector3(1600, 0, 0), eye), Is.False, "not for a PC: the table's 3000");
         Assert.That(t.PartOutOfView(Part("light"), 3, new Vector3(99999, 0, 0), eye), Is.False);
         Assert.That(t.PartOutOfView(Part("swoosh"), 3, new Vector3(99999, 0, 0), eye), Is.False, "not tested as it is made");
+    }
+
+    /// <summary>
+    /// CNifEffect::vfunc_3's view test (nifeffectparam.cpp:757-766) as every effect caller meets it: row 1 at the part's own
+    /// viewDistance, the row's distance for the caster when it has none (-1, CNifEffectParam's default, :356), never with
+    /// offSkip, never for kind 0 and never for a target with the no-cull flag (m_b30).
+    /// </summary>
+    [Test]
+    public void ANifPartIsTestedAtItsOwnDistanceElseItsCastersRow()
+    {
+        var t = EffectSkipTable.Parse(Xml, 1);
+        var eye = Vector3.Zero;
+        Assert.That(t.PartOutOfView(Part("nif"), 3, new Vector3(2499, 0, 0), eye), Is.False, "the PC row's 2500");
+        Assert.That(t.PartOutOfView(Part("nif"), 3, new Vector3(2500, 0, 0), eye), Is.True);
+        Assert.That(t.PartOutOfView(Part("nif", view: 500), 3, new Vector3(500, 0, 0), eye), Is.True, "its own distance");
+        Assert.That(t.PartOutOfView(Part("nif", view: 500), 1, new Vector3(500, 0, 0), eye), Is.True, "its own distance for the own PC too");
+        Assert.That(t.PartOutOfView(Part("nif"), 1, new Vector3(99999, 0, 0), eye), Is.False, "no row distance for the own PC");
+        Assert.That(t.PartOutOfView(Part("nif", view: 0), 3, new Vector3(99999, 0, 0), eye), Is.False, "its own 0 never skips");
+        Assert.That(t.PartOutOfView(Part("nif", view: 500), 0, new Vector3(99999, 0, 0), eye), Is.False, "kind 0");
+        Assert.That(t.PartOutOfView(Part("nif", offSkip: true), 3, new Vector3(99999, 0, 0), eye), Is.False, "offSkip");
+        Assert.That(t.PartOutOfView(Part("nif"), 3, new Vector3(99999, 0, 0), eye, noCull: true), Is.False, "the target's no-cull flag");
+        Assert.That(t.PartOutOfView(Part("nif", top: false), 3, new Vector3(2500, 0, 0), eye), Is.True, "a random part's child is made by CreateEffect too");
+        Assert.That(t.PartOutOfView(Part("nif"), 3, new Vector3(99999, 0, 0), null), Is.False, "no camera actor");
+    }
+
+    /// <summary>
+    /// Every nif part of every effect xml (Xml.m2d effect/*.xml, a random part's children too), every caster kind, every
+    /// graphic option and distances around each view distance: the client's rule written out from the raw XML
+    /// (CNifEffectParam::vfunc_1's viewDistance, nifeffectparam.cpp:376; CEffectParam::vfunc_1's offSkip, effectservice.cpp:660;
+    /// IsOutOfView, effectskipmgr.cpp:132-151) against <see cref="EffectSkipTable.PartOutOfView"/>.
+    /// </summary>
+    [TestCase("MS2_DATA")]
+    [TestCase("MS2_GMS2_DATA")]
+    public void EveryNifPartsViewTestIsCNifEffects(string env)
+    {
+        var data = Environment.GetEnvironmentVariable(env);
+        if (string.IsNullOrEmpty(data) || !Directory.Exists(data)) Assert.Ignore(env + " is not set");
+        using var packs = new PackSet(data);
+        var table = new EffectTable(packs);
+        string optionXml = System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/effectoption.xml"));
+        var options = XDocument.Parse(optionXml).Root.Elements().Where(e => e.Name.LocalName.StartsWith("option")).ToList();
+        Assert.That(options, Is.Not.Empty);
+        var casterNames = new Dictionary<string, int> { ["myPC"] = 1, ["PC"] = 3, ["monster"] = 5, ["bossMonster"] = 6, ["background"] = 7 };
+        int[] kinds = { 1, 2, 3, 5, 6, 7 };
+        var entries = packs.List("Xml").Where(e => e.StartsWith("effect/", StringComparison.Ordinal) && e.EndsWith(".xml", StringComparison.Ordinal))
+            .OrderBy(e => e, StringComparer.Ordinal).ToList();
+        long checks = 0, outOfView = 0;
+        int nifParts = 0, ownDistance = 0, offSkip = 0, children = 0;
+        var wrong = new List<string>();
+        bool first = true;
+        foreach (var opt in options)
+        {
+            int quality = Convert.ToInt32(opt.Name.LocalName["option".Length..], 8) - 1;
+            var skip = EffectSkipTable.Parse(optionXml, quality);
+            var row = new Dictionary<int, float>();
+            foreach (var el in opt.Element("nif")?.Elements("element") ?? Enumerable.Empty<XElement>())
+                if (casterNames.TryGetValue((string)el.Attribute("caster") ?? "", out int c))
+                    row[c] = float.TryParse((string)el.Attribute("viewDistance"), NumberStyles.Float, CultureInfo.InvariantCulture, out float vd) ? vd : 0;
+            foreach (var entry in entries)
+            {
+                var parts = table.Get(entry["effect/".Length..]);
+                if (parts == null) continue;
+                var raw = Ms2.Formats.Text.PackXml.Parse(packs.Read("Xml", entry)).Descendants("effect").ToList();
+                if (raw.Count != parts.Count) { if (wrong.Count < 20) wrong.Add($"{entry}: {raw.Count} effect elements, {parts.Count} parts"); continue; }
+                for (int i = 0; i < raw.Count; i++)
+                {
+                    var e = raw[i];
+                    if (!string.Equals((string)e.Attribute("type"), "nif", StringComparison.OrdinalIgnoreCase)) continue;
+                    float own = float.TryParse((string)e.Attribute("viewDistance"), NumberStyles.Float, CultureInfo.InvariantCulture, out float o) ? o : -1;
+                    string off = (string)e.Attribute("offSkip");
+                    bool rawOff = !string.IsNullOrEmpty(off) && (off.StartsWith("true", StringComparison.OrdinalIgnoreCase) ||
+                        off.StartsWith("yes", StringComparison.OrdinalIgnoreCase) || off[0] == '1');
+                    if (first)
+                    {
+                        nifParts++;
+                        if (own != -1) ownDistance++;
+                        if (rawOff) offSkip++;
+                        if (e.Parent != e.Document.Root) children++;
+                    }
+                    foreach (int kind in kinds)
+                    {
+                        float view = MathF.Abs(own + 1) <= 1e-4f ? row.GetValueOrDefault(kind) : own;
+                        foreach (float d in new[] { 0f, view - 1, view, view + 1, 1499, 1501, 1999, 2001, 2999, 3001, 9000 })
+                        {
+                            if (d < 0) continue;
+                            bool client = !rawOff && !(MathF.Abs(view) <= 1e-4f || d < view);
+                            bool ours = skip.PartOutOfView(parts[i], kind, new Vector3(0, d, 0), Vector3.Zero);
+                            checks++;
+                            if (client) outOfView++;
+                            if (client != ours && wrong.Count < 20) wrong.Add($"{opt.Name.LocalName} {entry} part {i} kind {kind} at {d}: client {client} ours {ours}");
+                        }
+                        if (skip.PartOutOfView(parts[i], kind, new Vector3(0, 9000, 0), null) && wrong.Count < 20)
+                            wrong.Add($"{entry} part {i} kind {kind}: out of view without a viewer");
+                        if (skip.PartOutOfView(parts[i], kind, new Vector3(0, 9000, 0), Vector3.Zero, noCull: true) && wrong.Count < 20)
+                            wrong.Add($"{entry} part {i} kind {kind}: out of view with the no-cull flag");
+                    }
+                    if (skip.PartOutOfView(parts[i], 0, new Vector3(0, 9000, 0), Vector3.Zero) && wrong.Count < 20)
+                        wrong.Add($"{entry} part {i}: kind 0 out of view");
+                }
+            }
+            first = false;
+        }
+        TestContext.Out.WriteLine($"{env}: {entries.Count} effect xmls, {nifParts} nif parts ({children} in a random part, {ownDistance} with their own " +
+            $"viewDistance, {offSkip} offSkip), {options.Count} graphic options, {checks} view tests, {outOfView} out of view");
+        Assert.That(nifParts, Is.GreaterThan(1000));
+        Assert.That(wrong, Is.Empty, string.Join("\n", wrong));
     }
 }

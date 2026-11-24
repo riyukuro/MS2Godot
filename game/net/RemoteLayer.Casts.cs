@@ -145,12 +145,12 @@ public sealed partial class RemoteLayer
     int KeepOnRemote(Remote r, string fx)
     {
         int h = OutOfSight(r) ? 0 : SpawnKeptEffect(fx, r.Visual, Ms2.Audio.SoundMusicEffectState.CasterOtherPc);
-        if (FxTrace) { GD.Print($"fx: remote keep {fx} -> {h} at {Time.GetTicksMsec()}"); RemoteEffectKept?.Invoke(fx); }
+        if (FxTrace) { GD.Print($"fx: remote keep {fx} -> {h} at {Time.GetTicksMsec()}, {RegionFx?.PartsOutOfView ?? 0} part(s) out of view so far"); RemoteEffectKept?.Invoke(fx); }
         return h;
     }
 
-    /// <summary>MS2_LIVE_FX_TRACE=1: each effect another PC's skill state keeps or inserts goes to the log (a live run's
-    /// record; nothing is printed otherwise).</summary>
+    /// <summary>MS2_LIVE_FX_TRACE=1: each effect another PC's skill state keeps or inserts, and each hit effect, goes to the
+    /// log with the parts refused out of view so far (a live run's record; nothing is printed otherwise).</summary>
     static readonly bool FxTrace = System.Environment.GetEnvironmentVariable("MS2_LIVE_FX_TRACE") == "1";
     /// <summary>With the trace on: each effect file another PC's skill state kept (the live harness's shot of it).</summary>
     internal static event Action<string> RemoteEffectKept;
@@ -160,8 +160,8 @@ public sealed partial class RemoteLayer
     void InsertOnRemote(Remote r, string fx)
     {
         bool far = OutOfSight(r);
-        if (FxTrace) GD.Print($"fx: remote insert {fx}{(far ? " (out of sight)" : "")} at {Time.GetTicksMsec()}");
         if (!far) ReleaseKeptEffect(SpawnKeptEffect(fx, r.Visual, Ms2.Audio.SoundMusicEffectState.CasterOtherPc));
+        if (FxTrace) GD.Print($"fx: remote insert {fx}{(far ? " (out of sight)" : "")} at {Time.GetTicksMsec()}, {RegionFx?.PartsOutOfView ?? 0} part(s) out of view so far");
     }
 
     /// <summary>An npc's skill state's effects: the record's kept ids, the motion's effect files and the skill's

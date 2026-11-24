@@ -151,12 +151,41 @@ public class EffectCasterKindSiteTests
 
         // RegionSkills.Spawn / Insert without a kind are the system's (0) effects: triggers, reactors, the lift markers
         var region = File.ReadAllText(Path.Combine(game, "scripts", "world", "RegionSkills.cs"));
-        if (!region.Contains("int casterKind = Ms2.Audio.SoundMusicEffectState.CasterSystem, bool view = false)", StringComparison.Ordinal))
+        if (!region.Contains("int casterKind = Ms2.Audio.SoundMusicEffectState.CasterSystem)", StringComparison.Ordinal))
             problems.Add("game/scripts/world/RegionSkills.cs: Play's kind for Spawn / Insert is not CasterSystem (0)");
 
         TestContext.Out.WriteLine($"{found.Count} effect sites, {Reviewed.Length} reviewed");
         Assert.That(problems, Is.Empty, string.Join("\n", problems));
         Assert.That(found, Has.Count.EqualTo(Reviewed.Length));
+    }
+
+    /// <summary>
+    /// Every site above reaches one of these entry points, and each runs CreateEffect's view test (effectservice.cpp:287-345)
+    /// for the part kinds it plays: a nif part's CNifEffect::vfunc_3 test (nifeffectparam.cpp:757-766) in CombatLayer.Play
+    /// (PlayEffect, PlayEffectOn; the hit effects, npc and boss skill effects, the npc regen, the replay) and RegionSkills.Play
+    /// (SpawnOn, SpawnKeptEffect, Spawn, Insert; region skills, kept effects, triggers, reactors); a soundEvent part's
+    /// (SoundEventOutOfView) in FieldAudio.PlayEffectSound, which both call; a hit sound's and an event voice's
+    /// FUN_1411a5110 test (SoundEventVolume, effectservice.cpp:1321) in PlayHitSound, PlaySoundEvent and PlayEventVoice.
+    /// soundMusic and light parts are not tested by the client (their effects have no vfunc_8, :337). RegionSkills.Play tests
+    /// for every caller with a kind other than 0, SpawnOn's too, not only a region skill's.
+    /// </summary>
+    [TestCase("net/CombatLayer.cs", "void Play(string xmlPath, Godot.Vector3 at, Basis rotation, int casterKind, Node3D actor)", "Skip.PartOutOfView(part, casterKind,")]
+    [TestCase("scripts/world/RegionSkills.cs", "List<Node3D> Play(string xml, Xform at, bool keep, int handle,", "skipTable.PartOutOfView(part, casterKind,")]
+    [TestCase("scripts/world/RegionSkills.cs", "List<Node3D> Play(string xml, Xform at, bool keep, int handle,", "var skipTable = casterKind != 0 ? Skip : null;")]
+    [TestCase("audio/FieldAudio.cs", "public int PlayEffectSound(EffectPart part, EffectOwner owner,", "EffectSkipTable.SoundEventOutOfView(effectSkip, part, owner.Kind,")]
+    [TestCase("audio/FieldAudio.cs", "public bool PlayHitSound(", "EffectSkipTable.SoundEventVolume(effectSkip, kind,")]
+    [TestCase("audio/FieldAudio.cs", "public bool PlaySoundEvent(", "EffectSkipTable.SoundEventVolume(effectSkip, kind,")]
+    [TestCase("audio/FieldAudio.cs", "public string PlayEventVoice(", "EffectSkipTable.SoundEventVolume(effectSkip, objectKind,")]
+    public void EveryEffectEntryPointRunsTheClientsViewTest(string file, string signature, string test)
+    {
+        var text = File.ReadAllText(Path.Combine(GameDir(), file)).Replace("\r\n", "\n");
+        int at = text.IndexOf(signature, StringComparison.Ordinal);
+        Assert.That(at, Is.GreaterThanOrEqualTo(0), $"game/{file}: no {signature}");
+        int open = text.IndexOf('{', at), depth = 0, end = open;
+        for (; end < text.Length; end++)
+            if (text[end] == '{') depth++;
+            else if (text[end] == '}' && --depth == 0) break;
+        Assert.That(text[open..end], Does.Contain(test), $"game/{file}: {signature} runs no view test");
     }
 
     /// <summary>The statement from its line's start to the close of the call's argument list (comments and strings skipped).</summary>

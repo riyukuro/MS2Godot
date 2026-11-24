@@ -26,6 +26,12 @@ public sealed class CombatLayer
     public int SceneEffects, ParticleSystemsRun, SceneFallbacks;
     public readonly HashSet<string> Unsupported = new();
     public int EffectsSpawned, EffectsNoXml, EffectsNoNif, EffectsNotNif, EffectsWithParticles, EffectsFailed, NumbersShown, EffectSounds;
+    /// <summary>The nif parts not made because they were out of the camera actor's view (<see cref="Play"/>).</summary>
+    public int PartsOutOfView;
+
+    /// <summary>The view distances of the graphic quality (Table/effectOption.xml, read once per data set).</summary>
+    Ms2.Formats.World.EffectSkipTable Skip => skip ??= FieldAudio.EffectSkip(packs);
+    Ms2.Formats.World.EffectSkipTable skip;
     public readonly HashSet<string> MissingEffects = new();
     public readonly HashSet<string> ParticleEffects = new();
     public bool ShowEffects = true;
@@ -95,7 +101,9 @@ void fragment() {
         return m;
     }
 
-    /// <summary>Plays an effect xml at a place: the nif parts show for their duration; sound events play at the place; soundMusic parts follow CSoundMusicEffect's caster-kind gate (m_unk_18 &lt;= 1, default rejected for unknown/remote casters).</summary>
+    /// <summary>Plays an effect xml at a place: the nif parts show for their duration; sound events play at the place; soundMusic parts follow CSoundMusicEffect's caster-kind gate (m_unk_18 &lt;= 1, default rejected for unknown/remote casters).
+    /// A nif part out of the camera actor's view for <paramref name="casterKind"/> is not made (CNifEffect::vfunc_3), nor a
+    /// sound event (CreateEffect, FieldAudio's test).</summary>
     public void PlayEffect(string xmlPath, Godot.Vector3 at, float yawRadians, int casterKind)
         => PlayEffect(xmlPath, at, new Basis(Godot.Vector3.Up, yawRadians), casterKind);
 
@@ -132,12 +140,14 @@ void fragment() {
         var parts = effects.Get(xmlPath);
         if (parts == null) { EffectsNoXml++; MissingEffects.Add(xmlPath); return; }
         var owner = EffectOwners.Of(casterKind, actor);
+        // the camera's actor for the nif parts' view test; kind 0 is never out of view (IsOutOfView, effectskipmgr.cpp:136)
+        var eye = casterKind != 0 && Skip != null ? EffectView.Viewer : null;
         foreach (var part in parts)
         {
             if (part.SkippedFor(owner)) continue;   // CEffectParam::vfunc_7 (effectservice.cpp:245-259)
             if (part.Type == "soundEvent" && part.SoundEvent != null)
             {
-                FieldAudio.Instance?.PlayEffectSound(part, owner, at, actor);
+                FieldAudio.Instance?.PlayEffectSound(part, owner, at, actor);   // its view test is FieldAudio's (SoundEventOutOfView)
                 EffectSounds++;
                 continue;
             }
@@ -152,6 +162,12 @@ void fragment() {
             bool onActor = actor != null && part.AttachKind != 0;
             var place = actor == null ? new Transform3D(rotation, at) : onActor ? Transform3D.Identity : WorldPlace(part, actor);
             var host = onActor ? actor : parent;
+            // CNifEffect::vfunc_3 (nifeffectparam.cpp:757-766): the part's root at its world place, row 1 at the part's
+            // viewDistance for the effect's kind; out of view, the part is not made. No caller here sets the target's
+            // no-cull flag (m_b30: AdditionalCli's keep effects and the kind 0 area effects only).
+            if (eye != null && Skip.PartOutOfView(part, casterKind,
+                    EffectView.Client(host.GlobalTransform * place * G(part.Translate[0], part.Translate[1], part.Translate[2])), eye))
+            { PartsOutOfView++; continue; }
             if (Particles && TryScene(part, place, host)) continue;
             var e = Effect(part.FilePath);
             if (e == null) { EffectsNoNif++; MissingEffects.Add(part.FilePath); continue; }

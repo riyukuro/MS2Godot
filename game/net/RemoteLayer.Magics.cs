@@ -225,6 +225,12 @@ public sealed partial class RemoteLayer
             combat.PlayEffect(fx.File, new Vector3(fx.At.X, fx.At.Z, -fx.At.Y), ClientBasis(fx.AxisX, fx.AxisY, fx.AxisZ),
                 fx.CasterKind);
         DamageHitEffectsPlayed++;
+        if (FxTrace)
+        {
+            var place = fx.ActorId != 0 ? NodeOf(fx.ActorId)?.GlobalPosition : new Vector3(fx.At.X, fx.At.Z, -fx.At.Y);
+            float away = place is { } p && EffectView.Viewer is { } eye ? System.Numerics.Vector3.Distance(EffectView.Client(p), eye) : -1;
+            GD.Print($"fx: hit {fx.File} kind {fx.CasterKind} at {Time.GetTicksMsec()}, viewer {away:F0} away, {combat.PartsOutOfView} nif part(s) out of view so far");
+        }
     }
 
     /// <summary>
