@@ -15,7 +15,8 @@ namespace Ms2Godot.World;
 /// <item>Faded: WorldService::FadeEntity, a fade of the entity's drawn instances (<see cref="TriggerFade"/>).</item>
 /// <item>VisibleSet: IsVisible (0xa0b6b179), the instances shown or hidden at once.</item>
 /// <item>Moved: the entity's Position set to the rest position plus the vibrator's offset: each shown instance moved by it.</item>
-/// <item>EffectPlayed: CEffectService::InsertEffect of the entity's XmlFilePath at the entity (an empty name plays nothing).</item>
+/// <item>EffectPlayed: CEffectService::InsertEffect of the entity's XmlFilePath at the entity, object kind 7 (background,
+/// entityvibrator.cpp:190); an empty name plays nothing.</item>
 /// </list>
 /// Nothing runs per frame: the session's vibrators call in from the world tick, and the fader runs only while a fade does.
 /// STILL-OPEN: the collider body stays at the rest position while the entity shakes or drops (the client's actor moves with
@@ -101,6 +102,6 @@ public sealed class FieldVibrateDraws
     void OnEffect(FieldVibrates.Entry entry, string path)
     {
         if (effects == null || string.IsNullOrEmpty(path)) return;
-        effects.Insert(path, entry.Entity.Transform, false, 0);
+        effects.Insert(path, entry.Entity.Transform, false, 0, Ms2.Audio.SoundMusicEffectState.CasterBackground);
     }
 }

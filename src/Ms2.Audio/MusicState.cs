@@ -641,6 +641,10 @@ public sealed class SoundMusicEffectState
     public const int CasterOtherPc = 3;
     public const int CasterNpc = 5;
     public const int CasterBoss = 6;
+    /// <summary>A world object's effect: "background" in effectOption.xml (EffectSkipMgr::ParseCaster @0x1411b9180), set by the
+    /// effect requests of an entity vibrator (entityvibrator.cpp:190, :213), the cube map (cubemapinformationservice_3.cpp:2547)
+    /// and a bgEffect_ text key (animationcallbackmanager.cpp:406).</summary>
+    public const int CasterBackground = 7;
 
     /// <summary>
     /// Maps a combat actor to Unk_EffectTarget::m_nKind per WorldService::GetObjectKind (worldservice_1.cpp:6304-6309):

@@ -83,6 +83,9 @@ public class EffectCasterKindSiteTests
         new("net/ReactorLayer.cs", "Fx?.Spawn(effect,", "RegionSkills.Spawn: CasterSystem", "0: a reactor's effect (reactor.cpp:287)"),
         new("scripts/world/LiftTargetMarkers.cs", "effects.Spawn(LiftableTargetBoxes.MarkerEffect,", "RegionSkills.Spawn: CasterSystem",
             "0: the lift target's marker (liftabletarget.cpp:147)"),
+        // world objects (7)
+        new("scripts/world/FieldVibrateDraws.cs", "effects.Insert(path, entry.Entity.Transform,", "CasterBackground",
+            "7: a vibrate object's effect, the request's kind set to 7 (CEntityVibrator, entityvibrator.cpp:190, :213)"),
         // pass-through
         new("net/LiveSession.Skills.cs", "=> remote?.PlayEffect(effect, at, yawRadians, casterKind)", "casterKind", PassThrough),
         new("net/LiveSession.Skills.cs", "=> remote?.PlayEffect(effect, at, rotation, casterKind)", "casterKind", PassThrough),
