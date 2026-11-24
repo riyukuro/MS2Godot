@@ -28,7 +28,7 @@ namespace Ms2.Ui;
 /// effect, PC and camera checks are left to the host's <c>canMove</c>.
 /// STILL-OPEN: the home privilege (FUN_14050da30) has no port. An unknown privilege is taken as not held, as for
 /// <c>TaxiStations.IsOpen</c>.
-/// STILL-OPEN: CAutoFindTaxiStation's adds to the requested list (autofindtaxistation.cpp:298, :378). The auto-find has no port.
+/// CAutoFindTaxiStation adds to the same list (autofindtaxistation.cpp:298, :378) through <see cref="AddRequested"/>.
 /// </summary>
 public sealed class TaxiStationAction
 {
@@ -55,6 +55,10 @@ public sealed class TaxiStationAction
     /// <summary>The fields RequestTaxi mode 0 was sent for since the server enter (DAT_143ab3098).</summary>
     public IReadOnlyList<int> Requested => requested;
     public int StationCount => stations.Count;
+    /// <summary>The field's stations, in the order they were attached.</summary>
+    public IReadOnlyList<Vec3> Stations => stations;
+    /// <summary>DAT_143ab3098.Add(field), from CAutoFindTaxiStation (autofindtaxistation.cpp:298, :378).</summary>
+    public void AddRequested(int field) => requested.Add(field);
 
     /// <summary>OnServerEnter (scenestategame.cpp:2115): DAT_143ab3098.RemoveAll().</summary>
     public void ServerEnter() => requested.Clear();

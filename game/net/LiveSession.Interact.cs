@@ -96,6 +96,7 @@ public partial class LiveSession
         npcPolled = false;
         taxiPolled = false;
         TaxiAction.Attach(null);
+        AutoFindFieldLeave();   // FUN_1409f1de0 and the OnceCallbackTimer's Clear (worldservice_1.cpp:9988-9989)
         var packs = PackSet.Shared(Settings.DataDir);
         InteractObjectTable tbl = null;
         try { tbl = InteractObjectTable.Shared(packs); }
@@ -121,6 +122,7 @@ public partial class LiveSession
         // the liftable target boxes loop (worldservice_1.cpp:6788-6801)
         LiftTargets.AttachField(same ? entities : null);
         TaxiAction.Attach(same ? entities : null);
+        AutoFindStationsAttached();
         GD.Print($"live: interact objects attached to xblock {xblock}{(same ? "" : $" (different xblock: no entities)")}: {InteractObjects.All.Count} registered, {Breakables.Count} breakables, {Liftables.Count} lifts, {LiftTargets.Count} lift targets, {Vibrates.Count} vibrate objects");
     }
 

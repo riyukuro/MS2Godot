@@ -21,6 +21,10 @@ public sealed class TaxiManager
 
     public TaxiManager(FieldMeta meta) { this.meta = meta; }
 
+    /// <summary>CTaxiManager::FUN_14085f730 (taximanager.cpp:119): CFieldMetaTable::GetTaxiHomePrivilege(field) == 1, the field's
+    /// taxi row is a house taxi (false without a row).</summary>
+    public static bool IsHomeTaxiField(FieldMeta meta, int field) => meta != null && meta.TaxiStations.TryGetValue(field, out bool home) && home;
+
     /// <summary>MakeTaxiKey (@0x14085fcb0, :133): the pair, smaller id first.</summary>
     static (uint, uint) Key(uint a, uint b) => a > b ? (b, a) : (a, b);
 

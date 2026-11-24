@@ -100,6 +100,9 @@ public sealed class TriggerCamera
     public CameraSetting Setting => setting;
     public CameraFlyBy FlyByData => fly;
 
+    /// <summary>SetPendingMode (camera.h:280): m_nPendingMode = <paramref name="n"/>; the next <see cref="Update"/> sets it.</summary>
+    public void SetPendingMode(int n) => pendingMode = n;
+
     /// <summary>FUN_140aed720 (camera.h:264): m_setting = setting.</summary>
     public void SetSetting(in CameraSetting s) => setting = s;
 

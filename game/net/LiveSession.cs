@@ -1699,6 +1699,7 @@ public partial class LiveSession : Node
         CubeCraft.ModelAttached();   // PC::vfunc_12 (pc.cpp:844-852): a craft that waited for the model is made
         if (found == player && player.Live) return;   // a repeat of the own FieldAddUser on the same field
         BindPlayer(found);
+        AutoFindOwnPcIn();   // MyPC::vfunc_12 (mypc.cpp:1016): StartAutoFind (LiveSession.AutoFind.cs)
         SyncCarriedModel();   // a new body: the craft's carried model goes on it
     }
 
@@ -1770,6 +1771,7 @@ public partial class LiveSession : Node
         guide?.OwnPcTick();   // MyPC::vfunc_53 (mypc.cpp:2976): only once the own pc is in the entered field
         LogGuideStatus();
         TickTaxi(delta);
+        TickAutoFind(delta);   // the OnceCallbackTimer and FUN_1409f1cb0 (LiveSession.AutoFind.cs)
         Me.ExpireRevival((uint)game.Session.ServerTick);   // PC::FUN_141661ac0 (pc.cpp:2043), in PC's per-frame update
         if (player != null && IsInstanceValid(player)) Me.LeaveFallOnGround(player.Grounded);   // StateFall::vfunc_9, the state's update
         TickOwnStateExit(delta);
@@ -2140,6 +2142,7 @@ public partial class LiveSession : Node
                 {
                     StubHudData.Instance.FoundTaxis.UnionWith(t.Fields);
                     TaxiFound?.Invoke(t);
+                    autoFind?.OnTaxiFound();   // OnTaxi's last call, FUN_1409f1970 (scenestategame.cpp:7923)
                 }
                 GD.Print($"live: taxi found {string.Join(",", t.Fields)} open {t.Open}");
             }

@@ -195,8 +195,9 @@ public sealed class StateHitData
 /// <summary>
 /// The own PC's reaction to a hit: PC::vfunc_33 (@0x141652080, pc.cpp:885) for a skill hit, vfunc_35 (:1010) for a splash
 /// hit and vfunc_34 (@0x1416529f0, :968) for a dot, as far as the state they change to and the push go.
-/// STILL-OPEN, not here: the buffs' hit invoke effects (PlayInvokeEffectsByEvent), the auto taxi cancel
-/// (CAutoFindTaxiStation::FUN_1409f1a00), the state's vfunc_6, the color boost, the hit sound, the death hand-off
+/// The auto taxi cancel (CAutoFindTaxiStation::FUN_1409f1a00, pc.cpp:896) is the session's, before this
+/// (<see cref="AutoFindTaxiStation.CancelUnlessFound"/>).
+/// STILL-OPEN, not here: the buffs' hit invoke effects (PlayInvokeEffectsByEvent), the state's vfunc_6, the color boost, the hit sound, the death hand-off
 /// (FUN_141653740) and the DPS meter.
 /// </summary>
 public static class HitReaction

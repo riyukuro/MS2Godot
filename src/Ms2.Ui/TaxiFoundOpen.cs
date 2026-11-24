@@ -8,7 +8,8 @@ namespace Ms2.Ui;
 /// bOpen set (the ids joining the found list is the session's): the centre notice of common string 0x7c8 (FUN_141275260(0x7c8,
 /// 3, 1)), the system sound "system_Taxi_Find" (DAT_143ae79e8), the minimap's EnableTaxiFrame with the first id, the field's
 /// stations (FUN_141739450(true): TaxiStations' own subscription) and the guide trigger 0x10 (TaxiFind).
-/// STILL-OPEN: OnTaxi's last call, CAutoFindTaxiStation::FUN_1409f1970 (the auto-find camera fly-by), has no port.
+/// OnTaxi's last call, CAutoFindTaxiStation::FUN_1409f1970 (the auto-find camera's fly back), is the session's
+/// (<see cref="AutoFindTaxiStation.OnTaxiFound"/>).
 /// </summary>
 public sealed class TaxiFoundOpen
 {

@@ -57,6 +57,7 @@ public partial class LiveSession
                 looked = true;
             }
             if (attack == null) return;
+            autoFind?.CancelUnlessFound();   // PC::vfunc_33 (pc.cpp:895-896): a record on the own pc ends the auto-find
             long total = 0;
             foreach (var h in t.Hits) total += h.Damage;
             int mapType = HitMapType();

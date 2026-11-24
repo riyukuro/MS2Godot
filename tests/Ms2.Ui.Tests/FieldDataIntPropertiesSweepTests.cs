@@ -11,7 +11,7 @@ namespace Ms2.Ui.Tests;
 /// tinyxml.cpp:1160), so a value with no leading number keeps the ctor's default; the defaults are CFieldData's
 /// (fielddata.cpp:543-556) and CFieldDataCli's (fielddatacli.cpp:67-79). The elements are the selected environment's
 /// &lt;property&gt; (fielddata.cpp:662-708), &lt;drop&gt; (:723-726), &lt;split&gt; (:730-731), &lt;cashCall&gt; (:734-741), &lt;ui&gt;
-/// (fielddatacli.cpp:218-232) and &lt;shadow&gt; (FUN_140a56ad0, :280). The int members the client tests for nonzero are bools here.
+/// (fielddatacli.cpp:218-237) and &lt;shadow&gt; (FUN_140a56ad0, :280). The int members the client tests for nonzero are bools here.
 /// The death-state properties are in <see cref="RevivalDataSweepTests"/>.
 /// </summary>
 [NonParallelizable]
@@ -54,13 +54,14 @@ public class FieldDataIntPropertiesSweepTests
         new("ui", "useEPSkill", 1, f => B(f.UseEPSkill)),
         new("ui", "useRidee", 1, f => B(f.UseRidee)),
         new("ui", "usePet", 1, f => B(f.UsePet)),
+        new("ui", "autoFindTaxiStation", 1, f => B(f.AutoFindTaxiStation)),
         new("ui", "vscroll", 1, f => f.VScroll),
         new("ui", "hscroll", 1, f => f.HScroll),
         new("ui", "instancingGrid", 0, f => f.InstancingGrid),
         new("shadow", "optionHighLevel", 0, f => f.ShadowOptionHighLevel),
     };
 
-    static readonly HashSet<string> Bools = new() { "checkClimb", "checkFly", "checkPartyObserve", "globalSplit", "RecallOtherUserProhibit", "useEPSkill", "useRidee", "usePet" };
+    static readonly HashSet<string> Bools = new() { "checkClimb", "checkFly", "checkPartyObserve", "globalSplit", "RecallOtherUserProhibit", "useEPSkill", "useRidee", "usePet", "autoFindTaxiStation" };
 
     /// <summary>The values the data sets do not hold today: each property set to each value in one synthetic row; the
     /// strict parse it replaced read "" and "x" as 0 (or true for the "!= 0" flags) and "1.0" / " 2" / "3abc" as 0.</summary>

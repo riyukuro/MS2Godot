@@ -54,6 +54,9 @@ public sealed class FieldData
     /// <summary>&lt;property checkFly&gt; (CFieldData default 0), &lt;ui useEPSkill useRidee usePet&gt; (CFieldDataCli, default 1;
     /// fielddatacli.cpp:228-230). useRidee is the map test of WorldService::FUN_141bcb210 (worldservice_1.cpp:5476).</summary>
     public bool CheckFly, UseEPSkill = true, UseRidee = true, UsePet = true;
+    /// <summary>&lt;ui autoFindTaxiStation&gt; (CFieldData m_nAutoFindTaxiStation +0xb8, default 1, fielddata.cpp:549; read at
+    /// fielddatacli.cpp:237): CAutoFindTaxiStation::StartAutoFind runs only where it is not 0.</summary>
+    public bool AutoFindTaxiStation = true;
     /// <summary>&lt;property skillUseDisable&gt;: a comma list of skill main types, each a bit of m_nSkillUseDisableMask (fielddata.cpp:707).</summary>
     public uint SkillUseDisableMask;
     /// <summary>&lt;property capacity&gt; (CFieldData m_nCapacity, default 0; fielddata.cpp:667, GetCapacity @0x1403757c0, :870).</summary>
@@ -213,6 +216,7 @@ public sealed class FieldData
         o.UseEPSkill = QueryInt(ui, "useEPSkill", 1) != 0;
         o.UseRidee = QueryInt(ui, "useRidee", 1) != 0;
         o.UsePet = QueryInt(ui, "usePet", 1) != 0;
+        o.AutoFindTaxiStation = QueryInt(ui, "autoFindTaxiStation", 1) != 0;
         o.MapType = QueryInt(prop, "mapType", 0);
         o.Capacity = QueryInt(prop, "capacity", 0);
         o.PkMode = QueryInt(prop, "pkMode", 0); o.ContinentCode = QueryInt(prop, "continentCode", 0);
