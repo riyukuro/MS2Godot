@@ -2119,6 +2119,8 @@ public partial class LiveSession : Node
             }
             else if (game.Is(p, Inbound.FieldProperty))
                 FieldProperties.Apply(Ms2.Net.Packets.FieldPropertyMessage.Read(p.Reader(), game.Profile));   // OnFieldProperty (scenestategame.cpp:3895)
+            else if (game.Is(p, Inbound.FieldEntrance))
+                OnFieldEntrance(Ms2.Net.Packets.FieldEntrance.Read(p.Reader()));   // OnFieldEntrance (scenestategame.cpp:2366)
             else if (game.Is(p, Inbound.FurnishingInventory))
                 ReadNotApplied("FurnishingInventory", Ms2.Net.Packets.FurnishingInventory.Read(p.Reader(), game.Profile).Mode);   // OnFurnishingInventory (scenestategame.cpp:9373): the cube stock has no house editor here yet
             else if (game.Is(p, Inbound.FurnishingStorage))

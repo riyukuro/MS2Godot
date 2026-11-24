@@ -160,6 +160,9 @@ public partial class LiveSession
         public override void GuideLog(string text) => GD.Print(text);
         public override void Send(Ms2.Net.Wire.IOutPacket packet) { GD.Print($"live: guide sends {packet.GetType().Name}{(packet is Ms2.Net.Packets.GuideServerTriggerEvent t ? " " + t.EventId : "")}"); s.Send(packet); }
 
+        /// <summary>CMyCharacter::GetDungeonEnterState: the stored state (0 for an unnamed id) once the server sent the table, else unknown as before.</summary>
+        public override int DungeonEnterState(int dungeonId) => s.DungeonEnterStatesKnown ? s.DungeonEnterStateOf(dungeonId) : base.DungeonEnterState(dungeonId);
+
         /// <summary>The own PC is in the field: bound, alive as an object and in the tree. The map unload's StopAndUpdate
         /// runs from the field's TreeExiting, which Godot emits after the field's children left the tree; on a field change
         /// the PC is dropped before that (SetMyPC(0), <see cref="DropOwnPc"/>), but when the process quits it is still bound,
