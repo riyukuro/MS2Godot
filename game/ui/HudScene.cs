@@ -2732,6 +2732,7 @@ public partial class HudScene : Node, IUiStageHost
         hudModel = NewModel();
         MovieLayerHost.Layers.FeatureEnabled = hudModel.IsFeatureEnabled;   // the adventure level bar's layer (feature 0xbd)
         hudModel.HasLocalPlayer = true;     // the HUD runs in a field, where WorldService::GetLocalPlayer is the MyPC
+        hudModel.Tables.ReservedWords.LocalPlayerGender = () => Ms2Godot.Net.LiveSession.Instance is { } live ? live.Me.User?.Gender : hudModel.HasLocalPlayer ? hudModel.Player.Gender : null;   // Rw_Gender
         hudModel.CanBreakItem = it => Ms2Godot.Net.LiveSession.Instance?.BreakManager.CanBreakItem(it) == true;   // CItemBreakManager::CanBreakItem
         hudModel.QuestItemLinks = ItemQuestLinks;    // CQuestManager::GetQuestItemLinks, an item tooltip's quest line
         // an install item's guide lines: the own housing grade, CAchieveManager::IsGradeCleared, GetRequireAchieveText

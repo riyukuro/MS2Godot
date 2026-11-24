@@ -64,13 +64,19 @@ public sealed class ReservedWords
     /// <summary>ReplaceObjectWords.</summary>
     public string ReplaceObjectWords(string s) => Replace(s, objectWords);
 
+    /// <summary>The local player's gender (0 male, 1 female), null without a local player. Rw_Gender reads it from
+    /// WorldService::GetLocalPlayer (reservedwordtable.cpp:803-805), so a text that has $male / $female words gets the
+    /// own gender whichever window shows it.</summary>
+    public Func<int?> LocalPlayerGender { get; set; }
+
     /// <summary>ReplaceValueWords, with the local player's name for $MyPCName and gender (0 male, 1 female) for $male and
-    /// $female (Rw_Gender: empty without a player, a null gender).</summary>
+    /// $female (Rw_Gender: empty without a player, a null gender). A null <paramref name="playerGender"/> is the local
+    /// player's (<see cref="LocalPlayerGender"/>), as the client's Rw_Gender takes it.</summary>
     public string ReplaceValueWords(string s, string playerName, int? playerGender = null) => Replace(s, new Dictionary<string, Word>(StringComparer.Ordinal)
     {
         ["$MyPCName"] = (_, _, _) => playerName ?? "",
-        ["$male"] = (t, _, _) => Gender(t, playerGender),
-        ["$female"] = (t, _, _) => Gender(t, playerGender),
+        ["$male"] = (t, _, _) => Gender(t, playerGender ?? LocalPlayerGender?.Invoke()),
+        ["$female"] = (t, _, _) => Gender(t, playerGender ?? LocalPlayerGender?.Invoke()),
         ["$ppr"] = Ppr,
         ["$pp"] = Ppr,
         ["$pp2"] = Pp2,
