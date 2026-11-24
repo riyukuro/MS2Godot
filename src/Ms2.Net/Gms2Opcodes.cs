@@ -40,6 +40,7 @@ static class Gms2Opcodes {
         [Inbound.FieldProperty] = 0xCC,
         [Inbound.WorldShareInfo] = 0xB2,
         [Inbound.BannerList] = 0xB5,
+        [Inbound.PremiumClub] = 0xED,
         [Inbound.ResponsePet] = 0xCE,
         [Inbound.FunctionCube] = 0x4E,
         [Inbound.Trigger] = 0x4F,

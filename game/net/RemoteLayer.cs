@@ -262,6 +262,14 @@ public sealed partial class RemoteLayer : Node3D
     public (int CubeMode, int HeldItem, bool Craft, int State) CubeStateOf(int objectId) =>
         users.TryGetValue(objectId, out var r) ? (r.Cube.CubeMode, r.Held.ItemId, r.Cube.Current != null, r.Pc.States.Cur) : (0, 0, false, 0);
 
+    /// <summary>PremiumClub mode 0 for another player (PC::FUN_141662d60 sets m_n1190): false when no such player is shown.</summary>
+    public bool SetPremiumTime(int objectId, long endTime)
+    {
+        if (!users.TryGetValue(objectId, out var r)) return false;
+        r.PremiumTime = endTime;
+        return true;
+    }
+
     /// <summary>The other players shown now (the own PC is not among them).</summary>
     public IEnumerable<Pc> Pcs => users.Values.Select(r => new Pc(r.ObjectId, r.CharacterId, r.Name ?? "", r.Picture, r.Root, r.Anchor, r.Gems,
         r.PremiumTime, r.PcBangGrade, r.WeddingState));

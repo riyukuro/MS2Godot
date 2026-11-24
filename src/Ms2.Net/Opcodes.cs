@@ -36,6 +36,7 @@ public enum Inbound : ushort {
     FieldProperty = 0xCA,       // RecvOp FieldProperty (commonfiles/opcodes.h:209): CSceneStateGame::OnFieldProperty (scenestategame.cpp:3895)
     WorldShareInfo = 0xB0,        // RecvOp WorldShareInfo: CSceneStateGame::OnWorldShareInfo (scenestategame.cpp:9756, @0x141733b30)
     BannerList = 0xB3,            // RecvOp BannerList: CAdBannerManagerCli::OnBannerList (adbannermanagercli.cpp:31, @0x14096b3a0)
+    PremiumClub = 0xEB,           // RecvOp PremiumClub: CSceneStateGame::OnPremiumClub (scenestategame.cpp:8426)
     ResponsePet = 0xCC,           // RecvOp ResponsePet: CPetManager::OnResponsePet (petmanager.cpp:722)
     FunctionCube = 0x4D,        // RecvOp FunctionCube: CSceneStateGame::OnFunctionCube (scenestategame.cpp:3660, @0x1417212a0) -> CFunctionCubeService::FUN_14122f270 (functioncubeobject.cpp:2411)
     Trigger = 0x4E,             // RecvOp Trigger (commonfiles/opcodes.h:86): CSceneStateGame::OnTrigger

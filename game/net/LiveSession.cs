@@ -1166,6 +1166,18 @@ public partial class LiveSession : Node
         GD.Print($"live: camera reset over {m.Seconds:0.##} s{(on ? "" : " (no field yet, nothing to reset)")}");
     }
 
+    /// <summary>
+    /// OnPremiumClub (scenestategame.cpp:8426): mode 0 sets the premium end time of the player it names (own or shown), which the item use
+    /// checks (PC::IsVip). The client also refreshes the inventory button and a main-player-info flag, and modes 1 and 2 feed the VIP dialog's
+    /// claimed list; the dialog is not ported (STILL-OPEN), so those are read and logged once.
+    /// </summary>
+    void OnPremiumClub(Ms2.Net.Packets.PremiumClub m)
+    {
+        if (m.Kind != Ms2.Net.Packets.PremiumClubKind.Time || !m.HasPlayerId) { ReadNotApplied("PremiumClub", m.Mode); return; }
+        if (m.PlayerId == selfObject) Me.PremiumTime = m.EndTime;
+        else if (remote == null || !remote.SetPremiumTime(m.PlayerId, m.EndTime)) return;   // WorldService::FindPCById found no player: the client returns
+    }
+
     readonly HashSet<(string, int)> packetsNotApplied = new();
 
     /// <summary>A packet read whole but not applied (its client state has no home here yet): logged once per packet name and mode.</summary>
@@ -2127,6 +2139,8 @@ public partial class LiveSession : Node
                 ReadNotApplied("WorldShareInfo", Ms2.Net.Packets.WorldShareInfo.Read(p.Reader()).Mode);   // OnWorldShareInfo (scenestategame.cpp:9756): the boss-notify npc flag, the world map tile and the world share event dialog are not ported
             else if (game.Is(p, Inbound.BannerList))
                 { Ms2.Net.Packets.BannerList.Read(p.Reader()); ReadNotApplied("BannerList", 0); }   // CAdBannerManagerCli::OnBannerList (adbannermanagercli.cpp:31): the ad banner manager and its consumers (cash shop, title) are not ported
+            else if (game.Is(p, Inbound.PremiumClub))
+                OnPremiumClub(Ms2.Net.Packets.PremiumClub.Read(p.Reader(), game.Profile));   // OnPremiumClub (scenestategame.cpp:8426)
             else if (game.Is(p, Inbound.ResponsePet))
                 ReadNotApplied("ResponsePet", Ms2.Net.Packets.PetResponse.Read(p.Reader(), game.Profile).Mode);   // CPetManager::OnResponsePet (petmanager.cpp:722): the pet system (summon, pet window, counts) is not ported
             else if (game.Is(p, Inbound.FunctionCube))
