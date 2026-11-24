@@ -56,7 +56,7 @@ public class OwnStateEnterTests
         ["StateRide"] = (null, false, null, BodyEntry.None),
         ["StateTransform"] = (new[] { "Equip_Change_Mantle_A" }, false, "CH/Common/Eff_FittingDoll.xml", BodyEntry.Idle),
         ["StateTaxiCall"] = (null, false, null, BodyEntry.Idle),
-        ["StateSummon"] = (null, false, null, BodyEntry.None),
+        ["StateSummon"] = (null, false, null, BodyEntry.Idle),   // vfunc_3 moves by a zero vector (statesummon.cpp:275-279)
         ["StatePvPWinLose"] = (null, false, null, BodyEntry.Idle),
         ["StateUseFurniture"] = (null, false, null, BodyEntry.None),
         ["StateCashCall"] = (null, false, null, BodyEntry.Idle),
@@ -72,7 +72,7 @@ public class OwnStateEnterTests
         ["StateBanner"] = (null, false, null, BodyEntry.Idle),
         ["StateMicroGameRps"] = (null, false, null, BodyEntry.None),
         ["StateReact"] = (null, false, null, BodyEntry.None),
-        ["StateTreeWatering"] = (null, false, null, BodyEntry.None),
+        ["StateTreeWatering"] = (null, false, null, BodyEntry.Idle),   // vfunc_3 moves by a zero vector (statetreewateringcontext.cpp:140-145)
         ["StateNurturing"] = (null, false, null, BodyEntry.None),
         ["StateMicroGameCoupleDance"] = (null, false, null, BodyEntry.None),
         ["StateTriggerFollowNpc"] = (null, false, null, BodyEntry.Idle),

@@ -17,6 +17,9 @@ public enum StateExitCause
     SequenceEnd,
     /// <summary>No exit of the state's own: input, a cancel or a packet only.</summary>
     NoSelfExit,
+    /// <summary>The casting bar the enter starts: its finish (OnCastingFinished sets m_n48) enters StateIdle on the next
+    /// frame; leaving the state stops the bar (FUN_1418e1390).</summary>
+    CastingBar,
     /// <summary>The body's move state of the same id runs the exit (Me.State is left with it, LeaveForBodyState).</summary>
     Body,
     /// <summary>Kept apart from Me.State: a controller of its own runs the state.</summary>
@@ -89,8 +92,9 @@ public sealed record StateEnterRow(string Class, int Id, StateEnterPlay Play, st
 /// (pc.cpp:668-721). Each frame the client's own exit is run: at once, on the input step, on a timer or at the end of the
 /// played sequence; the states whose input step reads no move key hold the body while they run. StateStun is the
 /// <see cref="OwnStun"/> kept across entries, which the stun buff also enters (<see cref="EnterBuffStun"/>).
-/// STILL-OPEN: the casting bar that StateSummon, StateRecall, StateTreeWatering and StateAutoInteraction start with no data
-/// is not shown; StateTalk's TALK_UP with a talkable NPC's talk open is not chosen (IDLE is played); StateSwimDash's swim
+/// StateSummon, StateRecall, StateTreeWatering and StateAutoInteraction start the casting bar (<see cref="TakeCast"/>), and
+/// its finish leaves them (<see cref="CastFinished"/>); a hit leaves the first three (<see cref="Hit"/>).
+/// STILL-OPEN: StateTalk's TALK_UP with a talkable NPC's talk open is not chosen (IDLE is played); StateSwimDash's swim
 /// dash effect is not played.
 /// </summary>
 public sealed class OwnStateExit
@@ -133,12 +137,12 @@ public sealed class OwnStateExit
         new("StateTransformDoll", 0x22, StateExitCause.NotOwn, "fittingdollslot_1.cpp:146", "the fitting doll's 0x22 (the pc registers StateTransform, pc.cpp:698)"),
         new("StatePuppetNpc", 0x23, StateExitCause.NotOwn, "stateidle.cpp:1034", "an NPC, pet or doll state"),
         new("StateTaxiCall", 0x25, StateExitCause.AtOnce, "statetaxicalldata.cpp:171-174", "no StateTaxiCallData: the enter goes on to StateIdle (TaxiCalling runs a call the own pc starts)"),
-        new("StateSummon", 0x26, StateExitCause.Apart, "", "rideSummon (its Tick)"),
+        new("StateSummon", 0x26, StateExitCause.CastingBar, "statesummon.cpp:199-272, 283-294, 297-373, 390-400", "no StateSummonData: the casting bar (string 0, SummonRideeDuration); its finish enters StateIdle, as a hit does (vfunc_6); the summon the own pc starts with an item is rideSummon's"),
         new("StatePvPWinLose", 0x28, StateExitCause.NoSelfExit, "statepvpwinlose.cpp:46-53, 65-70", "sub 0: no win or lose sequence plays, so the sequence end never leaves; the input step is State's (a queued skill only)"),
         new("StateUseFurniture", 0x29, StateExitCause.Later, "stateusefurnituredata.cpp:281", "its feature (furniture/home) is under Later; client exit: the frame at stateusefurnituredata.cpp:281 -> 1"),
         new("StateCashCall", 0x2a, StateExitCause.AtOnce, "statecashcalldata.cpp:159-162", "no StateCashCallData: the enter goes on to StateIdle"),
         new("StateGrabTarget", 0x2b, StateExitCause.AtOnce, "statedatagrabtarget.cpp:87-89", "no StateDataGrabTarget: the enter goes on to StateIdle"),
-        new("StateRecall", 0x2c, StateExitCause.NoSelfExit, "", "input, cancel or a packet only"),
+        new("StateRecall", 0x2c, StateExitCause.CastingBar, "statesummon.cpp:489-517, 520-531, 534-575, 577-587", "the casting bar (string 0x657, RecallCastingTime); its finish enters StateIdle (no StateRecallData: no party packet), as a hit does (vfunc_6)"),
         new("StateFishing", 0x2d, StateExitCause.AtOnce, "statefishingdata.cpp:206-209", "no StateFishingData: the enter goes on to StateIdle"),
         new("StateFishingFloat", 0x2e, StateExitCause.NotOwn, "cubecraft_1.cpp:928", "the fishing float's state (CFishingGuideObject), not the pc's"),
         new("StatePlayInstrument", 0x2f, StateExitCause.Later, "stateplayinstrumentdata.cpp:427", "its feature (instruments) is under Later; client exit: the frame at stateplayinstrumentdata.cpp:427 -> 5"),
@@ -146,12 +150,12 @@ public sealed class OwnStateExit
         new("StateTriggerEmotion", 0x35, StateExitCause.Body, "stateemotionidle.cpp:438", "the body's TriggerEmotion runs the exit"),
         new("StateHomeConvenient", 0x36, StateExitCause.AtOnce, "statehomeconvenient.cpp:245-248", "no StateHomeConvenientData: the enter goes on to StateIdle"),
         new("StateHomemade", 0x37, StateExitCause.Later, "statehomemade.cpp:239", "its feature (furniture/home) is under Later; client exit: the frame at statehomemade.cpp:239 -> 1"),
-        new("StateAutoInteraction", 0x39, StateExitCause.Apart, "stateinteractdata.cpp:741", "the interaction casts (InteractKey)"),
+        new("StateAutoInteraction", 0x39, StateExitCause.CastingBar, "stateinteractdata.cpp:684-718, 721-743, 759, 768-803", "no StateAutoInteractionData: the casting param's defaults (duration 0, no text), which the movie completes at once; the next frame enters StateIdle (no SmartPush packet). It has no hit exit"),
         new("StateCoupleEmotion", 0x3a, StateExitCause.AtOnce, "statecoupleemotion.cpp:422-425", "no StateCoupleEmotionData: the enter goes on to StateIdle"),
         new("StateBanner", 0x3b, StateExitCause.AtOnce, "statebannerdata.cpp:115-117", "no StateBannerData: the enter goes on to StateIdle"),
         new("StateMicroGameRps", 0x3c, StateExitCause.Later, "statemicrogame.cpp:262", "its feature (minigames) is under Later; client exit: the sequence end at statemicrogame.cpp:262 -> 1"),
         new("StateReact", 0x3d, StateExitCause.Apart, "statereact.cpp:271", "reactState (SequenceEnded = EndOfSequence)"),
-        new("StateTreeWatering", 0x3e, StateExitCause.NoSelfExit, "", "input, cancel or a packet only"),
+        new("StateTreeWatering", 0x3e, StateExitCause.CastingBar, "unit_140ad5280_statetreewateringcontext.cpp:97-125, 148-158, 161-190, 209-219", "sub 0: the casting bar (string 0, SummonRideeDuration), no sequence; its finish enters StateIdle (no TreeWatering packet), as a hit does (vfunc_6)"),
         new("StateNurturing", 0x40, StateExitCause.Later, "statenurturing.cpp:286", "its feature (nurturing) is under Later; client exit: the frame at statenurturing.cpp:286 -> 1"),
         new("StateMicroGameCoupleDance", 0x45, StateExitCause.Later, "statemicrogame.cpp:862", "its feature (minigames) is under Later; client exit: statemicrogame.cpp:862 -> 1"),
         new("StateTriggerFollowNpc", 0x46, StateExitCause.AtOnce, "stateemotionidle.cpp:508-510", "no StateDataTriggerFollowNpc: the enter goes on to StateIdle"),
@@ -200,12 +204,12 @@ public sealed class OwnStateExit
         new("StateTransformDoll", 0x22, StateEnterPlay.NotOwn, "", ""),
         new("StatePuppetNpc", 0x23, StateEnterPlay.NotOwn, "", ""),
         new("StateTaxiCall", 0x25, StateEnterPlay.Nothing, "Idle at once (Object_React_B only with data)", "statetaxicalldata.cpp:171-202"),
-        new("StateSummon", 0x26, StateEnterPlay.CastingBar, "the casting bar (text 0, the default duration); no sequence", "statesummon.cpp:199-272"),
+        new("StateSummon", 0x26, StateEnterPlay.CastingBar, "the casting bar (string 0, SummonRideeDuration); no sequence (sub 0)", "statesummon.cpp:199-272, 375-388"),
         new("StatePvPWinLose", 0x28, StateEnterPlay.Nothing, "sub 0: no win or lose sequence", "statepvpwinlose.cpp:46-53"),
         new("StateUseFurniture", 0x29, StateEnterPlay.Later, "", "stateusefurnituredata.cpp:167"),
         new("StateCashCall", 0x2a, StateEnterPlay.Nothing, "Idle at once", "statecashcalldata.cpp:159-162"),
         new("StateGrabTarget", 0x2b, StateEnterPlay.Nothing, "Idle at once", "statedatagrabtarget.cpp:87-89"),
-        new("StateRecall", 0x2c, StateEnterPlay.Sequence, "Object_React_A, and the casting bar (text 0x657)", "statesummon.cpp:503-516"),
+        new("StateRecall", 0x2c, StateEnterPlay.Sequence, "Object_React_A, and the casting bar (string 0x657, RecallCastingTime)", "statesummon.cpp:503-516"),
         new("StateFishing", 0x2d, StateEnterPlay.Nothing, "Idle at once", "statefishingdata.cpp:206-209"),
         new("StateFishingFloat", 0x2e, StateEnterPlay.NotOwn, "", ""),
         new("StatePlayInstrument", 0x2f, StateEnterPlay.Later, "", "stateplayinstrumentdata.cpp:227"),
@@ -213,12 +217,12 @@ public sealed class OwnStateExit
         new("StateTriggerEmotion", 0x35, StateEnterPlay.Nothing, "no emotion list, nothing plays", "stateemotionidle.cpp:384-416"),
         new("StateHomeConvenient", 0x36, StateEnterPlay.Nothing, "Idle at once", "statehomeconvenient.cpp:245-248"),
         new("StateHomemade", 0x37, StateEnterPlay.Later, "", "statehomemade.cpp:151"),
-        new("StateAutoInteraction", 0x39, StateEnterPlay.Sequence, "Object_React_C, and the casting bar", "stateinteractdata.cpp:684-705, 762-765"),
+        new("StateAutoInteraction", 0x39, StateEnterPlay.Sequence, "Object_React_C, and the casting bar with the param's defaults (no text, 0 ms)", "stateinteractdata.cpp:684-705, 762-803"),
         new("StateCoupleEmotion", 0x3a, StateEnterPlay.Nothing, "Idle at once", "statecoupleemotion.cpp:422-425"),
         new("StateBanner", 0x3b, StateEnterPlay.Nothing, "Idle at once", "statebannerdata.cpp:115-117"),
         new("StateMicroGameRps", 0x3c, StateEnterPlay.Later, "", "statemicrogame.cpp:262"),
         new("StateReact", 0x3d, StateEnterPlay.Nothing, "no StateReactData: the assert, nothing plays", "statereact.cpp:139-144"),
-        new("StateTreeWatering", 0x3e, StateEnterPlay.CastingBar, "the casting bar (text 0); no sequence", "unit_140ad5280_statetreewateringcontext.cpp:97-125"),
+        new("StateTreeWatering", 0x3e, StateEnterPlay.CastingBar, "the casting bar (string 0, SummonRideeDuration); no sequence (sub 0)", "unit_140ad5280_statetreewateringcontext.cpp:97-125, 193-206"),
         new("StateNurturing", 0x40, StateEnterPlay.Later, "", "statenurturing.cpp:286"),
         new("StateMicroGameCoupleDance", 0x45, StateEnterPlay.Later, "", "statemicrogame.cpp:862"),
         new("StateTriggerFollowNpc", 0x46, StateEnterPlay.Nothing, "Idle at once", "stateemotionidle.cpp:508-510"),
@@ -259,7 +263,8 @@ public sealed class OwnStateExit
         var row = OfOwnState(id);
         if (row == null) return BodyEntry.None;
         if (row.Cause is StateExitCause.AtOnce or StateExitCause.InputStep) return BodyEntry.Idle;
-        if (id is 0x11 or 0x12 or 0x16 or 0x22 or 0x28 or 0x2c or 0x39) return BodyEntry.Idle;
+        if (id is 0x11 or 0x12 or 0x16 or 0x22 or 0x28) return BodyEntry.Idle;
+        if (row.Cause == StateExitCause.CastingBar) return BodyEntry.Idle;   // StateSummon / StateTreeWatering's vfunc_3 moves by a zero vector
         if (row.Cause != StateExitCause.Body) return BodyEntry.None;
         return id switch
         {
@@ -281,6 +286,13 @@ public sealed class OwnStateExit
         };
     }
 
+    /// <summary>The cast a casting-bar state's enter started, once per entry; the caller starts it on the bar (UICastingBar
+    /// 0x4e72, StartCastingText or StartCasting) with a listener whose OnCastingFinished calls <see cref="CastFinished"/>.</summary>
+    public CastRequest Cast { get; private set; }
+    /// <summary>The casting-bar state was left (its vfunc_5: FUN_1418e1390 on the bar); the caller stops the bar, once.</summary>
+    public bool BarStopped { get; private set; }
+    bool castDone;   // m_n48
+
     /// <summary>StateTransform's sequence and effect (statetransform.cpp:57-63).</summary>
     public const string TransformSequence = "Equip_Change_Mantle_A";
     public const string TransformEffect = "CH/Common/Eff_FittingDoll.xml";
@@ -296,6 +308,18 @@ public sealed class OwnStateExit
     /// <summary>StateSpawn's hide time (statespawn.cpp:73-75): Unk_Random seeded with the object id, its first number
     /// % 300 + 100 ms.</summary>
     public static int SpawnDelayMs(int objectId) => (int)(new Ms2.Quest.QuestRandom(objectId).Next() % 300) + 100;
+
+    /// <summary>The casting bar's caption (a GetStringCommon id) and time in ms. StateAutoInteraction with no data starts the
+    /// param's defaults: no caption (<see cref="NoCaption"/>) and 0 ms.</summary>
+    public sealed record CastRequest(int StringCommonId, int DurationMs);
+    /// <summary>The caption of a cast whose param keeps the ctor's empty string (no GetStringCommon).</summary>
+    public const int NoCaption = -1;
+    /// <summary>StateRecall's caption (statesummon.cpp:513).</summary>
+    public const int RecallCaption = 0x657;
+    /// <summary>The constants SummonRideeDuration and RecallCastingTime in ms (Define, constantsblocks.cpp:880, 887: 5000
+    /// each when the tables do not set them); the caller sets them from the tables.</summary>
+    public int SummonRideeDurationMs = 5000;
+    public int RecallCastingTimeMs = 5000;
 
     /// <summary>StateStun, kept across entries (its sub and kind).</summary>
     public readonly OwnStun Stun = new();
@@ -365,12 +389,24 @@ public sealed class OwnStateExit
                 Sequence = TransformSequence;
                 Left = SequenceLength?.Invoke(Sequence) ?? -1;
                 break;
-            case StateExitCause.NoSelfExit when id is 0x28 or 0x2c or 0x16:
-                if (id == 0x2c) Play(RecallSequence, false, false);
-                else if (id == 0x16) Play(TalkAction, false, true);
+            case StateExitCause.NoSelfExit when id is 0x28 or 0x16:
+                if (id == 0x16) Play(TalkAction, false, true);
                 break;
-            case StateExitCause.Apart when id == 0x39:
-                Play(AutoInteractionSequence, false, false);
+            case StateExitCause.CastingBar:
+                // the held item goes first (PC::SendRequestCube, the caller's HeldItem.UserState), then the sequence and the bar
+                switch (id)
+                {
+                    case 0x26: Cast = new(0, SummonRideeDurationMs); break;                   // statesummon.cpp:204, 259-271
+                    case 0x2c:                                                              // statesummon.cpp:503-516
+                        Play(RecallSequence, false, false);
+                        Cast = new(RecallCaption, RecallCastingTimeMs);
+                        break;
+                    case 0x39:                                                              // stateinteractdata.cpp:688-704
+                        Play(AutoInteractionSequence, false, false);
+                        Cast = new(NoCaption, 0);
+                        break;
+                    case 0x3e: Cast = new(0, SummonRideeDurationMs); break;                   // statetreewateringcontext.cpp:101-125
+                }
                 break;
             default:
                 return false;
@@ -406,13 +442,54 @@ public sealed class OwnStateExit
         if (State == 0) return false;
         if (current != State) { Clear(); return false; }
         if (State == 0x12) return AdvanceStun(dt, stunned);
-        if (Cause == StateExitCause.InputStep) { if (crawlKeyDown) return false; }
+        if (Cause == StateExitCause.CastingBar)
+        {
+            // StateSummon / StateRecall / StateTreeWatering::vfunc_8 and StateAutoInteraction::vfunc_3: m_n48 enters StateIdle
+            if (!castDone) return false;
+        }
+        else if (Cause == StateExitCause.InputStep) { if (crawlKeyDown) return false; }
         else
         {
             if (Left < 0) return false;
             Left -= dt;
             if (Left > 0) return false;
         }
+        Clear();
+        return true;
+    }
+
+    /// <summary>The cast to start on the bar, once.</summary>
+    public CastRequest TakeCast()
+    {
+        var c = Cast;
+        Cast = null;
+        return c;
+    }
+
+    /// <summary>The bar was stopped for a left casting-bar state, once.</summary>
+    public bool TakeBarStopped()
+    {
+        bool b = BarStopped;
+        BarStopped = false;
+        return b;
+    }
+
+    /// <summary>OnCastingFinished of the running casting-bar state (statesummon.cpp:397-400, 584-587,
+    /// statetreewateringcontext.cpp:216-219, stateinteractdata.cpp:759): m_n48 = 1. A finish for a state no longer running
+    /// does nothing (the bar's listener was the state left).</summary>
+    public void CastFinished()
+    {
+        if (Cause == StateExitCause.CastingBar && State != 0) castDone = true;
+    }
+
+    /// <summary>
+    /// State::vfunc_6 of the running state, which PC's hit reaction calls (pc.cpp:952, 1075) after any push state: StateSummon,
+    /// StateRecall and StateTreeWatering enter StateIdle for the own pc (statesummon.cpp:390-394, 577-581,
+    /// statetreewateringcontext.cpp:209-213); StateAutoInteraction keeps State's empty one. Returns true when it leaves.
+    /// </summary>
+    public bool Hit()
+    {
+        if (State is not (0x26 or 0x2c or 0x3e)) return false;
         Clear();
         return true;
     }
@@ -459,6 +536,9 @@ public sealed class OwnStateExit
     void Clear()
     {
         if (State == 0x12) Stun.Leave();
+        if (Cause == StateExitCause.CastingBar && State != 0) BarStopped = true;   // vfunc_5: FUN_1418e1390
+        castDone = false;
+        Cast = null;
         State = 0; Sequence = null; Left = -1; Played = null; PlayedLoops = false; PlayedIsAction = false; Effect = null;
     }
 }

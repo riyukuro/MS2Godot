@@ -186,6 +186,9 @@ public partial class LiveSession : Node
     internal int OwnStateExitRunning => ownStateExit.State;
     /// <summary>The sequence the running own state plays on the body (null none).</summary>
     internal string OwnStatePlayed => ownStateExit.Played;
+    /// <summary>The sequence the last fresh entry of a state run here asked for (a state left on its entry frame shows it
+    /// for no frame, as the client's next update leaves it).</summary>
+    internal string OwnStateEnterPlayed;
 
     /// <summary>The live run's raw UserState (OnUserState: i32 object id, u8 state) for the own pc, as the server's debug
     /// packet command takes it: each byte in hex, the opcode first.</summary>
@@ -222,13 +225,52 @@ public partial class LiveSession : Node
     void EnterOwnStateExit(int st)
     {
         if (ownStunEntry) return;   // the stun buff's entry of the running StateStun (TickOwnStateExit)
+        bool fresh = ownStateExit.State != st;
         bool atOnce = ownStateExit.Enter(st, Me.ObjectId);
+        if (fresh && ownStateExit.State == st) OwnStateEnterPlayed = ownStateExit.Played;
         ServerStatesEntered++;
         ServerStateExitLeft = atOnce ? 0 : ownStateExit.State == st ? ownStateExit.Left : -1;
-        if (ownStateExit.State == st)
+        if (fresh && ownStateExit.State == st)
             GD.Print($"live: server state 0x{st:x} runs its own exit: {ownStateExit.Cause}{(ownStateExit.Sequence != null ? " " + ownStateExit.Sequence : "")}, {(ownStateExit.Left < 0 ? "none comes" : $"{ownStateExit.Left:0.###} s")}{(ownStateExit.Played != null ? ", plays " + ownStateExit.Played : "")}{(ownStateExit.Hidden ? ", hidden" : "")}");
         if (atOnce && Me.LeaveServerState(st)) GD.Print($"live: server state 0x{st:x} left at once (no state data)");
+        SyncOwnStateCast();
     }
+
+    /// <summary>The casting bar of <see cref="ownStateExit"/>'s casting-bar states: the left state's vfunc_5 stops the bar
+    /// (FUN_1418e1390), then the entered state's vfunc_4 starts its cast (StartCastingText, or StartCasting with the param's
+    /// defaults for StateAutoInteraction), whose OnCastingFinished sets the state's m_n48.</summary>
+    void SyncOwnStateCast()
+    {
+        if (ownStateExit.TakeBarStopped()) CastingBar?.Cancel();
+        if (ownStateExit.TakeCast() is not { } c) return;
+        ownStateCasts++;
+        LastOwnStateCast = c;
+        if (CastingBar == null) { GD.Print("live: server state cast with no casting bar"); return; }
+        string text = c.StringCommonId == Ms2.Ui.OwnStateExit.NoCaption ? "" : Ms2.Ui.Hud.MessageBoxData.Common(c.StringCommonId);
+        if (c.StringCommonId == Ms2.Ui.OwnStateExit.NoCaption)
+            CastingBar.StartCasting(ownStateCastListener, new Ms2.Ui.Hud.CastingParam { Duration = c.DurationMs });
+        else
+            CastingBar.StartCastingText(ownStateCastListener, text, c.DurationMs, showTime: false, activeBar: true, endText: "");
+        GD.Print($"live: server state 0x{ownStateExit.State:x} casts {c.DurationMs} ms \"{text}\"");
+    }
+
+    /// <summary>The live run's count of the casts the server-set states started, and the last one.</summary>
+    internal int ownStateCasts;
+    internal Ms2.Ui.OwnStateExit.CastRequest LastOwnStateCast;
+    /// <summary>The HUD's casting bar runs a cast (UICastingBar::IsCasting).</summary>
+    internal bool CastingBarRuns => CastingBar?.IsCasting == true;
+
+    /// <summary>The server-set casting-bar state as the bar's ICastingEventListener: its finish sets m_n48; a replacing cast
+    /// calls the base's empty OnCastingCancelled (none of the four overrides it).</summary>
+    sealed class OwnStateCastListener : Ms2.Ui.Hud.ICastingEventListener
+    {
+        readonly Ms2.Ui.OwnStateExit exit;
+        public OwnStateCastListener(Ms2.Ui.OwnStateExit exit) { this.exit = exit; }
+        public void OnCastingFinished() => exit.CastFinished();
+        public void OnCastingCancelled() { }
+    }
+    OwnStateCastListener ownStateCastListenerField;
+    OwnStateCastListener ownStateCastListener => ownStateCastListenerField ??= new OwnStateCastListener(ownStateExit);
 
     bool ownStunEntry;
     /// <summary>The own buffs' stun this frame (AdditionalBuffList.StunEntry for the pc); the HUD sets it with the buff list.</summary>
@@ -267,6 +309,7 @@ public partial class LiveSession : Node
             if (ownStateExit.Advance(delta, Me.State, false, stunned) && Me.LeaveServerState(st)) GD.Print($"live: server state 0x{st:x} left by its own exit");
             else if (ownStateExit.State == 0 && Me.State != st) GD.Print($"live: server state 0x{st:x} replaced by state {Me.State}");
         }
+        SyncOwnStateCast();
         if (player == null || !IsInstanceValid(player)) return;
         player.SetStateSequence(ownStateExit.Played, ownStateExit.PlayedLoops, ownStateExit.PlayedIsAction, ownStateExit.Plays);
         player.SetSpawnHidden(ownStateExit.Hidden);
@@ -1386,6 +1429,8 @@ public partial class LiveSession : Node
         player.TaxiHold = TaxiHoldsMove;
         player.ServerStateHold = ServerStateHoldsBody;
         ownStateExit.SequenceLength ??= OwnSequenceSeconds;
+        ownStateExit.SummonRideeDurationMs = SummonRideeDuration;   // Client::Constants SummonRideeDuration and RecallCastingTime
+        ownStateExit.RecallCastingTimeMs = Constants()?.Int("RecallCastingTime", 5000) ?? 5000;
         player.SetBattleStance(SelfInBattle);
         player.ServerTick = () => game?.Session.ServerTick ?? 0;
         SyncDeadFlag();   // an own FieldAddUser with no health: the flag, no state (scenestategame.cpp:11185)

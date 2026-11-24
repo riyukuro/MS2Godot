@@ -74,6 +74,17 @@ public partial class LiveSession
                 d.Position.ToVector3(), recordDir, d.DirectionShort.Z, attacker, ownHitData);
             if (change == HitReaction.Change.Hit) player.EnterHit(ownHitData, ownHitData.Duration > 0f);   // vfunc_59(0xd, data, 0, duration > 0), pc.cpp:943
             else if (change == HitReaction.Change.Idle) player.ReactIdle();
+            else if (total < 0)
+            {
+                // pc.cpp:952: the state kept takes vfunc_6; StateSummon, StateRecall and StateTreeWatering enter StateIdle
+                int st = ownStateExit.State;
+                if (st != 0 && Me.State == st && ownStateExit.Hit() && Me.LeaveServerState(st))
+                {
+                    Godot.GD.Print($"live: server state 0x{st:x} left by a hit");
+                    SyncOwnStateCast();
+                    player.ReactIdle();
+                }
+            }
         }
     }
 }

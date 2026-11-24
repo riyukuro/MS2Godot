@@ -287,39 +287,70 @@ public partial class LiveSession
                 Shows("the follow camera");
                 continue;
             }
-            if (step.StartsWith("ownstate:"))      // ownstate:<hex id>: the server's raw UserState for the own pc (its debug packet command), the exit timed
+            if (step.StartsWith("ownstate:"))      // ownstate:<hex id>[:move]: the server's raw UserState for the own pc (its debug packet command), the exit timed
             {
-                int st = Convert.ToInt32(step[9..], 16);
+                string[] parts = step[9..].Split(':');
+                int st = Convert.ToInt32(parts[0], 16);
+                bool moveOut = parts.Length > 1 && parts[1] == "move";   // a casting-bar state left by walking (its vfunc_8)
                 var row = Ms2.Ui.OwnStateExit.OfOwnState(st);
-                int before = live.ServerStatesEntered;
+                int before = live.ServerStatesEntered, castsBefore = live.ownStateCasts;
+                bool castState = row?.Cause == Ms2.Ui.StateExitCause.CastingBar;
                 bool sent = hud.SubmitChatLine("/debug packet " + live.OwnUserStateBytes(st));
                 await until(() => live.ServerStatesEntered > before, 60 * 5);
                 bool entered = live.ServerStatesEntered > before;
-                double expect = live.ServerStateExitLeft;
+                bool cast = live.ownStateCasts > castsBefore;
+                var castReq = cast ? live.LastOwnStateCast : null;
+                double expect = castState ? (castReq?.DurationMs ?? -1000) / 1000.0 : live.ServerStateExitLeft;
+                bool barRan = live.CastingBarRuns;
+                string enterPlayed = live.OwnStateEnterPlayed;
+                ulong w0 = Time.GetTicksMsec();   // the casting bar's timer runs on the real clock (Timer::FUN_1408688e0)
                 ulong f0 = Engine.GetProcessFrames();   // game time: the runs step a fixed 1/60 s a frame (--fixed-fps 60)
                 var at = live.OwnPlayer.GlobalPosition;
-                hud.DriveTowardScripted(at + new Vector3(600, 0, 0), false);   // a move held through the state: a held body stays put
+                // a move held through the state: a held body stays put; a casting-bar state is left by it (its vfunc_8), so
+                // only the :move form holds one
+                if (!castState || moveOut) hud.DriveTowardScripted(at + new Vector3(600, 0, 0), false);
                 // what the state plays on the body (Ms2.Ui.OwnStateExit.Enters): the model's sequences, the body's sequences
                 // and its hide, frame by frame, and a shot halfway through
                 var asked = new List<string>(); var shown = new List<string>(); bool wasHidden = false, shotTaken = false;
-                ulong half = (ulong)(expect > 0 ? expect * 30 : 20);
+                ulong half = (ulong)(expect > 0 && !castState ? expect * 30 : 20);
                 await until(() =>
                 {
                     if (live.OwnStatePlayed is { } pl && (asked.Count == 0 || asked[^1] != pl)) asked.Add(pl);
                     string cur = live.OwnPlayer.CurrentAnim;
                     if (shown.Count == 0 || shown[^1] != cur) shown.Add(cur);
                     wasHidden |= live.OwnPlayer.IsHidden;
-                    if (!shotTaken && Engine.GetProcessFrames() - f0 >= half) { Shot($"ownstate-{st:x}.png"); shotTaken = true; }
+                    barRan |= live.CastingBarRuns;
+                    bool shotDue = castState ? expect > 0 && Time.GetTicksMsec() - w0 >= (ulong)(expect * 500) : Engine.GetProcessFrames() - f0 >= half;
+                    if (!shotTaken && shotDue) { Shot($"ownstate-{st:x}{(moveOut ? "-move" : "")}.png"); shotTaken = true; }
                     return live.Me.State != st;
                 }, 60 * 12);
+                double took = castState ? (Time.GetTicksMsec() - w0) / 1000.0 : (Engine.GetProcessFrames() - f0) / 60.0;
+                if (moveOut)   // the walk goes on past the leave
+                {
+                    ulong m0 = Engine.GetProcessFrames();
+                    await until(() =>
+                    {
+                        string cur = live.OwnPlayer.CurrentAnim;
+                        if (shown.Count == 0 || shown[^1] != cur) shown.Add(cur);
+                        return Engine.GetProcessFrames() - m0 >= 20;
+                    }, 60);
+                }
                 hud.DriveEnd();
-                double took = (Engine.GetProcessFrames() - f0) / 60.0;
                 var shift = live.OwnPlayer.GlobalPosition - at; shift.Y = 0;
                 float moved = shift.Length();   // on the flat: a fall or a landing is not a move
+                await frames(2);
+                bool barAfter = live.CastingBarRuns;
+                if (castState)
+                    GD.Print($"live: combat ownstate 0x{st:x} casts: started {cast} ({castReq?.StringCommonId ?? 0:x} {castReq?.DurationMs ?? 0} ms \"{(castReq == null || castReq.StringCommonId < 0 ? "" : Ms2.Ui.Hud.MessageBoxData.Common(castReq.StringCommonId))}\"), the bar ran {barRan}, runs after {barAfter}, moved out {moveOut}");
                 GD.Print($"live: combat ownstate 0x{st:x} ({row?.Class} {row?.Cause}): sent {sent}, entered {entered}, expected exit {expect:0.###} s, state now {live.Me.State} after {took:0.###} s, moved {moved:0.##}");
                 var enterRow = Ms2.Ui.OwnStateExit.EnterOfOwnState(st);
                 GD.Print($"live: combat ownstate 0x{st:x} plays ({enterRow?.Play} {enterRow?.What}): asked [{string.Join(", ", asked)}], body [{string.Join(", ", shown)}], hidden {wasHidden}, now hidden {live.OwnPlayer.IsHidden}");
-                if (enterRow?.Play == Ms2.Ui.StateEnterPlay.Sequence)
+                if (enterRow?.Play == Ms2.Ui.StateEnterPlay.Sequence && castState && expect == 0)
+                    // a 0 ms cast completes in the enter and the state's first update leaves: the sequence is asked for and
+                    // shown for no frame, as the client's
+                    Check($"server state 0x{st:x} asks for its sequence and leaves on its first update ({enterPlayed})",
+                        enterPlayed == Ms2.Ui.OwnStateExit.AutoInteractionSequence && took < 0.1);
+                else if (enterRow?.Play == Ms2.Ui.StateEnterPlay.Sequence)
                     Check($"the body plays server state 0x{st:x}'s sequences as the client ({string.Join(", ", asked)})",
                         asked.Count > 0 && asked.Where(n => n != Ms2.Ui.OwnStateExit.TalkAction).All(n => shown.Contains(n.ToLowerInvariant())));
                 else if (enterRow?.Play == Ms2.Ui.StateEnterPlay.Hide)
@@ -331,6 +362,12 @@ public partial class LiveSession
                     Ms2.Ui.StateExitCause.Timer or Ms2.Ui.StateExitCause.SequenceEnd =>
                         expect > 0 && live.Me.State != st && System.Math.Abs(took - expect) < 0.15 && moved < 0.05f,
                     Ms2.Ui.StateExitCause.NoSelfExit => live.Me.State == st && moved < 0.05f,
+                    // the bar shows for the cast's time (a 0 ms cast the movie completes at once) and its finish leaves; a
+                    // walk leaves at once and stops the bar
+                    Ms2.Ui.StateExitCause.CastingBar when moveOut => cast && live.Me.State != st && took < 0.5 && !barAfter && moved > 0.05f
+                        && shown.Any(n => n.StartsWith("run", StringComparison.Ordinal) || n.StartsWith("walk", StringComparison.Ordinal)),
+                    Ms2.Ui.StateExitCause.CastingBar => cast && live.Me.State != st && !barAfter && moved < 0.05f
+                        && (expect > 0 ? barRan && System.Math.Abs(took - expect) < 0.15 : took < 0.1),
                     _ => false,
                 } == true;
                 Check($"the own pc leaves server state 0x{st:x} as the client ({row?.Cause})", ok);

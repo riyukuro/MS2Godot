@@ -696,8 +696,9 @@ public class HeldItemTests
     public void ServerStatesThatStartWithSendRequestCubeLetTheItemGo()
     {
         // OnUserState (scenestategame.cpp:5759-5771) passes every state to vfunc_59; the PC ctor (pc.cpp:675-697)
-        // registers ladder 8, rope 9, dead 0xc, climb 0x1d, ride 0x21
-        foreach (var state in new[] { 8, 9, 0x1d, 0x21 })
+        // registers ladder 8, rope 9, dead 0xc, climb 0x1d, ride 0x21; the casting-bar states summon 0x26, recall 0x2c,
+        // auto interaction 0x39 and tree watering 0x3e start with it too
+        foreach (var state in new[] { 8, 9, 0x1d, 0x21, 0x26, 0x2c, 0x39, 0x3e })
         {
             var held = new HeldItem();
             var sent = new List<IOutPacket>();
