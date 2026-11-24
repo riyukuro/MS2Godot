@@ -74,19 +74,27 @@ public sealed partial class Runtime
     /// <summary>Defines a native class from a C# type marked [AsClass]; its base must be defined already.</summary>
     public AsClass Bind(Type t)
     {
-        var at = t.GetCustomAttribute<AsClassAttribute>() ?? throw new ArgumentException(t.Name + " has no [AsClass]");
+        var refl = Reflected.GetValue(t, tt => new Members(tt));
+        var at = refl.Class ?? throw new ArgumentException(t.Name + " has no [AsClass]");
         var super = at.Super == null ? null : GetClass(at.Super) ?? throw new InvalidOperationException($"native base {at.Super} of {at.Name} not defined");
         var c = NewNativeClass(at.Name, super, cls => (AsObject)Activator.CreateInstance(t), at.Dynamic);
         c.NativeType = t;
         c.IsFinal = at.Final;
-        var refl = Reflected.GetValue(t, tt => new Members(tt));
         foreach (var (mi, isCtor, asAt) in refl.Methods)
         {
             if (isCtor)
             {
                 var m = mi;
                 var baseCtor = super?.Ctor;
-                c.Ctor = new NativeMethod(at.Name + "/ctor", (self, a) => { CheckSelf(t, self, at.Name); m.Invoke(self, new object[] { a }); return Rt.Undef; });
+                NativeCall ctor = null;
+                // as MethodBase.Invoke did: an exception the constructor throws comes out wrapped
+                c.Ctor = new NativeMethod(at.Name + "/ctor", (self, a) =>
+                {
+                    CheckSelf(t, self, at.Name);
+                    try { (ctor ??= NativeCall.Of(m)).Call(self, new object[] { a }); }
+                    catch (Exception e) when (e is not TargetInvocationException) { throw new TargetInvocationException(e); }
+                    return Rt.Undef;
+                });
                 continue;
             }
             if (asAt == null || mi.IsSpecialName) continue;
@@ -112,15 +120,18 @@ public sealed partial class Runtime
         return c;
     }
 
-    /// <summary>A native type's [As] members, read once per process (each open binds the flash classes into a new runtime).</summary>
+    /// <summary>A native type's [AsClass] and [As] members, read once per process (each open binds the flash classes into a new
+    /// runtime; reading an attribute again compiles reflection invoke stubs for AttributeUsageAttribute's setters).</summary>
     sealed class Members
     {
+        public readonly AsClassAttribute Class;
         public readonly List<(MethodInfo Method, bool IsCtor, AsAttribute As)> Methods = new();
         public readonly List<(PropertyInfo Property, AsAttribute As)> Props = new();
         public readonly List<(FieldInfo Field, AsAttribute As)> Fields = new();
         public Members(Type t)
         {
             const BindingFlags all = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly;
+            Class = t.GetCustomAttribute<AsClassAttribute>();
             foreach (var mi in t.GetMethods(all)) Methods.Add((mi, mi.GetCustomAttribute<AsCtorAttribute>() != null, mi.GetCustomAttribute<AsAttribute>()));
             foreach (var pi in t.GetProperties(all)) if (pi.GetCustomAttribute<AsAttribute>() is { } a) Props.Add((pi, a));
             foreach (var fi in t.GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly)) if (fi.GetCustomAttribute<AsAttribute>() is { } a) Fields.Add((fi, a));
@@ -128,16 +139,26 @@ public sealed partial class Runtime
     }
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Type, Members> Reflected = new();
 
+    /// <summary>A native type's [AsClass], read once per process.</summary>
+    internal static AsClassAttribute AsClassOf(Type t) => Reflected.GetValue(t, tt => new Members(tt)).Class;
+
     void CheckSelf(Type t, object self, string cls)
     {
         if (!t.IsInstanceOfType(self)) throw TypeError($"Error #1034: {cls} method called on {Rt.Describe(self)}.");
     }
 
+    static readonly Dictionary<MethodInfo, bool> RestParams = new();
+
     Func<object, object[], object> Caller(Type t, MethodInfo mi, string cls)
     {
         var ps = mi.GetParameters();
-        bool rest = ps.Length > 0 && ps[^1].ParameterType == typeof(object[]) && ps[^1].GetCustomAttribute<ParamArrayAttribute>() != null;
+        bool rest;
+        // once per process: reading the attribute again (its inherit walk reads AttributeUsageAttribute) compiles reflection stubs
+        lock (RestParams)
+            if (!RestParams.TryGetValue(mi, out rest))
+                RestParams[mi] = rest = ps.Length > 0 && ps[^1].ParameterType == typeof(object[]) && ps[^1].GetCustomAttribute<ParamArrayAttribute>() != null;
         bool isStatic = mi.IsStatic;
+        NativeCall native = null;
         return (self, a) =>
         {
             if (!isStatic) CheckSelf(t, self, cls);
@@ -149,9 +170,8 @@ public sealed partial class Runtime
                 if (i < a.Length) call[i] = FromAs(a[i], pt, ps[i].Name);
                 else call[i] = ps[i].HasDefaultValue ? ps[i].DefaultValue : pt == typeof(object) ? Rt.Undef : pt.IsValueType ? Activator.CreateInstance(pt) : null;
             }
-            object r;
-            try { r = mi.Invoke(isStatic ? null : self, call); }
-            catch (TargetInvocationException e) when (e.InnerException != null) { System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(e.InnerException).Throw(); throw; }
+            // the member's exception comes out as itself (NativeCall unwraps the reflection path's)
+            var r = (native ??= NativeCall.Of(mi)).Call(self, call);
             return mi.ReturnType == typeof(void) ? Rt.Undef : ToAs(r);
         };
     }

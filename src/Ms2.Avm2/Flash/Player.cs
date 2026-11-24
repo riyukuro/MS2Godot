@@ -108,13 +108,14 @@ namespace Ms2.Avm2.Flash
         /// <summary>Defines every [AsClass] type of this assembly (bases first) and the Scaleform natives.</summary>
         public static void InstallFlash(Runtime rt)
         {
-            var byName = FlashTypes.ToDictionary(t => t.GetCustomAttribute<AsClassAttribute>().Name);
+            // the attributes as read once per process (reading one again compiles reflection stubs, every runtime)
+            var byName = FlashTypes.ToDictionary(t => Runtime.AsClassOf(t).Name);
             var done = new HashSet<string>();
             void Def(string n)
             {
                 if (done.Contains(n) || !byName.TryGetValue(n, out var t)) return;
                 done.Add(n);
-                var sup = t.GetCustomAttribute<AsClassAttribute>().Super;
+                var sup = Runtime.AsClassOf(t).Super;
                 if (sup != null) Def(sup);
                 rt.Bind(t);
             }
