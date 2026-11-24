@@ -95,12 +95,17 @@ public static class SkillTooltip
     /// SetSkillDescription (:3943) over CStringTable::GetSkillDescription (stringtable.cpp:750): the "name" text of the skill's
     /// stringSkillDescription.xml row ("\n" as a line break, FUN_141815650), "" without a row, skill data or level data; a level's
     /// stringParam fills it as comma separated string arguments (FUN_141813790). The "$" reserved words of the text
-    /// (CReservedWordTable::ReplaceObjectWords) are not replaced here.
+    /// (CReservedWordTable::ReplaceObjectWords) are not replaced here. The GMS2 data has no stringSkillDescription.xml: its
+    /// level's own filled text is taken (<see cref="GameTables.Gms2SkillDescription"/>), with the same skill and level data test.
     /// </summary>
     public static string Description(GameTables tables, uint id, int level)
     {
         var text = tables.SkillDescriptionText(id);
-        if (text == null) return "";
+        if (text == null)
+        {
+            if (level is < 0 or > ushort.MaxValue || tables.Skills.Skills.GetSkillLevelData(id, level) == null) return "";
+            return tables.Gms2SkillDescription(id, (ushort)level) ?? "";
+        }
         text = text.Replace("\\n", "\n");
         var lv = tables.Skills.Skills.GetSkillLevelData(id, level);
         if (lv == null) return "";

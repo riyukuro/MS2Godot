@@ -772,6 +772,53 @@ public sealed class GameTables
     public string SkillDescriptionText(uint id) => Lazy(ref skillDescs, "stringskilldescription", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : null;
 
     /// <summary>
+    /// The GMS2 data's skill description of a level: it has no stringSkillDescription.xml in any language, only
+    /// string/&lt;lang&gt;/korskilldescription*.xml (13 files) with a &lt;key id level uiDescription&gt; row per skill level, the text
+    /// already filled (no {n} field in any of the 5943 rows). The available rows (one per id and level, as LoadLevelDescFiles
+    /// keeps them) are read as one file; the level's row is taken, else the row of the highest level not above it
+    /// (FUN_141815330's rule for the level descriptions); "\n" is a line break. Null for data with a stringSkillDescription.xml
+    /// (the KMS data, whose korskilldescription files the client does not read) and for a skill or level without a row.
+    /// INFERRED from the data: the GMS2 exe's string table is not in the decompiled source.
+    /// </summary>
+    public string Gms2SkillDescription(uint id, ushort level)
+    {
+        if (gms2SkillDescs == null)
+        {
+            gms2SkillDescs = new Dictionary<uint, SortedDictionary<ushort, string>>();
+            var langs = strings?.Languages ?? Array.Empty<string>();
+            if (packs != null && !langs.Any(l => packs.Exists("Xml", $"string/{l}/stringskilldescription.xml")))
+                foreach (var lang in langs)
+                {
+                    string prefix = $"string/{lang}/korskilldescription";
+                    var files = packs.List("Xml").Where(n => n.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                        && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) && n.IndexOf('/', prefix.Length) < 0).OrderBy(n => n, StringComparer.Ordinal).ToList();
+                    if (files.Count == 0) continue;
+                    var root = new XElement("ms2", files.SelectMany(n => GameStrings.Parse(packs.Read("Xml", n)).Root?.Elements() ?? Enumerable.Empty<XElement>()));
+                    var file = new Dictionary<uint, SortedDictionary<ushort, string>>();
+                    foreach (var e in FeatureElements.Collect(packs, root, "key", "id", "level"))
+                    {
+                        if ((string)e.Attribute("uiDescription") is not { Length: > 0 } text) continue;
+                        uint key = (uint)ReservedWords.Atoi((string)e.Attribute("id") ?? "");
+                        ushort lv = e.Attribute("level") is { } la ? (ushort)ReservedWords.Atoi((string)la) : (ushort)1;
+                        if (!file.TryGetValue(key, out var levels)) file[key] = levels = new SortedDictionary<ushort, string>();
+                        levels[lv] = text.Replace("\\n", "\n");
+                    }
+                    foreach (var (k, v) in file) gms2SkillDescs.TryAdd(k, v);    // the first language that has the skill
+                }
+        }
+        if (!gms2SkillDescs.TryGetValue(id, out var byLevel)) return null;
+        if (byLevel.TryGetValue(level, out var exact)) return exact;
+        string below = null;
+        foreach (var (lv, t) in byLevel)
+        {
+            if (level < lv) break;
+            below = t;
+        }
+        return below;
+    }
+    Dictionary<uint, SortedDictionary<ushort, string>> gms2SkillDescs;
+
+    /// <summary>
     /// CStringTable::GetItemDescription (stringtable.cpp:737): the <paramref name="tag"/> text of the item's row in
     /// korItemDescription.xml, "" without one. The rows are read as FUN_141814750 (:1113) does: each available &lt;key&gt;
     /// (IsElementAvailable) by id, a later one replacing an earlier one (SetAt), with FUN_141815650 (:1259) keeping the
