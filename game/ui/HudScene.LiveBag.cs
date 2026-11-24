@@ -88,6 +88,23 @@ public partial class HudScene
         bagBoxWrapped = inventory;
     }
 
+    /// <summary>The double click of the bag slot <paramref name="slot"/> (the movie's notifySlotUse with button 0,
+    /// NotifyDragSlot::SlotUse).</summary>
+    public bool BagUseScripted(string slot) =>
+        slot != null && inventory is { IsClosed: false } && inventory.OnCallback("notifySlotUse", new object[] { slot, 0 });
+
+    System.Action<string> bagNoticeWatch;
+
+    /// <summary>Every notice the bag gives (a text, or a common string key) also given to <paramref name="watch"/> (null: no
+    /// longer).</summary>
+    public void WatchBagNotices(System.Action<string> watch)
+    {
+        if (inventory == null) return;
+        if (bagNoticeWatch != null) { inventory.NoticeText -= bagNoticeWatch; inventory.SystemNotice -= bagNoticeWatch; }
+        bagNoticeWatch = watch;
+        if (watch != null) { inventory.NoticeText += watch; inventory.SystemNotice += watch; }
+    }
+
     /// <summary>The message box on screen, null when none.</summary>
     public Ms2.Ui.Hud.MessageBoxData ShownBoxScripted() => MessageBoxLayer.Instance?.Controller?.CurrentBox;
 

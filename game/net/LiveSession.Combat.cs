@@ -1055,7 +1055,7 @@ public partial class LiveSession
                 }
                 continue;
             }
-            if (step.StartsWith("bag"))      // the bag steps: baggive:N (MS2_LIVE_BAG_ITEM), bagkeep (MS2_LIVE_BAG_KEEP, one item), bagopen, bagsort[:id], bagui, bagdrop:N, bagdestroy, bagexpand[:id]
+            if (step.StartsWith("bag"))      // the bag steps: baggive:N (MS2_LIVE_BAG_ITEM), bagkeep (MS2_LIVE_BAG_KEEP, one item), bagopen, bagsort[:id], bagui, bagdrop:N, bagdestroy, bagexpand[:id], baguse:id[:box|yes|notice]
             {
                 string arg = step.Contains(':') ? step[(step.IndexOf(':') + 1)..] : "";
                 string name = step.Contains(':') ? step[..step.IndexOf(':')] : step;
@@ -1190,6 +1190,47 @@ public partial class LiveSession
                         var done = hud.ShownBoxScripted();      // the answer (mode 0xa): box 0x2a2, closed as its OK closes it
                         Check($"the expand's answer box shows: {done?.Msg}", done != null && done.Msg == hud.CommonText(0x2a2));
                         GD.Print($"live: combat bag expand answer: {(hud.BagBoxAnswerScripted(done, 0, done?.Extra ?? "") ? "answered" : "no box")}");
+                        await frames(30);
+                        break;
+                    }
+                    case "baguse":      // baguse:<item id>[:box|yes|notice]: the item given when missing, its slot double clicked
+                    {
+                        var parts = arg.Split(':');
+                        int id = int.Parse(parts[0]); string expect = parts.Length > 1 ? parts[1] : "box";
+                        if (Count(id) == 0) { hud.SubmitChatLine($"/item {id}"); await until(() => Count(id) > 0, 60 * 5); await frames(30); }
+                        long n0 = Count(id);
+                        var notices = new System.Collections.Generic.List<string>();
+                        string slot = hud.BagSlotScripted(id, live.Items.TabOf(id));
+                        hud.WatchBagNotices(notices.Add);
+                        GD.Print($"live: combat bag use {id} ({slot}, {n0} held): {(hud.BagUseScripted(slot) ? "double clicked" : "no slot")}");
+                        await frames(30);
+                        hud.WatchBagNotices(null);
+                        var shown = boxes.LastOrDefault();
+                        GD.Print($"live: combat bag use {id}: boxes [{Tags()}] type {shown?.Type} msg \"{shown?.Msg}\" notices [{string.Join(" | ", notices)}]");
+                        Shot($"bag_use_{id}.png");
+                        if (expect == "notice")
+                        {
+                            Check($"item {id}: a notice, no box, the item kept ({n0} -> {Count(id)})", notices.Count > 0 && boxes.Count == 0 && Count(id) == n0);
+                            break;
+                        }
+                        Check($"item {id}: a box ({Tags()}), no notice, the item kept ({n0} -> {Count(id)})", shown != null && notices.Count == 0 && Count(id) == n0);
+                        if (expect == "yes")
+                        {
+                            var extra0 = string.Join(",", live.Items.ExtraSlots.Select(kv => $"{kv.Key}:{kv.Value}"));
+                            GD.Print($"live: combat bag use {id} yes: {(hud.BagBoxAnswerScripted(shown, 0, shown?.Extra ?? "") ? "answered" : "no box")}");
+                            await until(() => Count(id) != n0, 60 * 5); await frames(60);
+                            var extra1 = string.Join(",", live.Items.ExtraSlots.Select(kv => $"{kv.Key}:{kv.Value}"));
+                            Check($"item {id} used by the server ({n0} -> {Count(id)}), extra slots [{extra0}] -> [{extra1}]", Count(id) == n0 - 1);
+                            Shot($"bag_use_{id}_yes.png");
+                            if (hud.ShownBoxScripted() is { } after) { GD.Print($"live: combat bag use {id} answer box \"{after.Msg}\""); hud.BagBoxAnswerScripted(after, 0, after.Extra); }
+                        }
+                        else
+                        {
+                            int button = shown?.Extra.Length > 0 ? 1 : 0;      // a tagged ask: its no; an untagged box: its OK
+                            GD.Print($"live: combat bag use {id} button {button}: {(hud.BagBoxAnswerScripted(shown, button, shown?.Extra ?? "") ? "answered" : "no box")}");
+                            await frames(120);
+                            Check($"item {id}: nothing used ({n0} -> {Count(id)})", Count(id) == n0);
+                        }
                         await frames(30);
                         break;
                     }
