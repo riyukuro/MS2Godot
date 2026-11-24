@@ -482,6 +482,27 @@ public class MessageBoxTests
     }
 
     [Test]
+    public void TheStickerPackItemBoxYesUsesItsItem()
+    {
+        // ChatEmoticonAdd @0x140d1fba0: box 0x11 (itemNotify) with the item entry, tag use_function_item, yes / no 0x477 / 0x478;
+        // its yes reaches UIMessageBox::FUN_1419fc810 with the box's item uid
+        var (h, c) = Load();
+        var used = new List<long>();
+        c.UseFunctionItem = used.Add;
+        var box = MessageBoxQueue.Create(0x11, "pack", null, Ms2.Ui.Hud.InventoryController.UseFunctionItemTag);
+        box.ItemUid = 4242;
+        var item = Ms2.Ui.Items.Item.Create(tables.Items, 20000001, 1);
+        if (item != null) box.SetItemEntry(item, "item", 1, 0, -1, -1, 1, tables.Items.TextColor);
+        box.SetButtonLabelIds(0x477, 0x478, 0);
+        MessageBoxQueue.Show(box);
+        for (int i = 0; i < 5; i++) h.Player.Tick();
+        Assert.That(c.CurrentBox, Is.SameAs(box));
+        Click(h, "m_button0");
+        Assert.That(used, Is.EqualTo(new long[] { 4242 }), "the yes uses the box's item");
+        Assert.That(c.IsIdle, Is.True);
+    }
+
+    [Test]
     public void TheBoxCountdownKeepsItsSecondsLeft()
     {
         long now = 1000;
