@@ -95,6 +95,33 @@ public class ChatScrollTests
     }
 
     [Test]
+    public void LinesOfAppendedTextAreTheLinesALayoutFromScratchMakes()
+    {
+        // DocView::Format (sfr_render_03b.cpp:2282) keeps the lines of a paragraph that did not change; the field keeps its
+        // paragraphs' lines the same way. Long lines wrap, short ones do not, some are equal, one is empty.
+        var (c, h) = ChatWindow();
+        var output = (AsObject)h.Child("m_textOutput");
+        var tf = h.Get(output, "textField");
+        for (int i = 0; i < 60; i++)
+        {
+            string body = i % 4 == 0 ? "a long line number " + i + " that is wide enough to need a second line and then a third one in the window of the chat"
+                : i % 7 == 0 ? "same" : i % 11 == 0 ? "" : "line " + i;
+            c.AppendLine(body + "<br>", 0);
+            Assert.That(N(h, tf, "numLines"), Is.GreaterThan(0));     // the lines are asked for after each line, as the window does
+        }
+        List<(string, int, int)> Lines() => Enumerable.Range(0, (int)N(h, tf, "numLines"))
+            .Select(i => ((string)h.Invoke(tf, "getLineText", i), (int)Rt.ToNumber(h.Invoke(tf, "getLineOffset", i)), (int)Rt.ToNumber(h.Invoke(tf, "getLineLength", i)))).ToList();
+        var kept = Lines();
+        h.Set(tf, "wordWrap", false);       // the kept paragraphs belong to the wrapping they were made at
+        Assert.That(N(h, tf, "numLines"), Is.LessThan(kept.Count), "unwrapped");
+        h.Set(tf, "wordWrap", true);
+        var fresh = Lines();
+        Assert.That(kept.Count, Is.GreaterThan(60), "the long lines wrapped");
+        Assert.That(kept, Is.EqualTo(fresh));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
     public void WheelOverTheLogScrollsItAndTheBarFollows()
     {
         // TextField::OnMouseWheelEvent (sfr_gfx_03e.cpp:915): the view moves up by the wheel's delta, within 1 .. maxScrollV

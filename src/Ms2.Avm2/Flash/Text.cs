@@ -199,9 +199,25 @@ public class AsTextField : AsInteractiveObject
         var lines = new List<(string, int)>();
         double max = Box.W - 4;
         int pstart = 0;
+        // a paragraph the last text held, at the same width, font, size and leading, breaks into the same lines (DocView::Format
+        // keeps the lines of a paragraph that did not change and lays out only the new and the changed ones, sfr_render_03b.cpp:2282):
+        // its lines are kept with their offsets from the paragraph's start. A field with IMG chars is laid out each time (the
+        // width of a char depends on where it is).
+        var wrapKey = (Box.W, wordWrap, FontName, Size, Leading);
+        bool keep = wordWrap && max > 0 && !HasImages;
+        if (!keep || wrapKey != paragraphKey) { laidParagraphs.Clear(); paragraphKey = wrapKey; }
+        laidParagraphsNext.Clear();
         foreach (var p in src.Split('\r'))
         {
             if (!wordWrap || max <= 0) { lines.Add((p, map[pstart])); pstart += p.Length + 1; continue; }
+            int first = lines.Count, origin = map[pstart];
+            if (keep && p.Length > 0 && (laidParagraphs.TryGetValue(p, out var laid) || laidParagraphsNext.TryGetValue(p, out laid)))
+            {
+                foreach (var (line, rel) in laid) lines.Add((line, origin + rel));
+                laidParagraphsNext[p] = laid;
+                pstart += p.Length + 1;
+                continue;
+            }
             var cur = new StringBuilder();
             int curStart = pstart;
             // Breaks after a space or a hyphen, and around CJK chars. ParagraphFormatter::CheckWordWrap
@@ -228,10 +244,23 @@ public class AsTextField : AsInteractiveObject
                 cur.Append(word);
             }
             lines.Add((cur.ToString(), map[curStart]));
+            if (keep && p.Length > 0)
+            {
+                var made = new List<(string Line, int Rel)>(lines.Count - first);
+                for (int i = first; i < lines.Count; i++) made.Add((lines[i].Item1, lines[i].Item2 - origin));
+                laidParagraphsNext[p] = made;
+            }
             pstart += p.Length + 1;
         }
+        (laidParagraphs, laidParagraphsNext) = (laidParagraphsNext, laidParagraphs);
+        laidParagraphsNext.Clear();
         return lines;
     }
+
+    /// <summary>The lines of each paragraph of the last text (by its text), with their offsets from the paragraph's start;
+    /// <see cref="paragraphKey"/>: the width, wrap, font, size and leading they were broken at.</summary>
+    Dictionary<string, List<(string Line, int Rel)>> laidParagraphs = new(), laidParagraphsNext = new();
+    (double, bool, string, double, double) paragraphKey;
 
     /// <summary>
     /// An IMG char's width, height and ascent in pixels as the client lays it out: TextField::ProcessImageTags

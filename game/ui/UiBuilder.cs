@@ -557,7 +557,12 @@ public partial class TextNode : Node2D
         return 255;
     }
 
-    public string Text { get => Label.Text; set { runStyles = null; HasSizedRuns = false; images = null; Label.Text = value ?? ""; } }
+    public string Text { get => LabelText; set { runStyles = null; HasSizedRuns = false; images = null; Label.Text = labelText = value ?? ""; } }
+
+    /// <summary>The label's text, kept here: reading Label.Text copies the whole text out of the engine on every call, and the
+    /// layout reads it per call (only <see cref="Text"/> and <see cref="SetHtml"/> set it).</summary>
+    string LabelText => labelText ??= Label.Text;
+    string labelText;
 
     /// <summary>
     /// AS3 htmlText = <paramref name="html"/>: the text without its markup (FlashHtml, with the field's multiline flag), each
@@ -572,7 +577,7 @@ public partial class TextNode : Node2D
         images = null;
         foreach (var st in styles)
             if (st.Image is HtmlImage im && (images ??= new()).ContainsKey(im) == false) images[im] = Box(im);
-        Label.Text = text;
+        Label.Text = labelText = text;
         Label.QueueRedraw();
     }
 
@@ -654,7 +659,7 @@ public partial class TextNode : Node2D
     public bool Selected(int index)
     {
         if (selEnd <= selBegin) return false;
-        int at = index < utf16.Count ? utf16[index] : Label.Text.Length;
+        int at = index < utf16.Count ? utf16[index] : LabelText.Length;
         return at >= selBegin && at < selEnd;
     }
 

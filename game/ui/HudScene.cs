@@ -4071,6 +4071,7 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "partydps" && frames == 200) OpenPartyDpsShot();
         if (openShot is "chatscroll" or "chatend" && frames is 200 or 215) ChatScrollShot(frames == 200 ? 0 : 1);
         if (openShot == "chatresize" && frames is >= 150 and <= 280) ChatResizeShot(frames);
+        if (openShot == "chatappend" && frames is >= 150 and <= 290) ChatAppendShot(frames);
         if (openShot == "guild" && frames == 200) ToggleGuild();
         if (openShot == "itemenchant" && frames == 200) OpenItemEnchantShot();
         if (openShot == "lapenshard" && frames == 200) OpenLapenshardShot();

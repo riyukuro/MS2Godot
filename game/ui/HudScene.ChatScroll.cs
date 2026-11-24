@@ -11,6 +11,8 @@ namespace Ms2Godot.Ui;
 /// log (TextField::OnMouseWheelEvent, sfr_gfx_03e.cpp:915) so the scroll bar thumb leaves the end. No server.
 /// <c>--uigen-open chatresize</c> fills the log to its limit and drags the window's resize handle, printing per move what
 /// the ActionScript handler (setSize and the redraws it asks for) and the display-list sync spent.
+/// <c>--uigen-open chatappend</c> fills the log to its limit, then adds one line a frame and prints what a frame cost in
+/// main-thread allocation and time against the quiet frames after it (what one appended line costs).
 /// </summary>
 public partial class HudScene
 {
@@ -82,4 +84,50 @@ public partial class HudScene
     }
 
     double resizeX, resizeY, resizeSyncPrev;
+
+    /// <summary>The text node under <paramref name="n"/> with the longest text (the chat log).</summary>
+    static TextNode LargestText(Node n)
+    {
+        TextNode best = n as TextNode;
+        for (int i = 0; i < n.GetChildCount(); i++)
+        {
+            var c = LargestText(n.GetChild(i));
+            if (c != null && (best == null || c.Text.Length > best.Text.Length)) best = c;
+        }
+        return best;
+    }
+
+    long appendBytes0; ulong appendUsec0;
+    readonly List<(bool Append, long Bytes, double Ms)> appendFrames = new();
+
+    /// <summary>One frame of the append run: 150-169 fill the log, 200-239 add a line a frame (the log is at its limit, so each
+    /// also drops the oldest), 250-289 add none, 290 prints the means. A frame's cost is the next call's reading less this one's.</summary>
+    void ChatAppendShot(int frames)
+    {
+        if (messengers.Count == 0) return;
+        if (frames is >= 150 and < 170)
+        {
+            for (int i = 1; i <= 25; i++) ChatLog.AddSystemLine("Chat line " + ((frames - 150) * 25 + i) + " of 500, long enough to be a line of its own in the log.", TalkKind.SystemNotice);
+            return;
+        }
+        if (frames < 200) return;
+        long bytes = GC.GetAllocatedBytesForCurrentThread(); ulong usec = Time.GetTicksUsec();
+        if (frames is >= 201 and <= 240 or >= 251 and <= 290)
+            appendFrames.Add((frames <= 240, bytes - appendBytes0, (usec - appendUsec0) / 1000.0));
+        appendBytes0 = bytes; appendUsec0 = usec;
+        if (frames is >= 200 and < 240)
+            ChatLog.AddSystemLine("Chat line " + (501 + frames - 200) + " of 500+, one more line appended to a full log, long enough to wrap in the window.", TalkKind.SystemNotice);
+        if (frames is 245 or 246)      // the lines as laid out from the kept paragraphs, and laid out anew
+        {
+            var log = LargestText(this);
+            if (log != null) GD.Print($"CHATAPPEND digest {(frames == 245 ? "kept" : "fresh")}={log.LayoutDigest(frames == 246)}");
+        }
+        if (frames == 290)
+        {
+            var a = appendFrames.Where(f => f.Append).ToList(); var q = appendFrames.Where(f => !f.Append).ToList();
+            double aB = a.Average(f => (double)f.Bytes), qB = q.Average(f => (double)f.Bytes), aM = a.Average(f => f.Ms), qM = q.Average(f => f.Ms);
+            GD.Print($"CHATAPPEND appended frames={a.Count} bytes/frame={aB:F0} ms/frame={aM:F2}; quiet frames={q.Count} bytes/frame={qB:F0} ms/frame={qM:F2}; per appended line bytes={aB - qB:F0} ms={aM - qM:F2}");
+            foreach (var f in a) GD.Print($"CHATAPPEND frame bytes={f.Bytes} ms={f.Ms:F2}");
+        }
+    }
 }

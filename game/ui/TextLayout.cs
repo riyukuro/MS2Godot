@@ -62,9 +62,32 @@ public partial class TextNode
     }
 
     List<LayoutLine> layout;
-    System.Collections.Generic.Dictionary<(int Start, int End), LayoutLine> lineCache;
-    (string, float, int, TextServer.AutowrapMode, HorizontalAlignment, Font, GlyphStyle[]) linesKey;
+    // what the kept paragraphs were laid out at; compared field by field (a ValueTuple.Equals over these types is JIT-compiled)
+    float keptSpacing; int keptFontSize; TextServer.AutowrapMode keptWrap; HorizontalAlignment keptAlign; Font keptFont;
     (string Text, float Width, float Spacing, int FontSize, TextServer.AutowrapMode Wrap, HorizontalAlignment Align, Font Font, GlyphStyle[] Styles) layoutKey;
+
+    /// <summary>
+    /// A paragraph laid out: the text and formats it was laid out from and its lines, kept for the next layout
+    /// (DocView::Format, sfr_render_03b.cpp:2282: a paragraph whose id and modification counter are unchanged keeps its lines, they
+    /// only move to the paragraph's new text position and y offset; only a new or modified paragraph is formatted again, which is
+    /// all an append to the log is, DocView::AppendText, :251). A paragraph is the same one when its text and the formats of its
+    /// chars (and of the char that ends it) are the same, wherever it now stands.
+    /// </summary>
+    sealed class LaidParagraph
+    {
+        public string Text;
+        public GlyphStyle[] Styles;
+        /// <summary>The code point the paragraph's lines are numbered from, and the label width they were broken for.</summary>
+        public int Base;
+        public float Width;
+        public List<LayoutLine> Lines;
+        /// <summary>The next paragraph with the same text hash.</summary>
+        public LaidParagraph Next;
+    }
+
+    // the paragraphs of the last layout by the hash of their text; a paragraph found there moves to the next layout's table, and
+    // each is used once (two paragraphs of the same text have lines of their own)
+    System.Collections.Generic.Dictionary<int, LaidParagraph> paragraphs = new(), paragraphsNext = new();
 
     /// <summary>True when some run has a FONT size other than the field's.</summary>
     public bool HasSizedRuns { get; private set; }
@@ -81,27 +104,118 @@ public partial class TextNode
     public List<LayoutLine> Layout()
     {
         var ls = Label.LabelSettings;
-        var key = (Label.Text, Label.Size.X, ls.LineSpacing, ls.FontSize, Label.AutowrapMode, Label.HorizontalAlignment, ls.Font, runStyles);
+        string text = LabelText;
+        var key = (text, Label.Size.X, ls.LineSpacing, ls.FontSize, Label.AutowrapMode, Label.HorizontalAlignment, ls.Font, runStyles);
         if (layout != null && key == layoutKey) return layout;
         layoutKey = key;
-        // the lines are kept for the next width: a line of the same code points at the same text, font and spacing is the same
-        // line (a break moves, the shaping and metrics of what is between two breaks do not)
-        var kept = (key.Text, key.LineSpacing, key.FontSize, key.AutowrapMode, key.HorizontalAlignment, key.Font, key.runStyles);
-        if (!kept.Equals(linesKey)) { lineCache = null; linesKey = kept; }
-        return layout = BuildLayout();
+        // the paragraphs are kept for the next text and width: a paragraph of the same text and formats at the same font and
+        // spacing is the same paragraph (a break moves, the shaping and metrics of what is between two breaks do not)
+        if (key.LineSpacing != keptSpacing || key.FontSize != keptFontSize || key.AutowrapMode != keptWrap || key.HorizontalAlignment != keptAlign || !ReferenceEquals(key.Font, keptFont))
+        {
+            paragraphs.Clear();
+            (keptSpacing, keptFontSize, keptWrap, keptAlign, keptFont) = (key.LineSpacing, key.FontSize, key.AutowrapMode, key.HorizontalAlignment, key.Font);
+        }
+        return layout = BuildLayout(text);
     }
 
-    List<LayoutLine> BuildLayout()
+    /// <summary>The paragraph kept from the last layout whose text is the <paramref name="length"/> UTF-16 units of
+    /// <paramref name="text"/> from <paramref name="at"/> and whose formats are those of code points [first, first + count).</summary>
+    LaidParagraph TakeLaidParagraph(string text, int at, int length, int first, int count)
+    {
+        int hash = string.GetHashCode(text.AsSpan(at, length));
+        if (!paragraphs.TryGetValue(hash, out var p)) return null;
+        LaidParagraph prev = null;
+        var span = text.AsSpan(at, length);
+        var styles = FormatsOf(first, count);
+        for (; p != null; prev = p, p = p.Next)
+        {
+            if (!span.SequenceEqual(p.Text) || !SameStyles(styles, p.Styles)) continue;
+            if (prev == null) { if (p.Next == null) paragraphs.Remove(hash); else paragraphs[hash] = p.Next; }
+            else prev.Next = p.Next;
+            p.Next = null;
+            return p;
+        }
+        return null;
+    }
+
+    /// <summary>A hash of every line's range, metrics and glyphs; with <paramref name="fresh"/> the paragraphs kept from earlier layouts
+    /// are dropped first, so the lines are all laid out anew (the chat append shot checks the two are the same).</summary>
+    public int LayoutDigest(bool fresh)
+    {
+        if (fresh) { paragraphs.Clear(); layout = null; }
+        var h = new HashCode();
+        foreach (var l in Layout())
+        {
+            h.Add(l.Start); h.Add(l.End); h.Add(l.Text); h.Add(l.Ascent); h.Add(l.BasePitch); h.Add(l.Pitch); h.Add(l.RawWidth); h.Add(l.LabelX); h.Add(l.Width);
+            foreach (var g in l.Shaped) { h.Add(g.Index); h.Add(g.End); h.Add(g.Count); h.Add(g.Glyph); h.Add(g.Raster); h.Add(g.Pen); h.Add(g.Advance); h.Add(g.Size); h.Add(g.Bounded); }
+        }
+        return h.ToHashCode();
+    }
+
+    /// <summary>The formats of code points [first, first + count) as far as the text has them (the rest are the field's own).</summary>
+    ReadOnlySpan<GlyphStyle> FormatsOf(int first, int count)
+    {
+        if (runStyles == null || first >= runStyles.Length) return default;
+        return runStyles.AsSpan(first, Math.Min(count, runStyles.Length - first));
+    }
+
+    /// <summary>Keeps <paramref name="p"/> for the next layout.</summary>
+    void KeepLaidParagraph(LaidParagraph p)
+    {
+        int hash = string.GetHashCode(p.Text.AsSpan());
+        paragraphsNext.TryGetValue(hash, out var head);
+        p.Next = head;
+        paragraphsNext[hash] = p;
+    }
+
+    /// <summary>Whether two runs of formats are equal, field by field: GlyphStyle's own Equals goes through EqualityComparer
+    /// instantiations over Color? and float?, which are JIT-compiled the first time a text with formats is laid out.</summary>
+    static bool SameStyles(ReadOnlySpan<GlyphStyle> a, GlyphStyle[] b)
+    {
+        if (a.Length != b.Length) return false;
+        for (int i = 0; i < b.Length; i++)
+        {
+            ref readonly var x = ref a[i]; var y = b[i];
+            if (x.Bold != y.Bold || x.Italic != y.Italic || x.Underline != y.Underline || !ReferenceEquals(x.Image, y.Image)) return false;
+            if (x.Color.HasValue != y.Color.HasValue || (x.Color.HasValue && x.Color.Value != y.Color.Value)) return false;
+            if (x.Size.HasValue != y.Size.HasValue || (x.Size.HasValue && x.Size.Value != y.Size.Value)) return false;
+        }
+        return true;
+    }
+
+    /// <summary>A kept paragraph's lines at another text position: every code point index they hold moves by the same amount.</summary>
+    static void MoveLaidParagraph(LaidParagraph p, int to)
+    {
+        if (to == p.Base) return;
+        foreach (var line in p.Lines) MoveLine(line, to - p.Base);
+        p.Base = to;
+    }
+
+    /// <summary>A kept line <paramref name="d"/> code points further on.</summary>
+    static void MoveLine(LayoutLine line, int d)
+    {
+        if (d == 0) return;
+        line.Start += d; line.End += d;
+        var glyphs = line.Shaped;
+        for (int i = 0; i < glyphs.Count; i++)
+        {
+            var g = glyphs[i];      // built as a glyph is (its constructor and initializers are warm), not with { }, whose init accessor is compiled on first use
+            glyphs[i] = new PlacedGlyph(g.Index + d, g.Count, g.Font, g.Glyph, g.Raster, g.Scale, g.Pen, g.Offset, g.Advance, g.Repeat, g.Size) { End = g.End + d, Bounded = g.Bounded };
+        }
+    }
+
+    List<LayoutLine> BuildLayout(string t)
     {
         var res = new List<LayoutLine>();
         var ls = Label.LabelSettings;
         var font = ls.Font;
-        string t = Label.Text;
-        var cps = new List<int>();                 // code point -> UTF-16 index
+        var cps = utf16;                           // code point -> UTF-16 index, the list kept from the last layout
+        cps.Clear();
         for (int c = 0; c < t.Length; c += char.IsSurrogatePair(t, c) ? 2 : 1) cps.Add(c);
-        utf16 = cps;
-        codePoints = cps.Select(c => char.ConvertToUtf32(t, c)).ToArray();
-        if (font == null || string.IsNullOrEmpty(t)) return res;
+        if (codePoints.Length < cps.Count) codePoints = new int[Math.Max(cps.Count, codePoints.Length * 2)];
+        cpCount = cps.Count;
+        for (int c = 0; c < cpCount; c++) codePoints[c] = char.ConvertToUtf32(t, cps[c]);
+        if (font == null || string.IsNullOrEmpty(t)) { paragraphs.Clear(); return res; }
         // the font's faces and OpenType features, read once per layout and freed after it: each read is a new tracked Godot
         // Array and Dictionary, which per run were left to the finalizer
         var fontRids = font.GetRids();
@@ -123,13 +237,40 @@ public partial class TextNode
         }) | Label.AutowrapTrimFlags;
         // Label::get_layout_data / get_character_bounds: whole-pixel font height and line spacing
         int fontH = (int)font.GetHeight(ramp), spacing = (int)ls.LineSpacing, paraSpacing = (int)ls.ParagraphSpacing;
-        var before = lineCache;
-        lineCache = new();
+        float width = Label.Size.X;
+        paragraphsNext.Clear();
         int pstart = 0;
         while (pstart <= cps.Count)
         {
             int pend = pstart;
             while (pend < cps.Count && codePoints[pend] != '\n') pend++;
+            // an empty paragraph takes its size from the char before it, so it is laid out where it stands every time; the formats
+            // that count for the others are those of its chars and of the char that ends it (its zero-width space's size)
+            LaidParagraph para = null;
+            bool kept = false;
+            if (pend > pstart)
+            {
+                para = TakeLaidParagraph(t, Utf16(pstart), Utf16(pend) - Utf16(pstart), pstart, pend + 1 - pstart);
+                if (para != null && para.Width == width)
+                {
+                    // unchanged: its lines only move to the paragraph's new position
+                    MoveLaidParagraph(para, pstart);
+                    foreach (var line in para.Lines)
+                    {
+                        line.Pitch = line.BasePitch;
+                        line.LabelX = LabelLineX(line.RawWidth);
+                        res.Add(line);
+                    }
+                    kept = true;
+                }
+            }
+            if (kept)
+            {
+                KeepLaidParagraph(para);
+                if (res.Count > 0) res[^1].Pitch += paraSpacing;
+                pstart = pend + 1;
+                continue;
+            }
             var rid = ts.CreateShapedText();
             ts.ShapedTextSetDirection(rid, TextServer.Direction.Ltr);
             // the zero-width space ends the paragraph's last run (an empty paragraph: a run of its own, at its line break's size)
@@ -150,16 +291,22 @@ public partial class TextNode
                 ts.ShapedTextAddString(rid, t.Substring(Utf16(a), Utf16(b) - Utf16(a)) + (last ? "\u200B" : ""), fontRids,
                     ShapeSize(SizeAt(a)), features, lang);
             }
+            var lines = new List<LayoutLine>();
             var breaks = ts.ShapedTextGetLineBreaks(rid, (int)Label.Size.X, 0, flags);
             for (int i = 0; i + 1 < breaks.Length; i += 2)
             {
                 int start = pstart + breaks[i], end = Math.Min(pstart + breaks[i + 1], pend);
-                if (before != null && before.TryGetValue((start, end), out var kept))
+                // the paragraph laid out before at another width: a line of the same code points is the same line
+                LayoutLine old = null;
+                if (para != null)
+                    foreach (var l in para.Lines)
+                        if (l.Start - para.Base == start - pstart && l.End - para.Base == end - pstart) { old = l; break; }
+                if (old != null)
                 {
-                    kept.Pitch = kept.BasePitch;
-                    kept.LabelX = LabelLineX(kept.RawWidth);
-                    lineCache[(start, end)] = kept;
-                    res.Add(kept);
+                    MoveLine(old, pstart - para.Base);
+                    old.Pitch = old.BasePitch;
+                    old.LabelX = LabelLineX(old.RawWidth);
+                    lines.Add(old);
                     continue;
                 }
                 var lrid = ts.ShapedTextSubstr(rid, breaks[i], breaks[i + 1] - breaks[i]);
@@ -181,15 +328,22 @@ public partial class TextNode
                 line.BasePitch = line.Pitch;
                 line.RawWidth = (float)ts.ShapedTextGetSize(lrid).X * line.Width.Ratio;
                 line.LabelX = LabelLineX(line.RawWidth);
-                lineCache[(start, end)] = line;
-                res.Add(line);
+                lines.Add(line);
                 ts.FreeRid(lrid);
-
             }
             ts.FreeRid(rid);
+            res.AddRange(lines);
+            if (pend > pstart)
+            {
+                para ??= new LaidParagraph { Text = t.Substring(Utf16(pstart), Utf16(pend) - Utf16(pstart)), Styles = FormatsOf(pstart, pend + 1 - pstart).ToArray() };
+                para.Base = pstart; para.Width = width; para.Lines = lines;
+                KeepLaidParagraph(para);
+            }
             if (res.Count > 0) res[^1].Pitch += paraSpacing;
             pstart = pend + 1;
         }
+        (paragraphs, paragraphsNext) = (paragraphsNext, paragraphs);
+        paragraphsNext.Clear();
         return res;
     }
 
@@ -244,7 +398,7 @@ public partial class TextNode
     {
         var all = Layout();
         if (all.Count == 0) return 0;
-        if (total != codePoints.Length && total > 0) start = (int)((long)start * codePoints.Length / total);
+        if (total != cpCount && total > 0) start = (int)((long)start * cpCount / total);
         double room = Bounds.Size.Y > 0 ? Bounds.Size.Y - 4 + 1 : double.MaxValue;
         return Ms2.Ui.ScrolledLines.FirstLine(all.Count, lineStart ??= LineStart, lineHeightAdvance ??= LineHeightAdvance, room, start, atEnd);
     }
@@ -261,14 +415,14 @@ public partial class TextNode
     (double Height, double Advance) LineHeightAdvance(int i)
     {
         var line = layout[i];
-        var (_, height, advance) = ClientLine(line.Start, line.End, codePoints.Length, sizeAt ??= SizeAt);
+        var (_, height, advance) = ClientLine(line.Start, line.End, cpCount, sizeAt ??= SizeAt);
         return (height, advance);
     }
 
     /// <summary>True when the glyph is past the label's visible character count.</summary>
     public bool Hidden(in PlacedGlyph g) => Label.VisibleCharacters >= 0 && g.Index >= Label.VisibleCharacters;
 
-    Func<int, float> sizeAt;
+    Func<int, float> sizeAt, fieldSize;
 
     /// <summary>
     /// The selection's highlight in label pixels, as TextLayout builds it (sfr_render_04d.cpp:625): each selected glyph's
@@ -279,11 +433,11 @@ public partial class TextNode
     public List<Rect2> SelectionRects()
     {
         var res = new List<Rect2>();
-        if (!HasSelection || string.IsNullOrEmpty(Label.Text)) return res;
+        if (!HasSelection || string.IsNullOrEmpty(LabelText)) return res;
         sizeAt ??= SizeAt;
         foreach (var line in ShownLines())
         {
-            var (asc, height, advance) = ClientLine(line.Start, line.End, codePoints.Length, sizeAt);
+            var (asc, height, advance) = ClientLine(line.Start, line.End, cpCount, sizeAt);
             float top = line.Baseline - asc / Label.Scale.Y, h = Math.Max(height, advance) / Label.Scale.Y;
             float x0 = 0, x1 = 0;
             bool open = false;
@@ -351,7 +505,7 @@ public partial class TextNode
         foreach (Dictionary g in glyphs)
         {
             using var _ = g;
-            int index = first + (int)g[GlyphKeys.Start], at = Math.Min(index, codePoints.Length - 1), repeat = (int)g[GlyphKeys.Repeat];
+            int index = first + (int)g[GlyphKeys.Start], at = Math.Min(index, cpCount - 1), repeat = (int)g[GlyphKeys.Repeat];
             float size = SizeAt(at), labelSize = LabelSize(size);
             bool image = ImageAt(at) != null;                       // an IMG object: its advance is in label pixels already
             float k = image ? 1 : labelSize / ShapeSize(size);       // label pixels per shaped pixel
@@ -397,8 +551,8 @@ public partial class TextNode
         float move = 0;
         for (int i = 0; i < lines.Count; i++)
         {
-            var (_, h, adv) = ClientLine(lines[i].Start, lines[i].End, codePoints.Length, j => SizeAt(j));
-            var (_, fh, fadv) = ClientLine(lines[i].Start, lines[i].End, codePoints.Length, _ => FieldSize, false);
+            var (_, h, adv) = ClientLine(lines[i].Start, lines[i].End, cpCount, sizeAt ??= SizeAt);
+            var (_, fh, fadv) = ClientLine(lines[i].Start, lines[i].End, cpCount, fieldSize ??= _ => FieldSize, false);
             move += i < lines.Count - 1 ? adv - fadv : h - fh;
         }
         return move;
@@ -440,17 +594,18 @@ public partial class TextNode
     }
 
     int[] codePoints = System.Array.Empty<int>();
+    int cpCount;
     List<int> utf16 = new();
 
     /// <summary>The text of the code points [a, b).</summary>
     string Substring(int a, int b)
     {
-        string t = Label.Text;
+        string t = LabelText;
         int i = a < utf16.Count ? utf16[a] : t.Length, j = b < utf16.Count ? utf16[b] : t.Length;
         return t.Substring(i, j - i);
     }
 
-    int CodePointAt(int cp) => cp >= 0 && cp < codePoints.Length ? codePoints[cp] : 0;
+    int CodePointAt(int cp) => cp >= 0 && cp < cpCount ? codePoints[cp] : 0;
 
     /// <summary>Alg::IRound.</summary>
     static float IRound(float v) => MathF.Floor(v + 0.5f);
