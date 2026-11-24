@@ -376,6 +376,19 @@ public sealed class SkillData
     }
 
     /// <summary>
+    /// The condition block of a GMS2 per-skill file, which has no &lt;basic&gt;&lt;condition&gt;: each level carries it as
+    /// &lt;beginCondition&gt; (the same flags, weapon rows, requireEffect, requireMapCodes and hasNotAdditionalEffectGroup children),
+    /// and the first level's is taken. INFERRED from the data, not from a client source (the GMS2 exe's skill reader is not in the
+    /// decompiled source): in all 9915 GMS2 skill files no file has basic/condition, every level has a beginCondition, and the
+    /// weapon rows and child lists are the same at every level of a skill; the flags are too except in two skills (50101304 and
+    /// 50101315, allowBattleRidingState 1 at one level only).
+    /// STILL-OPEN: the per-level beginCondition of those two skills (the port keeps one condition per skill, as SkillCondition is),
+    /// and the KMS condition@sp, which has no beginCondition attribute (beginCondition/stat@sp is not read as it).
+    /// </summary>
+    static XElement Gms2Condition(List<XElement> levels, bool gms2Row) =>
+        gms2Row ? levels.Select(l => l.Element("beginCondition")).FirstOrDefault(b => b != null) : null;
+
+    /// <summary>
     /// SkillData::Load: id, originID; under &lt;basic&gt; mainType, &lt;ui&gt; icon / attackType / tooltip, &lt;kinds&gt; rangeType /
     /// element, &lt;condition&gt; weapons; then the levels FUN_14028faa0(skill, "level", "value") picks: a level below 1 ends the
     /// load (SkillLevelData::Load returns 0, the skill keeps the levels read so far), and the max level is the highest.
@@ -466,7 +479,8 @@ public sealed class SkillData
             change.CheckEffectId.Clear(); change.CheckEffectLevel.Clear(); change.CheckEffectOverlapCount.Clear();
             change.CheckEffectCompareFunc.Clear(); change.ChangeSkillId.Clear();
         }
-        if (basic.Element("condition") is { } cond)
+        var levelRows = collect(e, "level", "value");
+        if ((basic.Element("condition") ?? Gms2Condition(levelRows, gms2Row)) is { } cond)
         {
             var c = s.Condition;
             c.UseCoolDownShowUI = Xml.Bool(cond, "useCoolDownShowUI");
@@ -481,7 +495,7 @@ public sealed class SkillData
             foreach (var r in cond.Elements("hasNotAdditionalEffectGroup")) c.HasNotAdditionalEffectGroup.Add(Xml.Int(r, "id"));
             foreach (var w in cond.Elements("weapon")) s.Weapons.Add(new SkillWeapon(Xml.Int(w, "lh"), Xml.Int(w, "rh")));
         }
-        foreach (var l in collect(e, "level", "value"))
+        foreach (var l in levelRows)
         {
             var lv = new SkillLevelData
             {
