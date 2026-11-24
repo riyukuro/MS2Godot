@@ -230,6 +230,35 @@ public sealed class EmitterDef
         return t;
     }
 
+    /// <summary>The triangles a mesh emitter picks from on a strip mesh (Primitive Type 1): <paramref name="count"/> indices
+    /// from <paramref name="start"/> are one strip of count - 2 triangles. NiPSMeshEmitter::ComputeIndices (NiPSMeshEmitter.cpp:
+    /// 713-760) reads triangle t as kIndicesIter[t][0..2], through the index iterator NiDataStreamPrimitiveLock::BeginIndexed16/32
+    /// makes. For a strip that iterator steps 1 index, takes 3, and reverses odd windings (CreateIndexedIteratorHelper,
+    /// NiDataStreamPrimitiveLock.inl:35-39); the random-access operator[] marks triangle t odd by t &amp; 1 and the primitive's
+    /// operator[] then returns its first two swapped (NiTPrimitiveRandomAccessIterator.h:79-93, 269-285). So triangle t is
+    /// (s[t], s[t+1], s[t+2]) on even t and (s[t+1], s[t], s[t+2]) on odd t; the degenerate ones stay, since the pick counts
+    /// them and then steps past them
+    /// (<see cref="SampleMesh"/>). Null as <see cref="Triangles"/>: a range outside the stream, under 3 indices, or an index
+    /// at or past <paramref name="vertexCount"/>.</summary>
+    public static int[] StripTriangles(double[] index, int start, int count, int vertexCount)
+    {
+        if (start < 0 || count < 3 || start > index.Length - count) return null;
+        var t = new int[(count - 2) * 3];
+        for (int i = 0; i < count; i++)
+        {
+            double x = index[start + i];
+            if (!(x >= 0 && x < vertexCount)) return null;
+        }
+        for (int q = 0; q < count - 2; q++)
+        {
+            int odd = q & 1;
+            t[q * 3] = (int)index[start + q + odd];
+            t[q * 3 + 1] = (int)index[start + q + 1 - odd];
+            t[q * 3 + 2] = (int)index[start + q + 2];
+        }
+        return t;
+    }
+
     /// <summary>The emitter-space direction for a declination and planar angle (variances already applied):
     /// NiPSEmitter::ComputeDirection (NiPSEmitter.inl:267-311). Declination 0 is +Z. A pre-RPI system (NiPSParticleSystem
     /// "Pre RPI") uses (sin dec cos plan, sin dec sin plan, cos dec); otherwise the RPI method (cos dec sin plan, -sin dec,
@@ -689,12 +718,12 @@ public sealed class EffectScene
                             var (ns, nc) = Submesh0(n, (int)mb, "NORMAL", nrm.v.Length / 3);
                             if (nc == pc) ed.MeshNormals = nrm.v.Skip(ns * 3).Take(nc * 3).Select(x => (float)x).ToArray();
                         }
-                        // STILL-OPEN: a tristrip mesh (Primitive Type 1) emits from vertices here; the client takes its
-                        // triangles through NiIndexedPrimitiveIterator.
-                        if (mm.TryGetValue("INDEX", out var idx) && idx.n == 1 && n.Blocks[(int)mb].IntOr("Primitive Type", 0) == 0)
+                        // a triangle list, or a strip (Primitive Type 1) read as the client's index iterator reads it
+                        long primitive = n.Blocks[(int)mb].IntOr("Primitive Type", 0);
+                        if (mm.TryGetValue("INDEX", out var idx) && idx.n == 1 && (primitive == 0 || primitive == 1))
                         {
                             var (xs, xc) = Submesh0(n, (int)mb, "INDEX", idx.v.Length);
-                            ed.MeshTriangles = EmitterDef.Triangles(idx.v, xs, xc, pc);
+                            ed.MeshTriangles = primitive == 0 ? EmitterDef.Triangles(idx.v, xs, xc, pc) : EmitterDef.StripTriangles(idx.v, xs, xc, pc);
                         }
                         ed.MeshNode = NodeOfBlock.GetValueOrDefault((int)mb, -1);
                         break;

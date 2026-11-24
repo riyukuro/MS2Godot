@@ -88,7 +88,7 @@ void fragment() {
         {
             var nif = NifFile.Load(mb.Spec, packs.Read(EffectArchive, entry));
             bool particles = nif.Blocks.Any(b => b.Type.StartsWith("NiPS", StringComparison.Ordinal));
-            m = (ModelData.Load(nif), particles);
+            m = (ModelBuilder.Read(nif, EffectArchive + "/" + entry), particles);
         }
         catch (Exception ex) { GD.PushWarning($"effect {entry}: {ex.Message}"); EffectsFailed++; models[entry] = default; return null; }
         models[entry] = m;

@@ -23,8 +23,9 @@ public static class EffectNif
         // an effect nif's textures ship in the effect archive (as CombatLayer and FieldBuilder search it); appended, so a
         // name already found in an earlier archive resolves as before
         if (!builder.TextureArchives.Contains(EffectArchive)) builder.TextureArchives = builder.TextureArchives.Append(EffectArchive).ToArray();
-        var nif = NifFile.Load(builder.Spec, packs.Read(EffectArchive, part.FilePath.Replace('\\', '/').ToLowerInvariant()));
-        var md = ModelData.Load(nif);
+        string entry = part.FilePath.Replace('\\', '/').ToLowerInvariant();
+        var nif = NifFile.Load(builder.Spec, packs.Read(EffectArchive, entry));
+        var md = ModelBuilder.Read(nif, EffectArchive + "/" + entry);
         var root = builder.Build(md, System.IO.Path.GetFileNameWithoutExtension(part.FilePath));
         var kf = KfAnimation.FromControllers(nif);
         if (kf != null)

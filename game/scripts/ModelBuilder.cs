@@ -49,8 +49,20 @@ public sealed class ModelBuilder
     public ModelData LoadModel(string entry) => LoadModel(ModelArchive, entry);
 
     public ModelData LoadModel(string archive, string entry) =>
-        keep == null ? ModelData.Load(NifFile.Load(spec, packs.Read(archive, entry)))
-                     : keep.Get(keep.Models, (archive + "/" + entry).ToLowerInvariant(), () => ModelData.Load(NifFile.Load(spec, packs.Read(archive, entry))));
+        keep == null ? ReadModel(archive, entry)
+                     : keep.Get(keep.Models, (archive + "/" + entry).ToLowerInvariant(), () => ReadModel(archive, entry));
+
+    /// <summary>One read of a model nif; a kept builder reads each once, so its load warnings show once.</summary>
+    ModelData ReadModel(string archive, string entry) => Read(NifFile.Load(spec, packs.Read(archive, entry)), archive + "/" + entry);
+
+    /// <summary>A model read from a loaded nif, its load warnings pushed under <paramref name="name"/>; every model read in
+    /// the game goes through here so none is silent.</summary>
+    public static ModelData Read(NifFile nif, string name)
+    {
+        var md = ModelData.Load(nif);
+        foreach (var w in md.Warnings) GD.PushWarning($"model {name}: {w}");
+        return md;
+    }
 
     public KfAnimation LoadKf(string entry) => KfAnimation.Load(NifFile.Load(spec, packs.Read(ModelArchive, entry)));
 

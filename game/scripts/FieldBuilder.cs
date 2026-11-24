@@ -359,7 +359,7 @@ public sealed class FieldBuilder
             try
             {
                 var nif = NifFile.Load(builder.Spec, packs.Read(archive, entry));
-                var md = ModelData.Load(nif);
+                var md = ModelBuilder.Read(nif, archive + "/" + entry);
                 me.Data = md;
                 try { me.Controllers = KfAnimation.FromControllers(nif); }
                 catch (Exception ex) { me.ControllersError = ex.Message; }

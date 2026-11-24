@@ -342,6 +342,11 @@ public sealed class ModelData
     public Xform RootLocal;
     public List<ModelBone> Bones = new();
     public List<ModelMesh> Meshes = new();
+    /// <summary>What the load read on an assumption the file broke, one line per mesh and case: another vertex stream whose
+    /// submesh regions are not the position stream's (only the position stream's are read), or two submeshes whose vertex
+    /// regions overlap under different bone palettes (the later submesh's palette is kept). Empty on every KMS2, KMS2_DEV
+    /// and GMS2 model.</summary>
+    public List<string> Warnings = new();
 
     /// <summary>
     /// Where an attached asset's self node goes when the body lacks the target node: the body's rigid mesh named
@@ -568,23 +573,75 @@ public sealed class ModelData
         return null;
     }
 
+    /// <summary>The first per-vertex stream of the mesh (one element per vertex, <paramref name="vertexCount"/> in all; so not
+    /// INDEX, BONE_PALETTE or MORPHWEIGHTS) whose submesh regions are not <paramref name="vertexRegions"/>, by its first
+    /// semantic, or null when they all match.</summary>
+    static string OtherVertexRegions(NifFile nif, int mesh, (int Start, int Count)[] vertexRegions, int vertexCount)
+    {
+        foreach (var r in nif.Blocks[mesh].Structs("Datastreams"))
+        {
+            var names = r.Structs("Component Semantics").Select(cs => nif.StrField(cs, "Name")).ToArray();
+            if (names.Contains("INDEX") || names.Contains("BONE_PALETTE")) continue;
+            var stream = nif.Blocks[(int)r.Int("Stream")];
+            long record = stream.Ints("Component Formats").Sum(f => (long)ElemSize(Code((uint)f)) * ((f >> 16) & 0xff));   // as MeshStreams
+            if (record <= 0 || stream.Struct("Data").Bytes("Data").Length / record != vertexCount) continue;
+            var map = r.Ints("Submesh To Region Map");
+            var regions = stream.Structs("Regions");
+            for (int sm = 0; sm < vertexRegions.Length; sm++)
+            {
+                string name = names.Length > 0 ? names[0] : "?";
+                if (sm >= map.Length || map[sm] < 0 || map[sm] >= regions.Length) return name;
+                var g = regions[(int)map[sm]];
+                if (g.Int("Start Index") != vertexRegions[sm].Start || g.Int("Num Indices") != vertexRegions[sm].Count) return name;
+            }
+        }
+        return null;
+    }
+
     /// <summary>
     /// The triangle list the client draws: submesh by submesh, the INDEX region's values counted from the submesh's first vertex.
     /// NiD3DShader::RenderMeshes draws each submesh with DrawIndexedPrimitive(BaseVertexIndex 0, StartIndex = the index region's
     /// start) after PreRenderSubmesh set every vertex stream at its region's start (SetStreamSource offset = region start *
     /// stride, NiD3DShader.cpp:245-289, 526-566), so an index is relative to that region. Without regions the stream is taken
-    /// whole, as before.
+    /// whole, as before; a strip without vertex regions that match its index regions still takes each index region as its own
+    /// strip, counted from vertex 0, so no triangle bridges two submeshes.
+    /// With <paramref name="strips"/> (Primitive Type 1, PRIMITIVE_TRISTRIPS) each submesh's region is one strip, drawn as
+    /// D3DPT_TRIANGLESTRIP (NiDX9Renderer::GetDX9PrimitiveFromNiMeshPrimitiveType, NiDX9Renderer.cpp:4857) with
+    /// count - 2 triangles (NiMesh::GetPrimitiveCountFromElementCount, NiMesh.cpp:312). It is unrolled as the engine's
+    /// NiMeshAlgorithms::ForEachIndexedTriStrip walks it (NiMeshAlgorithms.inl:533-575): triangle t is (s[t], s[t+1], s[t+2]),
+    /// the first two swapped on odd t to keep the winding. A triangle with a repeated vertex has no area and D3D draws nothing
+    /// for it, so it is left out.
     /// </summary>
-    public static int[] SubmeshIndices(double[] index, (int Start, int Count)[] indexRegions, (int Start, int Count)[] vertexRegions)
+    public static int[] SubmeshIndices(double[] index, (int Start, int Count)[] indexRegions, (int Start, int Count)[] vertexRegions, bool strips = false)
     {
         if (indexRegions == null || vertexRegions == null || indexRegions.Length != vertexRegions.Length)
-            return index.Select(x => (int)x).ToArray();
-        var o = new int[indexRegions.Sum(r => r.Count)];
-        int at = 0;
+        {
+            if (!strips) return index.Select(x => (int)x).ToArray();
+            indexRegions ??= new[] { (0, index.Length) };
+            vertexRegions = new (int, int)[indexRegions.Length];
+        }
+        if (!strips)
+        {
+            var o = new int[indexRegions.Sum(r => r.Count)];
+            int at = 0;
+            for (int sm = 0; sm < indexRegions.Length; sm++)
+                for (int q = indexRegions[sm].Start; q < indexRegions[sm].Start + indexRegions[sm].Count; q++)
+                    o[at++] = (int)index[q] + vertexRegions[sm].Start;
+            return o;
+        }
+        var t = new List<int>(indexRegions.Sum(r => Math.Max(0, r.Count - 2)) * 3);
         for (int sm = 0; sm < indexRegions.Length; sm++)
-            for (int q = indexRegions[sm].Start; q < indexRegions[sm].Start + indexRegions[sm].Count; q++)
-                o[at++] = (int)index[q] + vertexRegions[sm].Start;
-        return o;
+        {
+            int s0 = indexRegions[sm].Start, vs = vertexRegions[sm].Start;
+            for (int q = 0; q + 2 < indexRegions[sm].Count; q++)
+            {
+                int odd = q & 1;
+                int a = (int)index[s0 + q + odd] + vs, b = (int)index[s0 + q + 1 - odd] + vs, c = (int)index[s0 + q + 2] + vs;
+                if (a == b || b == c || a == c) continue;
+                t.Add(a); t.Add(b); t.Add(c);
+            }
+        }
+        return t.ToArray();
     }
 
     internal static Dictionary<string, string> TexturesOf(NifFile nif, int mi)
@@ -1030,7 +1087,8 @@ public sealed class ModelData
             var b = B[i];
             if (b.Type != "NiMesh") continue;
             if ((b.IntOr("Flags", 0) & 1) != 0) continue;           // APP_CULLED helper geometry
-            if (b.Int("Primitive Type") != 0) throw new NotSupportedException("only triangle lists");
+            long primitive = b.Int("Primitive Type");                  // 0 triangles, 1 triangle strips
+            if (primitive != 0 && primitive != 1) throw new NotSupportedException("only triangle lists and strips");
             var s = MeshStreams(nif, i);
             int si = -1;
             foreach (var m in b.Ints("Modifiers"))
@@ -1041,8 +1099,8 @@ public sealed class ModelData
                 foreach (var k in keys) if (s.TryGetValue(k, out var x)) return x;
                 return (null, 0);
             }
-            var pos = skinned ? Pick("POSITION_BP", "POSITION") : Pick("POSITION", "POSITION_BP");
             string positionKey = skinned ? (s.ContainsKey("POSITION_BP") ? "POSITION_BP" : "POSITION") : (s.ContainsKey("POSITION") ? "POSITION" : "POSITION_BP");
+            var pos = Pick(positionKey);
             var nrm = skinned ? Pick("NORMAL_BP", "NORMAL") : Pick("NORMAL", "NORMAL_BP");
             int nv = pos.v.Length / 3;
             var mesh = new ModelMesh
@@ -1078,8 +1136,10 @@ public sealed class ModelData
             ReadMorph(nif, b, s, skinned, mesh);
             // the submeshes (skin partitions): each draws its own INDEX region over its own vertex region
             int submeshes = (int)b.IntOr("Num Submeshes", 1);
-            var vertexRegions = SubmeshRegions(nif, i, s.ContainsKey(positionKey) ? positionKey : "POSITION", submeshes, nv);
-            mesh.Indices = SubmeshIndices(s["INDEX"].v, SubmeshRegions(nif, i, "INDEX", submeshes, s["INDEX"].v.Length), vertexRegions);
+            var vertexRegions = SubmeshRegions(nif, i, positionKey, submeshes, nv);
+            if (vertexRegions != null && OtherVertexRegions(nif, i, vertexRegions, nv) is { } other)
+                md.Warnings.Add($"{mesh.Name}: stream {other} has other submesh regions than {positionKey}");
+            mesh.Indices = SubmeshIndices(s["INDEX"].v, SubmeshRegions(nif, i, "INDEX", submeshes, s["INDEX"].v.Length), vertexRegions, primitive == 1);
             bool zSet = false, stSet = false;
             foreach (var p in b.Ints("Properties"))
             {
@@ -1169,9 +1229,19 @@ public sealed class ModelData
                 var palCount = new int[nv];
                 Array.Fill(palCount, bones.Length);
                 if (SubmeshRegions(nif, i, "BONE_PALETTE", submeshes, bones.Length) is { } palRegions && vertexRegions != null)
+                {
+                    var owner = new int[nv];
+                    Array.Fill(owner, -1);
+                    bool overlap = false;
                     for (int sm = 0; sm < submeshes; sm++)
                         for (int v = vertexRegions[sm].Start; v < vertexRegions[sm].Start + vertexRegions[sm].Count; v++)
+                        {
+                            if (owner[v] >= 0 && palRegions[owner[v]] != palRegions[sm]) overlap = true;
+                            owner[v] = sm;
                             (palStart[v], palCount[v]) = palRegions[sm];
+                        }
+                    if (overlap) md.Warnings.Add($"{mesh.Name}: submeshes share vertices under different bone palettes");
+                }
                 var bi = s["BLENDINDICES"]; var bw = s["BLENDWEIGHT"];
                 mesh.Joints = new int[nv * 4];
                 mesh.Weights = new float[nv * 4];
