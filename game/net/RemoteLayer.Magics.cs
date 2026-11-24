@@ -114,8 +114,10 @@ public sealed partial class RemoteLayer
         st.SkillExited = () => remoteMagics.SkillExited(id, (int)Time.GetTicksMsec());
         st.AttackFired = a => remoteMagics.AttackFired(id, a, (int)Time.GetTicksMsec());
         // the cast's tag effects kept on the caster (an actor target, SetActor) and ended with its skill state
-        st.TagEffect = (_, fx) => SpawnKeptEffect(fx, r.Visual, Ms2.Audio.SoundMusicEffectState.CasterOtherPc);   // GetObjectKind of the caster, PCBase 3 (stateskill.cpp:757)
-        st.MotionEffect = fx => SpawnKeptEffect(fx, r.Visual, Ms2.Audio.SoundMusicEffectState.CasterOtherPc);   // the same SetActor target (stateskill.cpp:750-761)
+        // (object kind 3, PCBase::vfunc_58), each past the sight test (FUN_1417f4bc0); its other effects too
+        st.TagEffect = (_, fx) => KeepOnRemote(r, fx);
+        st.KeepEffect = fx => KeepOnRemote(r, fx);
+        st.InsertEffect = fx => InsertOnRemote(r, fx);
         // PlayEventVoice for the other PC: its gender and job group, not the local player (the table's rows for it)
         st.EventSound = key => FieldAudio.Instance?.PlayEventVoice(Ms2.Audio.EventSoundTable.TextKeyType(key), r.Gender,
             r.Pc.JobGroup, false, Ms2.Audio.SoundMusicEffectState.CasterOtherPc, r.Visual.GlobalPosition, npcs.Viewer?.Invoke());   // GetObjectKind 3 (effectservice.cpp:1381)
@@ -155,6 +157,7 @@ public sealed partial class RemoteLayer
     /// (CEffectService::InsertEffect), then the magics' scene effects (<see cref="MagicSceneEffects"/>).</summary>
     void TickRemoteMagics(uint now)
     {
+        TickNpcSkillEffects();
         if (!remoteMagics.Any)
         {
             if (remoteSceneEffects.Count != 0) remoteSceneEffects.Sync(RegionFx);   // the last ones went

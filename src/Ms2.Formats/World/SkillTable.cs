@@ -59,6 +59,11 @@ public sealed class SkillMotion
     /// </summary>
     public string LoopEffect, SplashInvokeEffect, SplashEndEffect, SplashDurationCastEffect;
     public bool IgnoreOptimalHideCastEffect, SplashCastEffectStartDelay;
+    /// <summary>The motion's "endEffect", "loopKeepEffect" and "loopEndEffect" (skillleveldata.cpp:1168, :1171-1172):
+    /// StateSkill inserts the end effect at the state's exit (stateskill.cpp:536-545), keeps the loop keep effect from the
+    /// sequence's "startLoopKeepEffect" key (StartLoopEffect :2358-2372) and inserts the loop end effect at its
+    /// "endLoopKeepEffect" key (PlayLoopEndEffect :2376-2388). Null without the attribute.</summary>
+    public string EndEffect, LoopKeepEffect, LoopEndEffect;
     /// <summary>The motion's push cylinder (SkillMotionData::Load, skillleveldata.cpp:1197-1201), the force zone
     /// <see cref="ForceZone"/> reads; all 0 without the attributes.</summary>
     public PushCylinder PushCylinder;
@@ -202,6 +207,8 @@ public sealed class SkillTable
                     LoopEffect = (string)m.Attribute("loopEffect"), SplashInvokeEffect = (string)m.Attribute("splashInvokeEffect"),
                     SplashEndEffect = (string)m.Attribute("splashEndEffect"), SplashDurationCastEffect = (string)m.Attribute("splashDurationCastEffect"),
                     IgnoreOptimalHideCastEffect = Flag(m, "IgnoreOptimalHideCastEffect"), SplashCastEffectStartDelay = Flag(m, "splashCastEffectStartDelay"),
+                    EndEffect = (string)m.Attribute("endEffect"), LoopKeepEffect = (string)m.Attribute("loopKeepEffect"),
+                    LoopEndEffect = (string)m.Attribute("loopEndEffect"),
                 };
                 if (int.TryParse((string)m.Attribute("loopCount"), out int loops)) mo.LoopCount = loops;
                 mo.TagEffects = SkillMotion.ParseTagEffects((string)m.Attribute("strTagEffects"));

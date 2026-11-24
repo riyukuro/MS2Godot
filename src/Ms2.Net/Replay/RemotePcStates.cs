@@ -248,9 +248,15 @@ public sealed class RemotePcStates
     /// <summary>A tag effect of the cast's motion plays on the caster (StateSkill::TextKeyEvent, stateskill.cpp:792-834): the
     /// key and the effect xml (<see cref="CastTextKey"/>); the kept effect's id (CEffectService::FUN_1411a49c0), 0 for none.</summary>
     public Func<string, string, int> TagEffect;
-    /// <summary>The cast's motion effect kept on the caster (StateSkill::AnimActivated, stateskill.cpp:750-761, at the
-    /// sequence's start, <see cref="Cast"/>): the effect xml; the kept effect's id (FUN_1411a49c0), 0 for none.</summary>
-    public Func<string, int> MotionEffect;
+    /// <summary>An effect of the cast's motion kept on the caster (CEffectService::FUN_1411a49c0 with SetActor): the motion
+    /// effect (StateSkill::AnimActivated, stateskill.cpp:750-761, at the sequence's start, <see cref="Cast"/>), the loop
+    /// effect ("loopstart", :851-859) and the loop keep effect (StartLoopEffect, :2358-2372); the effect xml, the kept
+    /// effect's id, 0 for none (the caller's sight test, FUN_1417f4bc0, gives 0).</summary>
+    public Func<string, int> KeepEffect;
+    /// <summary>An effect of the cast's motion inserted on the caster and kept by nothing (CEffectService::InsertEffect with
+    /// SetActor): the loop end effect ("endLoopKeepEffect", PlayLoopEndEffect :2376-2388) and the end effect (the state's
+    /// exit, :536-545); the effect xml.</summary>
+    public Action<string> InsertEffect;
     /// <summary>A key of the cast's sequence containing "EventSound" (TextKeyEvent :834-841, <see cref="CastTextKey"/>): the
     /// key, for the PC's event voice (CEffectService::PlayEventVoice, Ms2.Audio.EventSoundTable).</summary>
     public Action<string> EventSound;
@@ -310,6 +316,7 @@ public sealed class RemotePcStates
     IReadOnlyDictionary<string, string> castTags;   // the motion's m_mapTagEffects
     readonly SkillTagEffects.Handles castTagIds = new();   // the record's m_map138
     bool castNotKeepEffect, nextNotKeepEffect;   // the running record's skill's notKeepEffect; the next cast's
+    SkillTagEffects.MotionEffects castEffects, nextEffects;   // the running record's motion's effect files; the next cast's
     float castLoopStart; double castLoopMs;
     IReadOnlyList<string> castPoints = System.Array.Empty<string>();
     // the record's motion data and move time, the move phases and the motion controller (shared with the own PC)
@@ -556,17 +563,19 @@ public sealed class RemotePcStates
     /// motion's tag effects (<see cref="CastTextKey"/>), <paramref name="notKeepEffect"/> its skill's stateAttr notKeepEffect
     /// (skilloverlapcompare.cpp:861), read as the state ends. The new record
     /// (CSkillRecord's constructor, skillrecord.cpp:164) starts at m_fDuration = m_fElapsed = 0.
-    /// <paramref name="motionEffect"/> is the motion's "motionEffect": StateSkill::AnimActivated (stateskill.cpp:750-761)
-    /// keeps it on the caster as the state's sequence starts, in the new record (<see cref="MotionEffect"/>), and the
-    /// state's exit ends it with the tag effects (<see cref="ChangeState"/>).
+    /// <paramref name="effects"/> are the motion's effect files: StateSkill::AnimActivated (stateskill.cpp:750-761) keeps
+    /// the motion effect on the caster as the state's sequence starts, in the new record (<see cref="KeepEffect"/>); the
+    /// sequence's keys play the loop and loop keep effects (<see cref="CastTextKey"/>); the state's exit ends them with the
+    /// tag effects and inserts the end effect (<see cref="ChangeState"/>).
     public void Cast(int skillId, bool chargingSkill, Vector3 pos, float rotZ, int holdId = 0, string holdNode = "",
         int motion = 0, int motionCount = 1, float speed = 1f, int loopCount = 0, IReadOnlyList<string> attackPoints = null,
         CastMove move = default, IReadOnlyDictionary<string, string> tagEffects = null, bool notKeepEffect = false,
-        string motionEffect = null)
+        SkillTagEffects.MotionEffects effects = default)
     {
         skillMotion.Record(move, speed, rotZ);
         castTags = tagEffects;
         nextNotKeepEffect = notKeepEffect;   // the running record's effects end with its own flag (ChangeState)
+        nextEffects = effects;
         castInLoop = false;   // vfunc_4 (stateskill.cpp:411) and the sequence start (FUN_1417f0940 :2223)
         castLoopCount = loopCount;
         castPoints = attackPoints ?? System.Array.Empty<string>();
@@ -580,8 +589,8 @@ public sealed class RemotePcStates
         castHoldNode = holdNode ?? "";
         ChangeState(StateSkill, 0, true);
         // AnimActivated (:750-761) once the new record's sequence is the target: m_n84 is 0 for a new record
-        if (Cur == StateSkill && castTagIds.Motion == 0 && !string.IsNullOrEmpty(motionEffect))
-            castTagIds.Motion = MotionEffect?.Invoke(motionEffect) ?? 0;
+        if (Cur == StateSkill && castTagIds.Motion == 0 && !string.IsNullOrEmpty(castEffects.Motion))
+            castTagIds.Motion = KeepEffect?.Invoke(castEffects.Motion) ?? 0;
     }
 
     /// <summary>
@@ -618,9 +627,11 @@ public sealed class RemotePcStates
     /// (<see cref="TagEffect"/>) unless <see cref="SkillTagEffects.Plays"/> says no; m_b117 follows the keys ("loopstart" on,
     /// "loopend" off then on again for a next round, a charging skill's "charging_attack" off).
     /// The effect's id is kept by its key (m_map138) for the state's exit (<see cref="ChangeState"/>). A key containing
-    /// "EventSound" (:834-841) then goes to <see cref="EventSound"/>.
-    /// STILL-OPEN: the loop effect (record m_n88, FUN_1417598e0), the tag effect's sight range test (FUN_1417f4bc0, object kind 3), FireCurrentAttack's hits and the weapon sync
-    /// (FUN_141663be0) are not ported.
+    /// "EventSound" (:834-841) then goes to <see cref="EventSound"/>. The record's loop effect (m_n88) is kept at "loopstart"
+    /// outside the ended charge loop and stopped at "loopend"; "startLoopKeepEffect" / "endLoopKeepEffect" (:1039-1045) keep
+    /// and end the state's loop keep effect (<see cref="SkillTagEffects.Handles"/>). Each effect goes through the
+    /// callbacks, which run the sight test (FUN_1417f4bc0, object kind 3) for this PC.
+    /// STILL-OPEN: FireCurrentAttack's hits and the weapon sync (FUN_141663be0) are not ported.
     /// </summary>
     public void CastTextKey(string key, float time)
     {
@@ -632,12 +643,14 @@ public sealed class RemotePcStates
         if (key == "loopstart") castInLoop = true;   // :844, before the m_bLoop test
         if (key == "loopstart" && !castLoop)
         {
+            castTagIds.LoopStart(castEffects.Loop, KeepEffect, StopEffect);   // :846-859, the record's loop effect
             castLoopStart = time;
             castLoopEnded = false;
             castLoopMs = 0;
         }
         if (key == "loopend")
         {
+            castTagIds.LoopEnd(StopEffect);   // :867-873
             castLoopEnded = true;
             castInLoop = false;   // :875
             if (castCharging || castRepeat > 0)
@@ -681,6 +694,11 @@ public sealed class RemotePcStates
         {
             castLoop = true;
             castInLoop = false;   // :996
+        }
+        switch (SkillTagEffects.LoopKeepKey(key))   // :1039-1045
+        {
+            case 1: castTagIds.StartLoopKeep(castEffects.LoopKeep, KeepEffect); break;
+            case 2: castTagIds.EndLoopKeep(castEffects.LoopEnd, StopEffect, InsertEffect); break;
         }
     }
 
@@ -837,11 +855,13 @@ public sealed class RemotePcStates
         if (state == StateSkill) FlushRequests();
         if (Cur == StateSkill)
         {
-            // StateSkill::vfunc_5(n) (stateskill.cpp:515-524): the record's tag effects stop at once when the owner is dead,
-            // the next state is StateHit (0xd) or the skill keeps no effect, else they are released
-            // STILL-OPEN: the stun test (AdditionalCliList::IsStunned) has no buff list here; the record's loop effect
-            // (m_n88) is not kept
-            castTagIds.End(Dead || state == StateHit || castNotKeepEffect, StopEffect, ReleaseEffect);
+            // StateSkill::vfunc_5(n) (stateskill.cpp:515-567): the record's effects stop at once when the owner is dead or
+            // stunned, the next state is StateHit (0xd) or the skill keeps no effect, else they are released; then the end
+            // effect, then the loop keep effect stops. Stunned: AdditionalCliList::IsStunned is m_motion.m_nStun, which
+            // AdditionalCliList::FUN_1409713b0 (additionalcli_2.cpp:786-830) sets just before it sends the owner to
+            // StateStun (vfunc_59(0x12)) and ResetSums clears at the next sum, so it is the exit to StateStun here.
+            castTagIds.End(Dead || state == StateHit || state == StateStun || castNotKeepEffect, StopEffect, ReleaseEffect,
+                castEffects.End, InsertEffect);
             SkillExited?.Invoke();
         }
         Exit(Cur, state);
@@ -852,6 +872,7 @@ public sealed class RemotePcStates
         if (state == StateSkill)
         {
             castNotKeepEffect = nextNotKeepEffect;
+            castEffects = nextEffects;
             SkillEntered?.Invoke();
         }
         Enter(state);

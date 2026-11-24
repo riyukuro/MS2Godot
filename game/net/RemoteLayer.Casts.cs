@@ -84,15 +84,9 @@ public sealed partial class RemoteLayer
         skillMotions ??= Ms2.Formats.World.SkillTable.For(packs);
         var motion = skillMotions.Motion(skillId, level, motionIndex);
         if (motion == null) return;
-        Node3D at; float yaw;
-        // the motion effect's object kind, GetObjectKind of the owner (stateskill.cpp:1834): PCBase 3 (pcbase.cpp:1092), an npc
-        // 5 or 6 for a boss
-        int casterKind;
         if (users.TryGetValue(actorId, out var r))
         {
-            casterKind = Ms2.Audio.SoundMusicEffectState.CasterOtherPc;
             if (r.Pc.States.Dead) return;
-            at = r.Root; yaw = r.Visual.Rotation.Y;
             if (!string.IsNullOrEmpty(motion.SequenceName) && SkillAnim(r.Gender, motion.SequenceName) is { an: not null } sk)
             {
                 var st = skillMotions.StateMove(skillId);
@@ -102,31 +96,125 @@ public sealed partial class RemoteLayer
                 remoteMagics.BeginCast(actorId, castUid, motionIndex);
                 r.Pc.PlaySkill(sk.name, Math.Max(speed, 0.1f), skillId, skillMotions.ChargingSkill(skillId), pos, rotZ, holdId, holdNode,
                     motionIndex, skillMotions.MotionCount(skillId, level), motion.LoopCount, motion.AttackPoints, move, motion.TagEffects,
-                    skillMotions.NotKeepEffect(skillId), motion.MotionEffect);
+                    skillMotions.NotKeepEffect(skillId), EffectsOf(motion));
                 CastsPlayed++;
             }
             else if (string.IsNullOrEmpty(motion.SequenceName) && !string.IsNullOrEmpty(motion.MotionEffect))
             {
                 // PlayCastStartEffect for a level without a sequence (stateskill.cpp:1829-1838): InsertEffect on the caster,
-                // which nothing keeps
-                ReleaseKeptEffect(SpawnKeptEffect(motion.MotionEffect, r.Visual, Ms2.Audio.SoundMusicEffectState.CasterOtherPc));
+                // which nothing keeps, past the sight test (:1837)
+                InsertOnRemote(r, motion.MotionEffect);
             }
             return;   // a sequence the body lacks never activates, so AnimActivated plays no motion effect
         }
         else if (npcs.Info(actorId) is { } n)
         {
-            casterKind = npcs.CasterKind(actorId);
+            // GetObjectKind of the npc (CNpc::vfunc_58): 6 for a boss, else 5
+            int kind = npcs.CasterKind(actorId);
             if (npcs.IsDead(actorId)) return;
-            at = n.root; yaw = n.yaw;
             if (!string.IsNullOrEmpty(motion.SequenceName))
             {
                 string anim = npcs.PlaySequence(actorId, motion.SequenceName);
                 // FUN_141673ce0 then vfunc_59(0x10): the record and the skill state the force zones read
-                npcs.BeginCast(actorId, castUid, motionIndex, motionIndex + 1 >= skillMotions.MotionCount(skillId, level), motion, anim);
+                if (npcs.BeginCast(actorId, castUid, motionIndex, motionIndex + 1 >= skillMotions.MotionCount(skillId, level), motion, anim))
+                    NpcSkillEntered(actorId, n.root, kind, skillMotions.NotKeepEffect(skillId), EffectsOf(motion), anim != null);
             }
+            else if (!string.IsNullOrEmpty(motion.MotionEffect))
+                ReleaseKeptEffect(SpawnKeptEffect(motion.MotionEffect, n.root, kind));   // :1829-1838
         }
-        else return;
-        if (!string.IsNullOrEmpty(motion.MotionEffect)) combat.PlayEffect(motion.MotionEffect, at.Position, yaw, casterKind);
+    }
+
+    /// <summary>The effect files StateSkill plays for a motion (<see cref="SkillTagEffects.MotionEffects"/>).</summary>
+    public static SkillTagEffects.MotionEffects EffectsOf(Ms2.Formats.World.SkillMotion m) =>
+        new(m.MotionEffect, m.LoopEffect, m.EndEffect, m.LoopKeepEffect, m.LoopEndEffect);
+
+    /// <summary>
+    /// StateSkill::FUN_1417f4bc0 (@0x1417f4bc0, stateskill.cpp:2790-2807), the test before each of the state's effects on
+    /// another PC (object kind 3; the own PC and npcs are never tested): true, so nothing is played, when the field has a
+    /// sight range (WorldService::GetSightRange, the field property 6) and the PC is farther than it from the local player.
+    /// </summary>
+    bool OutOfSight(Remote r)
+    {
+        if (SightRange?.Invoke() is not { } range) return false;
+        if (npcs.OwnPosition?.Invoke() is not { } me) return false;
+        return System.Numerics.Vector3.Distance(r.Pc.Position, me) > range;
+    }
+
+    /// <summary>An effect of another PC's skill state kept on it (FUN_1411a49c0, SetActor, object kind 3) past the sight test;
+    /// its id, 0 for none.</summary>
+    int KeepOnRemote(Remote r, string fx) =>
+        OutOfSight(r) ? 0 : SpawnKeptEffect(fx, r.Visual, Ms2.Audio.SoundMusicEffectState.CasterOtherPc);
+
+    /// <summary>An effect of another PC's skill state inserted on it and kept by nothing (InsertEffect, SetActor) past the
+    /// sight test.</summary>
+    void InsertOnRemote(Remote r, string fx)
+    {
+        if (!OutOfSight(r)) ReleaseKeptEffect(SpawnKeptEffect(fx, r.Visual, Ms2.Audio.SoundMusicEffectState.CasterOtherPc));
+    }
+
+    /// <summary>An npc's skill state's effects: the record's kept ids, the motion's effect files and the skill's
+    /// notKeepEffect.</summary>
+    sealed class NpcSkillEffects
+    {
+        public readonly SkillTagEffects.Handles Ids = new();
+        public SkillTagEffects.MotionEffects Fx;
+        public bool NotKeepEffect;
+        public Node3D Root;
+        public int Kind;
+    }
+    readonly Dictionary<int, NpcSkillEffects> npcSkillEffects = new();
+    Action<int> stopKept, releaseKept;
+    Action<string> insertNpcEffect;
+    Node3D insertNpcRoot;
+    int insertNpcKind;
+
+    /// <summary>
+    /// An npc's new record entered StateSkill (<see cref="NpcLayer.BeginCast"/>): the running record's state is left first
+    /// (<see cref="EndNpcSkill"/>, the next state 0x10), then AnimActivated (stateskill.cpp:750-761) keeps the motion
+    /// effect on the npc once the sequence plays (<paramref name="activated"/>: the body has it). Object kind
+    /// <paramref name="kind"/>: 5, or 6 for a boss (CNpc::vfunc_58).
+    /// </summary>
+    void NpcSkillEntered(int id, Node3D root, int kind, bool notKeepEffect, SkillTagEffects.MotionEffects fx, bool activated)
+    {
+        if (npcSkillEffects.TryGetValue(id, out var e)) EndNpcSkill(id, e, 0x10);
+        else npcSkillEffects[id] = e = new NpcSkillEffects();
+        e.Fx = fx; e.NotKeepEffect = notKeepEffect; e.Root = root; e.Kind = kind;
+        if (activated && !string.IsNullOrEmpty(fx.Motion))
+            e.Ids.Motion = SpawnKeptEffect(fx.Motion, root, kind);
+    }
+
+    /// <summary>
+    /// StateSkill::vfunc_5 (stateskill.cpp:515-567) for an npc leaving the state for <paramref name="next"/>: the motion
+    /// effect stops at once when the npc is dead, the next state is StateHit (0xd) or StateStun (0x12, the stun test, see
+    /// <see cref="RemotePcStates.ChangeState"/>) or the skill keeps no effect, else it is released; then the end effect is
+    /// inserted on the npc (<see cref="SkillTagEffects.Handles.End"/>).
+    /// STILL-OPEN: an npc's sequence keys are not walked here, so its loop and loop keep effects (and the tag effects) are
+    /// not played.
+    /// </summary>
+    void EndNpcSkill(int id, NpcSkillEffects e, byte next)
+    {
+        stopKept ??= StopKeptEffect;
+        releaseKept ??= ReleaseKeptEffect;
+        insertNpcEffect ??= fx => ReleaseKeptEffect(SpawnKeptEffect(fx, insertNpcRoot, insertNpcKind));
+        bool gone = e.Root == null || !GodotObject.IsInstanceValid(e.Root);
+        insertNpcRoot = gone ? null : e.Root; insertNpcKind = e.Kind;
+        e.Ids.End(gone || npcs.IsDead(id) || next == 0xd || next == 0x12 || e.NotKeepEffect, stopKept, releaseKept,
+            gone ? null : e.Fx.End, insertNpcEffect);
+        insertNpcRoot = null;
+    }
+
+    /// <summary>Each frame: an npc whose skill state was left (another state, or the npc gone) ends the state's effects
+    /// (<see cref="EndNpcSkill"/>). No allocation.</summary>
+    void TickNpcSkillEffects()
+    {
+        if (npcSkillEffects.Count == 0) return;
+        foreach (var (id, e) in npcSkillEffects)
+        {
+            byte state = npcs.StateOf(id);
+            if (state == 0x10) continue;
+            EndNpcSkill(id, e, state);
+            npcSkillEffects.Remove(id);
+        }
     }
 
     /// <summary>

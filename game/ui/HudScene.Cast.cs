@@ -623,6 +623,18 @@ public partial class HudScene
     readonly Ms2.Net.Replay.SkillTagEffects.Keys ownTagKeys = new();   // the motion's m_mapTagEffects keys in the sequence
     readonly Ms2.Net.Replay.SkillTagEffects.Handles ownTagIds = new();  // the record's m_map138: the tag effects' ids by key
     Action<int> stopOwnTagEffect, releaseOwnTagEffect;
+    Func<string, int> keepOwnEffect;
+    Action<string> insertOwnEffect;
+    /// <summary>The own running record's motion's effect files (the loop, loop keep, loop end and end effects the state plays,
+    /// <see cref="Ms2.Net.Replay.SkillTagEffects.Handles"/>); default once its state's exit ran.</summary>
+    Ms2.Net.Replay.SkillTagEffects.MotionEffects ownFx;
+    Action<int> StopOwnEffect => stopOwnTagEffect ??= h => Net.LiveSession.Instance?.StopKeptEffect(h);
+    Action<int> ReleaseOwnEffect => releaseOwnTagEffect ??= h => Net.LiveSession.Instance?.ReleaseKeptEffect(h);
+    /// <summary>FUN_1411a49c0 on the player (SetActor, object kind 1: no sight test for the own PC): the kept id, 0 for none.</summary>
+    Func<string, int> KeepOwnEffect => keepOwnEffect ??= fx => player?.Visual is { } v
+        ? Net.LiveSession.Instance?.SpawnKeptEffect(fx, v, Ms2.Audio.SoundMusicEffectState.CasterMyPc) ?? 0 : 0;
+    /// <summary>InsertEffect on the player, kept by nothing.</summary>
+    Action<string> InsertOwnEffect => insertOwnEffect ??= fx => ReleaseOwnEffect(KeepOwnEffect(fx));
 
     // MyPC::FUN_141525580's view of the own pc, made once; its delegates read the live session and the buff list
     UseCheckWorld ownUseCheck;
@@ -772,7 +784,9 @@ public partial class HudScene
         if (me.SkillSequence != null) me.Anims?.Kf.TryGetValue(me.SkillSequence, out kf);
         ownComboKeys.Set(kf?.TextKeys, motion?.SelfInputCombo);
         castMotions ??= Ms2.Formats.World.SkillTable.For(assets.Packs);
-        ownTagKeys.Set(kf?.TextKeys, castMotions.Motion((int)r.Skill.Id, r.Level.Level, r.Motion)?.TagEffects);
+        var castMotion = castMotions.Motion((int)r.Skill.Id, r.Level.Level, r.Motion);
+        ownTagKeys.Set(kf?.TextKeys, castMotion?.TagEffects);
+        ownFx = castMotion != null ? Net.RemoteLayer.EffectsOf(castMotion) : default;
         ownSequenceLength = kf?.Duration ?? 0;
         ownEnded = false;
         ownPollWorld = null;
@@ -899,7 +913,11 @@ public partial class HudScene
             if (tt == t) OwnTagEffects(t);
             if (tk == t)
             {
-                if (ownLoopStartKey == t) ownLoop.OnLoopStart(ownLoopStartKey, now);
+                if (ownLoopStartKey == t)
+                {
+                    if (!ownLoop.Loop) ownTagIds.LoopStart(ownFx.Loop, KeepOwnEffect, StopOwnEffect);   // :846-859
+                    ownLoop.OnLoopStart(ownLoopStartKey, now);
+                }
                 if (ownChargingComboKey == t) ownLoop.OnChargingCombo(charging, CastKeyDown(ownCast.Key), now, ownChargingComboTick);
                 while (ownPointTime == t)
                 {
@@ -912,6 +930,7 @@ public partial class HudScene
                 if (ownChargingAttackKey == t) ownLoop.OnChargingAttack(charging);
                 if (ownLoopEndKey == t)
                 {
+                    ownTagIds.LoopEnd(StopOwnEffect);   // :867-873
                     OwnLoopEnd(player, now);
                     if (ownKeyPos != pos) return false;   // the next round's seek: the keys read on from there next frame
                 }
@@ -935,7 +954,8 @@ public partial class HudScene
     /// each plays its effect on the player unless <see cref="Ms2.Net.Replay.SkillTagEffects.Plays"/> says no (the loop's
     /// m_b117 and m_bLoop, the record's m_n9c), kept on the player by its key (m_map138) for the state's exit
     /// (<see cref="EndOwnTagEffects"/>). A key containing "EventSound" (no path here) plays the own PC's event voice
-    /// (:834-841, <see cref="FieldAudio.PlayEventVoice"/>).
+    /// (:834-841, <see cref="FieldAudio.PlayEventVoice"/>); a loop keep key starts or ends the loop keep effect (:1039-1045,
+    /// <see cref="Ms2.Net.Replay.SkillTagEffects.Handles.StartLoopKeep"/>, <see cref="Ms2.Net.Replay.SkillTagEffects.Handles.EndLoopKeep"/>).
     /// </summary>
     void OwnTagEffects(double t)
     {
@@ -943,6 +963,13 @@ public partial class HudScene
         {
             var (time, key, path) = ownTagKeys[i];
             if (time != t) continue;
+            if (path == null && Ms2.Net.Replay.SkillTagEffects.LoopKeepKey(key) is int lk and > 0)
+            {
+                // :1039-1045: StartLoopEffect, or StopLoopEffect then PlayLoopEndEffect
+                if (lk == 1) ownTagIds.StartLoopKeep(ownFx.LoopKeep, KeepOwnEffect);
+                else ownTagIds.EndLoopKeep(ownFx.LoopEnd, StopOwnEffect, InsertOwnEffect);
+                continue;
+            }
             if (path == null)
             {
                 var at0 = player.GlobalPosition;
@@ -959,17 +986,19 @@ public partial class HudScene
     }
 
     /// <summary>
-    /// StateSkill::vfunc_5 (stateskill.cpp:515-524) for the own cast's tag effects (<see cref="Ms2.Net.Replay.SkillTagEffects.Handles.End"/>):
-    /// stopped at once when the player is dead, hit (the next state 0xd) or the skill has notKeepEffect, else released.
-    /// STILL-OPEN: the stun test (AdditionalCliList::IsStunned) is not made.
+    /// StateSkill::vfunc_5 (stateskill.cpp:515-567) for the own cast's effects (<see cref="Ms2.Net.Replay.SkillTagEffects.Handles.End"/>):
+    /// the motion, loop and tag effects stopped at once when the player is dead, hit (the next state 0xd) or the skill has
+    /// notKeepEffect, else released; then the motion's end effect inserted on the player and the loop keep effect stopped.
+    /// STILL-OPEN: the stun test (AdditionalCliList::IsStunned): the own player has no StateStun here.
     /// </summary>
     void EndOwnTagEffects()
     {
-        if (ownTagIds.Count == 0) return;
+        var fx = ownFx;
+        ownFx = default;
+        if (ownTagIds.Count == 0 && string.IsNullOrEmpty(fx.End)) return;
         bool hard = player == null || player.DeadFlag || player.State is Player.MoveState.Dead or Player.MoveState.Hit
             || (ownCast != null && castMotions?.NotKeepEffect((int)ownCast.Skill.Id) == true);
-        ownTagIds.End(hard, stopOwnTagEffect ??= h => Net.LiveSession.Instance?.StopKeptEffect(h),
-            releaseOwnTagEffect ??= h => Net.LiveSession.Instance?.ReleaseKeptEffect(h));
+        ownTagIds.End(hard, StopOwnEffect, ReleaseOwnEffect, player != null ? fx.End : null, InsertOwnEffect);
     }
 
     /// <summary>
@@ -980,7 +1009,8 @@ public partial class HudScene
     /// A next round first aims the record again (vfunc_100(m_spRecord, 1), :880-881: a continue skill keeps its own aim, see
     /// <see cref="SkillCast.Aim"/>, with the position now) and turns the owner to the record's rotation (SetTargetYaw /
     /// vfunc_21, :893-894).
-    /// STILL-OPEN: the record's loop effect stop (m_n88), the camera mode 10 yaw (FUN_1417f4ea0, :885-889) and the weapon
+    /// The record's loop effect (m_n88) was stopped at the key (<see cref="OwnKeys"/>).
+    /// STILL-OPEN: the camera mode 10 yaw (FUN_1417f4ea0, :885-889) and the weapon
     /// PC's sequence (FUN_141663be0).
     /// </summary>
     void OwnLoopEnd(Player me, uint now)

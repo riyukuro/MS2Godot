@@ -104,11 +104,11 @@ public class SkillMotionEffectVoiceSweepTests
                                 fxRows++;
                                 var calls = new Calls();
                                 var pc = new Pc();
-                                var sm = new RemotePcStates(pc) { MotionEffect = calls.Spawn, StopEffect = calls.Stop, ReleaseEffect = calls.Release };
+                                var sm = new RemotePcStates(pc) { KeepEffect = calls.Spawn, StopEffect = calls.Stop, ReleaseEffect = calls.Release };
                                 sm.ChangeState(RemotePcStates.StateIdle);
                                 bool notKeep = rows.NotKeepEffect(id);
                                 sm.Cast(id, rows.ChargingSkill(id), Vector3.Zero, 0f, motion: mi, motionCount: level.Motions.Count,
-                                    notKeepEffect: notKeep, motionEffect: m.MotionEffect);
+                                    notKeepEffect: notKeep, effects: new SkillTagEffects.MotionEffects(m.MotionEffect, null, null, null, null));
                                 if (dead) sm.SetDead(true);
                                 sm.ChangeState(dead ? RemotePcStates.StateDead : RemotePcStates.StateIdle);
                                 string exp = $"keep:{m.MotionEffect} {(dead || notKeep ? "stop:1" : "release:1")}";
@@ -141,7 +141,7 @@ public class SkillMotionEffectVoiceSweepTests
                         // the own walk holds each key at its time
                         var walk = new SkillTagEffects.Keys();
                         walk.Set(kf.TextKeys, m.TagEffects);
-                        var walked = Enumerable.Range(0, walk.Count).Select(i => walk[i]).Where(e => e.path == null).Select(e => (e.time, e.key)).ToList();
+                        var walked = Enumerable.Range(0, walk.Count).Select(i => walk[i]).Where(e => e.path == null && SkillTagEffects.IsEventSoundKey(e.key)).Select(e => (e.time, e.key)).ToList();
                         if (!walked.SequenceEqual(keys.Select(k => (k.time, k.text))))
                             bad.Add($"| {id} | {lr.Level} | {mi} | voice | own {bname} | {string.Join(",", keys.Select(k => $"{k.text}@{k.time:0.###}"))} | {string.Join(",", walked.Select(k => $"{k.key}@{k.time:0.###}"))} |");
                         // the other PC's state hands each key on

@@ -35,6 +35,25 @@ public static class SkillTagEffects
         key != null && key.Contains("EventSound", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
+    /// The effect files of one skill motion that StateSkill plays on the caster besides the tag effects (SkillMotionData::Load,
+    /// skillleveldata.cpp:1166-1172; GetMotionEffect's kinds 2, 3 and 4, :886-901): <see cref="Motion"/> "motionEffect",
+    /// <see cref="Loop"/> "loopEffect", <see cref="End"/> "endEffect", <see cref="LoopKeep"/> "loopKeepEffect" and
+    /// <see cref="LoopEnd"/> "loopEndEffect". Null or empty for none.
+    /// </summary>
+    public readonly record struct MotionEffects(string Motion, string Loop, string End, string LoopKeep, string LoopEnd)
+    {
+        public bool Any => !string.IsNullOrEmpty(Motion) || !string.IsNullOrEmpty(Loop) || !string.IsNullOrEmpty(End)
+            || !string.IsNullOrEmpty(LoopKeep) || !string.IsNullOrEmpty(LoopEnd);
+    }
+
+    /// <summary>TextKeyEvent's loop keep keys (stateskill.cpp:1039-1045, CString::EqualsNoCase): 1 for
+    /// "startLoopKeepEffect" (StartLoopEffect), 2 for "endLoopKeepEffect" (StopLoopEffect then PlayLoopEndEffect), else 0.</summary>
+    public static int LoopKeepKey(string key) =>
+        key == null ? 0
+        : key.Equals("startLoopKeepEffect", StringComparison.OrdinalIgnoreCase) ? 1
+        : key.Equals("endLoopKeepEffect", StringComparison.OrdinalIgnoreCase) ? 2 : 0;
+
+    /// <summary>
     /// A record's kept tag effects (CSkillRecord m_map138, a CRBMap of the text key to the effect id): TextKeyEvent sets the
     /// id a tag key's effect got (SetAt, stateskill.cpp:829: a key played again replaces its id, the old effect left running).
     /// <see cref="End"/> is StateSkill::vfunc_5's part for them (:515-524). No allocation past the list's growth.
@@ -48,7 +67,68 @@ public static class SkillTagEffects
         /// 0 for none. <see cref="End"/> ends it first, as StopRecordEffects (:2298-2300) and vfunc_5's releases (:520) do.</summary>
         public int Motion;
 
-        public int Count => map.Count + (Motion != 0 ? 1 : 0);
+        /// <summary>The record's loop effect (m_n88): the "loopEffect" the sequence's "loopstart" key keeps on the caster
+        /// (<see cref="LoopStart"/>) and its "loopend" key stops (<see cref="LoopEnd"/>); 0 for none.</summary>
+        public int Loop;
+
+        /// <summary>The state's loop keep effect (StateSkill m_nLoopEffectId): the "loopKeepEffect" the
+        /// "startLoopKeepEffect" key keeps (<see cref="StartLoopKeep"/>) until "endLoopKeepEffect" (<see cref="EndLoopKeep"/>)
+        /// or the state's exit stops it; 0 for none.</summary>
+        public int LoopKeep;
+
+        public int Count => map.Count + (Motion != 0 ? 1 : 0) + (Loop != 0 ? 1 : 0) + (LoopKeep != 0 ? 1 : 0);
+
+        /// <summary>
+        /// TextKeyEvent's "loopstart" (stateskill.cpp:844-860), when the charging loop has not ended (!m_bLoop): the record's
+        /// loop effect is stopped (FUN_1411a6060) and <paramref name="loopEffect"/> kept on the caster in its place
+        /// (<paramref name="keep"/>, FUN_1411a49c0 with SetActor; 0 when the caller's sight test skips it).
+        /// </summary>
+        public void LoopStart(string loopEffect, Func<string, int> keep, Action<int> stop)
+        {
+            if (Loop != 0) { stop?.Invoke(Loop); Loop = 0; }
+            if (!string.IsNullOrEmpty(loopEffect)) Loop = keep?.Invoke(loopEffect) ?? 0;
+        }
+
+        /// <summary>TextKeyEvent's "loopend" (:867-873): the record's loop effect is stopped.</summary>
+        public void LoopEnd(Action<int> stop)
+        {
+            if (Loop != 0) { stop?.Invoke(Loop); Loop = 0; }
+        }
+
+        /// <summary>StateSkill::StartLoopEffect (@0x1417f1ea0, stateskill.cpp:2358-2372): nothing while one is kept, else
+        /// <paramref name="loopKeepEffect"/> kept on the caster.</summary>
+        public void StartLoopKeep(string loopKeepEffect, Func<string, int> keep)
+        {
+            if (LoopKeep != 0 || string.IsNullOrEmpty(loopKeepEffect)) return;
+            LoopKeep = keep?.Invoke(loopKeepEffect) ?? 0;
+        }
+
+        /// <summary>"endLoopKeepEffect" (:1041-1045): StopLoopEffect (@0x1417f1fe0, :1659-1665) stops the loop keep effect,
+        /// then PlayLoopEndEffect (@0x1417f2030, :2376-2388) inserts <paramref name="loopEndEffect"/> on the caster, kept by
+        /// nothing (<paramref name="insert"/>).</summary>
+        public void EndLoopKeep(string loopEndEffect, Action<int> stop, Action<string> insert)
+        {
+            if (LoopKeep != 0) { stop?.Invoke(LoopKeep); LoopKeep = 0; }
+            if (!string.IsNullOrEmpty(loopEndEffect)) insert?.Invoke(loopEndEffect);
+        }
+
+        /// <summary>
+        /// TextKeyEvent's part for the effect slots other than the tag effects, for a key of the cast's sequence:
+        /// "loopstart" while <paramref name="chargingLoopEnded"/> (m_bLoop) is unset, "loopend", and the loop keep keys
+        /// (<see cref="LoopKeepKey"/>). True when the key was one of them.
+        /// </summary>
+        public bool TextKey(string key, in MotionEffects fx, bool chargingLoopEnded, Func<string, int> keep, Action<int> stop,
+            Action<string> insert)
+        {
+            if (key == "loopstart") { if (!chargingLoopEnded) LoopStart(fx.Loop, keep, stop); return true; }
+            if (key == "loopend") { LoopEnd(stop); return true; }
+            switch (LoopKeepKey(key))
+            {
+                case 1: StartLoopKeep(fx.LoopKeep, keep); return true;
+                case 2: EndLoopKeep(fx.LoopEnd, stop, insert); return true;
+            }
+            return false;
+        }
 
         /// <summary>The id kept for <paramref name="key"/>, 0 without one.</summary>
         public int this[string key]
@@ -69,20 +149,23 @@ public static class SkillTagEffects
         }
 
         /// <summary>
-        /// The state's exit (StateSkill::vfunc_5, stateskill.cpp:515-524): when <paramref name="hard"/> (the owner dead or
-        /// stunned, the next state 0xd, or the skill's notKeepEffect) StopRecordEffects (:2296-2310) stops each kept effect
-        /// at once (CEffectService::FUN_1411a6060, <paramref name="stop"/>) and zeroes its id; then each id left is released
-        /// (FUN_1411a69e0, <paramref name="release"/>; nothing for an id 0). The record goes with the state here, so the map
-        /// is emptied.
+        /// The state's exit (StateSkill::vfunc_5, stateskill.cpp:515-567): when <paramref name="hard"/> (the owner dead or
+        /// stunned, the next state 0xd, or the skill's notKeepEffect) StopRecordEffects (:2296-2310) stops the motion effect,
+        /// the loop effect and each tag effect at once (CEffectService::FUN_1411a6060, <paramref name="stop"/>) and zeroes
+        /// their ids; then each id left is released (FUN_1411a69e0, <paramref name="release"/>; nothing for an id 0), in the
+        /// same order (:520-523). The motion's "endEffect" (<paramref name="endEffect"/>) is then inserted on the caster,
+        /// kept by nothing (:536-545, <paramref name="insert"/>), and last the state's loop keep effect is stopped
+        /// (StopLoopEffect, :567). The record goes with the state here, so the map is emptied.
         /// </summary>
-        public void End(bool hard, Action<int> stop, Action<int> release)
+        public void End(bool hard, Action<int> stop, Action<int> release, string endEffect = null, Action<string> insert = null)
         {
-            if (Motion != 0)
+            if (hard)
             {
-                if (hard) stop?.Invoke(Motion);
-                else release?.Invoke(Motion);
-                Motion = 0;
+                if (Motion != 0) { stop?.Invoke(Motion); Motion = 0; }
+                if (Loop != 0) { stop?.Invoke(Loop); Loop = 0; }
             }
+            if (Motion != 0) { release?.Invoke(Motion); Motion = 0; }
+            if (Loop != 0) { release?.Invoke(Loop); Loop = 0; }
             for (int i = 0; i < map.Count; i++)
             {
                 var (k, id) = map[i];
@@ -91,6 +174,8 @@ public static class SkillTagEffects
                 else release?.Invoke(id);
             }
             map.Clear();
+            if (!string.IsNullOrEmpty(endEffect)) insert?.Invoke(endEffect);
+            if (LoopKeep != 0) { stop?.Invoke(LoopKeep); LoopKeep = 0; }
         }
     }
 
@@ -103,8 +188,8 @@ public static class SkillTagEffects
         readonly List<(double time, string key, string path)> list = new();
 
         /// <summary>The keys of <paramref name="textKeys"/> (time order) that <paramref name="tags"/> names, and each
-        /// EventSound key (<see cref="IsEventSoundKey"/>) with no path, after the key's tag effect as TextKeyEvent takes
-        /// them (:792-841); none for null keys.</summary>
+        /// EventSound key (<see cref="IsEventSoundKey"/>) and loop keep key (<see cref="LoopKeepKey"/>) with no path, after
+        /// the key's tag effect as TextKeyEvent takes them (:792-841, :1039-1045); none for null keys.</summary>
         public void Set(List<(double time, string text)> textKeys, IReadOnlyDictionary<string, string> tags)
         {
             list.Clear();
@@ -113,7 +198,7 @@ public static class SkillTagEffects
             {
                 if (k == null) continue;
                 if (tags != null && tags.TryGetValue(k, out var path)) list.Add((t, k, path));
-                if (IsEventSoundKey(k)) list.Add((t, k, null));
+                if (IsEventSoundKey(k) || LoopKeepKey(k) != 0) list.Add((t, k, null));
             }
         }
 
@@ -127,7 +212,8 @@ public static class SkillTagEffects
             return -1;
         }
 
-        /// <summary>The tag key at index <paramref name="i"/>: its time, name and effect xml (null for an EventSound key).</summary>
+        /// <summary>The tag key at index <paramref name="i"/>: its time, name and effect xml (null for an EventSound or loop
+        /// keep key).</summary>
         public (double time, string key, string path) this[int i] => list[i];
     }
 }
