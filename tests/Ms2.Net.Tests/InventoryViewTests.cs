@@ -34,6 +34,23 @@ public class InventoryViewTests {
         Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(256));
     }
 
+    [Test] public void CountOfTypeCountsUnexpiredItemsOfTheTypeAndDesignItemsSkipUgcAndMeshlessOnes() {
+        var b = Book();
+        var a = It(20000001, 1, 0, 5); b.TryAdd(a);                            // data type 2, five of them
+        var e = It(20000002, 2, 1); e.ExpiryTime = 100; b.TryAdd(e);           // type 2, expired from 100
+        b.TryAdd(It(30000001, 3, 0));                                          // type 3, no cube texture mesh
+        Func<int, int> typeOf = id => id / 10000000;
+        Assert.That(b.CountOfType(2, typeOf, 100), Is.EqualTo(1), "items, not amounts; the expired one is out");
+        Assert.That(b.CountOfType(2, typeOf, 99), Is.EqualTo(2));
+        Assert.That(b.CountOfType(0, typeOf, 100), Is.EqualTo(2), "type 0: any type");
+        Func<int, bool> mesh = id => id != 30000001;
+        Assert.That(b.HasDesignItem(3, typeOf, mesh, 100), Is.False, "no cube texture mesh");
+        Assert.That(b.HasDesignItem(0, typeOf, mesh, 100), Is.True);
+        a.HasUgc = true; a.Ugc = new UgcLook { Uid = 7 };
+        Assert.That(b.HasDesignItem(2, typeOf, mesh, 100), Is.False, "the UGC one is out and the other expired");
+        Assert.That(b.HasDesignItem(2, typeOf, mesh, 50), Is.True);
+    }
+
     [Test] public void CellsAreOrderedByInventorySlotAndCapacityIsBasePlusExtra() {
         var b = Book(); b.TryAdd(It(20000001, 1, 3, 5)); b.TryAdd(It(20000002, 2, 0));
         var v = new InventoryView(b);

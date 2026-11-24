@@ -90,6 +90,41 @@ public sealed class ItemBook {
         foreach (var it in items.Values) if (it.Id == id && it.Rarity == rarity) n += it.Amount;
         return n;
     }
+    /// <summary>Unk_Inventory::FUN_140a5f180 (inventory.cpp:782-803), what HasItemCount (:731) compares: the summed count
+    /// of the items with <paramref name="id"/> in the item's tab, of any rarity when <paramref name="rarity"/> is 0. An
+    /// item lives only in its own tab here, so every tab is walked. STILL-OPEN: the client skips the items the player
+    /// cannot use (CanUseItem, :798). 0 B.</summary>
+    public int CountById(int id, int rarity) {
+        if (id == 0) return 0;
+        int n = 0;
+        foreach (var it in items.Values) if (it.Id == id && (rarity == 0 || it.Rarity == rarity)) n += it.Amount;
+        return n;
+    }
+    /// <summary>Unk_Inventory::FUN_140a60c20 (inventory.cpp:1023-1034), CGuideConditionCountItem's count: the items (not their
+    /// amounts) of the data type <paramref name="type"/> (0 any) that are not expired (CItem::FUN_140528980) at <paramref name="now"/>.</summary>
+    public int CountOfType(int type, Func<int, int> typeOf, long now) {
+        int n = 0;
+        foreach (var it in items.Values) {
+            if (type != 0 && typeOf(it.Id) != type) continue;
+            if (Expired(it, now)) continue;
+            ++n;
+        }
+        return n;
+    }
+    /// <summary>CGuideConditionDesignItem::vfunc_3 (unit_1413a8370.cpp:332): an item that is not expired, has a cube texture
+    /// mesh, has no UGC id and is of the data type <paramref name="type"/> (0 any).</summary>
+    public bool HasDesignItem(int type, Func<int, int> typeOf, Func<int, bool> hasCubeTextureMesh, long now) {
+        foreach (var it in items.Values) {
+            if (Expired(it, now)) continue;
+            if (!hasCubeTextureMesh(it.Id)) continue;
+            if (it is { HasUgc: true, Ugc.Uid: not 0 }) continue;
+            if (type != 0 && typeOf(it.Id) != type) continue;
+            return true;
+        }
+        return false;
+    }
+    /// <summary>The negation of CItem::FUN_140528980: an expiry time that has passed.</summary>
+    static bool Expired(EquipItem it, long now) => it.ExpiryTime > 0 && it.ExpiryTime <= now;
     public IReadOnlyDictionary<int, int> ExtraSlots => extra;
     readonly Dictionary<int, int> extra = new();
     public Func<int, int> TabOf { get; set; }

@@ -240,7 +240,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchGemErrors = null;
         CastingBar?.Hide();                 // leaving the game scene (FUN_141adad20, uiservice.cpp:884): vfunc_3
         GuideEvent?.Hide();                 // UIGuideEvent::vfunc_3 (:877): the tips are dropped with the scene
-        if (Ms2Godot.Net.LiveSession.Instance is { } liveSession) { liveSession.GuidePane = null; liveSession.FindDialogOf = null; liveSession.DungeonRoomOf = null; }
+        if (Ms2Godot.Net.LiveSession.Instance is { } liveSession) { liveSession.GuidePane = null; liveSession.FindDialogOf = null; liveSession.DungeonRoomOf = null;
+            liveSession.GuideKeysOf = null; liveSession.GuideKeyDownOf = null; if (liveSession.GuideHud == this) liveSession.GuideHud = null; }
         unwatchNotices?.Invoke();
         unwatchNotices = null;
         if (liveHome != null) { liveHome.HomeInfoApplied -= OnHomeInfoApplied; liveHome.SaveSlotsUpdated -= OnSaveSlotsUpdated; UnbindCubeBill(liveHome); liveHome = null; }
@@ -818,6 +819,9 @@ public partial class HudScene : Node, IUiStageHost
             }
             live.FindDialogOf = guideDialogLookup;      // the guide's dialog conditions over the HUD's dialogs
             live.OwnSkillStateRunsOf = OwnSkillStateRuns;      // the guide's state id while the own cast runs (this HUD)
+            live.GuideKeysOf = () => hudModel?.Keys;           // the guide's key conditions (this HUD's key table, which HudModel replaces)
+            live.GuideKeyDownOf = GuideKeyDown;
+            live.GuideHud = this;                              // the guide's tab, menu and home reads over this HUD
             // the room table read here at the field's HUD build, on the main thread: no parse on the packet path
             var rooms = dungeonRooms ??= DungeonRooms.Load(assets.Packs, e => Ms2.Ui.FeatureElements.IsAvailable(assets.Packs, e));
             live.DungeonRoomOf = rooms.GetRoom;
@@ -3221,6 +3225,10 @@ public partial class HudScene : Node, IUiStageHost
         hudModel.Keys.KeysOfAction(action).Any(k => GodotKeyOfDik(k) is { } g && Input.IsPhysicalKeyPressed(g));
 
     /// <summary>The DirectInput keyboard codes (DIK_*, dinput.h) as Godot physical keys; null for a code not here.</summary>
+    /// <summary>The keyboard's IsKeyDown(key, false, 0) for the guide: the client key's physical key is held, with no text
+    /// field gate (the guide's Next and Input conditions test the focus themselves).</summary>
+    static bool GuideKeyDown(int dik) => dik != 0 && GodotKeyOfDik(dik) is { } g && Input.IsPhysicalKeyPressed(g);
+
     static Key? GodotKeyOfDik(int dik) => dik switch
     {
         0x01 => Key.Escape, >= 0x02 and <= 0x0a => Key.Key1 + (dik - 0x02), 0x0b => Key.Key0, 0x0c => Key.Minus, 0x0d => Key.Equal,

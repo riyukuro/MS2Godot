@@ -36,6 +36,40 @@ public partial class LiveSession
     public Func<string, GuideDialog> FindDialogOf { get; set; }
     /// <summary>Whether the own skill state runs (the HUD's cast), for the guide's state id (<see cref="OwnCurStateId"/>).</summary>
     public Func<bool> OwnSkillStateRunsOf { get; set; }
+    /// <summary>The HUD's key table (CKeyTable, GetKeyTable), which the guide's key conditions read; null before the HUD runs.</summary>
+    public Func<Ms2.Ui.KeyTable> GuideKeysOf { get; set; }
+    /// <summary>The keyboard's IsKeyDown(key, false, 0) over a client key code (the HUD's key map), not gated by a text field.</summary>
+    public Func<int, bool> GuideKeyDownOf { get; set; }
+    /// <summary>The HUD's dialog state the guide's tab and menu conditions read; null before the HUD runs.</summary>
+    public IGuideHudState GuideHud { get; set; }
+
+    /// <summary>The guide's field data (WorldService::GetFieldData) of a field id, kept for the last id asked: the guide asks each tick.</summary>
+    Ms2.Formats.World.FieldData GuideFieldData(int id)
+    {
+        if (id != guideFieldId)
+        {
+            guideFieldId = id;
+            try { guideField = Ms2.Formats.World.FieldData.FindById(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), id); }
+            catch (Exception) { guideField = null; }
+        }
+        return guideField;
+    }
+    /// <summary>The item table reads the guide's item conditions pass on, made once per HUD (a tick allocates no delegate).</summary>
+    Func<int, int> GuideItemTypeOf(IGuideHudState hud)
+    {
+        if (guideItemHud != hud)
+        {
+            guideItemHud = hud;
+            guideItemType = hud.ItemType;
+            guideItemMesh = hud.ItemHasCubeTextureMesh;
+        }
+        return guideItemType;
+    }
+    IGuideHudState guideItemHud;
+    Func<int, int> guideItemType;
+    Func<int, bool> guideItemMesh;
+    int guideFieldId = int.MinValue;
+    Ms2.Formats.World.FieldData guideField;
 
     void StartGuide()
     {
@@ -107,7 +141,8 @@ public partial class LiveSession
     /// <summary>
     /// What the guide reads from the live session. The scene is the game scene (0x620000c) once the field is entered;
     /// the guide event pane (UIGuideEvent 0x4e53) is the HUD's, so an event takes a step only while the field's HUD runs.
-    /// STILL-OPEN: the battle state and every member the base class answers with its default.
+    /// STILL-OPEN: every member the base class answers with its default; GuideConditionReadSweepTests lists the reads the
+    /// game files' conditions make that this world does not give, with their causes.
     /// </summary>
     sealed class LiveGuideWorld : GuideWorld
     {
@@ -141,6 +176,63 @@ public partial class LiveSession
         }
 
         public override bool Dead => s.Me.Dead;
+        /// <summary>Input (unit_1413a6580.cpp:108) and ActionInput (:162): the keyboard's IsKeyDown(key, false, 0).</summary>
+        public override bool IsKeyDown(int key) => s.GuideKeyDownOf?.Invoke(key) ?? false;
+        /// <summary>Next (unit_1413a7bc0.cpp:83): CInputKeyHandler::IsActionKeyDown(action, false, 0), a key the key table binds
+        /// to the action is down (CKeyTable::IsActionKeyDown, keytable.cpp:1037).</summary>
+        public override bool IsActionKeyDown(int action) =>
+            s.GuideKeysOf?.Invoke() is { } k && s.GuideKeyDownOf is { } down && k.IsActionKeyDown(action, down);
+        /// <summary>ActionInput (unit_1413a6580.cpp:159, :168): CKeyTable::FindKeyByActionAndPriority.</summary>
+        public override int FindKeyByActionAndPriority(int action, int priority) => s.GuideKeysOf?.Invoke()?.FindKeyByActionAndPriority(action, priority) ?? 0;
+        /// <summary>ActionInput (unit_1413a6580.cpp:165): CKeyTable::GetPairKey.</summary>
+        public override bool GetPairKey(int key, out int pair) => Ms2.Ui.KeyTable.GetPairKey(key, out pair);
+        /// <summary>DAT_143ab2890, which FieldId reads (unit_1413a9a50.cpp:92): set by OnGameToGame (networkservice.cpp:952),
+        /// cleared by the next OnRequestFieldEnter (scenestategame.cpp:2351); the session's GameToGame flag.</summary>
+        public override bool Migrating => s.Migrating;
+        /// <summary>PC::IsCubeMode1 (pc.cpp:1848), ConstructMode's read (unit_1413a7bc0.cpp:258): cube mode 1, building.</summary>
+        public override bool CubeMode => s.CubeCraft.CubeMode == 1;
+        /// <summary>EquipSkill (unit_1413a8370.cpp:130): CKeyTable::FindQuickSlotBySkillAndItemUid(skill, 0) on the current page.</summary>
+        public override int FindQuickSlotBySkill(int skillId) => s.KeyTable.FindQuickSlotBySkillAndItemUid(skillId, 0);
+        /// <summary>ExistShortcut (unit_1413a9df0.cpp:361): CKeyTable::GetQuickSlotSkillId (keytable.cpp:1478), the skill in
+        /// the slot of the current page, 0 when the page or the slot holds none.</summary>
+        public override int QuickSlotSkill(int slot) => s.KeyTable.Entry(s.KeyTable.CurrentPage, slot).SkillId;
+        /// <summary>ExistItem (unit_1413a8370.cpp:400): Unk_Inventory::HasItemCount (inventory.cpp:731), the count of any rarity.</summary>
+        public override bool HasItemCount(int itemId, int count) => s.Items.CountById(itemId, 0) >= count;
+        /// <summary>HasMoney (unit_1413a9df0_2.cpp:229-): type 0 is the meso balance DAT_143ab2898. STILL-OPEN: types 1-8
+        /// (merat, karma, honor, lu and the four unnamed globals) have no balance here and read 0.</summary>
+        public override long Balance(int moneyType) => moneyType == 0 ? s.Me.Meso : 0;
+        /// <summary>HasStatPoint (unit_1413a9df0_2.cpp:699-705): the stat point manager's GetRemaining, none without the player.</summary>
+        public override int? StatPointsLeft => HasPlayer ? s.Me.StatPoints.Remaining : null;
+        /// <summary>Title (unit_1413a9df0.cpp:745): the count of the title list DAT_143ab3268 (UserEnv titles, scenestategame.cpp:4427-4442).</summary>
+        public override int TitleCount => s.Me.Titles.Count;
+        /// <summary>CGuideConditionInventoryTab::vfunc_3 (unit_1413a76f0.cpp:135): UIInventoryDialog 0x4e2d shown (vfunc_55 == 0), its GetSelectedTab.</summary>
+        public override int? InventoryTab => s.GuideHud?.InventoryTab;
+        /// <summary>CGuideConditionMasteryMainTabIndex / SubTabIndex::vfunc_3 (unit_1413a9df0_2.cpp:572, 590): UIMasteryDialog 0x4f1e, its tab indexes.</summary>
+        public override int? MasteryMainTab => s.GuideHud?.MasteryMainTab;
+        public override int? MasterySubTab => s.GuideHud?.MasterySubTab;
+        /// <summary>CGuideConditionMenuExpand::vfunc_3 (unit_1413a9df0_2.cpp:519): UIGameMenuDialog 0x4e28's IsMenuExpanded(name).</summary>
+        public override bool? MenuExpanded(string name) => s.GuideHud?.MenuExpanded(name);
+        /// <summary>CGuideConditionHomeMode::vfunc_3 (unit_1413a9df0_2.cpp:909): CubeMapInformationService::FUN_1410c3650, the plot mode f330.</summary>
+        public override int HouseMode => s.CubeMap.PlotMode;
+        /// <summary>CGuideConditionIsMyHome::vfunc_3 (unit_1413a8370.cpp:185): FUN_1410d5640 (HomeOptionRows.CanChange).</summary>
+        public override bool IsMyHome => s.FieldId is int id
+            && Ms2.Ui.HomeOptionRows.CanChange(s.GuideFieldData(id)?.MapType == 3, s.CubeMap.PlotMode == 1, s.CubeMap.Owner, s.OwnAccountId);
+        /// <summary>CGuideConditionContinentCode::vfunc_3 (unit_1413a9df0.cpp:115): WorldService::GetFieldData's GetContinentCode; null without it.</summary>
+        /// <summary>CGuideConditionCountItem::vfunc_3 (unit_1413a8370.cpp:449): the inventory's FUN_140a60c20(type).</summary>
+        public override int CountItemsOfType(int itemType) =>
+            s.GuideHud is { } hud ? s.Items.CountOfType(itemType, s.GuideItemTypeOf(hud), ServerTime) : 0;
+        /// <summary>CGuideConditionDesignItem::vfunc_3 (unit_1413a8370.cpp:332) over the inventory's items.</summary>
+        public override bool HasDesignItem(int itemType) =>
+            s.GuideHud is { } hud && s.Items.HasDesignItem(itemType, s.GuideItemTypeOf(hud), s.guideItemMesh, ServerTime);
+        public override int? ContinentCode => s.FieldId is int id ? s.GuideFieldData(id)?.ContinentCode : null;
+        /// <summary>CGuideConditionBattleState::vfunc_3 (unit_1413a9df0_2.cpp:446): PCBase::vfunc_65 (pcbase.cpp:1286), the emotion
+        /// SetEmotion keeps (OnUserBattle and the add user's battle byte).</summary>
+        public override bool InBattle => s.SelfInBattle;
+        /// <summary>CGuideConditionAchieveExistTrophy::vfunc_3 (unit_1413a9df0.cpp:233): CAchieveManager::HasCompletedOfType.</summary>
+        public override bool HasTrophyOfType(int? type) => s.Achieves.HasCompletedOfType(type);
+        /// <summary>CGuideConditionRealEstateExpireDays::vfunc_3 (unit_1413a9df0_2.cpp:313): MyPC::GetUGCMapInfo's i64 at +0x30
+        /// (Unk_G9Rec m_nExpire, a CMsTime), the field ResponseCube 0x14 reads as HomeId; null without the info.</summary>
+        public override long? UgcMapExpire => s.Home.Info is { } info ? info.HomeId : null;
         public override int FieldId => s.FieldId ?? 0;
         public override int JobGroup => s.Me.User?.JobCode ?? 0;
         /// <summary>STILL-OPEN: the client's sub job is PC m_spJobFB8 (pc.cpp:1275); the user block's job, which the Job packet does not refresh here.</summary>
@@ -204,4 +296,19 @@ public partial class LiveSession
             return s.InteractObjects.NearestOfRow(new Ms2.Formats.Model.Vec3(p.X, p.Y, p.Z), interactId);
         }
     }
+}
+
+/// <summary>The HUD's side of the guide's dialog reads (CUIService::FindObject of the dialog's id, as each condition asks it).</summary>
+public interface IGuideHudState
+{
+    /// <summary>UIInventoryDialog's GetSelectedTab (m_194) while it is shown; null otherwise.</summary>
+    int? InventoryTab { get; }
+    /// <summary>UIMasteryDialog's GetMainTabIndex / GetSubTabIndex (-1 without its movie); null without the dialog.</summary>
+    int? MasteryMainTab { get; }
+    int? MasterySubTab { get; }
+    /// <summary>UIGameMenuDialog's IsMenuExpanded(name); null without the dialog.</summary>
+    bool? MenuExpanded(string name);
+    /// <summary>The item table's type and cube texture mesh of an item id (0 and false for an unknown id).</summary>
+    int ItemType(int itemId);
+    bool ItemHasCubeTextureMesh(int itemId);
 }

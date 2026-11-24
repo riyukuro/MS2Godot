@@ -52,6 +52,26 @@ public class AchieveTests
     }
 
     [Test]
+    public void HasCompletedOfTypeSkipsAccountTrophiesAndFiltersByType()
+    {
+        var t = Table();
+        t[21100001] = t[21100001] with { Account = true, MaxGrade = 3 };
+        t[22200002] = t[22200002] with { MaxGrade = 2 };
+        t[11100004] = t[11100004] with { MaxGrade = 1 };
+        var book = new AchieveBook(t);
+        book.Apply(Rows(
+            (21100001, 1, P(2, 3, 2, (1, 100), (2, 200))),             // completed, but an account trophy
+            (22200002, 1, P(2, 1, 1, (1, 1))),                         // type 2, not completed
+            (11100004, 1, P(3, 1, 1, (1, 1)))));                       // type 1, one grade: completed at state 3
+        Assert.That(book.Find(21100001)!.IsCompleted && book.Find(11100004)!.IsCompleted, Is.True);
+        Assert.That(book.HasCompletedOfType(2), Is.False, "the account trophy is skipped");
+        Assert.That(book.HasCompletedOfType(1), Is.True);
+        Assert.That(book.HasCompletedOfType(null), Is.True, "no type: any");
+        book.Apply(new AchieveMessage.Update(22200002, P(3, 2, 2, (1, 1), (2, 1))));
+        Assert.That(book.HasCompletedOfType(2), Is.True);
+    }
+
+    [Test]
     public void DataLoadsTheAchieveFiles()
     {
         var d = Environment.GetEnvironmentVariable("MS2_DATA");

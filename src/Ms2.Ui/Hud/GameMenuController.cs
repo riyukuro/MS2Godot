@@ -182,6 +182,11 @@ public sealed class GameMenuController : UiController
         return def.NewBy != null && NewBy(def) ? def.Name + "_event" : def.Name;
     }
 
+    /// <summary>IsMenuExpanded @0x141938a00 (uigamemenudialog.cpp:1304): the entry's m_button isExpand(); false
+    /// without the movie or the entry. The guide's MenuExpand asks it.</summary>
+    public bool IsMenuExpanded(string name) =>
+        Host?.Entity != null && MenuItem(name) is { } b && Rt.ToBoolean(Host.Invoke(b, "isExpand"));
+
     /// <summary>FindMenuItem @0x14193b180: m_menus' entry of that name, its m_button (the SystemDropdown).</summary>
     object MenuItem(string name)
     {

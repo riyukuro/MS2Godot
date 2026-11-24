@@ -53,6 +53,9 @@ public sealed class KeyTable : IKeyTable
         [0x82] = 0x83, [0x83] = 0x82, [0x38] = 0x76, [0x76] = 0x38, [0x2a] = 0x36, [0x36] = 0x2a, [0x1d] = 0x6b, [0x6b] = 0x1d,
     };
 
+    /// <summary>CKeyTable::GetPairKey @0x14142c830 (keytable.cpp:1143-1146): the other key of a pair (<see cref="PairKeys"/>).</summary>
+    public static bool GetPairKey(int key, out int pair) => PairKeys.TryGetValue(key, out pair);
+
     /// <summary>InitKeys (:653): the quick slot actions 500001..500025, slot i = action 0x7a121 + i.</summary>
     public const long FirstQuickSlotAction = 0x7a121;
     public const int QuickSlotActionCount = 25;

@@ -30,6 +30,8 @@ public sealed record AchieveData(int Id, int Type, int Category, int FirstGrade,
 {
     /// <summary>m_nMaxGrade (ctor 0): the highest grade value.</summary>
     public int MaxGrade { get; init; }
+    /// <summary>m_nAccount ("account", XmlGetBool, achievedata.cpp:900), CAchieve::GetData30: an account trophy.</summary>
+    public bool Account { get; init; }
     /// <summary>m_nLocking ("locking"), GetData68.</summary>
     public int Locking { get; init; }
     /// <summary>m_nRequireType: ParseRequireType of "uiFilterType" ("event" 1, "eventID" 2, else 0).</summary>
@@ -148,6 +150,7 @@ public sealed record AchieveData(int Id, int Type, int Category, int FirstGrade,
             return new AchieveData(id, type, category, first, conds)
             {
                 MaxGrade = max,
+                Account = Skills.Xml.GetBool(e, "account", false),
                 Locking = (int)Atoi(e, "locking"),
                 RequireType = e.Attribute("uiFilterType") is { } ft ? ParseRequireType((string)ft) : 0,
                 Require = ((string)e.Attribute("uiFilterValue") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries),
@@ -303,6 +306,21 @@ public sealed class AchieveBook
 
     /// <summary>Whether the player has trophy <paramref name="id"/> (Find @0x140935e60).</summary>
     public bool Has(int id) => map.ContainsKey(id);
+
+    /// <summary>
+    /// HasCompletedOfType (@0x140936740, achievemanager.cpp:430): a held trophy that is not an account one
+    /// (GetData30), of the type when one is given, and IsCompleted.
+    /// </summary>
+    public bool HasCompletedOfType(int? type)
+    {
+        foreach (var a in map.Values)
+        {
+            if (a.Data.Account) continue;
+            if (type is int t && a.Data.Type != t) continue;
+            if (a.IsCompleted) return true;
+        }
+        return false;
+    }
 
     /// <summary>Find (@0x140935e60): the trophy, null when the player lacks it.</summary>
     public Achieve Find(int id) => map.TryGetValue(id, out var a) ? a : null;

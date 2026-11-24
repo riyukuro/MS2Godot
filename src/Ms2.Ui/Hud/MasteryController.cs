@@ -158,10 +158,13 @@ public sealed class MasteryController : UiController, IMessageBoxListener, ICast
 
     // ---- the tabs -------------------------------------------------------------------------------------------------
 
-    int MainTabIndex() =>
+    /// <summary>GetMainTabIndex (uimasterydialog.cpp:1262): -1 without the movie or its m_mainTab, else the bar's
+    /// selectedIndex. The guide's MasteryMainTabIndex asks it.</summary>
+    public int MainTabIndex() =>
         Host?.Entity == null || Host.Child("m_mainTab") is not { } t ? -1 : Rt.ToInt32(Host.Get(t, "selectedIndex"));
 
-    int SubTabIndex() =>
+    /// <summary>GetSubTabIndex: the same over m_subTab. The guide's MasterySubTabIndex asks it.</summary>
+    public int SubTabIndex() =>
         Host?.Entity == null || Host.Child("m_subTab") is not { } t ? -1 : Rt.ToInt32(Host.Get(t, "selectedIndex"));
 
     /// <summary>FUN_140eb86b0 (@0x140eb86b0): the slot of the selected sub-tab; 0xe for none.</summary>
