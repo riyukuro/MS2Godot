@@ -101,6 +101,37 @@ public interface IInteractHost
     /// <summary>CGuideManager::AddTrigger(9, rowId, 0) (stateinteractdata.cpp:484).</summary>
     void OnGuideTrigger(int triggerType, int rowId);
     void StillOpen(string what);
+
+    // ---- the telescope (CInteractTelescopeObject, interactobject.cpp:955-1028) --------------------------------------------
+
+    /// <summary>PCBase::FUN_1416767d0: the local pc's position, where FindTelescopeEntity searches from (mypc.cpp:3030).</summary>
+    Vec3 PlayerPosition => default;
+    /// <summary>Client::Constants TelescopeFindDistance (clientconstants +0x26b0, Define default 300:
+    /// unit_1402ab440_constantsblocks.cpp:839).</summary>
+    float TelescopeFindDistance => LiveInteractObjects.DefaultTelescopeFindDistance;
+    /// <summary>CTriggerService::QueueCameraSteps(ids, 0) (@0x141863340, mypc.cpp:3057).</summary>
+    void QueueCameraSteps(IReadOnlyList<int> ids) { }
+    /// <summary>CTriggerService::FUN_141863460(0.0f): the trigger camera back to the follow mode at once (interactobject.cpp:1014).</summary>
+    void ResetTriggerCamera() { }
+    /// <summary>PlaySystemSound(name, "") (interactobject.cpp:974).</summary>
+    void PlaySystemSound(string name) { }
+    /// <summary>GFxSceneService::SetSubScene (interactobject.cpp:975, :1015).</summary>
+    void SetSubScene(int id) { }
+    /// <summary>FindCutSceneCinematic(0x4e52): the cut scene cinematic pane; null when there is none.</summary>
+    CutSceneCinematic Cinematic => null;
+    /// <summary>GetGamepadState(CGameOption) != 0 (interactobject.cpp:981).</summary>
+    bool GamepadActive => false;
+    /// <summary>CKeyTable::GetActionKeyName(action, kind) (interactobject.cpp:982).</summary>
+    string ActionKeyName(int action, int kind) => "";
+    /// <summary>ApplyEffect::SetFogRange (@0x1409a4450, applyeffect.cpp:586-622): the depth fog on or off, its near and far, and
+    /// its colour as 0xAARRGGBB.</summary>
+    void SetFogRange(bool on, float near, float far, uint color) { }
+    /// <summary>ApplyEffect::SetFogEffect (@0x1409a46a0, applyeffect.cpp:625): the height fog on or off, its colour (0xAARRGGBB),
+    /// upper and lower heights and percentage.</summary>
+    void SetFogEffect(bool on, uint color, float upper, float lower, float percentage) { }
+    /// <summary>WorldService::GetFieldData's mapxblock fog (CFieldDataCli::LoadXBlock, fielddatacli.cpp:389-430); null
+    /// without field data (OnCutSceneSkip then leaves the fog, interactobject.cpp:1017).</summary>
+    FieldFog FieldFog => null;
 }
 
 /// <summary>
@@ -138,6 +169,14 @@ public sealed class LiveInteractObject
     public bool Near;
     public FieldEntity Entity;
     public InteractObjectRow Row;
+    /// <summary>CInteractTelescopeObject::m_bActive (+0xb0): the telescope's view is on (vfunc_2) until its skip
+    /// (OnCutSceneSkip).</summary>
+    public bool TelescopeActive;
+    /// <summary>The telescope entity the last use found (MyPC::FUN_141529900), whose CameraIDs and fog the view takes; null when
+    /// none was. The client keeps it in m_ent, the object's own entity (interactobject.cpp:969).</summary>
+    public FieldEntity TelescopeEntity;
+    /// <summary>The object's NotifyCutSceneCinematicSkip registration (interactobject.cpp:985), null when not registered.</summary>
+    internal Action TelescopeSkip;
 }
 
 /// <summary>
@@ -151,8 +190,7 @@ public sealed class LiveInteractObject
 /// </para>
 /// <para>
 /// STILL-OPEN: CInteractObject::CheckHomePrivilege (m_homePrivilege.m_nCheck != 0), CInteractObject::CheckArenaTeam
-/// (m_arena.m_nCanInteractTeamId != 0), ShutdownInteractObjectId event gate, CInteractTelescopeObject cutscene subscene
-/// (0x6200041), CInteractMeshObject dynamic PhysX box toggle / NIF asset swap, CInteractGuildPosterObject upload,
+/// (m_arena.m_nCanInteractTeamId != 0), ShutdownInteractObjectId event gate, CInteractMeshObject dynamic PhysX box toggle / NIF asset swap, CInteractGuildPosterObject upload,
 /// CInteractBillBoardObject owner dialog check, RideOffActionInteract dismount-then-interact, and OnInteractObject
 /// mode 15 (field weapon equip PC::FUN_14165f1f0).
 /// </para>
@@ -166,6 +204,7 @@ public sealed class LiveInteractObjects : ICastingEventListener
     readonly List<LiveInteractObject> list = new();
     readonly List<InteractObjectMessage> pending = new();
     readonly HashSet<int> collectedIds = new();                  // DAT_143ab3128 (telescope / collection first-use notice)
+    readonly List<FieldEntity> telescopes = new();               // WorldService m_208's MS2Telescope tag (0x62f7a42c)
     readonly Dictionary<int, int> gatherCounts = new();          // g_143ab3150 (recipe -> gathered count)
     // reused buffers for zero-allocation Poll / Tick / gathering sends
     readonly List<LiveInteractObject> gatherInRange = new();
@@ -221,6 +260,7 @@ public sealed class LiveInteractObjects : ICastingEventListener
             for (int i = 0; i < entities.Count; i++)
             {
                 var e = entities[i];
+                if (e.HasMixin(TelescopeModel)) telescopes.Add(e);
                 if (!IsInteractEntity(e)) continue;
                 int rowId = (int)e.Number("interactID");
                 var row = table?.Get(rowId);
@@ -483,10 +523,131 @@ public sealed class LiveInteractObjects : ICastingEventListener
                 }
                 break;
             case InteractObjectMessage.KindTelescope:
-                // CInteractTelescopeObject::vfunc_2 (@0x1413ff980, interactobject.cpp:964-1009)
-                host.StillOpen($"InteractObject telescope '{obj.Name}': cutscene subscene 0x6200041 not ported");
+                UseTelescope(obj);
                 break;
         }
+    }
+
+    /// <summary>The telescope entities' model (WorldService m_208 tag 0x62f7a42c, mypc.cpp:3030).</summary>
+    public const string TelescopeModel = "MS2Telescope";
+    /// <summary>TelescopeFindDistance's Define default (unit_1402ab440_constantsblocks.cpp:839).</summary>
+    public const float DefaultTelescopeFindDistance = 300f;
+    /// <summary>s_strUseTelescope (0x143ad97b8, interactobject.cpp:46).</summary>
+    public const string UseTelescopeSound = "PC_use_telescope";
+    /// <summary>The cut scene cinematic id the telescope starts (interactobject.cpp:983) and its skip state (:984).</summary>
+    public const int TelescopeCinematicId = 9, TelescopeSkipState = 3;
+
+    /// <summary>
+    /// MyPC::FindTelescopeEntity (@0x141529750, mypc.cpp:3028-3042): the nearest MS2Telescope entity strictly within
+    /// <paramref name="distance"/> by 3D distance (WorldService::FUN_141bcfd30(0x62f7a42c, at, distance, 1, 0),
+    /// worldservice_1.cpp:5837-5868), or null; null too when that entity's CameraIDs give no id (XmlSplit over ","). A nearer
+    /// telescope without cameras hides a farther one with them.
+    /// </summary>
+    public FieldEntity FindTelescopeEntity(Vec3 at, float distance)
+    {
+        FieldEntity best = null;
+        float bestDist = float.MaxValue;
+        for (int i = 0; i < telescopes.Count; i++)
+        {
+            var e = telescopes[i];
+            var p = e.Position;
+            float dx = (float)at.X - (float)p.X, dy = (float)at.Y - (float)p.Y, dz = (float)at.Z - (float)p.Z;
+            float d = MathF.Sqrt(dx * dx + dy * dy + dz * dz);
+            if (d < distance && d < bestDist) { bestDist = d; best = e; }
+        }
+        if (best == null || TelescopeCameraIds(best).Count == 0) return null;
+        return best;
+    }
+
+    /// <summary>The field's MS2Telescope entities (m_208's tag list).</summary>
+    public IReadOnlyList<FieldEntity> Telescopes => telescopes;
+
+    /// <summary>The CameraIDs property (0x5aec4213) split over "," into ints (XmlSplit, mypc.cpp:3036-3038).</summary>
+    public static List<int> TelescopeCameraIds(FieldEntity e) => Guide.GuideXml.Ints(e.Get("CameraIDs") ?? "");
+
+    /// <summary>An efd::Color property (FUN_140b27ec0) as the telescope packs it: 0xFF000000 | r, g, b each (int)(c * 255f) &amp; 0xff
+    /// (interactobject.cpp:997-998, :1002-1003). A missing property is black.</summary>
+    public static uint TelescopeColor(FieldEntity e, string key)
+    {
+        var c = e.Numbers(key);
+        float r = c is { Length: > 0 } ? (float)c[0] : 0f, g = c is { Length: > 1 } ? (float)c[1] : 0f, b = c is { Length: > 2 } ? (float)c[2] : 0f;
+        return ((uint)(int)(r * 255.0f) & 0xffu) << 16 | 0xff000000u | ((uint)(int)(g * 255.0f) & 0xffu) << 8 | ((uint)(int)(b * 255.0f) & 0xffu);
+    }
+
+    /// <summary>
+    /// CInteractTelescopeObject::vfunc_2 (@0x1413ff980, interactobject.cpp:964-1009), the server's interact message for a
+    /// telescope. Without the local player nothing happens. MyPC::FUN_141529900 (mypc.cpp:3046-3060) finds the telescope
+    /// (<see cref="FindTelescopeEntity"/>) and queues its CameraIDs as trigger camera steps; when it finds one the object is
+    /// active, the use sound plays, the sub scene becomes the cinematic one (0x6200041), and the cut scene cinematic pane, when
+    /// there is one, starts cinematic 9 with an empty text and shows the skip prompt in state 3: the key cap is
+    /// s_cutscene_telescope_keycap (common 0x666), or with a gamepad the action key 0x49409's name, and the label
+    /// s_cutscene_telescope_keydesc (common 0x667); the object then hears the pane's skip (NotifyCutSceneCinematicSkip). Last the
+    /// telescope's own fog replaces the field's: EnableFog, FogNear, FogFar and FogColor for the depth fog, EnableHeightFog,
+    /// HeightFogColor, HeightFogUpperZ, HeightFogLowerZ and HeightFogPercentage for the height fog (the property hashes
+    /// 0x4c87bc48, 0x65832be6, 0xf8696656, 0x22a89b35 and 0x554eb57d, 0x85eb5e6b, 0x2c1b71fe, 0xc55896f7, 0xc9603b18 take the
+    /// names in the order OnCutSceneSkip puts back the field's fog of the same kinds).
+    /// STILL-OPEN: a use while the view is on registers the skip again in the client; whether NotifySystem then holds the
+    /// delegate twice is not checked, and here it is held once. The client writes the found entity into the object's own m_ent, so a use that finds none leaves the object
+    /// without an entity (its state effect stops, vfunc_3 :382); here the object keeps its entity and the find is in
+    /// <see cref="LiveInteractObject.TelescopeEntity"/>. The property name of each hash is not checked against the hash.
+    /// </summary>
+    void UseTelescope(LiveInteractObject obj)
+    {
+        if (!host.HasPlayer) return;
+        var ent = FindTelescopeEntity(host.PlayerPosition, host.TelescopeFindDistance);
+        obj.TelescopeEntity = ent;
+        if (ent == null) return;
+        host.QueueCameraSteps(TelescopeCameraIds(ent));
+        obj.TelescopeActive = true;
+        host.PlaySystemSound(UseTelescopeSound);
+        host.SetSubScene(CutSceneCinematic.CinematicSubScene);
+        if (host.Cinematic is { } help)
+        {
+            string title = host.Common(0x666);
+            if (host.GamepadActive) title = host.ActionKeyName(0x49409, 2);
+            help.StartCinematic(TelescopeCinematicId, "");
+            help.SetSkip(TelescopeSkipState, title, host.Common(0x667));
+            if (obj.TelescopeSkip == null)
+            {
+                var o = obj;
+                obj.TelescopeSkip = () => OnTelescopeSkip(o);
+                help.Skipped += obj.TelescopeSkip;
+            }
+        }
+        host.SetFogRange(ent.Bool("EnableFog"), (float)ent.Number("FogNear"), (float)ent.Number("FogFar"), TelescopeColor(ent, "FogColor"));
+        host.SetFogEffect(ent.Bool("EnableHeightFog"), TelescopeColor(ent, "HeightFogColor"), (float)ent.Number("HeightFogUpperZ"),
+                          (float)ent.Number("HeightFogLowerZ"), (float)ent.Number("HeightFogPercentage"));
+    }
+
+    /// <summary>
+    /// CInteractTelescopeObject::OnCutSceneSkip (@0x1413fff60, interactobject.cpp:1012-1028): the trigger camera back at once
+    /// (CTriggerService::FUN_141863460(0)), the field's sub scene (0x620001d), the field's mapxblock fog back when there is field
+    /// data, the skip no longer heard, and the object no longer active. The object's release (the dtor, :956-960) runs it
+    /// while active (<see cref="Release"/>).
+    /// </summary>
+    public void OnTelescopeSkip(LiveInteractObject obj)
+    {
+        host.ResetTriggerCamera();
+        host.SetSubScene(0x620001d);
+        if (host.FieldFog is { } f)
+        {
+            host.SetFogRange(f.Fog, f.FogNear, f.FogFar, f.FogColor);
+            host.SetFogEffect(f.HeightFog, f.HeightFogColor, f.HeightFogUpper, f.HeightFogLower, f.HeightFogPercentage);
+        }
+        if (obj.TelescopeSkip != null)
+        {
+            if (host.Cinematic is { } help) help.Skipped -= obj.TelescopeSkip;
+            obj.TelescopeSkip = null;
+        }
+        obj.TelescopeActive = false;
+    }
+
+    /// <summary>The field's objects go (the field's unload, a new field's objects replace these): each object's dtor; an
+    /// active telescope's (~CInteractTelescopeObject, interactobject.cpp:956-960) skips its view first.</summary>
+    public void Release()
+    {
+        for (int i = 0; i < list.Count; i++)
+            if (list[i].TelescopeActive) OnTelescopeSkip(list[i]);
     }
 
     /// <summary>SSG_INTERACT_ADD (mode 9, scenestategame.cpp:6310-6406): only mesh (1) and billboard (8) spawn dynamically.</summary>
@@ -552,6 +713,7 @@ public sealed class LiveInteractObjects : ICastingEventListener
         if (!string.IsNullOrEmpty(m.Effect)) host.OnObjectRemoveEffect(obj, m.Effect);
         if (polled == obj) polled = null;
         if (castingTarget == obj) CancelCast();
+        if (obj.TelescopeActive) OnTelescopeSkip(obj);   // ~CInteractTelescopeObject (interactobject.cpp:956-960)
         byName.Remove(obj.Name);
         list.Remove(obj);
         host.OnObjectRemoved(obj);

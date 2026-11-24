@@ -12,7 +12,7 @@ namespace Ms2.Ui.Tests;
 
 public class LiveInteractObjectsTests
 {
-    internal sealed class Host : IInteractHost
+    internal class Host : IInteractHost
     {
         public bool HasPlayer { get; set; } = true;
         public bool Restricted;

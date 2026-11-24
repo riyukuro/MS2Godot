@@ -142,9 +142,7 @@ public sealed class CutSceneCinematic
         {
             case CinematicPacket.KeyMode k: SetCinematicKeyMode(k.On); break;
             case CinematicPacket.Start s:
-                if (s.Id == 0) return;
-                Mode = 1; Id = s.Id; Text = Translate(s.Text); IsShowing = true;
-                Pane?.SetCinematic(Id, Text);
+                StartCinematic(s.Id, s.Text);
                 break;
             case CinematicPacket.Close:
                 IsShowing = false;
@@ -184,6 +182,36 @@ public sealed class CutSceneCinematic
         }
     }
 
+    /// <summary>StartCinematic (@0x141907f80, uicutscenecinematic.cpp:259-269): nothing for id 0, else mode 1, the id and the
+    /// translated text, and setCinematic on the movie. OnPacketStartCinematic and the telescope (interactobject.cpp:983) call it.</summary>
+    public void StartCinematic(int id, string text)
+    {
+        if (id == 0) return;
+        Mode = 1; Id = id; Text = Translate(text ?? ""); IsShowing = true;
+        Pane?.SetCinematic(Id, Text);
+    }
+
+    /// <summary>FUN_141907d60 (@0x141907d60, uicutscenecinematic.cpp:241-255), the skip prompt's state, key and label, called
+    /// from outside the packets: the telescope's state 3 with its key cap and description (interactobject.cpp:984). A state
+    /// other than 1 or 2 sends no trigger when skipped (<see cref="SkipCinematic"/>).</summary>
+    public void SetSkip(int state, string key, string label) => SetSkipState(state, key ?? "", label ?? "");
+
+    /// <summary>GFxSceneService::SetSubScene called outside the pane (the telescope, interactobject.cpp:975 and :1015): the
+    /// cinematic sub scene 0x6200041 is the one the pane shows in and takes the keys in (the key group on); any other id
+    /// leaves it. The pane's own SetCinematicKeyMode also ends an NPC talk first; this call does not.</summary>
+    public void SetSubScene(int id)
+    {
+        bool on = id == CinematicSubScene;
+        if (on == KeyMode) return;
+        SetCinematicKeyMode(on);
+    }
+
+    /// <summary>The cinematic sub scene (UISceneGameCinematicCutScene).</summary>
+    public const int CinematicSubScene = 0x6200041;
+
+    /// <summary>The pane is wanted: a Cinematic packet came, or the cinematic sub scene was entered without one.</summary>
+    public bool Wanted => Packets > 0 || KeyMode;
+
     /// <summary>SetCinematicKeyMode (@0x141908040): the key group on or off.</summary>
     void SetCinematicKeyMode(bool on)
     {
@@ -214,7 +242,10 @@ public sealed class CutSceneCinematic
         SkipState = 0; skipKey = ""; skipLabel = ""; SkipMessage = "";
     }
 
-    /// <summary>OnLoadComplete's replay (:~175): the pane's invokes for the mode in force, then the skip prompt again.</summary>
+    /// <summary>OnLoadComplete's replay (@0x141907720, :175-197): the pane's invokes for the mode in force, then the skip prompt
+    /// again with the key "$s_cutscene_skip_key". The client's pane loads as the cinematic sub scene first shows it
+    /// (CUIService FUN_141add040(0x4e52), uiservice.cpp:846), before any caller's FUN_141907d60; here the movie loads later,
+    /// so a key set from outside the packets before the load (the telescope's key cap) is the one shown, as in the client.</summary>
     public void Replay()
     {
         if (Pane == null) return;
@@ -224,7 +255,7 @@ public sealed class CutSceneCinematic
             case 2: Pane.SetOpening(Text ?? "", IsOpening); break;
             case 3: Pane.SetIntro(Text ?? ""); break;
         }
-        Pane.SetSkip(SkipState != 0, "$s_cutscene_skip_key", skipLabel, SkipState != 0);
+        Pane.SetSkip(SkipState != 0, skipKey.Length != 0 ? skipKey : "$s_cutscene_skip_key", skipLabel, SkipState != 0);
     }
 
     /// <summary>RequestSkip (:450): nothing without a prompt or once skipped; a message asks first (OnSkipMsgBox skips on yes).</summary>
