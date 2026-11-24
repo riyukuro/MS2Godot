@@ -981,6 +981,7 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         if (item.Data.FunctionName == "CallAirTaxi" && CallAirTaxi != null) { CallAirTaxi(); return true; }          // @0x140d24e10
         if (item.Data.FunctionName == "RecallParty") return true;                                                     // @0x140d1df70: 1, nothing
         if (item.Data.FunctionName == "RecallGuild" && RecallGuild != null) return RecallGuild(item);                 // @0x140d226b0
+        if (item.Data.FunctionName == "ChatEmoticonAdd") return ChatEmoticonAdd(item);                               // @0x140d1fba0
         if (OwnUseFunctions.Contains(item.Data.FunctionName)) { Button?.Invoke("notifySlotUse"); return true; }
         RequestUseItem(item, "");
         return true;

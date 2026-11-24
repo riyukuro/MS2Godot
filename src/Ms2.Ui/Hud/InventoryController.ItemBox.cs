@@ -165,6 +165,78 @@ public sealed partial class InventoryController
         return true;
     }
 
+    public const string ChatEmoticonUseKey = "s_msg_chat_emoticon_item_use_description",
+        ChatEmoticonEndDateKey = "s_msg_chat_emoticon_item_use_description_enddate",
+        ChatEmoticonDurationKey = "s_msg_chat_emoticon_item_use_description_duration",
+        ChatEmoticonWarningKey = "s_msg_chat_emoticon_item_use_description_warning";
+
+    /// <summary>
+    /// ChatEmoticonAdd @0x140d1fba0 (unit_140d1ae30_itemfunctiondispatch.cpp:1027-1064), a sticker pack item: the common
+    /// string s_msg_chat_emoticon_item_use_description with the item's name (FUN_14028dfa0, FUN_140527b10); with an endDate
+    /// in the function's xml values, that date ("%04d-%02d-%02d-%02d-%02d-%02d", FUN_14028e280: a bad date ends the use
+    /// with 0, no box) as year, month, day, hour and minute in ..._enddate; else with a durationSec, its span
+    /// (FormatTimeSpan, every part) in ..._duration; then ..._warning. Box 0x11 with tag use_function_item, the item uid, an
+    /// item entry of the item's id and rarity (CMsgBoxData::SetItemById @0x141a020b0, count 0) and the yes / no labels
+    /// 0x477 / 0x478, shown; its yes is the message box layer's use_function_item (<see cref="ConfirmUseFunctionItem"/>).
+    /// </summary>
+    internal bool ChatEmoticonAdd(Item item)
+    {
+        var t = Model.Tables;
+        var d = item.Data;
+        string text = ClientFormat.Format(t.Common(ChatEmoticonUseKey) ?? "", new ItemTooltip(Model, 0).Name(item));
+        if (d.HasFunctionXmlKey("endDate"))
+        {
+            if (ParseDate(d.FunctionXmlString("endDate")) is not { } end) return false;
+            text += ClientFormat.Format(t.Common(ChatEmoticonEndDateKey) ?? "", end.Year, end.Month, end.Day, end.Hour, end.Minute);
+        }
+        else if (d.HasFunctionXmlKey("durationSec"))
+        {
+            long seconds = long.TryParse(d.FunctionXmlString("durationSec").Trim(), out long v) ? v : 0;
+            text += ClientFormat.Format(t.Common(ChatEmoticonDurationKey) ?? "", BuffTooltip.FormatTimeSpan(t, seconds));
+        }
+        text += t.Common(ChatEmoticonWarningKey) ?? "";
+        var box = MessageBoxQueue.Create(0x11, text, null, UseFunctionItemTag);
+        box.ItemUid = item.Uid;
+        if (Item.Create(t.Items, item.ItemId, item.Rarity) is { } shown)
+            box.SetItemEntry(shown, new ItemTooltip(Model, 0).Name(shown), 1, 0, -1, -1, 1, t.Items.TextColor);
+        box.SetButtonLabelIds(0x477, 0x478, 0);
+        ShowBox(box);
+        return true;
+    }
+
+    /// <summary>FUN_14028e280 @0x14028e280 (commonutil.cpp:922-938) with "%04d-%02d-%02d-%02d-%02d-%02d": sscanf's six fields
+    /// (each at most that many digits after optional blanks and a sign; the dashes must match; a field not read stays 0);
+    /// null unless year &gt;= 1900, month 1-12, day 1-31, hour 0-23, minute and second 0-59. CMsTime's mktime carries a day
+    /// past the month's end into the next month.</summary>
+    public static DateTime? ParseDate(string text)
+    {
+        var f = new int[6];
+        int[] width = { 4, 2, 2, 2, 2, 2 };
+        int pos = 0;
+        for (int i = 0; i < 6; i++)
+        {
+            if (i > 0) { if (pos >= text.Length || text[pos] != '-') break; pos++; }
+            while (pos < text.Length && char.IsWhiteSpace(text[pos])) pos++;
+            int start = pos, sign = 1, n = 0, digits = 0;
+            if (pos < text.Length && (text[pos] == '-' || text[pos] == '+')) { if (text[pos] == '-') sign = -1; pos++; }
+            while (pos < text.Length && pos - start < width[i] && text[pos] is >= '0' and <= '9') { n = n * 10 + (text[pos] - '0'); pos++; digits++; }
+            if (digits == 0) break;
+            f[i] = sign * n;
+        }
+        if (f[0] < 1900 || f[1] < 1 || f[1] > 12 || f[2] < 1 || f[2] > 31 || f[3] < 0 || f[3] > 23 || f[4] < 0 || f[4] > 59
+            || f[5] < 0 || f[5] > 59) return null;
+        return new DateTime(f[0], f[1], 1, f[3], f[4], f[5]).AddDays(f[2] - 1);
+    }
+
+    /// <summary>UIMessageBox::FUN_1419fc810 @0x1419fc810 (uimessagebox.cpp:1527-1567), use_function_item's yes without the
+    /// ask argument: FindItemByUid of the box's item uid, then FUN_140a63880(item, "") (<see cref="RequestUseItem"/>);
+    /// nothing when the bag no longer has it.</summary>
+    public void ConfirmUseFunctionItem(long uid)
+    {
+        if (Model == null || View?.FindByUid(uid) is not { } e) return;
+        if (ToItem(e, Model.Tables.Items) is { } item) RequestUseItem(item, "");
+    }
+
     /// <summary>SelectItemBox @0x140d22430: the dialog of the item (nothing when it is open).</summary>
     internal bool SelectItemBox(Item item)
     {

@@ -86,7 +86,17 @@ public sealed class ItemData
     /// <summary>The function's xml values GetInt(name, 0), the attribute read with atoi.</summary>
     public int FunctionXmlInt(string name) => Atoi(FunctionXmlString(name));
 
-    string FunctionXmlString(string name)
+    /// <summary>The function's xml values HasKey(name): the parameter is xml values with that attribute.</summary>
+    public bool HasFunctionXmlKey(string name)
+    {
+        string s = FunctionParameter;
+        if (s.Length < 2 || s[0] != '<' || s[^1] != '>') return false;
+        try { return System.Xml.Linq.XElement.Parse(s).Attribute(name) != null; }
+        catch (System.Xml.XmlException) { return false; }
+    }
+
+    /// <summary>The function's xml values GetString(name, ""): "" when the parameter is no xml or has no such attribute.</summary>
+    public string FunctionXmlString(string name)
     {
         string s = FunctionParameter;
         if (s.Length < 2 || s[0] != '<' || s[^1] != '>') return "";

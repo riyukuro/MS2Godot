@@ -555,6 +555,98 @@ public class InventoryTests
     }
 
     [Test]
+    public void AStickerPackItemAsksWithItsPeriodAndItsYesSendsTheUse()
+    {
+        // ChatEmoticonAdd @0x140d1fba0 (unit_140d1ae30_itemfunctiondispatch.cpp:1027-1064); the yes is UIMessageBox::FUN_1419fc810
+        // (uimessagebox.cpp:1527-1567): FindItemByUid, FUN_140a63880(item, "")
+        var packs = Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var t = model.Tables;
+        int id = EmotionCastTests.ItemIds(packs).FirstOrDefault(i => t.Items.Get(i)?.FunctionName == "ChatEmoticonAdd");
+        if (id == 0) Assert.Inconclusive("no ChatEmoticonAdd item in this data");
+        var book = new ItemBook { TabOf = i => i / 10000000, BaseSlots = _ => 48 };
+        book.Apply(new ItemMessage.LoadTab(id / 10000000, new[] { new EquipItem { Id = id, Uid = 51, InventorySlot = 0, Amount = 1, Rarity = 1 } }));
+        var (h, c, _) = Load(model, book);
+        var shown = new List<MessageBoxData>(); c.ShowBox = shown.Add;
+        var sent = new List<(long, string)>(); c.View.RequestUse = (u, a) => sent.Add((u, a));
+        var raised = new List<string>(); c.Button += raised.Add;
+
+        var item = c.FindItem(51);
+        Assert.That(c.UseItem(item, true), Is.True);
+        Assert.That((sent.Count, raised.Count), Is.EqualTo((0, 0)), "the box asks first; not raised as unported");
+        var box = shown.Single();
+        Assert.That((box.Type, box.ItemUid, box.Extra), Is.EqualTo((0x11, 51L, InventoryController.UseFunctionItemTag)));
+        Assert.That(box.ItemEntry?.Item?.ItemId, Is.EqualTo(id), "SetItemById: the item's id and rarity");
+        Assert.That(box.ItemEntry.Count, Is.Zero);
+        string name = new ItemTooltip(model, 0).Name(item);
+        Assert.That(box.Msg, Does.StartWith(Ms2.Quest.ClientFormat.Format(t.Common(InventoryController.ChatEmoticonUseKey), name)));
+        Assert.That(box.Msg, Does.EndWith(t.Common(InventoryController.ChatEmoticonWarningKey)));
+        Assert.That(t.Common(InventoryController.ChatEmoticonUseKey), Is.Not.Empty);
+
+        var boxes = new MessageBoxController { UseFunctionItem = c.ConfirmUseFunctionItem, data = box };
+        Assert.That(boxes.HandlePlainTag(1, InventoryController.UseFunctionItemTag), Is.True);
+        Assert.That(sent, Is.Empty, "no sends nothing");
+        Assert.That(boxes.HandlePlainTag(0, InventoryController.UseFunctionItemTag), Is.True);
+        Assert.That(sent, Is.EqualTo(new[] { (51L, "") }));
+        box.Append(1);
+        Assert.That(boxes.HandlePlainTag(0, InventoryController.UseFunctionItemTag), Is.True);
+        c.ConfirmUseFunctionItem(99);
+        Assert.That(sent.Count, Is.EqualTo(1), "the ask argument's box (not ported) and an item no longer in the bag send nothing");
+    }
+
+    [Test]
+    public void TheStickerEndDateIsReadAsTheClientsScan()
+    {
+        // FUN_14028e280 (commonutil.cpp:922-938) with "%04d-%02d-%02d-%02d-%02d-%02d"
+        Assert.That(InventoryController.ParseDate("2021-12-31-23-59-00"), Is.EqualTo(new DateTime(2021, 12, 31, 23, 59, 0)));
+        Assert.That(InventoryController.ParseDate(" 2021-1-2-3-4-5"), Is.EqualTo(new DateTime(2021, 1, 2, 3, 4, 5)));
+        Assert.That(InventoryController.ParseDate("2021-02-31-00-00-00"), Is.EqualTo(new DateTime(2021, 3, 3)), "mktime carries the day");
+        Assert.That(InventoryController.ParseDate("2021-12-31"), Is.EqualTo(new DateTime(2021, 12, 31)), "fields not read stay 0");
+        Assert.That(InventoryController.ParseDate("2021-12"), Is.Null, "day 0");
+        Assert.That(InventoryController.ParseDate("1899-12-31-00-00-00"), Is.Null);
+        Assert.That(InventoryController.ParseDate("2021-13-01-00-00-00"), Is.Null);
+        Assert.That(InventoryController.ParseDate("2021-12-31-24-00-00"), Is.Null);
+        Assert.That(InventoryController.ParseDate("2021/12/31"), Is.Null, "the dash must match: month 0");
+        Assert.That(InventoryController.ParseDate("20211-12-31-00-00-00"), Is.Null, "%04d stops at 4 digits; the next char is no dash");
+        Assert.That(InventoryController.ParseDate(""), Is.Null);
+    }
+
+    /// <summary>Every ChatEmoticonAdd item's function values: an endDate the client reads, a durationSec, or neither; an
+    /// endDate it cannot read ends the use with no box, so those are listed. Its id names a sticker pack (group) of the
+    /// emoticon table with stickers in it.</summary>
+    static void EveryStickerItemHasItsPeriod(string variable)
+    {
+        using var packs = new PackSet(RcGap.Data(variable));
+        var t = new GameTables(packs, "en");
+        int end = 0, duration = 0, neither = 0;
+        var bad = new List<int>();
+        var noGroup = new List<int>();
+        string sample = null;
+        var table = t.ChatEmoticonData;
+        foreach (int id in EmotionCastTests.ItemIds(packs))
+        {
+            var d = t.Items.Get(id);
+            if (d?.FunctionName != "ChatEmoticonAdd") continue;
+            sample ??= d.FunctionParameter;
+            if (table.GetEmoticonsByGroup((uint)d.FunctionXmlInt("id")).Count == 0) noGroup.Add(id);
+            if (d.HasFunctionXmlKey("endDate")) { if (InventoryController.ParseDate(d.FunctionXmlString("endDate")) == null) bad.Add(id); else end++; }
+            else if (d.HasFunctionXmlKey("durationSec")) duration++;
+            else neither++;
+        }
+        TestContext.Out.WriteLine($"{variable}: ChatEmoticonAdd items: {end} endDate, {duration} durationSec, {neither} neither, " +
+            $"{bad.Count} unreadable endDate [{string.Join(",", bad)}]; {noGroup.Count} without stickers [{string.Join(",", noGroup)}]; sample {sample}");
+        Assert.That(end + duration + neither + bad.Count, Is.GreaterThan(0));
+        Assert.That(noGroup, Is.Empty, "each pack item's group has stickers");
+    }
+
+    [Test]
+    public void EveryKmsStickerItemHasItsPeriod() => EveryStickerItemHasItsPeriod("MS2_DATA");
+
+    [Test]
+    public void EveryGms2StickerItemHasItsPeriod() => EveryStickerItemHasItsPeriod("MS2_GMS2_DATA");
+
+    [Test]
     public void ARightClickSendsTheEquipOnly()
     {
         Packs();

@@ -227,6 +227,9 @@ public sealed class MessageBoxController : UiController
     /// <summary>HandleLearnEmotionButton's OK: the box's item uid (the local player test, FindItemByUid and
     /// Unk_Inventory::SendEmotion, <see cref="InventoryController.ConfirmLearnEmotion"/>).</summary>
     public Action<long> LearnEmotion;
+    /// <summary>use_function_item's yes: FindItemByUid of the box's item uid and FUN_140a63880(item, "")
+    /// (<see cref="InventoryController.ConfirmUseFunctionItem"/>).</summary>
+    public Action<long> UseFunctionItem;
 
     /// <summary>HandleUseBindEquipItemButton's yes (uimessagebox.cpp:1885): the box's item uid, arg 0 (the slot) and arg 1 (the
     /// layer) put on again with the binding skip (RequestEquipItem(item, a0, a1, 1)); false when the inventory no longer has
@@ -482,7 +485,7 @@ public sealed class MessageBoxController : UiController
     }
 
     /// <summary>HandlePlainTag @0x1419f9ba0 (uimessagebox.cpp:899), its "gameexit", "useBindFuncItem", "useBindEquipItem",
-    /// "useBindGemEquipItem" (:1052-1064) and "learn_emotion" (:983-987) branches; FUN_1419fa910 ("tag,arg") and the other plain tags are reported as
+    /// "useBindGemEquipItem" (:1052-1064), "learn_emotion" (:983-987) and "use_function_item" (:973-977) branches; FUN_1419fa910 ("tag,arg") and the other plain tags are reported as
     /// unported, except on a box with a listener: its tags (the slot menu's "expelMember:name", "changeChief:name") are the
     /// listener's, which OnClick has already called, and no plain tag handler takes them.</summary>
     internal bool HandlePlainTag(int button, string tag)
@@ -497,6 +500,8 @@ public sealed class MessageBoxController : UiController
             return HandleUseBindGemEquipItemButton(button);
         if (tag == InventoryController.LearnEmotionTag)                    // s_143af3ca0 (uimessagebox.cpp:983-987)
             return HandleLearnEmotionButton(button);
+        if (tag == InventoryController.UseFunctionItemTag)                 // s_143af3c90 (uimessagebox.cpp:973-977)
+            return HandleUseFunctionItemButton(button);
         if (tag.StartsWith(PartyInviteBox.Tag, StringComparison.Ordinal))   // strTag.Find("partyinvite") == 0
             return HandlePartyinviteButton(button);
         if (tag == RecallUserBox.Tag)
@@ -711,6 +716,17 @@ public sealed class MessageBoxController : UiController
             GameExit?.Invoke();
             return false;
         }
+        return true;
+    }
+
+    /// <summary>UIMessageBox::FUN_1419fc810 @0x1419fc810 (uimessagebox.cpp:1527-1567), "use_function_item": no record, 1; the
+    /// yes (button 0) without the ask argument (arg 0) uses the box's item (<see cref="UseFunctionItem"/>); 1.
+    /// STILL-OPEN: the ask argument's count box (type 0x1a, string 0x2a7, tag s_143af3da0): no ported box sets it, so such a
+    /// box does nothing here.</summary>
+    bool HandleUseFunctionItemButton(int button)
+    {
+        if (data == null) return true;
+        if (button == 0 && data.ArgInt(0, 0) == 0) UseFunctionItem?.Invoke(data.ItemUid);
         return true;
     }
 

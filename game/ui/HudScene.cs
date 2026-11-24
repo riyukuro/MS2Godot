@@ -3444,6 +3444,8 @@ public partial class HudScene : Node, IUiStageHost
         boxes.UseBindFuncItem = use; boxes.UseBindEquipItem = equip; boxes.UseBindGemEquipItem = gem;
         Action<long> learnEmotion = uid => inventory?.ConfirmLearnEmotion(uid);
         boxes.LearnEmotion = learnEmotion;
+        Action<long> useFunctionItem = uid => inventory?.ConfirmUseFunctionItem(uid);
+        boxes.UseFunctionItem = useFunctionItem;
         // HandleRequestTradeExButton -> FUN_14185b8e0 (the answer); HandleTradeInButton -> the inventory's count check and add
         Action<long, bool> tradeAnswer = (id, yes) => Trades?.SendAnswer(id, yes);
         Action<long, int> tradeIn = (uid, n) => inventory?.TradeIn(uid, n);
@@ -3465,6 +3467,7 @@ public partial class HudScene : Node, IUiStageHost
             if (boxes.UseBindEquipItem == equip) boxes.UseBindEquipItem = null;
             if (boxes.UseBindGemEquipItem == gem) boxes.UseBindGemEquipItem = null;
             if (boxes.LearnEmotion == learnEmotion) boxes.LearnEmotion = null;
+            if (boxes.UseFunctionItem == useFunctionItem) boxes.UseFunctionItem = null;
             if (boxes.RequestTradeAnswer == tradeAnswer) boxes.RequestTradeAnswer = null;
             if (boxes.TradeIn == tradeIn) boxes.TradeIn = null;
             if (boxes.UseStoreIn == storeIn) boxes.UseStoreIn = null;
