@@ -182,7 +182,7 @@ public sealed partial class ItemTooltip
         if (!model.IsFeatureEnabled(0xb7)) return;
         if (!model.HasLocalPlayer) return;                                           // FUN_1409c6540
         var d = item.Data;
-        var gm = Tables.ItemModels.Get(d.ItemPreset);
+        var gm = Tables.ItemModels.ForItem(d);
         if (gm == null || gm.Palette == 0) return;
         bool fixedColor = (Flags & 4) != 0 || (Flags & 0x8000) != 0;
         if (fixedColor && gm.DefaultColor(0) < 0) return;

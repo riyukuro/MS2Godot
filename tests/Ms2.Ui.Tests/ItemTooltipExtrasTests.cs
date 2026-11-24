@@ -239,17 +239,24 @@ public class ItemTooltipExtrasTests
     {
         var m = NewModel();
         m.HasLocalPlayer = true;
-        var gm = m.Tables.ItemModels.Get(m.Tables.Items.Get(IntroMagicianCoat).ItemPreset);
-        Assert.That(gm.Palette, Is.EqualTo(10));
-        var c = m.Tables.ColorPalettes.BySN(10, 7);
+        // the coat's colour head: its model 12200008's (palette 10) in KMS, the item file's (palette 5) in GMS2
+        var gm = m.Tables.ItemModels.ForItem(m.Tables.Items.Get(IntroMagicianCoat));
+        bool kr = DataRows.IsKr(Packs());
+        if (kr) Assert.That(gm.Palette, Is.EqualTo(10));
+        Assert.That(gm.Palette, Is.Not.Zero);
+        var c = m.Tables.ColorPalettes.BySN(gm.Palette, 7);
         Assert.That(c, Is.Not.Null);
-        Assert.That((c.Ch0, c.Ch2, c.Visible, c.ColorSN, c.PaletteId), Is.EqualTo((0xffef7091u, 0xff994252u, 0xffe4768bu, 7, 10)));
-        // the KMS colorpalette.xml has no stringKey: FUN_1409d3010 returns before the member
-        Assert.That(c.StringKey, Is.EqualTo(0));
+        if (kr)
+        {
+            Assert.That((c.Ch0, c.Ch2, c.Visible, c.ColorSN, c.PaletteId), Is.EqualTo((0xffef7091u, 0xff994252u, 0xffe4768bu, 7, 10)));
+            // the KMS colorpalette.xml has no stringKey: FUN_1409d3010 returns before the member
+            Assert.That(c.StringKey, Is.EqualTo(0));
+        }
         m.FeatureEnabledByName = Enable0xb7(m);
         var r = new EquipItem { Id = IntroMagicianCoat, Uid = 4, Rarity = 1, Amount = 1 };
-        r.Color = new EquipColor(default, default, default, 7, 10);
-        Assert.That(Tip(m, r).Data.ContainsKey("customizeColorData"), Is.False);
+        r.Color = new EquipColor(default, default, default, 7, gm.Palette);
+        // the member only where the colour names a string (the GMS2 palettes have stringKeys)
+        Assert.That(Tip(m, r).Data.ContainsKey("customizeColorData"), Is.EqualTo(c.StringKey != 0));
     }
 
     static Func<string, bool> Enable0xb7(UiModel m)

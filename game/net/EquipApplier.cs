@@ -497,7 +497,9 @@ public sealed class EquipApplier
     {
         var c = item.Color;
         if (c.Primary.A != 0 || c.Secondary.A != 0 || c.Tertiary.A != 0) return c;
-        var cust = im.Element("customize");
+        // a preset that names no palette: the item's own customize (GMS2's item files; ItemModelTable.ForItem)
+        // (only the per-item layout has such rows: the KMS itemdata files are not parsed again here)
+        var cust = Ms2.Ui.Items.ItemFiles.ColourHead(im, () => packs.Exists("Xml", $"itemdata/{item.Id / 100000}.xml") ? null : shared.Files(packs).Item(item.Id));
         if (Palettes == null || cust == null || (string)cust.Attribute("color") != "1") return null;
         if (!int.TryParse((string)cust.Attribute("colorPalette"), out int pal)) return null;
         int.TryParse((string)cust.Attribute("defaultColorIndex"), out int idx);

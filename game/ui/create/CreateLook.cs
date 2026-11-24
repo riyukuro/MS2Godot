@@ -190,9 +190,9 @@ public sealed class CreateLook
     /// </summary>
     public (int Palette, int DefaultRow) Palette(int id)
     {
-        var cust = Model(id)?.Element("customize");
-        // GMS2: the skin item's preset has no palette; its item row carries it (STILL-OPEN: the GMS2 exe's own avatar-colour test)
-        if (id == SkinOwner && cust?.Attribute("colorPalette") == null) cust = Data(id)?.Descendants("customize").FirstOrDefault();
+        // GMS2: a preset that names no palette (the skin item's among them) takes the item row's own customize
+        // (ItemFiles.ColourHead; STILL-OPEN: the GMS2 exe's own avatar-colour test)
+        var cust = Ms2.Ui.Items.ItemFiles.ColourHead(Model(id), () => Data(id));
         if (cust == null || (string)cust.Attribute("color") != "1" || !int.TryParse((string)cust.Attribute("colorPalette"), out int pal)) return (0, -1);
         var first = ((string)cust.Attribute("defaultColorIndex") ?? "-1").Split(',')[0];
         return (pal, int.TryParse(first, out int idx) ? idx : -1);

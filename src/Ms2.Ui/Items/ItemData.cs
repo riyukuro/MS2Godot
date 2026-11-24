@@ -142,9 +142,15 @@ public sealed class ItemData
     /// table/uiMaterialSound.xml whose sound GetMaterialSoundName gives (<see cref="ItemDataTable.UiMaterialSound"/>).</summary>
     public int UiMaterial;
 
+    /// <summary>The item's own &lt;customize&gt; with a palette, as a colour head (GMS2 item files; the KMS rows have none):
+    /// <see cref="ItemModelTable.ForItem"/>.</summary>
+    public ItemModelTable.Model OwnColourHead;
+
     public static ItemData Load(int id, XElement env, bool globalTransferType = false)
     {
         var d = new ItemData { Id = id };
+        if (env.Element("customize") is { } own && Atoi((string)own.Attribute("colorPalette") ?? "0") != 0)
+            d.OwnColourHead = ItemModelTable.HeadOf(own, Array.Empty<int>());
         if (env.Element("basic") is { } b)
         {
             Int(b, "originID", ref d.OriginId);

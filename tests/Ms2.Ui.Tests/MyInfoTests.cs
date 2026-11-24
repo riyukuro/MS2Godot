@@ -862,10 +862,11 @@ public class MyInfoTests
     [Test]
     public void DyeLineIsTheClientsForACustomizableOutfit()
     {
-        // the Green Hood Uniform's model 12200398: <customize color="1" colorPalette="10" defaultColorIndex="13">
+        // the Green Hood Uniform's colour head <customize color="1" colorPalette="10" defaultColorIndex="13">: on its model
+        // 12200398 in KMS, on the item file in GMS2 (whose preset 12200067 names no palette)
         var m = NewModel();
         m.HasLocalPlayer = true;
-        var gm = m.Tables.ItemModels.Get(m.Tables.Items.Get(12200398).ItemPreset);
+        var gm = m.Tables.ItemModels.ForItem(m.Tables.Items.Get(12200398));
         Assert.That(gm, Is.Not.Null);
         Assert.That((gm.ColorEnabled, gm.Palette, gm.DefaultColor(0), gm.MultiColor), Is.EqualTo((true, 10, 13, false)));
         var r = new EquipItem { Id = 12200398, Uid = 9, Rarity = 1, Amount = 1 };

@@ -14,7 +14,7 @@ public sealed partial class WornEquipment
     /// palette (+0x14, FUN_140547250) and not more than one default colour (flag11, FUN_140547230).
     /// </summary>
     public static bool IsCustomizable(ItemData d, ItemModelTable models) =>
-        d != null && d.ItemPreset != 0 && models.Get(d.ItemPreset) is { } m && m.ColorEnabled && m.Palette != 0 && !m.MultiColor;
+        models.ForItem(d) is { } m && m.ColorEnabled && m.Palette != 0 && !m.MultiColor;
 
     /// <summary>
     /// FUN_141421690 (@0x141421690, unnamed/unit_1414210f0.cpp:80): the item's customize kind, true for the avatar colour item

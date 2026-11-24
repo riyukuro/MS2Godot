@@ -512,7 +512,7 @@ public sealed partial class ItemTooltip
 
     /// <summary>CItemData::IsCustomizable (itemdata.cpp:1286): a model whose color is on with a palette and one default color.</summary>
     bool IsCustomizable(ItemData d) =>
-        d.ItemPreset != 0 && Tables.ItemModels.Get(d.ItemPreset) is { } m && m.ColorEnabled && m.Palette != 0 && !m.MultiColor;
+        Tables.ItemModels.ForItem(d) is { } m && m.ColorEnabled && m.Palette != 0 && !m.MultiColor;
 
     /// <summary>
     /// ASTooltip::FUN_1409d2cb0 (astooltip.cpp:2499), "customizeColor": with the local player, a customizable item's dye
@@ -526,7 +526,7 @@ public sealed partial class ItemTooltip
         if (!model.HasLocalPlayer) return false;
         var d = item.Data;
         if (!IsCustomizable(d)) return false;
-        bool defaultColor = Tables.ItemModels.Get(d.ItemPreset).DefaultColor(0) >= 0;   // CItemData::FUN_14053e2b0(0)
+        bool defaultColor = Tables.ItemModels.ForItem(d).DefaultColor(0) >= 0;   // CItemData::FUN_14053e2b0(0)
         string text = Tables.Common(0x9b7);
         if ((Flags & 4) != 0 && !defaultColor)
         {

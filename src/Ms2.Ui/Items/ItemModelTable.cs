@@ -122,6 +122,33 @@ public sealed class ItemModelTable
         public int DefaultColor(int index) => index < DefaultColors.Count ? DefaultColors[index] : -1;
     }
 
+    /// <summary>ItemModelHead::Load (@0x140546a90, itemdatastruct.cpp:930-950) of a &lt;customize&gt; element (none: no dye).</summary>
+    public static Model HeadOf(XElement customize, IReadOnlyList<int> slotTypes)
+    {
+        bool color = false; int palette = 0; var ids = new List<int>();
+        if (customize != null)
+        {
+            ItemData.Bool(customize, "color", ref color);
+            palette = ItemData.Atoi((string)customize.Attribute("colorPalette") ?? "0");
+            ids = ((string)customize.Attribute("defaultColorIndex") ?? "-1").Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(ItemData.Atoi).ToList();
+            if (palette == 0) color = false;
+        }
+        return new Model(color, palette, ids, slotTypes);
+    }
+
+    /// <summary>
+    /// The model of an item's preset with the colour head the item is dyed by: the preset's, or, when the preset names no
+    /// palette, the item's own &lt;customize&gt; (<see cref="ItemData.OwnColourHead"/>). The KMS item rows have no customize, so
+    /// this is the preset's model there. The GMS2 data moved the head into each item file and keeps a palette in only 262 of
+    /// its 7079 presets: read from the data, not from a client source (the GMS2 exe's reader is not read). Null without a model.
+    /// </summary>
+    public Model ForItem(ItemData d)
+    {
+        if (d == null || d.ItemPreset == 0 || Get(d.ItemPreset) is not { } m) return null;
+        return m.Palette == 0 && d.OwnColourHead is { } own ? own with { SlotTypes = m.SlotTypes } : m;
+    }
+
     readonly PackSet packs;
     readonly Dictionary<int, Dictionary<int, Model>> files = new();
     readonly Dictionary<int, Dictionary<int, IReadOnlyList<Asset>>> assetFiles = new();
@@ -156,18 +183,9 @@ public sealed class ItemModelTable
         foreach (var e in doc.Root.Elements("ItemModel"))
         {
             int id = ItemData.Atoi((string)e.Attribute("id") ?? "0");
-            bool color = false; int palette = 0; var ids = new List<int>();
-            if (e.Element("customize") is { } c)
-            {
-                ItemData.Bool(c, "color", ref color);
-                palette = ItemData.Atoi((string)c.Attribute("colorPalette") ?? "0");
-                ids = ((string)c.Attribute("defaultColorIndex") ?? "-1").Split(',', StringSplitOptions.RemoveEmptyEntries)
-                    .Select(ItemData.Atoi).ToList();
-                if (palette == 0) color = false;
-            }
             var slots = e.Element("slots")?.Elements("slot").Select(x => x.Attribute("name") is { } n ? SlotType(n.Value) : 0).ToList()
                 ?? new List<int>();
-            models[id] = new Model(color, palette, ids, slots);
+            models[id] = HeadOf(e.Element("customize"), slots);
         }
         return models;
     }

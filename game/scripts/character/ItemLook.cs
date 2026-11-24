@@ -99,7 +99,7 @@ public static class StarterLook
         {
             var data = files.Item(id);
             int modelId = int.TryParse((string)data?.Descendants("tool").FirstOrDefault()?.Attribute("itemPreset"), out int pre) && pre != 0 ? pre : id;
-            var cust = files.Model(modelId)?.Element("customize");
+            var cust = Ms2.Ui.Items.ItemFiles.ColourHead(files.Model(modelId), () => data);   // GMS2: the item's own when the preset has no palette
             if (cust == null || (string)cust.Attribute("color") != "1" || !int.TryParse((string)cust.Attribute("colorPalette"), out int pal)) return default;
             int.TryParse((string)cust.Attribute("defaultColorIndex"), out int idx);
             if (colorRows != null && colorRows.TryGetValue(slot, out int row)) idx = row;

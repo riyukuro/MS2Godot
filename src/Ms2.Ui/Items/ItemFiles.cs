@@ -39,6 +39,19 @@ public sealed class ItemFiles
         return perItem[id] = row;
     }
 
+    /// <summary>The &lt;customize&gt; an item is dyed by (<see cref="ItemModelTable.ForItem"/>'s rule on the elements): the model
+    /// row's when it names a palette, else the item row's own when that does (GMS2), else the model row's. The item row is
+    /// only asked for when the model names no palette.</summary>
+    public static XElement ColourHead(XElement model, Func<XElement> item)
+    {
+        var c = model?.Element("customize");
+        if (HasPalette(c)) return c;
+        var own = item?.Invoke()?.Descendants("customize").FirstOrDefault();
+        return HasPalette(own) ? own : c;
+    }
+
+    static bool HasPalette(XElement customize) => ItemData.Atoi((string)customize?.Attribute("colorPalette") ?? "0") != 0;
+
     /// <summary>The item model row (&lt;ItemModel id&gt;) of a model id, null when the data has none.</summary>
     public XElement Model(int id)
     {
