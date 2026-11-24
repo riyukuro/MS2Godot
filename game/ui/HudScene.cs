@@ -270,6 +270,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchMeso = null;
         unwatchGlobalPortal?.Invoke();
         unwatchGlobalPortal = null;
+        unwatchTaxiFound?.Invoke();
+        unwatchTaxiFound = null;
         foreach (var (_, c) in messengers) ChatLog.Windows.Remove(c);
         ChatLog.WindowCreated -= OnMessengerCreated;
         ChatLog.WindowClosed -= OnMessengerClosed;
@@ -424,6 +426,7 @@ public partial class HudScene : Node, IUiStageHost
         CharacterAbility();
         if (unwatchMeso == null) WatchMeso();
         WatchGlobalPortal();
+        WatchTaxiFound();
         Mastery();
         SystemMenuFacts();
         MassiveEventPane();
@@ -1286,11 +1289,11 @@ public partial class HudScene : Node, IUiStageHost
         }
         static bool IsModel(FieldEntity e, string model) =>
             string.Equals(e.ModelName, model, StringComparison.OrdinalIgnoreCase) || e.HasMixin(model);
-        void Place(MinimapIcons.Entity e, Vec3 at) { if (e != null) marks.Add(new() { Entity = e, Position = () => at }); }
+        void Place(MinimapIcons.Entity e, Vec3 at, bool taxi = false) { if (e != null) marks.Add(new() { Entity = e, Position = () => at, IsTaxi = taxi }); }
         if (icons.HasTaxi(fc.FieldId) && fc.Map?.Entities.FirstOrDefault(e => IsModel(e, "MS2TaxiStation")) is { } taxi)
         {
             int bestLevel = (int)Ms2.Ui.FeatureElements.Constants(assets.Packs).Float("TaxiCallBestDriverLevel", 25);
-            Place(MinimapIcons.Taxi(data.FoundTaxis.Contains(fc.FieldId), PlayerLevel >= bestLevel), taxi.Position);
+            Place(MinimapIcons.Taxi(data.FoundTaxis.Contains(fc.FieldId), PlayerLevel >= bestLevel), taxi.Position, taxi: true);
         }
         foreach (var e in fc.Map?.Entities.Where(e => IsModel(e, "MS2InteractObject")) ?? Enumerable.Empty<FieldEntity>())
         {

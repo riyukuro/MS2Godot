@@ -55,6 +55,8 @@ public sealed class MinimapController : UiController
         public bool ShowGuide;
         /// <summary>The proxy moves (UpdateProxyPosition each refresh); places never do.</summary>
         public bool Moves;
+        /// <summary>The field's taxi station (BuildTaxi's UIMinimapEntityTaxi, m_taxi).</summary>
+        public bool IsTaxi;
         /// <summary>The entity the movie made for it (null before the field image loads).</summary>
         public AsObject Clip { get; internal set; }
         internal bool Visible;
@@ -62,6 +64,24 @@ public sealed class MinimapController : UiController
 
     /// <summary>The marks in BuildEntities' order: non-portal proxies, the portals, then the taxi, named and map objects.</summary>
     public readonly List<Mark> Marks = new();
+
+    /// <summary>
+    /// EnableTaxiFrame (@0x141a3a780, uiminimapentity.cpp:1987), from OnTaxi's open branch: nothing in a house field
+    /// (FUN_1418fd2f0, the field's map type 3), before the movie or without the taxi mark; else the mark's entity goes to the
+    /// "enabled" frame (changeEntityFrame). OnTaxi passes the first found field; the body does not read it, so the current
+    /// field's mark is enabled whichever field was found.
+    /// </summary>
+    public void EnableTaxiFrame(bool houseField)
+    {
+        if (houseField) return;
+        if (Host?.Entity == null) return;
+        foreach (var m in Marks)
+        {
+            if (!m.IsTaxi) continue;
+            if (m.Clip != null) Host.Invoke("changeEntityFrame", m.Clip, "enabled");
+            return;
+        }
+    }
 
     /// <summary>UpdateOtherPlayer's tiers (uiminimapentity.cpp:3193-3227), in its order of tests.</summary>
     public enum PlayerRelation { Normal, QuestTarget, PartyChief, Party, Guild, Buddy }

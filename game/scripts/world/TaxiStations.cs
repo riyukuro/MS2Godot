@@ -36,8 +36,8 @@ namespace Ms2Godot.World;
 /// STILL-OPEN: the house-taxi privilege (FUN_14050da30) has no port, so a house-privilege field's station is taken as closed
 /// (never as open), and OnResponseCube's re-run is not wired.
 /// STILL-OPEN: a station opened by OnTaxi while in its field keeps its DisabledAsset model until the next field load (the
-/// batched field model is not rebuilt); the reveal and default effects do play. OnTaxi's system sound "system_Taxi_Find",
-/// the minimap's EnableTaxiFrame and the guide trigger 0x10 are not played either.
+/// batched field model is not rebuilt); the reveal and default effects do play. OnTaxi's notice, system sound, minimap
+/// EnableTaxiFrame and guide trigger 0x10 run on the HUD (<see cref="Ms2.Ui.TaxiFoundOpen"/>).
 /// STILL-OPEN: OnTaxi ends with CAutoFindTaxiStation::FUN_1409f1970 (@0x1409f1970, autofindtaxistation.cpp:307), which arms a
 /// 1500 ms timer for the auto-find camera fly-by (FUN_1409f1af0) when an auto-find is active and not done. The auto-find
 /// (StartAutoFind, the camera fly-by and its Esc request) has no port, so the call is left out.

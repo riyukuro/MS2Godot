@@ -1267,6 +1267,24 @@ public class HudTests
         Assert.That(h.RT.Errors, Is.Empty);
     }
 
+    [Test]
+    public void MinimapEnableTaxiFrameSetsTheTaxiMarkEnabledOutsideAHouseField()
+    {
+        // EnableTaxiFrame (uiminimapentity.cpp:1987): changeEntityFrame(the taxi's clip, "enabled"); nothing in a house field
+        var c = new MinimapController { ImageName = "map/minimap/02000001.dds", LocalPlayer = () => (default, 90f, false) };
+        c.Marks.Add(new() { Entity = Ms2.Formats.World.MinimapIcons.Taxi(false, false), Position = () => default, IsTaxi = true });
+        var h = Load(c, Model());
+        Assert.That(c.OnCallback("onFieldLoadComplete", new object[] { c.FieldClip }), Is.True);
+        var clip = c.Marks[0].Clip;
+        Assert.That(clip, Is.Not.Null);
+        Assert.That(h.Get(clip, "currentLabel"), Is.EqualTo("disabled"));
+        c.EnableTaxiFrame(true);
+        Assert.That(h.Get(clip, "currentLabel"), Is.EqualTo("disabled"), "a house field: nothing");
+        c.EnableTaxiFrame(false);
+        Assert.That(h.Get(clip, "currentLabel"), Is.EqualTo("enabled"));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
     static (MinimapController c, UiHost h) PingMinimap(bool allowed, List<string> sounds)
     {
         var m = Model();
