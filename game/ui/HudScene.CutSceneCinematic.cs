@@ -38,6 +38,7 @@ public partial class HudScene
         var c = new CutSceneCinematicController(cine);
         var size = ScreenMode.PixelSize(GetWindow());
         c.ClientWidth = (int)size.X; c.ClientHeight = (int)size.Y;
+        c.MovieScale = UiScale.ViewportFactor(size.X);   // the movie's stage is the window times this (UiScale), as the talk pane passes it
         c.Unloaded += () =>
         {
             cinematicMovie?.Host.Unload(); cinematicMovie?.QueueFree(); cinematicMovie = null;

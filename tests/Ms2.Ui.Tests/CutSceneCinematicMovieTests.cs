@@ -65,4 +65,31 @@ public class CutSceneCinematicMovieTests
         for (int i = 0; i < 10; i++) p.Tick();
         Assert.That(rt.Errors, Is.Empty, "the movie took the calls");
     }
+
+    /// <summary>Layout hands the movie the client size and the viewport factor (setStageSize), and the movie fills the stage with it:
+    /// the pane must be given the factor (a 1280 window has a 1835 wide stage), else the movie lays out in a stage one factor too small.</summary>
+    [Test]
+    public void StageSizeScaleFillsTheStage()
+    {
+        var d = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
+        var pk = new PackSet(d);
+        var ms = new MovieSource(k => pk.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? pk.Read("Resource/Gfx", e) : null);
+        double EntityWidth(double scale)
+        {
+            var c = new CutSceneCinematicController(new CutSceneCinematic()) { ClientWidth = 1280, ClientHeight = 720, MovieScale = scale };
+            var (rt, p) = ms.Open(c.Movie, r => r.Budget = 20_000_000);
+            p.StageW = 1835; p.StageH = 1032;
+            var host = new UiHost(p, c, new UiModel(new GameTables(pk, "en")) { HasLocalPlayer = true });
+            Assert.That(host.Load(), Is.True, string.Join("; ", rt.Errors));
+            for (int i = 0; i < 10; i++) p.Tick();
+            c.Layout(1835, 1032);
+            for (int i = 0; i < 3; i++) p.Tick();
+            return System.Convert.ToDouble(host.Get(host.Entity, "width"));
+        }
+        double one = EntityWidth(1), scaled = EntityWidth(1835.0 / 1280);
+        TestContext.WriteLine($"entity width at scale 1: {one}, at 1835/1280: {scaled}");
+        Assert.That(one, Is.LessThan(1835), "scale 1 leaves the movie short of the 1835 wide stage");
+        Assert.That(scaled, Is.GreaterThanOrEqualTo(1835), "the factor makes the movie cover the whole stage");
+    }
 }
