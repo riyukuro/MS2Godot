@@ -52,7 +52,7 @@ public delegate bool MagicRayCast(Vector3 from, Vector3 dir, float length, out V
 /// <item>The tick (CMagic::FUN_14145de80 @0x14145de80, magicdata.cpp:755), for a magic without attackMethodType 1
 /// (SkillTargetRecord::FUN_141759090 0): before start + delay it runs the region fill and the registration
 /// (FUN_141461bd0, FUN_141462490); after it, the state goes 0, 1, then 2 once spawnTime passed, where a lifeTime that ran out
-/// goes to 3 without them, else it runs them.</item>
+/// goes to 3 without them, else it runs them, then the end check (FUN_141463fb0), which ends it (<see cref="TickTag"/>).</item>
 /// <item>Both are due once now reaches start + delay - CMainSystem::FUN_1414734a0 (the latency maximum of the last time sync,
 /// the lead of <see cref="Tick"/>). The region fill (FUN_141464d00, magicdata.cpp:1750) runs once (m_n1CC) and sends the
 /// hits (<see cref="Fill"/>), for every attack (brokenOffence or not). The registration (FUN_141462490, magicdata.cpp:1594) runs once (m_n1D0) for a local owner and an attack with brokenOffence
@@ -60,7 +60,7 @@ public delegate bool MagicRayCast(Vector3 from, Vector3 dir, float length, out V
 /// which drops a missing area.</item>
 /// <item>A skill whose magicControl enable is 2 (m_n538) makes no region fill, so it registers nothing.</item>
 /// </list>
-/// So a magic is dropped after its one fill and registration.
+/// Its end (CMagic::FUN_14145f570) plays the end effects and sends the cube splash, as an arrow's end does.
 /// An attackMethodType 1 magic (an arrow record) flies instead (<see cref="TickArrow"/>): it does nothing before start + delay,
 /// then each tick in state 2 runs the flight (FUN_14145ec50), the arrow fill (FUN_141465b30: the box swept from the last point to
 /// the current one, its hits sent), the registration of that box every tick, and the end check (FUN_141463fb0), which drops
@@ -194,7 +194,7 @@ public sealed class OwnTagMagics
             var d = paths.Get(attack.MagicPathId, t.Hit);
             if (d == null) continue;
             var m = Make(attack, d, r, t.Serial, t.TargetId, t.Hit, startMs, dir, nodePosition, onHit, id);
-            if (arrow) InitArrow(m, d, dir, ownerId, ownerPosition, rayCast, startMs, objects);
+            InitArrow(m, d, dir, ownerId, ownerPosition, rayCast, startMs, objects, arrow);
             live.Add(m);
             n++;
             if (!arrow) continue;
@@ -342,9 +342,9 @@ public sealed class OwnTagMagics
     /// </list>
     /// </summary>
     void InitArrow(Magic m, MagicPathMove d, Vector3 dir, int ownerId, Vector3 ownerPosition, MagicRayCast rayCast, int nowMs,
-        ReadOnlySpan<HitCandidate> objects)
+        ReadOnlySpan<HitCandidate> objects, bool arrow = true)
     {
-        m.Arrow = true;
+        m.Arrow = arrow;
         m.Row = d;
         m.Velocity = d.Velocity;
         m.Hits = new HashSet<int>();
@@ -359,7 +359,8 @@ public sealed class OwnTagMagics
         m.Target = start + Turn(FireTurn(d, dir), d.Direction) * d.Distance + d.ControlEnd;
         m.Last = m.Current = start;
         UpdateTarget(m, nowMs, objects);
-        if (m.Attack.Arrow.RayPhysxTest != 0 && !d.IgnorePhysxTestInitPosition)
+        // the start ray only for an arrow record (FUN_141759090, magicdata.cpp:1435)
+        if (arrow && m.Attack.Arrow.RayPhysxTest != 0 && !d.IgnorePhysxTestInitPosition)
         {
             var delta = start - ownerPosition;
             delta.Z = 0;
@@ -573,7 +574,8 @@ public sealed class OwnTagMagics
                 if (m.Waiting ? m.Abandoned : (uint)nowMs >= (uint)(m.Start + m.Delay)) return true;
                 continue;
             }
-            if (Due(m, nowMs, leadMs, out bool expired) || expired) return true;
+            // a record that is not an arrow one fills once due and then ticks each frame to its end (TickTag)
+            if ((uint)nowMs >= (uint)(m.Start + m.Delay - leadMs)) return true;
         }
         return false;
     }
@@ -585,7 +587,7 @@ public sealed class OwnTagMagics
     /// <summary>
     /// One tick of every magic at <paramref name="nowMs"/>: each one due runs its region fill (<see cref="Fill"/>) over
     /// <paramref name="objects"/> for <paramref name="owner"/>, its send going to <paramref name="sends"/>, then registers the
-    /// area into <paramref name="pass"/> (when not null), and is dropped. <paramref name="record"/> is the owner's current cast
+    /// area into <paramref name="pass"/> (when not null), and ticks on to its end (<see cref="TickTag"/>). <paramref name="record"/> is the owner's current cast
     /// record (PCBase::FUN_141673e10 finds a record by its cast id; an older cast's is gone). Returns the number registered.
     /// STILL-OPEN: the point group sees only the current cast's record; PCBase::FUN_141673e10 finds any record the owner
     /// still keeps by its cast id.
@@ -608,17 +610,95 @@ public sealed class OwnTagMagics
                 else i++;
                 continue;
             }
-            if (!Due(m, nowMs, leadMs, out bool expired))
-            {
-                if (expired) live.RemoveAt(i); else i++;
-                continue;
-            }
-            live.RemoveAt(i);
-            var req = Fill(m, owner, objects, record != null && record.CastId == m.CastId ? record : null, rand, rayBlocked, pkMode, hitSounds);
-            if (req != null) sends?.Add(req);
-            if (pass != null && Register(m, owner, pass)) registered++;
+            if (TickTag(m, nowMs, leadMs, owner, objects, record, pass, sends, rand, rayBlocked, pkMode, rayCast, splashes, endEffects,
+                    hitSounds, ref registered)) live.RemoveAt(i);
+            else i++;
         }
         return registered;
+    }
+
+    /// <summary>
+    /// CMagic::FUN_14145de80 @0x14145de80 (magicdata.cpp:755) for a record that is not an arrow one (SkillTargetRecord::FUN_141759090
+    /// 0). True when it ended (dropped).
+    /// <list type="bullet">
+    /// <item>Before start + delay: the region fill and the registration once due (FUN_141461bd0, FUN_141462490, :763-766;
+    /// <see cref="FillOnce"/>).</item>
+    /// <item>Then the state goes 0 to 1 (FUN_14145e960, the magic scene's effect) and 1 to 2 once spawnTime passed, as an
+    /// arrow's.</item>
+    /// <item>In state 2 a lifeTime that ran out ends it (m_n52C 1, :786-790) without the fill; else the flight (FUN_14145ec50,
+    /// nothing at vel 0), the fill and registration once, and the end check (FUN_141463fb0, :2216-2246): once the flight's
+    /// remaining time is 0 and moveEndHoldDuration passed, the end.</item>
+    /// <item>The end is CMagic::FUN_14145f570 (<see cref="End"/>), as for an arrow: its end effects, and for an attack with a
+    /// cubeMagicPathID, an explosion (explosionByDestroy, a ray stop or the fill done, :1151-1153) and the local player as
+    /// owner, the splash (<see cref="SkillSplashRequest"/>, Skill 1/2, :1154-1165). An attack without a magicPathID takes id 0,
+    /// which LoadMagicPath sets to a default row (no explosionByDestroy, :370-375), so its magic explodes by its fill.</item>
+    /// </list>
+    /// </summary>
+    bool TickTag(Magic m, int nowMs, int leadMs, in MagicOwner owner, ReadOnlySpan<HitCandidate> objects, CastRecord record,
+        TombTagPass pass, List<SkillHitRequest> sends, Func<int> rand, MagicRayBlocked rayBlocked, bool pkMode, MagicRayCast rayCast,
+        List<SkillSplashRequest> splashes, List<MagicEndEffect> endEffects, List<MagicHitSound> hitSounds, ref int registered)
+    {
+        var own = record != null && record.CastId == m.CastId ? record : null;
+        int begin = m.Start + m.Delay;
+        if ((uint)begin > (uint)nowMs)
+        {
+            if ((uint)nowMs >= (uint)(begin - leadMs))
+                FillOnce(m, owner, objects, own, pass, sends, rand, rayBlocked, pkMode, hitSounds, ref registered);
+            return false;
+        }
+        if (m.LastTick == 0) m.LastTick = nowMs;
+        if ((uint)m.LastTick > (uint)nowMs) return false;
+        if (m.State == 0)
+        {
+            m.SceneEffect = MagicEffect(m.Attack).Length != 0;
+            m.State = 1;
+            m.StateTick = begin;
+            m.LastTick = begin;
+        }
+        if (m.State == 1 && (uint)(m.StateTick + m.Spawn) <= (uint)nowMs)
+        {
+            m.State = 2;
+            m.StateTick += m.Spawn;
+            m.LastTick = m.StateTick;
+        }
+        if (m.State == 2)
+        {
+            if (m.Life != 0 && (uint)(m.StateTick + m.Life) <= (uint)nowMs)
+            {
+                End(m, owner, splashes, endEffects, lifeEnd: true, nowMs, objects);
+                return true;
+            }
+            Fly(m, nowMs, objects, rayCast);
+            FillOnce(m, owner, objects, own, pass, sends, rand, rayBlocked, pkMode, hitSounds, ref registered);
+            if (m.Remain <= 0f)
+            {
+                int hold = m.Row.MoveEndHoldDuration;
+                if (m.HoldUntil == 0 && hold > 0) m.HoldUntil = nowMs + hold;
+                else if ((uint)m.HoldUntil < (uint)nowMs)
+                {
+                    End(m, owner, splashes, endEffects, lifeEnd: false, nowMs, objects);
+                    return true;
+                }
+            }
+        }
+        m.LastTick = nowMs;
+        return false;
+    }
+
+    /// <summary>
+    /// FUN_141464d00's one fill (m_n1CC, set once due for a local owner, magicdata.cpp:1752-1758, before the dead and stunned
+    /// tests) and FUN_141462490's one registration (m_n1D0). An owner other than the local player never fills; its magic still
+    /// ends.
+    /// </summary>
+    void FillOnce(Magic m, in MagicOwner owner, ReadOnlySpan<HitCandidate> objects, CastRecord record, TombTagPass pass,
+        List<SkillHitRequest> sends, Func<int> rand, MagicRayBlocked rayBlocked, bool pkMode, List<MagicHitSound> hitSounds,
+        ref int registered)
+    {
+        if (m.Filled || !owner.LocalPlayer) return;
+        m.Filled = true;
+        var req = Fill(m, owner, objects, record, rand, rayBlocked, pkMode, hitSounds);
+        if (req != null) sends?.Add(req);
+        if (pass != null && Register(m, owner, pass)) registered++;
     }
 
     /// <summary>
@@ -1078,19 +1158,6 @@ public sealed class OwnTagMagics
             z = 0f;
         }
         return new Vector3(x, y, z) * Deg;
-    }
-
-    /// <summary>Whether the fill and the registration run at <paramref name="nowMs"/>; <paramref name="expired"/> when the lifeTime ran
-    /// out before state 2 ran them (state 3: they never run).</summary>
-    static bool Due(Magic m, int nowMs, int leadMs, out bool expired)
-    {
-        expired = false;
-        int end = m.Start + m.Delay;
-        if ((uint)end > (uint)nowMs) return (uint)nowMs >= (uint)(end - leadMs);
-        int stateTick = end + m.Spawn;
-        if ((uint)stateTick > (uint)nowMs) return false;   // state 1 until spawnTime passed
-        if (m.Life != 0 && (uint)(stateTick + m.Life) <= (uint)nowMs) { expired = true; return false; }
-        return true;
     }
 
     /// <summary>

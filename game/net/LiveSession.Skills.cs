@@ -55,8 +55,8 @@ public partial class LiveSession
         return true;
     }
 
-    /// <summary>The mode 1 sub-mode 2 send of an own magic's splash (CMagic::FUN_14145f570, magicdata.cpp:1156). False offline.
-    /// STILL-OPEN: no caller until the magic's flight is ported (its end and piercing intervals send it).</summary>
+    /// <summary>The mode 1 sub-mode 2 send of an own magic's splash (CMagic::FUN_14145f570, magicdata.cpp:1156): every own
+    /// magic's end and a piercing arrow's intervals (OwnTagMagics, sent from HudScene.TickOwnTagMagics). False offline.</summary>
     public bool SendSplash(Ms2.Net.Packets.SkillSplashRequest req)
     {
         if (game == null) return false;

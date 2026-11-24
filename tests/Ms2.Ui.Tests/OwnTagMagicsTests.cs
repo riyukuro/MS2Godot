@@ -109,9 +109,9 @@ public class OwnTagMagicsTests
         foreach (var o in new[] { Owner(local: false), Owner(dead: true), Owner(stunned: true) })
         {
             var m = new OwnTagMagics();
-            m.Add(null, Attack(), Tags(0), 0, Paths);
-            Assert.That(m.Tick(0, 0, o, pass), Is.EqualTo(0));
-            Assert.That(m.Count, Is.EqualTo(0), "one attempt, then dropped");
+            m.Add(null, Attack(), Tags(0), 1000, Paths);
+            Assert.That(m.Tick(1000, 0, o, pass), Is.EqualTo(0));
+            Assert.That(m.Count, Is.EqualTo(0), "one attempt, then the end");
         }
         var none = new OwnTagMagics();
         none.Add(null, Attack(shape: 0), Tags(0), 0, Paths);

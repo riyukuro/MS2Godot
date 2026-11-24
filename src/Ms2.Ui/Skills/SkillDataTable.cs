@@ -500,6 +500,9 @@ public sealed class SkillData
         return s;
     }
 
+    /// <summary>Every level read, in no order (the data sweeps).</summary>
+    public IEnumerable<SkillLevelData> Levels => levels.Values;
+
     /// <summary>GetLevelData @0x1407e90a0 (:805).</summary>
     public SkillLevelData GetLevelData(int level) => level is >= 0 and <= ushort.MaxValue && levels.TryGetValue((ushort)level, out var l) ? l : null;
     /// <summary>GetOriginId @0x1407e9b50 (:947): originID, else the id.</summary>
@@ -613,6 +616,9 @@ public sealed class SkillDataTable
         }
         return d;
     }
+
+    /// <summary>Every skill read, in no order (the data sweeps).</summary>
+    public IEnumerable<SkillData> Values => All().Values;
 
     /// <summary>GetSkillData @0x1407ee1d0 (:1233): null for 0 or an unknown id.</summary>
     public SkillData GetSkillData(uint id) => id != 0 && All().TryGetValue(id, out var s) ? s : null;
