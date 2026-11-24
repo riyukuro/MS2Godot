@@ -43,12 +43,8 @@ public partial class LiveSession
         }
         GD.Print($"live: GameToLogin to {m.Address}:{m.Port}");
         StopCombatEffects();   // the game scene state goes, and its WorldService's time scale with it; the blink ends on the own PC first
-        if (player != null && IsInstanceValid(player)) player.Live = false;
-        player = null;
-        selfObject = -1;
-        Home.Clear();   // ~MyPC: m_sp1618 = 0 (mypc.cpp:897)
+        LeaveCharacter();
         ResetCubeService();   // the game scene's services shut down: CubeMapInformationService::OnShutdown @0x1410cef40 -> FUN_1410d0310 (cubemapinformationservice_3.cpp:1107, 5455-5475)
-        bindPending = false;
         PortalAction.Current = null;
         World.FieldContents.LeaveForLogin(GetTree(), LoginProgressMap);
         var old = game;
@@ -97,6 +93,34 @@ public partial class LiveSession
         }
         catch (System.OperationCanceledException) when (exit.IsCancellationRequested) { }
         catch (System.Exception e) { GD.PushError($"live: return to character select failed: {e.Message}"); }
+    }
+
+    /// <summary>
+    /// What goes with the character at the return to character select, so the next character entered starts from nothing of
+    /// this one's. FUN_141bbc580(0, 2) drops every field object and the own MyPC (SetMyPC(0), worldservice_1.cpp:10098; ~MyPC,
+    /// mypc.cpp:897-904): <see cref="DropOwnPc"/>, and a new <see cref="Me"/> (the own PC's user block, look, stats, titles and
+    /// revival state; the next one comes from the next entry's own FieldAddUser) with its skill system's cooldowns
+    /// (CSkillSystem is the MyPC's, MyPC::GetSkillSystem); the region skill objects (:10029-10056, 10073), the field properties
+    /// (ClearFieldProperties, :10104) and the current map (m_284 / m_290, :10123-10126), which is <see cref="entry"/>: with
+    /// none, the character select's fields build no game layers (<see cref="OnFieldBuilt"/>). The game UI scene's leave
+    /// (UISceneGame::vfunc_49, uiscenegame.cpp:209-216) clears the party and its listing (CPartyManager::ClearPartyAndRecruitment,
+    /// partymanager.cpp:425-441, with the battle records' party groups), the guild (CGuildManager::FUN_1413b5f90,
+    /// guildmanager.cpp:236-255) and the group chats (CGroupChatManager::FUN_14137e190, groupchatmanager.cpp:388); its personal
+    /// rankings (CGameRankingCli::ClearPersonal) and clubs (ClearClubsAndInvites) have no port here. The client keeps the rest
+    /// (the item, quest, key table, trophy and other managers): the next entry's load packets replace them.
+    /// </summary>
+    void LeaveCharacter()
+    {
+        DropOwnPc();
+        Me = new MyCharacter();
+        WireMe();
+        cooltimes = null;
+        regionSkills.Clear(); RegionSkillLog.Clear(); ClearFieldEffects(); FieldProperties.Clear(); HitEffects.Clear();
+        entry = null;
+        chosen = null;
+        Party.ClearPartyAndRecruitment();
+        Guilds.LeaveGame();
+        GroupChats.Clear();
     }
 
     /// <summary>The map OnGameToLogin's FUN_141bbc580 starts the loading screen for (networkservice.cpp:935).</summary>

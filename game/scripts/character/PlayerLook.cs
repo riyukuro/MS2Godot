@@ -74,12 +74,16 @@ public static class PlayerLook
     /// </summary>
     static (IReadOnlyList<EquipItem> items, SkinColor? skin)? Live()
     {
+        LiveLookOf = 0;
         if (!LiveSession.Active)    // offline: the chosen character's own items (stub list or a lobby-created one), else the starter look
             return Flow.Session.Chosen is { User: { } o } own && own.Equips.Count > 0 ? (own.Equips, o.Skin) : null;
-        if (LiveSession.Instance.Me is { User: { } u, Equips: { } worn }) return (worn, u.Skin);
-        if (Flow.Session.Chosen is { User: { } c } chosen) return (chosen.Equips, c.Skin);
+        if (LiveSession.Instance.Me is { User: { } u, Equips: { } worn }) { LiveLookOf = u.CharacterId; return (worn, u.Skin); }
+        if (Flow.Session.Chosen is { User: { } c } chosen) { LiveLookOf = c.CharacterId; return (chosen.Equips, c.Skin); }
         return null;
     }
+
+    /// <summary>The character whose items and skin the last live look was built with (0 offline or with none).</summary>
+    public static long LiveLookOf { get; private set; }
 
     /// <summary>
     /// The offline character's user block for the equipment window: the fixture's, with what the chosen list entry carries

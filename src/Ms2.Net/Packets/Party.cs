@@ -376,6 +376,10 @@ public sealed partial class PartyBook {
     /// <summary>ClearParty (:425), with ClearVote; ClearPartyGroups (:430).</summary>
     void Clear() { members.Clear(); BattleRecords?.ClearPartyGroups(); PartyId = 0; LeaderId = 0; Vote = null; }
 
+    /// <summary>ClearPartyAndRecruitment (@0x14162a480, partymanager.cpp:441): ClearParty, then ClearRecruitmentAndResetSearchUI;
+    /// the game UI scene's leave calls it (UISceneGame::vfunc_49, uiscenegame.cpp:212).</summary>
+    public void ClearPartyAndRecruitment() { Clear(); ClearRecruitment(); }
+
     /// <summary>vote (GetVote @0x14162c350): the running vote, null without one.</summary>
     public PartyVote Vote { get; private set; }
     /// <summary>The vote's start (vfunc_2), after the ready vote's member marks: the kick vote's chat notice and window

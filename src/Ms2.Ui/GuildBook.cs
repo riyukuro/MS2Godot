@@ -914,6 +914,15 @@ public sealed class GuildBook
         }
     }
 
+    /// <summary>FUN_1413b5f90 (@0x1413b5f90, guildmanager.cpp:236-255), which the game UI scene's leave calls (UISceneGame::vfunc_49,
+    /// uiscenegame.cpp:213): in a guild, its Reset, the pvp histories and m_3e0 / m_400 cleared; outside one nothing.</summary>
+    public void LeaveGame()
+    {
+        if (!InGuild) return;
+        ResetGuild();
+        StorageHistoryReceived = false;
+    }
+
     /// <summary>FUN_1413b5f90's Reset: the guild state is gone (the request lists are kept, as the client keeps them).</summary>
     void ResetGuild()
     {

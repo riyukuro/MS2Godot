@@ -58,6 +58,7 @@ public sealed partial class PlayerNameTag : CanvasLayer
         // setData: TextFieldEx.setVerticalAlign(m_name.textField, VALIGN_CENTER), then the name; the field is already size 0x12
         var nameClip = node.FindClip("m_name");
         NpcPresence.SetLabel(nameClip, name, null, color);
+        Shown = name;
         foreach (var c in nameClip?.AllClips() ?? []) foreach (var t in c.TextFields) t.AlignCenter();
         NpcPresence.SetLabel(node.FindClip("m_guild"), "", null, color);
         node.Scale = new Vector2(u, u);
@@ -89,8 +90,11 @@ public sealed partial class PlayerNameTag : CanvasLayer
     /// <summary>The PC's name changed (the own FieldAddUser, OnAddUser's SetName): setData's name line again.</summary>
     public void SetName(string name)
     {
-        if (node?.FindClip("m_name") is { } nameClip) NpcPresence.SetLabel(nameClip, name, null, color);
+        if (node?.FindClip("m_name") is { } nameClip) { NpcPresence.SetLabel(nameClip, name, null, color); Shown = name; }
     }
+
+    /// <summary>The name the tag's m_name line shows.</summary>
+    public string Shown { get; private set; }
 
     public override void _Process(double delta)
     {

@@ -171,6 +171,11 @@ public partial class LiveSession : Node
         BattleRecords.PetOwnerOf = id => remote?.Tracker.PetOwnerOf(id) ?? 0;
         // battlerecordmanager.cpp:188: the room id set, its row found, and the row's chaosDamageMeter
         BattleRecords.ChaosRoomMeter = () => dungeonRoomId != 0 && DungeonRoomOf?.Invoke(dungeonRoomId) is { ChaosDamageMeter: true };
+        WireMe();
+    }
+
+    void WireMe()
+    {
         // the server's state change (a death included) leaves the running interaction, react or ride summon state
         Me.StateEntered += st => InteractKey.LeaveForServerState(st, InteractObjects, InteractNpcs, reactState, rideSummon);
         Me.StateEntered += EnterOwnStateExit;   // a server state the body has no move state for runs the client's own exit
@@ -624,7 +629,7 @@ public partial class LiveSession : Node
 
     /// <summary>The local player's record for the character window: the own FieldAddUser, Stat, AttributePoint, UserEnv,
     /// HomeCommand and own AddPlayer proxy; live only.</summary>
-    public readonly MyCharacter Me = new();
+    public MyCharacter Me { get; private set; } = new();
     /// <summary>CAchieveManager: the local player's trophies and their tally from the Achieve packets (0x5E); live only.
     /// The trophy data (Xml achieve/*.xml) is read at the first packet.</summary>
     public Ms2.Ui.AchieveBook Achieves => achieves ??= AchieveBook();
