@@ -88,6 +88,10 @@ public sealed class FieldInteractDraws
     /// <summary>Whether the entity's instances are drawn (null: it has none here).</summary>
     public bool? Shown(FieldEntity e) => e != null && meshes.TryGetValue(e, out var t) ? t.Target.Shown : null;
 
+    /// <summary>Whether the object's entity is drawn: its mesh instances or its actor (null: neither is drawn here).</summary>
+    public bool? Drawn(LiveInteractObject o) =>
+        o?.Entity == null ? null : Shown(o.Entity) ?? (actors.TryGetValue(o.Entity, out var a) ? a.Visible : null);
+
     /// <summary>The object's box, or null.</summary>
     public StaticBody3D Box(LiveInteractObject o) => o != null && boxes.TryGetValue(o, out var b) ? b : null;
 

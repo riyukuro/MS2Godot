@@ -53,6 +53,16 @@ public partial class LiveSession
         string shots = System.Environment.GetEnvironmentVariable("MS2_LIVE_COMBAT_SHOTS");
         if (string.IsNullOrEmpty(steps) || flow.GetTree().CurrentScene is not Ui.HudScene hud || Instance is not { } live) return;
         if (!string.IsNullOrEmpty(shots)) DirAccess.MakeDirRecursiveAbsolute(shots);
+        void LogInteract(string step, Ms2.Ui.LiveInteractObject o)
+        {
+            if (o == null) return;
+            var draws = Field.Active?.Interacts;
+            var at = FieldPortals.ToMs2(live.OwnPlayer.GlobalPosition);
+            GD.Print($"live: combat {step}: object {o.Name} row {o.RowId} kind {o.Kind} state {o.State} shown state {o.ShownState} " +
+                     $"dialog 0x{o.DialogId:x}; drawn {draws?.Drawn(o)?.ToString() ?? "-"}, box {(draws?.Box(o) != null ? "up" : "none")}; " +
+                     $"pc at {at}, {Math.Sqrt(Math.Pow(at.X - o.Position.X, 2) + Math.Pow(at.Y - o.Position.Y, 2) + Math.Pow(at.Z - o.Position.Z, 2)):F0} away");
+        }
+
         void Shot(string name)
         {
             if (string.IsNullOrEmpty(shots)) return;
@@ -313,6 +323,18 @@ public partial class LiveSession
                 await until(() => !io.IsCasting, 60 * 15);
                 await frames(120);
                 Check($"{step}: the action key used it ({live.InteractSends - sends} send(s))", started);
+                LogInteract(step, o);
+                Shot($"interact_{id}.png");
+                continue;
+            }
+            if (step.StartsWith("dialogclosed:"))      // dialogclosed:<interact id>: the UI object's dialog let go (the walk took the pc away, or it was closed)
+            {
+                int id = int.Parse(step[13..]);
+                var o = live.InteractObjects?.All.FirstOrDefault(x => x.RowId == id);
+                await until(() => o == null || o.DialogId == 0, 60 * 5);
+                LogInteract(step, o);
+                Check($"{step}: the object's dialog is closed (id 0x{o?.DialogId ?? -1:x})", o != null && o.DialogId == 0);
+                Shot($"dialogclosed_{id}.png");
                 continue;
             }
             if (step == "pickup")      // the pickup key held 4 s where the pc stands (a drop at its feet); the bag count before and after
