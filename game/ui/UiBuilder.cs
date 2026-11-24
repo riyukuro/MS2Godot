@@ -553,7 +553,7 @@ public partial class TextNode : Node2D
         return 255;
     }
 
-    public string Text { get => LabelText; set { runStyles = null; HasSizedRuns = false; images = null; Label.Text = labelText = value ?? ""; } }
+    public string Text { get => LabelText; set { runStyles = null; runCount = 0; htmlParser = null; HasSizedRuns = false; images = null; Label.Text = labelText = value ?? ""; } }
 
     /// <summary>The label's text, kept here: reading Label.Text copies the whole text out of the engine on every call, and the
     /// layout reads it per call (only <see cref="Text"/> and <see cref="SetHtml"/> set it).</summary>
@@ -567,15 +567,70 @@ public partial class TextNode : Node2D
     /// </summary>
     public void SetHtml(string html)
     {
-        var (text, styles) = FlashHtml.Parse(html, Def?["multiline"] is JsonNode ml ? (bool)ml : true);
-        runStyles = Array.Exists(styles, s => !s.IsPlain) ? styles : null;
-        HasSizedRuns = Array.Exists(styles, s => s.Size is float z && z != FieldSize);
-        images = null;
-        foreach (var st in styles)
+        bool multiline = Def?["multiline"] is JsonNode ml ? (bool)ml : true;
+        html ??= "";
+        // an html that goes on from the one last parsed is parsed from where that ended (DocView::AppendHtml, sfr_render_03b.cpp:277 /
+        // :287: only the appended string goes through StyledText::ParseHtml, sfr_render_05i.cpp:1712 / :1721); anything else is
+        // parsed whole, as FlashHtml.Parse does
+        var p = htmlParser;
+        string add = null;
+        if (p != null && p.Continuable && multiline == htmlMultiline && html.Length >= htmlParsed.Length && html.StartsWith(htmlParsed, StringComparison.Ordinal))
+            add = html.Substring(htmlParsed.Length);
+        else
+        {
+            p = htmlParser = new Ms2.Avm2.Flash.HtmlText.Parser(multiline, '\n', true, false, html.Length);
+            htmlMultiline = multiline;
+            runStyles = null; runCount = 0; HasSizedRuns = false; images = null;
+            add = html;
+        }
+        htmlParsed = html;
+        int from = p.Count;
+        p.Feed(add);
+        float fieldSize = FieldSize;
+        for (int i = from; i < p.Count; i++)
+        {
+            var f = p.Formats[i];
+            Color? color = f.Color is uint rgb ? Color.Color8((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb) : null;
+            var st = new GlyphStyle(color, f.Bold, f.Italic, f.Underline, f.Size) { Image = f.Image };
+            if (st.IsPlain) continue;
+            if (runStyles == null || i >= runStyles.Length)
+            {
+                var grown = new GlyphStyle[Math.Max(p.Formats.Length, 16)];
+                if (runStyles != null) Array.Copy(runStyles, grown, runCount);
+                runStyles = grown;
+            }
+            runStyles[i] = st;
+            if (st.Size is float z && z != fieldSize) HasSizedRuns = true;
             if (st.Image is HtmlImage im && (images ??= new()).ContainsKey(im) == false) images[im] = Box(im);
-        Label.Text = labelText = text;
+        }
+        runCount = p.Count;
+        Label.Text = labelText = p.Text(0);
         Label.QueueRedraw();
     }
+
+    /// <summary>True when the text and the run styles kept from the pieces fed in equal those of the html parsed whole (a check for the
+    /// chat append shot; false when the text was not set from html).</summary>
+    public bool SameAsWholeParse()
+    {
+        if (htmlParser == null || htmlParsed == null) return false;
+        var whole = new Ms2.Avm2.Flash.HtmlText.Parser(htmlMultiline, '\n', true, false, htmlParsed.Length);
+        whole.Feed(htmlParsed);
+        if (whole.Text(0) != LabelText || whole.Count != runCount) return false;
+        for (int i = 0; i < whole.Count; i++)
+        {
+            var f = whole.Formats[i];
+            Color? color = f.Color is uint rgb ? Color.Color8((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb) : null;
+            var st = new GlyphStyle(color, f.Bold, f.Italic, f.Underline, f.Size) { Image = f.Image };
+            var kept = runStyles != null && i < runStyles.Length ? runStyles[i] : default;
+            if (st.IsPlain ? !kept.IsPlain : !kept.Equals(st)) return false;
+        }
+        return true;
+    }
+
+    Ms2.Avm2.Flash.HtmlText.Parser htmlParser;
+    string htmlParsed;
+    bool htmlMultiline;
+    int runCount;
 
     GlyphStyle[] runStyles;
 
@@ -617,7 +672,7 @@ public partial class TextNode : Node2D
 
     /// <summary>The text format of the code point at <paramref name="index"/> (the field's own when it has none).</summary>
     public GlyphStyle StyleAt(int index) =>
-        runStyles != null && index >= 0 && index < runStyles.Length ? runStyles[index] : default;
+        runStyles != null && index >= 0 && index < runCount ? runStyles[index] : default;
 
     /// <summary>The colour LineFace draws the code point at <paramref name="index"/> in: the selection's text colour when it is
     /// selected, else its FONT colour, else the field's.</summary>

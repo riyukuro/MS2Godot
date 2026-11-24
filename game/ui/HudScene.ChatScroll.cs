@@ -120,7 +120,7 @@ public partial class HudScene
         if (frames is 245 or 246)      // the lines as laid out from the kept paragraphs, and laid out anew
         {
             var log = LargestText(this);
-            if (log != null) GD.Print($"CHATAPPEND digest {(frames == 245 ? "kept" : "fresh")}={log.LayoutDigest(frames == 246)}");
+            if (log != null) GD.Print($"CHATAPPEND digest {(frames == 245 ? "kept" : "fresh")}={log.LayoutDigest(frames == 246)} incrementalText={(frames == 245 ? log.SameAsWholeParse() : "-")}");
         }
         if (frames == 290)
         {

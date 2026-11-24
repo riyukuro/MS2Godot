@@ -175,8 +175,8 @@ public partial class TextNode
     /// <summary>The formats of code points [first, first + count) as far as the text has them (the rest are the field's own).</summary>
     ReadOnlySpan<GlyphStyle> FormatsOf(int first, int count)
     {
-        if (runStyles == null || first >= runStyles.Length) return default;
-        return runStyles.AsSpan(first, Math.Min(count, runStyles.Length - first));
+        if (runStyles == null || first >= runCount) return default;
+        return runStyles.AsSpan(first, Math.Min(count, runCount - first));
     }
 
     /// <summary>Keeps <paramref name="p"/> for the next layout.</summary>

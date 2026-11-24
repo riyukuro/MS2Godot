@@ -57,40 +57,108 @@ public static class HtmlText
         bool perChar = false)
     {
         html ??= "";
-        if (literalNewLines) html = html.Replace("\\n", "\n");
-        var text = new StringBuilder(html.Length);
-        var styles = new List<HtmlFormat>(html.Length);
-        var stack = new List<(string Name, HtmlFormat Around)>();
-        var current = default(HtmlFormat);
-        var last = current;           // lastFormat: the last opened element's or content's format, which line breaks take
-        int openP = 0;
+        var p = new Parser(multiline, newLine, literalNewLines, perChar, html.Length);
+        p.Feed(html);
+        var formats = new HtmlFormat[p.Count];
+        Array.Copy(p.Formats, formats, p.Count);
+        return (p.Text(0), formats);
+    }
+
+    /// <summary>
+    /// <see cref="Parse"/> as a state that html can be fed to a piece at a time: what DocView::AppendHtml does
+    /// (sfr_render_03b.cpp:277 / :287 parse only the appended string into the document, StyledText::ParseHtml,
+    /// sfr_render_05i.cpp:1712 / :1721, then notify the change). Feeding the html of a text one piece after another gives
+    /// the text and formats parsing the pieces' concatenation gives, as long as <see cref="Continuable"/> held after each:
+    /// the elements still open, the format around them and the last element's format (what a line break takes) carry over.
+    /// </summary>
+    public sealed class Parser
+    {
+        readonly bool multiline, literalNewLines, perChar;
+        readonly char newLine;
+        readonly StringBuilder text;
+        HtmlFormat[] styles;
+        readonly List<(string Name, HtmlFormat Around)> stack = new();
+        HtmlFormat current;
+        HtmlFormat last;           // lastFormat: the last opened element's or content's format, which line breaks take
+        int openP;
+
+        public Parser(bool multiline, char newLine, bool literalNewLines, bool perChar, int capacity = 0)
+        {
+            (this.multiline, this.newLine, this.literalNewLines, this.perChar) = (multiline, newLine, literalNewLines, perChar);
+            text = new StringBuilder(capacity);
+            styles = new HtmlFormat[Math.Max(16, capacity)];
+        }
+
+        /// <summary>The formats per code point (per UTF-16 char with perChar); the array is longer than <see cref="Count"/>, the rest
+        /// is default (the field's own format).</summary>
+        public HtmlFormat[] Formats => styles;
+        public int Count { get; private set; }
+        /// <summary>The length of the text so far, line break at its end included.</summary>
+        public int Length => text.Length;
+        /// <summary>True when some format is not plain.</summary>
+        public bool Styled { get; private set; }
+        /// <summary>False when the html fed last ended where the next piece could change what it read: inside a tag with no closing
+        /// bracket, an entity that a semicolon could end, or a backslash a literal line break could follow. Parsing the pieces
+        /// as one text is then not the same as feeding them one after another.</summary>
+        public bool Continuable { get; private set; } = true;
+
+        /// <summary>The text so far without its last <paramref name="drop"/> chars.</summary>
+        public string Text(int drop) => text.ToString(0, text.Length - drop);
+        /// <summary>The char at <paramref name="i"/> of the text so far.</summary>
+        public char At(int i) => text[i];
+
         void Add(char c, HtmlFormat f)
         {
             if (!perChar && char.IsLowSurrogate(c) && text.Length > 0 && char.IsHighSurrogate(text[^1])) { text.Append(c); return; }
             text.Append(c);
-            styles.Add(f);
+            if (Count == styles.Length)
+            {
+                var grown = new HtmlFormat[styles.Length * 2];
+                Array.Copy(styles, grown, Count);
+                styles = grown;
+            }
+            styles[Count++] = f;
+            if (!f.IsPlain) Styled = true;
         }
         void Content(char c) { Add(c, current); last = current; }
         void NewLine() { if (multiline) Add(newLine, last); }
         bool ParagraphEmpty() => text.Length == 0 || text[^1] == newLine;
-        for (int i = 0; i < html.Length; i++)
+
+        /// <summary>Parses <paramref name="html"/> onto the end of the text.</summary>
+        public void Feed(string html)
         {
-            char c = html[i];
-            if (c == '<' && html.IndexOf('>', i + 1) is int end and > 0)
+            if (literalNewLines)
             {
-                Tag(html.Substring(i + 1, end - i - 1));
-                i = end;
-                continue;
+                html = html.Replace("\\n", "\n");
+                if (html.EndsWith('\\')) Continuable = false;
             }
-            if (c == '&' && Entity(html, i, out string decoded, out int length))
+            for (int i = 0; i < html.Length; i++)
             {
-                foreach (char d in decoded) Content(d);
-                i += length - 1;
-                continue;
+                char c = html[i];
+                if (c == '<')
+                {
+                    if (html.IndexOf('>', i + 1) is int end and > 0)
+                    {
+                        Tag(html.Substring(i + 1, end - i - 1));
+                        i = end;
+                        continue;
+                    }
+                    Continuable = false;
+                }
+                if (c == '&')
+                {
+                    if (Entity(html, i, out string decoded, out int length))
+                    {
+                        foreach (char d in decoded) Content(d);
+                        i += length - 1;
+                        continue;
+                    }
+                    if (html.Length - i <= 11) Continuable = false;
+                }
+                Content(c);
             }
-            Content(c);
         }
-        return (text.ToString(), styles.ToArray());
+
 
         void Tag(string body)
         {
@@ -154,6 +222,7 @@ public static class HtmlText
             else if (name == "LI") NewLine();
         }
     }
+
 
     /// <summary>The field defaults <see cref="Build"/> writes: TextField::SetTextFieldDef's default text format (font
     /// name, size, colour; kerning off) and paragraph format (alignment; margins, indent and leading when set).</summary>

@@ -165,7 +165,22 @@ public class AsTextField : AsInteractiveObject
 
     void Changed() { Version++; if (autoSizeMode != "none") AutoSize(); }
 
-    public List<string> Lines() => Spans().Select(l => l.Line).ToList();
+    /// <summary>The line texts. Kept while the spans are: the AS-visible line calls (getLineText, getLineLength, getLineOffset ...)
+    /// ask for them one line at a time, so a log of 1000 lines was copied into a new list for each of ~150 calls per appended line.
+    /// Callers read the list only.</summary>
+    public List<string> Lines()
+    {
+        var sp = Spans();
+        if (!ReferenceEquals(sp, linesOf) || lineTexts == null)
+        {
+            var l = new List<string>(sp.Count);
+            foreach (var x in sp) l.Add(x.Line);
+            lineTexts = l; linesOf = sp;
+        }
+        return lineTexts;
+    }
+    List<string> lineTexts;
+    List<(string Line, int Start)> linesOf;
 
     /// <summary>The lines and the index in <see cref="Text"/> of each line's first character. Kept for what they were made from
     /// (the text, the width, the font and the wrap): the AS-visible metrics (numLines, maxScrollV, scrollV) ask for
@@ -186,16 +201,23 @@ public class AsTextField : AsInteractiveObject
     {
         // CR LF and LF are paragraph ends as CR; map: index in that text -> index in Text
         string raw = displayAsPassword ? new string('*', Text.Length) : Text;
-        var sb = new StringBuilder(raw.Length);
-        var map = new List<int>(raw.Length + 1);
-        for (int i = 0; i < raw.Length; i++)
+        // a text with no LF has none to fold: it is its own paragraph text and every index maps to itself (no map, no copy)
+        List<int> map = null;
+        string src = raw;
+        if (raw.Contains('\n'))
         {
-            if (raw[i] == '\n' && i > 0 && raw[i - 1] == '\r') continue;
-            sb.Append(raw[i] == '\n' ? '\r' : raw[i]);
-            map.Add(i);
+            var sb = new StringBuilder(raw.Length);
+            map = new List<int>(raw.Length + 1);
+            for (int i = 0; i < raw.Length; i++)
+            {
+                if (raw[i] == '\n' && i > 0 && raw[i - 1] == '\r') continue;
+                sb.Append(raw[i] == '\n' ? '\r' : raw[i]);
+                map.Add(i);
+            }
+            map.Add(raw.Length);
+            src = sb.ToString();
         }
-        map.Add(raw.Length);
-        var src = sb.ToString();
+        int Map(int i) => map == null ? i : map[i];
         var lines = new List<(string, int)>();
         double max = Box.W - 4;
         int pstart = 0;
@@ -209,8 +231,8 @@ public class AsTextField : AsInteractiveObject
         laidParagraphsNext.Clear();
         foreach (var p in src.Split('\r'))
         {
-            if (!wordWrap || max <= 0) { lines.Add((p, map[pstart])); pstart += p.Length + 1; continue; }
-            int first = lines.Count, origin = map[pstart];
+            if (!wordWrap || max <= 0) { lines.Add((p, Map(pstart))); pstart += p.Length + 1; continue; }
+            int first = lines.Count, origin = Map(pstart);
             if (keep && p.Length > 0 && (laidParagraphs.TryGetValue(p, out var laid) || laidParagraphsNext.TryGetValue(p, out laid)))
             {
                 foreach (var (line, rel) in laid) lines.Add((line, origin + rel));
@@ -227,23 +249,23 @@ public class AsTextField : AsInteractiveObject
             foreach (var part in Regex.Split(p, @"(?<=[\s\-])|(?<=[⺀-￿])(?=.)|(?<=.)(?=[⺀-￿])"))
             {
                 var word = part;
-                if (cur.Length > 0 && LineWidth(cur + word.TrimEnd(), map[curStart]) > max)
+                if (cur.Length > 0 && LineWidth(cur + word.TrimEnd(), Map(curStart)) > max)
                 {
-                    lines.Add((cur.ToString(), map[curStart]));
+                    lines.Add((cur.ToString(), Map(curStart)));
                     curStart += cur.Length;
                     cur.Clear();
                 }
-                while (cur.Length == 0 && word.TrimEnd().Length > 1 && LineWidth(word.TrimEnd(), map[curStart]) > max)
+                while (cur.Length == 0 && word.TrimEnd().Length > 1 && LineWidth(word.TrimEnd(), Map(curStart)) > max)
                 {
                     int k = 1;
-                    while (k < word.Length && !char.IsWhiteSpace(word[k]) && LineWidth(word[..(k + 1)], map[curStart]) <= max) k++;
-                    lines.Add((word[..k], map[curStart]));
+                    while (k < word.Length && !char.IsWhiteSpace(word[k]) && LineWidth(word[..(k + 1)], Map(curStart)) <= max) k++;
+                    lines.Add((word[..k], Map(curStart)));
                     curStart += k;
                     word = word[k..];
                 }
                 cur.Append(word);
             }
-            lines.Add((cur.ToString(), map[curStart]));
+            lines.Add((cur.ToString(), Map(curStart)));
             if (keep && p.Length > 0)
             {
                 var made = new List<(string Line, int Rel)>(lines.Count - first);
@@ -449,23 +471,70 @@ public class AsTextField : AsInteractiveObject
         Html = html ?? "";
         IsHtml = true;
         var src = translate ? Tr(Html) : Html;
-        var (s, formats) = HtmlText.Parse(src, multiline, '\r', perChar: true);
-        bool endBreak = s.EndsWith('\r') && Regex.IsMatch(Html, "</p>\\s*$", RegexOptions.IgnoreCase);
-        if (endBreak) s = s[..^1];
+        var parser = new HtmlText.Parser(multiline, '\r', false, true, src.Length);
+        parser.Feed(src);
+        bool endBreak = parser.Length > 0 && parser.At(parser.Length - 1) == '\r' && EndsParagraph(Html);
+        string s = parser.Text(endBreak ? 1 : 0);
         if (translate && src == Html && s != Html && Tr(s) is var t && t != s) { SetHtml(t, false); return; }
         Text = s;
-        SetFormats(formats, endBreak);
+        SetFormats(parser.Formats, parser.Styled, endBreak);
+        htmlParser = translate && src == Html ? parser : null;      // what appendHtml goes on from
+        htmlParsed = Html;
+    }
+
+    /// <summary>The html ends with an end P and white space only (the line break its end makes is not kept in the text).</summary>
+    static bool EndsParagraph(string html)
+    {
+        var h = html.AsSpan().TrimEnd();
+        return h.EndsWith("</p>", StringComparison.OrdinalIgnoreCase);
+    }
+
+    HtmlText.Parser htmlParser;
+    string htmlParsed;      // the html the parser holds: Html while nothing else has set the text since
+
+    /// <summary>
+    /// TextFieldEx.appendHtml: the html is parsed on to the document (DocView::AppendHtml, sfr_render_03b.cpp:277 / :287, calls
+    /// StyledText::ParseHtml on the appended string only), so the cost does not grow with the text already there. The elements
+    /// the text left open and the format around them carry over, as they do when the whole html is parsed again (what this does
+    /// when the field's text did not come from an html text set here, or the end of it could join the appended html).
+    /// </summary>
+    public void AppendHtml(string add)
+    {
+        add ??= "";
+        var p = htmlParser;
+        if (p != null && p.Continuable && IsHtml && ReferenceEquals(htmlParsed, Html) && ReferenceEquals(formatsText, Text) && Html.Length > 0 && Html[0] != '$')
+        {
+            var whole = Html + add;
+            p.Feed(add);
+            bool endBreak = p.Length > 0 && p.At(p.Length - 1) == '\r' && EndsParagraph(whole);
+            if (p.Length - (endBreak ? 1 : 0) is var n && (n < 2 || p.At(0) != '$'))
+            {
+                string s = p.Text(endBreak ? 1 : 0);
+                Html = whole;
+                Text = s;
+                SetFormats(p.Formats, p.Styled, endBreak);
+                htmlParsed = Html;
+                return;
+            }
+            htmlParser = null;
+            SetHtml(whole);
+            return;
+        }
+        SetHtml((Html ?? System.Net.WebUtility.HtmlEncode(Text)) + add);
     }
 
     /// <summary>The chars' html formats (<see cref="SetHtml"/>), for <see cref="Text"/> while it is the html's text;
-    /// <see cref="formatsBreak"/>: the dropped line break the last format is for.</summary>
+    /// <see cref="formatsBreak"/>: the dropped line break the last format is for. The array may be longer than the text (the
+    /// parser's, which grows in place as html is appended): what it holds past the text is the field's own format.</summary>
     HtmlFormat[] formats;
     string formatsText;
     bool formatsBreak;
 
-    void SetFormats(HtmlFormat[] f, bool endBreak)
+    void SetFormats(HtmlFormat[] f, bool endBreak) => SetFormats(f, f != null && Array.Exists(f, x => !x.IsPlain), endBreak);
+
+    void SetFormats(HtmlFormat[] f, bool styled, bool endBreak)
     {
-        formats = f != null && Array.Exists(f, x => !x.IsPlain) ? f : null;
+        formats = f != null && styled ? f : null;
         formatsText = Text;
         formatsBreak = endBreak;
     }
