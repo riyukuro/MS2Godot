@@ -335,12 +335,10 @@ public partial class GameFlow : Node
                 var list = Session.List();
                 var victim = Session.SelectedIndex >= 0 && Session.SelectedIndex < list.Count ? list[Session.SelectedIndex] : null;
                 if (victim == null) return;
+                if (GetTree().CurrentScene is not CharacterListScene { Controller: { } dialog }) return;
                 Ui.MessageBoxLayer.Ensure(this);
                 var k = DeleteConstants();
-                FrontEndBoxes.DeleteConfirm(victim, k.Level, k.Wait, new FrontEndBoxes.DeleteListener(victim.User.Name, () =>
-                {
-                    if (Net.LiveSession.Instance is { } live && !live.Busy) DeleteLive(live, victim);
-                }));
+                FrontEndBoxes.DeleteConfirm(victim, k.Level, k.Wait, dialog);
             }
             else if (method == UICharacterListDialogContract.ToHost.OnGameStart && a.Length > 0)
             {
@@ -404,10 +402,28 @@ public partial class GameFlow : Node
         return k;
     }
 
-    async void DeleteLive(Net.LiveSession live, CharacterEntry victim)
+    /// <summary>
+    /// The character list's delete requests (CharacterManagement 2 / 3 / 4: SendCharacterManagementMode2, CancelDelete,
+    /// CheckDelete) for character <paramref name="sn"/>, sent on the live session; the answer goes to the dialog
+    /// (UICharacterListDialog::OnCharacterListPacket modes 2, 5 and 6). Offline nothing is sent and the dialog takes
+    /// requests again.
+    /// </summary>
+    public static void Manage(CharacterIdCommand command, string sn) => instance?.ManageLive(command, sn);
+
+    async void ManageLive(CharacterIdCommand command, string sn)
     {
-        var m = await live.DeleteAsync(victim);
-        if (m is { Command: CharacterListCommand.DeleteEntry, Error: 0 }) Go(State.Lobby);
+        var entry = Session.List().FirstOrDefault(c => c.User.CharacterId.ToString(System.Globalization.CultureInfo.InvariantCulture) == sn);
+        var m = entry != null && Net.LiveSession.Instance is { Busy: false } live ? await live.ManageAsync(command, entry) : null;
+        if (GetTree().CurrentScene is not CharacterListScene { Controller: { } dialog }) return;
+        if (m == null) { dialog.DeleteUnanswered(); return; }
+        Ui.MessageBoxLayer.Ensure(this);
+        string id = m.CharacterId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        switch (m.Command)
+        {
+            case CharacterListCommand.DeleteEntry: dialog.OnDeleteEntry(m.Error, id); break;
+            case CharacterListCommand.BeginDelete: dialog.OnBeginDelete(id, m.Error, m.DeleteTime); break;
+            case CharacterListCommand.CancelDelete: dialog.OnCancelDelete(id, m.Error); break;
+        }
     }
 
     async void EnterLive(Net.LiveSession live, CharacterEntry chosen)

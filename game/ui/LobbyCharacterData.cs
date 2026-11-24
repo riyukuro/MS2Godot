@@ -84,6 +84,6 @@ public sealed class LobbyCharacterData
         string img = images.Path(u.CharacterId, images.Mode == 1 ? "" : e.Picture ?? "", true);
         if (string.IsNullOrEmpty(img)) img = NoProfile;
         return new LobbyCharacterRow(u.Name, u.Gender, u.Job, levelJob, img, Date(u.CreationTime), LastPos(u.MapA),
-            u.CharacterId.ToString(CultureInfo.InvariantCulture));
+            u.CharacterId.ToString(CultureInfo.InvariantCulture), e.DeleteTime);
     }
 }

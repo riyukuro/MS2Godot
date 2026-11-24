@@ -187,4 +187,248 @@ public class CharacterListTests
         TestContext.WriteLine($"after: label {Rt.ToString(h.Get(h.Entity, "currentLabel"))} frame {h.Get(h.Entity, "currentFrame")}");
         Assert.That(started, Is.EqualTo(new[] { "12" }), "the popdown's end sends the start");
     }
+
+    // ---- the character delete (UICharacterListDialog::OnCharacterListPacket modes 2, 5, 6; ShowDeleteError) ----------
+
+    /// <summary>ShowDeleteError (@0x1418f47e0, :1959-1977): the client's string for each code; any other is s_char_err_destroy
+    /// with the code (BlockFormat(0x17, err)).</summary>
+    static readonly Dictionary<int, string> DeleteErrorKeys = new()
+    {
+        [1] = "s_char_err_already_destroy", [2] = "s_char_err_exist_ugc_map", [3] = "s_char_err_guild_master",
+        [4] = "s_char_err_guild", [5] = "s_char_err_ugc_market", [6] = "s_char_err_black_market_count",
+        [7] = "s_char_err_unread_mail", [8] = "s_char_err_no_destroy_wait", [9] = "s_char_err_meso_market_count",
+        [11] = "s_char_err_wedding",
+    };
+
+    /// <summary>The codes run: the server's set (CharacterDeleteError 1-11 and 255), and codes the client has no text for.</summary>
+    static readonly int[] DeleteCodes = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 255, -1 };
+
+    static string Key(string k) => "<" + k + ">" + (k is "s_char_err_destroy" or "s_char_err_next_delete_char_date" or "s_char_delete_waiting"
+        or "s_char_ask_revival_char" or "s_char_ask_delete_final" ? "{0}" : "");
+
+    static string ExpectedError(int code) =>
+        DeleteErrorKeys.TryGetValue(code, out var k) ? Key(k) : "<s_char_err_destroy>" + ((uint)code).ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    sealed class DeleteRig
+    {
+        public UiHost H; public CharacterListController C;
+        public long Now = 1_800_000_000, Tick = 1_000_000;
+        public readonly List<(string Text, int Type, string Tag)> Boxes = new();
+        public readonly List<string> Deletes = new(), Cancels = new(), Finals = new();
+        public object Renderer(int i) => H.Invoke(H.Entity, "getCharacterRenderer", i);
+        public bool DeleteShown(int i) => Rt.ToBoolean(H.Get(H.Get(Renderer(i), "m_delete"), "visible"));
+        public string DeleteLabel(int i) => Rt.ToString(H.Get(H.Get(H.Get(Renderer(i), "m_delete"), "m_label"), "text"));
+        public bool FinalShown(int i) => Rt.ToBoolean(H.Get(H.Get(Renderer(i), "m_finalDelete"), "visible"));
+        public string Sn(int i) => Rt.ToString(H.Get(H.Get(Renderer(i), "data"), "charSN"));
+        /// <summary>The movie list's rows that hold a character (the list fills up to maxRow with empty slots).</summary>
+        public int Rows
+        {
+            get
+            {
+                var dp = H.Get(H.Get(H.Entity, "m_charlist"), "dataProvider");
+                int n = (int)Rt.ToNumber(H.Get(dp, "length")), full = 0;
+                for (int i = 0; i < n; i++)
+                    if (H.Get(dp, i.ToString(System.Globalization.CultureInfo.InvariantCulture)) is { } row && Rt.ToString(H.Get(row, "charSN")) is { Length: > 0 } sn && sn != "undefined") full++;
+                return full;
+            }
+        }
+    }
+
+    Func<string, string> savedCommon;
+    [SetUp] public void CommonKeys() { savedCommon = Ms2.Ui.Hud.MessageBoxData.CommonByKey; Ms2.Ui.Hud.MessageBoxData.CommonByKey = Key; }
+    [TearDown] public void RestoreCommon() => Ms2.Ui.Hud.MessageBoxData.CommonByKey = savedCommon;
+
+    static DeleteRig LoadDelete(params LobbyCharacterRow[] rows)
+    {
+        var rig = new DeleteRig();
+        var (h, c) = Load(c =>
+        {
+            c.ServerNow = () => rig.Now;
+            c.ServerTick = () => rig.Tick;
+            c.DateText = unix => "date" + unix;
+            c.ShowBox = (text, type, tag) => rig.Boxes.Add((text, type, tag));
+            c.DeleteRequest += rig.Deletes.Add;
+            c.CancelDeleteRequest += rig.Cancels.Add;
+            c.FinalDeleteRequest += rig.Finals.Add;
+        }, rows);
+        rig.H = h; rig.C = c;
+        c.Previewed(rows.Length > 0 ? rows[0].CharSN : null);
+        c.FadeInComplete();
+        return rig;
+    }
+
+    [Test]
+    public void EveryDeleteErrorShowsItsTextAndKeepsTheList()
+    {
+        // modes 2 (DeleteEntry), 5 (BeginDelete) and 6 (CancelDelete) with each code: one plain box (type 0, no tag) with the
+        // code's text, the two characters still in the dialog and the movie, and the row in no delete state. Mode 5's code 10 is
+        // s_char_err_next_delete_char_date with the time (FUN_14083bdc0); in modes 2 and 6 code 10 has no text of its own.
+        var rig = LoadDelete(Row("A", "11", "d.png"), Row("B", "12", "d.png"));
+        var c = rig.C;
+        int runs = 0;
+        foreach (int mode in new[] { 2, 5, 6 })
+            foreach (int code in DeleteCodes)
+            {
+                rig.Boxes.Clear();
+                if (mode == 2) Assert.That(c.OnDeleteEntry(code, "11"), Is.EqualTo(-1));
+                else if (mode == 5) c.OnBeginDelete("11", code, rig.Now + 3600);
+                else c.OnCancelDelete("11", code);
+                string want = mode == 5 && code == 10 ? "<s_char_err_next_delete_char_date>date" + (rig.Now + 3600) : ExpectedError(code);
+                Assert.That(rig.Boxes, Is.EqualTo(new[] { (want, 0, "") }), $"mode {mode} code {code}");
+                Assert.That(c.Characters.Select(r => r.CharSN), Is.EqualTo(new[] { "11", "12" }), $"mode {mode} code {code}: the list");
+                Assert.That(rig.Rows, Is.EqualTo(2), $"mode {mode} code {code}: the movie's rows");
+                Assert.That(rig.DeleteShown(0), Is.False, $"mode {mode} code {code}: the row's delete state");
+                Assert.That(c.DeleteTimeOf("11"), Is.Zero);
+                runs++;
+            }
+        TestContext.WriteLine($"delete errors: {runs} answers checked ({DeleteCodes.Length} codes x 3 modes)");
+    }
+
+    [Test]
+    public void ARefusedDeleteOfAWaitingCharacterStopsItsCountdown()
+    {
+        // mode 2 with an error for a character in its wait (:952-958): its seconds are zeroed (FUN_1418e9ed0(0)), the error
+        // shown, and SetDeleteState takes it off the pending list and puts the row back to no delete state; the delete time stays
+        var rig = LoadDelete(Row("A", "11", "d.png") with { DeleteTime = 1_800_000_000 + 7200 }, Row("B", "12", "d.png"));
+        Assert.That(rig.DeleteShown(0), Is.True);
+        Assert.That(rig.C.PendingDeletes, Is.EqualTo(new[] { "11" }));
+        rig.C.OnDeleteEntry(7, "11");
+        Assert.That(rig.Boxes, Is.EqualTo(new[] { (Key("s_char_err_unread_mail"), 0, "") }));
+        Assert.That(rig.C.PendingDeletes, Is.Empty);
+        Assert.That(rig.DeleteShown(0), Is.False);
+        Assert.That(rig.C.DeleteSecondsLeft("11"), Is.Zero);
+        Assert.That(rig.C.DeleteTimeOf("11"), Is.EqualTo(1_800_000_000 + 7200));
+    }
+
+    [Test]
+    public void TheDeleteBoxNeedsTheCharactersName()
+    {
+        // OnMessage "deletePC,<typed>" (:745-762): MyPC's name, any case, sends CharacterManagement 2 once (m_1d8) until the answer;
+        // another name, or none, shows s_char_err_delete_name; a cancel closes the box only
+        var rig = LoadDelete(Row("Ara", "11", "d.png"), Row("B", "12", "d.png"));
+        var c = rig.C;
+        c.OnMessageBox(null, 1, "deletePC,Ara");
+        Assert.That(rig.Deletes, Is.Empty, "cancel");
+        c.OnMessageBox(null, 0, "deletePC,Bra");
+        c.OnMessageBox(null, 0, "deletePC,");
+        Assert.That(rig.Boxes, Is.EqualTo(new[] { (Key("s_char_err_delete_name"), 0, ""), (Key("s_char_err_delete_name"), 0, "") }));
+        c.OnMessageBox(null, 0, "deletePC,aRA");
+        c.OnMessageBox(null, 0, "deletePC,Ara");
+        Assert.That(rig.Deletes, Is.EqualTo(new[] { "11" }), "sent once while unanswered");
+        c.OnDeleteEntry(7, "11");
+        c.OnMessageBox(null, 0, "deletePC,Ara");
+        Assert.That(rig.Deletes, Is.EqualTo(new[] { "11", "11" }), "the answer lets the next one go");
+    }
+
+    [Test]
+    public void ADeleteGoesFromTheListAndTheMovie()
+    {
+        // mode 2 error 0 (:944-950): EraseCharacter, then CharacterRemoved: the movie's deleteCharacter(index), the input on; no box
+        var rig = LoadDelete(Row("A", "11", "d.png"), Row("B", "12", "d.png"));
+        bool emptied = false;
+        rig.C.ListEmptied += () => emptied = true;
+        Assert.That(rig.C.OnDeleteEntry(0, "11"), Is.EqualTo(0));
+        Assert.That(rig.Boxes, Is.Empty);
+        Assert.That(rig.C.Characters.Select(r => r.CharSN), Is.EqualTo(new[] { "12" }));
+        Assert.That(rig.Rows, Is.EqualTo(1));
+        Assert.That(rig.Sn(0), Is.EqualTo("12"));
+        Assert.That(rig.C.InputOn, Is.True);
+        Assert.That(emptied, Is.False);
+        rig.C.OnDeleteEntry(0, "12");
+        Assert.That(rig.Rows, Is.Zero);
+        Assert.That(emptied, Is.True, "the last one clears the preview");
+    }
+
+    [Test]
+    public void TheDeleteWaitCountsDownThenOffersTheFinalDelete()
+    {
+        // mode 5 error 0 (:970-986): FUN_1418e9fa0(time) and requestDelete(index, seconds), the renderer in the wait state on the
+        // pending list; vfunc_15 writes s_char_delete_waiting with the time left each frame and at 0 invokes readyDelete (the final
+        // delete and restore buttons). OnGameStart refuses a character with a delete time (:2259).
+        var rig = LoadDelete(Row("A", "11", "d.png"), Row("B", "12", "d.png"));
+        var c = rig.C;
+        Ms2.Ui.Hud.MessageBoxData.CommonByKey = k => k switch
+        {
+            "s_char_delete_waiting" => "wait {0}", "s_common_hour_min" => "{0}h{1}m", "s_common_min_sec" => "{0}m{1}s",
+            "s_common_sec" => "{0}s", "s_common_min" => "{0}m", "s_common_hour" => "{0}h", _ => Key(k),
+        };
+        c.OnBeginDelete("11", 0, rig.Now + 90_060);
+        Assert.That(rig.Boxes, Is.Empty);
+        Assert.That(rig.DeleteShown(0), Is.True, "the wait state");
+        Assert.That(rig.FinalShown(0), Is.False);
+        Assert.That(c.PendingDeletes, Is.EqualTo(new[] { "11" }));
+        c.Tick();
+        Assert.That(rig.DeleteLabel(0), Is.EqualTo("wait 25h1m"));
+        rig.Tick += 90_000_000;
+        c.Tick();
+        Assert.That(rig.DeleteLabel(0), Is.EqualTo("wait 1m0s").Or.EqualTo("wait 1m"));
+        Assert.That(c.OnCallback("OnGameStart", new object[] { "11" }), Is.False, "no game start while deleting");
+        Assert.That(c.Starting, Is.False);
+        rig.Tick += 60_000;
+        c.Tick();
+        Assert.That(c.PendingDeletes, Is.Empty);
+        Assert.That(rig.FinalShown(0), Is.True, "readyDelete: the final delete button");
+
+        // the ready state's buttons ask first (type 1 boxes); the final delete's OK sends CharacterManagement 4 once
+        rig.H.Invoke(rig.Renderer(0), "onClickFinalDelete", (object)null);
+        Assert.That(rig.Boxes, Is.EqualTo(new[] { ("<s_char_ask_delete_final>A", 1, "finalDelete,11") }));
+        c.OnMessageBox(null, 1, "finalDelete,11");
+        Assert.That(rig.Finals, Is.Empty, "cancel");
+        c.OnMessageBox(null, 0, "finalDelete,11");
+        c.OnMessageBox(null, 0, "finalDelete,11");
+        Assert.That(rig.Finals, Is.EqualTo(new[] { "11" }));
+        rig.Boxes.Clear();
+        rig.H.Invoke(rig.Renderer(0), "onClickRevivalChar", (object)null);
+        Assert.That(rig.Boxes, Is.EqualTo(new[] { ("<s_char_ask_revival_char>A", 1, "revivalChar,11") }));
+        c.OnMessageBox(null, 0, "revivalChar,11");
+        Assert.That(rig.Cancels, Is.EqualTo(new[] { "11" }), "the restore's OK sends CharacterManagement 3");
+        c.OnDeleteEntry(0, "11");
+        Assert.That(c.Characters.Select(r => r.CharSN), Is.EqualTo(new[] { "12" }));
+    }
+
+    [Test]
+    public void TheWaitsCancelButtonEndsTheWait()
+    {
+        // the wait state's cancel button (onClickCancelDelete :2314): CancelDelete zeroes the seconds and sends
+        // CharacterManagement 3; mode 6 error 0 (:1006-1013) clears the delete time and puts the row back (SetDeleteState)
+        var rig = LoadDelete(Row("A", "11", "d.png") with { DeleteTime = 1_800_000_000 + 600 }, Row("B", "12", "d.png"));
+        var c = rig.C;
+        Assert.That(rig.DeleteShown(0), Is.True, "a listed character with a delete time loads in its wait (waitDelTime)");
+        Assert.That(rig.FinalShown(0), Is.False);
+        rig.H.Invoke(rig.Renderer(0), "onClickCancelDelete", (object)null);
+        Assert.That(rig.Cancels, Is.EqualTo(new[] { "11" }));
+        Assert.That(c.DeleteSecondsLeft("11"), Is.Zero);
+        c.OnCancelDelete("11", 0);
+        Assert.That(rig.DeleteShown(0), Is.False);
+        Assert.That(c.PendingDeletes, Is.Empty);
+        Assert.That(c.DeleteTimeOf("11"), Is.Zero);
+        Assert.That(c.OnCallback("OnGameStart", new object[] { "11" }), Is.True, "the game start is back");
+    }
+
+    [Test]
+    public void ACharacterPastItsWaitLoadsReadyForTheFinalDelete()
+    {
+        // waitDelTime 0 (FUN_1418e9fa0 of a past time): the renderer's requestDelete(0) is the ready state; nothing pending
+        var rig = LoadDelete(Row("A", "11", "d.png") with { DeleteTime = 1_800_000_000 - 5 });
+        Assert.That(rig.DeleteShown(0), Is.True);
+        Assert.That(rig.FinalShown(0), Is.True);
+        Assert.That(rig.C.PendingDeletes, Is.Empty);
+        Assert.That(rig.C.OnCallback("OnGameStart", new object[] { "11" }), Is.False);
+    }
+
+    [Test]
+    public void EveryDeleteStringIsInTheData()
+    {
+        // the keys the delete flow shows, in this data's common strings. The GMS2 data's stringcommon has no s_char_err_wedding
+        // (KMS2 and KMS2_DEV have every key): that code's box is empty there, as GetStringCommonByKey finds nothing
+        Load();
+        var common = new Ms2.Formats.World.GameStrings(packs, "en").Common();
+        var keys = DeleteErrorKeys.Values.Concat(new[] { "s_char_err_destroy", "s_char_err_next_delete_char_date", "s_char_err_delete_name",
+            "s_char_delete_waiting", "s_char_ask_delete_final", "s_char_ask_revival_char", "s_char_ask_delete", "s_char_ask_delete_with_wait",
+            "s_char_ask_delete_confirm_checkbox" }).ToArray();
+        var missing = keys.Where(k => string.IsNullOrEmpty(common(k))).ToArray();
+        TestContext.WriteLine($"delete strings: {keys.Length} keys, {missing.Length} missing: {string.Join(", ", missing)}");
+        Assert.That(missing, Is.SubsetOf(new[] { "s_char_err_wedding" }));
+        if (common("s_char_ask_delete") is { } ask && ask.Contains("{0}") == false) Assert.Fail("s_char_ask_delete has no name argument");
+    }
 }

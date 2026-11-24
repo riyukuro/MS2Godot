@@ -1,18 +1,22 @@
+using Ms2.Quest;
+using Ms2.Ui.Hud;
+
 namespace Ms2.Ui;
 
 /// <summary>
 /// What the character list hands the movie for one character: the object FUN_1418f42c0 (uicharacterlistdialog.cpp:1933)
-/// fills for buildCharacterList / addCharacter.
+/// fills for buildCharacterList / addCharacter. <paramref name="DeleteTime"/> is the entry's delete time (CCharacterInfo::Read,
+/// :348: unix seconds, 0 without a delete wait), which the row's waitDelTime is made from.
 /// </summary>
 public sealed record LobbyCharacterRow(string CharName, int Gender, int JobCode, string LevelJob, string ImgPath,
-    string CreatedDate, string LastPos, string CharSN);
+    string CreatedDate, string LastPos, string CharSN, long DeleteTime = 0);
 
 /// <summary>
 /// UICharacterListDialog (ms2/client/ms2/uicharacterlistdialog.cpp): the character select dialog's C++ side over the
 /// uicharacterlistdialog movie (scaleform.ms2.controls.dialog.CharacterListDialog). What the client does with the answers
 /// (the preview, the game start, character creation, the server list) is the host's, through the events.
 /// </summary>
-public sealed class CharacterListController : UiController
+public sealed class CharacterListController : UiController, IMessageBoxListener
 {
     public override string Movie => "uicharacterlistdialog";
 
@@ -77,6 +81,9 @@ public sealed class CharacterListController : UiController
         fadedIn = true;
         popdownScene = old.popdownScene;   // m_1d4 lives with the dialog, which the client keeps open over the map load
         KeepRow = old.ListIndex;
+        // the characters' delete clocks (CCharacterInfo m_nSeconds / m_nStarted) and m_1d8 live in the kept dialog too
+        foreach (var kv in old.clocks) clocks[kv.Key] = kv.Value;
+        deleteSent = old.deleteSent;
     }
 
     /// <summary>The row to select on the rebuilt list (<see cref="CarryFrom"/>); null for RefreshLobby's own pick.</summary>
@@ -149,13 +156,26 @@ public sealed class CharacterListController : UiController
         select = count == 0 ? -1 : Math.Max(0, Math.Min(count - 1, select));
         if (KeepRow is int keep) select = keep;
         Host.Invoke(Host.Entity, "buildCharacterList", rows, select, CharacterLimit);
+        // :1361-1376: each character with seconds left (compared unsigned) gets its renderer in the pending list
+        for (int i = 0; i < Characters.Count; i++)
+            if ((uint)SecondsLeft(Clock(Characters[i].CharSN)) > 0
+                && Host.Invoke(Host.Entity, "getCharacterRenderer", i) is Avm2.Flash.AsDisplayObject renderer)
+                AddPending(Characters[i].CharSN, renderer);
         built = true;
     }
 
-    /// <summary>FUN_1418f42c0 (uicharacterlistdialog.cpp:1933-1956): one character's object.</summary>
-    object Row(LobbyCharacterRow c) => Host.Obj(
-        ("charname", c.CharName ?? ""), ("gender", c.Gender), ("jobcode", c.JobCode), ("levelJob", c.LevelJob ?? ""),
-        ("imgPath", c.ImgPath ?? ""), ("createddate", c.CreatedDate ?? ""), ("lastpos", c.LastPos ?? ""), ("charSN", c.CharSN ?? ""));
+    /// <summary>FUN_1418f42c0 (uicharacterlistdialog.cpp:1933-1956): one character's object; a character with a delete time
+    /// (FUN_1418ea020() > 0) gets waitDelTime, its seconds left (FUN_1418e9f30), which the renderer's setData turns into
+    /// requestDelete: the wait state, or the ready state at 0.</summary>
+    object Row(LobbyCharacterRow c)
+    {
+        var o = Host.Obj(
+            ("charname", c.CharName ?? ""), ("gender", c.Gender), ("jobcode", c.JobCode), ("levelJob", c.LevelJob ?? ""),
+            ("imgPath", c.ImgPath ?? ""), ("createddate", c.CreatedDate ?? ""), ("lastpos", c.LastPos ?? ""), ("charSN", c.CharSN ?? ""));
+        var clock = Clock(c.CharSN);
+        if (clock.DeleteTime > 0) Host.Set(o, "waitDelTime", (uint)SecondsLeft(clock));
+        return o;
+    }
 
     /// <summary>vfunc_28 (uicharacterlistdialog.cpp:2207-2440).</summary>
     public override bool OnCallback(string name, object[] args)
@@ -186,7 +206,7 @@ public sealed class CharacterListController : UiController
             var found = Find(Arg(args));
             selectedSn = found?.CharSN;
             if (found == null) return false;
-            // STILL-OPEN: the deletion wait (spFound->FUN_1418ea020() > 0 returns 0, :2259) is not in the row data
+            if (Clock(found.CharSN).DeleteTime > 0) return false;   // a character with a delete time does not start (:2259)
             BeginGameStart();
             return true;
         }
@@ -226,6 +246,24 @@ public sealed class CharacterListController : UiController
             {
                 (Characters[index], Characters[other]) = (Characters[other], Characters[index]);
                 Swapped?.Invoke(index, other);
+            }
+            return true;
+        }
+        if (Is(name, "onClickCancelDelete"))
+        {
+            // :2314-2322: the renderer's cancel button in the wait state
+            if (args.Length > 0) CancelDelete(Find(Arg(args)));
+            return true;
+        }
+        if (Is(name, "onClickRevivalChar") || Is(name, "onClickFinalDelete"))
+        {
+            // :2324-2356: the ready state's buttons ask first, a type 1 box (OK / cancel) answered in OnMessageBox:
+            // s_char_ask_revival_char (8) tagged "revivalChar,<id>", s_char_ask_delete_final (6) tagged "finalDelete,<id>"
+            if (args.Length > 0 && Find(Arg(args)) is { } found)
+            {
+                bool revival = Is(name, "onClickRevivalChar");
+                ShowBox(ClientFormat.Format(MessageBoxData.Common(revival ? 8 : 6), found.CharName ?? ""), 1,
+                    (revival ? "revivalChar," : "finalDelete,") + found.CharSN);
             }
             return true;
         }
@@ -324,6 +362,317 @@ public sealed class CharacterListController : UiController
     {
         Host.Invoke(Host.Entity, "popdown");
         SetInput(false);
+    }
+
+    // ---- the character delete (uicharacterlistdialog.cpp) -------------------------------------------------------------
+
+    /// <summary>CCharacterInfo's delete fields: m_nDeleteTime (unix seconds, 0 for none), m_nSeconds (the wait left when it was
+    /// set) and m_nStarted (GetServerTick then, 0 for none).</summary>
+    sealed class DeleteClock { public long DeleteTime; public uint Seconds; public long Started; }
+
+    /// <summary>The characters' delete clocks by id; a character's is made from its row's delete time when first asked for,
+    /// as CCharacterInfo::Read does it (FUN_1418e9fa0(nDeleteTime), :348).</summary>
+    readonly Dictionary<string, DeleteClock> clocks = new();
+    /// <summary>m_1f0: the renderers in the wait state, with their character.</summary>
+    readonly List<(string Sn, object Renderer)> pending = new();
+    /// <summary>m_1d8: a delete request (mode 2 or 4) is out; cleared by the DeleteEntry and BeginDelete answers.</summary>
+    bool deleteSent;
+
+    /// <summary>GetServerTime: the server's clock, unix seconds.</summary>
+    public Func<long> ServerNow = () => DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+    /// <summary>CMainSystem::GetServerTick, milliseconds.</summary>
+    public Func<long> ServerTick = () => Environment.TickCount64;
+    /// <summary>FUN_14083bdc0(CMsTime(t), true, "/", ":"): a date and time as text.</summary>
+    public Func<long, string> DateText = unix => MailTexts.DateString(unix, 0);
+    /// <summary>ShowMessageBox(text, type, this, tag); the dialog is the listener (<see cref="OnMessageBox"/>).</summary>
+    public Action<string, int, string> ShowBox;
+
+    /// <summary>FUN_1418f13d0 -> SendCharacterManagementMode2 (:1520): CharacterManagement 2 for MyPC, the previewed character.</summary>
+    public event Action<string> DeleteRequest;
+    /// <summary>CancelDelete (:1537): CharacterManagement 3.</summary>
+    public event Action<string> CancelDeleteRequest;
+    /// <summary>CheckDelete (:1552): CharacterManagement 4, the final delete of a character whose wait is over.</summary>
+    public event Action<string> FinalDeleteRequest;
+    /// <summary>CharacterRemoved with the list left empty (:1404-1408): ClearPreviewCharacter and CloseDialog(0x4ef2).</summary>
+    public event Action ListEmptied;
+
+    public CharacterListController()
+    {
+        ShowBox = (text, type, tag) => MessageBoxQueue.ShowMessageBox(text, type, this, tag);
+    }
+
+    DeleteClock Clock(string sn)
+    {
+        sn ??= "";
+        if (clocks.TryGetValue(sn, out var c)) return c;
+        c = new DeleteClock();
+        clocks[sn] = c;
+        SetDeleteTime(c, Find(sn)?.DeleteTime ?? 0);
+        return c;
+    }
+
+    /// <summary>FUN_1418e9ed0 (:459): the seconds left from now, on the server tick.</summary>
+    void SetSeconds(DeleteClock c, uint seconds)
+    {
+        c.Seconds = seconds;
+        c.Started = seconds > 0 ? ServerTick() : 0;
+    }
+
+    /// <summary>FUN_1418e9fa0 (:480): the delete time and the seconds to it from GetServerTime (0 when it is past).</summary>
+    int SetDeleteTime(DeleteClock c, long deleteTime)
+    {
+        c.DeleteTime = deleteTime;
+        long now = ServerNow();
+        int seconds = now < deleteTime ? (int)(deleteTime - now) : 0;
+        SetSeconds(c, (uint)seconds);
+        return seconds;
+    }
+
+    /// <summary>FUN_1418e9f30 (:468): the seconds left, m_nSeconds less the whole seconds since m_nStarted (0 without a
+    /// wait). As in the client it goes below 0 when a second is skipped, which the unsigned callers read as a long wait.</summary>
+    int SecondsLeft(DeleteClock c)
+    {
+        if (c.Started > 0 && c.Seconds > 0)
+        {
+            uint passed = (uint)((ServerTick() - c.Started) / 1000);
+            return (int)(c.Seconds - passed);
+        }
+        return 0;
+    }
+
+    /// <summary>The seconds left of character <paramref name="sn"/>'s delete wait (FUN_1418e9f30).</summary>
+    public int DeleteSecondsLeft(string sn) => SecondsLeft(Clock(sn));
+    /// <summary>The delete time of character <paramref name="sn"/> (FUN_1418ea020), 0 without one.</summary>
+    public long DeleteTimeOf(string sn) => Clock(sn).DeleteTime;
+    /// <summary>The characters with a renderer in the pending list (m_1f0).</summary>
+    public IEnumerable<string> PendingDeletes => pending.Select(p => p.Sn);
+
+    /// <summary>AddPending (:1173): the renderer of a character in its wait, replacing the one it had.</summary>
+    void AddPending(string sn, object renderer)
+    {
+        int i = pending.FindIndex(p => p.Sn == sn);
+        if (i >= 0) pending[i] = (sn, renderer);
+        else pending.Add((sn, renderer));
+    }
+
+    /// <summary>SetDeleteState (@0x1418ef190, :1214): RemovePending, then the movie's cancelDelete(index): the row back to
+    /// no delete state.</summary>
+    void SetDeleteState(int index, string sn)
+    {
+        pending.RemoveAll(p => p.Sn == sn);
+        if (Host?.Entity != null) Host.Invoke(Host.Entity, "cancelDelete", index);
+    }
+
+    /// <summary>
+    /// vfunc_15 (@0x1418ead80, :649-678), every frame: each pending renderer's m_delete.m_label gets s_char_delete_waiting
+    /// (common string 3) with the time left (FUN_141b708a0(left, 0)); the first one at 0 leaves the list and its renderer
+    /// is invoked readyDelete (the final delete and restore buttons), and the pass ends there.
+    /// </summary>
+    public void Tick()
+    {
+        if (IsClosed || Host?.Entity == null || pending.Count == 0) return;
+        for (int i = 0; i < pending.Count; i++)
+        {
+            var (sn, renderer) = pending[i];
+            if (renderer == null) continue;
+            uint left = (uint)SecondsLeft(Clock(sn));
+            if (left > 0)
+            {
+                string text = ClientFormat.Format(MessageBoxData.Common(3), TimeSpanText(left, false));
+                if (Host.Get(renderer, "m_delete") is { } del && Host.Get(del, "m_label") is { } label) Host.Set(label, "text", text);
+            }
+            else
+            {
+                pending.RemoveAt(i);
+                Host.Invoke(renderer, "readyDelete");
+                return;
+            }
+        }
+    }
+
+    /// <summary>FUN_141b708a0 @0x141b708a0 (util.cpp:999): a time span as text (s_common ids 0x97b-0x980).</summary>
+    public static string TimeSpanText(uint seconds, bool showSeconds)
+    {
+        string F(int id, params object[] a) => ClientFormat.Format(MessageBoxData.Common(id), a);
+        if (seconds < 60) return F(0x97b, seconds);
+        if (seconds < 3600)
+        {
+            uint m = seconds / 60, s = seconds % 60;
+            return s == 0 ? F(0x97c, m) : F(0x97e, m, s);
+        }
+        uint h = seconds / 3600, mm = seconds / 60 % 60, rest = seconds % 60;
+        if (showSeconds && rest != 0) return F(0x980, h, mm, rest);
+        return mm == 0 ? F(0x97d, h) : F(0x97f, h, mm);
+    }
+
+    /// <summary>
+    /// ShowDeleteError (@0x1418f47e0, :1959-1977): the text of a delete error, shown in a plain box (ShowMessageBox(text, 0,
+    /// 0, "")): 1 s_char_err_already_destroy, 2 s_char_err_exist_ugc_map, 3 s_char_err_guild_master, 4 s_char_err_guild,
+    /// 5 s_char_err_ugc_market, 6 s_char_err_black_market_count, 7 s_char_err_unread_mail, 8 s_char_err_no_destroy_wait,
+    /// 9 s_char_err_meso_market_count, 11 s_char_err_wedding, any other s_char_err_destroy with the code.
+    /// </summary>
+    public static string DeleteErrorText(int error) => (uint)error switch
+    {
+        1 => MessageBoxData.Common(0x16),
+        2 => MessageBoxData.Common(0x15),
+        3 => MessageBoxData.Common(0x19),
+        4 => MessageBoxData.Common(0x1a),
+        5 => MessageBoxData.Common(0x1b),
+        6 => MessageBoxData.Common(0x1c),
+        7 => MessageBoxData.Common(0x1d),
+        8 => MessageBoxData.Common(0x1e),
+        9 => MessageBoxData.CommonByKey("s_char_err_meso_market_count") ?? "",
+        11 => MessageBoxData.CommonByKey("s_char_err_wedding") ?? "",
+        _ => ClientFormat.Format(MessageBoxData.Common(0x17), (uint)error),
+    };
+
+    void ShowDeleteError(int error) => ShowBox(DeleteErrorText(error), 0, "");
+
+    /// <summary>
+    /// OnCharacterListPacket mode 2, DeleteEntry (:940-962): error 0 erases the character (EraseCharacter) and the movie's row
+    /// with it (CharacterRemoved); any other zeroes its seconds, shows the error (ShowDeleteError) and puts its row back to
+    /// no delete state (SetDeleteState). Then m_1d8 = 0. Returns the index the character had, -1 when it stayed.
+    /// </summary>
+    public int OnDeleteEntry(int error, string sn)
+    {
+        int index = -1;
+        if (error == 0)
+        {
+            index = Characters.FindIndex(c => c.CharSN == sn);
+            if (index >= 0) Characters.RemoveAt(index);
+        }
+        if (!IsClosed)
+        {
+            if (index >= 0) CharacterRemoved(sn, index);
+            else
+            {
+                int at = Characters.FindIndex(c => c.CharSN == sn);
+                if (at >= 0) SetSeconds(Clock(sn), 0);
+                ShowDeleteError(error);
+                SetDeleteState(at, sn);
+            }
+        }
+        deleteSent = false;
+        return index;
+    }
+
+    /// <summary>
+    /// CharacterRemoved (@0x1418f0e20, :1399-1414): the movie's deleteCharacter(index) and the dialog's input on; with no
+    /// character left the preview goes (<see cref="ListEmptied"/>). STILL-OPEN: the removal of the character's own folder
+    /// under the common resource path (DeleteDirectoryTree) is not ported; nothing is kept there yet.
+    /// </summary>
+    void CharacterRemoved(string sn, int index)
+    {
+        clocks.Remove(sn);
+        pending.RemoveAll(p => p.Sn == sn);
+        if (Host?.Entity == null) return;
+        Host.Invoke(Host.Entity, "deleteCharacter", index);
+        SetInput(true);
+        if (selectedSn == sn) selectedSn = null;
+        if (Characters.Count == 0) ListEmptied?.Invoke();
+    }
+
+    /// <summary>
+    /// OnCharacterListPacket mode 5, BeginDelete (:964-1000), skipped while the dialog is closed: error 0 sets the delete time
+    /// (FUN_1418e9fa0) and, with a time, the movie's requestDelete(index, seconds), whose renderer joins the pending list;
+    /// error 10 shows s_char_err_next_delete_char_date with the time (FUN_14083bdc0); any other ShowDeleteError. Then m_1d8 = 0.
+    /// </summary>
+    public void OnBeginDelete(string sn, int error, long deleteTime)
+    {
+        if (!IsClosed)
+        {
+            if (error == 0)
+            {
+                int index = Characters.FindIndex(c => c.CharSN == sn);
+                if (index >= 0)
+                {
+                    int seconds = SetDeleteTime(Clock(sn), deleteTime);
+                    if (deleteTime > 0 && Host?.Entity != null
+                        && Host.Invoke(Host.Entity, "requestDelete", index, (uint)seconds) is Avm2.Flash.AsDisplayObject renderer)
+                        AddPending(sn, renderer);
+                }
+            }
+            else if (error == 10)
+                ShowBox(ClientFormat.Format(MessageBoxData.CommonByKey("s_char_err_next_delete_char_date") ?? "", DateText(deleteTime)), 0, "");
+            else ShowDeleteError(error);
+        }
+        deleteSent = false;
+    }
+
+    /// <summary>
+    /// OnCharacterListPacket mode 6, CancelDelete (:1002-1018), skipped while the dialog is closed: error 0 clears the delete
+    /// time (FUN_1418e9fa0(0)) and puts the row back to no delete state (SetDeleteState); any other ShowDeleteError.
+    /// </summary>
+    public void OnCancelDelete(string sn, int error)
+    {
+        if (IsClosed) return;
+        if (error == 0)
+        {
+            int index = Characters.FindIndex(c => c.CharSN == sn);
+            if (index >= 0)
+            {
+                SetDeleteTime(Clock(sn), 0);
+                SetDeleteState(index, sn);
+            }
+        }
+        else ShowDeleteError(error);
+    }
+
+    /// <summary>CancelDelete (@0x1418f1940, :1537): the character's seconds zeroed, then CharacterManagement 3.</summary>
+    void CancelDelete(LobbyCharacterRow c)
+    {
+        if (c == null) return;
+        SetSeconds(Clock(c.CharSN), 0);
+        CancelDeleteRequest?.Invoke(c.CharSN);
+    }
+
+    /// <summary>The request m_1d8 waits for was not answered (the connection failed): the dialog takes delete requests again.
+    /// The client has no such step; its session ends with the connection.</summary>
+    public void DeleteUnanswered() => deleteSent = false;
+
+    /// <summary>
+    /// OnMessage (@0x1418eb540, :735-785) for the dialog's boxes: any answer closes the box (FUN_14151f200); an OK splits the
+    /// tag at the first ',': "deletePC,&lt;typed&gt;" sends the delete when the typed name is MyPC's (CompareNoCase), else
+    /// s_char_err_delete_name (FUN_140d73bc0(0x18)); "revivalChar,&lt;id&gt;" cancels the wait (CancelDelete);
+    /// "finalDelete,&lt;id&gt;" sends the final delete (CheckDelete). MyPC is the previewed character.
+    /// </summary>
+    public bool OnMessageBox(MessageBoxController sender, int button, string tag)
+    {
+        MessageBoxQueue.Next();
+        if (button != 0) return true;
+        var parts = (tag ?? "").Split(',', 2);   // FUN_14028cb70(tag, parts, ",", 2)
+        if (parts.Length != 2) return true;
+        switch (parts[0])
+        {
+            case "deletePC":
+                if (parts[1].Length > 0 && Find(previewedSn) is { } pc
+                    && string.Equals(parts[1], pc.CharName ?? "", StringComparison.OrdinalIgnoreCase))
+                {
+                    SendDelete(pc.CharSN);
+                    return true;
+                }
+                ShowBox(MessageBoxData.Common(0x18), 0, "");
+                break;
+            case "revivalChar":
+                if (ulong.TryParse(parts[1], out ulong rid) && rid > 0) CancelDelete(Find(parts[1]));
+                break;
+            case "finalDelete":
+                if (ulong.TryParse(parts[1], out ulong fid) && fid > 0 && !deleteSent && Find(parts[1]) != null)
+                {
+                    deleteSent = true;   // CheckDelete (:1552-1569)
+                    FinalDeleteRequest?.Invoke(parts[1]);
+                }
+                break;
+        }
+        return true;
+    }
+
+    /// <summary>SendCharacterManagementMode2 (@0x1418f1880, :1520-1534): once (m_1d8), for MyPC.</summary>
+    void SendDelete(string sn)
+    {
+        if (deleteSent || sn == null) return;
+        deleteSent = true;
+        DeleteRequest?.Invoke(sn);
     }
 
     LobbyCharacterRow Find(string sn) => sn == null ? null : Characters.Find(c => c.CharSN == sn);

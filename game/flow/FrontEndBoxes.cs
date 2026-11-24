@@ -16,9 +16,7 @@ public static class FrontEndBoxes
     static readonly Dictionary<int, string> Keys = new()
     {
         [1] = "s_char_input_name", [4] = "s_char_ask_delete", [5] = "s_char_ask_delete_with_wait",
-        [7] = "s_char_ask_delete_confirm_checkbox", [0x18] = "s_char_err_delete_name",
-        [0x97b] = "s_common_sec", [0x97c] = "s_common_min", [0x97d] = "s_common_hour",
-        [0x97e] = "s_common_min_sec", [0x97f] = "s_common_hour_min", [0x980] = "s_common_hour_min_sec",
+        [7] = "s_char_ask_delete_confirm_checkbox",
     };
 
     public static string Common(int id) => Keys.TryGetValue(id, out var k) ? MessageBoxData.CommonByKey(k) ?? "" : "";
@@ -39,23 +37,13 @@ public static class FrontEndBoxes
     }
 
     /// <summary>FUN_141b708a0 @0x141b708a0 (util.cpp:999): a time span as text.</summary>
-    public static string Duration(uint seconds, bool showSeconds)
-    {
-        if (seconds < 60) return Format(0x97b, seconds);
-        if (seconds < 3600)
-        {
-            uint m = seconds / 60, s = seconds % 60;
-            return s == 0 ? Format(0x97c, m) : Format(0x97e, m, s);
-        }
-        uint h = seconds / 3600, mm = seconds / 60 % 60, rest = seconds % 60;
-        if (showSeconds && rest != 0) return Format(0x980, h, mm, rest);
-        return mm == 0 ? Format(0x97d, h) : Format(0x97f, h, mm);
-    }
+    public static string Duration(uint seconds, bool showSeconds) => CharacterListController.TimeSpanText(seconds, showSeconds);
 
     /// <summary>
     /// UICharacterListDialog::vfunc_28 "OnDeletePC" (uicharacterlistdialog.cpp:2222-2244): a character at or above
     /// CharacterDestroyDivisionLevel gets s_char_ask_delete_with_wait (the limit, CharacterDestroyWaitSecond as text, the
-    /// name), a lower one s_char_ask_delete (the name); then box 0xe tagged "deletePC" with a name input and the checkbox.
+    /// name), a lower one s_char_ask_delete (the name); then box 0xe tagged "deletePC" with a name input and the checkbox. The
+    /// dialog answers it (<see cref="CharacterListController.OnMessageBox"/>).
     /// </summary>
     public static MessageBoxData DeleteConfirm(CharacterEntry pc, int divisionLevel, uint waitSeconds, IMessageBoxListener listener)
     {
@@ -69,33 +57,6 @@ public static class FrontEndBoxes
         box.SetCheckbox0(Common(7), false);
         MessageBoxQueue.Show(box);   // FUN_140d73c60
         return box;
-    }
-
-    /// <summary>
-    /// UICharacterListDialog::OnMessage @0x1418eb540 for the delete box: any answer closes it (FUN_14151f200); OK with
-    /// "deletePC,&lt;typed&gt;" whose name matches the character (case-insensitive) sends the delete (FUN_1418f13d0), any
-    /// other OK shows s_char_err_delete_name (FUN_140d73bc0(0x18, 0, 0, "")).
-    /// </summary>
-    public sealed class DeleteListener : IMessageBoxListener
-    {
-        readonly string name;
-        readonly System.Action delete;
-        public DeleteListener(string name, System.Action delete) { this.name = name ?? ""; this.delete = delete; }
-
-        public bool OnMessageBox(MessageBoxController sender, int button, string tag)
-        {
-            MessageBoxQueue.Next();
-            if (button != 0) return true;
-            var parts = (tag ?? "").Split(',', 2);   // FUN_14028cb70(tag, parts, ",", 2)
-            if (parts.Length != 2 || parts[0] != "deletePC") return true;
-            if (parts[1].Length > 0 && string.Equals(parts[1], name, System.StringComparison.OrdinalIgnoreCase))
-            {
-                delete?.Invoke();
-                return true;
-            }
-            MessageBoxQueue.ShowMessageBox(Common(0x18), 0, null, "");
-            return true;
-        }
     }
 
     /// <summary>

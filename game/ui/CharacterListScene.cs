@@ -50,6 +50,9 @@ public partial class CharacterListScene : LobbyFieldScene
     bool enterShots;
     int frames;
 
+    /// <summary>The scene's UICharacterListDialog, null before the list is built.</summary>
+    public CharacterListController Controller => controller;
+
     /// <summary>The list is built and takes input (no lobby change under way).</summary>
     public bool ListReady => controller != null && controller.InputOn && !controller.Selecting;
 
@@ -186,6 +189,11 @@ public partial class CharacterListScene : LobbyFieldScene
         controller.GameStart += sn => UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnGameStart, sn);
         controller.CreateCharacter += () => UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnCreatePC);
         controller.DeleteCharacter += () => UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnDeletePC);
+        // the delete requests go to the live session; its answers come back to this dialog (GameFlow.Manage)
+        controller.DeleteRequest += sn => Flow.GameFlow.Manage(Ms2.Net.Packets.CharacterIdCommand.BeginDelete, sn);
+        controller.CancelDeleteRequest += sn => Flow.GameFlow.Manage(Ms2.Net.Packets.CharacterIdCommand.CancelDelete, sn);
+        controller.FinalDeleteRequest += sn => Flow.GameFlow.Manage(Ms2.Net.Packets.CharacterIdCommand.ConfirmDelete, sn);
+        controller.ListEmptied += () => { Flow.Session.SelectedIndex = -1; PreviewSelected(); };
         controller.ServerList += () => UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnSceneLobbyServer);
         controller.GameExit += () => Ms2.Ui.Hud.QuitFlow.ShowExitConfirm(new GameStrings(assets.Packs, assets.Language).Common());
         controller.Swapped += (a, b) =>
@@ -237,7 +245,12 @@ public partial class CharacterListScene : LobbyFieldScene
             // UICharacterListDialog::OnLoadComplete: feature 0x112; feature.xml has DeleteAccount at KR level 100, over the
             // Live server level (feature_setting.xml Live KR 78)
             DeleteAccountEnabled = LobbyFeatures.IsEnabled(features, "DeleteAccount"),
+            // GetServerTime for the delete waits: the login session's clock (UTC without a sync)
+            ServerNow = () => Net.LiveSession.Instance?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            ServerTick = () => (long)Time.GetTicksMsec(),
         };
+        int lang = Array.IndexOf(new[] { "KR", "JP", "EN", "CN", "FR", "DE", "PT", "ES" }, (assets.Language ?? "").ToUpperInvariant());
+        c.DateText = unix => Ms2.Ui.MailTexts.DateString(unix, Math.Max(0, lang));   // FUN_14083bdc0(CMsTime(t), true, "/", ":")
         foreach (var e in characters) c.Characters.Add(data.Row(e));
         return c;
     }
@@ -419,6 +432,7 @@ public partial class CharacterListScene : LobbyFieldScene
     public override void _Process(double delta)
     {
         base._Process(delta);
+        controller?.Tick();   // UICharacterListDialog::vfunc_15: the delete waits' time left
         if (shotDir == null || controller == null) return;
         frames++;
         if (!midSaved && fadeStart >= 0 && Time.GetTicksMsec() / 1000.0 - fadeStart >= 0.2)

@@ -957,26 +957,43 @@ public partial class LiveSession : Node
         finally { Busy = false; }
     }
 
-    /// <summary>Delete request for a character (OnDeletePC): BeginDelete (CharacterManagement 2). A low-level character goes at once (CharacterList DeleteEntry, error 0: the entry leaves the list);
-    /// otherwise the server answers BeginDelete with the deadline. Returns the reply, null when the request failed. A refusal (error != 0) is logged and the list stays.</summary>
-    public async Task<CharacterListMessage> DeleteAsync(CharacterEntry entry)
+    /// <summary>
+    /// A character list delete request (CharacterManagement 2 BeginDelete, 3 CancelDelete, 4 ConfirmDelete) and the server's
+    /// answer, the CharacterList DeleteEntry, BeginDelete or CancelDelete for that character. The session's list follows it:
+    /// DeleteEntry with error 0 drops the entry, BeginDelete with error 0 sets its delete time, CancelDelete with error 0
+    /// clears it. A refusal changes nothing here; the dialog shows it. Returns null when the request was not answered.
+    /// </summary>
+    public async Task<CharacterListMessage> ManageAsync(CharacterIdCommand command, CharacterEntry entry)
     {
         Busy = true;
         try
         {
             long id = entry.User.CharacterId;
-            var m = await new LoginClient(login).ManageAsync(CharacterIdCommand.BeginDelete, id);
-            if (m.Command == CharacterListCommand.DeleteEntry && m.Error == 0)
+            var m = await new LoginClient(login).ManageAsync(command, id);
+            if (m.Error != 0)
             {
-                Session.Characters.RemoveAll(c => c.User.CharacterId == id);
-                if (Session.SelectedIndex >= Session.Characters.Count) Session.SelectedIndex = Math.Max(0, Session.Characters.Count - 1);
-                GD.Print($"live: character deleted: {entry.User.Name} id {id}");
+                GD.Print($"live: {command} of {entry.User.Name} refused: {m.Command} error {m.Error} (time {m.DeleteTime})");
+                return m;
             }
-            else if (m.Command == CharacterListCommand.BeginDelete && m.Error == 0) GD.Print($"live: delete pending for {entry.User.Name}, until unix {m.DeleteTime}");
-            else GD.PushWarning($"live: delete {m.Command} error {m.Error} (time {m.DeleteTime})");
+            switch (m.Command)
+            {
+                case CharacterListCommand.DeleteEntry:
+                    Session.Characters.RemoveAll(c => c.User.CharacterId == id);
+                    if (Session.SelectedIndex >= Session.Characters.Count) Session.SelectedIndex = Math.Max(0, Session.Characters.Count - 1);
+                    GD.Print($"live: character deleted: {entry.User.Name} id {id}");
+                    break;
+                case CharacterListCommand.BeginDelete:
+                    entry.DeleteTime = m.DeleteTime;
+                    GD.Print($"live: delete pending for {entry.User.Name}, until unix {m.DeleteTime}");
+                    break;
+                case CharacterListCommand.CancelDelete:
+                    entry.DeleteTime = 0;
+                    GD.Print($"live: delete of {entry.User.Name} cancelled");
+                    break;
+            }
             return m;
         }
-        catch (Exception ex) { GD.PushWarning("live: delete failed: " + ex.Message); return null; }
+        catch (Exception ex) { GD.PushWarning($"live: {command} failed: " + ex.Message); return null; }
         finally { Busy = false; }
     }
 
