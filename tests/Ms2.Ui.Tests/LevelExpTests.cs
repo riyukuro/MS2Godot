@@ -216,6 +216,17 @@ public class LevelExpTests
             "s_msg_take_adventure_level_exp", "s_msg_skillbook_add_skillpoint" };
         var noText = keys.Where(k => string.IsNullOrEmpty(t.Common(k))).ToList();
         TestContext.WriteLine($"{set} strings: {ids.Length} ids, {keys.Length - noText.Count}/{keys.Length} keys with text" + (noText.Count > 0 ? " (none: " + string.Join(", ", noText) + ")" : ""));
+        // the default chat windows (DefaultMessenger0..99.xml): the tabs that show the exp lines (kind 8, Require "experience")
+        var browser = new MessengerBrowser();
+        var tabs = new List<string>();
+        foreach (var doc in t.DefaultMessengers)
+            foreach (var tab in doc.Root?.Elements("Tab") ?? Enumerable.Empty<XElement>())
+            {
+                var panel = new PanelSetting();
+                panel.Read(tab.Element("PanelSetting"), browser, _ => true);
+                tabs.Add($"{tabs.Count}:{(panel.Hidden(ExpChatLines.ExpKind) ? "hidden" : "shown")}");
+            }
+        TestContext.WriteLine($"{set} chat tabs and the exp lines: {t.DefaultMessengers.Count} windows, {string.Join(" ", tabs)}");
         Assert.That(noText, Is.Empty, "common string keys");
 
         // the effects

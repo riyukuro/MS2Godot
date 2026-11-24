@@ -23,6 +23,7 @@ public partial class HudScene
         live.OwnAdventureLevelChanged += onAdventure;
         live.AdventurerBarChanged += onBar;
         live.SkillBookChanged += onJob;
+        if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print("live: level watch on");
         return () =>
         {
             live.ExpLogged -= onExp; live.OwnLevelChanged -= onLevel; live.OwnAdventureLevelChanged -= onAdventure;
@@ -40,6 +41,8 @@ public partial class HudScene
         if (l.Notify) EnsureRewardNotify().ShowExp(amount, 0);
         ChatLog.AddSystemLine(l.Line, ExpChatLines.ExpKind);
         ChatLog.AddSystemLine(l.Second, TalkKind.SystemNotice);
+        if (Ms2Godot.Net.LiveSession.LiveCheck)
+            GD.Print($"live: exp line type {type} notify {l.Notify} second {!string.IsNullOrEmpty(l.Second)} ({l.Line?.Length ?? 0} chars)");
     }
 
     /// <summary>
@@ -81,6 +84,16 @@ public partial class HudScene
         if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"live: own level {oldLevel} -> {level}");
     }
 
+    /// <summary>OnLevelUp on a raised level of any PC (scenestategame.cpp:9534-9536): Unk_BreakDialog&lt;UIInventoryDialog&gt;(0x4e2d)
+    /// finds the inventory dialog when it is loaded, and its UpdateButtonState pushes the buttons again (bAutoPickup reads the
+    /// level).</summary>
+    void InventoryLevelButtons()
+    {
+        if (inventoryMovie == null || inventory == null) return;
+        inventory.UpdateButtonState();
+        if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print("live: inventory buttons on the level up");
+    }
+
     /// <summary>
     /// OnPrestige kind 2's own PC part (scenestategame.cpp:8851-8862): on a rise, with the reward notify, the item toast of
     /// AdventureLevelLvUpRewardItem with grade 1 (FUN_141abf6e0); status 0x11 is the prestige watch's; FUN_141b16580:
@@ -95,6 +108,7 @@ public partial class HudScene
             EnsureRewardNotify().ShowItemReward(item, 1);
         }
         string text = Ms2.Quest.ClientFormat.Format(hudModel.Tables.Common(0xd22), level);
+        if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"live: own adventure level {oldLevel} -> {level} ({text?.Length ?? 0} chars)");
         if (string.IsNullOrEmpty(text)) return;
         SystemText?.ShowMessage(text, SystemTextController.Info, 0);
         ChatLog.AddSystemLine(text, TalkKind.SystemNotice);

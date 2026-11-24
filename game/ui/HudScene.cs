@@ -153,6 +153,7 @@ public partial class HudScene : Node, IUiStageHost
             livePortals.PickupRewardSink = (id, grade) => EnsureRewardNotify()?.ShowPickedItem(id, grade);
             livePortals.CashCouponSink = id => EnsureRewardNotify()?.ShowCashCoupon(id);
             livePortals.GameMenuDirty = () => gameMenu?.MarkDirty();
+            livePortals.InventoryButtonsDirty = InventoryLevelButtons;
             WatchReconnect(livePortals);
         }
         sizeSource = GetViewport();

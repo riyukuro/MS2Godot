@@ -972,7 +972,7 @@ public partial class LiveSession
                 }
                 continue;
             }
-            if (step.StartsWith("bag"))      // the bag steps: baggive:N (MS2_LIVE_BAG_ITEM), bagkeep (MS2_LIVE_BAG_KEEP, one item), bagsort[:id], bagui, bagdrop:N, bagdestroy, bagexpand[:id]
+            if (step.StartsWith("bag"))      // the bag steps: baggive:N (MS2_LIVE_BAG_ITEM), bagkeep (MS2_LIVE_BAG_KEEP, one item), bagopen, bagsort[:id], bagui, bagdrop:N, bagdestroy, bagexpand[:id]
             {
                 string arg = step.Contains(':') ? step[(step.IndexOf(':') + 1)..] : "";
                 string name = step.Contains(':') ? step[..step.IndexOf(':')] : step;
@@ -995,6 +995,10 @@ public partial class LiveSession
                 }
                 switch (name)
                 {
+                    case "bagopen":      // the bag opened as the key does
+                        Check("the bag is open", hud.OpenInventoryScripted());
+                        await frames(60);
+                        break;
                     case "baggive": case "bagkeep":
                     {
                         int id = int.Parse(Env(name == "baggive" ? "MS2_LIVE_BAG_ITEM" : "MS2_LIVE_BAG_KEEP", "0"));

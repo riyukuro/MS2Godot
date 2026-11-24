@@ -672,10 +672,16 @@ public partial class LiveSession : Node
         try { path = Ms2.Ui.GameTables.Shared(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), GameOptions.StringLanguage).CommonResource(key); }
         catch (Exception ex) { GD.PushWarning($"common effect {key}: {ex.Message}"); return; }
         if (string.IsNullOrEmpty(path)) return;
-        if (!own) { remote?.PlayActorEffect(objectId, path); return; }
+        if (!own)
+        {
+            bool played = remote?.PlayActorEffect(objectId, path) ?? false;
+            if (LiveCheck) GD.Print($"live: effect {key} on object {objectId}: {(played ? "played" : "no actor")}");
+            return;
+        }
         if (player == null || !IsInstanceValid(player)) return;
         var actor = player.Mount?.Visual ?? player.Visual;
         if (actor == null) return;
+        if (LiveCheck) GD.Print($"live: effect {key} on the own {(player.Mount?.Visual != null ? "ride" : "PC")}: {path}");
         OwnEffectsPlayed?.Invoke(path);
         ReleaseKeptEffect(SpawnKeptEffect(path, actor, Ms2.Audio.SoundMusicEffectState.CasterMyPc));
     }
@@ -1657,6 +1663,10 @@ public partial class LiveSession : Node
     /// <summary>UIGameMenuDialog::MarkDirty: the game menu runs RefreshMenu on its next frame (ItemUse modes 4 and 7, a raised level).</summary>
     public Action GameMenuDirty;
 
+    /// <summary>A raised level of any PC (OnLevelUp, scenestategame.cpp:9534): the inventory dialog, when it exists, runs
+    /// UpdateButtonState.</summary>
+    public Action InventoryButtonsDirty;
+
     /// <summary>The picked-up item's reward toast (UIRewardNotify::FUN_141abfa10): item id and grade.</summary>
     public Action<int, int> PickupRewardSink;
 
@@ -2031,6 +2041,7 @@ public partial class LiveSession : Node
                 int? oldLevel = selfLevel ? selfOld : remote?.LevelUp(l.ObjectId, l.Level);
                 if (oldLevel is { } was && l.Raises(was))
                 {
+                    InventoryButtonsDirty?.Invoke();   // :9534-9536 the inventory dialog (0x4e2d)'s UpdateButtonState
                     GameMenuDirty?.Invoke();   // :9537-9539 FindGameMenuDialog(0x4e28)->MarkDirty()
                     PlayPcEffect(l.ObjectId, selfLevel, LevelUpEffectKey);   // :9520-9540 EFFECT_LEVEL_UP on the PC or its ridee
                 }
