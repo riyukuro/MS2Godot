@@ -79,6 +79,64 @@ public static class Gms2SpecialAbilities
         ("bap", 1), ("cap_ignore_limit", 1), ("cad_ignore_limit", 1), ("aevp", 2), ("cap_ignore_limit_extra", 2), ("reduce_do_heal_hp", 2),
     };
 
+    /// <summary>
+    /// STAND-IN (STILL-OPEN): the special abilities whose name the GMS2 data has under the common string s_item_opt_sa_&lt;stem&gt;
+    /// (the GMS2 data has no table/specialAbilityStringTable.xml and no stringspecialabilityname.xml, so <see cref="Ms2.Ui.GameTables.SpecialAbilityName"/>
+    /// had no text for any ability). INFERRED from the KMS2 data, which has both: an ability's name text (its row's
+    /// commonStringID in string/&lt;lang&gt;/stringspecialabilityname.xml) equals the text of exactly one s_item_opt_sa_&lt;stem&gt;
+    /// key of string/&lt;lang&gt;/stringcommon.xml, the same key in the cn and the kr strings, for these 130 of the 207 rows (no
+    /// row matches a different key in the two languages; the other 77 match none or several). Each key is in the GMS2 English
+    /// strings. The GMS2 exe is not decompiled, so how it names an ability is not seen.
+    /// </summary>
+    public static readonly (int Id, string Stem)[] LegacyNameKeys =
+    {
+        (1, "improve_acquire_exp"), (2, "improve_acquire_meso"), (3, "improve_speed_swim"), (4, "improve_speed_dash"), (7, "improve_damage_final"),
+        (8, "improve_damage_critical"), (9, "improve_damage_normalNpc"), (11, "improve_damage_namedNpc"), (13, "improve_recovery_hp_dokill"),
+        (14, "improve_recovery_sp_dokill"), (15, "improve_recovery_ep_dokill"), (16, "improve_recovery_regen_doheal"),
+        (17, "improve_recovery_regen_receiveheal"), (18, "improve_elements_ice"), (19, "improve_elements_fire"), (20, "improve_elements_dark"),
+        (21, "improve_elements_light"), (22, "improve_elements_poison"), (23, "improve_elements_thunder"), (24, "improve_damage_nearrange"),
+        (25, "improve_damage_longrange"), (26, "improve_piercing_par"), (27, "improve_piercing_mar"), (28, "reduce_elements_ice"),
+        (29, "reduce_elements_fire"), (30, "reduce_elements_dark"), (31, "reduce_elements_light"), (32, "reduce_elements_poison"),
+        (33, "reduce_elements_thunder"), (34, "reduce_time_stun"), (35, "reduce_time_cooldown"), (36, "reduce_time_condition"),
+        (37, "reduce_damage_nearrange"), (38, "reduce_damage_longrange"), (39, "reduce_distance_knockBack"),
+        (48, "improve_npckill_dropitem_incrate"), (49, "improve_acquire_questreward_exp"), (54, "improve_damage_pvp"), (55, "reduce_damage_pvp"),
+        (56, "improve_guild_exp"), (57, "improve_guild_coin"), (58, "improve_massive_event_expball"), (59, "improve_acquire_fishing_exp"),
+        (60, "improve_acquire_arcade_exp"), (61, "improve_acquire_playinstrument_exp"), (62, "improve_maid_mood"), (63, "reduce_maid_recipe"),
+        (64, "reduce_meso_trade_fee"), (65, "reduce_enchant_material_fee"), (66, "reduce_merat_revival_fee"), (67, "improve_mining_reward_item"),
+        (68, "improve_breeding_reward_item"), (69, "improve_blacksmithing_reward_mastery"), (70, "improve_engraving_reward_mastery"),
+        (71, "improve_gathering_reward_item"), (72, "improve_farming_reward_item"), (73, "improve_alchemist_reward_mastery"),
+        (74, "improve_cooking_reward_mastery"), (75, "improve_acquire_gathering_exp"), (76, "improve_acquire_manufacturing_exp"),
+        (77, "skill_levelup_tier_1"), (78, "skill_levelup_tier_2"), (79, "skill_levelup_tier_3"), (80, "skill_levelup_tier_4"),
+        (81, "skill_levelup_tier_5"), (82, "skill_levelup_tier_6"), (83, "skill_levelup_tier_7"), (84, "skill_levelup_tier_8"),
+        (85, "skill_levelup_tier_9"), (86, "skill_levelup_tier_10"), (87, "skill_levelup_tier_11"), (88, "skill_levelup_tier_12"),
+        (89, "skill_levelup_tier_13"), (90, "skill_levelup_tier_14"), (91, "improve_massive_ox_exp"), (92, "improve_massive_trapmaster_exp"),
+        (93, "improve_massive_finalsurvival_exp"), (94, "improve_massive_crazyrunner_exp"), (95, "improve_massive_escape_exp"),
+        (96, "improve_massive_springbeach_exp"), (97, "improve_massive_dancedance_exp"), (98, "improve_massive_ox_msp"),
+        (99, "improve_massive_trapmaster_msp"), (100, "improve_massive_finalsurvival_msp"), (101, "improve_massive_crazyrunner_msp"),
+        (102, "improve_massive_escape_msp"), (103, "improve_massive_springbeach_msp"), (104, "improve_massive_dancedance_msp"),
+        (105, "npc_hit_reward_sp_ball"), (106, "npc_hit_reward_ep_ball"), (107, "improve_honor_token"), (108, "improve_pvp_exp"),
+        (109, "improve_darkstream_damage"), (110, "reduce_darkstream_recive_damage"), (112, "fishing_double_mastery"),
+        (113, "playinstrument_double_mastery"), (114, "complete_fieldmission_msp"), (115, "improve_glide_vertical_velocity"),
+        (117, "additionaleffect_95000012"), (118, "additionaleffect_95000014"), (130, "improve_stat_wap_u"), (131, "mining_double_reward"),
+        (132, "breeding_double_reward"), (133, "gathering_double_reward"), (134, "farming_double_reward"), (135, "blacksmithing_double_reward"),
+        (136, "engraving_double_reward"), (137, "alchemist_double_reward"), (138, "cooking_double_reward"), (139, "mining_double_mastery"),
+        (140, "breeding_double_mastery"), (141, "gathering_double_mastery"), (142, "farming_double_mastery"), (143, "blacksmithing_double_mastery"),
+        (144, "engraving_double_mastery"), (145, "alchemist_double_mastery"), (146, "cooking_double_mastery"), (147, "improve_chaosraid_wap"),
+        (148, "improve_chaosraid_asp"), (149, "improve_chaosraid_atp"), (150, "improve_chaosraid_hp"), (151, "improve_recovery_ball"),
+        (156, "improve_pettrap_reward"), (157, "ming_multiaction"), (158, "breeding_multiaction"), (159, "gathering_multiaction"),
+        (160, "farming_multiaction"), (161, "improve_massive_sh_crazyrunner_exp"), (162, "improve_massive_sh_crazyrunner_msp"),
+        (163, "reduce_damage_by_targetmaxhp")
+    };
+
+    /// <summary>The names of <see cref="LegacyNameKeys"/> from a pack's common strings (a missing or empty one left out).</summary>
+    public static Dictionary<int, string> LegacyNames(IReadOnlyDictionary<string, string> common)
+    {
+        var d = new Dictionary<int, string>();
+        foreach (var (id, stem) in LegacyNameKeys)
+            if (common.TryGetValue("s_item_opt_sa_" + stem, out var n) && !string.IsNullOrEmpty(n)) d[id] = n;
+        return d;
+    }
+
     /// <summary><see cref="DefaultRows"/> as the table's &lt;ms2&gt;&lt;key id option valueType/&gt; document.</summary>
     public static XDocument DefaultTable() => new(new XElement("ms2", DefaultRows.Select((r, i) => new XElement("key",
         new XAttribute("id", i + 1), new XAttribute("option", r.Option), new XAttribute("valueType", r.ValueType)))));
