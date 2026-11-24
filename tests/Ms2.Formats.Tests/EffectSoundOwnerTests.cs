@@ -50,6 +50,19 @@ public class EffectSoundOwnerTests
         Assert.That(byJob.SoundEventFor(30, true), Is.EqualTo("90300007"), "disableJobSound: the plain event");
     }
 
+    [Test]
+    public void ABoolAttributeReadsAsTinyXmlReadsIt()
+    {
+        // TiXmlElement::QueryBoolAttribute (tinyxml.cpp) through XmlGetAttr(bool) (tinyxmlhelper.cpp:211-214)
+        foreach (var v in new[] { "true", "True", "yes", "1", "1.0", "trueish" }) Assert.That(EffectTable.B(v, false), Is.True, v);
+        foreach (var v in new[] { "false", "FALSE", "no", "0" }) Assert.That(EffectTable.B(v, true), Is.False, v);
+        foreach (var v in new[] { null, "", " true", "on", "x" })
+        {
+            Assert.That(EffectTable.B(v, true), Is.True, v ?? "null");
+            Assert.That(EffectTable.B(v, false), Is.False, v ?? "null");
+        }
+    }
+
     [TestCase("MS2_DATA")]
     [TestCase("MS2_GMS2_DATA")]
     public void TheFlameTornadoCastPlaysTheFireAndTheCastersJobVoiceOnly(string env)

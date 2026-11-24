@@ -137,7 +137,7 @@ void fragment() {
             if (part.SkippedFor(owner)) continue;   // CEffectParam::vfunc_7 (effectservice.cpp:245-259)
             if (part.Type == "soundEvent" && part.SoundEvent != null)
             {
-                FieldAudio.Instance?.PlayEffectSound(part, owner, at);
+                FieldAudio.Instance?.PlayEffectSound(part, owner, at, actor);
                 EffectSounds++;
                 continue;
             }

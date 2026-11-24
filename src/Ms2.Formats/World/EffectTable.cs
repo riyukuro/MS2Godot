@@ -207,7 +207,16 @@ public sealed class EffectTable
         return cache[xmlPath] = parts;
     }
 
-    static bool B(string s, bool def) => s == null ? def : s.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) || s.Trim() == "1";
+    /// <summary>XmlGetAttr(bool) = TiXmlElement::QueryBoolAttribute (tinyxmlhelper.cpp:211-214, tinyxml.cpp): a value that
+    /// starts with "true", "yes" or "1" in any case is true, one that starts with "false", "no" or "0" is false, and an empty
+    /// or other value keeps the default.</summary>
+    internal static bool B(string s, bool def)
+    {
+        if (string.IsNullOrEmpty(s)) return def;
+        if (s.StartsWith("true", StringComparison.OrdinalIgnoreCase) || s.StartsWith("yes", StringComparison.OrdinalIgnoreCase) || s[0] == '1') return true;
+        if (s.StartsWith("false", StringComparison.OrdinalIgnoreCase) || s.StartsWith("no", StringComparison.OrdinalIgnoreCase) || s[0] == '0') return false;
+        return def;
+    }
     static float F(string s, float def = 0) => float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out float v) ? v : def;
     /// <summary>"r, g, b" in 0..255 as 0..1; white when absent or short.</summary>
     static float[] Color(string s)

@@ -278,7 +278,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
             if (part.SkippedFor(owner)) continue;   // CEffectParam::vfunc_7 (effectservice.cpp:245-259)
             if (part.Type == "soundEvent" && part.SoundEvent != null)
             {
-                FieldAudio.Instance?.PlayEffectSound(part, owner, FieldBuilder.ToGodotPoint(world.T));
+                FieldAudio.Instance?.PlayEffectSound(part, owner, FieldBuilder.ToGodotPoint(world.T), actor);
                 continue;
             }
             if (part.Type == "light" && part.Light != null)
