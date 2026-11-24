@@ -152,6 +152,7 @@ public enum Inbound : ushort {
     Buddy = 0x61,           // RecvOp Buddy (commonfiles/opcodes.h): CSceneStateGame::OnBuddy -> CBuddyManager::OnBuddy
     Fishing = 0xC4,         // RecvOp Fishing (commonfiles/opcodes.h:203): CFishingManager::FUN_140cd9840 (scenestategame.cpp:1805)
     Breakable = 0x4F,       // RecvOp Breakable (commonfiles/opcodes.h:87): CSceneStateGame::OnBreakable
+    RoomTimer = 0x50,       // RecvOp RoomTimer (commonfiles/opcodes.h:88): RoomTimerManager::Dispatch (scenestategame.cpp:1574)
     MassiveEvent = 0x60,    // RecvOp MassiveEvent (commonfiles/opcodes.h:104): CSceneStateGame::OnMassiveEvent (@0x141722f70)
     Liftable = 0x73,        // RecvOp Liftable (commonfiles/opcodes.h:123): CSceneStateGame::OnLiftable
     Reactor = 0x115,        // RecvOp::Reactor (commonfiles/opcodes.h:276): CSceneStateGame::OnReactor @0x14173c870

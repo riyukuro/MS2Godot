@@ -209,6 +209,7 @@ public partial class HudScene : Node, IUiStageHost
         unwatchMinimapPing = null;
         MassiveEventUnwatch();
         TriggerTimerUnwatch();
+        RoomTimerUnwatch();
         CloseQuestNavigation();
         unwatchMinimapPcs?.Invoke();
         unwatchMinimapPcs = null;
@@ -422,6 +423,7 @@ public partial class HudScene : Node, IUiStageHost
         SystemMenuFacts();
         MassiveEventPane();
         if (unwatchTriggerTimer == null) WatchTriggerTimer();
+        if (unwatchRoomTimer == null) RoomTimerPane();
         MessageBoxLayer.Ensure(this);       // the client's one message box layer (CUIService::CreateAllDialogs)
         BindBoxAnswers();
         TooltipLayer.Ensure(this);          // and its one tooltip movie (GFxManager LoadTooltipMovie)
@@ -1402,6 +1404,7 @@ public partial class HudScene : Node, IUiStageHost
     public void SwapField()
     {
         damageText?.ClearAll();                      // FUN_141ad9dc0 -> UIDamageText::ClearAll
+        RoomTimerMapChange();
         WorldUnLoadComplete();
         CloseHomeMenuOnLeave();
         if (fieldScene != null && IsInstanceValid(fieldScene))
@@ -3975,6 +3978,7 @@ public partial class HudScene : Node, IUiStageHost
         CinematicTick();                                      // UICutSceneCinematic's pane (0x4e52)
         MassiveEventTick();                                   // UIMassiveEvent::vfunc_15: the step countdown
         TriggerTimerTick();                                   // UITriggerTimerDialog::vfunc_72
+        RoomTimerTick();                                      // UITimerDialog::vfunc_72
         rewardNotify?.Update();                               // UIRewardNotify::vfunc_15: the held toasts
         gameMenu?.Update();                                   // UIGameMenuDialog::vfunc_15: a dirty menu refreshed
         TickOwnQueued();                                      // StateSkill::FUN_1417f11d0: the queued press

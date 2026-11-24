@@ -694,6 +694,7 @@ public partial class LiveSession : Node
     public readonly Ms2.Ui.Hud.WorldTimer FieldTimer = new();
     /// <summary>Trigger 0xf kind 1 (triggerservice.cpp:531): the trigger timer dialog (0x4e95) opens or closes.</summary>
     public event Action<TriggerDialogCommand> TriggerTimerReceived;
+    public event Action<RoomTimerMessage> RoomTimerReceived;
     /// <summary>The minimap dialog's ping send (MinimapPing 0xB1).</summary>
     public void SendMinimapPing(Ms2.Net.Wire.IOutPacket packet)
     {
@@ -2240,6 +2241,8 @@ public partial class LiveSession : Node
                 Liftables.Apply(LiftableUpdate.Read(p.Reader()));       // OnLiftable (scenestategame.cpp:11941)
             else if (game.Is(p, Inbound.MassiveEvent))
                 MassiveEventReceived?.Invoke(MassiveEventMessage.Read(p.Reader()));     // OnMassiveEvent (scenestategame.cpp:3858): the pane 0x4e4c reads it
+            else if (game.Is(p, Inbound.RoomTimer))
+                RoomTimerReceived?.Invoke(RoomTimerMessage.Read(p.Reader()));     // RoomTimerManager::Dispatch (scenestategame.cpp:1574)
             else if (game.Is(p, Inbound.MinimapPing))
                 MinimapPinged?.Invoke(MinimapPingMessage.Read(p.Reader()));     // OnMinimapPing (scenestategame.cpp:6806)
             else if (game.Is(p, Inbound.UserEnv))
