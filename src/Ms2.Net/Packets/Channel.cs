@@ -30,11 +30,13 @@ public abstract record DynamicChannelMessage {
                 int n = (ushort) r.ReadShort();
                 var tabs = new ushort[n];
                 for (int i = 0; i < n; i++) tabs[i] = (ushort) r.ReadShort();
+                r.ExpectEnd("DynamicChannel");
                 return new Channels(tabs);
             }
             case 0: {
                 var v = new ushort[8];
                 for (int i = 0; i < 8; i++) v[i] = (ushort) r.ReadShort();
+                r.ExpectEnd("DynamicChannel");
                 return new ClassTable(v);
             }
             default: return null;

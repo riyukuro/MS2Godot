@@ -1204,6 +1204,7 @@ public partial class LiveSession : Node
                 GD.PushWarning("live: enter failed: " + e.Message);
                 return new EnterResult(EnterEnd.MoveRefused, e.Error);
             }
+            NoteGameEndpoint(GameClient.HostOf(go.Address, host), go.Port);
             AttachGameReconnect(game);
             Quests.QuestInfo = QuestTable();
             ItemReader.SlotOf ??= ItemSlotTable();

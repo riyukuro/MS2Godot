@@ -15,8 +15,7 @@ public sealed class ChannelChangeState
     public bool NoServerChannel;
     /// <summary>FUN_140930b10 (DAT_143ab2878 != 0): the field's service type, set by RequestFieldEnter, is not 0.</summary>
     public bool ServiceTypeSet;
-    /// <summary>PCBase::vfunc_65 (m_unk_160, the emotion SetEmotion stores) == 1. STILL-OPEN: the emotion is not tracked
-    /// here, so it stays false.</summary>
+    /// <summary>PCBase::vfunc_65 (@0x14166ced0, pcbase.cpp:1284: m_unk_160 == 1, set by FieldAddUser.InBattle and OnUserBattle 0x2F): the player is in battle stance (s_change_ch_err_battle, 0x62b).</summary>
     public bool EmoteActive;
     /// <summary>PCBase::IsDead == 1.</summary>
     public bool Dead;
@@ -71,5 +70,41 @@ public static class ChannelList
             rows.Add(id);
         }
         return rows;
+    }
+}
+
+/// <summary>
+/// CNetworkService::SaveServerAddress (@0x141539130, networkservice.cpp:577-580) and RestoreServerAddress (@0x141539180,
+/// :582-588): OnServerEnter saves the active game server address when the channel is non-zero (scenestategame.cpp:2081-2082);
+/// CSceneStateMove::OnUpdate (:95-110) restores it once after all retries fail when GameToGame's kind was 0x11 (channel move).
+/// </summary>
+public sealed class SavedServerAddress
+{
+    public const byte ChannelMoveKind = 0x11;
+
+    public string Host { get; private set; } = "";
+    public ushort Port { get; private set; }
+
+    public void Save(string host, ushort port)
+    {
+        Host = host ?? "";
+        Port = port;
+    }
+
+    public void NoteServerEnter(short serverEnterChannel, string currentHost, ushort currentPort)
+    {
+        if (serverEnterChannel != 0) Save(currentHost, currentPort);
+    }
+
+    public bool TryRestore(byte moveKind, ref bool alreadyRestored, out string host, out ushort port)
+    {
+        host = "";
+        port = 0;
+        if (alreadyRestored || moveKind != ChannelMoveKind) return false;
+        if (string.IsNullOrEmpty(Host) || Port == 0) return false;
+        alreadyRestored = true;
+        host = Host;
+        port = Port;
+        return true;
     }
 }

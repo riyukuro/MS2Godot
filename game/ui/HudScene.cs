@@ -138,6 +138,7 @@ public partial class HudScene : Node, IUiStageHost
             livePortals.SystemNoticeSink = SystemNoticeText;
             livePortals.ChannelNoticeSink = ChannelNotice;
             livePortals.ChannelsChanged += ChannelsChanged;
+            livePortals.GameToGameFailed += OnGameToGameFailed;
             livePortals.CastingBar = CastingBar;
             livePortals.ItemRank = id => hudModel?.Tables?.Items?.Get(id)?.Rank ?? 0;
             livePortals.ItemExists = id => hudModel?.Tables?.Items is not { } items || items.Get(id) != null;
@@ -226,7 +227,7 @@ public partial class HudScene : Node, IUiStageHost
         CloseQuestNavigation();
         unwatchMinimapPcs?.Invoke();
         unwatchMinimapPcs = null;
-        if (Ms2Godot.Net.LiveSession.Instance is { } liveChannel) { liveChannel.ChannelsChanged -= ChannelsChanged; if (liveChannel.ChannelNoticeSink == (Action<int, int>)ChannelNotice) liveChannel.ChannelNoticeSink = null; }
+        if (Ms2Godot.Net.LiveSession.Instance is { } liveChannel) { liveChannel.ChannelsChanged -= ChannelsChanged; liveChannel.GameToGameFailed -= OnGameToGameFailed; if (liveChannel.ChannelNoticeSink == (Action<int, int>)ChannelNotice) liveChannel.ChannelNoticeSink = null; }
         UnwatchReconnect();
         RevivalUnwatch();
         unwatchQuickSlotState?.Invoke();
@@ -554,6 +555,21 @@ public partial class HudScene : Node, IUiStageHost
             minimapSide.Model.Field.Channels = ids.Length > 0 ? ids : new[] { LiveChannel() };
             minimapSide.ChannelGroupName = menuGroup;
             minimapSide.Notify();
+        }
+    }
+
+    /// <summary>UISystemMenuDialog::vfunc_79 (uisystemmenudialog.cpp:282) and UIMinimapDialog::vfunc_79 (uiminimapentity.cpp:1385): on GameToGame error != 0, restore the current channel selection.</summary>
+    void OnGameToGameFailed(byte _)
+    {
+        if (systemMenu is { IsClosed: false } menu)
+        {
+            menu.CurrentChannel = LiveChannel();
+            menu.SelectCurrentChannel();
+        }
+        if (minimapSide != null)
+        {
+            minimapSide.Model.Field.Channel = LiveChannel();
+            minimapSide.ApplySelectedChannel();
         }
     }
 

@@ -212,8 +212,12 @@ public sealed class GameClient {
     /// attempt. The connect goes to the packet's address (<see cref="HostOf"/>; <paramref name="host"/> only for 0.0.0.0).</summary>
     public static Task<(GameEntry entry, TcpTransport game)> EnterAsync(GameToGame go, long accountId, byte[] machineId, string host = null, int timeoutMs = 20000, CancellationToken ct = default, bool requestGlobalFactor = false, int connectWaitMs = MoveConnectWaitMs) {
         if (!go.Ok) throw new InvalidOperationException("GameToGame error " + go.Error);
-        return EnterAsync(HostOf(go.Address, host), go.Port, go.Token, accountId, machineId, timeoutMs, ct, requestGlobalFactor, connectWaitMs);
+        return EnterEndpointAsync(HostOf(go.Address, host), go.Port, go.Token, accountId, machineId, timeoutMs, ct, requestGlobalFactor, connectWaitMs);
     }
+
+    /// <summary>Connects to an explicit game server endpoint (either GameToGame's or RestoreServerAddress's fallback, networkservice.cpp:582) with the migration tokens.</summary>
+    public static Task<(GameEntry entry, TcpTransport game)> EnterEndpointAsync(string address, ushort port, ulong token, long accountId, byte[] machineId, int timeoutMs = 20000, CancellationToken ct = default, bool requestGlobalFactor = false, int connectWaitMs = MoveConnectWaitMs) =>
+        EnterAsync(address, port, token, accountId, machineId, timeoutMs, ct, requestGlobalFactor, connectWaitMs);
 
     static async Task<(GameEntry entry, TcpTransport game)> EnterAsync(string address, ushort port, ulong token, long accountId, byte[] machineId, int timeoutMs, CancellationToken ct, bool requestGlobalFactor, int connectWaitMs = Timeout.Infinite) {
         var game = new TcpTransport();

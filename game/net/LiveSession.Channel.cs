@@ -17,6 +17,10 @@ public partial class LiveSession
     int fallbackChannel = 1;
     ushort[] channelTabs = Array.Empty<ushort>();
     ushort[] classTable = new ushort[8];
+    readonly Ms2.Ui.SavedServerAddress savedAddress = new();
+    (string Host, ushort Port) activeGameEndpoint;
+
+    internal void NoteGameEndpoint(string endpointHost, ushort endpointPort) => activeGameEndpoint = (endpointHost ?? "", endpointPort);
 
     /// <summary>UIServerListDialog::EnterGame @0x141ad2c50 (uiserverlistdialog.cpp:633-637): the channel to ask for is m_nChannel (the login's, <see cref="Ms2Godot.Flow.Session.Channel"/>),
     /// else GetCurrentChannel; it becomes the current channel (DAT_1439f4a7c) at once, ServerEnter then replaces it (<see cref="NoteServerEnter"/> shows the notice when they differ). Returns it for the request.</summary>
@@ -55,15 +59,17 @@ public partial class LiveSession
     /// FUN_1412751b0 with a formatted string).</summary>
     public Action<int, int> ChannelNoticeSink;
 
-    /// <summary>CSceneStateGame::OnServerEnter's channel part (scenestategame.cpp:2068-2079): with channel 0 the previous one
-    /// is kept (at least 1) for GetCurrentChannel; a channel other than the current one shows string 0x2d7 as a chat
-    /// line.</summary>
+    /// <summary>CSceneStateGame::OnServerEnter's channel part (scenestategame.cpp:2068-2082): with channel 0 the previous one
+    /// is kept (at least 1) for GetCurrentChannel; with non-zero channel SaveServerAddress stores the current game address;
+    /// a channel other than the current one shows string 0x2d7 as a chat line.</summary>
     void NoteServerEnter(short channel)
     {
         int n = (ushort)channel;
         if (n == 0 && serverChannel != 0) fallbackChannel = serverChannel < 1 ? 1 : serverChannel;
         if (n != 0 && CurrentChannel != 0 && CurrentChannel != n) ChannelNoticeSink?.Invoke(0x2d7, n);
         serverChannel = n;
+        savedAddress.NoteServerEnter(channel, activeGameEndpoint.Host, activeGameEndpoint.Port);
+        ChannelsChanged?.Invoke();
     }
 
     /// <summary>CNetworkService::OnDynamicChannel @0x14153c4b0 (networkservice.cpp:977).</summary>
@@ -93,6 +99,7 @@ public partial class LiveSession
             Current = CurrentChannel,
             NoServerChannel = serverChannel == 0,
             ServiceTypeSet = (entry?.Field?.FieldType ?? 0) != 0,
+            EmoteActive = selfEmotion == 1,
             Dead = Me.Dead,
         };
         return Ms2.Ui.ChannelChange.Request(channel, s, id => ChannelNoticeSink?.Invoke(id, -1), SendGuideStates, Send);

@@ -24,9 +24,12 @@ public partial class LiveSession
     /// <summary>Cancelled when the session leaves the tree (_ExitTree): a move still connecting stops and leaves nothing behind.</summary>
     readonly System.Threading.CancellationTokenSource exitCts = new();
 
+    /// <summary>UISystemMenuDialog::vfunc_79 (@0x141b13570, uisystemmenudialog.cpp:282) and UIMinimapDialog::vfunc_79 (@0x141a37080, uiminimapentity.cpp:1385): raised when GameToGame returned an error so the channel dropdowns restore the current channel.</summary>
+    public event Action<byte> GameToGameFailed;
+
     /// <summary>
     /// CNetworkService::OnGameToGame @0x14153be30 (networkservice.cpp:942). An error shows GetFieldMoveErrorMessage's box and
-    /// changes nothing. On 0: the address, port, tokens, field (DAT_143ab2890) and kind (DAT_143ab284a) are kept;
+    /// resets any open channel dropdowns. On 0: the address, port, tokens, field (DAT_143ab2890) and kind (DAT_143ab284a) are kept;
     /// WorldService FUN_141bbc580(0, field) tears the field down (every object and the own MyPC go, the loading screen starts
     /// for <c>field</c>); CStateService FUN_1417e25a0(0x620003b) goes to CSceneStateMove; MyPC::FUN_1415308d0 resets the
     /// debug switches (none is ported). Here the teardown is the field move FieldContents.ServerMove starts (its loading
@@ -38,6 +41,7 @@ public partial class LiveSession
         if (!m.Ok)
         {
             GD.Print($"live: GameToGame error {m.Error}");
+            GameToGameFailed?.Invoke(m.Error);
             Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(Ms2.Ui.FieldMoveError.Text(m.Error, Ms2.Ui.Hud.MessageBoxData.CommonByKey), 0, null, "");
             return;
         }
@@ -77,16 +81,20 @@ public partial class LiveSession
     /// </summary>
     async Task MigrateAsync(GameToGame m, System.Threading.CancellationToken exit)
     {
+        string targetHost = GameClient.HostOf(m.Address, host);
+        ushort targetPort = m.Port;
+        bool restored = false;
         for (int attempt = 0; ; attempt++)
         {
             var clock = System.Diagnostics.Stopwatch.StartNew();
             try
             {
-                GD.Print($"live: GameToGame connects to {GameClient.EndpointText(GameClient.HostOf(m.Address, host), m.Port)} (attempt {attempt + 1})");
-                var (e, t) = await GameClient.EnterAsync(m, accountId, machine, host, ct: exit, requestGlobalFactor: !Factors.Applied);
+                GD.Print($"live: GameToGame connects to {GameClient.EndpointText(targetHost, targetPort)} (attempt {attempt + 1})");
+                var (e, t) = await GameClient.EnterEndpointAsync(targetHost, targetPort, m.Token, accountId, machine, ct: exit, requestGlobalFactor: !Factors.Applied);
                 // the session left the tree while the entry ran: nothing is taken, the connection goes
                 if (exit.IsCancellationRequested) { t.Dispose(); return; }
                 (entry, game) = (e, t);
+                NoteGameEndpoint(targetHost, targetPort);
                 AttachGameReconnect(game);
                 Migrations++;
                 GD.Print($"live: GameToGame entry after {moveClock.ElapsedMilliseconds} ms ({attempt + 1} attempt(s))");
@@ -116,8 +124,15 @@ public partial class LiveSession
             }
             catch (System.Net.Sockets.SocketException e)
             {
-                // the run out of attempts: the 0x20f / 7 box, then the process ends (scenestategame.cpp:1348-1357 and its CSceneStateMove twin)
                 GD.PushWarning($"live: GameToGame connect attempt {attempt + 1} failed: {e.Message}");
+                // CSceneStateMove::OnUpdate (scenestatemove.cpp:95-110): kind 0x11 restores the saved server address once before giving up
+                if (savedAddress.TryRestore(m.Kind, ref restored, out targetHost, out targetPort))
+                {
+                    GD.Print($"live: GameToGame restores saved server address {GameClient.EndpointText(targetHost, targetPort)}");
+                    attempt = -1;
+                    continue;
+                }
+                // the run out of attempts: the 0x20f / 7 box, then the process ends (scenestategame.cpp:1348-1357 and its CSceneStateMove twin)
                 GiveUp();
                 return;
             }
