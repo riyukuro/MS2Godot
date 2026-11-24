@@ -93,6 +93,8 @@ public enum Inbound : ushort {
     UiText = 0x94,              // RecvOp UiText: CSceneStateGame::FUN_141731190 (scenestategame.cpp:7878)
     NewsNotification = 0x9F,    // RecvOp NewsNotification: CSceneStateGame::OnNewsNotification (scenestategame.cpp:3789)
     PlaySystemSound = 0xC3,     // RecvOp PlaySystemSound: CSceneStateGame::OnPlaySystemSound (scenestategame.cpp:4389)
+    RecallScroll = 0xBC,        // RecvOp RecallScroll (commonfiles/opcodes.h:195): CSceneStateGame::OnRecallScroll (scenestategame.cpp:8038)
+    GlobalPortal = 0xC1,        // RecvOp GlobalPortal (commonfiles/opcodes.h:200): CSceneStateGame::OnGlobalPortal (scenestategame.cpp:4369)
     NoticeDialog = 0xCF,        // RecvOp NoticeDialog: UINoticeDialog::OnNoticeDialog (uinoticedialog.cpp:224)
     SmartPush = 0xD7,           // RecvOp SmartPush: CSceneStateGame::OnSmartPush (scenestategame.cpp:7335)
     SkillUse = 0x3C,
@@ -240,6 +242,8 @@ public enum Outbound : ushort {
     // SendOp (commonfiles/opcodes.h): Party, RoomDungeon, DungeonReward, Club
     Party = 0x2C,
     PartySearch = 0x6E,     // SendOp PartySearch (commonfiles/opcodes.h:415): CPartyManager::SendMatchPartyMode0/1/2
+    RecallScroll = 0x6F,    // SendOp RecallScroll (commonfiles/opcodes.h:416): UIMessageBox::HandleRecallscrollconfirmButton (uimessagebox.cpp:1641)
+    GlobalPortal = 0x72,    // SendOp GlobalPortal (commonfiles/opcodes.h:419): UIGlobalPortalDialog::SendGlobalPortal (uiglobalportaldialog.cpp:233)
     RoomDungeon = 0x2B,
     DungeonReward = 0x9D,
     Club = 0x95,

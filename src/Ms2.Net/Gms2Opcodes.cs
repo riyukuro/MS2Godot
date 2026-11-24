@@ -95,6 +95,8 @@ static class Gms2Opcodes {
         [Inbound.UiText] = 0x96,
         [Inbound.NewsNotification] = 0xA1,
         [Inbound.PlaySystemSound] = 0xC5,
+        [Inbound.RecallScroll] = 0xBE,
+        [Inbound.GlobalPortal] = 0xC3,
         [Inbound.NoticeDialog] = 0xD1,
         [Inbound.SmartPush] = 0xD9,
         [Inbound.SkillUse] = 0x3D,
@@ -240,6 +242,8 @@ static class Gms2Opcodes {
         [Outbound.Emote] = 0x13,
         [Outbound.Party] = 0x2C,
         [Outbound.PartySearch] = 0x6F,    // SendOp MatchParty
+        [Outbound.RecallScroll] = 0x70,
+        [Outbound.GlobalPortal] = 0x73,
         [Outbound.RoomDungeon] = 0x2B,
         [Outbound.DungeonReward] = 0x9E,
         [Outbound.Club] = 0x96,
