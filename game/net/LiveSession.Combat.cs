@@ -1055,7 +1055,7 @@ public partial class LiveSession
                 }
                 continue;
             }
-            if (step.StartsWith("bag"))      // the bag steps: baggive:N (MS2_LIVE_BAG_ITEM), bagkeep (MS2_LIVE_BAG_KEEP, one item), bagopen, bagsort[:id], bagui, bagdrop:N, bagdestroy, bagexpand[:id], baguse:id[:box|yes|notice]
+            if (step.StartsWith("bag"))      // the bag steps: baggive:N (MS2_LIVE_BAG_ITEM), bagkeep (MS2_LIVE_BAG_KEEP, one item), bagopen, bagsort[:id], bagui, bagdrop:N, bagdestroy, bagexpand[:id], baguse:id[:box|yes|notice], bagmove:id, bagmerge:id:N, baggemon:id, baggemoff:id[:drag]
             {
                 string arg = step.Contains(':') ? step[(step.IndexOf(':') + 1)..] : "";
                 string name = step.Contains(':') ? step[..step.IndexOf(':')] : step;
@@ -1232,6 +1232,103 @@ public partial class LiveSession
                             Check($"item {id}: nothing used ({n0} -> {Count(id)})", Count(id) == n0);
                         }
                         await frames(30);
+                        break;
+                    }
+                    case "namecheck":    // namecheck:<item id>:<name>[:used]: the name change item used, the name sent, the answer's box checked and closed
+                    {
+                        var parts = arg.Split(':');
+                        int id = int.Parse(parts[0]); string newName = parts[1]; bool expectUsed = parts.Length > 2 && parts[2] == "used";
+                        if (Count(id) == 0) { hud.SubmitChatLine($"/item {id}"); await until(() => Count(id) > 0, 60 * 5); await frames(30); }
+                        long n0 = Count(id);
+                        string slot = hud.BagSlotScripted(id, live.Items.TabOf(id));
+                        GD.Print($"live: combat name change {id} ({slot}): {(hud.BagUseScripted(slot) ? "double clicked" : "no slot")}");
+                        await frames(30);
+                        var input = hud.ShownBoxScripted();
+                        Check($"item {id}: the name box (type {input?.Type}, tag {input?.Extra}, input max {input?.InputMaxChars})",
+                              input is { Type: 10, Extra: Ms2.Ui.CharNameChange.Tag, InputMaxChars: Ms2.Ui.CharNameChange.MaxLength });
+                        if (input == null) break;
+                        GD.Print($"live: combat name change {id} \"{newName}\": {(hud.BagBoxAnswerScripted(input, 0, Ms2.Ui.CharNameChange.Tag + "," + newName) ? "answered" : "no box")}");
+                        await until(() => hud.ShownBoxScripted() is { } b && b != input, 60 * 5); await frames(30);
+                        var answer = hud.ShownBoxScripted();
+                        GD.Print($"live: combat name change {id} answer: type {answer?.Type} tag \"{answer?.Extra}\" msg \"{answer?.Msg}\" args [{string.Join(",", answer?.Args ?? new())}]");
+                        Shot($"name_change_{id}.png");
+                        if (expectUsed)
+                            Check($"\"{newName}\" is used: the plain box with the name", answer is { Type: 0, Extra: "" } && answer.Msg.Contains(newName));
+                        else
+                            Check($"\"{newName}\" is free: the confirm box with the item and the name", answer is { Type: 1, Extra: Ms2.Ui.CharNameChange.ConfirmTag }
+                                  && answer.ArgString(1, "") == newName && answer.ArgLong(0, 0) == live.Items.All.First(e => e.Id == id).Uid);
+                        if (answer != null && answer != input) hud.BagBoxAnswerScripted(answer, answer.Type == 0 ? 0 : 1, answer.Extra);    // its OK, or the confirm's no
+                        await frames(120);
+                        Check($"item {id}: nothing used ({n0} -> {Count(id)})", Count(id) == n0);
+                        break;
+                    }
+                    case "bagmove":      // bagmove:<item id>: the item given when missing, its stack dragged onto the first empty cell of its tab
+                    {
+                        int id = int.Parse(arg);
+                        if (Count(id) == 0) { hud.SubmitChatLine($"/item {id}"); await until(() => Count(id) > 0, 60 * 5); await frames(30); }
+                        hud.BagSlotScripted(id, live.Items.TabOf(id));
+                        var e = live.Items.All.First(x => x.Id == id);
+                        short from = e.InventorySlot; int amount = e.Amount; long total = Count(id);
+                        string src = hud.BagSlotOfUidScripted(e.Uid), dst = hud.BagSlotOfUidScripted(0);
+                        GD.Print($"live: combat bag move {id} uid {e.Uid} {src} -> {dst}: {(hud.DragEndOnScripted(src, dst) ? "dropped" : "no slot")}");
+                        await until(() => live.Items.Get(e.Uid)?.InventorySlot != from, 60 * 5); await frames(30);
+                        Check($"item {id} moved by the server ({src} -> {dst}: slot {from} -> {live.Items.Get(e.Uid)?.InventorySlot}), the stack's count kept ({amount} -> {live.Items.Get(e.Uid)?.Amount}, all {total} -> {Count(id)})",
+                              dst != null && hud.BagSlotOfUidScripted(e.Uid) == dst && live.Items.Get(e.Uid)?.Amount == amount && Count(id) == total);
+                        Shot($"bag_move_{id}.png");
+                        break;
+                    }
+                    case "bagmerge":      // bagmerge:<item id>:<amount>: the amount given, then the largest stack dragged onto the smallest
+                    {
+                        var parts = arg.Split(':'); int id = int.Parse(parts[0]); int n = int.Parse(parts[1]);
+                        System.Collections.Generic.List<Ms2.Net.Packets.EquipItem> Stacks() => live.Items.All.Where(x => x.Id == id).OrderBy(x => x.Amount).ToList();
+                        long n0 = Count(id);
+                        hud.SubmitChatLine($"/item {id} --amount {n}");
+                        await until(() => Count(id) == n0 + n, 60 * 5); await frames(30);
+                        var st = Stacks();
+                        GD.Print($"live: combat bag merge {id}: stacks [{string.Join(",", st.Select(x => $"{x.Uid}:{x.Amount}@{x.InventorySlot}"))}]");
+                        Check($"item {id} is held in two stacks or more", st.Count >= 2);
+                        if (st.Count < 2) break;
+                        var small = st[0]; var big = st[^1]; int a0 = small.Amount, b0 = big.Amount; long total = Count(id);
+                        hud.BagSlotScripted(id, live.Items.TabOf(id));
+                        string src = hud.BagSlotOfUidScripted(big.Uid), dst = hud.BagSlotOfUidScripted(small.Uid);
+                        GD.Print($"live: combat bag merge {big.Uid} ({b0}) onto {small.Uid} ({a0}): {(hud.DragEndOnScripted(src, dst) ? "dropped" : "no slot")}");
+                        await until(() => (live.Items.Get(small.Uid)?.Amount ?? 0) != a0, 60 * 5); await frames(30);
+                        int a1 = live.Items.Get(small.Uid)?.Amount ?? 0, b1 = live.Items.Get(big.Uid)?.Amount ?? 0;
+                        Check($"the server stacked them: {small.Uid} {a0} -> {a1}, {big.Uid} {b0} -> {b1}, total {total} -> {Count(id)}",
+                              a1 > a0 && b1 < b0 && a1 + b1 == a0 + b0 && Count(id) == total);
+                        Shot($"bag_merge_{id}.png");
+                        break;
+                    }
+                    case "baggemon":      // baggemon:<gem id>: the gem given when missing, the character window opened, the gem right clicked in the bag (mode 12)
+                    {
+                        int id = int.Parse(arg);
+                        if (Count(id) == 0) { hud.SubmitChatLine($"/item {id}"); await until(() => Count(id) > 0, 60 * 5); await frames(30); }
+                        long n0 = Count(id);
+                        Check("the character window is open", hud.OpenCharScripted()); await frames(30);
+                        hud.CharGemTabScripted(); await frames(30);
+                        string slot = hud.BagSlotScripted(id, live.Items.TabOf(id));
+                        GD.Print($"live: combat bag gem on {id} ({slot}): {(hud.BagRightClickScripted(slot) ? "right clicked" : "no slot")}");
+                        await frames(30);
+                        if (hud.ShownBoxScripted() is { Extra: Ms2.Ui.Hud.MyInfoController.BindOnGemEquipBox } bind)
+                        { GD.Print($"live: combat bag gem bind box \"{bind.Msg}\": {(hud.BagBoxAnswerScripted(bind, 0, bind.Extra) ? "yes" : "no box")}"); }
+                        await until(() => hud.WornGemSlotScripted(id) != null, 60 * 5); await frames(30);
+                        Check($"gem {id} worn ({hud.WornGemSlotScripted(id)}), the bag {n0} -> {Count(id)}", hud.WornGemSlotScripted(id) != null && Count(id) == n0 - 1);
+                        Shot($"bag_gem_on_{id}.png");
+                        break;
+                    }
+                    case "baggemoff":      // baggemoff:<gem id>[:drag]: the worn gem's slot right clicked (GemSlot::vfunc_14), or dragged onto an empty bag cell
+                    {
+                        var parts = arg.Split(':'); int id = int.Parse(parts[0]); bool drag = parts.Length > 1 && parts[1] == "drag";
+                        long n0 = Count(id);
+                        hud.OpenCharScripted(); hud.CharGemTabScripted(); await frames(30);
+                        string gem = hud.WornGemSlotScripted(id);
+                        hud.BagSlotScripted(id, live.Items.TabOf(id));
+                        string empty = hud.BagSlotOfUidScripted(0);
+                        bool done = drag ? hud.DragEndOnScripted(gem, empty) : hud.CharRightClickScripted(gem);
+                        GD.Print($"live: combat bag gem off {id} ({gem}{(drag ? " -> " + empty : "")}): {(done ? (drag ? "dropped" : "right clicked") : "no slot")}");
+                        await until(() => hud.WornGemSlotScripted(id) == null, 60 * 5); await frames(30);
+                        Check($"gem {id} taken off ({hud.WornGemSlotScripted(id) ?? "none worn"}), the bag {n0} -> {Count(id)}", gem != null && hud.WornGemSlotScripted(id) == null && Count(id) == n0 + 1);
+                        Shot($"bag_gem_off_{id}.png");
                         break;
                     }
                     default: GD.Print($"live: combat: unknown step {step}"); break;
@@ -1494,6 +1591,9 @@ public partial class LiveSession
                     await until(() => live.Items.All.Any(e => e.Id == weapon), 60 * 10); await frames(60);
                     Check("the weapon is in the bag", live.Items.All.Any(e => e.Id == weapon));
                     GD.Print($"live: combat equip: {(hud.EquipScripted(weapon) || EquipDirect(weapon, false) ? "sent" : "not sent")}");
+                    await frames(30);
+                    if (hud.ShownBoxScripted() is { Extra: Ms2.Ui.Hud.InventoryController.BindOnEquipBox } bind)      // a bind-on-equip item asks first (inventory.cpp:1245)
+                        GD.Print($"live: combat equip bind box \"{bind.Msg}\" yes: {(hud.BagBoxAnswerScripted(bind, 0, bind.Extra) ? "answered" : "no box")}");
                     await until(() => live.Me.Equips?.Any(e => e.Id == weapon) == true, 60 * 10); await frames(60);
                     Check("the weapon is worn", live.Me.Equips?.Any(e => e.Id == weapon) == true);
                     Shot("equipped.png");

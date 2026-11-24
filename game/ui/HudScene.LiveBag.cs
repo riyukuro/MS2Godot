@@ -1,3 +1,4 @@
+using System.Linq;
 using Godot;
 using Ms2.Avm2.Flash;
 
@@ -92,6 +93,50 @@ public partial class HudScene
     /// NotifyDragSlot::SlotUse).</summary>
     public bool BagUseScripted(string slot) =>
         slot != null && inventory is { IsClosed: false } && inventory.OnCallback("notifySlotUse", new object[] { slot, 0 });
+
+    /// <summary>The right click of the bag slot <paramref name="slot"/> (notifySlotUse with button 1, InvenSlot::vfunc_14).</summary>
+    public bool BagRightClickScripted(string slot) =>
+        slot != null && inventory is { IsClosed: false } && inventory.OnCallback("notifySlotUse", new object[] { slot, 1 });
+
+    /// <summary>The open bag's slot holding the item uid on the shown tab, or with uid 0 its first empty cell below the tab's
+    /// capacity; null without one.</summary>
+    public string BagSlotOfUidScripted(long uid)
+    {
+        if (inventory is not { IsClosed: false, View: { } view }) return null;
+        int cap = view.Capacity(view.Tab);
+        for (int i = 0; i < cap; i++)
+        {
+            var e = view.ItemAt(view.Tab, i);
+            if (uid == 0 ? e == null : e?.Uid == uid) return Ms2.Ui.Hud.InventoryController.SlotName(i);
+        }
+        return null;
+    }
+
+    /// <summary>A drag from the slot <paramref name="src"/> ended on the slot <paramref name="dst"/> (the movie's
+    /// notifySlotDragEnd with a target, NotifyDragSlot::SlotDragEnd): the destination's vfunc_18 with the source.</summary>
+    public bool DragEndOnScripted(string src, string dst)
+    {
+        if (inventory is not { IsClosed: false } || src == null || dst == null) return false;
+        Ms2.Ui.NotifyDragSlot.SlotDragEnd(inventoryMovie.Host.DragSlots, new object[] { src, dst });
+        return true;
+    }
+
+    /// <summary>The character window's gem bag slot of the worn gem with the item id (by its gem type); null when none is worn
+    /// or the window is shut.</summary>
+    public string WornGemSlotScripted(int itemId)
+    {
+        if (myInfo == null || myInfoMovie == null) return null;
+        var gem = myInfo.LocalGems?.Invoke()?.FirstOrDefault(g => g.Id == itemId);
+        int index = gem == null ? -1 : Ms2.Ui.Hud.MyInfoController.GemSlotIndex(gem.GemType);
+        return index < 0 ? null : Ms2.Ui.Hud.MyInfoController.GemBag + "." + index;
+    }
+
+    /// <summary>The character window shown on its gem tab (onChangeTab 2).</summary>
+    public bool CharGemTabScripted() => myInfo != null && myInfo.OnCallback("onChangeTab", new object[] { 2 });
+
+    /// <summary>The right click of the character window's slot <paramref name="slot"/> (notifySlotUse with button 1).</summary>
+    public bool CharRightClickScripted(string slot) =>
+        slot != null && myInfo != null && myInfo.OnCallback("notifySlotUse", new object[] { slot, 1 });
 
     System.Action<string> bagNoticeWatch;
 

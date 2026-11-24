@@ -726,6 +726,9 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner, IGemSlotOw
     /// <summary>GemSlotBag's slots (gemslot.cpp): index -> GemType.</summary>
     static readonly int[] GemTypes = { 1, 5, 3, 2, 4, 6, 9, 8, 7, 10, 11, 12 };
 
+    /// <summary>The gem bag slot index of a gem type; -1 for none.</summary>
+    public static int GemSlotIndex(int gemType) => Array.IndexOf(GemTypes, gemType);
+
     static int[] SlotsOf(int kind) => kind == 1 || kind == 2 ? SkinSlots : GearSlots;
 
     /// <summary>EquipSlotBag::vfunc_15 (equipslot.cpp:478): StringFormat("{0}.{1}", bag, the equip slot); GemSlotBag "%s.%d" of
