@@ -36,6 +36,8 @@ public class PoolThreadEngineCallTests
             "Ms2.Navigation (no engine); the folder is globalized on the main thread"),
         new("ui/UiAssets.cs", "ui.Dependency(k)", null,
             "SwfMovie parse and font bytes (no engine objects)"),
+        new("ui/HudScene.CutSceneSwf.cs", "cutSceneSwfSoundReady.Enqueue(() => FinishCutSceneSwfSound(", null,
+            "the swf cut scene's stream sound: SwfMovie parse and the PCM decode (no engine); the player is built on the main thread"),
         new("net/LiveSession.cs", "live: send {pk.GetType().Name} failed", null,
             "a failed send: the warning goes through EngineCalls"),
         new("net/LiveSession.cs", "live: login send {pk.GetType().Name} failed", null,

@@ -29,6 +29,8 @@ public sealed class SwfMovie
     public int AbcBytes;
     /// <summary>Raw ABC blocks (DoABC tags) in file order.</summary>
     public List<(string Name, byte[] Data)> AbcBlocks = new();
+    /// <summary>The root timeline's stream sound (SoundStreamHead + SoundStreamBlock), or null.</summary>
+    public SoundStream SoundStream;
 
     public static SwfMovie Load(string path) => Parse(File.ReadAllBytes(path));
 
@@ -167,6 +169,21 @@ public sealed class SwfMovie
             case 46: case 84: { var c = Register(r.U16(), CharKind.MorphShape, code); c.Bounds = ReadRect(r); return 0; }
             case 60: Register(r.U16(), CharKind.Video, code); return 0;
             case 14: Register(r.U16(), CharKind.Sound, code); return 0;
+            case 18: case 45:   // SoundStreamHead / SoundStreamHead2: the stream format
+            {
+                if (!top) return 1;
+                int play = r.U8(), stream = r.U8();
+                SoundStream = new SoundStream
+                {
+                    Codec = stream >> 4, Rate = new[] { 5512, 11025, 22050, 44100 }[(stream >> 2) & 3],
+                    Bits16 = (stream & 2) != 0, Stereo = (stream & 1) != 0, SamplesPerFrame = r.U16(),
+                };
+                return 0;
+            }
+            case 19: // SoundStreamBlock
+                if (!top || SoundStream == null) return 1;
+                SoundStream.Blocks.Add((tl.Frames.Count, r.Bytes(r.Remaining)));
+                return 0;
             case 87: Register(r.U16(), CharKind.Binary, code); return 0;
             case 82: { r.U32(); var n = r.CString(); AbcBytes += r.Remaining; AbcBlocks.Add((n, r.Bytes(r.Remaining))); return 1; }
             case 72: AbcBytes += r.Remaining; AbcBlocks.Add(("", r.Bytes(r.Remaining))); return 1;

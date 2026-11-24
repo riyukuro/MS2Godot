@@ -973,6 +973,15 @@ public partial class LiveSession
                 Shows("after the movie");
                 continue;
             }
+            if (step.StartsWith("movieframe:"))      // movieframe:<n>: a shot of the playing swf cut scene when its timeline reaches frame n (the same frame in two runs)
+            {
+                int want = int.Parse(step[11..]);
+                await until(() => hud.CutSceneSwfFrame() >= want, 60 * 60);
+                int got = hud.CutSceneSwfFrame();
+                Check($"the cut scene swf reached frame {want} (at {got})", got >= want);
+                Shot($"movieframe_{want}.png");
+                continue;
+            }
             if (step == "moviestate")      // what the cut scene pane holds now (the pane, the usm layer, the exit button), to compare before and after a field change
             {
                 GD.Print($"live: movie state: playing {live.Movie.IsPlaying}, path {live.Movie.Path}, id {live.Movie.CutSceneId}, exit button {live.Movie.ExitShown}, usm layer shown {hud.CutSceneVideoShown}, field {live.CurrentEntry?.MapId}");
@@ -1894,18 +1903,27 @@ public partial class LiveSession
                     Check($"hits per press: {hitPresses} of {press}", press >= need && hitPresses == press);
                     break;
                 }
-                case "skipmovie":    // a playing cut scene movie skipped as the client does: Esc asks box 0x88c, its first button runs Exit; then until the server's stop
+                case "skipmovie": case "skipmoviebutton":    // a playing cut scene movie skipped as the client does: Esc asks box 0x88c, its first button runs Exit; then until the server's stop (skipmoviebutton: the swf pane's own exit button is clicked, as onExit does)
                 {
                     await until(() => live.Movie.IsPlaying, 60 * 30);
                     int id = live.Movie.CutSceneId;
                     Check("a cut scene movie plays", live.Movie.IsPlaying);
                     if (!live.Movie.IsPlaying) break;
                     int sends = live.Movie.Sends;
-                    hud.Escape();
-                    GD.Print($"live: combat skip movie {id}: Esc pressed");
+                    if (step == "skipmoviebutton" || Env("MS2_LIVE_SKIP_BUTTON", "") == "1")      // the exit button clicked on the movie's own m_exit instead of Esc
+                    {
+                        await frames(60);
+                        Check("the exit button was clicked", hud.CutSceneSwfExitClickScripted());
+                        GD.Print($"live: combat skip movie {id}: exit button clicked");
+                    }
+                    else
+                    {
+                        hud.Escape();
+                        GD.Print($"live: combat skip movie {id}: Esc pressed");
+                    }
                     await until(() => hud.ShownBoxScripted() != null, 60 * 3); await frames(45);   // the box fades in
                     var ask = hud.ShownBoxScripted();
-                    Check($"Esc asks a box ({ask?.Msg})", ask != null);
+                    Check($"the skip asks a box ({ask?.Msg})", ask != null);
                     Check("nothing is sent before the answer", live.Movie.Sends == sends);
                     Shot("skipmovie_box.png");
                     hud.Escape(); await frames(5);

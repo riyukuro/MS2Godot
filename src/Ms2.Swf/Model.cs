@@ -80,6 +80,23 @@ public sealed class Timeline
     public List<FrameLabel> Labels = new();
 }
 
+/// <summary>
+/// The root timeline's stream sound: SoundStreamHead (tag 18, 45 for the second form) and the SoundStreamBlock tags (19), one per
+/// frame, in file order. The cut scene movies carry their sound this way (no DefineSound/StartSound).
+/// </summary>
+public sealed class SoundStream
+{
+    /// <summary>The playback and stream format byte's codec nibble: 0 raw, 1 ADPCM, 2 MP3, 3 raw little endian.</summary>
+    public int Codec;
+    public int Rate;
+    public bool Stereo;
+    public bool Bits16;
+    /// <summary>The head's average sample count per frame.</summary>
+    public int SamplesPerFrame;
+    /// <summary>The root timeline's frame (0-based) each block came before, and its payload.</summary>
+    public List<(int Frame, byte[] Data)> Blocks = new();
+}
+
 public sealed class TimelineOp
 {
     public Placement Place;     // null for a removal

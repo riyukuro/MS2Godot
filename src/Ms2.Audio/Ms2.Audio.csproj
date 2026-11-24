@@ -6,6 +6,7 @@
     <RootNamespace>Ms2.Audio</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="../Ms2.Swf/Ms2.Swf.csproj" />
     <PackageReference Include="NLayer" Version="3.0.1" />
     <InternalsVisibleTo Include="Ms2.Audio.Tests" />
   </ItemGroup>

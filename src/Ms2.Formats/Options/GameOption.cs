@@ -663,6 +663,11 @@ public sealed class GameOption
 
         /// <summary>Unk_SoundState::GetMovieVolume (gameoptionstruct.cpp:2786-2789).</summary>
         public float MovieVolume => MovieSoundStep * MainSoundStep / 100f;
+
+        /// <summary>What the client hands every movie player: <c>m_b00 ? 0.0f : GetMovieVolume()</c> (the usm's SetVolume,
+        /// uicutscenemovie.cpp:397; the swf's GFxManager::SetMasterVolume, :413; the side popup's "volume",
+        /// uisidepopuptalk_1.cpp:337; the upper dialog's video, uiupperhuddialog.cpp:1083). One lookup for all movie sound.</summary>
+        public float EffectiveMovieVolume => MuteAll ? 0f : MovieVolume;
     }
 
     /// <summary>Connect (Unk_GsConnect): reset FUN_141260550 gameoptionstruct.cpp:2862-2872, load :2876-2891, save :2895-2906;
