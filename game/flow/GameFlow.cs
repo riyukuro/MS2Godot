@@ -411,11 +411,13 @@ public partial class GameFlow : Node
             // socket error, whose OK runs UISceneLogin::vfunc_64, the dialog's failure state (windowservice.cpp:606-621,
             // FUN_141902530). A connection lost after the connect with a socket error is the session's LoginConnectionLost
             // (0x465); any other failure goes to the failure state at once.
+            // A ServerList without servers shows the same box with 0 and the same callback (CSceneStateLogin::OnPacket,
+            // scenestatelogin.cpp:121-129).
             int code = live.LastConnectError;
-            if (code != 0)
+            if (code != 0 || live.LastServerListEmpty)
             {
                 string text = Ms2.Ui.FrontEndConnection.ConnectFailed(code, Ms2.Ui.Hud.MessageBoxData.Common);
-                GD.Print($"login: connect failed (socket error {code}), box '{text}', then the dialog's failure state");
+                GD.Print(code != 0 ? $"login: connect failed (socket error {code}), box '{text}', then the dialog's failure state" : $"login: empty server list, box '{text}', then the dialog's failure state");
                 Ui.MessageBoxLayer.Ensure(this);
                 Ms2.Ui.Hud.MessageBoxQueue.ShowWithCallback(text, 0, (_, _) =>
                 {

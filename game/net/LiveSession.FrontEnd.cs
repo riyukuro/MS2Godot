@@ -36,6 +36,9 @@ public partial class LiveSession
     /// connect.</summary>
     public int LastConnectError { get; private set; }
 
+    /// <summary>The last login's ServerList had no server (CSceneStateLogin::OnPacket, scenestatelogin.cpp:121-129: box 0x20e with 0).</summary>
+    public bool LastServerListEmpty { get; private set; }
+
     /// <summary>True from the good LoginToGame on: the login server ends its session after it (a clean close), which is the
     /// move, not a loss.</summary>
     bool leavingLogin;

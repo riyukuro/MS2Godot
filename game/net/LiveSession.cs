@@ -971,6 +971,7 @@ public partial class LiveSession : Node
         Busy = true;
         LastLoginRefusal = null;
         LastConnectError = 0;
+        LastServerListEmpty = false;
         try
         {
             var args = LaunchArgs();
@@ -990,11 +991,35 @@ public partial class LiveSession : Node
             // no empty-id check: the client sends the request as typed (SendLoginRequest, uilogindialog.cpp:204-246) and the server answers
             user ??= "";
             login?.Dispose();
-            UseLogin(new TcpTransport());
             // the real client appends its region code to the id
             // GMS2: the launcher ticket (--ticket) goes in the token field (the packet drops id and password); only a GMS2 profile uses it
             string ticket = args.HasAddress ? args.Ticket : null;   // the ticket goes only to the server it was given with
-            var o = await new LoginClient(login) { Ticket = ticket, MachineIdPath = ticket != null ? ProjectSettings.GlobalizePath("user://machine-id") : null }.LoginAsync(host, port, user + "KR", pass, machine);
+            string machinePath = ticket != null ? ProjectSettings.GlobalizePath("user://machine-id") : null;
+            // UILoginDialog::SendLoginRequest (uilogindialog.cpp:204-246): the login dialog's request is type 1 on its own connection; the server
+            // answers ServerList and drops it (CSceneStateLogin::OnPacket, scenestatelogin.cpp:117-132)
+            ServerListAnswer listed;
+            using (var first = new TcpTransport())
+                listed = await new LoginClient(first) { Ticket = ticket, MachineIdPath = machinePath }.ServerListAsync(host, port, user + "KR", pass, machine);
+            if (listed.Refusal is { } refused) { GD.PushWarning($"live: login refused, state {refused.State} {refused.Message}"); LastLoginRefusal = refused; return false; }
+            // UIServerListDialog: ReceiveServerList, BuildServerList / OnSelectServer (no saved server or channel option here)
+            var choice = Ms2.Ui.ServerListPick.Pick(listed.List, null, 0);
+            if (choice == null)
+            {
+                // a list without servers: box 0x20e with 0, whose OK runs the dialog's failure state (scenestatelogin.cpp:121-129)
+                GD.PushWarning("live: the server list has no server");
+                LastServerListEmpty = true;
+                return false;
+            }
+            Session.ServerId = choice.ServerId;
+            Session.Channel = choice.Channel;
+            channelTabs = choice.Channels.ToArray();   // the picked server's m_channels; DynamicChannel kind 1 replaces them (SetChannels)
+            // ConnectToServer (uiserverlistdialog.cpp:502-517): one of the server's addresses at random; none, no connect
+            var addresses = choice.Server.Addresses;
+            if (addresses.Length == 0) { GD.PushWarning("live: the picked server has no address"); return false; }
+            var (serverHost, serverPort) = addresses[System.Random.Shared.Next(addresses.Length)];
+            if (LiveCheck) GD.Print($"live: server list {listed.List.Servers.Count} server(s), picked {choice.ServerId} channel {choice.Channel} of {choice.Channels.Count}, login at {GameClient.EndpointText(serverHost, serverPort)}");
+            UseLogin(new TcpTransport());
+            var o = await new LoginClient(login) { Ticket = ticket, MachineIdPath = machinePath, Channel = (short)choice.Channel }.LoginAsync(serverHost, serverPort, user + "KR", pass, machine);
             if (!o.Success) { GD.PushWarning($"live: login refused, state {o.Result.State} {o.Result.Message}"); LastLoginRefusal = o.Result; return false; }
             accountId = o.Result.AccountId;
             try

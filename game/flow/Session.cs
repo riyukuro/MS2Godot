@@ -16,14 +16,14 @@ public static class Session
 
     /// <summary>
     /// The server picked in the server list: UIServerListDialog m_nServerId, set by OnSelectServer to the ServerList packet
-    /// row's id (at least 1, uiserverlistdialog.cpp:529-538). The flow has no server list page yet, so it is 1, the first row
-    /// of table/serverList.xml.
+    /// row's id (at least 1, uiserverlistdialog.cpp:529-538). The login sets it from the type 1 login's list
+    /// (<see cref="Ms2.Ui.ServerListPick"/>); 1, the first row of table/serverList.xml, before any login.
     /// </summary>
     public static int ServerId = 1;
 
     /// <summary>
     /// The channel the login asked for: UIServerListDialog m_nChannel, the login type of ResponseLogin, which OnLoginResult
-    /// stores as the current channel (DAT_1439f4a7c, uiserverlistdialog.cpp:618). The flow logs in with channel 0.
+    /// stores as the current channel (DAT_1439f4a7c, uiserverlistdialog.cpp:618). The login sets it with the server pick (at least 1).
     /// </summary>
     public static int Channel;
 

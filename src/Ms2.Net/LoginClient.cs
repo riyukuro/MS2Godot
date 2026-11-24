@@ -16,6 +16,9 @@ public sealed record LoginOutcome(LoginResult Result, IReadOnlyList<CharacterEnt
     public bool CheckNames { get; init; }
 }
 
+/// <summary>The answer to the server list login: the list, or the LoginResult refusal (then <see cref="List"/> is null).</summary>
+public sealed record ServerListAnswer(ServerList List, LoginResult Refusal);
+
 /// <summary>The login server's answer to a rename on character select: CharacterList 7 (<see cref="NameChanged"/>, its
 /// code in Error), or the list sent again (<see cref="List"/>, with the EndList flag).</summary>
 public sealed record RenameAnswer(CharacterListMessage NameChanged, LoginOutcome List);
@@ -27,9 +30,12 @@ public sealed record RenameAnswer(CharacterListMessage NameChanged, LoginOutcome
 public sealed class LoginClient {
     /// <summary>ResponseLogin type byte for the character list: UIServerListDialog sends 2 (uiserverlistdialog.cpp:587), the server reads 2 as CharacterList (LoginHandler.cs:22-25). UILoginDialog sends 1 (the server list, then the server drops the socket).</summary>
     public const byte CharacterListType = 2;
+    /// <summary>ResponseLogin type byte for the server list: UILoginDialog::SendLoginRequest sends 1 (uilogindialog.cpp:230) with login type 0
+    /// (:217, a non-Nexon client); the server answers ServerList and drops the connection (LoginHandler.cs ServerList case).</summary>
+    public const byte ServerListType = 1;
 
     // ResponseLogin as the client builds it (uiserverlistdialog.cpp:586-598, WriteLoginA classobject.cpp:112-121): u8 type 2; unicode id (+ region code when m_bLocaledName, :596-597);
-    // unicode password; i16 login type = the selected channel m_nChannel (:591; 0 before a pick); the 16 byte machine id (CMachineIDManager::GetID, :592); i32 machine value
+    // unicode password; i16 login type = the selected channel m_nChannel (:590; 0 before a pick); the 16 byte machine id (CMachineIDManager::GetID, :592); i32 machine value
     // (CMachineIDManager::GetValue = m_n18, machineidmanager.cpp:58-61); i32 DAT_143ab2858 (:593, filled by the server's bypass key packet, networkservice.cpp:892, else 0);
     // the language code string (FUN_140652030(GetLanguage()), :595; the code depends on the client language setting and is not resolved here).
     // The server reads only up to the machine id (LoginHandler.cs:36-40), so the trailing fields do not change the outcome.
@@ -109,7 +115,42 @@ public sealed class LoginClient {
     public string Ticket { get; init; }
     /// <summary>GMS2 with a ticket: the file that keeps the machine id; read after the connect (the profile is known then), never touched for KMS.</summary>
     public string MachineIdPath { get; init; }
+    /// <summary>UIServerListDialog m_nChannel: the login type of the type 2 request (uiserverlistdialog.cpp:590), the channel the login asks for.</summary>
+    public short Channel { get; init; }
     public LoginClient(TcpTransport transport) { this.transport = transport; }
+
+    /// <summary>
+    /// UILoginDialog::SendLoginRequest @0x1419e1160 (uilogindialog.cpp:204-246): connects (when not yet connected), answers RequestLogin with
+    /// ResponseLogin type 1, and waits for ServerList (CSceneStateLogin::OnPacket, scenestatelogin.cpp:117-132; UIServerListDialog::ReceiveServerList,
+    /// uiserverlistdialog.cpp:310-343). The server drops this connection after the list; the type 2 login goes out on a new one
+    /// (UIServerListDialog::ConnectToServer, :502-517). A refused login is returned in <see cref="ServerListAnswer.Refusal"/>.
+    /// </summary>
+    public async Task<ServerListAnswer> ServerListAsync(string host, int port, string user, string password, byte[] machineId = null, CancellationToken ct = default, int timeoutMs = 15000) {
+        if (transport.Session == null) await transport.ConnectAsync(host, port, ct);
+        machineId ??= new byte[16];
+        if (Ticket != null && MachineIdPath != null && transport.Profile.IsGms2 && machineId.Length == 16) MachineIdFile.LoadOrCreate(MachineIdPath, machineId);
+        var deadline = Environment.TickCount64 + timeoutMs;
+        while (true) {
+            ct.ThrowIfCancellationRequested();
+            if (!transport.Incoming.TryDequeue(out var p)) {
+                if (transport.IsClosed) throw new IOException("login connection closed before the server list", transport.Failure);
+                if (Environment.TickCount64 > deadline) throw new TimeoutException("server list timed out");
+                await Task.Delay(5, ct);
+                continue;
+            }
+            if (transport.OpOf(p) is Inbound lop) switch (lop) {
+                case Inbound.RequestLogin:
+                    await transport.SendAsync(BuildLogin(ServerListType, user, password, machineId), ct);
+                    break;
+                case Inbound.LoginResult:
+                    var result = LoginResult.Read(p.Reader());
+                    if (!result.Success) return new ServerListAnswer(null, result);
+                    break;
+                case Inbound.ServerList:
+                    return new ServerListAnswer(ServerList.Read(p.Reader(), transport.Profile), null);
+            }
+        }
+    }
 
     /// <summary>Connects (when not yet connected) and logs in. <paramref name="user"/> is sent as given: the real client appends the region code ("KR") itself.</summary>
     public async Task<LoginOutcome> LoginAsync(string host, int port, string user, string password, byte[] machineId = null, CancellationToken ct = default) {
@@ -120,13 +161,13 @@ public sealed class LoginClient {
     }
 
     /// <summary>
-    /// The login packet. KMS (or GMS2 without a ticket): the upstream/KMS form, language "en", login type 0. GMS2 with a ticket: the recorded form, where the login
+    /// The login packet. KMS (or GMS2 without a ticket): the upstream/KMS form, language "en", login type 0 for type 1 and <see cref="Channel"/> for type 2. GMS2 with a ticket: the recorded form, where the login
     /// type follows the command as in all 14 recorded logins (command 2 carries 1, command 1 carries 0), the language is "EN", the local IPv4 is the connected
     /// socket's, the nonce is random per login and the trailer is 2 (the newer recorded series).
     /// </summary>
-    ResponseLogin BuildLogin(string user, string password, byte[] machineId) {
-        if (Ticket == null || !transport.Profile.IsGms2) return new ResponseLogin(CharacterListType, user, password, 0, machineId, 0, 0, "en");
-        return new ResponseLogin(CharacterListType, user, password, (short) (CharacterListType == 2 ? 1 : 0), machineId, 0, 0, "EN") {
+    ResponseLogin BuildLogin(byte type, string user, string password, byte[] machineId) {
+        if (Ticket == null || !transport.Profile.IsGms2) return new ResponseLogin(type, user, password, type == ServerListType ? (short) 0 : Channel, machineId, 0, 0, "en");
+        return new ResponseLogin(type, user, password, (short) (type == CharacterListType ? 1 : 0), machineId, 0, 0, "EN") {
             Ticket = Ticket, AccountId = 0, LocalIp = transport.LocalIPv4, Nonce = System.Security.Cryptography.RandomNumberGenerator.GetInt32(int.MinValue, int.MaxValue), Trailer = 2,
         };
     }
@@ -147,7 +188,7 @@ public sealed class LoginClient {
             }
             if (transport.OpOf(p) is Inbound lop) switch (lop) {
                 case Inbound.RequestLogin:
-                    await transport.SendAsync(BuildLogin(user, password, machineId), ct);
+                    await transport.SendAsync(BuildLogin(CharacterListType, user, password, machineId), ct);
                     break;
                 case Inbound.LoginResult:
                     result = LoginResult.Read(p.Reader());
