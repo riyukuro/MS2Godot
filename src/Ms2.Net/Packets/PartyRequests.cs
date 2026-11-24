@@ -21,6 +21,18 @@ public sealed record PartyInviteAnswer(string Name, int Answer, int Kind) : IOut
     public void Write(ByteWriter w) { w.WriteByte(2); w.WriteUnicodeString(Name ?? ""); w.WriteByte((byte)Answer); w.WriteInt(Kind); }
 }
 
+/// <summary>UIMessenger::FUN_141a17bc0 (uimessenger.cpp:2493), the yes of the helper-join box a chat link opens: Party u8 0x27, i32 party id, i32 room id.</summary>
+public sealed record PartyDungeonHelperJoin(int PartyId, int RoomId) : IOutPacket {
+    public Outbound Op => Outbound.Party;
+    public void Write(ByteWriter w) { w.WriteByte(0x27); w.WriteInt(PartyId); w.WriteInt(RoomId); }
+}
+
+/// <summary>UIMessenger::OnDungeonMemberConfirm (@0x141a17c90, uimessenger.cpp:2510), the yes of the member-join box: Party u8 0x2b, i32 party id, i32 room id.</summary>
+public sealed record PartyDungeonMemberJoin(int PartyId, int RoomId) : IOutPacket {
+    public Outbound Op => Outbound.Party;
+    public void Write(ByteWriter w) { w.WriteByte(0x2b); w.WriteInt(PartyId); w.WriteInt(RoomId); }
+}
+
 /// <summary>CPartyManager::SendPartyMode3 (partymanager.cpp:819): leave the party (u8 3).</summary>
 public sealed record PartyLeaveRequest : IOutPacket {
     public Outbound Op => Outbound.Party;

@@ -65,6 +65,19 @@ public partial class HudScene
             InviteLine = name => { ChatLog.AddInvitePartyLine(name); return true; },    // FindMessengerBrowser(0x4e61) is always up here
             DungeonName = id => tables.FieldEnteranceName(id),
         };
+        // UIMessenger::HandlePartyLink (:2302): the chat lines' party links
+        ChatLog.PartyLinks = new PartyLinks
+        {
+            SelfName = () => hudModel.HasLocalPlayer ? hudModel.Player.Name : null,
+            IsInParty = () => partyBook.IsInParty,
+            EnterState = id => live?.DungeonEnterStateOf(id) ?? 0,
+            RoomOf = id => live?.DungeonRoomOf?.Invoke(id),
+            DungeonName = id => tables.FieldEnteranceName(id),
+            Key = k => tables.Common(k) ?? "",
+            Common = id => tables.Common(id) ?? "",
+            Notice = SystemNoticeText,                           // ShowSystemNotice(text, 1, 1)
+            Send = PartySend,
+        };
         Action<PartyMessage> applied = msg =>
         {
             popupMenu?.OnPartyMessage(msg);                     // UIPopUpMenu's 0x53 handler
@@ -95,6 +108,7 @@ public partial class HudScene
             book.MemberUpdated -= updated; book.MembersRefreshed -= refreshed; book.ChiefChanged -= chief; book.Applied -= applied;
             book.VoteStarted -= voteStarted; book.VoteEnded -= voteEnded; book.Noted -= noted;
             if (live != null) live.PartyWindowOpen = () => false;
+            ChatLog.PartyLinks = null;
         };
         if (book.IsInParty) OpenParty();
     }

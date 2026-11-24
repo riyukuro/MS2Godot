@@ -55,6 +55,9 @@ public class PartyRequestsTests
         Assert.That(Bytes(new PartyReadyCheckRequest()), Is.EqualTo(new byte[] { 0x2e }));
         Assert.That(Bytes(new RoomDungeonEnterRequest(0)), Is.EqualTo(new byte[] { 3, 0, 0, 0, 0 }));
         Assert.That(Bytes(new DungeonGiveUpRequest()), Is.EqualTo(new byte[] { 5 }));
+        Assert.That(Bytes(new PartyDungeonHelperJoin(0x0102, 0x0304)), Is.EqualTo(new byte[] { 0x27, 2, 1, 0, 0, 4, 3, 0, 0 }));
+        Assert.That(Bytes(new PartyDungeonMemberJoin(0x0102, 0x0304)), Is.EqualTo(new byte[] { 0x2b, 2, 1, 0, 0, 4, 3, 0, 0 }));
+        Assert.That(new PartyDungeonHelperJoin(1, 2).Op, Is.EqualTo(Outbound.Party));
         Assert.That(Bytes(new ClubCreateRequest("Club")), Is.EqualTo(Concat(new byte[] { 1 }, Str("Club"))));
     }
 

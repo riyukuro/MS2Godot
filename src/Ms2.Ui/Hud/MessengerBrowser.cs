@@ -552,6 +552,8 @@ public sealed class MessengerBrowser
     public Action<UserChatRequest> SendPacket;
     /// <summary>MyPC::IsInParty.</summary>
     public Func<bool> IsInParty = () => false;
+    /// <summary>HandlePartyLink's world (the party manager, the dungeon table and the sends); null = the links do nothing.</summary>
+    public PartyLinks PartyLinks;
     /// <summary>CGuildManager::IsInGuild. STILL-OPEN: the guild manager is not ported, so not in a guild.</summary>
     public Func<bool> IsInGuild = () => false;
     /// <summary>CGuildManager::HasMemberPermission(name, permission). STILL-OPEN: not ported, so none.</summary>

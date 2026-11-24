@@ -1050,14 +1050,20 @@ public sealed class MessengerController : UiController
     /// local player with flags 2 (FUN_1409e0d40 / <see cref="ItemTooltip.Fill"/>), its close button (ShowCloseButton,
     /// astooltip.cpp:159: "closeButton" true) and SetEnablePreview; nothing when the uid links none or the fill fails.
     /// "whisper": a whisper to the argument's name (FUN_141a14bb0, <see cref="WhisperTo"/>), nothing returned.
+    /// "hyperLinkLeft": a click on a party link, <see cref="PartyLinks.Handle(string)"/> (nothing without the browser's links).
     /// STILL-OPEN: "itemPreview" (ItemPreviewMgr's OpenPreview while IsHudOn), "getAchieve", "menu",
-    /// "moveToHome", "billDialog", "searchFromMeratmarket", "itemSelect", "hyperLinkLeft" and the rest are not ported and
+    /// "moveToHome", "billDialog", "searchFromMeratmarket", "itemSelect" and the rest are not ported and
     /// answer nothing.
     /// </summary>
     public override IDictionary<string, object> GetUserData(string name, object[] args)
     {
         if (Model?.HasLocalPlayer != true) return null;
         if (name == "whisper") { WhisperTo(args.Length > 0 ? Rt.ToString(args[0]) : ""); return null; }
+        if (name == "hyperLinkLeft")                                  // :4756, HandlePartyLink; nothing returned
+        {
+            Browser.PartyLinks?.Handle(args.Length > 0 ? Rt.ToString(args[0]) : "");
+            return null;
+        }
         if (name != "getTooltip") return null;
         var item = Browser.LinkedItem(NumberText.ParseInt64W(args.Length > 0 ? Rt.ToString(args[0]) : ""));
         if (item == null) return null;

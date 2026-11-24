@@ -2488,6 +2488,18 @@ public class HudTests
     }
 
     [Test]
+    public void MessengerHyperLinkLeftRunsThePartyLinkOfTheBrowser()
+    {
+        var (c, h, _, _, _) = ChatWindow();
+        Assert.That(c.GetUserData("hyperLinkLeft", new object[] { "inviteParty,Bob" }), Is.Null, "no party links: nothing");
+        var seen = new List<string>();
+        c.Browser.PartyLinks = new PartyLinks { Send = p => seen.Add(((PartyInviteRequest)p).Name) };
+        Assert.That(c.GetUserData("hyperLinkLeft", new object[] { "inviteParty,Bob" }), Is.Null);
+        Assert.That(seen, Is.EqualTo(new[] { "Bob" }));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
     public void MessengerShowsAnItemDropNoticeAsASystemLineWithTheItemLink()
     {
         var m = Model();
