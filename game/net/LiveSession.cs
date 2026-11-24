@@ -1717,6 +1717,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.Cinematic))
             {
                 var cine = CinematicPacket.Read(p.Reader());
+                if (LogPackets) GD.Print($"live: cinematic {cine}");
                 Cinematic.Apply(cine);      // the HUD's pane (UICutSceneCinematic) runs the movie calls
             }
             else if (game.Is(p, Inbound.CameraInterpolation))
