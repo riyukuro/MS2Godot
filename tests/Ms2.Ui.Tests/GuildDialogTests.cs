@@ -177,7 +177,10 @@ public class GuildDialogTests
         Assert.That(c.SkillPage, Is.Not.Null);
         Assert.That(Rt.ToBoolean(c.Host.Get(c.SkillPage, "visible")), Is.True);
         Assert.That(c.Host.Get(c.Host.Child("m_guildFund", c.SkillPage), "text")?.ToString(), Is.EqualTo("g12345"));
-        Assert.That(c.Host.Get(c.Host.Child("m_guildEventFund", c.SkillPage), "text")?.ToString(), Is.EqualTo("g678"));
+        // the event fund text where the page has one (the GMS2 movie's guild_skill_page has no m_guildEventFund)
+        if (c.Host.Child("m_guildEventFund", c.SkillPage) is { } eventFund && !Rt.IsNullish(eventFund))
+            Assert.That(c.Host.Get(eventFund, "text")?.ToString(), Is.EqualTo("g678"));
+        else Assert.That(c.Host.Child("m_guildFund", c.SkillPage), Is.Not.Null, "the page itself is the data's");
         c.OpenCategoryPage("MemberSkill");
         Assert.That(Rt.ToBoolean(c.Host.Get(c.SkillPage, "visible")), Is.False, "HideAllPages");
         Assert.That(c.SkillPage2, Is.Not.Null);

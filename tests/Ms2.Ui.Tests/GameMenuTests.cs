@@ -1,6 +1,7 @@
 using Ms2.Avm2;
 using Ms2.Avm2.Flash;
 using Ms2.Formats.Pack;
+using Ms2.Formats.World;
 using Ms2.Ui.Hud;
 using NUnit.Framework;
 
@@ -94,9 +95,12 @@ public class GameMenuTests
         var home = h.Invoke(menus, "getChildByName", "home");
         Assert.That(Rt.ToNumber(h.Get(home, "x")), Is.EqualTo(4 * 56));
         Assert.That(Rt.ToString(h.Get(h.Invoke(home, "getChildByName", "m_button"), "m_layerName")), Is.EqualTo("home"));
-        // setMenuTag: the caption in the tag, bottom-aligned (TextFieldEx.setVerticalAlign)
+        // setMenuTag: the caption in the tag, bottom-aligned (TextFieldEx.setVerticalAlign). FUN_14193a7b0 gives a top entry
+        // its caption only with feature 0xc4 (MainMenuText) on: KR 1; GMS2 (NA 99) has icons only
         var tag = (Ms2.Avm2.Flash.AsTextField)h.Get(group, "tag");
-        Assert.That(tag.Text, Is.EqualTo("Character"));
+        string caption = h.Player.Translate(c.Table.Find(1001).Label);
+        Assert.That(caption, Is.Not.Empty.And.Not.StartWith("$"), "the character group's caption is in the data's strings");
+        Assert.That(tag.Text, Is.EqualTo(FeatureOn(0xc4) ? caption : ""));
         Assert.That(tag.VerticalAlign, Is.EqualTo("bottom"));
     }
 
@@ -116,14 +120,25 @@ public class GameMenuTests
         Assert.That(c.OnCallback("nosuchentry", Array.Empty<object>()), Is.False);
     }
 
-    /// <summary>Entry 0x14's (characterability) m_notifyUp on its top entry's button.</summary>
+    /// <summary>Entry 0x14's (characterability) m_notifyUp on its top entry's button. Where the menu has no entry 0x14 (its
+    /// child needs feature CharacterAbility: KR 15, GMS2's NA 99), whether any top entry's m_notifyUp shows.</summary>
     static bool AbilityUp(UiHost h, GameMenuController c)
     {
         var t = c.Table;
+        var menus = h.Child("m_menus");
+        if (t.FindTopId(0x14) == 0)
+        {
+            Assert.That(LobbyFeatures.IsEnabledByName(Packs(), "CharacterAbility"), Is.False, "no entry 0x14: the feature is off");
+            return t.TopItems().Select(i => t.Find(i.Id)?.Name).Where(n => n != null).Select(n => h.Invoke(menus, "getChildByName", n))
+                .Where(e => !Rt.IsNullish(e)).Any(e => Rt.ToBoolean(h.Get(h.Get(h.Invoke(e, "getChildByName", "m_button"), "m_notifyUp"), "visible")));
+        }
         string top = t.Find(t.FindTopId(0x14)).Name;
-        var button = h.Invoke(h.Invoke(h.Child("m_menus"), "getChildByName", top), "getChildByName", "m_button");
+        var button = h.Invoke(h.Invoke(menus, "getChildByName", top), "getChildByName", "m_button");
         return Rt.ToBoolean(h.Get(h.Get(button, "m_notifyUp"), "visible"));
     }
+
+    /// <summary>The menu has the character ability entry (0x14).</summary>
+    static bool HasAbilityEntry(GameMenuController c) => c.Table.FindTopId(0x14) != 0;
 
     /// <summary>Entry 7's (option) m_notifyRedCircle on its top entry's button.</summary>
     static bool OptionRedCircle(UiHost h, GameMenuController c)
@@ -137,6 +152,19 @@ public class GameMenuTests
     public void TheAgreementReminderRaisesTheOptionEntrysRedCircle()
     {
         var (h, c) = Load();
+        string top = c.Table.Find(c.Table.FindTopId(7)).Name;
+        var button = h.Invoke(h.Invoke(h.Child("m_menus"), "getChildByName", top), "getChildByName", "m_button");
+        if (!h.Has(button, "setNotifyRedCircle"))
+        {
+            // the GMS2 movie's SystemDropdown has no red circle (no setNotifyRedCircle, no m_notifyRedCircle): the flag is
+            // kept and sent to nothing
+            Assert.That(Rt.IsNullish(h.Get(button, "m_notifyRedCircle")), Is.True);
+            c.SetNotifyRedCircle7Flag(true);
+            c.RefreshMenu();
+            for (int i = 0; i < 5; i++) h.Player.Tick();
+            Assert.That(h.RT.Errors, Is.Empty);
+            return;
+        }
         Assert.That(OptionRedCircle(h, c), Is.False, "built without the reminder");
         c.SetNotifyRedCircle7Flag(true);
         for (int i = 0; i < 5; i++) h.Player.Tick();
@@ -178,7 +206,7 @@ public class GameMenuTests
         Assert.That(AbilityUp(h, c), Is.False, "built without the ability state");
         int quest = (int)model.Tables.CharacterAbilityOpenQuestID;
         c.SetCharacterAbility(OneAbility(), new CharacterAbilityData(), id => id == quest);
-        Assert.That(AbilityUp(h, c), Is.True);
+        Assert.That(AbilityUp(h, c), Is.EqualTo(HasAbilityEntry(c)), "the mark, where the menu has the entry");
         var learned = new CharacterAbilityData();
         learned.Ids.Add(10);
         c.SetCharacterAbility(OneAbility(), learned, id => id == quest);
@@ -198,7 +226,7 @@ public class GameMenuTests
         c.OnQuestRewarded(quest + 1);
         Assert.That(AbilityUp(h, c), Is.False, "another quest's reward leaves the mark");
         c.OnQuestRewarded(quest);
-        Assert.That(AbilityUp(h, c), Is.True);
+        Assert.That(AbilityUp(h, c), Is.EqualTo(HasAbilityEntry(c)), "the mark, where the menu has the entry");
     }
 
     [Test]

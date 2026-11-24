@@ -184,7 +184,10 @@ public class ItemEnchantDialogTests
         r.C.CountByTag = _ => 1;
         r.Select(5, r.Info(5, ing: new[] { new EnchantIngredient(id, 0x60, 4), new EnchantIngredient(id, 1, 1) }));
         var o = r.C.BuildInfo();
-        Assert.That(Rt.ToString(r.Get(o, "enchantFee")), Is.Not.Empty, "(4 - 1) * 1000");
+        // (4 - 1) * 1000 in s_itemenchant_fee: the KMS strings have it, the GMS2 ones do not (its fee text is empty)
+        string feeText = r.Model.Tables.Common("s_itemenchant_fee") ?? "";
+        Assert.That(Rt.ToString(r.Get(o, "enchantFee")), Is.EqualTo(r.C.FeeText(1, 4)));
+        Assert.That(r.C.FeeText(1, 4), feeText.Length > 0 ? Is.Not.Empty : Is.Empty);
         Assert.That(r.Model.ItemSlots.ContainsKey(ItemEnchantDialogController.IngredientPrefix + "0"), Is.True);
         Assert.That(r.Model.ItemSlots.ContainsKey(ItemEnchantDialogController.IngredientPrefix + "1"), Is.True);
         r.C.CountByTag = _ => 9;

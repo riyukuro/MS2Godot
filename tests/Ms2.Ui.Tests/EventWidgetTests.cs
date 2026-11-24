@@ -7,7 +7,8 @@ namespace Ms2.Ui.Tests;
 
 /// <summary>
 /// The event widgets' C++ side (UIEventWidgetDialog, uileveluppackagewidgetdialog.cpp): when each opens at field entry
-/// (vfunc_84) and the data it sends (vfunc_85). The level-up package cases read the KR data (need MS2_DATA).
+/// (vfunc_84) and the data it sends (vfunc_85). The level-up package cases read the data of MS2_DATA: the KR rows on KMS data, the
+/// rows of the data's own locale elsewhere.
 /// </summary>
 public class EventWidgetTests
 {
@@ -25,7 +26,19 @@ public class EventWidgetTests
         return packs;
     }
 
-    static QuestTable Quests() => quests ??= QuestTable.Load(Packs(), new[] { "en" }, "KR", f => LobbyFeatures.IsEnabled(Packs(), f));
+    static QuestTable Quests() => quests ??= QuestTable.Load(Packs(), new[] { "en" }, LobbyFeatures.LocaleOf(Packs()), f => LobbyFeatures.IsEnabled(Packs(), f));
+
+    static bool Kr => LobbyFeatures.LocaleOf(Packs()) == "KR";
+
+    /// <summary>Data of another locale (GMS2, per quest file): the reward rows of the quest's environment the client takes, the one
+    /// of its locale before the one without (IsElementAvailable). Those files give every job group the one row.</summary>
+    static List<(int Item, uint Count)> LocaleRows(int questId)
+    {
+        var file = Ms2.Formats.World.GameStrings.Parse(Packs().Read("Xml", $"quest/{questId}.xml")).Root!;
+        var envs = file.Elements("environment").Where(e => FeatureElements.IsAvailable(Packs(), e)).ToList();
+        var env = envs.FirstOrDefault(e => !string.IsNullOrEmpty((string)e.Attribute("locale"))) ?? envs.Single();
+        return env.Descendants("essentialJobItem").Select(e => ((int)e.Attribute("code"), (uint)e.Attribute("count"))).ToList();
+    }
 
     static UiModel NewModel() => new(new GameTables(Packs(), "en")) { FeatureEnabledByName = f => LobbyFeatures.IsEnabled(Packs(), f) };
 
@@ -108,10 +121,12 @@ public class EventWidgetTests
         Assert.That(w.QuestId, Is.EqualTo(70000002));
         Assert.That(d["title"], Is.EqualTo("$s_levelup_package_widget"));
         Assert.That((d["max"], d["current"], d["text"]), Is.EqualTo((5, 2, "12/15")));
-        // 70000002's last row with an item a knight (10) is recommended: its KR row, 12200297 rank 4 count 1
+        // 70000002's last row with an item a knight (10) is recommended: its KR row, 12200297 rank 4 count 1; on GMS2 (no NA
+        // environment) the one row of the environment without a locale
         var slot = model.ItemSlots[(string)d["binding"]];
         Assert.That(d["binding"], Is.EqualTo("LevelUpPackageWidget_1"));
-        Assert.That((slot.Item.ItemId, slot.Item.Count), Is.EqualTo((12200297, 1u)));
+        var want = Kr ? (12200297, 1u) : LocaleRows(70000002).Single();
+        Assert.That((slot.Item.ItemId, slot.Item.Count), Is.EqualTo(want));
         // a second build rebinds: the binder is cleared first
         d = w.Data();
         Assert.That(d["binding"], Is.EqualTo("LevelUpPackageWidget_2"));
@@ -122,8 +137,11 @@ public class EventWidgetTests
     public void LevelUpRewardIsTheRowForThePlayersJobGroup()
     {
         // 70000001's KR rows: one per job group; 13200167 (recommended for 1 and 10, rank 4, count 1) is a knight's and a
-        // beginner's, 13100171 (70, count 2, clamped to its slot maximum 1) an assassin's, 15100163 (a bow) an archer's
-        foreach (var (job, item, count) in new[] { (10, 13200167, 1u), (1, 13200167, 1u), (70, 13100171, 1u), (50, 15100163, 1u) })
+        // beginner's, 13100171 (70, count 2, clamped to its slot maximum 1) an assassin's, 15100163 (a bow) an archer's. On GMS2
+        // the environment without a locale (it has no NA one) has one row, the same for every job group.
+        var cases = Kr ? new[] { (10, 13200167, 1u), (1, 13200167, 1u), (70, 13100171, 1u), (50, 15100163, 1u) }
+            : new[] { 10, 1, 70, 50 }.Select(j => (j, LocaleRows(70000001).Single().Item, LocaleRows(70000001).Single().Count)).ToArray();
+        foreach (var (job, item, count) in cases)
         {
             var model = NewModel();
             var d = LevelUp(model, 3, job).Data();

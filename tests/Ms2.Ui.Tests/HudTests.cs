@@ -419,7 +419,9 @@ public class HudTests
         Assert.That(tip["itemName"], Is.EqualTo(m.Tables.ItemName(11300451)));
         Assert.That(tip["itemGrade"], Is.EqualTo(Ms2.Ui.Items.ItemTooltip.ItemRank(m.Tables.Items, 11300451)));
         Assert.That(tip["tooltipAlign"], Is.EqualTo(5));   // flags 0x20: neither 0x40 nor 2
-        Assert.That(c.GetTooltip(new object[] { 1u }), Is.Null);
+        // an id the data has no item for (GMS2 has an item 1)
+        uint missing = (uint)Enumerable.Range(1, 1000).First(i => m.Tables.Items.Get(i) == null);
+        Assert.That(c.GetTooltip(new object[] { missing }), Is.Null);
     }
 
     [Test]

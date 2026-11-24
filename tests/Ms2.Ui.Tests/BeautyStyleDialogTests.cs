@@ -1,3 +1,4 @@
+using System.Globalization;
 using Ms2.Avm2;
 using Ms2.Avm2.Flash;
 using Ms2.Formats.Pack;
@@ -107,10 +108,13 @@ public class BeautyStyleDialogTests
     {
         Packs();
         var t = new GameTables(packs, "en");
-        Assert.That(t.BeautyStyleExpandSlotPrice, Is.GreaterThan(0));
-        Assert.That(t.BeautyStyleExpandSlotCount1time, Is.GreaterThan(0));
-        Assert.That(t.BeautyStyleDefaultSlotCount, Is.GreaterThan(0));
-        Assert.That(t.BeautyStyleMaxSlotCount, Is.GreaterThan(0));
+        // each the data's own row (KMS2: 330, 1, 30, 5; GMS2: the NA price 980 and a max of 0, no slot to buy)
+        long Want(string key, long fallback) => ClientConstantsTests.TableValue(packs, key) is { } v ? long.Parse(v, CultureInfo.InvariantCulture) : fallback;
+        Assert.That(t.BeautyStyleExpandSlotPrice, Is.EqualTo(Want("BeautyStyleExpandSlotPrice", 790)));
+        Assert.That(t.BeautyStyleExpandSlotCount1time, Is.EqualTo(Want("BeautyStyleExpandSlotCount1time", 3)));
+        Assert.That(t.BeautyStyleDefaultSlotCount, Is.EqualTo(Want("BeautyStyleDefaultSlotCount", 1)));
+        Assert.That(t.BeautyStyleMaxSlotCount, Is.EqualTo(Want("BeautyStyleMaxSlotCount", 12)));
+        Assert.That(t.BeautyStyleExpandSlotPrice, Is.Not.EqualTo(790), "the table has a row for the price");
     }
 
     [Test]

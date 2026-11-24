@@ -1,6 +1,7 @@
 using Ms2.Avm2;
 using Ms2.Avm2.Flash;
 using Ms2.Formats.Pack;
+using Ms2.Formats.World;
 using NUnit.Framework;
 
 namespace Ms2.Ui.Tests;
@@ -42,15 +43,29 @@ public class CharacterCreateSelectTests
     static void Tick(UiHost h, int n) { for (int i = 0; i < n; i++) h.Player.Tick(); }
 
     [Test]
-    public void KrDisplayRowIsTheHighestEnabledFeature()
+    public void TheDisplayRowIsTheHighestEnabledFeature()
     {
         var c = new CharacterCreateSelectController();
         c.Load(Packs(), "en");
-        // the restored client's job page: twelve tabs, only the beginner tab disabled, a random start among six jobs
-        Assert.That(c.Jobs.Select(j => j.JobCode), Is.EqualTo(new[] { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 1 }));
-        Assert.That(c.Jobs.Where(j => !j.Enabled).Select(j => j.JobCode), Is.EqualTo(new[] { 1 }));
-        Assert.That(c.RandomJobs, Is.EqualTo(new[] { 10, 20, 30, 40, 50, 80 }));
-        Assert.That(c.SelectJob, Is.EqualTo(10));
+        if (LobbyFeatures.LocaleOf(Packs()) == "KR")
+        {
+            // the restored client's job page: twelve tabs, only the beginner tab
+            // disabled, a random start among six jobs
+            Assert.That(c.Jobs.Select(j => j.JobCode), Is.EqualTo(new[] { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 1 }));
+            Assert.That(c.Jobs.Where(j => !j.Enabled).Select(j => j.JobCode), Is.EqualTo(new[] { 1 }));
+            Assert.That(c.RandomJobs, Is.EqualTo(new[] { 10, 20, 30, 40, 50, 80 }));
+            Assert.That(c.SelectJob, Is.EqualTo(10));
+        }
+        else
+        {
+            // GMS2 (NA): the locale="NA" group wins over the one without a locale, and its Striker row is the highest: eleven
+            // tabs, none disabled, the striker selected; its random list is spelt "frandomselectJobCode", so there is none
+            Assert.That(LobbyFeatures.LocaleOf(Packs()), Is.EqualTo("NA"));
+            Assert.That(c.Jobs.Select(j => j.JobCode), Is.EqualTo(new[] { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110 }));
+            Assert.That(c.Jobs.Where(j => !j.Enabled), Is.Empty);
+            Assert.That(c.RandomJobs, Is.Empty);
+            Assert.That(c.SelectJob, Is.EqualTo(100));
+        }
         Assert.That(c.Jobs.All(j => j.Movie.EndsWith(".usm") && j.Name.Length > 0 && j.Desc.Length > 0), Is.True);
     }
 
