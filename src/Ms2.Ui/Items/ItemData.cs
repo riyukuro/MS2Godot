@@ -159,6 +159,7 @@ public sealed class ItemData
         if (env.Element("slots")?.Element("slot") is { } slot) d.FirstSlot = (string)slot.Attribute("name") ?? "";
         d.CustomNote = ((string)env.Element("MusicScore")?.Attribute("isCustomNote"))?.ToLowerInvariant() is "true" or "1";
         if (env.Element("ucc") is { } ucc) d.UccMesh = (string)ucc.Attribute("mesh") ?? "";
+        if (env.Element("maid") is { } maid) Int(maid, "maidID", ref d.MaidElementId);
         if (env.Element("property") is { } p)
         {
             Int(p, "type", ref d.Type);
@@ -316,8 +317,8 @@ public sealed class ItemData
         SellPrices.Count == 0 ? 0 : SellPrices.Count == 1 ? SellPrices[0]
         : SellPrices.Count == 6 && rarity >= 1 && rarity <= 6 ? SellPrices[rarity - 1] : 0;
 
-    /// <summary>CItemData::GetMaidId (itemdata.cpp:1163): param2 of a type 6 subtype 7 item; HasMaidId is above 0.</summary>
-    public bool HasMaidId => Type == 6 && Subtype == 7 && Param2 > 0;
+    /// <summary>CItemData::HasMaidId (itemdata.cpp:713): <see cref="MaidId"/> is above 0.</summary>
+    public bool HasMaidId => MaidId > 0;
     /// <summary>CItemData::HasPeriod (itemdata.cpp:981).</summary>
     public bool HasPeriod => UsePeriod > 0 || ExpirationTime > 0 || ExpirationType != 0 || TermTag.Length != 0;
 
@@ -355,8 +356,15 @@ public sealed class ItemData
     public bool IsGemstone => Type == 0xd;                     // FUN_14053d840 (:1038)
     public bool IsLapenshard => Type == 0x15;                  // IsLapenshardType (:1050)
     public bool IsPieceItem => Type == 0x1b;                   // :1068
-    /// <summary>GetMaidId (:1163): the npc a type 6 / subtype 7 item summons, else 0; HasMaidId (:713) is its being set.</summary>
-    public int MaidId => Type == 6 && Subtype == 7 ? Param2 : 0;
+    /// <summary>
+    /// GetMaidId (:1163): the npc a type 6 / subtype 7 item summons (its param2), else 0. A GMS2 item file names it in its own
+    /// &lt;maid maidID&gt; (<see cref="MaidElementId"/>), which is used when set. INFERRED from the data (the GMS2 exe is packed):
+    /// every GMS2 item file has a &lt;maid&gt;, 0 in all but 36, and those 36 are the KMS data's 36 type 6 / subtype 7 items
+    /// with the same npc as their param2; GMS2 gives them subtype 5 and no param2. The KMS data has no &lt;maid&gt;.
+    /// </summary>
+    public int MaidId => MaidElementId > 0 ? MaidElementId : Type == 6 && Subtype == 7 ? Param2 : 0;
+    /// <summary>The GMS2 item file's &lt;maid maidID&gt;, 0 when it has none (see <see cref="MaidId"/>).</summary>
+    public int MaidElementId;
     public bool IsCashItem => ItemGroup == 4;                  // :1280
     public bool HasSkinType => SkinType != 0;                  // :756
     /// <summary>:564: not type 1, and more than one per slot.</summary>
