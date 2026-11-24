@@ -27,6 +27,8 @@ public class EffectCasterKindSiteTests
         // the own PC: MyPC::vfunc_58 1
         new("ui/HudScene.Cast.cs", "if (!r.Level.HasSequenceName) live.ReleaseKeptEffect(live.SpawnKeptEffect(fx, me.Visual,", "CasterMyPc",
             "1: the own motion effect of a level without a sequence, inserted on the PC (PlayCastStartEffect, stateskill.cpp:1834)"),
+        new("net/LiveSession.SwimDash.cs", "swimDashEffect = SpawnKeptEffect(name, player.Visual,", "CasterMyPc",
+            "1: StateSwimDash's dash effect started at the own PC (SetActor) and kept as m_nEffect (FUN_1417fbec0, stateswimdash.cpp:221-233)"),
         new("ui/HudScene.Cast.cs", "ownTagIds.Motion = live.SpawnKeptEffect(fx, me.Visual,", "CasterMyPc",
             "1: the own motion effect kept on the PC (AnimActivated SetActor, stateskill.cpp:750-761)"),
         new("ui/HudScene.Cast.cs", "if (played) ownTagIds.Motion = live.SpawnKeptEffect(motion.MotionEffect, player.Visual,", "CasterMyPc",
