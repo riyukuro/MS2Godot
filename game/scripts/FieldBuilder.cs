@@ -150,6 +150,20 @@ public sealed class FieldBuilder
     public static bool IsBreakable(FieldEntity e) => e.HasMixin("MS2Breakable");
 
     /// <summary>
+    /// The instances (drawn and shadow-only) of every registered vibrate object (Ms2.Ui.FieldVibrates.Registers), for
+    /// world/FieldVibrateDraws: a vibrator moves them (its shake and its return's drop), and fades and shows them.
+    /// </summary>
+    public readonly Dictionary<FieldEntity, List<(MultiMesh Mm, int Index)>> VibrateMeshDraws = new();
+    /// <summary>The drawn instances of every registered vibrate object, which its fades draw alone.</summary>
+    public readonly Dictionary<FieldEntity, List<FadeDraw>> VibrateFadeDraws = new();
+    /// <summary>The colliders of every registered vibrate object: its own body, whose group a break switches
+    /// (CPhysXHelper::SetEntityCollisionGroup, see world/FieldVibrateDraws).</summary>
+    public readonly Dictionary<FieldEntity, TriggerCollider> VibrateColliders = new();
+
+    /// <summary>A vibrate object of the field load's registry (WorldService m_5e8: MS2Vibrate, Enabled, a size).</summary>
+    public static bool IsVibrate(FieldEntity e) => Ms2.Ui.FieldVibrates.Registers(e);
+
+    /// <summary>
     /// The instances (drawn and shadow-only) of every field lift (MS2Liftable), for world/FieldLiftables: a lift's
     /// SetActive fades it out and shows it again (CLiftableObject::SetActive, liftableobject.cpp:371-396).
     /// </summary>
@@ -162,6 +176,11 @@ public sealed class FieldBuilder
 
     void AddTriggerDraw(FieldEntity e, MultiMesh mm, int index)
     {
+        if (IsVibrate(e))
+        {
+            if (!VibrateMeshDraws.TryGetValue(e, out var own)) VibrateMeshDraws[e] = own = new List<(MultiMesh, int)>();
+            own.Add((mm, index));
+        }
         if (IsBreakable(e))
         {
             if (!BreakableMeshDraws.TryGetValue(e, out var own)) BreakableMeshDraws[e] = own = new List<(MultiMesh, int)>();
@@ -180,6 +199,11 @@ public sealed class FieldBuilder
     void AddFadeDraw(FieldEntity e, MultiMesh mm, int index, ModelMesh mesh, Node3D parent, bool notReceiving, uint lightOff)
     {
         AddTriggerDraw(e, mm, index);
+        if (IsVibrate(e))
+        {
+            if (!VibrateFadeDraws.TryGetValue(e, out var own)) VibrateFadeDraws[e] = own = new List<FadeDraw>();
+            own.Add(new FadeDraw { Mm = mm, Index = index, Mesh = mesh, Parent = parent, NotReceiving = notReceiving });
+        }
         if (IsBreakable(e))
         {
             if (!BreakableFadeDraws.TryGetValue(e, out var own)) BreakableFadeDraws[e] = own = new List<FadeDraw>();
@@ -582,6 +606,9 @@ public sealed class FieldBuilder
                 bool disabled = e.Bool("DisableCollision");
                 bool trigger = IsTriggerMesh(e);
                 if (disabled && !trigger) continue;
+                // a vibrate object's colliders also get a body of their own: its break and return switch their group
+                // (CEntityVibrator, entityvibrator.cpp:338-342 and the return's SetEntityCollisionGroup)
+                bool vibrate = !trigger && IsVibrate(e);
                 int group = (int)e.Number("PropCollisionGroup");
                 // MyPC::FUN_141524a80 (mypc.cpp:2353-2366): a state sync taken while standing on a MS2CubeProp whose
                 // IsFallReturn is set and whose PropCollisionGroup is 9 or 8 carries the cube's cell. Its shapes carry the
@@ -605,14 +632,14 @@ public sealed class FieldBuilder
                 TriggerCollider tc = null;
                 StaticBody3D Body(int at)
                 {
-                    if (!trigger) return Chunk(e.Position, at);
+                    if (!trigger && !vibrate) return Chunk(e.Position, at);
                     if (tc == null)
                     {
                         tc = new TriggerCollider { Group = group, Overlap = twoSided };
-                        tc.Body = new StaticBody3D { Name = $"Trigger_{entityIndex}", CollisionLayer = disabled ? 0u : 1u << at, CollisionMask = 0 };
+                        tc.Body = new StaticBody3D { Name = $"{(vibrate ? "Vibrate" : "Trigger")}_{entityIndex}", CollisionLayer = disabled ? 0u : 1u << at, CollisionMask = 0 };
                         tc.Body.SetMeta(GroupMeta, at);
                         colliders.AddChild(tc.Body);
-                        TriggerColliders[e] = tc;
+                        if (vibrate) VibrateColliders[e] = tc; else TriggerColliders[e] = tc;
                     }
                     return tc.Body;
                 }

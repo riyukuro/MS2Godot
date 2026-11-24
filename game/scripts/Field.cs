@@ -57,6 +57,8 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
     public World.FieldTriggers Triggers { get; private set; }
     /// <summary>The field's breakable objects as drawn (CBreakableObject::SetState), which the live session's Breakable packets drive.</summary>
     public World.FieldBreakables Breakables { get; private set; }
+    /// <summary>The field's vibrate objects' instances and colliders, driven by the session's vibrators.</summary>
+    public World.FieldVibrateDraws Vibrates { get; private set; }
     /// <summary>The field lifts' fades and removals (live only).</summary>
     public World.FieldLiftables Liftables { get; private set; }
     /// <summary>The lift target boxes' quest markers (CLiftableTarget's effect).</summary>
@@ -211,6 +213,8 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         AddChild(Triggers.Fader);
         Breakables = new World.FieldBreakables(Net.LiveSession.Instance?.Breakables ?? DevBreakables(), fb.BreakableMeshDraws, fb.BreakableFadeDraws);
         AddChild(Breakables.Fader);
+        Vibrates = new World.FieldVibrateDraws(Net.LiveSession.Instance?.Vibrates, fb.VibrateMeshDraws, fb.VibrateFadeDraws, fb.VibrateColliders);
+        AddChild(Vibrates.Fader);
         Liftables = new World.FieldLiftables(Net.LiveSession.Instance?.Liftables, fb.LiftableMeshDraws, fb.LiftableFadeDraws);
         AddChild(Liftables.Fader);
         int liftsElsewhere = 0;
@@ -226,6 +230,7 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         var regionSkills = new World.RegionSkills(packs, builder);   // WorldService's region skill objects (OnRegionSkill 0x4C)
         AddChild(regionSkills);
         Triggers.Bind(regionSkills);   // the effect trigger objects' effects go through the same effect service
+        Vibrates.Bind(regionSkills);   // and the vibrate objects' XmlFilePath effects
         LiftMarkers = new World.LiftTargetMarkers(Net.LiveSession.Instance?.LiftTargets, regionSkills);   // and the lift target markers
         long tBuild = sw.ElapsedMilliseconds;
         await Budget();
@@ -404,6 +409,7 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
     {
         if (Active == this) Active = null;
         Breakables?.Detach();
+        Vibrates?.Detach();
         Liftables?.Detach();
         LiftMarkers?.Detach();
         FieldLights.Clear(lightSet);

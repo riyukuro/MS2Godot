@@ -929,6 +929,25 @@ public sealed partial class RemoteLayer : Node3D
         }
     }
 
+    readonly List<Ms2.Ui.Hud.VibrateHit> vibrateHits = new();
+
+    /// <summary>
+    /// WorldService::FUN_141bc3560's vibrate objects' loop (worldservice_1.cpp:9181-9240), the first of the pass: the field's
+    /// vibrate objects (LiveSession.Vibrates, in field space), each hit sending the Vibrate request (0x26) with the local
+    /// player's position.
+    /// STILL-OPEN: PlayHitSound of the object's SoundMaterial.
+    /// </summary>
+    void RunVibrateTags()
+    {
+        var live = LiveSession.Instance;
+        if (live == null || live.Vibrates.Count == 0) return;
+        var own = live.OwnPlayer;
+        if (own == null || !IsInstanceValid(own)) return;
+        var g = own.GlobalPosition;
+        if (TombTags.RunVibrates(live.Vibrates, new System.Numerics.Vector3(g.X, -g.Z, g.Y), vibrateHits) == 0) return;
+        foreach (var h in vibrateHits) live.SendVibrate(h.Request);
+    }
+
     /// <summary>
     /// WorldService::FUN_141bc3560's tomb loop (worldservice_1.cpp:9319-9375), run from the world tick only while an area is
     /// registered: every other PC's standing tomb, at its node's place in client space (z up, unrotated: PC::FUN_14165cac0 places
@@ -997,7 +1016,8 @@ public sealed partial class RemoteLayer : Node3D
         }
         TickRemoteMagics(now);
         LiveSession.Instance?.Breakables.Update(now);
-        if (TombTags.Count > 0) { RunMarkerTags(); RunTombTags(); }
+        LiveSession.Instance?.Vibrates.Update(tick);   // the world tick's vibrators (worldservice_1.cpp:9243-9250)
+        if (TombTags.Count > 0) { RunVibrateTags(); RunMarkerTags(); RunTombTags(); }
         CodiTick(dt);
         npcs.Process(dt);
         if (ForcedPc() is { } own) npcs.ForceSources(own.ForceNpcs);   // FUN_141bc8420's npc zones

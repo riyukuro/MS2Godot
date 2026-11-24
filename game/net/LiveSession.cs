@@ -583,6 +583,9 @@ public partial class LiveSession : Node
     public readonly Ms2.Ui.LiftableObjects Liftables = new();
     /// <summary>The field's liftable target boxes (WorldService m_540).</summary>
     public readonly Ms2.Ui.LiftableTargetBoxes LiftTargets = new();
+    /// <summary>The field's vibrate objects and their running vibrators (WorldService m_5e8 and m_468; RecvOp Vibrate 0x75,
+    /// HideVibrate 0x76, ShowVibrate 0x77).</summary>
+    public readonly Ms2.Ui.FieldVibrates Vibrates = new();
     /// <summary>The own pc's cube mode and craft (PC::m_nCubeModeFFC, m_pCubeCraft).</summary>
     public readonly Ms2.Ui.CubeCraftState CubeCraft = new();
     CubeCraftOwner cubeCraftOwner;
@@ -691,6 +694,22 @@ public partial class LiveSession : Node
     public void SendRevival(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
     /// <summary>The field breakables' tag pass sends (Breakable 0x27, WorldService::FUN_141bc3560).</summary>
     public void SendBreakable(Ms2.Net.Packets.BreakableRequest packet) => Send(packet);
+    /// <summary>The vibrate objects' tag pass sends (Vibrate 0x26, WorldService::FUN_141bc3560).</summary>
+    public void SendVibrate(Ms2.Net.Packets.VibrateRequest packet) => Send(packet);
+
+    /// <summary>
+    /// OnVibrate's cast record (CSkillRecord::Init, then GetBrokenOffence, skillrecord.cpp:382): the skill's level row, else
+    /// null (Init fails and OnVibrate does nothing); the motion's attack's brokenOffence, 0 when the level has no such attack.
+    /// </summary>
+    int? VibrateOffence(Ms2.Net.Packets.Vibrate v)
+    {
+        if (v.Mode is not (0 or 1)) return 0;
+        var level = SkillRows?.Invoke((uint)v.SkillId)?.GetLevelData(v.Level);
+        if (level == null) return null;
+        if (v.Motion >= level.Motions.Count) return 0;
+        var attacks = level.Motions[v.Motion].Attacks;
+        return v.AttackPoint < attacks.Count ? attacks[v.AttackPoint].BrokenOffence : 0;
+    }
     /// <summary>CBuddyManager: the friends, requests and blocks from the Buddy packets (0x61, CSceneStateGame::OnBuddy); live
     /// only. Its sends (Buddy 0x30) go out while the game connection is up.</summary>
     public Ms2.Ui.BuddyBook Buddies => buddies ??= new Ms2.Ui.BuddyBook { Send = SendBuddy };
@@ -1208,7 +1227,7 @@ public partial class LiveSession : Node
             Me.Apply(entry.Enter);                 // the exp counters (OnServerEnter, scenestategame.cpp:2085-2086)
         });
         GD.Print($"live: {entry.Early.Count} packets before the field: {Quests.All.Count} quests, {Items.All.Count} items, adventure claimed {Adventure.Claimed.Count}, missions {Adventure.Missions.Count}");
-        Ms2.Ui.FieldEnter.Take(fieldEntry, entry.Field, Breakables, Liftables, LiftTargets);   // the login's field: its breakables and lifts wait for its entities
+        Ms2.Ui.FieldEnter.Take(fieldEntry, entry.Field, Breakables, Liftables, LiftTargets, Vibrates);   // the login's field: its breakables and lifts wait for its entities
         NewFieldPortals(entry.Field.MapId);
         NewFieldInteractObjects(entry.Field.MapId);
         NewFieldReactors();
@@ -1485,7 +1504,7 @@ public partial class LiveSession : Node
     void OnRequestFieldEnter(RequestFieldEnter f)
     {
         // a refused entry or the loading map again keeps the field's breakables and lifts; a new field resets them
-        var taken = Ms2.Ui.FieldEnter.Take(fieldEntry, f, Breakables, Liftables, LiftTargets); // perf-ok: FieldEnter.Take is a static method, not LINQ
+        var taken = Ms2.Ui.FieldEnter.Take(fieldEntry, f, Breakables, Liftables, LiftTargets, Vibrates); // perf-ok: FieldEnter.Take is a static method, not LINQ
         if (taken == Ms2.Ui.FieldEnterResult.Refused)
         {
             string text = Ms2.Ui.FieldMoveError.Text(f.Error, Ms2.Ui.Hud.MessageBoxData.CommonByKey);
@@ -2329,7 +2348,15 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.FurnishingStorage))
                 ReadNotApplied("FurnishingStorage", Ms2.Net.Packets.FurnishingStorage.Read(p.Reader(), game.Profile).Mode);   // OnFurnishingStorage (scenestategame.cpp:2734): the house storage list has no dialog here yet
             else if (game.Is(p, Inbound.Vibrate))
-                ReadNotApplied("Vibrate", Ms2.Net.Packets.Vibrate.Read(p.Reader(), game.Profile).Mode);   // OnVibrate (scenestategame.cpp:5981): a skill cast on a named world object; the world service's by-name skill hook is not ported
+            {
+                var v = Ms2.Net.Packets.Vibrate.Read(p.Reader(), game.Profile);   // OnVibrate (scenestategame.cpp:5981)
+                var outcome = Vibrates.Apply(v, VibrateOffence(v), (uint)ServerTick);
+                if (LogPackets) GD.Print($"live: Vibrate mode {v.Mode} '{v.Entity}' skill {v.SkillId}/{v.Level}: {outcome}");
+            }
+            else if (game.Is(p, Inbound.HideVibrate))
+                Vibrates.Hide(Ms2.Net.Packets.VibrateName.Read(p.Reader()), (uint)ServerTick);   // OnHideVibrate (scenestategame.cpp:6018)
+            else if (game.Is(p, Inbound.ShowVibrate))
+                Vibrates.Show(Ms2.Net.Packets.VibrateName.Read(p.Reader()));   // OnShowVibrate (scenestategame.cpp:6026)
             else if (game.Is(p, Inbound.SkillDamage))
             {
                 // The records that hit the own player; MasteryEvents applies the client's mode drops (3 needs its PC, 5 its
