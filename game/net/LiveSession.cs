@@ -557,7 +557,7 @@ public partial class LiveSession : Node
         var (notice, box) = Ms2.Ui.JobErrorNotice.Text(error, value, Ms2.Ui.Hud.MessageBoxData.Common);
         if (box != null) Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(box, 0, null, "");
         if (notice.Length != 0) SystemNoticeSink?.Invoke(notice);
-        GD.Print($"live: job error {error} notice \"{notice}\"{(box != null ? " with a box" : "")}");
+        if (LiveCheck) GD.Print($"live: job error {error} notice \"{notice}\"{(box != null ? " with a box" : "")}");
     }
 
     /// <summary>The changeJobs effects played on the own PC (the scripted run counts them).</summary>
@@ -2406,7 +2406,7 @@ public partial class LiveSession : Node
                 if (j.Mode == 2 && remote?.PlayJobChangeEffect(j.ObjectId) == true)
                 {
                     if (selfJob) JobChangeEffects++;
-                    GD.Print($"live: job change effect on object {j.ObjectId}");
+                    if (LiveCheck) GD.Print($"live: job change effect on object {j.ObjectId}");
                 }
                 GD.Print($"live: job mode {j.Mode} object {j.ObjectId}{(selfJob ? " SELF" : "")}" + (j.Book != null ? $" ({j.Book.Skills.Count} skills)" : j.Mode == 3 ? $" error {j.Error}" : ""));
             }
