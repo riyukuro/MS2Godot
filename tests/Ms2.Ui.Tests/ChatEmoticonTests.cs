@@ -324,6 +324,39 @@ public class ChatEmoticonTests
     }
 
     [Test]
+    public void APackAddedWhileTheDialogIsClosedIsNewOnTheNextOpenUntilItUnloads()
+    {
+        // the dialog is registered with the game scene (uiservice.cpp:2658), so FUN_140a39360's FindChatEmoticonDialog finds
+        // it closed and AddNewGroup marks the pack (and queues the guide occurrence); vfunc_26 @0x140bd1160
+        // (uichatemoticondialog.cpp:220-224), UIDialog's unload, clears the marks
+        var t = Table();
+        uint g = BigGroup(t);
+        var s = State();
+        var c = new ChatEmoticonDialogController(s) { CommonText = id => $"c{id:x} {{0}}/{{1}}/{{2}} {{3}}:{{4}}" };
+        var occurrences = new List<int>(); c.QueueOccurrence = (k, _) => occurrences.Add(k);
+        c.Attach();
+        s.Apply(new ChatStampMessage.Added(1, new[] { new ChatEmoticonGroup(g, 5000) }));
+        Assert.That(occurrences, Is.EqualTo(new[] { ChatEmoticonDialogController.ChatEmoticonOccurrence }));
+        int cat = (int)t.GetEmoticonsByGroup(g)[0].CategoryId;
+        Assert.That(c.IsNewTab(cat), Is.True, "the model is rebuilt with no movie");
+
+        var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
+        p.StageW = 1920; p.StageH = 1080;
+        var h = new UiHost(p, c, new UiModel(tables));
+        Assert.That(h.Load(), Is.True, c.Movie + " load: " + string.Join("; ", rt.Errors));
+        for (int i = 0; i < 5; i++) p.Tick();
+        Assert.That(c.IsNewTab(cat), Is.True, "still new when opened");
+        Assert.That(c.TabEmoticons(cat).All(x => x.New), Is.True);
+        Assert.That(c.DialogCallback("onEndClose"), Is.True);
+        c.Rebuild();
+        Assert.That(c.IsNewTab(cat), Is.False, "the unload cleared the marks");
+        s.Apply(new ChatStampMessage.Added(1, new[] { new ChatEmoticonGroup(g, 5000) }));
+        Assert.That(c.IsNewTab(cat), Is.True, "still hooked after the close");
+        c.Detach();
+        Assert.That(c.TypeName, Is.EqualTo("ChatEmoticonDialog"), "GetTypeName @0x140bd0f60: the settings file's name");
+    }
+
+    [Test]
     public void AnExpiredPackShowsDisabledAndTheShopTabKeepsTheTab()
     {
         var t = Table();

@@ -6,10 +6,12 @@ using Ms2.Ui.ChatEmoticons;
 namespace Ms2.Ui.Hud;
 
 /// <summary>
-/// UIChatEmoticonDialog (ms2/client/ms2/uichatemoticondialog.cpp, UI 0x4f80, "ChatEmoticon", movie uichatemoticondialog): the
+/// UIChatEmoticonDialog (ms2/client/ms2/uichatemoticondialog.cpp, UI 0x4f80, "ChatEmoticonDialog", movie uichatemoticondialog): the
 /// tabs (the favorites, one per category of an owned pack) and the grid of the selected tab's emoticons, over the local
 /// player's <see cref="ChatEmoticonState"/>. A pick is posted to the messenger window named by <see cref="CurrentMessenger"/>
-/// (PostEmoticonSelected @0x140bd28b0).
+/// (PostEmoticonSelected @0x140bd28b0). The dialog is registered with the game scene (CUIService, uiservice.cpp:2658), so
+/// CChatEmoticonCli finds it while closed too (FindChatEmoticonDialog): <see cref="Attach"/> hooks the state for the scene's
+/// life, and a pack added while closed is marked new for the next open; the unload (vfunc_26) clears the marks.
 /// STILL-OPEN: onClickShopButton and the shop tab (-2) open the Merat market dialog (OnClickShopButton @0x140bd2990,
 /// SearchByCategory(1, 0x9dd0)), which is not ported, so they do nothing; onFocusIn / onFocusOut / onShiftRClick are
 /// not handled by the client's vfunc_28 either.
@@ -18,7 +20,7 @@ public sealed class ChatEmoticonDialogController : UiController
 {
     public override string Movie => "uichatemoticondialog";
     protected override string EntityMethod => "buildTab";
-    public override string TypeName => "ChatEmoticon";
+    public override string TypeName => "ChatEmoticonDialog";   // GetTypeName @0x140bd0f60 (uichatemoticondialog.cpp:165)
 
     /// <summary>The favorites tab's id and its icon (buildTab @0x140bd1720, s_strCategoryPath).</summary>
     public const int FavoritesTab = -1;
@@ -67,24 +69,32 @@ public sealed class ChatEmoticonDialogController : UiController
         base.OnLoadComplete();
         selTab = -1;
         nextExpire = 0;
-        state.Refresh -= Rebuild; state.Refresh += Rebuild;
-        state.Clear -= ClearEmoticonData; state.Clear += ClearEmoticonData;
-        state.NewGroup -= AddNewGroup; state.NewGroup += AddNewGroup;
-        Unloaded -= Unhook; Unloaded += Unhook;
+        Attach();
+        Unloaded -= ClearNewGroups; Unloaded += ClearNewGroups;
         Send(state.ListRequest());
         BuildModel();
         BuildTab();
         BuildItem();
     }
 
-    void Unhook()
+    /// <summary>The state's dialog calls (FindChatEmoticonDialog finds the registered dialog, open or not): the refresh, the
+    /// clear and AddNewGroup. Once per controller; <see cref="Detach"/> when the scene goes.</summary>
+    public void Attach()
+    {
+        state.Refresh -= Rebuild; state.Refresh += Rebuild;
+        state.Clear -= ClearEmoticonData; state.Clear += ClearEmoticonData;
+        state.NewGroup -= AddNewGroup; state.NewGroup += AddNewGroup;
+    }
+
+    public void Detach()
     {
         state.Refresh -= Rebuild;
         state.Clear -= ClearEmoticonData;
         state.NewGroup -= AddNewGroup;
     }
 
-    /// <summary>vfunc_26: the new-pack marks are cleared.</summary>
+    /// <summary>vfunc_26 @0x140bd1160 (uichatemoticondialog.cpp:220-224), UIDialog's unload (the listeners removed): the
+    /// new-pack marks are cleared.</summary>
     public void ClearNewGroups() => newGroups.Clear();
 
     /// <summary>vfunc_72, each frame: an expiry passed in the shown tab rebuilds the items.</summary>

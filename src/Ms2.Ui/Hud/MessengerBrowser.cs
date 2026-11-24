@@ -1010,12 +1010,12 @@ public sealed class MessengerBrowser
     public Func<bool> IsNewTabDialogClosed = () => true;
     /// <summary>CUIService::OpenDialog(0x4e62), the tab name dialog (STILL-OPEN: not ported; the HUD logs it).</summary>
     public Action OpenNewTabDialog;
-    /// <summary>CUIService::ToggleDialog(0x4f80), the chat emoticon dialog (STILL-OPEN: not ported; the HUD logs it).</summary>
+    /// <summary>CUIService::ToggleDialog(0x4f80), the chat emoticon dialog (the HUD's ChatEmoticonDialogController); null does nothing.</summary>
     public Action ToggleEmoticonDialog;
     /// <summary>
     /// The checks of SendEmoticon / SetEmoticonFavorite: the emoticon is in CChatEmoticonTable and the local character's
-    /// CChatEmoticonCli IsEmoticonUsable. STILL-OPEN: neither the table nor the character's sticker sets are ported, so
-    /// none is usable unless the host says so.
+    /// CChatEmoticonCli IsEmoticonUsable; the HUD wires it to the own <see cref="ChatEmoticons"/>, so without that none
+    /// is usable.
     /// </summary>
     public Func<int, bool> IsEmoticonUsable = _ => false;
     /// <summary>The ChatSticker sends (SendOp 0xB7, FUN_140710590).</summary>

@@ -55,6 +55,8 @@ public partial class HudScene
             },
             ChatEmoticonAdded);
         chatEmoticonLink.Hook();
+        ChatEmoticon();
+        chatEmoticon.Attach();     // the dialog is registered with the scene: packs added while closed are marked new
     }
 
     /// <summary>ChatStamp mode 2's notice (chatemoticoncli.cpp:221-239): the reward notify's icon notice
@@ -73,6 +75,7 @@ public partial class HudScene
         if (ReferenceEquals(ChatLog.ToggleEmoticonDialog, toggleChatEmoticon)) ChatLog.ToggleEmoticonDialog = null;
         chatEmoticonLink?.Unhook();   // the live state outlives this scene
         chatEmoticonLink = null;
+        chatEmoticon?.Detach();
     }
 
     void ChatEmoticon()
