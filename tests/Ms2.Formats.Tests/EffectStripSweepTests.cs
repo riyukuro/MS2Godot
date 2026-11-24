@@ -284,10 +284,17 @@ public class EffectStripSweepTests
     {
         var t = new SwooshTrail(60, 240, 1f / 30);
         double now = 0;
-        for (int i = 0; i < 200; i++) t.Sample(now += 0.04, new(i, 0, 0), new(i, 0, 1));
+        Samples(t, ref now, 200);
+        Assert.That(Samples(t, ref now, 2000), Is.EqualTo(0));
+    }
+
+    // fully optimized from the start: a Release build's tiered loop (on-stack replacement) allocates on its own
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveOptimization)]
+    static long Samples(SwooshTrail t, ref double now, int count)
+    {
         long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 2000; i++) t.Sample(now += 0.04, new(i, 0, 0), new(i, 0, 1));
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0));
+        for (int i = 0; i < count; i++) t.Sample(now += 0.04, new(i, 0, 0), new(i, 0, 1));
+        return GC.GetAllocatedBytesForCurrentThread() - before;
     }
 
     static bool IsNumberAttr(string n) => n is "length" or "quality" or "sampling" or "width" or "spread" or "jointLen" or "imageSize" or "timeLife" or "timeInterval" or "moveInterval" or "textureChangeTick";
