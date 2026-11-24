@@ -22,6 +22,23 @@ public class Gms2ItemEnchantTests {
         Assert.That(checkedModes, Is.GreaterThan(0));
     }
 
+    /// <summary>Mode 6 (UIItemEnchantDialog, the enchant charge of one item changed): i64 uid, i32 charge, the same on both profiles. All 26 recorded packets.</summary>
+    [Test]
+    public void EveryRecordedGms2ChargePacketReadsAsAUidAndACharge() {
+        var list = Gms2Sniffs.Inbound("gms2", ProtocolProfile.Gms2.Number(Inbound.ItemEnchant));
+        int n = 0;
+        foreach (var (file, data) in list) {
+            if (data[0] != 6) continue;
+            var r = new ByteReader(data);
+            var m = ItemEnchantMessage.Read(r, _ => null, ProtocolProfile.Gms2);
+            Assert.That(m, Is.TypeOf<ItemEnchantMessage.ChargeChanged>(), file);
+            Assert.That(((ItemEnchantMessage.ChargeChanged) m).Charge, Is.GreaterThanOrEqualTo(0), file);
+            Assert.That(r.Available, Is.EqualTo(0), file);
+            n++;
+        }
+        Assert.That(n, Is.EqualTo(26));
+    }
+
     [Test]
     public void AGms2OptionCarriesATrailingFloat() {
         var w = new ByteWriter(); w.WriteInt(2);
