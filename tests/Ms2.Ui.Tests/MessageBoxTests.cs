@@ -313,6 +313,55 @@ public class MessageBoxTests
         Assert.That(c.IsIdle, Is.True);
     }
 
+    /// <summary>The forced rename box (FUN_1418f13f0, OnLoginToGame 0x31): no listener, so its "changeInvalidCharName,<typed>"
+    /// answer goes to HandleChangeInvalidCharNameButton (uimessagebox.cpp:2119-2156): an empty name gets common string 0xd
+    /// under the input and keeps the box, a name the checker refuses its message, a good one the request with the box's
+    /// character id; any other button cancels.</summary>
+    [Test]
+    public void TheRenameBoxChecksTheNameThenSendsIt()
+    {
+        var (h, c) = Load();
+        var sent = new List<(long, string)>();
+        int cancels = 0;
+        c.CharacterNameError = n => n == "Bad" ? "This name cannot be used." : null;
+        c.RenameInvalidName += (id, n) => sent.Add((id, n));
+        c.RenameInvalidNameCancelled += () => cancels++;
+        var box = InvalidNameRename.Create(20000000042, MessageBoxData.CommonByKey);
+        Assert.That(box.Msg, Is.Not.Empty, "s_char_rename_input");
+        MessageBoxQueue.Show(box);
+        h.Player.Tick();
+        void Wait() { for (int i = 0; i < h.Player.FrameRate; i++) h.Player.Tick(); }
+
+        Click(h, "m_button0");
+        Assert.That(c.CurrentBox, Is.SameAs(box), "an empty name keeps the box");
+        TestContext.WriteLine($"empty: '{SafeError(h)}'");
+        h.Set(h.Get(Box(h), "m_textInput"), "text", "Bad");
+        Wait();
+        Click(h, "m_button0");
+        Assert.That(c.CurrentBox, Is.SameAs(box), "a refused name keeps the box");
+        Assert.That(sent, Is.Empty);
+        h.Set(h.Get(Box(h), "m_textInput"), "text", "Neu");
+        Wait();
+        Click(h, "m_button0");
+        Assert.That(sent, Is.EqualTo(new[] { (20000000042L, "Neu") }));
+        Assert.That(cancels, Is.Zero);
+        Assert.That(c.IsIdle, Is.True);
+
+        var again = InvalidNameRename.Create(7, MessageBoxData.CommonByKey);
+        MessageBoxQueue.Show(again);
+        h.Player.Tick();
+        Wait();
+        Click(h, "m_button1");
+        Assert.That(cancels, Is.EqualTo(1));
+        Assert.That(sent, Has.Count.EqualTo(1));
+        Assert.That(c.IsIdle, Is.True);
+    }
+
+    static string SafeError(UiHost h)
+    {
+        try { return Rt.ToString(h.Get(h.Get(Box(h), "m_errorMsg"), "text")); } catch (Exception e) { return e.GetType().Name; }
+    }
+
     /// <summary>The name box's field takes any character: CommonTextField.setInpuCharName gives it the restrict set
     /// CommonTextField.init built, and the client runs that init (Main.addedToStage, CommonInit.init) after Common.init
     /// cleared m_getFormatFunction and before main registers it (gfxmoviemain.cpp:106-114), so the translator's

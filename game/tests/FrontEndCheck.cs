@@ -20,6 +20,11 @@ namespace Ms2Godot.Tests;
 /// 10054, --expect-code): the flow goes to the login scene with box s_login_err_disconnected, the error's reason and its
 /// code (window message 0x465), and its OK leaves the login scene up. (A clean close, which shows nothing, is the unit
 /// tests': this server's shutdown does not close cleanly.)</item>
+/// <item>--case rename --name N --taken T --new W: N is a character whose name is due a change (the script made it longer
+/// than the 12 letter form), T another character's name. The list's EndList flag is on; Start on N opens the rename box
+/// (FUN_1418f13f0: type 10, s_char_rename_input, the character's id) with no popdown. Its OK with no name keeps the box;
+/// T is refused by the server (CharacterList 7 code 2, common string 0x2a with the name); W renames the character, the
+/// server sends the list again with the new name, and Start on W enters the game.</item>
 /// </list>
 /// A shot of each box and of the list after it into MS2_SHOTS. Quits with 0 when the case holds, else 1.
 /// </summary>
@@ -36,7 +41,7 @@ public partial class FrontEndCheck : Node
 /// <summary>The check's driver, at the tree root so it outlives the scene changes.</summary>
 public partial class FrontEndDriver : Node
 {
-    string mode = "start", expect = "any";
+    string mode = "start", expect = "any", renameFrom, renameTaken, renameTo;
     int expectCode = 10054;
     int failures, shots;
 
@@ -140,6 +145,9 @@ public partial class FrontEndDriver : Node
             if (args[i] == "--case") mode = args[i + 1];
             if (args[i] == "--expect") expect = args[i + 1];
             if (args[i] == "--expect-code") int.TryParse(args[i + 1], out expectCode);
+            if (args[i] == "--name") renameFrom = args[i + 1];
+            if (args[i] == "--taken") renameTaken = args[i + 1];
+            if (args[i] == "--new") renameTo = args[i + 1];
         }
         if (!await TypeLogin()) { Done(); return; }
         switch (mode)
@@ -186,9 +194,103 @@ public partial class FrontEndDriver : Node
                 if (GetTree().CurrentScene is not LoginScene) Fail("the login scene is gone");
                 break;
             }
+            case "rename":
+                await Rename();
+                break;
             default: Fail("unknown case " + mode); break;
         }
         Done();
+    }
+
+    /// <summary><paramref name="name"/>'s row selected in the movie and the dialog (the preview loaded).</summary>
+    async System.Threading.Tasks.Task<bool> Select(string name)
+    {
+        if (!await ListUp()) return false;
+        int row = Session.List().FindIndex(c => c.User.Name == name);
+        if (row < 0) return Fail($"'{name}' is not on the list ({string.Join(", ", Session.List().Select(c => c.User.Name))})");
+        if (List.ListIndex != row || Session.SelectedIndex != row)
+        {
+            if (List.ListIndex == row) { List.SelectRow(-1); await Frames(5); }
+            List.SelectRow(row);
+            await Frames(10);
+            if (!await ListUp()) return false;
+        }
+        await Frames(30);
+        return List.ListIndex == row && Session.SelectedIndex == row
+            || Fail($"row {row} of '{name}' was not selected (movie row {List.ListIndex}, dialog row {Session.SelectedIndex})");
+    }
+
+    /// <summary>Start (Enter) on the selected row until the rename box is up; false when another box or the game came.</summary>
+    async System.Threading.Tasks.Task<MessageBoxData> RenameBox(string step, long id)
+    {
+        Key(Godot.Key.Enter);
+        if (!await Until(() => BoxUp || Flow.Current != GameFlow.State.Lobby, 1800)) { Fail($"{step}: no box came"); return null; }
+        if (Flow.Current != GameFlow.State.Lobby) { Fail($"{step}: the flow left character select: {Flow.Current}"); return null; }
+        await Frames(60);
+        var box = MessageBoxQueue.Current();
+        GD.Print($"front end: {step}: box type {box?.Type} tag '{box?.Extra}' id {box?.ArgLong(0, 0)} '{box?.Msg}', list popped down {List?.Controller?.Starting}");
+        Shot(step);
+        if (box == null || box.Extra != Ms2.Ui.InvalidNameRename.Tag || box.Type != 10) { Fail($"{step}: not the rename box"); return null; }
+        if (box.ArgLong(0, 0) != id) Fail($"{step}: the box's character is {box.ArgLong(0, 0)}, expected {id}");
+        if (box.Msg != MessageBoxData.CommonByKey("s_char_rename_input")) Fail($"{step}: the box says '{box.Msg}'");
+        if (List.Controller.Starting) Fail($"{step}: the start went on under the box");
+        return box;
+    }
+
+    async System.Threading.Tasks.Task Rename()
+    {
+        if (string.IsNullOrEmpty(renameFrom) || string.IsNullOrEmpty(renameTaken) || string.IsNullOrEmpty(renameTo)) { Fail("--name, --taken and --new are needed"); return; }
+        if (!await Until(() => Flow.Current == GameFlow.State.Lobby, 1800)) { Fail("the login did not reach character select"); return; }
+        if (!await ListUp()) return;
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        GD.Print($"front end: the list's EndList flag {live?.CheckNames}, the dialog's {List?.Controller?.CheckNames}");
+        if (live?.CheckNames != true || List?.Controller?.CheckNames != true) { Fail("the list's flag is off: no name is due"); return; }
+        if (!await Select(renameFrom)) return;
+        long id = Session.List().First(c => c.User.Name == renameFrom).User.CharacterId;
+
+        // 1: OK with no name: s_char_rename_input's error (common 0xd) under the input, the box stays, nothing is sent
+        var box = await RenameBox("rename1", id);
+        if (box == null) return;
+        MessageBoxLayer.Instance.Click(0);
+        await Frames(60);
+        Shot("rename1_empty");
+        if (MessageBoxQueue.Current() != box) { Fail("an empty name closed the box"); return; }
+
+        // 2: another character's name: CharacterList 7 code 2, its box, and the input back
+        await ToSignal(GetTree().CreateTimer(1), SceneTreeTimer.SignalName.Timeout);   // ButtonDelayTimer
+        MessageBoxLayer.Instance.Type(renameTaken);
+        await Frames(10);
+        MessageBoxLayer.Instance.Click(0);
+        string taken = Ms2.Ui.InvalidNameRename.AnswerText(2, renameTaken, MessageBoxData.Common);
+        if (!await Until(() => MessageBoxQueue.Current() is { } b && b != box, 1800)) { Fail("no answer box for the taken name"); return; }
+        await Frames(60);
+        string msg = MessageBoxQueue.Current()?.Msg;
+        GD.Print($"front end: rename2: box '{msg}'");
+        Shot("rename2_taken");
+        if (msg != taken) Fail($"the taken name's box says '{msg}', expected '{taken}'");
+        MessageBoxLayer.Instance.Click(0);
+        if (!await Until(() => MessageBoxQueue.IsIdle, 300)) { Fail("the answer box's OK did not close it"); return; }
+        if (Session.List().All(c => c.User.Name != renameFrom)) { Fail("the refused name changed the list"); return; }
+
+        // 3: a new name: the list comes again with it, its flag off, and Start enters the game
+        if (!await Select(renameFrom)) return;
+        box = await RenameBox("rename3", id);
+        if (box == null) return;
+        await ToSignal(GetTree().CreateTimer(1), SceneTreeTimer.SignalName.Timeout);
+        MessageBoxLayer.Instance.Type(renameTo);
+        await Frames(10);
+        MessageBoxLayer.Instance.Click(0);
+        if (!await Until(() => Session.List().Any(c => c.User.Name == renameTo), 1800)) { Fail($"'{renameTo}' never reached the list ({string.Join(", ", Session.List().Select(c => c.User.Name))})"); return; }
+        if (!await ListUp()) return;
+        await Frames(60);
+        GD.Print($"front end: rename3: the list has {string.Join(", ", Session.List().Select(c => c.User.Name))}, flag {live.CheckNames}");
+        Shot("rename3_list");
+        if (!await Select(renameTo)) return;
+        Key(Godot.Key.Enter);
+        if (!await Until(() => Flow.Current == GameFlow.State.Game, 3600)) { Fail($"Start on '{renameTo}' did not enter the game (flow {Flow.Current}, box '{MessageBoxQueue.Current()?.Msg}')"); return; }
+        await Frames(120);
+        GD.Print($"front end: rename3: '{renameTo}' entered the game");
+        Shot("rename3_game");
     }
 
     void Done()

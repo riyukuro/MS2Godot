@@ -199,6 +199,82 @@ public class CharacterListTests
     }
 
     [Test]
+    public void ATooLongNameGetsTheRenameBoxInsteadOfTheStart()
+    {
+        // FUN_1418f13f0 (uicharacterlistdialog.cpp:1472-1490): with m_1e8 set and the checker's 2 (too long) the rename box
+        // opens with the character id and the start ends: no popdown and no enter request
+        var boxes = new List<Ms2.Ui.Hud.MessageBoxData>();
+        var started = new List<string>();
+        var (h, c) = Load(c =>
+        {
+            c.CheckNames = true;
+            c.CheckName = n => n.Length > 12 ? InvalidNameRename.TooLong : 0;
+            c.ShowRenameBox = boxes.Add;
+            c.GameStart += started.Add;
+        }, Row("Abcdefghijklm", "11", "d.png"), Row("Short", "12", "d.png"));
+        var p = h.Player;
+        c.Previewed("11");
+        c.FadeInComplete();
+        h.Invoke(h.Entity, "onEnterKey");
+        for (int i = 0; i < 240; i++) p.Tick();
+        Assert.That(boxes, Has.Count.EqualTo(1));
+        Assert.That((boxes[0].Type, boxes[0].Extra, boxes[0].ArgLong(0, 0)), Is.EqualTo((10, InvalidNameRename.Tag, 11L)));
+        Assert.That(started, Is.Empty, "no enter request");
+        Assert.That(c.Starting, Is.False);
+        // the movie turns the list's mouse off on Enter itself (no HidePopups ran); the box's cancel (FUN_1418f20d0) turns it on again
+        c.RenameCancelled();
+        Assert.That(c.InputOn, Is.True, "the cancel gives the list its input");
+
+        // the other row's name passes: the start goes on
+        Assert.That(c.OnCallback("OnGameStart", new object[] { "12" }), Is.True);
+        for (int i = 0; i < 240 && started.Count == 0; i++) p.Tick();
+        Assert.That(started, Is.EqualTo(new[] { "12" }));
+        Assert.That(boxes, Has.Count.EqualTo(1));
+    }
+
+    [Test]
+    public void WithoutTheListsFlagTheNameIsNotChecked()
+    {
+        var boxes = new List<Ms2.Ui.Hud.MessageBoxData>();
+        var started = new List<string>();
+        var (h, c) = Load(c =>
+        {
+            c.CheckName = _ => InvalidNameRename.TooLong;
+            c.ShowRenameBox = boxes.Add;
+            c.GameStart += started.Add;
+        }, Row("Abcdefghijklm", "11", "d.png"));
+        c.Previewed("11");
+        c.FadeInComplete();
+        h.Invoke(h.Entity, "onEnterKey");
+        for (int i = 0; i < 240 && started.Count == 0; i++) h.Player.Tick();
+        Assert.That(started, Is.EqualTo(new[] { "11" }));
+        Assert.That(boxes, Is.Empty);
+    }
+
+    [Test]
+    public void TheRenameAnswerRenamesTheRowOrShowsItsText()
+    {
+        // vfunc_79 case 0xc type 7 (:605-633): code 1 sets the name and the movie's updateCharacterName(index, name); any other
+        // code shows its text in a plain box with no listener; the input comes on either way
+        var boxes = new List<Ms2.Ui.Hud.MessageBoxData>();
+        var (h, c) = Load(c => c.ShowRenameBox = boxes.Add, Row("A", "11", "d.png"), Row("Abcdefghijklm", "12", "d.png"));
+        c.Previewed("11");
+        c.FadeInComplete();
+        c.OnNameChanged(1, "12", "Neu");
+        Assert.That(c.Characters[1].CharName, Is.EqualTo("Neu"));
+        string MovieName(int i) => Rt.ToString(h.Get(h.Get(h.Invoke(h.Entity, "getCharacterRenderer", i), "m_name"), "text"));
+        Assert.That(MovieName(1), Is.EqualTo("Neu"), "the movie's row");
+        Assert.That(MovieName(0), Is.EqualTo("A"));
+        Assert.That(boxes, Is.Empty);
+        c.OnNameChanged(2, "12", "Taken");
+        string taken = InvalidNameRename.AnswerText(2, "Taken", Ms2.Ui.Hud.MessageBoxData.Common);
+        Assert.That(taken, Does.StartWith("<"), "common string 0x2a by key: " + taken);
+        Assert.That(boxes.Select(b => (b.Type, b.Msg, b.Extra, b.Listener == null)), Is.EqualTo(new[] { (0, taken, "", true) }));
+        Assert.That(c.Characters[1].CharName, Is.EqualTo("Neu"), "a refused name leaves the row");
+        Assert.That(c.InputOn, Is.True);
+    }
+
+    [Test]
     public void AStartDuringASelectionGoesOnAfterThePreview()
     {
         // FUN_1418f13f0 under m_180 (a selection being handled): no HidePopups, m_1d4 = 0x620000c. The preview of the new select map

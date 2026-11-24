@@ -34,6 +34,14 @@ public class PacketTests {
         Assert.That((c.Command, c.CharacterId, c.Error), Is.EqualTo((CharacterListCommand.CancelDelete, 9L, 8)));
     }
 
+    // vfunc_79 case 0xc (type 7): i32 code, i64 id, unicode name
+    [Test] public void CharacterListRenameAnswerReads() {
+        var m = ListMsg(w => { w.WriteByte(7); w.WriteInt(2); w.WriteLong(20000000042); w.WriteUnicodeString("Taken"); });
+        Assert.That((m.Command, m.Error, m.CharacterId, m.Name), Is.EqualTo((CharacterListCommand.NameChanged, 2, 20000000042L, "Taken")));
+        var w2 = new ByteWriter(); new RenameCharacter(20000000042, "Ab").Write(w2);
+        Assert.That(w2.Buffer.AsSpan(0, w2.Length).ToArray(), Is.EqualTo(new byte[] { 5, 42, 200, 23, 168, 4, 0, 0, 0, 2, 0, (byte) 'A', 0, (byte) 'b', 0 }));
+    }
+
     [Test] public void ManageCharacterDeleteLayout() {
         var w = new ByteWriter(); new ManageCharacter(CharacterIdCommand.ConfirmDelete, 5).Write(w);
         Assert.That(w.Buffer.AsSpan(0, w.Length).ToArray(), Is.EqualTo(new byte[] { 4, 5, 0, 0, 0, 0, 0, 0, 0 }));

@@ -134,6 +134,9 @@ public partial class LiveSession : Node
     /// <summary>The last create the server refused (null after a create that went through).</summary>
     /// <summary>The account's character limit from CharMaxCount 0xB8 (DAT_1439f4a84); 0 until the server sent it.</summary>
     public int CharacterLimit;
+    /// <summary>The last character list's EndList flag (m_1e8, OnCharacterListPacket mode 4): the game start checks the
+    /// name first (<see cref="Ms2.Ui.InvalidNameRename"/>).</summary>
+    public bool CheckNames;
     /// <summary>The quest state the quest packets build (live only; the quest log reads it, offline it stays empty).</summary>
     public readonly QuestBook Quests = new();
     /// <summary>CPartyManager's party from the party packets (0x53); live only.</summary>
@@ -958,6 +961,7 @@ public partial class LiveSession : Node
             Session.AccountId = user;
             Session.Characters = o.Characters.ToList();
             if (o.CharacterLimit > 0) CharacterLimit = o.CharacterLimit;
+            CheckNames = o.CheckNames;
             GD.Print($"live: logged in, {o.Characters.Count} character(s): {string.Join(", ", o.Characters.Select(c => c.User.Name))}");
             return true;
         }
@@ -986,6 +990,34 @@ public partial class LiveSession : Node
         }
         catch (CharacterCreateRefused ex) { GD.PushWarning("live: " + ex.Message); LastRefusal = ex; return null; }
         catch (Exception ex) { GD.PushWarning("live: create failed: " + ex.Message); return null; }
+        finally { Busy = false; }
+    }
+
+    /// <summary>
+    /// The forced rename (CharacterManagement 5) of <paramref name="characterId"/> and the login server's answer: CharacterList 7
+    /// with its code, or the list sent again, which becomes the session's (with its EndList flag). Null when it was not
+    /// answered.
+    /// </summary>
+    public async Task<RenameAnswer> RenameAsync(long characterId, string name)
+    {
+        Busy = true;
+        try
+        {
+            var a = await new LoginClient(login).RenameAsync(characterId, name);
+            if (a.List is { } o)
+            {
+                Session.Characters = o.Characters.ToList();
+                CheckNames = o.CheckNames;
+                GD.Print($"live: rename of {characterId} to '{name}': the list again, {o.Characters.Count} character(s): {string.Join(", ", o.Characters.Select(c => c.User.Name))}");
+            }
+            else
+            {
+                GD.Print($"live: rename of {characterId} to '{name}': CharacterList 7, code {a.NameChanged.Error}");
+                if (a.NameChanged.Error == 1 && Session.Characters?.Find(c => c.User.CharacterId == characterId) is { } e) e.User.Name = a.NameChanged.Name;
+            }
+            return a;
+        }
+        catch (Exception ex) { GD.PushWarning("live: rename failed: " + ex.Message); return null; }
         finally { Busy = false; }
     }
 

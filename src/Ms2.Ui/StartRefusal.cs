@@ -17,15 +17,17 @@ public static class StartRefusal
     public const int Notice = 0x19;
 
     /// <summary>
-    /// The box of a refused start, not shown yet; null for result 0. 0x1a and 0x19 show the packet's text with its "\n"
-    /// pairs made line breaks, titled common string 0x8c6, 0x1a with the maintenanceExit tag; any other result shows
-    /// GetFieldMoveErrorMessage's text (<see cref="FieldMoveError"/>).
+    /// The box of a refused start, not shown yet; null for result 0. 0x31 is the rename box for
+    /// <paramref name="characterId"/> (<see cref="InvalidNameRename.Create"/>); 0x1a and 0x19 show the packet's text with
+    /// its "\n" pairs made line breaks, titled common string 0x8c6, 0x1a with the maintenanceExit tag; any other result
+    /// shows GetFieldMoveErrorMessage's text (<see cref="FieldMoveError"/>).
     /// </summary>
-    public static MessageBoxData Build(int result, string message, Func<string, string> commonByKey)
+    public static MessageBoxData Build(int result, string message, Func<string, string> commonByKey, long characterId = 0)
     {
         switch (result)
         {
             case 0: return null;
+            case RenameRequired: return InvalidNameRename.Create(characterId, commonByKey);
             case Maintenance:
             case Notice:
             {

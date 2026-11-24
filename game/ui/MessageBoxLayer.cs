@@ -28,6 +28,10 @@ public partial class MessageBoxLayer : CanvasLayer
     public static event Action AlreadyReconnect;
     /// <summary>An externalBlock box's OK (UIMessageBox::HandleExternalBlockButton): the page, and whether the client quits after it.</summary>
     public static event Action<string, bool> ExternalBlock;
+    /// <summary>The forced rename box's request (HandleChangeInvalidCharNameButton): the character and the name.</summary>
+    public static event Action<long, string> RenameInvalidName;
+    /// <summary>The forced rename box's cancel (FUN_1418f20d0).</summary>
+    public static event Action RenameInvalidNameCancelled;
 
     MessageBoxController controller;
     MovieDialog movie;
@@ -59,6 +63,14 @@ public partial class MessageBoxLayer : CanvasLayer
         controller.MaintenanceExit += () => MaintenanceExit?.Invoke();
         controller.AlreadyReconnect += () => AlreadyReconnect?.Invoke();
         controller.ExternalBlock += (url, quit) => ExternalBlock?.Invoke(url, quit);
+        controller.RenameInvalidName += (id, name) => RenameInvalidName?.Invoke(id, name);
+        controller.RenameInvalidNameCancelled += () => RenameInvalidNameCancelled?.Invoke();
+        Ms2.Formats.Text.BanTextChecker names = null;   // FUN_141276a30: the client's checker, made at the first name
+        controller.CharacterNameError = name =>
+        {
+            names ??= Ms2.Formats.Text.BanTextChecker.FromPacks(assets.Packs, assets.Language);
+            return names.CheckCharacterName(name, out var message, true) == 0 ? null : message;
+        };
         controller.AnswerPartyInvite = a => Ms2Godot.Net.LiveSession.Instance?.AnswerPartyInvite(a);
         controller.AnswerGuildInvite = a => Ms2Godot.Net.LiveSession.Instance?.Guilds.AnswerInvite(a);
         controller.AnswerRecallUser = a => Ms2Godot.Net.LiveSession.Instance?.AnswerRecallUser(a);

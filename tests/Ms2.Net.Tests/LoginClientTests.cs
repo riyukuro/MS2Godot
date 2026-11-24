@@ -115,6 +115,43 @@ public class LoginClientTests {
         l.Stop();
     }
 
+    // the EndList flag (OnCharacterListPacket mode 4, m_1e8) comes back with the list; the forced rename (CharacterManagement 5)
+    // is answered with CharacterList 7 and its code, or with the list again
+    [Test] public async Task TheListsEndFlagAndTheRenameAnswers() {
+        var (s, l, srv, t, login) = await Start();
+        using (t) {
+            await ReadFrame(s, srv);
+            await s.WriteAsync(srv.Frame(Inbound.RequestLogin));
+            await ReadFrame(s, srv);
+            await s.WriteAsync(LoginResultFrame(srv, 0));
+            await s.WriteAsync(srv.Frame((Inbound) 0x0C, w => w.WriteByte((byte) CharacterListCommand.StartList)));
+            await s.WriteAsync(srv.Frame((Inbound) 0x0C, w => { w.WriteByte((byte) CharacterListCommand.List); w.WriteByte(0); }));
+            await s.WriteAsync(srv.Frame((Inbound) 0x0C, w => { w.WriteByte((byte) CharacterListCommand.EndList); w.WriteByte(1); }));
+            var o = await login.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.That(o.CheckNames, Is.True, "EndList 1: the start checks the names");
+
+            var client = new LoginClient(t);
+            var refused = client.RenameAsync(20000000042, "Taken");
+            var (op, body) = await ReadFrame(s, srv);
+            Assert.That(op, Is.EqualTo((ushort) Outbound.CharacterManagement));
+            Assert.That(RenameCharacter.Read(new ByteReader(body)), Is.EqualTo(new RenameCharacter(20000000042, "Taken")));
+            await s.WriteAsync(srv.Frame((Inbound) 0x0C, w => { w.WriteByte((byte) CharacterListCommand.NameChanged); w.WriteInt(2); w.WriteLong(20000000042); w.WriteUnicodeString("Taken"); }));
+            var a = await refused.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.That(a.List, Is.Null);
+            Assert.That((a.NameChanged.Error, a.NameChanged.CharacterId, a.NameChanged.Name), Is.EqualTo((2, 20000000042L, "Taken")));
+
+            var taken = client.RenameAsync(20000000042, "Fine");
+            await ReadFrame(s, srv);
+            await s.WriteAsync(srv.Frame((Inbound) 0x0C, w => w.WriteByte((byte) CharacterListCommand.StartList)));
+            await s.WriteAsync(srv.Frame((Inbound) 0x0C, w => { w.WriteByte((byte) CharacterListCommand.List); w.WriteByte(0); }));
+            await s.WriteAsync(srv.Frame((Inbound) 0x0C, w => { w.WriteByte((byte) CharacterListCommand.EndList); w.WriteByte(0); }));
+            a = await taken.WaitAsync(TimeSpan.FromSeconds(10));
+            Assert.That(a.NameChanged, Is.Null);
+            Assert.That(a.List.CheckNames, Is.False, "the list again, its flag off once no name is due");
+        }
+        l.Stop();
+    }
+
     [Test] public async Task RejectedLoginReturnsTheError() {
         var (s, l, srv, t, login) = await Start();
         using (t) {

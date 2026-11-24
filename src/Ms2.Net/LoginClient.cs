@@ -11,7 +11,14 @@ public sealed record LoginOutcome(LoginResult Result, IReadOnlyList<CharacterEnt
     public int CharacterRows { get; init; }
     /// <summary>Ugc mode 0x11 (CUgcManager::OnUgc), the web server's addresses the login server sends after the login result; null when none came.</summary>
     public UgcEndpoint Endpoint { get; init; }
+    /// <summary>The list's EndList flag (OnCharacterListPacket mode 4, uicharacterlistdialog.cpp:906): m_1e8, the game start's
+    /// rename check is on.</summary>
+    public bool CheckNames { get; init; }
 }
+
+/// <summary>The login server's answer to a rename on character select: CharacterList 7 (<see cref="NameChanged"/>, its
+/// code in Error), or the list sent again (<see cref="List"/>, with the EndList flag).</summary>
+public sealed record RenameAnswer(CharacterListMessage NameChanged, LoginOutcome List);
 
 /// <summary>
 /// Login server exchange up to the character list: hello and ResponseVersion (the session does those), RequestLogin 0x09, ResponseLogin,
@@ -63,6 +70,37 @@ public sealed class LoginClient {
             if (!transport.Is(p, Inbound.CharacterList)) continue;
             var m = CharacterListMessage.Read(p.Reader(), "KR", transport.Profile);
             if (m.Command is CharacterListCommand.DeleteEntry or CharacterListCommand.BeginDelete or CharacterListCommand.CancelDelete && m.CharacterId == characterId) return m;
+        }
+    }
+
+    /// <summary>
+    /// SendCharacterManagementMode5 (uicharacterlistdialog.cpp:1712-1721): the forced rename of character
+    /// <paramref name="characterId"/> to <paramref name="name"/>, and the answer: CharacterList 7 with its code
+    /// (UICharacterListDialog::vfunc_79 case 0xc, :605-633), or the list again (StartList, the entries, EndList), which a
+    /// server sends when it took the name.
+    /// </summary>
+    public async Task<RenameAnswer> RenameAsync(long characterId, string name, int timeoutMs = 15000, CancellationToken ct = default) {
+        await transport.SendAsync(new RenameCharacter(characterId, name), ct);
+        var deadline = Environment.TickCount64 + timeoutMs;
+        var list = new List<CharacterEntry>();
+        bool listing = false;
+        while (true) {
+            ct.ThrowIfCancellationRequested();
+            if (!transport.Incoming.TryDequeue(out var p)) {
+                if (transport.IsClosed) throw new IOException("login connection closed", transport.Failure);
+                if (Environment.TickCount64 > deadline) throw new TimeoutException("character rename timed out");
+                await Task.Delay(5, ct);
+                continue;
+            }
+            if (!transport.Is(p, Inbound.CharacterList)) continue;
+            var m = CharacterListMessage.Read(p.Reader(), "KR", transport.Profile);
+            switch (m.Command) {
+                case CharacterListCommand.NameChanged: return new RenameAnswer(m, null);
+                case CharacterListCommand.StartList: list.Clear(); listing = true; break;
+                case CharacterListCommand.List or CharacterListCommand.AppendEntry: if (listing) list.AddRange(m.Entries); break;
+                case CharacterListCommand.EndList when listing:
+                    return new RenameAnswer(null, new LoginOutcome(new LoginResult(0, 0, "", 0, 0, 0, 0, 0, null), list) { CheckNames = m.CheckNames });
+            }
         }
     }
 
@@ -125,7 +163,7 @@ public sealed class LoginClient {
                     var m = CharacterListMessage.Read(p.Reader(), "KR", transport.Profile);
                     if (m.Command == CharacterListCommand.StartList) list.Clear();
                     else if (m.Command is CharacterListCommand.List or CharacterListCommand.AppendEntry) list.AddRange(m.Entries);
-                    else if (m.Command == CharacterListCommand.EndList) return new LoginOutcome(result ?? throw new InvalidDataException("CharacterList before LoginResult"), list) { CharacterLimit = limit, CharacterRows = rows, Endpoint = endpoint };
+                    else if (m.Command == CharacterListCommand.EndList) return new LoginOutcome(result ?? throw new InvalidDataException("CharacterList before LoginResult"), list) { CharacterLimit = limit, CharacterRows = rows, Endpoint = endpoint, CheckNames = m.CheckNames };
                     break;
             }
         }
@@ -179,7 +217,7 @@ public sealed class LoginClient {
                     var cl = CharacterListMessage.Read(p.Reader(), "KR", transport.Profile);
                     if (cl.Command == CharacterListCommand.StartList) list.Clear();
                     else if (cl.Command is CharacterListCommand.List or CharacterListCommand.AppendEntry) list.AddRange(cl.Entries);
-                    else if (cl.Command == CharacterListCommand.EndList) return new LoginOutcome(new LoginResult(0, 0, "", 0, 0, 0, 0, 0, null), list) { CharacterLimit = limit, CharacterRows = rows };
+                    else if (cl.Command == CharacterListCommand.EndList) return new LoginOutcome(new LoginResult(0, 0, "", 0, 0, 0, 0, 0, null), list) { CharacterLimit = limit, CharacterRows = rows, CheckNames = cl.CheckNames };
                     break;
             }
         }

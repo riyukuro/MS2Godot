@@ -264,7 +264,11 @@ public partial class CharacterListScene : LobbyFieldScene
             // GetServerTime for the delete waits: the login session's clock (UTC without a sync)
             ServerNow = () => Net.LiveSession.Instance?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             ServerTick = () => (long)Time.GetTicksMsec(),
+            // m_1e8, the list's EndList flag, and CBanTextChecker::FUN_140225210(name, reason, 1) for the start's rename check
+            CheckNames = Net.LiveSession.Instance?.CheckNames ?? false,
         };
+        Ms2.Formats.Text.BanTextChecker names = null;
+        c.CheckName = name => (names ??= Ms2.Formats.Text.BanTextChecker.FromPacks(assets.Packs, assets.Language)).CheckCharacterName(name, out _, true);
         int lang = Array.IndexOf(new[] { "KR", "JP", "EN", "CN", "FR", "DE", "PT", "ES" }, (assets.Language ?? "").ToUpperInvariant());
         c.DateText = unix => Ms2.Ui.MailTexts.DateString(unix, Math.Max(0, lang));   // FUN_14083bdc0(CMsTime(t), true, "/", ":")
         foreach (var e in characters) c.Characters.Add(data.Row(e));

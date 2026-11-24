@@ -207,6 +207,7 @@ public sealed class CharacterListController : UiController, IMessageBoxListener
             selectedSn = found?.CharSN;
             if (found == null) return false;
             if (Clock(found.CharSN).DeleteTime > 0) return false;   // a character with a delete time does not start (:2259)
+            if (NameMustChange(found)) return true;
             BeginGameStart();
             return true;
         }
@@ -271,13 +272,58 @@ public sealed class CharacterListController : UiController, IMessageBoxListener
         return false;
     }
 
+    /// <summary>m_1e8: the character list's EndList flag (OnCharacterListPacket mode 4, :906); the game start checks the
+    /// name while it is set.</summary>
+    public bool CheckNames;
+    /// <summary>CBanTextChecker::FUN_140225210(name, reason, 1): the checker's result for the 12 letter form; null when the
+    /// client has no checker (the check is skipped).</summary>
+    public Func<string, int> CheckName;
+
+    /// <summary>
+    /// FUN_1418f13f0's start (uicharacterlistdialog.cpp:1472-1490): with m_1e8 set, a selected character whose name the
+    /// checker finds too long (<see cref="InvalidNameRename.TooLong"/>) gets the rename box (<see cref="InvalidNameRename.Create"/>)
+    /// and the start ends there: the list stays up, nothing pops down. True when the box opened.
+    /// </summary>
+    bool NameMustChange(LobbyCharacterRow found)
+    {
+        if (!CheckNames || CheckName == null || CheckName(found.CharName ?? "") != InvalidNameRename.TooLong) return false;
+        if (!long.TryParse(found.CharSN, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out long id)) return false;
+        ShowRenameBox(InvalidNameRename.Create(id, MessageBoxData.CommonByKey));
+        return true;
+    }
+
+    /// <summary>FUN_1418f20d0 (uicharacterlistdialog.cpp:1724-1727), the rename box's cancel: the input on.</summary>
+    public void RenameCancelled()
+    {
+        if (Host?.Entity != null) SetInput(true);
+    }
+
+    /// <summary>
+    /// vfunc_79 case 0xc type 7 (uicharacterlistdialog.cpp:605-633), CharacterList 7: the input on; code 1 gives character
+    /// <paramref name="sn"/>'s row the name (the movie's updateCharacterName with its index), any other shows the client's
+    /// text for the code (<see cref="InvalidNameRename.AnswerText"/>).
+    /// </summary>
+    public void OnNameChanged(int code, string sn, string name)
+    {
+        if (Host?.Entity == null) return;
+        SetInput(true);
+        if (code == 1)
+        {
+            int index = Characters.FindIndex(c => c.CharSN == sn);
+            if (index < 0) return;
+            Characters[index] = Characters[index] with { CharName = name ?? "" };
+            Host.Invoke(Host.Entity, "updateCharacterName", index, name ?? "");
+            return;
+        }
+        ShowRenameBox(MessageBoxQueue.Create(0, InvalidNameRename.AnswerText(code, name, MessageBoxData.Common), null, ""));   // no listener
+    }
+
     /// <summary>
     /// FUN_1418f13f0 (uicharacterlistdialog.cpp:1470-1499), OnGameStart's body: HidePopups (popdown, input off) unless a
     /// selection is being handled (m_180), and m_1d4 = 0x620000c, which stops every OnSelectCharacter while the character
     /// is set (:2271-2276) and makes the popdown's end send the enter request (<see cref="OnEndPopdown"/>). With m_180 set
     /// the popdown waits for the preview (FUN_1418f1d00 from PreviewCharacter, <see cref="Previewed"/>).
-    /// STILL-OPEN: the m_1e8 rename check before it (CBanTextChecker FUN_140225210 == 2 -> the s_char_rename_input box) is
-    /// not ported; m_1e8's setter is not identified.
+    /// The rename check before it is <see cref="NameMustChange"/>, run at the Start only (FUN_1418f1d00 pops down without it).
     /// </summary>
     void BeginGameStart()
     {
@@ -399,6 +445,9 @@ public sealed class CharacterListController : UiController, IMessageBoxListener
     public Func<long, string> DateText = unix => MailTexts.DateString(unix, 0);
     /// <summary>ShowMessageBox(text, type, this, tag); the dialog is the listener (<see cref="OnMessageBox"/>).</summary>
     public Action<string, int, string> ShowBox;
+    /// <summary>FUN_14151f150 for the rename box (<see cref="InvalidNameRename.Create"/>, answered by the box layer) and the
+    /// rename answer's text box.</summary>
+    public Action<MessageBoxData> ShowRenameBox = MessageBoxQueue.Show;
 
     /// <summary>FUN_1418f13d0 -> SendCharacterManagementMode2 (:1520): CharacterManagement 2 for MyPC, the previewed character.</summary>
     public event Action<string> DeleteRequest;

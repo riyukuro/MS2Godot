@@ -497,6 +497,7 @@ public sealed class MessageBoxController : UiController
         if (tokens[0] == "swapstorein") return HandleSwapStoreInButton(button, MessageBoxData.WToI(tokens[1]));
         if (tokens[0] == "sell") return HandleSellButton(button, MessageBoxData.WToI(tokens[1]));
         if (tokens[0] == "sellconfirm") return HandleSellConfirmButton(button, MessageBoxData.WToI(tokens[1]));
+        if (tokens[0] == InvalidNameRename.Tag) return HandleChangeInvalidCharNameButton(button, tokens[1]);
         if (data?.Listener == null) UnportedTag?.Invoke(button, tag);
         return false;
     }
@@ -620,6 +621,27 @@ public sealed class MessageBoxController : UiController
     }
     /// <summary>The alreadyReconnect tag's OK: the login again.</summary>
     public event Action AlreadyReconnect;
+
+    /// <summary>HandleChangeInvalidCharNameButton @0x1419fecc0 (uimessagebox.cpp:2119-2156), the rename box's buttons
+    /// (<see cref="InvalidNameRename.Answer"/>): no record, 1; a name to fix keeps the box with the error under its input
+    /// (0); the request (<see cref="RenameInvalidName"/>) or the cancel (<see cref="RenameInvalidNameCancelled"/>), 1.</summary>
+    bool HandleChangeInvalidCharNameButton(int button, string name)
+    {
+        if (data == null) return true;
+        var (todo, error) = InvalidNameRename.Answer(button, name, CharacterNameError, MessageBoxData.Common);
+        switch (todo)
+        {
+            case InvalidNameRename.Action.ShowError: UpdateErrorMessage(error); return false;
+            case InvalidNameRename.Action.Send: RenameInvalidName?.Invoke(data.ArgLong(0, 0), name); return true;
+            default: RenameInvalidNameCancelled?.Invoke(); return true;
+        }
+    }
+    /// <summary>FUN_141276a30, the character name check: its message, null when the name passes (no checker: passes).</summary>
+    public Func<string, string> CharacterNameError;
+    /// <summary>The rename box's request: the character (argument 0) and the name (SendCharacterManagementMode5).</summary>
+    public event Action<long, string> RenameInvalidName;
+    /// <summary>The rename box's cancel: FUN_1418f20d0, the character list's input on.</summary>
+    public event Action RenameInvalidNameCancelled;
 
     /// <summary>HandleExternalBlockButton @0x1419fccb0 (uimessagebox.cpp:1581-1611): button 0 reads argument 0 (FUN_141a00450) and
     /// opens its page: 0 the certify page, then the quit as <see cref="HandleMaintenanceExitButton"/>; 1 the identification page; 1.</summary>

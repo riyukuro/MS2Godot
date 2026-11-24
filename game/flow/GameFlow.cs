@@ -45,6 +45,8 @@ public partial class GameFlow : Node
     Action<string, bool> onExternalBlock;
     Action onGameToLogin, onListReturned;
     Action<int> onLoginLost;
+    Action<long, string> onRename;
+    Action onRenameCancelled;
 
     /// <summary>Returns the flow to the login scene (e.g. forced-quit notice, scenestategame.cpp:9268).</summary>
     public static void ReturnToLogin() => instance?.Go(State.Login);
@@ -98,6 +100,11 @@ public partial class GameFlow : Node
         // HandleExternalBlockButton: ShellExecuteEx of the page; type 0 then quits as the maintenance exit does
         onExternalBlock = (url, quit) => { OS.ShellOpen(url); if (quit) QuitNow(); };
         Ui.MessageBoxLayer.ExternalBlock += onExternalBlock;
+        // HandleChangeInvalidCharNameButton: the rename request (SendCharacterManagementMode5), or the cancel (FUN_1418f20d0)
+        onRename = RenameLive;
+        Ui.MessageBoxLayer.RenameInvalidName += onRename;
+        onRenameCancelled = () => { if (GetTree().CurrentScene is CharacterListScene { Controller: { } dialog }) dialog.RenameCancelled(); };
+        Ui.MessageBoxLayer.RenameInvalidNameCancelled += onRenameCancelled;
 
         Net.LiveSession.Attach(this);
         WireLive();
@@ -212,6 +219,8 @@ public partial class GameFlow : Node
         if (onGameExit != null) { Ui.MessageBoxLayer.GameExit -= onGameExit; Ui.MessageBoxLayer.MaintenanceExit -= onGameExit; onGameExit = null; }
         if (onAlreadyReconnect != null) { Ui.MessageBoxLayer.AlreadyReconnect -= onAlreadyReconnect; onAlreadyReconnect = null; }
         if (onExternalBlock != null) { Ui.MessageBoxLayer.ExternalBlock -= onExternalBlock; onExternalBlock = null; }
+        if (onRename != null) { Ui.MessageBoxLayer.RenameInvalidName -= onRename; onRename = null; }
+        if (onRenameCancelled != null) { Ui.MessageBoxLayer.RenameInvalidNameCancelled -= onRenameCancelled; onRenameCancelled = null; }
         if (onGameToLogin != null && Net.LiveSession.Instance is { } liveSession) { liveSession.ReturnedToCharacterSelect -= onGameToLogin; onGameToLogin = null; }
         if (onListReturned != null && Net.LiveSession.Instance is { } liveSession2) { liveSession2.CharacterListReturned -= onListReturned; onListReturned = null; }
         if (onLoginLost != null && Net.LiveSession.Instance is { } liveSession3) { liveSession3.LoginConnectionLost -= onLoginLost; onLoginLost = null; }
@@ -487,7 +496,7 @@ public partial class GameFlow : Node
                 return;
             case Net.LiveSession.EnterEnd.Refused:
                 Ui.MessageBoxLayer.Ensure(this);
-                if (Ms2.Ui.StartRefusal.Build(r.Code, r.Answer?.Message, Ms2.Ui.Hud.MessageBoxData.CommonByKey) is { } box)
+                if (Ms2.Ui.StartRefusal.Build(r.Code, r.Answer?.Message, Ms2.Ui.Hud.MessageBoxData.CommonByKey, r.Answer?.CharacterId ?? 0) is { } box)
                     Ms2.Ui.Hud.MessageBoxQueue.Show(box);
                 StartFailed();
                 return;
@@ -510,6 +519,24 @@ public partial class GameFlow : Node
                 StartFailed();
                 return;
         }
+    }
+
+    /// <summary>
+    /// The rename box's request (SendCharacterManagementMode5) on the live session, and the login server's answer for the list:
+    /// CharacterList 7 goes to the dialog (<see cref="Ms2.Ui.CharacterListController.OnNameChanged"/>); a list sent again
+    /// (the server took the name) replaces the shown one, as a list after the return does. With no answer the list takes
+    /// input again. Offline nothing is sent.
+    /// </summary>
+    async void RenameLive(long characterId, string name)
+    {
+        if (Net.LiveSession.Instance is not { } live) return;
+        while (live.Busy) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        var a = await live.RenameAsync(characterId, name);
+        if (GetTree().CurrentScene is not CharacterListScene { Controller: { } dialog } list) return;
+        Ui.MessageBoxLayer.Ensure(this);
+        if (a?.List != null) { list.ReplaceList(); return; }
+        if (a?.NameChanged is { } m) { dialog.OnNameChanged(m.Error, m.CharacterId.ToString(System.Globalization.CultureInfo.InvariantCulture), m.Name); return; }
+        dialog.RenameCancelled();
     }
 
     /// <summary>ShowPopup on the character list, when it is still the scene: the list takes input again.</summary>

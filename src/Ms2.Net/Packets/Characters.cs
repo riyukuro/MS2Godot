@@ -275,7 +275,10 @@ public sealed class CharacterListMessage {
     public CharacterListCommand Command;
     public List<CharacterEntry> Entries = new();
     public bool CheckNames; // EndList
-    public byte[] Raw;      // NameChanged: not decoded
+    public byte[] Raw;      // a command not decoded
+    /// <summary>NameChanged (UICharacterListDialog::vfunc_79 case 0xc type 7, uicharacterlistdialog.cpp:605-611): i32 code
+    /// (in <see cref="Error"/>; 1 the name is taken), i64 character id, unicode name.</summary>
+    public string Name;
     // DeleteEntry / BeginDelete / CancelDelete (UICharacterListDialog::OnCharacterListPacket, uicharacterlistdialog.cpp:894-1018; server CharacterListPacket.cs:48-71).
     // DeleteEntry: i32 error, i64 id. BeginDelete: i64 id, i32 error, i64 deleteTime (unix seconds; error 10 = too early, the time is the next allowed date). CancelDelete: i64 id, i32 error.
     public long CharacterId;
@@ -298,6 +301,7 @@ public sealed class CharacterListMessage {
             case CharacterListCommand.DeleteEntry: m.Error = r.ReadInt(); m.CharacterId = r.ReadLong(); break;
             case CharacterListCommand.BeginDelete: m.CharacterId = r.ReadLong(); m.Error = r.ReadInt(); m.DeleteTime = r.ReadLong(); break;
             case CharacterListCommand.CancelDelete: m.CharacterId = r.ReadLong(); m.Error = r.ReadInt(); break;
+            case CharacterListCommand.NameChanged: m.Error = r.ReadInt(); m.CharacterId = r.ReadLong(); m.Name = r.ReadUnicodeString(); break;
             default: m.Raw = r.ReadBytes(r.Available); return m;
         }
         r.ExpectEnd($"CharacterList {m.Command}");
