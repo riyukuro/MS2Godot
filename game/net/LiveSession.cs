@@ -1524,6 +1524,9 @@ public partial class LiveSession : Node
         regionSkills.Clear(); RegionSkillLog.Clear(); ClearFieldEffects(); pendingTriggers.Clear(); triggerField = null;
         EffectNifs.Clear();        // the field's load empties m_848 (WorldService::FUN_141bcda90, worldservice_1.cpp:6950)
         FieldProperties.Clear();   // ClearFieldProperties on field leave (worldservice_1.cpp:5368)
+        // LoadMap tears the old map down (LoadMap -> FUN_141bbc1d0 -> FUN_141bbc580, worldservice_1.cpp:3320, :3353): a trigger
+        // that moves the player with the cinematic key group on leaves it there
+        Cinematic.FieldUnloaded();
         taxiCall = null;        // the call's state goes with the old field's own player (0x6a does not run on in the new field)
         // the old field's own player stops sending: SetMyPC(0) until the new field's FieldAddUser
         DropOwnPc();

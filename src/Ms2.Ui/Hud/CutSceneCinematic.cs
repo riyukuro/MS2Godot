@@ -191,6 +191,14 @@ public sealed class CutSceneCinematic
         KeyModeChanged?.Invoke(on);
     }
 
+    /// <summary>The field's unload in the cinematic sub scene: WorldService::FUN_141bbc580 calls the scene's vfunc_54
+    /// (worldservice_1.cpp:10119), which UISceneGameCinematicCutScene answers with SetSubScene(0x620001d) (uiscenegame.cpp:804):
+    /// the key group goes off, and the pane with it. The mode, id and text stay, as the client keeps them.</summary>
+    public void FieldUnloaded()
+    {
+        if (KeyMode) SetCinematicKeyMode(false);
+    }
+
     // ---- skip ---------------------------------------------------------------------------------------------------------
 
     /// <summary>FUN_141907d60 (:~160): the state, key and label; not skipped yet; the prompt shows for a state other than 0.</summary>

@@ -45,8 +45,16 @@ public partial class HudScene
             if (cinematicPane == c) { cinematicPane = null; if (cine.Pane == c) cine.Pane = null; }
         };
         cinematicPane = c;
-        cinematicMovie = new MovieDialog(assets, c, hudModel, size);
+        cinematicMovie = new MovieDialog(assets, c, hudModel, size) { Visible = cine.KeyMode };
         uiRoot.AddChild(cinematicMovie);
+    }
+
+    /// <summary>The pane is a dialog of the cinematic sub scene 0x6200041: entering it shows the dialog (UISceneGameCinematicCutScene
+    /// vfunc_48 -> CUIService::FUN_141ada6f0, uiservice.cpp:846), leaving it hides it (vfunc_49 -> FUN_141adad20, :904). The key
+    /// group's change (SetCinematicKeyMode, the KeyMode packet, an opening or intro, a field's unload) is that sub scene change.</summary>
+    void CinematicSubScene(bool on)
+    {
+        if (cinematicMovie != null) cinematicMovie.Visible = on;
     }
 
     void CinematicWire(Ms2Godot.Net.LiveSession live, CutSceneCinematic cine)
@@ -69,10 +77,12 @@ public partial class HudScene
         cine.BalloonActorReady = id => Ms2Godot.World.NpcEmoticons.Live?.ObjectBalloonReady(id) == true;
         cine.ShowBalloon = (id, text) => Ms2Godot.World.NpcEmoticons.Live?.ShowObjectBalloon(id, text);
         cine.HideBalloon = id => Ms2Godot.World.NpcEmoticons.Live?.HideObjectBalloon(id);
+        cine.KeyModeChanged += CinematicSubScene;
     }
 
     void CinematicUnwire()
     {
+        if (cinematicLive?.Cinematic is { } wired) wired.KeyModeChanged -= CinematicSubScene;
         if (cinematicMovie != null) { cinematicMovie.Host.Unload(); cinematicMovie.QueueFree(); cinematicMovie = null; }
         cinematicPane = null;
         cinematicLive = null;

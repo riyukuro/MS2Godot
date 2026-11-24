@@ -72,4 +72,22 @@ public class CutSceneCinematicTests
         c.Apply(CinematicPacket.Read(R(w => { w.WriteByte(12); w.WriteUnicodeString("intro"); })));
         Assert.That((c.Mode, c.Text), Is.EqualTo((3, "intro")));
     }
+
+    /// <summary>The job intro's last state turns the key group on and starts cinematic 3, then moves the player to another field
+    /// with no key mode off: the field's unload leaves the cinematic sub scene, so the key group (and the pane with it) goes off.</summary>
+    [Test]
+    public void TheFieldsUnloadTurnsTheKeyGroupOff()
+    {
+        var c = new CutSceneCinematic();
+        var changes = new List<bool>();
+        c.KeyModeChanged += changes.Add;
+        c.Apply(CinematicPacket.Read(R(w => { w.WriteByte(1); w.WriteBool(true); })));
+        c.Apply(CinematicPacket.Read(R(w => { w.WriteByte(3); w.WriteInt(3); w.WriteUnicodeString(""); w.WriteUnicodeString(""); })));
+        c.FieldUnloaded();
+        Assert.That(c.KeyMode, Is.False);
+        Assert.That(changes, Is.EqualTo(new[] { true, false }));
+        Assert.That((c.Mode, c.Id, c.IsShowing), Is.EqualTo((1, 3, true)), "the client keeps the mode, id and text");
+        c.FieldUnloaded();
+        Assert.That(changes, Has.Count.EqualTo(2), "out of the sub scene already: no change");
+    }
 }
