@@ -48,14 +48,16 @@ public sealed partial class RemotePc : IHitBody, IPushBody
 
     /// <summary>
     /// State::vfunc_14 (m_n14, state.cpp:569) of the current state: StateSkill's is whether the push runs with a speed
-    /// above 0 (stateskill.cpp:1300); StateIdle's is 0 on water (stateidle.cpp:493); StateWalk and StateHit keep 1, and
-    /// StateHold sets 1 (stateholddata.cpp:148); the other states set 0 in their ctors.
+    /// above 0 (stateskill.cpp:1300); StateIdle's is 0 on water (stateidle.cpp:493); StateWalk and StateHit keep 1,
+    /// StateHold sets 1 (stateholddata.cpp:148), and StateEmotion's and StateEmotionIdle's ctors leave it
+    /// (stateemotionidle.cpp:197-200, :647-649); the other ported states set 0 in their ctors.
     /// </summary>
     public bool StateTakesHits => States.Cur switch
     {
         RemotePcStates.StateSkill => Push.Speed > 0f,
         RemotePcStates.StateIdle => !OnWater,
-        RemotePcStates.StateWalk or RemotePcStates.StateHit or RemotePcStates.StateHold => true,
+        RemotePcStates.StateWalk or RemotePcStates.StateHit or RemotePcStates.StateHold
+            or RemotePcStates.StateEmotion or RemotePcStates.StateEmotionIdle => true,
         _ => false,
     };
 

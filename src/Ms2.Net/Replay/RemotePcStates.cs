@@ -161,11 +161,12 @@ public struct HoldTarget
 /// and the transitions the PC takes by itself: a fall, a landing, the end of the landing). The input states' vfunc_8
 /// runs for MyPC only (mypc.cpp:2966), so a remote PC changes state by its records and by its own vfunc_9 tests.
 /// Ported states: StateIdle (1), StateWalk (2), StateLand (4), StateFall (5), StateJump (6), StateSwim (0x1b), and StateSkill
-/// (0x10) as far as the queue and the next state go (<see cref="Cast"/>, <see cref="CastSequenceEnded"/>, <see cref="EndSkill"/>), and StateHold (0x20, on
-/// the held actor's node: <see cref="Hold"/>).
-/// STILL-OPEN: every other registered state (pc.cpp:668-721: crawl, ladder, rope, emotion, dash, climb, glide, swim
+/// (0x10) as far as the queue and the next state go (<see cref="Cast"/>, <see cref="CastSequenceEnded"/>, <see cref="EndSkill"/>), StateHold (0x20, on
+/// the held actor's node: <see cref="Hold"/>), and StateEmotion (0xb) and StateEmotionIdle (0xf) on <see cref="Emotion"/>.
+/// STILL-OPEN: every other registered state (pc.cpp:668-721: crawl, ladder, rope, dash, climb, glide, swim
 /// dash, ...) changes the id here and runs no update of its own; the records still place the PC (FUN_1417dbd00 snaps for
-/// those states at once). A record's StateData (FUN_1417dc9a0 / vfunc_27, read by its vfunc_2) is read for StateHold only. The push
+/// those states at once). A record's StateData (FUN_1417dc9a0 / vfunc_27, read by its vfunc_2) is read for StateHold and the
+/// two emotion states only. The push
 /// control (m_pushControl, statemanager.cpp:591), the marker the sender stood on (m_str88, FUN_1417dc4c0
 /// statemanager.cpp:606-620), the cube cell (FUN_141678300) and the fixed Z rotation of PCBase::vfunc_21
 /// (AdditionalCliList::TryGetFixedZRotation) are not ported. FUN_141676b70 (m_unk_b80, the ride/stunt idle and walk subs
@@ -177,7 +178,7 @@ public sealed class RemotePcStates
 {
     public const int StateNone = 0, StateIdle = 1, StateWalk = 2, StateLand = 4, StateFall = 5, StateJump = 6,
         StateSkill = 0x10, StateHold = 0x20, StateRide = 0x21, StateSwim = 0x1b, StateDead = 0xc, StateHit = 0xd,
-        StateStun = 0x12;
+        StateStun = 0x12, StateEmotion = 0xb, StateEmotionIdle = 0xf;
 
     // action ids (ActionType, actioncontainer.cpp) the ported states play through vfunc_123
     public const int ActIdle = 0, ActBattleIdle = 1, ActJumpDown = 2, ActJumpLand = 3, ActJumpUp = 4, ActJumpFall = 5,
@@ -295,6 +296,24 @@ public sealed class RemotePcStates
     }
     /// <summary>The queued records (for tests).</summary>
     public int Queued => requests.Count;
+
+    // ---- StateEmotion / StateEmotionIdle -------------------------------------------------------------------------------
+
+    /// <summary>The body side of the two emotion states; null plays nothing (no row: StateEmotion has no loop and goes to
+    /// StateIdle).</summary>
+    public IEmotionBody Emotion;
+    /// <summary>StateEmotionIdle's m_n10 for the idle animation (kind 1); 0x70-0x72 are the bore animations (kinds 2-4).</summary>
+    public const int EmotionIdleSub = 0x6f;
+    int pendingEmotion;                    // the next entry's StateEmotionData / StateEmotionIdleData m_nEmotion
+    bool emotionData, idleData;            // each state's m_spData2 is set
+    int emotionId, idleId;                 // their m_nEmotion
+    string emotionAnim = "", idleAnim = "";  // each state's m_strAnim
+    string emotionLoop;                    // StateEmotion's m_strLoop (kept from an earlier entry when a row has no anim)
+    double emotionLeft = -1, emotionPeriod = -1;   // the played sequence's EndOfSequence: seconds to it, a loop's period
+
+    /// <summary>The emotion skill id of the emotion state the PC is in (each state's StateEmotionData / StateEmotionIdleData
+    /// m_nEmotion: StateEmotion::FUN_1417c4320, StateEmotionIdle::FUN_1417c6a30), else 0.</summary>
+    public int EmotionId => Cur == StateEmotion && emotionData ? emotionId : Cur == StateEmotionIdle && idleData ? idleId : 0;
     /// <summary>The cast's record (PCBase::vfunc_103, the CSkillRecord): its skill id (GetSkillId) and its skill's
     /// m_blockA4.m_bChargingSkill, which <see cref="Apply"/> tests in StateSkill. StateSkill's m_b111 is the same flag
     /// (stateskill.cpp:766, m_spSkill->m_blockA4): it belongs to the skill, not to a level, as the table's flag does.
@@ -796,6 +815,8 @@ public sealed class RemotePcStates
         bool force = Cur == r.State && StateForces(r);
         // FUN_1417dc9a0 (vfunc_27) then StateData::vfunc_2: StateHoldData::vfunc_2 (@0x1417cbaf0) reads m_n90 / m_str98
         if (r.State == StateHold) { pendingHoldId = r.HoldTargetId; pendingHoldNode = r.HoldNode; }
+        // StateEmotionData::vfunc_2 (@0x1417c3850) / StateEmotionIdleData::vfunc_2 (@0x1417c5bb0): m_nEmotion = m_n64
+        if (r.State is StateEmotion or StateEmotionIdle) pendingEmotion = r.SkillId;
         // PCBase::vfunc_59 (pcbase.cpp:1098-1112): ready (m_unk_b4) and not riding (state 0x21 hands it to the ridee)
         ChangeState(r.State, r.Sub, force);
     }
@@ -835,8 +856,10 @@ public sealed class RemotePcStates
     public float LastSnap { get; private set; }
 
     /// <summary>vfunc_28 of the current state (State::vfunc_28 is false; StateJump's is m_n10 != the record's sub,
-    /// statejump.cpp:342-345).</summary>
-    bool StateForces(SyncRecord r) => Cur == StateJump && subs[StateJump] != r.Sub;
+    /// statejump.cpp:342-345; StateEmotion's (@0x1417c4270, stateemotionidle.cpp:339-344) no data or another emotion than
+    /// the record's m_n64).</summary>
+    bool StateForces(SyncRecord r) => Cur == StateJump ? subs[StateJump] != r.Sub
+        : Cur == StateEmotion && (!emotionData || emotionId != r.SkillId);
 
     /// <summary>
     /// CStateManager::ChangeState (@0x1417dafa0, statemanager.cpp:300-325): an unregistered id is ignored; the same state
@@ -877,6 +900,94 @@ public sealed class RemotePcStates
         }
         Enter(state);
         NotifyWeaponKey();
+    }
+
+    // ---- the emotion states ------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// StateEmotion::vfunc_4 @0x1417c3990 (stateemotionidle.cpp:208-241) past State::vfunc_4, for another PC (the held item's
+    /// SendRequestCube is MyPC's): the record's StateEmotionData; a skill without a row or that is no main type 0xe keeps the
+    /// state with nothing played; else m_strAnim = paramStr, the name tag offsets (offsetNameTag), the face
+    /// (FUN_14166ef10(anim, 1, 0, false)), and the emotion's anim (kind 0) played from its start into m_strLoop.
+    /// STILL-OPEN: the state effects (State::FUN_1417b92a0, StateEffectMgr).
+    /// </summary>
+    void EmotionEnter()
+    {
+        emotionData = true;
+        emotionId = pendingEmotion;
+        emotionLeft = -1;
+        var row = Emotion?.Row(emotionId);
+        if (row == null || row.MainType != 0xe) return;
+        emotionAnim = row.ParamStr ?? "";
+        Emotion.Offsets(row.OffsetNameTag, row.OffsetNameTag);
+        Emotion.Face(emotionAnim);
+        emotionLoop = Emotion.Animation(emotionAnim, 0);
+        if (emotionLoop != null) EmotionPlay(emotionLoop, true);
+    }
+
+    /// <summary>
+    /// StateEmotionIdle::vfunc_4 @0x1417c5d10 (:657-688): the timer reset, m_n10 = 0x6f, the StateEmotionIdleData; a skill
+    /// without a row or that is no main type 0xe goes to StateIdle; else m_strAnim, the face, the name tag offsets and the
+    /// idleAnim (kind 1) played from its start. STILL-OPEN: the state effects (FUN_1417b92a0).
+    /// </summary>
+    void EmotionIdleEnter()
+    {
+        subs[StateEmotionIdle] = EmotionIdleSub;
+        idleData = true;
+        idleId = pendingEmotion;
+        emotionLeft = -1;
+        var row = Emotion?.Row(idleId);
+        if (row == null || row.MainType != 0xe) { ChangeState(StateIdle); return; }
+        idleAnim = row.ParamStr ?? "";
+        Emotion.Face(idleAnim);
+        Emotion.Offsets(row.OffsetNameTag, row.OffsetNameTag);
+        if (Emotion.Animation(idleAnim, 1) is { } idle) EmotionPlay(idle, true);
+    }
+
+    /// <summary>PlayAnimation(name, 1, bForce, false) and its EndOfSequence: at a clamped sequence's end and, INFERRED
+    /// (NiActorManager's END_OF_SEQUENCE is engine code, not in the decomp), at the end of each pass of a looped one: all
+    /// 126 KMS emotions whose anim loops have an idleAnim, which StateEmotion reaches only from its EndOfSequence.</summary>
+    void EmotionPlay(string sequence, bool force)
+    {
+        var p = Emotion.Play(sequence, force);
+        if (!p.Played) return;
+        emotionLeft = p.Length > 0 ? p.Length : -1;
+        emotionPeriod = p.Loops && p.Length > 0 ? p.Length : -1;
+    }
+
+    /// <summary>The played sequence's EndOfSequence came this frame, once (a loop's again each pass).</summary>
+    bool EmotionSequenceEnded(float dt)
+    {
+        if (emotionLeft < 0) return false;
+        emotionLeft -= dt;
+        if (emotionLeft > 0) return false;
+        emotionLeft = emotionPeriod > 0 ? Math.Max(emotionLeft + emotionPeriod, 1e-3) : -1;
+        return true;
+    }
+
+    /// <summary>StateEmotion::EndOfSequence @0x1417c4150 (:325-336): with an idleAnim (into m_strLoop) on to
+    /// StateEmotionIdle with the emotion, else StateIdle.</summary>
+    void EmotionEndOfSequence()
+    {
+        if (Emotion?.Animation(emotionAnim, 1) is { } idle)
+        {
+            emotionLoop = idle;
+            pendingEmotion = emotionId;
+            ChangeState(StateEmotionIdle);
+        }
+        else ChangeState(StateIdle);
+    }
+
+    /// <summary>
+    /// StateEmotionIdle's frame for another PC: its EndOfSequence (@0x1417c6940, :832-840) puts a bore sub back to 0x6f;
+    /// vfunc_9 (@0x1417c6810, :806-829) plays the sub's kind (0x6f idleAnim, 0x70-0x72 the bore kinds 2-4) without bForce.
+    /// The bore pick (vfunc_8's timer) is MyPC's input: another PC's sub comes from its records (ChangeState's sub).
+    /// </summary>
+    void EmotionIdleFrame(float dt)
+    {
+        if (EmotionSequenceEnded(dt) && subs[StateEmotionIdle] != EmotionIdleSub) subs[StateEmotionIdle] = EmotionIdleSub;
+        int kind = subs[StateEmotionIdle] switch { 0x70 => 2, 0x71 => 3, 0x72 => 4, _ => 1 };
+        if (Emotion?.Animation(idleAnim, kind) is { } next) EmotionPlay(next, false);
     }
 
     // ---- StateHold ---------------------------------------------------------------------------------------------------
@@ -1048,6 +1159,14 @@ public sealed class RemotePcStates
                 subs[s] = 0x84;
                 Speed = pc.WaterRunner ? pc.RowRunSpeed : pc.SwimSpeed;
                 break;
+            case StateEmotion:
+                pc.AnimSpeed = 1f;                            // State::vfunc_4 -> State::vfunc_10
+                EmotionEnter();
+                break;
+            case StateEmotionIdle:
+                pc.AnimSpeed = 1f;
+                EmotionIdleEnter();
+                break;
         }
     }
 
@@ -1076,6 +1195,22 @@ public sealed class RemotePcStates
                 HitLeft?.Invoke();                            // StateHit::vfunc_5: EndLift, then m_bC8 set
                 hitTakesRecords = true;
                 break;
+            case StateEmotion:
+                // StateEmotion::vfunc_5 (@0x1417c3cb0, stateemotionidle.cpp:244-252): m_n10 0, the offsets 0 and, unless the
+                // next state is StateEmotionIdle, the face rests
+                subs[s] = 0;
+                emotionLeft = -1;
+                Emotion?.Offsets(0, 0);
+                if (next != StateEmotionIdle) Emotion?.FaceRest();
+                break;
+            case StateEmotionIdle:
+                // StateEmotionIdle::vfunc_5 (@0x1417c61a0, :709-717): the data and anim cleared, the face rests, the offsets 0
+                idleData = false; idleId = 0;
+                idleAnim = "";
+                emotionLeft = -1;
+                Emotion?.FaceRest();
+                Emotion?.Offsets(0, 0);
+                break;
             case StateHold:
                 // StateHold::vfunc_5 (@0x1417cbe70, stateholddata.cpp:188-201): StopJump, the shadow back on
                 // (vfunc_31(true)), the rotation from before the hold (vfunc_21(m_kDir)); the rest is MyPC's
@@ -1095,6 +1230,17 @@ public sealed class RemotePcStates
             case StateDead:
                 // StateIdle::vfunc_3 / StateLand::vfunc_3 / StateDead::vfunc_3: vfunc_68 with a zero move
                 MoveBy(Vector3.Zero, dt);
+                break;
+            case StateEmotion:
+                // StateEmotion::vfunc_3 (@0x1417c3fe0, stateemotionidle.cpp:300-322): no data does nothing; the learned
+                // test is MyPC's (FUN_1417b84b0); no loop goes to StateIdle, else a zero move
+                if (!emotionData) break;
+                if (string.IsNullOrEmpty(emotionLoop)) ChangeState(StateIdle);
+                else MoveBy(Vector3.Zero, dt);
+                break;
+            case StateEmotionIdle:
+                // StateEmotionIdle::vfunc_3 (@0x1417c6070, :691-706): a zero move (the learned test is MyPC's)
+                if (idleData) MoveBy(Vector3.Zero, dt);
                 break;
             case StateWalk:
             {
@@ -1195,6 +1341,10 @@ public sealed class RemotePcStates
             case StateJump: JumpFrame(); break;
             case StateHold: HoldFrame(); break;
             case StateHit: HitFrame?.Invoke(); break;
+            case StateEmotion:
+                if (EmotionSequenceEnded(dt)) EmotionEndOfSequence();
+                break;
+            case StateEmotionIdle: EmotionIdleFrame(dt); break;
             case StateSwim:
                 // StateSwim::vfunc_9 (@0x1417fac90, stateswim.cpp:228-263), no ridee: StateSwim::vfunc_10
                 // (@0x1417fafb0, stateswim.cpp:266-270) sets m_f938 and PlayAnimation passes FUN_1416713c0().

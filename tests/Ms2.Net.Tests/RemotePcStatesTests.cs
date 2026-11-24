@@ -295,20 +295,20 @@ public class RemotePcStatesTests {
         sm.Update(1e-4f);
         Assert.That(b.Position.Z, Is.GreaterThan(200));
         Assert.That(sm.Snaps, Is.EqualTo(2));
-        // a state outside the moving list (StateEmotion 0xb) snaps at any distance
+        // a state outside the moving list (0x14, registered, no update of its own here) snaps at any distance
         b.Position = Vector3.Zero;
-        sm.Push(Rec(0xb, 0, new Vector3(10, 0, 0), Vector2.Zero, 0f));
+        sm.Push(Rec(0x14, 0, new Vector3(10, 0, 0), Vector2.Zero, 0f));
         sm.Update(1e-4f);
         Assert.That(b.Position.X, Is.EqualTo(10).Within(0.01));
-        Assert.That(sm.Cur, Is.EqualTo(0xb));
+        Assert.That(sm.Cur, Is.EqualTo(0x14));
         // StateHit / StateStun records place the PC but do not change its state
         sm.Push(Rec(0xd, 0, new Vector3(20, 0, 0), Vector2.Zero, 0f));
         sm.Update(1e-4f);
-        Assert.That(sm.Cur, Is.EqualTo(0xb));
+        Assert.That(sm.Cur, Is.EqualTo(0x14));
         // an unregistered id is ignored by ChangeState
         sm.Push(Rec(0x13, 0, new Vector3(30, 0, 0), Vector2.Zero, 0f));
         sm.Update(1e-4f);
-        Assert.That(sm.Cur, Is.EqualTo(0xb));
+        Assert.That(sm.Cur, Is.EqualTo(0x14));
         Assert.That(RemotePcStates.CorrectionAllowed(0x20), Is.False);
         Assert.That(RemotePcStates.CorrectionAllowed(2), Is.True);
     }
@@ -352,13 +352,13 @@ public class RemotePcStatesTests {
         var sm = new RemotePcStates(b);
         sm.Spawn(); Run(sm, 0.1f);
         b.Pushed = true;
-        sm.Push(Rec(0xb, 0, new Vector3(300, 0, 0), Vector2.Zero, 0f, yaw: 90));
+        sm.Push(Rec(0x14, 0, new Vector3(300, 0, 0), Vector2.Zero, 0f, yaw: 90));
         sm.Update(1e-4f);
         Assert.That(b.Position.X, Is.LessThan(5), "a pushed PC was put on the record");
         Assert.That(b.RotationZ, Is.Not.EqualTo(90f).Within(0.1f), "a pushed PC took the record's rotation");
-        Assert.That(sm.Cur, Is.EqualTo(0xb));
+        Assert.That(sm.Cur, Is.EqualTo(0x14));
         b.Pushed = false;
-        sm.Push(Rec(0xb, 0, new Vector3(300, 0, 0), Vector2.Zero, 0f, yaw: 90));
+        sm.Push(Rec(0x14, 0, new Vector3(300, 0, 0), Vector2.Zero, 0f, yaw: 90));
         sm.Update(1e-4f);
         Assert.That(b.Position.X, Is.EqualTo(300).Within(0.01));
     }
@@ -1232,5 +1232,141 @@ public class RemotePcStatesTests {
         live.RideOn(ridee, 50, 100);
         live.RideOff(true, 50, 100);
         Assert.That(live.Cur, Is.EqualTo(RemotePcStates.StateIdle));
+    }
+
+    // ---- StateEmotion (0xb) / StateEmotionIdle (0xf) ------------------------------------------------------------------
+
+    sealed class Emo : IEmotionBody {
+        public readonly Dictionary<int, EmotionRow> Rows = new();
+        public readonly Dictionary<(string, int), string> Anims = new();
+        public readonly Dictionary<string, (double len, bool loop)> Seqs = new();
+        public readonly List<(string seq, bool force)> Played = new();
+        public readonly List<string> Faces = new();
+        public int Rests;
+        public (float tag, float bar) Off;
+        public string Current;
+        public EmotionRow Row(int id) => Rows.TryGetValue(id, out var r) ? r : null;
+        public string Animation(string name, int kind) => Anims.TryGetValue((name, kind), out var a) ? a : null;
+        public EmotionPlay Play(string seq, bool force) {
+            if (!force && seq == Current) return default;
+            if (!Seqs.TryGetValue(seq, out var q)) return default;
+            Current = seq; Played.Add((seq, force));
+            return new EmotionPlay(true, q.len, q.loop);
+        }
+        public void Offsets(float tag, float bar) => Off = (tag, bar);
+        public void Face(string anim) => Faces.Add(anim);
+        public void FaceRest() => Rests++;
+    }
+
+    const int Hello = 90200011, Bow = 90200012, Plain = 10200001;
+
+    static Emo Emotions() {
+        var e = new Emo();
+        e.Rows[Hello] = new EmotionRow(0xe, "hello", 15);
+        e.Rows[Bow] = new EmotionRow(0xe, "bow", 0);
+        e.Rows[Plain] = new EmotionRow(0, "", 0);
+        e.Anims[("hello", 0)] = "Emotion_Hello_A"; e.Anims[("hello", 1)] = "Emotion_Hello_Idle_A";
+        e.Anims[("hello", 2)] = "Emotion_Hello_Bore_A";
+        e.Anims[("bow", 0)] = "Emotion_Bow_A";                                      // no idleAnim
+        e.Seqs["Emotion_Hello_A"] = (1.0, true);                                   // looped, as 126 KMS emotions' anims
+        e.Seqs["Emotion_Hello_Idle_A"] = (2.0, true);
+        e.Seqs["Emotion_Hello_Bore_A"] = (0.5, false);
+        e.Seqs["Emotion_Bow_A"] = (0.8, false);
+        return e;
+    }
+
+    [Test] public void AnEmotionRecordPlaysTheAnimThenTheIdleAnimAndItsBoreSubs() {
+        // the record's m_n64 is StateEmotionData's emotion (vfunc_2); StateEmotion::vfunc_4 plays the face, the offsets and
+        // the anim forced; its EndOfSequence goes to StateEmotionIdle (no face rest between), whose vfunc_9 plays the sub's
+        // kind; a bore sub from a record plays the bore kind, and its end puts the sub back to 0x6f
+        var e = Emotions();
+        var sm = new RemotePcStates(new Body()) { Emotion = e };
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Push(Rec(0xb, 0, Vector3.Zero, Vector2.Zero, 0f, skill: Hello));
+        Run(sm, 0.1f);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateEmotion));
+        Assert.That(sm.EmotionId, Is.EqualTo(Hello));
+        Assert.That(e.Played, Is.EqualTo(new[] { ("Emotion_Hello_A", true) }));
+        Assert.That(e.Faces, Is.EqualTo(new[] { "hello" }));
+        Assert.That(e.Off, Is.EqualTo((15f, 15f)));
+        Run(sm, 1.0f);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateEmotionIdle), "the looped anim's end of its pass");
+        Assert.That(sm.Sub, Is.EqualTo(RemotePcStates.EmotionIdleSub));
+        Assert.That(sm.EmotionId, Is.EqualTo(Hello));
+        Assert.That(e.Played[^1], Is.EqualTo(("Emotion_Hello_Idle_A", true)));
+        Assert.That(e.Rests, Is.Zero, "StateEmotion::vfunc_5 keeps the face for StateEmotionIdle");
+        Run(sm, 5f);
+        Assert.That(e.Played, Has.Count.EqualTo(2), "the idle loops; vfunc_9 does not restart it");
+        sm.Push(Rec(0xf, 0x70, Vector3.Zero, Vector2.Zero, 0f, skill: Hello));
+        Run(sm, 0.1f);
+        Assert.That(sm.Sub, Is.EqualTo(0x70));
+        Assert.That(e.Played[^1], Is.EqualTo(("Emotion_Hello_Bore_A", false)));
+        Run(sm, 0.5f);
+        Assert.That(sm.Sub, Is.EqualTo(RemotePcStates.EmotionIdleSub));
+        Assert.That(e.Played[^1], Is.EqualTo(("Emotion_Hello_Idle_A", false)));
+        sm.Push(Rec(1, 0, Vector3.Zero, Vector2.Zero, 0f));
+        Run(sm, 0.1f);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateIdle));
+        Assert.That(sm.EmotionId, Is.Zero);
+        Assert.That(e.Rests, Is.EqualTo(1));
+        Assert.That(e.Off, Is.EqualTo((0f, 0f)));
+    }
+
+    [Test] public void AnotherEmotionReentersTheEmotionStateAndTheSameOneDoesNot() {
+        // StateEmotion::vfunc_28: forced for another emotion than the record's m_n64; an emotion without idleAnim ends in
+        // StateIdle with the face rested
+        var e = Emotions();
+        var sm = new RemotePcStates(new Body()) { Emotion = e };
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Push(Rec(0xb, 0, Vector3.Zero, Vector2.Zero, 0f, skill: Hello));
+        Run(sm, 0.1f);
+        sm.Push(Rec(0xb, 0, Vector3.Zero, Vector2.Zero, 0f, skill: Hello));
+        Run(sm, 0.1f);
+        Assert.That(e.Played, Has.Count.EqualTo(1));
+        sm.Push(Rec(0xb, 0, Vector3.Zero, Vector2.Zero, 0f, skill: Bow));
+        Run(sm, 0.1f);
+        Assert.That(sm.EmotionId, Is.EqualTo(Bow));
+        Assert.That(e.Played[^1], Is.EqualTo(("Emotion_Bow_A", true)));
+        Assert.That(e.Rests, Is.EqualTo(1), "the forced change leaves and enters the state");
+        Assert.That(e.Off, Is.EqualTo((0f, 0f)));
+        Run(sm, 0.8f);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateIdle));
+        Assert.That(e.Rests, Is.EqualTo(2));
+    }
+
+    [Test] public void AnEmotionWithoutRowOrAnimGoesIdle() {
+        // vfunc_4 keeps the state with nothing played for no row / main type not 0xe; vfunc_3 then finds no loop -> StateIdle;
+        // StateEmotionIdle::vfunc_4 goes to StateIdle at once for such a row; no emotion body plays nothing
+        foreach (int id in new[] { 777, Plain }) {
+            var e = Emotions();
+            var sm = new RemotePcStates(new Body()) { Emotion = e };
+            sm.Spawn(); Run(sm, 0.5f);
+            sm.Push(Rec(0xb, 0, Vector3.Zero, Vector2.Zero, 0f, skill: id));
+            Run(sm, 0.1f);
+            Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateIdle), $"{id}");
+            sm.Push(Rec(0xf, 0x6f, Vector3.Zero, Vector2.Zero, 0f, skill: id));
+            Run(sm, 0.1f);
+            Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateIdle), $"{id}");
+            Assert.That(e.Played, Is.Empty);
+        }
+        var bare = new RemotePcStates(new Body());
+        bare.Spawn(); Run(bare, 0.5f);
+        bare.Push(Rec(0xb, 0, Vector3.Zero, Vector2.Zero, 0f, skill: Hello));
+        Run(bare, 0.1f);
+        Assert.That(bare.Cur, Is.EqualTo(RemotePcStates.StateIdle));
+    }
+
+    [Test] public void AnEmotionIdleRecordEntersWithTheIdleAnim() {
+        // a PC seen already in StateEmotionIdle: vfunc_4 sets m_n10 0x6f whatever the record's sub, then the next record's
+        // sub (unforced: State::vfunc_25) takes the bore
+        var e = Emotions();
+        var sm = new RemotePcStates(new Body()) { Emotion = e };
+        sm.Spawn(); Run(sm, 0.5f);
+        sm.Push(Rec(0xf, 0x70, Vector3.Zero, Vector2.Zero, 0f, skill: Hello));
+        Run(sm, 0.1f);
+        Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateEmotionIdle));
+        Assert.That(sm.Sub, Is.EqualTo(RemotePcStates.EmotionIdleSub));
+        Assert.That(e.Played, Is.EqualTo(new[] { ("Emotion_Hello_Idle_A", true) }));
+        Assert.That(e.Faces, Is.EqualTo(new[] { "hello" }));
     }
 }

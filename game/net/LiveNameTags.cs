@@ -29,6 +29,7 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
     sealed class Tag
     {
         public Node3D Root; public Func<Vector3> Anchor; public MovieClipNode Node; public float Offset;
+        public float Extra;                           // a pc's m_f170 (the emotion states' offsetNameTag)
         public NpcRow Row; public bool Dead;          // npcs
         public long CharacterId; public bool Self;    // players
         public Color Color;
@@ -190,6 +191,12 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
         if (t.Node.FindClip("m_name") is { } clip) NpcPresence.SetLabel(clip, t.Title + name, null, t.Color);
     }
 
+    /// <summary>PCBase m_f170 (FUN_141670330) of a player's tag: added to OffsetPcNametag (PCBase::vfunc_89).</summary>
+    public void SetExtraOffset(Node3D root, float offset)
+    {
+        if (root != null && tags.TryGetValue(root, out var t)) t.Extra = offset;
+    }
+
     /// <summary>The actor left the field: its tag goes with it.</summary>
     public void Remove(Node3D root)
     {
@@ -230,7 +237,7 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
             if (!on) continue;
             t.Node.Modulate = new Color(1, 1, 1, NpcPresence.TagAlpha(d));
             var p = camera.UnprojectPosition(head);
-            p.Y += (t.Offset + (t.Ride?.NameTagOffsetY ?? 0) + (field == null ? 0 : PlayerNameTag.PitchShift(field, head))) * u;
+            p.Y += (t.Offset + t.Extra + (t.Ride?.NameTagOffsetY ?? 0) + (field == null ? 0 : PlayerNameTag.PitchShift(field, head))) * u;
             t.Node.Position = UiScale.StagePoint(p, u);
         }
         if (gone != null) foreach (var r in gone) if (tags.Remove(r, out var t)) t.Node.QueueFree();

@@ -553,6 +553,32 @@ public sealed partial class RemoteLayer : Node3D
 
     static string BodyDir(byte gender) => gender == 0 ? "male" : "female";
 
+    Ms2.Formats.World.EmotionTable emotionTable;
+    readonly int[] defaultFace = { -1, -1 };
+
+    /// <summary>PC::vfunc_69 (pc.cpp:3094-3108) and CEmotionManager::GetGroup: the worn face item when its model has parts,
+    /// else the gender's base face item; its emotion group, null without one.</summary>
+    Ms2.Formats.World.EmotionGroup EmotionGroup(int wornFace, byte gender)
+    {
+        int g = gender == 0 ? 0 : 1;
+        int id = wornFace;
+        if (id == 0)
+        {
+            if (defaultFace[g] < 0) defaultFace[g] = Ms2.Ui.FaceEmotion.DefaultFace(packs, g);
+            id = defaultFace[g];
+        }
+        if (id <= 0) return null;
+        emotionTable ??= new Ms2.Formats.World.EmotionTable(packs, Ms2.Formats.World.EmotionTable.Item);
+        return emotionTable.Group((uint)id);
+    }
+
+    /// <summary>SkillDataTableCli::GetSkillData for StateEmotion / StateEmotionIdle: main type, paramStr, offsetNameTag.</summary>
+    Ms2.Net.Replay.EmotionRow EmotionRow(int id)
+    {
+        var s = Ms2.Ui.GameTables.Shared(packs, Ms2Godot.GameOptions.StringLanguage).Skills.GetSkillData((uint)id);
+        return s == null ? null : new Ms2.Net.Replay.EmotionRow(s.MainType, s.ParamStr, s.OffsetNameTag);
+    }
+
 
     /// The remote's weapon hold, from its state machine: State::vfunc_15 of the current state, sub state and StateWalk's run flag.
     /// Called on a key change (RemotePcStates.WeaponKeyChanged) and on a battle-stance change, not per frame.
@@ -637,6 +663,17 @@ public sealed partial class RemoteLayer : Node3D
         r.Anchor = () => World.DummyAnchor.Point(dummies, "Eff_UI", model, md.RootName) ?? root.GlobalPosition;
         r.Damage = new Ui.DamageTarget(root, () => World.DummyAnchor.Point(dummies, "Eff_Damage", model, md.RootName) ?? root.GlobalPosition, true);
         pc.States.DeadEntered = () => EnterDead(r);
+        // StateEmotion / StateEmotionIdle: the emotion skill's row, the face item's group (PC::vfunc_69), the tag offset
+        pc.States.Emotion = pc;
+        pc.EmotionRowOf = EmotionRow;
+        pc.EmotionGroupOf = () => EmotionGroup(equip.FaceItem(visual), r.Gender);
+        pc.NameTagOffset = v => tags.SetExtraOffset(root, v);
+        if (LiveSession.LiveCheck)
+            pc.States.StateChanged = s =>
+            {
+                if (s is RemotePcStates.StateEmotion or RemotePcStates.StateEmotionIdle)
+                    GD.Print($"live: other player {r.Name} emotion state {s:x} sub {pc.States.Sub:x}");
+            };
         pc.States.DeadLeft = pc.LeaveDead;
         HookMagics(r);
         pc.Spawn();
