@@ -42,7 +42,7 @@ public partial class HudScene
             if (!(ItemBreakOpen && itemBreak.Id == id)) ToggleItemBreak(donation);
             return ItemBreakOpen && itemBreak.Id == id ? id : 0;
         }
-        GD.Print($"interact dialog '{name}' value '{value}': not ported (STILL-OPEN)");
+        NotApplied.Print($"interact dialog '{name}' value '{value}': not ported (STILL-OPEN)");
         return 0;
     }
 

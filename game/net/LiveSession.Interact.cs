@@ -775,7 +775,7 @@ public partial class LiveSession
         public int OnOpenUiDialog(string swf, string value)
         {
             int id = s.InteractUiDialog?.Invoke(swf, value) ?? 0;
-            GD.Print($"live: interact open UI '{swf}' value '{value}': dialog 0x{id:x}");
+            if (LiveCheck) GD.Print($"live: interact open UI '{swf}' value '{value}': dialog 0x{id:x}");
             return id;
         }
 
