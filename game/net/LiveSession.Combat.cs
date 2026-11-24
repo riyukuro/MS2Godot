@@ -310,17 +310,35 @@ public partial class LiveSession
                     GD.Print($"live: combat {step}: breakable {target.Name} state {lastState} shown {target.Shown} visible {target.Visible}");
                     Shot($"breakhit_state{seen.Count - 1}_{lastState}.png");
                 }
-                float dist = hud.DriveTowardScripted(at, false);
-                for (int n = 0; n < 60 * 25 && dist > 120; n++) { dist = hud.DriveTowardScripted(at, false); await frames(1); }
+                // the run ends at the breakable's side facing the pc's start (half its side + 80 out), not at its centre: a
+                // breakable with NxCollision stands in its box (MakeNxBoxController), which the pc walks against or stands on
+                double side = System.Math.Min(target.Size.X, target.Size.Y) * 0.5, top = target.Position.Z + target.Size.Z;
+                double ox = own.X - target.Position.X, oy = own.Y - target.Position.Y, olen = System.Math.Sqrt(ox * ox + oy * oy);
+                if (olen < 1) { ox = 1; oy = 0; olen = 1; }
+                double reach = side + 80;
+                var stand = new Vector3((float)(target.Position.X + ox / olen * reach), (float)target.Position.Z, -(float)(target.Position.Y + oy / olen * reach));
+                float dist = hud.DriveTowardScripted(stand, false);
+                for (int n = 0; n < 60 * 25 && dist > 40; n++) { dist = hud.DriveTowardScripted(stand, false); await frames(1); }
                 hud.DriveEnd(); await frames(20);
                 Shot("breakhit_before.png");
+                (double Flat, double Z) Stood()
                 {
-                    // a breakable with NxCollision stands in its box (MakeNxBoxController): the run stops at its side
-                    var stood = FieldPortals.ToMs2(live.OwnPlayer.GlobalPosition);
-                    double sx = stood.X - target.Position.X, sy = stood.Y - target.Position.Y, flat = System.Math.Sqrt(sx * sx + sy * sy);
-                    double side = System.Math.Min(target.Size.X, target.Size.Y) * 0.5;
-                    GD.Print($"live: combat {step}: stopped {flat:F0} from its centre (box {(target.HasBox ? "up" : "none")}, half side {side:F0})");
-                    if (target.HasBox) Check($"the pc stops outside the breakable's box ({flat:F0} from the centre, half side {side:F0})", flat >= side);
+                    var p = FieldPortals.ToMs2(live.OwnPlayer.GlobalPosition);
+                    double sx = p.X - target.Position.X, sy = p.Y - target.Position.Y;
+                    return (System.Math.Sqrt(sx * sx + sy * sy), p.Z);
+                }
+                var before = Stood();
+                GD.Print($"live: combat {step}: at its side {before.Flat:F0} from its centre, z {before.Z:F0} (box {(target.HasBox ? "up" : "none")}, half side {side:F0}, top {top:F0})");
+                if (target.HasBox)
+                {
+                    // a push toward the centre for 1.5 s: the box keeps the pc out (at its side, or on its top)
+                    for (int n = 0; n < 90; n++) { hud.DriveTowardScripted(at, false); await frames(1); }
+                    hud.DriveEnd(); await frames(20);
+                    var pushed = Stood();
+                    bool outside = pushed.Flat >= side - 5 || pushed.Z >= top - 5;
+                    GD.Print($"live: combat {step}: pushed toward the centre: {pushed.Flat:F0} from it, z {pushed.Z:F0}");
+                    Shot("breakhit_pushed.png");
+                    Check($"the box keeps the pc out ({pushed.Flat:F0} from the centre, half side {side:F0}, z {pushed.Z:F0}, top {top:F0})", outside);
                 }
                 for (int i = int.Parse(arg[0]); i > 0 && target.State == 2; i--)
                 {
