@@ -1147,6 +1147,8 @@ public partial class LiveSession : Node
 
     Field triggerField;                                  // the field the Trigger packets apply to
     readonly List<byte[]> pendingTriggers = new();       // Trigger packets that came before the field was built
+    /// <summary>WorldService m_848: the field's trigger effect nifs by object id (Trigger types 0x10-0x12).</summary>
+    public readonly Ms2.Ui.FieldEffectNifs EffectNifs = new();
 
     /// <summary>
     /// Trigger (RecvOp 0x4E): CSceneStateGame::OnTrigger (@0x141721270, scenestategame.cpp:3653) hands it to
@@ -1161,6 +1163,7 @@ public partial class LiveSession : Node
                 z => { if (player != null && IsInstanceValid(player)) player.TurnToRotZ(z); }, c => TriggerNotApplied(TriggerObjects.Ui, c.Sub),
                 player != null && IsInstanceValid(player) ? player.EnterTriggerEmotion : null, TriggerFace)) return;
         if (ReadUiTrigger(body)) return;
+        if (EffectNifs.ApplyTrigger(body, game.Profile)) return;     // types 0x10-0x12: WorldService m_848 and the npcs' Eff_UI nifs
         if (body.Length > 0 && TriggerObjects.ClientType(body[0], game.Profile) is var ct && (TriggerObjects.NotPorted(ct) || TriggerObjects.ClientIgnores(ct)))
         {
             if (TriggerObjects.NotPorted(ct)) TriggerNotApplied(ct, 0);     // the client applies it; this port does not (logged once)
@@ -1294,6 +1297,7 @@ public partial class LiveSession : Node
         remote.NpcExpShown = (npc, exp) => NpcExpShown?.Invoke(npc, exp);
         remote.NpcAdded = npc => NpcAdded?.Invoke(npc);
         remote.NpcRemoved = id => NpcRemoved?.Invoke(id);
+        remote.UseEffectNifs(EffectNifs);
         remote.RegionSkillOf = id => regionSkills.TryGetValue(id, out var s) ? s : null;
         remote.Viewer = () => player != null && IsInstanceValid(player) ? player.GlobalPosition : null;
         remote.BattleStanceChanged = (id, on) => BattleStanceChanged?.Invoke(id, on);
@@ -1396,6 +1400,7 @@ public partial class LiveSession : Node
         }
         // a new field: no region skill or trigger object survives it (an error or the loading map again keeps the field)
         regionSkills.Clear(); RegionSkillLog.Clear(); ClearFieldEffects(); pendingTriggers.Clear(); triggerField = null;
+        EffectNifs.Clear();        // the field's load empties m_848 (WorldService::FUN_141bcda90, worldservice_1.cpp:6950)
         FieldProperties.Clear();   // ClearFieldProperties on field leave (worldservice_1.cpp:5368)
         taxiCall = null;        // the call's state goes with the old field's own player (0x6a does not run on in the new field)
         // the old field's own player stops sending: SetMyPC(0) until the new field's FieldAddUser

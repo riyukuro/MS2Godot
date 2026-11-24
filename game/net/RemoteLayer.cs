@@ -161,6 +161,19 @@ public sealed partial class RemoteLayer : Node3D
     /// <summary>An npc made and an npc removed (<see cref="NpcLayer.Added"/>, <see cref="NpcLayer.Removed"/>).</summary>
     public Action<World.FieldNpcs.Placed> NpcAdded { set => npcs.Added = value; }
     public Action<int> NpcRemoved { set => npcs.Removed = value; }
+
+    /// <summary>
+    /// The field's effect nif table (WorldService m_848) on this layer's npcs: an npc of the id is the loaded object, the attach
+    /// and detach are the npc's (<see cref="NpcLayer.AttachEffectNif"/>), and an npc added later gets its entry. A freed layer
+    /// finds no object.
+    /// </summary>
+    public void UseEffectNifs(Ms2.Ui.FieldEffectNifs table)
+    {
+        table.Loaded = id => IsInstanceValid(this) && npcs.Has(id);
+        table.Attach = (id, e) => { if (IsInstanceValid(this)) npcs.AttachEffectNif(id, e); };
+        table.Detach = id => { if (IsInstanceValid(this)) npcs.DetachEffectNif(id); };
+        npcs.ActorAdded = table.ActorAdded;
+    }
     /// <summary>The own player's place for the npcs' hit sounds (<see cref="NpcLayer.Viewer"/>).</summary>
     public Func<Vector3?> Viewer { set => npcs.Viewer = value; }
     /// <summary>The viewer and the s_random stream the npcs' hit sounds use, for the tombs' (FUN_140ade030).</summary>

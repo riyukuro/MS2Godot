@@ -93,8 +93,8 @@ public static partial class TriggerObjects
     };
 
     /// <summary>The client types the client applies and this port does not: they are logged once per type.</summary>
-    public static bool NotPorted(byte clientType) => clientType is TargetLookCenterCamera or TextPopup or LoadEffects or AddEffect
-        or RemoveEffect or BoxResult or RandomTargetSequence or RandomTargetFlicker or RandomTarget3;
+    public static bool NotPorted(byte clientType) => clientType is TargetLookCenterCamera or TextPopup or BoxResult
+        or RandomTargetSequence or RandomTargetFlicker or RandomTarget3;
 
     public const byte UiGuideTrigger = 1, UiShowSummary = 2, UiHideSummary = 3, UiStartMovie = 4, UiStopMovie = 5,
         UiEmotions = 7, UiEmotion = 8, UiFaceEmotion = 9, UiTurn = 0xa, UiLookAt = 0xb, UiTypingGame = 0xc;

@@ -55,6 +55,10 @@ public sealed class NpcLayer
         public bool CastLast;                     // CSkillRecord::FUN_141759e40: the record's motion is the level's last
         public double CastEnded = -1;             // StateSkill m_fStartTime once the sequence ended (EndOfSequence); -1 while it plays
         public double PlayEnds;                   // the layer time the sequence Play last started is over; +inf for a looping one
+        public Node3D EffectUi;                   // PCBase m_spC40: the trigger's effect nif on the Eff_UI node (FUN_141678ad0)
+        public TriggerEffectNif EffectUiOf;       // its packet entry (scale, z rotation)
+        public Transform3D EffectUiAt;            // the model's global transform it was placed for
+        public Xform EffectUiRoot;                // the nif root's own transform, whose rotation and scale the attach replaces
     }
 
     /// <summary>
@@ -242,6 +246,7 @@ public sealed class NpcLayer
         i.HpCur = n.Stats[2].Health; i.HpMax = n.Stats[0].Health;
         i.Life = lives[n.ObjectId] = lives.GetValueOrDefault(n.ObjectId, -1) + 1;
         inst[n.ObjectId] = i;
+        ActorAdded?.Invoke(n.ObjectId);            // WorldService::OnActorAdded: the field's effect nif of this id (m_848)
         Spawned++;
         Added?.Invoke(i.Talk);
         if (n.Hidden) Die(n.ObjectId, false);      // OnFieldAddNpc (scenestategame.cpp:3556-3558): vfunc_125(0)
@@ -259,6 +264,104 @@ public sealed class NpcLayer
         Tags?.Remove(i.Root);
         Bars?.Remove(i.Root);
         i.Root.QueueFree();
+    }
+
+    /// <summary>WorldService::FUN_141bd1200 for an npc: the npc of that id is in the field (an npc here is loaded once added).</summary>
+    public bool Has(int objectId) => inst.ContainsKey(objectId);
+
+    /// <summary>WorldService::OnActorAdded (@0x141bbfb50): an npc was added, with its object id (FieldEffectNifs.ActorAdded).</summary>
+    public Action<int> ActorAdded;
+
+    /// <summary>The Model pack an effect nif's path names: "Model/" + the path (JoinPath("Model", name)), its first folder the pack.</summary>
+    const string ModelRoot = "Resource/Model/";
+    readonly Dictionary<string, ModelData> effectNifs = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// CNifLoadingService::Load(JoinPath("Model", name)) of PCBase::FUN_141678ad0: the nif in the Model pack of the path's
+    /// first folder ("Map/Royalcity/Indoor/x.nif" is Resource/Model/Map's royalcity/indoor/x.nif). Null when it is not there.
+    /// </summary>
+    ModelData EffectNif(string path)
+    {
+        if (string.IsNullOrEmpty(path)) return null;
+        if (effectNifs.TryGetValue(path, out var md)) return md;
+        md = null;
+        string p = path.Replace('\\', '/').TrimStart('/');
+        int slash = p.IndexOf('/');
+        if (slash > 0)
+        {
+            string archive = ModelRoot + p[..slash], entry = p[(slash + 1)..].ToLowerInvariant();
+            try
+            {
+                if (packs.Exists(archive, entry))
+                {
+                    if (!mb.TextureArchives.Contains(archive)) mb.TextureArchives = mb.TextureArchives.Prepend(archive).ToArray();
+                    md = mb.LoadModel(archive, entry);
+                }
+            }
+            catch (Exception ex) { GD.PushWarning($"effect nif {path}: {ex.Message}"); }
+        }
+        if (md == null) GD.Print($"live: effect nif {path} is not in the data");
+        return effectNifs[path] = md;
+    }
+
+    static readonly NodePath EffUiName = "Eff_UI";
+    const string SceneRoot = "Scene Root";
+
+    /// <summary>
+    /// PCBase::FUN_141678ad0 (@0x141678ad0, pcbase.cpp:4278): with no effect on the npc yet (m_spC40) and an Eff_UI node, the
+    /// nif under Model/ loaded, scaled when the scale is not 1, turned about z by the degrees when they are not 0, and attached
+    /// to the Eff_UI node. The npc's Eff_UI node is its row's dummy (DummyWorld), so the nif is placed at the dummy each time the
+    /// model moves (<see cref="PlaceEffectUi"/>), under the body, so it hides with it.
+    /// STILL-OPEN: the outline (bOutline: FUN_141b70cb0 on every render object, width 3, colour (1, 0.95, 0.5058)) is not drawn;
+    /// a pc's Eff_UI (the server names npcs only) is not looked up.
+    /// </summary>
+    public void AttachEffectNif(int objectId, TriggerEffectNif e)
+    {
+        if (!inst.TryGetValue(objectId, out var i) || i.EffectUi != null || i.Placeholder) return;
+        var modelNode = i.Visual?.GetNodeOrNull<Node3D>(ModelPath);
+        if (modelNode == null || EffectDummyTable.Find(i.Model?.Row?.EffectDummies, EffUiName.ToString()) == null) return;   // FUN_141675150("Eff_UI") finds none
+        var md = EffectNif(e.NifPath);
+        if (md == null) return;
+        var node = mb.Build(md, "EffectUi");
+        // the nif root's own transform goes into the place (SetScale / SetRotate replace its scale and rotation), so the Model
+        // node keeps only the turn to y-up
+        node.GetNode<Node3D>(ModelPath).Transform = ClientToGodot;
+        i.Visual.AddChild(node);
+        i.EffectUi = node; i.EffectUiOf = e; i.EffectUiAt = default; i.EffectUiRoot = md.RootLocal;
+        PlaceEffectUi(i);
+    }
+
+    /// <summary>PCBase::DetachEffectUiNode (@0x141678f50, pcbase.cpp:4317): the npc's effect nif taken off, m_spC40 cleared.</summary>
+    public void DetachEffectNif(int objectId)
+    {
+        if (!inst.TryGetValue(objectId, out var i) || i.EffectUi == null) return;
+        i.EffectUi.QueueFree();
+        i.EffectUi = null; i.EffectUiOf = null;
+    }
+
+    /// <summary>Client z-up to Godot y-up, (x, y, z) to (x, z, -y): the Model node's turn (ModelBuilder.Build), written out.</summary>
+    static readonly Transform3D ClientToGodot = new(new Basis(new Godot.Vector3(1, 0, 0), new Godot.Vector3(0, 0, -1), new Godot.Vector3(0, 1, 0)), Godot.Vector3.Zero);
+
+    /// <summary>
+    /// The effect nif's place: the Eff_UI dummy's client world transform (DummyWorld.Find under the model root) times the nif
+    /// root's local transform, whose scale is the effect's when it is not 1 (SetScale) and whose rotation the z turn when the
+    /// degrees are not 0 (SetRotate of FromEulerAnglesXYZ(0, 0, degrees * pi / 180)), in the body's frame. Done again only
+    /// when the model's global transform changed.
+    /// </summary>
+    void PlaceEffectUi(Inst i)
+    {
+        var modelNode = i.Visual.GetNodeOrNull<Node3D>(ModelPath);
+        if (modelNode == null || !modelNode.IsInsideTree()) return;
+        var g = modelNode.GlobalTransform;
+        if (g == i.EffectUiAt) return;
+        i.EffectUiAt = g;
+        var e = i.EffectUiOf;
+        if (DummyWorld.Find(i.Model.Row.EffectDummies, EffUiName.ToString(), World.DummyAnchor.ClientWorld(modelNode), SceneRoot) is not { } w) { i.EffectUi.Visible = false; return; }
+        var r = i.EffectUiRoot;
+        var own = new Xform(r.T, e.RotateZ != 0 ? DummyWorld.EulerXyz(0, 0, e.RotateZ) : r.R, e.Scale != 1f ? e.Scale : r.S);
+        var world = ClientToGodot * ModelBuilder.ToGodot(w.Compose(own)) * ClientToGodot.AffineInverse();
+        i.EffectUi.Visible = true;
+        i.EffectUi.Transform = i.Visual.GlobalTransform.AffineInverse() * world;
     }
 
     /// <summary>CAnimationManager::PlayAnimation (animationmanager.cpp:238-290): <paramref name="force"/> (bForce) plays the sequence
@@ -892,6 +995,7 @@ public sealed class NpcLayer
             }
             else i.Root.Position += i.Velocity * dt;          // CNpc::vfunc_53 (@0x1410952f0): pos += m_posD40 * time
             if (!i.Placeholder) Turn(i, dt);
+            if (i.EffectUi != null) PlaceEffectUi(i);
             if (i.State == 0x10) SkillEnd(i);
             if (i.Spawn.Active) SpawnStep(i, dt);
             // the CNpc update's shake (:2419-2424): the drawn point is the npc's own plus the offset, each frame anew

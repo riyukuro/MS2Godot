@@ -158,8 +158,8 @@ public class TriggerObjectsTests
     [Test]
     public void EveryClientTypeIsAppliedLoggedOrIgnoredAsTheClientsSwitch()
     {
-        var applied = new byte[] { 2, 3, 5, 7, 9, 0xf, 0x13, 0x14, 0x15 };
-        var notPorted = new byte[] { 6, 0xc, 0x10, 0x11, 0x12, 0x16, 0x17, 0x18, 0x19 };
+        var applied = new byte[] { 2, 3, 5, 7, 9, 0xf, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15 };
+        var notPorted = new byte[] { 6, 0xc, 0x16, 0x17, 0x18, 0x19 };
         for (int t = 0; t < 0x20; t++)
         {
             byte b = (byte)t;
@@ -169,5 +169,35 @@ public class TriggerObjectsTests
         }
         // GMS2 sends 0x15 as 0x14 and 0x16 as 0x15: the box result is logged, its wire 0x15 is not the duel bar
         Assert.That(TriggerObjects.NotPorted(TriggerObjects.ClientType(0x15, ProtocolProfile.Gms2)), Is.True);
+    }
+
+    /// <summary>Types 0x10 and 0x11 read GameObjectEffectNifCtx::Read's fields (gameobjecteffectnifctx.cpp:68) in the order the
+    /// server writes them; 0x10's entries each carry their key first, and 0x12 is the id alone.</summary>
+    [Test]
+    public void EffectNifBodiesReadAsTheClient()
+    {
+        var w = new ByteWriter();
+        w.WriteInt(2);
+        w.WriteInt(71); w.WriteInt(71); w.WriteString("Map/Royalcity/Indoor/ry_in_prop_amp_A01.nif"); w.WriteBool(true); w.WriteFloat(0.5f); w.WriteFloat(45f);
+        w.WriteInt(72); w.WriteInt(73); w.WriteString("Npc/Etc/a.nif"); w.WriteBool(false); w.WriteFloat(1f); w.WriteFloat(0f);
+        var r = R(w);
+        var load = TriggerObjects.ReadLoadEffects(r);
+        Assert.That(load.Select(e => (e.Key, e.Effect.ObjectId, e.Effect.NifPath, e.Effect.Outline, e.Effect.Scale, e.Effect.RotateZ)),
+            Is.EqualTo(new[] { (71, 71, "Map/Royalcity/Indoor/ry_in_prop_amp_A01.nif", true, 0.5f, 45f), (72, 73, "Npc/Etc/a.nif", false, 1f, 0f) }));
+        Assert.That(r.Available, Is.Zero);
+
+        // a count past the body reads the entries that are there
+        w = new ByteWriter(); w.WriteInt(-1); w.WriteInt(5); w.WriteInt(5); w.WriteString("x.nif"); w.WriteBool(false); w.WriteFloat(1f); w.WriteFloat(0f);
+        r = R(w);
+        Assert.That(TriggerObjects.ReadLoadEffects(r).Count, Is.EqualTo(1));
+
+        w = new ByteWriter(); w.WriteInt(9); w.WriteString("y.nif"); w.WriteBool(true); w.WriteFloat(2f); w.WriteFloat(-90f);
+        r = R(w);
+        Assert.That(TriggerEffectNif.Read(r), Is.EqualTo(new TriggerEffectNif(9, "y.nif", true, 2f, -90f)));
+        Assert.That(r.Available, Is.Zero);
+
+        w = new ByteWriter(); w.WriteInt(9);
+        r = R(w);
+        Assert.That((TriggerObjects.ReadRemoveEffect(r), r.Available), Is.EqualTo((9, 0)));
     }
 }
