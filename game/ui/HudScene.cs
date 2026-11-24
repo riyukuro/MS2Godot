@@ -1018,7 +1018,16 @@ public partial class HudScene : Node, IUiStageHost
         {
             Action<short> onGemError = e => SystemNotice(Ms2.Ui.Hud.MyInfoController.GemEquipErrorKey(e, hudModel.IsFeatureEnabled(0x4a)));
             live.GemEquipError += onGemError;
-            unwatchGemErrors = () => live.GemEquipError -= onGemError;
+            // OnCheckCharNameResult (scenestategame.cpp:4698): the name change's used-name box or its confirm
+            Action<Ms2.Net.Packets.CheckCharNameResult> onCharName = r =>
+            {
+                var box = Ms2.Ui.CharNameChange.ResultBox(r.Used, r.ItemUid, r.Name, hudModel.HasLocalPlayer ? hudModel.Player.Name : null, hudModel.Tables.Common);
+                if (box == null) return;
+                if (!r.Used) Ms2.Ui.Hud.MessageBoxQueue.Next();     // FUN_14151f200
+                Ms2.Ui.Hud.MessageBoxQueue.Show(box);
+            };
+            live.CharNameChecked += onCharName;
+            unwatchGemErrors = () => { live.GemEquipError -= onGemError; live.CharNameChecked -= onCharName; };
             Notices = NewNotices(live);
             Action<Ms2.Net.Packets.NoticeMessage> onNotice = Notices.OnNotice;
             live.Notice += onNotice;
@@ -3508,6 +3517,8 @@ public partial class HudScene : Node, IUiStageHost
             hudModel.Tables.GuildNameLengthMax, out var msg) == 0 ? null : msg ?? "";
         Action<string> boxNotice = SystemNoticeText;
         boxes.UseGuildNameItem = useGuildName; boxes.CheckGuildName = checkGuildName; boxes.SystemNotice = boxNotice;
+        Action<long, string> useCharName = (uid, name) => inventory?.ConfirmCharName(uid, name);     // HandleConfirmChangeCharNameButton
+        boxes.UseCharNameItem = useCharName;
         // HandleRequestTradeExButton -> FUN_14185b8e0 (the answer); HandleTradeInButton -> the inventory's count check and add
         Action<long, bool> tradeAnswer = (id, yes) => Trades?.SendAnswer(id, yes);
         Action<long, int> tradeIn = (uid, n) => inventory?.TradeIn(uid, n);
@@ -3527,6 +3538,7 @@ public partial class HudScene : Node, IUiStageHost
         {
             if (boxes.UseBindFuncItem == use) boxes.UseBindFuncItem = null;
             if (boxes.UseGuildNameItem == useGuildName) boxes.UseGuildNameItem = null;
+            if (boxes.UseCharNameItem == useCharName) boxes.UseCharNameItem = null;
             if (boxes.CheckGuildName == checkGuildName) boxes.CheckGuildName = null;
             if (boxes.SystemNotice == boxNotice) boxes.SystemNotice = null;
             if (boxes.UseBindEquipItem == equip) boxes.UseBindEquipItem = null;

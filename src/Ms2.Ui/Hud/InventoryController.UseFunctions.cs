@@ -51,6 +51,8 @@ public sealed partial class InventoryController
                 return ResetAbilityCoolTime(item);
             case "ChangeGuildName":
                 return ChangeGuildName(item);
+            case "ChangeCharName":
+                return ChangeCharName(item);
             case "TreasureMap":         // RecallParty's handler @0x140d1df70: returns 1, nothing done
                 return true;
             case "EnchantScroll":       // @0x140d225d0
@@ -241,6 +243,21 @@ public sealed partial class InventoryController
         box.SetInput(0, "", max, 0, 0);
         ShowBox(box);
         return false;
+    }
+
+    /// <summary>ChangeCharName @0x140d236a0: the name box (<see cref="CharNameChange.InputBox"/>); 1. STILL-OPEN: the blocked
+    /// action 10 (CBlockManager::FindBlockedAction, its notice FUN_140a30ad0) goes first in the client.</summary>
+    bool ChangeCharName(Item item)
+    {
+        ShowBox(CharNameChange.InputBox(item.Uid, Model.Tables.Common));
+        return true;
+    }
+
+    /// <summary>HandleConfirmChangeCharNameButton's use (uimessagebox.cpp:1624): the item of the uid used with the name
+    /// (FUN_140a63880); nothing without the item.</summary>
+    public void ConfirmCharName(long uid, string name)
+    {
+        if (Model != null && View?.FindByUid(uid) is { } e && ToItem(e, Model.Tables.Items) is { } item) FunctionUse(item, name);
     }
 
     /// <summary>UIMessageBox::HandleChangeGuildNameButton's use (uimessagebox.cpp:2159), after its empty name and

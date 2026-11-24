@@ -141,6 +141,7 @@ public enum Inbound : ushort {
     SkillPoint = 0x44,
     SkillBookTree = 0x10C,
     SkillMacro = 0xD1,          // RecvOp::SkillMacro (commonfiles/opcodes.h:216): the compact skill control tabs
+    CheckCharNameResult = 0xD3, // RecvOp::CheckCharNameResult (commonfiles/opcodes.h:217): CSceneStateGame::OnCheckCharNameResult
     ProxyGameObj = 0x7E,
     BadgeEquip = 0x7F,
     Taxi = 0x80,            // RecvOp Taxi (commonfiles/opcodes.h): CSceneStateGame::OnTaxi
@@ -239,6 +240,7 @@ public enum Outbound : ushort {
     RequestSkillBookTree = 0xA2,
     Job = 0x25,                 // SendOp::Job (commonfiles/opcodes.h:342): UISkillBookTreeDialog::RequestJob, JobSystemCli::RequestReset
     SkillMacro = 0x7B,          // SendOp::SkillMacro (commonfiles/opcodes.h:428): UISkillCompactControlDialog's tab requests
+    CheckCharName = 0x7D,       // SendOp::CheckCharName (commonfiles/opcodes.h:430): UIMessageBox::HandleChangeCharNameButton
     NpcTalk = 0x22,
     Beauty = 0x23,          // SendOp::Beauty (commonfiles/opcodes.h:340): CSceneStateGame::SendBeauty
     Shop = 0x28,            // SendOp::Shop (commonfiles/opcodes.h:345): UIShopDialog / RequestSellItem

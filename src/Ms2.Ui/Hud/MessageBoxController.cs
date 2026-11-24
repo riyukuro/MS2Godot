@@ -502,6 +502,8 @@ public sealed class MessageBoxController : UiController
             return HandleUseBindFuncItemButton(button);
         if (tag == "useBindEquipItem")
             return HandleUseBindEquipItemButton(button);
+        if (tag == CharNameChange.ConfirmTag)          // s_143af3ca8 (:988)
+            return HandleConfirmChangeCharNameButton(button);
         if (tag == "useBindGemEquipItem")
             return HandleUseBindGemEquipItemButton(button);
         if (tag == InventoryController.LearnEmotionTag)                    // s_143af3ca0 (uimessagebox.cpp:983-987)
@@ -549,6 +551,7 @@ public sealed class MessageBoxController : UiController
         if (tokens[0] == "sellconfirm") return HandleSellConfirmButton(button, MessageBoxData.WToI(tokens[1]));
         if (tokens[0] == InvalidNameRename.Tag) return HandleChangeInvalidCharNameButton(button, tokens[1]);
         if (tokens[0] == InventoryController.ChangeGuildNameTag) return HandleChangeGuildNameButton(button, tokens[1]);
+        if (tokens[0] == CharNameChange.Tag) return HandleChangeCharNameButton(button, tokens[1]);
         if (data?.Listener == null) UnportedTag?.Invoke(button, tag);
         return false;
     }
@@ -757,6 +760,30 @@ public sealed class MessageBoxController : UiController
         if (CheckGuildName?.Invoke(name) is { } message) { SystemNotice?.Invoke(message); return false; }
         return UseGuildNameItem?.Invoke(data.ItemUid, name) ?? false;
     }
+
+    /// <summary>HandleChangeCharNameButton @0x1419feae0 (uimessagebox.cpp:2086): no record, 1; see <see cref="CharNameChange.Answer"/>.
+    /// The check goes as SendOp CheckCharName with the name and the box's item uid.</summary>
+    internal bool HandleChangeCharNameButton(int button, string name)
+    {
+        if (data == null) return true;
+        var (act, error) = CharNameChange.Answer(button, name, CharacterNameError, MessageBoxData.Common);
+        if (act == CharNameChange.Action.ShowError) { UpdateErrorMessage(error); return false; }
+        if (act == CharNameChange.Action.Send) CheckCharName?.Invoke(name, data.ItemUid);
+        return true;
+    }
+    /// <summary>The name change box's check request (SendOp CheckCharName): the name and the item uid.</summary>
+    public Action<string, long> CheckCharName;
+
+    /// <summary>HandleConfirmChangeCharNameButton @0x1419fce20 (uimessagebox.cpp:1624): no record, 1; the yes uses the item of
+    /// argument 0 (when the inventory has it) with the name of argument 1 (FUN_140a63880); 1.</summary>
+    bool HandleConfirmChangeCharNameButton(int button)
+    {
+        if (data == null) return true;
+        if (button == 0) UseCharNameItem?.Invoke(data.ArgLong(0, 0), data.ArgString(1, ""));
+        return true;
+    }
+    /// <summary>The confirm's use: the item uid and the name. Null: nothing is used.</summary>
+    public Action<long, string> UseCharNameItem;
 
     /// <summary>HandleUseBindFuncItemButton @0x1419fde80: no record, 1; the yes finds the item (0 without it) and uses it
     /// confirmed; 1.</summary>

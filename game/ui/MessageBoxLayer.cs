@@ -71,6 +71,7 @@ public partial class MessageBoxLayer : CanvasLayer
             names ??= Ms2.Formats.Text.BanTextChecker.FromPacks(assets.Packs, assets.Language);
             return names.CheckCharacterName(name, out var message, true) == 0 ? null : message;
         };
+        controller.CheckCharName = (name, uid) => Ms2Godot.Net.LiveSession.Instance?.CheckCharName(name, uid);   // HandleChangeCharNameButton
         controller.AnswerPartyInvite = a => Ms2Godot.Net.LiveSession.Instance?.AnswerPartyInvite(a);
         controller.AnswerGuildInvite = a => Ms2Godot.Net.LiveSession.Instance?.Guilds.AnswerInvite(a);
         controller.AnswerRecallUser = a => Ms2Godot.Net.LiveSession.Instance?.AnswerRecallUser(a);

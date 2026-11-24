@@ -1790,6 +1790,46 @@ public class InventoryTests
     }
 
     [Test]
+    public void ANameChangeItemAsksTheNameChecksItAndItsConfirmUsesItWithTheName()
+    {
+        // ChangeCharName @0x140d236a0; HandleChangeCharNameButton @0x1419feae0 ("changeCharName,<input>") sends CheckCharName;
+        // OnCheckCharNameResult @0x141737db0; HandleConfirmChangeCharNameButton @0x1419fce20
+        Packs();
+        var tables = NewModel().Tables;
+        int id = new[] { 20300006, 20300222, 20300576, 20301429 }.FirstOrDefault(i => tables.Items.Get(i)?.FunctionName == "ChangeCharName");
+        if (id == 0) Assert.Ignore("no name change item in this data");
+        var (c, model, item, sent, boxes, raised) = UseSetup("ChangeCharName", id);
+        Assert.That(c.UseItem(item, true), Is.True);
+        var box = boxes.Single();
+        Assert.That((box.Type, box.Msg, box.Extra, box.ItemUid, box.InputType, box.InputDefault, box.InputMaxChars, sent.Count, raised.Count),
+            Is.EqualTo((10, model.Tables.Common(1), "changeCharName", 50L, 2, "", 12, 0, 0)));
+
+        var checks = new List<(string, long)>();
+        var mb = new MessageBoxController { data = box, CheckCharName = (n, u) => checks.Add((n, u)), CharacterNameError = n => n == "Bad" ? "refused" : null };
+        Assert.That(mb.HandleArgTag(0, "changeCharName,"), Is.False, "an empty name keeps the box");
+        Assert.That(mb.HandleArgTag(0, "changeCharName,Bad"), Is.False, "a refused name keeps the box");
+        Assert.That(mb.HandleArgTag(1, "changeCharName,Good"), Is.True, "the other button closes");
+        Assert.That(checks, Is.Empty);
+        Assert.That(mb.HandleArgTag(0, "changeCharName,Good"), Is.True);
+        Assert.That(checks, Is.EqualTo(new[] { ("Good", 50L) }));
+
+        string Common(int i) => model.Tables.Common(i);
+        var used = Ms2.Ui.CharNameChange.ResultBox(true, 50, "Good", "Me", Common);
+        Assert.That((used.Type, used.Msg, used.Extra), Is.EqualTo((0, Ms2.Quest.ClientFormat.Format(Common(0x2a), "Good"), "")));
+        Assert.That(Ms2.Ui.CharNameChange.ResultBox(false, 50, "Good", null, Common), Is.Null, "no local player: nothing");
+        var confirm = Ms2.Ui.CharNameChange.ResultBox(false, 50, "Good", "Me", Common);
+        Assert.That((confirm.Type, confirm.Msg, confirm.Extra, string.Join(",", confirm.Args)),
+            Is.EqualTo((1, Ms2.Quest.ClientFormat.Format(Common(0x28), "Me", "Good"), "confirmChangeCharName", "50,Good")));
+        var yes = new MessageBoxController { data = confirm, UseCharNameItem = c.ConfirmCharName };
+        Assert.That(yes.HandlePlainTag(1, "confirmChangeCharName"), Is.True);
+        Assert.That(sent, Is.Empty, "the no: nothing");
+        Assert.That(yes.HandlePlainTag(0, "confirmChangeCharName"), Is.True);
+        Assert.That(sent, Is.EqualTo(new[] { (50L, "Good") }), "the item used with the name");
+        c.ConfirmCharName(51, "Other");
+        Assert.That(sent.Count, Is.EqualTo(1), "no item of the uid: nothing");
+    }
+
+    [Test]
     public void AChatEmoticonItemTellsItsPeriodThenAsks()
     {
         // ChatEmoticonAdd @0x140d1fba0: <v id="5" durationSec="2592000"/>; an endDate instead; SetItemById(id, rarity, 0)

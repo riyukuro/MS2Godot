@@ -14,6 +14,7 @@ static class Gms2Opcodes {
         [Inbound.Reconnect] = 0x05,
         [Inbound.Ping] = 0x06,
         [Inbound.SkillMacro] = 0xD3,
+        [Inbound.CheckCharNameResult] = 0xD5,
         [Inbound.ReconnectUnk] = 0x07,
         [Inbound.FinalizeReconnect] = 0x08,
         [Inbound.RequestLogin] = 0x09,
@@ -190,6 +191,7 @@ static class Gms2Opcodes {
         [Outbound.ResponseVersion] = 0x01,
         [Outbound.Patch] = 0x02,
         [Outbound.SkillMacro] = 0x7C,
+        [Outbound.CheckCharName] = 0x7E,
         [Outbound.NewsNotification] = 0x64,   // upstream RecvOp NewsNotification
         [Outbound.SmartPush] = 0x84,          // upstream RecvOp SmartPush
         [Outbound.ChatSticker] = 0xB9,

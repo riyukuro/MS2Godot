@@ -472,6 +472,10 @@ public partial class LiveSession : Node
     }
     /// <summary>A SkillMacro (0xD1) mode 0 packet, the compact skill control window's vfunc_79 (@0x140f9fee0).</summary>
     public event Action<SkillMacroPacket> SkillMacro;
+    /// <summary>CSceneStateGame::OnCheckCharNameResult (scenestategame.cpp:4698): the name change check's answer.</summary>
+    public event Action<CheckCharNameResult> CharNameChecked;
+    /// <summary>UIMessageBox::HandleChangeCharNameButton's send (uimessagebox.cpp:2109): SendOp CheckCharName.</summary>
+    public void CheckCharName(string name, long itemUid) => Send(new CheckCharNameRequest(name, itemUid));
     /// <summary>The compact tabs of the last SkillMacro mode 2 (CSkillSystem::FUN_141767ae0 @0x141767ae0, m_lstCompact), or of
     /// the window's SetCompactConfigs; empty before either.</summary>
     public IReadOnlyList<SkillMacroTab> CompactConfigs { get; set; } = Array.Empty<SkillMacroTab>();
@@ -2647,6 +2651,12 @@ public partial class LiveSession : Node
                 SkillPoints.Apply(SkillPointPacket.Read(p.Reader(), game.Profile));   // CSceneStateGame::OnSkillPoint (scenestategame.cpp:4241)
                 SkillPointsChanged?.Invoke();
                 GD.Print($"live: skill points rank 1 {SkillPoints.RankTotal(1)} rank 2 {SkillPoints.RankTotal(2)} extra {SkillPoints.Extra}");
+            }
+            else if (game.Is(p, Inbound.CheckCharNameResult))
+            {
+                var m = CheckCharNameResult.Read(p.Reader());
+                GD.Print($"live: char name check: used {m.Used}, item {m.ItemUid}");
+                CharNameChecked?.Invoke(m);
             }
             else if (game.Is(p, Inbound.SkillMacro))
             {
