@@ -6,8 +6,7 @@ namespace Ms2.Ui.Tests;
 
 /// <summary>
 /// G14 — startInvenItem (D24): GMS2 table/job.xml job code 010 lists &lt;startInvenItem&gt; 13200220 and 14100190, job 001
-/// 13000001; WeaponStance.StartItemIds reads job@startItems, which GMS2 does not write. KMS job 10 has
-/// startItems="13200220,14100190".
+/// 13000001; KMS job 10 has startItems="13200220,14100190". WeaponStance.StartItemIds reads either shape.
 /// </summary>
 public class RcG14StartInvenItemTests
 {
@@ -19,7 +18,6 @@ public class RcG14StartInvenItemTests
     }
 
     [Test]
-    [Ignore("G14: WeaponStance.StartItemIds reads job@startItems only; GMS2 startInvenItem/item@itemID is unread")]
     public void TheGms2JobReadsItsStartInvenItems()
     {
         using var packs = new PackSet(RcGap.Data("MS2_GMS2_DATA"));

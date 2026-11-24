@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Xml.Linq;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
 using Ms2.Net.Packets;
@@ -247,7 +248,9 @@ public sealed class WeaponStance
 
     /// <summary>
     /// JobData::Load (@0x140643a60, commonfiles/jobtable.cpp:152): the startItems list of <paramref name="jobGroup"/> in
-    /// table/job.xml, empty when the job has none.
+    /// table/job.xml, empty when the job has none. The GMS2 file (<see cref="JobTable.IsCodeShape"/>) keys its rows by code
+    /// and lists them as &lt;startInvenItem&gt;&lt;item itemID&gt;: read from the data, not from a client source (each group
+    /// the KMS file also has lists the same ids as its startItems).
     /// </summary>
     public static IReadOnlyList<int> StartItemIds(PackSet packs, int jobGroup)
     {
@@ -257,17 +260,28 @@ public sealed class WeaponStance
             var dict = new Dictionary<int, List<int>>();
             if (!p.Exists("Xml", "table/job.xml")) return dict;
             var root = GameStrings.Parse(p.Read("Xml", "table/job.xml")).Root;
-            if (root == null) return dict;
-            foreach (var j in FeatureElements.Collect(p, root, "job", "jobGroupID"))
-            {
-                int id = ItemData.Atoi((string)j.Attribute("jobGroupID") ?? "0");
-                var ids = ((string)j.Attribute("startItems") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
-                    .Select(ItemData.Atoi).Where(v => v > 0).ToList();
-                dict.TryAdd(id, ids);
-            }
-            return dict;
+            return root == null ? dict : StartItemsByGroup(root, (parent, child, key) => FeatureElements.Collect(p, parent, child, key));
         });
         return map.TryGetValue(jobGroup, out var list) ? list : Array.Empty<int>();
+    }
+
+    /// <summary>The start item lists of table/job.xml's root by job group, in either shape (see <see cref="StartItemIds"/>).</summary>
+    /// <param name="collect">FUN_14028faa0(root, "job", key): the available &lt;job&gt; elements, one per group.</param>
+    public static Dictionary<int, List<int>> StartItemsByGroup(XElement root, Func<XElement, string, string, List<XElement>> collect)
+    {
+        var dict = new Dictionary<int, List<int>>();
+        bool code = JobTable.IsCodeShape(root);
+        string key = code ? "code" : "jobGroupID";
+        foreach (var j in collect(root, "job", key))
+        {
+            int id = ItemData.Atoi((string)j.Attribute(key) ?? "0");
+            var ids = (code
+                    ? j.Elements("startInvenItem").Elements("item").Select(i => (string)i.Attribute("itemID") ?? "")
+                    : ((string)j.Attribute("startItems") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
+                .Select(ItemData.Atoi).Where(v => v > 0).ToList();
+            dict.TryAdd(id, ids);
+        }
+        return dict;
     }
 
     /// <summary>

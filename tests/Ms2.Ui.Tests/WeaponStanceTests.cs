@@ -37,6 +37,27 @@ public class WeaponStanceTests
         Assert.That(actual.Z, Is.EqualTo(z).Within(1e-4f), label + " Z");
     }
 
+    [Test]
+    public void TheStartItemsAreReadFromEitherJobFileShape()
+    {
+        static List<XElement> All(XElement parent, string child, string key) => parent.Elements(child).ToList();
+        // KMS: <job jobGroupID startItems="a,b">
+        var kms = XElement.Parse(@"<ms2><job jobGroupID=""10"" startItems=""13200220,14100190"" /><job jobGroupID=""70"" startItems=""13100225,13100225"" /></ms2>");
+        var k = WeaponStance.StartItemsByGroup(kms, All);
+        Assert.That(k[10], Is.EqualTo(new[] { 13200220, 14100190 }));
+        Assert.That(k[70], Is.EqualTo(new[] { 13100225, 13100225 }), "a dual wield lists its weapon twice");
+        // GMS2: <job code="010"><startInvenItem><item itemID/>; its <reward> items are not start items
+        var gms2 = XElement.Parse(@"<ms2><job code=""010""><startInvenItem><item itemID=""13200220"" grade=""1"" count=""1"" />
+            <item itemID=""14100190"" grade=""1"" count=""1"" /></startInvenItem><reward><item itemID=""13200029"" grade=""1"" /></reward></job>
+            <job feature=""JobChange_01"" code=""010""><startInvenItem><item itemID=""1"" /></startInvenItem></job>
+            <job code=""020""><startInvenItem><item itemID=""15000224"" /></startInvenItem></job></ms2>");
+        Assert.That(JobTable.IsCodeShape(gms2), Is.True);
+        Assert.That(JobTable.IsCodeShape(kms), Is.False);
+        var g = WeaponStance.StartItemsByGroup(gms2, All);
+        Assert.That(g[10], Is.EqualTo(new[] { 13200220, 14100190 }), "the first available row of the group");
+        Assert.That(g[20], Is.EqualTo(new[] { 15000224 }));
+    }
+
     [TestCase(10, 0, "Sword_", 200001,
         new[] { "Weapon_Side_L_Point", "Weapon_Back_B_Point" },
         new[] { "Weapon_Hand_R_Point", "Weapon_Hand_L_Point" },

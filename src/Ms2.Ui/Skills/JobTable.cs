@@ -182,8 +182,7 @@ public sealed class JobTable
     {
         var root = doc?.Root;
         if (root == null || root.Name != "ms2") return;
-        // The GMS2 file has <job code> and no jobGroupID; the KMS shape keeps its own reader.
-        if (!root.Elements("job").Any(e => e.Attribute("jobGroupID") != null) && root.Elements("job").Any(e => e.Attribute("code") != null))
+        if (IsCodeShape(root))
         {
             var subJobs = new Dictionary<int, int[]>();
             foreach (var g in jobGroup?.Root?.Elements("JobGroup") ?? Enumerable.Empty<XElement>())
@@ -205,6 +204,10 @@ public sealed class JobTable
             jobs.TryAdd(j.JobGroupId, j);
         }
     }
+
+    /// <summary>The GMS2 table/job.xml shape: &lt;job code&gt; and no jobGroupID (the KMS shape keeps its own reader).</summary>
+    public static bool IsCodeShape(XElement root) => root != null
+        && !root.Elements("job").Any(e => e.Attribute("jobGroupID") != null) && root.Elements("job").Any(e => e.Attribute("code") != null);
 
     /// <summary>JobTable::Load (jobtable.cpp:309) of the pack's table/job.xml (and table/jobgroup.xml where the data has it).</summary>
     public static JobTable Load(Ms2.Formats.Pack.PackSet packs)
