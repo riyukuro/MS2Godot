@@ -479,6 +479,7 @@ public partial class LiveSession
                     GD.Print($"live: combat {step} page {k + 1}: script {tfc.Talk.ScriptId} page {tfc.Talk.Page + 1}, quest page {tfc.Talk.OnQuestPage}");
                     tfc.Talk.ActionKey();
                     await frames(90);
+                    if (k == 0 && tfc.Talk.Open) Shot($"talk{id}_{Math.Abs(step.GetHashCode()) % 1000}_page2.png");   // the window drawn, its second page
                 }
                 if (tfc.Talk.Open) { GD.Print($"live: combat {step}: still open after {pages} pages, ended"); tfc.Talk.End(); }
                 await frames(120);
