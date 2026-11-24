@@ -18,10 +18,46 @@ public sealed record GlobalFactorRequest : IOutPacket {
 
 /// <summary>Outbound 0x17 (SendOp::RequestItemInventory) mode 8: UIInventoryDialog::SendRequestItemInventory 0x14199c230 (uiinventorydialog.cpp:1598): u8 8, u8 tab, bool stack.
 /// The sort request ("send the sort request", uiinventorydialog.h:87): sent by OnClickSort (:856) and OnSortConfirm (:1391), not on a tab switch
-/// (OnTabChanged 0x14199a4b0 sends nothing).</summary>
-public sealed record ItemInventorySortRequest(byte Tab, bool Stack) : IOutPacket {
+/// (OnTabChanged 0x14199a4b0 sends nothing).
+/// GMS2: mode 10 with the wire's tab (<see cref="Gms2InventoryTab.ToWire"/>): the 6 recorded GMS2 sort requests are u8 10, u8 0,
+/// bool 0, and the upstream server's ItemInventoryHandler reads Sort = 10; a mode 8 is a command it does not have.</summary>
+public sealed record ItemInventorySortRequest(byte Tab, bool Stack) : IProfileOutPacket {
     public Outbound Op => Outbound.RequestItemInventory;
-    public void Write(Maple2.PacketLib.Tools.ByteWriter w) { w.WriteByte(8); w.WriteByte(Tab); w.WriteBool(Stack); }
+    public void Write(Maple2.PacketLib.Tools.ByteWriter w) => Write(w, ProtocolProfile.Kms2525);
+    public void Write(Maple2.PacketLib.Tools.ByteWriter w, ProtocolProfile profile) {
+        if (profile.IsGms2) { w.WriteByte(10); w.WriteByte((byte) Gms2InventoryTab.ToWire(Tab)); }
+        else { w.WriteByte(8); w.WriteByte(Tab); }
+        w.WriteBool(Stack);
+    }
+}
+
+/// <summary>Outbound 0x17 (SendOp::RequestItemInventory) mode 4: CNetworkService::SendRequestItemInventoryMode4 @0x141538930
+/// (networkservice.cpp:514): u8 4, i64 the item's uid, i32 the count. The drop of a bag item on the ground: FUN_14140c4d0
+/// (invenslot.cpp:1840) for a single non-quest item, else the "drop" box's yes (UIMessageBox::HandleDropButton, uimessagebox.cpp:2008).
+/// The same on GMS2 (the recorded GMS2 drop is 13 bytes; the upstream server's Drop = 4 reads i64, i32).</summary>
+public sealed record ItemInventoryDropRequest(long Uid, int Count) : IOutPacket {
+    public Outbound Op => Outbound.RequestItemInventory;
+    public void Write(Maple2.PacketLib.Tools.ByteWriter w) { w.WriteByte(4); w.WriteLong(Uid); w.WriteInt(Count); }
+}
+
+/// <summary>Outbound 0x17 (SendOp::RequestItemInventory) mode 5: CNetworkService::SendRequestItemInventoryMode5 @0x1415389b0
+/// (networkservice.cpp:516): u8 5, i64 the item's uid. The "destroy_item" box's yes (UIMessageBox::HandleDestroyItemButton,
+/// uimessagebox.cpp:1352) for an item that cannot go on the ground. The same on GMS2 (13 recorded, 9 bytes each).</summary>
+public sealed record ItemInventoryDestroyRequest(long Uid) : IOutPacket {
+    public Outbound Op => Outbound.RequestItemInventory;
+    public void Write(Maple2.PacketLib.Tools.ByteWriter w) { w.WriteByte(5); w.WriteLong(Uid); }
+}
+
+/// <summary>Outbound 0x17 (SendOp::RequestItemInventory) mode 9: Unk_Inventory::SendRequestItemInventory @0x140a62cc0
+/// (inventory.cpp:1303): u8 9, u8 the tab. The bag expand (UIInventoryDialog::RequestExpandSlots, uiinventorydialog.cpp:1874).
+/// GMS2: mode 11 with the wire's tab, as the upstream server's Expand = 11 reads it (no GMS2 expand is recorded).</summary>
+public sealed record ItemInventoryExpandRequest(byte Tab) : IProfileOutPacket {
+    public Outbound Op => Outbound.RequestItemInventory;
+    public void Write(Maple2.PacketLib.Tools.ByteWriter w) => Write(w, ProtocolProfile.Kms2525);
+    public void Write(Maple2.PacketLib.Tools.ByteWriter w, ProtocolProfile profile) {
+        if (profile.IsGms2) { w.WriteByte(11); w.WriteByte((byte) Gms2InventoryTab.ToWire(Tab)); }
+        else { w.WriteByte(9); w.WriteByte(Tab); }
+    }
 }
 
 /// <summary>Outbound 0x17 (SendOp::RequestItemInventory) mode 3: InvenSlot::vfunc_18 (invenslot.cpp:1141), an inventory item dropped on

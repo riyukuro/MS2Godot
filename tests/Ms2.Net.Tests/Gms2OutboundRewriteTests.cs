@@ -140,4 +140,11 @@ public class Gms2OutboundRewriteTests {
         Assert.That(Bytes(new QuestGotoDungeonRequest(9)), Is.EqualTo(new byte[] { 0xD, 9, 0, 0, 0 }));
     }
     [Test] public void RequestItemPickupRewritesByteForByte() => All(0x1C, r => { int id = r.ReadInt(); return new RequestItemPickup(id, r.ReadBool() ? r.ReadInt() : 0); });
+    // RequestItemInventory 0x17: the upstream server's Move 3, Drop 4, DropAll 5 and Sort 10 (with the wire's tab)
+    [Test] public void ItemInventoryMoveDropDestroyAndSortRewriteByteForByte() => All(0x17, r => r.ReadByte() switch {
+        3 => new ItemInventoryMoveRequest(r.ReadLong(), r.ReadShort()),
+        4 => new ItemInventoryDropRequest(r.ReadLong(), r.ReadInt()),
+        5 => new ItemInventoryDestroyRequest(r.ReadLong()),
+        _ => new ItemInventorySortRequest((byte) Gms2InventoryTab.FromWire(r.ReadByte()), r.ReadBool()),
+    }, d => d[0] is 3 or 4 or 5 or 10);
 }

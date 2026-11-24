@@ -6,9 +6,9 @@ using NUnit.Framework;
 namespace Ms2.Net.Tests;
 
 /// <summary>
-/// The inventory writers main does not have: mode 4 (drop a count), mode 5 (destroy) and mode 9 (expand a tab), all on
+/// The inventory writers: mode 4 (drop a count), mode 5 (destroy) and mode 9 (expand a tab), all on
 /// SendOp::RequestItemInventory (0x17). The client's writers are networkservice.cpp:514-517 and the KMS calls at
-/// uiinventorydialog.cpp:1874-1881 (mode 9); the handler side is invenslot.cpp:1109-1140, :1379-1505. Expected records:
+/// uiinventorydialog.cpp:1874-1881 (mode 9); the handler side is invenslot.cpp:1109-1140, :1379-1505. The records are
 /// Ms2.Net.ItemInventoryDropRequest(long uid, int count), ItemInventoryDestroyRequest(long uid) and
 /// ItemInventoryExpandRequest(byte tab).
 /// </summary>
@@ -25,7 +25,6 @@ public class RcInventoryWritersTests
         return (IOutPacket)ctor.Invoke(args);
     }
 
-    [Ignore("the mode-4 drop writer is not written")]
     [Test]
     public void Mode4WritesTheUidAndCount()
     {
@@ -34,7 +33,6 @@ public class RcInventoryWritersTests
         Assert.That(RcLane.Write(p), Is.EqualTo(RcLane.Bytes("04080706050403020105000000")));
     }
 
-    [Ignore("the mode-5 destroy writer is not written")]
     [Test]
     public void Mode5WritesTheUid()
     {
@@ -43,7 +41,6 @@ public class RcInventoryWritersTests
         Assert.That(RcLane.Write(p), Is.EqualTo(RcLane.Bytes("050807060504030201")));
     }
 
-    [Ignore("the mode-9 expand writer is not written")]
     [Test]
     public void Mode9WritesTheTab()
     {

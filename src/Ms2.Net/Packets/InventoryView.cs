@@ -59,6 +59,12 @@ public sealed class InventoryView {
     public Action<long, byte> RequestEquipGem { get; set; }
     /// <summary>The use request (<see cref="ItemUseRequest"/>, Unk_Inventory::RequestUseItem): (item uid, argument).</summary>
     public Action<long, string> RequestUse { get; set; }
+    /// <summary>The drop on the ground (<see cref="ItemInventoryDropRequest"/>, SendRequestItemInventoryMode4): (item uid, count).</summary>
+    public Action<long, int> RequestDrop { get; set; }
+    /// <summary>The destroy (<see cref="ItemInventoryDestroyRequest"/>, SendRequestItemInventoryMode5): the item uid.</summary>
+    public Action<long> RequestDestroy { get; set; }
+    /// <summary>The bag expand (<see cref="ItemInventoryExpandRequest"/>, Unk_Inventory::SendRequestItemInventory(category)): the tab.</summary>
+    public Action<int> RequestExpand { get; set; }
     public int Pending => pending;
     /// <summary>FUN_141999e00: m_19c = 7 (new marks, expand label and tab rebuild).</summary>
     public void MarkAllPending() { if (binding != null) pending = PendingNew | PendingExpand | PendingRebuild; }

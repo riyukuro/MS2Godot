@@ -24,6 +24,7 @@ public abstract record ItemMessage {
     public static ItemMessage Read(ByteReader r, Func<long, EquipItem> find) => Read(r, find, ProtocolProfile.Kms2525);
 
     /// <summary>
+    /// The GMS2 tabs of LoadTab, Reset and ExpandCount are the wire's numbers mapped to the client's (<see cref="Gms2InventoryTab"/>).
     /// The GMS2 command numbers (upstream ItemInventoryPacket.Command) are mapped to the KMS2 mode each one stands for:
     /// 7 Load (6), 8 NotifyNew (7), 10 LoadTab (8), 12 ExpandComplete (10), 13 Reset (11), 14 ExpandCount (12), 15 Error (13),
     /// 16 UpdateItem (14); 0 to 3 are the same. Item bodies read through the GMS2 item layout, and Add carries a unicode
@@ -40,10 +41,10 @@ public abstract record ItemMessage {
             case 3: return new Move(r.ReadLong(), r.ReadShort(), r.ReadLong(), r.ReadShort());
             case 6: return new Load(ItemList(r, profile));
             case 7: { long uid = r.ReadLong(); int arg = r.ReadInt(); return new NotifyNew(uid, arg, r.ReadUnicodeString()); }
-            case 8: { int tab = r.ReadInt(); if (tab < 0) { r.ReadShort(); return new LoadTab(tab, new List<EquipItem>()); } return new LoadTab(tab, ItemList(r, profile)); } // FUN_141715860 returns on a negative tab without reading records
+            case 8: { int tab = r.ReadInt(); if (tab < 0) { r.ReadShort(); return new LoadTab(tab, new List<EquipItem>()); } var l = ItemList(r, profile); return new LoadTab(gms2 ? Gms2InventoryTab.FromWire(tab) : tab, l); } // FUN_141715860 returns on a negative tab without reading records
             case 10: return new ExpandComplete();
-            case 11: return new Reset(r.ReadInt());
-            case 12: { int tab = r.ReadByte(); return new ExpandCount(tab, r.ReadInt()); }
+            case 11: { int tab = r.ReadInt(); return new Reset(gms2 ? Gms2InventoryTab.FromWire(tab) : tab); }
+            case 12: { int tab = r.ReadByte(); int n = r.ReadInt(); return new ExpandCount(gms2 ? Gms2InventoryTab.FromWire(tab) : tab, n); }
             case 13: {
                 int code = r.ReadInt();
                 // GMS2: upstream ItemInventoryPacket.Error writes the code alone; no recorded error carries 40/41
@@ -73,6 +74,76 @@ public abstract record ItemMessage {
         }
         return l;
     }
+}
+
+/// <summary>What OnItemInventory (scenestategame.cpp:2973-3027) shows for an answer.</summary>
+public enum ItemAnswerKind {
+    /// <summary>FUN_140d73bc0(id, 0, 0, ""): a box of the common string.</summary>
+    Box,
+    /// <summary>ShowMessageBox(GetStringCommonByKey(key), 0, 0, ""): a box of the keyed common string.</summary>
+    BoxKey,
+    /// <summary>ShowMessageBox(FUN_14028dee0(id, the item's name, the count)): a box of the common string formatted.</summary>
+    BoxItem,
+    /// <summary>ShowMessageBox(BlockFormat(id, the code)): a box of the common string formatted with the code.</summary>
+    BoxCode,
+    /// <summary>FUN_141275260(id, 1, 1): the system notice of the common string.</summary>
+    Notice,
+    /// <summary>Unk_SSGFormatMsg(id, 1, 1, the item's name, the count): the system notice of the common string formatted.</summary>
+    NoticeItem,
+    /// <summary>CUIService::FUN_141add1f0: the client's own meret purchase dialog (no string).</summary>
+    Service,
+}
+
+/// <summary>
+/// The text an ItemInventory answer shows: mode 0xd's error codes (scenestategame.cpp:2973) and mode 0xa (:3026). The item name is
+/// CStringTable::FUN_141811980(1, id); the count is the u16 the packet carries. <see cref="Sound"/> is the system sound played after
+/// the notice (code 0xd: PlaySystemSound(DAT_143ae7978), the bag-full warning).
+/// </summary>
+public readonly record struct ItemInventoryAnswer(ItemAnswerKind Kind, int StringId, string Key = null, int ItemId = 0, int Number = 0, string Sound = null) {
+    /// <summary>Mode 0xa: FUN_140d73bc0(0x2a2).</summary>
+    public static readonly ItemInventoryAnswer ExpandDone = new(ItemAnswerKind.Box, 0x2a2);
+    /// <summary>s_strWarningBag (DAT_143ae7978).</summary>
+    public const string WarningBagSound = "system_notice_error_warningBag";
+
+    /// <summary>Mode 0xd: the answer of an error code, as the client's switch has it; any other code is BlockFormat(0xcd, code).</summary>
+    public static ItemInventoryAnswer Error(int code, int itemId, int value) => code switch {
+        0xc => new(ItemAnswerKind.Box, 0xeb),
+        0xd => new(ItemAnswerKind.Notice, 0x43, Sound: WarningBagSound),
+        0x1f => new(ItemAnswerKind.Box, 0x72),
+        0x22 => new(ItemAnswerKind.Service, 0),
+        0x23 => new(ItemAnswerKind.Box, 0xfd),
+        0x24 => new(ItemAnswerKind.Box, 0xfe),
+        0x25 => new(ItemAnswerKind.BoxKey, 0, "s_item_err_Invalid_slot_codi"),
+        0x26 => new(ItemAnswerKind.BoxKey, 0, "s_item_err_not_active_tab"),
+        0x28 => new(ItemAnswerKind.BoxItem, 0x941, ItemId: itemId, Number: value),
+        0x29 => new(ItemAnswerKind.NoticeItem, 0x942, ItemId: itemId, Number: value),
+        0x2a => new(ItemAnswerKind.Box, 0xd7),
+        _ => new(ItemAnswerKind.BoxCode, 0xcd, Number: code),
+    };
+}
+
+/// <summary>
+/// The bag tab numbers of the GMS2 wire. The KMS2 client numbers its 15 tabs 0-14 without gaps (Unk_Inventory's categories, the tab
+/// CItemData::FUN_14053e530 gives an item); GMS2 numbers them as the upstream server's InventoryType, 0-16 with 8 (pet equipment)
+/// and 14 unused: life skill 9, pet 10, consumable 11, currency 12, badge 13, lapenshard 15, fragment 16. The recorded GMS2
+/// Reset and ExpandCount packets run over every number 0-16 (695 logins each); the KMS2 ones over 0-14.
+/// </summary>
+public static class Gms2InventoryTab {
+    /// <summary>The client tab of a GMS2 wire tab; -1 for 8, 14 and any number outside 0-16 (no client tab: SetExtraSlots and
+    /// RemoveItemsInCategory ignore it).</summary>
+    public static int FromWire(int tab) => tab switch {
+        >= 0 and <= 7 => tab,
+        >= 9 and <= 13 => tab - 1,
+        15 or 16 => tab - 2,
+        _ => -1,
+    };
+
+    /// <summary>The GMS2 wire tab of a client tab 0-14; a number outside them goes as it is.</summary>
+    public static int ToWire(int tab) => tab switch {
+        >= 8 and <= 12 => tab + 1,
+        13 or 14 => tab + 2,
+        _ => tab,
+    };
 }
 
 /// <summary>
@@ -137,6 +208,10 @@ public sealed class ItemBook {
     public event Action<long> Changed;
     public event Action<int, int, int> ErrorReceived;   // code, item id, value
     public event Action<long, int> NotifiedNew;
+    /// <summary>Mode 0xa: the expand done (OnItemInventory's FUN_140d73bc0(0x2a2), <see cref="ItemInventoryAnswer.ExpandDone"/>).</summary>
+    public event Action ExpandCompleted;
+    /// <summary>Mode 0xc after SetExtraSlots, with the client tab: the open inventory dialog plays its expand effect.</summary>
+    public event Action<int> ExtraSlotsSet;
 
     public void Apply(ItemMessage m) {
         switch (m) {
@@ -156,7 +231,8 @@ public sealed class ItemBook {
             case ItemMessage.Reset x:
                 if (TabOf != null) foreach (var i in items.Values.Where(i => TabOf(i.Id) == x.Tab).ToList()) items.Remove(i.Uid);
                 Changed?.Invoke(0); break;
-            case ItemMessage.ExpandCount x: SetExtraSlots(x.Tab, x.Count); Changed?.Invoke(0); break;
+            case ItemMessage.ExpandCount x: SetExtraSlots(x.Tab, x.Count); Changed?.Invoke(0); ExtraSlotsSet?.Invoke(x.Tab); break;
+            case ItemMessage.ExpandComplete: ExpandCompleted?.Invoke(); break;
             case ItemMessage.NotifyNew x: if (items.TryGetValue(x.Uid, out var nw)) { nw.IsNew = true; if (!string.IsNullOrEmpty(x.Name)) nw.NotifiedName = x.Name; NotifiedNew?.Invoke(x.Uid, x.Arg); Changed?.Invoke(x.Uid); } break;
             case ItemMessage.Error x: ErrorReceived?.Invoke(x.Code, x.ItemId, x.Value); break;
         }
