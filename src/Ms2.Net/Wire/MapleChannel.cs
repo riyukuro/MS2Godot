@@ -117,6 +117,9 @@ public sealed class MapleChannel {
     /// </summary>
     public ProtocolProfile Profile { get => profile; set { profile = value; profilePinned = true; } }
 
+    /// <summary>CGameSocket::FUN_1412672d0 (@0x1412672d0, gamesocket.cpp:405-412): raised when ResponseKey resets m_sequence and m_out.</summary>
+    public event Action SequenceReset;
+
     /// <summary>Encrypts and sends one packet. Callable from several threads: the iv advances per frame, so encrypt and write stay in order.</summary>
     public async Task SendAsync(Outbound op, Action<ByteWriter> body = null, CancellationToken ct = default) {
         var w = new ByteWriter();
@@ -137,7 +140,7 @@ public sealed class MapleChannel {
             var e = enc.Encrypt(w);
             await stream.WriteAsync(e.Buffer.AsMemory(0, e.Length), ct);
             await stream.FlushAsync(ct);
-            if (op == Outbound.ResponseKey) { Out.Reset(); Out.Configure(ReconnectOptions); }   // FUN_1412672d0 runs after the ResponseKey is sent (networkservice.cpp:864)
+            if (op == Outbound.ResponseKey) { Out.Reset(); Out.Configure(ReconnectOptions); SequenceReset?.Invoke(); }   // FUN_1412672d0 runs after the ResponseKey is sent (networkservice.cpp:865)
         } finally { sendLock.Release(); }
     }
 

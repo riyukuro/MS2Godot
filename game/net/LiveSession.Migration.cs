@@ -48,6 +48,7 @@ public partial class LiveSession
         DropOwnPc();
         PortalAction.Current = null;
         moveClock.Restart();
+        ResetReconnect();
         var old = game;
         game = null;
         old?.Dispose();
@@ -86,6 +87,7 @@ public partial class LiveSession
                 // the session left the tree while the entry ran: nothing is taken, the connection goes
                 if (exit.IsCancellationRequested) { t.Dispose(); return; }
                 (entry, game) = (e, t);
+                AttachGameReconnect(game);
                 Migrations++;
                 GD.Print($"live: GameToGame entry after {moveClock.ElapsedMilliseconds} ms ({attempt + 1} attempt(s))");
                 TakeEntry();

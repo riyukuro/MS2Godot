@@ -28,8 +28,10 @@ public sealed class TcpTransport : IDisposable {
     /// <summary>UIReconnectTopLayerNotify (0x4f78): attempt and attempts while a reconnect runs; <see cref="ReconnectProgressHidden"/> when it ends.</summary>
     public event Action<int, int> ReconnectProgress;
     public event Action ReconnectProgressHidden;
-    /// <summary>OnReconnectPacket kind 3 in game: the server ended the session (SendRequestQuitAndDisconnect, scene 0x6200009 and the 0x20f box in the client). STILL-OPEN in the owner.</summary>
+    /// <summary>OnReconnectPacket kind 3 in game: the server ended the session (SendRequestQuitAndDisconnect, scene 0x6200009 and the 0x20f box in the client).</summary>
     public event Action SessionEnded;
+    /// <summary>WindowService uMsg 0x465 when reconnect gave up (windowservice.cpp:482-555): the error code for the disconnect box and return to scene 0x6200009.</summary>
+    public event Action<int> ReconnectGaveUp;
 
     public TcpTransport() { Reconnection = new ReconnectionManager(new ReconnectHost(this)); }
 
@@ -98,7 +100,7 @@ public sealed class TcpTransport : IDisposable {
         return true;
     }
 
-    /// <summary>The main loop's part: the once-a-second Tick and the 0x46b attempt message.</summary>
+    /// <summary>The main loop's part: the once-a-second Tick and the 0x46b attempt message (windowservice.cpp:558-578).</summary>
     void StartDriver() {
         if (driving) return;
         driving = true;
@@ -106,7 +108,11 @@ public sealed class TcpTransport : IDisposable {
             try {
                 while (Volatile.Read(ref disposed) == 0 && Volatile.Read(ref closed) == 0 && Reconnection.IsReconnecting) {
                     Reconnection.Tick();
-                    if (wantAttempt) { wantAttempt = false; if (!Reconnection.TryConnect() && Reconnection.IsReconnecting) Reconnection.OnFailed(ReconnectionManager.ErrorSocketClosed); }
+                    if (wantAttempt) {
+                        wantAttempt = false;
+                        if (!InGame()) Reconnection.OnFailed(ReconnectionManager.ErrorNotInGame);
+                        else if (!Reconnection.TryConnect() && Reconnection.IsReconnecting) Reconnection.OnFailed(ReconnectionManager.ErrorConnectFailed);
+                    }
                     await Task.Delay(100);
                 }
             } finally { driving = false; }
@@ -117,6 +123,7 @@ public sealed class TcpTransport : IDisposable {
     void GaveUp(int code) {
         Failure ??= new IOException($"reconnect gave up (code {code})");
         Volatile.Write(ref closed, 1);
+        try { ReconnectGaveUp?.Invoke(code); } catch { }
         try { Closed?.Invoke(); } catch { }
     }
 
@@ -129,7 +136,7 @@ public sealed class TcpTransport : IDisposable {
         public bool Closing => Volatile.Read(ref t.disposed) != 0;   // g_socketClosing: the owner is closing the socket (the client's shutdown flag)
         public string SocketHost => t.lastHost;
         public int SocketPort => t.lastPort;
-        public int SocketSequence => t.carry?.Sequence ?? 0;
+        public int SocketSequence => t.session?.ReceivedCount ?? 0;   // CNetworkService::GetSocketSequence -> CGameSocket::GetSequence (@0x1412673f0, gamesocket.cpp:418)
         public bool IsConnected => t.tcp.Connected;
         public bool Connect(string host, int port) {
             try {

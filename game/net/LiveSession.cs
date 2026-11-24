@@ -953,6 +953,7 @@ public partial class LiveSession : Node
         StopGuide();
         Ms2.Ui.FieldMoveCover.Lower();        // no field move outlives the session
         StopCombatEffects();                  // nor a time scale change
+        ResetReconnect();
         game?.Dispose(); login?.Dispose();
         if (Instance == this) Instance = null;
     }
@@ -1203,6 +1204,7 @@ public partial class LiveSession : Node
                 GD.PushWarning("live: enter failed: " + e.Message);
                 return new EnterResult(EnterEnd.MoveRefused, e.Error);
             }
+            AttachGameReconnect(game);
             Quests.QuestInfo = QuestTable();
             ItemReader.SlotOf ??= ItemSlotTable();
             ItemReader.ExtraOf ??= id => { try { return Kinds().ExtraOf(id); } catch (Exception e) { GD.Print($"live: item kinds unavailable ({e.Message})"); return null; } };
@@ -1238,7 +1240,7 @@ public partial class LiveSession : Node
     /// enter, in arrival order, through the read loop's handler, then its RequestFieldEnter becomes the current entry.</summary>
     void TakeEntry()
     {
-        if (entry.Enter != null) { NoteServerEnter(entry.Enter.Channel); Housing.ServerEnter(); }
+        if (entry.Enter != null) { NoteServerEnter(entry.Enter.Channel); Housing.ServerEnter(); UpdateReconnectIdentity(); }
         // a new game scene: the old one's OnLeave ran GameEventManagerCli::Clear (scenestategame.cpp:1314)
         InteractShutdowns.Clear();
         Construction.Clear();
@@ -2537,6 +2539,8 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.GameToLogin)) OnGameToLogin(GameToLogin.Read(p.Reader()));
             else if (game.Is(p, Inbound.GameToGame)) OnGameToGame(GameToGame.Read(p.Reader()));
             else if (game.Is(p, Inbound.DynamicChannel)) OnDynamicChannel(DynamicChannelMessage.Read(p.Reader()));
+            else if (game.Is(p, Inbound.Gvg)) OnGvg(p);
+            else if (game.Is(p, Inbound.Reconnect) || game.Is(p, Inbound.ReconnectUnk) || game.Is(p, Inbound.FinalizeReconnect)) { }   // handled on the session's network loop
             else if (game.Is(p, Inbound.EnterUgcMap))
             {
                 var m = EnterUgcMapMessage.Read(p.Reader());

@@ -150,6 +150,7 @@ public partial class HudScene : Node, IUiStageHost
             livePortals.PickupRewardSink = (id, grade) => EnsureRewardNotify()?.ShowPickedItem(id, grade);
             livePortals.CashCouponSink = id => EnsureRewardNotify()?.ShowCashCoupon(id);
             livePortals.GameMenuDirty = () => gameMenu?.MarkDirty();
+            WatchReconnect(livePortals);
         }
         sizeSource = GetViewport();
         sizeSource.SizeChanged += QueueRelayout;
@@ -226,6 +227,7 @@ public partial class HudScene : Node, IUiStageHost
         unwatchMinimapPcs?.Invoke();
         unwatchMinimapPcs = null;
         if (Ms2Godot.Net.LiveSession.Instance is { } liveChannel) { liveChannel.ChannelsChanged -= ChannelsChanged; if (liveChannel.ChannelNoticeSink == (Action<int, int>)ChannelNotice) liveChannel.ChannelNoticeSink = null; }
+        UnwatchReconnect();
         RevivalUnwatch();
         unwatchQuickSlotState?.Invoke();
         unwatchBuffs?.Invoke();
@@ -427,6 +429,7 @@ public partial class HudScene : Node, IUiStageHost
         SystemTextLines(uiRoot);
         CastingGauge(uiRoot);
         GuideEventPane(uiRoot);
+        ReconnectNotifySlot(uiRoot);
         HudModel();
         Chat(uiRoot);
         Quests(uiRoot);

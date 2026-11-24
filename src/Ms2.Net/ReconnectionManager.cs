@@ -39,11 +39,11 @@ public interface IReconnectHost {
 /// <summary>
 /// CReconnectionManagerCli (reconnectionmanagercli.cpp @0x140aace60-0x140aadd70), the state machine for getting a dropped game connection back: the options and
 /// context the server sent, the attempt counters, and the decisions (whether to try, whether it is over). Time and the socket come from <see cref="IReconnectHost"/>.
-/// <see cref="TcpTransport"/> hosts it: a drop in the game calls <see cref="ShouldReconnect"/> and <see cref="Begin"/>. STILL-OPEN: the UIReconnectTopLayerNotify dialog (0x4f78) behind ShowProgress, and what the owner does on EndSession.
+/// <see cref="TcpTransport"/> hosts it: a drop in the game calls <see cref="ShouldReconnect"/> and <see cref="Begin"/>.
 /// </summary>
 public sealed class ReconnectionManager {
-    /// <summary>Codes the client raises itself: the socket closed (0x2745), a result arrived outside the game scene (0xcc), the time ran out (0xc9).</summary>
-    public const int ErrorSocketClosed = 0x2745, ErrorNotInGame = 0xcc, ErrorTimedOut = 0xc9;
+    /// <summary>Codes the client raises itself: the socket closed (0x2745), a connect attempt failed (200, windowservice.cpp:575/613), a result or attempt arrived outside the game scene (0xcc), the time ran out (0xc9).</summary>
+    public const int ErrorSocketClosed = 0x2745, ErrorConnectFailed = 200, ErrorNotInGame = 0xcc, ErrorTimedOut = 0xc9;
 
     readonly IReconnectHost host;
     readonly ReconnectionOptions options = new();

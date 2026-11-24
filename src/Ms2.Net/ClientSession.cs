@@ -103,7 +103,10 @@ public sealed class ClientSession {
         }
     }
 
-    public ClientSession(MapleChannel channel) { this.channel = channel; }
+    public ClientSession(MapleChannel channel) {
+        this.channel = channel;
+        channel.SequenceReset += () => ReceivedCount = 0;   // CGameSocket::FUN_1412672d0 (gamesocket.cpp:406): m_sequence = 0
+    }
 
     /// <summary>Reads the server hello, answers it with ResponseVersion, then loops until the stream ends or the token is cancelled.</summary>
     public async Task RunAsync(CancellationToken ct = default, ResponseVersion hello = null) {
@@ -121,11 +124,14 @@ public sealed class ClientSession {
                     await channel.SendAsync(new Pong(ReceivedCount), ct);
                     break;
                 case Inbound.ReconnectUnk:
-                    ReconnectUnk.Read(p.Reader());   // OnReconnectUnk (networkservice.cpp:882): read and dropped
+                    ReceivedCount = ReconnectUnk.Read(p.Reader()).ServerSequence;   // CGameSocket::ProcessPacket (gamesocket.cpp:320): m_sequence = ReadInt32()
                     break;
-                case Inbound.FinalizeReconnect:
-                    await channel.RetransmitAsync(RetransmitRequest.Read(p.Reader()).Sequence, ct);   // OnRetransmitRequest (:884)
+                case Inbound.FinalizeReconnect: {
+                    var rr = RetransmitRequest.Read(p.Reader());
+                    ReceivedCount = rr.ServerSequence;                              // CGameSocket::ProcessPacket (gamesocket.cpp:321): m_sequence = first i32
+                    await channel.RetransmitAsync(rr.Sequence, ct);                 // OnRetransmitRequest (networkservice.cpp:884)
                     break;
+                }
                 case Inbound.Gvg:
                     if (GvgOptions.FindReconnection(p.Reader()) is { } ro) { Manager?.SetOptions(ro); channel.SetReconnectOptions(ro); }   // OnGvg kind 43 (:820)
                     break;

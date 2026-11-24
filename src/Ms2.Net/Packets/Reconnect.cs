@@ -60,8 +60,30 @@ public sealed record ReconnectNotice(byte Kind, ReconnectionContext Context, int
     }
 }
 
-/// <summary>Inbound 0x07 (OnReconnectUnk @0x14153b2d0): one i32 the client reads and drops.</summary>
-public sealed record ReconnectUnk(int Unused) {
+/// <summary>
+/// Unk_MachineId::ToString (@0x14067c400, unit_14067c020_machineidcodec.cpp:139-149): the 16-byte machine id as uppercase
+/// hex pairs joined by '-', sent in <see cref="ReconnectRequest.MachineId"/> (reconnectionmanagercli.cpp:244).
+/// </summary>
+public static class MachineIdText {
+    public static string Format(ReadOnlySpan<byte> id) {
+        if (id.Length != 16) throw new ArgumentException("machine id must be 16 bytes", nameof(id));
+        var src = id.ToArray();
+        return string.Create(47, src, static (dst, bytes) => {
+            const string hex = "0123456789ABCDEF";
+            for (int i = 0; i < 16; i++) {
+                int p = i * 3;
+                byte b = bytes[i];
+                dst[p] = hex[b >> 4];
+                dst[p + 1] = hex[b & 0xF];
+                if (i < 15) dst[p + 2] = '-';
+            }
+        });
+    }
+}
+
+/// <summary>Inbound 0x07 (CGameSocket::ProcessPacket gamesocket.cpp:320; OnReconnectUnk @0x14153b2d0, networkservice.cpp:882): one i32 that restores CGameSocket::m_sequence.</summary>
+public sealed record ReconnectUnk(int ServerSequence) {
+    public int Unused => ServerSequence;
     public static ReconnectUnk Read(ByteReader r) { var p = new ReconnectUnk(r.ReadInt()); r.ExpectEnd("ReconnectUnk"); return p; }
 }
 
@@ -71,8 +93,9 @@ public sealed record ReconnectAck(int Sequence) : IOutPacket {
     public void Write(ByteWriter w) => w.WriteInt(Sequence);
 }
 
-/// <summary>Inbound 0x08 (OnRetransmitRequest @0x14153b310): i32 dropped, i32 the last client sequence the server saw. The client answers by resending what is after it.</summary>
-public sealed record RetransmitRequest(int Unused, int Sequence) {
+/// <summary>Inbound 0x08 (CGameSocket::ProcessPacket gamesocket.cpp:321; OnRetransmitRequest @0x14153b310, networkservice.cpp:884): i32 restoring CGameSocket::m_sequence, i32 the last client sequence the server saw.</summary>
+public sealed record RetransmitRequest(int ServerSequence, int Sequence) {
+    public int Unused => ServerSequence;
     public static RetransmitRequest Read(ByteReader r) { var p = new RetransmitRequest(r.ReadInt(), r.ReadInt()); r.ExpectEnd("FinalizeReconnect"); return p; }
 }
 
@@ -82,22 +105,71 @@ public sealed record FinalizeReconnect(int Sequence) : IOutPacket {
     public void Write(ByteWriter w) => w.WriteInt(Sequence);
 }
 
+/// <summary>One entry decoded by <see cref="GvgOptions.ReadAll"/> (CNetworkService::OnGvg @0x14153a8f0, networkservice.cpp:811-832).</summary>
+public abstract record GvgEntry(int Kind) {
+    /// <summary>Kind 1: launch flag bool (networkservice.cpp:816).</summary>
+    public sealed record LaunchFlag(bool Enabled) : GvgEntry(1);
+    /// <summary>Kind 7: CContentShutdown::Decode (@0x1402c4c00, contentshutdown.cpp:26-30): u16 count, count x u16 content ids.</summary>
+    public sealed record ContentShutdown(ushort[] DisabledContents) : GvgEntry(7);
+    /// <summary>Kind 25: four i32 socket options (noDelay, option5, receiveBuffer, sendBuffer, networkservice.cpp:818).</summary>
+    public sealed record SocketOptions(int NoDelay, int Option5, int ReceiveBuffer, int SendBuffer) : GvgEntry(25);
+    /// <summary>Kind 34: i16, i32, i32 (networkservice.cpp:829).</summary>
+    public sealed record GroupState(short Value0, int Value1, int Value2) : GvgEntry(34);
+    /// <summary>Kind 42: DungeonRecordManagerCli::OnRates (@0x140b22100, dungeonrecordcli.cpp:466-470): two floats.</summary>
+    public sealed record DungeonRates(float RateA, float RateB) : GvgEntry(42);
+    /// <summary>Kind 43: ReconnectionOptions (networkservice.cpp:820-828).</summary>
+    public sealed record Reconnection(ReconnectionOptions Options) : GvgEntry(GvgOptions.KindReconnectionOptions);
+}
+
 /// <summary>
-/// Inbound 0x6D (CNetworkService::OnGvg @0x14153a8f0, networkservice.cpp:811-832): i32 count, then per entry i32 kind and its body. Only kind 43
-/// (ReconnectionOptions) matters to the socket. The walk knows the bodies of kinds 1 (bool), 25 (four i32), 34 (i16, i32, i32) and 43; a kind whose body
-/// lives in another reader (7 shutdown input, 42 rates) ends it, so an options entry behind one is not seen. STILL-OPEN: those two bodies.
+/// Inbound 0x6D (CNetworkService::OnGvg @0x14153a8f0, networkservice.cpp:811-832): i32 count, then per entry i32 kind and its body
+/// across all six client kinds: 1 (bool), 7 (u16 count + count x u16, CContentShutdown::Decode), 25 (four i32), 34 (i16, i32, i32),
+/// 42 (two floats, DungeonRecordManagerCli::OnRates) and 43 (ReconnectionOptions).
 /// </summary>
 public static class GvgOptions {
-    public const int KindReconnectionOptions = 43;
+    public const int KindLaunchFlag = 1, KindContentShutdown = 7, KindSocketOptions = 25,
+        KindGroupState = 34, KindDungeonRates = 42, KindReconnectionOptions = 43;
 
-    /// <summary>The options of the first kind 43 entry, or null when the packet has none (before an entry the walk cannot size).</summary>
+    /// <summary>Reads every entry of an OnGvg packet when all kinds are known, verifying no trailing bytes remain.</summary>
+    public static List<GvgEntry> ReadAll(ByteReader r) {
+        int count = r.ReadInt();
+        var list = new List<GvgEntry>(count);
+        for (int i = 0; i < count; i++) {
+            int kind = r.ReadInt();
+            switch (kind) {
+                case KindLaunchFlag: list.Add(new GvgEntry.LaunchFlag(r.ReadBool())); break;
+                case KindContentShutdown: {
+                    int n = r.ReadUShort();
+                    var flags = new ushort[n];
+                    for (int k = 0; k < n; k++) flags[k] = r.ReadUShort();
+                    list.Add(new GvgEntry.ContentShutdown(flags));
+                    break;
+                }
+                case KindSocketOptions: list.Add(new GvgEntry.SocketOptions(r.ReadInt(), r.ReadInt(), r.ReadInt(), r.ReadInt())); break;
+                case KindGroupState: list.Add(new GvgEntry.GroupState(r.ReadShort(), r.ReadInt(), r.ReadInt())); break;
+                case KindDungeonRates: list.Add(new GvgEntry.DungeonRates(r.ReadFloat(), r.ReadFloat())); break;
+                case KindReconnectionOptions: list.Add(new GvgEntry.Reconnection(ReconnectionOptions.Read(r))); break;
+                default: throw new InvalidDataException($"Unknown Gvg group kind {kind}");
+            }
+        }
+        r.ExpectEnd("Gvg");
+        return list;
+    }
+
+    /// <summary>The options of the first kind 43 entry, or null when the packet has none (or hits an unknown kind).</summary>
     public static ReconnectionOptions FindReconnection(ByteReader r) {
         int count = r.ReadInt();
         for (int i = 0; i < count; i++) {
             switch (r.ReadInt()) {
-                case 1: r.ReadByte(); break;
-                case 25: for (int k = 0; k < 4; k++) r.ReadInt(); break;
-                case 34: r.ReadShort(); r.ReadInt(); r.ReadInt(); break;
+                case KindLaunchFlag: r.ReadByte(); break;
+                case KindContentShutdown: {
+                    int n = r.ReadUShort();
+                    for (int k = 0; k < n; k++) r.ReadUShort();
+                    break;
+                }
+                case KindSocketOptions: for (int k = 0; k < 4; k++) r.ReadInt(); break;
+                case KindGroupState: r.ReadShort(); r.ReadInt(); r.ReadInt(); break;
+                case KindDungeonRates: r.ReadFloat(); r.ReadFloat(); break;
                 case KindReconnectionOptions: return ReconnectionOptions.Read(r);
                 default: return null;
             }

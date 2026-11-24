@@ -47,6 +47,7 @@ public partial class LiveSession
         ResetCubeService();   // the game scene's services shut down: CubeMapInformationService::OnShutdown @0x1410cef40 -> FUN_1410d0310 (cubemapinformationservice_3.cpp:1107, 5455-5475)
         PortalAction.Current = null;
         World.FieldContents.LeaveForLogin(GetTree(), LoginProgressMap);
+        ResetReconnect();
         var old = game;
         game = null;
         old?.Dispose();
