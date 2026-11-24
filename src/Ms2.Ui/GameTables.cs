@@ -987,11 +987,12 @@ public sealed class GameTables
     public Ms2.Ui.Items.UgcMapSetItemTable UgcMapSetItems => ugcMapSetItems ??= packs == null ? Ms2.Ui.Items.UgcMapSetItemTable.Empty
         : new Ms2.Ui.Items.UgcMapSetItemTable(Xml(TablePath.Resolve(packs, "ugcmapsetitem.xml") ?? "table/ugcmapsetitem.xml"));
     Ms2.Ui.Items.ItemMergeOptionTable mergeOptions;
-    /// <summary>CItemMergeOptionTable (GetXmlPath("Table", "itemMergeOptionBase.xml"), the locale folder first), read on
-    /// first use.</summary>
+    /// <summary>CItemMergeOptionTable (GetXmlPath("Table", "itemMergeOptionBase.xml"), the locale folder first, and the GMS2
+    /// data's itemMergeOptionMaterial.xml where it has one), read on first use.</summary>
     public Ms2.Ui.Items.ItemMergeOptionTable MergeOptions => mergeOptions ??= packs == null ? Ms2.Ui.Items.ItemMergeOptionTable.Empty
         : new Ms2.Ui.Items.ItemMergeOptionTable(Xml(TablePath.Resolve(packs, "itemmergeoptionbase.xml") ?? "table/itemmergeoptionbase.xml"),
-            (p, c, k) => FeatureElements.Collect(packs, p, c, k), ItemOptions.FindStatByName, ItemOptions.FindSpecialByName);
+            (p, c, k) => FeatureElements.Collect(packs, p, c, k), ItemOptions.FindStatByName, ItemOptions.FindSpecialByName,
+            TablePath.Resolve(packs, Ms2.Ui.Items.ItemMergeOptionTable.MaterialFile) is { } material ? Xml(material) : null);
     Dictionary<int, (uint[] Items, uint[] Ranks)> remakeScrolls;
     /// <summary>CItemRemakeScrollTable::GetData (itemremakescrolldata.cpp:200): Load (:148) reads Table/itemRemakeScroll.xml's
     /// &lt;remakeScroll&gt; rows whose feature is on (IsElementFeatureEnabled), id not 0, the item and rank lists split at ','
