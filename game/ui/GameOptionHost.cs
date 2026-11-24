@@ -228,8 +228,9 @@ public sealed class GameOptionHost : IGameOptionDialogHost
 
     public SoundFlag SoundFlag => GameOptions.SoundFlag;
     public bool InstrumentPlaying => false;
-    public bool AppActive => true;
-    public void ApplySoundVolumes(SoundVolumes volumes) => FieldAudio.Instance?.ApplyVolumes(volumes);
+    /// <summary>g_bAppActive: the window has the focus (<see cref="SoundMix.AppActive"/>, set by FieldAudio's focus notification).</summary>
+    public bool AppActive => SoundMix.Shared.AppActive;
+    public void ApplySoundVolumes(SoundVolumes volumes) => FieldAudio.ApplyVolumes(volumes);
     public void UpdateInstrumentVolume() { }
 
     // ---- the Game pages --------------------------------------------------------------------------------------------

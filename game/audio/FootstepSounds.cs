@@ -103,6 +103,7 @@ public partial class FootstepSounds : Node
             var v = voices[nextVoice++ % voices.Length];
             v.Stream = wav;
             v.VolumeDb = Mathf.LinearToDb(clip.Volume);
+            v.Bus = SoundBuses.Of(clip.Category);
             v.Play();
         }
     }

@@ -12,6 +12,9 @@ public sealed class SoundClip
     public int LoopEndSample = -1;
     public float Volume = 1f;
     public float MinDistance, MaxDistance;   // 3D events: attenuation range in world units (0 = not 3D)
+    /// <summary>The client's category slot the event plays in (<see cref="SoundCategories"/>); -1 for none (a music
+    /// segment, which the music system plays).</summary>
+    public int Category = -1;
 }
 
 /// <summary>
@@ -184,6 +187,12 @@ public sealed class SoundLibrary
         var clip = FromWave(waves[rng.Next(waves.Count)]);
         if (clip == null) return null;
         clip.Volume = ev.Volume * ev.DefVolumes[0];
+        // the event's category: the options set the top-level one's volume, the authored sub-category volumes stay
+        if (SoundCategories.TryResolve(Fev, ev.Category, out int slot, out float belowTop))
+        {
+            clip.Category = slot;
+            clip.Volume *= belowTop;
+        }
         clip.MinDistance = ev.MinDistance;
         clip.MaxDistance = ev.MaxDistance;
         return clip;
@@ -236,8 +245,22 @@ public sealed class SoundLibrary
     public bool HasVoiceTag(string tag) => !string.IsNullOrEmpty(tag) && VoiceTags().ContainsKey(tag);
 
     /// <summary>Resolves a trigger/programmer voice tag (e.g. from CEffectService::PlayTriggerVoice) in the current voice language.</summary>
-    public SoundClip ResolveVoiceTag(string tag) =>
-        !string.IsNullOrEmpty(tag) && VoiceTags().TryGetValue(tag, out var hit) ? Clip(hit.Bank, hit.Sample, 1f) : null;
+    /// <summary>The sound plays through the event "MS2Sound/Sound/Voice/ko" "1" (CEffectService::PlayTriggerVoice,
+    /// effectservice.cpp:1438), so it takes that event's category.</summary>
+    public SoundClip ResolveVoiceTag(string tag)
+    {
+        if (string.IsNullOrEmpty(tag) || !VoiceTags().TryGetValue(tag, out var hit)) return null;
+        var clip = Clip(hit.Bank, hit.Sample, 1f);
+        if (SoundCategories.TryResolve(Fev, Fev.FindEvent(TriggerVoiceEvent, TriggerVoiceGroup)?.Category, out int slot, out float belowTop))
+        {
+            clip.Category = slot;
+            clip.Volume *= belowTop;
+        }
+        return clip;
+    }
+
+    /// <summary>The programmer-sound event PlayTriggerVoice plays a voice tag through (effectservice.cpp:1438).</summary>
+    public const string TriggerVoiceGroup = "MS2Sound/Sound/Voice/ko", TriggerVoiceEvent = "1";
 
     Dictionary<string, (Fsb5 Bank, FsbSample Sample)> VoiceTags()
     {

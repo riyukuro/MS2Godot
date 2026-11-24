@@ -113,6 +113,16 @@ public sealed class MusicCue
     public List<MusicSegment> Segments = new();
 }
 
+/// <summary>An event category of the FEV project (FMOD::EventCategory): its name, authored volume and pitch, and its
+/// sub-categories. A sub-category's volume multiplies with its parents' (FMOD Ex category volumes are hierarchical).</summary>
+public sealed class FevCategory
+{
+    public string Name;
+    public float Volume = 1f, Pitch;
+    public FevCategory Parent;
+    public List<FevCategory> Children = new();
+}
+
 /// <summary>A sound event: its group path, category, volume, 3D distances and sound definitions.</summary>
 public sealed class FevEvent
 {
@@ -162,6 +172,7 @@ public sealed class FevProject
                 StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Name ?? ""));
     }
 
+    FevCategory rootCategory;
     readonly List<string> groups = new();
     readonly Dictionary<string, List<FevEvent>> eventsByGroup = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<(string Group, string Name), FevEvent> eventsByGroupAndName = new(PairIgnoreCase.Instance);
@@ -176,6 +187,32 @@ public sealed class FevProject
     public IReadOnlyCollection<int> CueIds => cueToTheme.Keys;
     public IReadOnlyList<string> Groups => groups;
     public int EventCount => eventsByGroupAndName.Count;
+    /// <summary>The project's event category tree (the root is FMOD's "master").</summary>
+    public FevCategory RootCategory => rootCategory;
+    /// <summary>The category at <paramref name="path"/> ("npcVoice/npcMaidVoiceMonologue/Arita"), from the root's
+    /// children down; null when a step names no category. Names compare as FMOD does, case-insensitively.</summary>
+    public FevCategory FindCategory(string path)
+    {
+        if (rootCategory == null || string.IsNullOrEmpty(path)) return null;
+        var c = rootCategory;
+        int start = 0;
+        while (start <= path.Length)
+        {
+            int end = path.IndexOf('/', start);
+            if (end < 0) end = path.Length;
+            var step = path.AsSpan(start, end - start);
+            FevCategory next = null;
+            foreach (var k in c.Children)
+                if (step.Equals(k.Name, StringComparison.OrdinalIgnoreCase)) { next = k; break; }
+            if (next == null) return null;
+            c = next;
+            start = end + 1;
+        }
+        return c;
+    }
+
+    /// <summary>Every event of the project, in group order.</summary>
+    public IEnumerable<FevEvent> AllEvents => eventsByGroupAndName.Values;
     public IEnumerable<string> EventNames => events.Keys;
     public IReadOnlyList<FevEvent> EventsNamed(string name) => events.TryGetValue(name, out var l) ? l : Array.Empty<FevEvent>();
 
@@ -268,7 +305,7 @@ public sealed class FevProject
         int defCount = ObjectCount(obct, 17);
         ReadDefs(defCount, out int defsEnd);
         ReadMusic(defsEnd);
-        int groupsStart = SkipCategoryTree(afterBanks);
+        int groupsStart = ReadCategoryTree(afterBanks, null);
         ReadEventGroups(groupsStart);
     }
 
@@ -343,13 +380,21 @@ public sealed class FevProject
     }
 
     // Category tree immediately after the bank table: len-prefixed name, f32 volume, f32 pitch, u32 maxPlay, u32 steal, u32 nSub, sub...
-    int SkipCategoryTree(int p)
+    int ReadCategoryTree(int p, FevCategory parent)
     {
         int len = U32(p);
+        var c = new FevCategory
+        {
+            Name = len > 1 ? Encoding.UTF8.GetString(d, p + 4, len - 1) : "",
+            Volume = F32(p + 4 + len),
+            Pitch = F32(p + 8 + len),
+            Parent = parent,
+        };
+        if (parent == null) rootCategory = c; else parent.Children.Add(c);
         p += 4 + len + 16;
         int nSub = U32(p);
         p += 4;
-        for (int i = 0; i < nSub; i++) p = SkipCategoryTree(p);
+        for (int i = 0; i < nSub; i++) p = ReadCategoryTree(p, c);
         return p;
     }
 

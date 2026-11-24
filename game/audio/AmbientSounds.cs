@@ -76,7 +76,7 @@ public partial class AmbientSounds : Node3D
         float min = clip.MinDistance > 0 ? clip.MinDistance : 60;
         var player = new AudioStreamPlayer3D
         {
-            Name = e.Name, Position = pos, VolumeDb = Mathf.LinearToDb(clip.Volume),
+            Name = e.Name, Position = pos, VolumeDb = Mathf.LinearToDb(clip.Volume), Bus = SoundBuses.Of(clip.Category),
             AttenuationModel = AudioStreamPlayer3D.AttenuationModelEnum.InverseDistance, UnitSize = min, MaxDistance = max,
         };
         AddChild(player);

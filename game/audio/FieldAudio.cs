@@ -76,16 +76,39 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     /// store (<see cref="GameOptions"/>). Open sets it.</summary>
     public float MusicVolume { get; set; } = 1f;
 
-    /// <summary>The options dialog's sound save (CGameOptionSoundDefault::vfunc_10 -> FUN_14125fe20,
-    /// gameoptionstruct.cpp:2727-2752): CSoundEventMgr::SetCategoryVolume(2, ...) becomes the music volume, applied to the
-    /// playing cue at once. SetAllMute and the sound service's main volume are not carried here yet.</summary>
-    public void ApplyVolumes(Ms2.Formats.Options.SoundVolumes v)
+    /// <summary>The sound options' volumes (FUN_14125fe20, gameoptionstruct.cpp:2727-2752, from the options dialog's save
+    /// CGameOptionSoundDefault::vfunc_10 and at startup CGameOption::FUN_141243860, gameoption.cpp:1925): every category's
+    /// volume and mute go to <see cref="SoundMix.Shared"/> and its buses (<see cref="SoundBuses"/>), which reach the playing
+    /// sounds at once; SetCategoryVolume(2) also sets the music system's volume, applied to the playing cue here.</summary>
+    public static void ApplyVolumes(Ms2.Formats.Options.SoundVolumes v)
     {
-        categoryMusicVolume = v.Category[2];
+        Ms2.Formats.Options.SoundMix.Shared.Apply(v);
+        SoundBuses.Sync();
+        Instance?.ApplyMusicVolume();
+        if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"audio: volumes {SoundBuses.Describe()} music volume {Ms2.Formats.Options.SoundMix.Shared.MusicVolume:F2}");
+    }
+
+    void ApplyMusicVolume()
+    {
+        categoryMusicVolume = Ms2.Formats.Options.SoundMix.Shared.MusicVolume;
         MusicVolume = categoryMusicVolume;
         ApplyPlayerGain(0);
         ApplyPlayerGain(1);
         GD.Print($"audio: music volume {MusicVolume:F2}");
+    }
+
+    /// <summary>The window's focus (WM_ACTIVATEAPP, windowservice.cpp:801-831): the categories mute or come back unless
+    /// "play in the background" is on (<see cref="Ms2.Formats.Options.SoundMix.AppActivated"/>).</summary>
+    public override void _Notification(int what)
+    {
+        if (what != NotificationApplicationFocusIn && what != NotificationApplicationFocusOut) return;
+        var mix = Ms2.Formats.Options.SoundMix.Shared;
+        bool active = what == NotificationApplicationFocusIn;
+        if (active == mix.AppActive) return;   // every FieldAudio in the tree hears it; the first one applies it
+        var options = GameOptions.Current?.SoundOption;
+        if (active) mix.AppActivated(options); else mix.AppDeactivated(options);
+        SoundBuses.Sync();
+        if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"audio: app {(active ? "active" : "inactive")}: {SoundBuses.Describe()}");
     }
 
     public int BgmCue { get; private set; }
@@ -106,7 +129,11 @@ public partial class FieldAudio : Node, World.ITriggerSounds
             return false;
         }
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        categoryMusicVolume = GameOptions.Current.SoundOption.CategoryVolume(2);
+        // the saved volumes, as the client applies them at startup (CGameOption::FUN_141243860, gameoption.cpp:1925)
+        var mix = Ms2.Formats.Options.SoundMix.Shared;
+        mix.Apply(Ms2.Formats.Options.SoundVolumes.From(GameOptions.Current.SoundOption, false, mix.AppActive));
+        SoundBuses.Sync();
+        categoryMusicVolume = mix.MusicVolume;
         MusicVolume = categoryMusicVolume;
         library = SoundLibrary.Shared(dir, GameOptions.Voice);
         // One MusicController for the session (CSoundEventMgr singleton; resets only at shutdown, worldservice_1.cpp:10583, soundeventmgr.cpp:1036).
@@ -126,8 +153,8 @@ public partial class FieldAudio : Node, World.ITriggerSounds
             try { volumeOtherPc = World.FieldContents.Constants(packs).Float("VolumeOtherPc", Ms2.Formats.World.EffectSkipTable.VolumeOtherPcDefine); }
             catch (Exception ex) { GD.PushWarning("audio: constants: " + ex.Message); }
         }
-        musicPlayers[0] = new AudioStreamPlayer { Name = "MusicA" };
-        musicPlayers[1] = new AudioStreamPlayer { Name = "MusicB" };
+        musicPlayers[0] = new AudioStreamPlayer { Name = "MusicA", Bus = SoundBuses.Music };
+        musicPlayers[1] = new AudioStreamPlayer { Name = "MusicB", Bus = SoundBuses.Music };
         ui = new AudioStreamPlayer { Name = "Ui" };
         AddChild(musicPlayers[0]);
         AddChild(musicPlayers[1]);
@@ -800,6 +827,8 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         v.Stream = wav;
         v.GlobalPosition = position;
         v.VolumeDb = Mathf.LinearToDb(clip.Volume * volume);
+        v.Bus = SoundBuses.Of(clip.Category);
+        if (Ms2Godot.Net.LiveSession.LiveCheck) LogGain("3d", clip, clip.Volume * volume, v.Bus);
         v.MaxDistance = clip.MaxDistance > 0 ? clip.MaxDistance : 3000;
         v.UnitSize = clip.MinDistance > 0 ? clip.MinDistance : 300;
         // the tree's timer outlives the field: a voice freed with it before the delay ends plays nothing
@@ -809,12 +838,35 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         return ticket;
     }
 
+    static void LogGain(string player, SoundClip clip, float own, StringName bus)
+    {
+        float busGain = SoundBuses.BusGain(bus);
+        GD.Print($"audio: play {player} {clip.Name} category {clip.Category} bus {bus} own {own:F2} bus gain {busGain:F2} heard {own * busGain:F2}");
+    }
+
+    /// <summary>The gain of every player now (own volume, bus gain, playing), for the live check.</summary>
+    public string DescribeGains()
+    {
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i < musicPlayers.Length; i++)
+            if (musicPlayers[i] is { } m && IsInstanceValid(m))
+                sb.Append($"music{i} own {Mathf.DbToLinear(m.VolumeDb):F2} bus {SoundBuses.BusGain(m.Bus):F2} playing {m.Playing}; ");
+        if (ui != null && IsInstanceValid(ui)) sb.Append($"ui bus {ui.Bus} {SoundBuses.BusGain(ui.Bus):F2}; ");
+        int playing = 0;
+        foreach (var v in voices3d)
+            if (v != null && IsInstanceValid(v) && v.Playing) { playing++; sb.Append($"3d {v.Bus} own {Mathf.DbToLinear(v.VolumeDb):F2} bus {SoundBuses.BusGain(v.Bus):F2}; "); }
+        sb.Append($"{playing} 3d playing; buses {SoundBuses.Describe()}");
+        return sb.ToString();
+    }
+
     void PlayClip(SoundClip clip)
     {
         var pcm = SafeDecode.Decode(clip);
         if (pcm == null) return;
         ui.Stream = Stream(pcm, pcm.ToBytes(), false);
         ui.VolumeDb = Mathf.LinearToDb(clip.Volume);
+        ui.Bus = SoundBuses.Of(clip.Category);
+        if (Ms2Godot.Net.LiveSession.LiveCheck) LogGain("ui", clip, clip.Volume, ui.Bus);
         ui.Play();
     }
 
