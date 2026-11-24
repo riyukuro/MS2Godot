@@ -30,6 +30,8 @@ public sealed class NpcLayer
         public Godot.Vector3 Velocity;            // m_posD40: the last block's velocity, added to the position every frame (CNpc::vfunc_53)
         public bool Eases;                        // a dead body: eased toward the block position, no velocity
         public readonly Ms2.Net.Replay.NpcJumpArc Arc = new();   // m_unkDB0: the jump arc a -2/-3 block starts
+        public readonly Ms2.Ui.Skills.NpcSpawnState Spawn = new();   // StateSpawn (0x11): the hide, the spawn point's sequence, then idle
+        public Func<string, float> SequenceLength;                   // GetAnimationDuration on this body, made on the first spawn
         public float AniSpeed = 1f, TurnCap;      // the Run_ speed (the row's anispeed times ScaleRate) and rotationSpeed (the turn cap, degrees per second)
         public bool Placeholder, Dead;
         public string DeadAction;                 // m_strED0: the death sequence picked at spawn (CNpc init, :539)
@@ -54,6 +56,12 @@ public sealed class NpcLayer
         public double CastEnded = -1;             // StateSkill m_fStartTime once the sequence ended (EndOfSequence); -1 while it plays
         public double PlayEnds;                   // the layer time the sequence Play last started is over; +inf for a looping one
     }
+
+    /// <summary>
+    /// WorldService::FUN_141bcfff0 (worldservice_1.cpp:5872): the spawn state's sequence for a spawn id, from the field's
+    /// spawn points (<see cref="Ms2.Formats.World.FieldSpawnPoints.Find"/>); null when the field has no such point.
+    /// </summary>
+    public Func<int, string> SpawnAnimation = _ => null;
 
     /// <summary>The CRT rand() the death pick draws from (0..0x7fff).</summary>
     public Random Rand = new();
@@ -562,6 +570,8 @@ public sealed class NpcLayer
     public string CurrentAnimation(int id) => inst.TryGetValue(id, out var i) && i.Player != null ? i.Player.CurrentAnimation : null;
 
     /// <summary>The speed the npc's animation plays at, 0 when the npc or its model is missing.</summary>
+    /// <summary>Whether the npc's body is shown (the spawn state's hide reason off).</summary>
+    public bool BodyShown(int id) => inst.TryGetValue(id, out var i) && i.Visual != null && i.Visual.Visible;
     public float AnimSpeed(int id) => inst.TryGetValue(id, out var i) && i.Player != null ? (float)i.Player.SpeedScale : 0;
 
     public bool IsDead(int id) => inst.TryGetValue(id, out var i) && i.Dead;
@@ -639,10 +649,11 @@ public sealed class NpcLayer
     /// (6) plays the arc's sequence at 1 (StateJumpNpc::vfunc_4, stateidle.cpp:1014-1021). While the arc runs a block neither places
     /// nor turns the npc (:961) and <see cref="Process"/> moves it along the arc; the block velocity is kept either way (:972) and
     /// moves the npc once the arc ended.
-    /// STILL-OPEN: a block of state 0x11 (spawn) plays no sequence in the client (:953); its StateSpawn (statespawn.cpp:65-128) hides
-    /// the npc for 100-400 ms and plays the SpawnAnimation of the field's spawn point named by the block's spawn id (Walk_A when it has
-    /// none; WorldService::FUN_141bcfff0, worldservice_1.cpp:5872), then goes to idle. That state is not ported, so the block's own
-    /// sequence (Regen in most retail spawn blocks) plays here.
+    /// A block of state 0x11 (spawn) plays no sequence of its own (:953). With a new serial, while the npc is not in the spawn
+    /// state, it enters StateSpawn (:975-984) with the sequence of the field's spawn point that its spawn id names
+    /// (<see cref="SpawnAnimation"/>), or with none when the id is 0 or names no point (the plain change, :1027); see
+    /// <see cref="EnterSpawn"/>. A block of the spawn state while the npc is in it changes nothing (State::vfunc_25,
+    /// statemanager.cpp:297).
     /// In the hit state (0xd) the npc keeps its own height (:962-963), and a block of state 0xd with a new serial plays its sequence
     /// again from its start at the block speed (:1022), after the plain play of the block's sequence (:955).
     /// STILL-OPEN: the hit state is left here only by a block that enters another state; the client's StateHitNPC ends by itself
@@ -657,7 +668,9 @@ public sealed class NpcLayer
         i.Moves++;
         bool hitHeld = i.State == 0xd;              // GetCurStateId() before the block's own state is entered (:962)
         bool fresh = b.Serial != i.Serial;
+        byte before = i.State;
         var talk = SyncState(i, b.State, b.Serial);
+        if (fresh && b.State == 0x11 && i.State == 0x11 && before != 0x11) EnterSpawn(i, b);
         if (i.Dead) { i.Velocity = default; i.Eases = true; return; }       // a dead body keeps its last frame
         i.Eases = false;
         var vel = G(b.Velocity.ToVector3());
@@ -685,7 +698,7 @@ public sealed class NpcLayer
                     }
                 }
             }
-            if (i.Model != null && name != null && b.Sequence != i.Sequence) Play(i, b.Sequence, speed);
+            if (i.Model != null && name != null && b.Sequence != i.Sequence && b.State != 0x11) Play(i, b.Sequence, speed);
             if (i.Model != null && name != null && fresh && b.State == 0xd) Play(i, b.Sequence, speed, true);
         }
         if (fresh && b.State == 6 && talk == Ms2.Net.Replay.NpcTalkFacing.Step.Enter && i.Arc.Moving) PlayNamed(i, i.Arc.Name, 1f, false);
@@ -701,6 +714,45 @@ public sealed class NpcLayer
         if (talk == Ms2.Net.Replay.NpcTalkFacing.Step.LookAtPlayer && OwnPosition() is { } me)
             i.TargetYaw = Ms2.Net.Replay.NpcTalkFacing.LookYaw(new System.Numerics.Vector3(i.Root.Position.X, -i.Root.Position.Z, i.Root.Position.Y), me);
         i.Velocity = vel;
+    }
+
+    /// <summary>
+    /// The spawn branch of ApplySyncBlock (:975-984) and StateSpawn::vfunc_4 (statespawn.cpp:65-77): the npc and its shadow are
+    /// hidden (AddHideReason(10), SetShadowVisible(false)) for the delay its object id draws, with the sequence of the point the
+    /// block's spawn id names. <see cref="Process"/> runs the state (<see cref="SpawnStep"/>).
+    /// </summary>
+    void EnterSpawn(Inst i, Ms2.Net.Packets.NpcSync b)
+    {
+        int id = b.SpawnId;
+        i.Spawn.Enter(b.ObjectId, id != 0 ? SpawnAnimation(id) : null, Now * 1000.0);
+        // GetAnimationDuration (0x14099eb30): the sequence's length, 0 for one the body lacks
+        i.SequenceLength ??= name => i.Model?.Kfm.ByName(name) is { } seq ? (float)(Anim(i.Model, seq.Id)?.Length ?? 0) : 0f;
+        SpawnHidden(i, true);
+        GD.Print($"live: npc {b.ObjectId} spawn state, point {id}, sequence {i.Spawn.Animation ?? "none"}, hidden {i.Spawn.Delay} ms");
+    }
+
+    /// <summary>PCBase::AddHideReason / RemoveHideReason of the spawn state's reason, with the simple shadow (statespawn.cpp:72-73, :88-89).</summary>
+    static void SpawnHidden(Inst i, bool hidden)
+    {
+        if (i.Visual != null) i.Visual.Visible = !hidden;
+        FieldShadows.SetShadowVisible(i.Root, !hidden);
+    }
+
+    /// <summary>
+    /// StateSpawn::vfunc_3 (statespawn.cpp:94-130) for one frame, and vfunc_5 (:80-92) once the npc left the state some other
+    /// way (a block of another state, a death, a cast): shown again. At the delay's end the npc is shown and the point's
+    /// sequence plays forced at speed 1; at its length the npc goes to the idle state (vfunc_59(1)).
+    /// </summary>
+    void SpawnStep(Inst i, float dt)
+    {
+        if (i.State != 0x11) { i.Spawn.Leave(); SpawnHidden(i, false); return; }
+        var step = i.Spawn.Update(dt, Now * 1000.0, i.SequenceLength);
+        if (step is Ms2.Ui.Skills.NpcSpawnState.Step.Show or Ms2.Ui.Skills.NpcSpawnState.Step.ShowAndIdle)
+        {
+            SpawnHidden(i, false);
+            if (!string.IsNullOrEmpty(i.Spawn.Animation)) PlayNamed(i, i.Spawn.Animation, 1f, true);
+        }
+        if (step is Ms2.Ui.Skills.NpcSpawnState.Step.Idle or Ms2.Ui.Skills.NpcSpawnState.Step.ShowAndIdle) i.State = 1;
     }
 
     /// <summary>PlayAnimation by name (PCBase::PlayAnimation): nothing when the body has no such sequence; without
@@ -830,6 +882,7 @@ public sealed class NpcLayer
             else i.Root.Position += i.Velocity * dt;          // CNpc::vfunc_53 (@0x1410952f0): pos += m_posD40 * time
             if (!i.Placeholder) Turn(i, dt);
             if (i.State == 0x10) SkillEnd(i);
+            if (i.Spawn.Active) SpawnStep(i, dt);
             // the CNpc update's shake (:2419-2424): the drawn point is the npc's own plus the offset, each frame anew
             if (i.Vibrate.Active)
             {

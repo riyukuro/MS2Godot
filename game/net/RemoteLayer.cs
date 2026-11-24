@@ -272,7 +272,7 @@ public sealed partial class RemoteLayer : Node3D
         equip = new EquipApplier(packs, mb) { Palettes = new Look.ColorPalettes(packs) };
         var table = new Ms2.Formats.World.NpcTable(packs);
         Tracker.NpcLayoutOf = id => { var r = table.Find(id); return r == null ? default : new NpcLayout(r.IsBoss, r.HasDamagedHpBarTag); };
-        npcs = new NpcLayer(packs, mb, table, this);
+        npcs = new NpcLayer(packs, mb, table, this) { SpawnAnimation = id => field.SpawnPoints?.Find(id) };
         npcTable = table;
         combat = new CombatLayer(packs, mb, new EffectTable(packs), this);
         npcs.Combat = combat;

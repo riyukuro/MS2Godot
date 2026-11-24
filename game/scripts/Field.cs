@@ -51,6 +51,8 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
     Color ambientColor, sunColor, sunAmbient, sunSpecular;
     /// <summary>The prop fade between the player and the camera (BGTransparencyMgr).</summary>
     public World.FieldFade Fade { get; private set; }
+    /// <summary>The field's npc spawn points by spawn id (WorldService::FUN_141bcfff0), for the npcs' spawn state.</summary>
+    public FieldSpawnPoints SpawnPoints { get; private set; }
     /// <summary>The field's trigger objects (CTriggerService), which the live session's Trigger packets drive.</summary>
     public World.FieldTriggers Triggers { get; private set; }
     /// <summary>The field's breakable objects as drawn (CBreakableObject::SetState), which the live session's Breakable packets drive.</summary>
@@ -166,6 +168,7 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         var flats = new FlatLibrary(packs);
         await Budget();
         var map = FieldMap.Load(packs, flats, fieldName);
+        SpawnPoints = new FieldSpawnPoints(map.Entities);
         long tMap = sw.ElapsedMilliseconds;
         await Budget();
         FieldData fd = null;

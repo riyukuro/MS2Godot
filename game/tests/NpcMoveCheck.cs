@@ -17,6 +17,8 @@ namespace Ms2Godot.Tests;
 /// - a block speed of 0 on a one-shot sequence the model has is kept, not taken as 1 (a model without one fails); a death after it
 ///   plays at 1 and ends, so the exp is shown; the idle queued after a one-shot played at 2 starts at 1;
 /// - a jump sequence stops the velocity and keeps the yaw;
+/// - a block of the spawn state (0x11) hides the npc for its delay without playing its own sequence, then shows it with the
+///   spawn point's sequence and ends in idle; a spawn block while in the state does nothing; one naming no point idles at once;
 /// - the yaw turns at most the row's rotationSpeed per second (CNpc::TurnTowardTargetYaw @0x141099170);
 /// - Process allocates nothing per frame.
 /// Quits with 0 when all hold, else 1.
@@ -121,13 +123,40 @@ public partial class NpcMoveCheck : Node3D
         npcs.Move(new NpcMovedEvent(0, new NpcSync { ObjectId = 1, Position = new Vector3S(10, 0, 50), State = 1, Serial = 78, Sequence = -1, AnimSpeed = 1 }));
         Check((At() - new Vector3(10, 50 + lift, 0)).Length() < 0.01f, $"out of the hit state the block did not place the height: {At()}");
 
+        // the spawn state (0x11): a block with a spawn id hides the npc for 100-400 ms (StateSpawn), plays no sequence of its own,
+        // then shows it with the spawn point's sequence and goes to idle at its length; a spawn block while in the state changes nothing
+        npcs.Add(new NpcAddedEvent(0, new FieldAddNpc { ObjectId = 4, NpcId = npcId }));
+        string spawnSeq = npcs.SequenceId(4, "Regen_A") >= 0 ? "Regen_A" : null;
+        npcs.SequenceId(4, n => { if (spawnSeq == null && OneShot(n)) spawnSeq = n; return spawnSeq == n; });
+        npcs.SpawnAnimation = id => id == 55 ? spawnSeq : null;
+        void Spawn(int obj, ushort serial, int spawnId, short seq = -1) => npcs.Move(new NpcMovedEvent(0, new NpcSync { ObjectId = obj, Position = new Vector3S(0, 0, 0),
+            State = 0x11, Serial = serial, Sequence = seq, AnimSpeed = 1, Tail = System.BitConverter.GetBytes(spawnId) }));
+        string before = npcs.CurrentAnimation(4);
+        int other = npcs.SequenceId(4, n => n != spawnSeq && OneShot(n));
+        Spawn(4, 5, 55, (short)other);
+        Check(!npcs.BodyShown(4) && npcs.StateOf(4) == 0x11, $"the spawn block did not hide the npc in the spawn state: shown {npcs.BodyShown(4)}, state {npcs.StateOf(4)}");
+        Check(npcs.CurrentAnimation(4) == before, $"the spawn block played its own sequence {npcs.CurrentAnimation(4)}");
+        npcs.Process(0.05f);
+        Check(!npcs.BodyShown(4), "the npc was shown before the spawn delay");
+        npcs.Process(0.4f);
+        Check(npcs.BodyShown(4), "the npc was not shown after the spawn delay");
+        Check(spawnSeq == null || npcs.CurrentAnimation(4) == "s" + npcs.SequenceId(4, spawnSeq), $"the spawn point's sequence {spawnSeq} did not play: {npcs.CurrentAnimation(4)}");
+        Spawn(4, 6, 99);
+        Check(npcs.BodyShown(4), "a spawn block in the spawn state entered it again");
+        npcs.Process(30f);
+        Check(npcs.StateOf(4) == 1, $"the spawn state did not end in idle: {npcs.StateOf(4)}");
+        Spawn(4, 7, 99);
+        Check(!npcs.BodyShown(4), "a spawn block naming no point did not hide the npc");
+        npcs.Process(0.45f);
+        Check(npcs.BodyShown(4) && npcs.StateOf(4) == 1, $"without a point the spawn state did not show and idle after the delay: shown {npcs.BodyShown(4)}, state {npcs.StateOf(4)}");
+
         Block(300, 100);
         npcs.Process(0.016f);
         long a0 = System.GC.GetAllocatedBytesForCurrentThread();
         for (int k = 0; k < 100; k++) npcs.Process(0.016f);
         long alloc = System.GC.GetAllocatedBytesForCurrentThread() - a0;
         Check(alloc == 0, $"Process allocated {alloc} B in 100 frames");
-        string head = $"npc move: npc {npcId}, run {run}, anispeed {row.AniSpeed}, scale {row.Scale}, rotationSpeed {row.RotationSpeed}, {alloc} B per 100 frames";
+        string head = $"npc move: npc {npcId}, run {run}, spawn sequence {spawnSeq ?? "none"}, anispeed {row.AniSpeed}, scale {row.Scale}, rotationSpeed {row.RotationSpeed}, {alloc} B per 100 frames";
         AfterFrames(npcs, npcId, fails, head);
     }
 

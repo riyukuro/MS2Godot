@@ -106,6 +106,8 @@ public sealed class NpcSync {
     public byte[] Tail = Array.Empty<byte>();
     public bool Rotates => (Flags & 1) != 0;
     public bool Emotion => (Flags & 2) != 0;
+    /// <summary>The spawn id a block of the spawn state (0x11) leads its tail with (ApplySyncBlock :976, ReadInt32); 0 otherwise.</summary>
+    public int SpawnId => State == 0x11 && Tail.Length >= 4 ? System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(Tail) : 0;
 
     public static NpcSync Read(ByteReader r, Func<int, NpcLayout> layoutOf) {
         var s = new NpcSync { ObjectId = r.ReadInt(), Flags = r.ReadByte(), Position = r.ReadVec3S(), RotationZ = r.ReadShort() / 10f, Velocity = r.ReadVec3S(), AnimSpeed = r.ReadShort() / 100f };
