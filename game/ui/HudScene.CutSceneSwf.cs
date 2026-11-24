@@ -44,7 +44,7 @@ public partial class HudScene
         cutSceneSwfMovie = new MovieDialog(assets, c, hudModel, size);
         cutSceneSwfLayer.AddChild(cutSceneSwfMovie);
         c.Play(path);
-        GD.Print($"cut scene movie {movie.CutSceneId}: {path} plays in the pane");
+        if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"cut scene movie {movie.CutSceneId}: {path} plays in the pane");
     }
 
     void FreeCutSceneSwf()
