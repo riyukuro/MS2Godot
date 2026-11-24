@@ -494,6 +494,7 @@ public partial class LiveSession
         InteractObjects?.Tick(at, playerMoved);
         InteractNpcs?.Tick(at, playerMoved);
         rideSummon?.Tick(playerMoved);   // StateSummon::vfunc_8, the body's move standing in for the move input
+        recallCast?.Tick(playerMoved);   // StateRecall::vfunc_8, likewise
     }
 
     /// <summary>Action key press on the polled interact object: only the polled action runs, and its own state gate refuses it
@@ -512,6 +513,7 @@ public partial class LiveSession
     {
         if (selfObject < 0 || player == null || !IsInstanceValid(player)) return -1;
         if (TaxiCalling) return TaxiStationAction.StateTaxiCall;
+        if (recallCast is { IsCasting: true }) return RecallChecks.StateRecall;
         int move;
         if (player.Mount != null) move = 0x21;
         else
@@ -534,6 +536,7 @@ public partial class LiveSession
     {
         if (selfObject < 0 || player == null || !IsInstanceValid(player)) return -1;
         if (TaxiCalling) return TaxiStationAction.StateTaxiCall;
+        if (recallCast is { IsCasting: true }) return RecallChecks.StateRecall;
         return InteractKey.StateId(InteractObjects, InteractNpcs, reactState,
             Ms2.Ui.OwnPcState.CurStateId(Me.State, player.Mount != null, skillStateRuns, player.MoveStateId));
     }

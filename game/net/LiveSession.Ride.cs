@@ -115,6 +115,7 @@ public partial class LiveSession
                 // the vfunc_25 test before the effects.
                 if (wasRiding) { PlayOwnCommonEffect(RideOffEffectKey); PlayOwnEffect(skillEffect); OwnPassengers.Clear(); }   // and ClearPassengers
                 if (r.RideOff?.Type == RideOffHoldRequest.ActionType) HoldAfterRideOff();
+                RecallAfterRideOff(r.RideOff);   // case 8 (mypc.cpp:3467-3472)
                 if (OwnRide.SummonsAfterRideOff(r, selfObject)) SummonAfterRideOff(r);
                 break;
         }

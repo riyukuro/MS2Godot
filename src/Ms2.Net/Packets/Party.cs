@@ -12,6 +12,9 @@ public sealed class PartyUser {
     public long AccountId;      // m_0
     public long CharacterId;    // m_8
     public string Name = "";    // SetName
+    /// <summary>m_28: the field CountOnlineMembersOutsideTutorial (partymanager.cpp:847) and the world map's member icons
+    /// (uiworldmapdialog.cpp:1263) look up. The Maple2 server writes the member's map id in both m_28 and m_2c.</summary>
+    public int CurrentMapId;
     public int MapId;           // m_2c: the field (string table 3, the map name)
     public int MapInstanceId;   // m_30: compared when the channel is 0 (a dungeon)
     public short Level;         // m_34
@@ -40,7 +43,7 @@ public sealed class PartyUser {
         r.ReadByte(); r.ReadByte();                    // m_14, m_78
         r.ReadLong();                                  // m_18
         r.ReadInt();                                   // m_20
-        r.ReadInt();                                   // m_28
+        u.CurrentMapId = r.ReadInt();                  // m_28
         u.MapId = r.ReadInt();
         u.MapInstanceId = r.ReadInt();
         u.Level = r.ReadShort();
@@ -94,7 +97,7 @@ public sealed class PartyUser {
     /// <summary>Writes the record in the layout <see cref="Read"/> takes (tests and offline fixtures).</summary>
     public void Write(ByteWriter w) {
         w.WriteLong(AccountId); w.WriteLong(CharacterId); w.WriteUnicodeString(Name);
-        w.WriteByte(0); w.WriteByte(0); w.WriteLong(0); w.WriteInt(0); w.WriteInt(0);
+        w.WriteByte(0); w.WriteByte(0); w.WriteLong(0); w.WriteInt(0); w.WriteInt(CurrentMapId);
         w.WriteInt(MapId); w.WriteInt(MapInstanceId); w.WriteShort(Level); w.WriteShort((short) Channel);
         w.WriteInt(JobGroup); w.WriteInt(Job); w.WriteInt(MaxHp); w.WriteInt(Hp); w.WriteShort(TombFlags);
         w.WriteLong(0); w.WriteLong(0); w.WriteLong(0); w.WriteInt(0);

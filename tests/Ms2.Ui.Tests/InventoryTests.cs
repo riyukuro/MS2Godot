@@ -923,6 +923,37 @@ public class InventoryTests
     }
 
     [Test]
+    public void RecallGuildGoesToItsOwnHandlerNotTheUnportedRaise()
+    {
+        // RecallGuild (@0x140d226b0): its checks and StateRecall; UseItem returns its result. Unset: raised as unported.
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var d = model.Tables.Items.Get(20300327);
+        var (savedName, savedArgs) = (d.FunctionName, d.FunctionArgs.ToList());
+        try
+        {
+            var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
+            book.Apply(new ItemMessage.LoadTab(2, new[] { new EquipItem { Id = 20300327, Uid = 30, InventorySlot = 0, Amount = 1, Rarity = 1 } }));
+            var (h, c, _) = Load(model, book);
+            c.Wearer = () => new PcInfo { Level = 50, JobGroup = 10, Equips = Array.Empty<EquipItem>() };
+            var sent = new List<(long, string)>(); c.View.RequestUse = (u, a) => sent.Add((u, a));
+            var raised = new List<string>(); c.Button += raised.Add;
+            var recalls = new List<long>(); bool answer = false;
+            c.RecallGuild = item => { recalls.Add(item.Uid); return answer; };
+            d.FunctionName = "RecallGuild";
+            Assert.That(c.UseItem(c.FindItem(30), true), Is.False, "the handler's refusal is UseItem's result");
+            answer = true;
+            Assert.That(c.UseItem(c.FindItem(30), true), Is.True);
+            Assert.That((recalls.Count, recalls[0], sent.Count, raised.Count), Is.EqualTo((2, 30L, 0, 0)), "no plain use, not raised");
+            d.FunctionName = "RecallWedding";
+            Assert.That(c.UseItem(c.FindItem(30), true), Is.True);
+            Assert.That((recalls.Count, sent.Count, raised.Count), Is.EqualTo((2, 0, 1)), "the wedding recall stays raised");
+        }
+        finally { d.FunctionName = savedName; d.FunctionArgs.Clear(); d.FunctionArgs.AddRange(savedArgs); }
+    }
+
+    [Test]
     public void AnOpenItemBoxAsksThenOpensOnlyOnTheServerAnswer()
     {
         Packs();

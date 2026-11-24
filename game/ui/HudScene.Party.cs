@@ -156,7 +156,7 @@ public partial class HudScene
         c.SlotMenuOpen = () => popupMenu != null && !popupMenu.IsClosed && popupMenu.InfoString == PopupMenuController.PartySlotInfo;
         c.MemberMenu += (x, y, id) => OpenPartySlotMenu(x, y, id);
         c.ObserveMember += id => GD.Print($"party: observe {id}: StartObserving is not ported");
-        c.Recall += () => GD.Print("party: recall: not ported");
+        c.Recall += () => live?.RecallFromPartyWindow();
         c.Send = PartySend;
         c.SystemNotice += SystemNoticeText;                                      // ShowSystemNotice(text, 1, 1)
         c.DungeonName = id => menuModel.Tables.FieldEnteranceName(id);          // CStringTable::FUN_141811980(0x14, id)

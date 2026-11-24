@@ -39,6 +39,13 @@ public sealed record PartyLeaveRequest : IOutPacket {
     public void Write(ByteWriter w) => w.WriteByte(3);
 }
 
+/// <summary>StateRecall::vfunc_8 (@0x1417f8920, statesummon.cpp:546-551): a finished recall cast with no scroll (StateRecallData
+/// -1, the party window's merat recall) sends u8 0x1d and nothing more.</summary>
+public sealed record PartyRecallRequest : IOutPacket {
+    public Outbound Op => Outbound.Party;
+    public void Write(ByteWriter w) => w.WriteByte(0x1d);
+}
+
 /// <summary>CPartyManager::SendPartyMode4 (partymanager.cpp:717): expel a member (u8 4, the member's character id).</summary>
 public sealed record PartyKickRequest(long CharacterId) : IOutPacket {
     public Outbound Op => Outbound.Party;

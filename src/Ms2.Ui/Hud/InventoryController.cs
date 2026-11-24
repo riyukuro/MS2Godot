@@ -933,6 +933,7 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
             return BlueprintImport(item);                                                                             // @0x140d1f6d0
         if (item.Data.FunctionName == "CallAirTaxi" && CallAirTaxi != null) { CallAirTaxi(); return true; }          // @0x140d24e10
         if (item.Data.FunctionName == "RecallParty") return true;                                                     // @0x140d1df70: 1, nothing
+        if (item.Data.FunctionName == "RecallGuild" && RecallGuild != null) return RecallGuild(item);                 // @0x140d226b0
         if (OwnUseFunctions.Contains(item.Data.FunctionName)) { Button?.Invoke("notifySlotUse"); return true; }
         RequestUseItem(item, "");
         return true;
@@ -959,6 +960,12 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     /// <summary>CallAirTaxi (@0x140d24e10, unit_140d1ae30_itemfunctiondispatch.cpp): the world map (0x4e42) opened when it is
     /// closed (IsDialogClosed, OpenDialog); 1. Nothing is sent: the world map's air taxi asks the server. Null: raised as unported.</summary>
     public Action CallAirTaxi;
+
+    /// <summary>RecallGuild (@0x140d226b0, unit_140d1ae30_itemfunctiondispatch.cpp:1346): the guild recall's checks, then
+    /// StateRecall with the scroll (<see cref="RecallChecks.Guild"/>); its result is UseItem's. Null: raised as unported.
+    /// STILL-OPEN: RecallWedding (@0x140d228e0) stays raised: the wedding manager (the Wedding packet's proxy state and
+    /// partner) is not ported, and its checks (<see cref="RecallChecks.Wedding"/>) read them.</summary>
+    public Func<Item, bool> RecallGuild;
 
     /// <summary>RequestUseItem's functions that skip the player state check (checkState 0, inventory.cpp:1205-1207).</summary>
     public static readonly HashSet<string> NoStateCheckFunctions = new(StringComparer.Ordinal) { "OpenItemBox", "OpenItemBoxLullu", "OpenItemBoxLulluSimple" };

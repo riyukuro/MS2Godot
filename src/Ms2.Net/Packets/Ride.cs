@@ -204,6 +204,24 @@ public sealed record RideOffHoldRequest : IOutPacket
     }
 }
 
+/// <summary>Outbound RequestRide mode 1 with a RideOffActionRecall (rideonaction.cpp:489-512): u8 1, u8 type 8, u8 argument 0,
+/// i64 the recall's target (the scroll's uid, m_n28). CCashCallManager::FUN_140b04430 (cashcallmanager.cpp:349-354) sends it
+/// when the own pc rides; the answer's type 8 starts StateRecall with that target (mypc.cpp:3467-3472).</summary>
+public sealed record RideOffRecallRequest(long Target) : IOutPacket
+{
+    public const byte ActionType = 8;
+
+    public Outbound Op => Outbound.RequestRide;
+
+    public void Write(ByteWriter w)
+    {
+        w.WriteByte(1);
+        w.WriteByte(ActionType);
+        w.WriteByte(0);
+        w.WriteLong(Target);
+    }
+}
+
 /// <summary>Outbound RequestRide mode 2, ride along (MyPC, mypc.cpp:4684-4692): u8 2, then WriteRideRequest (@0x1401fcc90):
 /// i32 ridee id, i64 item uid.</summary>
 public sealed record RideAlongRequest(int RideeId, long ItemUid) : IOutPacket
