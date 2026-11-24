@@ -185,10 +185,8 @@ public sealed class FieldData
     public static FieldData FindById(PackSet packs, int fieldId) =>
         IndexOf(packs).ById.TryGetValue(fieldId, out var fd) ? FromEntry(fd) : null;
 
-    static int Int(XElement e, string a) =>
-        (string)e?.Attribute(a) is { } v && int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) ? n : 0;
-
-    static FieldData FromEntry(XElement fd)
+    /// <summary>One fieldData row of the table, read as CFieldData / CFieldDataCli load it; null without a default xblock.</summary>
+    public static FieldData FromEntry(XElement fd)
     {
         var env = DefaultEnvironment(fd);      // the first without a locale; the client's pick is STILL-OPEN, see there
         var xb = (string)env?.Element("xblock")?.Attribute("name");
@@ -204,24 +202,27 @@ public sealed class FieldData
             Read(cam, "zoomInHeightOffset", ref o.Camera.ZoomInHeightOffset);
         }
         var prop = env.Element("property") ?? fd.Element("property");
-        if ((string)prop?.Attribute("checkClimb") is { } cc) o.CheckClimb = cc != "0";
-        if ((string)prop?.Attribute("checkFly") is { } cf) o.CheckFly = cf != "0";
+        // every int property: XmlGetAttr of an int is QueryIntAttribute (tinyxmlhelper.cpp:151, sscanf "%d"), so a value with no
+        // leading number keeps the ctor's default (CFieldData fielddata.cpp:543-556, CFieldDataCli fielddatacli.cpp:67-79)
+        var ui = env.Element("ui");
+        o.CheckClimb = QueryInt(prop, "checkClimb", 1) != 0;
+        o.CheckFly = QueryInt(prop, "checkFly", 0) != 0;
         if ((string)prop?.Attribute("skillUseDisable") is { } sud)
             foreach (var t in sud.Split(',', StringSplitOptions.RemoveEmptyEntries))
                 if (int.TryParse(t, NumberStyles.Integer, CultureInfo.InvariantCulture, out var bit)) o.SkillUseDisableMask |= 1u << bit;
-        if ((string)env.Element("ui")?.Attribute("useEPSkill") is { } ue) o.UseEPSkill = ue != "0";
-        if ((string)env.Element("ui")?.Attribute("useRidee") is { } ur) o.UseRidee = ur != "0";
-        if ((string)env.Element("ui")?.Attribute("usePet") is { } up) o.UsePet = up != "0";
-        if ((string)prop?.Attribute("mapType") is { } mt && int.TryParse(mt, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mti)) o.MapType = mti;
-        o.Capacity = Int(prop, "capacity");
-        o.PkMode = Int(prop, "pkMode"); o.ContinentCode = Int(prop, "continentCode"); o.RequireQuest = Int(prop, "requireQuest"); o.TutorialType = Int(prop, "tutorialType");
-        if ((string)prop?.Attribute("channelGroupID") is { } cg && int.TryParse(cg, NumberStyles.Integer, CultureInfo.InvariantCulture, out var cgi)) o.ChannelGroupId = cgi;
-        o.RecallOtherUserProhibit = Flag(env.Element("cashCall"), "RecallOtherUserProhibit");
-        o.GlobalSplit = Flag(env.Element("split"), "globalSplit");
-        o.CheckPartyObserve = Flag(prop, "checkPartyObserve");
+        o.UseEPSkill = QueryInt(ui, "useEPSkill", 1) != 0;
+        o.UseRidee = QueryInt(ui, "useRidee", 1) != 0;
+        o.UsePet = QueryInt(ui, "usePet", 1) != 0;
+        o.MapType = QueryInt(prop, "mapType", 0);
+        o.Capacity = QueryInt(prop, "capacity", 0);
+        o.PkMode = QueryInt(prop, "pkMode", 0); o.ContinentCode = QueryInt(prop, "continentCode", 0);
+        o.RequireQuest = QueryInt(prop, "requireQuest", 0); o.TutorialType = QueryInt(prop, "tutorialType", 0);   // XmlGetTutorialType: XmlQuery int (fielddata.cpp:918)
+        o.ChannelGroupId = QueryInt(prop, "channelGroupID", 0);
+        o.RecallOtherUserProhibit = QueryInt(env.Element("cashCall"), "RecallOtherUserProhibit", 0) != 0;
+        o.GlobalSplit = QueryInt(env.Element("split"), "globalSplit", 0) != 0;
+        o.CheckPartyObserve = QueryInt(prop, "checkPartyObserve", 0) != 0;
         o.MinimapPing = BoolAttr(prop, "minimapPing", false);
-        // the death state's properties: XmlGetAttr of an int is QueryIntAttribute (tinyxmlhelper.cpp:151), so a value with no
-        // leading number keeps the ctor's default (GMS2 writes deathPenalty="" on 140 fields: the client keeps 1)
+        // the death state's properties (GMS2 writes deathPenalty="" on 140 fields: the client keeps 1)
         o.RevivalReturnId = QueryInt(prop, "revivalreturnid", 0); if (o.RevivalReturnId == 0) o.RevivalReturnId = o.Id;
         o.DeathPenalty = QueryInt(prop, "deathPenalty", 1);
         o.AutoRevivalType = QueryInt(prop, "autoRevivalType", 0); o.AutoRevivalTime = QueryInt(prop, "autoRevivalTime", 0);
@@ -229,19 +230,19 @@ public sealed class FieldData
         o.InfiniteMeratRevival = QueryInt(prop, "infinityMeratRevival", 1) != 0;
         o.PopupMenu = BoolAttr(prop, "popupMenu", true);
         o.GemSystem = BoolAttr(prop, "gemSystem", true);
-        if ((string)env.Element("drop")?.Attribute("maplevel") is { } ml && int.TryParse(ml, NumberStyles.Integer, CultureInfo.InvariantCulture, out var mli)) o.MapLevel = mli;
+        o.MapLevel = QueryInt(env.Element("drop"), "maplevel", 0);
         if ((string)env.Element("ui")?.Attribute("bgMask") is { } bm) o.BgMask = bm;
-        if ((string)env.Element("ui")?.Attribute("vscroll") is { } vs && int.TryParse(vs, NumberStyles.Integer, CultureInfo.InvariantCulture, out var vsi)) o.VScroll = vsi;
-        if ((string)env.Element("ui")?.Attribute("hscroll") is { } hs && int.TryParse(hs, NumberStyles.Integer, CultureInfo.InvariantCulture, out var hsi)) o.HScroll = hsi;
+        o.VScroll = QueryInt(ui, "vscroll", 1);
+        o.HScroll = QueryInt(ui, "hscroll", 1);
         if ((string)env.Element("ui")?.Attribute("mapEffectId") is { } me) o.MapEffectId = me;
-        if ((string)env.Element("ui")?.Attribute("instancingGrid") is { } ig && int.TryParse(ig, NumberStyles.Integer, CultureInfo.InvariantCulture, out var g)) o.InstancingGrid = g;
+        o.InstancingGrid = QueryInt(ui, "instancingGrid", 0);
         var fov = env.Element("fov");
         if (fov != null) Read(fov, "value", ref o.Camera.FovDeg);
         var sh = env.Element("shadow");
         if (sh != null)
         {
             Read(sh, "simpleshadow", ref o.SimpleShadow);
-            if ((string)sh.Attribute("optionHighLevel") is { } hl && int.TryParse(hl, NumberStyles.Integer, CultureInfo.InvariantCulture, out var hli)) o.ShadowOptionHighLevel = hli;
+            o.ShadowOptionHighLevel = QueryInt(sh, "optionHighLevel", 0);      // FUN_140a56ad0: XmlQuery int, kept on a failure
         }
         var hdr = env.Element("hdr");
         if (hdr != null)
@@ -259,7 +260,6 @@ public sealed class FieldData
     public static string XBlockOf(PackSet packs, int fieldId) =>
         IndexOf(packs).ById.TryGetValue(fieldId, out var fd) ? (string)DefaultEnvironment(fd).Element("xblock").Attribute("name") : null;
 
-    /// <summary>XmlGetAttr of an int flag: nonzero when the element has the attribute with a nonzero number.</summary>
     /// <summary>TiXmlElement::QueryIntAttribute (sscanf "%d", tinyxml.cpp:1160): the leading signed digits after white space; no
     /// attribute, or a value with no leading number, keeps <paramref name="fallback"/>.</summary>
     static int QueryInt(XElement e, string name, int fallback)
@@ -274,9 +274,6 @@ public sealed class FieldData
         if (i == digits) return fallback;
         return int.TryParse(s.AsSpan(start, i - start), NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) ? v : fallback;
     }
-
-    static bool Flag(XElement e, string name) =>
-        (string)e?.Attribute(name) is { } v && int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) && n != 0;
 
     /// <summary>XmlGetAttr of a bool (tinyxmlhelper.cpp:141, TiXmlElement::QueryBoolAttribute, tinyxml.cpp:618): "true",
     /// "yes" or "1" in any case is true, "false", "no" or "0" false; any other value or none keeps
