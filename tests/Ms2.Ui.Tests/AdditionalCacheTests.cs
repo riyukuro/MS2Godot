@@ -40,10 +40,16 @@ public class AdditionalCacheTests
             // the name is the data's language (an English or a Korean client), so it is compared with the XML read
             Assert.That(firstName, Is.Not.Empty.And.EqualTo(xml.AdditionalDescription(10500111, 1, "name")));
 
+            // the ids as the table reads them: the KMS additional/ rows, or (the GMS2 data has no additional/) the file names
+            // of additionaleffect/<id>.xml
             var ids = new SortedSet<uint>();
             foreach (var n in packs.List("Xml").Where(n => n.StartsWith("additional/", StringComparison.OrdinalIgnoreCase) && n.IndexOf('/', 11) < 0))
                 foreach (var e in GameStrings.Parse(packs.Read("Xml", n)).Root?.Elements("additional") ?? Enumerable.Empty<XElement>())
                     if (uint.TryParse((string)e.Attribute("id"), out var id)) ids.Add(id);
+            if (ids.Count == 0)
+                foreach (var n in packs.List("Xml").Where(n => n.StartsWith(AdditionalTable.Gms2Folder, StringComparison.OrdinalIgnoreCase)
+                    && n.IndexOf('/', AdditionalTable.Gms2Folder.Length) < 0 && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)))
+                    if (uint.TryParse(Path.GetFileNameWithoutExtension(n), out var id)) ids.Add(id);
             Assert.That(ids.Count, Is.GreaterThan(1000));
             int levels = 0, specials = 0, armors = 0, stuns = 0, overlaps = 0;
             foreach (var id in ids.Append(0u).Append(99999999u))
