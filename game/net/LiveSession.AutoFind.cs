@@ -101,7 +101,7 @@ public partial class LiveSession
         public void Send(IOutPacket packet)
         {
             s.Send(packet);
-            GD.Print($"live: auto-find taxi request (mode 5) for field {FieldId}");
+            if (LiveCheck) GD.Print($"live: auto-find taxi request (mode 5) for field {FieldId}");
         }
         public void SetPlayerStateFlag(bool on)
         {
@@ -130,7 +130,7 @@ public partial class LiveSession
             fly.Kind = 2;
             c.SetFlyBy(fly, 1, 1.0f);
             c.SetMode(mode, keep);
-            GD.Print($"live: auto-find camera to ({position.X:F0}, {position.Y:F0}, {position.Z:F0}) over {seconds:F2} s, mode {mode}");
+            if (LiveCheck) GD.Print($"live: auto-find camera to ({position.X:F0}, {position.Y:F0}, {position.Z:F0}) over {seconds:F2} s, mode {mode}");
         }
 
         public void SetPendingMode(int mode) => Camera?.SetPendingMode(mode);
