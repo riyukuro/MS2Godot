@@ -628,13 +628,34 @@ public partial class HudScene
     /// <summary>The own running record's motion's effect files (the loop, loop keep, loop end and end effects the state plays,
     /// <see cref="Ms2.Net.Replay.SkillTagEffects.Handles"/>); default once its state's exit ran.</summary>
     Ms2.Net.Replay.SkillTagEffects.MotionEffects ownFx;
-    Action<int> StopOwnEffect => stopOwnTagEffect ??= h => Net.LiveSession.Instance?.StopKeptEffect(h);
-    Action<int> ReleaseOwnEffect => releaseOwnTagEffect ??= h => Net.LiveSession.Instance?.ReleaseKeptEffect(h);
+    /// <summary>MS2_LIVE_FX_TRACE=1: each keep, stop, release and insert of the own skill state's effects goes to the log
+    /// (a live run's record of the slots; nothing is printed otherwise).</summary>
+    static readonly bool OwnFxTrace = System.Environment.GetEnvironmentVariable("MS2_LIVE_FX_TRACE") == "1";
+    /// <summary>With the trace on: each effect file the own skill state kept (the live harness's shot of it).</summary>
+    internal static event Action<string> OwnEffectKept;
+    Action<int> StopOwnEffect => stopOwnTagEffect ??= h =>
+    {
+        if (OwnFxTrace) GD.Print($"fx: own stop {h} at {Time.GetTicksMsec()}");
+        Net.LiveSession.Instance?.StopKeptEffect(h);
+    };
+    Action<int> ReleaseOwnEffect => releaseOwnTagEffect ??= h =>
+    {
+        if (OwnFxTrace) GD.Print($"fx: own release {h} at {Time.GetTicksMsec()}");
+        Net.LiveSession.Instance?.ReleaseKeptEffect(h);
+    };
     /// <summary>FUN_1411a49c0 on the player (SetActor, object kind 1: no sight test for the own PC): the kept id, 0 for none.</summary>
-    Func<string, int> KeepOwnEffect => keepOwnEffect ??= fx => player?.Visual is { } v
-        ? Net.LiveSession.Instance?.SpawnKeptEffect(fx, v, Ms2.Audio.SoundMusicEffectState.CasterMyPc) ?? 0 : 0;
+    Func<string, int> KeepOwnEffect => keepOwnEffect ??= fx =>
+    {
+        int h = player?.Visual is { } v ? Net.LiveSession.Instance?.SpawnKeptEffect(fx, v, Ms2.Audio.SoundMusicEffectState.CasterMyPc) ?? 0 : 0;
+        if (OwnFxTrace) { GD.Print($"fx: own keep {fx} -> {h} at {Time.GetTicksMsec()}"); OwnEffectKept?.Invoke(fx); }
+        return h;
+    };
     /// <summary>InsertEffect on the player, kept by nothing.</summary>
-    Action<string> InsertOwnEffect => insertOwnEffect ??= fx => ReleaseOwnEffect(KeepOwnEffect(fx));
+    Action<string> InsertOwnEffect => insertOwnEffect ??= fx =>
+    {
+        if (OwnFxTrace) GD.Print($"fx: own insert {fx} at {Time.GetTicksMsec()}");
+        ReleaseOwnEffect(KeepOwnEffect(fx));
+    };
 
     // MyPC::FUN_141525580's view of the own pc, made once; its delegates read the live session and the buff list
     UseCheckWorld ownUseCheck;

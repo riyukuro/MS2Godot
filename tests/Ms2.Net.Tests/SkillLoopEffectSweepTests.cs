@@ -203,6 +203,18 @@ public class SkillLoopEffectSweepTests
         var slotSkills = slots.ToDictionary(s => s, _ => new SortedSet<string>());
         int ignoreHide = 0, loopKeepSamples = 0;
         var samples = new List<string>();
+        // MS2_SKILLSEQ_LOOPFX_DUMP=<id>[,<id>...]: each level's motions of those skills, their sequence and effect files
+        var dump = (Environment.GetEnvironmentVariable("MS2_SKILLSEQ_LOOPFX_DUMP") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToHashSet();
+        var dumped = new List<string>();
+        foreach (int id in dump.OrderBy(i => i))
+            foreach (var level in rows.Levels(id))
+                for (int m = 0; m < level.Motions.Count; m++)
+                {
+                    var mo = level.Motions[m];
+                    var kf = string.IsNullOrEmpty(mo.SequenceName) ? null : bodies.Values.Select(b => b.Get(mo.SequenceName)).FirstOrDefault(k => k != null);
+                    dumped.Add($"{id} level {level.Level} motion {m} {mo.SequenceName} loops {mo.LoopCount}: motion {mo.MotionEffect} loop {mo.LoopEffect} keep {mo.LoopKeepEffect} "
+                        + $"loopEnd {mo.LoopEndEffect} end {mo.EndEffect}; keys {(kf == null ? "-" : string.Join(",", kf.TextKeys.Select(k => $"{k.text}@{k.time:0.###}")))}");
+                }
         foreach (int id in rows.Ids.OrderBy(i => i))
         {
             var seen = new HashSet<string>();
@@ -276,6 +288,7 @@ public class SkillLoopEffectSweepTests
         sb.AppendLine("|---|---|---|---|---|");
         foreach (var s in slots) sb.AppendLine($"| {s} | {named[s]} | {noKey[s]} | {noXml[s]} | {npcNamed[s]} |");
         foreach (var s in slots.Skip(1)) sb.AppendLine($"{s} skills: {string.Join(" ", slotSkills[s])}");
+        foreach (var d in dumped) sb.AppendLine("dump " + d);
         sb.AppendLine("samples:");
         foreach (var s in samples) sb.AppendLine("  " + s);
         if (bad.Count > 0)

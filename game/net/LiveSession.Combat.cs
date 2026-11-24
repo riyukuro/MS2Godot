@@ -56,7 +56,7 @@ public partial class LiveSession
         void Shot(string name)
         {
             if (string.IsNullOrEmpty(shots)) return;
-            flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(shots, name)); GD.Print("live: shot " + name);
+            flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(shots, name)); GD.Print($"live: shot {name} at {Time.GetTicksMsec()}");
         }
         void Check(string what, bool ok) => GD.Print($"live: combat {(ok ? "PASS" : "FAIL")}: {what}");
         void Shows(string what)     // the frame is not one colour: nothing full screen is left over the field
@@ -164,6 +164,25 @@ public partial class LiveSession
                     }
                     GD.Print($"live: scan y {y,6:F0} {row}");
                 }
+                continue;
+            }
+            // watchfx:N: N seconds of frames; with MS2_LIVE_FX_TRACE=1 each effect another PC's or the own skill state keeps
+            // (a cast by a held key, say) is shot two frames later (at most 12 shots)
+            if (step.StartsWith("watchfx:"))
+            {
+                int shotsLeft = 12, shotAt = -1, n = 0, frame = 0;
+                string who = null;
+                void Kept(string fx) { if (shotAt < 0) { shotAt = frame + 2; who = "remote"; } }
+                void OwnKept(string fx) { if (shotAt < 0) { shotAt = frame + 2; who = "own"; } }
+                RemoteLayer.RemoteEffectKept += Kept;
+                Ui.HudScene.OwnEffectKept += OwnKept;
+                for (int end = 60 * int.Parse(step[8..]); frame < end; frame++)
+                {
+                    if (frame == shotAt && shotsLeft-- > 0) { Shot($"{who}fx{++n}.png"); shotAt = -1; }
+                    await frames(1);
+                }
+                RemoteLayer.RemoteEffectKept -= Kept;
+                Ui.HudScene.OwnEffectKept -= OwnKept;
                 continue;
             }
             if (step.StartsWith("wait:"))      // wait:N: N seconds of frames (a trigger's timed states)
@@ -451,15 +470,30 @@ public partial class LiveSession
                 Shot($"aimcast{sid}_{Math.Abs(step.GetHashCode()) % 1000}.png");
                 continue;
             }
-            if (step.StartsWith("cast:"))      // cast:<skill id>[:<frames to wait after>]: the own cast, shots before, during and after
+            // cast:<skill id>[:<frames to wait after>[:<frame>/<frame>...]]: the own cast, shots before, during and after;
+            // more shots at the listed frames after the cast (each past 15 and before the wait's end). With
+            // MS2_LIVE_FX_TRACE=1 and a frame list, the shot before and at 15 are left out and each effect the own skill
+            // state keeps is shot two frames later instead (a shot stalls the frame, so timed shots miss a short effect)
+            if (step.StartsWith("cast:"))
             {
                 var parts = step[5..].Split(':');
                 uint sid = uint.Parse(parts[0]);
                 int gap = parts.Length > 1 ? int.Parse(parts[1]) : 165;
-                if (gap > 60) Shot($"cast{sid}_0.png");
-                GD.Print($"live: combat {step}: {(hud.CastSkillScripted(sid) ? "cast" : "refused")}");
-                await frames(Math.Min(gap, 15)); if (gap > 60) Shot($"cast{sid}_1.png");
-                if (gap > 15) await frames(gap - 15);
+                bool onKeep = parts.Length > 2 && System.Environment.GetEnvironmentVariable("MS2_LIVE_FX_TRACE") == "1";
+                if (gap > 60 && !onKeep) Shot($"cast{sid}_0.png");
+                int kept = 0, keepShotAt = -1, frame = 0;
+                void Kept(string fx) { kept++; if (keepShotAt < 0) keepShotAt = frame + 2; }
+                if (onKeep) Ui.HudScene.OwnEffectKept += Kept;
+                GD.Print($"live: combat {step}: {(hud.CastSkillScripted(sid) ? "cast" : "refused")} at {Time.GetTicksMsec()}");
+                var list = parts.Length > 2 ? parts[2].Split('/').Select(int.Parse).Where(f => onKeep || f > 15).ToList() : new List<int>();
+                for (; frame < gap; frame++)
+                {
+                    if (frame == 15 && gap > 60 && !onKeep) Shot($"cast{sid}_1.png");
+                    if (frame == keepShotAt) { Shot($"cast{sid}_keep{kept}.png"); keepShotAt = -1; }
+                    else if (list.Contains(frame)) Shot($"cast{sid}_f{frame}.png");
+                    await frames(1);
+                }
+                if (onKeep) Ui.HudScene.OwnEffectKept -= Kept;
                 continue;
             }
             if (step.StartsWith("level:"))

@@ -121,8 +121,8 @@ public sealed partial class RemoteLayer
         // PlayEventVoice for the other PC: its gender and job group, not the local player (the table's rows for it)
         st.EventSound = key => FieldAudio.Instance?.PlayEventVoice(Ms2.Audio.EventSoundTable.TextKeyType(key), r.Gender,
             r.Pc.JobGroup, false, Ms2.Audio.SoundMusicEffectState.CasterOtherPc, r.Visual.GlobalPosition, npcs.Viewer?.Invoke());   // GetObjectKind 3 (effectservice.cpp:1381)
-        st.StopEffect = StopKeptEffect;
-        st.ReleaseEffect = ReleaseKeptEffect;
+        st.StopEffect = FxTrace ? h => { GD.Print($"fx: remote stop {h} at {Time.GetTicksMsec()}"); StopKeptEffect(h); } : StopKeptEffect;
+        st.ReleaseEffect = FxTrace ? h => { GD.Print($"fx: remote release {h} at {Time.GetTicksMsec()}"); ReleaseKeptEffect(h); } : ReleaseKeptEffect;
     }
 
     /// <summary>A kept effect on an actor (FUN_1411a49c0, SetActor): its id, 0 when it did not spawn.</summary>
