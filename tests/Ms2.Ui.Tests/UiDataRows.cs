@@ -37,12 +37,24 @@ static class UiDataRows
         return id;
     }
 
-    /// <summary>Raw &lt;property&gt;&lt;sell price&gt; list from the item's XML, returning the single price or the 1-based rarity entry.</summary>
+    /// <summary>
+    /// Raw &lt;property&gt;&lt;sell price&gt; list from the item's XML, returning the single price or the 1-based rarity entry.
+    /// A GMS2 item's priceCustom entry above 0 replaces the price at its index (the client's gem 40200003 rarity 4 sells for 1,
+    /// its priceCustom; its price is 100).
+    /// </summary>
     public static long SellPrice(PackSet packs, int id, int rarity)
     {
-        var attr = (string)ItemPart(packs, id, "property")?.Element("sell")?.Attribute("price") ?? "";
-        var prices = attr.Split(',', StringSplitOptions.RemoveEmptyEntries)
+        var sell = ItemPart(packs, id, "property")?.Element("sell");
+        static List<long> List(string attr) => (attr ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Select(t => long.TryParse(t.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out long v) ? v : 0L).ToList();
+        var prices = List((string)sell?.Attribute("price"));
+        var custom = List((string)sell?.Attribute("priceCustom"));
+        for (int i = 0; i < custom.Count; i++)
+            if (custom[i] > 0)
+            {
+                while (prices.Count <= i) prices.Add(0);
+                prices[i] = custom[i];
+            }
         return prices.Count == 1 ? prices[0] : prices.Count == 6 && rarity is >= 1 and <= 6 ? prices[rarity - 1] : 0;
     }
 

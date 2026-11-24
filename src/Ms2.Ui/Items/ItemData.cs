@@ -164,7 +164,7 @@ public sealed class ItemData
         {
             Int(p, "type", ref d.Type);
             if (p.Element("sell") is { } sell)
-                d.SellPrices = ((string)sell.Attribute("price") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Select(t => (long)Atoi(t)).ToList();
+                d.SellPrices = SellList((string)sell.Attribute("price"), (string)sell.Attribute("priceCustom"));
             Int(p, "subtype", ref d.Subtype);
             Int(p, "iconCode", ref d.IconCode);
             Int(p, "itemGroup", ref d.ItemGroup);
@@ -458,6 +458,26 @@ public sealed class ItemData
     public bool IsGemstone => Type == 0xd;                     // FUN_14053d840 (:1038)
     public bool IsLapenshard => Type == 0x15;                  // IsLapenshardType (:1050)
     public bool IsPieceItem => Type == 0x1b;                   // :1068
+    /// <summary>
+    /// ItemProperty &lt;sell price&gt;, one price per rarity. The GMS2 item files add priceCustom: a rarity whose priceCustom is
+    /// above 0 sells at it, else at price. INFERRED from the data: on the 9844 ids both data sets sell, this gives the KMS
+    /// client's list for 1383 rarity prices price alone misses and misses none price alone gives.
+    /// </summary>
+    internal static List<long> SellList(string price, string custom)
+    {
+        var list = (price ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Select(t => (long)Atoi(t)).ToList();
+        if (string.IsNullOrEmpty(custom)) return list;
+        var over = custom.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        for (int i = 0; i < over.Length; i++)
+        {
+            long v = Atoi(over[i]);
+            if (v <= 0) continue;
+            while (list.Count <= i) list.Add(0);
+            list[i] = v;
+        }
+        return list;
+    }
+
     /// <summary>
     /// GetMaidId (:1163): the npc a type 6 / subtype 7 item summons (its param2), else 0. A GMS2 item file names it in its own
     /// &lt;maid maidID&gt; (<see cref="MaidElementId"/>), which is used when set. INFERRED from the data (the GMS2 exe is packed):

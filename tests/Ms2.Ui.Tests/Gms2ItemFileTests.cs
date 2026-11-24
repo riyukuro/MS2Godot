@@ -102,4 +102,41 @@ public class Gms2ItemFileTests
         // its int_value_base 2
         Assert.That(t.ItemOptions.ConstantOptions(gem, gem.Rank)!.Value.Stat.Values, Is.EqualTo(new[] { 2 }));
     }
+
+    [Test]
+    public void TheSellPriceIsThePriceCustomAboveZeroElseThePrice()
+    {
+        Assert.That(ItemData.SellList("472,590,755", null), Is.EqualTo(new long[] { 472, 590, 755 }));
+        Assert.That(ItemData.SellList("100,100,100", "1,0,-1"), Is.EqualTo(new long[] { 1, 100, 100 }));
+        Assert.That(ItemData.SellList("5", "0,0,7"), Is.EqualTo(new long[] { 5, 0, 7 }));
+        Assert.That(ItemData.SellList("", ""), Is.Empty);
+    }
+
+    /// <summary>
+    /// On the GMS2 data, whole list: every sell price list is priceCustom above 0, else price, per rarity. Before, it was
+    /// price alone.
+    /// </summary>
+    [Test]
+    public void EveryGms2SellListIsThePriceCustomElseThePrice()
+    {
+        var t = Gms2();
+        var packs = gms2Packs;
+        int lists = 0, custom = 0;
+        foreach (var (id, entry) in ItemDataTable.PerItemIndex(packs.List("Xml")))
+        {
+            var env = FeatureElements.SelectEnvironment(packs, GameStrings.Parse(packs.Read("Xml", entry)).Root);
+            var d = t.Items.Get(id);
+            if (env?.Element("property")?.Element("sell") is not { } sell || d == null) continue;
+            var price = ((string)sell.Attribute("price") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Select(ItemData.Atoi).ToList();
+            var over = ((string)sell.Attribute("priceCustom") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Select(ItemData.Atoi).ToList();
+            var expect = Enumerable.Range(0, Math.Max(price.Count, over.Count))
+                .Select(i => (long)(i < over.Count && over[i] > 0 ? over[i] : i < price.Count ? price[i] : 0)).ToList();
+            Assert.That(d.SellPrices, Is.EqualTo(expect), $"item {id}");
+            lists++;
+            if (!expect.SequenceEqual(price.Select(v => (long)v))) custom++;
+        }
+        TestContext.Out.WriteLine($"{lists} sell lists, {custom} changed by priceCustom");
+        Assert.That(lists, Is.GreaterThan(30000));
+        Assert.That(custom, Is.GreaterThan(1000));
+    }
 }

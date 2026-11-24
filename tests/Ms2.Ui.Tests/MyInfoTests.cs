@@ -1245,9 +1245,10 @@ public class MyInfoTests
             tip.Fill(item);
             return tip;
         }
-        // lv10_tooltip_gemstone.png: "Shop Sales Price : 1" on KR (GMS2 40200003 has sell price 100) with the meso icon
+        // lv10_tooltip_gemstone.png: "Shop Sales Price : 1" with the meso icon. GMS2 40200003 has sell price 100 and
+        // priceCustom 1, so it sells for the client's 1 on both data sets.
         long gemPrice = UiDataRows.SellPrice(Packs(), 40200003, 4);
-        if (UiDataRows.IsKr(Packs())) Assert.That(gemPrice, Is.EqualTo(1L));
+        Assert.That(gemPrice, Is.EqualTo(1L));
         string gemPriceText = NumberText.MesoText(gemPrice.ToString(System.Globalization.CultureInfo.InvariantCulture));
         var gem = Tip(40200003, 4);
         Assert.That(gem.Data["itemSellPrice"], Is.EqualTo($"Shop Sales Price : {gemPriceText} <Img Src='export_common_icon_meso_h21' vspace='-6'/> "));
