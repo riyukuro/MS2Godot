@@ -138,6 +138,16 @@ public sealed record VectorPath(Rgba Color, float[] Points);
 
 public sealed record BitmapFill(int BitmapId, Matrix Matrix, bool Smooth, bool Repeat);
 
+/// <summary>The sampler the client gives a bitmap fill. The DefineShape reader (FillStyleSwfReader::Read @0x14265adf0,
+/// sfr_gfx_08s2.cpp:364, the bitmap cases :457-459) maps all four bitmap fill types (0x40 repeating, 0x41 clamped, 0x42
+/// non-smooth repeating, 0x43 non-smooth clamped) to Render::Sample_Linear: the SWF "non-smoothed" flag does not reach the
+/// renderer. Only the morph shape reader (MorphCharacterDef::ReadMorphFillStyle @0x14265fbb0, sfr_gfx_08s3.cpp:385-386) keeps
+/// Sample_Point for 0x42 and 0x43.</summary>
+public static class FillSampling
+{
+    public static bool Linear(int fillType, bool morph) => !(morph && (fillType == 0x42 || fillType == 0x43));
+}
+
 public sealed class EditText
 {
     public int? FontId;

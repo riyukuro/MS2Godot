@@ -138,6 +138,32 @@ public class CutSceneMovieSwfTests
     /// scene therefore carries no point sampled fill. The point sampled fills made the movies blocky at a window below the
     /// 1920x1080 stage (the 1280x720 images are drawn at 0.698 at 1280x720).</summary>
     [Test]
+    public void EveryTriggerSwfMovieSamplesItsBitmapFillsLinearlyAsTheClientDoes()
+    {
+        Assert.That(Ms2.Swf.FillSampling.Linear(0x40, false) && Ms2.Swf.FillSampling.Linear(0x41, false)
+            && Ms2.Swf.FillSampling.Linear(0x42, false) && Ms2.Swf.FillSampling.Linear(0x43, false), "regular shapes: all four linear");
+        Assert.That(Ms2.Swf.FillSampling.Linear(0x42, true) || Ms2.Swf.FillSampling.Linear(0x43, true), Is.False, "morph shapes: 0x42/0x43 are point");
+        var (packs, _) = Open();
+        var bad = new List<string>();
+        int fills = 0;
+        foreach (var path in SwfPaths(packs))
+        {
+            var gfx = Path.ChangeExtension(Path.GetFileName(path), ".gfx").ToLowerInvariant();
+            if (packs.FindByFileName("Resource/Gfx", gfx) is not { } e) continue;
+            var movie = Ms2.Swf.SwfMovie.Parse(packs.Read("Resource/Gfx", e));
+            int n = 0, point = 0;
+            foreach (var c in movie.Characters.Values)
+                foreach (var f in c.BitmapFills ?? new List<Ms2.Swf.BitmapFill>()) { n++; if (!f.Smooth) point++; }
+            fills += n;
+            TestContext.Out.WriteLine($"{path}: {n} bitmap fills, {point} point sampled");
+            if (point > 0) bad.Add($"{path}: {point} of {n} bitmap fills are point sampled");
+        }
+        Assert.That(fills, Is.GreaterThan(0));
+        Assert.That(bad, Is.Empty, string.Join("\n", bad));
+    }
+
+    /// <summary>PlaySwf (@0x141910110, uicutscenemovie.cpp:411-413) hands the movie <c>m_b00 ? 0 : GetMovieVolume()</c>.</summary>
+    [Test]
     public void TheMovieVolumeIsZeroWhenMutedAndTheMovieStepTimesTheMainStepOtherwise()
     {
         var o = new Ms2.Formats.Options.GameOption.Sound { MainSoundStep = 8, MovieSoundStep = 5 };

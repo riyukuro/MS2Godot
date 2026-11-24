@@ -553,7 +553,7 @@ public sealed class SwfMovie
             {
                 int id = r.U16();
                 var m = ReadMatrix(r);
-                if (id != 0xFFFF) c.BitmapFills.Add(new BitmapFill(id, m, t == 0x40 || t == 0x41, t == 0x40 || t == 0x42));
+                if (id != 0xFFFF) c.BitmapFills.Add(new BitmapFill(id, m, FillSampling.Linear(t, morph: false), t == 0x40 || t == 0x42));
                 break;
             }
             default: throw new InvalidDataException("fill style type 0x" + t.ToString("x"));

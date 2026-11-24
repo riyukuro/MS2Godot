@@ -137,7 +137,7 @@ public partial class ShapeNode : Node2D
             {
                 Texture = bm.Value.Tex, RegionEnabled = true, RegionRect = bm.Value.Region, Centered = false,
                 Position = new Vector2(UiBuilder.F(m?["x"], 0), UiBuilder.F(m?["y"], 0)), Scale = new Vector2(sx, sy),
-                TextureFilter = (bool)f["smooth"] ? TextureFilterEnum.Linear : TextureFilterEnum.Nearest,
+                TextureFilter = TextureFilterEnum.Linear,   // every DefineShape bitmap fill is Render::Sample_Linear, smooth flag or not (FillStyleSwfReader::Read @0x14265adf0, sfr_gfx_08s2.cpp:457-459)
             };
             AddChild(spr);
         }
@@ -182,7 +182,7 @@ public partial class ShapeNode : Node2D
             AddChild(new Sprite2D
             {
                 Texture = bm.Value.Tex, RegionEnabled = true, RegionRect = bm.Value.Region, Centered = false, Position = pos, Scale = new Vector2(sx, sy),
-                TextureFilter = (bool)f["smooth"] ? TextureFilterEnum.Linear : TextureFilterEnum.Nearest,
+                TextureFilter = TextureFilterEnum.Linear,   // every DefineShape bitmap fill is Render::Sample_Linear, smooth flag or not (FillStyleSwfReader::Read @0x14265adf0, sfr_gfx_08s2.cpp:457-459)
             });
         }
     }
