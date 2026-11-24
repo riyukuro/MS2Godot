@@ -1054,7 +1054,7 @@ public partial class LiveSession : Node
         pendingTriggers.Clear();
         regionSkills.Clear(); RegionSkillLog.Clear();
         HitEffects.Clear();
-        var layer = remote = new RemoteLayer(field, builder, entry.Enter.CharacterId) { Feature8e = CodiFeature, ServerNow = () => ServerTime, HotTimes = HotTimes, ItemExists = id => ItemExists?.Invoke(id) ?? true, HitEffects = HitEffects, SightRange = () => FieldProperties.SightRange };
+        var layer = remote = new RemoteLayer(field, builder, entry.Enter.CharacterId) { Feature8e = CodiFeature, ServerNow = () => ServerTime, HotTimes = HotTimes, ItemExists = id => ItemExists?.Invoke(id) ?? true, HitEffects = HitEffects, SightRange = () => FieldProperties.SightRange, NpcTalking = () => IsTalking(), OwnPosition = () => ClientPositionOf(player) };
         remote.Tracker.Profile = game.Profile;
         remote.Tracker.Entered(entry.Enter.ObjectId);   // the ServerEnter the entry took: the own damage records' owner
         // WorldService::FUN_141bd1200 finds MyPC too: other players' StateHold on the own mount reads its seats

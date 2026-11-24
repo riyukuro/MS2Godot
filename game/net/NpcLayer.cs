@@ -45,6 +45,7 @@ public sealed class NpcLayer
         public int[] AnchorBones;                 // the skeleton's bone per <nodeCollisions> row (-1: none), found on the first hit
         public byte State;                        // GetCurStateId(): the sync blocks' state (ApplySyncBlock), 0x10 on a cast, 0xc dead
         public ushort Serial;                     // m_nDAC: the last block's state serial (0 at spawn, CNpc init :473)
+        public byte TalkPhase;                    // StateTalkNpc's phase (m_n10) while State is the talk state: 0x48 talking, 0x49 not
         public Ms2.Formats.World.SkillMotion Cast; // the head of PCBase m_unk_8e8: the cast record's motion (GetMotionData)
         public long CastUid; public int CastMotion = -1;   // the record's cast uid and motion index, as FUN_141673bf0 finds it
         public int CastSeq = -1;                  // the cast's sequence id as played here; -1 when the body has none
@@ -640,7 +641,7 @@ public sealed class NpcLayer
         if (!inst.TryGetValue(b.ObjectId, out var i)) return;
         i.Target = Placed(b.Position.ToVector3());
         i.Moves++;
-        SyncState(i, b.State, b.Serial);
+        var talk = SyncState(i, b.State, b.Serial);
         if (i.Dead || b.Sequence is -2 or -3) { i.Velocity = default; i.Eases = true; return; }       // a dead body keeps its last frame
         i.Eases = false;
         var vel = G(b.Velocity.ToVector3());
@@ -665,6 +666,10 @@ public sealed class NpcLayer
         if (place) i.Root.Position = i.Target;
         i.TargetYaw = b.RotationZ;
         if (b.Rotates && !i.Placeholder) i.Visual.Rotation = new Godot.Vector3(0, Mathf.DegToRad(b.RotationZ), 0);
+        // the talk branch's LookAtPoint(local player, 0) comes after the block's SetTargetYaw (:966, :1003): the npc turns
+        // to the own PC at its rotation speed, no snap
+        if (talk == Ms2.Net.Replay.NpcTalkFacing.Step.LookAtPlayer && OwnPosition() is { } me)
+            i.TargetYaw = Ms2.Net.Replay.NpcTalkFacing.LookYaw(new System.Numerics.Vector3(i.Root.Position.X, -i.Root.Position.Z, i.Root.Position.Y), me);
         i.Velocity = vel;
     }
 
@@ -672,15 +677,32 @@ public sealed class NpcLayer
     /// The state part of CNpc::ApplySyncBlock (unit_14108e1e0_npcactorandvibrate.cpp:973-1032): a block whose serial is the last one
     /// (m_nDAC) changes nothing; otherwise the serial is kept and the block's state entered (vfunc_59), except 0x12 and gosNone (0).
     /// The spawn (0x11), talk (0x16) and hit (0xd) branches enter their state too, with their data.
-    /// STILL-OPEN: the talk branch's two early returns (the own pc talking to it or not, :987-1004), the additional-list flag
-    /// (AdditionalCliList::FUN_1409709b0, :1025) and a refusal by vfunc_59 are not followed; the state is taken as entered.
+    /// The talk branch (:986-1006, <see cref="Ms2.Net.Replay.NpcTalkFacing.OnBlock"/>) keeps the state or looks at the own PC
+    /// (the step is returned; <see cref="Move"/> turns the npc after the block's yaw); entering the talk state sets its phase
+    /// from <see cref="Talking"/> (StateTalkNpc::vfunc_4).
+    /// STILL-OPEN: the additional-list flag (AdditionalCliList::FUN_1409709b0, :1025) and a refusal by vfunc_59 are not
+    /// followed; the state is taken as entered. The talk state's own motion (useTalkMotion) is not played from it.
     /// </summary>
-    static void SyncState(Inst i, byte state, ushort serial)
+    Ms2.Net.Replay.NpcTalkFacing.Step SyncState(Inst i, byte state, ushort serial)
     {
-        if (serial == i.Serial) return;
+        if (serial == i.Serial) return Ms2.Net.Replay.NpcTalkFacing.Step.Keep;
         i.Serial = serial;
-        if (state != 0 && state != 0x12 && !i.Dead) i.State = state;
+        bool talking = Talking();
+        var row = i.Talk?.Row ?? i.Model?.Row;
+        var step = Ms2.Net.Replay.NpcTalkFacing.OnBlock(state, i.State, i.TalkPhase, talking, row?.LookAtMyPcWhenTalking ?? true);
+        if (step != Ms2.Net.Replay.NpcTalkFacing.Step.Enter) return step;
+        if (state != 0 && state != 0x12 && !i.Dead)
+        {
+            i.State = state;
+            if (state == Ms2.Net.Replay.NpcTalkFacing.TalkState) i.TalkPhase = Ms2.Net.Replay.NpcTalkFacing.EnterPhase(talking);
+        }
+        return step;
     }
+
+    /// <summary>UITalkManager::GetTalking() != 0: a talk with an npc is open (the talk branch's test, :987 and :998).</summary>
+    public Func<bool> Talking = () => false;
+    /// <summary>The local player's position in client space (the talk look's target, :1003); null without one.</summary>
+    public Func<System.Numerics.Vector3?> OwnPosition = () => null;
 
     /// <summary>The npc's state (GetCurStateId), 0 when there is no npc of the id.</summary>
     public byte StateOf(int id) => inst.TryGetValue(id, out var i) ? i.State : (byte)0;

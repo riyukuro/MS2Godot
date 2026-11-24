@@ -243,6 +243,10 @@ public sealed partial class RemoteLayer : Node3D
 
     readonly NxController.FaceGrids faceGrids;   // the field's, shared with the player's controller
 
+    /// <summary>The npc layer's talk test (UITalkManager::GetTalking) and the local player's client position, for the talk look.</summary>
+    public Func<bool> NpcTalking { set => npcs.Talking = value; }
+    public Func<System.Numerics.Vector3?> OwnPosition { set => npcs.OwnPosition = value; }
+
     public RemoteLayer(Field field, ModelBuilder mb, long selfCharacterId)
     {
         Name = "RemoteLayer";
