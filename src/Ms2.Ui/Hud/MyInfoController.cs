@@ -30,7 +30,15 @@ public interface IEquipSlotOwner : IDragSlotOwner
 /// member unset (or the row's value and detail empty): the Lua scores and crit rate, the equipment abilities, the item
 /// level, the shield, the achievement tally and the profile image path.</para>
 /// </summary>
-public sealed class MyInfoController : UiController, IEquipSlotOwner
+/// <summary>A gem slot (GemSlot) as the source of a drop on a bag slot.</summary>
+public interface IGemSlotOwner
+{
+    /// <summary>InvenSlot::vfunc_18's gem slot branch for a drop of <paramref name="source"/> on a bag slot holding
+    /// <paramref name="mine"/> (null for an empty one); false when the name is not a gem slot.</summary>
+    bool GemSlotDroppedOnBag(string source, Item mine);
+}
+
+public sealed class MyInfoController : UiController, IEquipSlotOwner, IGemSlotOwner
 {
     public override string Movie => "uimyinfodialog";
     protected override string EntityMethod => "setTodayMemo";
@@ -1058,7 +1066,8 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     /// NotifyDragSlot::SlotUse (notifydragslot.cpp:33) for a slot of the equip bag: the button is the second argument (0
     /// without one). Button 0 is EquipSlot::vfunc_13 (equipslot.cpp:116), nothing. Button 1: MS2DragSlot::vfunc_19 (the slot
     /// is enabled, EquipSlot's ctor) with action 0x49406 held is the preview (vfunc_16, not ported: raised), else
-    /// <see cref="Unequip"/>. A gem bag slot's use is not ported: raised. The client guards none against a repeat.
+    /// <see cref="Unequip"/>. A gem bag slot (GemSlot, the same base): button 1, the preview key or GemSlot::vfunc_14: for the
+    /// local record (FUN_140dba1c0) its gem (vfunc_25), <see cref="UnequipGem"/>. The client guards none against a repeat.
     /// </summary>
     bool SlotUse(object[] args)
     {
@@ -1069,6 +1078,13 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
             if (button != 1) return true;
             if (ActionKeyDown(0x49406)) { Button?.Invoke("notifySlotUse"); return true; }
             Unequip(slot);
+            return true;
+        }
+        if (args.Length > 0 && args[0] is string g && GemIndexOf(g) is int index and >= 0)
+        {
+            if (button != 1) return true;
+            if (ActionKeyDown(0x49406)) { Button?.Invoke("notifySlotUse"); return true; }
+            if (gemBagRecord is { IsLocal: true } && GemSlotItem(index) is { } gem) UnequipGem(gem);    // GemSlot::vfunc_14, gemslot.cpp:145
             return true;
         }
         Button?.Invoke("notifySlotUse");
@@ -1294,9 +1310,8 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
     /// <paramref name="skipBinding"/>, an item that binds on equip and is not bound (HasBindingRule, no HasBinding) asks first:
     /// box 17 with s_msg_transfer_bind_when_equip and the player's name (vfunc_77), tag <see cref="BindOnGemEquipBox"/>, the
     /// slot appended (Append&lt;int&gt;), the item uid and entry (FUN_140527b10 the name, 1, 0, -1, -1, 1), buttons 1143 / 1144,
-    /// shown; true. Else the gem equip request (BadgeEquip mode 0: the uid, the slot as an unsigned char); true. Nothing is
-    /// put on here: the server's badge packets do.
-    /// STILL-OPEN: the item's material sound (CEffectService::FUN_1411a5110, "ms2sound/sound/item").
+    /// shown; true. Else the gem equip request (BadgeEquip mode 0: the uid, the slot as an unsigned char) and the item's
+    /// material sound (<see cref="ItemSound"/>); true. Nothing is put on here: the server's badge packets do.
     /// </summary>
     public bool EquipGem(Item item, int slot, bool skipBinding)
     {
@@ -1314,6 +1329,66 @@ public sealed class MyInfoController : UiController, IEquipSlotOwner
             return true;
         }
         Inventory?.RequestEquipGem?.Invoke(item.Uid, (byte)slot);
+        ItemSound?.Invoke(item);
+        return true;
+    }
+
+    /// <summary>The item's material sound ("ms2sound/sound/item", CEffectService::FUN_1411a5110), as UnequipGem plays it.</summary>
+    public Action<Item> ItemSound;
+
+    /// <summary>
+    /// UnequipGem @0x141271f90 (gemslot_2.cpp:485): no item or no local player: false. Dead: box 0x42; false. Else the gem
+    /// unequip request (BadgeEquip mode 1: the item's slot, CItem::GetSlot, the gem's badge slot) and the item's material
+    /// sound; true. Nothing is taken off here: the server's badge packets do.
+    /// </summary>
+    public bool UnequipGem(Item item)
+    {
+        if (item == null || Model == null || !Model.HasLocalPlayer) return false;
+        if (LocalPlayerDead()) { ShowCommonBox(DeadKey); return false; }
+        Inventory?.RequestUnequipGem?.Invoke(item.Record?.BadgeSlot ?? (byte)0);
+        ItemSound?.Invoke(item);
+        return true;
+    }
+
+    /// <summary>The gem bag slot index of a binding name; -1 for another name.</summary>
+    int GemIndexOf(string name) =>
+        gemBagRecord != null && name.StartsWith(GemBagName + ".", StringComparison.Ordinal)
+        && int.TryParse(name.AsSpan(GemBagName.Length + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out int i)
+        && (uint)i < GemTypes.Length ? i : -1;
+
+    /// <summary>GemSlot::vfunc_25 (gemslot.cpp:186): the record's gem of the slot's type (PCInfo::FindItemByGemType, the
+    /// first with that gem type); null without a record or such a gem.</summary>
+    Item GemSlotItem(int index)
+    {
+        var e = gemBagRecord?.Gems?.FirstOrDefault(g => g.GemType == GemTypes[index]);
+        return e != null && Model != null ? InventoryController.ToItem(e, Model.Tables.Items) : null;
+    }
+
+    /// <summary>CItemData::FUN_14053e900 (itemdata.cpp:1460): a gem item's subtype, else 0.</summary>
+    static int GemKind(Item item) => item.Data.IsGemItem ? item.Data.Subtype : 0;
+
+    /// <summary>
+    /// InvenSlot::vfunc_18 (invenslot.cpp:1207), a gem slot dropped on a bag slot. The slot's gem (vfunc_25), none: nothing.
+    /// The bag slot's item a gem (CItem::IsGem): of another kind (<see cref="GemKind"/>) than the worn gem,
+    /// <see cref="UnequipGem"/> of the worn one; the same kind and that kind the slot's gem type (GetGemType),
+    /// <see cref="EquipGem"/>(the bag's gem, the worn gem's slot, 0). Any other bag item or an empty cell: UnequipGem. Then
+    /// the gem slot's vfunc_10 (pushed again). The client does not check the record is the local player's here.
+    /// </summary>
+    public bool GemSlotDroppedOnBag(string source, Item mine)
+    {
+        int index = GemIndexOf(source);
+        if (index < 0) return false;
+        if (GemSlotItem(index) is { } gem)
+        {
+            if (mine != null && mine.Data.IsGemItem)
+            {
+                int kind = GemKind(mine);
+                if (kind != GemKind(gem)) UnequipGem(gem);
+                else if (GemTypes[index] == kind) EquipGem(mine, gem.Record?.BadgeSlot ?? 0, false);
+            }
+            else UnequipGem(gem);
+        }
+        RefreshSlot(source);
         return true;
     }
 

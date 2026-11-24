@@ -410,8 +410,10 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     /// InvenSlot::vfunc_18 (invenslot.cpp:1141), something dropped on a slot of this bag. A slot of this bag: the move
     /// request (mode 3: the source slot's item uid, 0 for an empty cell as m_nItemUid, and this slot's index), then the
     /// source's vfunc_10 (pushed again: nothing moves until the server's item packets do). The character window's equip
-    /// slot (EquipSlot, FUN_14120d560): <see cref="WornDroppedOnBag"/>. Any other source (the store slot branch and the
-    /// rest) is not ported: raised. A bag move plays the item's sound (PlayItemSoundByUid, :1150).
+    /// slot (EquipSlot, FUN_14120d560): <see cref="WornDroppedOnBag"/>. A trade slot: <see cref="ITradeSlotOwner"/>; a gem slot
+    /// (with this slot's item): <see cref="IGemSlotOwner"/>; the lock and dismantle slots: their owners' hooks. Any other
+    /// source (the store, fitting doll, pet, pet equip and item scroll slot branches) is not ported: raised. A bag move plays
+    /// the item's sound (PlayItemSoundByUid, :1150).
     /// </summary>
     public void SlotDroppedOn(string name, string source, IDragSlotOwner sourceOwner)
     {
@@ -428,6 +430,8 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         {
             if (equips.WornSlot(source) is { } worn) WornDroppedOnBag(worn.Item, worn.Slot, worn.Kind, to, equips);
         }
+        else if (sourceOwner is ITradeSlotOwner trade && trade.TradeSlotDroppedOnBag(source)) { }
+        else if (sourceOwner is IGemSlotOwner gems && gems.GemSlotDroppedOnBag(source, View?.ItemAt(View.Tab, to) is { } g && Model != null ? ToItem(g, Model.Tables.Items) : null)) { }
         else if (sourceOwner is IItemLockSlotOwner lk && lk.LockSlotUid(source) is long old and not 0 && LockSlotDropped != null)
         {
             Item mine = View?.ItemAt(View.Tab, to) is { } e && Model != null ? ToItem(e, Model.Tables.Items) : null;

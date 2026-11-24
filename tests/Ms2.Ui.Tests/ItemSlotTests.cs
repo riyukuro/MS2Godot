@@ -147,6 +147,16 @@ public class ItemSlotTests
     }
 
     [Test]
+    public void Flag0x800SetsTheItemsName()
+    {
+        // asitemslot.cpp:1304: 0x800 SetItemName(CItem::FUN_140527b10), the trade slots' 0x1c81f
+        var model = NewModel();
+        var item = Item.Create(model.Tables.Items, 20300327, 0);
+        Assert.That(Slot(model, item, 0x11 | 0x800)["itemName"], Is.EqualTo(new ItemTooltip(model, 0).Name(item)));
+        Assert.That(Slot(model, item, 0x11).ContainsKey("itemName"), Is.False);
+    }
+
+    [Test]
     public void UnportedFlagsThrow()
     {
         var model = NewModel();

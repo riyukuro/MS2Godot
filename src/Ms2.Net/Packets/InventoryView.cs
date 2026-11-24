@@ -57,6 +57,8 @@ public sealed class InventoryView {
     public Action<long, byte> RequestSwapEquip { get; set; }
     /// <summary>The gem equip (<see cref="GemEquipRequest"/>, EquipGem): (the gem item's uid, the gem slot, 0xff for none).</summary>
     public Action<long, byte> RequestEquipGem { get; set; }
+    /// <summary>The gem unequip (<see cref="GemUnequipRequest"/>, UnequipGem): the worn gem's slot.</summary>
+    public Action<byte> RequestUnequipGem { get; set; }
     /// <summary>The use request (<see cref="ItemUseRequest"/>, Unk_Inventory::RequestUseItem): (item uid, argument).</summary>
     public Action<long, string> RequestUse { get; set; }
     /// <summary>The drop on the ground (<see cref="ItemInventoryDropRequest"/>, SendRequestItemInventoryMode4): (item uid, count).</summary>

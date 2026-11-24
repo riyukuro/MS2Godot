@@ -1862,6 +1862,40 @@ public class InventoryTests
         Assert.That((bar, gems, raised.Count), Is.EqualTo((new[] { 30L }, new[] { 31L }, 2)));
     }
 
+    sealed class GemSlots : IDragSlotOwner, IGemSlotOwner
+    {
+        public readonly List<(string, long)> Dropped = new();
+        public bool IsDragSlot(string name) => name.StartsWith("Gem.", StringComparison.Ordinal);
+        public void RefreshSlot(string name) { }
+        public void SlotDropUnresolved(string name) { }
+        public bool GemSlotDroppedOnBag(string source, Item mine)
+        {
+            if (!IsDragSlot(source)) return false;
+            Dropped.Add((source, mine?.Uid ?? 0));
+            return true;
+        }
+    }
+
+    [Test]
+    public void AGemSlotDroppedOnTheBagGoesToItsOwnerWithTheBagSlotsItem()
+    {
+        // InvenSlot::vfunc_18 (invenslot.cpp:1207): the gem slot branch gets this slot's item (FindItemByUid of m_nItemUid)
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
+        book.Apply(new ItemMessage.LoadTab(7, new[] { new EquipItem { Id = 70200001, Uid = 31, InventorySlot = 0, Amount = 1, Rarity = 1 } }));
+        var (_, c, _) = Load(model, book);
+        c.ShowTab(7); c.Process();
+        var raised = new List<string>(); c.Button += raised.Add;
+        var gems = new GemSlots();
+        c.SlotDroppedOn(InventoryController.SlotName(0), "Gem.2", gems);
+        c.SlotDroppedOn(InventoryController.SlotName(1), "Gem.4", gems);
+        Assert.That(gems.Dropped, Is.EqualTo(new[] { ("Gem.2", 31L), ("Gem.4", 0L) }));
+        c.SlotDroppedOn(InventoryController.SlotName(0), "Other.0", gems);
+        Assert.That((gems.Dropped.Count, raised.Single()), Is.EqualTo((2, "notifySlotDragEnd")), "not a gem slot: as before");
+    }
+
     [Test]
     public void ATreasureMapDoesNothingAsAPartyRecall()
     {

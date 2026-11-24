@@ -13,7 +13,14 @@ namespace Ms2.Ui.Hud;
 /// <para>STILL-OPEN: the partner's fee reduction (CEquipment::GetAbilityRate(0x40)) and PC::IsVip of the local player are
 /// <see cref="FeeReduceRate"/> / <see cref="IsVip"/>, 0 and false until the host has them.</para>
 /// </summary>
-public sealed class TradeDialogController : UiController, ITradeDialog, IDragSlotOwner
+/// <summary>A trade slot (TradeSlot) as the source of a drop on a bag slot.</summary>
+public interface ITradeSlotOwner
+{
+    /// <summary>InvenSlot::vfunc_18's trade slot branch; false when the name is not a trade slot.</summary>
+    bool TradeSlotDroppedOnBag(string source);
+}
+
+public sealed class TradeDialogController : UiController, ITradeDialog, IDragSlotOwner, ITradeSlotOwner
 {
     public override string Movie => "uitradedialogex";
     protected override string EntityMethod => "initData";
@@ -527,4 +534,19 @@ public sealed class TradeDialogController : UiController, ITradeDialog, IDragSlo
     }
 
     public void SlotDropUnresolved(string name) => RefreshSlot(name);
+
+    /// <summary>
+    /// InvenSlot::vfunc_18 (invenslot.cpp:1202), a trade slot dropped on a bag slot: the item's sound by its id
+    /// (PlayItemSoundById of TradeSlot::GetItemTemplateId), then TradeSlot::SendRemoveItem (trademanagerex_2.cpp:196: my side
+    /// only, SendTradeMode9(uid, index)); then the trade slot's vfunc_10 (pushed again).
+    /// </summary>
+    public bool TradeSlotDroppedOnBag(string source)
+    {
+        if (!ParseSlot(source, out bool isMine, out int i)) return false;
+        var item = SlotItem(isMine, i);
+        if (item != null) ItemSound?.Invoke(item);
+        if (isMine) Book?.SendRemoveItem(item?.Uid ?? 0, i);
+        RefreshSlot(source);
+        return true;
+    }
 }

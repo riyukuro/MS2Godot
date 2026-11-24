@@ -1596,6 +1596,63 @@ public class MyInfoTests
         Assert.That((sent.Count, bag.Refreshed.Count), Is.EqualTo((3, refreshed)));
     }
 
+    /// <summary>GemSlot::vfunc_14 (gemslot.cpp:145) and InvenSlot::vfunc_18's gem slot branch (invenslot.cpp:1207):
+    /// UnequipGem (gemslot_2.cpp:485) sends BadgeEquip mode 1 with the worn gem's slot; a bag gem of the worn gem's kind
+    /// that is also the slot's gem type is put on in its place.</summary>
+    [Test]
+    public void AGemSlotRightClickedOrDroppedOnTheBagTakesTheGemOff()
+    {
+        Packs();
+        var book = new Ms2.Net.Packets.ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 4 };
+        var view = new Ms2.Net.Packets.InventoryView(book);
+        var on = new List<(long, byte)>(); view.RequestEquipGem = (u, s) => on.Add((u, s));
+        var off = new List<byte>(); view.RequestUnequipGem = off.Add;
+        var shown = new List<MessageBoxData>();
+        var sounds = new List<long>();
+        var (h, c, _, errors) = Load(x => { x.Inventory = view; x.ShowBox = shown.Add; x.ItemSound = i => sounds.Add(i.Uid); });
+        Assert.That(errors, Is.Empty);
+        c.OnCallback("onChangeTab", new object[] { 2 });
+        for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(200 + i * 16); }
+        string Slot(int s) => MyInfoController.GemBag + "." + s;
+        var items = c.Model.Tables.Items;
+        Item Bag(int id, long uid) => InventoryController.ToItem(new Ms2.Net.Packets.EquipItem { Id = id, Uid = uid, Amount = 1, Rarity = 1 }, items);
+
+        // the right click (button 1) on slot 2, gem type 3: the fixture's worn gem at badge slot 3 comes off, with its sound
+        c.OnCallback("notifySlotUse", new object[] { Slot(2), 1 });
+        Assert.That((off.Single(), sounds.Single(), on.Count, shown.Count), Is.EqualTo(((byte)3, 2003L, 0, 0)));
+        // button 0 and an empty gem slot (type 5): nothing
+        c.OnCallback("notifySlotUse", new object[] { Slot(2), 0 });
+        c.OnCallback("notifySlotUse", new object[] { Slot(1), 1 });
+        Assert.That(off.Count, Is.EqualTo(1));
+
+        // dropped on an empty bag cell or on an item that is no gem: off
+        Assert.That(c.GemSlotDroppedOnBag(Slot(2), null), Is.True);
+        Assert.That(c.GemSlotDroppedOnBag(Slot(2), Bag(20000021, 7)), Is.True);
+        Assert.That(off, Is.EqualTo(new byte[] { 3, 3, 3 }));
+        // on a gem of the worn gem's kind (the item's subtype): when that kind is the slot's gem type 3 the bag gem goes on at
+        // the worn gem's slot; else nothing (the GMS2 data's gem is of kind 11)
+        int kind = items.Get(70200001).Subtype;
+        int put = kind == 3 ? 1 : 0;
+        Assert.That(c.GemSlotDroppedOnBag(Slot(2), Bag(70200001, 951)), Is.True);
+        Assert.That((on.Count, off.Count), Is.EqualTo((put, 3)));
+        if (put == 1) Assert.That(on.Single(), Is.EqualTo((951L, (byte)3)));
+        // on a gem of another kind: off
+        int other = Enumerable.Range(7000, 100).SelectMany(p => Enumerable.Range(p * 10000 + 1, 5))
+            .FirstOrDefault(id => items.Get(id) is { IsGemItem: true } d && d.Subtype != kind);
+        if (other == 0) Assert.Ignore("no gem of another kind in this data");
+        Assert.That(c.GemSlotDroppedOnBag(Slot(2), Bag(other, 952)), Is.True);
+        Assert.That((on.Count, off.Count), Is.EqualTo((put, 4)));
+        // an empty gem slot sends nothing; a name that is no gem slot is not this branch
+        Assert.That(c.GemSlotDroppedOnBag(Slot(1), null), Is.True);
+        Assert.That(c.GemSlotDroppedOnBag("InventoryDialog.0", null), Is.False);
+        Assert.That(off.Count, Is.EqualTo(4));
+
+        // dead: box 0x42, nothing sent
+        c.LocalPlayerDead = () => true;
+        c.GemSlotDroppedOnBag(Slot(2), null);
+        Assert.That((off.Count, shown.Single().Msg), Is.EqualTo((4, c.Model.Tables.Common(MyInfoController.DeadKey))));
+    }
+
     /// <summary>The gem slot takes the worn gem from the local actor's PCGemEquip (gemslot.cpp:134), which OnBadgeEquip
     /// (inbound 0x7f, scenestategame.cpp:11006) keeps: mode 0 puts a gem on by its type, mode 1 takes the type off.</summary>
     [Test]

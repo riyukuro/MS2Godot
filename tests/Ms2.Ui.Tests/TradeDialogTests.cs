@@ -79,6 +79,33 @@ public class TradeDialogTests
         }
     }
 
+    /// <summary>InvenSlot::vfunc_18's trade slot branch (invenslot.cpp:1202): a trade slot dropped on a bag slot plays the
+    /// item's sound and, on my side only, sends the remove (TradeSlot::SendRemoveItem, mode 9 with the uid and the index);
+    /// the trade slot is pushed again either way.</summary>
+    [Test]
+    public void ATradeSlotDroppedOnTheBagTakesMyItemOut()
+    {
+        Packs();
+        var (inv, book, sent, _) = LoadInventory();
+        inv.ShowTab(3); inv.Process();
+        var trade = new TradeDialogController { Book = book, OwnedMeso = () => 5000 };
+        var sounds = new List<long>();
+        trade.ItemSound += i => sounds.Add(i.Uid);
+        Load(trade, NewModel());
+        trade.SetTradeSlotItem(true, 2, Tradeable(11, 1, 1));
+        trade.SetTradeSlotItem(false, 1, Tradeable(12, 1, 1));
+
+        inv.SlotDroppedOn(InventoryController.SlotName(5), TradeDialogController.SlotName(true, 2), trade);
+        Assert.That((sent.Single(), sounds.Single()), Is.EqualTo((TradeRequest.RemoveItem(11, 2), 11L)));
+        // the partner's slot: the sound only
+        inv.SlotDroppedOn(InventoryController.SlotName(5), TradeDialogController.SlotName(false, 1), trade);
+        Assert.That((sent.Count, sounds.Last()), Is.EqualTo((1, 12L)));
+        // my empty slot: no sound, the remove with uid 0
+        inv.SlotDroppedOn(InventoryController.SlotName(5), TradeDialogController.SlotName(true, 0), trade);
+        Assert.That((sent.Last(), sounds.Count), Is.EqualTo((TradeRequest.RemoveItem(0, 0), 2)));
+        Assert.That(trade.TradeSlotDroppedOnBag("InventoryDialog.0"), Is.False, "no trade slot");
+    }
+
     static Item Tradeable(long uid, uint count, uint slotMax)
     {
         var i = Item.Create(new ItemData { Id = 1, SlotMax = slotMax }, 1);

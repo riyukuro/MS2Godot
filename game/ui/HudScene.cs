@@ -3200,6 +3200,7 @@ public partial class HudScene : Node, IUiStageHost
             LocalPlayerDead = () => me.Dead,              // PCBase::IsDead (FieldAddUser, UserState 12 / DeadUser, Revival)
         };
         c.SystemNotice += SystemNotice;
+        c.ItemSound += item => PlayItemSound(item?.Data);
         c.ToggleDialog += id => GD.Print($"character: dialog 0x{id:x} is not in this HUD");
         c.OpenDialog += id => GD.Print($"character: dialog 0x{id:x} is not in this HUD");
         c.Button += name =>
