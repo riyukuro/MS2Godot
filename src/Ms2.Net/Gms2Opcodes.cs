@@ -44,6 +44,7 @@ static class Gms2Opcodes {
         [Inbound.LegionBattle] = 0xF6,
         [Inbound.Mentoring] = 0x10C,
         [Inbound.Survival] = 0x11B,
+        [Inbound.Wedding] = 0x12A,
         [Inbound.PremiumClub] = 0xED,
         [Inbound.ResponsePet] = 0xCE,
         [Inbound.FunctionCube] = 0x4E,

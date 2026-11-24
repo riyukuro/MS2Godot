@@ -39,6 +39,7 @@ public enum Inbound : ushort {
     Survival = 0x119,             // RecvOp Survival (commonfiles/opcodes.h:280): no named client handler; layouts from the recordings and the Maple2 server's SurvivalPacket
     Mentoring = 0x10A,            // RecvOp Mentoring: CMentoringManager::OnPacket (mentoringmanager.cpp:255)
     LegionBattle = 0xF4,          // RecvOp LegionBattle: CSceneStateGame::OnLegionBattle (scenestategame.cpp:8480)
+    Wedding = 0x128,              // RecvOp Wedding (commonfiles/opcodes.h:294): CWeddingManager::OnPacket (weddingmanager.cpp:198)
     InGameRank = 0xEE,            // RecvOp InGameRank: CGameRankingCli::OnPacket (gamerankingcli.cpp:350)
     PremiumClub = 0xEB,           // RecvOp PremiumClub: CSceneStateGame::OnPremiumClub (scenestategame.cpp:8426)
     ResponsePet = 0xCC,           // RecvOp ResponsePet: CPetManager::OnResponsePet (petmanager.cpp:722)

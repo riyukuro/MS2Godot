@@ -2139,6 +2139,8 @@ public partial class LiveSession : Node
                 ReadNotApplied("WorldShareInfo", Ms2.Net.Packets.WorldShareInfo.Read(p.Reader()).Mode);   // OnWorldShareInfo (scenestategame.cpp:9756): the boss-notify npc flag, the world map tile and the world share event dialog are not ported
             else if (game.Is(p, Inbound.BannerList))
                 { Ms2.Net.Packets.BannerList.Read(p.Reader()); ReadNotApplied("BannerList", 0); }   // CAdBannerManagerCli::OnBannerList (adbannermanagercli.cpp:31): the ad banner manager and its consumers (cash shop, title) are not ported
+            else if (game.Is(p, Inbound.Wedding))
+                ReadNotApplied("Wedding", Ms2.Net.Packets.WeddingPacket.Read(p.Reader()).Mode);   // the wedding manager and its dialogs are not ported (the client reads the packet only with feature 0x104)
             else if (game.Is(p, Inbound.Survival))
                 ReadNotApplied("Survival", Ms2.Net.Packets.SurvivalPacket.Read(p.Reader()).Mode);   // the survival season pass and medals; no client handler is named in the decompile and the survival UI is not ported
             else if (game.Is(p, Inbound.Mentoring))
