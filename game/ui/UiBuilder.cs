@@ -339,15 +339,19 @@ public partial class TextNode : Node2D
     /// </summary>
     public int FirstLine
     {
-        get => Label.LinesSkipped;
+        get => firstLine;
         set
         {
             int v = Math.Clamp(value, 0, Math.Max(0, Layout().Count - 1));
-            if (v == Label.LinesSkipped) return;
-            Label.LinesSkipped = v;
+            if (v == firstLine) return;
+            firstLine = v;
             AlignLine();
         }
     }
+
+    /// <summary>The first shown line, of the whole text. The label's own LinesSkipped is this less the lines of the text it was
+    /// not given (<see cref="SyncWindow"/>).</summary>
+    int firstLine;
 
     /// <summary>The clip again for the node's place: a script field's node is moved without its text changing.</summary>
     public void RefreshClip() => UpdateClip(Layout());
@@ -433,10 +437,11 @@ public partial class TextNode : Node2D
         var align = Label.HorizontalAlignment;
         var ls = Label.LabelSettings;
         bool exact = align == HorizontalAlignment.Center || align == HorizontalAlignment.Right;
+        SyncWindow();
         var all = Layout();
         UpdateClip(all);
         // the label draws the lines that fit the field (FitLines), the bottom alignment's count at most
-        int fit = FitLines(all), cap = fit < all.Count - Label.LinesSkipped ? fit : -1;
+        int fit = FitLines(all), cap = fit < all.Count - firstLine ? fit : -1;
         if (bottomCap >= 0) cap = cap < 0 ? bottomCap : Math.Min(cap, bottomCap);
         if (Label.MaxLinesVisible != cap) Callable.From(() => Label.MaxLinesVisible = cap).CallDeferred();
         int lines = exact ? all.Count : 0;
@@ -553,7 +558,7 @@ public partial class TextNode : Node2D
         return 255;
     }
 
-    public string Text { get => LabelText; set { runStyles = null; runCount = 0; htmlParser = null; HasSizedRuns = false; images = null; Label.Text = labelText = value ?? ""; } }
+    public string Text { get => LabelText; set { runStyles = null; runCount = 0; htmlParser = null; HasSizedRuns = false; images = null; labelText = value ?? ""; SyncWindow(); } }
 
     /// <summary>The label's text, kept here: reading Label.Text copies the whole text out of the engine on every call, and the
     /// layout reads it per call (only <see cref="Text"/> and <see cref="SetHtml"/> set it).</summary>
@@ -605,7 +610,8 @@ public partial class TextNode : Node2D
         }
         runCount = p.Count;
         // the line break the last P's end makes is not a line of its own (AsTextField.SetHtml: not in the field's text, so not in numLines)
-        Label.Text = labelText = p.Text(EndBreak(p, html));
+        labelText = p.Text(EndBreak(p, html));
+        SyncWindow();
         Label.QueueRedraw();
     }
 
@@ -730,18 +736,18 @@ public partial class TextNode : Node2D
     public float DescentRatio;
 
     /// <summary>Width of the current text in the field's own units (AS3 textWidth).</summary>
-    public float TextWidth => Label.LabelSettings.Font.GetStringSize(Label.Text, HorizontalAlignment.Left, -1, Label.LabelSettings.FontSize).X * Label.Scale.X;
+    public float TextWidth => Label.LabelSettings.Font.GetStringSize(LabelText, HorizontalAlignment.Left, -1, Label.LabelSettings.FontSize).X * Label.Scale.X;
 
     /// <summary>Lines the text wraps to at the field width (AS3 numLines).</summary>
     public int NumLines
     {
         get
         {
-            if (Label.AutowrapMode == TextServer.AutowrapMode.Off) return Math.Max(1, Label.Text.Split('\n').Length);
+            if (Label.AutowrapMode == TextServer.AutowrapMode.Off) return Math.Max(1, LabelText.Split('\n').Length);
             if (Label.IsInsideTree() || HasSizedRuns || HasImages) return Math.Max(1, Layout().Count);   // the lines as drawn (the label's own wrap at the field's size)
             var ls = Label.LabelSettings;
             var p = new TextParagraph { Width = Label.Size.X, BreakFlags = TextServer.LineBreakFlag.Mandatory | TextServer.LineBreakFlag.WordBound | TextServer.LineBreakFlag.Adaptive };
-            p.AddString(Label.Text, ls.Font, ls.FontSize);
+            p.AddString(LabelText, ls.Font, ls.FontSize);
             return Math.Max(1, p.GetLineCount());
         }
     }
@@ -845,7 +851,7 @@ public partial class TextNode : Node2D
     {
         var ls = Label.LabelSettings;
         float room = (Bounds.Size.X - 4) / Label.Scale.X;
-        while (ls.FontSize > 1 && ls.Font.GetStringSize(Label.Text, HorizontalAlignment.Left, -1, ls.FontSize).X > room) ls.FontSize--;
+        while (ls.FontSize > 1 && ls.Font.GetStringSize(LabelText, HorizontalAlignment.Left, -1, ls.FontSize).X > room) ls.FontSize--;
     }
 
     /// <summary>

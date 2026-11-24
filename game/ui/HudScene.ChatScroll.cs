@@ -119,6 +119,50 @@ public partial class HudScene
 
     double resizeX, resizeY, resizeSyncPrev;
 
+    /// <summary>
+    /// <c>--uigen-open chatlog:top|mid|bot</c>: the log filled to its 500 lines (wrapping lines, user lines and a super chat line among
+    /// them), scrolled to its top, middle or end by the script's scrollV; frame 280 prints what the field and its label show (the
+    /// script's range and the lines the label draws, as a hash of their text), the shot is the frame after.
+    /// </summary>
+    void ChatLogShot(int frames)
+    {
+        if (messengers.Count == 0) return;
+        var (m, _) = messengers[0];
+        if (frames is >= 150 and < 170)
+        {
+            for (int i = 1; i <= 25; i++)
+            {
+                int n = (frames - 150) * 25 + i;
+                if (n % 97 == 0)
+                {
+                    ChatLog.FeatureEnabled = _ => false;
+                    ChatLog.OnUserChat(new Ms2.Net.Packets.ChatMessage(0, 0, "Hero", false, 0, n == 291 ? "Super chat line" : "Plain line " + n, n == 291 ? 0x10 : 0, false, 0, "", 0, 11000001, 0));
+                    ChatLog.FeatureEnabled = null;
+                }
+                else ChatLog.AddSystemLine("Chat line " + n + " of 500, long enough to be a line of its own in the log." + (n % 3 == 0 ? " It goes on and on, so that it needs a second and a third line in the window." : ""), TalkKind.SystemNotice);
+            }
+            return;
+        }
+        var h = m.Host;
+        if (h.Child("m_textOutput") is not AsDisplayObject o) return;
+        var tfld = h.Get(o, "textField");
+        if (frames == 200)
+        {
+            int max = Rt.ToInt32(h.Get(tfld, "maxScrollV"));
+            string pos = openShot.Split(':').ElementAtOrDefault(1) ?? "bot";
+            h.Set(tfld, "scrollV", pos == "top" ? 1 : pos == "mid" ? max / 2 : max);
+            return;
+        }
+        if (frames == 280)
+        {
+            var log = LargestText(this);
+            var shown = log?.ShownLines();
+            string text = shown == null ? "" : string.Join("|", shown.Select(l => l.Text.TrimEnd('\n')));
+            GD.Print($"CHATLOG {openShot} scrollV={Rt.ToString(h.Get(tfld, "scrollV"))} maxScrollV={Rt.ToString(h.Get(tfld, "maxScrollV"))} bottomScrollV={Rt.ToString(h.Get(tfld, "bottomScrollV"))} numLines={Rt.ToString(h.Get(tfld, "numLines"))} firstLine={log?.FirstLine} shown={shown?.Count} hash={text.Aggregate(17u, (a, c) => a * 31 + c):X} [{text.Substring(0, Math.Min(text.Length, 400))}]");
+            if (log != null) GD.Print($"CHATLOG layoutDigest={log.LayoutDigest(false)}");
+        }
+    }
+
     /// <summary>The text node under <paramref name="n"/> with the longest text (the chat log).</summary>
     static TextNode LargestText(Node n)
     {

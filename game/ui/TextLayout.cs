@@ -363,6 +363,76 @@ public partial class TextNode
         return res;
     }
 
+    // ---- the label's window of the text ----------------------------------------------------------------------------------
+    // The label's own layout is not what draws a coloured field: every glyph comes from Layout() (LineFace), the label's face is
+    // hidden (SelfModulate). But Label shapes the whole text again whenever it changes (it keeps no paragraph of an earlier
+    // shaping): a full chat log's append cost the engine 12 ms for that shaping alone. A long coloured text is therefore given
+    // to the label as a window of whole paragraphs around the shown lines; the field keeps the text, the layout and the first
+    // shown line of the whole (firstLine), and the label's LinesSkipped is that less the lines before its window.
+
+    /// <summary>Text shorter than this goes to the label whole, and so does a text of fewer lines than <see cref="MinWindowLines"/>.</summary>
+    const int MinWindowChars = 4000, MinWindowLines = 96;
+
+    string engineText;                    // what the label was last given as its text
+    List<LayoutLine> windowLayout;        // the layout the window was cut from, and its line range [windowLo, windowHi)
+    int windowLo, windowHi;
+
+    /// <summary>
+    /// True when the label's own face is never seen: the field draws every glyph by line (the same condition AlignLine hides the
+    /// face by, for text with html formats).
+    /// </summary>
+    bool FaceByRuns()
+    {
+        var ls = Label.LabelSettings;
+        if (runStyles == null || ls == null) return false;
+        bool plain = ls.ShadowColor.A <= 0 && ls.OutlineSize <= 0;
+        return plain || ((HasSizedRuns || HasImages) && ls.OutlineSize <= 0 && ls.ShadowSize <= 0);
+    }
+
+    /// <summary>The text is a code point range of the layout: the UTF-16 index of code point <paramref name="cp"/> (from the last layout).</summary>
+    int Utf16Of(int cp) => cp < utf16.Count ? utf16[cp] : labelText.Length;
+
+    /// <summary>True when the layout line <paramref name="i"/> starts a paragraph (a line break before it, or the text's start).</summary>
+    bool StartsParagraph(List<LayoutLine> all, int i) => i <= 0 || i >= all.Count || all[i].Start == 0 || codePoints[all[i].Start - 1] == '\n';
+
+    /// <summary>
+    /// Gives the label the text it draws: the whole text, or for a long coloured text the paragraphs from one screenful above the
+    /// first shown line to one and a half below it (the window is kept while the shown lines stay inside it, so a scroll moves
+    /// only the label's skipped count), with LinesSkipped set to the lines of the window before the first shown one.
+    /// </summary>
+    void SyncWindow()
+    {
+        string full = LabelText;
+        List<LayoutLine> all = null;
+        if (full.Length >= MinWindowChars && Label.VisibleCharacters < 0 && FaceByRuns() && (all = Layout()).Count >= MinWindowLines)
+        {
+            int first = Math.Min(firstLine, all.Count - 1), fit = Math.Max(1, FitLines(all));
+            int skip;
+            if (ReferenceEquals(windowLayout, all) && first >= windowLo && (windowHi >= all.Count || first + fit + 1 <= windowHi)) skip = first - windowLo;
+            else
+            {
+                int lo = Math.Max(0, first - fit), hi = Math.Min(all.Count, first + fit + fit / 2 + 2);
+                while (lo > 0 && !StartsParagraph(all, lo)) lo--;
+                while (hi < all.Count && !StartsParagraph(all, hi)) hi++;
+                windowLayout = all; windowLo = lo; windowHi = hi;
+                int a = Utf16Of(all[lo].Start), b = hi < all.Count ? Utf16Of(all[hi].Start - 1) : full.Length;      // the break before the next paragraph is not in the window
+                SetEngineText(full.Substring(a, b - a));
+                skip = first - lo;
+            }
+            if (Label.LinesSkipped != skip) Label.LinesSkipped = skip;
+            return;
+        }
+        windowLayout = null;
+        SetEngineText(full);
+        if (Label.LinesSkipped != firstLine) Label.LinesSkipped = firstLine;
+    }
+
+    void SetEngineText(string text)
+    {
+        if (engineText != null && string.Equals(engineText, text)) return;
+        Label.Text = engineText = text;
+    }
+
     /// <summary>
     /// The lines the label shows (Label::get_layout_data): from its first unskipped line (LinesSkipped), those whose running
     /// height fits the label's height plus one line spacing, and the first one always (as the client shows it), at most
@@ -375,7 +445,7 @@ public partial class TextNode
         var res = new List<LayoutLine>();
         int fit = FitLines(all);
         float top = 0;
-        for (int i = Label.LinesSkipped; i < all.Count; i++)
+        for (int i = firstLine; i < all.Count; i++)
         {
             var l = all[i];
             if (res.Count >= fit) break;
@@ -398,10 +468,10 @@ public partial class TextNode
     /// </summary>
     int FitLines(List<LayoutLine> all)
     {
-        if (!(Bounds.Size.Y > 0)) return all.Count - Label.LinesSkipped;
+        if (!(Bounds.Size.Y > 0)) return all.Count - firstLine;
         // the one sum the scrolled field's first line is chosen by (ScrolledLines.Fit), so the cap and the first line agree
         // when the text exactly fills the box; `all` is the current layout (every caller read it with Layout() just before)
-        return Ms2.Ui.ScrolledLines.Fit(all.Count, lineHeightAdvance ??= LineHeightAdvance, Bounds.Size.Y - 4 + 1, Label.LinesSkipped);
+        return Ms2.Ui.ScrolledLines.Fit(all.Count, lineHeightAdvance ??= LineHeightAdvance, Bounds.Size.Y - 4 + 1, firstLine);
     }
 
     /// <summary>
