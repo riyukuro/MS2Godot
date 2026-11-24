@@ -47,6 +47,15 @@ public sealed class EffectPart
     /// <summary>soundEvent doNotStop (CSoundEventEffectParam::vfunc_1, soundeventmgr.cpp:298): the sound plays on for 10 s
     /// after its effect is stopped (CSoundEventEffect::vfunc_5, :612-626).</summary>
     public bool DoNotStop;
+    /// <summary>soundEvent cooltimeID (CSoundEventEffectParam::vfunc_1, soundeventmgr.cpp:299): the sound is made only when
+    /// <see cref="CooltimeTable.Use"/> lets it (FUN_1417760d0, :368-375); 0 has no cooldown.</summary>
+    public int CooltimeId;
+    /// <summary>soundEvent isSkipMusicConcert (CSoundEventEffectParam::vfunc_1, soundeventmgr.cpp:266-299): CreateEffect makes
+    /// no such part in the music concert (CSoundEventEffectParam::vfunc_7, :360-363; <see cref="IsMusicConcert"/>).</summary>
+    public bool SkipMusicConcert;
+    /// <summary>CFieldData::FUN_1403756f0 (fielddata.cpp:849-852), which WorldService::FUN_141bcb150 asks of the current
+    /// field: the concert is map 2000064 (0x1e84c0) with feature 0x60 (MusicConcert) on.</summary>
+    public static bool IsMusicConcert(int fieldId, bool musicConcertFeature) => fieldId == 0x1e84c0 && musicConcertFeature;
     /// <summary>soundEvent byJob (CSoundEventEffectParam::vfunc_1 @0x141775af0, soundeventmgr.cpp:283-307): the event and start
     /// delay per owner job code, from jobEvent="job:event;..." (FUN_141776330) and byJobStartDelay="job:delay;..."
     /// (FUN_1417764c0). Null when byJob is off.</summary>
@@ -167,6 +176,8 @@ public sealed class EffectTable
                     p.OffSkip = B((string)e.Attribute("offSkip"), false);
                     if (string.Equals(p.Type, "soundEvent", StringComparison.Ordinal)) p.ForceHearDistance = F((string)e.Attribute("forceHearDistance"), 0f);
                     if (string.Equals(p.Type, "soundEvent", StringComparison.Ordinal)) p.DoNotStop = B((string)e.Attribute("doNotStop"), false);
+                    if (string.Equals(p.Type, "soundEvent", StringComparison.Ordinal)) p.CooltimeId = I((string)e.Attribute("cooltimeID"), 0);
+                    if (string.Equals(p.Type, "soundEvent", StringComparison.Ordinal)) p.SkipMusicConcert = B((string)e.Attribute("isSkipMusicConcert"), false);
                     if (string.Equals(p.Type, "soundEvent", StringComparison.Ordinal) && B((string)e.Attribute("byJob"), false))
                     {
                         p.JobEvents = new Dictionary<int, string>();

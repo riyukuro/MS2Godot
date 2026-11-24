@@ -39,6 +39,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     HitSoundTable hitSounds;
     EventSoundTable eventSounds;
     Ms2.Formats.World.EffectSkipTable effectSkip;
+    Ms2.Formats.World.CooltimeTable cooltimes;
     float volumeOtherPc = Ms2.Formats.World.EffectSkipTable.VolumeOtherPcDefine;
     public SoundLibrary Library => library;
     public MusicController MusicState { get; private set; }
@@ -118,6 +119,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
             hitSounds = HitSounds(packs);
             eventSounds = EventSounds(packs);
             effectSkip = EffectSkip(packs);
+            cooltimes = Cooltimes(packs);
             try { volumeOtherPc = World.FieldContents.Constants(packs).Float("VolumeOtherPc", Ms2.Formats.World.EffectSkipTable.VolumeOtherPcDefine); }
             catch (Exception ex) { GD.PushWarning("audio: constants: " + ex.Message); }
         }
@@ -174,6 +176,22 @@ public partial class FieldAudio : Node, World.ITriggerSounds
 
     /// <summary>Table/effectOption.xml for the graphic quality (EffectSkipMgr::LoadOption, effectskipmgr.cpp:181), read once per
     /// pack set as the client reads it once. Null when the table cannot be read (warned once): nothing is skipped by view.</summary>
+    // one per data set for the session: a cooldown outlives a field change (CCooltimeManager::GetInstance)
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Ms2.Formats.World.CooltimeTable> cooltimeTables = new();
+
+    static Ms2.Formats.World.CooltimeTable Cooltimes(PackSet packs)
+    {
+        if (cooltimeTables.TryGetValue(packs, out var t)) return t;
+        try
+        {
+            var root = Ms2.Formats.Text.PackXml.Parse(packs.Read("Xml", "table/cooltimetable.xml")).Root;
+            t = Ms2.Formats.World.CooltimeTable.From(root == null ? [] : Ms2.Ui.FeatureElements.Collect(packs, root, "v", "cooltimeID"));
+        }
+        catch (Exception ex) { GD.PushWarning("audio: CooltimeTable.xml: " + ex.Message); }
+        cooltimeTables.AddOrUpdate(packs, t);
+        return t;
+    }
+
     static Ms2.Formats.World.EffectSkipTable EffectSkip(PackSet packs)
     {
         if (effectSkipTables.TryGetValue(packs, out var t)) return t;
@@ -676,6 +694,10 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     public Func<Vector3?> Viewer;
     /// <summary>Effect sounds not played for the view distance (<see cref="PlayEffectSound"/>).</summary>
     public int EffectSoundsOutOfView;
+    /// <summary>Effect sounds not made because their cooltimeID was cooling (<see cref="Ms2.Formats.World.CooltimeTable.Use"/>).</summary>
+    public int EffectSoundsCooling;
+    /// <summary>The field is the music concert (<see cref="EffectPart.IsMusicConcert"/>), set by Field on its build.</summary>
+    public bool InMusicConcert;
 
     /// <summary>
     /// An effect's soundEvent part (CSoundEventEffect::vfunc_3 @0x141776760, soundeventmgr.cpp:456-574) for
@@ -691,8 +713,12 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     /// </summary>
     public int PlayEffectSound(EffectPart part, EffectOwner owner, Vector3 at, Node3D actor = null)
     {
+        // CreateEffect's vfunc_7 filter (effectservice.cpp:289) comes before the view test
+        if (part.SkipMusicConcert && InMusicConcert) return 0;
         if (Ms2.Formats.World.EffectSkipTable.SoundEventOutOfView(effectSkip, part, owner.Kind, ToNumerics(at),
                 Viewer?.Invoke() is { } eye ? ToNumerics(eye) : null)) { EffectSoundsOutOfView++; return 0; }
+        // CSoundEventEffect::vfunc_3 (soundeventmgr.cpp:463): a cooling cooltimeID makes no sound (GetTickCount ms)
+        if (part.CooltimeId != 0 && cooltimes?.Use(part.CooltimeId, System.Environment.TickCount64) == false) { EffectSoundsCooling++; return 0; }
         string ev = part.SoundEventFor(owner.JobCode, GameOptions.SoundFlag.DisableJobSound);
         if (string.IsNullOrEmpty(ev)) return 0;
         return PlayEventVoice(part.SoundGroup == null ? ev : part.SoundGroup + "/" + ev, at, part.SoundStartDelayFor(owner.JobCode),

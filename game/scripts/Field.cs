@@ -291,6 +291,9 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         Built?.Invoke(this, builder);
         Audio = FieldAudio.Start(this, data, packs, fieldName, map, player, player?.Anim);   // sound: game/audio
         if (Audio != null) Triggers.Bind(Audio);   // the sound trigger objects' music and ambient sounds
+        // feature 0x60 is FeatureTable.Names[0x5f], "MusicConcert" (CFieldData::FUN_1403756f0)
+        if (Audio != null && packs != null)
+            Audio.InMusicConcert = EffectPart.IsMusicConcert(hdrFieldId(fieldName), Ms2.Ui.LobbyFeatures.IsEnabledByName(packs, Ms2.Ui.FeatureTable.Names[0x60 - 1]));
         if (Audio != null) Audio.Viewer = () => player != null && IsInstanceValid(player) && player.IsInsideTree() ? player.GlobalPosition : null;
         if (player != null && Audio?.Footsteps is { } steps)
         {
