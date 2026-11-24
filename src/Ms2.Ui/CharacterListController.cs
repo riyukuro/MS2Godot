@@ -571,8 +571,8 @@ public sealed class CharacterListController : UiController, IMessageBoxListener
 
     /// <summary>
     /// CharacterRemoved (@0x1418f0e20, :1399-1414): the movie's deleteCharacter(index) and the dialog's input on; with no
-    /// character left the preview goes (<see cref="ListEmptied"/>). STILL-OPEN: the removal of the character's own folder
-    /// under the common resource path (DeleteDirectoryTree) is not ported; nothing is kept there yet.
+    /// character left the preview goes (<see cref="ListEmptied"/>); then the character's own folder goes
+    /// (<see cref="RemoveCharacterFolder"/>, :1410-1413).
     /// </summary>
     void CharacterRemoved(string sn, int index)
     {
@@ -583,7 +583,12 @@ public sealed class CharacterListController : UiController, IMessageBoxListener
         SetInput(true);
         if (selectedSn == sn) selectedSn = null;
         if (Characters.Count == 0) ListEmptied?.Invoke();
+        RemoveCharacterFolder?.Invoke(sn);
     }
+
+    /// <summary>The end of CharacterRemoved: the removed character's folder under the account's (DeleteDirectoryTree on
+    /// RESOURCE_PATH + FUN_1412756c0(account, character), <see cref="CharacterFolderRemoval"/>), by the character's id.</summary>
+    public event Action<string> RemoveCharacterFolder;
 
     /// <summary>
     /// OnCharacterListPacket mode 5, BeginDelete (:964-1000), skipped while the dialog is closed: error 0 sets the delete time

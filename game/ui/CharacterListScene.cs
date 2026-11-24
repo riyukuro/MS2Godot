@@ -194,6 +194,7 @@ public partial class CharacterListScene : LobbyFieldScene
         controller.CancelDeleteRequest += sn => Flow.GameFlow.Manage(Ms2.Net.Packets.CharacterIdCommand.CancelDelete, sn);
         controller.FinalDeleteRequest += sn => Flow.GameFlow.Manage(Ms2.Net.Packets.CharacterIdCommand.ConfirmDelete, sn);
         controller.ListEmptied += () => { Flow.Session.SelectedIndex = -1; PreviewSelected(); };
+        controller.RemoveCharacterFolder += RemoveCharacterFolder;
         controller.ServerList += () => UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnSceneLobbyServer);
         controller.GameExit += () => Ms2.Ui.Hud.QuitFlow.ShowExitConfirm(new GameStrings(assets.Packs, assets.Language).Common());
         controller.Swapped += (a, b) =>
@@ -226,6 +227,21 @@ public partial class CharacterListScene : LobbyFieldScene
         dialog?.QueueFree();
         BuildList(false, true);
         controller.FadeInComplete();
+    }
+
+    /// <summary>
+    /// The deleted character's folder (CharacterRemoved, uicharacterlistdialog.cpp:1410-1413): the client's
+    /// "../../Config/&lt;account&gt;/&lt;character&gt;" is ours under the folder the game option file is in (user://Config, or
+    /// the --options-file folder of a test run), &lt;account id&gt;/&lt;character id&gt;, where the dialogs' settings, the character
+    /// options and the learning quest's file are kept. The account is the live login's; offline nothing is removed.
+    /// </summary>
+    static void RemoveCharacterFolder(string sn)
+    {
+        if (Net.LiveSession.Instance is not { } live || !ulong.TryParse(sn, out var id)) return;
+        var root = System.IO.Path.GetDirectoryName(GameOptions.FilePath);
+        var account = System.IO.Path.Combine(root, ((ulong)live.OwnAccountId).ToString(System.Globalization.CultureInfo.InvariantCulture));
+        int n = Ms2.Ui.CharacterFolderRemoval.Remove(account, id);
+        GD.Print($"character list: character {sn}'s folder under {account}: {n} files removed");
     }
 
     /// <summary>Frames stepped to put a dialog that was already open at the end of its popup (the popup labels are shorter).</summary>
