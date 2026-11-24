@@ -89,7 +89,7 @@ public partial class LiveSession
         }
         long now = ServerTime;
         long uid = RecallChecks.FirstByTag(PartyCallItems(now), RecallChecks.PartyCallTag);
-        if (uid == 0) { GD.Print("live: party recall: no party_call scroll; the merat recall is not ported"); return; }
+        if (uid == 0) { NotApplied.Print("live: party recall: no party_call scroll; the merat recall is not ported"); return; }
         StartRecallCast(uid);
     }
 

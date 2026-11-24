@@ -75,7 +75,7 @@ public partial class LiveSession
     {
         var f = CashCallFactsNow(field);
         var outcome = CashCall.Start(f, out int kind, out long uid);
-        GD.Print($"live: cash call to {field}: {outcome} kind {kind} item {uid}");
+        if (LiveCheck) GD.Print($"live: cash call to {field}: {outcome} kind {kind} item {uid}");
         switch (outcome)
         {
             case CashCall.Outcome.Call:
