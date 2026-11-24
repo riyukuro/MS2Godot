@@ -695,9 +695,9 @@ public class OwnArrowMagicTests
         var pass = new TombTagPass();
         Func<int> rand = () => 0;
         for (int t = 0; t < 50; t++) m.Tick(T + t, 0, Owner, objects, r, pass, sends, rand, null);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int t = 50; t < 1050; t++) m.Tick(T + t, 0, Owner, objects, r, pass, sends, rand, null);
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(64));
+        int tick = 50;
+        long bytes = Alloc.Least(() => { for (int end = tick + 1000; tick < end; tick++) m.Tick(T + tick, 0, Owner, objects, r, pass, sends, rand, null); });
+        Assert.That(bytes, Is.LessThan(64));
         Assert.That(m.Count, Is.EqualTo(1));
     }
     [Test]
@@ -778,9 +778,7 @@ public class OwnArrowMagicTests
         m.Tick(T + 50, 0, Owner, new[] { Me }, r, null, new List<SkillHitRequest>(), () => 0, null);
         var fx = new List<MagicSceneEffect>(4);
         m.SceneEffects(fx);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++) { fx.Clear(); m.SceneEffects(fx); }
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.Zero);
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 1000; i++) { fx.Clear(); m.SceneEffects(fx); } }), Is.Zero);
         Assert.That(fx.Count, Is.EqualTo(1));
     }
 

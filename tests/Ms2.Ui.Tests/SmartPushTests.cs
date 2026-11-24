@@ -297,10 +297,11 @@ public class SmartPushTests
             return GC.GetAllocatedBytesForCurrentThread() - before;
         }
         // A Release run reads a constant 24 B however many ticks run (one-off, not per tick: JIT or tiering), so the claim is
-        // that ten times the ticks cost no more bytes than the short run.
-        long shortRun = Measure(500, false), longRun = Measure(5000, false);
+        // that ten times the ticks cost no more bytes than the short run; each is the least of up to 5 runs (Alloc.Least), as
+        // a one-time compile under load can read kilobytes in any one of them.
+        long shortRun = Alloc.Least(() => Measure(500, false)), longRun = Alloc.Least(() => Measure(5000, false));
         Assert.That(longRun, Is.LessThanOrEqualTo(shortRun), "per tick: 0 B");
-        long shortHidden = Measure(500, true), longHidden = Measure(5000, true);
+        long shortHidden = Alloc.Least(() => Measure(500, true)), longHidden = Alloc.Least(() => Measure(5000, true));
         Assert.That(longHidden, Is.LessThanOrEqualTo(shortHidden), "the suppressed path: 0 B per tick");
         f.Hide = false;
         Assert.That(strip.Log, Is.Empty);

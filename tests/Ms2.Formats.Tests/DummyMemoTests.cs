@@ -75,8 +75,7 @@ public class DummyMemoTests
     {
         var memo = new DummyMemo();
         Lookup(memo, Rows, "Eff_UI", "Scene Root", At(5));
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++) Lookup(memo, Rows, "Eff_UI", "Scene Root", At(5));
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(256), "1000 lookups");
+        long bytes = Alloc.Least(() => { for (int i = 0; i < 1000; i++) Lookup(memo, Rows, "Eff_UI", "Scene Root", At(5)); });
+        Assert.That(bytes, Is.LessThan(256), "1000 lookups");
     }
 }

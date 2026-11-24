@@ -179,11 +179,9 @@ public class StoreDialogTests
         var c = new StoreDialogController { Book = NewBook() };
         Load(c, NewModel());
         for (int i = 0; i < 5000; i++) c.Process();     // past the tiered JIT's call counting
-        // 100000 calls: one allocating call would cost 2.4 MB at the least; the Release runtime charges the thread a
-        // constant (24 bytes) at some point in any long loop, so the bound is a few hundred bytes
-        long a = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 100_000; i++) c.Process();
-        long window = GC.GetAllocatedBytesForCurrentThread() - a;
+        // 100000 calls: one allocating call would cost 2.4 MB at the least; the least of up to 5 windows (Alloc.Least)
+        // leaves out the runtime's one-time charge to the thread in a long loop, so the bound is a few hundred bytes
+        long window = Alloc.Least(() => { for (int i = 0; i < 100_000; i++) c.Process(); });
         Assert.That(window, Is.LessThan(256), "Process allocates per call");
     }
 

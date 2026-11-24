@@ -806,10 +806,7 @@ public class ShopTests
         c.ServerTime = () => now;
         c.ReadShopInfo(Header() with { ResetTime = 1_000, ResetEnable = true, ResetLimited = true });
         for (int i = 0; i < 50; i++) c.Process(); // warm up past tiered JIT & timezone cache
-        var noBytes = Is.Zero; // made before the window (see TextureTransformTests)
-        long allocBefore = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 100; i++) c.Process();
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - allocBefore, noBytes, "Process() must allocate 0 bytes per frame");
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 100; i++) c.Process(); }), Is.Zero, "Process() must allocate 0 bytes per frame");
 
         sent.Clear();
         now = 1_500;

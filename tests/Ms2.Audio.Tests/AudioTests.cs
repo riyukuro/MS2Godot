@@ -582,16 +582,17 @@ public class AudioTests
         xf.BeginTransition(crossfadeMs: 2000, hasActiveAudio: true);
         xf.Step(0.001f);
         MusicCrossfade.LinkCrossfadeMs(endLink, 2000);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 100_000; i++)
+        long allocated = Alloc.Least(() =>
         {
-            if (!xf.IsFading) xf.BeginTransition(crossfadeMs: 2000, hasActiveAudio: true);
-            xf.Step(0.016f);
-            _ = MusicCrossfade.LinkCrossfadeMs(endLink, 2000);
-        }
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-        // Under 512 B over 100000 steps, the repo's bound: a Release run sees a one-off 24 B while the JIT tiers up, which
-        // a per-step allocation (at least 24 B each, 2.4 MB in all) could not hide under.
+            for (int i = 0; i < 100_000; i++)
+            {
+                if (!xf.IsFading) xf.BeginTransition(crossfadeMs: 2000, hasActiveAudio: true);
+                xf.Step(0.016f);
+                _ = MusicCrossfade.LinkCrossfadeMs(endLink, 2000);
+            }
+        });
+        // Under 512 B over 100000 steps, the repo's bound, in the least of the windows (Alloc.Least): a per-step allocation
+        // (at least 24 B each, 2.4 MB in all) could not hide under it.
         Assert.That(allocated, Is.LessThan(512), "MusicCrossfade per-frame stepping must not allocate");
     }
 
@@ -647,10 +648,7 @@ public class AudioTests
         Assert.That(xf.FadeDuration, Is.EqualTo(2.0f).Within(1e-5f));
 
         // Zero allocation on PeekNextSegment in steady state.
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
-            _ = mc.PeekNextSegment();
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0));
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 1000; i++) _ = mc.PeekNextSegment(); }), Is.EqualTo(0));
     }
 
     [Test]
@@ -838,10 +836,8 @@ public class AudioTests
         // Per-frame allocation guard on SoundMusicEffectState.Tick.
         fx.Apply(mc, new SoundMusicEffectParam(Volume: 0.5f, Duration: 1000f), nowSeconds: 0.0, currentMusicVolume: categoryVol, categoryMusicVolume: categoryVol, casterKind: SoundMusicEffectState.CasterSystem);
         fx.Tick(0.016, categoryVol, out _);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 10_000; i++)
-            fx.Tick(i * 0.016, categoryVol, out _);
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.EqualTo(0), "SoundMusicEffectState.Tick must not allocate");
+        long bytes = Alloc.Least(() => { for (int i = 0; i < 10_000; i++) fx.Tick(i * 0.016, categoryVol, out _); });
+        Assert.That(bytes, Is.EqualTo(0), "SoundMusicEffectState.Tick must not allocate");
     }
 
     [Test]

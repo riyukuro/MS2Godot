@@ -18,4 +18,8 @@
     <!-- the game's precompiled-image code, which names no Godot type -->
     <Compile Include="../../game/scripts/PrecompiledImage.cs" Link="game/PrecompiledImage.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/Alloc.cs" Link="Alloc.cs" />
+    <Using Include="Ms2Godot.Tests" />
+  </ItemGroup>
 </Project>

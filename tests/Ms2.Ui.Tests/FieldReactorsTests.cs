@@ -269,9 +269,7 @@ public class FieldReactorsTests
         var u = new User();
         for (int i = 0; i < 20; i++) f.Add(Add(i, "r" + i, 10, new Vector3(i * 10, 0, 0), St(0)), out _);
         for (int i = 0; i < 100; i++) f.Nearest(Vector3.Zero, u);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 100000; i++) f.Nearest(Vector3.Zero, u);
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512), "100000 polls (Release tiers the loop up once: 24 B)");
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 100000; i++) f.Nearest(Vector3.Zero, u); }), Is.LessThan(512), "100000 polls");
     }
 
     static GameEventMessage Msg(byte kind, params ReactorEvent[] e) =>

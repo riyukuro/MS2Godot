@@ -94,12 +94,11 @@ public partial class NpcForceCheck : Node3D
         // the casting npc's frame: managed bytes and time over 1000 frames of no time (the cast stays on)
         npcs.Process(0f);
         var sw = new System.Diagnostics.Stopwatch();
-        long b0 = System.GC.GetAllocatedBytesForCurrentThread();
+        int windows = 0;
         sw.Start();
-        for (int k = 0; k < 1000; k++) npcs.Process(0f);
+        long castBytes = CheckAlloc.Least(() => { windows++; for (int k = 0; k < 1000; k++) npcs.Process(0f); });
         sw.Stop();
-        long castBytes = System.GC.GetAllocatedBytesForCurrentThread() - b0;
-        double castUs = sw.Elapsed.TotalMilliseconds;
+        double castUs = sw.Elapsed.TotalMilliseconds / windows;
         Check(npcs.StateOf(obj) == 0x10, $"the cast left the state in {npcs.StateOf(obj)} over frames of no time");
         Check(castBytes == 0, $"1000 frames of a casting npc allocated {castBytes} B");
 

@@ -207,9 +207,7 @@ public class QuestNavigatorTests
     static long FrameBytes(QuestNavigator nav)
     {
         for (int i = 0; i < 10; i++) nav.Frame();
-        long b = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++) nav.Frame();
-        return GC.GetAllocatedBytesForCurrentThread() - b;
+        return Alloc.Least(() => { for (int i = 0; i < 1000; i++) nav.Frame(); });
     }
 
     [Test]

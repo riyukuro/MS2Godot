@@ -368,9 +368,7 @@ public class ReactStateTests
         st.Begin(ReactState.KindReact, r.Data, "box");
         var at = new Vector3(100, 10, 0);
         for (int i = 0; i < 100; i++) st.Tick(at, false);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 100000; i++) st.Tick(at, false);
-        long used = GC.GetAllocatedBytesForCurrentThread() - before;
+        long used = Alloc.Least(() => { for (int i = 0; i < 100000; i++) st.Tick(at, false); });
         Assert.That(st.Active, Is.True);
         Assert.That(used, Is.LessThan(512), "100000 ticks");
     }

@@ -95,13 +95,7 @@ public class DamageEffectStateTests
     public void NothingAllocatesPerFrame()
     {
         var s = Shown(100);
-        long Round()
-        {
-            long x = GC.GetAllocatedBytesForCurrentThread();
-            for (int i = 0; i < 100; i++) { s.Hp(i % 2 == 0 ? 10 : 90, 100); s.SetAlpha(i); s.Advance(16); }
-            return GC.GetAllocatedBytesForCurrentThread() - x;
-        }
-        Round();
-        Assert.That(Round(), Is.EqualTo(0), "bytes over 100 frames");
+        long bytes = Alloc.Least(() => { for (int i = 0; i < 100; i++) { s.Hp(i % 2 == 0 ? 10 : 90, 100); s.SetAlpha(i); s.Advance(16); } });
+        Assert.That(bytes, Is.EqualTo(0), "bytes over 100 frames");
     }
 }

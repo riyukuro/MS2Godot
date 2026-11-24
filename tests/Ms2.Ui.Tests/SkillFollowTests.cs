@@ -201,7 +201,7 @@ public class SkillFollowTests
     public void TheComboKeyAdvanceAllocatesNothing()
     {
         var r = Running();
-        long Window()   // measured twice, the second asserted (the first can take one-time JIT allocations)
+        long Window()   // the least of up to 5 windows is asserted (Alloc.Least)
         {
             long before = GC.GetAllocatedBytesForCurrentThread();
             int chain = 0;
@@ -215,8 +215,7 @@ public class SkillFollowTests
             }
             return GC.GetAllocatedBytesForCurrentThread() - before;
         }
-        Window();
-        Assert.That(Window(), Is.LessThan(512));
+        Assert.That(Alloc.Least(Window), Is.LessThan(512));
     }
 
     [Test]

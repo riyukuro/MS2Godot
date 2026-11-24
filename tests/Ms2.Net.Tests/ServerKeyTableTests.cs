@@ -85,9 +85,7 @@ public class ServerKeyTableTests {
         t.SetEntry(1, 9, new QuickSlotEntry(0, 20000001, 55)); t.SetEntry(1, 3, new QuickSlotEntry(0, 20000001, 55));
         Assert.That(t.FindQuickSlotBySkillAndItem(0, 20000001, 55), Is.EqualTo(3), "the lowest slot");
         Assert.That(t.FindQuickSlotBySkillAndItemUid(0, 55), Is.EqualTo(3));
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++) { t.FindQuickSlotBySkillAndItem(0, 20000001, 55); t.FindQuickSlotBySkillAndItemUid(0, 55); }
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512));
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 1000; i++) { t.FindQuickSlotBySkillAndItem(0, 20000001, 55); t.FindQuickSlotBySkillAndItemUid(0, 55); } }), Is.LessThan(512));
     }
 
     [Test] public void FindBySkillAndItemMatchesAllThreeOfTheCurrentPage() {

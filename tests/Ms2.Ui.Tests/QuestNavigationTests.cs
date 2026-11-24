@@ -293,10 +293,8 @@ public class QuestNavigationTests
         ctx.LiftableIds.Add(55);
         var r = new TraceResult { Kind = TraceKind.Npc, DistanceText = "12", Context = ctx };
         for (int i = 0; i < 3; i++) c.Tick(r, ctx);
-        // measured twice: the first round takes the measured loop's one-time cost in Release (24 B, not per frame)
-        long Round() { long x = GC.GetAllocatedBytesForCurrentThread(); for (int i = 0; i < 100; i++) c.Tick(r, ctx); return GC.GetAllocatedBytesForCurrentThread() - x; }
-        Round();
-        Assert.That(Round(), Is.EqualTo(0), "bytes over 100 frames");
+        // the least of up to 5 rounds (Alloc.Least): a round can take the loop's one-time JIT cost, not per frame
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 100; i++) c.Tick(r, ctx); }), Is.EqualTo(0), "bytes over 100 frames");
         Assert.That(h.RT.Errors, Is.Empty);
     }
 
@@ -312,10 +310,8 @@ public class QuestNavigationTests
         var r = new TraceResult { Kind = TraceKind.Npc, DistanceText = "12" };
         c.Tick(r, null);
         Assert.That(pc.Shown, Is.True);
-        // measured twice: the first round takes the measured loop's one-time cost in Release (24 B, not per frame)
-        long Round() { long x = GC.GetAllocatedBytesForCurrentThread(); for (int i = 0; i < 100; i++) c.Tick(r, null); return GC.GetAllocatedBytesForCurrentThread() - x; }
-        Round();
-        Assert.That(Round(), Is.EqualTo(0), "bytes over 100 frames");
+        // the least of up to 5 rounds (Alloc.Least): a round can take the loop's one-time JIT cost, not per frame
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 100; i++) c.Tick(r, null); }), Is.EqualTo(0), "bytes over 100 frames");
         Assert.That(h.RT.Errors, Is.Empty);
     }
 }

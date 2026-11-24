@@ -29,9 +29,7 @@ public class InventoryViewTests {
         Assert.That(b.CountOf(20000001, 1), Is.EqualTo(7));
         Assert.That(b.CountOf(20000002, 2), Is.EqualTo(0));
         for (int i = 0; i < 100; i++) b.CountOf(20000001, 2);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 10000; i++) b.CountOf(20000001, 2);
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(256));
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 10000; i++) b.CountOf(20000001, 2); }), Is.LessThan(256));
     }
 
     [Test] public void CountOfTypeCountsUnexpiredItemsOfTheTypeAndDesignItemsSkipUgcAndMeshlessOnes() {

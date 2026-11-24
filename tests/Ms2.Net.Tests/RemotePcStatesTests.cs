@@ -1146,9 +1146,7 @@ public class RemotePcStatesTests {
         sm.Cast(10200001, false, Vector3.Zero, 0f, 4242, "n");
         sm.CastSequenceEnded();
         for (int i = 0; i < 60; i++) sm.Update(1 / 60f);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 600; i++) sm.Update(1 / 60f);
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(256));
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 600; i++) sm.Update(1 / 60f); }), Is.LessThan(256));
     }
 
     [Test] public void UpdateAllocatesNothingPerFrame() {
@@ -1157,9 +1155,7 @@ public class RemotePcStatesTests {
         sm.Spawn();
         sm.Push(Rec(2, 0x18, Vector3.Zero, new Vector2(0, 1), 0f));
         for (int i = 0; i < 120; i++) sm.Update(1 / 60f);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 600; i++) sm.Update(1 / 60f);
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(256));
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 600; i++) sm.Update(1 / 60f); }), Is.LessThan(256));
     }
 
     [Test] public void UserStateTwelveEntersTheDeathStateWithoutTheFlag() {

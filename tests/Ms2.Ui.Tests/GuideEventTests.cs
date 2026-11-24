@@ -756,9 +756,7 @@ public class GuideEventTests
         long Bytes(string name)
         {
             for (int i = 0; i < 100; i++) DialogGates.FindOpen(registry, name);
-            long before = GC.GetAllocatedBytesForCurrentThread();
-            for (int i = 0; i < 10_000; i++) DialogGates.FindOpen(registry, name);
-            return GC.GetAllocatedBytesForCurrentThread() - before;
+            return Alloc.Least(() => { for (int i = 0; i < 10_000; i++) DialogGates.FindOpen(registry, name); });
         }
         Assert.That(Bytes("InventoryDialog"), Is.EqualTo(0), "found: no allocation");
 
@@ -767,15 +765,9 @@ public class GuideEventTests
         Assert.That(Ms2.Ui.Guide.GuideControllerDialog.Of(inv), Is.SameAs(g), "one wrapper per controller");
         Assert.That(g.Root, Is.Not.Null.And.SameAs(g.Root), "one root node while the entity stays");
         Assert.That(Ms2.Ui.Guide.GuideControllerDialog.Of(null), Is.Null);
-        // measured in a local function after a warm-up call: the Release JIT's first pass through a loop may allocate once
-        long OpenBytes()
-        {
-            long before = GC.GetAllocatedBytesForCurrentThread();
-            for (int i = 0; i < 10_000; i++) _ = Ms2.Ui.Guide.GuideControllerDialog.Of(DialogGates.FindOpen(registry, "InventoryDialog"))?.Root;
-            return GC.GetAllocatedBytesForCurrentThread() - before;
-        }
-        OpenBytes();
-        Assert.That(OpenBytes(), Is.EqualTo(0), "open: the wrapper and its root allocate nothing per lookup");
+        // the least of up to 5 windows (Alloc.Least): the JIT's pass through a loop may allocate once
+        long open = Alloc.Least(() => { for (int i = 0; i < 10_000; i++) _ = Ms2.Ui.Guide.GuideControllerDialog.Of(DialogGates.FindOpen(registry, "InventoryDialog"))?.Root; });
+        Assert.That(open, Is.EqualTo(0), "open: the wrapper and its root allocate nothing per lookup");
 
         inv.Close();
         for (int i = 0; i < 30 && !inv.IsClosed; i++) { ip.Tick(); inv.Process(); }

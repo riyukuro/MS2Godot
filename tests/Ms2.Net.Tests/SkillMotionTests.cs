@@ -221,9 +221,8 @@ public class SkillMotionTests
         var lin = Start(o, Move(0));
         var arc = Start(o, Move(1, distance: 200f));
         var mv = Start(o, Move(3));
-        long Window()   // measured over windows, the least kept (one-time JIT and tiering allocations)
+        long least = Alloc.Least(() =>
         {
-            long before = GC.GetAllocatedBytesForCurrentThread();
             for (int i = 0; i < 1000; i++)
             {
                 lin.TextKeys(o, keys, -1, 0.1);
@@ -233,10 +232,7 @@ public class SkillMotionTests
                 lin.ArmMovePhases(o);
                 _ = lin.TakesInput;
             }
-            return GC.GetAllocatedBytesForCurrentThread() - before;
-        }
-        long least = long.MaxValue;
-        for (int w = 0; w < 5; w++) least = Math.Min(least, Window());
+        });
         Assert.That(least, Is.EqualTo(0));
     }
 }

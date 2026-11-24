@@ -127,8 +127,6 @@ public class CubeLockTests
         var l = Lock("<housing id=\"7\" trophyID=\"2300\" interiorLevel=\"1\" categoryIndex=\"12\"/>", cleared: (_, _) => true,
             interiors: "<ms2><list categoryIndex=\"12\"/></ms2>");
         l.IsLocked(7, true, false);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 100; i++) l.IsLocked(7, true, false);
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.Zero);
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 100; i++) l.IsLocked(7, true, false); }), Is.Zero);
     }
 }

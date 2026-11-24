@@ -271,9 +271,7 @@ public class LiveInteractNpcTests
         var pos = new Vec3(0, 0, 0);
         live.Poll(pos); live.Use();
         for (int i = 0; i < 20; i++) { live.Poll(pos); live.Tick(pos, false); }
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 600; i++) { live.Poll(pos); live.Tick(pos, false); }
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        long allocated = Alloc.Least(() => { for (int i = 0; i < 600; i++) { live.Poll(pos); live.Tick(pos, false); } });
         Assert.That(allocated, Is.EqualTo(0), $"Poll+Tick allocated {allocated} B over 600 frames");
     }
 }

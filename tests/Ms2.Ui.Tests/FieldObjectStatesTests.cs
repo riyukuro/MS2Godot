@@ -368,13 +368,7 @@ public class FieldObjectStatesTests
         var l = new LiftableObjects();
         for (int i = 0; i < 20; i++) Liftable(l, "l" + i, i * 400);
         var at = new Vec3(4000, 0, 0);
-        long bytes = 0;
-        for (int round = 0; round < 2; round++)          // measured on the second round: the first pays the JIT tiering
-        {
-            long before = GC.GetAllocatedBytesForCurrentThread();
-            for (int i = 0; i < 100; i++) { l.Poll(at); l.Poll(new Vec3(0, 0, 0)); }
-            bytes = GC.GetAllocatedBytesForCurrentThread() - before;
-        }
+        long bytes = Alloc.Least(() => { for (int i = 0; i < 100; i++) { l.Poll(at); l.Poll(new Vec3(0, 0, 0)); } });
         Assert.That(bytes, Is.EqualTo(0));
     }
     static RequestFieldEnter FieldEnterPacket(int map, byte error = 0) => new(error, map, 0, 0, 0, 0, default, default, 0);

@@ -48,15 +48,17 @@ public class AppliedChildListsTests
         var lists = new AppliedChildLists<P, N>();
         var ps = new P[50]; var ns = new N[50];
         for (int i = 0; i < 50; i++) { ps[i] = new P(); ns[i] = new N(); var w = lists.Rent(); w.Add(ns[i]); lists.Set(ps[i], w); lists.Return(w); }
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int sync = 0; sync < 100; sync++)
-            for (int i = 0; i < 50; i++)
-            {
-                var w = lists.Rent(); w.Add(ns[i]);
-                if (!lists.IsApplied(ps[i], w)) Assert.Fail("changed");
-                lists.Return(w);
-            }
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512), "5000 containers");
+        long bytes = Alloc.Least(() =>
+        {
+            for (int sync = 0; sync < 100; sync++)
+                for (int i = 0; i < 50; i++)
+                {
+                    var w = lists.Rent(); w.Add(ns[i]);
+                    if (!lists.IsApplied(ps[i], w)) Assert.Fail("changed");
+                    lists.Return(w);
+                }
+        });
+        Assert.That(bytes, Is.LessThan(512), "5000 containers");
     }
 
     [Test]
@@ -67,16 +69,18 @@ public class AppliedChildListsTests
         var w = lists.Rent(); w.Add(a); w.Add(b); lists.Set(p, w); lists.Return(w);
         var x = lists.Rent(); x.Add(b); x.Add(a);   // the pool's list, filled once so the allocation below is the Set's alone
         lists.Return(x);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 100; i++)
+        long bytes = Alloc.Least(() =>
         {
-            var y = lists.Rent();
-            if (i % 2 == 0) { y.Add(b); y.Add(a); } else { y.Add(a); y.Add(b); }
-            if (lists.IsApplied(p, y)) Assert.Fail("unchanged");
-            lists.Set(p, y);
-            if (!lists.IsApplied(p, y)) Assert.Fail("not kept");
-            lists.Return(y);
-        }
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512), "100 changes");
+            for (int i = 0; i < 100; i++)
+            {
+                var y = lists.Rent();
+                if (i % 2 == 0) { y.Add(b); y.Add(a); } else { y.Add(a); y.Add(b); }
+                if (lists.IsApplied(p, y)) Assert.Fail("unchanged");
+                lists.Set(p, y);
+                if (!lists.IsApplied(p, y)) Assert.Fail("not kept");
+                lists.Return(y);
+            }
+        });
+        Assert.That(bytes, Is.LessThan(512), "100 changes");
     }
 }

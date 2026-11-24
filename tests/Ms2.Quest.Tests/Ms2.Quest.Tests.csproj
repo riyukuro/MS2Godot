@@ -15,4 +15,8 @@
     <ProjectReference Include="../../src/Ms2.Quest/Ms2.Quest.csproj" />
     <ProjectReference Include="../../src/Ms2.Formats/Ms2.Formats.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../Shared/Alloc.cs" Link="Alloc.cs" />
+    <Using Include="Ms2Godot.Tests" />
+  </ItemGroup>
 </Project>

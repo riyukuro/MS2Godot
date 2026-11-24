@@ -137,9 +137,7 @@ public partial class NifCacheCheck : Node
             Check(NifCache.Count.Textures == 0, "an unheld texture stayed past 120 s");
 
             for (int i = 0; i < 100; i++) NifCache.Tick();
-            long a0 = GC.GetAllocatedBytesForCurrentThread();
-            for (int i = 0; i < 10000; i++) NifCache.Tick();
-            long bytes = GC.GetAllocatedBytesForCurrentThread() - a0;
+            long bytes = CheckAlloc.Least(() => { for (int i = 0; i < 10000; i++) NifCache.Tick(); });
             Check(bytes == 0, $"tick allocates {bytes} B over 10000 frames");
         }
         finally

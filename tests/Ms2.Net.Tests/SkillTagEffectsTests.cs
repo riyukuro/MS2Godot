@@ -53,10 +53,9 @@ public class SkillTagEffectsTests {
         var keys = new SkillTagEffects.Keys();
         keys.Set(new List<(double, string)> { (0.1, "e0"), (0.4, "e1") }, new Dictionary<string, string> { ["e0"] = "a", ["e1"] = "b" });
         keys.Next(0, 1);
-        long before = GC.GetAllocatedBytesForCurrentThread();
         double sum = 0;
-        for (int i = 0; i < 1000; i++) sum += keys.Next(i * 0.001, 1) + (SkillTagEffects.Plays(0.3f, true, false, false, 0.2f, 0.7f, 0) ? 1 : 0);
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.Zero);
+        long bytes = Alloc.Least(() => { for (int i = 0; i < 1000; i++) sum += keys.Next(i * 0.001, 1) + (SkillTagEffects.Plays(0.3f, true, false, false, 0.2f, 0.7f, 0) ? 1 : 0); });
+        Assert.That(bytes, Is.Zero);
         Assert.That(sum, Is.GreaterThan(0));
     }
 

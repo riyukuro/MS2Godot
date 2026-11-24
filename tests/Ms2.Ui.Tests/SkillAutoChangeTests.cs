@@ -151,9 +151,7 @@ public class SkillAutoChangeTests
         Func<long> id = NextId;
         Func<int> tick = () => 1;
         poll.Get(w, c, run, 0, ref win, id, tick);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 100; i++) poll.Get(w, c, run, 0, ref win, id, tick);
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.Zero);
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 100; i++) poll.Get(w, c, run, 0, ref win, id, tick); }), Is.Zero);
     }
 
     [Test]

@@ -164,10 +164,8 @@ public class SkillCooltimesTests
         c.SetDuration(0, 103, 1f);
         c.SetDuration(0, 100, 1000f);
         c.Update(1); c.Update(2);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (uint i = 0; i < 100000; i++) c.Update(10 + i);
-        // a Release run takes a one-off 24 B while the loop tiers up; per call nothing
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThan(512), "100000 updates");
+        uint now = 10;                                         // the clock runs on across the windows (Alloc.Least)
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 100000; i++) c.Update(now++); }), Is.LessThan(512), "100000 updates");
         Assert.That(ended, Is.EqualTo(1), "103 ended inside the loop");
     }
 
@@ -430,9 +428,16 @@ public class SkillCooltimesTests
         c.LevelCooldown = _ => 3f;
         c.SetDuration(0, 110, 3f); c.SetRechargeUses(110, 2); c.SetDuration(0, 103, 50f);
         for (uint t = 0; t < 20000; t += 500) c.Update(t);    // warm: the lists and tables grow once
-        c.SetDuration(20000, 110, 3f); c.SetRechargeUses(110, 2);
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (uint t = 20000; t < 40000; t += 16) c.Update(t);
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.LessThanOrEqualTo(2048), "0 B per frame bar the restarted cooldown objects");
+        uint start = 20000;
+        long Window()                                          // each window restarts the cooldown outside the count
+        {
+            c.SetDuration(start, 110, 3f); c.SetRechargeUses(110, 2);
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (uint t = start; t < start + 20000; t += 16) c.Update(t);
+            long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+            start += 20000;
+            return bytes;
+        }
+        Assert.That(Alloc.Least(Window), Is.LessThanOrEqualTo(2048), "0 B per frame bar the restarted cooldown objects");
     }
 }

@@ -208,9 +208,8 @@ public class FieldDataTests
             if ((string)fd.Elements("environment").FirstOrDefault(e => e.Attribute("locale") == null)?.Element("xblock")?.Attribute("name") is { } xb)
                 last = xb;
         Assert.That(FieldData.FindByXBlock(packs, last), Is.Not.Null);      // warm: the index is built once
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        var f = FieldData.FindByXBlock(packs, last);
-        long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+        FieldData f = null;
+        long bytes = Alloc.Least(() => { f = FieldData.FindByXBlock(packs, last); });
         TestContext.WriteLine($"FindByXBlock({last}) allocated {bytes} B");
         Assert.That(f, Is.Not.Null);
         Assert.That(bytes, Is.LessThan(16 * 1024));

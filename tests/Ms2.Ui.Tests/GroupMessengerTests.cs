@@ -183,18 +183,17 @@ public class GroupMessengerTests
         const int lines = 200;
         void Queue() { for (int i = 0; i < lines; i++) b.QueueTalkLog(99, "Al", "hi"); }   // no window for chat 99
         Queue(); b.Process();                                          // warm up
-        long start = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < lines; i++) { b.ColorItemLinks("hi"); b.FindWindowByGroupId(99); }
-        long colour = GC.GetAllocatedBytesForCurrentThread() - start;
-        Queue();
-        start = GC.GetAllocatedBytesForCurrentThread();
-        b.Process();
-        long process = GC.GetAllocatedBytesForCurrentThread() - start;
+        long colour = Alloc.Least(() => { for (int i = 0; i < lines; i++) { b.ColorItemLinks("hi"); b.FindWindowByGroupId(99); } });
+        long QueuedProcess()                                           // the queue is filled outside the count
+        {
+            Queue();
+            long start = GC.GetAllocatedBytesForCurrentThread();
+            b.Process();
+            return GC.GetAllocatedBytesForCurrentThread() - start;
+        }
+        long process = Alloc.Least(QueuedProcess);
         Assert.That(process, Is.LessThanOrEqualTo(colour + 256), $"Process {process} B, per-line work {colour} B");
-        var noBytes = Is.Zero;                                           // made before the window (see TextureTransformTests)
-        start = GC.GetAllocatedBytesForCurrentThread();
-        b.Process();                                                   // an empty queue
-        Assert.That(GC.GetAllocatedBytesForCurrentThread() - start, noBytes);
+        Assert.That(Alloc.Least(() => { b.Process(); }), Is.Zero, "an empty queue");
     }
 
     [Test]

@@ -489,14 +489,15 @@ public class LiveInteractObjectsTests
     static void AssertNoAlloc(LiveInteractObjects live, Vec3 pos, string what)
     {
         for (int i = 0; i < 20; i++) { live.Poll(pos); live.PollBillBoard(pos); live.Tick(pos, false); }
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 600; i++)
+        long allocated = Alloc.Least(() =>
         {
-            live.Poll(pos);
-            live.PollBillBoard(pos);
-            live.Tick(pos, false);
-        }
-        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            for (int i = 0; i < 600; i++)
+            {
+                live.Poll(pos);
+                live.PollBillBoard(pos);
+                live.Tick(pos, false);
+            }
+        });
         Assert.That(allocated, Is.EqualTo(0), $"{what}: Poll+PollBillBoard+Tick allocated {allocated} B over 600 frames");
     }
 

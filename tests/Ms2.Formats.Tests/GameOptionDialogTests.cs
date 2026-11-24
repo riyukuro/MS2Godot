@@ -895,9 +895,7 @@ public class GameOptionDialogTests
     {
         var (d, _) = Open();
         for (int i = 0; i < 300; i++) d.Update();   // warm-up (tiered JIT)
-        // a round that is measured twice: the first absorbs the loop's one-time JIT cost in Release (24 B, not per frame)
-        long Round() { long x = GC.GetAllocatedBytesForCurrentThread(); for (int i = 0; i < 100; i++) d.Update(); return GC.GetAllocatedBytesForCurrentThread() - x; }
-        Round();
-        Assert.That(Round(), Is.EqualTo(0));
+        // the least of up to 5 rounds (Alloc.Least): a round can take the loop's one-time JIT cost, not per frame
+        Assert.That(Alloc.Least(() => { for (int i = 0; i < 100; i++) d.Update(); }), Is.EqualTo(0));
     }
 }

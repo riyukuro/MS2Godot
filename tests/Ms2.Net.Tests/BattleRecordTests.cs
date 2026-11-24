@@ -216,15 +216,6 @@ public class BattleRecordTests {
         Assert.That(m.HasRecord(1, 1) || m.IsGroupActive(1), Is.False, "ClearParty: ClearPartyGroups");
     }
 
-    static long LeastBytes(Action calls) {
-        long least = long.MaxValue;                     // the least of up to 5 windows: tiering lands one-time allocations anywhere
-        for (int i = 0; i < 5 && least > 0; i++) {
-            long before = GC.GetAllocatedBytesForCurrentThread();
-            calls();
-            least = Math.Min(least, GC.GetAllocatedBytesForCurrentThread() - before);
-        }
-        return least;
-    }
 
     [Test]
     public void RecordingASkillDamageAllocatesNothing() {
@@ -235,16 +226,16 @@ public class BattleRecordTests {
         Func<int, bool> yes = _ => true;
         void Calls() { for (int i = 0; i < 1000; i++) m.Record(d, yes, yes, yes); }
         Calls();
-        Assert.That(LeastBytes(Calls), Is.Zero, "no group active");
+        Assert.That(Alloc.Least(Calls), Is.Zero, "no group active");
         int roomAsks = 0;
         m.ChaosRoomMeter = () => { roomAsks++; return true; };
         Calls();
-        Assert.That(LeastBytes(Calls), Is.Zero, "in a chaos dungeon room, no group running");
+        Assert.That(Alloc.Least(Calls), Is.Zero, "in a chaos dungeon room, no group running");
         Assert.That(roomAsks, Is.Zero, "the room is asked only for a running chaos group");
         Assert.That(m.HasRecord(2, 1000) && m.GetRecord(2, 1000).Amount(BattleRecord.Dealt) == 0, Is.True);
         m.StartGroup(1);
         Calls();
-        Assert.That(LeastBytes(Calls), Is.Zero, "the party group active");
+        Assert.That(Alloc.Least(Calls), Is.Zero, "the party group active");
         Assert.That(m.GetRecord(1, 1000).Amount(BattleRecord.Dealt), Is.GreaterThan(0));
     }
 
