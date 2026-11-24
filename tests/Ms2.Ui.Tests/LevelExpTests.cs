@@ -204,6 +204,8 @@ public class LevelExpTests
         TestContext.WriteLine($"{set} adventure: {adv.Levels.Count} reward levels, {itemRewards.Count} item rewards ({missingRewardItems.Count} without item data), "
             + $"{missions} missions ({missingMissionItems.Count} reward items without data), level-up item {lvUpItem}");
         Assert.That(missingRewardItems, Is.Empty, "every item reward has item data");
+        // HudScene.AdventureNotifyCount gives 0 at adventure level 0 without the tables: CountUnclaimedRewards(0) has no row
+        Assert.That(adv.Levels, Has.No.Member(0u), "no reward row at adventure level 0");
         Assert.That(missingMissionItems, Is.Empty, "every mission reward item has item data");
         Assert.That(lvUpItem, Is.Not.Zero);
         Assert.That(t.Items.Get(lvUpItem), Is.Not.Null, "the adventure level-up reward item");

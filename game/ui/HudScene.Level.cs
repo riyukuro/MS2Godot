@@ -128,11 +128,13 @@ public partial class HudScene
 
     /// <summary>FUN_141938ae0 (uigamemenudialog.cpp:1380-1394) for the adventure level: 0x4f87 and 0x4f67 count the rewards
     /// not claimed up to the PC's adventure level (CountUnclaimedRewards); 0x4f67 adds the open dialog's
-    /// GetClaimableMissionCount.</summary>
+    /// GetClaimableMissionCount. RefreshMenu asks it at the menu's build, on every field load; at adventure level 0 the
+    /// count is of the reward rows at level 0, and the reward tables have none (LevelExpTests' sweep, every data set), so it
+    /// is 0 without loading them. The mission count is only asked with the dialog open, which loaded the tables.</summary>
     int AdventureNotifyCount(int id)
     {
         var p = hudModel.Player;
-        int n = AdventureLevelTable().CountUnclaimedRewards((uint)p.AdventureLevel, p.AdventureClaimed);
+        int n = p.AdventureLevel == 0 ? 0 : AdventureLevelTable().CountUnclaimedRewards((uint)p.AdventureLevel, p.AdventureClaimed);
         if (id == 0x4f67 && adventureLevelMovie != null && adventureLevel != null)
             n += AdventureLevelController.GetClaimableMissionCount(AdventureLevelTable(), p);
         return n;

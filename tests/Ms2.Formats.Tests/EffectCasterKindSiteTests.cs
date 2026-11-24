@@ -45,6 +45,8 @@ public class EffectCasterKindSiteTests
         new("ui/HudScene.Cast.cs", "PlayHitSound(hs.Attack, hs.Defence,", "CasterMyPc", "1: the own hit sound (PlayHitSound, effectservice.cpp:1355)"),
         new("ui/HudScene.Cast.cs", "live.PlayFieldEffect(fx.File,", "CasterMyPc", "1: the own magic's end effect (CMagic, magicdata.cpp:2151)"),
         new("net/LiveSession.Skills.cs", "remote?.PlayEffect(path, player.GlobalPosition,", "CasterMyPc", "1: the own PC's effect"),
+        new("net/LiveSession.cs", "ReleaseKeptEffect(SpawnKeptEffect(path, actor,", "CasterMyPc",
+            "1: EFFECT_LEVEL_UP (OnLevelUp, scenestategame.cpp:9520-9540) and EFFECT_ADVENTURE_LEVEL_UP (OnPrestige kind 2, :8838-8849) inserted on the own PC or its ridee; the kind is GetObjectKind of the PC, not the ridee"),
         new("net/RemoteLayer.Magics.cs", "int h = fx.SpawnOn(e.File, node,", "casterKind",
             "the magic owner's (CMagic, magicdata.cpp:927-931): ownSceneEffects 1, remoteSceneEffects 3"),
         // other PCs: PCBase::vfunc_58 3
@@ -57,6 +59,8 @@ public class EffectCasterKindSiteTests
         new("net/RemoteLayer.Magics.cs", "combat.PlayEffect(fx.File, new Vector3(fx.At.X, fx.At.Z, -fx.At.Y), MagicEffectBasis(fx),", "CasterOtherPc",
             "3: a user's magic end effect (CMagic, magicdata.cpp:2151)"),
         new("net/RemoteLayer.Ride.cs", "combat.PlayEffect(path, r.Pc.Body.GlobalPosition,", "CasterOtherPc", "3: a user's mount effect (Ridee::vfunc_58, the rider's)"),
+        new("net/RemoteLayer.Ride.cs", "ReleaseKeptEffect(SpawnKeptEffect(path, actor,", "CasterOtherPc",
+            "3: EFFECT_LEVEL_UP (scenestategame.cpp:9520-9540) and EFFECT_ADVENTURE_LEVEL_UP (:8838-8849) inserted on another PC or its ridee; the kind is GetObjectKind of the PC (PCBase::vfunc_58), not the ridee"),
         // npcs
         new("net/RemoteLayer.Casts.cs", "ReleaseKeptEffect(SpawnKeptEffect(motion.MotionEffect, n.root,", "kind",
             "the npc's, NpcLayer.CasterKind (CNpc::vfunc_58, 5 or 6): the motion effect of a level without a sequence, inserted on it (stateskill.cpp:1834)"),
