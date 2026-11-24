@@ -285,6 +285,46 @@ public partial class LiveSession
                 Shot("tombhit.png");
                 continue;
             }
+            if (step.StartsWith("breakhit:"))      // breakhit:N[:secs]: a run to the nearest standing breakable the tag pass hits, faced, the attack key N times a second apart; its states printed as they change for secs (60)
+            {
+                var arg = step[9..].Split(':');
+                var own = FieldPortals.ToMs2(live.OwnPlayer.GlobalPosition);
+                Ms2.Ui.BreakableObjects.Marker target = null;
+                double best = double.MaxValue;
+                foreach (var m in live.Breakables.Sorted)
+                {
+                    if (!m.Hittable || !m.ReactionArrow || m.State != 2) continue;
+                    double dx = m.Position.X - own.X, dy = m.Position.Y - own.Y, dz = m.Position.Z - own.Z, d = dx * dx + dy * dy + dz * dz;
+                    if (d < best) { best = d; target = m; }
+                }
+                Check($"a standing breakable the tag pass hits is in the field ({live.Breakables.Count} breakables)", target != null);
+                if (target == null) continue;
+                var at = new Vector3((float)target.Position.X, (float)target.Position.Z, -(float)target.Position.Y);
+                GD.Print($"live: combat {step}: breakable {target.Name} at {target.Position} size {target.Size} state {target.State}, {System.Math.Sqrt(best):F0} away");
+                int lastState = target.State;
+                var seen = new System.Collections.Generic.List<int> { lastState };
+                void Track()
+                {
+                    if (target.State == lastState) return;
+                    lastState = target.State; seen.Add(lastState);
+                    GD.Print($"live: combat {step}: breakable {target.Name} state {lastState} shown {target.Shown} visible {target.Visible}");
+                    Shot($"breakhit_state{seen.Count - 1}_{lastState}.png");
+                }
+                float dist = hud.DriveTowardScripted(at, false);
+                for (int n = 0; n < 60 * 25 && dist > 120; n++) { dist = hud.DriveTowardScripted(at, false); await frames(1); }
+                hud.DriveEnd(); await frames(20);
+                Shot("breakhit_before.png");
+                for (int i = int.Parse(arg[0]); i > 0 && target.State == 2; i--)
+                {
+                    dist = hud.FaceScripted(at);
+                    GD.Print($"live: combat {step}: distance {dist:F0}: {(hud.AttackScripted() ? "cast" : "refused")}");
+                    for (int f = 0; f < 60; f++) { await frames(1); Track(); }
+                }
+                for (int s = 0, secs = arg.Length > 1 ? int.Parse(arg[1]) : 60; s < 60 * secs; s++) { await frames(1); Track(); }
+                Check($"the server broke it (states {string.Join(" ", seen)})", seen.Contains(3) || seen.Contains(4));
+                Shot("breakhit_end.png");
+                continue;
+            }
             if (step.StartsWith("faceto:"))      // faceto:x y z: the player turned to the map point where it stands
             {
                 var c = step[7..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
