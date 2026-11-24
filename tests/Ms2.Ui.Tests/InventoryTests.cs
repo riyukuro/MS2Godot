@@ -97,6 +97,9 @@ public class InventoryTests
         Assert.That(c.GetBinding("InventoryDialog.0"), Is.Null, "no local player: vfunc_8 returns 0");
     }
 
+    /// <summary>The slot list: the KMS movie's m_itemBagEx (a TileList), the GMS2 movie's m_itemBag (an ItemBag).</summary>
+    static object SlotList(UiHost h) => h.Child("m_itemBagEx") ?? h.Child("m_itemBag");
+
     static List<object> Items(UiHost h, object dp) =>
         Enumerable.Range(0, (int)Rt.ToNumber(h.Get(dp, "length"))).Select(i => h.Invoke(dp, "requestItemAt", i)).ToList();
 
@@ -120,7 +123,7 @@ public class InventoryTests
     {
         Packs();
         var (h, c, _) = Load();
-        var names = Items(h, h.Get(h.Child("m_itemBagEx"), "dataProvider")).Select(Rt.ToString).ToList();
+        var names = Items(h, h.Get(SlotList(h), "dataProvider")).Select(Rt.ToString).ToList();
         Assert.That(names.Count, Is.EqualTo(48));
         Assert.That(names[0], Is.EqualTo("InventoryDialog.0"));
         Assert.That(Rt.ToString(h.Get(h.Child("m_expand"), "text")), Is.EqualTo("2/48"));
@@ -138,7 +141,7 @@ public class InventoryTests
         for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
         Assert.That(c.View.Tab, Is.EqualTo(3));
         Assert.That(Rt.ToString(h.Get(h.Child("m_expand"), "text")), Is.EqualTo("1/54"));
-        Assert.That((int)Rt.ToNumber(h.Get(h.Get(h.Child("m_itemBagEx"), "dataProvider"), "length")), Is.EqualTo(54));
+        Assert.That((int)Rt.ToNumber(h.Get(h.Get(SlotList(h), "dataProvider"), "length")), Is.EqualTo(54));
         Assert.That(sent, Is.Zero);
     }
 
