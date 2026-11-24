@@ -137,6 +137,15 @@ public abstract record PartyMessage(int Mode) {
             case 0xe: { long id = r.ReadLong(); SkipCounters(r); return new PartyMemberCounters(id); }       // OnPartyMemberCounters @0x14162e240
             case 0x12: { long id = r.ReadLong(); return new PartyMemberResult(id, r.ReadByte()); }          // FUN_14162e3d0 @0x14162e3d0
             case 0x14: return new PartyNotice(r.ReadUnicodeString(), r.ReadUnicodeString(), r.ReadUnicodeString());   // OnPartyNotice @0x14162e5d0
+            case 0x15: { var text = StringIdText.Read(r); return new PartyNoticeWithSound(text, r.ReadUnicodeString()); }   // OnPartyNoticeWithSound @0x14162e730
+            case 0x1e: { int kind = r.ReadByte(); bool registered = r.ReadBool(); bool announce = r.ReadBool(); return new PartyDungeonMatchRegister(kind, registered, announce, r.ReadByte()); }   // OnPartyDungeonMatchRegister @0x14162ea90
+            case 0x1f: return new PartyDungeonMatchConfirm();                                              // OnPartyDungeonMatchConfirm @0x14162ed60: no body is read
+            case 0x23: return new PartyExpireTimer(r.ReadLong());                                          // FUN_14162ee10 @0x14162ee10
+            case 0x25: { long id = r.ReadLong(); string name = r.ReadUnicodeString(); return new PartyChatNotice(id, name, StringIdText.Read(r)); }   // FUN_14162ee70 @0x14162ee70
+            case 0x28: return new PartyFindDungeonCooldown(r.ReadInt());                                   // OnPartyFindDungeonCooldown @0x1416302f0
+            case 0x2c: return new PartyInviteSent(r.ReadUnicodeString());                                  // OnPartyInviteSent @0x1416303b0
+            case 0x37: { bool registered = r.ReadBool(); return new PartySurvivalSquadRegister(registered, r.ReadBool()); }   // OnPartySurvivalSquadRegister @0x141630790
+            case 0x38: return new PartyDungeonRoomCreate(r.ReadInt());                                     // OnPartyDungeonRoomCreate @0x141630a60
             case 0x19: { bool matching = r.ReadBool(); return new PartyMatchDungeonChange(matching, r.ReadInt()); }   // OnPartyMatchDungeonChange @0x14162e820
             case 2: { var u = PartyUser.Read(r, profile); SkipCounters(r); return new PartyJoin(u); }            // OnPartyMemberJoin
             case 3: return new PartyLeave(r.ReadLong(), r.ReadBool());                                    // OnPartyMemberLeave
@@ -250,7 +259,6 @@ public sealed class PartyVote {
     }
 }
 
-/// <summary>A mode the party window does not use (search, dungeon matching, notices); its body is not read.</summary>
 /// <summary>Mode 0, OnPartyResultMessage @0x14162f030: u8 result, the name the notice formats.</summary>
 public sealed record PartyResult(int Result, string Name) : PartyMessage(0);
 /// <summary>Mode 0xe, OnPartyMemberCounters: i64 member, then the counter map (not kept).</summary>
@@ -261,6 +269,28 @@ public sealed record PartyMemberResult(long CharacterId, int Result) : PartyMess
 public sealed record PartyNotice(string Key, string Sound, string Argument) : PartyMessage(0x14);
 /// <summary>Mode 0x19, OnPartyMatchDungeonChange: bool matchmaking, i32 dungeon id.</summary>
 public sealed record PartyMatchDungeonChange(bool Matchmaking, int DungeonId) : PartyMessage(0x19);
+/// <summary>Mode 0x15, OnPartyNoticeWithSound @0x14162e730 (partymanager.cpp:1281): a string-id text (StringIdInterface::FUN_141024e60),
+/// then the sound name.</summary>
+public sealed record PartyNoticeWithSound(StringIdText Text, string Sound) : PartyMessage(0x15);
+/// <summary>Mode 0x1e, OnPartyDungeonMatchRegister @0x14162ea90 (partymanager.cpp:1318): u8 dungeon group, bool registered, bool announce,
+/// then the search bits (Unk_PartyBits, one u8) that replace the kept ones.</summary>
+public sealed record PartyDungeonMatchRegister(int Group, bool Registered, bool Announce, int SearchBits) : PartyMessage(0x1e);
+/// <summary>Mode 0x1f, OnPartyDungeonMatchConfirm @0x14162ed60 (partymanager.cpp:1342): no body; the client opens the confirm box.</summary>
+public sealed record PartyDungeonMatchConfirm() : PartyMessage(0x1f);
+/// <summary>Mode 0x23, FUN_14162ee10 @0x14162ee10 (partymanager.cpp:1349): i64 that CMyCharacter::SetExpireAndUpdateTimer takes.</summary>
+public sealed record PartyExpireTimer(long Value) : PartyMessage(0x23);
+/// <summary>Mode 0x25, FUN_14162ee70 @0x14162ee70 (partymanager.cpp:1357): i64 sender id, the sender's name, a string-id text; a chat
+/// line unless the sender is blocked or a buddy.</summary>
+public sealed record PartyChatNotice(long SenderId, string Name, StringIdText Text) : PartyMessage(0x25);
+/// <summary>Mode 0x28, OnPartyFindDungeonCooldown @0x1416302f0 (partymanager.cpp:1425): i32 milliseconds.</summary>
+public sealed record PartyFindDungeonCooldown(int Milliseconds) : PartyMessage(0x28);
+/// <summary>Mode 0x2c, OnPartyInviteSent @0x1416303b0 (partymanager.cpp:1434): the invited player's name.</summary>
+public sealed record PartyInviteSent(string Name) : PartyMessage(0x2c);
+/// <summary>Mode 0x37, OnPartySurvivalSquadRegister @0x141630790 (partymanager.cpp:1481): bool registered (flag29), bool notify.</summary>
+public sealed record PartySurvivalSquadRegister(bool Registered, bool Notify) : PartyMessage(0x37);
+/// <summary>Mode 0x38, OnPartyDungeonRoomCreate @0x141630a60 (partymanager.cpp:1503): i32 dungeon id.</summary>
+public sealed record PartyDungeonRoomCreate(int DungeonId) : PartyMessage(0x38);
+/// <summary>A mode this reader does not decode; its body is left unread (no ExpectEnd).</summary>
 public sealed record PartyOtherMode(int OtherMode) : PartyMessage(OtherMode);
 
 /// <summary>One member of mode 9: the offline flag, the record (its counters are read past).</summary>
@@ -269,13 +299,16 @@ public sealed record PartyInfoMember(bool Offline, PartyUser User);
 /// <summary>
 /// Mode 9, OnPartyInfo (partymanager.cpp:1104): bool announce, i32 party id, i64 leader id, u8 count (at most 10 read) of
 /// { bool offline, record, counters }, bool matchmaking, i32 dungeon id, u8 search permissions, bool survival squad, u8 has
-/// recruit (then the recruit). The permissions and the survival squad flag are read past; the recruit is kept
-/// (<see cref="Recruit"/>, null without one).
+/// recruit (then the recruit). The recruit is kept (<see cref="Recruit"/>, null without one), as are the permissions and the flag.
 /// </summary>
 public sealed record PartyInfo(bool Announce, int PartyId, long LeaderId, IReadOnlyList<PartyInfoMember> Members, bool Matchmaking, int DungeonId)
     : PartyMessage(9) {
     /// <summary>The party's listing (CMatchPartyRecruit::Read, matchpartyrecruitschcond.cpp:228), null when has recruit is 0.</summary>
     public PartyRecruit Recruit { get; init; }
+    /// <summary>The search bits (permissions, Unk_PartyBits: one u8).</summary>
+    public int SearchBits { get; init; }
+    /// <summary>flag29: the survival squad is registered.</summary>
+    public bool SurvivalSquad { get; init; }
 
     internal static PartyInfo ReadBody(ByteReader r, ProtocolProfile profile) {
         bool announce = r.ReadBool();
@@ -291,18 +324,18 @@ public sealed record PartyInfo(bool Announce, int PartyId, long LeaderId, IReadO
         }
         bool matchmaking = r.ReadBool();
         int dungeon = r.ReadInt();
-        r.ReadByte();                                  // >> permissions: Unk_PartyBits, one u8 (dungeonrecord.cpp:34)
-        r.ReadBool();                                  // flag29 (IsSurvivalSquadRegistered)
+        int bits = r.ReadByte();                       // >> permissions: Unk_PartyBits, one u8 (dungeonrecord.cpp:34)
+        bool squad = r.ReadBool();                     // flag29 (IsSurvivalSquadRegistered)
         var recruit = r.ReadByte() != 0 ? PartyRecruit.Read(r) : null;   // the recruit (matchpartyrecruitschcond.cpp:228)
-        return new PartyInfo(announce, id, leader, members, matchmaking, dungeon) { Recruit = recruit };
+        return new PartyInfo(announce, id, leader, members, matchmaking, dungeon) { Recruit = recruit, SearchBits = bits, SurvivalSquad = squad };
     }
 
-    /// <summary>Writes a mode 9 body (tests and offline fixtures): no search permissions, no survival squad, the recruit when set.</summary>
+    /// <summary>Writes a mode 9 body (tests and offline fixtures): the search bits, the survival squad flag, the recruit when set.</summary>
     public byte[] Write() {
         var w = new ByteWriter();
         w.WriteByte(9); w.WriteBool(Announce); w.WriteInt(PartyId); w.WriteLong(LeaderId); w.WriteByte((byte) Members.Count);
         foreach (var m in Members) { w.WriteBool(m.Offline); m.User.Write(w); WriteCounters(w); }
-        w.WriteBool(Matchmaking); w.WriteInt(DungeonId); w.WriteByte(0); w.WriteBool(false);
+        w.WriteBool(Matchmaking); w.WriteInt(DungeonId); w.WriteByte((byte) SearchBits); w.WriteBool(SurvivalSquad);
         w.WriteByte((byte) (Recruit != null ? 1 : 0)); Recruit?.Write(w);
         return w.Buffer.AsSpan(0, w.Length).ToArray();
     }
@@ -335,6 +368,15 @@ public sealed partial class PartyBook {
     public long LeaderId { get; private set; }
     public bool Matchmaking { get; private set; }
     public int DungeonId { get; private set; }
+    /// <summary>permissions (partymanager.h:134, Unk_PartyBits: one u8): the dungeon groups the party is matching for, set by modes 9
+    /// and 0x1e and cleared by ClearParty (:435).</summary>
+    public int SearchBits { get; private set; }
+    /// <summary>IsMatchSearching @0x14162ac00: false for bit 0, else the bit (HasBit; a bit past the byte is not set).</summary>
+    public bool IsMatchSearching(int bit) => bit > 0 && bit < 8 && (SearchBits >> bit & 1) != 0;
+    /// <summary>IsAnySearching @0x14162ac40: any search bit set (the upper HUD's search icon, uiupperhuddialog.cpp:814).</summary>
+    public bool IsAnySearching => SearchBits != 0;
+    /// <summary>flag29, IsSurvivalSquadRegistered @0x14162ad30: set by modes 9 and 0x37, cleared by ClearParty (:434).</summary>
+    public bool SurvivalSquadRegistered { get; private set; }
     /// <summary>partyName (GetPartyName @0x14162b4f0): the last invite's name, kept for its answer.</summary>
     public string PartyName { get; private set; } = "";
     /// <summary>partyKind (GetPartyKind @0x14162b540): the last invite's kind, kept for its answer.</summary>
@@ -374,7 +416,7 @@ public sealed partial class PartyBook {
     public BattleRecordManager BattleRecords { get; set; }
 
     /// <summary>ClearParty (:425), with ClearVote; ClearPartyGroups (:430).</summary>
-    void Clear() { members.Clear(); BattleRecords?.ClearPartyGroups(); PartyId = 0; LeaderId = 0; Vote = null; }
+    void Clear() { members.Clear(); BattleRecords?.ClearPartyGroups(); PartyId = 0; LeaderId = 0; SurvivalSquadRegistered = false; SearchBits = 0; Vote = null; }
 
     /// <summary>ClearPartyAndRecruitment (@0x14162a480, partymanager.cpp:441): ClearParty, then ClearRecruitmentAndResetSearchUI;
     /// the game UI scene's leave calls it (UISceneGame::vfunc_49, uiscenegame.cpp:212).</summary>
@@ -436,6 +478,7 @@ public sealed partial class PartyBook {
                     BattleRecords?.AddPartyMemberRecord(m.User.CharacterId);    // :1125
                 }
                 Matchmaking = info.Matchmaking; DungeonId = info.DungeonId;
+                SearchBits = info.SearchBits; SurvivalSquadRegistered = info.SurvivalSquad;     // :1129, :1130
                 if (IsInParty) Opened?.Invoke();
                 ApplyInfoRecruit(info.Recruit);
                 break;
@@ -543,6 +586,15 @@ public sealed partial class PartyBook {
                 Vote = null;
                 break;
             }
+            case PartyMatchDungeonChange change:            // :1293
+                Matchmaking = change.Matchmaking; DungeonId = change.DungeonId;
+                break;
+            case PartyDungeonMatchRegister reg:             // :1318
+                SearchBits = reg.SearchBits;
+                break;
+            case PartySurvivalSquadRegister squad:          // :1481
+                SurvivalSquadRegistered = squad.Registered;
+                break;
             case PartyGearScore g: {                        // :1245
                 if (Find(g.CharacterId) is { } m) m.User.GearScore = g.Value;
                 break;

@@ -154,4 +154,67 @@ public class PartyPacketTests {
         book.Apply(new PartyVoteEnd(), self, true);
         Assert.That(ended, Has.Count.EqualTo(1));
     }
+
+    // The nine modes OnParty dispatches that the reader left as PartyOtherMode with the body unread.
+
+    [Test]
+    public void TheNoticeWithSoundReadsItsStringIdTextThenTheSound() {
+        var m = (PartyNoticeWithSound) Read(Body(w => {
+            w.WriteByte(0x15);
+            w.WriteBool(true); w.WriteInt(4); w.WriteInt(0x321); w.WriteInt(2); w.WriteUnicodeString("a"); w.WriteUnicodeString("b");
+            w.WriteUnicodeString("snd");
+        }));
+        Assert.That((m.Text.Formatted, m.Text.Kind, m.Text.Id, m.Text.Args, m.Sound), Is.EqualTo((true, 4, 0x321, new[] { "a", "b" }, "snd")));
+        var plain = (PartyNoticeWithSound) Read(Body(w => { w.WriteByte(0x15); w.WriteBool(false); w.WriteInt(0); w.WriteUnicodeString("t"); w.WriteUnicodeString("s"); }));
+        Assert.That((plain.Text.Formatted, plain.Text.Text, plain.Sound), Is.EqualTo((false, "t", "s")));
+    }
+
+    [Test]
+    public void TheDungeonMatchRegisterReadsItsGroupFlagsAndBits() {
+        Assert.That(Read(Body(w => { w.WriteByte(0x1e); w.WriteByte(3); w.WriteBool(true); w.WriteBool(false); w.WriteByte(0x0a); })),
+            Is.EqualTo(new PartyDungeonMatchRegister(3, true, false, 0x0a)));
+    }
+
+    [Test]
+    public void TheMatchConfirmHasNoBody() {
+        Assert.That(Read(Body(w => w.WriteByte(0x1f))), Is.EqualTo(new PartyDungeonMatchConfirm()));
+        Assert.Throws<PacketLayoutException>(() => PartyMessage.Read(new ByteReader(Body(w => { w.WriteByte(0x1f); w.WriteByte(1); }))));
+    }
+
+    [Test]
+    public void TheShortDungeonAndNoticeModesRead() {
+        Assert.That(Read(Body(w => { w.WriteByte(0x23); w.WriteLong(0x1234567890L); })), Is.EqualTo(new PartyExpireTimer(0x1234567890L)));
+        Assert.That(Read(Body(w => { w.WriteByte(0x28); w.WriteInt(4500); })), Is.EqualTo(new PartyFindDungeonCooldown(4500)));
+        Assert.That(Read(Body(w => { w.WriteByte(0x2c); w.WriteUnicodeString("Guest"); })), Is.EqualTo(new PartyInviteSent("Guest")));
+        Assert.That(Read(Body(w => { w.WriteByte(0x37); w.WriteBool(true); w.WriteBool(false); })), Is.EqualTo(new PartySurvivalSquadRegister(true, false)));
+        Assert.That(Read(Body(w => { w.WriteByte(0x38); w.WriteInt(77); })), Is.EqualTo(new PartyDungeonRoomCreate(77)));
+    }
+
+    [Test]
+    public void TheChatNoticeReadsTheSenderAndItsText() {
+        var m = (PartyChatNotice) Read(Body(w => {
+            w.WriteByte(0x25); w.WriteLong(55); w.WriteUnicodeString("Sender");
+            w.WriteBool(true); w.WriteInt(0); w.WriteInt(0x500); w.WriteInt(1); w.WriteUnicodeString("x");
+        }));
+        Assert.That((m.SenderId, m.Name, m.Text.Id, m.Text.Args), Is.EqualTo((55L, "Sender", 0x500, new[] { "x" })));
+    }
+
+    [Test]
+    public void TheSearchBitsAndTheSurvivalSquadFollowThePackets() {
+        // OnPartyInfo, OnPartyDungeonMatchRegister and OnPartySurvivalSquadRegister keep permissions and flag29; ClearParty resets them
+        var book = new PartyBook();
+        const long self = 11;
+        var info = new PartyInfo(false, 9, 11, new[] { new PartyInfoMember(false, User(11, "Lead")), new PartyInfoMember(false, User(12, "Other")) }, false, 0) { SearchBits = 0x06, SurvivalSquad = true };
+        book.Apply((PartyInfo) Read(info.Write()), self, false);
+        Assert.That((book.SearchBits, book.SurvivalSquadRegistered, book.IsAnySearching), Is.EqualTo((0x06, true, true)));
+        Assert.That((book.IsMatchSearching(0), book.IsMatchSearching(1), book.IsMatchSearching(2), book.IsMatchSearching(3)), Is.EqualTo((false, true, true, false)));
+        book.Apply(new PartyDungeonMatchRegister(1, true, true, 0x02), self, true);
+        Assert.That((book.SearchBits, book.IsMatchSearching(1), book.IsMatchSearching(2)), Is.EqualTo((0x02, true, false)));
+        book.Apply(new PartySurvivalSquadRegister(false, false), self, true);
+        Assert.That(book.SurvivalSquadRegistered, Is.False);
+        book.Apply(new PartyMatchDungeonChange(true, 31), self, true);
+        Assert.That((book.Matchmaking, book.DungeonId), Is.EqualTo((true, 31)));
+        book.Apply(new PartyDisband(), self, true);
+        Assert.That((book.SearchBits, book.IsAnySearching, book.SurvivalSquadRegistered), Is.EqualTo((0, false, false)));
+    }
 }
