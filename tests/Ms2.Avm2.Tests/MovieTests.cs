@@ -337,11 +337,17 @@ public class MovieTests
     {
         var d = Environment.GetEnvironmentVariable("MS2_DATA");
         if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
-        var packs = new PackSet(d);
-        var keys = packs.List("Resource/Gfx").Where(e => e.EndsWith(".gfx", StringComparison.OrdinalIgnoreCase)).ToDictionary(e => Path.GetFileNameWithoutExtension(e).ToLowerInvariant(), e => e);
-        var source = new MovieSource(k => keys.TryGetValue(k.ToLowerInvariant(), out var e) ? packs.Read("Resource/Gfx", e) : null);
+        using var packs = new PackSet(d);
+        // GMS2 Resource/Gfx has localized duplicates of commonimage.gfx (na/, na/de/, na/pt/); resolve by filename as Open() does.
+        var keys = packs.List("Resource/Gfx")
+            .Where(e => e.EndsWith(".gfx", StringComparison.OrdinalIgnoreCase))
+            .Select(e => Path.GetFileNameWithoutExtension(e).ToLowerInvariant())
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(k => k, StringComparer.Ordinal)
+            .ToList();
+        var source = new MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
         string target = null, imported = null, cls = null;
-        foreach (var k in keys.Keys.OrderBy(k => k))
+        foreach (var k in keys)
         {
             var m = source.Movie(k);
             if (m == null || k == "uiexpbar") continue;

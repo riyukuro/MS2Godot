@@ -146,7 +146,9 @@ public class EventSoundTableTests
         using var packs = new PackSet(d);
         var text = System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/eventsound.xml"));
         var t = EventSoundTable.Parse(text);
-        var lib = SoundLibrary.Shared(soundDir, voiceLanguage);
+        // KMS ships Korea voice banks (voice 0); GMS2 ships EN voice banks (voice 2, NA region default).
+        int effectiveVoice = TablePath.Region(e => packs.Exists("Xml", e)) == "kr" ? voiceLanguage : 2;
+        var lib = SoundLibrary.Shared(soundDir, effectiveVoice);
         var paths = new HashSet<string>();
         foreach (var e in XDocument.Parse(text.TrimStart('\uFEFF')).Root!.Elements("eventSound"))
         {

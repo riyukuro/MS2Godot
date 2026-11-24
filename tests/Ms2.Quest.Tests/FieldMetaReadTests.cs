@@ -116,8 +116,9 @@ public class FieldMetaReadTests
     {
         var data = Environment.GetEnvironmentVariable("MS2_DATA");
         if (string.IsNullOrEmpty(data)) Assert.Ignore("MS2_DATA is not set");
-        var packs = new PackSet(data);
-        var xml = System.Text.Encoding.UTF8.GetString(packs.Read(FieldMeta.Archive, FieldMeta.Entry)).TrimStart('\ufeff');
+        using var packs = new PackSet(data);
+        var entry = FieldMeta.EntryOf(packs) ?? FieldMeta.Entry;
+        var xml = System.Text.Encoding.UTF8.GetString(packs.Read(FieldMeta.Archive, entry)).TrimStart('\ufeff');
         Assert.That(Dump(FieldMeta.Load(packs)), Is.EqualTo(Dump(DomParse(xml))));
     }
 }

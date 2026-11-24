@@ -14,6 +14,20 @@ public class AudioTests
         return dir;
     }
 
+    static bool IsKr(Ms2.Formats.Pack.PackSet packs)
+    {
+        ArgumentNullException.ThrowIfNull(packs);
+        return Ms2.Formats.Pack.TablePath.Region(e => packs.Exists("Xml", e)) == "kr";
+    }
+
+    static bool IsKr()
+    {
+        var data = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(data)) Assert.Ignore("MS2_DATA is not set");
+        using var packs = new Ms2.Formats.Pack.PackSet(data);
+        return IsKr(packs);
+    }
+
     // MPEG-1 layer II / III frame walker: counts frames and returns the playing time, so a payload that is not a clean
     // MPEG audio stream fails. (The client's banks hold layer II.)
     static (int frames, double seconds, int rate, int channels) WalkMpeg(byte[] b)
@@ -64,7 +78,8 @@ public class AudioTests
     {
         var lib = new SoundLibrary(SoundDir());
         Assert.That(lib.Fev.Banks, Does.Contain("MS2Sound_BGM"));
-        Assert.That(lib.Fev.Defs.Count, Is.EqualTo(12281));
+        // KMS Sound/MS2Sound.fev has 12281 sound defs; GMS2 Sound/MS2Sound.fev has 12046.
+        Assert.That(lib.Fev.Defs.Count, Is.EqualTo(IsKr() ? 12281 : 12046));
         // table/fielddata.xml: Tria (field 2000001) has <bgm id="35" param="5"/>
         var plan = lib.ResolveMusic(35);
         Assert.That(plan, Is.Not.Null);
@@ -196,7 +211,8 @@ public class AudioTests
     [Test]
     public void EffectAndNpcSoundEventsResolve()
     {
-        var lib = new SoundLibrary(SoundDir());
+        // KMS ships Korea voice banks (voice 0); GMS2 ships EN voice banks (voice 2, NA region default).
+        var lib = new SoundLibrary(SoundDir(), voiceLanguage: IsKr() ? 0 : 2);
         Assert.That(lib.ResolveEvent("MS2Sound/Sound/Skill/HeavyGunner/02200017"), Is.Not.Null, "effect soundEvent");
         Assert.That(lib.ResolveEvent("ko/Npc/01000022"), Is.Not.Null, "npcSoundStart");
     }
@@ -439,42 +455,63 @@ public class AudioTests
         // <bank>_<language>.fsb, so a missing en bank is the library's own fallback to the FEV default (_Kor_def).
         var kr = new SoundLibrary(dir, voiceLanguage: 0);
         var en = new SoundLibrary(dir, voiceLanguage: 2);
-        Assert.That(Path.GetFileName(kr.Bank("MS2Sound_Voice").Path), Is.EqualTo("MS2Sound_Voice_Kor_def.fsb"));
-        bool hasEn = en.HasBankForVoice("MS2Sound_Voice", 2);
-        Assert.That(Path.GetFileName(en.Bank("MS2Sound_Voice").Path), Is.EqualTo(hasEn ? "MS2Sound_Voice_en.fsb" : "MS2Sound_Voice_Kor_def.fsb"));
-        if (hasEn)
-        {
-            var krVoice = kr.ResolveEvent("ko/Npc/01000022", new Random(0));
-            var enVoice = en.ResolveEvent("ko/Npc/01000022", new Random(0));
-            Assert.That(krVoice, Is.Not.Null);
-            Assert.That(enVoice, Is.Not.Null);
-            Assert.That(krVoice.Name, Does.StartWith("Male_Age30_Doctor_Normal_Greet_"));
-            Assert.That(enVoice.Name, Is.EqualTo("en_" + krVoice.Name));
-            Assert.That(WalkMpeg(krVoice.Mp3).frames, Is.GreaterThan(5));
-            Assert.That(WalkMpeg(enVoice.Mp3).frames, Is.GreaterThan(5));
-        }
-
-        // Strict bank open fails when a language bank (e.g. JP) is not installed; fallback uses FEV default (_Kor_def)
         var jp = new SoundLibrary(dir, voiceLanguage: 1);
-        if (!jp.HasBankForVoice("MS2Sound_Voice", 1))
+        if (IsKr())
         {
-            Assert.Throws<FileNotFoundException>(() => jp.Bank("MS2Sound_Voice", allowFallback: false));
-            Assert.That(Path.GetFileName(jp.Bank("MS2Sound_Voice", allowFallback: true).Path), Is.EqualTo("MS2Sound_Voice_Kor_def.fsb"));
-        }
+            Assert.That(Path.GetFileName(kr.Bank("MS2Sound_Voice").Path), Is.EqualTo("MS2Sound_Voice_Kor_def.fsb"));
+            bool hasEn = en.HasBankForVoice("MS2Sound_Voice", 2);
+            Assert.That(Path.GetFileName(en.Bank("MS2Sound_Voice").Path), Is.EqualTo(hasEn ? "MS2Sound_Voice_en.fsb" : "MS2Sound_Voice_Kor_def.fsb"));
+            if (hasEn)
+            {
+                var krVoice = kr.ResolveEvent("ko/Npc/01000022", new Random(0));
+                var enVoice = en.ResolveEvent("ko/Npc/01000022", new Random(0));
+                Assert.That(krVoice, Is.Not.Null);
+                Assert.That(enVoice, Is.Not.Null);
+                Assert.That(krVoice.Name, Does.StartWith("Male_Age30_Doctor_Normal_Greet_"));
+                Assert.That(enVoice.Name, Is.EqualTo("en_" + krVoice.Name));
+                Assert.That(WalkMpeg(krVoice.Mp3).frames, Is.GreaterThan(5));
+                Assert.That(WalkMpeg(enVoice.Mp3).frames, Is.GreaterThan(5));
+            }
 
-        // Programmer sound voice tag lookup (CSoundService::OpenVoiceStreams + BuildTagTable over Voice8 / Voice9)
-        // The tag banks (Voice8 / Voice9) are per language file too: assert each language only where its file is installed.
-        var krTag = kr.ResolveVoiceTag("Guide_Sidepopup_Tutorial_01");
-        if (krTag != null)
-            Assert.That(krTag.Name, Is.EqualTo("Guide_Sidepopup_Tutorial_01"));
-        if (hasEn)
+            // Strict bank open fails when a language bank (e.g. JP) is not installed; fallback uses FEV default (_Kor_def)
+            if (!jp.HasBankForVoice("MS2Sound_Voice", 1))
+            {
+                Assert.Throws<FileNotFoundException>(() => jp.Bank("MS2Sound_Voice", allowFallback: false));
+                Assert.That(Path.GetFileName(jp.Bank("MS2Sound_Voice", allowFallback: true).Path), Is.EqualTo("MS2Sound_Voice_Kor_def.fsb"));
+            }
+
+            // Programmer sound voice tag lookup (CSoundService::OpenVoiceStreams + BuildTagTable over Voice8 / Voice9)
+            // The tag banks (Voice8 / Voice9) are per language file too: assert each language only where its file is installed.
+            var krTag = kr.ResolveVoiceTag("Guide_Sidepopup_Tutorial_01");
+            if (krTag != null)
+                Assert.That(krTag.Name, Is.EqualTo("Guide_Sidepopup_Tutorial_01"));
+            if (hasEn)
+            {
+                var enTag = en.ResolveVoiceTag("Guide_Sidepopup_Tutorial_01");
+                Assert.That(krTag, Is.Not.Null);
+                Assert.That(enTag, Is.Not.Null);
+                Assert.That(enTag.Name, Is.EqualTo("en_Guide_Sidepopup_Tutorial_01"));
+            }
+            Assert.That(jp.HasVoiceTag("Guide_Sidepopup_Tutorial_01"), Is.False, "JP returns early in OpenVoiceStreams");
+        }
+        else
         {
+            // GMS2 Data/Sound ships only the 11 *_en.fsb voice banks (no *_Kor_def.fsb or *_jp.fsb).
+            Assert.That(kr.HasBankForVoice("MS2Sound_Voice", 0), Is.False);
+            Assert.That(en.HasBankForVoice("MS2Sound_Voice", 2), Is.True);
+            Assert.That(Path.GetFileName(en.Bank("MS2Sound_Voice").Path), Is.EqualTo("MS2Sound_Voice_en.fsb"));
+            var enVoice = en.ResolveEvent("ko/Npc/01000022", new Random(0));
+            Assert.That(enVoice, Is.Not.Null);
+            Assert.That(enVoice.Name, Does.StartWith("en_Male_Age30_Doctor_Normal_Greet_"));
+            Assert.That(WalkMpeg(enVoice.Mp3).frames, Is.GreaterThan(5));
+            Assert.Throws<FileNotFoundException>(() => kr.Bank("MS2Sound_Voice", allowFallback: false));
+            Assert.Throws<FileNotFoundException>(() => jp.Bank("MS2Sound_Voice", allowFallback: false));
+            Assert.That(kr.ResolveVoiceTag("Guide_Sidepopup_Tutorial_01"), Is.Null);
             var enTag = en.ResolveVoiceTag("Guide_Sidepopup_Tutorial_01");
-            Assert.That(krTag, Is.Not.Null);
             Assert.That(enTag, Is.Not.Null);
             Assert.That(enTag.Name, Is.EqualTo("en_Guide_Sidepopup_Tutorial_01"));
+            Assert.That(jp.HasVoiceTag("Guide_Sidepopup_Tutorial_01"), Is.False, "JP returns early in OpenVoiceStreams");
         }
-        Assert.That(jp.HasVoiceTag("Guide_Sidepopup_Tutorial_01"), Is.False, "JP returns early in OpenVoiceStreams");
     }
 
     // ---- event groups beyond the event category ------------------------------------------------------------------
@@ -485,9 +522,9 @@ public class AudioTests
         var lib = SoundLibrary.Shared(SoundDir());
         var fev = lib.Fev;
 
-        // OBCT kind 3 = 39 groups, 12677 events total
+        // OBCT kind 3 = 39 groups; KMS Sound/MS2Sound.fev has 12677 events, GMS2 Sound/MS2Sound.fev has 12467.
         Assert.That(fev.Groups.Count, Is.EqualTo(39));
-        Assert.That(fev.EventCount, Is.EqualTo(12677));
+        Assert.That(fev.EventCount, Is.EqualTo(IsKr() ? 12677 : 12467));
 
         // 01200001 exists in BOTH MS2Sound/Sound/Attack/Swing and MS2Sound/Sound/Skill/Berserker, both category "effect"
         var swing = fev.FindEvent("01200001", "MS2Sound/Sound/Attack/Swing");
@@ -752,32 +789,47 @@ public class AudioTests
     public void LoginBgBgmTableLoadsRealXmlAndPlaysThroughMusicController()
     {
         var lib = SoundLibrary.Shared(SoundDir());
-        var packs = new Ms2.Formats.Pack.PackSet(Environment.GetEnvironmentVariable("MS2_DATA"));
-        var table = LoginBgBgmTable.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/loginbgbgm.xml")));
-
-        // Every calendar month 1..12 has at least one row with a non-empty background and non-zero BGM cue.
-        for (int month = 1; month <= 12; month++)
-        {
-            Assert.That(table.SelectCurrent(month, _ => 0), Is.True, $"month {month}");
-            Assert.That(table.GetBgDay(), Is.Not.Empty, $"month {month} bgDay");
-            Assert.That(table.GetBgm(_ => 0).CueId, Is.GreaterThan(0), $"month {month} cueId");
-        }
-
-        // Month 1 first candidate: BG_winter2020_Login.swf -> cue 15, param 5 -> BGM_Login_Reminisce_Start_01.
-        Assert.That(table.SelectCurrent(1, _ => 0), Is.True);
-        Assert.That(table.GetBgDay(), Is.EqualTo("BG_winter2020_Login.swf"));
-        Assert.That(table.GetBgm(_ => 0), Is.EqualTo((15, 5)));
-
+        using var packs = new Ms2.Formats.Pack.PackSet(Environment.GetEnvironmentVariable("MS2_DATA"));
         var mc = new MusicController(lib.Fev);
-        var map1Fallback = new FieldBgmSpec(BgmId: 192, BgmParam: 5, BgmValue: 0f);
-        Assert.That(mc.PlayLoginBgm(table, map1Fallback, _ => 0), Is.True);
-        Assert.That(mc.CurrentCueId, Is.EqualTo(15));
-        Assert.That(lib.ResolveSegment(mc.CurrentSegment).Name, Is.EqualTo("BGM_Login_Reminisce_Start_01"));
+        if (IsKr(packs))
+        {
+            var table = LoginBgBgmTable.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/loginbgbgm.xml")));
 
-        // When no login row is selected (GetBgm == (0, 0)), falls back to map 1's own <bgm id="192" param="5"/>.
-        table.SelectCurrent(0);
-        Assert.That(mc.PlayLoginBgm(table, map1Fallback, _ => 0), Is.True);
-        Assert.That(mc.CurrentCueId, Is.EqualTo(192));
+            // Every calendar month 1..12 has at least one row with a non-empty background and non-zero BGM cue.
+            for (int month = 1; month <= 12; month++)
+            {
+                Assert.That(table.SelectCurrent(month, _ => 0), Is.True, $"month {month}");
+                Assert.That(table.GetBgDay(), Is.Not.Empty, $"month {month} bgDay");
+                Assert.That(table.GetBgm(_ => 0).CueId, Is.GreaterThan(0), $"month {month} cueId");
+            }
+
+            // Month 1 first candidate: BG_winter2020_Login.swf -> cue 15, param 5 -> BGM_Login_Reminisce_Start_01.
+            Assert.That(table.SelectCurrent(1, _ => 0), Is.True);
+            Assert.That(table.GetBgDay(), Is.EqualTo("BG_winter2020_Login.swf"));
+            Assert.That(table.GetBgm(_ => 0), Is.EqualTo((15, 5)));
+
+            var map1Fallback = new FieldBgmSpec(BgmId: 192, BgmParam: 5, BgmValue: 0f);
+            Assert.That(mc.PlayLoginBgm(table, map1Fallback, _ => 0), Is.True);
+            Assert.That(mc.CurrentCueId, Is.EqualTo(15));
+            Assert.That(lib.ResolveSegment(mc.CurrentSegment).Name, Is.EqualTo("BGM_Login_Reminisce_Start_01"));
+
+            // When no login row is selected (GetBgm == (0, 0)), falls back to map 1's own <bgm id="192" param="5"/>.
+            table.SelectCurrent(0);
+            Assert.That(mc.PlayLoginBgm(table, map1Fallback, _ => 0), Is.True);
+            Assert.That(mc.CurrentCueId, Is.EqualTo(192));
+        }
+        else
+        {
+            // GMS2 ships no table/loginbgbgm.xml (GameFlow falls back to login map 00000001's own <bgm>):
+            // map/00000001.xml <environment feature="CBT" locale="NA"> sets <bgm id="227" param="5" value="0"/>.
+            Assert.That(packs.Exists("Xml", "table/loginbgbgm.xml"), Is.False);
+            var emptyTable = new LoginBgBgmTable();
+            Assert.That(emptyTable.SelectCurrent(1, _ => 0), Is.False);
+            var map1Fallback = new FieldBgmSpec(BgmId: 227, BgmParam: 5, BgmValue: 0f);
+            Assert.That(mc.PlayLoginBgm(emptyTable, map1Fallback, _ => 0), Is.True);
+            Assert.That(mc.CurrentCueId, Is.EqualTo(227));
+            Assert.That(lib.ResolveSegment(mc.CurrentSegment).Name, Is.EqualTo("BGM_RoadtoHome_Intro_01"));
+        }
     }
 
     // ---- SoundMusic effect type 3 (CSoundMusicEffect, soundmusiceffectparam.cpp:125-176) -------------------------

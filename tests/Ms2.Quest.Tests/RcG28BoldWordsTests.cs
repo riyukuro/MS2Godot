@@ -21,7 +21,7 @@ public class RcG28BoldWordsTests
     [Test]
     public void TheKmsBoldTablesAreUnchanged()
     {
-        using var packs = new PackSet(RcGap.Data("MS2_DATA"));
+        using var packs = new PackSet(RcGap.KmsData());
         var w = Load(packs);
         Assert.That(RcGap.Field<HashSet<long>>(w, "itemIds"), Does.Contain(11200001L), "kms itemdata/112.xml");
         Assert.That(RcGap.Field<Dictionary<long, int>>(w, "npcFriendly")[22000052], Is.EqualTo(0), "kms npcdata/220.xml environment has no friendly");

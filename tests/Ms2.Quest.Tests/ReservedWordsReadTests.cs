@@ -154,7 +154,8 @@ public class ReservedWordsReadTests
     [Test]
     public void EveryItemAndNpcFileMatches()
     {
-        var p = Packs();
+        // Tests ReservedWords.Rows against KMS multi-row itemdata/*.xml and npcdata/*.xml tables (GMS2 has per-file item/ and npc/ only).
+        using var p = new PackSet(RcGap.KmsData());
         int items = 0, npcs = 0;
         foreach (var entry in p.List("Xml").Where(n => n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)))
         {

@@ -29,7 +29,9 @@ public class SystemSoundSweepTests
         if (!File.Exists(Path.Combine(soundDir, "MS2Sound.fev"))) Assert.Ignore($"no Sound/MS2Sound.fev under {variable}");
         using var packs = new PackSet(d);
         var table = SystemSoundTable.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/systemsound.xml")));
-        var lib = new SoundLibrary(soundDir, voice);
+        // KMS ships Korea voice banks (voice 0); GMS2 ships EN voice banks (voice 2, NA region default).
+        int effectiveVoice = TablePath.Region(e => packs.Exists("Xml", e)) == "kr" ? voice : 2;
+        var lib = new SoundLibrary(soundDir, effectiveVoice);
         var problems = new List<string>();
         var gaps = new List<string>();
         int rows = 0, byGender = 0, byJob = 0, voiceRows = 0, silent = 0, names = 0, waves = 0;
@@ -91,7 +93,9 @@ public class SystemSoundSweepTests
         if (!File.Exists(Path.Combine(soundDir, "MS2Sound.fev"))) Assert.Ignore($"no Sound/MS2Sound.fev under {variable}");
         using var packs = new PackSet(d);
         var table = SystemSoundTable.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/systemsound.xml")));
-        var lib = new SoundLibrary(soundDir, voice);
+        // KMS ships Korea voice banks (voice 0); GMS2 ships EN voice banks (voice 2, NA region default).
+        int effectiveVoice = TablePath.Region(e => packs.Exists("Xml", e)) == "kr" ? voice : 2;
+        var lib = new SoundLibrary(soundDir, effectiveVoice);
         const string key = "system_notice_error_warningBag";
         // a male priest (job group 40) and a female beginner (1), then the job sound off: the soundIDs by gender
         Assert.That(table.Resolve(key, 0, 40), Is.EqualTo("MS2Sound/Sound/Voice/ko/Normal/Male/90130063"));

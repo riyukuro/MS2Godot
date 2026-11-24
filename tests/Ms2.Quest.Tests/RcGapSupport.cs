@@ -19,6 +19,28 @@ static class RcGap
         return d;
     }
 
+    /// <summary>True when <paramref name="packs"/> is KMS data (table/kr/ layout).</summary>
+    public static bool IsKr(Ms2.Formats.Pack.PackSet packs)
+    {
+        ArgumentNullException.ThrowIfNull(packs);
+        return Ms2.Formats.Pack.TablePath.Region(e => packs.Exists("Xml", e)) == "kr";
+    }
+
+    /// <summary>
+    /// The KMS data for a KMS-only test: MS2_DATA when it is KMS data (TablePath.Region == "kr"), else MS2_KMS_DATA when
+    /// set; otherwise inconclusive via Assume.That because these tests read KMS-only files or tables that GMS2 does not ship.
+    /// </summary>
+    public static string KmsData()
+    {
+        var d = Data("MS2_DATA");
+        using (var packs = new Ms2.Formats.Pack.PackSet(d))
+            if (IsKr(packs)) return d;
+        var kms = Environment.GetEnvironmentVariable("MS2_KMS_DATA");
+        if (!string.IsNullOrEmpty(kms) && Directory.Exists(kms)) return kms;
+        Assume.That(false, "test needs the KMS data and MS2_KMS_DATA is unset");
+        return null;
+    }
+
     public static object Member(object o, string name)
     {
         var t = o?.GetType() ?? throw new AssertionException("the reader returned no row");
