@@ -134,6 +134,7 @@ public enum Inbound : ushort {
     BlackMarket = 0x98,     // RecvOp BlackMarket (commonfiles/opcodes.h): CBlackMarketMan::OnBlackMarket (networkservice.cpp:690)
     Guild = 0x8A,           // RecvOp Guild (commonfiles/opcodes.h): CGuildManager::FUN_1413b6370
     GroupChat = 0x8B,       // RecvOp GroupChat (commonfiles/opcodes.h): CGroupChatManager::OnGroupChat (networkservice.cpp:687)
+    RecallUser = 0x8C,      // RecvOp RecallUser (commonfiles/opcodes.h:148): CSceneStateGame::OnRecallUser @0x141731c10 (scenestategame.cpp:4733)
     Prestige = 0x11C,
     Lapenshard = 0x11B,     // RecvOp Lapenshard (commonfiles/opcodes.h): CSceneStateGame::OnLapenshard @0x14173d2e0 (scenestategame.cpp:8743)
     Buddy = 0x61,           // RecvOp Buddy (commonfiles/opcodes.h): CSceneStateGame::OnBuddy -> CBuddyManager::OnBuddy
@@ -201,6 +202,7 @@ public enum Outbound : ushort {
     Skill = 0x20,               // SendOp::Skill (commonfiles/opcodes.h:337): the own skill sends, a sub-mode byte first
     StateSkill = 0x21,          // SendOp::StateSkill (commonfiles/opcodes.h:338): StateSkill::UseStateSkill @0x1417eb3a0
     RequestAdditionalEffect = 0x5C, // SendOp::RequestAdditionalEffect (commonfiles/opcodes.h:397): UIAdditionalControlDialog::vfunc_28
+    RecallUser = 0x5D,      // SendOp::RecallUser (commonfiles/opcodes.h:398): CNetworkService::SendRecallUserReply @0x141538b10 and SendRecallUserText @0x141538bb0 (networkservice.cpp:522)
     GlobalFactor = 0x82,
     ServerEnter = 0xB0,
     RequestSkillBookTree = 0xA2,

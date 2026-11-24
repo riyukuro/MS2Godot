@@ -240,6 +240,9 @@ public sealed class MessageBoxController : UiController
     /// <summary>CGuildManager::SendGuildMode5(accept): HandleGuildinviteButton's answer to the invite received.</summary>
     public Action<bool> AnswerGuildInvite;
 
+    /// <summary>CNetworkService::SendRecallUserReply(accept) (networkservice.cpp:522): HandleRecallconfirmButton's answer, button 0 accepts.</summary>
+    public Action<bool> AnswerRecallUser;
+
     /// <summary>HandleRequestTradeExButton @0x1419fbc40 (uimessagebox.cpp:1503): the trade request box's answer, its argument 0
     /// (the requester's id, FUN_141a02f10(0, 0)) and yes (button 0) to FUN_14185b8e0.</summary>
     public Action<long, bool> RequestTradeAnswer;
@@ -464,6 +467,8 @@ public sealed class MessageBoxController : UiController
             return HandleUseBindGemEquipItemButton(button);
         if (tag.StartsWith(PartyInviteBox.Tag, StringComparison.Ordinal))   // strTag.Find("partyinvite") == 0
             return HandlePartyinviteButton(button);
+        if (tag == RecallUserBox.Tag)
+            return HandleRecallconfirmButton(button);
         if (tag == GuildInviteBox.Tag)
             return HandleGuildinviteButton(button);
         if (tag == "requestTradeEx")
@@ -512,6 +517,13 @@ public sealed class MessageBoxController : UiController
 
     /// <summary>HandleGuildinviteButton @0x1419fba00 (uimessagebox.cpp:1342): button 0 accepts, any other (the countdown's
     /// too) declines; 1.</summary>
+    /// <summary>UIMessageBox::HandleRecallconfirmButton @0x1419fc640 (uimessagebox.cpp:1470): SendRecallUserReply(button == 0).</summary>
+    bool HandleRecallconfirmButton(int button)
+    {
+        AnswerRecallUser?.Invoke(button == 0);
+        return true;
+    }
+
     bool HandleGuildinviteButton(int button)
     {
         AnswerGuildInvite?.Invoke(button == 0);

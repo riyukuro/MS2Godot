@@ -61,6 +61,7 @@ public partial class MessageBoxLayer : CanvasLayer
         controller.ExternalBlock += (url, quit) => ExternalBlock?.Invoke(url, quit);
         controller.AnswerPartyInvite = a => Ms2Godot.Net.LiveSession.Instance?.AnswerPartyInvite(a);
         controller.AnswerGuildInvite = a => Ms2Godot.Net.LiveSession.Instance?.Guilds.AnswerInvite(a);
+        controller.AnswerRecallUser = a => Ms2Godot.Net.LiveSession.Instance?.AnswerRecallUser(a);
         controller.UnportedTag += (b, t) => GD.Print($"message box: button {b} of tag {t}: its handler is not ported");
         movie = new MovieDialog(assets, controller, new UiModel(GameTables.Shared(assets.Packs, assets.Language)), ScreenMode.PixelSize(root));
         AddChild(movie);

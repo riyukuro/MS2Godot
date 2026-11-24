@@ -394,6 +394,45 @@ public class MessageBoxTests
     }
 
     [Test]
+    public void RecallInviteShowsItsBoxAndAnswers()
+    {
+        // OnRecallUser (scenestategame.cpp:4733): mode 4 opens the confirm box of common 0x902 once; a second invite while one is
+        // pending is answered with SendRecallUserText (the name, flag 4); the box's yes / no is SendRecallUserReply (u8 4, id, accept)
+        var sent = new List<Ms2.Net.Wire.IOutPacket>();
+        var notices = new List<string>();
+        var recall = new RecallUserBox { Send = sent.Add, Notice = notices.Add };
+        var (h, c) = Load();
+        c.AnswerRecallUser = recall.Answer;
+        var box = recall.Apply(new Ms2.Net.Packets.RecallUserPacket.Invite(1, "Caller", 77));
+        h.Player.Tick();
+        Assert.That(recall.Pending, Is.EqualTo(77));
+        Assert.That(c.CurrentBox, Is.SameAs(box));
+        Assert.That((box.Type, box.Extra, box.Listener), Is.EqualTo((1, "recallconfirm", (IMessageBoxListener)null)));
+        Assert.That((box.Modaless, box.NoInputBlock, box.EnterAllowed), Is.EqualTo((true, true, false)));
+        Assert.That((box.HasTimer, box.Timer.Sec, box.Timer.ShowFormat), Is.EqualTo((true, 0x14, 1)));
+        Assert.That(box.Msg, Does.Contain("Caller"), "common 0x902 with the caller's name");
+        Assert.That(recall.Apply(new Ms2.Net.Packets.RecallUserPacket.Invite(1, "Other", 78)), Is.Null);
+        Assert.That(sent, Is.EqualTo(new Ms2.Net.Wire.IOutPacket[] { new Ms2.Net.Packets.RecallUserText("Other", 4) }), "the second invite is refused by text");
+        Assert.That(recall.Pending, Is.EqualTo(77));
+        Click(h, "m_button0");
+        Assert.That(sent[^1], Is.EqualTo(new Ms2.Net.Packets.RecallUserReply(77, true)), "yes accepts the pending invite");
+        Assert.That((recall.Pending, c.IsIdle), Is.EqualTo((0, true)));
+        recall.Answer(true);
+        Assert.That(sent, Has.Count.EqualTo(2), "no invite pending: nothing is sent");
+        recall.Apply(new Ms2.Net.Packets.RecallUserPacket.Invite(1, "Caller", 79));
+        Click(h, "m_button1");
+        Assert.That(sent[^1], Is.EqualTo(new Ms2.Net.Packets.RecallUserReply(79, false)), "no declines");
+        // the chat lines of modes 5 to 7
+        recall.Apply(new Ms2.Net.Packets.RecallUserPacket.Progress("A", 0));
+        recall.Apply(new Ms2.Net.Packets.RecallUserPacket.Progress("A", 9));
+        recall.Apply(new Ms2.Net.Packets.RecallUserPacket.Recalled("B"));
+        recall.Apply(new Ms2.Net.Packets.RecallUserPacket.Failure("C", 4));
+        Assert.That(notices, Has.Count.EqualTo(3), "result 9 of mode 5 shows nothing");
+        Assert.That(notices[0], Does.Contain("A")); Assert.That(notices[1], Does.Contain("B")); Assert.That(notices[2], Does.Contain("C"));
+        TestContext.WriteLine("recall: " + box.Msg + " | " + string.Join(" | ", notices));
+    }
+
+    [Test]
     public void TheBoxCountdownKeepsItsSecondsLeft()
     {
         long now = 1000;

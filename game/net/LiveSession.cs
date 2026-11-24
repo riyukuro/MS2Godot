@@ -1970,6 +1970,7 @@ public partial class LiveSession : Node
                 if (Me.FallDamageVoice(fall, player != null && IsInstanceValid(player) && player.Mount != null) is { } voice)
                     PlayOwnCommonEffect(voice);
             }
+            else if (game.Is(p, Inbound.RecallUser)) OnRecallUser(RecallUserPacket.Read(p.Reader()));   // OnRecallUser (scenestategame.cpp:4733): no ExpectEnd, the client reads no further
             else if (game.Is(p, Inbound.Tombstone))
             {
                 var t = TombstoneUpdate.Read(p.Reader());      // OnTombstone (scenestategame.cpp:9644) -> PC::FUN_14165d300
