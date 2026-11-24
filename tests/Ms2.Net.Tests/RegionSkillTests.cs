@@ -133,6 +133,56 @@ public class RegionSkillTests {
         Assert.That(fx.Log, Is.Empty);
     }
 
+    [Test] public void HitEffectInsertsTheInvokeEffectAtEveryPointWithTheRotation() {
+        // PlayHitEffect (regionskillobject.cpp:224-252): the region's damage (0x3D mode 5) plays splashInvokeEffect once per
+        // point, turned as Init's spawns, each time a hit comes; nothing kept
+        var fx = new Fx();
+        var o = RegionSkillObject.Init(3, 2, Two, new SkillMotion { MotionEffect = "a.xml", SplashInvokeEffect = "invoke.xml" }, 0, 90, 0, true, 0, fx);
+        fx.Log.Clear(); fx.At.Clear();
+        o.PlayHitEffect(fx);
+        o.PlayHitEffect(fx);
+        Assert.That(fx.Log, Is.EqualTo(new[] { "insert invoke.xml", "insert invoke.xml", "insert invoke.xml", "insert invoke.xml" }));
+        Assert.That(fx.At[0].T, Is.EqualTo(Two[0]));
+        Assert.That(fx.At[1].T, Is.EqualTo(Two[1]));
+        Assert.That(fx.At[0].R, Is.EqualTo(RegionSkillObject.PointTransform(Two[0], 0, 90).R));
+        Assert.That(o.Effects, Has.Count.EqualTo(2), "the hit effect is not kept");
+    }
+
+    [Test] public void HitEffectNeedsTheEffectAndALocalOwnerOrIgnoreHide() {
+        var fx = new Fx();
+        RegionSkillObject.Init(3, 2, Two, new SkillMotion(), 0, 0, 0, true, 0, fx).PlayHitEffect(fx);
+        Assert.That(fx.Log, Is.Empty, "no splashInvokeEffect");
+        RegionSkillObject.Init(3, 2, Two, new SkillMotion { SplashInvokeEffect = "invoke.xml" }, 0, 0, 0, false, 0, fx).PlayHitEffect(fx);
+        Assert.That(fx.Log, Is.Empty, "not local");
+        RegionSkillObject.Init(3, 2, Two, new SkillMotion { SplashInvokeEffect = "invoke.xml", IgnoreOptimalHideCastEffect = true }, 0, 0, 0, false, 0, fx).PlayHitEffect(fx);
+        Assert.That(fx.Log, Is.EqualTo(new[] { "insert invoke.xml", "insert invoke.xml" }), "IgnoreOptimalHideCastEffect");
+    }
+
+    /// <summary>The Assassin's Fragmented Star (10800021): its star (attack p0, cubeMagicPathID 108000211) places a region of
+    /// 10800022 where it ends, and that region's damage plays the ring of stars, splashInvokeEffect
+    /// Eff_Assassin_CircleOfStar_Invoke_01.xml, one nif turned in steps round the point. On both data sets.</summary>
+    [TestCase("MS2_DATA")]
+    [TestCase("MS2_GMS2_DATA")]
+    public void FragmentedStarsRegionPlaysTheStarRingOnItsHit(string env) {
+        string data = Environment.GetEnvironmentVariable(env);
+        if (string.IsNullOrEmpty(data) || !Directory.Exists(data)) Assert.Ignore(env + " is not set");
+        var packs = PackSet.Shared(data);
+        var attr = new SkillTable(packs).RegionMotion(10800022, 1);
+        Assert.That(attr, Is.Not.Null);
+        Assert.That(attr.SplashInvokeEffect, Is.EqualTo("CH/Skill/Assassin/Eff_Assassin_CircleOfStar_Invoke_01.xml").IgnoreCase);
+        var parts = new EffectTable(packs).Get(attr.SplashInvokeEffect);
+        Assert.That(parts, Is.Not.Null);
+        var nifs = parts.Where(p => p.Type == "nif" && p.FilePath.EndsWith("Eff_Assassin_CircleOfStar_Invoke_01.nif", StringComparison.OrdinalIgnoreCase)).ToList();
+        TestContext.Out.WriteLine($"{env}: {parts.Count} parts, {nifs.Count} star nifs");
+        Assert.That(nifs, Has.Count.GreaterThan(1), "the ring: the star nif repeated");
+
+        var fx = new Fx();
+        var o = RegionSkillObject.Init(1, 2, new[] { new Vec3(100, 200, 300) }, attr, 0, 45, 0, true, 0, fx);
+        fx.Log.Clear();
+        o.PlayHitEffect(fx);
+        Assert.That(fx.Log, Is.EqualTo(new[] { "insert " + attr.SplashInvokeEffect }));
+    }
+
     static PackSet Data() {
         string data = Environment.GetEnvironmentVariable("MS2_DATA");
         if (string.IsNullOrEmpty(data)) Assert.Ignore("MS2_DATA not set (skill and effect data)");

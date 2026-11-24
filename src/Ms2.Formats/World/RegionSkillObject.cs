@@ -23,13 +23,14 @@ public interface IRegionSkillEffects
 /// effect at every point with one rotation.
 /// <para>Ported: <see cref="Init"/> (@0x1416f5a20, :83-207) for the motion effect (+0x28), <see cref="PlayLateEffect"/>
 /// (@0x1416f7790, :405-433), <see cref="Reset"/> (@0x1416f6b90, :255-285), <see cref="FadeOutEffects"/> (@0x1416f6860,
-/// :217-221) and <see cref="UpdateEffects"/>'s late call (@0x1416f6f50, :309-401).</para>
+/// :217-221), <see cref="PlayHitEffect"/> (@0x1416f6900, :224-252) and <see cref="UpdateEffects"/>'s late call (@0x1416f6f50,
+/// :309-401).</para>
 /// STILL-OPEN: the second loop effect (loopEffect, +0x38: Init spawns it for a local owner, then FUN_1411a68f0(e, false) and
 /// StopLoopEffects' FUN_1411a68f0(e, true), CEffect::vfunc_10, whose meaning has no port), so it is not spawned, and mode 2
 /// (StopLoopEffects) has nothing to stop.
 /// STILL-OPEN: the pending points (spawn failed, or SplashCastEffectStartDelay) spawn in UpdateEffects only when
 /// EffectSkipMgr::ShouldSkipByView passes; that test has no port, so pending points stay unspawned.
-/// STILL-OPEN: PlayHitEffect (@0x1416f6900, OnRegionSkillDamage) and the collision shapes (DAT_143ae95e1/e0) are not ported.
+/// STILL-OPEN: the collision shapes (DAT_143ae95e1/e0) are not ported.
 /// STILL-OPEN: m_bLocal is COptimizer::FUN_14161ce60(owner) == 0 (optimizer.cpp:559-573), nonzero only in the optimizer's
 /// preload mode for a PC; that mode has no port, so the caller passes true.
 /// </summary>
@@ -100,6 +101,17 @@ public sealed class RegionSkillObject
     /// <summary>UpdateEffects (@0x1416f6f50): the pending spawns need ShouldSkipByView (STILL-OPEN, see the class), then
     /// PlayLateEffect (:400).</summary>
     public void UpdateEffects(uint serverTick, IRegionSkillEffects fx) => PlayLateEffect(serverTick, fx);
+
+    /// <summary>PlayHitEffect (@0x1416f6900, :224-252), run by OnRegionSkillDamage (0x3D mode 5, scenestategame.cpp:7773-7776) once
+    /// the region is found and before its targets are read, so with no target too: SplashInvokeEffect (+0x30) once at every point
+    /// (local or IgnoreOptimalHideCastEffect), the random index the region's id. The loop effects' FUN_1411a68f0(e, false) before
+    /// it is STILL-OPEN with the loop effect (see the class).</summary>
+    public void PlayHitEffect(IRegionSkillEffects fx)
+    {
+        if (string.IsNullOrEmpty(Attr.SplashInvokeEffect)) return;
+        if (Local || Attr.IgnoreOptimalHideCastEffect)
+            foreach (var p in Points) fx.Insert(Attr.SplashInvokeEffect, PointTransform(p, RotX, RotY), Attr.IgnoreOptimalHideCastEffect, Id);
+    }
 
     /// <summary>Reset (@0x1416f6b90, :255-285): SplashEndEffect once at every point (local or IgnoreOptimalHideCastEffect).
     /// The collision touches before it are not ported.</summary>
