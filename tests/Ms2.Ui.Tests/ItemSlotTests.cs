@@ -38,12 +38,8 @@ public class ItemSlotTests
         var t = new GameTables(Packs(), "en");
         var d = t.Items.Get(20300327);
         Assert.That(d, Is.Not.Null);
-        // the property row as the data has it (GMS2 uses type 10 and has no property@rank)
-        var p = UiDataRows.ItemPart(Packs(), 20300327, "property");
-        Assert.That((d.Type, d.Rank, d.ItemGroup, d.SlotMax, d.Category), Is.EqualTo((UiDataRows.Int(p, "type"), UiDataRows.Int(p, "rank"),
-            UiDataRows.Int(p, "itemGroup"), (uint)UiDataRows.Int(p, "slotMax"), (string)p.Attribute("category"))));
-        if (UiDataRows.IsKr(Packs()))
-            Assert.That((d.Type, d.Rank, d.ItemGroup, d.SlotMax, d.Category), Is.EqualTo((25, 1, 2, 999u, "Package")));
+        // KMS itemdata property@type=25/rank=1; GMS2 maps OpenItemBox type=10/subtype=17 to type 25 and constant=1 grade to rank 1.
+        Assert.That((d.Type, d.Rank, d.ItemGroup, d.SlotMax, d.Category), Is.EqualTo((25, 1, 2, 999u, "Package")));
         Assert.That(d.RecommendJobs, Is.EqualTo(new[] { 1, 10 }));
         Assert.That(d.FunctionName, Is.EqualTo("OpenItemBox"));
         // IsJobRecommended: job 1 counts as 10
@@ -83,13 +79,11 @@ public class ItemSlotTests
         Assert.That(name, Is.EqualTo("LevelUpPackageWidget_1"));
         var slot = model.ItemSlots[name];
         Assert.That((slot.IconType, slot.Flags), Is.EqualTo((0x11, 0x800)));
-        // the data's rank over the given 0 (KR: 1; GMS2 item rows omit rank, so the given 0 stays)
-        int rank = UiDataRows.Int(UiDataRows.ItemPart(Packs(), 20300327, "property"), "rank");
-        Assert.That(slot.Item.Rarity, Is.EqualTo(rank));
-        if (UiDataRows.IsKr(Packs())) Assert.That(rank, Is.EqualTo(1));
+        // the data's rank over the given 0 (both KMS itemdata and GMS2 constant=1 give rank 1)
+        Assert.That(slot.Item.Rarity, Is.EqualTo(1));
         var s = Slot(model, slot.Item, slot.IconType);
         Assert.That(s["itemID"], Is.EqualTo(20300327u));
-        Assert.That(s["itemGrade"], Is.EqualTo(rank));
+        Assert.That(s["itemGrade"], Is.EqualTo(1));
         Assert.That(s["index"], Is.EqualTo(-1));
         Assert.That(s["iconPath"], Is.EqualTo("./Data/Resource/Image/item/icon/20300327.png"));
         Assert.That((s["itemCash"], s["itemSkin"], s["itemPcBang"], s["itemVIP"], s["itemWedding"], s["itemPiece"]), Is.EqualTo((0, 0, 0, 0, 0, 0)));
@@ -127,18 +121,16 @@ public class ItemSlotTests
         var s = Slot(model, item, 0x11);
         Assert.That(s["itemSeason"], Is.EqualTo(season));
         Assert.That(s["iconPath"], Is.EqualTo(expectedIcon));
-        Assert.That(s["itemGrade"], Is.EqualTo(UiDataRows.Int(prop, "rank")));
+        Assert.That(s["itemGrade"], Is.EqualTo(4));
         if (UiDataRows.IsKr(Packs()))
         {
             Assert.That((coin, box, season), Is.EqualTo((22201001, 1001001, "1")));
             Assert.That(s["iconPath"], Is.EqualTo("./Data/Resource/Image/item/icon/newGacha_coin_ducky.png"));
-            Assert.That(s["itemGrade"], Is.EqualTo(4));
         }
         else
         {
             Assert.That((coin, box, season), Is.EqualTo((22201004, 1001004, "1")));
             Assert.That(s["iconPath"], Is.EqualTo("./Data/Resource/Image/item/icon/newGacha_coin_ducky.png"));
-            Assert.That(s["itemGrade"], Is.EqualTo(0));
         }
     }
 
