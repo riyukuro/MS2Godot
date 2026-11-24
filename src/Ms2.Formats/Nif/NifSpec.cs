@@ -10,6 +10,13 @@ public sealed class NifField
     public string WidthName;                     // raw width text: may name an array field (per-row widths)
     public bool Binary;
     public (string key, NifExpr expr)[] Args = Array.Empty<(string, NifExpr)>();
+
+    // resolved once when the field list is built, for a type that is not the template (#T#): its storage type, its basic
+    // read (Fmt 0 when it is a struct), and that struct's own fields on first read
+    internal string Store;
+    internal char Fmt;
+    internal int Size;
+    internal List<NifField> Sub;
 }
 
 /// <summary>
@@ -131,6 +138,11 @@ public sealed class NifSpec
                 args.Add((k == "arg" ? "ARG" : "ARG" + k[3..], Expr(at.Value)));
             }
             nf.Args = args.ToArray();
+            if (nf.Type != "#T#")
+            {
+                nf.Store = Storage(nf.Type);
+                NifReader.BasicOf(nf.Store, out nf.Fmt, out nf.Size);
+            }
             f.Add(nf);
         }
         fieldCache[name] = f;

@@ -15,35 +15,75 @@ public sealed class NifExpr
     static readonly Regex VerLit = new(@"^\d+\.\d+\.\d+\.\d+$", RegexOptions.Compiled);
     static readonly Regex NumLit = new(@"^(0x[0-9a-fA-F]+|\d+(\.\d*)?([eE][-+]?\d+)?)$", RegexOptions.Compiled);
 
-    abstract class Node { public abstract double Eval(Func<string, double> get); }
-    sealed class Const : Node { public double V; public override double Eval(Func<string, double> get) => V; }
-    sealed class Ident : Node { public string Name; public override double Eval(Func<string, double> get) => get(Name); }
+    abstract class Node
+    {
+        public abstract double Eval(Func<string, double> get);
+        public abstract double Eval(in NifScope s);
+    }
+    sealed class Const : Node
+    {
+        public double V;
+        public override double Eval(Func<string, double> get) => V;
+        public override double Eval(in NifScope s) => V;
+    }
+    sealed class Ident : Node
+    {
+        public readonly string Name;
+        // how the reader resolves the name, decided once here in place of on every evaluation (NifReader.Lookup's order)
+        readonly NifScope.Kind kind;
+        readonly string key;          // #ARG# name without the '#'s
+        readonly string[] path;       // a\b\c
+        public Ident(string name)
+        {
+            Name = name;
+            kind = NifScope.Classify(name);
+            if (kind == NifScope.Kind.Arg) key = name.Trim('#');
+            else if (kind == NifScope.Kind.Path) path = name.Split('\\');
+        }
+        public override double Eval(Func<string, double> get) => get(Name);
+        public override double Eval(in NifScope s) => s.Get(kind, Name, key, path);
+    }
+    enum Op : byte { Neg, Not, Inv, Add, Sub, Mul, Div, Shl, Shr, And, Or, Eq, Ne, Lt, Gt, Le, Ge, LAnd, LOr }
+    static Op OpOf(string op, bool unary) => op switch
+    {
+        "-" => unary ? Op.Neg : Op.Sub, "~" => Op.Inv, "!" => Op.Not,
+        "+" => Op.Add, "*" => Op.Mul, "/" => Op.Div, "<<" => Op.Shl, ">>" => Op.Shr, "&" => Op.And, "|" => Op.Or,
+        "==" => Op.Eq, "!=" => Op.Ne, "<" => Op.Lt, ">" => Op.Gt, "<=" => Op.Le, ">=" => Op.Ge, "&&" => Op.LAnd, "||" => Op.LOr,
+        _ => throw new InvalidOperationException(op),
+    };
     sealed class Unary : Node
     {
-        public string Op; public Node A;
-        public override double Eval(Func<string, double> get)
-        {
-            double a = A.Eval(get);
-            return Op switch { "-" => -a, "~" => ~(long)a, "!" => a == 0 ? 1 : 0, _ => throw new InvalidOperationException(Op) };
-        }
+        public readonly Op O; public readonly Node A;
+        public Unary(string op, Node a) { O = OpOf(op, true); A = a; }
+        double Apply(double a) => O switch { Op.Neg => -a, Op.Inv => ~(long)a, _ => a == 0 ? 1 : 0 };
+        public override double Eval(Func<string, double> get) => Apply(A.Eval(get));
+        public override double Eval(in NifScope s) => Apply(A.Eval(s));
     }
     sealed class Binary : Node
     {
-        public string Op; public Node A, B;
+        public readonly Op O; public readonly Node A, B;
+        public Binary(string op, Node a, Node b) { O = OpOf(op, false); A = a; B = b; }
+        static double Apply(Op o, double a, double b) => o switch
+        {
+            Op.Add => a + b, Op.Sub => a - b, Op.Mul => a * b, Op.Div => a / b,
+            Op.Shl => (long)a << (int)b, Op.Shr => (long)a >> (int)b,
+            Op.And => (long)a & (long)b, Op.Or => (long)a | (long)b,
+            Op.Eq => a == b ? 1 : 0, Op.Ne => a != b ? 1 : 0,
+            Op.Lt => a < b ? 1 : 0, Op.Gt => a > b ? 1 : 0, Op.Le => a <= b ? 1 : 0, _ => a >= b ? 1 : 0,
+        };
         public override double Eval(Func<string, double> get)
         {
-            if (Op == "&&") return A.Eval(get) != 0 && B.Eval(get) != 0 ? 1 : 0;
-            if (Op == "||") return A.Eval(get) != 0 || B.Eval(get) != 0 ? 1 : 0;
-            double a = A.Eval(get), b = B.Eval(get);
-            return Op switch
-            {
-                "+" => a + b, "-" => a - b, "*" => a * b, "/" => a / b,
-                "<<" => (long)a << (int)b, ">>" => (long)a >> (int)b,
-                "&" => (long)a & (long)b, "|" => (long)a | (long)b,
-                "==" => a == b ? 1 : 0, "!=" => a != b ? 1 : 0,
-                "<" => a < b ? 1 : 0, ">" => a > b ? 1 : 0, "<=" => a <= b ? 1 : 0, ">=" => a >= b ? 1 : 0,
-                _ => throw new InvalidOperationException(Op),
-            };
+            if (O == Op.LAnd) return A.Eval(get) != 0 && B.Eval(get) != 0 ? 1 : 0;
+            if (O == Op.LOr) return A.Eval(get) != 0 || B.Eval(get) != 0 ? 1 : 0;
+            double a = A.Eval(get);
+            return Apply(O, a, B.Eval(get));
+        }
+        public override double Eval(in NifScope s)
+        {
+            if (O == Op.LAnd) return A.Eval(s) != 0 && B.Eval(s) != 0 ? 1 : 0;
+            if (O == Op.LOr) return A.Eval(s) != 0 || B.Eval(s) != 0 ? 1 : 0;
+            double a = A.Eval(s);
+            return Apply(O, a, B.Eval(s));
         }
     }
 
@@ -53,6 +93,8 @@ public sealed class NifExpr
     NifExpr(string src, Node root) { Source = src; this.root = root; }
 
     public double Eval(Func<string, double> get) => root.Eval(get);
+    /// <summary>The reader's evaluation: the same values as Eval with NifReader's lookup, with no delegate per struct.</summary>
+    internal double Eval(in NifScope s) => root.Eval(s);
 
     public static uint ParseVersion(string s)
     {
@@ -100,18 +142,18 @@ public sealed class NifExpr
     Node ParseOr()
     {
         var a = ParseAnd();
-        while (At("||")) { pos++; a = new Binary { Op = "||", A = a, B = ParseAnd() }; }
+        while (At("||")) { pos++; a = new Binary("||", a, ParseAnd()); }
         return a;
     }
     Node ParseAnd()
     {
         var a = ParseNot();
-        while (At("&&")) { pos++; a = new Binary { Op = "&&", A = a, B = ParseNot() }; }
+        while (At("&&")) { pos++; a = new Binary("&&", a, ParseNot()); }
         return a;
     }
     Node ParseNot()
     {
-        if (At("!")) { pos++; return new Unary { Op = "!", A = ParseNot() }; }
+        if (At("!")) { pos++; return new Unary("!", ParseNot()); }
         return ParseCmp();
     }
     Node ParseCmp()
@@ -123,8 +165,8 @@ public sealed class NifExpr
         {
             pos++;
             var b = ParseBor();
-            var c = new Binary { Op = op, A = a, B = b };
-            result = result == null ? c : new Binary { Op = "&&", A = result, B = c };   // Python chained compare
+            var c = new Binary(op, a, b);
+            result = result == null ? c : new Binary("&&", result, c);   // Python chained compare
             a = b;
         }
         return result ?? a;
@@ -132,41 +174,41 @@ public sealed class NifExpr
     Node ParseBor()
     {
         var a = ParseBand();
-        while (At("|")) { pos++; a = new Binary { Op = "|", A = a, B = ParseBand() }; }
+        while (At("|")) { pos++; a = new Binary("|", a, ParseBand()); }
         return a;
     }
     Node ParseBand()
     {
         var a = ParseShift();
-        while (At("&")) { pos++; a = new Binary { Op = "&", A = a, B = ParseShift() }; }
+        while (At("&")) { pos++; a = new Binary("&", a, ParseShift()); }
         return a;
     }
     Node ParseShift()
     {
         var a = ParseArith();
         string op;
-        while ((op = AtAny("<<", ">>")) != null) { pos++; a = new Binary { Op = op, A = a, B = ParseArith() }; }
+        while ((op = AtAny("<<", ">>")) != null) { pos++; a = new Binary(op, a, ParseArith()); }
         return a;
     }
     Node ParseArith()
     {
         var a = ParseTerm();
         string op;
-        while ((op = AtAny("+", "-")) != null) { pos++; a = new Binary { Op = op, A = a, B = ParseTerm() }; }
+        while ((op = AtAny("+", "-")) != null) { pos++; a = new Binary(op, a, ParseTerm()); }
         return a;
     }
     Node ParseTerm()
     {
         var a = ParseUnary();
         string op;
-        while ((op = AtAny("*", "/")) != null) { pos++; a = new Binary { Op = op, A = a, B = ParseUnary() }; }
+        while ((op = AtAny("*", "/")) != null) { pos++; a = new Binary(op, a, ParseUnary()); }
         return a;
     }
     Node ParseUnary()
     {
         string op;
-        if ((op = AtAny("-", "~")) != null) { pos++; return new Unary { Op = op, A = ParseUnary() }; }
-        if (At("!")) { pos++; return new Unary { Op = "!", A = ParseUnary() }; }
+        if ((op = AtAny("-", "~")) != null) { pos++; return new Unary(op, ParseUnary()); }
+        if (At("!")) { pos++; return new Unary("!", ParseUnary()); }
         return ParseAtom();
     }
     Node ParseAtom()
@@ -174,7 +216,7 @@ public sealed class NifExpr
         if (pos >= toks.Count) throw new FormatException("unexpected end of expression");
         var t = toks[pos++];
         if (t.k == 'n') return new Const { V = t.v };
-        if (t.k == 'i') return new Ident { Name = t.t };
+        if (t.k == 'i') return new Ident(t.t);
         if (t.t == "(")
         {
             var n = ParseOr();
