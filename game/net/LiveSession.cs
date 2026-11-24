@@ -3515,6 +3515,76 @@ public partial class LiveSession : Node
                     await Frames(60);
                 }
                 else if (step == "close") { eh.CloseEmoteDialogsScripted(); await Frames(60); }
+                else if (step.StartsWith("key:"))
+                {
+                    // "key:<Godot key name>:<ms>": that key held down for the time (wall clock), then let go
+                    var parts = step.Split(':');
+                    if (Enum.TryParse<Key>(parts[1], true, out var key) && parts.Length > 2 && int.TryParse(parts[2], out int ms))
+                    {
+                        Input.ParseInputEvent(new InputEventKey { Keycode = key, PhysicalKeycode = key, Pressed = true });
+                        var held = System.Diagnostics.Stopwatch.StartNew();
+                        while (held.ElapsedMilliseconds < ms) await Frames(1);
+                        Input.ParseInputEvent(new InputEventKey { Keycode = key, PhysicalKeycode = key, Pressed = false });
+                        await Frames(30);
+                        GD.Print($"live: key {n}: {key} held {held.ElapsedMilliseconds} ms");
+                    }
+                }
+                else if (step.StartsWith("couple:"))
+                {
+                    // "couple:<name>[:<emotion id>]": a right press on that player's PC, the popup's couple action item,
+                    // then the couple dialog's onSelectEmotion with the emotion (the first valid couple one by default)
+                    var parts = step.Split(':');
+                    string who = parts[1];
+                    await Until(() => Instance != null && Instance.FieldPcs.Any(p => p.Name == who), 60 * 90);
+                    System.Collections.Generic.IReadOnlyList<int> items = null;
+                    for (int i = 0; i < 20 && (items = eh.RightClickPcScripted(who)) == null; i++) await Frames(30);
+                    GD.Print($"live: couple popup {n}: {(items == null ? "no menu" : string.Join(",", items.Select(x => $"0x{x:x}")))}");
+                    if (items != null && !string.IsNullOrEmpty(emoteShots))
+                    {
+                        await Frames(60);
+                        flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(emoteShots, $"emote_{n}_popup.png"));
+                    }
+                    eh.ClickPopupItemScripted(Ms2.Ui.Hud.PopupMenuController.CoupleAction);
+                    await Frames(180);
+                    GD.Print($"live: couple dialog {n}: {eh.CoupleDialogListed} listed");
+                    if (!string.IsNullOrEmpty(emoteShots))
+                        flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(emoteShots, $"emote_{n}_dialog.png"));
+                    uint id = parts.Length > 2 && uint.TryParse(parts[2], out var given) ? given : eh.FirstCoupleEmotionScripted();
+                    GD.Print($"live: couple use {n}: {id} {(id != 0 && eh.SelectCoupleEmotionScripted(id) ? "clicked" : "not clicked")}");
+                    await Frames(30);
+                    GD.Print($"live: couple use {n}: {eh.CoupleStatesScripted(who)}");
+                }
+                else if (step.StartsWith("coupleanswer"))
+                {
+                    // "coupleanswer[:no]": the couple invite box (tag coupleEmotion) waited for (at most 300 s), shot and answered
+                    var asked = System.Diagnostics.Stopwatch.StartNew();   // wall clock: the asker's own steps come first
+                    while (asked.Elapsed.TotalSeconds < 300 && Ms2.Ui.Hud.MessageBoxQueue.Current()?.Extra != "coupleEmotion") await Frames(10);
+                    bool boxed = Ms2.Ui.Hud.MessageBoxQueue.Current()?.Extra == "coupleEmotion";
+                    GD.Print($"live: couple box {n}: {(boxed ? "shown" : "never shown")}");
+                    if (boxed)
+                    {
+                        await Frames(120);
+                        if (!string.IsNullOrEmpty(emoteShots))
+                            flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(emoteShots, $"emote_{n}_box.png"));
+                        MessageBoxLayer.Instance?.Click(step.EndsWith(":no") ? 1 : 0);
+                        await Frames(30);
+                        GD.Print($"live: couple box {n}: {(step.EndsWith(":no") ? "no" : "yes")} clicked, box {(MessageBoxLayer.Instance?.Shown == true ? "still shown" : "closed")}");
+                    }
+                }
+                else if (step.StartsWith("couplewatch:"))
+                {
+                    // "couplewatch:<name>:<s>": both couple states each half second, a shot each 2 s
+                    var parts = step.Split(':');
+                    int secs = parts.Length > 2 && int.TryParse(parts[2], out var w) ? w : 10;
+                    var clock = System.Diagnostics.Stopwatch.StartNew();
+                    for (int half = 1; half <= secs * 2; half++)
+                    {
+                        while (clock.ElapsedMilliseconds < half * 500) await Frames(1);
+                        GD.Print($"live: couple watch {n} {half * 0.5:0.0}s: {eh.CoupleStatesScripted(parts[1])}");
+                        if (half % 4 == 0 && !string.IsNullOrEmpty(emoteShots))
+                            flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(emoteShots, $"emote_{n}_{half / 2:00}s.png"));
+                    }
+                }
                 else if (step.StartsWith("useitem:") && int.TryParse(step.AsSpan(8), out int itemId))
                 {
                     // "useitem:<item id>": that item double clicked in the bag; a box that comes up is shot and answered yes

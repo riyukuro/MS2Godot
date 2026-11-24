@@ -97,10 +97,69 @@ public partial class HudScene
         return 0;
     }
 
+    /// <summary>A right press on the named player's PC in the field (OnRightMouseDown at its body's screen point); the
+    /// popup's items, or null when no menu opened.</summary>
+    public System.Collections.Generic.IReadOnlyList<int> RightClickPcScripted(string name)
+    {
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        var camera = GetViewport().GetCamera3D();
+        if (live == null || camera == null) return null;
+        foreach (var pc in live.FieldPcs)
+        {
+            if (pc.Name != name || pc.Root == null || !IsInstanceValid(pc.Root)) continue;
+            var feet = pc.Root.GlobalPosition;
+            var body = pc.Anchor != null ? (feet + pc.Anchor()) * 0.5f : feet + new Vector3(0, 80, 0);
+            if (camera.IsPositionBehind(body)) return null;
+            return OnFieldRightMouseDown(camera.UnprojectPosition(body)) ? popupMenu?.Items : null;
+        }
+        return null;
+    }
+
+    /// <summary>The popup menu's MenuItemClick with that item id. A click in the movie also hides its list, which the next
+    /// Update reads as the close; the call here skips the movie, so the menu is closed after it.</summary>
+    public void ClickPopupItemScripted(int id)
+    {
+        if (popupMenu == null) return;
+        popupMenu.OnCallback("MenuItemClick", new object[] { (double)id });
+        popupMenu.ClosePopup();
+    }
+
+    public int CoupleDialogListed => CoupleActionOpen ? coupleAction.ListedCount : -1;
+
+    /// <summary>The first couple emotion (main type 0xf) valid now, 0 for none.</summary>
+    public uint FirstCoupleEmotionScripted()
+    {
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        validEmotions.Clear();
+        (live?.Emotions ?? offlineEmotions).GetValid(live?.GameSession?.ServerTime ?? 0, validEmotions);
+        return validEmotions.Select(e => (uint)e.Id).FirstOrDefault(id =>
+            hudModel?.Tables.Skills.GetSkillData(id) is { MainType: Ms2.Ui.Skills.EmotionCast.MainTypeCouple });
+    }
+
+    /// <summary>The couple dialog's onSelectEmotion with that id; false while it is closed.</summary>
+    public bool SelectCoupleEmotionScripted(uint id)
+    {
+        if (!CoupleActionOpen) return false;
+        coupleAction.OnCallback("onSelectEmotion", new object[] { id });
+        return true;
+    }
+
+    /// <summary>The own PC's and the named player's state, sub and animation index as the couple state reads them.</summary>
+    public string CoupleStatesScripted(string partner)
+    {
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        string Fmt(Ms2Godot.CouplePartnerView? v) => v is { } x ? $"{x.StateId:x}/{x.Sub:x}/{x.Ani}@({x.Position.X:0},{x.Position.Y:0},{x.Position.Z:0})" : "-";
+        var me = GetTree().GetFirstNodeInGroup(Player.Group) as Player;
+        string mine = me != null ? Fmt(me.CoupleView) : "-";
+        int obj = live?.FieldPcs.FirstOrDefault(p => p.Name == partner).ObjectId ?? 0;
+        return $"me {mine} {partner} {(obj != 0 ? Fmt(live.CouplePartnerOf(obj)) : "-")}";
+    }
+
     public void CloseEmoteDialogsScripted()
     {
         if (DynamicActionOpen) dynamicAction.Close();
         if (ChatEmoticonOpen) chatEmoticon.Close();
         if (inventory != null && !inventory.IsClosed) inventory.Close();
+        if (CoupleActionOpen) coupleAction.Close();
     }
 }
