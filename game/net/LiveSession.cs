@@ -2541,6 +2541,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.GameToGame)) OnGameToGame(GameToGame.Read(p.Reader()));
             else if (game.Is(p, Inbound.DynamicChannel)) OnDynamicChannel(DynamicChannelMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.Gvg)) OnGvg(p);
+            else if (HandleSessionPacket(p)) { }
             else if (game.Is(p, Inbound.Reconnect) || game.Is(p, Inbound.ReconnectUnk) || game.Is(p, Inbound.FinalizeReconnect)) { }   // handled on the session's network loop
             else if (game.Is(p, Inbound.EnterUgcMap))
             {

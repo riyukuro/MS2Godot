@@ -59,7 +59,7 @@ public class ReconnectSessionTests {
             foreach (var v in o) w.WriteInt(v);
         }));
         await s.WriteAsync(srv.Frame(Inbound.RequestKey));
-        await WaitFor(() => !t.Incoming.IsEmpty);
+        await WaitFor(() => t.Incoming.Count >= 2);   // both Gvg and RequestKey read before ResponseKey resets ReceivedCount
         await t.SendAsync(new ResponseKey(11, 22, idBytes));
         await ReadFrame(s, srv);   // ResponseKey resets m_sequence = 0 and m_out
 

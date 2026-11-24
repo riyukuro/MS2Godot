@@ -4,11 +4,12 @@ namespace Ms2.Net;
 /// The GMS2 opcode numbers (client version 12), keyed by the same Inbound / Outbound members the KMS2 profile uses. Source: the
 /// Maple2 upstream server's SendOp table (server to client, our Inbound) and RecvOp table (client to server, our Outbound),
 /// Maple2.Server.Core/Constants. A member upstream has no row for stays unmapped, so the profile throws KeyNotFoundException for it
-/// exactly as for any unknown op: Inbound.UserChatItemLink, Inbound.UserSkinColor and Outbound.PersonalInfoAgreement.
+/// exactly as for any unknown op: Inbound.DataPatch, Inbound.UserChatItemLink, Inbound.UserSkinColor, Inbound.WorldTimeSync and Outbound.PersonalInfoAgreement.
 /// </summary>
 static class Gms2Opcodes {
     public static readonly Dictionary<Inbound, ushort> InboundNumbers = new() {
         [Inbound.RequestVersion] = 0x01,
+        [Inbound.VersionResult] = 0x02,
         [Inbound.RequestKey] = 0x04,
         [Inbound.Reconnect] = 0x05,
         [Inbound.Ping] = 0x06,
@@ -178,9 +179,16 @@ static class Gms2Opcodes {
         [Inbound.ChatStamp] = 0x128,
         [Inbound.ItemBox] = 0xAE,
         [Inbound.ItemScript] = 0xF7,     // upstream SendOp.ItemScript
+        [Inbound.RelocateWorld] = 0x74,
+        [Inbound.WaitingTicketUpdate] = 0xB6,
+        [Inbound.NpsInfo] = 0xC8,
+        [Inbound.AaErr] = 0xD2,
+        [Inbound.BypassKey] = 0xE8,
+        [Inbound.SyncWorld] = 0x112,
     };
     public static readonly Dictionary<Outbound, ushort> OutboundNumbers = new() {
         [Outbound.ResponseVersion] = 0x01,
+        [Outbound.Patch] = 0x02,
         [Outbound.SkillMacro] = 0x7C,
         [Outbound.NewsNotification] = 0x64,   // upstream RecvOp NewsNotification
         [Outbound.SmartPush] = 0x84,          // upstream RecvOp SmartPush
@@ -276,5 +284,8 @@ static class Gms2Opcodes {
         [Outbound.RequestTutorialItem] = 0x9D,
         [Outbound.MinimapPing] = 0xB3,
         [Outbound.Channel] = 0x3C,
+        [Outbound.RelocateWorld] = 0x3F,
+        [Outbound.WaitingTicket] = 0x6E,
+        [Outbound.SyncWorld] = 0xA6,
     };
 }

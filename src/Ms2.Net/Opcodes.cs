@@ -6,6 +6,8 @@ namespace Ms2.Net;
 
 public enum Inbound : ushort {
     RequestVersion = 0x01,
+    VersionResult = 0x02,       // RecvOp VersionResult (commonfiles/opcodes.h:10): CNetworkService::OnVersionResult @0x14153af70 (networkservice.cpp:854)
+    DataPatch = 0x03,           // RecvOp DataPatch (commonfiles/opcodes.h:11): CNetworkService::OnDataPatch @0x14153af40 (networkservice.cpp:852) -> FUN_140a84960 @0x140a84960
     RequestKey = 0x04,
     Reconnect = 0x05,           // RecvOp Reconnect: CNetworkService::OnReconnect @0x14153b1c0 (networkservice.cpp:871)
     Ping = 0x06,
@@ -177,10 +179,18 @@ public enum Inbound : ushort {
     Trade = 0x82,           // RecvOp Trade (commonfiles/opcodes.h): CSceneStateGame -> CTradeManagerEx::OnTrade
     GuideRecord = 0x89,     // RecvOp GuideRecord (commonfiles/opcodes.h): CGuideManager::ReceiveStates
     DynamicChannel = 0xA7,  // RecvOp DynamicChannel (commonfiles/opcodes.h): CNetworkService::OnDynamicChannel @0x14153c4b0 (networkservice.cpp:977)
+    RelocateWorld = 0x72,       // RecvOp RelocateWorld (commonfiles/opcodes.h:122): CNetworkService::OnRelocateWorld @0x14153c0c0 (networkservice.cpp:957)
+    WaitingTicketUpdate = 0xB4, // RecvOp WaitingTicketUpdate (commonfiles/opcodes.h:187): CSceneStateMulti::OnWaitingTicketUpdate @0x14174f8d0 (scenestatemulti.cpp:733)
+    NpsInfo = 0xC6,             // RecvOp NpsInfo (commonfiles/opcodes.h:205): CNetworkService::OnNpsInfo @0x14153e0d0 (networkservice.cpp:1075)
+    AaErr = 0xD0,               // RecvOp AaErr (commonfiles/opcodes.h:215): CNetworkService::OnAaErr @0x14153e150 (networkservice.cpp:1080)
+    BypassKey = 0xE6,           // RecvOp BypassKey (commonfiles/opcodes.h:234): CNetworkService::OnBypassKey @0x14153b3b0 (networkservice.cpp:891)
+    SyncWorld = 0x10F,          // RecvOp SyncWorld (commonfiles/opcodes.h:271): CSceneStateMulti::OnServerTimePacket @0x14174fcc0 (scenestatemulti.cpp:766)
+    WorldTimeSync = 0x110,      // RecvOp WorldTimeSync (commonfiles/opcodes.h:272): CNetworkService::OnWorldTimeSync @0x14153a8a0 (networkservice.cpp:806)
 }
 
 public enum Outbound : ushort {
     ResponseVersion = 0x01,
+    Patch = 0x02,               // SendOp Patch (commonfiles/opcodes.h:308): CNetworkService::SendPatchFileList @0x141538d50, COnlinePatchManagerCli::RequestFile @0x140a85530
     ResponseLogin = 0x03,
     ResponseKey = 0x04,
     Reconnect = 0x05,           // SendOp Reconnect: CReconnectionManagerCli::SendReconnectRequest @0x140aad7f0
@@ -280,4 +290,7 @@ public enum Outbound : ushort {
     SmartPush = 0x83,       // SendOp SmartPush (commonfiles/opcodes.h:436): CSmartPush::vfunc_5 (smartpush.cpp:322)
     NewsNotification = 0x63, // SendOp NewsNotification (commonfiles/opcodes.h:404): CWebBrowserService::SendNewsNotification (webbrowserservice.cpp:359)
     Channel = 0x3B,         // SendOp::Channel (commonfiles/opcodes.h): WorldService::FUN_141bc80c0 (worldservice_1.cpp:4936) and its message box answer
+    RelocateWorld = 0x3E,   // SendOp::RelocateWorld (commonfiles/opcodes.h:367): CNetworkService::OnRequestKey @0x14153b010 (networkservice.cpp:867)
+    WaitingTicket = 0x6D,   // SendOp::WaitingTicket (commonfiles/opcodes.h:414): UIServerListDialog::FUN_141ad3260 @0x141ad3260 (uiserverlistdialog.cpp:723)
+    SyncWorld = 0xA5,       // SendOp::SyncWorld (commonfiles/opcodes.h:468): WorldService::SendSyncWorld @0x141bca110 (worldservice_1.cpp:762)
 }
