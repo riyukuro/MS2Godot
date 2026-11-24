@@ -38,8 +38,80 @@ public sealed class ItemDropTable
     {
         const string entry = "table/itemdata.xml";
         if (!packs.Exists("Xml", entry)) return;
-        Load(GameStrings.Parse(packs.Read("Xml", entry)).Root);
+        var root = GameStrings.Parse(packs.Read("Xml", entry)).Root;
+        Load(root);
+        if (styles.Count == 0 && root?.Element("dropitem") != null) LoadGms2(root, id => ItemFile(packs, id));
     }
+
+    /// <summary>The GMS2 layout (<see cref="LoadGms2"/>) with the item files given by id; for tests.</summary>
+    public ItemDropTable(XElement root, Func<int, XElement> itemFile)
+    {
+        Load(root);
+        if (styles.Count == 0 && root?.Element("dropitem") != null) LoadGms2(root, itemFile);
+    }
+
+    /// <summary>The ids whose dropItemAsset rows InitDrop reads: the meso (its rows serve all three meso ids) and the four special items.</summary>
+    public static readonly int[] AssetItemIds = { 0x55d4a81, 0x55d4a88, 0x55d4a89, 0x55d4a8a, 0x55d4a93 };
+
+    /// <summary>
+    /// The GMS2 data's layout of the same table. Its drop styles are &lt;dropitem name type ...&gt; rows with no sound ids, and
+    /// each item keeps its asset rows in its own file (item/a/bb/id.xml): property@xmlData holds &lt;v asset displayType
+    /// min|minRate/&gt;, the style by name. The KMS table is this data converted: style 1 has every value of the row
+    /// "equip_ItemBox"; rows 11-14, 51-54, 61-64, 71-74 are the xmlData rows of 90000001, 90000008, 90000009 and 90000010
+    /// as (displayType's values, asset); 90000008's minRate is its KMS min over 10000. Built the same way here: each xmlData
+    /// row becomes a style of its own, and styles 1 and 2 (InitDrop's item and pet styles) take "equip_ItemBox".
+    /// STILL-OPEN: the GMS2 data has no pet style (KMS style 2 is the box at scale 1.5 with no bounce) and no drop or get
+    /// sound ids, so a GMS2 drop plays none.
+    /// </summary>
+    void LoadGms2(XElement root, Func<int, XElement> itemFile)
+    {
+        var byName = new Dictionary<string, DropStyle>(StringComparer.OrdinalIgnoreCase);
+        foreach (var v in root.Elements("dropitem")) byName[S(v, "name")] = Row(v, I(v, "type"));
+        if (byName.TryGetValue("equip_ItemBox", out var box))
+        {
+            styles[ItemStyle] = Copy(box, ItemStyle, "");
+            styles[PetStyle] = Copy(box, PetStyle, "");
+        }
+        int next = 1000;
+        foreach (int id in AssetItemIds)
+        {
+            string data = (string)itemFile(id)?.Element("environment")?.Element("property")?.Attribute("xmlData");
+            if (string.IsNullOrWhiteSpace(data)) continue;
+            XElement rows;
+            try { rows = XElement.Parse("<rows>" + data + "</rows>"); } catch (System.Xml.XmlException) { continue; }
+            var list = assets[id] = new();
+            foreach (var v in rows.Elements("v"))
+            {
+                if (!byName.TryGetValue(S(v, "displayType"), out var row)) continue;
+                int type = next++;
+                styles[type] = Copy(row, type, S(v, "asset"));
+                uint min = v.Attribute("minRate") != null ? (uint)MathF.Round(F(v, "minRate") * 10000f) : (uint)I(v, "min");
+                list.Add((type, min));
+            }
+        }
+    }
+
+    /// <summary>An item's own file in the GMS2 layout: item/{id / 10^7}/{(id / 10^5) % 100:00}/{id}.xml; null when there is none.</summary>
+    static XElement ItemFile(PackSet packs, int id)
+    {
+        string entry = $"item/{id / 10000000}/{id / 100000 % 100:D2}/{id}.xml";
+        return packs.Exists("Xml", entry) ? GameStrings.Parse(packs.Read("Xml", entry)).Root : null;
+    }
+
+    static DropStyle Copy(DropStyle s, int type, string asset) => new()
+    {
+        TypeId = type, RestHeight = s.RestHeight, Scale = s.Scale, GetAniSpeed = s.GetAniSpeed, DropAniSpeed = s.DropAniSpeed, BeAniSpeed = s.BeAniSpeed,
+        ShadowBias = s.ShadowBias, ShadowScale = s.ShadowScale, BounceHeight = s.BounceHeight, BouncePeriod = s.BouncePeriod,
+        GetAni = s.GetAni, DropAni = s.DropAni, BeAni = s.BeAni, BeEffect = s.BeEffect, AssetName = asset, DropSoundId = s.DropSoundId, GetSoundId = s.GetSoundId,
+    };
+
+    static DropStyle Row(XElement v, int type) => new()
+    {
+        TypeId = type, Scale = F(v, "scale", 1f), RestHeight = F(v, "bias", 50f), ShadowScale = F(v, "shadowscale"), ShadowBias = F(v, "shadowbias"),
+        DropAni = V(v, "dropani"), DropAniSpeed = F(v, "dropanispeed"), BeAni = V(v, "beani"), BeAniSpeed = F(v, "beanispeed"),
+        GetAni = V(v, "getani"), GetAniSpeed = F(v, "getanispeed"), BounceHeight = F(v, "bounceheight", 30f), BouncePeriod = F(v, "bounceperiod", 1f),
+        BeEffect = S(v, "beeffect"), DropSoundId = S(v, "dropSoundID"), GetSoundId = S(v, "getSoundID"), AssetName = S(v, "assetName"),
+    };
 
     public ItemDropTable(XElement root) { Load(root); }
 
@@ -48,13 +120,7 @@ public sealed class ItemDropTable
         if (root == null) return;
         foreach (var v in root.Elements("dropStyle").SelectMany(x => x.Elements("v")))
         {
-            var s = new DropStyle
-            {
-                TypeId = I(v, "typeID"), Scale = F(v, "scale", 1f), RestHeight = F(v, "bias", 50f), ShadowScale = F(v, "shadowscale"), ShadowBias = F(v, "shadowbias"),
-                DropAni = V(v, "dropani"), DropAniSpeed = F(v, "dropanispeed"), BeAni = V(v, "beani"), BeAniSpeed = F(v, "beanispeed"),
-                GetAni = V(v, "getani"), GetAniSpeed = F(v, "getanispeed"), BounceHeight = F(v, "bounceheight", 30f), BouncePeriod = F(v, "bounceperiod", 1f),
-                BeEffect = S(v, "beeffect"), DropSoundId = S(v, "dropSoundID"), GetSoundId = S(v, "getSoundID"), AssetName = S(v, "assetName"),
-            };
+            var s = Row(v, I(v, "typeID"));
             styles[s.TypeId] = s;
         }
         foreach (var item in root.Elements("dropItemAsset").SelectMany(x => x.Elements("Item")))
@@ -68,6 +134,13 @@ public sealed class ItemDropTable
         foreach (var n in root.Elements("gradePetNif")) gradePetNif[I(n, "id")] = S(n, "nif");
         foreach (var n in root.Elements("gradeEffect")) gradeEffect[I(n, "id")] = S(n, "effect");
     }
+
+    /// <summary>Every style row, for the data checks.</summary>
+    public IEnumerable<DropStyle> Styles => styles.Values;
+    /// <summary>Every asset row (item id, style type, minimum amount), for the data checks.</summary>
+    public IEnumerable<(int ItemId, int TypeId, uint Min)> AssetRows => assets.SelectMany(a => a.Value.Select(r => (a.Key, r.TypeId, r.Min)));
+    /// <summary>The grade keys of the grade nifs, pet grade nifs and grade effects, for the data checks.</summary>
+    public IEnumerable<int> Grades => gradeNif.Keys.Union(gradePetNif.Keys).Union(gradeEffect.Keys).OrderBy(g => g);
 
     /// <summary>GetDropEffect: the style of a type; null when there is none.</summary>
     public DropStyle Style(int type) => styles.TryGetValue(type, out var s) ? s : null;
