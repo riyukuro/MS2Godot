@@ -42,6 +42,7 @@ static class Gms2Opcodes {
         [Inbound.BannerList] = 0xB5,
         [Inbound.InGameRank] = 0xF0,
         [Inbound.LegionBattle] = 0xF6,
+        [Inbound.Mentoring] = 0x10C,
         [Inbound.PremiumClub] = 0xED,
         [Inbound.ResponsePet] = 0xCE,
         [Inbound.FunctionCube] = 0x4E,

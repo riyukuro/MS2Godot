@@ -36,6 +36,7 @@ public enum Inbound : ushort {
     FieldProperty = 0xCA,       // RecvOp FieldProperty (commonfiles/opcodes.h:209): CSceneStateGame::OnFieldProperty (scenestategame.cpp:3895)
     WorldShareInfo = 0xB0,        // RecvOp WorldShareInfo: CSceneStateGame::OnWorldShareInfo (scenestategame.cpp:9756, @0x141733b30)
     BannerList = 0xB3,            // RecvOp BannerList: CAdBannerManagerCli::OnBannerList (adbannermanagercli.cpp:31, @0x14096b3a0)
+    Mentoring = 0x10A,            // RecvOp Mentoring: CMentoringManager::OnPacket (mentoringmanager.cpp:255)
     LegionBattle = 0xF4,          // RecvOp LegionBattle: CSceneStateGame::OnLegionBattle (scenestategame.cpp:8480)
     InGameRank = 0xEE,            // RecvOp InGameRank: CGameRankingCli::OnPacket (gamerankingcli.cpp:350)
     PremiumClub = 0xEB,           // RecvOp PremiumClub: CSceneStateGame::OnPremiumClub (scenestategame.cpp:8426)
