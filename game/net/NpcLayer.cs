@@ -269,6 +269,10 @@ public sealed class NpcLayer
     /// <summary>WorldService::FUN_141bd1200 for an npc: the npc of that id is in the field (an npc here is loaded once added).</summary>
     public bool Has(int objectId) => inst.ContainsKey(objectId);
 
+    /// <summary>The npc duel bar's view of an npc (WorldService::FindNpcById by object id): its npc id and the stat pair
+    /// (FieldAddNpc, then the Stat packets); null when the field has no npc of that id.</summary>
+    public (int NpcId, long Hp, long MaxHp)? HpOf(int objectId) => inst.TryGetValue(objectId, out var i) ? (i.NpcId, i.HpCur, i.HpMax) : null;
+
     /// <summary>WorldService::OnActorAdded (@0x141bbfb50): an npc was added, with its object id (FieldEffectNifs.ActorAdded).</summary>
     public Action<int> ActorAdded;
 

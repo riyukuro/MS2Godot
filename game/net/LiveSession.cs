@@ -612,6 +612,7 @@ public partial class LiveSession : Node
     public IEnumerable<FieldNpcs.Placed> LiveNpcs => remote?.Npcs ?? Enumerable.Empty<FieldNpcs.Placed>();
     /// <summary>The live npc of the object id is dead (CNpc IsDead); false when there is none.</summary>
     public bool NpcDead(int objectId) => remote?.NpcDead(objectId) ?? false;
+    public (int NpcId, long Hp, long MaxHp)? NpcHp(int objectId) => remote?.NpcHp(objectId);
     /// <summary>A drop reached a player who picked it (CDropItem::SetState(3), dropitem.cpp:671-695): the player (null for the
     /// own PC), then the meso, or the count and icon path of a type 3 item; nothing for another picker or item.</summary>
     public event Action<Ui.DamageTarget, long> MesoGained;
@@ -697,6 +698,7 @@ public partial class LiveSession : Node
     public event Action<RoomTimerMessage> RoomTimerReceived;
     /// <summary>Trigger 0x13 (OnSidePopupTalk, triggerservice.cpp:683): a side popup talk for UISidePopupTalk (0x4f57).</summary>
     public event Action<TriggerSidePopup> SidePopupReceived;
+    public event Action<TriggerDuelHpBar> DuelHpBarReceived;      // Trigger type 0x15 (OnNpcDuelHpBar), the HUD's when it listens
     /// <summary>The minimap dialog's ping send (MinimapPing 0xB1).</summary>
     public void SendMinimapPing(Ms2.Net.Wire.IOutPacket packet)
     {
@@ -1222,7 +1224,7 @@ public partial class LiveSession : Node
     /// The Trigger types whose dialogs are not ported, read whole (CTriggerService::FUN_141861840, triggerservice.cpp:366):
     /// Dialog 0xf (the PvP observer 0x4e96, 0x4e99/0x4e9a, 0x4ed3; kind 1's timer 0x4e95 goes to the HUD), the side popup talk 0x13
     /// (UISidePopupTalk 0x4f57, the HUD's when it listens), the set-visible list 0x14 (FindObjectByName, the object's state) and the npc duel bar
-    /// 0x15 (UINpcDuelHPBarDialog 0x4f62). STILL-OPEN: applying them; each is logged once per type and kind.
+    /// 0x15 (UINpcDuelHPBarDialog 0x4f62, the HUD's when it listens). STILL-OPEN: the PvP dialogs and 0x14; each is logged once per type and kind.
     /// </summary>
     bool ReadUiTrigger(byte[] body)
     {
@@ -1248,7 +1250,7 @@ public partial class LiveSession : Node
                     return true;
                 }
                 case TriggerObjects.SetVisibleUi: TriggerNotApplied(type, TriggerObjects.ReadSetVisibleUi(r).State); return true;
-                case TriggerObjects.DuelHpBar: TriggerNotApplied(type, TriggerObjects.ReadDuelHpBar(r).Show ? (byte)1 : (byte)0); return true;
+                case TriggerObjects.DuelHpBar: { var bar = TriggerObjects.ReadDuelHpBar(r); if (DuelHpBarReceived != null) DuelHpBarReceived(bar); else TriggerNotApplied(type, bar.Show ? (byte)1 : (byte)0); return true; }
                 default: return false;
             }
         }

@@ -152,6 +152,8 @@ public sealed partial class RemoteLayer : Node3D
 
     /// <summary>WorldService::FindNpcById: whether an npc of the object id is here.</summary>
     public bool HasNpc(int objectId) => npcs.Placed(objectId) != null;
+    /// <summary>An npc's id and hp pair by object id (<see cref="NpcLayer.HpOf"/>); null when the field has none.</summary>
+    public (int NpcId, long Hp, long MaxHp)? NpcHp(int objectId) => npcs.HpOf(objectId);
 
     /// <summary>OnExpUp's gain of an npc (<see cref="NpcLayer.AddExp"/>); false when there is no npc of the id.</summary>
     public bool AddNpcExp(int objectId, long exp) => npcs.AddExp(objectId, exp);
