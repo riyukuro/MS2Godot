@@ -96,7 +96,7 @@ public sealed class ActionAnims
                 missing.Add(prefKey);
             }
         }
-        if (player != null && !player.HasAnimation(baseKey))
+        if (lib != null && !lib.HasAnimation(baseKey))
         {
             if (missing.Contains(baseKey)) return null;
             if (Sequence(baseKey, loop) == null) { missing.Add(baseKey); return null; }
@@ -162,7 +162,7 @@ public sealed class ActionAnims
     /// <summary>Reads the action table and loads each movement sequence the body has (female/&lt;name&gt;.kf).</summary>
     public static ActionAnims Load(PackSet packs, ModelBuilder builder, ModelData md, AnimationPlayer player, string bodyDir)
     {
-        var aa = new ActionAnims { builder = builder, md = md, player = player, bodyDir = bodyDir };
+        var aa = new ActionAnims { builder = builder, md = md, lib = player?.GetAnimationLibrary(""), bodyDir = bodyDir };
         string kfmEntry = $"{bodyDir}/{bodyDir}.kfm";
         if (packs.Exists(ModelBuilder.ModelArchive, kfmEntry))
         {
@@ -194,7 +194,7 @@ public sealed class ActionAnims
         foreach (var v in group?.Elements("v") ?? Enumerable.Empty<XElement>())
             table[(string)v.Attribute("type")] = Array.ConvertAll(((string)v.Attribute("names") ?? "").Split(','), n => n.Trim());
 
-        var lib = player.GetAnimationLibrary("");
+        var lib = aa.lib;
         foreach (Act a in Enum.GetValues<Act>())
         {
             int id = (int)a;
@@ -221,7 +221,9 @@ public sealed class ActionAnims
 
     ModelBuilder builder;
     ModelData md;
-    AnimationPlayer player;
+    /// <summary>The body's animation library (the load's player's): the remote layer shares one ActionAnims and its library
+    /// among the PCs of a body, so the player the load came with is freed when its PC leaves while the library lives on.</summary>
+    AnimationLibrary lib;
     string bodyDir;
     /// <summary>The body folder the sequences come from ("male" or "female").</summary>
     public string BodyDir => bodyDir;
@@ -229,9 +231,8 @@ public sealed class ActionAnims
     /// <summary>A sequence by its name (the body's &lt;name&gt;.kf), loaded on first use; null when the body has none.</summary>
     public string Sequence(string seq, bool loop)
     {
-        if (string.IsNullOrEmpty(seq) || player == null) return null;
+        if (string.IsNullOrEmpty(seq) || lib == null) return null;
         string key = seq.ToLowerInvariant();
-        var lib = player.GetAnimationLibrary("");
         if (lib.HasAnimation(key)) return key;
         KfAnimation kf;
         try { kf = builder.LoadKf(BodySequences.Entry(bodyDir, key)); }
