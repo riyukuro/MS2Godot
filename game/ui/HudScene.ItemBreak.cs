@@ -1,3 +1,4 @@
+using System;
 using Godot;
 using Ms2.Net.Packets;
 using Ms2.Quest;
@@ -10,8 +11,8 @@ namespace Ms2Godot.Ui;
 /// <summary>
 /// The item dismantle: CItemBreakManager (the session's <see cref="ItemBreakManager"/>, the ItemDismantle packets 0x96) and its
 /// dialogs UIItemBreakDialog (0x4e8d) and UIItemBreakDonationDialog (0x4e8e) as <see cref="ItemBreakDialogController"/>.
-/// Live only: the inventory's break button opens the break dialog. STILL-OPEN: the donation dialog's opener (no caller in this
-/// HUD), the break ingredient table, the skin reward calculation, the lullu box opener, the dock beside the inventory, the
+/// Live only: the inventory's break button opens the break dialog, and a UI interact object opens either
+/// (<see cref="OpenInteractDialog"/>). STILL-OPEN: the break ingredient table, the skin reward calculation, the lullu box opener, the dock beside the inventory, the
 /// extraction scroll dialogs' states (0x4f49, 0x4f4a) in the inventory's button state.
 /// </summary>
 public partial class HudScene
@@ -20,6 +21,38 @@ public partial class HudScene
     MovieDialog itemBreakMovie;              // the movie, from open until the unload
 
     bool ItemBreakOpen => itemBreak != null && !itemBreak.IsClosed;
+
+    /// <summary>
+    /// A UI interact object's dialog (CInteractUIObject::vfunc_2, interactobject.cpp:1045-1056): GetUISwfEntity finds it by
+    /// its type name, trimmed, without case (uiswfentitymanager.cpp:693-727), a non-empty value is given to it (m_170) and
+    /// CUIService::OpenDialog opens it (an open one stays). The swf names the interact rows use are ItemBreakDialog,
+    /// ItemBreakDonationDialog, WorldmapDialog with "missionAttack", BlueMarbleGameDialog, CardReverseGameDialog and
+    /// WeddingBillboardDialog. Returns its ui class id, or 0 when nothing opens.
+    /// STILL-OPEN: the world map's mission attack mode (m_214 from m_170 "missionAttack", uiworldmapdialog.cpp:393-396, with
+    /// CQuestManager's mission attack fields and SendQuestMode15) and the blue marble, card reverse and wedding billboard
+    /// dialogs are not ported: those names open nothing.
+    /// </summary>
+    int OpenInteractDialog(string swf, string value)
+    {
+        string name = (swf ?? "").Trim();
+        bool donation = name.Equals("ItemBreakDonationDialog", StringComparison.OrdinalIgnoreCase);
+        if (donation || name.Equals("ItemBreakDialog", StringComparison.OrdinalIgnoreCase))
+        {
+            int id = donation ? ItemBreakDialogController.DonationUiId : ItemBreakDialogController.UiId;
+            if (!(ItemBreakOpen && itemBreak.Id == id)) ToggleItemBreak(donation);
+            return ItemBreakOpen && itemBreak.Id == id ? id : 0;
+        }
+        GD.Print($"interact dialog '{name}' value '{value}': not ported (STILL-OPEN)");
+        return 0;
+    }
+
+    bool InteractDialogClosed(int id) =>
+        id is not (ItemBreakDialogController.UiId or ItemBreakDialogController.DonationUiId) || !ItemBreakOpen || itemBreak.Id != id;
+
+    void CloseInteractDialog(int id)
+    {
+        if (!InteractDialogClosed(id)) itemBreak.Close();
+    }
 
     /// <summary>CUIService::ToggleDialog(0x4e8d / 0x4e8e): one of the two at a time (IsBreakDialogOpen).</summary>
     void ToggleItemBreak(bool donation)

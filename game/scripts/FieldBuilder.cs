@@ -174,8 +174,23 @@ public sealed class FieldBuilder
     /// <summary>A field lift (CLiftableObject, the MS2Liftable mixin; the field load's model 0x32767dd).</summary>
     public static bool IsLiftable(FieldEntity e) => e.HasMixin(Ms2.Ui.LiftableObjects.Model);
 
+    /// <summary>
+    /// The instances (drawn and shadow-only) of every MS2InteractMesh entity, for world/FieldInteractDraws: an interact object's
+    /// state 2 hides them and its other states show them (CInteractMeshObject::vfunc_3, IsVisible 0xa0b6b179).
+    /// </summary>
+    public readonly Dictionary<FieldEntity, List<(MultiMesh Mm, int Index)>> InteractMeshDraws = new();
+
+    /// <summary>The field's collider root (in the field's z-up space), where world/FieldInteractDraws adds an interact object's
+    /// box.</summary>
+    public Node3D Colliders { get; private set; }
+
     void AddTriggerDraw(FieldEntity e, MultiMesh mm, int index)
     {
+        if (e.HasMixin("MS2InteractMesh"))
+        {
+            if (!InteractMeshDraws.TryGetValue(e, out var own)) InteractMeshDraws[e] = own = new List<(MultiMesh, int)>();
+            own.Add((mm, index));
+        }
         if (IsVibrate(e))
         {
             if (!VibrateMeshDraws.TryGetValue(e, out var own)) VibrateMeshDraws[e] = own = new List<(MultiMesh, int)>();
@@ -471,6 +486,7 @@ public sealed class FieldBuilder
         building = world;
         var visuals = new Node3D { Name = "Visuals" };
         var colliders = new Node3D { Name = "Colliders" };
+        Colliders = colliders;
         world.AddChild(visuals);
         world.AddChild(colliders);
         var twoSided = new TwoSidedSpace { Name = "TwoSided" };

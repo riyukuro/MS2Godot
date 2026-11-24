@@ -143,6 +143,9 @@ public partial class HudScene : Node, IUiStageHost
             livePortals.ItemExists = id => hudModel?.Tables?.Items is not { } items || items.Get(id) != null;
             livePortals.CommonBoxSink = id => MessageBoxQueue.ShowCommon(id, 0, null, "");
             livePortals.TaxiKey = TaxiKey;
+            livePortals.InteractUiDialog = OpenInteractDialog;
+            livePortals.InteractUiDialogClosed = InteractDialogClosed;
+            livePortals.InteractUiDialogClose = CloseInteractDialog;
             livePortals.ReactorRewardSink = (id, grade) => EnsureRewardNotify()?.ShowItemReward(id, grade);
             livePortals.PickupRewardSink = (id, grade) => EnsureRewardNotify()?.ShowPickedItem(id, grade);
             livePortals.CashCouponSink = id => EnsureRewardNotify()?.ShowCashCoupon(id);
@@ -203,6 +206,12 @@ public partial class HudScene : Node, IUiStageHost
             if (livePortals.SystemNoticeSink == (Action<string>)SystemNoticeText) livePortals.SystemNoticeSink = null;
             if (livePortals.CastingBar == CastingBar) livePortals.CastingBar = null;
             if (livePortals.TaxiKey == (Action)TaxiKey) livePortals.TaxiKey = null;
+            if (livePortals.InteractUiDialog == (Func<string, string, int>)OpenInteractDialog)
+            {
+                livePortals.InteractUiDialog = null;
+                livePortals.InteractUiDialogClosed = null;
+                livePortals.InteractUiDialogClose = null;
+            }
         }
         unwatchDamage?.Invoke();
         unwatchDamage = null;

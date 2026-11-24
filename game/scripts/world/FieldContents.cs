@@ -26,6 +26,8 @@ public partial class FieldContents : Node3D
     public readonly FieldProps Props;
     /// <summary>The trigger actors <see cref="Start"/> drew, for the field's triggers.</summary>
     public IReadOnlyList<FieldNpcs.TriggerActor> TriggerActors { get; private set; } = Array.Empty<FieldNpcs.TriggerActor>();
+    /// <summary>The interact actors (MS2InteractActor) the field drew, by entity (world/FieldInteractDraws).</summary>
+    public IReadOnlyDictionary<FieldEntity, FieldNpcs.TriggerActor> InteractActors { get; private set; } = new Dictionary<FieldEntity, FieldNpcs.TriggerActor>();
     FieldMap map;
     FieldPortals portals;
     Player player;
@@ -112,6 +114,7 @@ public partial class FieldContents : Node3D
         AddChild(people);
         fnpcs.PlaceActors(people, map);
         TriggerActors = fnpcs.TriggerActors;
+        InteractActors = fnpcs.InteractActors;
         if (offline && npcs)
         {
             try { fnpcs.SpawnNpcs(people, map, Npcs(packs), fieldId, offline ? Masks(packs) : null); }

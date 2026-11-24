@@ -177,6 +177,12 @@ public sealed class FieldNpcs
     /// <summary>The trigger actors <see cref="PlaceActors"/> drew.</summary>
     public readonly List<TriggerActor> TriggerActors = new();
 
+    /// <summary>The interact actors (MS2InteractActor) <see cref="PlaceActors"/> drew, by entity. Their kfm is mostly a map
+    /// model (Resource/Model/Map: 3144 of the 3314 that register on KMS2_DEV, 138 an npc model); they are drawn like a trigger actor, whatever their IsVisible,
+    /// as an interact object's state sets that flag and plays its sequences (CInteractMeshObject::vfunc_3,
+    /// world/FieldInteractDraws).</summary>
+    public readonly Dictionary<FieldEntity, TriggerActor> InteractActors = new();
+
     /// <summary>The field's actor entities (client placed).</summary>
     public void PlaceActors(Node3D parent, FieldMap map)
     {
@@ -184,18 +190,20 @@ public sealed class FieldNpcs
         {
             if (e.ModelName != "MS2Actor" && !e.HasMixin("Actor")) continue;
             bool trigger = Ms2.Net.Packets.TriggerObjects.KindOf(e.HasMixin) == Ms2.Net.Packets.TriggerObjectKind.Actor;
+            bool interact = !trigger && e.HasMixin("MS2InteractActor");
             bool visible = e.Bool("IsVisible", true);
-            if (!visible && !trigger) continue;
+            if (!visible && !trigger && !interact) continue;
             var (archive, entry) = assets.Resolve(e.Get("KfmAsset"));
-            var m = archive == NpcArchive || (trigger && archive != null) ? Model(archive, entry) : null;
+            var m = archive == NpcArchive || ((trigger || interact) && archive != null) ? Model(archive, entry) : null;
             if (m == null) { Missing++; continue; }
             var seq = e.Get("InitialSequence");
-            if (trigger)
+            if (trigger || interact)
             {
                 var root = Place(parent, m.Value, e.Name ?? "Actor", e, (float)e.Scale, Array.Empty<string>());
                 var t = new TriggerActor(this, m.Value, e, root) { Visible = visible };
                 t.PlayAnimation(seq);
-                TriggerActors.Add(t);
+                if (trigger) TriggerActors.Add(t);
+                else InteractActors[e] = t;
             }
             else Place(parent, m.Value, e.Name ?? "Actor", e, (float)e.Scale, new[] { seq, "Idle_A" }.Where(s => !string.IsNullOrEmpty(s)));
             Actors++;

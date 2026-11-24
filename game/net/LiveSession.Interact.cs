@@ -18,6 +18,18 @@ namespace Ms2Godot.Net;
 public partial class LiveSession
 {
     public LiveInteractObjects InteractObjects { get; private set; }
+    /// <summary>The field's interact draws (World.FieldInteractDraws.Apply): each object state change, set while the field is up.</summary>
+    public Action<LiveInteractObject> InteractStateDrawn;
+    /// <summary>The field's interact draws (World.FieldInteractDraws.Remove): an object removed (InteractObject mode 10).</summary>
+    public Action<LiveInteractObject> InteractRemoved;
+    /// <summary>The field's interact draws (World.FieldInteractDraws.Effect): a result's success effect (true, kept) or a remove's
+    /// one-shot (false).</summary>
+    public Action<LiveInteractObject, string, bool> InteractEffect;
+    /// <summary>The HUD's dialogs by swf name (a UI interact object's message, CInteractUIObject::vfunc_2): open the one the
+    /// name finds with the value, its ui class id or 0; whether one is closed; close one. Unset: nothing opens.</summary>
+    public Func<string, string, int> InteractUiDialog;
+    public Func<int, bool> InteractUiDialogClosed;
+    public Action<int> InteractUiDialogClose;
     /// <summary>The field npcs InteractNpcAction (key 0x11) reads and its StateInteractionNpc cast; RemoteLayer fills it.</summary>
     public LiveInteractNpc InteractNpcs { get; private set; }
     bool npcPolled;
@@ -752,20 +764,24 @@ public partial class LiveSession
             if (s.player != null && IsInstanceValid(s.player)) s.player.StopInteractAnim();
         }
 
-        public void OnObjectStateChanged(LiveInteractObject obj)
+        public void OnObjectStateChanged(LiveInteractObject obj) => s.InteractStateDrawn?.Invoke(obj);
+
+        public void OnObjectRemoved(LiveInteractObject obj) => s.InteractRemoved?.Invoke(obj);
+
+        public void OnObjectSuccessEffect(LiveInteractObject obj, string effectAsset) => s.InteractEffect?.Invoke(obj, effectAsset, true);
+
+        public void OnObjectRemoveEffect(LiveInteractObject obj, string effect) => s.InteractEffect?.Invoke(obj, effect, false);
+
+        public int OnOpenUiDialog(string swf, string value)
         {
-            // STILL-OPEN: dynamic mesh swap / visibility / PhysX box toggle on the rendered field entity
+            int id = s.InteractUiDialog?.Invoke(swf, value) ?? 0;
+            GD.Print($"live: interact open UI '{swf}' value '{value}': dialog 0x{id:x}");
+            return id;
         }
 
-        public void OnObjectSuccessEffect(LiveInteractObject obj, string effectAsset)
-        {
-            GD.Print($"live: interact effect '{effectAsset}' at {obj.Name}");
-        }
+        public bool IsDialogClosed(int dialogId) => s.InteractUiDialogClosed?.Invoke(dialogId) ?? true;
 
-        public void OnOpenUiDialog(string swf, string value)
-        {
-            GD.Print($"live: interact open UI '{swf}' value '{value}' (STILL-OPEN)");
-        }
+        public void CloseDialog(int dialogId) => s.InteractUiDialogClose?.Invoke(dialogId);
 
         public void OnGuideTrigger(int triggerType, int rowId) => s.guide?.AddTrigger((Ms2.Ui.Guide.GuideTrigger)triggerType, rowId);
 

@@ -59,6 +59,8 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
     public World.FieldBreakables Breakables { get; private set; }
     /// <summary>The field's vibrate objects' instances and colliders, driven by the session's vibrators.</summary>
     public World.FieldVibrateDraws Vibrates { get; private set; }
+    /// <summary>The interact objects' state draws (CInteractMeshObject::vfunc_3: visibility, actor sequence, box, state effect).</summary>
+    public World.FieldInteractDraws Interacts { get; private set; }
     /// <summary>The field lifts' fades and removals (live only).</summary>
     public World.FieldLiftables Liftables { get; private set; }
     /// <summary>The lift target boxes' quest markers (CLiftableTarget's effect).</summary>
@@ -215,6 +217,8 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         AddChild(Breakables.Fader);
         Vibrates = new World.FieldVibrateDraws(Net.LiveSession.Instance?.Vibrates, fb.VibrateMeshDraws, fb.VibrateFadeDraws, fb.VibrateColliders);
         AddChild(Vibrates.Fader);
+        Interacts = new World.FieldInteractDraws(fb.InteractMeshDraws, fb.Colliders);
+        AddChild(Interacts.Fader);
         Liftables = new World.FieldLiftables(Net.LiveSession.Instance?.Liftables, fb.LiftableMeshDraws, fb.LiftableFadeDraws);
         AddChild(Liftables.Fader);
         int liftsElsewhere = 0;
@@ -231,6 +235,7 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         AddChild(regionSkills);
         Triggers.Bind(regionSkills);   // the effect trigger objects' effects go through the same effect service
         Vibrates.Bind(regionSkills);   // and the vibrate objects' XmlFilePath effects
+        Interacts.Bind(regionSkills);  // and the interact objects' state effects
         LiftMarkers = new World.LiftTargetMarkers(Net.LiveSession.Instance?.LiftTargets, regionSkills);   // and the lift target markers
         long tBuild = sw.ElapsedMilliseconds;
         await Budget();
@@ -255,6 +260,13 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         abandon = null;
         contents.Start(map, fieldName, player, SpawnsLocalPlayer && !Net.LiveSession.Active);
         Triggers.Bind(contents.TriggerActors);   // the actor trigger objects' drawn actors
+        if (Net.LiveSession.Instance is { } lsInteract)   // the objects contents.Start attached, then each state change
+        {
+            Interacts.Bind(lsInteract.InteractObjects, contents.InteractActors);
+            lsInteract.InteractStateDrawn = Interacts.Apply;
+            lsInteract.InteractRemoved = Interacts.Remove;
+            lsInteract.InteractEffect = Interacts.Effect;
+        }
         devBreakables?.AttachField(map.Entities);
         DevBreakableStates();
         var hdr = new FieldHdr();
@@ -410,6 +422,11 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         if (Active == this) Active = null;
         Breakables?.Detach();
         Vibrates?.Detach();
+        if (Interacts != null)
+        {
+            if (Net.LiveSession.Instance is { } ls && ls.InteractStateDrawn == Interacts.Apply) { ls.InteractStateDrawn = null; ls.InteractRemoved = null; ls.InteractEffect = null; }
+            Interacts.Detach();
+        }
         Liftables?.Detach();
         LiftMarkers?.Detach();
         FieldLights.Clear(lightSet);
