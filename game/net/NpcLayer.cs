@@ -28,7 +28,8 @@ public sealed class NpcLayer
         public int NpcId, Life, Moves;
         public Godot.Vector3 Target; public float TargetYaw; public int Sequence = -1; public string Playing = "";
         public Godot.Vector3 Velocity;            // m_posD40: the last block's velocity, added to the position every frame (CNpc::vfunc_53)
-        public bool Eases;                        // a jump arc or a dead body: eased toward the block position, no velocity
+        public bool Eases;                        // a dead body: eased toward the block position, no velocity
+        public readonly Ms2.Net.Replay.NpcJumpArc Arc = new();   // m_unkDB0: the jump arc a -2/-3 block starts
         public float AniSpeed = 1f, TurnCap;      // the Run_ speed (the row's anispeed times ScaleRate) and rotationSpeed (the turn cap, degrees per second)
         public bool Placeholder, Dead;
         public string DeadAction;                 // m_strED0: the death sequence picked at spawn (CNpc init, :539)
@@ -250,14 +251,18 @@ public sealed class NpcLayer
         i.Root.QueueFree();
     }
 
-    void Play(Inst i, int seqId, float speed = 1f)
+    /// <summary>CAnimationManager::PlayAnimation (animationmanager.cpp:238-290): <paramref name="force"/> (bForce) plays the sequence
+    /// from its start even when it is the one playing; without it a Play of the playing sequence goes on where it is.</summary>
+    void Play(Inst i, int seqId, float speed = 1f, bool force = false)
     {
         var a = Anim(i.Model, seqId);
         if (a == null) { SequencesMissing++; return; }
         string name = $"s{seqId}";
         var lib = i.Player.GetAnimationLibrary("");
         if (!lib.HasAnimation(name)) lib.AddAnimation(name, a);
+        bool again = force && i.Player.CurrentAnimation == name;
         i.Player.Play(name, 0.12);
+        if (again) i.Player.Seek(0, true);
         i.Player.SpeedScale = speed;
         i.Playing = name; i.Sequence = seqId; SequencesPlayed++;
         // kept once per play, so the skill state's end (SkillEnd) reads no animation state each frame; from the player's
@@ -627,13 +632,20 @@ public sealed class NpcLayer
     /// CAnimationManager::PlayAnimation the speed only takes when the sequence changes.
     /// STILL-OPEN: a block speed of 0 is no clean freeze in either client: Godot scales the cross-fade by SpeedScale too, and the
     /// client's frequency 0 gives a NaN or infinite sequence time (NiControllerSequence.cpp:755).
-    /// A jump block (-2/-3) starts the arc mover m_unkDB0, which keeps the yaw target and the snap from applying, as a dead body does here.
-    /// STILL-OPEN: the arc mover is not ported; a jumping npc eases toward the block position.
-    /// STILL-OPEN: in state 0xd the client keeps the npc's own height; the block's state is tracked (<see cref="SyncState"/>) but not applied to it.
-    /// STILL-OPEN: a hit-state block (state 0xd) replays its sequence at the block speed even when it is the sequence already playing
-    /// (unit_14108e1e0_npcactorandvibrate.cpp:1022); here the speed only takes when the sequence changes.
-    /// STILL-OPEN: a jump block without the arc data plays its sequence (Jump_A/Jump_B) at the block speed
-    /// (unit_14108e1e0_npcactorandvibrate.cpp:928); that branch is not ported.
+    /// A jump block (-2/-3) starts the arc mover m_unkDB0 (<see cref="Ms2.Net.Replay.NpcJumpArc"/>, :916-929). One without the arc data
+    /// plays its Jump_A / Jump_B from its start at the block speed (:928); one with it plays nothing here, and entering the jump state
+    /// (6) plays the arc's sequence at 1 (StateJumpNpc::vfunc_4, stateidle.cpp:1014-1021). While the arc runs a block neither places
+    /// nor turns the npc (:961) and <see cref="Process"/> moves it along the arc; the block velocity is kept either way (:972) and
+    /// moves the npc once the arc ended.
+    /// STILL-OPEN: a block of state 0x11 (spawn) plays no sequence in the client (:953); its StateSpawn (statespawn.cpp:65-128) hides
+    /// the npc for 100-400 ms and plays the SpawnAnimation of the field's spawn point named by the block's spawn id (Walk_A when it has
+    /// none; WorldService::FUN_141bcfff0, worldservice_1.cpp:5872), then goes to idle. That state is not ported, so the block's own
+    /// sequence (Regen in most retail spawn blocks) plays here.
+    /// In the hit state (0xd) the npc keeps its own height (:962-963), and a block of state 0xd with a new serial plays its sequence
+    /// again from its start at the block speed (:1022), after the plain play of the block's sequence (:955).
+    /// STILL-OPEN: the hit state is left here only by a block that enters another state; the client's StateHitNPC ends by itself
+    /// at the later of its sequence's end and the block's pause plus push time, so the height is kept for longer here.
+    /// STILL-OPEN: the additional-list flag (AdditionalCliList::FUN_1409709b0, :953) that also stops the sequence is not followed.
     /// </summary>
     public void Move(Ms2.Net.Replay.NpcMovedEvent e)
     {
@@ -641,31 +653,47 @@ public sealed class NpcLayer
         if (!inst.TryGetValue(b.ObjectId, out var i)) return;
         i.Target = Placed(b.Position.ToVector3());
         i.Moves++;
+        bool hitHeld = i.State == 0xd;              // GetCurStateId() before the block's own state is entered (:962)
+        bool fresh = b.Serial != i.Serial;
         var talk = SyncState(i, b.State, b.Serial);
-        if (i.Dead || b.Sequence is -2 or -3) { i.Velocity = default; i.Eases = true; return; }       // a dead body keeps its last frame
+        if (i.Dead) { i.Velocity = default; i.Eases = true; return; }       // a dead body keeps its last frame
         i.Eases = false;
         var vel = G(b.Velocity.ToVector3());
         bool place = true;
         float speed = b.AnimSpeed;
-        string name = b.Sequence >= 0 ? i.Model?.Kfm.ById(b.Sequence)?.Name : null;
-        if (name != null && name.StartsWith("Run_", System.StringComparison.Ordinal))
+        var at = b.Position.ToVector3() + new System.Numerics.Vector3(0, 0, World.FieldNpcs.PacketLift);
+        if (i.Arc.Begin(b, at))
         {
-            speed = i.AniSpeed;
-            if (i.Root.Position.DistanceTo(i.Target) > 30f)
+            if (!b.JumpAbsolute) PlayNamed(i, i.Arc.Name, speed, true);
+        }
+        else
+        {
+            string name = b.Sequence >= 0 ? i.Model?.Kfm.ById(b.Sequence)?.Name : null;
+            if (name != null && name.StartsWith("Run_", System.StringComparison.Ordinal))
             {
-                var ahead = i.Target + vel * 0.3f;
-                float ratio = (ahead - i.Root.Position).Length() / (ahead - i.Target).Length();
-                if (ratio < 2f)
+                speed = i.AniSpeed;
+                if (i.Root.Position.DistanceTo(i.Target) > 30f)
                 {
-                    float scale = Mathf.Clamp(ratio, 0.8f, 1.2f);
-                    if (scale > 1.03f || scale < 0.97f) { speed *= ratio; vel *= scale; place = false; }
+                    var ahead = i.Target + vel * 0.3f;
+                    float ratio = (ahead - i.Root.Position).Length() / (ahead - i.Target).Length();
+                    if (ratio < 2f)
+                    {
+                        float scale = Mathf.Clamp(ratio, 0.8f, 1.2f);
+                        if (scale > 1.03f || scale < 0.97f) { speed *= ratio; vel *= scale; place = false; }
+                    }
                 }
             }
+            if (i.Model != null && name != null && b.Sequence != i.Sequence) Play(i, b.Sequence, speed);
+            if (i.Model != null && name != null && fresh && b.State == 0xd) Play(i, b.Sequence, speed, true);
         }
-        if (i.Model != null && b.Sequence >= 0 && b.Sequence != i.Sequence) Play(i, b.Sequence, speed);
-        if (place) i.Root.Position = i.Target;
-        i.TargetYaw = b.RotationZ;
-        if (b.Rotates && !i.Placeholder) i.Visual.Rotation = new Godot.Vector3(0, Mathf.DegToRad(b.RotationZ), 0);
+        if (fresh && b.State == 6 && talk == Ms2.Net.Replay.NpcTalkFacing.Step.Enter && i.Arc.Moving) PlayNamed(i, i.Arc.Name, 1f, false);
+        if (!i.Arc.Moving)
+        {
+            if (hitHeld) i.Target.Y = i.Root.Position.Y;
+            if (place) i.Root.Position = i.Target;
+            i.TargetYaw = b.RotationZ;
+            if (b.Rotates && !i.Placeholder) i.Visual.Rotation = new Godot.Vector3(0, Mathf.DegToRad(b.RotationZ), 0);
+        }
         // the talk branch's LookAtPoint(local player, 0) comes after the block's SetTargetYaw (:966, :1003): the npc turns
         // to the own PC at its rotation speed, no snap
         if (talk == Ms2.Net.Replay.NpcTalkFacing.Step.LookAtPlayer && OwnPosition() is { } me)
@@ -673,15 +701,25 @@ public sealed class NpcLayer
         i.Velocity = vel;
     }
 
+    /// <summary>PlayAnimation by name (PCBase::PlayAnimation): nothing when the body has no such sequence; without
+    /// <paramref name="force"/> nothing when it is the sequence playing.</summary>
+    void PlayNamed(Inst i, string name, float speed, bool force)
+    {
+        var seq = i.Model?.Kfm.ByName(name);
+        if (seq == null || !force && seq.Id == i.Sequence) return;
+        Play(i, seq.Id, speed, force);
+    }
+
     /// <summary>
     /// The state part of CNpc::ApplySyncBlock (unit_14108e1e0_npcactorandvibrate.cpp:973-1032): a block whose serial is the last one
-    /// (m_nDAC) changes nothing; otherwise the serial is kept and the block's state entered (vfunc_59), except 0x12 and gosNone (0).
+    /// (m_nDAC) changes nothing; otherwise the serial is kept and the block's state entered (vfunc_59), except 0x12, gosNone (0) and a
+    /// state the npc does not have (<see cref="Ms2.Net.Replay.NpcStates.BlockEnters"/>).
     /// The spawn (0x11), talk (0x16) and hit (0xd) branches enter their state too, with their data.
     /// The talk branch (:986-1006, <see cref="Ms2.Net.Replay.NpcTalkFacing.OnBlock"/>) keeps the state or looks at the own PC
     /// (the step is returned; <see cref="Move"/> turns the npc after the block's yaw); entering the talk state sets its phase
     /// from <see cref="Talking"/> (StateTalkNpc::vfunc_4).
-    /// STILL-OPEN: the additional-list flag (AdditionalCliList::FUN_1409709b0, :1025) and a refusal by vfunc_59 are not
-    /// followed; the state is taken as entered. The talk state's own motion (useTalkMotion) is not played from it.
+    /// STILL-OPEN: the additional-list flag (AdditionalCliList::FUN_1409709b0, :1025) and the current state's refusal of the same
+    /// state again (State::vfunc_25, statemanager.cpp:297) are not followed; the state is taken as entered. The talk state's own motion (useTalkMotion) is not played from it.
     /// </summary>
     Ms2.Net.Replay.NpcTalkFacing.Step SyncState(Inst i, byte state, ushort serial)
     {
@@ -691,7 +729,7 @@ public sealed class NpcLayer
         var row = i.Talk?.Row ?? i.Model?.Row;
         var step = Ms2.Net.Replay.NpcTalkFacing.OnBlock(state, i.State, i.TalkPhase, talking, row?.LookAtMyPcWhenTalking ?? true);
         if (step != Ms2.Net.Replay.NpcTalkFacing.Step.Enter) return step;
-        if (state != 0 && state != 0x12 && !i.Dead)
+        if (Ms2.Net.Replay.NpcStates.BlockEnters(state) && !i.Dead)
         {
             i.State = state;
             if (state == Ms2.Net.Replay.NpcTalkFacing.TalkState) i.TalkPhase = Ms2.Net.Replay.NpcTalkFacing.EnterPhase(talking);
@@ -780,6 +818,12 @@ public sealed class NpcLayer
                 var d = i.Target - i.Root.Position;
                 if (d.Length() > 600) i.Root.Position = i.Target;
                 else i.Root.Position += d * Mathf.Min(1f, dt * 10f);
+            }
+            else if (i.Arc.Moving)                            // CNpc::vfunc_53 (:2360-2366): the arc's point and yaw target
+            {
+                float yaw = i.TargetYaw;
+                i.Root.Position = G(i.Arc.Advance(dt, ref yaw));
+                i.TargetYaw = yaw;
             }
             else i.Root.Position += i.Velocity * dt;          // CNpc::vfunc_53 (@0x1410952f0): pos += m_posD40 * time
             if (!i.Placeholder) Turn(i, dt);

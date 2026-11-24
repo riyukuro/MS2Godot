@@ -98,12 +98,28 @@ public partial class NpcMoveCheck : Node3D
         Check(Mathf.Abs(Yaw() - want) < 0.01f, $"the turn step is {Yaw()}, want {want} (rotationSpeed {row.RotationSpeed})");
 
         Block(0, 0, rotates: true, yaw: 0);
-        Block(300, 100, -2, rotates: true, yaw: 45);
+        // a jump block without the arc data: from the block position (4 up) to its to point (2 up) in 0.45 s, the peak
+        // 150 / 212.132 of the distance (CNpc +0xdb0); the block's yaw and snap do not apply, its velocity moves the npc after
+        npcs.Move(new NpcMovedEvent(0, new NpcSync { ObjectId = 1, Flags = 1, Position = new Vector3S(300, 0, 0), Velocity = new Vector3S(100, 0, 0),
+            RotationZ = 45, Sequence = -2, AnimSpeed = 1, JumpTo = new System.Numerics.Vector3(300, 200, 0) }));
         Check(Mathf.Abs(Yaw()) < 0.01f, $"the jump block snapped the yaw to {Yaw()}");
-        npcs.Process(0.1f);
-        npcs.Process(1f);
-        Check(Near(At(), 300), $"the jump block did not stop the velocity: {At()}");
-        Check(Mathf.Abs(Yaw()) < 0.01f, $"the jump block set the yaw target: {Yaw()}");
+        npcs.Process(0.225f);
+        float peak = 150f / 212.132f * new System.Numerics.Vector3(0, 200, -2).Length();
+        Check((At() - new Vector3(300, 3 + peak, -100)).Length() < 0.01f, $"the arc's middle is {At()}, want (300, {3 + peak}, -100)");
+        npcs.Process(0.5f);
+        Check((At() - new Vector3(300, 2, -200)).Length() < 0.01f, $"the arc did not end at its to point: {At()}");
+        npcs.Process(0.5f);
+        Check((At() - new Vector3(350, 2, -200)).Length() < 0.01f, $"the block velocity did not move the npc after the arc: {At()}");
+
+        // in the hit state (0xd) a block keeps the npc's own height
+        npcs.Move(new NpcMovedEvent(0, new NpcSync { ObjectId = 1, Position = new Vector3S(0, 0, 0), State = 0xd, Serial = 77, Sequence = -1, AnimSpeed = 1 }));
+        npcs.Move(new NpcMovedEvent(0, new NpcSync { ObjectId = 1, Position = new Vector3S(10, 0, 50), Serial = 77, Sequence = -1, AnimSpeed = 1 }));
+        Check(Near(At(), 10), $"the hit state did not keep the npc's height: {At()}");
+        // the block that leaves it is placed in the hit state still (its state is entered after the placement), the next one is not
+        npcs.Move(new NpcMovedEvent(0, new NpcSync { ObjectId = 1, Position = new Vector3S(10, 0, 50), State = 1, Serial = 78, Sequence = -1, AnimSpeed = 1 }));
+        Check(Near(At(), 10), $"the block that leaves the hit state did not keep the height: {At()}");
+        npcs.Move(new NpcMovedEvent(0, new NpcSync { ObjectId = 1, Position = new Vector3S(10, 0, 50), State = 1, Serial = 78, Sequence = -1, AnimSpeed = 1 }));
+        Check((At() - new Vector3(10, 50 + lift, 0)).Length() < 0.01f, $"out of the hit state the block did not place the height: {At()}");
 
         Block(300, 100);
         npcs.Process(0.016f);
