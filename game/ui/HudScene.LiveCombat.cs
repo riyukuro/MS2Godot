@@ -71,6 +71,14 @@ public partial class HudScene
     /// <summary>Opens the character window through the menu's route (OpenMyInfo); whether it is up afterwards.</summary>
     public bool OpenCharScripted() { OpenMyInfo(); return myInfoMovie != null; }
 
+    /// <summary>The guide event's state for the run: 0 idle, 1 opening, 2 open (GuideEntity m_nState), 3 cleared; -1 without
+    /// the guide or the event.</summary>
+    public int GuideEventScripted(int id)
+    {
+        if (Ms2.Ui.Guide.GuideManager.Current is not { } g || g.FindEntity(id) is not { } e) return -1;
+        return g.IsCleared(id) ? 3 : e.State;
+    }
+
     /// <summary>The guide's running events and held limits, for the log.</summary>
     public string GuideStateText() => Ms2.Ui.Guide.GuideManager.Current?.DescribeState() ?? "no guide manager";
 

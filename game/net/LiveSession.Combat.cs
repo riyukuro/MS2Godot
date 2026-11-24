@@ -192,6 +192,28 @@ public partial class LiveSession
                 Ui.HudScene.OwnEffectKept -= OwnKept;
                 continue;
             }
+            if (step.StartsWith("guide:"))      // guide:<event id>[:clear][:<seconds>]: until the tutorial guide's event is open (or cleared); 60 s by default
+            {
+                var a = step.Split(':');
+                int id = int.Parse(a[1]);
+                bool clear = a.Contains("clear");
+                int secs = a.Length > 2 && int.TryParse(a[^1], out int s) ? s : 60;
+                int want = clear ? 3 : 2;
+                await until(() => hud.GuideEventScripted(id) >= want, 60 * secs);
+                int state = hud.GuideEventScripted(id);
+                Check($"guide event {id} {(clear ? "cleared" : "open")} (state {state}, at {FieldPortals.ToMs2(live.OwnPlayer.GlobalPosition)})", state >= want);
+                GD.Print($"live: combat guide state: {hud.GuideStateText()}");
+                continue;
+            }
+            if (step.StartsWith("bagwait:"))      // bagwait:<item id>[:<count>]: until the server has put the item in the bag (no item command of our own)
+            {
+                var a = step.Split(':');
+                int id = int.Parse(a[1]), count = a.Length > 2 ? int.Parse(a[2]) : 1;
+                int Has() => (int)live.Items.All.Where(e => e.Id == id).Sum(e => Math.Max(1L, (long)e.Amount)) + (live.Me.Equips?.Count(e => e.Id == id) ?? 0);
+                await until(() => Has() >= count, 60 * 30);
+                Check($"the server put item {id} in the bag ({Has()} of {count})", Has() >= count);
+                continue;
+            }
             if (step.StartsWith("wait:"))      // wait:N: N seconds of frames (a trigger's timed states)
             {
                 await frames(60 * int.Parse(step[5..]));
@@ -348,7 +370,9 @@ public partial class LiveSession
                         dist = hud.FaceScripted(target.Position); hud.DriveScripted(new Vector2(0, 1), false); await frames(1);
                     }
                     hud.DriveEnd(); await frames(20);
-                    if (dist > 250 && Alive(target))
+                    if (dist > 250 && Alive(target) && Env("MS2_LIVE_WALK_ONLY", "0") == "1")      // as a player: attack from where the walk stopped
+                        GD.Print($"live: combat {step}: the walk stopped at distance {dist:F0} (blocked; MS2_LIVE_WALK_ONLY puts nobody), at {live.player.GlobalPosition}");
+                    else if (dist > 250 && Alive(target))
                     {      // no path finding: a wall between stops the straight walk, so the pc is put 150 from the npc on the line to it
                         var away = live.player.GlobalPosition - target.Position; away.Y = 0;
                         live.player.GlobalPosition = target.Position + (away.LengthSquared() > 1e-6f ? away.Normalized() : Vector3.Forward) * 150 + new Vector3(0, 20, 0);
