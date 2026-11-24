@@ -24,7 +24,8 @@ public partial class LiveSession
     /// lift (or lift:x y z): a run to the lift at MS2_LIVE_LIFT_AT (its map point, x,y,z) or the given point, then the action key; checks: the lift craft came
     /// back, the carried model, the carry idle, then a few steps of the carry walk.
     /// putdown: the action key in cube mode where the player stands; checks: the craft ended.
-    /// walkto:x y z[/x y z...] runs through map points in turn; jumpto:x y z runs to a point a level up, jumping on the way; faceto:x y z turns the player to a map point; scan:x0 y0 x1 y1 cell
+    /// walkto:x y z[/x y z...] runs through map points in turn; jumpto:x y z runs to a point a level up, jumping on the way; faceto:x y z turns the player to a map point; aimcell:x y z
+    /// tries the four sides of a target box's cell until the craft's cell is it, with the wheel for a box a level off the ground; scan:x0 y0 x1 y1 cell
     /// logs the ground level under each cell (negative levels as a, b, ...); keys:N presses the action key N times.
     /// </summary>
     static long BagSum(LiveSession live) { long n = 0; foreach (var i in live.Items.All) n += i.Amount; return n; }
@@ -157,6 +158,40 @@ public partial class LiveSession
             if (step.StartsWith("keys:"))      // keys:N: the action key pressed N times, a second apart (a talk's Next pages)
             {
                 for (int i = int.Parse(step[5..]); i > 0; i--) { await PressActionKey(frames); await frames(60); }
+                continue;
+            }
+            if (step.StartsWith("aimcell:"))      // aimcell:x y z: the craft's cell made the cell of a target box at the map point
+            {
+                // PutDownLiftableAction takes the box's cell as GetCellPosition gives it (cut toward zero), which for a box at
+                // a negative point is not always the cell the box is drawn in: the player tries the four sides of that cell.
+                var c = step[8..].Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(float.Parse).ToArray();
+                var cell = Ms2.Ui.CubeCell.Position(new System.Numerics.Vector3(c[0], c[1], c[2]));
+                var me = FieldPortals.ToMs2(live.OwnPlayer.GlobalPosition);
+                var sides = new[] { (150f, 0f), (-150f, 0f), (0f, 150f), (0f, -150f) }
+                    .OrderBy(s => new Vector2(cell.X + s.Item1 - (float)me.X, cell.Y + s.Item2 - (float)me.Y).Length());
+                bool hit = false;
+                foreach (var (sx, sy) in sides)
+                {
+                    var stand = new Vector3(cell.X + sx, live.OwnPlayer.GlobalPosition.Y, -(cell.Y + sy));
+                    float dist = hud.DriveTowardScripted(stand, false);
+                    for (int n = 0; n < 60 * 8 && dist > 30; n++) { dist = hud.DriveTowardScripted(stand, false); await frames(1); }
+                    hud.DriveEnd();
+                    hud.FaceScripted(new Vector3(cell.X, live.OwnPlayer.GlobalPosition.Y, -cell.Y));
+                    await frames(30);
+                    var got = live.CubeCraft.Current?.Cell;
+                    for (int w = 0; w < 3 && got is { } g && g.X == cell.X && g.Y == cell.Y && g.Z != cell.Z; w++)
+                    {      // the box a level off the ground: the wheel lifts or lowers the craft, as the player turns it
+                        var wheel = new InputEventMouseButton { ButtonIndex = g.Z < cell.Z ? MouseButton.WheelUp : MouseButton.WheelDown, Pressed = true, Position = new Vector2(640, 360) };
+                        Input.ParseInputEvent(wheel);
+                        await frames(2);
+                        Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = wheel.ButtonIndex, Pressed = false, Position = wheel.Position });
+                        await frames(20);
+                        got = live.CubeCraft.Current?.Cell;
+                    }
+                    GD.Print($"live: combat aimcell {step[8..]}: box cell {cell}, from side {sx} {sy} (distance {dist:F0}, at {FieldPortals.ToMs2(live.OwnPlayer.GlobalPosition)}) the craft's cell {got}");
+                    if (got == cell) { hit = true; break; }
+                }
+                Check($"the craft's cell is the box cell {cell}", hit);
                 continue;
             }
             if (step.StartsWith("faceto:"))      // faceto:x y z: the player turned to the map point where it stands
