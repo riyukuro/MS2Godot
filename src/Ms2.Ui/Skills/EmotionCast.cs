@@ -7,8 +7,7 @@ namespace Ms2.Ui.Skills;
 /// The own cast of an emotion skill: StateSkill::FUN_1417ea570 @0x1417ea570 (stateskill.cpp:1807-1816) hands a skill with
 /// IsEmotion to StateSkill::FUN_1417eaa50 @0x1417eaa50 (:1875-1993), which never starts the skill state (it returns 0, so
 /// MyPC::vfunc_102 neither enters 0x10 nor fires a first attack, mypc.cpp:1207-1227) and sends no mode 0 cast.
-/// STILL-OPEN: main type 0xf, the couple emotion (:1915-1990: the couple action dialog's partner, StateCoupleEmotion 0x3a
-/// and BuddyEmote 0xa3), has no port; such a record does nothing here.
+/// Main type 0xf, the couple emotion (:1914-1990), is <see cref="CoupleEmotionCast.Use"/>.
 /// </summary>
 public static class EmotionCast
 {

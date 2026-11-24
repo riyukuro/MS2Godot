@@ -766,10 +766,11 @@ public partial class HudScene
     /// enters StateEmotion on the body (<see cref="Player.EnterEmotion"/>) and sends Emote mode 2; it returns 0, so neither the
     /// skill state nor a first attack starts (:1207-1227). FUN_141766cc0's reuse record, FUN_141767990, the cast's cooldown when
     /// it was handled (*pResult, FUN_141525ff0, :1230-1231) and the charge use (:1232-1233) follow as for any cast.
-    /// STILL-OPEN: NotifyUseSKill (:1206); main type 0xf (the couple emotion) does nothing.
+    /// Main type 0xf (the couple emotion) is <see cref="UseOwnCouple"/>. STILL-OPEN: NotifyUseSKill (:1206).
     /// </summary>
     bool UseOwnEmotion(Player me, Net.LiveSession live, CastRecord r, uint now)
     {
+        if (r.Skill.MainType == EmotionCast.MainTypeCouple) return UseOwnCouple(me, live, r, now);
         var o = EmotionCast.Use(r.Skill, me.State == Player.MoveState.Jump, me.OnWater, me.ClientStateId, me.EmotionAnim);
         if (o.Enter) me.EnterEmotion(r.Skill);
         bool sent = false;

@@ -1032,6 +1032,8 @@ public partial class LiveSession : Node
     public (int ObjectId, Ms2.Ui.Hud.PopupMenuTarget Target)? PopupTargetOf(ulong colliderId, Func<long, string, string> profileImage) =>
         remote?.PopupTargetOf(colliderId, profileImage);
 
+    /// <summary>The other player of a character id as the couple cast reads it (<see cref="RemoteLayer.CouplePeerOf"/>).</summary>
+    public Ms2.Ui.Skills.CouplePeer CouplePeerOf(long characterId) => remote?.CouplePeerOf(characterId);
     public bool UserInField(long characterId) => remote?.Tracker.Snapshot().Any(a => a.Add?.User?.CharacterId == characterId) ?? false;
     /// <summary>FindProxyObjectByOwner (worldservice): the field's other user with this character id (FieldAddUser); null = none.</summary>
     public UserBlock OtherUserInField(long characterId) => remote?.Tracker.Snapshot().FirstOrDefault(a => a.Add?.User?.CharacterId == characterId)?.Add.User;

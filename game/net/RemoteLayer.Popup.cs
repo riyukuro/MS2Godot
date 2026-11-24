@@ -26,4 +26,18 @@ public sealed partial class RemoteLayer
         }
         return null;
     }
+
+    /// <summary>WorldService::FUN_141bd1530 for StateSkill's couple branch (stateskill.cpp:1928-1985): the other player of
+    /// a character id with what the branch reads of it (GetObjectId, vfunc_77 the name, FUN_141656a80 the character id,
+    /// vfunc_18 the feet in MS2 axes, vfunc_20 the rotation in degrees). Null when no such PC.</summary>
+    public Ms2.Ui.Skills.CouplePeer CouplePeerOf(long characterId)
+    {
+        foreach (var r in users.Values)
+        {
+            if (r.Pc == null || r.CharacterId != characterId) continue;
+            return new Ms2.Ui.Skills.CouplePeer(r.ObjectId, r.CharacterId, r.Name ?? "", r.Pc.Position,
+                new System.Numerics.Vector3(0f, 0f, r.Pc.RotationZ));
+        }
+        return null;
+    }
 }
