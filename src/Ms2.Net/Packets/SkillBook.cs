@@ -60,12 +60,16 @@ public sealed class SkillBook {
     /// <summary>Skill types the GMS2 block lists per job group (upstream SkillInfo.SKILL_TYPES).</summary>
     const int Gms2SkillTypes = 4;
 
-    /// <summary>The block for a profile. GMS2 (upstream SkillInfo.WriteTo): i32 job (read as the rank), u8 group count, then per group the i32 job
-    /// code and four lists of u8 count with (bool notify, bool learned, i32 id, i32 level, u8 extra). The groups' skills are joined in one list and
-    /// the first group's code is the job group. STILL-OPEN: the KMS2 client's reader of this block has the other layout; the GMS2 client's was not read.</summary>
+    /// <summary>The block for a profile. GMS2 (upstream SkillInfo.WriteTo): i32 job (the sub job code, e.g. 300 or 301 for the
+    /// awakened one), u8 group count, then per group the i32 job code and four lists of u8 count with (bool notify, bool learned,
+    /// i32 id, i32 level, u8 extra). The KMS2 block has the rank where this has the job; the rank is the job's
+    /// (JobTable::GetJobRank @0x140644b80: job % 10 + 1), so JobSystem's GetSubJob(rank) gives the job back. The groups' skills
+    /// are joined in one list and the first group's code is the job group. STILL-OPEN: the GMS2 client's reader of this block
+    /// was not read.</summary>
     public static SkillBook Read(ByteReader r, ProtocolProfile profile) {
         if (!profile.IsGms2) return Read(r);
-        int rank = r.ReadInt(), groups = r.ReadByte(), group = 0;
+        int job = r.ReadInt(), groups = r.ReadByte(), group = 0;
+        int rank = job % 10 + 1;
         var list = new List<BookSkill>();
         for (int g = 0; g < groups; g++) {
             int code = r.ReadInt();

@@ -59,12 +59,12 @@ public class Gms2JobTests {
     public void BookModeReadsTheGms2Block() {
         var w = new ByteWriter();
         w.WriteInt(7); w.WriteByte(1);                       // object id, mode 1 (basic)
-        w.WriteInt(900); w.WriteByte(1); w.WriteInt(90);     // job 900, one group of job code 90
+        w.WriteInt(901); w.WriteByte(1); w.WriteInt(90);     // job 901 (awakened), one group of job code 90
         w.WriteByte(1); w.WriteBool(false); w.WriteBool(true); w.WriteInt(11000001); w.WriteInt(4); w.WriteByte(0);
         w.WriteByte(0); w.WriteByte(0); w.WriteByte(0);
         var r = new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray());
         var p = JobPacket.Read(r, ProtocolProfile.Gms2);
-        Assert.That(p.Book.Rank, Is.EqualTo(900));
+        Assert.That(p.Book.Rank, Is.EqualTo(2), "the job's rank: 901 % 10 + 1 (JobTable::GetJobRank)");
         Assert.That(p.Book.JobGroup, Is.EqualTo(90));
         Assert.That(p.Book.Skills.Single(), Is.EqualTo(new BookSkill(11000001, 4, false, true, false)));
         Assert.That(r.Available, Is.EqualTo(0));

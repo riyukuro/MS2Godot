@@ -18,7 +18,7 @@ public class Gms2FieldAddUserTests {
     }
 
     static void Skills(ByteWriter w) {
-        w.WriteInt(10); w.WriteByte(1); w.WriteInt(100);                    // job, group count, job code
+        w.WriteInt(100); w.WriteByte(1); w.WriteInt(10);                    // job (Knight), group count, job code
         for (int t = 0; t < 4; t++) {
             w.WriteByte((byte) (t == 1 ? 2 : 0));
             if (t != 1) continue;
@@ -87,7 +87,7 @@ public class Gms2FieldAddUserTests {
     [Test]
     public void SkillBlockIsPerTypeListsWithTheNotifyFlagFirst() {
         var f = FieldAddUser.Read(new ByteReader(Packet(false, false)), ProtocolProfile.Gms2);
-        Assert.That(f.SkillRank, Is.EqualTo(10)); Assert.That(f.SkillJobCode, Is.EqualTo(100));
+        Assert.That(f.SkillRank, Is.EqualTo(1)); Assert.That(f.SkillJobCode, Is.EqualTo(10));   // job 100: rank 100 % 10 + 1
         Assert.That(f.Book.Skills.Select(s => (s.SkillId, s.Level, s.Changed, s.Learned, s.Extra)),
             Is.EqualTo(new[] { (10100001, 3, true, true, false), (10100002, 1, false, false, true) }));
     }

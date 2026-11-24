@@ -183,6 +183,31 @@ public class ChangeJobTests
         Assert.That(rt.Errors, Is.Empty);
     }
 
+    /// <summary>The GMS2 server's skill block (upstream SkillInfo.WriteTo) carries the job where the KMS2 block has the rank:
+    /// for every row, the block of the sub job and of the changed job gives that sub job back through the job system
+    /// (GetSubJob of the rank), which the window, the menu entry and the effect read.</summary>
+    [Test]
+    public void TheGms2SkillBlockGivesEveryRowsSubJob()
+    {
+        using var packs = new PackSet(RcGap.Data("MS2_GMS2_DATA"));
+        var tables = new GameTables(packs, "en");
+        var t = ChangeJobTable.Load(packs, Features(packs), tables);
+        Assert.That(t.Rows, Has.Count.EqualTo(11));
+        var bad = new List<string>();
+        foreach (var d in t.Rows.Values)
+            foreach (int job in new[] { d.SubJobCode, d.ChangeSubJobCode })
+            {
+                var w = new Maple2.PacketLib.Tools.ByteWriter();
+                w.WriteInt(job); w.WriteByte(1); w.WriteInt(job / 10);
+                for (int i = 0; i < 4; i++) w.WriteByte(0);
+                var book = Ms2.Net.Packets.SkillBook.Read(new Maple2.PacketLib.Tools.ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray()), Ms2.Net.ProtocolProfile.Gms2);
+                var jobs = new JobSystem(tables.Skills);
+                jobs.Read(book);
+                if (jobs.SubJob != job) bad.Add($"{job}: sub job {jobs.SubJob}");
+            }
+        Assert.That(bad, Is.Empty);
+    }
+
     /// <summary>The menu's FUN_14193b4a0: a started quest marks the menu dirty only when it is the sub job's start quest.</summary>
     [Test]
     public void TheStartQuestOfTheSubJobRefreshesTheMenu()
