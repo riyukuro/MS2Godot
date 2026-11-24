@@ -31,7 +31,6 @@ public class GuideConditionReadSweepTests
         ["ConstructionCell"] = "PC::GetConstructionGuide is not ported (CubeCraft.ConfirmPlacement holds it as none too), so the craft's "
             + "cell is never used; null is the client's answer without a guide",
         ["CubePaletteSelection"] = "GetUGCCubePalette (CubeHolderManager::GetSelectedItemId): the UGC cube palette is not ported",
-        ["DungeonEnterState"] = "the dungeon enter state table is not kept (the quest rules' read is null too)",
         ["EarliestSaleEnd"] = "the merat market's sale list is not ported",
         ["GuildPvpSeason"] = "the guild PvP season test is not ported",      // FUN_1404c6160
         ["InstrumentHasScore"] = "the instrument dialog (0x4eec) is not ported",
