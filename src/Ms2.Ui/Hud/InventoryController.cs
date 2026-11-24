@@ -670,9 +670,7 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     public bool CanExpandTab()
     {
         if (View == null) return false;
-        int tab = View.Tab;
-        int extra = View.Capacity(tab) - BaseSlots(tab);
-        return extra != MaxSlots(tab);
+        return !TabMaxed(View.Tab);
     }
 
     /// <summary>
@@ -802,7 +800,8 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
 
     /// <summary>
     /// The functions with a handler of their own (RegisterItemUseFuncs, unit_140d1ae30_itemfunctiondispatch.cpp:373): UseItem
-    /// runs it in place of the plain use request. Those <see cref="UseItem"/> runs are ported; the others' use is raised.
+    /// runs it in place of the plain use request. The ported ones are in <see cref="OwnUse"/> and UseItem's item box,
+    /// blueprint, merge revert, air taxi and party recall lines; the use of the others is raised.
     /// </summary>
     public static readonly IReadOnlySet<string> OwnUseFunctions = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -982,6 +981,7 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         if (item.Data.FunctionName == "RecallParty") return true;                                                     // @0x140d1df70: 1, nothing
         if (item.Data.FunctionName == "RecallGuild" && RecallGuild != null) return RecallGuild(item);                 // @0x140d226b0
         if (item.Data.FunctionName == "ChatEmoticonAdd") return ChatEmoticonAdd(item);                               // @0x140d1fba0
+        if (OwnUse(item) is bool own) return own;                                                                    // InventoryController.UseFunctions
         if (OwnUseFunctions.Contains(item.Data.FunctionName)) { Button?.Invoke("notifySlotUse"); return true; }
         RequestUseItem(item, "");
         return true;

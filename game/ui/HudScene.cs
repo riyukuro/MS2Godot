@@ -3625,6 +3625,9 @@ public partial class HudScene : Node, IUiStageHost
         c.CharacterId = () => live?.CharacterId ?? 0;
         c.ItemUseError = item => itemUse?.Error(item) ?? 0;
         c.OpenDialog = id => GD.Print($"inventory: dialog 0x{id:x} is not in this HUD");
+        c.FieldIsTutorial = FieldHasTutorial;
+        c.GmLevel = () => ChatLog?.GmLevel() ?? 0;
+        c.WarningSound += key => FieldAudio.Instance?.PlayUi(key);     // PlaySystemSound(s_warningGender)
         c.MeratBalance = () => Ms2.Ui.Shop.CurrencyWallet.Merat(hudModel.Player);
         c.MeretPurchase = () => NotApplied.Print("inventory: the meret purchase dialog (CUIService::FUN_141add1f0) is not ported");
         BindBoxAnswers();

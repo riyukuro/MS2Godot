@@ -29,7 +29,8 @@ public sealed partial class InventoryController
     public Func<bool> SelectBoxOpen = () => false;
     public event Action<string> WarningSound;
 
-    /// <summary>Bag count of an item id (FUN_140a5f180(id, 0)).</summary>
+    /// <summary>Bag count of an item id (FUN_140a5f180(id, 0)). STILL-OPEN: the client skips the items the player cannot
+    /// use (PC::CanUseItem) in that count.</summary>
     public int BagCountOf(int itemId) => BagCount(itemId);
 
     int BagCount(int itemId)
@@ -51,7 +52,8 @@ public sealed partial class InventoryController
     string ItemName(Item item) => new ItemTooltip(Model, 0).Name(item);
 
     /// <summary>
-    /// OpenItemBox(spItem, pc) @0x140d259d0: a gender the item does not allow plays s_warningGender with notice 0x2d, nothing
+    /// OpenItemBox(spItem, pc) @0x140d259d0: a gender the item does not allow plays s_warningGender with box 0x2d
+    /// (FUN_140d73bc0, a message box of the common string), nothing
     /// sent; nCount is arg 4 (default 1) only past 4 arguments; more than the bag holds shows
     /// s_msg_item_open_item_box_multi_no_having_count (have, count); else <see cref="OpenItemBoxAsk"/>.
     /// </summary>
@@ -62,7 +64,7 @@ public sealed partial class InventoryController
         if (record != null && !d.IsGenderAllowed(record.Gender))
         {
             WarningSound?.Invoke(GenderWarningSound);
-            SystemNotice?.Invoke(Model.Tables.Common(0x2d));
+            ShowBox(MessageBoxQueue.Create(0, Model.Tables.Common(0x2d), null, ""));
             return false;
         }
         int nCount = d.FunctionArgs.Count > 4 ? d.FunctionArgInt(4, 1) : 1;

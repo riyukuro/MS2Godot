@@ -1577,4 +1577,189 @@ public class InventoryTests
         c.ConfirmDestroy(70);
         Assert.That((destroyed.Single(), destroySounds, sounds.Count), Is.EqualTo((70L, 1, 2)), "the destroy: the default sound, not the item's");
     }
+
+    // ---- the use handlers of RegisterItemUseFuncs (InventoryController.UseFunctions) ------------------------------------------
+
+    /// <summary>The bag with the data's item of a function (the item function sweep's first id) at uid 50, slot 0, and the
+    /// other items given; ignored when the data's item has another function.</summary>
+    static (InventoryController C, UiModel Model, Item Item, List<(long, string)> Sent, List<MessageBoxData> Boxes, List<string> Raised)
+        UseSetup(string function, int id, params EquipItem[] more)
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        if (model.Tables.Items.Get(id)?.FunctionName != function) Assert.Ignore($"item {id} is not {function} in this data");
+        var book = new ItemBook { TabOf = i => i / 10000000, BaseSlots = _ => 48 };
+        var all = new List<EquipItem> { new() { Id = id, Uid = 50, InventorySlot = 0, Amount = 1, Rarity = 1 } };
+        all.AddRange(more);
+        foreach (var g in all.GroupBy(e => e.Id / 10000000)) book.Apply(new ItemMessage.LoadTab(g.Key, g.ToArray()));
+        var (_, c, _) = Load(model, book);
+        var sent = new List<(long, string)>(); c.View.RequestUse = (u, a) => sent.Add((u, a));
+        var boxes = new List<MessageBoxData>(); c.ShowBox = boxes.Add;
+        var raised = new List<string>(); c.Button += raised.Add;
+        return (c, model, c.FindItem(50), sent, boxes, raised);
+    }
+
+    [TestCase("EnchantScroll", 31000001, InventoryController.EnchantScrollDialogId, null)]
+    [TestCase("ItemRemakeScroll", 30000914, InventoryController.RemakeScrollDialogId, InventoryController.RemakeScrollOpenKey)]
+    [TestCase("ItemRePackingScroll", 20300464, InventoryController.RePackingScrollDialogId, InventoryController.RePackingScrollOpenKey)]
+    [TestCase("ItemSocketScroll", 31000193, InventoryController.SocketScrollDialogId, InventoryController.SocketScrollOpenKey)]
+    public void AScrollIsUsedUnlessItsWindowIsOpen(string function, int id, int dialog, string openKey)
+    {
+        // EnchantScroll @0x140d225d0 (box 0xb68), ItemRemakeScroll @0x140d221c0, ItemRePackingScroll @0x140d22090, ItemSocketScroll @0x140d21c30
+        var (c, model, item, sent, boxes, raised) = UseSetup(function, id);
+        bool open = false;
+        c.IsDialogOpen = d => open && d == dialog;
+        c.UseItem(item, true);
+        Assert.That((sent, raised.Count, boxes.Count), Is.EqualTo((new[] { (50L, "") }, 0, 0)), "closed: the plain use, the server opens the window");
+        open = true;
+        Assert.That(c.UseItem(item, true), Is.False);
+        string text = openKey == null ? model.Tables.Common(0xb68) : model.Tables.Common(openKey);
+        Assert.That((sent.Count, boxes.Single().Type, boxes.Single().Msg), Is.EqualTo((1, 0, text)), "open: its box, nothing sent");
+    }
+
+    [Test]
+    public void AnInventoryExpandItemAsksNamingTheTabsAtTheirMaximumAndItsYesUsesIt()
+    {
+        // ExpandInven @0x140d23870, FUN_140a5ce30 (inventory.cpp:469), the box's yes FUN_1419fc810 (uimessagebox.cpp:1527)
+        var (c, model, item, sent, boxes, raised) = UseSetup("ExpandInven", 20300247);
+        c.MaxSlots = _ => 36;
+        Assert.That(c.UseItem(item, true), Is.True);
+        var box = boxes.Single();
+        Assert.That((box.Type, box.Extra, box.ItemUid, box.EnterAllowed), Is.EqualTo((0x11, InventoryController.UseFunctionItemTag, 50L, false)));
+        Assert.That(box.Msg, Is.EqualTo(Ms2.Quest.ClientFormat.Format(model.Tables.Common(0x29c))));
+        Assert.That((sent.Count, raised.Count), Is.EqualTo((0, 0)), "it asks first");
+        var mb = new MessageBoxController { UseFunctionItem = c.ConfirmUseFunctionItem, data = box };
+        Assert.That(mb.HandlePlainTag(1, InventoryController.UseFunctionItemTag), Is.True);
+        Assert.That(sent, Is.Empty, "the other button: nothing");
+        Assert.That(mb.HandlePlainTag(0, InventoryController.UseFunctionItemTag), Is.True);
+        Assert.That(sent, Is.EqualTo(new[] { (50L, "") }), "the yes is the plain use");
+        c.ConfirmUseFunctionItem(99);     // an item no longer in the bag: nothing
+        Assert.That(sent.Count, Is.EqualTo(1));
+
+        c.MaxSlots = t => t == 2 ? 0 : 36;
+        c.UseItem(item, true);
+        Assert.That(boxes.Last().Msg, Is.EqualTo(Ms2.Quest.ClientFormat.Format(model.Tables.Common(0x29c))), "two arguments: the plain text even with a tab at its maximum");
+        var d = item.Data;
+        var saved = d.FunctionArgs.ToList();
+        try
+        {
+            d.FunctionArgs.Clear(); d.FunctionArgs.Add("6");
+            c.UseItem(item, true);
+            Assert.That(boxes.Last().Msg, Is.EqualTo(Ms2.Quest.ClientFormat.Format(model.Tables.Common(0x2a6), model.Tables.Common(0x25c))), "one argument: the tab at its maximum is named");
+        }
+        finally { d.FunctionArgs.Clear(); d.FunctionArgs.AddRange(saved); }
+
+        c.MaxSlots = _ => 0;
+        int before = boxes.Count;
+        Assert.That(c.UseItem(item, true), Is.False);
+        Assert.That((boxes.Count, boxes.Last().Type, boxes.Last().Msg), Is.EqualTo((before + 1, 0, model.Tables.Common(0x2a3))), "every tab at its maximum: box 0x2a3");
+        Assert.That(InventoryController.InventoryTabName(model.Tables, 13), Is.EqualTo(model.Tables.Common("s_inventory_tab_lapenshard") ?? ""));
+    }
+
+    [Test]
+    public void AKeyBoxNeedsItsKeysThenAsks()
+    {
+        // OpenItemBoxWithKey @0x140d25430: arguments 0 (the key) and 1 (the count)
+        var (c, model, item, sent, boxes, raised) = UseSetup("OpenItemBoxWithKey", 20300133);
+        int key = item.Data.FunctionArgInt(0, 0), need = item.Data.FunctionArgInt(1, 0);
+        string keyName = model.Tables.ItemName(key) ?? "";
+        c.UseItem(item, true);
+        Assert.That((boxes.Single().Type, boxes.Single().Msg, sent.Count),
+            Is.EqualTo((0, Ms2.Quest.ClientFormat.Format(model.Tables.Common(InventoryController.WithKeyNoKeyKey), keyName, 0, need), 0)), "no key: the count box");
+
+        (c, model, item, sent, boxes, raised) = UseSetup("OpenItemBoxWithKey", 20300133,
+            new EquipItem { Id = key, Uid = 51, InventorySlot = (short)(key / 10000000 == 2 ? 1 : 0), Amount = need, Rarity = 1 });
+        c.UseItem(item, true);
+        var box = boxes.Single();
+        Assert.That((box.Type, box.Extra, box.Msg, box.EnterAllowed), Is.EqualTo((0x11, InventoryController.UseFunctionItemTag,
+            Ms2.Quest.ClientFormat.Format(model.Tables.Common(InventoryController.WithKeyKey), keyName), true)));
+        Assert.That((sent.Count, raised.Count), Is.EqualTo((0, 0)));
+    }
+
+    [Test]
+    public void ALevelPotionChecksTheFieldTheLevelAndDeathBeforeTheUse()
+    {
+        // LevelPotion @0x140d24900: <v targetLevel="..."/>
+        var (c, model, item, sent, boxes, raised) = UseSetup("LevelPotion", 20000476);
+        int target = item.Data.FunctionXmlInt("targetLevel");
+        Assert.That(target, Is.GreaterThan(1));
+        var notices = new List<string>(); c.SystemNotice += notices.Add;
+        var record = new PcInfo { Level = (ushort)target, JobGroup = 10, Equips = Array.Empty<EquipItem>() };
+        c.Wearer = () => record;
+        c.FieldIsTutorial = () => true;
+        c.UseItem(item, true);
+        Assert.That((notices, boxes.Count, sent.Count), Is.EqualTo((new[] { InventoryController.TutorialLevelUpKey }, 0, 0)), "a tutorial field: the notice");
+        c.FieldIsTutorial = () => false;
+        c.UseItem(item, true);
+        Assert.That(boxes.Last().Msg, Is.EqualTo(Ms2.Quest.ClientFormat.Format(model.Tables.Common(InventoryController.TargetLevelKey), target)), "at the level already");
+        record.Level = (ushort)(target - 1);
+        bool dead = true;
+        c.LocalPlayerDead = () => dead;
+        c.UseItem(item, true);
+        Assert.That((boxes.Last().Msg, sent.Count), Is.EqualTo((model.Tables.Common(0x54), 0)), "dead: box 0x54");
+        dead = false;
+        c.UseItem(item, true);
+        Assert.That((sent, raised.Count), Is.EqualTo((new[] { (50L, "") }, 0)));
+    }
+
+    [Test]
+    public void ALimitedQuantityBoxWaitsItsCooldownUnlessTheGmLevelIsHigh()
+    {
+        // OpenItemBoxLimitedQuantity @0x140d25c50: <xmlData cooldownTime="3"/>, s_itemUseMap by item id, DAT_143ab2914 < 0x32
+        var (c, model, item, sent, boxes, raised) = UseSetup("OpenItemBoxLimitedQuantity", 20302629);
+        int cooldown = item.Data.FunctionXmlInt("cooldownTime");
+        Assert.That(cooldown, Is.GreaterThan(0));
+        uint now = 7_000_000;
+        c.TickCount = () => now;
+        c.UseItem(item, true);
+        Assert.That(sent.Count, Is.EqualTo(1));
+        now += (uint)cooldown * 1000 - 1;
+        c.UseItem(item, true);
+        Assert.That(sent.Count, Is.EqualTo(1), "sooner than the cooldown: nothing");
+        c.GmLevel = () => 0x32;
+        c.UseItem(item, true);
+        Assert.That(sent.Count, Is.EqualTo(2), "a GM level of 0x32: no cooldown");
+        c.GmLevel = () => 0;
+        now += 1;
+        c.UseItem(item, true);
+        Assert.That((sent.Count, raised.Count), Is.EqualTo((3, 0)), "the cooldown passed");
+    }
+
+    [Test]
+    public void ATreasureMapDoesNothingAsAPartyRecall()
+    {
+        // TreasureMap is registered with RecallParty's handler @0x140d1df70: returns 1, nothing done
+        var (c, model, item, sent, boxes, raised) = UseSetup("TreasureMap", 30001025);
+        Assert.That(c.UseItem(item, true), Is.True);
+        Assert.That((sent.Count, raised.Count, boxes.Count), Is.EqualTo((0, 0, 0)), "returns 1, nothing done, not raised");
+    }
+
+    [Test]
+    public void AnItemBoxOfTheOtherGenderShowsBox0x2d()
+    {
+        // OpenItemBox @0x140d259d0: PlaySystemSound(s_warningGender), FUN_140d73bc0(0x2d): a message box, not a notice
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var d = model.Tables.Items.Get(20300327);
+        int saved = d.GenderLimit;
+        try
+        {
+            d.GenderLimit = 1;
+            var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
+            book.Apply(new ItemMessage.LoadTab(2, new[] { new EquipItem { Id = 20300327, Uid = 30, InventorySlot = 0, Amount = 1, Rarity = 1 } }));
+            var (_, c, _) = Load(model, book);
+            c.Wearer = () => new PcInfo { Level = 50, JobGroup = 10, Gender = 0, Equips = Array.Empty<EquipItem>() };
+            var boxes = new List<MessageBoxData>(); c.ShowBox = boxes.Add;
+            var notices = new List<string>(); c.SystemNotice += notices.Add;
+            var sounds = new List<string>(); c.WarningSound += sounds.Add;
+            if (d.FunctionName != "OpenItemBox") Assert.Ignore("item 20300327 is not OpenItemBox in this data");
+            // CanUseItem's gender check comes first with the same box: go past it to the handler's own
+            Assert.That(c.OpenItemBox(c.FindItem(30)), Is.False);
+            Assert.That((boxes.Single().Type, boxes.Single().Msg, notices.Count, sounds.Single()),
+                Is.EqualTo((0, model.Tables.Common(0x2d), 0, InventoryController.GenderWarningSound)));
+        }
+        finally { d.GenderLimit = saved; }
+    }
 }
