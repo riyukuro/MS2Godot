@@ -55,6 +55,7 @@ public partial class HudScene
                 Table = table,
                 Data = abilities,
                 IsQuestRewarded = rewarded,
+                World = () => hudModel,
                 ServerTime = () => live?.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                 Quest = id => AbilityQuestTable().Quest(id),
                 QuestName = id => AbilityQuestTable().QuestName(id),

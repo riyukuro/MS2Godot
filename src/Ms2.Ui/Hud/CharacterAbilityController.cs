@@ -56,12 +56,22 @@ public sealed class CharacterAbilityController : UiController, IMessageBoxListen
     bool built;                 // m_bBuilt
     ulong? lastTick;            // m_timer (Init in the ctor, then Check(1000))
 
+    /// <summary>
+    /// The model OnChangeMyLevel reads before the dialog's movie is loaded: the HUD's. The client's dialog registers
+    /// NotifyChangeMyLevel when it is made (uicharacterabilitydialog.cpp:356), and its handler reads the feature
+    /// (FUN_1401e0800) and the client constants with no movie; only the rebuild needs m_30 (:519-529). Once the movie is
+    /// loaded it is the host's model. Read on every use: a HUD relayout builds a new model.
+    /// </summary>
+    public Func<UiModel> World { get; init; }
+    UiModel Manager => Host?.Model ?? World?.Invoke();
+
     uint DefaultPoint => Model.Tables.CharacterAbilityDefaultPoint;
-    int OpenQuest => (int)Model.Tables.CharacterAbilityOpenQuestID;
+    int OpenQuest => (int)Manager.Tables.CharacterAbilityOpenQuestID;
     int? Level => Model.HasLocalPlayer ? Pc.Level : null;
 
-    /// <summary>FUN_1401e0800(level): feature 0x2d and the level reached <see cref="CharacterAbilityData.StartLevel"/>.</summary>
-    bool IsOpen(ushort level) => CharacterAbilityData.IsOpen(Model.IsFeatureEnabled(Feature.CharacterAbility), level);
+    /// <summary>FUN_1401e0800(level): feature 0x2d and the level reached <see cref="CharacterAbilityData.StartLevel"/>
+    /// (characterability.cpp:289). False with no model at all (a controller made with neither a host nor a world).</summary>
+    bool IsOpen(ushort level) => Manager is { } m && CharacterAbilityData.IsOpen(m.IsFeatureEnabled(Feature.CharacterAbility), level);
 
     /// <summary>
     /// vfunc_72 (@0x140f2a4a0): nothing while closed or before the table is built; else once a second (m_timer.Check(1000),

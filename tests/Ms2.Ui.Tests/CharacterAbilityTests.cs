@@ -94,6 +94,41 @@ public class CharacterAbilityTests
     }
 
     [Test]
+    public void ALevelChangeBeforeTheMovieLoadsReadsTheHudsModel()
+    {
+        // UICharacterAbilityDialog::OnChangeMyLevel (@0x140f2b000, uicharacterabilitydialog.cpp:515-530) runs from the
+        // dialog's making (NotifyChangeMyLevel, :356); it reads the feature and the constants, and m_30 (the movie) only
+        // before the rebuild. A level-up before the dialog was ever opened threw here, so the LevelUp packet's other
+        // listeners (the game menu, the guide) were skipped.
+        var table = CharacterAbilityTable.Load(Doc("<ms2><category id='1' name='a' tooltip='b'/></ms2>"),
+            Doc("<ms2><ability id='10' categoryID='1' requireLevel='50'/><ability id='11' categoryID='1' requireLevel='51'/></ms2>"),
+            _ => true, k => k);
+        var model = new UiModel(null);
+        int asked = 0;
+        var counts = new List<int>();
+        var c = new CharacterAbilityController
+        {
+            Table = table, World = () => model,
+            IsQuestRewarded = id => { asked = id; return true; },
+        };
+        c.MenuNotifyCount += counts.Add;
+        Assert.That(c.Host, Is.Null);
+
+        c.OnChangeMyLevel(50);
+        Assert.That(counts, Is.Empty, "feature 0x2d off: FUN_1401e0800 is 0");
+
+        model.Features.Add(Feature.CharacterAbility);
+        c.OnChangeMyLevel(49);
+        Assert.That(counts, Is.Empty, "below CharacterAbilityData.StartLevel");
+        c.OnChangeMyLevel(50);
+        c.OnChangeMyLevel(52);
+        Assert.That(counts, Is.EqualTo(new[] { 1, 0 }), "FUN_140f2bee0: an unlearned ability at exactly that level");
+        Assert.That(asked, Is.EqualTo((int)model.Tables.CharacterAbilityOpenQuestID), "the constant's quest");
+
+        Assert.DoesNotThrow(() => new CharacterAbilityController { Table = table }.OnChangeMyLevel(50), "no host and no world");
+    }
+
+    [Test]
     public void NewAbilityAtIsAnUnlearnedAbilityOfExactlyThatLevel()
     {
         var t = Load();
