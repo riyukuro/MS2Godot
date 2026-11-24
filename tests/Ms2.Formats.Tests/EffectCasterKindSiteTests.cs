@@ -88,6 +88,13 @@ public class EffectCasterKindSiteTests
         // world objects (7)
         new("scripts/world/FieldVibrateDraws.cs", "effects.Insert(path, entry.Entity.Transform,", "CasterBackground",
             "7: a vibrate object's effect, the request's kind set to 7 (CEntityVibrator, entityvibrator.cpp:190, :213)"),
+        // interact objects
+        new("scripts/world/FieldInteractDraws.cs", "effects.Insert(effect, new Xform(o.Position, Xform.Identity.R, 1), false, 0)",
+            "RegionSkills.Insert: CasterSystem", "0: an interact object's remove effect, a one-shot at its position (scenestategame.cpp:6415-6426)"),
+        new("scripts/world/FieldInteractDraws.cs", "int h = effects.Spawn(effect, StateAt(o), false, 0, 1)", "false, 0, 1)",
+            "1: CInteractObject::vfunc_12's success effect kept as m_nParticle, the local player its actor (interactobject.cpp:647-665)"),
+        new("scripts/world/FieldInteractDraws.cs", "int handle = effects.Spawn(effect, StateAt(o), false, 0)", "RegionSkills.Spawn: CasterSystem",
+            "0: CInteractObject::ShowStateEffect's state effect, request m_nObject 0 (interactobject.cpp:451-471)"),
         // pass-through
         new("net/LiveSession.Skills.cs", "=> remote?.PlayEffect(effect, at, yawRadians, casterKind)", "casterKind", PassThrough),
         new("net/LiveSession.Skills.cs", "=> remote?.PlayEffect(effect, at, rotation, casterKind)", "casterKind", PassThrough),
