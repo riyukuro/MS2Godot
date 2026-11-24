@@ -62,6 +62,7 @@ public class AsTextFormat : AsObject
         underline = o.underline ?? underline; url = o.url ?? url; target = o.target ?? target; align = o.align ?? align;
         leftMargin = o.leftMargin ?? leftMargin; rightMargin = o.rightMargin ?? rightMargin; indent = o.indent ?? indent; leading = o.leading ?? leading;
         letterSpacing = o.letterSpacing ?? letterSpacing; kerning = o.kerning ?? kerning; blockIndent = o.blockIndent ?? blockIndent;
+        tabStops = o.tabStops ?? tabStops; bullet = o.bullet ?? bullet; display = o.display ?? display;
     }
 }
 
@@ -302,7 +303,23 @@ public class AsTextField : AsInteractiveObject
         return (t.Width, t.Height, 0);
     }
 
-    bool HasImages => Formats is { } f && Array.Exists(f, x => x.Image != null);
+    bool HasImages { get { FormatFlags(); return flagImages; } }
+
+    // what the chars' formats hold, read once per format array and field size: the scroll and metric getters ask on every call and a chat log's
+    // array has a format per char
+    HtmlFormat[] flagsFor; double flagsSize; bool flagImages, flagSized;
+    void FormatFlags()
+    {
+        var f = Formats;
+        if (ReferenceEquals(f, flagsFor) && flagsSize == Size) return;
+        flagsFor = f; flagsSize = Size;
+        flagImages = f != null && Array.Exists(f, x => x.Image != null);
+        flagSized = f != null && Array.Exists(f, x => x.Size is int z && z != Size);
+    }
+
+    /// <summary>A text whose lines are not all the field's line height: IMG chars, or runs in another FONT size (the formatter tracks
+    /// each glyph's own ascent and descent, TrackFontParams, sfr_render_03b.cpp:2150), with the font's ratios known to measure by.</summary>
+    bool RunHeights { get { FormatFlags(); return TextMeasure.HeightRatio != null && TextMeasure.AscentRatio != null && (flagImages || flagSized); } }
 
     /// <summary>
     /// A line's width: the font's advances of its text chars and, for each IMG char, its width plus 40 twips
@@ -383,7 +400,7 @@ public class AsTextField : AsInteractiveObject
         double line = TextMeasure.LineHeight(FontName, Size, 0) * scale, lead = Leading * scale;
         double textH = lineCount == 0 ? 0 : Math.Floor(lineCount * (line + lead) - lead);
         // lines with IMG chars have their own heights (ImageTextH)
-        if (lineCount > 0 && HasImages && TextMeasure.HeightRatio != null && TextMeasure.AscentRatio != null && lineCount == Spans().Count)
+        if (lineCount > 0 && RunHeights && lineCount == Spans().Count)
             textH = Math.Floor(ImageTextH() * scale);
         if (textH < maxH) return valign == "center" ? top + (maxH / 2 - textH / 2) : top + maxH - textH;
         double vis = 0;
@@ -402,7 +419,7 @@ public class AsTextField : AsInteractiveObject
     public double TextH()
     {
         if (Text.Length == 0) return 0;
-        if (HasImages && TextMeasure.HeightRatio != null && TextMeasure.AscentRatio != null) return ImageTextH();
+        if (RunHeights) return ImageTextH();
         var n = Lines().Count;
         return n * TextMeasure.LineHeight(FontName, Size, Leading) - Leading;
     }
@@ -419,10 +436,24 @@ public class AsTextField : AsInteractiveObject
         return l.Count == 0 ? 0 : (l[^1].Top + l[^1].H) / 20;
     }
 
-    /// <summary>Each line's top and height in twips by FinalizeLine (see ImageTextH).</summary>
+    /// <summary>Each line's top and height in twips by FinalizeLine (see ImageTextH). Kept for the lines and formats it was made from:
+    /// the scroll getters ask for it again and again.</summary>
     List<(double Top, double H)> ImageLines()
     {
-        double asc = TextMeasure.AscentRatio(FontName) * Size * 20, desc = (TextMeasure.HeightRatio(FontName) - TextMeasure.AscentRatio(FontName)) * Size * 20;
+        var sp = Spans();
+        var key = (Formats, Size, FontName, Leading);
+        if (imageLines != null && ReferenceEquals(sp, imageLinesSpans) && key == imageLinesKey && !HasImages) return imageLines;
+        imageLinesSpans = sp; imageLinesKey = key;
+        return imageLines = MakeImageLines();
+    }
+    List<(double Top, double H)> imageLines;
+    List<(string Line, int Start)> imageLinesSpans;
+    (HtmlFormat[], double, string, double) imageLinesKey;
+
+    List<(double Top, double H)> MakeImageLines()
+    {
+        double ascR = TextMeasure.AscentRatio(FontName), descR = TextMeasure.HeightRatio(FontName) - ascR;
+        double SizeAt(int i) => Formats is { } f && i >= 0 && i < f.Length && f[i].Size is int z ? z : Size;
         static double IRound(double v) => Math.Floor(v + 0.5);
         double leading = IRound(Leading * 20), offset = 0, height = 0;
         bool first = true;
@@ -430,11 +461,11 @@ public class AsTextField : AsInteractiveObject
         foreach (var (line, start) in Spans())
         {
             double maxAsc = 0, maxDesc = 0;
-            bool font = line.Length == 0;
             for (int i = 0; i < line.Length; i++)
                 if (ImageAt(start + i) is { } img) { maxAsc = Math.Max(maxAsc, img.Ascent * 20); maxDesc = Math.Max(maxDesc, (img.H - img.Ascent) * 20); }
-                else font = true;
-            if (font) { maxAsc = Math.Max(maxAsc, asc); maxDesc = Math.Max(maxDesc, desc); }
+                else { double sz = SizeAt(start + i) * 20; maxAsc = Math.Max(maxAsc, ascR * sz); maxDesc = Math.Max(maxDesc, descR * sz); }
+            // an empty line takes its paragraph end's font
+            if (line.Length == 0) { double sz = SizeAt(Math.Min(start, Math.Max(0, Text.Length - 1))) * 20; maxAsc = Math.Max(maxAsc, ascR * sz); maxDesc = Math.Max(maxDesc, descR * sz); }
             if (!first) offset += IRound(height + leading);
             first = false;
             height = IRound(maxAsc + maxDesc);
@@ -477,13 +508,13 @@ public class AsTextField : AsInteractiveObject
         string s = parser.Text(endBreak ? 1 : 0);
         if (translate && src == Html && s != Html && Tr(s) is var t && t != s) { SetHtml(t, false); return; }
         Text = s;
-        SetFormats(parser.Formats, parser.Styled, endBreak);
+        SetFormats(parser.Formats, parser.Styled, endBreak, parser.Paragraphs);
         htmlParser = translate && src == Html ? parser : null;      // what appendHtml goes on from
         htmlParsed = Html;
     }
 
     /// <summary>The html ends with an end P and white space only (the line break its end makes is not kept in the text).</summary>
-    static bool EndsParagraph(string html)
+    public static bool EndsParagraph(string html)
     {
         var h = html.AsSpan().TrimEnd();
         return h.EndsWith("</p>", StringComparison.OrdinalIgnoreCase);
@@ -512,7 +543,7 @@ public class AsTextField : AsInteractiveObject
                 string s = p.Text(endBreak ? 1 : 0);
                 Html = whole;
                 Text = s;
-                SetFormats(p.Formats, p.Styled, endBreak);
+                SetFormats(p.Formats, p.Styled, endBreak, p.Paragraphs);
                 htmlParsed = Html;
                 return;
             }
@@ -530,16 +561,74 @@ public class AsTextField : AsInteractiveObject
     string formatsText;
     bool formatsBreak;
 
-    void SetFormats(HtmlFormat[] f, bool endBreak) => SetFormats(f, f != null && Array.Exists(f, x => !x.IsPlain), endBreak);
+    void SetFormats(HtmlFormat[] f, bool endBreak, IReadOnlyList<(int Start, ParaFormat Format)> paras = null) =>
+        SetFormats(f, f != null && (paras is { Count: > 0 } || Array.Exists(f, x => !x.IsPlain)), endBreak, paras);
 
-    void SetFormats(HtmlFormat[] f, bool styled, bool endBreak)
+    void SetFormats(HtmlFormat[] f, bool styled, bool endBreak, IReadOnlyList<(int Start, ParaFormat Format)> paras = null)
     {
         formats = f != null && styled ? f : null;
+        paraFormats = formats != null && paras is { Count: > 0 } ? paras : null;
         formatsText = Text;
         formatsBreak = endBreak;
     }
 
     HtmlFormat[] Formats => formats != null && ReferenceEquals(formatsText, Text) ? formats : null;
+
+    /// <summary>The paragraph formats the html (TEXTFORMAT, P ALIGN) or setTextFormat gave, by the text index each paragraph starts at
+    /// (ascending); a paragraph not listed has the field's own paragraph format. Kept with <see cref="formats"/>, for the same text.</summary>
+    IReadOnlyList<(int Start, ParaFormat Format)> paraFormats;
+    IReadOnlyList<(int Start, ParaFormat Format)> Paras => paraFormats != null && ReferenceEquals(formatsText, Text) ? paraFormats : null;
+
+    /// <summary>TextField::SetTextFieldDef's default paragraph format (the field's own TextFormat): what a paragraph with no format of
+    /// its own has (the first element of ParseHtml copies it, StyledText::AppendString gives it to each plain paragraph).</summary>
+    ParaFormat FieldPara()
+    {
+        var f = Format;
+        if (f == null) return default;
+        int? I(object v) => v != null && !Rt.IsNullish(v) ? (int)Rt.ToNumber(v) : null;
+        return new ParaFormat(f.align is string a && !Rt.IsNullish(a) ? a.ToLowerInvariant() : null, I(f.indent), I(f.blockIndent), I(f.leading),
+            I(f.leftMargin), I(f.rightMargin), TabStopsOf(f.tabStops));
+    }
+
+    static int[] TabStopsOf(object v) => v is AsArray a ? a.Items.Select(x => (int)Rt.ToNumber(x)).ToArray() : null;
+
+    /// <summary>The paragraph format an AS3 TextFormat sets (TextField::setTextFormat builds a ParagraphFormat from it,
+    /// sfr_as3_13.cpp @0x1424b44d0).</summary>
+    static ParaFormat ParaOf(AsTextFormat f)
+    {
+        int? I(object v) => v != null && !Rt.IsNullish(v) ? (int)Rt.ToNumber(v) : null;
+        return new ParaFormat(f.align is string a && !Rt.IsNullish(a) ? a.ToLowerInvariant() : null, I(f.indent), I(f.blockIndent), I(f.leading),
+            I(f.leftMargin), I(f.rightMargin), TabStopsOf(f.tabStops));
+    }
+
+    /// <summary>The paragraph of text index <paramref name="pos"/> (0..Length): its start and its length, line break included;
+    /// <paramref name="ends"/> false for the last paragraph (no line break closes it).</summary>
+    (int Start, int Length, bool Closed) ParaAt(int pos)
+    {
+        var t = Text;
+        int start = pos;
+        while (start > 0 && t[start - 1] is not ('\r' or '\n')) start--;
+        int i = pos;
+        while (i < t.Length && t[i] is not ('\r' or '\n')) i++;
+        if (i >= t.Length) return (start, t.Length - start, false);
+        int end = i + 1;
+        if (t[i] == '\r' && end < t.Length && t[end] == '\n') end++;
+        return (start, end - start, true);
+    }
+
+    /// <summary>The paragraph's own format (as the html or setTextFormat set it), none when it has no entry.</summary>
+    static ParaFormat OwnPara(IReadOnlyList<(int Start, ParaFormat Format)> paras, int start)
+    {
+        if (paras == null) return default;
+        int lo = 0, hi = paras.Count - 1;
+        while (lo <= hi)
+        {
+            int mid = (lo + hi) >> 1;
+            if (paras[mid].Start == start) return paras[mid].Format;
+            if (paras[mid].Start < start) lo = mid + 1; else hi = mid - 1;
+        }
+        return default;
+    }
 
     /// <summary>
     /// StyledText::GetHtml (sfr_render_01c.cpp:1308, <see cref="HtmlText.Build"/>) of the field's document: the text in its
@@ -551,8 +640,8 @@ public class AsTextField : AsInteractiveObject
         var doc = own && formatsBreak ? Text + "\r" : Text;
         double? Opt(object v) => v is { } x && !Rt.IsNullish(x) && Rt.ToNumber(x) != 0 ? Rt.ToNumber(x) : null;
         var d = new HtmlText.Defaults(FontName, Size, textColor, Format?.align as string ?? "left",
-            Opt(Format?.leftMargin), Opt(Format?.rightMargin), Opt(Format?.indent), Opt(Format?.leading));
-        return HtmlText.Build(doc, Formats, d);
+            Opt(Format?.leftMargin), Opt(Format?.rightMargin), Opt(Format?.indent), Opt(Format?.leading), Opt(Format?.blockIndent), TabStopsOf(Format?.tabStops));
+        return HtmlText.Build(doc, Formats, d, own ? Paras : null);
     }
 
     /// <summary>The html the renderer draws the text from: the last html set, or, once the chars' formats were edited
@@ -663,6 +752,7 @@ public class AsTextField : AsInteractiveObject
     {
         b = Math.Clamp(b, 0, Text.Length); e = Math.Clamp(e, b, Text.Length); s ??= "";
         var f = Formats;
+        var pf = Paras;
         var old = Text;
         Text = old[..b] + s + old[e..];
         if (f != null && f.Length >= old.Length)
@@ -673,9 +763,27 @@ public class AsTextField : AsInteractiveObject
             Array.Copy(f, 0, nf, 0, b);
             for (int i = 0; i < s.Length; i++) nf[b + i] = fill;
             Array.Copy(f, e, nf, b + s.Length, f.Length - e);
-            SetFormats(nf, formatsBreak);
+            SetFormats(nf, formatsBreak, ShiftParas(pf, b, e, s.Length));
         }
         Html = null; Changed();
+    }
+    /// <summary>The paragraph formats after the chars b..e became <paramref name="added"/> chars: the paragraphs that start after the cut
+    /// move by the change, the ones whose start was cut out are gone (a line break typed in is a paragraph with no format of its own;
+    /// the client's Paragraph::InsertString / Remove copy or merge the format, not modelled).</summary>
+    static IReadOnlyList<(int Start, ParaFormat Format)> ShiftParas(IReadOnlyList<(int Start, ParaFormat Format)> paras, int b, int e, int added)
+    {
+        if (paras == null) return null;
+        int delta = added - (e - b);
+        bool touched = false;
+        foreach (var (start, _) in paras) if (start > b) { touched = true; break; }
+        if (!touched) return paras;
+        var shifted = new List<(int, ParaFormat)>(paras.Count);
+        foreach (var (start, fmt) in paras)
+        {
+            if (start <= b) shifted.Add((start, fmt));
+            else if (start > e) shifted.Add((start + delta, fmt));
+        }
+        return shifted;
     }
     [As] public void replaceSelectedText(string s) => replaceText(SelBegin, SelEnd, s);
     [As] public int length => Text.Length;
@@ -684,9 +792,12 @@ public class AsTextField : AsInteractiveObject
     [As] public int numLines => Math.Max(1, Lines().Count);
     [As] public string getLineText(int i) { var l = Lines(); return i >= 0 && i < l.Count ? l[i] : throw R.RangeError("Error #2006: The supplied index is out of bounds."); }
     // Scaleform's TextField::getLineLength / getLineOffset (sfr_as3_13.cpp:1347, :1363; DocView::GetLineLength / GetLineOffset,
-    // sfr_render_03b.cpp:619, :609): a negative line or one past the last gives -1, never a RangeError
-    [As] public int getLineLength(int i) { var l = Lines(); return i >= 0 && i < l.Count ? l[i].Length : -1; }
-    [As] public int getLineOffset(int i) { var l = Lines(); if (i < 0 || i >= l.Count) return -1; int o = 0; for (int k = 0; k < i; k++) o += l[k].Length; return o; }
+    // sfr_render_03b.cpp:619, :609): the offset is the line's position in the text (Line::GetTextPos) and the length is the line's
+    // text length, which counts the line's own end (a paragraph break: CR, or CR LF as the text holds it), so a line starts where
+    // the one before it ends. TextAreaEx.calcSuperChatInfo reads getTextFormat(off, off + len - 1) with them. A negative line or
+    // one past the last gives -1, never a RangeError
+    [As] public int getLineLength(int i) { var l = Spans(); if (i < 0 || i >= l.Count) return -1; return (i + 1 < l.Count ? l[i + 1].Start : Text.Length) - l[i].Start; }
+    [As] public int getLineOffset(int i) { var l = Spans(); return i >= 0 && i < l.Count ? l[i].Start : -1; }
     [As] public int getLineIndexOfChar(int c) => c < 0 || c >= Text.Length ? -1 : LineOfChar(Spans(), c);
     [As] public int getLineIndexAtPoint(double x, double y) => Math.Clamp((int)((y - 2) / TextMeasure.LineHeight(FontName, Size, Leading)), 0, numLines - 1);
     [As] public int getCharIndexAtPoint(double x, double y) => -1;
@@ -706,7 +817,7 @@ public class AsTextField : AsInteractiveObject
         double w = col < line.Length ? TextMeasure.Width(FontName, Size, line[col].ToString()) : TextMeasure.Width(FontName, Size, Text[i].ToString());
         // the first line sits at the vertical align's top, a line with IMG chars has its own height (ImageTextH)
         double top = FirstLineTop(spans.Count) - Box.Y, y = top + k * (lh + Leading);
-        if (HasImages && TextMeasure.HeightRatio != null && TextMeasure.AscentRatio != null)
+        if (RunHeights)
         {
             var il = ImageLines();
             y = top + il[k].Top / 20;
@@ -738,6 +849,13 @@ public class AsTextField : AsInteractiveObject
         double w = LineWidth(s, start);
         m.width = w; m.height = TextMeasure.LineHeight(FontName, Size, 0);
         m.ascent = Size * 0.9; m.descent = Size * 0.25; m.leading = Leading;
+        // a line with IMG chars is as tall as the formatter made it (ImageLines); TextAreaEx.updateBackgroundColor adds these heights
+        // up to find where a line is drawn
+        if (i >= 0 && i < l.Count && RunHeights)
+        {
+            double h = ImageLines()[i].H / 20;
+            m.ascent += h - m.height; m.height = h;
+        }
         m.x = 2 + AlignOffset(w);       // FirstCharXOff: the gutter and the align's shift (the same x getCharBoundaries starts a line at)
         return m;
     }
@@ -825,6 +943,7 @@ public class AsTextField : AsInteractiveObject
         bool whole = b == -1 && e == -1;
         if (whole) { Format ??= (AsTextFormat)R.GetClass("flash.text.TextFormat").Construct(); Format.MergeFrom(f); }
         if (!whole || Formats != null) ApplyCharFormat(f, begin, (int)Math.Min(end, Text.Length));
+        if (!whole || Paras != null) ApplyParaFormat(ParaOf(f), begin, (int)Math.Min(end, Text.Length));
         Changed();
     }
 
@@ -849,8 +968,40 @@ public class AsTextField : AsInteractiveObject
             if (Set(f.url)) c = c with { Url = Rt.ToString(f.url) is { Length: > 0 } u ? u : null };
             nf[i] = c;
         }
-        SetFormats(nf, own && formatsBreak);
+        SetFormats(nf, own && formatsBreak, Paras);
         // the html the formats were parsed from no longer says what the chars look like: the renderer and htmlText build it from them
+        Html = null; htmlParser = null;
+    }
+
+    /// <summary>
+    /// StyledText::SetParagraphFormat (sfr_render_01c.cpp:1141, @0x14259c5e0): the format is merged into each paragraph that starts
+    /// inside [begin, end). Like the client's loop, a paragraph the range ends exactly at the end of is followed by the next one,
+    /// which is merged too before the loop sees nothing left (a range ending at a paragraph's end sets the next paragraph as well).
+    /// </summary>
+    void ApplyParaFormat(ParaFormat pf, int begin, int end)
+    {
+        if (pf.IsNone || begin < 0 || begin > Text.Length) return;
+        var list = new List<(int Start, ParaFormat Format)>(Paras ?? Array.Empty<(int, ParaFormat)>());
+        int pos = begin, left = Math.Max(0, end - begin);
+        var (start, len, closed) = ParaAt(pos);
+        int from = pos - start;
+        while (true)
+        {
+            if (from == 0)
+            {
+                int k = list.FindIndex(x => x.Start >= start);
+                if (k >= 0 && list[k].Start == start) list[k] = (start, list[k].Format.Merge(pf));
+                else list.Insert(k < 0 ? list.Count : k, (start, pf));
+            }
+            if (left == 0 || !closed) break;
+            left -= left > len ? len - from : left;      // the client's "to": a range ending inside the paragraph uses all of what is left
+            start += len;
+            (_, len, closed) = ParaAt(start);
+            from = 0;
+        }
+        if (list.Count == 0) return;
+        var src = Formats;
+        SetFormats(src ?? new HtmlFormat[Text.Length], true, src != null && formatsBreak, list);
         Html = null; htmlParser = null;
     }
 
@@ -876,8 +1027,46 @@ public class AsTextField : AsInteractiveObject
         f.italic = Same(c => c.Italic || di) ? c0.Italic || di : null;
         f.underline = Same(c => c.Underline || du) ? c0.Underline || du : null;
         if (!Same(c => c.Url)) f.url = null; else if (c0.Url != null) f.url = c0.Url;
+        SetParaProps(f, RangePara(begin, last));
         return f;
     }
+    /// <summary>
+    /// StyledText::GetTextAndParagraphFormat (sfr_render_01c.cpp:1195, @0x1425990d0), the paragraph half: the formats of the paragraphs
+    /// <paramref name="begin"/>..<paramref name="last"/> covers from their first char (a paragraph entered mid-way adds none), the
+    /// first taken as it is and the rest intersected, each over the field's own paragraph format. None when no paragraph counts.
+    /// </summary>
+    ParaFormat? RangePara(int begin, int last)
+    {
+        var def = FieldPara();
+        var paras = Paras;
+        ParaFormat? acc = null;
+        int pos = begin;
+        while (pos < last)
+        {
+            var (start, len, _) = ParaAt(pos);
+            int from = pos - start, n = Math.Min(last - pos, len - from);
+            if (n <= 0) break;
+            if (from == 0)
+            {
+                var eff = def.Merge(OwnPara(paras, start));
+                acc = acc is { } a ? eff.Intersection(a) : eff;
+            }
+            pos += n;
+        }
+        return acc;
+    }
+
+    /// <summary>The paragraph half of the TextFormat getTextFormat returns: a property set the same in every paragraph counted,
+    /// null otherwise (TextFormat::Intersection's shape; a paragraph format never given a property leaves it unset).</summary>
+    void SetParaProps(AsTextFormat f, ParaFormat? pf)
+    {
+        var p = pf ?? default;
+        object N(int? v) => v is int i ? Rt.Num(i) : null;
+        f.align = p.Align; f.indent = N(p.Indent); f.blockIndent = N(p.BlockIndent); f.leading = N(p.Leading);
+        f.leftMargin = N(p.LeftMargin); f.rightMargin = N(p.RightMargin);
+        f.tabStops = p.TabStops is { } t ? new AsArray(R, t.Select(x => (object)Rt.Num(x))) : null;
+    }
+
     /// <summary>Both ends clamped into the text, the order kept: the caret goes to <paramref name="e"/> and
     /// <paramref name="b"/> is the anchor a Shift key extends from (TextField::SetSelection @0x1425bcfc0, which calls
     /// EditorKit::SetSelection: SetCursorPos(e), then DocView::SetSelection(b, e) as given).</summary>
@@ -948,9 +1137,41 @@ public class AsTextField : AsInteractiveObject
         if (mouseWheelEnabled) scrollV = scrollV - delta;
     }
     [As] public int scrollH { get; set; }
-    [As] public int maxScrollV { get { int vis = Math.Max(1, (int)((Box.H - 4) / TextMeasure.LineHeight(FontName, Size, Leading))); return Math.Max(1, numLines - vis + 1); } }
+    /// <summary>With IMG chars the lines are not one height, so what fits is counted by the formatter's heights, as the
+    /// renderer pins the end of the field (Ms2.Ui.ScrolledLines.LastPosition; LineBuffer::IsLineVisible, sfr_render_04d.cpp:365: a line
+    /// is shown when its bottom is within the field's text height). Null without IMG chars or font ratios: the uniform count.</summary>
+    Func<int, (double Height, double Advance)> ImageMetrics(out int count)
+    {
+        count = 0;
+        if (!RunHeights) return null;
+        var il = ImageLines();
+        count = il.Count;
+        double lead = Math.Floor(Leading * 20 + 0.5);
+        return i => (il[i].H / 20, Math.Floor(il[i].H + lead + 0.5) / 20);
+    }
+    [As] public int maxScrollV
+    {
+        get
+        {
+            if (ImageMetrics(out int n) is { } m && n > 0) return Ms2.Ui.ScrolledLines.LastPosition(n, m, Box.H - 4 + 1) + 1;
+            int vis = Math.Max(1, (int)((Box.H - 4) / TextMeasure.LineHeight(FontName, Size, Leading)));
+            return Math.Max(1, numLines - vis + 1);
+        }
+    }
     [As] public int maxScrollH => 0;
-    [As] public int bottomScrollV { get { int vis = Math.Max(1, (int)((Box.H - 4) / TextMeasure.LineHeight(FontName, Size, Leading))); return Math.Min(numLines, scrollV + vis - 1); } }
+    [As] public int bottomScrollV
+    {
+        get
+        {
+            if (ImageMetrics(out int n) is { } m && n > 0)
+            {
+                int first = Math.Clamp(scrollV - 1, 0, n - 1);
+                return first + Ms2.Ui.ScrolledLines.Fit(n, m, Box.H - 4 + 1, first);
+            }
+            int vis = Math.Max(1, (int)((Box.H - 4) / TextMeasure.LineHeight(FontName, Size, Leading)));
+            return Math.Min(numLines, scrollV + vis - 1);
+        }
+    }
     [As] public AsObject getImageReference(string id) => null;
 
     /// <summary>Typed input from the player: inserts at the caret, honours maxChars and restrict. A character the

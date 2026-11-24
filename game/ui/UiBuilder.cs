@@ -604,7 +604,8 @@ public partial class TextNode : Node2D
             if (st.Image is HtmlImage im && (images ??= new()).ContainsKey(im) == false) images[im] = Box(im);
         }
         runCount = p.Count;
-        Label.Text = labelText = p.Text(0);
+        // the line break the last P's end makes is not a line of its own (AsTextField.SetHtml: not in the field's text, so not in numLines)
+        Label.Text = labelText = p.Text(EndBreak(p, html));
         Label.QueueRedraw();
     }
 
@@ -615,7 +616,7 @@ public partial class TextNode : Node2D
         if (htmlParser == null || htmlParsed == null) return false;
         var whole = new Ms2.Avm2.Flash.HtmlText.Parser(htmlMultiline, '\n', true, false, htmlParsed.Length);
         whole.Feed(htmlParsed);
-        if (whole.Text(0) != LabelText || whole.Count != runCount) return false;
+        if (whole.Text(EndBreak(whole, htmlParsed)) != LabelText || whole.Count != runCount) return false;
         for (int i = 0; i < whole.Count; i++)
         {
             var f = whole.Formats[i];
@@ -626,6 +627,11 @@ public partial class TextNode : Node2D
         }
         return true;
     }
+
+    /// <summary>1 when the html ends with an end P (and white space only) and the text with its line break: that break only ends the
+    /// paragraph (AsTextField.SetHtml's endBreak), else 0.</summary>
+    static int EndBreak(Ms2.Avm2.Flash.HtmlText.Parser p, string html) =>
+        p.Length > 0 && p.At(p.Length - 1) == '\n' && Ms2.Avm2.Flash.AsTextField.EndsParagraph(html) ? 1 : 0;
 
     Ms2.Avm2.Flash.HtmlText.Parser htmlParser;
     string htmlParsed;

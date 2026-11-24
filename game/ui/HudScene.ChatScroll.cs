@@ -9,6 +9,8 @@ namespace Ms2Godot.Ui;
 /// <summary>
 /// The <c>--uigen-open chatscroll</c> shot: the chat window with more lines than fit, then scrolled up with the wheel over the
 /// log (TextField::OnMouseWheelEvent, sfr_gfx_03e.cpp:915) so the scroll bar thumb leaves the end. No server.
+/// <c>--uigen-open chatend</c> is the log at its end with a super chat line in it: the shot prints, after the view synced, the script's
+/// scroll range and where the super chat line is against the block TextAreaEx.updateBackgroundColor made for it.
 /// <c>--uigen-open chatresize</c> fills the log to its limit and drags the window's resize handle, printing per move what
 /// the ActionScript handler (setSize and the redraws it asks for) and the display-list sync spent.
 /// <c>--uigen-open chatappend</c> fills the log to its limit, then adds one line a frame and prints what a frame cost in
@@ -25,11 +27,43 @@ public partial class HudScene
         {
             // every third line is long enough to wrap in the window, so the script's and the label's wraps can differ
             for (int i = 1; i <= 60; i++) ChatLog.AddSystemLine("Chat line " + i + " of 60, long enough to be a line of its own in the log." + (i % 3 == 0 ? " It goes on and on, so that it needs a second and a third line in the window." : ""), TalkKind.SystemNotice);
+            // a user line, a super chat (type 0x10: TEXTFORMAT indent/tabStops, whose line TextAreaEx.updateBackgroundColor colours from
+            // getTextFormat) and a user line again
+            ChatLog.FeatureEnabled = _ => false;      // the KMS2 data's chat strings are the ones with the gender argument
+            foreach (int type in new[] { 0, 0x10, 0 })
+                ChatLog.OnUserChat(new Ms2.Net.Packets.ChatMessage(0, 0, "Hero", false, 0, type == 0x10 ? "Super chat line" : "Plain line", type, false, 0, "", 0, 11000001, 0));
+            ChatLog.FeatureEnabled = null;
+            foreach (var l in ChatLog.Logs.TakeLast(4)) GD.Print("chatlog tail kind " + l.Kind + ": " + l.Msg);
             return;
         }
-        if (openShot == "chatend") return;      // the log as it stands at its end
         var h = m.Host;
         if (h.Child("m_textOutput") is not AsDisplayObject o) return;
+        var tfld = h.Get(o, "textField");
+        if (step == 2)
+        {
+            // after the view synced: the script's range is the one drawn, and the block TextAreaEx.updateBackgroundColor made sits on the
+            // super chat line (its place below the first shown line, in the field's view)
+            var bg = h.Child("m_textBgColor") as AsContainer;
+            int nl = Rt.ToInt32(h.Get(tfld, "numLines")), superLine = -1;
+            for (int i = 0; i < nl && superLine < 0; i++)
+            {
+                int off = Rt.ToInt32(h.Invoke(tfld, "getLineOffset", i)), len = Rt.ToInt32(h.Invoke(tfld, "getLineLength", i));
+                if (h.Invoke(tfld, "getTextFormat", off, off + len - 1) is { } tf && Rt.ToNumber(h.Get(tf, "indent")) > 0 && h.Get(tf, "tabStops") != null) superLine = i;
+            }
+            string row = "none";
+            if (superLine >= 0)
+            {
+                var cb = h.Invoke(tfld, "getCharBoundaries", Rt.ToInt32(h.Invoke(tfld, "getLineOffset", superLine)));
+                var first = h.Invoke(tfld, "getCharBoundaries", Rt.ToInt32(h.Invoke(tfld, "getLineOffset", Rt.ToInt32(h.Get(tfld, "scrollV")) - 1)));
+                row = $"line {superLine} y={Rt.ToNumber(h.Get(cb, "y")) - Rt.ToNumber(h.Get(first, "y")) + 2:F1} h={Rt.ToString(h.Get(h.Invoke(tfld, "getLineMetrics", superLine), "height"))}";
+            }
+            string blocks = bg == null ? "none" : string.Join("; ", bg.Children.Take(4).Select(k => { var kb = k.GetBounds(bg); return $"y={kb.Y:F1} h={kb.H:F1} w={kb.W:F1}"; }));
+            GD.Print($"CHATSUPER scrollV={Rt.ToString(h.Get(tfld, "scrollV"))} maxScrollV={Rt.ToString(h.Get(tfld, "maxScrollV"))} bottomScrollV={Rt.ToString(h.Get(tfld, "bottomScrollV"))} numLines={nl} superRow [{row}] blocks {bg?.Children.Count ?? 0} [{blocks}]");
+            return;
+        }
+        // the super chat consumer: TextAreaEx.updateBackgroundColor fills m_textBgColor with a tinted block per super chat line
+        if (openShot is "chatscroll" or "chatend") h.Invoke(o, "updateBackgroundColor");
+        if (openShot == "chatend") return;      // the log as it stands at its end
         var b = o.GetBounds(o);
         var (x, y) = o.LocalToGlobal(b.X + b.W / 2, b.Y + b.H / 2);
         h.Player.MouseMove(x, y);

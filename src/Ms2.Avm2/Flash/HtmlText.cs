@@ -28,6 +28,32 @@ public readonly record struct HtmlFormat(uint? Color, bool Bold, bool Italic, bo
 }
 
 /// <summary>
+/// A paragraph's format as ParagraphFormat holds it, each field null while not set (the field's own default format then
+/// applies): ALIGN of a P, and INDENT, BLOCKINDENT, LEADING, LEFTMARGIN, RIGHTMARGIN and TABSTOPS of a TEXTFORMAT
+/// (StyledText::ParseHtml, sfr_render_05i.cpp:1361). <see cref="Merge"/> is ParagraphFormat::Merge and
+/// <see cref="Intersection"/> ParagraphFormat::Intersection (sfr_render_03.cpp:579, :1676 / :1700). Bullet and display are not modelled.
+/// </summary>
+public readonly record struct ParaFormat(string Align, int? Indent, int? BlockIndent, int? Leading, int? LeftMargin, int? RightMargin, int[] TabStops)
+{
+    public bool IsNone => Align == null && Indent == null && BlockIndent == null && Leading == null && LeftMargin == null && RightMargin == null && TabStops == null;
+
+    /// <summary>This format with the fields <paramref name="o"/> sets replaced.</summary>
+    public ParaFormat Merge(ParaFormat o) => new(o.Align ?? Align, o.Indent ?? Indent, o.BlockIndent ?? BlockIndent, o.Leading ?? Leading,
+        o.LeftMargin ?? LeftMargin, o.RightMargin ?? RightMargin, o.TabStops ?? TabStops);
+
+    /// <summary>The fields both set to the same value.</summary>
+    public ParaFormat Intersection(ParaFormat o) => new(Align != null && Align == o.Align ? Align : null,
+        Indent != null && Indent == o.Indent ? Indent : null, BlockIndent != null && BlockIndent == o.BlockIndent ? BlockIndent : null,
+        Leading != null && Leading == o.Leading ? Leading : null, LeftMargin != null && LeftMargin == o.LeftMargin ? LeftMargin : null,
+        RightMargin != null && RightMargin == o.RightMargin ? RightMargin : null,
+        TabStops != null && o.TabStops != null && TabStops.AsSpan().SequenceEqual(o.TabStops) ? TabStops : null);
+
+    public bool Equals(ParaFormat o) => Align == o.Align && Indent == o.Indent && BlockIndent == o.BlockIndent && Leading == o.Leading
+        && LeftMargin == o.LeftMargin && RightMargin == o.RightMargin && (TabStops == null ? o.TabStops == null : o.TabStops != null && TabStops.AsSpan().SequenceEqual(o.TabStops));
+    public override int GetHashCode() => HashCode.Combine(Align, Indent, BlockIndent, Leading, LeftMargin, RightMargin, TabStops?.Length);
+}
+
+/// <summary>
 /// A Flash text field's htmlText read and written the way Scaleform's StyledText does it: <see cref="Parse"/> is
 /// StyledText::ParseHtml (sfr_render_05i.cpp), <see cref="Build"/> is StyledText::GetHtml (sfr_render_01c.cpp:1308).
 /// </summary>
@@ -77,8 +103,11 @@ public static class HtmlText
         readonly char newLine;
         readonly StringBuilder text;
         HtmlFormat[] styles;
-        readonly List<(string Name, HtmlFormat Around)> stack = new();
+        readonly List<(string Name, HtmlFormat Around, ParaFormat AroundPara)> stack = new();
+        readonly List<(int Start, ParaFormat Format)> paras = new();
         HtmlFormat current;
+        ParaFormat para;           // the paragraph format of the element being read (its parent's, with its own attributes)
+        int paraStart;             // the text index the last paragraph starts at
         HtmlFormat last;           // lastFormat: the last opened element's or content's format, which line breaks take
         int openP;
 
@@ -97,6 +126,10 @@ public static class HtmlText
         public int Length => text.Length;
         /// <summary>True when some format is not plain.</summary>
         public bool Styled { get; private set; }
+        /// <summary>The formats the paragraphs got from the html, by the text index each starts at (ascending; a paragraph with none
+        /// set is not listed). A paragraph ends at each CR or LF (NLP_ReplaceCRLF keeps each of a CR LF pair its own).
+        /// Grows in place as html is appended.</summary>
+        public IReadOnlyList<(int Start, ParaFormat Format)> Paragraphs => paras;
         /// <summary>False when the html fed last ended where the next piece could change what it read: inside a tag with no closing
         /// bracket, an entity that a semicolon could end, or a backslash a literal line break could follow. Parsing the pieces
         /// as one text is then not the same as feeding them one after another.</summary>
@@ -107,10 +140,12 @@ public static class HtmlText
         /// <summary>The char at <paramref name="i"/> of the text so far.</summary>
         public char At(int i) => text[i];
 
-        void Add(char c, HtmlFormat f)
+        void Add(char c, HtmlFormat f, ParaFormat pf)
         {
             if (!perChar && char.IsLowSurrogate(c) && text.Length > 0 && char.IsHighSurrogate(text[^1])) { text.Append(c); return; }
+            SetPara(pf);
             text.Append(c);
+            if (c is '\r' or '\n') { paraStart = text.Length; SetPara(pf); }   // the paragraph after a line break in content takes the content's format
             if (Count == styles.Length)
             {
                 var grown = new HtmlFormat[styles.Length * 2];
@@ -120,8 +155,18 @@ public static class HtmlText
             styles[Count++] = f;
             if (!f.IsPlain) Styled = true;
         }
-        void Content(char c) { Add(c, current); last = current; }
-        void NewLine() { if (multiline) Add(newLine, last); }
+
+        /// <summary>StyledText::AppendString (sfr_render_01c.cpp:959 / :986), Paragraph::SetFormat (:335): a paragraph with no text yet
+        /// takes the format given, merged over what it has.</summary>
+        void SetPara(ParaFormat pf)
+        {
+            if (pf.IsNone || text.Length != paraStart) return;
+            if (paras.Count > 0 && paras[^1].Start == paraStart) paras[^1] = (paraStart, paras[^1].Format.Merge(pf));
+            else paras.Add((paraStart, pf));
+            Styled = true;
+        }
+        void Content(char c) { Add(c, current, para); last = current; }
+        void NewLine() { if (multiline) Add(newLine, last, default); }
         bool ParagraphEmpty() => text.Length == 0 || text[^1] == newLine;
 
         /// <summary>Parses <paramref name="html"/> onto the end of the text.</summary>
@@ -176,12 +221,12 @@ public static class HtmlText
                 case "IMG":
                 {
                     // HTML_IMG: the image char's format is the default text format with the image desc
-                    Add(' ', new HtmlFormat { Image = Image(rest[n..]), Url = current.Url });
+                    Add(' ', new HtmlFormat { Image = Image(rest[n..]), Url = current.Url }, para);
                     last = current;
                     return;
                 }
             }
-            stack.Add((name, current));
+            stack.Add((name, current, para));
             switch (name)
             {
                 case "B": current = current with { Bold = true }; break;
@@ -197,10 +242,25 @@ public static class HtmlText
                 case "P":
                     if (openP > 0) NewLine();                               // a P inside an open P starts a paragraph
                     openP++;
+                    if ((Attribute(rest[n..], "align") ?? "").Trim().ToLowerInvariant() is var al && al is "left" or "right" or "center" or "justify")
+                        para = para with { Align = al };
+                    SetPara(para);                                          // an empty paragraph takes the P's format (:1269)
                     break;
                 case "LI":
                     if (!ParagraphEmpty()) NewLine();
+                    SetPara(para);
                     break;
+                case "TEXTFORMAT":
+                {
+                    var attrs = rest[n..];
+                    if (ParseInt(Attribute(attrs, "indent")) is int indent) para = para with { Indent = indent };
+                    if (ParseInt(Attribute(attrs, "blockindent")) is int bi and >= 0) para = para with { BlockIndent = bi };
+                    if (ParseInt(Attribute(attrs, "leading")) is int ld) para = para with { Leading = ld };
+                    if (ParseInt(Attribute(attrs, "leftmargin")) is int lm and >= 0) para = para with { LeftMargin = lm };
+                    if (ParseInt(Attribute(attrs, "rightmargin")) is int rm and >= 0) para = para with { RightMargin = rm };
+                    if (Attribute(attrs, "tabstops") is { } ts) para = para with { TabStops = TabStops(ts) };
+                    break;
+                }
             }
             last = current;
             if (selfClosing) End(name, true);
@@ -216,7 +276,7 @@ public static class HtmlText
                 while (stack.Count > 0 && stack[^1].Name != name) stack.RemoveAt(stack.Count - 1);
                 if (stack.Count == 0) return;
             }
-            current = stack[^1].Around;
+            (_, current, para) = stack[^1];
             stack.RemoveAt(stack.Count - 1);
             if (name == "P") { openP--; if (!emptyElement) NewLine(); }   // an empty P element makes no paragraph
             else if (name == "LI") NewLine();
@@ -227,7 +287,8 @@ public static class HtmlText
     /// <summary>The field defaults <see cref="Build"/> writes: TextField::SetTextFieldDef's default text format (font
     /// name, size, colour; kerning off) and paragraph format (alignment; margins, indent and leading when set).</summary>
     public readonly record struct Defaults(string Font, double Size, uint Color, string Align,
-        double? LeftMargin = null, double? RightMargin = null, double? Indent = null, double? Leading = null);
+        double? LeftMargin = null, double? RightMargin = null, double? Indent = null, double? Leading = null,
+        double? BlockIndent = null, int[] TabStops = null);
 
     /// <summary>
     /// StyledText::GetHtml (sfr_render_01c.cpp:1308): one TEXTFORMAT + P block per paragraph of <paramref name="text"/>
@@ -237,7 +298,7 @@ public static class HtmlText
     /// <paramref name="d"/>. Not modelled: FACE per run, LETTERSPACING, ALPHA, LI paragraphs, BLOCKINDENT and
     /// TABSTOPS.
     /// </summary>
-    public static string Build(string text, HtmlFormat[] formats, Defaults d)
+    public static string Build(string text, HtmlFormat[] formats, Defaults d, IReadOnlyList<(int Start, ParaFormat Format)> paragraphs = null)
     {
         var html = new StringBuilder();
         text ??= "";
@@ -246,20 +307,25 @@ public static class HtmlText
         {
             "right" => "RIGHT", "center" => "CENTER", "justify" => "JUSTIFY", _ => "LEFT",
         };
-        static string N(double v) => ((int)v).ToString(CultureInfo.InvariantCulture);
-        int at = 0;
+        static int? Pick(int? own, double? field) => own ?? (field is double v ? (int)v : null);
+        int at = 0, pi = 0;
         for (int np = 0; np < paras.Length; np++)
         {
             string p = paras[np];
             int start = at;
             at += p.Length + 1;
             if (np + 1 == paras.Length && p.Length == 0) continue;
+            while (paragraphs != null && pi < paragraphs.Count && paragraphs[pi].Start < start) pi++;
+            var own = paragraphs != null && pi < paragraphs.Count && paragraphs[pi].Start == start ? paragraphs[pi].Format : default;
             html.Append("<TEXTFORMAT");
-            if (d.Indent is double ind) html.Append(" INDENT=\"").Append(N(ind)).Append('"');
-            if (d.LeftMargin is double lm) html.Append(" LEFTMARGIN=\"").Append(N(lm)).Append('"');
-            if (d.RightMargin is double rm) html.Append(" RIGHTMARGIN=\"").Append(N(rm)).Append('"');
-            if (d.Leading is double ld) html.Append(" LEADING=\"").Append(N(ld)).Append('"');
-            html.Append("><P ALIGN=\"").Append(align).Append("\">");
+            if (Pick(own.Indent, d.Indent) is int ind) html.Append(" INDENT=\"").Append(ind.ToString(CultureInfo.InvariantCulture)).Append('"');
+            if (Pick(own.BlockIndent, d.BlockIndent) is int bi) html.Append(" BLOCKINDENT=\"").Append(bi.ToString(CultureInfo.InvariantCulture)).Append('"');
+            if (Pick(own.LeftMargin, d.LeftMargin) is int lm) html.Append(" LEFTMARGIN=\"").Append(lm.ToString(CultureInfo.InvariantCulture)).Append('"');
+            if (Pick(own.RightMargin, d.RightMargin) is int rm) html.Append(" RIGHTMARGIN=\"").Append(rm.ToString(CultureInfo.InvariantCulture)).Append('"');
+            if (Pick(own.Leading, d.Leading) is int ld) html.Append(" LEADING=\"").Append(ld.ToString(CultureInfo.InvariantCulture)).Append('"');
+            if ((own.TabStops ?? d.TabStops) is int[] tabs) html.Append(" TABSTOPS=\"").Append(string.Join(',', tabs)).Append('"');
+            string pAlign = own.Align == null ? align : own.Align switch { "right" => "RIGHT", "center" => "CENTER", "justify" => "JUSTIFY", _ => "LEFT" };
+            html.Append("><P ALIGN=\"").Append(pAlign).Append("\">");
             // the paragraph's runs, its newline included (its format may open the FONT of an otherwise empty paragraph)
             int len = Math.Min(p.Length + 1, text.Length - start);
             bool fontOpen = false;
@@ -356,6 +422,22 @@ public static class HtmlText
             r = unchecked(r * 10 + (v[i] - '0'));
         }
         return r * sign;
+    }
+
+    /// <summary>TABSTOPS="[a,b,c]" (ParseHtml, sfr_render_05i.cpp:1361): an optional '[' and comma-separated unsigned numbers; a value
+    /// ParseInt rejects ends the list.</summary>
+    static int[] TabStops(string v)
+    {
+        v = v.Trim();
+        if (v.StartsWith('[')) v = v[1..];
+        v = v.TrimEnd(']');
+        var stops = new List<int>();
+        foreach (var part in v.Split(','))
+        {
+            if (ParseInt(part.Trim()) is not int t || t < 0) break;
+            stops.Add(t);
+        }
+        return stops.ToArray();
     }
 
     static string Attribute(string attrs, string name)
