@@ -3316,6 +3316,126 @@ public partial class LiveSession : Node
             }
             live.FieldEntered -= Entered;
         }
+        // MS2_LIVE_PARTY: "ask:<name>" or "answer", on two clients in one field (MS2_LIVE_MOVES warps both first); shots in
+        // MS2_LIVE_PARTY_SHOTS. Round one: the asker clicks the chat link "inviteParty,<name>", the answerer accepts the invite
+        // box; both windows open; the asker starts a ready check and both answer its box; the asker hands over the lead; the new
+        // leader kicks the asker. Round two: the asker invites again, the answerer accepts, the asker leaves. The party book
+        // (members, leader) is logged at each step on both sides.
+        string partyRun = System.Environment.GetEnvironmentVariable("MS2_LIVE_PARTY");
+        if (!string.IsNullOrEmpty(partyRun) && Instance is { } pl && tree.CurrentScene is Ui.HudScene ph)
+        {
+            var pp = partyRun.Split(':');
+            bool asker = pp[0] == "ask";
+            string partner = asker && pp.Length > 1 ? pp[1] : "";
+            string role = asker ? "A" : "B";
+            string partyShots = System.Environment.GetEnvironmentVariable("MS2_LIVE_PARTY_SHOTS");
+            if (!string.IsNullOrEmpty(partyShots)) DirAccess.MakeDirRecursiveAbsolute(partyShots);
+            void PShot(string name)
+            {
+                GD.Print($"live: party {role}: {name}: {ph.PartyText()}");
+                if (!string.IsNullOrEmpty(partyShots))
+                    flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(partyShots, $"{role}_{name}.png"));
+            }
+            async Task<bool> Box(string what, int seconds)
+            {
+                await Until(() => MessageBoxLayer.Instance?.Shown == true, 60 * seconds);
+                bool shown = MessageBoxLayer.Instance?.Shown == true;
+                GD.Print($"live: party {role}: {what} box {(shown ? "shown" : "never shown")}");
+                if (!shown) return false;
+                await Frames(60);
+                PShot(what + "_box");
+                MessageBoxLayer.Instance?.Click(0);
+                await Frames(60);
+                return true;
+            }
+            async Task<bool> Joined(bool joined, int seconds)
+            {
+                await Until(() => pl.Party.IsInParty == joined && (!joined || pl.Party.Members.Count > 1), 60 * seconds);
+                await Frames(120);
+                return pl.Party.IsInParty == joined;
+            }
+            long Other() => pl.Party.Members.FirstOrDefault(m => m.CharacterId != pl.CharacterId)?.CharacterId ?? 0;
+            await Frames(240);
+            // a new character's opening cut scene movie covers the field: the HUD's Esc skips it, as in the movie scene's own run
+            await Until(() => pl.Movie.IsPlaying, 60 * 20);
+            if (pl.Movie.IsPlaying)
+            {
+                ph.Escape();
+                GD.Print($"live: party {role}: opening movie {pl.Movie.CutSceneId} skipped");
+                await Until(() => !pl.Movie.IsPlaying, 60 * 15);
+                await Frames(120);
+            }
+            if (asker)
+            {
+                UserBlock who = null;
+                await Until(() => (who = pl.FieldUsers().FirstOrDefault(u => u.Name == partner)) != null, 60 * 120);
+                GD.Print($"live: party A: {partner} {(who != null ? "is in the field" : "never came")}");
+                await Frames(120);
+                PShot("before");
+                ph.PartyLinkClick("inviteParty," + partner);
+                bool joined = await Joined(true, 60);
+                GD.Print($"live: party A: invite answered, in party {joined}, window {ph.PartyWindowShown}");
+                PShot("party");
+                // the ready check: the popup menu's entry sends this; each side answers the box the start opens
+                pl.SendParty(new Ms2.Net.Packets.PartyReadyCheckRequest());
+                await Box("ready", 20);
+                await Frames(60 * 4);
+                PShot("ready_marks");
+                await Frames(60 * 12);
+                PShot("ready_end");
+                // the lead goes to the answerer
+                long other = Other();
+                pl.SendParty(new Ms2.Net.Packets.PartyLeaderChangeRequest(partner));
+                await Until(() => pl.Party.LeaderId == other, 60 * 20);
+                GD.Print($"live: party A: leader is now {pl.Party.LeaderId} (answerer {other})");
+                await Frames(60);
+                PShot("leader_changed");
+                await Until(() => !pl.Party.IsInParty, 60 * 60);
+                await Frames(120);
+                GD.Print($"live: party A: after the kick: in party {pl.Party.IsInParty}, window {ph.PartyWindowShown}");
+                PShot("kicked");
+                // round two: invite again and leave
+                await Frames(60 * 5);
+                ph.PartyLinkClick("inviteParty," + partner);
+                joined = await Joined(true, 60);
+                GD.Print($"live: party A: second invite, in party {joined}");
+                PShot("party2");
+                await Frames(60 * 3);
+                pl.SendParty(new Ms2.Net.Packets.PartyLeaveRequest());
+                await Joined(false, 30);
+                GD.Print($"live: party A: left, in party {pl.Party.IsInParty}, window {ph.PartyWindowShown}");
+                PShot("left");
+            }
+            else
+            {
+                await Box("invite", 120);
+                bool joined = await Joined(true, 60);
+                GD.Print($"live: party B: joined {joined}, window {ph.PartyWindowShown}");
+                PShot("party");
+                await Box("ready", 40);
+                await Frames(60 * 4);
+                PShot("ready_marks");
+                await Frames(60 * 12);
+                PShot("ready_end");
+                long self = pl.CharacterId;
+                await Until(() => pl.Party.LeaderId == self, 60 * 40);
+                GD.Print($"live: party B: leader is now {pl.Party.LeaderId} (self {self})");
+                await Frames(60);
+                PShot("leader_changed");
+                long other = Other();
+                GD.Print($"live: party B: kicking {other}");
+                pl.SendParty(new Ms2.Net.Packets.PartyKickRequest(other));
+                await Frames(60 * 3);
+                PShot("kicked_other");
+                await Box("invite", 120);
+                joined = await Joined(true, 60);
+                GD.Print($"live: party B: second join {joined}");
+                PShot("party2");
+                await Until(() => pl.Party.Members.Count < 2 || !pl.Party.IsInParty, 60 * 60);
+                await Frames(120);
+                PShot("after_leave");
+            }
+        }
         await Frames(60 * hold);
         bool ok = flow.Current == GameFlow.State.Game;
         GD.Print(ok ? "live: auto run done" : "live: auto run failed");

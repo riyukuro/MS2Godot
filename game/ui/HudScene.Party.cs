@@ -28,6 +28,22 @@ public partial class HudScene
 
     bool PartyWindowOpen => party != null && !party.IsClosed;
 
+    // ---- scripted live runs (MS2_LIVE_PARTY) ---------------------------------------------------------------------------
+
+    /// <summary>Scripted runs: the party window is up.</summary>
+    public bool PartyWindowShown => PartyWindowOpen;
+
+    /// <summary>Scripted runs: a click on a chat party link, as the messenger's hyperLinkLeft runs it (for example "inviteParty,Name").</summary>
+    public void PartyLinkClick(string text) => ChatLog.PartyLinks?.Handle(text);
+
+    /// <summary>Scripted runs: the leader and every member of the party book with the offline and dead marks.</summary>
+    public string PartyText()
+    {
+        if (partyBook == null || !partyBook.IsInParty) return "not in a party";
+        return $"party {partyBook.PartyId} leader {partyBook.LeaderId}: " + string.Join(", ",
+            partyBook.Members.Select(m => $"{m.User.Name}({m.User.CharacterId}) hp {m.User.Hp}/{m.User.MaxHp}{(m.Offline ? " offline" : "")}{(m.User.IsDead ? " dead" : "")}"));
+    }
+
     /// <summary>FUN_140710590 for the party window and the popup menu: the session's send; offline the packet is logged.</summary>
     void PartySend(Ms2.Net.Wire.IOutPacket packet)
     {
