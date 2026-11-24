@@ -260,6 +260,7 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         abandon = null;
         contents.Start(map, fieldName, player, SpawnsLocalPlayer && !Net.LiveSession.Active);
         Triggers.Bind(contents.TriggerActors);   // the actor trigger objects' drawn actors
+        Breakables.BindActors(contents.BreakableActors);   // the breakable actors, at their markers' states
         if (Net.LiveSession.Instance is { } lsInteract)   // the objects contents.Start attached, then each state change
         {
             Interacts.Bind(lsInteract.InteractObjects, contents.InteractActors);

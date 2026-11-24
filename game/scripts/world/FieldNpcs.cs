@@ -160,15 +160,20 @@ public sealed class FieldNpcs
         /// (triggeractioncli.cpp:723), and Gamebryo's NiActorManager::SetTargetAnimation does not restart the sequence that
         /// is already the target, so the same name again leaves it where it is (a finished "Opened" stays open).
         /// </summary>
-        public bool PlayAnimation(string sequence)
+        public bool PlayAnimation(string sequence) => PlayAnimation(sequence, false);
+
+        /// <summary>As <see cref="PlayAnimation(string)"/>; with <paramref name="force"/> (bForce true, a breakable's idle,
+        /// breakableobject.cpp:302) the sequence already the target starts again from its first frame.</summary>
+        public bool PlayAnimation(string sequence, bool force)
         {
-            if (sequence != null && sequence == Sequence) return true;
+            if (sequence != null && sequence == Sequence && !force) return true;
             var a = player == null || string.IsNullOrEmpty(sequence) ? null : owner.Anim(model, sequence, byCycle: true);
             if (a == null) return false;
             var name = new StringName(sequence.ValidateNodeName());
             var lib = player.GetAnimationLibrary("");
             if (!lib.HasAnimation(name)) lib.AddAnimation(name, a);
             player.Play(name);
+            if (force) player.Seek(0, true);
             Sequence = sequence;
             return true;
         }
@@ -183,6 +188,11 @@ public sealed class FieldNpcs
     /// world/FieldInteractDraws).</summary>
     public readonly Dictionary<FieldEntity, TriggerActor> InteractActors = new();
 
+    /// <summary>The breakable actors (MS2Breakable with the Actor mixin, CBreakableObject's m_bHasAnim) <see cref="PlaceActors"/>
+    /// drew, by entity, from any archive: the field load's SetState(2) shows each and plays its idle (breakableobject.cpp:
+    /// 264, 293-304); their later states come from world/FieldBreakables.</summary>
+    public readonly Dictionary<FieldEntity, TriggerActor> BreakableActors = new();
+
     /// <summary>The field's actor entities (client placed).</summary>
     public void PlaceActors(Node3D parent, FieldMap map)
     {
@@ -191,19 +201,21 @@ public sealed class FieldNpcs
             if (e.ModelName != "MS2Actor" && !e.HasMixin("Actor")) continue;
             bool trigger = Ms2.Net.Packets.TriggerObjects.KindOf(e.HasMixin) == Ms2.Net.Packets.TriggerObjectKind.Actor;
             bool interact = !trigger && e.HasMixin("MS2InteractActor");
-            bool visible = e.Bool("IsVisible", true);
+            bool breakable = !trigger && !interact && e.HasMixin("MS2Breakable");
+            bool visible = e.Bool("IsVisible", true) || breakable;
             if (!visible && !trigger && !interact) continue;
             var (archive, entry) = assets.Resolve(e.Get("KfmAsset"));
-            var m = archive == NpcArchive || ((trigger || interact) && archive != null) ? Model(archive, entry) : null;
+            var m = archive == NpcArchive || ((trigger || interact || breakable) && archive != null) ? Model(archive, entry) : null;
             if (m == null) { Missing++; continue; }
             var seq = e.Get("InitialSequence");
-            if (trigger || interact)
+            if (trigger || interact || breakable)
             {
                 var root = Place(parent, m.Value, e.Name ?? "Actor", e, (float)e.Scale, Array.Empty<string>());
                 var t = new TriggerActor(this, m.Value, e, root) { Visible = visible };
                 t.PlayAnimation(seq);
                 if (trigger) TriggerActors.Add(t);
-                else InteractActors[e] = t;
+                else if (interact) InteractActors[e] = t;
+                else BreakableActors[e] = t;
             }
             else Place(parent, m.Value, e.Name ?? "Actor", e, (float)e.Scale, new[] { seq, "Idle_A" }.Where(s => !string.IsNullOrEmpty(s)));
             Actors++;
