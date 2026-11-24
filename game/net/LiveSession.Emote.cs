@@ -10,8 +10,9 @@ namespace Ms2Godot.Net;
 /// The favorite send (mode 4) comes from the dynamic action dialog's onFavorite (uidynamicactiondialog.cpp:369), which
 /// also refreshes on NotifyLearnEmotion (the Learned event).
 /// The use (mode 2) comes from the own emotion cast (StateSkill::FUN_1417eaa50, stateskill.cpp:1904-1910, <see cref="SendEmote"/>).
-/// STILL-OPEN: learn (mode 1) from the learn-emotion message box (UIMessageBox::HandleLearnEmotionButton,
-/// uimessagebox.cpp:1451) on an emotion item has no caller yet.
+/// The learn (mode 1) comes from the learn-emotion message box on an emotion item (UIMessageBox::HandleLearnEmotionButton,
+/// uimessagebox.cpp:1451, through the inventory). NotifyLearnEmotion also reaches CGuideManager::OnLearnEmotion
+/// (registered at guideentity_1b.cpp:187, body :1057 @0x14138eb90).
 /// </summary>
 public partial class LiveSession
 {
@@ -37,6 +38,7 @@ public partial class LiveSession
         {
             emotionsHooked = true;
             Emotions.Notice += id => CommonBoxSink?.Invoke(id);
+            Emotions.Learned += id => guide?.OnLearnEmotion(id);     // NotifyLearnEmotion -> CGuideManager::OnLearnEmotion
         }
         if (selfObject < 0) return;
         if (Emotions.Apply(m, GameSession?.ServerTime ?? 0))
