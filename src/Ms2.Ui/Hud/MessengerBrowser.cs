@@ -24,6 +24,9 @@ public static class TalkKind
     public const int Friend = 0xc;
     /// <summary>SystemSetting "event" and "notice" (FUN_1414813b0): the welcome line and the chat copies of the notices.</summary>
     public const int SystemEvent = 0x13, SystemNotice = 0x14;
+    /// <summary>SubjectSetting "party" (messengerdata.cpp:561): the party chat lines; NoticeSetting "party" (:299): the party
+    /// notice lines (FUN_1412751b0(.., 0xe)); SubjectSetting "partyInvite": the invite line (FUN_141a239e0).</summary>
+    public const int PartyChat = 2, PartyNotice = 0xe, PartyInvite = 0x19;
     /// <summary>SubjectSetting::FUN_141481e90 never hides it: the top layer notices (ShowTopLayerNotify @0x141275400).</summary>
     public const int TopLayer = 0x1d;
 }
@@ -268,6 +271,18 @@ public sealed class MessengerBrowser
         string line = Tables.ReservedWords.ReplaceValueWords(text, Model?.HasLocalPlayer == true ? Model.Player.Name : null);
         AddLog(ClientFormat.Format(Tables.Common("s_html_chat_notice"), Tables.ChatTextColors["chatTextSystemMessage"],
             (uint)GlobalScreen.FontSize, line), kind);
+    }
+
+    /// <summary>
+    /// UIMessengerBrowser::FUN_141a239e0 (uimessenger.cpp:3069) with FUN_141841fd0 (texttohtml.cpp:667): the line that offers
+    /// to invite <paramref name="name"/> to the party. s_html_chat_invite_party carries the link 'event:inviteParty,name',
+    /// s_html_chat_invite_party_message the name and that link, s_html_chat_system_notice the colour s_color16 and the font size.
+    /// </summary>
+    public void AddInvitePartyLine(string name)
+    {
+        string link = ClientFormat.Format(Tables.Common("s_html_chat_invite_party"), $"'event:inviteParty,{name}'");
+        string message = ClientFormat.Format(Tables.Common("s_html_chat_invite_party_message"), name, link);
+        AddLog(ClientFormat.Format(Tables.Common("s_html_chat_system_notice"), Tables.ChatColor(16), (uint)GlobalScreen.FontSize, message), TalkKind.PartyInvite);
     }
 
     /// <summary>

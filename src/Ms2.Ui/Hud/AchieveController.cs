@@ -623,7 +623,7 @@ public sealed class AchieveController : UiController
     };
 
     /// <summary>translateenum.cpp:50 TranslateEnumDungeonGroup's keys (the same list WorldMapController reads).</summary>
-    static readonly string[] DungeonGroupKeys =
+    internal static readonly string[] DungeonGroupKeys =
     {
         null, "normal", "raid", "chaosRaid", "reverseRaid", "lapenta", "guildRaid", "darkStream", "worldBoss", "item", "vip",
         "event", "fameChallenge", "colosseum", "turka",

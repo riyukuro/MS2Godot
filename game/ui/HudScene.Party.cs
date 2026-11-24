@@ -51,10 +51,25 @@ public partial class HudScene
         Action<PartyMember, int> updated = (m, f) => { if (PartyWindowOpen) party.UpdateMember(m, f); };
         Action refreshed = () => { if (PartyWindowOpen) party.RefreshAllMembers(); };
         Action<PartyMember, PartyMember> chief = (o, n) => { if (PartyWindowOpen) party.ChangeChief(o, n); };
+        // CPartyManager's chat lines, notices, boxes and sounds (partymanager.cpp): the handlers' lines after the book's state
+        var tables = (menuModel ??= NewModel()).Tables;
+        var notices = new PartyNotices
+        {
+            Tables = tables,
+            SelfCharacterId = live?.CharacterId ?? PartyFixture.SelfCharacterId,
+            Buddies = CommunityBook(),
+            StringIdText = t => Notices?.Text(t) ?? t.Text ?? "",
+            ChatLine = (text, kind) => ChatLog.AddSystemLine(text, kind),
+            Notice = SystemNoticeText,
+            PlaySound = key => { if (!string.IsNullOrEmpty(key)) FieldAudio.Instance?.PlayUi(key); },
+            InviteLine = name => { ChatLog.AddInvitePartyLine(name); return true; },    // FindMessengerBrowser(0x4e61) is always up here
+            DungeonName = id => tables.FieldEnteranceName(id),
+        };
         Action<PartyMessage> applied = msg =>
         {
             popupMenu?.OnPartyMessage(msg);                     // UIPopUpMenu's 0x53 handler
             if (PartyWindowOpen) party.OnPartyMessage(msg);     // UIPartyDialog::OnPartyPacket
+            notices.OnApplied(partyBook, msg);                  // the manager handler's own lines, after the state
         };
         var book = partyBook;
         // PartyVoteCli vfunc_2 / vfunc_3: the votes' chat lines, sound, notice and the ready check's answer box
@@ -68,16 +83,17 @@ public partial class HudScene
             PlaySound = key => FieldAudio.Instance?.PlayUi(key),
             Send = PartySend,
         };
+        Action<PartyNote> noted = notices.OnNoted;
         Action<PartyVote> voteStarted = v => votes.OnStarted(book, v);
         Action<PartyVote> voteEnded = v => votes.OnEnded(book, v);
         book.Opened += opened; book.Closed += closed; book.MemberAdded += added; book.MemberRemoved += removed;
         book.MemberUpdated += updated; book.MembersRefreshed += refreshed; book.ChiefChanged += chief; book.Applied += applied;
-        book.VoteStarted += voteStarted; book.VoteEnded += voteEnded;
+        book.VoteStarted += voteStarted; book.VoteEnded += voteEnded; book.Noted += noted;
         unwatchParty = () =>
         {
             book.Opened -= opened; book.Closed -= closed; book.MemberAdded -= added; book.MemberRemoved -= removed;
             book.MemberUpdated -= updated; book.MembersRefreshed -= refreshed; book.ChiefChanged -= chief; book.Applied -= applied;
-            book.VoteStarted -= voteStarted; book.VoteEnded -= voteEnded;
+            book.VoteStarted -= voteStarted; book.VoteEnded -= voteEnded; book.Noted -= noted;
             if (live != null) live.PartyWindowOpen = () => false;
         };
         if (book.IsInParty) OpenParty();
@@ -112,7 +128,8 @@ public partial class HudScene
         c.ObserveMember += id => GD.Print($"party: observe {id}: StartObserving is not ported");
         c.Recall += () => GD.Print("party: recall: not ported");
         c.Send = PartySend;
-        c.SystemNotice += text => GD.Print($"party: system notice: {text}");    // ShowSystemNotice: the notices are not ported
+        c.SystemNotice += SystemNoticeText;                                      // ShowSystemNotice(text, 1, 1)
+        c.DungeonName = id => menuModel.Tables.FieldEnteranceName(id);          // CStringTable::FUN_141811980(0x14, id)
         c.ClubNameError = name =>
         {
             partyNameChecker ??= Ms2.Formats.Text.BanTextChecker.FromPacks(assets.Packs, assets.Language);
