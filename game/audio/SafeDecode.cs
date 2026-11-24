@@ -5,8 +5,9 @@ namespace Ms2Godot;
 
 /// <summary>
 /// MpegDecoder.Decode that never throws: a clip the decoder cannot read logs one named warning (once per clip) and yields null,
-/// so the caller skips it and plays that clip silent. The client plays these clips through FMOD, so a null here is a deviation;
-/// it is the decoder's layer-II leniency gap (NLayer rejects some valid layer-II mono frames), not the bank slice.
+/// so the caller skips it and plays that clip silent. The client plays these clips through FMOD, so a null here is a deviation
+/// (the one-frame stand-ins and the layer II mono samples above 192 kbps that once failed here are decoded by MpegDecoder frame by
+/// frame; MpegFrameSweepTests decodes every bank payload of both data sets).
 /// </summary>
 public static class SafeDecode
 {

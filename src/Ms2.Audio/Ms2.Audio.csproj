@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="NLayer" Version="3.0.1" />
+    <InternalsVisibleTo Include="Ms2.Audio.Tests" />
   </ItemGroup>
 </Project>
