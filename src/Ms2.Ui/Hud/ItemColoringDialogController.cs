@@ -65,6 +65,9 @@ public sealed class ItemColoringDialogController : UiController
     public override string Movie => "uiitemcoloringdialog";
     protected override string EntityMethod => "initData";
     public override string TypeName => "ItemColoringDialog";
+    /// <summary>UIItemColoringDialog's ctor (@0x1419abdd0, uiitemcoloringdialog.cpp:250) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog
+    /// unloads at once (FUN_141924330, uidialog.cpp:393) and a following OpenDialog loads it again.</summary>
+    protected override bool TweenEnabled => false;
 
     public const int UiId = 0x4e23, BillId = 0x4e7b, ShopCategory = 5, ShopKindColoring = 3;
 

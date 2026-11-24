@@ -24,6 +24,9 @@ public sealed class BeautyStyleDialogController : UiController
     public override string Movie => "uibeautyshopstyledialog";
     protected override string EntityMethod => "initData";
     public override string TypeName => "BeautyShopStyleDialog";
+    /// <summary>UIBeautyShopStyleDialog's ctor (@0x140f03090, uibeautyshopstyledialog.cpp:778) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog
+    /// unloads at once (FUN_141924330, uidialog.cpp:393) and a following OpenDialog loads it again.</summary>
+    protected override bool TweenEnabled => false;
 
     // ---- host-set parts -----------------------------------------------------------------------------------------------
     public IBeautyCustomize Customize;

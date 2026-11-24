@@ -15,6 +15,9 @@ public class HomeOptionDialogController : UiController, IMessageBoxListener
     public override string Movie => "uihomeoptiondialog";
     protected override string EntityMethod => "setData";
     public override string TypeName => "HomeOptionDialog";
+    /// <summary>UIHomeOptionDialog's ctor (@0x140fa8cc0, uihomeoptiondialog.cpp:86) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog
+    /// unloads at once (FUN_141924330, uidialog.cpp:393) and a following OpenDialog loads it again.</summary>
+    protected override bool TweenEnabled => false;
 
     /// <summary>FUN_140223190 (row): the name the movie's setData object keys a row by.</summary>
     public static readonly string[] RowNames =

@@ -19,6 +19,9 @@ public sealed class PartyController : UiController
     public override bool AlwaysOn => true;
     protected override string EntityMethod => "initMembers";
     public override string TypeName => "PartyDialog";      // GetTypeName @0x141a74d50 (:410)
+    /// <summary>UIPartyDialog's ctor (@0x141a74b40, uipartydialog.cpp:397) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog
+    /// unloads at once (FUN_141924330, uidialog.cpp:393) and a following OpenDialog loads it again.</summary>
+    protected override bool TweenEnabled => false;
 
     /// <summary>CPartyManager's party.</summary>
     public PartyBook Party = new();

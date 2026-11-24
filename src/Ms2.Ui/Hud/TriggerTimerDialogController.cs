@@ -20,6 +20,9 @@ public sealed class TriggerTimerDialogController : UiController
     public override string Movie => "uitriggertimerdialog";
     protected override string EntityMethod => "setTime";
     public override string TypeName => "TriggerTimerDialog";      // GetTypeName (@0x141b33180)
+    /// <summary>UITriggerTimerDialog's ctor (@0x141b330c0, uitriggertimerdialog.cpp:43) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog
+    /// unloads at once (FUN_141924330, uidialog.cpp:393) and a following OpenDialog loads it again.</summary>
+    protected override bool TweenEnabled => false;
     public override bool AlwaysOn => true;                         // ctor SetFlag(0, 1)
 
     /// <summary>The field timer it reads (WorldService's).</summary>

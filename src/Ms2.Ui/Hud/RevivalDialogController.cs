@@ -107,6 +107,9 @@ public sealed class RevivalDialogController : UiController, IMessageBoxListener,
     public override string Movie => "uirevivaldialog";
     protected override string EntityMethod => "alignment";                  // the movie's game entity, as UIRevivalDialog::vfunc_43 finds it
     public override string TypeName => "RevivalDialog";                     // GetTypeName (uirevivaldialog.cpp:172)
+    /// <summary>UIRevivalDialog's ctor (@0x141aba6a0, uirevivaldialog.cpp:152) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog
+    /// unloads at once (FUN_141924330, uidialog.cpp:393) and a following OpenDialog loads it again.</summary>
+    protected override bool TweenEnabled => false;
 
     /// <summary>The ctor's SetFlag(0, 1) (uirevivaldialog.cpp:163): an always-on dialog (vfunc_56), so it never counts as a
     /// shown dialog in the guide's gate and is not closable (CUIService::IsDialogClosable).</summary>

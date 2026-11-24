@@ -19,6 +19,9 @@ public sealed class MailSendDialogController : UiController
     public override string Movie => "uimailsenddialog";
     protected override string EntityMethod => "selectRecvName";
     public override string TypeName => "MailSendDialog";
+    /// <summary>UIMailSendDialog's ctor (@0x1419ec180, uimaillistdialog.cpp:1356) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog
+    /// unloads at once (FUN_141924330, uidialog.cpp:393) and a following OpenDialog loads it again.</summary>
+    protected override bool TweenEnabled => false;
 
     public const int UiId = 0x4e4a;
     /// <summary>The notices: an empty title, an empty content, the limits (s_mail_error_sendmail), the content limit input.</summary>

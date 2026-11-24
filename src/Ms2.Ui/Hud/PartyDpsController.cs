@@ -24,6 +24,9 @@ public sealed class PartyDpsController : UiController
     protected override string EntityMethod => "setAscendingMeterValue";
     /// <summary>GetTypeName (@0x141a7b150).</summary>
     public override string TypeName => "PartyDPSDialog";
+    /// <summary>UIPartyDPSDialog's ctor (@0x141a7b050, uipartydialog.cpp:1198) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog
+    /// unloads at once (FUN_141924330, uidialog.cpp:393) and a following OpenDialog loads it again.</summary>
+    protected override bool TweenEnabled => false;
 
     readonly PartyBook party;
     readonly BattleRecordManager records;

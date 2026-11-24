@@ -13,6 +13,9 @@ public sealed class AutoReviveCountDownController : UiController
     public override string Movie => "uiautorevivecountdowndialog";
     protected override string EntityMethod => "alignment";
     public override string TypeName => "AutoReviveCountDownDialog";         // GetTypeName @0x141284d00
+    /// <summary>UIAutoReviveCountDownDialog's ctor (@0x141284ac0, uiautorevivecountdowndialog.cpp:22) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog
+    /// unloads at once (FUN_141924330, uidialog.cpp:393) and a following OpenDialog loads it again.</summary>
+    protected override bool TweenEnabled => false;
 
     uint endTime;                       // m_nEndTime (ms tick)
     uint remainSec;                     // m_nRemainSec

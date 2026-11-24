@@ -23,6 +23,9 @@ public sealed class ItemMergeOptionDialogController : UiController
     public override string Movie => "uiitemmergeoptiondialog";
     protected override string EntityMethod => "alignment";
     public override string TypeName => "ItemMergeOptionDialog";
+    /// <summary>UIItemMergeOptionDialog's ctor (@0x1419ccd00, uiitemmergeoptiondialog.cpp:314) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog
+    /// unloads at once (FUN_141924330, uidialog.cpp:393) and a following OpenDialog loads it again.</summary>
+    protected override bool TweenEnabled => false;
 
     public const int UiId = 0x4e68;
     public string MergeBag => TypeName + "_MergeSlotBag";

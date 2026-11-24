@@ -21,6 +21,9 @@ public sealed class ItemEnchantDialogController : UiController, IDragSlotOwner
     public override string Movie => "uiitemenchantdialog";
     protected override string EntityMethod => "alignment";
     public override string TypeName => "ItemEnchantDialog";
+    /// <summary>UIItemEnchantDialog's ctor (@0x1419befc0, uiitemenchantdialog.cpp:431) and UIItemModifyDialogBase's (uiitemenchantdialog.cpp:329, @0x1419be860) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog
+    /// unloads at once (FUN_141924330, uidialog.cpp:393) and a following OpenDialog loads it again.</summary>
+    protected override bool TweenEnabled => false;
 
     public const int UiId = 0x4e92;
     public const string Bag = "ItemEnchantDialog", EquipBag = "ItemEnchantDialog.equip";

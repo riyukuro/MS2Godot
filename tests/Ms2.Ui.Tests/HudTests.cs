@@ -1085,6 +1085,27 @@ public class HudTests
     }
 
     [Test]
+    public void ThePartyWindowClosesAtOnceSoTheNextOpenLoadsItAgain()
+    {
+        // OnPartyInfo (@0x14162d5b0) does CloseDialog(0x4e45) then OpenDialog(0x4e45). UIPartyDialog's ctor (@0x141a74b40) has no
+        // SetTweenEnabled, so FUN_141924330 (uidialog.cpp:393) unloads at once (m_c0 2) and the open (vfunc_65, :564, only for a
+        // closed dialog) loads the movie again. A close tween here left the dialog "closing" and dropped that second open.
+        var m = Model();
+        var book = PartyFixture.Book(2000062, m.Player);
+        var c = new PartyController { Party = book, SelfCharacterId = PartyFixture.SelfCharacterId, MapName = _ => "Field" };
+        var h = Load(c, m);
+        Assert.That(c.IsClosed, Is.False);
+        bool unloaded = false;
+        c.Unloaded += () => unloaded = true;
+        c.Close();
+        Assert.That(c.IsClosed, Is.True, "the close is at once, with no tween running");
+        Assert.That(unloaded, Is.True);
+        var again = Load(c, m);
+        Assert.That(c.IsClosed, Is.False, "the open after the close loads it again");
+        Assert.That(again.RT.Errors, Is.Empty);
+    }
+
+    [Test]
     public void PartyWindowButtonsSendTheClientRequests()
     {
         // UIPartyDialog: enter dungeon sends at once, give up asks, create club asks for a name and checks it (CreateClub)

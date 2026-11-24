@@ -26,6 +26,12 @@ public sealed class GameDictionaryController : UiController
     public sealed record Entry(string Name, int Id, int Type, int LevelOrGrade, int InvisibleLevel, int FieldId);
 
     public override string TypeName => "GameDictionaryDialog";      // GetTypeName (@0x140f44900)
+
+    /// <summary>UIGameDictionaryDialog's ctor (@0x140f447d0, uigamedictionarydialog.cpp:153) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog
+
+    /// unloads at once (FUN_141924330, uidialog.cpp:393) and a following OpenDialog loads it again.</summary>
+
+    protected override bool TweenEnabled => false;
     public override string Movie => "uigamedictionarydialog";
     protected override string EntityMethod => "searchResult";       // GameDictionaryDialog
 

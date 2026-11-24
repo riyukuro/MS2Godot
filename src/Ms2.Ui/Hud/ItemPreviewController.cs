@@ -19,6 +19,9 @@ public sealed class ItemPreviewController : UiController
     public override string Movie => "uiitempreviewdialog";
     protected override string EntityMethod => "alignment";
     public override string TypeName => "ItemPreviewDialog";
+    /// <summary>UIItemPreviewDialog's ctor (@0x1412d5890, uiitempreviewdialog.cpp:64) has no SetTweenEnabled: m_c4 stays 0, so CloseDialog
+    /// unloads at once (FUN_141924330, uidialog.cpp:393) and a following OpenDialog loads it again.</summary>
+    protected override bool TweenEnabled => false;
 
     public const int UiId = 0x4ec2;
     /// <summary>The common strings: GetStringCommon ids of the notices and of the message.</summary>
