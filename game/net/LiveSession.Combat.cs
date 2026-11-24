@@ -299,12 +299,31 @@ public partial class LiveSession
                 ulong f0 = Engine.GetProcessFrames();   // game time: the runs step a fixed 1/60 s a frame (--fixed-fps 60)
                 var at = live.OwnPlayer.GlobalPosition;
                 hud.DriveTowardScripted(at + new Vector3(600, 0, 0), false);   // a move held through the state: a held body stays put
-                await until(() => live.Me.State != st, 60 * 12);
+                // what the state plays on the body (Ms2.Ui.OwnStateExit.Enters): the model's sequences, the body's sequences
+                // and its hide, frame by frame, and a shot halfway through
+                var asked = new List<string>(); var shown = new List<string>(); bool wasHidden = false, shotTaken = false;
+                ulong half = (ulong)(expect > 0 ? expect * 30 : 20);
+                await until(() =>
+                {
+                    if (live.OwnStatePlayed is { } pl && (asked.Count == 0 || asked[^1] != pl)) asked.Add(pl);
+                    string cur = live.OwnPlayer.CurrentAnim;
+                    if (shown.Count == 0 || shown[^1] != cur) shown.Add(cur);
+                    wasHidden |= live.OwnPlayer.IsHidden;
+                    if (!shotTaken && Engine.GetProcessFrames() - f0 >= half) { Shot($"ownstate-{st:x}.png"); shotTaken = true; }
+                    return live.Me.State != st;
+                }, 60 * 12);
                 hud.DriveEnd();
                 double took = (Engine.GetProcessFrames() - f0) / 60.0;
                 var shift = live.OwnPlayer.GlobalPosition - at; shift.Y = 0;
                 float moved = shift.Length();   // on the flat: a fall or a landing is not a move
                 GD.Print($"live: combat ownstate 0x{st:x} ({row?.Class} {row?.Cause}): sent {sent}, entered {entered}, expected exit {expect:0.###} s, state now {live.Me.State} after {took:0.###} s, moved {moved:0.##}");
+                var enterRow = Ms2.Ui.OwnStateExit.EnterOfOwnState(st);
+                GD.Print($"live: combat ownstate 0x{st:x} plays ({enterRow?.Play} {enterRow?.What}): asked [{string.Join(", ", asked)}], body [{string.Join(", ", shown)}], hidden {wasHidden}, now hidden {live.OwnPlayer.IsHidden}");
+                if (enterRow?.Play == Ms2.Ui.StateEnterPlay.Sequence)
+                    Check($"the body plays server state 0x{st:x}'s sequences as the client ({string.Join(", ", asked)})",
+                        asked.Count > 0 && asked.Where(n => n != Ms2.Ui.OwnStateExit.TalkAction).All(n => shown.Contains(n.ToLowerInvariant())));
+                else if (enterRow?.Play == Ms2.Ui.StateEnterPlay.Hide)
+                    Check($"the body is hidden for server state 0x{st:x} and shown after it", wasHidden && !live.OwnPlayer.IsHidden);
                 bool ok = entered && row?.Cause switch
                 {
                     Ms2.Ui.StateExitCause.AtOnce => live.Me.State != st && took < 0.1,
@@ -315,6 +334,46 @@ public partial class LiveSession
                     _ => false,
                 } == true;
                 Check($"the own pc leaves server state 0x{st:x} as the client ({row?.Cause})", ok);
+                await frames(30);
+                continue;
+            }
+            if (step.StartsWith("buffstun:"))      // buffstun:<effect id>:<level>:<ms>: a raw OnBuff adding a stun effect to the own pc, then its removal
+            {
+                var c = step[9..].Split(':');
+                uint id = uint.Parse(c[0]); ushort lv = ushort.Parse(c[1]); uint ms = uint.Parse(c[2]);
+                const int key = 0x7e000001;
+                int before = live.BuffStunsEntered;
+                bool sent = hud.SubmitChatLine("/debug packet " + live.OwnBuffBytes(0, key, id, lv, ms + 10000));
+                await until(() => live.BuffStunsEntered > before, 60 * 5);
+                bool entered = live.BuffStunsEntered > before;
+                var got = live.LastOwnBuff;
+                GD.Print($"live: combat buffstun {id}: own buff seen {(got == null ? "none" : $"mode {got.Mode} key {got.Key:x} effect {got.State?.Id} level {got.State?.Level}")}, stun entry {live.OwnBuffStun()?.ToString() ?? "none"}");
+                var asked = new List<string>(); var shown = new List<string>();
+                void Watch()
+                {
+                    if (live.OwnStatePlayed is { } pl && (asked.Count == 0 || asked[^1] != pl)) asked.Add(pl);
+                    string cur = live.OwnPlayer.CurrentAnim;
+                    if (shown.Count == 0 || shown[^1] != cur) shown.Add(cur);
+                }
+                ulong f0 = Engine.GetProcessFrames();
+                var at = live.OwnPlayer.GlobalPosition;
+                hud.DriveTowardScripted(at + new Vector3(600, 0, 0), false);   // the stun holds the body against a held move
+                bool shotTaken = false;
+                await until(() =>
+                {
+                    Watch();
+                    if (!shotTaken && Engine.GetProcessFrames() - f0 >= (ulong)(ms * 60 / 2000)) { Shot($"buffstun-{id}.png"); shotTaken = true; }
+                    return Engine.GetProcessFrames() - f0 >= (ulong)(ms * 60 / 1000);
+                }, (int)(ms * 60 / 1000) + 60);
+                bool held = live.Me.State == 0x12;
+                hud.DriveEnd();
+                var shift = live.OwnPlayer.GlobalPosition - at; shift.Y = 0;
+                hud.SubmitChatLine("/debug packet " + live.OwnBuffBytes(1, key, 0, 0, 0));
+                await until(() => { Watch(); return live.Me.State != 0x12; }, 60 * 8);
+                GD.Print($"live: combat buffstun {id} level {lv}: sent {sent}, entered {entered}, held {held}, moved {shift.Length():0.##}, state now {live.Me.State}, asked [{string.Join(", ", asked)}], body [{string.Join(", ", shown)}]");
+                Check($"a stun effect {id} holds the own pc in StateStun, lying and standing up as the client",
+                    entered && held && shift.Length() < 0.05f && live.Me.State != 0x12 && asked.Count >= 2
+                    && asked.All(n => shown.Contains(n.ToLowerInvariant())) && asked[^1].StartsWith("Stnd_Up_", StringComparison.Ordinal));
                 await frames(30);
                 continue;
             }

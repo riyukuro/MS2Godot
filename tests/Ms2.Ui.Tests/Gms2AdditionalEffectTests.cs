@@ -170,6 +170,11 @@ public class Gms2AdditionalEffectTests
                 Assert.That((b.Level, b.IsBuff, b.DurationTick, b.Icon, b.IconOnOff), Is.EqualTo((a.Level, a.IsBuff, a.DurationTick, a.Icon, a.IconOnOff)), $"{id}");
                 Assert.That(Show(b.SpecialAbilities), Is.EqualTo(Show(a.SpecialAbilities)), $"{id} abilities");
             }
+            // a stun effect's Motion stun (the own pc's StateStun) from the cache as from the XML
+            var (sx, sc) = (xml.GetLevel(40353001, 1), cached.GetLevel(40353001, 1));
+            Assert.That(sc, Is.Not.Null, "40353001");
+            Assert.That((sx.Stun, sx.StunAnimation, sx.MaxBuffCount), Is.EqualTo((2u, "", 1u)), "40353001 stun in the XML");
+            Assert.That((sc.Stun, sc.StunAnimation, sc.MaxBuffCount), Is.EqualTo((sx.Stun, sx.StunAnimation, sx.MaxBuffCount)), "40353001 stun in the cache");
             // the names and tooltips from the split koradditionaldescription files, the same from the cache
             var keep = GameTables.AdditionalCacheOf;
             try

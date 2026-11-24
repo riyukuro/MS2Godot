@@ -3439,6 +3439,7 @@ public partial class HudScene : Node, IUiStageHost
         live.OwnAbilityRate = type => Ms2.Ui.Items.WornEquipment.AbilityRate(Ms2.Ui.Items.WornEquipment.AbilityTotal(
             OwnWorn(type), type, buffs, live.HotTimes, (live.Me.User?.PcBangGrade ?? 0) > 0));
         live.OwnEventBuff = buffs.HasEnabledWithEventBuffType;   // the swimming mount's RunX (Ridee::FUN_1417075e0)
+        live.OwnBuffStun = () => buffs.StunEntry(true);          // AdditionalCliList::FUN_1409713b0's stun, each frame
         Action<Ms2.Net.Packets.BuffPacket> onBuff = b =>
         {
             ownBuffs.UpperTargetId = live.UpperTargetId;
@@ -3467,6 +3468,7 @@ public partial class HudScene : Node, IUiStageHost
             live.Me.PutOnOrOff -= onPutOnOrOff;
             live.OwnPushResistLevel = () => 0;
             live.OwnBuffSuperArmor = _ => 0;
+            live.OwnBuffStun = () => null;
             live.OwnAbilityRate = _ => 0f;
             live.OwnEventBuff = _ => false;
         };

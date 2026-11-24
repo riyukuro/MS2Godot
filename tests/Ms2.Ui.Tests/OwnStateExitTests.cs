@@ -20,7 +20,7 @@ public class OwnStateExitTests
         me.Apply(u);
         var exit = new OwnStateExit
         {
-            Rand = () => 1,   // rand() % 2 != 0: the "A" set
+            Stun = { Rand = () => 1 },   // rand() % 2 != 0: the "A" set
             SequenceLength = n => n == "Stnd_Up_A" ? StandUpA : n == OwnStateExit.TransformSequence ? Mantle : null,
         };
         me.StateEntered += st => { if (exit.Enter(st, Self)) me.LeaveServerState(st); };   // LiveSession.EnterOwnStateExit
@@ -53,9 +53,9 @@ public class OwnStateExitTests
         Assert.That(OwnStateExit.Classes.Select(r => r.Class).Distinct().Count(), Is.EqualTo(61));
         Assert.That(counts, Is.EquivalentTo(new Dictionary<StateExitCause, int>
         {
-            [StateExitCause.AtOnce] = 6, [StateExitCause.InputStep] = 1, [StateExitCause.Timer] = 1,
-            [StateExitCause.SequenceEnd] = 2, [StateExitCause.NoSelfExit] = 10, [StateExitCause.Body] = 15,
-            [StateExitCause.Apart] = 7, [StateExitCause.NotOwn] = 12, [StateExitCause.Later] = 7,
+            [StateExitCause.AtOnce] = 13, [StateExitCause.InputStep] = 1, [StateExitCause.Timer] = 1,
+            [StateExitCause.SequenceEnd] = 2, [StateExitCause.NoSelfExit] = 5, [StateExitCause.Body] = 14,
+            [StateExitCause.Apart] = 6, [StateExitCause.NotOwn] = 12, [StateExitCause.Later] = 7,
         }));
         // the pc registers one class per id (pc.cpp:668-721)
         var own = OwnStateExit.Classes.Where(r => r.Id >= 0 && r.Cause != StateExitCause.NotOwn).GroupBy(r => r.Id);
@@ -93,7 +93,8 @@ public class OwnStateExitTests
             }
             case StateExitCause.SequenceEnd:
             {
-                double len = row.Id == 0x12 ? StandUpA : Mantle;
+                // StateStun plays Down_A on the enter and Stnd_Up_A from its first frame, which runs from the next
+                double len = row.Id == 0x12 ? StandUpA + 0.01 : Mantle;
                 if (!exit.HoldsBody || exit.Sequence != (row.Id == 0x12 ? "Stnd_Up_A" : OwnStateExit.TransformSequence)) return $"sequence {exit.Sequence}";
                 me.ApplyUserState(Self, row.Id);   // asked again with no sub: the running state is kept (State::vfunc_25)
                 Run(me, exit, len - 0.005);
@@ -115,7 +116,8 @@ public class OwnStateExitTests
             case StateExitCause.Apart:
             case StateExitCause.Later:
                 Run(me, exit, 30);
-                return exit.State == 0 && me.State == row.Id ? null : "run here";
+                // StateAutoInteraction's sequence is played here (its exit is the interaction's)
+                return exit.State == (row.Id == 0x39 ? 0x39 : 0) && me.State == row.Id ? null : "run here";
         }
         return "no cause";
     }
@@ -133,7 +135,7 @@ public class OwnStateExitTests
     [Test] public void AStunWithNoSequenceOnTheBodyNeverEnds()
     {
         var (me, exit) = Pc();
-        exit.Rand = () => 0;   // the "B" set, which this body lacks
+        exit.Stun.Rand = () => 0;   // the "B" set, which this body lacks
         me.ApplyUserState(Self, 0x12);
         Assert.That((exit.Sequence, exit.Left), Is.EqualTo(("Stnd_Up_B", -1.0)));
         Run(me, exit, 30);

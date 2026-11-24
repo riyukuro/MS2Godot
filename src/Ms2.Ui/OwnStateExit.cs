@@ -30,14 +30,68 @@ public enum StateExitCause
 /// <summary>One state class: its id (-1 for a class the pc never registers), the client's exit and the cite.</summary>
 public sealed record StateExitRow(string Class, int Id, StateExitCause Cause, string Cite, string Note);
 
+/// <summary>What a state class plays on the body when it is entered with no state data.</summary>
+public enum StateEnterPlay
+{
+    /// <summary>Nothing the body shows (the class leaves at once, or plays nothing without data).</summary>
+    Nothing,
+    /// <summary>The body's move state of the same id plays it (Player.EnterServerState).</summary>
+    BodyState,
+    /// <summary>A sequence of the class's own, played on the body while the state runs.</summary>
+    Sequence,
+    /// <summary>The body hidden while the state runs.</summary>
+    Hide,
+    /// <summary>An effect only.</summary>
+    Effect,
+    /// <summary>The casting bar only.</summary>
+    CastingBar,
+    /// <summary>A controller of its own plays it.</summary>
+    Apart,
+    /// <summary>Not a state of the own pc.</summary>
+    NotOwn,
+    /// <summary>The state's feature is under Later; listed, not run.</summary>
+    Later,
+}
+
+/// <summary>The body's entry for a server-set state (<see cref="OwnStateExit.BodyEntryOf"/>).</summary>
+public enum BodyEntry
+{
+    /// <summary>The body is left as it is (held, or run by a controller of its own).</summary>
+    None,
+    Idle,
+    /// <summary>StateWalk: with no move key held the next input step stands, so the body is left as it is.</summary>
+    Walk,
+    Land,
+    Fall,
+    Jump,
+    /// <summary>A ladder in reach (side 3), else StateIdle (stateladder.cpp:153-201).</summary>
+    Ladder,
+    /// <summary>A rope in reach (side 3), else StateIdle (statemanager.cpp:1236, 1260).</summary>
+    Rope,
+    Hit,
+    Dash,
+    Revival,
+    /// <summary>StateSwim; the body swims only on water.</summary>
+    Swim,
+    /// <summary>A wall in reach.</summary>
+    Climb,
+    FallDamage,
+    /// <summary>No StateTriggerEmotionData: no emotion list, nothing plays.</summary>
+    TriggerEmotion,
+}
+
+/// <summary>One state class and what its enter plays with no state data (<see cref="StateEnterPlay"/>), with the cite.</summary>
+public sealed record StateEnterRow(string Class, int Id, StateEnterPlay Play, string What, string Cite);
+
 /// <summary>
 /// The own pc's exit from a state the server put it into (OnUserState, no state data) for the states the body has no move
-/// state for. The pc's classes are the ones PC's constructor registers (pc.cpp:668-721). Each frame the client's own exit
-/// is run: at once, on the input step, on a timer or at the end of the played sequence; the states whose input step reads
-/// no move key hold the body while they run.
-/// STILL-OPEN: the played sequence itself (Stnd_Up_A / B, Equip_Change_Mantle_A) and StateSpawn's hide (AddHideReason 10)
-/// are not shown on the body; a stun buff holding StateStun (AdditionalCliList::FUN_1409709b0) and an earlier stun's sub
-/// and kind (m_n10, m_nKind kept across entries) are not modelled, as the port keeps no buff motion.
+/// state for, and what the state plays on the body meanwhile. The pc's classes are the ones PC's constructor registers
+/// (pc.cpp:668-721). Each frame the client's own exit is run: at once, on the input step, on a timer or at the end of the
+/// played sequence; the states whose input step reads no move key hold the body while they run. StateStun is the
+/// <see cref="OwnStun"/> kept across entries, which the stun buff also enters (<see cref="EnterBuffStun"/>).
+/// STILL-OPEN: the casting bar that StateSummon, StateRecall, StateTreeWatering and StateAutoInteraction start with no data
+/// is not shown; StateTalk's TALK_UP with a talkable NPC's talk open is not chosen (IDLE is played); StateSwimDash's swim
+/// dash effect is not played.
 /// </summary>
 public sealed class OwnStateExit
 {
@@ -73,28 +127,28 @@ public sealed class OwnStateExit
         new("StateClimb", 0x1d, StateExitCause.Body, "state.cpp:1077", "the body's Climb runs the exit"),
         new("StateGlide", 0x1e, StateExitCause.AtOnce, "stateglide.cpp:111-115, statemanager.cpp:770-775", "no StateGlideData: the skill row is not found (StateMoveSkill's fallback state 0), then the enter goes on to StateIdle"),
         new("StateFallDamage", 0x1f, StateExitCause.Body, "statefalldamage.cpp:108", "the body's FallDamage runs the exit"),
-        new("StateHold", 0x20, StateExitCause.Body, "", "the body's Hold runs the exit"),
+        new("StateHold", 0x20, StateExitCause.AtOnce, "stateholddata.cpp:165-168", "no StateHoldData: the enter goes on to StateIdle"),
         new("StateRide", 0x21, StateExitCause.Apart, "", "the mount"),
         new("StateTransform", 0x22, StateExitCause.SequenceEnd, "statetransform.cpp:63, 79-86", "Equip_Change_Mantle_A plays and its end enters StateIdle"),
         new("StateTransformDoll", 0x22, StateExitCause.NotOwn, "fittingdollslot_1.cpp:146", "the fitting doll's 0x22 (the pc registers StateTransform, pc.cpp:698)"),
         new("StatePuppetNpc", 0x23, StateExitCause.NotOwn, "stateidle.cpp:1034", "an NPC, pet or doll state"),
-        new("StateTaxiCall", 0x25, StateExitCause.Apart, "statetaxicalldata.cpp:295", "TaxiCalling (its own LeaveState)"),
+        new("StateTaxiCall", 0x25, StateExitCause.AtOnce, "statetaxicalldata.cpp:171-174", "no StateTaxiCallData: the enter goes on to StateIdle (TaxiCalling runs a call the own pc starts)"),
         new("StateSummon", 0x26, StateExitCause.Apart, "", "rideSummon (its Tick)"),
         new("StatePvPWinLose", 0x28, StateExitCause.NoSelfExit, "statepvpwinlose.cpp:46-53, 65-70", "sub 0: no win or lose sequence plays, so the sequence end never leaves; the input step is State's (a queued skill only)"),
         new("StateUseFurniture", 0x29, StateExitCause.Later, "stateusefurnituredata.cpp:281", "its feature (furniture/home) is under Later; client exit: the frame at stateusefurnituredata.cpp:281 -> 1"),
-        new("StateCashCall", 0x2a, StateExitCause.NoSelfExit, "", "input, cancel or a packet only"),
+        new("StateCashCall", 0x2a, StateExitCause.AtOnce, "statecashcalldata.cpp:159-162", "no StateCashCallData: the enter goes on to StateIdle"),
         new("StateGrabTarget", 0x2b, StateExitCause.AtOnce, "statedatagrabtarget.cpp:87-89", "no StateDataGrabTarget: the enter goes on to StateIdle"),
         new("StateRecall", 0x2c, StateExitCause.NoSelfExit, "", "input, cancel or a packet only"),
-        new("StateFishing", 0x2d, StateExitCause.NoSelfExit, "", "input, cancel or a packet only"),
+        new("StateFishing", 0x2d, StateExitCause.AtOnce, "statefishingdata.cpp:206-209", "no StateFishingData: the enter goes on to StateIdle"),
         new("StateFishingFloat", 0x2e, StateExitCause.NotOwn, "cubecraft_1.cpp:928", "the fishing float's state (CFishingGuideObject), not the pc's"),
         new("StatePlayInstrument", 0x2f, StateExitCause.Later, "stateplayinstrumentdata.cpp:427", "its feature (instruments) is under Later; client exit: the frame at stateplayinstrumentdata.cpp:427 -> 5"),
         new("StateSummonRevive", 0x30, StateExitCause.NotOwn, "", "an NPC, pet or doll state"),
         new("StateTriggerEmotion", 0x35, StateExitCause.Body, "stateemotionidle.cpp:438", "the body's TriggerEmotion runs the exit"),
-        new("StateHomeConvenient", 0x36, StateExitCause.NoSelfExit, "", "input, cancel or a packet only"),
+        new("StateHomeConvenient", 0x36, StateExitCause.AtOnce, "statehomeconvenient.cpp:245-248", "no StateHomeConvenientData: the enter goes on to StateIdle"),
         new("StateHomemade", 0x37, StateExitCause.Later, "statehomemade.cpp:239", "its feature (furniture/home) is under Later; client exit: the frame at statehomemade.cpp:239 -> 1"),
         new("StateAutoInteraction", 0x39, StateExitCause.Apart, "stateinteractdata.cpp:741", "the interaction casts (InteractKey)"),
-        new("StateCoupleEmotion", 0x3a, StateExitCause.NoSelfExit, "", "input, cancel or a packet only"),
-        new("StateBanner", 0x3b, StateExitCause.NoSelfExit, "", "input, cancel or a packet only"),
+        new("StateCoupleEmotion", 0x3a, StateExitCause.AtOnce, "statecoupleemotion.cpp:422-425", "no StateCoupleEmotionData: the enter goes on to StateIdle"),
+        new("StateBanner", 0x3b, StateExitCause.AtOnce, "statebannerdata.cpp:115-117", "no StateBannerData: the enter goes on to StateIdle"),
         new("StateMicroGameRps", 0x3c, StateExitCause.Later, "statemicrogame.cpp:262", "its feature (minigames) is under Later; client exit: the sequence end at statemicrogame.cpp:262 -> 1"),
         new("StateReact", 0x3d, StateExitCause.Apart, "statereact.cpp:271", "reactState (SequenceEnded = EndOfSequence)"),
         new("StateTreeWatering", 0x3e, StateExitCause.NoSelfExit, "", "input, cancel or a packet only"),
@@ -105,6 +159,73 @@ public sealed class OwnStateExit
         new("StateGoToHome", -1, StateExitCause.NotOwn, "", "no object registers it"),
         new("StateMoveSkill", -1, StateExitCause.NotOwn, "pc.cpp:668-721", "not registered on the pc: StateGlide's base only"),
         new("StateSummonIdle", -1, StateExitCause.NotOwn, "", "an NPC, pet or doll state"),
+    };
+
+    /// <summary>What each class plays on the body when it is entered with no state data (the same 61 classes, the same
+    /// order as <see cref="Classes"/>).</summary>
+    public static readonly IReadOnlyList<StateEnterRow> Enters = new StateEnterRow[]
+    {
+        new("StateIdle", 0x1, StateEnterPlay.BodyState, "Idle", "stateidle.cpp:167-200"),
+        new("StateIdlePet", 0x1, StateEnterPlay.NotOwn, "", ""),
+        new("StateWalk", 0x2, StateEnterPlay.BodyState, "Walk: with no move key held the next input step stands", "statewalk.cpp:101-155"),
+        new("StateWalkNPC", 0x2, StateEnterPlay.NotOwn, "", ""),
+        new("StateCrawl", 0x3, StateEnterPlay.Nothing, "the rest face; the crawl sequence's one frame (the update runs before the input step leaves)", "state.cpp:1640-1646, statemanager.cpp:232-233, mypc.cpp:2966"),
+        new("StateLand", 0x4, StateEnterPlay.BodyState, "Land", "stateland.cpp:74-104"),
+        new("StateFall", 0x5, StateEnterPlay.BodyState, "Fall", "statefall.cpp:93-131"),
+        new("StateJump", 0x6, StateEnterPlay.BodyState, "Jump", "statejump.cpp:95-146"),
+        new("StateJumpTo", 0x7, StateEnterPlay.Nothing, "no arc (sub 0x29)", "statejumpto.cpp:52-78"),
+        new("StateLadder", 0x8, StateEnterPlay.BodyState, "Ladder on a ladder in reach (side 3), else Idle", "stateladder.cpp:153-201"),
+        new("StateRope", 0x9, StateEnterPlay.BodyState, "Rope on a rope in reach (side 3), else Idle", "statemanager.cpp:1236, 1260"),
+        new("StateEmotion", 0xb, StateEnterPlay.Nothing, "Idle at once", "stateemotionidle.cpp:218-220"),
+        new("StateHit", 0xd, StateEnterPlay.BodyState, "Hit: HIT with no lift", "statehit.cpp:65-110"),
+        new("StateHitNPC", 0xd, StateEnterPlay.NotOwn, "", ""),
+        new("StateEmotionIdle", 0xf, StateEnterPlay.Nothing, "Idle at once", "stateemotionidle.cpp:663-666"),
+        new("StateSkill", 0x10, StateEnterPlay.Apart, "the cast of the pc's record", "stateskill.cpp:392, 426-429"),
+        new("StateSpawn", 0x11, StateEnterPlay.Hide, "hide reason 10 and the shadow off until the timer", "statespawn.cpp:65-75, 98-130"),
+        new("StateStun", 0x12, StateEnterPlay.Sequence, "Down_A or Down_B, then the first frame's Stnd_Up_A or Stnd_Up_B", "statestun.cpp:77-113, 123-159"),
+        new("StateDash", 0x14, StateEnterPlay.BodyState, "Dash", "state.cpp:1782-1798"),
+        new("StateTalk", 0x16, StateEnterPlay.Sequence, "IDLE (TALK_UP looped with a talkable NPC's talk open)", "statetalk.cpp:125-136"),
+        new("StateRegen", 0x17, StateEnterPlay.NotOwn, "", ""),
+        new("StateRevival", 0x18, StateEnterPlay.BodyState, "Revival", "statedead.cpp:325-330"),
+        new("StateInteraction", 0x19, StateEnterPlay.Nothing, "sub 0: no branch plays", "stateinteractdata.cpp:257-318"),
+        new("StateInteractionNpc", 0x1a, StateEnterPlay.NotOwn, "", ""),
+        new("StateSwim", 0x1b, StateEnterPlay.BodyState, "Swim on water", "stateswim.cpp:89-130"),
+        new("StateSwimDash", 0x1c, StateEnterPlay.Effect, "the swim dash effect (swim effect 0x32), no sequence", "stateswimdash.cpp:92-99, 221-233"),
+        new("StateClimb", 0x1d, StateEnterPlay.BodyState, "Climb on a wall in reach", "state.cpp:1029-1057"),
+        new("StateGlide", 0x1e, StateEnterPlay.Nothing, "Idle at once", "stateglide.cpp:111-115"),
+        new("StateFallDamage", 0x1f, StateEnterPlay.BodyState, "FallDamage", "statefalldamage.cpp:51-70"),
+        new("StateHold", 0x20, StateEnterPlay.Nothing, "Idle at once", "stateholddata.cpp:165-168"),
+        new("StateRide", 0x21, StateEnterPlay.Apart, "the mount; the shadow off", "statemanager.cpp:1087-1098"),
+        new("StateTransform", 0x22, StateEnterPlay.Sequence, "Equip_Change_Mantle_A and the effect CH/Common/Eff_FittingDoll.xml", "statetransform.cpp:54-64"),
+        new("StateTransformDoll", 0x22, StateEnterPlay.NotOwn, "", ""),
+        new("StatePuppetNpc", 0x23, StateEnterPlay.NotOwn, "", ""),
+        new("StateTaxiCall", 0x25, StateEnterPlay.Nothing, "Idle at once (Object_React_B only with data)", "statetaxicalldata.cpp:171-202"),
+        new("StateSummon", 0x26, StateEnterPlay.CastingBar, "the casting bar (text 0, the default duration); no sequence", "statesummon.cpp:199-272"),
+        new("StatePvPWinLose", 0x28, StateEnterPlay.Nothing, "sub 0: no win or lose sequence", "statepvpwinlose.cpp:46-53"),
+        new("StateUseFurniture", 0x29, StateEnterPlay.Later, "", "stateusefurnituredata.cpp:167"),
+        new("StateCashCall", 0x2a, StateEnterPlay.Nothing, "Idle at once", "statecashcalldata.cpp:159-162"),
+        new("StateGrabTarget", 0x2b, StateEnterPlay.Nothing, "Idle at once", "statedatagrabtarget.cpp:87-89"),
+        new("StateRecall", 0x2c, StateEnterPlay.Sequence, "Object_React_A, and the casting bar (text 0x657)", "statesummon.cpp:503-516"),
+        new("StateFishing", 0x2d, StateEnterPlay.Nothing, "Idle at once", "statefishingdata.cpp:206-209"),
+        new("StateFishingFloat", 0x2e, StateEnterPlay.NotOwn, "", ""),
+        new("StatePlayInstrument", 0x2f, StateEnterPlay.Later, "", "stateplayinstrumentdata.cpp:227"),
+        new("StateSummonRevive", 0x30, StateEnterPlay.NotOwn, "", ""),
+        new("StateTriggerEmotion", 0x35, StateEnterPlay.Nothing, "no emotion list, nothing plays", "stateemotionidle.cpp:384-416"),
+        new("StateHomeConvenient", 0x36, StateEnterPlay.Nothing, "Idle at once", "statehomeconvenient.cpp:245-248"),
+        new("StateHomemade", 0x37, StateEnterPlay.Later, "", "statehomemade.cpp:151"),
+        new("StateAutoInteraction", 0x39, StateEnterPlay.Sequence, "Object_React_C, and the casting bar", "stateinteractdata.cpp:684-705, 762-765"),
+        new("StateCoupleEmotion", 0x3a, StateEnterPlay.Nothing, "Idle at once", "statecoupleemotion.cpp:422-425"),
+        new("StateBanner", 0x3b, StateEnterPlay.Nothing, "Idle at once", "statebannerdata.cpp:115-117"),
+        new("StateMicroGameRps", 0x3c, StateEnterPlay.Later, "", "statemicrogame.cpp:262"),
+        new("StateReact", 0x3d, StateEnterPlay.Nothing, "no StateReactData: the assert, nothing plays", "statereact.cpp:139-144"),
+        new("StateTreeWatering", 0x3e, StateEnterPlay.CastingBar, "the casting bar (text 0); no sequence", "unit_140ad5280_statetreewateringcontext.cpp:97-125"),
+        new("StateNurturing", 0x40, StateEnterPlay.Later, "", "statenurturing.cpp:286"),
+        new("StateMicroGameCoupleDance", 0x45, StateEnterPlay.Later, "", "statemicrogame.cpp:862"),
+        new("StateTriggerFollowNpc", 0x46, StateEnterPlay.Nothing, "Idle at once", "stateemotionidle.cpp:508-510"),
+        new("StateWeddingEmotion", 0x47, StateEnterPlay.Later, "", "stateweddingemotiondata.cpp:199"),
+        new("StateGoToHome", -1, StateEnterPlay.NotOwn, "", ""),
+        new("StateMoveSkill", -1, StateEnterPlay.NotOwn, "", ""),
+        new("StateSummonIdle", -1, StateEnterPlay.NotOwn, "", ""),
     };
 
     /// <summary>StateIdle's id: every exit here enters it (vfunc_59(1)).</summary>
@@ -118,18 +239,66 @@ public sealed class OwnStateExit
         return null;
     }
 
-    /// <summary>StateStun's sequences without state data: the "A" or "B" lie set's stand-up (statestun.cpp:56-57, phase
-    /// index 2 of sub 0x3f with kind 0, FUN_1417f7140 :226-231).</summary>
-    public static readonly string[] StunStandUp = { "Stnd_Up_A", "Stnd_Up_B" };
-    /// <summary>StateTransform's sequence (statetransform.cpp:63).</summary>
+    /// <summary>What the own pc's class for a state id plays when entered with no data.</summary>
+    public static StateEnterRow EnterOfOwnState(int id)
+    {
+        foreach (var r in Enters)
+            if (r.Id == id && r.Play != StateEnterPlay.NotOwn) return r;
+        return null;
+    }
+
+    /// <summary>
+    /// The body's move state a server-set state leaves it in, as ChangeState runs the old state's vfunc_5 and the class's
+    /// enter with no data: an at-once class and StateCrawl (whose first input step leaves) go on to StateIdle; a
+    /// <see cref="StateEnterPlay.BodyState"/> class enters the body's own state; a state run here (<see cref="Enter"/>: its
+    /// sequence, hide or timer) stands the body while it runs; a class a controller of its own runs, and StateSwimDash,
+    /// leave the body as it is (<see cref="BodyEntry.None"/>).
+    /// </summary>
+    public static BodyEntry BodyEntryOf(int id)
+    {
+        var row = OfOwnState(id);
+        if (row == null) return BodyEntry.None;
+        if (row.Cause is StateExitCause.AtOnce or StateExitCause.InputStep) return BodyEntry.Idle;
+        if (id is 0x11 or 0x12 or 0x16 or 0x22 or 0x28 or 0x2c or 0x39) return BodyEntry.Idle;
+        if (row.Cause != StateExitCause.Body) return BodyEntry.None;
+        return id switch
+        {
+            0x1 => BodyEntry.Idle,
+            0x2 => BodyEntry.Walk,
+            0x4 => BodyEntry.Land,
+            0x5 => BodyEntry.Fall,
+            0x6 => BodyEntry.Jump,
+            0x8 => BodyEntry.Ladder,
+            0x9 => BodyEntry.Rope,
+            0xd => BodyEntry.Hit,
+            0x14 => BodyEntry.Dash,
+            0x18 => BodyEntry.Revival,
+            0x1b => BodyEntry.Swim,
+            0x1d => BodyEntry.Climb,
+            0x1f => BodyEntry.FallDamage,
+            0x35 => BodyEntry.TriggerEmotion,
+            _ => BodyEntry.None,
+        };
+    }
+
+    /// <summary>StateTransform's sequence and effect (statetransform.cpp:57-63).</summary>
     public const string TransformSequence = "Equip_Change_Mantle_A";
+    public const string TransformEffect = "CH/Common/Eff_FittingDoll.xml";
+    /// <summary>StateRecall's sequence (statesummon.cpp:504) and StateAutoInteraction's (FUN_1417d36b0,
+    /// stateinteractdata.cpp:762-765).</summary>
+    public const string RecallSequence = "Object_React_A";
+    public const string AutoInteractionSequence = "Object_React_C";
+    /// <summary>StateTalk's sequence with no talkable NPC open: vfunc_123(0), the action table's IDLE (statetalk.cpp:133-135).</summary>
+    public const string TalkAction = "IDLE";
+    /// <summary>StateSpawn's hide reason (AddHideReason(10), statespawn.cpp:65-75).</summary>
+    public const int SpawnHideReason = 10;
 
     /// <summary>StateSpawn's hide time (statespawn.cpp:73-75): Unk_Random seeded with the object id, its first number
     /// % 300 + 100 ms.</summary>
     public static int SpawnDelayMs(int objectId) => (int)(new Ms2.Quest.QuestRandom(objectId).Next() % 300) + 100;
 
-    /// <summary>The CRT rand() for StateStun's set (rand() % 2 != 0 picks "A", statestun.cpp:93-96).</summary>
-    public Func<int> Rand = () => System.Random.Shared.Next(0x8000);
+    /// <summary>StateStun, kept across entries (its sub and kind).</summary>
+    public readonly OwnStun Stun = new();
     /// <summary>A body sequence's length in seconds by name; null when the body has none (it plays nothing and never ends,
     /// as PCBase::PlayAnimation of a missing name).</summary>
     public Func<string, double?> SequenceLength;
@@ -138,10 +307,25 @@ public sealed class OwnStateExit
     public int State { get; private set; }
     /// <summary>Its cause.</summary>
     public StateExitCause Cause { get; private set; }
-    /// <summary>The sequence it plays, if any.</summary>
+    /// <summary>The sequence whose end the exit waits for, if any.</summary>
     public string Sequence { get; private set; }
     /// <summary>Seconds to the exit; below 0 none comes.</summary>
     public double Left { get; private set; } = -1;
+
+    /// <summary>The sequence the running state plays on the body (null none: the body's own), whether it loops, whether it
+    /// is an action name (<see cref="TalkAction"/>) rather than a sequence, and a count that rises with each new play.</summary>
+    public string Played { get; private set; }
+    public bool PlayedLoops { get; private set; }
+    public bool PlayedIsAction { get; private set; }
+    public int Plays { get; private set; }
+    /// <summary>The body hidden for StateSpawn (hide reason 10, the shadow off).</summary>
+    public bool Hidden => State == 0x11;
+    /// <summary>The body's animation paused (StateStun sub 0x41).</summary>
+    public bool Paused => State == 0x12 && Stun.Paused;
+    /// <summary>An effect the entry started (StateTransform's), once per entry; the caller takes it.</summary>
+    public string Effect { get; private set; }
+    /// <summary>The buff's stun animation for StateStun sub 0x46 (m_motion.m_strStunAnimation).</summary>
+    public string StunAnimation { get; private set; }
 
     /// <summary>The running state's input step reads no move key: StateStun's is empty (statestun.cpp:197-199); StateSpawn,
     /// StateTransform and StatePvPWinLose keep State's, which only casts a queued skill (state.cpp:634-640).</summary>
@@ -155,7 +339,7 @@ public sealed class OwnStateExit
     public bool Enter(int id, int objectId)
     {
         if (id == State && State != 0) return false;
-        State = 0; Sequence = null; Left = -1;
+        Clear();
         var row = OfOwnState(id);
         if (row == null) return false;
         switch (row.Cause)
@@ -169,11 +353,24 @@ public sealed class OwnStateExit
             case StateExitCause.Timer:
                 Left = SpawnDelayMs(objectId) / 1000.0;
                 break;
+            case StateExitCause.SequenceEnd when id == 0x12:
+                Stun.Enter(null, null);
+                TakeStunPlay();
+                Sequence = Stun.Sub == OwnStun.SubStandUp ? Stun.Played : Stun.Set?[2 + (Stun.Kind == 6 ? 5 : 0)];
+                Left = Sequence != null ? SequenceLength?.Invoke(Sequence) ?? -1 : -1;
+                break;
             case StateExitCause.SequenceEnd:
-                Sequence = id == 0x12 ? StunStandUp[Rand() % 2 != 0 ? 0 : 1] : TransformSequence;
+                Play(TransformSequence, false, false);
+                Effect = TransformEffect;
+                Sequence = TransformSequence;
                 Left = SequenceLength?.Invoke(Sequence) ?? -1;
                 break;
-            case StateExitCause.NoSelfExit when id == 0x28:
+            case StateExitCause.NoSelfExit when id is 0x28 or 0x2c or 0x16:
+                if (id == 0x2c) Play(RecallSequence, false, false);
+                else if (id == 0x16) Play(TalkAction, false, true);
+                break;
+            case StateExitCause.Apart when id == 0x39:
+                Play(AutoInteractionSequence, false, false);
                 break;
             default:
                 return false;
@@ -183,13 +380,32 @@ public sealed class OwnStateExit
     }
 
     /// <summary>
-    /// One frame of the running state. <paramref name="current"/> is Me.State: another state (the body's, the server's)
-    /// has replaced it and nothing runs. Returns true when the state's own exit enters StateIdle now.
+    /// The stun buff's entry this frame (AdditionalCliList::FUN_1409713b0): vfunc_59(0x12, StateStunData(stun), sub). A
+    /// running StateStun only takes the sub (State::vfunc_25 -> StateStun::vfunc_2); else ChangeState sets the sub, then
+    /// StateStun::vfunc_4 runs with the stun as the kind. Returns true when StateStun was entered now.
     /// </summary>
-    public bool Advance(double dt, int current, bool crawlKeyDown = false)
+    public bool EnterBuffStun(int stun, int sub, string stunAnimation)
+    {
+        StunAnimation = stunAnimation;
+        if (State == 0x12) { Stun.SetSub(sub); return false; }
+        Clear();
+        Stun.SetSub(sub);
+        Stun.Enter(stun, stunAnimation);
+        TakeStunPlay();
+        State = 0x12; Cause = StateExitCause.SequenceEnd;
+        return true;
+    }
+
+    /// <summary>
+    /// One frame of the running state. <paramref name="current"/> is Me.State: another state (the body's, the server's)
+    /// has replaced it and nothing runs. StateStun runs its frame (<paramref name="stunned"/>: a buff holds it,
+    /// AdditionalCliList::FUN_1409709b0) and its sequence ends. Returns true when the state's own exit enters StateIdle now.
+    /// </summary>
+    public bool Advance(double dt, int current, bool crawlKeyDown = false, bool stunned = false)
     {
         if (State == 0) return false;
-        if (current != State) { State = 0; Sequence = null; Left = -1; return false; }
+        if (current != State) { Clear(); return false; }
+        if (State == 0x12) return AdvanceStun(dt, stunned);
         if (Cause == StateExitCause.InputStep) { if (crawlKeyDown) return false; }
         else
         {
@@ -197,7 +413,52 @@ public sealed class OwnStateExit
             Left -= dt;
             if (Left > 0) return false;
         }
-        State = 0; Sequence = null; Left = -1;
+        Clear();
         return true;
+    }
+
+    /// <summary>The effect the entry started, once.</summary>
+    public string TakeEffect()
+    {
+        var e = Effect;
+        Effect = null;
+        return e;
+    }
+
+    bool AdvanceStun(double dt, bool stunned)
+    {
+        int plays = Stun.Plays;
+        if (Stun.Frame(stunned)) { Clear(); return true; }
+        if (Stun.Plays != plays) { TakeStunPlay(); return false; }   // a sequence started this frame runs from the next
+        if (Left < 0) return false;
+        Left -= dt;
+        if (Left > 0) return false;
+        plays = Stun.Plays;
+        if (Stun.SequenceEnd(StunAnimation)) { Clear(); return true; }
+        if (Stun.Plays != plays) TakeStunPlay();
+        else Left = -1;
+        return false;
+    }
+
+    void TakeStunPlay()
+    {
+        if (Stun.Played == null) { Left = -1; return; }
+        Play(Stun.Played, Stun.Loops, false);
+        Sequence = Stun.Played;
+        Left = Stun.Loops ? -1 : SequenceLength?.Invoke(Sequence) ?? -1;
+    }
+
+    void Play(string name, bool loop, bool action)
+    {
+        Played = name;
+        PlayedLoops = loop;
+        PlayedIsAction = action;
+        Plays++;
+    }
+
+    void Clear()
+    {
+        if (State == 0x12) Stun.Leave();
+        State = 0; Sequence = null; Left = -1; Played = null; PlayedLoops = false; PlayedIsAction = false; Effect = null;
     }
 }

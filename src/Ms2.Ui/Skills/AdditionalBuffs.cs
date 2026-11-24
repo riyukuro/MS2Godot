@@ -19,6 +19,8 @@ public sealed class AdditionalBuff
     public byte Enabled;
     /// <summary>m_nShieldValue.</summary>
     public long Shield;
+    /// <summary>m_b40: brought by the field entry's list (DecodeListPacket, additionalcli_2.cpp:730), not added by an OnBuff.</summary>
+    public bool FromList;
     /// <summary>m_bSuspended. STILL-OPEN: no packet the port reads sets it, so it stays false.</summary>
     public bool Suspended;
     /// <summary>m_spLevel (SkillDataTableCli::FUN_140aafef0 of the id and level).</summary>
@@ -329,6 +331,23 @@ public sealed class AdditionalBuffList
     }
 
     /// <summary>
+    /// AdditionalCliList::FUN_1409713b0 (additionalcli_2.cpp:786-833), each frame: the first enabled effect whose level has a
+    /// &lt;Motion stun&gt;, its stun, the sub StateStun is entered with (<see cref="Ms2.Ui.OwnStun.BuffSub"/>) and its stun
+    /// animation; null when none. The owner's checks (alive, the current state's vfunc_17) are the caller's.
+    /// STILL-OPEN: m_map is a CAtlMap walked in its hash order; here it is the add order.
+    /// </summary>
+    public (int Stun, int Sub, string Animation)? StunEntry(bool ownerIsPc)
+    {
+        foreach (var b in map.Values)
+        {
+            if (b.Enabled == 0 || b.LevelData.Stun == 0) continue;
+            int stun = unchecked((int)b.LevelData.Stun);
+            return (stun, Ms2.Ui.OwnStun.BuffSub(stun, ownerIsPc, b.FromList), b.LevelData.StunAnimation);
+        }
+        return null;
+    }
+
+    /// <summary>
     /// IsHidden @0x140970990 (additionalcli_2.cpp:537), m_motion.m_nHide as FUN_140972a00 (:1072) sums it: set when an enabled,
     /// unsuspended effect's level has a nonzero &lt;Motion hide&gt;.
     /// </summary>
@@ -386,6 +405,7 @@ public sealed class AdditionalBuffList
         var b = new AdditionalBuff(this) { OwnerId = p.OwnerObjectId, Key = p.Key, CasterId = p.CasterObjectId };
         if (p.State is { } s) b.ApplyState(s);
         b.Shield = p.Shield ?? 0;
+        b.FromList = p.FromList;
         b.LevelData = levelOf(b.Id, b.Level);
         if (!b.IsValid || map.ContainsKey(b.Key)) return false;
         map[b.Key] = b;

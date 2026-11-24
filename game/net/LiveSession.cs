@@ -184,6 +184,8 @@ public partial class LiveSession : Node
     internal int ServerStatesEntered;
     internal double ServerStateExitLeft;
     internal int OwnStateExitRunning => ownStateExit.State;
+    /// <summary>The sequence the running own state plays on the body (null none).</summary>
+    internal string OwnStatePlayed => ownStateExit.Played;
 
     /// <summary>The live run's raw UserState (OnUserState: i32 object id, u8 state) for the own pc, as the server's debug
     /// packet command takes it: each byte in hex, the opcode first.</summary>
@@ -194,26 +196,93 @@ public partial class LiveSession : Node
         return $"{op & 0xff:X2} {op >> 8:X2} {id & 0xff:X2} {(id >> 8) & 0xff:X2} {(id >> 16) & 0xff:X2} {(id >> 24) & 0xff:X2} {state & 0xff:X2}";
     }
 
+    /// <summary>The live run's raw OnBuff for the own pc, as <see cref="OwnUserStateBytes"/>: mode 0 adds effect
+    /// <paramref name="id"/> at <paramref name="level"/> under <paramref name="key"/> for <paramref name="ms"/> from now
+    /// (the owner header, then the state: start and end tick, id, level, overlap 1, enabled; a shield of 0), mode 1 removes
+    /// the key (the header only).</summary>
+    /// <summary>The last OnBuff packet of the own pc (for the live run's report).</summary>
+    internal BuffPacket LastOwnBuff;
+
+    internal string OwnBuffBytes(byte mode, int key, uint id, ushort level, uint ms)
+    {
+        var b = new List<byte>();
+        void I32(uint v) { b.Add((byte)v); b.Add((byte)(v >> 8)); b.Add((byte)(v >> 16)); b.Add((byte)(v >> 24)); }
+        ushort op = game.Profile.Number(Ms2.Net.Inbound.Buff);
+        b.Add((byte)op); b.Add((byte)(op >> 8)); b.Add(mode);
+        I32(unchecked((uint)Me.ObjectId)); I32(unchecked((uint)key)); I32(unchecked((uint)Me.ObjectId));
+        if (mode == 0)
+        {
+            uint now = unchecked((uint)game.Session.ServerTick);
+            I32(now); I32(now + ms); I32(id); b.Add((byte)level); b.Add((byte)(level >> 8)); I32(1); b.Add(1);
+            I32(0); I32(0);
+        }
+        return string.Join(" ", b.Select(x => x.ToString("X2")));
+    }
+
     void EnterOwnStateExit(int st)
     {
+        if (ownStunEntry) return;   // the stun buff's entry of the running StateStun (TickOwnStateExit)
         bool atOnce = ownStateExit.Enter(st, Me.ObjectId);
         ServerStatesEntered++;
         ServerStateExitLeft = atOnce ? 0 : ownStateExit.State == st ? ownStateExit.Left : -1;
         if (ownStateExit.State == st)
-            GD.Print($"live: server state 0x{st:x} runs its own exit: {ownStateExit.Cause}{(ownStateExit.Sequence != null ? " " + ownStateExit.Sequence : "")}, {(ownStateExit.Left < 0 ? "none comes" : $"{ownStateExit.Left:0.###} s")}");
+            GD.Print($"live: server state 0x{st:x} runs its own exit: {ownStateExit.Cause}{(ownStateExit.Sequence != null ? " " + ownStateExit.Sequence : "")}, {(ownStateExit.Left < 0 ? "none comes" : $"{ownStateExit.Left:0.###} s")}{(ownStateExit.Played != null ? ", plays " + ownStateExit.Played : "")}{(ownStateExit.Hidden ? ", hidden" : "")}");
         if (atOnce && Me.LeaveServerState(st)) GD.Print($"live: server state 0x{st:x} left at once (no state data)");
     }
 
-    /// <summary>The frame of <see cref="ownStateExit"/>: its exit enters StateIdle (the body's state from then).</summary>
+    bool ownStunEntry;
+    /// <summary>The own buffs' stun this frame (AdditionalBuffList.StunEntry for the pc); the HUD sets it with the buff list.</summary>
+    public Func<(int Stun, int Sub, string Animation)?> OwnBuffStun = () => null;
+    /// <summary>The live run's count of the stun buff's entries of StateStun.</summary>
+    internal int BuffStunsEntered;
+
+    /// <summary>
+    /// The frame of <see cref="ownStateExit"/>: AdditionalCliList::FUN_1409713b0 (additionalcli_2.cpp:786-833) first, which
+    /// enters StateStun each frame while an enabled effect stuns the living pc; then the running state's frame, whose exit
+    /// enters StateIdle (the body's state from then); then what it plays on the body (the sequence, StateSpawn's hide,
+    /// StateStun's pause and StateTransform's effect).
+    /// STILL-OPEN: the stun buff's checks of the current state's vfunc_17 (0 only in StateGrabTarget, which leaves at once
+    /// without data here) and of a hold by a riding pc with event buff 2 (PC::FUN_141660120, pc.cpp:2967) are not made; the
+    /// list's stun (m_motion.m_nStun, cleared when the list is summed again) is taken as an enabled stun effect being held.
+    /// </summary>
     void TickOwnStateExit(double delta)
     {
+        bool stunned = false;
+        if (player != null && IsInstanceValid(player) && !Me.DeathOnlyStates && OwnBuffStun() is { } s)
+        {
+            stunned = true;
+            if (ownStateExit.EnterBuffStun(s.Stun, s.Sub, s.Animation))
+            {
+                BuffStunsEntered++;
+                GD.Print($"live: stun buff {s.Stun} enters StateStun, sub 0x{s.Sub:x}, plays {ownStateExit.Played}");
+                ownStunEntry = true;
+                try { Me.EnterOwnState(0x12); }
+                finally { ownStunEntry = false; }
+                player.EnterServerState(Ms2.Ui.BodyEntry.Idle);
+            }
+        }
         int st = ownStateExit.State;
-        if (st == 0) return;
-        if (ownStateExit.Advance(delta, Me.State) && Me.LeaveServerState(st)) GD.Print($"live: server state 0x{st:x} left by its own exit");
-        else if (ownStateExit.State == 0 && Me.State != st) GD.Print($"live: server state 0x{st:x} replaced by state {Me.State}");
+        if (st != 0)
+        {
+            if (ownStateExit.Advance(delta, Me.State, false, stunned) && Me.LeaveServerState(st)) GD.Print($"live: server state 0x{st:x} left by its own exit");
+            else if (ownStateExit.State == 0 && Me.State != st) GD.Print($"live: server state 0x{st:x} replaced by state {Me.State}");
+        }
+        if (player == null || !IsInstanceValid(player)) return;
+        player.SetStateSequence(ownStateExit.Played, ownStateExit.PlayedLoops, ownStateExit.PlayedIsAction, ownStateExit.Plays);
+        player.SetSpawnHidden(ownStateExit.Hidden);
+        player.SetAnimationPaused(ownStateExit.Paused);
+        if (ownStateExit.TakeEffect() is { } fx) PlayOwnEffect(fx);
     }
 
     bool ServerStateHoldsBody() => ownStateExit.HoldsBody && Me.State == ownStateExit.State;
+
+    /// <summary>The body's own Idle, Land and Fall while a state runs here: its frame moves by gravity only (StateStun::vfunc_3,
+    /// statestun.cpp:126), so standing, falling and landing stay in it; another body state replaces it.</summary>
+    void BodyStateEntered(int id)
+    {
+        if (ownStateExit.State != 0 && Me.State == ownStateExit.State && id is 1 or 4 or 5) return;
+        Me.LeaveForBodyState(id);
+    }
 
     double? OwnSequenceSeconds(string name) => player != null && IsInstanceValid(player) ? player.SequenceSeconds(name) : null;
     /// <summary>CGroupChatManager's chats from the group chat packets (0x8B); live only. The HUD sets its texts and its browser.</summary>
@@ -1324,7 +1393,7 @@ public partial class LiveSession : Node
         player.StateSyncOut += records => SendSync(records, false);
         player.RideSyncOut += records => SendSync(records, true);   // StateRideeController::vfunc_0 (state.cpp:537-562)
         player.HeldStateEntered += st => HeldItem.EnterState(st, Send);
-        player.MoveStateEntered += id => Me.LeaveForBodyState(id);     // ChangeState: the body's own state replaces the server's
+        player.MoveStateEntered += BodyStateEntered;     // ChangeState: the body's own state replaces the server's
         player.HoldLookup = (id, node) => remote?.FindHoldTarget(selfObject, id, node) ?? default;
         WireRunX(player);
         player.HoldLeft += () => { if (game != null) Send(new RideLeaveRequest()); };   // MyPC::SendRequestRideMode4
@@ -1395,7 +1464,7 @@ public partial class LiveSession : Node
                 if (self)
                 {
                     OwnBuff(null);
-                    foreach (var b in u.Buffs) OwnBuff(BuffPacket.FromAdd(b));
+                    foreach (var b in u.Buffs) OwnBuff(BuffPacket.FromAdd(b) with { FromList = true });
                 }
                 if (self && u.Book != null) { SkillBook = u.Book; SkillBookChanged?.Invoke(-1); }
                 GD.Print($"live: FieldAddUser object {u.ObjectId} {(self ? "SELF" : "other")} char {u.User.CharacterId} '{u.User.Name}' pos {u.Position}");
@@ -1417,7 +1486,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.Buff))
             {
                 var b = BuffPacket.Read(p.Reader());
-                if (b.OwnerObjectId == selfObject) OwnBuff(b);
+                if (b.OwnerObjectId == selfObject) { LastOwnBuff = b; OwnBuff(b); }
             }
             else if (game.Is(p, Inbound.ExpUp))
             {
@@ -1699,6 +1768,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.UserState))
             {
                 var u = UserState.Read(p.Reader());     // OnUserState (scenestategame.cpp:5758): the state, then state 12 runs PC::vfunc_137
+                bool letIn = u.ObjectId == selfObject && !Me.DeathOnlyStates;   // PC::vfunc_124 (pc.cpp:1199)
                 Me.ApplyUserState(u.ObjectId, u.State);
                 if (u.ObjectId == selfObject) EndTaxiCall();    // any state set on the own player leaves StateTaxiCall (ChangeState, vfunc_5)
                 bool died = u.ObjectId == selfObject && u.State == 12 && Me.Dead;  // the dead branch runs each time, not only on the flip
@@ -1717,7 +1787,12 @@ public partial class LiveSession : Node
                     SyncDeadFlag();
                     if (Me.State == 0xc) OwnDeathState();
                     else if (Me.State == 0x18) player.EnterRevival();
-                    else player.LeaveDeath();
+                    else
+                    {
+                        player.LeaveDeath();
+                        // the class's enter with no data on the body (Ms2.Ui.OwnStateExit.BodyEntryOf)
+                        if (letIn && u.State is not (0xc or 0x18)) player.EnterServerState(Ms2.Ui.OwnStateExit.BodyEntryOf(u.State));
+                    }
                 }
             }
             else if (game.Is(p, Inbound.DeadUser))

@@ -383,6 +383,13 @@ public sealed class MyCharacter {
     }
 
     /// <summary>
+    /// The own client's vfunc_59(state) (the stun buff's StateStun, AdditionalCliList::FUN_1409713b0,
+    /// additionalcli_2.cpp:831), with PC::vfunc_124's and ChangeState's checks as <see cref="EnterState"/>. Returns whether
+    /// the state was entered.
+    /// </summary>
+    public bool EnterOwnState(int state) => EnterState(state);
+
+    /// <summary>
     /// The state's own exit to StateIdle (vfunc_59(1)) for a state the server put the player into that the body has no move
     /// state for (Ms2.Ui.OwnStateExit: at once, the input step, a timer or the played sequence's end). From then the body's
     /// move state is the state (0 here). Returns whether <paramref name="state"/> was the state and was left.

@@ -22,6 +22,8 @@ public readonly record struct BuffState(uint StartTick, uint EndTick, uint Id, u
 public sealed record BuffPacket(byte Mode, int OwnerObjectId, int Key, int CasterObjectId, uint Flags, BuffState? State, long? Shield)
 {
     public const byte Add = 0, Remove = 1, Modify = 2;
+    /// <summary>An add from the FieldAddUser list (DecodeListPacket sets the effect's m_b40, additionalcli_2.cpp:730).</summary>
+    public bool FromList { get; init; }
     public const uint ModifyState = 1, ModifyValue = 2;
 
     public static BuffPacket Read(ByteReader r)

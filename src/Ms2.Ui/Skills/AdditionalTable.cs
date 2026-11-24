@@ -37,6 +37,11 @@ public sealed class AdditionalLevelData
     /// FUN_1409726e0 lets count in the field as the list's super armor.</summary>
     public uint SuperArmor;
     public int SuperArmorApplyFieldType;
+    /// <summary>&lt;Motion stun stunAnimation&gt; (m_motion.m_nStun, m_strStunAnimation, additionalactionadditional.cpp:1103-1104):
+    /// AdditionalCliList::FUN_1409713b0 (additionalcli_2.cpp:786-833) enters StateStun each frame for the first enabled effect
+    /// with a stun; 99 plays the stun animation.</summary>
+    public uint Stun;
+    public string StunAnimation = "";
     /// <summary>&lt;Defensive invincible&gt; (m_nInvincible +0x29c, additionalactionadditional.cpp:1256): AdditionalCliList::FUN_140972a00
     /// (additionalcli_2.cpp:1075) takes the list's GetInvincible from it.</summary>
     public int Invincible;
@@ -111,6 +116,8 @@ public sealed class AdditionalLevelData
             lv.Hide = Xml.Int(motion, "hide");
             lv.SuperArmor = Xml.UInt(motion, "superArmor");
             lv.SuperArmorApplyFieldType = Xml.Int(motion, "superArmorApplyFieldType");
+            lv.Stun = Xml.UInt(motion, "stun");
+            lv.StunAnimation = (string)motion.Attribute("stunAnimation") ?? "";
         }
         if (e.Element("Defensive") is { } defensive) lv.Invincible = Xml.Int(defensive, "invincible");
         if (e.Element("InvokeEffect") is { } invoke)

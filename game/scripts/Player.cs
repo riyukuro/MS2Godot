@@ -1069,6 +1069,7 @@ public partial class Player : CharacterBody3D
     {
         if (Mount != null) { RideAnimation(); return; }
         if (Anims == null) return;
+        if (StateSequenceHolds) return;   // a server-set state's own sequence (PlayerServerState)
         if (interactAnim != null)
         {
             if (State != MoveState.Idle || (!interactLoop && !Anim.IsPlaying()))
