@@ -290,6 +290,7 @@ public sealed class MyCharacter {
         for (int i = 0; i < 3; i++) StatsOf(i)[PlayerStat.Health] = u.Stats[i].Health;   // MyPC::vfunc_91 = PC::vfunc_90 (pc.cpp:1644): SetStat(kind, 4, health)
         State = 0;
         SetRevivalEndTick(u.RevivalEndTick); RevivalConfirmCount = u.RevivalCount; RevivalFlag = u.RevivalFlag;   // scenestategame.cpp:11280-11281
+        MesoRevivalsUsed = 0;   // the own FieldAddUser makes a new MyPC (scenestategame.cpp:11117-11120), whose ctor zeroes m_n1644 (mypc.cpp:880)
         Dead = u.Stats[2].Health == 0;                                  // scenestategame.cpp:11185: FUN_141670a00(4) == 0 -> FUN_14166ce50(1)
         Changed?.Invoke();
     }
@@ -485,8 +486,9 @@ public sealed class MyCharacter {
         return true;
     }
 
-    /// <summary>OnRevivalCount (scenestategame.cpp:4092).</summary>
-    public void Apply(RevivalCount c) { MesoRevivalsUsed = c.Used; Changed?.Invoke(); }
+    /// <summary>OnRevivalCount (scenestategame.cpp:4092): MyPC::FUN_14152a2f0 (mypc.cpp:3187) sets m_n1644; without a local
+    /// player (before the first own FieldAddUser) the packet does nothing.</summary>
+    public void Apply(RevivalCount c) { if (User == null) return; MesoRevivalsUsed = c.Used; Changed?.Invoke(); }
 
     /// <summary>OnDungeonReviveCount (scenestategame.cpp:5074).</summary>
     public void Apply(DungeonReviveCount c) { DungeonRevivalsUsed = c.Used; Changed?.Invoke(); }

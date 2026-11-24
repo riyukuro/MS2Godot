@@ -43,12 +43,20 @@ public sealed class ClientConstants
     /// <summary>A constant's text; null when it is not in the tables.</summary>
     public string String(string key) => values.TryGetValue(key, out var s) ? s : null;
 
-    /// <summary>An int constant (Value&lt;int&gt;, GetOr); <paramref name="def"/> when the tables do not set it or it is not an int.</summary>
-    public int Int(string key, int def) =>
-        values.TryGetValue(key, out var s) && int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n) ? n : def;
+    /// <summary>The keys the tables set (each one's picked row).</summary>
+    public IEnumerable<string> Keys => values.Keys;
 
+    /// <summary>An int constant (Value&lt;int&gt;, GetOr): Constants::Lookup(int*) (@0x1402bb340,
+    /// unit_1402ab440_constantsblocks.cpp:477) reads a set key with FUN_140718170, atoi (packetlogger.cpp:144): the leading
+    /// number, 0 without one, never the default. <paramref name="def"/> only when the tables do not set the key.</summary>
+    public int Int(string key, int def) =>
+        values.TryGetValue(key, out var s) && s != null ? ReservedWords.Atoi(s) : def;
+
+    /// <summary>A float constant (Value&lt;float&gt;, GetOr @0x1402bb710): Constants::Lookup(float*) (@0x1402bb680, :532) reads a
+    /// set key with FUN_140718450, (float)atof (packetlogger.cpp:186), so the tables' "0.8f" is 0.8 and a value without a
+    /// leading number is 0. <paramref name="def"/> only when the tables do not set the key.</summary>
     public float Float(string key, float def) =>
-        values.TryGetValue(key, out var s) && float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out float f) ? f : def;
+        values.TryGetValue(key, out var s) && s != null ? (float)Ms2.Formats.Text.ArgumentFormat.Atof(s) : def;
 
     /// <summary>A bool constant (Value&lt;bool&gt;, GetOr): FUN_140718390 (packetlogger.cpp:180), true when the text holds any of
     /// "1oOtT"; <paramref name="def"/> when the tables do not set it.</summary>

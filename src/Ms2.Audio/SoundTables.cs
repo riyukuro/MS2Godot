@@ -77,6 +77,98 @@ public sealed class HitSoundTable
 }
 
 /// <summary>
+/// table/eventsound.xml (SoundPropertyMgr::LoadEventSound @0x141792740, soundproperty.cpp:591): each element from the first
+/// &lt;eventSound&gt; on (the loop takes every next sibling element, whatever its name) with a non-empty "event" and a
+/// "soundID" or "restoreSoundID" is stored as m_events[type][gender][job][onlyCasterMyPC], a later row replacing an earlier
+/// one. The type is FUN_141793500's case-sensitive name match (<see cref="TypeOf"/>); an unknown name is skipped.
+/// "onlyCasterMyPC" is set only by the exact text "true"; "group" is lower-cased; "job" and "gender" are XmlGetAttr ints
+/// (QueryIntAttribute, 0 without a leading number).
+/// <para>STILL-OPEN: the row's onlyCasterMyPC without the attribute is Unk_EventVoice's implicit ctor's (not recovered;
+/// taken as false). Every row of the KMS2 and GMS2 tables sets it.</para>
+/// </summary>
+public sealed class EventSoundTable
+{
+    /// <summary>FUN_141793500's event types.</summary>
+    public const int BossKill = 1, BossEndKill = 2, OtherPcKill = 3, MyPcResurrection = 4, MyPcDead = 5, SkillAction = 6;
+
+    /// <summary>Unk_EventVoice (soundproperty.h:93).</summary>
+    public readonly record struct Voice(bool OnlyCasterMyPC, string Group, string SoundId, string RestoreSoundId);
+
+    readonly Dictionary<(int Type, int Gender, int Job, bool Caster), Voice> map = new();
+
+    public int Count => map.Count;
+
+    /// <summary>FUN_141793500: the CString == compares, 0 for another name.</summary>
+    public static int TypeOf(string name) => name switch
+    {
+        "Boss_Kill" => BossKill,
+        "Boss_EndKill" => BossEndKill,
+        "otherPC_Kill" => OtherPcKill,
+        "myPC_Resurrection" => MyPcResurrection,
+        "myPC_Dead" => MyPcDead,
+        "skill_action" => SkillAction,
+        _ => 0,
+    };
+
+    public static EventSoundTable Parse(string xml)
+    {
+        var t = new EventSoundTable();
+        var root = XDocument.Parse(xml.TrimStart('\uFEFF')).Root;
+        if (root == null || root.Name.LocalName != "ms2") return t;
+        bool started = false;
+        foreach (var e in root.Elements())
+        {
+            if (!started && e.Name.LocalName != "eventSound") continue;
+            started = true;
+            string ev = (string)e.Attribute("event") ?? "", sound = (string)e.Attribute("soundID") ?? "", restore = (string)e.Attribute("restoreSoundID") ?? "";
+            if (ev.Length == 0 || (sound.Length == 0 && restore.Length == 0)) continue;
+            int type = TypeOf(ev);
+            if (type == 0) continue;
+            bool caster = (string)e.Attribute("onlyCasterMyPC") == "true";
+            string group = ((string)e.Attribute("group") ?? "").ToLowerInvariant();
+            t.map[(type, Query(e, "gender"), Query(e, "job"), caster)] = new Voice(caster, group, sound, restore);
+        }
+        return t;
+    }
+
+    /// <summary>QueryIntAttribute (sscanf "%d"): the leading signed digits after white space; 0 (the default) without them.</summary>
+    static int Query(XElement e, string name)
+    {
+        if ((string)e.Attribute(name) is not { } s) return 0;
+        int i = 0;
+        while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
+        bool neg = false;
+        if (i < s.Length && (s[i] == '-' || s[i] == '+')) neg = s[i++] == '-';
+        int start = i;
+        long v = 0;
+        while (i < s.Length && s[i] >= '0' && s[i] <= '9') { v = v * 10 + (s[i++] - '0'); if (v > int.MaxValue + 1L) return 0; }
+        if (i == start) return 0;
+        return (int)(neg ? -v : v);
+    }
+
+    /// <summary>SoundPropertyMgr::GetEventVoice @0x141792e00 (soundproperty.cpp:662): m_events[type][the PC's GetGender][its
+    /// GetJobGroupId][1 for the local player, else 0]; a missing entry is the default voice (empty names).</summary>
+    public Voice Get(int type, int gender, int jobGroup, bool localPlayer) =>
+        map.TryGetValue((type, gender, jobGroup, localPlayer), out var v) ? v : default;
+
+    /// <summary>
+    /// CEffectService::PlayEventVoice @0x1411a5770 (effectservice.cpp:1371) up to its FUN_1411a5110 call: the voice's
+    /// restoreSoundID when the job sound is off (IsJobSoundDisabled @0x141260470: the KR region and the character option's
+    /// disableJobSound), else its soundID; nothing for an empty name, or for an onlyCasterMyPC voice on an actor whose object
+    /// kind (GetObjectKind) is not 1, the own PC. Returns the event path, "group/name", or null.
+    /// </summary>
+    public string VoicePath(int type, int gender, int jobGroup, bool localPlayer, int objectKind, bool jobSoundDisabled)
+    {
+        if (type == 0) return null;
+        var v = Get(type, gender, jobGroup, localPlayer);
+        string name = jobSoundDisabled ? v.RestoreSoundId : v.SoundId;
+        if (string.IsNullOrEmpty(name)) return null;
+        if (v.OnlyCasterMyPC && objectKind != 1) return null;
+        return (v.Group ?? "") + "/" + name;
+    }
+}
+
+/// <summary>
 /// Footsteps as the client plays them (CGroundEffectDataManager::PlayEffects): the ground's material name (the entity property
 /// MapAttribute: grass, rock, ...) selects groundeffect/&lt;ground&gt;.xml, the action (walk, run0, run1, land) selects an
 /// &lt;action&gt;, and every &lt;effects&gt; block of it picks one effect file by percent; the effect file's soundEvent effects are

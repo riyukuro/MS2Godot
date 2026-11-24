@@ -45,7 +45,12 @@ public sealed class RemoteDeath
 
     /// <summary>The Tombstone packet's PC::FUN_14165d300 (pc.cpp:3464) on the standing tomb: its hit or break and the bar's
     /// stage. Returns the stage, null without a tomb or for a break.</summary>
-    public int? Hit(int kind, int value) => Tomb != null && GodotObject.IsInstanceValid(Tomb) ? Tomb.Hit(kind, value) : null;
+    public int? Hit(int kind, int value, int hitter, Ms2.Formats.World.ClientConstants constants, Vector3? viewer, Func<uint> rand)
+    {
+        if (Tomb == null || !GodotObject.IsInstanceValid(Tomb)) return null;
+        Tomb.PlayPacketSounds(kind, hitter, false, constants, viewer, rand);
+        return Tomb.Hit(kind, value);
+    }
 
     /// <summary>The tomb and the bar freed with the PC (UserRemoved, a replacing UserAdded).</summary>
     public void Free()

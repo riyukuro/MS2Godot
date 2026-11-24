@@ -141,6 +141,9 @@ public sealed partial class RemoteLayer : Node3D
     public Action<int> NpcRemoved { set => npcs.Removed = value; }
     /// <summary>The own player's place for the npcs' hit sounds (<see cref="NpcLayer.Viewer"/>).</summary>
     public Func<Vector3?> Viewer { set => npcs.Viewer = value; }
+    /// <summary>The viewer and the s_random stream the npcs' hit sounds use, for the tombs' (FUN_140ade030).</summary>
+    internal Vector3? ViewerPosition => npcs.Viewer?.Invoke();
+    internal Func<uint> HitSoundRand => npcs.HitSoundRand;
     /// <summary>The field's npcs, dead or not.</summary>
     public IEnumerable<World.FieldNpcs.Placed> Npcs => npcs.All;
     public bool NpcDead(int objectId) => npcs.IsDead(objectId);
@@ -772,8 +775,10 @@ public sealed partial class RemoteLayer : Node3D
                     break;
                 case UserTombstoneEvent tb:
                     // OnTombstone (scenestategame.cpp:9644) -> PC::FUN_14165d300 (pc.cpp:3464): the tomb's hit or break
-                    // and its bar's stage. STILL-OPEN: the hitter display of a break (kind 0) and the pet sound.
-                    if (users.TryGetValue(tb.ObjectId, out var tu)) tu.Death.Hit(tb.Kind, tb.Value);
+                    // and its bar's stage, after FUN_140ade030's hit sound (relation 3: not the local player, so no event voice).
+                    // STILL-OPEN: the pet part of OnTombstone (the pet's vfunc_59(1, 0, 0x11, 0) and the system sound 02100201
+                    // while CPet::vfunc_127 holds): the field's pets have no object here, and vfunc_127 is not recovered.
+                    if (users.TryGetValue(tb.ObjectId, out var tu)) tu.Death.Hit(tb.Kind, tb.Value, tb.Hitter, World.FieldContents.Constants(packs), ViewerPosition, HitSoundRand);
                     break;
                 case SkillDamageEvent dmg:
                     // FUN_141671c20 (pcbase.cpp:3922) calls vfunc_112 whenever the target has an entry, a miss (type 2) too
@@ -861,23 +866,26 @@ public sealed partial class RemoteLayer : Node3D
     /// <summary>
     /// WorldService::FUN_141bc3560's named sensors' loop (worldservice_1.cpp:9262-9316), before the tombs' with the same areas:
     /// the field's breakable markers (LiveSession.Breakables, in field space as the field entities), each hit sending the
-    /// Breakable request (0x27).
-    /// STILL-OPEN: PlayHitSound of the marker's SoundMaterial.
+    /// Breakable request (0x27), after the marker's hit sound (<see cref="PlayTagHitSound"/>).
     /// </summary>
     void RunMarkerTags()
     {
         var live = LiveSession.Instance;
         if (live == null) return;
         if (TombTags.RunMarkers(live.Breakables, markerHits) == 0) return;
-        foreach (var h in markerHits) live.SendBreakable(h.Request);
+        foreach (var h in markerHits)
+        {
+            PlayTagHitSound(h.HitSound, h.Position);   // FUN_140ade030(1, 1) before the packet (worldservice_1.cpp:9301)
+            live.SendBreakable(h.Request);
+        }
     }
 
     /// <summary>
     /// WorldService::FUN_141bc3560's tomb loop (worldservice_1.cpp:9319-9375), run from the world tick only while an area is
     /// registered: every other PC's standing tomb, at its node's place in client space (z up, unrotated: PC::FUN_14165cac0 places
     /// it at the PC); each hit sends the Tombstone request (0x2A). A tomb is skipped while its PC is hostile to the local player
-    /// (TombTagPass.HostileInField of the field's pkMode, read once per field).
-    /// STILL-OPEN: PlayHitSound of the tomb's SoundMaterial.
+    /// (TombTagPass.HostileInField of the field's pkMode, read once per field), after the tomb's hit sound
+    /// (<see cref="PlayTagHitSound"/>).
     /// </summary>
     void RunTombTags()
     {
@@ -902,7 +910,24 @@ public sealed partial class RemoteLayer : Node3D
         int hits = TombTags.Run(new ReadOnlySpan<Ms2.Ui.Hud.TombTarget>(tombTargets, 0, n), tombHits);
         Array.Clear(tombTargets, 0, n);
         if (hits == 0) return;
-        foreach (var h in tombHits) LiveSession.Instance?.SendRevival(h.Request);
+        foreach (var h in tombHits)
+        {
+            PlayTagHitSound(h.HitSound, h.Position);   // FUN_140ade030(1, 1) before the packet (worldservice_1.cpp:9367)
+            LiveSession.Instance?.SendRevival(h.Request);
+        }
+    }
+
+    /// <summary>
+    /// CBreakableObject::FUN_140ade030(1, 1) (breakableobject.cpp:233) for a tag area's hit on a tomb or a field marker
+    /// (worldservice_1.cpp:9301, :9367): PlayHitSound of attack material 1 and the object's SoundMaterial, relation 1 (the
+    /// local player's hit), at VolumeMyPcToBreakableObject, at the object's place (client space, z up).
+    /// </summary>
+    void PlayTagHitSound(int soundMaterial, System.Numerics.Vector3 clientPosition)
+    {
+        float volume = Ms2.Ui.Hud.Tombstone.HitVolume(1, World.FieldContents.Constants(packs));
+        var at = new Vector3(clientPosition.X, clientPosition.Z, -clientPosition.Y);
+        bool played = FieldAudio.Instance?.PlayHitSound(1, soundMaterial, 1, at, volume, ViewerPosition, HitSoundRand) ?? false;
+        GD.Print($"tomb tags: hit sound attack 1 defence {soundMaterial} relation 1 volume {volume:F2} played {played}");
     }
 
     public override void _Process(double delta)

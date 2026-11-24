@@ -112,6 +112,8 @@ public partial class LiveSession : Node
     public const string DeathEffectInPlaceKey = "dead_Start_MyPC_PvP", DeathEffectKey = "dead_Start_MyPC", RevivalPenaltyEndKey = "EFFECT_RESOLVE_PANELTY";
     /// <summary>The own tombstone (PC m_spFC8) while it stands, else null or a freed node.</summary>
     public Movement.PlayerTombstone Tomb { get; private set; }
+    /// <summary>The hit sound pick before the field's layers exist (the tomb is a field object, so not reached in practice).</summary>
+    static readonly Func<uint> NoHitSoundRand = () => 0u;
     ModelBuilder fieldBuilder;          // the field build's model builder, for the tomb
     /// <summary>The own buffs' IsDisableRevivalHere, set by the HUD that holds the buff list; false without one.</summary>
     public Func<bool> BuffsDisableRevival = () => false;
@@ -1707,6 +1709,7 @@ public partial class LiveSession : Node
                 var (effect, guideTrigger) = Me.ApplyRevivalConfirm(c);
                 if (effect) PlayOwnCommonEffect(RevivalPenaltyEndKey);     // InsertEffect of CommonResource +0x358 at the own PC
                 if (guideTrigger) guide?.AddTrigger(GuideTrigger.RevivalPanelty, 0, 0);
+                GD.Print($"live: revival confirm object {c.ObjectId} end tick {c.EndTick} count {c.Count}: effect {effect} guide {guideTrigger}");
             }
             else if (game.Is(p, Inbound.StateConsumeEp))
             {
@@ -1725,11 +1728,30 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.Tombstone))
             {
                 var t = TombstoneUpdate.Read(p.Reader());      // OnTombstone (scenestategame.cpp:9644) -> PC::FUN_14165d300
-                if (Me.Apply(t) && Tomb != null && IsInstanceValid(Tomb)) Tomb.Hit(t.Kind, t.Value);
+                GD.Print($"live: tombstone object {t.ObjectId} kind {t.Kind} value {t.Value} hitter {t.Hitter} pet {t.Pet} (own tomb {Tomb != null && IsInstanceValid(Tomb)})");
+                if (Me.Apply(t) && Tomb != null && IsInstanceValid(Tomb))
+                {
+                    // PC::FUN_14165d300 (pc.cpp:3464) on the own tomb: the hit sound, the break's myPC_Resurrection voice, then the state
+                    if (Tomb.PlayPacketSounds(t.Kind, t.Hitter, true, Constants(), remote?.ViewerPosition, remote?.HitSoundRand ?? NoHitSoundRand)
+                        && player != null && IsInstanceValid(player))
+                        FieldAudio.Instance?.PlayEventVoice(Ms2.Audio.EventSoundTable.MyPcResurrection, Me.User.Gender, Me.User.JobCode, true, 1,
+                            player.GlobalPosition, player.GlobalPosition);
+                    Tomb.Hit(t.Kind, t.Value);
+                }
             }
             else if (game.Is(p, Inbound.ResponseRide)) OnResponseRide(ResponseRide.Read(p.Reader(), selfObject, game.Profile));   // OnResponseRide (:12026)
-            else if (game.Is(p, Inbound.RevivalCount)) Me.Apply(RevivalCount.Read(p.Reader()));   // OnRevivalCount (scenestategame.cpp:4092)
-            else if (game.Is(p, Inbound.DungeonReviveCount)) Me.Apply(DungeonReviveCount.Read(p.Reader()));   // OnDungeonReviveCount (:5074)
+            else if (game.Is(p, Inbound.RevivalCount))
+            {
+                var rc = RevivalCount.Read(p.Reader());
+                int before = Me.MesoRevivalsUsed;
+                Me.Apply(rc);   // OnRevivalCount (scenestategame.cpp:4092)
+                GD.Print($"live: revival count {rc.Used}: meso revives used {before} -> {Me.MesoRevivalsUsed}");
+            }
+            else if (game.Is(p, Inbound.DungeonReviveCount))
+            {
+                Me.Apply(DungeonReviveCount.Read(p.Reader()));   // OnDungeonReviveCount (:5074)
+                GD.Print($"live: dungeon revive count {Me.DungeonRevivalsUsed}");
+            }
             else if (game.Is(p, Inbound.AutoRevive)) AutoReviveStarted?.Invoke(AutoRevive.Read(p.Reader()).DurationMs);   // OnAutoRevive (:4332)
             else if (game.Is(p, Inbound.ItemPutOnOrOff))
             {

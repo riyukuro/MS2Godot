@@ -37,6 +37,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     SoundLibrary library;
     SystemSoundTable systemSounds;
     HitSoundTable hitSounds;
+    EventSoundTable eventSounds;
     Ms2.Formats.World.EffectSkipTable effectSkip;
     float volumeOtherPc = Ms2.Formats.World.EffectSkipTable.VolumeOtherPcDefine;
     public SoundLibrary Library => library;
@@ -115,6 +116,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         {
             systemSounds = SystemSounds(packs);
             hitSounds = HitSounds(packs);
+            eventSounds = EventSounds(packs);
             effectSkip = EffectSkip(packs);
             try { volumeOtherPc = World.FieldContents.Constants(packs).Float("VolumeOtherPc", Ms2.Formats.World.EffectSkipTable.VolumeOtherPcDefine); }
             catch (Exception ex) { GD.PushWarning("audio: constants: " + ex.Message); }
@@ -155,6 +157,19 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         return t;
     }
 
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, EventSoundTable> eventSoundTables = new();
+
+    /// <summary>table/eventsound.xml, parsed once per pack set (SoundPropertyMgr::LoadEventSound, soundproperty.cpp:591, from
+    /// the same startup Load). Null when the table cannot be read (warned once).</summary>
+    static EventSoundTable EventSounds(PackSet packs)
+    {
+        if (eventSoundTables.TryGetValue(packs, out var t)) return t;
+        try { t = EventSoundTable.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/eventsound.xml"))); }
+        catch (Exception ex) { GD.PushWarning("audio: eventsound.xml: " + ex.Message); }
+        eventSoundTables.AddOrUpdate(packs, t);
+        return t;
+    }
+
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, Ms2.Formats.World.EffectSkipTable> effectSkipTables = new();
 
     /// <summary>Table/effectOption.xml for the graphic quality (EffectSkipMgr::LoadOption, effectskipmgr.cpp:181), read once per
@@ -188,6 +203,27 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     }
 
     static System.Numerics.Vector3 ToNumerics(Vector3 v) => new(v.X, v.Y, v.Z);
+
+    /// <summary>
+    /// CEffectService::PlayEventVoice @0x1411a5770 (effectservice.cpp:1371): the event voice of <paramref name="type"/> for a
+    /// PC of <paramref name="gender"/> and <paramref name="jobGroup"/> (<see cref="EventSoundTable.VoicePath"/>; the job sound
+    /// is off with the KR region and the character option's disableJobSound, IsJobSoundDisabled @0x141260470), played through
+    /// FUN_1411a5110 at <paramref name="position"/> (the PC's vfunc_18) at volume 1 with the object kind's checks. Returns the
+    /// event path asked for, null when the table gives none.
+    /// STILL-OPEN: the PC's sound pitch (PCBase::GetSoundPitch, m_unk_118) passed as the last argument is not applied.
+    /// </summary>
+    public string PlayEventVoice(int type, int gender, int jobGroup, bool localPlayer, int objectKind, Vector3 position, Vector3? viewer)
+    {
+        bool off = (GameOptions.Current?.StatusOption?.RegionKr ?? false) && GameOptions.SoundFlag.DisableJobSound;
+        var path = eventSounds?.VoicePath(type, gender, jobGroup, localPlayer, objectKind, off);
+        if (path == null) return null;
+        var status = GameOptions.Current?.StatusOption;
+        float v = Ms2.Formats.World.EffectSkipTable.SoundEventVolume(effectSkip, objectKind, ToNumerics(position), viewer is { } e ? ToNumerics(e) : null,
+            1f, volumeOtherPc, status?.DisplayShowOnlyMyPet ?? false, status?.DisplayHideMyPet ?? false);
+        bool played = v >= 0 && PlayEventAt(path, position, 0, v);
+        GD.Print($"audio: event voice {type} -> {path} played {played}");
+        return path;
+    }
 
     /// <summary>The full &lt;bgm&gt; spec of a field's fielddata entry (default environment; CFieldDataCli::vfunc_1 @0x140a55500, fielddatacli.cpp:240-249).</summary>
     public static FieldBgmSpec FieldBgm(PackSet packs, string xblockName) =>

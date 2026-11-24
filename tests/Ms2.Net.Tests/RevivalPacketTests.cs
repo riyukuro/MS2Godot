@@ -80,6 +80,28 @@ public class RevivalPacketTests {
         Assert.That((me.MesoRevivalsUsed, me.DungeonRevivalsUsed), Is.EqualTo((3, 5)));
     }
 
+    /// <summary>OnRevivalCount (scenestategame.cpp:4092) returns without a local player; the old code stored it anyway.</summary>
+    [Test]
+    public void RevivalCountBeforeTheOwnFieldAddUserIsDropped() {
+        var me = new MyCharacter();
+        me.Apply(RevivalCount.Read(R(w => w.WriteInt(2))));
+        Assert.That(me.MesoRevivalsUsed, Is.EqualTo(0));
+    }
+
+    /// <summary>Each own FieldAddUser makes a new MyPC (scenestategame.cpp:11117-11120) whose ctor zeroes m_n1644 (mypc.cpp:880),
+    /// so the meso revive count of the last field is gone until the next RevivalCount; the dungeon room's count
+    /// (DAT_143ab2950) is a global and stays. The old code kept the last field's count.</summary>
+    [Test]
+    public void TheOwnFieldAddUserZeroesTheMesoReviveCountAndKeepsTheDungeonOne() {
+        var me = Own();
+        me.Apply(RevivalCount.Read(R(w => w.WriteInt(3))));
+        me.Apply(DungeonReviveCount.Read(R(w => w.WriteInt(5))));
+        me.Apply(new FieldAddUser { ObjectId = 10, User = new UserBlock { Name = "a" } });
+        Assert.That((me.MesoRevivalsUsed, me.DungeonRevivalsUsed), Is.EqualTo((0, 5)));
+        me.Apply(RevivalCount.Read(R(w => w.WriteInt(1))));
+        Assert.That(me.MesoRevivalsUsed, Is.EqualTo(1));
+    }
+
     [Test]
     public void AutoReviveReadsTheDuration() {
         Assert.That(AutoRevive.Read(R(w => w.WriteInt(10000))), Is.EqualTo(new AutoRevive(10000)));

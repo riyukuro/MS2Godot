@@ -81,4 +81,24 @@ public class TombstoneTests
     [TestCase(1, 0, null)]    // max(1, 0): ceil(5) = 5
     [TestCase(1, 10, 1)]      // ceil(0.5)
     public void GaugeStage(int hit, int max, int? stage) => Assert.That(Tombstone.GaugeStage(hit, max), Is.EqualTo(stage));
+    /// <summary>FUN_14165d300 (pc.cpp:3464): a hit always plays FUN_140ade030's hit sound; a break only with a hitter, and the
+    /// local player's break with a hitter then plays PlayEventVoice(4). The relation is 1 for the own tomb, else 3.</summary>
+    [TestCase(3, 1, true, true, 1, false)]
+    [TestCase(3, 0, false, true, 3, false)]
+    [TestCase(0, 1, true, true, 1, true)]
+    [TestCase(0, 1, false, true, 3, false)]
+    [TestCase(0, 0, true, false, 1, false)]
+    [TestCase(0, 0, false, false, 3, false)]
+    public void ThePacketsSoundsFollowFun14165d300(int kind, int hitter, bool local, bool hitSound, int relation, bool voice) =>
+        Assert.That(Tombstone.PacketSounds(kind, hitter, local), Is.EqualTo((hitSound, relation, voice)));
+
+    /// <summary>FUN_140ade030's volume: VolumeMyPcToBreakableObject for relation 1 or 2, else VolumePcToBreakableObject;
+    /// the Define 0.1 without the tables; the tables' "0.8f" and "0.3f" read through atof.</summary>
+    [Test]
+    public void TheHitVolumeIsTheBreakableObjectConstantOfTheRelation()
+    {
+        var c = new Ms2.Formats.World.ClientConstants(new Dictionary<string, string> { ["VolumeMyPcToBreakableObject"] = "0.8f", ["VolumePcToBreakableObject"] = "0.3f" });
+        Assert.That((Tombstone.HitVolume(1, c), Tombstone.HitVolume(2, c), Tombstone.HitVolume(3, c), Tombstone.HitVolume(0, c)), Is.EqualTo((0.8f, 0.8f, 0.3f, 0.3f)));
+        Assert.That((Tombstone.HitVolume(1, null), Tombstone.HitVolume(3, null)), Is.EqualTo((0.1f, 0.1f)));
+    }
 }

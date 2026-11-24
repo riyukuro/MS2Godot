@@ -109,6 +109,24 @@ public sealed partial class PlayerTombstone : Node3D
     /// <summary>The Tombstone packet's tomb part (<see cref="Tombstone.Apply"/>); returns the bar's stage for a hit.</summary>
     public int? Hit(int kind, int value) => PendingStage = State.Apply(kind, value, (long)Time.GetTicksMsec());
 
+    /// <summary>
+    /// The Tombstone packet's sounds (<see cref="Tombstone.PacketSounds"/>, pc.cpp:3464), before <see cref="Hit"/> as in
+    /// FUN_14165d300: FUN_140ade030's PlayHitSound (breakableobject.cpp:233) of the hitter as the attack material and the
+    /// tomb's SoundMaterial at the tomb, and for the local player's break with a hitter PlayEventVoice(4) at the PC
+    /// (<paramref name="voice"/>, which the host plays: it holds the gender and job group). Returns whether the voice is due.
+    /// </summary>
+    public bool PlayPacketSounds(int kind, int hitter, bool localPlayer, Ms2.Formats.World.ClientConstants constants, Vector3? viewer, Func<uint> rand)
+    {
+        var (hitSound, relation, voice) = Tombstone.PacketSounds(kind, hitter, localPlayer);
+        if (hitSound)
+        {
+            float volume = Tombstone.HitVolume(relation, constants);
+            bool played = FieldAudio.Instance?.PlayHitSound(hitter, State.HitSound, relation, GlobalPosition, volume, viewer, rand) ?? false;
+            GD.Print($"tomb: hit sound attack {hitter} defence {State.HitSound} relation {relation} volume {volume:F2} played {played}");
+        }
+        return voice;
+    }
+
     /// <summary>The bar's stage of the last hit, until the bar (TombGaugeBar) took it.</summary>
     public int? PendingStage;
 

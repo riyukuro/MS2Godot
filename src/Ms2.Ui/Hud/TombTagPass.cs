@@ -48,7 +48,8 @@ public readonly record struct TombHit(TombstoneRequest Request, int HitSound, Ve
 /// PC::vfunc_122, <see cref="HostileInField"/>); with reactionArrow (FUN_140adf310)
 /// the first area whose record has not entered this tomb and that intersects the tomb's box (CBaseCollision::Intersect of the
 /// area and GetBox) is the hit: the record keeps the tomb's entity id, the hitter is 1 (the area level read there is dead),
-/// FUN_140ade030(1, 1) plays the hit sound (VolumeMyPcToBreakableObject) and starts the hit timer (not ported: the tomb's
+/// FUN_140ade030(1, 1) plays the hit sound (VolumeMyPcToBreakableObject; the host plays it, RemoteLayer.PlayTagHitSound)
+/// and starts the hit timer (not ported: the tomb's
 /// state is the server's, and FUN_140addea0 does not read that timer for IsTombStone), the Tombstone packet
 /// (0x2A: object id, hitter) goes out, then the record's FUN_1417591b0.</item>
 /// </list>
@@ -56,7 +57,7 @@ public readonly record struct TombHit(TombstoneRequest Request, int HitSound, Ve
 /// The registrations come from the own cast's magics (<see cref="OwnTagMagics"/>); the magics of the 0x3d mode 0 cast records
 /// (scenestategame.cpp:5509) are not the local player's (FUN_141464410), so they register nothing.
 /// The field markers' loop runs first (<see cref="RunMarkers"/>).
-/// STILL-OPEN: PlayHitSound and the movers' part (m_738).
+/// STILL-OPEN: the movers' part (m_738).
 /// </summary>
 public sealed class TombTagPass
 {

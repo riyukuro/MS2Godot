@@ -151,6 +151,26 @@ public sealed class Tombstone
         return GaugeStage(kind, value);
     }
 
+    /// <summary>
+    /// The sounds of FUN_14165d300 (pc.cpp:3464) for a Tombstone packet on a PC that has its tomb: a hit (kind not 0) always
+    /// runs FUN_140ade030(hitter, relation); a break (kind 0) runs it only with a hitter, and then, for the local player's
+    /// own tomb, PlayEventVoice(4, the PC) (myPC_Resurrection). The relation is GetObjectKind's: 1 for the local player,
+    /// 3 for another PC. FUN_140ade030 (breakableobject.cpp:233) plays PlayHitSound(hitter as the attack material,
+    /// m_nHitSound, relation, the tomb's position, <see cref="HitVolume"/>); its hit timer is not read for a tomb.
+    /// </summary>
+    public static (bool HitSound, int Relation, bool Voice) PacketSounds(int kind, int hitter, bool localPlayer)
+    {
+        int relation = localPlayer ? 1 : 3;
+        if (kind != 0) return (true, relation, false);
+        return (hitter != 0, relation, hitter != 0 && localPlayer);
+    }
+
+    /// <summary>FUN_140ade030's volume: VolumeMyPcToBreakableObject for relation 1 or 2, else VolumePcToBreakableObject
+    /// (both Define 0.1, unit_1402ab440_constantsblocks.cpp:789, :791; the tables set 0.8 and 0.3). VolumeOtherPc for
+    /// relation 3 is applied later (CEffectService::FUN_1411a5110, effectservice.cpp:1336, in FieldAudio).</summary>
+    public static float HitVolume(int relation, Ms2.Formats.World.ClientConstants constants) =>
+        relation is 1 or 2 ? constants?.Float("VolumeMyPcToBreakableObject", 0.1f) ?? 0.1f : constants?.Float("VolumePcToBreakableObject", 0.1f) ?? 0.1f;
+
     /// <summary>PC::vfunc_142's keep test: not finished, and breaking or the PC still in StateDead.</summary>
     public bool KeepFor(bool pcDead) => !Finished && (State == Break || pcDead);
 

@@ -58,8 +58,10 @@ public sealed class NpcLayer
     /// <summary>The CRT rand() the death pick draws from (0..0x7fff).</summary>
     public Random Rand = new();
     readonly Func<int> crtRand;
-    /// <summary>s_random's Tausworthe stream for the hit sound table's pick (HitSoundTable.Get).</summary>
+    /// <summary>s_random's Tausworthe stream for the hit sound table's pick (HitSoundTable.Get); the field's tombs draw from
+    /// it too (<see cref="RemoteLayer.HitSoundRand"/>), as the client has one s_random.</summary>
     readonly Func<uint> hitSoundRand;
+    internal Func<uint> HitSoundRand => hitSoundRand;
     /// <summary>The game time (CMainSystem::GetGameTime) the npcs' shakes run on, in seconds: <see cref="Process"/>'s sum.</summary>
     public float Now;
 

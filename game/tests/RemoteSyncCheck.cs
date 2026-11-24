@@ -195,7 +195,7 @@ public partial class RemoteSyncCheck : Node3D
                 if (wetDeath.Tomb != null) fails.Add("revive in place: a tomb");
                 foreach (var p in new[] { stone, wet })
                     if (p.Body.GetNodeOrNull<BlobShadow>(FieldShadows.ShadowNode) is not { Enabled: false }) fails.Add($"death: {p.Body.Name}'s shadow not off (StateDead::vfunc_4's vfunc_31(false))");
-                hitStage = stoneDeath.Hit(1, 5);         // hit 1 of 5: stage 1
+                hitStage = stoneDeath.Hit(1, 5, 1, null, null, () => 0u);   // hit 1 of 5: stage 1 (the hit sound plays without a field audio: nothing)
                 GD.Print($"remote sync: death sequence {stone.Anim.CurrentAnimation}, tomb {(t != null && IsInstanceValid(t) ? t.State.Initial : "none")}, revive in place {wet.Anim.CurrentAnimation}, hit stage {hitStage?.ToString() ?? "none"}");
                 break;
             }
