@@ -1850,6 +1850,15 @@ public partial class HudScene : Node, IUiStageHost
     static bool? ChatKey(InputEventKey k, MovieDialog m, Func<int, bool, bool> onKey, Func<bool> inputActive, string name)
     {
         if (!m.Loaded || !m.IsVisibleInTree()) return null;
+        // Space with the input focused: the client types it first (the character comes through the window's WM_CHAR to the
+        // movie), then vfunc_13's poll (uimessenger.cpp:834) runs FUN_141a14600 on the trimmed text, and SubjectChanged takes the
+        // command word "and the space after it" off the line. Its return 1 only stops the other key handlers (the jump).
+        if (k.Pressed && !k.Echo && !UiFocus.IsTyping && k.Keycode == Key.Space && inputActive())
+        {
+            m.Player.Key(As3View.FlashKeyCode(k.Keycode), (uint)k.Unicode, true, k.ShiftPressed, k.CtrlPressed);
+            onKey(MessengerController.DikSpace, false);      // the command typed so far (FUN_141a14600)
+            return true;
+        }
         if (k.Pressed && !k.Echo && !UiFocus.IsTyping)
         {
             if ((k.Keycode == Key.Enter && onKey(MessengerController.DikReturn, false))
@@ -1857,7 +1866,6 @@ public partial class HudScene : Node, IUiStageHost
                 || (k.Keycode == Key.Up && onKey(MessengerController.DikUp, false))        // the input history (FUN_141a13c20)
                 || (k.Keycode == Key.Down && onKey(MessengerController.DikDown, false))
                 || (k.Keycode == Key.Tab && onKey(MessengerController.DikTab, false))       // the next target (FUN_141a14760)
-                || (k.Keycode == Key.Space && onKey(MessengerController.DikSpace, false))   // the command typed so far (FUN_141a14600)
                 || (DikOfGodotKey(k.PhysicalKeycode) is var dik and not 0 && onKey(dik, false)))   // the whisper action key
                 return true;
         }

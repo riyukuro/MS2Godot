@@ -125,7 +125,7 @@ public partial class HudScene
     void ChatKeyEvent(Key key)
     {
         foreach (bool down in new[] { true, false })
-            Input.ParseInputEvent(new InputEventKey { Keycode = key, PhysicalKeycode = key, Pressed = down });
+            Input.ParseInputEvent(new InputEventKey { Keycode = key, PhysicalKeycode = key, Unicode = key == Key.Space ? 32 : 0, Pressed = down });
     }
 
     /// <summary><c>--uigen-open chattab:N</c>: frame 160 Return focuses the input, from 165 every 5 frames a real Tab key event
@@ -169,6 +169,8 @@ public partial class HudScene
         if (frames == 180) { h.Set(h.Get(input, "textField"), "text", hudModel.Tables.Common(0xaa5)); return; }
         if (frames == 182) { ChatKeyEvent(Key.Space); return; }
         if (frames == 185) Print("whisper command, space");
+        if (frames == 186) { h.Set(h.Get(input, "textField"), "text", "ab"); ChatKeyEvent(Key.Space); return; }
+        if (frames == 188) { Print("plain text, space"); return; }
         if (frames == 190 && shotDir != null)
         {
             DirAccess.MakeDirRecursiveAbsolute(shotDir);
