@@ -365,6 +365,27 @@ public static class ItemReader {
         return it;
     }
 
+    /// <summary><see cref="ReadKnownEquip(ByteReader)"/> for a profile: GMS2 (upstream WriteEquip, PlayerInfoPacket) names the slot with a
+    /// unicode string and writes the GMS2 body. An id <see cref="Known"/> rejects returns null after the header, as on KMS.</summary>
+    public static EquipItem ReadKnownEquip(ByteReader r, ProtocolProfile profile) {
+        if (!profile.IsGms2) return ReadKnownEquip(r);
+        var it = new EquipItem { Id = r.ReadInt(), Uid = r.ReadLong() };
+        it.Slot = ParseSlotName(r.ReadUnicodeString());
+        it.Rarity = r.ReadInt();
+        if (Known != null && !Known(it.Id)) return null;
+        ReadBody(r, it, it.Slot, gms2: true);
+        return it;
+    }
+
+    /// <summary><see cref="ReadKnownBadge(ByteReader)"/> for a profile: GMS2 (upstream WriteBadge) has the same head and the GMS2 body.</summary>
+    public static EquipItem ReadKnownBadge(ByteReader r, ProtocolProfile profile) {
+        if (!profile.IsGms2) return ReadKnownBadge(r);
+        var it = new EquipItem { IsBadge = true, BadgeSlot = r.ReadByte(), Id = r.ReadInt(), Uid = r.ReadLong(), Rarity = r.ReadInt() };
+        if (Known != null && !Known(it.Id)) return null;
+        ReadBody(r, it, EquipSlot.Unknown, badge: true, gms2: true);
+        return it;
+    }
+
     /// <summary><see cref="ReadBadge"/>'s layout as ReadItems reads the extra buffer (pcdata.cpp:296): null, with the header
     /// read and no body, for an id <see cref="Known"/> rejects.</summary>
     public static EquipItem ReadKnownBadge(ByteReader r) {

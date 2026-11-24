@@ -19,10 +19,13 @@ public sealed record CharacterInfoRequest(long CharacterId) : IOutPacket {
 /// the client reads; <see cref="Info"/> is null then.
 /// </summary>
 public sealed record CharacterInfoAnswer(long CharacterId, byte Result, PcInfo Info) {
-    public static CharacterInfoAnswer Read(ByteReader r) {
+    public static CharacterInfoAnswer Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    /// <summary>GMS2 (upstream PlayerInfoPacket.Load): the same head, the record and the two item buffers in the GMS2 layouts.</summary>
+    public static CharacterInfoAnswer Read(ByteReader r, ProtocolProfile profile) {
         long id = r.ReadLong();
         byte result = r.ReadByte();
-        return new CharacterInfoAnswer(id, result, result == 1 ? PcDataPack.Read(r).ToPcInfo() : null);
+        return new CharacterInfoAnswer(id, result, result == 1 ? PcDataPack.Read(r, profile).ToPcInfo() : null);
     }
 }
 
@@ -46,18 +49,20 @@ public sealed class PcDataPack {
     /// id, i64 uid, i32 rarity, CItem::ReadFromStream. An unknown id ends the read (return).</summary>
     public readonly List<EquipItem> Gems = new();
 
-    public static PcDataPack Read(ByteReader r) {
+    public static PcDataPack Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    public static PcDataPack Read(ByteReader r, ProtocolProfile profile) {
         var p = new PcDataPack { Value18 = r.ReadLong(), Value20 = r.ReadLong(), Value28 = r.ReadLong() };
         var record = new ByteReader(r.ReadBytes(r.ReadInt()));
         var items = new ByteReader(r.ReadBytes(r.ReadInt()));
         var extra = new ByteReader(r.ReadBytes(r.ReadInt()));
-        p.Record = PcData.Read(record);
-        ReadItemList(items, p.Equips);
+        p.Record = PcData.Read(record, profile);
+        ReadItemList(items, p.Equips, profile);
         p.CodiActive = items.ReadBool(); p.CodiStart = items.ReadLong(); p.CodiEnd = items.ReadLong();
-        ReadItemList(items, p.Skins);
+        ReadItemList(items, p.Skins, profile);
         int n = extra.ReadByte();
         for (int i = 0; i < n; i++) {
-            var gem = ItemReader.ReadKnownBadge(extra);
+            var gem = ItemReader.ReadKnownBadge(extra, profile);
             if (gem == null) break;
             gem.BadgeSlot = 0;                  // the u8 is read into nUnused: SetSlot is not called
             p.Gems.Add(gem);
@@ -65,10 +70,10 @@ public sealed class PcDataPack {
         return p;
     }
 
-    static void ReadItemList(ByteReader r, List<EquipItem> list) {
+    static void ReadItemList(ByteReader r, List<EquipItem> list, ProtocolProfile profile) {
         int n = r.ReadByte();
         for (int i = 0; i < n; i++) {
-            var it = ItemReader.ReadKnownEquip(r);
+            var it = ItemReader.ReadKnownEquip(r, profile);
             if (it == null) break;
             list.Add(it);
         }
@@ -132,24 +137,45 @@ public sealed class PcData {
     public ushort GuildRank;                    // m_n418 (i16 as u16)
     public string GuildName2 = "", GuildEmblemPath = "";   // m_str420, m_str428
     public long GuildId, GuildEmblem;           // m_n430, m_n438
+    /// <summary>GMS2 only (upstream WriteClass of MarriageInfo, the record's tail): i16 marital status, two spouse names, i64
+    /// proposal time. The client record this reader follows has no such members; they are not kept in <see cref="PcInfo"/>.</summary>
+    public short MaritalStatus; public string Spouse1 = "", Spouse2 = ""; public long ProposalTime;
 
-    public static PcData Read(ByteReader r) {
+    public static PcData Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    /// <summary>
+    /// GMS2 (upstream PlayerInfoPacket.WriteDetailsBuffer, 3,513 recorded bytes): after the three stat blocks come 35 + 180 + 180
+    /// floats (1,580 bytes, no pairs table, so <see cref="Special"/> stays empty); the home is a name and three ints; then the
+    /// titles, the achievement total (m_n3f8), the gear score (m_n3fc) and the login time (m_n400); two ints the writer leaves 0
+    /// (the KMS record's home commend points are not sent); the 8-byte skin colour; and a marriage tail instead of the guild's
+    /// rank, names, id and emblem. STILL-OPEN: the two zero ints are not named by the client.
+    /// </summary>
+    public static PcData Read(ByteReader r, ProtocolProfile profile) {
+        bool gms2 = profile.IsGms2;
         var d = new PcData {
             AccountId = r.ReadLong(), CharacterId = r.ReadLong(), Name = r.ReadUnicodeString(), Level = r.ReadShort(),
             JobGroup = r.ReadInt(), SubJob = r.ReadInt(), Gender = r.ReadInt(), PrestigeLevel = r.ReadInt(), Value44 = r.ReadByte(),
         };
         foreach (var block in new[] { d.Stats0, d.Stats1, d.Stats2 })
             for (int s = 0; s < PcInfo.StatCount; s++) block[s] = r.ReadLong();
-        int pairs = r.ReadInt();
-        for (int i = 0; i < pairs; i++) { int key = (ushort) r.ReadShort(); d.Special[key] = r.ReadInt(); }
+        if (gms2) r.ReadBytes(35 * 4 + 180 * 4 + 180 * 4);
+        else {
+            int pairs = r.ReadInt();
+            for (int i = 0; i < pairs; i++) { int key = (ushort) r.ReadShort(); d.Special[key] = r.ReadInt(); }
+        }
         d.Picture = r.ReadUnicodeString(); d.Motto = r.ReadUnicodeString(); d.GuildName = r.ReadUnicodeString();
         d.GuildGrade = r.ReadUnicodeString(); d.HomeName = r.ReadUnicodeString();
         d.HomeMapId = r.ReadInt(); d.HomeType = r.ReadInt(); d.HomeValue = r.ReadInt(); d.Title = r.ReadInt();
         int n = r.ReadInt();
         for (int i = 0; i < n; i++) d.Titles.Add((uint) r.ReadInt());
         d.Trophy = r.ReadInt(); d.Value3fc = r.ReadInt(); d.Value400 = r.ReadLong();
-        d.HomeCommendPoint = r.ReadInt(); d.HomeCommendMonthly = r.ReadInt();
+        if (gms2) { r.ReadInt(); r.ReadInt(); }
+        else { d.HomeCommendPoint = r.ReadInt(); d.HomeCommendMonthly = r.ReadInt(); }
         d.SkinColor0 = r.ReadInt(); d.SkinColor1 = r.ReadInt();
+        if (gms2) {
+            d.MaritalStatus = r.ReadShort(); d.Spouse1 = r.ReadUnicodeString(); d.Spouse2 = r.ReadUnicodeString(); d.ProposalTime = r.ReadLong();
+            return d;
+        }
         d.GuildRank = (ushort) r.ReadShort(); d.GuildName2 = r.ReadUnicodeString(); d.GuildEmblemPath = r.ReadUnicodeString();
         d.GuildId = r.ReadLong(); d.GuildEmblem = r.ReadLong();
         return d;

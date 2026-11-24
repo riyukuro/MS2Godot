@@ -366,10 +366,51 @@ public class RcPcDataLayoutTests {
         Assert.That(r.Available, Is.EqualTo(0));
     }
 
-    [Ignore("GMS2 character-info record not read yet")]
+    /// <summary>The masking pass wrote '*' over every string. That hides what the reader needs of an equip: its slot name (the server
+    /// writes e.g. "HR"; the slot decides the appearance floats: hair 14, face decor 4, cap 13, else none), and the text of a
+    /// ugc item's id that marks the ugc block (the client knows it from the item data). Each masked two-character string after an
+    /// item's id and uid is given the slot, among those four, and the item the ugc setting, with which the item reads to where
+    /// the next item's masked slot name stands; nothing else changes, so every length stays. Returns the ids read with a ugc block.</summary>
+    static (byte[] Bytes, HashSet<int> Ugc) WithSlotNames(byte[] masked) {
+        var b = (byte[]) masked.Clone();
+        var ugc = new HashSet<int>();
+        var at = new List<int>();
+        for (int i = 12; i + 6 <= b.Length; i++)
+            if (b[i] == 2 && b[i + 1] == 0 && b[i + 2] == '*' && b[i + 3] == 0 && b[i + 4] == '*' && b[i + 5] == 0) at.Add(i);
+        var old = ItemReader.ExtraOf;
+        try {
+            ItemReader.ExtraOf = id => ugc.Contains(id) ? ItemExtra.Ugc : ItemExtra.None;
+            for (int k = 0; k < at.Count; k++) {
+                int name = at[k], id = BitConverter.ToInt32(b, name - 12);
+                bool found = false;
+                foreach (bool withUgc in new[] { false, true }) {
+                    if (withUgc) ugc.Add(id); else ugc.Remove(id);
+                    foreach (var slot in new[] { "CL", "HR", "FD", "CP" }) {
+                        b[name + 2] = (byte) slot[0]; b[name + 4] = (byte) slot[1];
+                        try {
+                            var rd = new ByteReader(b[(name - 12)..]);
+                            ItemReader.ReadKnownEquip(rd, ProtocolProfile.Gms2);
+                            int end = b.Length - rd.Available;
+                            if (k + 1 == at.Count || at[k + 1] == end + 12) { found = true; break; }
+                        } catch (Exception) { }
+                    }
+                    if (found) break;
+                }
+                if (!found) { ugc.Remove(id); b[name + 2] = b[name + 4] = (byte) '*'; }     // not an item: a two-character string elsewhere
+            }
+        } finally { ItemReader.ExtraOf = old; }
+        return (b, ugc);
+    }
+
     [Test] public void Gms2CharacterInfoReadsTheGms2Record() {
-        var r = new ByteReader(Gms2);
-        var a = (CharacterInfoAnswer) RcPkt.Read("CharacterInfoAnswer", r, ProtocolProfile.Gms2);
+        var (bytes, ugc) = WithSlotNames(Gms2);
+        var r = new ByteReader(bytes);
+        var old = ItemReader.ExtraOf;
+        CharacterInfoAnswer a;
+        try {
+            ItemReader.ExtraOf = id => ugc.Contains(id) ? ItemExtra.Ugc : ItemExtra.None;
+            a = (CharacterInfoAnswer) RcPkt.Read("CharacterInfoAnswer", r, ProtocolProfile.Gms2);
+        } finally { ItemReader.ExtraOf = old; }
         Assert.That(a.Result, Is.EqualTo((byte) 1));
         var i = a.Info;
         Assert.That(i, Is.Not.Null);
@@ -383,11 +424,20 @@ public class RcPcDataLayoutTests {
         Assert.That(i.Motto, Has.Length.EqualTo(12));
         Assert.That(i.GuildName, Has.Length.EqualTo(14));
         Assert.That(i.GuildGrade, Has.Length.EqualTo(5));
-        Assert.That(RcPkt.MemberAny<string>(i, "HomeName", "HomeAddress"), Has.Length.EqualTo(15));
         Assert.That(i.Title, Is.EqualTo(10000061));
         Assert.That(i.Titles.Count, Is.EqualTo(191));
         Assert.That(i.Trophy, Is.EqualTo(2123));
         Assert.That((i.AccountId, i.CharacterId), Is.EqualTo((0x1111111111111111L, 0x1111111111111111L)), "the recorded ids are masked");
         Assert.That(r.Available, Is.EqualTo(0), "the 1,580-byte GMS2 block and the three buffers must be read");
+
+        // the pack itself (the window keeps neither the home name nor the marriage tail)
+        var old2 = ItemReader.ExtraOf;
+        PcDataPack pack;
+        try { ItemReader.ExtraOf = id => ugc.Contains(id) ? ItemExtra.Ugc : ItemExtra.None; pack = PcDataPack.Read(new ByteReader(bytes[9..]), ProtocolProfile.Gms2); }
+        finally { ItemReader.ExtraOf = old2; }
+        Assert.That(pack.Record.HomeName, Has.Length.EqualTo(15));
+        Assert.That((pack.Equips.Count, pack.Skins.Count, pack.Gems.Count), Is.EqualTo((24, 0, 6)), "gear plus outfit in the first list, no second outfit, six worn gems");
+        Assert.That(ugc.Count, Is.EqualTo(4), "four of the equips carry a ugc block");
+        Assert.That((pack.Record.MaritalStatus, pack.Record.Spouse1, pack.Record.Spouse2, pack.Record.ProposalTime), Is.EqualTo(((short) 0, "", "", 0L)), "the recorded character is not married");
     }
 }
