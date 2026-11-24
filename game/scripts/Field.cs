@@ -901,6 +901,8 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
     public void Wheel(int notch) => zoomInput = notch;
     /// <summary>The zoom distance (m_50), for scripted runs (MoveProof cam).</summary>
     public float CameraDistance => zoom.Distance;
+    /// <summary>CCameraMode::vfunc_17 (m_54): the field camera's farthest zoom, for the popup menu's height offset.</summary>
+    public float CameraFarthest => zoom.Setting.Distance;
     /// <summary>
     /// Scripted runs (MoveProof view): the zoom distance (m_50, clamped to MinCameraDistance .. farthest + player height),
     /// the angle from the up axis in degrees as Ctrl + up/down sets it (null: the distance's own), and the Ctrl + left/right

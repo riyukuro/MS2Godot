@@ -1028,6 +1028,10 @@ public partial class LiveSession : Node
     /// WorldService::FUN_141bd1530 (worldservice_1.cpp:6210): the field's user object with this character id, here whether
     /// the field's users (FieldAddUser, kept by the tracker) hold one. False before the field is built.
     /// </summary>
+    /// <summary>The other player whose PC body the ray hit (<see cref="RemoteLayer.PopupTargetOf"/>); null without the field.</summary>
+    public (int ObjectId, Ms2.Ui.Hud.PopupMenuTarget Target)? PopupTargetOf(ulong colliderId, Func<long, string, string> profileImage) =>
+        remote?.PopupTargetOf(colliderId, profileImage);
+
     public bool UserInField(long characterId) => remote?.Tracker.Snapshot().Any(a => a.Add?.User?.CharacterId == characterId) ?? false;
     /// <summary>FindProxyObjectByOwner (worldservice): the field's other user with this character id (FieldAddUser); null = none.</summary>
     public UserBlock OtherUserInField(long characterId) => remote?.Tracker.Snapshot().FirstOrDefault(a => a.Add?.User?.CharacterId == characterId)?.Add.User;

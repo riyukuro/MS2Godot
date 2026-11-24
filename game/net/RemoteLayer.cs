@@ -54,6 +54,8 @@ public sealed partial class RemoteLayer : Node3D
         public short Level; public Dictionary<int, int> WornAbilities;
         /// <summary>The PC's adventure level (vfunc_141: the user block's m_530, then OnPrestige kind 2's vfunc_140).</summary>
         public int AdventureLevel;
+        /// <summary>The user block's job code (PC::GetSubJob), the popup menu header's job icon.</summary>
+        public int Job;
         /// <summary>The PC's AdditionalCliList (FUN_1416749a0): FieldAddUser's list (DecodeListPacket, additionalcli_2.cpp:721,
         /// each one an add) and its OnBuff packets. Only what the target filter reads of it is used.</summary>
         public Ms2.Ui.Skills.AdditionalBuffList Buffs;
@@ -627,7 +629,7 @@ public sealed partial class RemoteLayer : Node3D
         var r = new Remote { Pc = pc, Root = root, Visual = visual, Name = u.User.Name, Motto = u.User.Motto };
         r.ObjectId = u.ObjectId; r.CharacterId = u.User.CharacterId; r.GuildName = u.User.GuildName ?? ""; r.Picture = u.User.Picture ?? ""; r.Gems = u.Badges; r.Equips = u.Equips; r.Outfit2 = u.Outfit2; r.CodiStart = u.SkinTabStart; r.CodiEnd = u.SkinTabEnd;
         r.Gender = u.User.Gender;
-        r.PremiumTime = u.PremiumTime; r.WeddingState = u.WeddingState; r.PcBangGrade = u.User.PcBangGrade; r.Level = u.User.Level;
+        r.PremiumTime = u.PremiumTime; r.WeddingState = u.WeddingState; r.PcBangGrade = u.User.PcBangGrade; r.Level = u.User.Level; r.Job = u.User.Job;
         r.AdventureLevel = u.User.PrestigeLevel;
         r.HpCur = u.Stats[2].Health; r.HpMax = u.Stats[0].Health; r.InBattle = u.InBattle; r.Emotion = u.InBattle ? 1 : 0;
         // PC::vfunc_91 = vfunc_90's 0x23 block (pc.cpp:1645-1660): per kind health 4, attack speed 0xd, movement speed 0xe,

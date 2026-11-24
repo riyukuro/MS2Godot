@@ -797,6 +797,71 @@ public class HudTests
     }
 
     [Test]
+    public void FieldPcMenuListsTheCoupleActionAndSitsBesideThePc()
+    {
+        // FUN_141a8ab90 (uipartydialog.cpp:3776): mode 1, flags 0x3f3fe; FUN_141a83810 adds 0x1fc (AddCoupleActionMenu, flag
+        // 0x8000, not for the own PC) after the block items and before the report; Open (:2475-2489) places it with
+        // CalcMenuPosition and the camera height offset
+        var m = Model();
+        var projected = new List<System.Numerics.Vector3>();
+        bool rightSide = true;
+        var c = new PopupMenuController
+        {
+            SelfCharacterId = 12, ProfileImagePath = (_, _) => "", PlayerInField = _ => true, OffsetPcPopupMenu = 10,
+            WorldToMovie = w => { projected.Add(w); return w.X > 100 && !rightSide ? null : (w.X, w.Y); },
+            MenuHeightOffset = () => 7,
+        };
+        var h = Load(c, m);
+        PopupMenuTarget Other() => new() { Name = "Other", CharacterId = 4002, Level = 30, Alive = true, World = new(100, 200, 0) };
+        c.OpenOnFieldPc(99, 2, Other());
+        Assert.That(c.IsClosed, Is.False);
+        var items = c.Items.ToList();
+        Assert.That(items, Does.Contain(PopupMenuController.CoupleAction));
+        Assert.That(items.IndexOf(PopupMenuController.CoupleAction), Is.EqualTo(items.IndexOf(PopupMenuController.Report) - 1));
+        Assert.That(items.IndexOf(PopupMenuController.CoupleAction), Is.GreaterThan(items.IndexOf(PopupMenuController.Block)));
+        Assert.That(projected, Is.EqualTo(new[] { new System.Numerics.Vector3(110, 200, 0) }));
+        // the same PC again in mode 1: nothing (the menu stays)
+        c.OpenOnFieldPc(99, 2, Other());
+        Assert.That(projected, Has.Count.EqualTo(1));
+        // the couple action item opens the dialog for the target's character id
+        long opened = 0;
+        c.OpenCoupleAction += id => opened = id;
+        c.OnCallback("MenuItemClick", new object[] { (uint)PopupMenuController.CoupleAction });
+        Assert.That(opened, Is.EqualTo(4002));
+        c.ClosePopup();
+        // the own PC (kind 1): no couple action
+        c.OpenOnFieldPc(98, 1, new PopupMenuTarget { Name = "Me", CharacterId = 12, Alive = true, World = new(0, 0, 0) });
+        Assert.That(c.Items, Does.Not.Contain(PopupMenuController.CoupleAction));
+        c.ClosePopup();
+        // the right side does not project: the left side (dir -1); neither: no menu
+        rightSide = false;
+        projected.Clear();
+        c.OpenOnFieldPc(99, 2, Other());
+        Assert.That(projected, Is.EqualTo(new[] { new System.Numerics.Vector3(110, 200, 0), new System.Numerics.Vector3(90, 200, 0) }));
+        Assert.That(c.IsClosed, Is.False);
+        c.ClosePopup();
+        c.WorldToMovie = _ => null;
+        c.OpenOnFieldPc(99, 2, Other());
+        Assert.That(c.IsClosed, Is.True);
+        // kind 0 or 3, or no name: nothing
+        c.WorldToMovie = w => (w.X, w.Y);
+        c.OpenOnFieldPc(97, 3, Other());
+        c.OpenOnFieldPc(97, 2, new PopupMenuTarget());
+        Assert.That(c.IsClosed, Is.True);
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void TheCameraHeightOffsetFollowsTheZoom()
+    {
+        // GetCameraHeightOffset (@0x141a83db0): ceil((far / h) * ((far - h) / (far - near)) * 60 * screenH / 1050)
+        Assert.That(PopupMenuController.CameraHeightOffset(400, 1100, 800, 1050), Is.EqualTo(36f));
+        Assert.That(PopupMenuController.CameraHeightOffset(400, 1100, 1100, 1050), Is.EqualTo(0f));
+        Assert.That(PopupMenuController.CameraHeightOffset(400, 1100, 400, 2100), Is.EqualTo(MathF.Ceiling(1100f / 400 * 60 * 2)));
+        Assert.That(PopupMenuController.CameraHeightOffset(500, 500, 500, 1050), Is.EqualTo(0f));
+    }
+
+    [Test]
     public void PartySlotMenuListsTheClientItems()
     {
         // UIPopUpMenu for the party slots (FUN_141a83810 with 0x63fe): the own slot, an online member, an offline member,

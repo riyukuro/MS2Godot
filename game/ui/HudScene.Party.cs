@@ -277,6 +277,7 @@ public partial class HudScene
             c.Messenger = ChatLog;                                  // Unk_MdState m_48: the chat windows' browser
             c.PlaySound = key => FieldAudio.Instance?.PlayUi(key);
             c.OpenMyInfo += () => { if (myInfo == null || myInfo.IsClosed) OpenMyInfo(); };     // OpenDialog(0x2711)
+            c.OpenCoupleAction += OpenCoupleActionDialog;           // 0x1fc: UICoupleActionDialog (0x4f4e)
             c.CharacterInfo = pcInfoRequests;                       // UIPCInfoDialog (0x4ec8)'s request state
             c.CharacterInfoOpen = () => PcInfoOpen;                 // FUN_141924630: vfunc_55 == 0
             c.CloseCharacterInfo += () => { if (PcInfoOpen) pcInfo.Close(); };   // RequestCloseDialog(0x4ec8)

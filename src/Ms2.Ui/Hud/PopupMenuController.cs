@@ -9,6 +9,7 @@ namespace Ms2.Ui.Hud;
 public sealed class PopupMenuTarget
 {
     public float X, Y;              // m_pos: the info's x, y for modes 2 and 3
+    public System.Numerics.Vector3 World;   // m_pos for mode 1: the PC's position (vfunc_18, MS2 axes)
     public string Name = "";        // m_strName
     public long CharacterId;        // m_nCharId
     public int Level;               // m_nLevel
@@ -53,6 +54,7 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
     public const int Unfriend = 300, AddFriend = 0x12d, Block = 400, Unblock = 0x191, EditBlockReason = 0x192;
     public const int Trade = 500, Report = 0x1f5, InviteToGroupChat = 0x1f6, VisitHouse = 0x1f7, InviteToMyHome = 0x1f8, GrantFurnishingRights = 0x1fb;
     public const int InviteToGuild = 0x2bd;
+    public const int CoupleAction = 0x1fc;
 
     /// <summary>The party window's Unk_PopupMenuInfo (FUN_141a77760): mode 3 (the movie position as given), the flags, type 1
     /// (TYPE_WITHCHARINFO, the header with the character) and the info string.</summary>
@@ -65,6 +67,39 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
     /// <summary>OnGuildMemberPopupMenu's Unk_PopupMenuInfo (uiguilddialog.cpp:823): mode 3, flags 0x63de (the party slot's
     /// without trade), type 1, an empty info string.</summary>
     public const int GuildMemberFlags = 0x63de;
+    /// <summary>FUN_141a8ab90's Unk_PopupMenuInfo for a PC clicked in the field (uipartydialog.cpp:3776): mode 1 (placed beside
+    /// the PC on screen), flags 0x3f3fe, type 1, an empty info string; PopUpMenu's own type 10.</summary>
+    public const int FieldPcMode = 1, FieldPcFlags = 0x3f3fe, FieldPcType = 1;
+
+    /// <summary>OpenCoupleActionDialog (:3435), the couple action item (0x1fc): the dialog 0x4f4e opened when closed, then
+    /// SetSelectedCharacter(m_a8), the target's character id.</summary>
+    public event Action<long> OpenCoupleAction;
+    /// <summary>CameraMgr::FUN_140af0700 (camera.cpp:1553) times GetMovieScale: a world point (MS2 axes) to the movie's
+    /// position; null when it does not project (no camera, or WorldPtToScreenPt3 fails).</summary>
+    public Func<System.Numerics.Vector3, (float X, float Y)?> WorldToMovie = _ => null;
+    /// <summary>GetCameraHeightOffset (@0x141a83db0, <see cref="CameraHeightOffset"/>) of the field camera, times the movie
+    /// scale; 0 without a camera mode.</summary>
+    public Func<float> MenuHeightOffset = () => 0;
+    /// <summary>The client constant OffsetPcPopupMenu (+0x798, 0 unless table/constants.xml sets it): CalcMenuPosition's step
+    /// along the world x axis.</summary>
+    public float OffsetPcPopupMenu;
+
+    /// <summary>
+    /// GetCameraHeightOffset (@0x141a83db0, uipartydialog.cpp:2795): with near the camera mode's nearest zoom (vfunc_15), far
+    /// its farthest (vfunc_17, m_54) and height its distance (vfunc_19, m_50): 0 when far equals near; else
+    /// ceil((far / height) * ((far - height) / (far - near)) * 60 * screenHeight / 1050), in floats as the client computes it.
+    /// </summary>
+    public static float CameraHeightOffset(float near, float far, float height, uint screenHeight)
+    {
+        float depth = far - near;
+        if (depth == 0.0f) return 0;
+        float a = -1.0f / depth, b = far / depth;
+        float t = a * height + b;
+        t *= 60.0f;
+        float offset = far / height * t;
+        float scale = screenHeight / 1050.0f;
+        return MathF.Ceiling(offset * scale);
+    }
 
     /// <summary>CGuildManager: the own guild (IsInGuild, FindMemberByName) for the guild invite item (FUN_141a84b40) and its
     /// handler (InviteToGuild, FUN_1413b71c0). Null = no guild.</summary>
@@ -299,6 +334,25 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
         if (!Open(t, GuildMemberFlags, kind)) ResetState();
     }
 
+    /// <summary>
+    /// FUN_141a8ab90 (uipartydialog.cpp:3760) for a PC picked in the field, then PopUpMenu (:1973): nothing when the menu is
+    /// already open in mode 1 on that PC (<paramref name="entityKey"/>, GetEntityIDValue); else the open menu closes, and
+    /// with the target's kind (GetTargetKind: 1 the own PC or the own mount, 2 another PC) and a name the target is
+    /// opened in mode 1 with <see cref="FieldPcFlags"/>. The target is the PC's: its position, level, character id,
+    /// profile image, name, alive, online, job group, job code and trophy sum.
+    /// </summary>
+    public void OpenOnFieldPc(long entityKey, int kind, PopupMenuTarget t)
+    {
+        if (mode == FieldPcMode && this.entityKey == entityKey) return;      // ResetState zeroes both
+        ClosePopup();
+        if (kind == 0 || kind == 3) return;
+        if (string.IsNullOrEmpty(t?.Name)) return;                      // "UIPopUpMenu::PopUpMenu Empty Menu"
+        ApplyMenuInfo(FieldPcMode, FieldPcType, "");
+        this.entityKey = entityKey;
+        t.Online = true;
+        if (!Open(t, FieldPcFlags, kind)) ResetState();
+    }
+
     /// <summary>ApplyMenuInfo (:2403): the info's mode (m_80), type (m_84) and string (m_88).</summary>
     void ApplyMenuInfo(int infoMode, int type, string infoString)
     {
@@ -321,13 +375,30 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
         items.Clear();
         BuildItems(flags, kind, t);
         if (items.Count == 0) return false;
+        float dirX = 1.0f, x = t.X, y = t.Y, offset = 0;
+        int dirY = 1;
+        if (mode == FieldPcMode)
+        {
+            // :2475-2489: beside the PC (CalcMenuPosition: + dir * OffsetPcPopupMenu on the world x axis), the other side
+            // when that does not project; then the camera height offset
+            dirY = 2;
+            var at = WorldToMovie(t.World + new System.Numerics.Vector3(dirX * OffsetPcPopupMenu, 0, 0));
+            if (at == null)
+            {
+                dirX = -1.0f;
+                at = WorldToMovie(t.World + new System.Numerics.Vector3(dirX * OffsetPcPopupMenu, 0, 0));
+            }
+            if (at is not { } placed) return false;                     // !bPlaced
+            (x, y) = placed;
+            offset = MenuHeightOffset();
+        }
         var menu = new List<object>();
         foreach (int id in items)                                       // BuildMenuItemArray (:2876)
             menu.Add(new Dictionary<string, object> { ["id"] = (uint)id, ["label"] = Model.Tables.PopupMenuName(id) });
         var obj = new Dictionary<string, object>
         {
-            ["type"] = menuType, ["menu"] = menu, ["posx"] = t.X, ["posy"] = t.Y, ["name"] = t.Name,
-            ["dirx"] = 1.0f, ["diry"] = 1, ["level"] = t.Level, ["imgpath"] = t.Image, ["trophy"] = t.Trophy, ["jobcode"] = t.JobCode,
+            ["type"] = menuType, ["menu"] = menu, ["posx"] = x, ["posy"] = y - offset, ["name"] = t.Name,
+            ["dirx"] = dirX, ["diry"] = dirY, ["level"] = t.Level, ["imgpath"] = t.Image, ["trophy"] = t.Trophy, ["jobcode"] = t.JobCode,
         };
         var result = Host.Invoke(Host.Entity, "open", obj);
         if (result is not Avm2.AsObject) return false;
@@ -369,6 +440,9 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
         if ((flags & 0x2000) != 0 && kind == 2 && OtherCharacter(id) && InOwnHome() && Registered(GrantFurnishingRights))
             Add(GrantFurnishingRights);                                                                    // AddRequestCubeMenu: FUN_1418fd670
         if ((flags & 0x10) != 0 && kind != 1 && (id != 0 || t.ByName)) AddBlockItems(t.ByName ? Buddies.FindByName(t.Name) : Buddies.FindByAccount(id));         // FUN_141a84860 (:2984)
+        // STILL-OPEN: 0x10000 AddProposeMenu, 0x20000 FUN_141a84cb0 (the home block items), 0x400 AddRequestPetMenu, 0x800
+        // FUN_141a84a90 and 0x1000 (the home action items under feature 0x39) list nothing here
+        if ((flags & 0x8000) != 0 && kind != 1) Add(CoupleAction);                                         // AddCoupleActionMenu (:3066)
         if ((flags & 0x40) != 0 && kind != 1 && online) Add(Report);                                       // AddReportMenu (:3011)
     }
 
@@ -561,6 +635,9 @@ public sealed class PopupMenuController : UiController, IMessageBoxListener
                 break;
             case InviteToGuild:                                         // InviteToGuild (:3482): FUN_1413b71c0(m_90)
                 if (name.Length != 0) Guild?.Invite(name);
+                break;
+            case CoupleAction:                                          // OpenCoupleActionDialog (:3435)
+                OpenCoupleAction?.Invoke(charId);
                 break;
             default:
                 ItemClicked?.Invoke(id, target);
