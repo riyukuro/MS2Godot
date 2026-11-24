@@ -27,7 +27,14 @@ public sealed record BeautyStylePacket(int Mode) {
     public long Uid, NewUid, Time; public int Slot;
     public int Result;
 
-    public static BeautyStylePacket Read(ByteReader r) {
+    public static BeautyStylePacket Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    /// <summary>
+    /// <see cref="Read(ByteReader)"/> for a profile. GMS2 mode 0xf (upstream BeautyPacket.StartList / the saved hair list) lists each style as
+    /// item id, uid, style slot, creation time and a hair appearance (<see cref="ItemReader.ReadHairAppearance"/>), not an item body.
+    /// Every other mode is the same on both profiles.
+    /// </summary>
+    public static BeautyStylePacket Read(ByteReader r, ProtocolProfile profile) {
         var p = new BeautyStylePacket(r.ReadByte());
         switch (p.Mode) {
             case 2: p.ShopMode = r.ReadByte(); p.Shop = BeautyShopData.Read(r); break;
@@ -38,7 +45,9 @@ public sealed record BeautyStylePacket(int Mode) {
                 p.Styles = new BeautyStyleItem[n];
                 for (int i = 0; i < n; i++) {
                     int id = r.ReadInt(); long uid = r.ReadLong(); int slot = r.ReadInt(); long time = r.ReadLong();
-                    var it = ItemReader.ReadItem(r, id, 1);   // CItem::FUN_140523c40(id, 1, 0), then ReadProxyFromPacket
+                    var it = profile.IsGms2
+                        ? ItemReader.ReadHairAppearance(r, id)
+                        : ItemReader.ReadItem(r, id, 1);   // CItem::FUN_140523c40(id, 1, 0), then ReadProxyFromPacket
                     it.Uid = uid; it.CreationTime = time;
                     p.Styles[i] = new BeautyStyleItem(slot, it);
                 }

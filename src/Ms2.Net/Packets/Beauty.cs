@@ -45,14 +45,21 @@ public sealed record BeautyShopPacket(int Mode) {
     /// <summary>Mode 9 shows its notice (string 0x996 with the item's name) only for an item and a positive count.</summary>
     public bool ShowsItemNotice => Mode == 9 && ItemId != 0 && (uint) Count > 0;
 
-    public static BeautyShopPacket Read(ByteReader r) {
+    public static BeautyShopPacket Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    /// <summary>
+    /// <see cref="Read(ByteReader)"/> for a profile. GMS2 mode 0 (upstream BeautyPacket.BeautyShop, WriteBeautyShopItems) is the same shop
+    /// without the i64 sale context: kind, <see cref="BeautyShopData"/>, two bytes (the slot count and saved style count the dialog reads),
+    /// the u16 count and the rows. Modes 1 and 2 (DyeShop, SaveShop) are the kind and the shop data on both profiles.
+    /// </summary>
+    public static BeautyShopPacket Read(ByteReader r, ProtocolProfile profile) {
         var p = new BeautyShopPacket(r.ReadByte());
         switch (p.Mode) {
             case 0:
                 p.Kind = r.ReadByte();
                 p.Shop = BeautyShopData.Read(r);
                 p.SlotCount = r.ReadByte(); p.SavedStyles = r.ReadByte();
-                p.Context = r.ReadLong();
+                if (!profile.IsGms2) p.Context = r.ReadLong();
                 int n = (ushort) r.ReadShort();
                 p.Items = new BeautyShopItem[n];
                 for (int i = 0; i < n; i++) p.Items[i] = BeautyShopItem.Read(r);
@@ -174,7 +181,10 @@ public sealed record BeautyColoringPacket(int Mode) {
     public int Kind, Result;
     public BeautyShopData Shop;
 
-    public static BeautyColoringPacket Read(ByteReader r) {
+    public static BeautyColoringPacket Read(ByteReader r) => Read(r, ProtocolProfile.Kms2525);
+
+    /// <summary>The GMS2 dye shop (upstream BeautyPacket.DyeShop, mode 1) is the same kind byte and shop data, so the profile changes nothing here.</summary>
+    public static BeautyColoringPacket Read(ByteReader r, ProtocolProfile profile) {
         var p = new BeautyColoringPacket(r.ReadByte());
         switch (p.Mode) {
             case 1: p.Kind = r.ReadByte(); p.Shop = BeautyShopData.Read(r); break;

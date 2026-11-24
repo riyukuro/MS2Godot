@@ -524,6 +524,8 @@ public partial class LiveSession : Node
     /// <summary>Inbound 0x31 body: UIBeautyShopDialog::OnBeautyShopPacket (uibeautyshopdialog.cpp:1510) or UIBeautyShopStyleDialog's
     /// FUN_140f05a80 (uibeautyshopstyledialog.cpp:1205) reads it, whichever is open (<see cref="Ms2.Ui.Hud.BeautyPacketRouter"/>).</summary>
     public event Action<byte[]> BeautyPacketReceived;
+    /// <summary>The wire profile of the game session (KMS until one is connected); the beauty readers differ by profile.</summary>
+    public ProtocolProfile GameProfile => game?.Profile ?? ProtocolProfile.Kms2525;
     /// <summary>The adventure data the client keeps in globals (DAT_143ab2958..3318): session-lived, so a field change keeps
     /// the exp, the filled level, the claimed levels and the missions.</summary>
     public readonly Ms2.Ui.AdventureData Adventure = new();

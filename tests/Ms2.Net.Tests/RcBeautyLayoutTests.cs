@@ -82,42 +82,42 @@ public class RcBeautyLayoutTests {
         Assert.That(r.Available, Is.EqualTo(0));
     }
 
-    [Ignore("GMS2 shop body not read yet")]
-    [Test] public void Gms2Mode0ReadsTheGms2Shop() {
-        var empty = ReadShop(Mode0Empty, entries: 0, category: 3, shop: 501, shopType: 4, voucher: 20300042, subType: 19);
-        Assert.That(empty);
-        var entries = ReadShop(Mode0Entries, entries: 78, category: 1, shop: 500, shopType: 3, voucher: 20300036, subType: 16);
-        Assert.That(entries);
+    [Test] public void Gms2Mode0ReadsTheShopWithoutASaleContext() {
+        var empty = ReadShop(Mode0Empty, entries: 0, kind: 3, shop: 501, category: 4, coupon: 20300042, saleTag: 19);
+        Assert.That(empty.Shop.Payment.Amount, Is.EqualTo(0));
+        Assert.That(empty.Shop.RecolorPayment.Amount, Is.EqualTo(270), "the second cost row is the recolor price");
+        var entries = ReadShop(Mode0Entries, entries: 78, kind: 1, shop: 500, category: 3, coupon: 20300036, saleTag: 16);
+        Assert.That(entries.Items[0].ItemId, Is.EqualTo(10300161));
+        Assert.That(entries.Items[0].Payment.Amount, Is.EqualTo(330));
+        Assert.That(entries.Items[^1].ItemId, Is.EqualTo(10300115), "the last of the 78 rows");
+        Assert.That(entries.Context, Is.EqualTo(0), "GMS2 sends no sale context");
     }
 
-    static bool ReadShop(byte[] bytes, int entries, int category, int shop, int shopType, int voucher, int subType) {
+    static BeautyShopPacket ReadShop(byte[] bytes, int entries, int kind, int shop, int category, int coupon, int saleTag) {
         var r = new ByteReader(bytes);
-        var p = RcPkt.Read("BeautyShopPacket", r, ProtocolProfile.Gms2);
-        Assert.That(RcPkt.MemberAny<int>(p, "Mode"), Is.EqualTo(0));
-        Assert.That(RcPkt.MemberAny<int>(p, "Category", "Shop.Category"), Is.EqualTo(category));
-        Assert.That(RcPkt.MemberAny<int>(p, "ShopId", "Shop.ShopId"), Is.EqualTo(shop));
-        Assert.That(RcPkt.MemberAny<int>(p, "ShopType", "Shop.ShopType"), Is.EqualTo(shopType));
-        Assert.That(RcPkt.MemberAny<int>(p, "VoucherId", "Shop.DisplayCouponId"), Is.EqualTo(voucher));
-        Assert.That(RcPkt.MemberAny<int>(p, "ShopSubType", "SubType"), Is.EqualTo(subType));
-        var rows = RcPkt.MemberAny(p, "Entries", "Items");
-        Assert.That(RcPkt.Count(rows), Is.EqualTo(entries));
-        if (entries > 0) Assert.That(RcPkt.MemberAny<int>(RcPkt.Member(rows, "[0]"), "ItemId", "Id"), Is.EqualTo(10300161));
-        Assert.That(r.Available, Is.EqualTo(0), "the 46-byte shop row, both costs and the entries must be read");
-        return true;
+        var p = BeautyShopPacket.Read(r, ProtocolProfile.Gms2);
+        Assert.That(p.Mode, Is.EqualTo(0));
+        Assert.That((p.Kind, p.Shop.ShopId, p.Shop.Category, p.Shop.DisplayCouponId, p.Shop.SaleCouponTag), Is.EqualTo((kind, shop, category, coupon, saleTag)));
+        Assert.That(p.Items, Has.Length.EqualTo(entries));
+        Assert.That(r.Available, Is.EqualTo(0), "the shop data, both cost rows, the two bytes and the entries must be read");
+        return p;
     }
 
-    [Ignore("GMS2 shop body not read yet")]
     [Test] public void Gms2Mode0FReadsTheSavedHairList() {
         var r = new ByteReader(Mode0F);
-        var p = RcPkt.Read("BeautyStylePacket", r, ProtocolProfile.Gms2);
-        Assert.That(RcPkt.MemberAny<int>(p, "Mode"), Is.EqualTo(0x0F));
-        var styles = RcPkt.Member(p, "Styles");
-        Assert.That(RcPkt.Count(styles), Is.EqualTo(6));
-        var first = RcPkt.Member(styles, "[0]");
-        Assert.That(RcPkt.MemberAny<int>(first, "StyleSlot"), Is.EqualTo(0));
-        Assert.That(RcPkt.MemberAny<int>(first, "Item.Id", "Id"), Is.EqualTo(10200134));
-        Assert.That(RcPkt.MemberAny<long>(first, "Item.Uid", "Uid"), Is.EqualTo(3008288436697253957L));
-        Assert.That(RcPkt.MemberAny<long>(first, "Item.CreationTime", "CreationTime"), Is.EqualTo(1567369486L));
-        Assert.That(r.Available, Is.EqualTo(0), "each entry ends after the 76-byte HairAppearance");
+        var p = BeautyStylePacket.Read(r, ProtocolProfile.Gms2);
+        Assert.That(p.Mode, Is.EqualTo(0x0F));
+        Assert.That(p.Styles, Has.Length.EqualTo(6));
+        var first = p.Styles[0];
+        Assert.That(first.StyleSlot, Is.EqualTo(0));
+        Assert.That(first.Item.Id, Is.EqualTo(10200134));
+        Assert.That(first.Item.Uid, Is.EqualTo(3008288436697253957L));
+        Assert.That(first.Item.CreationTime, Is.EqualTo(1567369486L));
+        Assert.That(first.Item.Slot, Is.EqualTo(EquipSlot.HR));
+        Assert.That(first.Item.Color.PaletteId, Is.EqualTo(100000000));
+        Assert.That(first.Item.Appearance, Has.Length.EqualTo(14));
+        Assert.That(first.Item.Appearance[0], Is.EqualTo(1f));
+        Assert.That(p.Styles.Select(x => x.StyleSlot), Is.EqualTo(new[] { 0, 1, 2, 3, 4, 5 }));
+        Assert.That(r.Available, Is.EqualTo(0), "each entry ends after the 76-byte hair appearance");
     }
 }

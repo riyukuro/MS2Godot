@@ -1,6 +1,7 @@
 using Ms2.Avm2;
 using Ms2.Avm2.Flash;
 using Ms2.Formats.Pack;
+using Ms2.Net;
 using Ms2.Net.Packets;
 using Ms2.Ui.Hud;
 using NUnit.Framework;
@@ -96,5 +97,30 @@ public class BeautyStyleFlowTests
         Assert.That(style.Open(), Is.True);
         BeautyPacketRouter.Route(Removed(5), shop, style, logs.Add);
         Assert.That(logs, Has.Some.Contains("beauty style mode 18"));
+    }
+
+    /// <summary>The GMS2 empty shop (mode 0): kind, the shop data, two bytes and the u16 count, 50 bytes; the KMS reader ran past it for the sale context.</summary>
+    static byte[] Gms2EmptyShop()
+    {
+        var b = new List<byte> { 0, 3 };
+        void I(int v) => b.AddRange(BitConverter.GetBytes(v));
+        void Payment(int amount) { b.Add(4); I(0); I(amount); b.AddRange(new byte[2]); }
+        I(501); I(4); I(20300042); b.Add(0); I(0); I(19); b.Add(0);
+        Payment(0); Payment(270);
+        b.AddRange(new byte[4]);
+        return b.ToArray();
+    }
+
+    [Test]
+    public void TheGms2ShopBodyHasNoSaleContextAndRoutesToTheShop()
+    {
+        var body = Gms2EmptyShop();
+        Assert.That(body, Has.Length.EqualTo(50));
+        var logs = new List<string>();
+        var shop = new BeautyShopFlow { Log = logs.Add };
+        BeautyPacketRouter.Route(body, shop, Flow(new Cust(), new(), logs), logs.Add, null, ProtocolProfile.Gms2);
+        Assert.That(logs, Has.Some.Contains("beauty shop mode 0"));
+        Assert.Catch(() => BeautyPacketRouter.Route(body, shop, Flow(new Cust(), new(), logs), logs.Add),
+            "the KMS reader asks for the sale context the GMS2 body does not have");
     }
 }

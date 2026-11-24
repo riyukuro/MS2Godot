@@ -1,3 +1,4 @@
+using Ms2.Net;
 using Ms2.Net.Packets;
 using Maple2.PacketLib.Tools;
 using Ms2.Net.Wire;
@@ -61,23 +62,24 @@ public sealed class BeautyStyleFlow
 /// </summary>
 public static class BeautyPacketRouter
 {
-    public static void Route(byte[] body, BeautyShopFlow shop, BeautyStyleFlow style, Action<string> log, ItemColoringFlow coloring = null)
+    public static void Route(byte[] body, BeautyShopFlow shop, BeautyStyleFlow style, Action<string> log, ItemColoringFlow coloring = null, ProtocolProfile profile = null)
     {
+        profile ??= ProtocolProfile.Kms2525;
         if (coloring is { IsOpen: true })
         {
-            var cp = BeautyColoringPacket.Read(new ByteReader(body));
+            var cp = BeautyColoringPacket.Read(new ByteReader(body), profile);
             log($"live: item coloring mode {cp.Mode}");
             coloring.OnPacket(cp);
         }
         else if (style.IsOpen)
         {
-            var sp = BeautyStylePacket.Read(new ByteReader(body));
+            var sp = BeautyStylePacket.Read(new ByteReader(body), profile);
             log($"live: beauty style mode {sp.Mode}");
             style.OnPacket(sp);
         }
         else
         {
-            var bp = BeautyShopPacket.Read(new ByteReader(body));
+            var bp = BeautyShopPacket.Read(new ByteReader(body), profile);
             log($"live: beauty shop mode {bp.Mode}");
             shop.OnPacket(bp);
         }

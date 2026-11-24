@@ -259,6 +259,17 @@ public static class ItemReader {
     }
 
     /// <summary>
+    /// A GMS2 saved hair (upstream HairAppearance, ItemAppearance.cs): the item's colour then the 14 hair floats, with nothing else of an item
+    /// body. The item is a hair (slot HR) of rarity 1, as the saved-style list makes it.
+    /// </summary>
+    public static EquipItem ReadHairAppearance(ByteReader r, int id) {
+        var it = new EquipItem { Id = id, Rarity = 1, Slot = EquipSlot.HR };
+        it.Color = r.ReadEquipColor();
+        it.Appearance = ReadFloats(r, 1 + 3 + 3 + 1 + 3 + 3);
+        return it;
+    }
+
+    /// <summary>
     /// The body <see cref="ReadBody"/> reads for an item with every block empty and no extra block (no UGC, gem, music or
     /// pet; not a hair, decal or cap), the amount set (tests and offline fixtures).
     /// </summary>

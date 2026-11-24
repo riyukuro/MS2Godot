@@ -53,7 +53,7 @@ public partial class HudScene
         itemColoringFlow.Show = ShowItemColoring;
         itemColoringFlow.Log = m => GD.Print(m);
         itemColoringFlow.CreateCustomize = () => CreateItemColoringCustomize(live);
-        void OnBeautyPacket(byte[] body) => BeautyPacketRouter.Route(body, beautyFlow, beautyStyleFlow, m => GD.Print(m), itemColoringFlow);
+        void OnBeautyPacket(byte[] body) => BeautyPacketRouter.Route(body, beautyFlow, beautyStyleFlow, m => GD.Print(m), itemColoringFlow, live.GameProfile);
         void OnOwnItem(int itemId)   // vfunc_24 of the item event listeners
         {
             itemColoringFlow.Current?.OnItemDyed(itemId);
