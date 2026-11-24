@@ -617,21 +617,6 @@ public class SkillSequenceInputSweepTests
 
     // ---- the port's own PC: the Ms2.Ui skill parts in HudScene.Cast.cs's order ----------------------------------------
 
-    /// <summary>
-    /// The port with one known gap's fix put in, to mark a failing row by its cause: the row is marked with the gap only when
-    /// the run with that fix plays the client's order.
-    /// PollAfterKeys (gap P): HudScene.TickOwnAttacks polls the held keys (PollOwnPress) before the frame's text keys
-    /// (OwnKeys). The port reads a frame's keys in the next frame, so a window a key opens (inputcombo, the motion's
-    /// selfInputCombo key) misses that frame's held key, which the client's next vfunc_8 sees (stateskill.cpp:640-641 after
-    /// the animation service threw the key); with the keys first the poll sees the window as the client's does.
-    /// NewRecordAtEnd (gap Q): HudScene.OwnEndPoll hands back the queued record for the held key, which can be a continue
-    /// round queued at the loopend (Charged); the client's end step builds a new record of the key (MyPC::vfunc_104,
-    /// mypc.cpp:1671-1729) and vfunc_102 queues it in the round's place (SetChargeRecord, :1152-1166), so its release casts
-    /// the skill again where the port's would play a round of the ended sequence.
-    /// </summary>
-    [Flags]
-    enum PortFix { None = 0, PollAfterKeys = 1, NewRecordAtEnd = 2 }
-
     sealed class PortOwn : IOwn
     {
         readonly Ctx c;
@@ -642,8 +627,6 @@ public class SkillSequenceInputSweepTests
         public int LoopsInMotion { get; private set; }
         public int MotionLoopCount { get; private set; }
         public double FollowPos { get; private set; } = double.NaN;
-        /// <summary>The token count when the end step ran with SkillLoop.HoldsEnd set (-1: never).</summary>
-        public int IgnoredHoldAt = -1;
         double timeMs;
         uint Clock => 100000 + (uint)timeMs;
 
@@ -662,12 +645,9 @@ public class SkillSequenceInputSweepTests
         Keys keys;
         long castIds = 1;
 
-        readonly PortFix fix;
-
-        public PortOwn(Ctx c, PortFix fix = PortFix.None)
+        public PortOwn(Ctx c)
         {
             this.c = c;
-            this.fix = fix;
             cool = new SkillCooltimes(c.Skills);
             bound.Add(1);
             if (c.Out != null) bound.Add(2);
@@ -836,8 +816,14 @@ public class SkillSequenceInputSweepTests
         bool OwnSequenceEnding()
         {
             if (!OwnKeys(Math.Max(ownKeyPos, kf.Duration))) return !Done;
-            // STILL-OPEN in HudScene: EndOfSequence's hold (SkillLoop.HoldsEnd) is not kept here
-            if (ownLoop.HoldsEnd && IgnoredHoldAt < 0) IgnoredHoldAt = Out.Count;
+            if (ownLoop.HoldsEnd)
+            {
+                // EndOfSequence :1056-1060: the body holds the last frame (Player.HoldSkillSequence) with no end timer; with no
+                // queued round left to cast nothing sends the sequence back
+                atEnd = true;
+                if (ownQueued == null) { Stop("held-no-timer"); return false; }
+                return true;
+            }
             ownWindow.EndOfSequence();
             ownEnded = true;
             atEnd = true;
@@ -877,7 +863,7 @@ public class SkillSequenceInputSweepTests
             int dik = PollKey();
             if (dik == 0) return null;
             var s = SkillOf(dik);
-            if (ownQueued != null && ownQueued.Key == dik && (object)ownQueued.Skill == s && !(fix.HasFlag(PortFix.NewRecordAtEnd) && ownQueued.Charged))
+            if (ownQueued != null && ownQueued.Key == dik && (object)ownQueued.Skill == s && !ownQueued.Charged)
                 return ownQueued;
             return Request(dik);
         }
@@ -911,18 +897,9 @@ public class SkillSequenceInputSweepTests
         void TickOwnAttacks()
         {
             if (ownEnded) { TickOwnEnded(); return; }
-            if (fix.HasFlag(PortFix.PollAfterKeys))
-            {
-                if (!OwnKeys(pos)) return;
-                PollOwnPress();
-                if (Done || ownEnded) return;
-            }
-            else
-            {
-                PollOwnPress();
-                if (Done || ownEnded) return;
-                if (!OwnKeys(pos)) return;
-            }
+            if (!OwnKeys(pos)) return;
+            PollOwnPress();
+            if (Done || ownEnded) return;
             if (ownNext != null) TryChainOwn(ownCast, "frame");
         }
 
@@ -1298,8 +1275,7 @@ public class SkillSequenceInputSweepTests
 
     sealed record Row(uint Skill, string Kind, int Level, string Body, string Side, Scenario Scenario, string Expected, string Played)
     {
-        public int RefusedAt = -1, IgnoredHoldAt = -1;
-        public string FixedBy;
+        public int RefusedAt = -1;
         public double ExpectedFollowPos = double.NaN, PlayedFollowPos = double.NaN, FrameSeqTime;
         public string Verdict = Expected == Played ? "ok" : "FAIL";
         public string Data = "";
@@ -1317,21 +1293,13 @@ public class SkillSequenceInputSweepTests
         }));
 
     /// <summary>
-    /// Known port gaps, marked not failed, each with the rows that show it (in the own cast path HudScene.Cast.cs and the
-    /// Ms2.Ui skill parts it calls, which another change owns):
-    /// gap A: a refused EndOfSequence (m_bCharging or a repeat left: no loop keys, or a round queued behind the cooldown)
-    /// holds the client's state with no timer (stateskill.cpp:1056-1059; FUN_1417ee120 :2889-2893 returns before the 5 s
-    /// test at :2990 while m_b48 is unset); HudScene.OwnSequenceEnding takes the end step there (the state leaves, casts
-    /// the key held, or its 5 s timeout ends it; SkillLoop.HoldsEnd, STILL-OPEN there), and a queued round's release
-    /// then finds the state ended. Marked where the port's end step ran with HoldsEnd set at the client's refused end,
-    /// the same up to there.
-    /// gap P, gap Q: see <see cref="PortFix"/>; marked where the run with that fix plays the client's order.
+    /// The rows that differ only in which callback sees the same cast first, marked "same cast", not failed. Every other
+    /// difference fails.
     /// </summary>
     static void MarkGaps(List<Row> list)
     {
         foreach (var r in list)
         {
-            if (r.Verdict == "FAIL" && r.FixedBy != null) { r.Verdict = r.FixedBy; continue; }
             // same cast: the same skill follows at the same sequence time, within a frame, through another callback (the
             // per-frame chain or the combo key's; the client's end step casting a new record once its cooldown is over or
             // FUN_1417f11d0 / TickOwnQueued casting the queued one). The port reads a frame's keys in the next frame (HudScene
@@ -1339,10 +1307,6 @@ public class SkillSequenceInputSweepTests
             if (r.Verdict == "FAIL" && r.Side == "own" && !double.IsNaN(r.ExpectedFollowPos) && !double.IsNaN(r.PlayedFollowPos)
                 && Math.Abs(r.ExpectedFollowPos - r.PlayedFollowPos) <= r.FrameSeqTime + 1e-6 && SameButLabel(r.Expected, r.Played))
                 r.Verdict = "same cast";
-            if (r.Verdict == "ok" || r.Side != "own" || r.RefusedAt < 0 || r.RefusedAt != r.IgnoredHoldAt) continue;
-            // the port's end step ran where the client refused the end, the same up to there
-            int i = r.RefusedAt;
-            if (r.Expected.Split(' ').Take(i).SequenceEqual(r.Played.Split(' ').Take(i))) r.Verdict = "gap A";
         }
     }
 
@@ -1403,13 +1367,9 @@ public class SkillSequenceInputSweepTests
                         }
                         var exp = string.Join(" ", RunOwn(e, s));
                         var got = string.Join(" ", RunOwn(po, s));
-                        string fixedBy = null;
-                        if (exp != got)
-                            foreach (var (f, name) in new[] { (PortFix.PollAfterKeys, "gap P"), (PortFix.NewRecordAtEnd, "gap Q"), (PortFix.PollAfterKeys | PortFix.NewRecordAtEnd, "gap P+Q") })
-                                if (string.Join(" ", RunOwn(new PortOwn(ctx, f), s)) == exp) { fixedBy = name; break; }
                         string kind = isJob ? "job" : "pc";
                         list.Add(new Row(uid, kind, level.Level, bname, "own", s, exp, got) {
-                            Data = exp == got ? "" : RowData(skill, level, body), RefusedAt = e.RefusedAt, IgnoredHoldAt = po.IgnoredHoldAt, FixedBy = fixedBy,
+                            Data = exp == got ? "" : RowData(skill, level, body), RefusedAt = e.RefusedAt,
                             ExpectedFollowPos = e.FollowPos, PlayedFollowPos = po.FollowPos, FrameSeqTime = Dt * e.Speed,
                         });
                         if ((s == Scenario.Hold || s == Scenario.Release) && (skill.Continue || skill.ChargingSkill))

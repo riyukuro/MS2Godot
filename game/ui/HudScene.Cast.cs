@@ -559,7 +559,8 @@ public partial class HudScene
     }
 
     /// <summary>vfunc_104(1, 1, 1) at the end step: this frame's press, else the key held (<see cref="PollOwnKey"/>); the queued
-    /// cooling record for its own key and skill; null for none or a key refused before in this state.</summary>
+    /// cooling record for its own key and skill, but not a continue round queued at the loopend (a new record replaces it);
+    /// null for none or a key refused before in this state.</summary>
     CastRecord OwnEndPoll()
     {
         if (framePressFrame != Engine.GetProcessFrames())
@@ -572,7 +573,9 @@ public partial class HudScene
         if (dik == 0) return null;
         var s = OwnKeySkill(dik);
         if (s == null) return null;
-        if (ownQueued != null && ownQueued.Key == dik && (object)ownQueued.Skill == s) return ownQueued;
+        // a continue round queued at the loopend (Charged) is not the key's cast: MyPC::vfunc_104 (mypc.cpp:1668-1729) builds a
+        // new record each call and vfunc_102 queues it in the round's place (SetChargeRecord, :1152-1166)
+        if (ownQueued != null && ownQueued.Key == dik && (object)ownQueued.Skill == s && !ownQueued.Charged) return ownQueued;
         if (PollRefused(dik, s, ownWindow)) return null;
         KeyRequest(dik, out var r);
         if (r == null) RefusePoll(dik, s, ownWindow);
@@ -797,9 +800,9 @@ public partial class HudScene
     }
 
     /// <summary>
-    /// Each frame while the own skill state runs (StateSkill::vfunc_8 @0x1417e6990): the key-down poll
-    /// (<see cref="PollOwnPress"/>, FUN_1417eeb10 :638-639), the text keys passed since the last frame (<see cref="OwnKeys"/>),
-    /// then FUN_1417ee120's per-frame FUN_1417ef4a0 (:2889-2891) for an accepted press. After the sequence's end the state's
+    /// Each frame while the own skill state runs (StateSkill::vfunc_8 @0x1417e6990): the text keys passed since the last frame
+    /// (<see cref="OwnKeys"/>, thrown by the animation's update before vfunc_8), the key-down poll (<see cref="PollOwnPress"/>,
+    /// FUN_1417eeb10 :638-639), then FUN_1417ee120's per-frame FUN_1417ef4a0 (:2889-2891) for an accepted press. After the sequence's end the state's
     /// end step each frame (<see cref="TickOwnEnded"/>). The hold of a key-down skill's key ends with the key let go outside
     /// the state (<see cref="HeldKeyPoll.Release"/>). 0 B/frame until a point fires or a key goes to a request.
     /// </summary>
@@ -812,9 +815,12 @@ public partial class HudScene
         if (ownEnded) { TickOwnEnded(); return; }
         double pos = player.SkillSequencePosition;
         if (pos < 0) return;
+        // the client's animation service throws the frame's text keys in MyPC's update (mypc.cpp:2942-2966) before the
+        // state's vfunc_8 polls the keys, so a window a key opens (inputcombo, the selfInputCombo key) sees that frame's
+        // held key: the keys first, then the poll
+        if (!OwnKeys(pos)) return;
         PollOwnPress();
         if (!OwnSkillStateRuns() || ownEnded) return;
-        if (!OwnKeys(pos)) return;
         var running = ownCast;
         if (ownNext != null) TryChainOwn(running);
         if (ownCast == running && OwnSkillStateRuns()) OwnSwingCancel();   // vfunc_8's last step (:725)
