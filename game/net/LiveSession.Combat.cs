@@ -90,7 +90,14 @@ public partial class LiveSession
         live.DamageNumbered += (n, npc, pc) => { if (npc != null) { numbers++; hitCount[npc] = hitCount.GetValueOrDefault(npc) + 1; } };
         live.NpcExpShown += (npc, exp) => kills++;
         FieldNpcs.Placed lastNpc = null;
-        live.NpcAdded += npc => { npcs++; lastNpc = npc; };
+        var serverNpcs = new System.Collections.Generic.List<FieldNpcs.Placed>();
+        live.NpcAdded += npc => { npcs++; lastNpc = npc; serverNpcs.Add(npc); };
+        var goneNpcs = new System.Collections.Generic.HashSet<int>();     // object ids removed by the server or counted dead by the kill step
+        live.NpcRemoved += id => goneNpcs.Add(id);
+        int questProgress = 0;
+        live.Quests.ProgressUpdated += id => questProgress++;
+        bool Alive(FieldNpcs.Placed n) => n?.Root != null && GodotObject.IsInstanceValid(n.Root) && !goneNpcs.Contains(n.ObjectId);
+        live.Quests.Changed += id => { var q = live.Quests.Get(id); GD.Print($"live: combat quest {id} state {q?.State} progress [{string.Join(" ", q?.Progress ?? System.Array.Empty<long>())}]"); };
         live.MesoChanged += (delta, kind) => mesoDelta += delta;
         await frames(240);
         int camShots = 0;
@@ -256,6 +263,115 @@ public partial class LiveSession
             if (step.StartsWith('~') && int.TryParse(step.AsSpan(1), out int waitSecs))      // ~N: N seconds
             {
                 await frames(60 * waitSecs);
+                continue;
+            }
+            if (step == "quests")      // the quest records not yet rewarded, the talkable npcs and the server npcs of the field
+            {
+                foreach (var q in live.Quests.All.Where(q => q.State != 2).OrderBy(q => q.Id))
+                    GD.Print($"live: combat quests: {q.Id} state {q.State} progress [{string.Join(" ", q.Progress ?? System.Array.Empty<long>())}]");
+                GD.Print($"live: combat quests: field {live.FieldId}, talk npcs {string.Join(" ", live.TalkNpcs.Select(x => x.Row.Id).Distinct().OrderBy(x => x))}, server npcs {string.Join(" ", serverNpcs.Where(Alive).Select(x => x.Row.Id).Distinct().OrderBy(x => x))}, interact objects {string.Join(" ", live.InteractObjects?.All.Select(x => $"{x.RowId}/{x.State}").Distinct() ?? Enumerable.Empty<string>())}");
+                continue;
+            }
+            if (step.StartsWith("interact:"))      // interact:<interact id>: the own pc put at the nearest field interact object of that id (no walk), then the action key; the cast and its end are waited for
+            {
+                int id = int.Parse(step[9..]);
+                var io = live.InteractObjects;
+                Ms2.Ui.LiveInteractObject o = null;
+                await until(() => live.player != null && (o = io?.All.Where(x => x.RowId == id)
+                    .OrderBy(x => FieldBuilder.ToGodotPoint(x.Position).DistanceSquaredTo(live.player.GlobalPosition)).FirstOrDefault()) != null, 60 * 20);
+                Check($"{step}: the object in the field ({o?.Name}, state {o?.State})", o != null);
+                if (o == null) continue;
+                live.player.GlobalPosition = FieldBuilder.ToGodotPoint(o.Position) + new Vector3(0, 5, 0);
+                live.player.Velocity = Vector3.Zero;
+                await frames(90);
+                int sends = live.InteractSends;
+                await PressActionKey(frames);
+                await until(() => io.IsCasting || live.InteractSends > sends, 60 * 3);
+                bool started = io.IsCasting || live.InteractSends > sends;
+                await until(() => !io.IsCasting, 60 * 15);
+                await frames(120);
+                Check($"{step}: the action key used it ({live.InteractSends - sends} send(s))", started);
+                continue;
+            }
+            if (step == "pickup")      // the pickup key held 4 s where the pc stands (a drop at its feet); the bag count before and after
+            {
+                long bag = BagSum(live);
+                live.PickupKeyHeld = true;
+                await frames(60 * 4);
+                live.PickupKeyHeld = false;
+                await frames(60);
+                GD.Print($"live: combat pickup: bag {bag} -> {BagSum(live)}");
+                continue;
+            }
+            if (step.StartsWith("talk:"))      // talk:<npc id>[:<pages>]: the own pc put in front of the field's npc of that id (no walk), the action key, then Next through the pages, the quest pages too (their accept and complete go out); the quest changes print as they come
+            {
+                var a = step.Split(':');
+                int id = int.Parse(a[1]), pages = a.Length > 2 ? int.Parse(a[2]) : 16;
+                var tfc = flow.GetTree().GetFirstNodeInGroup(FieldContents.Group) as FieldContents;
+                FieldNpcs.Placed n = null;
+                await until(() => (n = live.TalkNpcs.FirstOrDefault(x => x.Row.Id == id && Alive(x))) != null, 60 * 30);
+                Check($"{step}: the npc in the field", n != null);
+                if (n == null || tfc?.Talk == null || live.player == null || !GodotObject.IsInstanceValid(live.player)) continue;
+                double yaw = n.Root.Rotation.Y;
+                var front = new Vector3((float)Math.Sin(yaw), 0, (float)Math.Cos(yaw));
+                live.player.GlobalPosition = n.Position + front * 120 + new Vector3(0, 20, 0);
+                live.player.Velocity = Vector3.Zero;
+                live.player.Face(-front);
+                await frames(90);
+                tfc.Talk.ActionKey();
+                await until(() => tfc.Talk.Open, 60 * 5);
+                Check($"{step}: the talk opened", tfc.Talk.Open);
+                Shot($"talk{id}_{Math.Abs(step.GetHashCode()) % 1000}_open.png");
+                for (int k = 0; k < pages && tfc.Talk.Open; k++)
+                {
+                    GD.Print($"live: combat {step} page {k + 1}: script {tfc.Talk.ScriptId} page {tfc.Talk.Page + 1}, quest page {tfc.Talk.OnQuestPage}");
+                    tfc.Talk.ActionKey();
+                    await frames(90);
+                }
+                if (tfc.Talk.Open) { GD.Print($"live: combat {step}: still open after {pages} pages, ended"); tfc.Talk.End(); }
+                await frames(120);
+                continue;
+            }
+            if (step.StartsWith("kill:"))      // kill:<npc id>[:<count>]: the field's server npcs of that id, nearest first, each walked to, faced and attacked until it dies (up to MS2_LIVE_COMBAT_PRESSES presses each)
+            {
+                var a = step.Split(':');
+                int id = int.Parse(a[1]), count = a.Length > 2 ? int.Parse(a[2]) : 1, need = int.Parse(Env("MS2_LIVE_COMBAT_PRESSES", "20")), dead = 0;
+                int? field = live.FieldId;
+                for (int i = 0; i < count && live.FieldId == field; i++)
+                {
+                    FieldNpcs.Placed target = null;
+                    await until(() => (target = serverNpcs.Where(x => x.Row.Id == id && Alive(x)).OrderBy(x => live.player.GlobalPosition.DistanceSquaredTo(x.Position)).FirstOrDefault()) != null, 60 * 30);
+                    if (target == null) break;
+                    float dist = hud.FaceScripted(target.Position);
+                    for (int walk = 0; walk < 60 * 25 && dist > 200 && Alive(target); walk++)
+                    {
+                        dist = hud.FaceScripted(target.Position); hud.DriveScripted(new Vector2(0, 1), false); await frames(1);
+                    }
+                    hud.DriveEnd(); await frames(20);
+                    if (dist > 250 && Alive(target))
+                    {      // no path finding: a wall between stops the straight walk, so the pc is put 150 from the npc on the line to it
+                        var away = live.player.GlobalPosition - target.Position; away.Y = 0;
+                        live.player.GlobalPosition = target.Position + (away.LengthSquared() > 1e-6f ? away.Normalized() : Vector3.Forward) * 150 + new Vector3(0, 20, 0);
+                        live.player.Velocity = Vector3.Zero;
+                        await frames(90);
+                        dist = hud.FaceScripted(target.Position);
+                        GD.Print($"live: combat {step}: the walk was blocked, put {dist:F0} from the npc");
+                    }
+                    int before = kills, progressBefore = questProgress, press = 0;
+                    for (; press < need && Alive(target) && kills == before && questProgress == progressBefore && live.FieldId == field; press++)
+                    {
+                        dist = hud.FaceScripted(target.Position);
+                        await frames(20);
+                        hud.AttackScripted();
+                        await frames(90);
+                    }
+                    await frames(60 * 3);
+                    bool died = kills > before || questProgress > progressBefore || !Alive(target);
+                    if (died) goneNpcs.Add(target.ObjectId);     // a corpse stays a while: the next pick skips it
+                    GD.Print($"live: combat {step}: npc {i + 1} at distance {dist:F0}, {press} press(es), {hitCount.GetValueOrDefault(target)} number(s) on it, died {died}, own hp {live.Me.Dead switch { true => "dead", _ => "alive" }}");
+                    if (died) dead++;
+                }
+                Check($"{step}: {dead} of {count} died", dead == count);
                 continue;
             }
             if (step.StartsWith("box:"))      // box:<id>: the own pc put at the trigger box's centre (no walk; the position goes out with the next sync)

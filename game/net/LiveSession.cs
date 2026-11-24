@@ -2659,11 +2659,13 @@ public partial class LiveSession : Node
         if (System.Environment.GetEnvironmentVariable("MS2_LIVE_DELETE") == "1")   // delete the last character through the dialog's OnDeletePC, then stop
         {
             int n0 = Session.List().Count;
-            Session.SelectedIndex = n0 - 1;
+            // MS2_LIVE_DELETE_NAME: that character instead of the last
+            int at = Session.List().FindIndex(c => c.User.Name == System.Environment.GetEnvironmentVariable("MS2_LIVE_DELETE_NAME"));
+            Session.SelectedIndex = at >= 0 ? at : n0 - 1;
             UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnDeletePC);
             await Frames(30);   // the confirmation box: the checkbox, the character's name, OK
             MessageBoxLayer.Instance?.Tick(0);
-            MessageBoxLayer.Instance?.Type(Session.List()[n0 - 1].User.Name);
+            MessageBoxLayer.Instance?.Type(Session.List()[Session.SelectedIndex].User.Name);
             await Frames(30);
             MessageBoxLayer.Instance?.Click(0);
             await Until(() => Session.List().Count < n0, 600); await Frames(60);

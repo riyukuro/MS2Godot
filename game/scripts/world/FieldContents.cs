@@ -43,6 +43,8 @@ public partial class FieldContents : Node3D
     bool moving;
 
     NpcTalk talk;
+    /// <summary>The field's npc talk (the live harness's talk step).</summary>
+    public NpcTalk Talk => talk;
     /// <summary>The live action key's current action and its 100 ms poll clock.</summary>
     Ms2.Ui.ActionKeyPoll actionKeys;
     NpcEmoticons emoticons;
