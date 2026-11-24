@@ -268,6 +268,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchFishingBook = null;
         unwatchMeso?.Invoke();
         unwatchMeso = null;
+        unwatchGlobalPortal?.Invoke();
+        unwatchGlobalPortal = null;
         foreach (var (_, c) in messengers) ChatLog.Windows.Remove(c);
         ChatLog.WindowCreated -= OnMessengerCreated;
         ChatLog.WindowClosed -= OnMessengerClosed;
@@ -421,6 +423,7 @@ public partial class HudScene : Node, IUiStageHost
         if (unwatchPrestige == null) WatchPrestige();
         CharacterAbility();
         if (unwatchMeso == null) WatchMeso();
+        WatchGlobalPortal();
         Mastery();
         SystemMenuFacts();
         MassiveEventPane();
@@ -4010,6 +4013,7 @@ public partial class HudScene : Node, IUiStageHost
         if (myInfo != null && !myInfo.IsClosed) myInfo.Process((long)Time.GetTicksMsec());     // UIMyInfoDialog::vfunc_15
         (notice?.Host.Controller as NoticeDialogController)?.Update((uint)Time.GetTicksMsec());     // UINoticeDialog::vfunc_72
         smartPushManager?.Update((uint)Time.GetTicksMsec());     // CSmartPushManager::UpdatePushes (mypc.cpp:2979)
+        globalPortal?.Update();                                  // UIGlobalPortalDialog::vfunc_72, open or closed
         popupMenu?.Update();       // UIPopUpMenu::vfunc_15
         optionDialog?.Update();    // UIGameOptionDialog::vfunc_15 (@0x141942bf0)
         if (PartyWindowOpen) party.Process();      // UIPartyDialog::vfunc_15: the vote page's time, the ready marks' deadline
