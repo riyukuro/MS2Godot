@@ -2139,6 +2139,8 @@ public partial class LiveSession : Node
                 ReadNotApplied("WorldShareInfo", Ms2.Net.Packets.WorldShareInfo.Read(p.Reader()).Mode);   // OnWorldShareInfo (scenestategame.cpp:9756): the boss-notify npc flag, the world map tile and the world share event dialog are not ported
             else if (game.Is(p, Inbound.BannerList))
                 { Ms2.Net.Packets.BannerList.Read(p.Reader()); ReadNotApplied("BannerList", 0); }   // CAdBannerManagerCli::OnBannerList (adbannermanagercli.cpp:31): the ad banner manager and its consumers (cash shop, title) are not ported
+            else if (game.Is(p, Inbound.LegionBattle))
+                ReadNotApplied("LegionBattle", Ms2.Net.Packets.LegionBattle.Read(p.Reader()).Mode);   // CSceneStateGame::OnLegionBattle (scenestategame.cpp:8480): fills the field table's guaranteed NPC spawn times; that table is not ported
             else if (game.Is(p, Inbound.InGameRank))
                 ReadNotApplied("InGameRank", Ms2.Net.Packets.InGameRankAnswer.Read(p.Reader()).Mode);   // CGameRankingCli::OnPacket (gamerankingcli.cpp:350): sets the ranking answer lifetimes; the ranking client (boards, cache) is not ported
             else if (game.Is(p, Inbound.PremiumClub))
