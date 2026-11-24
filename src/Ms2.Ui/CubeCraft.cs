@@ -31,8 +31,8 @@ public sealed class CubeCraftState
         public bool HoldsLift => Mode == 2;
         /// <summary>m_ptCell: the corner of the cell the craft points at (GetCellPosition).</summary>
         public Vector3 Cell { get; internal set; }
-        /// <summary>m_fLift (ctor 0, cubecraft_2.cpp:291; 0 again at the start, :351): the height added to the cell in front.
-        /// STILL-OPEN: AdjustLift (@0x1410aa060, :590-596, +-150) has no caller ported, so it stays 0.</summary>
+        /// <summary>m_fLift (ctor 0, cubecraft_2.cpp:291; 0 again at the start, :351): the height added to the cell in front,
+        /// +-150 a step (AdjustLift @0x1410aa060, :590-596) through <see cref="CubeCraftState.LiftStep"/>.</summary>
         public float Lift { get; internal set; }
         /// <summary>m_spGuide is set: the guide cube CreateGuide (@0x1410a92c0, :421-464) loads. Here it is the guide's state
         /// only (no model is loaded).</summary>
@@ -285,6 +285,40 @@ public sealed class CubeCraftState
     /// <summary>The common string of the same-item notice in craft mode 2 (FUN_141275260(0x6c9, 1, 1),
     /// cubecraft_2.cpp:1041).</summary>
     public const int SameItemHeldText = 0x6c9;
+    /// <summary>The common strings of a refused lift step (FUN_141275260(0x6f4 / 0x6f5, 1, 1), cubecraft_2.cpp:1189, :1211).</summary>
+    public const int LiftUpRefusedText = 0x6f4, LiftDownRefusedText = 0x6f5;
+
+    /// <summary>
+    /// The wheel in cube mode: UGCKeyController::vfunc_6 (@0x140ef2ef0, uiugccubepalettedialog.cpp:2207, only in cube mode,
+    /// FUN_140ef4970) to UGCKeyMode1::vfunc_7 (@0x140ef22d0, :2049-2058), the mode the controller starts in: forward
+    /// FUN_140ef3f70 -> FUN_1410ac1c0 (cubecraft_2.cpp:1178-1199), back FUN_140ef3fc0 -> FUN_1410ac380 (:1201-1222), each on
+    /// the active craft (GetActiveCubeCraft). The step is allowed by FUN_1410ae960 (:1407-1450); else the common notice
+    /// <see cref="LiftUpRefusedText"/> or <see cref="LiftDownRefusedText"/> (the returned id; 0 when the lift moved or
+    /// there is no craft). Craft mode 2 (a carried lift): the cell in front at the lift (GetCellInFrontOfActor with m_fLift)
+    /// may be fewer than <paramref name="limitUp"/> cells above the one at 0 (CubeLiftHeightLimitUp) to go up, fewer than
+    /// <paramref name="limitDown"/> below it (CubeLiftHeightLimitDown) to go down.
+    /// STILL-OPEN: the other craft modes test the cube map's column (FUN_1410cdf60) or the construction guide's sweep
+    /// (FUN_1410cdd80, HasLift) and move that guide (FUN_1410a77e0); they refuse here. Mode 1's palette dialog must exist
+    /// (GetUGCCubePaletteDialog(0x4f16)); it is not ported, and the step does not ask for it. The F1-F3 key modes
+    /// (UGCKeyController::vfunc_0) are not ported: the wheel is mode 1's.
+    /// </summary>
+    public int LiftStep(bool up, int limitUp, int limitDown)
+    {
+        var c = Current;
+        var o = Owner;
+        if (!InCubeMode || c == null || o == null || !o.IsLocal) return 0;
+        bool can = false;
+        if (c.Mode == 2)
+        {
+            int floor = CubeCell.Of(CubeCell.InFrontOf(o.Point, o.RotZ, 0f, 1)).Z;
+            int top = CubeCell.Of(CubeCell.InFrontOf(o.Point, o.RotZ, c.Lift, 1)).Z;
+            can = up ? top - floor < limitUp : floor - top < limitDown;
+        }
+        if (!can) return up ? LiftUpRefusedText : LiftDownRefusedText;
+        c.Lift += up ? CubeCell.Size : -CubeCell.Size;
+        return 0;
+    }
+
     /// <summary>The system sound of a placed cube (PlaySystemSound(DAT_143ae79b8), scenestategame.cpp:1222).</summary>
     public const string PlaceSound = "ugc_setblock";
     /// <summary>The system sound of a cube the remove answer takes away (PlaySystemSound(DAT_143ae79c8), scenestategame.cpp:1219).</summary>
