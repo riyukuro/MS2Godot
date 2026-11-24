@@ -242,6 +242,8 @@ public sealed class MessageBoxController : UiController
 
     /// <summary>CNetworkService::SendRecallUserReply(accept) (networkservice.cpp:522): HandleRecallconfirmButton's answer, button 0 accepts.</summary>
     public Action<bool> AnswerRecallUser;
+    /// <summary>FUN_140710590 of HandleRecallscrollconfirmButton's RecallScroll (<see cref="RecallScrollConfirm.Accept"/>).</summary>
+    public Action<Ms2.Net.Packets.RecallScrollAccept> SendRecallScroll;
 
     /// <summary>HandleRequestTradeExButton @0x1419fbc40 (uimessagebox.cpp:1503): the trade request box's answer, its argument 0
     /// (the requester's id, FUN_141a02f10(0, 0)) and yes (button 0) to FUN_14185b8e0.</summary>
@@ -473,6 +475,8 @@ public sealed class MessageBoxController : UiController
             return HandleGuildinviteButton(button);
         if (tag == "requestTradeEx")
             return HandleRequestTradeExButton(button);
+        if (tag == RecallScrollNotifyController.ConfirmTag)
+            return HandleRecallscrollconfirmButton(button);
         if (tag == "sell")
             return HandleSellButton(button, 1);
         if (tag == LoginRefusalBox.MaintenanceExitTag)
@@ -528,6 +532,15 @@ public sealed class MessageBoxController : UiController
     bool HandleGuildinviteButton(int button)
     {
         AnswerGuildInvite?.Invoke(button == 0);
+        return true;
+    }
+
+    /// <summary>HandleRecallscrollconfirmButton @0x1419fcf60 (uimessagebox.cpp:1641): no box, 1; button 0 sends RecallScroll with
+    /// the box's slot, name and field; 1.</summary>
+    bool HandleRecallscrollconfirmButton(int button)
+    {
+        if (data == null) return true;
+        if (button == 0) SendRecallScroll?.Invoke(RecallScrollConfirm.Accept(data));
         return true;
     }
 

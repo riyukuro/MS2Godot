@@ -503,6 +503,8 @@ public partial class LiveSession : Node
     public event Action<SmartPushMessage> SmartPushReceived;
     /// <summary>GlobalPortal (0xC1, OnGlobalPortal :4369): UIGlobalPortalDialog::OnGlobalPortalPacket.</summary>
     public event Action<GlobalPortalPacket> GlobalPortalReceived;
+    /// <summary>RecallScroll (0xBC, OnRecallScroll :8038): UIRecallScrollNotifyDialog's open and close.</summary>
+    public event Action<RecallScrollPacket> RecallScrollReceived;
     /// <summary>NoticeDialog (0xCF, UINoticeDialog::OnNoticeDialog).</summary>
     public event Action<NoticeDialogMessage> NoticeDialogReceived;
     /// <summary>NewsNotification (0x9F, :3789).</summary>
@@ -1897,6 +1899,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.PlaySystemSound)) SystemSoundReceived?.Invoke(SystemSound.Read(p.Reader()));
             else if (game.Is(p, Inbound.SmartPush)) SmartPushReceived?.Invoke(SmartPushMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.GlobalPortal)) GlobalPortalReceived?.Invoke(GlobalPortalPacket.Read(p.Reader()));   // no ExpectEnd: mode 1 leaves its event id unread, as the client
+            else if (game.Is(p, Inbound.RecallScroll)) RecallScrollReceived?.Invoke(RecallScrollPacket.Read(p.Reader()));
             else if (game.Is(p, Inbound.NoticeDialog)) NoticeDialogReceived?.Invoke(NoticeDialogMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.NewsNotification)) NewsNotificationReceived?.Invoke(NewsNotification.Read(p.Reader()));
             else if (game.Is(p, Inbound.UiText))

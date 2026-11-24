@@ -270,6 +270,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchMeso = null;
         unwatchGlobalPortal?.Invoke();
         unwatchGlobalPortal = null;
+        unwatchRecallScroll?.Invoke();
+        unwatchRecallScroll = null;
         unwatchTaxiFound?.Invoke();
         unwatchTaxiFound = null;
         foreach (var (_, c) in messengers) ChatLog.Windows.Remove(c);
@@ -426,6 +428,7 @@ public partial class HudScene : Node, IUiStageHost
         CharacterAbility();
         if (unwatchMeso == null) WatchMeso();
         WatchGlobalPortal();
+        RecallScrollNotify(uiRoot);
         WatchTaxiFound();
         Mastery();
         SystemMenuFacts();
@@ -4017,6 +4020,7 @@ public partial class HudScene : Node, IUiStageHost
         (notice?.Host.Controller as NoticeDialogController)?.Update((uint)Time.GetTicksMsec());     // UINoticeDialog::vfunc_72
         smartPushManager?.Update((uint)Time.GetTicksMsec());     // CSmartPushManager::UpdatePushes (mypc.cpp:2979)
         globalPortal?.Update();                                  // UIGlobalPortalDialog::vfunc_72, open or closed
+        recallNotify?.Update();                                  // UIRecallScrollNotifyDialog::vfunc_72
         popupMenu?.Update();       // UIPopUpMenu::vfunc_15
         optionDialog?.Update();    // UIGameOptionDialog::vfunc_15 (@0x141942bf0)
         if (PartyWindowOpen) party.Process();      // UIPartyDialog::vfunc_15: the vote page's time, the ready marks' deadline
