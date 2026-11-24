@@ -181,6 +181,8 @@ public static class DataCache
             if (PackIndex.BuildCache(archives[i], System.IO.Path.Combine(packs.DataDir, archives[i] + ".m2d"), s)) built.Add("index " + archives[i]);
             progress?.Invoke(phase, 0.99 + 0.01 * (i + 1) / archives.Count);
         }
+        // the asset-web catalog (keyed by its own archive): a field build resolves its models' llids from this file
+        if (AssetIndex.BuildCache(packs, s)) built.Add("asset catalog");
         // the movies' layouts (keyed by the Gfx archive, in the UI code's folder): a dialog's first open reads its file
         const string layoutPhase = "Reading the client's UI layouts";
         progress?.Invoke(layoutPhase, 0);
