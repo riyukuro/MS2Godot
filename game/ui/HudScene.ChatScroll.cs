@@ -128,6 +128,29 @@ public partial class HudScene
             Input.ParseInputEvent(new InputEventKey { Keycode = key, PhysicalKeycode = key, Pressed = down });
     }
 
+    /// <summary><c>--uigen-open chattab:N</c>: frame 160 Return focuses the input, from 165 every 5 frames a real Tab key event
+    /// (N of them) and two frames later the print of the selected target row; the frame 300 shot shows the last one.</summary>
+    void ChatTabShot(int frames, int tabs)
+    {
+        if (messengers.Count == 0) return;
+        var (m, c) = messengers[0];
+        var h = m.Host;
+        if (h.Child("m_subject") is not AsDisplayObject subject) return;
+        void Print(string what)
+        {
+            int sel = (int)Rt.ToNumber(h.Get(subject, "selectedIndex"));
+            var row = h.Get(h.Get(subject, "dataProvider"), sel.ToString()) as AsObject;
+            GD.Print($"CHATTAB {what}: selectedIndex={sel} label=\"{(row == null ? "" : Rt.ToString(h.Get(row, "label")))}\" focused={c.InputActive}");
+        }
+        if (frames == 150) Print("start");
+        if (frames == 160) { ChatKeyEvent(Key.Enter); return; }
+        if (frames == 163) { Print("focused"); return; }
+        if (frames < 165 || (frames - 165) % 5 != 0 && (frames - 167) % 5 != 0) return;
+        int n = (frames - 165) / 5;
+        if ((frames - 165) % 5 == 0) { if (n < tabs) ChatKeyEvent(Key.Tab); }
+        else if (n < tabs) Print($"tab {n + 1}");
+    }
+
     /// <summary><c>--uigen-open chathistory</c>: frames 160, 170 and 180 (+4) send "alpha", "beta" and "gamma" (Return focuses the input,
     /// the text is set, Return sends it); from 200 Up, Up, Up, Down, Down, Down and a focus out with Up print the input's text.</summary>
     void ChatHistoryShot(int frames)

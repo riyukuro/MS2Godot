@@ -1769,7 +1769,8 @@ public partial class HudScene : Node, IUiStageHost
             if ((k.Keycode == Key.Enter && onKey(MessengerController.DikReturn, false))
                 || (k.Keycode == Key.Escape && onKey(DikEscape, true))
                 || (k.Keycode == Key.Up && onKey(MessengerController.DikUp, false))        // the input history (FUN_141a13c20)
-                || (k.Keycode == Key.Down && onKey(MessengerController.DikDown, false)))
+                || (k.Keycode == Key.Down && onKey(MessengerController.DikDown, false))
+                || (k.Keycode == Key.Tab && onKey(MessengerController.DikTab, false)))      // the next target (FUN_141a14760)
                 return true;
         }
         if (!inputActive()) return null;
@@ -4093,6 +4094,7 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "chatresize" && frames is >= 150 and <= 280) ChatResizeShot(frames);
         if (openShot == "chatappend" && frames is >= 150 and <= 290) ChatAppendShot(frames);
         if (openShot == "chathistory" && frames is >= 160 and <= 240) ChatHistoryShot(frames);
+        if (openShot != null && openShot.StartsWith("chattab") && frames is >= 150 and <= 280) ChatTabShot(frames, openShot.Contains(':') ? int.Parse(openShot.Split(':')[1]) : 1);
         if (openShot != null && openShot.StartsWith("chatgm") && frames is >= 150 and <= 280) ChatGmShot(frames);
         if (openShot != null && openShot.StartsWith("chatlog") && frames is >= 150 and <= 280) ChatLogShot(frames);
         if (openShot == "guild" && frames == 200) ToggleGuild();

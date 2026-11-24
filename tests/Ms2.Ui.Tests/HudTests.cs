@@ -1867,6 +1867,57 @@ public class HudTests
     }
 
     [Test]
+    public void ChatTabKeyStepsToTheNextTarget()
+    {
+        // FUN_141a14760 (:1958), vfunc_13 (:810) key 0xf with the input focused: the list's next row, the first after the last
+        // (menuRowCount rows), then SelectSubject. Rows without feature 0x19: world, channel, social, party, guild, megaphone.
+        var (c, h, m, sent, _) = ChatWindow();
+        var subject = (AsObject)h.Child("m_subject");
+        var input = (AsObject)h.Child("m_textInput");
+        int Sel() => (int)Rt.ToNumber(h.Get(subject, "selectedIndex"));
+        Assert.That(Sel(), Is.EqualTo(2));
+        Assert.That(c.OnKey(MessengerController.DikTab, false), Is.False, "Tab with the input not focused");
+        Assert.That(Sel(), Is.EqualTo(2));
+        c.OnKey(MessengerController.DikReturn, false);                      // focuses the input
+        var seen = new List<int>();
+        for (int i = 0; i < 7; i++) { Assert.That(c.OnKey(MessengerController.DikTab, false), Is.True); seen.Add(Sel()); }
+        Assert.That(seen, Is.EqualTo(new[] { 3, 4, 5, 0, 1, 2, 3 }), "wraps after the last row");
+        // vfunc_93 follows: the command word of a "/" line goes, the rest stays; a line without one is kept
+        h.Set(h.Get(input, "textField"), "text", "/w hello");
+        c.OnKey(MessengerController.DikTab, false);
+        Assert.That(Rt.ToString(h.Get(input, "text")), Is.EqualTo("hello"));
+        Assert.That(Sel(), Is.EqualTo(4));
+        c.OnKey(MessengerController.DikTab, false);
+        Assert.That(Rt.ToString(h.Get(input, "text")), Is.EqualTo("hello"));
+        Assert.That(Sel(), Is.EqualTo(5));
+        Assert.That(sent, Is.Empty, "Tab sends nothing");
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void ChatTabKeySkipsTheSuperRowWithoutASuperChatItem()
+    {
+        // FUN_141a14760: a next row of type 0x10 with no super chat item (FUN_140a5e2e0) selects the world (0xb), or the first
+        // type when the world is hidden. Rows with feature 0x19: super, world, channel, social, party, guild, megaphone.
+        var m = Model();
+        m.FeatureEnabledByName = f => LobbyFeatures.IsEnabled(packs, f);
+        var log = new MessengerBrowser { Model = m };
+        var c = new MessengerController(m.Tables.DefaultMessengers[0], "messengerdialog0.xml", true, log);
+        var h = Load(c, m);
+        var subject = (AsObject)h.Child("m_subject");
+        int Sel() => (int)Rt.ToNumber(h.Get(subject, "selectedIndex"));
+        c.OnKey(MessengerController.DikReturn, false);
+        Assert.That(Sel(), Is.EqualTo(3));
+        var seen = new List<int>();
+        for (int i = 0; i < 5; i++) { c.OnKey(MessengerController.DikTab, false); seen.Add(Sel()); }
+        Assert.That(seen, Is.EqualTo(new[] { 4, 5, 6, 1, 2 }), "past the last row the super row is skipped to the world row");
+        log.HasSuperChatItem = () => true;
+        for (int i = 0; i < 5; i++) c.OnKey(MessengerController.DikTab, false);             // 3 4 5 6 0
+        Assert.That(Sel(), Is.EqualTo(0), "with a super chat item the super row is taken");
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
     public void ClearingTheChatBrowserClearsTheInputHistoryAndTheTargets()
     {
         // FUN_141a23c20 (:3114): m_history and m_itHistory, the whisper target, the talk target, m_1b0 and m_reports go with the log

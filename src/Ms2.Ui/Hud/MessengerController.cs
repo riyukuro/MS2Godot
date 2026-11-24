@@ -38,7 +38,7 @@ public sealed class MessengerController : UiController
     /// <summary>IsTypeHidden (:3614): super chat needs feature 0x19.</summary>
     public const int SuperChatFeature = 0x19;
     /// <summary>DIK codes vfunc_13 (:810) reads.</summary>
-    public const int DikReturn = 0x1c, DikUp = 0x79, DikDown = 0x7e;
+    public const int DikReturn = 0x1c, DikUp = 0x79, DikDown = 0x7e, DikTab = 0xf;
 
     /// <summary>MessengerData::TalkTab: tabName, close, detach, additive and its panel setting (m_panel).</summary>
     public sealed class TalkTab
@@ -551,7 +551,38 @@ public sealed class MessengerController : UiController
         if (escape) return Release();
         if (dik == DikUp && InputFocused) { HistoryKey(true); return true; }
         if (dik == DikDown && InputFocused) { HistoryKey(false); return true; }
+        if (dik == DikTab) return TabKey();
         return false;
+    }
+
+    /// <summary>
+    /// vfunc_13 (:810), Tab (0xf) after Return, Escape, Up and Down: with the input not focused it is not used. With it
+    /// focused, the client first completes the slash command popup's first match (m_strLastWhisper, set by vfunc_74 :4116 /
+    /// :4177 from the debug command table); that popup is not ported, so the string is always empty here, and Tab goes on to
+    /// FUN_141a14760 (:1958): the next target.
+    /// </summary>
+    bool TabKey()
+    {
+        if (textInput == null || !InputFocused) return false;
+        NextTarget();
+        return true;
+    }
+
+    /// <summary>
+    /// FUN_141a14760 (:1958): the target list's next row, the first after the last (rows counted by menuRowCount, at most
+    /// eight); the super chat row without a super chat item (<see cref="MessengerBrowser.HasSuperChatItem"/>) is skipped to
+    /// the world row, or to the first type when the world is hidden; then SelectSubject (:1946).
+    /// </summary>
+    void NextTarget()
+    {
+        if (subject == null) return;
+        uint count = (uint)Rt.ToNumber(Host.Get(subject, "menuRowCount"));
+        uint next = (uint)Rt.ToNumber(Host.Get(subject, "selectedIndex")) + 1;
+        if (next >= count) next = 0;
+        int type = TypeAt((int)next);
+        if (type == Super && !Browser.HasSuperChatItem())
+            type = IsTypeHidden(World) ? TypeAt(FirstSubjectIndex()) : World;
+        SelectSubject(type);
     }
 
     /// <summary>

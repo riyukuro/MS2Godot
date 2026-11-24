@@ -548,6 +548,9 @@ public sealed class MessengerBrowser
     /// <summary>The function name of the local player's selected super chat item (MyPC FUN_1416639e0, then the item
     /// data's function.name); "" without one. STILL-OPEN: the selection is not modelled.</summary>
     public Func<string> SuperChatItemFunction = () => "";
+    /// <summary>Whether the local player has a super chat item (MyPC FUN_1416639e0 -> Unk_Inventory::FUN_140a5e2e0 finds it
+    /// in the bag); Tab skips the super row without one. STILL-OPEN: the selection is not modelled, so none.</summary>
+    public Func<bool> HasSuperChatItem = () => false;
     /// <summary>DAT_143ab2914, the local player's GM level (FUN_140930150, scenestategame.cpp:5854); 0 by default.</summary>
     public Func<int> GmLevel = () => 0;
     /// <summary>ExecuteEmotionCommand(text): an emotion's slash command ran. STILL-OPEN: not ported, so none.</summary>
