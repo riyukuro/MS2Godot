@@ -13,6 +13,12 @@ namespace Ms2.Formats.World;
 /// <para>Read are the attributes the cube lock check uses (filter, categoryIndex, trophyID, trophyLevel, interiorLevel,
 /// setItemID) and the price table's money type and price. Left out: categoryTag, doNotInstallBlueprint and the price
 /// table's ugcHousingBuy (ItemHousing hasPrice), which nothing ported reads.</para>
+/// <para>Data without table/housing.xml that keeps one file per item (GMS2, <see cref="PerItemFiles"/>): the row is the
+/// &lt;housing&gt; of the environment the client picks (FeatureElements.SelectEnvironment) in the item's own file, read with
+/// the same attributes and defaults when the item is first asked for. INFERRED from the data (the GMS2 client's item reader
+/// is packed, so unread): every GMS2 item file has one &lt;housing&gt;; of the 2171 ids both data sets have, 2014 carry the
+/// KMS row's values, the rest differ in categoryIndex (148) or filter (9), and of the 34894 GMS2-only ids all but one hold
+/// the defaults.</para>
 /// </summary>
 public sealed class HousingTable
 {
@@ -43,6 +49,10 @@ public sealed class HousingTable
 
     readonly Dictionary<int, Row> rows = new();
     readonly Dictionary<uint, Price> prices = new();
+    /// <summary>The per-item data's pack set (null with a housing table), its index (built on first use) and the rows read.</summary>
+    readonly PackSet perItemPacks;
+    Dictionary<int, string> perItemIndex;
+    readonly Dictionary<int, Row> perItemRows = new();
 
     public const string HousingFile = "housing.xml";
     /// <summary>CPriceTable::Load (@0x140738ba0, pricetable.cpp:53-62): the housing prices from these two files, in order.</summary>
@@ -60,18 +70,45 @@ public sealed class HousingTable
         var priceDocs = new List<XDocument>();
         foreach (var file in PriceFiles)
             if (EntryOf(packs, file) is { } e) priceDocs.Add(PackXml.Parse(packs.Read("Xml", e)));
-        Load(EntryOf(packs, HousingFile) is { } h ? PackXml.Parse(packs.Read("Xml", h)) : null, priceDocs);
+        var h = EntryOf(packs, HousingFile);
+        Load(h != null ? PackXml.Parse(packs.Read("Xml", h)) : null, priceDocs);
+        if (h == null) perItemPacks = packs;
     }
 
     /// <summary>The table from the xml itself (tests): the housing file and the price files in load order.</summary>
     public HousingTable(XDocument housing, params XDocument[] priceFiles) => Load(housing, priceFiles);
 
-    public int Count => rows.Count;
-    /// <summary>Every row, in no set order.</summary>
-    public IEnumerable<Row> Rows => rows.Values;
+    /// <summary>The number of <see cref="Rows"/>.</summary>
+    public int Count => perItemPacks == null ? rows.Count : Rows.Count();
+    /// <summary>Every row, in no set order. Per-item data: every item file's row, reading the files not read yet (only
+    /// tests and tools enumerate; the game asks by id).</summary>
+    public IEnumerable<Row> Rows
+    {
+        get
+        {
+            if (perItemPacks == null) return rows.Values;
+            lock (perItemRows) perItemIndex ??= PerItemFiles.Index(perItemPacks);
+            return perItemIndex.Keys.Select(Get).Where(r => r != null).ToList();
+        }
+    }
 
     /// <summary>CItemDataTable::GetHousing: the item's row, null when it has none.</summary>
-    public Row Get(int itemId) => rows.TryGetValue(itemId, out var r) ? r : null;
+    public Row Get(int itemId)
+    {
+        Row r;
+        if (perItemPacks == null) return rows.TryGetValue(itemId, out r) ? r : null;
+        lock (perItemRows)
+        {
+            if (perItemRows.TryGetValue(itemId, out r)) return r;   // null: read, no row
+            perItemIndex ??= PerItemFiles.Index(perItemPacks);
+            if (perItemIndex.TryGetValue(itemId, out var entry)
+                && PackXml.Parse(perItemPacks.Read("Xml", entry))?.Root is { } root
+                && Ms2.Ui.FeatureElements.SelectEnvironment(perItemPacks, root)?.Element("housing") is { } e)
+                r = RowOf(itemId, e);
+            perItemRows[itemId] = r;
+            return r;
+        }
+    }
 
     /// <summary>CPriceTable::GetHousing's row for an id, null when the price table has none.</summary>
     public Price? PriceOf(uint id) => prices.TryGetValue(id, out var p) ? p : null;
@@ -92,22 +129,27 @@ public sealed class HousingTable
         foreach (var e in hroot.Elements("housing"))
         {
             int id = (int)UInt(e, "id", 0);
-            var p = PriceOf((uint)id);
-            var row = new Row
-            {
-                ItemId = id,
-                Filter = Int(e, "filter", 100),
-                CategoryIndex = Int(e, "categoryIndex", 10000),
-                TrophyId = UInt(e, "trophyID", 0),
-                TrophyLevel = UInt(e, "trophyLevel", 1),
-                InteriorLevel = (ushort)UInt(e, "interiorLevel", 1),
-                MoneyType = p?.MoneyType ?? 1,
-                Price = p?.DefaultPrice ?? 0,
-                SetItemId = UInt(e, "setItemID", 0),
-            };
             // std::map::insert: the first row of an id stays
-            rows.TryAdd(id, row);
+            rows.TryAdd(id, RowOf(id, e));
         }
+    }
+
+    /// <summary>ItemHousing::LoadElement on one &lt;housing&gt; element, with the price table's money type and price.</summary>
+    Row RowOf(int id, XElement e)
+    {
+        var p = PriceOf((uint)id);
+        return new Row
+        {
+            ItemId = id,
+            Filter = Int(e, "filter", 100),
+            CategoryIndex = Int(e, "categoryIndex", 10000),
+            TrophyId = UInt(e, "trophyID", 0),
+            TrophyLevel = UInt(e, "trophyLevel", 1),
+            InteriorLevel = (ushort)UInt(e, "interiorLevel", 1),
+            MoneyType = p?.MoneyType ?? 1,
+            Price = p?.DefaultPrice ?? 0,
+            SetItemId = UInt(e, "setItemID", 0),
+        };
     }
 
     static int Int(XElement e, string a, int keep) =>

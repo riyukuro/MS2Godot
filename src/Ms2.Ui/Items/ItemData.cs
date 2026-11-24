@@ -561,19 +561,9 @@ public sealed class ItemDataTable
         return d;
     }
 
-    /// <summary>id -> entry for every item/.../&lt;id&gt;.xml, empty when the names hold itemdata/ files.</summary>
-    internal static Dictionary<int, string> PerItemIndex(IEnumerable<string> names)
-    {
-        var index = new Dictionary<int, string>();
-        if (names.Any(n => n.StartsWith("itemdata/", StringComparison.Ordinal))) return index;
-        foreach (var n in names)
-        {
-            if (!n.StartsWith("item/", StringComparison.Ordinal) || !n.EndsWith(".xml", StringComparison.Ordinal)) continue;
-            int slash = n.LastIndexOf('/');
-            if (int.TryParse(n.AsSpan(slash + 1, n.Length - slash - 5), NumberStyles.None, CultureInfo.InvariantCulture, out int i)) index.TryAdd(i, n);
-        }
-        return index;
-    }
+    /// <summary><see cref="PerItemFiles.Index(IEnumerable{string})"/>: id -> entry for every item/.../&lt;id&gt;.xml, empty when the
+    /// names hold itemdata/ files.</summary>
+    internal static Dictionary<int, string> PerItemIndex(IEnumerable<string> names) => PerItemFiles.Index(names);
 
     internal int PerItemIndexCount => perItemIndex?.Count ?? 0;
     Dictionary<int, string> perItemIndex;

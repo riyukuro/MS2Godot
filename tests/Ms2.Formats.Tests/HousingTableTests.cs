@@ -67,13 +67,55 @@ public class HousingTableTests
         var data = System.Environment.GetEnvironmentVariable("MS2_DATA");
         if (string.IsNullOrEmpty(data) || !System.IO.Directory.Exists(data)) Assert.Ignore("MS2_DATA not set");
         using var packs = new PackSet(data);
-        Assert.That(HousingTable.EntryOf(packs, HousingTable.HousingFile), Is.Not.Null);
+        // the KMS data's housing table, or (GMS2) one file per item with its own <housing>
+        Assert.That(HousingTable.EntryOf(packs, HousingTable.HousingFile) != null || PerItemFiles.Index(packs).Count > 0, Is.True);
         foreach (var f in HousingTable.PriceFiles) Assert.That(HousingTable.EntryOf(packs, f), Is.Not.Null, f);
         var t = new HousingTable(packs);
-        Assert.That(t.Count, Is.GreaterThan(0));
         var priced = PackXml.Parse(packs.Read("Xml", HousingTable.EntryOf(packs, HousingTable.PriceFiles[1]))).Root!.Elements("key")
             .Select(k => uint.Parse((string)k.Attribute("id")!)).First(id => t.Get((int)id) != null);
         Assert.That(t.PriceOf(priced), Is.Not.Null);
         Assert.That(t.Get((int)priced).MoneyType, Is.EqualTo(t.PriceOf(priced)!.Value.MoneyType));
+        Assert.That(t.Count, Is.GreaterThan(0));
+    }
+
+    /// <summary>
+    /// The GMS2 data has no table/housing.xml; each item/&lt;a&gt;/&lt;bb&gt;/&lt;id&gt;.xml holds a &lt;housing&gt; in its environment.
+    /// Every item file's row is that element's (with the defaults for a missing attribute) and its price row's money type
+    /// and price; an id without a file has none. Before, the table was empty on this data.
+    /// </summary>
+    [Test]
+    public void EveryGms2ItemFileGivesItsHousingRow()
+    {
+        var data = System.Environment.GetEnvironmentVariable("MS2_GMS2_DATA");
+        if (string.IsNullOrEmpty(data) || !System.IO.Directory.Exists(data)) Assert.Ignore("MS2_GMS2_DATA not set");
+        using var packs = new PackSet(data);
+        Assert.That(HousingTable.EntryOf(packs, HousingTable.HousingFile), Is.Null, "the GMS2 data has no housing table");
+        var t = new HousingTable(packs);
+        var index = PerItemFiles.Index(packs);
+        Assert.That(index.Count, Is.GreaterThan(30000));
+        int rows = 0, notDefault = 0, priced = 0;
+        foreach (var (id, entry) in index)
+        {
+            var root = PackXml.Parse(packs.Read("Xml", entry)).Root!;
+            var h = Ms2.Ui.FeatureElements.SelectEnvironment(packs, root)?.Element("housing");
+            var r = t.Get(id);
+            if (h == null) { Assert.That(r, Is.Null, $"item {id}"); continue; }
+            rows++;
+            Assert.That(r, Is.Not.Null, $"item {id}");
+            int I(string a, int keep) => int.TryParse((string)h.Attribute(a), out int v) ? v : keep;
+            Assert.That((r.ItemId, r.Filter, r.CategoryIndex, (int)r.TrophyId, (int)r.TrophyLevel, (int)r.InteriorLevel),
+                Is.EqualTo((id, I("filter", 100), I("categoryIndex", 10000), I("trophyID", 0), I("trophyLevel", 1), I("interiorLevel", 1))),
+                $"item {id}");
+            var p = t.PriceOf((uint)id);
+            Assert.That((r.MoneyType, r.Price), Is.EqualTo((p?.MoneyType ?? 1, p?.DefaultPrice ?? 0L)), $"item {id}");
+            if (p != null) priced++;
+            if (r.CategoryIndex != 10000 || r.Filter != 100) notDefault++;
+        }
+        TestContext.Out.WriteLine($"{index.Count} item files, {rows} housing rows, {notDefault} not the default category, {priced} priced");
+        Assert.That(rows, Is.GreaterThan(30000));
+        Assert.That(notDefault, Is.GreaterThan(1000), "the install items' own categories");
+        Assert.That(priced, Is.GreaterThan(0));
+        Assert.That(t.Count, Is.EqualTo(rows));
+        Assert.That(t.Get(int.MaxValue), Is.Null, "no file, no row");
     }
 }
