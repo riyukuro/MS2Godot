@@ -681,6 +681,15 @@ public sealed partial class RemoteLayer : Node3D
                     GD.Print($"live: other player {r.Name} emotion state {s:x} sub {pc.States.Sub:x}");
             };
         pc.States.DeadLeft = pc.LeaveDead;
+        // StateCoupleEmotion: the partner (any PC, the own one too), the genders, the row, the table and the path nifs
+        pc.CoupleObjectId = r.ObjectId;
+        pc.CoupleGender = r.Gender;
+        pc.CouplePartnerOf = AnyCouplePartner;
+        pc.CoupleGenderOf = AnyGender;
+        pc.CoupleSkillRow = id => Ms2.Ui.GameTables.Shared(packs, GameOptions.StringLanguage).Skills.GetSkillData(id);
+        pc.CoupleTable = () => Ms2.Ui.GameTables.Shared(packs, GameOptions.StringLanguage).CoupleEmotions;
+        pc.CouplePathLoader = CouplePathLoader;
+        pc.HookCouple();
         HookMagics(r);
         pc.Spawn();
         // PC::vfunc_10 (a hurt spawn) and OnAddUser's SetEmotion of the packet's emotion byte (scenestategame.cpp:11188,

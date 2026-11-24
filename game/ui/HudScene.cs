@@ -278,6 +278,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchItemMerge = null;
         unwatchPrestige?.Invoke();
         unwatchPrestige = null;
+        unwatchCouple?.Invoke();
+        unwatchCouple = null;
         unwatchCharacterAbility?.Invoke();
         unwatchCharacterAbility = null;
         unwatchChangeJob?.Invoke();
@@ -445,6 +447,7 @@ public partial class HudScene : Node, IUiStageHost
         EventWidgets(uiRoot);
         LearningQuest();
         if (unwatchPrestige == null) WatchPrestige();
+        if (unwatchCouple == null) WatchCouple();
         CharacterAbility();
         if (unwatchMeso == null) WatchMeso();
         WatchGlobalPortal();

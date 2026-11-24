@@ -99,13 +99,14 @@ public class RemotePcStatesTests {
     // the default field camera's Euler rotation (CameraMathTests: hangle 45, vangle 30), its flat view direction (1, 1)/sqrt 2
     static readonly Vector3 Cam = new(90, 45, -40);
 
-    static SyncRecord Rec(int state, int sub, Vector3 pos, Vector2 move, float timeS, float yaw = 0, Vector3? cam = null, int skill = 0, int hold = 0, string holdNode = null) {
+    static SyncRecord Rec(int state, int sub, Vector3 pos, Vector2 move, float timeS, float yaw = 0, Vector3? cam = null, int skill = 0, int hold = 0, string holdNode = null, byte[] tail = null) {
         var s = new StateSync {
             State = (byte) state, SubState = (byte) sub, Position = new Vector3S((short) pos.X, (short) pos.Y, (short) pos.Z),
             Rotation = (short) (yaw * 10), Rotation2 = (short) (yaw * 10), Unknown1 = 2, Unknown3 = (short) (timeS * 1000), SyncNumber = 0x7fffffff,
         };
         if (skill != 0) { s.Flags |= StateSync.Flag.Flag1; s.Flag1Value = skill; }   // m_n64, optional bit 0
         if (hold != 0) { s.Flags |= StateSync.Flag.Flag6; s.Flag6Value = hold; s.Flag6Text = holdNode; }   // m_n90 / m_str98, optional bit 5
+        if (tail != null) s.SpecialTail = tail;                                                            // a special state's fields
         var c = cam ?? Cam;
         s.Speed = new Vector3S((short) c.X, (short) c.Y, (short) c.Z);
         int ax = move.X == -1 ? 0 : move.X == 0 ? 1 : move.X == 1 ? 2 : -1, ay = move.Y == -1 ? 0 : move.Y == 0 ? 1 : move.Y == 1 ? 2 : -1;
@@ -1273,6 +1274,56 @@ public class RemotePcStatesTests {
         e.Seqs["Emotion_Hello_Bore_A"] = (0.5, false);
         e.Seqs["Emotion_Bow_A"] = (0.8, false);
         return e;
+    }
+
+    [Test] public void ACoupleRecordKeepsItsEmotionAndTail() {
+        // StateCoupleEmotionData::vfunc_2: the emotion is the record's m_n64, the StateSyncObjectCoupleEmotion fields
+        // (requester i32, partner i32, animation u8, end vec3, start vec3) follow the base record
+        var sm = new RemotePcStates(new Body());
+        sm.Spawn(); Run(sm, 0.5f);
+        Assert.That(sm.CoupleAni, Is.EqualTo(-1));
+        var tail = new byte[4 + 4 + 1 + 24];
+        tail[8] = 2;
+        // through the wire: the record's reader keeps the tail raw and the client record carries it
+        sm.Push(Rec(RemotePcStates.StateCoupleEmotion, 0x96, Vector3.Zero, Vector2.Zero, 0f, skill: 90220001, tail: tail));
+        Run(sm, 0.1f);
+        Assert.That((sm.Cur, sm.Sub), Is.EqualTo((0x3a, 0x96)));
+        Assert.That((sm.CoupleEmotion, sm.CoupleAni), Is.EqualTo((90220001, 2)));
+        Assert.That(sm.CoupleTail, Is.EqualTo(tail));
+        sm.CoupleAniOf = () => 3;
+        Assert.That(sm.CoupleAni, Is.EqualTo(3), "the body's index once it plays");
+    }
+
+    [Test] public void ACoupleRecordOfAnotherSubEntersTheStateAgain() {
+        // StateCoupleEmotion::vfunc_28 (@0x140b81f70): a record whose sub differs forces the state (vfunc_5, then vfunc_4
+        // with the record's data); the same sub only keeps the state. Its body runs each frame; the 0x95 to 0x96 step
+        // (vfunc_3's FUN_14166cc40) is the sub alone.
+        var sm = new RemotePcStates(new Body());
+        var calls = new List<string>();
+        sm.CoupleEntered = () => calls.Add($"enter {sm.Sub:x}");
+        sm.CoupleLeft = () => calls.Add("leave");
+        int frames = 0;
+        sm.CoupleFrame = _ => frames++;
+        sm.Spawn(); Run(sm, 0.5f);
+        var tail = new byte[33];
+        Rec2(0x93); Run(sm, 0.1f);
+        Rec2(0x93); Run(sm, 0.1f);
+        Assert.That(calls, Is.EqualTo(new[] { "enter 93" }), "the same sub keeps the state");
+        Assert.That(frames, Is.GreaterThan(0));
+        Rec2(0x95); Run(sm, 0.1f);
+        Assert.That(calls, Is.EqualTo(new[] { "enter 93", "leave", "enter 95" }));
+        Assert.That(sm.SetCoupleSub(0x96), Is.True);
+        Assert.That(sm.SetCoupleSub(0x96), Is.False, "no change");
+        Assert.That(sm.Sub, Is.EqualTo(0x96));
+        Assert.That(calls, Has.Count.EqualTo(3), "the sub alone does not enter again");
+        sm.Push(Rec(RemotePcStates.StateIdle, 1, Vector3.Zero, Vector2.Zero, 0f)); Run(sm, 0.1f);
+        Assert.That(calls[^1], Is.EqualTo("leave"));
+        Assert.That(sm.SetCoupleSub(0x95), Is.False, "out of the state");
+
+        void Rec2(int sub)
+        {
+            sm.Push(Rec(RemotePcStates.StateCoupleEmotion, sub, Vector3.Zero, Vector2.Zero, 0f, skill: 90220001, tail: tail));
+        }
     }
 
     [Test] public void AnEmotionRecordPlaysTheAnimThenTheIdleAnimAndItsBoreSubs() {

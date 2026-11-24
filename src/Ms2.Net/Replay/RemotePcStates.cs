@@ -178,7 +178,30 @@ public sealed class RemotePcStates
 {
     public const int StateNone = 0, StateIdle = 1, StateWalk = 2, StateLand = 4, StateFall = 5, StateJump = 6,
         StateSkill = 0x10, StateHold = 0x20, StateRide = 0x21, StateSwim = 0x1b, StateDead = 0xc, StateHit = 0xd,
-        StateStun = 0x12, StateEmotion = 0xb, StateEmotionIdle = 0xf;
+        StateStun = 0x12, StateEmotion = 0xb, StateEmotionIdle = 0xf, StateCoupleEmotion = 0x3a;
+
+    /// <summary>The last StateCoupleEmotion record's emotion (m_n64) and its raw StateSyncObjectCoupleEmotion fields
+    /// (Ms2.Ui's CoupleEmotionState.ReadTail reads them); kept until the next such record.</summary>
+    public int CoupleEmotion { get; private set; }
+    public byte[] CoupleTail { get; private set; } = Array.Empty<byte>();
+    /// <summary>The couple state's m_nAni: the body's (<see cref="CoupleAniOf"/>) while it plays one, else the record
+    /// tail's u8 after the two ids; -1 without either.</summary>
+    public int CoupleAni => CoupleAniOf?.Invoke() is int a and >= 0 ? a : CoupleTail.Length > 8 ? CoupleTail[8] : -1;
+    /// <summary>The game's StateCoupleEmotion body (statecoupleemotion.cpp, which needs the path nif): vfunc_4 at the entry,
+    /// vfunc_5 at the exit, vfunc_3 and vfunc_9 each frame (with the frame's seconds), and its m_nAni (-1 for none).</summary>
+    public Action CoupleEntered, CoupleLeft;
+    public Action<float> CoupleFrame;
+    public Func<int> CoupleAniOf;
+
+    /// <summary>FUN_14166cc40 on the couple state (vfunc_3's 0x95 to 0x96): the sub, and true when it changed (the caller runs
+    /// StateCoupleEmotion::vfunc_2's first animation).</summary>
+    public bool SetCoupleSub(int sub)
+    {
+        if (Cur != StateCoupleEmotion || subs[Cur] == sub) return false;
+        subs[Cur] = sub;
+        NotifyWeaponKey();
+        return true;
+    }
 
     // action ids (ActionType, actioncontainer.cpp) the ported states play through vfunc_123
     public const int ActIdle = 0, ActBattleIdle = 1, ActJumpDown = 2, ActJumpLand = 3, ActJumpUp = 4, ActJumpFall = 5,
@@ -817,6 +840,9 @@ public sealed class RemotePcStates
         if (r.State == StateHold) { pendingHoldId = r.HoldTargetId; pendingHoldNode = r.HoldNode; }
         // StateEmotionData::vfunc_2 (@0x1417c3850) / StateEmotionIdleData::vfunc_2 (@0x1417c5bb0): m_nEmotion = m_n64
         if (r.State is StateEmotion or StateEmotionIdle) pendingEmotion = r.SkillId;
+        // StateCoupleEmotionData::vfunc_2 (@0x140b7fbe0, statecoupleemotion.cpp:190-205): the emotion (m_n64) and the
+        // StateSyncObjectCoupleEmotion fields (requester, partner, animation, end angles, start)
+        if (r.State == StateCoupleEmotion) { CoupleEmotion = r.SkillId; CoupleTail = r.SpecialTail; }
         // PCBase::vfunc_59 (pcbase.cpp:1098-1112): ready (m_unk_b4) and not riding (state 0x21 hands it to the ridee)
         ChangeState(r.State, r.Sub, force);
     }
@@ -855,10 +881,11 @@ public sealed class RemotePcStates
     public int Snaps { get; private set; }
     public float LastSnap { get; private set; }
 
-    /// <summary>vfunc_28 of the current state (State::vfunc_28 is false; StateJump's is m_n10 != the record's sub,
-    /// statejump.cpp:342-345; StateEmotion's (@0x1417c4270, stateemotionidle.cpp:339-344) no data or another emotion than
+    /// <summary>vfunc_28 of the current state (State::vfunc_28 is false; StateJump's and StateCoupleEmotion's are m_n10 !=
+    /// the record's sub, statejump.cpp:342-345, statecoupleemotion.cpp:756-759; StateEmotion's (@0x1417c4270, stateemotionidle.cpp:339-344) no data or another emotion than
     /// the record's m_n64).</summary>
     bool StateForces(SyncRecord r) => Cur == StateJump ? subs[StateJump] != r.Sub
+        : Cur == StateCoupleEmotion ? subs[StateCoupleEmotion] != r.Sub    // StateCoupleEmotion::vfunc_28 @0x140b81f70
         : Cur == StateEmotion && (!emotionData || emotionId != r.SkillId);
 
     /// <summary>
@@ -1167,6 +1194,10 @@ public sealed class RemotePcStates
                 pc.AnimSpeed = 1f;
                 EmotionIdleEnter();
                 break;
+            case StateCoupleEmotion:
+                pc.AnimSpeed = 1f;
+                CoupleEntered?.Invoke();
+                break;
         }
     }
 
@@ -1210,6 +1241,9 @@ public sealed class RemotePcStates
                 emotionLeft = -1;
                 Emotion?.FaceRest();
                 Emotion?.Offsets(0, 0);
+                break;
+            case StateCoupleEmotion:
+                CoupleLeft?.Invoke();                         // StateCoupleEmotion::vfunc_5 @0x140b80d10
                 break;
             case StateHold:
                 // StateHold::vfunc_5 (@0x1417cbe70, stateholddata.cpp:188-201): StopJump, the shadow back on
@@ -1345,6 +1379,7 @@ public sealed class RemotePcStates
                 if (EmotionSequenceEnded(dt)) EmotionEndOfSequence();
                 break;
             case StateEmotionIdle: EmotionIdleFrame(dt); break;
+            case StateCoupleEmotion: CoupleFrame?.Invoke(dt); break;
             case StateSwim:
                 // StateSwim::vfunc_9 (@0x1417fac90, stateswim.cpp:228-263), no ridee: StateSwim::vfunc_10
                 // (@0x1417fafb0, stateswim.cpp:266-270) sets m_f938 and PlayAnimation passes FUN_1416713c0().

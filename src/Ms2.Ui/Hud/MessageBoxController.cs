@@ -255,6 +255,10 @@ public sealed class MessageBoxController : UiController
     /// <summary>CGuildManager::SendGuildMode5(accept): HandleGuildinviteButton's answer to the invite received.</summary>
     public Action<bool> AnswerGuildInvite;
 
+    /// <summary>HandleCoupleEmotionButton @0x1419ff870 (uimessagebox.cpp:2273): the button, the box's emotion (argument 0,
+    /// FUN_141a02e90) and the asker's character id (argument 1, FUN_141a02f10); CoupleEmotionInbound.Answer takes them.</summary>
+    public Action<int, uint, long> AnswerCoupleEmotion;
+
     /// <summary>CNetworkService::SendRecallUserReply(accept) (networkservice.cpp:522): HandleRecallconfirmButton's answer, button 0 accepts.</summary>
     public Action<bool> AnswerRecallUser;
     /// <summary>FUN_140710590 of HandleRecallscrollconfirmButton's RecallScroll (<see cref="RecallScrollConfirm.Accept"/>).</summary>
@@ -494,7 +498,7 @@ public sealed class MessageBoxController : UiController
     }
 
     /// <summary>HandlePlainTag @0x1419f9ba0 (uimessagebox.cpp:899), its "gameexit", "useBindFuncItem", "useBindEquipItem",
-    /// "useBindGemEquipItem" (:1052-1064), "learn_emotion" (:983-987) and "use_function_item" (:973-977) branches; FUN_1419fa910 ("tag,arg") and the other plain tags are reported as
+    /// "useBindGemEquipItem" (:1052-1064), "learn_emotion" (:983-987), "use_function_item" (:973-977) and "coupleEmotion" (:1067-1071) branches; FUN_1419fa910 ("tag,arg") and the other plain tags are reported as
     /// unported, except on a box with a listener: its tags (the slot menu's "expelMember:name", "changeChief:name") are the
     /// listener's, which OnClick has already called, and no plain tag handler takes them.</summary>
     internal bool HandlePlainTag(int button, string tag)
@@ -523,6 +527,8 @@ public sealed class MessageBoxController : UiController
             return HandleRequestTradeExButton(button);
         if (tag == RecallScrollNotifyController.ConfirmTag)
             return HandleRecallscrollconfirmButton(button);
+        if (tag == CoupleEmotionInviteBox.Tag)                             // s_143af3d28 (uimessagebox.cpp:1067-1071)
+            return HandleCoupleEmotionButton(button);
         if (tag == "sell")
             return HandleSellButton(button, 1);
         if (tag == "drop")
@@ -594,6 +600,14 @@ public sealed class MessageBoxController : UiController
     {
         if (data == null) return true;
         if (button == 0) SendRecallScroll?.Invoke(RecallScrollConfirm.Accept(data));
+        return true;
+    }
+
+    /// <summary>HandleCoupleEmotionButton @0x1419ff870: without the box's data 1; else its emotion and asker to the answer; 1.</summary>
+    bool HandleCoupleEmotionButton(int button)
+    {
+        if (data == null) return true;
+        AnswerCoupleEmotion?.Invoke(button, data.ArgUInt(0, 0), data.ArgLong(1, 0));
         return true;
     }
 

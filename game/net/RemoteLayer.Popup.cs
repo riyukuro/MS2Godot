@@ -40,4 +40,40 @@ public sealed partial class RemoteLayer
         }
         return null;
     }
+
+    /// <summary>WorldService::FindPCById for the couple state: the other player of an object id as
+    /// <see cref="CouplePeerOf"/> gives it; null when none.</summary>
+    public Ms2.Ui.Skills.CouplePeer CouplePeerByObject(int objectId) =>
+        users.TryGetValue(objectId, out var r) && r.Pc != null
+            ? new Ms2.Ui.Skills.CouplePeer(r.ObjectId, r.CharacterId, r.Name ?? "", r.Pc.Position, new System.Numerics.Vector3(0f, 0f, r.Pc.RotationZ))
+            : null;
+
+    /// <summary>What the own couple state reads of its partner (StateCoupleEmotion's GetPartner: the feet, GetCurStateId,
+    /// FUN_14166cc80 the sub, the partner state's GetAniIndex); null when the PC is not in the field.</summary>
+    public CouplePartnerView? CouplePartnerOf(int objectId) =>
+        users.TryGetValue(objectId, out var r) && r.Pc != null
+            ? new CouplePartnerView(r.Pc.Position, r.Pc.States.Cur, r.Pc.States.Sub, r.Pc.States.CoupleAni)
+            : null;
+
+    /// <summary>The other player's gender (CoupleEmotionAnimInfo::Init's partner gender), -1 when none.</summary>
+    public int GenderOf(int objectId) => users.TryGetValue(objectId, out var r) ? r.Gender : -1;
+
+    /// <summary>The couple state's partner of any PC: the own PC's view when the id is the own object id.</summary>
+    public CouplePartnerView? AnyCouplePartner(int objectId)
+    {
+        if (objectId != 0 && objectId == Tracker.SelfObjectId)
+            return LiveSession.Instance?.OwnPlayer is { } me && IsInstanceValid(me) ? me.CoupleView : null;
+        return CouplePartnerOf(objectId);
+    }
+
+    /// <summary>PC::GetGender of any PC by object id, -1 when none.</summary>
+    public int AnyGender(int objectId)
+    {
+        if (objectId != 0 && objectId == Tracker.SelfObjectId)
+            return LiveSession.Instance?.OwnPlayer is { } me && IsInstanceValid(me) ? me.Gender : -1;
+        return GenderOf(objectId);
+    }
+
+    /// <summary>The path nif loader the couple states use (set by the HUD, which holds the nif spec).</summary>
+    public static Func<string, string, string, Ms2.Ui.Skills.CouplePath> CouplePathLoader;
 }

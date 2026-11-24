@@ -469,6 +469,31 @@ public class MessageBoxTests
     }
 
     [Test]
+    public void CoupleEmotionInviteShowsItsBoxAndAnswers()
+    {
+        // OnBuddyEmote mode 0 (networkservice.cpp:1124-1127) and HandleCoupleEmotionButton (uimessagebox.cpp:2273)
+        var answers = new List<(int, uint, long)>();
+        var (h, c) = Load();
+        c.AnswerCoupleEmotion = (b, e, id) => answers.Add((b, e, id));
+        var box = CoupleEmotionInviteBox.Show(90220001, 4002, "Asker", "Hug", 20);
+        h.Player.Tick();
+        Assert.That(c.CurrentBox, Is.SameAs(box));
+        Assert.That((box.Type, box.Extra, box.Listener), Is.EqualTo((1, "coupleEmotion", (IMessageBoxListener)null)));
+        Assert.That((box.Modaless, box.NoInputBlock, box.EnterAllowed), Is.EqualTo((true, true, false)));
+        Assert.That((box.HasTimer, box.Timer.Sec, box.Timer.ShowFormat), Is.EqualTo((true, 20, 1)));
+        Assert.That(box.Args, Is.EqualTo(new[] { "90220001", "4002", "Asker" }));
+        Assert.That(box.ArgString(2, null), Is.EqualTo("Asker"));
+        Assert.That(box.Msg, Does.Contain("Asker").And.Contain("Hug"), "common 0xce5 with the asker and the emotion");
+        TestContext.WriteLine("couple invite: " + box.Msg);
+        Click(h, "m_button1");
+        Assert.That(answers, Is.EqualTo(new[] { (1, 90220001u, 4002L) }));
+        Assert.That(c.IsIdle, Is.True);
+        CoupleEmotionInviteBox.Show(90220001, 4002, "Asker", "Hug", 20);
+        Click(h, "m_button0");
+        Assert.That(answers[1], Is.EqualTo((0, 90220001u, 4002L)), "yes is button 0");
+    }
+
+    [Test]
     public void RecallInviteShowsItsBoxAndAnswers()
     {
         // OnRecallUser (scenestategame.cpp:4733): mode 4 opens the confirm box of common 0x902 once; a second invite while one is

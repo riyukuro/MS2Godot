@@ -48,6 +48,7 @@ public sealed record RideOffSkillRequest(RideOffAction Action) : IOutPacket
             case RideOffTaxi t: w.WriteInt(t.TaxiId); break;
             case RideOffCashCall c: w.WriteInt(c.Value28); w.WriteByte(c.Value2C); w.WriteLong(c.Value30); break;
             case RideOffTakeLR l: w.WriteByte(l.Value28); w.WriteInt(l.Value2C); break;
+            case RideOffCoupleEmotion c: w.WriteInt(c.Value28); w.WriteLong(c.Value30); break;   // vfunc_1 @0x140780a20 (rideonaction.cpp:745-750)
         }
     }
 }

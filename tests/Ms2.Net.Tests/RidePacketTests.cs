@@ -198,5 +198,8 @@ public class RidePacketTests
         Assert.That(Bytes(new RideOffSkillRequest(new RideOffUseGlideItem(0, 0x0102030405060708L, false, 7))),
             Is.EqualTo(new byte[] { 1, 25, 0, 8, 7, 6, 5, 4, 3, 2, 1, 0, 7, 0, 0, 0 }));
         Assert.That(Bytes(new RideOffSkillRequest(new RideOffAction(0, 0))), Is.EqualTo(new byte[] { 1, 0, 0 }));
+        // HandleCoupleEmotionButton's RideOffActionCoupleEmotion(0): type 19, the emotion (i32) and the asker (i64)
+        Assert.That(Bytes(new RideOffSkillRequest(new RideOffCoupleEmotion(0, 0x01020304, 0x0102030405060708L))),
+            Is.EqualTo(new byte[] { 1, 19, 0, 4, 3, 2, 1, 8, 7, 6, 5, 4, 3, 2, 1 }));
     }
 }

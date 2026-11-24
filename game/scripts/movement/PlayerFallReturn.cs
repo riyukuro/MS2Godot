@@ -58,6 +58,7 @@ public partial class Player
         public byte Sub; public int Tick;
         public int HoldId; public string HoldNode;   // StateHoldData::vfunc_1: m_n90 and m_str98
         public int Emotion;                          // StateEmotionData / StateEmotionIdleData::vfunc_1: m_n64
+        public byte[] CoupleTail; public int CoupleAni;   // StateSyncObjectCoupleEmotion's fields (statesyncobject.cpp:294-302)
         public double Made; public float Time; public bool Sent; public int Cell = int.MaxValue;
         public bool InQueue;              // in the queued list until the next Flush
     }
@@ -116,7 +117,7 @@ public partial class Player
     {
         MoveState.Idle => 1, MoveState.Walk => 2, MoveState.Land => 4, MoveState.Fall => 5, MoveState.Jump => 6,
         MoveState.Ladder => 8, MoveState.Rope => 9, MoveState.Dead => 0xc, MoveState.Hit => 0xd, MoveState.Revival => 0x18, MoveState.Dash => 20, MoveState.Swim => 27, MoveState.Climb => 29, MoveState.Hold => 0x20, MoveState.FallDamage => 0x1f, MoveState.TriggerEmotion => 0x35,
-        MoveState.Emotion => 0xb, MoveState.EmotionIdle => 0xf, _ => 1,
+        MoveState.Emotion => 0xb, MoveState.EmotionIdle => 0xf, MoveState.CoupleEmotion => 0x3a, _ => 1,
     };
 
     /// <summary>The state's own sub id (FUN_14166cc80, mypc.cpp:2323): Walk 0x18 (statewalk.cpp:86; the gamepad 0x19 is not modelled), Swim 0x84,
@@ -140,6 +141,7 @@ public partial class Player
             MoveState.Climb => (byte)csub,
             MoveState.Dash => (byte)dsub,
             MoveState.EmotionIdle => EmotionIdleSubId,          // StateEmotionIdle m_n10 (0x6f, 0x70-0x72); StateEmotion's is 0
+            MoveState.CoupleEmotion => (byte)Couple.Sub,        // StateCoupleEmotion m_n10 (0x93-0x96)
             _ => 0,
         };
     }
@@ -235,6 +237,9 @@ public partial class Player
             // adds the target and node, and with the held PC's ridee its feet z replaces the position's
             rec.HoldId = 0; rec.HoldNode = null;
             rec.Emotion = EmotionId;   // StateEmotionData::vfunc_1 (stateemotionidle.cpp:181-185), StateEmotionIdleData's the same (:631-635)
+            // StateCoupleEmotionData::vfunc_1 (statecoupleemotion.cpp:174-186): m_n64 the emotion, and the couple fields
+            rec.CoupleTail = null;
+            if (State == MoveState.CoupleEmotion && Couple.Active) { rec.Emotion = (int)Couple.Emotion; rec.CoupleTail = Couple.SyncTail(); rec.CoupleAni = Couple.Ani; }
             if (State == MoveState.Hold)
             {
                 rec.HoldId = holdTargetId; rec.HoldNode = holdNode;
@@ -268,6 +273,10 @@ public partial class Player
             case MoveState.EmotionIdle:
                 // StateEmotionIdle::vfunc_22 (:843-850): another sub state than the record's (a bore animation picked or ended)
                 return current != null && current.Sub != EmotionIdleSubId;
+            case MoveState.CoupleEmotion:
+                // StateCoupleEmotion::vfunc_22 (statecoupleemotion.cpp:733-753): another sub than the record's, or in 0x96
+                // another animation index
+                return current != null && (current.Sub != (byte)Couple.Sub || Couple.Sub == Ms2.Ui.Skills.CoupleEmotionState.Playing && current.CoupleAni != Couple.Ani);
             case MoveState.Swim:
                 if (Mount != null && syncClock - swimRideTick >= 1.0)
                 {
@@ -351,6 +360,7 @@ public partial class Player
             rec.Flag1Value = HoldSkillId; rec.Flag3Value = 1;
             if (q.HoldId != 0) { rec.Flags |= Ms2.Net.Packets.StateSync.Flag.Flag6; rec.Flag6Value = q.HoldId; rec.Flag6Text = q.HoldNode ?? ""; }
         }
+        if (q.CoupleTail != null) rec.SpecialTail = q.CoupleTail;
         if (q.Emotion != 0)
         {
             // FUN_140836250 sets bit 0 for a non-zero m_n64: the emotion id

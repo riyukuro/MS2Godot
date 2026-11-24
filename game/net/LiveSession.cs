@@ -2188,6 +2188,7 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.SmartPush)) SmartPushReceived?.Invoke(SmartPushMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.GlobalPortal)) GlobalPortalReceived?.Invoke(GlobalPortalPacket.Read(p.Reader()));   // no ExpectEnd: mode 1 leaves its event id unread, as the client
             else if (game.Is(p, Inbound.RecallScroll)) RecallScrollReceived?.Invoke(RecallScrollPacket.Read(p.Reader()));
+            else if (game.Is(p, Inbound.BuddyEmote)) OnBuddyEmote(BuddyEmoteMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.NoticeDialog)) NoticeDialogReceived?.Invoke(NoticeDialogMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.NewsNotification)) NewsNotificationReceived?.Invoke(NewsNotification.Read(p.Reader()));
             else if (game.Is(p, Inbound.UiText))

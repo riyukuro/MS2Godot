@@ -53,6 +53,9 @@ public partial class MessageBoxLayer : CanvasLayer
         return instance;
     }
 
+    /// <summary>HandleCoupleEmotionButton's answer: the HUD's couple host (HudScene.AnswerCoupleEmotion) while it watches.</summary>
+    public static Action<int, uint, long> CoupleEmotionAnswer;
+
     void Build(UiAssets assets, Window root)
     {
         if (!UiCode.Load(Settings.DataDir)) GD.PushWarning("UI code is not built for this data: the message box runs interpreted");
@@ -76,6 +79,7 @@ public partial class MessageBoxLayer : CanvasLayer
         controller.AnswerGuildInvite = a => Ms2Godot.Net.LiveSession.Instance?.Guilds.AnswerInvite(a);
         controller.AnswerRecallUser = a => Ms2Godot.Net.LiveSession.Instance?.AnswerRecallUser(a);
         controller.SendRecallScroll = p => Ms2Godot.Net.LiveSession.Instance?.SendTalk(p);   // HandleRecallscrollconfirmButton
+        controller.AnswerCoupleEmotion = (b, e, id) => CoupleEmotionAnswer?.Invoke(b, e, id);
         controller.UnportedTag += (b, t) => GD.Print($"message box: button {b} of tag {t}: its handler is not ported");
         movie = new MovieDialog(assets, controller, new UiModel(GameTables.Shared(assets.Packs, assets.Language)), ScreenMode.PixelSize(root));
         AddChild(movie);

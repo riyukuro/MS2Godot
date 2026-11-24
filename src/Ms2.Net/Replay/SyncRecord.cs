@@ -44,6 +44,9 @@ public sealed class SyncRecord
     public string HoldNode = "";
     /// <summary>m_nA0 (+0xa0): the cube cell, 0x7fffffff when unset.</summary>
     public int CubeCell = 0x7fffffff;
+    /// <summary>The special state's fields after the base record (StateSyncObjectCoupleEmotion and the others,
+    /// <see cref="StateSync.SpecialTail"/>), raw; empty for other states.</summary>
+    public byte[] SpecialTail = Array.Empty<byte>();
     /// <summary>m_nA8 (+0xa8): set once the queue has played the record.</summary>
     public bool Fired;
 
@@ -64,6 +67,7 @@ public sealed class SyncRecord
             TargetYaw = s.Rotation2 / 10.0f,
             Time = s.Unknown3 / 1000.0f,                        // ReadShortDivScaled(1000): (float)int16 / 1000 (packet.cpp:583)
             CubeCell = s.SyncNumber,
+            SpecialTail = s.SpecialTail ?? Array.Empty<byte>(),
         };
         if (s.Flags.HasFlag(StateSync.Flag.Flag1)) r.SkillId = s.Flag1Value;
         if (profile.IsGms2)

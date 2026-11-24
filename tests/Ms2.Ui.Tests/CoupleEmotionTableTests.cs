@@ -117,6 +117,8 @@ public class CoupleEmotionTableTests
         var noCenter = new SortedSet<string>(StringComparer.Ordinal);
         var noSeq = new SortedSet<string>(StringComparer.Ordinal);
         var nifs = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        var placed = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        var noPath = new SortedSet<string>(StringComparer.Ordinal);
         int sets = 0, anis = 0;
         foreach (var d in rows)
             foreach (var (g1, g2, a) in d.All())
@@ -137,6 +139,20 @@ public class CoupleEmotionTableTests
                     }
                     foreach (var node in new[] { CoupleEmotionTable.NodeA, CoupleEmotionTable.NodeB })
                         if (!names.Contains(node)) noNode.Add($"{nif}:{node}");
+                    if (!placed.ContainsKey(entry))
+                    {
+                        // both actors' Load, and FindPlacement on open ground with nothing in the way
+                        var file = Ms2.Formats.Nif.NifFile.Load(spec, packs.Read("Resource/Model/Path", entry));
+                        bool ok = true;
+                        foreach (var (own, peer) in new[] { (CoupleEmotionTable.NodeA, CoupleEmotionTable.NodeB), (CoupleEmotionTable.NodeB, CoupleEmotionTable.NodeA) })
+                        {
+                            var path = CouplePath.Load(file, own, peer);
+                            ok &= path != null && path.FindPlacement(System.Numerics.Vector3.Zero, System.Numerics.Vector3.Zero, _ => true, (_, _, _) => false, out _, out _, out _)
+                                && path.OwnerPose(System.Numerics.Vector3.Zero, System.Numerics.Vector3.Zero).Pos is var pos && float.IsFinite(pos.X + pos.Y + pos.Z);
+                        }
+                        placed[entry] = ok;
+                        if (!ok) noPath.Add(nif);
+                    }
                     if (!names.Contains(CoupleEmotionTable.CenterNode)) noCenter.Add(nif);
                 }
                 // the body each list plays on: Init gives the request list to "B" (the female when the genders differ)
@@ -153,13 +169,14 @@ public class CoupleEmotionTableTests
         var noRow = couples.Where(s => table.GetData(unchecked((uint)s.Param1)) == null).Select(s => $"{s.Id}:{s.Param1}").ToList();
         TestContext.WriteLine($"{variable}: {rows.Count} rows ({table.InvalidCount} left out by Validate), {sets} sets, {anis} anis, "
             + $"{nifs.Count} nifs read; {couples.Count} couple skills; no nif: {Show(noNif)}; nif without A/B: {Show(noNode)}; "
-            + $"nif without Eff_center: {Show(noCenter)}; no body sequence: {Show(noSeq)}; skill without row: {Show(noRow)}");
+            + $"nif without Eff_center: {Show(noCenter)}; nif CouplePath cannot place: {Show(noPath)}; no body sequence: {Show(noSeq)}; skill without row: {Show(noRow)}");
         Assert.That(rows, Has.Count.GreaterThan(20));
         Assert.That(table.InvalidCount, Is.EqualTo(0));
         Assert.That(couples, Has.Count.GreaterThan(20));
         Assert.That(noRow, Is.Empty);
         Assert.That(noNif, Is.Empty);
         Assert.That(noNode, Is.Empty);
+        Assert.That(noPath, Is.Empty);
         Assert.That(noSeq, Is.Empty);
     }
 
@@ -186,7 +203,7 @@ public class CoupleEmotionTableTests
         Assert.That(differ, Is.Empty);
     }
 
-    static string NifXmlPath()
+    internal static string NifXmlPath()
     {
         var nx = Environment.GetEnvironmentVariable("MS2_NIFXML");
         if (string.IsNullOrEmpty(nx))
