@@ -22,7 +22,7 @@ public sealed class RemoteInvincible
     public void Start(int durationMs, int timerId, uint now, Node3D actor, World.RegionSkills fx, string effect)
     {
         Blink.Start(durationMs, timerId, now);
-        Effect = fx != null && GodotObject.IsInstanceValid(fx) && !string.IsNullOrEmpty(effect) ? fx.SpawnOn(effect, actor) : 0;
+        Effect = fx != null && GodotObject.IsInstanceValid(fx) && !string.IsNullOrEmpty(effect) ? fx.SpawnOn(effect, actor, Ms2.Audio.SoundMusicEffectState.CasterSystem) : 0;   // kind 0 (pc.cpp:3419)
     }
 
     /// <summary>FUN_1416615f0 each frame: the blink's alpha on <paramref name="tree"/>; past the end FUN_141661370(0, 0, 0)

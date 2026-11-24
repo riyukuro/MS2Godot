@@ -96,11 +96,11 @@ void fragment() {
     }
 
     /// <summary>Plays an effect xml at a place: the nif parts show for their duration; sound events play at the place; soundMusic parts follow CSoundMusicEffect's caster-kind gate (m_unk_18 &lt;= 1, default rejected for unknown/remote casters).</summary>
-    public void PlayEffect(string xmlPath, Godot.Vector3 at, float yawRadians, int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
+    public void PlayEffect(string xmlPath, Godot.Vector3 at, float yawRadians, int casterKind)
         => PlayEffect(xmlPath, at, new Basis(Godot.Vector3.Up, yawRadians), casterKind);
 
     /// <summary>The same turned by a full rotation (godot space), as an effect's NiTransform turns it.</summary>
-    public void PlayEffect(string xmlPath, Godot.Vector3 at, Basis rotation, int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
+    public void PlayEffect(string xmlPath, Godot.Vector3 at, Basis rotation, int casterKind)
         => Play(xmlPath, at, rotation, casterKind, null);
 
     /// <summary>

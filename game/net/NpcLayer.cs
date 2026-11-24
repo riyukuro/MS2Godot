@@ -322,6 +322,10 @@ public sealed class NpcLayer
     /// <summary>The live npcs that are not dead, for the talk.</summary>
     public IEnumerable<World.FieldNpcs.Placed> Talkable => inst.Values.Where(x => !x.Dead && x.Talk != null).Select(x => x.Talk);
 
+    /// <summary>The npc's object kind for its effects (CNpc::vfunc_58): 6 for a boss, else 5; 0 for no such npc.</summary>
+    public int CasterKind(int id) =>
+        !inst.TryGetValue(id, out var i) ? 0 : table.Find(i.NpcId)?.IsBoss == true ? Ms2.Audio.SoundMusicEffectState.CasterBoss : Ms2.Audio.SoundMusicEffectState.CasterNpc;
+
     public (Node3D root, float height, float yaw)? Info(int id) =>
         inst.TryGetValue(id, out var i) ? (i.Root, i.Height, i.Placeholder ? 0 : i.Visual.Rotation.Y) : null;
 
@@ -468,7 +472,7 @@ public sealed class NpcLayer
     {
         if (string.IsNullOrEmpty(effect) || i.Root == null) return;
         EffectPlayed?.Invoke(i.NpcId, effect);
-        Combat?.PlayEffect(effect, i.Root.GlobalPosition, i.Visual?.Rotation.Y ?? 0, row.IsBoss ? 6 : 5);
+        Combat?.PlayEffect(effect, i.Root.GlobalPosition, i.Visual?.Rotation.Y ?? 0, row.IsBoss ? Ms2.Audio.SoundMusicEffectState.CasterBoss : Ms2.Audio.SoundMusicEffectState.CasterNpc);
     }
 
     /// <summary>

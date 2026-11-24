@@ -96,11 +96,16 @@ public partial class LiveSession
 
     /// <summary>A skill motion's effect in the field, through the combat layer the other players' casts use;
     /// <paramref name="casterKind"/> is the effect's object relation (FUN_141bd19d0: 1 the own PC).</summary>
-    public void PlayFieldEffect(string effect, Vector3 at, float yawRadians, int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
+    public void PlayFieldEffect(string effect, Vector3 at, float yawRadians, int casterKind)
         => remote?.PlayEffect(effect, at, yawRadians, casterKind);
 
     /// <summary>The own magics' scene effects (an arrow's "effect" while it flies) after their tick, in the field.</summary>
     public void SyncOwnMagicEffects(Ms2.Ui.Hud.OwnTagMagics own) => remote?.SyncOwnSceneEffects(own);
+
+    /// <summary>WorldService::GetObjectKind of an object id (worldservice_1.cpp:6296-6309): MyPC::vfunc_58 1 for the own PC
+    /// (mypc.cpp:1247), PCBase::vfunc_58 3 for another (pcbase.cpp:1092), an npc's 5 or 6 for a boss; 0 for no object.</summary>
+    public int ObjectKind(int objectId) =>
+        objectId != 0 && objectId == SelfObjectId ? Ms2.Audio.SoundMusicEffectState.CasterMyPc : remote?.ObjectKind(objectId) ?? 0;
 
     /// <summary>A kept effect on <paramref name="actor"/> (FUN_1411a49c0, SetActor) in the field's region skill node: its id,
     /// 0 when it did not spawn.</summary>
@@ -111,7 +116,7 @@ public partial class LiveSession
     public void ReleaseKeptEffect(int id) => remote?.ReleaseKeptEffect(id);
 
     /// <summary>The same turned by a full rotation (godot space), as an own magic's end effect.</summary>
-    public void PlayFieldEffect(string effect, Vector3 at, Basis rotation, int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
+    public void PlayFieldEffect(string effect, Vector3 at, Basis rotation, int casterKind)
         => remote?.PlayEffect(effect, at, rotation, casterKind);
 
     /// <summary>

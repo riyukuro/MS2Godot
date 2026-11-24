@@ -143,7 +143,7 @@ public sealed partial class RemoteLayer
     {
         if (string.IsNullOrEmpty(path) || r.Pc?.Body == null) return;
         RideEffectsPlayed?.Invoke(r.ObjectId, path);
-        combat.PlayEffect(path, r.Pc.Body.GlobalPosition, r.Visual?.Rotation.Y ?? 0);
+        combat.PlayEffect(path, r.Pc.Body.GlobalPosition, r.Visual?.Rotation.Y ?? 0, Ms2.Audio.SoundMusicEffectState.CasterOtherPc);   // PCBase 3 (pcbase.cpp:1092)
     }
 
     /// <summary>The riding row of a remote PC's ridee, null without one.</summary>

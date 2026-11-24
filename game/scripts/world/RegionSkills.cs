@@ -126,7 +126,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
             string fx = GameTables.Shared(packs, GameOptions.StringLanguage).CommonResource("Revival_Invincible");
             // a restart overwrites the handle and leaves the old effect in kept, running (its loop too), as the client's
             // m_n1060 store does (pc.cpp:3420); with no player node yet the handle stays 0 and the bind spawns it
-            invincibleHandle = SpawnOn(fx, LiveSession.Instance?.OwnPlayer);
+            invincibleHandle = SpawnOn(fx, LiveSession.Instance?.OwnPlayer, Ms2.Audio.SoundMusicEffectState.CasterSystem);   // kind 0 (pc.cpp:3419)
             return;
         }
         if (invincibleHandle != 0) FadeOut(invincibleHandle, 0);
@@ -197,12 +197,29 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
 
     public void Insert(string effect, Xform at, bool always, int randomIndex) => Play(effect, at, false, 0);
 
+    /// <summary>A region skill's kept effect with its owner's object kind (regionskillobject.cpp:118-124).</summary>
+    public int Spawn(string effect, Xform at, bool always, int randomIndex, int casterKind)
+    {
+        int h = nextHandle;
+        var nodes = Play(effect, at, true, h, null, casterKind);
+        if (nodes == null) return 0;
+        nextHandle++;
+        kept[h] = nodes;
+        return h;
+    }
+
+    /// <summary>A region skill's one-shot effect with its owner's object kind (regionskillobject.cpp:238-249).</summary>
+    public void Insert(string effect, Xform at, bool always, int randomIndex, int casterKind) => Play(effect, at, false, 0, null, casterKind);
+
+    /// <summary>The object kind of an object id in the live field (<see cref="LiveSession.ObjectKind"/>), 0 offline.</summary>
+    public int ObjectKind(int objectId) => LiveSession.Instance?.ObjectKind(objectId) ?? 0;
+
     /// <summary>FUN_1411a49c0 with an actor target (m_nKind 0, SetActor): a kept effect on the actor; its handle, or 0 when it
     /// did not spawn. Its nif parts follow the actor except attach type 0 ones, which start at its node in the world
     /// (CombatLayer.ActorPlace); soundMusic parts play for <paramref name="casterKind"/> (SoundMusicEffectState).
     /// STILL-OPEN: the light parts of such an effect stay where the actor was at the spawn; the following parts hang on the
     /// actor's root, not on their named node.</summary>
-    public int SpawnOn(string effect, Node3D actor, int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
+    public int SpawnOn(string effect, Node3D actor, int casterKind)
     {
         if (actor == null || !IsInstanceValid(actor)) return 0;
         int h = nextHandle;
@@ -269,7 +286,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     /// duration; a looping part stays until it is faded), light parts through FieldLights, sound events at the point, soundMusic parts for <paramref name="casterKind"/>. Null
     /// when the xml is missing.</summary>
     List<Node3D> Play(string xml, Xform at, bool keep, int handle, Node3D actor = null,
-        int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
+        int casterKind = Ms2.Audio.SoundMusicEffectState.CasterSystem)
     {
         var parts = table.Get(xml);
         if (parts == null) return null;

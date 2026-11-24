@@ -85,8 +85,12 @@ public sealed partial class RemoteLayer
         var motion = skillMotions.Motion(skillId, level, motionIndex);
         if (motion == null) return;
         Node3D at; float yaw;
+        // the motion effect's object kind, GetObjectKind of the owner (stateskill.cpp:1834): PCBase 3 (pcbase.cpp:1092), an npc
+        // 5 or 6 for a boss
+        int casterKind;
         if (users.TryGetValue(actorId, out var r))
         {
+            casterKind = Ms2.Audio.SoundMusicEffectState.CasterOtherPc;
             if (r.Pc.States.Dead) return;
             at = r.Root; yaw = r.Visual.Rotation.Y;
             if (!string.IsNullOrEmpty(motion.SequenceName) && SkillAnim(r.Gender, motion.SequenceName) is { an: not null } sk)
@@ -105,12 +109,13 @@ public sealed partial class RemoteLayer
             {
                 // PlayCastStartEffect for a level without a sequence (stateskill.cpp:1829-1838): InsertEffect on the caster,
                 // which nothing keeps
-                ReleaseKeptEffect(SpawnKeptEffect(motion.MotionEffect, r.Visual, Ms2.Audio.SoundMusicEffectState.CasterOther));
+                ReleaseKeptEffect(SpawnKeptEffect(motion.MotionEffect, r.Visual, Ms2.Audio.SoundMusicEffectState.CasterOtherPc));
             }
             return;   // a sequence the body lacks never activates, so AnimActivated plays no motion effect
         }
         else if (npcs.Info(actorId) is { } n)
         {
+            casterKind = npcs.CasterKind(actorId);
             if (npcs.IsDead(actorId)) return;
             at = n.root; yaw = n.yaw;
             if (!string.IsNullOrEmpty(motion.SequenceName))
@@ -121,7 +126,7 @@ public sealed partial class RemoteLayer
             }
         }
         else return;
-        if (!string.IsNullOrEmpty(motion.MotionEffect)) combat.PlayEffect(motion.MotionEffect, at.Position, yaw);
+        if (!string.IsNullOrEmpty(motion.MotionEffect)) combat.PlayEffect(motion.MotionEffect, at.Position, yaw, casterKind);
     }
 
     /// <summary>

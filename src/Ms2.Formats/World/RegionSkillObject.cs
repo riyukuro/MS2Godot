@@ -21,6 +21,13 @@ public interface IRegionSkillEffects
     /// lighteffectparam.cpp:451-456; CRandomEffect: its chosen effect's). The base CEffect::vfunc_10 does nothing
     /// (effectservice.cpp:422), so by default nothing changes.</summary>
     void SetVisible(int handle, bool visible) { }
+    /// <summary>WorldService::FUN_141bd19d0 (@0x141bd19d0, worldservice_1.cpp:6296-6300): the object kind of an object id
+    /// (GetObjectKind: MyPC 1, PCBase 3, an npc 5 or 6 for a boss), 0 for no such object.</summary>
+    int ObjectKind(int objectId) => 0;
+    /// <summary><see cref="Spawn(string, Xform, bool, int)"/> with the effect target's object kind (m_nKind).</summary>
+    int Spawn(string effect, Xform at, bool always, int randomIndex, int casterKind) => Spawn(effect, at, always, randomIndex);
+    /// <summary><see cref="Insert(string, Xform, bool, int)"/> with the effect target's object kind (m_nKind).</summary>
+    void Insert(string effect, Xform at, bool always, int randomIndex, int casterKind) => Insert(effect, at, always, randomIndex);
 }
 
 /// <summary>
@@ -43,6 +50,9 @@ public interface IRegionSkillEffects
 public sealed class RegionSkillObject
 {
     public int Id, OwnerId;
+    /// <summary>m_nOwnerType: the owner's object kind taken at Init (regionskillobject.cpp:103), every effect's m_nKind
+    /// (:118, :152, :238, :271).</summary>
+    public int OwnerKind;
     public uint StartTick;
     public float RotX, RotY;
     public Vec3[] Points;
@@ -80,14 +90,14 @@ public sealed class RegionSkillObject
         bool local, uint serverTick, IRegionSkillEffects fx)
     {
         if (attr == null) return null;
-        var o = new RegionSkillObject { Id = id, OwnerId = ownerId, Points = points, Attr = attr, RotX = rotX, RotY = rotY, StartTick = startTick, Local = local };
+        var o = new RegionSkillObject { Id = id, OwnerId = ownerId, Points = points, Attr = attr, RotX = rotX, RotY = rotY, StartTick = startTick, Local = local, OwnerKind = fx.ObjectKind(ownerId) };
         if (!string.IsNullOrEmpty(attr.MotionEffect) && fx.Has(attr.MotionEffect))
         {
             foreach (var p in points)
             {
                 int e = 0;
                 if ((local || attr.IgnoreOptimalHideCastEffect) && !attr.SplashCastEffectStartDelay)
-                    e = fx.Spawn(attr.MotionEffect, PointTransform(p, rotX, rotY), attr.IgnoreOptimalHideCastEffect, id);
+                    e = fx.Spawn(attr.MotionEffect, PointTransform(p, rotX, rotY), attr.IgnoreOptimalHideCastEffect, id, o.OwnerKind);
                 if (e != 0) o.Effects.Add(e);
                 else o.Pending.Add((p, attr.SplashCastEffectStartDelay ? startTick : serverTick));
             }
@@ -98,7 +108,7 @@ public sealed class RegionSkillObject
         {
             foreach (var p in points)
             {
-                int e = local ? fx.Spawn(attr.LoopEffect, PointTransform(p, rotX, rotY), false, id) : 0;
+                int e = local ? fx.Spawn(attr.LoopEffect, PointTransform(p, rotX, rotY), false, id, o.OwnerKind) : 0;
                 if (e != 0)
                 {
                     o.Effects.Add(e);
@@ -119,7 +129,7 @@ public sealed class RegionSkillObject
     {
         if (lateDone || string.IsNullOrEmpty(Attr.SplashDurationCastEffect) || StartTick > serverTick) return;
         if (Local || Attr.IgnoreOptimalHideCastEffect)
-            foreach (var p in Points) fx.Insert(Attr.SplashDurationCastEffect, PointTransform(p, RotX, RotY), Attr.IgnoreOptimalHideCastEffect, Id);
+            foreach (var p in Points) fx.Insert(Attr.SplashDurationCastEffect, PointTransform(p, RotX, RotY), Attr.IgnoreOptimalHideCastEffect, Id, OwnerKind);
         lateDone = true;
     }
 
@@ -136,7 +146,7 @@ public sealed class RegionSkillObject
         foreach (int e in LoopEffects) fx.SetVisible(e, false);
         if (string.IsNullOrEmpty(Attr.SplashInvokeEffect)) return;
         if (Local || Attr.IgnoreOptimalHideCastEffect)
-            foreach (var p in Points) fx.Insert(Attr.SplashInvokeEffect, PointTransform(p, RotX, RotY), Attr.IgnoreOptimalHideCastEffect, Id);
+            foreach (var p in Points) fx.Insert(Attr.SplashInvokeEffect, PointTransform(p, RotX, RotY), Attr.IgnoreOptimalHideCastEffect, Id, OwnerKind);
     }
 
     /// <summary>StopLoopEffects (@0x1416f6e40, :294-298), Init's last spawn step and OnRegionSkill mode 2: every loop effect
@@ -152,7 +162,7 @@ public sealed class RegionSkillObject
     {
         if (string.IsNullOrEmpty(Attr.SplashEndEffect)) return;
         if (Local || Attr.IgnoreOptimalHideCastEffect)
-            foreach (var p in Points) fx.Insert(Attr.SplashEndEffect, PointTransform(p, RotX, RotY), Attr.IgnoreOptimalHideCastEffect, Id);
+            foreach (var p in Points) fx.Insert(Attr.SplashEndEffect, PointTransform(p, RotX, RotY), Attr.IgnoreOptimalHideCastEffect, Id, OwnerKind);
     }
 
     /// <summary>FadeOutEffects (@0x1416f6860, :217-221): every kept effect fades over RegionSkillFadeOutDuration.</summary>

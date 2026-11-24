@@ -28,7 +28,9 @@ public sealed partial class RemoteLayer
     // after FillMagicObjects: IsOutsideSightRange's range and local player (worldservice_1.cpp:7956)
     FieldSight MagicSight() => new(SightRange?.Invoke(), magicPlayerPos);
     public int MagicsMade;
-    readonly MagicSceneEffects remoteSceneEffects = new(), ownSceneEffects = new();
+    // the scene effect takes its magic owner's object kind (CMagic, magicdata.cpp:927-931; MyPC 1, PCBase 3)
+    readonly MagicSceneEffects remoteSceneEffects = new(Ms2.Audio.SoundMusicEffectState.CasterOtherPc),
+        ownSceneEffects = new(Ms2.Audio.SoundMusicEffectState.CasterMyPc);
 
     /// <summary>
     /// The magics' scene effects in the field (CMagic m_nEffectId, <see cref="MagicSceneEffect"/>): a holder node per magic
@@ -37,7 +39,7 @@ public sealed partial class RemoteLayer
     /// A spawn that failed is not tried again. 0 B per frame past the lists' growth.
     /// STILL-OPEN: FUN_1411a68f0(m_nEffectId, bHidden) after the spawn (the scene's app-culled flag; CEffect::vfunc_10).
     /// </summary>
-    sealed class MagicSceneEffects
+    sealed class MagicSceneEffects(int casterKind)
     {
         public readonly List<MagicSceneEffect> Now = new();
         readonly List<(int Key, Node3D Node, int Handle)> shown = new();
@@ -68,7 +70,7 @@ public sealed partial class RemoteLayer
                 var node = new Node3D();
                 fx.AddChild(node);
                 node.GlobalTransform = pose;
-                int h = fx.SpawnOn(e.File, node);
+                int h = fx.SpawnOn(e.File, node, casterKind);
                 if (h == 0) { node.QueueFree(); node = null; }
                 shown.Add((e.Key, node, h));
             }
@@ -112,11 +114,11 @@ public sealed partial class RemoteLayer
         st.SkillExited = () => remoteMagics.SkillExited(id, (int)Time.GetTicksMsec());
         st.AttackFired = a => remoteMagics.AttackFired(id, a, (int)Time.GetTicksMsec());
         // the cast's tag effects kept on the caster (an actor target, SetActor) and ended with its skill state
-        st.TagEffect = (_, fx) => SpawnKeptEffect(fx, r.Visual, Ms2.Audio.SoundMusicEffectState.CasterOther);
-        st.MotionEffect = fx => SpawnKeptEffect(fx, r.Visual, Ms2.Audio.SoundMusicEffectState.CasterOther);
+        st.TagEffect = (_, fx) => SpawnKeptEffect(fx, r.Visual, Ms2.Audio.SoundMusicEffectState.CasterOtherPc);   // GetObjectKind of the caster, PCBase 3 (stateskill.cpp:757)
+        st.MotionEffect = fx => SpawnKeptEffect(fx, r.Visual, Ms2.Audio.SoundMusicEffectState.CasterOtherPc);   // the same SetActor target (stateskill.cpp:750-761)
         // PlayEventVoice for the other PC: its gender and job group, not the local player (the table's rows for it)
         st.EventSound = key => FieldAudio.Instance?.PlayEventVoice(Ms2.Audio.EventSoundTable.TextKeyType(key), r.Gender,
-            r.Pc.JobGroup, false, 3, r.Visual.GlobalPosition, npcs.Viewer?.Invoke());   // object kind 3: another PC
+            r.Pc.JobGroup, false, Ms2.Audio.SoundMusicEffectState.CasterOtherPc, r.Visual.GlobalPosition, npcs.Viewer?.Invoke());   // GetObjectKind 3 (effectservice.cpp:1381)
         st.StopEffect = StopKeptEffect;
         st.ReleaseEffect = ReleaseKeptEffect;
     }

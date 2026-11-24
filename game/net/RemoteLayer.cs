@@ -458,12 +458,16 @@ public sealed partial class RemoteLayer : Node3D
         npcs.HitCandidates(into);
     }
 
+    /// <summary>The object kind of a remote object id: PCBase 3 for a user (pcbase.cpp:1092), an npc's 5 or 6, else 0.</summary>
+    public int ObjectKind(int objectId) =>
+        users.ContainsKey(objectId) ? Ms2.Audio.SoundMusicEffectState.CasterOtherPc : npcs.CasterKind(objectId);
+
     /// <summary>An effect xml played at a point (CombatLayer.PlayEffect), the own cast's motion effect.</summary>
-    public void PlayEffect(string effect, Vector3 at, float yawRadians, int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
+    public void PlayEffect(string effect, Vector3 at, float yawRadians, int casterKind)
         => combat.PlayEffect(effect, at, yawRadians, casterKind);
 
     /// <summary>The same turned by a full rotation (godot space).</summary>
-    public void PlayEffect(string effect, Vector3 at, Basis rotation, int casterKind = Ms2.Audio.SoundMusicEffectState.CasterOther)
+    public void PlayEffect(string effect, Vector3 at, Basis rotation, int casterKind)
         => combat.PlayEffect(effect, at, rotation, casterKind);
 
     /// <summary>How long an effect xml's parts stay (CombatLayer.EffectLength).</summary>

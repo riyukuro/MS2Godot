@@ -1899,7 +1899,8 @@ public partial class LiveSession : Node
                     // PC::FUN_14165d300 (pc.cpp:3464) on the own tomb: the hit sound, the break's myPC_Resurrection voice, then the state
                     if (Tomb.PlayPacketSounds(t.Kind, t.Hitter, true, Constants(), remote?.ViewerPosition, remote?.HitSoundRand ?? NoHitSoundRand)
                         && player != null && IsInstanceValid(player))
-                        FieldAudio.Instance?.PlayEventVoice(Ms2.Audio.EventSoundTable.MyPcResurrection, Me.User.Gender, Me.User.JobCode, true, 1,
+                        FieldAudio.Instance?.PlayEventVoice(Ms2.Audio.EventSoundTable.MyPcResurrection, Me.User.Gender, Me.User.JobCode, true,
+                            Ms2.Audio.SoundMusicEffectState.CasterMyPc,
                             player.GlobalPosition, player.GlobalPosition);
                     Tomb.Hit(t.Kind, t.Value);
                 }

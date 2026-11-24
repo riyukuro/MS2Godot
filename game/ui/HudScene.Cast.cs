@@ -947,7 +947,7 @@ public partial class HudScene
             {
                 var at0 = player.GlobalPosition;
                 FieldAudio.Instance?.PlayEventVoice(Ms2.Audio.EventSoundTable.TextKeyType(key), player.Gender,
-                    Net.LiveSession.Instance?.Me.User?.JobCode ?? 0, true, 1, at0, at0);   // GetJobGroupId, as the guide's world reads it
+                    Net.LiveSession.Instance?.Me.User?.JobCode ?? 0, true, Ms2.Audio.SoundMusicEffectState.CasterMyPc, at0, at0);   // GetJobGroupId, as the guide's world reads it
                 continue;
             }
             float at = player.Anims?.TextKey(ownSequence, key) ?? -1;
