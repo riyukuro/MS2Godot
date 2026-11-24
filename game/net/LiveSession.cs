@@ -1257,6 +1257,8 @@ public partial class LiveSession : Node
             taxiCall = null;               // a new server enter drops the call (the state is reset)
             TaxiAction.ServerEnter();      // DAT_143ab3098.RemoveAll() (scenestategame.cpp:2115)
             StubHudData.Instance.FoundTaxis = entry.Enter?.UnlockedTaxis is { } taxis ? new HashSet<int>(taxis) : new HashSet<int>();
+            StubHudData.Instance.VisitedFields = entry.Enter?.UnlockedMaps is { } maps ? new HashSet<int>(maps) : new HashSet<int>();   // DAT_143ab3058 (:2108-2114)
+            StubHudData.Instance.LoadedFields.Clear();
             Me.Apply(entry.Enter);                 // the exp counters (OnServerEnter, scenestategame.cpp:2085-2086)
         });
         GD.Print($"live: {entry.Early.Count} packets before the field: {Quests.All.Count} quests, {Items.All.Count} items, adventure claimed {Adventure.Claimed.Count}, missions {Adventure.Missions.Count}");
@@ -1507,6 +1509,7 @@ public partial class LiveSession : Node
         DropOwnPcInvincible();
         rideSummon?.Cancel();
         recallCast?.Cancel();
+        DropCashCall();
         if (player != null && IsInstanceValid(player)) { player.Live = false; player.DeadFlag = false; }
         player = null;
         selfObject = -1;

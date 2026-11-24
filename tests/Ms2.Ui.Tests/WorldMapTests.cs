@@ -437,4 +437,237 @@ public class WorldMapTests
         Assert.That(o["taxicost"], Is.EqualTo(""), "the current field has no fare");
         Assert.That(o["taxidesc"], Is.Not.EqualTo(""));
     }
+
+    // ---- the air taxi: OnCashTaxi (:548), CheckCashTaxi (@0x141b60e90), FUN_141b614c0, the confirms and TakeCashTaxi (@0x141b5aa70) ----
+
+    sealed class CashRig
+    {
+        public WorldMapController C;
+        public readonly List<MessageBoxData> Boxes = new();
+        public readonly List<int> Called = new();
+        public readonly Dictionary<int, int> Tickets = new();
+        public uint Target;      // Tria's continent, a destination, no admin level, no pk mode
+        public string Name;
+        public long Mesos = 10_000_000;
+    }
+
+    static CashRig CashTaxiRig(bool visited)
+    {
+        var (h, c, rt) = Load();
+        var tria = table.FindField(Tria);
+        uint target = table.Fields.Values.Where(f => f.Id != (int)Tria && f.Continent == tria.Continent && f.CashTaxiDestinationAllowed
+                                                     && f.EnterAdminLevel == 0 && f.PkMode == 0)
+                           .Select(f => (uint)f.Id).OrderBy(x => x).First();
+        var rig = new CashRig { C = c, Target = target, Name = c.Model.Tables.MapName((int)target) ?? "" };
+        c.PlayerLevel = 24;
+        c.ShowBox = rig.Boxes.Add;
+        c.HasPlayer = () => true;
+        c.CanEnterState = _ => true;
+        c.Mesos = () => rig.Mesos;
+        c.TicketCount = tag => rig.Tickets.TryGetValue(tag, out int n) ? n : 0;
+        c.StartCashCall = rig.Called.Add;
+        MessageBoxData.CommonByKey = new Ms2.Formats.World.GameStrings(packs, "en").Common();
+        c.SetTaxiMode(1);        // Close() resets it: the sign that TakeCashTaxi closed the dialog
+        c.VisitedFields = visited ? new[] { Tria, target } : new[] { Tria };
+        c.OnIconPacket();        // FUN_141b58f00 copies DAT_143ab3058 into m_1a0
+        return rig;
+    }
+
+    static string Fill(string text, params object[] args)
+    {
+        for (int i = 0; i < args.Length; i++) text = text.Replace("{" + i + "}", Convert.ToString(args[i], System.Globalization.CultureInfo.InvariantCulture));
+        return text;
+    }
+
+    [Test]
+    public void OnCashTaxiRefusesInTheClientsOrder()
+    {
+        var r = CashTaxiRig(true);
+        var c = r.C;
+        void Ask(uint f) => Assert.That(c.OnCallback("OnCashTaxi", new object[] { f }), Is.True);
+        void Expect(string msg, string why)
+        {
+            Assert.That(r.Boxes.Select(b => b.Msg), Is.EqualTo(new[] { msg }), why);
+            Assert.That(r.Called, Is.Empty);
+            r.Boxes.Clear();
+        }
+        c.PlayerDead = () => true; Ask(r.Target); Expect(MessageBoxData.Common(0x91), "dead"); c.PlayerDead = () => false;
+        c.CanEnterState = s => s != 0x2a; Ask(r.Target); Expect(MessageBoxData.Common(0x93), "FUN_141527160(0x2a)"); c.CanEnterState = _ => true;
+        c.PlayerInCubeMode = () => true; Ask(r.Target); Expect(MessageBoxData.Common(0x92), "cube mode"); c.PlayerInCubeMode = () => false;
+        c.PlayerStateId = () => 0x25; Ask(r.Target); Expect(MessageBoxData.Common(0x91), "StateTaxiCall");
+        c.PlayerStateId = () => 0x2a; Ask(r.Target); Expect(MessageBoxData.Common(0x91), "StateCashCall"); c.PlayerStateId = () => 1;
+        Ask(Tria); Expect(MessageBoxData.Common(0x8a), "the current field");
+        var cases = new List<string>();
+        if (table.Fields.Values.FirstOrDefault(f => !f.CashTaxiDepartureAllowed) is { } noDep)
+        {
+            c.FieldId = noDep.Id; Ask(r.Target); Expect(MessageBoxData.Common(0x8f), "cashTaxiNotDeparture"); c.FieldId = (int)Tria;
+            cases.Add("departure");
+        }
+        if (table.Fields.Values.FirstOrDefault(f => !f.CashTaxiDestinationAllowed && f.Id != (int)Tria) is { } noDest)
+        {
+            Ask((uint)noDest.Id); Expect(Fill(MessageBoxData.Common(0x90), c.Model.Tables.MapName(noDest.Id) ?? ""), "cashTaxiNotDestination");
+            cases.Add("destination");
+        }
+        if (table.Fields.Values.FirstOrDefault(f => f.EnterAdminLevel > 0 && f.CashTaxiDestinationAllowed && f.Id != (int)Tria) is { } admin)
+        {
+            Ask((uint)admin.Id); Expect(MessageBoxData.Common(0x99d), "enterAdminLevel");
+            cases.Add("admin");
+        }
+        var tria = table.FindField(Tria);
+        if (table.Fields.Values.FirstOrDefault(f => f.Continent != tria.Continent && f.CashTaxiDestinationAllowed && f.EnterAdminLevel == 0) is { } far)
+        {
+            Ask((uint)far.Id); Expect(MessageBoxData.Common(0x8e), "another continent group");
+            c.WarpOpenContinents = new[] { tria.Continent, far.Continent };
+            Ask((uint)far.Id);
+            Assert.That(r.Boxes, Has.Count.EqualTo(1));
+            Assert.That(r.Boxes[0].Msg, Is.Not.EqualTo(MessageBoxData.Common(0x8e)), "WarpOpenContinent joins the two groups");
+            r.Boxes.Clear();
+            cases.Add("continent");
+        }
+        c.HasPlayer = () => false; Ask(r.Target);
+        Assert.That(r.Boxes, Is.Empty, "no player: the callback returns first");
+        TestContext.WriteLine("field cases run: " + string.Join(", ", cases));
+        Assert.That(cases, Does.Contain("continent"), "the data has fields on other continents");
+    }
+
+    [Test]
+    public void AVisitedFieldWithoutTicketsAsksTheMesoFareAndYesCallsWhenTheMesosCoverIt()
+    {
+        var r = CashTaxiRig(true);
+        var c = r.C;
+        c.AirTaxiDiscountRate = () => 0.1f;
+        c.OnCallback("OnCashTaxi", new object[] { r.Target });
+        long fare = (long)((double)TaxiManager.GetAirTaxiFare(24) * (double)(1.0f - 0.1f) + 0.000001);
+        Assert.That(r.Boxes, Has.Count.EqualTo(1));
+        var box = r.Boxes[0];
+        Assert.That((box.Type, box.HasCallback), Is.EqualTo((1, true)));
+        Assert.That(box.Msg, Is.EqualTo(Fill(c.Model.Tables.Common("s_cash_taxi_transfer_meso") ?? "", r.Name, fare)));
+        Assert.That(box.ArgLong(0, -1), Is.EqualTo(fare), "the fare kept in the box");
+        r.Boxes.Clear();
+        box.Callback(1, box);
+        Assert.That((r.Boxes.Count, r.Called.Count), Is.EqualTo((0, 0)), "no does nothing");
+        r.Mesos = fare - 1;
+        box.Callback(0, box);
+        Assert.That(r.Boxes.Select(b => b.Msg), Is.EqualTo(new[] { MessageBoxData.Common(0x34) }));
+        Assert.That(r.Called, Is.Empty);
+        r.Mesos = fare;
+        box.Callback(0, box);
+        Assert.That(r.Called, Is.EqualTo(new[] { (int)r.Target }));
+        Assert.That(c.TaxiMode, Is.Zero, "TakeCashTaxi closed the dialog");
+    }
+
+    [Test]
+    public void TicketsTheFreeEventAndVipAskWithOnCashTaxiAndYesCalls()
+    {
+        var r = CashTaxiRig(true);
+        var c = r.C;
+        r.Tickets[CashCall.AirTaxiTag] = 1;
+        c.OnCallback("OnCashTaxi", new object[] { r.Target });
+        Assert.That(r.Boxes.Select(b => (b.Type, b.Extra, b.Msg)),
+            Is.EqualTo(new[] { (1, "onCashTaxi", Fill(MessageBoxData.Common(0x8c), r.Name)) }));
+        Assert.That(r.Called, Is.Empty, "nothing before the answer");
+        Assert.That(c.OnMessageBox(null, 1, "onCashTaxi"), Is.False);
+        Assert.That(r.Called, Is.Empty);
+        Assert.That(c.OnMessageBox(null, 0, "onCashTaxi"), Is.True);
+        Assert.That(r.Called, Is.EqualTo(new[] { (int)r.Target }));
+
+        r = CashTaxiRig(true);
+        r.Tickets[CashCall.AdvancedAirTaxiTag] = 1;
+        r.C.FreeAirTaxi = () => true;
+        r.C.OnCallback("OnCashTaxi", new object[] { r.Target });
+        Assert.That(r.Boxes.Select(b => (b.Extra, b.Msg)), Is.EqualTo(new[] { ("onCashTaxi", Fill(MessageBoxData.Common(0x8d), r.Name)) }),
+            "the free event comes before the tickets");
+
+        r = CashTaxiRig(false);
+        r.C.PlayerVip = () => true;
+        r.C.FeatureEnabled = id => id == CashCall.VipAirTaxiFeature;
+        r.C.OnCallback("OnCashTaxi", new object[] { r.Target });
+        Assert.That(r.Boxes.Select(b => (b.Extra, b.Msg)),
+            Is.EqualTo(new[] { ("onCashTaxi", Fill(r.C.Model.Tables.Common("s_taxi_transfer_vip_user") ?? "", r.Name)) }), "VIP goes before the visit test");
+    }
+
+    [Test]
+    public void AFieldNotVisitedNeedsThreeAdvancedTicketsOrTheMeratBox()
+    {
+        var r = CashTaxiRig(false);
+        var c = r.C;
+        string Key(string k) => c.Model.Tables.Common(k) ?? "";
+        void Ask() { r.Boxes.Clear(); c.OnCallback("OnCashTaxi", new object[] { r.Target }); }
+        r.Tickets[CashCall.AirTaxiTag] = 5;
+        r.Tickets[CashCall.AdvancedAirTaxiTag] = 2;
+        Ask();
+        Assert.That(r.Boxes.Select(b => (b.Type, b.Msg)), Is.EqualTo(new[] { (0, Key("s_err_cash_taxi_need_advanced_ticket")) }),
+            "air_taxi tickets do not count for a field not visited");
+        r.Tickets[CashCall.AdvancedAirTaxiTag] = 3;
+        Ask();
+        Assert.That(r.Boxes.Select(b => (b.Type, b.Extra, b.Msg)),
+            Is.EqualTo(new[] { (1, "onCashTaxi", Fill(Key("s_cash_taxi_transfer_advanced"), r.Name)) }));
+        r.Tickets[CashCall.AdvancedAirTaxiTag] = 0;
+        c.FeatureEnabled = id => id == CashCall.MeratAirTaxiFeature;
+        c.AirTaxiDiscountRate = () => 0.5f;
+        Ask();
+        Assert.That(r.Boxes, Has.Count.EqualTo(1));
+        var box = r.Boxes[0];
+        Assert.That((box.Type, box.HasCallback), Is.EqualTo((1, true)));
+        Assert.That(box.Msg, Is.EqualTo(Fill(Key("s_err_cash_taxi_need_advanced_ticket_merat"), 195L)), "MeratAirTaxiPrice 390 less half");
+        r.Boxes.Clear();
+        box.Callback(0, box);
+        Assert.That((r.Boxes.Count, r.Called.Count), Is.EqualTo((0, 0)), "no platform merat check: nothing");
+        long asked = 0;
+        c.MeratPlatformCheck = p => { asked = p; return false; };
+        box.Callback(0, box);
+        Assert.That(asked, Is.EqualTo(390), "the platform checks the undiscounted price");
+        Assert.That(r.Boxes.Select(b => b.Msg), Is.EqualTo(new[] { MessageBoxData.Common(0x35) }));
+        c.MeratPlatformCheck = _ => true;
+        box.Callback(0, box);
+        Assert.That(r.Called, Is.EqualTo(new[] { (int)r.Target }));
+    }
+
+    [Test]
+    public void APvpFieldOnAShadowContinentAsksBeforeTheCall()
+    {
+        var r = CashTaxiRig(true);     // first: its Load skips the test without data
+        var tria = table.FindField(Tria);
+        var pk = table.Fields.Values.FirstOrDefault(f => f.PkMode != 0 && f.Id != (int)Tria && f.CashTaxiDestinationAllowed && f.EnterAdminLevel == 0);
+        Assert.That(pk, Is.Not.Null, "the data has a pk field");
+        Assert.That(tria.PkMode, Is.Zero);
+        var c = r.C;
+        c.VisitedFields = new[] { Tria, (uint)pk.Id };
+        c.OnIconPacket();
+        c.WarpOpenContinents = new[] { tria.Continent, pk.Continent };
+        r.Tickets[CashCall.AirTaxiTag] = 1;
+        c.IsShadowContinent = code => code == pk.Continent;
+        c.OnCallback("OnCashTaxi", new object[] { (uint)pk.Id });
+        r.Boxes.Clear();
+        c.OnMessageBox(null, 0, "onCashTaxi");
+        Assert.That(r.Called, Is.Empty, "the pk box comes first");
+        Assert.That(r.Boxes, Has.Count.EqualTo(1));
+        var box = r.Boxes[0];
+        Assert.That((box.Type, box.Msg, box.HasCallback), Is.EqualTo((1, MessageBoxData.Common(0x971), true)));
+        Assert.That(c.TaxiMode, Is.EqualTo(1), "the dialog stays open");
+        box.Callback(0, box);
+        Assert.That(r.Called, Is.EqualTo(new[] { pk.Id }));
+        Assert.That(c.TaxiMode, Is.Zero);
+        // not a shadow continent: no box, the call at once
+        r = CashTaxiRig(true);
+        r.C.VisitedFields = new[] { Tria, (uint)pk.Id };
+        r.C.OnIconPacket();
+        r.C.WarpOpenContinents = new[] { tria.Continent, pk.Continent };
+        r.Tickets[CashCall.AirTaxiTag] = 1;
+        r.C.OnCallback("OnCashTaxi", new object[] { (uint)pk.Id });
+        r.C.OnMessageBox(null, 0, "onCashTaxi");
+        Assert.That(r.Called, Is.EqualTo(new[] { pk.Id }));
+    }
+
+    [Test]
+    public void TheSearchInfosCashTaxiIconChecksTheAirTaxi()
+    {
+        var r = CashTaxiRig(true);
+        r.C.OnCallback("onClickSearchInfoIcon", new object[] { "dungeon", r.Target });
+        Assert.That(r.Boxes, Is.Empty, "the dungeon room dialog is not here");
+        r.C.OnCallback("onClickSearchInfoIcon", new object[] { "cashTaxi", r.Target });
+        Assert.That(r.Boxes, Has.Count.EqualTo(1));
+        Assert.That(r.Boxes[0].Msg, Is.EqualTo(Fill(r.C.Model.Tables.Common("s_cash_taxi_transfer_meso") ?? "", r.Name, TaxiManager.GetAirTaxiFare(24))),
+            "no ticket, no discount: the meso box of CheckCashTaxi");
+    }
 }

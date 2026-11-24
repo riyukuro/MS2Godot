@@ -1452,7 +1452,8 @@ public partial class HudScene : Node, IUiStageHost
         if (questGuideSide != null) questGuideSide.FieldId = xblockFieldId;
         if (questGuideInputs != null) questGuideInputs.FieldId = xblockFieldId;
         if (questLogSide?.Detail != null) questLogSide.Detail.FieldId = xblockFieldId;
-        if (worldMapSide != null) { worldMapSide.FieldId = xblockFieldId; worldMapSide.VisitedFields = new[] { (uint)xblockFieldId }; }
+        StubHudData.Instance.LoadedFields.Add(xblockFieldId);      // FUN_141bd7bf0's candidates, tested when the tiles are read
+        if (worldMapSide != null) { worldMapSide.FieldId = xblockFieldId; worldMapSide.VisitedFields = VisitedFieldIds(); }
         SystemMenuFacts();
         FieldMoves++;
         worldLoadPending = true;
@@ -2134,7 +2135,7 @@ public partial class HudScene : Node, IUiStageHost
         c.HasPlayer = () => Ms2Godot.Net.LiveSession.Instance is { TaxiPlayerReady: true };
         c.PlayerDead = () => Ms2Godot.Net.LiveSession.Instance?.TaxiPlayerDead ?? false;
         c.PlayerStateId = () => Ms2Godot.Net.LiveSession.Instance?.TaxiPlayerStateId ?? 0;
-        c.CanEnterState = _ => Ms2Godot.Net.LiveSession.Instance is { TaxiCalling: false };   // STILL-OPEN: FUN_141527160's other gates; a call started while the own skill sequence runs ends on the next frame (TaxiStateLeft), where the client's ChangeState(0x25) replaces the skill state
+        c.CanEnterState = _ => Ms2Godot.Net.LiveSession.Instance is { TaxiCalling: false, CashCalling: false };   // STILL-OPEN: FUN_141527160's other gates; a call started while the own skill sequence runs ends on the next frame (TaxiStateLeft), where the client's ChangeState(0x25) replaces the skill state
         c.StationNear = () => Ms2Godot.Net.LiveSession.Instance?.TaxiStationNear ?? false;
         c.Mesos = () => hudModel.HasLocalPlayer ? hudModel.Player.Mesos : 0;   // DAT_143ab2898
         c.PlayerRiding = () => Ms2Godot.Net.LiveSession.Instance?.TaxiPlayerRiding ?? false;
@@ -2147,6 +2148,55 @@ public partial class HudScene : Node, IUiStageHost
             live.TaxiBestDriverLevel = (int)k.Float("TaxiCallBestDriverLevel", 25);
             live.StartTaxiCall(field, PlayerLevel);
         };
+        // the air taxi (CheckCashTaxi, FUN_141b614c0, TakeCashTaxi): the live session's bag, VIP time and cash call
+        var constants = Ms2.Ui.FeatureElements.Constants(assets.Packs);
+        c.PlayerVip = () => Ms2Godot.Net.LiveSession.Instance is { } l && l.Me.PremiumTime > l.ServerTime;   // PC::IsVip
+        c.FeatureEnabled = id => hudModel.IsFeatureEnabled(id);
+        c.TicketCount = tag => Ms2Godot.Net.LiveSession.Instance?.TicketCount(tag) ?? 0;
+        c.AirTaxiDiscountRate = () => Ms2Godot.Net.LiveSession.Instance?.OwnAbilityRate(0xaa) ?? 0f;     // GetAbilityRate(0xaa)
+        c.MeratAirTaxiPrice = constants.Int("MeratAirTaxiPrice", (int)Ms2.Ui.CashCall.DefaultMeratAirTaxiPrice);
+        var warp = new HashSet<int>();      // Values<int> WarpOpenContinent: WarpOpenContinent0, 1, ... until one is missing
+        for (int i = 0; constants.String("WarpOpenContinent" + i) != null; i++) warp.Add(constants.Int("WarpOpenContinent" + i, 0));
+        c.WarpOpenContinents = warp;
+        HashSet<int> shadow = null;
+        c.IsShadowContinent = code =>
+        {
+            try { shadow ??= Ms2.Ui.PortalAction.ShadowContinents(assets.Packs); } catch { shadow = new HashSet<int>(); }
+            return shadow.Contains(code);
+        };
+        c.StartCashCall = field =>
+        {
+            if (Ms2Godot.Net.LiveSession.Instance is { } live) live.CashCallFeature ??= id => hudModel.IsFeatureEnabled(id);
+            Ms2Godot.Net.LiveSession.Instance?.StartCashCall(field);
+        };
+    }
+
+    /// <summary>WorldService::FUN_141bd7bf0 / FUN_141bd7c60 (worldservice_1.cpp:8161-8194) over the fields loaded since the last
+    /// call: each one's parent field, then the field, joins DAT_143ab3058 when its world map tile is public (m_21).</summary>
+    void FoldLoadedFields()
+    {
+        var d = StubHudData.Instance;
+        if (worldMapTable == null || d.LoadedFields.Count == 0) return;
+        fieldMeta ??= QuestMapGraph.SharedMeta(assets.Packs);
+        foreach (int id in d.LoadedFields)
+        {
+            if (fieldMeta.ParentFields.TryGetValue(id, out int parent)) AddVisited(parent);
+            AddVisited(id);
+        }
+        d.LoadedFields.Clear();
+
+        void AddVisited(int id)
+        {
+            if (d.VisitedFields.Contains(id)) return;
+            if (worldMapTable.FindTile((uint)id) is { Public: true }) d.VisitedFields.Add(id);
+        }
+    }
+
+    /// <summary>The world map's DAT_143ab3058 copy (FUN_141b58f00 reads it at the open).</summary>
+    IEnumerable<uint> VisitedFieldIds()
+    {
+        FoldLoadedFields();
+        foreach (int id in StubHudData.Instance.VisitedFields) yield return (uint)id;
     }
 
     void ToggleWorldMap()
@@ -2185,7 +2235,7 @@ public partial class HudScene : Node, IUiStageHost
                 PlayerLevel = PlayerLevel,
                 // the job group: live the user block's (WatchLivePlayer), the fixture's sub job / 10 (HudModel)
                 JobGroupId = Ms2Godot.Net.LiveSession.Active ? hudModel.Player.JobGroup : data.Player.Job <= 1 ? 10 : (data.Player.Job / 10 + 1) * 10,
-                VisitedFields = new[] { (uint)fieldId },
+                VisitedFields = VisitedFieldIds(),
                 Npcs = World.FieldContents.Npcs(assets.Packs),
                 Rooms = dungeonRooms ??= DungeonRooms.Load(assets.Packs, e => Ms2.Ui.FeatureElements.IsAvailable(assets.Packs, e)),
                 Missions = fieldMissions,       // the quest tracker's, read when the HUD starts

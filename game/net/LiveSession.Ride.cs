@@ -103,7 +103,7 @@ public partial class LiveSession
             case OwnRide.Step.RideOff when own:
                 // MyPC::vfunc_121: RemoveSkillSet of the ridee's skillSetId, PC::vfunc_121, NotifyStatusChanged(0xc, 0), then
                 // the action's switch: Hold 7 boards the nearest mount (HoldAfterRideOff). STILL-OPEN: the skill set and
-                // the other cases (UseSkill's cast, Interact's state 0x19, Taxi 0x25, CashCall 0x2a, TakeLR's
+                // the other cases (UseSkill's cast, Interact's state 0x19, Taxi 0x25, TakeLR's
                 // chair, Recall ...); a react ride-off reads null (no case 20 in ReadRideOffAction, rideonaction.cpp:159), so
                 // it is a plain ride off.
                 bool wasRiding = player.Mount != null;
@@ -116,6 +116,7 @@ public partial class LiveSession
                 if (wasRiding) { PlayOwnCommonEffect(RideOffEffectKey); PlayOwnEffect(skillEffect); OwnPassengers.Clear(); }   // and ClearPassengers
                 if (r.RideOff?.Type == RideOffHoldRequest.ActionType) HoldAfterRideOff();
                 RecallAfterRideOff(r.RideOff);   // case 8 (mypc.cpp:3467-3472)
+                CashCallAfterRideOff(r.RideOff); // case 4 (mypc.cpp:3420-3425)
                 if (OwnRide.SummonsAfterRideOff(r, selfObject)) SummonAfterRideOff(r);
                 break;
         }

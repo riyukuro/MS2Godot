@@ -20,6 +20,13 @@ public sealed class StubHudData
     /// reference run had found Tria's: its minimap shows the station enabled. Offline only: a live entry replaces the list
     /// with the ServerEnter one, or an empty one when the packet is missing (LiveSession).</summary>
     public HashSet<int> FoundTaxis = new() { 2000001 };
+    /// <summary>DAT_143ab3058, the fields the player has been to: the login packet's first int list (OnServerEnter,
+    /// scenestategame.cpp:2108-2114), then each field loaded whose world map tile is public, and its parent field
+    /// (WorldService::FUN_141bd7bf0 / FUN_141bd7c60, worldservice_1.cpp:8161-8194). Offline it starts empty.</summary>
+    public HashSet<int> VisitedFields = new();
+    /// <summary>The fields loaded since the world map's tiles were last read: FUN_141bd7bf0's candidates (the parent, then the
+    /// field), kept until the tile table is there to test them.</summary>
+    public List<int> LoadedFields = new();
     /// <summary>The field's interact objects' state from the server (1 = reactable). The reference run's extract station
     /// shows on its minimap, which only state 1 allows.</summary>
     public int InteractState = 1;

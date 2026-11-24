@@ -37,6 +37,10 @@ public sealed class WorldMapTable
     public sealed class Field
     {
         public int Id, Continent, MapType, PkMode, MapLevel, IndoorMask = 1, CashTaxiNotDestination;
+        /// <summary>m_nCashTaxiNotDeparture: &lt;cashCall cashTaxiNotDeparture&gt; (fielddata.cpp:736); m_nEnterAdminLevel:
+        /// &lt;property enterAdminLevel&gt; (:669).</summary>
+        public int CashTaxiNotDeparture, EnterAdminLevel;
+        public bool CashTaxiDepartureAllowed => CashTaxiNotDeparture == 0;   // fielddata.cpp:799
         public bool MapSearch = true;   // the ctor's m_bMapSearch(true) (fielddata.cpp:548)
         public bool IsIndoor => IndoorMask == 2 || IndoorMask == 4;     // IsIndoor (fielddata.cpp:757)
         public bool CashTaxiDestinationAllowed => CashTaxiNotDestination == 0;   // fielddata.cpp:802
@@ -111,6 +115,8 @@ public sealed class WorldMapTable
             f.MapSearch = Bool(prop, "mapSearch", true);
             f.MapLevel = Int(env.Element("drop"), "maplevel");
             f.CashTaxiNotDestination = Int(env.Element("cashCall"), "cashTaxiNotDestination");
+            f.CashTaxiNotDeparture = Int(env.Element("cashCall"), "cashTaxiNotDeparture");
+            f.EnterAdminLevel = Int(prop, "enterAdminLevel");
             if (env.Element("indoor") is { } indoor) f.IndoorMask = 1 << Int(indoor, "type");
             fields[f.Id] = f;
         }

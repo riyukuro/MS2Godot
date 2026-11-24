@@ -91,6 +91,7 @@ public partial class LiveSession
     /// the move direction sends the owner to state 2 (the call ends); in the other phases the state holds the body.</summary>
     bool TaxiHoldsMove(bool moveInput)
     {
+        if (cashCall != null) return CashCallHoldsMove(moveInput);    // StateCashCall::vfunc_8, the same hold (LiveSession.CashCall.cs)
         if (taxiCall == null) return false;
         bool held = taxiCall.HoldsMove(moveInput);
         if (taxiCall.Finished) taxiCall = null;
@@ -105,6 +106,7 @@ public partial class LiveSession
 
     void TickTaxi(double delta)
     {
+        TickCashCall(delta);      // StateCashCall::vfunc_3 (LiveSession.CashCall.cs)
         if (taxiCall == null) return;
         if (TaxiStateLeft()) { EndTaxiCall(); if (taxiCall == null) return; }
         taxiCall.Tick(delta);

@@ -532,7 +532,7 @@ public sealed class WorldMapController : UiController, IMessageBoxListener
     public Action<int> RideOffForTaxi;
     /// <summary>Turn toward the station (yaw + 180), then vfunc_59(0x25, StateTaxiCallData(field)).</summary>
     public Action<int> StartTaxiCall;
-    const int StateTaxiCall = 0x25, StateTaxiBoard = 0x2a;
+    const int StateTaxiCall = 0x25, StateCashCall = CashCall.StateId;
 
     /// <summary>CFieldData::FUN_140374410 (fielddata.cpp:637): m_nMapType == 3.</summary>
     bool FieldMapType3(int id) => Table.FindField((uint)id) is { MapType: 3 };
@@ -561,15 +561,16 @@ public sealed class WorldMapController : UiController, IMessageBoxListener
 
     /// <summary>
     /// OnMessage (:755-775): a box's answer is taken from the queue first (FUN_14151f200); yes (0) on "onTaxi" is TakeTaxi(m_190),
-    /// handled. Any other yes is handled too (return 1 at :774); another answer is not.
-    /// STILL-OPEN: "onPortal", "onCashTaxi" and "onTopMostLayer" (MoveByPortal, TakeCashTaxi, the layer) are not ported here.
+    /// on "onCashTaxi" TakeCashTaxi(m_190), handled. Any other yes is handled too (return 1 at :774); another answer is not.
+    /// STILL-OPEN: "onPortal" and "onTopMostLayer" (MoveByPortal, the layer) are not ported here.
     /// </summary>
     public bool OnMessageBox(MessageBoxController sender, int button, string tag)
     {
         MessageBoxQueue.Next();
         if (button != 0) return false;
         if (tag == "onTaxi") { TakeTaxi((int)taxiTarget); return true; }
-        return true;     // :774: any yes answer is handled, whatever the tag (onPortal, onCashTaxi, onTopMostLayer do their part below)
+        if (tag == "onCashTaxi") { TakeCashTaxi((int)taxiTarget); return true; }
+        return true;     // :774: any yes answer is handled, whatever the tag (onPortal, onTopMostLayer do their part below)
     }
 
     /// <summary>
@@ -582,7 +583,7 @@ public sealed class WorldMapController : UiController, IMessageBoxListener
     {
         if (!HasPlayer() || PlayerDead()) return;
         int st = PlayerStateId();
-        if (st == StateTaxiCall || st == StateTaxiBoard) return;
+        if (st == StateTaxiCall || st == StateCashCall) return;
         if (!StationNear()) { Notice(0x89); return; }
         if (FieldMapType3(fieldId)) { Notice(0x51); return; }
         if (field == fieldId) { Notice(0x8a); return; }
@@ -592,6 +593,169 @@ public sealed class WorldMapController : UiController, IMessageBoxListener
         if (PlayerRiding()) { RideOffForTaxi?.Invoke(fieldId); return; }
         if (!CanEnterState(StateTaxiCall)) return;
         StartTaxiCall?.Invoke(fieldId);
+    }
+
+    // ---- the air taxi (CheckCashTaxi @0x141b60e90 :2383, FUN_141b614c0 :2444, TakeCashTaxi @0x141b5aa70 :1429) ----
+    /// <summary>MyPC::IsInCubeMode.</summary>
+    public Func<bool> PlayerInCubeMode = () => false;
+    /// <summary>PC::IsVip (pc.cpp:2209).</summary>
+    public Func<bool> PlayerVip = () => false;
+    /// <summary>CFeatureManager::IsFeatureEnabled.</summary>
+    public Func<int, bool> FeatureEnabled = _ => false;
+    /// <summary>CFeatureManager::IsRegionJP.</summary>
+    public bool RegionJP;
+    /// <summary>CGameRule::IsFreeAirTaxiActive (gamerule.cpp:975): a FreeAirTaxi game event runs.</summary>
+    public Func<bool> FreeAirTaxi = () => false;
+    /// <summary>g_143ab2a90.FUN_140a5f7b0(tag, 0) (<see cref="CashCall.CountByTag"/>).</summary>
+    public Func<int, int> TicketCount = _ => 0;
+    /// <summary>CEquipment::GetAbilityRate(0xaa), the air taxi fare's discount.</summary>
+    public Func<float> AirTaxiDiscountRate = () => 0f;
+    /// <summary>Client::Constants MeratAirTaxiPrice.</summary>
+    public long MeratAirTaxiPrice = CashCall.DefaultMeratAirTaxiPrice;
+    /// <summary>Client::Constants WarpOpenContinent (Values&lt;int&gt;), read by Constants::AreSameGroup.</summary>
+    public ICollection<int> WarpOpenContinents = Array.Empty<int>();
+    /// <summary>CFieldDataCli::GetShadowContinent != 0 for a continent code (MapContinentTable's shadowContinent).</summary>
+    public Func<int, bool> IsShadowContinent = _ => false;
+    /// <summary>IClientPlatform vfunc_40(price), OnTaxiMeratConfirm's merat check. STILL-OPEN: the platform is not ported; null
+    /// makes the merat box's yes do nothing.</summary>
+    public Func<long, bool> MeratPlatformCheck;
+    /// <summary>TSingleton&lt;CCashCallManager&gt;::FUN_140b030b0(field) (<see cref="CashCall.Start"/>); null does nothing.</summary>
+    public Action<int> StartCashCall;
+
+    /// <summary>Constants::AreSameGroup (@0x1402b7750, constantsblocks.cpp:303): the same continent, or both in WarpOpenContinent.</summary>
+    internal bool AreSameGroup(int a, int b) => a == b || (WarpOpenContinents.Contains(a) && WarpOpenContinents.Contains(b));
+
+    /// <summary>ScaleValue (@0x140632990): (__int64)(value * rate + 1e-6).</summary>
+    static long ScaleValue(long value, float rate) => (long)((double)value * (double)rate + 0.000001);
+
+    /// <summary>
+    /// CheckCashTaxi (@0x141b60e90, :2383-2441): m_190 = the field. A dead player: notice 0x91; one that cannot enter StateCashCall
+    /// (0x2a): 0x93; in cube mode: 0x92; in state 0x25 or 0x2a: 0x91; the current field (WorldService::GetFieldId): 0x8a; a field
+    /// whose &lt;cashCall cashTaxiNotDeparture&gt; is set: 0x8f. The map's field or the target missing from the field table: nothing.
+    /// A target with cashTaxiNotDestination: box 0x90 with its name; one with an enterAdminLevel (FUN_140a55d20, fielddatacli.cpp:296,
+    /// the release build's debug mode is off): box 0x99d; the two fields' continents not in one group (FUN_141b60b40): 0x8e. Then
+    /// the fare box (<see cref="OfferCashTaxi"/>).
+    /// </summary>
+    void CheckCashTaxi(uint fieldId)
+    {
+        taxiTarget = fieldId;
+        if (PlayerDead()) { Notice(0x91); return; }
+        if (!CanEnterState(StateCashCall)) { Notice(0x93); return; }
+        if (PlayerInCubeMode()) { Notice(0x92); return; }
+        int st = PlayerStateId();
+        if (st == StateTaxiCall || st == StateCashCall) { Notice(0x91); return; }
+        if (FieldId == taxiTarget) { Notice(0x8a); return; }
+        // m_298, WorldService's CFieldDataCli of the current field (never null in the client): a field the table lacks reads as allowed
+        if (Table.FindField((uint)FieldId) is { CashTaxiDepartureAllowed: false }) { Notice(0x8f); return; }
+        if (Table.FindField((uint)field) is not { } from) return;
+        if (Table.FindField(taxiTarget) is not { } to) return;
+        if (!to.CashTaxiDestinationAllowed)
+        {
+            ShowBox(MessageBoxQueue.Create(0, Fill(Model.Tables.Common(0x90) ?? "", MapName(taxiTarget)), null, ""));
+            return;
+        }
+        if (to.EnterAdminLevel > 0) { ShowBox(MessageBoxQueue.Create(0, Model.Tables.Common(0x99d) ?? "", null, "")); return; }
+        if (!AreSameGroup(from.Continent, to.Continent)) { Notice(0x8e); return; }
+        OfferCashTaxi();
+    }
+
+    /// <summary>
+    /// FUN_141b614c0 (:2444-2502): a VIP with feature 0x57: the s_taxi_transfer_vip_user box. A field not visited (m_1a0): with fewer
+    /// air_taxi_advanced items than <see cref="CashCall.AdvancedTicketsNeeded"/>, with feature 0x83 the merat box (MeratAirTaxiPrice
+    /// less the 0xaa discount, OnTaxiMeratConfirm), else the s_err_cash_taxi_need_advanced_ticket box; with enough, the
+    /// s_cash_taxi_transfer_advanced box. A visited field: a free air taxi event's box 0x8d, any air_taxi or air_taxi_advanced item's
+    /// box 0x8c, else the meso fare box (CTaxiManager::GetAirTaxiFare less the 0xaa discount, the fare kept in the box,
+    /// OnTaxiMesoConfirm). The "onCashTaxi" boxes are yes / no (type 1) with this dialog as the listener.
+    /// STILL-OPEN: the merat branch's IClientPlatform vfunc_43(2, 0, 1000) before the price.
+    /// </summary>
+    void OfferCashTaxi()
+    {
+        string name = MapName(taxiTarget);
+        if (PlayerVip() && FeatureEnabled(CashCall.VipAirTaxiFeature))
+        {
+            ShowBox(MessageBoxQueue.Create(1, Fill(Common("s_taxi_transfer_vip_user"), name), this, "onCashTaxi"));
+            return;
+        }
+        if (!visited.Contains(taxiTarget))
+        {
+            if (TicketCount(CashCall.AdvancedAirTaxiTag) < CashCall.AdvancedTicketsNeeded(RegionJP))
+            {
+                if (FeatureEnabled(CashCall.MeratAirTaxiFeature))
+                {
+                    long price = MeratAirTaxiPrice;
+                    if (price != 0) price = ScaleValue(price, 1.0f - AirTaxiDiscountRate());
+                    ShowBox(MessageBoxQueue.CreateWithCallback(Fill(Common("s_err_cash_taxi_need_advanced_ticket_merat"), price), 1,
+                        OnTaxiMeratConfirm));      // ShowYesNoMessageBox (@0x140d74230): type 1 with the callback
+                }
+                else ShowBox(MessageBoxQueue.Create(0, Common("s_err_cash_taxi_need_advanced_ticket"), null, ""));
+                return;
+            }
+            ShowBox(MessageBoxQueue.Create(1, Fill(Common("s_cash_taxi_transfer_advanced"), name), this, "onCashTaxi"));
+            return;
+        }
+        if (FreeAirTaxi())
+            ShowBox(MessageBoxQueue.Create(1, Fill(Model.Tables.Common(0x8d) ?? "", name), this, "onCashTaxi"));
+        else if (TicketCount(CashCall.AirTaxiTag) > 0 || TicketCount(CashCall.AdvancedAirTaxiTag) > 0)
+            ShowBox(MessageBoxQueue.Create(1, Fill(Model.Tables.Common(0x8c) ?? "", name), this, "onCashTaxi"));
+        else
+        {
+            long fare = TaxiManager.GetAirTaxiFare((short)PlayerLevel);
+            if (fare != 0) fare = ScaleValue(fare, 1.0f - AirTaxiDiscountRate());
+            var box = MessageBoxQueue.CreateWithCallback(Fill(Common("s_cash_taxi_transfer_meso"), name, fare), 1, OnTaxiMesoConfirm);
+            box.Append(fare);      // FUN_141b62e40: AppendInt64(price)
+            ShowBox(box);
+        }
+    }
+
+    /// <summary>OnTaxiMesoConfirm (@0x141b5ad60, :1451): yes with fewer mesos than the box's fare: notice 0x34; else TakeCashTaxi.</summary>
+    bool OnTaxiMesoConfirm(int button, MessageBoxData data)
+    {
+        if (button != 0) return true;
+        long price = data.ArgLong(0, 0);
+        if (Mesos() < price) { Notice(0x34); return true; }
+        TakeCashTaxi((int)taxiTarget);
+        return true;
+    }
+
+    /// <summary>OnTaxiMeratConfirm (@0x141b5ae00, :1466): yes: the platform's merat check of MeratAirTaxiPrice, failing: notice 0x35;
+    /// else TakeCashTaxi. Without the platform (<see cref="MeratPlatformCheck"/> null) nothing happens.</summary>
+    bool OnTaxiMeratConfirm(int button, MessageBoxData data)
+    {
+        if (button != 0) return true;
+        if (MeratPlatformCheck == null) return true;
+        if (!MeratPlatformCheck(MeratAirTaxiPrice)) { Notice(0x35); return true; }
+        TakeCashTaxi((int)taxiTarget);
+        return true;
+    }
+
+    /// <summary>
+    /// TakeCashTaxi (@0x141b5aa70, :1429): from a field with pkMode 0 (WorldService's field) to a shadow continent's field with a
+    /// pkMode: the yes / no box 0x971 with the field (OnPkFieldTaxiConfirm); else the cash call (CCashCallManager::FUN_140b030b0)
+    /// and the dialog closes (vfunc_67), whatever the call did.
+    /// </summary>
+    void TakeCashTaxi(int fieldId)
+    {
+        var from = Table.FindField((uint)FieldId);
+        var to = Table.FindField((uint)fieldId);
+        if (from != null && to != null && IsShadowContinent(to.Continent) && from.PkMode == 0 && to.PkMode != 0)
+        {
+            var box = MessageBoxQueue.Create(1, Model.Tables.Common(0x971) ?? "", null, "");
+            box.Append((uint)fieldId);
+            box.Callback = OnPkFieldTaxiConfirm;
+            ShowBox(box);          // FUN_140d73c60
+            return;
+        }
+        StartCashCall?.Invoke(fieldId);
+        Close();
+    }
+
+    /// <summary>OnPkFieldTaxiConfirm (@0x141b5aec0, :1478): yes: the cash call to the box's field, then the dialog closes.</summary>
+    bool OnPkFieldTaxiConfirm(int button, MessageBoxData data)
+    {
+        if (button != 0) return true;
+        StartCashCall?.Invoke(data.ArgInt(0, 0));
+        Close();
+        return true;
     }
 
     /// <summary>Client::Constants TaxiCallBestDriverLevel (+0x2b28).</summary>
@@ -992,9 +1156,22 @@ public sealed class WorldMapController : UiController, IMessageBoxListener
                 if (args.Length > 0 && MissionRewards?.GetNextRound(Int(args, 0)) is int next and not 0) UpdateFieldMissionRound(next);
                 return true;
             case "ontaxi": OnTaxi(args); return true;
-            // the cash taxi, a portal move, the boss / dungeon dialogs and the mission reward (SendQuest :1782, the
-            // Quest packet 0x1a once the round's target is reached) move the player or spend: not here
-            case "oncashtaxi": case "onportal": case "onboss": case "ondungeon": case "onclicksearchinfoicon":
+            case "oncashtaxi":         // :548-555: nothing while m_214 (the mission attack) is set
+                if (!missionAttack && args.Length > 0 && HasPlayer()) CheckCashTaxi(UInt(args, 0));
+                return true;
+            case "onclicksearchinfoicon":
+            {
+                // :686-704: the kind, then the id. "dungeon" opens the dungeon room dialog (0x4ebd, not here); "cashTaxi" checks the
+                // air taxi (no m_214 test on this path)
+                if (args.Length < 2 || !HasPlayer()) return true;
+                string kind = Str(args, 0);
+                if (kind.Contains("dungeon", StringComparison.Ordinal)) return true;
+                if (kind.Contains("cashTaxi", StringComparison.Ordinal)) CheckCashTaxi(UInt(args, 1));
+                return true;
+            }
+            // a portal move, the boss / dungeon dialogs and the mission reward (SendQuest :1782, the Quest packet 0x1a once the
+            // round's target is reached) move the player or spend: not here
+            case "onportal": case "onboss": case "ondungeon":
             case "onclickmissionreward":
                 return true;
         }

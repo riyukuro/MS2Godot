@@ -514,6 +514,7 @@ public partial class LiveSession
         if (selfObject < 0 || player == null || !IsInstanceValid(player)) return -1;
         if (TaxiCalling) return TaxiStationAction.StateTaxiCall;
         if (recallCast is { IsCasting: true }) return RecallChecks.StateRecall;
+        if (CashCalling) return CashCall.StateId;
         int move;
         if (player.Mount != null) move = 0x21;
         else
@@ -537,6 +538,7 @@ public partial class LiveSession
         if (selfObject < 0 || player == null || !IsInstanceValid(player)) return -1;
         if (TaxiCalling) return TaxiStationAction.StateTaxiCall;
         if (recallCast is { IsCasting: true }) return RecallChecks.StateRecall;
+        if (CashCalling) return CashCall.StateId;
         return InteractKey.StateId(InteractObjects, InteractNpcs, reactState,
             Ms2.Ui.OwnPcState.CurStateId(Me.State, player.Mount != null, skillStateRuns, player.MoveStateId));
     }
