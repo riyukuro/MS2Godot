@@ -1058,8 +1058,10 @@ public partial class LiveSession : Node
             using (var first = new TcpTransport())
                 listed = await new LoginClient(first) { Ticket = ticket, MachineIdPath = machinePath }.ServerListAsync(host, port, user + "KR", pass, machine);
             if (listed.Refusal is { } refused) { GD.PushWarning($"live: login refused, state {refused.State} {refused.Message}"); LastLoginRefusal = refused; return false; }
-            // UIServerListDialog: ReceiveServerList, BuildServerList / OnSelectServer (no saved server or channel option here)
-            var choice = Ms2.Ui.ServerListPick.Pick(listed.List, null, 0);
+            // UIServerListDialog: ReceiveServerList, then BuildServerList / OnSelectServer from the options' saved server and
+            // channel (m_strServer in the ctor, uiserverlistdialog.cpp:249; atoi(m_strChannel) in OnLoadComplete, :350)
+            var saved = GameOptions.Current.ConnectOption;
+            var choice = Ms2.Ui.ServerListPick.Pick(listed.List, saved.WorldName, saved.ChannelNumber);
             if (choice == null)
             {
                 // a list without servers: box 0x20e with 0, whose OK runs the dialog's failure state (scenestatelogin.cpp:121-129)
@@ -1069,6 +1071,7 @@ public partial class LiveSession : Node
             }
             Session.ServerId = choice.ServerId;
             Session.Channel = choice.Channel;
+            pickedServer = choice.Server.Name;
             channelTabs = choice.Channels.ToArray();   // the picked server's m_channels; DynamicChannel kind 1 replaces them (SetChannels)
             // ConnectToServer (uiserverlistdialog.cpp:502-517): one of the server's addresses at random; none, no connect
             var addresses = choice.Server.Addresses;
@@ -1266,7 +1269,10 @@ public partial class LiveSession : Node
         {
             if (from == null || from.IsClosed) return Dropped(from, null);
             LoginToGame go;
-            try { go = await GameClient.SelectAsync(from, chosen.User.CharacterId, BeginEnterGame()); }
+            short asked = BeginEnterGame();
+            var select = GameClient.SelectAsync(from, chosen.User.CharacterId, asked);
+            RememberEnterGame(asked);   // EnterGame saves the server and channel options right after the request (uiserverlistdialog.cpp:641-649)
+            try { go = await select; }
             catch (System.IO.IOException e) when (from.IsClosed) { return Dropped(from, e); }
             if (!go.Ok)
             {

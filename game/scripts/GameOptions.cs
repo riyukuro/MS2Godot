@@ -342,6 +342,38 @@ public static class GameOptions
         Write(accountPath, accountDoc);
     }
 
+    /// <summary>The server list's remembered server (FUN_141260a30, at UIServerListDialog::EnterGame uiserverlistdialog.cpp:647):
+    /// the connect block's WorldName, then both files.</summary>
+    public static void RememberServer(string name)
+    {
+        var o = Current;
+        EnsureCharacter();
+        o.ConnectOption.SetWorldName(doc, name);
+        WriteGameAndAccountFiles();
+    }
+
+    /// <summary>The server list's remembered channel (FUN_141260ab0, from UIServerListDialog::EnterGame :648-649 and SetChannel
+    /// :657-661, both only for a channel other than 0): the connect block's Channel, then both files.</summary>
+    public static void RememberChannel(int channel)
+    {
+        if (channel == 0) return;
+        var o = Current;
+        EnsureCharacter();
+        o.ConnectOption.SetChannel(doc, channel);
+        WriteGameAndAccountFiles();
+    }
+
+    /// <summary>CGameOption::WriteGameAndAccountFiles (gameoption.cpp:1870-1876): the version on both documents, then both
+    /// files, as they are.</summary>
+    static void WriteGameAndAccountFiles()
+    {
+        GameOption.SetOptionVersion(doc);
+        GameOption.SetOptionVersion(accountDoc);
+        try { GameOption.WriteFile(FilePath, doc); }
+        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException) { GD.PushWarning("options: " + ex.Message); }
+        Write(accountPath, accountDoc);
+    }
+
     static XDocument ReadFile(string path)
     {
         try { return System.IO.File.Exists(path) ? Parse(System.IO.File.ReadAllBytes(path)) : null; }

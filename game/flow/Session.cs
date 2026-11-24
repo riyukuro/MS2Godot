@@ -23,7 +23,8 @@ public static class Session
 
     /// <summary>
     /// The channel the login asked for: UIServerListDialog m_nChannel, the login type of ResponseLogin, which OnLoginResult
-    /// stores as the current channel (DAT_1439f4a7c, uiserverlistdialog.cpp:618). The login sets it with the server pick (at least 1).
+    /// stores as the current channel (DAT_1439f4a7c, uiserverlistdialog.cpp:618). The login sets it with the server pick (at least 1,
+    /// the saved channel option when there is one); each ServerEnter sets it to its channel (SetChannel, scenestategame.cpp:2138).
     /// </summary>
     public static int Channel;
 

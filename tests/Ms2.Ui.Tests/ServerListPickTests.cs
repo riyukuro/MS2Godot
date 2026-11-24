@@ -18,6 +18,8 @@ public class ServerListPickTests
         var c = ServerListPick.Pick(new ServerList("live", new() { Row(3, "C", 1), Row(2, "B", 4, 2, 2, 1) }), null, 5);
         Assert.That((c.Server.Name, c.ServerId, c.Channel), Is.EqualTo(("B", 2, 1)));
         Assert.That(c.Channels, Is.EqualTo(new ushort[] { 1, 2, 4 }), "m_channels: ascending, without repeats");
+        var gone = ServerListPick.Pick(new ServerList("live", new() { Row(3, "C", 1), Row(2, "B", 4, 2, 2, 1) }), "Gone", 5);
+        Assert.That((gone.Server.Name, gone.Channel), Is.EqualTo(("B", 1)), "a saved server the list no longer has");
     }
 
     [Test]

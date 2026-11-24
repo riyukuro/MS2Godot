@@ -105,6 +105,32 @@ public class GameOptionTests
     }
 
     [Test]
+    public void TheServerListsSavedServerAndChannelGoIntoTheConnectBlock()
+    {
+        var doc = Doc("<ms2><connect WorldName=\"Old\" Channel=\"3\" CharSN=\"9\"/><other a=\"1\"/></ms2>");
+        var o = new GameOption(0);
+        o.Load(doc, _ => true);
+        Assert.That((o.ConnectOption.WorldName, o.ConnectOption.ChannelNumber), Is.EqualTo(("Old", 3)));
+        o.ConnectOption.SetWorldName(doc, "New");
+        o.ConnectOption.SetChannel(doc, 12);
+        var connect = doc.Root.Element("connect");
+        Assert.That(((string)connect.Attribute("WorldName"), (string)connect.Attribute("Channel")), Is.EqualTo(("New", "12")));
+        Assert.That((string)connect.Attribute("CharSN"), Is.EqualTo("9"), "only the one attribute is written");
+        Assert.That(doc.Root.Element("other"), Is.Not.Null);
+        var again = new GameOption(0);
+        again.Load(doc, _ => true);
+        Assert.That((again.ConnectOption.WorldName, again.ConnectOption.ChannelNumber), Is.EqualTo(("New", 12)));
+    }
+
+    [TestCase("", 0)]
+    [TestCase("7", 7)]
+    [TestCase(" 4x", 4)]
+    [TestCase("-2", -2)]
+    [TestCase("abc", 0)]
+    public void TheSavedChannelReadsAsAtoi(string text, int channel) =>
+        Assert.That(new GameOption.Connect { Channel = text }.ChannelNumber, Is.EqualTo(channel));
+
+    [Test]
     public void ShippedDefaultLoads()
     {
         var data = Environment.GetEnvironmentVariable("MS2_DATA");

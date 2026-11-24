@@ -704,6 +704,25 @@ public sealed class GameOption
             Xml.WriteString(d, "connect", "CharList", string.Join(",", CharList.Select(c => c.ToString(CultureInfo.InvariantCulture))));
             Xml.WriteBool(d, "connect", "LoginByLocaleName", LoginByLocaleName);
         }
+
+        /// <summary>FUN_141260a30 (gameoptionstruct.cpp:2934-2941): the server name, into the member and the document's
+        /// attribute (the caller then writes the files).</summary>
+        public void SetWorldName(XDocument d, string worldName)
+        {
+            WorldName = worldName ?? "";
+            Xml.WriteString(d, "connect", "WorldName", WorldName);
+        }
+
+        /// <summary>FUN_141260ab0 (gameoptionstruct.cpp:2944-2951): the channel as its decimal text ("{0}"), into the member
+        /// and the document's attribute.</summary>
+        public void SetChannel(XDocument d, int channel)
+        {
+            Channel = channel.ToString(CultureInfo.InvariantCulture);
+            Xml.WriteString(d, "connect", "Channel", Channel);
+        }
+
+        /// <summary>The saved channel as UIServerListDialog reads it: atoi(m_strChannel) (uiserverlistdialog.cpp:350, :383).</summary>
+        public int ChannelNumber => World.ReservedWords.Atoi(Channel ?? "");
     }
 
     /// <summary>Optimizer (Unk_GraphicState2): reset FUN_14125ec50 gameoptionstruct.cpp:2305-2316, load :2320-2335,

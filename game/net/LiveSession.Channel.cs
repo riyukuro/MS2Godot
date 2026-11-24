@@ -32,6 +32,17 @@ public partial class LiveSession
         return (short)n;
     }
 
+    /// <summary>UIServerListDialog::EnterGame's option part (uiserverlistdialog.cpp:647-649), after the enter request went out:
+    /// GetServer (the picked server's name), then the channel asked for when it is not 0.</summary>
+    void RememberEnterGame(short channel)
+    {
+        GameOptions.RememberServer(pickedServer ?? "");
+        GameOptions.RememberChannel(channel);
+    }
+
+    /// <summary>UIServerListDialog's m_strServer: the name of the server the login picked (ServerListPick).</summary>
+    string pickedServer;
+
     /// <summary>GetCurrentChannel @0x14092f640.</summary>
     public int CurrentChannel => serverChannel == 0 ? fallbackChannel : serverChannel;
 
@@ -69,6 +80,10 @@ public partial class LiveSession
         if (n != 0 && CurrentChannel != 0 && CurrentChannel != n) ChannelNoticeSink?.Invoke(0x2d7, n);
         serverChannel = n;
         savedAddress.NoteServerEnter(channel, activeGameEndpoint.Host, activeGameEndpoint.Port);
+        // the server list dialog's SetChannel (scenestategame.cpp:2136-2138; uiserverlistdialog.cpp:657-661): m_nChannel, and
+        // the options' channel when it is not 0
+        Ms2Godot.Flow.Session.Channel = n;
+        GameOptions.RememberChannel(n);
         ChannelsChanged?.Invoke();
     }
 
