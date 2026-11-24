@@ -14,20 +14,6 @@ public class AudioTests
         return dir;
     }
 
-    static bool IsKr(Ms2.Formats.Pack.PackSet packs)
-    {
-        ArgumentNullException.ThrowIfNull(packs);
-        return Ms2.Formats.Pack.TablePath.Region(e => packs.Exists("Xml", e)) == "kr";
-    }
-
-    static bool IsKr()
-    {
-        var data = Environment.GetEnvironmentVariable("MS2_DATA");
-        if (string.IsNullOrEmpty(data)) Assert.Ignore("MS2_DATA is not set");
-        using var packs = new Ms2.Formats.Pack.PackSet(data);
-        return IsKr(packs);
-    }
-
     // MPEG-1 layer II / III frame walker: counts frames and returns the playing time, so a payload that is not a clean
     // MPEG audio stream fails. (The client's banks hold layer II.)
     static (int frames, double seconds, int rate, int channels) WalkMpeg(byte[] b)
@@ -79,7 +65,7 @@ public class AudioTests
         var lib = new SoundLibrary(SoundDir());
         Assert.That(lib.Fev.Banks, Does.Contain("MS2Sound_BGM"));
         // KMS Sound/MS2Sound.fev has 12281 sound defs; GMS2 Sound/MS2Sound.fev has 12046.
-        Assert.That(lib.Fev.Defs.Count, Is.EqualTo(IsKr() ? 12281 : 12046));
+        Assert.That(lib.Fev.Defs.Count, Is.EqualTo(AudioData.IsKr() ? 12281 : 12046));
         // table/fielddata.xml: Tria (field 2000001) has <bgm id="35" param="5"/>
         var plan = lib.ResolveMusic(35);
         Assert.That(plan, Is.Not.Null);
@@ -212,7 +198,7 @@ public class AudioTests
     public void EffectAndNpcSoundEventsResolve()
     {
         // KMS ships Korea voice banks (voice 0); GMS2 ships EN voice banks (voice 2, NA region default).
-        var lib = new SoundLibrary(SoundDir(), voiceLanguage: IsKr() ? 0 : 2);
+        var lib = new SoundLibrary(SoundDir(), voiceLanguage: AudioData.IsKr() ? 0 : 2);
         Assert.That(lib.ResolveEvent("MS2Sound/Sound/Skill/HeavyGunner/02200017"), Is.Not.Null, "effect soundEvent");
         Assert.That(lib.ResolveEvent("ko/Npc/01000022"), Is.Not.Null, "npcSoundStart");
     }
@@ -456,7 +442,7 @@ public class AudioTests
         var kr = new SoundLibrary(dir, voiceLanguage: 0);
         var en = new SoundLibrary(dir, voiceLanguage: 2);
         var jp = new SoundLibrary(dir, voiceLanguage: 1);
-        if (IsKr())
+        if (AudioData.IsKr())
         {
             Assert.That(Path.GetFileName(kr.Bank("MS2Sound_Voice").Path), Is.EqualTo("MS2Sound_Voice_Kor_def.fsb"));
             bool hasEn = en.HasBankForVoice("MS2Sound_Voice", 2);
@@ -524,7 +510,7 @@ public class AudioTests
 
         // OBCT kind 3 = 39 groups; KMS Sound/MS2Sound.fev has 12677 events, GMS2 Sound/MS2Sound.fev has 12467.
         Assert.That(fev.Groups.Count, Is.EqualTo(39));
-        Assert.That(fev.EventCount, Is.EqualTo(IsKr() ? 12677 : 12467));
+        Assert.That(fev.EventCount, Is.EqualTo(AudioData.IsKr() ? 12677 : 12467));
 
         // 01200001 exists in BOTH MS2Sound/Sound/Attack/Swing and MS2Sound/Sound/Skill/Berserker, both category "effect"
         var swing = fev.FindEvent("01200001", "MS2Sound/Sound/Attack/Swing");
@@ -789,9 +775,9 @@ public class AudioTests
     public void LoginBgBgmTableLoadsRealXmlAndPlaysThroughMusicController()
     {
         var lib = SoundLibrary.Shared(SoundDir());
-        using var packs = new Ms2.Formats.Pack.PackSet(Environment.GetEnvironmentVariable("MS2_DATA"));
+        var packs = AudioData.DataPacks();
         var mc = new MusicController(lib.Fev);
-        if (IsKr(packs))
+        if (AudioData.IsKr(packs))
         {
             var table = LoginBgBgmTable.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/loginbgbgm.xml")));
 

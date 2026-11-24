@@ -30,7 +30,7 @@ public class SystemSoundSweepTests
         using var packs = new PackSet(d);
         var table = SystemSoundTable.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/systemsound.xml")));
         // KMS ships Korea voice banks (voice 0); GMS2 ships EN voice banks (voice 2, NA region default).
-        int effectiveVoice = TablePath.Region(e => packs.Exists("Xml", e)) == "kr" ? voice : 2;
+        int effectiveVoice = AudioData.IsKr(packs) ? voice : 2;
         var lib = new SoundLibrary(soundDir, effectiveVoice);
         var problems = new List<string>();
         var gaps = new List<string>();
@@ -94,7 +94,7 @@ public class SystemSoundSweepTests
         using var packs = new PackSet(d);
         var table = SystemSoundTable.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/systemsound.xml")));
         // KMS ships Korea voice banks (voice 0); GMS2 ships EN voice banks (voice 2, NA region default).
-        int effectiveVoice = TablePath.Region(e => packs.Exists("Xml", e)) == "kr" ? voice : 2;
+        int effectiveVoice = AudioData.IsKr(packs) ? voice : 2;
         var lib = new SoundLibrary(soundDir, effectiveVoice);
         const string key = "system_notice_error_warningBag";
         // a male priest (job group 40) and a female beginner (1), then the job sound off: the soundIDs by gender
