@@ -18,8 +18,9 @@ namespace Ms2.Ui.Hud;
 /// box 0x88c, whose OK (:312-322) runs Exit, hides the button and logs "cut_scene_stop"; the field's Esc does not skip
 /// (FUN_1418fcb70 returns at the playing movie, uichatballoon.cpp:528-530).
 /// The HUD plays a usm path (<see cref="IsUsm"/>, UICutSceneMovie::Play @0x14190fef0 picks the player by the extension) and
-/// stops the pane at its end or on a load error (<see cref="Stop"/>).
-/// STILL-OPEN: the swf movies (PlaySwf), the exit button and its timing, and box 0x88c: the port's Esc
+/// stops the pane at its end or on a load error (<see cref="Stop"/>). A swf path plays in the pane's own movie
+/// (<see cref="CutSceneMovieController"/>, PlaySwf), whose onSwfStop calls <see cref="Exit"/>.
+/// STILL-OPEN: the exit button and its timing, and box 0x88c: the port's Esc
 /// (<see cref="SkipOnEsc"/>) stands in for the button's OK.
 /// </summary>
 public sealed class CutSceneMovie

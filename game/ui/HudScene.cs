@@ -4117,30 +4117,19 @@ public partial class HudScene : Node, IUiStageHost
         if (t == 1300 && System.Environment.GetEnvironmentVariable("MS2_PERF_QUIT") != null) PerfQuit();
     }
 
-    Label movieLabel;      // STILL-OPEN: a swf cut scene movie and the cinematic pane; a label stands for them
-
-    /// <summary>UICutSceneMovie (0x4e7e): a usm movie plays full screen (<see cref="TickCutSceneVideo"/>); a swf movie and the
-    /// cinematic pane show a label while they play.</summary>
+    /// <summary>UICutSceneMovie (0x4e7e): a usm movie plays full screen (<see cref="TickCutSceneVideo"/>); a swf movie plays in the
+    /// pane's own movie (<see cref="TickCutSceneSwf"/>).</summary>
     void TickCutSceneMovie()
     {
         var movie = Ms2Godot.Net.LiveSession.Instance?.Movie;
-        bool usm = TickCutSceneVideo(movie);     // every frame: a stopped movie takes its layer down
-        bool on = movie?.IsPlaying == true && !usm;
-        if (!on && movieLabel == null) return;
-        if (movieLabel == null)
-        {
-            if (systemMenuLayer == null) AddChild(systemMenuLayer = new CanvasLayer { Layer = 11 });
-            movieLabel = new Label { Position = new Vector2(16, 16), Visible = false };
-            systemMenuLayer.AddChild(movieLabel);
-        }
-        movieLabel.Visible = on;
-        if (on) movieLabel.Text = $"[cut scene movie {movie.CutSceneId}: {movie.Path}] Esc skips";   // a swf movie
+        TickCutSceneVideo(movie);                // every frame: a stopped movie takes its layer down
+        TickCutSceneSwf(movie);
     }
 
     public override void _Process(double delta)
     {
         PerfLog.Frame(perfState);
-        TickCutSceneMovie();                                  // UICutSceneMovie's pane (STILL-OPEN: the movie)
+        TickCutSceneMovie();                                  // UICutSceneMovie's pane
         CinematicTick();                                      // UICutSceneCinematic's pane (0x4e52)
         MassiveEventTick();                                   // UIMassiveEvent::vfunc_15: the step countdown
         TriggerTimerTick();                                   // UITriggerTimerDialog::vfunc_72

@@ -8,8 +8,8 @@ namespace Ms2Godot.Ui;
 /// UI layer 2, vfunc_52 :87). The usm's end (vfunc_31 "end", :279-284) and a load error (vfunc_30 "error", :271-275) stop
 /// the pane (vfunc_53) with nothing sent, so the server's trigger goes on at its own fallback unless the player skips (Esc,
 /// <see cref="Ms2.Ui.Hud.CutSceneMovie.SkipOnEsc"/>).
-/// STILL-OPEN: the movie's sound (the usm audio is not decoded), the exit button and its box 0x88c, the swf movies
-/// (PlaySwf), the start offset (Seek(m_68)).
+/// STILL-OPEN: the movie's sound (the usm audio is not decoded), the exit button and its box 0x88c, the start offset
+/// (Seek(m_68)). The swf movies are <see cref="HudScene.TickCutSceneSwf"/>.
 /// </summary>
 public partial class HudScene
 {
