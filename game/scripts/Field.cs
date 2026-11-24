@@ -213,7 +213,7 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         AddChild(Fade);
         Triggers = new World.FieldTriggers(map.Entities, fb.TriggerMeshDraws, fb.TriggerColliders, fb.TriggerFadeDraws) { FieldName = fieldName };
         AddChild(Triggers.Fader);
-        Breakables = new World.FieldBreakables(Net.LiveSession.Instance?.Breakables ?? DevBreakables(), fb.BreakableMeshDraws, fb.BreakableFadeDraws);
+        Breakables = new World.FieldBreakables(Net.LiveSession.Instance?.Breakables ?? DevBreakables(), fb.BreakableMeshDraws, fb.BreakableFadeDraws, fb.Colliders);
         AddChild(Breakables.Fader);
         Vibrates = new World.FieldVibrateDraws(Net.LiveSession.Instance?.Vibrates, fb.VibrateMeshDraws, fb.VibrateFadeDraws, fb.VibrateColliders);
         AddChild(Vibrates.Fader);

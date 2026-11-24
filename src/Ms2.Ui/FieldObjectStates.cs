@@ -18,8 +18,10 @@ namespace Ms2.Ui;
 /// (@0x140ade120, breakableobject.cpp:244-266) returns 1, which it always does.</para>
 /// <para>SetState (<see cref="Marker"/>): the host gets <see cref="StateSet"/>, the marker's show/hide, the sequence and the
 /// dead effect to play; the tag pass (<see cref="Hud.TombTagPass.RunMarkers"/>) reads the hittable and idle rules.</para>
-/// STILL-OPEN: the physics actor, the shadow and the move cycle (Update's moveDirection/moveDistance, synced by the sync
-/// values) per marker. The reader of the cube map's list (+0x1a0) is not found.
+/// <para>The physics box (<see cref="Marker.HasBox"/>, <see cref="BoxChanged"/>): MakeNxBoxController in states 2 (so at the
+/// attach) and 6, ReleasePhysicsActor in 3 and 4.</para>
+/// STILL-OPEN: the shadow and the move cycle (Update's moveDirection/moveDistance, synced by the sync values, and the
+/// kinematic box it moves) per marker. The reader of the cube map's list (+0x1a0) is not found.
 /// </summary>
 public sealed class BreakableObjects
 {
@@ -52,6 +54,34 @@ public sealed class BreakableObjects
         /// <summary>m_ptPos / m_ptRot: properties 0xfd95ca52 ("Position") and 0x68c7c29d ("Rotation") (:617-618).</summary>
         public Vec3 Position { get; internal set; }
         public Vec3 Rotation { get; internal set; }
+        /// <summary>m_bPhysics: property 0xd3ba88ae (breakableobject.cpp:595), the flats' NxCollision (the breakable flats'
+        /// one physics flag; the hash is not checked against the name). MakeNxBoxController makes no box without it (:658).</summary>
+        public bool Physics { get; internal set; }
+        /// <summary>m_nGroup: property 0xada5c5d2 ("PropCollisionGroup") (:588), the box's shapes' group (:701).</summary>
+        public int Group { get; internal set; }
+        /// <summary>m_pActor is set: the box MakeNxBoxController (@0x140ae0210, :656-705) made and ReleasePhysicsActor
+        /// (@0x140ae0720, :736-752) removed. The box is <see cref="Size"/> (its half dimensions m_ptSize * 0.5, :679-680) at the
+        /// position with its centre raised by half the height (:689), turned by the rotation's z (rotZ, :690): see
+        /// <see cref="BoxCenter"/>. Static: the kinematic body (:671-677) is for a moving marker.</summary>
+        public bool HasBox { get; private set; }
+        /// <summary>The box's centre: the position, z + half of the size's z.</summary>
+        public Vec3 BoxCenter => new(Position.X, Position.Y, Position.Z + Size.Z * 0.5);
+
+        /// <summary>MakeNxBoxController: nothing without m_bPhysics or while the box is up (:658-661). Returns whether it made one.</summary>
+        internal bool MakeBox()
+        {
+            if (!Physics || HasBox) return false;
+            return HasBox = true;
+        }
+
+        /// <summary>ReleasePhysicsActor. Returns whether a box went.</summary>
+        internal bool ReleaseBox()
+        {
+            if (!HasBox) return false;
+            HasBox = false;
+            return true;
+        }
+
         /// <summary>m_bHasAnim: the entity's model contains 0x48ccc02d ("Actor").</summary>
         public bool HasAnim { get; internal set; }
         /// <summary>m_strIdleAnim: property 0x3ff293c8 ("InitialSequence").</summary>
@@ -98,14 +128,17 @@ public sealed class BreakableObjects
         /// damage lists and effects are empty (FUN_140ae0c20 runs only for a tomb), so 5 and 6 only show it; 2 plays the idle
         /// (force) when the model animates and shows it; 3 plays the dead effect and a random revive entry (not forced) and
         /// shows it; 4 hides it. No entity: the state only (:277). FUN_140adf6e0 acts only for a tomb, so a field marker's
-        /// state changes only by the server's Breakable.
-        /// STILL-OPEN: the physics actor (MakeNxBoxController for 2, ReleasePhysicsActor for 3 and 4) and the shadow.
+        /// state changes only by the server's Breakable. The box: MakeNxBoxController in 2 (:301) and 6 (:309),
+        /// ReleasePhysicsActor in 3 (:322) and 4 (:335); 5 leaves it.
+        /// STILL-OPEN: the shadow.
         /// </summary>
         internal void SetState(int state, long nowMs = 0, Func<int, int> pick = null)
         {
             State = state;
             if (Entity == null) return;
             Play = null; PlayForce = false;
+            if (state is 2 or 6) MakeBox();
+            else if (state is 3 or 4) ReleaseBox();
             switch (state)
             {
                 case 2:
@@ -140,6 +173,9 @@ public sealed class BreakableObjects
 
     /// <summary>A marker's state was set: the name and the state.</summary>
     public Action<string, int> StateSet;
+
+    /// <summary>A marker's box was made or released (<see cref="Marker.HasBox"/>): at the attach or by a state.</summary>
+    public Action<Marker> BoxChanged;
 
     /// <summary>The cube map's states by name (CubeMapInformationService +0x1a0).</summary>
     public IReadOnlyDictionary<string, int> CubeStates => cubeStates;
@@ -197,7 +233,9 @@ public sealed class BreakableObjects
 
     void SetState(Marker m, int state)
     {
+        bool box = m.HasBox;
         m.SetState(state, NowMs, Pick);
+        if (m.HasBox != box) BoxChanged?.Invoke(m);
         if (m.Fading && !fading.Contains(m)) fading.Add(m);
     }
 
@@ -239,9 +277,10 @@ public sealed class BreakableObjects
                 HasAnim = e.HasMixin("Actor"), IdleAnim = e.Get("InitialSequence"),
                 ReviveAnims = string.IsNullOrEmpty(revive) ? Array.Empty<string>() : revive.Split(',', StringSplitOptions.RemoveEmptyEntries),
                 DeadEffect = e.Get("reactionEffectXml"),
+                Physics = e.Bool("NxCollision"), Group = (int)e.Number("PropCollisionGroup"),
             };
             markers[m.Name] = m;
-            SetState(m, 2);
+            SetState(m, 2);   // its MakeNxBoxController makes the box
             n++;
         }
         Holding = false;

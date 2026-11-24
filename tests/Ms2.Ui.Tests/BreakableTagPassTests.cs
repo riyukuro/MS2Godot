@@ -68,6 +68,32 @@ public class BreakableTagPassTests
     }
 
     [Test]
+    public void TheBoxIsUpWhileStandingOrDamagedAndGoesWhenBrokenOrHidden()
+    {
+        // MakeNxBoxController (breakableobject.cpp:656-705) in SetState 2 (the attach's too) and 6, ReleasePhysicsActor in 3
+        // and 4; 5 leaves it; no box without m_bPhysics (NxCollision)
+        var b = new BreakableObjects { Pick = n => n - 1 };
+        var changes = new List<(string, bool)>();
+        b.BoxChanged += m => changes.Add((m.Name, m.HasBox));
+        b.AttachField(new[] { Actor("Pot", ("NxCollision", "True"), ("PropCollisionGroup", "3"), ("Position", "10, 20, 30"),
+            ("Rotation", "0, 0, 90")), Actor("NoBox") });
+        var pot = b.Find("pot");
+        Assert.That((pot.Physics, pot.Group, pot.HasBox, b.Find("nobox").HasBox), Is.EqualTo((true, 3, true, false)));
+        Assert.That((pot.BoxCenter.X, pot.BoxCenter.Y, pot.BoxCenter.Z), Is.EqualTo((10.0, 20.0, 105.0)), "the bottom at the position's z");
+        Assert.That(changes, Is.EqualTo(new[] { ("pot", true) }));
+        var seen = new List<bool>();
+        foreach (int state in new[] { 5, 3, 5, 2, 2, 4, 6, 4 })
+        {
+            Set(b, "pot", state);
+            seen.Add(pot.HasBox);
+        }
+        Assert.That(seen, Is.EqualTo(new[] { true, false, false, true, true, false, true, false }));
+        Assert.That(changes.Count, Is.EqualTo(6), "one change per make or release, none for a second make");
+        foreach (int state in new[] { 2, 6, 3 }) Set(b, "nobox", state);
+        Assert.That(changes.Count, Is.EqualTo(6), "no box without NxCollision");
+    }
+
+    [Test]
     public void AnAnimatedMarkerWithoutAnIdleNamePlaysNothing()
     {
         // SetState(2) (breakableobject.cpp:302): m_bHasAnim alone gates the idle; an empty m_strIdleAnim finds no sequence,
