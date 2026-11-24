@@ -25,7 +25,7 @@ namespace Ms2.Ui.Hud;
 /// (<see cref="CutSceneMovieController"/>, PlaySwf), whose onSwfStop calls <see cref="Exit"/>.
 /// STILL-OPEN: the exit button's own widget on a usm (the pane's movie is not loaded for a usm here: <see cref="ExitShown"/>
 /// stands in for m_exit's visibility) and, for the intro story, the video time that shows it (vfunc_15 @0x14190f600);
-/// the click on the button; the "cut_scene_stop" log.
+/// the "cut_scene_stop" log (CBigDataLogSystem) the box's OK writes.
 /// </summary>
 public sealed class CutSceneMovie
 {
@@ -82,29 +82,45 @@ public sealed class CutSceneMovie
         else { Sends++; send(new CutSceneExitTrigger(CutSceneId)); }
     }
 
-    /// <summary>The pane's key handler (vfunc_13 @0x14190f510, uicutscenemovie.cpp:246-254): Esc with the exit button shown and
+    /// <summary>The pane's own m_exit widget when the pane has one (a swf movie's pane: true while it is visible, false while the
+    /// movie has no m_exit yet), null for a usm, which has no widget here and uses <see cref="ExitShown"/> in its place.</summary>
+    public Func<bool> ExitButtonVisible { get; set; }
+
+    bool ExitVisible => ExitButtonVisible?.Invoke() ?? ExitShown;
+
+    /// <summary>The pane's key handler (vfunc_13 @0x14190f510, uicutscenemovie.cpp:246-254): Esc with the exit button visible and
     /// no message box up asks box 0x88c (FUN_140d73bc0(0x88c, 1, this, "")) and takes the key. Nothing is sent before the answer.</summary>
     public bool AskExitOnEsc()
     {
-        if (!IsPlaying || !ExitShown || !MessageBoxQueue.IsIdle) return false;
-        MessageBoxQueue.ShowCommon(0x88c, 1, answer ??= new Answer(this), "");
+        if (!IsPlaying || !ExitVisible || !MessageBoxQueue.IsIdle) return false;
+        AskExit();
         return true;
     }
+
+    /// <summary>onExit from the movie (the exit button's click, vfunc_28 @0x14190f840, :296-298): the same box, asked without the
+    /// key handler's idle check.</summary>
+    public void AskExit() => MessageBoxQueue.ShowCommon(0x88c, 1, answer ??= new Answer(this), "");
+
+    /// <summary>The box's yes ran Exit: the pane shows its exit button and plays its "hide" (:315-318).</summary>
+    public event Action ExitAnswered;
 
     /// <summary>The field's Esc at a playing movie (FUN_1419102c0, FUN_1418fcb70 :528-530): it returns without skipping.</summary>
     public bool TakesEsc() => IsPlaying;
 
     Answer answer;
 
-    /// <summary>OnMessage (@0x14190f980, :312-322): the box's first button runs Exit, hides the button and shows the next
-    /// queued box (FUN_14151f200); the answer is handled (1). Any other button leaves the box to close itself.</summary>
+    /// <summary>OnMessage (@0x14190f980, :312-322): the box's first button runs Exit, then m_exit->vfunc_3(1) (SetVisible(true))
+    /// and vfunc_13("hide") (gotoAndPlay "hide"), and shows the next queued box (FUN_14151f200); the answer is handled (1). The
+    /// button stays visible, so a later Esc asks the box again until the server's stop comes. Any other button leaves the box to
+    /// close itself. The "cut_scene_stop" log (CBigDataLogSystem) is STILL-OPEN.</summary>
     sealed class Answer(CutSceneMovie m) : IMessageBoxListener
     {
         public bool OnMessageBox(MessageBoxController sender, int button, string tag)
         {
             if (button != 0) return false;
             m.Exit();
-            m.ExitShown = false;
+            m.ExitShown = true;
+            m.ExitAnswered?.Invoke();
             MessageBoxQueue.Next();
             return true;
         }

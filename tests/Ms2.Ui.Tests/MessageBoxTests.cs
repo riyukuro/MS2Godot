@@ -150,7 +150,7 @@ public class MessageBoxTests
     }
 
     /// <summary>UICutSceneMovie::vfunc_13 (@0x14190f510) and OnMessage (@0x14190f980): Esc asks box 0x88c while the exit
-    /// button shows and no box is up; only its first button runs Exit (the Trigger request), and the button hides.</summary>
+    /// button shows and no box is up; only its first button runs Exit (the Trigger request); the button stays visible.</summary>
     [Test]
     public void EscAtACutSceneMovieAsksTheExitBoxAndOnlyYesSends()
     {
@@ -173,10 +173,54 @@ public class MessageBoxTests
         Click(h, "m_button0");
         Assert.That(sent.Count, Is.EqualTo(1), "yes: Exit sends the Trigger request");
         Assert.That(sent[0], Is.TypeOf<Ms2.Net.Packets.CutSceneExitTrigger>());
-        Assert.That(movie.ExitShown, Is.False, "the button hides");
+        Assert.That(movie.ExitShown, Is.True, "m_exit->vfunc_3(1): the button stays visible (it plays its hide)");
         Assert.That(c.IsIdle, Is.True);
         Assert.That(movie.IsPlaying, Is.True, "it plays on until the server's stop");
-        Assert.That(movie.AskExitOnEsc(), Is.False, "the hidden button asks nothing");
+        Assert.That(movie.AskExitOnEsc(), Is.True, "the visible button asks again");
+        movie.Stop();
+        Assert.That(movie.AskExitOnEsc(), Is.False, "the stop takes the button with the movie");
+    }
+
+    /// <summary>Whole list: every swf cut scene the trigger scripts play (KMS and GMS2 data alike) skips with Esc and with the exit
+    /// button. The pane's own m_exit shows once the movie plays; Esc (vfunc_13 @0x14190f510) and the button's onExit (vfunc_28
+    /// @0x14190f840) ask box 0x88c; no sends nothing, yes sends the one Trigger request (Exit @0x141910220).</summary>
+    [Test]
+    public void EveryTriggerSwfMovieSkipsWithEscAndTheExitButton()
+    {
+        var cutPacks = CutSceneMovieSwfTests.Open();
+        var (h, box) = Load();
+        var bad = new List<string>();
+        foreach (var path in CutSceneMovieSwfTests.SwfPaths(cutPacks.packs))
+        {
+            var gfx = System.IO.Path.ChangeExtension(System.IO.Path.GetFileName(path), ".gfx").ToLowerInvariant();
+            if (cutPacks.packs.FindByFileName("Resource/Gfx", gfx) == null) continue;     // not shipped: the loader errors, no pane to skip
+            var (c, state, rt, p, sent) = CutSceneMovieSwfTests.Pane(cutPacks.src, cutPacks.packs);
+            state.Start(path, 9);
+            c.Play(path);
+            for (int i = 0; i < 5; i++) p.Tick();
+            MessageBoxQueue.Clear(0);
+            h.Player.Tick();
+            if (!state.AskExitOnEsc()) { bad.Add($"{path}: Esc is not taken while the button shows"); continue; }
+            h.Player.Tick();
+            if (box.IsIdle) { bad.Add($"{path}: Esc raised no box"); continue; }
+            if (sent.Count != 0) bad.Add($"{path}: sent before the answer");
+            Click(h, "m_button1");
+            if (sent.Count != 0 || !box.IsIdle) bad.Add($"{path}: no sent {sent.Count} or left the box up");
+            state.AskExitOnEsc(); h.Player.Tick();
+            Click(h, "m_button0");
+            if (sent.Count != 1 || sent[0] is not Ms2.Net.Packets.CutSceneExitTrigger) bad.Add($"{path}: Esc + yes sent {sent.Count}");
+            // the button: onExit from the movie
+            c.OnCallback("onExit", System.Array.Empty<object>()); h.Player.Tick();
+            if (box.IsIdle) bad.Add($"{path}: onExit raised no box");
+            else
+            {
+                Click(h, "m_button0");
+                if (sent.Count != 2) bad.Add($"{path}: the button + yes sent {sent.Count} in all");
+            }
+            if (rt.Errors.Count > 0) bad.Add($"{path}: {rt.Errors.Count} errors, e.g. {rt.Errors[0]}");
+            TestContext.Out.WriteLine($"{path}: Esc and onExit ask box 0x88c, yes sends {sent.Count} in all");
+        }
+        Assert.That(bad, Is.Empty, string.Join("\n", bad));
     }
 
     [Test]

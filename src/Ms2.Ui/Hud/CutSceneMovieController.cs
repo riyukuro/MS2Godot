@@ -11,8 +11,10 @@ namespace Ms2.Ui.Hud;
 /// The stop (vfunc_53 @0x14190ed50, :107-129) calls the movie's hide (a tween out of the black backdrop and the content); the
 /// movie's onHideComplete (unloadAndStop of the loaded movie, then the call below) ends the pane (:288-293).
 /// The state (the path, the cut scene id, Exit's send) is <see cref="CutSceneMovie"/>.
-/// STILL-OPEN: the movie's sound (GFxManager::SetMasterVolume from the movie volume option, PlaySwf :411-412), the exit
-/// button's click (not answered here; Esc asks box 0x88c as <see cref="CutSceneMovie.AskExitOnEsc"/>), the start offset.
+/// The exit button's click (onExit) and Esc ask box 0x88c (<see cref="CutSceneMovie.AskExit"/>, <see cref="CutSceneMovie.AskExitOnEsc"/>);
+/// the box's OK runs Exit, shows m_exit and plays its "hide". The movie's sound is the swf's stream sound, played by the HUD (the
+/// volume is PlaySwf's, :411-413).
+/// STILL-OPEN: the start offset, the "cut_scene_stop" log.
 /// </summary>
 public sealed class CutSceneMovieController : UiController
 {
@@ -44,6 +46,19 @@ public sealed class CutSceneMovieController : UiController
         State = state;
         this.gamepad = gamepad;
         this.gamepadKeyName = gamepadKeyName;
+        state.ExitButtonVisible = ExitButtonVisible;         // Esc asks only while m_exit is there and visible (vfunc_13 :246-254)
+        state.ExitAnswered += OnExitAnswered;
+    }
+
+    /// <summary>m_exit's visibility (ASDisplayObject::GetVisible): false until the movie is loaded and ShowSkipButton ran.</summary>
+    bool ExitButtonVisible() => Host?.Entity != null && Host.Child("m_exit") is { } exit && Rt.ToBoolean(Host.Get(exit, "visible"));
+
+    /// <summary>OnMessage's yes (@0x14190f980, :315-318): m_exit->vfunc_3(1) (SetVisible(true)) and vfunc_13("hide") (gotoAndPlay "hide").</summary>
+    void OnExitAnswered()
+    {
+        if (Host?.Entity == null || Host.Child("m_exit") is not { } exit) return;
+        Host.SetVisible(exit, true);
+        Host.Invoke(exit, "gotoAndPlay", "hide");
     }
 
     public bool Loaded => Host?.Entity != null;
@@ -97,14 +112,18 @@ public sealed class CutSceneMovieController : UiController
         HideComplete?.Invoke();
     }
 
-    /// <summary>vfunc_28 (@0x14190f840): onHideComplete empties the path; onSwfStop is Exit (a cut scene id sends the Trigger
-    /// request and the movie waits for the server's stop). onExit's box 0x88c is STILL-OPEN.</summary>
+    /// <summary>vfunc_28 (@0x14190f840): onHideComplete empties the path; onExit (the exit button's click) asks box 0x88c (:296-298,
+    /// <see cref="CutSceneMovie.AskExit"/>); onSwfStop is Exit (a cut scene id sends the Trigger request and the movie waits for the
+    /// server's stop).</summary>
     public override bool OnCallback(string name, object[] args)
     {
         switch (name)
         {
             case "onHideComplete":
                 Finish();
+                return true;
+            case "onExit":
+                State.AskExit();
                 return true;
             case "onSwfStop":
                 SwfStops++;
