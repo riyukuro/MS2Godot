@@ -164,7 +164,10 @@ public class RenderStateTests
         var (packs, spec) = NifEnv.Open();
         ModelData Load(string dir, string file) => ModelData.Load(NifFile.Load(spec, packs.Read(dir,
             packs.List(dir).Single(n => n.EndsWith("/" + file, StringComparison.OrdinalIgnoreCase)))));
-        foreach (var (dir, file) in new[] { ("Resource/Model/Npc", "21430201_m_bluelapenta.nif"), ("Resource/Model/Item", "11020395_m_fhwinter01.nif") })
+        // GMS2 does not ship item 11020395; Resource/Model/Item 1/13/11300195_c_bigbomb_e.nif carries the same
+        // untested additive-blended NiAlphaProperty (flags 0x100D on Object01 and Plane).
+        var itemFile = RcGap.IsKr(packs) ? "11020395_m_fhwinter01.nif" : "11300195_c_bigbomb_e.nif";
+        foreach (var (dir, file) in new[] { ("Resource/Model/Npc", "21430201_m_bluelapenta.nif"), ("Resource/Model/Item", itemFile) })
         {
             var blended = Load(dir, file).Meshes.Where(m => m.AlphaFlags >= 0 && !m.AlphaTestOn).ToList();
             Assert.That(blended, Is.Not.Empty, file);

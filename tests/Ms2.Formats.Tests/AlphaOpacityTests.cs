@@ -79,9 +79,16 @@ public class AlphaOpacityTests
     public void WinterHatSmokeIsAnimated(string file)
     {
         var (packs, spec) = NifEnv.Open();
-        var md = Load(packs, spec, "Resource/Model/Item", file, "Plane");
+        // GMS2 does not ship item 11020395; Resource/Model/Item 1/90/19000016_fishingrod017.nif ("Editable Poly") and
+        // 1/90/19000044_fishingrod044.nif ("PolyMesh") have the same additive, material-alpha-0, NiAlphaController meshes.
+        string mesh = "Plane";
+        if (!RcGap.IsKr(packs))
+            (file, mesh) = file == "11020395_m_fhwinter01.nif"
+                ? ("19000016_fishingrod017.nif", "Editable Poly")
+                : ("19000044_fishingrod044.nif", "PolyMesh");
+        var md = Load(packs, spec, "Resource/Model/Item", file, mesh);
         var smoke = md.Meshes.Where(m => m.Blend == BlendForm.Add && m.MaterialAlpha == 0f).ToList();
-        Assert.That(smoke.Select(m => m.Name), Does.Contain("Plane"));
+        Assert.That(smoke.Select(m => m.Name), Does.Contain(mesh));
         foreach (var m in smoke)
         {
             Assert.That(m.AlphaAnim, Is.Not.Null, m.Name);

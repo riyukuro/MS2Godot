@@ -23,7 +23,7 @@ public class RcG29NpcScriptScreenEffectTests
     [Test]
     public void TheKmsContentKeepsItsTextAndSpeaker()
     {
-        using var packs = new PackSet(RcGap.Data("MS2_DATA"));
+        using var packs = new PackSet(RcGap.KmsData());
         var c = FirstContent(packs, "script/quest/questscript_final.xml");
         Assert.That(c, Is.Not.Null, "kms script/quest/questscript_final.xml has a screen-effect content");
         var ct = NpcScriptTable.Content.Parse(c);

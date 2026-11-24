@@ -50,10 +50,12 @@ public class ShadowCasterTests
     {
         var data = Environment.GetEnvironmentVariable("MS2_DATA");
         if (string.IsNullOrEmpty(data)) Assert.Ignore("MS2_DATA not set");
-        var packs = new Ms2.Formats.Pack.PackSet(data);
+        using var packs = new Ms2.Formats.Pack.PackSet(data);
         var map = FieldMap.Load(packs, new FlatLibrary(packs), "02000001_tw_tria");
         var off = map.Entities.Where(e => !e.CastsShadow).ToList();
-        Assert.That(off.Count, Is.EqualTo(1235));
+        // KMS xblock/02000001_tw_tria.xblock has 15186 entities (254 non-Mesh/non-Actor: 2 MS2RegionSpawn, 0 SpawnPointNPC -> 1235 off);
+        // GMS2 xblock/02000001_tw_tria.xblock has 15185 entities (253 non-Mesh/non-Actor: 0 MS2RegionSpawn, 1 SpawnPointNPC -> 1234 off).
+        Assert.That(off.Count, Is.EqualTo(RcGap.IsKr(packs) ? 1235 : 1234));
         Assert.That(off.Count(e => e.HasMixin("Mesh")), Is.EqualTo(981));
         Assert.That(off.Where(e => !e.HasMixin("Mesh") && !e.HasMixin("Actor")).All(e => e.Get("NifAsset") == null), Is.True);
         foreach (var name in new[] { "co_fluid_water_B02_", "he_fi_nature_grass_A01_", "he_fi_prop_fence_C02_" })

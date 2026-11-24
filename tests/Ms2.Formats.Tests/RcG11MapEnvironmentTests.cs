@@ -15,7 +15,7 @@ public class RcG11MapEnvironmentTests
     [Test]
     public void TheKmsFieldKeepsItsLoginXBlock()
     {
-        using var packs = new PackSet(RcGap.Data("MS2_DATA"));
+        using var packs = new PackSet(RcGap.KmsData());
         var f = FieldData.FindById(packs, 1);
         Assert.That(f, Is.Not.Null, "kms table/fielddata.xml id 1");
         Assert.That(f.XBlock, Is.EqualTo("Login"));

@@ -14,7 +14,7 @@ public class RcG18HousingTests
     [Test]
     public void TheKmsHousingTableKeepsItsRow()
     {
-        using var packs = new PackSet(RcGap.Data("MS2_DATA"));
+        using var packs = new PackSet(RcGap.KmsData());
         var r = new HousingTable(packs).Get(50100000);
         Assert.That(r, Is.Not.Null, "kms table/housing.xml");
         Assert.That(r.CategoryIndex, Is.EqualTo(14));

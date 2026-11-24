@@ -72,9 +72,14 @@ public class FieldEffectRouteTests
         var (packs, spec) = NifEnv.Open();
         var assets = AssetIndex.For(packs);
         var flats = new FlatLibrary(packs);
-        // 02000556's butterflies: EffectMesh entities whose model (common/etc/ks_npc_butterfly_b01.nif) is skinned
-        var e = FieldMap.Load(packs, flats, "02000556_bf").Entities.First(k => k.HasMixin("EffectMesh") && k.Get("NifAsset") is { } l
-            && assets.Resolve(l).entry?.EndsWith("ks_npc_butterfly_b01.nif") == true);
+        // KMS: 02000556_bf's butterflies (common/etc/ks_npc_butterfly_b01.nif);
+        // GMS2 does not ship xblock/02000556_bf.xblock, and xblock/02020010_bf.xblock places 4 EffectMesh butterflies
+        // (ks_npc_butterfly_A02_) whose Resource/Model/Map NIF (common/etc/ks_npc_butterfly_a02.nif) is skinned.
+        var (xblock, nif) = RcGap.IsKr(packs)
+            ? ("02000556_bf", "ks_npc_butterfly_b01.nif")
+            : ("02020010_bf", "ks_npc_butterfly_a02.nif");
+        var e = FieldMap.Load(packs, flats, xblock).Entities.First(k => k.HasMixin("EffectMesh") && k.Get("NifAsset") is { } l
+            && assets.Resolve(l).entry?.EndsWith(nif) == true);
         string llid = e.Get("NifAsset");
         var (archive, entry) = assets.Resolve(llid);
         var md = ModelData.Load(NifFile.Load(spec, packs.Read(archive, entry)));

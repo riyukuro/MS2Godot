@@ -75,8 +75,22 @@ public class SeasonDataTableTests
         var data = System.Environment.GetEnvironmentVariable("MS2_DATA");
         if (string.IsNullOrEmpty(data) || !System.IO.Directory.Exists(data)) Assert.Ignore("MS2_DATA not set");
         using var packs = new PackSet(data);
-        var t = new SeasonDataTable(packs, "GuildPvP", new GameStrings(packs));
-        Assert.That(t.Count, Is.GreaterThan(0));
-        Assert.That(t.All.All(s => s.Id > 0 && s.Grades.Length == 7));
+        var strings = new GameStrings(packs);
+        var t = new SeasonDataTable(packs, "GuildPvP", strings);
+        if (RcGap.IsKr(packs))
+        {
+            Assert.That(t.Count, Is.GreaterThan(0));
+            Assert.That(t.All.All(s => s.Id > 0 && s.Grades.Length == 7));
+        }
+        else
+        {
+            // GMS2 table/na/seasondata_guildpvp.xml ships a single blank template <Season seasonID="" .../> row (id 0);
+            // table/na/seasondata_pvp.xml carries the populated PvP seasons (54 rows, ids 1..54).
+            Assert.That(t.Count, Is.EqualTo(1));
+            Assert.That(t.All.All(s => s.Id == 0 && s.Grades.Length == 7));
+            var pvp = new SeasonDataTable(packs, "PvP", strings);
+            Assert.That(pvp.Count, Is.GreaterThan(0));
+            Assert.That(pvp.All.All(s => s.Id > 0 && s.Grades.Length == 7));
+        }
     }
 }
