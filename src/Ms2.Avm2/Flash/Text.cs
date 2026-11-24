@@ -157,8 +157,15 @@ public class AsTextField : AsInteractiveObject
     /// applied before this runs (ConstructInto).</summary>
     void LoadGeom() { if (geomX == null) UpdateGeom(force: true); }
 
-    /// <summary>Scaleform's translator: a text that is a string-table key ("$s_...") shows the table's value.</summary>
-    string Tr(string s) => s.Length > 1 && s[0] == '$' && Class.Runtime.Player?.Translate is { } t ? t(s) ?? s : s;
+    /// <summary>Scaleform's translator on a text set (TextField::SetTextValue @0x1425bd9a0, sfr_gfx_03f.cpp:600-700): the whole
+    /// text of every text field is the key handed to the movie's translator, unless the field's Flags_NoTranslate is set
+    /// (gfx_textfield.h:140; only AS2 sets it, the AS3 TextFieldEx has no setNoTranslate, sfr_as3_14.cpp:112-128). The client's
+    /// FontTranslator::Translate (@0x1422f9d10, fontconfig.cpp:315) returns at once for an empty key, looks the key up in its
+    /// map by the whole text (no "$" test, no trimming), and only a key it finds sets the result (SetResultHtml, the text
+    /// takes it as HTML); a key that is not in the table leaves the result unset, so the field keeps the text it was given.
+    /// The "$s_..." keys of korFlash.xml and the "s_..." keys of stringMovie.xml / usmSubtitleText.xml (the cut scene movies'
+    /// subtitles) are all keys in that one map.</summary>
+    string Tr(string s) => s.Length > 0 && Class.Runtime.Player?.Translate is { } t ? t(s) ?? s : s;
 
     double Size => Format?.size is { } s && !Rt.IsNullish(s) ? Rt.ToNumber(s) : 12;
     string FontName => Format?.font is string f ? f : "";

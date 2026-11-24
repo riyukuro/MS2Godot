@@ -929,6 +929,29 @@ public class RuntimeTests
     }
 
     [Test]
+    public void EveryTextIsTheTranslatorsKeyNotOnlyOneWithADollar()
+    {
+        // TextField::SetTextValue hands the whole text to the translator whatever it starts with (the cut scene subtitles are
+        // "s_Cut_..." keys); an empty text is not asked for, and a text the table has no entry for stays as it is
+        var (rt, p) = Empty();
+        var asked = new List<string>();
+        p.Translate = k => { asked.Add(k); return k == "s_Cut_Blackstar_Crash_01" ? "The <b>ship</b> falls" : null; };
+        var tf = Field(rt, 200, false);
+        tf.text = "s_Cut_Blackstar_Crash_01";
+        Assert.That(tf.Text, Is.EqualTo("The ship falls"));
+        Assert.That(tf.Html, Is.EqualTo("The <b>ship</b> falls"));
+        tf.text = "s_Cut_Blackstar_Crash_02";
+        Assert.That(tf.Text, Is.EqualTo("s_Cut_Blackstar_Crash_02"), "a key with no value stays");
+        tf.text = "s_Cut_Blackstar_Crash_01 and more";
+        Assert.That(tf.Text, Is.EqualTo("s_Cut_Blackstar_Crash_01 and more"), "only a whole text is a key");
+        asked.Clear();
+        tf.text = "";
+        Assert.That(asked, Is.Empty, "an empty key returns before the lookup");
+        tf.htmlText = "<p><font size=\"12\">s_Cut_Blackstar_Crash_01</font></p>";
+        Assert.That(tf.Text, Is.EqualTo("The ship falls"), "an html text's plain text is the key as well");
+    }
+
+    [Test]
     public void TextAutoSizeScaleFollowsDocViewFormat()
     {
         // shrink: the smaller axis ratio where the text is larger; text that fits keeps its size
