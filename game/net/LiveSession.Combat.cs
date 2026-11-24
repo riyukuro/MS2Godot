@@ -1002,8 +1002,9 @@ public partial class LiveSession
                         int presses = int.Parse(Env("MS2_LIVE_COMBAT_PRESSES", "30"));
                         for (; press < presses && !Gone(); press++) { hud.FaceScripted(target.Position); await frames(20); hud.AttackScripted(); await frames(60); }
                         // MS2_LIVE_LOOT_FINISH=1: a mob still up after the presses is finished by the GM kill near the player (the
-                        // server's kill goes through the same death and the same drops, the player its damage dealer)
-                        if (!Gone() && Env("MS2_LIVE_LOOT_FINISH", "0") == "1") { hud.SubmitChatLine("/kill near --distance 600"); await until(Gone, 60 * 5); }
+                        // server's kill goes through the same death and the same drops, the player its damage dealer); =all kills
+                        // every mob and NPC of the field instead, for a server whose kill near finds none
+                        if (!Gone() && Env("MS2_LIVE_LOOT_FINISH", "0") is "1" or "all") { hud.SubmitChatLine(Env("MS2_LIVE_LOOT_FINISH", "0") == "all" ? "/kill all" : "/kill near --distance 600"); await until(Gone, 60 * 5); }
                         await until(() => made.Any(d => d.SourceObjectId == target.ObjectId), 60 * 6); await frames(60 * 3);
                         mine = made.Where(d => d.SourceObjectId == target.ObjectId).ToList();
                         GD.Print($"live: combat mobloot kill {kill}: npc {target.ObjectId} dead {Gone()} after {press} press(es), drops {string.Join(" ", mine.Select(d => $"{d.ItemId}x{d.Amount}/r{d.Rarity}"))}");
@@ -1124,7 +1125,10 @@ public partial class LiveSession
                         if (target == null || npcs == added) { Check("the mob is in the field", false); break; }
                         int deadBefore = kills, press = 0;
                         bool Gone() => kills > deadBefore || !GodotObject.IsInstanceValid(target.Root) || live.NpcDead(target.ObjectId);
-                        for (; press < 30 && !Gone(); press++) { hud.FaceScripted(target.Position); await frames(20); hud.AttackScripted(); await frames(60); }
+                        int presses = int.Parse(Env("MS2_LIVE_COMBAT_PRESSES", "30"));
+                        for (; press < presses && !Gone(); press++) { hud.FaceScripted(target.Position); await frames(20); hud.AttackScripted(); await frames(60); }
+                        // MS2_LIVE_LOOT_FINISH=1 or all: a mob still up is finished by the GM kill, as in mobloot
+                        if (!Gone() && Env("MS2_LIVE_LOOT_FINISH", "0") is "1" or "all") { hud.SubmitChatLine(Env("MS2_LIVE_LOOT_FINISH", "0") == "all" ? "/kill all" : "/kill near --distance 600"); await until(Gone, 60 * 5); }
                         await until(() => made.Any(d => d.SourceObjectId == target.ObjectId), 60 * 6); await frames(60 * 3);
                         drop = made.FirstOrDefault(d => d.SourceObjectId == target.ObjectId && IsItem(d) && live.DropShown(d.ObjectId) != null);
                         GD.Print($"live: combat autoloot kill {kill}: npc {target.ObjectId} dead {Gone()} after {press} press(es), drops {string.Join(" ", made.Where(d => d.SourceObjectId == target.ObjectId).Select(d => $"{d.ItemId}x{d.Amount}/r{d.Rarity}/kind 0x{d.DropKind:x}"))}");
@@ -1153,7 +1157,9 @@ public partial class LiveSession
                     void Ask(int id) { if (id == drop.ObjectId) asks.Add(((uint)Time.GetTicksMsec(), "request")); }
                     void Refused(int id, int mode) { if (id == drop.ObjectId) asks.Add(((uint)Time.GetTicksMsec(), $"refused mode {mode}")); }
                     void Notice(int n) { if (n == Ms2.Formats.World.DropPickup.BagFullNotice) asks.Add(((uint)Time.GetTicksMsec(), "notice 0x43")); }
-                    live.DropAutoRequest += Ask; live.DropRefused += Refused; live.DropNotice += Notice;
+                    var sounds = new System.Collections.Generic.List<(string Key, bool Played)>();
+                    void Sound(string k, bool played) => sounds.Add((k, played));
+                    live.DropAutoRequest += Ask; live.DropRefused += Refused; live.DropNotice += Notice; live.DropSystemSound += Sound;
                     long bag0 = BagSum(live);
                     live.PickupKeyHeld = false;
                     options.CopyFrom(on);
@@ -1164,13 +1170,17 @@ public partial class LiveSession
                     }
                     hud.DriveEnd();
                     await frames(20); Shot(full ? "autofull_asked.png" : "autoloot_asked.png");
-                    if (full) await until(() => asks.Count(a => a.What == "request") >= 3, 60 * 8);
+                    // MS2_LIVE_LOOT_NO_REFUSAL=1: a server that answers a full-bag request with nothing (no mode 1)
+                    bool refuses = Env("MS2_LIVE_LOOT_NO_REFUSAL", "0") != "1";
+                    if (full && refuses) await until(() => asks.Count(a => a.What == "request") >= 3, 60 * 8);
+                    else if (full) await frames(60 * 8);
                     else await until(() => live.DropShown(drop.ObjectId) == null && BagSum(live) > bag0, 60 * 5);
                     await frames(60);
-                    live.DropAutoRequest -= Ask; live.DropRefused -= Refused; live.DropNotice -= Notice;
+                    live.DropAutoRequest -= Ask; live.DropRefused -= Refused; live.DropNotice -= Notice; live.DropSystemSound -= Sound;
                     options.CopyFrom(saved);
                     uint t0 = asks.Count > 0 ? asks[0].At : 0;
-                    GD.Print($"live: combat {(full ? "autofull" : "autoloot")}: {string.Join(", ", asks.Select(a => $"{a.What} +{a.At - t0} ms"))}; key held {live.PickupKeyHeld}");
+                    GD.Print($"live: combat {(full ? "autofull" : "autoloot")}: {string.Join(", ", asks.Select(a => $"{a.What} +{a.At - t0} ms"))}; key held {live.PickupKeyHeld}; "
+                        + $"sounds {string.Join(" ", sounds.Select(x => $"{x.Key}:{(x.Played ? "played" : "not played")}"))}");
                     Shot(full ? "autofull_after.png" : "autoloot_after.png");
                     if (!full)
                     {
@@ -1179,11 +1189,18 @@ public partial class LiveSession
                         break;
                     }
                     var seq = asks.Where(a => a.What != "notice 0x43").Select(a => a.What).ToList();
-                    bool alternates = seq.Count >= 3 && seq.Select((w, i) => w == (i % 2 == 0 ? "request" : "refused mode 1")).All(x => x);
-                    Check($"each auto request waits for the mode 1 refusal before the next ({string.Join(" > ", seq)})", alternates);
-                    var reqs = asks.Where(a => a.What == "request").Select(a => a.At).ToList();
-                    Check($"the next request comes after the repeat delay ({string.Join(" ", reqs.Zip(reqs.Skip(1), (x, y) => y - x))} ms)", reqs.Count >= 2 && reqs.Zip(reqs.Skip(1), (x, y) => y - x).All(d => d >= Ms2.Formats.World.DropPickup.RepeatDelayMs));
+                    if (!refuses)
+                        // no refusal clears the request flag, so auto loot does not ask again (OnFieldPickupItem mode 1 is what clears it)
+                        Check($"one auto request, and none after it with no refusal ({string.Join(" > ", seq)})", seq.Count == 1 && seq[0] == "request");
+                    else
+                    {
+                        bool alternates = seq.Count >= 3 && seq.Select((w, i) => w == (i % 2 == 0 ? "request" : "refused mode 1")).All(x => x);
+                        Check($"each auto request waits for the mode 1 refusal before the next ({string.Join(" > ", seq)})", alternates);
+                        var reqs = asks.Where(a => a.What == "request").Select(a => a.At).ToList();
+                        Check($"the next request comes after the repeat delay ({string.Join(" ", reqs.Zip(reqs.Skip(1), (x, y) => y - x))} ms)", reqs.Count >= 2 && reqs.Zip(reqs.Skip(1), (x, y) => y - x).All(d => d >= Ms2.Formats.World.DropPickup.RepeatDelayMs));
+                    }
                     Check("the bag-full notice came with the requests", asks.Any(a => a.What == "notice 0x43"));
+                    Check("the bag-full sound played", sounds.Any(x => x.Key == Ms2.Formats.World.DropPickup.BagFullSound && x.Played));
                     Check($"the drop stays and the bag is unchanged ({bag0} -> {BagSum(live)})", live.DropShown(drop.ObjectId) != null && BagSum(live) == bag0);
                     break;
                 }
