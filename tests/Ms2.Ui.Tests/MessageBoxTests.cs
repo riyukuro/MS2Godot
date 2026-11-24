@@ -136,6 +136,36 @@ public class MessageBoxTests
         Assert.That(quit, Is.EqualTo(1));
     }
 
+    /// <summary>UICutSceneMovie::vfunc_13 (@0x14190f510) and OnMessage (@0x14190f980): Esc asks box 0x88c while the exit
+    /// button shows and no box is up; only its first button runs Exit (the Trigger request), and the button hides.</summary>
+    [Test]
+    public void EscAtACutSceneMovieAsksTheExitBoxAndOnlyYesSends()
+    {
+        var (h, c) = Load();
+        var sent = new List<Ms2.Net.Wire.IOutPacket>();
+        var movie = new CutSceneMovie(sent.Add);
+        Assert.That(movie.AskExitOnEsc(), Is.False, "no movie, no box");
+        movie.Start("Common/Common_Opening.usm", 7);
+        Assert.That(movie.AskExitOnEsc(), Is.True);
+        h.Player.Tick();
+        Assert.That(c.IsIdle, Is.False, "the box is up");
+        Assert.That(sent, Is.Empty, "nothing is sent before the answer");
+        Assert.That(movie.AskExitOnEsc(), Is.False, "a box is up: the key is not taken");
+        Click(h, "m_button1");
+        Assert.That(sent, Is.Empty, "no: nothing is sent");
+        Assert.That(movie.IsPlaying && movie.ExitShown, Is.True);
+        Assert.That(c.IsIdle, Is.True);
+        Assert.That(movie.AskExitOnEsc(), Is.True);
+        h.Player.Tick();
+        Click(h, "m_button0");
+        Assert.That(sent.Count, Is.EqualTo(1), "yes: Exit sends the Trigger request");
+        Assert.That(sent[0], Is.TypeOf<Ms2.Net.Packets.CutSceneExitTrigger>());
+        Assert.That(movie.ExitShown, Is.False, "the button hides");
+        Assert.That(c.IsIdle, Is.True);
+        Assert.That(movie.IsPlaying, Is.True, "it plays on until the server's stop");
+        Assert.That(movie.AskExitOnEsc(), Is.False, "the hidden button asks nothing");
+    }
+
     [Test]
     public void PricedSmartPushBoxHasARealNoButton()
     {

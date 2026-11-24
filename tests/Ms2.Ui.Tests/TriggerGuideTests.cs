@@ -143,7 +143,9 @@ public class TriggerGuideTests
         Assert.That(movie.IsPlaying, Is.True);
         Assert.That(movie.Path, Is.EqualTo("cut/intro.usm"));
         Assert.That(sent, Is.Empty, "no send without the skip");
-        Assert.That(Ms2.Ui.Hud.FieldEsc.Run(() => false, () => false, () => false, movie.SkipOnEsc), Is.True);
+        Assert.That(Ms2.Ui.Hud.FieldEsc.Run(() => false, () => false, () => false, movie.TakesEsc), Is.True, "the field's Esc returns at a playing movie");
+        Assert.That(sent, Is.Empty, "the field's Esc skips nothing");
+        movie.Exit();    // the exit box's OK
         Assert.That(sent.Count, Is.EqualTo(1));
         Assert.That(sent[0], Is.EqualTo(new byte[] { sentType, 5, 1, 0, 0, 0 }));
         Assert.That(movie.IsPlaying, Is.True, "it plays on until the server's stop");
@@ -152,10 +154,25 @@ public class TriggerGuideTests
         Assert.That(TriggerGuide.Apply(Body(inType, 5, 1), profile, null, movie), Is.True);
         Assert.That(movie.IsPlaying, Is.False);
         Assert.That(movie.CutSceneId, Is.Zero, "vfunc_53 clears the cut scene id");
-        Assert.That(movie.SkipOnEsc(), Is.False, "Esc is not taken without a movie");
+        Assert.That(movie.TakesEsc(), Is.False, "Esc is not taken without a movie");
+        Assert.That(movie.AskExitOnEsc(), Is.False, "and asks no box");
         movie.Exit();
         Assert.That(TriggerGuide.Apply(Body(inType, 5, 1), profile, null, movie), Is.True);
         Assert.That(sent.Count, Is.EqualTo(1), "after the stop neither an Exit nor the id's stop sends again");
+    }
+
+    /// <summary>The intro story's exit button shows later (vfunc_15), so Esc asks no box before that; the field's Esc still returns.</summary>
+    [Test]
+    public void TheIntroStoryHasNoExitButtonToAsk()
+    {
+        var movie = new Ms2.Ui.Hud.CutSceneMovie(_ => { });
+        movie.Start("Common/MS2IntroStory.usm", 0);
+        Assert.That(movie.ExitShown, Is.False);
+        Assert.That(movie.AskExitOnEsc(), Is.False);
+        Assert.That(movie.TakesEsc(), Is.True);
+        movie.Stop();
+        movie.Start("Common/Common_Opening.usm", 0);
+        Assert.That(movie.ExitShown, Is.True, "OnLoadComplete: ShowSkipButton");
     }
 
     [Test]

@@ -973,6 +973,12 @@ public partial class LiveSession
                 Shows("after the movie");
                 continue;
             }
+            if (step == "moviestate")      // what the cut scene pane holds now (the pane, the usm layer, the exit button), to compare before and after a field change
+            {
+                GD.Print($"live: movie state: playing {live.Movie.IsPlaying}, path {live.Movie.Path}, id {live.Movie.CutSceneId}, exit button {live.Movie.ExitShown}, usm layer shown {hud.CutSceneVideoShown}, field {live.CurrentEntry?.MapId}");
+                Shot($"moviestate_{live.CurrentEntry?.MapId}.png");
+                continue;
+            }
             if (step == "camfree")      // the trigger camera is back in the follow mode
             {
                 var cam = triggerFieldOf(live)?.TriggerCamera;
@@ -1888,16 +1894,27 @@ public partial class LiveSession
                     Check($"hits per press: {hitPresses} of {press}", press >= need && hitPresses == press);
                     break;
                 }
-                case "skipmovie":    // a playing cut scene movie skipped by the HUD's Esc (the port's stand-in for the movie's exit button), then until the server's stop
+                case "skipmovie":    // a playing cut scene movie skipped as the client does: Esc asks box 0x88c, its first button runs Exit; then until the server's stop
                 {
                     await until(() => live.Movie.IsPlaying, 60 * 30);
                     int id = live.Movie.CutSceneId;
                     Check("a cut scene movie plays", live.Movie.IsPlaying);
                     if (!live.Movie.IsPlaying) break;
+                    int sends = live.Movie.Sends;
                     hud.Escape();
                     GD.Print($"live: combat skip movie {id}: Esc pressed");
+                    await until(() => hud.ShownBoxScripted() != null, 60 * 3); await frames(10);
+                    var ask = hud.ShownBoxScripted();
+                    Check($"Esc asks a box ({ask?.Msg})", ask != null);
+                    Check("nothing is sent before the answer", live.Movie.Sends == sends);
+                    Shot("skipmovie_box.png");
+                    hud.Escape(); await frames(5);
+                    Check("a second Esc asks no second box", hud.ShownBoxScripted() == ask);
+                    GD.Print($"live: combat skip movie: box answered {(hud.BagBoxAnswerScripted(ask, 0, ask?.Extra ?? "") ? "yes" : "no box")}");
+                    await frames(10);
+                    Check("the answer sent the stop request", live.Movie.Sends == sends + 1 || id == 0);
                     await until(() => !live.Movie.IsPlaying, 60 * 15);
-                    Check("the server stopped the movie", !live.Movie.IsPlaying);
+                    GD.Print($"live: combat skip movie {id}: the server {(live.Movie.IsPlaying ? "did not stop it" : "stopped it")}");
                     break;
                 }
                 case "hitlast":      // the npc the server added last (no spawn of our own), faced and attacked until it dies or the field changes; up to MS2_LIVE_COMBAT_PRESSES presses

@@ -15,13 +15,17 @@ namespace Ms2.Ui.Hud;
 /// player's "end" to vfunc_53, uicutscenemovie.cpp:279-284), and so does a load error (vfunc_30, :271-275); only a swf
 /// movie's own stop (onSwfStop, :300-301) goes through Exit. A server that waits for the movie's stop therefore waits
 /// its own time when the player does not skip. In the client the skip is the movie's exit button: onExit (:296-298) asks
-/// box 0x88c, whose OK (:312-322) runs Exit, hides the button and logs "cut_scene_stop"; the field's Esc does not skip
-/// (FUN_1418fcb70 returns at the playing movie, uichatballoon.cpp:528-530).
+/// box 0x88c, whose OK (:312-322) runs Exit, hides the button and logs "cut_scene_stop". The pane's own key handler
+/// (vfunc_13 @0x14190f510, :246-254) takes Esc to the same box while the button shows and no box is up
+/// (<see cref="AskExitOnEsc"/>); the field's Esc does not skip (FUN_1418fcb70 returns at the playing movie,
+/// uichatballoon.cpp:528-530, <see cref="TakesEsc"/>). Nothing in the client stops the pane on a field change: a usm plays
+/// to its end, a load error, the server's stop or a confirmed skip.
 /// The HUD plays a usm path (<see cref="IsUsm"/>, UICutSceneMovie::Play @0x14190fef0 picks the player by the extension) and
 /// stops the pane at its end or on a load error (<see cref="Stop"/>). A swf path plays in the pane's own movie
 /// (<see cref="CutSceneMovieController"/>, PlaySwf), whose onSwfStop calls <see cref="Exit"/>.
-/// STILL-OPEN: the exit button and its timing, and box 0x88c: the port's Esc
-/// (<see cref="SkipOnEsc"/>) stands in for the button's OK.
+/// STILL-OPEN: the exit button's own widget on a usm (the pane's movie is not loaded for a usm here: <see cref="ExitShown"/>
+/// stands in for m_exit's visibility) and, for the intro story, the video time that shows it (vfunc_15 @0x14190f600);
+/// the click on the button; the "cut_scene_stop" log.
 /// </summary>
 public sealed class CutSceneMovie
 {
@@ -34,12 +38,23 @@ public sealed class CutSceneMovie
     public int CutSceneId { get; private set; }
     public bool IsPlaying => Path != null;
 
+    /// <summary>The Trigger requests <see cref="Exit"/> sent (a live check counts them).</summary>
+    public int Sends { get; private set; }
+
+    /// <summary>m_exit shows (ShowSkipButton @0x14190fcb0, from OnLoadComplete @0x14190ee90 unless the intro story: that one
+    /// shows it later, vfunc_15) and is hidden by the box's OK.</summary>
+    public bool ExitShown { get; private set; }
+
+    /// <summary>vfunc_52 (@0x14190ec00, :80): m_bIntroStory is the path "Common/MS2IntroStory.usm".</summary>
+    public static bool IsIntroStory(string path) => path == "Common/MS2IntroStory.usm";
+
     /// <summary>FUN_141863b70: a movie that plays is stopped first, then the id is stored and the path starts.</summary>
     public void Start(string path, int cutSceneId)
     {
         if (IsPlaying) Stop();
         CutSceneId = cutSceneId;
         Path = path;
+        ExitShown = !IsIntroStory(path);
     }
 
     /// <summary>UICutSceneMovie::Play (@0x14190fef0, uicutscenemovie.cpp:377-389): PathFindExtension ".usm" plays in the
@@ -51,6 +66,7 @@ public sealed class CutSceneMovie
     {
         Path = null;
         CutSceneId = 0;
+        ExitShown = false;
     }
 
     /// <summary>UICutSceneMovie::StopIfCutScene (@0x14190f0d0): the id has to be the stored one.</summary>
@@ -63,15 +79,34 @@ public sealed class CutSceneMovie
     public void Exit()
     {
         if (CutSceneId == 0) Stop();
-        else send(new CutSceneExitTrigger(CutSceneId));
+        else { Sends++; send(new CutSceneExitTrigger(CutSceneId)); }
     }
 
-    /// <summary>The port's Esc step for the movie (FUN_1419102c0 = it plays): skips it, taking the key, in place of the movie's
-    /// exit button and its box 0x88c (the client's field Esc only stops at a playing movie).</summary>
-    public bool SkipOnEsc()
+    /// <summary>The pane's key handler (vfunc_13 @0x14190f510, uicutscenemovie.cpp:246-254): Esc with the exit button shown and
+    /// no message box up asks box 0x88c (FUN_140d73bc0(0x88c, 1, this, "")) and takes the key. Nothing is sent before the answer.</summary>
+    public bool AskExitOnEsc()
     {
-        if (!IsPlaying) return false;
-        Exit();
+        if (!IsPlaying || !ExitShown || !MessageBoxQueue.IsIdle) return false;
+        MessageBoxQueue.ShowCommon(0x88c, 1, answer ??= new Answer(this), "");
         return true;
+    }
+
+    /// <summary>The field's Esc at a playing movie (FUN_1419102c0, FUN_1418fcb70 :528-530): it returns without skipping.</summary>
+    public bool TakesEsc() => IsPlaying;
+
+    Answer answer;
+
+    /// <summary>OnMessage (@0x14190f980, :312-322): the box's first button runs Exit, hides the button and shows the next
+    /// queued box (FUN_14151f200); the answer is handled (1). Any other button leaves the box to close itself.</summary>
+    sealed class Answer(CutSceneMovie m) : IMessageBoxListener
+    {
+        public bool OnMessageBox(MessageBoxController sender, int button, string tag)
+        {
+            if (button != 0) return false;
+            m.Exit();
+            m.ExitShown = false;
+            MessageBoxQueue.Next();
+            return true;
+        }
     }
 }

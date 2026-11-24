@@ -12,7 +12,7 @@ namespace Ms2.Ui.Hud;
 /// movie's onHideComplete (unloadAndStop of the loaded movie, then the call below) ends the pane (:288-293).
 /// The state (the path, the cut scene id, Exit's send) is <see cref="CutSceneMovie"/>.
 /// STILL-OPEN: the movie's sound (GFxManager::SetMasterVolume from the movie volume option, PlaySwf :411-412), the exit
-/// button's box 0x88c (the click is not answered here; Esc skips as <see cref="CutSceneMovie.SkipOnEsc"/>), the start offset.
+/// button's click (not answered here; Esc asks box 0x88c as <see cref="CutSceneMovie.AskExitOnEsc"/>), the start offset.
 /// </summary>
 public sealed class CutSceneMovieController : UiController
 {

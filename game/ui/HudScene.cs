@@ -636,24 +636,25 @@ public partial class HudScene : Node, IUiStageHost
     /// <summary>
     /// Esc in the field, FUN_1418fcb70 (uichatballoon.cpp:523-555), in its order as far as this HUD has its parts
     /// (<see cref="Ms2.Ui.Hud.FieldEsc.Run"/> holds the UI's own three): the game option dialog takes it first, the
-    /// shown tooltips close (GFxManager::CloseTooltips), the cut-scene movie (CutSceneMovie.SkipOnEsc, between the tooltips and the tip), fishing is not in it, then the
+    /// shown tooltips close (GFxManager::CloseTooltips), the cut-scene movie (CutSceneMovie.TakesEsc, between the tooltips and the tip), fishing is not in it, then the
     /// guide's text tip takes Esc (SkipTextTip); a focused text field keeps Esc (the chat input takes it in _Input), and
     /// an NPC talk takes it itself (FUN_141275080 is 0 while talking). With a closable dialog open
     /// (FUN_141274ff0, unit_141274d10_uihelpers.cpp) Esc closes all of them when the interface option EnableCloseAllDlg is
     /// on and is otherwise left; with none it toggles the system menu: ToggleDialog(0x4e21) = FUN_1419246f0, open when
-    /// vfunc_55 (closed and unloaded), else vfunc_67 (close). STILL-OPEN: at a playing cut-scene movie (0x4e7e,
-    /// UICutSceneMovie::FUN_1419102c0) the client's Esc stops without a skip (uichatballoon.cpp:528-530), as the movie's own
-    /// exit button skips; the pane has no button, so the port's Esc skips there (CutSceneMovie.SkipOnEsc).
+    /// vfunc_55 (closed and unloaded), else vfunc_67 (close). The cut-scene movie's own key handler (UICutSceneMovie::vfunc_13
+    /// @0x14190f510) runs before all of this and asks its exit box (CutSceneMovie.AskExitOnEsc); at a playing movie
+    /// (FUN_1419102c0) the field's Esc then only returns, without a skip (uichatballoon.cpp:528-530).
     /// </summary>
     public void Escape()
     {
         if (assets == null) return;
         if (CinematicEscape(Input.IsKeyPressed(Key.Shift))) return;       // UICutSceneCinematic's key handler takes Esc first
+        if (Ms2Godot.Net.LiveSession.Instance?.Movie.AskExitOnEsc() == true) return;   // UICutSceneMovie::vfunc_13: box 0x88c
         if (Ms2.Ui.Hud.FieldEsc.Run(
                 () => optionDialog != null && optionDialog.OnKey(true),            // UIGameOptionDialog::vfunc_13 @0x141942b10 takes Esc
                 () => TooltipLayer.Instance?.Controller?.DestroyTooltips() == true,  // CloseTooltips, the first step
                 () => GuideEvent?.SkipTextTip() == true,                            // the guide's text tip (FUN_1418fcb70, uichatballoon.cpp:531)
-                () => Ms2Godot.Net.LiveSession.Instance?.Movie.SkipOnEsc() == true))   // UICutSceneMovie plays: Exit (sends the stop request)
+                () => Ms2Godot.Net.LiveSession.Instance?.Movie.TakesEsc() == true))   // UICutSceneMovie plays: the field's Esc returns
             return;
         if (AnyClosableDialogOpen())
         {
