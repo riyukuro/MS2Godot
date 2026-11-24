@@ -78,6 +78,8 @@ public sealed class GameMenuController : UiController
 
     readonly Dictionary<int, int> enabled = new();     // m_enabled (SetMenuEnable)
     List<int> order = new();                           // m_order: the ids the last build added
+    /// <summary>m_order: the entry ids the last RefreshMenu listed.</summary>
+    public IReadOnlyList<int> Listed => order;
     bool redCircleHome, redCircleOption;               // m_bFlag259, m_bFlag25a
 
     bool Feature(int id) => Model.IsFeatureEnabled(id);

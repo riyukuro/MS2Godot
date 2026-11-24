@@ -114,4 +114,30 @@ public partial class HudScene
         uiRoot.AddChild(changeJobMovie);
         GD.Print($"change job: open for sub job {jobs.SubJob} ({(c.Table.Get(jobs.SubJob) is { } d ? $"to {d.ChangeSubJobCode}, {d.Skills1.Count}+{d.Skills2.Count} skills" : "no row")})");
     }
+
+    // ---- the scripted live run's hooks (MS2_LIVE_COMBAT_STEP jobchange): the menu's click and the window's button go the
+    // movie's way, through OnCallback
+
+    /// <summary>Whether the game menu's last build listed the jobchange entry (54), and CanChangeJob now.</summary>
+    public string ChangeJobMenuState() => gameMenu == null ? "no menu"
+        : $"listed {gameMenu.Listed.Contains(54)}, CanChangeJob {CanChangeJob()}, start quest {ChangeJobStartQuest()}";
+
+    /// <summary>The menu's jobchange click (the movie's callback with the entry's name).</summary>
+    public bool ChangeJobMenuClickScripted() => gameMenu != null && gameMenu.OnCallback("jobchange", System.Array.Empty<object>());
+
+    /// <summary>The window: open, its sub job and the movie's job name text; null when closed.</summary>
+    public string ChangeJobWindowState()
+    {
+        if (!ChangeJobOpen || changeJob.IsClosed) return null;
+        var h = changeJob.Host;
+        string name = h.Child("m_content") is { } content && h.Get(h.Get(content, "m_jobName"), "textField") is { } tf
+            ? Ms2.Avm2.Rt.ToString(h.Get(tf, "text")) : "?";
+        return $"sub job {changeJob.JobCode}, name \"{name}\"";
+    }
+
+    /// <summary>The window's change button (onChangeJob).</summary>
+    public bool ChangeJobPressScripted() => ChangeJobOpen && changeJob.OnCallback("onChangeJob", System.Array.Empty<object>());
+
+    /// <summary>Whether the job change effect's movie is up.</summary>
+    public bool ChangeJobEffectUp => changeJobEffectMovie != null && GodotObject.IsInstanceValid(changeJobEffectMovie);
 }

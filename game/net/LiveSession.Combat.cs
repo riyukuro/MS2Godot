@@ -797,6 +797,19 @@ public partial class LiveSession
                 await frames(30);
                 continue;
             }
+            if (step.StartsWith("awaken:"))      // awaken:<job code name>: the GM job change (Job mode 2), the effect on the PC and UIChangeJobEffect
+            {
+                int effects0 = live.JobChangeEffects;
+                GD.Print($"live: combat {step}: {(hud.SubmitChatLine("/player job " + step[7..] + " awakening") ? "sent" : "no chat window")}");
+                await until(() => hud.ChangeJobEffectUp, 60 * 10);
+                bool up = hud.ChangeJobEffectUp;
+                await frames(60); Shot("jobchange-effect.png");
+                await until(() => !hud.ChangeJobEffectUp, 60 * 20);
+                GD.Print($"live: combat {step}: pc effects {live.JobChangeEffects - effects0}, window up {up}, hidden {!hud.ChangeJobEffectUp}");
+                Check("the job change plays the changeJobs effect on the own pc", live.JobChangeEffects > effects0);
+                Check("the job change shows UIChangeJobEffect and it hides at its end", up && !hud.ChangeJobEffectUp);
+                continue;
+            }
             if (step.StartsWith("chat:"))      // one chat line, no comma in it
             {
                 GD.Print($"live: combat {step}: {(hud.SubmitChatLine(step[5..]) ? "sent" : "no chat window")}");
@@ -1434,6 +1447,23 @@ public partial class LiveSession
                     GD.Print($"live: combat guide step: {(hud.GuideStepScripted(int.Parse(Env("MS2_LIVE_GUIDE_STEP", "55"))) ? "set" : "no guide")}");
                     await frames(60 * 8);
                     GD.Print($"live: combat guide state: {hud.GuideStateText()}");
+                    break;
+                }
+                case "jobchange":     // the game menu's jobchange entry (listed at the change level), its window, its change button
+                {
+                    await frames(60);
+                    string menu = hud.ChangeJobMenuState();
+                    GD.Print($"live: combat job change menu: {menu}");
+                    Check("the game menu lists the job change entry", menu.StartsWith("listed True", StringComparison.Ordinal));
+                    bool clicked = hud.ChangeJobMenuClickScripted();
+                    await until(() => hud.ChangeJobWindowState() != null, 60 * 5); await frames(60);
+                    string win = hud.ChangeJobWindowState();
+                    GD.Print($"live: combat job change window: click {clicked}, {win ?? "not open"}");
+                    Shot("jobchange-window.png");
+                    Check("the entry opens the job change window with the sub job's row", win != null && !win.EndsWith("name \"\"", StringComparison.Ordinal));
+                    bool pressed = hud.ChangeJobPressScripted();
+                    await until(() => hud.ChangeJobWindowState() == null, 60 * 3);
+                    Check("the change button closes the window", pressed && hud.ChangeJobWindowState() == null);
                     break;
                 }
                 case "openchar":

@@ -560,6 +560,9 @@ public partial class LiveSession : Node
         GD.Print($"live: job error {error} notice \"{notice}\"{(box != null ? " with a box" : "")}");
     }
 
+    /// <summary>The changeJobs effects played on the own PC (the scripted run counts them).</summary>
+    public int JobChangeEffects { get; private set; }
+
     /// <summary>Raised after ItemUse mode 6 sent the Beauty request.</summary>
     public event Action<BeautyReq> BeautyRequested;
     /// <summary>OnItemUpdate (scenestategame.cpp:3214) for the local player's worn item: the item event dispatcher's vfunc_23 (the item's id), whose listeners (the item colour dialog, vfunc_24 @0x1419adf80) take it.</summary>
@@ -2400,7 +2403,11 @@ public partial class LiveSession : Node
                 if (selfJob && j.Mode is 0 or 2 or 7) guide?.OnJobChanged(Me.User?.Job ?? 0);   // NotifyStatusChanged(4) with the sub job (scenestategame.cpp:7463/7485/7506)
                 if (selfJob && j.Mode == 3) ShowJobError(j.Error, j.ErrorValue);
                 // mode 2: the common resource's changeJobs effect on the PC, any PC the field has (scenestategame.cpp:7476-7481)
-                if (j.Mode == 2 && remote?.PlayJobChangeEffect(j.ObjectId) == true) GD.Print($"live: job change effect on object {j.ObjectId}");
+                if (j.Mode == 2 && remote?.PlayJobChangeEffect(j.ObjectId) == true)
+                {
+                    if (selfJob) JobChangeEffects++;
+                    GD.Print($"live: job change effect on object {j.ObjectId}");
+                }
                 GD.Print($"live: job mode {j.Mode} object {j.ObjectId}{(selfJob ? " SELF" : "")}" + (j.Book != null ? $" ({j.Book.Skills.Count} skills)" : j.Mode == 3 ? $" error {j.Error}" : ""));
             }
             else if (game.Is(p, Inbound.AttributePoint))
