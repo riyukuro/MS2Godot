@@ -172,6 +172,17 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
 
     void RT(Action a) => Host.RT.Guard("inventory tab", a);
 
+    /// <summary>The tab bar's index set to the tab of the id, as a click on it does (the bar's clikIndexChange runs OnTabChanged);
+    /// false when the bag has no such tab or no bar.</summary>
+    public bool ShowTab(int tab)
+    {
+        int index = -1;
+        for (int i = 0; i < tabs.Count; i++) if (tabs[i].Tab == tab) { index = i; break; }
+        if (index < 0 || Host.Child("m_tab") is not { } bar) return false;
+        Host.Set(bar, "selectedIndex", index);
+        return View?.Tab == tab;
+    }
+
     /// <summary>OnTabChanged @0x14199a4b0: a valid index with data sets m_194 to its tabIndex, m_19c = 7, UpdateButtonState.</summary>
     void OnTabChanged(object ev)
     {

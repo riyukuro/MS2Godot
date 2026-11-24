@@ -173,6 +173,12 @@ public sealed partial class DropLayer : Node3D
     public (bool Known, bool IsMeso, bool IsEp) Describe(int objectId) =>
         drops.TryGetValue(objectId, out var d) ? (true, d.Packet.IsMeso, d.Packet.ItemId == FieldPickupItem.EpItemId) : (false, false, false);
 
+    /// <summary>A drop the field shows: where it is (engine space), its CDropItem state and whether its grade effect (the rarity glow)
+    /// and beEffect run; null when the field has no drop of the id.</summary>
+    public (Vector3 At, int State, bool Glow, bool BeEffect)? Shown(int objectId) =>
+        drops.TryGetValue(objectId, out var d) && IsInstanceValid(d.Root)
+            ? (d.Root.GlobalPosition, d.Motion.State, d.Effects.EffectA != 0, d.Effects.EffectB != 0) : null;
+
     /// <summary>
     /// OnFieldPickupItem (scenestategame.cpp:2420) as far as it moves the drop: a pickup sends a resting drop to its picker
     /// (CDropItem::OnPickedUp, which also starts the shared pick timer); a refusal changes nothing the drop shows.

@@ -614,6 +614,10 @@ public partial class LiveSession : Node
     /// own PC), then the meso, or the count and icon path of a type 3 item; nothing for another picker or item.</summary>
     public event Action<Ui.DamageTarget, long> MesoGained;
     public event Action<Ui.DamageTarget, int, string> ItemGained;
+    /// <summary>A FieldAddItem read, and whether the field made a drop of it (InitDrop's tests: the owner, the item data, the model).</summary>
+    public event Action<FieldAddItem, bool> DropAdded;
+    /// <summary>The field's drop of the object id: where it is, its state and its effects (<see cref="DropLayer.Shown"/>).</summary>
+    public (Vector3 At, int State, bool Glow, bool BeEffect)? DropShown(int objectId) => drops?.Shown(objectId);
     /// <summary>The region skill objects' ids of the field (OnRegionSkill 0x4C modes 0 and 1): mode 5's damage needs one
     /// (OnRegionSkillDamage drops the packet when GetRegionSkillObject finds none).</summary>
     readonly Dictionary<int, (int Skill, short Level)> regionSkills = new();
@@ -1277,8 +1281,11 @@ public partial class LiveSession : Node
         dropLayer.CanStack = DropCanStack;
         dropLayer.Effects = () => FieldEffects;
         dropLayer.ObjectKind = id => remote?.ObjectKind(id, selfObject) ?? (id == selfObject && selfObject != 0 ? 1 : 0);
-        dropLayer.Sound = (path, kind, at) => FieldAudio.Instance?.PlaySoundEvent(path, kind, new Vector3(at.X, at.Z, -at.Y),
-            player != null && IsInstanceValid(player) ? player.GlobalPosition : null);
+        dropLayer.Sound = (path, kind, at) =>
+        {
+            if (LogPackets) GD.Print($"live: drop sound {path} kind {kind}");
+            FieldAudio.Instance?.PlaySoundEvent(path, kind, new Vector3(at.X, at.Z, -at.Y), player != null && IsInstanceValid(player) ? player.GlobalPosition : null);
+        };
         dropLayer.SelfObjectId = () => selfObject;
         dropLayer.PickedByMe = DropPickedByMe;
         dropLayer.Notice = id => { string text = Ms2.Ui.Hud.MessageBoxData.Common(id); if (!string.IsNullOrEmpty(text)) SystemNoticeSink?.Invoke(text); };
@@ -1566,7 +1573,14 @@ public partial class LiveSession : Node
                 if (self && u.Book != null) { SkillBook = u.Book; SkillBookChanged?.Invoke(-1); }
                 GD.Print($"live: FieldAddUser object {u.ObjectId} {(self ? "SELF" : "other")} char {u.User.CharacterId} '{u.User.Name}' pos {u.Position}");
             }
-            else if (game.Is(p, Inbound.FieldAddItem)) { var item = FieldAddItem.Read(p.Reader(), game.Profile); drops?.Add(item); }
+            else if (game.Is(p, Inbound.FieldAddItem))
+            {
+                var item = FieldAddItem.Read(p.Reader(), game.Profile);
+                drops?.Add(item);
+                bool made = drops?.Describe(item.ObjectId).Known == true;
+                if (LogPackets) GD.Print($"live: drop object {item.ObjectId} item {item.ItemId} amount {item.Amount} rarity {item.Rarity} owner type {item.OwnerType} char {item.OwnerUid} from {item.SourceObjectId}: {(made ? "made" : "not made")}");
+                DropAdded?.Invoke(item, made);
+            }
             else if (game.Is(p, Inbound.FieldRemoveItem)) drops?.OnRemovePacket(FieldRemoveItem.Read(p.Reader()).ObjectId);
             else if (game.Is(p, Inbound.FieldPickupItem) && drops != null)
             {
@@ -1578,7 +1592,8 @@ public partial class LiveSession : Node
                     StubHudData.Instance.EpCurrent = (int)ep; StubHudData.Instance.EpMax = (int)epMax;
                 }
                 drops.OnPickupPacket(pick);
-                if (LogPackets || pick.Picked) GD.Print($"live: pickup object {pick.ObjectId} picked {pick.Picked} by {pick.PickerId}{(pick.Picked ? "" : " mode " + pick.Mode)}{(pick.Meso != 0 ? " meso " + pick.Meso : "")}{(pick.EpBall ? " ep +" + pick.Ep : "")}");
+                if (!pick.DropKnown) { if (LogPackets) GD.Print($"live: pickup object {pick.ObjectId}: no drop of this field, the rest unread"); }
+                else if (LogPackets || pick.Picked) GD.Print($"live: pickup object {pick.ObjectId} picked {pick.Picked} by {pick.PickerId}{(pick.Picked ? "" : " mode " + pick.Mode)}{(pick.Meso != 0 ? " meso " + pick.Meso : "")}{(pick.EpBall ? " ep +" + pick.Ep : "")}");
             }
             else if (game.Is(p, Inbound.UserBattle) && p.Body.Length >= 5 && BitConverter.ToInt32(p.Body, 0) == selfObject
                      && OwnCurStateId(OwnSkillStateRunsOf?.Invoke() ?? false) != StateWaitingSelect)

@@ -65,6 +65,9 @@ public partial class HudScene
     /// <summary>Opens the inventory (the guide's InventoryDialog occurrence) when it is shut; the character window through the same menu route.</summary>
     public bool OpenInventoryScripted() { if (inventory == null || inventory.IsClosed) OpenInventory(); return inventory is { IsClosed: false }; }
 
+    /// <summary>The open inventory switched to a tab (<see cref="Ms2.Ui.Hud.InventoryController.ShowTab"/>); whether it shows it.</summary>
+    public bool InventoryTabScripted(int tab) => inventory is { IsClosed: false } inv && inv.ShowTab(tab);
+
     /// <summary>Opens the character window through the menu's route (OpenMyInfo); whether it is up afterwards.</summary>
     public bool OpenCharScripted() { OpenMyInfo(); return myInfoMovie != null; }
 

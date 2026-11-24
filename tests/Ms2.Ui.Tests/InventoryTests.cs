@@ -56,6 +56,20 @@ public class InventoryTests
     }
 
     [Test]
+    public void ShowTabSelectsTheTabsButtonAsAClickDoes()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var (h, c, _) = Load(model);
+        var (name, tab) = c.Tabs.First(t => t.Name == "material");
+        Assert.That(c.ShowTab(tab), Is.True, "the view shows the material tab");
+        Assert.That(c.View.Tab, Is.EqualTo(tab));
+        Assert.That(Rt.ToNumber(h.Get(h.Child("m_tab"), "selectedIndex")), Is.EqualTo(c.Tabs.ToList().IndexOf((name, tab))), "the bar's button");
+        Assert.That(c.ShowTab(999), Is.False, "no such tab");
+    }
+
+    [Test]
     public void SlotsAreBuiltOnTheItemSlotPath()
     {
         Packs();

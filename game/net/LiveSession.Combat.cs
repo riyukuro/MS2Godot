@@ -25,6 +25,9 @@ public partial class LiveSession
     /// lift (or lift:x y z): a run to the lift at MS2_LIVE_LIFT_AT (its map point, x,y,z) or the given point, then the action key; checks: the lift craft came
     /// back, the carried model, the carry idle, then a few steps of the carry walk.
     /// putdown: the action key in cube mode where the player stands; checks: the craft ended.
+    /// mobloot: MS2_LIVE_COMBAT_MOB killed until a kill drops an item (MS2_LIVE_LOOT_KILLS tries), its drops on the ground, a run to
+    /// each with the pickup key held; checks: the item drop, the bag and meso gain. watchdrops: MS2_LIVE_WATCH_SECONDS of another
+    /// player's drops with the pickup key held; checks: none of them is made or picked here.
     /// walkto:x y z[/x y z...] runs through map points in turn; jumpto:x y z runs to a point a level up, jumping on the way; faceto:x y z turns the player to a map point; aimcell:x y z
     /// tries the four sides of a target box's cell until the craft's cell is it, with the wheel for a box a level off the ground; scan:x0 y0 x1 y1 cell
     /// logs the ground level under each cell (negative levels as a, b, ...); keys:N presses the action key N times.
@@ -935,6 +938,101 @@ public partial class LiveSession
                     GD.Print($"live: combat paid revived: meso {meso0} -> {live.Me.Meso}, meso revives used {live.Me.MesoRevivalsUsed}, " +
                         $"penalty count {live.Me.RevivalConfirmCount}, end tick {live.Me.RevivalEndTick}");
                     Shot("revived_paid.png");
+                    break;
+                }
+                case "mobloot":
+                {
+                    // MS2_LIVE_COMBAT_MOB spawned and killed, again up to MS2_LIVE_LOOT_KILLS times until a kill drops an item (not a meso,
+                    // a currency or a ball); then shots of the kill's drops on the ground, a run to each with the pickup key held, the bag after
+                    int mob = int.Parse(Env("MS2_LIVE_COMBAT_MOB", "0")), most = int.Parse(Env("MS2_LIVE_LOOT_KILLS", "8"));
+                    var made = new System.Collections.Generic.List<Ms2.Net.Packets.FieldAddItem>();
+                    void Made(Ms2.Net.Packets.FieldAddItem d, bool shown) { if (shown) made.Add(d); }
+                    live.DropAdded += Made;
+                    static bool IsItem(Ms2.Net.Packets.FieldAddItem d) => !d.IsMeso && !Ms2.Formats.World.DropPickup.IsCurrencyId(d.ItemId) && !Ms2.Formats.World.DropPickup.IsSpecialId(d.ItemId);
+                    var mine = new System.Collections.Generic.List<Ms2.Net.Packets.FieldAddItem>();
+                    int kill = 0;
+                    for (; kill < most && !mine.Any(IsItem); kill++)
+                    {
+                        int added = npcs;
+                        hud.SubmitChatLine("/npc " + mob);
+                        await until(() => npcs > added, 60 * 15); await frames(60);
+                        var target = lastNpc;
+                        if (target == null || npcs == added) { Check("the mob is in the field", false); break; }
+                        int deadBefore = kills, press = 0;
+                        bool Gone() => kills > deadBefore || !GodotObject.IsInstanceValid(target.Root) || live.NpcDead(target.ObjectId);
+                        int presses = int.Parse(Env("MS2_LIVE_COMBAT_PRESSES", "30"));
+                        for (; press < presses && !Gone(); press++) { hud.FaceScripted(target.Position); await frames(20); hud.AttackScripted(); await frames(60); }
+                        // MS2_LIVE_LOOT_FINISH=1: a mob still up after the presses is finished by the GM kill near the player (the
+                        // server's kill goes through the same death and the same drops, the player its damage dealer)
+                        if (!Gone() && Env("MS2_LIVE_LOOT_FINISH", "0") == "1") { hud.SubmitChatLine("/kill near --distance 600"); await until(Gone, 60 * 5); }
+                        await until(() => made.Any(d => d.SourceObjectId == target.ObjectId), 60 * 6); await frames(60 * 3);
+                        mine = made.Where(d => d.SourceObjectId == target.ObjectId).ToList();
+                        GD.Print($"live: combat mobloot kill {kill}: npc {target.ObjectId} dead {Gone()} after {press} press(es), drops {string.Join(" ", mine.Select(d => $"{d.ItemId}x{d.Amount}/r{d.Rarity}"))}");
+                    }
+                    live.DropAdded -= Made;
+                    var items = mine.Where(IsItem).ToList();
+                    Check($"a kill dropped an item ({kill} kill(s); {string.Join(" ", items.Select(d => d.ItemId))})", items.Count > 0);
+                    foreach (var d in mine)
+                        if (live.DropShown(d.ObjectId) is { } s)
+                            GD.Print($"live: combat mobloot drop {d.ObjectId} item {d.ItemId} rarity {d.Rarity}: state {s.State}, grade effect {s.Glow}, beEffect {s.BeEffect}, at {FieldPortals.ToMs2(s.At)} (packet {d.Position}), player at {FieldPortals.ToMs2(live.OwnPlayer.GlobalPosition)}");
+                    // a run to near the first item drop (the pickup key up), so the shot has the drops in the middle of the view
+                    if (items.FirstOrDefault() is { } first)
+                    {
+                        for (int n = 0; n < 60 * 8 && live.DropShown(first.ObjectId) is { } fs && hud.DriveTowardScripted(fs.At, false) > 150; n++) await frames(1);
+                        hud.DriveEnd();
+                    }
+                    await frames(60); Shot("mobloot_ground.png");
+                    long bag0 = BagSum(live), meso0 = mesoDelta;
+                    live.PickupKeyHeld = true;
+                    foreach (var d in mine.OrderBy(d => d.IsMeso ? 0 : 1))
+                    {
+                        for (int n = 0; n < 60 * 10 && live.DropShown(d.ObjectId) is { } s; n++)
+                        {
+                            float dist = hud.DriveTowardScripted(s.At, false);
+                            if (dist < 50) hud.DriveEnd();
+                            await frames(1);
+                        }
+                        hud.DriveEnd();
+                        GD.Print($"live: combat mobloot pickup {d.ObjectId} item {d.ItemId}: {(live.DropShown(d.ObjectId) == null ? "gone" : "still there")}");
+                    }
+                    await until(() => BagSum(live) != bag0 || !items.Any(), 60 * 5); await frames(90);
+                    live.PickupKeyHeld = false;
+                    Check($"the bag took the item ({bag0} -> {BagSum(live)}; held {string.Join(" ", items.Select(i => $"{i.ItemId}:{live.Items.All.Where(e => e.Id == i.ItemId).Sum(e => (long)e.Amount)}"))})", items.Count > 0 && BagSum(live) > bag0);
+                    if (mine.Any(d => d.IsMeso)) Check($"the meso count changed ({mesoDelta - meso0})", mesoDelta > meso0);
+                    Shot("mobloot_picked.png");
+                    GD.Print($"live: combat bag: {(hud.OpenInventoryScripted() ? "open" : "refused")}");
+                    await frames(60);
+                    if (items.FirstOrDefault() is { } shown && live.Inventory?.TabOfItem(shown.ItemId) is int tab)
+                        GD.Print($"live: combat bag tab {tab} of item {shown.ItemId}: {(hud.InventoryTabScripted(tab) ? "shown" : "not shown")}");
+                    await frames(60); Shot("mobloot_bag.png");
+                    break;
+                }
+                case "watchdrops":
+                {
+                    // MS2_LIVE_WATCH_SECONDS of the field's drops (another player's kill): each add made or not, the pickup key held
+                    // where the player stands; checks: drops came, and none owned by another player was made or picked here
+                    int secs = int.Parse(Env("MS2_LIVE_WATCH_SECONDS", "90"));
+                    var seen = new System.Collections.Generic.List<(Ms2.Net.Packets.FieldAddItem D, bool Made)>();
+                    void Seen(Ms2.Net.Packets.FieldAddItem d, bool shown) => seen.Add((d, shown));
+                    live.DropAdded += Seen;
+                    long bag0 = BagSum(live), meso0 = mesoDelta;
+                    bool shot = false;
+                    live.PickupKeyHeld = true;
+                    ulong end = Time.GetTicksMsec() + (ulong)secs * 1000;      // seconds, not frames: two clients on one machine run slow
+                    while (Time.GetTicksMsec() < end)
+                    {
+                        await frames(30);
+                        if (!shot && seen.Count > 0) { await frames(120); Shot("watch_drops.png"); shot = true; }
+                    }
+                    live.PickupKeyHeld = false;
+                    live.DropAdded -= Seen;
+                    long own = live.CharacterId;
+                    var others = seen.Where(s => s.D.OwnerType <= 1 && s.D.OwnerUid != own).ToList();
+                    GD.Print($"live: combat watchdrops: {seen.Count} add(s): {string.Join(" ", seen.Select(s => $"{s.D.ItemId}x{s.D.Amount}/owner{s.D.OwnerType}:{(s.D.OwnerUid == own ? "me" : s.D.OwnerUid.ToString())}/{(s.Made ? "made" : "not made")}"))}");
+                    Check($"another player's drops came ({others.Count})", others.Count > 0);
+                    Check("none of another player's drops was made here", others.All(s => !s.Made));
+                    Check($"the bag and meso are unchanged ({bag0} -> {BagSum(live)}, meso {mesoDelta - meso0})", BagSum(live) == bag0 && mesoDelta == meso0);
+                    Shot("watch_end.png");
                     break;
                 }
                 case "loot":
