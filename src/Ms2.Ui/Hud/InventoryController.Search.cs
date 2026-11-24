@@ -101,7 +101,8 @@ public sealed partial class InventoryController
         int slot = FindSlotBySearch(searchText);
         if (slot > -1)
         {
-            if (Host.Child("m_itemBagEx") is { } list) Host.Set(list, "scrollPosition", slot / 6);
+            // the GMS2 movie's m_itemBag (an ItemBag, a TileCacheList) has the same scrollPosition setter; INFERRED (no GMS2 C++)
+            if (SlotList() is { } list) Host.Set(list, "scrollPosition", slot / 6);
             return;
         }
         if (Host.Child("m_inputSearch") is { } input)

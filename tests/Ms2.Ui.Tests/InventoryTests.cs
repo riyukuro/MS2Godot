@@ -1459,7 +1459,7 @@ public class InventoryTests
         Assert.That(c.OnCallback("OnItemSearch", new object[] { AsciiUpper(name) }), Is.True);
         Assert.That(boxes, Is.Empty, "found: no box");
         Assert.That(c.SearchText, Is.EqualTo(Ms2.Formats.Text.JamoSearchText.Of(AsciiUpper(name))), "m_1d8 is the text form");
-        if (h.Child("m_itemBagEx") is { } list) Assert.That(Rt.ToNumber(h.Get(list, "scrollPosition")), Is.EqualTo(5), "slot 31 is on row 31 / 6");
+        Assert.That(Rt.ToNumber(h.Get(SlotList(h), "scrollPosition")), Is.EqualTo(5), "slot 31 is on row 31 / 6");
         Assert.That((SearchOn(h, c, 31), SearchOn(h, c, 43), SearchOn(h, c, 0)), Is.EqualTo((true, true, false)));
         c.ShowTab(0);
         for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
