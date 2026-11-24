@@ -34,6 +34,9 @@ public partial class HudScene
                 if (live != null) live.SendTalk(p);
                 else GD.Print($"dynamic action: {p.GetType().Name} not sent (offline)");
             },
+            HasPlayer = () => GetTree().GetFirstNodeInGroup(Player.Group) is Player,
+            InCubeMode = () => Ms2Godot.Net.LiveSession.Instance?.CubeCraft?.InCubeMode == true,
+            UseSkill = UseOwnSkill,
         };
         c.Unloaded += () =>
         {
@@ -41,6 +44,19 @@ public partial class HudScene
             dynamicActionMovie?.QueueFree();
             dynamicActionMovie = null;
         };
+    }
+
+    /// <summary>
+    /// MyPC::FUN_141525480(id, 0) @0x141525480 (mypc.cpp:2379-2388): the skill's level (GetSkillLevel), FUN_141526c80's swap and
+    /// CreateSkillRecord (<see cref="RequestOwn"/>, no key), then MyPC::vfunc_102 (<see cref="UseOwnRecord"/>) directly, not the
+    /// running skill state's press.
+    /// </summary>
+    void UseOwnSkill(uint id)
+    {
+        if (GetTree().GetFirstNodeInGroup(Player.Group) is not Player me) return;
+        var w = QuickSlotWorld();
+        var held = w.Weapon is { } h ? weaponActions.FindAction(h.Right, h.Left) : null;
+        if (RequestOwn(w, id, held, 0) is { } r) UseOwnRecord(me, r);
     }
 
     /// <summary>CUIService::ToggleDialog(0x4e7a): the messenger's eventEmotion (uimessenger.cpp:4052).</summary>

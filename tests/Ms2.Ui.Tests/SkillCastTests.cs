@@ -168,7 +168,7 @@ public class SkillCastTests
         Assert.That(SkillCast.Use(Rec(600, 2), 6000, 55, false),
             Is.EqualTo(new StateSkillRequest(88, 4321, 600, 2, 0x1c, 55, 9)), "UseStateSkill: the record's tick, not the server tick");
         Assert.That(SkillCast.Use(Rec(100, 1), 6000, 55, false), Is.InstanceOf<SkillCastRequest>(), "action kind 0: the mode 0 send");
-        Assert.That(SkillCast.Use(Rec(601, 1), 6000, 55, false), Is.InstanceOf<SkillCastRequest>(), "an emotion is no state skill");
+        Assert.That(SkillCast.Use(Rec(601, 1), 6000, 55, false), Is.Null, "an emotion sends its own Emote packet (FUN_1417eaa50)");
     }
 
     [Test]

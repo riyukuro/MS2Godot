@@ -17,8 +17,8 @@ namespace Ms2Godot.Ui;
 /// TimerEntity::vfunc_3 on the PC HP bar could hide it there.</item>
 /// <item>Rank 1 (100 with PvP points, not here), label friendly (the own side); width (int)(cur / max x 39), no tween.</item>
 /// <item>Place: the Eff_UI point the own name tag hangs from (<see cref="PlayerNameTag.Anchor"/>), plus vfunc_9 =
-/// OffsetPcHpbar (m_f164) + m_f174 (0) + the mount's hpBarOffsetY (PCBase::FUN_141670390) down, plus FUN_1412762d0, in
-/// stage units; hidden while the mount's default rider has nameTagHide.</item>
+/// OffsetPcHpbar (m_f164) + m_f174 (the emotion states' offsetNameTag, else 0) + the mount's hpBarOffsetY (PCBase::FUN_141670390)
+/// down, plus FUN_1412762d0, in stage units; hidden while the mount's default rider has nameTagHide.</item>
 /// </list>
 /// </summary>
 public sealed partial class PlayerHpBar : CanvasLayer
@@ -124,7 +124,7 @@ public sealed partial class PlayerHpBar : CanvasLayer
         if (camera == null || tag?.Anchor is not { } anchor || camera.IsPositionBehind(anchor) || Hidden() || ride is { NameTagHide: true })
         { clip.Hide(); return; }
         var p = camera.UnprojectPosition(anchor);
-        p.Y += (offset + (ride?.HpBarOffsetY ?? 0) + tag.HeightAdjust(anchor)) * u;   // + Ridee::GetHpBarOffsetY (pcbase.cpp:2327-2334)
+        p.Y += (offset + tag.HpBarOffset + (ride?.HpBarOffsetY ?? 0) + tag.HeightAdjust(anchor)) * u;   // + Ridee::GetHpBarOffsetY (pcbase.cpp:2327-2334)
         if (dirty && period > 0) timerLeft = period;   // vfunc_6 restarts the timer when it redraws the width
         clip.Draw(p, 1, true, cur, max, ref dirty);    // SetPositionFloat: the origin is not snapped to whole pixels
     }

@@ -316,6 +316,12 @@ public sealed class SkillData
     /// <summary>&lt;kinds groupIDs&gt; (m_nGroupIDs, skilloverlapcompare.cpp:850): the skill group the table indexes it under
     /// (SkillDataTable::GetGroupSkills @0x1407ee3b0, :1313).</summary>
     public uint GroupIds;
+    /// <summary>&lt;basic paramStr&gt; (m_strParamStr, skilloverlapcompare.cpp:823, GetParamStr): an emotion skill's emotion name,
+    /// which its state plays (StateEmotion::vfunc_4, stateemotionidle.cpp:225) and the Emote mode 2 send carries.</summary>
+    public string ParamStr = "";
+    /// <summary>&lt;kinds offsetNameTag&gt; (m_nOffsetNameTag, skilloverlapcompare.cpp:844): how far an emotion's states move the
+    /// name tag (PCBase::FUN_141670330 / FUN_141670360, stateemotionidle.cpp:226-227).</summary>
+    public int OffsetNameTag;
     /// <summary>
     /// &lt;basic&gt;&lt;combo inputSkill outputSkill comboSkill chargingSkill&gt; (Unk_SkillBlockA4::Load @0x140802ef0,
     /// skillleveldata.cpp:493), loaded from &lt;basic&gt; (skilloverlapcompare.cpp:874).
@@ -385,6 +391,15 @@ public sealed class SkillData
         s.MainType = basic.Attribute("mainType") == null && basic.Element("kinds") is { } k0 && k0.Attribute("type") != null
             ? GmsMainType(Xml.Int(k0, "type"), Xml.Int(k0, "subType"))
             : Xml.Int(basic, "mainType");
+        s.ParamStr = (string)basic.Attribute("paramStr") ?? "";
+        if (basic.Attribute("mainType") == null && basic.Element("kinds") is { } ek && Xml.Int(ek, "emotionType") is int emotionType && emotionType is 1 or 2)
+        {
+            // INFERRED (GMS2 per-skill files, no client reader): <kinds emotionType emotion> stands for the KMS mainType and
+            // paramStr. Of the 173 emotion skills both data sets have, all 140 with emotionType 1 are KMS mainType 14 with
+            // paramStr equal to emotion, and all 33 with emotionType 2 are mainType 15 (whose KMS paramStr is empty).
+            s.MainType = emotionType == 1 ? 14 : 15;
+            if (emotionType == 1) s.ParamStr = (string)ek.Attribute("emotion") ?? "";
+        }
         if (basic.Element("ui") is { } ui)
         {
             s.Icon = (string)ui.Attribute("icon") ?? "";
@@ -402,6 +417,7 @@ public sealed class SkillData
             s.DisableWater = Xml.Bool(kinds, "disableWater");
             s.ImmediateActive = Xml.Int(kinds, "immediateActive");
             s.GroupIds = Xml.UInt(kinds, "groupIDs");
+            s.OffsetNameTag = Xml.Int(kinds, "offsetNameTag");
         }
         if (basic.Element("combo") is { } combo)
         {
@@ -622,6 +638,9 @@ public sealed class SkillDataTable
 
     /// <summary>GetSkillData @0x1407ee1d0 (:1233): null for 0 or an unknown id.</summary>
     public SkillData GetSkillData(uint id) => id != 0 && All().TryGetValue(id, out var s) ? s : null;
+
+    /// <summary>Every row read (SkillDataTable's map), in no order.</summary>
+    public IEnumerable<SkillData> Rows => All().Values;
 
     /// <summary>GetSkillLevelData @0x1407ee2f0 (:1246).</summary>
     public SkillLevelData GetSkillLevelData(uint id, int level) => GetSkillData(id)?.GetLevelData(level);

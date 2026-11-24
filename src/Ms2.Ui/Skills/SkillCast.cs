@@ -608,12 +608,14 @@ public static class SkillCast
     /// <summary>
     /// StateSkill::FUN_1417ea570 @0x1417ea570 (stateskill.cpp:1807-1816), the own cast's send: a skill whose action kind names a
     /// player state (FUN_1407e9bd0, <see cref="SkillData.ActionKind"/>) and is no emotion goes through UseStateSkill
-    /// (<see cref="UseState"/>, null when it sends nothing), any other the mode 0 send (<see cref="Send"/>).
-    /// STILL-OPEN: the emotion route (FUN_1417eaa50) is still the mode 0 send here, and the mode 0 send is not skipped for a
-    /// level with a sequence while riding (PCBase::FUN_141675ed0, :1813; rides have no port).
+    /// (<see cref="UseState"/>, null when it sends nothing), any other the mode 0 send (<see cref="Send"/>). An emotion
+    /// (IsEmotion) goes to FUN_1417eaa50 (:1809-1810, <see cref="EmotionCast"/>), which sends its own Emote packet, so it
+    /// gets null here.
+    /// STILL-OPEN: the mode 0 send is not skipped for a level with a sequence while riding (PCBase::FUN_141675ed0, :1813;
+    /// rides have no port).
     /// </summary>
     public static Ms2.Net.Wire.IOutPacket Use(CastRecord r, int serverTick, int elapsed, bool holdAttackFeature) =>
-        !r.Skill.IsEmotion && r.Skill.ActionKind != 0 ? UseState(r, elapsed) : Send(r, serverTick, elapsed, holdAttackFeature);
+        r.Skill.IsEmotion ? null : r.Skill.ActionKind != 0 ? UseState(r, elapsed) : Send(r, serverTick, elapsed, holdAttackFeature);
 
     /// <summary>
     /// StateSkill::UseStateSkill @0x1417eb3a0 (stateskill.cpp:1999-2073)'s send, SendOp::StateSkill 0x21 mode 0: the record's

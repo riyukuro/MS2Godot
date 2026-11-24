@@ -15,7 +15,7 @@ namespace Ms2Godot.Ui;
 /// Table/pcEffectDummy.xml for its gender placed by DummyWorld (on Scene Root at (0, 0, 170) in the data, straight up the
 /// world); the actor's position when it has no such node.</item>
 /// <item>Place (vfunc_6): the anchor's screen point times the movie scale (into stage units), plus vfunc_9 =
-/// PCBase::vfunc_89 = OffsetPcNametag (m_f16c) + m_f170 (0 unless set) down, plus FUN_1412762d0(anchor); the movie is drawn
+/// PCBase::vfunc_89 = OffsetPcNametag (m_f16c) + m_f170 (the emotion states' offsetNameTag, else 0) down, plus FUN_1412762d0(anchor); the movie is drawn
 /// at the UI scale (UiScale), so the shifts and the clip shrink with it on a window under 1920 wide.</item>
 /// <item>FUN_1412762d0, while the camera is set up: floor((-40 + 70 x clamp(pitch in degrees, 0, 90) / 90) x r), with
 /// pitch the camera mode's m_6c and r = min distance (m_58) / d once the ground distance d from the camera mode's position
@@ -116,14 +116,17 @@ public sealed partial class PlayerNameTag : CanvasLayer
         node.Visible = on;
         if (!on) return;
         var p = camera.UnprojectPosition(anchor);
-        // vfunc_6 works in stage units: screen point / u, then the shifts; vfunc_9 = PCBase::vfunc_89 adds the mount's
-        // default rider nameTagOffsetY (Ridee::vfunc_89, pcbase.cpp:2339-2346)
-        p.Y += (offset + (ride?.NameTagOffsetY ?? 0) + HeightAdjust(anchor)) * u;
+        // vfunc_6 works in stage units: screen point / u, then the shifts; m_f170 is the emotion states' offsetNameTag, and
+        // vfunc_9 = PCBase::vfunc_89 adds the mount's default rider nameTagOffsetY (Ridee::vfunc_89, pcbase.cpp:2339-2346)
+        p.Y += (offset + player.NameTagOffset + (ride?.NameTagOffsetY ?? 0) + HeightAdjust(anchor)) * u;
         node.Position = UiScale.StagePoint(p, u);
     }
 
     /// <summary>The own mount's row while the player rides (PCBase::GetRidee()->GetData()), else null.</summary>
     public Movement.RideData Ride => player != null && IsInstanceValid(player) ? player.Mount?.Data : null;
+
+    /// <summary>m_f174 of the own PC (the emotion states' offsetNameTag, 0 otherwise), for the HP bar (FUN_141670390).</summary>
+    public float HpBarOffset => player?.HpBarOffset ?? 0;
 
     /// <summary>The own PC's Eff_UI point this frame (its position when the dummy is missing), null before the player is found.</summary>
     public Vector3? Anchor { get; private set; }

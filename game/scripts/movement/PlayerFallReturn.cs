@@ -57,6 +57,7 @@ public partial class Player
         public Vector3 Pos; public bool Marked; public MoveState State; public Vector3 Dir; public float Yaw, BodyYaw; public Vector3 CamEuler;
         public byte Sub; public int Tick;
         public int HoldId; public string HoldNode;   // StateHoldData::vfunc_1: m_n90 and m_str98
+        public int Emotion;                          // StateEmotionData / StateEmotionIdleData::vfunc_1: m_n64
         public double Made; public float Time; public bool Sent; public int Cell = int.MaxValue;
         public bool InQueue;              // in the queued list until the next Flush
     }
@@ -114,7 +115,8 @@ public partial class Player
     internal static byte StateId(MoveState s) => s switch
     {
         MoveState.Idle => 1, MoveState.Walk => 2, MoveState.Land => 4, MoveState.Fall => 5, MoveState.Jump => 6,
-        MoveState.Ladder => 8, MoveState.Rope => 9, MoveState.Dead => 0xc, MoveState.Hit => 0xd, MoveState.Revival => 0x18, MoveState.Dash => 20, MoveState.Swim => 27, MoveState.Climb => 29, MoveState.Hold => 0x20, MoveState.FallDamage => 0x1f, MoveState.TriggerEmotion => 0x35, _ => 1,
+        MoveState.Ladder => 8, MoveState.Rope => 9, MoveState.Dead => 0xc, MoveState.Hit => 0xd, MoveState.Revival => 0x18, MoveState.Dash => 20, MoveState.Swim => 27, MoveState.Climb => 29, MoveState.Hold => 0x20, MoveState.FallDamage => 0x1f, MoveState.TriggerEmotion => 0x35,
+        MoveState.Emotion => 0xb, MoveState.EmotionIdle => 0xf, _ => 1,
     };
 
     /// <summary>The state's own sub id (FUN_14166cc80, mypc.cpp:2323): Walk 0x18 (statewalk.cpp:86; the gamepad 0x19 is not modelled), Swim 0x84,
@@ -137,6 +139,7 @@ public partial class Player
             MoveState.Rope => (byte)rsub,
             MoveState.Climb => (byte)csub,
             MoveState.Dash => (byte)dsub,
+            MoveState.EmotionIdle => EmotionIdleSubId,          // StateEmotionIdle m_n10 (0x6f, 0x70-0x72); StateEmotion's is 0
             _ => 0,
         };
     }
@@ -231,6 +234,7 @@ public partial class Player
             // State::vfunc_26 after the fields above (mypc.cpp:2333-2334): StateHoldData::vfunc_1 (stateholddata.cpp:113-127)
             // adds the target and node, and with the held PC's ridee its feet z replaces the position's
             rec.HoldId = 0; rec.HoldNode = null;
+            rec.Emotion = EmotionId;   // StateEmotionData::vfunc_1 (stateemotionidle.cpp:181-185), StateEmotionIdleData's the same (:631-635)
             if (State == MoveState.Hold)
             {
                 rec.HoldId = holdTargetId; rec.HoldNode = holdNode;
@@ -258,6 +262,12 @@ public partial class Player
         {
             case MoveState.Walk:
                 return !WalkRecordByAge || current == null || (syncClock - current.Made) * 1000.0 >= TrafficLimitMs;
+            case MoveState.Emotion:
+                // StateEmotion::vfunc_22 (stateemotionidle.cpp:255-262): another emotion than the record's m_n64
+                return current != null && current.Emotion != EmotionId;
+            case MoveState.EmotionIdle:
+                // StateEmotionIdle::vfunc_22 (:843-850): another sub state than the record's (a bore animation picked or ended)
+                return current != null && current.Sub != EmotionIdleSubId;
             case MoveState.Swim:
                 if (Mount != null && syncClock - swimRideTick >= 1.0)
                 {
@@ -340,6 +350,12 @@ public partial class Player
             rec.Flags = Ms2.Net.Packets.StateSync.Flag.Flag1 | Ms2.Net.Packets.StateSync.Flag.Flag3;
             rec.Flag1Value = HoldSkillId; rec.Flag3Value = 1;
             if (q.HoldId != 0) { rec.Flags |= Ms2.Net.Packets.StateSync.Flag.Flag6; rec.Flag6Value = q.HoldId; rec.Flag6Text = q.HoldNode ?? ""; }
+        }
+        if (q.Emotion != 0)
+        {
+            // FUN_140836250 sets bit 0 for a non-zero m_n64: the emotion id
+            rec.Flags |= Ms2.Net.Packets.StateSync.Flag.Flag1;
+            rec.Flag1Value = q.Emotion;
         }
         static int Axis(float v) => v == -1f ? 0 : v == 0f ? 1 : v == 1f ? 2 : -1;
         int ax = Axis(vx), ay = Axis(vy);

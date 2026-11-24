@@ -23,6 +23,9 @@ public partial class Player : ISkillMotionOwner
     {
         var key = Anims?.Sequence(sequenceName, false);
         if (key == null || Anim == null) return false;
+        // vfunc_59(0x10) leaves StateEmotion / StateEmotionIdle with their vfunc_5 (the face and the name tag offsets); the
+        // skill state's end then goes to StateIdle
+        if (State is MoveState.Emotion or MoveState.EmotionIdle) Enter(MoveState.Idle);
         PlaySequence(key, speed, true);
         skillSequence = key;
         skillSpeed = speed;

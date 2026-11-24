@@ -145,6 +145,34 @@ public class DynamicActionDialogTests
     }
 
     [Test]
+    public void OnSelectEmotionUsesTheSkillUnlessInCubeModeOrWithoutThePlayer()
+    {
+        // vfunc_28 onSelectEmotion (uidynamicactiondialog.cpp:311-318) -> UseAction (:449-457) -> MyPC::FUN_141525480(id, 0)
+        var r = Load(r =>
+        {
+            r.Skill(1); r.Skill(2);
+            r.List.Apply(new EmoteMessage.List(new[] { E(1), E(2) }), 0);
+        });
+        var used = new List<uint>();
+        bool cube = false, player = true;
+        r.C.UseSkill = used.Add;
+        r.C.InCubeMode = () => cube;
+        r.C.HasPlayer = () => player;
+        r.C.OnCallback("onSelectEmotion", new object[] { 0u });
+        Assert.That(used, Is.Empty, "id 0: nothing");
+        r.C.OnCallback("onSelectEmotion", new object[] { 2u });
+        Assert.That(used, Is.EqualTo(new uint[] { 2 }));
+        r.C.OnCallback("onSelectEmotion", new object[] { 9u });
+        Assert.That(used, Is.EqualTo(new uint[] { 2, 9 }), "UseAction does not check the list (the cast's own checks do)");
+        cube = true;
+        r.C.OnCallback("onSelectEmotion", new object[] { 1u });
+        cube = false; player = false;
+        r.C.OnCallback("onSelectEmotion", new object[] { 1u });
+        Assert.That(used, Is.EqualTo(new uint[] { 2, 9 }));
+        Assert.That(r.Sent, Is.Empty, "the dialog itself sends nothing");
+    }
+
+    [Test]
     public void OnFavoriteSetsTheEntrySendsModeFourAndRefreshesOnlyWhenFavoriteOnly()
     {
         // vfunc_28 onFavorite (uidynamicactiondialog.cpp:356-374)

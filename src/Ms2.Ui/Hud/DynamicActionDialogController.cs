@@ -8,8 +8,8 @@ namespace Ms2.Ui.Hud;
 /// <summary>
 /// UIDynamicActionDialog (ms2/client/ms2/uidynamicactiondialog.cpp, UI 0x4e7a, "DynamicAction"), the C++ side of
 /// uidynamicaction: the local player's learned emotions (main type 0xe) as a grid, with the sort, favorite-only and search
-/// filters and the favorite toggle (Emote mode 4).
-/// STILL-OPEN: onSelectEmotion (UseAction @0x14192c9b0: MyPC::FUN_141525480, the emotion skill use), onFocusIn /
+/// filters, the favorite toggle (Emote mode 4) and the use of a clicked emotion (onSelectEmotion, <see cref="UseAction"/>).
+/// STILL-OPEN: onFocusIn /
 /// onFocusOut and vfunc_13's key bind flow (the 0x84f confirm box, the 0x84c notice, FUN_14192df00
 /// SetKeyBindingAndSync), onShiftRClick (PreviewAction @0x14192ca10, the skill preview dialog 0x4ec3), the tooltip
 /// (vfunc_49 @0x14192bb30) and NotifyClearAchieve (FUN_14192c660 refreshes; its sender is not ported) do nothing here.
@@ -48,6 +48,11 @@ public sealed class DynamicActionDialogController : UiController
     public Func<long> Now = () => 0;
     /// <summary>FUN_140710590, the send.</summary>
     public Action<IOutPacket> Send = _ => { };
+    /// <summary>PC::IsInCubeMode of the local player (pc.cpp:1845).</summary>
+    public Func<bool> InCubeMode = () => false;
+    /// <summary>MyPC::FUN_141525480(id, 0) @0x141525480 (mypc.cpp:2379-2388): the own cast of the skill at GetSkillLevel, through
+    /// MyPC::vfunc_102.</summary>
+    public Action<uint> UseSkill = _ => { };
 
     public DynamicActionDialogController(EmotionList emotions) { this.emotions = emotions; }
 
@@ -239,9 +244,27 @@ public sealed class DynamicActionDialogController : UiController
                 if (args.Length == 0) return false;
                 SetSearchText(Rt.ToString(args[0]) ?? "");
                 return false;
-            // onSelectEmotion, onFocusIn, onFocusOut, onShiftRClick: STILL-OPEN (see the class summary)
+            case "onselectemotion":
+            {
+                // vfunc_28 (uidynamicactiondialog.cpp:311-318): PopUInt, 0 ignored
+                if (args.Length == 0) return false;
+                uint id = Rt.ToUint32(args[0]);
+                if (id == 0) return false;
+                UseAction(id);
+                return false;
+            }
+            // onFocusIn, onFocusOut, onShiftRClick: STILL-OPEN (see the class summary)
         }
         return false;
+    }
+
+    /// <summary>UseAction @0x14192c9b0 (uidynamicactiondialog.cpp:449-457): nothing without the local player or in cube mode;
+    /// else MyPC::FUN_141525480(id, 0) (<see cref="UseSkill"/>).</summary>
+    public void UseAction(uint id)
+    {
+        if (!HasPlayer()) return;
+        if (InCubeMode()) return;
+        UseSkill(id);
     }
 
     /// <summary>SetSearchText (@0x14192d790): an equal text (CompareNoCase) changes nothing; else it is kept and the list

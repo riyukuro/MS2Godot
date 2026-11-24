@@ -1731,6 +1731,10 @@ public partial class LiveSession : Node
         player.StateSyncOut += records => SendSync(records, false);
         player.RideSyncOut += records => SendSync(records, true);   // StateRideeController::vfunc_0 (state.cpp:537-562)
         player.HeldStateEntered += st => HeldItem.EnterState(st, Send);
+        // StateEmotion / StateEmotionIdle: CSkillSystem::IsEmotionLearned(id, 1) of the own pc, and the bore constants
+        player.EmotionLearned = id => Emotions.IsLearned(id, 1, ServerTime);
+        player.BoreWaitingTickMs = Constants()?.Int("BoreWaitingTick", 20000) ?? 20000;
+        player.EmotionBoreChance = Constants()?.Int("EmotionBoreAnimProbability", 100) ?? 100;
         player.MoveStateEntered += BodyStateEntered;     // ChangeState: the body's own state replaces the server's
         player.HoldLookup = (id, node) => remote?.FindHoldTarget(selfObject, id, node) ?? default;
         WireRunX(player);

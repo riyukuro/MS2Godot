@@ -720,7 +720,9 @@ public partial class HudScene
         }
         // :1197-1203: the running skill state's elapsed time (StateSkill m_nElapsed, FUN_14028d280: ms to seconds)
         float elapsed = OwnSkillStateRuns() ? (Time.GetTicksMsec() - ownStateStartMs) * 0.001f : 0f;
-        // StateSkill::FUN_1417ea570: the skill state and the mode 0 send
+        // StateSkill::FUN_1417ea570: an emotion's own route (FUN_1417eaa50, which never starts the skill state), else the
+        // skill state and the mode 0 send
+        if (r.Skill.IsEmotion) return UseOwnEmotion(me, live, r, now);
         bool sent = live?.SendCast(r, hudModel.IsFeatureEnabled(174)) ?? false;
         SkillCast.Casted(castWorld, r);
         SampleAbilityRate();   // FUN_141766cc0 (skillslot.cpp:2350): DAT_143aea120, before the cooldown starts (mypc.cpp:2627)
@@ -756,6 +758,33 @@ public partial class HudScene
                 ownTagIds.Motion = live.SpawnKeptEffect(fx, me.Visual, Ms2.Audio.SoundMusicEffectState.CasterMyPc);
         }
         if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"cast: skill {r.Skill.Id} level {r.Level.Level} motion {r.Motion}{(sent ? " sent" : " (offline, not sent)")}");
+        return true;
+    }
+
+    /// <summary>
+    /// MyPC::vfunc_102 (mypc.cpp:1205-1233) for an emotion record: StateSkill::FUN_1417eaa50 (<see cref="EmotionCast.Use"/>)
+    /// enters StateEmotion on the body (<see cref="Player.EnterEmotion"/>) and sends Emote mode 2; it returns 0, so neither the
+    /// skill state nor a first attack starts (:1207-1227). FUN_141766cc0's reuse record, FUN_141767990, the cast's cooldown when
+    /// it was handled (*pResult, FUN_141525ff0, :1230-1231) and the charge use (:1232-1233) follow as for any cast.
+    /// STILL-OPEN: NotifyUseSKill (:1206); main type 0xf (the couple emotion) does nothing.
+    /// </summary>
+    bool UseOwnEmotion(Player me, Net.LiveSession live, CastRecord r, uint now)
+    {
+        var o = EmotionCast.Use(r.Skill, me.State == Player.MoveState.Jump, me.OnWater, me.ClientStateId, me.EmotionAnim);
+        if (o.Enter) me.EnterEmotion(r.Skill);
+        bool sent = false;
+        if (o.Send != null)
+        {
+            if (live != null) sent = live.SendEmote(o.Send);
+            else GD.Print($"cast: emotion {r.Skill.Id} \"{o.Send.Param}\" not sent (offline)");
+        }
+        SkillCast.Casted(castWorld, r);
+        SampleAbilityRate();
+        CompactUsed(r);
+        if (o.Handled && live != null) live.Cooltimes.StartCast(r, null, 0f, now);
+        live?.Cooltimes.OnRechargeSkillUsed(r.Skill, now);
+        if (Ms2Godot.Net.LiveSession.LiveCheck)
+            GD.Print($"cast: emotion {r.Skill.Id} \"{r.Skill.ParamStr}\" {(o.Handled ? o.Enter ? "entered" : "kept" : "refused")}{(sent ? " sent" : "")} state {me.ClientStateId}");
         return true;
     }
 
