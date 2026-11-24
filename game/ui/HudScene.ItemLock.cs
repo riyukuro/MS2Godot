@@ -34,7 +34,11 @@ public partial class HudScene
             Book = book,
             Now = () => live.GameSession?.ServerTime ?? 0,
             FindItem = uid => live.Items.Get(uid) is { } e ? InventoryController.ToItem(e, hudModel.Tables.Items) : null,
+            ShiftHeld = () => Input.IsKeyPressed(Key.Shift),
+            ActionKeyDown = ActionKeyDown,
+            LinkItem = ChatLog.LinkItem,
         };
+        c.Button += name => GD.Print($"item lock: {name} is not ported");
         c.NoticeText += SystemNoticeText;
         c.InventoryButtons += InventoryButtonsAndFlags;
         c.InventorySlotRefresh += uid => inventory?.RefreshItemSlot(uid);

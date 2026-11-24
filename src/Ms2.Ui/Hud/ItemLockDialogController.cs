@@ -44,6 +44,14 @@ public sealed class ItemLockDialogController : UiController, IDragSlotOwner, IIt
     public Func<long> Now = () => 0;
     /// <summary>The dialog closed.</summary>
     public event Action Closed;
+    /// <summary>A callback this port does not handle (the slot preview), raised by name.</summary>
+    public event Action<string> Button;
+    /// <summary>The key action held (the preview action 0x49406).</summary>
+    public Func<int, bool> ActionKeyDown = _ => false;
+    /// <summary>Shift held (DragSlot::vfunc_13's check).</summary>
+    public Func<bool> ShiftHeld = () => false;
+    /// <summary>FUN_140d2cfc0: the item linked into the chat input.</summary>
+    public Action<Item> LinkItem;
     /// <summary>The inventory item of a uid (Unk_Inventory::FindItemByUid) as the UI item; null when unknown.</summary>
     public Func<long, Item> FindItem = _ => null;
     /// <summary>An inventory slot needs a redraw (UIInventoryDialog::RefreshItemSlot).</summary>
@@ -135,7 +143,8 @@ public sealed class ItemLockDialogController : UiController, IDragSlotOwner, IIt
 
     // ---- callbacks ---------------------------------------------------------------------------------------------------
 
-    /// <summary>vfunc_28 (@0x140f572e0): OnItemLock / OnItemUnLock with an item in the bag ask to confirm, OnChangeTab switches.</summary>
+    /// <summary>vfunc_28 (@0x140f572e0): OnItemLock / OnItemUnLock with an item in the bag ask to confirm, OnChangeTab switches.
+    /// The slots' NotifyDragSlot callbacks: <see cref="SlotUse"/> and <see cref="SlotShiftClick"/>.</summary>
     public override bool OnCallback(string name, object[] args)
     {
         if (Book == null) return false;
@@ -150,8 +159,38 @@ public sealed class ItemLockDialogController : UiController, IDragSlotOwner, IIt
                 if (args.Length == 0) return false; // the client reads the tab from its args and does nothing without them
                 ChangeTab((int)Rt.ToUint32(args[0]));
                 return true;
+            case "notifyslotuse": return SlotUse(args);
+            case "notifyslotshiftclick": return SlotShiftClick(args);
         }
         return false;
+    }
+
+    /// <summary>
+    /// NotifyDragSlot::SlotUse for a lock slot: button 0 without Shift, DragSlot::vfunc_13 (pushed again); button 1, the
+    /// preview key held (MS2DragSlot::vfunc_19, the slot enabled by its ctor) the preview (not ported: raised), else
+    /// ItemLockSlot::vfunc_14 (itemlockslot.cpp:90): <see cref="RemoveFromSlot"/>.
+    /// </summary>
+    bool SlotUse(object[] args)
+    {
+        if (args.Length < 1 || !ParseSlot(args[0], out int i)) return false;
+        int button = args.Length > 1 ? InventoryController.ArgInt(args[1]) : 0;
+        if (button == 0) { if (!ShiftHeld()) Host.Push(SlotName(i)); }
+        else if (button == 1)
+        {
+            if (ActionKeyDown(0x49406)) Button?.Invoke("notifySlotUse");
+            else RemoveFromSlot(i);
+        }
+        return true;
+    }
+
+    /// <summary>NotifyDragSlot::SlotShiftClick, ItemLockSlot::vfunc_15 (itemlockslot.cpp:99): the item linked (FUN_140d2cfc0),
+    /// then DragSlot::vfunc_15 (pushed again).</summary>
+    bool SlotShiftClick(object[] args)
+    {
+        if (args.Length < 1 || !ParseSlot(args[0], out int i)) return false;
+        if (ItemOf(i) is { } item) LinkItem?.Invoke(item);
+        Host.Push(SlotName(i));
+        return true;
     }
 
     /// <summary>The tab 0: a box of type 0x21 (tag "itemlock_confirm") whose yes sends mode 3 (UIMessageBox::HandleItemlockConfirmButton);
@@ -195,7 +234,7 @@ public sealed class ItemLockDialogController : UiController, IDragSlotOwner, IIt
     {
         if (!ParseSlot(name, out int i)) return base.GetBinding(name);
         var item = ItemOf(i);
-        if (item == null || Model == null) return null;
+        if (item == null || Model == null || !Model.HasLocalPlayer) return null;      // vfunc_8: no local player, none
         var slot = new List<(string, object)>();
         return ItemSlot.Build(slot, item, Model.HasLocalPlayer, SlotFlags, Model, Model.ItemSlotSources) ? Host.Obj(slot.ToArray()) : null;
     }
@@ -204,8 +243,11 @@ public sealed class ItemLockDialogController : UiController, IDragSlotOwner, IIt
     {
         if (!ParseSlot(name, out int i)) return base.GetSlotTooltip(name);
         var item = ItemOf(i);
+        if (Model == null || !Model.HasLocalPlayer) return new AsTooltip();           // vfunc_0: no local player, none
         var tip = new ItemTooltip(Model, TooltipFlags) { Localize = k => Host.Player.Translate?.Invoke(k) ?? k };
-        return item != null && tip.Fill(item) ? tip.Data : new AsTooltip();
+        if (item == null || !tip.Fill(item)) return new AsTooltip();
+        tip.SetEnablePreview(item);                                                    // the slot is enabled (its ctor)
+        return tip.Data;
     }
 
     Item ItemOf(int slot) => Book[slot] is long uid and not 0 ? FindItem(uid) : null;

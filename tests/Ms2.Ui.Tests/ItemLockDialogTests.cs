@@ -229,6 +229,49 @@ public class ItemLockDialogTests
     }
 
     [Test]
+    public void ALockSlotsRightClickTakesItsItemOutAndItsShiftClickLinksIt()
+    {
+        // NotifyDragSlot::SlotUse button 1 -> ItemLockSlot::vfunc_14 (mode 2 with the item uid); the preview key: raised;
+        // button 0: pushed again; SlotShiftClick -> vfunc_15 (the item linked)
+        var r = new Rig();
+        r.Add(5); r.Put(5, 2);
+        r.Sent.Clear();
+        bool preview = false;
+        var raised = new List<string>(); r.C.Button += raised.Add;
+        r.C.ActionKeyDown = k => preview && k == 0x49406;
+        var linked = new List<long>(); r.C.LinkItem = i => linked.Add(i.Uid);
+        string Slot(int i) => ItemLockDialogController.SlotName(i);
+
+        Assert.That(r.C.OnCallback("notifySlotUse", new object[] { Slot(2), 1 }), Is.True);
+        Assert.That(r.Sent.Select(Bytes).Single(), Is.EqualTo(new byte[] { 2, 5, 0, 0, 0, 0, 0, 0, 0 }));
+        r.C.OnCallback("notifySlotUse", new object[] { Slot(2), 0 });
+        r.C.OnCallback("notifySlotUse", new object[] { Slot(3), 1 });
+        Assert.That(r.Sent.Count, Is.EqualTo(1), "button 0 and an empty slot send nothing");
+        preview = true;
+        r.C.OnCallback("notifySlotUse", new object[] { Slot(2), 1 });
+        Assert.That((r.Sent.Count, raised.Single()), Is.EqualTo((1, "notifySlotUse")), "the preview key: the preview, raised");
+
+        Assert.That(r.C.OnCallback("notifySlotShiftClick", new object[] { Slot(2) }), Is.True);
+        r.C.OnCallback("notifySlotShiftClick", new object[] { Slot(3) });
+        Assert.That(linked, Is.EqualTo(new[] { 5L }));
+        Assert.That(r.C.OnCallback("notifySlotUse", new object[] { "Other.0", 1 }), Is.False);
+    }
+
+    [Test]
+    public void ALockSlotShowsNoItemOrTooltipWithoutTheLocalPlayer()
+    {
+        // ItemLockSlot::vfunc_8 / vfunc_0 (itemlockslot.cpp:114, :132): no local player, 0
+        var r = new Rig();
+        r.Add(5); r.Put(5, 2);
+        string slot = ItemLockDialogController.SlotName(2);
+        Assert.That(r.C.GetBinding(slot), Is.Not.Null);
+        Assert.That(r.C.GetSlotTooltip(slot), Is.Not.Empty);
+        r.Model.HasLocalPlayer = false;
+        Assert.That(r.C.GetBinding(slot), Is.Null);
+        Assert.That(r.C.GetSlotTooltip(slot), Is.Empty);
+    }
+
+    [Test]
     public void ClosingSendsTheResetAndIgnoresLaterPackets()
     {
         var r = new Rig();
