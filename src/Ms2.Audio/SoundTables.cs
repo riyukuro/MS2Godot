@@ -3,34 +3,147 @@ using System.Xml.Linq;
 namespace Ms2.Audio;
 
 /// <summary>
-/// table/systemsound.xml: a UI sound key (button_click, dialog_open, dialog_close, ...) to the sound event the client plays
-/// (SystemSoundProperty: group + soundID).
+/// table/systemSound.xml as SoundPropertyMgr::LoadSystemSound (@0x141792360, soundproperty.cpp:417) reads it: every element
+/// from the first &lt;systemSound&gt; on (the loop takes each next sibling element, whatever its name; the file spells one
+/// "systemSOund") is a <see cref="Property"/> stored under its "key" in a case-insensitive map, a later row replacing an
+/// earlier one. A document whose root is not &lt;ms2&gt; gives no rows.
 /// </summary>
 public sealed class SystemSoundTable
 {
-    readonly Dictionary<string, (string group, string[] ids)> map = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// SystemSoundProperty (soundproperty.h:50), loaded by SystemSoundProperty::Load (@0x141790ae0, soundproperty.cpp:135):
+    /// "soundID" split at ',' (XmlTokenList, the empty tokens skipped), "group", the bools "byGender" and "byJob"
+    /// (QueryBoolAttribute), the unsigned "cooltimeID", and only when both bools are set, "jobSoundID": ';'-separated
+    /// "job:male,female" entries, an entry kept only with exactly two parts and two names (SetAt, a later one replacing).
+    /// </summary>
+    public sealed class Property
+    {
+        public string Group = "";
+        public bool ByGender, ByJob;
+        public uint CooltimeId;
+        public string[] Sounds = Array.Empty<string>();
+        public readonly Dictionary<int, string[]> JobSounds = new();
+
+        /// <summary>SystemSoundProperty::GetCategory @0x141790e00 (soundproperty.cpp:169): the group, with "/Male" for gender 0
+        /// and "/Female" for gender 1 on a byGender row.</summary>
+        public string Category(int gender)
+        {
+            if (ByGender)
+            {
+                if (gender == 0) return Group + "/Male";
+                if (gender == 1) return Group + "/Female";
+            }
+            return Group;
+        }
+
+        /// <summary>
+        /// SystemSoundProperty::GetSoundName @0x141790ed0 (soundproperty.cpp:182). The job sounds count only on a row that is
+        /// byGender and byJob while the job sound is on (IsJobSoundDisabled @0x141260470: the KR region and the character
+        /// option's disableJobSound turn it off): no job sounds at all gives no name; the job's pair gives its name of the
+        /// gender (none for a gender of 2 or more); a job without a pair falls to the soundIDs. Then: no soundIDs gives no
+        /// name; a byGender row gives the gender's soundID (none for a gender of 2 or more), another row the first.
+        /// STILL-OPEN: a byGender row with one soundID and gender 1 indexes past the array, which AtlThrow(E_INVALIDARG)s in
+        /// the exe; here it gives no name. No row of the KMS2 or GMS2 tables has that shape.
+        /// </summary>
+        public string SoundName(uint gender, int job, bool jobSoundDisabled)
+        {
+            bool byJob = ByJob && !jobSoundDisabled;
+            if (ByGender && byJob)
+            {
+                if (JobSounds.Count == 0) return null;
+                if (JobSounds.TryGetValue(job, out var names))
+                    return gender >= 2 ? null : names[gender];
+            }
+            if (Sounds.Length == 0) return null;
+            if (ByGender) return gender >= 2 || gender >= Sounds.Length ? null : Sounds[gender];
+            return Sounds[0];
+        }
+    }
+
+    readonly Dictionary<string, Property> map = new(StringComparer.OrdinalIgnoreCase);
+
+    public int Count => map.Count;
+
+    /// <summary>Every row by key.</summary>
+    public IReadOnlyDictionary<string, Property> Rows => map;
 
     public static SystemSoundTable Parse(string xml)
     {
         var t = new SystemSoundTable();
-        foreach (var e in XDocument.Parse(xml).Root.Elements())
+        var root = XDocument.Parse(xml.TrimStart('\uFEFF')).Root;
+        if (root == null || root.Name.LocalName != "ms2") return t;
+        bool started = false;
+        foreach (var e in root.Elements())
         {
-            if (!e.Name.LocalName.Equals("systemSound", StringComparison.OrdinalIgnoreCase)) continue;   // the file spells one "systemSOund"
-            var key = (string)e.Attribute("key");
-            if (key == null) continue;
-            var ids = ((string)e.Attribute("soundID") ?? "").Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            t.map[key] = ((string)e.Attribute("group") ?? "", ids);
+            if (!started && e.Name.LocalName != "systemSound") continue;
+            started = true;
+            var p = new Property
+            {
+                Sounds = Split((string)e.Attribute("soundID"), ','),
+                Group = (string)e.Attribute("group") ?? "",
+                ByGender = Flag(e, "byGender"),
+                ByJob = Flag(e, "byJob"),
+                CooltimeId = uint.TryParse((string)e.Attribute("cooltimeID"), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out uint c) ? c : 0,
+            };
+            if (p.ByJob && p.ByGender)
+                foreach (var entry in Split((string)e.Attribute("jobSoundID"), ';'))
+                {
+                    var parts = Split(entry, ':');
+                    if (parts.Length != 2) continue;
+                    var names = Split(parts[1], ',');
+                    if (names.Length != 2) continue;
+                    p.JobSounds[Atoi(parts[0])] = names;
+                }
+            t.map[(string)e.Attribute("key") ?? ""] = p;
         }
         return t;
     }
 
-    public int Count => map.Count;
+    /// <summary>Unk_SplitA (achievedata.cpp, @0x14015f0b0): CString::Tokenize, the empty tokens skipped, nothing trimmed.</summary>
+    static string[] Split(string s, char sep) => string.IsNullOrEmpty(s) ? Array.Empty<string>() : s.Split(sep, StringSplitOptions.RemoveEmptyEntries);
 
-    /// <summary>The event path ("MS2Sound/Sound/system/02000002") of a key, or null when the key has no sound.</summary>
-    public string Resolve(string key)
+    /// <summary>XmlGetAttr of a bool (tinyxmlhelper.cpp:141, QueryBoolAttribute, tinyxml.cpp:620): a value starting with
+    /// "true", "yes" or "1" in any case is set; otherwise the property's false stays.</summary>
+    static bool Flag(XElement e, string name) =>
+        (string)e.Attribute(name) is { Length: > 0 } v && (v.StartsWith("true", StringComparison.OrdinalIgnoreCase) || v.StartsWith("yes", StringComparison.OrdinalIgnoreCase) || v.StartsWith('1'));
+
+    /// <summary>atoi: the leading signed digits after white space, 0 without them.</summary>
+    static int Atoi(string s)
     {
-        if (!map.TryGetValue(key, out var v) || v.ids.Length == 0) return null;
-        return v.group + "/" + v.ids[0];
+        int i = 0;
+        while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
+        bool neg = false;
+        if (i < s.Length && (s[i] == '-' || s[i] == '+')) neg = s[i++] == '-';
+        long v = 0;
+        while (i < s.Length && s[i] >= '0' && s[i] <= '9' && v <= int.MaxValue) v = v * 10 + (s[i++] - '0');
+        return (int)(neg ? -v : v);
+    }
+
+    /// <summary>
+    /// SoundPropertyMgr::FindSystemSound @0x141792ee0 (soundproperty.cpp:648): the row of "arg_name", or of the name with no
+    /// <paramref name="arg"/>. A missing "arg_name" gives no row even when the plain name has one (the exe tests the plain
+    /// name and returns its still-empty pointer).
+    /// </summary>
+    public Property Find(string name, string arg = "")
+    {
+        if (map.Count == 0) return null;
+        string key = string.IsNullOrEmpty(arg) ? name ?? "" : arg + "_" + name;
+        if (key.Length == 0) return null;
+        return map.TryGetValue(key, out var p) ? p : null;
+    }
+
+    /// <summary>
+    /// CEffectService::PlaySystemSound @0x1411a5a60 (effectservice.cpp:1288) up to its play: the row's sound name for the
+    /// local player's gender and job group (0 and 1 without a local player), none for an empty name or "0"; the event path
+    /// is GetCategory(gender) + "/" + the name (FUN_1411a5110 lower-cases the category; the FEV lookup ignores case). The
+    /// row's cooltime (CooltimeManager::Use) is the caller's, through <see cref="Find"/>'s CooltimeId.
+    /// </summary>
+    public string Resolve(string key, int gender = 0, int jobGroup = 1, bool jobSoundDisabled = false, string arg = "")
+    {
+        var p = Find(key, arg);
+        var name = p?.SoundName(unchecked((uint)gender), jobGroup, jobSoundDisabled);
+        if (string.IsNullOrEmpty(name) || name == "0") return null;
+        return p.Category(gender) + "/" + name;
     }
 }
 

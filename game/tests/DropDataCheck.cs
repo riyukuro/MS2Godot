@@ -44,7 +44,7 @@ public partial class DropDataCheck : Node
         var builder = new ModelBuilder(ModelBuilder.SharedSpec(Settings.NifXml), packs);
         var effects = new EffectTable(packs);
         var soundDir = System.IO.Path.Combine(Settings.DataDir, "Sound");
-        var sounds = System.IO.File.Exists(System.IO.Path.Combine(soundDir, "MS2Sound.fev")) ? new SoundLibrary(soundDir) : null;
+        var sounds = System.IO.File.Exists(System.IO.Path.Combine(soundDir, "MS2Sound.fev")) ? new SoundLibrary(soundDir, GameOptions.Current != null ? GameOptions.Voice : 0) : null;   // the voice of the options (the region's on a fresh file)
         if (sounds == null) fails.Add("no Sound/MS2Sound.fev");
 
         var root = GameStrings.Parse(packs.Read("Xml", "table/itemdata.xml")).Root;
@@ -124,10 +124,12 @@ public partial class DropDataCheck : Node
         foreach (var id in soundIds)
             if (sounds?.ResolveEvent(DropEffects.SoundGroup + "/" + id) != null) soundOk++; else fails.Add($"item sound {id} has no event with a wave");
         var system = SystemSoundTable.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/systemsound.xml")));
-        var warn = system.Resolve(DropPickup.BagFullSound);
-        bool warnOk = warn != null && sounds?.ResolveEvent(warn) != null;
-        // reported, not failed: the row is byGender / byJob in the Korean voice group, which SystemSoundTable.Resolve takes as its
-        // first id (the gender, job and voice language choice of system sounds is a table-wide gap, not this list's)
+        // the bag-full sound, as PlaySystemSound gives it to a male and a female beginner (job group 1): byGender and byJob rows
+        // take the gender's category and the job's name; the waves come from the voice language's banks
+        var warns = new[] { system.Resolve(DropPickup.BagFullSound, 0, 1), system.Resolve(DropPickup.BagFullSound, 1, 1) };
+        bool warnOk = warns.All(w => w != null && sounds?.ResolveEvent(w) != null);
+        if (!warnOk) fails.Add($"bag-full sound {string.Join(" ", warns)} has no event with a wave");
+        var warn = string.Join(" ", warns);
         var strings = Ms2.Ui.GameTables.Shared(packs, GameOptions.StringLanguage);
         foreach (int n in new[] { DropPickup.BagFullNotice, DropPickup.TooFarNotice })
             if (Ms2.Formats.Text.CommonStringIds.Key(n) is not { } key || string.IsNullOrEmpty(strings.Common(key))) fails.Add($"notice 0x{n:x} has no common string");

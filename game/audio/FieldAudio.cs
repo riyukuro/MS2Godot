@@ -146,6 +146,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         return t;
     }
 
+
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, HitSoundTable> hitSoundTables = new();
 
     /// <summary>table/hitsound.xml, parsed once per pack set (SoundPropertyMgr::LoadHitSound, soundproperty.cpp:513, from the
@@ -643,13 +644,23 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     }
 
     /// <summary>
-    /// A UI sound by the client's key (table/systemsound.xml: button_click, dialog_open, dialog_close, ...), played as the
-    /// event the table names. Returns false when the key has no sound.
+    /// CEffectService::PlaySystemSound @0x1411a5a60 (effectservice.cpp:1288): a UI sound by the client's key (table/systemsound.xml:
+    /// button_click, dialog_open, system_notice_error_warningBag, ...). The row's sound is the local player's gender and job
+    /// group's (gender 0 and job 1 without one; SystemSoundTable.Resolve), with the job sounds off under the KR region's
+    /// disableJobSound (IsJobSoundDisabled @0x141260470); a row with a cooltimeID plays only when CooltimeManager::Use lets it.
+    /// The event's waves come from the banks of the voice language (SoundLibrary). Returns false when nothing is played.
     /// </summary>
-    public bool PlayUi(string key)
+    public bool PlayUi(string key, string arg = "")
     {
-        var path = systemSounds?.Resolve(key);
-        return path != null && PlayEvent(path);
+        var p = systemSounds?.Find(key, arg);
+        if (p == null) return false;
+        var me = Ms2Godot.Net.LiveSession.Instance?.Me.User;
+        int gender = me?.Gender ?? 0, job = me?.JobCode ?? 1;
+        bool off = (GameOptions.Current?.StatusOption?.RegionKr ?? false) && GameOptions.SoundFlag.DisableJobSound;
+        var path = systemSounds.Resolve(key, gender, job, off, arg);
+        if (path == null) return false;
+        if (p.CooltimeId != 0 && cooltimes != null && !cooltimes.Use((int)p.CooltimeId, System.Environment.TickCount64)) return false;
+        return PlayEvent(path);
     }
 
     public bool PlayUiClick() => PlayUi("button_click");
