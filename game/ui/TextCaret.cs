@@ -145,7 +145,7 @@ public partial class TextCaret : Node2D
                 if (g.Index >= at) { pen = g.Pen; found = true; break; }
                 pen = g.Pen + g.Advance * g.Repeat;
             }
-            if (found || line.Shaped.Count > 0) lx += pen;
+            if (found || line.Shaped.Length > 0) lx += pen;
         }
         var global = label.GetGlobalTransform() * new Vector2(lx, 0);
         return (li, (GetParent<Node2D>().GetGlobalTransform().AffineInverse() * global).X);

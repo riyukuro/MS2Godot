@@ -151,7 +151,7 @@ public partial class LoginTypingDriver : Node
         if (NodeOf(tf) is not TextNode node) return "no text node";
         var color = node.Label.LabelSettings.FontColor;
         var lines = node.ShownLines();
-        if (lines.Count != 1 || lines[0].Shaped.Count < Id.Length) return $"{lines.Count} lines";
+        if (lines.Count != 1 || lines[0].Shaped.Length < Id.Length) return $"{lines.Count} lines";
         var line = lines[0];
         var rects = Rects(node);
         var glyphs = new System.Text.StringBuilder();
@@ -165,8 +165,8 @@ public partial class LoginTypingDriver : Node
         }
         string got = $"face by line {node.FaceByLine}, glyphs {glyphs}rects {(rects == null ? "none drawn" : string.Join(" ", rects))}";
         if (!shown) return colours && rects is not { Count: > 0 } ? null : got;
-        var g1 = line.Shaped.Find(g => g.Index == 1);
-        var g3 = line.Shaped.Find(g => g.Index == 3);
+        var g1 = Array.Find(line.Shaped, g => g.Index == 1);
+        var g3 = Array.Find(line.Shaped, g => g.Index == 3);
         float x0 = line.LabelX + g1.Pen + line.Dx, x1 = line.LabelX + g3.Pen + line.Dx + g3.Advance * g3.Repeat;
         bool rect = rects is { Count: 1 } && Mathf.IsEqualApprox(rects[0].Position.X, x0) && Mathf.IsEqualApprox(rects[0].End.X, x1)
             && rects[0].Size.Y > 0 && rects[0].Position.Y <= line.Baseline && rects[0].End.Y >= line.Baseline;
@@ -187,8 +187,8 @@ public partial class LoginTypingDriver : Node
         var lines = node?.ShownLines();
         if (lines is not { Count: 1 }) return null;
         var line = lines[0];
-        var g1 = line.Shaped.Find(g => g.Index == 1);
-        var g4 = line.Shaped.Find(g => g.Index == 4);
+        var g1 = Array.Find(line.Shaped, g => g.Index == 1);
+        var g4 = Array.Find(line.Shaped, g => g.Index == 4);
         float y = line.Baseline - 4;
         var xf = node.Label.GetViewport().GetFinalTransform() * node.Label.GetGlobalTransformWithCanvas();
         return (xf * new Vector2(line.LabelX + g1.Pen + line.Dx + 1, y), xf * new Vector2(line.LabelX + g4.Pen + line.Dx + 1, y));

@@ -27,13 +27,31 @@ public partial class TextNode
     /// <summary>One glyph as drawn: its code point, font and glyph id, the raster size it is drawn from and the scale from that
     /// raster to label pixels, its pen on the baseline and offset in label pixels, its advance in label pixels and its run's
     /// size in label pixels.</summary>
-    public readonly record struct PlacedGlyph(int Index, int Count, Rid Font, long Glyph, int Raster, float Scale, float Pen, Vector2 Offset,
-        float Advance, int Repeat, float Size)
+    /// <remarks>Fields, not properties: a kept line's glyphs are read and moved in a full log's churn (<see cref="MoveLine"/>),
+    /// and each property accessor first read there is a method compiled in the window.</remarks>
+    public struct PlacedGlyph
     {
-        /// <summary>The code point past the glyph's cluster and whether the glyph has a character position of its own in the
-        /// label (Label::get_character_bounds: a cluster's glyph with a glyph id, or a space).</summary>
-        public int End { get; init; }
-        public bool Bounded { get; init; }
+        public int Index, Count;
+        public Rid Font;
+        public long Glyph;
+        public int Raster;
+        public float Scale, Pen;
+        public Vector2 Offset;
+        public float Advance;
+        public int Repeat;
+        public float Size;
+        /// <summary>The code point past the glyph's cluster.</summary>
+        public int End;
+        /// <summary>Whether the glyph has a character position of its own in the label (Label::get_character_bounds: a cluster's
+        /// glyph with a glyph id, or a space).</summary>
+        public bool Bounded;
+
+        public PlacedGlyph(int index, int count, Rid font, long glyph, int raster, float scale, float pen, Vector2 offset,
+            float advance, int repeat, float size)
+        {
+            Index = index; Count = count; Font = font; Glyph = glyph; Raster = raster; Scale = scale; Pen = pen; Offset = offset;
+            Advance = advance; Repeat = repeat; Size = size; End = 0; Bounded = false;
+        }
     }
 
     /// <summary>One laid out line: its code point range, top and baseline in label pixels and its glyphs (pens without the
@@ -58,7 +76,9 @@ public partial class TextNode
         public string Text;
         /// <summary>The label's own glyphs of the line (its paragraph's shaped line), pens from the line's x; LineFace and
         /// GlyphShadow draw these as the label does (Label::draw_glyph: each glyph repeat times, one advance apart).</summary>
-        public readonly List<PlacedGlyph> Shaped = new();
+        /// <summary>An array, not a list: moving a kept line (<see cref="MoveLine"/>, each time the oldest line of a full log drops) reads and
+        /// writes every glyph, and a list's accessors over this struct are JIT-compiled when the first line moves.</summary>
+        public PlacedGlyph[] Shaped = new PlacedGlyph[0];
     }
 
     List<LayoutLine> layout;
@@ -183,24 +203,16 @@ public partial class TextNode
         return true;
     }
 
-    /// <summary>A kept paragraph's lines at another text position: every code point index they hold moves by the same amount.</summary>
-    static void MoveLaidParagraph(LaidParagraph p, int to)
-    {
-        if (to == p.Base) return;
-        foreach (var line in p.Lines) MoveLine(line, to - p.Base);
-        p.Base = to;
-    }
-
     /// <summary>A kept line <paramref name="d"/> code points further on.</summary>
     static void MoveLine(LayoutLine line, int d)
     {
         if (d == 0) return;
         line.Start += d; line.End += d;
         var glyphs = line.Shaped;
-        for (int i = 0; i < glyphs.Count; i++)
+        for (int i = 0; i < glyphs.Length; i++)
         {
-            var g = glyphs[i];      // built as a glyph is (its constructor and initializers are warm), not with { }, whose init accessor is compiled on first use
-            glyphs[i] = new PlacedGlyph(g.Index + d, g.Count, g.Font, g.Glyph, g.Raster, g.Scale, g.Pen, g.Offset, g.Advance, g.Repeat, g.Size) { End = g.End + d, Bounded = g.Bounded };
+            glyphs[i].Index += d;
+            glyphs[i].End += d;
         }
     }
 
@@ -254,7 +266,11 @@ public partial class TextNode
                 if (para != null && para.Width == width)
                 {
                     // unchanged: its lines only move to the paragraph's new position
-                    MoveLaidParagraph(para, pstart);
+                    if (pstart != para.Base)      // a kept paragraph's lines move by the difference of its positions
+                    {
+                        foreach (var kept1 in para.Lines) MoveLine(kept1, pstart - para.Base);
+                        para.Base = pstart;
+                    }
                     foreach (var line in para.Lines)
                     {
                         line.Pitch = line.BasePitch;
@@ -390,14 +406,24 @@ public partial class TextNode
 
     /// <summary>
     /// The line this label draws from for a script field scrolled to the line starting at code point <paramref name="start"/>
-    /// of a text of <paramref name="total"/> code points. The script's line count is the AVM's wrap, the label's is Godot's: the
+    /// of the script's text (<paramref name="start"/> a UTF-16 index into <paramref name="text"/>). The script's line count is the AVM's wrap, the label's is Godot's: the
     /// line holding that character, but never one below which fewer lines than the field holds would show; at the end of the
     /// scroll range the first line from which the last line still fits, so the newest line is always the last one drawn.
     /// </summary>
-    public int FirstLineFor(int start, int total, bool atEnd)
+    public int FirstLineFor(string text, int start, bool atEnd)
     {
         var all = Layout();
         if (all.Count == 0) return 0;
+        // code points of the script's text before the index, and in all of it (a low surrogate is half a code point); inline, not a
+        // helper: each method first called in a full chat log's churn is compiled in that window
+        int total = 0, first = 0;
+        for (int i = 0; i < text.Length; i++)
+        {
+            if (char.IsLowSurrogate(text[i])) continue;
+            if (i < start) first++;
+            total++;
+        }
+        start = first;
         if (total != cpCount && total > 0) start = (int)((long)start * cpCount / total);
         double room = Bounds.Size.Y > 0 ? Bounds.Size.Y - 4 + 1 : double.MaxValue;
         return Ms2.Ui.ScrolledLines.FirstLine(all.Count, lineStart ??= LineStart, lineHeightAdvance ??= LineHeightAdvance, room, start, atEnd);
@@ -502,6 +528,8 @@ public partial class TextNode
         float pen = 0, shaped = 0;
         var glyphs = ts.ShapedTextGetGlyphs(rid);
         using var glyphsOwner = (Godot.Collections.Array)glyphs;
+        var placed = new PlacedGlyph[glyphs.Count];
+        int n = 0;
         foreach (Dictionary g in glyphs)
         {
             using var _ = g;
@@ -516,15 +544,16 @@ public partial class TextNode
             int count = (int)g[GlyphKeys.Count];
             long id = image ? 0 : (long)g[GlyphKeys.Index];
             var gflags = (TextServer.GraphemeFlag)(long)g[GlyphKeys.Flags];
-            line.Shaped.Add(new PlacedGlyph(index, count, (Rid)g[GlyphKeys.FontRid], id, raster, labelSize / raster,
+            placed[n++] = new PlacedGlyph(index, count, (Rid)g[GlyphKeys.FontRid], id, raster, labelSize / raster,
                 pen, (Vector2)g[GlyphKeys.Offset] * k, advance * k, repeat, labelSize)
             {
                 End = first + (int)g[GlyphKeys.End],
                 Bounded = count > 0 && (image || id != 0 || (gflags & TextServer.GraphemeFlag.Space) != 0),
-            });
+            };
             pen += advance * k * repeat;
             shaped += advance * repeat;
         }
+        line.Shaped = placed;
         return (pen, shaped > 0 ? pen / shaped : 1);
     }
 
