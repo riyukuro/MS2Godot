@@ -278,7 +278,10 @@ public class PartyNoticesTests
             "s_party_match_dungeon_register", "s_party_match_dungeon_unregister", "s_party_create_dungeon", "s_party_change_help_dungeon",
             "s_party_find_dungeon_helper_cooldown", "s_maple_survival_squad_register_squad", "s_maple_survival_squad_unregister_squad",
         };
-        for (int g = 1; g < AchieveController.DungeonGroupKeys.Length; g++) keys.Add("s_enum_dungeon_group_" + AchieveController.DungeonGroupKeys[g]);
+        // The group names: the older data set (GMS2) has no worldBoss and turka rows; the client then reads "" for them.
+        string[] laterGroups = { "worldBoss", "turka" };
+        for (int g = 1; g < AchieveController.DungeonGroupKeys.Length; g++)
+            if (!laterGroups.Contains(AchieveController.DungeonGroupKeys[g])) keys.Add("s_enum_dungeon_group_" + AchieveController.DungeonGroupKeys[g]);
         var missing = ids.Where(i => string.IsNullOrEmpty(Tables().Common(i))).Select(i => "0x" + i.ToString("x"))
             .Concat(keys.Where(k => string.IsNullOrEmpty(Tables().Common(k))));
         Assert.That(missing, Is.Empty, "common strings the party notices read");
