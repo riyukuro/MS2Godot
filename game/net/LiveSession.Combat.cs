@@ -401,6 +401,35 @@ public partial class LiveSession
                 Shot($"interact_{id}.png");
                 continue;
             }
+            if (step.StartsWith("telescope:"))      // telescope:<interact id>: the own pc put at the nearest telescope of that id, the action key; its view checked, then Esc skips it
+            {
+                int id = int.Parse(step[10..]);
+                var io = live.InteractObjects;
+                Ms2.Ui.LiveInteractObject o = null;
+                await until(() => live.player != null && (o = io?.All.Where(x => x.RowId == id && x.Kind == Ms2.Net.Packets.InteractObjectMessage.KindTelescope)
+                    .OrderBy(x => FieldBuilder.ToGodotPoint(x.Position).DistanceSquaredTo(live.player.GlobalPosition)).FirstOrDefault()) != null, 60 * 20);
+                Check($"{step}: the telescope in the field ({o?.Name})", o != null);
+                if (o == null) continue;
+                live.player.GlobalPosition = FieldBuilder.ToGodotPoint(o.Position) + new Vector3(0, 5, 0);
+                live.player.Velocity = Vector3.Zero;
+                await frames(90);
+                Shot("telescope_before.png");
+                await PressActionKey(frames);
+                await until(() => o.TelescopeActive, 60 * 5);
+                var cine = live.Cinematic;
+                var cams = o.TelescopeEntity != null ? string.Join(",", Ms2.Ui.LiveInteractObjects.TelescopeCameraIds(o.TelescopeEntity)) : "none";
+                GD.Print($"live: combat {step}: found {o.TelescopeEntity?.Raw?.Id ?? "none"} cameras {cams}, key mode {cine.KeyMode}, cinematic {cine.Mode}/{cine.Id}, skip state {cine.SkipState}");
+                Check($"{step}: the server's message entered the view (cameras {cams})", o.TelescopeActive);
+                Check($"{step}: the cinematic sub scene with cinematic 9 and skip state 3", cine.KeyMode && cine.Mode == 1 && cine.Id == 9 && cine.SkipState == 3);
+                await frames(60 * 3);
+                Shot("telescope_view.png");
+                hud.Escape();
+                await frames(60 * 2);
+                Check($"{step}: Esc skipped the view (inactive, key mode {cine.KeyMode})", !o.TelescopeActive && !cine.KeyMode);
+                await frames(60);
+                Shot("telescope_after.png");
+                continue;
+            }
             if (step.StartsWith("dialogclosed:"))      // dialogclosed:<interact id>: the UI object's dialog let go (the walk took the pc away, or it was closed)
             {
                 int id = int.Parse(step[13..]);
