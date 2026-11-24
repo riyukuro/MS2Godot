@@ -18,10 +18,11 @@ public partial class HudScene
     VideoPlayerNode cutSceneVideo;
     string cutScenePath;
 
-    /// <summary>Plays the pane's usm while it plays: true when a usm shows (or ended this frame), false for a swf or no movie.</summary>
+    /// <summary>Plays the pane's usm while it plays: true when a usm shows (or ended this frame), false for a swf or no movie.
+    /// Called every frame, with a movie or not, so the layer goes when the movie stops or the session ends.</summary>
     bool TickCutSceneVideo(Ms2.Ui.Hud.CutSceneMovie movie)
     {
-        string path = movie.IsPlaying ? movie.Path : null;
+        string path = movie?.IsPlaying == true ? movie.Path : null;
         if (path != cutScenePath)
         {
             cutScenePath = path;

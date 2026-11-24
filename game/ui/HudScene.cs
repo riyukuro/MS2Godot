@@ -3946,7 +3946,8 @@ public partial class HudScene : Node, IUiStageHost
     {
         var movie = Ms2Godot.Net.LiveSession.Instance?.Movie;
         var cine = Ms2Godot.Net.LiveSession.Instance?.Cinematic;
-        bool on = movie?.IsPlaying == true && !TickCutSceneVideo(movie);
+        bool usm = TickCutSceneVideo(movie);     // every frame: a stopped movie takes its layer down
+        bool on = movie?.IsPlaying == true && !usm;
         bool cineOn = cine?.IsShowing == true;
         if (!on && !cineOn && movieLabel == null) return;
         if (movieLabel == null)
