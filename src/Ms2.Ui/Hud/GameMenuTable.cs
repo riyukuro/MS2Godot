@@ -19,6 +19,8 @@ public static class GameMenuActions
     public const string ToggleSystemShop = "ToggleSystemShop";
     /// <summary>The learning entry's handler.</summary>
     public const string OpenLearningQuest = "OpenLearningQuestDialog";
+    /// <summary>The jobchange entry's handler, ToggleDialog(0x4f6b) (@0x14193d590, uigamemenudialog.cpp:2200).</summary>
+    public const string ToggleChangeJob = "FUN_14193d590";
 }
 
 /// <summary>One CGameMenuItem: a table/gamemenu.xml menu or child, with its filter.</summary>
@@ -96,7 +98,7 @@ public sealed class GameMenuTable
         new(51, "adventure_level", "$s_gamemenu_popup_adventure_level", "s_tooltip_gamemenu_adventure_level", "", 0, 0x4f67, 0),
         new(52, "world_champion", "$s_gamemenu_popup_world_champion", "s_tooltip_gamemenu_world_champion", "", 0, 0, 199, Action: "SendWorldChampionMode8"),
         new(53, "cashAttend", "$s_gamemenu_popup_cashAttend", "s_tooltip_gamemenu_cashAttend", "", 0, 0x4eb9, 0, Action: "FUN_14193d560"),
-        new(54, "jobchange", "$s_gamemenu_popup_changejob", "s_tooltip_gamemenu_changejob", "", 0, 0, 0, Action: "FUN_14193d590", EnabledBy: "UIChangeJobDialog::CanChangeJob"),
+        new(54, "jobchange", "$s_gamemenu_popup_changejob", "s_tooltip_gamemenu_changejob", "", 0, 0, 0, Action: GameMenuActions.ToggleChangeJob, EnabledBy: "UIChangeJobDialog::CanChangeJob"),
         new(55, "lapenshard", "$s_gamemenu_btn_lapenshard", "s_tooltip_gamemenu_lapenshard", "", 0, 0x4f6d, 211),
         new(57, "coupledance", "$s_gamemenu_popup_coupledance", "s_tooltip_gamemenu_coupledance", "", 0, 0x4f71, 0, Action: "FUN_14193d320"),
         new(59, "pssbshop", "$s_gamemenu_btn_pssbshop", "s_tooltip_gamemenu_pssbshop", "", 0, 0, 0, Action: GameMenuActions.ToggleSystemShop),

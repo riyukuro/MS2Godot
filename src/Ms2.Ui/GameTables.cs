@@ -106,6 +106,7 @@ public sealed class GameTables
         // ConstantsBlocks (unit_1402ab440_constantsblocks.cpp:1169): read by JobSystem::GetLevelSkillPoint (jobsystem.cpp:301)
         SkillPointLimitLevel1 = (int)k.Float("SkillPointLimitLevel1", SkillPointLimitLevel1);
         SkillPointLimitLevel2 = (int)k.Float("SkillPointLimitLevel2", SkillPointLimitLevel2);
+        ChangeJobLevel = (int)k.Float("ChangeJobLevel", ChangeJobLevel);
         BothHandGearScorePenaltyDiv = k.Float("BothHandGearScorePenaltyDiv", BothHandGearScorePenaltyDiv);
         ClubNameLengthMin = (int)k.Float("ClubNameLengthMin", ClubNameLengthMin);
         ClubNameLengthMax = (int)k.Float("ClubNameLengthMax", ClubNameLengthMax);
@@ -354,6 +355,11 @@ public sealed class GameTables
     public int MaxLevel => nextExp.Count == 0 ? 0 : nextExp.Keys.Max();
     /// <summary>The job's display name by sub job code (string table 6); the code as text when unknown.</summary>
     public string JobName(int subJob) => jobNames.TryGetValue(subJob.ToString(CultureInfo.InvariantCulture), out var n) && n != null ? n : subJob.ToString(CultureInfo.InvariantCulture);
+    /// <summary>CStringTable::FUN_141811980(6, id): the job name of a sub job code, "" when unknown.</summary>
+    public string JobNameOrEmpty(int subJob) => jobNames.TryGetValue(subJob.ToString(CultureInfo.InvariantCulture), out var n) && n != null ? n : "";
+    /// <summary>CStringTable::FUN_141811980(0x4f, id): string table 79 "stringChangeJobDesc", "" when unknown.</summary>
+    public string ChangeJobDesc(int id) => Lazy(ref changeJobDescs, "stringchangejobdesc", "name").TryGetValue(id.ToString(CultureInfo.InvariantCulture), out var n) ? n ?? "" : "";
+    Dictionary<string, string> changeJobDescs;
     public string Common(string key) => common(key);
     /// <summary>GetStringCommon (commonutil.cpp:860): the common string of the id (CommonString::RegisterIds keys); "" when
     /// the id or its key is unknown.</summary>
@@ -444,6 +450,9 @@ public sealed class GameTables
     public uint MeratConsumeWorldChat = 5, MeratConsumeChannelChat = 2;
     /// <summary>Client::Constants SkillPointLimitLevel1 / SkillPointLimitLevel2 (defaults 80, 100).</summary>
     public int SkillPointLimitLevel1 = 80, SkillPointLimitLevel2 = 100;
+    /// <summary>Client::Constants ChangeJobLevel (Define default 14, unit_1402ab440_constantsblocks.cpp:1200): the least level
+    /// CChangeJobTable::CanChange takes.</summary>
+    public int ChangeJobLevel = 14;
     /// <summary>Client::Constants BothHandGearScorePenaltyDiv (default 4.0, unit_1402ab440_constantsblocks.cpp:1248): the
     /// divisor of the main-hand item level with one one-handed weapon (PC::vfunc_126, pc.cpp:4235).</summary>
     public float BothHandGearScorePenaltyDiv = 4.0f;

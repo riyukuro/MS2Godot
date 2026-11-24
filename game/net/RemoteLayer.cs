@@ -747,6 +747,21 @@ public sealed partial class RemoteLayer : Node3D
     World.RegionSkills RegionFx => GetParent()?.GetNodeOrNull<World.RegionSkills>(RegionSkillsName);
     static readonly NodePath RegionSkillsName = "RegionSkills";
 
+    /// <summary>The Job packet's mode 2 (scenestategame.cpp:7476-7481): the common resource's changeJobs effect
+    /// (m_strChangeJobs, CH/Common/EFF_ChangeJobs.xml) on the PC (SetActor), its object kind GetObjectKind: the local
+    /// player's 1, another PC's 3. A PC FindPCById does not find plays nothing (OnJob returns at its start). Returns
+    /// whether it played.</summary>
+    public bool PlayJobChangeEffect(int objectId)
+    {
+        bool self = objectId == Tracker.SelfObjectId;
+        if (!self && !users.ContainsKey(objectId)) return false;
+        var actor = NodeOf(objectId);
+        if (actor == null) return false;
+        string fx = Ms2.Ui.GameTables.Shared(packs, Ms2Godot.GameOptions.StringLanguage).CommonResource("changeJobs");
+        combat.PlayEffectOn(fx, actor, self ? Ms2.Audio.SoundMusicEffectState.CasterMyPc : Ms2.Audio.SoundMusicEffectState.CasterOtherPc);
+        return true;
+    }
+
     /// <summary>FUN_141661370(1, UserRevivalInvincibleTick, 100000004) on a remote PC (OnRevival, scenestategame.cpp:7408):
     /// the times, the common resource's Revival_Invincible effect at the actor (m_strInvincibleEffect), no buff icon.</summary>
     void StartInvincible(Remote r)

@@ -2399,6 +2399,8 @@ public partial class LiveSession : Node
                 if (selfJob && j.Book != null) { SkillBook = j.Book; SkillBookChanged?.Invoke(j.Mode); }
                 if (selfJob && j.Mode is 0 or 2 or 7) guide?.OnJobChanged(Me.User?.Job ?? 0);   // NotifyStatusChanged(4) with the sub job (scenestategame.cpp:7463/7485/7506)
                 if (selfJob && j.Mode == 3) ShowJobError(j.Error, j.ErrorValue);
+                // mode 2: the common resource's changeJobs effect on the PC, any PC the field has (scenestategame.cpp:7476-7481)
+                if (j.Mode == 2 && remote?.PlayJobChangeEffect(j.ObjectId) == true) GD.Print($"live: job change effect on object {j.ObjectId}");
                 GD.Print($"live: job mode {j.Mode} object {j.ObjectId}{(selfJob ? " SELF" : "")}" + (j.Book != null ? $" ({j.Book.Skills.Count} skills)" : j.Mode == 3 ? $" error {j.Error}" : ""));
             }
             else if (game.Is(p, Inbound.AttributePoint))

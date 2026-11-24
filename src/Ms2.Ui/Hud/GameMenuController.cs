@@ -282,6 +282,17 @@ public sealed class GameMenuController : UiController
     /// <summary>MarkDirty (m_nDirty = 1, scenestategame.cpp:900): the next <see cref="Update"/> refreshes the menu.</summary>
     public void MarkDirty() => dirty = true;
 
+    /// <summary>CChangeJobTable::GetStartQuestId of the local player's sub job (0 without a player or a row).</summary>
+    public Func<int> ChangeJobStartQuest = () => 0;
+
+    /// <summary>vfunc_o178_1 @0x141937650 (uigamemenudialog.cpp:990), a started quest (UIQuestEventListener slot 1): its
+    /// FUN_14193b4a0 (:1779) marks the menu dirty when the quest is the sub job's job change start quest, so the next
+    /// RefreshMenu asks CanChangeJob again. STILL-OPEN: its UpdateQuestMenu (the quest button) is not ported.</summary>
+    public void OnQuestStarted(int questId)
+    {
+        if (questId != 0 && questId == ChangeJobStartQuest()) MarkDirty();
+    }
+
     /// <summary>
     /// vfunc_15 @0x141937980 (uigamemenudialog.cpp:1066), each frame: a dirty menu runs RefreshMenu once. Returns whether it ran.
     /// The vfunc_55 test (a closing dialog) never holds for this always-on dialog without a tween.

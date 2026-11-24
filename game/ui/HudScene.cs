@@ -280,6 +280,8 @@ public partial class HudScene : Node, IUiStageHost
         unwatchPrestige = null;
         unwatchCharacterAbility?.Invoke();
         unwatchCharacterAbility = null;
+        unwatchChangeJob?.Invoke();
+        unwatchChangeJob = null;
         unwatchFishingBook?.Invoke();
         unwatchFishingBook = null;
         unwatchMeso?.Invoke();
@@ -3043,8 +3045,11 @@ public partial class HudScene : Node, IUiStageHost
     void GameMenu(Control ui)
     {
         gameMenuTable ??= Ms2.Ui.Hud.GameMenuTable.Load(assets.Packs, hudModel.IsFeatureEnabled);
-        var c = gameMenu = new Ms2.Ui.Hud.GameMenuController { Table = gameMenuTable, NotifyCount = CommunityNotifyCount,
-            AdventureBarCount = () => Ms2Godot.Net.LiveSession.Instance?.AdventurerBarCount ?? 0 };
+        var c = gameMenu = new Ms2.Ui.Hud.GameMenuController
+        {
+            Table = gameMenuTable, NotifyCount = CommunityNotifyCount, EnabledBy = GameMenuEnabledBy, ChangeJobStartQuest = ChangeJobStartQuest,
+            AdventureBarCount = () => Ms2Godot.Net.LiveSession.Instance?.AdventurerBarCount ?? 0,
+        };
         c.SetNotifyRedCircle7Flag(agreementReminder);
         c.ToggleDialog += GameMenuToggle;
         WatchAchieves();
@@ -3058,9 +3063,11 @@ public partial class HudScene : Node, IUiStageHost
         {
             if (def.Action == GameMenuActions.OpenLearningQuest) OpenLearningQuest();
             else if (def.Action == GameMenuActions.ToggleSystemShop) ToggleShopTab(9);   // uigamemenudialog.cpp:2209
+            else if (def.Action == GameMenuActions.ToggleChangeJob) ToggleChangeJob();   // FUN_14193d590, uigamemenudialog.cpp:2200
         };
         WatchBuddies();
         WatchGuild();
+        WatchChangeJob();
         if (portrait == null && (portrait = PortraitView.Create(assets.Packs, Settings.NifXml)) != null) AddChild(portrait);
         ui.AddChild(gameMenuMovie = new MovieDialog(assets, c, hudModel, ScreenMode.PixelSize(GetWindow())));
         string face = "img://" + gameMenuMovie.Host.Id + ":faceView/";
@@ -3092,6 +3099,7 @@ public partial class HudScene : Node, IUiStageHost
         else if (id == 0x4f1e) ToggleMastery();
         else if (id == 0x4e7a) ToggleDynamicAction();   // UIDynamicActionDialog
         else if (id == 0x4f80) ToggleChatEmoticon();    // UIChatEmoticonDialog
+        else if (id == ChangeJobDialogController.UiId) ToggleChangeJob();
     }
 
     // ---- character window: uimyinfodialog run by its own ActionScript, UIMyInfoDialog's C++ side as MyInfoController --

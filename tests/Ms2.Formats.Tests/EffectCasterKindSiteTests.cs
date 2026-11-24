@@ -99,6 +99,8 @@ public class EffectCasterKindSiteTests
             "1: CInteractObject::vfunc_12's success effect kept as m_nParticle, the local player its actor (interactobject.cpp:647-665)"),
         new("scripts/world/FieldInteractDraws.cs", "int handle = effects.Spawn(effect, StateAt(o), false, 0)", "RegionSkills.Spawn: CasterSystem",
             "0: CInteractObject::ShowStateEffect's state effect, request m_nObject 0 (interactobject.cpp:451-471)"),
+        new("net/RemoteLayer.cs", "combat.PlayEffectOn(fx, actor, self ?", "self ? Ms2.Audio.SoundMusicEffectState.CasterMyPc : Ms2.Audio.SoundMusicEffectState.CasterOtherPc",
+            "the job change's PC: GetObjectKind, the own PC 1, another 3 (Job mode 2, scenestategame.cpp:7476-7481)"),
         // pass-through
         new("net/LiveSession.Skills.cs", "=> remote?.PlayEffect(effect, at, yawRadians, casterKind)", "casterKind", PassThrough),
         new("net/LiveSession.Skills.cs", "=> remote?.PlayEffect(effect, at, rotation, casterKind)", "casterKind", PassThrough),
