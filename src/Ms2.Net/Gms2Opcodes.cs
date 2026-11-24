@@ -39,6 +39,7 @@ static class Gms2Opcodes {
         [Inbound.RegionSkill] = 0x4D,
         [Inbound.FieldProperty] = 0xCC,
         [Inbound.WorldShareInfo] = 0xB2,
+        [Inbound.BannerList] = 0xB5,
         [Inbound.FunctionCube] = 0x4E,
         [Inbound.Trigger] = 0x4F,
         [Inbound.Cinematic] = 0x68,       // recorded: 4 packets on the tutorial map (KeyMode, StartCinematic, Close)
