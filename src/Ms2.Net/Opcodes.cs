@@ -109,6 +109,7 @@ public enum Inbound : ushort {
     ItemUse = 0xAB,             // RecvOp ItemUse (commonfiles/opcodes.h:179): CSceneStateGame::OnItemUse
     ItemBox = 0xAC,             // RecvOp ItemBox (commonfiles/opcodes.h:180): CSceneStateGame::OnItemBox (@0x141739e40)
     BindItem = 0x103,           // RecvOp BindItem (opcodes.h:260): CSceneStateGame::OnBindItem
+    ItemScript = 0xF5,          // RecvOp ItemScript (opcodes.h:248): CSceneStateGame::OnItemScript (@0x14173e510)
     ItemUpdate = 0x2A,          // RecvOp ItemUpdate (opcodes.h:50)
     FieldAddItem = 0x2B,        // RecvOp FieldAddItem (opcodes.h:51): CSceneStateGame::OnFieldAddItem
     FieldRemoveItem = 0x2C,     // RecvOp FieldRemoveItem (opcodes.h:52): CSceneStateGame::OnFieldRemoveItem

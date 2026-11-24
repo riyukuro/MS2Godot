@@ -1570,6 +1570,9 @@ public partial class LiveSession : Node
     /// <summary>The picked-up item's reward toast (UIRewardNotify::FUN_141abfa10): item id and grade.</summary>
     public Action<int, int> PickupRewardSink;
 
+    /// <summary>OnItemScript mode 4's cash coupon toast (UIRewardNotify::FUN_141ac1d10): the item id.</summary>
+    public Action<int> CashCouponSink;
+
     /// <summary>
     /// CDropItem::OnPickedUp with the local player as picker (dropitem.cpp:1007-1020), after the get sound: the reward toast for an
     /// item of rarity 1 or more that is not a meso, a token or a merat (<see cref="DropPickup.Toasts"/>), then guide trigger 0xc with
@@ -1861,6 +1864,10 @@ public partial class LiveSession : Node
                 var b = BindItem.Read(p.Reader(), Items.Get, Me.EquipByUid, game.Profile);   // CSceneStateGame::OnBindItem (scenestategame.cpp:8542)
                 if (b.Found && !b.Worn) Items.Apply(new ItemMessage.Update(b.Uid, b.Item));   // the bag's item read again: the inventory redraws
                 GD.Print($"live: bind item uid {b.Uid}{(b.Found ? (b.Worn ? " (worn)" : " (bag)") : " (unknown)")}");
+            }
+            else if (game.Is(p, Inbound.ItemScript))
+            {
+                if (ItemScriptCoupon.TryRead(p.Reader(), out int coupon)) { CashCouponSink?.Invoke(coupon); GD.Print($"live: item script cash coupon {coupon}"); }
             }
             else if (game.Is(p, Inbound.ItemUse))
             {

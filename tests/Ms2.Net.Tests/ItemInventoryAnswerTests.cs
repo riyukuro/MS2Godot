@@ -103,4 +103,14 @@ public class ItemInventoryAnswerTests {
         Assert.That(ItemInventoryAnswer.Error(0x2a, 0, 0).StringId, Is.EqualTo(0xd7));
         Assert.That(ItemInventoryAnswer.Error(17, 0, 0), Is.EqualTo(new ItemInventoryAnswer(ItemAnswerKind.BoxCode, 0xcd, Number: 17)));
     }
+
+    [Test]
+    public void ItemScriptReadsOnlyMode4sItemId() {
+        var w = new ByteWriter(); w.WriteByte(4); w.WriteInt(20300001);
+        var r = new ByteReader(w.ToArray());
+        Assert.That((ItemScriptCoupon.TryRead(r, out int id), id, r.Available), Is.EqualTo((true, 20300001, 0)));
+        w = new ByteWriter(); w.WriteByte(5); w.WriteInt(1); w.WriteInt(2);
+        Assert.That(ItemScriptCoupon.TryRead(new ByteReader(w.ToArray()), out _), Is.False, "the gacha mode is not this handler's");
+        Assert.That((ProtocolProfile.Kms2525.Number(Inbound.ItemScript), ProtocolProfile.Gms2.Number(Inbound.ItemScript)), Is.EqualTo(((ushort) 0xF5, (ushort) 0xF7)));
+    }
 }

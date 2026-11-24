@@ -56,3 +56,20 @@ public sealed record ItemUseNotice(int Mode, int NoticeStringId, int ItemId, Cod
 public sealed record BeautyReq(int Type, long Uid) {
     public static BeautyReq Read(ByteReader r) => new(r.ReadInt(), r.ReadLong());
 }
+
+/// <summary>
+/// Inbound ItemScript, CSceneStateGame::OnItemScript @0x14173e510 (scenestategame.cpp:6829): only mode 4 is read, an i32 item id
+/// the reward notify (0x4e5d) shows as a cash coupon (UIRewardNotify::FUN_141ac1d10); any other mode is ignored here. The server's
+/// other modes (the lulu, pet and gacha boxes, the treasure map) are not read by this handler.
+/// </summary>
+public static class ItemScriptCoupon {
+    public const int Mode = 4;
+
+    /// <summary>The item id of a mode 4 packet; false for any other mode.</summary>
+    public static bool TryRead(ByteReader r, out int itemId) {
+        itemId = 0;
+        if (r.Available < 1 || r.ReadByte() != Mode) return false;
+        itemId = r.ReadInt();
+        return true;
+    }
+}

@@ -145,6 +145,7 @@ public partial class HudScene : Node, IUiStageHost
             livePortals.TaxiKey = TaxiKey;
             livePortals.ReactorRewardSink = (id, grade) => EnsureRewardNotify()?.ShowItemReward(id, grade);
             livePortals.PickupRewardSink = (id, grade) => EnsureRewardNotify()?.ShowPickedItem(id, grade);
+            livePortals.CashCouponSink = id => EnsureRewardNotify()?.ShowCashCoupon(id);
             livePortals.GameMenuDirty = () => gameMenu?.MarkDirty();
         }
         sizeSource = GetViewport();

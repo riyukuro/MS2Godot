@@ -177,6 +177,7 @@ static class Gms2Opcodes {
         [Inbound.DynamicChannel] = 0xA9,
         [Inbound.ChatStamp] = 0x128,
         [Inbound.ItemBox] = 0xAE,
+        [Inbound.ItemScript] = 0xF7,     // upstream SendOp.ItemScript
     };
     public static readonly Dictionary<Outbound, ushort> OutboundNumbers = new() {
         [Outbound.ResponseVersion] = 0x01,

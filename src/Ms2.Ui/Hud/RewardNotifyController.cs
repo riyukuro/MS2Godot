@@ -96,6 +96,14 @@ public sealed class RewardNotifyController : UiController
         ShowItem(itemId, grade, Model.Tables.Items.TextColor(grade), Model.Tables.ItemName(itemId), d.IconPath, d.IsPieceItem);
     }
 
+    /// <summary>FUN_141ac1d10 (uirewardnotify.cpp:612), OnItemScript mode 4: nothing without the item's data; else type "boxOpen",
+    /// nextType "cashCoupon", the item's GetIconPath and its name (CStringTable::FUN_141811980(1, id)).</summary>
+    public void ShowCashCoupon(int itemId)
+    {
+        if ((ItemOf ?? Model.Tables.Items.Get)(itemId) is not { } d) return;
+        AppendReward(Host.Obj(("type", "boxOpen"), ("nextType", "cashCoupon"), ("icon", d.IconPath), ("msg", Model.Tables.ItemName(itemId))));
+    }
+
     /// <summary>FUN_141abfa10 (uirewardnotify.cpp:358), a picked-up drop's toast: nothing for the special ids (FUN_14053f900, the EP
     /// and SP balls), else as <see cref="ShowItemReward"/>. STILL-OPEN: the name of a UGC, score or pet item (CItem::FUN_140527b10)
     /// is the table name here.</summary>

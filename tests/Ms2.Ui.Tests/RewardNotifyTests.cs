@@ -225,4 +225,29 @@ public class RewardNotifyTests
         c.ShowPickedItem(20000001, 1);
         Assert.That(c.Pending, Is.EqualTo(1));
     }
+
+    [Test]
+    public void ACashCouponIsTheBoxOpenToastWithTheItemsIconAndName()
+    {
+        var (h, c, p) = Load();
+        var model = new UiModel(new GameTables(Packs(), "en"));
+        int id = Enumerable.Range(20000000, 1000000).First(i => model.Tables.Items.Get(i) is { IconPath.Length: > 0 } && !string.IsNullOrEmpty(model.Tables.ItemName(i)));
+        c.ItemOf = i => i == id ? model.Tables.Items.Get(i) : null;
+        c.Block = true;
+        c.ShowCashCoupon(id + 1);
+        Assert.That(c.Pending, Is.EqualTo(0), "FUN_141ac1d10: no item data, no toast");
+        c.ShowCashCoupon(id);
+        Assert.That(c.Pending, Is.EqualTo(1));
+        var queue = (System.Collections.Generic.List<object>)typeof(RewardNotifyController)
+            .GetField("queue", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(c)!;
+        object shown = queue[0];
+        Assert.That(Rt.ToString(h.Get(shown, "type")), Is.EqualTo("boxOpen"));
+        Assert.That(Rt.ToString(h.Get(shown, "nextType")), Is.EqualTo("cashCoupon"));
+        Assert.That(Rt.ToString(h.Get(shown, "icon")), Is.EqualTo(model.Tables.Items.Get(id).IconPath));
+        Assert.That(Rt.ToString(h.Get(shown, "msg")), Is.EqualTo(model.Tables.ItemName(id)));
+        c.Block = false;
+        c.Update();
+        for (int i = 0; i < 5; i++) p.Tick();
+        Assert.That(NotifyType(h), Is.EqualTo("boxOpen"), "the movie shows it");
+    }
 }
