@@ -433,6 +433,8 @@ public partial class LiveSession
                 bool moveOut = parts.Length > 1 && parts[1] == "move";   // a casting-bar state left by walking (its vfunc_8)
                 var row = Ms2.Ui.OwnStateExit.OfOwnState(st);
                 int before = live.ServerStatesEntered, castsBefore = live.ownStateCasts;
+                int faces0 = live.OwnStateFaces, dash0 = live.SwimDashEffects, dashStops0 = live.SwimDashEffectsStopped;
+                string face0 = live.OwnPlayer.FaceEmotion?.Current;
                 bool castState = row?.Cause == Ms2.Ui.StateExitCause.CastingBar;
                 bool sent = hud.SubmitChatLine("/debug packet " + live.OwnUserStateBytes(st));
                 await until(() => live.ServerStatesEntered > before, 60 * 5);
@@ -496,7 +498,9 @@ public partial class LiveSession
                     Check($"the body is hidden for server state 0x{st:x} and shown after it", wasHidden && !live.OwnPlayer.IsHidden);
                 bool ok = entered && row?.Cause switch
                 {
-                    Ms2.Ui.StateExitCause.AtOnce => live.Me.State != st && took < 0.1,
+                    Ms2.Ui.StateExitCause.AtOnce or Ms2.Ui.StateExitCause.Fallback => live.Me.State != st && took < 0.1,
+                    // StateLadder / StateRope with nothing in reach: StateIdle at once
+                    Ms2.Ui.StateExitCause.Body when st is 8 or 9 => live.Me.State != st && took < 0.1,
                     Ms2.Ui.StateExitCause.InputStep => live.Me.State != st && took < 0.2,
                     Ms2.Ui.StateExitCause.Timer or Ms2.Ui.StateExitCause.SequenceEnd =>
                         expect > 0 && live.Me.State != st && System.Math.Abs(took - expect) < 0.15 && moved < 0.05f,
@@ -510,7 +514,79 @@ public partial class LiveSession
                     _ => false,
                 } == true;
                 Check($"the own pc leaves server state 0x{st:x} as the client ({row?.Cause})", ok);
+                if (st == 0x12)   // StateStun::vfunc_4's face (statestun.cpp:112)
+                    Check($"server state 0x12 plays the Stun face ({live.OwnStateFaces - faces0} play(s), last {live.LastOwnStateFace}, played {live.LastOwnStateFacePlayed}, face now {live.OwnPlayer.FaceEmotion?.Current ?? "none"})",
+                        live.OwnStateFaces == faces0 + 1 && live.LastOwnStateFace == Ms2.Ui.OwnStun.Face && (live.LastOwnStateFacePlayed || face0 == Ms2.Ui.OwnStun.Face));
+                if (st == 0x1c)   // StateSwimDash's dash effect at the pc after its fallback, each entry stopping the last (stateswimdash.cpp:92-108, 221-233)
+                {
+                    int entries = live.ServerStatesEntered - before, started = live.SwimDashEffects - dash0, stopped = live.SwimDashEffectsStopped - dashStops0;
+                    Check($"server state 0x1c starts its kept dash effect at the pc on each of its {entries} entries, the last stopped first ({live.LastSwimDashEffect}, id {live.SwimDashEffectId}, started {started}, stopped {stopped})",
+                        entries > 0 && started == entries && stopped == started - (dash0 == 0 ? 1 : 0)
+                        && live.SwimDashEffectId != 0 && live.LastSwimDashEffect == live.SwimDashEffectName());
+                }
+                if (st is 0x1d or 8 or 9)   // SetShadowVisible(false) after the fallback to StateIdle (state.cpp:1038, stateladder.cpp:202, statemanager.cpp:1262)
+                {
+                    bool has = live.OwnPlayer.HasSimpleShadow;
+                    Check($"server state 0x{st:x} leaves the own shadow off ({(has ? $"simple shadow shown {live.OwnPlayer.ShadowShown}" : "no simple shadow at this level")})",
+                        !has || !live.OwnPlayer.ShadowShown);
+                }
                 await frames(30);
+                continue;
+            }
+            if (step.StartsWith("talkstate:"))      // talkstate:<npc id>: a spawned npc's talk opened (NpcTalk 1), then the server's StateTalk 0x16
+            {
+                int nid = int.Parse(step[10..]);
+                int added = npcs;
+                hud.SubmitChatLine("/npc " + nid);
+                await until(() => npcs > added && lastNpc?.Row?.Id == nid, 60 * 5); await frames(60);
+                var npc = lastNpc;
+                bool spawned = npc?.Row?.Id == nid && npc.ObjectId != 0;
+                if (spawned) { hud.FaceScripted(npc.Position); live.SendTalk(new Ms2.Net.Packets.NpcTalkBeginRequest(npc.ObjectId)); }
+                await until(() => live.TalkNpcId != 0, 60 * 5); await frames(10);
+                // an npc with no talk script in this data closes the talk at once (FUN_141b1ff80): no talk npc, IDLE
+                bool open = spawned && live.TalkNpcId == npc.ObjectId && live.IsTalking();
+                int before = live.ServerStatesEntered;
+                bool sent = hud.SubmitChatLine("/debug packet " + live.OwnUserStateBytes(0x16));
+                await until(() => live.ServerStatesEntered > before, 60 * 5);
+                var shown = new System.Collections.Generic.List<string>();
+                ulong f0 = Engine.GetProcessFrames();
+                bool upShot = false, idleShot = false;
+                bool left = false;
+                await until(() =>
+                {
+                    string cur = live.OwnPlayer.CurrentAnim;
+                    if (shown.Count == 0 || shown[^1] != cur) shown.Add(cur);
+                    ulong n = Engine.GetProcessFrames() - f0;
+                    if (live.Me.State != 0x16) left = true;
+                    if (!upShot && n >= 20) { Shot($"talkstate-{nid}-up.png"); upShot = true; }
+                    if (!idleShot && n >= 150) { Shot($"talkstate-{nid}-idle.png"); idleShot = true; }
+                    return n >= 180;
+                }, 300);
+                // statetalk.cpp:101-137: the talk npc's talkAni and the own TALK_UP and TALK_IDLE -> TALK_UP forced (ChatUp_A clamps),
+                // its end -> phase 0x48: TALK_IDLE with the own chat balloon active, else LISTEN_IDLE (162-178, 215-222); else IDLE.
+                // vfunc_8 is empty (209-211): the body stays in StateTalk.
+                bool up = open && npc.Row.TalkAni && live.OwnPlayer.HasTalkUp && live.OwnPlayer.HasTalkIdle;
+                string played = live.OwnStatePlayed;
+                bool loops = live.OwnStatePlayedLoops;
+                bool balloon = live.OwnBalloonActive();
+                string idle = Ms2.Ui.OwnStateExit.TalkIdleOf(balloon);
+                int phase = live.OwnTalkPhase;
+                GD.Print($"live: combat talkstate {nid}: spawned {spawned}, talk open {open} (npc {live.TalkNpcId}), talkAni {npc?.Row?.TalkAni}, TALK_UP {live.OwnPlayer.TalkUpSequence ?? "none"}, sent {sent}, state {live.Me.State} (left {left}), phase 0x{phase:x}, plays {played} loops {loops}, own balloon {balloon}, body [{string.Join(", ", shown)}]");
+                Check($"StateTalk with npc {nid}'s talk {(open ? "open" : "closed (no talk script)")} (talkAni {npc?.Row?.TalkAni}) plays {(up ? $"TALK_UP once, then {idle}" : "IDLE")} and holds the body as the client",
+                    spawned && live.Me.State == 0x16 && !left
+                    && (up ? phase == Ms2.Ui.OwnStateExit.TalkPhaseIdle && played == idle && loops
+                             && shown.IndexOf(live.OwnPlayer.TalkUpSequence) is >= 0 and var ui && ui < shown.Count - 1
+                           : phase == Ms2.Ui.OwnStateExit.TalkPhaseNone && played == Ms2.Ui.OwnStateExit.TalkAction));
+                // StateTalk::vfunc_5 (statetalk.cpp:142-150): the state left with the talk open sends NpcTalk 0
+                int ends0 = live.OwnTalkEnds;
+                bool wasTalking = live.IsTalking();
+                hud.SubmitChatLine("/debug packet " + live.OwnUserStateBytes(1));
+                await until(() => live.Me.State != 0x16, 60 * 5);
+                await frames(10);
+                Check(wasTalking ? $"StateTalk left with npc {nid}'s talk open ends the talk (NpcTalk 0)" : $"StateTalk left with no talk open sends nothing (npc {nid})",
+                    wasTalking ? live.OwnTalkEnds == ends0 + 1 && !live.IsTalking() : live.OwnTalkEnds == ends0);
+                if (live.IsTalking()) live.EndTalk();
+                await frames(60);
                 continue;
             }
             if (step.StartsWith("buffstun:"))      // buffstun:<effect id>:<level>:<ms>: a raw OnBuff adding a stun effect to the own pc, then its removal
@@ -518,7 +594,7 @@ public partial class LiveSession
                 var c = step[9..].Split(':');
                 uint id = uint.Parse(c[0]); ushort lv = ushort.Parse(c[1]); uint ms = uint.Parse(c[2]);
                 const int key = 0x7e000001;
-                int before = live.BuffStunsEntered;
+                int before = live.BuffStunsEntered, faces0 = live.OwnStateFaces;
                 bool sent = hud.SubmitChatLine("/debug packet " + live.OwnBuffBytes(0, key, id, lv, ms + 10000));
                 await until(() => live.BuffStunsEntered > before, 60 * 5);
                 bool entered = live.BuffStunsEntered > before;
@@ -550,6 +626,8 @@ public partial class LiveSession
                 Check($"a stun effect {id} holds the own pc in StateStun, lying and standing up as the client",
                     entered && held && shift.Length() < 0.05f && live.Me.State != 0x12 && asked.Count >= 2
                     && asked.All(n => shown.Contains(n.ToLowerInvariant())) && asked[^1].StartsWith("Stnd_Up_", StringComparison.Ordinal));
+                Check($"the stun buff's StateStun plays the Stun face once ({live.OwnStateFaces - faces0} play(s), last {live.LastOwnStateFace}, played {live.LastOwnStateFacePlayed})",
+                    live.OwnStateFaces == faces0 + 1 && live.LastOwnStateFace == Ms2.Ui.OwnStun.Face);
                 await frames(30);
                 continue;
             }

@@ -46,7 +46,7 @@ public sealed class HeldItem
     }
 
     /// <summary>A state's vfunc_4 for the local pc (FUN_1417b84b0): the states that start with PC::SendRequestCube.
-    /// Rope, Climb, Ladder and the emotions test GetHeldItem first, Ride, Dead and Glide don't; SendRequestCube tests it
+    /// Rope, Climb, Ladder, Talk and the emotions test GetHeldItem first, Ride, Dead, Glide and SwimDash don't; SendRequestCube tests it
     /// itself, so the result is the same. Every other state sends nothing.</summary>
     public bool EnterState(HeldItemState state, Action<IOutPacket> send) => state switch
     {
@@ -63,17 +63,21 @@ public sealed class HeldItem
         HeldItemState.Recall => SendRequestCube(send),          // StateRecall::vfunc_4 (statesummon.cpp:495-501)
         HeldItemState.AutoInteraction => SendRequestCube(send), // StateAutoInteraction::vfunc_4 (stateinteractdata.cpp:690-695)
         HeldItemState.TreeWatering => SendRequestCube(send),    // StateTreeWatering::vfunc_4 (statetreewateringcontext.cpp:114-118)
+        HeldItemState.SwimDash => SendRequestCube(send),        // StateSwimDash::vfunc_4 (stateswimdash.cpp:96-98), after its fallback too
+        HeldItemState.Talk => SendRequestCube(send),            // StateTalk::vfunc_4 (statetalk.cpp:124-126)
         _ => false,
     };
 
     /// <summary>The PC state ids (PC ctor, pc.cpp:675-697) whose state is in <see cref="HeldItemState"/>: 8 ladder, 9 rope,
-    /// 0xc dead, 0x1d climb, 0x21 ride, 0x26 summon, 0x2c recall, 0x39 auto interaction, 0x3e tree watering. STILL-OPEN: 0xb emotion and 0x1e glide map to Other until those states are
+    /// 0xc dead, 0x1d climb, 0x21 ride, 0x26 summon, 0x1c swim dash, 0x16 talk, 0x2c recall, 0x39 auto interaction, 0x3e tree watering. STILL-OPEN: 0xb emotion and 0x1e glide map to Other until those states are
     /// ported (their vfunc_4 also calls SendRequestCube); TriggerEmotion's id is not registered in that ctor.</summary>
     public static HeldItemState ForStateId(int state) => state switch
     {
         8 => HeldItemState.Ladder,
         9 => HeldItemState.Rope,
         0xc => HeldItemState.Dead,
+        0x1c => HeldItemState.SwimDash,
+        0x16 => HeldItemState.Talk,
         0x1d => HeldItemState.Climb,
         0x21 => HeldItemState.Ride,
         0x26 => HeldItemState.Summon,
@@ -125,4 +129,4 @@ public sealed class HeldItem
 }
 
 /// <summary>The local pc's states whose vfunc_4 calls PC::SendRequestCube (see <see cref="HeldItem.EnterState"/>).</summary>
-public enum HeldItemState { Other, Ride, Rope, Climb, Ladder, Dead, Glide, Emotion, TriggerEmotion, Hold, Summon, Recall, AutoInteraction, TreeWatering }
+public enum HeldItemState { Other, Ride, Rope, Climb, Ladder, Dead, Glide, Emotion, TriggerEmotion, Hold, Summon, Recall, AutoInteraction, TreeWatering, SwimDash, Talk }

@@ -48,8 +48,8 @@ public class OwnStateEnterTests
         ["StateRevival"] = (null, false, null, BodyEntry.Revival),
         ["StateInteraction"] = (null, false, null, BodyEntry.None),
         ["StateSwim"] = (null, false, null, BodyEntry.Swim),
-        ["StateSwimDash"] = (null, false, null, BodyEntry.None),
-        ["StateClimb"] = (null, false, null, BodyEntry.Climb),
+        ["StateSwimDash"] = (null, false, DashEffect, BodyEntry.Swim),   // StateSwim at once, then the dash effect
+        ["StateClimb"] = (null, false, null, BodyEntry.Climb),   // StateIdle at once, then the shadow off
         ["StateGlide"] = (null, false, null, BodyEntry.Idle),
         ["StateFallDamage"] = (null, false, null, BodyEntry.FallDamage),
         ["StateHold"] = (null, false, null, BodyEntry.Idle),
@@ -116,11 +116,14 @@ public class OwnStateEnterTests
         Assert.That(mismatches, Is.Empty);
         Assert.That(counts, Is.EquivalentTo(new Dictionary<StateEnterPlay, int>
         {
-            [StateEnterPlay.Nothing] = 18, [StateEnterPlay.BodyState] = 13, [StateEnterPlay.Sequence] = 5,
+            [StateEnterPlay.Nothing] = 19, [StateEnterPlay.BodyState] = 12, [StateEnterPlay.Sequence] = 5,
             [StateEnterPlay.Hide] = 1, [StateEnterPlay.Effect] = 1, [StateEnterPlay.CastingBar] = 2,
             [StateEnterPlay.Apart] = 2, [StateEnterPlay.NotOwn] = 12, [StateEnterPlay.Later] = 7,
         }));
     }
+
+    /// <summary>The dash effect StateSwimDash's enter starts (PC::GetSwimEffectName(0x32), the caller's).</summary>
+    const string DashEffect = "swim dash";
 
     static string Show(IEnumerable<string> seq) => seq == null ? "nothing" : string.Join(" > ", seq);
 
@@ -135,7 +138,7 @@ public class OwnStateEnterTests
         me.ApplyUserState(Self, id);
         Take();
         bool hidden = exit.Hidden;
-        string effect = exit.TakeEffect();
+        string effect = exit.TakeEffect() ?? (exit.TakeDashEffect() ? DashEffect : null);
         int st = exit.State;
         if (exit.Advance(0.01, me.State)) me.LeaveServerState(st);
         Take();

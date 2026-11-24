@@ -182,6 +182,8 @@ public partial class LiveSession : Node
         // the server's state change (a death included) leaves the running interaction, react or ride summon state
         Me.StateEntered += st => InteractKey.LeaveForServerState(st, InteractObjects, InteractNpcs, reactState, rideSummon);
         Me.StateEntered += EnterOwnStateExit;   // a server state the body has no move state for runs the client's own exit
+        ownStateExit.TalkUp = OwnTalkUp;
+        ownStateExit.OwnBalloonActive = OwnBalloonActive;
     }
 
     /// <summary>The own pc's exit from a state the server put it into (Ms2.Ui.OwnStateExit), with no move state of the body.</summary>
@@ -194,6 +196,7 @@ public partial class LiveSession : Node
     internal int OwnStateExitRunning => ownStateExit.State;
     /// <summary>The sequence the running own state plays on the body (null none).</summary>
     internal string OwnStatePlayed => ownStateExit.Played;
+    internal bool OwnStatePlayedLoops => ownStateExit.PlayedLoops;
     /// <summary>The sequence the last fresh entry of a state run here asked for (a state left on its entry frame shows it
     /// for no frame, as the client's next update leaves it).</summary>
     internal string OwnStateEnterPlayed;
@@ -240,7 +243,11 @@ public partial class LiveSession : Node
         ServerStateExitLeft = atOnce ? 0 : ownStateExit.State == st ? ownStateExit.Left : -1;
         if (fresh && ownStateExit.State == st)
             if (LiveCheck) GD.Print($"live: server state 0x{st:x} runs its own exit: {ownStateExit.Cause}{(ownStateExit.Sequence != null ? " " + ownStateExit.Sequence : "")}, {(ownStateExit.Left < 0 ? "none comes" : $"{ownStateExit.Left:0.###} s")}{(ownStateExit.Played != null ? ", plays " + ownStateExit.Played : "")}{(ownStateExit.Hidden ? ", hidden" : "")}");
-        if (atOnce && Me.LeaveServerState(st) && LiveCheck) GD.Print($"live: server state 0x{st:x} left at once (no state data)");
+        int fallback = ownStateExit.TakeFallback();
+        bool dash = ownStateExit.TakeDashEffect();
+        if (atOnce && Me.LeaveServerState(st) && LiveCheck) GD.Print($"live: server state 0x{st:x} left at once (no state data){(fallback != 0 ? $" to its fallback 0x{fallback:x}" : "")}");
+        if (dash) StartSwimDashEffect();   // after the fallback's enter, inside StateSwimDash::vfunc_4
+        PlayOwnStateFace();
         SyncOwnStateCast();
     }
 
@@ -288,17 +295,17 @@ public partial class LiveSession : Node
 
     /// <summary>
     /// The frame of <see cref="ownStateExit"/>: AdditionalCliList::FUN_1409713b0 (additionalcli_2.cpp:786-833) first, which
-    /// enters StateStun each frame while an enabled effect stuns the living pc; then the running state's frame, whose exit
-    /// enters StateIdle (the body's state from then); then what it plays on the body (the sequence, StateSpawn's hide,
-    /// StateStun's pause and StateTransform's effect).
-    /// STILL-OPEN: the stun buff's checks of the current state's vfunc_17 (0 only in StateGrabTarget, which leaves at once
-    /// without data here) and of a hold by a riding pc with event buff 2 (PC::FUN_141660120, pc.cpp:2967) are not made; the
-    /// list's stun (m_motion.m_nStun, cleared when the list is summed again) is taken as an enabled stun effect being held.
+    /// enters StateStun each frame while an enabled effect stuns the living pc that is not in StateGrabTarget nor held by a
+    /// riding pc with event buff 2 (<see cref="OwnStunMayEnter"/>); then the running state's frame, whose exit enters
+    /// StateIdle (the body's state from then); then what it plays on the body (the sequence, StateSpawn's hide, StateStun's
+    /// pause and StateTransform's effect).
+    /// STILL-OPEN: the list's stun (m_motion.m_nStun, cleared when the list is summed again) is taken as an enabled stun
+    /// effect being held.
     /// </summary>
     void TickOwnStateExit(double delta)
     {
         bool stunned = false;
-        if (player != null && IsInstanceValid(player) && !Me.DeathOnlyStates && OwnBuffStun() is { } s)
+        if (player != null && IsInstanceValid(player) && !Me.DeathOnlyStates && OwnBuffStun() is { } s && OwnStunMayEnter())
         {
             stunned = true;
             if (ownStateExit.EnterBuffStun(s.Stun, s.Sub, s.Animation))
@@ -309,6 +316,7 @@ public partial class LiveSession : Node
                 try { Me.EnterOwnState(0x12); }
                 finally { ownStunEntry = false; }
                 player.EnterServerState(Ms2.Ui.BodyEntry.Idle);
+                PlayOwnStateFace();
             }
         }
         int st = ownStateExit.State;
@@ -323,6 +331,7 @@ public partial class LiveSession : Node
         player.SetSpawnHidden(ownStateExit.Hidden);
         player.SetAnimationPaused(ownStateExit.Paused);
         if (ownStateExit.TakeEffect() is { } fx) PlayOwnEffect(fx);
+        EndTalkOfOwnState();
     }
 
     bool ServerStateHoldsBody() => ownStateExit.HoldsBody && Me.State == ownStateExit.State;
@@ -1677,6 +1686,7 @@ public partial class LiveSession : Node
         player.TaxiHold = TaxiHoldsMove;
         player.ServerStateHold = ServerStateHoldsBody;
         ownStateExit.SequenceLength ??= OwnSequenceSeconds;
+        ownStateExit.ActionLength ??= n => player != null && IsInstanceValid(player) ? player.ActionSeconds(n) : null;
         ownStateExit.SummonRideeDurationMs = SummonRideeDuration;   // Client::Constants SummonRideeDuration and RecallCastingTime
         ownStateExit.RecallCastingTimeMs = Constants()?.Int("RecallCastingTime", 5000) ?? 5000;
         player.SetBattleStance(SelfInBattle);
@@ -2119,7 +2129,16 @@ public partial class LiveSession : Node
                     {
                         player.LeaveDeath();
                         // the class's enter with no data on the body (Ms2.Ui.OwnStateExit.BodyEntryOf)
-                        if (letIn && u.State is not (0xc or 0x18)) player.EnterServerState(Ms2.Ui.OwnStateExit.BodyEntryOf(u.State));
+                        if (letIn && u.State is not (0xc or 0x18))
+                        {
+                            var entry = Ms2.Ui.OwnStateExit.BodyEntryOf(u.State);
+                            player.EnterServerState(entry);
+                            // StateLadder / StateRope with nothing in reach enter StateIdle (vfunc_59(1), stateladder.cpp:198-201,
+                            // statemanager.cpp:1257-1260), also when the body already stands
+                            if (entry is Ms2.Ui.BodyEntry.Ladder or Ms2.Ui.BodyEntry.Rope && player.State is not (Player.MoveState.Ladder or Player.MoveState.Rope)
+                                && Me.LeaveServerState(u.State))
+                                if (LiveCheck) GD.Print($"live: server state 0x{u.State:x} found nothing in reach and enters StateIdle");
+                        }
                     }
                 }
             }

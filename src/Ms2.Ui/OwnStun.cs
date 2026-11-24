@@ -40,6 +40,33 @@ public sealed class OwnStun
         _ => SubPlain,
     };
 
+    /// <summary>StateGrabTarget, the one state class whose vfunc_17 is 0 (statedatagrabtarget.cpp:164-167; State::vfunc_17,
+    /// state.cpp:698-701, is 1).</summary>
+    public const int StateGrabTarget = 0x2b;
+    /// <summary>StateHold, the state PC::FUN_141660120 asks for (pc.cpp:2970).</summary>
+    public const int StateHold = 0x20;
+
+    /// <summary>
+    /// AdditionalCliList::FUN_1409713b0's checks before it looks for a stun (additionalcli_2.cpp:786-797): the owner has health
+    /// (FUN_141670a00(4), the current Health stat), its current state's vfunc_17 holds (every state but StateGrabTarget) and
+    /// it is not held by a riding PC with an event buff of type 2 (<see cref="HeldByRidingPc"/>). The portrait copy's check
+    /// (IsOwnerPortraitPC) is not the field pc's.
+    /// </summary>
+    public static bool BuffMayEnter(long health, int currentState, bool heldByRidingPc) =>
+        health != 0 && currentState != StateGrabTarget && !heldByRidingPc;
+
+    /// <summary>
+    /// PC::FUN_141660120 (pc.cpp:2967-2988): the pc is in StateHold, its holder (StateHold::FUN_1417cd0d0, the hold data's
+    /// target id, found by WorldService::FUN_141bd1200) is a PC (class 0x6200003 or 0x6200004) that rides a mount
+    /// (GetRidee) and whose buffs have an enabled event buff of type 2 (HasEnabledWithEventBuffType(2)).
+    /// </summary>
+    public static bool HeldByRidingPc(int currentState, bool holderIsPc, bool holderRides, bool holderEventBuff2) =>
+        currentState == StateHold && holderIsPc && holderRides && holderEventBuff2;
+
+    /// <summary>The face StateStun::vfunc_4 plays at its end (FUN_14166ef10("Stun", 1, 0, false), statestun.cpp:112): not
+    /// forced, so a face already on "Stun" does not start over.</summary>
+    public const string Face = "Stun";
+
     /// <summary>The CRT rand(): rand() % 2 != 0 takes the "A" set (statestun.cpp:93-96).</summary>
     public Func<int> Rand = () => System.Random.Shared.Next(0x8000);
 
@@ -71,8 +98,8 @@ public sealed class OwnStun
     /// <summary>
     /// StateStun::vfunc_4 (statestun.cpp:77-113), after ChangeState's vfunc_2(sub): the kind from the data, the set by the sub
     /// (the plain set for 0x40, none for 0x41 and 0x46, else "A" or "B" by rand()), then 0x41 pauses the body, 0x46 plays
-    /// the buff's stun animation and the others their phase. <paramref name="kind"/> is null without StateStunData.
-    /// STILL-OPEN: the "Stun" face (FUN_14166ef10("Stun", 1, 0, false), :112) is the caller's.
+    /// the buff's stun animation and the others their phase; last the "Stun" face (<see cref="Face"/>, which
+    /// <see cref="OwnStateExit.TakeFace"/> hands the caller). <paramref name="kind"/> is null without StateStunData.
     /// </summary>
     public void Enter(int? kind, string buffAnimation)
     {

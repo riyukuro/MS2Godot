@@ -67,6 +67,10 @@ public sealed class NpcRow
     /// &lt;lookattarget&gt;; the environment's own attribute wins.
     /// </summary>
     public bool LookAtMyPcWhenTalking = true, UseTalkMotion = true;
+    /// <summary>The environment's talkAni (CNpcData m_bTalkAni +0x8a, CNpcData::LoadXml npcdata.cpp:1463, XmlGetAttr's bool;
+    /// true when absent, the ctor's :650): StateTalk's enter plays the own PC's TALK_UP only with a talk npc that has it
+    /// (statetalk.cpp:107).</summary>
+    public bool TalkAni = true;
     /// <summary>
     /// &lt;dead defaultaction upaction&gt; (CNpcData::LoadXml, npcdata.cpp:1651-1659): XmlTokenList, the attribute split at ','
     /// by CString::Tokenize (achievedata.cpp:501), which skips empty tokens and trims nothing.
@@ -257,6 +261,7 @@ public sealed class NpcTable
             row.InteractCoolTime = Int(ia, "interactCoolTime");
             row.InteractShowCastingBar = EffectDummy.Bool(ia, "interactIsShowCastingBar", true);
         }
+        row.TalkAni = EffectDummy.Bool(env, "talkAni", true);
         row.DamagedVibrateDuration = Flt(env, "damagedVibrateDuration", 0);
         row.DamagedVibrateAmp = Flt(env, "damagedVibrateAmp", 0);
         row.DamagedColorScale = Flt(env, "damagedColorScale", 2f);

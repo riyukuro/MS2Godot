@@ -781,11 +781,13 @@ public class HeldItemTests
     [TestCase(HeldItemState.Emotion)]
     [TestCase(HeldItemState.TriggerEmotion)]
     [TestCase(HeldItemState.Hold)]
+    [TestCase(HeldItemState.SwimDash)]
+    [TestCase(HeldItemState.Talk)]
     public void EnteringAStateThatSendsRequestCubeLetsTheHeldItemGo(HeldItemState state)
     {
         // each state's vfunc_4 calls PC::SendRequestCube (StateRide statemanager.cpp:1095, StateRope :1239, StateClimb
         // state.cpp:1041, StateLadder stateladder.cpp:164, StateDead statedead.cpp:152, StateGlide stateglide.cpp:140,
-        // StateEmotion / StateTriggerEmotion stateemotionidle.cpp:215/391)
+        // StateEmotion / StateTriggerEmotion stateemotionidle.cpp:215/391, StateSwimDash stateswimdash.cpp:96-98, StateTalk statetalk.cpp:121-123)
         var held = new HeldItem();
         var sent = new List<IOutPacket>();
         held.Hold(15000001, true);

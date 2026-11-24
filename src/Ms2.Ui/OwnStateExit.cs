@@ -9,6 +9,9 @@ public enum StateExitCause
 {
     /// <summary>The enter or the first frame finds no state data and goes on to StateIdle.</summary>
     AtOnce,
+    /// <summary>StateMoveSkill's enter finds no state data (vfunc_38, statemanager.cpp:770-779) and enters the class's
+    /// fallback state at once (FUN_1417df370, :720-723), here not StateIdle: StateSwimDash's StateSwim.</summary>
+    Fallback,
     /// <summary>The input step leaves when a key is not held.</summary>
     InputStep,
     /// <summary>A timer of the state's own.</summary>
@@ -76,7 +79,8 @@ public enum BodyEntry
     Revival,
     /// <summary>StateSwim; the body swims only on water.</summary>
     Swim,
-    /// <summary>A wall in reach.</summary>
+    /// <summary>StateClimb with no data: StateIdle at once (StateMoveSkill's fallback 1), then the rest of the enter hides
+    /// the shadow (SetShadowVisible(false), state.cpp:1038).</summary>
     Climb,
     FallDamage,
     /// <summary>No StateTriggerEmotionData: no emotion list, nothing plays.</summary>
@@ -94,8 +98,10 @@ public sealed record StateEnterRow(string Class, int Id, StateEnterPlay Play, st
 /// <see cref="OwnStun"/> kept across entries, which the stun buff also enters (<see cref="EnterBuffStun"/>).
 /// StateSummon, StateRecall, StateTreeWatering and StateAutoInteraction start the casting bar (<see cref="TakeCast"/>), and
 /// its finish leaves them (<see cref="CastFinished"/>); a hit leaves the first three (<see cref="Hit"/>).
-/// STILL-OPEN: StateTalk's TALK_UP with a talkable NPC's talk open is not chosen (IDLE is played); StateSwimDash's swim
-/// dash effect is not played.
+/// StateTalk chooses TALK_UP or IDLE (<see cref="TalkUp"/>), after TALK_UP the talk or listen idle (<see cref="TalkPhase"/>),
+/// holds the body and ends the open talk when left or hit (<see cref="TakeTalkEnds"/>); StateSwimDash enters StateSwim inside its enter and keeps
+/// the dash effect (<see cref="TakeFallback"/>, <see cref="TakeDashEffect"/>); StateStun's enter plays the "Stun" face
+/// (<see cref="TakeFace"/>).
 /// </summary>
 public sealed class OwnStateExit
 {
@@ -111,8 +117,8 @@ public sealed class OwnStateExit
         new("StateFall", 0x5, StateExitCause.Body, "statefall.cpp:213", "the body's Fall runs the exit"),
         new("StateJump", 0x6, StateExitCause.Body, "statejump.cpp:212", "the body's Jump runs the exit"),
         new("StateJumpTo", 0x7, StateExitCause.AtOnce, "statejumpto.cpp:76-77, 102-104", "no StateJumpToData: no arc is started (sub 0x29), so the first frame enters StateIdle"),
-        new("StateLadder", 0x8, StateExitCause.Body, "stateladder.cpp:343", "the body's Ladder runs the exit"),
-        new("StateRope", 0x9, StateExitCause.Body, "statemanager.cpp:1472", "the body's Rope runs the exit"),
+        new("StateLadder", 0x8, StateExitCause.Body, "stateladder.cpp:343", "the body's Ladder runs the exit (no ladder in reach: StateIdle, the shadow left hidden, stateladder.cpp:198-202)"),
+        new("StateRope", 0x9, StateExitCause.Body, "statemanager.cpp:1472", "the body's Rope runs the exit (no rope in reach: StateIdle, the shadow left hidden, statemanager.cpp:1257-1262)"),
         new("StateEmotion", 0xb, StateExitCause.AtOnce, "stateemotionidle.cpp:218-220", "no StateEmotionData: the enter goes on to StateIdle"),
         new("StateHit", 0xd, StateExitCause.Body, "statehit.cpp:129", "the body's Hit runs the exit"),
         new("StateHitNPC", 0xd, StateExitCause.NotOwn, "statehit.cpp:290", "an NPC, pet or doll state"),
@@ -127,11 +133,11 @@ public sealed class OwnStateExit
         new("StateInteraction", 0x19, StateExitCause.Apart, "stateinteractdata.cpp:424", "the interaction casts (InteractKey)"),
         new("StateInteractionNpc", 0x1a, StateExitCause.NotOwn, "", "an NPC, pet or doll state"),
         new("StateSwim", 0x1b, StateExitCause.Body, "", "the body's Swim runs the exit"),
-        new("StateSwimDash", 0x1c, StateExitCause.NoSelfExit, "", "input, cancel or a packet only"),
-        new("StateClimb", 0x1d, StateExitCause.Body, "state.cpp:1077", "the body's Climb runs the exit"),
-        new("StateGlide", 0x1e, StateExitCause.AtOnce, "stateglide.cpp:111-115, statemanager.cpp:770-775", "no StateGlideData: the skill row is not found (StateMoveSkill's fallback state 0), then the enter goes on to StateIdle"),
+        new("StateSwimDash", 0x1c, StateExitCause.Fallback, "stateswimdash.cpp:77-83, 92-99, statemanager.cpp:291-314, 670-676, 720-723, 770-779", "no StateSkillData: StateMoveSkill's enter enters the fallback StateSwim (0x1b) at once, inside the enter (PCBase::vfunc_59 changes the state now, pcbase.cpp:1098-1113)"),
+        new("StateClimb", 0x1d, StateExitCause.AtOnce, "state.cpp:1004-1008, 1029-1057, statemanager.cpp:670-676, 720-723, 770-779", "no StateSkillData: StateMoveSkill's enter enters the fallback StateIdle at once; the rest of the enter then hides the shadow"),
+        new("StateGlide", 0x1e, StateExitCause.AtOnce, "stateglide.cpp:86-96, 109-116, 290-301, statemanager.cpp:670-676, 720-723", "no StateGlideData: StateMoveSkill's enter enters the fallback StateFall (5) at once, then the missing glide row enters StateIdle"),
         new("StateFallDamage", 0x1f, StateExitCause.Body, "statefalldamage.cpp:108", "the body's FallDamage runs the exit"),
-        new("StateHold", 0x20, StateExitCause.AtOnce, "stateholddata.cpp:165-168", "no StateHoldData: the enter goes on to StateIdle"),
+        new("StateHold", 0x20, StateExitCause.AtOnce, "stateholddata.cpp:144-151, 161-169, statemanager.cpp:670-676, 720-723", "no StateHoldData: StateMoveSkill's enter enters the fallback state 6 (sub 0x22) at once, then the missing hold data enters StateIdle"),
         new("StateRide", 0x21, StateExitCause.Apart, "", "the mount"),
         new("StateTransform", 0x22, StateExitCause.SequenceEnd, "statetransform.cpp:63, 79-86", "Equip_Change_Mantle_A plays and its end enters StateIdle"),
         new("StateTransformDoll", 0x22, StateExitCause.NotOwn, "fittingdollslot_1.cpp:146", "the fitting doll's 0x22 (the pc registers StateTransform, pc.cpp:698)"),
@@ -178,8 +184,8 @@ public sealed class OwnStateExit
         new("StateFall", 0x5, StateEnterPlay.BodyState, "Fall", "statefall.cpp:93-131"),
         new("StateJump", 0x6, StateEnterPlay.BodyState, "Jump", "statejump.cpp:95-146"),
         new("StateJumpTo", 0x7, StateEnterPlay.Nothing, "no arc (sub 0x29)", "statejumpto.cpp:52-78"),
-        new("StateLadder", 0x8, StateEnterPlay.BodyState, "Ladder on a ladder in reach (side 3), else Idle", "stateladder.cpp:153-201"),
-        new("StateRope", 0x9, StateEnterPlay.BodyState, "Rope on a rope in reach (side 3), else Idle", "statemanager.cpp:1236, 1260"),
+        new("StateLadder", 0x8, StateEnterPlay.BodyState, "Ladder on a ladder in reach (side 3), else Idle; the shadow hidden either way", "stateladder.cpp:153-202"),
+        new("StateRope", 0x9, StateEnterPlay.BodyState, "Rope on a rope in reach (side 3), else Idle; the shadow hidden either way", "statemanager.cpp:1236, 1240-1262"),
         new("StateEmotion", 0xb, StateEnterPlay.Nothing, "Idle at once", "stateemotionidle.cpp:218-220"),
         new("StateHit", 0xd, StateEnterPlay.BodyState, "Hit: HIT with no lift", "statehit.cpp:65-110"),
         new("StateHitNPC", 0xd, StateEnterPlay.NotOwn, "", ""),
@@ -188,17 +194,17 @@ public sealed class OwnStateExit
         new("StateSpawn", 0x11, StateEnterPlay.Hide, "hide reason 10 and the shadow off until the timer", "statespawn.cpp:65-75, 98-130"),
         new("StateStun", 0x12, StateEnterPlay.Sequence, "Down_A or Down_B, then the first frame's Stnd_Up_A or Stnd_Up_B", "statestun.cpp:77-113, 123-159"),
         new("StateDash", 0x14, StateEnterPlay.BodyState, "Dash", "state.cpp:1782-1798"),
-        new("StateTalk", 0x16, StateEnterPlay.Sequence, "IDLE (TALK_UP looped with a talkable NPC's talk open)", "statetalk.cpp:125-136"),
+        new("StateTalk", 0x16, StateEnterPlay.Sequence, "TALK_UP forced with a talk npc whose data has talkAni and the own pc's TALK_UP and TALK_IDLE, then TALK_IDLE while the own chat balloon shows, else LISTEN_IDLE; else IDLE", "statetalk.cpp:101-137, 162-178, 215-222"),
         new("StateRegen", 0x17, StateEnterPlay.NotOwn, "", ""),
         new("StateRevival", 0x18, StateEnterPlay.BodyState, "Revival", "statedead.cpp:325-330"),
         new("StateInteraction", 0x19, StateEnterPlay.Nothing, "sub 0: no branch plays", "stateinteractdata.cpp:257-318"),
         new("StateInteractionNpc", 0x1a, StateEnterPlay.NotOwn, "", ""),
         new("StateSwim", 0x1b, StateEnterPlay.BodyState, "Swim on water", "stateswim.cpp:89-130"),
-        new("StateSwimDash", 0x1c, StateEnterPlay.Effect, "the swim dash effect (swim effect 0x32), no sequence", "stateswimdash.cpp:92-99, 221-233"),
-        new("StateClimb", 0x1d, StateEnterPlay.BodyState, "Climb on a wall in reach", "state.cpp:1029-1057"),
-        new("StateGlide", 0x1e, StateEnterPlay.Nothing, "Idle at once", "stateglide.cpp:111-115"),
+        new("StateSwimDash", 0x1c, StateEnterPlay.Effect, "StateSwim at once (the body's Swim on water), then the dash effect PC::GetSwimEffectName(0x32) at the pc, kept until the next StateSwimDash stops it", "stateswimdash.cpp:92-99, 102-108, 214-233, pc.cpp:3575-3592"),
+        new("StateClimb", 0x1d, StateEnterPlay.Nothing, "Idle at once, then the shadow hidden", "state.cpp:1029-1057, statemanager.cpp:670-676, 720-723"),
+        new("StateGlide", 0x1e, StateEnterPlay.Nothing, "Idle at once (StateFall's enter between)", "stateglide.cpp:109-116"),
         new("StateFallDamage", 0x1f, StateEnterPlay.BodyState, "FallDamage", "statefalldamage.cpp:51-70"),
-        new("StateHold", 0x20, StateEnterPlay.Nothing, "Idle at once", "stateholddata.cpp:165-168"),
+        new("StateHold", 0x20, StateEnterPlay.Nothing, "Idle at once (state 6's enter between)", "stateholddata.cpp:161-169"),
         new("StateRide", 0x21, StateEnterPlay.Apart, "the mount; the shadow off", "statemanager.cpp:1087-1098"),
         new("StateTransform", 0x22, StateEnterPlay.Sequence, "Equip_Change_Mantle_A and the effect CH/Common/Eff_FittingDoll.xml", "statetransform.cpp:54-64"),
         new("StateTransformDoll", 0x22, StateEnterPlay.NotOwn, "", ""),
@@ -256,12 +262,15 @@ public sealed class OwnStateExit
     /// enter with no data: an at-once class and StateCrawl (whose first input step leaves) go on to StateIdle; a
     /// <see cref="StateEnterPlay.BodyState"/> class enters the body's own state; a state run here (<see cref="Enter"/>: its
     /// sequence, hide or timer) stands the body while it runs; a class a controller of its own runs, and StateSwimDash,
-    /// leave the body as it is (<see cref="BodyEntry.None"/>).
+    /// leave the body as it is (<see cref="BodyEntry.None"/>). StateClimb goes on to StateIdle with the shadow hidden
+    /// (<see cref="BodyEntry.Climb"/>); StateSwimDash's fallback StateSwim is the body's Swim.
     /// </summary>
     public static BodyEntry BodyEntryOf(int id)
     {
         var row = OfOwnState(id);
         if (row == null) return BodyEntry.None;
+        if (id == 0x1d) return BodyEntry.Climb;
+        if (row.Cause == StateExitCause.Fallback) return BodyEntry.Swim;
         if (row.Cause is StateExitCause.AtOnce or StateExitCause.InputStep) return BodyEntry.Idle;
         if (id is 0x11 or 0x12 or 0x16 or 0x22 or 0x28) return BodyEntry.Idle;
         if (row.Cause == StateExitCause.CastingBar) return BodyEntry.Idle;   // StateSummon / StateTreeWatering's vfunc_3 moves by a zero vector
@@ -279,7 +288,6 @@ public sealed class OwnStateExit
             0x14 => BodyEntry.Dash,
             0x18 => BodyEntry.Revival,
             0x1b => BodyEntry.Swim,
-            0x1d => BodyEntry.Climb,
             0x1f => BodyEntry.FallDamage,
             0x35 => BodyEntry.TriggerEmotion,
             _ => BodyEntry.None,
@@ -302,6 +310,38 @@ public sealed class OwnStateExit
     public const string AutoInteractionSequence = "Object_React_C";
     /// <summary>StateTalk's sequence with no talkable NPC open: vfunc_123(0), the action table's IDLE (statetalk.cpp:133-135).</summary>
     public const string TalkAction = "IDLE";
+    /// <summary>StateTalk's action with the talk npc's talkAni and the own pc's TALK_UP and TALK_IDLE: vfunc_123(0x2d), played
+    /// with bForce (PlayAnimation(name, 1.0f, true), statetalk.cpp:125-130). Its sequence (ChatUp_A) clamps: it plays once.</summary>
+    public const string TalkUpAction = "TALK_UP";
+    /// <summary>StateTalk's actions after TALK_UP ended (vfunc_9, statetalk.cpp:162-178): vfunc_123(0x2e) TALK_IDLE while the
+    /// own pc's chat balloon is active (PCBase+0xaa8, GetChatBalloonEntity, pc.cpp:1586-1590; UIHudEntity::Entity m_4c,
+    /// FUN_140f48d40), else vfunc_123(0x2f) LISTEN_IDLE. Both without bForce, so a frame asking for the one playing keeps it.</summary>
+    public const string TalkIdleAction = "TALK_IDLE", ListenIdleAction = "LISTEN_IDLE";
+    /// <summary>StateTalk's m_n10: 0x47 TALK_UP plays, 0x48 the talk or listen idle, 0x49 IDLE (no talk animation).</summary>
+    public const int TalkPhaseUp = 0x47, TalkPhaseIdle = 0x48, TalkPhaseNone = 0x49;
+    /// <summary>The action StateTalk's phase 0x48 plays: TALK_IDLE with the own chat balloon active, else LISTEN_IDLE.</summary>
+    public static string TalkIdleOf(bool ownBalloonActive) => ownBalloonActive ? TalkIdleAction : ListenIdleAction;
+    /// <summary>
+    /// StateTalk::vfunc_4 (statetalk.cpp:101-137): bTalk, UITalkManager::GetTalkNpc() (the npc of the open talk,
+    /// uitalkcinematic.cpp:1776) with its NpcData's m_bTalkAni ("talkAni", npcdata.cpp:1463); bFirst and bSecond, the own
+    /// pc's sequences of vfunc_123(0x2d) TALK_UP and vfunc_123(0x2e) TALK_IDLE. All three: TALK_UP forced (m_n10 0x47);
+    /// else IDLE (0x49).
+    /// </summary>
+    public static bool ChoosesTalkUp(bool npcTalkAni, bool hasTalkUp, bool hasTalkIdle) => npcTalkAni && hasTalkUp && hasTalkIdle;
+    /// <summary>The caller's <see cref="ChoosesTalkUp"/> for the open talk at StateTalk's enter; false when unset.</summary>
+    public Func<bool> TalkUp = () => false;
+    /// <summary>The own pc's chat balloon is active (UIChatBalloon::Entity m_4c), read by StateTalk's phase 0x48; false when
+    /// unset.</summary>
+    public Func<bool> OwnBalloonActive = () => false;
+    /// <summary>An action's body sequence length in seconds by action name (vfunc_123); null when the body has none.</summary>
+    public Func<string, double?> ActionLength;
+    /// <summary>StateTalk's phase (m_n10), 0 outside StateTalk.</summary>
+    public int TalkPhase { get; private set; }
+    /// <summary>StateTalk was left or hit with the own pc (vfunc_5, vfunc_6, statetalk.cpp:142-150, 202-206): the caller sends
+    /// NpcTalk 0 when a talk is open (UITalkManager::GetTalking, SendNpcTalkMode0), once.</summary>
+    public bool TalkEnds { get; private set; }
+    /// <summary>StateSwimDash's fallback state (m_nFallbackState, stateswimdash.cpp:77-83).</summary>
+    public const int SwimDashFallback = 0x1b;
     /// <summary>StateSpawn's hide reason (AddHideReason(10), statespawn.cpp:65-75).</summary>
     public const int SpawnHideReason = 10;
 
@@ -348,12 +388,21 @@ public sealed class OwnStateExit
     public bool Paused => State == 0x12 && Stun.Paused;
     /// <summary>An effect the entry started (StateTransform's), once per entry; the caller takes it.</summary>
     public string Effect { get; private set; }
+    /// <summary>The face StateStun's enter plays (FUN_14166ef10("Stun", 1, 0, false), statestun.cpp:112), once per enter.</summary>
+    public string Face { get; private set; }
+    /// <summary>StateSwimDash's enter entered its fallback (<see cref="SwimDashFallback"/>) at once, once; the caller enters
+    /// it before the dash effect starts.</summary>
+    public int Fallback { get; private set; }
+    /// <summary>StateSwimDash's enter starts the dash effect (FUN_1417fbec0, stateswimdash.cpp:221-233: the old one stopped,
+    /// PC::GetSwimEffectName(0x32) started at the pc and kept), once.</summary>
+    public bool DashEffect { get; private set; }
     /// <summary>The buff's stun animation for StateStun sub 0x46 (m_motion.m_strStunAnimation).</summary>
     public string StunAnimation { get; private set; }
 
-    /// <summary>The running state's input step reads no move key: StateStun's is empty (statestun.cpp:197-199); StateSpawn,
-    /// StateTransform and StatePvPWinLose keep State's, which only casts a queued skill (state.cpp:634-640).</summary>
-    public bool HoldsBody => State is 0x11 or 0x12 or 0x22 or 0x28;
+    /// <summary>The running state's input step reads no move key: StateStun's and StateTalk's are empty (statestun.cpp:197-199,
+    /// statetalk.cpp:209-211); StateSpawn, StateTransform and StatePvPWinLose keep State's, which only casts a queued skill
+    /// (state.cpp:634-640).</summary>
+    public bool HoldsBody => State is 0x11 or 0x12 or 0x16 or 0x22 or 0x28;
 
     /// <summary>
     /// The server entered <paramref name="id"/> (Me.StateEntered). CStateManager::ChangeState (statemanager.cpp:297) keeps
@@ -371,6 +420,13 @@ public sealed class OwnStateExit
             case StateExitCause.AtOnce:
                 Cause = row.Cause;
                 return true;
+            case StateExitCause.Fallback:
+                // StateMoveSkill::vfunc_4: vfunc_38 fails, FUN_1417df370 enters m_nFallbackState now; then FUN_1417fbec0
+                // and SendRequestCube (stateswimdash.cpp:92-99)
+                Cause = row.Cause;
+                Fallback = SwimDashFallback;
+                DashEffect = true;
+                return true;
             case StateExitCause.InputStep:
                 Left = 0;
                 break;
@@ -379,6 +435,7 @@ public sealed class OwnStateExit
                 break;
             case StateExitCause.SequenceEnd when id == 0x12:
                 Stun.Enter(null, null);
+                Face = OwnStun.Face;
                 TakeStunPlay();
                 Sequence = Stun.Sub == OwnStun.SubStandUp ? Stun.Played : Stun.Set?[2 + (Stun.Kind == 6 ? 5 : 0)];
                 Left = Sequence != null ? SequenceLength?.Invoke(Sequence) ?? -1 : -1;
@@ -390,7 +447,21 @@ public sealed class OwnStateExit
                 Left = SequenceLength?.Invoke(Sequence) ?? -1;
                 break;
             case StateExitCause.NoSelfExit when id is 0x28 or 0x16:
-                if (id == 0x16) Play(TalkAction, false, true);
+                if (id == 0x16)
+                {
+                    // the held item went first (the caller's HeldItem.UserState, statetalk.cpp:121-123)
+                    if (TalkUp())
+                    {
+                        TalkPhase = TalkPhaseUp;
+                        Play(TalkUpAction, false, true);
+                        Left = ActionLength?.Invoke(TalkUpAction) ?? -1;
+                    }
+                    else
+                    {
+                        TalkPhase = TalkPhaseNone;
+                        Play(TalkAction, true, true);
+                    }
+                }
                 break;
             case StateExitCause.CastingBar:
                 // the held item goes first (PC::SendRequestCube, the caller's HeldItem.UserState), then the sequence and the bar
@@ -427,6 +498,7 @@ public sealed class OwnStateExit
         Clear();
         Stun.SetSub(sub);
         Stun.Enter(stun, stunAnimation);
+        Face = OwnStun.Face;
         TakeStunPlay();
         State = 0x12; Cause = StateExitCause.SequenceEnd;
         return true;
@@ -442,6 +514,7 @@ public sealed class OwnStateExit
         if (State == 0) return false;
         if (current != State) { Clear(); return false; }
         if (State == 0x12) return AdvanceStun(dt, stunned);
+        if (State == 0x16) { AdvanceTalk(dt); return false; }
         if (Cause == StateExitCause.CastingBar)
         {
             // StateSummon / StateRecall / StateTreeWatering::vfunc_8 and StateAutoInteraction::vfunc_3: m_n48 enters StateIdle
@@ -489,6 +562,7 @@ public sealed class OwnStateExit
     /// </summary>
     public bool Hit()
     {
+        if (State == 0x16) { TalkEnds = true; return false; }   // StateTalk::vfunc_6: SendNpcTalkMode0, the state kept
         if (State is not (0x26 or 0x2c or 0x3e)) return false;
         Clear();
         return true;
@@ -500,6 +574,59 @@ public sealed class OwnStateExit
         var e = Effect;
         Effect = null;
         return e;
+    }
+
+    /// <summary>The face the enter played, once.</summary>
+    public string TakeFace()
+    {
+        var f = Face;
+        Face = null;
+        return f;
+    }
+
+    /// <summary>The fallback state StateSwimDash's enter entered (0 none), once.</summary>
+    public int TakeFallback()
+    {
+        int f = Fallback;
+        Fallback = 0;
+        return f;
+    }
+
+    /// <summary>Whether StateSwimDash's enter started its dash effect, once.</summary>
+    public bool TakeDashEffect()
+    {
+        bool d = DashEffect;
+        DashEffect = false;
+        return d;
+    }
+
+    /// <summary>Whether StateTalk was left or hit, once (<see cref="TalkEnds"/>).</summary>
+    public bool TakeTalkEnds()
+    {
+        bool t = TalkEnds;
+        TalkEnds = false;
+        return t;
+    }
+
+    /// <summary>
+    /// StateTalk's frame: EndOfSequence (statetalk.cpp:215-222) moves 0x47 to 0x48 when TALK_UP's sequence ends; vfunc_9
+    /// (162-178) in 0x48 asks for TALK_IDLE or LISTEN_IDLE each frame, which starts only when it is not the one playing.
+    /// STILL-OPEN: the phases 0x4a and 0x4b of SelectDialogueBranch (only the enchant dialog's, uiitemenchantdialog.cpp:863)
+    /// and their CommonResource effects (vfunc_9, 179-197).
+    /// </summary>
+    void AdvanceTalk(double dt)
+    {
+        if (TalkPhase == TalkPhaseUp)
+        {
+            if (Left < 0) return;
+            Left -= dt;
+            if (Left > 0) return;
+            Left = -1;
+            TalkPhase = TalkPhaseIdle;
+        }
+        if (TalkPhase != TalkPhaseIdle) return;
+        string a = TalkIdleOf(OwnBalloonActive());
+        if (a != Played) Play(a, true, true);
     }
 
     bool AdvanceStun(double dt, bool stunned)
@@ -536,9 +663,11 @@ public sealed class OwnStateExit
     void Clear()
     {
         if (State == 0x12) Stun.Leave();
+        if (State == 0x16) TalkEnds = true;   // StateTalk::vfunc_5
         if (Cause == StateExitCause.CastingBar && State != 0) BarStopped = true;   // vfunc_5: FUN_1418e1390
         castDone = false;
         Cast = null;
         State = 0; Sequence = null; Left = -1; Played = null; PlayedLoops = false; PlayedIsAction = false; Effect = null;
+        Face = null; Fallback = 0; DashEffect = false; TalkPhase = 0;
     }
 }

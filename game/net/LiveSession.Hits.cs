@@ -84,6 +84,7 @@ public partial class LiveSession
                     SyncOwnStateCast();
                     player.ReactIdle();
                 }
+                EndTalkOfOwnState();
             }
         }
     }

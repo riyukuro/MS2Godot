@@ -532,6 +532,10 @@ public partial class Player : CharacterBody3D
         // StateDead::vfunc_5 (statedead.cpp:181) on any exit: the body shown and the shadow on, also when the dead flag was
         // cleared without a revival (the live link off or lost) and the next state is an ordinary one
         if (old == MoveState.Dead && s != MoveState.Dead) { SetBodyShown(true); FieldShadows.SetShadowEnabled(this, true); }
+        // StateLadder / StateRope / StateClimb: vfunc_5 turns the simple shadow back on (stateladder.cpp:211,
+        // statemanager.cpp:1269, state.cpp:1063), vfunc_4 off (stateladder.cpp:202, statemanager.cpp:1262, state.cpp:1038)
+        if (old != s && old is MoveState.Ladder or MoveState.Rope or MoveState.Climb) FieldShadows.SetShadowVisible(this, true);
+        if (old != s && s is MoveState.Ladder or MoveState.Rope or MoveState.Climb) FieldShadows.SetShadowVisible(this, false);
         prevState = old;
         State = s;
         stateTime = 0;

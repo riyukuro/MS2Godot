@@ -131,6 +131,8 @@ public sealed partial class RemoteLayer
     public void StopKeptEffect(int id) => RegionFx?.FadeOut(id, 0);
     /// <summary>CEffectService::FUN_1411a69e0: a kept effect released.</summary>
     public void ReleaseKeptEffect(int id) => RegionFx?.Release(id);
+    /// <summary>The field's region skill node the kept effect ids belong to (a new field's node numbers them again).</summary>
+    public object KeptEffectScope => RegionFx;
 
     /// <summary>
     /// CSceneStateGame::FUN_14171c1d0 (scenestategame.cpp:5511) for another player's mode 0: its skill level's attack, the

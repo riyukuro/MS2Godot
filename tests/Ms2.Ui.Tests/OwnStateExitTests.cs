@@ -57,9 +57,9 @@ public class OwnStateExitTests
         Assert.That(OwnStateExit.Classes.Select(r => r.Class).Distinct().Count(), Is.EqualTo(61));
         Assert.That(counts, Is.EquivalentTo(new Dictionary<StateExitCause, int>
         {
-            [StateExitCause.AtOnce] = 13, [StateExitCause.InputStep] = 1, [StateExitCause.Timer] = 1,
-            [StateExitCause.SequenceEnd] = 2, [StateExitCause.NoSelfExit] = 3, [StateExitCause.CastingBar] = 4,
-            [StateExitCause.Body] = 14, [StateExitCause.Apart] = 4, [StateExitCause.NotOwn] = 12, [StateExitCause.Later] = 7,
+            [StateExitCause.AtOnce] = 14, [StateExitCause.Fallback] = 1, [StateExitCause.InputStep] = 1, [StateExitCause.Timer] = 1,
+            [StateExitCause.SequenceEnd] = 2, [StateExitCause.NoSelfExit] = 2, [StateExitCause.CastingBar] = 4,
+            [StateExitCause.Body] = 13, [StateExitCause.Apart] = 4, [StateExitCause.NotOwn] = 12, [StateExitCause.Later] = 7,
         }));
         // the pc registers one class per id (pc.cpp:668-721)
         var own = OwnStateExit.Classes.Where(r => r.Id >= 0 && r.Cause != StateExitCause.NotOwn).GroupBy(r => r.Id);
@@ -79,6 +79,12 @@ public class OwnStateExitTests
         {
             case StateExitCause.AtOnce:
                 return me.State == 0 && exit.State == 0 ? null : $"still in 0x{me.State:x}";
+            case StateExitCause.Fallback:
+                // StateSwimDash: StateSwim entered inside the enter, then the dash effect started, once each
+                if (me.State != 0 || exit.State != 0) return $"still in 0x{me.State:x}";
+                if (OwnStateExit.BodyEntryOf(row.Id) != BodyEntry.Swim) return "the body is not left in Swim";
+                if (exit.TakeFallback() != OwnStateExit.SwimDashFallback || !exit.TakeDashEffect()) return "no fallback or dash effect";
+                return exit.TakeFallback() == 0 && !exit.TakeDashEffect() ? null : "taken twice";
             case StateExitCause.InputStep:
                 if (me.State != row.Id || exit.HoldsBody) return "not entered, or the body is held";
                 Run(me, exit, 0.5, crawlKey: true);
@@ -109,7 +115,7 @@ public class OwnStateExitTests
             case StateExitCause.NoSelfExit:
                 Run(me, exit, 30);
                 if (me.State != row.Id) return "left by itself";
-                if (exit.HoldsBody != (row.Id == 0x28)) return "the body hold";
+                if (exit.HoldsBody != (row.Id is 0x28 or 0x16)) return "the body hold";   // StatePvPWinLose keeps State's step, StateTalk's is empty
                 me.LeaveForBodyState(1);   // our leave: the next body state (the client's: input, a cancel or a packet)
                 return me.State == 0 ? null : "kept after a body state";
             case StateExitCause.Body:

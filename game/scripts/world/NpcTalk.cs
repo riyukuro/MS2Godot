@@ -132,7 +132,7 @@ public sealed partial class NpcTalk : Node
 
     /// <summary>A talk ui's close sent NpcTalk 0 (SendNpcTalkMode0): the talk is over (m_nTalking = 0) and ResetTalk hides the
     /// talk window.</summary>
-    void OnTalkEndedByUi() { liveTalking = null; liveRequested = null; Teardown(); }
+    void OnTalkEndedByUi() { liveTalking = null; liveRequested = null; live.TalkNpcId = 0; Teardown(); }
 
     public override void _ExitTree()
     {
@@ -566,6 +566,7 @@ public sealed partial class NpcTalk : Node
                         }
                         GD.Print($"talk: npc {npc.Row.Id} type {flags} script {o.ScriptId}: no talk script (its talk ui is not ported), NpcTalk 0 sent");
                         liveTalking = null;
+                        live.TalkNpcId = 0;
                         live.SendTalk(new NpcTalkEndRequest());
                         return;
                     }

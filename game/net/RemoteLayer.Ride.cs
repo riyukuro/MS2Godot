@@ -153,6 +153,19 @@ public sealed partial class RemoteLayer
     /// <summary>The ridee another player rides, or null.</summary>
     public RemotePc RideeOf(int objectId) => users.TryGetValue(objectId, out var u) ? u.Ridee : null;
 
+    /// <summary>
+    /// PC::FUN_141660120's test of the own pc's holder (pc.cpp:2967-2988): FUN_141bd1200's actor of the id is a PC (class
+    /// 0x6200003 / 0x6200004, another player here), it rides (GetRidee) and its buffs have an enabled effect of event buff
+    /// type <paramref name="eventBuffType"/> (HasEnabledWithEventBuffType). All false for an id that is no player here.
+    /// </summary>
+    public (bool IsPc, bool Rides, bool EventBuff) HolderOf(int objectId, int eventBuffType) =>
+        users.TryGetValue(objectId, out var u)
+            ? (true, u.Ridee != null, u.Buffs?.HasEnabledWithEventBuffType(eventBuffType) == true)
+            : (false, false, false);
+
+    /// <summary>WorldService::FindNpcById's npc row: the field npc of the object id, null when none is here.</summary>
+    public Ms2.Formats.World.NpcRow NpcRowOf(int objectId) => npcs.Placed(objectId)?.Row;
+
     public Ms2Godot.Movement.RideData RideeRow(int objectId) => users.TryGetValue(objectId, out var u) ? u.Ridee?.Mount?.Data : null;
 
     /// <summary>The move-speed rate (vfunc_96) of a remote PC, or of its ridee; null without that body.</summary>

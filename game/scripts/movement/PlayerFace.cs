@@ -26,6 +26,10 @@ public partial class Player
     /// <summary>The trigger's Ui sub 9 on the own pc: the named face, or the rest face for an empty name.</summary>
     public void TriggerFace(string name) => FaceEmotion?.Trigger(name, FaceMs);
 
+    /// <summary>PCBase::FUN_14166ef10(name, 1, 0, force) on the own pc (StateStun's "Stun", statestun.cpp:112): whether it
+    /// played.</summary>
+    public bool PlayFace(string name, bool force) => FaceEmotion?.Play(name, force, FaceMs) == true;
+
     // the body's key pass: the sequence it last read and the position it read to; FaceKeysFromStart makes the next pass
     // throw the keys in [0, position], as an activated sequence throws its keys from 0 (m_bNeedFirstTextKey)
     const double FaceKeysFromStart = -2;
