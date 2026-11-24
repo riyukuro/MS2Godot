@@ -248,6 +248,17 @@ public sealed class CutSceneCinematic
         Pane?.SetSkipVisible(false);
     }
 
+    /// <summary>Esc at the pane (UICutSceneCinematic vfunc_13): Shift+Esc ends the cinematic, plain Esc asks to skip. The
+    /// dialogs' key pass calls a dialog's vfunc_13 only while its root clip is shown (vfunc_9, uiswfentitymanager.cpp:319;
+    /// uiswfentity.h:46), and the pane is shown only in the cinematic sub scene, that is with the key group on. True when the
+    /// pane took the key.</summary>
+    public bool KeyEscape(bool shift)
+    {
+        if (!KeyMode) return false;
+        if (shift) ForceEnd(); else RequestSkip();
+        return true;
+    }
+
     /// <summary>The key handler's Shift+Esc (vfunc_13): the trigger, the key group off, the pane closed.</summary>
     public void ForceEnd()
     {

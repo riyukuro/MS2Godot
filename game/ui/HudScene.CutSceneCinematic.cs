@@ -89,12 +89,9 @@ public partial class HudScene
     }
 
     /// <summary>The pane's key handler (UICutSceneCinematic vfunc_13): Shift+Esc ends the cinematic (the trigger, the key group off,
-    /// the pane closed), plain Esc asks to skip (RequestSkip). True when the pane took the key; false when no cinematic is up.</summary>
+    /// the pane closed), plain Esc asks to skip (RequestSkip). True when the pane took the key; false when the pane is not shown.</summary>
     bool CinematicEscape(bool shift)
     {
-        var cine = cinematicLive?.Cinematic;
-        if (cine == null || !(cine.KeyMode || cine.Mode != 0)) return false;
-        if (shift) cine.ForceEnd(); else cine.RequestSkip();
-        return true;
+        return cinematicLive?.Cinematic is { } cine && cine.KeyEscape(shift);
     }
 }

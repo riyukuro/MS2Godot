@@ -90,4 +90,20 @@ public class CutSceneCinematicTests
         c.FieldUnloaded();
         Assert.That(changes, Has.Count.EqualTo(2), "out of the sub scene already: no change");
     }
+
+    [Test]
+    public void EscGoesToThePaneOnlyWhileTheKeyGroupIsOn()
+    {
+        var c = new CutSceneCinematic();
+        int sent = 0;
+        c.SendTrigger = () => sent++;
+        Assert.That(c.KeyEscape(false), Is.False, "no cinematic: the key goes on");
+        c.Apply(CinematicPacket.Read(R(w => { w.WriteByte(1); w.WriteBool(true); })));
+        c.Apply(CinematicPacket.Read(R(w => { w.WriteByte(3); w.WriteInt(3); w.WriteUnicodeString(""); w.WriteUnicodeString(""); })));
+        Assert.That(c.KeyEscape(false), Is.True, "the pane is shown: it takes Esc");
+        c.FieldUnloaded();
+        Assert.That(c.Mode, Is.EqualTo(1));
+        Assert.That((c.KeyEscape(false), c.KeyEscape(true)), Is.EqualTo((false, false)), "the pane hidden with the key group: Esc goes on");
+        Assert.That((sent, c.IsShowing), Is.EqualTo((0, true)), "nothing sent, nothing closed");
+    }
 }
