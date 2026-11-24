@@ -647,6 +647,22 @@ public class ItemTooltipExtrasTests
         var plain = new ItemTooltip(m, 0x200);
         plain.Fill(Item.Create(m.Tables.Items, 20300327, 0));
         Assert.That(plain.Data.ContainsKey("itemSeason"), Is.False);
+        // whole list: every box's coin item shows its box's season where the box shows it on the icon, else none
+        var root = Ms2.Formats.World.GameStrings.Parse(Packs().Read("Xml", "table/gacha_info.xml")).Root;
+        int coins = 0, seasons = 0;
+        foreach (var id in root.Elements("randomBox").Select(e => ItemData.Atoi((string)e.Attribute("coinItemID") ?? "")).Distinct())
+        {
+            if (m.Tables.Items.Get(id) == null) continue;
+            var t = new ItemTooltip(m, 0x200);
+            t.Fill(Item.Create(m.Tables.Items, id, 0));
+            int b = m.Tables.GachaBoxes.RandomBoxIdByCoinItem(id);
+            Assert.That(t.Data.TryGetValue("itemSeason", out var v) ? v : null,
+                Is.EqualTo(m.Tables.GachaBoxes.IsSeasonNumberOnIcon(b) ? m.Tables.GachaBoxes.SeasonText(b) : null), $"coin {id} box {b}");
+            coins++;
+            if (v is string { Length: > 0 }) seasons++;
+        }
+        TestContext.WriteLine($"{coins} coin items, {seasons} with a season");
+        Assert.That(seasons, Is.GreaterThan(10));
     }
 
     [Test]
