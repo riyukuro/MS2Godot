@@ -45,6 +45,15 @@ public struct DropRandom
 {
     uint s1, s2, s3;
     public DropRandom(uint a, uint b, uint c) { s1 = a | 0x100000; s2 = b | 0x1000; s3 = c | 0x10; }
+    /// <summary>Unk_Random(int nSeed) @0x140768210 (questmasktable.cpp:400-407): three Unk_RandomStep values (the LCG
+    /// x * 0x343fd + 0x269ec3, :374-379) through SetState.</summary>
+    public static DropRandom Seeded(int seed)
+    {
+        uint a = unchecked((uint)seed); seed = unchecked(seed * 0x343fd + 0x269ec3);
+        uint b = unchecked((uint)seed); seed = unchecked(seed * 0x343fd + 0x269ec3);
+        uint c = unchecked((uint)seed);
+        return new DropRandom(a, b, c);
+    }
     public uint Next()
     {
         s1 = (s1 & 0xfffffffe) << 12 ^ (s1 << 13 ^ s1) >> 19;

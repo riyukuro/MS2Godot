@@ -21,10 +21,14 @@ public sealed partial class RemoteLayer
     /// FUN_141673b40 -> StateSkill::PlayCastStartEffect plays its motion at the record's speed).
     /// The record's extra (an actor id and its node) is StateSkill's m_nB0 / m_strB8: the cast's end holds that actor
     /// (StateHold, 0x20) instead of going to StateIdle.
-    /// STILL-OPEN: the pet effect (bEffect, :3343-3347) and CEffectService::SetTick are not ported.
+    /// With the actor found, CEffectService::SetTick(serial) (:3340) before the cast plays: the seed of its random parts' pick
+    /// (<see cref="Ms2.Formats.World.EffectRandom.Tick"/>).
+    /// STILL-OPEN: the pet effect (bEffect, :3343-3347) is not ported; SetTick waits for CSkillRecord::Init, which is taken
+    /// to pass.
     /// </summary>
     void OnSkillUse(SkillUse u)
     {
+        if (users.ContainsKey(u.ActorId) || u.ActorId == Tracker.SelfObjectId) Ms2.Formats.World.EffectRandom.Tick = unchecked((uint)u.Serial);
         if (users.TryGetValue(u.ActorId, out var r)) r.Cast.Use(u.CastUid, u.Motion);
         PlayCast(u.ActorId, u.SkillId, u.Level, u.Motion, u.Speed, new System.Numerics.Vector3(u.Position.X, u.Position.Y, u.Position.Z), u.Rotation.Z,
             new System.Numerics.Vector3(u.Direction.X, u.Direction.Y, u.Direction.Z), u.HasExtra ? u.Extra : 0, u.HasExtra ? u.ExtraText ?? "" : "", u.CastUid);
@@ -115,6 +119,7 @@ public sealed partial class RemoteLayer
             if (!string.IsNullOrEmpty(motion.SequenceName))
             {
                 string anim = npcs.PlaySequence(actorId, motion.SequenceName);
+                if (FxTrace) GD.Print($"fx: npc cast {actorId} skill {skillId} motion {motionIndex} {motion.SequenceName} -> {anim ?? "no anim"}, effect {motion.MotionEffect} at {Time.GetTicksMsec()}");
                 // FUN_141673ce0 then vfunc_59(0x10): the record and the skill state the force zones read
                 if (npcs.BeginCast(actorId, castUid, motionIndex, motionIndex + 1 >= skillMotions.MotionCount(skillId, level), motion, anim))
                     NpcSkillEntered(actorId, n.root, kind, skillMotions.NotKeepEffect(skillId), EffectsOf(motion), anim != null);

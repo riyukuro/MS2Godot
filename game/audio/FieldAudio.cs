@@ -111,6 +111,9 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         library = SoundLibrary.Shared(dir, GameOptions.Voice);
         // One MusicController for the session (CSoundEventMgr singleton; resets only at shutdown, worldservice_1.cpp:10583, soundeventmgr.cpp:1036).
         MusicState = MusicController.Shared(library.Fev);
+        // a random part's soundEvent children are made only when FMOD has their event (CSoundEventEffectParam::vfunc_2)
+        var fev = library.Fev;
+        Ms2.Formats.World.EffectRandom.SoundEventFound = p => EffectSoundParam.Made(fev, p.SoundGroup, p.SoundEvent, p.JobEvents?.Values);
         GD.Print($"audio: MS2Sound.fev ready in {sw.ElapsedMilliseconds} ms: {library.Fev.Banks.Count} banks (voice {library.LanguageName}), {library.Fev.Defs.Count} sound definitions, {library.Fev.EventCount} events in {library.Fev.Groups.Count} groups, {library.Fev.CueIds.Count()} music cues");
         GD.Print($"audio: music volume {MusicVolume:F2}");
         if (packs != null)

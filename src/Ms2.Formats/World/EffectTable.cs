@@ -127,6 +127,16 @@ public sealed class EffectPart
     /// <summary>A direct child of the xml's root, one of the effect data's params (effectservice.cpp:614-617). The children of a
     /// random part (randomeffectparam.cpp:88) are listed too, with this false.</summary>
     public bool TopLevel;
+    /// <summary>A random part's child: the index in the effect's part list of its random part (the &lt;effect&gt; it sits in,
+    /// CRandomEffectParam::vfunc_1, randomeffectparam.cpp:88-93); -1 for any other part.</summary>
+    public int RandomParent = -1;
+    /// <summary>A random part's direct &lt;effect&gt; children, as indices in the effect's part list, in the file's order
+    /// (FirstChild / NextSibling "effect", randomeffectparam.cpp:88); null for any other part.</summary>
+    public int[] RandomChildren;
+    /// <summary>A random part's prob: XmlSplit of the text on ", " (CString::Tokenize, no empty token), each token through
+    /// atoi (placeholder/xmlattr.h, XmlConvert) as m_arrWeights (randomeffectparam.cpp:86-87). Child i (of the children
+    /// made) takes weight i, 0 past the list's end (:162-165). Empty for no prob.</summary>
+    public uint[] RandomWeights;
     /// <summary>A nif part's viewDistance (CNifEffectParam::vfunc_1, nifeffectparam.cpp:376, m_fViewDistance +0xac): its own
     /// view distance, -1 (absent) for the table's.</summary>
     public float ViewDistance = -1;
@@ -162,86 +172,106 @@ public sealed class EffectTable
         {
             try
             {
-                var x = PackXml.Parse(packs.Read("Xml", entry));
-                parts = new List<EffectPart>();
-                foreach (var e in x.Descendants("effect"))
-                {
-                    var p = new EffectPart { Type = (string)e.Attribute("type"), FilePath = (string)e.Attribute("filePath"), SoundGroup = (string)e.Attribute("group"), SoundEvent = (string)e.Attribute("event"), StartDelay = F((string)e.Attribute("startDelay")), Duration = F((string)e.Attribute("duration")) };
-                    if (string.Equals(p.Type, "soundMusic", StringComparison.OrdinalIgnoreCase))
-                    {
-                        p.MusicCueId = I((string)e.Attribute("cueID"), -1);
-                        p.MusicParamId = I((string)e.Attribute("paramID"), -1);
-                        p.MusicParamValue = F((string)e.Attribute("paramValue"), 0f);
-                        p.MusicPriority = I((string)e.Attribute("priority"), 0x80);
-                        p.MusicVolume = F((string)e.Attribute("volume"), -1f);
-                        p.MusicReverb = (string)e.Attribute("reverb") ?? "";
-                    }
-                    var t = e.Element("transform");
-                    if (t != null) { p.Translate = V((string)t.Attribute("translate")); p.Rotation = V((string)t.Attribute("rotation")); p.Scale = F((string)t.Attribute("scale"), 1f); }
-                    p.Loop = B((string)e.Attribute("loop"), false);
-                    p.Gender = I((string)e.Attribute("gender"), 2);
-                    p.JobCode = I((string)e.Attribute("jobCode"), 0);
-                    p.OnlyCasterMyPC = B((string)e.Attribute("onlyCasterMyPC"), false);
-                    p.OnlyTargetMyPC = B((string)e.Attribute("onlyTargetMyPC"), false);
-                    p.OffSkip = B((string)e.Attribute("offSkip"), false);
-                    if (string.Equals(p.Type, "soundEvent", StringComparison.Ordinal)) p.ForceHearDistance = F((string)e.Attribute("forceHearDistance"), 0f);
-                    if (string.Equals(p.Type, "soundEvent", StringComparison.Ordinal)) p.DoNotStop = B((string)e.Attribute("doNotStop"), false);
-                    if (string.Equals(p.Type, "soundEvent", StringComparison.Ordinal)) p.CooltimeId = I((string)e.Attribute("cooltimeID"), 0);
-                    if (string.Equals(p.Type, "soundEvent", StringComparison.Ordinal)) p.SkipMusicConcert = B((string)e.Attribute("isSkipMusicConcert"), false);
-                    if (string.Equals(p.Type, "soundEvent", StringComparison.Ordinal) && B((string)e.Attribute("byJob"), false))
-                    {
-                        p.JobEvents = new Dictionary<int, string>();
-                        p.JobStartDelays = new Dictionary<int, float>();
-                        foreach (var (job, ev) in JobPairs((string)e.Attribute("jobEvent"))) p.JobEvents[I(job, 0)] = ev;
-                        foreach (var (job, d) in JobPairs((string)e.Attribute("byJobStartDelay"))) p.JobStartDelays[I(job, 0)] = F(d);
-                    }
-                    p.FallType = (int)F((string)e.Attribute("fallType"));
-                    p.TypeId = EffectSkipTable.ParseEffectType(p.Type);
-                    p.TopLevel = e.Parent == x.Root;
-                    if (p.TypeId == EffectSkipTable.RowNif) p.ViewDistance = F((string)e.Attribute("viewDistance"), -1f);
-                    if (e.Element("attachInfo") is { } a)
-                    {
-                        p.AttachType = (string)a.Attribute("attachType");
-                        p.ParentNode = (string)a.Attribute("parentNode");
-                        p.AttachToNode = B((string)a.Attribute("attachToNode"), false);
-                        p.ApplyNodeTransform = B((string)a.Attribute("applyNodeTransform"), false);
-                    }
-                    if (e.Element("applyNodeTransform") is { } an)
-                    {
-                        p.ApplyTranslate = B((string)an.Attribute("translate"), true);
-                        p.ApplyRotation = B((string)an.Attribute("rotation"), true);
-                        p.ApplyScale = B((string)an.Attribute("scale"), true);
-                    }
-                    if (e.Element("update") is { } u)
-                    {
-                        p.UpdateTranslate = B((string)u.Attribute("translate"), true);
-                        p.UpdateRotation = B((string)u.Attribute("rotation"), true);
-                        p.UpdateScale = B((string)u.Attribute("scale"), true);
-                    }
-                    if (p.Type == "light")
-                    {
-                        var lp = new EffectLightParam();
-                        if (e.Element("light") is { } li)
-                        {
-                            lp.Diffuse = Color((string)li.Attribute("diffuse"));
-                            lp.Specular = Color((string)li.Attribute("specular"));
-                            lp.Dimmer = F((string)li.Attribute("dimmer"), 1f);
-                            lp.Range = F((string)li.Attribute("range"), 1000f);
-                        }
-                        if (e.Element("attenuation") is { } at)
-                        {
-                            lp.Constant = F((string)at.Attribute("constant"), 1f);
-                            lp.Linear = F((string)at.Attribute("linear"), 0f);
-                            lp.Quadratic = F((string)at.Attribute("quadratic"), 0f);
-                        }
-                        p.Light = lp;
-                    }
-                    parts.Add(p);
-                }
+                parts = Parse(PackXml.Parse(packs.Read("Xml", entry)));
             }
             catch { parts = null; }
         }
         return cache[xmlPath] = parts;
+    }
+
+    /// <summary>The parts of one effect xml: every &lt;effect&gt; in document order, a random part's children linked to it.</summary>
+    internal static List<EffectPart> Parse(XDocument x)
+    {
+        var parts = new List<EffectPart>();
+        var index = new Dictionary<XElement, int>();
+        foreach (var e in x.Descendants("effect"))
+        {
+            var p = new EffectPart { Type = (string)e.Attribute("type"), FilePath = (string)e.Attribute("filePath"), SoundGroup = (string)e.Attribute("group"), SoundEvent = (string)e.Attribute("event"), StartDelay = F((string)e.Attribute("startDelay")), Duration = F((string)e.Attribute("duration")) };
+            if (string.Equals(p.Type, "soundMusic", StringComparison.OrdinalIgnoreCase))
+            {
+                p.MusicCueId = I((string)e.Attribute("cueID"), -1);
+                p.MusicParamId = I((string)e.Attribute("paramID"), -1);
+                p.MusicParamValue = F((string)e.Attribute("paramValue"), 0f);
+                p.MusicPriority = I((string)e.Attribute("priority"), 0x80);
+                p.MusicVolume = F((string)e.Attribute("volume"), -1f);
+                p.MusicReverb = (string)e.Attribute("reverb") ?? "";
+            }
+            var t = e.Element("transform");
+            if (t != null) { p.Translate = V((string)t.Attribute("translate")); p.Rotation = V((string)t.Attribute("rotation")); p.Scale = F((string)t.Attribute("scale"), 1f); }
+            p.Loop = B((string)e.Attribute("loop"), false);
+            p.Gender = I((string)e.Attribute("gender"), 2);
+            p.JobCode = I((string)e.Attribute("jobCode"), 0);
+            p.OnlyCasterMyPC = B((string)e.Attribute("onlyCasterMyPC"), false);
+            p.OnlyTargetMyPC = B((string)e.Attribute("onlyTargetMyPC"), false);
+            p.OffSkip = B((string)e.Attribute("offSkip"), false);
+            if (string.Equals(p.Type, "soundEvent", StringComparison.Ordinal)) p.ForceHearDistance = F((string)e.Attribute("forceHearDistance"), 0f);
+            if (string.Equals(p.Type, "soundEvent", StringComparison.Ordinal)) p.DoNotStop = B((string)e.Attribute("doNotStop"), false);
+            if (string.Equals(p.Type, "soundEvent", StringComparison.Ordinal)) p.CooltimeId = I((string)e.Attribute("cooltimeID"), 0);
+            if (string.Equals(p.Type, "soundEvent", StringComparison.Ordinal)) p.SkipMusicConcert = B((string)e.Attribute("isSkipMusicConcert"), false);
+            if (string.Equals(p.Type, "soundEvent", StringComparison.Ordinal) && B((string)e.Attribute("byJob"), false))
+            {
+                p.JobEvents = new Dictionary<int, string>();
+                p.JobStartDelays = new Dictionary<int, float>();
+                foreach (var (job, ev) in JobPairs((string)e.Attribute("jobEvent"))) p.JobEvents[I(job, 0)] = ev;
+                foreach (var (job, d) in JobPairs((string)e.Attribute("byJobStartDelay"))) p.JobStartDelays[I(job, 0)] = F(d);
+            }
+            p.FallType = (int)F((string)e.Attribute("fallType"));
+            p.TypeId = EffectSkipTable.ParseEffectType(p.Type);
+            p.TopLevel = e.Parent == x.Root;
+            if (p.TypeId == EffectSkipTable.TypeRandom) p.RandomWeights = Weights((string)e.Attribute("prob"));
+            if (p.TypeId == EffectSkipTable.RowNif) p.ViewDistance = F((string)e.Attribute("viewDistance"), -1f);
+            if (e.Element("attachInfo") is { } a)
+            {
+                p.AttachType = (string)a.Attribute("attachType");
+                p.ParentNode = (string)a.Attribute("parentNode");
+                p.AttachToNode = B((string)a.Attribute("attachToNode"), false);
+                p.ApplyNodeTransform = B((string)a.Attribute("applyNodeTransform"), false);
+            }
+            if (e.Element("applyNodeTransform") is { } an)
+            {
+                p.ApplyTranslate = B((string)an.Attribute("translate"), true);
+                p.ApplyRotation = B((string)an.Attribute("rotation"), true);
+                p.ApplyScale = B((string)an.Attribute("scale"), true);
+            }
+            if (e.Element("update") is { } u)
+            {
+                p.UpdateTranslate = B((string)u.Attribute("translate"), true);
+                p.UpdateRotation = B((string)u.Attribute("rotation"), true);
+                p.UpdateScale = B((string)u.Attribute("scale"), true);
+            }
+            if (p.Type == "light")
+            {
+                var lp = new EffectLightParam();
+                if (e.Element("light") is { } li)
+                {
+                    lp.Diffuse = Color((string)li.Attribute("diffuse"));
+                    lp.Specular = Color((string)li.Attribute("specular"));
+                    lp.Dimmer = F((string)li.Attribute("dimmer"), 1f);
+                    lp.Range = F((string)li.Attribute("range"), 1000f);
+                }
+                if (e.Element("attenuation") is { } at)
+                {
+                    lp.Constant = F((string)at.Attribute("constant"), 1f);
+                    lp.Linear = F((string)at.Attribute("linear"), 0f);
+                    lp.Quadratic = F((string)at.Attribute("quadratic"), 0f);
+                }
+                p.Light = lp;
+            }
+            if (e.Parent != null && index.TryGetValue(e.Parent, out int up) && parts[up].RandomWeights != null) p.RandomParent = up;
+            index[e] = parts.Count;
+            parts.Add(p);
+        }
+        for (int i = 0; i < parts.Count; i++)
+            if (parts[i].RandomWeights != null)
+            {
+                int n = 0;
+                foreach (var c in parts) if (c.RandomParent == i) n++;
+                var kids = new int[n];
+                n = 0;
+                for (int j = 0; j < parts.Count; j++) if (parts[j].RandomParent == i) kids[n++] = j;
+                parts[i].RandomChildren = kids;
+            }
+        return parts;
     }
 
     /// <summary>XmlGetAttr(bool) = TiXmlElement::QueryBoolAttribute (tinyxmlhelper.cpp:211-214, tinyxml.cpp): a value that
@@ -254,6 +284,29 @@ public sealed class EffectTable
         if (s.StartsWith("false", StringComparison.OrdinalIgnoreCase) || s.StartsWith("no", StringComparison.OrdinalIgnoreCase) || s[0] == '0') return false;
         return def;
     }
+    /// <summary>XmlSplit (placeholder/xmlattr.h) of a list on ", " with atoi per token: CRandomEffectParam's prob.</summary>
+    internal static uint[] Weights(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return Array.Empty<uint>();
+        var tokens = s.Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+        var w = new uint[tokens.Length];
+        for (int i = 0; i < tokens.Length; i++) w[i] = unchecked((uint)Atoi(tokens[i]));
+        return w;
+    }
+
+    /// <summary>The CRT atoi: leading white space, a sign, then digits up to the first other character; 0 for none.</summary>
+    internal static int Atoi(string s)
+    {
+        int i = 0;
+        while (i < s.Length && (s[i] == ' ' || (s[i] >= '\t' && s[i] <= '\r'))) i++;
+        bool neg = false;
+        if (i < s.Length && (s[i] == '+' || s[i] == '-')) neg = s[i++] == '-';
+        long v = 0;
+        for (; i < s.Length && s[i] >= '0' && s[i] <= '9'; i++) v = Math.Min(v * 10 + (s[i] - '0'), (long)int.MaxValue + 1);
+        if (neg) v = -v;
+        return (int)Math.Clamp(v, int.MinValue, int.MaxValue);
+    }
+
     static float F(string s, float def = 0) => float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out float v) ? v : def;
     /// <summary>"r, g, b" in 0..255 as 0..1; white when absent or short.</summary>
     static float[] Color(string s)

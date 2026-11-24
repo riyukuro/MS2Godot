@@ -197,14 +197,14 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     public int Spawn(string effect, Xform at, bool always, int randomIndex)
     {
         int h = nextHandle;
-        var nodes = Play(effect, at, true, h);
+        var nodes = Play(effect, at, true, h, randomIndex: (uint)randomIndex);
         if (nodes == null) return 0;
         nextHandle++;
         kept[h] = nodes;
         return h;
     }
 
-    public void Insert(string effect, Xform at, bool always, int randomIndex) => Play(effect, at, false, 0);
+    public void Insert(string effect, Xform at, bool always, int randomIndex) => Play(effect, at, false, 0, randomIndex: (uint)randomIndex);
 
     /// <summary>The view distance table of the graphic quality (FieldAudio's, read once per data).</summary>
     Ms2.Formats.World.EffectSkipTable Skip => skip ??= FieldAudio.EffectSkip(packs);
@@ -227,12 +227,14 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
 
     /// <summary>The spawns, the inserts and the parts the view distances refused (for the checks).</summary>
     public int PartsOutOfView;
+    /// <summary>The parts one play makes (<see cref="Ms2.Formats.World.EffectRandom.PlayList"/>), kept between plays.</summary>
+    readonly List<Ms2.Formats.World.EffectPart> playParts = new();
 
     /// <summary>A region skill's kept effect with its owner's object kind (regionskillobject.cpp:118-124).</summary>
     public int Spawn(string effect, Xform at, bool always, int randomIndex, int casterKind)
     {
         int h = nextHandle;
-        var nodes = Play(effect, at, true, h, null, casterKind);
+        var nodes = Play(effect, at, true, h, null, casterKind, (uint)randomIndex);
         if (nodes == null) return 0;
         nextHandle++;
         kept[h] = nodes;
@@ -240,7 +242,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     }
 
     /// <summary>A region skill's one-shot effect with its owner's object kind (regionskillobject.cpp:238-249).</summary>
-    public void Insert(string effect, Xform at, bool always, int randomIndex, int casterKind) => Play(effect, at, false, 0, null, casterKind);
+    public void Insert(string effect, Xform at, bool always, int randomIndex, int casterKind) => Play(effect, at, false, 0, null, casterKind, (uint)randomIndex);
 
     /// <summary>The object kind of an object id in the live field (<see cref="LiveSession.ObjectKind"/>), 0 offline.</summary>
     public int ObjectKind(int objectId) => LiveSession.Instance?.ObjectKind(objectId) ?? 0;
@@ -313,6 +315,8 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
         }
     }
 
+    static readonly bool FxTrace = System.Environment.GetEnvironmentVariable("MS2_LIVE_FX_TRACE") == "1";
+
     /// <summary>The effect xml's parts at a Gamebryo world transform: nif parts through the effect scene runtime (startDelay,
     /// duration; a looping part stays until it is faded), light parts through FieldLights, sound events at the point, soundMusic parts for <paramref name="casterKind"/>. Null
     /// when the xml is missing.
@@ -321,13 +325,16 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     /// back when no part is made (InsertEffect's nCount 0, effectservice.cpp:1288-1289): each top level part refused by
     /// CEffectParam::vfunc_7's filters (<see cref="Ms2.Formats.World.EffectPart.SkippedFor"/>) or by the view. Kind 0 (the
     /// triggers, reactors, lift markers, the invincible effect) is never out of view. The per-name count limit and the lod
-    /// level are not ported; a random part counts as made (its child's own test is not part of the count).</summary>
+    /// level are not ported. A random part makes one child (<see cref="Ms2.Formats.World.EffectRandom.PlayList"/>: the
+    /// target's m_nRandomIndex <paramref name="randomIndex"/>, a region skill's object id, else the weighted pick on
+    /// EffectRandom.Tick), and counts as made when that child is made and passes the random part's own view test.</summary>
     List<Node3D> Play(string xml, Xform at, bool keep, int handle, Node3D actor = null,
-        int casterKind = Ms2.Audio.SoundMusicEffectState.CasterSystem)
+        int casterKind = Ms2.Audio.SoundMusicEffectState.CasterSystem, uint randomIndex = 0)
     {
-        var parts = table.Get(xml);
-        if (parts == null) return null;
+        var all = table.Get(xml);
+        if (all == null) return null;
         var owner = EffectOwners.Of(casterKind, actor);
+        var parts = Ms2.Formats.World.EffectRandom.PlayList(all, randomIndex, Ms2.Formats.World.EffectRandom.Tick, playParts, owner);
         var skipTable = casterKind != 0 ? Skip : null;   // kind 0 is never out of view (IsOutOfView, effectskipmgr.cpp:136)
         System.Numerics.Vector3? eye = skipTable != null ? Viewer : null;
         // an effect on an actor: the nif parts but attach type 0 ones are its children (they follow it), at in the actor's
@@ -342,22 +349,25 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
         int made = 0;
         foreach (var part in parts)
         {
-            if (!part.TopLevel || part.SkippedFor(owner)) continue;   // a random part's child: its random part is the param
-            if (eye != null && skipTable.PartOutOfView(part, casterKind, N(PartPlace(world, part)), eye)) { PartsOutOfView++; continue; }
+            if (part.SkippedFor(owner)) continue;
+            if (eye != null && (skipTable.PartOutOfView(part, casterKind, N(PartPlace(world, part)), eye)
+                    || part.RandomParent >= 0 && skipTable.RandomOutOfView(all[part.RandomParent], casterKind, N(PartPlace(world, part)), eye)))
+            { PartsOutOfView++; continue; }
             made++;
         }
-        if (made == 0 && parts.Count > 0) return null;
+        if (made == 0 && all.Count > 0) return null;
         var nodes = new List<Node3D>();
         foreach (var part in parts)
         {
             if (part.SkippedFor(owner)) continue;   // CEffectParam::vfunc_7 (effectservice.cpp:245-259)
+            if (FxTrace && part.RandomParent >= 0)
+                GD.Print($"fx: random {xml} part {part.RandomParent} -> {part.FilePath ?? part.SoundEvent ?? part.Type} (index {randomIndex}, tick {Ms2.Formats.World.EffectRandom.Tick}) at {Time.GetTicksMsec()}");
             // a nif part out of view is not made (CNifEffect::vfunc_3, nifeffectparam.cpp:757-766), a random part's chosen child
-            // too (CreateEffect, randomeffectparam.cpp:174); a sound event's test is FieldAudio's (SoundEventOutOfView)
-            if (eye != null && part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeNif && skipTable.PartOutOfView(part, casterKind, N(PartPlace(world, part)), eye))
-            {
-                if (!part.TopLevel) PartsOutOfView++;
+            // too (CreateEffect, randomeffectparam.cpp:174), nor a child out of its random part's view; a sound event's own test
+            // is FieldAudio's (SoundEventOutOfView). The pre-pass above counted these.
+            if (eye != null && (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeNif && skipTable.PartOutOfView(part, casterKind, N(PartPlace(world, part)), eye)
+                    || part.RandomParent >= 0 && skipTable.RandomOutOfView(all[part.RandomParent], casterKind, N(PartPlace(world, part)), eye)))
                 continue;
-            }
             if (part.Type == "soundEvent" && part.SoundEvent != null)
             {
                 int voice = FieldAudio.Instance?.PlayEffectSound(part, owner, FieldBuilder.ToGodotPoint(world.T), actor) ?? 0;

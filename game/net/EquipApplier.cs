@@ -60,6 +60,7 @@ public sealed class EquipApplier
     Dictionary<int, Dictionary<int, int>> presets => shared.Presets;
     Dictionary<int, string> characterIdle => shared.CharacterIdle;
     Ms2.Formats.World.EffectTable effects;
+    readonly List<Ms2.Formats.World.EffectPart> idleParts = new();
     public int IdleEffects, IdleEffectsOpen;
 
     /// <summary>
@@ -454,7 +455,8 @@ public sealed class EquipApplier
         {
             if (!characterIdle.TryGetValue(item.Id, out var xml) && (FindItem(item.Id) == null || !characterIdle.TryGetValue(item.Id, out xml))) return;
             effects ??= new Ms2.Formats.World.EffectTable(packs);
-            foreach (var part in effects.Get(xml) ?? new List<Ms2.Formats.World.EffectPart>())
+            // a random part makes one child (CRandomEffect::vfunc_3, randomeffectparam.cpp:143-178)
+            foreach (var part in Ms2.Formats.World.EffectRandom.PlayList(effects.Get(xml), 0, Ms2.Formats.World.EffectRandom.Tick, idleParts))
             {
                 if (part.Type != "nif" || string.IsNullOrEmpty(part.FilePath)) continue;
                 if (!part.AttachToNode || !part.ApplyNodeTransform) { IdleEffectsOpen++; continue; }

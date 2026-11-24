@@ -129,13 +129,16 @@ public partial class TaxiStations : Node3D
         running.Clear();
     }
 
+    readonly List<Ms2.Formats.World.EffectPart> playParts = new();
+
     /// <summary>The effect xml's parts at a Godot point, identity rotation: nif parts through the effect scene runtime (startDelay,
     /// duration; a looping part stays), sound events at the point.</summary>
     void Play(string xml, Vector3 at, bool keep)
     {
         var parts = table.Get(xml);
         if (parts == null) { GD.PushWarning($"taxi: no effect xml {xml}"); return; }
-        foreach (var part in parts)
+        // a random part makes one child (CRandomEffect::vfunc_3, randomeffectparam.cpp:143-178)
+        foreach (var part in Ms2.Formats.World.EffectRandom.PlayList(parts, 0, Ms2.Formats.World.EffectRandom.Tick, playParts))
         {
             if (part.Type == "soundEvent" && part.SoundEvent != null)
             {

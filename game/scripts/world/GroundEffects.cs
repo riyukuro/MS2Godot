@@ -29,12 +29,15 @@ public partial class GroundEffects : Node3D
         Name = "GroundEffects";
     }
 
+    readonly List<Ms2.Formats.World.EffectPart> playParts = new();
+
     /// <summary>Plays the nif parts of an effect file at a Godot point, turned by <paramref name="yawRadians"/> about the up axis.</summary>
     public void Play(string effectFile, Vector3 at, float yawRadians)
     {
         var parts = table.Get(effectFile);
         if (parts == null) return;
-        foreach (var part in parts)
+        // a random part makes one child (CRandomEffect::vfunc_3, randomeffectparam.cpp:143-178)
+        foreach (var part in Ms2.Formats.World.EffectRandom.PlayList(parts, 0, Ms2.Formats.World.EffectRandom.Tick, playParts))
         {
             if (part.Type != "nif" || string.IsNullOrEmpty(part.FilePath)) continue;
             var sc = Scene(part.FilePath);

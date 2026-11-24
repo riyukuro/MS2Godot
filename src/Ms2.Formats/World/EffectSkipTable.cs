@@ -96,7 +96,8 @@ public sealed class EffectSkipTable
 
     /// <summary>The effect param kinds (effectservice.h): CreateEffect's view tests for the screen kinds (:322-330) and the rows
     /// above.</summary>
-    public const int TypeNif = 1, TypeSoundEvent = 2;
+    public const int TypeNif = 1, TypeSoundEvent = 2, TypeMonochrome = 4, TypeSwoosh = 7, TypeStatus = 8, TypeLight = 9, TypeFog = 10,
+        TypeRandom = 11, TypeVibrate = 12, TypeRibbon = 13, TypeTextureOverride = 15, TypeLightning = 16, TypeBeam = 21, TypeAfterImage = 22;
 
     static readonly string[] TypeNames =
     {
@@ -150,6 +151,14 @@ public sealed class EffectSkipTable
         if (part.TypeId == TypeSoundEvent) return SoundEventOutOfView(this, part, caster, at, viewer);
         return false;
     }
+
+    /// <summary>
+    /// CreateEffect's second test for a random part (effectservice.cpp:337-345): once its child is made, CRandomEffect::vfunc_8
+    /// (randomeffectparam.cpp:199-203) gives the child's place, tested on <see cref="RowRandom"/> for the caster unless the random
+    /// part has offSkip; out of view, the random effect and its child go (vfunc_7).
+    /// </summary>
+    public bool RandomOutOfView(EffectPart random, int caster, Vector3 at, Vector3? viewer) =>
+        !random.OffSkip && IsOutOfView(RowRandom, caster, at, viewer);
 
     /// <summary>CEffectService::IsEffectTypeVisible @0x1411a91d0 (effectservice.cpp:2199): the status option
     /// DisplayShowOnlyMyPet (+0x12) hides relation 4, DisplayHideMyPet (+0x13) relation 2.</summary>

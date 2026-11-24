@@ -28,6 +28,8 @@ public sealed class CombatLayer
     public int EffectsSpawned, EffectsNoXml, EffectsNoNif, EffectsNotNif, EffectsWithParticles, EffectsFailed, NumbersShown, EffectSounds;
     /// <summary>The nif parts not made because they were out of the camera actor's view (<see cref="Play"/>).</summary>
     public int PartsOutOfView;
+    /// <summary>The parts one play makes (<see cref="Ms2.Formats.World.EffectRandom.PlayList"/>), kept between plays.</summary>
+    readonly List<Ms2.Formats.World.EffectPart> playParts = new();
 
     /// <summary>The view distances of the graphic quality (Table/effectOption.xml, read once per data set).</summary>
     Ms2.Formats.World.EffectSkipTable Skip => skip ??= FieldAudio.EffectSkip(packs);
@@ -35,6 +37,7 @@ public sealed class CombatLayer
     public readonly HashSet<string> MissingEffects = new();
     public readonly HashSet<string> ParticleEffects = new();
     public bool ShowEffects = true;
+    static readonly bool FxTrace = System.Environment.GetEnvironmentVariable("MS2_LIVE_FX_TRACE") == "1";
 
     public CombatLayer(PackSet packs, ModelBuilder mb, EffectTable effects, Node3D parent)
     {
@@ -142,9 +145,15 @@ void fragment() {
         var owner = EffectOwners.Of(casterKind, actor);
         // the camera's actor for the nif parts' view test; kind 0 is never out of view (IsOutOfView, effectskipmgr.cpp:136)
         var eye = casterKind != 0 && Skip != null ? EffectView.Viewer : null;
-        foreach (var part in parts)
+        // a random part makes one child, picked once for this play (CRandomEffect::vfunc_3, randomeffectparam.cpp:143-178)
+        foreach (var part in Ms2.Formats.World.EffectRandom.PlayList(parts, 0, Ms2.Formats.World.EffectRandom.Tick, playParts, owner))
         {
             if (part.SkippedFor(owner)) continue;   // CEffectParam::vfunc_7 (effectservice.cpp:245-259)
+            if (FxTrace && part.RandomParent >= 0)
+                GD.Print($"fx: random {xmlPath} part {part.RandomParent} -> {part.FilePath ?? part.SoundEvent ?? part.Type} (tick {Ms2.Formats.World.EffectRandom.Tick}) at {Time.GetTicksMsec()}");
+            // a random part's child: the random part's own test at the child's place (effectservice.cpp:337-345)
+            if (eye != null && part.RandomParent >= 0 && part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeSoundEvent
+                && Skip.RandomOutOfView(parts[part.RandomParent], casterKind, EffectView.Client(at), eye)) { PartsOutOfView++; continue; }
             if (part.Type == "soundEvent" && part.SoundEvent != null)
             {
                 FieldAudio.Instance?.PlayEffectSound(part, owner, at, actor);   // its view test is FieldAudio's (SoundEventOutOfView)
@@ -165,9 +174,13 @@ void fragment() {
             // CNifEffect::vfunc_3 (nifeffectparam.cpp:757-766): the part's root at its world place, row 1 at the part's
             // viewDistance for the effect's kind; out of view, the part is not made. No caller here sets the target's
             // no-cull flag (m_b30: AdditionalCli's keep effects and the kind 0 area effects only).
-            if (eye != null && Skip.PartOutOfView(part, casterKind,
-                    EffectView.Client(host.GlobalTransform * place * G(part.Translate[0], part.Translate[1], part.Translate[2])), eye))
-            { PartsOutOfView++; continue; }
+            if (eye != null)
+            {
+                var spot = EffectView.Client(host.GlobalTransform * place * G(part.Translate[0], part.Translate[1], part.Translate[2]));
+                if (Skip.PartOutOfView(part, casterKind, spot, eye)
+                    || part.RandomParent >= 0 && Skip.RandomOutOfView(parts[part.RandomParent], casterKind, spot, eye))
+                { PartsOutOfView++; continue; }
+            }
             if (Particles && TryScene(part, place, host)) continue;
             var e = Effect(part.FilePath);
             if (e == null) { EffectsNoNif++; MissingEffects.Add(part.FilePath); continue; }

@@ -251,6 +251,7 @@ public partial class ReplayField : Field
         if (motion == null) { SkillNoRow++; return; }
         var who = Find(u.ActorId);
         if (who == null) return;
+        Ms2.Formats.World.EffectRandom.Tick = unchecked((uint)u.Serial);   // CEffectService::SetTick (scenestategame.cpp:3340)
         if (!string.IsNullOrEmpty(motion.SequenceName))
         {
             if (actors.TryGetValue(u.ActorId, out var a))
