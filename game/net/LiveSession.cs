@@ -690,6 +690,10 @@ public partial class LiveSession : Node
     /// <summary>OnMinimapPing @0x14173de10 (scenestategame.cpp:6806-6815): the ping for the minimap dialog's AddPing (set by the HUD).</summary>
     public event Action<MinimapPingMessage> MinimapPinged;
     public event Action<MassiveEventMessage> MassiveEventReceived;
+    /// <summary>WorldService's field timer (m_800-m_808), which the Trigger 0xf kinds set (triggerservice.cpp:527).</summary>
+    public readonly Ms2.Ui.Hud.WorldTimer FieldTimer = new();
+    /// <summary>Trigger 0xf kind 1 (triggerservice.cpp:531): the trigger timer dialog (0x4e95) opens or closes.</summary>
+    public event Action<TriggerDialogCommand> TriggerTimerReceived;
     /// <summary>The minimap dialog's ping send (MinimapPing 0xB1).</summary>
     public void SendMinimapPing(Ms2.Net.Wire.IOutPacket packet)
     {
@@ -1205,7 +1209,7 @@ public partial class LiveSession : Node
 
     /// <summary>
     /// The Trigger types whose dialogs are not ported, read whole (CTriggerService::FUN_141861840, triggerservice.cpp:366):
-    /// Dialog 0xf (the timer 0x4e95, the PvP observer 0x4e96, 0x4e99/0x4e9a, 0x4ed3), the side popup talk 0x13
+    /// Dialog 0xf (the PvP observer 0x4e96, 0x4e99/0x4e9a, 0x4ed3; kind 1's timer 0x4e95 goes to the HUD), the side popup talk 0x13
     /// (UISidePopupTalk 0x4f57), the set-visible list 0x14 (FindObjectByName, the object's state) and the npc duel bar
     /// 0x15 (UINpcDuelHPBarDialog 0x4f62). STILL-OPEN: applying them; each is logged once per type and kind.
     /// </summary>
@@ -1218,7 +1222,14 @@ public partial class LiveSession : Node
         {
             switch (type)
             {
-                case TriggerObjects.Dialog: TriggerNotApplied(type, TriggerObjects.ReadDialog(r).Kind); return true;
+                case TriggerObjects.Dialog:
+                {
+                    var d = TriggerObjects.ReadDialog(r);
+                    if (d.Kind is >= TriggerDialogCommand.Timer and <= TriggerDialogCommand.PvpDuel) FieldTimer.Set(d.Start, d.Duration, d.AutoRemove);   // WorldService::FUN_141bc6f60, every kind 1-5
+                    if (d.Kind == TriggerDialogCommand.Timer) TriggerTimerReceived?.Invoke(d);
+                    else TriggerNotApplied(type, d.Kind);
+                    return true;
+                }
                 case TriggerObjects.SidePopup: TriggerNotApplied(type, TriggerObjects.ReadSidePopup(r).Kind); return true;
                 case TriggerObjects.SetVisibleUi: TriggerNotApplied(type, TriggerObjects.ReadSetVisibleUi(r).State); return true;
                 case TriggerObjects.DuelHpBar: TriggerNotApplied(type, TriggerObjects.ReadDuelHpBar(r).Show ? (byte)1 : (byte)0); return true;
