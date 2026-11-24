@@ -24,10 +24,10 @@ public partial class HudScene
         {
             NowMs = () => (uint)Time.GetTicksMsec(),
             // PlaySystemSound (table/systemsound.xml through the audio bank); the print is the no-bank fallback
-            SystemSound = key => { if (FieldAudio.Instance?.PlayUi(key) != true) GD.Print($"massive event: system sound {key} is not played"); },
+            SystemSound = key => { if (FieldAudio.Instance?.PlayUi(key) != true) NotApplied.Print($"massive event: system sound {key} is not played"); },
             ChatLine = (text, kind) => ChatLog.AddSystemLine(text, kind),
             Text = t => Notices?.Text(t) ?? t.Text ?? "",
-            Unapplied = m => GD.Print($"live: MassiveEvent kind {m.Kind} read, not applied (the event introduce dialog 0x4f06 is not ported)"),
+            Unapplied = m => NotApplied.Print($"live: MassiveEvent kind {m.Kind} read, not applied (the event introduce dialog 0x4f06 is not ported)"),
             ClientSize = () =>
             {
                 var size = (Vector2)ScreenMode.PixelSize(GetWindow());

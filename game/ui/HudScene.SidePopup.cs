@@ -27,12 +27,12 @@ public partial class HudScene
             {
                 // CEffectService::PlayVoiceAt at the local player (pPlayer->vfunc_18, its position)
                 if (fieldScene?.GetNodeOrNull<Node3D>("Player") is { } me) World.NpcTalk.PlayVoiceAt(voice, me.GlobalPosition);
-                else GD.Print($"side popup: voice {voice} has no player to play at");
+                else NotApplied.Print($"side popup: voice {voice} has no player to play at");
                 return 0;
             },
-            SystemSound = key => { if (FieldAudio.Instance?.PlayUi(key) != true) GD.Print($"side popup: system sound {key} is not played"); },
+            SystemSound = key => { if (FieldAudio.Instance?.PlayUi(key) != true) NotApplied.Print($"side popup: system sound {key} is not played"); },
             ServerTime = () => Net.LiveSession.Instance?.ServerTime ?? 0,
-            Unapplied = name => GD.Print($"side popup: {name} is not applied (the field war and wedding hall sends are not ported)"),
+            Unapplied = name => NotApplied.Print($"side popup: {name} is not applied (the field war and wedding hall sends are not ported)"),
         };
         unwatchSidePopup?.Invoke();
         unwatchSidePopup = null;

@@ -37,7 +37,7 @@ public partial class HudScene
                 {
                     Timer = live.FieldTimer,
                     ServerTick = () => Net.LiveSession.Instance?.ServerTick ?? 0,
-                    PlayEffect = name => { GD.Print($"trigger timer: effect {name} is not played (no screen effect path)"); return 0; },
+                    PlayEffect = name => { NotApplied.Print($"trigger timer: effect {name} is not played (no screen effect path)"); return 0; },
                 };
             triggerTimer.Timer = live.FieldTimer;
             if (triggerTimerMovie == null)

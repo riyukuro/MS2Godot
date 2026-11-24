@@ -304,7 +304,7 @@ public sealed class NpcLayer
             }
             catch (Exception ex) { GD.PushWarning($"effect nif {path}: {ex.Message}"); }
         }
-        if (md == null) GD.Print($"live: effect nif {path} is not in the data");
+        if (md == null) NotApplied.Print($"live: effect nif {path} is not in the data");
         return effectNifs[path] = md;
     }
 

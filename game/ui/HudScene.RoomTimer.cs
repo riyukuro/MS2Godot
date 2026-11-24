@@ -25,7 +25,7 @@ public partial class HudScene
             {
                 ServerTick = () => Net.LiveSession.Instance?.ServerTick ?? 0,
                 NowMs = () => (uint)Time.GetTicksMsec(),
-                PlayEffect = name => { GD.Print($"timer: effect {name} is not played (no screen effect path)"); return 0; },
+                PlayEffect = name => { NotApplied.Print($"timer: effect {name} is not played (no screen effect path)"); return 0; },
                 OpenRequested = OpenTimerDialog,
             };
             timerDialog.Unloaded += TimerDialogUnloaded;
@@ -34,7 +34,7 @@ public partial class HudScene
                 GetTimer = t => t == Ms2.Net.Packets.RoomTimerMessage.TimerDialog ? timerDialog : null,
                 Common = id => hudModel?.Tables.Common(id) ?? "",
                 Notice = (text, type) => ChatLog.ShowSystemNotice?.Invoke(text, type, true),
-                Unapplied = m => GD.Print($"live: RoomTimer command {m.Command} type {m.Type} read, not applied (the timer gauge 0x4f61 is not ported)"),
+                Unapplied = m => NotApplied.Print($"live: RoomTimer command {m.Command} type {m.Type} read, not applied (the timer gauge 0x4f61 is not ported)"),
             };
         }
         unwatchRoomTimer?.Invoke();
