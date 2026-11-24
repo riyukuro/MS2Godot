@@ -172,6 +172,10 @@ public sealed class LiveInteractObjects : ICastingEventListener
     readonly List<LiveInteractObject> activeGatherTargets = new();
     readonly Func<int, QuestMaskTable.QuestStatus> questLookup;
 
+    /// <summary>CGameEventValueManager's MasteryReduce (the game event list's), for the gathering cast time and caption; the
+    /// session sets its own, kept across fields.</summary>
+    public MasteryReduceRule MasteryReduce = new();
+
     LiveInteractObject polled, gatherPick, interactPick, boardPick;
     bool polledGathering;
     // StateInteraction (0x19) active cast state
@@ -919,14 +923,20 @@ public sealed class LiveInteractObjects : ICastingEventListener
             host.Send(new InteractObjectStartRequest(target.Name));
         }
 
-        // CInteractObject::vfunc_6 (@0x1413fd9b0) / CInteractGatheringObject::vfunc_6 (@0x1414027c0)
-        // STILL-OPEN: the gathering cursor's MasteryReduce text and cast time
-        string caption = target.Kind == InteractObjectMessage.KindGathering
-            ? host.CommonByKey("s_action_gathering")
-            : host.InteractActionName(target.RowId);
+        // CInteractObject::vfunc_6 (@0x1413fd9b0): the action name and the row's reactTime; CInteractGatheringObject::vfunc_6
+        // (@0x1414027c0, interactobject.cpp:1495-1501): the time through MasteryReduce's Apply, the caption s_action_gathering
+        // with MasteryReduce's text after it
+        string caption;
+        uint castMs = target.Row.ReactTimeMs;
+        if (target.Kind == InteractObjectMessage.KindGathering)
+        {
+            castMs = MasteryReduce.Apply(castMs);
+            caption = host.CommonByKey("s_action_gathering") + MasteryReduce.Text(host.CommonByKey);
+        }
+        else caption = host.InteractActionName(target.RowId);
         castEndMs = 0;
-        if (!host.StartCasting(this, caption, (int)target.Row.ReactTimeMs))
-            castEndMs = host.NowMs + target.Row.ReactTimeMs;      // no bar: the cast time still runs
+        if (!host.StartCasting(this, caption, (int)castMs))
+            castEndMs = host.NowMs + castMs;      // no bar: the cast time still runs
 
     }
 

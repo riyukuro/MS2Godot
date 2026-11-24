@@ -238,6 +238,20 @@ public class GameEventPacketTests
     }
 
     [Test]
+    public void MasteryReduceEventsKeepTheirIdAndRate()
+    {
+        // GameEventMasteryReduce::vfunc_4 (gameevent.cpp:3610-3614): id, then ReadInt m_d0; an id, I type after it
+        var m = GameEventMessage.Read(Reader(w =>
+        {
+            w.WriteByte(1); w.WriteInt(2);
+            w.WriteUnicodeString("MasteryReduce"); w.WriteInt(50); w.WriteInt(20000);
+            w.WriteUnicodeString("GuildCoin"); w.WriteInt(51); w.WriteInt(3);
+        }));
+        Assert.That(m.Truncated, Is.False);
+        Assert.That(m.MasteryReduceEvents, Is.EqualTo(new[] { new MasteryReduceEvent(50, 20000) }));
+    }
+
+    [Test]
     public void ConstructionEventsKeepTheirListsInPacketOrder()
     {
         // GameEventMassiveConstructionEvent::vfunc_4 (gameevent.cpp:2926-2944): id, n x u32 field id, i32 channel,

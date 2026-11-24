@@ -79,6 +79,9 @@ public partial class LiveSession
     public readonly Ms2.Ui.BeautyShopSales BeautySales = new();
     /// <summary>The game rule's meso revival events and flags (CGameRule m_2f0, m_368, m_36c), the revival dialog's flat meso rule.</summary>
     public readonly Ms2.Ui.MesoRevivalRule MesoRevivals = new();
+    /// <summary>The game event list's MasteryReduce rate (CGameEventValueManager MasteryReduce), the gathering cast's time and
+    /// caption; kept across fields, cleared with a new game scene.</summary>
+    public readonly Ms2.Ui.MasteryReduceRule MasteryReduce = new();
     public readonly SpecialAbilityHotTimes HotTimes = new(PerMilleAbility);
     static Func<int, bool> perMilleAbility;
     static bool PerMilleAbility(int type)
@@ -101,7 +104,7 @@ public partial class LiveSession
         InteractObjectTable tbl = null;
         try { tbl = InteractObjectTable.Shared(packs); }
         catch (Exception e) { GD.Print($"live: interact object table unavailable ({e.Message})"); }
-        InteractObjects = new LiveInteractObjects(new InteractHost(this, mapId), tbl) { Held = HeldItem };
+        InteractObjects = new LiveInteractObjects(new InteractHost(this, mapId), tbl) { Held = HeldItem, MasteryReduce = MasteryReduce };
     }
 
     /// <summary>Binds the loaded field's xblock MS2InteractObject, MS2Breakable and MS2Liftable entities and applies any held
@@ -359,6 +362,7 @@ public partial class LiveSession
         SaleEvents.Apply(m);
         BeautySales.Apply(m);
         MesoRevivals.Apply(m);
+        MasteryReduce.Apply(m);
         GD.Print($"live: GameEvent kind {m.Kind}: {m.Shutdowns.Count} shutdown events, {m.HotTimes.Count} hot times, {m.RemovedIds.Count} removed{(m.Truncated ? ", stopped at an unregistered type" : "")}");
     }
 

@@ -24,6 +24,10 @@ public sealed record BeautyShopSaleEvent(int Id, int SaleEventId, int Rate, byte
 /// OnStart (:908-913) puts in the game rule's MesoRevivalEventContext m_18.</summary>
 public sealed record MesoRevivalEvent(int Id, bool Flag);
 
+/// <summary>One GameEventMasteryReduce (commonfiles/gameevent.cpp:3571-3613): the event id and the rate m_d0 (vfunc_4 :3610-3614)
+/// OnStart (:3594) sets on CGameEventValueMasteryReduce (SetRate); vfunc_6 (:3598) sets it to 0.</summary>
+public sealed record MasteryReduceEvent(int Id, int Rate);
+
 /// <summary>One GameEventMassiveConstructionEvent (commonfiles/gameevent.cpp:2926-2944): the event id, the field ids (m_d0),
 /// the channel (m_f0) and the account ids (m_f8) OnStart (:2946-2958) puts in the game rule.</summary>
 public sealed record MassiveConstructionEvent(int Id, IReadOnlyList<uint> FieldIds, int Channel, IReadOnlyList<long> AccountIds);
@@ -73,6 +77,9 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
     /// <summary>The MesoRevival events of a kind 0, 1 or 3 message, in packet order.</summary>
     public IReadOnlyList<MesoRevivalEvent> MesoRevivalEvents { get; init; } = Array.Empty<MesoRevivalEvent>();
 
+    /// <summary>The MasteryReduce events of a kind 0, 1 or 3 message, in packet order.</summary>
+    public IReadOnlyList<MasteryReduceEvent> MasteryReduceEvents { get; init; } = Array.Empty<MasteryReduceEvent>();
+
     public static GameEventMessage Read(ByteReader r)
     {
         byte kind = r.ReadByte();
@@ -84,6 +91,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
         var beautySales = new List<BeautyShopSaleEvent>();
         var reactors = new List<ReactorEvent>();
         var mesoRevivals = new List<MesoRevivalEvent>();
+        var masteryReduces = new List<MasteryReduceEvent>();
         bool truncated = false;
         switch (kind)
         {
@@ -95,7 +103,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
                 for (int i = 0; i < n; i++)
                 {
                     string name = r.ReadUnicodeString();
-                    if (!ReadBody(name, r, shutdowns, hotTimes, saleEvents, construction, beautySales, reactors, mesoRevivals))
+                    if (!ReadBody(name, r, shutdowns, hotTimes, saleEvents, construction, beautySales, reactors, mesoRevivals, masteryReduces))
                     {
                         truncated = true;     // Create failed (:144-147): the client returns here
                         break;
@@ -112,7 +120,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
         }
         if (!truncated) r.ExpectEnd("GameEvent");
         return new GameEventMessage(kind, shutdowns, removed, truncated) { HotTimes = hotTimes, SaleEvents = saleEvents, ConstructionEvents = construction, BeautySaleEvents = beautySales,
-            ReactorEvents = reactors, MesoRevivalEvents = mesoRevivals };
+            ReactorEvents = reactors, MesoRevivalEvents = mesoRevivals, MasteryReduceEvents = masteryReduces };
     }
 
     /// <summary>
@@ -124,7 +132,8 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
     internal static bool ReadBody(string name, ByteReader r, List<ShutdownInteractObjectEvent> shutdowns,
                                   List<SpecialAbilityHotTimeEvent> hotTimes = null, List<PremiumMarketSaleEvent> saleEvents = null,
                                   List<object> construction = null, List<BeautyShopSaleEvent> beautySales = null,
-                                  List<ReactorEvent> reactors = null, List<MesoRevivalEvent> mesoRevivals = null)
+                                  List<ReactorEvent> reactors = null, List<MesoRevivalEvent> mesoRevivals = null,
+                                  List<MasteryReduceEvent> masteryReduces = null)
     {
         switch (name)
         {
@@ -186,13 +195,13 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
             // id, I: LobbyMap (gameeventlobbymap.cpp:86), CharacterCountRestricted (:148), ItemBuff (gameevent.cpp:961),
             // SaleEnchant (:1183), UGCMapSaleCoupon (:1359), EventFieldPopup (:1529), the types read as GameEventSale
             // (:1952), GuildSkillSale (:3218), GuildPersonalSkillSale (:3264), GuildExp (:3318), GuildFund (:3364),
-            // GuildCoin (:3410), MasteryReduce (:3610), UGCMapContractSale (:3648), UGCMapExtensionSale (:3694),
+            // GuildCoin (:3410), UGCMapContractSale (:3648), UGCMapExtensionSale (:3694),
             // PetBattleExp (:4103), PetComposeSale (:4149), FindDungeonHelperBonus (:4599), StarShop (:4997),
             // AdventureLevelBonusExpRate (:5876), SalePetCrystal (:6621), ArcadeOpen (:6692, ArcadeOpenContext::Read)
             case "LobbyMap": case "CharacterCountRestricted": case "ItemBuff": case "SaleEnchant": case "UGCMapSaleCoupon":
             case "EventFieldPopup": case "SaleGemStoneUpgrade": case "SaleLapenshardUpgradeRGB":
             case "SaleUGCDesign": case "GuildSkillSale": case "GuildPersonalSkillSale": case "GuildExp": case "GuildFund":
-            case "GuildCoin": case "MasteryReduce": case "UGCMapContractSale": case "UGCMapExtensionSale":
+            case "GuildCoin": case "UGCMapContractSale": case "UGCMapExtensionSale":
             case "PetBattleExp": case "PetComposeSale": case "FindDungeonHelperBonus": case "StarShop":
             case "AdventureLevelBonusExpRate": case "SalePetCrystal": case "ArcadeOpen":
                 r.ReadInt(); r.ReadInt();
@@ -226,6 +235,12 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
             case "SaleRemake":          // :1995: id, I, B
                 r.ReadInt(); r.ReadInt(); r.ReadByte();
                 return true;
+            case "MasteryReduce":       // :3610-3614: id, I
+            {
+                int id = r.ReadInt();
+                masteryReduces?.Add(new MasteryReduceEvent(id, r.ReadInt()));
+                return true;
+            }
             case "MesoRevival":         // :900: id, B (ReadBool: nonzero is true)
             {
                 int id = r.ReadInt();

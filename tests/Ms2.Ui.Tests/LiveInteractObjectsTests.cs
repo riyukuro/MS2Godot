@@ -310,6 +310,35 @@ public class LiveInteractObjectsTests
         Assert.That(host.Sent, Has.Count.EqualTo(1)); // only mode 0x0b, never mode 0x0c
     }
 
+    /// <summary>CInteractGatheringObject::vfunc_6 (interactobject.cpp:1495-1501): with a MasteryReduce event the gathering cast
+    /// is the row's reactTime through Apply, and the caption is s_action_gathering with the event's text after it.</summary>
+    [Test]
+    public void AMasteryReduceEventShortensTheGatheringCastAndAddsItsText()
+    {
+        var host = new Host { NowMs = 10_000, MasteryInteractionDistance = 300 };
+        var tbl = MakeTable(new InteractObjectRow { Id = 600, Type = InteractObjectMessage.KindGathering, InteractionDistance = 300, ReactTimeMs = 3000 });
+        var live = new LiveInteractObjects(host, tbl);
+        live.Attach(new[] { XblockEntity("ore-1", 600, new Vec3(0, 0, 0)) });
+        live.Apply(new InteractObjectMessage { Mode = InteractObjectMessage.ModeStates, Entries = new List<InteractObjectMessage.StateEntry> { new("ore-1", 1, 6, 0) } });
+        live.MasteryReduce.Apply(new GameEventMessage(1, Array.Empty<ShutdownInteractObjectEvent>(), Array.Empty<int>(), false)
+            { MasteryReduceEvents = new[] { new MasteryReduceEvent(9, 15000) } });
+        Assert.That(live.Poll(new Vec3(20, 0, 0)), Is.True);
+        Assert.That(live.Use(new Vec3(20, 0, 0)), Is.True);
+        Assert.That(host.CastDurationMs, Is.EqualTo(2000), "3000 / 1.5");
+        Assert.That(host.CastCaption, Is.EqualTo("key:s_action_gathering" + "key:s_mastery_reduce_event"));
+
+        host.HasBar = false;
+        live.CancelCast();
+        Assert.That(live.Use(new Vec3(20, 0, 0)), Is.True);
+        live.Tick(new Vec3(20, 0, 0), false);
+        host.NowMs += 1999;
+        live.Tick(new Vec3(20, 0, 0), false);
+        Assert.That(host.Sent.OfType<InteractObjectCompleteRequest>(), Is.Empty, "no bar: the shortened time still runs");
+        host.NowMs += 1;
+        live.Tick(new Vec3(20, 0, 0), false);
+        Assert.That(host.Sent.OfType<InteractObjectCompleteRequest>().Count(), Is.EqualTo(1));
+    }
+
     [Test]
     public void GatheringMultiTargetSendRespawnAndSuccessFailAnims()
     {
@@ -349,6 +378,7 @@ public class LiveInteractObjectsTests
         Assert.That(live.Use(new Vec3(20, 0, 0)), Is.True);
         Assert.That(host.CastCaption, Is.EqualTo("key:s_action_gathering"));
         Assert.That(((InteractObjectStartRequest)host.Sent[0]).Names, Is.EqualTo(new[] { "ore-1", "ore-2" }));
+        Assert.That(host.CastDurationMs, Is.EqualTo(1000));
 
         live.OnCastingFinished();
         live.Tick(new Vec3(20, 0, 0), playerMoved: false);

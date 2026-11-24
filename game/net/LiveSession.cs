@@ -1274,6 +1274,7 @@ public partial class LiveSession : Node
         SaleEvents.Clear();
         BeautySales.Clear();
         MesoRevivals.Clear();
+        MasteryReduce.Clear();
         ReactorRules.Clear();
         // the adventure level, quest, item, trophy, title and key table loads among them
         entry.Replay(Handle, () =>
