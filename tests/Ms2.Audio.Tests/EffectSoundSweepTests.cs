@@ -22,12 +22,16 @@ public class EffectSoundSweepTests
         "type", "group", "event", "startDelay", "byJob", "jobEvent", "byJobStartDelay", "gender", "jobCode", "onlyCasterMyPC",
         "onlyTargetMyPC",
         "attachInfo.attachToNode",   // the sound follows its owner (vfunc_9 SetPosition, soundeventmgr.cpp:582)
+        "forceHearDistance", "offSkip",   // CreateEffect's view test (effectservice.cpp:301-331), EffectSkipTable.SoundEventOutOfView
     };
+    // read by the client but no change to a soundEvent: CSoundEventEffect::vfunc_3 sets the loop flag false after
+    // CEffect::vfunc_3 took it (soundeventmgr.cpp:497), and CSoundEventEffect::vfunc_9 @0x1417771a0 (:577-591) never tests the
+    // duration: the effect lives until its sound ends (the FMOD finish callback, :617-623) or is stopped
+    static readonly HashSet<string> NoChangeToASound = new(StringComparer.Ordinal) { "loop", "duration" };
     // read by the client, not used by ours yet (STILL-OPEN, counted below)
     static readonly HashSet<string> Open = new(StringComparer.Ordinal)
     {
-        "doNotStop", "forceHearDistance", "cooltimeID", "isSkipMusicConcert", "loop", "duration", "offSkip", "lodSkipLevel",
-        "ignoreOptimize",
+        "doNotStop", "cooltimeID", "isSkipMusicConcert", "lodSkipLevel", "ignoreOptimize",
         // attachInfo (:300-306): ours follows the actor's root, not the named node (CSoundEventEffect::vfunc_3 :514-560)
         "attachInfo.applyNodeTransform", "attachInfo.parentNode",
     };
@@ -83,14 +87,14 @@ public class EffectSoundSweepTests
                 var attach = e.Element("attachInfo")?.Attributes().Select(a => "attachInfo." + a.Name.LocalName) ?? Enumerable.Empty<string>();
                 foreach (var n in e.Attributes().Select(a => a.Name.LocalName).Concat(attach))
                 {
-                    var into = Handled.Contains(n) || Open.Contains(n) || ClientIgnores.Contains(n) ? counts : unknown;
+                    var into = Handled.Contains(n) || NoChangeToASound.Contains(n) || Open.Contains(n) || ClientIgnores.Contains(n) ? counts : unknown;
                     into[n] = into.GetValueOrDefault(n) + 1;
                 }
             }
         }
         TestContext.Out.WriteLine($"{env}: {files} effect files ({unparsed} not XML), {parts} soundEvent parts");
         foreach (var (n, c) in counts)
-            TestContext.Out.WriteLine($"  {(Handled.Contains(n) ? "handled" : Open.Contains(n) ? "OPEN" : "client ignores")} {n} {c}");
+            TestContext.Out.WriteLine($"  {(Handled.Contains(n) ? "handled" : NoChangeToASound.Contains(n) ? "no change to a sound" : Open.Contains(n) ? "OPEN" : "client ignores")} {n} {c}");
         Assert.That(parts, Is.GreaterThan(10000));
         Assert.That(unknown, Is.Empty, "attributes on soundEvent parts that neither list names");
     }
@@ -101,7 +105,7 @@ public class EffectSoundSweepTests
     {
         using var packs = new PackSet(Data(env));
         var table = new EffectTable(packs);
-        int parts = 0, byJob = 0, jobPairs = 0, filtered = 0, following = 0;
+        int parts = 0, byJob = 0, jobPairs = 0, filtered = 0, following = 0, forced = 0, offSkip = 0;
         var wrong = new List<string>();
         foreach (var entry in EffectEntries(packs))
         {
@@ -128,14 +132,81 @@ public class EffectSoundSweepTests
                 bool follows = TiBool(r.Element("attachInfo")?.Attribute("attachToNode"));
                 if (gender != 2 || job != 0 || caster || target) filtered++;
                 if (follows) following++;
+                // XmlGetAttr(float) (TiXmlElement::QueryFloatAttribute): the default 0 when absent or not a number
+                float force = float.TryParse((string)r.Attribute("forceHearDistance"), System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out float fh) ? fh : 0;
+                bool noSkip = TiBool(r.Attribute("offSkip"));
+                if (force != 0) forced++;
+                if (noSkip) offSkip++;
                 if (p.Gender != gender || p.JobCode != job || p.OnlyCasterMyPC != caster || p.OnlyTargetMyPC != target || p.AttachToNode != follows
+                    || p.ForceHearDistance != force || p.OffSkip != noSkip
                     || p.SoundGroup != (string)r.Attribute("group") || p.SoundEvent != (string)r.Attribute("event")
                     || (pairs == null ? p.JobEvents != null : p.JobEvents == null || !p.JobEvents.OrderBy(k => k.Key).SequenceEqual(pairs.OrderBy(k => k.Key))))
                     wrong.Add($"{entry} part {i}");
             }
         }
-        TestContext.Out.WriteLine($"{env}: {parts} soundEvent parts, {filtered} with an owner filter, {byJob} byJob with {jobPairs} job events, {following} following their owner (attachToNode)");
+        TestContext.Out.WriteLine($"{env}: {parts} soundEvent parts, {filtered} with an owner filter, {byJob} byJob with {jobPairs} job events, {following} following their owner (attachToNode), {forced} with a forceHearDistance, {offSkip} offSkip");
         Assert.That(parts, Is.GreaterThan(10000));
+        Assert.That(wrong, Is.Empty);
+    }
+
+    /// <summary>
+    /// CreateEffect @0x14119eae0 (effectservice.cpp:287-331) for every soundEvent part, every caster kind
+    /// (EffectSkipMgr::ParseCaster: myPC 1, PC 3, monster 5, bossMonster 6, background 7, and 2 that no element names), every
+    /// graphic option of Table/effectOption.xml and distances around each view distance: the client's rule written out
+    /// from the raw XML (IsOutOfView @0x1411b86e0, effectskipmgr.cpp:132-151) against ours.
+    /// </summary>
+    [TestCase("MS2_DATA")]
+    [TestCase("MS2_GMS2_DATA")]
+    public void EveryPartsViewTestIsCreateEffects(string env)
+    {
+        using var packs = new PackSet(Data(env));
+        var table = new EffectTable(packs);
+        string optionXml = System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/effectoption.xml"));
+        var options = XDocument.Parse(optionXml).Root.Elements().Where(e => e.Name.LocalName.StartsWith("option")).ToList();
+        Assert.That(options, Is.Not.Empty);
+        int[] kinds = { 1, 2, 3, 5, 6, 7 };
+        var casterNames = new Dictionary<string, int> { ["myPC"] = 1, ["PC"] = 3, ["monster"] = 5, ["bossMonster"] = 6, ["background"] = 7 };
+        long checks = 0, outOfView = 0;
+        var wrong = new List<string>();
+        var viewer = System.Numerics.Vector3.Zero;
+        foreach (var opt in options)
+        {
+            int quality = int.Parse(opt.Name.LocalName["option".Length..]) - 1;   // "option" + _itoa(n + 1) (effectskipmgr.cpp:186-188)
+            var skip = EffectSkipTable.Parse(optionXml, quality);
+            var row = new Dictionary<int, float>();
+            foreach (var el in opt.Element("sound")?.Elements("element") ?? Enumerable.Empty<XElement>())
+                if (casterNames.TryGetValue((string)el.Attribute("caster") ?? "", out int c))
+                    row[c] = float.TryParse((string)el.Attribute("viewDistance"), System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out float vd) ? vd : 0;
+            foreach (var entry in EffectEntries(packs))
+            {
+                var parts = table.Get(entry["effect/".Length..]);
+                if (parts == null) continue;
+                foreach (var p in parts)
+                {
+                    if (p.Type != "soundEvent") continue;
+                    foreach (int kind in kinds)
+                    {
+                        float view = p.ForceHearDistance != 0 && (kind == 5 || kind == 6) ? p.ForceHearDistance : row.GetValueOrDefault(kind);
+                        foreach (float d in new[] { 0f, view - 1, view + 1, 1499, 1501, 2999, 3001, 3999, 4001, 9000 })
+                        {
+                            if (d < 0) continue;
+                            bool client = !p.OffSkip && kind != 0 && view != 0 && !(d < view);
+                            bool ours = EffectSkipTable.SoundEventOutOfView(skip, p, kind, new System.Numerics.Vector3(d, 0, 0), viewer);
+                            checks++;
+                            if (client) outOfView++;
+                            if (client != ours && wrong.Count < 20) wrong.Add($"{opt.Name} {entry} kind {kind} at {d}: client {client} ours {ours}");
+                        }
+                        // no camera actor: never out of view (effectskipmgr.cpp:137-141)
+                        if (EffectSkipTable.SoundEventOutOfView(skip, p, kind, new System.Numerics.Vector3(9000, 0, 0), null) && wrong.Count < 20)
+                            wrong.Add($"{opt.Name} {entry} kind {kind}: out of view without a viewer");
+                    }
+                }
+            }
+        }
+        TestContext.Out.WriteLine($"{env}: {options.Count} graphic options, {checks} view tests, {outOfView} out of view");
+        Assert.That(checks, Is.GreaterThan(100000));
         Assert.That(wrong, Is.Empty);
     }
 

@@ -37,6 +37,13 @@ public sealed class EffectPart
     /// (0 = any), onlyCasterMyPC, onlyTargetMyPC. <see cref="SkippedFor"/> applies them.</summary>
     public int Gender = 2, JobCode;
     public bool OnlyCasterMyPC, OnlyTargetMyPC;
+    /// <summary>offSkip (CEffectParam::vfunc_1, effectservice.cpp:649-662): CreateEffect @0x14119eae0 (effectservice.cpp:318-345)
+    /// makes no view test for the part.</summary>
+    public bool OffSkip;
+    /// <summary>soundEvent forceHearDistance (CSoundEventEffectParam::vfunc_1, soundeventmgr.cpp:297): when not 0, the view
+    /// distance CreateEffect tests a monster's or a boss's sound against (effectservice.cpp:301-306), in place of the
+    /// effectOption sound row's.</summary>
+    public float ForceHearDistance;
     /// <summary>soundEvent byJob (CSoundEventEffectParam::vfunc_1 @0x141775af0, soundeventmgr.cpp:283-307): the event and start
     /// delay per owner job code, from jobEvent="job:event;..." (FUN_141776330) and byJobStartDelay="job:delay;..."
     /// (FUN_1417764c0). Null when byJob is off.</summary>
@@ -154,6 +161,8 @@ public sealed class EffectTable
                     p.JobCode = I((string)e.Attribute("jobCode"), 0);
                     p.OnlyCasterMyPC = B((string)e.Attribute("onlyCasterMyPC"), false);
                     p.OnlyTargetMyPC = B((string)e.Attribute("onlyTargetMyPC"), false);
+                    p.OffSkip = B((string)e.Attribute("offSkip"), false);
+                    if (string.Equals(p.Type, "soundEvent", StringComparison.Ordinal)) p.ForceHearDistance = F((string)e.Attribute("forceHearDistance"), 0f);
                     if (string.Equals(p.Type, "soundEvent", StringComparison.Ordinal) && B((string)e.Attribute("byJob"), false))
                     {
                         p.JobEvents = new Dictionary<int, string>();

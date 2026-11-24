@@ -63,6 +63,28 @@ public class EffectSoundOwnerTests
         }
     }
 
+    [Test]
+    public void ASoundOutOfTheCasterKindsViewDistanceIsNotMade()
+    {
+        // effectOption.xml's sound row as option5 has it (EffectSkipMgr::LoadOption), tested as CreateEffect tests a soundEvent
+        const string xml = "<ms2><option5><sound><element caster=\"myPC\" viewDistance=\"0\" /><element caster=\"PC\" viewDistance=\"3000\" />"
+            + "<element caster=\"monster\" viewDistance=\"1500\" /><element caster=\"bossMonster\" viewDistance=\"3000\" /></sound></option5></ms2>";
+        var skip = EffectSkipTable.Parse(xml, 4);
+        var eye = System.Numerics.Vector3.Zero;
+        System.Numerics.Vector3 At(float d) => new(d, 0, 0);
+        var plain = new EffectPart { Type = "soundEvent" };
+        var forced = new EffectPart { Type = "soundEvent", ForceHearDistance = 4000 };
+        Assert.That(EffectSkipTable.SoundEventOutOfView(skip, plain, 5, At(1400), eye), Is.False, "a monster's sound inside 1500");
+        Assert.That(EffectSkipTable.SoundEventOutOfView(skip, plain, 5, At(1600), eye), Is.True, "a monster's sound past 1500");
+        Assert.That(EffectSkipTable.SoundEventOutOfView(skip, forced, 5, At(3500), eye), Is.False, "forceHearDistance 4000 for a monster");
+        Assert.That(EffectSkipTable.SoundEventOutOfView(skip, forced, 6, At(4100), eye), Is.True, "and for a boss");
+        Assert.That(EffectSkipTable.SoundEventOutOfView(skip, forced, 3, At(3500), eye), Is.True, "another PC keeps the row's 3000");
+        Assert.That(EffectSkipTable.SoundEventOutOfView(skip, plain, 1, At(90000), eye), Is.False, "the own PC's row is 0: never");
+        Assert.That(EffectSkipTable.SoundEventOutOfView(skip, new EffectPart { Type = "soundEvent", OffSkip = true }, 5, At(9000), eye), Is.False, "offSkip");
+        Assert.That(EffectSkipTable.SoundEventOutOfView(skip, plain, 5, At(9000), null), Is.False, "no camera actor");
+        Assert.That(EffectSkipTable.SoundEventOutOfView(null, plain, 5, At(9000), eye), Is.False, "no table");
+    }
+
     [TestCase("MS2_DATA")]
     [TestCase("MS2_GMS2_DATA")]
     public void TheFlameTornadoCastPlaysTheFireAndTheCastersJobVoiceOnly(string env)

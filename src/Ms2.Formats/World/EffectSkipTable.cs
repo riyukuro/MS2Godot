@@ -79,6 +79,21 @@ public sealed class EffectSkipTable
         return !(IsNearlyEqual(view, 0) || d < view);
     }
 
+    /// <summary>
+    /// CreateEffect @0x14119eae0 for a soundEvent part (effectservice.cpp:287-331): no test with offSkip; else
+    /// <see cref="IsOutOfView"/> on <see cref="RowSound"/> for the caster <paramref name="kind"/>, at the part's
+    /// forceHearDistance when it is not 0 and the caster is a monster (5) or a boss (6), else at the row's distance. Out of
+    /// view, the effect is not made and nothing plays. A null table skips nothing.
+    /// STILL-OPEN: the second test at the started effect's root (:337-345) is taken as the same place; an owner of class
+    /// 0x6200044 swaps the target object for the local player's (:307-311).
+    /// </summary>
+    public static bool SoundEventOutOfView(EffectSkipTable skip, EffectPart part, int kind, Vector3 at, Vector3? viewer)
+    {
+        if (skip == null || part.OffSkip) return false;
+        float view = !IsNearlyEqual(part.ForceHearDistance, 0) && (kind == 5 || kind == 6) ? part.ForceHearDistance : -1;
+        return skip.IsOutOfView(RowSound, kind, at, viewer, view);
+    }
+
     /// <summary>CEffectService::IsEffectTypeVisible @0x1411a91d0 (effectservice.cpp:2199): the status option
     /// DisplayShowOnlyMyPet (+0x12) hides relation 4, DisplayHideMyPet (+0x13) relation 2.</summary>
     public static bool IsEffectTypeVisible(int kind, bool showOnlyMyPet, bool hideMyPet) =>

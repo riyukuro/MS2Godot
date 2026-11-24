@@ -632,13 +632,19 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     }
     readonly Dictionary<string, AudioStreamWav> decoded = new();
     public int PositionalPlayed;
+    /// <summary>The camera's actor, where the client measures an effect's view distance from (EffectSkipMgr::IsOutOfView,
+    /// effectskipmgr.cpp:140-145, CameraMgr::FUN_140a38d60); null when there is none, and then nothing is out of view.</summary>
+    public Func<Vector3?> Viewer;
+    /// <summary>Effect sounds not played for the view distance (<see cref="PlayEffectSound"/>).</summary>
+    public int EffectSoundsOutOfView;
 
     /// <summary>
     /// An effect's soundEvent part (CSoundEventEffect::vfunc_3 @0x141776760, soundeventmgr.cpp:456-574) for
     /// <paramref name="owner"/> at <paramref name="at"/>: the event of the owner's job when the part is byJob
     /// (<see cref="EffectPart.SoundEventFor"/>; the character's disableJobSound option keeps the plain event), none when that
     /// is empty, after the job's start delay (<see cref="EffectPart.SoundStartDelayFor"/>). The caller has made the owner tests
-    /// (<see cref="EffectPart.SkippedFor"/>). With attachToNode the sound's root hangs under the owner's node (:514-534) and
+    /// (<see cref="EffectPart.SkippedFor"/>); CreateEffect's view test is made here, from <see cref="Viewer"/>
+    /// (<see cref="Ms2.Formats.World.EffectSkipTable.SoundEventOutOfView"/>). With attachToNode the sound's root hangs under the owner's node (:514-534) and
     /// vfunc_9 (:577-583) moves the sound to the root's world place each frame, so it follows <paramref name="actor"/> from
     /// where it started; without it, or without an actor, it stays at <paramref name="at"/>.
     /// STILL-OPEN: the voice pitch of SoundPropertyMgr::FindPitch (:483-485) is not applied; an attached sound follows the
@@ -646,6 +652,8 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     /// </summary>
     public bool PlayEffectSound(EffectPart part, EffectOwner owner, Vector3 at, Node3D actor = null)
     {
+        if (Ms2.Formats.World.EffectSkipTable.SoundEventOutOfView(effectSkip, part, owner.Kind, ToNumerics(at),
+                Viewer?.Invoke() is { } eye ? ToNumerics(eye) : null)) { EffectSoundsOutOfView++; return false; }
         string ev = part.SoundEventFor(owner.JobCode, GameOptions.SoundFlag.DisableJobSound);
         if (string.IsNullOrEmpty(ev)) return false;
         return PlayEventAt(part.SoundGroup == null ? ev : part.SoundGroup + "/" + ev, at, part.SoundStartDelayFor(owner.JobCode),
