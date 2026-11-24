@@ -403,6 +403,8 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         while (decodedSegments.TryDequeue(out var decoded)) decoded();
         if (following3d > 0) FollowVoices();
         audioClock += delta;
+        if (voiceSlots.Pending > 0)
+            for (int due; (due = voiceSlots.NextDue(audioClock)) >= 0;) StopVoice(due);
         bool gainDirty = false;
         if (soundMusicFade.IsFading)
         {
@@ -650,6 +652,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     }
 
     readonly AudioStreamPlayer3D[] voices3d = new AudioStreamPlayer3D[16];
+    readonly EffectVoiceSlots voiceSlots = new(16);   // which sound each voice holds, and the doNotStop stops pending
     readonly Node3D[] followed3d = new Node3D[16];        // the node a voice follows (attachToNode), null for none
     readonly Vector3[] followOffset3d = new Vector3[16];
     int nextVoice3d, following3d;
@@ -686,14 +689,32 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     /// STILL-OPEN: the voice pitch of SoundPropertyMgr::FindPitch (:483-485) is not applied; an attached sound follows the
     /// actor's root, not the named parentNode.
     /// </summary>
-    public bool PlayEffectSound(EffectPart part, EffectOwner owner, Vector3 at, Node3D actor = null)
+    public int PlayEffectSound(EffectPart part, EffectOwner owner, Vector3 at, Node3D actor = null)
     {
         if (Ms2.Formats.World.EffectSkipTable.SoundEventOutOfView(effectSkip, part, owner.Kind, ToNumerics(at),
-                Viewer?.Invoke() is { } eye ? ToNumerics(eye) : null)) { EffectSoundsOutOfView++; return false; }
+                Viewer?.Invoke() is { } eye ? ToNumerics(eye) : null)) { EffectSoundsOutOfView++; return 0; }
         string ev = part.SoundEventFor(owner.JobCode, GameOptions.SoundFlag.DisableJobSound);
-        if (string.IsNullOrEmpty(ev)) return false;
-        return PlayEventAt(part.SoundGroup == null ? ev : part.SoundGroup + "/" + ev, at, part.SoundStartDelayFor(owner.JobCode),
-            follow: part.AttachToNode ? actor : null);
+        if (string.IsNullOrEmpty(ev)) return 0;
+        return PlayEventVoice(part.SoundGroup == null ? ev : part.SoundGroup + "/" + ev, at, part.SoundStartDelayFor(owner.JobCode),
+            1, part.AttachToNode ? actor : null);
+    }
+
+    /// <summary>
+    /// The sound of <paramref name="voice"/> (<see cref="PlayEffectSound"/>'s return) stopped with its effect
+    /// (CSoundEventEffect::vfunc_5 @0x141777520, soundeventmgr.cpp:612-626): at once, so one still waiting for its start
+    /// delay never starts; with <paramref name="doNotStop"/> 10 s later (vfunc_9, :585-590). Nothing when the voice has
+    /// gone to a newer sound.
+    /// </summary>
+    public void StopEffectSound(int voice, bool doNotStop)
+    {
+        int slot = voiceSlots.Stop(voice, doNotStop, audioClock);
+        if (slot >= 0) StopVoice(slot);
+    }
+
+    void StopVoice(int slot)
+    {
+        if (followed3d[slot] != null) { followed3d[slot] = null; following3d--; }
+        if (voices3d[slot] is { } v && IsInstanceValid(v)) v.Stop();
     }
 
     /// <summary>
@@ -702,17 +723,22 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     /// (CreateSoundEventEffectParam's volume). Attenuation follows the event's 3D distances. With <paramref name="follow"/> the
     /// sound keeps its offset from that node until the node leaves the tree or the voice is reused.
     /// </summary>
-    public bool PlayEventAt(string path, Vector3 position, float delay = 0, float volume = 1, Node3D follow = null)
+    public bool PlayEventAt(string path, Vector3 position, float delay = 0, float volume = 1, Node3D follow = null) =>
+        PlayEventVoice(path, position, delay, volume, follow) != 0;
+
+    /// <summary><see cref="PlayEventAt"/>, returning the sound's voice for <see cref="StopEffectSound"/> (0 when nothing plays).</summary>
+    int PlayEventVoice(string path, Vector3 position, float delay, float volume, Node3D follow)
     {
         var clip = library?.ResolveEvent(path);
-        if (clip == null) return false;
+        if (clip == null) return 0;
         if (!decoded.TryGetValue(clip.Name, out var wav))
         {
             var pcm = SafeDecode.Decode(clip);
             decoded[clip.Name] = wav = pcm == null ? null : new AudioStreamWav { Format = AudioStreamWav.FormatEnum.Format16Bits, Stereo = pcm.Channels == 2, MixRate = pcm.Rate, Data = pcm.ToBytes() };
         }
-        if (wav == null) return false;
+        if (wav == null) return 0;
         int slot = nextVoice3d++ % voices3d.Length;
+        int ticket = voiceSlots.Take(slot);
         var v = voices3d[slot];
         if (v == null) { v = voices3d[slot] = new AudioStreamPlayer3D { MaxDistance = 3000, UnitSize = 300 }; AddChild(v); }
         if (followed3d[slot] != null) following3d--;
@@ -724,9 +750,10 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         v.MaxDistance = clip.MaxDistance > 0 ? clip.MaxDistance : 3000;
         v.UnitSize = clip.MinDistance > 0 ? clip.MinDistance : 300;
         // the tree's timer outlives the field: a voice freed with it before the delay ends plays nothing
-        if (delay > 0) GetTree().CreateTimer(delay).Timeout += () => { if (IsInstanceValid(v)) v.Play(); }; else v.Play();
+        // the voice's sound may be stopped, or the voice taken by a newer sound, before the delay ends
+        if (delay > 0) GetTree().CreateTimer(delay).Timeout += () => { if (IsInstanceValid(v) && voiceSlots.SlotOf(ticket) == slot) v.Play(); }; else v.Play();
         PositionalPlayed++;
-        return true;
+        return ticket;
     }
 
     void PlayClip(SoundClip clip)

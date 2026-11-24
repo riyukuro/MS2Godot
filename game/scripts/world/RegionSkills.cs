@@ -35,6 +35,8 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     readonly float fadeSeconds;
     readonly Dictionary<string, EffectScene> scenes = new(StringComparer.OrdinalIgnoreCase);
     readonly Dictionary<int, List<Node3D>> kept = new();
+    // the sounds of each kept effect: stopped with it (CSoundEventEffect::vfunc_5), left to play on when it is released
+    readonly Dictionary<int, List<(int Voice, bool DoNotStop)>> keptSounds = new();
     readonly HashSet<int> looping = new();   // kept effects with a part whose param loops (CEffect m_b2c, the "loop" attribute)
 
     /// <summary>An effect xml's light part (CLightEffect, lighteffectparam.cpp:363-377): it adds its light at its start delay
@@ -224,6 +226,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     {
         if (looping.Contains(handle)) { FadeOut(handle, 0); return; }
         kept.Remove(handle);
+        keptSounds.Remove(handle);
     }
 
     /// <summary>FUN_1411a68f0 on a kept effect: its nif parts shown or hidden (CNifEffect SetAppCulled(!visible)), its lights at
@@ -241,9 +244,16 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
         }
     }
 
+    /// <summary>
+    /// CEffectService::FUN_1411a6060 / FUN_1411a67f0 (effectservice.cpp:1445-1474): a kept effect stopped, faded over
+    /// <paramref name="seconds"/>. Its sounds stop at once either way (CEffect::vfunc_6 calls vfunc_5, :386-390; a doNotStop
+    /// sound 10 s later, FieldAudio.StopEffectSound).
+    /// </summary>
     public void FadeOut(int handle, float seconds)
     {
         looping.Remove(handle);
+        if (keptSounds.Remove(handle, out var sounds))
+            foreach (var (voice, doNotStop) in sounds) FieldAudio.Instance?.StopEffectSound(voice, doNotStop);
         foreach (var l in lights)
             if (l.Handle == handle) l.End = Math.Min(l.End, l.Born + Math.Max(seconds, 0));
         if (!kept.Remove(handle, out var nodes)) return;
@@ -278,7 +288,12 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
             if (part.SkippedFor(owner)) continue;   // CEffectParam::vfunc_7 (effectservice.cpp:245-259)
             if (part.Type == "soundEvent" && part.SoundEvent != null)
             {
-                FieldAudio.Instance?.PlayEffectSound(part, owner, FieldBuilder.ToGodotPoint(world.T), actor);
+                int voice = FieldAudio.Instance?.PlayEffectSound(part, owner, FieldBuilder.ToGodotPoint(world.T), actor) ?? 0;
+                if (keep && voice != 0)
+                {
+                    if (!keptSounds.TryGetValue(handle, out var sounds)) keptSounds[handle] = sounds = new();
+                    sounds.Add((voice, part.DoNotStop));
+                }
                 continue;
             }
             if (part.Type == "light" && part.Light != null)

@@ -22,6 +22,7 @@ public class EffectSoundSweepTests
         "type", "group", "event", "startDelay", "byJob", "jobEvent", "byJobStartDelay", "gender", "jobCode", "onlyCasterMyPC",
         "onlyTargetMyPC",
         "attachInfo.attachToNode",   // the sound follows its owner (vfunc_9 SetPosition, soundeventmgr.cpp:582)
+        "doNotStop",   // a kept effect's stop: at once, or 10 s later (EffectVoiceSlots, CSoundEventEffect::vfunc_5)
         "forceHearDistance", "offSkip",   // CreateEffect's view test (effectservice.cpp:301-331), EffectSkipTable.SoundEventOutOfView
     };
     // read by the client but no change to a soundEvent: CSoundEventEffect::vfunc_3 sets the loop flag false after
@@ -31,7 +32,7 @@ public class EffectSoundSweepTests
     // read by the client, not used by ours yet (STILL-OPEN, counted below)
     static readonly HashSet<string> Open = new(StringComparer.Ordinal)
     {
-        "doNotStop", "cooltimeID", "isSkipMusicConcert", "lodSkipLevel", "ignoreOptimize",
+        "cooltimeID", "isSkipMusicConcert", "lodSkipLevel", "ignoreOptimize",
         // attachInfo (:300-306): ours follows the actor's root, not the named node (CSoundEventEffect::vfunc_3 :514-560)
         "attachInfo.applyNodeTransform", "attachInfo.parentNode",
     };
@@ -105,7 +106,7 @@ public class EffectSoundSweepTests
     {
         using var packs = new PackSet(Data(env));
         var table = new EffectTable(packs);
-        int parts = 0, byJob = 0, jobPairs = 0, filtered = 0, following = 0, forced = 0, offSkip = 0;
+        int parts = 0, byJob = 0, jobPairs = 0, filtered = 0, following = 0, forced = 0, offSkip = 0, doNotStop = 0;
         var wrong = new List<string>();
         foreach (var entry in EffectEntries(packs))
         {
@@ -135,17 +136,18 @@ public class EffectSoundSweepTests
                 // XmlGetAttr(float) (TiXmlElement::QueryFloatAttribute): the default 0 when absent or not a number
                 float force = float.TryParse((string)r.Attribute("forceHearDistance"), System.Globalization.NumberStyles.Float,
                     System.Globalization.CultureInfo.InvariantCulture, out float fh) ? fh : 0;
-                bool noSkip = TiBool(r.Attribute("offSkip"));
+                bool noSkip = TiBool(r.Attribute("offSkip")), keepOn = TiBool(r.Attribute("doNotStop"));
+                if (keepOn) doNotStop++;
                 if (force != 0) forced++;
                 if (noSkip) offSkip++;
                 if (p.Gender != gender || p.JobCode != job || p.OnlyCasterMyPC != caster || p.OnlyTargetMyPC != target || p.AttachToNode != follows
-                    || p.ForceHearDistance != force || p.OffSkip != noSkip
+                    || p.ForceHearDistance != force || p.OffSkip != noSkip || p.DoNotStop != keepOn
                     || p.SoundGroup != (string)r.Attribute("group") || p.SoundEvent != (string)r.Attribute("event")
                     || (pairs == null ? p.JobEvents != null : p.JobEvents == null || !p.JobEvents.OrderBy(k => k.Key).SequenceEqual(pairs.OrderBy(k => k.Key))))
                     wrong.Add($"{entry} part {i}");
             }
         }
-        TestContext.Out.WriteLine($"{env}: {parts} soundEvent parts, {filtered} with an owner filter, {byJob} byJob with {jobPairs} job events, {following} following their owner (attachToNode), {forced} with a forceHearDistance, {offSkip} offSkip");
+        TestContext.Out.WriteLine($"{env}: {parts} soundEvent parts, {filtered} with an owner filter, {byJob} byJob with {jobPairs} job events, {following} following their owner (attachToNode), {forced} with a forceHearDistance, {offSkip} offSkip, {doNotStop} doNotStop");
         Assert.That(parts, Is.GreaterThan(10000));
         Assert.That(wrong, Is.Empty);
     }

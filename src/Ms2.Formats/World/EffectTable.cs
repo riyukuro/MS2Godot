@@ -44,6 +44,9 @@ public sealed class EffectPart
     /// distance CreateEffect tests a monster's or a boss's sound against (effectservice.cpp:301-306), in place of the
     /// effectOption sound row's.</summary>
     public float ForceHearDistance;
+    /// <summary>soundEvent doNotStop (CSoundEventEffectParam::vfunc_1, soundeventmgr.cpp:298): the sound plays on for 10 s
+    /// after its effect is stopped (CSoundEventEffect::vfunc_5, :612-626).</summary>
+    public bool DoNotStop;
     /// <summary>soundEvent byJob (CSoundEventEffectParam::vfunc_1 @0x141775af0, soundeventmgr.cpp:283-307): the event and start
     /// delay per owner job code, from jobEvent="job:event;..." (FUN_141776330) and byJobStartDelay="job:delay;..."
     /// (FUN_1417764c0). Null when byJob is off.</summary>
@@ -163,6 +166,7 @@ public sealed class EffectTable
                     p.OnlyTargetMyPC = B((string)e.Attribute("onlyTargetMyPC"), false);
                     p.OffSkip = B((string)e.Attribute("offSkip"), false);
                     if (string.Equals(p.Type, "soundEvent", StringComparison.Ordinal)) p.ForceHearDistance = F((string)e.Attribute("forceHearDistance"), 0f);
+                    if (string.Equals(p.Type, "soundEvent", StringComparison.Ordinal)) p.DoNotStop = B((string)e.Attribute("doNotStop"), false);
                     if (string.Equals(p.Type, "soundEvent", StringComparison.Ordinal) && B((string)e.Attribute("byJob"), false))
                     {
                         p.JobEvents = new Dictionary<int, string>();
