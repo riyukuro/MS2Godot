@@ -290,6 +290,30 @@ public sealed class ItemData
         return fileSubtype == 16 ? 0 : fileSubtype;
     }
 
+    /// <summary>
+    /// GMS2 item files write the box kinds as type 10 with a subtype: subtype 17 where the KMS data has type 25 (0x19) and
+    /// 18 where it has type 26 (0x1a), both with subtype 0. INFERRED from the data, over the 31428 ids both data sets have:
+    /// 2290 of the 2302 GMS2 type 10 / subtype 17 items are KMS type 25 and 410 of the 418 subtype 18 ones type 26 (the
+    /// rest are the GMS2 data's own kinds); no KMS item is type 10 with a subtype other than 0, and every type 25 or 26
+    /// item has subtype 0. The other KMS kinds GMS2 folds into type 10 (23, 27, 8) do not follow its subtype one to one,
+    /// so they stay type 10. STILL-OPEN: the GMS2 client's reader is packed, so unread.
+    /// </summary>
+    public void FillBoxType()
+    {
+        if (Type != 10) return;
+        if (Subtype == 17) (Type, Subtype) = (0x19, 0);
+        else if (Subtype == 18) (Type, Subtype) = (0x1a, 0);
+    }
+
+    /// <summary>
+    /// ItemFunction::GetBoxId (@0x14054a460, itemdatastruct.cpp:1821) for OpenItemBox: arg0, the KMS param1. The GMS2 files
+    /// have no param1 and write the box as parameter="globalDropLevel,globalDropRank,globalDropBoxId,individualDropBoxId[,n]"
+    /// or as &lt;v ... individualDropBoxId="..."/&gt;; the individual box is the KMS param1 (INFERRED from the data: 2097 of
+    /// the 2136 OpenItemBox items both data sets have; the rest name a global box or the GMS2 data's own box).
+    /// </summary>
+    public int OpenItemBoxId => FunctionParam1 != 0 || FunctionParameter.Length == 0 ? FunctionParam1
+        : HasFunctionXml ? FunctionXmlInt("individualDropBoxId") : FunctionArgInt(3, 0);
+
     public int EquipSubtype => Type == 1 ? Subtype : 0;        // GetEquipSubtype @0x14053c620 (commonfiles/itemdata.cpp:509)
 
     /// <summary>ItemFunctionArgs::FUN_1408d1f60 (unit_1408d1ec0_commandargumentaccessors.cpp:61): the word at the index as _wtoi, the default past the list.</summary>
@@ -557,6 +581,7 @@ public sealed class ItemDataTable
             && FeatureElements.SelectEnvironment(packs, root) is { } env)
             d = ItemData.Load(id, env, globalTransferType ??= LobbyFeatures.IsEnabled(packs, "GlobalTransferType"));
         d?.FillEquipSubtype();
+        d?.FillBoxType();
         perItemRows[id] = d;
         return d;
     }

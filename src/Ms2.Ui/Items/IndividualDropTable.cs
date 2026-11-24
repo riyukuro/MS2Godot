@@ -1,3 +1,4 @@
+using System.Xml.Linq;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
 
@@ -13,6 +14,14 @@ public sealed record ItemDropEntry(int ItemId, int Count, int Rank, int Enchant,
 /// its available &lt;v&gt; items (ItemDropIndividualGroup::Load @0x1402e8a20; a group without an item is dropped).
 /// STILL-OPEN: ShutdownDropBox (CGameEventValueManager) is not ported, so no box is ever shut down; the count is the
 /// minimum of minCount/maxCount where the client's m_count.GetValue() draws from the range.
+/// <para>The GMS2 data has no individualItemDrop_Final.xml: it writes one flat &lt;individualDropBox individualDropBoxID
+/// dropGroup item item2 minCount maxCount enchantLevel showTooltip smartDropRate isApplySmartGenderDrop&gt; per item over
+/// table/individualitemdrop*.xml and the region folder's (table/na/individualitemdrop_*.xml). <see cref="Gms2Boxes"/> reads
+/// them as the same boxes: the rows of a box and dropGroup are one group, in the order they come, the group's flags from
+/// its first row (isApplySmartGenderDrop is written True/TRUE/0). INFERRED from the data: of the 2785 boxes both data sets
+/// have, 2259 list the same items and counts, and showTooltip and the gender flag agree on every row of those. STILL-OPEN:
+/// GMS2 has no uiItemRank, and its PackageUIShowGrade does not follow it (KMS rank 3 rows are unset there), so the rank
+/// is 0; the GMS2 client's reader is packed, so unread.</para>
 /// </summary>
 public sealed class IndividualDropTable
 {
@@ -30,7 +39,8 @@ public sealed class IndividualDropTable
     {
         if (boxes != null) return boxes;
         boxes = new();
-        if (packs == null || !packs.Exists("Xml", "table/individualitemdrop_final.xml")) return boxes;
+        if (packs == null) return boxes;
+        if (!packs.Exists("Xml", "table/individualitemdrop_final.xml")) return Gms2Boxes(boxes);
         foreach (var b in GameStrings.Parse(packs.Read("Xml", "table/individualitemdrop_final.xml")).Root.Elements("dropBox"))
         {
             if (!FeatureElements.IsAvailable(packs, b)) continue;
@@ -61,6 +71,42 @@ public sealed class IndividualDropTable
         }
         return boxes;
     }
+
+    /// <summary>The GMS2 data's flat rows as boxes (see the class notes); the plain table files first, then the region
+    /// folder's, each set in name order.</summary>
+    Dictionary<int, List<Group>> Gms2Boxes(Dictionary<int, List<Group>> into)
+    {
+        string region = TablePath.Region(e => packs.Exists("Xml", e));
+        var names = packs.List("Xml").Where(n => n.EndsWith(".xml", StringComparison.Ordinal)
+                && (IsDropFile(n, "table/") || IsDropFile(n, "table/" + region + "/")))
+            .OrderBy(n => n.Count(c => c == '/')).ThenBy(n => n, StringComparer.Ordinal).ToList();
+        var groupsOf = new Dictionary<int, List<(int Group, Group Value)>>();
+        foreach (var name in names)
+            foreach (var e in GameStrings.Parse(packs.Read("Xml", name)).Root.Elements("individualDropBox"))
+            {
+                if (!FeatureElements.IsAvailable(packs, e)) continue;
+                int box = Int(e, "individualDropBoxID"), groupId = Int(e, "dropGroup");
+                if (!groupsOf.TryGetValue(box, out var list)) groupsOf[box] = list = new();
+                int at = list.FindIndex(g => g.Group == groupId);
+                if (at < 0)
+                {
+                    list.Add((groupId, new Group(Bool(e, "isApplySmartGenderDrop"), Int(e, "smartDropRate"), new List<Item>())));
+                    at = list.Count - 1;
+                }
+                int min = e.Attribute("minCount") != null ? Int(e, "minCount") : 1;
+                list[at].Value.Items.Add(new Item(Int(e, "item"), Int(e, "item2"), 0, Int(e, "enchantLevel"), min, Int(e, "showTooltip")));
+            }
+        foreach (var (box, list) in groupsOf) into[box] = list.Select(g => g.Value).ToList();
+        return into;
+    }
+
+    static bool IsDropFile(string name, string folder) =>
+        name.StartsWith(folder + "individualitemdrop", StringComparison.Ordinal) && name.IndexOf('/', folder.Length) < 0;
+
+    static int Int(XElement e, string a) => ItemData.Atoi((string)e.Attribute(a) ?? "0");
+
+    static bool Bool(XElement e, string a) =>
+        ((string)e.Attribute(a) ?? "") is var v && (v.Equals("true", StringComparison.OrdinalIgnoreCase) || ItemData.Atoi(v) != 0);
 
     /// <summary>The ids of the loaded boxes.</summary>
     public IEnumerable<int> BoxIds => Boxes().Keys;

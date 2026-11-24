@@ -21,14 +21,14 @@ public sealed partial class ItemTooltip
         SetItemPackageList(results);
     }
 
-    /// <summary>ItemFunction::GetBoxId (itemdatastruct.cpp:1821): OpenItemBox's first word; OpenItemBoxWithKey's first word,
+    /// <summary>ItemFunction::GetBoxId (itemdatastruct.cpp:1821): OpenItemBox's first word (<see cref="ItemData.OpenItemBoxId"/>); OpenItemBoxWithKey's first word,
     /// else its sixth; OpenItemBoxLullu(Simple)'s xml commonBoxId; SelectItemBox's xml individualDropBoxId, else its second
     /// word; OpenGachaBox's gacha box (first word) individualDropBoxID; else 0.</summary>
     int BoxId(ItemData d)
     {
         switch (d.FunctionName)
         {
-            case "OpenItemBox": return d.FunctionParam1;
+            case "OpenItemBox": return d.OpenItemBoxId;
             case "OpenItemBoxWithKey": return d.FunctionParam1 != 0 ? d.FunctionParam1 : d.FunctionArgInt(5, 0);
             case "OpenItemBoxLullu" or "OpenItemBoxLulluSimple" when d.HasFunctionXml: return d.FunctionXmlInt("commonBoxId");
             case "SelectItemBox": return d.HasFunctionXml ? d.FunctionXmlInt("individualDropBoxId") : d.FunctionArgInt(1, 0);
