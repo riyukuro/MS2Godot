@@ -1605,12 +1605,32 @@ public partial class LiveSession : Node
     /// <summary>The own FieldAddUser makes the MyPC (OnAddUser, at the login's field and after each move); it sends movement
     /// from then on. The field's player node may come a frame later than the packet: the bind waits for it.</summary>
     bool bindPending;
+    (System.Numerics.Vector3 Position, float RotZ)? selfAddAt;   // the own FieldAddUser's position and facing, until the bind
+
+    /// <summary>OnAddUser makes the MyPC at the packet's position (scenestategame.cpp:11136-11147: kPos.z += 25, vfunc_19,
+    /// the facing vfunc_21), then snaps it down to the ground (:11174-11181), as for the other players
+    /// (<see cref="RemoteLayer.SpawnPoint"/>). The RequestFieldEnter position only goes to the world service before the map
+    /// loads (OnRequestFieldEnter, scenestategame.cpp:2348); where the two differ (a trigger's move to a portal of
+    /// another field), the player stands at the FieldAddUser's.</summary>
+    void PlaceAtAddUser(Player found)
+    {
+        if (selfAddAt is not { } add) return;
+        selfAddAt = null;
+        var g = new Vector3(add.Position.X, add.Position.Z, -add.Position.Y);
+        var at = remote?.SpawnPoint(g) ?? g + Vector3.Up * 25f;
+        found.GlobalPosition = at; found.SpawnPoint = at; found.Velocity = Vector3.Zero;
+        double a = add.RotZ * Math.PI / 180;
+        found.Face(new Vector3((float)Math.Sin(a), 0, (float)Math.Cos(a)));
+        GD.Print($"live: MyPC at the FieldAddUser position {add.Position} -> godot {at}");
+    }
+
     void TryBindPlayer()
     {
         if (!bindPending) return;
         var found = GetTree().Root.FindChild("Player", true, false) as Player;
         if (found == null || found.IsQueuedForDeletion()) return;
         bindPending = false;
+        PlaceAtAddUser(found);
         CubeCraft.ModelAttached();   // PC::vfunc_12 (pc.cpp:844-852): a craft that waited for the model is made
         if (found == player && player.Live) return;   // a repeat of the own FieldAddUser on the same field
         BindPlayer(found);
@@ -1718,6 +1738,7 @@ public partial class LiveSession : Node
                     CubeCraft.ConstructionUnlockOnEnter ??= ConstructionUnlockOnEnter;
                     CubeCraft.CraftChanged ??= SyncCarriedModel;
                     CubeCraft.NewPc(); CubeCraft.Set(u.CubeMode, u.CraftMode, u.CubeItem, Me.Dead);
+                    selfAddAt = (u.Position, u.Rotation.Z);
                     bindPending = true; TryBindPlayer();   // OnAddUser builds the MyPC
                     // a new MyPC holds nothing; PC::vfunc_12 (pc.cpp:853-855) holds the AddUser i32 (scenestategame.cpp:11218)
                     HeldItem.Release();

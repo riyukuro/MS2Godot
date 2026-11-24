@@ -668,7 +668,7 @@ public sealed partial class RemoteLayer : Node3D
     /// vfunc_19 at :11146), then RayCastFixedDirection down from there (:11174-11181); the hit raised by 25 when the capsule
     /// there overlaps nothing, else the raised position.
     /// </summary>
-    Vector3 SpawnPoint(Vector3 packet)
+    internal Vector3 SpawnPoint(Vector3 packet)
     {
         var at = packet + Vector3.Up * 25f;
         var space = GetWorld3D().DirectSpaceState;
