@@ -4,6 +4,7 @@ using Ms2.Formats.Pack;
 using Ms2.Formats.Text;
 using Ms2.Formats.World;
 using Ms2.Net.Packets;
+using Ms2.Ui;
 using Ms2.Ui.Skills;
 using NUnit.Framework;
 
@@ -202,6 +203,53 @@ public class EmotionCastTests
         Assert.That(missing.Where(m => !noFace.Contains(m[..m.IndexOf('@')])), Is.Empty);
         Assert.That(noSeq, Is.Empty);
     }
+
+    /// <summary>The item ids of the data: KMS itemdata/NNN.xml rows, GMS2 item/a/bb/id.xml files.</summary>
+    internal static IEnumerable<int> ItemIds(PackSet packs)
+    {
+        var rx = new System.Text.RegularExpressions.Regex("<item\\s+id=\"(\\d+)\"");
+        foreach (var e in packs.List("Xml"))
+        {
+            if (e.StartsWith("itemdata/", StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (System.Text.RegularExpressions.Match m in rx.Matches(PackXml.Text(packs.Read("Xml", e))))
+                    yield return int.Parse(m.Groups[1].Value);
+            }
+            else if (e.StartsWith("item/", StringComparison.OrdinalIgnoreCase) && int.TryParse(Path.GetFileNameWithoutExtension(e), out int id))
+                yield return id;
+        }
+    }
+
+    /// <summary>
+    /// Every emotion item (type 24, FUN_14053ce40) of the data: its skill (the learn box's name, IsEmotionLearned's id) is an
+    /// emotion skill row (main type 0xe or 0xf), or 0 (listed: the box names no skill and the learn is the server's to
+    /// refuse). Items of other types whose skill is an emotion are counted by type: GMS2's emotion items are type 2, which
+    /// the KMS client's double click casts as an item skill, not the learn box (no GMS2 client code to say otherwise).
+    /// </summary>
+    static void EveryEmotionItemTeachesAnEmotion(string variable, bool typed)
+    {
+        using var packs = new PackSet(RcGap.Data(variable));
+        var tables = new GameTables(packs, "en");
+        var all = ItemIds(packs).Distinct().Select(tables.Items.Get).Where(d => d != null).ToList();
+        var items = all.Where(d => d.Type == EmotionList.EmotionItemType).ToList();
+        var noSkill = items.Where(d => d.SkillId == 0).Select(d => d.Id).ToList();
+        var bad = items.Where(d => d.SkillId != 0 && tables.Skills.GetSkillData((uint)d.SkillId) is not { IsEmotion: true })
+            .Select(d => $"{d.Id}:{d.SkillId}").ToList();
+        int couple = items.Count(d => tables.Skills.GetSkillData((uint)d.SkillId)?.MainType == EmotionCast.MainTypeCouple);
+        var byType = all.Where(d => d.SkillId != 0 && tables.Skills.GetSkillData((uint)d.SkillId) is { IsEmotion: true })
+            .GroupBy(d => d.Type).OrderBy(g => g.Key).Select(g => $"type {g.Key}: {g.Count()}");
+        TestContext.WriteLine($"{variable}: {all.Count} items, {items.Count} emotion items (type 24; {couple} teach a couple emotion), "
+            + $"first {items.FirstOrDefault()?.Id}; skill 0: {(noSkill.Count == 0 ? "none" : string.Join(", ", noSkill))}; "
+            + $"not an emotion skill: {(bad.Count == 0 ? "none" : string.Join(", ", bad))}; items with an emotion skill by type: {string.Join(", ", byType)}");
+        Assert.That(bad, Is.Empty);
+        if (typed) Assert.That(items, Is.Not.Empty);
+    }
+
+    [Test]
+    public void EveryKmsEmotionItemTeachesAnEmotion() => EveryEmotionItemTeachesAnEmotion("MS2_DATA", true);
+
+    [Test]
+    public void EveryGms2EmotionItemTeachesAnEmotion() => EveryEmotionItemTeachesAnEmotion("MS2_GMS2_DATA", false);
 
     static string NifXmlPath()
     {

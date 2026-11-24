@@ -5,8 +5,8 @@ namespace Ms2.Ui.Items;
 /// (unit_141274d10_uihelpers.cpp:480): whether the local player (WorldService::GetLocalPlayer) can use an item, the code
 /// the shop's "usable items only" filter and the item slots' lock / disable marks read.
 /// STILL-OPEN: nothing feeds <see cref="InPcBang"/> (PC FUN_141658f30), <see cref="IsVip"/> (PC::IsVip) or
-/// <see cref="WeddingInProgress"/> (WeddingManager::IsInProgress) yet, so they stay false; <see cref="EmotionLearned"/>
-/// (SkillSystem::IsEmotionLearned) is null until a host has the learned emotions.
+/// <see cref="WeddingInProgress"/> (WeddingManager::IsInProgress) yet, so they stay false. <see cref="EmotionLearned"/>
+/// (SkillSystem::IsEmotionLearned) is the live session's emotion list; null (offline) counts none learned.
 /// </summary>
 public sealed class ItemUse
 {

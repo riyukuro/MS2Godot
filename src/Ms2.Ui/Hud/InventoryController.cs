@@ -825,8 +825,8 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     /// (always 1), FUN_14140dea0 (:2082) on the record: CItem::FUN_140528980 false (item.cpp:1717: expired, not a pet, no maid
     /// id): box 225 (0xe1) when expired; the level: ShowMessageBox(s_err_not_enough_level) (:2106, a box here: CanUseItem's
     /// notice comes after it); the job: s_item_err_disable_job; the gender: box 45. Then TryUseItem (:532) and
-    /// <see cref="UseItem"/>. An item without a function: a shop id, a pet and an emotion are
-    /// not ported (raised); an equipment item (type 1, :886) is put on as by the right click (FUN_1414056b0's layer) only while the
+    /// <see cref="UseItem"/>. An item without a function: a shop id and a pet are not ported (raised); an emotion item (type
+    /// 0x18, FUN_14053ce40) that passes FUN_14140dea0 asks first (<see cref="LearnEmotionBox"/>); an equipment item (type 1, :886) is put on as by the right click (FUN_1414056b0's layer) only while the
     /// shop dialog 0x4e3b is open, else nothing; type 0x13 does nothing; others pass FUN_14140dea0 and go to <see cref="UseItemSkill"/>.
     /// STILL-OPEN: the cube craft placement (MyPC FUN_141659690), the PC bang (0xe2), VIP, wedding and owner-bind (0xfe)
     /// checks, TryUseItem's use cooldown (FUN_141409060, box 0x55). Without the wearer's record the requirement checks are
@@ -841,8 +841,14 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         if (d.HasCubeTextureMesh || d.IsScoreItem) { Button?.Invoke("notifySlotUse"); return; }
         if (!d.HasFunction)
         {
-            // :853-893: a shop id, a pet and an emotion (type 0x18) have their own handlers (raised); type 0x13 none
-            if (d.ShopId > 0 || d.IsPetItem || d.Type is 0x18) { Button?.Invoke("notifySlotUse"); return; }
+            // :853-872: a shop id and a pet have their own handlers (raised); type 0x13 none
+            if (d.ShopId > 0 || d.IsPetItem) { Button?.Invoke("notifySlotUse"); return; }
+            // :873-884 (FUN_14053ce40, type 0x18): FUN_14140dea0, then the learn box
+            if (d.Type == EmotionList.EmotionItemType)
+            {
+                if (UseChecks(item)) ShowBox(LearnEmotionBox(item));
+                return;
+            }
             // :886-893 (FUN_14053cbc0, type 1): only while the shop dialog (0x4e3b) is open, the item is put on as by the right click
             if (d.Type == 1)
             {
@@ -855,6 +861,47 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
             return;
         }
         if (UseChecks(item)) UseItem(item, false);
+    }
+
+    /// <summary>The tag of the emotion item's box (s_strLearnEmotion, invenslot.cpp:347).</summary>
+    public const string LearnEmotionTag = "learn_emotion";
+
+    /// <summary>InvenSlot::vfunc_13's emotion box (invenslot.cpp:877-882): CreateMessageBox(1, FormatStringId(0x85a, the
+    /// item's skill's name (CStringTable FUN_141811980(4, id))), 0, "learn_emotion") with the item uid, shown
+    /// (FUN_140d73c60).</summary>
+    MessageBoxData LearnEmotionBox(Item item)
+    {
+        string text = Ms2.Quest.ClientFormat.Format(Model.Tables.Common(0x85a), Model.Tables.SkillName((uint)item.Data.SkillId));
+        var box = MessageBoxQueue.Create(1, text, null, LearnEmotionTag);
+        box.ItemUid = item.Uid;
+        return box;
+    }
+
+    /// <summary>The own CSkillSystem's emotions (IsEmotionLearned); null counts none learned.</summary>
+    public EmotionList Emotions;
+    /// <summary>Sends Emote mode 1 (Unk_Inventory::SendEmotion's packet).</summary>
+    public Action<Ms2.Net.Packets.EmoteLearnRequest> SendEmoteLearn;
+
+    /// <summary>UIMessageBox::HandleLearnEmotionButton @0x1419fc550 (uimessagebox.cpp:1451-1466), the OK after the box closed
+    /// (FUN_14151f200): no local player, nothing; FindItemByUid of the box's item uid, then <see cref="SendEmotion"/>.</summary>
+    public void ConfirmLearnEmotion(long uid)
+    {
+        if (Model == null || !Model.HasLocalPlayer) return;
+        if (View?.FindByUid(uid) is not { } e) return;
+        var item = ToItem(e, Model.Tables.Items);
+        if (item != null) SendEmotion(item);
+    }
+
+    /// <summary>Unk_Inventory::SendEmotion @0x140a65bb0 (inventory.cpp:1615-1627): no local player or an item that is no
+    /// emotion item (type 24): box 2135; its skill id and level learned (IsEmotionLearned): box 2136; else Emote mode 1 with
+    /// the item uid (<see cref="EmotionList.LearnFromItem"/>).</summary>
+    void SendEmotion(Item item)
+    {
+        if (!Model.HasLocalPlayer) { ShowBox(MessageBoxQueue.Create(0, Model.Tables.Common(EmotionList.NotEmotionItemString), null, "")); return; }
+        var req = (Emotions ?? new EmotionList()).LearnFromItem(item.Uid, item.Data.Type, item.Data.SkillId, (ushort)item.Data.SkillLevel,
+            View?.ServerTime() ?? 0, out int notice);
+        if (req == null) { ShowBox(MessageBoxQueue.Create(0, Model.Tables.Common(notice), null, "")); return; }
+        SendEmoteLearn?.Invoke(req);
     }
 
     /// <summary>FUN_14140dea0 (invenslot.cpp:2082) on the record: box 225 for an expired item that is not a pet and has no maid

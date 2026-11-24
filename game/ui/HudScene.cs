@@ -2919,6 +2919,9 @@ public partial class HudScene : Node, IUiStageHost
         {
             Player = p,
             ServerTime = () => session?.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            // SkillSystem::IsEmotionLearned of the own skill system (offline: none learned)
+            EmotionLearned = session == null ? null
+                : (id, level) => session.Emotions.IsLearned(id, (ushort)level, session.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds()),
         };
         (hudModel.ItemSlotSources ??= new()).UsableState = itemUse.UsableState;
         WatchLivePlayer(hudModel);
@@ -3436,6 +3439,8 @@ public partial class HudScene : Node, IUiStageHost
         Func<long, uint, uint, bool> equip = (uid, slot, mode) => inventory?.ConfirmBindEquip(uid, slot, mode) ?? false;
         Func<long, int, bool> gem = (uid, slot) => myInfo?.ConfirmBindGemEquip(uid, slot) ?? false;
         boxes.UseBindFuncItem = use; boxes.UseBindEquipItem = equip; boxes.UseBindGemEquipItem = gem;
+        Action<long> learnEmotion = uid => inventory?.ConfirmLearnEmotion(uid);
+        boxes.LearnEmotion = learnEmotion;
         // HandleRequestTradeExButton -> FUN_14185b8e0 (the answer); HandleTradeInButton -> the inventory's count check and add
         Action<long, bool> tradeAnswer = (id, yes) => Trades?.SendAnswer(id, yes);
         Action<long, int> tradeIn = (uid, n) => inventory?.TradeIn(uid, n);
@@ -3456,6 +3461,7 @@ public partial class HudScene : Node, IUiStageHost
             if (boxes.UseBindFuncItem == use) boxes.UseBindFuncItem = null;
             if (boxes.UseBindEquipItem == equip) boxes.UseBindEquipItem = null;
             if (boxes.UseBindGemEquipItem == gem) boxes.UseBindGemEquipItem = null;
+            if (boxes.LearnEmotion == learnEmotion) boxes.LearnEmotion = null;
             if (boxes.RequestTradeAnswer == tradeAnswer) boxes.RequestTradeAnswer = null;
             if (boxes.TradeIn == tradeIn) boxes.TradeIn = null;
             if (boxes.UseStoreIn == storeIn) boxes.UseStoreIn = null;
@@ -3532,6 +3538,9 @@ public partial class HudScene : Node, IUiStageHost
         c.RevertSelect = item => itemRevert?.UseFromInventory(item);
         c.RevertOpen = OpenItemRevert;
         c.UseItemSkill = CastItemSkill;
+        // Unk_Inventory::SendEmotion: the own skill system's emotions, Emote mode 1
+        c.Emotions = live?.Emotions;
+        c.SendEmoteLearn = req => { if (live == null || !live.SendEmote(req)) GD.Print($"inventory: emotion learn of item {req.ItemUid} not sent (offline)"); };
         c.OpenSelectBox = OpenSelectItemBox;
         c.BlueprintOpenAnswer = (answer, uid) => liveHome?.Bill.OnBlueprintOpenBox(answer, uid) ?? true;   // FUN_140ee8000
         c.SelectBoxOpen = () => SelectItemBoxOpen;

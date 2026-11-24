@@ -497,6 +497,64 @@ public class InventoryTests
     }
 
     [Test]
+    public void AnEmotionItemAsksFirstAndItsOkSendsTheLearn()
+    {
+        // InvenSlot::vfunc_13 (invenslot.cpp:873-884): an emotion item (type 24) passes FUN_14140dea0, then box 1 with
+        // FormatStringId(0x85a, the skill's name), tag "learn_emotion" and the item uid; nothing is sent until its OK
+        // (HandleLearnEmotionButton, uimessagebox.cpp:1451-1466), which runs Unk_Inventory::SendEmotion (inventory.cpp:1615)
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var t = model.Tables;
+        var data = t.Items.Get(20200001);
+        if (data?.Type != Ms2.Ui.EmotionList.EmotionItemType) Assert.Inconclusive("this data has no type 24 item 20200001 (GMS2 data: type 2)");
+        var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
+        book.Apply(new ItemMessage.LoadTab(2, new[]
+        {
+            new EquipItem { Id = 20200001, Uid = 30, InventorySlot = 0, Amount = 1, Rarity = 1 },
+            new EquipItem { Id = 20200001, Uid = 31, InventorySlot = 1, Amount = 1, Rarity = 1, ExpiryTime = 500 },
+        }));
+        var (h, c, _) = Load(model, book);
+        c.View.ServerTime = () => 1000;
+        int tab = c.Tabs.Select((x, i) => (x, i)).First(x => x.x.Tab == 2).i;
+        h.Set(h.Child("m_tab"), "selectedIndex", tab);
+        for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
+        var raised = new List<string>(); c.Button += raised.Add;
+        var shown = new List<MessageBoxData>(); c.ShowBox = shown.Add;
+        var sent = new List<Ms2.Net.Packets.EmoteLearnRequest>(); c.SendEmoteLearn = sent.Add;
+        var equips = new List<long>(); c.View.RequestEquip = (u, _, _) => equips.Add(u);
+
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.0" });
+        var box = shown.Single();
+        Assert.That((box.Type, box.Extra, box.ItemUid), Is.EqualTo((1, InventoryController.LearnEmotionTag, 30L)));
+        Assert.That(box.Msg, Is.EqualTo(Ms2.Quest.ClientFormat.Format(t.Common(0x85a), t.SkillName((uint)data.SkillId))));
+        Assert.That(t.Common(0x85a), Is.Not.Empty);
+        Assert.That((sent.Count, raised.Count, equips.Count), Is.EqualTo((0, 0, 0)), "the box first: nothing sent or raised");
+        c.OnCallback("notifySlotUse", new object[] { "InventoryDialog.1" });
+        Assert.That(shown.Last().Msg, Is.EqualTo(t.Common(InventoryController.ExpiredKey)), "FUN_14140dea0: the expired box, no learn box");
+
+        // the box's OK through the message box layer's tag handler
+        var boxes = new MessageBoxController();
+        boxes.LearnEmotion = c.ConfirmLearnEmotion;
+        boxes.data = box;
+        Assert.That(boxes.HandlePlainTag(1, InventoryController.LearnEmotionTag), Is.True);
+        Assert.That(sent, Is.Empty, "cancel sends nothing");
+        Assert.That(boxes.HandlePlainTag(0, InventoryController.LearnEmotionTag), Is.True);
+        Assert.That(sent, Is.EqualTo(new[] { new Ms2.Net.Packets.EmoteLearnRequest(30) }));
+
+        // learned already: box 2136, nothing sent; an item the bag no longer has, or no local player: nothing
+        c.Emotions = new Ms2.Ui.EmotionList();
+        c.Emotions.Apply(new EmoteMessage.List(new[] { new EmoteEntry(data.SkillId, (ushort)data.SkillLevel, true, 0, 0, false) }), 0);
+        c.ConfirmLearnEmotion(30);
+        Assert.That(shown.Last().Msg, Is.EqualTo(t.Common(Ms2.Ui.EmotionList.AlreadyLearnedString)));
+        int boxCount = shown.Count;
+        c.ConfirmLearnEmotion(99);
+        model.HasLocalPlayer = false;
+        c.ConfirmLearnEmotion(30);
+        Assert.That((sent.Count, shown.Count), Is.EqualTo((1, boxCount)));
+    }
+
+    [Test]
     public void ARightClickSendsTheEquipOnly()
     {
         Packs();

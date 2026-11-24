@@ -193,7 +193,7 @@ public static class MessageBoxQueue
 /// The C++ side of the message box layer, UIMessageBox (client/ms2/uimessagebox.cpp; UI id 0x4e48), for its movie
 /// uimessagebox. The boxes' layout, buttons and keys are the movie's (MessageBoxFactory and the msgbox_* classes); this
 /// opens and closes them with the box record's members and answers their OnClick. Of the tag handlers "gameexit",
-/// "useBindFuncItem", "useBindEquipItem" and "useBindGemEquipItem" are ported; the others are logged.
+/// "useBindFuncItem", "useBindEquipItem", "useBindGemEquipItem" and "learn_emotion" are ported; the others are logged.
 /// </summary>
 public sealed class MessageBoxController : UiController
 {
@@ -224,6 +224,9 @@ public sealed class MessageBoxController : UiController
     /// <summary>HandleUseBindFuncItemButton's yes (uimessagebox.cpp:1868): the box's item uid used again with bConfirmed
     /// (UseItem(item, 1)); false when the inventory no longer has the item. Null: the item is not found.</summary>
     public Func<long, bool> UseBindFuncItem;
+    /// <summary>HandleLearnEmotionButton's OK: the box's item uid (the local player test, FindItemByUid and
+    /// Unk_Inventory::SendEmotion, <see cref="InventoryController.ConfirmLearnEmotion"/>).</summary>
+    public Action<long> LearnEmotion;
 
     /// <summary>HandleUseBindEquipItemButton's yes (uimessagebox.cpp:1885): the box's item uid, arg 0 (the slot) and arg 1 (the
     /// layer) put on again with the binding skip (RequestEquipItem(item, a0, a1, 1)); false when the inventory no longer has
@@ -478,8 +481,8 @@ public sealed class MessageBoxController : UiController
         return box.Type == 0;
     }
 
-    /// <summary>HandlePlainTag @0x1419f9ba0 (uimessagebox.cpp:899), its "gameexit", "useBindFuncItem", "useBindEquipItem" and
-    /// "useBindGemEquipItem" branches (:1052-1064); FUN_1419fa910 ("tag,arg") and the other plain tags are reported as
+    /// <summary>HandlePlainTag @0x1419f9ba0 (uimessagebox.cpp:899), its "gameexit", "useBindFuncItem", "useBindEquipItem",
+    /// "useBindGemEquipItem" (:1052-1064) and "learn_emotion" (:983-987) branches; FUN_1419fa910 ("tag,arg") and the other plain tags are reported as
     /// unported, except on a box with a listener: its tags (the slot menu's "expelMember:name", "changeChief:name") are the
     /// listener's, which OnClick has already called, and no plain tag handler takes them.</summary>
     internal bool HandlePlainTag(int button, string tag)
@@ -492,6 +495,8 @@ public sealed class MessageBoxController : UiController
             return HandleUseBindEquipItemButton(button);
         if (tag == "useBindGemEquipItem")
             return HandleUseBindGemEquipItemButton(button);
+        if (tag == InventoryController.LearnEmotionTag)                    // s_143af3ca0 (uimessagebox.cpp:983-987)
+            return HandleLearnEmotionButton(button);
         if (tag.StartsWith(PartyInviteBox.Tag, StringComparison.Ordinal))   // strTag.Find("partyinvite") == 0
             return HandlePartyinviteButton(button);
         if (tag == RecallUserBox.Tag)
@@ -706,6 +711,15 @@ public sealed class MessageBoxController : UiController
             GameExit?.Invoke();
             return false;
         }
+        return true;
+    }
+
+    /// <summary>UIMessageBox::HandleLearnEmotionButton @0x1419fc550 (uimessagebox.cpp:1451-1466): the OK (button 0) closes the
+    /// box (FUN_14151f200) and sends the emotion item's learn (<see cref="LearnEmotion"/>); 1 either way.</summary>
+    bool HandleLearnEmotionButton(int button)
+    {
+        if (data == null) return true;
+        if (button == 0) LearnEmotion?.Invoke(data.ItemUid);
         return true;
     }
 
