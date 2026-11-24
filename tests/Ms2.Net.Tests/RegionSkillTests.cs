@@ -47,13 +47,25 @@ public class RegionSkillTests {
         public readonly List<string> Log = new();
         public readonly List<Xform> At = new();
         public bool FailSpawn;
+        public readonly List<int> Kinds = new();
+        /// <summary>The points out of view (ShouldSkipByView); none by default.</summary>
+        public Func<string, int, Vec3, bool> Skip;
+        public int SkipAsks;
         int next = 1;
         public bool Has(string effect) => effect != "missing.xml";
-        public int Spawn(string effect, Xform at, bool always, int randomIndex) {
+        /// <summary>The owner's object kind (ObjectKind of any id).</summary>
+        public int Owner;
+        public Fx Of(int kind) { Owner = kind; return this; }
+        public int ObjectKind(int objectId) => Owner;
+        public int Spawn(string effect, Xform at, bool always, int randomIndex) => Spawn(effect, at, always, randomIndex, 0);
+        public void Insert(string effect, Xform at, bool always, int randomIndex) => Insert(effect, at, always, randomIndex, 0);
+        public int Spawn(string effect, Xform at, bool always, int randomIndex, int kind) {
+            Kinds.Add(kind);
             if (FailSpawn) return 0;
             Log.Add($"spawn {effect}"); At.Add(at); return next++;
         }
-        public void Insert(string effect, Xform at, bool always, int randomIndex) { Log.Add($"insert {effect}"); At.Add(at); }
+        public void Insert(string effect, Xform at, bool always, int randomIndex, int kind) { Kinds.Add(kind); Log.Add($"insert {effect}"); At.Add(at); }
+        public bool ShouldSkipByView(string effect, int kind, Vec3 at) { SkipAsks++; return Skip?.Invoke(effect, kind, at) ?? false; }
         public void FadeOut(int handle, float seconds) => Log.Add($"fade {handle} {seconds}");
         public void SetVisible(int handle, bool visible) => Log.Add($"show {handle} {visible}");
     }
@@ -116,6 +128,90 @@ public class RegionSkillTests {
         o.Local = true;
         o.UpdateEffects(200, fx);
         Assert.That(fx.Log, Is.Empty);
+    }
+
+    [Test] public void PendingPointsSpawnOnceTheirTimeHasComeAndTheyAreInView() {
+        var attr = new SkillMotion { MotionEffect = "a.xml", SplashCastEffectStartDelay = true };
+        var fx = new Fx();
+        var o = RegionSkillObject.Init(1, 2, Two, attr, 0, 0, 100, true, 50, fx.Of(3));
+        Assert.That(o.OwnerKind, Is.EqualTo(3));
+        o.UpdateEffects(99, fx);   // GetServerTick() < nTime: not yet, and the view is not asked
+        Assert.That((fx.Log.Count, fx.SkipAsks), Is.EqualTo((0, 0)));
+        fx.Skip = (e, k, at) => at == Two[1];   // the second point is out of view
+        o.UpdateEffects(100, fx);
+        Assert.That(fx.Log, Is.EqualTo(new[] { "spawn a.xml" }));
+        Assert.That(fx.At[0].T, Is.EqualTo(Two[0]));
+        Assert.That(o.Pending, Is.EqualTo(new[] { (Two[1], 100u) }));
+        Assert.That(o.Effects, Is.EqualTo(new[] { 1 }));
+        fx.Skip = null;
+        o.UpdateEffects(101, fx);
+        Assert.That(fx.Log, Is.EqualTo(new[] { "spawn a.xml", "spawn a.xml" }));
+        Assert.That(o.Pending, Is.Empty);
+        Assert.That(o.Effects, Is.EqualTo(new[] { 1, 2 }));
+        Assert.That(fx.Kinds, Is.EqualTo(new[] { 3, 3 }), "the owner's kind goes with every spawn");
+    }
+
+    [Test] public void APendingPointRetriesAFailedSpawnAndNeedsALocalOwnerOrIgnoreHide() {
+        var fx = new Fx { FailSpawn = true };
+        var o = RegionSkillObject.Init(1, 2, Two, new SkillMotion { MotionEffect = "a.xml" }, 0, 0, 100, true, 50, fx);
+        Assert.That(o.Pending, Has.Count.EqualTo(2));
+        o.UpdateEffects(60, fx);
+        Assert.That(o.Pending, Has.Count.EqualTo(2), "a spawn that fails stays pending");
+        fx.FailSpawn = false;
+        o.UpdateEffects(61, fx);
+        Assert.That((o.Pending.Count, o.Effects.Count), Is.EqualTo((0, 2)));
+
+        fx = new Fx();   // not local: pending, never spawned; with IgnoreOptimalHideCastEffect it spawns
+        var attr = new SkillMotion { MotionEffect = "a.xml" };
+        o = RegionSkillObject.Init(1, 2, Two, attr, 0, 0, 100, false, 50, fx);
+        o.UpdateEffects(60, fx);
+        Assert.That((fx.Log.Count, o.Pending.Count), Is.EqualTo((0, 2)));
+        Assert.That(fx.SkipAsks, Is.EqualTo(2), "ShouldSkipByView runs before the local test");
+        attr.IgnoreOptimalHideCastEffect = true;
+        o.UpdateEffects(61, fx);
+        Assert.That(o.Pending, Is.Empty);
+    }
+
+    [Test] public void APendingSpawnTakesTheFirstEntryOfItsPoint() {
+        var same = new[] { Two[0], Two[0] };
+        var fx = new Fx { FailSpawn = true };
+        var o = RegionSkillObject.Init(1, 2, same, new SkillMotion { MotionEffect = "a.xml" }, 0, 0, 100, true, 50, fx);
+        fx.FailSpawn = false;
+        o.UpdateEffects(60, fx);   // both spawn; each removes the first entry of the point
+        Assert.That((o.Pending.Count, o.Effects.Count), Is.EqualTo((0, 2)));
+    }
+
+    [Test] public void WaitingLoopPointsSpawnShownWhenInViewWithALocalOwner() {
+        var attr = new SkillMotion { LoopEffect = "loop.xml" };
+        var fx = new Fx { FailSpawn = true };
+        var o = RegionSkillObject.Init(1, 2, Two, attr, 0, 0, 100, true, 50, fx.Of(3));
+        Assert.That(o.Waiting, Is.EqualTo(Two));
+        fx.FailSpawn = false;
+        fx.Skip = (e, k, at) => e == "loop.xml" && k == 3 && at == Two[0];
+        o.UpdateEffects(60, fx);
+        Assert.That(fx.Log, Is.EqualTo(new[] { "spawn loop.xml", "show 1 True" }));
+        Assert.That(o.Waiting, Is.EqualTo(new[] { Two[0] }));
+        Assert.That((o.Effects, o.LoopEffects), Is.EqualTo((new List<int> { 1 }, new List<int> { 1 })));
+        fx.Skip = null;
+        o.UpdateEffects(61, fx);
+        Assert.That(o.Waiting, Is.Empty);
+        Assert.That(o.LoopEffects, Is.EqualTo(new[] { 1, 2 }));
+
+        fx = new Fx();   // a non-local owner waits for ever, IgnoreOptimalHideCastEffect or not (:370)
+        attr.IgnoreOptimalHideCastEffect = true;
+        o = RegionSkillObject.Init(1, 2, Two, attr, 0, 0, 100, false, 50, fx);
+        o.UpdateEffects(60, fx);
+        Assert.That((fx.Log.Count, o.Waiting.Count), Is.EqualTo((0, 2)));
+    }
+
+    [Test] public void HitResetAndLateEffectsCarryTheOwnersKind() {
+        var fx = new Fx();
+        var o = RegionSkillObject.Init(1, 2, new[] { Two[0] }, new SkillMotion { SplashDurationCastEffect = "late.xml", SplashInvokeEffect = "hit.xml",
+            SplashEndEffect = "end.xml" }, 0, 0, 0, true, 50, fx.Of(5));
+        o.PlayHitEffect(fx);
+        o.Reset(fx);
+        Assert.That(fx.Log, Is.EqualTo(new[] { "insert late.xml", "insert hit.xml", "insert end.xml" }));
+        Assert.That(fx.Kinds, Is.EqualTo(new[] { 5, 5, 5 }));
     }
 
     [Test] public void AddKeepsTheFirstIdAndRemoveResetsThenFades() {

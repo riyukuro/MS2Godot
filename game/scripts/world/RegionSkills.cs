@@ -24,7 +24,10 @@ namespace Ms2Godot.World;
 /// field (the field leave drops every object). Messages that came before the node (the session's log of the field) are
 /// replayed on enter.
 /// STILL-OPEN: CNifEffect's fade (vfunc_6, nifeffectparam.cpp:899) ramps the material alpha; here the effect is freed when the
-/// fade time ends, without the ramp. The bAlways flag (EffectSkipMgr) has no port, so it does not change the spawn.
+/// fade time ends, without the ramp.
+/// The view distances (EffectSkipMgr, Table/effectOption.xml of the graphic quality) are from the own player, the camera's
+/// actor: a region's spawn or insert does not make a nif or soundEvent part out of view of the owner's kind, and a spawn
+/// that made no part fails, so its point waits (<see cref="RegionSkillObject.UpdateEffects"/>).
 /// </summary>
 public partial class RegionSkills : Node3D, IRegionSkillEffects
 {
@@ -152,7 +155,9 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
                 var pts = a.Points.Select(p => new Vec3(p.X, p.Y, p.Z)).ToArray();
                 var o = RegionSkillObject.Init(a.Id, a.OwnerId, pts, Skills.RegionMotion(a.SkillId, a.Level), a.RotX, a.RotY,
                     (uint)a.StartTick, true, ServerTick, this);   // STILL-OPEN: m_bLocal (the optimizer's preload test), see RegionSkillObject
-                if (o != null) Objects.Add(o);
+                if (o != null && Objects.Add(o) && LiveSession.LiveCheck)
+                    GD.Print($"live: region {a.Id} owner kind {o.OwnerKind}: {o.Effects.Count} kept, {o.Pending.Count} pending, " +
+                        $"{o.Waiting.Count} waiting, {PartsOutOfView} part(s) out of view so far, viewer {ViewerDistance(pts):F0} away");
                 break;
             }
             case RegionSkillMessage.Remove r: Objects.Remove(r.Id, fadeSeconds, this); break;
@@ -175,12 +180,16 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     public string PlayHit(int regionId)
     {
         if (!Objects.Objects.TryGetValue(regionId, out var o)) return "none (no region of the id)";
+        int refused = PartsOutOfView;
         o.PlayHitEffect(this);
         HitEffectsPlayed++;
+        refused = PartsOutOfView - refused;
         var e = o.Attr.SplashInvokeEffect;
         if (string.IsNullOrEmpty(e)) return "none (no splashInvokeEffect)";
         if (!o.Local && !o.Attr.IgnoreOptimalHideCastEffect) return "none (not the own region)";
-        return $"{e} at {o.Points.Length} point(s)" + (Has(e) ? "" : " (no such effect xml)");
+        if (!LiveSession.LiveCheck) return e;   // the line below is only printed in a live check
+        return $"{e} at {o.Points.Length} point(s), owner kind {o.OwnerKind}, {refused} part(s) out of view, viewer {ViewerDistance(o.Points):F0} away"
+            + (Has(e) ? "" : " (no such effect xml)");
     }
 
     public bool Has(string effect) => table.Get(effect) != null;
@@ -197,11 +206,33 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
 
     public void Insert(string effect, Xform at, bool always, int randomIndex) => Play(effect, at, false, 0);
 
+    /// <summary>The view distance table of the graphic quality (FieldAudio's, read once per data).</summary>
+    Ms2.Formats.World.EffectSkipTable Skip => skip ??= FieldAudio.EffectSkip(packs);
+    Ms2.Formats.World.EffectSkipTable skip;
+
+    /// <summary>The camera's actor's place for the view distances (CameraMgr m_1c0, effectskipmgr.cpp:139-142): the own
+    /// player, in the game's coordinates; none without one, which skips nothing.</summary>
+    static System.Numerics.Vector3? Viewer =>
+        LiveSession.Instance?.OwnPlayer is { } pl && IsInstanceValid(pl) && pl.IsInsideTree()
+            ? new System.Numerics.Vector3(pl.GlobalPosition.X, -pl.GlobalPosition.Z, pl.GlobalPosition.Y) : null;
+
+    static System.Numerics.Vector3 N(Vec3 v) => new((float)v.X, (float)v.Y, (float)v.Z);
+
+    /// <summary>The viewer's distance to the first point, for the log; -1 without a viewer.</summary>
+    static float ViewerDistance(Vec3[] pts) =>
+        pts.Length > 0 && Viewer is { } eye ? System.Numerics.Vector3.Distance(eye, N(pts[0])) : -1;
+
+    public bool ShouldSkipByView(string effect, int kind, Vec3 at) =>
+        kind != 0 && Skip is { } t && t.ShouldSkipByView(table.Get(effect), kind, N(at), Viewer);
+
+    /// <summary>The spawns, the inserts and the parts the view distances refused (for the checks).</summary>
+    public int PartsOutOfView;
+
     /// <summary>A region skill's kept effect with its owner's object kind (regionskillobject.cpp:118-124).</summary>
     public int Spawn(string effect, Xform at, bool always, int randomIndex, int casterKind)
     {
         int h = nextHandle;
-        var nodes = Play(effect, at, true, h, null, casterKind);
+        var nodes = Play(effect, at, true, h, null, casterKind, view: true);
         if (nodes == null) return 0;
         nextHandle++;
         kept[h] = nodes;
@@ -209,7 +240,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     }
 
     /// <summary>A region skill's one-shot effect with its owner's object kind (regionskillobject.cpp:238-249).</summary>
-    public void Insert(string effect, Xform at, bool always, int randomIndex, int casterKind) => Play(effect, at, false, 0, null, casterKind);
+    public void Insert(string effect, Xform at, bool always, int randomIndex, int casterKind) => Play(effect, at, false, 0, null, casterKind, view: true);
 
     /// <summary>The object kind of an object id in the live field (<see cref="LiveSession.ObjectKind"/>), 0 offline.</summary>
     public int ObjectKind(int objectId) => LiveSession.Instance?.ObjectKind(objectId) ?? 0;
@@ -284,12 +315,33 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
 
     /// <summary>The effect xml's parts at a Gamebryo world transform: nif parts through the effect scene runtime (startDelay,
     /// duration; a looping part stays until it is faded), light parts through FieldLights, sound events at the point, soundMusic parts for <paramref name="casterKind"/>. Null
-    /// when the xml is missing.</summary>
+    /// when the xml is missing.
+    /// With <paramref name="view"/> (a region's spawn or insert, the object kind <paramref name="casterKind"/>) a nif or soundEvent
+    /// part out of view (<see cref="Ms2.Formats.World.EffectSkipTable.PartOutOfView"/>, at the part's world place) is not made,
+    /// and null comes back when no part is made (InsertEffect's nCount 0, effectservice.cpp:1288-1289): each part refused by
+    /// CEffectParam::vfunc_7's filters (<see cref="Ms2.Formats.World.EffectPart.SkippedFor"/>) or by the view. The per-name
+    /// count limit and the lod level are not ported.</summary>
     List<Node3D> Play(string xml, Xform at, bool keep, int handle, Node3D actor = null,
-        int casterKind = Ms2.Audio.SoundMusicEffectState.CasterSystem)
+        int casterKind = Ms2.Audio.SoundMusicEffectState.CasterSystem, bool view = false)
     {
         var parts = table.Get(xml);
         if (parts == null) return null;
+        var owner = EffectOwners.Of(casterKind, actor);
+        var skipTable = view && casterKind != 0 ? Skip : null;
+        System.Numerics.Vector3? eye = skipTable != null ? Viewer : null;
+        if (view)
+        {
+            // the refusals first, so a spawn that makes nothing changes nothing (CreateEffect returns before the part runs)
+            int made = 0;
+            foreach (var part in parts)
+            {
+                if (!part.TopLevel || part.SkippedFor(owner)) continue;   // a random part's child: its random part is the param
+                var place = at.Apply(new Vec3(part.Translate[0], part.Translate[1], part.Translate[2]));
+                if (eye != null && skipTable.PartOutOfView(part, casterKind, N(place), eye)) { PartsOutOfView++; continue; }
+                made++;
+            }
+            if (made == 0 && parts.Count > 0) return null;
+        }
         var nodes = new List<Node3D>();
         // an effect on an actor: the nif parts but attach type 0 ones are its children (they follow it), at in the actor's
         // own space; sounds and lights take its place at the spawn
@@ -299,10 +351,11 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
             var g = actor.GlobalPosition;
             world = new Xform(new Vec3(g.X, -g.Z, g.Y), at.R, at.S);
         }
-        var owner = EffectOwners.Of(casterKind, actor);
         foreach (var part in parts)
         {
             if (part.SkippedFor(owner)) continue;   // CEffectParam::vfunc_7 (effectservice.cpp:245-259)
+            if (eye != null && part.TopLevel && skipTable.PartOutOfView(part, casterKind, N(at.Apply(new Vec3(part.Translate[0], part.Translate[1], part.Translate[2]))), eye))
+                continue;
             if (part.Type == "soundEvent" && part.SoundEvent != null)
             {
                 int voice = FieldAudio.Instance?.PlayEffectSound(part, owner, FieldBuilder.ToGodotPoint(world.T), actor) ?? 0;

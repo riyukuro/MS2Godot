@@ -94,6 +94,63 @@ public sealed class EffectSkipTable
         return skip.IsOutOfView(RowSound, kind, at, viewer, view);
     }
 
+    /// <summary>The effect param kinds (effectservice.h): CreateEffect's view tests for the screen kinds (:322-330) and the rows
+    /// above.</summary>
+    public const int TypeNif = 1, TypeSoundEvent = 2;
+
+    static readonly string[] TypeNames =
+    {
+        "nif", "soundEvent", "soundMusic", "monochrome", "radialBlur", "weather", "swoosh", "status", "light", "fog", "random",
+        "vibrate", "ribbon", "chaoslight", "textureoverride", "lightning", "cameraMove", "screenMasking", "gaussianBlur",
+        "postShimmer", "beam", "afterImage",
+    };
+
+    /// <summary>ParseEffectType @0x1411a0f80 (effectdatamanager.cpp): the type name (CompareNoCase) to its kind, nif 1 to
+    /// afterImage 22; empty or unknown is 0.</summary>
+    public static int ParseEffectType(string type)
+    {
+        if (string.IsNullOrEmpty(type)) return 0;
+        for (int i = 0; i < TypeNames.Length; i++)
+            if (string.Equals(type, TypeNames[i], StringComparison.OrdinalIgnoreCase)) return i + 1;
+        return 0;
+    }
+
+    /// <summary>
+    /// EffectSkipMgr::ShouldSkipByView @0x1411b8870 (effectskipmgr.cpp:157-176): an effect's params (the xml's top level
+    /// parts) at <paramref name="at"/> for the caster kind. A part without offSkip is tested on its kind's row, a nif part with
+    /// its own viewDistance; one part out of view skips the whole effect. Its only callers are CRegionSkillObject::UpdateEffects'
+    /// two retries (regionskillobject.cpp:328, :370).
+    /// </summary>
+    public bool ShouldSkipByView(IReadOnlyList<EffectPart> parts, int caster, Vector3 at, Vector3? viewer)
+    {
+        if (parts == null) return false;
+        for (int i = 0; i < parts.Count; i++)
+        {
+            var p = parts[i];
+            if (!p.TopLevel || p.OffSkip) continue;
+            if (IsOutOfView(p.TypeId, caster, at, viewer, p.TypeId == TypeNif ? p.ViewDistance : -1)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// The view tests one part of an effect meets as it is made, at its world place <paramref name="at"/>:
+    /// <list type="bullet">
+    /// <item>A nif part: CNifEffect::vfunc_3 (nifeffectparam.cpp:757-766), row 1 with the part's viewDistance, unless offSkip
+    /// or the target's no-cull flag (m_b30, which no region skill target sets).</item>
+    /// <item>A soundEvent part: <see cref="SoundEventOutOfView"/>.</item>
+    /// </list>
+    /// True when the part is refused, and so not made. CreateEffect's other screen kinds (monochrome, radialBlur, vibrate,
+    /// cameraMove, screenMasking, gaussianBlur, postShimmer) are not played by the callers.
+    /// </summary>
+    public bool PartOutOfView(EffectPart part, int caster, Vector3 at, Vector3? viewer, bool noCull = false)
+    {
+        if (part.OffSkip) return false;
+        if (part.TypeId == TypeNif) return !noCull && IsOutOfView(RowNif, caster, at, viewer, part.ViewDistance);
+        if (part.TypeId == TypeSoundEvent) return SoundEventOutOfView(this, part, caster, at, viewer);
+        return false;
+    }
+
     /// <summary>CEffectService::IsEffectTypeVisible @0x1411a91d0 (effectservice.cpp:2199): the status option
     /// DisplayShowOnlyMyPet (+0x12) hides relation 4, DisplayHideMyPet (+0x13) relation 2.</summary>
     public static bool IsEffectTypeVisible(int kind, bool showOnlyMyPet, bool hideMyPet) =>

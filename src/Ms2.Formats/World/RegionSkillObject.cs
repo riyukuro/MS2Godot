@@ -14,6 +14,9 @@ public interface IRegionSkillEffects
     int Spawn(string effect, Xform at, bool always, int randomIndex);
     /// <summary>InsertEffect: a one-shot effect, not kept.</summary>
     void Insert(string effect, Xform at, bool always, int randomIndex);
+    /// <summary>EffectSkipMgr::ShouldSkipByView @0x1411b8870 (effectskipmgr.cpp:157-176): whether the effect at the point is out
+    /// of view of the camera's actor for the caster kind (<see cref="EffectSkipTable.ShouldSkipByView"/>). None is by default.</summary>
+    bool ShouldSkipByView(string effect, int kind, Vec3 at) => false;
     /// <summary>FUN_1411a67f0 (@0x1411a67f0, effectservice.cpp:1480-1492): fades a kept effect out over the seconds.</summary>
     void FadeOut(int handle, float seconds);
     /// <summary>FUN_1411a68f0 (@0x1411a68f0, effectservice.cpp:1496-1506): CEffect::vfunc_10 on every part of a kept effect,
@@ -24,7 +27,9 @@ public interface IRegionSkillEffects
     /// <summary>WorldService::FUN_141bd19d0 (@0x141bd19d0, worldservice_1.cpp:6296-6300): the object kind of an object id
     /// (GetObjectKind: MyPC 1, PCBase 3, an npc 5 or 6 for a boss), 0 for no such object.</summary>
     int ObjectKind(int objectId) => 0;
-    /// <summary><see cref="Spawn(string, Xform, bool, int)"/> with the effect target's object kind (m_nKind).</summary>
+    /// <summary><see cref="Spawn(string, Xform, bool, int)"/> with the effect target's object kind (m_nKind). It returns 0 when
+    /// no part is made (InsertEffect @0x1411a4a00, effectservice.cpp:1265-1298): a part out of view of the camera's actor for
+    /// that kind is not made. Kind 0 is never out of view.</summary>
     int Spawn(string effect, Xform at, bool always, int randomIndex, int casterKind) => Spawn(effect, at, always, randomIndex);
     /// <summary><see cref="Insert(string, Xform, bool, int)"/> with the effect target's object kind (m_nKind).</summary>
     void Insert(string effect, Xform at, bool always, int randomIndex, int casterKind) => Insert(effect, at, always, randomIndex);
@@ -40,9 +45,10 @@ public interface IRegionSkillEffects
 /// The loop effect (loopEffect, +0x38) is the region's look while it waits: Init spawns it for a local owner, hidden
 /// (FUN_1411a68f0(e, false)), then StopLoopEffects shows it; each hit (PlayHitEffect) hides it and OnRegionSkill mode 2
 /// (StopLoopEffects) shows it again. It is kept with the motion effects, so the remove fades it too.
-/// STILL-OPEN: the pending points (spawn failed, or SplashCastEffectStartDelay) and the waiting loop effect points (spawn
-/// failed) spawn in UpdateEffects only when EffectSkipMgr::ShouldSkipByView passes; that test has no port, so they stay
-/// unspawned.
+/// Every spawn and insert passes the owner's object kind (m_nOwnerType, WorldService::FUN_141bd19d0 @0x141bd19d0: the
+/// owner's vfunc_58, 1 the own PC, 3 another PC, 5 an npc, 6 a boss, 0 when the owner is not in the field), so a part out
+/// of view of the camera's actor is not made (EffectSkipMgr). A point whose motion effect did not spawn (or waits for
+/// SplashCastEffectStartDelay) is pending, a point whose loop effect did not spawn is waiting; UpdateEffects retries them.
 /// STILL-OPEN: the collision shapes (DAT_143ae95e1/e0) are not ported.
 /// STILL-OPEN: m_bLocal is COptimizer::FUN_14161ce60(owner) == 0 (optimizer.cpp:559-573), nonzero only in the optimizer's
 /// preload mode for a PC; that mode has no port, so the caller passes true.
@@ -133,9 +139,60 @@ public sealed class RegionSkillObject
         lateDone = true;
     }
 
-    /// <summary>UpdateEffects (@0x1416f6f50): the pending spawns need ShouldSkipByView (STILL-OPEN, see the class), then
-    /// PlayLateEffect (:400).</summary>
-    public void UpdateEffects(uint serverTick, IRegionSkillEffects fx) => PlayLateEffect(serverTick, fx);
+    /// <summary>
+    /// UpdateEffects (@0x1416f6f50, regionskillobject.cpp:309-401), every world tick:
+    /// <list type="bullet">
+    /// <item>The pending points (:311-354) whose time has come, not skipped by view (ShouldSkipByView of the motion effect at
+    /// the point) and with a local owner or IgnoreOptimalHideCastEffect, spawn the motion effect. One that spawned is kept in
+    /// m_effects, and the first pending entry of the same point leaves the list.</item>
+    /// <item>The waiting points (:355-399), not skipped by view (the loop effect's) with a local owner, spawn the loop effect.
+    /// It is kept in both lists and shown (FUN_1411a68f0(e, true)), even if a hit hid the others, and the first waiting entry
+    /// of the same point leaves the list.</item>
+    /// </list>
+    /// Then PlayLateEffect (:400). A point that still does not spawn is tried again on the next tick.
+    /// </summary>
+    public void UpdateEffects(uint serverTick, IRegionSkillEffects fx)
+    {
+        if (Pending.Count > 0 && !string.IsNullOrEmpty(Attr.MotionEffect) && fx.Has(Attr.MotionEffect))
+        {
+            int spawnedAt = spawned.Count;
+            for (int i = 0; i < Pending.Count; i++)
+            {
+                var (pt, time) = Pending[i];
+                if (serverTick < time) continue;
+                if (fx.ShouldSkipByView(Attr.MotionEffect, OwnerKind, pt) || !(Local || Attr.IgnoreOptimalHideCastEffect)) continue;
+                int e = fx.Spawn(Attr.MotionEffect, PointTransform(pt, RotX, RotY), Attr.IgnoreOptimalHideCastEffect, Id, OwnerKind);
+                if (e == 0) continue;
+                Effects.Add(e);
+                spawned.Add(pt);
+            }
+            for (int i = spawnedAt; i < spawned.Count; i++)
+                for (int j = 0; j < Pending.Count; j++)
+                    if (Pending[j].Point == spawned[i]) { Pending.RemoveAt(j); break; }
+            spawned.RemoveRange(spawnedAt, spawned.Count - spawnedAt);
+        }
+        if (Waiting.Count > 0 && !string.IsNullOrEmpty(Attr.LoopEffect) && fx.Has(Attr.LoopEffect))
+        {
+            for (int i = 0; i < Waiting.Count; i++)
+            {
+                var pt = Waiting[i];
+                if (fx.ShouldSkipByView(Attr.LoopEffect, OwnerKind, pt) || !Local) continue;
+                int e = fx.Spawn(Attr.LoopEffect, PointTransform(pt, RotX, RotY), false, Id, OwnerKind);
+                if (e == 0) continue;
+                Effects.Add(e);
+                LoopEffects.Add(e);
+                fx.SetVisible(e, true);
+                spawned.Add(pt);
+            }
+            for (int i = 0; i < spawned.Count; i++)
+                for (int j = 0; j < Waiting.Count; j++)
+                    if (Waiting[j] == spawned[i]) { Waiting.RemoveAt(j); break; }
+            spawned.Clear();
+        }
+        PlayLateEffect(serverTick, fx);
+    }
+
+    readonly List<Vec3> spawned = new();   // kSpawned of UpdateEffects, kept so a tick allocates nothing
 
     /// <summary>PlayHitEffect (@0x1416f6900, :224-252), run by OnRegionSkillDamage (0x3D mode 5, scenestategame.cpp:7773-7776) once
     /// the region is found and before its targets are read, so with no target too: the loop effects hidden (:229-230), then

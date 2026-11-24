@@ -37,8 +37,9 @@ public sealed class EffectPart
     /// (0 = any), onlyCasterMyPC, onlyTargetMyPC. <see cref="SkippedFor"/> applies them.</summary>
     public int Gender = 2, JobCode;
     public bool OnlyCasterMyPC, OnlyTargetMyPC;
-    /// <summary>offSkip (CEffectParam::vfunc_1, effectservice.cpp:649-662): CreateEffect @0x14119eae0 (effectservice.cpp:318-345)
-    /// makes no view test for the part.</summary>
+    /// <summary>offSkip (CEffectParam::vfunc_1, effectservice.cpp:649-662, m_bOffSkip +0x31): CreateEffect @0x14119eae0
+    /// (effectservice.cpp:318-345), CNifEffect::vfunc_3 (nifeffectparam.cpp:763) and EffectSkipMgr::ShouldSkipByView make no
+    /// view test for the part.</summary>
     public bool OffSkip;
     /// <summary>soundEvent forceHearDistance (CSoundEventEffectParam::vfunc_1, soundeventmgr.cpp:297): when not 0, the view
     /// distance CreateEffect tests a monster's or a boss's sound against (effectservice.cpp:301-306), in place of the
@@ -120,6 +121,15 @@ public sealed class EffectPart
     /// <summary>The light a type="light" part makes (null for other parts).</summary>
     public EffectLightParam Light;
     public bool UpdateTranslate = true, UpdateRotation = true, UpdateScale = true;
+    /// <summary>The type attribute's kind, CEffectParam::m_nType (ParseEffectType @0x1411a0f80, effectdatamanager.cpp; 0 for an
+    /// unknown or absent type): EffectSkipMgr's row for the part.</summary>
+    public int TypeId;
+    /// <summary>A direct child of the xml's root, one of the effect data's params (effectservice.cpp:614-617). The children of a
+    /// random part (randomeffectparam.cpp:88) are listed too, with this false.</summary>
+    public bool TopLevel;
+    /// <summary>A nif part's viewDistance (CNifEffectParam::vfunc_1, nifeffectparam.cpp:376, m_fViewDistance +0xac): its own
+    /// view distance, -1 (absent) for the table's.</summary>
+    public float ViewDistance = -1;
     /// <summary>type="weather" fallType: the sky object WeatherEffect::vfunc_4 hands CEffectService::SetSkyObject
     /// (0 clear, 1 snow, 2 heavy snow, 3 rain, 4 heavy rain, 5 sandstorm, 6 cherry blossom, 7 leaf fall).</summary>
     public int FallType;
@@ -186,6 +196,9 @@ public sealed class EffectTable
                         foreach (var (job, d) in JobPairs((string)e.Attribute("byJobStartDelay"))) p.JobStartDelays[I(job, 0)] = F(d);
                     }
                     p.FallType = (int)F((string)e.Attribute("fallType"));
+                    p.TypeId = EffectSkipTable.ParseEffectType(p.Type);
+                    p.TopLevel = e.Parent == x.Root;
+                    if (p.TypeId == EffectSkipTable.RowNif) p.ViewDistance = F((string)e.Attribute("viewDistance"), -1f);
                     if (e.Element("attachInfo") is { } a)
                     {
                         p.AttachType = (string)a.Attribute("attachType");

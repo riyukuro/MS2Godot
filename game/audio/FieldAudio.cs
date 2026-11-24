@@ -193,7 +193,7 @@ public partial class FieldAudio : Node, World.ITriggerSounds
         return t;
     }
 
-    static Ms2.Formats.World.EffectSkipTable EffectSkip(PackSet packs)
+    public static Ms2.Formats.World.EffectSkipTable EffectSkip(PackSet packs)
     {
         if (effectSkipTables.TryGetValue(packs, out var t)) return t;
         try { t = Ms2.Formats.World.EffectSkipTable.Parse(System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/effectoption.xml")), GameOptions.Current.GraphicOption.Quality); }

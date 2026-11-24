@@ -151,7 +151,7 @@ public class EffectCasterKindSiteTests
 
         // RegionSkills.Spawn / Insert without a kind are the system's (0) effects: triggers, reactors, the lift markers
         var region = File.ReadAllText(Path.Combine(game, "scripts", "world", "RegionSkills.cs"));
-        if (!region.Contains("int casterKind = Ms2.Audio.SoundMusicEffectState.CasterSystem)", StringComparison.Ordinal))
+        if (!region.Contains("int casterKind = Ms2.Audio.SoundMusicEffectState.CasterSystem, bool view = false)", StringComparison.Ordinal))
             problems.Add("game/scripts/world/RegionSkills.cs: Play's kind for Spawn / Insert is not CasterSystem (0)");
 
         TestContext.Out.WriteLine($"{found.Count} effect sites, {Reviewed.Length} reviewed");

@@ -90,4 +90,65 @@ public class EffectSkipTableTests
             Assert.That(t.ViewDistance(EffectSkipTable.RowSound, 3), Is.GreaterThan(0f), $"quality {q}: the option is read");
         }
     }
+
+    [Test]
+    public void EffectTypesParseAsTheClientsKindsCaseBlind()
+    {
+        Assert.That(EffectSkipTable.ParseEffectType("nif"), Is.EqualTo(1));
+        Assert.That(EffectSkipTable.ParseEffectType("SOUNDEVENT"), Is.EqualTo(2));
+        Assert.That(EffectSkipTable.ParseEffectType("swoosh"), Is.EqualTo(EffectSkipTable.RowSwoosh));
+        Assert.That(EffectSkipTable.ParseEffectType("random"), Is.EqualTo(EffectSkipTable.RowRandom));
+        Assert.That(EffectSkipTable.ParseEffectType("chaosLight"), Is.EqualTo(EffectSkipTable.RowChaosLight));
+        Assert.That(EffectSkipTable.ParseEffectType("lightning"), Is.EqualTo(EffectSkipTable.RowLightning));
+        Assert.That(EffectSkipTable.ParseEffectType("afterImage"), Is.EqualTo(22));
+        Assert.That(EffectSkipTable.ParseEffectType("sound"), Is.EqualTo(0));
+        Assert.That(EffectSkipTable.ParseEffectType(null), Is.EqualTo(0));
+    }
+
+    static EffectPart Part(string type, bool top = true, bool offSkip = false, float view = -1, float hear = 0) => new()
+    {
+        Type = type, TypeId = EffectSkipTable.ParseEffectType(type), TopLevel = top, OffSkip = offSkip, ViewDistance = view, ForceHearDistance = hear,
+    };
+
+    /// <summary>ShouldSkipByView (effectskipmgr.cpp:157-176): any top level part without offSkip out of view on its row skips
+    /// the effect; a nif part with its own viewDistance; a random part's children are not params.</summary>
+    [Test]
+    public void AnEffectIsSkippedByViewWhenOneOfItsPartsIsOutOfView()
+    {
+        var t = EffectSkipTable.Parse(Xml, 1);   // option2: sound PC 3000, monster 1500; nif PC 2500
+        var eye = Vector3.Zero;
+        var far = new Vector3(2600, 0, 0);
+        Assert.That(t.ShouldSkipByView(new[] { Part("nif") }, 3, far, eye), Is.True);
+        Assert.That(t.ShouldSkipByView(new[] { Part("nif") }, 3, new Vector3(2400, 0, 0), eye), Is.False);
+        Assert.That(t.ShouldSkipByView(new[] { Part("nif") }, 1, far * 10, eye), Is.False, "myPC has no nif distance");
+        Assert.That(t.ShouldSkipByView(new[] { Part("nif") }, 0, far, eye), Is.False, "kind 0");
+        Assert.That(t.ShouldSkipByView(new[] { Part("nif") }, 3, far, null), Is.False, "no camera actor");
+        Assert.That(t.ShouldSkipByView(new[] { Part("nif", offSkip: true) }, 3, far, eye), Is.False, "offSkip");
+        Assert.That(t.ShouldSkipByView(new[] { Part("nif", view: 0) }, 3, far, eye), Is.False, "the part's viewDistance 0");
+        Assert.That(t.ShouldSkipByView(new[] { Part("nif", view: 100) }, 3, new Vector3(200, 0, 0), eye), Is.True, "the part's own distance");
+        Assert.That(t.ShouldSkipByView(new[] { Part("nif", top: false) }, 3, far, eye), Is.False, "a random part's child");
+        Assert.That(t.ShouldSkipByView(new[] { Part("light") }, 3, far * 10, eye), Is.False, "no light row");
+        Assert.That(t.ShouldSkipByView(new[] { Part("light"), Part("soundEvent") }, 5, new Vector3(1600, 0, 0), eye), Is.True,
+            "one part decides; the sound row of a monster");
+        Assert.That(t.ShouldSkipByView(new[] { Part("soundEvent", view: 99999) }, 5, new Vector3(1600, 0, 0), eye), Is.True,
+            "only a nif part has its own distance");
+        Assert.That(t.ShouldSkipByView(null, 3, far, eye), Is.False);
+    }
+
+    /// <summary>The part tests as a part is made: CNifEffect::vfunc_3 (nifeffectparam.cpp:757-766) for a nif part, CreateEffect
+    /// (effectservice.cpp:291-330) for a soundEvent part, forceHearDistance only for a monster or boss caster.</summary>
+    [Test]
+    public void APartOutOfViewIsNotMade()
+    {
+        var t = EffectSkipTable.Parse(Xml, 1);
+        var eye = Vector3.Zero;
+        Assert.That(t.PartOutOfView(Part("nif"), 3, new Vector3(2500, 0, 0), eye), Is.True);
+        Assert.That(t.PartOutOfView(Part("nif"), 3, new Vector3(2500, 0, 0), eye, noCull: true), Is.False);
+        Assert.That(t.PartOutOfView(Part("nif", offSkip: true), 3, new Vector3(2500, 0, 0), eye), Is.False);
+        Assert.That(t.PartOutOfView(Part("soundEvent"), 5, new Vector3(1600, 0, 0), eye), Is.True);
+        Assert.That(t.PartOutOfView(Part("soundEvent", hear: 2000), 5, new Vector3(1600, 0, 0), eye), Is.False, "forceHearDistance, a monster");
+        Assert.That(t.PartOutOfView(Part("soundEvent", hear: 10), 3, new Vector3(1600, 0, 0), eye), Is.False, "not for a PC: the table's 3000");
+        Assert.That(t.PartOutOfView(Part("light"), 3, new Vector3(99999, 0, 0), eye), Is.False);
+        Assert.That(t.PartOutOfView(Part("swoosh"), 3, new Vector3(99999, 0, 0), eye), Is.False, "not tested as it is made");
+    }
 }
