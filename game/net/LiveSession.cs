@@ -236,8 +236,8 @@ public partial class LiveSession : Node
         ServerStatesEntered++;
         ServerStateExitLeft = atOnce ? 0 : ownStateExit.State == st ? ownStateExit.Left : -1;
         if (fresh && ownStateExit.State == st)
-            GD.Print($"live: server state 0x{st:x} runs its own exit: {ownStateExit.Cause}{(ownStateExit.Sequence != null ? " " + ownStateExit.Sequence : "")}, {(ownStateExit.Left < 0 ? "none comes" : $"{ownStateExit.Left:0.###} s")}{(ownStateExit.Played != null ? ", plays " + ownStateExit.Played : "")}{(ownStateExit.Hidden ? ", hidden" : "")}");
-        if (atOnce && Me.LeaveServerState(st)) GD.Print($"live: server state 0x{st:x} left at once (no state data)");
+            if (LiveCheck) GD.Print($"live: server state 0x{st:x} runs its own exit: {ownStateExit.Cause}{(ownStateExit.Sequence != null ? " " + ownStateExit.Sequence : "")}, {(ownStateExit.Left < 0 ? "none comes" : $"{ownStateExit.Left:0.###} s")}{(ownStateExit.Played != null ? ", plays " + ownStateExit.Played : "")}{(ownStateExit.Hidden ? ", hidden" : "")}");
+        if (atOnce && Me.LeaveServerState(st) && LiveCheck) GD.Print($"live: server state 0x{st:x} left at once (no state data)");
         SyncOwnStateCast();
     }
 
@@ -256,7 +256,7 @@ public partial class LiveSession : Node
             CastingBar.StartCasting(ownStateCastListener, new Ms2.Ui.Hud.CastingParam { Duration = c.DurationMs });
         else
             CastingBar.StartCastingText(ownStateCastListener, text, c.DurationMs, showTime: false, activeBar: true, endText: "");
-        GD.Print($"live: server state 0x{ownStateExit.State:x} casts {c.DurationMs} ms \"{text}\"");
+        if (LiveCheck) GD.Print($"live: server state 0x{ownStateExit.State:x} casts {c.DurationMs} ms \"{text}\"");
     }
 
     /// <summary>The live run's count of the casts the server-set states started, and the last one.</summary>
@@ -301,7 +301,7 @@ public partial class LiveSession : Node
             if (ownStateExit.EnterBuffStun(s.Stun, s.Sub, s.Animation))
             {
                 BuffStunsEntered++;
-                GD.Print($"live: stun buff {s.Stun} enters StateStun, sub 0x{s.Sub:x}, plays {ownStateExit.Played}");
+                if (LiveCheck) GD.Print($"live: stun buff {s.Stun} enters StateStun, sub 0x{s.Sub:x}, plays {ownStateExit.Played}");
                 ownStunEntry = true;
                 try { Me.EnterOwnState(0x12); }
                 finally { ownStunEntry = false; }
@@ -311,8 +311,8 @@ public partial class LiveSession : Node
         int st = ownStateExit.State;
         if (st != 0)
         {
-            if (ownStateExit.Advance(delta, Me.State, false, stunned) && Me.LeaveServerState(st)) GD.Print($"live: server state 0x{st:x} left by its own exit");
-            else if (ownStateExit.State == 0 && Me.State != st) GD.Print($"live: server state 0x{st:x} replaced by state {Me.State}");
+            if (ownStateExit.Advance(delta, Me.State, false, stunned) && Me.LeaveServerState(st)) { if (LiveCheck) GD.Print($"live: server state 0x{st:x} left by its own exit"); }
+            else if (ownStateExit.State == 0 && Me.State != st && LiveCheck) GD.Print($"live: server state 0x{st:x} replaced by state {Me.State}");
         }
         SyncOwnStateCast();
         if (player == null || !IsInstanceValid(player)) return;
@@ -1447,7 +1447,7 @@ public partial class LiveSession : Node
         bool pet = k.ExtraOf(item.ItemId) is { } x && x.HasFlag(ItemExtra.Pet);
         bool counts = DropPickup.GuideCounts(item.Item?.ExpiryTime ?? 0, ServerTime, pet, k.HasMaidId(item.ItemId));
         if (counts) guide?.AddTrigger(GuideTrigger.ItemPickup, item.ItemId, 0);
-        GD.Print($"live: picked up item {item.ItemId} rarity {item.Rarity}: toast {toast} guide {counts}");
+        if (LiveCheck) GD.Print($"live: picked up item {item.ItemId} rarity {item.Rarity}: toast {toast} guide {counts}");
     }
 
     /// <summary>The own Stat (0x2E; CSceneStateGame::OnStat, scenestategame.cpp:9424): health, spirit and stamina reach the HUD data.</summary>
@@ -1650,7 +1650,7 @@ public partial class LiveSession : Node
                 }
                 drops.OnPickupPacket(pick);
                 if (!pick.DropKnown) { if (LogPackets) GD.Print($"live: pickup object {pick.ObjectId}: no drop of this field, the rest unread"); }
-                else if (LogPackets || pick.Picked) GD.Print($"live: pickup object {pick.ObjectId} picked {pick.Picked} by {pick.PickerId}{(pick.Picked ? "" : " mode " + pick.Mode)}{(pick.Meso != 0 ? " meso " + pick.Meso : "")}{(pick.EpBall ? " ep +" + pick.Ep : "")}");
+                else if (LogPackets || (pick.Picked && LiveCheck)) GD.Print($"live: pickup object {pick.ObjectId} picked {pick.Picked} by {pick.PickerId}{(pick.Picked ? "" : " mode " + pick.Mode)}{(pick.Meso != 0 ? " meso " + pick.Meso : "")}{(pick.EpBall ? " ep +" + pick.Ep : "")}");
             }
             else if (game.Is(p, Inbound.UserBattle) && p.Body.Length >= 5 && BitConverter.ToInt32(p.Body, 0) == selfObject
                      && OwnCurStateId(OwnSkillStateRunsOf?.Invoke() ?? false) != StateWaitingSelect)

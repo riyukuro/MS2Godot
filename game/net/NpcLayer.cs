@@ -839,7 +839,7 @@ public sealed class NpcLayer
         // GetAnimationDuration (0x14099eb30): the sequence's length, 0 for one the body lacks
         i.SequenceLength ??= name => i.Model?.Kfm.ByName(name) is { } seq ? (float)(Anim(i.Model, seq.Id)?.Length ?? 0) : 0f;
         SpawnHidden(i, true);
-        GD.Print($"live: npc {b.ObjectId} spawn state, point {id}, sequence {i.Spawn.Animation ?? "none"}, hidden {i.Spawn.Delay} ms");
+        if (LiveSession.LiveCheck) GD.Print($"live: npc {b.ObjectId} spawn state, point {id}, sequence {i.Spawn.Animation ?? "none"}, hidden {i.Spawn.Delay} ms");
     }
 
     /// <summary>PCBase::AddHideReason / RemoveHideReason of the spawn state's reason, with the simple shadow (statespawn.cpp:72-73, :88-89).</summary>

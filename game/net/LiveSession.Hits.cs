@@ -80,7 +80,7 @@ public partial class LiveSession
                 int st = ownStateExit.State;
                 if (st != 0 && Me.State == st && ownStateExit.Hit() && Me.LeaveServerState(st))
                 {
-                    Godot.GD.Print($"live: server state 0x{st:x} left by a hit");
+                    if (LiveCheck) Godot.GD.Print($"live: server state 0x{st:x} left by a hit");
                     SyncOwnStateCast();
                     player.ReactIdle();
                 }
