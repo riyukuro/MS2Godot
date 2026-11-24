@@ -270,6 +270,37 @@ public partial class LiveSession
                 Shows("the follow camera");
                 continue;
             }
+            if (step.StartsWith("ownstate:"))      // ownstate:<hex id>: the server's raw UserState for the own pc (its debug packet command), the exit timed
+            {
+                int st = Convert.ToInt32(step[9..], 16);
+                var row = Ms2.Ui.OwnStateExit.OfOwnState(st);
+                int before = live.ServerStatesEntered;
+                bool sent = hud.SubmitChatLine("/debug packet " + live.OwnUserStateBytes(st));
+                await until(() => live.ServerStatesEntered > before, 60 * 5);
+                bool entered = live.ServerStatesEntered > before;
+                double expect = live.ServerStateExitLeft;
+                ulong f0 = Engine.GetProcessFrames();   // game time: the runs step a fixed 1/60 s a frame (--fixed-fps 60)
+                var at = live.OwnPlayer.GlobalPosition;
+                hud.DriveTowardScripted(at + new Vector3(600, 0, 0), false);   // a move held through the state: a held body stays put
+                await until(() => live.Me.State != st, 60 * 12);
+                hud.DriveEnd();
+                double took = (Engine.GetProcessFrames() - f0) / 60.0;
+                var shift = live.OwnPlayer.GlobalPosition - at; shift.Y = 0;
+                float moved = shift.Length();   // on the flat: a fall or a landing is not a move
+                GD.Print($"live: combat ownstate 0x{st:x} ({row?.Class} {row?.Cause}): sent {sent}, entered {entered}, expected exit {expect:0.###} s, state now {live.Me.State} after {took:0.###} s, moved {moved:0.##}");
+                bool ok = entered && row?.Cause switch
+                {
+                    Ms2.Ui.StateExitCause.AtOnce => live.Me.State != st && took < 0.1,
+                    Ms2.Ui.StateExitCause.InputStep => live.Me.State != st && took < 0.2,
+                    Ms2.Ui.StateExitCause.Timer or Ms2.Ui.StateExitCause.SequenceEnd =>
+                        expect > 0 && live.Me.State != st && System.Math.Abs(took - expect) < 0.15 && moved < 0.05f,
+                    Ms2.Ui.StateExitCause.NoSelfExit => live.Me.State == st && moved < 0.05f,
+                    _ => false,
+                } == true;
+                Check($"the own pc leaves server state 0x{st:x} as the client ({row?.Cause})", ok);
+                await frames(30);
+                continue;
+            }
             if (step.StartsWith("chat:"))      // one chat line, no comma in it
             {
                 GD.Print($"live: combat {step}: {(hud.SubmitChatLine(step[5..]) ? "sent" : "no chat window")}");

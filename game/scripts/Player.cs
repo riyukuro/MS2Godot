@@ -278,6 +278,16 @@ public partial class Player : CharacterBody3D
 
     /// <summary>The own taxi call (StateTaxiCall): asked each frame with whether a move input is down; true holds the move, jump and click-move input.</summary>
     public System.Func<bool, bool> TaxiHold;
+    /// <summary>A state the server put the own pc into whose input step reads no move key (Ms2.Ui.OwnStateExit.HoldsBody:
+    /// StateStun, StateSpawn, StateTransform, StatePvPWinLose): true holds the move, jump and click-move input.</summary>
+    public System.Func<bool> ServerStateHold;
+
+    /// <summary>The length in seconds of the body's sequence <paramref name="name"/>; null when the body has none.</summary>
+    public double? SequenceSeconds(string name)
+    {
+        string key = Anims?.Sequence(name, false);
+        return key == null || Anim == null || !Anim.HasAnimation(key) ? null : Anim.GetAnimation(key).Length;
+    }
 
     void Step(double delta)
     {
@@ -319,6 +329,7 @@ public partial class Player : CharacterBody3D
         // a click-move target (MouseMove) is kept: CMouseController::FUN_140ad23f0 sets it in any state and StateTaxiCall::vfunc_8 returns
         // before reading the move direction outside 0x65, so it neither reads nor clears it and it survives to idle
         if (TaxiHold != null && TaxiHold(Input2 != Vector2.Zero || MouseInput != Vector2.Zero)) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }
+        if (ServerStateHold?.Invoke() == true) { Input2 = Vector2.Zero; MouseInput = Vector2.Zero; JumpHeld = false; }
         var rawInput = Input2 != Vector2.Zero ? Input2 : MouseInput;
         var input = DiagonalHold(rawInput, dt);
         bool jumpPressed = JumpHeld && !prevJump;

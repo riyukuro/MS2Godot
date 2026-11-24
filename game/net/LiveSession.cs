@@ -173,7 +173,49 @@ public partial class LiveSession : Node
         BattleRecords.ChaosRoomMeter = () => dungeonRoomId != 0 && DungeonRoomOf?.Invoke(dungeonRoomId) is { ChaosDamageMeter: true };
         // the server's state change (a death included) leaves the running interaction, react or ride summon state
         Me.StateEntered += st => InteractKey.LeaveForServerState(st, InteractObjects, InteractNpcs, reactState, rideSummon);
+        Me.StateEntered += EnterOwnStateExit;   // a server state the body has no move state for runs the client's own exit
     }
+
+    /// <summary>The own pc's exit from a state the server put it into (Ms2.Ui.OwnStateExit), with no move state of the body.</summary>
+    readonly Ms2.Ui.OwnStateExit ownStateExit = new();
+
+    /// <summary>The live run's count of server states entered and the exit time the last one started with (seconds, below 0
+    /// none, 0 at once).</summary>
+    internal int ServerStatesEntered;
+    internal double ServerStateExitLeft;
+    internal int OwnStateExitRunning => ownStateExit.State;
+
+    /// <summary>The live run's raw UserState (OnUserState: i32 object id, u8 state) for the own pc, as the server's debug
+    /// packet command takes it: each byte in hex, the opcode first.</summary>
+    internal string OwnUserStateBytes(int state)
+    {
+        ushort op = game.Profile.Number(Ms2.Net.Inbound.UserState);
+        int id = Me.ObjectId;
+        return $"{op & 0xff:X2} {op >> 8:X2} {id & 0xff:X2} {(id >> 8) & 0xff:X2} {(id >> 16) & 0xff:X2} {(id >> 24) & 0xff:X2} {state & 0xff:X2}";
+    }
+
+    void EnterOwnStateExit(int st)
+    {
+        bool atOnce = ownStateExit.Enter(st, Me.ObjectId);
+        ServerStatesEntered++;
+        ServerStateExitLeft = atOnce ? 0 : ownStateExit.State == st ? ownStateExit.Left : -1;
+        if (ownStateExit.State == st)
+            GD.Print($"live: server state 0x{st:x} runs its own exit: {ownStateExit.Cause}{(ownStateExit.Sequence != null ? " " + ownStateExit.Sequence : "")}, {(ownStateExit.Left < 0 ? "none comes" : $"{ownStateExit.Left:0.###} s")}");
+        if (atOnce && Me.LeaveServerState(st)) GD.Print($"live: server state 0x{st:x} left at once (no state data)");
+    }
+
+    /// <summary>The frame of <see cref="ownStateExit"/>: its exit enters StateIdle (the body's state from then).</summary>
+    void TickOwnStateExit(double delta)
+    {
+        int st = ownStateExit.State;
+        if (st == 0) return;
+        if (ownStateExit.Advance(delta, Me.State) && Me.LeaveServerState(st)) GD.Print($"live: server state 0x{st:x} left by its own exit");
+        else if (ownStateExit.State == 0 && Me.State != st) GD.Print($"live: server state 0x{st:x} replaced by state {Me.State}");
+    }
+
+    bool ServerStateHoldsBody() => ownStateExit.HoldsBody && Me.State == ownStateExit.State;
+
+    double? OwnSequenceSeconds(string name) => player != null && IsInstanceValid(player) ? player.SequenceSeconds(name) : null;
     /// <summary>CGroupChatManager's chats from the group chat packets (0x8B); live only. The HUD sets its texts and its browser.</summary>
     public readonly Ms2.Ui.GroupChatBook GroupChats = new();
     /// <summary>The party window is loaded and open (FUN_141924630), for OnPartyMemberJoin's add-or-open; set by the HUD.</summary>
@@ -1273,6 +1315,8 @@ public partial class LiveSession : Node
         player.Live = true;
         player.WalkRecordByAge = game?.Profile.IsGms2 ?? false;   // the recorded GMS2 client's walk cadence, see Player.WalkRecordByAge
         player.TaxiHold = TaxiHoldsMove;
+        player.ServerStateHold = ServerStateHoldsBody;
+        ownStateExit.SequenceLength ??= OwnSequenceSeconds;
         player.SetBattleStance(SelfInBattle);
         player.ServerTick = () => game?.Session.ServerTick ?? 0;
         SyncDeadFlag();   // an own FieldAddUser with no health: the flag, no state (scenestategame.cpp:11185)
@@ -1311,6 +1355,7 @@ public partial class LiveSession : Node
         TickTaxi(delta);
         Me.ExpireRevival((uint)game.Session.ServerTick);   // PC::FUN_141661ac0 (pc.cpp:2043), in PC's per-frame update
         if (player != null && IsInstanceValid(player)) Me.LeaveFallOnGround(player.Grounded);   // StateFall::vfunc_9, the state's update
+        TickOwnStateExit(delta);
         if (bindPending) TryBindPlayer();
         CubeCraft.Owner ??= cubeCraftOwner ??= new CubeCraftOwner(this);
         CubeCraft.Update();          // MyPC::vfunc_53 (mypc.cpp:2969-2970): the craft's Update while in cube mode

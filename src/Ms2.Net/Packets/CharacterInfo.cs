@@ -383,6 +383,17 @@ public sealed class MyCharacter {
     }
 
     /// <summary>
+    /// The state's own exit to StateIdle (vfunc_59(1)) for a state the server put the player into that the body has no move
+    /// state for (Ms2.Ui.OwnStateExit: at once, the input step, a timer or the played sequence's end). From then the body's
+    /// move state is the state (0 here). Returns whether <paramref name="state"/> was the state and was left.
+    /// </summary>
+    public bool LeaveServerState(int state) {
+        if (State != state || state is 0 or 1 or 2) return false;
+        State = 0;
+        return true;
+    }
+
+    /// <summary>
     /// vfunc_137 for the local player (OnUserState state 12; OnDeadUser, scenestategame.cpp:6532): PC::vfunc_137 (pc.cpp:4593)
     /// not in the death state and with no current health (FUN_141670a00(4) = m_unk_1c0[2][4]): FUN_14166ce50(1); then
     /// MyPC::vfunc_137 (mypc.cpp:1343) with the dead flag set enters the death state (vfunc_59(0xc)). Other objects: nothing.
