@@ -2688,9 +2688,9 @@ public partial class HudScene : Node, IUiStageHost
     /// <item>7 with feature 0xfb: the open dialog's mission list, then, with the game menu, SetPoint(0) (:8917-8926);</item>
     /// <item>6 with feature 0xfb and result 1: the open dialog's mission list, then SetPoint(0) (:8945-8950).</item>
     /// </list>
-    /// STILL-OPEN: the exp gain notice (FUN_1413610f0), kind 2's level-up effect (any PC), reward notice 0x4e5d and
-    /// FUN_141b16580, the game menu notice FUN_141938ae0 after kinds 4 and 7 and, without feature 0xfb, the older dialog
-    /// 0x4f87 are not ported.
+    /// Kind 1's chat line (FUN_1413610f0) is here; kind 2's effect is the session's, its own PC's reward notice and system
+    /// text are <see cref="OwnAdventureLevelUp"/>; after kinds 4 and 7 the game menu's count of 0x4f67 (FUN_141938ae0).
+    /// STILL-OPEN: without feature 0xfb the older dialog 0x4f87 (on in the KMS2, GMS2 and restore data, so not reached).
     /// </summary>
     void WatchPrestige()
     {
@@ -2698,7 +2698,8 @@ public partial class HudScene : Node, IUiStageHost
         if (live == null) return;
         Action<Ms2.Net.Packets.PrestigeMessage> onPrestige = m => ApplyPrestige(m, live.Me.ObjectId);
         live.PrestigeReceived += onPrestige;
-        unwatchPrestige = () => live.PrestigeReceived -= onPrestige;
+        var unwatchLevel = WatchLevel(live);
+        unwatchPrestige = () => { live.PrestigeReceived -= onPrestige; unwatchLevel(); };
     }
 
     Action unwatchMeso;
@@ -2823,6 +2824,7 @@ public partial class HudScene : Node, IUiStageHost
         {
             case Ms2.Net.Packets.PrestigeMessage.ExpGain g:
                 hudModel.Notify(Ms2.Ui.StatusEvent.AdventureExp);
+                AdventureExpLine(g.Gain);             // FUN_1413610f0 (:8825)
                 adventureBar?.SetPoint(g.Gain);
                 break;
             case Ms2.Net.Packets.PrestigeMessage.LevelUp u:
@@ -2838,13 +2840,14 @@ public partial class HudScene : Node, IUiStageHost
                 break;
             case Ms2.Net.Packets.PrestigeMessage.ClaimResult c:
                 if (c.Result != 1) break;
-                if (missions) { if (open) adventureLevel.RefreshLevelGuide(); }
+                if (missions) { if (open) { adventureLevel.RefreshLevelGuide(); gameMenu?.UpdateNotifyCount(0x4f67); } }   // :8871-8877
                 else GD.Print("adventure level: the older adventure dialog 0x4f87 is not in this HUD");
                 break;
             case Ms2.Net.Packets.PrestigeMessage.MissionList ml:
                 if (!missions || ml.Result != 1 || !open) break;
                 adventureLevel.RefreshMissionList();
                 if (ml.Kind == 7 && gameMenuMovie == null) break;
+                if (ml.Kind == 7) gameMenu?.UpdateNotifyCount(0x4f67);   // :8923-8926 FUN_141938ae0(0x4f67, 0)
                 adventureBar?.SetPoint(0);
                 break;
         }
@@ -3039,7 +3042,8 @@ public partial class HudScene : Node, IUiStageHost
     void GameMenu(Control ui)
     {
         gameMenuTable ??= Ms2.Ui.Hud.GameMenuTable.Load(assets.Packs, hudModel.IsFeatureEnabled);
-        var c = gameMenu = new Ms2.Ui.Hud.GameMenuController { Table = gameMenuTable, NotifyCount = CommunityNotifyCount };
+        var c = gameMenu = new Ms2.Ui.Hud.GameMenuController { Table = gameMenuTable, NotifyCount = CommunityNotifyCount,
+            AdventureBarCount = () => Ms2Godot.Net.LiveSession.Instance?.AdventurerBarCount ?? 0 };
         c.SetNotifyRedCircle7Flag(agreementReminder);
         c.ToggleDialog += GameMenuToggle;
         WatchAchieves();

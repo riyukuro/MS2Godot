@@ -114,6 +114,40 @@ public sealed class JobSystem
         }
     }
 
+    /// <summary>
+    /// JobSystemCli::vfunc_4 @0x140a6de80 (jobsystemcli.cpp:123), the level change (OnLevelUp, scenestategame.cpp:9541):
+    /// UpdateLearnable @0x140639d90 (jobsystem.cpp:453), then Refresh. UpdateLearnable takes each skill learnt by rank
+    /// (IsLearn): learnt when the rank reaches its job level, changed when it was not learnt before, its sub skills synced;
+    /// then RecalcPoints. The level itself is not read (checked against the exe: the compare is the rank at +0x5c against
+    /// GetJobLevel). Refresh's NotifySkill of each learnt skill (jobsystemcli.cpp:182) has no listener here.
+    /// </summary>
+    public void UpdateLearnable(int level)
+    {
+        foreach (var s in skills.Values)
+        {
+            if (!s.IsLearn) continue;
+            bool was = s.Learned;
+            s.Learned = Rank >= s.JobLevel;
+            s.Changed = !was && s.Learned;
+            SyncSubSkills(s);
+        }
+        RecalcPoints();
+    }
+
+    /// <summary>SyncSubSkills @0x14063a330 (:489): the job row's sub skills take the skill's learnt state and its level,
+    /// capped by their own max level (SkillData::FUN_1407e9ac0).</summary>
+    void SyncSubSkills(JobSkill s)
+    {
+        if (Job?.FindSkill(s.Id) is not { } d) return;
+        foreach (uint sub in d.SubSkillIds)
+        {
+            if (FindSkill(sub) is not { } ss || t.GetSkillData(sub) is not { } sd) continue;
+            ss.Learned = s.Learned;
+            ushort max = t.MaxLevel(sd);
+            ss.Level = max < s.Level ? max : s.Level;
+        }
+    }
+
     /// <summary>GetUsedPoint @0x140639b40 (:427).</summary>
     public int GetUsedPoint(int jobLevel) => usedPoints.GetValueOrDefault(jobLevel);
 

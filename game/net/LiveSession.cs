@@ -642,6 +642,43 @@ public partial class LiveSession : Node
     /// <summary>OnExpUp's number for the own PC (scenestategame.cpp:4152): mode 0, a gain, no npc of the packet's npc id
     /// (an npc of the id keeps the gain: <see cref="NpcExpShown"/>); the gain and its exp type.</summary>
     public event Action<long, int> ExpGained;
+
+    /// <summary>OnExpUp mode 0 (scenestategame.cpp:4180): the packet and whether the rest exp was above 0 before it, for the
+    /// exp chat lines (FUN_1413606c0).</summary>
+    public event Action<ExpUp, bool> ExpLogged;
+
+    /// <summary>OnLevelUp of the own PC (scenestategame.cpp:9545-9567): the old level and the packet's, raised for each own
+    /// LevelUp packet (a rise or not) before NotifyChangeMyLevel.</summary>
+    public event Action<int, int> OwnLevelChanged;
+
+    /// <summary>OnPrestige kind 2 of the own PC (scenestategame.cpp:8851-8862): the old adventure level and the packet's.</summary>
+    public event Action<int, int> OwnAdventureLevelChanged;
+
+    /// <summary>DAT_143ab2900, OnAdventurerBar's count (scenestategame.cpp:4082).</summary>
+    public int AdventurerBarCount { get; private set; }
+    /// <summary>OnAdventurerBar: the game menu's FUN_141939620 follows.</summary>
+    public event Action AdventurerBarChanged;
+
+    /// <summary>The commonResource.xml keys of CommonResource +0x328 and +0x5b0 (commonresource.h).</summary>
+    public const string LevelUpEffectKey = "EFFECT_LEVEL_UP", AdventureLevelUpEffectKey = "EFFECT_ADVENTURE_LEVEL_UP";
+
+    /// <summary>
+    /// The effect query of OnLevelUp (scenestategame.cpp:9520-9540) and OnPrestige kind 2 (:8838-8849): a CommonResource
+    /// effect whose actor is the PC's ridee while it rides, else the PC, with the PC's object kind (1 own, 3 another).
+    /// </summary>
+    void PlayPcEffect(int objectId, bool own, string key)
+    {
+        string path;
+        try { path = Ms2.Ui.GameTables.Shared(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), GameOptions.StringLanguage).CommonResource(key); }
+        catch (Exception ex) { GD.PushWarning($"common effect {key}: {ex.Message}"); return; }
+        if (string.IsNullOrEmpty(path)) return;
+        if (!own) { remote?.PlayActorEffect(objectId, path); return; }
+        if (player == null || !IsInstanceValid(player)) return;
+        var actor = player.Mount?.Visual ?? player.Visual;
+        if (actor == null) return;
+        OwnEffectsPlayed?.Invoke(path);
+        ReleaseKeptEffect(SpawnKeptEffect(path, actor, Ms2.Audio.SoundMusicEffectState.CasterMyPc));
+    }
     /// <summary>An npc's exp gain shown when its death sequence ended (<see cref="NpcLayer.ExpShown"/>): the npc and the exp.</summary>
     public event Action<FieldNpcs.Placed, long> NpcExpShown;
     /// <summary>A live npc made (FieldAddNpc) and removed (FieldRemoveNpc, its object id), the quest navigator's notifies.</summary>
@@ -1892,11 +1929,13 @@ public partial class LiveSession : Node
             else if (game.Is(p, Inbound.ExpUp))
             {
                 var e = ExpUp.Read(p.Reader());   // CSceneStateGame::OnExpUp (scenestategame.cpp:4129); no ExpectEnd: the client ignores trailing bytes
+                bool rested = Me.RestExp > 0;     // :4139 bRested: DAT_143ab28a8 before the packet's
                 Me.Apply(e);
                 // scenestategame.cpp:4145: an npc of the packet's id keeps the gain (CNpc::FUN_141094df0), else the own PC shows it
                 if (e.Mode == 0 && e.Gained > 0 && remote?.AddNpcExp(e.NpcId, e.Gained) != true) ExpGained?.Invoke(e.Gained, e.Type);
                 // :4174: the own character's exp tally for any mode 0 gain, whoever kept the number (with a local player)
                 if (e.Mode == 0 && e.Gained > 0 && selfObject > 0) BattleRecords.RecordExp(CharacterId, e.Gained);
+                if (e.Mode == 0) ExpLogged?.Invoke(e, rested);   // :4180 FUN_1413606c0 for every mode 0 packet, a gain of 0 too
                 if (LiveCheck) GD.Print($"live: exp up mode {e.Mode} +{e.Gained} exp {Me.Exp} rest {Me.RestExp}");
             }
             else if (game.Is(p, Inbound.ItemDrop)) { }   // CSceneStateGame::FUN_141717560 (scenestategame.cpp:3262) has an empty body: the client does nothing with it
@@ -1978,13 +2017,24 @@ public partial class LiveSession : Node
                     else remote?.ShowNumber(n);
                 }
             }
+            else if (game.Is(p, Inbound.AdventurerBar))
+            {
+                AdventurerBarCount = p.Reader().ReadInt();   // CSceneStateGame::OnAdventurerBar (scenestategame.cpp:4082): DAT_143ab2900
+                AdventurerBarChanged?.Invoke();              // the game menu's FUN_141939620
+                if (LiveCheck) GD.Print($"live: adventurer bar {AdventurerBarCount}");
+            }
             else if (game.Is(p, Inbound.LevelUp))
             {
                 var l = LevelUp.Read(p.Reader());  // CSceneStateGame::OnLevelUp (scenestategame.cpp:9511)
                 int selfOld = Me.User?.Level ?? 0;
                 bool selfLevel = Me.Apply(l);
                 int? oldLevel = selfLevel ? selfOld : remote?.LevelUp(l.ObjectId, l.Level);
-                if (oldLevel is { } was && l.Raises(was)) GameMenuDirty?.Invoke();   // :9537-9539 FindGameMenuDialog(0x4e28)->MarkDirty()
+                if (oldLevel is { } was && l.Raises(was))
+                {
+                    GameMenuDirty?.Invoke();   // :9537-9539 FindGameMenuDialog(0x4e28)->MarkDirty()
+                    PlayPcEffect(l.ObjectId, selfLevel, LevelUpEffectKey);   // :9520-9540 EFFECT_LEVEL_UP on the PC or its ridee
+                }
+                if (selfLevel) OwnLevelChanged?.Invoke(selfOld, l.Level);   // :9541-9561, before status 6 and NotifyChangeMyLevel
                 if (selfLevel) guide?.OnChangeMyLevel();   // NotifyChangeMyLevel (CGuideManager::OnChangeMyLevel)
                 if (selfLevel || LiveCheck) GD.Print($"live: level up object {l.ObjectId} level {l.Level}{(selfLevel ? " SELF" : "")}");
             }
@@ -2377,10 +2427,18 @@ public partial class LiveSession : Node
                 // kind 2: FindPCById; the own PC's old level fills level 1 (:8856), then vfunc_140 (:8836). Other PCs'
                 // user blocks take it in the field tracker
                 bool ownLevel = m is PrestigeMessage.LevelUp up && up.ObjectId == selfObject && Me.User != null;
+                int ownOld = ownLevel ? Me.User.PrestigeLevel : 0;
                 if (m != null) Adventure.Apply(m, ownLevel ? Me.User.PrestigeLevel : null, MissionFeature());
                 if (ownLevel) Me.User.PrestigeLevel = ((PrestigeMessage.LevelUp)m).Value;
+                if (m is PrestigeMessage.LevelUp lu)
+                {
+                    // :8833-8849: the PC's old level, the new; on a rise EFFECT_ADVENTURE_LEVEL_UP on it or its ridee
+                    int? was = ownLevel ? ownOld : lu.ObjectId == selfObject ? null : remote?.AdventureLevelUp(lu.ObjectId, lu.Value);
+                    if (was is { } w && lu.Value > w) PlayPcEffect(lu.ObjectId, ownLevel, AdventureLevelUpEffectKey);
+                    if (ownLevel) OwnAdventureLevelChanged?.Invoke(ownOld, lu.Value);
+                }
                 if (m != null) PrestigeReceived?.Invoke(m);
-                GD.Print($"live: prestige {m?.GetType().Name ?? "other kind"}");
+                if (LiveCheck) GD.Print($"live: prestige {m?.GetType().Name ?? "other kind"}");
             }
             else if (game.Is(p, Inbound.Lapenshard))
             {

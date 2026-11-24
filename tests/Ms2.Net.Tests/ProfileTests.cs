@@ -82,10 +82,11 @@ public class ProfileTests {
         Assert.Throws<KeyNotFoundException>(() => p.Number(Inbound.UserChatItemLink));
         Assert.Throws<KeyNotFoundException>(() => p.Number(Inbound.UserSkinColor));   // STILL-OPEN: the GMS2 number is not recovered
         Assert.Throws<KeyNotFoundException>(() => p.Number(Inbound.WorldTimeSync));
+        Assert.Throws<KeyNotFoundException>(() => p.Number(Inbound.AdventurerBar));   // STILL-OPEN: the GMS2 number is not recovered
         Assert.Throws<KeyNotFoundException>(() => p.Number(Outbound.PersonalInfoAgreement));
         // every other member is mapped, and the numbers stay unique per direction
         // (the failure message names the members to add a row for in Gms2Opcodes.cs)
-        Assert.That(Enum.GetValues<Inbound>().Where(o => o is not (Inbound.DataPatch or Inbound.UserChatItemLink or Inbound.UserSkinColor or Inbound.WorldTimeSync) && !TryNumber(p, o)).Select(o => "Inbound." + o), Is.Empty, "no GMS2 number for");
+        Assert.That(Enum.GetValues<Inbound>().Where(o => o is not (Inbound.DataPatch or Inbound.UserChatItemLink or Inbound.UserSkinColor or Inbound.WorldTimeSync or Inbound.AdventurerBar) && !TryNumber(p, o)).Select(o => "Inbound." + o), Is.Empty, "no GMS2 number for");
         Assert.That(Enum.GetValues<Outbound>().Where(o => o != Outbound.PersonalInfoAgreement && !TryNumber(p, o)).Select(o => "Outbound." + o), Is.Empty, "no GMS2 number for");
     }
 

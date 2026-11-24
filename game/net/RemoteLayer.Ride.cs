@@ -134,6 +134,34 @@ public sealed partial class RemoteLayer
         return old;
     }
 
+    /// <summary>OnPrestige kind 2 for another PC (scenestategame.cpp:8833-8836): its old adventure level (vfunc_141), then the
+    /// new (vfunc_140); null when no PC of the id is here (FindPCById).</summary>
+    public int? AdventureLevelUp(int objectId, int level)
+    {
+        if (!users.TryGetValue(objectId, out var r)) return null;
+        int old = r.AdventureLevel;
+        r.AdventureLevel = level;
+        return old;
+    }
+
+    /// <summary>
+    /// The effect query of OnLevelUp (scenestategame.cpp:9520-9540) and OnPrestige kind 2 (:8838-8849) for another PC: the
+    /// actor is its ridee while it rides (GetRidee), else the PC, the kind the PC's (3); the effect is inserted on it and
+    /// left to play out. False when no PC of the id is here or the path is empty.
+    /// </summary>
+    public bool PlayActorEffect(int objectId, string path)
+    {
+        if (string.IsNullOrEmpty(path) || !users.TryGetValue(objectId, out var r) || r.Pc == null) return false;
+        var actor = (r.Ridee ?? r.Pc).Visual;
+        if (actor == null) return false;
+        ActorEffectsPlayed?.Invoke(objectId, path);
+        ReleaseKeptEffect(SpawnKeptEffect(path, actor, Ms2.Audio.SoundMusicEffectState.CasterOtherPc));
+        return true;
+    }
+
+    /// <summary>The object id and effect xml of each <see cref="PlayActorEffect"/> (for the checks).</summary>
+    public Action<int, string> ActorEffectsPlayed;
+
     /// <summary>RideOffAction type 24, UnRideSkill.</summary>
     public const int UnRideSkillType = 24;
 

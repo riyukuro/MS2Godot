@@ -132,6 +132,27 @@ public sealed class RewardNotifyController : UiController
         ShowLearnEmotion(Model.Tables.SkillName((uint)emotionId), d.Icon);
     }
 
+    /// <summary>
+    /// FUN_141ac0210 (@0x141ac0210, uirewardnotify.cpp:417): the player's job system's learnt skills without the sub skills
+    /// (GetSkills(list, 1, true)); a skill with no skill data is passed over; each changed one gets a learn_skill toast;
+    /// PC_SkillGet plays once when any did. OnLevelUp (scenestategame.cpp:9551) and OnJob (:7466-7528) call it.
+    /// </summary>
+    /// <returns>The number of toasts.</returns>
+    public int ShowLearnSkills(Ms2.Ui.Skills.JobSystem jobs)
+    {
+        if (jobs == null) return 0;
+        int n = 0;
+        foreach (var s in jobs.GetSkills(true, true))
+        {
+            if ((Skill ?? Model.Tables.Skills.GetSkillData)(s.Id) is not { } d) continue;
+            if (!s.Changed) continue;
+            n++;
+            ShowLearnSkill(Model.Tables.SkillName(s.Id), d.IsPassive, d.Icon);
+        }
+        if (n > 0) Sound?.Invoke("PC_SkillGet");
+        return n;
+    }
+
     /// <summary>FUN_141ac0210 (@0x141ac0210), one learned skill: msg 0x804, skillType, skillIconPath; the caller plays PC_SkillGet once.</summary>
     public void ShowLearnSkill(string skillName, bool skillType, string icon) =>
         AppendReward(Host.Obj(("type", "learn_skill"), ("msg", Fmt(0x804, skillName)), ("skillType", skillType ? 1 : 0), ("skillIconPath", icon)));

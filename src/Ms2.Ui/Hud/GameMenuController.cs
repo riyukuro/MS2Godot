@@ -56,6 +56,8 @@ public sealed class GameMenuController : UiController
     public Func<GameMenuDef, bool> NewBy = _ => false;
     /// <summary>FUN_141938ae0's count for a dialog id (unread mail, claimable rewards, ...); 0 without the systems.</summary>
     public Func<int, int> NotifyCount = _ => 0;
+    /// <summary>DAT_143ab2900: the count OnAdventurerBar (scenestategame.cpp:4082) keeps; 0 until the first packet.</summary>
+    public Func<int> AdventureBarCount = () => 0;
     /// <summary>CCharacterAbilityTable and CCharacterAbilityManager, for the character ability notify mark
     /// (<see cref="UpdateCharacterAbilityNotify"/>) and its tooltip.</summary>
     public CharacterAbilityTable AbilityTable = new();
@@ -113,6 +115,7 @@ public sealed class GameMenuController : UiController
             UpdateNotifyCount(ui);
         SetNotifyRedCircle(0x16, redCircleHome);
         SetNotifyRedCircle(7, redCircleOption);
+        UpdateAdventureBarCount();
         UpdateCharacterAbilityNotify();
         RideVisibility();                                // FUN_141939ec0 (uigamemenudialog.cpp:1519)
     }
@@ -124,6 +127,16 @@ public sealed class GameMenuController : UiController
     public override void OnStatus(StatusEvent e)
     {
         if (e == StatusEvent.Riding) RideVisibility();
+    }
+
+    /// <summary>FUN_141939620 (@0x141939620, uigamemenudialog.cpp:1447): with feature 0x5c (AdventureBar), setNotifyCount of
+    /// menu 0x24 with the kept count on its top entry's button. RefreshMenu (:1504) and OnAdventurerBar call it. The
+    /// feature is off on the KMS2, GMS2 and restore data (level 99 above the Live level).</summary>
+    public void UpdateAdventureBarCount()
+    {
+        if (!Feature(0x5c)) return;
+        if (Host?.Entity == null || Table == null) return;
+        if (MenuItem(MenuName(Table.FindTopId(0x24))) is { } b) Host.Invoke(b, "setNotifyCount", MenuName(0x24), AdventureBarCount());
     }
 
     /// <summary>FUN_14193a140: per visible top item {row, col} and its fields (FUN_14193a7b0); the visible children go into

@@ -229,6 +229,11 @@ public partial class LiveSession
                 await frames(60 * int.Parse(step[5..]));
                 continue;
             }
+            if (step.StartsWith("shot:"))      // shot:<name>: a shot of the frame as it is
+            {
+                Shot(step[5..] + ".png");
+                continue;
+            }
             if (step.StartsWith("keys:"))      // keys:N: the action key pressed N times, a second apart (a talk's Next pages)
             {
                 for (int i = int.Parse(step[5..]); i > 0; i--) { await PressActionKey(frames); await frames(60); }
