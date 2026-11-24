@@ -115,6 +115,23 @@ public partial class HudScene
         return true;
     }
 
+    /// <summary>The quick slots' cooldown answer for skill <paramref name="skillId"/>: each slot holding it, whether the slot
+    /// shows the skill's running cooldown (<see cref="Ms2.Ui.Skills.SkillSlotState.NotifyCooldownStart"/>, the check that runs
+    /// the slot's onCooldownStart) with its time left and total; the same check without a slot when none holds it.</summary>
+    public string CooldownScripted(uint skillId)
+    {
+        var w = QuickSlotWorld();
+        if (w.Tables.GetSkillData(skillId) is not { } sd) return "no skill data";
+        string One(Ms2.Ui.Skills.SkillSlotState s) =>
+            s.NotifyCooldownStart(sd.CooldownKey, out float remain, out float total) ? $"shown {remain:F2}/{total:F2}" : "not shown";
+        var parts = new System.Collections.Generic.List<string> { $"useCoolDownShowUI {sd.Condition.UseCoolDownShowUI}" };
+        for (int i = 0; playerInfo != null && i < Ms2.Ui.Hud.MainPlayerInfoController.SlotCount; i++)
+            if (playerInfo.ShownEntry(i) is var e && e.SkillId == (int)skillId)
+                parts.Add($"slot {i}: {One(new Ms2.Ui.Skills.SkillSlotState(w, (uint)e.SkillId, e.ItemId, e.ItemUid))}");
+        if (parts.Count == 1) parts.Add($"no slot holds it; without a slot: {One(new Ms2.Ui.Skills.SkillSlotState(w, skillId, 0, 0))}");
+        return string.Join(", ", parts);
+    }
+
     /// <summary>The Escape key pressed, through the dialog key handler. True when a dialog took it.</summary>
     public bool EscScripted() =>
         DialogKeys(new InputEventKey { Keycode = Key.Escape, PhysicalKeycode = Key.Escape, Pressed = true, Echo = false });

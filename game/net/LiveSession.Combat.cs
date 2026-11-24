@@ -782,6 +782,26 @@ public partial class LiveSession
                 if (onKeep) Ui.HudScene.OwnEffectKept -= Kept;
                 continue;
             }
+            // equip:<item id>: the item made by the GM item command and put on through the bag's equip action (as equip, with
+            // the id in the step instead of MS2_LIVE_COMBAT_WEAPON)
+            if (step.StartsWith("equip:"))
+            {
+                int item = int.Parse(step[6..]);
+                GD.Print($"live: combat {step}: item {(hud.SubmitChatLine($"/item {item}") ? "sent" : "no chat window")}");
+                await until(() => live.Items.All.Any(e => e.Id == item), 60 * 10); await frames(60);
+                Check($"{item} is in the bag", live.Items.All.Any(e => e.Id == item));
+                GD.Print($"live: combat {step}: {(hud.EquipScripted(item) || EquipDirect(item, false) ? "sent" : "not sent")}");
+                await until(() => live.Me.Equips?.Any(e => e.Id == item) == true, 60 * 10); await frames(60);
+                Check($"{item} is worn", live.Me.Equips?.Any(e => e.Id == item) == true);
+                Shot($"equip{item}.png");
+                continue;
+            }
+            // cooldown:<skill id>: the quick slots' cooldown answer for the skill (HudScene.CooldownScripted), logged
+            if (step.StartsWith("cooldown:"))
+            {
+                GD.Print($"live: combat {step}: {hud.CooldownScripted(uint.Parse(step[9..]))}");
+                continue;
+            }
             if (step.StartsWith("level:"))
             {
                 int level = int.Parse(step[6..]);
