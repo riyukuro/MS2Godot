@@ -272,6 +272,18 @@ public sealed class UiAssets
         return tex;
     }
 
+    /// <summary>
+    /// A chat emoticon url's image ("img://emoticon:&lt;id&gt;"): the image loader's type 5 (GFxImageLoader::Protocol::Parse and the
+    /// image callback FUN_140a59830, <see cref="Ms2.Ui.ChatEmoticons.ChatEmoticonTable.ImagePathOfUrl"/>), the emoticon's
+    /// image_path read as a Resource/Image file. Null for any other url or an emoticon the table does not have.
+    /// </summary>
+    public Texture2D EmoticonImage(string url)
+    {
+        if (string.IsNullOrEmpty(url) || url.IndexOf(Ms2.Ui.ChatEmoticons.ChatEmoticonTable.ImageHost, StringComparison.Ordinal) < 0) return null;
+        var path = Ms2.Ui.GameTables.Shared(Packs, Language).ChatEmoticonData.ImagePathOfUrl(url);
+        return path == null ? null : ImageFile(Ms2.Ui.ChatEmoticons.ChatEmoticonTable.ResourceImageEntry(path));
+    }
+
     public string Str(string key)
     {
         if (string.IsNullOrEmpty(key)) return key;

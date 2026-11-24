@@ -45,6 +45,48 @@ public sealed class ChatEmoticonTable
     public IReadOnlyList<ChatEmoticon> GetEmoticonsByGroup(uint group) => byGroup.TryGetValue(group, out var l) ? l : Array.Empty<ChatEmoticon>();
     public IReadOnlyList<ChatEmoticon> GetEmoticonsByCommand(string command) => byCommand.TryGetValue(command ?? "", out var l) ? l : Array.Empty<ChatEmoticon>();
 
+    /// <summary>The url host of a chat emoticon image: "img://emoticon:&lt;id&gt;" (UIMessenger::TypeEmoticon's IMG tag).</summary>
+    public const string ImageHost = "emoticon";
+
+    /// <summary>
+    /// The image file of an emoticon url, as the movies' image loader finds it: GFxImageLoader::Protocol::Parse
+    /// (@0x1422eced0, gfxui/gfximageloader.cpp:78-99, 117-122) takes the host before the first ":" with "img://" removed
+    /// (Token @0x1422ed7a0, :152-161) and, for "emoticon", the rest as the path, type 5; the image callback (FUN_140a59830,
+    /// client/ms2/asyncimageloader.cpp:356-366) reads the path as an unsigned number (ParseUInt) and loads that emoticon's
+    /// image_path. Null when the url is not an emoticon url, has no path, or names an emoticon the table does not have
+    /// (the callback then has no file).
+    /// </summary>
+    public string ImagePathOfUrl(string url)
+    {
+        if (string.IsNullOrEmpty(url)) return null;
+        var str = url.Replace("img://", "");
+        int at = str.IndexOf(':');
+        string host = at < 0 ? str : str[..at], path = at < 0 ? "" : str[(at + 1)..];
+        if (host != ImageHost || path.Length == 0) return null;
+        return GetEmoticon(ParseUInt(path)) is { } e && e.ImagePath.Length > 0 ? e.ImagePath : null;
+    }
+
+    /// <summary>A file path as the movies and tables give it ("./Data/Resource/Image/x/y.png", "x\\y.dds") as its
+    /// Resource/Image entry ("x/y.png"), lower case.</summary>
+    public static string ResourceImageEntry(string path)
+    {
+        var p = (path ?? "").Replace('\\', '/').TrimStart('.', '/');
+        int at = p.IndexOf("resource/image/", StringComparison.OrdinalIgnoreCase);
+        if (at >= 0) p = p[(at + "resource/image/".Length)..];
+        return p.ToLowerInvariant();
+    }
+
+    /// <summary>ParseUInt: strtoul base 10 of the leading digits (0 without).</summary>
+    static uint ParseUInt(string s)
+    {
+        s = s.TrimStart();
+        ulong n = 0;
+        int i = 0;
+        if (i < s.Length && s[i] == '+') i++;
+        while (i < s.Length && char.IsAsciiDigit(s[i]) && n <= uint.MaxValue) n = n * 10 + (ulong)(s[i++] - '0');
+        return n > uint.MaxValue ? uint.MaxValue : (uint)n;
+    }
+
     /// <summary>Emoticons whose category is not in the category table (what Validate logs).</summary>
     public IEnumerable<ChatEmoticon> InvalidCategory() => emoticons.Values.Where(e => !categories.ContainsKey(e.CategoryId));
 

@@ -751,6 +751,7 @@ public partial class As3View : Node2D
     {
         if (string.IsNullOrEmpty(url)) return null;
         if (ImageLookup?.Invoke(url) is { } supplied) return supplied;
+        if (assets.EmoticonImage(url) is { } emoticon) return emoticon;
         // GetProfileImagePath's "./Custom/Download/Profile/<file>": a downloaded profile picture (none until it is in)
         if (Ms2.Ui.ProfileImages.FileOfPath(url) is { } profile) return Net.ProfileImageService.Texture(profile);
         var p = url;
@@ -758,9 +759,7 @@ public partial class As3View : Node2D
         p = p.Replace('\\', '/').TrimStart('.', '/');
         // the upload dialog's "./Custom/Thumbnail/<title>.png" (Common.getImgUrl: "img://icon:" + the path)
         if (p.StartsWith("custom/", StringComparison.OrdinalIgnoreCase)) return Net.UgcFileService.TextureOfPath(p);
-        int at = p.IndexOf("resource/image/", StringComparison.OrdinalIgnoreCase);
-        if (at >= 0) p = p[(at + "resource/image/".Length)..];
-        return assets.ImageFile(p.ToLowerInvariant());
+        return assets.ImageFile(Ms2.Ui.ChatEmoticons.ChatEmoticonTable.ResourceImageEntry(p));
     }
 
     // ---- input ---------------------------------------------------------------------------------------------------

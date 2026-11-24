@@ -231,6 +231,7 @@ public partial class TextNode : Node2D
     {
         Def = sym["text"];
         ExportedImage = src => scope.Assets.ExportedImage(scope.MovieKey, scope.RootKey, src);
+        LoadedImage = scope.Assets.EmoticonImage;
         Readable = (bool?)Def["readable"] == true;
         Bounds = UiBuilder.Rc(sym["bounds"]);
         if (nine != null) Bounds = nine.Map(Bounds);
@@ -659,15 +660,27 @@ public partial class TextNode : Node2D
     /// <summary>The IMG url's image: (texture or null, region) when an exported name, null when none.</summary>
     public Func<string, (Texture2D Tex, Rect2 Region)?> ExportedImage;
 
+    /// <summary>
+    /// The IMG url's image when it is no exported name: the movie's image loader (GFxImageLoader::LoadProtocolImage,
+    /// gfxui/gfximageloader.cpp:171). Only its emoticon type is given here (<see cref="UiAssets.EmoticonImage"/>, the chat
+    /// line's "img://emoticon:&lt;id&gt;"). STILL-OPEN: the loader's other url types inside a text field (icon, ugc, keepMem).
+    /// </summary>
+    public Func<string, Texture2D> LoadedImage;
+
     ImageBox Box(HtmlImage im)
     {
         if (ExportedImage?.Invoke(im.Src) is { } found && found.Region.Size.X > 0 && found.Region.Size.Y > 0)
-        {
-            float ow = found.Region.Size.X, oh = found.Region.Size.Y;
-            float w = im.Width > 0 ? im.Width : ow, h = im.Height > 0 ? im.Height : oh;
-            return new ImageBox(found.Tex, found.Region, MathF.Floor(w * 20 + 0.5f) / 20, h, (oh + im.VSpace) * (h / oh));
-        }
+            return Box(im, found.Tex, found.Region);
+        if (LoadedImage?.Invoke(im.Src) is { } loaded && loaded.GetWidth() > 0 && loaded.GetHeight() > 0)
+            return Box(im, loaded, new Rect2(Vector2.Zero, loaded.GetSize()));
         return new ImageBox(null, default, im.Width, im.Height, 0);
+    }
+
+    static ImageBox Box(HtmlImage im, Texture2D tex, Rect2 region)
+    {
+        float ow = region.Size.X, oh = region.Size.Y;
+        float w = im.Width > 0 ? im.Width : ow, h = im.Height > 0 ? im.Height : oh;
+        return new ImageBox(tex, region, MathF.Floor(w * 20 + 0.5f) / 20, h, (oh + im.VSpace) * (h / oh));
     }
 
     /// <summary>True when the text has IMG chars.</summary>

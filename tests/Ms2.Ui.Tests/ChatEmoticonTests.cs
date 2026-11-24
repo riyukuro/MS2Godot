@@ -51,6 +51,52 @@ public class ChatEmoticonTests
     // ---- the table ----
 
     [Test]
+    public void AnEmoticonUrlLoadsItsTablesImage()
+    {
+        // GFxImageLoader::Protocol::Parse (gfximageloader.cpp:78-122): "img://" removed, the host before ":" and for
+        // "emoticon" the rest, type 5; FUN_140a59830 (asyncimageloader.cpp:356-366): ParseUInt of it, the emoticon's image_path
+        var t = Table();
+        var e = t.Emoticons.First(x => x.ImagePath.Length > 0);
+        Assert.That(t.ImagePathOfUrl($"img://emoticon:{e.Id}"), Is.EqualTo(e.ImagePath));
+        Assert.That(t.ImagePathOfUrl($"emoticon:{e.Id}"), Is.EqualTo(e.ImagePath), "the loader's url without the scheme");
+        Assert.That(t.ImagePathOfUrl($"img://emoticon:{e.Id}x"), Is.EqualTo(e.ImagePath), "ParseUInt takes the leading digits");
+        Assert.That(t.ImagePathOfUrl("img://emoticon:"), Is.Null, "no path: Parse fails");
+        Assert.That(t.ImagePathOfUrl("img://emoticon:4294967295"), Is.Null, "an id the table does not have: no file");
+        Assert.That(t.ImagePathOfUrl($"img://icon:{e.Id}"), Is.Null, "another host");
+        Assert.That(t.ImagePathOfUrl(e.ImagePath), Is.Null, "a plain path");
+    }
+
+    /// <summary>The data sweep: every emoticon's chat IMG url finds its image file in the image archive, on each data set given
+    /// (MS2_DATA, MS2_GMS2_DATA), with the path as the loader reads it.</summary>
+    [Test]
+    public void EveryEmoticonsChatImageIsInTheArchive()
+    {
+        Data();
+        int sets = 0;
+        foreach (var (label, dir) in new[] { ("MS2_DATA", Environment.GetEnvironmentVariable("MS2_DATA")), ("MS2_GMS2_DATA", Environment.GetEnvironmentVariable("MS2_GMS2_DATA")) })
+        {
+            if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) { TestContext.WriteLine($"{label}: not set"); continue; }
+            var p = label == "MS2_DATA" ? packs : new PackSet(dir);
+            var t = label == "MS2_DATA" ? tables.ChatEmoticonData : new GameTables(p, "en").ChatEmoticonData;
+            var all = t.Emoticons.ToList();
+            Assert.That(all, Is.Not.Empty, label);
+            var missing = all.Where(e => t.ImagePathOfUrl($"img://emoticon:{e.Id}") is not { } path
+                || !p.Exists("Resource/Image", ChatEmoticonTable.ResourceImageEntry(path))).Select(e => $"{e.Id}:{e.ImagePath}").ToList();
+            // a tab with emoticons must show its icon; a tab with none (the data's development category) is only listed
+            var used = all.Select(e => e.CategoryId).ToHashSet();
+            var noIcon = t.Categories.Where(c => !p.Exists("Resource/Image", ChatEmoticonTable.ResourceImageEntry(c.IconPath))).ToList();
+            var cats = noIcon.Where(c => used.Contains(c.Id)).Select(c => $"{c.Id}:{c.IconPath}").ToList();
+            TestContext.WriteLine($"{label}: {all.Count} emoticons in {all.Select(e => e.GroupId).Distinct().Count()} packs, {missing.Count} without their image: {string.Join(", ", missing.Take(10))}; " +
+                $"{t.Categories.Count()} tabs, {cats.Count} with emoticons and without their icon: {string.Join(", ", cats.Take(10))}; " +
+                $"empty tabs without an icon: {string.Join(", ", noIcon.Where(c => !used.Contains(c.Id)).Select(c => $"{c.Id}:{c.IconPath}"))}");
+            Assert.That(missing, Is.Empty, label + ": emoticon images");
+            Assert.That(cats, Is.Empty, label + ": tab icons");
+            sets++;
+        }
+        Assert.That(sets, Is.GreaterThan(0));
+    }
+
+    [Test]
     public void TheTableHasEmoticonsInKnownCategories()
     {
         var t = Table();
