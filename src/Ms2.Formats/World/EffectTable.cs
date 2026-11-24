@@ -140,6 +140,12 @@ public sealed class EffectPart
     /// <summary>A nif part's viewDistance (CNifEffectParam::vfunc_1, nifeffectparam.cpp:376, m_fViewDistance +0xac): its own
     /// view distance, -1 (absent) for the table's.</summary>
     public float ViewDistance = -1;
+    /// <summary>A swoosh, ribbon, lightning or beam part's own values (<see cref="EffectStripParam.Read"/>); null for other parts.</summary>
+    public EffectStripParam Strip;
+    /// <summary>An afterImage part's own values; null for other parts.</summary>
+    public EffectAfterImageParam AfterImage;
+    /// <summary>A status part's category (statuseffectparam.cpp:101-105); null for other parts.</summary>
+    public string StatusCategory;
     /// <summary>type="weather" fallType: the sky object WeatherEffect::vfunc_4 hands CEffectService::SetSkyObject
     /// (0 clear, 1 snow, 2 heavy snow, 3 rain, 4 heavy rain, 5 sandstorm, 6 cherry blossom, 7 leaf fall).</summary>
     public int FallType;
@@ -220,6 +226,10 @@ public sealed class EffectTable
             p.TopLevel = e.Parent == x.Root;
             if (p.TypeId == EffectSkipTable.TypeRandom) p.RandomWeights = Weights((string)e.Attribute("prob"));
             if (p.TypeId == EffectSkipTable.RowNif) p.ViewDistance = F((string)e.Attribute("viewDistance"), -1f);
+            if (p.TypeId is EffectSkipTable.TypeSwoosh or EffectSkipTable.TypeRibbon or EffectSkipTable.TypeLightning or EffectSkipTable.TypeBeam)
+                p.Strip = EffectStripParam.Read(p.TypeId, e);
+            else if (p.TypeId == EffectSkipTable.TypeAfterImage) p.AfterImage = EffectAfterImageParam.Read(e);
+            else if (p.TypeId == EffectSkipTable.TypeStatus) p.StatusCategory = (string)e.Attribute("category") ?? "";   // CStatusEffectParam::vfunc_1 @0x1418010a0
             if (e.Element("attachInfo") is { } a)
             {
                 p.AttachType = (string)a.Attribute("attachType");

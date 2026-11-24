@@ -167,6 +167,11 @@ void fragment() {
                 EffectSounds++;
                 continue;
             }
+            if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeSwoosh)
+            {
+                if (actor == null || Swoosh(parts, part, actor, casterKind, eye)) EffectsNotNif++;
+                continue;
+            }
             if (part.Type != "nif" || string.IsNullOrEmpty(part.FilePath)) { EffectsNotNif++; continue; }
             bool onActor = actor != null && part.AttachKind != 0;
             var place = actor == null ? new Transform3D(rotation, at) : onActor ? Transform3D.Identity : WorldPlace(part, actor);
@@ -208,6 +213,24 @@ void fragment() {
             live.Add((holder, 0f, part.StartDelay, part.StartDelay + Mathf.Min(dur, 3f), mats));
             EffectsSpawned++;
         }
+    }
+
+    /// <summary>The swooshes made on actors (<see cref="SwooshEffect"/>).</summary>
+    public int Swooshes;
+
+    /// <summary>
+    /// A swoosh part on <paramref name="actor"/> (CSwooshEffect; an effect at a place has no target node and makes none,
+    /// swoosheffectparam.cpp:293-295). Once made, CreateEffect tests its place (vfunc_8: the actor's world point) on the
+    /// swoosh row for the caster unless offSkip (effectservice.cpp:335-343). False when it was made.
+    /// </summary>
+    internal bool Swoosh(IReadOnlyList<EffectPart> parts, EffectPart part, Node3D actor, int casterKind, System.Numerics.Vector3? eye)
+    {
+        if (eye != null && !part.OffSkip && Skip.IsOutOfView(EffectSkipTable.TypeSwoosh, casterKind, EffectView.Client(actor.GlobalPosition), eye))
+        { PartsOutOfView++; return true; }
+        if (SwooshEffect.Make(parts, part, actor, casterKind, mb, Scene) is not { } sw) return true;
+        actor.AddChild(sw);
+        Swooshes++; EffectsSpawned++;
+        return false;
     }
 
     /// <summary>How long <see cref="PlayEffect(string, Godot.Vector3, Basis, int)"/> keeps an effect xml's nif parts: the

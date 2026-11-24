@@ -353,6 +353,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
             if (eye != null && (skipTable.PartOutOfView(part, casterKind, N(PartPlace(world, part)), eye)
                     || part.RandomParent >= 0 && skipTable.RandomOutOfView(all[part.RandomParent], casterKind, N(PartPlace(world, part)), eye)))
             { PartsOutOfView++; continue; }
+            if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeSwoosh && (actor == null || SwooshOutOfView(part, actor, casterKind, eye))) continue;
             made++;
         }
         if (made == 0 && all.Count > 0) return null;
@@ -391,6 +392,18 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
                 FieldAudio.Instance?.PlayEffectSoundMusic(part, casterKind);
                 continue;
             }
+            if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeSwoosh)
+            {
+                // CSwooshEffect on the actor (none on a place, swoosheffectparam.cpp:293-295), tested once made on the swoosh
+                // row (effectservice.cpp:335-343); a loop keeps it until the effect is stopped
+                if (actor == null || SwooshOutOfView(part, actor, casterKind, eye)) continue;
+                if (SwooshEffect.Make(all, part, actor, casterKind, builder, Scene) is not { } sw) continue;
+                actor.AddChild(sw);
+                if (keep) nodes.Add(sw);
+                if (keep && part.Loop) looping.Add(handle);
+                Spawned++;
+                continue;
+            }
             if (part.Type != "nif" || string.IsNullOrEmpty(part.FilePath) || Scene(part.FilePath) is not { } sc) continue;
             var local = new Xform(new Vec3(part.Translate[0], part.Translate[1], part.Translate[2]),
                 DummyWorld.EulerXyz(part.Rotation[0], part.Rotation[1], part.Rotation[2]), part.Scale <= 0 ? 1 : part.Scale);
@@ -410,6 +423,9 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
         }
         return nodes;
     }
+
+    bool SwooshOutOfView(Ms2.Formats.World.EffectPart part, Node3D actor, int casterKind, System.Numerics.Vector3? eye) =>
+        eye != null && !part.OffSkip && Skip.IsOutOfView(Ms2.Formats.World.EffectSkipTable.TypeSwoosh, casterKind, Ms2Godot.Net.EffectView.Client(actor.GlobalPosition), eye);
 
     EffectScene Scene(string nifPath)
     {

@@ -560,6 +560,20 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
         return w;
     }
 
+    /// <summary>The index of the scene's node named <paramref name="name"/> (NiAVObject::GetObjectByName: the exact name), -1
+    /// when the effect has none.</summary>
+    public int NodeNamed(string name)
+    {
+        for (int i = 0; i < scene.Nodes.Count; i++)
+            if (string.Equals(scene.Nodes[i].Name, name, StringComparison.Ordinal)) return i;
+        return -1;
+    }
+
+    /// <summary>Node <paramref name="i"/>'s world point this frame (a swoosh's trail node: CSwooshEffect::UpdateTrail reads its
+    /// world translate), Godot space.</summary>
+    public Vector3 NodePoint(int i) => z.GlobalTransform * World(i, t, camLocalFx).Origin;
+
+    Vector3 camLocalFx = new(0, -1000, 300);
     // the camera's direction, up and right in this effect's space for the billboard nodes (set each Advance)
     Vector3 camDirFx = new(0, 1, 0), camUpFx = new(0, 0, 1), camRightFx = new(1, 0, 0);
     static System.Numerics.Vector3 N(Vector3 v) => new(v.X, v.Y, v.Z);
@@ -583,7 +597,7 @@ vec3 ms2_fog_apply(vec3 c, uint layers) {
             camRight = (inv * cam.GlobalBasis.X).Normalized(); camUp = (inv * cam.GlobalBasis.Y).Normalized();
             camDir = (inv * -cam.GlobalBasis.Z).Normalized();   // Godot's camera looks along -Z
         }
-        camRightFx = camRight; camUpFx = camUp; camDirFx = camDir;
+        camRightFx = camRight; camUpFx = camUp; camDirFx = camDir; camLocalFx = camLocal;
         // a static node's world transform depends on neither the time nor the camera: it is kept from the first frame
         foreach (int i in dynNodes) done[i] = false;
         long q1 = ProbeOn ? System.Diagnostics.Stopwatch.GetTimestamp() : 0;
