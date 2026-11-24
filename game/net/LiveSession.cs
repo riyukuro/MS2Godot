@@ -3124,6 +3124,7 @@ public partial class LiveSession : Node
                     GD.Print($"live: chat link {n}: line {(back ? "came back" : "did not come back")}, item links {(linked ? "came" : "did not come")}");
                     await Frames(120);
                 }
+                else if (await CallChatStep(line, chatHud, n, Frames, Until)) { }   // the recall and air taxi lines (LiveSession.CallRuns.cs)
                 else
                 {
                     bool back = false;

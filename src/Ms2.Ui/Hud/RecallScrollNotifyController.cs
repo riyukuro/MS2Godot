@@ -25,7 +25,7 @@ public sealed class RecallScrollNotifyController : UiController
     public const string Sound = "Summon_Cash";
     /// <summary>s_strRecallConfirm, the confirm box's tag.</summary>
     public const string ConfirmTag = "recallscrollconfirm";
-    const int Slots = 3;
+    public const int Slots = 3;
 
     public override string Movie => "uirecallscrollnotifydialog";
     protected override string EntityMethod => "alignment";            // Dialog's
