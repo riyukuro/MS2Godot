@@ -103,6 +103,7 @@ public sealed class FieldTriggers
         if (fadeDraws != null) Fader = new TriggerFade();
         foreach (var e in entities)
         {
+            if (e.HasMixin("MS2TriggerBox")) boxes[(int)e.Number("TriggerObjectID")] = e.Position;
             if (TriggerObjects.KindOf(e.HasMixin) is not { } kind) continue;
             int id = (int)e.Number("TriggerObjectID");
             kinds[id] = kind;     // CAtlMap::SetAt: a later entity with the same id replaces the earlier
@@ -119,6 +120,11 @@ public sealed class FieldTriggers
             else colliders.Remove(id);
         }
     }
+
+    readonly Dictionary<int, Vec3> boxes = new();
+
+    /// <summary>The centre of the field's trigger box of that id (the server's box conditions; scripted runs stand in it).</summary>
+    public Vec3? BoxCenter(int id) => boxes.TryGetValue(id, out var c) ? c : null;
 
     /// <summary>Binds the rope / ladder objects to the field's climbables: the entry of each object's entity.</summary>
     public void Bind(Climbables field)

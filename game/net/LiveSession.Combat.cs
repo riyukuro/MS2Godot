@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Godot;
 using Ms2Godot.Flow;
@@ -28,6 +29,8 @@ public partial class LiveSession
     /// tries the four sides of a target box's cell until the craft's cell is it, with the wheel for a box a level off the ground; scan:x0 y0 x1 y1 cell
     /// logs the ground level under each cell (negative levels as a, b, ...); keys:N presses the action key N times.
     /// </summary>
+    static Field triggerFieldOf(LiveSession live) => live.triggerField != null && GodotObject.IsInstanceValid(live.triggerField) ? live.triggerField : null;
+
     static long BagSum(LiveSession live) { long n = 0; foreach (var i in live.Items.All) n += i.Amount; return n; }
 
     /// <summary>The action key pressed once through the engine's input (a Space key down, held a few frames so the field's
@@ -52,6 +55,14 @@ public partial class LiveSession
             flow.GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(shots, name)); GD.Print("live: shot " + name);
         }
         void Check(string what, bool ok) => GD.Print($"live: combat {(ok ? "PASS" : "FAIL")}: {what}");
+        void Shows(string what)     // the frame is not one colour: nothing full screen is left over the field
+        {
+            var img = flow.GetViewport().GetTexture().GetImage();
+            float lo = 1, hi = 0;
+            for (int y = 0; y < img.GetHeight(); y += 24)
+                for (int x = 0; x < img.GetWidth(); x += 24) { float l = img.GetPixel(x, y).Luminance; lo = Mathf.Min(lo, l); hi = Mathf.Max(hi, l); }
+            Check($"{what}: the frame is not one colour (luminance {lo:0.00} to {hi:0.00})", hi - lo > 0.05f);
+        }
         string Env(string k, string d) => System.Environment.GetEnvironmentVariable(k) is { Length: > 0 } v ? v : d;
         // MS2_LIVE_EQUIP_DIRECT=1: when the bag refuses (the tutorial guide keeps it shut and holds the put on), the equip request
         // goes out as the bag would send it, right hand first and the second copy to the left; for a start that has the weapon
@@ -78,6 +89,7 @@ public partial class LiveSession
         live.NpcAdded += npc => { npcs++; lastNpc = npc; };
         live.MesoChanged += (delta, kind) => mesoDelta += delta;
         await frames(240);
+        int camShots = 0;
         foreach (var step in steps.Split(','))
         {
             GD.Print($"live: combat step {step}");
@@ -199,6 +211,61 @@ public partial class LiveSession
                 var c = step[7..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 hud.FaceScripted(new Vector3(float.Parse(c[0]), float.Parse(c[2]), -float.Parse(c[1])));
                 await frames(30);
+            if (step.StartsWith('~') && int.TryParse(step.AsSpan(1), out int waitSecs))      // ~N: N seconds
+            {
+                await frames(60 * waitSecs);
+                continue;
+            }
+            if (step.StartsWith("box:"))      // box:<id>: the own pc put at the trigger box's centre (no walk; the position goes out with the next sync)
+            {
+                var at = triggerFieldOf(live)?.Triggers?.BoxCenter(int.Parse(step[4..]));
+                if (at is { } c && live.player != null && GodotObject.IsInstanceValid(live.player))
+                {
+                    live.player.GlobalPosition = FieldBuilder.ToGodotPoint(c) + new Vector3(0, 5, 0);
+                    live.player.Velocity = Vector3.Zero;
+                }
+                Check($"{step}: the own pc in the box ({at})", at != null);
+                await frames(120);
+                continue;
+            }
+            if (step.StartsWith("portal:") && flow.GetTree().GetFirstNodeInGroup(FieldContents.Group) is FieldContents pfc)      // portal:<id|any>: into a server-listed open portal, then the action key
+            {
+                string pid = step[7..];
+                var list = live.Portals?.All ?? (System.Collections.Generic.IReadOnlyList<Ms2.Ui.LivePortal>)Array.Empty<Ms2.Ui.LivePortal>();
+                var p = pid == "any" ? list.FirstOrDefault(x => x.HasBox && x.Glow && x.TargetMap != 0) : list.FirstOrDefault(x => x.Id.ToString() == pid);
+                int entered = 0; void Entered(int map, long ms) => entered++;
+                live.FieldEntered += Entered;
+                int sends = live.PortalSends;
+                if (p != null && pfc.StandInPortal(p.Id))
+                {
+                    await frames(60);
+                    if (pfc.LivePortalPoll()) pfc.LivePortalUse();
+                    await frames(10);
+                }
+                bool sent = live.PortalSends > sends;
+                GD.Print($"live: combat {step}: {(p == null ? "not listed here" : $"{p.Id} type {p.Type} shown {p.Shown} glow {p.Glow} -> field {p.TargetMap}")}, {(sent ? "sent" : "not sent")}");
+                if (sent) { await until(() => entered > 0, 60 * 90); await frames(240); }
+                live.FieldEntered -= Entered;
+                Check($"the field entry through {step} (map {live.CurrentEntry?.MapId})", entered > 0);
+                continue;
+            }
+            if (step == "watchmovie")      // a cut scene movie, not skipped: until it ends (the usm's end stops the pane) or the server stops it
+            {
+                await until(() => live.Movie.IsPlaying, 60 * 60);
+                Check($"a cut scene movie plays ({live.Movie.Path})", live.Movie.IsPlaying);
+                Shot("watchmovie_playing.png");
+                await until(() => !live.Movie.IsPlaying, 60 * 240);
+                Check("the movie stopped", !live.Movie.IsPlaying);
+                await frames(30);
+                Shows("after the movie");
+                continue;
+            }
+            if (step == "camfree")      // the trigger camera is back in the follow mode
+            {
+                var cam = triggerFieldOf(live)?.TriggerCamera;
+                Check($"the camera follows the pc (mode {cam?.ModeType})", cam?.ModeType == TriggerCamera.Target);
+                Shot($"camfree_{live.CurrentEntry?.MapId}_{++camShots}.png");
+                Shows("the follow camera");
                 continue;
             }
             if (step.StartsWith("chat:"))      // one chat line, no comma in it
