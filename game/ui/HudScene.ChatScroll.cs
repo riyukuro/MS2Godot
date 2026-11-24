@@ -151,6 +151,31 @@ public partial class HudScene
         else if (n < tabs) Print($"tab {n + 1}");
     }
 
+    /// <summary><c>--uigen-open chatspace</c>: with the last whisper target set to Bob, frame 160 sends the H key (the whisper action) to the unfocused
+    /// input; 170 types "/p" and sends Space (the party target is selected), 180 types the whisper command word and sends Space (a whisper to Bob starts). Each is printed two frames later.</summary>
+    void ChatSpaceShot(int frames)
+    {
+        if (messengers.Count == 0) return;
+        var (m, c) = messengers[0];
+        var h = m.Host;
+        if (h.Child("m_textInput") is not AsDisplayObject input || h.Child("m_subject") is not AsDisplayObject subject) return;
+        void Print(string what) => GD.Print($"CHATSPACE {what}: text=\"{Rt.ToString(h.Get(input, "text"))}\" selectedIndex={Rt.ToString(h.Get(subject, "selectedIndex"))} focused={c.InputActive}");
+        if (frames == 150) { c.Browser.WhisperTarget = "Bob"; Print("start"); return; }
+        if (frames == 160) { ChatKeyEvent(Key.H); return; }
+        if (frames == 163) { Print("whisper key"); return; }
+        if (frames == 170) { h.Set(h.Get(input, "textField"), "text", "/p"); return; }
+        if (frames == 172) { ChatKeyEvent(Key.Space); return; }
+        if (frames == 175) { Print("/p, space"); return; }
+        if (frames == 180) { h.Set(h.Get(input, "textField"), "text", hudModel.Tables.Common(0xaa5)); return; }
+        if (frames == 182) { ChatKeyEvent(Key.Space); return; }
+        if (frames == 185) Print("whisper command, space");
+        if (frames == 190 && shotDir != null)
+        {
+            DirAccess.MakeDirRecursiveAbsolute(shotDir);
+            GetViewport().GetTexture().GetImage().SavePng(System.IO.Path.Combine(shotDir, "space.png"));     // before anything takes the focus away
+        }
+    }
+
     /// <summary><c>--uigen-open chathistory</c>: frames 160, 170 and 180 (+4) send "alpha", "beta" and "gamma" (Return focuses the input,
     /// the text is set, Return sends it); from 200 Up, Up, Up, Down, Down, Down and a focus out with Up print the input's text.</summary>
     void ChatHistoryShot(int frames)

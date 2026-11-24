@@ -38,7 +38,9 @@ public sealed class MessengerController : UiController
     /// <summary>IsTypeHidden (:3614): super chat needs feature 0x19.</summary>
     public const int SuperChatFeature = 0x19;
     /// <summary>DIK codes vfunc_13 (:810) reads.</summary>
-    public const int DikReturn = 0x1c, DikUp = 0x79, DikDown = 0x7e, DikTab = 0xf;
+    public const int DikReturn = 0x1c, DikUp = 0x79, DikDown = 0x7e, DikTab = 0xf, DikSpace = 0x39;
+    /// <summary>The whisper action (IsActionKeyPressed 0x49405, vfunc_13 :823; code 300037 in defaultkey.xml, the H key).</summary>
+    public const long ActionWhisper = 0x49405;
 
     /// <summary>MessengerData::TalkTab: tabName, close, detach, additive and its panel setting (m_panel).</summary>
     public sealed class TalkTab
@@ -548,11 +550,60 @@ public sealed class MessengerController : UiController
         if (Browser.GetCurrentName() != Name) return false;
         if (!InputFocused && InputBlocked()) return false;
         if (dik == DikReturn) { ReturnKey(); return true; }
+        if (!escape && dik != 0 && Model.Keys.KeysOfAction(ActionWhisper).Contains(dik)) return WhisperKey();
+        if (dik == DikSpace) return SpaceKey();
         if (escape) return Release();
         if (dik == DikUp && InputFocused) { HistoryKey(true); return true; }
         if (dik == DikDown && InputFocused) { HistoryKey(false); return true; }
         if (dik == DikTab) return TabKey();
         return false;
+    }
+
+    /// <summary>
+    /// vfunc_13 (:823), the whisper action key: with the input not focused it takes the focus and starts a whisper to the
+    /// browser's last whisper target (BeginWhisper, :2482), and the key is used; with it focused the key is not used (the
+    /// letter goes to the field).
+    /// </summary>
+    bool WhisperKey()
+    {
+        if (textInput == null || InputFocused) return false;
+        SetFocused(textInput, 1);
+        BeginWhisper(Browser.WhisperTarget);
+        return true;
+    }
+
+    /// <summary>
+    /// vfunc_13 (:834), Space (0x39) while a text field has the focus: FUN_141a14600 (:1922) acts on the type of the
+    /// slash command typed so far (<see cref="InputChatType"/>): a type of the target list selects it (SelectSubject, which
+    /// takes the command word off the line), a whisper (4) starts "whisper command + last target", a talk (0x14) the same
+    /// with the club command; other types do nothing. The key is used either way. STILL-OPEN: the client's test is
+    /// CUIService::IsTextFieldFocused (any field); here this window's input has to be focused.
+    /// </summary>
+    bool SpaceKey()
+    {
+        if (textInput == null || !InputFocused) return false;
+        switch (InputChatType())
+        {
+            case Social: case Party: case Guild: case World: case Channel: case Super: case GuildMegaphone:
+                SelectSubject(InputChatType());
+                break;
+            case 4: BeginWhisper(Browser.WhisperTarget); break;
+            case Talk: BeginTalk(Browser.TalkTarget); break;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// GetInputChatType (@0x141a14250, :1969): the trimmed input text under 2 characters, or not starting with "/", is 0x1b
+    /// (the debug-mode emoticon alias, 0x18, is not modelled); a slash command gives its chat type, the first shown
+    /// type (FUN_141a14500) when that one is hidden.
+    /// </summary>
+    int InputChatType()
+    {
+        string text = UserCommands.Trim(Rt.ToString(Host.Get(textInput, "text")));
+        if (text.Length < 2 || text[0] != '/') return UserCommands.NoChatType;
+        int type = Commands.ChatType(text);
+        return IsTypeHidden(type) ? TypeAt(FirstSubjectIndex()) : type;
     }
 
     /// <summary>

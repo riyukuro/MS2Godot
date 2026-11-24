@@ -1918,6 +1918,69 @@ public class HudTests
     }
 
     [Test]
+    public void ChatSpaceKeyActsOnTheSlashCommandTypedSoFar()
+    {
+        // vfunc_13 (:834) key 0x39 with a text field focused: FUN_141a14600 (:1922) on GetInputChatType (:1969). A target type
+        // selects it and drops the command word (SelectSubject, vfunc_93), a whisper (4) starts "whisper command + last target",
+        // a talk (0x14) the same with the club command; any other line is left. The key is used either way.
+        var (c, h, m, sent, _) = ChatWindow();
+        var subject = (AsObject)h.Child("m_subject");
+        var input = (AsObject)h.Child("m_textInput");
+        int Sel() => (int)Rt.ToNumber(h.Get(subject, "selectedIndex"));
+        string Text() => Rt.ToString(h.Get(input, "text"));
+        void Type(string t) => h.Set(h.Get(input, "textField"), "text", t);
+        Assert.That(c.OnKey(MessengerController.DikSpace, false), Is.False, "Space with the input not focused");
+        c.OnKey(MessengerController.DikReturn, false);
+        Type("/p");
+        Assert.That(c.OnKey(MessengerController.DikSpace, false), Is.True);
+        Assert.That(Sel(), Is.EqualTo(3), "the party row");
+        Type("/p ");
+        c.OnKey(MessengerController.DikSpace, false);
+        Assert.That(Text(), Is.EqualTo(""), "the command word goes");
+        Type("/p hello");
+        c.OnKey(MessengerController.DikSpace, false);
+        Assert.That(Text(), Is.EqualTo("/p hello"), "ChatType looks the whole trimmed text up: no alias, left alone");
+        c.Browser.WhisperTarget = "Bob";
+        Type("/w");
+        c.OnKey(MessengerController.DikSpace, false);
+        Assert.That(Text(), Is.EqualTo(m.Tables.Common(0xaa5) + " Bob "));
+        c.Browser.WhisperTarget = "";
+        Type("/w");
+        c.OnKey(MessengerController.DikSpace, false);
+        Assert.That(Text(), Is.EqualTo(m.Tables.Common(0xaa5) + " "), "no target yet");
+        Type("plain words");
+        int before = Sel();
+        Assert.That(c.OnKey(MessengerController.DikSpace, false), Is.True, "used, nothing else happens");
+        Assert.That(Text(), Is.EqualTo("plain words"));
+        Assert.That(Sel(), Is.EqualTo(before));
+        Type("/");
+        c.OnKey(MessengerController.DikSpace, false);
+        Assert.That(Text(), Is.EqualTo("/"), "under two characters");
+        Assert.That(sent, Is.Empty);
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void ChatWhisperActionKeyStartsAWhisperWhenTheInputIsNotFocused()
+    {
+        // vfunc_13 (:823): the whisper action (0x49405, the H key in defaultkey.xml) with the input not focused focuses it and
+        // BeginWhisper(last whisper target); with the input focused the key is not used and the letter goes to the field.
+        var (c, h, m, sent, _) = ChatWindow();
+        var input = (AsObject)h.Child("m_textInput");
+        Assert.That(m.Keys.KeysOfAction(MessengerController.ActionWhisper), Is.EqualTo(new[] { 35 }));
+        c.Browser.WhisperTarget = "Bob";
+        Assert.That(c.OnKey(35, false), Is.True);
+        Assert.That(Rt.ToNumber(h.Get(input, "focused")), Is.Not.EqualTo(0.0));
+        Assert.That(Rt.ToString(h.Get(input, "text")), Is.EqualTo(m.Tables.Common(0xaa5) + " Bob "));
+        h.Set(h.Get(input, "textField"), "text", "hi");
+        Assert.That(c.OnKey(35, false), Is.False, "focused: the letter is typed");
+        Assert.That(Rt.ToString(h.Get(input, "text")), Is.EqualTo("hi"));
+        Assert.That(c.OnKey(36, false), Is.False, "another key");
+        Assert.That(sent, Is.Empty);
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
     public void ClearingTheChatBrowserClearsTheInputHistoryAndTheTargets()
     {
         // FUN_141a23c20 (:3114): m_history and m_itHistory, the whisper target, the talk target, m_1b0 and m_reports go with the log
