@@ -52,6 +52,27 @@ public class RcG04NpcCoreFieldsTests
         Assert.That(t.Rows.Count(n => !n.UseTalkMotion), Is.GreaterThan(500));
     }
 
+    // the spawn effect: environment regenEffect, which StateSpawn plays when the spawn state shows the npc (statespawn.cpp:114-127)
+    [TestCase("MS2_GMS2_DATA")]
+    [TestCase("MS2_DATA")]
+    [TestCase("MS2_KMS2_DEV_DATA")]
+    public void TheNpcReadsItsRegenEffect(string data)
+    {
+        if (string.IsNullOrEmpty(System.Environment.GetEnvironmentVariable(data))) Assert.Ignore($"{data} not set");
+        using var packs = new PackSet(RcGap.Data(data));
+        var t = new NpcTable(packs);
+        Assert.That(t.Find(22000052)?.RegenEffect, Is.EqualTo("BG/Common/Eff_Test_Regen.xml"));
+        var with = t.Rows.Where(n => !string.IsNullOrEmpty(n.RegenEffect)).ToList();
+        var paths = with.GroupBy(n => n.RegenEffect, System.StringComparer.OrdinalIgnoreCase).OrderByDescending(g => g.Count()).ToList();
+        var effects = new EffectTable(packs);
+        var missing = paths.Where(g => effects.Get(g.Key) == null).Select(g => $"{g.Key} ({g.Count()})").ToList();
+        TestContext.Out.WriteLine($"{data}: {t.Rows.Count()} rows, {with.Count} with a regenEffect, {paths.Count} paths, {missing.Count} without an effect xml: " +
+            string.Join(", ", paths.Take(12).Select(g => $"{g.Key} {g.Count()}")) + (missing.Count > 0 ? "; missing: " + string.Join(", ", missing) : ""));
+        // KMS2 4,789 of 10,795 rows (BG/Common/Eff_Test_Regen.xml 4,509), KMS2_DEV 4,788 of 10,793, GMS2 4,373 of 10,193
+        Assert.That(with.Count, Is.GreaterThan(4000));
+        Assert.That(missing, Is.Empty);
+    }
+
     [Test]
     [Ignore("G04: GMS2 npc <distance>/<corpse> and basic talk/shop/regen not read yet")]
     public void TheGms2NpcReadsShadowSpeedSightCorpseAndTalk()

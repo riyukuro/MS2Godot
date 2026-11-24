@@ -741,7 +741,8 @@ public sealed class NpcLayer
     /// <summary>
     /// StateSpawn::vfunc_3 (statespawn.cpp:94-130) for one frame, and vfunc_5 (:80-92) once the npc left the state some other
     /// way (a block of another state, a death, a cast): shown again. At the delay's end the npc is shown and the point's
-    /// sequence plays forced at speed 1; at its length the npc goes to the idle state (vfunc_59(1)).
+    /// sequence plays forced at speed 1 and the npc data's regenEffect plays at its place; at its length the npc goes to the idle
+    /// state (vfunc_59(1)).
     /// </summary>
     void SpawnStep(Inst i, float dt)
     {
@@ -751,6 +752,12 @@ public sealed class NpcLayer
         {
             SpawnHidden(i, false);
             if (!string.IsNullOrEmpty(i.Spawn.Animation)) PlayNamed(i, i.Spawn.Animation, 1f, true);
+            // the npc data's regenEffect at the npc's place, no actor and object kind 0 (:114-127)
+            if (i.Root != null && table.Find(i.NpcId)?.RegenEffect is { Length: > 0 } regen)
+            {
+                EffectPlayed?.Invoke(i.NpcId, regen);
+                Combat?.PlayEffect(regen, i.Root.GlobalPosition, Basis.Identity, Ms2.Audio.SoundMusicEffectState.CasterSystem);
+            }
         }
         if (step is Ms2.Ui.Skills.NpcSpawnState.Step.Idle or Ms2.Ui.Skills.NpcSpawnState.Step.ShowAndIdle) i.State = 1;
     }

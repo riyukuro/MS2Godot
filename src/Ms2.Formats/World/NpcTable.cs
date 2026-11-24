@@ -85,6 +85,9 @@ public sealed class NpcRow
     /// <summary>The environment's deadEffect and damageEffect (NpcDataCli::LoadXml, npcdatacli.cpp:176-177; null when absent):
     /// the effect xml CNpc::FUN_141098fb0 plays on the npc when it dies with its sound (0) or takes a hit below 0 (1).</summary>
     public string DeadEffect, DamageEffect;
+    /// <summary>The environment's regenEffect (NpcDataCli m_strRegenEffect +0x550, npcdatacli.cpp:175; null when absent): the effect
+    /// xml StateSpawn plays at the npc's place when the spawn state shows it (statespawn.cpp:114-127).</summary>
+    public string RegenEffect;
     public string Name;                      // from string/en/npcname.xml (or kr), null when absent
     public bool HpBar;                           // environment hpBar (NpcDataCli, default false): the npc has a head hp bar
     public int Level = 1;                        // environment level (CNpcData m_nLevel, 1 when absent)
@@ -203,6 +206,7 @@ public sealed class NpcTable
             PropertyTags = ((string)env.Attribute("propertyTags") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
             SoundStart = (string)env.Attribute("npcSoundStart"), SoundEnd = (string)env.Attribute("npcSoundEnd"), SoundDead = (string)env.Attribute("npcSoundDead"),
             DeadEffect = (string)env.Attribute("deadEffect"), DamageEffect = (string)env.Attribute("damageEffect"),
+            RegenEffect = (string)env.Attribute("regenEffect"),
             Kfm = (string)model?.Attribute("kfm"),
             Scale = Flt(model, "scale", 1f),
             // CNpcData::LoadXml reads these four off <model> (npcdata.cpp:1524-1527, 0 when absent). GMS2's npc files keep them in

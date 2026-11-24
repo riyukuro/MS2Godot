@@ -5,7 +5,7 @@ namespace Ms2.Ui.Skills;
 /// unit_14108e1e0_npcactorandvibrate.cpp:975-984) with the sequence of the field's spawn point (<see cref="Enter"/>), it hides
 /// the npc and its shadow for a delay drawn from the object id, then shows it, plays the sequence and goes to the idle state
 /// once the sequence's length has passed. Times are the game clock's (Timer, timer.cpp: milliseconds of clock 0xe001001b).
-/// STILL-OPEN: the mount's spawn effect (FUN_1417b8480's npc data +0x550, :114-129) is not ported; an npc has no mount here.
+/// The host plays the npc data's regenEffect on <see cref="Step.Show"/> (:114-127; FUN_1417b8480 is the owner as a CNpc).
 /// </summary>
 public sealed class NpcSpawnState
 {
