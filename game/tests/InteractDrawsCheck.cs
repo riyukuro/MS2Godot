@@ -19,16 +19,19 @@ namespace Ms2Godot.Tests;
 /// What the player should see: each interact actor drawn and playing its InitialSequence; an object whose row has a normal
 /// collision blocking with a box from the load; in state 1 the actor plays its reactable sequence and the box follows the
 /// reactable collision; in state 2 the object is gone from view and keeps its box; a removed object is gone with its box.
+/// Then the watch towers of 99999906 (lookout tower actors, CInteractWatchTowerObject): a state change while the player is far
+/// leaves the tower's sequence; within 2000 it plays its state's sequence (on in state 0, off otherwise), and away it keeps it.
 /// Events only: nothing runs per frame. Needs MS2_DATA and MS2_NIFXML (or local.cfg). Quits with 0 when it holds, else 1.
 /// </summary>
 public partial class InteractDrawsCheck : Node
 {
-    const string XBlock = "02000284_bf";
+    const string XBlock = "02000284_bf", TowerXBlock = "99999906";
     readonly List<string> fails = new();
     FieldBuilder fb;
     FieldNpcs fnpcs;
     LiveInteractObjects live;
     FieldInteractDraws draws;
+    ModelBuilder builder;
     int frame;
 
     public override void _Ready()
@@ -40,7 +43,7 @@ public partial class InteractDrawsCheck : Node
     void Build()
     {
         var packs = PackSet.Shared(Settings.DataDir);
-        var builder = new ModelBuilder(ModelBuilder.SharedSpec(Settings.NifXml), packs);
+        builder = new ModelBuilder(ModelBuilder.SharedSpec(Settings.NifXml), packs);
         var map = FieldMap.Load(packs, new FlatLibrary(packs), XBlock);
         fb = new FieldBuilder(packs, AssetIndex.For(packs), builder);
         foreach (var _ in fb.BuildSteps(map)) { }
@@ -51,7 +54,7 @@ public partial class InteractDrawsCheck : Node
         fnpcs.PlaceActors(people, map);
         draws = new FieldInteractDraws(fb.InteractMeshDraws, fb.Colliders);
         AddChild(draws.Fader);
-        live = new LiveInteractObjects(new Host { Owner = this }, InteractObjectTable.Shared(packs));
+        live = new LiveInteractObjects(new Host { Draws = draws }, InteractObjectTable.Shared(packs));
         live.Attach(map.Entities);
         draws.Bind(live, fnpcs.InteractActors);
     }
@@ -60,7 +63,7 @@ public partial class InteractDrawsCheck : Node
     {
         if (live == null || fails.Count > 0) { Done(); return; }
         if (++frame < 3) return;
-        try { Check(); }
+        try { Check(); CheckWatchTowers(); }
         catch (Exception e) { fails.Add(e.ToString()); }
         Done();
     }
@@ -122,10 +125,59 @@ public partial class InteractDrawsCheck : Node
         GD.Print($"interact draws check: {swap.Name} ({swap.AssetA} / {swap.AssetB}, collision {swap.Row.NormalCollision} / {swap.Row.ReactableCollision}) and mesh {m.Name} through states 1, 2, 0 and the remove");
     }
 
-    /// <summary>A host with no player: no checks pass, nothing is sent.</summary>
+    /// <summary>The watch towers: CInteractWatchTowerObject::vfunc_3 and vfunc_11 (interactobject.cpp:1721-1773) through
+    /// LiveInteractObjects.Tick and FieldInteractDraws.Apply.</summary>
+    void CheckWatchTowers()
+    {
+        var packs = PackSet.Shared(Settings.DataDir);
+        var map = FieldMap.Load(packs, new FlatLibrary(packs), TowerXBlock);
+        var people = new Node3D { Name = "Towers" };
+        AddChild(people);
+        var tnpcs = new FieldNpcs(packs, AssetIndex.For(packs), builder);
+        tnpcs.PlaceActors(people, map);
+        var tdraws = new FieldInteractDraws(new Dictionary<FieldEntity, List<(MultiMesh Mm, int Index)>>(), null);
+        AddChild(tdraws.Fader);   // freed with the scene
+        var host = new Host { Draws = tdraws };
+        var towers = new LiveInteractObjects(host, InteractObjectTable.Shared(packs));
+        towers.Attach(map.Entities);
+        tdraws.Bind(towers, tnpcs.InteractActors);
+        var list = towers.All.Where(o => o.Kind == InteractObjectMessage.KindWatchTower && o.AssetType == 2).ToList();
+        int drawn = list.Count(o => tnpcs.InteractActors.ContainsKey(o.Entity));
+        GD.Print($"interact draws check: {TowerXBlock} {list.Count} watch towers ({drawn} drawn)");
+        if (list.Count == 0 || drawn != list.Count) { fails.Add($"{TowerXBlock}: {list.Count} watch towers, {drawn} drawn"); return; }
+        var t = list.First(o => o.AssetA != o.AssetB && o.AssetB.Length > 0);
+        var a = tnpcs.InteractActors[t.Entity];
+        void Expect(string what, string sequence)
+        {
+            if (a.Sequence != sequence) fails.Add($"{t.Name}: {what}: plays {a.Sequence ?? "nothing"}, not {sequence}");
+            if (!a.Root.Visible) fails.Add($"{t.Name}: {what}: hidden");
+        }
+        void Set(byte state) =>
+            towers.Apply(new InteractObjectMessage { Mode = InteractObjectMessage.ModeState, Name = t.Name, State = state, Kind = t.Kind });
+        var far = new Ms2.Formats.Model.Vec3(t.Position.X + 2000, t.Position.Y, t.Position.Z);
+        var near = new Ms2.Formats.Model.Vec3(t.Position.X + 1999, t.Position.Y, t.Position.Z + 5000);
+        Expect("the load", t.AssetA);
+        Set(1);
+        Expect("state 1 with no player", t.AssetA);
+        host.HasPlayer = true;
+        towers.Tick(far, false);
+        Expect("state 1, 2000 away", t.AssetA);
+        towers.Tick(near, false);
+        Expect("state 1, near", t.AssetB);
+        Set(0);
+        Expect("state 0, near", t.AssetA);
+        Set(2);
+        Expect("state 2, near", t.AssetB);
+        towers.Tick(far, false);
+        Set(0);
+        Expect("state 0 after going away", t.AssetB);
+        GD.Print($"interact draws check: watch tower {t.Name} ({t.AssetA} / {t.AssetB}) near and far through states 1, 0, 2 and 0");
+    }
+
+    /// <summary>A host with no player unless set: no checks pass, nothing is sent.</summary>
     sealed class Host : IInteractHost
     {
-        public bool HasPlayer => false;
+        public bool HasPlayer { get; set; }
         public bool IsRestricted(int kind) => false;
         public int FieldId => 0;
         public ushort Channel => 1;
@@ -158,12 +210,12 @@ public partial class InteractDrawsCheck : Node
         public void CancelCasting() { }
         public void PlayPlayerAnim(string animName, bool loop) { }
         public void StopPlayerInteractAnim() { }
-        public void OnObjectStateChanged(LiveInteractObject obj) => Owner?.draws?.Apply(obj);
-        public void OnObjectRemoved(LiveInteractObject obj) => Owner?.draws?.Remove(obj);
+        public void OnObjectStateChanged(LiveInteractObject obj) => Draws?.Apply(obj);
+        public void OnObjectRemoved(LiveInteractObject obj) => Draws?.Remove(obj);
         public void OnObjectSuccessEffect(LiveInteractObject obj, string effectAsset) { }
         public int OnOpenUiDialog(string swf, string value) => 0;
         public void OnGuideTrigger(int triggerType, int rowId) { }
         public void StillOpen(string what) { }
-        public InteractDrawsCheck Owner;
+        public FieldInteractDraws Draws;
     }
 }

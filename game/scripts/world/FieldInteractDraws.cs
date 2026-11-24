@@ -16,7 +16,8 @@ namespace Ms2Godot.World;
 /// <item>IsVisible (0xa0b6b179): an MS2InteractMesh's drawn instances (FieldBuilder.InteractMeshDraws) or an MS2InteractActor's
 /// actor (FieldNpcs.InteractActors) shown or hidden at once.</item>
 /// <item>The asset (FUN_1413ff690, :909-921): an MS2InteractActor plays the sequence (Unk_AnimSvc::PlayAnimation, 1.0f, false);
-/// the same name again leaves it where it is, as the trigger actors' does.</item>
+/// the same name again leaves it where it is, as the trigger actors' does. A watch tower (CInteractWatchTowerObject) applies it
+/// only while the player is near (<see cref="LiveInteractObjects.WatchTowerAsset"/>) and never sets IsVisible or the box.</item>
 /// <item>SetCollision (:925-931): MakeNxBoxController (:848-889) makes one static box of the row's ShapeDimension at the object's
 /// position, its bottom at the position's z, turned by the rotation's z, its shapes in group 0 (layer 1 here); ReleaseActor
 /// (:892-906) removes it. A second make while the box is up does nothing.</item>
@@ -107,6 +108,8 @@ public sealed class FieldInteractDraws
             if (collision > 0) MakeBox(o);
             else if (collision == 0) ReleaseBox(o);
         }
+        else if (LiveInteractObjects.WatchTowerAsset(o) is { } towerAsset && o.AssetType == 2 && o.Entity != null && actors.TryGetValue(o.Entity, out var tower))
+            tower.PlayAnimation(towerAsset);
         if (model.StateEffect(o, out string effect)) ShowEffect(o, effect);
     }
 

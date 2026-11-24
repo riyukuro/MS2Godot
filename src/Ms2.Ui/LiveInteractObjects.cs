@@ -133,6 +133,9 @@ public sealed class LiveInteractObject
     public byte ShownState = 3;
     /// <summary>CInteractUIObject::m_nDialogId: the ui class id of the dialog its message opened (0: none).</summary>
     public int DialogId;
+    /// <summary>CInteractWatchTowerObject::m_bNear: the local player is within 2000 of a watch tower (x and y only), set by
+    /// <see cref="LiveInteractObjects.Tick"/>; false at the register (vfunc_1, @0x141403470, interactobject.cpp:1700-1706).</summary>
+    public bool Near;
     public FieldEntity Entity;
     public InteractObjectRow Row;
 }
@@ -273,7 +276,7 @@ public sealed class LiveInteractObjects : ICastingEventListener
     /// 1.0f, false) and SetCollision of the row's NormalCollision (state 0) or ReactableCollision: non-zero makes the box
     /// (MakeNxBoxController), zero releases it (ReleaseActor).
     /// False for an object that is not a mesh object, and for a watch tower, whose own vfunc_3 (@0x1414034e0, :1721-1734)
-    /// applies the asset only while the player is near (STILL-OPEN: m_bNear, vfunc_11's 2000 distance, is not ported).</summary>
+    /// sets neither IsVisible nor the box and applies the asset only while the player is near (<see cref="WatchTowerAsset"/>).</summary>
     public static bool MeshDraw(LiveInteractObject o, out bool visible, out string asset, out int collision)
     {
         visible = true; asset = null; collision = -1;
@@ -301,6 +304,7 @@ public sealed class LiveInteractObjects : ICastingEventListener
     {
         effect = "";
         if (o?.Row == null) return false;
+        if (o.Kind == InteractObjectMessage.KindWatchTower) return WatchTowerEffect(o, out effect);
         string want = null;
         if (CheckQuestMask(o) && QuestMaskTable.Check(o.State == 0 ? o.Row.MaskNormal : o.State == 1 ? o.Row.MaskReactable : EmptyMask, questLookup))
         {
@@ -311,6 +315,59 @@ public sealed class LiveInteractObjects : ICastingEventListener
         o.ShownState = 3;
         if (!string.IsNullOrEmpty(want)) { o.ShownState = o.State; effect = want; return true; }
         return wasUp;
+    }
+
+    /// <summary>
+    /// A watch tower's state effect, with no mask check. Near: ShowStateEffect (vfunc_3 @0x1414034e0, interactobject.cpp:1721-1734,
+    /// and vfunc_11's near branch, :1760-1767): the effect of the state (vfunc_13, @0x1413fe7d0) unless the shown state is the
+    /// same. Far: vfunc_11's far branch ClearStateEffect (:1769-1772); a state change while far (vfunc_3 with m_bNear 0) does
+    /// nothing, and the effect is already cleared then.
+    /// </summary>
+    static bool WatchTowerEffect(LiveInteractObject o, out string effect)
+    {
+        effect = "";
+        if (!o.Near)
+        {
+            if (o.ShownState == 3) return false;
+            o.ShownState = 3;
+            return true;
+        }
+        if (o.ShownState == o.State) return false;
+        bool wasUp = o.ShownState != 3;
+        o.ShownState = 3;
+        string want = o.State == 0 ? o.Row.EffectNormal : o.State == 1 ? o.Row.EffectReactable : "";
+        if (!string.IsNullOrEmpty(want)) { o.ShownState = o.State; effect = want; return true; }
+        return wasUp;
+    }
+
+    /// <summary>The asset a watch tower applies (FUN_1413ff690: asset A in state 0, else B) while the player is near
+    /// (vfunc_3 @0x1414034e0, :1729-1733; vfunc_11's near branch, :1764-1766), else null. Its entity's IsVisible and box are
+    /// never set by its state.</summary>
+    public static string WatchTowerAsset(LiveInteractObject o) =>
+        o != null && o.Kind == InteractObjectMessage.KindWatchTower && o.Near && o.Row != null && o.AssetType != 0
+            ? (o.State == 0 ? o.AssetA : o.AssetB) : null;
+
+    /// <summary>The 2D distance a watch tower counts as near under (vfunc_11, interactobject.cpp:1753-1754).</summary>
+    public const float WatchTowerNearDistance = 2000f;
+
+    /// <summary>
+    /// CInteractWatchTowerObject::vfunc_11 (@0x1414035d0, interactobject.cpp:1746-1773), run for every object each frame by
+    /// WorldService::FUN_141bcb830 (worldservice_1.cpp:9666-9670): near is the local player within 2000 of the object's
+    /// position, x and y only (GetDistance2D @0x141403f20, float); with no local player it is far. Only a change does
+    /// anything: the host redraws the effect and the asset (<see cref="WatchTowerEffect"/>, <see cref="WatchTowerAsset"/>).
+    /// EnableHighlight / DisableDynamicUpdate have no draw effect here.
+    /// </summary>
+    void TickWatchTower(LiveInteractObject o, Vec3 playerPos)
+    {
+        bool near = false;
+        if (host.HasPlayer)
+        {
+            float dx = (float)playerPos.X - (float)o.Position.X, dy = (float)playerPos.Y - (float)o.Position.Y;
+            near = MathF.Sqrt(dx * dx + dy * dy) < WatchTowerNearDistance;
+        }
+        if (o.Near == near) return;
+        o.Near = near;
+        host.OnObjectStateChanged(o);
     }
 
     static bool IsInteractEntity(FieldEntity e) =>
@@ -889,7 +946,8 @@ public sealed class LiveInteractObjects : ICastingEventListener
     }
 
     /// <summary>
-    /// Per-frame tick: gathering respawn timers (CInteractGatheringObject::vfunc_11 @0x141402750, interactobject.cpp:1481-1492)
+    /// Per-frame tick: gathering respawn timers (CInteractGatheringObject::vfunc_11 @0x141402750, interactobject.cpp:1481-1492),
+    /// the UI objects' dialogs, the watch towers' near rule (<see cref="TickWatchTower"/>)
     /// and StateInteraction::vfunc_8 (@0x1417d18c0, stateinteractdata.cpp:353-402). Zero allocations when no cast completes.
     /// </summary>
     public void Tick(Vec3 playerPos, bool playerMoved)
@@ -904,6 +962,7 @@ public sealed class LiveInteractObjects : ICastingEventListener
                 SetState(o, 1);
             }
             else if (o.DialogId != 0) TickDialog(o, playerPos);
+            else if (o.Kind == InteractObjectMessage.KindWatchTower) TickWatchTower(o, playerPos);
         }
 
         if (!castingActive) return;

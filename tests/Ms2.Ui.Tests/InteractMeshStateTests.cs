@@ -110,4 +110,69 @@ public class InteractMeshStateTests
         Assert.That(live.StateEffect(o, out fx), Is.True, "the use mask fails: the effect is cleared");
         Assert.That(fx, Is.Empty);
     }
+    static InteractObjectMessage State(string name, byte state) =>
+        new() { Mode = InteractObjectMessage.ModeState, Name = name, State = state, Kind = InteractObjectMessage.KindWatchTower };
+
+    /// <summary>A watch tower's state effect shows only while the local player is within 2000 of it, x and y only, with no
+    /// mask check; going far clears it, and a state change while far shows nothing (CInteractWatchTowerObject::vfunc_3 and
+    /// vfunc_11, interactobject.cpp:1721-1773).</summary>
+    [Test]
+    public void AWatchTowersEffectShowsOnlyWhileThePlayerIsNear()
+    {
+        var hidden = new QuestMaskTable.Mask();
+        hidden.Ranges.Add(new QuestMaskTable.Range(100, 1, 0, 0));
+        var row = new InteractObjectRow { Id = 9, Type = InteractObjectMessage.KindWatchTower, EffectNormal = "fx_n.xml", EffectReactable = "fx_r.xml", MaskNormal = hidden };
+        var (host, live) = Field(Table(row), Entity("W", 9, "MS2InteractActor", ("InitialSequence", "Idle"), ("reactableSequenceName", "Open")));
+        var o = live.ByName("w");
+        Assume.That(QuestMaskTable.Check(hidden, host.QuestStatusOf), Is.False);
+        Assert.That(live.StateEffect(o, out _), Is.False, "registered far: no effect");
+        host.StateChanges.Clear();
+
+        live.Tick(new Vec3(100 + 1999, 200, 99999), false);     // 1999 away in x and y; z is not counted
+        Assert.That(host.StateChanges, Has.Count.EqualTo(1), "near: redrawn");
+        Assert.That(live.StateEffect(o, out var fx), Is.True);
+        Assert.That((fx, o.ShownState), Is.EqualTo(("fx_n.xml", (byte)0)), "no mask check");
+        live.Tick(new Vec3(100 + 1999, 200, 300), false);
+        Assert.That(host.StateChanges, Has.Count.EqualTo(1), "still near: nothing");
+
+        live.Apply(State("w", 1));
+        Assert.That(live.StateEffect(o, out fx), Is.True);
+        Assert.That(fx, Is.EqualTo("fx_r.xml"));
+
+        live.Tick(new Vec3(100, 200 + 2000, 300), false);     // 2000 is not under 2000
+        Assert.That(host.StateChanges, Has.Count.EqualTo(3), "far: redrawn");
+        Assert.That(live.StateEffect(o, out fx), Is.True, "far: cleared");
+        Assert.That((fx, o.ShownState), Is.EqualTo(("", (byte)3)));
+        live.Apply(State("w", 0));
+        Assert.That(live.StateEffect(o, out _), Is.False, "a state change while far shows nothing");
+
+        live.Tick(new Vec3(100, 200, 300), false);
+        Assert.That(live.StateEffect(o, out fx), Is.True);
+        Assert.That(fx, Is.EqualTo("fx_n.xml"));
+        host.HasPlayer = false;
+        live.Tick(new Vec3(100, 200, 300), false);
+        Assert.That(live.StateEffect(o, out fx), Is.True, "no local player: far");
+        Assert.That(fx, Is.Empty);
+    }
+
+    /// <summary>A watch tower applies its state's asset only while near, and never sets its entity's IsVisible or box.</summary>
+    [Test]
+    public void AWatchTowerTakesItsStatesAssetOnlyWhileNear()
+    {
+        var row = new InteractObjectRow { Id = 9, Type = InteractObjectMessage.KindWatchTower, NormalCollision = 1, ReactableCollision = 0 };
+        var (host, live) = Field(Table(row), Entity("W", 9, "MS2InteractActor", ("InitialSequence", "Idle"), ("reactableSequenceName", "Open")));
+        var o = live.ByName("w");
+        Assert.That(LiveInteractObjects.MeshDraw(o, out _, out _, out _), Is.False, "no IsVisible or box");
+        Assert.That(LiveInteractObjects.WatchTowerAsset(o), Is.Null, "far");
+        live.Tick(new Vec3(0, 0, 0), false);
+        Assert.That(o.Near, Is.True);
+        Assert.That(LiveInteractObjects.WatchTowerAsset(o), Is.EqualTo("Idle"));
+        live.Apply(State("w", 1));
+        Assert.That(LiveInteractObjects.WatchTowerAsset(o), Is.EqualTo("Open"));
+        live.Apply(State("w", 2));
+        Assert.That(LiveInteractObjects.WatchTowerAsset(o), Is.EqualTo("Open"), "any state but 0 takes asset B");
+        Assert.That(LiveInteractObjects.MeshDraw(o, out _, out _, out _), Is.False, "state 2 does not hide it");
+        live.Tick(new Vec3(5000, 0, 0), false);
+        Assert.That(LiveInteractObjects.WatchTowerAsset(o), Is.Null);
+    }
 }
