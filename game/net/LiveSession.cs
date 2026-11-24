@@ -549,6 +549,17 @@ public partial class LiveSession : Node
         Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(text, 0, null, "");
     }
 
+    /// <summary>The Job packet's mode 3 (scenestategame.cpp:7537-7565, <see cref="Ms2.Ui.JobErrorNotice"/>): error 18's box, then
+    /// the notice. The client shows it for any PC FindPCById finds; the server sends it with the requester's own object, so
+    /// only that one is taken here.</summary>
+    void ShowJobError(int error, int value)
+    {
+        var (notice, box) = Ms2.Ui.JobErrorNotice.Text(error, value, Ms2.Ui.Hud.MessageBoxData.Common);
+        if (box != null) Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(box, 0, null, "");
+        if (notice.Length != 0) SystemNoticeSink?.Invoke(notice);
+        GD.Print($"live: job error {error} notice \"{notice}\"{(box != null ? " with a box" : "")}");
+    }
+
     /// <summary>Raised after ItemUse mode 6 sent the Beauty request.</summary>
     public event Action<BeautyReq> BeautyRequested;
     /// <summary>OnItemUpdate (scenestategame.cpp:3214) for the local player's worn item: the item event dispatcher's vfunc_23 (the item's id), whose listeners (the item colour dialog, vfunc_24 @0x1419adf80) take it.</summary>
@@ -2387,6 +2398,7 @@ public partial class LiveSession : Node
                 bool selfJob = j.ObjectId == selfObject;   // FindPCById: a PC not in the field yet drops the packet, as here
                 if (selfJob && j.Book != null) { SkillBook = j.Book; SkillBookChanged?.Invoke(j.Mode); }
                 if (selfJob && j.Mode is 0 or 2 or 7) guide?.OnJobChanged(Me.User?.Job ?? 0);   // NotifyStatusChanged(4) with the sub job (scenestategame.cpp:7463/7485/7506)
+                if (selfJob && j.Mode == 3) ShowJobError(j.Error, j.ErrorValue);
                 GD.Print($"live: job mode {j.Mode} object {j.ObjectId}{(selfJob ? " SELF" : "")}" + (j.Book != null ? $" ({j.Book.Skills.Count} skills)" : j.Mode == 3 ? $" error {j.Error}" : ""));
             }
             else if (game.Is(p, Inbound.AttributePoint))
