@@ -38,6 +38,8 @@ public class ItemNameTests
         foreach (var entry in packs.List("Xml").Where(e => file.IsMatch(e.Replace('\\', '/'))))
             foreach (var e in GameStrings.Parse(packs.Read("Xml", entry)).Root.Elements("item"))
                 if (int.TryParse((string)e.Attribute("id"), out int id) && m.Tables.Items.Get(id) != null) ids.Add(id);
+        if (ids.Count == 0)     // the GMS2 data: one file per item (item/<a>/<bb>/<id>.xml), as the item table indexes them
+            ids.AddRange(ItemDataTable.PerItemIndex(packs.List("Xml")).Keys.Where(id => m.Tables.Items.Get(id) != null));
         ids = ids.Distinct().OrderBy(i => i).ToList();
         return ids;
     }
