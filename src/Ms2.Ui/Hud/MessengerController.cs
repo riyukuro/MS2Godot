@@ -38,7 +38,7 @@ public sealed class MessengerController : UiController
     /// <summary>IsTypeHidden (:3614): super chat needs feature 0x19.</summary>
     public const int SuperChatFeature = 0x19;
     /// <summary>DIK codes vfunc_13 (:810) reads.</summary>
-    public const int DikReturn = 0x1c;
+    public const int DikReturn = 0x1c, DikUp = 0x79, DikDown = 0x7e;
 
     /// <summary>MessengerData::TalkTab: tabName, close, detach, additive and its panel setting (m_panel).</summary>
     public sealed class TalkTab
@@ -549,7 +549,23 @@ public sealed class MessengerController : UiController
         if (!InputFocused && InputBlocked()) return false;
         if (dik == DikReturn) { ReturnKey(); return true; }
         if (escape) return Release();
+        if (dik == DikUp && InputFocused) { HistoryKey(true); return true; }
+        if (dik == DikDown && InputFocused) { HistoryKey(false); return true; }
         return false;
+    }
+
+    /// <summary>
+    /// FUN_141a13c20 (:1775), Up (0x79) or Down (0x7e) with the input focused: the browser's next history entry
+    /// (<see cref="MessengerBrowser.GetHistoryEntry"/>) replaces the kept links and the input text, the caret after it. In
+    /// vfunc_13 (:810) these keys come after Return and Escape. vfunc_94 after it is empty in the client.
+    /// </summary>
+    void HistoryKey(bool up)
+    {
+        if (textInput == null || !InputFocused) return;
+        if (!Browser.GetHistoryEntry(up, out var entry)) return;
+        inputLinks.Clear();
+        inputLinks.AddRange(entry.Links);
+        SetInputText(entry.Text, true);
     }
 
     /// <summary>FUN_141a17700 (:2446): an open emoticon preview takes Return while typing; else FUN_141a11e30.</summary>
@@ -581,7 +597,7 @@ public sealed class MessengerController : UiController
             string text = Escape(Rt.ToString(Host.Get(textInput, "text")));
             string html = MessengerBrowser.RemoveChatTags(Rt.ToString(Host.Get(textInput, "htmlText")));
             text = UserCommands.Trim(text);
-            if (text.Length > 0) SubmitLine(text, html);
+            if (text.Length > 0) SubmitLine(text, html, true);
             Release();
             return;
         }
@@ -695,20 +711,23 @@ public sealed class MessengerController : UiController
     /// <summary>
     /// SubmitLine (@0x141a0f1d0, :1223): a line with links is sent as its html. A line starting with "/" is a command
     /// (<see cref="RunCommand"/>); else the selected target's type (FUN_141a144a0) unless FUN_141a12380 asks first, sent
-    /// through FUN_141a12e40 (SendChat with no target; the history is not kept).
+    /// through FUN_141a12e40 (SendChat with no target). With bHistory (Return, FUN_141a11e30; the emoticon line passes 0)
+    /// a used command (its text) or a sent line (the html when it has links) goes to the browser's history
+    /// (<see cref="MessengerBrowser.RecordHistory"/>) with the links the input holds.
     /// </summary>
-    public void SubmitLine(string text, string html)
+    public void SubmitLine(string text, string html, bool history = false)
     {
         bool links = HasChatLink(html);
         string send = links ? html : text;
         if (text.Length > 0 && text[0] == '/')
         {
-            RunCommand(text, html, links);
+            if (RunCommand(text, html, links) != 0 && history) Browser.RecordHistory(text, inputLinks);
             return;
         }
         int type = SelectedType();
         if (Browser.ConfirmSend(type, send)) return;
         SendChat(type, send, "", 0);
+        if (history) Browser.RecordHistory(send, inputLinks);
     }
 
     /// <summary>FUN_141a144a0 (:1896): the type of the target list's selected row, else the first type.</summary>
@@ -978,7 +997,7 @@ public sealed class MessengerController : UiController
         switch (name.ToLowerInvariant())
         {
             case "eventfocusin": Browser.MakeCurrent(Name); return true;     // vfunc_90 (:2141)
-            case "eventfocusout": return true;                 // vfunc_91: the history iterator back to the end
+            case "eventfocusout": Browser.ResetHistoryPosition(); return true;     // vfunc_91 (:2150)
             case "eventchangetab": SelectTab(args.Length > 0 ? Rt.ToString(args[0]) : ""); return true;
             case "eventchangetalktarget": SubjectChanged(); return true;     // vfunc_93
             case "eventtextinput": RemoveUnlistedLinks(); return true;       // vfunc_28 :4042

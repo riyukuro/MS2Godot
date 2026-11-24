@@ -214,6 +214,48 @@ public sealed class MessengerBrowser
 
     GameTables Tables => Model?.Tables ?? GameTables.Empty;
 
+    /// <summary>Unk_MsgHistory (uimessenger.cpp): a sent line and the links the input held (m_keys).</summary>
+    public readonly record struct HistoryEntry(string Text, IReadOnlyList<string> Links);
+
+    /// <summary>The history FUN_141a25f70 (@0x141a25f70, :3555) keeps: at most this many lines (nMax).</summary>
+    public const int MaxHistory = 10;
+    readonly List<HistoryEntry> history = new();              // m_history
+    int historyAt;                                            // m_itHistory as an index, history.Count = end()
+    public IReadOnlyList<HistoryEntry> History => history;
+    public int HistoryPosition => historyAt;
+
+    /// <summary>
+    /// FUN_141a25f70 (:3555), a sent line joins the history: none for an empty text; the same text as the last entry only
+    /// takes the position back to the end; else the entry (text and a copy of the links) is added, the oldest goes past
+    /// ten, and the position is the end.
+    /// </summary>
+    public void RecordHistory(string text, IReadOnlyList<string> links)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+        if (history.Count > 0 && history[^1].Text == text) { historyAt = history.Count; return; }
+        history.Add(new HistoryEntry(text, links.ToArray()));
+        if (history.Count > MaxHistory) history.RemoveAt(0);
+        historyAt = history.Count;
+    }
+
+    /// <summary>
+    /// GetHistoryEntry (@0x141a261b0, :3575): none for an empty history. Up (bUp) moves the position back, none at the
+    /// first entry; down moves it on, none at the end. Moving onto the end gives no entry but still counts as a move (the
+    /// client leaves its out entry empty then, so the input is emptied).
+    /// </summary>
+    public bool GetHistoryEntry(bool up, out HistoryEntry entry)
+    {
+        entry = new HistoryEntry("", System.Array.Empty<string>());
+        if (history.Count == 0) return false;
+        if (up) { if (historyAt == 0) return false; historyAt--; }
+        else { if (historyAt == history.Count) return false; historyAt++; }
+        if (historyAt != history.Count) entry = history[historyAt];
+        return true;
+    }
+
+    /// <summary>vfunc_91 (:2150), the window's focus out: the position goes back to the end.</summary>
+    public void ResetHistoryPosition() => historyAt = history.Count;
+
     /// <summary>
     /// FUN_141a247c0 (:3247), the system lines (FUN_1412751b0, unit_141274d10_uihelpers.cpp:247): none for an empty text;
     /// the value words replaced (ReplaceValueWords: the local player's name; the gender words read no gender here), then

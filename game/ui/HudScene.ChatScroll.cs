@@ -15,6 +15,8 @@ namespace Ms2Godot.Ui;
 /// the ActionScript handler (setSize and the redraws it asks for) and the display-list sync spent.
 /// <c>--uigen-open chatappend</c> fills the log to its limit, then adds one line a frame and prints what a frame cost in
 /// main-thread allocation and time against the quiet frames after it (what one appended line costs).
+/// <c>--uigen-open chathistory</c> sends three lines with real Return key events (the line's text set between them), then Up and Down
+/// key events, and prints the input's text after each (the input history, FUN_141a13c20).
 /// </summary>
 public partial class HudScene
 {
@@ -118,6 +120,37 @@ public partial class HudScene
     }
 
     double resizeX, resizeY, resizeSyncPrev;
+
+    /// <summary>One key press and release through the viewport, as the keyboard sends it.</summary>
+    void ChatKeyEvent(Key key)
+    {
+        foreach (bool down in new[] { true, false })
+            Input.ParseInputEvent(new InputEventKey { Keycode = key, PhysicalKeycode = key, Pressed = down });
+    }
+
+    /// <summary><c>--uigen-open chathistory</c>: frames 160, 170 and 180 (+4) send "alpha", "beta" and "gamma" (Return focuses the input,
+    /// the text is set, Return sends it); from 200 Up, Up, Up, Down, Down, Down and a focus out with Up print the input's text.</summary>
+    void ChatHistoryShot(int frames)
+    {
+        if (messengers.Count == 0) return;
+        var (m, c) = messengers[0];
+        var h = m.Host;
+        if (h.Child("m_textInput") is not AsDisplayObject input) return;
+        void Print(string what) => GD.Print($"CHATHISTORY {what}: text=\"{Rt.ToString(h.Get(input, "text"))}\" focused={Rt.ToString(h.Get(input, "focused"))} history={string.Join("|", c.Browser.History.Select(e => e.Text))} sent={ChatLog.Logs.Count}");
+        // the key events reach the scene on the next frame, so a text is set and a state read two frames after the key
+        if (frames is 160 or 170 or 180) { ChatKeyEvent(Key.Enter); return; }
+        if (frames is 162 or 172 or 182) { h.Set(h.Get(input, "textField"), "text", frames == 162 ? "alpha" : frames == 172 ? "beta" : "gamma"); return; }
+        if (frames is 164 or 174 or 184) { ChatKeyEvent(Key.Enter); return; }
+        if (frames is 166 or 176 or 186) { Print("sent"); return; }
+        if (frames == 200) { ChatKeyEvent(Key.Enter); return; }
+        if (frames == 202) { Print("focused"); return; }
+        if (frames is 205 or 210 or 215) { ChatKeyEvent(Key.Up); return; }
+        if (frames is 207 or 212 or 217) { Print("up"); return; }
+        if (frames is 220 or 225 or 230) { ChatKeyEvent(Key.Down); return; }
+        if (frames is 222 or 227 or 232) { Print("down"); return; }
+        if (frames == 235) { c.OnCallback("eventFocusOut", System.Array.Empty<object>()); ChatKeyEvent(Key.Up); return; }
+        if (frames == 237) Print("focus out, up");
+    }
 
     /// <summary>
     /// <c>--uigen-open chatlog:top|mid|bot</c>: the log filled to its 500 lines (wrapping lines, user lines and a super chat line among

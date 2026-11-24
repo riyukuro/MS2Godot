@@ -1822,6 +1822,75 @@ public class HudTests
     }
 
     [Test]
+    public void ChatInputHistoryUpAndDown()
+    {
+        // FUN_141a11e30 -> FUN_141a0f1d0(bHistory 1) -> FUN_141a25f70: a sent line joins the browser's history (ten at most,
+        // the last text not twice); FUN_141a13c20 (vfunc_13 :810, keys 0x79 / 0x7e, input focused) puts the entry in the input
+        var (c, h, m, sent, _) = ChatWindow();
+        var input = (AsObject)h.Child("m_textInput");
+        string Text() => Rt.ToString(h.Get(input, "text"));
+        void Type(string t)
+        {
+            c.OnKey(MessengerController.DikReturn, false);              // focuses the input
+            h.Set(h.Get(input, "textField"), "text", t);
+        }
+        Assert.That(c.OnKey(MessengerController.DikUp, false), Is.False, "Up with the input not focused");
+        for (int i = 1; i <= 12; i++) { Type("line" + i); c.OnKey(MessengerController.DikReturn, false); }
+        Type("line12"); c.OnKey(MessengerController.DikReturn, false);                      // the same text again: one entry
+        Assert.That(sent.Count, Is.EqualTo(13));
+        Assert.That(c.Browser.History.Count, Is.EqualTo(MessengerBrowser.MaxHistory));
+        Assert.That(c.Browser.History[0].Text, Is.EqualTo("line3"), "the two oldest went");
+        Assert.That(c.Browser.History[^1].Text, Is.EqualTo("line12"));
+        Type("");
+        Assert.That(c.OnKey(MessengerController.DikUp, false), Is.True);
+        Assert.That(Text(), Is.EqualTo("line12"));
+        c.OnKey(MessengerController.DikUp, false);
+        Assert.That(Text(), Is.EqualTo("line11"));
+        for (int i = 0; i < 20; i++) c.OnKey(MessengerController.DikUp, false);              // none past the first entry
+        Assert.That(Text(), Is.EqualTo("line3"));
+        c.OnKey(MessengerController.DikDown, false);
+        Assert.That(Text(), Is.EqualTo("line4"));
+        for (int i = 0; i < 20; i++) c.OnKey(MessengerController.DikDown, false);
+        Assert.That(Text(), Is.EqualTo(""), "down onto the end empties the input; none beyond it");
+        // eventFocusOut (vfunc_91) puts the position back to the end: Up gives the last line again
+        c.OnCallback("eventFocusOut", new object[0]);
+        c.OnKey(MessengerController.DikUp, false);
+        c.OnKey(MessengerController.DikUp, false);
+        c.OnCallback("eventFocusOut", new object[0]);
+        c.OnKey(MessengerController.DikUp, false);
+        Assert.That(Text(), Is.EqualTo("line12"));
+        // Return sends the entry again and does not add it a second time
+        c.OnKey(MessengerController.DikReturn, false);
+        Assert.That(sent[^1].Message, Is.EqualTo("line12"));
+        Assert.That(c.Browser.History.Count, Is.EqualTo(MessengerBrowser.MaxHistory));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void ChatInputHistoryKeepsTheLinksAndTheCommands()
+    {
+        var (c, h, m, sent, _) = ChatWindow();
+        var input = (AsObject)h.Child("m_textInput");
+        var held = Item.Create(m.Tables.Items, 15000001, 3);
+        held.Uid = 7;
+        c.Browser.FindHeldItem = uid => uid == 7 ? held : null;
+        string link = c.Browser.ItemLink(15000001, held.Rarity, 7);
+        c.Browser.LinkItem(held);
+        c.OnKey(MessengerController.DikReturn, false);
+        Assert.That(c.InputLinks, Is.Empty);
+        Assert.That(c.Browser.History.Count, Is.EqualTo(1));
+        Assert.That(c.Browser.History[0].Links, Is.EqualTo(new[] { link }), "the links the input held");
+        Assert.That(MessengerController.HasChatLink(c.Browser.History[0].Text), Is.True, "a line with links is kept as its html");
+        // Up puts the line and its links back, so the link survives eventTextInput's removal of typed links
+        c.OnKey(MessengerController.DikReturn, false);
+        c.OnKey(MessengerController.DikUp, false);
+        Assert.That(c.InputLinks, Is.EqualTo(new[] { link }));
+        c.OnCallback("eventTextInput", new object[0]);
+        Assert.That(Rt.ToString(h.Get(input, "htmlText")), Does.Contain("itemTooltip,7,"));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
     public void MessengerDropsHandTypedLinks()
     {
         var (c, h, m, sent, _) = ChatWindow();
