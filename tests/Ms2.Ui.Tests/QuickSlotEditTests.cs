@@ -75,6 +75,29 @@ public class QuickSlotEditTests
     }
 
     [Test]
+    public void ABagRightClickAppendsAsMode4UnlessTheQuickSlotsAreFull()
+    {
+        // FUN_14092fac0 (:418): UIMainPlayerInfo::FUN_1419f29c0 (all 25 slots hold a skill) gives notice 0x9a6; then the
+        // checks of FUN_14092f690; then KeyTable mode 4: page, skill, item, uid, -1 (the server picks the slot)
+        var sent = new List<IOutPacket>();
+        var notices = new List<int>();
+        Assert.That(QuickSlotEdit.Append(World(), _ => false, sent.Add, notices.Add, true, 100, 20000002, 5, 1), Is.False);
+        Assert.That((notices, sent.Count), Is.EqualTo((new[] { QuickSlotEdit.SlotsFullNotice }, 0)));
+        Assert.That(QuickSlotEdit.Append(World(), _ => false, sent.Add, notices.Add, false, 300, 0, 0, 1), Is.False);
+        Assert.That(notices.Last(), Is.EqualTo(QuickSlotEdit.PassiveNotice), "a passive skill, as FUN_14092f690");
+        Assert.That(QuickSlotEdit.Append(World(), _ => false, sent.Add, notices.Add, false, 0, 11000001, 9, 1), Is.False, "gear is no quick slot item");
+        Assert.That(QuickSlotEdit.Append(World(), _ => false, sent.Add, notices.Add, false, 100, 20000002, 5, 1), Is.True);
+        var w = new ByteWriter();
+        w.WriteByte(4); w.WriteShort(1); w.WriteInt(100); w.WriteInt(20000002); w.WriteLong(5); w.WriteInt(-1);
+        Assert.That((sent.Count, sent[0].Op), Is.EqualTo((1, Outbound.KeyTable)));
+        Assert.That(Bytes(sent[0]), Is.EqualTo(w.Buffer.AsSpan(0, w.Length).ToArray()));
+        var held = World();
+        held.SkillSetActive = true;
+        Assert.That(QuickSlotEdit.Append(held, _ => false, sent.Add, notices.Add, false, 100, 20000002, 5, 1), Is.True);
+        Assert.That(sent, Has.Count.EqualTo(1), "a skill set held: taken, not sent");
+    }
+
+    [Test]
     public void APassiveOrUnknownSkillIsRefused()
     {
         var sent = new List<IOutPacket>();

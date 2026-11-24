@@ -1837,6 +1837,32 @@ public class InventoryTests
     }
 
     [Test]
+    public void ARightClickPutsAQuickSlotItemOnTheBarAndAGemOnThroughMyInfo()
+    {
+        // InvenSlot::vfunc_14 (invenslot.cpp:904): mode 7 FUN_14092fac0, mode 12 EquipGem(item, -1, 0)
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        if (model.Tables.Items.Get(20000021) is not { IsQuickSlotUsable: true } || model.Tables.Items.Get(70200001) is not { IsGemItem: true })
+            Assert.Ignore("no potion 20000021 or gem 70200001 in this data");
+        var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
+        book.Apply(new ItemMessage.LoadTab(2, new[] { new EquipItem { Id = 20000021, Uid = 30, InventorySlot = 0, Amount = 3, Rarity = 1 } }));
+        book.Apply(new ItemMessage.LoadTab(7, new[] { new EquipItem { Id = 70200001, Uid = 31, InventorySlot = 0, Amount = 1, Rarity = 1 } }));
+        var (h, c, _) = Load(model, book);
+        var raised = new List<string>(); c.Button += raised.Add;
+        var bar = new List<long>(); var gems = new List<long>();
+        string Slot(int id) { c.ShowTab(id / 10000000); c.Process(); return c.SlotNameOfItem(id); }
+        c.OnCallback("notifySlotUse", new object[] { Slot(20000021), 1 });
+        c.OnCallback("notifySlotUse", new object[] { Slot(70200001), 1 });
+        Assert.That(raised, Is.EqualTo(new[] { "notifySlotUse", "notifySlotUse" }), "without the bar and my info: raised");
+        c.AddToQuickSlot = i => bar.Add(i.Uid);
+        c.EquipGemFromBag = i => gems.Add(i.Uid);
+        c.OnCallback("notifySlotUse", new object[] { Slot(20000021), 1 });
+        c.OnCallback("notifySlotUse", new object[] { Slot(70200001), 1 });
+        Assert.That((bar, gems, raised.Count), Is.EqualTo((new[] { 30L }, new[] { 31L }, 2)));
+    }
+
+    [Test]
     public void ATreasureMapDoesNothingAsAPartyRecall()
     {
         // TreasureMap is registered with RecallParty's handler @0x140d1df70: returns 1, nothing done

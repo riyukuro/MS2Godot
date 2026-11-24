@@ -54,6 +54,41 @@ public static class QuickSlotEdit
         return true;
     }
 
+    /// <summary>FUN_141275260(0x9a6, 1, 1): the notice of an item put on full quick slots.</summary>
+    public const int SlotsFullNotice = 0x9a6;
+
+    /// <summary>
+    /// FUN_14092fac0 @0x14092fac0 (:418) with (skill, item, uid, page), the bag's right click of a quick slot item: the main
+    /// player info's quick slots all holding a skill (UIMainPlayerInfo::FUN_1419f29c0, <paramref name="slotsFull"/>; false
+    /// without that dialog) give the 0x9a6 notice; then the checks of <see cref="Add"/>; then mode 4
+    /// (<see cref="KeyTableAddQuickSlotRequest"/>: the server puts it on the page's first free slot) unless a skill set is
+    /// held. Returns true (1).
+    /// </summary>
+    public static bool Append(SlotWorld w, Func<int, bool> feature, Action<IOutPacket> send, Action<int> notice, bool slotsFull,
+        int skillId, int itemId, long itemUid, int page)
+    {
+        if (slotsFull) { notice?.Invoke(SlotsFullNotice); return false; }
+        if (skillId != 0)
+        {
+            var row = w.Tables.GetSkillData((uint)skillId);
+            if (row == null) return false;
+            if (row.IsPassive) { notice?.Invoke(PassiveNotice); return false; }
+            if (feature(LapenshardFeature))
+            {
+                var bagItem = FindItem(w, i => i.Id == itemId);
+                if (bagItem != null && w.ItemData(bagItem.Id) is { IsLapenshard: true }) return false;
+            }
+        }
+        else
+        {
+            var bagItem = FindItem(w, i => i.Uid == itemUid);
+            var data = bagItem != null ? w.ItemData(bagItem.Id) : w.ItemData(itemId);
+            if (data == null || !data.IsQuickSlotUsable) return false;
+        }
+        if (!w.SkillSetActive) send(new KeyTableAddQuickSlotRequest(page, new QuickSlotEntry(skillId, itemId, itemUid)));
+        return true;
+    }
+
     /// <summary>
     /// SendKeyTableMode5 @0x14092fef0 (:481) with (skill, item, uid, page, slot index): an empty slot (all three 0) is 0;
     /// else mode 5 (<see cref="KeyTableRemoveQuickSlotRequest"/>) unless a skill set is held, and after that send

@@ -639,6 +639,39 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
     /// <summary>FUN_140d73bc0(id, 0, 0, ""): a notice box of a common string id.</summary>
     public Action<int> NoticeBox = _ => { };
 
+    /// <summary>UIMainPlayerInfo::FUN_1419f29c0 (uimainplayerinfo.cpp:1288): every one of the 25 quick slots (in the update
+    /// order) shows a skill; also 1 when the slot bar is not bound.</summary>
+    public bool QuickSlotsFull()
+    {
+        if (Host?.Entity == null) return true;
+        foreach (int i in UpdateOrder)
+            if (Shown(i).SkillId == 0) return false;
+        return true;
+    }
+
+    /// <summary>
+    /// InvenSlot::vfunc_14 case 7 (invenslot.cpp:960), a bag item's right click in use mode 7: an item passing FUN_14053e460;
+    /// its skill (FUN_141769320); a ride item with a UGC mesh and no UGC id: box 0x2e8 and nothing more. The uid sent is 0 for a
+    /// consumable (FUN_14053d270, type 2) whose skill is not of the item count kinds (FUN_1407e9ea0), else the item's. Then
+    /// FUN_14092fac0 (<see cref="Skills.QuickSlotEdit.Append"/>) on the key table's page (CKeyTable::FUN_140a700b0).
+    /// </summary>
+    public bool AddItemFromBag(Items.Item item)
+    {
+        var d = item?.Data;
+        if (d == null || !d.IsQuickSlotUsable) return false;
+        var w = World();
+        int skill = Skills.QuickSlotEdit.ItemSkillId(w, d);
+        if (d.IsRideItem && d.HasCubeTextureMesh && item.Record?.Ugc is not { Uid: > 0 })
+        {
+            NoticeBox(Skills.QuickSlotEdit.RideUgcNotice);
+            return false;
+        }
+        bool countKind = w.Tables.GetSkillData((uint)skill)?.IsItemCountKind == true;
+        long uid = d.IsConsumable && !countKind ? 0 : item.Uid;
+        int page = Model.ServerKeys?.CurrentPage ?? 0;
+        return Skills.QuickSlotEdit.Append(w, Model.IsFeatureEnabled, Send, Notice, QuickSlotsFull(), skill, item.ItemId, uid, page);
+    }
+
     /// <summary>
     /// The quick slot index of a name ("&lt;bag&gt;.&lt;i&gt;", i below 0x19), else -1: SkillSlotBag names its slots
     /// "SlotInfo.skill.0.&lt;i&gt;" (GetSlotName @0x1419f31f0, uimainplayerinfo.cpp:1424, with FUN_1417633f0(.., 0x19)) and

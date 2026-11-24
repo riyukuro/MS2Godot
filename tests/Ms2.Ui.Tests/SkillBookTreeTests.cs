@@ -423,6 +423,27 @@ public class SkillBookTreeTests
     }
 
     [Test]
+    public void ABagRightClickPutsAQuickSlotItemOnThePageWithItsUidByItsKind()
+    {
+        // InvenSlot::vfunc_14 case 7 (invenslot.cpp:960): FUN_141769320's skill; uid 0 for a consumable whose skill is not of
+        // the item count kinds (FUN_1407e9ea0); FUN_14092fac0 on CKeyTable::FUN_140a700b0's page
+        var (bh, _, _) = Load();
+        var m = bh.Model;
+        var (h, bar, sent, t) = QuickSlotBar(m);
+        var item = Ms2.Ui.Items.Item.Create(m.Tables.Items, 20000021, 1);
+        if (item == null || !item.Data.IsQuickSlotUsable) Assert.Ignore("no quick slot potion 20000021 in this data");
+        item.Uid = 77;
+        int skill = item.Data.SkillId;
+        bool countKind = m.Tables.Skills.GetSkillData((uint)skill)?.IsItemCountKind == true;
+        Assert.That(bar.QuickSlotsFull(), Is.False, "an empty page");
+        Assert.That(bar.AddItemFromBag(item), Is.True);
+        Assert.That(sent, Is.EqualTo(new[] { new KeyTableAddQuickSlotRequest(0, new QuickSlotEntry(skill, 20000021, countKind ? 77 : 0)) }));
+        var gear = Ms2.Ui.Items.Item.Create(m.Tables.Items, 13000001, 1);
+        Assert.That(bar.AddItemFromBag(gear), Is.False, "not a quick slot item");
+        Assert.That(sent, Has.Count.EqualTo(1));
+    }
+
+    [Test]
     public void ABookSkillDroppedOnAQuickSlotIsSentAndKept()
     {
         // NotifyDragSlot::SlotDragEnd from a BookSlot to a SkillSlot: SkillSlot::vfunc_18 (skillslot.cpp:507) reads the book

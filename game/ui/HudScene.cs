@@ -3635,6 +3635,8 @@ public partial class HudScene : Node, IUiStageHost
         c.ItemUseError = item => itemUse?.Error(item) ?? 0;
         c.OpenDialog = id => GD.Print($"inventory: dialog 0x{id:x} is not in this HUD");
         c.FieldIsTutorial = FieldHasTutorial;
+        c.AddToQuickSlot = item => playerInfo?.AddItemFromBag(item);                           // InvenSlot::vfunc_14 case 7
+        c.EquipGemFromBag = item => myInfo?.EquipGem(item, -1, false);                           // case 12: FindMyInfoDialog(0x2711)
         c.IsQuestRewarded = id => live?.Quests.Get(id)?.State == 2;
         c.IsGuildMaster = () => hudModel.HasLocalPlayer && live?.Guilds is { } g && g.IsMaster(hudModel.Player.Name);
         c.GmLevel = () => ChatLog?.GmLevel() ?? 0;

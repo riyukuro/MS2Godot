@@ -776,8 +776,9 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     /// InvenSlot::vfunc_14 (invenslot.cpp:904): none for an empty cell; the item's new flag cleared (SetNew(0), FUN_14199bc00);
     /// then by FUN_14140d3e0 (<see cref="UseMode"/>): mode 1 is <see cref="TryAddToTrade"/>, mode 6 puts it on, FUN_140a621c0(uid, 0, FUN_1414056b0) =
     /// RequestEquipItem(item, 0, layer, 0) (<see cref="RequestEquip"/>). FUN_1414056b0 (:601): 0 for a non-skin item; a skin
-    /// item 1, or with feature 0x8e 2 unless action 0x4940d is held. The other modes (7 the quick slot, 12 the gem, 15 the
-    /// UGC rename) are not ported and are raised.
+    /// item 1, or with feature 0x8e 2 unless action 0x4940d is held. Mode 7 is <see cref="AddToQuickSlot"/>, mode 12
+    /// <see cref="EquipGemFromBag"/>. Mode 15 (FUN_141405440, the UGC item's own dialog) and the other modes are not ported and
+    /// are raised.
     /// </summary>
     void RightClick(int i)
     {
@@ -793,6 +794,8 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         if (mode is 8 or 9 && BreakAdd != null) { BreakAdd(item); return; }              // cases 8, 9: the open break dialog lists it
         if (mode == 10 && LockSelect != null) { LockSelect(item); return; }       // case 10: the open lock dialog selects it
         if (mode == 17 && RevertSelect != null) { RevertSelect(item); return; }    // case 17: the open merge revert dialog checks and shows it
+        if (mode == 7 && AddToQuickSlot != null) { AddToQuickSlot(item); return; }  // case 7: FUN_14092fac0 on the quick slot page
+        if (mode == 12 && EquipGemFromBag != null) { EquipGemFromBag(item); return; }   // case 12: EquipGem(item, -1, 0) with the my info dialog
         if (mode != 6) { Button?.Invoke("notifySlotUse"); return; }
         int layer = !item.Data.HasSkinType ? 0 : !Feature(0x8e) ? 1 : ActionKeyDown(0x4940d) ? 1 : 2;
         RequestEquip(item, 0, layer);
@@ -1004,6 +1007,13 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         ItemSound?.Invoke(item);      // the material sound, inventory.cpp:1223
         return true;
     }
+
+    /// <summary>InvenSlot::vfunc_14 case 7: the main player info's <see cref="MainPlayerInfoController.AddItemFromBag"/>. Null:
+    /// raised as unported.</summary>
+    public Action<Item> AddToQuickSlot;
+    /// <summary>InvenSlot::vfunc_14 case 12: with the my info dialog (FindMyInfoDialog(0x2711)), its EquipGem(item, -1, 0); nothing
+    /// without it. Null: raised as unported.</summary>
+    public Action<Item> EquipGemFromBag;
 
     /// <summary>CallAirTaxi (@0x140d24e10, unit_140d1ae30_itemfunctiondispatch.cpp): the world map (0x4e42) opened when it is
     /// closed (IsDialogClosed, OpenDialog); 1. Nothing is sent: the world map's air taxi asks the server. Null: raised as unported.</summary>
