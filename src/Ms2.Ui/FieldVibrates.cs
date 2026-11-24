@@ -54,8 +54,11 @@ public sealed class FieldVibrates
         /// <summary>The offset of the entity's Position from its rest position (the vibrator's SetPosition).</summary>
         public Vector3 Offset { get; internal set; }
 
-        /// <summary>The m_420 box (worldservice_1.cpp:6855-6862).</summary>
-        public Skills.HitBox Box() => Skills.HitBox.Pose(
+        Skills.HitBox? box;
+
+        /// <summary>The m_420 box (worldservice_1.cpp:6855-6862): the field load makes it once and the tag pass reads it, so it
+        /// is posed on the first read and kept.</summary>
+        public Skills.HitBox Box() => box ??= Skills.HitBox.Pose(
             new((float)Size.X, (float)(Size.Y * 0.5), (float)Size.Z), new(0, (float)(Size.Y * 0.5), 0),
             new((float)Position.X, (float)Position.Y, (float)Position.Z), new((float)Rotation.X, (float)Rotation.Y, (float)Rotation.Z));
     }
