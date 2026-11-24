@@ -61,6 +61,10 @@ public sealed partial class NpcTalk
         return fieldQuests.TryGetValue(field, out var l) ? l : Array.Empty<int>();
     }
 
+    // NotifyChangeMyPC (FUN_140e771b0): ClearOpenedQuests. Live, EnterGame posts it for a character other than the saved one;
+    // the check below covers the sandbox, which enters no game.
+    static NpcTalk() => Ms2.Ui.NotifyChangeMyPc.Posted += () => popupOpened.Clear();
+
     /// <summary>NotifyChangeMyPC: ClearOpenedQuests.</summary>
     void ClearOpenedOnCharacterChange()
     {

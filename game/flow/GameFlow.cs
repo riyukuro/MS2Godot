@@ -571,7 +571,7 @@ public partial class GameFlow : Node
         // FUN_141880600: the new character's picture, shot from the create page and uploaded (its answer sets the list's key)
         var png = await CharacterCreateScene.ProfileShot();
         if (png != null) live.UploadNewCharacterPicture(e.User.CharacterId, png);
-        Session.SelectedIndex = Session.List().Count - 1;
+        Ui.CharacterListScene.SelectCharacter(Session.List()[^1]);
         Go(State.Lobby);
     }
 
@@ -616,7 +616,7 @@ public partial class GameFlow : Node
         }
         catch (Exception ex) { GD.PushWarning("flow create: " + ex.Message); }
         var e = Session.Add(request, subJob1);
-        Session.SelectedIndex = Session.List().IndexOf(e);
+        Ui.CharacterListScene.SelectCharacter(e);
         Ms2.Ui.Hud.MessageBoxQueue.Next();   // as on the server's answer: the name box closes (vfunc_79, FUN_14151f200)
         Go(State.Lobby);
     }

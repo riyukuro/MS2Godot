@@ -721,6 +721,16 @@ public sealed class GameOption
             Xml.WriteString(d, "connect", "Channel", Channel);
         }
 
+        /// <summary>FUN_141260c00 (gameoptionstruct.cpp:2967-2976): the entered character's id, with the character name cleared,
+        /// into the members and the document's two attributes.</summary>
+        public void SetCharSN(XDocument d, ulong charSn)
+        {
+            CharSN = charSn;
+            CharName = "";
+            Xml.WriteString(d, "connect", "CharSN", CharSN.ToString(CultureInfo.InvariantCulture));
+            Xml.WriteString(d, "connect", "CharName", CharName);
+        }
+
         /// <summary>The saved channel as UIServerListDialog reads it: atoi(m_strChannel) (uiserverlistdialog.cpp:350, :383).</summary>
         public int ChannelNumber => World.ReservedWords.Atoi(Channel ?? "");
     }

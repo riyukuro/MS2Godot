@@ -342,6 +342,16 @@ public static class GameOptions
         Write(accountPath, accountDoc);
     }
 
+    /// <summary>The entered character (FUN_141260c00, at UIServerListDialog::EnterGame uiserverlistdialog.cpp:646): the connect
+    /// block's CharSN, its CharName cleared, then both files.</summary>
+    public static void RememberCharacter(ulong charSn)
+    {
+        var o = Current;
+        EnsureCharacter();
+        o.ConnectOption.SetCharSN(doc, charSn);
+        WriteGameAndAccountFiles();
+    }
+
     /// <summary>The server list's remembered server (FUN_141260a30, at UIServerListDialog::EnterGame uiserverlistdialog.cpp:647):
     /// the connect block's WorldName, then both files.</summary>
     public static void RememberServer(string name)

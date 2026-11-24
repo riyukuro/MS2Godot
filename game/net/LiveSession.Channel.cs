@@ -32,10 +32,15 @@ public partial class LiveSession
         return (short)n;
     }
 
-    /// <summary>UIServerListDialog::EnterGame's option part (uiserverlistdialog.cpp:647-649), after the enter request went out:
-    /// GetServer (the picked server's name), then the channel asked for when it is not 0.</summary>
-    void RememberEnterGame(short channel)
+    /// <summary>UIServerListDialog::EnterGame's option part (uiserverlistdialog.cpp:642-649), after the enter request went out:
+    /// NotifyChangeMyPC when the character is not the saved one, the character (CharSN), GetServer (the picked server's
+    /// name), then the channel asked for when it is not 0.</summary>
+    void RememberEnterGame(long characterId, short channel)
     {
+        bool changed = GameOptions.Current.ConnectOption.CharSN != (ulong)characterId;
+        GD.Print($"live: EnterGame saves character {characterId}{(changed ? ", changed: NotifyChangeMyPC" : ", unchanged")}");
+        if (changed) Ms2.Ui.NotifyChangeMyPc.Post();
+        GameOptions.RememberCharacter((ulong)characterId);
         GameOptions.RememberServer(pickedServer ?? "");
         GameOptions.RememberChannel(channel);
     }

@@ -38,8 +38,39 @@ public partial class CharacterListScene : LobbyFieldScene
     CharacterListController controller;
     /// <summary>The dialog of the scene a map change left; the new one carries its state (the client keeps the dialog open).</summary>
     static CharacterListController carried;
-    /// <summary>GameOption m_nCharSN as the client keeps it: the last previewed character (SelectCharacter, :1263).</summary>
-    static string lastSn = "";
+    /// <summary>The dialog's m_1a0 and m_198 as the client keeps them: CUIService makes the one UICharacterListDialog at startup
+    /// (uiservice.cpp:2383), whose constructor reads the options' CharSN and CharName (:554-555); then each preview's
+    /// SelectCharacter (:1263-1267) takes its id and empties the name. Null until the options are read.</summary>
+    static string lastSn, lastName;
+
+    static void SeedSaved()
+    {
+        if (lastSn != null) return;
+        var c = GameOptions.Current.ConnectOption;
+        lastSn = c.CharSN == 0 ? "" : c.CharSN.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        lastName = c.CharName ?? "";
+    }
+
+    /// <summary>UICharacterListDialog::SelectCharacter (uicharacterlistdialog.cpp:1263-1267) outside the dialog: the create
+    /// answer selects the new character (mode 1, :920-930), which the next list starts from.</summary>
+    public static void SelectCharacter(CharacterEntry e)
+    {
+        SeedSaved();
+        lastSn = e.User.CharacterId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        lastName = "";
+        Flow.Session.SelectedIndex = Flow.Session.List().IndexOf(e);
+    }
+
+    /// <summary>The row the dialog's RefreshLobby selects from <see cref="lastName"/> / <see cref="lastSn"/>. In the client that
+    /// selection's OnSelectCharacter loads the select map and previews the character; here the scene loads the map and
+    /// previews before the dialog is built, so it starts from the same row.</summary>
+    static void SelectSavedRow()
+    {
+        SeedSaved();
+        var list = Flow.Session.List();
+        Flow.Session.SelectedIndex = list.Count == 0 ? 0 : CharacterListController.SavedRow(list.Count, i => list[i].User.Name,
+            i => list[i].User.CharacterId.ToString(System.Globalization.CultureInfo.InvariantCulture), lastName, lastSn);
+    }
     /// <summary>The character previewed in this scene, null for none.</summary>
     string previewSn;
     int? limitArg;
@@ -125,6 +156,7 @@ public partial class CharacterListScene : LobbyFieldScene
         if (string.IsNullOrEmpty(Settings.DataDir)) return defaultName;
         uiPacks = PackSet.Shared(Settings.DataDir);
         tables = new CreateTables(uiPacks);
+        if (!reselecting) SelectSavedRow();
         mapId = tables.SelectMap(SelectedJobGroup());
         return tables.XBlockOf(mapId) ?? defaultName;
     }
@@ -180,11 +212,12 @@ public partial class CharacterListScene : LobbyFieldScene
     void BuildList(bool reselect, bool popupPlays)
     {
         controller = NewController(assets, uiPacks ?? packs, data, Flow.Session.List(), limitArg);
+        SeedSaved();
         if (reselect && carried != null) controller.CarryFrom(carried);
-        else controller.SavedSn = lastSn;
+        else { controller.SavedSn = lastSn; controller.SavedName = lastName; }
         carried = null;
         controller.Previewed(previewSn);
-        if (previewSn != null) lastSn = previewSn;
+        if (previewSn != null) { lastSn = previewSn; lastName = ""; }
         controller.SelectCharacter += OnSelectCharacter;
         controller.GameStart += sn => UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnGameStart, sn);
         controller.CreateCharacter += () => UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnCreatePC);
@@ -221,7 +254,7 @@ public partial class CharacterListScene : LobbyFieldScene
     {
         if (!IsInsideTree() || layer == null) return;
         StubCharacterList.Dress(packs, Flow.Session.List());
-        Flow.Session.SelectedIndex = 0;
+        SelectSavedRow();
         PreviewSelected();
         if (controller == null) return;   // the first build is still to come: it reads the list as it is then
         dialog?.QueueFree();
@@ -257,6 +290,7 @@ public partial class CharacterListScene : LobbyFieldScene
         var c = new CharacterListController
         {
             CharacterLimit = Net.LiveSession.Instance is { CharacterLimit: > 0 } live ? live.CharacterLimit : limit ?? 6,
+            CharacterRows = Net.LiveSession.Instance is { CharacterRows: > 0 } liveRows ? liveRows.CharacterRows : 8,
             Server = (info.Name, info.IconPath),
             // UICharacterListDialog::OnLoadComplete: feature 0x112; feature.xml has DeleteAccount at KR level 100, over the
             // Live server level (feature_setting.xml Live KR 78)

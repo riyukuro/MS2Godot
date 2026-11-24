@@ -2471,10 +2471,13 @@ public partial class HudScene : Node, IUiStageHost
         Action<Ms2.Ui.StatusEvent> onStatus = e => { if (e == Ms2.Ui.StatusEvent.Level) c.MarkDirty(); };
         hudModel.Changed += onStatus;
         if (live != null) live.Quests.Changed += onQuest;
+        Action onChangeMyPc = c.OnChangeMyPc;   // NotifyChangeMyPC (FUN_140ea1d70): the seen marks dropped
+        Ms2.Ui.NotifyChangeMyPc.Posted += onChangeMyPc;
         unwatchLearningQuest = () =>
         {
             hudModel.Changed -= onStatus;
             if (live != null) live.Quests.Changed -= onQuest;
+            Ms2.Ui.NotifyChangeMyPc.Posted -= onChangeMyPc;
         };
     }
 

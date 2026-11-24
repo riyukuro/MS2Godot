@@ -134,6 +134,9 @@ public partial class LiveSession : Node
     /// <summary>The last create the server refused (null after a create that went through).</summary>
     /// <summary>The account's character limit from CharMaxCount 0xB8 (DAT_1439f4a84); 0 until the server sent it.</summary>
     public int CharacterLimit;
+    /// <summary>CharMaxCount's second value (DAT_1439f4a88): the character list's row count (RefreshLobby's maxRow,
+    /// uicharacterlistdialog.cpp:1352); 0 until the server sent it.</summary>
+    public int CharacterRows;
     /// <summary>The last character list's EndList flag (m_1e8, OnCharacterListPacket mode 4): the game start checks the
     /// name first (<see cref="Ms2.Ui.InvalidNameRename"/>).</summary>
     public bool CheckNames;
@@ -1105,6 +1108,7 @@ public partial class LiveSession : Node
             Session.AccountId = user;
             Session.Characters = o.Characters.ToList();
             if (o.CharacterLimit > 0) CharacterLimit = o.CharacterLimit;
+            if (o.CharacterRows > 0) CharacterRows = o.CharacterRows;
             CheckNames = o.CheckNames;
             GD.Print($"live: logged in, {o.Characters.Count} character(s): {string.Join(", ", o.Characters.Select(c => c.User.Name))}");
             return true;
@@ -1277,7 +1281,7 @@ public partial class LiveSession : Node
             LoginToGame go;
             short asked = BeginEnterGame();
             var select = GameClient.SelectAsync(from, chosen.User.CharacterId, asked);
-            RememberEnterGame(asked);   // EnterGame saves the server and channel options right after the request (uiserverlistdialog.cpp:641-649)
+            RememberEnterGame(chosen.User.CharacterId, asked);   // EnterGame saves the character, server and channel options right after the request (uiserverlistdialog.cpp:641-649)
             try { go = await select; }
             catch (System.IO.IOException e) when (from.IsClosed) { return Dropped(from, e); }
             if (!go.Ok)
@@ -2922,8 +2926,21 @@ public partial class LiveSession : Node
             GD.Print(gone ? $"live: delete run done, {n0} -> {Session.List().Count}" : "live: delete run failed");
             tree.Quit(gone ? 0 : 1); return;
         }
-        string pick = System.Environment.GetEnvironmentVariable("MS2_LIVE_CHAR");   // enter with this character name (default: the first)
-        var first = newName != null && newName != "" ? Session.List().Last() : !string.IsNullOrEmpty(pick) ? Session.List().FirstOrDefault(c => c.User.Name == pick) : Session.List().FirstOrDefault();
+        // MS2_LIVE_CHAR: enter with this character name, "@last" the last row, "@selected" the row the list selected
+        // (the saved CharSN, uicharacterlistdialog.cpp:1365); default the first
+        string pick = System.Environment.GetEnvironmentVariable("MS2_LIVE_CHAR");
+        int dialogRow = -1;
+        if (pick == "@selected")   // as a player: Start once the dialog takes input (after the select scene's fade-in)
+        {
+            await Until(() => tree.CurrentScene is Ui.CharacterListScene { Controller: { Host.Entity: not null } d } && d.InputOn, 1800);
+            if (tree.CurrentScene is Ui.CharacterListScene { Controller: { Host.Entity: not null } dl }) dialogRow = dl.ListIndex;
+        }
+        var listed = Session.List();
+        var selectedRow = Session.SelectedIndex >= 0 && Session.SelectedIndex < listed.Count ? listed[Session.SelectedIndex] : null;
+        GD.Print($"live: the list selected row {Session.SelectedIndex} of {listed.Count} (dialog row {dialogRow}), character {selectedRow?.User.CharacterId}; saved CharSN {GameOptions.Current.ConnectOption.CharSN}");
+        var first = newName != null && newName != "" ? listed.Last()
+            : pick == "@last" ? listed.LastOrDefault() : pick == "@selected" ? selectedRow
+            : !string.IsNullOrEmpty(pick) ? listed.FirstOrDefault(c => c.User.Name == pick) : listed.FirstOrDefault();
         if (first == null) { GD.PushWarning("live: no character"); tree.Quit(1); return; }
         UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnGameStart, first.User.CharacterId.ToString());
         await Until(() => flow.Current == GameFlow.State.Game);

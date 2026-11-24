@@ -122,6 +122,22 @@ public class GameOptionTests
         Assert.That((again.ConnectOption.WorldName, again.ConnectOption.ChannelNumber), Is.EqualTo(("New", 12)));
     }
 
+    [Test]
+    public void TheEnteredCharacterGoesIntoTheConnectBlockWithItsNameCleared()
+    {
+        var doc = Doc("<ms2><connect CharSN=\"5\" CharName=\"Old\" Channel=\"2\"/></ms2>");
+        var o = new GameOption(0);
+        o.Load(doc, _ => true);
+        Assert.That((o.ConnectOption.CharSN, o.ConnectOption.CharName), Is.EqualTo((5UL, "Old")));
+        o.ConnectOption.SetCharSN(doc, 1234567890123UL);
+        var connect = doc.Root.Element("connect");
+        Assert.That(((string)connect.Attribute("CharSN"), (string)connect.Attribute("CharName")), Is.EqualTo(("1234567890123", "")));
+        Assert.That((string)connect.Attribute("Channel"), Is.EqualTo("2"), "the other attributes stay");
+        var again = new GameOption(0);
+        again.Load(doc, _ => true);
+        Assert.That((again.ConnectOption.CharSN, again.ConnectOption.CharName), Is.EqualTo((1234567890123UL, "")));
+    }
+
     [TestCase("", 0)]
     [TestCase("7", 7)]
     [TestCase(" 4x", 4)]

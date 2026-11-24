@@ -51,6 +51,49 @@ public class CharacterListTests
         Assert.That(again, Is.EqualTo(0), "the rebuilt dialog does not load it again");
     }
 
+    [TestCase("", "13", 2)]
+    [TestCase("B", "", 1)]
+    [TestCase("C", "11", 2)]     // name and id on different rows: the later row (uicharacterlistdialog.cpp:1362-1366)
+    [TestCase("A", "13", 2)]
+    [TestCase("Z", "99", 0)]
+    [TestCase("", "", 0)]
+    public void TheSavedRowFollowsRefreshLobby(string name, string sn, int row)
+    {
+        string[] names = { "A", "B", "C" }, sns = { "11", "12", "13" };
+        Assert.That(CharacterListController.SavedRow(3, i => names[i], i => sns[i], name, sn), Is.EqualTo(row));
+    }
+
+    [Test]
+    public void TheSavedCharacterIsSelectedOnLoad()
+    {
+        // RefreshLobby (uicharacterlistdialog.cpp:1353-1367): the row named m_198 (option CharName) or the row with id m_1a0
+        // (option CharSN, which EnterGame saves with the name cleared, gameoptionstruct.cpp:2967-2976), else the first
+        string Picked(Action<CharacterListController> saved)
+        {
+            var got = new List<string>();
+            Load(c => { saved(c); c.SelectCharacter += got.Add; }, Row("A", "11", "d.png"), Row("B", "12", "d.png"), Row("C", "13", "d.png"));
+            Assert.That(got, Is.Not.Empty, "the list's load selects a row");
+            return got[0];
+        }
+        Assert.That(Picked(c => c.SavedSn = "13"), Is.EqualTo("13"), "the saved id");
+        Assert.That(Picked(c => c.SavedName = "B"), Is.EqualTo("12"), "the saved name");
+        Assert.That(Picked(c => c.SavedSn = "99"), Is.EqualTo("11"), "an id no longer listed gives the first row");
+    }
+
+    [TestCase(8, 8, "107")]
+    [TestCase(21, 8, "100")]
+    [TestCase(21, 24, "120")]
+    public void ASavedCharacterPastTheRowsGivesTheFirst(int n, int rowsShown, string expected)
+    {
+        // RefreshLobby sets maxRow (CharMaxCount's second value) and CharacterListList.buildCharacterList builds only
+        // maxRow rows; a selected index whose renderer it does not have (enableSelect false) gives getEnabledSelectIndex
+        var rows = Enumerable.Range(0, n).Select(i => Row("N" + i, (100 + i).ToString(), "d.png")).ToArray();
+        var got = new List<string>();
+        Load(c => { c.SavedSn = (100 + n - 1).ToString(); c.CharacterRows = rowsShown; c.CharacterLimit = rowsShown; c.SelectCharacter += got.Add; }, rows);
+        Assert.That(got, Is.Not.Empty);
+        Assert.That(got[0], Is.EqualTo(expected));
+    }
+
     [Test]
     public void LobbyButtonsFadeInWithThePopup()
     {

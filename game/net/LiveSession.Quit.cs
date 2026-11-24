@@ -80,6 +80,7 @@ public partial class LiveSession
                 if (exit.IsCancellationRequested) return;
                 Session.Characters = System.Linq.Enumerable.ToList(o.Characters);
                 if (o.CharacterLimit > 0) CharacterLimit = o.CharacterLimit;
+                if (o.CharacterRows > 0) CharacterRows = o.CharacterRows;
                 CheckNames = o.CheckNames;
                 GD.Print($"live: back at character select, {o.Characters.Count} character(s)");
                 CharacterListReturned?.Invoke();

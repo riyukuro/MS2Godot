@@ -142,16 +142,9 @@ public sealed class CharacterListController : UiController, IMessageBoxListener
     public void RefreshLobby()
     {
         if (Host.Get(Host.Entity, "m_charlist") is { } list) Host.Set(list, "maxRow", CharacterRows);
-        int select = 0;
-        bool byName = SavedName.Length > 0;
+        int select = SavedRow(Characters.Count, i => Characters[i].CharName, i => Characters[i].CharSN, SavedName, SavedSn);
         var rows = new object[Characters.Count];
-        for (int i = 0; i < Characters.Count; i++)
-        {
-            var c = Characters[i];
-            if (byName && SavedName == c.CharName) select = i;
-            else if (SavedSn == c.CharSN) select = i;
-            rows[i] = Row(c);
-        }
+        for (int i = 0; i < Characters.Count; i++) rows[i] = Row(Characters[i]);
         int count = rows.Length;
         select = count == 0 ? -1 : Math.Max(0, Math.Min(count - 1, select));
         if (KeepRow is int keep) select = keep;
@@ -162,6 +155,20 @@ public sealed class CharacterListController : UiController, IMessageBoxListener
                 && Host.Invoke(Host.Entity, "getCharacterRenderer", i) is Avm2.Flash.AsDisplayObject renderer)
                 AddPending(Characters[i].CharSN, renderer);
         built = true;
+    }
+
+    /// <summary>RefreshLobby's selected row (uicharacterlistdialog.cpp:1353-1367): the row named <paramref name="savedName"/>
+    /// (m_198) when one is saved, or the row with id <paramref name="savedSn"/> (m_1a0), the later row winning; else 0.</summary>
+    public static int SavedRow(int count, Func<int, string> name, Func<int, string> sn, string savedName, string savedSn)
+    {
+        int select = 0;
+        bool byName = !string.IsNullOrEmpty(savedName);
+        for (int i = 0; i < count; i++)
+        {
+            if (byName && savedName == name(i)) select = i;
+            else if (savedSn == sn(i)) select = i;
+        }
+        return select;
     }
 
     /// <summary>FUN_1418f42c0 (uicharacterlistdialog.cpp:1933-1956): one character's object; a character with a delete time
