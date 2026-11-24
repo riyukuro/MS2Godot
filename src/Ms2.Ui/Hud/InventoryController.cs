@@ -59,8 +59,11 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
 
     /// <summary>CUIService::ToggleDialog(id) of a button: item break 0x4e8d, item lock 0x4f08, socket and gem 0x4f0a, enchant 0x4e91.</summary>
     public event Action<int> ToggleDialog;
+    /// <summary>CUIService::OpenDialog of a UI id after the dialog's SetMode (the second argument), as onClickItemOption does
+    /// with UIItemGetOptionDialog (uiinventorydialog.cpp:858-866).</summary>
+    public event Action<int, int> OpenDialogMode;
     /// <summary>A button whose client path sends a request or opens a part not here (by its callback name): OnClickSort,
-    /// onClickSlotExpand, onClickOpenBank, onClickItemOption, onClickItemMerge, onClickItemEnchantTransform,
+    /// onClickSlotExpand, onClickOpenBank, onClickItemMerge, onClickItemEnchantTransform,
     /// onClickUnlimitedEnchant, onClickItemRemakeOption, notifySlotUse (the double click, the preview and the
     /// right-click modes other than put-on), notifySlotDragEnd (a drop off the bag, a drop from a kind of slot not ported).</summary>
     public event Action<string> Button;
@@ -351,7 +354,8 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
             case "notifyslotuse": return SlotUse(args);
             case "notifyslotshiftclick": return SlotShiftClick(args);
             case "onclickitemmerge": OnClickItemMerge(); return true;
-            case "onclickitemoption": case "onclickitemenchanttransform": case "onclickunlimitedenchant":
+            case "onclickitemoption": OpenDialogMode?.Invoke(ItemGetOptionDialogController.UiId, 1); return true;
+            case "onclickitemenchanttransform": case "onclickunlimitedenchant":
                 Button?.Invoke(name); return true;
             // :952: with an argument (ASData::SetArgsIfAny) the search of its text (FUN_1422b8f40); answered 1 either way
             case "onitemsearch":

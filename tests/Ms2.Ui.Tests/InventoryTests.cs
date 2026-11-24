@@ -284,6 +284,10 @@ public class InventoryTests
         Assert.That(c.OnCallback("OnSelected", new object[] { "Elixir" }), Is.False, "no branch in the client: 0");
         Assert.That(raised, Is.EqualTo(new[] { "onClickItemRemakeOption", "onClickOpenBank" }), "the expand is the dialog's own; the two unhandled ones raise nothing");
         Assert.That(toggled, Is.EqualTo(0x4e8d));
+        // onClickItemOption (:858-866): the auto-loot dialog 0x4e6c, SetMode(1) then OpenDialog
+        var opened = new List<(int, int)>(); c.OpenDialogMode += (id, mode) => opened.Add((id, mode));
+        Assert.That(c.OnCallback("onClickItemOption", Array.Empty<object>()), Is.True);
+        Assert.That((opened.Single(), raised.Count), Is.EqualTo(((0x4e6c, 1), 2)), "opened in mode 1, nothing raised");
 
         // an expired item: box 0x2a1, the answer sends (0 = stack)
         MessageBoxData shown = null;

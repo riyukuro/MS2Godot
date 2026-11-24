@@ -95,7 +95,7 @@ public static class GameOptions
     }
 
     /// <summary>CFeatureManager::IsRegionCN: the data's locale is CN.</summary>
-    static bool RegionCn() => Settings.DataDir is { } data && System.IO.File.Exists(System.IO.Path.Combine(data, "Xml.m2d"))
+    public static bool RegionCn() => Settings.DataDir is { } data && System.IO.File.Exists(System.IO.Path.Combine(data, "Xml.m2d"))
         && string.Equals(Ms2.Ui.LobbyFeatures.LocaleOf(PackSet.Shared(data)), "CN", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>CFeatureManager::IsFeatureEnabled(id) on the data's feature list.</summary>
