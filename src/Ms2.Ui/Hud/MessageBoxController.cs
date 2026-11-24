@@ -230,6 +230,12 @@ public sealed class MessageBoxController : UiController
     /// <summary>use_function_item's yes: FindItemByUid of the box's item uid and FUN_140a63880(item, "")
     /// (<see cref="InventoryController.ConfirmUseFunctionItem"/>).</summary>
     public Action<long> UseFunctionItem;
+    /// <summary>The guild name box's use (HandleChangeGuildNameButton): the box's item uid and the name; false keeps the box.</summary>
+    public Func<long, string, bool> UseGuildNameItem;
+    /// <summary>CBanTextChecker::CheckGuildName (CommonString GetChecker): null when the name passes, else its message.</summary>
+    public Func<string, string> CheckGuildName;
+    /// <summary>ShowSystemNotice(text, 1, 1).</summary>
+    public Action<string> SystemNotice;
 
     /// <summary>HandleUseBindEquipItemButton's yes (uimessagebox.cpp:1885): the box's item uid, arg 0 (the slot) and arg 1 (the
     /// layer) put on again with the binding skip (RequestEquipItem(item, a0, a1, 1)); false when the inventory no longer has
@@ -529,7 +535,7 @@ public sealed class MessageBoxController : UiController
     }
 
     /// <summary>FUN_1419fa910 (uimessagebox.cpp:1092): a tag of exactly two tokens split by "," (FUN_14028cb70(tag, tokens,
-    /// L",", 2)); 0 otherwise. Of its tags "tradein", "drop", "sell" and "sellconfirm" are ported; the others are reported as unported.</summary>
+    /// L",", 2)); 0 otherwise. Of its tags "tradein", "drop", "sell", "sellconfirm" and "changeGuildName" are ported; the others are reported as unported.</summary>
     internal bool HandleArgTag(int button, string tag)
     {
         var tokens = tag.Split(',');
@@ -542,6 +548,7 @@ public sealed class MessageBoxController : UiController
         if (tokens[0] == "sell") return HandleSellButton(button, MessageBoxData.WToI(tokens[1]));
         if (tokens[0] == "sellconfirm") return HandleSellConfirmButton(button, MessageBoxData.WToI(tokens[1]));
         if (tokens[0] == InvalidNameRename.Tag) return HandleChangeInvalidCharNameButton(button, tokens[1]);
+        if (tokens[0] == InventoryController.ChangeGuildNameTag) return HandleChangeGuildNameButton(button, tokens[1]);
         if (data?.Listener == null) UnportedTag?.Invoke(button, tag);
         return false;
     }
@@ -737,6 +744,18 @@ public sealed class MessageBoxController : UiController
         if (data == null) return true;
         if (button == 0) LearnEmotion?.Invoke(data.ItemUid);
         return true;
+    }
+
+    /// <summary>HandleChangeGuildNameButton @0x1419feeb0 (uimessagebox.cpp:2159): no record, 1. The yes: an empty name
+    /// shows common string 0xd as the box's error (UpdateErrorMessage) and keeps it; a name CheckGuildName refuses goes to
+    /// the system notice and keeps it; else the item of the box's uid is used with the name (0 without the item).</summary>
+    internal bool HandleChangeGuildNameButton(int button, string name)
+    {
+        if (data == null) return true;
+        if (button != 0) return true;
+        if (string.IsNullOrEmpty(name)) { UpdateErrorMessage(MessageBoxData.Common(0xd) ?? ""); return false; }
+        if (CheckGuildName?.Invoke(name) is { } message) { SystemNotice?.Invoke(message); return false; }
+        return UseGuildNameItem?.Invoke(data.ItemUid, name) ?? false;
     }
 
     /// <summary>HandleUseBindFuncItemButton @0x1419fde80: no record, 1; the yes finds the item (0 without it) and uses it

@@ -19,12 +19,20 @@ public sealed partial class InventoryController
     public const string RemakeScrollOpenKey = "s_itemremake_scroll_already_open", SocketScrollOpenKey = "s_itemsocket_scroll_already_open",
         RePackingScrollOpenKey = "s_item_repacking_scroll_already_open",
         WithKeyNoKeyKey = "s_msg_item_open_item_box_with_key_no_key_count", WithKeyKey = "s_msg_item_open_item_box_with_key",
-        TutorialLevelUpKey = "s_tutorial_levelup_item_not_use", TargetLevelKey = "s_err_cannot_already_target_level_potion";
+        TutorialLevelUpKey = "s_tutorial_levelup_item_not_use", TargetLevelKey = "s_err_cannot_already_target_level_potion",
+        GuildNameKey = "s_guild_ui_change_name";
+
+    /// <summary>s_strChangeGuildName: the guild name box's tag; its yes is UIMessageBox::HandleChangeGuildNameButton.</summary>
+    public const string ChangeGuildNameTag = "changeGuildName";
 
     /// <summary>WorldService::GetFieldData()->HasTutorialType(): the field is a tutorial one (LevelPotion refuses there).</summary>
     public Func<bool> FieldIsTutorial = () => false;
     /// <summary>DAT_143ab2914, the local player's GM level: from 0x32 the limited quantity box has no cooldown.</summary>
     public Func<int> GmLevel = () => 0;
+    /// <summary>CQuestManagerCommon::IsQuestRewarded.</summary>
+    public Func<int, bool> IsQuestRewarded = _ => false;
+    /// <summary>CGuildManager::IsMaster of the local player's name (vfunc_77).</summary>
+    public Func<bool> IsGuildMaster = () => false;
     /// <summary>GetTickCountMs2: the client's millisecond tick.</summary>
     public Func<uint> TickCount = () => (uint)Environment.TickCount;
 
@@ -39,6 +47,10 @@ public sealed partial class InventoryController
     {
         switch (item.Data.FunctionName)
         {
+            case "ResetAbilityCoolTime":
+                return ResetAbilityCoolTime(item);
+            case "ChangeGuildName":
+                return ChangeGuildName(item);
             case "TreasureMap":         // RecallParty's handler @0x140d1df70: returns 1, nothing done
                 return true;
             case "EnchantScroll":       // @0x140d225d0
@@ -189,6 +201,55 @@ public sealed partial class InventoryController
             lastLimitedUse[item.ItemId] = now;
         }
         FunctionUse(item, "");
+        return true;
+    }
+
+    /// <summary>
+    /// ResetAbilityCoolTime @0x140d22b50: the character abilities open (FUN_1401e0800 of the level: feature 0x2d and the
+    /// start level) and the constant's quest (CharacterAbilityOpenQuestID) rewarded, else box 0xc63; then a type 1 box of
+    /// common string 0xc62 (FUN_140d73e40) with the "use_function_item" tag and the item's uid, Enter not answering it.
+    /// Without the wearer's record the level is 0 (closed).
+    /// </summary>
+    bool ResetAbilityCoolTime(Item item)
+    {
+        ushort level = Wearer?.Invoke()?.Level ?? 0;
+        if (!CharacterAbilityData.IsOpen(Model.IsFeatureEnabled(Ms2.Ui.Feature.CharacterAbility), level)
+            || !IsQuestRewarded((int)Model.Tables.CharacterAbilityOpenQuestID))
+        {
+            ShowBox(MessageBoxQueue.Create(0, Model.Tables.Common(0xc63), null, ""));
+            return false;
+        }
+        var box = MessageBoxQueue.Create(1, Model.Tables.Common(0xc62), null, UseFunctionItemTag);
+        box.ItemUid = item.Uid;
+        box.EnterAllowed = false;
+        box.SetButtonLabelIds(0x477, 0x478, 0);
+        ShowBox(box);
+        return true;
+    }
+
+    /// <summary>
+    /// ChangeGuildName @0x140d233d0: not the guild's master: the notice common 0x416. Else a type 10 box of
+    /// s_guild_ui_change_name (GuildNameLengthMax) tagged "changeGuildName" with the item's uid and an empty input of that
+    /// many characters (SetInput(0, "", max, 0, 0)). 0 either way.
+    /// </summary>
+    bool ChangeGuildName(Item item)
+    {
+        if (!IsGuildMaster()) { NoticeText?.Invoke(Model.Tables.Common(0x416) ?? ""); return false; }
+        int max = Model.Tables.GuildNameLengthMax;
+        var box = MessageBoxQueue.Create(10, ClientFormat.Format(Model.Tables.Common(GuildNameKey) ?? "", max), null, ChangeGuildNameTag);
+        box.ItemUid = item.Uid;
+        box.SetInput(0, "", max, 0, 0);
+        ShowBox(box);
+        return false;
+    }
+
+    /// <summary>UIMessageBox::HandleChangeGuildNameButton's use (uimessagebox.cpp:2159), after its empty name and
+    /// CheckGuildName tests: the item of the box's uid is used with the name (FUN_140a63880); no such item: 0 (the box
+    /// stays).</summary>
+    public bool ConfirmGuildName(long uid, string name)
+    {
+        if (Model == null || View?.FindByUid(uid) is not { } e || ToItem(e, Model.Tables.Items) is not { } item) return false;
+        FunctionUse(item, name);
         return true;
     }
 }

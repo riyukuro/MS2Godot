@@ -3501,6 +3501,12 @@ public partial class HudScene : Node, IUiStageHost
         boxes.LearnEmotion = learnEmotion;
         Action<long> useFunctionItem = uid => inventory?.ConfirmUseFunctionItem(uid);
         boxes.UseFunctionItem = useFunctionItem;
+        // HandleChangeGuildNameButton: CheckGuildName (CommonString GetChecker), ShowSystemNotice, the item used with the name
+        Func<long, string, bool> useGuildName = (uid, name) => inventory?.ConfirmGuildName(uid, name) ?? false;
+        Func<string, string> checkGuildName = name => CommunityChecker().CheckGuildName(name, hudModel.Tables.GuildNameLengthMin,
+            hudModel.Tables.GuildNameLengthMax, out var msg) == 0 ? null : msg ?? "";
+        Action<string> boxNotice = SystemNoticeText;
+        boxes.UseGuildNameItem = useGuildName; boxes.CheckGuildName = checkGuildName; boxes.SystemNotice = boxNotice;
         // HandleRequestTradeExButton -> FUN_14185b8e0 (the answer); HandleTradeInButton -> the inventory's count check and add
         Action<long, bool> tradeAnswer = (id, yes) => Trades?.SendAnswer(id, yes);
         Action<long, int> tradeIn = (uid, n) => inventory?.TradeIn(uid, n);
@@ -3519,6 +3525,9 @@ public partial class HudScene : Node, IUiStageHost
         unbindBoxAnswers = () =>
         {
             if (boxes.UseBindFuncItem == use) boxes.UseBindFuncItem = null;
+            if (boxes.UseGuildNameItem == useGuildName) boxes.UseGuildNameItem = null;
+            if (boxes.CheckGuildName == checkGuildName) boxes.CheckGuildName = null;
+            if (boxes.SystemNotice == boxNotice) boxes.SystemNotice = null;
             if (boxes.UseBindEquipItem == equip) boxes.UseBindEquipItem = null;
             if (boxes.UseBindGemEquipItem == gem) boxes.UseBindGemEquipItem = null;
             if (boxes.LearnEmotion == learnEmotion) boxes.LearnEmotion = null;
@@ -3626,6 +3635,8 @@ public partial class HudScene : Node, IUiStageHost
         c.ItemUseError = item => itemUse?.Error(item) ?? 0;
         c.OpenDialog = id => GD.Print($"inventory: dialog 0x{id:x} is not in this HUD");
         c.FieldIsTutorial = FieldHasTutorial;
+        c.IsQuestRewarded = id => live?.Quests.Get(id)?.State == 2;
+        c.IsGuildMaster = () => hudModel.HasLocalPlayer && live?.Guilds is { } g && g.IsMaster(hudModel.Player.Name);
         c.GmLevel = () => ChatLog?.GmLevel() ?? 0;
         c.WarningSound += key => FieldAudio.Instance?.PlayUi(key);     // PlaySystemSound(s_warningGender)
         c.MeratBalance = () => Ms2.Ui.Shop.CurrencyWallet.Merat(hudModel.Player);

@@ -1727,6 +1727,116 @@ public class InventoryTests
     }
 
     [Test]
+    public void AnAbilityCoolTimeResetNeedsTheAbilitiesOpenThenAsks()
+    {
+        // ResetAbilityCoolTime @0x140d22b50: FUN_1401e0800(level) and CharacterAbilityOpenQuestID rewarded, else box 0xc63;
+        // then FUN_140d73e40(1, 0xc62, 0, "use_function_item"), FUN_141a024a0(0)
+        var (c, model, item, sent, boxes, raised) = UseSetup("ResetAbilityCoolTime", 40100028);
+        var record = new PcInfo { Level = CharacterAbilityData.StartLevel, JobGroup = 10, Equips = Array.Empty<EquipItem>() };
+        c.Wearer = () => record;
+        bool rewarded = true;
+        var asked = new List<int>();
+        c.IsQuestRewarded = q => { asked.Add(q); return rewarded; };
+        model.FeatureEnabledByName = null;             // the feature by the set below, not the data's table
+        model.Features.Remove(Ms2.Ui.Feature.CharacterAbility);
+        Assert.That(c.UseItem(item, true), Is.False);
+        Assert.That((boxes.Single().Msg, sent.Count), Is.EqualTo((model.Tables.Common(0xc63), 0)), "the feature off: box 0xc63");
+        model.Features.Add(Ms2.Ui.Feature.CharacterAbility);
+        record.Level = CharacterAbilityData.StartLevel - 1;
+        c.UseItem(item, true);
+        Assert.That(boxes.Last().Msg, Is.EqualTo(model.Tables.Common(0xc63)), "under the start level");
+        record.Level = CharacterAbilityData.StartLevel;
+        rewarded = false;
+        c.UseItem(item, true);
+        Assert.That((boxes.Count, asked.Last()), Is.EqualTo((3, (int)model.Tables.CharacterAbilityOpenQuestID)), "the quest not rewarded");
+        rewarded = true;
+        Assert.That(c.UseItem(item, true), Is.True);
+        var box = boxes.Last();
+        Assert.That((box.Type, box.Msg, box.Extra, box.ItemUid, box.EnterAllowed, box.ItemEntry, sent.Count, raised.Count),
+            Is.EqualTo((1, model.Tables.Common(0xc62), InventoryController.UseFunctionItemTag, 50L, false, (MessageBoxItem)null, 0, 0)));
+        var mb = new MessageBoxController { UseFunctionItem = c.ConfirmUseFunctionItem, data = box };
+        mb.HandlePlainTag(0, InventoryController.UseFunctionItemTag);
+        Assert.That(sent, Is.EqualTo(new[] { (50L, "") }));
+    }
+
+    [Test]
+    public void AGuildNameItemAsksTheMasterForTheNameAndItsYesUsesItWithTheName()
+    {
+        // ChangeGuildName @0x140d233d0; UIMessageBox::HandleChangeGuildNameButton @0x1419feeb0 ("changeGuildName,<input>")
+        var (c, model, item, sent, boxes, raised) = UseSetup("ChangeGuildName", 20300657);
+        var notices = new List<string>(); c.NoticeText += notices.Add;
+        Assert.That(c.UseItem(item, true), Is.False);
+        Assert.That((notices, boxes.Count, sent.Count, raised.Count), Is.EqualTo((new[] { model.Tables.Common(0x416) }, 0, 0, 0)), "not the master: notice 0x416");
+        c.IsGuildMaster = () => true;
+        Assert.That(c.UseItem(item, true), Is.False, "the handler returns 0 with the box shown");
+        var box = boxes.Single();
+        int max = model.Tables.GuildNameLengthMax;
+        Assert.That((box.Type, box.Msg, box.Extra, box.ItemUid, box.InputType, box.InputDefault, box.InputMaxChars),
+            Is.EqualTo((10, Ms2.Quest.ClientFormat.Format(model.Tables.Common(InventoryController.GuildNameKey), max), "changeGuildName", 50L, 0, "", max)));
+        var refused = new List<string>();
+        var mb = new MessageBoxController
+        {
+            UseGuildNameItem = c.ConfirmGuildName, data = box, SystemNotice = refused.Add,
+            CheckGuildName = n => n == "Bad" ? "refused" : null,
+        };
+        Assert.That(mb.HandleArgTag(0, "changeGuildName,"), Is.False, "an empty name keeps the box");
+        Assert.That(mb.HandleArgTag(0, "changeGuildName,Bad"), Is.False, "a refused name keeps the box");
+        Assert.That((refused, sent.Count), Is.EqualTo((new[] { "refused" }, 0)));
+        Assert.That(mb.HandleArgTag(1, "changeGuildName,Good"), Is.True);
+        Assert.That(sent, Is.Empty, "the other button: nothing");
+        Assert.That(mb.HandleArgTag(0, "changeGuildName,Good"), Is.True);
+        Assert.That(sent, Is.EqualTo(new[] { (50L, "Good") }), "the item used with the name");
+        Assert.That(c.ConfirmGuildName(51, "Good"), Is.False, "no item of the uid: the box stays");
+    }
+
+    [Test]
+    public void AChatEmoticonItemTellsItsPeriodThenAsks()
+    {
+        // ChatEmoticonAdd @0x140d1fba0: <v id="5" durationSec="2592000"/>; an endDate instead; SetItemById(id, rarity, 0)
+        var (c, model, item, sent, boxes, raised) = UseSetup("ChatEmoticonAdd", 21100000);
+        var t = model.Tables;
+        var d = item.Data;
+        string saved = d.FunctionParameter;
+        try
+        {
+            Assert.That(d.HasFunctionXmlKey("durationSec"), Is.True);
+            string head = Ms2.Quest.ClientFormat.Format(t.Common(InventoryController.ChatEmoticonUseKey), new ItemTooltip(model, 0).Name(item));
+            string warn = t.Common(InventoryController.ChatEmoticonWarningKey);
+            Assert.That(c.UseItem(item, true), Is.True);
+            var box = boxes.Single();
+            string span = BuffTooltip.FormatTimeSpan(t, long.Parse(d.FunctionXmlString("durationSec")), true, true, true, true);
+            Assert.That(box.Msg, Is.EqualTo(head + Ms2.Quest.ClientFormat.Format(t.Common(InventoryController.ChatEmoticonDurationKey), span) + warn));
+            Assert.That((box.Type, box.Extra, box.ItemUid, box.EnterAllowed, sent.Count, raised.Count),
+                Is.EqualTo((0x11, InventoryController.UseFunctionItemTag, 50L, true, 0, 0)));
+            Assert.That((box.ItemEntry.Item.ItemId, box.ItemEntry.Item.Rarity, box.ItemEntry.Count, ReferenceEquals(box.ItemEntry.Item, item)),
+                Is.EqualTo((21100000, item.Rarity, 0, false)), "a new item of the id and rarity, count 0");
+            d.FunctionParameter = "<v id=\"5\" endDate=\"2030-02-30-07-08-09\"/>";
+            c.UseItem(item, true);
+            Assert.That(boxes.Last().Msg, Is.EqualTo(head + Ms2.Quest.ClientFormat.Format(t.Common(InventoryController.ChatEmoticonEndDateKey), 2030, 3, 2, 7, 8) + warn),
+                "the end date, its day carried into the next month");
+            d.FunctionParameter = "<v id=\"5\" endDate=\"2030-13-01-00-00-00\"/>";
+            Assert.That(c.UseItem(item, true), Is.False);
+            d.FunctionParameter = "<v id=\"5\"/>";
+            c.UseItem(item, true);
+            Assert.That((boxes.Count, boxes.Last().Msg), Is.EqualTo((3, head + warn)), "a bad date: no box; no period: the description and warning");
+        }
+        finally { d.FunctionParameter = saved; }
+    }
+
+    [TestCase("2030-01-31-23-59-59", "2030-01-31 23:59:59")]
+    [TestCase("2030-02-31-00-00-00", "2030-03-03 00:00:00")]
+    [TestCase("2030-1-5-1-2-3", "2030-01-05 01:02:03")]
+    [TestCase("2030-01-05", "2030-01-05 00:00:00")]
+    [TestCase("1899-01-01-00-00-00", null)]
+    [TestCase("2030-01-01-24-00-00", null)]
+    [TestCase("", null)]
+    public void TheEmoticonEndDateIsReadAsTheClientsScan(string text, string expected)
+    {
+        // FUN_14028e280 (commonutil.cpp:922): sscanf "%04d-%02d-%02d-%02d-%02d-%02d", fields it did not reach stay 0
+        Assert.That(InventoryController.ParseDate(text)?.ToString("yyyy-MM-dd HH:mm:ss"), Is.EqualTo(expected));
+    }
+
+    [Test]
     public void ATreasureMapDoesNothingAsAPartyRecall()
     {
         // TreasureMap is registered with RecallParty's handler @0x140d1df70: returns 1, nothing done
