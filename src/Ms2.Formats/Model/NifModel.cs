@@ -537,6 +537,56 @@ public sealed class ModelData
         return o;
     }
 
+    /// <summary>
+    /// Each of the NiMesh's <paramref name="submeshes"/> regions (first element, count) in its stream holding
+    /// <paramref name="semantic"/> (index 0): NiDataStreamRef::GetRegionForSubmesh, the stream ref's "Submesh To Region Map"
+    /// picking one of the stream's "Regions". Null when the stream is missing, has no map or no regions, or a region is missing
+    /// or outside the stream's <paramref name="total"/> elements: the stream is then taken whole.
+    /// </summary>
+    public static (int Start, int Count)[] SubmeshRegions(NifFile nif, int mesh, string semantic, int submeshes, int total)
+    {
+        if (submeshes < 1) return null;
+        foreach (var r in nif.Blocks[mesh].Structs("Datastreams"))
+        {
+            bool has = false;
+            foreach (var cs in r.Structs("Component Semantics"))
+                if (cs.IntOr("Index", 0) == 0 && nif.StrField(cs, "Name") == semantic) { has = true; break; }
+            if (!has) continue;
+            var map = r.Ints("Submesh To Region Map");
+            var regions = nif.Blocks[(int)r.Int("Stream")].Structs("Regions");
+            if (map.Length < submeshes || regions.Length == 0) return null;
+            var o = new (int, int)[submeshes];
+            for (int sm = 0; sm < submeshes; sm++)
+            {
+                if (map[sm] < 0 || map[sm] >= regions.Length) return null;
+                long start = regions[(int)map[sm]].Int("Start Index"), count = regions[(int)map[sm]].Int("Num Indices");
+                if (start < 0 || count < 0 || start + count > total) return null;
+                o[sm] = ((int)start, (int)count);
+            }
+            return o;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// The triangle list the client draws: submesh by submesh, the INDEX region's values counted from the submesh's first vertex.
+    /// NiD3DShader::RenderMeshes draws each submesh with DrawIndexedPrimitive(BaseVertexIndex 0, StartIndex = the index region's
+    /// start) after PreRenderSubmesh set every vertex stream at its region's start (SetStreamSource offset = region start *
+    /// stride, NiD3DShader.cpp:245-289, 526-566), so an index is relative to that region. Without regions the stream is taken
+    /// whole, as before.
+    /// </summary>
+    public static int[] SubmeshIndices(double[] index, (int Start, int Count)[] indexRegions, (int Start, int Count)[] vertexRegions)
+    {
+        if (indexRegions == null || vertexRegions == null || indexRegions.Length != vertexRegions.Length)
+            return index.Select(x => (int)x).ToArray();
+        var o = new int[indexRegions.Sum(r => r.Count)];
+        int at = 0;
+        for (int sm = 0; sm < indexRegions.Length; sm++)
+            for (int q = indexRegions[sm].Start; q < indexRegions[sm].Start + indexRegions[sm].Count; q++)
+                o[at++] = (int)index[q] + vertexRegions[sm].Start;
+        return o;
+    }
+
     internal static Dictionary<string, string> TexturesOf(NifFile nif, int mi)
     {
         var B = nif.Blocks;
@@ -992,6 +1042,7 @@ public sealed class ModelData
                 return (null, 0);
             }
             var pos = skinned ? Pick("POSITION_BP", "POSITION") : Pick("POSITION", "POSITION_BP");
+            string positionKey = skinned ? (s.ContainsKey("POSITION_BP") ? "POSITION_BP" : "POSITION") : (s.ContainsKey("POSITION") ? "POSITION" : "POSITION_BP");
             var nrm = skinned ? Pick("NORMAL_BP", "NORMAL") : Pick("NORMAL", "NORMAL_BP");
             int nv = pos.v.Length / 3;
             var mesh = new ModelMesh
@@ -1025,7 +1076,10 @@ public sealed class ModelData
             ReadMaterial(nif, b, mesh);
             ReadTextureControllers(nif, b, mesh);
             ReadMorph(nif, b, s, skinned, mesh);
-            mesh.Indices = s["INDEX"].v.Select(x => (int)x).ToArray();
+            // the submeshes (skin partitions): each draws its own INDEX region over its own vertex region
+            int submeshes = (int)b.IntOr("Num Submeshes", 1);
+            var vertexRegions = SubmeshRegions(nif, i, s.ContainsKey(positionKey) ? positionKey : "POSITION", submeshes, nv);
+            mesh.Indices = SubmeshIndices(s["INDEX"].v, SubmeshRegions(nif, i, "INDEX", submeshes, s["INDEX"].v.Length), vertexRegions);
             bool zSet = false, stSet = false;
             foreach (var p in b.Ints("Properties"))
             {
@@ -1109,6 +1163,15 @@ public sealed class ModelData
                 var pal = s.TryGetValue("BONE_PALETTE", out var pp) ? pp.v.Select(x => (int)x).ToArray()
                                                                      : Enumerable.Range(0, skBones.Length).ToArray();
                 var bones = pal.Select(p => boneOf[(int)skBones[p]]).ToArray();
+                // a vertex's blend indices count from its submesh's BONE_PALETTE region (NiD3DShaderConstantMap.cpp:1627-1636
+                // loads the bone matrices of kRCC.m_uiSubmesh's region); a vertex outside every submesh keeps the whole palette
+                var palStart = new int[nv];
+                var palCount = new int[nv];
+                Array.Fill(palCount, bones.Length);
+                if (SubmeshRegions(nif, i, "BONE_PALETTE", submeshes, bones.Length) is { } palRegions && vertexRegions != null)
+                    for (int sm = 0; sm < submeshes; sm++)
+                        for (int v = vertexRegions[sm].Start; v < vertexRegions[sm].Start + vertexRegions[sm].Count; v++)
+                            (palStart[v], palCount[v]) = palRegions[sm];
                 var bi = s["BLENDINDICES"]; var bw = s["BLENDWEIGHT"];
                 mesh.Joints = new int[nv * 4];
                 mesh.Weights = new float[nv * 4];
@@ -1122,9 +1185,9 @@ public sealed class ModelData
                     for (int j = 0; j < 4; j++)
                     {
                         int ix = j < bi.n ? (int)bi.v[k * bi.n + j] : 0;
-                        if (ix >= bones.Length) { w[j] = 0; ix = 0; }
+                        if (ix >= palCount[k]) { w[j] = 0; ix = 0; }
                         if (w[j] < 1e-6) w[j] = 0;
-                        J[j] = w[j] == 0 ? 0 : bones[ix];
+                        J[j] = w[j] == 0 ? 0 : bones[palStart[k] + ix];
                     }
                     double sum = w.Sum();
                     if (sum <= 0) { w[0] = 1; sum = 1; }
