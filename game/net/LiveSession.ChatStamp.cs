@@ -25,10 +25,11 @@ public partial class LiveSession
         }
     }
 
-    /// <summary>OnChatStamp returns without a local player (the MyPC lookup); the MyPC exists from the own OnAddUser on.</summary>
+    /// <summary>OnChatStamp @0x14173e440 (scenestategame.cpp:5177-5180): the own character's (GetMyCharacter, from the game
+    /// scene's start, not the field's MyPC) CChatEmoticonCli::DispatchPacket, so a list before the own OnAddUser is kept.</summary>
     void OnChatStamp(ChatStampMessage m)
     {
-        if (m == null || selfObject < 0) return;
+        if (m == null) return;
         ChatEmoticons.Apply(m);
         if (LiveCheck) GD.Print($"live: ChatStamp {m.GetType().Name}");
     }

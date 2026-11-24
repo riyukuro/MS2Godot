@@ -215,6 +215,31 @@ public class RewardNotifyTests
     }
 
     [Test]
+    public void AnAddedStickerPackGivesTheIconNoticeWithItsItemName()
+    {
+        // CChatEmoticonCli::FUN_140a39360 (chatemoticoncli.cpp:221-239), ChatStamp mode 2: the item's data or nothing; the
+        // notice text s_msg_chat_emoticon_add_notify_message with the item's name, an icon notice with effect 1
+        var (h, c, _) = Load();
+        var t = h.Model.Tables;
+        int itemId = EmotionCastTests.ItemIds(Packs()).FirstOrDefault(id => t.Items.Get(id)?.FunctionName == "ChatEmoticonAdd");
+        if (itemId == 0) Assert.Inconclusive("no ChatEmoticonAdd item in this data");
+        c.Block = true;
+        Assert.That(t.Items.Get(999999999), Is.Null);
+        Assert.That(c.OnChatEmoticonAdded(999999999), Is.Null, "no item data: the assert's return, no notice");
+        Assert.That(c.Pending, Is.Zero);
+        string msg = c.OnChatEmoticonAdded(itemId);
+        Assert.That(t.Common("s_msg_chat_emoticon_add_notify_message"), Is.Not.Empty);
+        Assert.That(msg, Is.EqualTo(t.ReservedWords.ReplaceValueWords(
+            Ms2.Quest.ClientFormat.Format(t.Common("s_msg_chat_emoticon_add_notify_message"), t.ItemName(itemId)), h.Model.Player?.Name)));
+        Assert.That(msg, Does.Contain(t.ItemName(itemId)));
+        Assert.That(c.Pending, Is.EqualTo(1));
+        c.Block = false;
+        c.Update();
+        Assert.That(c.Pending, Is.Zero);
+        Assert.That(NotifyType(h), Is.EqualTo("icon"));
+    }
+
+    [Test]
     public void APickedUpSpecialIdHasNoToast()
     {
         var (_, c, _) = Load();

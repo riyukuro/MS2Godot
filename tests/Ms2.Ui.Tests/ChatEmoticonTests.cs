@@ -222,6 +222,22 @@ public class ChatEmoticonTests
     }
 
     [Test]
+    public void ARemovedIdGoesEveryTimeItIsListed()
+    {
+        // m_ids is a std::list; remove (chatemoticoncli.cpp:178, :250, :263) drops every equal element
+        var s = State();
+        s.Apply(new ChatStampMessage.List(new uint[] { 1, 2, 1, 3, 1 }, Array.Empty<ChatEmoticonGroup>()));
+        s.Apply(new ChatStampMessage.MovedToEnd(1));
+        Assert.That(s.Favorites, Is.EqualTo(new uint[] { 2, 3, 1 }));
+        s.Apply(new ChatStampMessage.List(new uint[] { 4, 2, 4 }, Array.Empty<ChatEmoticonGroup>()));
+        s.Apply(new ChatStampMessage.Removed(4));
+        Assert.That(s.Favorites, Is.EqualTo(new uint[] { 2 }));
+        s.Apply(new ChatStampMessage.List(new uint[] { 5, 2, 5 }, Array.Empty<ChatEmoticonGroup>()));
+        s.Apply(new ChatStampMessage.Expired(Array.Empty<uint>(), new uint[] { 5 }));
+        Assert.That(s.Favorites, Is.EqualTo(new uint[] { 2 }));
+    }
+
+    [Test]
     public void TypedAndGroupSentReachTheNamedWindow()
     {
         var s = State();

@@ -7,8 +7,7 @@ namespace Ms2.Ui.ChatEmoticons;
 /// with their expiry (m_groups). The ChatStamp packet's handlers (DispatchPacket @0x140a3a700) change it and tell the
 /// listeners the client's calls reach: the dialog's refresh / clear / new-group, a message box by common key, the added
 /// pack's notice, and the messenger windows that type or send an emoticon.
-/// STILL-OPEN: type 2's reward notify (the 0x4e5d window's notice and the system notice with the item's name) has no
-/// listener; the Added event carries the item id.
+/// The ids are a std::list: its remove drops every equal id (<see cref="RemoveId"/>).
 /// </summary>
 public sealed class ChatEmoticonState
 {
@@ -32,7 +31,7 @@ public sealed class ChatEmoticonState
     public event Action<uint> NewGroup;
     /// <summary>A common string message box by key (FUN_140d73bc0 with the key's string).</summary>
     public event Action<string> MessageBox;
-    /// <summary>Type 2's reward notify: the pack's item id.</summary>
+    /// <summary>Type 2's reward notify: the pack's item id (the HUD's RewardNotifyController.OnChatEmoticonAdded).</summary>
     public event Action<int> Added;
     /// <summary>Type 3: UIMessenger::TypeEmoticon(flag, id) for the window of that name.</summary>
     public event Action<string, byte, uint> TypeInWindow;
@@ -40,6 +39,9 @@ public sealed class ChatEmoticonState
     public event Action<string, uint> SendImageInWindow;
 
     readonly System.Collections.Generic.SortedSet<uint> added = new();   // FUN_140a39360's setAdded
+
+    /// <summary>m_ids.remove(id) (std::list::remove, chatemoticoncli.cpp:178/:250/:263): every equal id goes.</summary>
+    void RemoveId(uint id) => ids.RemoveAll(x => x == id);
 
     /// <summary>FindGroup (@0x140a3a640).</summary>
     public ChatEmoticonGroup? FindGroup(uint id)
@@ -103,7 +105,7 @@ public sealed class ChatEmoticonState
                 break;
             case ChatStampMessage.Expired x:
                 foreach (uint g in x.Groups) RemoveGroup(g);
-                foreach (uint id in x.Favorites) ids.Remove(id);
+                foreach (uint id in x.Favorites) RemoveId(id);
                 Refresh?.Invoke();
                 MessageBox?.Invoke("s_msg_chat_emoticon_expired");
                 break;
@@ -117,11 +119,11 @@ public sealed class ChatEmoticonState
             case ChatStampMessage.Typed t: TypeInWindow?.Invoke(t.Window, t.Flag, t.Id); break;
             case ChatStampMessage.GroupSent s: SendImageInWindow?.Invoke(s.Window, s.Id); break;
             case ChatStampMessage.MovedToEnd e:
-                ids.Remove(e.Id); ids.Add(e.Id);
+                RemoveId(e.Id); ids.Add(e.Id);
                 Refresh?.Invoke();
                 break;
             case ChatStampMessage.Removed r:
-                ids.Remove(r.Id);
+                RemoveId(r.Id);
                 Refresh?.Invoke();
                 break;
             case ChatStampMessage.Result res:

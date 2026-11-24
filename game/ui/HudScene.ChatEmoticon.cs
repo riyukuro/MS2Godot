@@ -52,8 +52,20 @@ public partial class HudScene
             (window, flag, id) =>
             {
                 foreach (var (_, c) in messengers) if (c.Name == window) c.TypeEmoticon(flag, id);
-            });
+            },
+            ChatEmoticonAdded);
         chatEmoticonLink.Hook();
+    }
+
+    /// <summary>ChatStamp mode 2's notice (chatemoticoncli.cpp:221-239): the reward notify's icon notice
+    /// (<see cref="RewardNotifyController.OnChatEmoticonAdded"/>), then ShowSystemNotice(text, 0, 1): the system text's
+    /// type 0 line and the same text as a chat line of kind 0x14.</summary>
+    void ChatEmoticonAdded(int itemId)
+    {
+        string msg = EnsureRewardNotify().OnChatEmoticonAdded(itemId);
+        if (msg == null || SystemText == null) return;
+        SystemText.ShowMessage(msg, 0, 0);
+        ChatLog.AddSystemLine(msg, TalkKind.SystemNotice);
     }
 
     void UnhookChatEmoticon()

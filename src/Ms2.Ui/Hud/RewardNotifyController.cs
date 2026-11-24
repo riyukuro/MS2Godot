@@ -143,6 +143,23 @@ public sealed class RewardNotifyController : UiController
         AppendReward(Host.Obj(("msg", Fmt(0x689, titleName)), ("type", "icon"), ("icon", Res("title_icon_path"))));
     }
 
+    /// <summary>
+    /// CChatEmoticonCli::FUN_140a39360's tail (chatemoticoncli.cpp:221-239), ChatStamp mode 2 for this window
+    /// (FindRewardNotify(0x4e5d)): nothing without the item's data (the assert, :222-226); else the common string
+    /// s_msg_chat_emoticon_add_notify_message formatted with the item's name (FUN_14028dfa0, CStringTable 1), its value
+    /// words replaced (CReservedWordTable::ReplaceValueWords), shown as an icon notice with the item's icon and effect 1
+    /// (<see cref="ShowIconNotice(string, string, int)"/>, FUN_141ac1580). Returns that text, which the caller passes to
+    /// ShowSystemNotice(text, 0, 1); null when nothing was shown.
+    /// </summary>
+    public string OnChatEmoticonAdded(int itemId)
+    {
+        if ((ItemOf ?? Model.Tables.Items.Get)(itemId) is not { } d) return null;
+        string msg = ClientFormat.Format(Model.Tables.Common("s_msg_chat_emoticon_add_notify_message"), Model.Tables.ItemName(itemId));
+        msg = Model.Tables.ReservedWords.ReplaceValueWords(msg, Model.HasLocalPlayer ? Model.Player.Name : null);
+        ShowIconNotice(d.IconPath, msg, 1);
+        return msg;
+    }
+
     /// <summary>ShowIconNotice (@0x141ac0cd0).</summary>
     public void ShowIconNotice(string msg, string icon) =>
         AppendReward(Host.Obj(("msg", msg), ("type", "icon"), ("icon", icon)));

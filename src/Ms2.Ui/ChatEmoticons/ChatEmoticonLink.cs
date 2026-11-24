@@ -12,10 +12,12 @@ public sealed class ChatEmoticonLink
     readonly ChatEmoticonState state;
     readonly Action<string> messageBox;
     readonly Action<string, byte, uint> typeInWindow;
+    readonly Action<int> added;
 
-    public ChatEmoticonLink(ChatEmoticonState state, Action<string> messageBox, Action<string, byte, uint> typeInWindow)
+    public ChatEmoticonLink(ChatEmoticonState state, Action<string> messageBox, Action<string, byte, uint> typeInWindow,
+        Action<int> added = null)
     {
-        this.state = state; this.messageBox = messageBox; this.typeInWindow = typeInWindow;
+        this.state = state; this.messageBox = messageBox; this.typeInWindow = typeInWindow; this.added = added;
     }
 
     public void Hook()
@@ -23,11 +25,13 @@ public sealed class ChatEmoticonLink
         Unhook();
         state.MessageBox += messageBox;
         state.TypeInWindow += typeInWindow;
+        if (added != null) state.Added += added;
     }
 
     public void Unhook()
     {
         state.MessageBox -= messageBox;
         state.TypeInWindow -= typeInWindow;
+        if (added != null) state.Added -= added;
     }
 }
