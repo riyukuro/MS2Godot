@@ -98,9 +98,16 @@ public sealed partial class RemoteLayer
                 remoteMagics.BeginCast(actorId, castUid, motionIndex);
                 r.Pc.PlaySkill(sk.name, Math.Max(speed, 0.1f), skillId, skillMotions.ChargingSkill(skillId), pos, rotZ, holdId, holdNode,
                     motionIndex, skillMotions.MotionCount(skillId, level), motion.LoopCount, motion.AttackPoints, move, motion.TagEffects,
-                    skillMotions.NotKeepEffect(skillId));
+                    skillMotions.NotKeepEffect(skillId), motion.MotionEffect);
                 CastsPlayed++;
             }
+            else if (string.IsNullOrEmpty(motion.SequenceName) && !string.IsNullOrEmpty(motion.MotionEffect))
+            {
+                // PlayCastStartEffect for a level without a sequence (stateskill.cpp:1829-1838): InsertEffect on the caster,
+                // which nothing keeps
+                ReleaseKeptEffect(SpawnKeptEffect(motion.MotionEffect, r.Visual, Ms2.Audio.SoundMusicEffectState.CasterOther));
+            }
+            return;   // a sequence the body lacks never activates, so AnimActivated plays no motion effect
         }
         else if (npcs.Info(actorId) is { } n)
         {

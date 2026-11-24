@@ -113,6 +113,10 @@ public sealed partial class RemoteLayer
         st.AttackFired = a => remoteMagics.AttackFired(id, a, (int)Time.GetTicksMsec());
         // the cast's tag effects kept on the caster (an actor target, SetActor) and ended with its skill state
         st.TagEffect = (_, fx) => SpawnKeptEffect(fx, r.Visual, Ms2.Audio.SoundMusicEffectState.CasterOther);
+        st.MotionEffect = fx => SpawnKeptEffect(fx, r.Visual, Ms2.Audio.SoundMusicEffectState.CasterOther);
+        // PlayEventVoice for the other PC: its gender and job group, not the local player (the table's rows for it)
+        st.EventSound = key => FieldAudio.Instance?.PlayEventVoice(Ms2.Audio.EventSoundTable.TextKeyType(key), r.Gender,
+            r.Pc.JobGroup, false, 3, r.Visual.GlobalPosition, npcs.Viewer?.Invoke());   // object kind 3: another PC
         st.StopEffect = StopKeptEffect;
         st.ReleaseEffect = ReleaseKeptEffect;
     }

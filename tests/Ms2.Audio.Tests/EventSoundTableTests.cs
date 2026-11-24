@@ -118,4 +118,46 @@ public class EventSoundTableTests
         Assert.That(rows, Is.Not.Empty);
         Assert.That(problems, Is.Empty, string.Join("\n", problems.Take(60)));
     }
+
+    [Test]
+    public void ASkillTextKeyNamesItsEventAfterElevenCharacters()
+    {
+        Assert.That(EventSoundTable.TextKeyType("EventSound/skill_action"), Is.EqualTo(EventSoundTable.SkillAction));
+        Assert.That(EventSoundTable.TextKeyType("eventsound/skill_action"), Is.EqualTo(EventSoundTable.SkillAction), "ContainsNoCase");
+        Assert.That(EventSoundTable.TextKeyType("EventSound/Skill_Action"), Is.EqualTo(0), "the name compares case-sensitively");
+        Assert.That(EventSoundTable.TextKeyType("EventSound"), Is.EqualTo(0), "Mid(11) of a shorter key is empty");
+        Assert.That(EventSoundTable.TextKeyType("skill_action"), Is.EqualTo(0), "no EventSound in the key");
+        Assert.That(EventSoundTable.TextKeyType(null), Is.EqualTo(0));
+    }
+
+    /// <summary>
+    /// Every voice the own PC can play resolves to a wave in the voice banks of the data's own voice language
+    /// (MS2Sound_Voice*_&lt;lang&gt;.fsb): KMS ships the Korean banks (voice 0), GMS2 only the English ones (voice 2, the NA
+    /// region's index GameOptions takes for the voice).
+    /// </summary>
+    [TestCase("MS2_DATA", 0)]
+    [TestCase("MS2_GMS2_DATA", 2)]
+    public void EveryVoicePlaysAWaveOfTheDatasVoiceLanguage(string variable, int voiceLanguage)
+    {
+        var d = Environment.GetEnvironmentVariable(variable);
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore($"{variable} is not set");
+        var soundDir = Path.Combine(d, "Sound");
+        if (!File.Exists(Path.Combine(soundDir, "MS2Sound.fev"))) Assert.Ignore($"no Sound/MS2Sound.fev under {variable}");
+        using var packs = new PackSet(d);
+        var text = System.Text.Encoding.UTF8.GetString(packs.Read("Xml", "table/eventsound.xml"));
+        var t = EventSoundTable.Parse(text);
+        var lib = SoundLibrary.Shared(soundDir, voiceLanguage);
+        var paths = new HashSet<string>();
+        foreach (var e in XDocument.Parse(text.TrimStart('\uFEFF')).Root!.Elements("eventSound"))
+        {
+            int type = EventSoundTable.TypeOf((string)e.Attribute("event") ?? "");
+            int gender = int.Parse((string)e.Attribute("gender")!, CultureInfo.InvariantCulture), job = int.Parse((string)e.Attribute("job")!, CultureInfo.InvariantCulture);
+            foreach (bool off in new[] { false, true })
+                if (t.VoicePath(type, gender, job, true, 1, off) is { } path) paths.Add(path);
+        }
+        var missing = paths.Where(p => lib.ResolveEvent(p) == null).OrderBy(p => p).ToList();
+        TestContext.Progress.WriteLine($"{variable}: voice language {voiceLanguage}, {paths.Count} voices, {paths.Count - missing.Count} play a wave, {missing.Count} do not");
+        Assert.That(paths, Is.Not.Empty);
+        Assert.That(missing, Is.Empty, string.Join("\n", missing.Take(40)));
+    }
 }

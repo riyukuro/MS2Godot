@@ -28,6 +28,13 @@ public static class SkillTagEffects
     }
 
     /// <summary>
+    /// StateSkill::TextKeyEvent's voice test (stateskill.cpp:834): a key containing "EventSound" (CString::ContainsNoCase)
+    /// plays PlayEventVoice for a PC (the event after the key's first 11 characters, Ms2.Audio.EventSoundTable).
+    /// </summary>
+    public static bool IsEventSoundKey(string key) =>
+        key != null && key.Contains("EventSound", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// A record's kept tag effects (CSkillRecord m_map138, a CRBMap of the text key to the effect id): TextKeyEvent sets the
     /// id a tag key's effect got (SetAt, stateskill.cpp:829: a key played again replaces its id, the old effect left running).
     /// <see cref="End"/> is StateSkill::vfunc_5's part for them (:515-524). No allocation past the list's growth.
@@ -36,7 +43,12 @@ public static class SkillTagEffects
     {
         readonly List<(string key, int id)> map = new();
 
-        public int Count => map.Count;
+        /// <summary>The record's motion effect (m_n84): the "motionEffect" StateSkill::AnimActivated (@0x1417e71d0,
+        /// stateskill.cpp:750-761) keeps on the caster at the sequence's start, once per record (only while m_n84 is 0);
+        /// 0 for none. <see cref="End"/> ends it first, as StopRecordEffects (:2298-2300) and vfunc_5's releases (:520) do.</summary>
+        public int Motion;
+
+        public int Count => map.Count + (Motion != 0 ? 1 : 0);
 
         /// <summary>The id kept for <paramref name="key"/>, 0 without one.</summary>
         public int this[string key]
@@ -65,6 +77,12 @@ public static class SkillTagEffects
         /// </summary>
         public void End(bool hard, Action<int> stop, Action<int> release)
         {
+            if (Motion != 0)
+            {
+                if (hard) stop?.Invoke(Motion);
+                else release?.Invoke(Motion);
+                Motion = 0;
+            }
             for (int i = 0; i < map.Count; i++)
             {
                 var (k, id) = map[i];
@@ -84,13 +102,19 @@ public static class SkillTagEffects
     {
         readonly List<(double time, string key, string path)> list = new();
 
-        /// <summary>The keys of <paramref name="textKeys"/> (time order) that <paramref name="tags"/> names; none for null.</summary>
+        /// <summary>The keys of <paramref name="textKeys"/> (time order) that <paramref name="tags"/> names, and each
+        /// EventSound key (<see cref="IsEventSoundKey"/>) with no path, after the key's tag effect as TextKeyEvent takes
+        /// them (:792-841); none for null keys.</summary>
         public void Set(List<(double time, string text)> textKeys, IReadOnlyDictionary<string, string> tags)
         {
             list.Clear();
-            if (textKeys == null || tags == null || tags.Count == 0) return;
+            if (textKeys == null) return;
             foreach (var (t, k) in textKeys)
-                if (k != null && tags.TryGetValue(k, out var path)) list.Add((t, k, path));
+            {
+                if (k == null) continue;
+                if (tags != null && tags.TryGetValue(k, out var path)) list.Add((t, k, path));
+                if (IsEventSoundKey(k)) list.Add((t, k, null));
+            }
         }
 
         public int Count => list.Count;
@@ -103,7 +127,7 @@ public static class SkillTagEffects
             return -1;
         }
 
-        /// <summary>The tag key at index <paramref name="i"/>: its time, name and effect xml.</summary>
+        /// <summary>The tag key at index <paramref name="i"/>: its time, name and effect xml (null for an EventSound key).</summary>
         public (double time, string key, string path) this[int i] => list[i];
     }
 }

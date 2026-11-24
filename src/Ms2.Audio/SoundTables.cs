@@ -110,6 +110,17 @@ public sealed class EventSoundTable
         _ => 0,
     };
 
+    /// <summary>
+    /// StateSkill::TextKeyEvent's voice (@0x1417e7660, stateskill.cpp:834-841): a skill motion's text key containing
+    /// "EventSound" (no case) names the event after its first 11 characters (CString::Mid(11), "EventSound/" being 11 long;
+    /// empty for a shorter key), then <see cref="TypeOf"/>. 0 for no such key or no known event.
+    /// </summary>
+    public static int TextKeyType(string key)
+    {
+        if (key == null || key.IndexOf("EventSound", StringComparison.OrdinalIgnoreCase) < 0) return 0;
+        return TypeOf(key.Length > 11 ? key[11..] : "");
+    }
+
     public static EventSoundTable Parse(string xml)
     {
         var t = new EventSoundTable();

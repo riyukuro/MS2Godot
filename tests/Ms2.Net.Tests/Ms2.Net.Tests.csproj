@@ -16,6 +16,7 @@
     <ProjectReference Include="../../src/Ms2.Net/Ms2.Net.csproj" />
     <ProjectReference Include="../../src/Ms2.Formats/Ms2.Formats.csproj" />
     <ProjectReference Include="../../src/Ms2.Ui/Ms2.Ui.csproj" />
+    <ProjectReference Include="../../src/Ms2.Audio/Ms2.Audio.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../Shared/Alloc.cs" Link="Alloc.cs" />

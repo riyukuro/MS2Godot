@@ -714,8 +714,14 @@ public partial class HudScene
         // :1232: PCBase::FUN_141675ed0 is 0 without a ridee (STILL-OPEN: rides), so the charge use counts
         live?.Cooltimes.OnRechargeSkillUsed(r.Skill, now);
         castMotions ??= Ms2.Formats.World.SkillTable.For(assets.Packs);
-        if (castMotions.Motion((int)r.Skill.Id, r.Level.Level, r.Motion)?.MotionEffect is { } fx)
-            live?.PlayFieldEffect(fx, g, me.Visual?.Rotation.Y ?? 0, Ms2.Audio.SoundMusicEffectState.CasterMyPc);
+        // the motion effect on the player (SetActor): AnimActivated keeps it in the record once the state's sequence starts
+        // (stateskill.cpp:750-761); a level without a sequence has PlayCastStartEffect insert it, kept by nothing (:1829-1838)
+        if (castMotions.Motion((int)r.Skill.Id, r.Level.Level, r.Motion)?.MotionEffect is { Length: > 0 } fx && live != null && me.Visual != null)
+        {
+            if (!r.Level.HasSequenceName) live.ReleaseKeptEffect(live.SpawnKeptEffect(fx, me.Visual, Ms2.Audio.SoundMusicEffectState.CasterMyPc));
+            else if ((object)ownCast == r && (object)me.SkillSequence == ownSequence && ownTagIds.Motion == 0)
+                ownTagIds.Motion = live.SpawnKeptEffect(fx, me.Visual, Ms2.Audio.SoundMusicEffectState.CasterMyPc);
+        }
         GD.Print($"cast: skill {r.Skill.Id} level {r.Level.Level} motion {r.Motion}{(sent ? " sent" : " (offline, not sent)")}");
         return true;
     }
@@ -928,7 +934,8 @@ public partial class HudScene
     /// StateSkill::TextKeyEvent's tag effects (stateskill.cpp:792-834) for the own sequence's tag keys at <paramref name="t"/>:
     /// each plays its effect on the player unless <see cref="Ms2.Net.Replay.SkillTagEffects.Plays"/> says no (the loop's
     /// m_b117 and m_bLoop, the record's m_n9c), kept on the player by its key (m_map138) for the state's exit
-    /// (<see cref="EndOwnTagEffects"/>).
+    /// (<see cref="EndOwnTagEffects"/>). A key containing "EventSound" (no path here) plays the own PC's event voice
+    /// (:834-841, <see cref="FieldAudio.PlayEventVoice"/>).
     /// </summary>
     void OwnTagEffects(double t)
     {
@@ -936,6 +943,13 @@ public partial class HudScene
         {
             var (time, key, path) = ownTagKeys[i];
             if (time != t) continue;
+            if (path == null)
+            {
+                var at0 = player.GlobalPosition;
+                FieldAudio.Instance?.PlayEventVoice(Ms2.Audio.EventSoundTable.TextKeyType(key), player.Gender,
+                    Net.LiveSession.Instance?.Me.User?.JobCode ?? 0, true, 1, at0, at0);   // GetJobGroupId, as the guide's world reads it
+                continue;
+            }
             float at = player.Anims?.TextKey(ownSequence, key) ?? -1;
             if (!Ms2.Net.Replay.SkillTagEffects.Plays(at, ownLoop.InLoop, ownCast.QueuedCharge, ownLoop.Loop, ownLoopStartKey,
                     ownLoopEndKey, ownChargingAttackKey)) continue;
@@ -1344,20 +1358,27 @@ public partial class HudScene
         bool running = ownCast != null && (object)player.SkillSequence == ownSequence;
         if (running && ownCast.CastId == s.CastUid && ownCast.Motion == s.Motion) return;
         CancelOwnMagics();
+        EndOwnTagEffects();   // the running state's exit (vfunc_5 :515-524)
         ownCast = null;
         castMotions ??= Ms2.Formats.World.SkillTable.For(assets.Packs);
         var motion = castMotions.Motion(s.SkillId, s.Level, s.Motion);
         if (motion == null) return;
+        bool played = false;
         if (!string.IsNullOrEmpty(motion.SequenceName))
         {
             // the sync's cast has no record here (STILL-OPEN below): the motion starts from the PC's facing
             float rotZ = player.FacingRotZ, rad = Mathf.DegToRad(rotZ);
-            player.PlaySkillSequence(motion.SequenceName, MathF.Max(s.Speed, 0.1f),
+            played = player.PlaySkillSequence(motion.SequenceName, MathF.Max(s.Speed, 0.1f),
                 OwnCastMove(s.SkillId, s.Level, s.Motion, new System.Numerics.Vector3(MathF.Sin(rad), -MathF.Cos(rad), 0)), rotZ);
         }
-        var g = player.GlobalPosition;
-        if (!string.IsNullOrEmpty(motion.MotionEffect))
-            Net.LiveSession.Instance?.PlayFieldEffect(motion.MotionEffect, g, player.Visual?.Rotation.Y ?? 0, Ms2.Audio.SoundMusicEffectState.CasterMyPc);
+        // the motion effect on the player as the cast's state keeps it (AnimActivated, stateskill.cpp:750-761), or inserted on
+        // it for a motion without a sequence (PlayCastStartEffect :1829-1838)
+        if (!string.IsNullOrEmpty(motion.MotionEffect) && Net.LiveSession.Instance is { } live && player.Visual != null)
+        {
+            if (played) ownTagIds.Motion = live.SpawnKeptEffect(motion.MotionEffect, player.Visual, Ms2.Audio.SoundMusicEffectState.CasterMyPc);
+            else if (string.IsNullOrEmpty(motion.SequenceName))
+                live.ReleaseKeptEffect(live.SpawnKeptEffect(motion.MotionEffect, player.Visual, Ms2.Audio.SoundMusicEffectState.CasterMyPc));
+        }
         GD.Print($"cast: skill {s.SkillId} motion {s.Motion} started by the server");
     }
 
