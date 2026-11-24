@@ -22,6 +22,9 @@ public sealed class UpperHudController : UiController
 
     AsDisplayObject Root => Host.Entity as AsDisplayObject;
 
+    /// <summary>GFxManager::Localize: the Flash table's text of a "$" key (the key itself when it has none).</summary>
+    string Localize(string key) => Host.Player.Translate?.Invoke(key) ?? key;
+
     /// <summary>OnLoadComplete (uiupperhuddialog.cpp:250).</summary>
     public override void OnLoadComplete()
     {
@@ -29,7 +32,7 @@ public sealed class UpperHudController : UiController
         if (Host.Child("m_searchButton") is { } search)
         {
             if (Model.IsFeatureEnabled(Feature.SearchTooltip))
-                Host.Invoke(search, "changeTooltipText", Model.Tables.Common("s_gamedictionary_tooltip_search") ?? "");
+                Host.Invoke(search, "changeTooltipText", Localize("$s_gamedictionary_tooltip_search"));   // GFxManager::Localize (:277)
             Listen(search, "buttonClick", OnSearchClick);                          // AddClickHandler(OnSearchClick)
         }
         if (Host.Child("m_tokenPocketButton") is { } tokenPocket)

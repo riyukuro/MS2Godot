@@ -10,7 +10,7 @@ namespace Ms2Godot.Ui;
 
 /// <summary>
 /// Player data for the UI runtime: layouts (built from Resource/Gfx.m2d with Ms2.Swf), DDS atlases, and the flash UI
-/// string table (Xml.m2d string/&lt;language&gt;/korflash.xml, keys such as "$s_login_msg_id").
+/// string table (Xml.m2d string/&lt;language&gt;/korflash.xml with usmSubtitleText.xml and stringMovie.xml, keys such as "$s_login_msg_id").
 /// </summary>
 public sealed class UiAssets
 {
@@ -296,22 +296,10 @@ public sealed class UiAssets
         strings["$"] = "";
         try
         {
-            var locale = LobbyFeatures.LocaleOf(Packs);
-            var bytes = Packs.Read("Xml", $"string/{Language}/korflash.xml");
-            foreach (var kv in GameStrings.FlashKeys(bytes, locale)) strings[kv.Key] = kv.Value;
+            // korFlash, usmSubtitleText and stringMovie (NiGFxLocalizeManager::LoadStringTables)
+            foreach (var kv in GameStrings.FlashTable(Packs, Language, LobbyFeatures.LocaleOf(Packs))) strings[kv.Key] = kv.Value;
         }
         catch (Exception e) { GD.PushWarning($"UI string table: {e.Message}"); }
-        // LoadStringTables (@0x1422eb940): the usm subtitles, then the swf cut scene movies' subtitles (attribute "name"), over the same map
-        foreach (var file in new[] { "usmsubtitletext.xml", "stringmovie.xml" })
-        {
-            try
-            {
-                var name = $"string/{Language}/{file}";
-                if (!Packs.Exists("Xml", name)) continue;
-                foreach (var kv in GameStrings.FlashKeys(Packs.Read("Xml", name), LobbyFeatures.LocaleOf(Packs), "name")) strings[kv.Key] = kv.Value;
-            }
-            catch (Exception e) { GD.PushWarning($"UI string table {file}: {e.Message}"); }
-        }
     }
 }
 

@@ -1,8 +1,10 @@
 using Ms2.Avm2;
 using Ms2.Avm2.Flash;
 using Ms2.Formats.Pack;
+using Ms2.Formats.World;
 using Ms2.Net.Packets;
 using Ms2.Net.Wire;
+using Ms2.Quest;
 using Ms2.Ui.Hud;
 using Ms2.Ui.Items;
 using NUnit.Framework;
@@ -39,7 +41,7 @@ public class ItemBreakDialogTests
         public UiModel Model;
         public UiHost Host;
 
-        public Rig(bool donation = false)
+        public Rig(bool donation = false, bool flash = false)
         {
             Packs();
             Model = new UiModel(new GameTables(packs, "en")) { HasLocalPlayer = true };
@@ -50,7 +52,13 @@ public class ItemBreakDialogTests
             C.Sound += Sounds.Add;
             var (rt, p) = src.Open(C.Movie, r => r.Budget = 20_000_000);
             p.StageW = 1280; p.StageH = 720;
-            p.Translate = k => k.TrimStart('$');
+            if (flash)
+            {
+                // the client's Flash table (korFlash, usmSubtitleText, stringMovie of the string folder); a missing key shows itself
+                var table = GameStrings.FlashTable(packs, "en", LobbyFeatures.LocaleOf(packs));
+                p.Translate = k => table.TryGetValue(k, out var t) ? t : k;
+            }
+            else p.Translate = k => k.TrimStart('$');
             Host = new UiHost(p, C, Model);
             Assert.That(Host.Load(), Is.True, "load: " + string.Join("; ", rt.Errors));
             for (int i = 0; i < 10; i++) p.Tick();
@@ -165,7 +173,7 @@ public class ItemBreakDialogTests
         r.C.ClickBreak();
         Assert.That(r.Boxes, Is.Empty);
         Assert.That(r.C.InProgress, Is.True);
-        Assert.That(r.Sounds, Does.Contain("s_strExtractProgress"));
+        Assert.That(r.Sounds, Does.Contain("Extract_Progress"));
         Assert.That(r.C.OnCallback("onSendBreak", Array.Empty<object>()), Is.True);
         Assert.That(r.Sent.Select(Hex).Single(), Is.EqualTo(Hex(ItemDismantleRequest.Start())));
     }
@@ -210,7 +218,7 @@ public class ItemBreakDialogTests
         int id = new[] { 20000001, 20000002, 30000001, 11300001, 12000001 }.First(i => !string.IsNullOrEmpty(r.Model.Tables.ItemName(i)));
         r.M.OnPacket(new ItemDismantlePacket(3) { Type = 1, Rewards = new[] { new DismantleReward(id, 4), new DismantleReward(id + 1, 0) } });
         Assert.That(r.C.InProgress, Is.False);
-        Assert.That(r.Sounds, Does.Contain("s_strExtractEnd"));
+        Assert.That(r.Sounds, Does.Contain("Extract_End"));
         Assert.That(r.M.HasBreakItems, Is.False, "mode 3 clears the list");
         Assert.That(r.Model.ItemSlots.Keys.Where(k => k.StartsWith("ItemBreakDialog_")).Count(), Is.EqualTo(1));
         r.C.Close();
@@ -280,5 +288,53 @@ public class ItemBreakDialogTests
         r.Add(5); r.Put(5, 0);
         for (int i = 0; i < 5000; i++) r.C.Tick();     // past the tiered JIT's call counting
         Assert.That(Alloc.Least(() => { for (int i = 0; i < 100_000; i++) r.C.Tick(); }), Is.LessThan(512));
+    }
+
+    /// <summary>The rank dropdown's rows: the rank's name and GetStringByKey("s_itembreak_rank_or_below") (uiinventorydialog.cpp:2609),
+    /// the common table's text; no row shows a "$s_" key.</summary>
+    [Test]
+    public void RankRowsTakeTheOrBelowTextFromTheCommonTable()
+    {
+        var r = new Rig(flash: true);
+        string below = r.Model.Tables.Common("s_itembreak_rank_or_below");
+        Assert.That(below, Is.Not.Null.And.Not.Empty, "the data's common row");
+        var dp = r.Host.Get(r.Host.Child("m_bundleRankDropdown"), "dataProvider");
+        int n = (int)Rt.ToNumber(r.Host.Get(dp, "length"));
+        var labels = Enumerable.Range(0, n).Select(i => Rt.ToString(r.Host.Get(r.Host.Invoke(dp, "requestItemAt", i), "label"))).ToList();
+        TestContext.WriteLine(string.Join(" | ", labels));
+        var want = Enumerable.Range(1, 6).Select(k => r.Model.Tables.Common("s_word_rank_" + k.ToString("00")) + " " + below);
+        Assert.That(labels, Is.EqualTo(want));
+        Assert.That(labels.Any(l => l.Contains("s_itembreak")), Is.False);
+    }
+
+    /// <summary>The result and preview rows' text: FUN_14028dfa0 of the common table's "s_itembreak_preview_static" /
+    /// "s_itembreak_preview_random" (uiinventorydialog.cpp:2736, :2878-2880).</summary>
+    [Test]
+    public void ResultAndPreviewRowsFormatTheCommonTablesText()
+    {
+        var r = new Rig(flash: true);
+        int id = new[] { 20000001, 20000002, 30000001, 11300001, 12000001 }.First(i => !string.IsNullOrEmpty(r.Model.Tables.ItemName(i)));
+        string name = r.Model.Tables.ItemName(id);
+        string fixedText = r.Model.Tables.Common("s_itembreak_preview_static"), random = r.Model.Tables.Common("s_itembreak_preview_random");
+        Assert.That((fixedText, random), Is.Not.EqualTo((null as string, null as string)));
+        Assert.That(r.C.RowText(id, 3, 3), Is.EqualTo(ClientFormat.Format(fixedText ?? "", name, 3u)));
+        Assert.That(r.C.RowText(id, 1, 4), Is.EqualTo(ClientFormat.Format(random ?? "", name, 1u, 4u)));
+        Assert.That(r.C.RowText(id, 1, 4), Does.Not.Contain("s_itembreak"));
+    }
+
+    /// <summary>The dialog's and the manager's sounds are the client's system sound keys (s_strExtractProgress "Extract_Progress",
+    /// s_strExtractEnd "Extract_End", uiinventorydialog.cpp:475-476; "Extract_ItemChoice"), each a row of table/systemsound.xml.</summary>
+    [Test]
+    public void SoundsAreSystemSoundKeys()
+    {
+        var r = new Rig();
+        r.Add(5); r.Put(5, 0);
+        r.C.StartBreak();
+        r.C.EndBreak();
+        var keys = System.Xml.Linq.XDocument.Load(new MemoryStream(packs.Read("Xml", "table/systemsound.xml"))).Root.Elements()
+            .Select(e => (string)e.Attribute("key")).Where(k => k != null).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        Assert.That(r.Sounds, Is.SupersetOf(new[] { "Extract_Progress", "Extract_End" }));
+        foreach (var k in r.Sounds.Append("Extract_ItemChoice").Append(InventoryController.GenderWarningSound))
+            Assert.That(keys, Does.Contain(k), k);
     }
 }

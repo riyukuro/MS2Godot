@@ -19,7 +19,7 @@ public sealed partial class InventoryController
     public const string OpenBoxKey = "s_msg_item_open_item_box", OpenBoxMultiKey = "s_msg_item_open_item_box_multi",
         OpenBoxMultiNoCountKey = "s_msg_item_open_item_box_multi_no_having_count", OpenBoxMultiOpenMsgKey = "s_msg_item_open_item_box_multiopen_msg",
         OpenBoxMultiOpenTitleKey = "s_msg_item_open_item_box_multiopen_title", OpenBoxMultiOpenOkKey = "s_msg_item_open_item_box_multiopen_ok",
-        CancelWordKey = "s_word_cancel", GenderWarningSound = "s_warningGender";
+        CancelWordKey = "s_word_cancel", GenderWarningSound = "system_notice_error_warningGender";   // s_warningGender (inventory.cpp:224)
 
     /// <summary>FUN_140c3f9d0 (the multi open window): item id, rarity (the request's slot), the arguments, the count.</summary>
     public Action<int, int, string, int> OpenMultiBox;

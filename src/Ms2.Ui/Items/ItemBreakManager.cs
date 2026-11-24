@@ -34,7 +34,7 @@ public sealed class ItemBreakManager
     public Func<long, bool> Exists { get; set; }
     bool InInventory(long uid) => Exists != null ? Exists(uid) : Find(uid) != null;
     public Action<IOutPacket> Send { get; set; }
-    /// <summary>The string by key (a "$s_" key or the plain name).</summary>
+    /// <summary>GetStringCommonByKey: the common table's text of a key (itembreakmanager.cpp:436, :458, :467).</summary>
     public Func<string, string> Text { get; set; } = k => k;
     public Func<int, string> Common { get; set; } = _ => "";
     public Func<long> ServerTime { get; set; } = () => 0;
@@ -180,7 +180,7 @@ public sealed class ItemBreakManager
         if (Contains(it.Uid)) { NoticeKey?.Invoke("s_itembreak_selected_item"); return 0; }
         if (!GemsBreakable(it))
         {
-            var box = MessageBoxQueue.Create(0, Text("$s_itembreak_usedgemstone_item"), null, "");
+            var box = MessageBoxQueue.Create(0, Text("s_itembreak_usedgemstone_item"), null, "");
             ShowBox?.Invoke(box);
             return 0;
         }
@@ -200,7 +200,7 @@ public sealed class ItemBreakManager
         if (BlockAdd(it)) return;
         if (it.Data.IsStackable && it.Count > 1)
         {
-            var box = MessageBoxQueue.Create(CountBoxType, Text("$s_msg_item_break"), null, "");
+            var box = MessageBoxQueue.Create(CountBoxType, Text("s_msg_item_break"), null, "");
             box.SetInput(1, it.Count.ToString(System.Globalization.CultureInfo.InvariantCulture), (int)it.Count, 0, 0);
             box.Callback = OnCountBox;
             box.Append(arg);
@@ -210,7 +210,7 @@ public sealed class ItemBreakManager
         }
         else if (it.Rarity >= 5 && HighSaOption(it) is { } option)
         {
-            var box = MessageBoxQueue.Create(HighSaBoxType, option + "\n" + Text("$s_itembreak_high_sa_option_item"), null, "");
+            var box = MessageBoxQueue.Create(HighSaBoxType, option + "\n" + Text("s_itembreak_high_sa_option_item"), null, "");
             box.Callback = OnConfirmBox;
             box.ItemUid = it.Uid;
             box.SetItemEntry(it, ItemName(it), 1, (int)it.Count, (int)it.Count, 0, 0, null);

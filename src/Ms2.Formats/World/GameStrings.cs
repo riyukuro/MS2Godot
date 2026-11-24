@@ -123,6 +123,34 @@ public sealed class GameStrings
     }
 
     /// <summary>
+    /// The Flash translator's whole map, as NiGFxLocalizeManager::LoadStringTables (@0x1422eb940, nigfxlocalizemanager.cpp:105-134)
+    /// fills it: korFlash.xml by "value" (loader 1, FUN_141628610), usmSubtitleText.xml by "name" (loader 2, LoadUsmSubtitleText),
+    /// stringMovie.xml by "name" (loader 3, LoadStringMovie), each from the string folder (FUN_14071ae20, ms2memfile.cpp:543-566;
+    /// set at ms2memfile.cpp:324-327). A later row replaces an earlier one. Loader 4 (flashDebug.xml, GetXmlDebugPath) is the
+    /// developer layout's file and is not in the packed data. A file the data lacks is skipped (its loader returns false).
+    /// </summary>
+    public static Dictionary<string, string> FlashTable(PackSet packs, string language, string locale)
+    {
+        var map = new Dictionary<string, string>();
+        foreach (var (file, attr) in FlashFiles)
+            if (FindXml(packs, $"string/{language}/{file}") is { } entry)
+                FlashKeys(packs.Read("Xml", entry), locale, attr, map);
+        return map;
+    }
+
+    static readonly (string File, string Attr)[] FlashFiles =
+        [("korflash.xml", "value"), ("usmsubtitletext.xml", "name"), ("stringmovie.xml", "name")];
+
+    /// <summary>The Xml entry of a path, its case as the data has it (the client's file system ignores case).</summary>
+    static string FindXml(PackSet packs, string path)
+    {
+        if (packs.Exists("Xml", path)) return path;
+        foreach (var e in packs.List("Xml"))
+            if (string.Equals(e, path, StringComparison.OrdinalIgnoreCase)) return e;
+        return null;
+    }
+
+    /// <summary>
     /// korFlash.xml rows as NiGFxLocalizeManager::ParseStringXml (nigfxlocalizemanager.cpp:171) reads them. A row whose locale
     /// attribute is set and differs (case-insensitive, whole name) from the client's locale is skipped; the feature attribute is
     /// not looked at. A row without the value attribute gets its own key as text (XmlGetAttr returns 1 for a missing attribute and
@@ -132,9 +160,13 @@ public sealed class GameStrings
     /// Flash translator shows the key itself. The text attribute is "value" for korFlash.xml and "name" for usmSubtitleText.xml
     /// and stringMovie.xml (NiGFxLocalizeManager::LoadStringTables @0x1422eb940, nigfxlocalizemanager.cpp:112-134).
     /// </summary>
-    public static Dictionary<string, string> FlashKeys(byte[] xml, string locale, string textAttribute = "value")
+    public static Dictionary<string, string> FlashKeys(byte[] xml, string locale, string textAttribute = "value") =>
+        FlashKeys(xml, locale, textAttribute, new());
+
+    /// <summary>The same rows read with <paramref name="attr"/> as the text attribute, added to <paramref name="map"/> (AddString's
+    /// SetAt: a later row replaces an earlier one).</summary>
+    public static Dictionary<string, string> FlashKeys(byte[] xml, string locale, string attr, Dictionary<string, string> map)
     {
-        var map = new Dictionary<string, string>();
         using var xr = System.Xml.XmlReader.Create(new MemoryStream(xml));
         string key = "";
         while (xr.Read())
@@ -143,7 +175,7 @@ public sealed class GameStrings
             var rowLocale = xr.GetAttribute("locale");
             if (!string.IsNullOrEmpty(rowLocale) && !string.Equals(rowLocale, locale, StringComparison.OrdinalIgnoreCase)) continue;
             if (xr.GetAttribute("id") is { } id) key = id;
-            var v = xr.GetAttribute(textAttribute);
+            var v = xr.GetAttribute(attr);
             map[key] = v == null ? key : v.Replace("\\n", "\n").Replace("\\r", "\r");
         }
         return map;

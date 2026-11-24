@@ -171,6 +171,25 @@ public class ItemBreakManagerTests
         Assert.That(sent, Is.Empty);
     }
 
+    /// <summary>The three boxes' texts are GetStringCommonByKey of the plain key (itembreakmanager.cpp:436, :458, :467), the
+    /// common table's text, not a "$" Flash key.</summary>
+    [Test]
+    public void TheBoxesTakeTheCommonTablesTextByThePlainKey()
+    {
+        var common = new Dictionary<string, string>
+        {
+            ["s_itembreak_usedgemstone_item"] = "gems", ["s_msg_item_break"] = "count", ["s_itembreak_high_sa_option_item"] = "high",
+        };
+        m.Text = k => common.TryGetValue(k, out var t) ? t : null;
+        m.GemsBreakable = _ => false;
+        m.TryAddItem(Make(1), 0);
+        m.GemsBreakable = _ => true;
+        m.TryAddItem(Make(9, count: 50, slotMax: 99), 0);
+        m.HighSaOption = _ => "Option";
+        m.TryAddItem(Make(3, rarity: 5), 0);
+        Assert.That(boxes.Select(b => b.Msg), Is.EqualTo(new[] { "gems", "count", "Option\nhigh" }));
+    }
+
     [Test]
     public void HighSaOptionAsksToConfirmFirst()
     {

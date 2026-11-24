@@ -18,8 +18,9 @@ public interface IItemBreakSlotOwner
 /// UIItemBreakBase with an ItemBreakSlotBag of ItemBreakSlots (itembreakslot.cpp), named "&lt;TypeName&gt;.%d". The state and
 /// every refusal and send are <see cref="ItemBreakManager"/> (CItemBreakManager); this controller shows it: the bag, the
 /// type and rank dropdowns, the break button's confirms, the progress calls, the preview (mode 5) and result (mode 3) rows.
-/// <para>STILL-OPEN: the dock beside the inventory (vfunc_43), the movie's reward slot toggles, the rank dropdown's untranslated
-/// "$s_itembreak..." caption in the shot.</para>
+/// <para>The texts come from the table the client reads each from: <see cref="Loc"/> (GFxManager::Localize, the Flash table)
+/// and <see cref="Common"/> (GetStringByKey / GetStringCommonByKey / FUN_14028dfa0, the common table).</para>
+/// <para>STILL-OPEN: the dock beside the inventory (vfunc_43), the movie's reward slot toggles.</para>
 /// </summary>
 public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, IItemBreakSlotOwner
 {
@@ -81,7 +82,11 @@ public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, II
             && index >= 0 && index < ItemBreakManager.Slots;
     }
 
+    /// <summary>GFxManager::Localize("$" + key): the Flash table's text (the key itself when it has none).</summary>
     string Loc(string key) => Host.Player.Translate?.Invoke("$" + key) ?? key;
+
+    /// <summary>GetStringByKey / GetStringCommonByKey / FUN_14028dfa0's format: the common table's text ("" when it has none).</summary>
+    string Common(string key) => Model.Tables.Common(key) ?? "";
 
     // ---- load / close ------------------------------------------------------------------------------------------------
 
@@ -199,7 +204,7 @@ public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, II
             if (!Rt.IsNullish(dp))
             {
                 Host.Invoke(dp, "cleanUp");
-                string below = Loc("s_itembreak_rank_or_below");
+                string below = Common("s_itembreak_rank_or_below");     // GetStringByKey (uiinventorydialog.cpp:2609)
                 for (int r = 1; r < 7; r++)
                     Host.Invoke(dp, "push", new Dictionary<string, object> { ["rank"] = r, ["label"] = RankName(r) + " " + below });
                 Host.Set(rank, "menuRowCount", 6u);
@@ -240,17 +245,17 @@ public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, II
         Mgr.BreakInProgress = true;
         UpdateCanSend();
         if (Host.Entity != null) Host.Invoke(Host.Entity, "startBreak");
-        Sound?.Invoke("s_strExtractProgress");
+        Sound?.Invoke("Extract_Progress");                     // s_strExtractProgress (uiinventorydialog.cpp:476, :2514)
     }
 
-    /// <summary>EndBreak: Invoke "endBreak", m_188 = 0, the s_strExtractEnd sound.</summary>
+    /// <summary>EndBreak: Invoke "endBreak", m_188 = 0, the s_strExtractEnd sound ("Extract_End").</summary>
     public void EndBreak()
     {
         InProgress = false;
         Mgr.BreakInProgress = false;
         UpdateCanSend();
         if (Host.Entity != null) Host.Invoke(Host.Entity, "endBreak");
-        Sound?.Invoke("s_strExtractEnd");
+        Sound?.Invoke("Extract_End");                          // s_strExtractEnd (:475, :2526)
     }
 
     /// <summary>ResetBreak: m_188 = 0, Invoke "resetBreak".</summary>
@@ -297,7 +302,7 @@ public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, II
         foreach (var r in p.Rewards ?? Array.Empty<DismantleReward>())
         {
             if (r.Amount == 0) continue;
-            string text = ClientFormat.Format(Loc("s_itembreak_preview_static"), ItemDisplayName(r.ItemId), r.Amount);
+            string text = RowText(r.ItemId, (uint)r.Amount, (uint)r.Amount);
             string bind = BindReward("", r.ItemId, (uint)r.Amount);
             rows.Add(Host.Obj(("slotBinding", bind), ("toggle", false), ("text", text)));
         }
@@ -317,15 +322,18 @@ public sealed class ItemBreakDialogController : UiController, IDragSlotOwner, II
         foreach (var (id, v) in byId)
         {
             if (v.Low == 0 && v.High == 0) continue;
-            string name = ItemDisplayName(id);
-            string text = v.Low == v.High
-                ? ClientFormat.Format(Loc("s_itembreak_preview_static"), name, v.Low)
-                : ClientFormat.Format(Loc("s_itembreak_preview_random"), name, v.Low, v.High);
+            string text = RowText(id, (uint)v.Low, (uint)v.High);
             string bind = BindReward("preview_", id, (uint)v.Low);
             rows.Add(Host.Obj(("slotBinding", bind), ("toggle", false), ("text", text)));
         }
         Host.Invoke(Host.Entity, "setPreview", Host.Obj(("dp", DataProvider(rows))));
     }
+
+    /// <summary>A result or preview row's text: FUN_14028dfa0 of "s_itembreak_preview_static" (the item's name, the amount) when
+    /// low equals high, else of "s_itembreak_preview_random" (the name, low, high) (uiinventorydialog.cpp:2736, :2878-2880).</summary>
+    internal string RowText(int itemId, uint low, uint high) => low == high
+        ? ClientFormat.Format(Common("s_itembreak_preview_static"), ItemDisplayName(itemId), low)
+        : ClientFormat.Format(Common("s_itembreak_preview_random"), ItemDisplayName(itemId), low, high);
 
     object DataProvider(IEnumerable<object> values)
     {

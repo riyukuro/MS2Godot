@@ -1184,6 +1184,26 @@ public class HudTests
         Assert.That(AllTexts(pi), Has.Some.Contains("1000"));
     }
 
+    /// <summary>The search button's tooltip is GFxManager::Localize("$s_gamedictionary_tooltip_search") (uiupperhuddialog.cpp:277),
+    /// the Flash table's text, not the common table's.</summary>
+    [Test]
+    public void UpperHudSearchTooltipIsTheFlashTablesText()
+    {
+        var m = Model();
+        m.Features.Add(Feature.SearchTooltip);
+        var flash = Ms2.Formats.World.GameStrings.FlashTable(packs, "en", LobbyFeatures.LocaleOf(packs));
+        Assert.That(flash.TryGetValue("$s_gamedictionary_tooltip_search", out var want), Is.True, "the data's Flash row");
+        var c = new UpperHudController();
+        var (rt, p) = src.Open(c.Movie, r => { r.Budget = 20_000_000; r.FixedWallClock = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc); });
+        p.StageW = 1920; p.StageH = 1080;
+        p.Translate = k => flash.TryGetValue(k, out var t) ? t : k;
+        var h = new UiHost(p, c, m);
+        Assert.That(h.Load(), Is.True, string.Join("; ", rt.Errors));
+        // changeTooltipText (the movie's button): _tooltipData.text = the argument while no external tooltip getter is set
+        var tip = h.Get(h.Get(h.Child("m_searchButton"), "_tooltipData"), "text");
+        Assert.That(Rt.ToString(tip), Is.EqualTo(want));
+    }
+
     [Test]
     public void UpperHudMoneyAndClock()
     {

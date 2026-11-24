@@ -237,8 +237,8 @@ public sealed class CubeBillDialogController : UiController
         string desc = "";
         if (cost.Preview)
         {
-            Text("m_buy", Str("s_common_confirm"));
-            Text("m_title", Str("s_ugc_cube_bill_title_calculate"));
+            Text("m_buy", "$s_common_confirm");                    // the "$" key itself: the text field's translator (:94, :97)
+            Text("m_title", "$s_ugc_cube_bill_title_calculate");
             if (cost.Kind == 3) desc = Fmt("s_home_bill_description_blueprint_preview", (uint) cost.Arg);
         }
         if (desc.Length == 0) desc = Fmt("s_home_bill_description", (uint) cost.Arg);

@@ -191,4 +191,29 @@ public class CubeBillTests
         Assert.That(sent.Count, Is.EqualTo(1));
         Assert.That(d.OnCallback("OnOther", Array.Empty<object>()), Is.False);
     }
+
+    /// <summary>A preview's buy button and title are the "$" keys set as they are (uiugccubebilldialog.cpp:94, :97): the text field's
+    /// translator shows the Flash table's text, not the common table's.</summary>
+    [Test] public void PreviewButtonAndTitleAreTheFlashTablesTexts()
+    {
+        var d = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
+        var packs = new Ms2.Formats.Pack.PackSet(d);
+        var src = new Ms2.Avm2.Flash.MovieSource(k => packs.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? packs.Read("Resource/Gfx", e) : null);
+        var flash = Ms2.Formats.World.GameStrings.FlashTable(packs, "en", LobbyFeatures.LocaleOf(packs));
+        Assert.That(flash.TryGetValue("$s_common_confirm", out var confirm), Is.True, "the data's Flash row");
+        Assert.That(flash.TryGetValue("$s_ugc_cube_bill_title_calculate", out var title), Is.True, "the data's Flash row");
+        var (b, _, _) = Make();
+        b.OnBill(Bill(ResponseCubeBill.ModeBlueprint, true, (1, 5)));
+        var model = new UiModel(new GameTables(packs, "en"));
+        var c = new CubeBillDialogController(b) { FeatureOn = _ => false, Wallet = () => new long[4] };
+        var (rt, p) = src.Open(c.Movie, r => r.Budget = 20_000_000);
+        p.StageW = 1280; p.StageH = 720;
+        p.Translate = k => flash.TryGetValue(k, out var t) ? t : k;
+        var h = new UiHost(p, c, model);
+        Assert.That(h.Load(), Is.True, string.Join("; ", rt.Errors));
+        for (int i = 0; i < 5; i++) p.Tick();      // the button's label goes to its text field on the next draw
+        Assert.That(Ms2.Avm2.Rt.ToString(h.Get(h.Get(h.Child("m_buy"), "textField"), "text")), Is.EqualTo(confirm));
+        Assert.That(Ms2.Avm2.Rt.ToString(h.Get(h.Child("m_title"), "text")), Is.EqualTo(title));
+    }
 }
