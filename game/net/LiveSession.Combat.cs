@@ -1903,7 +1903,7 @@ public partial class LiveSession
                     int sends = live.Movie.Sends;
                     hud.Escape();
                     GD.Print($"live: combat skip movie {id}: Esc pressed");
-                    await until(() => hud.ShownBoxScripted() != null, 60 * 3); await frames(10);
+                    await until(() => hud.ShownBoxScripted() != null, 60 * 3); await frames(45);   // the box fades in
                     var ask = hud.ShownBoxScripted();
                     Check($"Esc asks a box ({ask?.Msg})", ask != null);
                     Check("nothing is sent before the answer", live.Movie.Sends == sends);

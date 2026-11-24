@@ -136,6 +136,19 @@ public class MessageBoxTests
         Assert.That(quit, Is.EqualTo(1));
     }
 
+    /// <summary>The key pass over the panes (UISwfEntityManager::FUN_1422d1c20): the movie pane (layer 2) before the cinematic pane (layer 4).
+    /// An opening has the cinematic's key mode on while its usm plays; Esc has to reach the movie's exit box and not only the cinematic's skip.</summary>
+    [Test]
+    public void TheMoviePaneAsksItsKeyBeforeTheCinematicPane()
+    {
+        var asked = new List<string>();
+        Assert.That(FieldEsc.CutScenePanesKey(() => { asked.Add("movie"); return true; }, () => { asked.Add("cinematic"); return true; }), Is.True);
+        Assert.That(asked, Is.EqualTo(new[] { "movie" }), "the movie takes the key; the cinematic is not asked");
+        asked.Clear();
+        Assert.That(FieldEsc.CutScenePanesKey(() => { asked.Add("movie"); return false; }, () => { asked.Add("cinematic"); return true; }), Is.True);
+        Assert.That(asked, Is.EqualTo(new[] { "movie", "cinematic" }), "without the movie's box the cinematic's skip gets it");
+    }
+
     /// <summary>UICutSceneMovie::vfunc_13 (@0x14190f510) and OnMessage (@0x14190f980): Esc asks box 0x88c while the exit
     /// button shows and no box is up; only its first button runs Exit (the Trigger request), and the button hides.</summary>
     [Test]

@@ -40,7 +40,7 @@ public partial class HudScene
         var size = ScreenMode.PixelSize(GetWindow());
         c.HideComplete += () => { if (cutSceneSwfPane == c) FreeCutSceneSwf(); };
         cutSceneSwfPane = c;
-        if (cutSceneSwfLayer == null) AddChild(cutSceneSwfLayer = new CanvasLayer { Layer = 12 });
+        if (cutSceneSwfLayer == null) AddChild(cutSceneSwfLayer = new CanvasLayer { Layer = 11 });   // under the message box layer (12)
         cutSceneSwfMovie = new MovieDialog(assets, c, hudModel, size);
         cutSceneSwfLayer.AddChild(cutSceneSwfMovie);
         c.Play(path);

@@ -10,6 +10,12 @@ namespace Ms2.Ui.Hud;
 /// </summary>
 public static class FieldEsc
 {
+    /// <summary>The key pass over the cut scene panes (UISwfEntityManager::FUN_1422d1c20 @0x1422d1c20, uiswfentitymanager.cpp:296-358):
+    /// the layers go from 0 up and each from its newest entity, so the movie pane (layer 2, UICutSceneMovie vfunc_52 :87) asks its key
+    /// before the cinematic pane (layer 4, uicutscenecinematic.cpp:149) does. An opening that holds both (the cinematic's key mode
+    /// is on while a usm plays) therefore asks the movie's exit box; the cinematic's skip is for when the movie does not take it.</summary>
+    public static bool CutScenePanesKey(Func<bool> movieKey, Func<bool> cinematicKey) => movieKey() || cinematicKey();
+
     /// <summary>Whether one of the UI's parts took Esc: the option dialog's key handler, the tooltips' close, the
     /// guide tip's skip, in the client's order.</summary>
     public static bool Run(Func<bool> optionDialogTakesKey, Func<bool> closeTooltips, Func<bool> skipGuideTextTip, Func<bool> cutSceneMoviePlays = null)

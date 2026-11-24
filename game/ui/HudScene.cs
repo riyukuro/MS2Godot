@@ -642,14 +642,15 @@ public partial class HudScene : Node, IUiStageHost
     /// (FUN_141274ff0, unit_141274d10_uihelpers.cpp) Esc closes all of them when the interface option EnableCloseAllDlg is
     /// on and is otherwise left; with none it toggles the system menu: ToggleDialog(0x4e21) = FUN_1419246f0, open when
     /// vfunc_55 (closed and unloaded), else vfunc_67 (close). The cut-scene movie's own key handler (UICutSceneMovie::vfunc_13
-    /// @0x14190f510) runs before all of this and asks its exit box (CutSceneMovie.AskExitOnEsc); at a playing movie
+    /// @0x14190f510) runs before all of this (layer 2, before the cinematic pane's layer 4: FieldEsc.CutScenePanesKey) and asks its exit box (CutSceneMovie.AskExitOnEsc); at a playing movie
     /// (FUN_1419102c0) the field's Esc then only returns, without a skip (uichatballoon.cpp:528-530).
     /// </summary>
     public void Escape()
     {
         if (assets == null) return;
-        if (CinematicEscape(Input.IsKeyPressed(Key.Shift))) return;       // UICutSceneCinematic's key handler takes Esc first
-        if (Ms2Godot.Net.LiveSession.Instance?.Movie.AskExitOnEsc() == true) return;   // UICutSceneMovie::vfunc_13: box 0x88c
+        if (Ms2.Ui.Hud.FieldEsc.CutScenePanesKey(                                       // the movie pane's layer (2) is asked before the cinematic's (4)
+                () => Ms2Godot.Net.LiveSession.Instance?.Movie.AskExitOnEsc() == true,  // UICutSceneMovie::vfunc_13: box 0x88c
+                () => CinematicEscape(Input.IsKeyPressed(Key.Shift)))) return;          // UICutSceneCinematic's key handler
         if (Ms2.Ui.Hud.FieldEsc.Run(
                 () => optionDialog != null && optionDialog.OnKey(true),            // UIGameOptionDialog::vfunc_13 @0x141942b10 takes Esc
                 () => TooltipLayer.Instance?.Controller?.DestroyTooltips() == true,  // CloseTooltips, the first step

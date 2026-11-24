@@ -52,7 +52,7 @@ public partial class HudScene
     void EnsureCutSceneLayer()
     {
         if (cutSceneLayer != null) return;
-        AddChild(cutSceneLayer = new CanvasLayer { Layer = 12, Visible = false });
+        AddChild(cutSceneLayer = new CanvasLayer { Layer = 11, Visible = false });   // under the message box layer (12): the exit box 0x88c shows over the movie
         cutSceneLayer.AddChild(cutSceneBack = new ColorRect { Color = Colors.Black, MouseFilter = Control.MouseFilterEnum.Stop });
         cutSceneLayer.AddChild(cutSceneVideo = new VideoPlayerNode());
         cutSceneVideo.Finished += () =>
