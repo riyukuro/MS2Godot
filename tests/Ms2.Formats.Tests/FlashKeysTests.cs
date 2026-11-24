@@ -49,4 +49,14 @@ public class FlashKeysTests
         Assert.That(m["$s_x"], Is.EqualTo("$s_x"));
         Assert.That(m[""], Is.EqualTo("again"), "no id keeps the previous row's key, the later text replaces");
     }
+
+    [Test]
+    public void ThePathOfTheSubtitleTablesReadsTheNameAttribute()
+    {
+        // usmSubtitleText.xml and stringMovie.xml carry their text in "name" (LoadStringTables parses them with "name")
+        const string movie = "<ms2><key id=\"s_Cut_Blackstar_Crash_01\" name=\"a\\nb\" npc=\"x\" /><key id=\"s_v\" value=\"only value\" /></ms2>";
+        var m = GameStrings.FlashKeys(Encoding.UTF8.GetBytes(movie), "KR", "name");
+        Assert.That(m["s_Cut_Blackstar_Crash_01"], Is.EqualTo("a\nb"));
+        Assert.That(m["s_v"], Is.EqualTo("s_v"), "a row without the attribute is its own key");
+    }
 }

@@ -129,9 +129,10 @@ public sealed class GameStrings
     /// the client then sets text = key); a row without an id keeps the previous row's key (the key variable is outside the loop);
     /// an empty id is added as an empty key. The "\\n" and "\\r" escapes of a present value become line breaks; the later row
     /// replaces an earlier one (SetAt). A key that is not in the map is the caller's: the C++ GetString gives "" for it, while the
-    /// Flash translator shows the key itself.
+    /// Flash translator shows the key itself. The text attribute is "value" for korFlash.xml and "name" for usmSubtitleText.xml
+    /// and stringMovie.xml (NiGFxLocalizeManager::LoadStringTables @0x1422eb940, nigfxlocalizemanager.cpp:112-134).
     /// </summary>
-    public static Dictionary<string, string> FlashKeys(byte[] xml, string locale)
+    public static Dictionary<string, string> FlashKeys(byte[] xml, string locale, string textAttribute = "value")
     {
         var map = new Dictionary<string, string>();
         using var xr = System.Xml.XmlReader.Create(new MemoryStream(xml));
@@ -142,7 +143,7 @@ public sealed class GameStrings
             var rowLocale = xr.GetAttribute("locale");
             if (!string.IsNullOrEmpty(rowLocale) && !string.Equals(rowLocale, locale, StringComparison.OrdinalIgnoreCase)) continue;
             if (xr.GetAttribute("id") is { } id) key = id;
-            var v = xr.GetAttribute("value");
+            var v = xr.GetAttribute(textAttribute);
             map[key] = v == null ? key : v.Replace("\\n", "\n").Replace("\\r", "\r");
         }
         return map;

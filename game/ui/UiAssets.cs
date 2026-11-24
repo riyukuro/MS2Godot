@@ -284,10 +284,22 @@ public sealed class UiAssets
         strings["$"] = "";
         try
         {
+            var locale = LobbyFeatures.LocaleOf(Packs);
             var bytes = Packs.Read("Xml", $"string/{Language}/korflash.xml");
-            foreach (var kv in GameStrings.FlashKeys(bytes, LobbyFeatures.LocaleOf(Packs))) strings[kv.Key] = kv.Value;
+            foreach (var kv in GameStrings.FlashKeys(bytes, locale)) strings[kv.Key] = kv.Value;
         }
         catch (Exception e) { GD.PushWarning($"UI string table: {e.Message}"); }
+        // LoadStringTables (@0x1422eb940): the usm subtitles, then the swf cut scene movies' subtitles (attribute "name"), over the same map
+        foreach (var file in new[] { "usmsubtitletext.xml", "stringmovie.xml" })
+        {
+            try
+            {
+                var name = $"string/{Language}/{file}";
+                if (!Packs.Exists("Xml", name)) continue;
+                foreach (var kv in GameStrings.FlashKeys(Packs.Read("Xml", name), LobbyFeatures.LocaleOf(Packs), "name")) strings[kv.Key] = kv.Value;
+            }
+            catch (Exception e) { GD.PushWarning($"UI string table {file}: {e.Message}"); }
+        }
     }
 }
 
