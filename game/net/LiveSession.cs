@@ -203,6 +203,25 @@ public partial class LiveSession : Node
 
     /// <summary>The live run's raw UserState (OnUserState: i32 object id, u8 state) for the own pc, as the server's debug
     /// packet command takes it: each byte in hex, the opcode first.</summary>
+    /// <summary>A ResponseRide for the own pc as the server's debug packet command takes it (hex bytes): mode 0 with a
+    /// RideOnAction of type 0 (ride id, the mount's object id, and KMS's flag byte), or mode 1 with a plain RideOffAction.</summary>
+    internal string OwnRideBytes(bool on, int rideId, int mountObjectId)
+    {
+        var w = new Maple2.PacketLib.Tools.ByteWriter();
+        w.WriteShort((short)game.Profile.Number(Ms2.Net.Inbound.ResponseRide));
+        w.WriteByte(on ? (byte)0 : (byte)1);
+        w.WriteInt(Me.ObjectId);
+        w.WriteByte(0);
+        if (on)
+        {
+            w.WriteInt(rideId);
+            w.WriteInt(mountObjectId);
+            if (!game.Profile.IsGms2) w.WriteBool(false);
+        }
+        else w.WriteByte(0);
+        return string.Join(" ", w.ToArray().Select(b => b.ToString("X2")));
+    }
+
     internal string OwnUserStateBytes(int state)
     {
         ushort op = game.Profile.Number(Ms2.Net.Inbound.UserState);

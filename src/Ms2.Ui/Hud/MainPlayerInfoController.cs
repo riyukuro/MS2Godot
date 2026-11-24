@@ -46,11 +46,11 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
     {
         InitEffects();
         base.OnLoadComplete();
+        slotMode = 0;                                   // m_nSlotMode = 0 (uimainplayerinfo.cpp:511)
         ChangeSkillSlot(SlotExpand ? 1 : 0);
         InitPlayerInfo();
         RefreshQuickSlots();
-        // vfunc_oa0_20(IsRiding): not riding and slot mode 0 -> nothing to send (uimainplayerinfo.cpp:795)
-        if (Pc.Riding) OnRiding(true);
+        OnRiding(Pc.Riding);                            // vfunc_oa0_20(IsRiding) (:515)
         Host.Invoke("enabledExpansionSlotToggle", true);
         Host.Invoke("expansionSlotActive", SkillMinimize, CommonMinimize);
         if (Model.ServerKeys is { Loaded: true } t) ShortkeyPage = t.CurrentPage + 1;   // SetShortkeyPageNumber(m_nQuickSlotPage + 1)
@@ -88,7 +88,25 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         Host.Invoke("changeSkillSlot", slot, PadKind() != PadKinds.Dual);   // bShowKey: the dual pad shows no key captions (:1126)
         UpdateModifiedKeys();
         UpdateEffectPositions();
-        Host.Invoke(Slot, "onSlotModeChange", 0);       // SyncSlotMode, m_nSlotMode = 0
+        SyncSlotMode();
+    }
+
+    /// <summary>m_nSlotMode: 1 while riding a mount with useRidingUI (the riding slots), else 0.</summary>
+    int slotMode;
+    /// <summary>m_nHideMask: the hide reasons (<see cref="SetHideReason"/>).</summary>
+    uint hideMask;
+    /// <summary>The hide reason of a mount whose hidePCInfo is 2 (FUN_1419f16b0's SetHideReason(4, bShow)).</summary>
+    public const uint RideHideReason = 4;
+
+    /// <summary>SyncSlotMode @0x1419f18f0 (uimainplayerinfo.cpp:1058-1063): m_slot.onSlotModeChange(m_nSlotMode).</summary>
+    void SyncSlotMode() => Host.Invoke(Slot, "onSlotModeChange", slotMode);
+
+    /// <summary>SetHideReason @0x1419f1d10 (uimainplayerinfo.cpp:1107-1118): the reason's bit is set when hidden and
+    /// cleared when shown; the dialog shows (UIDialog::vfunc_8(1)) only with no reason left.</summary>
+    public void SetHideReason(uint mask, bool show)
+    {
+        if (!show) hideMask |= mask; else hideMask &= ~mask;
+        Host.SetVisible(Host.Entity, hideMask == 0);
     }
 
     // ---- the buff strip ----
@@ -225,10 +243,42 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         Host.Invoke(pi, "setName", Pc.NameWithTitle);      // UpdateName
     }
 
+    /// <summary>
+    /// vfunc_oa0_20 @0x1419f0460 (uimainplayerinfo.cpp:795-835), the riding status event: nothing when the mount hides the
+    /// main player info (FUN_1419f16b0); else the riding object (riding, HP, SP) and slot mode 0, or for a mount with
+    /// useRidingUI slot mode 1 with rideOff (enableRideOffUI) and rideeName (string table 0x31); onRiding is sent only
+    /// when the slot mode changes, after SyncSlotMode. STILL-OPEN: the mount's avatar (UIAvatarRidee and the render
+    /// target, :826-827, :834-835).
+    /// </summary>
     void OnRiding(bool riding)
     {
-        Host.Invoke(PlayerInfo, "onRiding", Host.Obj(("riding", riding ? 1 : 0), ("curHP", Pc.HpCur), ("maxHP", Pc.HpMax),
-            ("curSP", (uint)Pc.SpCur), ("maxSP", (uint)Pc.SpMax)));
+        var pi = PlayerInfo;
+        if (pi == null) return;
+        if (!PcInfoTag()) return;
+        var ridee = riding ? Pc.Ridee : null;
+        int mode = RidingUi.SlotMode(riding, ridee);
+        if (slotMode == mode) return;
+        slotMode = mode;
+        SyncSlotMode();
+        var obj = Host.Obj(("riding", riding ? 1 : 0), ("curHP", Pc.HpCur), ("maxHP", Pc.HpMax),
+            ("curSP", (uint)Pc.SpCur), ("maxSP", (uint)Pc.SpMax));
+        if (mode == 1)
+        {
+            Host.Set(obj, "rideOff", ridee.EnableRideOffUI ? 1 : 0);
+            Host.Set(obj, "rideeName", Model.Tables.StringTableText(0x31, ridee.Id));
+        }
+        Host.Invoke(pi, "onRiding", obj);
+    }
+
+    /// <summary>FUN_1419f16b0 @0x1419f16b0 (uimainplayerinfo.cpp:1025-1045): visibleTag(1) unless the mount's hidePCInfo is
+    /// set, and SetHideReason(4, shown) where shown is false only for hidePCInfo 2; returns shown.</summary>
+    bool PcInfoTag()
+    {
+        var ridee = Pc.Riding ? Pc.Ridee : null;
+        bool shown = RidingUi.MainInfoShown(ridee);
+        Host.Invoke(PlayerInfo, "visibleTag", RidingUi.PcInfoShown(ridee) ? 1 : 0);
+        SetHideReason(RideHideReason, shown);
+        return shown;
     }
 
     /// <summary>The status listener slots vfunc_oa0_3..9 (uimainplayerinfo.cpp:703-759, 1021).</summary>
@@ -243,6 +293,7 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
             case StatusEvent.Job: Host.Invoke(pi, "setJob", (uint)Pc.SubJob, Model.Tables.JobName(Pc.SubJob)); break;
             case StatusEvent.Name: Host.Invoke(pi, "setName", Pc.NameWithTitle); break;
             case StatusEvent.Level: Host.Invoke(pi, "setLevel", (uint)Pc.Level); break;
+            case StatusEvent.Riding: OnRiding(Pc.Riding); break;
         }
         if (e is StatusEvent.Hp or StatusEvent.Sp or StatusEvent.Ep or StatusEvent.Level) QueueSlotRefresh(RefreshGray);     // :717-763
     }

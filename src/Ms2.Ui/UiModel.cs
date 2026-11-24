@@ -18,6 +18,7 @@ public enum StatusEvent
     State = 9,
     Unknown10 = 10,
     Merat = 11,     // the merat balance
+    Riding = 0xc,   // the own ride on (1) or off (0): MyPC::vfunc_120 / vfunc_121 (mypc.cpp:3317, :3365), listener vfunc_oa0_20
     RedMerat = 13,  // the red merat balance (OnMeretUse's NotifyStatusChanged(0xd), scenestategame.cpp:7089)
     TokenMoney = 0x14,      // NotifyChangedTokenMoney (OnCurrencyToken, scenestategame.cpp:7114)
     AdventureLevel = 0x11,  // Prestige kind 2 for the player (listener vfunc_oa0_30)
@@ -73,6 +74,8 @@ public sealed class PlayerState
     public SortedDictionary<uint, (uint Progress, bool Complete)> AdventureMissions => Adventure.Missions;
     public int Channel;
     public bool Battle, Riding;
+    /// <summary>The own mount's row while <see cref="Riding"/> (MyPC GetRidee()->GetData()); null otherwise.</summary>
+    public RideeRow Ridee;
     public string NameWithTitle => string.IsNullOrEmpty(Title) ? Name : Title + " " + Name;
 }
 

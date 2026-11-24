@@ -18,15 +18,27 @@ public static class DummyAnchor
     static readonly Transform3D ToClient = new(new Basis(new Vector3(1, 0, 0), new Vector3(0, 0, 1), new Vector3(0, -1, 0)), Vector3.Zero);
 
     /// <summary>A node's global transform as a client-world transform (rotation, uniform scale, translate).</summary>
-    public static Xform ClientWorld(Node3D node)
+    public static Xform ClientWorld(Node3D node) => ClientWorld(node.GlobalTransform);
+
+    /// <summary>A Godot world transform (a node's or a bone's) as a client-world transform.</summary>
+    public static Xform ClientWorld(in Transform3D global)
     {
-        var t = ToClient * node.GlobalTransform;
+        var t = ToClient * global;
         var b = t.Basis;
         double s = b.Column0.Length();
         if (s == 0) s = 1;
         Vector3 c0 = b.Column0 / (float)s, c1 = b.Column1 / (float)s, c2 = b.Column2 / (float)s;
         var r = new double[] { c0.X, c1.X, c2.X, c0.Y, c1.Y, c2.Y, c0.Z, c1.Z, c2.Z };
         return new Xform(new Vec3(t.Origin.X, t.Origin.Y, t.Origin.Z), r, s);
+    }
+
+    /// <summary>A client-world transform back in Godot's world, the inverse of <see cref="ClientWorld(in Transform3D)"/>.</summary>
+    public static Transform3D GodotWorld(in Xform x)
+    {
+        var r = x.R; float s = (float)x.S;
+        var b = new Basis(new Vector3((float)r[0], (float)r[3], (float)r[6]) * s, new Vector3((float)r[1], (float)r[4], (float)r[7]) * s,
+            new Vector3((float)r[2], (float)r[5], (float)r[8]) * s);
+        return ToClient.AffineInverse() * new Transform3D(b, new Vector3((float)x.T.X, (float)x.T.Y, (float)x.T.Z));
     }
 
     /// <summary>

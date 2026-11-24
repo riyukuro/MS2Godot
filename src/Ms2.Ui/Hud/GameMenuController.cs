@@ -114,6 +114,16 @@ public sealed class GameMenuController : UiController
         SetNotifyRedCircle(0x16, redCircleHome);
         SetNotifyRedCircle(7, redCircleOption);
         UpdateCharacterAbilityNotify();
+        RideVisibility();                                // FUN_141939ec0 (uigamemenudialog.cpp:1519)
+    }
+
+    /// <summary>FUN_141939ec0 @0x141939ec0 (uigamemenudialog.cpp:1543-1555): the menu shows (vfunc_3) unless the own
+    /// mount's hidePCInfo is set; RefreshMenu and the riding status event (vfunc_oa0_20, :1127-1130) run it.</summary>
+    void RideVisibility() => Host.SetVisible(Host.Entity, RidingUi.PcInfoShown(Pc.Riding ? Pc.Ridee : null));
+
+    public override void OnStatus(StatusEvent e)
+    {
+        if (e == StatusEvent.Riding) RideVisibility();
     }
 
     /// <summary>FUN_14193a140: per visible top item {row, col} and its fields (FUN_14193a7b0); the visible children go into

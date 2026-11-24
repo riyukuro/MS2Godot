@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Xml.Linq;
 using Ms2.Formats.Pack;
 using Ms2.Formats.Text;
+using Ms2.Formats.World;
 
 namespace Ms2Godot.Movement;
 
@@ -38,6 +39,26 @@ public sealed class RideData
     public bool HideRider;
     /// <summary>rideSummonCastTime in seconds, null without it (RideeData::Basic, ridingtable.cpp:360-361).</summary>
     public float? SummonCastTime;
+    /// <summary>basic hidePCInfo (m_basic.m_nHidePCInfo, an int query): non-zero hides the own player info tag, the exp
+    /// bars, the minimap's players and the game menu, and refuses three window keys; 2 also hides the main player info,
+    /// and above 1 the ride-on closes six windows (<see cref="Ms2.Ui.RideeRow"/>).</summary>
+    public int HidePCInfo;
+    /// <summary>basic useRidingUI (m_basic.m_nUseRidingUI, XmlGetBool): the main player info's riding slot mode
+    /// (UIMainPlayerInfo::vfunc_oa0_20, uimainplayerinfo.cpp:820).</summary>
+    public bool UseRidingUI;
+    /// <summary>basic showRideeNameTag (m_basic.m_nShowRideeNameTag, XmlGetBool): the rider's name tag shows the mount's
+    /// name (PC::vfunc_77, pc.cpp:1528-1538).</summary>
+    public bool ShowRideeNameTag;
+    /// <summary>basic skillSetID (m_basic.m_nSkillSetId): the skill set MyPC::vfunc_120 adds (mypc.cpp:3301).</summary>
+    public int SkillSetId;
+    /// <summary>basic loopEffect (m_basic.m_strLoopEffect): the effect Ridee::vfunc_12 starts at the mount once its model
+    /// is in (ridee.cpp:527-534); null without one.</summary>
+    public string LoopEffect;
+    /// <summary>The default rider's nameTagOffsetY / hpBarOffsetY / nameTagHide / useRidingNavi (RideeData::Rider read
+    /// from &lt;basic&gt;, ridingtable.cpp:171-177): Ridee::vfunc_89 / GetHpBarOffsetY (ridee.cpp:1127-1143), the name tag
+    /// and HP bar hide of a rider (uinametag.cpp:331, uihpbar.cpp:209) and the quest beam (questnavigator.cpp:479).</summary>
+    public float NameTagOffsetY, HpBarOffsetY;
+    public bool NameTagHide, UseRidingNavi;
     public float[] RideTranslation = new float[3], RideRotation = new float[3];
     public string AniPC = "Ride_Idle_A", AniPCIdle, AniPCRun, AniPCJump, AniPCSPIdle, AniPCSPRun, AniPCSPJump;
     /// <summary>RideeData::Collision (@0x140783800): the box size, 100 each when absent (ctor @0x1407836e0), and whether the
@@ -82,6 +103,15 @@ public sealed class RideData
             EnableRideOffUI = QueryBool((string)b.Attribute("enableRideOffUI"), false),
             RideOffBySkillEffect = (string)b.Attribute("rideOffBySkillEffect"),
             HideRider = QueryBool((string)b.Attribute("hideRider"), false),
+            HidePCInfo = (int)F(b, "hidePCInfo", 0),
+            UseRidingUI = QueryBool((string)b.Attribute("useRidingUI"), false),
+            ShowRideeNameTag = QueryBool((string)b.Attribute("showRideeNameTag"), false),
+            SkillSetId = (int)F(b, "skillSetID", 0),
+            LoopEffect = (string)b.Attribute("loopEffect") is { Length: > 0 } loop ? loop : null,
+            NameTagOffsetY = F(b, "nameTagOffsetY", 0),
+            HpBarOffsetY = F(b, "hpBarOffsetY", 0),
+            NameTagHide = F(b, "nameTagHide", 0) != 0,
+            UseRidingNavi = F(b, "useRidingNavi", 0) != 0,
             RideTranslation = V(b, "rideTranslation"),
             RideRotation = V(b, "rideRotation"),
         };
@@ -111,8 +141,47 @@ public sealed class RideData
             var seat = RideSeat.Read(p);
             d.Seats[seat.Id] = seat;
         }
+        // The GMS2 data keeps a mount's passengers apart, in riding/passenger/%08d.xml (&lt;ms2&gt;&lt;ridepassenger
+        // passengerid rideBone ...&gt;, one element per seat, the attributes of a KMS &lt;passenger&gt;); the KMS reader
+        // (Passengers::FUN_140784010) only knows the row's own &lt;passengers&gt;, so this is the GMS2 layout, read when the
+        // row has none.
+        if (d.Seats.Count == 0 && packs.Exists("Xml", $"riding/passenger/{id:D8}.xml"))
+            foreach (var p in PackXml.Parse(packs.Read("Xml", $"riding/passenger/{id:D8}.xml")).Root?.Elements("ridepassenger")
+                         ?? Enumerable.Empty<XElement>())
+            {
+                var seat = RideSeat.Read(p);
+                d.Seats[seat.Id] = seat;
+            }
+        d.EffectDummies = LoadEffectDummies(packs, id);
         return d;
     }
+
+    /// <summary>
+    /// CRideeData::m_effectDummies, LoadRidingEffectDummy @0x140784de0 (ridingtable.cpp:784-829): a copy of the common
+    /// rows (CommonEffectDummy, table/defaulteffectdummy.xml), then each &lt;ms2&gt;&lt;effectdummy&gt;&lt;dummy&gt; of
+    /// Xml riding/effectdummy/%08d.xml parsed over the first row of its name or added at the end, as an npc's
+    /// (<see cref="EffectDummyTable.MergeNpc"/>). Ridee::vfunc_12 attaches them before it looks the seat up by name
+    /// (ridee.cpp:496-500), so a rideBone such as Eff_Head or Eff_UI is one of these.
+    /// </summary>
+    public IReadOnlyList<EffectDummy> EffectDummies = Array.Empty<EffectDummy>();
+
+    static IReadOnlyList<EffectDummy> LoadEffectDummies(PackSet packs, int id)
+    {
+        var defaults = CommonDummies.GetValue(packs, p => EffectDummyTable.Load(p).Default);
+        string entry = $"riding/effectdummy/{id:D8}.xml";
+        return packs.Exists("Xml", entry) ? EffectDummyTable.MergeNpc(defaults, PackXml.Parse(packs.Read("Xml", entry)).Root) : defaults;
+    }
+
+    /// <summary>The common rows per pack set, read once.</summary>
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, IReadOnlyList<EffectDummy>> CommonDummies = new();
+
+    /// <summary>CRideeData::GetKfmName (ridingtable.cpp:684-689): kfm2 for a rider of gender 0 when the row has one, else
+    /// kfm. Ridee::FUN_1417043a0 passes the PC rider's GetGender, 1 for any other rider (ridee.cpp:417-420).</summary>
+    public string KfmFor(int gender) => gender == 0 && !string.IsNullOrEmpty(Kfm2) ? Kfm2 : Kfm;
+
+    /// <summary>The row's UI part (<see cref="Ms2.Ui.RideeRow"/>), what the HUD reads of the own mount.</summary>
+    public Ms2.Ui.RideeRow UiRow => uiRow ??= new(Id, HidePCInfo, UseRidingUI, EnableRideOffUI, ShowRideeNameTag, NameTagHide, UseRidingNavi);
+    Ms2.Ui.RideeRow uiRow;
 
     /// <summary>The rider sequences StateRide picks from (<see cref="Ms2.Net.Replay.StateRideAnim"/>).</summary>
     public Ms2.Net.Replay.RiderSequences Rider => new(AniPC, AniPCIdle, AniPCRun, AniPCJump, AniPCSPIdle, AniPCSPRun, AniPCSPJump);

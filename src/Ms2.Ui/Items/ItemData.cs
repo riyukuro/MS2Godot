@@ -168,6 +168,15 @@ public sealed class ItemData
             Int(p, "socketDataId", ref d.SocketDataId);
             Int(p, "gearScore", ref d.GearScore);
             Int(p, "unlimitedEnchantMaxGrade", ref d.UnlimitedEnchantMaxGrade);
+            // INFERRED: no GMS2 item file writes param1 on <property>; a ride item (type 9) names its mount in <ride rideMonster>
+            // and a pet (type 11) its pet in <pet petID>. All 331 GMS2 ride items name an existing riding row, and of the items
+            // KMS also has, 316 of 325 rides and all 203 pets carry KMS's param1 there. STILL-OPEN: the GMS2 client's reader is not
+            // in the restored source.
+            if (p.Attribute("param1") == null)
+            {
+                if (d.Type == 9 && env.Element("ride") is { } ride) Int(ride, "rideMonster", ref d.Param1);
+                else if (d.Type == 0xb && env.Element("pet") is { } pet) Int(pet, "petID", ref d.Param1);
+            }
         }
         if (env.Element("limit") is { } l)
         {

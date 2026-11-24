@@ -26,8 +26,7 @@ namespace Ms2Godot.Net;
 /// (Entity::vfunc_8's m_54, the actor's camera distance; 9999999 in the shipped table).</item>
 /// </list>
 /// Not ported: the PvP rules (HasPvPPoint, PC::vfunc_122's relation, FUN_1419923f0's hostile branch) — without a PvP
-/// state every bar draws rank 1 and the friendly gauge — the optimizer's spawn gate (FUN_14123dbd0) and the mount's
-/// tag-hiding (the ridee's m_nNameTagHide).
+/// state every bar draws rank 1 and the friendly gauge — and the optimizer's spawn gate (FUN_14123dbd0).
 /// </summary>
 public sealed partial class LiveHpBars : CanvasLayer, IMovieLayer
 {
@@ -36,6 +35,7 @@ public sealed partial class LiveHpBars : CanvasLayer, IMovieLayer
         public Node3D Root; public Func<Vector3> Anchor; public float Offset;
         public NpcHpBar Npc; public NpcRow Row;          // npcs
         public PcHpBar Pc; public long CharId;           // players
+        public Movement.RideData Ride;                   // players: the mount's row while riding
     }
 
     readonly Dictionary<Node3D, Entry> bars = new();
@@ -116,6 +116,14 @@ public sealed partial class LiveHpBars : CanvasLayer, IMovieLayer
         return bar;
     }
 
+    /// <summary>The player's ride on (the mount's row) or off (null): the bar moves by the default rider's hpBarOffsetY
+    /// (PCBase::FUN_141670390, pcbase.cpp:2327-2334) and hides with its nameTagHide (UIHpBar::Entity::vfunc_8,
+    /// uihpbar.cpp:204-211).</summary>
+    public void Ride(Node3D root, Movement.RideData ride)
+    {
+        if (root != null && bars.TryGetValue(root, out var e)) e.Ride = ride;
+    }
+
     /// <summary>The actor left the field (ReleaseEntity): its bar goes with it.</summary>
     public void Remove(Node3D root)
     {
@@ -144,14 +152,14 @@ public sealed partial class LiveHpBars : CanvasLayer, IMovieLayer
             // vfunc_10), then the bar's vfunc_8 rules, the distance check last (Entity::vfunc_8's m_54)
             Vector2? p = null;
             bool far = true;
-            if (layer && Shown(e))
+            if (layer && Shown(e) && e.Ride is not { NameTagHide: true })
             {
                 var a = e.Anchor();
                 if (!camera.IsPositionBehind(a))
                 {
                     far = eye.DistanceTo(e.Root.GlobalPosition) > distance;   // Entity::vfunc_8: FUN_140f48e20() > m_54
                     var s = camera.UnprojectPosition(a);
-                    s.Y += (e.Offset + (field == null ? 0 : PlayerNameTag.PitchShift(field, a))) * u;
+                    s.Y += (e.Offset + (e.Ride?.HpBarOffsetY ?? 0) + (field == null ? 0 : PlayerNameTag.PitchShift(field, a))) * u;
                     p = s;
                 }
             }

@@ -730,7 +730,13 @@ public sealed partial class RemoteLayer : Node3D
 
     /// <summary>The member's bar, made on demand (PC::vfunc_80 is called from UpdateHpBar, OnStat and a hit, so the
     /// entity is made at the first of those, not at the spawn).</summary>
-    PcHpBar EnsureBar(Remote r) => r.Bar ??= CanPcBar(r.CharacterId) ? bars.AddPc(r.Root, r.Anchor, r.CharacterId) : null;
+    PcHpBar EnsureBar(Remote r)
+    {
+        if (r.Bar != null || !CanPcBar(r.CharacterId)) return r.Bar;
+        r.Bar = bars.AddPc(r.Root, r.Anchor, r.CharacterId);
+        bars.Ride(r.Root, r.Ridee?.Mount?.Data);
+        return r.Bar;
+    }
 
     void Drain()
     {

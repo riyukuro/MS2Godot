@@ -56,7 +56,7 @@ public partial class HudScene
             NearestNpc = QuestNavigationNearestNpc,
             NearestInteract = QuestNavigationNearestInteract,
             Portals = () => questNavigationPortals,
-            CanShowBeam = () => player != null,
+            CanShowBeam = QuestBeamAllowed,
             LoadTracked = () => questNavigationTracked,
             SaveTracked = id => questNavigationTracked = id,
         };
@@ -66,7 +66,7 @@ public partial class HudScene
         var c = questNavigation = new QuestNavigationController
         {
             FieldId = FieldNow,
-            CanShowBeam = () => player != null,
+            CanShowBeam = QuestBeamAllowed,
             PlayerPosition = () => QuestNavigationPlayer() is { } p ? new QuestNavigationController.Point((float)p.X, (float)p.Y, (float)p.Z) : null,
             NpcDead = id => questNavigationNpcs.TryGetValue(id, out var n) ? QuestNavigationNpcDead(id, n) : null,
             NpcAnchor = id => questNavigationNpcs.TryGetValue(id, out var n) ? NpcAnchorOf(n) : null,

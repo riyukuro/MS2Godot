@@ -32,6 +32,8 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
         public NpcRow Row; public bool Dead;          // npcs
         public long CharacterId; public bool Self;    // players
         public Color Color;
+        public string Title = "", Name = "";           // players: the title prefix ("{title} ") and PC::vfunc_77's name
+        public Movement.RideData Ride;                 // players: the mount's row while riding
     }
 
     readonly Dictionary<Node3D, Tag> tags = new();
@@ -120,17 +122,18 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
         Remove(root);
         if (movie == null) return;
         var user = add.User;
-        string name = user.Name ?? "";
-        if (add.Title != 0 && tables.TitleName(add.Title) is { Length: > 0 } title) name = title + " " + name;
+        string name = user.Name ?? "", prefix = "";
+        if (add.Title != 0 && tables.TitleName(add.Title) is { Length: > 0 } title) prefix = title + " ";
         string guild = string.IsNullOrEmpty(user.GuildName) ? "" : "<" + user.GuildName + ">";
         var color = self ? myColor : pcColor;
-        var node = NpcPresence.BuildTag(movie, u, name, guild, color);
+        var node = NpcPresence.BuildTag(movie, u, prefix + name, guild, color);
         if (node == null) return;
         Symbol(node, add, guild.Length > 0);
         var dummies = EffectDummyTable.Load(packs).Pc(user.Gender);
         Add(new Tag
         {
             Root = root, Node = node, Offset = pcOffset, CharacterId = user.CharacterId, Self = self, Color = color,
+            Title = prefix, Name = name,
             Anchor = () => DummyAnchor.Point(dummies, "Eff_UI", model, rootName) ?? root.GlobalPosition,
         });
     }
@@ -172,6 +175,21 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
         tags[t.Root] = t;
     }
 
+    /// <summary>
+    /// The player's ride on (its mount's row) or off (null): PCBase::vfunc_120 / vfunc_121 refresh the tag
+    /// (vfunc_82()->FUN_140f48d80, pcbase.cpp:3335-3339), whose name is PC::vfunc_77, the mount's name (string table 0x31)
+    /// for a row with showRideeNameTag (pc.cpp:1528-1538). While riding the tag moves by the default rider's nameTagOffsetY
+    /// (PCBase::vfunc_89, pcbase.cpp:2339-2346) and hides with its nameTagHide (UINameTag::Entity::vfunc_8,
+    /// uinametag.cpp:327-333).
+    /// </summary>
+    public void Ride(Node3D root, Movement.RideData ride)
+    {
+        if (root == null || !tags.TryGetValue(root, out var t) || t.Row != null) return;
+        t.Ride = ride;
+        string name = ride is { ShowRideeNameTag: true } ? tables.StringTableText(0x31, ride.Id) : t.Name;
+        if (t.Node.FindClip("m_name") is { } clip) NpcPresence.SetLabel(clip, t.Title + name, null, t.Color);
+    }
+
     /// <summary>The actor left the field: its tag goes with it.</summary>
     public void Remove(Node3D root)
     {
@@ -207,12 +225,12 @@ public sealed partial class LiveNameTags : CanvasLayer, IMovieLayer
             }
             var head = t.Anchor();
             float d = eye.DistanceTo(t.Root.GlobalPosition);
-            bool on = layer && Shown(t) && NpcPresence.InRange(d) && !camera.IsPositionBehind(head);
+            bool on = layer && Shown(t) && t.Ride is not { NameTagHide: true } && NpcPresence.InRange(d) && !camera.IsPositionBehind(head);
             t.Node.Visible = on;
             if (!on) continue;
             t.Node.Modulate = new Color(1, 1, 1, NpcPresence.TagAlpha(d));
             var p = camera.UnprojectPosition(head);
-            p.Y += (t.Offset + (field == null ? 0 : PlayerNameTag.PitchShift(field, head))) * u;
+            p.Y += (t.Offset + (t.Ride?.NameTagOffsetY ?? 0) + (field == null ? 0 : PlayerNameTag.PitchShift(field, head))) * u;
             t.Node.Position = UiScale.StagePoint(p, u);
         }
         if (gone != null) foreach (var r in gone) if (tags.Remove(r, out var t)) t.Node.QueueFree();

@@ -426,6 +426,52 @@ public partial class LiveSession
                 Shows("the follow camera");
                 continue;
             }
+            if (step.StartsWith("rideraw:"))      // rideraw:<ride id>: the own pc rides the row by a ResponseRide mode 0 the server's debug packet command sends, then rides off (mode 1)
+            {
+                int rideId = int.Parse(step[8..]);
+                if (hud.ClearShotScripted()) GD.Print("live: combat level-up guide closed for the shots");
+                bool sent = hud.SubmitChatLine("/debug packet " + live.OwnRideBytes(true, rideId, 0x7e000100 + (rideId & 0xff)));
+                await until(() => live.OwnRidee?.Id == rideId, 60 * 8);
+                await frames(90);
+                Check($"rideraw {rideId}: riding (sent {sent}); {hud.RideHudScripted()}", live.OwnRidee?.Id == rideId);
+                Shot($"ride_{rideId}_on.png");
+                hud.DriveTowardScripted(live.OwnPlayer.GlobalPosition + new Vector3(400, 0, 0), false);
+                await frames(60);
+                Shot($"ride_{rideId}_run.png");
+                hud.DriveEnd();
+                await frames(30);
+                hud.SubmitChatLine("/debug packet " + live.OwnRideBytes(false, rideId, 0));
+                await until(() => live.OwnRidee == null, 60 * 8);
+                await frames(60);
+                Check($"rideraw {rideId}: off; {hud.RideHudScripted()}", live.OwnRidee == null);
+                Shot($"ride_{rideId}_off.png");
+                continue;
+            }
+            if (step.StartsWith("rideitem:"))      // rideitem:<item id>: the item into the bag (the server's GM item command), used as from a quickslot (the summon cast, then RequestRide), then used again to ride off
+            {
+                int itemId = int.Parse(step[9..]);
+                if (hud.ClearShotScripted()) GD.Print("live: combat level-up guide closed for the shots");
+                long Uid() { foreach (var e in live.Items.All) if (e.Id == itemId) return e.Uid; return 0; }
+                if (Uid() == 0) { hud.SubmitChatLine($"/item {itemId}"); await until(() => Uid() != 0, 60 * 5); }
+                long uid = Uid();
+                int ridee = hud.ItemRideeScripted(itemId);
+                live.UseRideeItem(uid);
+                await until(() => live.OwnRidee != null, 60 * 12);
+                await frames(90);
+                Check($"rideitem {itemId} (uid {uid}, ridee {ridee}): riding {live.OwnRidee?.Id}; {hud.RideHudScripted()}", live.OwnRidee?.Id == ridee && ridee != 0);
+                Shot($"rideitem_{itemId}_on.png");
+                hud.DriveTowardScripted(live.OwnPlayer.GlobalPosition + new Vector3(400, 0, 0), false);
+                await frames(60);
+                Shot($"rideitem_{itemId}_run.png");
+                hud.DriveEnd();
+                await frames(30);
+                live.UseRideeItem(uid);
+                await until(() => live.OwnRidee == null, 60 * 8);
+                await frames(60);
+                Check($"rideitem {itemId}: off; {hud.RideHudScripted()}", live.OwnRidee == null);
+                Shot($"rideitem_{itemId}_off.png");
+                continue;
+            }
             if (step.StartsWith("ownstate:"))      // ownstate:<hex id>[:move]: the server's raw UserState for the own pc (its debug packet command), the exit timed
             {
                 string[] parts = step[9..].Split(':');

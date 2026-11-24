@@ -5,6 +5,7 @@ using Ms2.Formats.Nif;
 using Ms2.Formats.Pack;
 using Ms2Godot.Movement;
 using Ms2.Formats.Text;
+using Ms2.Formats.World;
 
 namespace Ms2Godot;
 
@@ -20,6 +21,9 @@ public sealed class Mount
     public AnimationPlayer Anim;
     public Skeleton3D Skeleton;
     public int SeatBone = -1;
+    /// <summary>The rideBone names one of the ridee's effect dummies rather than a model node (<see cref="SeatWorld"/>).</summary>
+    public bool SeatDummy;
+    Node3D model;
     public string Current = "";
     Dictionary<string, string> actions = NoActions;
     static readonly Dictionary<string, string> NoActions = new();
@@ -39,29 +43,70 @@ public sealed class Mount
         return actionsCache = a;
     }
     KfmFile kfm;
-    string folder, kfmEntry;
+    string folder, kfmEntry, archive = NpcArchive;
+
+    /// <summary>
+    /// The archives a model asset is looked up in by its file name, in this order. The client's asset locator resolves the
+    /// urn by name over the whole Resource tree (its index is not read); the mounts' kfms are in Npc but for one in Map
+    /// (99920104, the royal city cat wheel), and the object mounts' nifs are in Map, Npc or Effect. The order is the
+    /// port's: a name in two archives takes Npc's.
+    /// </summary>
+    public static readonly string[] ModelArchives = { NpcArchive, "Resource/Model/Map", "Resource/Model/Item", "Resource/Model/Effect" };
+
+    /// <summary>The (archive, entry) of a model file by its lower-case file name, or (null, null).</summary>
+    public static (string Archive, string Entry) FindModel(PackSet packs, string fileName)
+    {
+        foreach (var a in ModelArchives)
+            if (packs.FindByFileName(a, fileName) is { } e) return (a, e);
+        return (null, null);
+    }
+
+    static string NifFileName(string nif)
+    {
+        nif = Path.GetFileName(nif.Replace('\\', '/')).ToLowerInvariant();
+        return nif.EndsWith(".nif") ? nif : nif + ".nif";
+    }
     PackSet packs;
     ModelBuilder mb;
     ModelData md;
 
-    public static Mount Load(PackSet packs, ModelBuilder mb, int rideId)
+    /// <summary>
+    /// Ridee::FUN_1417043a0 (ridee.cpp:411-445): the row's model for a rider of <paramref name="gender"/>
+    /// (CRideeData::GetKfmName: kfm2 for gender 0 when the row has one; a rider that is not a PC passes 1). A row with a kfm
+    /// is the asset "urn:gamebryo-animation:" + kfm, the kfm's own nif (the row's nif is not read then); one without is
+    /// "urn:gamebryo-scenegraph:" + nif as an "MS2PropCollide" (the object mounts: no kfm, no sequences). The asset is found
+    /// by name (<see cref="FindModel"/>); neither name gives no ridee (the client returns 0).
+    /// </summary>
+    public static Mount Load(PackSet packs, ModelBuilder mb, int rideId, int gender = 1)
     {
         var d = RideData.Load(packs, rideId);
-        string want = (d.Kfm ?? "").ToLowerInvariant() + ".kfm";
-        string kfmEntry = packs.List(NpcArchive).FirstOrDefault(e => e.EndsWith("/" + want, StringComparison.OrdinalIgnoreCase))
-                          ?? throw new FileNotFoundException($"riding {rideId}: kfm {d.Kfm} not in the Npc pack");
-        if (!mb.TextureArchives.Contains(NpcArchive)) mb.TextureArchives = mb.TextureArchives.Prepend(NpcArchive).ToArray();
-        var m = new Mount { Data = d, packs = packs, mb = mb, folder = kfmEntry[..kfmEntry.LastIndexOf('/')], kfmEntry = kfmEntry };
-        m.kfm = KfmFile.Load(packs.Read(NpcArchive, kfmEntry));
-        string nif = string.IsNullOrEmpty(d.Nif) ? m.kfm.Nif.Replace('\\', '/').TrimStart('.', '/') : d.Nif;
-        nif = Path.GetFileName(nif).ToLowerInvariant();
-        if (!nif.EndsWith(".nif")) nif += ".nif";
-        m.md = mb.LoadModel(NpcArchive, $"{m.folder}/{nif}");
+        string kfmName = d.KfmFor(gender);
+        var m = new Mount { Data = d, packs = packs, mb = mb };
+        string nifArchive, nifEntry;
+        if (!string.IsNullOrEmpty(kfmName))
+        {
+            (m.archive, m.kfmEntry) = FindModel(packs, kfmName.ToLowerInvariant() + ".kfm");
+            if (m.kfmEntry == null) throw new FileNotFoundException($"riding {rideId}: kfm {kfmName} not in the model packs");
+            m.folder = m.kfmEntry[..m.kfmEntry.LastIndexOf('/')];
+            m.kfm = KfmFile.Load(packs.Read(m.archive, m.kfmEntry));
+            nifArchive = m.archive;
+            nifEntry = $"{m.folder}/{NifFileName(m.kfm.Nif.Replace('\\', '/').TrimStart('.', '/'))}";
+        }
+        else if (!string.IsNullOrEmpty(d.Nif))
+        {
+            (nifArchive, nifEntry) = FindModel(packs, NifFileName(d.Nif));
+            if (nifEntry == null) throw new FileNotFoundException($"riding {rideId}: nif {d.Nif} not in the model packs");
+        }
+        else throw new InvalidDataException($"riding {rideId}: no kfm and no nif");
+        if (!mb.TextureArchives.Contains(nifArchive)) mb.TextureArchives = mb.TextureArchives.Prepend(nifArchive).ToArray();
+        m.md = mb.LoadModel(nifArchive, nifEntry);
         m.Visual = mb.Build(m.md, "Mount");
         m.Visual.Scale = Vector3.One * d.Scale;
         m.Anim = m.Visual.GetNode<AnimationPlayer>("Model/AnimationPlayer");
         m.Skeleton = m.Visual.GetNode<Skeleton3D>($"Model/{ModelBuilder.SkeletonName}");
         m.SeatBone = string.IsNullOrEmpty(d.RideBone) ? -1 : m.Skeleton.FindBone(d.RideBone);
+        m.model = m.Visual.GetNodeOrNull<Node3D>("Model");
+        m.SeatDummy = m.SeatBone < 0 && !string.IsNullOrEmpty(d.RideBone) && EffectDummyTable.Find(d.EffectDummies, d.RideBone) != null;
 
         m.actions = Actions(packs);
         return m;
@@ -133,7 +178,7 @@ public sealed class Mount
         string x = kfmEntry[..^4] + ".xml";
         if (XmlKeyCache.TryGetValue(x, out var map)) return map;
         map = new Dictionary<string, List<(double, string)>>(StringComparer.Ordinal);
-        var root = packs.Exists(NpcArchive, x) ? PackXml.Parse(packs.Read(NpcArchive, x)).Root : null;
+        var root = packs.Exists(archive, x) ? PackXml.Parse(packs.Read(archive, x)).Root : null;
         if (root?.Name.LocalName == "ms2")
             foreach (var el in root.Elements())
             {
@@ -161,8 +206,8 @@ public sealed class Mount
         if (s == null) return null;
         string kfName = Path.GetFileName(s.KfPath.Replace('\\', '/'));
         string entry = $"{folder}/{kfName.ToLowerInvariant()}";
-        if (!packs.Exists(NpcArchive, entry)) return null;
-        var kf = KfAnimation.Load(NifFile.Load(mb.Spec, packs.Read(NpcArchive, entry)));
+        if (!packs.Exists(archive, entry)) return null;
+        var kf = KfAnimation.Load(NifFile.Load(mb.Spec, packs.Read(archive, entry)));
         var keys = new List<(double time, string text)>(kf.TextKeys);
         // the kf's keys, then the xml's, unsorted (NiTextKeyExtraData.cpp:69-72); the xml element is named like the kf file
         if (XmlKeys().TryGetValue(Path.GetFileNameWithoutExtension(kfName), out var extra)) keys.AddRange(extra);
@@ -180,8 +225,29 @@ public sealed class Mount
     /// </summary>
     public Transform3D Seat()
     {
-        ClientSeat(BoneWorld(SeatBone), Data.RideTranslation, Data.RideRotation, out var pos, out var r);
+        ClientSeat(SeatWorld(), Data.RideTranslation, Data.RideRotation, out var pos, out var r);
         return new Transform3D(ToGodot * r * ToClient, ToGodot * pos);
+    }
+
+    /// <summary>
+    /// m_spSeat, pRoot-&gt;GetObjectByName(rideBone) (ridee.cpp:500): a node of the model, else one of the effect dummies
+    /// vfunc_12 has just attached (<see cref="RideData.EffectDummies"/>; 33 KMS rows seat the rider on Eff_Head or Eff_UI,
+    /// which no nif has). With neither, the client makes no RideeInterpolator; the port keeps the rider on the mount's root.
+    /// </summary>
+    public Transform3D SeatWorld()
+    {
+        if (SeatBone >= 0) return BoneWorld(SeatBone);
+        if (SeatDummy && model != null
+            && DummyWorld.Find(Data.EffectDummies, Data.RideBone, World.DummyAnchor.ClientWorld(model), md.RootName, BoneClientWorld) is { } w)
+            return World.DummyAnchor.GodotWorld(w);
+        return Visual.GlobalTransform;
+    }
+
+    /// <summary>A dummy's parent that is a node of the model: the bone's world transform in the client's axes.</summary>
+    Xform? BoneClientWorld(string name)
+    {
+        int b = Skeleton.FindBone(name);
+        return b < 0 ? null : World.DummyAnchor.ClientWorld(Skeleton.GlobalTransform * Skeleton.GetBoneGlobalPose(b));
     }
 
     static readonly Basis ToGodot = new(Vector3.Right, -Mathf.Pi / 2), ToClient = ToGodot.Inverse();   // MS2 (Z-up) <-> Godot

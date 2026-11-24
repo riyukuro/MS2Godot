@@ -1869,9 +1869,9 @@ public partial class HudScene : Node, IUiStageHost
         if (k.Keycode == Key.Escape && WorldMapOpen) { worldMapSide.Close(); return true; }
         if (gameDictionary?.IsClosed == false && k.Keycode == Key.Enter && gameDictionary.EnterKey()) return true;
         if (inventory?.IsClosed == false && k.Keycode == Key.Enter && inventory.EnterKey()) return true;
-        if (actions && k.PhysicalKeycode == Key.I) { ToggleInventory(); return true; }     // action 400001 (DIK 23, I): ToggleDialog(0x4e2d)
-        if (actions && k.PhysicalKeycode == Key.P) { ToggleMyInfo(); return true; }        // action 400002 (DIK 25, P): ToggleDialog(0x2711), keytable.cpp:738
-        if (actions && k.PhysicalKeycode == Key.K) { ToggleSkillBook(); return true; }     // action 400005 (DIK 37, K): ToggleDialog(0x4f2d)
+        if (actions && k.PhysicalKeycode == Key.I) { if (!RideRefusesKey(0x61a81)) ToggleInventory(); return true; }     // action 400001 (DIK 23, I): ToggleDialog(0x4e2d)
+        if (actions && k.PhysicalKeycode == Key.P) { if (!RideRefusesKey(0x61a82)) ToggleMyInfo(); return true; }        // action 400002 (DIK 25, P): ToggleDialog(0x2711), keytable.cpp:738
+        if (actions && k.PhysicalKeycode == Key.K) { if (!RideRefusesKey(0x61a85)) ToggleSkillBook(); return true; }     // action 400005 (DIK 37, K): ToggleDialog(0x4f2d)
         if (actions && Ms2.Ui.Hud.SkillCompactControlController.OpensWithKey(hudModel.Keys, DikOfGodotKey(k.PhysicalKeycode)))
         { ToggleSkillCompact(); return true; }   // action 400031: ToggleDialog(0x4ef6), no default key
         bool open = questLog != null && questLogSide?.IsClosed == false;
@@ -2859,7 +2859,7 @@ public partial class HudScene : Node, IUiStageHost
             foreach (var e in changed) model.Notify(e);
             if (model != hudModel) return;
             OwnMinimapPicture(live);
-            if (changed.Contains(Ms2.Ui.StatusEvent.Name)) playerNameTag?.SetName(model.Player.Name);
+            if (changed.Contains(Ms2.Ui.StatusEvent.Name)) playerNameTag?.SetName(OwnTagName());
             if (changed.Contains(Ms2.Ui.StatusEvent.Hp))
             {
                 damageEffect?.Hp(model.Player.HpCur, model.Player.HpMax);
@@ -2869,6 +2869,10 @@ public partial class HudScene : Node, IUiStageHost
         Sync();
         live.Me.Changed += Sync;
         unwatchLivePlayer += () => live.Me.Changed -= Sync;
+        if (model != hudModel) return;
+        SetOwnRide(model, live.OwnRidee);               // the own pc's ride as the HUD loads (MyPC::IsRiding)
+        live.OwnRideChanged += OnOwnRide;
+        unwatchLivePlayer += () => live.OwnRideChanged -= OnOwnRide;
     }
 
     /// <summary>

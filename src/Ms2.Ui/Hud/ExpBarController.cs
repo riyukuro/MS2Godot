@@ -26,12 +26,17 @@ public sealed class ExpBarController : UiController
     {
         UpdateExp(3);
         Host.SetVisible(Host.Child("m_point"), ShowPoint);
+        RideVisibility();
     }
 
     public override void OnStatus(StatusEvent e)
     {
         if (e is StatusEvent.Exp or StatusEvent.Level) UpdateExp(3);
+        if (e == StatusEvent.Riding) RideVisibility();          // vfunc_oa0_20 (uiexpbar.cpp:253-256)
     }
+
+    /// <summary>FUN_141932430 (uiexpbar.cpp:168-184): the bar hides while the own mount's hidePCInfo is set.</summary>
+    void RideVisibility() => Host.SetVisible(Host.Entity, RidingUi.PcInfoShown(Pc.Riding ? Pc.Ridee : null));
 
     /// <summary>UpdateExp (uiexpbar.cpp:115): setExp(cur %, rest %, text, flags); text only with flag 1.</summary>
     public void UpdateExp(uint flags)

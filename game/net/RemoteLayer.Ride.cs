@@ -59,7 +59,7 @@ public sealed partial class RemoteLayer
     {
         if (a == null || r.Ridee != null) return;
         Mount m;
-        try { m = Mount.Load(packs, builder, a.RideId); }
+        try { m = Mount.Load(packs, builder, a.RideId, r.Gender); }
         catch (Exception ex) { GD.PushWarning($"live: riding {a.RideId} of {r.Name}: {ex.Message}"); return; }
         var ridee = RemotePc.CreateRidee($"Ridee{r.ObjectId}", m, gravity, r.Pc.Body.Position + Vector3.Up * 25f, r.Pc.RotationZ, faceGrids);
         AddChild(ridee.Body);
@@ -77,6 +77,8 @@ public sealed partial class RemoteLayer
         r.Pc.States.RideOn(ridee.States, r.HpCur, r.HpMax);
         PlayRideEffect(r, CommonPath(ref rideOnPath, LiveSession.RideOnEffectKey));   // pcbase.cpp:3324-3330
         if (m.Data.HideRider) r.Pc.SetHideReason(RemotePc.HideReasonRide, true);       // :3331-3333
+        tags.Ride(r.Root, m.Data);        // the tag refresh (vfunc_82()->FUN_140f48d80, pcbase.cpp:3335-3339)
+        bars.Ride(r.Root, m.Data);
         r.NoBoarding = a.Flag;            // PC::FUN_1416642c0(m_b28), pcbase.cpp:3341-3343
     }
 
@@ -93,6 +95,8 @@ public sealed partial class RemoteLayer
         if (ridee.Mount?.Data?.HideRider == true) r.Pc.SetHideReason(RemotePc.HideReasonRide, false);   // pcbase.cpp:3402-3404
         Dismount(r.Pc, r.Visual, ridee, r.HpCur, r.HpMax);
         FreeRidee(r);
+        tags.Ride(r.Root, null);
+        bars.Ride(r.Root, null);
         PlayRideEffect(r, CommonPath(ref rideOffPath, LiveSession.RideOffEffectKey));   // pcbase.cpp:3416-3422
         PlayRideEffect(r, skillEffect);                                                  // :3423-3429
     }

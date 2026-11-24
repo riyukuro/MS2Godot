@@ -111,13 +111,19 @@ public sealed partial class PlayerNameTag : CanvasLayer
         if (camera == null) return;
         var anchor = DummyAnchor.Point(dummies, "Eff_UI", model, player.RootName) ?? player.GlobalPosition;
         Anchor = anchor;
-        bool on = !camera.IsPositionBehind(anchor);
+        var ride = Ride;
+        bool on = !camera.IsPositionBehind(anchor) && ride is not { NameTagHide: true };   // vfunc_8 (uinametag.cpp:327-333)
         node.Visible = on;
         if (!on) return;
         var p = camera.UnprojectPosition(anchor);
-        p.Y += (offset + HeightAdjust(anchor)) * u;      // vfunc_6 works in stage units: screen point / u, then the shifts
+        // vfunc_6 works in stage units: screen point / u, then the shifts; vfunc_9 = PCBase::vfunc_89 adds the mount's
+        // default rider nameTagOffsetY (Ridee::vfunc_89, pcbase.cpp:2339-2346)
+        p.Y += (offset + (ride?.NameTagOffsetY ?? 0) + HeightAdjust(anchor)) * u;
         node.Position = UiScale.StagePoint(p, u);
     }
+
+    /// <summary>The own mount's row while the player rides (PCBase::GetRidee()->GetData()), else null.</summary>
+    public Movement.RideData Ride => player != null && IsInstanceValid(player) ? player.Mount?.Data : null;
 
     /// <summary>The own PC's Eff_UI point this frame (its position when the dummy is missing), null before the player is found.</summary>
     public Vector3? Anchor { get; private set; }

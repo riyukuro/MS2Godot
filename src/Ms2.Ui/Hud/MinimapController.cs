@@ -255,12 +255,22 @@ public sealed class MinimapController : UiController
         base.OnLoadComplete();
         BuildUIData();
         BuildField();
+        UpdatePlayerVisibility();
         if (PingAllowed && Host.Entity != null && !ReferenceEquals(pingListenersOn, Host.Entity))
         {
             pingListenersOn = Host.Entity;
             Host.Invoke(Host.Entity, "addEventListener", "click", redPing ??= _ => { RedPing(); return null; }, false, 0, false);
             Host.Invoke(Host.Entity, "addEventListener", "rightClick", bluePing ??= _ => { BluePing(); return null; }, false, 0, false);
         }
+    }
+
+    /// <summary>UpdatePlayerVisibility @0x141a42a70 (uiminimapentity.cpp:2395-2408): visiblePlayers(false) while the own
+    /// mount's hidePCInfo is set, else true; OnLoadComplete (:1126) and the riding status event (vfunc_oa0_20, :1695-1698).</summary>
+    void UpdatePlayerVisibility() => Host.Invoke(Host.Entity, "visiblePlayers", RidingUi.PcInfoShown(Pc.Riding ? Pc.Ridee : null));
+
+    public override void OnStatus(StatusEvent e)
+    {
+        if (e == StatusEvent.Riding) UpdatePlayerVisibility();
     }
 
     Func<object[], object> redPing, bluePing;

@@ -35,7 +35,17 @@ public sealed class AdventureLevelExpBarController : UiController
         if (!Model.IsFeatureEnabled(Feature)) { Host.SetVisible(Host.Entity, false); return; }
         SetPoint(0);
         Host.SetVisible(Host.Child("m_point"), ShowPoint);
-        // FUN_140ba7130: the bar hides while the player rides a mount whose data has m_nHidePCInfo; mounts are not modelled
+        RideVisibility();
+    }
+
+    /// <summary>FUN_140ba7130 (uiadventurelevelexpbar.cpp:182-196): the bar hides while the own mount's hidePCInfo is set;
+    /// OnLoadComplete and the riding status event (vfunc_oa0_20, :243-246) run it.</summary>
+    void RideVisibility() => Host.SetVisible(Host.Entity, RidingUi.PcInfoShown(Pc.Riding ? Pc.Ridee : null));
+
+    /// <summary>The status listener, added only with feature 0xbd (OnLoadComplete, :213-215).</summary>
+    public override void OnStatus(StatusEvent e)
+    {
+        if (e == StatusEvent.Riding && Model.IsFeatureEnabled(Feature)) RideVisibility();
     }
 
     long ExpPerLevel => Model.Tables.AdventureLevelLvUpExp;

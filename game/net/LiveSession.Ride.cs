@@ -12,7 +12,9 @@ namespace Ms2Godot.Net;
 /// (<see cref="OwnRide"/>), other players' in <see cref="Net.RemoteLayer.OnRide"/>; the own pc's passenger map and
 /// no-boarding flag of modes 3-6 (<see cref="RidePassengers"/>), mode 3's own StateHold on another player's mount
 /// (<see cref="Player.HoldOn"/>). STILL-OPEN: RecvOp NpcRide 0xE7 (CSceneStateGame::OnNpcRide,
-/// scenestategame.cpp:4871: i32 npc id, then CNpc::FUN_141092c50) and the ridee skill set (mypc.cpp:1219-1226).
+/// scenestategame.cpp:4871: i32 npc id, then CNpc::FUN_141092c50: u8 mode 0 an i64, 1 an i32 owner object id the npc turns
+/// toward and is offset from (FUN_141093eb0, vfunc_51), 2 clears it; the port has no npc bound to an owner) and the ridee
+/// skill set (mypc.cpp:1219-1226).
 /// The own pc's ride-off-first cast (IsUnrideOnUse, mypc.cpp:2447-2470) is <see cref="RideOffForSkill"/>.
 /// </summary>
 public partial class LiveSession
@@ -100,13 +102,14 @@ public partial class LiveSession
                 break;
             case OwnRide.Step.RideOff when own:
                 // MyPC::vfunc_121: RemoveSkillSet of the ridee's skillSetId, PC::vfunc_121, NotifyStatusChanged(0xc, 0), then
-                // the action's switch: Hold 7 boards the nearest mount (HoldAfterRideOff). STILL-OPEN: the skill set, the
-                // status event and the other cases (UseSkill's cast, Interact's state 0x19, Taxi 0x25, CashCall 0x2a, TakeLR's
+                // the action's switch: Hold 7 boards the nearest mount (HoldAfterRideOff). STILL-OPEN: the skill set and
+                // the other cases (UseSkill's cast, Interact's state 0x19, Taxi 0x25, CashCall 0x2a, TakeLR's
                 // chair, Recall ...); a react ride-off reads null (no case 20 in ReadRideOffAction, rideonaction.cpp:159), so
                 // it is a plain ride off.
                 bool wasRiding = player.Mount != null;
                 string skillEffect = r.RideOff?.Type == RemoteLayer.UnRideSkillType ? player.Mount?.Data?.RideOffBySkillEffect : null;
                 player.RideOff();
+                OwnRideChanged?.Invoke(null);           // NotifyStatusChanged(0xc, 0) after PC::vfunc_121 (mypc.cpp:3365)
                 // PCBase::vfunc_121: the ride-off effect only when a ridee was released (the body returns before it
                 // otherwise), then an UnRideSkill's rideOffBySkillEffect (pcbase.cpp:3397-3401, :3423-3429). STILL-OPEN:
                 // the vfunc_25 test before the effects.
@@ -123,13 +126,21 @@ public partial class LiveSession
         if (fieldBuilder == null) return;
         Mount m;
         // Ridee::FUN_1417043a0 (ridee.cpp:411) returns 0 for an unknown riding id: no ridee, no state change
-        try { m = Mount.Load(PackSet.Shared(Settings.DataDir), fieldBuilder, a.RideId); }
+        try { m = Mount.Load(PackSet.Shared(Settings.DataDir), fieldBuilder, a.RideId, Me?.User?.Gender ?? 1); }
         catch (Exception ex) { GD.PushWarning($"live: ride {a.RideId}: {ex.Message}"); return; }
         player.RideOn(m);
         PlayOwnCommonEffect(RideOnEffectKey);
         OwnNoBoarding = a.Flag;           // PC::FUN_1416642c0(m_b28), pcbase.cpp:3341-3343
-        // Player.RideOn hides the rider of a hideRider row. STILL-OPEN: the RideeItemInfo of a type 1 action, the camera target; MyPC:
-        // ClearRecords, AddSkillSet of skillSetId, the dialog closes for hidePCInfo above 1 (0x4e2d, 0x4f2d,
-        // 0x4ec8, 0x2711, 0x4f76, 0x4ec3), NotifyStatusChanged(0xc, 1)
+        // Player.RideOn hides the rider of a hideRider row. MyPC::vfunc_120's window closes for hidePCInfo above 1 and its
+        // NotifyStatusChanged(0xc, 1) (mypc.cpp:3306-3317) are the HUD's (OwnRideChanged). STILL-OPEN: the RideeItemInfo of
+        // a type 1 action, the camera target; MyPC: ClearRecords, AddSkillSet of skillSetId.
+        OwnRideChanged?.Invoke(m.Data.UiRow);
     }
+
+    /// <summary>The own ride on (the mount's row) and off (null), after PCBase::vfunc_120 / vfunc_121: MyPC's window
+    /// closes and the riding status event follow it (mypc.cpp:3306-3317, :3365).</summary>
+    public event Action<Ms2.Ui.RideeRow> OwnRideChanged;
+
+    /// <summary>The own mount's row, null when the own pc does not ride (MyPC::IsRiding / GetRidee()->GetData()).</summary>
+    public Ms2.Ui.RideeRow OwnRidee => player != null && IsInstanceValid(player) ? player.Mount?.Data?.UiRow : null;
 }
