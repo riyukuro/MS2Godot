@@ -4093,6 +4093,7 @@ public partial class HudScene : Node, IUiStageHost
         if (openShot == "chatresize" && frames is >= 150 and <= 280) ChatResizeShot(frames);
         if (openShot == "chatappend" && frames is >= 150 and <= 290) ChatAppendShot(frames);
         if (openShot == "chathistory" && frames is >= 160 and <= 240) ChatHistoryShot(frames);
+        if (openShot != null && openShot.StartsWith("chatgm") && frames is >= 150 and <= 280) ChatGmShot(frames);
         if (openShot != null && openShot.StartsWith("chatlog") && frames is >= 150 and <= 280) ChatLogShot(frames);
         if (openShot == "guild" && frames == 200) ToggleGuild();
         if (openShot == "itemenchant" && frames == 200) OpenItemEnchantShot();

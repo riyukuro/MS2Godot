@@ -2954,7 +2954,7 @@ public partial class LiveSession : Node
 
         // MS2_LIVE_CHAT="line|line|...": each line sent from the first chat window, waiting for a chat line to come back (at
         // most 5 s) and 2 s more; "~N" waits N s instead. With MS2_LIVE_CHAT_SHOTS=<dir> the screen is shot after each as
-        // chat_<n>.png
+        // chat_<n>.png; "@chatup:N" first scrolls the log N lines up from the bottom
         string chat = System.Environment.GetEnvironmentVariable("MS2_LIVE_CHAT");
         if (!string.IsNullOrEmpty(chat) && tree.CurrentScene is Ui.HudScene chatHud)
         {
@@ -2965,6 +2965,7 @@ public partial class LiveSession : Node
             foreach (var line in chat.Split('|'))
             {
                 if (line.StartsWith('~') && int.TryParse(line.AsSpan(1), out int wait)) await Frames(60 * wait);   // "~N": wait N s, then shoot
+                else if (line.StartsWith("@chatup:") && int.TryParse(line.AsSpan(8), out int up)) { chatHud.ScrollChatUp(up); await Frames(30); }   // "@chatup:N": the first chat window's log N lines up from the bottom
                 else if (line == "@return") { chatHud.PressChatReturn(); await Frames(30); }   // "@return": Return in the chat window
                 else if (line == "@groupcreate" && Instance != null)
                 {

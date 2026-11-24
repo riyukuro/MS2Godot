@@ -196,6 +196,80 @@ public partial class HudScene
         }
     }
 
+    /// <summary>
+    /// <c>--uigen-open chatgm[:lines above the end[:log lines before]]</c>: a log of 500 (or the given number of) system lines, then the server's command help as one notice (its "\n"-joined,
+    /// html-encoded lines with "word:" in &lt;b&gt;), scrolled to the end; frame 280 prints the colour of the text node's runs
+    /// at each help line (the script's getTextFormat) and the label's.
+    /// </summary>
+    /// <summary>The live driver's "@chatup:N": the first chat window's log scrolled N lines up from the bottom.</summary>
+    public void ScrollChatUp(int up)
+    {
+        if (messengers.Count == 0) return;
+        var h = messengers[0].Side.Host;
+        if (h.Child("m_textOutput") is not AsDisplayObject o) return;
+        var tfld = h.Get(o, "textField");
+        h.Set(tfld, "scrollV", Math.Max(1, Rt.ToInt32(h.Get(tfld, "maxScrollV")) - up));
+    }
+
+    void ChatGmShot(int frames)
+    {
+        if (messengers.Count == 0) return;
+        var (m, _) = messengers[0];
+        int total = int.TryParse(openShot.Split(':').ElementAtOrDefault(2), out var tl) ? tl : 500;
+        if (frames is >= 150 and < 170)
+        {
+            for (int i = 1; i <= 25; i++)
+                if ((frames - 150) * 25 + i <= total)
+                    ChatLog.AddSystemLine("Chat line " + ((frames - 150) * 25 + i) + " of " + total + ", long enough to be a line of its own in the log.",
+                        new[] { TalkKind.SystemNotice, TalkKind.Meso, TalkKind.Item, TalkKind.Merat, TalkKind.Token, TalkKind.Friend, TalkKind.SystemEvent, TalkKind.TopLayer }[(frames - 150) * 25 + i & 7]);   // each kind's own colour
+            return;
+        }
+        var h = m.Host;
+        if (h.Child("m_textOutput") is not AsDisplayObject o) return;
+        var tfld = h.Get(o, "textField");
+        if (frames == 170)
+        {
+            string[] names = { "perm", "alert", "ban", "baninfo", "unban", "banword", "buff", "movefield", "addfield", "clearinven",
+                "toggleinvisiblefromnpc", "toggledeathpower", "heal", "level", "item", "kick", "mute", "notice", "warp", "spawn", "killall", "gold", "exp", "skill" };
+            // GameConsole.GameOutputStreamWriter: HtmlEncode, "word:" in <b>, runs of spaces folded to two
+            var sb = new System.Text.StringBuilder("Commands:\n");
+            foreach (var n in names) sb.Append($"  {n}  Do the {n} thing (the client's GM window). Usage: {n} <character> [-t type]\n");
+            string enc = System.Net.WebUtility.HtmlEncode(sb.ToString().TrimEnd('\n'));
+            enc = System.Text.RegularExpressions.Regex.Replace(enc, "(\\w+:)", "<b>$1</b>");
+            enc = System.Text.RegularExpressions.Regex.Replace(enc, " {2,}", "  ");
+            string wire = System.Environment.GetEnvironmentVariable("MS2_CHATGM_TEXT");   // a captured notice text, sent as it came
+            if (!string.IsNullOrEmpty(wire) && System.IO.File.Exists(wire)) enc = System.IO.File.ReadAllText(wire);
+            ChatLog.AddSystemLine(enc, TalkKind.SystemNotice);
+            return;
+        }
+        if (frames == 200) { int up = int.TryParse(openShot.Split(':').ElementAtOrDefault(1), out var u) ? u : 0; h.Set(tfld, "scrollV", Math.Max(1, Rt.ToInt32(h.Get(tfld, "maxScrollV")) - up)); return; }
+        if (frames == 280)
+        {
+            string plain = Rt.ToString(h.Get(tfld, "text"));
+            int at = 0, idx = 0;
+            var cols = new List<string>();
+            foreach (string para in plain.Split('\r', '\n'))
+            {
+                if (idx >= total && para.Length > 0)
+                    cols.Add(Rt.ToString(h.Get(h.Invoke(tfld, "getTextFormat", at, at + 1), "color")) + ":" + para.Substring(0, Math.Min(12, para.Length)));
+                at += para.Length + 1;
+                idx++;
+            }
+            if (LargestText(this) is { } tn)
+            {
+                var sb2 = new System.Text.StringBuilder();
+                string tt = tn.Text; int pi = 0, cp0 = 0;
+                foreach (string para in tt.Split('\n'))
+                {
+                    if (pi < 14 && para.Length > 0) { var st = tn.StyleAt(cp0 + Math.Min(3, para.Length - 1)); sb2.Append($"{(st.Color is Color c ? c.ToHtml(false) : "-")}{(st.Bold ? "b" : "")}:{para.Substring(0, Math.Min(8, para.Length))} | "); }
+                    cp0 += para.Length + 1; pi++;
+                }
+                GD.Print($"CHATGM node whole={tn.SameAsWholeParse()} {sb2}");
+            }
+            GD.Print($"CHATGM scrollV={Rt.ToString(h.Get(tfld, "scrollV"))} max={Rt.ToString(h.Get(tfld, "maxScrollV"))} runs=[{string.Join(" | ", cols)}]");
+        }
+    }
+
     /// <summary>The text node under <paramref name="n"/> with the longest text (the chat log).</summary>
     static TextNode LargestText(Node n)
     {

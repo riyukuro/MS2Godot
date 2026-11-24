@@ -598,13 +598,7 @@ public partial class TextNode : Node2D
             Color? color = f.Color is uint rgb ? Color.Color8((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb) : null;
             var st = new GlyphStyle(color, f.Bold, f.Italic, f.Underline, f.Size) { Image = f.Image };
             if (st.IsPlain) continue;
-            if (runStyles == null || i >= runStyles.Length)
-            {
-                var grown = new GlyphStyle[Math.Max(p.Formats.Length, 16)];
-                if (runStyles != null) Array.Copy(runStyles, grown, runCount);
-                runStyles = grown;
-            }
-            runStyles[i] = st;
+            Ms2.Ui.SparseRuns.Set(ref runStyles, i, st, p.Formats.Length);   // a growth keeps this feed's earlier chars too
             if (st.Size is float z && z != fieldSize) HasSizedRuns = true;
             if (st.Image is HtmlImage im && (images ??= new()).ContainsKey(im) == false) images[im] = Box(im);
         }

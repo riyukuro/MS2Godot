@@ -2155,6 +2155,51 @@ public class HudTests
         Assert.That(h.RT.Errors, Is.Empty);
     }
 
+    [Test]
+    public void ASystemLineOfManyParagraphsKeepsItsColourOnEveryParagraph()
+    {
+        // the server's command help is one notice of "\n"-joined lines, html encoded, "word:" in <b>: every paragraph of
+        // it is in the system colour, not only the ones after the first formatted run
+        var m = Model();
+        var c = new MessengerController(m.Tables.DefaultMessengers[0], "messengerdialog0.xml", true);
+        var h = Load(c, m);
+        // the text of CommandRouter.GetCommandList through GameOutputStreamWriter (HtmlEncode, "word:" in <b>, 2+ spaces to 2)
+        string[] lines =
+        {
+            "perm  Set/Remove admin permissions.", "alert  Send alert to the entire server.",
+            "ban  Ban a player by character name. Usage: ban <character> [-t type] [-d days] [reason...]",
+            "baninfo  Show all active bans for a character. Usage: baninfo <character>",
+            "unban  Remove bans by ID. Usage: unban <banId> [banId ...]",
+            "banword  The chat ban-word list: list, add, remove.", "buff  Add buff to player.",
+            "movefield  Move to a field (the client's GM map window).", "addfield  Move to a field (the client's GM map window).",
+            "clearinven  Empty the inventory (the client's GM item window).",
+            "toggleinvisiblefromnpc  Monsters ignore you (GM hotkey).", "toggledeathpower  Your hits kill monsters (GM hotkey).",
+        };
+        var sb = new System.Text.StringBuilder("Commands:\n");
+        foreach (string l in lines) sb.Append("  " + l + "\n");
+        string enc = System.Net.WebUtility.HtmlEncode(sb.ToString().TrimEnd('\n'));
+        enc = System.Text.RegularExpressions.Regex.Replace(enc, "(\\w+:)", "<b>$1</b>");
+        string text = System.Text.RegularExpressions.Regex.Replace(enc, " {2,}", "  ");
+        c.Browser.AddSystemLine(text, TalkKind.SystemNotice);
+        c.Browser.Process();
+        var output = (AsObject)h.Get(h.Child("m_textOutput"), "textField");
+        string plain = Rt.ToString(h.Get(output, "text"));
+        uint want = m.Tables.ChatTextColors["chatTextSystemMessage"];
+        int at = 0, paragraphs = 0;
+        foreach (string para in plain.Split('\r', '\n'))
+        {
+            if (para.Length > 0)
+            {
+                var fmt = h.Invoke(output, "getTextFormat", at, at + 1);
+                Assert.That((uint)Rt.ToNumber(h.Get(fmt, "color")), Is.EqualTo(want), $"paragraph {paragraphs} \"{para}\"");
+                paragraphs++;
+            }
+            at += para.Length + 1;
+        }
+        Assert.That(paragraphs, Is.GreaterThanOrEqualTo(lines.Length));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
     static List<string> BarLabels(UiHost h)
     {
         var dp = h.Get(h.Child("m_buttonBar"), "dataProvider");
