@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Godot;
 using Ms2.Ui;
 using Ms2.Ui.Hud;
@@ -57,6 +58,21 @@ public partial class HudScene
         var w = QuickSlotWorld();
         var held = w.Weapon is { } h ? weaponActions.FindAction(h.Right, h.Left) : null;
         if (RequestOwn(w, id, held, 0) is { } r) UseOwnRecord(me, r);
+    }
+
+    Func<string, bool> executeEmotion;         // the hook the shared messenger log calls
+    readonly List<Emotion> validEmotions = new();
+
+    /// <summary>UIMessenger::ExecuteEmotionCommand (<see cref="MessengerBrowser.ExecuteEmotionCommand"/>) over the own
+    /// emotions valid now (CSkillSystem::GetValidEmotions) and korDynamicAction's reserved words.</summary>
+    bool ExecuteEmotionCommand(string text)
+    {
+        var live = Ms2Godot.Net.LiveSession.Instance;
+        validEmotions.Clear();
+        (live?.Emotions ?? offlineEmotions).GetValid(live?.GameSession?.ServerTime ?? 0, validEmotions);
+        bool hasPlayer = GetTree().GetFirstNodeInGroup(Player.Group) is Player;
+        if (hudModel?.Tables is not { } t) return false;
+        return MessengerBrowser.ExecuteEmotionCommand(text, hasPlayer, validEmotions, t.DynamicActionReserved, UseOwnSkill);
     }
 
     /// <summary>CUIService::ToggleDialog(0x4e7a): the messenger's eventEmotion (uimessenger.cpp:4052).</summary>

@@ -265,4 +265,85 @@ public class EmotionCastTests
 
     [Test]
     public void EveryGms2EmotionResolvesAndPlays() => EveryEmotionResolvesAndPlays("MS2_GMS2_DATA");
+
+    static Emotion Learned(int id) => new() { Entry = new EmoteEntry(id, 1, true, 0, 0, false) };
+
+    [Test]
+    public void ATypedSlashWordUsesTheFirstLearnedEmotionWithThatWord()
+    {
+        // UIMessenger::ExecuteEmotionCommand @0x141a148b0 (uimessenger.cpp:1986-2020)
+        var words = new Dictionary<uint, IReadOnlyList<string>>
+        {
+            [90200001] = new[] { "/wave", "/hi" },
+            [90200002] = new[] { "/dance", "/hi" },
+        };
+        var valid = new[] { Learned(90200001), Learned(90200002) };
+        var used = new List<uint>();
+        bool Run(string text, IReadOnlyList<Emotion> list = null, bool player = true) =>
+            Ms2.Ui.Hud.MessengerBrowser.ExecuteEmotionCommand(text, player, list ?? valid, id => words.GetValueOrDefault(id), used.Add);
+
+        Assert.That(Run("/DANCE"), Is.True, "CompareNoCase");
+        Assert.That(Run("/hi"), Is.True, "the first emotion in list order with the word");
+        Assert.That(Run("ok /wave now"), Is.True, "the first '/' anywhere in the line, up to the next space");
+        Assert.That(Run("<FONT COLOR=\"#ffffff\">/dance</FONT>"), Is.True, "FUN_140d2c650: the FONT tags go first");
+        Assert.That(used, Is.EqualTo(new uint[] { 90200002, 90200001, 90200001, 90200002 }));
+        used.Clear();
+        Assert.That(Run("/wav"), Is.False);
+        Assert.That(Run("wave"), Is.False, "no '/'");
+        Assert.That(Run("/dance/x"), Is.False, "the command runs to the space, not the next '/'");
+        Assert.That(Run("/dance", player: false), Is.False, "no local player");
+        Assert.That(Run("/dance", Array.Empty<Emotion>()), Is.False, "no valid emotion");
+        Assert.That(Run("/dance", new[] { Learned(90200009), Learned(90200002) }), Is.False,
+            "an emotion without a dynamic action row ends the search");
+        Assert.That(used, Is.Empty);
+    }
+
+    /// <summary>
+    /// Every emotion skill's reserved words (korDynamicAction, <see cref="GameTables.DynamicActionReserved"/>) typed in chat
+    /// with that emotion learned run it. A word with a space can never be the command (it ends at the first space), and an
+    /// emotion skill without a dynamic action row ends the search of every emotion after it: both are listed. The rows are
+    /// the string language's file with IsElementAvailable's locale pick: the KMS data's English file tags many rows NA, which
+    /// a KR locale skips, so with English strings on the KMS data those emotions have no row.
+    /// </summary>
+    static void EveryEmotionCommandRunsItsEmotion(string variable, string language)
+    {
+        using var packs = new PackSet(RcGap.Data(variable));
+        var tables = new GameTables(packs, language);
+        var rows = tables.Skills.Skills.Rows.Where(s => s.MainType == EmotionCast.MainTypeEmotion).OrderBy(s => s.Id).ToList();
+        Assert.That(rows, Is.Not.Empty);
+        var noRow = new List<uint>();
+        var spaced = new List<string>();
+        var shared = new SortedDictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase);
+        int words = 0;
+        foreach (var r in rows)
+        {
+            var reserved = tables.DynamicActionReserved(r.Id);
+            if (reserved == null) { noRow.Add(r.Id); continue; }
+            foreach (var w in reserved)
+            {
+                if (!shared.TryGetValue(w, out var ids)) shared[w] = ids = new List<uint>();
+                ids.Add(r.Id);
+                if (w.Any(char.IsWhiteSpace)) { spaced.Add($"{r.Id}:{w.Length}"); continue; }
+                var used = new List<uint>();
+                bool ran = Ms2.Ui.Hud.MessengerBrowser.ExecuteEmotionCommand(w, true, new[] { Learned((int)r.Id) },
+                    tables.DynamicActionReserved, used.Add);
+                Assert.That((ran, used.SingleOrDefault()), Is.EqualTo((true, r.Id)), $"skill {r.Id} word {words}");
+                words++;
+            }
+        }
+        var dup = shared.Where(kv => kv.Value.Count > 1).Select(kv => string.Join("/", kv.Value)).ToList();
+        TestContext.Out.WriteLine($"{variable} {language}: {rows.Count} emotion skills, {words} words run their emotion; " +
+            $"{noRow.Count} without a dynamic action row [{string.Join(",", noRow)}]; {spaced.Count} words with a space " +
+            $"[{string.Join(",", spaced)}]; {dup.Count} words of more than one skill [{string.Join(",", dup)}]");
+        Assert.That(words, Is.GreaterThan(0));
+    }
+
+    [Test]
+    public void EveryKmsEmotionCommandRunsItsEmotion() => EveryEmotionCommandRunsItsEmotion("MS2_DATA", "kr");
+
+    [Test]
+    public void EveryKmsEmotionCommandRunsItsEmotionWithEnglishStrings() => EveryEmotionCommandRunsItsEmotion("MS2_DATA", "en");
+
+    [Test]
+    public void EveryGms2EmotionCommandRunsItsEmotion() => EveryEmotionCommandRunsItsEmotion("MS2_GMS2_DATA", "en");
 }

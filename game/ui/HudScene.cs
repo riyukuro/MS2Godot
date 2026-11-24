@@ -91,6 +91,8 @@ public partial class HudScene : Node, IUiStageHost
         PerfLog.ApplyFpsCap();
         toggleDynamicAction = ToggleDynamicAction;
         ChatLog.ToggleDynamicAction = toggleDynamicAction;   // the messenger's eventEmotion
+        executeEmotion = ExecuteEmotionCommand;
+        ChatLog.ExecuteEmotion = executeEmotion;             // a typed line's emotion command
         chatEmoticonFixture = args.Contains("--chatemoticon-fixture");
         // FUN_14116d7a0's mask 2, CUIService::IsTextFieldFocused (@0x141adbb00, uiservice.cpp:1364): a field of the dialogs'
         // stage (main.gfx) takes typing, or a Godot text control does
@@ -291,6 +293,7 @@ public partial class HudScene : Node, IUiStageHost
         ChatLog.WindowCreated -= OnMessengerCreated;
         ChatLog.WindowClosed -= OnMessengerClosed;
         if (ReferenceEquals(ChatLog.ToggleDynamicAction, toggleDynamicAction)) ChatLog.ToggleDynamicAction = null;
+        if (ReferenceEquals(ChatLog.ExecuteEmotion, executeEmotion)) ChatLog.ExecuteEmotion = _ => false;
         if (offlineChat != null && ReferenceEquals(ChatLog.SendPacket, offlineChat)) ChatLog.SendPacket = null;
         offlineChat = null;
         UnhookChatEmoticon();

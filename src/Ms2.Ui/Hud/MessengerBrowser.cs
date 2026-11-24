@@ -570,8 +570,39 @@ public sealed class MessengerBrowser
     public Func<bool> HasSuperChatItem = () => false;
     /// <summary>DAT_143ab2914, the local player's GM level (FUN_140930150, scenestategame.cpp:5854); 0 by default.</summary>
     public Func<int> GmLevel = () => 0;
-    /// <summary>ExecuteEmotionCommand(text): an emotion's slash command ran. STILL-OPEN: not ported, so none.</summary>
+    /// <summary>ExecuteEmotionCommand(text) (<see cref="ExecuteEmotionCommand"/>): an emotion's slash command ran; the HUD
+    /// wires it to the local player's emotions, so without that none runs.</summary>
     public Func<string, bool> ExecuteEmotion = _ => false;
+
+    /// <summary>
+    /// UIMessenger::ExecuteEmotionCommand @0x141a148b0 (uimessenger.cpp:1986-2020), the first step of a typed line
+    /// (FUN_141a10fd0, :4366): false without the local player (<paramref name="hasPlayer"/>) or with no valid emotion
+    /// (CSkillSystem::GetValidEmotions, <paramref name="valid"/>). The line without its P/BR/TEXTFORMAT/FONT tags
+    /// (FUN_140d2c650); from its first '/' (anywhere in the line) to the next space or the end, trimmed on the right, is
+    /// the command. Each valid emotion in list order: no dynamic action row (CDynamicActionData::Find,
+    /// <paramref name="reserved"/> null) ends the search with false; a reserved word equal to the command (CompareNoCase)
+    /// uses the row's skill (MyPC::FUN_141525480(id, 0), <paramref name="use"/>) and returns true.
+    /// </summary>
+    public static bool ExecuteEmotionCommand(string text, bool hasPlayer, IReadOnlyList<Emotion> valid,
+        Func<uint, IReadOnlyList<string>> reserved, Action<uint> use)
+    {
+        if (!hasPlayer || valid == null || valid.Count == 0) return false;
+        string line = RemoveChatTags(text ?? "");
+        int begin = line.IndexOf('/');
+        if (begin < 0) return false;
+        int end = line.IndexOf(' ', begin);
+        if (end < 0) end = line.Length;
+        string command = line.Substring(begin, Math.Min(end - begin + 1, line.Length - begin)).TrimEnd();
+        for (int i = 0; i < valid.Count; i++)
+        {
+            uint id = (uint)valid[i].Id;
+            var words = reserved(id);
+            if (words == null) return false;
+            for (int j = 0; j < words.Count; j++)
+                if (string.Compare(words[j], command, StringComparison.OrdinalIgnoreCase) == 0) { use(id); return true; }
+        }
+        return false;
+    }
     /// <summary>
     /// FUN_141a12380 (:4450): with the community options m_b0 / m_b1 / m_b2 set, a super / world / channel line asks in a
     /// message box first (sent from its OnSuperChatConfirm / OnWorldChatConfirm / OnChannelChatConfirm); true = asked.
