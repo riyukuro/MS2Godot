@@ -59,10 +59,11 @@ public sealed class ItemOptionTables
 
     /// <summary>The definitions of a key table, by &lt;key id&gt; into <paramref name="slots"/> slots (a later key replaces an
     /// earlier one; an id outside the slots is dropped).</summary>
-    Def[] Defs(string path, int slots, Dictionary<string, string> valueNames)
+    Def[] Defs(string path, int slots, Dictionary<string, string> valueNames) => Defs(Root(path), slots, valueNames);
+
+    Def[] Defs(XElement root, int slots, Dictionary<string, string> valueNames)
     {
         var d = new Def[slots];
-        var root = Root(path);
         if (root == null) return d;
         foreach (var e in root.Elements("key"))
         {
@@ -113,7 +114,24 @@ public sealed class ItemOptionTables
             d[i] = new Def(DefaultStats[i].Option, DefaultStats[i].ValueType, statValueNames.TryGetValue((1000 + i).ToString(), out var t) ? t : "");
         return stats = d;
     }
-    Def[] Specials() => specials ??= Defs("table/specialabilitystringtable.xml", 0xcf, specialValueNames);
+    /// <summary>
+    /// LoadSpecialAbilityStringTable (specialability.cpp:131): the rows of table/specialAbilityStringTable.xml. A pack without
+    /// the table (the GMS2 data) takes the STAND-IN rows of <see cref="Ms2.Ui.Skills.Gms2SpecialAbilities.DefaultRows"/>, as
+    /// the additional effects do (GameTables.SpecialAbilityTypes), with the value texts GameTables files from the pack's
+    /// common strings (<see cref="Ms2.Ui.Skills.Gms2SpecialAbilities.LegacyValueTexts"/>). INFERRED: the GMS2 data names
+    /// the kind of 153 of the 206 rows in its own files (item options &lt;name&gt;_rate_base / _value_base, additional effects
+    /// &lt;name&gt;rate / &lt;name&gt;value) and every one is the row's valueType (pen has one penvalue among 6,139 rate
+    /// uses; that attribute is dropped as having no KMS ability); STILL-OPEN: the other 53 rows are not used in the GMS2 data
+    /// and keep the KMS valueType unchecked.
+    /// </summary>
+    Def[] Specials()
+    {
+        if (specials != null) return specials;
+        const string path = "table/specialabilitystringtable.xml";
+        var root = Root(path);
+        if (root == null && packs != null && !packs.Exists("Xml", path)) root = Ms2.Ui.Skills.Gms2SpecialAbilities.DefaultTable().Root;
+        return specials = Defs(root, 0xcf, specialValueNames);
+    }
 
     /// <summary>FindStatByName (stat.cpp): the stat whose option name equals <paramref name="name"/> (case-insensitive),
     /// -1 when none.</summary>
@@ -222,8 +240,8 @@ public sealed class ItemOptionTables
     /// parpen_rate_base 0.054 is the KMS rows' parpen 54), rounded. A name that is neither a stat nor a special ability (the
     /// GMS2-only calibration factors and hidden adds), or whose kind is the other one (78 wapmin/wapmax_rate_base and 6
     /// pvpdamage*_rate_base rows), and a value of 0 are dropped. INFERRED from the data (the GMS2 client's reader is not in
-    /// the restored source). STILL-OPEN: GMS2 has no specialabilitystringtable.xml, so <see cref="FindSpecialByName"/> finds no
-    /// special there and the special values are dropped too.
+    /// the restored source). GMS2 has no specialabilitystringtable.xml, so a special is found in the stand-in rows
+    /// (<see cref="Specials"/>).
     /// </summary>
     internal List<(int Stat, int Special, int Value)> Gms2Values(XElement e)
     {

@@ -249,8 +249,12 @@ public sealed class GameTables
         r.StatOptions = Options(packs, statTable ?? "table/statstringtable.xml");
         r.SpecialNames = CommonTexts(packs, "table/specialabilitystringtable.xml", r.SpecialValueNames);
         // no special ability table (the GMS2 data has none): the names its common strings have (Gms2SpecialAbilities.LegacyNameKeys)
+        // and the value texts (the _r / _v ones by the stand-in row's kind) the item option tables read under its valueStringID
         if (!packs.Exists("Xml", "table/specialabilitystringtable.xml"))
+        {
             r.SpecialNames = Ms2.Ui.Skills.Gms2SpecialAbilities.LegacyNames(r.CommonStrings);
+            Ms2.Ui.Skills.Gms2SpecialAbilities.LegacyValueTexts(r.CommonStrings, r.SpecialValueNames);
+        }
         if (statTable == null)
         {
             // no stat table (the GMS2 data has none): ItemOptionTables.DefaultStats is the stand-in; the texts are the pack's

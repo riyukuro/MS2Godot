@@ -137,9 +137,30 @@ public static class Gms2SpecialAbilities
         return d;
     }
 
-    /// <summary><see cref="DefaultRows"/> as the table's &lt;ms2&gt;&lt;key id option valueType/&gt; document.</summary>
+    /// <summary>
+    /// The value format texts of the <see cref="LegacyNameKeys"/> abilities, filed under the valueStringID the table would give
+    /// (1000 + id, as every row of the KMS tables has): s_item_opt_sa_&lt;stem&gt;_r for a rate ability (valueType 2) and
+    /// s_item_opt_sa_&lt;stem&gt;_v for a flat one; a missing or empty text, or an id that already has one, is left alone.
+    /// INFERRED from the data (the GMS2 exe is packed, no strings to read): the GMS2 common strings have both texts for every
+    /// stem, and the _r ones format a one-decimal float (136 of 154 "{0:0.1f}%", the rest "{0}" or none), what the tooltip passes
+    /// a rate (the value / 10), while the _v ones format an int ("{0:d}" or "{0}"), the flat value; the KMS value texts
+    /// use the same "{0:0.1f}%" for their rate rows and "{0:d}" for the flat ones.
+    /// </summary>
+    public static void LegacyValueTexts(IReadOnlyDictionary<string, string> common, Dictionary<string, string> valueNames)
+    {
+        foreach (var (id, stem) in LegacyNameKeys)
+        {
+            if ((uint)(id - 1) >= (uint)DefaultRows.Length) continue;
+            string key = "s_item_opt_sa_" + stem + (DefaultRows[id - 1].ValueType == 2 ? "_r" : "_v");
+            if (common.TryGetValue(key, out var v) && !string.IsNullOrEmpty(v)) valueNames.TryAdd((1000 + id).ToString(CultureInfo.InvariantCulture), v);
+        }
+    }
+
+    /// <summary><see cref="DefaultRows"/> as the table's &lt;ms2&gt;&lt;key id option valueType valueStringID/&gt; document
+    /// (valueStringID 1000 + id, as every KMS row has; <see cref="LegacyValueTexts"/> files the texts under it).</summary>
     public static XDocument DefaultTable() => new(new XElement("ms2", DefaultRows.Select((r, i) => new XElement("key",
-        new XAttribute("id", i + 1), new XAttribute("option", r.Option), new XAttribute("valueType", r.ValueType)))));
+        new XAttribute("id", i + 1), new XAttribute("option", r.Option), new XAttribute("valueType", r.ValueType),
+        new XAttribute("valueStringID", 1000 + i + 1)))));
 
     static Dictionary<string, (string Option, int ValueType)> byKey;
     static string Key(string name) => name.Replace("_", "", StringComparison.Ordinal).ToLowerInvariant();
