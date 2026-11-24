@@ -434,6 +434,79 @@ public sealed class GameOption
         public CharacterFlag Clone() => (CharacterFlag)MemberwiseClone();
     }
 
+    /// <summary>
+    /// The character file's "autoLooting" block (Unk_GsAutoLoot, CGameOption m_autoLoot): reset FUN_141260ed0 (gameoptionstruct.cpp:3030,
+    /// all off, grade 1, pet on), load LoadGameOptionAutoLooting @0x141260f40 (:3046), save SaveGameOptionAutoLooting @0x141261150 (:3074).
+    /// LoadCharacterOption resets it and then reads it from the character file or the default one (gameoption.cpp:1798-1805).
+    /// </summary>
+    public sealed class AutoLoot
+    {
+        public bool Equip, Consume, Etc, Meso, Merat, Token, Other, GemStone, Pet = true;
+        public int EquipGrade = 1;
+
+        /// <param name="regionCn">IsRegionCN: no "isEnableMerat" there</param>
+        /// <param name="gemStone">feature 0x2e: "IsEnableGemStone" is read</param>
+        /// <param name="pet">feature 0x8c: "isEnablePet" is read</param>
+        public void Load(XDocument d, bool regionCn, bool gemStone, bool pet)
+        {
+            int grade = EquipGrade;
+            Xml.ReadBool(d, "autoLooting", "isEnableEquip", ref Equip);
+            Xml.ReadInt(d, "autoLooting", "equipGrade", ref grade);
+            Xml.ReadBool(d, "autoLooting", "isEnableConsume", ref Consume);
+            Xml.ReadBool(d, "autoLooting", "isEnableETC", ref Etc);
+            Xml.ReadBool(d, "autoLooting", "isEnableMeso", ref Meso);
+            if (!regionCn && !Xml.ReadBool(d, "autoLooting", "isEnableMerat", ref Merat)) Merat = Meso;
+            if (!Xml.ReadBool(d, "autoLooting", "isEnableToken", ref Token)) Token = Meso;
+            Xml.ReadBool(d, "autoLooting", "isEnableOther", ref Other);
+            if (gemStone) Xml.ReadBool(d, "autoLooting", "IsEnableGemStone", ref GemStone);
+            if (pet) Xml.ReadBool(d, "autoLooting", "isEnablePet", ref Pet);
+            EquipGrade = grade;
+        }
+
+        public void Save(XDocument d, bool regionCn, bool gemStone, bool pet)
+        {
+            Xml.WriteBool(d, "autoLooting", "isEnableEquip", Equip);
+            Xml.WriteInt(d, "autoLooting", "equipGrade", EquipGrade);
+            Xml.WriteBool(d, "autoLooting", "isEnableConsume", Consume);
+            Xml.WriteBool(d, "autoLooting", "isEnableETC", Etc);
+            Xml.WriteBool(d, "autoLooting", "isEnableMeso", Meso);
+            if (!regionCn) Xml.WriteBool(d, "autoLooting", "isEnableMerat", Merat);
+            Xml.WriteBool(d, "autoLooting", "isEnableToken", Token);
+            Xml.WriteBool(d, "autoLooting", "isEnableOther", Other);
+            if (gemStone) Xml.WriteBool(d, "autoLooting", "IsEnableGemStone", GemStone);
+            if (pet) Xml.WriteBool(d, "autoLooting", "isEnablePet", Pet);
+        }
+
+        /// <summary>
+        /// FUN_141261340 (gameoptionstruct.cpp:3100): whether auto loot takes a dropped item. <paramref name="otherDrop"/> is the drop's
+        /// kind being 0x3ed (mypc.cpp:4730), which only the "other" switch lets through; <paramref name="type"/> is the item's
+        /// <c>property type</c> (CItemData::GetType); <paramref name="level"/> the local player's level, null without a local player.
+        /// </summary>
+        public bool Takes(int itemId, int type, int rarity, bool otherDrop, int? level)
+        {
+            if (otherDrop && !Other) return false;
+            if (World.DropPickup.IsSpecialId(itemId)) return true;            // FUN_14053f900
+            if (level is not { } lv || (ushort)lv < 1) return false;          // vfunc_78
+            if (type == 0xb) return Pet;                                      // IsPetItem
+            if (type is 0xd or 0xe) return GemStone;                          // FUN_14053d840, type 0xe
+            if (World.DropPickup.IsMesoId(itemId)) return Meso;               // CItem::IsMeso (FUN_14053f8c0)
+            if (World.DropPickup.IsMeratId(itemId)) return Merat;             // IsMerat (FUN_14053f940)
+            if (World.DropPickup.IsTokenId(itemId) || type == 0x14) return Token;   // IsToken (FUN_14053f990), IsCoinItem
+            if (type == 2) return Consume;
+            if (type == 1) return Equip && rarity >= EquipGrade;              // FUN_14053cbc0
+            return Etc;
+        }
+
+        public AutoLoot Clone() => (AutoLoot)MemberwiseClone();
+
+        /// <summary>FUN_141261310 (gameoptionstruct.cpp:3093): the whole block copied over this one.</summary>
+        public void CopyFrom(AutoLoot o)
+        {
+            Equip = o.Equip; Consume = o.Consume; Etc = o.Etc; Meso = o.Meso; Merat = o.Merat; Token = o.Token;
+            Other = o.Other; GemStone = o.GemStone; Pet = o.Pet; EquipGrade = o.EquipGrade;
+        }
+    }
+
     /// <summary>Graphic (Unk_GraphicState): reset FUN_14125d8c0 gameoptionstruct.cpp:1908-1931, load LoadGameOptionGraphic
     /// :1936-1990 in its file form (nDefault 0, as LoadGameOption calls it, gameoption.cpp:1743), save :1994-2010.
     /// ScreenMode ("fullScreen"): 0 the device's full screen, 1 window, 2 full window (the dialog offers 1 and 2,

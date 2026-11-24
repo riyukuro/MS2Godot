@@ -619,6 +619,14 @@ public partial class LiveSession : Node
     public event Action<Ui.DamageTarget, int, string> ItemGained;
     /// <summary>A FieldAddItem read, and whether the field made a drop of it (InitDrop's tests: the owner, the item data, the model).</summary>
     public event Action<FieldAddItem, bool> DropAdded;
+    /// <summary>A notice of the drop layer's pickup request (0x43 the bag is full, 0x45 the drop is out of reach).</summary>
+    public event Action<int> DropNotice;
+    /// <summary>A system sound of the drop layer's pickup request (the key, and whether a sound played).</summary>
+    public event Action<string, bool> DropSystemSound;
+    /// <summary>Auto loot asked for a drop (its object id).</summary>
+    public event Action<int> DropAutoRequest;
+    /// <summary>The server refused a pickup: the drop's object id and the answer's mode.</summary>
+    public event Action<int, int> DropRefused;
     /// <summary>The field's drop of the object id: where it is, its state and its effects (<see cref="DropLayer.Shown"/>).</summary>
     public (Vector3 At, int State, bool Glow, bool BeEffect)? DropShown(int objectId) => drops?.Shown(objectId);
     /// <summary>The region skill objects' ids of the field (OnRegionSkill 0x4C modes 0 and 1): mode 5's damage needs one
@@ -1333,8 +1341,29 @@ public partial class LiveSession : Node
         };
         dropLayer.SelfObjectId = () => selfObject;
         dropLayer.PickedByMe = DropPickedByMe;
-        dropLayer.Notice = id => { string text = Ms2.Ui.Hud.MessageBoxData.Common(id); if (!string.IsNullOrEmpty(text)) SystemNoticeSink?.Invoke(text); };
-        dropLayer.SystemSound = key => FieldAudio.Instance?.PlayUi(key);
+        // the character's block, read once for the field (a new character is a new field; the item-get dialog edits this object)
+        var autoLoot = GameOptions.AutoLoot;
+        dropLayer.AutoLoot = () => autoLoot;
+        dropLayer.ItemType = kinds.TypeOf;
+        dropLayer.AutoRequested = d =>
+        {
+            if (LogPackets) GD.Print($"live: drop auto request {d.ObjectId} item {d.ItemId} kind 0x{d.DropKind:x}");
+            DropAutoRequest?.Invoke(d.ObjectId);
+        };
+        dropLayer.Level = () => player != null && IsInstanceValid(player) && Me.User is { } u ? u.Level : null;
+        dropLayer.Notice = id =>
+        {
+            string text = Ms2.Ui.Hud.MessageBoxData.Common(id);
+            if (!string.IsNullOrEmpty(text)) SystemNoticeSink?.Invoke(text);
+            if (LogPackets) GD.Print($"live: drop notice 0x{id:x}");
+            DropNotice?.Invoke(id);
+        };
+        dropLayer.SystemSound = key =>
+        {
+            bool played = FieldAudio.Instance?.PlayUi(key) == true;
+            if (LogPackets) GD.Print($"live: drop system sound {key}: {(played ? "played" : "not played")}");
+            DropSystemSound?.Invoke(key, played);
+        };
         field.TreeExiting += () => { if (drops == dropLayer) { drops = null; PickupKeyHeld = false; } };
         // the field is freed: its tracker stops filling Events (a newer field's layer is left alone); the guide stops and
         // updates on the map's unload (worldservice_1.cpp:10021)
@@ -1649,6 +1678,7 @@ public partial class LiveSession : Node
                     StubHudData.Instance.EpCurrent = (int)ep; StubHudData.Instance.EpMax = (int)epMax;
                 }
                 drops.OnPickupPacket(pick);
+                if (pick.DropKnown && !pick.Picked) DropRefused?.Invoke(pick.ObjectId, pick.Mode);
                 if (!pick.DropKnown) { if (LogPackets) GD.Print($"live: pickup object {pick.ObjectId}: no drop of this field, the rest unread"); }
                 else if (LogPackets || (pick.Picked && LiveCheck)) GD.Print($"live: pickup object {pick.ObjectId} picked {pick.Picked} by {pick.PickerId}{(pick.Picked ? "" : " mode " + pick.Mode)}{(pick.Meso != 0 ? " meso " + pick.Meso : "")}{(pick.EpBall ? " ep +" + pick.Ep : "")}");
             }

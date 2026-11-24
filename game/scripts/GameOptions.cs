@@ -70,6 +70,8 @@ public static class GameOptions
         set { EnsureCharacter(); accountCommunity = value; }
     }
 
+    /// <summary>The character file's "autoLooting" block (CGameOption m_autoLoot, FUN_141533e20).</summary>
+    public static GameOption.AutoLoot AutoLoot { get { EnsureCharacter(); return autoLoot; } }
     /// <summary>The character file's "gamepad" block (CGameOption +0x1a0, LoadGameOptionGamepad @0x14125f330).</summary>
     public static GameOption.GamePad GamePad { get { EnsureCharacter(); return gamePad; } }
     /// <summary>CGameOption +0x1b4, the stored personal info agreement. The server's answer is not read yet, so it starts empty.</summary>
@@ -92,10 +94,15 @@ public static class GameOptions
         SaveCharacterSettings();
     }
 
+    /// <summary>CFeatureManager::IsRegionCN: the data's locale is CN.</summary>
+    static bool RegionCn() => Settings.DataDir is { } data && System.IO.File.Exists(System.IO.Path.Combine(data, "Xml.m2d"))
+        && string.Equals(Ms2.Ui.LobbyFeatures.LocaleOf(PackSet.Shared(data)), "CN", StringComparison.OrdinalIgnoreCase);
+
     static bool FeatureById(int id) => id >= 1 && id <= Ms2.Ui.FeatureTable.Names.Length && Settings.DataDir is { } data
         && Ms2.Ui.LobbyFeatures.IsEnabledByName(PackSet.Shared(data), Ms2.Ui.FeatureTable.Names[id - 1]);
 
     static GameOption.GamePad gamePad = new();
+    static GameOption.AutoLoot autoLoot = new();
     static SoundFlag soundFlag = new();
     static GameOption.CharacterFlag mouseControl = GameOption.CharacterFlag.MouseControl(), learningQuest = GameOption.CharacterFlag.LearningQuest();
     static GameOption.AccountCommunity accountCommunity = new();
@@ -133,6 +140,8 @@ public static class GameOptions
         learningQuest = GameOption.CharacterFlag.LearningQuest();
         gamePad = new GameOption.GamePad();
         gamePad.Load(characterDoc, FeatureById(0xc3), FeatureById(0xd6));
+        autoLoot = new GameOption.AutoLoot();   // FUN_141260ed0, then LoadGameOptionAutoLooting (gameoption.cpp:1798-1805)
+        autoLoot.Load(characterDoc, RegionCn(), FeatureById(0x2e), FeatureById(0x8c));
         // FUN_14125c970: a file without the switch gets it from the character's creation time (on only before 2017-06-29;
         // every character here is created by this server, so off), written back at once.
         if (!learningQuest.Load(characterDoc) && f != null)
@@ -165,7 +174,7 @@ public static class GameOptions
     }
 
     /// <summary>SaveCharacterSettings (gameoption.cpp:1879-1889): the character blocks, the version, the file. The blocks
-    /// not modelled here (autoLooting, etc) stay as they were read.</summary>
+    /// not modelled here stay as they were read.</summary>
     public static void SaveCharacterSettings()
     {
         EnsureCharacter();
@@ -173,6 +182,7 @@ public static class GameOptions
         mouseControl.Save(characterDoc);
         learningQuest.Save(characterDoc);
         gamePad.Save(characterDoc, FeatureById(0xc3), FeatureById(0xd6));
+        autoLoot.Save(characterDoc, RegionCn(), FeatureById(0x2e), FeatureById(0x8c));   // gameoption.cpp:1881
         WriteCharacterFile();
     }
 

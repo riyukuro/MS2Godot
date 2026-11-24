@@ -718,7 +718,8 @@ public partial class LiveSession
                 }
                 continue;
             }
-            switch (step.StartsWith("lift:") ? "lift" : step.StartsWith("mobloot:") || step.StartsWith("mobmeso:") ? "mobloot" : step)
+            switch (step.StartsWith("lift:") ? "lift" : step.StartsWith("mobloot:") || step.StartsWith("mobmeso:") ? "mobloot"
+                : step.StartsWith("bagfull:") ? "bagfull" : step.StartsWith("autoloot:") || step.StartsWith("autofull:") ? "autoloot" : step)
             {
                 case "attack":
                 {
@@ -1048,6 +1049,142 @@ public partial class LiveSession
                     if (items.FirstOrDefault() is { } shown && live.Inventory?.TabOfItem(shown.ItemId) is int tab)
                         GD.Print($"live: combat bag tab {tab} of item {shown.ItemId}: {(hud.InventoryTabScripted(tab) ? "shown" : "not shown")}");
                     await frames(60); Shot(tag + "_bag.png");
+                    break;
+                }
+                case "bagfull":
+                {
+                    // bagfull:<item id>: the GM item command fills the item's tab (a non-stacking item takes every free cell), the same
+                    // item is dropped by the player, and the pickup key is held at the drop. CDropItem::FUN_141190900's bag test refuses
+                    // the request: notice 0x43 and the bag-full system sound, the drop left on the ground and the bag unchanged
+                    int item = int.Parse(step[8..]);
+                    var notices = new System.Collections.Generic.List<int>();
+                    var sounds = new System.Collections.Generic.List<(string Key, bool Played)>();
+                    var made = new System.Collections.Generic.List<Ms2.Net.Packets.FieldAddItem>();
+                    void Notice(int n) => notices.Add(n);
+                    void Sound(string k, bool played) => sounds.Add((k, played));
+                    void Made(Ms2.Net.Packets.FieldAddItem d, bool shown) { if (shown && d.ItemId == item) made.Add(d); }
+                    long bag0 = BagSum(live);
+                    GD.Print($"live: combat bagfull give {item}: {(hud.SubmitChatLine($"/item {item} --amount 500") ? "sent" : "no chat window")}");
+                    await until(() => BagSum(live) > bag0, 60 * 10); await frames(60 * 3);
+                    int tab = live.Inventory?.TabOfItem(item) ?? -1;
+                    Check($"the item's tab {tab} is full ({bag0} -> {BagSum(live)})", tab >= 0 && live.Inventory?.HasEmptyCell(tab) == false);
+                    live.DropAdded += Made;
+                    GD.Print($"live: combat bagfull drop {item}: {(hud.SubmitChatLine($"/item {item} --drop") ? "sent" : "no chat window")}");
+                    await until(() => made.Count > 0, 60 * 10); await frames(60 * 2);
+                    live.DropAdded -= Made;
+                    var drop = made.FirstOrDefault();
+                    Check("the dropped item is in the field", drop != null);
+                    if (drop == null) break;
+                    long bag1 = BagSum(live);
+                    await frames(30); Shot("bagfull_ground.png");
+                    live.DropNotice += Notice;
+                    live.DropSystemSound += Sound;
+                    live.PickupKeyHeld = true;
+                    for (int n = 0; n < 60 * 8 && live.DropShown(drop.ObjectId) is { } s && !notices.Contains(Ms2.Formats.World.DropPickup.BagFullNotice); n++)
+                    {
+                        if (hud.DriveTowardScripted(s.At, false) < 50) hud.DriveEnd();
+                        await frames(1);
+                    }
+                    hud.DriveEnd();
+                    await frames(20); Shot("bagfull_notice.png");
+                    await frames(60 * 2);
+                    live.PickupKeyHeld = false;
+                    live.DropNotice -= Notice;
+                    live.DropSystemSound -= Sound;
+                    GD.Print($"live: combat bagfull: notices {string.Join(" ", notices.Distinct().Select(n => $"0x{n:x}"))} ({notices.Count}), sounds {string.Join(" ", sounds.Distinct().Select(x => $"{x.Key}:{(x.Played ? "played" : "not played")}"))} ({sounds.Count})");
+                    Check("the bag-full notice came", notices.Contains(Ms2.Formats.World.DropPickup.BagFullNotice));
+                    Check("the bag-full sound played", sounds.Any(x => x.Key == Ms2.Formats.World.DropPickup.BagFullSound && x.Played));
+                    Check($"the drop stays and the bag is unchanged ({bag1} -> {BagSum(live)})", live.DropShown(drop.ObjectId) != null && BagSum(live) == bag1);
+                    break;
+                }
+                case "autoloot":
+                {
+                    // autoloot:<npc id>: auto loot off (the options block, as the item-get dialog sets it) while the mob is killed, up
+                    // to MS2_LIVE_LOOT_KILLS times until it drops an item; then the character file's options back and a run to the drop
+                    // with the pickup key up. MyPC::FUN_141530db0 requests it on its own (mypc.cpp:4724-4734) and the bag takes it.
+                    // autofull:<npc id>: before the options come back the drop's tab is filled (the GM item command, the drop's own item
+                    // to the last cell and stack), so the request is refused: notice 0x43, the server's refusal mode 1, which clears the
+                    // request flag (scenestategame.cpp:2450-2454), and auto loot asks again once the repeat delay is over.
+                    bool full = step.StartsWith("autofull:");
+                    int mob = int.Parse(step[9..]), most = int.Parse(Env("MS2_LIVE_LOOT_KILLS", "8"));
+                    var options = GameOptions.AutoLoot;
+                    var saved = options.Clone();
+                    options.CopyFrom(new Ms2.Formats.Options.GameOption.AutoLoot { Pet = false });
+                    var made = new System.Collections.Generic.List<Ms2.Net.Packets.FieldAddItem>();
+                    void Made(Ms2.Net.Packets.FieldAddItem d, bool shown) { if (shown) made.Add(d); }
+                    static bool IsItem(Ms2.Net.Packets.FieldAddItem d) => !d.IsMeso && !Ms2.Formats.World.DropPickup.IsCurrencyId(d.ItemId) && !Ms2.Formats.World.DropPickup.IsSpecialId(d.ItemId);
+                    live.DropAdded += Made;
+                    Ms2.Net.Packets.FieldAddItem drop = null;
+                    for (int kill = 0; kill < most && drop == null; kill++)
+                    {
+                        int added = npcs;
+                        hud.SubmitChatLine("/npc " + mob);
+                        await until(() => npcs > added, 60 * 15); await frames(60);
+                        var target = lastNpc;
+                        if (target == null || npcs == added) { Check("the mob is in the field", false); break; }
+                        int deadBefore = kills, press = 0;
+                        bool Gone() => kills > deadBefore || !GodotObject.IsInstanceValid(target.Root) || live.NpcDead(target.ObjectId);
+                        for (; press < 30 && !Gone(); press++) { hud.FaceScripted(target.Position); await frames(20); hud.AttackScripted(); await frames(60); }
+                        await until(() => made.Any(d => d.SourceObjectId == target.ObjectId), 60 * 6); await frames(60 * 3);
+                        drop = made.FirstOrDefault(d => d.SourceObjectId == target.ObjectId && IsItem(d) && live.DropShown(d.ObjectId) != null);
+                        GD.Print($"live: combat autoloot kill {kill}: npc {target.ObjectId} dead {Gone()} after {press} press(es), drops {string.Join(" ", made.Where(d => d.SourceObjectId == target.ObjectId).Select(d => $"{d.ItemId}x{d.Amount}/r{d.Rarity}/kind 0x{d.DropKind:x}"))}");
+                    }
+                    live.DropAdded -= Made;
+                    Check("a kill dropped an item that stays with auto loot off", drop != null);
+                    if (drop == null) { options.CopyFrom(saved); break; }
+                    var on = saved.Clone();
+                    var kinds = Kinds();
+                    int type = kinds.TypeOf(drop.ItemId);
+                    if (drop.DropKind == 0x3ed) on.Other = true;   // such a drop needs the "other" switch, off in the default file
+                    GD.Print($"live: combat autoloot drop {drop.ObjectId} item {drop.ItemId} type {type} rarity {drop.Rarity} kind 0x{drop.DropKind:x}: the options take it {on.Takes(drop.ItemId, type, drop.Rarity, drop.DropKind == 0x3ed, live.Me.User?.Level)}");
+                    if (full)
+                    {
+                        // the room the item has in its tab: every empty cell at SlotMax and what its own stacks still take
+                        int tab = live.Inventory.TabOfItem(drop.ItemId);
+                        long slotMax = Math.Max(1u, kinds.SlotMax(drop.ItemId));
+                        var cells = live.Inventory.Cells(tab);
+                        long room = cells.Count(c => c.Empty) * slotMax + cells.Where(c => !c.Empty && c.ItemId == drop.ItemId).Sum(c => Math.Max(0, slotMax - c.Amount));
+                        long had = BagSum(live);
+                        GD.Print($"live: combat autofull fill tab {tab} with {room} of {drop.ItemId} (slot max {slotMax}): {(hud.SubmitChatLine($"/item {drop.ItemId} --amount {room}") ? "sent" : "no chat window")}");
+                        await until(() => live.Inventory.HasEmptyCell(tab) == false, 60 * 10); await frames(60 * 2);
+                        Check($"the drop's tab {tab} is full ({had} -> {BagSum(live)})", live.Inventory.HasEmptyCell(tab) == false);
+                    }
+                    var asks = new System.Collections.Generic.List<(uint At, string What)>();
+                    void Ask(int id) { if (id == drop.ObjectId) asks.Add(((uint)Time.GetTicksMsec(), "request")); }
+                    void Refused(int id, int mode) { if (id == drop.ObjectId) asks.Add(((uint)Time.GetTicksMsec(), $"refused mode {mode}")); }
+                    void Notice(int n) { if (n == Ms2.Formats.World.DropPickup.BagFullNotice) asks.Add(((uint)Time.GetTicksMsec(), "notice 0x43")); }
+                    live.DropAutoRequest += Ask; live.DropRefused += Refused; live.DropNotice += Notice;
+                    long bag0 = BagSum(live);
+                    live.PickupKeyHeld = false;
+                    options.CopyFrom(on);
+                    for (int n = 0; n < 60 * 8 && live.DropShown(drop.ObjectId) is { } s && asks.Count == 0; n++)
+                    {
+                        if (hud.DriveTowardScripted(s.At, false) < 40) hud.DriveEnd();
+                        await frames(1);
+                    }
+                    hud.DriveEnd();
+                    await frames(20); Shot(full ? "autofull_asked.png" : "autoloot_asked.png");
+                    if (full) await until(() => asks.Count(a => a.What == "request") >= 3, 60 * 8);
+                    else await until(() => live.DropShown(drop.ObjectId) == null && BagSum(live) > bag0, 60 * 5);
+                    await frames(60);
+                    live.DropAutoRequest -= Ask; live.DropRefused -= Refused; live.DropNotice -= Notice;
+                    options.CopyFrom(saved);
+                    uint t0 = asks.Count > 0 ? asks[0].At : 0;
+                    GD.Print($"live: combat {(full ? "autofull" : "autoloot")}: {string.Join(", ", asks.Select(a => $"{a.What} +{a.At - t0} ms"))}; key held {live.PickupKeyHeld}");
+                    Shot(full ? "autofull_after.png" : "autoloot_after.png");
+                    if (!full)
+                    {
+                        Check("auto loot asked for the drop with the pickup key up", asks.Any(a => a.What == "request"));
+                        Check($"the bag took the item ({bag0} -> {BagSum(live)})", BagSum(live) > bag0 && live.DropShown(drop.ObjectId) == null);
+                        break;
+                    }
+                    var seq = asks.Where(a => a.What != "notice 0x43").Select(a => a.What).ToList();
+                    bool alternates = seq.Count >= 3 && seq.Select((w, i) => w == (i % 2 == 0 ? "request" : "refused mode 1")).All(x => x);
+                    Check($"each auto request waits for the mode 1 refusal before the next ({string.Join(" > ", seq)})", alternates);
+                    var reqs = asks.Where(a => a.What == "request").Select(a => a.At).ToList();
+                    Check($"the next request comes after the repeat delay ({string.Join(" ", reqs.Zip(reqs.Skip(1), (x, y) => y - x))} ms)", reqs.Count >= 2 && reqs.Zip(reqs.Skip(1), (x, y) => y - x).All(d => d >= Ms2.Formats.World.DropPickup.RepeatDelayMs));
+                    Check("the bag-full notice came with the requests", asks.Any(a => a.What == "notice 0x43"));
+                    Check($"the drop stays and the bag is unchanged ({bag0} -> {BagSum(live)})", live.DropShown(drop.ObjectId) != null && BagSum(live) == bag0);
                     break;
                 }
                 case "watchdrops":

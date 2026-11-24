@@ -1,5 +1,6 @@
 using Godot;
 using Ms2.Formats.Model;
+using Ms2.Formats.Options;
 using Ms2.Formats.Pack;
 using Ms2.Formats.World;
 using Ms2.Net.Packets;
@@ -31,6 +32,8 @@ public sealed partial class DropLayer : Node3D
         public long Meso;            // m_n64Meso: the add packet's amount, then the pickup's value (SetMeso)
         public float Faded;          // seconds into the removal fade (vfunc_40(1, 0, 0, 0.5))
         public List<GeometryInstance3D> Meshes;   // the drop's meshes the fade sets
+        public bool Requested;       // m_n294 (FUN_141192840): set by each pickup request, cleared by a mode 1 refusal
+        public int Type;             // the item's property type (CItemData::GetType), for the auto loot options
     }
 
     readonly PackSet packs;
@@ -83,6 +86,14 @@ public sealed partial class DropLayer : Node3D
     public Action<int> Notice;
     /// <summary>PlaySystemSound: a system ui sound by its name.</summary>
     public Action<string> SystemSound;
+    /// <summary>The character's auto loot options (CGameOption m_autoLoot, FUN_141533e20); none turns auto loot off.</summary>
+    public Func<GameOption.AutoLoot> AutoLoot = () => null;
+    /// <summary>An item's property type (CItemData::GetType).</summary>
+    public Func<int, int> ItemType = _ => 0;
+    /// <summary>The local player's level (vfunc_78), null without a local player.</summary>
+    public Func<int?> Level = () => null;
+    /// <summary>Auto loot asked for a drop (mypc.cpp:4732-4733), before the request itself.</summary>
+    public Action<FieldAddItem> AutoRequested;
     public int Count => drops.Count;
     /// <summary>FieldAddItems the client would not make a drop of (not the owner, no item data, no style, no model).</summary>
     public int Skipped, NoModel;
@@ -131,7 +142,8 @@ public sealed partial class DropLayer : Node3D
         var motion = new DropMotion(constants, look.Style, d.ObjectId, pet);
         uint fade = DropPickup.FadeUntil(Clock(), d.DropKind, pet, d.PetTrap, constants.PetTrapVisibleDelayMs);
         var drop = new Drop { Root = root, Motion = motion, Packet = d, FadeUntil = fade, Held = fade != 0 && !pet, Hidden = fade != 0,
-            Style = look.Style, Effects = new DropEffects(Effects(), PlaySound), Meso = d.Amount };
+            Style = look.Style, Effects = new DropEffects(Effects(), PlaySound), Meso = d.Amount,
+            Type = d.IsMeso ? 0 : ItemType(d.ItemId) };
         root.Visible = !drop.Hidden;
         if (drop.Held) root.Position = G(DropMotion.Created70(d.Position));
         else LaunchDrop(drop);
@@ -181,11 +193,17 @@ public sealed partial class DropLayer : Node3D
 
     /// <summary>
     /// OnFieldPickupItem (scenestategame.cpp:2420) as far as it moves the drop: a pickup sends a resting drop to its picker
-    /// (CDropItem::OnPickedUp, which also starts the shared pick timer); a refusal changes nothing the drop shows.
+    /// (CDropItem::OnPickedUp, which also starts the shared pick timer); a refusal with mode 1 clears the request flag (m_n294), so
+    /// auto loot asks again; nothing the drop shows changes.
     /// </summary>
     public void OnPickupPacket(FieldPickupItem p)
     {
-        if (!p.DropKnown || !p.Picked || !drops.TryGetValue(p.ObjectId, out var d)) return;
+        if (!p.DropKnown || !drops.TryGetValue(p.ObjectId, out var d)) return;
+        if (!p.Picked)
+        {
+            if (p.Mode == 1) d.Requested = false;   // scenestategame.cpp:2450-2454: FUN_141192840(0), so auto loot asks again
+            return;
+        }
         d.Meso = p.MesoShown(d.Meso, d.Packet.IsMeso);
         var at = ActorPosition(p.PickerId);
         if (p.PickerId == SelfObjectId() && at is { } mine)
@@ -292,7 +310,7 @@ public sealed partial class DropLayer : Node3D
             d.Root.Rotation = new Vector3(Mathf.DegToRad(s.X), Mathf.DegToRad(s.Z), Mathf.DegToRad(-s.Y));
         }
         bool down = GetKeyDown();
-        if (down && drops.Count > 0) TryPickup(!keyWasDown);
+        if (drops.Count > 0) PickupFrame(down, down && !keyWasDown);
         keyWasDown = down;
         if (fading.Count > 0) Fade(dt);
         if (gone.Count == 0) return;
@@ -314,30 +332,41 @@ public sealed partial class DropLayer : Node3D
     }
 
     /// <summary>
-    /// MyPC::FUN_141530db0 with the "get" key down (mypc.cpp:4740): every meso in range goes in one RequestMesoPickup, then the nearest
-    /// drop in item range is requested when the bag takes it (or the key was just pressed). Auto loot (the option-driven flagging) is not ported.
+    /// MyPC::UpdateAutoLoot (mypc.cpp:4555), each frame unless dead, and its FUN_141530db0 (:4712-4760): the auto loot options
+    /// request every item in range they take that is not flagged (m_n294) and not dropped by the player, the meso option sends the
+    /// mesos in range, and with the "get" key held the mesos again and the nearest drop when the bag takes it (or the key was just pressed).
     /// </summary>
-    void TryPickup(bool pressed)
+    void PickupFrame(bool key, bool pressed)
     {
         if (PlayerPosition() is not { } me || PickupBlocked()) return;
+        var auto = AutoLoot();
+        if (auto == null && !key) return;
         uint now = Clock();
+        int self = SelfObjectId();
+        int? level = Level();
         planner.Clear(); planned.Clear();
         foreach (var d in drops.Values)
         {
+            var p = d.Packet;
             planner.Candidates.Add(new PickupCandidate
             {
-                ObjectId = d.Packet.ObjectId, State = d.Motion.State, LastRequest = d.LastRequest, FadeUntil = d.FadeUntil,
-                Distance = (me - d.Motion.Position).Length(), Meso = d.Packet.IsMeso, Owner = d.Packet.IsPickupAllowed(ownCharacterId),
+                ObjectId = p.ObjectId, State = d.Motion.State, LastRequest = d.LastRequest, FadeUntil = d.FadeUntil,
+                Distance = (me - d.Motion.Position).Length(), Meso = p.IsMeso, Owner = p.IsPickupAllowed(ownCharacterId),
+                Requested = d.Requested, FromSelf = self != 0 && p.SourceObjectId == self,
+                AutoTakes = auto != null && !p.IsMeso && auto.Takes(p.ItemId, d.Type, p.Rarity, p.DropKind == 0x3ed, level),
             });
             planned.Add(d);
         }
-        planner.Plan(now, globalUntil, constants.MaxLength, constants.MoneyMaxLength, RequestMesoPickup.MaxCount);
-        if (planner.Mesos.Count > 0)
+        planner.Frame(now, globalUntil, constants.MaxLength, constants.MoneyMaxLength, RequestMesoPickup.MaxCount, auto?.Meso == true, key);
+        foreach (int i in planner.Auto) { AutoRequested?.Invoke(planned[i].Packet); Request(planned[i], now); }
+        if (planner.MesoSends > 0)
         {
             mesoIds.Clear();
             foreach (int i in planner.Mesos) { planned[i].LastRequest = now; mesoIds.Add(planned[i].Packet.ObjectId); }
-            Send(new RequestMesoPickup(mesoIds.ToArray()));
+            var ids = mesoIds.ToArray();
+            for (int n = 0; n < planner.MesoSends; n++) Send(new RequestMesoPickup(ids));
         }
+        if (!key) return;
         if (planner.Nearest >= 0)
         {
             var nearest = planned[planner.Nearest];
@@ -356,7 +385,9 @@ public sealed partial class DropLayer : Node3D
     /// </summary>
     void Request(Drop d, uint now)
     {
+        if (DropPickup.KeepsOnRemove(d.PickerId, d.Motion.State)) return;   // FUN_1411900d0: being picked up
         d.LastRequest = now;
+        d.Requested = true;   // SendRequestItemPickup: FUN_141192840(1)
         int id = d.Packet.ItemId;
         if (DropPickup.BagFull(id, HasEmptyCell(TabOf(id)), CanStack(d.Packet)))
         {

@@ -110,32 +110,59 @@ public struct PickupCandidate
     public uint LastRequest, FadeUntil;
     public float Distance;
     public bool Meso, Owner;
+    /// <summary>CDropItem m_n294 (FUN_141533e40): a pickup was requested and not refused with mode 1 since.</summary>
+    public bool Requested;
+    /// <summary>The drop came out of the local player (GetOwnerObjId() == the player's object id, mypc.cpp:4728).</summary>
+    public bool FromSelf;
+    /// <summary>The auto loot options take the item (<see cref="Ms2.Formats.Options.GameOption.AutoLoot.Takes"/>).</summary>
+    public bool AutoTakes;
 }
 
 /// <summary>
-/// The "get" key's choice (mypc.cpp:4740-4757), Godot-free: the mesos in range (CollectDropItems, at most 0x80) are stamped as requested
-/// before FindNearestDropItem(1, 0) runs, so a meso in both ranges is sent once; with no drop in range the nearest one that ignores
-/// the owner rule (FindNearestDropItem(1, 1)) hops (SetState(5)).
+/// One frame of MyPC::FUN_141530db0 (mypc.cpp:4712-4760), Godot-free. CollectDropItems(items, mesos, 0, 1, 0) takes the eligible drops
+/// once at the start (worldservice_1.cpp:6388: a meso in the money range, any other drop in the item range, the owner rule kept).
+/// Auto loot then requests every collected item not flagged, not from the player and taken by the options (<see cref="Auto"/>; each
+/// request stamps the drop). With the meso option the collected mesos are sent (FUN_1415310e0, at most 0x80); with the get key held
+/// the same list is sent again (FUN_1411900d0 is still false for a resting drop, so a meso goes twice in that frame, as in the
+/// client), then FindNearestDropItem(1, 0) over the stamped drops, else the nearest out-of-owner one hops (FindNearestDropItem(1, 1)).
 /// </summary>
 public sealed class PickupPlanner
 {
     public readonly List<PickupCandidate> Candidates = new();
     /// <summary>Indices into <see cref="Candidates"/> of the mesos to send.</summary>
     public readonly List<int> Mesos = new();
+    /// <summary>Indices of the items auto loot requests, in the candidates' order.</summary>
+    public readonly List<int> Auto = new();
+    /// <summary>How many RequestMesoPickup packets of <see cref="Mesos"/> the frame sends: one for the meso option, one for the key.</summary>
+    public int MesoSends;
     /// <summary>The index to request (-1 none), and the index that hops when there is none to request.</summary>
     public int Nearest = -1, Hop = -1;
 
-    public void Clear() { Candidates.Clear(); Mesos.Clear(); Nearest = Hop = -1; }
+    public void Clear() { Candidates.Clear(); Mesos.Clear(); Auto.Clear(); MesoSends = 0; Nearest = Hop = -1; }
 
-    public void Plan(uint nowMs, uint globalUntilMs, float itemRange, float moneyRange, int maxMesos)
+    /// <summary>The get key alone (no auto loot): the frame with the key held and the meso option off.</summary>
+    public void Plan(uint nowMs, uint globalUntilMs, float itemRange, float moneyRange, int maxMesos) =>
+        Frame(nowMs, globalUntilMs, itemRange, moneyRange, maxMesos, autoMeso: false, key: true);
+
+    public void Frame(uint nowMs, uint globalUntilMs, float itemRange, float moneyRange, int maxMesos, bool autoMeso, bool key)
     {
-        Mesos.Clear(); Nearest = Hop = -1;
+        Mesos.Clear(); Auto.Clear(); MesoSends = 0; Nearest = Hop = -1;
         for (int i = 0; i < Candidates.Count; i++)
         {
             var c = Candidates[i];
-            if (c.Meso && Mesos.Count < maxMesos && DropPickup.Eligible(c.State, nowMs, globalUntilMs, c.LastRequest, c.FadeUntil, c.Distance, moneyRange, c.Owner))
-                Mesos.Add(i);
+            if (c.Meso)
+            {
+                if (Mesos.Count < maxMesos && DropPickup.Eligible(c.State, nowMs, globalUntilMs, c.LastRequest, c.FadeUntil, c.Distance, moneyRange, c.Owner))
+                    Mesos.Add(i);
+            }
+            else if (!c.Requested && !c.FromSelf && c.AutoTakes
+                     && DropPickup.Eligible(c.State, nowMs, globalUntilMs, c.LastRequest, c.FadeUntil, c.Distance, itemRange, c.Owner))
+                Auto.Add(i);
         }
+        foreach (int i in Auto) { var c = Candidates[i]; c.LastRequest = nowMs; c.Requested = true; Candidates[i] = c; }   // SendRequestItemPickup
+        if (autoMeso && Mesos.Count > 0) MesoSends++;
+        if (!key) { if (MesoSends == 0) Mesos.Clear(); return; }
+        if (Mesos.Count > 0) MesoSends++;
         foreach (int i in Mesos) { var c = Candidates[i]; c.LastRequest = nowMs; Candidates[i] = c; }   // FUN_141191030
         float best = float.MaxValue, bestHop = float.MaxValue;
         for (int i = 0; i < Candidates.Count; i++)
