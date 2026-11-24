@@ -34,6 +34,7 @@ public enum Inbound : ushort {
     NpcTalk = 0x4B,
     RegionSkill = 0x4C,         // RecvOp RegionSkill (commonfiles/opcodes.h): CSceneStateGame::OnRegionSkill
     FieldProperty = 0xCA,       // RecvOp FieldProperty (commonfiles/opcodes.h:209): CSceneStateGame::OnFieldProperty (scenestategame.cpp:3895)
+    FunctionCube = 0x4D,        // RecvOp FunctionCube: CSceneStateGame::OnFunctionCube (scenestategame.cpp:3660, @0x1417212a0) -> CFunctionCubeService::FUN_14122f270 (functioncubeobject.cpp:2411)
     Trigger = 0x4E,             // RecvOp Trigger (commonfiles/opcodes.h:86): CSceneStateGame::OnTrigger
     Cinematic = 0x66,           // RecvOp Cinematic (commonfiles/opcodes.h:110): CSceneStateGame::OnCinematic (scenestategame.cpp:3867) -> UICutSceneCinematic::OnPacket
     Quest = 0x52,

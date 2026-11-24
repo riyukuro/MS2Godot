@@ -38,6 +38,7 @@ static class Gms2Opcodes {
         [Inbound.NpcTalk] = 0x4C,
         [Inbound.RegionSkill] = 0x4D,
         [Inbound.FieldProperty] = 0xCC,
+        [Inbound.FunctionCube] = 0x4E,
         [Inbound.Trigger] = 0x4F,
         [Inbound.Cinematic] = 0x68,       // recorded: 4 packets on the tutorial map (KeyMode, StartCinematic, Close)
         [Inbound.Quest] = 0x53,
