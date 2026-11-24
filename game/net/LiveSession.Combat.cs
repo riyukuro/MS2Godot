@@ -314,6 +314,14 @@ public partial class LiveSession
                 for (int n = 0; n < 60 * 25 && dist > 120; n++) { dist = hud.DriveTowardScripted(at, false); await frames(1); }
                 hud.DriveEnd(); await frames(20);
                 Shot("breakhit_before.png");
+                {
+                    // a breakable with NxCollision stands in its box (MakeNxBoxController): the run stops at its side
+                    var stood = FieldPortals.ToMs2(live.OwnPlayer.GlobalPosition);
+                    double sx = stood.X - target.Position.X, sy = stood.Y - target.Position.Y, flat = System.Math.Sqrt(sx * sx + sy * sy);
+                    double side = System.Math.Min(target.Size.X, target.Size.Y) * 0.5;
+                    GD.Print($"live: combat {step}: stopped {flat:F0} from its centre (box {(target.HasBox ? "up" : "none")}, half side {side:F0})");
+                    if (target.HasBox) Check($"the pc stops outside the breakable's box ({flat:F0} from the centre, half side {side:F0})", flat >= side);
+                }
                 for (int i = int.Parse(arg[0]); i > 0 && target.State == 2; i--)
                 {
                     dist = hud.FaceScripted(at);
