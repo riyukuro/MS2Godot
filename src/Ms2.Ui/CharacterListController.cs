@@ -364,6 +364,19 @@ public sealed class CharacterListController : UiController, IMessageBoxListener
         SetInput(false);
     }
 
+    /// <summary>
+    /// ShowPopup (uicharacterlistdialog.cpp:1571-1579): with the movie loaded, the camera dialog 0x4ef2 opened (not ported:
+    /// character select has no camera dialog here), the movie's popup and the input on. A failed game start ends here
+    /// (a refused start, vfunc_79 case 0xe :591-597; an enter that could not be sent, FUN_1418f1790 :1503-1517; the
+    /// failed connect box's OK, UISceneLobbySelect::vfunc_64), so the list takes input again.
+    /// </summary>
+    public void ShowPopup()
+    {
+        if (Host?.Entity == null) return;
+        Host.Invoke(Host.Entity, "popup");
+        SetInput(true);
+    }
+
     // ---- the character delete (uicharacterlistdialog.cpp) -------------------------------------------------------------
 
     /// <summary>CCharacterInfo's delete fields: m_nDeleteTime (unix seconds, 0 for none), m_nSeconds (the wait left when it was

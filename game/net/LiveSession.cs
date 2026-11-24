@@ -914,6 +914,7 @@ public partial class LiveSession : Node
     {
         Busy = true;
         LastLoginRefusal = null;
+        LastConnectError = 0;
         try
         {
             var args = LaunchArgs();
@@ -933,7 +934,7 @@ public partial class LiveSession : Node
             // no empty-id check: the client sends the request as typed (SendLoginRequest, uilogindialog.cpp:204-246) and the server answers
             user ??= "";
             login?.Dispose();
-            login = new TcpTransport();
+            UseLogin(new TcpTransport());
             // the real client appends its region code to the id
             // GMS2: the launcher ticket (--ticket) goes in the token field (the packet drops id and password); only a GMS2 profile uses it
             string ticket = args.HasAddress ? args.Ticket : null;   // the ticket goes only to the server it was given with
@@ -959,6 +960,13 @@ public partial class LiveSession : Node
             if (o.CharacterLimit > 0) CharacterLimit = o.CharacterLimit;
             GD.Print($"live: logged in, {o.Characters.Count} character(s): {string.Join(", ", o.Characters.Select(c => c.User.Name))}");
             return true;
+        }
+        catch (System.Net.Sockets.SocketException ex)
+        {
+            // the connect itself failed: window message 0x467 (CClientPlatformBase::vfunc_31 from the connect event's error)
+            LastConnectError = (int)ex.SocketErrorCode;
+            GD.PushWarning($"live: login connect failed, socket error {LastConnectError}: {ex.Message}");
+            return false;
         }
         catch (Exception ex) { GD.PushWarning("live: login failed: " + ex.Message); return false; }
         finally { Busy = false; }
@@ -1077,16 +1085,40 @@ public partial class LiveSession : Node
         };
     }
 
-    /// <summary>Select the character and migrate to the game server, up to RequestFieldEnter. The chosen character's map becomes the server's.</summary>
-    public async Task<bool> EnterAsync(CharacterEntry chosen)
+    /// <summary>
+    /// Select the character and migrate to the game server, up to RequestFieldEnter. The chosen character's map becomes the
+    /// server's. How it ended (<see cref="EnterResult"/>): a refused start is the LoginToGame answer, a failed connect the
+    /// socket error of the game server's connect, a lost login connection its socket error (0 for a clean close).
+    /// </summary>
+    public async Task<EnterResult> EnterAsync(CharacterEntry chosen)
     {
         Busy = true;
         regionSkills.Clear(); RegionSkillLog.Clear(); ClearFieldEffects(); FieldProperties.Clear();   // a new field: no region skill object or field property survives it
+        var from = login;
         try
         {
-            var go = await GameClient.SelectAsync(login, chosen.User.CharacterId, BeginEnterGame());
+            if (from == null || from.IsClosed) return Dropped(from, null);
+            LoginToGame go;
+            try { go = await GameClient.SelectAsync(from, chosen.User.CharacterId, BeginEnterGame()); }
+            catch (System.IO.IOException e) when (from.IsClosed) { return Dropped(from, e); }
+            if (!go.Ok)
+            {
+                GD.Print($"live: start refused, result 0x{go.Error:x} '{go.Message}'");
+                return new EnterResult(EnterEnd.Refused, go.Error, go);
+            }
+            leavingLogin = true;   // the login server ends this session now
             GD.Print($"live: game entry connects to {GameClient.EndpointText(GameClient.HostOf(go.Address, host), go.Port)}");
-            (entry, game) = await GameClient.EnterAsync(go, accountId, machine, host, requestGlobalFactor: !Factors.Applied);
+            try { (entry, game) = await GameClient.EnterAsync(go, accountId, machine, host, requestGlobalFactor: !Factors.Applied); }
+            catch (System.Net.Sockets.SocketException e)
+            {
+                GD.PushWarning($"live: game connect failed, socket error {(int)e.SocketErrorCode}: {e.Message}");
+                return new EnterResult(EnterEnd.ConnectFailed, (int)e.SocketErrorCode);
+            }
+            catch (MoveRefusedException e)
+            {
+                GD.PushWarning("live: enter failed: " + e.Message);
+                return new EnterResult(EnterEnd.MoveRefused, e.Error);
+            }
             Quests.QuestInfo = QuestTable();
             ItemReader.SlotOf ??= ItemSlotTable();
             ItemReader.ExtraOf ??= id => { try { return Kinds().ExtraOf(id); } catch (Exception e) { GD.Print($"live: item kinds unavailable ({e.Message})"); return null; } };
@@ -1102,10 +1134,18 @@ public partial class LiveSession : Node
             login.Dispose(); login = null;
             this.chosen = chosen;
             TakeEntry();
-            return true;
+            return new EnterResult(EnterEnd.Entered);
         }
-        catch (Exception ex) { GD.PushWarning("live: enter failed: " + ex.Message); return false; }
+        catch (Exception ex) { GD.PushWarning("live: enter failed: " + ex.Message); return new EnterResult(EnterEnd.Failed); }
         finally { Busy = false; }
+    }
+
+    /// <summary>The login connection was gone when the start was sent or answered: its socket error, 0 for a clean close.</summary>
+    static EnterResult Dropped(TcpTransport t, Exception e)
+    {
+        int code = Ms2.Ui.FrontEndConnection.CodeOf(t?.Failure ?? e);
+        GD.PushWarning($"live: start not sent, the login connection is closed (socket error {code})");
+        return new EnterResult(EnterEnd.Dropped, code);
     }
 
     CharacterEntry chosen;

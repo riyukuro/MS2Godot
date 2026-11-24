@@ -195,13 +195,21 @@ public sealed record TickRequest(int Tick) {
     public static TickRequest Read(ByteReader r) { var p = new TickRequest(r.ReadInt()); r.ExpectEnd("TickRequest"); return p; }
 }
 
-/// <summary>Inbound 0x0E. ok: 4 byte ip, u16 port, u64 token, i32 map id. Error 0x?? "rename required" and the others carry a text.</summary>
+/// <summary>Inbound 0x0E (Unk_NetworkTransfer::ReadFrom @0x1407a4c60, serverpacketdef.cpp:288-302). ok: 4 byte ip, u16 port,
+/// u64 token (the two i32), i32 map id. Any other result carries a text; result 0x31 (the name must change) then the
+/// character's id (<see cref="CharacterId"/>).</summary>
 public sealed record LoginToGame(byte Error, byte[] Ip, ushort Port, ulong Token, int MapId, string Message) {
     public bool Ok => Error == 0;
     public System.Net.IPAddress Address => Ip == null ? null : new System.Net.IPAddress(Ip);
+    /// <summary>Result 0x31's character (the i64 after the text); 0 otherwise.</summary>
+    public long CharacterId { get; init; }
     public static LoginToGame Read(ByteReader r) {
         byte err = r.ReadByte();
-        if (err != 0) return new LoginToGame(err, null, 0, 0, 0, r.Available >= 2 ? r.ReadUnicodeString() : "");
+        if (err != 0) {
+            string text = r.Available >= 2 ? r.ReadUnicodeString() : "";
+            long character = err == 0x31 && r.Available >= 8 ? r.ReadLong() : 0;
+            return new LoginToGame(err, null, 0, 0, 0, text) { CharacterId = character };
+        }
         var p = new LoginToGame(0, r.ReadBytes(4), r.ReadUShort(), r.ReadULong(), r.ReadInt(), "");
         r.ExpectEnd("LoginToGame"); return p;
     }

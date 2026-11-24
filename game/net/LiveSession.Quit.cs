@@ -72,7 +72,7 @@ public partial class LiveSession
                 });
             if (exit.IsCancellationRequested) { next.Dispose(); return; }
             login?.Dispose();
-            login = next;
+            UseLogin(next);
             // deferred like the scene switch, so it runs after it: the switch empties the list, this fills it
             Callable.From(() =>
             {

@@ -67,6 +67,19 @@ public class PacketTests {
         Assert.That(p.Token, Is.EqualTo(ulong.MaxValue - 4));
     }
 
+    [Test] public void LoginToGameRefusalsCarryTheirTextAndTheRenameCharacter() {
+        // Unk_NetworkTransfer::ReadFrom (serverpacketdef.cpp:288-302): any result but 0 reads the text; result 0x31 then the
+        // character's i64 (the rename box appends it)
+        var w = new ByteWriter();
+        w.WriteByte(0x31); w.WriteUnicodeString(""); w.WriteLong(20000000042);
+        var p = LoginToGame.Read(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray()));
+        Assert.That(p.Ok, Is.False); Assert.That(p.Error, Is.EqualTo(0x31)); Assert.That(p.CharacterId, Is.EqualTo(20000000042));
+        w = new ByteWriter();
+        w.WriteByte(0x1a); w.WriteUnicodeString("down\\nfor work");
+        p = LoginToGame.Read(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray()));
+        Assert.That(p.Error, Is.EqualTo(0x1a)); Assert.That(p.Message, Is.EqualTo("down\\nfor work")); Assert.That(p.CharacterId, Is.EqualTo(0));
+    }
+
     [Test] public void TrailingBytesAreAnError() {
         var w = new ByteWriter(); w.WriteInt(1); w.WriteByte(0);
         Assert.Throws<PacketLayoutException>(() => TickRequest.Read(new ByteReader(w.Buffer.AsSpan(0, w.Length).ToArray())));

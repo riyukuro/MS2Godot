@@ -131,6 +131,39 @@ public class CharacterListTests
     }
 
     [Test]
+    public void AFailedStartPopsTheListUpAgain()
+    {
+        // ShowPopup (uicharacterlistdialog.cpp:1571-1579), from a refused start (vfunc_79 case 0xe), an enter that was not
+        // sent (FUN_1418f1790) and the failed connect box's OK (UISceneLobbySelect::vfunc_64): the movie's popup and the
+        // input on, so the same row can be started again
+        var (h, c) = Load(Row("A", "11", "d.png"), Row("B", "12", "d.png"));
+        var started = new List<string>();
+        c.GameStart += started.Add;
+        var p = h.Player;
+        c.Previewed("11");
+        c.FadeInComplete();
+        string Label() => Rt.ToString(h.Get(h.Entity, "currentLabel"));
+        string up = Label();
+        h.Invoke(h.Entity, "onEnterKey");
+        for (int i = 0; i < 240 && started.Count == 0; i++) p.Tick();
+        Assert.That(started, Is.EqualTo(new[] { "11" }));
+        for (int i = 0; i < 60; i++) p.Tick();
+        string down = Label();
+        Assert.That(c.InputOn, Is.False, "popped down, no input while the start is out");
+
+        c.ShowPopup();
+        for (int i = 0; i < 120; i++) p.Tick();
+        TestContext.WriteLine($"labels: up '{up}', after the start '{down}', after ShowPopup '{Label()}'");
+        Assert.That(c.InputOn, Is.True, "the list takes the mouse again");
+        Assert.That(Label(), Is.EqualTo(up), "the movie is popped up again");
+        Assert.That(c.Starting, Is.False);
+
+        h.Invoke(h.Entity, "onEnterKey");
+        for (int i = 0; i < 240 && started.Count == 1; i++) p.Tick();
+        Assert.That(started, Is.EqualTo(new[] { "11", "11" }), "Start works again after the failure");
+    }
+
+    [Test]
     public void ARowClickAfterStartDoesNothing()
     {
         // OnGameStart -> FUN_1418f13f0 (uicharacterlistdialog.cpp:1470-1499): HidePopups (popdown, mouseChildren off) and m_1d4 =

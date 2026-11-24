@@ -44,6 +44,7 @@ public partial class GameFlow : Node
     Action onGameExit, onAlreadyReconnect;
     Action<string, bool> onExternalBlock;
     Action onGameToLogin, onListReturned;
+    Action<int> onLoginLost;
 
     /// <summary>Returns the flow to the login scene (e.g. forced-quit notice, scenestategame.cpp:9268).</summary>
     public static void ReturnToLogin() => instance?.Go(State.Login);
@@ -123,6 +124,25 @@ public partial class GameFlow : Node
         liveSession.ReturnedToCharacterSelect += onGameToLogin;
         onListReturned = () => { if (Current == State.Lobby && GetTree().CurrentScene is CharacterListScene list) list.ReplaceList(); };
         liveSession.CharacterListReturned += onListReturned;
+        onLoginLost = LoginConnectionLost;
+        liveSession.LoginConnectionLost += onLoginLost;
+    }
+
+    /// <summary>
+    /// Window message 0x465 outside the field (windowservice.cpp:454-545): the login connection closed with socket error
+    /// <paramref name="code"/> on the login, character select or create scene. No reconnect starts there
+    /// (ShouldReconnect needs the field scene), so the scene goes to the login scene (FUN_1417e25a0(0x6200009)) and the
+    /// box shows the error's reason and its code (<see cref="Ms2.Ui.FrontEndConnection.Disconnected"/>); the next login
+    /// connects again. The login scene is not built again when it is already up.
+    /// </summary>
+    void LoginConnectionLost(int code)
+    {
+        if (Current is not (State.Login or State.Lobby or State.Create)) return;
+        string text = Ms2.Ui.FrontEndConnection.Disconnected(code, Ms2.Ui.Hud.MessageBoxData.Common);
+        GD.Print($"flow: the login connection was lost (socket error {code}): to the login scene, box '{text}'");
+        if (Current != State.Login) Go(State.Login);
+        Ui.MessageBoxLayer.Ensure(this);
+        Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(text, 0, null, "");
     }
 
     static int SceneIdFor(State state) => state switch
@@ -194,6 +214,7 @@ public partial class GameFlow : Node
         if (onExternalBlock != null) { Ui.MessageBoxLayer.ExternalBlock -= onExternalBlock; onExternalBlock = null; }
         if (onGameToLogin != null && Net.LiveSession.Instance is { } liveSession) { liveSession.ReturnedToCharacterSelect -= onGameToLogin; onGameToLogin = null; }
         if (onListReturned != null && Net.LiveSession.Instance is { } liveSession2) { liveSession2.CharacterListReturned -= onListReturned; onListReturned = null; }
+        if (onLoginLost != null && Net.LiveSession.Instance is { } liveSession3) { liveSession3.LoginConnectionLost -= onLoginLost; onLoginLost = null; }
         Session.GameScene = null;
         if (instance == this) instance = null;
     }
@@ -343,11 +364,11 @@ public partial class GameFlow : Node
             else if (method == UICharacterListDialogContract.ToHost.OnGameStart && a.Length > 0)
             {
                 var chosen = Session.List().FirstOrDefault(c => c.User.CharacterId.ToString() == (string)a[0]);
-                if (chosen == null) return;
+                if (chosen == null) { StartFailed(); return; }   // FUN_1418f1790: no character to enter, ShowPopup
                 Session.Choose(chosen);
                 if (Net.LiveSession.Instance is { } live)
                 {
-                    if (!live.Busy) EnterLive(live, chosen);
+                    EnterLive(live, chosen);
                     return;
                 }
                 Go(State.Loading);
@@ -377,9 +398,24 @@ public partial class GameFlow : Node
         }
         else if (scene is { } shown && shown.Controller != null)
         {
-            // Catches only a login attempt that failed without a server answer (connection refused or timed out), which is what the
-            // client sends through UISceneLogin::vfunc_64. STILL-OPEN: a connection that drops after the connect is the client's
-            // disconnect path, which this flow does not have yet.
+            // A login that failed without a server answer. A failed connect is window message 0x467: box 0x20e with the
+            // socket error, whose OK runs UISceneLogin::vfunc_64, the dialog's failure state (windowservice.cpp:606-621,
+            // FUN_141902530). A connection lost after the connect with a socket error is the session's LoginConnectionLost
+            // (0x465); any other failure goes to the failure state at once.
+            int code = live.LastConnectError;
+            if (code != 0)
+            {
+                string text = Ms2.Ui.FrontEndConnection.ConnectFailed(code, Ms2.Ui.Hud.MessageBoxData.Common);
+                GD.Print($"login: connect failed (socket error {code}), box '{text}', then the dialog's failure state");
+                Ui.MessageBoxLayer.Ensure(this);
+                Ms2.Ui.Hud.MessageBoxQueue.ShowWithCallback(text, 0, (_, _) =>
+                {
+                    if (GetTree().CurrentScene is Ui.LoginScene { Controller: not null } now)
+                        Ms2.Ui.LoginConnectFailure.Run(now.Controller.ShowConnectFailure, now.Scene.FailConnect);
+                    return true;
+                });
+                return;
+            }
             GD.Print("login: connect failed, the dialog shows its failure state");
             Ms2.Ui.LoginConnectFailure.Run(shown.Controller.ShowConnectFailure, shown.Scene.FailConnect);
         }
@@ -426,9 +462,64 @@ public partial class GameFlow : Node
         }
     }
 
+    /// <summary>
+    /// The enter request at the popdown's end (FUN_1418f1790 -> UIServerListDialog::EnterGame) and how it ended. The
+    /// client sends at once; a request still in flight here (a delete's answer) is waited for first, so the start is never
+    /// dropped. A refused start shows OnLoginToGame's box and pops the list up (<see cref="Ms2.Ui.StartRefusal"/>); a
+    /// failed game connect shows box 0x20e with the socket error, whose OK pops the list up (window message 0x467,
+    /// UISceneLobbySelect::vfunc_64); a login connection lost with a socket error is the 0x465 path
+    /// (<see cref="LoginConnectionLost"/>, raised by the session).
+    /// <para>Chosen here, where the client has no such end: after a clean close of the login connection the client queues
+    /// the request and waits for ever (EnterGame returns 1, gamesocket.cpp SendPacket keeps it pending), and with no
+    /// LoginToGame answer it waits too; the port pops the list up instead, so the list never stays without input. A move
+    /// refusal from the game server, or a game connection lost before the field, comes when the client is already past
+    /// the list (its field load began with the LoginToGame); here the list is still up, so the move error's box shows and
+    /// the list pops up.</para>
+    /// </summary>
     async void EnterLive(Net.LiveSession live, CharacterEntry chosen)
     {
-        if (await live.EnterAsync(chosen)) Go(State.Loading);
+        while (live.Busy) await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        var r = await live.EnterAsync(chosen);
+        switch (r.End)
+        {
+            case Net.LiveSession.EnterEnd.Entered:
+                Go(State.Loading);
+                return;
+            case Net.LiveSession.EnterEnd.Refused:
+                Ui.MessageBoxLayer.Ensure(this);
+                if (Ms2.Ui.StartRefusal.Build(r.Code, r.Answer?.Message, Ms2.Ui.Hud.MessageBoxData.CommonByKey) is { } box)
+                    Ms2.Ui.Hud.MessageBoxQueue.Show(box);
+                StartFailed();
+                return;
+            case Net.LiveSession.EnterEnd.ConnectFailed:
+            {
+                Ui.MessageBoxLayer.Ensure(this);
+                string text = Ms2.Ui.FrontEndConnection.ConnectFailed(r.Code, Ms2.Ui.Hud.MessageBoxData.Common);
+                GD.Print($"flow: the game connect failed (socket error {r.Code}): box '{text}'");
+                Ms2.Ui.Hud.MessageBoxQueue.ShowWithCallback(text, 0, (_, _) => { StartFailed(); return true; });
+                return;
+            }
+            case Net.LiveSession.EnterEnd.MoveRefused:
+                Ui.MessageBoxLayer.Ensure(this);
+                Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(Ms2.Ui.FieldMoveError.Text(r.Code, Ms2.Ui.Hud.MessageBoxData.CommonByKey), 0, null, "");
+                StartFailed();
+                return;
+            case Net.LiveSession.EnterEnd.Dropped when r.Code != 0:
+                return;   // the session raises LoginConnectionLost: the login scene and its box
+            default:
+                StartFailed();
+                return;
+        }
+    }
+
+    /// <summary>ShowPopup on the character list, when it is still the scene: the list takes input again.</summary>
+    void StartFailed()
+    {
+        if (GetTree().CurrentScene is CharacterListScene { Controller: { } dialog })
+        {
+            GD.Print("flow: the game start failed, the character list pops up again");
+            dialog.ShowPopup();
+        }
     }
 
     /// <summary>OnCreateCharacterAnswer: a refusal shows the message its kind picks (the create screen stays).</summary>
