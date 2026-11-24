@@ -125,6 +125,15 @@ public sealed partial class RemoteLayer : Node3D
         users.TryGetValue(objectId, out var r) && r.Root != null && GodotObject.IsInstanceValid(r.Root) && r.Root.IsInsideTree()
             ? new System.Numerics.Vector3(r.Root.GlobalPosition.X, -r.Root.GlobalPosition.Z, r.Root.GlobalPosition.Y) : null;
 
+    /// <summary>The first other player's tomb that stands in the field (in the tree, with its state), the one the tomb
+    /// pass would test (<see cref="RunTombTags"/>); null without one. For the scripted live runs.</summary>
+    public PlayerTombstone StandingTomb()
+    {
+        foreach (var r in users.Values)
+            if (r.Death.Tomb is { } t && IsInstanceValid(t) && t.IsInsideTree() && t.State != null) return t;
+        return null;
+    }
+
     /// <summary>WorldService::FindPCById: a shown player as a damage number's target; null when it is not a player here.</summary>
     public Ui.DamageTarget DamageOf(int objectId) => users.TryGetValue(objectId, out var r) ? r.Damage : null;
 

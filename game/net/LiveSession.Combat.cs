@@ -206,6 +206,23 @@ public partial class LiveSession
                 Check($"the craft's cell is the box cell {cell}", hit);
                 continue;
             }
+            if (step.StartsWith("tombhit:"))      // tombhit:N: a run to another player's standing tomb, the player turned to it, then the attack key N times a second apart
+            {
+                var tomb = live.remote?.StandingTomb();
+                Check("another player's tomb stands in the field", tomb != null);
+                if (tomb == null) continue;
+                float dist = hud.DriveTowardScripted(tomb.GlobalPosition, false);
+                for (int n = 0; n < 60 * 25 && dist > 80 && GodotObject.IsInstanceValid(tomb); n++) { dist = hud.DriveTowardScripted(tomb.GlobalPosition, false); await frames(1); }
+                hud.DriveEnd(); await frames(20);
+                for (int i = int.Parse(step[8..]); i > 0 && GodotObject.IsInstanceValid(tomb) && tomb.IsInsideTree(); i--)
+                {
+                    dist = hud.FaceScripted(tomb.GlobalPosition);
+                    GD.Print($"live: combat {step}: distance {dist:F0}: {(hud.AttackScripted() ? "cast" : "refused")}");
+                    await frames(60);
+                }
+                Shot("tombhit.png");
+                continue;
+            }
             if (step.StartsWith("faceto:"))      // faceto:x y z: the player turned to the map point where it stands
             {
                 var c = step[7..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
