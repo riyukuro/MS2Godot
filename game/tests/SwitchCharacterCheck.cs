@@ -81,6 +81,13 @@ public partial class SwitchCharacterDriver : Node
         if (live.CharacterId != target.CharacterId) return Done($"round {round}: the session entered {live.CharacterId}, not {target.CharacterId}");
         if (tag?.Shown != target.Name) return Done($"round {round}: the name tag shows '{tag?.Shown}', not '{target.Name}'");
         if (Look.PlayerLook.LiveLookOf != target.CharacterId) return Done($"round {round}: the player's look is of {Look.PlayerLook.LiveLookOf}, not {target.CharacterId}");
+        if (live.Movie.IsPlaying)   // a new GMS2 character's opening movie covers the field: skipped with Esc, as a player would
+        {
+            GD.Print($"switch character: round {round} a cut scene movie plays, Esc skips it for the shot");
+            Key(Godot.Key.Escape);
+            await Until(() => !live.Movie.IsPlaying, 600);
+            await Frames(60);
+        }
         Shot($"round{round}_{target.Name}.png");
         await Frames(120);
         return true;

@@ -171,7 +171,9 @@ public partial class DeleteCharacterDriver : Node
                 var live = Net.LiveSession.Instance;
                 int unread = live.Mails.Unread;      // the menu count (Notify); the list's opening sets it to 0, as the client does
                 hud.OpenMailScripted();
-                if (!await Until(() => hud.MailList != null, 600)) return Fail("the mail list never opened");
+                if (!await Until(() => hud.MailList != null, 600))
+                    return Fail(Ms2.Ui.Guide.GuideManager.RefusesDialogOpen("MailListDialog")
+                        ? "the mail list never opened: the guide holds it shut (s_tutorial_dialog_limit)" : "the mail list never opened");
                 await Frames(180);
                 int Listed() => live.Mails.Mails.Count(m => !m.IsRead);
                 int listed = Listed();
