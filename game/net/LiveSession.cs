@@ -3284,6 +3284,7 @@ public partial class LiveSession : Node
         // item and answers its box yes; "close" closes both dialogs; "~N" waits N s.
         // The own state and emotion are logged each half second for 6 s after a use; with MS2_LIVE_EMOTE_SHOTS=<dir> a shot after each
         // step as emote_<n>.png.
+        await SoundRun(tree, Frames);   // MS2_LIVE_SOUND (LiveSession.SoundScript.cs)
         string emoteRun = System.Environment.GetEnvironmentVariable("MS2_LIVE_EMOTE");
         if (!string.IsNullOrEmpty(emoteRun) && tree.CurrentScene is Ui.HudScene eh)
         {
