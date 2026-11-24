@@ -568,6 +568,7 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         }
         catch (Exception ex) { GD.PushWarning("mapxblock: " + ex.Message); }
 
+        loadedFogXml = x; loadedFogDefault = (fogNear, fogFar, fog);
         // mapxblock heightfog: colour, upper, lower, percentage (a standard height blend in field_lit)
         RenderingServer.GlobalShaderParameterSet("ms2_hfog", Vector3.Zero);
         if (x?.Root?.Element("heightfog") is { } hfog)
@@ -797,7 +798,59 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         fogParams.Z = bias;
         RenderingServer.GlobalShaderParameterSet("ms2_fog", fogParams);
     }
-    Vector4 fogParams;   // ms2_fog: near, far, bias, unused
+    Vector4 fogParams;   // ms2_fog: near, far, bias, off (1: ApplyEffect::SetFogRange(false, ...))
+
+    /// <summary>The fog this field's load applied, as CFieldDataCli::LoadXBlock reads the mapxblock (the telescope's skip puts it
+    /// back). A mapxblock without a fog element leaves the client's fog off (m_bFog false); the load here applies its fog with
+    /// the defaults below all the same, and this holds what it applied.
+    /// The held mapxblock document is parsed for it only when asked (the telescope's skip), so the field's load pays nothing.</summary>
+    public Ms2.Ui.FieldFog LoadedFog
+    {
+        get
+        {
+            if (loadedFog != null) return loadedFog;
+            var f = Ms2.Ui.FieldFog.Parse(loadedFogXml);
+            if (!f.Fog)
+            {
+                var (near, far, c) = loadedFogDefault;
+                f.Fog = true; f.FogNear = near; f.FogFar = far;
+                f.FogColor = 0xff000000u | (uint)(c.R8 << 16 | c.G8 << 8 | c.B8);
+            }
+            return loadedFog = f;
+        }
+    }
+    Ms2.Ui.FieldFog loadedFog;
+    XDocument loadedFogXml;
+    (float Near, float Far, Color Color) loadedFogDefault;
+
+    /// <summary>ApplyEffect::SetFogRange (@0x1409a4450, applyeffect.cpp:586-622): the depth fog on or off (NiFogProperty
+    /// SetFog), its near and far, and its colour (0xAARRGGBB; the rgb is the gamma value, as the mapxblock's). The field_lit
+    /// family's fog (ms2_fog, its w the off switch) and the environment fog of the other materials both follow.</summary>
+    public void SetFogRange(bool on, float near, float far, uint color)
+    {
+        var c = new Color(((color >> 16) & 0xff) / 255f, ((color >> 8) & 0xff) / 255f, (color & 0xff) / 255f);
+        RenderingServer.GlobalShaderParameterSet("ms2_fog_color", new Vector3(c.R, c.G, c.B));
+        fogParams = new Vector4(near, far, fogParams.Z, on ? 0f : 1f);
+        RenderingServer.GlobalShaderParameterSet("ms2_fog", fogParams);
+        if (environment != null)
+        {
+            environment.FogEnabled = on;
+            environment.FogLightColor = c.LinearToSrgb();
+            environment.FogDepthBegin = near;
+            environment.FogDepthEnd = far;
+        }
+    }
+
+    /// <summary>ApplyEffect::SetFogEffect (@0x1409a46a0, applyeffect.cpp:625): the height fog's colour, upper and lower heights
+    /// and percentage, as the load sets ms2_hfog; off is no height fog here (density 0), as a mapxblock without one.
+    /// STILL-OPEN: the client's off sets the upper height to -10000 and keeps the rest; field_lit's blend has no such case.</summary>
+    public void SetFogEffect(bool on, uint color, float upper, float lower, float percentage)
+    {
+        if (!on) { RenderingServer.GlobalShaderParameterSet("ms2_hfog", Vector3.Zero); return; }
+        RenderingServer.GlobalShaderParameterSet("ms2_hfog_color",
+            new Vector3(((color >> 16) & 0xff) / 255f, ((color >> 8) & 0xff) / 255f, (color & 0xff) / 255f));
+        RenderingServer.GlobalShaderParameterSet("ms2_hfog", new Vector3(upper, lower, Mathf.Clamp(percentage / 100f, 0f, 1f)));
+    }
 
     /// <summary>CTargetCameraMode::vfunc_8: the distance, coast and passes run in <see cref="TargetCameraZoom"/>; each pass shows
     /// the camera through <see cref="ITargetCameraView.Show"/>.</summary>

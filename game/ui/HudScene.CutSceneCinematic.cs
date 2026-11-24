@@ -29,7 +29,8 @@ public partial class HudScene
         }
         var cine = cinematicLive?.Cinematic;
         if (cine == null) return;
-        if (cinematicPane == null && cine.Packets > 0 && uiRoot != null) OpenCinematicPane(cine);
+        // the first packet, or the cinematic sub scene entered without one (the telescope): CUIService FUN_141add040(0x4e52)
+        if (cinematicPane == null && cine.Wanted && uiRoot != null) OpenCinematicPane(cine);
         if (cine.Packets > 0) cine.Update();
     }
 

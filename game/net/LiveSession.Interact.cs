@@ -93,6 +93,7 @@ public partial class LiveSession
     void NewFieldInteractObjects(int mapId)
     {
         InteractObjects?.CancelCast();
+        InteractObjects?.Release();     // the old field's objects go: an active telescope's dtor skips its view
         HeldItem.Release();
         InteractNpcs ??= new LiveInteractNpc(new InteractNpcHost(this)) { Held = HeldItem };
         InteractNpcs.Clear();
@@ -797,5 +798,40 @@ public partial class LiveSession
         public void OnGuideTrigger(int triggerType, int rowId) => s.guide?.AddTrigger((Ms2.Ui.Guide.GuideTrigger)triggerType, rowId);
 
         public void StillOpen(string what) => GD.Print($"live: STILL-OPEN {what}; nothing sent");
+
+        // ---- the telescope (CInteractTelescopeObject) ------------------------------------------------------------------------
+
+        Field TriggerField => s.triggerField != null && IsInstanceValid(s.triggerField) ? s.triggerField : null;
+        float? telescopeDist;
+
+        /// <summary>The own pc's field position (PCBase::FUN_1416767d0).</summary>
+        public Vec3 PlayerPosition => HasPlayer ? FieldPortals.ToMs2(s.player.GlobalPosition) : default;
+        public float TelescopeFindDistance
+        {
+            get
+            {
+                if (telescopeDist is { } d) return d;
+                float v = LiveInteractObjects.DefaultTelescopeFindDistance;
+                try { v = FieldContents.Constants(Packs).Float("TelescopeFindDistance", v); } catch { }
+                telescopeDist = v;
+                return v;
+            }
+        }
+        /// <summary>CTriggerService::QueueCameraSteps(ids, 0) on the field's trigger objects; nothing before the field is built.</summary>
+        public void QueueCameraSteps(IReadOnlyList<int> ids) => TriggerField?.Triggers?.QueueCameraSteps(ids, false);
+        /// <summary>CTriggerService::FUN_141863460(0.0f) (<see cref="World.FieldTriggers.ResetCamera"/>).</summary>
+        public void ResetTriggerCamera() => TriggerField?.Triggers?.ResetCamera(0f);
+        public void PlaySystemSound(string name) => FieldAudio.Instance?.PlayUi(name);
+        /// <summary>GFxSceneService::SetSubScene: the cinematic sub scene is the cut scene cinematic pane's (its key group).</summary>
+        public void SetSubScene(int id) => s.Cinematic.SetSubScene(id);
+        /// <summary>FindCutSceneCinematic(0x4e52): the session's pane model; the HUD makes its movie when the sub scene is entered.</summary>
+        public Ms2.Ui.Hud.CutSceneCinematic Cinematic => s.Cinematic;
+        // STILL-OPEN: GetGamepadState and the pad's action key names (GetActionKeyName kind 2) are not ported; the key cap is the
+        // keyboard's common text
+        public void SetFogRange(bool on, float near, float far, uint color) => TriggerField?.SetFogRange(on, near, far, color);
+        public void SetFogEffect(bool on, uint color, float upper, float lower, float percentage) =>
+            TriggerField?.SetFogEffect(on, color, upper, lower, percentage);
+        /// <summary>The fog the field's load applied (<see cref="Field.LoadedFog"/>).</summary>
+        public FieldFog FieldFog => TriggerField?.LoadedFog;
     }
 }

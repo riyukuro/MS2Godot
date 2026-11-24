@@ -15,7 +15,7 @@
 // no bias) for the material: writing FOG turns that off.
 // Only cameras that carry FOG_LAYER in their cull mask fog (the field camera); the UI character views share
 // character_lit and draw no fog.
-global uniform vec4 ms2_fog;        // near, far, bias (the camera distance), unused
+global uniform vec4 ms2_fog;        // near, far, bias (the camera distance), off (1: SetFogRange(false), no depth fog)
 global uniform vec3 ms2_fog_color;  // gamma value
 
 const uint FOG_LAYER = 1048576u;    // 1 << 20, Field.FogLayer
@@ -23,7 +23,7 @@ const uint FOG_LAYER = 1048576u;    // 1 << 20, Field.FogLayer
 varying float fog_share;
 
 float ms2_fog_share(mat4 view, vec3 world, uint layers) {
-	if ((layers & FOG_LAYER) == 0u) {
+	if ((layers & FOG_LAYER) == 0u || ms2_fog.w != 0.0) {
 		return 0.0;
 	}
 	float z = -(view * vec4(world, 1.0)).z;
