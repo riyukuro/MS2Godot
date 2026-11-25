@@ -12,27 +12,27 @@ namespace Ms2.Net.Tests;
 /// <see cref="LivePortals.Apply"/> (registers spawned or bound portals, updates flags on mode 2, removes on mode 1).
 /// </summary>
 public class FieldPortalRecordedTests {
-    // gms2 recording: 0x49 mode 0 (Add spawned type 6), packet 6918, 128 bytes (extracted with extract.py, model masked with '*')
+    // gms2: 0x49 mode 0 (Add spawned type 6), 128 bytes (model masked with '*')
     static readonly byte[] Gms2AddSpawned = Convert.FromHexString(
         "00A043F6050101E8A7B9C168034842002083440000000000000000000034C200004843000048420000AF4316002A002A" +
         "002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A002A00AD841E00745026" +
         "000000000000000000000000000006DACD92100000523C8E1000000000000000");
-    // gms2 recording: 0x49 mode 1 (Remove), packet 6947, 5 bytes (extracted with extract.py): portal 100025248
+    // gms2: 0x49 mode 1 (Remove), 5 bytes: portal 100025248
     static readonly byte[] Gms2Remove = Convert.FromHexString("01A043F605");
-    // gms2 recording: 0x49 mode 0 (Add bound type 0), packet 2278, 84 bytes (extracted with extract.py): portal 1, target 2000001
+    // gms2: 0x49 mode 0 (Add bound type 0), 84 bytes: portal 1, target 2000001
     static readonly byte[] Gms2AddBound = Convert.FromHexString(
         "00010000000101000016430080BBC400006144000000000000000000003443000048430000484300007A43000081841E" +
         "0080C0060000000000010000000000000000000000000000000000000000000000000000");
-    // gms2 recording: 0x49 mode 2 (Update flags), packet 2311, 10 bytes (extracted with extract.py): portal 2, vis/en/mm = true
+    // gms2: 0x49 mode 2 (Update flags), 10 bytes: portal 2, vis/en/mm = true
     static readonly byte[] Gms2Update = Convert.FromHexString("02020000000101010000");
 
-    // kms2 recording: 0x48 mode 0 (Add spawned type 0x0B), packet 572, 84 bytes (extracted with extract.py): portal 103483385, target 2000062
+    // kms2: 0x48 mode 0 (Add spawned type 0x0B), 84 bytes: portal 103483385, target 2000062
     static readonly byte[] KmsAddSpawned = Convert.FromHexString(
         "00F9072B06010100404EC500A057C50000964200000000000000000000B4420000164300001643000016430000BE841E" +
         "004260AB00000000000000000000000000000B0000000000000000000000000000000000");
-    // kms2 recording: 0x48 mode 1 (Remove), packet 890, 5 bytes (extracted with extract.py): portal 103483385
+    // kms2: 0x48 mode 1 (Remove), 5 bytes: portal 103483385
     static readonly byte[] KmsRemove = Convert.FromHexString("01F9072B06");
-    // kms2 recording: 0x48 mode 2 (Update flags), packet 463, 10 bytes (extracted with extract.py): portal 1, vis/en/mm = false
+    // kms2: 0x48 mode 2 (Update flags), 10 bytes: portal 1, vis/en/mm = false
     static readonly byte[] KmsUpdate = Convert.FromHexString("02010000000000000000");
 
     static LivePortals AttachedPortals(params FieldEntity[] entities) {

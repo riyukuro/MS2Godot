@@ -9,16 +9,16 @@ namespace Ms2.Net.Tests;
 /// <see cref="StatPointBook.Apply"/> (mode 0 reward points, mode 1 spent stat points).
 /// </summary>
 public class AttributePointRecordedTests {
-    // gms2 recording: 0x46 mode 0 (Extra), packet 2310, 41 bytes (extracted with extract.py): total 5, (1,5),(2,0),(3,0),(4,0)
+    // gms2: 0x46 mode 0 (Extra), 41 bytes: total 5, (1,5),(2,0),(3,0),(4,0)
     static readonly byte[] Gms2Extra = Convert.FromHexString(
         "0005000000040000000100000005000000020000000000000003000000000000000400000000000000");
-    // gms2 recording: 0x46 mode 1 (Stats), packet 2312, 14 bytes (extracted with extract.py): total 5, stat 0 = 5
+    // gms2: 0x46 mode 1 (Stats), 14 bytes: total 5, stat 0 = 5
     static readonly byte[] Gms2Stats = Convert.FromHexString("0105000000010000000005000000");
 
-    // kms2 recording: 0x45 mode 0 (Extra), packet 592, 41 bytes (extracted with extract.py): total 69, (1,23),(2,8),(3,12),(4,26)
+    // kms2: 0x45 mode 0 (Extra), 41 bytes: total 69, (1,23),(2,8),(3,12),(4,26)
     static readonly byte[] KmsExtra = Convert.FromHexString(
         "00450000000400000001000000170000000200000008000000030000000C000000040000001A000000");
-    // kms2 recording: 0x45 mode 1 (Stats), packet 1811, 19 bytes (extracted with extract.py): total 106, stat 0 = 46, stat 17 = 60
+    // kms2: 0x45 mode 1 (Stats), 19 bytes: total 106, stat 0 = 46, stat 17 = 60
     static readonly byte[] KmsStats = Convert.FromHexString("016A00000002000000002E000000113C000000");
 
     [Test] public void Gms2ExtraAndStatsUpdateStatPointBook() {

@@ -10,32 +10,31 @@ namespace Ms2.Net.Tests;
 /// <see cref="CubeCellMap.Load"/> (mode 0 house cubes) and <see cref="CubePlots.Apply"/> (modes 1-3 plot states, owners and sales).
 /// </summary>
 public class LoadCubesRecordedTests {
-    // gms2 recording: 0x6C mode 0 (2 cubes), packet 1933, 108 bytes (extracted with extract.py; owner masked with 0x11, instance uid with 0x22)
+    // gms2: 0x6C mode 0 (2 cubes), 108 bytes (owner masked with 0x11, instance uid with 0x22)
     static readonly byte[] Gms2Cubes = Convert.FromHexString(
         "000002000000F5F1010011111111111111116E84FF022222222222222222000000000000000000010000000000000000" +
         "000087430000000000F2F407001111111111111111BE0B01032222222222222222000000000000000000010000000000" +
         "000000000087430000000000");
-    // gms2 recording: 0x6C mode 1 (plot states), packet 2267, 10 bytes (extracted with extract.py): plot 1
+    // gms2: 0x6C mode 1 (plot states), 10 bytes: plot 1
     static readonly byte[] Gms2PlotStates = Convert.FromHexString("01010000000100000000");
-    // gms2 recording: 0x6C mode 2 (plot owners), packet 2275, 51 bytes (extracted with extract.py; name masked with '*', owner id with 0x11)
+    // gms2: 0x6C mode 2 (plot owners), 51 bytes (name masked with '*', owner id with 0x11)
     static readonly byte[] Gms2PlotOwners = Convert.FromHexString(
         "02010000000C000000000000000E002A002A002A002A002A002A002A002A002A002A002A002A002A002A001111111111111111");
-    // gms2 recording: 0x6C mode 3 (plot sales), packet 2253, 22 bytes (extracted with extract.py): plot 12, block 0, state 2
+    // gms2: 0x6C mode 3 (plot sales), 22 bytes: plot 12, block 0, state 2
     static readonly byte[] Gms2PlotSales = Convert.FromHexString("03010000000C00000000000000025E119E5E00000000");
 
-    // kms2 recording: 0x6A mode 0 (4 cubes, one with masked 3-char notice), packet 563, 219 bytes
-    // (extracted with extract.py; owner masked with 0x11, instance uid with 0x22)
+    // kms2: 0x6A mode 0 (4 cubes, one with masked 3-char notice), 219 bytes (owner masked with 0x11, instance uid with 0x22)
     static readonly byte[] KmsCubes = Convert.FromHexString(
         "000004000000EAE9010011111111111111119E0B01032222222222222222000000000000000000010000000000000000" +
         "0000B4420000000000EAEA010011111111111111111A0C01032222222222222222000000000000000000010000000000" +
         "0000000000B4420000000000EBEA01001111111111111111F20B01032222222222222222000000000000000000010000" +
         "00000000000000000000000000000103002A002A002A0001EFEF01001111111111111111BE0B01032222222222222222" +
         "000000000000000000010000000000000000000034430000000000");
-    // kms2 recording: 0x6A mode 1 (plot states), packet 564, 10 bytes (extracted with extract.py): plot 1
+    // kms2: 0x6A mode 1 (plot states), 10 bytes: plot 1
     static readonly byte[] KmsPlotStates = Convert.FromHexString("01010000000100000001");
-    // kms2 recording: 0x6A mode 2 (plot owners), packet 562, 23 bytes (extracted with extract.py; owner id masked with 0x11)
+    // kms2: 0x6A mode 2 (plot owners), 23 bytes (owner id masked with 0x11)
     static readonly byte[] KmsPlotOwners = Convert.FromHexString("0201000000010000000000000000001111111111111111");
-    // kms2 recording: 0x6A mode 3 (plot sales), packet 1789, 56 bytes (extracted with extract.py): plots 7, 8, 10
+    // kms2: 0x6A mode 3 (plot sales), 56 bytes: plots 7, 8, 10
     static readonly byte[] KmsPlotSales = Convert.FromHexString(
         "030300000007000000000000000131630161000000000800000000000000012D7D0361000000000A0000000000000001E31B136100000000");
 

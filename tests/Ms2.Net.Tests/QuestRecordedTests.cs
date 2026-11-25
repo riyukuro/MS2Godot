@@ -9,22 +9,22 @@ namespace Ms2.Net.Tests;
 /// Exercises recorded GMS2 and KMS2 frames for Start (mode 2), Update (mode 3), Complete (mode 4) and Pinned (mode 0x17).
 /// </summary>
 public class QuestRecordedTests {
-    // gms2 recording: 0x53 mode 2 (Start), packet 2667, 18 bytes (extracted with extract.py): quest 50001550, tracked=true
+    // gms2: 0x53 mode 2 (Start), 18 bytes: quest 50001550, tracked=true
     static readonly byte[] Gms2Start = Convert.FromHexString("028EF6FA02CC49A25E000000000100000000");
-    // gms2 recording: 0x53 mode 4 (Complete), packet 2854, 17 bytes (extracted with extract.py): quest 50001550, count 1
+    // gms2: 0x53 mode 4 (Complete), 17 bytes: quest 50001550, count 1
     static readonly byte[] Gms2Complete = Convert.FromHexString("048EF6FA0201000000D849A25E00000000");
-    // gms2 recording: 0x53 mode 3 (Update), packet 2483, 13 bytes (extracted with extract.py): quest 72000005, progress [1]
+    // gms2: 0x53 mode 3 (Update), 13 bytes: quest 72000005, progress [1]
     static readonly byte[] Gms2Update = Convert.FromHexString("0305A24A040100000001000000");
-    // gms2 recording: 0x53 mode 0x17 (Pinned), packet 2199, 5 bytes (extracted with extract.py): empty list
+    // gms2: 0x53 mode 0x17 (Pinned), 5 bytes: empty list
     static readonly byte[] Gms2PinnedEmpty = Convert.FromHexString("1700000000");
 
-    // kms2 recording: 0x52 mode 2 (Start), packet 528, 22 bytes (extracted with extract.py): quest 72000133, progress [0]
+    // kms2: 0x52 mode 2 (Start), 22 bytes: quest 72000133, progress [0]
     static readonly byte[] KmsStart = Convert.FromHexString("0285A24A0499D6416100000000000100000000000000");
-    // kms2 recording: 0x52 mode 3 (Update), packet 547, 21 bytes (extracted with extract.py): quest 90000660, progress [1, 0, 0]
+    // kms2: 0x52 mode 3 (Update), 21 bytes: quest 90000660, progress [1, 0, 0]
     static readonly byte[] KmsUpdate = Convert.FromHexString("03144D5D0503000000010000000000000000000000");
-    // kms2 recording: 0x52 mode 4 (Complete), packet 4262, 17 bytes (extracted with extract.py): quest 20002305, count 1
+    // kms2: 0x52 mode 4 (Complete), 17 bytes: quest 20002305, count 1
     static readonly byte[] KmsComplete = Convert.FromHexString("04013631010100000018D5416100000000");
-    // kms2 recording: 0x52 mode 0x17 (Pinned), packet 488, 13 bytes (extracted with extract.py): [90000400, 90000060]
+    // kms2: 0x52 mode 0x17 (Pinned), 13 bytes: [90000400, 90000060]
     static readonly byte[] KmsPinned = Convert.FromHexString("1702000000104C5D05BC4A5D05");
 
     [Test] public void Gms2StartCompleteUpdateAndPinnedUpdateQuestBook() {

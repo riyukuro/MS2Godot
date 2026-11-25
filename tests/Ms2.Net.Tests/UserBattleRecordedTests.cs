@@ -12,14 +12,14 @@ namespace Ms2.Net.Tests;
 /// <see cref="FieldTracker.Inbound"/> (enqueues <see cref="UserBattleEvent"/> with object id and emotion byte).
 /// </summary>
 public class UserBattleRecordedTests {
-    // gms2 recording: 0x30 (battle on), packet 2411, 5 bytes (extracted with extract.py): object 442495, emotion 1
+    // gms2: 0x30 (battle on), 5 bytes: object 442495, emotion 1
     static readonly byte[] Gms2On = Convert.FromHexString("7FC0060001");
-    // gms2 recording: 0x30 (battle off), packet 2498, 5 bytes (extracted with extract.py): object 442495, emotion 0
+    // gms2: 0x30 (battle off), 5 bytes: object 442495, emotion 0
     static readonly byte[] Gms2Off = Convert.FromHexString("7FC0060000");
 
-    // kms2 recording: 0x2F (battle on), packet 8759, 5 bytes (extracted with extract.py): object 15040624, emotion 1
+    // kms2: 0x2F (battle on), 5 bytes: object 15040624, emotion 1
     static readonly byte[] KmsOn = Convert.FromHexString("7080E50001");
-    // kms2 recording: 0x2F (battle off), packet 11376, 5 bytes (extracted with extract.py): object 15040624, emotion 0
+    // kms2: 0x2F (battle off), 5 bytes: object 15040624, emotion 0
     static readonly byte[] KmsOff = Convert.FromHexString("7080E50000");
 
     [Test] public void Gms2UserBattleDecodesAndEnqueuesFieldTrackerEvents() {

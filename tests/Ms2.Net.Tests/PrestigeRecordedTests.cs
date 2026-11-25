@@ -14,62 +14,22 @@ namespace Ms2.Net.Tests;
 /// <see cref="FieldTracker.Inbound"/> (kind 2 updates the tracked actor's PrestigeLevel).
 /// </summary>
 public class PrestigeRecordedTests {
-    // gms2 recording: 0x11E kind 0 (Loaded), packet 32, 81 bytes (extracted with extract.py): exp 774885, filled 402, 14 claimed
+    // gms2: 0x11E kind 0 (Loaded), 81 bytes: exp 774885, filled 402, 14 claimed
     static readonly byte[] Gms2Loaded = Convert.FromHexString(
         "00E5D20B000000000092010000E5D20B00000000000E000000020000000400000006000000080000000A0000000C000000" +
         "140000001E00000028000000320000003C00000046000000500000005A000000");
-    // gms2 recording: 0x11E kind 1 (ExpGain), packet 5288, 17 bytes (extracted with extract.py): value 826385, gain 15000
+    // gms2: 0x11E kind 1 (ExpGain), 17 bytes: value 826385, gain 15000
     static readonly byte[] Gms2ExpGain = Convert.FromHexString("01119C0C0000000000983A000000000000");
-    // gms2 recording: 0x11E kind 2 (LevelUp), packet 9143, 9 bytes (extracted with extract.py): object 1705804, level 402
+    // gms2: 0x11E kind 2 (LevelUp), 9 bytes: object 1705804, level 402
     static readonly byte[] Gms2LevelUp = Convert.FromHexString("024C071A0092010000");
 
-    // kms2 recording: 0x11C kind 0 (Loaded), packet 39, 57 bytes (extracted with extract.py): exp 710735, filled 40, 8 claimed
+    // kms2: 0x11C kind 0 (Loaded), 57 bytes: exp 710735, filled 40, 8 claimed
     static readonly byte[] KmsLoaded = Convert.FromHexString(
         "004FD80A0000000000280000004FD80A000000000008000000020000000400000006000000080000000A0000000C000000140000001E000000");
-    // kms2 recording: 0x11C kind 1 (ExpGain), packet 3718, 17 bytes (extracted with extract.py): value 101000, gain 15000
+    // kms2: 0x11C kind 1 (ExpGain), 17 bytes: value 101000, gain 15000
     static readonly byte[] KmsExpGain = Convert.FromHexString("01888A010000000000983A000000000000");
-    // kms2 recording: 0x11C kind 2 (LevelUp), packet 1153, 9 bytes (extracted with extract.py): object 3623263, level 2
+    // kms2: 0x11C kind 2 (LevelUp), 9 bytes: object 3623263, level 2
     static readonly byte[] KmsLevelUp = Convert.FromHexString("025F49370002000000");
-
-    static void SeedActor(FieldTracker t, int objectId) {
-        var w = new ByteWriter();
-        w.WriteInt(objectId);
-        w.WriteLong(1); w.WriteLong(2); w.WriteUnicodeString("Hero");
-        w.WriteByte(0); w.WriteByte(0); w.WriteLong(0); w.WriteInt(0);
-        w.WriteInt(8); w.WriteInt(0); w.WriteInt(0); w.WriteShort(21); w.WriteShort(1);
-        w.WriteInt(10); w.WriteInt(100); w.WriteInt(2100); w.WriteInt(1630); w.WriteShort(0);
-        w.WriteLong(0); w.WriteLong(0); w.WriteLong(0); w.WriteInt(0);
-        w.WriteFloat(0); w.WriteFloat(0); w.WriteFloat(0); w.WriteInt(0);
-        for (int i = 0; i < 8; i++) w.WriteByte(0);
-        w.WriteLong(0); w.WriteInt(0); w.WriteInt(0); w.WriteInt(0);
-        w.WriteLong(0); w.WriteUnicodeString(""); w.WriteUnicodeString(""); w.WriteUnicodeString("");
-        w.WriteByte(0); w.WriteByte(0);
-        for (int i = 0; i < 12; i++) w.WriteInt(0);
-        w.WriteUnicodeString(""); w.WriteLong(0);
-        w.WriteInt(0); w.WriteByte(0); w.WriteBool(false); w.WriteLong(0); w.WriteInt(0);
-        w.WriteInt(0); w.WriteLong(0); w.WriteInt(0); w.WriteLong(0);
-        w.WriteInt(0); w.WriteInt(0); w.WriteShort(0); w.WriteLong(0);
-        w.WriteInt(1); w.WriteInt(100); w.WriteByte(0);
-        w.WriteFloat(0); w.WriteFloat(0); w.WriteFloat(0);
-        w.WriteFloat(0); w.WriteFloat(0); w.WriteFloat(0);
-        w.WriteByte(0); w.WriteByte(0x23);
-        for (int i = 0; i < 3; i++) { w.WriteLong(2100); w.WriteInt(0); w.WriteInt(0); w.WriteInt(0); w.WriteInt(0); }
-        w.WriteBool(false); w.WriteByte(0);
-        w.WriteInt(0); w.WriteLong(0); w.WriteLong(0); w.WriteBool(false); w.WriteInt(0);
-        for (int i = 0; i < 8; i++) w.WriteByte(0);
-        w.WriteUnicodeString(""); w.WriteBool(false);
-        w.WriteInt(0); w.WriteLong(0); w.WriteInt(0); w.WriteInt(0);
-        void Block(params byte[] body) { w.WriteBool(false); w.WriteInt(body.Length); w.WriteBytes(body); }
-        Block(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
-        Block(0);
-        Block(0);
-        w.WriteShort(0);
-        w.WriteInt(0); w.WriteInt(0); w.WriteByte(0); w.WriteInt(0); w.WriteByte(0); w.WriteByte(0);
-        w.WriteInt(0); w.WriteShort(0); w.WriteBool(false);
-        w.WriteInt(0); w.WriteBool(false);
-        w.WriteLong(0); w.WriteInt(0); w.WriteByte(0); w.WriteShort(0);
-        t.Inbound(new RawPacket((ushort)Inbound.FieldAddUser, w.Buffer.AsSpan(0, w.Length).ToArray()));
-    }
 
     [Test] public void Gms2PrestigeUpdatesAdventureDataAndFieldTracker() {
         var adv = new AdventureData();
@@ -98,11 +58,10 @@ public class PrestigeRecordedTests {
         Assert.That((up.ObjectId, up.Value), Is.EqualTo((1705804, 402)));
         Assert.That(r2.Available, Is.EqualTo(0));
 
-        var tracker = new FieldTracker { Profile = ProtocolProfile.Kms2525 };
-        SeedActor(tracker, 1705804);
-        tracker.Profile = ProtocolProfile.Gms2;
+        var tracker = new FieldTracker { Profile = ProtocolProfile.Gms2 };
+        FieldTrackerSeed.AddUser(tracker, up.ObjectId, "Hero");
         tracker.Inbound(new RawPacket(ProtocolProfile.Gms2.Number(Inbound.Prestige), Gms2LevelUp));
-        Assert.That(tracker.Snapshot().Single(a => a.ObjectId == 1705804).Add.User.PrestigeLevel, Is.EqualTo(402));
+        Assert.That(tracker.Snapshot().Single(a => a.ObjectId == up.ObjectId).Add.User.PrestigeLevel, Is.EqualTo(up.Value));
     }
 
     [Test] public void KmsPrestigeUpdatesAdventureDataAndFieldTracker() {
@@ -133,8 +92,8 @@ public class PrestigeRecordedTests {
         Assert.That(r2.Available, Is.EqualTo(0));
 
         var tracker = new FieldTracker { Profile = ProtocolProfile.Kms2525 };
-        SeedActor(tracker, 3623263);
+        FieldTrackerSeed.AddUser(tracker, up.ObjectId, "Hero");
         tracker.Inbound(new RawPacket(ProtocolProfile.Kms2525.Number(Inbound.Prestige), KmsLevelUp));
-        Assert.That(tracker.Snapshot().Single(a => a.ObjectId == 3623263).Add.User.PrestigeLevel, Is.EqualTo(2));
+        Assert.That(tracker.Snapshot().Single(a => a.ObjectId == up.ObjectId).Add.User.PrestigeLevel, Is.EqualTo(up.Value));
     }
 }
