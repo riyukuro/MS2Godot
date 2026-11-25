@@ -50,6 +50,12 @@ public class EffectCasterKindSiteTests
         new("net/RemoteLayer.Magics.cs", "int h = fx.SpawnOn(e.File, node,", "casterKind",
             "the magic owner's (CMagic, magicdata.cpp:927-931): ownSceneEffects 1, remoteSceneEffects 3"),
         // other PCs: PCBase::vfunc_58 3
+        // a mount's loopEffect: Ridee::vfunc_12 (@0x141704c80, ridee.cpp:527-534) passes GetObjectKind of the ridee, which
+        // Ridee::vfunc_58 (ridee.cpp:539-545) takes from its rider (the own PC 1, another PC 3)
+        new("net/LiveSession.Ride.cs", "p.KeepRideEffect = (path, actor) => SpawnKeptEffect(path, actor,", "CasterMyPc",
+            "1: the own mount's loopEffect, the rider's kind (Ridee::vfunc_12 / vfunc_58, ridee.cpp:527-545)"),
+        new("net/RemoteLayer.Ride.cs", "m.LoopFx.Start(m.Data.LoopEffect, RegionFx, path => SpawnKeptEffect(path, m.Visual,", "CasterOtherPc",
+            "3: another PC's mount loopEffect, the rider's kind (Ridee::vfunc_12 / vfunc_58, ridee.cpp:527-545)"),
         new("net/RemoteLayer.Casts.cs", "OutOfSight(r) ? 0 : SpawnKeptEffect(fx, r.Visual,", "CasterOtherPc",
             "3: a user's skill state effects kept on it, tag, motion, loop and loop keep (stateskill.cpp:750-761, :844-860, :2358), past the sight test (:2790-2807)"),
         new("net/RemoteLayer.Casts.cs", "ReleaseKeptEffect(SpawnKeptEffect(fx, r.Visual,", "CasterOtherPc",
