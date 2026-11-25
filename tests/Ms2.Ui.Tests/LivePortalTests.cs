@@ -153,14 +153,22 @@ public class LivePortalTests
         Assert.That(host.Sent, Is.Empty);
     }
 
-    [TestCase((byte)0x10)]
-    public void UnportedTypeSendsNothing(byte type)
+    // PortalAction::UsePortal case 0x10 (actionkeyobject.cpp:1063) -> FUN_140dff580: HomeAction 10, 5, target, portal id; nothing
+    // else (no mode 0 move, no dialog).
+    [Test]
+    public void TypeTenSendsTheHomeActionAndNothingElse()
     {
         var (host, action, portals) = Field(Xblock(7));
-        portals.Apply(Add(7, type: type));
+        portals.Apply(Add(7, type: 0x10));
         Enter(action);
-        Assert.That(host.Sent, Is.Empty);
-        Assert.That(host.Open, Has.Count.EqualTo(1));
+        Assert.That(host.Sent, Has.Count.EqualTo(1));
+        Assert.That(host.Sent[0], Is.TypeOf<HomeActionPortalRequest>());
+        var w = new ByteWriter(); host.Sent[0].Write(w);
+        Assert.That(w.Buffer.AsSpan(0, w.Length).ToArray(), Is.EqualTo(new byte[] { 10, 5, 0xD0, 0x07, 0, 0, 7, 0, 0, 0 }), "u8 10, u8 5, i32 target 2000, i32 portal 7");
+        Assert.That(((HomeActionPortalRequest)host.Sent[0]).Target, Is.EqualTo(2000));
+        Assert.That(((HomeActionPortalRequest)host.Sent[0]).PortalId, Is.EqualTo(7));
+        Assert.That(host.Open, Is.Empty);
+        Assert.That(host.Dungeon, Is.Empty);
     }
 
     // PortalAction::UsePortal (actionkeyobject.cpp:1040): types 8, 0xc, 0xe and 0x11 open the dungeon room dialog and send nothing.

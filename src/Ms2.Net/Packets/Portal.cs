@@ -99,3 +99,13 @@ public sealed record RoomDungeonPortalRequest : IOutPacket {
     public Outbound Op => Outbound.RoomDungeon;
     public void Write(ByteWriter w) => w.WriteByte(9);
 }
+
+/// <summary>
+/// FUN_140dff580 @0x140dff580 (unit_140dfef30_ugcoxevent.cpp:232), PortalAction::UsePortal's type 0x10 (actionkeyobject.cpp:1063):
+/// HomeAction u8 10, u8 5, i32 target map, i32 portal id. The UGC OX quiz event's portal request; the Maple2 server has no
+/// handler for sub command 10, so it answers nothing (STILL-OPEN: the reply's reader, FUN_140dff600's sub types, is not ported).
+/// </summary>
+public sealed record HomeActionPortalRequest(int Target, int PortalId) : IOutPacket {
+    public Outbound Op => Outbound.HomeAction;
+    public void Write(ByteWriter w) { w.WriteByte(10); w.WriteByte(5); w.WriteInt(Target); w.WriteInt(PortalId); }
+}

@@ -269,6 +269,7 @@ static class Gms2Opcodes {
         [Outbound.RequestSetCraftMode] = 0x36,   // SendOp::RequestSetCraftMode: unchanged below 0x37
         [Outbound.RequestCube] = 0x37,
         [Outbound.RequestHome] = 0x52,
+        [Outbound.HomeAction] = 0x90,            // upstream RecvOp.HomeAction
         [Outbound.ResolvePenalty] = 0x45,
         [Outbound.TakeBoat] = 0x46,
         [Outbound.RequestTaxi] = 0x49,

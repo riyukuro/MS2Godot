@@ -427,7 +427,7 @@ public sealed class PortalAction
             case 0xc: host.OpenDungeonRoomDialogWithMode(portalId, 3); break;
             case 0xd: MoveTo(p, 0, 1); break;
             case 0xe: host.OpenDungeonRoomDialogWithMode(portalId, 4); break;
-            case 0x10: host.StillOpen($"portal {portalId}: type 0x10 (FUN_140dff580) is not ported"); break;
+            case 0x10: host.Send(new HomeActionPortalRequest(target, portalId)); break;   // FUN_140dff580 @0x140dff580
             case 0x11: host.OpenDungeonRoomDialogRoom(portalId); break;
             default: MoveTo(p, target, portalId); break;
         }
