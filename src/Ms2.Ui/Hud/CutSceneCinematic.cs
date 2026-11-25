@@ -279,18 +279,20 @@ public sealed class CutSceneCinematic
         Pane?.SetSkipVisible(false);
     }
 
-    /// <summary>Esc at the pane (UICutSceneCinematic vfunc_13): Shift+Esc ends the cinematic, plain Esc asks to skip. The
-    /// dialogs' key pass calls a dialog's vfunc_13 only while its root clip is shown (vfunc_9, uiswfentitymanager.cpp:319;
-    /// uiswfentity.h:46), and the pane is shown only in the cinematic sub scene, that is with the key group on. True when the
-    /// pane took the key.</summary>
-    public bool KeyEscape(bool shift)
+    /// <summary>Esc at the pane (UICutSceneCinematic vfunc_13, @0x141907c80, uicutscenecinematic.cpp:221-237): with the
+    /// Develop feature (CFeatureManager 2) on, Shift+Esc ends the cinematic; otherwise Esc, Shift or not, asks to skip
+    /// (RequestSkip), so the skip notify goes out. The dialogs' key pass calls a dialog's vfunc_13 only while its root clip is
+    /// shown (vfunc_9, uiswfentitymanager.cpp:319; uiswfentity.h:46), and the pane is shown only in the cinematic sub scene,
+    /// that is with the key group on. True when the pane took the key.</summary>
+    public bool KeyEscape(bool shift, bool develop)
     {
         if (!KeyMode) return false;
-        if (shift) ForceEnd(); else RequestSkip();
+        if (shift && develop) ForceEnd(); else RequestSkip();
         return true;
     }
 
-    /// <summary>The key handler's Shift+Esc (vfunc_13): the trigger, the key group off, the pane closed.</summary>
+    /// <summary>The key handler's Shift+Esc with the Develop feature (vfunc_13): the trigger, the key group off, the pane
+    /// closed (FUN_1419080b0). It posts no skip notify (only SkipCinematic does, :1109-1120), so a telescope's view stays.</summary>
     public void ForceEnd()
     {
         SendTrigger();

@@ -68,6 +68,14 @@ public sealed class FieldFog
                | ((uint)Guide.GuideXml.Atoi(parts[2]) & 0xff);
     }
 
+    /// <summary>The height range the height fog blend takes for SetFogEffect's upper and lower: the engine's CalculateHeightFog
+    /// divides by upper - lower, so equal heights give a step at that height (above it no fog; at and below it the whole
+    /// percentage, the 0/0 at the height saturating to 0). Here that is a 0.001 range above lower, which draws the same step
+    /// without the division by zero. The data has one such telescope (KMS2 02020011_bf, heights 0 and 0); no mapxblock has one.
+    /// STILL-OPEN: D3D9 leaves saturate of NaN to the hardware; 0 is D3D10's rule.</summary>
+    public static (float Upper, float Lower) BlendRange(float upper, float lower) =>
+        upper == lower ? (lower + 0.001f, lower) : (upper, lower);
+
     /// <summary>XmlGetAttr(element, name, float&amp;): the value when the attribute is there, else the one held.</summary>
     static void Attr(XElement e, string name, ref float v)
     {

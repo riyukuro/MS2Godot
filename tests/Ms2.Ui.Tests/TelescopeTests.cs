@@ -141,7 +141,7 @@ public class TelescopeTests
             "<ms2><fog color=\"10,20,30\" near=\"2000\" far=\"12000\"/><heightfog color=\"40,50,60\" upper=\"300\" lower=\"-100\" percentage=\"50\"/></ms2>"));
         r.Live.Apply(Use("tel-1"));
         r.Host.Calls.Clear();
-        Assert.That(r.Cine.KeyEscape(shift: false), Is.True, "Esc at the pane asks to skip");
+        Assert.That(r.Cine.KeyEscape(shift: false, develop: false), Is.True, "Esc at the pane asks to skip");
         Assert.That(r.Host.Calls, Is.EqualTo(new[]
         {
             "camera reset",
@@ -155,6 +155,23 @@ public class TelescopeTests
         r.Host.Calls.Clear();
         r.Cine.SkipCinematic();
         Assert.That(r.Host.Calls, Is.Empty, "the skip is no longer heard");
+    }
+
+    /// <summary>UICutSceneCinematic::vfunc_13 (uicutscenecinematic.cpp:221-237): Shift+Esc ends the cinematic without the skip
+    /// notify only with the Develop feature on; otherwise it is Esc, the skip, and the telescope's view ends with it.</summary>
+    [Test]
+    public void ShiftEscSkipsTheViewUnlessTheDevelopFeatureIsOn()
+    {
+        var r = Rig(Telescope("tel-1", new Vec3(10, 0, 0), "101", Fog));
+        r.Live.Apply(Use("tel-1"));
+        Assert.That(r.Cine.KeyEscape(shift: true, develop: false), Is.True);
+        Assert.That((r.Live.ByName("tel-1").TelescopeActive, r.Cine.KeyMode), Is.EqualTo((false, false)), "a retail Shift+Esc is the skip");
+
+        var d = Rig(Telescope("tel-1", new Vec3(10, 0, 0), "101", Fog));
+        d.Live.Apply(Use("tel-1"));
+        Assert.That(d.Cine.KeyEscape(shift: true, develop: true), Is.True);
+        Assert.That((d.Live.ByName("tel-1").TelescopeActive, d.Cine.KeyMode), Is.EqualTo((true, false)),
+            "the Develop feature's Shift+Esc posts no skip notify: the view stays, as the client's");
     }
 
     /// <summary>Nothing happens when no telescope is strictly within TelescopeFindDistance, when the nearest has no cameras (a
@@ -218,6 +235,14 @@ public class TelescopeTests
         Assert.That(FieldFog.ParseColor("1,2"), Is.Zero);
     }
 
+    /// <summary>Equal height fog heights (a step, CalculateHeightFog's divide) become a 0.001 range above lower; others stay.</summary>
+    [Test]
+    public void EqualHeightFogHeightsBlendAsAStep()
+    {
+        Assert.That(FieldFog.BlendRange(0, 0), Is.EqualTo((0.001f, 0f)));
+        Assert.That(FieldFog.BlendRange(800, -200), Is.EqualTo((800f, -200f)));
+    }
+
     /// <summary>A key set before the pane's movie loads is the one its replay shows: the client's pane is loaded before the
     /// telescope sets its key cap (OnLoadComplete then FUN_141907d60).</summary>
     [Test]
@@ -261,6 +286,7 @@ public class TelescopeDataTests
         var table = InteractObjectTable.Shared(packs);
         int maps = 0, telescopes = 0, withCameras = 0, cameras = 0;
         var missing = new List<string>();
+        var flatHeightFog = new List<string>();
         foreach (var entry in packs.List(XBlock.Archive).Where(n => n.StartsWith("xblock/") && n.EndsWith(".xblock")).OrderBy(n => n, StringComparer.Ordinal))
         {
             string name = entry["xblock/".Length..^".xblock".Length];
@@ -280,6 +306,8 @@ public class TelescopeDataTests
                 var o = live.ByName(t.Raw.Id.ToLowerInvariant());
                 TestContext.Out.WriteLine($"{name} {t.Raw.Id} row {(int)t.Number("interactID")} at {t.Position} cameras [{string.Join(",", ids)}] " +
                                           $"fog {t.Bool("EnableFog")} {t.Number("FogNear")}-{t.Number("FogFar")} hfog {t.Bool("EnableHeightFog")} object {(o == null ? "none" : $"kind {o.Kind}")}");
+                if (t.Bool("EnableHeightFog") && t.Number("HeightFogUpperZ") == t.Number("HeightFogLowerZ"))
+                    flatHeightFog.Add($"{name} {t.Raw.Id} upper {t.Number("HeightFogUpperZ")} lower {t.Number("HeightFogLowerZ")}");
                 if (ids.Count == 0) continue;
                 withCameras++;
                 Assert.That(o, Is.Not.Null, $"{name} {t.Raw.Id}: a telescope with cameras registers");
@@ -293,7 +321,46 @@ public class TelescopeDataTests
         }
         TestContext.Out.WriteLine($"{maps} maps with telescopes, {telescopes} telescopes, {withCameras} with cameras, {cameras} camera ids, {missing.Count} not a trigger camera of the map");
         foreach (var m in missing) TestContext.Out.WriteLine("  missing: " + m);
+        foreach (var m in flatHeightFog) TestContext.Out.WriteLine("  height fog with upper == lower: " + m);
         Assert.That(withCameras, Is.GreaterThan(0));
         Assert.That(missing.Count, Is.LessThan(cameras / 50), "only a few cameras are not the map's");
+    }
+}
+
+/// <summary>Every mapxblock's fog and height fog elements on the data, as the field load and CFieldDataCli::LoadXBlock
+/// (fielddatacli.cpp:389-430) read them: each fog has a three-part colour, near and far; each height fog a colour, upper,
+/// lower and percentage, and its upper differs from its lower (the height blend divides by upper - lower).</summary>
+public class FieldFogDataTests
+{
+    [Test]
+    public void EveryMapxblockFogIsComplete()
+    {
+        var d = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
+        using var packs = new Ms2.Formats.Pack.PackSet(d);
+        int blocks = 0, fogs = 0, hfogs = 0;
+        var bad = new List<string>();
+        foreach (var entry in packs.List(MapXBlock.Archive).Where(n => n.StartsWith("mapxblock/") && n.EndsWith(".xml")).OrderBy(n => n, StringComparer.Ordinal))
+        {
+            var x = MapXBlock.Parse(packs.Read(MapXBlock.Archive, entry));
+            blocks++;
+            if (x.Root?.Element("fog") is { } f)
+            {
+                fogs++;
+                if (((string)f.Attribute("color"))?.Split(',').Length != 3 || f.Attribute("near") == null || f.Attribute("far") == null)
+                    bad.Add($"{entry} fog {f}");
+            }
+            if (x.Root?.Element("heightfog") is { } h)
+            {
+                hfogs++;
+                if (((string)h.Attribute("color"))?.Split(',').Length != 3 || h.Attribute("upper") == null || h.Attribute("lower") == null
+                    || h.Attribute("percentage") == null || (string)h.Attribute("upper") == (string)h.Attribute("lower"))
+                    bad.Add($"{entry} heightfog {h}");
+            }
+        }
+        TestContext.Out.WriteLine($"{blocks} mapxblocks, {fogs} fog, {hfogs} heightfog, {bad.Count} incomplete");
+        foreach (var b in bad) TestContext.Out.WriteLine("  " + b);
+        Assert.That(fogs, Is.GreaterThan(0));
+        Assert.That(bad, Is.Empty);
     }
 }
