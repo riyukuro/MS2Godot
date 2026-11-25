@@ -124,6 +124,9 @@ public sealed class EffectPart
     /// <summary>The type attribute's kind, CEffectParam::m_nType (ParseEffectType @0x1411a0f80, effectdatamanager.cpp; 0 for an
     /// unknown or absent type): EffectSkipMgr's row for the part.</summary>
     public int TypeId;
+    /// <summary>A vibrate part's freq, amp, damping (the shake's min scale, 1 when absent) and dampingTime (from the start, 0
+    /// when absent; CVibrateEffectParam::vfunc_1 @0x141b72690, vibrateeffectparam.cpp:66-74). See <see cref="CameraVibrate"/>.</summary>
+    public float VibrateFrequency, VibrateAmplitude, VibrateDamping = 1f, VibrateDampingTime;
     /// <summary>A direct child of the xml's root, one of the effect data's params (effectservice.cpp:614-617). The children of a
     /// random part (randomeffectparam.cpp:88) are listed too, with this false.</summary>
     public bool TopLevel;
@@ -229,6 +232,13 @@ public sealed class EffectTable
             if (p.TypeId is EffectSkipTable.TypeSwoosh or EffectSkipTable.TypeRibbon or EffectSkipTable.TypeLightning or EffectSkipTable.TypeBeam)
                 p.Strip = EffectStripParam.Read(p.TypeId, e);
             else if (p.TypeId == EffectSkipTable.TypeAfterImage) p.AfterImage = EffectAfterImageParam.Read(e);
+            else if (p.TypeId == EffectSkipTable.TypeVibrate)
+            {
+                p.VibrateFrequency = F((string)e.Attribute("freq"));
+                p.VibrateAmplitude = F((string)e.Attribute("amp"));
+                p.VibrateDamping = F((string)e.Attribute("damping"), 1f);
+                p.VibrateDampingTime = F((string)e.Attribute("dampingTime"));
+            }
             else if (p.TypeId == EffectSkipTable.TypeStatus) p.StatusCategory = (string)e.Attribute("category") ?? "";   // CStatusEffectParam::vfunc_1 @0x1418010a0
             if (e.Element("attachInfo") is { } a)
             {

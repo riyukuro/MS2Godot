@@ -832,7 +832,7 @@ public sealed partial class RemoteLayer : Node3D
     void PlayGroundEffects(string action, string ground, Vector3 at, float yaw)
     {
         groundTable ??= new GroundEffectTable(p => { try { return System.Text.Encoding.UTF8.GetString(packs.Read("Xml", p)); } catch { return null; } });
-        if (groundFx == null) AddChild(groundFx = new World.GroundEffects(packs, builder));
+        if (groundFx == null) AddChild(groundFx = new World.GroundEffects(packs, builder) { CasterKind = 3 });   // another PC's
         foreach (var f in groundTable.PickFiles(ground, action, groundRng))
         {
             groundFx.Play(f, at, yaw);

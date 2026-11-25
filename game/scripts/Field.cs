@@ -312,6 +312,7 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         if (OS.GetEnvironment("MS2_NOGLOW") != "1") glow = GlowPass.Attach(this, camera);   // MS2_NOGLOW=1: the bloom without the glow share (before shots)
         bloom.Glow = glow;   // set once: the render callback reads it, and with HDR off ConvertOnly returns before the read
         Active = this;
+        Net.CameraShakes.Effects.Clear();   // the camera set up in this field (camera.cpp:803): the last field's shakes are gone
         SwitchPostProcess(hdrOn);
         AddChild(camera);
         listener = new AudioListener3D();
@@ -435,7 +436,7 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
     /// on the next frame).</summary>
     public override void _ExitTree()
     {
-        if (Active == this) Active = null;
+        if (Active == this) { Active = null; Net.CameraShakes.Effects.Clear(); }   // CameraMgr::FUN_140aead90 (camera.cpp:853-866)
         Breakables?.Detach();
         Vibrates?.Detach();
         if (Interacts != null)
@@ -890,7 +891,21 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
         zoom.Update(new System.Numerics.Vector3(p.X, p.Y, p.Z), ms2yaw, (float)dt, zoomInput, this);
         zoomInput = 0;
         SetFogBias(zoom.Distance);
+        Shake();
     }
+
+    /// <summary>
+    /// The camera effects on the follow camera (<see cref="Net.CameraShakes.Apply"/>): CTargetCameraMode::vfunc_3 takes the
+    /// moved eye and clears m_f0, so the next vfunc_39 takes the placed camera at once instead of easing to it
+    /// (<see cref="shakeSnap"/>).
+    /// </summary>
+    void Shake()
+    {
+        if (Net.CameraShakes.Apply(camera, Net.CameraShakes.Now)) shakeSnap = true;
+    }
+
+    /// <summary>The last frame's shake moved the eye (m_f0 0): the shown camera takes the placed one.</summary>
+    bool shakeSnap;
 
     /// <summary>One pass's shown camera (vfunc_39): the player turns with the placed camera, the sync record's camera field is
     /// set, and the shown camera eases to the placed one; returns whether its near plane is blocked.</summary>
@@ -943,6 +958,7 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
 
     Transform3D EaseCamera(Transform3D placed, float dt)
     {
+        if (shakeSnap) { shakeSnap = false; return (shownCam = placed).Value; }
         if (shownCam is not { } shown || dt <= 0) return (shownCam = placed).Value;
         var gap = placed.Origin - shown.Origin;
         float dist = gap.Length(), blend = 0;
@@ -1116,6 +1132,9 @@ public partial class Field : Node3D, World.ITargetCamera, ITargetCameraView, Ms2
                 camera.GlobalTransform = s.Transform();
                 camera.Fov = s.Fov;
                 triggerCameraShown = true;
+                // STILL-OPEN: a lock or fly-by mode takes the shake too (its own vfunc_3); here the shakes only run their time
+                var none = System.Numerics.Vector3.Zero;
+                Net.CameraShakes.Effects.Update(Net.CameraShakes.Now, ref none);
             }
             else
             {

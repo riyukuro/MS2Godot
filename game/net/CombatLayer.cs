@@ -175,6 +175,11 @@ void fragment() {
                 if (actor == null || Swoosh(parts, part, actor, casterKind, eye)) EffectsNotNif++;
                 continue;
             }
+            if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeVibrate)
+            {
+                if (!CameraShakes.Play(parts, part, owner)) EffectsNotNif++;   // the camera shake (CVibrateEffect::vfunc_3)
+                continue;
+            }
             if (part.Type != "nif" || string.IsNullOrEmpty(part.FilePath)) { EffectsNotNif++; continue; }
             Transform3D place; Node3D host; bool own = true;
             if (actor == null) { place = new Transform3D(rotation, at); host = parent; }

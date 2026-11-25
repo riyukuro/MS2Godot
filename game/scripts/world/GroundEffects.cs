@@ -11,7 +11,7 @@ namespace Ms2Godot.World;
 /// The visual half of CGroundEffectDataManager::PlayEffects (@0x141377420): each effect file a ground action picks (the steps' and
 /// StateLand's "land", e.g. CH/Common/Tile/default/default_e_land.xml) goes to CEffectService::InsertEffect at the character. Its nif
 /// parts play here through the effect scene runtime, at the character's feet and facing, not attached (attachToNode false), for the
-/// part's duration after its startDelay. The sound parts play in FootstepSounds.
+/// part's duration after its startDelay, and its vibrate parts shake the camera. The sound parts play in FootstepSounds.
 /// </summary>
 public partial class GroundEffects : Node3D
 {
@@ -31,6 +31,10 @@ public partial class GroundEffects : Node3D
 
     readonly List<Ms2.Formats.World.EffectPart> playParts = new();
 
+    /// <summary>The kind of the character the effects play at (1 the own PC, 3 another PC's): a vibrate part shakes the camera
+    /// only for one not of kind 3 (<see cref="CameraShakes.Makes"/>).</summary>
+    public int CasterKind = EffectOwner.KindMyPc;
+
     /// <summary>Plays the nif parts of an effect file at a Godot point, turned by <paramref name="yawRadians"/> about the up axis.</summary>
     public void Play(string effectFile, Vector3 at, float yawRadians)
     {
@@ -39,6 +43,7 @@ public partial class GroundEffects : Node3D
         // a random part makes one child (CRandomEffect::vfunc_3, randomeffectparam.cpp:143-178)
         foreach (var part in Ms2.Formats.World.EffectRandom.PlayList(parts, 0, Ms2.Formats.World.EffectRandom.Tick, playParts))
         {
+            if (part.TypeId == EffectSkipTable.TypeVibrate) { CameraShakes.Play(parts, part, EffectOwner.OfKind(CasterKind)); continue; }
             if (part.Type != "nif" || string.IsNullOrEmpty(part.FilePath)) continue;
             var sc = Scene(part.FilePath);
             if (sc == null) continue;

@@ -23,9 +23,9 @@ public static class EffectRandom
     /// CreateEffectParam @0x1411a04e0 (effectservice.cpp:701-737) makes a param of a known type whose vfunc_2 passes; only those
     /// are a random part's children (randomeffectparam.cpp:90-92). CEffectParam::vfunc_2 (:667-685) refuses a monochrome,
     /// swoosh, status, light, fog, vibrate or textureOverride part with no loop and a duration of 0; a soundEvent part's
-    /// group and event must be found (<see cref="SoundEventFound"/>); a random part needs a child (randomeffectparam.cpp:98-108).
-    /// STILL-OPEN: a vibrate part's damping time (vibrateeffectparam.cpp:77-88) and a soundMusic part's cue
-    /// (soundmusiceffectparam.cpp:89-104) are not tested.
+    /// group and event must be found (<see cref="SoundEventFound"/>); a random part needs a child (randomeffectparam.cpp:98-108);
+    /// a vibrate part's duration must pass its damping time (CVibrateEffectParam::vfunc_2, vibrateeffectparam.cpp:77-88).
+    /// STILL-OPEN: a soundMusic part's cue (soundmusiceffectparam.cpp:89-104) is not tested.
     /// </summary>
     public static bool ParamMade(IReadOnlyList<EffectPart> parts, EffectPart p)
     {
@@ -38,6 +38,7 @@ public static class EffectRandom
                 case EffectSkipTable.TypeTextureOverride:
                     return false;
             }
+        if (p.TypeId == EffectSkipTable.TypeVibrate) return p.Duration > p.VibrateDampingTime;
         if (p.TypeId == EffectSkipTable.TypeSoundEvent) return SoundEventFound?.Invoke(p) ?? true;
         if (p.TypeId == EffectSkipTable.TypeRandom)
         {

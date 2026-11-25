@@ -374,6 +374,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
             if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeSwoosh && (actor == null || SwooshOutOfView(part, actor, casterKind, eye))) continue;
             if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeLightning && (actor == null || !LightningEffect.Makes(all, part, points))) continue;
             if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeBeam && (actor == null || !BeamEffect.Makes(all, part, points))) continue;
+            if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeVibrate && !CameraShakes.Makes(all, part, owner)) continue;
             made++;
         }
         if (made == 0 && all.Count > 0) return null;
@@ -410,6 +411,11 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
             if (string.Equals(part.Type, "soundMusic", StringComparison.OrdinalIgnoreCase))
             {
                 FieldAudio.Instance?.PlayEffectSoundMusic(part, casterKind);
+                continue;
+            }
+            if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeVibrate)
+            {
+                CameraShakes.Play(all, part, owner);   // the camera shake (CVibrateEffect::vfunc_3); it has no view test
                 continue;
             }
             if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeSwoosh)
