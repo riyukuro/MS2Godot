@@ -19,6 +19,7 @@ public partial class HudScene
     AttendGiftDialogController attendGift;
     MovieDialog attendGiftMovie;
     bool attendWatched;
+    Action unwatchAttend;             // WatchAttend's handlers, removed as the HUD leaves the tree
 
     bool AttendGiftOpen => attendGift != null && !attendGift.IsClosed;
     /// <summary>Whether the window is up (the live run's check).</summary>
@@ -34,9 +35,14 @@ public partial class HudScene
         var state = live.AttendDialog;
         state.SystemNotice = key => SystemNoticeText(hudModel.Tables.Common(key) ?? "");
         state.Open = () => OpenAttendGift();
-        live.Attend.Started += _ => gameMenu?.MarkDirty();
-        live.Attend.Ended += _ => gameMenu?.MarkDirty();
+        var attend = live.Attend;
+        attend.Started += AttendMenuDirty;
+        attend.Ended += AttendMenuDirty;
+        unwatchAttend = () => { attend.Started -= AttendMenuDirty; attend.Ended -= AttendMenuDirty; attendWatched = false; };
     }
+
+    /// <summary>An attendance event's start or end: the game menu's attendGift entry reads again.</summary>
+    void AttendMenuDirty(Ms2.Net.Packets.AttendGiftEvent _) => gameMenu?.MarkDirty();
 
     /// <summary>The game menu's attendGift filter (CGameMenuItem::IsVisible @0x140cf0bf0): the dialog has active events. The other
     /// filters have no source here and hide their entries.</summary>

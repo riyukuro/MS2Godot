@@ -16,6 +16,7 @@ public partial class HudScene
     StoreDialogController store;        // from open until the close
     MovieDialog storeMovie;             // the movie, from open until the unload
     bool storageWatched;
+    Action unwatchStorage;            // WatchStorage's handlers, removed as the HUD leaves the tree
     StorageSender storageSender;        // CStore's requests with the client's checks, once per session
 
     bool StoreOpen => store != null && !store.IsClosed;
@@ -28,18 +29,30 @@ public partial class HudScene
         var book = live.Storage;
         book.MaxExtended = hudModel.Tables.StoreExpandMaxSlotCount;
         book.MaxStackOf = live.Items.MaxStackOf;
-        book.OpenRequested += OpenStore;
         // a bank npc's talk without a script (CNpc::OpenTalkUi / CloseTalkUi of 0x4e47)
-        live.TalkUiOpen += id =>
+        Action<int> talkOpen = id =>
         {
             if (id == StoreDialogController.UiId) NpcTalkUi.OpenStore(book, () => storageSender.RequestLoad(), OpenStore);
         };
-        live.TalkUiClose += id =>
+        Action<int> talkClose = id =>
         {
             if (id == StoreDialogController.UiId && StoreOpen) store.Close();
         };
+        Action<int> error = code => ShowStorageText(StorageBook.ErrorText(code, book.CurrentCapacity ?? 0));
+        book.OpenRequested += OpenStore;
+        live.TalkUiOpen += talkOpen;
+        live.TalkUiClose += talkClose;
         live.ObjectStoreRequested += OpenObjectStore;
-        book.ErrorReceived += code => ShowStorageText(StorageBook.ErrorText(code, book.CurrentCapacity ?? 0));
+        book.ErrorReceived += error;
+        unwatchStorage = () =>       // the session and its book outlive this HUD
+        {
+            book.OpenRequested -= OpenStore;
+            live.TalkUiOpen -= talkOpen;
+            live.TalkUiClose -= talkClose;
+            live.ObjectStoreRequested -= OpenObjectStore;
+            book.ErrorReceived -= error;
+            storageWatched = false;
+        };
         storageSender = new StorageSender(book)
         {
             Send = live.SendStorage,

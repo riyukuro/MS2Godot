@@ -697,17 +697,20 @@ public partial class FieldAudio : Node, World.ITriggerSounds
     /// disableJobSound (IsJobSoundDisabled @0x141260470); a row with a cooltimeID plays only when CooltimeManager::Use lets it.
     /// The event's waves come from the banks of the voice language (SoundLibrary). Returns false when nothing is played.
     /// </summary>
-    public bool PlayUi(string key, string arg = "")
+    public bool PlayUi(string key, string arg = "") => UiSoundPath(key, arg) is { } path && PlayEvent(path);
+
+    /// <summary>PlaySystemSound's event path for a key (null when nothing plays), its cool time used.</summary>
+    string UiSoundPath(string key, string arg)
     {
         var p = systemSounds?.Find(key, arg);
-        if (p == null) return false;
+        if (p == null) return null;
         var me = Ms2Godot.Net.LiveSession.Instance?.Me.User;
         int gender = me?.Gender ?? 0, job = me?.JobCode ?? 1;
         bool off = (GameOptions.Current?.StatusOption?.RegionKr ?? false) && GameOptions.SoundFlag.DisableJobSound;
         var path = systemSounds.Resolve(key, gender, job, off, arg);
-        if (path == null) return false;
-        if (p.CooltimeId != 0 && cooltimes != null && !cooltimes.Use((int)p.CooltimeId, System.Environment.TickCount64)) return false;
-        return PlayEvent(path);
+        if (path == null) return null;
+        if (p.CooltimeId != 0 && cooltimes != null && !cooltimes.Use((int)p.CooltimeId, System.Environment.TickCount64)) return null;
+        return path;
     }
 
     public bool PlayUiClick() => PlayUi("button_click");

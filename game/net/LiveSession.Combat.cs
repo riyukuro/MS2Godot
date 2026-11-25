@@ -1958,6 +1958,12 @@ public partial class LiveSession
                 hud.EscScripted(); await frames(60);
                 continue;
             }
+            if (step == "hudonce")      // the HUD's live player watch counted (HudScene.LiveWatchScripted), one per event and model
+            {
+                var counts = hud.LiveWatchScripted(out bool once);
+                Check($"each live event reaches the HUD once ({counts})", once);
+                continue;
+            }
             if (step.StartsWith("cooldown:"))
             {
                 GD.Print($"live: combat {step}: {hud.CooldownScripted(uint.Parse(step[9..]))}");
@@ -2223,12 +2229,6 @@ public partial class LiveSession
                         Check($"the expand's answer box shows: {done?.Msg}", done != null && done.Msg == hud.CommonText(0x2a2));
                         GD.Print($"live: combat bag expand answer: {(hud.BagBoxAnswerScripted(done, 0, done?.Extra ?? "") ? "answered" : "no box")}");
                         await frames(30);
-                        break;
-                    }
-                    case "hudonce":     // hudonce: the HUD's live player watch counted (HudScene.LiveWatchScripted), one per event and model
-                    {
-                        var counts = hud.LiveWatchScripted(out bool once);
-                        Check($"each live event reaches the HUD once ({counts})", once);
                         break;
                     }
                     case "bagyes":      // bagyes: the message box shown now answered with its first button (a bind-on-equip box's yes)

@@ -320,6 +320,7 @@ public partial class HudScene : Node, IUiStageHost
         unwatchLivePlayer = null;
         unbindBoxAnswers?.Invoke();
         unbindBoxAnswers = null;
+        UnwatchSessionLeftovers();
         Ms2Godot.Net.ProfileImageService.Images.Ready -= ProfileImageReady;
         if (sizeSource != null) { sizeSource.SizeChanged -= QueueRelayout; sizeSource = null; }
         if (MovieDialog.SceneResizer == this) MovieDialog.SceneResizer = null;

@@ -9,9 +9,9 @@ namespace Ms2Godot.Ui;
 /// <summary>
 /// UIItemGachaBoxDialog (0x4f8b, <see cref="ItemGachaBoxDialogController"/>), the capsule machine OpenGachaBox opens
 /// (@0x140d25e10: GetItemUseDialog(0x4f8b), open: nothing; else SetBoxItemId and open). Live only. The server's ItemScript
-/// mode 5 goes to it while it is open (its vfunc_79).
-/// STILL-OPEN: the rolling sound is not stopped on the idle state or the unload (PlaySystemSound's handle and
-/// CEffectService::FUN_1411a6060 are not in FieldAudio's UI sounds); the shop link box's dialog 0x4ec1 (the Merat market).
+/// mode 5 goes to it while it is open (its vfunc_79). Its sounds play by handle (<see cref="FieldAudio.PlayUiHandle"/>), so
+/// the rolling sound stops on the idle state's restart and the unload.
+/// STILL-OPEN: the shop link box's dialog 0x4ec1 (the Merat market).
 /// </summary>
 public partial class HudScene
 {
@@ -34,7 +34,8 @@ public partial class HudScene
             RequestUse = (box, mode) => inventory?.FunctionUse(box, mode) ?? false,
             Self = () => inventory?.Wearer?.Invoke() is { } me ? (me.JobGroup, me.Gender) : null,
             Send = request => live?.SendShop(request),
-            PlaySound = key => { FieldAudio.Instance?.PlayUi(key); return 0; },
+            PlaySound = key => FieldAudio.Instance?.PlayUiHandle(key) ?? 0,   // the rolling sound's handle, stopped by state and unload
+            StopSound = handle => FieldAudio.Instance?.StopUi(handle),
             ShowBox = box => MessageBoxQueue.Show(box),
             OpenDialog = id => GD.Print($"gacha box: dialog 0x{id:x} is not in this HUD"),
         };
