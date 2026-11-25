@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Threading;
 using System.Threading.Tasks;
 using Maple2.PacketLib.Tools;
 using Ms2.Net;
@@ -14,12 +15,13 @@ using NUnit.Framework;
 namespace Ms2.Net.Tests;
 
 /// <summary>
-/// Recorded-packet dispatch tests for RequestKey (KMS 0x04, GMS2 0x04;
+/// FakeServer-built dispatch tests for RequestKey (KMS 0x04, GMS2 0x04;
 /// CNetworkService::OnRequestKey @0x14153b010, networkservice.cpp:859 -> GameClient.EnterEndpointAsync, ClientSession.RunAsync).
-/// Every recorded KMS2 and GMS2 0x04 packet carries an empty 0-byte payload.
+/// KMS2 and GMS2 0x04 packets are bodyless (0 bytes).
 /// </summary>
-public class RequestKeyRecordedTests
+public class RequestKeyDispatchTests
 {
+    static readonly TimeSpan IoTimeout = TimeSpan.FromSeconds(10);
     sealed class DuplexStream : Stream
     {
         readonly Stream input;
@@ -61,56 +63,76 @@ public class RequestKeyRecordedTests
         public void EndSession() { }
     }
 
-    static async Task<(ushort Op, byte[] Body)> ReadFrame(NetworkStream s, FakeServer srv)
+    static async Task<(ushort Op, byte[] Body)> ReadFrame(NetworkStream s, FakeServer srv, CancellationToken ct)
     {
         var head = new byte[6];
-        await s.ReadExactlyAsync(head);
+        await s.ReadExactlyAsync(head, ct);
         var frame = new byte[6 + BitConverter.ToInt32(head, 2)];
         head.CopyTo(frame, 0);
-        await s.ReadExactlyAsync(frame.AsMemory(6));
+        await s.ReadExactlyAsync(frame.AsMemory(6), ct);
         return srv.Read(frame);
+    }
+
+    static async Task Observe(Task<(GameEntry entry, TcpTransport game)> enter)
+    {
+        if (enter == null) return;
+        try
+        {
+            var (_, game) = await enter.WaitAsync(TimeSpan.FromSeconds(2));
+            game.Dispose();
+        }
+        catch
+        {
+            // Faulted or cancelled enter task observed on cleanup so it never escapes as unobserved.
+        }
     }
 
     static async Task VerifyRequestKeyAnswersResponseKeyAndReconnect(bool gms2, long accountId, ulong token)
     {
         var profile = gms2 ? ProtocolProfile.Gms2 : ProtocolProfile.Kms2525;
 
-        // 1. GameClient entry answers empty RequestKey with ResponseKey.
+        // 1. GameClient entry answers bodyless RequestKey with ResponseKey.
+        using var cts = new CancellationTokenSource(IoTimeout);
+        var ct = cts.Token;
         var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
+        Task<(GameEntry entry, TcpTransport game)> enter = null;
         try
         {
             int port = ((IPEndPoint)listener.LocalEndpoint).Port;
             var srv = new FakeServer(0x10203040, 0x50607080, gms2: gms2);
-            var accept = listener.AcceptTcpClientAsync();
+            var accept = listener.AcceptTcpClientAsync(ct).AsTask();
             var machine = Enumerable.Range(1, 16).Select(i => (byte)i).ToArray();
-            var enter = GameClient.EnterEndpointAsync("127.0.0.1", (ushort)port, token, accountId, machine);
+            enter = GameClient.EnterEndpointAsync("127.0.0.1", (ushort)port, token, accountId, machine, ct: ct);
 
-            using var peer = await accept;
+            using var peer = await accept.WaitAsync(IoTimeout);
             var s = peer.GetStream();
-            await s.WriteAsync(srv.HelloFrame);
-            await ReadFrame(s, srv); // ResponseVersion
-            await s.WriteAsync(srv.Frame(Inbound.RequestKey));
+            await s.WriteAsync(srv.HelloFrame, ct);
+            await ReadFrame(s, srv, ct); // ResponseVersion
+            await s.WriteAsync(srv.Frame(Inbound.RequestKey), ct);
 
-            var (op, body) = await ReadFrame(s, srv);
+            var (op, body) = await ReadFrame(s, srv, ct);
             Assert.That(op, Is.EqualTo(profile.Number(Outbound.ResponseKey)));
             var key = ResponseKey.Read(new ByteReader(body));
             Assert.That(key.AccountId, Is.EqualTo(accountId));
             Assert.That(key.Token, Is.EqualTo(token));
             Assert.That(key.MachineId, Is.EqualTo(machine));
 
-            await s.WriteAsync(srv.Frame(Inbound.MoveResult, w => w.WriteByte(0)));
+            await s.WriteAsync(srv.Frame(Inbound.MoveResult, w => w.WriteByte(0)), ct);
             await s.WriteAsync(srv.Frame(Inbound.RequestFieldEnter, w =>
             {
                 w.WriteByte(0); w.WriteInt(2_000_001); w.WriteByte(0); w.WriteByte(0); w.WriteInt(0); w.WriteInt(0);
                 w.WriteFloat(0); w.WriteFloat(0); w.WriteFloat(0); w.WriteFloat(0); w.WriteFloat(0); w.WriteFloat(0); w.WriteInt(0);
-            }));
-            var (_, game) = await enter.WaitAsync(TimeSpan.FromSeconds(10));
+            }), ct);
+            var (_, game) = await enter.WaitAsync(IoTimeout);
+            enter = null;
             game.Dispose();
         }
         finally
         {
+            cts.Cancel();
             listener.Stop();
+            await Observe(enter);
         }
 
         // 2. ClientSession while reconnecting routes RequestKey to ReconnectionManager.SendRequest and suppresses PacketReceived.

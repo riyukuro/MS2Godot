@@ -8,14 +8,14 @@ using NUnit.Framework;
 namespace Ms2.Net.Tests;
 
 /// <summary>
-/// Recorded-packet ClientSession dispatch tests for World (KMS 0xB9, GMS2 0xBB;
+/// FakeServer-built ClientSession dispatch tests for World (KMS 0xB9, GMS2 0xBB;
 /// CSceneStateGame::OnWorld, scenestategame.cpp:3883).
 /// Dispatch-only: OnWorld reads no packet fields (sets WorldService m_2bc = 1) and LiveSession discards the body.
 /// </summary>
-public class WorldRecordedTests
+public class WorldDispatchTests
 {
-    // kms2: 0xB9, 17 bytes (non-empty variant; 64-bit id at bytes 1..9 masked)
-    static readonly byte[] KmsWorld17Bytes = Convert.FromHexString("0001000000000011112358E25D00000000");
+    // kms2: 0xB9, 17 bytes (non-empty variant; 8-byte id at offsets 1..8 and 4-byte timestamp at offsets 9..12 masked)
+    static readonly byte[] KmsWorld17Bytes = Convert.FromHexString("0001000000000011111020304000000000");
 
     sealed class DuplexStream : Stream
     {
@@ -57,8 +57,9 @@ public class WorldRecordedTests
     }
 
     [Test]
-    public void Gms2WorldEmptyFrameDispatchesThroughClientSessionOnOpcode0xBB()
+    public void Gms2WorldBodylessFrameDispatchesThroughClientSessionOnOpcode0xBB()
     {
+        // GMS2 0xBB frames are bodyless (0 bytes).
         var srv = new FakeServer(0x05060708, 0x0D0C0B0A, gms2: true);
         var inbound = new MemoryStream();
         inbound.Write(srv.HelloFrame);

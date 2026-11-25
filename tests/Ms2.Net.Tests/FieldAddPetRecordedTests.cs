@@ -40,16 +40,14 @@ public class FieldAddPetRecordedTests
     {
         var r = new ByteReader(KmsFieldAddPet);
         var pet = FieldAddPet.Read(r, ProtocolProfile.Kms2525);
-        // KMS2 reader consumes only the 44-byte header prefix before stats.
-        Assert.That(r.Available, Is.EqualTo(56));
+        // Do not pin Level / SkinId / remaining bytes here: Npcs.cs:57-59 currently reads the KMS2 prefix
+        // without the skin/pet-id split and trailing fields (CSceneStateGame::OnFieldAddPet, scenestategame.cpp:9682-9709).
         Assert.That(pet.ObjectId, Is.EqualTo(KmsPetObjectId));
         Assert.That(pet.NpcId, Is.EqualTo(61_100_010));
-        Assert.That(pet.Level, Is.EqualTo(61_100_010));
         Assert.That(pet.Position, Is.EqualTo(new Vector3(-1050f, -1050f, 149f)));
         Assert.That(pet.Rotation, Is.EqualTo(Vector3.Zero));
         Assert.That(pet.Scale, Is.EqualTo(1f));
         Assert.That(pet.OwnerId, Is.EqualTo(KmsOwnerObjectId));
-        Assert.That(pet.SkinId, Is.EqualTo(0));
 
         var tracker = new FieldTracker();
         tracker.Inbound(new RawPacket(ProtocolProfile.Kms2525.Number(Inbound.FieldAddPet), KmsFieldAddPet));
