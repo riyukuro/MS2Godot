@@ -1774,6 +1774,96 @@ public class HudTests
         Assert.That(texts, Has.None.Contains("Third"));
     }
 
+    /// <summary>A quest state the test changes, as the live quest book does.</summary>
+    sealed class ChangingQuests : Ms2.Quest.IQuestState
+    {
+        public readonly List<Ms2.Quest.QuestRecord> List = new();
+        public IReadOnlyList<Ms2.Quest.QuestRecord> Records => List.OrderBy(r => r.Id).ToList();
+        public Ms2.Quest.QuestRecord Get(int questId) => List.Find(r => r.Id == questId);
+        public void Set(Ms2.Quest.QuestRecord r) { List.RemoveAll(x => x.Id == r.Id); List.Add(r); }
+        public bool CanStart(int questId) => false;
+        public int PlayerLevel => 10;
+        public long CharacterId => 0;
+        public bool NpcFieldOpen(int npcId, int fieldId) => false;
+    }
+
+    [Test]
+    public void QuestGuideFollowsTheQuestEvents()
+    {
+        // UIQuestGuideDialog as a UIQuestEventListener (uiquesteventlistener.cpp:613-669, vfunc_15 :424): a quest started after
+        // the tracker loaded is queued and added on the next frame, a rewarded one queued for removal, a removed one goes at
+        // once, the tracking flag adds or removes, and a rebuild lists the state again
+        var m = Model();
+        var t = new Ms2.Quest.QuestTable("KR", _ => true) { Common = k => k == "s_quest_name_with_level" ? "{0} (Lv. {1})" : "" };
+        t.AddQuests(System.Xml.Linq.XDocument.Parse(@"<ms2>
+            <quest id=""1""><basic questType=""0"" standardLevel=""3"" /><condition type=""npc"" code=""7"" value=""1"" /></quest>
+            <quest id=""2""><basic questType=""1"" standardLevel=""4"" /><condition type=""npc"" code=""7"" value=""2"" /></quest>
+            <quest id=""3""><basic questType=""1"" standardLevel=""5"" /><condition type=""npc"" code=""7"" value=""1"" /></quest>
+            <quest id=""70000001""><basic questType=""3"" standardLevel=""0"" /><condition type=""level"" value=""78"" /></quest></ms2>"));
+        t.BuildIndexes();
+        t.AddDescriptions(System.Xml.Linq.XDocument.Parse(@"<ms2>
+            <quest questID=""1"" name=""First"" /><quest questID=""2"" name=""Second"" /><quest questID=""3"" name=""Third"" />
+            <quest questID=""70000001"" name=""Reach Level 78"" /></ms2>"));
+        static Ms2.Quest.QuestRecord Q(int id, int state, int tracking, long started) => new(id, state, started, 0, tracking, false, false, new long[] { 0 });
+        var state = new ChangingQuests();
+        state.Set(Q(1, 1, 1, 10));
+        var notices = new List<int>();
+        var c = new QuestGuideController { Table = t, State = state, Notice = notices.Add };
+        var h = Load(c, m);
+        var container = (AsContainer)h.Get(h.Entity, "m_dragContainer");
+        List<string> Shown() => AllTexts(container);
+        // removeEntity takes the entry out of m_entities at once and plays the clip's "hide" before it leaves the stage
+        int Listed() => container.Children.Count(e => Rt.ToString(h.Get(e, "currentLabel")) != "hide");
+        Assert.That(Listed(), Is.EqualTo(1));
+
+        state.Set(Q(2, 1, 1, 20));
+        c.OnQuestStarted(2);
+        Assert.That(Listed(), Is.EqualTo(1), "queued: added on the frame");
+        c.Tick();
+        Assert.That(Listed(), Is.EqualTo(2), "a quest started after the load is listed");
+        Assert.That(Shown(), Has.Some.Contains("Second (Lv. 4)"));
+
+        state.Set(Q(3, 1, 0, 30));
+        c.OnQuestStarted(3);
+        state.Set(Q(70000001, 1, 1, 40));
+        c.OnQuestStarted(70000001);
+        c.Tick();
+        Assert.That(Listed(), Is.EqualTo(2), "an untracked quest and a mission type quest stay out");
+
+        state.Set(Q(2, 1, 1, 20) with { Complete = true, Progress = new long[] { 2 } });
+        c.OnQuestProgress(2);
+        Assert.That(h.RT.Errors, Is.Empty);
+
+        state.Set(Q(2, 2, 1, 20));
+        c.OnQuestRewarded(2);
+        c.Tick();
+        Assert.That(Listed(), Is.EqualTo(1), "a rewarded quest leaves on the frame");
+        c.OnQuestTracking(2);
+        c.OnQuestResult(2, 0);
+        c.OnQuestResult(99, 3);
+        Assert.That(Listed(), Is.EqualTo(1), "AddQuestEntity skips a rewarded quest and one the character does not have");
+
+        state.List.RemoveAll(r => r.Id == 1);
+        c.OnQuestRemoved(1);
+        Assert.That(Listed(), Is.EqualTo(0), "a removed quest leaves at once");
+
+        state.Set(Q(3, 1, 1, 30));
+        c.OnQuestTracking(3);
+        Assert.That(Listed(), Is.EqualTo(1));
+        Assert.That(Shown(), Has.Some.Contains("Third (Lv. 5)"));
+        state.Set(Q(3, 1, 0, 30));
+        c.OnQuestTracking(3);
+        Assert.That(Listed(), Is.EqualTo(0));
+
+        state.Set(Q(1, 1, 1, 10));
+        state.Set(Q(3, 1, 1, 30));
+        c.QueueRebuild();
+        c.Tick();
+        Assert.That(Listed(), Is.EqualTo(2), "the rebuild lists the tracked quests in progress");
+        Assert.That(h.RT.Errors, Is.Empty);
+        Assert.That(notices, Is.Empty);
+    }
+
     [Test]
     public void QuestGuideSkipsMissionTypeQuests()
     {

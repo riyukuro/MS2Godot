@@ -233,6 +233,8 @@ public partial class HudScene : Node, IUiStageHost
         SidePopupUnwatch();
         NpcDuelHpBarUnwatch();
         CloseQuestNavigation();
+        unwatchQuestGuide?.Invoke();
+        unwatchQuestGuide = null;
         unwatchMinimapPcs?.Invoke();
         unwatchMinimapPcs = null;
         if (Ms2Godot.Net.LiveSession.Instance is { } liveChannel) { liveChannel.ChannelsChanged -= ChannelsChanged; liveChannel.GameToGameFailed -= OnGameToGameFailed; if (liveChannel.ChannelNoticeSink == (Action<int, int>)ChannelNotice) liveChannel.ChannelNoticeSink = null; }
@@ -2072,9 +2074,46 @@ public partial class HudScene : Node, IUiStageHost
             PageCount = (int)constants.Float("QuestGuidePageCount", 4),
             MaxCount = (int)constants.Float("QuestGuideMaxCount", 40),
         };
+        questGuideSide.Notice = id => SystemNotice(Ms2.Formats.Text.CommonStringIds.Key(id) ?? "");
         var model = NewModel();
         questGuide = new MovieDialog(assets, questGuideSide, model, ScreenMode.PixelSize(GetWindow()));
         ui.AddChild(questGuide);
+        WatchQuestGuide(questGuideSide);
+    }
+
+    Action unwatchQuestGuide;
+
+    /// <summary>
+    /// UIQuestGuideDialog as a UIQuestEventListener: the quest manager's events for each quest packet (questmanager_2.cpp:
+    /// 1004-1083) and the quest list's rebuild (CloseQuestDialogs). The tracker's frame empties the queues they fill.
+    /// </summary>
+    void WatchQuestGuide(Ms2.Ui.Hud.QuestGuideController c)
+    {
+        unwatchQuestGuide?.Invoke();
+        unwatchQuestGuide = null;
+        if (Ms2Godot.Net.LiveSession.Instance is not { } live) return;
+        var quests = live.Quests;
+        Action<int> started = c.OnQuestStarted, progress = c.OnQuestProgress, rewarded = c.OnQuestRewarded, removed = c.OnQuestRemoved,
+                    tracking = c.OnQuestTracking;
+        Action<int, int> result = c.OnQuestResult;
+        Action reloaded = c.QueueRebuild;
+        quests.Started += started;
+        quests.ProgressUpdated += progress;
+        quests.Rewarded += rewarded;
+        quests.Removed += removed;
+        quests.TrackingChanged += tracking;
+        quests.ResultReceived += result;
+        quests.Reloaded += reloaded;
+        unwatchQuestGuide = () =>
+        {
+            quests.Started -= started;
+            quests.ProgressUpdated -= progress;
+            quests.Rewarded -= rewarded;
+            quests.Removed -= removed;
+            quests.TrackingChanged -= tracking;
+            quests.ResultReceived -= result;
+            quests.Reloaded -= reloaded;
+        };
     }
 
     /// <summary>
@@ -4393,6 +4432,7 @@ public partial class HudScene : Node, IUiStageHost
         if (minimap == null && minimapSlot != null && GetTree().GetFirstNodeInGroup(World.FieldContents.Group) is World.FieldContents { Portals: not null } mfc) OpenMinimap(mfc);
         if (!questNavigationOpened && questNavigationSlot != null && GetTree().GetFirstNodeInGroup(World.FieldContents.Group) is World.FieldContents { Portals: not null } qfc) OpenQuestNavigation(qfc);
         QuestNavigationTick();               // CQuestNavigator FUN_140c99ee0, then UIQuestNavigation::vfunc_15
+        questGuideSide?.Tick();              // UIQuestGuideDialog::vfunc_15: the queued removals and additions, a rebuild
         minimapSide?.Process(Time.GetTicksMsec());
         upperHudSide?.Process(Time.GetTicksMsec());
         TargetBar?.Process();

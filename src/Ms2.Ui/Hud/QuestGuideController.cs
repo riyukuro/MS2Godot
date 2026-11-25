@@ -1,4 +1,5 @@
 using System.Globalization;
+using Ms2.Avm2;
 using Ms2.Quest;
 
 namespace Ms2.Ui.Hud;
@@ -36,8 +37,16 @@ public sealed class QuestGuideController : UiController
     /// unit_1402ab440_constantsblocks.cpp:917-918).</summary>
     public int PageCount = 4, MaxCount = 40;
 
+    /// <summary>FUN_141275260(id, 1, 1): the system notice of a common string id (AddQuestEntity's 0x5f1, the tracker is full).</summary>
+    public Action<int> Notice;
+
+    /// <summary>m_30: the movie is up.</summary>
+    public bool Loaded => Host?.Entity != null;
+
     bool missionToggle;     // m_bMissionToggle
     int recommendQuest;     // m_nRecommendQuest
+    readonly List<int> addQueue = new(), removeQueue = new();      // m_addQueue, m_removeQueue
+    bool recommendDirty, rebuild;      // m_bRecommendDirty, m_bRebuild
 
     /// <summary>
     /// OnLoadComplete (uiquesteventlistener.cpp:391): UIDialog's, setMaxEntity(QuestGuidePageCount, QuestGuideMaxCount),
@@ -90,6 +99,133 @@ public sealed class QuestGuideController : UiController
         Host.Invoke("addMission", Host.Obj(("conditions", conditions), ("toggle", missionToggle ? 1 : 0)), "field");
     }
 
+    // ---- UIQuestEventListener: the quest manager's events (UIQuestEventDispatcher, questmanager_2.cpp:1004-1083) --------------
+    // The dispatcher's vfunc_1 / 2 / 3 (@0x141aa88e0, @0x141aa8a30, @0x141aa8b70) send the quest types 3, 4, 5, 7 and 10 to slots
+    // of their own (8-12; the tracker's slot 9 updates the dungeon mission, not here); the other types go to slots 1, 2 and 3.
+
+    /// <summary>OnQuest mode 2 (a quest started), vfunc_o178_1 (@0x141aab3b0): a tracked quest is queued for adding; a main
+    /// quest (type 0) marks the recommendation dirty.</summary>
+    public void OnQuestStarted(int id)
+    {
+        var d = Table.Quest(id);
+        if (!QuestCommon.InMainQuestMap(d) || State.Get(id) is not { } r || TrackingState(r) == 0) return;
+        addQueue.Add(id);
+        if (d?.Type == 0) recommendDirty = true;
+    }
+
+    /// <summary>OnQuest mode 4 (a quest rewarded), vfunc_o178_2 (@0x141aab420): queued for removal; a main quest marks the
+    /// recommendation dirty.</summary>
+    public void OnQuestRewarded(int id)
+    {
+        var d = Table.Quest(id);
+        if (!QuestCommon.InMainQuestMap(d)) return;
+        removeQueue.Add(id);
+        if (d?.Type == 0) recommendDirty = true;
+    }
+
+    /// <summary>OnQuest mode 3 (a quest's progress), vfunc_o178_3 (@0x141aab480): a tracked quest's entity is updated.</summary>
+    public void OnQuestProgress(int id)
+    {
+        if (!QuestCommon.InMainQuestMap(Table.Quest(id)) || State.Get(id) is not { } r || TrackingState(r) == 0) return;
+        UpdateQuestEntity(r);
+    }
+
+    /// <summary>OnQuest mode 6 or 7 (a quest removed or expired), vfunc_o178_5 (@0x141aab510): its entity goes now; a main
+    /// quest marks the recommendation dirty.</summary>
+    public void OnQuestRemoved(int id)
+    {
+        RemoveQuestEntity(id);
+        if (Table.Quest(id)?.Type == 0) recommendDirty = true;
+    }
+
+    /// <summary>OnQuest mode 9 (the tracking flag), vfunc_o178_6 (@0x141aab570): unless the tracker is closed (vfunc_55), a
+    /// tracked quest is added, an untracked one removed.</summary>
+    public void OnQuestTracking(int id)
+    {
+        if (IsClosed || State.Get(id) is not { } r) return;
+        if (TrackingState(r) != 0) AddQuestEntity(id);
+        else RemoveQuestEntity(id);
+    }
+
+    /// <summary>OnQuest mode 5 (the answer to a give-up), vfunc_o178_7 (@0x141aab4d0): AddQuestEntity of the id (nothing when
+    /// the quest is gone).</summary>
+    public void OnQuestResult(int id, int result) => AddQuestEntity(id);
+
+    /// <summary>FUN_141aacf20: the whole list is built again on the next frame.</summary>
+    public void QueueRebuild() => rebuild = true;
+
+    /// <summary>
+    /// vfunc_15 (@0x141aaa450), each frame in the game scene (sub scene 0x620001d) with the movie up: the removals, the
+    /// recommendation, the additions, then a queued rebuild. RefreshRecommendedQuest is not ported (no recommended quest is
+    /// picked here, see <see cref="RecommendedQuest"/>): the dirty flag is only cleared.
+    /// </summary>
+    public void Tick()
+    {
+        if (!Loaded) return;
+        if (removeQueue.Count > 0)
+        {
+            foreach (int id in removeQueue) RemoveQuestEntity(id);
+            removeQueue.Clear();
+        }
+        recommendDirty = false;
+        if (addQueue.Count > 0)
+        {
+            foreach (int id in addQueue) AddQuestEntity(id);
+            addQueue.Clear();
+        }
+        if (rebuild)
+        {
+            rebuild = false;
+            BuildAll();
+        }
+    }
+
+    /// <summary>
+    /// AddQuestEntity (@0x141aac190): a quest the character has and is not rewarded; with the tracker full (canAdd) only a
+    /// forced one (FUN_14074b790), else the notice 0x5f1; then addEntity with its entity.
+    /// </summary>
+    bool AddQuestEntity(int id)
+    {
+        if (State.Get(id) is not { } r || r.IsRewarded) return false;
+        if (!CanAdd() && !Table.ForceRegist(id))
+        {
+            Notice?.Invoke(0x5f1);
+            return false;
+        }
+        if (!Loaded) return true;
+        Host.Invoke("addEntity", QuestEntity(r));
+        return true;
+    }
+
+    /// <summary>CanAdd (@0x141aacd70): the movie's canAdd; false without the movie.</summary>
+    bool CanAdd() => Loaded && Rt.ToBoolean(Host.Invoke("canAdd"));
+
+    /// <summary>RemoveQuestEntity (@0x141aac360): the movie's removeEntity with the id.</summary>
+    void RemoveQuestEntity(int id)
+    {
+        if (Loaded) Host.Invoke("removeEntity", (uint)id);
+    }
+
+    /// <summary>
+    /// UpdateQuestEntity (@0x141aabe50): updateEntity with the id, satisfied, progress 1, the icon, the title, then the goto
+    /// buttons, conditions, period and navigation state as the entity has them.
+    /// </summary>
+    void UpdateQuestEntity(QuestRecord r)
+    {
+        if (!Loaded) return;
+        var d = Table.Quest(r.Id);
+        var o = new Dictionary<string, object>
+        {
+            ["id"] = (uint)r.Id,
+            ["satisfied"] = r.Complete ? 1 : 0,
+            ["progress"] = 1,
+            ["icon"] = QuestIcon(d, r),
+            ["title"] = NameWithLevel(r.Id),
+        };
+        EntityTail(o, d, r);
+        Host.Invoke("updateEntity", o);
+    }
+
     /// <summary>CQuest::GetTrackingState: a forced quest (FUN_14074b790) is always tracked, else the record's flag.</summary>
     int TrackingState(QuestRecord r) => Table.ForceRegist(r.Id) ? 1 : r.Tracking;
 
@@ -111,6 +247,14 @@ public sealed class QuestGuideController : UiController
             ["acceptedDate"] = (double)r.StartTime,
             ["forceRegistGuide"] = Table.ForceRegist(r.Id) && d != null && d.Fields.Contains((uint)FieldId),
         };
+        EntityTail(o, d, r);
+        return o;
+    }
+
+    /// <summary>The members FUN_141aad6b0 and UpdateQuestEntity both end with: SetQuestGotoButtons, SetQuestConditions,
+    /// SetQuestPeriod, SetQuestNavigationState.</summary>
+    void EntityTail(Dictionary<string, object> o, QuestData d, QuestRecord r)
+    {
         // "alliance" (GetAllianceSymbol, questmasktable.cpp:562: the fame table's symbol) is not sent: no fame table here
         // SetQuestGotoButtons (:897): the quest dialog's goto buttons without the give-up one
         if (GotoButtons?.Invoke(d, r) is { } buttons) o["gotoButton"] = buttons.Where(b => b != "giveup").Cast<object>().ToList();
@@ -124,7 +268,6 @@ public sealed class QuestGuideController : UiController
         // SetQuestNavigationState (:883): feature 0x77 gives the quest's navigation flag and whether the navigator traces it
         o["navi"] = 0;
         o["tracing"] = 0;
-        return o;
     }
 
     /// <summary>SetQuestConditions (uiquesteventlistener.cpp:833): each condition's text and whether its goal is reached,

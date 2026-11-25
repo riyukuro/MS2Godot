@@ -124,4 +124,53 @@ public class QuestRecordedTests {
         book.Apply(pinned);
         Assert.That(book.Pinned, Is.EquivalentTo(new[] { 90000400, 90000060 }));
     }
+    /// <summary>
+    /// The quest manager's events the quest tracker listens to (questmanager_2.cpp:1047-1083 and CloseQuestDialogs): mode 5
+    /// gives slot 7 its id and result, modes 6 and 7 slot 5 for each quest the book had, mode 9 slot 6, and the quest list
+    /// (0x16) and a dropping count list (0x1f) a rebuild.
+    /// </summary>
+    [Test] public void RemovalTrackingResultAndReloadEventsReachListeners() {
+        var book = new QuestBook();
+        var removed = new List<int>();
+        var tracked = new List<int>();
+        var results = new List<(int, int)>();
+        int reloads = 0;
+        book.Removed += removed.Add;
+        book.TrackingChanged += tracked.Add;
+        book.ResultReceived += (id, r) => results.Add((id, r));
+        book.Reloaded += () => reloads++;
+        QuestMessage Frame(string hex) {
+            var r = new ByteReader(Convert.FromHexString(hex));
+            var m = QuestMessage.Read(r);
+            Assert.That(r.Available, Is.EqualTo(0), hex);
+            return m;
+        }
+        foreach (int id in new[] { 11, 12, 13, 14 }) book.Apply(new QuestMessage.Start(id, 1, true, new long[] { 0 }));
+
+        book.Apply(Frame("090B00000000"));             // mode 9: quest 11 untracked
+        Assert.That(tracked, Is.EqualTo(new[] { 11 }));
+        Assert.That(book.Get(11).Tracked, Is.False);
+        book.Apply(Frame("096300000001"));             // an unknown quest: nothing
+        Assert.That(tracked, Is.EqualTo(new[] { 11 }));
+
+        book.Apply(Frame("060C000000"));               // mode 6: quest 12 removed
+        book.Apply(Frame("0663000000"));               // an unknown quest: nothing
+        Assert.That(removed, Is.EqualTo(new[] { 12 }));
+        book.Apply(Frame("07020000000D00000063000000"));   // mode 7: quests 13 and 99 expired, only 13 known
+        Assert.That(removed, Is.EqualTo(new[] { 12, 13 }));
+        Assert.That(book.Get(13), Is.Null);
+
+        book.Apply(Frame("050E00000000000000"));       // mode 5: quest 14 given up, result 0 removes it
+        book.Apply(Frame("056300000003000000"));       // another result, an unknown quest: still told
+        Assert.That(results, Is.EqualTo(new[] { (14, 0), (99, 3) }));
+        Assert.That(book.Get(14), Is.Null);
+
+        Assert.That(reloads, Is.EqualTo(0));
+        book.Apply(new QuestMessage.Load(new List<QuestRecord>()));
+        Assert.That(reloads, Is.EqualTo(1));
+        book.Apply(Frame("1F0000000000"));             // mode 0x1f without the drop byte: no rebuild
+        Assert.That(reloads, Is.EqualTo(1));
+        book.Apply(Frame("1F0100000000"));             // with it: CloseQuestDialogs
+        Assert.That(reloads, Is.EqualTo(2));
+    }
 }
