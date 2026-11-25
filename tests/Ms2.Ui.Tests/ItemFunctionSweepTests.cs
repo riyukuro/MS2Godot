@@ -26,6 +26,22 @@ public class ItemFunctionSweepTests
         "OpenItemBoxLimitedQuantity", "OpenGachaBox", "QuestStart",
     };
 
+    /// <summary>Every item id of the data set: the rows of the itemdata/&lt;n&gt;.xml files (GMS2) and the item/&lt;a&gt;/&lt;b&gt;/&lt;id&gt;.xml
+    /// files (KMS).</summary>
+    internal static SortedSet<int> ItemIds(PackSet packs)
+    {
+        var ids = new SortedSet<int>();
+        var perFile = new Regex(@"^item/\d+/\d+/(\d+)\.xml$");
+        foreach (var entry in packs.List("Xml"))
+        {
+            if (entry.StartsWith("itemdata/") && entry.EndsWith(".xml") && int.TryParse(entry[9..^4], out _))
+                foreach (var e in Ms2.Formats.Text.PackXml.Parse(packs.Read("Xml", entry)).Root.Elements("item"))
+                    { if (int.TryParse((string)e.Attribute("id"), out int i)) ids.Add(i); }
+            else if (perFile.Match(entry) is { Success: true } m) ids.Add(int.Parse(m.Groups[1].Value));
+        }
+        return ids;
+    }
+
     [Test]
     public void TheOwnHandlerListIsTheClientsTable()
     {
@@ -39,15 +55,7 @@ public class ItemFunctionSweepTests
         if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
         var packs = new PackSet(d);
         var items = new ItemDataTable(packs);
-        var ids = new SortedSet<int>();
-        var perFile = new Regex(@"^item/\d+/\d+/(\d+)\.xml$");
-        foreach (var entry in packs.List("Xml"))
-        {
-            if (entry.StartsWith("itemdata/") && entry.EndsWith(".xml") && int.TryParse(entry[9..^4], out _))
-                foreach (var e in Ms2.Formats.Text.PackXml.Parse(packs.Read("Xml", entry)).Root.Elements("item"))
-                    { if (int.TryParse((string)e.Attribute("id"), out int i)) ids.Add(i); }
-            else if (perFile.Match(entry) is { Success: true } m) ids.Add(int.Parse(m.Groups[1].Value));
-        }
+        var ids = ItemIds(packs);
         var byName = new SortedDictionary<string, (int Count, int First)>(StringComparer.Ordinal);
         int read = 0;
         foreach (int id in ids)

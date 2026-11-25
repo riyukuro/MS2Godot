@@ -31,7 +31,7 @@ public sealed partial class ItemTooltip
             case "OpenItemBox": return d.OpenItemBoxId;
             case "OpenItemBoxWithKey": return d.FunctionParam1 != 0 ? d.FunctionParam1 : d.FunctionArgInt(5, 0);
             case "OpenItemBoxLullu" or "OpenItemBoxLulluSimple" when d.HasFunctionXml: return d.FunctionXmlInt("commonBoxId");
-            case "SelectItemBox": return d.HasFunctionXml ? d.FunctionXmlInt("individualDropBoxId") : d.FunctionArgInt(1, 0);
+            case "SelectItemBox": return d.SelectItemBoxDropBoxId;
             case "OpenGachaBox": return Tables.GachaBoxes.IndividualDropBoxId(d.FunctionArgInt(0, 0));
             default: return 0;
         }

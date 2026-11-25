@@ -52,9 +52,9 @@ public sealed class SelectItemBoxState
 /// UISelectItemBoxDialog (client/ms2/uiselectitemboxdialog.cpp, UI id 0x4eff, type name "SelectItemBoxDialog", movie
 /// uiselectitemboxdialog): lists the rewards of the item's individual drop box (the SelectItemBox function's parameter
 /// "selectCount,dropBoxId"), the player picks selectCount of them and OK opens the box with the picked indices.
-/// <para>STILL-OPEN: the xml form of the function parameter (selectCount / individualDropBoxId as xml values, the
-/// client's m_props branch; ItemData leaves FunctionArgs empty for it, so such an item shows an empty list); the
-/// "select_item_box_function" BigData log; the select_confirm sound; the movie's own tween on close.</para>
+/// <para>The count and box are <see cref="ItemData.SelectItemBoxCount"/> / <see cref="ItemData.SelectItemBoxDropBoxId"/> (the
+/// arguments, or the xml values selectCount / individualDropBoxId). STILL-OPEN: the "select_item_box_function" BigData log;
+/// the movie's own tween on close.</para>
 /// </summary>
 public sealed class SelectItemBoxController : UiController
 {
@@ -68,6 +68,8 @@ public sealed class SelectItemBoxController : UiController
 
     public readonly SelectItemBoxState State = new();
     public long ItemUid;                                       // SetItemUid (@0x140f9a200)
+    /// <summary>PlaySystemSound(key, ""): the OK's "select_confirm".</summary>
+    public Action<string> SystemSound;
     /// <summary>Unk_Inventory::FindItemByUid.</summary>
     public Func<long, Item> FindItem = _ => null;
     /// <summary>How many of an item id the bag holds (FUN_140a5f180).</summary>
@@ -87,7 +89,7 @@ public sealed class SelectItemBoxController : UiController
     public Func<int, List<ItemDropEntry>> GetBoxItems = _ => new();
     /// <summary>FUN_1412752d0: a system notice by common string key.</summary>
     public event Action<string> NoticeKey;
-    /// <summary>The picks the list holds; the movie's getSelectedList unless set (a test).</summary>
+    /// <summary>The picks the list holds; the movie's getSelectedList unless set.</summary>
     public Func<List<uint>> SelectedOverride;
 
     /// <summary>The dialog ran its close (vfunc_67); the host hides the movie when its tween ends.</summary>
@@ -135,10 +137,8 @@ public sealed class SelectItemBoxController : UiController
         for (int i = 0; i < slots.Length; i++) slots[i] = Host.Child("m_selectedSlot" + i.ToString(CultureInfo.InvariantCulture));
         countText = Host.Child("m_selectedCount");
         noticeText = Host.Child("m_selectNotice");
-        int dropBoxId = 0;
-        // the xml-parameter branch (m_props) is not ported: see the class doc
-        State.SelectCount = item.Data.FunctionArgInt(0, 0);
-        dropBoxId = item.Data.FunctionArgInt(1, 0);
+        State.SelectCount = item.Data.SelectItemBoxCount;
+        int dropBoxId = item.Data.SelectItemBoxDropBoxId;
         if (dropBoxId == 0 || State.SelectCount == 0) return;
         if (!Model.HasLocalPlayer) return;
         State.Rewards.Clear();
@@ -170,13 +170,16 @@ public sealed class SelectItemBoxController : UiController
         Host.Invoke(b, "addEventListener", "buttonClick", closeHandler, false, 0, false);
     }
 
+    /// <summary>ASMultiSelectTileCacheList::FUN_1422cfa30 (astilelist.cpp:196): getSelectedList(array) pushes the selected rows'
+    /// indices into the array it is given (it returns nothing), and GetAll reads them back.</summary>
     List<uint> Selected()
     {
         if (SelectedOverride != null) return SelectedOverride();
         var r = new List<uint>();
         if (list == null) return r;
-        var arr = Host.Invoke(list, "getSelectedList");
-        if (arr is AsArray a) foreach (var v in a.Items) r.Add(Rt.ToUint32(v));
+        var arr = new AsArray(Host.RT);
+        Host.Invoke(list, "getSelectedList", arr);
+        foreach (var v in arr.Items) r.Add(Rt.ToUint32(v));
         return r;
     }
 
@@ -194,6 +197,7 @@ public sealed class SelectItemBoxController : UiController
         }
         OpenContents(item, indices);
         Close();
+        SystemSound?.Invoke("select_confirm");      // PlaySystemSound("select_confirm", "")
     }
 
     /// <summary>FUN_140f9a5f0: a row was clicked.</summary>

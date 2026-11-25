@@ -58,10 +58,14 @@ public class SelectItemBoxTests
         public List<string> Notices = new();
         public List<uint> Picks = new();
         public int Closes;
+        public List<string> Sounds = new();
         readonly List<string> savedArgs;
+        readonly string savedParameter;
         readonly ItemData data;
 
-        public Rig(int selectCount, int boxId, bool player = true)
+        /// <summary>The box item with the arguments "selectCount,boxId", or with <paramref name="xml"/> as its parameter.</summary>
+        /// <paramref name="movieSelection"/>: the picks are the movie list's selected rows, not <see cref="Picks"/>.
+        public Rig(int selectCount, int boxId, bool player = true, string xml = null, bool movieSelection = false)
         {
             Packs();
             Model = new UiModel(new GameTables(packs, "en")) { HasLocalPlayer = player };
@@ -71,9 +75,15 @@ public class SelectItemBoxTests
             Box.Uid = 77;
             data = Box.Data;
             savedArgs = data.FunctionArgs.ToList();
+            savedParameter = data.FunctionParameter;
             data.FunctionArgs.Clear();
-            data.FunctionArgs.Add(selectCount.ToString(CultureInfo.InvariantCulture));
-            data.FunctionArgs.Add(boxId.ToString(CultureInfo.InvariantCulture));
+            data.FunctionParameter = xml ?? "";
+            if (xml == null)
+            {
+                data.FunctionArgs.Add(selectCount.ToString(CultureInfo.InvariantCulture));
+                data.FunctionArgs.Add(boxId.ToString(CultureInfo.InvariantCulture));
+            }
+            C.SystemSound = Sounds.Add;
             C.FindItem = u => u == 77 ? Box : null;
             C.HaveCount = _ => 1;
             C.GetBoxItems = b =>
@@ -82,7 +92,7 @@ public class SelectItemBoxTests
             };
             C.OpenContents = (i, s) => Opened.Add((i, s));
             C.NoticeKey += Notices.Add;
-            C.SelectedOverride = () => Picks;
+            if (!movieSelection) C.SelectedOverride = () => Picks;
             C.Closing += () => Closes++;
             var (rt, p) = src.Open(C.Movie, r => r.Budget = 20_000_000);
             p.StageW = 1280; p.StageH = 720;
@@ -96,7 +106,29 @@ public class SelectItemBoxTests
         {
             data.FunctionArgs.Clear();
             data.FunctionArgs.AddRange(savedArgs);
+            data.FunctionParameter = savedParameter;
         }
+    }
+
+    [Test]
+    public void ARowClickedInTheMovieListIsThePickTheOkSends()
+    {
+        Packs();
+        int box = FirstBox(packs, 2);
+        if (box == 0) Assert.Ignore("no box with two rewards");
+        using var r = new Rig(1, box, movieSelection: true);
+        var list = r.Host.Child("m_selectItemList");
+        r.C.OnOk();
+        Assert.That(r.Opened, Is.Empty, "nothing picked");
+        // MultiSelectTileCacheList.onListItemClick: the clicked renderer selected, then the list's itemClick (FUN_140f9a5f0)
+        var row = r.Host.Invoke(list, "getRendererAt", 1);
+        Assert.That(row, Is.Not.Null, "the list's second row");
+        r.Host.Set(row, "selected", true);
+        r.C.Refresh();
+        Assert.That(Rt.ToBoolean(r.Host.Get(r.Host.Child("m_okButton"), "enabled")), Is.True, "one of one picked");
+        r.C.OnOk();
+        Assert.That(r.Opened.Select(o => o.Item2), Is.EqualTo(new[] { "1" }));
+        Assert.That(r.Sounds, Is.EqualTo(new[] { "select_confirm" }));
     }
 
     [Test]
@@ -162,6 +194,20 @@ public class SelectItemBoxTests
         r.C.OnOk();
         Assert.That(r.Opened.Single().Item2, Is.EqualTo("1,2"));
         Assert.That(r.Closes, Is.EqualTo(1), "the dialog closed itself");
+        Assert.That(r.Sounds, Is.EqualTo(new[] { "select_confirm" }), "PlaySystemSound(\"select_confirm\") after the open, once");
+    }
+
+    [Test]
+    public void AnXmlParameterGivesThePicksAndTheBox()
+    {
+        Packs();
+        int box = FirstBox(packs);
+        Assume.That(box, Is.Not.EqualTo(0));
+        using var r = new Rig(0, 0, xml: $"<v selectCount=\"2\" individualDropBoxId=\"{box}\"/>");
+        Assert.That(r.C.State.SelectCount, Is.EqualTo(2), "m_props' selectCount (uiselectitemboxdialog.cpp:150)");
+        Assert.That(r.C.State.Rewards, Is.EqualTo(SelectItemBoxController.BoxRewards(r.Model.Tables, box, 1, 0)), "its individualDropBoxId's rewards");
+        using var none = new Rig(0, 0, xml: $"<v individualDropBoxId=\"{box}\"/>");
+        Assert.That(none.C.State.Rewards, Is.Empty, "no selectCount: nothing is listed");
     }
 
     [Test]
@@ -176,6 +222,7 @@ public class SelectItemBoxTests
         Assert.That(r.Opened, Is.Empty);
         Assert.That(r.Notices, Is.EqualTo(new[] { "s_selectItemBox_select_wrong" }));
         Assert.That(r.Closes, Is.EqualTo(0));
+        Assert.That(r.Sounds, Is.Empty);
     }
 
     [Test]

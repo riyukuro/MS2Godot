@@ -33,6 +33,7 @@ public partial class HudScene
             ItemUid = item.Uid,
             FindItem = uid => uid == item.Uid ? item : inventory?.FindItem(uid),
             HaveCount = id => inventory?.BagCountOf(id) ?? 0,
+            SystemSound = key => FieldAudio.Instance?.PlayUi(key),
             OpenContents = (box, indices) => inventory?.OpenItemBoxContents(box, indices),
             GetBoxItems = boxId =>
             {
@@ -103,9 +104,9 @@ public partial class HudScene
         if (multi) { OpenItemMultiOpen(20300327, 1, "", 7); return; }
         for (int id = 20300000; id < 20400000; id++)
         {
-            if (tables.Items.Get(id) is not { FunctionName: "SelectItemBox" } d || d.FunctionArgInt(1, 0) == 0) continue;
+            if (tables.Items.Get(id) is not { FunctionName: "SelectItemBox" } d || d.SelectItemBoxDropBoxId == 0) continue;
             var list = new List<ItemDropEntry>();
-            tables.IndividualDrops.GetBoxItems(tables.Items, d.FunctionArgInt(1, 0), 1, 0, false, list);
+            tables.IndividualDrops.GetBoxItems(tables.Items, d.SelectItemBoxDropBoxId, 1, 0, false, list);
             if (list.Count == 0) continue;
             var item = Item.Create(tables.Items, id, 1);
             item.Uid = 1;

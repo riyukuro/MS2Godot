@@ -330,6 +330,15 @@ public sealed class ItemData
     public int OpenItemBoxId => FunctionParam1 != 0 || FunctionParameter.Length == 0 ? FunctionParam1
         : HasFunctionXml ? FunctionXmlInt("individualDropBoxId") : FunctionArgInt(3, 0);
 
+    /// <summary>
+    /// UISelectItemBoxDialog::OnLoadComplete (uiselectitemboxdialog.cpp:146-153): the picks and the individual drop box of a
+    /// SelectItemBox item. With xml values (ItemFunction m_props not empty) they are its selectCount and individualDropBoxId,
+    /// else the arguments 0 and 1; 0 when missing.
+    /// </summary>
+    public int SelectItemBoxCount => HasFunctionXml ? FunctionXmlInt("selectCount") : FunctionArgInt(0, 0);
+    /// <inheritdoc cref="SelectItemBoxCount"/>
+    public int SelectItemBoxDropBoxId => HasFunctionXml ? FunctionXmlInt("individualDropBoxId") : FunctionArgInt(1, 0);
+
     public int EquipSubtype => Type == 1 ? Subtype : 0;        // GetEquipSubtype @0x14053c620 (commonfiles/itemdata.cpp:509)
 
     /// <summary>ItemFunctionArgs::FUN_1408d1f60 (unit_1408d1ec0_commandargumentaccessors.cpp:61): the word at the index as _wtoi, the default past the list.</summary>
