@@ -724,6 +724,54 @@ public partial class LiveSession
                 fld?.SetMouseControl(GameOptions.MouseControl.Value);
                 continue;
             }
+            if (step == "talkagain")   // talkagain: a talk with a plain npc (no function) by the action key, ended; at once the key and the mouse pick refuse a new talk (UITalkManager::IsTalkIntervalElapsed, TalkCooldown), and once it has passed the pick finds the npc and the key talks again
+            {
+                var tfc = flow.GetTree().GetFirstNodeInGroup(FieldContents.Group) as FieldContents;
+                var talk = tfc?.Talk;
+                if (talk == null || !GodotObject.IsInstanceValid(live.player)) { Check($"{step}: the field's talk", false); continue; }
+                await until(() => live.TalkNpcs.Any(x => x.Row.Kind == 0 && x.Root.Visible && Alive(x)), 60 * 30);
+                FieldNpcs.Placed npc = null;
+                foreach (var tn in live.TalkNpcs.Where(x => x.Row.Kind == 0 && x.Root.Visible && Alive(x)).Take(5).ToList())
+                {
+                    double yaw = tn.Root.Rotation.Y;
+                    var front = new Vector3((float)Math.Sin(yaw), 0, (float)Math.Cos(yaw));
+                    live.player.GlobalPosition = tn.Position + front * 100 + new Vector3(0, 20, 0);
+                    live.player.Velocity = Vector3.Zero;
+                    live.player.Face(-front);
+                    await frames(30);
+                    talk.ActionKey();
+                    await until(() => talk.Open, 60 * 5);
+                    if (talk.Open) { npc = tn; break; }
+                }
+                Check($"{step}: a talk opens (npc {npc?.Row.Id})", npc != null);
+                if (npc == null) continue;
+                await frames(30);
+                talk.End();
+                await until(() => !talk.Open, 60 * 5);
+                Check($"{step}: the talk ended", !talk.Open);
+                var cam = flow.GetViewport().GetCamera3D();
+                var mid = npc.Position + new Vector3(0, npc.Row.CapsuleHeight * 0.5f, 0);
+                Godot.Vector3 rayDir = cam == null ? Vector3.Zero : (mid - cam.GlobalPosition).Normalized();
+                // at once: the interval has not passed
+                bool elapsedNow = talk.TalkIntervalElapsed;
+                bool pickNow = cam != null && talk.FindClickTarget(cam.GlobalPosition, rayDir) == npc;
+                bool keyNow = talk.ActionKey();
+                await frames(20);
+                bool openNow = talk.Open;
+                GD.Print($"live: combat {step}: right after the end: interval elapsed {elapsedNow}, pick finds the npc {pickNow}, key took it {keyNow}, open {openNow}");
+                Check($"{step}: right after the end the key and the pick refuse a talk", !elapsedNow && !pickNow && !keyNow && !openNow);
+                await until(() => talk.TalkIntervalElapsed, 60 * 3);
+                await frames(10);
+                bool pickLater = cam != null && talk.FindClickTarget(cam.GlobalPosition, rayDir) == npc;
+                bool keyLater = talk.ActionKey();
+                await until(() => talk.Open, 60 * 5);
+                GD.Print($"live: combat {step}: after the interval: pick finds the npc {pickLater}, key took it {keyLater}, open {talk.Open}");
+                Check($"{step}: after the interval the pick finds the npc and the key talks again", pickLater && keyLater && talk.Open);
+                Shot("talkagain.png");
+                talk.End();
+                await until(() => !talk.Open, 60 * 5);
+                continue;
+            }
             if (step.StartsWith("kill:"))      // kill:<npc id>[:<count>]: the field's server npcs of that id, nearest first, each walked to, faced and attacked until it dies (up to MS2_LIVE_COMBAT_PRESSES presses each)
             {
                 var a = step.Split(':');
