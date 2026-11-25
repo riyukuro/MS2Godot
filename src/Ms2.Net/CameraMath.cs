@@ -26,18 +26,24 @@ public static class CameraMath
     /// (cameramode.cpp:326-330, :356-360). The matrix's columns are the view direction, the up vector and the right
     /// vector in MS2 axes.
     /// </summary>
-    public static (float X, float Y, float Z) ToEuler(double[,] m)
+    public static (float X, float Y, float Z) ToEuler(double[,] m) =>
+        ToEuler(m[0, 0], m[0, 1], m[0, 2], m[1, 0], m[1, 1], m[1, 2], m[2, 2]);
+
+    /// <summary><see cref="ToEuler(double[,])"/> of a row-major 3x3 in a flat array.</summary>
+    public static (float X, float Y, float Z) ToEuler(ReadOnlySpan<double> m) => ToEuler(m[0], m[1], m[2], m[3], m[4], m[5], m[8]);
+
+    static (float X, float Y, float Z) ToEuler(double m00, double m01, double m02, double m10, double m11, double m12, double m22)
     {
         double ax, ay, az;
         // ToEulerAnglesXYZ (Matrix3_Win32.cpp:938-971): the pole cases start within EE_RIGHT_ANGLE_EPSILON (1e-3 rad) of +-90 deg, not only at exactly +-1.
         const double eps = 1e-3;
-        double y = Math.Asin(Math.Clamp(m[0, 2], -1, 1));
+        double y = Math.Asin(Math.Clamp(m02, -1, 1));
         if (y < Math.PI / 2 - eps)
         {
-            if (y > -(Math.PI / 2 - eps)) { ax = Math.Atan2(-m[1, 2], m[2, 2]); ay = y; az = Math.Atan2(-m[0, 1], m[0, 0]); }
-            else { ax = -Math.Atan2(m[1, 0], m[1, 1]); ay = -Math.PI / 2; az = 0; }
+            if (y > -(Math.PI / 2 - eps)) { ax = Math.Atan2(-m12, m22); ay = y; az = Math.Atan2(-m01, m00); }
+            else { ax = -Math.Atan2(m10, m11); ay = -Math.PI / 2; az = 0; }
         }
-        else { ax = Math.Atan2(m[1, 0], m[1, 1]); ay = Math.PI / 2; az = 0; }
+        else { ax = Math.Atan2(m10, m11); ay = Math.PI / 2; az = 0; }
         const double k = 57.2957764;
         return ((float)(ax * k), (float)(ay * k), (float)(az * k));
     }
@@ -50,15 +56,20 @@ public static class CameraMath
     /// </summary>
     public static double[,] FromEuler(float x, float y, float z)
     {
+        Span<double> f = stackalloc double[9];
+        FromEuler(x, y, z, f);
+        return new double[,] { { f[0], f[1], f[2] }, { f[3], f[4], f[5] }, { f[6], f[7], f[8] } };
+    }
+
+    /// <summary><see cref="FromEuler(float, float, float)"/> into a row-major 3x3 flat span (no allocation).</summary>
+    public static void FromEuler(float x, float y, float z, Span<double> m)
+    {
         const double k = 0.0174532924;
         double a = x * k, b = y * k, c = z * k;
         double ca = Math.Cos(a), sa = Math.Sin(a), cb = Math.Cos(b), sb = Math.Sin(b), cc = Math.Cos(c), sc = Math.Sin(c);
-        return new double[,]
-        {
-            { cb * cc, -cb * sc, sb },
-            { sa * sb * cc + ca * sc, -sa * sb * sc + ca * cc, -sa * cb },
-            { -ca * sb * cc + sa * sc, ca * sb * sc + sa * cc, ca * cb },
-        };
+        m[0] = cb * cc; m[1] = -cb * sc; m[2] = sb;
+        m[3] = sa * sb * cc + ca * sc; m[4] = -sa * sb * sc + ca * cc; m[5] = -sa * cb;
+        m[6] = -ca * sb * cc + sa * sc; m[7] = ca * sb * sc + sa * cc; m[8] = ca * cb;
     }
 
     /// <summary>

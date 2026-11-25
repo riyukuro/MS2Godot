@@ -19,6 +19,10 @@ public sealed class CouplePath
     readonly int owner, peer, center, parent;
     readonly Xform[] world;
     readonly bool[] done;
+    /// <summary>The per-frame matrices, made at the load: each node's world rotation (its <see cref="world"/> entry's R),
+    /// a local rotation, the end angles' parent rotation and the pose's rotation.</summary>
+    readonly double[][] worldR;
+    readonly double[] localR = new double[9], endR = new double[9], poseR = new double[9];
     double time;
 
     CouplePath(EffectScene scene, int owner, int peer, int center)
@@ -30,6 +34,8 @@ public sealed class CouplePath
         parent = scene.Nodes[owner].Parent;
         world = new Xform[scene.Nodes.Count];
         done = new bool[scene.Nodes.Count];
+        worldR = new double[scene.Nodes.Count][];
+        for (int i = 0; i < worldR.Length; i++) worldR[i] = new double[9];
         Update(0);
     }
 
@@ -82,7 +88,8 @@ public sealed class CouplePath
         return hit >= 0 && IsNiNode(nif.Blocks[scene.Nodes[hit].Block].Type) ? hit : -1;
     }
 
-    /// <summary>UpdateNif: the root updated at the time since the load (controllers on application time).</summary>
+    /// <summary>UpdateNif: the root updated at the time since the load (controllers on application time). Each node's world
+    /// rotation is written into its own buffer, so an update allocates nothing.</summary>
     public void Update(double t)
     {
         time = t;
@@ -90,46 +97,80 @@ public sealed class CouplePath
         for (int i = 0; i < scene.Nodes.Count; i++) WorldOf(i);
     }
 
-    Xform WorldOf(int i)
+    void WorldOf(int i)
     {
-        if (done[i]) return world[i];
-        var local = LocalAt(scene.Nodes[i], time);
+        if (done[i]) return;
         int pa = scene.Nodes[i].Parent;
-        world[i] = pa >= 0 ? WorldOf(pa).Compose(local) : local;
+        if (pa >= 0) WorldOf(pa);
+        var local = LocalAt(scene.Nodes[i], time, localR);
+        var r = worldR[i];
+        if (pa >= 0)
+        {
+            var pw = world[pa];
+            Mul(pw.R, local.R, r);
+            world[i] = new Xform(pw.Apply(local.T), r, pw.S * local.S);
+        }
+        else
+        {
+            Array.Copy(local.R, r, 9);
+            world[i] = new Xform(local.T, r, local.S);
+        }
         done[i] = true;
-        return world[i];
     }
 
-    /// <summary>The node's local transform with the interpolator's valid parts in place of the rest ones.</summary>
-    static Xform LocalAt(EffectNode n, double t)
+    /// <summary>The node's local transform with the interpolator's valid parts in place of the rest ones; an animated
+    /// rotation goes into <paramref name="r"/> (the rest one is the node's own).</summary>
+    static Xform LocalAt(EffectNode n, double t, double[] r)
     {
         if (n.Anim == null) return n.Local;
         double lt = n.AnimCtl != null ? n.AnimCtl.Local(t) : t;
         var T = n.Anim.T != null ? n.Anim.T(lt) : n.Local.T;
-        var R = n.Anim.R != null ? n.Anim.R(lt).ToMatrix() : n.Local.R;
+        var R = n.Anim.R != null ? ToMatrix(n.Anim.R(lt), r) : n.Local.R;
         double S = n.Anim.S != null ? n.Anim.S(lt) : n.Local.S;
         return new Xform(T, R, S);
     }
 
+    /// <summary><see cref="Quat.ToMatrix"/> into <paramref name="m"/>.</summary>
+    static double[] ToMatrix(Quat q, double[] m)
+    {
+        q = q.Normalized();
+        double w = q.W, x = q.X, y = q.Y, z = q.Z;
+        m[0] = 1 - 2 * (y * y + z * z); m[1] = 2 * (x * y - w * z); m[2] = 2 * (x * z + w * y);
+        m[3] = 2 * (x * y + w * z); m[4] = 1 - 2 * (x * x + z * z); m[5] = 2 * (y * z - w * x);
+        m[6] = 2 * (x * z - w * y); m[7] = 2 * (y * z + w * x); m[8] = 1 - 2 * (x * x + y * y);
+        return m;
+    }
+
+    /// <summary>The 3x3 product a * b (Xform.Compose's) into <paramref name="o"/>, which is neither a nor b.</summary>
+    static void Mul(double[] a, double[] b, double[] o)
+    {
+        for (int i = 0; i < 3; i++)
+            for (int j = 0; j < 3; j++)
+                o[i * 3 + j] = a[i * 3] * b[j] + a[i * 3 + 1] * b[3 + j] + a[i * 3 + 2] * b[6 + j];
+    }
+
+    /// <summary>The world transforms of the last <see cref="Update"/>; their rotations are the path's buffers, which the next
+    /// update overwrites.</summary>
     public Xform OwnerWorld => world[owner];
     public Xform PeerWorld => world[peer];
     public Xform ParentWorld => world[parent];
+    /// <summary>A node's local transform now, its rotation a new matrix.</summary>
     public Xform OwnerLocal => LocalOf(owner);
     public Xform CenterLocal => LocalOf(center);
-    Xform LocalOf(int i) => LocalAt(scene.Nodes[i], time);
+    Xform LocalOf(int i) => LocalAt(scene.Nodes[i], time, new double[9]);
 
     /// <summary>EulerToMatrix @0x140b86230: Rx(x) Ry(y) Rz(z) of degrees with Gamebryo's turn sense undone.</summary>
     public static double[] EulerToMatrix(Vector3 euler)
     {
-        var m = CameraMath.FromEuler(euler.X, euler.Y, euler.Z);
-        return new[] { m[0, 0], m[0, 1], m[0, 2], m[1, 0], m[1, 1], m[1, 2], m[2, 0], m[2, 1], m[2, 2] };
+        var m = new double[9];
+        CameraMath.FromEuler(euler.X, euler.Y, euler.Z, m);
+        return m;
     }
 
     /// <summary>NiMatrix3::ToEulerAnglesXYZ times -57.2957764; false (no angles) at its two pole cases.</summary>
     public static bool ToAngles(double[] r, out Vector3 angles)
     {
-        var m = new double[3, 3] { { r[0], r[1], r[2] }, { r[3], r[4], r[5] }, { r[6], r[7], r[8] } };
-        var (x, y, z) = CameraMath.ToEuler(m);
+        var (x, y, z) = CameraMath.ToEuler(r);
         angles = new Vector3(x, y, z);
         return Math.Abs(Math.Asin(Math.Clamp(r[2], -1, 1))) < Math.PI / 2 - 1e-3;
     }
@@ -139,15 +180,17 @@ public sealed class CouplePath
     /// <summary>
     /// SyncWithPartner's pose (@0x140b82c40, statecoupleemotion.cpp:989-998): the parent's world transform with its
     /// rotation replaced by EulerToMatrix(posEnd), times the owner's local transform; the feet at posStart plus its
-    /// translation, the body turned to its angles (none at a pole).
+    /// translation, the body turned to its angles (none at a pole). The matrices are the path's buffers: no allocation.
     /// </summary>
     public (Vector3 Pos, Vector3? Angles) OwnerPose(Vector3 posStart, Vector3 posEnd)
     {
         var pw = world[parent];
-        var parentXf = new Xform(pw.T, EulerToMatrix(posEnd), pw.S);
-        var o = parentXf.Compose(OwnerLocal);
-        var pos = posStart + V(o.T);
-        return (pos, ToAngles(o.R, out var a) ? a : null);
+        CameraMath.FromEuler(posEnd.X, posEnd.Y, posEnd.Z, endR);
+        var parentXf = new Xform(pw.T, endR, pw.S);
+        var local = LocalAt(scene.Nodes[owner], time, localR);
+        Mul(endR, local.R, poseR);
+        var pos = posStart + V(parentXf.Apply(local.T));
+        return (pos, ToAngles(poseR, out var a) ? a : null);
     }
 
     /// <summary>

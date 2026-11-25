@@ -92,4 +92,53 @@ public class CouplePathTests
         Assert.That(angles, Is.Not.Null);
         Assert.That(angles.Value.Z, Is.EqualTo(-45f).Within(0.01f));
     }
+    /// <summary>
+    /// SyncWithPartner runs each frame for each couple PC: UpdateNif then the owner's pose. Over every couple path nif of the
+    /// data (both actors), a frame allocates no managed memory once the path is loaded: the node transforms, the end angles'
+    /// matrix and the pose fill buffers the path keeps.
+    /// </summary>
+    [Test]
+    public void ASyncFrameAllocatesNothing()
+    {
+        var nx = CoupleEmotionTableTests.NifXmlPath();
+        if (nx == null) Assert.Ignore("MS2_NIFXML is not set and external/nifxml is not checked out");
+        var spec = new Ms2.Formats.Nif.NifSpec(nx);
+        using var packs = new PackSet(RcGap.Data("MS2_DATA"));
+        var table = new GameTables(packs, "en").CoupleEmotions;
+        var entries = table.Rows.SelectMany(d => d.All()).SelectMany(x => x.Item3.NifPaths)
+            .Select(n => n.ToLowerInvariant()).Distinct().Where(e => packs.Exists("Resource/Model/Path", e)).OrderBy(e => e).ToList();
+        const int frames = 600;
+        long worst = 0, total = 0;
+        string worstNif = null;
+        foreach (var e in entries)
+        {
+            var file = Ms2.Formats.Nif.NifFile.Load(spec, packs.Read("Resource/Model/Path", e));
+            foreach (var (own, peer) in new[] { (CoupleEmotionTable.NodeA, CoupleEmotionTable.NodeB), (CoupleEmotionTable.NodeB, CoupleEmotionTable.NodeA) })
+            {
+                var p = CouplePath.Load(file, own, peer);
+                Assert.That(p, Is.Not.Null, e);
+                float sum = 0;
+                long bytes = 0, first = 0;
+                for (int pass = 0; pass < 2; pass++)
+                {
+                    long before = GC.GetAllocatedBytesForCurrentThread();
+                    for (int f = 1; f <= frames; f++)
+                    {
+                        p.Update(f / 60.0);
+                        sum += p.OwnerPose(new Vector3(100, 200, 300), new Vector3(0, 0, f)).Pos.X;
+                    }
+                    if (pass == 0) first = GC.GetAllocatedBytesForCurrentThread() - before;
+                    else bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+                }
+                if (first > 0) TestContext.WriteLine($"first pass {e} ({own}): {first} B, second {bytes} B");
+                Assert.That(float.IsFinite(sum), e);
+                total += bytes;
+                if (bytes > worst) { worst = bytes; worstNif = $"{e} ({own})"; }
+            }
+        }
+        TestContext.WriteLine($"{entries.Count} path nifs, {frames} frames each actor: worst {worst / (double)frames:0.#} B/frame ({worstNif ?? "none"}), "
+            + $"total {total} B");
+        Assert.That(entries, Has.Count.GreaterThan(10));
+        Assert.That(worst, Is.Zero, worstNif);
+    }
 }
