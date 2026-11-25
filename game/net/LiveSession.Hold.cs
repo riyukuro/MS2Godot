@@ -17,13 +17,14 @@ public partial class LiveSession : IHoldWorld
     /// <summary>The interact poll's last pick was HoldAction (key 6).</summary>
     public bool HoldPolled => holdPolled;
 
-    // FUN_141683ef0 (the move gate) is not ported and taken as passing, as the hold pc and taxi keys do
-    bool IHoldWorld.HoldUsable => selfObject > 0 && player != null && IsInstanceValid(player) && !player.DeadFlag;
+    bool IHoldWorld.HoldUsable => selfObject > 0 && player != null && IsInstanceValid(player) && !player.DeadFlag && MoveGatePasses();
 
     /// <summary>GetCurStateId (<see cref="OwnCurStateIdNow"/>): StateHold is the move state's 0x20.</summary>
     int IHoldWorld.HoldState => OwnCurStateIdNow;
     int IHoldWorld.HoldSelfId => selfObject;
     bool IHoldWorld.HoldRiding => player.Mount != null;
+    /// <summary>The own skill state's sub id (<see cref="Player.SkillSubState"/>); 0 in another state.</summary>
+    int IHoldWorld.HoldSubState => OwnCurStateIdNow == HoldAction.StateSkill ? player.SkillSubState : 0;
 
     /// <summary>FindPCById: another player here, or the own pc.</summary>
     bool IHoldWorld.IsPc(int objectId) =>

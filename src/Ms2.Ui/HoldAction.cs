@@ -12,6 +12,8 @@ public interface IHoldWorld
     int HoldSelfId { get; }
     /// <summary>The own pc rides (GetRidee).</summary>
     bool HoldRiding { get; }
+    /// <summary>The current state's sub id (PCBase::FUN_14166cc80, the state's m_n10).</summary>
+    int HoldSubState { get; }
     /// <summary>PC::FindHoldTarget (WorldService::FindNearestActor): the actor with the nearest hold node within
     /// <paramref name="range"/> of the own feet and that node's name; 0 when none.</summary>
     int FindHoldTarget(float range, out string node);
@@ -26,7 +28,6 @@ public interface IHoldWorld
 /// the body's Hold_PointNN nodes), or let go of it. The poll (vfunc_1) applies while such an npc's node is within
 /// FindHoldTargetRange; the press (vfunc_2) leaves the hold in StateHold, rides off with a RideOffActionHold when riding,
 /// else enters StateHold (0x20) on the node found within the range + 20.
-/// STILL-OPEN: the skill state's sub state 0x3b refusal (GetCurStateId 0x10 with FUN_14166cc80 0x3b) is not known here.
 /// </summary>
 public sealed class HoldAction
 {
@@ -38,6 +39,12 @@ public sealed class HoldAction
     public const float UseExtraRange = 20f;
     /// <summary>The own state the key refuses (0x2b) and StateHold (0x20).</summary>
     public const int StateRefused = 0x2b, StateHold = 0x20;
+    /// <summary>The skill state (0x10) and its sub id while the cast is attached to an actor (StateSkill::vfunc_4 sets
+    /// m_n10 0x3b when the record's m_nB0, the attach id, is set; stateskill.cpp:491-494), which both vfuncs refuse.</summary>
+    public const int StateSkill = 0x10, SubSkillAttached = 0x3b;
+
+    static bool Refused(IHoldWorld w, int state) =>
+        state == StateRefused || (state == StateSkill && w.HoldSubState == SubSkillAttached);
     /// <summary>vfunc_59(6): the state the press leaves a hold for (StateJump).</summary>
     public const int StateLeave = 6;
     /// <summary>The cart npc whose captions are their own (vfunc_6).</summary>
@@ -58,7 +65,7 @@ public sealed class HoldAction
     bool captionHolding;   // m_n1c: the caption was taken in StateHold
 
     /// <summary>
-    /// vfunc_1 (@0x14095c060): 0 for no usable player or state 0x2b; the hold target within <paramref name="range"/>; the own
+    /// vfunc_1 (@0x14095c060): 0 for no usable player, state 0x2b, or the skill state attached to an actor (0x10 with sub 0x3b); the hold target within <paramref name="range"/>; the own
     /// pc's id or a player refuses; m_n18 cleared, then an npc of another npc id than kept sets m_nNpcId and m_n18, any other
     /// actor clears m_nNpcId; the caption's hold state differing from the current one sets m_n18; then 1.
     /// </summary>
@@ -66,7 +73,7 @@ public sealed class HoldAction
     {
         if (!w.HoldUsable) return false;
         int state = w.HoldState;
-        if (state == StateRefused) return false;
+        if (Refused(w, state)) return false;
         Range = range;
         int id = w.FindHoldTarget(range, out _);
         if (id == 0) return false;
@@ -84,7 +91,7 @@ public sealed class HoldAction
     }
 
     /// <summary>
-    /// vfunc_2 (@0x14095c2f0): nothing for no usable player or state 0x2b; in StateHold vfunc_59(6) (leave); riding,
+    /// vfunc_2 (@0x14095c2f0): nothing for no usable player, state 0x2b or 0x10 with sub 0x3b; in StateHold vfunc_59(6) (leave); riding,
     /// SendRequestRideMode1(RideOffActionHold(0)); else the hold target within m_f24 + 20 enters StateHold with its id and
     /// node (<paramref name="target"/>, <paramref name="node"/>), nothing when none is found.
     /// </summary>
@@ -94,7 +101,7 @@ public sealed class HoldAction
         node = null;
         if (!w.HoldUsable) return Press.None;
         int state = w.HoldState;
-        if (state == StateRefused) return Press.None;
+        if (Refused(w, state)) return Press.None;
         if (state == StateHold) return Press.Leave;
         if (w.HoldRiding) return Press.RideOff;
         target = w.FindHoldTarget(Range + UseExtraRange, out node);

@@ -28,8 +28,7 @@ public partial class LiveSession : IHoldPcWorld
         return on;
     }
 
-    // FUN_141683ef0 (the move gate) is not ported and taken as passing, as the taxi key does
-    bool IHoldPcWorld.HoldPcUsable => selfObject > 0 && player != null && IsInstanceValid(player) && !player.DeadFlag;
+    bool IHoldPcWorld.HoldPcUsable => selfObject > 0 && player != null && IsInstanceValid(player) && !player.DeadFlag && MoveGatePasses();
 
     /// <summary>GetCurStateId as far as it is known here: StateHold 0x20, riding 0x21, a state the server set, else 1.</summary>
     int IHoldPcWorld.HoldPcState =>

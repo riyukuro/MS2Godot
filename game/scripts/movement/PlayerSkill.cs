@@ -12,6 +12,11 @@ public partial class Player : ISkillMotionOwner
     // sequence time its move keys were read up to
     readonly SkillMotion skillMotion = new();
 
+    /// <summary>The skill state's sub id (its m_n10, PCBase::FUN_14166cc80): StateSkill::vfunc_4 (stateskill.cpp:491-497)
+    /// sets 0x3b for a cast attached to an actor (the record's m_nB0), else 0x3c when the skill's magic control is enabled,
+    /// else 0. The own casts here are never attached (the attach id is not ported), so 0x3b does not come yet.</summary>
+    public int SkillSubState => SkillSequencePlaying() && skillMotion.NoMove ? 0x3c : 0;
+
     /// <summary>
     /// The own cast's motion (StateSkill plays the record's motion sequence at its sequenceSpeed): the body's &lt;name&gt;.kf, the
     /// same file the other players' casts play (ReplayField.SkillAnim). False when the body has no such sequence.

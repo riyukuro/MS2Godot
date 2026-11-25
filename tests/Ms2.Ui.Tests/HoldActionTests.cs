@@ -8,12 +8,13 @@ public class HoldActionTests
     sealed class World : IHoldWorld
     {
         public bool Usable = true, Riding, IsPlayer;
-        public int State = 1, Self = 1, Found = 7, Npc = 11000001;
+        public int State = 1, Sub, Self = 1, Found = 7, Npc = 11000001;
         public float AskedRange;
         public bool HoldUsable => Usable;
         public int HoldState => State;
         public int HoldSelfId => Self;
         public bool HoldRiding => Riding;
+        public int HoldSubState => Sub;
         public int FindHoldTarget(float range, out string node) { AskedRange = range; node = Found != 0 ? "Hold_Point00" : null; return Found; }
         public bool IsPc(int objectId) => IsPlayer;
         public bool FindNpc(int objectId, out int npcId) { npcId = Npc; return Npc != 0; }
@@ -47,6 +48,16 @@ public class HoldActionTests
         Assert.That(a.Use(new World { State = 0x2b }, out _, out _), Is.EqualTo(HoldAction.Press.None));
         Assert.That(a.Use(new World { Usable = false }, out _, out _), Is.EqualTo(HoldAction.Press.None));
         Assert.That(a.Use(new World { Found = 0 }, out _, out _), Is.EqualTo(HoldAction.Press.None));
+    }
+
+    [Test]
+    public void ASkillCastAttachedToAnActorRefusesTheHoldButAnotherSkillDoesNot()
+    {
+        var a = new HoldAction();
+        Assert.That(a.Poll(new World { State = 0x10, Sub = 0x3b }), Is.False);
+        Assert.That(a.Use(new World { State = 0x10, Sub = 0x3b }, out _, out _), Is.EqualTo(HoldAction.Press.None));
+        Assert.That(a.Poll(new World { State = 0x10, Sub = 0x3c }), Is.True);       // magic control, not attached
+        Assert.That(a.Poll(new World { State = 1, Sub = 0x3b }), Is.True);          // 0x3b only counts in the skill state
     }
 
     [Test]

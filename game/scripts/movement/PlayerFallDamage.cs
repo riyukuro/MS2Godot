@@ -37,13 +37,13 @@ public partial class Player
     /// (@0x1417c8150, :105-110) goes to StateIdle when the FALL_DAMAGE sequence ends; vfunc_8 (@0x1417c8030, :90-101) faces
     /// the pressed move and with a held move (FUN_1416749c0) goes to StateWalk. The facing (vfunc_22, :95) is Step's shared
     /// line after the state switch, which turns toward the pressed move each frame in this state too. A body without the
-    /// sequence stays until a move. vfunc_63 is 0 while the PC holds state flags, which are not ported (STILL-OPEN); FUN_1417b9460 (the next
+    /// sequence stays until a move. vfunc_63 is 0 while the PC holds state flags (statefalldamage.cpp:93): then no walk; FUN_1417b9460 (the next
     /// queued skill) is the base cast poll, which the HUD's own cast covers.
     /// </summary>
     void FallDamageUpdate(bool hasInput)
     {
         kVel = Vector3.Zero;
         if (fallDamageAnim.Length > 0 && CurrentAnim == fallDamageAnim && !Anim.IsPlaying()) { Enter(MoveState.Idle); return; }
-        if (hasInput) Enter(MoveState.Walk);
+        if (hasInput && CanAct) Enter(MoveState.Walk);
     }
 }

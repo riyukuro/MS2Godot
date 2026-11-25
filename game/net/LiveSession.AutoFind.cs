@@ -16,8 +16,8 @@ namespace Ms2Godot.Net;
 /// it with the timer (worldservice_1.cpp:9988-9989). The camera is the field's CameraMgr (<see cref="World.TriggerCamera"/>).
 /// The port loads a field's entities and the own pc's model in either order: a start that finds no stations yet runs when they
 /// are attached (in the client the field's entities are in before the pc is added).
-/// STILL-OPEN: PCBase state flag 0x100 (AddStateFlags / RemoveStateFlags) has no port, so the player is not held while the
-/// camera is away (vfunc_63, "can act", returns 0 with it); it is only kept and logged here.
+/// While the camera is away the own pc holds state flag 0x100 (AddStateFlags / RemoveStateFlags), so vfunc_63 ("can act") is
+/// 0 and the move gate is closed (<see cref="MoveGatePasses"/>).
 /// STILL-OPEN: the cutscene movie's Pause and Resume (UICutSceneMovie::PlayDefaultScene, uicutscenemovie.cpp:451, and
 /// vfunc_53, :122): PlayDefaultScene has no port, so nothing pauses the auto-find.
 /// STILL-OPEN: in a camera mode other than the follow one, FUN_1409f2430 and the yaw and pitch getters read that mode's m_50,
@@ -28,7 +28,7 @@ public partial class LiveSession
     AutoFindTaxiStation autoFind;
     /// <summary>The auto-find (one per session, as the client's singleton).</summary>
     public AutoFindTaxiStation AutoFind => autoFind ??= new AutoFindTaxiStation(new AutoFindHost(this));
-    /// <summary>The state flag 0x100 the auto-find holds on the own pc (no port: <see cref="LiveSession"/> STILL-OPEN above).</summary>
+    /// <summary>The state flag 0x100 the auto-find holds on the own pc (<see cref="Player.StateFlags"/>).</summary>
     public bool AutoFindHoldsPlayer { get; private set; }
     bool autoFindWaitsForStations, autoFindStationsIn, escapeWasDown;
 
@@ -107,6 +107,8 @@ public partial class LiveSession
         {
             if (!s.TaxiPlayerReady) return;    // GetLocalPlayer() == 0
             s.AutoFindHoldsPlayer = on;
+            if (on) s.player.AddStateFlags(AutoFindTaxiStation.StateFlag);
+            else s.player.RemoveStateFlags(AutoFindTaxiStation.StateFlag);
         }
 
         public bool ModePosition(out Num.Vector3 position)

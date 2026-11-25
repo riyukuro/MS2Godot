@@ -143,15 +143,17 @@ public partial class Player : IHitBody, IPushBody
                 PlaySequence(key, 1f, false);
             }
         }
-        // vfunc_8: vfunc_63 is 0 while the PC holds state flags (m_unk_158, AddStateFlags pcbase.cpp:1233); the flags are
-        // not ported, so the PC can always act here (STILL-OPEN)
-        var move = EscapeHit.MoveKeyIsDown != 0 ? held : pressed;
-        var dir = WorldDir(move);
-        switch (EscapeHit.Escape(lift.Active, lift.Falling, true, dir != Vector3.Zero, InAirFor(0f), jumpPressed))
+        // vfunc_8 (statehit.cpp:188): no escape while vfunc_63 is 0, the PC holding state flags (m_unk_158)
+        if (CanAct)
         {
-            case HitEscape.Walk: Enter(MoveState.Walk); return;
-            case HitEscape.Jump: StartJump(dir, dir != Vector3.Zero, 0); return;   // vfunc_59(6) without data: StateJump sub 0x21
-            case HitEscape.Skill: break;   // STILL-OPEN: State::FUN_1417b9460 (the next queued skill) is not ported
+            var move = EscapeHit.MoveKeyIsDown != 0 ? held : pressed;
+            var dir = WorldDir(move);
+            switch (EscapeHit.Escape(lift.Active, lift.Falling, true, dir != Vector3.Zero, InAirFor(0f), jumpPressed))
+            {
+                case HitEscape.Walk: Enter(MoveState.Walk); return;
+                case HitEscape.Jump: StartJump(dir, dir != Vector3.Zero, 0); return;   // vfunc_59(6) without data: StateJump sub 0x21
+                case HitEscape.Skill: break;   // STILL-OPEN: State::FUN_1417b9460 (the next queued skill) is not ported
+            }
         }
         if (hitAnim.Length == 0) Enter(MoveState.Idle);
     }
