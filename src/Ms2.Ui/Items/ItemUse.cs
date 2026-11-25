@@ -48,8 +48,8 @@ public sealed class ItemUse
         if (!data.IsLevelAllowed(Player.Level)) return 1;
         if (data.Vip && !IsVip) return 7;
         if (data.Wedding && !WeddingInProgress) return 7;
-        // FUN_14053ce40 (itemdata.cpp:725): type 0x18, an emotion item
-        if (data.Type == 0x18 && EmotionLearned?.Invoke(data.SkillId, data.SkillLevel) == true) return 9;
+        // FUN_14053ce40 (itemdata.cpp:725): an emotion item (type 0x18; GMS2 data subtype 14)
+        if (data.IsEmotionItem && EmotionLearned?.Invoke(data.SkillId, data.SkillLevel) == true) return 9;
         return 0;
     }
 

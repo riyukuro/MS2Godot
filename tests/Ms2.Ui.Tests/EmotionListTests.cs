@@ -92,15 +92,36 @@ public class EmotionListTests
     [Test]
     public void LearnFromItemChecksTypeAndLearned()
     {
-        // Unk_Inventory::SendEmotion (inventory.cpp:1615-1626): type 24, not learned -> mode 1 with the uid
+        // Unk_Inventory::SendEmotion (inventory.cpp:1615-1626): an emotion item, not learned -> mode 1 with the uid
         var list = new EmotionList();
         list.Apply(new EmoteMessage.List(new[] { E(7, 1) }), 0);
-        Assert.That(list.LearnFromItem(11, 3, 8, 1, 0, out int n1), Is.Null);
+        Assert.That(list.LearnFromItem(11, false, 8, 1, 0, out int n1), Is.Null);
         Assert.That(n1, Is.EqualTo(2135));
-        Assert.That(list.LearnFromItem(11, 24, 7, 1, 0, out int n2), Is.Null);
+        Assert.That(list.LearnFromItem(11, true, 7, 1, 0, out int n2), Is.Null);
         Assert.That(n2, Is.EqualTo(2136));
-        var req = list.LearnFromItem(11, 24, 8, 1, 0, out int n3);
+        var req = list.LearnFromItem(11, true, 8, 1, 0, out int n3);
         Assert.That(n3, Is.EqualTo(0));
         Assert.That(req, Is.EqualTo(new EmoteLearnRequest(11)));
+    }
+
+    static Ms2.Ui.Items.ItemData Item(int id, string property, bool gms2File)
+    {
+        var d = Ms2.Ui.Items.ItemData.Load(id, System.Xml.Linq.XElement.Parse($"<environment><property {property}/></environment>"));
+        if (gms2File) { d.FillEmotionItem(); d.FillEquipSubtype(); d.FillBoxType(); }   // ItemDataTable.PerItem's order
+        return d;
+    }
+
+    [Test]
+    public void AnEmotionItemIsType24OnKmsDataAndSubtype14OnGms2Data()
+    {
+        // KMS FUN_14053ce40 (itemdata.cpp:725): type 0x18. GMS2 client: subtype == 14 (@0x140343af0, @0x140346cd0, @0x1403333d0)
+        Assert.That(Item(20200001, "type=\"24\" subtype=\"0\"", false).IsEmotionItem, Is.True, "KMS row");
+        Assert.That(Item(20200001, "type=\"2\" subtype=\"14\"", false).IsEmotionItem, Is.False, "a KMS row reads the type only");
+        Assert.That(Item(20200001, "type=\"2\" subtype=\"14\"", true).IsEmotionItem, Is.True, "GMS2 file");
+        Assert.That(Item(20200001, "type=\"24\" subtype=\"0\"", true).IsEmotionItem, Is.False, "the GMS2 client never reads type 0x18");
+        Assert.That(Item(20000001, "type=\"2\" subtype=\"2\"", true).IsEmotionItem, Is.False);
+        // the file's subtype, before FillEquipSubtype turns a group 114 equipment's kind into 14
+        var equip = Item(11400001, "type=\"1\" subtype=\"0\"", true);
+        Assert.That((equip.Subtype, equip.IsEmotionItem), Is.EqualTo((14, false)));
     }
 }

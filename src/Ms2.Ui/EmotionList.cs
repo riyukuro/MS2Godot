@@ -31,8 +31,8 @@ public sealed class EmotionList
     public const int NotEmotionItemString = 2135;
     /// <summary>Unk_Inventory::SendEmotion's notice for an emotion already learned (inventory.cpp:1621).</summary>
     public const int AlreadyLearnedString = 2136;
-    /// <summary>The item type of an emotion item (CItemData::GetType() == 24, inventory.cpp:1620).</summary>
-    public const int EmotionItemType = 24;
+    /// <summary>The item type of an emotion item on the KMS data (CItemData::GetType() == 24, inventory.cpp:1620).</summary>
+    public const int EmotionItemType = Items.ItemData.EmotionItemType;
 
     readonly List<Emotion> emotions = new();
 
@@ -110,14 +110,15 @@ public sealed class EmotionList
     }
 
     /// <summary>
-    /// Unk_Inventory::SendEmotion (@0x140a65bb0, inventory.cpp:1615): an emotion item (type 24) whose skill id and level
-    /// are not learned sends Emote mode 1 with the item uid; otherwise the notice string comes back and nothing is sent.
-    /// Returns the request, or null with <paramref name="notice"/> set.
+    /// Unk_Inventory::SendEmotion (@0x140a65bb0, inventory.cpp:1615): an emotion item (type 24; GMS2 data subtype 14, the
+    /// GMS2 copy @0x1403333d0, <see cref="Items.ItemData.IsEmotionItem"/>) whose skill id and level are not learned sends
+    /// Emote mode 1 with the item uid; otherwise the notice string comes back and nothing is sent. Returns the request, or
+    /// null with <paramref name="notice"/> set.
     /// </summary>
-    public EmoteLearnRequest LearnFromItem(long itemUid, int itemType, int skillId, ushort skillLevel, long now, out int notice)
+    public EmoteLearnRequest LearnFromItem(long itemUid, bool emotionItem, int skillId, ushort skillLevel, long now, out int notice)
     {
         notice = 0;
-        if (itemType != EmotionItemType) { notice = NotEmotionItemString; return null; }
+        if (!emotionItem) { notice = NotEmotionItemString; return null; }
         if (IsLearned(skillId, skillLevel, now)) { notice = AlreadyLearnedString; return null; }
         return new EmoteLearnRequest(itemUid);
     }

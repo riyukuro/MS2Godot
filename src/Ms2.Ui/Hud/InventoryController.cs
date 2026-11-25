@@ -853,8 +853,8 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         {
             // :853-872: a shop id and a pet have their own handlers (raised); type 0x13 none
             if (d.ShopId > 0 || d.IsPetItem) { Button?.Invoke("notifySlotUse"); return; }
-            // :873-884 (FUN_14053ce40, type 0x18): FUN_14140dea0, then the learn box
-            if (d.Type == EmotionList.EmotionItemType)
+            // :873-884 (FUN_14053ce40, type 0x18; the GMS2 client's subtype 14 @0x140346cd0): FUN_14140dea0, then the learn box
+            if (d.IsEmotionItem)
             {
                 if (UseChecks(item)) ShowBox(LearnEmotionBox(item));
                 return;
@@ -903,12 +903,12 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     }
 
     /// <summary>Unk_Inventory::SendEmotion @0x140a65bb0 (inventory.cpp:1615-1627): no local player or an item that is no
-    /// emotion item (type 24): box 2135; its skill id and level learned (IsEmotionLearned): box 2136; else Emote mode 1 with
+    /// emotion item (<see cref="ItemData.IsEmotionItem"/>): box 2135; its skill id and level learned (IsEmotionLearned): box 2136; else Emote mode 1 with
     /// the item uid (<see cref="EmotionList.LearnFromItem"/>).</summary>
     void SendEmotion(Item item)
     {
         if (!Model.HasLocalPlayer) { ShowBox(MessageBoxQueue.Create(0, Model.Tables.Common(EmotionList.NotEmotionItemString), null, "")); return; }
-        var req = (Emotions ?? new EmotionList()).LearnFromItem(item.Uid, item.Data.Type, item.Data.SkillId, (ushort)item.Data.SkillLevel,
+        var req = (Emotions ?? new EmotionList()).LearnFromItem(item.Uid, item.Data.IsEmotionItem, item.Data.SkillId, (ushort)item.Data.SkillLevel,
             View?.ServerTime() ?? 0, out int notice);
         if (req == null) { ShowBox(MessageBoxQueue.Create(0, Model.Tables.Common(notice), null, "")); return; }
         SendEmoteLearn?.Invoke(req);

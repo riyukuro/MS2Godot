@@ -346,6 +346,26 @@ public sealed class ItemData
     /// <summary>CItemData::HasPeriod (itemdata.cpp:981).</summary>
     public bool HasPeriod => UsePeriod > 0 || ExpirationTime > 0 || ExpirationType != 0 || TermTag.Length != 0;
 
+    /// <summary>
+    /// An emotion item: FUN_14053ce40 (itemdata.cpp:725), type 0x18. The GMS2 files write these as type 2 with subtype 14,
+    /// and the GMS2 client tests the subtype: its item data keeps the file's type at +0x358 and subtype at +0x35c (the
+    /// &lt;property&gt; reader @0x140351960 stores "type" at +0x70 and "subtype" at +0x74 of the block its caller passes as
+    /// data+0x2e8, @0x14034559a), and its emotion test is subtype == 14: the predicate @0x140343af0, the double click's
+    /// by-id copy @0x140346cd0 (InvenSlot::vfunc_13 @0x140ab7d80, before the learn box, string 0x87a, tag "learn_emotion")
+    /// and SendEmotion's copy @0x1403333d0 (notices 0x877/0x878). The GMS2 exe compares type 0x18 nowhere. Read from the
+    /// GMS2 x64 dump's disassembly (not decompiled). Set by <see cref="FillEmotionItem"/> on the GMS2 per-item path.
+    /// </summary>
+    public bool IsEmotionItem => emotionByFile ?? Type == EmotionItemType;
+    /// <summary>CItemData's emotion item type on the KMS data (FUN_14053ce40).</summary>
+    public const int EmotionItemType = 0x18;
+    /// <summary>The GMS2 client's emotion item subtype (@0x140343af0).</summary>
+    public const int Gms2EmotionSubtype = 14;
+    bool? emotionByFile;
+
+    /// <summary>The GMS2 client's emotion test on the file's subtype (<see cref="IsEmotionItem"/>); run before
+    /// <see cref="FillEquipSubtype"/>, which rewrites some equipment subtypes the GMS2 client keeps.</summary>
+    public void FillEmotionItem() => emotionByFile = Subtype == Gms2EmotionSubtype;
+
     public bool IsGemItem => Type == 7;                        // :669
     public bool IsPetItem => Type == 0xb;                      // :675
     public bool IsScoreItem => Type == 0xc;                    // :695
@@ -580,6 +600,7 @@ public sealed class ItemDataTable
             && GameStrings.Parse(packs.Read("Xml", entry))?.Root is { } root
             && FeatureElements.SelectEnvironment(packs, root) is { } env)
             d = ItemData.Load(id, env, globalTransferType ??= LobbyFeatures.IsEnabled(packs, "GlobalTransferType"));
+        d?.FillEmotionItem();
         d?.FillEquipSubtype();
         d?.FillBoxType();
         // the GMS2 files have no rank: the one grade of the item's constant option code (ItemOptionTables.SingleGrade)

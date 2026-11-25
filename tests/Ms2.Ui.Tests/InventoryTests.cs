@@ -503,7 +503,7 @@ public class InventoryTests
     [Test]
     public void AnEmotionItemAsksFirstAndItsOkSendsTheLearn()
     {
-        // InvenSlot::vfunc_13 (invenslot.cpp:873-884): an emotion item (type 24) passes FUN_14140dea0, then box 1 with
+        // InvenSlot::vfunc_13 (invenslot.cpp:873-884): an emotion item (type 24; GMS2 data subtype 14) passes FUN_14140dea0, then box 1 with
         // FormatStringId(0x85a, the skill's name), tag "learn_emotion" and the item uid; nothing is sent until its OK
         // (HandleLearnEmotionButton, uimessagebox.cpp:1451-1466), which runs Unk_Inventory::SendEmotion (inventory.cpp:1615)
         Packs();
@@ -511,7 +511,7 @@ public class InventoryTests
         model.HasLocalPlayer = true;
         var t = model.Tables;
         var data = t.Items.Get(20200001);
-        if (data?.Type != Ms2.Ui.EmotionList.EmotionItemType) Assert.Inconclusive("this data has no type 24 item 20200001 (GMS2 data: type 2)");
+        if (data?.IsEmotionItem != true) Assert.Inconclusive("this data has no emotion item 20200001");
         var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
         book.Apply(new ItemMessage.LoadTab(2, new[]
         {
