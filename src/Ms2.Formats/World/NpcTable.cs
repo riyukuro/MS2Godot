@@ -183,19 +183,47 @@ public sealed class NpcTable
     /// the client's g_strLocaleDir2) first, then en and kr as <see cref="GameStrings"/> does.</summary>
     public NpcTable(PackSet packs, string language = null) : this(packs, EffectDummyTable.Load(packs), language) { }
 
-    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<NpcTable>>> shared = new();
+    /// <summary>The set's table in the language it was last asked in.</summary>
+    sealed class Slot
+    {
+        public string Language;
+        public Lazy<NpcTable> Table;
+    }
+
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, System.Runtime.CompilerServices.StrongBox<Slot>> shared = new();
+
+    /// <summary>The table build of <see cref="For"/>; a test may make it fail.</summary>
+    internal static Func<PackSet, string, NpcTable> Build = (packs, language) => new NpcTable(packs, language);
 
     /// <summary>
-    /// The one table of a data set and name language: the client reads its npc table once (the CNpcDataTable singleton,
-    /// npcdata.h:385-392, LoadNpcCache @0x1406ce4a0, NeedsLoad @0x1406cedb0), not on each field enter, so the read of every
-    /// npc file (GMS2's per-file set above all) is paid once per PackSet and language. Nothing changes a table after its build,
+    /// The one table of a data set: the client reads its npc table once (the CNpcDataTable singleton, npcdata.h:385-392,
+    /// LoadNpcCache @0x1406ce4a0, NeedsLoad @0x1406cedb0), not on each field enter, so the read of every npc file (GMS2's per-file
+    /// set above all) is paid once per PackSet. Its names are in the client's one string locale (g_strLocaleDir2), so every user
+    /// asks in the same language (the game's string language) and the set keeps only the table of the language last asked: a
+    /// language change builds the new one and lets the old one go, never two resident. Nothing changes a table after its build,
     /// so the users (the field's npcs, the replay, the quest guide, the field contents) read the same one. A null language is
-    /// en, as in the constructor; the table belongs to the PackSet object (compared by reference), so another Data folder
-    /// has its own.
+    /// en, as in the constructor; the table belongs to the PackSet object (compared by reference), so another Data folder has
+    /// its own. A caller during the build waits for it (a field enter's prefetch may be building it); a build that throws is
+    /// dropped, so the next call builds again instead of throwing the kept exception on every field enter.
     /// </summary>
-    public static NpcTable For(PackSet packs, string language = null) =>
-        shared.GetValue(packs, _ => new(StringComparer.Ordinal))
-              .GetOrAdd(language ?? "en", lang => new Lazy<NpcTable>(() => new NpcTable(packs, lang))).Value;
+    public static NpcTable For(PackSet packs, string language = null)
+    {
+        string lang = language ?? "en";
+        var box = shared.GetValue(packs, _ => new System.Runtime.CompilerServices.StrongBox<Slot>());
+        Slot slot;
+        lock (box)
+        {
+            if (box.Value?.Language != lang)
+                box.Value = new Slot { Language = lang, Table = new Lazy<NpcTable>(() => Build(packs, lang)) };
+            slot = box.Value;
+        }
+        try { return slot.Table.Value; }
+        catch
+        {
+            lock (box) if (box.Value == slot) box.Value = null;
+            throw;
+        }
+    }
 
     public NpcTable(PackSet packs, EffectDummyTable effectDummies, string language = null)
     {

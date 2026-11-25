@@ -347,7 +347,7 @@ public sealed partial class RemoteLayer : Node3D
         if (!mb.TextureArchives.Contains(ModelBuilder.ModelArchive)) mb.TextureArchives = mb.TextureArchives.Prepend(ModelBuilder.ModelArchive).ToArray();
         var packs = this.packs = field.Packs;
         equip = new EquipApplier(packs, mb) { Palettes = new Look.ColorPalettes(packs) };
-        var table = Ms2.Formats.World.NpcTable.For(packs);
+        var table = Ms2Godot.World.FieldContents.Npcs(packs);   // the string language, as every npc table user asks (NpcTable.For)
         Tracker.NpcLayoutOf = id => { var r = table.Find(id); return r == null ? default : new NpcLayout(r.IsBoss, r.HasDamagedHpBarTag); };
         npcs = new NpcLayer(packs, mb, table, this)
         {

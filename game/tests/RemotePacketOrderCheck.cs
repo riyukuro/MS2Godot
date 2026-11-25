@@ -24,7 +24,7 @@ public partial class RemotePacketOrderCheck : Node3D
         var field = new FieldStub(packs);
         AddChild(field);
         var layer = new RemoteLayer(field, builder, 1);
-        var table = Ms2.Formats.World.NpcTable.For(packs);
+        var table = Ms2Godot.World.FieldContents.Npcs(packs);
         int npcId = 0;
         foreach (int id in new[] { 21000001, 21000002, 21000003, 11000001 })
             if (table.Find(id) != null) { npcId = id; break; }
