@@ -31,7 +31,7 @@ public partial class TooltipLayer : CanvasLayer
         if (instance != null && IsInstanceValid(instance)) return instance;
         var dataDir = Settings.DataDir;
         if (string.IsNullOrEmpty(dataDir)) return null;
-        instance = new TooltipLayer { Name = "TooltipLayer", Layer = 13, ProcessMode = ProcessModeEnum.Always };
+        instance = new TooltipLayer { Name = "TooltipLayer", Layer = 14, ProcessMode = ProcessModeEnum.Always };
         instance.Build(new UiAssets(PackSet.Shared(dataDir)), any.GetTree().Root);
         any.GetTree().Root.CallDeferred(Node.MethodName.AddChild, instance);
         return instance;

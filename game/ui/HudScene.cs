@@ -57,6 +57,9 @@ public partial class HudScene : Node, IUiStageHost
     /// <summary>UICastingBar's C++ side: the cast gauge a caster starts (StartCasting) and is called back from.</summary>
     public Ms2.Ui.Hud.CastingBarController CastingBar { get; private set; }
     MovieDialog guideEvent;                 // uiguideevent
+    CanvasLayer guideEventLayer;            // CommonDepth.GuideEvent (35): over the dialogs, under the tooltip and the cursor
+    /// <summary>The canvas layer of the guide movie: over the message box layer (12), under <see cref="TooltipLayer"/> (14).</summary>
+    public const int GuideEventCanvasLayer = 13;
     /// <summary>UIGuideEvent's C++ side (0x4e53): the guide's tutorial balloon, summary panel, text tips and arrows.</summary>
     public Ms2.Ui.Hud.GuideEventController GuideEvent { get; private set; }
     DamageText damageText;
@@ -936,8 +939,15 @@ public partial class HudScene : Node, IUiStageHost
             InventoryOf = GuideInventoryOf,
             InventoryTabOf = GuideInventoryTabOf,
         };
+        // UIGuideEvent loads its movie into CommonDepth layer 0x23 = GuideEvent (LoadSwf(0x23), uiguideeventarrow.cpp:102),
+        // over the dialog layers (25, 26, 29) and the message box (34), under the system text (36), tooltip (37) and cursor
+        // (39). Here that is its own canvas layer over the HUD (10), the dialogs (11), the message box and massive event (12),
+        // under the tooltip (14); a movie in the HUD's layer drew under every dialog added after it.
+        guideEventLayer = new CanvasLayer { Layer = GuideEventCanvasLayer, Offset = UiScale.MovieOrigin };
+        MovieLayerHost.Bind(guideEventLayer, Ms2.Ui.CommonDepth.GuideEvent);
+        AddChild(guideEventLayer);
         guideEvent = new MovieDialog(assets, GuideEvent, NewModel(), ScreenMode.PixelSize(GetWindow()));
-        ui.AddChild(guideEvent);
+        guideEventLayer.AddChild(guideEvent);
         if (Ms2Godot.Net.LiveSession.Instance is { } live)
         {
             live.GuidePane = GuideEvent;
