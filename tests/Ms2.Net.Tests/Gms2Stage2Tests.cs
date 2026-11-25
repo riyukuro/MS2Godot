@@ -37,6 +37,21 @@ public class Gms2Stage2Tests {
         Assert.That(r.Available, Is.EqualTo(0));
     }
 
+    /// <summary>Type 2 comes with receiver uid 0 (a drop with no character), so it is anyone's; type 0 is the receiver's own.</summary>
+    [Test]
+    public void FieldAddItemOfTypeTwoIsAnyones() {
+        foreach (var (type, uid, owner) in new[] { ((byte) 2, 0L, (byte) 2), ((byte) 0, 0x77L, (byte) 0), ((byte) 1, 0x77L, (byte) 1) }) {
+            var w = new ByteWriter();
+            w.WriteInt(43); w.WriteInt(90000001); w.WriteInt(20); w.WriteBool(true); w.WriteLong(uid);
+            w.WriteFloat(0); w.WriteFloat(0); w.WriteFloat(0); w.WriteInt(9); w.WriteInt(0); w.WriteByte(type);
+            w.WriteInt(1); w.WriteShort(0); w.WriteBool(false); w.WriteBool(false);
+            var d = FieldAddItem.Read(Reader(w), Gms);
+            Assert.That(d.OwnerType, Is.EqualTo(owner), $"type {type}");
+            Assert.That(d.IsPickupAllowed(0x55), Is.EqualTo(type == 2), $"type {type}: another character");
+            Assert.That(d.IsPickupAllowed(0x77), Is.True, $"type {type}: the receiver");
+        }
+    }
+
     [Test]
     public void EveryRecordedGms2FieldAddItemDecodes() {
         var all = Gms2Sniffs.Inbound("gms2", Gms.Number(Inbound.FieldAddItem));
