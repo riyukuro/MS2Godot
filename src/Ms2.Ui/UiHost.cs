@@ -143,7 +143,13 @@ public sealed class UiHost
                 RT.Guard("Tooltip", () => t.Call(Rt.ToString(args[0]), args.Skip(1).Select(FromAs).ToArray()));
             return null;
         }
-        if (ev == "MouseCursor") return null;                           // forwarded to the cursor movie
+        if (ev == "MouseCursor")
+        {
+            // GFxMovieMain::vfunc_4 (gfxmoviemain.cpp:139-146): FindMovie(6)->vfunc_3(args[0], the rest), the cursor movie
+            if (args.Length > 0 && MouseCursor is { } c)
+                RT.Guard("MouseCursor", () => c.Call(Rt.ToString(args[0]), args.Skip(1).Select(FromAs).ToArray()));
+            return null;
+        }
         if (args.Length == 0) return null;
         var name = Rt.ToString(args[0]);
         var rest = args.Skip(1).ToArray();
@@ -421,6 +427,8 @@ public sealed class UiHost
     /// <summary>The run's tooltip movie (GFxManager::FindMovie(5), GFxMovieTooltip), which every movie's "Tooltip" calls
     /// go to; null = none hosted.</summary>
     public static ITooltipMovie Tooltips;
+    /// <summary>The cursor movie (movie 6, <see cref="MouseCursorController"/>) the "MouseCursor" calls go to.</summary>
+    public static ITooltipMovie MouseCursor;
 
     /// <summary>
     /// An AS value as plain C# values, the copy GFxMovieTooltip::vfunc_3 makes of a call's objects into its own movie

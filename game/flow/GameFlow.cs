@@ -67,6 +67,7 @@ public partial class GameFlow : Node
         ScreenMode.ApplyAtStartup();   // then MS2RenderService::OnInit sizes the window from it (ms2renderservice.cpp:699-743)
         Ui.MessageBoxLayer.Ensure(this);   // CUIService::CreateAllDialogs registers the one message box layer (uiservice.cpp:2345)
         Ui.TooltipLayer.Ensure(this);      // GFxManager's init loads the one tooltip movie (LoadTooltipMovie, gfxmanager.cpp:135)
+        Ui.MouseCursorLayer.Ensure(this);  // and then the cursor movie (LoadMouseCursorMovie, gfxmanager.cpp:137)
         Session.Reset();
         Session.GameScene = GameScene;
         UiBridge.ToHost += OnHost;

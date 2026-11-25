@@ -30,7 +30,8 @@ public sealed class AsTooltip : Dictionary<string, object>
 }
 
 /// <summary>GFxMovieTooltip::vfunc_3: a "Tooltip" call from a movie (createTooltip / destroyTooltip), its objects already
-/// copied out of the calling movie (<see cref="UiHost.FromAs"/>).</summary>
+/// copied out of the calling movie (<see cref="UiHost.FromAs"/>). GFxMovieMouseCursor::vfunc_3 takes the "MouseCursor" calls
+/// the same way.</summary>
 public interface ITooltipMovie
 {
     void Call(string method, object[] args);

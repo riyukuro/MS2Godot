@@ -460,6 +460,7 @@ public partial class HudScene : Node, IUiStageHost
         MessageBoxLayer.Ensure(this);       // the client's one message box layer (CUIService::CreateAllDialogs)
         BindBoxAnswers();
         TooltipLayer.Ensure(this);          // and its one tooltip movie (GFxManager LoadTooltipMovie)
+        MouseCursorLayer.Ensure(this);      // and the cursor movie (GFxManager LoadMouseCursorMovie)
     }
 
     CanvasLayer screenMaskLayer;        // CommonDepth.ScreenMask (10): over the damage text and action guide, under the HUD
