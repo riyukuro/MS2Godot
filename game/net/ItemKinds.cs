@@ -92,10 +92,18 @@ public sealed class ItemKinds
     /// <summary>CItem::GetSlotMax: the max stack of an item; 0 for an unknown item.</summary>
     public uint SlotMax(int id) => Row(id)?.SlotMax ?? 0;
 
-    /// <summary>The inventory tab of an item (CItemData::FUN_14053e530); 7 when the item is unknown (Unk_Inventory::FUN_140a61870).</summary>
+    bool? pieceTabOn;
+
+    /// <summary>The inventory tab of an item (CItemData::FUN_14053e530); 7 when the item is unknown (Unk_Inventory::FUN_140a61870).
+    /// On the GMS2 data (one file per item) the GMS2 client's own rule (<see cref="Ms2.Ui.Items.ItemData.Gms2InventoryTabOf"/>) in
+    /// this client's tab numbers (<see cref="Gms2InventoryTab.FromWire"/>): -1 for its survival tab (wire 14) and tab 8, which
+    /// the 15 tabs of this inventory do not have. STILL-OPEN: those two GMS2 tabs (44 survival items in the GMS2 data, no type 17).</summary>
     public int TabOf(int id)
     {
         if (Row(id) is not { } r) return 7;
+        if (noPrefixFile.Contains(id / 100000) && perItem.Get(id)?.Gms2WireTab(pieceTabOn ??= Ms2.Ui.LobbyFeatures.IsEnabled(packs,
+                Ms2.Ui.Items.ItemData.Gms2PieceTabFeature)) is int wire)
+            return Gms2InventoryTab.FromWire(wire);
         switch (r.Type)
         {
             case 1: return r.Skin ? 1 : 0;

@@ -247,7 +247,8 @@ public sealed class ItemBook {
     /// <summary>Unk_Inventory::AddItem (0x140a5d120): 0 added; 17 duplicate uid or occupied slot; 29 slot out of range. The old item stays on a refusal.</summary>
     public int TryAdd(EquipItem it) {
         if (items.ContainsKey(it.Uid)) return 17;
-        if (TabOf != null && it.InventorySlot != -1) {
+        // a tab outside 0-14 (a GMS2 tab this inventory has none of, Gms2InventoryTab) has no cells to check: the item is only kept
+        if (TabOf != null && it.InventorySlot != -1 && (uint) TabOf(it.Id) < Tabs) {
             int tab = TabOf(it.Id);
             if (BaseSlots != null && (it.InventorySlot < 0 || it.InventorySlot >= BaseSlots(tab) + (extra.TryGetValue(tab, out var e) ? e : 0))) return 29;
             foreach (var o in items.Values) if (o.InventorySlot == it.InventorySlot && TabOf(o.Id) == tab) return 17;

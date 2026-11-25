@@ -107,7 +107,7 @@ public class EmotionListTests
     static Ms2.Ui.Items.ItemData Item(int id, string property, bool gms2File)
     {
         var d = Ms2.Ui.Items.ItemData.Load(id, System.Xml.Linq.XElement.Parse($"<environment><property {property}/></environment>"));
-        if (gms2File) { d.FillEmotionItem(); d.FillEquipSubtype(); d.FillBoxType(); }   // ItemDataTable.PerItem's order
+        if (gms2File) { d.FillGms2File(); d.FillEquipSubtype(); d.FillBoxType(); }   // ItemDataTable.PerItem's order
         return d;
     }
 

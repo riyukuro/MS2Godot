@@ -173,6 +173,9 @@ public sealed class ItemData
             Int(p, "param1", ref d.Param1);
             Int(p, "param2", ref d.Param2);
             Int(p, "doNotPreview", ref d.DoNotPreview);         // ItemProperty::Load (itemdatastruct.cpp:1127)
+            Int(p, "survival", ref d.Survival);                 // GMS2 only (Gms2InventoryTabOf)
+            Int(p, "skin", ref d.Skin);                         // GMS2 only (Gms2InventoryTabOf)
+            d.PieceTag = ((string)p.Attribute("functionTags") ?? "").Split(',').Contains("piece");
             if (Unsigned(p, "slotMax", out uint slotMax)) d.SlotMax = slotMax;
             d.SlotMax = Math.Min(d.SlotMax, 99999u);
             d.Category = (string)p.Attribute("category") ?? d.Category;
@@ -353,18 +356,73 @@ public sealed class ItemData
     /// data+0x2e8, @0x14034559a), and its emotion test is subtype == 14: the predicate @0x140343af0, the double click's
     /// by-id copy @0x140346cd0 (InvenSlot::vfunc_13 @0x140ab7d80, before the learn box, string 0x87a, tag "learn_emotion")
     /// and SendEmotion's copy @0x1403333d0 (notices 0x877/0x878). The GMS2 exe compares type 0x18 nowhere. Read from the
-    /// GMS2 x64 dump's disassembly (not decompiled). Set by <see cref="FillEmotionItem"/> on the GMS2 per-item path.
+    /// GMS2 x64 dump's disassembly (not decompiled). Set by <see cref="FillGms2File"/> on the GMS2 per-item path.
     /// </summary>
-    public bool IsEmotionItem => emotionByFile ?? Type == EmotionItemType;
+    public bool IsEmotionItem => gms2File is { } f ? f.Subtype == Gms2EmotionSubtype : Type == EmotionItemType;
     /// <summary>CItemData's emotion item type on the KMS data (FUN_14053ce40).</summary>
     public const int EmotionItemType = 0x18;
     /// <summary>The GMS2 client's emotion item subtype (@0x140343af0).</summary>
     public const int Gms2EmotionSubtype = 14;
-    bool? emotionByFile;
 
-    /// <summary>The GMS2 client's emotion test on the file's subtype (<see cref="IsEmotionItem"/>); run before
-    /// <see cref="FillEquipSubtype"/>, which rewrites some equipment subtypes the GMS2 client keeps.</summary>
-    public void FillEmotionItem() => emotionByFile = Subtype == Gms2EmotionSubtype;
+    /// <summary>The type and subtype the GMS2 item file writes, as its client keeps them (+0x358, +0x35c); null on the KMS data.
+    /// <see cref="FillEquipSubtype"/> and <see cref="FillBoxType"/> rewrite <see cref="Type"/> and <see cref="Subtype"/> to the
+    /// KMS numbers afterwards, and the GMS2 client's own tests read these.</summary>
+    (int Type, int Subtype)? gms2File;
+
+    /// <summary>Keeps the GMS2 file's type and subtype (<see cref="IsEmotionItem"/>, <see cref="Gms2WireTab"/>); run first on the
+    /// GMS2 per-item path, before the fills that rewrite them.</summary>
+    public void FillGms2File() => gms2File = (Type, Subtype);
+
+    /// <summary>property@survival (the GMS2 &lt;property&gt; reader @0x140351a8d keeps it at +0x38 of the block, data+0x320).</summary>
+    public int Survival;
+    /// <summary>property@skin (the GMS2 reader @0x1403519a9 keeps it at +0x18 of the block, data+0x300; skinType is the next field,
+    /// +0x1c). Both are read as "%d" (@0x1404996a0).</summary>
+    public int Skin;
+    /// <summary>property@functionTags holds the word "piece": the GMS2 reader @0x140352210 splits the list on "," and keeps
+    /// "piece" as tag 1 (data+0x2e8+0x1c8, a map the tab rule asks for key 1, @0x140352440). INFERRED: the compare is an mfc140
+    /// import by ordinal, unread for case; every GMS2 item file writes the attribute as exactly "piece" (618 files) or not at all.</summary>
+    public bool PieceTag;
+
+    /// <summary>The GMS2 feature the piece tab hangs on: id 0x104 in the GMS2 feature table (the ids its init sets, @0x140298e39
+    /// region), "InventoryPieceTab".</summary>
+    public const string Gms2PieceTabFeature = "InventoryPieceTab";
+
+    /// <summary>The GMS2 client's inventory tab of this item in the GMS2 wire numbers (<see cref="Gms2InventoryTabOf"/>); null on the
+    /// KMS data, where CItemData::FUN_14053e530's type rule holds.</summary>
+    public int? Gms2WireTab(bool pieceTabOn) =>
+        gms2File is { } f ? Gms2InventoryTabOf(f.Type, f.Subtype, Skin, Survival, PieceTag, pieceTabOn) : null;
+
+    /// <summary>
+    /// The GMS2 client's item tab, @0x140344be0 (the GMS2 x64 dump, not decompiled; it pairs with CItemData::FUN_14053e530,
+    /// itemdata.cpp:1381, by its returns and its callers' place). It numbers the tabs as the GMS2 wire does (0-16, see
+    /// Gms2InventoryTab): survival (data+0x320) is 14; the piece tag with IsFeatureEnabled(0x104) is 16 (@0x140344c09, the feature
+    /// check @0x14029a1b0); then the file's type through a jump table @0x140344d08 over 1-21: 1 skin != 0 ? 1 : 0 (data+0x300),
+    /// 3 -> 5, 5 and 9 -> 2, 6 and 12 -> 4, 7 -> 13, 11 -> 10, 13 and 14 -> 6, 15 and 19 -> 3, 16 -> 9, 17 -> 8, 18 -> 11,
+    /// 20 -> 12, 21 -> 15; every other type (2, 4, 8, 10, 0, 22 and up) goes by the subtype: 20 -> 4, 2 -> 11, else 7. So an
+    /// emotion item (type 2, subtype 14) sits in tab 7, where the KMS type rule puts a type 2 item in tab 10.
+    /// </summary>
+    public static int Gms2InventoryTabOf(int type, int subtype, int skin, int survival, bool pieceTag, bool pieceTabOn)
+    {
+        if (survival != 0) return 14;
+        if (pieceTag && pieceTabOn) return 16;
+        switch (type)
+        {
+            case 1: return skin != 0 ? 1 : 0;
+            case 3: return 5;
+            case 5: case 9: return 2;
+            case 6: case 12: return 4;
+            case 7: return 13;
+            case 11: return 10;
+            case 13: case 14: return 6;
+            case 15: case 19: return 3;
+            case 16: return 9;
+            case 17: return 8;
+            case 18: return 11;
+            case 20: return 12;
+            case 21: return 15;
+        }
+        return subtype switch { 20 => 4, 2 => 11, _ => 7 };
+    }
 
     public bool IsGemItem => Type == 7;                        // :669
     public bool IsPetItem => Type == 0xb;                      // :675
@@ -600,7 +658,7 @@ public sealed class ItemDataTable
             && GameStrings.Parse(packs.Read("Xml", entry))?.Root is { } root
             && FeatureElements.SelectEnvironment(packs, root) is { } env)
             d = ItemData.Load(id, env, globalTransferType ??= LobbyFeatures.IsEnabled(packs, "GlobalTransferType"));
-        d?.FillEmotionItem();
+        d?.FillGms2File();
         d?.FillEquipSubtype();
         d?.FillBoxType();
         // the GMS2 files have no rank: the one grade of the item's constant option code (ItemOptionTables.SingleGrade)
