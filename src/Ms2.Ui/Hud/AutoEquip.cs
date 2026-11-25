@@ -37,7 +37,9 @@ public sealed class AutoEquip
     public Func<long, Item> FindItemByUid;
     /// <summary>WorldService::GetLocalPlayer's level (vfunc_78); null without a local player.</summary>
     public Func<int?> PlayerLevel;
-    /// <summary>The local player's GetEquipBySlotKind(slot, layer): the worn item, null for none.</summary>
+    /// <summary>The local player's GetEquipBySlotKind(slot, layer) (PC::GetEquipBySlotKind, pc.cpp:1370: CEquipment::GetItemAt):
+    /// the item in the slot, null for none. A worn item fills every slot its model's groups take (<see cref="EquipmentSlots"/>),
+    /// so pants find the PA slot taken by a worn top-and-bottom outfit, an off-hand the LH slot taken by a two-hander.</summary>
     public Func<int, int, Item> WornAt;
     /// <summary>GetItemUseError (inventory.cpp:1578) for the local player.</summary>
     public Func<Item, int> ItemUseError;

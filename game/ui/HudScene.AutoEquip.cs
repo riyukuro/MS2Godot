@@ -40,7 +40,9 @@ public partial class HudScene
         Func<IEnumerable<Item>> tab = () => live.Inventory is { } v ? EquipTabItems(v, tables.Items) : null;
         Func<long, Item> find = uid => live.Inventory?.FindByUid(uid) is { } e ? InventoryController.ToItem(e, tables.Items) : null;
         Func<int?> level = () => hudModel.HasLocalPlayer && live.Me?.User is { } u ? u.Level : null;
-        Func<int, int, Item> worn = (slot, layer) => WornEquipment.Of(live.Me?.ToPcInfo(now()), tables.Items)?.At(slot, layer);
+        // GetEquipBySlotKind: CEquipment's slots, where a worn item of several slots (a top-and-bottom outfit, a two-hander)
+        // fills each one
+        Func<int, int, Item> worn = (slot, layer) => EquipmentSlots.Of(live.Me?.ToPcInfo(now()), tables.Items, tables.ItemModels)?.At(slot, layer);
         Func<Item, int> useError = item => itemUse?.Error(item) ?? 11;
         var equip = liveEquip;
         Func<Item, int> request = item =>

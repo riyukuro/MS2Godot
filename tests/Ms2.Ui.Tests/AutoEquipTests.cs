@@ -29,6 +29,8 @@ public class AutoEquipTests
         public int? Level = 20;
         public readonly List<Item> Bag = new();
         public readonly Dictionary<(int, int), Item> Worn = new();
+        /// <summary>CEquipment's slots, when set: GetEquipBySlotKind reads them instead of <see cref="Worn"/>.</summary>
+        public EquipmentSlots Slots;
         public Func<Item, int> UseError = _ => 0;
         public int Answer = 1;
         public readonly List<long> Asked = new();
@@ -40,7 +42,7 @@ public class AutoEquipTests
                 EquipTabItems = () => Bag,
                 FindItemByUid = uid => Bag.FirstOrDefault(i => i.Uid == uid),
                 PlayerLevel = () => Level,
-                WornAt = (slot, layer) => Worn.TryGetValue((slot, layer), out var w) ? w : null,
+                WornAt = (slot, layer) => Slots != null ? Slots.At(slot, layer) : Worn.TryGetValue((slot, layer), out var w) ? w : null,
                 ItemUseError = i => UseError(i),
                 RequestEquipItem = i => { Asked.Add(i.Uid); return Answer; },
                 FirstGroupType = preset => preset,
@@ -171,6 +173,36 @@ public class AutoEquipTests
         f.Feature = false;
         a.ResetAutoEquip();
         Assert.That(a.IsAutoEquipEnabled, Is.False);
+    }
+
+    /// <summary>
+    /// GetEquipBySlotKind is CEquipment::GetItemAt (pc.cpp:1370), whose slots ApplyEquipItem fills for every group of a worn
+    /// item's model (equipment.cpp:2174): pants (PA) are not asked while a top-and-bottom outfit (CL+PA) is worn, an
+    /// off-hand (LH) not while a two-hander (RH+LH) is, at the level up and as a new item alike; with a one-slot top or a
+    /// one-handed weapon in their place both are asked.
+    /// </summary>
+    [Test]
+    public void AnItemOfSeveralSlotsKeepsEachOfThemFromTheAutoEquip()
+    {
+        foreach (var (wornSlot, groups, candidateSlot, takes) in new[]
+        {
+            (8, new[] { 8, 9 }, 9, true),     // a top-and-bottom outfit; pants
+            (8, new[] { 8 }, 9, false),       // a top only
+            (5, new[] { 5, 4 }, 4, true),     // a two-hander; an off-hand
+            (5, new[] { 5 }, 4, false),       // a one-handed weapon
+        })
+        {
+            string why = $"worn {string.Join("+", groups)} at {wornSlot}, candidate slot {candidateSlot}";
+            var f = new Field { Level = 20, Slots = new EquipmentSlots() };
+            f.Slots.Apply(Gear(90, 10, wornSlot), wornSlot, 0, groups);
+            var a = f.Make();
+            var candidate = Gear(1, 20, candidateSlot);
+            f.Bag.Add(candidate);
+            Assert.That(a.CanAutoEquip(candidate), Is.EqualTo(!takes), why);
+            a.OnLevelUp(20);
+            a.OnNewItem(candidate);
+            Assert.That(f.Asked, takes ? Is.Empty : Is.EqualTo(new long[] { 1 }), why);
+        }
     }
 
     [Test]
