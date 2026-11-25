@@ -223,10 +223,11 @@ public class FieldTrackerTests {
 
     static byte[] AddPet(int objectId, int ownerId) {
         var w = new ByteWriter();
-        w.WriteInt(objectId); w.WriteInt(61000001); w.WriteInt(3);         // object id, npc id, level
+        w.WriteInt(objectId); w.WriteInt(61000001); w.WriteInt(61000001);  // object id, skin id, npc id
         for (int i = 0; i < 6; i++) w.WriteFloat(i);                       // position, rotation
         w.WriteFloat(1); w.WriteInt(ownerId);                              // scale, owner
-        w.WriteByte(0); w.WriteLong(0);                                    // the start of the rest, left unread
+        w.WriteByte(35); for (int i = 0; i < 3; i++) { w.WriteLong(100); w.WriteInt(100); }   // stats
+        w.WriteLong(5); w.WriteByte(0); w.WriteShort(3); w.WriteShort(1); w.WriteInt(0); w.WriteUnicodeString("");   // uid, u8, level, rank, i32, name
         return Bytes(w);
     }
 

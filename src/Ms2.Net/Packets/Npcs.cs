@@ -28,10 +28,7 @@ public sealed class FieldAddNpc {
         var n = new FieldAddNpc { ObjectId = r.ReadInt(), NpcId = r.ReadInt(), Position = r.ReadVec3(), Rotation = r.ReadVec3() };
         var layout = layoutOf(n.NpcId);
         if (layout.IsBoss) n.BossModelName = r.ReadString();
-        // CNpc::vfunc_90: type 1 = one stat (u8 id, 3 values), else 3 x (i64 health, i32 spirit)
-        byte type = r.ReadByte();
-        if (type == 1) { r.ReadByte(); for (int i = 0; i < 3; i++) r.ReadLong(); /* percent stats are i64, others i32; only seen as type 35 */ throw new PacketLayoutException("npc single-stat form not decoded"); }
-        for (int i = 0; i < 3; i++) n.Stats[i] = (r.ReadLong(), r.ReadInt());
+        ReadStats(r, n.Stats);
         n.Hidden = r.ReadByte() != 0;
         int buffs = (ushort) r.ReadShort();
         for (int i = 0; i < buffs; i++) n.Buffs.Add(Buff.Read(r));
@@ -47,39 +44,43 @@ public sealed class FieldAddNpc {
         r.ExpectEnd("FieldAddNpc");
         return n;
     }
+
+    /// <summary>CNpc::vfunc_90, the stats FieldAddNpc and FieldAddPet carry: type 1 = one stat (u8 id, 3 values), else 3 x (i64 health, i32 spirit).</summary>
+    internal static void ReadStats(ByteReader r, (long Health, int Spirit)[] stats) {
+        byte type = r.ReadByte();
+        if (type == 1) { r.ReadByte(); for (int i = 0; i < 3; i++) r.ReadLong(); /* percent stats are i64, others i32; only seen as type 35 */ throw new PacketLayoutException("npc single-stat form not decoded"); }
+        for (int i = 0; i < 3; i++) stats[i] = (r.ReadLong(), r.ReadInt());
+    }
 }
 
 /// <summary>
-/// Inbound FieldAddPet (RecvOp 0x5a), the prefix CSceneStateGame::OnFieldAddPet (scenestategame.cpp:9682) reads before the
-/// pet's stats: i32 object id, i32 npc id, i32 level, position, rotation, f32 scale, i32 owner (SetOwnerId: the owner's object
-/// id). The rest (the npc stats, maid uid, grade, name, ...) is left unread.
+/// Inbound FieldAddPet (KMS 0x5A, GMS2 0x5B), the whole of CSceneStateGame::OnFieldAddPet @0x141719a60 (scenestategame.cpp:9682-9709),
+/// the same on both: i32 object id (SetObjectId), i32 skin id (vfunc_124, the npc the pet is drawn as), i32 npc id (SetPetId),
+/// position, rotation, f32 scale, i32 owner (SetOwnerId: the owner's object id), the npc stats (CNpc::vfunc_90), i64 pet item uid
+/// (SetMaidUid), u8, i16 level (FUN_14174a580, the setter FieldAddNpc's i32 level goes to, :3562), i16 taming rank (SetGrade), i32,
+/// unicode name.
 /// </summary>
-public sealed record FieldAddPet(int ObjectId, int NpcId, int Level, System.Numerics.Vector3 Position, System.Numerics.Vector3 Rotation, float Scale, int OwnerId) {
-    public static FieldAddPet Read(ByteReader r) =>
-        new(r.ReadInt(), r.ReadInt(), r.ReadInt(), r.ReadVec3(), r.ReadVec3(), r.ReadFloat(), r.ReadInt());
-
-    /// <summary>The pet's skin id (GMS2 only: the second field), 0 on KMS2.</summary>
-    public int SkinId { get; init; }
-    /// <summary>The pet item's uid, taming rank and name (GMS2 only; the whole packet is read there).</summary>
+public sealed record FieldAddPet(int ObjectId, int SkinId, int NpcId, System.Numerics.Vector3 Position, System.Numerics.Vector3 Rotation, float Scale, int OwnerId) {
+    public (long Health, int Spirit)[] Stats { get; init; } = new (long, int)[3];
     public long PetUid { get; init; }
+    public int Level { get; init; }
     public short TamingRank { get; init; }
     public string Name { get; init; } = "";
 
-    /// <summary>
-    /// GMS2 (0x5B): i32 object id, i32 skin id, i32 npc id, position, rotation, f32 scale, i32 owner, the npc stats (u8 type, 3 x (i64, i32)),
-    /// i64 pet uid, u8, i16 level, i16 taming rank, i32, unicode name.
-    /// </summary>
-    public static FieldAddPet Read(ByteReader r, ProtocolProfile profile) {
-        if (!profile.IsGms2) return Read(r);
+    public static FieldAddPet Read(ByteReader r) {
         int id = r.ReadInt(), skin = r.ReadInt(), npc = r.ReadInt();
         var pos = r.ReadVec3(); var rot = r.ReadVec3(); float scale = r.ReadFloat(); int owner = r.ReadInt();
-        r.ReadByte(); for (int i = 0; i < 3; i++) { r.ReadLong(); r.ReadInt(); }
+        var stats = new (long, int)[3];
+        FieldAddNpc.ReadStats(r, stats);
         long uid = r.ReadLong(); r.ReadByte();
         short level = r.ReadShort(), rank = r.ReadShort(); r.ReadInt();
         string name = r.ReadUnicodeString();
         r.ExpectEnd("FieldAddPet");
-        return new(id, npc, level, pos, rot, scale, owner) { SkinId = skin, PetUid = uid, TamingRank = rank, Name = name };
+        return new(id, skin, npc, pos, rot, scale, owner) { Stats = stats, PetUid = uid, Level = level, TamingRank = rank, Name = name };
     }
+
+    /// <summary>Both regions read the same body (<see cref="Read(ByteReader)"/>).</summary>
+    public static FieldAddPet Read(ByteReader r, ProtocolProfile profile) => Read(r);
 }
 
 /// <summary>Inbound FieldRemovePet (RecvOp 0x5b): CSceneStateGame::OnFieldRemovePet reads the i32 object id first.</summary>
