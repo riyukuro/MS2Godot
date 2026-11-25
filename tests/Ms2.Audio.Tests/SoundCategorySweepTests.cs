@@ -92,8 +92,10 @@ public class SoundCategorySweepTests
     {
         var d = Environment.GetEnvironmentVariable(variable);
         if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore($"{variable} is not set");
-        // the GMS2 data has the English voice banks only (voice 2), the KMS data the Korean ones (voice 0)
-        var lib = new SoundLibrary(Path.Combine(d, "Sound"), variable == "MS2_GMS2_DATA" ? 2 : 0);
+        // the GMS2 data has the English voice banks only (voice 2), the KMS data the Korean ones (voice 0); pick by the banks the
+        // data holds, not by the variable's name (the GMS2 gate runs the MS2_DATA case on GMS2 data)
+        string sound = Path.Combine(d, "Sound");
+        var lib = new SoundLibrary(sound, File.Exists(Path.Combine(sound, "MS2Sound_Voice_Kor_def.fsb")) ? 0 : 2);
         int checkedCount = 0;
         // per top-level category, the first event whose sound is in this data's banks
         foreach (var g in lib.Fev.AllEvents.Where(e => e.Defs.Count > 0).GroupBy(e => e.Category.Split('/')[0]))
