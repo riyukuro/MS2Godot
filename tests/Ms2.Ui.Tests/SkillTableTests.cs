@@ -1,5 +1,6 @@
 using Maple2.PacketLib.Tools;
 using Ms2.Formats.Pack;
+using Ms2.Formats.World;
 using Ms2.Net.Packets;
 using Ms2.Ui;
 using Ms2.Ui.Skills;
@@ -18,10 +19,18 @@ public class SkillTableTests
         if (tables != null) return tables;
         var d = Environment.GetEnvironmentVariable("MS2_DATA");
         if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
-        return tables = new GameTables(new PackSet(d), "en");
+        var packs = new PackSet(d);
+        gms2 = JobTable.IsCodeShape(GameStrings.Parse(packs.Read("Xml", "table/job.xml")).Root);
+        return tables = new GameTables(packs, "en");
     }
 
-    const uint ArrowStream = 10500001, ArrowBarrage = 10500021;
+    static bool gms2;
+
+    const uint ArrowStream = 10500001, ArrowBarrage = 10500021, ArrowBarrageNeeds = 10500011;
+
+    /// <summary>The 10500011 level Arrow Barrage needs: 1 in the KMS job row; 3 in the GMS2 skill file's levels, whose
+    /// CharacterBalance_01 levels (the KMS row's) are off in that data.</summary>
+    static ushort BarrageNeedsLevel => gms2 ? (ushort)3 : (ushort)1;
 
     [Test]
     public void TheArcherJobRowsAndSkillData()
@@ -35,7 +44,7 @@ public class SkillTableTests
         Assert.That((row.GetRequireLevel(1), row.GetRequireLevel(2), row.GetRequireLevel(12), row.GetRequireLevel(20)), Is.EqualTo(((ushort)0, (ushort)10, (ushort)30, (ushort)30)));
         var barrage = job.FindSkill(ArrowBarrage);
         Assert.That(barrage.RequireSkillIds, Is.EqualTo(new uint[] { 10500001, 10500011 }));
-        Assert.That(barrage.RequireSkillLevels, Is.EqualTo(new ushort[] { 3, 1 }));
+        Assert.That(barrage.RequireSkillLevels, Is.EqualTo(new ushort[] { 3, BarrageNeedsLevel }));
         // a sub skill finds the row of its skill
         Assert.That(job.GetSkillData(10500152)?.SkillId, Is.EqualTo(10500151u));
         Assert.That(job.FindSkill(10500261).RequireQuestId, Is.EqualTo(40002795u));
@@ -82,9 +91,10 @@ public class SkillTableTests
         Assert.That(sim.GetUsedPoints(0), Is.EqualTo(new[] { (ArrowStream, 1) }));
         Assert.That(sim.LevelDown(ArrowStream, out _), Is.True);
         Assert.That(sim.IsChanged(), Is.False);
-        // Arrow Barrage needs Arrow Stream 3 (and level 16)
+        // Arrow Barrage needs Arrow Stream 3 and 10500011 at BarrageNeedsLevel (and level 16)
         Assert.That(sim.CanLevelUp(ArrowBarrage), Is.False);
         sim.LevelUp(ArrowStream); sim.LevelUp(ArrowStream);
+        while (sim.GetEditSkill(ArrowBarrageNeeds).Level < BarrageNeedsLevel) Assert.That(sim.LevelUp(ArrowBarrageNeeds), Is.True);
         Assert.That(sim.CanLevelUp(ArrowBarrage), Is.True);
         Assert.That(sim.LevelUp(ArrowBarrage), Is.True);
         Assert.That(sim.GetEditSkill(ArrowBarrage).Learned, Is.True);
@@ -135,11 +145,12 @@ public class SkillTableTests
         player.QuickSlotOf = _ => 3;
         var q = SkillTooltip.Build(tables, player, ArrowStream, 1, 0x10, true);
         Assert.That((q["itemEquip"], q.ContainsKey("enablePuton")), Is.EqualTo(("Equipped", false)));
-        // 10500021 at level 1: level 16 and Arrow Stream 3 unmet (red), 10500011 at 1 learnt with the rank (yellow)
+        // 10500021 at level 1: level 16 and Arrow Stream 3 unmet (red); 10500011 at 1 learnt with the rank, yellow where 1 is
+        // enough (KMS) and red where it needs 3 (GMS2)
         var b = ((List<object>)SkillTooltip.Build(tables, player, ArrowBarrage, 1, 0x10, false)["requireDescription"]).Cast<Dictionary<string, object>>().ToList();
         TestContext.WriteLine(string.Join(" | ", b.Select(r => $"{r["text"]} {r["color"]}")));
         Assert.That(b.Count, Is.EqualTo(4));
-        Assert.That(b.Skip(1).Select(r => (string)r["color"]), Is.EqualTo(new[] { "ff4040", "ff4040", "ffd400" }));
+        Assert.That(b.Skip(1).Select(r => (string)r["color"]), Is.EqualTo(new[] { "ff4040", "ff4040", BarrageNeedsLevel <= 1 ? "ffd400" : "ff4040" }));
         Assert.That((string)b[1]["text"], Is.EqualTo("Level 16+"));
         Assert.That((string)b[2]["text"], Is.EqualTo("Arrow Stream [Level 3+]"));
     }
