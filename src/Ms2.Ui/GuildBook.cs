@@ -783,6 +783,10 @@ public sealed class GuildBook
                 if (Info != null) { Info.F350 = m.Value; Info.F354 = false; }
                 VsGameRefresh?.Invoke();
                 break;
+            case 0x4f:
+                // FUN_1413c4e20 (@0x1413c4e20, guildmanager.cpp:2780): ShowGuildError(kind, code, arg) of the read values.
+                ShowGuildError(m.ErrorKind, m.ErrorCode, m.ErrorArg);
+                break;
             case 0x38:
             {
                 // FUN_1413c3780 (@0x1413c3780, :2531): the guild's custom event of the id is overwritten by the one read (none: the

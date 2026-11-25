@@ -43,6 +43,10 @@ public class GuildRecordedTests
     // gms2: 0x8C type 0x54 (GMS2 mode 84 -> KMS 0x56 MyRequests), 5 bytes (0 entries)
     static readonly byte[] Gms2MyRequestsEmpty = Convert.FromHexString("5400000000");
 
+    // ShowGuildError's packet (KMS 0x4f FUN_1413c4e20; GMS2 type 77, the upstream server's Error): u8 kind 1, u8 code 12, i32 arg 0
+    static readonly byte[] KmsError = Convert.FromHexString("4F010C00000000");
+    static readonly byte[] Gms2Error = Convert.FromHexString("4D010C00000000");
+
     static GuildBook InGuildBook(string memberName, int eventId = 1)
     {
         var book = new GuildBook
@@ -120,6 +124,22 @@ public class GuildRecordedTests
         Assert.That(book.Info, Is.Null);
         Assert.That(closes, Is.EqualTo(2));
         Assert.That(boxes.Count, Is.EqualTo(2));
+    }
+
+    [TestCase("kms")]
+    [TestCase("gms2")]
+    public void ErrorPacketShowsTheGuildErrorNotice(string region)
+    {
+        var m = region == "kms" ? GuildMessage.Read(new ByteReader(KmsError), ProtocolProfile.Kms2525)
+                                : GuildMessage.Read(new ByteReader(Gms2Error), ProtocolProfile.Gms2);
+        Assert.That(m.Type, Is.EqualTo(0x4f));
+        Assert.That((m.ErrorKind, m.ErrorCode, m.ErrorArg), Is.EqualTo((1, 12, 0)));
+        var book = new GuildBook { Common = id => $"c:{id:X}", CommonByKey = key => $"k:{key}" };
+        var notices = new List<(string Text, int Kind, bool Flag)>();
+        book.Notice += (t, k, f) => notices.Add((t, k, f));
+        book.Apply(m);
+        Assert.That(notices, Is.EqualTo(new[] { (book.ErrorText(12, 0), 1, true) }));
+        Assert.That(notices[0].Text, Is.EqualTo("c:40C"));
     }
 
     [Test]

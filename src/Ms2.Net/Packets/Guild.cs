@@ -173,6 +173,7 @@ public sealed class GuildInviteInfo {
 /// <item>0x76 OnPacketVsGameTicket (:2653): u8 registered (f354), u8 notify.</item>
 /// <item>0x75 OnPacketVsGameMatchCanceled (:2670): no body.</item>
 /// <item>0x77 FUN_1413c45e0 (:2679): i32 the other game id (f350).</item>
+/// <item>0x4f FUN_1413c4e20 (:2780): u8 the kind, u8 the error code, i32 the argument (ShowGuildError).</item>
 /// <item>0x44 FUN_1413bf2a0 (guildmanager.cpp:1855): u8 the propensity focus, i32 its value (CGuildInfo f154 / f158).</item>
 /// </list>
 /// The other types are not read here (STILL-OPEN).
@@ -237,6 +238,10 @@ public sealed record GuildMessage(byte Type) {
     /// <summary>Type 0x44: the guild's propensity focus (f154) and value (f158).</summary>
     public int Focus { get; init; }
     public int Value { get; init; }
+    /// <summary>Type 0x4f: ShowGuildError's kind, code and argument.</summary>
+    public int ErrorKind { get; init; }
+    public int ErrorCode { get; init; }
+    public int ErrorArg { get; init; }
     /// <summary>Types 4 and 5: the invite.</summary>
     public GuildInviteInfo Invite { get; init; }
     /// <summary>Type 6: the reason of a refusal (1 to 3 have a line).</summary>
@@ -380,6 +385,8 @@ public sealed record GuildMessage(byte Type) {
             case 0x75: return new(t);
             // FUN_1413c45e0 (:2679)
             case 0x77: return Done(new(t) { Value = r.ReadInt() }, r);
+            // FUN_1413c4e20 (@0x1413c4e20, :2780): u8 the kind, u8 the code, i32 the argument, then ShowGuildError
+            case 0x4f: return Done(new(t) { ErrorKind = r.ReadByte(), ErrorCode = r.ReadByte(), ErrorArg = r.ReadInt() }, r);
             default: return new(t);
         }
     }
