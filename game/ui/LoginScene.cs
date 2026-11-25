@@ -99,6 +99,10 @@ public partial class LoginScene : Control
         backgroundSize = LoginBackground.Measured(bg);
         LoginBackground.Fit(bg, window, backgroundSize);
         background = bg;
+        string name = LoginBackground.MovieName(url);
+        title = LoginBackground.Title(bg);
+        titleEvents = Ms2.Ui.LoginTitleEvents.Find(assets.Movies.Abc(name).Select(a => a.Abc), title?.ClassName);
+        if (titleEvents.Count == 0) GD.PushWarning($"login backdrop {name}: no title events in its title's frame scripts");
         AddChild(bg);
         LoginBackground.Play(bg, forShots);
     }
@@ -138,18 +142,25 @@ public partial class LoginScene : Control
     /// <summary>True once the login dialog 0x4e22 was opened (the passport start opens none).</summary>
     public bool DialogOpen => dialog != null;
 
-    bool titleEnded;
+    MovieClipNode title;
+    List<(int Frame, string Event)> titleEvents;
+    int titleEventNext;
     /// <summary>
-    /// The passport start's title (UISceneLogin::vfunc_61, uiscenelogin.cpp:244-255): the background's AS is not run, so its
-    /// events come from the title sprite stopping on its last frame: showTitle, then endShowTitle (bit 0x4000).
-    /// STILL-OPEN: the frame the background sends showTitle on; both go at the title's end here.
+    /// The background title's frame scripts (<see cref="Ms2.Ui.LoginTitleEvents"/>) as its playhead reaches them: showTitle and
+    /// endShowTitle to UISceneLogin::vfunc_61 (uiscenelogin.cpp:243-255), on every start, as Background.onDispathEvent passes
+    /// them on. The id and password start has shown the title already (vfunc_60), so its showTitle finds the movie shown.
     /// </summary>
-    void PassportTitle()
+    void TitleEvents()
     {
-        if (titleEnded || !Scene.Passport || !LoginBackground.TitleEnded(background)) return;
-        titleEnded = true;
-        Scene.BackgroundEvent("showTitle");
-        Scene.BackgroundEvent("endShowTitle");
+        if (title == null || titleEvents == null || titleEventNext >= titleEvents.Count) return;
+        Ms2.Ui.LoginTitleEvents.Due(titleEvents, ref titleEventNext, title.Frame, sendTitleEvent ??= SendTitleEvent);
+    }
+
+    Action<string> sendTitleEvent;
+    void SendTitleEvent(string ev)
+    {
+        GD.Print($"login: title {ev} at frame {title.Frame + 1}");
+        Scene.BackgroundEvent(ev);
     }
 
     /// <summary>OpenLoginDialogs (uiscenelogin.cpp, @0x141acfa00): the login dialog 0x4e22 over the scene's movie.</summary>
@@ -199,7 +210,7 @@ public partial class LoginScene : Control
 
     public override void _Process(double delta)
     {
-        PassportTitle();
+        TitleEvents();
         Scene.Tick();       // UISceneLogin::vfunc_15
         if (shotDir == null) return;
         frames++;
