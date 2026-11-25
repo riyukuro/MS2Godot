@@ -3066,6 +3066,8 @@ public partial class HudScene : Node, IUiStageHost
             hudModel.Keys.KeysSentToServer += keysSentHandler = keySender.SendKeyTableSaveAll;
         }
         hudModel.Keys.Apply(hudModel.ServerKeys, PadDefaultsKind());
+        // the own skill system's skill sets live with the session's own pc (a mount's set outlasts a HUD rebuild)
+        if (Ms2Godot.Net.LiveSession.Instance is { } setOwner) hudModel.SkillSets = setOwner.OwnSkillSets;
         var p = hudModel.Player;
         p.Name = data.Player.Name; p.Level = data.Player.Level;
         // jobCode is the sub job (uimainplayerinfo.cpp:1405): 100 Knight, 200 Berserker ... 1100 Soul Binder; the stub
@@ -3188,6 +3190,7 @@ public partial class HudScene : Node, IUiStageHost
             PressKey = ClickedSlotKey,
             UseSkill = ClickedSlotSkill,
         };
+        playerInfo.SkillSetModeChanged += mode => upperHudSide?.OnSkillSetMode(mode);   // NotifySkillSetMode's other listener
         OwnBuffs();
         ui.AddChild(playerInfoMovie = new MovieDialog(assets, playerInfo, hudModel, window));
         WatchQuickSlotState();
@@ -4027,11 +4030,14 @@ public partial class HudScene : Node, IUiStageHost
         };
         Action<Ms2.Net.Packets.KeyBinding> onBind = live.SendKeyTableBind;
         Action<int> onPageChanged = live.SendKeyTableSetPage;
+        Action onSkillSet = playerInfo.ApplySkillSet;                            // CSkillSystem::ApplySkillSet after Add / Remove
         live.SkillBookChanged += onBook;
         live.Items.Changed += onBag;
         live.KeyTableChanged += onKeys;
         hudModel.Keys.KeyBindingChanged += onBind;
         playerInfo.QuickSlotPageChanged += onPageChanged;
+        live.OwnSkillSetApplied += onSkillSet;
+        live.OwnSkillSets.SaveKeySetting = playerInfo.SaveKeySetting;           // CKeyTable::SaveKeySetting of an open set
         unwatchQuickSlotState = () =>
         {
             live.SkillBookChanged -= onBook;
@@ -4041,6 +4047,8 @@ public partial class HudScene : Node, IUiStageHost
             hudModel.Keys.KeysSentToServer -= keysSentHandler;
             keysSentHandler = null;
             playerInfo.QuickSlotPageChanged -= onPageChanged;
+            live.OwnSkillSetApplied -= onSkillSet;
+            live.OwnSkillSets.SaveKeySetting = null;
         };
     }
     Ms2Godot.Net.ItemKinds slotKinds;
@@ -4062,7 +4070,7 @@ public partial class HudScene : Node, IUiStageHost
         object book = live != null ? live.SkillBook : (object)hudModel.Player.SubJob;
         if (slotJobs == null || !Equals(slotJobsBook, book))
         {
-            slotJobs = new Ms2.Ui.Skills.JobSystem(tables) { IsFeatureEnabled = hudModel.IsFeatureEnabled };
+            slotJobs = new Ms2.Ui.Skills.JobSystem(tables) { IsFeatureEnabled = hudModel.IsFeatureEnabled, SkillSet = () => hudModel.SkillSets.Current };
             slotJobs.Read(live != null ? live.SkillBook : UiFixture.NewCharacterSkillBook(tables.Jobs, hudModel.Player.SubJob / 10));
             slotJobsBook = book;
         }
@@ -4102,6 +4110,7 @@ public partial class HudScene : Node, IUiStageHost
             Level = p.Level, Hp = p.HpCur, Sp = p.SpCur, Ep = p.EpCur, Meso = p.Mesos,
             Inventory = live != null ? live.Items.All : (OfflineInventory() != null ? offlineBook.All : Array.Empty<Ms2.Net.Packets.EquipItem>()), TabOf = slotKinds.TabOf,
             Field = slotField,
+            SkillSetActive = hudModel.SkillSets.Current != null,                 // FUN_140930d70
         };
         slotConstants ??= Ms2.Ui.FeatureElements.Constants(assets.Packs);
         world.SummonRideSkill = slotConstants.Int("SummonRideSkillID", world.SummonRideSkill);

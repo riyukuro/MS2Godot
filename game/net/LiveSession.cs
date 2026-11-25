@@ -1834,6 +1834,7 @@ public partial class LiveSession : Node
         selfObject = -1;
         Home.Clear();   // ~MyPC: m_sp1618 = 0 (mypc.cpp:897)
         OwnPassengers.Clear();   // ~MyPC drops m_mapB28 with the pc
+        DropOwnSkillSets();      // ~MyPC's skill system
         bindPending = false;
     }
 
@@ -2036,6 +2037,7 @@ public partial class LiveSession : Node
     void BindPlayer(Player found)
     {
         player = found;
+        InitOwnSkillSets();      // the new MyPC's CSkillSystem::Init
         player.Live = true;
         player.WalkRecordByAge = game?.Profile.IsGms2 ?? false;   // the recorded GMS2 client's walk cadence, see Player.WalkRecordByAge
         player.TaxiHold = TaxiHoldsMove;

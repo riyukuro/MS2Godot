@@ -13,8 +13,8 @@ namespace Ms2Godot.Net;
 /// no-boarding flag of modes 3-6 (<see cref="RidePassengers"/>), mode 3's own StateHold on another player's mount
 /// (<see cref="Player.HoldOn"/>). STILL-OPEN: RecvOp NpcRide 0xE7 (CSceneStateGame::OnNpcRide,
 /// scenestategame.cpp:4871: i32 npc id, then CNpc::FUN_141092c50: u8 mode 0 an i64, 1 an i32 owner object id the npc turns
-/// toward and is offset from (FUN_141093eb0, vfunc_51), 2 clears it; the port has no npc bound to an owner) and the ridee
-/// skill set (mypc.cpp:1219-1226).
+/// toward and is offset from (FUN_141093eb0, vfunc_51), 2 clears it; the port has no npc bound to an owner) and the ridee's
+/// step on a skill use (Ridee::FUN_141706650, mypc.cpp:1219-1226). The ridee's skill set is <see cref="OwnSkillSets"/>.
 /// The own pc's ride-off-first cast (IsUnrideOnUse, mypc.cpp:2447-2470) is <see cref="RideOffForSkill"/>.
 /// </summary>
 public partial class LiveSession
@@ -105,13 +105,13 @@ public partial class LiveSession
                 OwnRideOn(r.RideOn);
                 break;
             case OwnRide.Step.RideOff when own:
-                // MyPC::vfunc_121: RemoveSkillSet of the ridee's skillSetId, PC::vfunc_121, NotifyStatusChanged(0xc, 0), then
-                // the action's switch: Hold 7 boards the nearest mount (HoldAfterRideOff), CoupleEmotion 0x13 asks the couple emotion
-                // (CoupleAfterRideOff). STILL-OPEN: the skill set and
-                // the other cases (UseSkill's cast, Interact's state 0x19, Taxi 0x25, TakeLR's
+                // MyPC::vfunc_121: RemoveSkillSet of the ridee's skillSetId (OwnSkillSetOff), PC::vfunc_121, NotifyStatusChanged(0xc, 0),
+                // then the action's switch: Hold 7 boards the nearest mount (HoldAfterRideOff), CoupleEmotion 0x13 asks the couple
+                // emotion (CoupleAfterRideOff). STILL-OPEN: the other cases (UseSkill's cast, Interact's state 0x19, Taxi 0x25, TakeLR's
                 // chair, Recall ...); a react ride-off reads null (no case 20 in ReadRideOffAction, rideonaction.cpp:159), so
                 // it is a plain ride off.
                 bool wasRiding = player.Mount != null;
+                OwnSkillSetOff(player.Mount?.Data?.SkillSetId ?? 0);
                 string skillEffect = r.RideOff?.Type == RemoteLayer.UnRideSkillType ? player.Mount?.Data?.RideOffBySkillEffect : null;
                 player.RideOff();
                 OwnRideChanged?.Invoke(null);           // NotifyStatusChanged(0xc, 0) after PC::vfunc_121 (mypc.cpp:3365)
@@ -139,11 +139,52 @@ public partial class LiveSession
         player.RideOn(m);
         PlayOwnCommonEffect(RideOnEffectKey);
         OwnNoBoarding = a.Flag;           // PC::FUN_1416642c0(m_b28), pcbase.cpp:3341-3343
+        OwnSkillSetOn(m.Data.SkillSetId);
         // Player.RideOn hides the rider of a hideRider row. MyPC::vfunc_120's window closes for hidePCInfo above 1 and its
         // NotifyStatusChanged(0xc, 1) (mypc.cpp:3306-3317) are the HUD's (OwnRideChanged). STILL-OPEN: the RideeItemInfo of
-        // a type 1 action, the camera target; MyPC: ClearRecords, AddSkillSet of skillSetId.
+        // a type 1 action, the camera target; MyPC: ClearRecords.
         OwnRideChanged?.Invoke(m.Data.UiRow);
     }
+
+    /// <summary>The own skill system's skill sets (CSkillSystem m_lstSkillSets / m_spSkillSet): a ridden mount's skillSetID.</summary>
+    public readonly Ms2.Ui.Skills.SkillSetList OwnSkillSets = new();
+    Ms2.Ui.Skills.SkillSetTable skillSetTable;
+
+    /// <summary>CSkillSetTable (Table/skillSet.xml of the data set), loaded on the first skill set.</summary>
+    Ms2.Ui.Skills.SkillSetTable SkillSetTable => skillSetTable ??= Ms2.Ui.Skills.SkillSetTable.Load(PackSet.Shared(Settings.DataDir));
+
+    /// <summary>MyPC::vfunc_120 (mypc.cpp:3301-3305): a ridee with a skillSetID adds it (CSkillSystem::AddSkillSet) and the
+    /// skill system applies its current set (<see cref="OwnSkillSetApplied"/>).</summary>
+    void OwnSkillSetOn(int id)
+    {
+        if (id == 0) return;
+        OwnSkillSets.Add(id, SkillSetTable);
+        OwnSkillSetApplied?.Invoke();
+    }
+
+    /// <summary>MyPC::vfunc_121 (mypc.cpp:3348-3359), before PC::vfunc_121 releases the ridee: with a current skill set, the
+    /// ridee's skillSetID is removed (CSkillSystem::RemoveSkillSet) and the skill system applies what is left.</summary>
+    void OwnSkillSetOff(int id)
+    {
+        if (OwnSkillSets.Current == null || id == 0) return;
+        OwnSkillSets.Remove(id, SkillSetTable);
+        OwnSkillSetApplied?.Invoke();
+    }
+
+    /// <summary>~CSkillSystem @0x141764900 (skillslot.cpp:1829-1836) with the old MyPC at a field change: each listed set is
+    /// removed (an open set's layout saved), so the next MyPC's skill system starts with none.</summary>
+    void DropOwnSkillSets()
+    {
+        while (OwnSkillSets.Ids.Count > 0) OwnSkillSets.Remove(OwnSkillSets.Ids[0], SkillSetTable);
+    }
+
+    /// <summary>CSkillSystem::Init @0x141764a80 (skillslot.cpp:1839-1846) of the new MyPC: ApplySkillSet, which without a set
+    /// leaves a skill set mode the old field's mount left on (SendKeyTableMode7).</summary>
+    void InitOwnSkillSets() => OwnSkillSetApplied?.Invoke();
+
+    /// <summary>CSkillSystem::ApplySkillSet after the own skill sets changed: the quick slots take the current set, or leave
+    /// skill set mode (the HUD's <see cref="Ms2.Ui.Hud.MainPlayerInfoController.ApplySkillSet"/>).</summary>
+    public event Action OwnSkillSetApplied;
 
     /// <summary>The own ride on (the mount's row) and off (null), after PCBase::vfunc_120 / vfunc_121: MyPC's window
     /// closes and the riding status event follow it (mypc.cpp:3306-3317, :3365).</summary>

@@ -112,6 +112,15 @@ public sealed class UpperHudController : UiController
         if (Model.IsFeatureEnabled(Feature.GamePad)) ShowGamePadMode();
     }
 
+    /// <summary>UIUpperHudDialog::OnSkillSetMode @0x141357330 (uiupperhuddialog.cpp:602-612), the NotifySkillSetMode listener: the
+    /// keyboard and mouse mode buttons (bound with feature 0xaf, :285-297) are off while a skill set fills the quick slots.</summary>
+    public void OnSkillSetMode(bool mode)
+    {
+        if (Host?.Entity == null || !Model.IsFeatureEnabled(Feature.InputMode)) return;
+        if (Host.Child("m_keyboardMode") is { } kb) Host.Set(kb, "enabled", !mode);
+        if (Host.Child("m_mouseMode") is { } ms) Host.Set(ms, "enabled", !mode);
+    }
+
     /// <summary>UIUpperHudDialog::SetInputMode (uiupperhuddialog.cpp:641-647, called from FUN_14125bd20): updates the visible keyboard/mouse mode indicator.</summary>
     public void SetMouseMode(bool mouseMode)
     {

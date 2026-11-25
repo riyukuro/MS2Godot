@@ -106,7 +106,7 @@ public sealed class RideData
             HidePCInfo = (int)F(b, "hidePCInfo", 0),
             UseRidingUI = QueryBool((string)b.Attribute("useRidingUI"), false),
             ShowRideeNameTag = QueryBool((string)b.Attribute("showRideeNameTag"), false),
-            SkillSetId = (int)F(b, "skillSetID", 0),
+            SkillSetId = (int)U(b, "skillSetID"),     // XmlGetAttr as unsigned (unit_140781d80_ridingtable.cpp:357); a float loses the last digits
             LoopEffect = (string)b.Attribute("loopEffect") is { Length: > 0 } loop ? loop : null,
             NameTagOffsetY = F(b, "nameTagOffsetY", 0),
             HpBarOffsetY = F(b, "hpBarOffsetY", 0),
@@ -198,6 +198,10 @@ public sealed class RideData
         if (Is("false") || Is("no") || Is("0")) return false;
         return def;
     }
+
+    /// <summary>XmlGetAttr of an unsigned: the number, else 0.</summary>
+    internal static uint U(XElement e, string name) =>
+        uint.TryParse((string)e.Attribute(name), NumberStyles.None, CultureInfo.InvariantCulture, out var v) ? v : 0;
 
     internal static float F(XElement e, string name, float def) =>
         float.TryParse((string)e.Attribute(name), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : def;

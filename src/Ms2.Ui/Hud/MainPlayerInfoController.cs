@@ -217,9 +217,16 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         effects?.Update();
     }
 
-    /// <summary>RefreshQuickSlots (uimainplayerinfo.cpp:1071): m_slot.updateBindSlot(expand). The slot contents come
-    /// through DataBinding ("&lt;slot name&gt;.N" bindings) once the key table is wired.</summary>
-    public void RefreshQuickSlots() => Host.Invoke(Slot, "updateBindSlot", SlotExpand);
+    /// <summary>RefreshQuickSlots @0x1419f19c0 (uimainplayerinfo.cpp:1071-1090): m_slot.updateBindSlot(expand), then with a local
+    /// player whose skill system has a set, the set fills the slots again (<see cref="ApplySkillSetToQuickSlots"/>) and a set
+    /// without slotLock loads its layout. The slot contents come through DataBinding ("&lt;slot name&gt;.N" bindings).</summary>
+    public void RefreshQuickSlots()
+    {
+        Host.Invoke(Slot, "updateBindSlot", SlotExpand);
+        if (!Model.HasLocalPlayer || Model.SkillSets.Current is not { } set) return;
+        ApplySkillSetToQuickSlots(set);
+        if (!set.SlotLock) LoadKeySetting(set.KeySettingName);
+    }
 
     /// <summary>InitPlayerInfo (uimainplayerinfo.cpp:1394): m_playerInfo visible, then init(obj).</summary>
     void InitPlayerInfo()
@@ -388,7 +395,7 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         d.Add(("itemLock", 0));                                                 // FUN_14175cc60 returns 0
         d.Add(("shortcutKey", Model.Keys.GetKeyName(hotkey)));
         d.Add(("itemVIP", s.IsVipItem ? 1 : 0));
-        d.Add(("disableDrag", SlotKeys.ContainsKey(i)));                        // IsFixed (0) || HasKeyBinding (:1433)
+        d.Add(("disableDrag", IsFixedOrBound(i)));                              // IsFixed || HasKeyBinding (:1433)
         if (s.RechargeMax > 0) d.Add(("rechargeRemainCount", s.RechargeRemaining));
         d.Add(("totalTime", (double)total));                                    // ASSlot::SetTotalTime / SetRemainTime (:1066, :1060)
         d.Add(("remainTime", (double)remain));
@@ -403,7 +410,7 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
     /// <summary>
     /// SkillSlot::vfunc_0 (ITooltip, skillslot.cpp:716) through NotifyDragSlot::GetSlotTooltip: null for a name that is not
     /// a slot; an empty object when the slot gives none. A filled tooltip of a slot that is not fixed (IsFixed() == 0,
-    /// :725; no slot of this bar is) gets the right-click remove hint, SetEnablePuton(GetStringCommon(0x759)) = s_msg_rclick_putoff_qslot.
+    /// :725; a slotLock skill set fixes its slots) gets the right-click remove hint, SetEnablePuton(GetStringCommon(0x759)) = s_msg_rclick_putoff_qslot.
     /// - An item id whose item is gone: ASTooltip(player, 0x40, 2).FUN_1409e1770(id, GetItemRank(id)) (:722), GetItemRank
     ///   being the data's default rank (its rank field, 1 when that is 0).
     /// - An item that FUN_14053e460 allows: FUN_1409e0d40 over the item, the same flags.
@@ -432,7 +439,7 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
             var gone = new Items.ItemTooltip(Model, SlotTooltipFlags);
             int rank = Items.ItemTooltip.ItemRank(Model.Tables.Items, e.ItemId);
             if (!gone.FillById(e.ItemId, rank)) return null;
-            if (!IsFixed) gone.SetEnablePuton(removeHint);
+            if (!IsFixed(i)) gone.SetEnablePuton(removeHint);
             return gone.Data;
         }
         if (item != null && w.ItemData(item.Id) is { } data && data.IsQuickSlotUsable)
@@ -440,7 +447,7 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
             if (!Model.HasLocalPlayer) return null;
             var tip = new Items.ItemTooltip(Model, SlotTooltipFlags);
             if (!tip.Fill(InventoryController.ToItem(item, Model.Tables.Items))) return null;
-            if (!IsFixed) tip.SetEnablePuton(removeHint);
+            if (!IsFixed(i)) tip.SetEnablePuton(removeHint);
             return tip.Data;
         }
         uint skillId = s.EffectiveSkillId;
@@ -456,7 +463,7 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         int level = w.Jobs?.LevelData(skillId)?.Level ?? 1;
         var skillTip = Skills.SkillTooltip.Build(Model.Tables, player, skillId, level, SlotTooltipFlags, false);
         if (skillTip == null) return null;
-        if (!IsFixed) skillTip["enablePuton"] = removeHint;
+        if (!IsFixed(i)) skillTip["enablePuton"] = removeHint;
         return skillTip;
     }
 
@@ -597,7 +604,8 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
     /// posts from OnKeyTable mode 0 and 7 (keytable.cpp:285-370): setShortkeyPageNumber(cur + 1), then
     /// UpdateQuickSlots @0x1419f2560 (:1209) forced when the page changed. It walks the slots in the order 4..7, 0..3, 8..24: a
     /// slot whose page entry is empty empties (vfunc_11) and is pushed (vfunc_10); a slot whose entry equals its own is skipped
-    /// unless forced; else it takes the entry and is pushed. STILL-OPEN: mode 7's GetLocked early return.
+    /// unless forced; else it takes the entry and is pushed. A mode 7 while the key table is locked (a skill set) takes no pages
+    /// and posts nothing (<see cref="Ms2.Net.Packets.ServerKeyTable.Apply"/>, keytable.cpp:355).
     /// </summary>
     public void OnShortkeyPageNotify(int prev, int cur)
     {
@@ -610,7 +618,8 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         {
             var e = t.Entry(t.CurrentPage, i);
             if (!e.IsEmpty && !force && e.Equals(slotFields[i])) continue;
-            slotFields[i] = e;
+            if (e.IsEmpty) ClearSlot(i);                                        // vfunc_11
+            else slotFields[i] = e;
             Host.Push(SlotBag + "." + i);
         }
     }
@@ -622,6 +631,162 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
     {
         if (Model.ServerKeys is { PageNotified: true } t) OnShortkeyPageNotify(SlotFieldsPage, t.CurrentPage);
     }
+
+    // ---- the skill set (a mount's skill bar) -------------------------------------------------------------------------------
+
+    /// <summary>
+    /// CSkillSystem::ApplySkillSet @0x1417683d0 (skillslot.cpp:2624) of the own skill system's current set
+    /// (<see cref="UiModel.SkillSets"/>): without a set the key table leaves skill set mode (<see cref="ReleaseSkillSet"/>);
+    /// else the set fills the quick slots (<see cref="ApplySkillSetToQuickSlots"/>) and a set without slotLock loads the
+    /// player's own layout of it (<see cref="LoadKeySetting"/>). MyPC::vfunc_120 / vfunc_121 call it after AddSkillSet /
+    /// RemoveSkillSet of the ridee's skillSetID (mypc.cpp:3301-3305, :3354-3358).
+    /// </summary>
+    public void ApplySkillSet()
+    {
+        var set = Model.SkillSets.Current;
+        if (set == null) { ReleaseSkillSet(); return; }
+        ApplySkillSetToQuickSlots(set);
+        if (!set.SlotLock) LoadKeySetting(set.KeySettingName);
+    }
+
+    /// <summary>
+    /// CKeyTable::ApplySkillSetToQuickSlots @0x14142e8c0 (keytable.cpp:1780-1832): the key table is locked (m_nLocked 1: key sends
+    /// and the server's mode 7 pages are ignored) and its pages emptied, keeping their count; without the current page nothing
+    /// more. NotifySkillSetMode(true) turns the page buttons off (<see cref="OnSkillSetMode"/>). Then the slots in the update
+    /// order 4..7, 0..3, 8..24 each empty (vfunc_11) and take the set's next skill id, else its next item id as the item's skill
+    /// and the id (uid 0), both written to the page too. An item id without item data writes an empty entry and the slot is
+    /// left as it is (the loop continues before SetFixed and vfunc_10). With slotLock the slot is fixed, so it can not be
+    /// dragged on or cleared; then it is pushed (vfunc_10). A slot past the set's ids stays empty, fixed with slotLock.
+    /// </summary>
+    public void ApplySkillSetToQuickSlots(Skills.SkillSet set)
+    {
+        if (set == null || Model.ServerKeys is not { } t) return;
+        t.Locked = true;
+        Model.Keys.Locked = true;
+        t.ClearPages();
+        if (!t.HasPage(t.CurrentPage)) return;
+        OnSkillSetMode(true);
+        if (Host?.Entity == null) return;                                       // FindMainPlayerInfo(0x4e5f)
+        SlotFieldsPage = t.CurrentPage;
+        var w = World();
+        int skill = 0, item = 0;
+        foreach (int i in UpdateOrder)
+        {
+            ClearSlot(i);                                                       // vfunc_11
+            if (skill < set.SkillIds.Count)
+            {
+                var e = new Ms2.Net.Packets.QuickSlotEntry(set.SkillIds[skill++], 0, 0);
+                t.SetEntry(t.CurrentPage, i, e);
+                slotFields[i] = e;
+            }
+            else if (item < set.ItemIds.Count)
+            {
+                int itemId = set.ItemIds[item++];                               // FUN_14142f870 keeps the id
+                if (w.ItemData(itemId) is not { } d)
+                {
+                    t.SetEntry(t.CurrentPage, i, default);
+                    continue;
+                }
+                var e = new Ms2.Net.Packets.QuickSlotEntry(d.SkillId, itemId, 0);
+                t.SetEntry(t.CurrentPage, i, e);
+                slotFields[i] = e;
+            }
+            if (set.SlotLock) fixedSlots[i] = true;                             // SetFixed(1)
+            Host.Push(SlotBag + "." + i);                                       // vfunc_10
+        }
+    }
+
+    /// <summary>
+    /// CKeyTable::SendKeyTableMode7 @0x14142f700 (keytable.cpp:2021-2034): nothing unless locked; the quick slots empty
+    /// (UIMainPlayerInfo::ClearQuickSlots @0x1419f2a90, vfunc_11 in the update order), the lock is lifted, NotifySkillSetMode(false)
+    /// turns the page buttons on, the changed keys go out (SendKeysToServer), then KeyTable mode 7 asks the server for the
+    /// pages, whose mode 7 answer fills the slots again (<see cref="OnShortkeyPageNotify"/>).
+    /// </summary>
+    public void ReleaseSkillSet()
+    {
+        if (Model.ServerKeys is not { Locked: true } t) return;
+        if (Host?.Entity != null)
+            foreach (int i in UpdateOrder)
+            {
+                ClearSlot(i);
+                Host.Push(SlotBag + "." + i);
+            }
+        t.Locked = false;
+        Model.Keys.Locked = false;
+        OnSkillSetMode(false);
+        Model.Keys.SendKeysToServer();
+        Send(new Ms2.Net.Packets.KeyTableUnlockRequest());
+    }
+
+    /// <summary>
+    /// The NotifySkillSetMode post's listeners: UIMainPlayerInfo::OnSkillSetModeNotify @0x1419f1580 (uimainplayerinfo.cpp:1008)
+    /// is EnablePageButton(!mode) (:1238, m_30.enablePageButton), and <see cref="SkillSetModeChanged"/> for the others
+    /// (UIUpperHudDialog::OnSkillSetMode, uiupperhuddialog.cpp:602).
+    /// </summary>
+    void OnSkillSetMode(bool mode)
+    {
+        if (Host?.Entity != null) Host.Invoke("enablePageButton", !mode);
+        SkillSetModeChanged?.Invoke(mode);
+    }
+
+    /// <summary>NotifySkillSetMode(mode) for the other listeners.</summary>
+    public event Action<bool> SkillSetModeChanged;
+
+    /// <summary>The key setting file of a set: "keySetting_{name}.xml" in the character folder (keytable.cpp:2087, :2098).</summary>
+    public static string KeySettingFile(string name) => $"keySetting_{name}.xml";
+
+    /// <summary>
+    /// CKeyTable::SaveKeySetting @0x14142f8b0 (keytable.cpp:2064-2091): the 25 slots' own item and skill ids in index order as
+    /// &lt;ms2&gt;&lt;setting index itemId skillId/&gt; (FUN_14142f830 keeps the item id) in the character folder. Nothing without the
+    /// slot bar or a folder.
+    /// </summary>
+    public void SaveKeySetting(string name)
+    {
+        if (Host?.Entity == null || Host.Folder == null) return;
+        var root = new System.Xml.Linq.XElement("ms2");
+        for (int i = 0; i < SlotCount; i++)
+        {
+            var e = Shown(i);
+            root.Add(new System.Xml.Linq.XElement("setting", new System.Xml.Linq.XAttribute("index", i),
+                new System.Xml.Linq.XAttribute("itemId", (uint)e.ItemId), new System.Xml.Linq.XAttribute("skillId", (uint)e.SkillId)));
+        }
+        var doc = new System.Xml.Linq.XDocument(new System.Xml.Linq.XDeclaration("1.0", "utf-8", null), root);
+        Host.Folder.Write(KeySettingFile(name), doc.Declaration + "\n" + root);
+    }
+
+    /// <summary>
+    /// CKeyTable::LoadKeySetting @0x14142fc10 (keytable.cpp:2094-2145): with the file and its &lt;ms2&gt; root the pages are emptied
+    /// (their count kept); each &lt;setting&gt; with an index 0..25 empties its slot (vfunc_11; 25 has no slot), and one with an
+    /// item or skill id sets it on the current page (SetQuickSlotEntry, uid 0) and on the slot, which is pushed (vfunc_10).
+    /// </summary>
+    public void LoadKeySetting(string name)
+    {
+        if (Host?.Entity == null || Model.ServerKeys is not { } t) return;
+        var text = Host.Folder?.Read(KeySettingFile(name));
+        if (text == null) return;
+        System.Xml.Linq.XElement root;
+        try { root = System.Xml.Linq.XDocument.Parse(text).Root; }
+        catch (System.Xml.XmlException) { return; }                           // TiXmlDocument::LoadFile fails
+        if (root?.Name != "ms2") return;
+        t.ClearPages();
+        foreach (var n in root.Elements("setting"))
+        {
+            int index = Attr(n, "index", -1);
+            int itemId = Attr(n, "itemId", 0), skillId = Attr(n, "skillId", 0);
+            if (index < 0 || index >= SlotCount) continue;                    // above 25, or 25 (no slot)
+            ClearSlot(index);                                                   // vfunc_11
+            if (itemId == 0 && skillId == 0) continue;
+            var e = new Ms2.Net.Packets.QuickSlotEntry(skillId, itemId, 0);
+            t.SetEntry(t.CurrentPage, index, e);
+            slotFields[index] = e;
+            Host.Push(SlotBag + "." + index);                                   // vfunc_10
+        }
+    }
+
+    // GetIntAttr / GetUIntAttr: the attribute's number, else the default
+    static int Attr(System.Xml.Linq.XElement e, string name, int def) =>
+        long.TryParse((string)e.Attribute(name), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var v)
+            ? unchecked((int)v) : def;
 
     /// <summary>GetHotkey(0) (skillslot.cpp:1235); GetHotkeyText (:1229) is its key name.</summary>
     int Hotkey(int slot)
@@ -695,12 +860,22 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
         name != null && name.StartsWith(SlotBag + ".", StringComparison.Ordinal)
         && int.TryParse(name.AsSpan(SlotBag.Length + 1), System.Globalization.NumberStyles.None, null, out var i) && i < SlotCount ? i : -1;
 
-    /// <summary>SkillSlot::IsFixed (m_bFixed): 0 for every slot of this bar; a slot tooltip's remove hint and
+    /// <summary>SkillSlot::IsFixed / SetFixed (m_bFixed, skillslot.cpp:387-396): set on the slots a slotLock skill set fills
+    /// (<see cref="ApplySkillSetToQuickSlots"/>), cleared with the slot (vfunc_11, :497); a slot tooltip's remove hint and
     /// FUN_141761990 test it (skillslot.cpp:725, :1433).</summary>
-    static bool IsFixed => false;
+    readonly bool[] fixedSlots = new bool[SlotCount];
+
+    bool IsFixed(int slot) => fixedSlots[slot];
 
     /// <summary>SkillSlot::FUN_141761990 (skillslot.cpp:1433): IsFixed or a key bound slot (22..24).</summary>
-    static bool IsFixedOrBound(int slot) => IsFixed || SlotKeys.ContainsKey(slot);
+    bool IsFixedOrBound(int slot) => IsFixed(slot) || SlotKeys.ContainsKey(slot);
+
+    /// <summary>SkillSlot::vfunc_11 @0x14175d3f0 (skillslot.cpp:491): the slot's skill, item and fixed flag cleared.</summary>
+    void ClearSlot(int i)
+    {
+        slotFields[i] = default;
+        fixedSlots[i] = false;
+    }
 
     /// <summary>A SkillSlot of the bar.</summary>
     public bool IsDragSlot(string name) => SlotIndex(name) >= 0;
@@ -795,7 +970,7 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
             int found = t.FindQuickSlotBySkillAndItem(e.SkillId, e.ItemId, e.ItemUid);
             if (found != -1) t.SetEntry(t.CurrentPage, found, default);
         }
-        slotFields[i] = default;                                                // vfunc_11
+        ClearSlot(i);                                                           // vfunc_11
         Host.Push(SlotBag + "." + i);
     }
 
@@ -849,8 +1024,10 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
     public event Action<int> QuickSlotPageChanged;
 
     /// <summary>FUN_140930d70 (uimainplayerinfo.cpp:1488-1489, 1504-1505; unit_14092f420_accountsessionstate.cpp:865-871):
-    /// true when the local PC is in skill-set mode, blocking quick-slot page changes. STILL-OPEN: skill-set state is not ported.</summary>
+    /// true when the local PC's skill system has a skill set (<see cref="UiModel.SkillSets"/>), blocking quick-slot page changes.</summary>
     public Func<bool> HasSkillSet;
+
+    bool InSkillSet() => HasSkillSet != null ? HasSkillSet() : Model.SkillSets.Current != null;
 
     /// <summary>Syncs the displayed 1-based page number from <see cref="UiModel.ServerKeys"/> (SetShortkeyPageNumber, uimainplayerinfo.cpp:1202).</summary>
     public void SyncQuickSlotPage()
@@ -866,7 +1043,7 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
             case "notifySlotUse": return SlotUse(args);
             case "onNextPage":
                 // UIMainPlayerInfo::OnNextPage (@0x1419f36c0, uimainplayerinfo.cpp:1502-1513)
-                if (HasSkillSet?.Invoke() == true) return true;
+                if (InSkillSet()) return true;
                 if (Model.ServerKeys is { Loaded: true } nextTable)
                 {
                     if (nextTable.PageCount == 0) return true;
@@ -880,7 +1057,7 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
                 return true;
             case "onPrevPage":
                 // UIMainPlayerInfo::OnPrevPage (@0x1419f3630, uimainplayerinfo.cpp:1486-1499)
-                if (HasSkillSet?.Invoke() == true) return true;
+                if (InSkillSet()) return true;
                 if (Model.ServerKeys is { Loaded: true } prevTable)
                 {
                     if (prevTable.PageCount == 0) return true;

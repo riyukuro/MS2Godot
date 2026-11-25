@@ -62,6 +62,15 @@ public sealed class ServerKeyTable {
         if (e.IsEmpty) pages[page].Remove(slot); else pages[page][slot] = e;
     }
 
+    /// <summary>m_quickSlots.RemoveAll() then SetCount(the old count, -1) (CKeyTable::ApplySkillSetToQuickSlots /
+    /// LoadKeySetting, keytable.cpp:1784-1786, :2111-2113): the same number of pages, each empty.</summary>
+    public void ClearPages() {
+        foreach (var p in pages) p.Clear();
+    }
+
+    /// <summary>GetQuickSlotPage(page) is not null: the page exists.</summary>
+    public bool HasPage(int page) => page >= 0 && page < pages.Count;
+
     /// <summary>CKeyTable::FindQuickSlotBySkillAndItemUid @0x14142e090 (client/ms2/keytable.cpp): the slot of the current page that
     /// holds the skill and item uid, -1 when none does, 0 when the page does not exist. The client walks a CAtlMap; with the
     /// same entry on two slots the one returned may differ.</summary>

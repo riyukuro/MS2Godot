@@ -566,6 +566,152 @@ public class HudTests
         Assert.That((c.ShownEntry(3), c.ShownEntry(5)), Is.EqualTo((new QuickSlotEntry(10500003, 0, 0), default(QuickSlotEntry))));
     }
 
+    sealed class Folder : ICharacterFolder
+    {
+        public readonly Dictionary<string, string> Files = new();
+        public string Read(string file) => Files.GetValueOrDefault(file);
+        public void Write(string file, string text) => Files[file] = text;
+    }
+
+    static ServerKeyTable TwoPages()
+    {
+        var t = new ServerKeyTable();
+        t.Apply(new Maple2.PacketLib.Tools.ByteReader(ServerKeyTable.Write(0, false, Array.Empty<KeyBinding>(), 0,
+            new IReadOnlyList<(int, QuickSlotEntry)>[] {
+                new[] { (3, new QuickSlotEntry(10500001, 0, 0)), (5, new QuickSlotEntry(10500002, 0, 0)) },
+                new[] { (3, new QuickSlotEntry(10500003, 0, 0)) } })));
+        return t;
+    }
+
+    [Test]
+    public void AMountsSkillSetFillsTheQuickSlotsUntilTheRideOff()
+    {
+        // MyPC::vfunc_120 (mypc.cpp:3301-3305): AddSkillSet + CSkillSystem::ApplySkillSet; CKeyTable::ApplySkillSetToQuickSlots
+        // (keytable.cpp:1780-1832) locks the key table, empties the pages and fills slots 4..7, 0..3, 8.. with the set's skills,
+        // then its items (an item without data leaves its slot empty); slotLock fixes them. MyPC::vfunc_121's RemoveSkillSet +
+        // ApplySkillSet leaves the mode: SendKeyTableMode7 (keytable.cpp:2021-2034) empties the slots and sends mode 7
+        var m = Model();
+        var t = TwoPages();
+        m.Keys = new KeyTable(packs, "en"); m.ServerKeys = t; m.Keys.Apply(t);
+        var table = Ms2.Ui.Skills.SkillSetTable.Load(System.Xml.Linq.XDocument.Parse(
+            """<ms2><skillSet id="99" skillIDs="10500010,10500011" skillLevels="1,1" itemIDs="777,778" /></ms2>"""), _ => true);
+        var item = new Ms2.Ui.Items.ItemData { SkillId = 10500020 };
+        m.SkillSets = new Ms2.Ui.Skills.SkillSetList();
+        var c = new MainPlayerInfoController
+        {
+            SlotWorld = () => new Ms2.Ui.Skills.SlotWorld { Tables = m.Tables.Skills, HasPc = true, ItemData = id => id == 777 ? item : null,
+                SkillSetActive = m.SkillSets.Current != null },
+        };
+        var sent = new List<Ms2.Net.Wire.IOutPacket>();
+        c.Send = sent.Add;
+        var modes = new List<bool>();
+        c.SkillSetModeChanged += modes.Add;
+        var h = Load(c, m);
+        Assert.That(c.ShownEntry(3), Is.EqualTo(new QuickSlotEntry(10500001, 0, 0)));
+
+        m.SkillSets.Add(99, table);
+        c.ApplySkillSet();
+        Assert.That((t.Locked, m.Keys.Locked), Is.EqualTo((true, true)), "m_nLocked 1: no key sends, no mode 7 pages");
+        Assert.That(modes, Is.EqualTo(new[] { true }), "NotifySkillSetMode(true)");
+        Assert.That(c.ShownEntry(4), Is.EqualTo(new QuickSlotEntry(10500010, 0, 0)), "the first slot of the order is 4");
+        Assert.That(c.ShownEntry(5), Is.EqualTo(new QuickSlotEntry(10500011, 0, 0)));
+        Assert.That(c.ShownEntry(6), Is.EqualTo(new QuickSlotEntry(10500020, 777, 0)), "an item: its skill and id, uid 0");
+        Assert.That(c.ShownEntry(7), Is.EqualTo(default(QuickSlotEntry)), "an item without data: empty");
+        Assert.That(c.ShownEntry(3), Is.EqualTo(default(QuickSlotEntry)), "the player's own slots empty");
+        Assert.That((t.Entry(0, 4), t.Entry(0, 6), t.Entry(0, 3), t.Entry(1, 3)),
+            Is.EqualTo((new QuickSlotEntry(10500010, 0, 0), new QuickSlotEntry(10500020, 777, 0), default(QuickSlotEntry), default(QuickSlotEntry))),
+            "the pages are emptied, keeping their count, and the current page holds the set");
+        Assert.That(t.PageCount, Is.EqualTo(2));
+
+        c.RemoveSlot(4);                                                     // a fixed slot (FUN_141761990): nothing
+        Assert.That(c.ShownEntry(4), Is.EqualTo(new QuickSlotEntry(10500010, 0, 0)));
+        c.RemoveSlot(0);                                                     // past the set's ids: empty but fixed too
+        c.SlotDroppedOn(MainPlayerInfoController.SlotBag + ".0", MainPlayerInfoController.SlotBag + ".4", c);
+        Assert.That(c.ShownEntry(0), Is.EqualTo(default(QuickSlotEntry)), "a fixed slot takes no drop");
+        Assert.That(sent, Is.Empty);
+
+        c.OnCallback("onNextPage", Array.Empty<object>());                   // FUN_140930d70: no page change in a set
+        Assert.That(t.CurrentPage, Is.Zero);
+
+        // the server's mode 7 while locked (keytable.cpp:355): no pages, no notify
+        Assert.That(t.Apply(new Maple2.PacketLib.Tools.ByteReader(ServerKeyTable.Write(7, false, null, 0,
+            new IReadOnlyList<(int, QuickSlotEntry)>[] { new[] { (3, new QuickSlotEntry(10500001, 0, 0)) } }))), Is.EqualTo(7));
+        Assert.That(t.PageNotified, Is.False);
+        Assert.That(t.Entry(0, 4), Is.EqualTo(new QuickSlotEntry(10500010, 0, 0)));
+
+        m.SkillSets.Remove(99, table);
+        c.ApplySkillSet();
+        Assert.That((t.Locked, m.Keys.Locked), Is.EqualTo((false, false)));
+        Assert.That(modes, Is.EqualTo(new[] { true, false }));
+        Assert.That(sent, Is.EqualTo(new Ms2.Net.Wire.IOutPacket[] { new KeyTableUnlockRequest() }), "mode 7 asks for the pages");
+        Assert.That(Enumerable.Range(0, 25).Select(c.ShownEntry), Is.All.EqualTo(default(QuickSlotEntry)), "ClearQuickSlots");
+        c.ApplySkillSet();
+        Assert.That(sent, Has.Count.EqualTo(1), "not locked: a second release sends nothing");
+
+        // the server's answer refills the player's own slots
+        t.Apply(new Maple2.PacketLib.Tools.ByteReader(ServerKeyTable.Write(7, false, null, 0,
+            new IReadOnlyList<(int, QuickSlotEntry)>[] { new[] { (3, new QuickSlotEntry(10500001, 0, 0)) }, Array.Empty<(int, QuickSlotEntry)>() })));
+        c.OnKeyTable();
+        Assert.That((c.ShownEntry(3), c.ShownEntry(4)), Is.EqualTo((new QuickSlotEntry(10500001, 0, 0), default(QuickSlotEntry))));
+        c.RemoveSlot(3);                                                     // not fixed any more: the right click sends mode 5
+        Assert.That(sent, Has.Count.EqualTo(2));
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
+    [Test]
+    public void AnOpenSkillSetKeepsThePlayersLayoutInTheCharacterFolder()
+    {
+        // a set without slotLock: CSkillSystem::AddSkillSet / RemoveSkillSet save the current layout
+        // (CKeyTable::SaveKeySetting, keytable.cpp:2064-2091, keySetting_SkillSet{id}_{version}.xml) and ApplySkillSet loads it
+        // after the set fills the slots (LoadKeySetting, :2094-2145)
+        var m = Model();
+        var t = TwoPages();
+        m.Keys = new KeyTable(packs, "en"); m.ServerKeys = t; m.Keys.Apply(t);
+        var table = Ms2.Ui.Skills.SkillSetTable.Load(System.Xml.Linq.XDocument.Parse(
+            """<ms2><skillSet id="5" version="5" slotLock="0" skillIDs="10500001,10500002" skillLevels="1,1" /></ms2>"""), _ => true);
+        var c = new MainPlayerInfoController
+        {
+            SlotWorld = () => new Ms2.Ui.Skills.SlotWorld { Tables = m.Tables.Skills, HasPc = true, SkillSetActive = m.SkillSets.Current != null },
+        };
+        m.SkillSets = new Ms2.Ui.Skills.SkillSetList { SaveKeySetting = c.SaveKeySetting };
+        var sent = new List<Ms2.Net.Wire.IOutPacket>();
+        c.Send = sent.Add;
+        var h = Load(c, m);
+        var folder = new Folder();
+        h.Folder = folder;
+        string s4 = MainPlayerInfoController.SlotBag + ".4", s5 = MainPlayerInfoController.SlotBag + ".5";
+
+        m.SkillSets.Add(5, table);
+        c.ApplySkillSet();
+        Assert.That((c.ShownEntry(4), c.ShownEntry(5)), Is.EqualTo((new QuickSlotEntry(10500001, 0, 0), new QuickSlotEntry(10500002, 0, 0))));
+        c.SlotDroppedOn(s5, s4, c);                                           // not fixed: the swap writes the page, sends nothing
+        Assert.That(sent, Is.Empty);
+        Assert.That((c.ShownEntry(4), c.ShownEntry(5)), Is.EqualTo((new QuickSlotEntry(10500002, 0, 0), new QuickSlotEntry(10500001, 0, 0))));
+
+        m.SkillSets.Remove(5, table);
+        Assert.That(folder.Files.Keys, Is.EqualTo(new[] { "keySetting_SkillSet5_5.xml" }));
+        var settings = System.Xml.Linq.XDocument.Parse(folder.Files["keySetting_SkillSet5_5.xml"]).Root;
+        Assert.That(settings.Name.LocalName, Is.EqualTo("ms2"));
+        Assert.That(settings.Elements("setting").Count(), Is.EqualTo(25));
+        var slot4 = settings.Elements("setting").Single(e => (int)e.Attribute("index") == 4);
+        Assert.That(((int)slot4.Attribute("skillId"), (int)slot4.Attribute("itemId")), Is.EqualTo((10500002, 0)));
+        c.ApplySkillSet();
+        Assert.That(sent, Is.EqualTo(new Ms2.Net.Wire.IOutPacket[] { new KeyTableUnlockRequest() }));
+
+        m.SkillSets.Add(5, table);
+        c.ApplySkillSet();
+        Assert.That((c.ShownEntry(4), c.ShownEntry(5)), Is.EqualTo((new QuickSlotEntry(10500002, 0, 0), new QuickSlotEntry(10500001, 0, 0))),
+            "the saved layout comes back");
+        Assert.That((t.Entry(0, 4), t.Entry(0, 5)), Is.EqualTo((new QuickSlotEntry(10500002, 0, 0), new QuickSlotEntry(10500001, 0, 0))));
+
+        folder.Files["keySetting_SkillSet5_5.xml"] = "<ms2><setting index=\"25\" skillId=\"1\"/><setting index=\"7\" skillId=\"10500012\"/><setting index=\"4\"/></ms2>";
+        c.ApplySkillSet();
+        Assert.That((c.ShownEntry(4), c.ShownEntry(5), c.ShownEntry(7)),
+            Is.EqualTo((default(QuickSlotEntry), new QuickSlotEntry(10500002, 0, 0), new QuickSlotEntry(10500012, 0, 0))),
+            "an empty setting empties its slot; a slot the file does not name keeps the set's entry; 25 has no slot");
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
     sealed class Bag(Dictionary<string, long> cells) : IInvenSlotOwner
     {
         public readonly List<string> Refreshed = new();

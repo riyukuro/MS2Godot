@@ -109,6 +109,9 @@ public sealed class UiModel
     /// <summary>The server's KeyTable packet state (Ms2.Net): the bindings applied to <see cref="Keys"/> and the quick slot pages
     /// with the current page. Null = none received.</summary>
     public Ms2.Net.Packets.ServerKeyTable ServerKeys;
+    /// <summary>The own skill system's skill sets (CSkillSystem m_lstSkillSets / m_spSkillSet): a mount's skillSetID while it
+    /// is ridden.</summary>
+    public Skills.SkillSetList SkillSets = new();
     /// <summary>The client's feature switches (CFeatureManager::IsFeatureEnabled id) the HUD code tests.</summary>
     public readonly HashSet<int> Features = new() { Feature.SearchTooltip, Feature.InputMode, Feature.GamePad };
     /// <summary>The server clock the upper HUD shows (GetServerTime); null = local time.</summary>

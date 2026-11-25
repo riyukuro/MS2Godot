@@ -44,9 +44,9 @@ public sealed class JobSkill
 
 /// <summary>
 /// The local player's JobSystem (guess/jobsystem.cpp) as JobSystemCli (client/ms2/jobsystemcli.cpp) reads it: the rank, the
-/// job and the skills of the Job / FieldAddUser stream (JobSystem::vfunc_7 @0x140638f10). The skill set (CSkillSet), the
-/// skill tier options (CSkillTierOptionManager, PC::GetSkillTree) and the lapenshard levels have no feed here; they are
-/// the hooks <see cref="SkillSetLevel"/>, <see cref="TierLevel"/>, <see cref="LapenshardLevel"/> (0 = none).
+/// job and the skills of the Job / FieldAddUser stream (JobSystem::vfunc_7 @0x140638f10). The skill set (CSkillSystem::GetSkillSet),
+/// the skill tier options (CSkillTierOptionManager, PC::GetSkillTree) and the lapenshard levels have no feed here; they are
+/// the hooks <see cref="SkillSet"/>, <see cref="TierLevel"/>, <see cref="LapenshardLevel"/> (null / 0 = none).
 /// </summary>
 public sealed class JobSystem
 {
@@ -59,8 +59,11 @@ public sealed class JobSystem
     public JobData Job { get; private set; }
     public int TotalPoint { get; private set; }
 
-    /// <summary>CSkillSet::GetSkillLevel of the player's skill system (0 = not in the set).</summary>
-    public Func<uint, ushort> SkillSetLevel = _ => 0;
+    /// <summary>CSkillSystem::GetSkillSet of the player's skill system (null = none).</summary>
+    public Func<SkillSet> SkillSet = () => null;
+
+    /// <summary>CSkillSet::GetSkillLevel of the current set (0 = no set, or not in it).</summary>
+    ushort SkillSetLevel(uint id) => SkillSet() is { } s ? (ushort)s.GetSkillLevel((int)id) : (ushort)0;
     /// <summary>CSkillTierOptionManager::GetSkillLevel (skilltieroptionmanager.cpp:133).</summary>
     public Func<uint, ushort> TierLevel = _ => 0;
     /// <summary>MyPC::GetLapenshardSkillLevel, read with feature 0xd3.</summary>
@@ -197,7 +200,7 @@ public sealed class JobSystem
     /// <summary>vfunc_2 after its kind short cut (jobsystemcli.cpp:88-113; GMS2 @0x14057ccf2 on).</summary>
     bool LearnedPastKind(uint id)
     {
-        if (SkillSetLevel(id) != 0) return true;
+        if (SkillSet()?.HasSkill((int)id) == true) return true;            // jobsystemcli.cpp:91-95
         if (TierLevel(id) > 0) return true;
         if (IsFeatureEnabled(0xd3) && LapenshardLevel(id) > 0) return true;
         if (Job != null && Job.FindSubSkill(id) is { } parent && TierLevel(parent.SkillId) > 0) return true;

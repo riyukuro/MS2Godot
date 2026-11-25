@@ -942,6 +942,10 @@ public sealed class GameTables
     FishTable fish;
     TitleTags titleTags;
     Ms2.Ui.Skills.MagicPathTable magicPaths;
+    /// <summary>CSkillSetTable (Table/skillSet.xml): the skill sets a mount (and other content) puts on the quick slots.</summary>
+    public Ms2.Ui.Skills.SkillSetTable SkillSets => skillSets ??= packs == null ? new Ms2.Ui.Skills.SkillSetTable() : Ms2.Ui.Skills.SkillSetTable.Load(packs);
+    Ms2.Ui.Skills.SkillSetTable skillSets;
+
     /// <summary>The magic paths (LoadMagicPath, Table/magicPath.xml, no feature filter), read on first use.</summary>
     public Ms2.Ui.Skills.MagicPathTable MagicPaths => magicPaths ??= packs == null ? Ms2.Ui.Skills.MagicPathTable.Empty
         : new Ms2.Ui.Skills.MagicPathTable(Xml("table/magicpath.xml"));
