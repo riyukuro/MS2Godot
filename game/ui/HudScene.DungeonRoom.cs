@@ -143,6 +143,42 @@ public partial class HudScene
     /// <summary>Scripted runs: the open key (action 400037).</summary>
     public void DungeonRoomKey() => ToggleDungeonRoom();
 
+    /// <summary>Scripted runs: the world map's dungeon icon (the movie's onClickSearchInfoIcon with the kind "dungeon", uiworldmapdialog.cpp:686-704)
+    /// on <paramref name="room"/>. False when the map did not open.</summary>
+    public bool WorldMapDungeonIcon(uint room)
+    {
+        if (!WorldMapOpen) OpenWorldMap();
+        if (worldMapSide == null || worldMap == null) return false;
+        worldMapSide.OnCallback("onClickSearchInfoIcon", new object[] { "dungeon", (double)room });
+        return true;
+    }
+
+    /// <summary>Scripted runs: closes the world map.</summary>
+    public void CloseWorldMapLive() { if (WorldMapOpen) worldMapSide.Close(); }
+
+    /// <summary>Scripted runs: a click on the first minimap mark with a type 8 portal (MinimapController.ClickMark). The text names the
+    /// portal marks the field has; null when the minimap or such a mark is missing.</summary>
+    public string MinimapType8Click()
+    {
+        if (minimapSide == null) return null;
+        var marks = minimapSide.Marks;
+        string all = string.Join(",", marks.Where(m => m.HasPortal).Select(m => $"{m.PortalId}:t{m.PortalType}"));
+        var mark = marks.FirstOrDefault(m => m.HasPortal && m.PortalType == 8);
+        if (mark == null) return $"no type 8 mark; portal marks [{all}]";
+        minimapSide.ClickMark(mark);
+        return $"clicked portal {mark.PortalId} (feature 0x1a {minimapSide.Model.IsFeatureEnabled(MinimapController.DungeonRoomFeature)}); portal marks [{all}]";
+    }
+
+    /// <summary>Scripted runs: the guild window opened and its dungeon button pressed (the movie's onOpenDungeonDialog). False when the
+    /// window did not open.</summary>
+    public bool GuildDungeonButton()
+    {
+        OpenGuild();
+        if (guild == null || !GuildOpen) return false;
+        guild.OnCallback("onOpenDungeonDialog", System.Array.Empty<object>());
+        return true;
+    }
+
     /// <summary>Scripted runs: the state of the window, for the log.</summary>
     public string DungeonRoomText() => !DungeonRoomOpen
         ? "closed"

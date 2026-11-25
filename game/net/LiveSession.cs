@@ -4329,6 +4329,37 @@ public partial class LiveSession : Node
                 await Step("portal_type8", () => pl.OpenDungeonRoomDialog?.Invoke(dPortal));
                 await Step("leave_close2", () => pl.LeavePortal());
             }
+            else if (pp[0] == "dungeonopen")
+            {
+                // MS2_LIVE_PARTY "dungeonopen:<room>": the three openers that are not portals, one shot and one log line each (the line
+                // carries the window's group): the world map's dungeon icon on the room, a click on a type 8 portal mark of the minimap
+                // (the field must have one; MS2_LIVE_MOVES warps there first) and the guild window's dungeon button.
+                uint oRoom = pp.Length > 1 && uint.TryParse(pp[1], out var orr) ? orr : 0;
+                async Task Open(string what, Func<string> act)
+                {
+                    string note = "";
+                    try { note = act() ?? ""; }
+                    catch (Exception e) { GD.Print($"live: party {role}: {what}: threw {e}"); }
+                    GD.Print($"live: party {role}: {what}: {note} -> at once {ph.DungeonRoomText()}");   // before any frame: a server may drop the session
+                    await Frames(4);
+                    PShot(what + "_early");
+                    await Frames(56);
+                    GD.Print($"live: party {role}: {what}: {note} -> {ph.DungeonRoomText()}");
+                    PShot(what);
+                    await Frames(180);
+                    GD.Print($"live: party {role}: {what}: 3 s later -> {ph.DungeonRoomText()}");
+                }
+                string Field() => $"field {pl.FieldId}";
+                int wantField = int.TryParse(System.Environment.GetEnvironmentVariable("MS2_LIVE_DUNGEON_FIELD"), out var wf) ? wf : 0;
+                if (wantField != 0) { await Until(() => pl.FieldId == wantField, 60 * 60); await Frames(300); }   // the warp has landed and the minimap is built
+                GD.Print($"live: party {role}: dungeonopen start {Field()}");
+                await Open("worldmap_icon", () => ph.WorldMapDungeonIcon(oRoom) ? "icon clicked" : "world map did not open");
+                ph.CloseWorldMapLive();
+                await Open("minimap_type8", () => ph.MinimapType8Click());
+                ph.DungeonRoomKey();                                   // closes the window the click opened
+                await Frames(60);
+                await Open("guild_button", () => ph.GuildDungeonButton() ? "button pressed" : "guild window did not open");
+            }
             else if (joinLink)
             {
                 // MS2_LIVE_PARTY "joinlink:<helper|member>:<room>": one client clicks the chat link "joinPartyDungeonHelper" or
