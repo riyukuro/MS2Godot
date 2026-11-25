@@ -994,6 +994,9 @@ public partial class LiveSession : Node
     public void SendChat(Ms2.Net.Wire.IOutPacket packet) => Send(packet);
     /// <summary>The field's live npcs (by FieldAddNpc), for the talk; empty before the field is built.</summary>
     public IEnumerable<FieldNpcs.Placed> TalkNpcs => remote?.TalkNpcs ?? Enumerable.Empty<FieldNpcs.Placed>();
+    /// <summary>The talk key's nearest npc search over the live npcs (<see cref="RemoteLayer.NearestTalkNpc"/>), no allocation.</summary>
+    public FieldNpcs.Placed NearestTalkNpc(int friendly, Vector3 me, Vector3 face, float range, bool frontOnly) =>
+        remote?.NearestTalkNpc(friendly, me, face, range, frontOnly);
     /// <summary>The field's other players (the remote layer's), none before the field is built.</summary>
     public IEnumerable<RemoteLayer.Pc> FieldPcs => remote?.Pcs ?? Enumerable.Empty<RemoteLayer.Pc>();
     /// <summary>The other pcs the field shows now, as the minimap's proxies read them.</summary>

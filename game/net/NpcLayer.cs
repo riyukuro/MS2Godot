@@ -427,6 +427,17 @@ public sealed class NpcLayer
         }
     }
 
+    /// <summary>WorldService::FindNearestNpc for the talk key's poll (<see cref="World.NpcTalk.NearerTalkNpc"/>) over the live
+    /// npcs that are not dead, without an allocation.</summary>
+    public World.FieldNpcs.Placed NearestTalkable(int friendly, Vector3 me, Vector3 face, float range, bool frontOnly)
+    {
+        World.FieldNpcs.Placed best = null;
+        float bestD = float.MaxValue;
+        foreach (var i in inst.Values)
+            if (!i.Dead && i.Talk != null) World.NpcTalk.NearerTalkNpc(i.Talk, friendly, me, face, range, frontOnly, ref best, ref bestD);
+        return best;
+    }
+
     /// <summary>The live npcs that are not dead, for the talk.</summary>
     public IEnumerable<World.FieldNpcs.Placed> Talkable => inst.Values.Where(x => !x.Dead && x.Talk != null).Select(x => x.Talk);
 

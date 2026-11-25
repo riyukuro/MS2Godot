@@ -106,6 +106,9 @@ public sealed partial class RemoteLayer : Node3D
     public int NpcCount => npcs.Count;
     /// <summary>The field's live npcs for the talk.</summary>
     public IEnumerable<World.FieldNpcs.Placed> TalkNpcs => npcs.Talkable;
+    /// <summary><see cref="NpcLayer.NearestTalkable"/>.</summary>
+    public World.FieldNpcs.Placed NearestTalkNpc(int friendly, Vector3 me, Vector3 face, float range, bool frontOnly) =>
+        npcs.NearestTalkable(friendly, me, face, range, frontOnly);
 
     /// <summary>One other player in the field: its object, name, picture key, root, Eff_UI anchor, worn gems and the
     /// PC::CanUseItem state of its balloon gem (premium time, PC bang grade, wedding state).</summary>

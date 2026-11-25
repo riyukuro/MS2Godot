@@ -643,13 +643,14 @@ public partial class FieldContents : Node3D
             // live: at most every 100 ms the action key's poll runs its actions by ascending key and the first that applies
             // is the current one (Unk_ActionKeyManager::Update, a CRBMap): gathering (4), the npc hold (6), the taxi (8), the
             // interact npc (0x11) and interact (0x12) objects, the server-listed portal the player stands in (0x13, PortalAction
-            // vfunc_1), the liftable cube in reach (0x15, LiftCubeAction vfunc_1, from the ridee when riding), the billboard (0x18).
-            // TalkAction (0x14) is polled at the press: its npc search allocates. The key runs only the
+            // vfunc_1), the talkable npc (0x14, TalkAction vfunc_1), the liftable cube in reach (0x15, LiftCubeAction vfunc_1,
+            // from the ridee when riding), the billboard (0x18), the reactor (0x1a), the hold pc (0x1b). The key runs only the
             // current action (ActivateCurrentAction), so a refused interact does not reach the talk. Active
-            // StateInteraction casts tick every frame (0 B/frame).
-            // STILL-OPEN: a billboard or a lift keeps its highlight next to a talkable npc (the talk takes the key at the press).
+            // StateInteraction casts tick every frame (0 B/frame). A lift keeps the highlight its last poll gave when an earlier
+            // action (the talk) takes the key: LiftCubeAction has no vfunc_3 (ActionKeyObject's is empty, :732), as in the client.
             // In cube mode (PC::IsInCubeMode) the poll runs the cube-mode map instead (GetActiveActionMap,
-            // actionkeyobject.cpp:707-717): put down liftable (0xc), portal (0x13), talk (0x14, at the press).
+            // actionkeyobject.cpp:707-717): put down liftable (0xc), portal (0x13), talk (0x14, whose vfunc_1 refuses in cube
+            // mode, :1370).
             var playerMs2 = FieldPortals.ToMs2(player.GlobalPosition);
             bool cubeMode = Ms2Godot.Net.LiveSession.Instance is { } cs && cs.CubeCraft.InCubeMode;
             if (actionKeys.Due((uint)Time.GetTicksMsec()))
@@ -663,12 +664,15 @@ public partial class FieldContents : Node3D
                 {
                     bool onInteract = LiveInteractPoll(playerMs2);
                     bool onPortal = !onInteract && LivePortalPoll();
-                    bool onLift = !onInteract && !onPortal && LiveLiftPoll(playerMs2);
-                    bool onBoard = !onInteract && !onPortal && !onLift && LiveInteractBillBoardPoll(playerMs2);
-                    bool onReactor = !onInteract && !onPortal && !onLift && !onBoard && LiveReactorPoll(playerMs2);
-                    bool onHoldPc = !onInteract && !onPortal && !onLift && !onBoard && !onReactor
+                    bool onTalk = !onInteract && !onPortal && talk != null && Ms2Godot.Net.LiveSession.Instance is { } tls
+                        && talk.PollTalkAction(false, tls.OwnCurStateIdNow);
+                    bool before = onInteract || onPortal || onTalk;
+                    bool onLift = !before && LiveLiftPoll(playerMs2);
+                    bool onBoard = !before && !onLift && LiveInteractBillBoardPoll(playerMs2);
+                    bool onReactor = !before && !onLift && !onBoard && LiveReactorPoll(playerMs2);
+                    bool onHoldPc = !before && !onLift && !onBoard && !onReactor
                         && Ms2Godot.Net.LiveSession.Instance is { } hls && hls.PollHoldPc();
-                    actionKeys.Current = Ms2.Ui.ActionKeyPoll.Pick(onInteract, onPortal, false, onLift, onBoard, onReactor, onHoldPc);
+                    actionKeys.Current = Ms2.Ui.ActionKeyPoll.Pick(onInteract, onPortal, onTalk, onLift, onBoard, onReactor, onHoldPc);
                     // the hold (6) is polled inside the interact part, between gathering (4) and the taxi (8)
                     if (onInteract && Ms2Godot.Net.LiveSession.Instance is { HoldPolled: true })
                         actionKeys.Current = Ms2.Ui.ActionKeyTarget.Hold;
@@ -703,10 +707,6 @@ public partial class FieldContents : Node3D
         bool held = Ms2Godot.Net.LiveSession.Instance is { } hs && hs.HeldItem.Held;
         var target = actionKeys.OnPress(heldItem: held);
         if (held || !actionKeys.InActiveMap(cubeMode)) return;
-        if (target is Ms2.Ui.ActionKeyTarget.Lift or Ms2.Ui.ActionKeyTarget.BillBoard or Ms2.Ui.ActionKeyTarget.Reactor
-                or Ms2.Ui.ActionKeyTarget.HoldPc
-            && talk?.TalkActionNpc() != null)
-            target = Ms2.Ui.ActionKeyTarget.Talk;                  // talk 0x14 comes before lift 0x15, billboard 0x18, reactor 0x1a, hold pc 0x1b
         switch (target)
         {
             case Ms2.Ui.ActionKeyTarget.Interact:
@@ -721,7 +721,7 @@ public partial class FieldContents : Node3D
             case Ms2.Ui.ActionKeyTarget.PutDownLiftable:
                 if (Ms2Godot.Net.LiveSession.Instance is { } pls) pls.ConfirmPlacement();
                 break;
-            default: talk?.ActionKey(); break;
+            case Ms2.Ui.ActionKeyTarget.Talk: talk?.UseTalkAction(); break;
         }
     }
 

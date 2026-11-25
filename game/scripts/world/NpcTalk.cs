@@ -290,7 +290,8 @@ public sealed partial class NpcTalk : Node
 
     /// <summary>TalkAction::vfunc_1's check (actionkeyobject.cpp:1385-1398) on the found npc, on the character's quest records.</summary>
     bool HasTalk(NpcRow r) => QuestMarks(packs).HasTalk(r.Id, r.Kind, Scripts(packs).Find(r.Id) != null, QuestContext, Rules,
-        (quest, script) => QuestScripts(packs).Find(quest, script) != null);
+        hasQuestTalk ??= (quest, script) => QuestScripts(packs).Find(quest, script) != null);
+    Func<int, int, bool> hasQuestTalk;
 
     /// <summary>UITalkManager's talk interval (<see cref="TalkInterval"/>): one for the run, as the manager is, so a talk ended
     /// by a field move still counts in the next field.</summary>
@@ -306,6 +307,37 @@ public sealed partial class NpcTalk : Node
     /// <summary>TalkAction::vfunc_1's npc (actionkeyobject.cpp:1366-1390): none before the talk interval has passed
     /// (:1375), else the talkable npc (MyPC::FindTalkableNpc).</summary>
     public FieldNpcs.Placed TalkActionNpc() => TalkIntervalElapsed ? FindTalkable() : null;
+
+    /// <summary>TalkAction m_n18: the npc id of the npc the last poll kept (0 for none), what a mouse pick compares
+    /// (CMouseInteractNpc::vfunc_3 reads +0x18).</summary>
+    public int TalkActionNpcId { get; private set; }
+    FieldNpcs.Placed talkActionNpc;    // m_nNpcId (the object) and m_strName
+
+    /// <summary>
+    /// TalkAction::vfunc_1 (@0x140957bb0, actionkeyobject.cpp:1366-1405) for the action key's poll: 0 in cube mode, while a
+    /// guide event restricts talking (IsRestricted(2)), before the talk interval has passed, or in state 8 / 9 (ladder,
+    /// rope); else the kept npc cleared, then the talkable npc (MyPC::FindTalkableNpc: shown, and with a mark, a function,
+    /// npc talks or a quest talk) kept, and 1.
+    /// </summary>
+    public bool PollTalkAction(bool cubeMode, int ownState)
+    {
+        if (player == null || cubeMode) return false;
+        if (Ms2.Ui.Guide.GuideManager.Current?.IsRestricted(Ms2.Ui.Guide.GuideLimit.ActionTalk) == true) return false;
+        if (!TalkIntervalElapsed) return false;
+        if (ownState is 8 or 9) return false;
+        TalkActionNpcId = 0;
+        talkActionNpc = null;
+        var n = FindTalkable();
+        if (n == null) return false;
+        TalkActionNpcId = n.Row.Id;
+        talkActionNpc = n;
+        return true;
+    }
+
+    /// <summary>TalkAction::vfunc_2 (@0x140957e80, :1415-1428): the talk with the kept npc (MyPC::FUN_141529a50 by its object
+    /// id); the talk start refuses while talking (<see cref="Start"/>).</summary>
+    public bool UseTalkAction() =>
+        talkActionNpc != null && IsInstanceValid(talkActionNpc.Root) && Start(talkActionNpc);
 
     /// <summary>
     /// MyPC::FindTalkableNpc (mypc.cpp:2825, @0x141529640): WorldService::FindNearestNpc friendly 2, else friendly 1; then
@@ -333,17 +365,23 @@ public sealed partial class NpcTalk : Node
         bool frontOnly = constants.Float("TalkableFrontOnly", 1) != 0;
         var me = player.GlobalPosition;
         var face = new Vector3(Mathf.Sin(player.Visual.Rotation.Y), 0, Mathf.Cos(player.Visual.Rotation.Y));
+        if (live != null) return live.NearestTalkNpc(friendly, me, face, range, frontOnly);
         FieldNpcs.Placed best = null; float bestD = float.MaxValue;
-        foreach (var n in live != null ? live.TalkNpcs : npcs)
-        {
-            if (n.Row.Friendly != friendly) continue;
-            var to = n.Position - me;
-            float d = to.Length();
-            if (d > range + n.Row.CapsuleRadius) continue;
-            if (frontOnly && !n.Row.HasTag("dummy_npc") && new Vector3(to.X, 0, to.Z).Dot(face) < 0) continue;
-            if (d < bestD) { bestD = d; best = n; }
-        }
+        foreach (var n in npcs) NearerTalkNpc(n, friendly, me, face, range, frontOnly, ref best, ref bestD);
         return best;
+    }
+
+    /// <summary>One npc of <see cref="FindNearestNpc"/>'s search: of that friendly value, within the range plus its capsule
+    /// radius, not behind the facing plane unless "dummy_npc", and nearer than <paramref name="best"/>.</summary>
+    public static void NearerTalkNpc(FieldNpcs.Placed n, int friendly, Vector3 me, Vector3 face, float range, bool frontOnly,
+        ref FieldNpcs.Placed best, ref float bestD)
+    {
+        if (n.Row.Friendly != friendly) return;
+        var to = n.Position - me;
+        float d = to.Length();
+        if (d > range + n.Row.CapsuleRadius) return;
+        if (frontOnly && !n.Row.HasTag("dummy_npc") && new Vector3(to.X, 0, to.Z).Dot(face) < 0) return;
+        if (d < bestD) { bestD = d; best = n; }
     }
 
     /// <summary>
@@ -372,12 +410,15 @@ public sealed partial class NpcTalk : Node
         return null;
     }
 
-    /// <summary>CMouseController::UpdateHover's activate (unit_140ad1860_mousecontroller.cpp:705-715): when the talk key's npc is
-    /// the clicked one, the talk starts (CMouseInteract::vfunc_4, ActivateCurrentAction) and true is returned.</summary>
+    /// <summary>CMouseController::UpdateHover's activate (unit_140ad1860_mousecontroller.cpp:705-715): when the action key's
+    /// current action is the talk (0x14) and its npc id is the clicked npc's (CMouseInteractNpc::vfunc_3, mouseinteract.cpp:
+    /// 283-289), the current action runs (CMouseInteract::vfunc_4, ActivateCurrentAction) and true is returned.</summary>
     public bool TalkIfCurrent(FieldNpcs.Placed clicked)
     {
-        if (clicked == null || window != null || TalkActionNpc() != clicked) return false;
-        Start(clicked);
+        var fc = FieldContents.Current;
+        if (clicked == null || fc == null || fc.CurrentAction != Ms2.Ui.ActionKeyTarget.Talk || TalkActionNpcId != clicked.Row?.Id)
+            return false;
+        fc.ActivateCurrentAction();
         return true;
     }
 
