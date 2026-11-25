@@ -135,7 +135,26 @@ public sealed class GameStrings
         foreach (var (file, attr) in FlashFiles)
             if (FindXml(packs, $"string/{language}/{file}") is { } entry)
                 FlashKeys(packs.Read("Xml", entry), locale, attr, map);
+        if (language != "kr" && FindXml(packs, "string/kr/korflash.xml") is { } kr)
+            FillUntranslated(map, FlashKeys(packs.Read("Xml", kr), locale));
         return map;
+    }
+
+    /// <summary>
+    /// A text the data's own localisation step left as its marker, "KORFLASH_&lt;KEY&gt;_VALUE" (the other languages' korFlash.xml of the
+    /// KMS2 data hold 122 of them, e.g. the limit break button, with the feature name after a ":[F]"). The client never reads
+    /// these as text: the game runs in the kr folder, where every row is real. STILL-OPEN: what the retail client shows for
+    /// them when its language is not KR is not in the decompile.
+    /// </summary>
+    public static bool IsUntranslated(string text) => text != null && text.StartsWith("KORFLASH_", StringComparison.Ordinal);
+
+    /// <summary>A row that is only the localisation marker takes the same key's text from <paramref name="fallback"/> (the kr folder's
+    /// table: the data's own text, or the patch package's English), so a language without a translation shows words instead of the
+    /// marker. A key the fallback lacks, or holds as a marker too, keeps what the language's table says.</summary>
+    public static void FillUntranslated(Dictionary<string, string> map, IReadOnlyDictionary<string, string> fallback)
+    {
+        foreach (var key in map.Where(kv => IsUntranslated(kv.Value)).Select(kv => kv.Key).ToList())
+            if (fallback.TryGetValue(key, out var text) && !IsUntranslated(text)) map[key] = text;
     }
 
     static readonly (string File, string Attr)[] FlashFiles =

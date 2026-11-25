@@ -59,4 +59,47 @@ public class FlashKeysTests
         Assert.That(m["s_Cut_Blackstar_Crash_01"], Is.EqualTo("a\nb"));
         Assert.That(m["s_v"], Is.EqualTo("s_v"), "a row without the attribute is its own key");
     }
+
+    [Test]
+    public void ALocalisationMarkerTakesTheKrFoldersText()
+    {
+        var en = GameStrings.FlashKeys(Encoding.UTF8.GetBytes("<ms2>"
+            + "<key id=\"$s_inventory_unlimited_enchant\" value=\"KORFLASH_$S_INVENTORY_UNLIMITED_ENCHANT_VALUE:[F]UnlimitedEnchant\" feature=\"UnlimitedEnchant\" />"
+            + "<key id=\"$s_both\" value=\"KORFLASH_$S_BOTH_VALUE\" />"
+            + "<key id=\"$s_kept\" value=\"English\" />"
+            + "<key id=\"$s_only_here\" value=\"KORFLASH_$S_ONLY_HERE_VALUE\" />"
+            + "</ms2>"), "KR");
+        var kr = GameStrings.FlashKeys(Encoding.UTF8.GetBytes("<ms2>"
+            + "<key id=\"$s_inventory_unlimited_enchant\" value=\"Limit Break\" />"
+            + "<key id=\"$s_both\" value=\"KORFLASH_$S_BOTH_VALUE\" />"
+            + "<key id=\"$s_kept\" value=\"Korean\" />"
+            + "</ms2>"), "KR");
+        GameStrings.FillUntranslated(en, kr);
+        Assert.That(en["$s_inventory_unlimited_enchant"], Is.EqualTo("Limit Break"), "the marker is not shown");
+        Assert.That(en["$s_kept"], Is.EqualTo("English"), "a real text of the language stays");
+        Assert.That(en["$s_both"], Does.StartWith("KORFLASH_"), "a marker in both stays as the language has it");
+        Assert.That(en["$s_only_here"], Does.StartWith("KORFLASH_"), "a key the kr folder lacks stays as the language has it");
+    }
+
+    /// <summary>The real data: no language's UI table shows the marker for a key the kr folder has real text for.</summary>
+    [Test]
+    public void NoLanguageOfTheDataShowsAMarkerWhereKrHasText()
+    {
+        var d = Environment.GetEnvironmentVariable("MS2_DATA");
+        if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
+        using var packs = new Ms2.Formats.Pack.PackSet(d);
+        string locale = Ms2.Ui.LobbyFeatures.LocaleOf(packs);
+        var kr = GameStrings.FlashTable(packs, "kr", locale);
+        int checkedLanguages = 0;
+        foreach (var lang in new[] { "jp", "en", "cn", "fr", "de", "pt", "es" })
+        {
+            if (!packs.Exists("Xml", $"string/{lang}/korflash.xml")) continue;
+            checkedLanguages++;
+            var table = GameStrings.FlashTable(packs, lang, locale);
+            var shown = table.Where(kv => GameStrings.IsUntranslated(kv.Value) && kr.TryGetValue(kv.Key, out var t) && !GameStrings.IsUntranslated(t))
+                .Select(kv => kv.Key).ToList();
+            Assert.That(shown, Is.Empty, $"{lang}: markers shown for keys kr has text for");
+        }
+        if (checkedLanguages == 0) Assert.Ignore("the data has no other language folder with korflash.xml");
+    }
 }
