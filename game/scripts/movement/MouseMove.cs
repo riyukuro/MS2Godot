@@ -7,6 +7,12 @@ namespace Ms2Godot.Movement;
 /// 0xaf). Releasing the left button on a cube sets a target; the direction to it is taken once and walked straight, with
 /// no path finding. The move ends when the distance starts growing within 75 of the target, after 15 of growth in
 /// total, when a probe (every 100 ms from 75 up along the facing, 50 long) hits a cube, or on any keyboard direction.
+/// With feature 0xe2 "MouseInteract" a release first tries the click picks (CMouseController::FUN_140ad3550): of them only the
+/// npc one (CMouseInteractNpc, <see cref="World.NpcTalk.FindClickTarget"/>) is here. A picked npc is walked to, and each frame
+/// (UpdateHover) once the talk key's npc is that npc the walk stops and the talk starts. The picked npc is kept until the next
+/// click or the talk (FUN_140ad40b0), not cleared when the walk ends.
+/// STILL-OPEN: the other picks (talk cancel, taxi, ugc banner, weapon object, portal, interact object; tried before the npc,
+/// first hit wins), the hover cursor and its hint (GetCursorKind, s_mouse_interact_talk) and holding (action 6).
 /// </summary>
 public partial class MouseMove : Node
 {
@@ -16,6 +22,8 @@ public partial class MouseMove : Node
     Vector3 dir;                  // world, flat, unit; zero when not moving
     Vector3 target;
     float lastDist, growth, probeT;
+    World.FieldNpcs.Placed clickedNpc;    // m_spCurrent's npc (CMouseInteractNpc m_nNpcId)
+    readonly bool interact = Ms2Godot.GameOptions.FeatureEnabled(0xe2);
 
     public MouseMove(Player player, Camera3D camera)
     {
@@ -29,7 +37,13 @@ public partial class MouseMove : Node
         if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false } mb) return;
         if (Ms2.Ui.FieldMoveCover.Up) return;       // no field to click under a move's loading screen
         var from = camera.ProjectRayOrigin(mb.Position);
-        var to = from + camera.ProjectRayNormal(mb.Position) * 20000f;
+        var normal = camera.ProjectRayNormal(mb.Position);
+        if (interact)
+        {
+            clickedNpc = World.NpcTalk.Current?.FindClickTarget(from, normal);
+            if (clickedNpc != null) { Go(clickedNpc.Position); return; }
+        }
+        var to = from + normal * 20000f;
         using var hit = player.GetWorld3D().DirectSpaceState.IntersectRay(ray.Set(from, to, player.GetRid()));
         if (hit.Count == 0) return;
         var p = (Vector3)hit[PhysicsKeys.Position];
@@ -55,6 +69,11 @@ public partial class MouseMove : Node
 
     public override void _Process(double delta)
     {
+        if (interact && clickedNpc != null && World.NpcTalk.Current is { } talk)
+        {
+            if (!IsInstanceValid(clickedNpc.Root)) clickedNpc = null;
+            else if (talk.TalkIfCurrent(clickedNpc)) { clickedNpc = null; Stop(); return; }
+        }
         if (!Moving) { player.MouseInput = Vector2.Zero; return; }
         if (player.DeathHoldsMove) { Stop(); return; }   // StateDead::vfunc_4: CPushControl::Reset (statedead.cpp:152)
         if (MoveInput.Read().Move != Vector2.Zero) { Stop(); return; }

@@ -144,4 +144,23 @@ public class NpcQuestMarksTests
         Assert.That(NpcQuestMarks.Suffix(new QuestData { Type = 9, Repeat = 1 }), Is.EqualTo(""));
         Assert.That(NpcQuestMarks.Suffix(null), Is.EqualTo(""));
     }
+
+    /// <summary>CMouseInteractNpc::FindTarget's pick test and FUN_14147ad10's ray test.</summary>
+    [Test]
+    public void TheClickPicksAsTheMouseInteract()
+    {
+        Assert.That(NpcMousePick.Picks(0, false, 4, false, true, false), Is.False, "no kind, no talks, no mark");
+        Assert.That(NpcMousePick.Picks(0, false, 0, false, true, false), Is.True, "a quest it starts");
+        Assert.That(NpcMousePick.Picks(0, false, 2, false, true, false), Is.True, "a quest it completes");
+        Assert.That(NpcMousePick.Picks(3, false, 4, false, true, false), Is.True, "a function kind");
+        Assert.That(NpcMousePick.Picks(0, true, 4, false, true, false), Is.True, "npc talks");
+        Assert.That(NpcMousePick.Picks(3, true, 0, false, false, false), Is.False, "talking restricted");
+        Assert.That(NpcMousePick.Picks(0, false, 4, true, false, true), Is.True, "held");
+        var o = System.Numerics.Vector3.Zero;
+        var x = new System.Numerics.Vector3(1, 0, 0);
+        Assert.That(NpcMousePick.RayHitsSphere(o, x * 5, new(100, 10, 0), 10), Is.True, "passes at the radius");
+        Assert.That(NpcMousePick.RayHitsSphere(o, x, new(100, 11, 0), 10), Is.False, "passes outside");
+        Assert.That(NpcMousePick.RayHitsSphere(o, x, new(-100, 0, 0), 10), Is.False, "behind the origin");
+        Assert.That(NpcMousePick.RayHitsSphere(o, x, new(-5, 0, 0), 10), Is.True, "the origin inside");
+    }
 }

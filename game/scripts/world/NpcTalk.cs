@@ -14,7 +14,8 @@ namespace Ms2Godot.World;
 /// Talking to an npc in the offline sandbox (the client's TalkAction + UITalkManager, with the sandbox answering the server's part).
 /// - Who: MyPC::FindTalkableNpc -> WorldService::FindNearestNpc, friendly 2 first, then friendly 1: within TalkableDistance plus
 ///   the npc's capsule radius, in front of the player (TalkableFrontOnly), nearest first; then TalkAction's check on that npc
-///   (<see cref="NpcQuestMarks.HasTalk"/>): a quest for it, a function kind, an npc script, or a started quest's talk.
+///   (<see cref="NpcQuestMarks.HasTalk"/>): a quest for it, a function kind, an npc script, or a started quest's talk. With
+///   mouse control a click picks an npc too (<see cref="FindClickTarget"/>, walked to by <see cref="Movement.MouseMove"/>).
 /// - The window: uitalkcinematic run by its own ActionScript (<see cref="MovieDialog"/>) with UITalkCinematic's C++ side
 ///   (<see cref="TalkCinematicController"/>), the movie a plain talk opens (UITalkManager::OnTalkPacket mode 1 -> FUN_141b1ff80,
 ///   uitalkcinematic.cpp:1456: sub scene 0x6200031).
@@ -118,8 +119,12 @@ public sealed partial class NpcTalk : Node
         Name = "NpcTalk";
     }
 
+    /// <summary>The field's talk in the tree (the mouse controller's npc pick reads it).</summary>
+    public static NpcTalk Current { get; private set; }
+
     public override void _EnterTree()
     {
+        Current = this;
         Ui.MessageBoxLayer.Ensure(this);    // the accept's unrequire-group box (CUIService::CreateAllDialogs has the one layer)
         if (live == null) return;
         live.NpcTalkReceived += OnLiveTalk;
@@ -136,6 +141,7 @@ public sealed partial class NpcTalk : Node
 
     public override void _ExitTree()
     {
+        if (Current == this) Current = null;
         if (window != null) { window = null; MovieLayerHost.Layers.LeaveTalk(); }   // a field left with the talk open
         ClosePopupMovie();
         if (live == null) return;
@@ -290,18 +296,22 @@ public sealed partial class NpcTalk : Node
     /// MyPC::FindTalkableNpc (mypc.cpp:2825, @0x141529640): WorldService::FindNearestNpc friendly 2, else friendly 1; then
     /// TalkAction::vfunc_1 (actionkeyobject.cpp:1382-1405) talks to that npc only if it has something to say. The nearest npc
     /// is picked first: one with nothing to say keeps the key from a talkable npc further away, as in the client.
-    /// STILL-OPEN: FindNearestNpc skips the front test for an npc with property tag 8 (worldservice_1.cpp:6467) and
-    /// TalkAction refuses an npc whose GameObject m_unk_b0 is set (FUN_14123c660, :1385); neither is ported. The visible test
-    /// here is ours (a trigger-hidden npc), not FindNearestNpc's.
+    /// TalkAction refuses a hidden npc (GameObject::FUN_14123c660, m_unk_b0, actionkeyobject.cpp:1385; GameObject::vfunc_23 sets
+    /// it with the entity's visible property, here the root's Visible) even when a shown one stands further away.
     /// </summary>
     public FieldNpcs.Placed FindTalkable()
     {
         if (player == null) return null;
         var n = FindNearestNpc(2) ?? FindNearestNpc(1);
-        return n != null && HasTalk(n.Row) ? n : null;
+        return n != null && n.Root.Visible && HasTalk(n.Row) ? n : null;
     }
 
-    /// <summary>WorldService::FindNearestNpc(friendly, TalkableDistance, TalkableFrontOnly, 1) (worldservice_1.cpp:6438).</summary>
+    /// <summary>
+    /// WorldService::FindNearestNpc(friendly, TalkableDistance, TalkableFrontOnly, 1) (worldservice_1.cpp:6438): the npcs of that
+    /// friendly value within the range plus their capsule radius (m_rangeBonus, +0x2d8), not behind the player's facing plane
+    /// unless the npc has property tag 8 "dummy_npc" (:6467, npcdata.cpp's tag list), nearest first. It does not look at
+    /// visibility.
+    /// </summary>
     FieldNpcs.Placed FindNearestNpc(int friendly)
     {
         float range = constants.Float("TalkableDistance", 300);
@@ -311,14 +321,46 @@ public sealed partial class NpcTalk : Node
         FieldNpcs.Placed best = null; float bestD = float.MaxValue;
         foreach (var n in live != null ? live.TalkNpcs : npcs)
         {
-            if (n.Row.Friendly != friendly || !n.Root.Visible) continue;
+            if (n.Row.Friendly != friendly) continue;
             var to = n.Position - me;
             float d = to.Length();
             if (d > range + n.Row.CapsuleRadius) continue;
-            if (frontOnly && new Vector3(to.X, 0, to.Z).Dot(face) < 0) continue;
+            if (frontOnly && !n.Row.HasTag("dummy_npc") && new Vector3(to.X, 0, to.Z).Dot(face) < 0) continue;
             if (d < bestD) { bestD = d; best = n; }
         }
         return best;
+    }
+
+    /// <summary>
+    /// CMouseInteractNpc::FindTarget (mouseinteract.cpp:307) for a click ray (Godot space): the first npc, in object id order
+    /// (the npc map), that is shown, not an enemy, passes <see cref="NpcMousePick.Picks"/> (its kind, npc talks or shown quest
+    /// mark, while a guide event does not restrict talking) and whose sphere the ray passes through. No distance limit: the
+    /// pick range (m_pickRange) is the hover cursor's only.
+    /// STILL-OPEN: the talk interval (UITalkManager::IsTalkIntervalElapsed) and holding (PCBase::vfunc_117, HoldAction) are not
+    /// ported, as for the talk key.
+    /// </summary>
+    public FieldNpcs.Placed FindClickTarget(Vector3 origin, Vector3 dir)
+    {
+        if (player == null) return null;
+        bool talkAllowed = Ms2.Ui.Guide.GuideManager.Current?.IsRestricted(Ms2.Ui.Guide.GuideLimit.ActionTalk) != true;
+        foreach (var n in (live != null ? live.TalkNpcs : npcs).OrderBy(x => x.ObjectId))
+        {
+            if (!n.Root.Visible || n.Row.Friendly == 0) continue;
+            if (!NpcMousePick.Picks(n.Row.Kind, Scripts(packs).Find(n.Row.Id) != null, QuestMark(n.Row.Id).State, false, talkAllowed, false)) continue;
+            float half = n.Row.CapsuleHeight * 0.5f;
+            var c = n.Position + new Vector3(0, half, 0);
+            if (NpcMousePick.RayHitsSphere(new(origin.X, origin.Y, origin.Z), new(dir.X, dir.Y, dir.Z), new(c.X, c.Y, c.Z), half)) return n;
+        }
+        return null;
+    }
+
+    /// <summary>CMouseController::UpdateHover's activate (unit_140ad1860_mousecontroller.cpp:705-715): when the talk key's npc is
+    /// the clicked one, the talk starts (CMouseInteract::vfunc_4, ActivateCurrentAction) and true is returned.</summary>
+    public bool TalkIfCurrent(FieldNpcs.Placed clicked)
+    {
+        if (clicked == null || window != null || FindTalkable() != clicked) return false;
+        Start(clicked);
+        return true;
     }
 
     /// <summary>The script the server opens a plain talk with (see the class summary).</summary>

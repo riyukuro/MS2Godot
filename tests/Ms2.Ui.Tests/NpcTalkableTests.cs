@@ -174,4 +174,54 @@ public class NpcTalkableTests
         Assert.That(fails, Is.Empty, string.Join("; ", fails.Take(20)));
         Assert.That(jobsWithChain, Is.GreaterThan(0));
     }
+
+    /// <summary>
+    /// The click (CMouseInteractNpc::FindTarget, <see cref="NpcMousePick.Picks"/>) over every quest: a quest-only npc (no kind,
+    /// no npc script) is clickable while it shows a mark: at its quest's start for a character that can start it (job and
+    /// level of the quest's require), and at its complete npc once the quest is done. A start npc of a running quest with a
+    /// talk 200 and no mark is not clickable (the talk key reaches it, the click does not, as in the client); counted.
+    /// </summary>
+    [TestCase("MS2_DATA", "KR")]
+    [TestCase("MS2_GMS2_DATA", "NA")]
+    public void EveryQuestOnlyNpcIsClickableWhileItShowsAMark(string env, string locale)
+    {
+        var d = Load(env, locale);
+        var marks = new NpcQuestMarks(d.Quests);
+        bool QuestOnly(int npc) => npc != 0 && d.Npcs.Find(npc) is { Kind: 0 } && d.Scripts.Find(npc) == null;
+        bool Clicks(int npc, Ctx ctx) => NpcMousePick.Picks(0, false, marks.Get(npc, ctx, new QuestRules(d.Quests, ctx)).State, false, true, false);
+        int start = 0, startUnknown = 0, complete = 0, keyOnly = 0;
+        var npcs = new HashSet<int>();
+        var fails = new List<string>();
+        foreach (var q in d.Quests.Quests)
+        {
+            if (QuestOnly(q.StartNpc))
+            {
+                var ctx = new Ctx { JobGroup = q.Require.Job.Length > 0 ? q.Require.Job[0] : null, Level = Math.Max(1, q.Require.Level) };
+                foreach (int r in q.RequireQuest) ctx.Records[(int)r] = new QuestRecord((int)r, 2, 0, 0, 0, true, false);
+                if (new QuestRules(d.Quests, ctx).CanStart(q.Id, q.StartNpc) == true)
+                {
+                    start++; npcs.Add(q.StartNpc);
+                    if (!Clicks(q.StartNpc, ctx)) fails.Add($"start {q.Id} at {q.StartNpc}");
+                }
+                else startUnknown++;
+                if (q.StartNpc != q.CompleteNpc && d.QuestScripts.Find(q.Id, 200) != null)
+                {
+                    var run = new Ctx();
+                    run.Records[q.Id] = new QuestRecord(q.Id, 1, 0, 0, 0, false, false);
+                    if (!Clicks(q.StartNpc, run) && marks.HasTalkScriptForNpc(q.StartNpc, run, (x, y) => d.QuestScripts.Find(x, y) != null)) keyOnly++;
+                }
+            }
+            if (QuestOnly(q.CompleteNpc))
+            {
+                var ctx = new Ctx();
+                ctx.Records[q.Id] = new QuestRecord(q.Id, 1, 0, 0, 0, true, false);
+                complete++; npcs.Add(q.CompleteNpc);
+                if (!Clicks(q.CompleteNpc, ctx)) fails.Add($"complete {q.Id} at {q.CompleteNpc}");
+            }
+        }
+        TestContext.Out.WriteLine($"{env}: quest-only npcs {npcs.Count}, start checks {start} (start not provable here {startUnknown}), " +
+                                  $"complete checks {complete}, running quests whose start npc only the key reaches {keyOnly}, fails {fails.Count}");
+        Assert.That(fails, Is.Empty, string.Join("; ", fails.Take(20)));
+        Assert.That(start + complete, Is.GreaterThan(0));
+    }
 }

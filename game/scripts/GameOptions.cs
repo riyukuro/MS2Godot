@@ -98,6 +98,9 @@ public static class GameOptions
     static bool RegionCn() => Settings.DataDir is { } data && System.IO.File.Exists(System.IO.Path.Combine(data, "Xml.m2d"))
         && string.Equals(Ms2.Ui.LobbyFeatures.LocaleOf(PackSet.Shared(data)), "CN", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>CFeatureManager::IsFeatureEnabled(id) on the data's feature list.</summary>
+    public static bool FeatureEnabled(int id) => FeatureById(id);
+
     static bool FeatureById(int id) => id >= 1 && id <= Ms2.Ui.FeatureTable.Names.Length && Settings.DataDir is { } data
         && Ms2.Ui.LobbyFeatures.IsEnabledByName(PackSet.Shared(data), Ms2.Ui.FeatureTable.Names[id - 1]);
 
