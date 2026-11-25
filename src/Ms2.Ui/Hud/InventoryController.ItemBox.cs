@@ -41,6 +41,15 @@ public sealed partial class InventoryController
         return null;
     }
 
+    /// <summary>Unk_Inventory::GetItemUidsInCategory (@0x140a609a0, inventory.cpp:998) then FindItemByUid: the items of the
+    /// category's slots in slot order; none for a category outside 0..14.</summary>
+    public IEnumerable<Item> CategoryItems(int category)
+    {
+        if (category < 0 || category >= 15 || View == null) yield break;
+        foreach (var c in View.Cells(category))
+            if (!c.Empty && FindItem(c.Uid) is { } item) yield return item;
+    }
+
     /// <summary>Unk_Inventory::FUN_140a5f7b0(tag, 0) (inventory.cpp:835, GetItemCountByTag): the count of every bag item whose data
     /// has the string tag; 0 for tag 0. STILL-OPEN: PC::CanUseItem's skip, as in <see cref="BagCountOf"/>.</summary>
     public int BagCountOfTag(int tag)

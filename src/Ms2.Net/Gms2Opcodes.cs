@@ -297,6 +297,7 @@ static class Gms2Opcodes {
         [Outbound.GuideRecord] = 0x58,
         [Outbound.Tutorial] = 0x8B,
         [Outbound.RequestTutorialItem] = 0x9D,
+        [Outbound.TreasureMap] = 0xA0,           // upstream RecvOp.TreasureMap
         [Outbound.MinimapPing] = 0xB3,
         [Outbound.Channel] = 0x3C,
         [Outbound.RelocateWorld] = 0x3F,

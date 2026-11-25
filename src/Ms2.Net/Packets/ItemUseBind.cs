@@ -97,3 +97,38 @@ public sealed record ItemScriptBoxResult(int Mode, IReadOnlyList<ItemScriptBoxIt
         return new ItemScriptBoxResult(mode, items);
     }
 }
+
+/// <summary>
+/// Outbound TreasureMap 0x9F sub 2 (UIItemTreasureMapDialog::SendTreasureMapMode2 @0x140c55ba0, uiitemtreasuremapdialog.cpp:233,
+/// and OnSubmitClick's back from a result, :258): u8 2, i64 the map's uid, bool the free appraise. The server answers with the
+/// cost (<see cref="ItemScriptTreasureMap"/> sub 2).
+/// </summary>
+public sealed record TreasureMapCostRequest(long Uid, bool Free) : IOutPacket {
+    public Outbound Op => Outbound.TreasureMap;
+    public void Write(ByteWriter w) { w.WriteByte(2); w.WriteLong(Uid); w.WriteBool(Free); }
+}
+
+/// <summary>
+/// Inbound ItemScript (0xF5 on KMS) as UIItemTreasureMapDialog::vfunc_79 (@0x140c55960, uiitemtreasuremapdialog.cpp:174) reads it,
+/// the dialog open and loaded: a sub byte; sub 2 an i64 uid and an i64 cost (OnAppraiseCost); sub 3 a bool, true followed by
+/// an i32 item id and an i32 rank (ShowAppraisedItem), false ends the appraise (back to the select page). Other subs are
+/// ignored (nothing read past the byte).
+/// </summary>
+public abstract record ItemScriptTreasureMap {
+    public const int CostSub = 2, ResultSub = 3;
+
+    /// <summary>Sub 2: the appraise cost of the map; a negative cost cannot be appraised.</summary>
+    public sealed record Cost(long Uid, long Amount) : ItemScriptTreasureMap;
+    /// <summary>Sub 3: the appraised item (Ok), or the end of the appraise (not Ok, no item).</summary>
+    public sealed record Result(bool Ok, int ItemId, int Rank) : ItemScriptTreasureMap;
+
+    /// <summary>The message of a sub 2 or 3 packet; null for any other sub.</summary>
+    public static ItemScriptTreasureMap TryRead(ByteReader r) {
+        if (r.Available < 1) return null;
+        int sub = r.ReadByte();
+        if (sub == CostSub) return new Cost(r.ReadLong(), r.ReadLong());
+        if (sub != ResultSub) return null;
+        bool ok = r.ReadBool();
+        return ok ? new Result(true, r.ReadInt(), r.ReadInt()) : new Result(false, 0, 0);
+    }
+}

@@ -302,6 +302,7 @@ public enum Outbound : ushort {
     GuideRecord = 0x57,
     Tutorial = 0x8A,
     RequestTutorialItem = 0x9C,
+    TreasureMap = 0x9F,     // SendOp TreasureMap (commonfiles/opcodes.h:462): UIItemTreasureMapDialog's cost request
     MinimapPing = 0xB1,     // SendOp MinimapPing (commonfiles/opcodes.h:480): UIMinimapDialog::SendMinimapPing
     SmartPush = 0x83,       // SendOp SmartPush (commonfiles/opcodes.h:436): CSmartPush::vfunc_5 (smartpush.cpp:322)
     NewsNotification = 0x63, // SendOp NewsNotification (commonfiles/opcodes.h:404): CWebBrowserService::SendNewsNotification (webbrowserservice.cpp:359)

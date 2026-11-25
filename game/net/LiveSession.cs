@@ -1938,6 +1938,8 @@ public partial class LiveSession : Node
 
     /// <summary>ItemScript modes 0 and 5, the Lullu box's and the gacha's result (their dialogs' vfunc_79); live only.</summary>
     public event Action<ItemScriptBoxResult> ItemScriptBoxResulted;
+    /// <summary>ItemScript subs 2 and 3, read as the open treasure map dialog reads them.</summary>
+    public event Action<ItemScriptTreasureMap> ItemScriptTreasureMapped;
 
     /// <summary>
     /// CDropItem::OnPickedUp with the local player as picker (dropitem.cpp:1007-1020), after the get sound: the reward toast for an
@@ -2253,6 +2255,12 @@ public partial class LiveSession : Node
                 {
                     if (LiveCheck) GD.Print($"live: item script box mode {box.Mode}, {box.Items.Count} item(s){(box.Items.Count > 0 ? $", first {box.Items[0].ItemId} x{box.Items[0].Count} rank {box.Items[0].Rank}{(box.Items[0].Special ? " special" : "")}" : "")}");
                     ItemScriptBoxResulted?.Invoke(box);
+                }
+                // and the treasure map dialog its subs 2 and 3 (vfunc_79 @0x140c55960)
+                else if (ItemScriptTreasureMap.TryRead(p.Reader()) is { } map)
+                {
+                    if (LiveCheck) GD.Print($"live: item script treasure map {map}");
+                    ItemScriptTreasureMapped?.Invoke(map);
                 }
             }
             else if (game.Is(p, Inbound.ItemUse))
