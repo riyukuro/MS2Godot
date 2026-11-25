@@ -485,6 +485,41 @@ public partial class LiveSession
                 await frames(120);
                 continue;
             }
+            if (step.StartsWith("click:"))     // click:<npc id>: mouse control on, the own pc put 600 in front of the field's npc of that id facing it, a left click at the npc's middle on screen (CMouseController: the npc pick, the walk, the talk when in reach), then the talk ended
+            {
+                int id = int.Parse(step.Split(':')[1]);
+                var tfc = flow.GetTree().GetFirstNodeInGroup(FieldContents.Group) as FieldContents;
+                FieldNpcs.Placed n = null;
+                await until(() => (n = live.TalkNpcs.FirstOrDefault(x => x.Row.Id == id && Alive(x))) != null, 60 * 30);
+                Check($"{step}: the npc in the field", n != null);
+                if (n == null || tfc?.Talk == null || live.player == null || !GodotObject.IsInstanceValid(live.player)) continue;
+                bool feature = GameOptions.FeatureEnabled(0xe2);
+                GD.Print($"live: combat {step}: feature 0xe2 MouseInteract {feature}, 0xaf {GameOptions.FeatureEnabled(0xaf)}");
+                (live.player.GetParent() as Field)?.SetMouseControl(true);
+                double yaw = n.Root.Rotation.Y;
+                var front = new Vector3((float)Math.Sin(yaw), 0, (float)Math.Cos(yaw));
+                live.player.GlobalPosition = n.Position + front * 600 + new Vector3(0, 20, 0);
+                live.player.Velocity = Vector3.Zero;
+                live.player.Face(-front);
+                await frames(90);
+                var cam = flow.GetViewport().GetCamera3D();
+                var at = n.Position + new Vector3(0, n.Row.CapsuleHeight * 0.5f, 0);
+                bool shown = cam != null && !cam.IsPositionBehind(at);
+                var screen = shown ? cam.UnprojectPosition(at) : Vector2.Zero;
+                GD.Print($"live: combat {step}: npc {n.ObjectId} at screen {screen} (in view {shown}), player {live.player.GlobalPosition.DistanceTo(n.Position):0} away, key talks to it {tfc.Talk.FindTalkable() == n}");
+                Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = true, Position = screen, GlobalPosition = screen });
+                await frames(2);
+                Input.ParseInputEvent(new InputEventMouseButton { ButtonIndex = MouseButton.Left, Pressed = false, Position = screen, GlobalPosition = screen });
+                await until(() => tfc.Talk.Open, 60 * 10);
+                Check($"{step}: the talk opened", tfc.Talk.Open);
+                GD.Print($"live: combat {step}: player {live.player.GlobalPosition.DistanceTo(n.Position):0} from the npc at the talk");
+                await frames(90);
+                Shot($"click{id}_open.png");
+                if (tfc.Talk.Open) tfc.Talk.End();
+                (live.player.GetParent() as Field)?.SetMouseControl(GameOptions.MouseControl.Value);
+                await frames(120);
+                continue;
+            }
             if (step.StartsWith("kill:"))      // kill:<npc id>[:<count>]: the field's server npcs of that id, nearest first, each walked to, faced and attacked until it dies (up to MS2_LIVE_COMBAT_PRESSES presses each)
             {
                 var a = step.Split(':');
