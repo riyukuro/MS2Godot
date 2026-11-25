@@ -700,8 +700,10 @@ public sealed class FieldBuilder
                 // (CEntityVibrator, entityvibrator.cpp:338-342 and the return's SetEntityCollisionGroup)
                 bool vibrate = !trigger && IsVibrate(e);
                 // an interact mesh with a reactable model: its NIF PhysX shapes get a body of their own, which the swap to
-                // asset B takes out of the world (InteractColliders)
-                bool swaps = !trigger && !vibrate && !disabled && !e.Bool("GeneratePhysX") && reactableModels.ContainsKey(e);
+                // asset B takes out of the world (InteractColliders). One with no twin (ReactableTwin) keeps its own model's
+                // draws, so it keeps their shapes too
+                bool swaps = !trigger && !vibrate && !disabled && !e.Bool("GeneratePhysX")
+                             && reactableModels.TryGetValue(e, out var swapTo) && ReactableTwin(e, swapTo, drawnApart, out _) != null;
                 int group = (int)e.Number("PropCollisionGroup");
                 // MyPC::FUN_141524a80 (mypc.cpp:2353-2366): a state sync taken while standing on a MS2CubeProp whose
                 // IsFallReturn is set and whose PropCollisionGroup is 9 or 8 carries the cube's cell. Its shapes carry the
@@ -788,16 +790,9 @@ public sealed class FieldBuilder
             entityIndex++;
             if (!reactableModels.TryGetValue(e, out var llidB)) continue;
             yield return 0;
-            var me = Model(llidB);
-            if (me == null) continue;
+            var twin = ReactableTwin(e, llidB, drawnApart, out var me);
+            if (twin == null) { if (me != null) ReactableNotDrawn++; continue; }
             ReactableCollision(e, me, entityIndex, colliders, twoSided);
-            if (me.Elsewhere || drawnApart.Contains(e)) { ReactableNotDrawn++; continue; }
-            var raw = new XEntity { Id = e.Raw.Id, ModelName = e.Raw.ModelName, Name = e.Raw.Name, Sets = e.Raw.Sets,
-                                    Props = new Dictionary<string, string>(e.Raw.Props, StringComparer.Ordinal) };
-            raw.Props["NifAsset"] = llidB;
-            var twin = new FieldEntity { Raw = raw, Flat = e.Flat };
-            var (ba, be) = assets.Resolve(llidB);
-            if (ba != null && be != null && twin.PlaysAsEffect(ba, me.Data)) { ReactableNotDrawn++; continue; }
             reactableOf[twin] = e;
             Group(groups, llidB, twin, me, notReceiving.Contains(e));
             ReactableTwins++;
@@ -927,6 +922,22 @@ public sealed class FieldBuilder
     public int ReactableNotDrawn;
     /// <summary>The reactable models whose PhysX shapes the build made (<see cref="InteractCollider.B"/>).</summary>
     public int ReactableColliders;
+
+    /// <summary>The twin an interact mesh draws its reactable model <paramref name="llidB"/> with: the entity with asset B as its
+    /// NifAsset. Null when it gets none: asset B does not load (<paramref name="me"/> null), is drawn elsewhere or plays as an
+    /// effect, or the entity's own model is drawn elsewhere or played as an effect (<paramref name="drawnApart"/>; its own draw
+    /// could not be hidden for it). Such an entity keeps its own model's draws and NIF collision: no swap.</summary>
+    FieldEntity ReactableTwin(FieldEntity e, string llidB, HashSet<FieldEntity> drawnApart, out ModelEntry me)
+    {
+        me = Model(llidB);
+        if (me == null || me.Elsewhere || drawnApart.Contains(e)) return null;
+        var raw = new XEntity { Id = e.Raw.Id, ModelName = e.Raw.ModelName, Name = e.Raw.Name, Sets = e.Raw.Sets,
+                                Props = new Dictionary<string, string>(e.Raw.Props, StringComparer.Ordinal) };
+        raw.Props["NifAsset"] = llidB;
+        var twin = new FieldEntity { Raw = raw, Flat = e.Flat };
+        var (ba, be) = assets.Resolve(llidB);
+        return ba != null && be != null && twin.PlaysAsEffect(ba, me.Data) ? null : twin;
+    }
 
     /// <summary>Asset B's NIF PhysX shapes for an <see cref="InteractCollider"/>: a body of its own, out of the world until the
     /// swap, in the entity's PropCollisionGroup, at the entity's transform, tagged with its MapAttribute as the entity's own are.</summary>

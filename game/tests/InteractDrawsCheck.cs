@@ -27,7 +27,9 @@ namespace Ms2Godot.Tests;
 /// The review fixes, each on a field of its own:
 /// <list type="bullet">
 /// <item>02000332_bf: an object whose own model animates (drawn by world/FieldProps) gets no reactable twin, so its state 1
-/// cannot draw both models.</item>
+/// cannot draw both models, and no swapped collision, so its own model's shapes stay in the world with its own draw.</item>
+/// <item>02020301_bf and 02000312_bf: an object with no reactable twin (its own model or asset B animates) keeps its own
+/// model's NIF collision in every state.</item>
 /// <item>02000024_bf and 02000011_bf: the NIF collision follows NifAsset (FieldBuilder.InteractCollider): the own model's
 /// shapes in state 0, asset B's in state 1, kept through state 2.</item>
 /// <item>02000011_bf and 02000024_bf: a fade target (Transparency) with a reactable model: a fade of the own model ends at the swap, the
@@ -81,7 +83,7 @@ public partial class InteractDrawsCheck : Node
         catch (Exception e) { fails.Add(e.ToString()); }
         foreach (var (name, check) in new (string, Action)[]
                  {
-                     ("drawn apart", CheckDrawnApart), ("collision", CheckCollisionSwap), ("fade", CheckFade), ("hidden at the load", CheckHiddenAtLoad),
+                     ("drawn apart", CheckDrawnApart), ("no twin collision", CheckNoTwinCollision), ("collision", CheckCollisionSwap), ("fade", CheckFade), ("hidden at the load", CheckHiddenAtLoad),
                  })
         {
             try { check(); }
@@ -130,10 +132,39 @@ public partial class InteractDrawsCheck : Node
         foreach (var o in apart)
         {
             if (b.Fb.InteractReactableDraws.ContainsKey(o.Entity)) fails.Add($"{o.Name}: its own model is drawn elsewhere and it has a reactable twin (both would draw)");
+            // with no twin its own model stays drawn, so its own shapes stay in the world and asset B's are never made
+            if (b.Draws.Collision(o.Entity) is { } col)
+                fails.Add($"{o.Name}: no reactable twin but a swapped collision (own body {col.A != null}, reactable body {col.B != null}): state 1 would collide with asset B under the own model");
             b.State(o, 1);
             if (b.Draws.ShownReactable(o.Entity) == true) fails.Add($"{o.Name}: state 1 draws a reactable model beside its own animated one");
         }
         if (b.Fb.ReactableNotDrawn < apart.Count) fails.Add($"02000332_bf: {b.Fb.ReactableNotDrawn} reactable models not drawn, fewer than {apart.Count}");
+    }
+
+    /// <summary>
+    /// An object with no reactable twin keeps its own model's draw, so it keeps its own model's NIF collision through every state:
+    /// 02020301_bf (its own model animates; both models have PhysX shapes) and 02000312_bf (asset B animates; only B has shapes).
+    /// </summary>
+    void CheckNoTwinCollision()
+    {
+        foreach (var xblock in new[] { "02020301_bf", "02000312_bf" })
+        {
+            var b = BuildField(xblock);
+            var noTwin = b.Live.All.Where(o => o.AssetType == 1 && o.AssetB.StartsWith("urn:llid:") && o.AssetB != o.AssetA
+                                               && !b.Fb.InteractReactableDraws.ContainsKey(o.Entity)).ToList();
+            GD.Print($"interact draws check: {xblock} {noTwin.Count} objects with a reactable model and no twin, {b.Fb.ReactableNotDrawn} reactable models not drawn, {b.Fb.ReactableColliders} reactable colliders");
+            if (noTwin.Count == 0) { fails.Add($"{xblock}: no object with a reactable model and no twin"); continue; }
+            foreach (var o in noTwin)
+                foreach (byte state in new byte[] { 1, 2, 0 })
+                {
+                    b.State(o, state);
+                    if (b.Draws.Collision(o.Entity) is { } col)
+                    {
+                        fails.Add($"{o.Name} ({xblock}): no reactable twin but a swapped collision in state {state} (own body {col.A != null}, reactable in the world {col.B?.Body.CollisionLayer > 0})");
+                        break;
+                    }
+                }
+        }
     }
 
     /// <summary>The NIF collision follows NifAsset: 02000024_bf (both models collide) and 02000011_bf (only asset B does).</summary>
