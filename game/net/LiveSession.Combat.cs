@@ -106,6 +106,10 @@ public partial class LiveSession
         live.NpcRemoved += id => goneNpcs.Add(id);
         int questProgress = 0;
         live.Quests.ProgressUpdated += id => questProgress++;
+        // what holds the own player's move (Player.Step's gates), for a log line
+        static string MoveHolds(Player p) => p == null ? "no player" :
+            $"state {p.State}, script driven {p.ScriptDriven}, server state hold {p.ServerStateHold?.Invoke() == true}, dead hold {p.DeathHoldsMove}, " +
+            $"guide hold {Movement.MoveInput.GuideHoldsMove()}, input block {Ms2.Ui.InputBlock.Active}, move cover {Ms2.Ui.FieldMoveCover.Up}, taxi hook set {p.TaxiHold != null}";
         bool Alive(FieldNpcs.Placed n) => n?.Root != null && GodotObject.IsInstanceValid(n.Root) && !goneNpcs.Contains(n.ObjectId);
         live.Quests.Changed += id => { var q = live.Quests.Get(id); GD.Print($"live: combat quest {id} state {q?.State} progress [{string.Join(" ", q?.Progress ?? System.Array.Empty<long>())}]"); };
         live.MesoChanged += (delta, kind) => mesoDelta += delta;
@@ -135,7 +139,7 @@ public partial class LiveSession
                     for (; n < 60 * 25 && dist > 40; n++)
                     {
                         dist = hud.DriveTowardScripted(at, false); await frames(1);
-                        if (n % 120 == 119) GD.Print($"live: combat walkto {point}: distance {dist:F0}, at {FieldPortals.ToMs2(live.OwnPlayer.GlobalPosition)}");
+                        if (n % 120 == 119) GD.Print($"live: combat walkto {point}: distance {dist:F0}, at {FieldPortals.ToMs2(live.OwnPlayer.GlobalPosition)}, {MoveHolds(live.player)}");
                     }
                     hud.DriveEnd();
                     GD.Print($"live: combat walkto {point}: distance {dist:F0} after {n} frames, at {FieldPortals.ToMs2(live.OwnPlayer.GlobalPosition)}");
@@ -483,6 +487,23 @@ public partial class LiveSession
                 }
                 if (tfc.Talk.Open) { GD.Print($"live: combat {step}: still open after {pages} pages, ended"); tfc.Talk.End(); }
                 await frames(120);
+                continue;
+            }
+            if (step.StartsWith("keymove:"))   // keymove:<left|right|up|down>:<frames>: a physical arrow key held for that many frames, as a player presses it (MoveInput reads the key), then released; logs the move and the holds
+            {
+                var a = step.Split(':');
+                var key = a[1] switch { "left" => Key.Left, "right" => Key.Right, "down" => Key.Down, _ => Key.Up };
+                int hold = a.Length > 2 ? int.Parse(a[2]) : 120;
+                if (live.player == null || !GodotObject.IsInstanceValid(live.player)) continue;
+                var from = live.player.GlobalPosition;
+                GD.Print($"live: combat {step}: before, {MoveHolds(live.player)}");
+                Input.ParseInputEvent(new InputEventKey { Keycode = key, PhysicalKeycode = key, Pressed = true });
+                for (int f = 0; f < hold; f++) { await frames(1); if (f == hold / 2) GD.Print($"live: combat {step}: held, {MoveHolds(live.player)}"); }
+                Input.ParseInputEvent(new InputEventKey { Keycode = key, PhysicalKeycode = key, Pressed = false });
+                await frames(10);
+                float moved = new Vector2(live.player.GlobalPosition.X - from.X, live.player.GlobalPosition.Z - from.Z).Length();
+                Check($"{step}: the key moved the player", moved > 50);
+                GD.Print($"live: combat {step}: moved {moved:F0}, at {FieldPortals.ToMs2(live.player.GlobalPosition)}");
                 continue;
             }
             if (step.StartsWith("click:"))     // click:<npc id>: mouse control on, the own pc put 600 in front of the field's npc of that id facing it, a left click at the npc's middle on screen (CMouseController: the npc pick, the walk, the talk when in reach), then the talk ended
