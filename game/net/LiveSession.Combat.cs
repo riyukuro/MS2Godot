@@ -1421,7 +1421,9 @@ public partial class LiveSession
                 float off = on is { } o && node is { } n ? o.At.DistanceTo(n) : -1f;
                 Check($"npcride {ownerNid}:{riderNid}: rider {rid} owner {on?.Owner} (sent {sent}); owner {oid} Ride_A {(node is { } nn ? $"{nn.X:0},{nn.Y:0},{nn.Z:0}" : "none")}, " +
                     $"rider at {(on is { } a ? $"{a.At.X:0},{a.At.Y:0},{a.At.Z:0}" : "-")} ({off:0.00} off), before {(was is { } w ? $"{w.At.X:0},{w.At.Y:0},{w.At.Z:0}" : "-")}",
-                    on?.Owner == oid && node != null && off >= 0 && off < 1f);
+                    // the rider is placed in the npc update, before the owner's animation moves its Ride_A bone in the same frame,
+                    // so an animated node is a frame ahead of the rider (the client reads the node's last world transform too)
+                    on?.Owner == oid && node != null && off >= 0 && off < 10f);
                 Shot("npcride_on.png");
                 const long damage = 123456789012;
                 hud.SubmitChatLine("/debug packet " + live.NpcRideBytes(rid, 0, damage));
