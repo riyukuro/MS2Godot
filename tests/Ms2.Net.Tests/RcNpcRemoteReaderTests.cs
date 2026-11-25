@@ -142,7 +142,6 @@ public class RcNpcRemoteReaderTests
         Assert.That(RcLane.Bool(shown, "Shown", "Show"), Is.True);
     }
 
-    [Ignore("the 0x130 skill-spread body is not read yet")]
     [Test]
     public void Gms2SkillSpreadReadsActorSkillLevelAndPose()
     {

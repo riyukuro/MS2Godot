@@ -167,6 +167,7 @@ public enum Inbound : ushort {
     Liftable = 0x73,        // RecvOp Liftable (commonfiles/opcodes.h:123): CSceneStateGame::OnLiftable
     Reactor = 0x115,        // RecvOp::Reactor (commonfiles/opcodes.h:276): CSceneStateGame::OnReactor @0x14173c870
     MinimapPing = 0x121,    // RecvOp MinimapPing (commonfiles/opcodes.h:288): CSceneStateGame::OnMinimapPing
+    NpcSkillSpread = 0x130, // no RecvOp name (commonfiles/opcodes.h): CSceneStateGame::FUN_141720c60 (scenestategame.cpp:1533, :7677), a debug range shape
     CharacterAbility = 0xDF,    // RecvOp CharacterAbility (commonfiles/opcodes.h): CCharacterAbilityManager::OnCharacterAbility
     UserEnv = 0xA8,
     Mastery = 0xCD,             // RecvOp Mastery (commonfiles/opcodes.h): CSceneStateGame::OnMastery

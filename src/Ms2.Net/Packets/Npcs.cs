@@ -140,3 +140,14 @@ public sealed class NpcControl {
         return c;
     }
 }
+
+/// <summary>
+/// Inbound 0x130 (CSceneStateGame::FUN_141720c60 @0x141720c60, scenestategame.cpp:7677-7692; the switch's case 0x130, :1533):
+/// i32 actor object id, i32 skill id, i16 level, Vector3 position, Vector3 direction (34 bytes). The client looks the actor and the
+/// skill's level row up and has CSkillCollisionManager::Show (skillcollisionmanager.cpp:375-398) draw the row's spread range shape
+/// there, only while its debug switches to show skill collision shapes are on (DAT_143ae95e0 for a pc, DAT_143ae95e1 for an npc,
+/// off in a normal client), so the game reads it and shows nothing. Upstream Maple2 has no SendOp row for it, so GMS2 has no number.
+/// </summary>
+public sealed record NpcSkillSpread(int ActorId, int SkillId, short Level, Vector3 Position, Vector3 Direction) {
+    public static NpcSkillSpread Read(ByteReader r) => new(r.ReadInt(), r.ReadInt(), r.ReadShort(), r.ReadVec3(), r.ReadVec3());
+}
