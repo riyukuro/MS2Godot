@@ -80,6 +80,9 @@ public sealed partial class RemoteLayer
         tags.Ride(r.Root, m.Data);        // the tag refresh (vfunc_82()->FUN_140f48d80, pcbase.cpp:3335-3339)
         bars.Ride(r.Root, m.Data);
         r.NoBoarding = a.Flag;            // PC::FUN_1416642c0(m_b28), pcbase.cpp:3341-3343
+        // Ridee::vfunc_12 (ridee.cpp:527-534), from the ridee's spawn: the row's loopEffect at the ridee, kept as m_nIdleFx
+        // until the ridee goes (FreeRidee)
+        m.LoopFx.Start(m.Data.LoopEffect, RegionFx, path => SpawnKeptEffect(path, m.Visual, Ms2.Audio.SoundMusicEffectState.CasterOtherPc), StopKeptEffect);
     }
 
     /// <summary>
@@ -231,9 +234,11 @@ public sealed partial class RemoteLayer
         r.Ridee?.SetStat(kind, stat, value);
     }
 
-    static void FreeRidee(Remote r)
+    /// <summary>The ridee released: ~Ridee stops its loop effect (ridee.cpp:402-406), then the body goes.</summary>
+    void FreeRidee(Remote r)
     {
         if (r.Ridee == null) return;
+        r.Ridee.Mount?.LoopFx.Stop(RegionFx, StopKeptEffect);
         r.Ridee.Free();
         r.Ridee = null;
         if (r.Pc != null) r.Pc.Ridee = null;

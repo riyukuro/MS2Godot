@@ -245,6 +245,7 @@ public partial class RemoteRideCheck : Node3D
         RideeSpeeds(layer, m.Data.Id);
         RideShadow(layer, pc);
         OwnUnRideSkillEffect(pc, m);
+        LoopEffect(pc);
         KeysByKfm();
         KeyCaseAndOrder(m.Data.Id);
         pc.QueueFree();
@@ -689,6 +690,66 @@ public partial class RemoteRideCheck : Node3D
         if (played.Count != 0) fails.Add($"own ride off with no mount played {string.Join(", ", played)}");
         ls.Free();
         GD.Print($"remote ride: own UnRideSkill ride off plays '{skill}'; with no mount {played.Count}");
+    }
+
+    /// <summary>
+    /// Ridee::vfunc_12's loop effect (ridee.cpp:527-534) and ~Ridee's stop (:402-406), on the first riding row with a
+    /// loopEffect whose model loads: another player's ride on keeps the row's effect at its ridee in the field's effect layer;
+    /// the ride off stops it, and a PC that leaves while riding stops it too. The own pc's mount keeps it the same way from
+    /// its ride on to its ride off. A row without one keeps nothing.
+    /// </summary>
+    void LoopEffect(Player pc)
+    {
+        const int User = 35;
+        var loopMount = FirstMount(x => x.Data.LoopEffect != null);
+        if (loopMount == null) { fails.Add("loop effect: no riding row with a loopEffect loads"); return; }
+        int rideId = loopMount.Data.Id;
+        string path = loopMount.Data.LoopEffect;
+        var field = new FieldStub(packs);
+        AddChild(field);
+        var fx = new Ms2Godot.World.RegionSkills(packs, builder);
+        field.AddChild(fx);
+        var layer = new RemoteLayer(field, builder, 1);
+        const System.Reflection.BindingFlags Private = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        var kept = (System.Collections.IDictionary)typeof(Ms2Godot.World.RegionSkills).GetField("kept", Private).GetValue(fx);
+        if (!fx.Has(path)) fails.Add($"loop effect: no {path} in the data");
+        var u = new FieldAddUser { ObjectId = User, User = new UserBlock { Name = "l", CharacterId = 135, Gender = 1 } };
+        u.Stats[0].Health = 100; u.Stats[2].Health = 100;
+        layer.Tracker.Events.Enqueue(new UserAddedEvent(0, u, false));
+        layer._Process(0);
+        ResponseRide On(int id) => new(0, User, new RideOnAction(0, id, 5035, false, 0, 0, 0, 0), null, 0, 0, 0, 0, false);
+        layer.OnRide(On(rideId));
+        int h = layer.RideeOf(User)?.Mount?.LoopFx.Handle ?? 0;
+        if (h == 0 || !kept.Contains(h)) fails.Add($"remote loop effect of {rideId}: handle {h} not kept");
+        layer.OnRide(new ResponseRide(1, User, null, new RideOffAction(0, 0), 0, 0, 0, 0, false));
+        if (h != 0 && kept.Contains(h)) fails.Add($"remote loop effect {h} still kept after the ride off");
+        layer.OnRide(On(rideId));
+        int h2 = layer.RideeOf(User)?.Mount?.LoopFx.Handle ?? 0;
+        layer.Tracker.Events.Enqueue(new UserRemovedEvent(0, User));
+        layer._Process(0);
+        if (h2 == 0 || kept.Contains(h2)) fails.Add($"remote loop effect {h2} of a PC that left riding: still kept or never kept");
+        // a row without one
+        var plain = FirstMount(x => x.Data.LoopEffect == null);
+        int before = kept.Count;
+        layer.Tracker.Events.Enqueue(new UserAddedEvent(0, u, false));
+        layer._Process(0);
+        layer.OnRide(On(plain.Data.Id));
+        if ((layer.RideeOf(User)?.Mount?.LoopFx.Handle ?? -1) != 0 || kept.Count != before) fails.Add($"plain row {plain.Data.Id} kept a loop effect");
+
+        // the own pc
+        if (pc.Mount != null) pc.RideOff();
+        pc.KeepRideEffect = (p, actor) => fx.SpawnOn(p, actor, Ms2.Audio.SoundMusicEffectState.CasterMyPc);
+        pc.StopRideEffect = id => fx.FadeOut(id, 0);
+        pc.RideEffectScope = () => fx;
+        pc.RideOn(loopMount);
+        int own = loopMount.LoopFx.Handle;
+        if (own == 0 || !kept.Contains(own)) fails.Add($"own loop effect of {rideId}: handle {own} not kept");
+        pc.RideOff();
+        if (own != 0 && kept.Contains(own)) fails.Add($"own loop effect {own} still kept after the ride off");
+        pc.KeepRideEffect = null; pc.StopRideEffect = null; pc.RideEffectScope = null;
+        layer.Free();
+        field.QueueFree();
+        GD.Print($"remote ride: loop effect of {rideId} '{path}' kept at the ridee ({h}, {h2}) and own ({own}), stopped at the ride off and the leave");
     }
 
     /// <summary>The hold key end to end: with the npc away the player is the pick and the poll keeps it; an npc's

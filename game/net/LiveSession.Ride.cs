@@ -66,6 +66,10 @@ public partial class LiveSession
             PlayOwnEffect(path);
             return remote.EffectLength(path);
         };
+        // Ridee::vfunc_12's loop effect at the own mount (ridee.cpp:527-534), the actor's kind the own pc's
+        p.KeepRideEffect = (path, actor) => SpawnKeptEffect(path, actor, Ms2.Audio.SoundMusicEffectState.CasterMyPc);
+        p.StopRideEffect = StopKeptEffect;
+        p.RideEffectScope = () => remote?.KeptEffectScope;
         p.RunXNoEp += () =>
         {
             string text = MessageBoxData.Common(RunXNoEpNoticeId);

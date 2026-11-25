@@ -23,6 +23,8 @@ public sealed class Mount
     public int SeatBone = -1;
     /// <summary>The rideBone names one of the ridee's effect dummies rather than a model node (<see cref="SeatWorld"/>).</summary>
     public bool SeatDummy;
+    /// <summary>Ridee m_nIdleFx: the row's loopEffect kept at the mount while it is in (ridee.cpp:527-534, :402-406).</summary>
+    public readonly Ms2.Ui.RideeLoopEffect LoopFx = new();
     Node3D model;
     public string Current = "";
     Dictionary<string, string> actions = NoActions;
@@ -389,6 +391,9 @@ public partial class Player
         baseSpeed = RideSpeed();
         Enter(MoveState.Idle);
         if (m.Data.HideRider) SetHideReason(HideReasonRide, true);   // PCBase::vfunc_120 (pcbase.cpp:3331-3333)
+        // Ridee::vfunc_12 (ridee.cpp:527-534): the row's loopEffect at the ridee, kept as m_nIdleFx
+        object fx = RideEffectScope?.Invoke();
+        m.LoopFx.Start(m.Data.LoopEffect, fx, path => KeepRideEffect?.Invoke(path, m.Visual) ?? 0, StopRideEffect);
     }
 
     public void RideOff()
@@ -400,6 +405,7 @@ public partial class Player
         bool mountOnGround = Grounded && !jumping;
         if (Mount.Data.HideRider) SetHideReason(HideReasonRide, false);   // PCBase::vfunc_121 (pcbase.cpp:3402-3404)
         FieldShadows.SetShadowVisible(this, true);                       // StateRide::vfunc_5 (statemanager.cpp:1103)
+        Mount.LoopFx.Stop(RideEffectScope?.Invoke(), StopRideEffect);   // ~Ridee (ridee.cpp:402-406)
         RemoveChild(Mount.Visual);
         Mount.Visual.QueueFree();
         Mount = null;
@@ -500,6 +506,13 @@ public partial class Player
     public Func<bool> FieldUsesEp;
     /// <summary>CEffectService::InsertEffect of a ride effect at the mount; returns how long it plays (0 when not played).</summary>
     public Func<string, float> PlayRideEffect;
+    /// <summary>CEffectService::FUN_1411a49c0 of the row's loopEffect with the mount as the actor (Ridee::vfunc_12): the kept
+    /// effect's handle, 0 when it did not spawn; null keeps none.</summary>
+    public Func<string, Node3D, int> KeepRideEffect;
+    /// <summary>FUN_1411a6060 of a kept ride effect (~Ridee).</summary>
+    public Action<int> StopRideEffect;
+    /// <summary>The effect layer the kept ride effects belong to (<see cref="Ms2.Ui.RideeLoopEffect"/>); null keeps none.</summary>
+    public Func<object> RideEffectScope;
     /// <summary>The RunX sprint without the EP: notice 0x48 (FUN_141275260(0x48, 1, 0)) and the sound
     /// "system_notice_error_ep" (s_strNoticeEp, ridee.cpp:347), at most every 5 s.</summary>
     public event Action RunXNoEp;
