@@ -213,4 +213,53 @@ public class SoundCategorySweepTests
         Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.Zero);
         Assert.That(sum, Is.GreaterThan(0));
     }
+
+    /// <summary>The game's bus layout (game/default_bus_layout.tres, which the engine loads at startup) holds Master and then
+    /// SoundCategories.BusNames in order, each sending to Master: SoundBuses sets them by index from bus 1.</summary>
+    [Test]
+    public void TheBusLayoutMatchesTheBusNames()
+    {
+        var dir = new DirectoryInfo(TestContext.CurrentContext.TestDirectory);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "MS2Godot.sln"))) dir = dir.Parent;
+        Assert.That(dir, Is.Not.Null, "the repository root");
+        var file = Path.Combine(dir.FullName, "game", "default_bus_layout.tres");
+        var props = new Dictionary<string, string>();
+        foreach (var line in File.ReadLines(file))
+        {
+            int eq = line.IndexOf(" = ", StringComparison.Ordinal);
+            if (line.StartsWith("bus/", StringComparison.Ordinal) && eq > 0) props[line[..eq]] = line[(eq + 3)..];
+        }
+        static string Name(string v) => v.StartsWith("&\"", StringComparison.Ordinal) ? v[2..^1] : v;
+        Assert.That(Name(props["bus/0/name"]), Is.EqualTo("Master"));
+        int count = props.Keys.Count(k => k.EndsWith("/name", StringComparison.Ordinal));
+        Assert.That(count, Is.EqualTo(SoundCategories.BusNames.Length + 1), "Master and one bus per name, no more");
+        for (int i = 0; i < SoundCategories.BusNames.Length; i++)
+        {
+            Assert.That(Name(props[$"bus/{i + 1}/name"]), Is.EqualTo(SoundCategories.BusNames[i]), $"bus {i + 1}");
+            Assert.That(Name(props[$"bus/{i + 1}/send"]), Is.EqualTo("Master"), $"bus {i + 1} send");
+            Assert.That(props[$"bus/{i + 1}/volume_db"], Is.EqualTo("0.0"));
+            Assert.That(props[$"bus/{i + 1}/mute"], Is.EqualTo("false"));
+        }
+        Assert.That(SoundCategories.BusNames.Take(SoundCategories.Count), Is.EqualTo(SoundCategories.Names), "a slot's bus is its category's");
+        Assert.That(SoundCategories.BusNames.Skip(SoundCategories.Count), Is.EqualTo(new[] { "Music", "Movie" }));
+    }
+
+    /// <summary>The options save applies the page state before storing it (CGameOptionSoundDefault::vfunc_10,
+    /// gameoptionstruct.cpp:645-648), so the movie volume must come with the applied state, not from the store.</summary>
+    [Test]
+    public void TheMovieVolumeComesWithTheAppliedState()
+    {
+        var stored = Options();
+        var mix = new SoundMix();
+        mix.Apply(SoundVolumes.From(stored, false, true));
+        Assert.That(mix.MovieVolume, Is.EqualTo(0.08f).Within(1e-6f), "movie 1 x main 8 / 100");
+        var page = stored.Clone();
+        page.MovieSoundStep = 10;
+        page.MainSoundStep = 10;
+        int v = mix.Version;
+        mix.Apply(SoundVolumes.From(page, false, true));   // the save, while the store still holds the old state
+        Assert.That(mix.MovieVolume, Is.EqualTo(1f).Within(1e-6f));
+        Assert.That(mix.Version, Is.Not.EqualTo(v), "the buses see the change");
+        Assert.That(stored.MovieVolume, Is.EqualTo(0.08f).Within(1e-6f), "the store is not what was applied");
+    }
 }

@@ -27,6 +27,8 @@ public sealed class SoundMix
     public bool MovieMuted { get; private set; }
     /// <summary>The music volume of the last apply (SetCategoryVolume(2): m_pMusicSystem->setVolume, soundeventmgr.cpp:1673).</summary>
     public float MusicVolume => volume[2];
+    /// <summary>The movie volume of the last apply (<see cref="SoundVolumes.MovieVolume"/>).</summary>
+    public float MovieVolume { get; private set; } = 1f;
     /// <summary>The app has the focus (g_bAppActive, windowservice.cpp:801-831).</summary>
     public bool AppActive { get; private set; } = true;
 
@@ -41,6 +43,7 @@ public sealed class SoundMix
     public void Apply(SoundVolumes v)
     {
         for (int i = 0; i < CategoryCount; i++) volume[i] = v.Category[i];
+        MovieVolume = v.MovieVolume;
         SetAllMute(v.AllMute);
     }
 

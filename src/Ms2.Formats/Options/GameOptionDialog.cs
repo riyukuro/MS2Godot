@@ -290,6 +290,12 @@ public readonly record struct ResolutionRow(int ModeId, int Width, int Height, s
 /// categories 0..10, SetAllMute, CInstrumentManager::Mute, and the sound service's main volume.</summary>
 public sealed record SoundVolumes(float[] Category, bool AllMute, bool MuteInstruments, float MainVolume)
 {
+    /// <summary>The movie volume of the same state (Unk_SoundState::GetMovieVolume, gameoptionstruct.cpp:2786). FUN_14125fe20
+    /// does not set it: the movie players read it from the state when they play (uicutscenemovie.cpp:397, 413). It rides
+    /// here so the movie bus takes the state being saved; the save applies the page state before it is stored
+    /// (CGameOptionSoundDefault::vfunc_10, gameoptionstruct.cpp:645-648).</summary>
+    public float MovieVolume { get; init; } = 1f;
+
     public static SoundVolumes From(GameOption.Sound p, bool instrumentPlaying, bool appActive)
     {
         float bgm = p.CategoryVolume(2);
@@ -313,7 +319,7 @@ public sealed record SoundVolumes(float[] Category, bool AllMute, bool MuteInstr
             mute = true;
             muteInstruments = true;
         }
-        return new SoundVolumes(c, mute, muteInstruments, p.MainSoundStep * 10 / 100f);
+        return new SoundVolumes(c, mute, muteInstruments, p.MainSoundStep * 10 / 100f) { MovieVolume = p.MovieVolume };
     }
 }
 

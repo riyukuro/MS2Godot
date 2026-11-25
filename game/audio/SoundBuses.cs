@@ -18,11 +18,7 @@ namespace Ms2Godot;
 public static class SoundBuses
 {
     /// <summary>The bus of each category slot, then Music and Movie, in the layout's order from bus 1.</summary>
-    static readonly StringName[] Bus =
-    {
-        "effect", "environment", "bgm", "UISound", "npcVoice", "SystemVoice", "mobVoice", "EmotionVoice", "SystemAlert",
-        "effectSpecialSkill", "PCVoice", "Music", "Movie",
-    };
+    static readonly StringName[] Bus = System.Array.ConvertAll(Ms2.Audio.SoundCategories.BusNames, n => new StringName(n));
     const int MusicSlot = SoundMix.CategoryCount, MovieSlot = SoundMix.CategoryCount + 1;
     static readonly StringName MasterBus = "Master";
     /// <summary>The music system's bus.</summary>
@@ -35,12 +31,12 @@ public static class SoundBuses
     /// <summary>The bus a sound of <paramref name="category"/> plays on: its category's, or Master for a sound in none.</summary>
     public static StringName Of(int category) => (uint)category < SoundMix.CategoryCount ? Bus[category] : MasterBus;
 
-    /// <summary>Puts <see cref="SoundMix.Shared"/> and the movie volume on the buses when they changed since the last call.
+    /// <summary>Puts <see cref="SoundMix.Shared"/> (with its movie volume) on the buses when it changed since the last call.
     /// Main thread only.</summary>
     public static void Sync()
     {
         var mix = SoundMix.Shared;
-        float movie = GameOptions.Current?.SoundOption?.MovieVolume ?? 1f;
+        float movie = mix.MovieVolume;
         if (appliedVersion == mix.Version && appliedMovieVolume == movie) return;
         if (AudioServer.BusCount <= MovieSlot + 1)
         {

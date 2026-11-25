@@ -21,6 +21,14 @@ public static class SoundCategories
         "effectSpecialSkill", "PCVoice",
     };
 
+    /// <summary>The audio buses the game plays them on, in the order of the game's bus layout from bus 1 (bus 0 is
+    /// Master): one per slot, then the music system's and the movie sound's.</summary>
+    public static readonly string[] BusNames =
+    {
+        "effect", "environment", "bgm", "UISound", "npcVoice", "SystemVoice", "mobVoice", "EmotionVoice", "SystemAlert",
+        "effectSpecialSkill", "PCVoice", "Music", "Movie",
+    };
+
     /// <summary>The slot of a top-level category name, -1 for a name the client does not hold (getCategory by a bare name
     /// finds top-level categories only).</summary>
     public static int IndexOf(string topName)
