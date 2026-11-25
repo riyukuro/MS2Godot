@@ -7,34 +7,26 @@ run time.
 
 ## Progress
 
-![MS2Godot progress](assets/progress.png)
+![MS2Godot progress by feature](assets/features.png)
 
-The picture counts what MS2Godot has followed of the restored client. Every rule is mechanical, so it is redrawn
-from the code after each merge with no hand marks.
+The picture is MS2Godot's progress by feature: the client's player-facing features (character creation, combat, the
+inventory, quests, party, housing and so on), grouped by area. Each tile is one feature, and its area is the feature's
+share of the client's code. Every UI movie the client loads and every opcode it sends and receives belongs to exactly
+one feature.
 
-- Client code (left): the client's functions, without exception-handling funclets and the Nexon Messenger stubs,
-  in the decomp's progress groups. A function is *ported* when MS2Godot's code or comments cite it: by address
-  (`@0x14…`, `FUN_14…`; an address inside a function counts for that function), by `file.cpp:LINE` (the function
-  of the restored source whose body holds that line), or by a `Class::Method` name that matches exactly one client
-  function. A cite means the function was followed, not that it is finished. *Same file*: a game function that is
-  not cited, in a source file where another function is. The engine, middleware, runtime and library groups
-  (Gamebryo, Scaleform, CRI, CEF, PhysX, the C runtime, Lua and the others) are *replaced*: Godot and MS2Godot's
-  own runtime stand in for them, and a function there that is cited still shows as ported. The headline is ported
-  functions over the game code and common files functions; the template instantiations are compiler-generated, so
-  they are counted apart with their own share, and the figure with them is in the sub-line. The footer gives the
-  cites of each kind and how many did not resolve.
-- UI movies: the movies of the client's `Gfx.m2d` that the client loads: `UI` + a dialog type name of the restored
-  source (a formatted name such as `DamageFont_{0}` covers every movie it can make), a string in the source that
-  names the movie, a `.swf`/`.gfx` name in the XML tables or the font config, or a movie that one of those names
-  inside its own bytes. The other movies are shown as an unused count and left out. A movie's callbacks are the
-  `ExternalInterface.call` names its own classes raise (the shared library classes, the ones the small `uihpbar`
-  movie also defines, such as the window base, are left out). *Done*: the movie's name is a string in MS2Godot's
-  code, and those files (with the controller base) name every callback, compared without case as the client
-  compares them. *Partial*: named, but not every callback is. *Missing*: never named.
-- Packets: the opcodes the client receives and sends (its `RecvOp` and `SendOp` uses), matched by value to
-  `Ms2.Net`'s `Inbound` and `Outbound` tables. Received: *done* when MS2Godot dispatches on it, *partial* when the
-  table has it and nothing dispatches on it. Sent: *done* when MS2Godot sends it, *partial* when only the table has
-  it. *Missing*: not in the table.
+- *Playable* (green): checked by playing it against a server, or by a scripted live run, with the MS2Godot commit,
+  test or screenshot that shows it.
+- *Working, partial* (orange): the same kind of evidence, with parts still open or missing.
+- *Started* (blue): no such run yet, but MS2Godot has a UI movie, an opcode or a cited client source file of the
+  feature.
+- *Not started* (dark): none of those.
+
+Under each name: the feature's UI movies done of all, the received and sent opcodes MS2Godot handles of all, and the
+client source files MS2Godot follows. A movie is done when MS2Godot's code answers every callback it raises; a
+received opcode is done when MS2Godot dispatches on it, a sent one when MS2Godot sends it; a source file is followed
+when MS2Godot's code cites one of its functions. The headline counts playable features and their share of the
+client's code. The session and the UI framework are infrastructure, not features, and are left out of the counts.
+The picture is redrawn after each merge.
 
 Current state: a field walk. The main scene loads one field (Tria, `02000001_tw_tria`, by default) and places
 the player character at the field's player spawn point, dressed in a new character's starter look. It walks,
