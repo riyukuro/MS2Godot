@@ -43,4 +43,18 @@ public class ServerListPickTests
         var c = ServerListPick.Pick(new ServerList("live", new() { Row(1, "A", 1), Row(5, "A", 7, 8) }), null, 0);
         Assert.That((c.ServerId, c.Channels), Is.EqualTo((5, (IReadOnlyList<ushort>)new ushort[] { 7, 8 })));
     }
+
+    [Test]
+    public void TheEnteredServersChannelsFollowDynamicChannel()
+    {
+        // SetChannels (uiserverlistdialog.cpp:681-697) replaces only the entered server's channels; the server list's next
+        // connect then clamps the saved channel to them (BuildServerList :473)
+        var list = new ServerList("live", new() { Row(1, "A", 1, 2), Row(2, "B", 1, 2) });
+        var later = ServerListPick.WithChannels(list, "A", new ushort[] { 1, 2, 3, 4 });
+        Assert.That(ServerListPick.Pick(later, "A", 4).Channel, Is.EqualTo(4), "channel 4 is there now");
+        Assert.That(ServerListPick.Pick(list, "A", 4).Channel, Is.EqualTo(2), "the first list had 2");
+        Assert.That(later.Servers[1].Channels, Is.EqualTo(new ushort[] { 1, 2 }), "the other server keeps its own");
+        Assert.That(ServerListPick.WithChannels(list, "Gone", new ushort[] { 9 }), Is.SameAs(list), "no such server");
+        Assert.That(ServerListPick.WithChannels(list, "A", System.Array.Empty<ushort>()), Is.SameAs(list), "no channels yet");
+    }
 }

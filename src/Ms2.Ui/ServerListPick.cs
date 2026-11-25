@@ -41,4 +41,18 @@ public static class ServerListPick
     }
 
     static List<ushort> ChannelIds(ServerListChannelEntry s) => new SortedSet<ushort>(s.Channels).ToList();
+
+    /// <summary>
+    /// The dialog's list as it stands later: SetChannels @0x141ad3030 (uiserverlistdialog.cpp:681-697), from DynamicChannel,
+    /// replaces the channels of the server named <paramref name="server"/> (GetServer, the one entered) with
+    /// <paramref name="channels"/>; the other servers keep the ServerList's. No such server, or no channels yet, leaves the
+    /// list as it is.
+    /// </summary>
+    public static ServerList WithChannels(ServerList list, string server, IReadOnlyList<ushort> channels)
+    {
+        if (list == null || string.IsNullOrEmpty(server) || channels == null || channels.Count == 0) return list;
+        if (!list.Servers.Any(s => s.Name == server)) return list;
+        var ids = channels.ToArray();
+        return list with { Servers = list.Servers.Select(s => s.Name == server ? s with { Channels = ids } : s).ToList() };
+    }
 }

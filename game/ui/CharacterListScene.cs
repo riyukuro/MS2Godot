@@ -229,6 +229,8 @@ public partial class CharacterListScene : LobbyFieldScene
         controller.ListEmptied += () => { Flow.Session.SelectedIndex = -1; PreviewSelected(); };
         controller.RemoveCharacterFolder += RemoveCharacterFolder;
         controller.ServerList += () => UiBridge.Raise(UICharacterListDialogContract.Movie, UICharacterListDialogContract.ToHost.OnSceneLobbyServer);
+        controller.ExitToServerList += Flow.GameFlow.ReturnToServerList;
+        controller.QuitToLogin += Flow.GameFlow.QuitToLoginScene;
         controller.GameExit += () => Ms2.Ui.Hud.QuitFlow.ShowExitConfirm(new GameStrings(assets.Packs, assets.Language).Common());
         controller.Swapped += (a, b) =>
         {

@@ -49,6 +49,12 @@ public sealed class CharacterListController : UiController, IMessageBoxListener
     public bool DeleteAccountEnabled;
     /// <summary>The platform's vfunc_1, or a test server: m_serverlist's enabled and visible (OnLoadComplete :721-728).</summary>
     public bool ServerListEnabled = true;
+    /// <summary>
+    /// The platform's vfunc_1 is set, as on the KMS client's Nexon Korea platform (4; CreateClientPlatform makes it for
+    /// country 0, ms2clientplatform.cpp:26-44): the server list button goes to the lobby's server scene (FUN_1418f11c0
+    /// :1432-1440, m_1d4 0x620001a). Unset (the Tencent platform, 0) it quits to the login scene (m_1d4 0x6200009).
+    /// </summary>
+    public bool ServerListScene = true;
 
     /// <summary>m_1dc: set once RefreshLobby built the list; vfunc_13 sends Enter only after that.</summary>
     bool built;
@@ -63,6 +69,10 @@ public sealed class CharacterListController : UiController, IMessageBoxListener
 
     /// <summary>m_1d4 for a game start (FUN_1418f13f0 :1498): the popdown ends in the enter request (OnEndPopdown :1654).</summary>
     const int GameStartScene = 0x620000c;
+    /// <summary>m_1d4 for the server list (FUN_1418f11c0 :1437): the popdown ends in RequestServerList and the lobby's server scene.</summary>
+    const int LobbyServerScene = 0x620001a;
+    /// <summary>m_1d4 for the login scene (FUN_1418f11c0 :1439): the popdown ends in QuitAndDisconnect.</summary>
+    const int LoginScene = 0x6200009;
 
     /// <summary>A game start is under way (m_1d4 = 0x620000c): the list pops down and takes no selection until the scene changes.</summary>
     public bool Starting => popdownScene == GameStartScene;
@@ -102,8 +112,15 @@ public sealed class CharacterListController : UiController, IMessageBoxListener
     public event Action<int> CharacterLimitReached;
     /// <summary>OnDeletePC (vfunc_28 :2218-2244): the delete confirmation message box.</summary>
     public event Action DeleteCharacter;
-    /// <summary>OnSceneLobbyServer / onClickRegionList (FUN_1418f11c0 :1418): the dialog pops down for the server list.</summary>
+    /// <summary>OnSceneLobbyServer / onClickRegionList (FUN_1418f11c0 :1432): the dialog pops down for the server list.</summary>
     public event Action ServerList;
+    /// <summary>
+    /// The server list's popdown ended (OnEndPopdown with m_1d4 0x620001a, :1644-1648): RequestServerList on the login
+    /// connection and CSceneStateMulti::ExitToServerList (scenestatemulti.cpp:529-535).
+    /// </summary>
+    public event Action ExitToServerList;
+    /// <summary>The login scene's popdown ended (OnEndPopdown with m_1d4 0x6200009, :1656-1658): QuitAndDisconnect (:1665-1681).</summary>
+    public event Action QuitToLogin;
     /// <summary>OnGameExit (FUN_1418fc760, uichatballoon.cpp:463): the quit message box.</summary>
     public event Action GameExit;
     /// <summary>OnGameOption (FUN_1418fc760): the option dialog 0x4ef3.</summary>
@@ -192,11 +209,8 @@ public sealed class CharacterListController : UiController, IMessageBoxListener
         if (Is(name, "OnGameOption")) { GameOption?.Invoke(); return true; }
         if (Is(name, "OnSceneLobbyServer") || Is(name, "onClickRegionList"))
         {
-            // FUN_1418f11c0: HidePopups unless a selection is being handled, then the scene to go to (0x6200009 the server
-            // list; 0x620001a when the platform's vfunc_1 is set)
-            if (!Selecting) Popdown();
-            popdownScene = 0x6200009;
             ServerList?.Invoke();
+            LeaveForServerList();
             return true;
         }
         if (Is(name, "OnCreatePC"))
@@ -352,18 +366,35 @@ public sealed class CharacterListController : UiController, IMessageBoxListener
             if (selectedSn != null) GameStart?.Invoke(selectedSn);
             return;
         }
+        if (scene == LobbyServerScene) { ExitToServerList?.Invoke(); return; }
+        if (scene == LoginScene) { QuitToLogin?.Invoke(); return; }
         EndPopdown?.Invoke();
     }
 
     /// <summary>
-    /// FUN_1418f1d00 (uicharacterlistdialog.cpp:1615-1631) for a game start, run when a preview is done (PreviewCharacter
-    /// :1056, FUN_1418ee5c0 :1077): a Start that came while a selection was being handled pops the list down now. The host
+    /// FUN_1418f11c0 (uicharacterlistdialog.cpp:1432-1440), for OnSceneLobbyServer / onClickRegionList (:2213, :2405):
+    /// HidePopups unless a selection is being handled (m_180), and m_1d4 the scene to go to: 0x620001a, the server list,
+    /// when the platform's vfunc_1 is set, else 0x6200009, the login scene. The popdown's end goes there
+    /// (<see cref="OnEndPopdown"/>); with m_180 set the popdown waits for the preview (FUN_1418f1d00 :1624-1626).
+    /// </summary>
+    void LeaveForServerList()
+    {
+        if (Host?.Entity != null && !Selecting) Popdown();
+        popdownScene = ServerListScene ? LobbyServerScene : LoginScene;
+    }
+
+    /// <summary>
+    /// FUN_1418f1d00 (uicharacterlistdialog.cpp:1615-1631) for a game start or the server list, run when a preview is done
+    /// (PreviewCharacter :1056, FUN_1418ee5c0 :1077): a Start or a server list click that came while a selection was being
+    /// handled pops the list down now. The host
     /// that builds the dialog again over a map load (the client keeps it open) calls it once the rebuilt movie stands where
     /// the kept one was (its popup stepped to the end); before the movie is loaded it does nothing.
     /// </summary>
     public void ResumeGameStart()
     {
-        if (popdownScene == GameStartScene && Host?.Entity != null) BeginGameStart();
+        if (Host?.Entity == null) return;
+        if (popdownScene == GameStartScene) BeginGameStart();
+        else if (popdownScene == LobbyServerScene) LeaveForServerList();   // case 0x620001a: FUN_1418f11c0 again
     }
 
     /// <summary>

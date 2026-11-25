@@ -340,6 +340,83 @@ public class CharacterListTests
         Assert.That(started, Is.EqualTo(new[] { "12" }), "the popdown's end sends the start");
     }
 
+    // ---- the server list button (OnSceneLobbyServer, FUN_1418f11c0, OnEndPopdown) ---------------------------------------
+
+    /// <summary>A mouse click on the dialog's m_serverlist button (m_content.m_serverlist; onClickServerlist -> OnSceneLobbyServer).</summary>
+    static void ClickServerList(UiHost h)
+    {
+        var button = h.Child("m_serverlist", h.Child("m_content")) as AsDisplayObject;
+        Assert.That(button, Is.Not.Null, "the server list button");
+        var b = button.GetBounds(null);
+        var p = h.Player;
+        p.MouseMove(b.X + b.W / 2, b.Y + b.H / 2);
+        p.MouseButton(true);
+        p.MouseButton(false);
+        p.Tick();
+    }
+
+    sealed class Leaves
+    {
+        public int Server, Login, Other;
+        public Leaves(CharacterListController c)
+        {
+            c.ExitToServerList += () => Server++;
+            c.QuitToLogin += () => Login++;
+            c.EndPopdown += () => Other++;
+        }
+    }
+
+    [Test]
+    public void TheServerListButtonGoesToTheServerListWhenThePopdownEnds()
+    {
+        // The KMS client's platform has vfunc_1 4, so FUN_1418f11c0 (uicharacterlistdialog.cpp:1432-1440) pops the list down with
+        // m_1d4 = 0x620001a, and the popdown's end sends RequestServerList and goes to the server scene (OnEndPopdown :1644-1648).
+        var (h, c) = Load(Row("A", "11", "d.png"), Row("B", "12", "d.png"));
+        var left = new Leaves(c);
+        c.Previewed("11");
+        c.FadeInComplete();
+        ClickServerList(h);
+        Assert.That(c.InputOn, Is.False, "HidePopups turned the list's mouse off");
+        Assert.That(left.Server, Is.EqualTo(0), "nothing goes before the popdown ends");
+        for (int i = 0; i < 240 && left.Server == 0; i++) h.Player.Tick();
+        Assert.That(left.Server, Is.EqualTo(1), "the popdown's end goes to the server list");
+        Assert.That(left.Login, Is.EqualTo(0), "not the login scene's quit");
+        Assert.That(left.Other, Is.EqualTo(0), "not a plain popdown end");
+    }
+
+    [Test]
+    public void WithoutThePlatformsServerListTheButtonQuitsToTheLoginScene()
+    {
+        // vfunc_1 0 (the Tencent platform): m_1d4 = 0x6200009, whose popdown end is QuitAndDisconnect (:1656-1658, :1665-1681)
+        var (h, c) = Load(c => c.ServerListScene = false, Row("A", "11", "d.png"));
+        var left = new Leaves(c);
+        c.Previewed("11");
+        c.FadeInComplete();
+        Assert.That(c.OnCallback("OnSceneLobbyServer", Array.Empty<object>()), Is.True);
+        for (int i = 0; i < 240 && left.Login == 0; i++) h.Player.Tick();
+        Assert.That((left.Server, left.Login, left.Other), Is.EqualTo((0, 1, 0)));
+    }
+
+    [Test]
+    public void AServerListClickDuringASelectionGoesOnAfterThePreview()
+    {
+        // FUN_1418f11c0 under m_180 sets m_1d4 without HidePopups; the preview's FUN_1418f1d00 runs it again for 0x620001a
+        // (:1624-1626): the popdown, then the server list at its end
+        var (h, c) = Load(Row("A", "11", "d.png"), Row("B", "12", "d.png"));
+        var left = new Leaves(c);
+        c.Previewed("11");
+        c.FadeInComplete();
+        Assert.That(c.OnCallback("OnSelectCharacter", new object[] { "12" }), Is.True);
+        Assert.That(c.Selecting, Is.True);
+        Assert.That(c.OnCallback("onClickRegionList", Array.Empty<object>()), Is.True);
+        for (int i = 0; i < 240; i++) h.Player.Tick();
+        Assert.That(left.Server, Is.EqualTo(0), "no popdown while the selection is handled");
+        c.Previewed("12");
+        Assert.That(c.InputOn, Is.False, "HidePopups after the preview");
+        for (int i = 0; i < 240 && left.Server == 0; i++) h.Player.Tick();
+        Assert.That((left.Server, left.Login, left.Other), Is.EqualTo((1, 0, 0)));
+    }
+
     // ---- the character delete (UICharacterListDialog::OnCharacterListPacket modes 2, 5, 6; ShowDeleteError) ----------
 
     /// <summary>ShowDeleteError (@0x1418f47e0, :1959-1977): the client's string for each code; any other is s_char_err_destroy

@@ -96,7 +96,11 @@ public partial class GameFlow : Node
         Ui.MessageBoxLayer.GameExit += onGameExit;
         Ui.MessageBoxLayer.MaintenanceExit += onGameExit;   // HandleMaintenanceExitButton: the same quit (uimessagebox.cpp:1515-1519)
         // HandleAlreadyReconnectButton: ConnectToConfiguredServer, and the login server's RequestLogin gets the login again
-        onAlreadyReconnect = () => { if (Current == State.Login && Net.LiveSession.Instance is { Busy: false } live) LoginLive(live); };
+        onAlreadyReconnect = () =>
+        {
+            if (Current == State.Login && Net.LiveSession.Instance is { Busy: false } live) LoginLive(live);
+            else if (Current == State.Lobby) _ = LobbyLogin(true);   // from the server list's connect: the type 2 login again
+        };
         Ui.MessageBoxLayer.AlreadyReconnect += onAlreadyReconnect;
         // HandleExternalBlockButton: ShellExecuteEx of the page; type 0 then quits as the maintenance exit does
         onExternalBlock = (url, quit) => { OS.ShellOpen(url); if (quit) QuitNow(); };
@@ -459,6 +463,57 @@ public partial class GameFlow : Node
     /// requests again.
     /// </summary>
     public static void Manage(CharacterIdCommand command, string sn) => instance?.ManageLive(command, sn);
+
+    /// <summary>
+    /// The character list's server list popdown ended (OnEndPopdown, m_1d4 0x620001a): RequestServerList, then the lobby's
+    /// server scene, whose dialog on the KMS client's platform connects again to the saved server and channel at once and
+    /// logs in (uiserverlistdialog.cpp:346-371, FUN_141ad2560). The new character list enters character select again.
+    /// The server scene's own movie is not hosted: the popped-down list stays on screen while it connects.
+    /// </summary>
+    public static void ReturnToServerList() => instance?.ServerListAgain();
+
+    /// <summary>
+    /// The character list's login scene popdown ended (OnEndPopdown, m_1d4 0x6200009, only where the platform's vfunc_1 is
+    /// 0): QuitAndDisconnect (uicharacterlistdialog.cpp:1665-1681), SendRequestQuitAndDisconnect and the login scene.
+    /// </summary>
+    public static void QuitToLoginScene()
+    {
+        if (instance == null || instance.Current != State.Lobby) return;
+        _ = Net.LiveSession.Instance?.SendRequestQuitAndDisconnect();
+        instance.Go(State.Login);
+    }
+
+    async void ServerListAgain() => await LobbyLogin(false);
+
+    /// <summary>
+    /// The server list's connect from the lobby: after the list's RequestServerList, or (<paramref name="configured"/>) the
+    /// AlreadyLogin box's OK. A good login enters character select again with the new list. AlreadyLogin (4, 5) shows its box
+    /// and the lobby stays (CNetworkService::OnLoginResult, networkservice.cpp:1033-1036; UIServerListDialog::OnLoginResult only
+    /// fails the hidden dialog, :604-611), so the box's OK connects again. Any other failure goes to the login scene with the
+    /// box a first login shows: the server scene, where the client stays, is not hosted.
+    /// </summary>
+    async System.Threading.Tasks.Task LobbyLogin(bool configured)
+    {
+        if (Current != State.Lobby) return;
+        if (Net.LiveSession.Instance is not { Busy: false } live) { if (!configured) Go(State.Login); return; }   // offline: no server list to connect to
+        if (configured ? await live.ConnectConfiguredAgainAsync() : await live.ServerListAgainAsync())
+        {
+            if (Current == State.Lobby) Change(LobbyScene);   // CSceneStateMulti back to its select scene with the new list
+            return;
+        }
+        if (live.LastLoginRefusal is { State: 4 or 5 } already)
+        {
+            GD.Print($"lobby: the server list's login was refused, state {already.State}; its box, and the lobby stays");
+            Ui.MessageBoxLayer.Ensure(this);
+            FrontEndBoxes.LoginRefused(already);
+            return;
+        }
+        GD.Print("lobby: the server list's login failed; back to the login scene");
+        Go(State.Login);
+        Ui.MessageBoxLayer.Ensure(this);
+        if (live.LastLoginRefusal is { } r) FrontEndBoxes.LoginRefused(r);
+        else Ms2.Ui.Hud.MessageBoxQueue.ShowMessageBox(Ms2.Ui.FrontEndConnection.ConnectFailed(live.LastConnectError, Ms2.Ui.Hud.MessageBoxData.Common), 0, null, "");
+    }
 
     async void ManageLive(CharacterIdCommand command, string sn)
     {
