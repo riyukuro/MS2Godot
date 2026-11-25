@@ -99,6 +99,7 @@ public partial class LiveSession
         InteractNpcs.Clear();
         npcPolled = false;
         taxiPolled = false;
+        holdPolled = false;
         TaxiAction.Attach(null);
         AutoFindFieldLeave();   // FUN_1409f1de0 and the OnceCallbackTimer's Clear (worldservice_1.cpp:9988-9989)
         var packs = PackSet.Shared(Settings.DataDir);
@@ -378,7 +379,8 @@ public partial class LiveSession
     }
 
     /// <summary>
-    /// Per-frame action-key poll before the portal, by ascending action key: GatheringAction (4), TaxiStationAction (8,
+    /// Per-frame action-key poll before the portal, by ascending action key: GatheringAction (4), HoldAction (6,
+    /// <see cref="PollHold"/>), TaxiStationAction (8,
     /// <see cref="PollTaxi"/>), InteractNpcAction
     /// (0x11, <see cref="LiveInteractNpc.Poll"/>), InteractAction (0x12). 0 B/frame.
     /// </summary>
@@ -390,7 +392,8 @@ public partial class LiveSession
     {
         taxiAt = at;
         taxiPoll ??= PollTaxi;
-        return InteractKey.Poll(InteractObjects, InteractNpcs, at, npcAt, taxiPoll, out npcPolled, out taxiPolled);
+        holdPoll ??= PollHold;
+        return InteractKey.Poll(InteractObjects, InteractNpcs, at, npcAt, holdPoll, taxiPoll, out npcPolled, out holdPolled, out taxiPolled);
     }
 
     /// <summary>The billboard action's poll (key 0x18, after the portal; 0 B/frame).</summary>

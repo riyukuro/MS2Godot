@@ -54,6 +54,14 @@ public partial class Player
         ClearHitReport();
     }
 
+    /// <summary>HoldAction::vfunc_2 in StateHold (actionkeyobject.cpp:2263-2264): vfunc_59(6, 0, 0, 0), StateJump sub 0 with no
+    /// move direction.</summary>
+    public void HoldLetGo()
+    {
+        if (State != MoveState.Hold) return;
+        StartJump(Vector3.Zero, false, 0);
+    }
+
     /// <summary>ResponseRide modes 4 / 5 for the hold's owner (scenestategame.cpp:12099-12112): the camera is back on the
     /// own pc, so leaving the hold sends no mode 4.</summary>
     public void HoldCameraBack(int ownerId)

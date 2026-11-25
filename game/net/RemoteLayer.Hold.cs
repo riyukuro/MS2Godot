@@ -188,6 +188,20 @@ public sealed partial class RemoteLayer
         return holdPoints[key] = found.ToArray();
     }
 
+    static readonly NodePath NpcHoldSkeletonPath = "Model/" + ModelBuilder.SkeletonName;
+
+    /// <summary>WorldService::FindNpcById and PCBase::vfunc_117 (@0x1416752a0, pcbase.cpp:2747: m_unk_b88 not empty) for an
+    /// npc of the field: its npc id, and whether its body has a Hold_PointNN node (CNpc keeps PCBase::vfunc_119). False when
+    /// no such npc is here; a placeholder has no nodes. A dead npc keeps its nodes.</summary>
+    public bool NpcHoldable(int id, out int npcId, out bool holdable)
+    {
+        holdable = false;
+        if (!npcs.HoldInfo(id, out npcId, out _, out var visual)) return false;
+        if (visual != null && IsInstanceValid(visual) && visual.GetNodeOrNull<Skeleton3D>(NpcHoldSkeletonPath) is { } sk)
+            holdable = HoldPoints(sk).Length > 0;
+        return true;
+    }
+
     /// <summary>What MyPC::FUN_1415279d0 reads of another player: its ridee, m_mapB28's count, the ridee's passenger count
     /// (CRideeData m_passengers), its character id, guild name, feet and m_b1224. False when it is not here.</summary>
     public bool HoldPcInfo(int id, out bool hasRidee, out int passengers, out int seats, out long characterId, out string guild,

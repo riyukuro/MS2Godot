@@ -21,6 +21,9 @@ public enum ActionKeyTarget
     Reactor,
     /// <summary>HoldPCAction (0x1b, actionkeyobject.cpp:2298-2380), in the normal map only: board another player's mount.</summary>
     HoldPc,
+    /// <summary>HoldAction (6, actionkeyobject.cpp:2196-2295), in the normal map only: hold on to an npc with hold nodes, or
+    /// let go. Polled inside the interact part, after gathering (4) and before the taxi (8).</summary>
+    Hold,
 }
 
 /// <summary>

@@ -641,9 +641,9 @@ public partial class FieldContents : Node3D
         if (!offline)
         {
             // live: at most every 100 ms the action key's poll runs its actions by ascending key and the first that applies
-            // is the current one (Unk_ActionKeyManager::Update, a CRBMap): gathering (4), the interact npc (0x11) and
-            // interact (0x12) objects, the server-listed portal the player stands in (0x13, PortalAction vfunc_1), the
-            // liftable cube in reach (0x15, LiftCubeAction vfunc_1, from the ridee when riding), the billboard (0x18).
+            // is the current one (Unk_ActionKeyManager::Update, a CRBMap): gathering (4), the npc hold (6), the taxi (8), the
+            // interact npc (0x11) and interact (0x12) objects, the server-listed portal the player stands in (0x13, PortalAction
+            // vfunc_1), the liftable cube in reach (0x15, LiftCubeAction vfunc_1, from the ridee when riding), the billboard (0x18).
             // TalkAction (0x14) is polled at the press: its npc search allocates. The key runs only the
             // current action (ActivateCurrentAction), so a refused interact does not reach the talk. Active
             // StateInteraction casts tick every frame (0 B/frame).
@@ -669,6 +669,9 @@ public partial class FieldContents : Node3D
                     bool onHoldPc = !onInteract && !onPortal && !onLift && !onBoard && !onReactor
                         && Ms2Godot.Net.LiveSession.Instance is { } hls && hls.PollHoldPc();
                     actionKeys.Current = Ms2.Ui.ActionKeyPoll.Pick(onInteract, onPortal, false, onLift, onBoard, onReactor, onHoldPc);
+                    // the hold (6) is polled inside the interact part, between gathering (4) and the taxi (8)
+                    if (onInteract && Ms2Godot.Net.LiveSession.Instance is { HoldPolled: true })
+                        actionKeys.Current = Ms2.Ui.ActionKeyTarget.Hold;
                 }
             }
             LiveInteractTick(playerMs2, player.State != Player.MoveState.Idle);
@@ -712,6 +715,7 @@ public partial class FieldContents : Node3D
             case Ms2.Ui.ActionKeyTarget.Lift: if (Ms2Godot.Net.LiveSession.Instance is { } lls) lls.UseLift(); break;
             case Ms2.Ui.ActionKeyTarget.Reactor: if (!moving && Ms2Godot.Net.LiveSession.Instance is { } rls) rls.UseReactor(); break;
             case Ms2.Ui.ActionKeyTarget.HoldPc: if (Ms2Godot.Net.LiveSession.Instance is { } hps) hps.UseHoldPc(); break;
+            case Ms2.Ui.ActionKeyTarget.Hold: if (Ms2Godot.Net.LiveSession.Instance is { } hos) hos.UseHold(); break;
             // PutDownLiftableAction::vfunc_2 (@0x14095ad50): the active craft's ConfirmPlacement, which sends
             // RequestCube 10 for a free cell (see CubeCraftState.ConfirmPlacement for what stays open).
             case Ms2.Ui.ActionKeyTarget.PutDownLiftable:

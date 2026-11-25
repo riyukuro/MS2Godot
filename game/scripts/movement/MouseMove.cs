@@ -31,6 +31,7 @@ public partial class MouseMove : Node
     // m_spCurrent: the kept pick and what its vfunc_3 compares
     Ms2.Ui.MousePick pick;
     World.FieldNpcs.Placed clickedNpc;    // CMouseInteractNpc m_nNpcId
+    bool clickedNpcHold;                  // CMouseInteractNpc m_nAction: 6 (HoldAction) for an npc with hold nodes, else 0x14
     int pickPortalTarget;                 // CMouseInteractPortal m_nPortalId (the portal's target map, FUN_14169d280)
     string pickObject;                    // CMouseInteractObject m_strObjectId
     int pickObjectAction;                 // CMouseInteractObject m_nAction
@@ -39,6 +40,8 @@ public partial class MouseMove : Node
     public static Ms2.Ui.MousePick LastKept, LastRan;
     /// <summary>The last hover cursor kind set (logged; the scripted live runs read it).</summary>
     public static int LastHoverKind;
+    /// <summary>The last hint the hover set (the scripted live runs read it).</summary>
+    public static string LastHint;
     double hoverT;
     Ms2.Ui.GameTables hintTables;
     int? limitDistance;                   // Common::Constants MouseInteractLimitDistance (m_pickRange)
@@ -144,7 +147,11 @@ public partial class MouseMove : Node
                     pickObject = obj.Name;
                     pickObjectAction = Ms2.Ui.MouseInteract.ObjectActionKey(obj.Kind);
                     break;
-                case World.FieldNpcs.Placed npc: clickedNpc = npc; break;
+                case World.FieldNpcs.Placed npc:
+                    // CMouseInteractNpc::vfunc_2 (mouseinteract.cpp:270-274): m_nAction 6 for an npc with hold nodes
+                    clickedNpc = npc;
+                    clickedNpcHold = ls != null && ls.NpcHoldable(npc.ObjectId);
+                    break;
             }
             return true;
         }
@@ -225,8 +232,8 @@ public partial class MouseMove : Node
         {
             Ms2.Ui.LivePortal portal => Ms2.Ui.MouseInteract.PortalHint(t, portal.Type, portal.TargetMap),
             Ms2.Ui.LiveInteractObject obj => Ms2.Ui.MouseInteract.ObjectHint(t, obj.RowId),
-            // no npc is held by another in the port (PCBase::vfunc_117)
-            World.FieldNpcs.Placed npc => npc.Row == null ? "" : Ms2.Ui.MouseInteract.NpcHint(t, npc.Row.Id, false),
+            World.FieldNpcs.Placed npc => npc.Row == null ? ""
+                : Ms2.Ui.MouseInteract.NpcHint(t, npc.Row.Id, Net.LiveSession.Instance is { } hl && hl.NpcHoldable(npc.ObjectId)),
             _ => Ms2.Ui.MouseInteract.FixedHint(t, p),
         };
     }
@@ -257,7 +264,7 @@ public partial class MouseMove : Node
         int current = cursor.GetCursorType();
         if (Ms2.Ui.MouseCursorController.HoverType(current, kind) is not { } wanted) return;
         if (current != wanted) cursor.ChangeType(wanted);
-        if (!string.IsNullOrEmpty(hint)) cursor.SetText(hint);
+        if (!string.IsNullOrEmpty(hint)) { cursor.SetText(hint); LastHint = hint; }
         if (kind != LastHoverKind) { LastHoverKind = kind; GD.Print($"mouse: hover kind {kind} hint \"{hint}\""); }
     }
 
@@ -303,6 +310,13 @@ public partial class MouseMove : Node
                 break;
             case Ms2.Ui.MousePick.Npc:
                 if (clickedNpc == null || !IsInstanceValid(clickedNpc.Root)) { ClearPick(); return false; }
+                if (clickedNpcHold)
+                {
+                    // CMouseInteractNpc::vfunc_3 (:290-296): the current action is HoldAction with the kept npc id
+                    if (fc == null || ls == null || fc.CurrentAction != Ms2.Ui.ActionKeyTarget.Hold
+                        || ls.Hold.NpcId != clickedNpc.Row?.Id) return false;
+                    break;
+                }
                 if (World.NpcTalk.Current is not { } talk || !talk.TalkIfCurrent(clickedNpc)) return false;
                 Stop(); ClearPick();
                 return true;
@@ -334,6 +348,7 @@ public partial class MouseMove : Node
     {
         pick = Ms2.Ui.MousePick.None;
         clickedNpc = null;
+        clickedNpcHold = false;
         pickPortalTarget = 0;
         pickObject = null;
         pickObjectAction = 0;

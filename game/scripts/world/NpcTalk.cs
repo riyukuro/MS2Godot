@@ -349,9 +349,9 @@ public sealed partial class NpcTalk : Node
     /// <summary>
     /// CMouseInteractNpc::FindTarget (mouseinteract.cpp:307) for a click ray (Godot space): the first npc, in object id order
     /// (the npc map), that is shown, not an enemy, passes <see cref="NpcMousePick.Picks"/> (its kind, npc talks or shown quest
-    /// mark, while a guide event does not restrict talking) and whose sphere the ray passes through. No distance limit: the
-    /// pick range (m_pickRange) is the hover cursor's only.
-    /// STILL-OPEN: holding (PCBase::vfunc_117, HoldAction) is not ported, as for the talk key.
+    /// mark, while a guide event does not restrict talking and the talk interval has passed; or hold nodes, PCBase::vfunc_117,
+    /// while the own pc is not in StateHold) and whose sphere the ray passes through. No distance limit: the pick range
+    /// (m_pickRange) is the hover cursor's only.
     /// </summary>
     public FieldNpcs.Placed FindClickTarget(Vector3 origin, Vector3 dir)
     {
@@ -359,10 +359,12 @@ public sealed partial class NpcTalk : Node
         // mouseinteract.cpp:314-317: no talk pick while a guide event restricts talking or before the talk interval has passed
         bool talkAllowed = Ms2.Ui.Guide.GuideManager.Current?.IsRestricted(Ms2.Ui.Guide.GuideLimit.ActionTalk) != true
             && TalkIntervalElapsed;
+        bool holdAllowed = player.State != Player.MoveState.Hold;      // :318-319: no hold pick in state 0x20
         foreach (var n in (live != null ? live.TalkNpcs : npcs).OrderBy(x => x.ObjectId))
         {
             if (!n.Root.Visible || n.Row.Friendly == 0) continue;
-            if (!NpcMousePick.Picks(n.Row.Kind, Scripts(packs).Find(n.Row.Id) != null, QuestMark(n.Row.Id).State, false, talkAllowed, false)) continue;
+            if (!NpcMousePick.Picks(n.Row.Kind, Scripts(packs).Find(n.Row.Id) != null, QuestMark(n.Row.Id).State,
+                    live != null && live.NpcHoldable(n.ObjectId), talkAllowed, holdAllowed)) continue;
             float half = n.Row.CapsuleHeight * 0.5f;
             var c = n.Position + new Vector3(0, half, 0);
             if (NpcMousePick.RayHitsSphere(new(origin.X, origin.Y, origin.Z), new(dir.X, dir.Y, dir.Z), new(c.X, c.Y, c.Z), half)) return n;
