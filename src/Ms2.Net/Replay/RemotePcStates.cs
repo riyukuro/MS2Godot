@@ -953,7 +953,7 @@ public sealed class RemotePcStates
         var row = Emotion?.Row(emotionId);
         if (row == null || row.MainType != 0xe) return;
         emotionAnim = row.ParamStr ?? "";
-        Emotion.Offsets(row.OffsetNameTag, row.OffsetNameTag);
+        Emotion.Offsets(row.OffsetNameTag, row.OffsetHpBar);
         Emotion.Face(emotionAnim);
         emotionLoop = Emotion.Animation(emotionAnim, 0);
         if (emotionLoop != null) EmotionPlay(emotionLoop, true);
@@ -974,7 +974,7 @@ public sealed class RemotePcStates
         if (row == null || row.MainType != 0xe) { ChangeState(StateIdle); return; }
         idleAnim = row.ParamStr ?? "";
         Emotion.Face(idleAnim);
-        Emotion.Offsets(row.OffsetNameTag, row.OffsetNameTag);
+        Emotion.Offsets(row.OffsetNameTag, row.OffsetHpBar);
         if (Emotion.Animation(idleAnim, 1) is { } idle) EmotionPlay(idle, true);
     }
 

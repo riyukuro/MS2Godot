@@ -1,8 +1,8 @@
 namespace Ms2.Net.Replay;
 
 /// <summary>The skill row StateEmotion / StateEmotionIdle read (SkillDataTableCli::GetSkillData): its main type, basic
-/// paramStr and kinds offsetNameTag.</summary>
-public sealed record EmotionRow(int MainType, string ParamStr, int OffsetNameTag);
+/// paramStr, kinds offsetNameTag and the HP bar's offset (the KMS row's offsetNameTag; the GMS2 row's offsetHPBar).</summary>
+public sealed record EmotionRow(int MainType, string ParamStr, int OffsetNameTag, int OffsetHpBar);
 
 /// <summary>A body sequence PCBase::PlayAnimation started: its length in seconds and whether it loops (the kf's cycle 0).</summary>
 public readonly record struct EmotionPlay(bool Played, double Length, bool Loops);

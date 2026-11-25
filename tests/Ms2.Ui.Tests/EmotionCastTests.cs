@@ -38,6 +38,19 @@ public class EmotionCastTests
     }
 
     [Test]
+    public void TheHpBarOffsetIsTheNameTagOffsetOnKmsAndOffsetHpBarOnGms2()
+    {
+        // KMS StateEmotionIdle sets m_f170 and m_f174 from m_nOffsetNameTag (stateemotionidle.cpp:230-231); the GMS2 client keeps
+        // <kinds offsetHPBar> (reader @0x14045d294) and sets the bar from it (@0x140c6238f)
+        Assert.That((Row(Sit).OffsetNameTag, Row(Sit).OffsetHpBar), Is.EqualTo((-40, -40)));
+        const string gms2 = "<skill id=\"90200011\"><basic><kinds type=\"0\" subType=\"0\" emotionType=\"1\" emotion=\"sit\" offsetNameTag=\"-40\" offsetHPBar=\"-30\"/></basic></skill>";
+        var g = SkillData.Load(XElement.Parse(gms2), (e, child, key) => e.Elements(child).ToList(), gms2Row: true);
+        Assert.That((g.OffsetNameTag, g.OffsetHpBar), Is.EqualTo((-40, -30)));
+        var none = SkillData.Load(XElement.Parse(gms2.Replace(" offsetHPBar=\"-30\"", "")), (e, child, key) => e.Elements(child).ToList(), gms2Row: true);
+        Assert.That(none.OffsetHpBar, Is.EqualTo(0), "a GMS2 row without offsetHPBar keeps 0 (INFERRED: the block's initial value)");
+    }
+
+    [Test]
     public void AnEmotionCastIsNoModeZeroCast()
     {
         // FUN_1417ea570 (stateskill.cpp:1809-1810): IsEmotion goes to FUN_1417eaa50, which sends Emote mode 2 itself

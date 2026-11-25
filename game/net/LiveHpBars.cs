@@ -36,6 +36,7 @@ public sealed partial class LiveHpBars : CanvasLayer, IMovieLayer
         public NpcHpBar Npc; public NpcRow Row;          // npcs
         public PcHpBar Pc; public long CharId;           // players
         public Movement.RideData Ride;                   // players: the mount's row while riding
+        public float Extra;                              // players: PCBase m_f174 (FUN_141670360)
     }
 
     readonly Dictionary<Node3D, Entry> bars = new();
@@ -124,6 +125,13 @@ public sealed partial class LiveHpBars : CanvasLayer, IMovieLayer
         if (root != null && bars.TryGetValue(root, out var e)) e.Ride = ride;
     }
 
+    /// <summary>PCBase m_f174 (FUN_141670360) of a player's bar: added to OffsetPcHpbar (PCBase::FUN_141670390,
+    /// pcbase.cpp:2327-2334).</summary>
+    public void SetExtraOffset(Node3D root, float offset)
+    {
+        if (root != null && bars.TryGetValue(root, out var e)) e.Extra = offset;
+    }
+
     /// <summary>The actor left the field (ReleaseEntity): its bar goes with it.</summary>
     public void Remove(Node3D root)
     {
@@ -159,7 +167,7 @@ public sealed partial class LiveHpBars : CanvasLayer, IMovieLayer
                 {
                     far = eye.DistanceTo(e.Root.GlobalPosition) > distance;   // Entity::vfunc_8: FUN_140f48e20() > m_54
                     var s = camera.UnprojectPosition(a);
-                    s.Y += (e.Offset + (e.Ride?.HpBarOffsetY ?? 0) + (field == null ? 0 : PlayerNameTag.PitchShift(field, a))) * u;
+                    s.Y += (e.Offset + e.Extra + (e.Ride?.HpBarOffsetY ?? 0) + (field == null ? 0 : PlayerNameTag.PitchShift(field, a))) * u;
                     p = s;
                 }
             }

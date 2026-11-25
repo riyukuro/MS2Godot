@@ -325,6 +325,12 @@ public sealed class SkillData
     /// <summary>&lt;kinds offsetNameTag&gt; (m_nOffsetNameTag, skilloverlapcompare.cpp:844): how far an emotion's states move the
     /// name tag (PCBase::FUN_141670330 / FUN_141670360, stateemotionidle.cpp:226-227).</summary>
     public int OffsetNameTag;
+    /// <summary>How far an emotion's states move the HP bar (PCBase m_f174, FUN_141670360). The KMS client sets it from
+    /// m_nOffsetNameTag too (stateemotionidle.cpp:230-231); the GMS2 client reads &lt;kinds offsetHPBar&gt; into the kinds block's
+    /// +0x34 (the reader @0x14045d294, row +0xb4) and its emotion state sets the bar from it (the setter @0x140baef60 called
+    /// @0x140c6238f and @0x140c63be9 with row +0xb4, the name tag @0x140baef50 with row +0xb0, offsetNameTag), so a GMS2 row
+    /// keeps offsetHPBar (0 when absent, INFERRED: the block's initial value is not read). Read from the GMS2 x64 dump's disassembly (not decompiled).</summary>
+    public int OffsetHpBar;
     /// <summary>
     /// The GMS2 learned test's kind short cut (JobSystemCli::vfunc_2 @0x14057cc50 on the kinds block, row +0x80): kinds type 3
     /// (@0x14045d5d0, +8) or an emotionType of 1 or 2 with an emotion name (@0x14045d510: +0x24 in 1-2 and the +0x28 string's
@@ -445,6 +451,7 @@ public sealed class SkillData
             s.ImmediateActive = Xml.Int(kinds, "immediateActive");
             s.GroupIds = Xml.UInt(kinds, "groupIDs");
             s.OffsetNameTag = Xml.Int(kinds, "offsetNameTag");
+            s.OffsetHpBar = gms2Row ? Xml.Int(kinds, "offsetHPBar") : s.OffsetNameTag;
             if (gms2Row)
                 s.Gms2NotBookKind = Xml.Int(kinds, "type") == 3
                     || Xml.Int(kinds, "emotionType") is 1 or 2 && !string.IsNullOrEmpty((string)kinds.Attribute("emotion"));

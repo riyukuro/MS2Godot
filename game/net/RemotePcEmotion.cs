@@ -20,6 +20,10 @@ public sealed partial class RemotePc : IEmotionBody
     public Func<EmotionGroup> EmotionGroupOf;
     /// <summary>m_f170 (FUN_141670330): added to OffsetPcNametag for the PC's name tag.</summary>
     public Action<float> NameTagOffset;
+    /// <summary>m_f174 (FUN_141670360): added to OffsetPcHpbar for the PC's HP bar (PCBase::FUN_141670390, pcbase.cpp:2327-2334).</summary>
+    public Action<float> HpBarOffset;
+    /// <summary>The PC's m_f174 now, which a bar made later (the party member's bar is made on demand) starts with.</summary>
+    public float HpBarExtra { get; private set; }
 
     public EmotionRow Row(int id) => EmotionRowOf?.Invoke(id);
 
@@ -46,7 +50,14 @@ public sealed partial class RemotePc : IEmotionBody
         return new EmotionPlay(true, a.Length, loop);
     }
 
-    void IEmotionBody.Offsets(float nameTag, float hpBar) => NameTagOffset?.Invoke(nameTag);
+    /// <summary>StateEmotionIdle's FUN_141670330 / FUN_141670360 (stateemotionidle.cpp:230-231, :248-249): the name tag's and
+    /// the HP bar's offsets.</summary>
+    void IEmotionBody.Offsets(float nameTag, float hpBar)
+    {
+        NameTagOffset?.Invoke(nameTag);
+        HpBarExtra = hpBar;
+        HpBarOffset?.Invoke(hpBar);
+    }
 
     public void Face(string anim) { }
 

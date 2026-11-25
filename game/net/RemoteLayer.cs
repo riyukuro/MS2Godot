@@ -583,7 +583,7 @@ public sealed partial class RemoteLayer : Node3D
     Ms2.Net.Replay.EmotionRow EmotionRow(int id)
     {
         var s = Ms2.Ui.GameTables.Shared(packs, Ms2Godot.GameOptions.StringLanguage).Skills.GetSkillData((uint)id);
-        return s == null ? null : new Ms2.Net.Replay.EmotionRow(s.MainType, s.ParamStr, s.OffsetNameTag);
+        return s == null ? null : new Ms2.Net.Replay.EmotionRow(s.MainType, s.ParamStr, s.OffsetNameTag, s.OffsetHpBar);
     }
 
 
@@ -677,6 +677,7 @@ public sealed partial class RemoteLayer : Node3D
         pc.EmotionRowOf = EmotionRow;
         pc.EmotionGroupOf = () => EmotionGroup(equip.FaceItem(visual), r.Gender);
         pc.NameTagOffset = v => tags.SetExtraOffset(root, v);
+        pc.HpBarOffset = v => bars.SetExtraOffset(root, v);
         if (LiveSession.LiveCheck)
             pc.States.StateChanged = s =>
             {
@@ -805,6 +806,7 @@ public sealed partial class RemoteLayer : Node3D
         if (r.Bar != null || !CanPcBar(r.CharacterId)) return r.Bar;
         r.Bar = bars.AddPc(r.Root, r.Anchor, r.CharacterId);
         bars.Ride(r.Root, r.Ridee?.Mount?.Data);
+        bars.SetExtraOffset(r.Root, r.Pc?.HpBarExtra ?? 0);
         return r.Bar;
     }
 

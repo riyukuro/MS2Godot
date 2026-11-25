@@ -60,7 +60,7 @@ public partial class Player
         emotionLeft = -1;
         if (row.MainType != EmotionCast.MainTypeEmotion) return;
         emotionAnim = row.ParamStr;
-        NameTagOffset = HpBarOffset = row.OffsetNameTag;
+        NameTagOffset = row.OffsetNameTag; HpBarOffset = row.OffsetHpBar;
         FaceEmotion?.Play(emotionAnim, false, FaceMs);
         emotionLoop = EmotionAnimation(0);
         if (emotionLoop != null) PlayEmotion(emotionLoop, true);
@@ -86,7 +86,7 @@ public partial class Player
         if (row == null || row.MainType != EmotionCast.MainTypeEmotion) { Enter(MoveState.Idle); return; }
         emotionAnim = row.ParamStr;
         FaceEmotion?.Play(emotionAnim, false, FaceMs);
-        NameTagOffset = HpBarOffset = row.OffsetNameTag;
+        NameTagOffset = row.OffsetNameTag; HpBarOffset = row.OffsetHpBar;
         if (EmotionAnimation(1) is { } idle) PlayEmotion(idle, true);
     }
 

@@ -1263,9 +1263,10 @@ public class RemotePcStatesTests {
 
     static Emo Emotions() {
         var e = new Emo();
-        e.Rows[Hello] = new EmotionRow(0xe, "hello", 15);
-        e.Rows[Bow] = new EmotionRow(0xe, "bow", 0);
-        e.Rows[Plain] = new EmotionRow(0, "", 0);
+        // a GMS2-style row: offsetNameTag 15, offsetHPBar 25 (a KMS row's bar offset is its offsetNameTag)
+        e.Rows[Hello] = new EmotionRow(0xe, "hello", 15, 25);
+        e.Rows[Bow] = new EmotionRow(0xe, "bow", 0, 0);
+        e.Rows[Plain] = new EmotionRow(0, "", 0, 0);
         e.Anims[("hello", 0)] = "Emotion_Hello_A"; e.Anims[("hello", 1)] = "Emotion_Hello_Idle_A";
         e.Anims[("hello", 2)] = "Emotion_Hello_Bore_A";
         e.Anims[("bow", 0)] = "Emotion_Bow_A";                                      // no idleAnim
@@ -1375,7 +1376,7 @@ public class RemotePcStatesTests {
         Assert.That(sm.EmotionId, Is.EqualTo(Hello));
         Assert.That(e.Played, Is.EqualTo(new[] { ("Emotion_Hello_A", true) }));
         Assert.That(e.Faces, Is.EqualTo(new[] { "hello" }));
-        Assert.That(e.Off, Is.EqualTo((15f, 15f)));
+        Assert.That(e.Off, Is.EqualTo((15f, 25f)), "the name tag's and the HP bar's offsets of the row");
         Run(sm, 1.0f);
         Assert.That(sm.Cur, Is.EqualTo(RemotePcStates.StateEmotionIdle), "the looped anim's end of its pass");
         Assert.That(sm.Sub, Is.EqualTo(RemotePcStates.EmotionIdleSub));
