@@ -341,6 +341,8 @@ public partial class LiveSession : Node
     bool ownStunEntry;
     /// <summary>The own buffs' stun this frame (AdditionalBuffList.StunEntry for the pc); the HUD sets it with the buff list.</summary>
     public Func<(int Stun, int Sub, string Animation)?> OwnBuffStun = () => null;
+    /// <summary>The own PC's AdditionalCliList (the HUD holds it); null without the HUD.</summary>
+    public Ms2.Ui.Skills.AdditionalBuffList OwnBuffList;
     /// <summary>The live run's count of the stun buff's entries of StateStun.</summary>
     internal int BuffStunsEntered;
 
@@ -1743,7 +1745,8 @@ public partial class LiveSession : Node
         field.TreeExiting += () => { if (drops == dropLayer) { drops = null; PickupKeyHeld = false; } };
         // the field is freed: its tracker stops filling Events (a newer field's layer is left alone); the guide stops and
         // updates on the map's unload (worldservice_1.cpp:10021)
-        field.TreeExiting += () => { if (remote == layer) remote = null; guide?.StopAndUpdate(); };
+        // the field's effects go with it: the own buffs' keep effect ids are forgotten, kept anew in the next field
+        field.TreeExiting += () => { if (remote == layer) remote = null; guide?.StopAndUpdate(); OwnBuffList?.ForgetEffects(); };
         AddReactorLayer(field, builder);
         // the field is whole: the entry's answer (the login's comes through the flow as well; only one goes out)
         field.Loaded += FieldLoaded;

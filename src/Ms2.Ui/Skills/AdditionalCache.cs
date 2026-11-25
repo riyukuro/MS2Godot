@@ -15,7 +15,7 @@ namespace Ms2.Ui.Skills;
 public sealed class AdditionalCache
 {
     /// <summary>The format and parse version: bump it with any change to what the build writes or how the XML is read.</summary>
-    public const int Version = 13;     // 2: the levels' EventBuffType; 3: PvpOnOff; 4: ForceApplyTarget, Hide; 5: SpecialEffect; 6: InvokeEffect; 7: SpecialAbility; 8: DisableRevivalHere; 9: Invincible, SuperArmor, SuperArmorApplyFieldType; 10: the GMS2 additionaleffect/ files; 11: the GMS2 koradditionaldescription files; 12: the GMS2 special abilities; 13: MaxBuffCount, Stun, StunAnimation
+    public const int Version = 14;     // 2: the levels' EventBuffType; 3: PvpOnOff; 4: ForceApplyTarget, Hide; 5: SpecialEffect; 6: InvokeEffect; 7: SpecialAbility; 8: DisableRevivalHere; 9: Invincible, SuperArmor, SuperArmorApplyFieldType; 10: the GMS2 additionaleffect/ files; 11: the GMS2 koradditionaldescription files; 12: the GMS2 special abilities; 13: MaxBuffCount, Stun, StunAnimation; 14: the motion effects, InvokeEvent, OverlapKeep
     const uint Magic = 0x4441324D;     // "M2AD"
     const uint EndMagic = 0x444E4541;  // "AEND"
 
@@ -153,6 +153,11 @@ public sealed class AdditionalCache
             if (l.InvokeRates != null) foreach (var f in l.InvokeRates) w.Write(f);
             w.Write(l.SpecialAbilities?.Count ?? -1);
             if (l.SpecialAbilities != null) foreach (var (k, v) in l.SpecialAbilities) { w.Write(k); w.Write(v); }
+            w.Write(l.StartEffect); w.Write(l.KeepEffect); w.Write(l.StopEffect); w.Write(l.InvokeEffect);
+            w.Write(l.IgnoreOptimalHideStartEffect);
+            w.Write(l.InvokeEvent);
+            w.Write(l.OverlapKeep != null);
+            if (l.OverlapKeep != null) { WriteRows(w, l.OverlapKeep.Start); WriteRows(w, l.OverlapKeep.Keep); WriteRows(w, l.OverlapKeep.End); }
         }
     }
 
@@ -160,6 +165,19 @@ public sealed class AdditionalCache
     {
         w.Write(a?.Length ?? -1);
         if (a != null) foreach (var n in a) w.Write(n);
+    }
+
+    static void WriteRows(BinaryWriter w, (uint Count, string Effect)[] rows)
+    {
+        w.Write(rows.Length);
+        foreach (var (c, e) in rows) { w.Write(c); w.Write(e); }
+    }
+
+    static (uint, string)[] ReadRows(BinaryReader r)
+    {
+        var rows = new (uint, string)[r.ReadInt32()];
+        for (int i = 0; i < rows.Length; i++) rows[i] = (r.ReadUInt32(), r.ReadString());
+        return rows;
     }
 
     static int[] ReadInts(BinaryReader r)
@@ -269,7 +287,8 @@ public sealed class AdditionalCache
         var d = new AdditionalData { Id = id, MainType = r.ReadInt32(), IsDebuff = r.ReadBoolean() };
         int n = r.ReadInt32();
         for (int k = 0; k < n; k++)
-            d.Levels.Add(new AdditionalLevelData
+        {
+            var l = new AdditionalLevelData
             {
                 Level = r.ReadUInt16(), StringParam = r.ReadString(), DurationTick = r.ReadUInt32(), KeepCondition = r.ReadInt32(),
                 IconOnOff = r.ReadInt32(), Icon = r.ReadString(), Priority = r.ReadInt32(), IsHideCooltime = r.ReadBoolean(),
@@ -281,7 +300,12 @@ public sealed class AdditionalCache
                 InvokeSkillId = r.ReadUInt32(), InvokeSkillGroupId = r.ReadUInt32(), InvokeEffectId = r.ReadUInt32(), InvokeEffectGroupId = r.ReadUInt32(),
                 InvokeTypes = ReadInts(r), InvokeValues = ReadInts(r), InvokeRates = ReadFloats(r),
                 SpecialAbilities = ReadAbilities(r), Parent = d,
-            });
+                StartEffect = r.ReadString(), KeepEffect = r.ReadString(), StopEffect = r.ReadString(), InvokeEffect = r.ReadString(),
+                IgnoreOptimalHideStartEffect = r.ReadBoolean(), InvokeEvent = r.ReadInt32(),
+            };
+            if (r.ReadBoolean()) l.OverlapKeep = new OverlapKeepEffects(ReadRows(r), ReadRows(r), ReadRows(r));
+            d.Levels.Add(l);
+        }
         return d;
     }
 

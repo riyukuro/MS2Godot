@@ -49,6 +49,32 @@ public partial class HudScene
     public bool SkillBookPointUpScripted(uint id) => skillBook != null && !skillBook.IsClosed
         && skillBook.OnCallback("onSkillPointUp", new object[] { (double)id });
 
+    /// <summary>One point at a time into the skill's required skills (the job table's requirements, in turn) and then the skill,
+    /// up to a learnt level 1, through the movie's plus button; the levels reached, for the log.</summary>
+    public string SkillBookLearnScripted(uint id)
+    {
+        var sim = SkillBookPreview;
+        if (sim == null) return "no window";
+        var jobs = hudModel?.Tables?.Skills?.Jobs;
+        var job = jobs?.GetJobData(sim.JobCode) ?? jobs?.GetJobData(sim.JobCode / 10 * 10) ?? jobs?.GetJobData(sim.JobCode / 10);
+        var log = new System.Collections.Generic.List<string>();
+        void Learn(uint skill, int want, int depth)
+        {
+            if (depth > 8) return;
+            if (job?.GetSkillData(skill) is { } d)
+                for (int i = 0; i < d.RequireSkillIds.Count; i++) Learn(d.RequireSkillIds[i], System.Math.Max(1, (int)d.RequireSkillLevel(i)), depth + 1);
+            for (int k = 0; k <= want && sim.GetEditSkill(skill) is var e && !(e?.Learned == true && e.Level >= want); k++)
+                SkillBookPointUpScripted(skill);
+            log.Add($"{skill} {(sim.GetEditSkill(skill)?.Learned == true ? "learnt" : "not learnt")} {sim.GetEditSkill(skill)?.Level ?? 0}/{want}");
+        }
+        Learn(id, 1, 0);
+        return $"job {sim.JobCode} ({(job != null ? "in the table" : "not in the table")}): {string.Join(", ", log)}";
+    }
+
+    /// <summary>The window's apply button (the movie's onApplySkill); false when the window does not take it.</summary>
+    public bool SkillBookApplyScripted() => skillBook != null && !skillBook.IsClosed
+        && skillBook.OnCallback("onApplySkill", System.Array.Empty<object>());
+
     /// <summary>The skill tooltip's requirement lines at the preview's level (text and color), as the window builds it.</summary>
     public string SkillBookRequireText(uint id)
     {

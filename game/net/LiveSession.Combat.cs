@@ -78,6 +78,31 @@ public partial class LiveSession
             Check($"{what}: the frame is not one colour (luminance {lo:0.00} to {hi:0.00})", hi - lo > 0.05f);
         }
         string Env(string k, string d) => System.Environment.GetEnvironmentVariable(k) is { Length: > 0 } v ? v : d;
+        // MS2_LIVE_BUFF_SHOTS=N: the first N buff keep effects (RemoteLayer.BuffEffectPlayed, on any owner) shot that many frames
+        // after they are kept (MS2_LIVE_BUFF_SHOT_FRAMES, "2" by default, "a/b/..." for more), during whatever step waits frames then
+        if (int.TryParse(Env("MS2_LIVE_BUFF_SHOTS", "0"), out int buffShots) && buffShots > 0)
+        {
+            var at = Env("MS2_LIVE_BUFF_SHOT_FRAMES", "2").Split('/').Select(int.Parse).ToArray();
+            int since = -1, taken = 0;
+            string name = null;
+            RemoteLayer.BuffEffectPlayed += (fx, owner, h) =>
+            {
+                if (h <= 0 || since >= 0 || taken >= buffShots) return;
+                since = 0; name = $"buff{++taken}_{owner}_{System.IO.Path.GetFileNameWithoutExtension(fx)}";
+            };
+            var inner = frames;
+            frames = async count =>
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    await inner(1);
+                    if (since < 0) continue;
+                    since++;
+                    if (at.Contains(since)) Shot($"{name}_f{since}.png");
+                    if (since >= at.Max()) since = -1;
+                }
+            };
+        }
         // MS2_LIVE_EQUIP_DIRECT=1: when the bag refuses (the tutorial guide keeps it shut and holds the put on), the equip request
         // goes out as the bag would send it, right hand first and the second copy to the left; for a start that has the weapon
         // worn already, as a created character of another server's data
@@ -88,7 +113,8 @@ public partial class LiveSession
             foreach (var e in live.Items.All)
             {
                 if (e.Id != itemId || worn?.Any(w => w.Uid == e.Uid) == true) continue;
-                send(e.Uid, (byte)(another ? Ms2.Net.Packets.EquipSlot.LH : Ms2.Net.Packets.EquipSlot.RH), 0);
+                bool shield = itemId / 100000 == 141;      // a shield goes to the left hand as the bag puts it
+                send(e.Uid, (byte)(another || shield ? Ms2.Net.Packets.EquipSlot.LH : Ms2.Net.Packets.EquipSlot.RH), 0);
                 return true;
             }
             return false;
@@ -1373,6 +1399,31 @@ public partial class LiveSession
                 continue;
             }
             // cooldown:<skill id>: the quick slots' cooldown answer for the skill (HudScene.CooldownScripted), logged
+            if (step.StartsWith("movieend:"))      // movieend:<secs>: until the playing cut scene movie has ended (one Esc does not skip), at most that long
+            {
+                await until(() => !live.Movie.IsPlaying, 60 * int.Parse(step[9..]));
+                Check("no cut scene movie plays", !live.Movie.IsPlaying);
+                await frames(60);
+                continue;
+            }
+            if (step.StartsWith("learn:"))      // learn:<skill id>[/<skill id>...]: skill points by the GM command, the skill window opened, each learnt with the skills it requires, applied
+            {
+                var ids = step[6..].Split('/').Select(uint.Parse).ToArray();
+                hud.SubmitChatLine("/player skillpoint 30");
+                await frames(90);
+                bool open = hud.SkillBookOpenScripted();
+                await until(() => hud.SkillBookTreeShown, 60 * 10); await frames(60);
+                foreach (var id in ids)
+                {
+                    string got = hud.SkillBookLearnScripted(id);
+                    await frames(20);
+                    GD.Print($"live: combat {step}: {id}: {got}: {hud.SkillBookSlotState(id) ?? "not in the tree"}");
+                }
+                GD.Print($"live: combat {step}: window {(open ? "open" : "refused")}, apply {(hud.SkillBookApplyScripted() ? "sent" : "refused")}");
+                await frames(120);
+                hud.EscScripted(); await frames(60);
+                continue;
+            }
             if (step.StartsWith("cooldown:"))
             {
                 GD.Print($"live: combat {step}: {hud.CooldownScripted(uint.Parse(step[9..]))}");

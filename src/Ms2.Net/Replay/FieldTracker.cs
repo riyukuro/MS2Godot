@@ -46,8 +46,8 @@ public sealed record UserRevivalConfirmEvent(double Time, int ObjectId, uint End
 /// <summary>OnTombstone (0x5D, scenestategame.cpp:9644): FindPCById, then PC::FUN_14165d300(<paramref name="Kind"/>,
 /// <paramref name="Value"/>, <paramref name="Hitter"/>) for any PC (the tomb's break or hit and its bar's stage).</summary>
 public sealed record UserTombstoneEvent(double Time, int ObjectId, byte Kind, byte Value, int Hitter) : ReplayEvent(Time);
-/// <summary>OnBuff (0x47, scenestategame.cpp:7591) for a PC in the field: the owner header names it (FUN_141bd1200; an owner
-/// that is not here returns). The packet goes to that PC's AdditionalCliList (FUN_1416749a0).</summary>
+/// <summary>OnBuff (0x47, scenestategame.cpp:7591) for a PC or an npc in the field: the owner header names it (FUN_141bd1200;
+/// an owner that is not here returns). The packet goes to that object's AdditionalCliList (FUN_1416749a0).</summary>
 public sealed record UserBuffEvent(double Time, BuffPacket Buff) : ReplayEvent(Time);
 /// <summary>An npc's emotion bit changed (CNpc::ApplySyncBlock @0x1410918e0 reads the block's flags bit 2 and calls
 /// SetEmotion, whose change guard is pcbase.cpp:1268): the battle stance, true in battle. CNpc::vfunc_66 activates the
@@ -193,9 +193,9 @@ public sealed class FieldTracker {
                 break;
             }
             case Ms2.Net.Inbound.Buff: {
-                // STILL-OPEN: an npc owner's list (FUN_141bd1200 finds npcs too); only the PCs' are kept
+                // the owner is a PC or an npc (FUN_141bd1200 finds both)
                 var b = BuffPacket.Read(p.Reader());
-                if (HasActor(b.OwnerObjectId)) Events.Enqueue(new UserBuffEvent(Time, b));
+                if (HasObject(b.OwnerObjectId)) Events.Enqueue(new UserBuffEvent(Time, b));
                 break;
             }
             case Ms2.Net.Inbound.UserBattle: {

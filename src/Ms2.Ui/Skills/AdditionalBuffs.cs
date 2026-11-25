@@ -3,8 +3,9 @@ using Ms2.Net.Packets;
 namespace Ms2.Ui.Skills;
 
 /// <summary>
-/// AdditionalCli (client/ms2/additionalcli_1.cpp): one additional effect on the local player, the parts the buff strip reads.
-/// The effects, stance bar, shield bar and skill sets the client also drives from it are not here.
+/// AdditionalCli (client/ms2/additionalcli_1.cpp): one additional effect on a PC or an npc: the parts the buff strip reads and
+/// its motion effects (<see cref="AdditionalBuffList.Effects"/>). The stance bar, shield bar and skill sets the client also
+/// drives from it are not here.
 /// </summary>
 public sealed class AdditionalBuff
 {
@@ -25,6 +26,8 @@ public sealed class AdditionalBuff
     public bool Suspended;
     /// <summary>m_spLevel (SkillDataTableCli::FUN_140aafef0 of the id and level).</summary>
     public AdditionalLevelData LevelData;
+    /// <summary>m_nKeepEffect: the kept keep effect's id, 0 for none.</summary>
+    public int KeepEffect { get; internal set; }
     readonly AdditionalBuffList list;
 
     internal AdditionalBuff(AdditionalBuffList list) => this.list = list;
@@ -87,9 +90,29 @@ public interface IBuffStrip
 }
 
 /// <summary>
-/// The local player's AdditionalCliList (additionalcli_2.cpp) as OnBuff (scenestategame.cpp:7591) and the own FieldAddUser fill
-/// it. Only the buff strip parts are ported: the effects, costume sets, tail effects, skill sets, guild buffs and the shield
-/// bar are not.
+/// What an AdditionalCli's effects go through: CEffectService with a query whose actor is the owner (SetActor), whose object
+/// kind is the caster's (WorldService::FUN_141bd19d0) and whose lookup id is the caster's (SetLookupId).
+/// </summary>
+public interface IBuffMotionEffects
+{
+    /// <summary>FUN_1411a49c0 with m_b30 set (kept, not culled by sight): the kept effect's id, 0 when it did not spawn.</summary>
+    int Keep(string effect, int ownerId, int casterId);
+    /// <summary>InsertEffect: played once on the owner, kept by nothing.</summary>
+    void Insert(string effect, int ownerId, int casterId);
+    /// <summary>FUN_1411a6060: a kept effect stopped at once.</summary>
+    void Stop(int id);
+    /// <summary>FUN_141b6efc0 of the owner's entity: the owner has a scene node.</summary>
+    bool OwnerShown(int ownerId);
+}
+
+/// <summary>
+/// A PC's or an npc's AdditionalCliList (additionalcli_2.cpp) as OnBuff (scenestategame.cpp:7591) and the FieldAddUser /
+/// FieldAddNpc lists fill it. Ported: the buff strip parts and the motion effects (<see cref="Effects"/>, run each frame by
+/// <see cref="UpdateEffects"/>); the costume sets, tail effects, skill sets, guild buffs and the shield bar are not.
+/// STILL-OPEN in the effects: a portrait PC's list (IsPortraitOwner) is never made here; AdditionalCli::Update's battle riding
+/// suspension (m_bSuspended) and FUN_14096db40's immediateActiveRequireSkill disable are not ported; PlayStartEffect and
+/// PlayInvokeEffect skip a caster whose GameObject vfunc_25 (+0x40) is set, which is not known here, so they never skip; the
+/// IgnoreOptimalHideStartEffect flag goes nowhere, as the port has no optimal hide.
 /// </summary>
 public sealed class AdditionalBuffList
 {
@@ -103,6 +126,8 @@ public sealed class AdditionalBuffList
     public int UpperTargetId;
     /// <summary>FindMainPlayerInfo(20063); null = no panel.</summary>
     public IBuffStrip Strip;
+    /// <summary>The effect service the effects play through; null = none are played.</summary>
+    public IBuffMotionEffects Effects;
 
     /// <param name="levelOf">SkillDataTableCli::FUN_140aafef0: the effect level, null when unknown.</param>
     public AdditionalBuffList(Func<uint, ushort, AdditionalLevelData> levelOf) => this.levelOf = levelOf;
@@ -393,13 +418,14 @@ public sealed class AdditionalBuffList
         switch (p.Mode)
         {
             case BuffPacket.Add: Add(p); break;
-            case BuffPacket.Remove: Remove(p.Key); break;
+            case BuffPacket.Remove: Remove(p.Key, p.CasterObjectId); break;
             case BuffPacket.Modify: Modify(p); break;
         }
     }
 
     /// <summary>Mode 0: AdditionalCli::FUN_14096be10 (owner, state, value, then the level), then AdditionalCliList::Add
-    /// @0x14096f070: nothing for an invalid effect or a key already held; else kept, AddBuffUI, and FUN_1419f37f0(0xd).</summary>
+    /// @0x14096f070: nothing for an invalid effect or a key already held; else kept, FUN_14096c4c0 (the start effect),
+    /// AddBuffUI, and FUN_1419f37f0(0xd).</summary>
     public bool Add(BuffPacket p)
     {
         var b = new AdditionalBuff(this) { OwnerId = p.OwnerObjectId, Key = p.Key, CasterId = p.CasterObjectId };
@@ -409,51 +435,219 @@ public sealed class AdditionalBuffList
         b.LevelData = levelOf(b.Id, b.Level);
         if (!b.IsValid || map.ContainsKey(b.Key)) return false;
         map[b.Key] = b;
+        StartIfNotListed(b);
         AddBuffUI(b);
         Strip?.QueueSlotRefresh(0xd);
         return true;
     }
 
-    /// <summary>Mode 1: Remove @0x14096f500: RemoveBuffUI, drop it, FUN_1419f37f0(0xd).</summary>
-    public void Remove(int key)
+    /// <summary>Mode 1: Remove @0x14096f500: StopEffects with the packet's caster, RemoveBuffUI, drop it, FUN_1419f37f0(0xd).</summary>
+    public void Remove(int key, int casterId)
     {
-        if (!map.Remove(key, out var b)) return;
+        if (!map.TryGetValue(key, out var b)) return;
+        StopEffects(b, casterId);
+        map.Remove(key);
         RemoveBuffUI(b);
         Strip?.QueueSlotRefresh(0xd);
     }
 
     /// <summary>
-    /// Mode 2: DecodeModifyPacket @0x14096f820. A key not held with flag 1 decodes into a new effect that is never kept (the
-    /// client's UpdateBuffUI still runs for it, and its strip has no such key). AdditionalCli::DecodeModifyPacket @0x14096bf40:
-    /// the owner header, then flag 1 the state (its level must exist, else nothing more), flag 2 the shield. After flag 1 a
-    /// valid effect gets UpdateBuffUI.
+    /// Mode 2: DecodeModifyPacket @0x14096f820. A key not held with flag 1 decodes into a new effect (the ctor's enabled flag
+    /// and overlap count 1) that is never kept (the client's start effect and UpdateBuffUI still run for it, and its strip has
+    /// no such key). AdditionalCli::DecodeModifyPacket @0x14096bf40: the owner header, then flag 1 the state (its level must
+    /// exist, else nothing more): a changed enabled flag of a keep condition 99 effect stops its effects (StopEffects with its
+    /// caster) when it was enabled, else restarts the keep effect (RestartKeepEffect); else a changed overlap count of an effect
+    /// with an overlap keep effect plays the overlap effects and returns before the shield. Flag 2 the shield. After flag 1 a
+    /// valid effect gets FUN_14096c4c0 (the start effect) and UpdateBuffUI.
     /// </summary>
     public void Modify(BuffPacket p)
     {
         if (!map.TryGetValue(p.Key, out var b))
         {
             if ((p.Flags & BuffPacket.ModifyState) == 0) return;
-            b = new AdditionalBuff(this);
+            b = new AdditionalBuff(this) { Enabled = 1, OverlapCount = 1 };
         }
         b.OwnerId = p.OwnerObjectId;
         b.Key = p.Key;
         b.CasterId = p.CasterObjectId;
+        bool overlapReturn = false;
         if ((p.Flags & BuffPacket.ModifyState) != 0 && p.State is { } s)
         {
             if (levelOf(s.Id, s.Level) is not { } level) return;
+            byte wasEnabled = b.Enabled;
             b.LevelData = level;
+            bool countChanged = b.OverlapCount != s.OverlapCount;
             b.ApplyState(s);
+            if (wasEnabled != b.Enabled)
+            {
+                if (level.IsKeepCondition99)
+                {
+                    if (wasEnabled != 0) StopEffects(b, b.CasterId);
+                    else RestartKeepEffect(b);
+                }
+            }
+            else if (countChanged && level.HasOverlapKeepEffect)
+            {
+                PlayOverlapEffects(b);
+                overlapReturn = true;
+            }
         }
-        if ((p.Flags & BuffPacket.ModifyValue) != 0) b.Shield = p.Shield ?? 0;
+        if (!overlapReturn && (p.Flags & BuffPacket.ModifyValue) != 0) b.Shield = p.Shield ?? 0;
         if (!b.IsValid) return;
-        if ((p.Flags & BuffPacket.ModifyState) != 0) UpdateBuffUI(b);
+        if ((p.Flags & BuffPacket.ModifyState) != 0)
+        {
+            StartIfNotListed(b);
+            UpdateBuffUI(b);
+        }
     }
 
-    /// <summary>ClearAll @0x140970490: RemoveBuffUI for each, then empty.</summary>
+    /// <summary>ClearAll @0x140970490: RemoveKeepEffect and RemoveBuffUI for each, then empty.</summary>
     public void ClearAll()
     {
-        foreach (var b in map.Values) RemoveBuffUI(b);
+        foreach (var b in map.Values)
+        {
+            RemoveKeepEffect(b);
+            RemoveBuffUI(b);
+        }
         map.Clear();
+    }
+
+    /// <summary>The effects went with the field (the client's MyPC and its list are made anew in the next field, whose entry list
+    /// plays no start effect): the keep effect ids are forgotten, not stopped, and the next update keeps them anew.</summary>
+    public void ForgetEffects()
+    {
+        foreach (var b in map.Values) b.KeepEffect = 0;
+    }
+
+    /// <summary>
+    /// UpdateEffects @0x1409728b0's AdditionalCli::Update @0x14096c520 for each effect, once per frame: nothing for a disabled keep
+    /// condition 99 effect; else, with no keep effect, the overlap effects when it has an overlap keep effect, else the keep
+    /// effect. A keep effect that did not spawn is tried again the next frame, as the client does.
+    /// </summary>
+    public void UpdateEffects()
+    {
+        if (Effects == null || map.Count == 0) return;
+        foreach (var b in map.Values)
+        {
+            if (b.Enabled == 0 && b.LevelData.IsKeepCondition99) continue;
+            if (b.KeepEffect != 0) continue;
+            if (b.LevelData.HasOverlapKeepEffect) PlayOverlapEffects(b);
+            else PlayKeepEffect(b);
+        }
+    }
+
+    /// <summary>PlayInvokeEffectsByEvent @0x14096fb20: the invoke effect of each enabled effect whose level's invoke event is
+    /// <paramref name="invokeEvent"/> (1 a hit, PC::vfunc_33 / vfunc_35 and CNpc::vfunc_33 when the attack's invokeEffectDisable
+    /// is 0; 0 a dot tick, PC::vfunc_34 and CNpc::vfunc_34).</summary>
+    public void PlayInvokeEffectsByEvent(int invokeEvent)
+    {
+        if (Effects == null) return;
+        foreach (var b in map.Values)
+        {
+            if (b.Enabled == 0) continue;
+            if (b.LevelData.InvokeEvent == invokeEvent) PlayInvokeEffect(b);
+        }
+    }
+
+    /// <summary>FUN_14096fc00 @0x14096fc00 (0x3d mode 4, scenestategame.cpp:5697): the invoke effect of the effect of the key.</summary>
+    public void PlayInvokeEffect(int key)
+    {
+        if (Effects != null && map.TryGetValue(key, out var b)) PlayInvokeEffect(b);
+    }
+
+    /// <summary>FUN_14096c4c0 @0x14096c4c0: nothing for a disabled keep condition 99 effect; the start effect unless the field
+    /// entry's list brought it (m_b40).</summary>
+    void StartIfNotListed(AdditionalBuff b)
+    {
+        if (b.Enabled == 0 && b.LevelData.IsKeepCondition99) return;
+        if (!b.FromList) PlayStartEffect(b);
+    }
+
+    /// <summary>PlayStartEffect @0x14096d860: the start effect on the owner when it has one and the owner is shown.</summary>
+    void PlayStartEffect(AdditionalBuff b)
+    {
+        if (Effects == null || b.LevelData.StartEffect.Length == 0) return;
+        if (!Effects.OwnerShown(b.OwnerId)) return;
+        Effects.Insert(b.LevelData.StartEffect, b.OwnerId, b.CasterId);
+    }
+
+    /// <summary>PlayStopEffect @0x14096d9d0: the stop effect on the owner, kind and lookup from <paramref name="casterId"/>.</summary>
+    void PlayStopEffect(AdditionalBuff b, int casterId)
+    {
+        if (Effects == null || b.LevelData.StopEffect.Length == 0) return;
+        Effects.Insert(b.LevelData.StopEffect, b.OwnerId, casterId);
+    }
+
+    /// <summary>PlayKeepEffect @0x14096c7a0: the keep effect kept on the owner.</summary>
+    void PlayKeepEffect(AdditionalBuff b)
+    {
+        if (Effects == null || b.LevelData.KeepEffect.Length == 0) return;
+        b.KeepEffect = Effects.Keep(b.LevelData.KeepEffect, b.OwnerId, b.CasterId);
+    }
+
+    /// <summary>PlayInvokeEffect @0x14096cec0: nothing for a disabled keep condition 99 effect; else the invoke effect on the owner.</summary>
+    void PlayInvokeEffect(AdditionalBuff b)
+    {
+        if (b.Enabled == 0 && b.LevelData.IsKeepCondition99) return;
+        if (b.LevelData.InvokeEffect.Length == 0) return;
+        Effects.Insert(b.LevelData.InvokeEffect, b.OwnerId, b.CasterId);
+    }
+
+    /// <summary>StopEffects @0x14096c650: RemoveKeepEffect, then the stop effect with <paramref name="casterId"/>.</summary>
+    void StopEffects(AdditionalBuff b, int casterId)
+    {
+        RemoveKeepEffect(b);
+        PlayStopEffect(b, casterId);
+    }
+
+    /// <summary>RestartKeepEffect @0x14096c740: the overlap effects with an overlap keep effect, else the keep effect anew.</summary>
+    void RestartKeepEffect(AdditionalBuff b)
+    {
+        if (b.LevelData.HasOverlapKeepEffect) PlayOverlapEffects(b);
+        else
+        {
+            RemoveKeepEffect(b);
+            PlayKeepEffect(b);
+        }
+    }
+
+    /// <summary>RemoveKeepEffect @0x14096ce50: the keep effect stopped, then with an overlap keep effect the end effect of the
+    /// current count.</summary>
+    void RemoveKeepEffect(AdditionalBuff b)
+    {
+        if (b.KeepEffect == 0) return;
+        Effects?.Stop(b.KeepEffect);
+        b.KeepEffect = 0;
+        if (b.LevelData.HasOverlapKeepEffect) PlayOverlapEndEffect(b, 0);
+    }
+
+    /// <summary>PlayOverlapEffects @0x14096ca50: the start effect of the count, then FUN_14096ca80 (the count's keep effect).</summary>
+    void PlayOverlapEffects(AdditionalBuff b)
+    {
+        if (Effects == null) return;
+        uint count = (uint)b.OverlapCount;
+        var o = b.LevelData.OverlapKeep;
+        // PlayOverlapStartEffect @0x14096c8e0: the start row of exactly the count
+        if (OverlapKeepEffects.Exact(o.Start, count) is { } start) Effects.Insert(start, b.OwnerId, b.CasterId);
+        // FUN_14096ca80: a kept effect is replaced only when the keep rows have the count itself, ending with the end effect of
+        // the count below (at least 1); then the keep row of the largest count not above it
+        if (b.KeepEffect != 0)
+        {
+            if (OverlapKeepEffects.Exact(o.Keep, count) == null) return;
+            Effects.Stop(b.KeepEffect);
+            b.KeepEffect = 0;
+            PlayOverlapEndEffect(b, (int)Math.Max(1u, count - 1));
+        }
+        if (OverlapKeepEffects.Floor(o.Keep, count) is { } keep) b.KeepEffect = Effects.Keep(keep, b.OwnerId, b.CasterId);
+    }
+
+    /// <summary>PlayOverlapEndEffect @0x14096ccc0: 0 = the current count; the end row of the largest count not above it.</summary>
+    void PlayOverlapEndEffect(AdditionalBuff b, int count)
+    {
+        if (Effects == null) return;
+        if (count == 0) count = b.OverlapCount;
+        if ((uint)count == uint.MaxValue) return;   // upper_bound(count + 1) of the unsigned count wraps to 0: no row
+        if (OverlapKeepEffects.Floor(b.LevelData.OverlapKeep.End, (uint)count) is { } end) Effects.Insert(end, b.OwnerId, b.CasterId);
     }
 
     /// <summary>Gives every held effect to a panel that was made after them (AddBuffUI again).</summary>

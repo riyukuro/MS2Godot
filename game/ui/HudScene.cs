@@ -3717,6 +3717,8 @@ public partial class HudScene : Node, IUiStageHost
         }
         ownBuffs.ServerTick = () => live.GameSession is { } gs ? unchecked((uint)gs.ServerTick) : 0;
         ownBuffs.OwnerIsMyPc = true;
+        ownBuffs.Effects = live.BuffEffects;    // the start, keep, stop and invoke effects on the own PC
+        live.OwnBuffList = ownBuffs;
         var buffs = ownBuffs;
         live.Cooltimes.GroupReduceRate = g => buffs.ReduceSkillGroupCooltime(g);   // FUN_1417664e0, skillslot.cpp:2279
         // skillslot.cpp:2290-2291: the skill stat options 0x3ea (count, flat) and 0x3e9 (rate) of the own buffs
@@ -3778,6 +3780,10 @@ public partial class HudScene : Node, IUiStageHost
             live.OwnBuffStun = () => null;
             live.OwnAbilityRate = _ => 0f;
             live.OwnEventBuff = _ => false;
+            // the list goes with the HUD: its keep effects are removed (ClearAll), the panel is not touched
+            if (live.OwnBuffList == buffs) live.OwnBuffList = null;
+            buffs.Strip = null;
+            buffs.ClearAll();
         };
     }
 
@@ -4274,6 +4280,7 @@ public partial class HudScene : Node, IUiStageHost
         TickOwnTagMagics();                                   // CMagic::FUN_14145de80: the own magics' tag areas
         Net.LiveSession.Instance?.SyncOwnMagicEffects(ownTagMagics);   // CMagic m_nEffectId: their scene effects
         TickCooltimes();                                      // CSkillSystem::Update: the cooldowns
+        ownBuffs?.UpdateEffects();                            // AdditionalCliList::UpdateEffects: the own buffs' keep effects
         TickCompact();                                        // CSkillSystem::Update's compact lists, State::vfunc_8's pick
         TickAutoEquip();                                      // MyPC::vfunc_53: Unk_Inventory::ProcessAutoEquipQueue
         ChatLog.Process();                                    // UIMessengerBrowser::vfunc_15

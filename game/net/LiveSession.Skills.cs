@@ -112,6 +112,20 @@ public partial class LiveSession
     public int SpawnKeptEffect(string effect, Node3D actor, int casterKind) => remote?.SpawnKeptEffect(effect, actor, casterKind) ?? 0;
     /// <summary>A kept effect stopped at once (CEffectService::FUN_1411a6060).</summary>
     public void StopKeptEffect(int id) => remote?.StopKeptEffect(id);
+
+    /// <summary>The buff lists' effect service through the field of the moment (none between fields).</summary>
+    public Ms2.Ui.Skills.IBuffMotionEffects BuffEffects => buffEffects ??= new FieldBuffEffects(this);
+    FieldBuffEffects buffEffects;
+
+    sealed class FieldBuffEffects : Ms2.Ui.Skills.IBuffMotionEffects
+    {
+        readonly LiveSession s;
+        public FieldBuffEffects(LiveSession s) => this.s = s;
+        public int Keep(string effect, int ownerId, int casterId) => s.remote?.BuffEffects.Keep(effect, ownerId, casterId) ?? 0;
+        public void Insert(string effect, int ownerId, int casterId) => s.remote?.BuffEffects.Insert(effect, ownerId, casterId);
+        public void Stop(int id) => s.remote?.BuffEffects.Stop(id);
+        public bool OwnerShown(int ownerId) => s.remote?.BuffEffects.OwnerShown(ownerId) == true;
+    }
     /// <summary>A kept effect released (CEffectService::FUN_1411a69e0).</summary>
     public void ReleaseKeptEffect(int id) => remote?.ReleaseKeptEffect(id);
 

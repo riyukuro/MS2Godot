@@ -51,7 +51,7 @@ public class AdditionalCacheTests
                     && n.IndexOf('/', AdditionalTable.Gms2Folder.Length) < 0 && n.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)))
                     if (uint.TryParse(Path.GetFileNameWithoutExtension(n), out var id)) ids.Add(id);
             Assert.That(ids.Count, Is.GreaterThan(1000));
-            int levels = 0, specials = 0, armors = 0, stuns = 0, overlaps = 0;
+            int levels = 0, specials = 0, armors = 0, stuns = 0, overlaps = 0, keeps = 0, overlapKeeps = 0;
             foreach (var id in ids.Append(0u).Append(99999999u))
             {
                 var a = xml.Additional.GetAdditional(id);
@@ -78,6 +78,15 @@ public class AdditionalCacheTests
                         Is.EqualTo((la.InvokeSkillId, la.InvokeSkillGroupId, la.InvokeEffectId, la.InvokeEffectGroupId, la.InvokeTypes, la.InvokeValues, la.InvokeRates)), $"effect {id} level {lv} invoke effect");
                     Assert.That(lb.SpecialAbilities, Is.EqualTo(la.SpecialAbilities), $"effect {id} level {lv} special abilities");
                     if (la.SpecialAbilities != null) specials++;
+                    Assert.That((lb.StartEffect, lb.KeepEffect, lb.StopEffect, lb.InvokeEffect, lb.IgnoreOptimalHideStartEffect, lb.InvokeEvent),
+                        Is.EqualTo((la.StartEffect, la.KeepEffect, la.StopEffect, la.InvokeEffect, la.IgnoreOptimalHideStartEffect, la.InvokeEvent)), $"effect {id} level {lv} motion effects");
+                    Assert.That(lb.OverlapKeep == null, Is.EqualTo(la.OverlapKeep == null), $"effect {id} level {lv} overlap keep");
+                    if (la.OverlapKeep != null)
+                    {
+                        Assert.That((lb.OverlapKeep.Start, lb.OverlapKeep.Keep, lb.OverlapKeep.End), Is.EqualTo((la.OverlapKeep.Start, la.OverlapKeep.Keep, la.OverlapKeep.End)), $"effect {id} level {lv} overlap keep rows");
+                        overlapKeeps++;
+                    }
+                    if (la.KeepEffect.Length > 0) keeps++;
                     foreach (var t in Tags)
                         Assert.That(cached.AdditionalDescription(id, lv, t), Is.EqualTo(xml.AdditionalDescription(id, lv, t)), $"effect {id} level {lv} {t}");
                 }
@@ -88,6 +97,8 @@ public class AdditionalCacheTests
             TestContext.Progress.WriteLine($"additional cache: {stuns} stun levels, {overlaps} levels with a max buff count other than 1");
             Assert.That(stuns, Is.GreaterThan(300), "levels with a stun");
             Assert.That(overlaps, Is.GreaterThan(0), "levels with a max buff count");
+            TestContext.Progress.WriteLine($"additional cache: {keeps} levels with a keep effect, {overlapKeeps} with overlap keep effects");
+            Assert.That(keeps, Is.GreaterThan(1000), "levels with a keep effect");
         }
         finally
         {

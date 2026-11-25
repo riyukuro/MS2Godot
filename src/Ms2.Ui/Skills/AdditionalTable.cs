@@ -42,6 +42,22 @@ public sealed class AdditionalLevelData
     /// with a stun; 99 plays the stun animation.</summary>
     public uint Stun;
     public string StunAnimation = "";
+    /// <summary>&lt;Motion startEffect keepEffect stopEffect invokeEffect&gt; (m_motion.m_strStartEffect ... m_strInvokeEffect,
+    /// additionalactionadditional.cpp:1095-1098): the effect xmls AdditionalCli plays on its owner (PlayStartEffect,
+    /// PlayKeepEffect, PlayStopEffect, PlayInvokeEffect, additionalcli_1.cpp); empty for none.</summary>
+    public string StartEffect = "", KeepEffect = "", StopEffect = "", InvokeEffect = "";
+    /// <summary>&lt;Motion IgnoreOptimalHideStartEffect&gt; (m_motion.m_bIgnoreOptimalHideStartEffect, :1099): every one of the
+    /// effects above is inserted with it (the query's m_b31).</summary>
+    public bool IgnoreOptimalHideStartEffect;
+    /// <summary>&lt;Basic invokeEvent&gt; (m_nInvokeEvent, :1062): the event AdditionalCliList::PlayInvokeEffectsByEvent
+    /// (additionalcli_2.cpp:311) plays the invoke effect on: 1 a hit, 0 a dot tick.</summary>
+    public int InvokeEvent;
+    /// <summary>&lt;Motion&gt;&lt;OverlapKeepEffectProperty&gt; (m_motion.m_overlapKeepEffect, LoadOverlapKeepEffect @0x140175320,
+    /// :1499); null without one.</summary>
+    public OverlapKeepEffects OverlapKeep;
+
+    /// <summary>HasOverlapKeepEffect @0x140175220 (:1464): the overlap property has a keep row.</summary>
+    public bool HasOverlapKeepEffect => OverlapKeep is { Keep.Length: > 0 };
     /// <summary>&lt;Defensive invincible&gt; (m_nInvincible +0x29c, additionalactionadditional.cpp:1256): AdditionalCliList::FUN_140972a00
     /// (additionalcli_2.cpp:1075) takes the list's GetInvincible from it.</summary>
     public int Invincible;
@@ -107,6 +123,7 @@ public sealed class AdditionalLevelData
             lv.KeepCondition = Xml.Int(basic, "keepCondition");
             if (basic.Attribute("maxBuffCount") != null) lv.MaxBuffCount = Xml.UInt(basic, "maxBuffCount");
             lv.EventBuffType = Xml.UInt(basic, "eventBuffType");
+            lv.InvokeEvent = Xml.Int(basic, "invokeEvent");
             lv.PvpOnOff = Xml.Bool(basic, "pvpOnOff");
             lv.ForceApplyTarget = Xml.Int(basic, "forceApplyTarget");
             lv.DisableRevivalHere = Xml.Bool(basic, "disableRevivalHere");
@@ -118,6 +135,12 @@ public sealed class AdditionalLevelData
             lv.SuperArmorApplyFieldType = Xml.Int(motion, "superArmorApplyFieldType");
             lv.Stun = Xml.UInt(motion, "stun");
             lv.StunAnimation = (string)motion.Attribute("stunAnimation") ?? "";
+            lv.StartEffect = (string)motion.Attribute("startEffect") ?? "";
+            lv.KeepEffect = (string)motion.Attribute("keepEffect") ?? "";
+            lv.StopEffect = (string)motion.Attribute("stopEffect") ?? "";
+            lv.InvokeEffect = (string)motion.Attribute("invokeEffect") ?? "";
+            lv.IgnoreOptimalHideStartEffect = Xml.Bool(motion, "IgnoreOptimalHideStartEffect");
+            lv.OverlapKeep = OverlapKeepEffects.Load(motion.Element("OverlapKeepEffectProperty"));
         }
         if (e.Element("Defensive") is { } defensive) lv.Invincible = Xml.Int(defensive, "invincible");
         if (e.Element("InvokeEffect") is { } invoke)
@@ -196,6 +219,62 @@ public sealed class AdditionalLevelData
     public float ValueFloat(string name, float def = 0f) =>
         SpecialEffectValues != null && SpecialEffectValues.TryGetValue(name, out var s)
             ? float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var f) ? f : 0f : def;
+}
+
+/// <summary>
+/// AdditionalLevelData::OverlapKeepEffectProperty (additionalactionadditional.h:292): the &lt;start&gt;, &lt;keep&gt; and &lt;end&gt;
+/// lists of &lt;overlap count effect&gt; (count 1 when absent), each a std::map by count where the first row of a count stays
+/// (insert). Here each list is sorted by count. Start is looked up by the exact count (find); keep and end are maps ordered by
+/// std::greater looked up with upper_bound(count + 1), which is the row of the largest count not above the count
+/// (<see cref="Floor"/>).
+/// </summary>
+public sealed class OverlapKeepEffects
+{
+    public readonly (uint Count, string Effect)[] Start, Keep, End;
+
+    public OverlapKeepEffects((uint, string)[] start, (uint, string)[] keep, (uint, string)[] end)
+    {
+        Start = start; Keep = keep; End = end;
+    }
+
+    /// <summary>LoadOverlapKeepEffect: null without the element.</summary>
+    public static OverlapKeepEffects Load(XElement e)
+    {
+        if (e == null) return null;
+        (uint, string)[] Rows(string name)
+        {
+            var rows = new List<(uint Count, string Effect)>();
+            if (e.Element(name) is { } list)
+                foreach (var o in list.Elements("overlap"))
+                {
+                    uint count = o.Attribute("count") != null ? Xml.UInt(o, "count") : 1;
+                    if (!rows.Exists(r => r.Count == count)) rows.Add((count, (string)o.Attribute("effect") ?? ""));
+                }
+            rows.Sort((a, b) => a.Count.CompareTo(b.Count));
+            return rows.ToArray();
+        }
+        return new OverlapKeepEffects(Rows("start"), Rows("keep"), Rows("end"));
+    }
+
+    /// <summary>std::map::find: the effect of exactly <paramref name="count"/>, null when none.</summary>
+    public static string Exact((uint Count, string Effect)[] rows, uint count)
+    {
+        foreach (var r in rows) if (r.Count == count) return r.Effect;
+        return null;
+    }
+
+    /// <summary>upper_bound(count + 1) on a std::greater map: the effect of the largest count not above
+    /// <paramref name="count"/>, null when every count is above it.</summary>
+    public static string Floor((uint Count, string Effect)[] rows, uint count)
+    {
+        string found = null;
+        foreach (var r in rows)
+        {
+            if (r.Count > count) break;
+            found = r.Effect;
+        }
+        return found;
+    }
 }
 
 /// <summary>One &lt;additional&gt; of additional/*.xml (AdditionalData::Load @0x140170c60, additionalactionadditional.cpp:707).</summary>

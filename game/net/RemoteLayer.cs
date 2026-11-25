@@ -647,10 +647,10 @@ public sealed partial class RemoteLayer : Node3D
         // OnAddUser (scenestategame.cpp:11185-11186): no current health after the stats -> FUN_14166ce50(1), the dead flag
         if (r.HpCur == 0) pc.States.SetDead(true);
         levelOf ??= Ms2.Ui.GameTables.Shared(packs, Ms2Godot.GameOptions.StringLanguage).Additional.GetLevel;
-        r.Buffs = new Ms2.Ui.Skills.AdditionalBuffList(levelOf);
+        r.Buffs = new Ms2.Ui.Skills.AdditionalBuffList(levelOf) { Effects = BuffEffects, ServerTick = BuffTick };
         r.Death.BuffsDisableRevival = () => r.Buffs.IsDisableRevivalHere;
         r.Death.Revival.Apply(u);   // OnAddUser (scenestategame.cpp:11280-11281): the confirm end tick and count, the flag
-        foreach (var b in u.Buffs) r.Buffs.Apply(BuffPacket.FromAdd(b));
+        foreach (var b in u.Buffs) r.Buffs.Apply(BuffPacket.FromAdd(b) with { FromList = true });   // DecodeListPacket's m_b40
         // OnAddUser (scenestategame.cpp:11189-11192): the new PC's PC::vfunc_135 before its model, after the dead flag (a dead
         // pc gets no mode); its StateFall is the spawn's own. PC::vfunc_12 (pc.cpp:844-855) on the model: the waiting craft is
         // made and the AddUser i32 is held.
@@ -818,7 +818,7 @@ public sealed partial class RemoteLayer : Node3D
                 case UserAddedEvent add:
                     if (add.User.User.CharacterId == selfCharacter) break;
                     // a replaced or leaving PC: ~PC frees its kept invincible effect m_n1060 (pc.cpp:764-768)
-                    if (users.Remove(add.User.ObjectId, out var old)) { remoteMagics.Remove(old.ObjectId); hitEffects.Remove(old.ObjectId); old.Invincible.End(null, RegionFx); tags.Remove(old.Root); bars.Remove(old.Root); old.Death.Free(); FreeRidee(old); old.Pc.Free(); }
+                    if (users.Remove(add.User.ObjectId, out var old)) { old.Buffs?.ClearAll(); remoteMagics.Remove(old.ObjectId); hitEffects.Remove(old.ObjectId); old.Invincible.End(null, RegionFx); tags.Remove(old.Root); bars.Remove(old.Root); old.Death.Free(); FreeRidee(old); old.Pc.Free(); }
                     if (old != null) PcLeft?.Invoke(old.ObjectId);
                     var added = users[add.User.ObjectId] = Spawn(add.User); UsersSpawned++; ArmCodi();
                     // FieldAddUser's ride (PCBase::SetRideOnAction) and its passengers, ridden at the PC's creation
@@ -836,6 +836,7 @@ public sealed partial class RemoteLayer : Node3D
                     if (users.Remove(rem.ObjectId, out var gone))
                     {
                         gone.Invincible.End(null, RegionFx);   // ~PC, pc.cpp:764-768
+                        gone.Buffs?.ClearAll();                  // ~AdditionalCliList: the keep effects removed
                         remoteMagics.Remove(rem.ObjectId);
                         hitEffects.Remove(rem.ObjectId);
                         tags.Remove(gone.Root); bars.Remove(gone.Root); gone.Death.Free(); FreeRidee(gone); gone.Pc.Free();
@@ -924,6 +925,9 @@ public sealed partial class RemoteLayer : Node3D
                         {
                             if (t.Hits.Length == 0) continue;
                             npcs.Damaged(t.TargetId, byLocal);
+                            attackOf ??= (s, l, m, a) => SkillDamage?.Get(s, l, m, a);
+                            PlayHitInvokeEffects(t.TargetId, dmg.Damage.Mode, dmg.Damage.Mode == 3 ? null
+                                : Ms2.Ui.Skills.NpcHitSound.RecordAttack(dmg.Damage, RegionSkillOf, attackOf));
                             // CNpc::vfunc_33 for a cast's hit (mode 1), vfunc_34 for a dot's (3), vfunc_35 for a splash's (5, 6).
                             // STILL-OPEN: the client runs a cast's when its magic model lands the record
                             // (CMagicService::FUN_14146b440, scenestategame.cpp:5649), not when the packet comes in; and it
@@ -943,7 +947,9 @@ public sealed partial class RemoteLayer : Node3D
                     OnRemoteMagics(dmg.Damage);
                     break;
                 case UserBuffEvent ub:
+                    // OnBuff for another player or an npc (FUN_141bd1200 finds both)
                     if (users.TryGetValue(ub.Buff.OwnerObjectId, out var rb)) rb.Buffs.Apply(ub.Buff);
+                    else if (npcBuffs.TryGetValue(ub.Buff.OwnerObjectId, out var nb)) nb.Apply(ub.Buff);
                     break;
                 case SkillUsedEvent used: OnSkillUse(used.Use); break;
                 case SkillSyncedEvent ss: OnSkillSync(ss.Sync); break;
@@ -955,12 +961,14 @@ public sealed partial class RemoteLayer : Node3D
                 case NpcStanceEvent st: npcs.Stance(st.ObjectId, st.Battle); break;
                 case NpcAddedEvent na:
                     npcs.Add(na); NpcsAdded++;
+                    AddNpcBuffs(na.Npc);
                     // the talkable byte FieldAddNpc reads (FUN_14174a560, scenestategame.cpp:3561) for InteractNpcAction
                     LiveSession.Instance?.InteractNpcs?.Add(na.Npc.ObjectId, npcTable.Find(na.Npc.NpcId), na.Npc.Talkable,
                         new Vec3(na.Npc.Position.X, na.Npc.Position.Y, na.Npc.Position.Z));
                     break;
                 case NpcRemovedEvent nr:
                     npcs.Remove(nr.ObjectId, nr.Dead);
+                    if (!nr.Dead) DropNpcBuffs(nr.ObjectId);
                     // the corpse stays an object (and keeps its throttle) until a later FieldRemoveNpc removes the body, or the field goes
                     if (!nr.Dead) hitEffects.Remove(nr.ObjectId);
                     if (nr.Dead) LiveSession.Instance?.InteractNpcs?.SetDead(nr.ObjectId, true);
@@ -1090,6 +1098,7 @@ public sealed partial class RemoteLayer : Node3D
             if (a.Invincible.Blink.Active && a.Invincible.Tick(now, a.Visual)) a.Invincible.End(a.Visual, RegionFx);
             a.Death.Revival.Expire(tick);
         }
+        TickBuffEffects();
         TickRemoteMagics(now);
         LiveSession.Instance?.Breakables.Update(now);
         LiveSession.Instance?.Vibrates.Update(tick);   // the world tick's vibrators (worldservice_1.cpp:9243-9250)
