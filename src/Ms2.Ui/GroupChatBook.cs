@@ -64,7 +64,7 @@ public sealed class GroupChatBook
     /// <summary>CBlockManager::FindBlockedAction(2) with GetBlockActionMessage(.., 2): the block's message, or null when chat
     /// is not blocked. STILL-OPEN: the block manager is not ported, so null.</summary>
     public Func<string> BlockedMessage = () => null;
-    /// <summary>The field data's HasLimitContent(0x100). STILL-OPEN: the field's limit contents are not read, so false.</summary>
+    /// <summary>The field data's HasLimitContent(0x100) (groupchatmanager.cpp:566); false until the HUD wires the current field's.</summary>
     public Func<bool> ChatLimited = () => false;
     /// <summary>FUN_14151f820: the box shown now, or null.</summary>
     public Func<MessageBoxData> ShownBox = MessageBoxQueue.Current;

@@ -54,7 +54,7 @@ public sealed class SkillBookTreeController : UiController, IDragSlotOwner
     }
     /// <summary>PC::vfunc_65 of the local player (CanApply :612): in battle, the skill set cannot be applied.</summary>
     public Func<bool> InBattle = () => false;
-    /// <summary>CFieldDataCli::HasLimitContent(0x10) (CanApply :612). STILL-OPEN: the field's limit contents are not read, so false.</summary>
+    /// <summary>CFieldDataCli::HasLimitContent(0x10) (CanApply :612, uiskillbookautodistributedialog.cpp:625); false until the HUD wires the current field's.</summary>
     public Func<bool> FieldLimitsSkillSet = () => false;
     /// <summary>ShowMessageBox / FUN_140d73c60: show a box.</summary>
     public Action<MessageBoxData> ShowBox = MessageBoxQueue.Show;

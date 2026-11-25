@@ -26,6 +26,10 @@ public partial class LiveSession
         return fieldFacts;
     }
 
+    /// <summary>CFieldDataCli::HasLimitContent(mask) @0x140375660 (fielddata.cpp:836) of the current field; false when the field
+    /// is not known, as the client's callers do on a null field data.</summary>
+    public bool FieldHasLimitContent(uint mask) => CurrentFieldData()?.HasLimitContent(mask) ?? false;
+
     /// <summary>CFieldData::FindField(id) then HasTutorialType: null when the field is not found.</summary>
     static bool? TutorialField(int id)
     {

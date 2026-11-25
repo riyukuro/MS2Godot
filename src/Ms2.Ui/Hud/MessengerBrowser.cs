@@ -623,7 +623,7 @@ public sealed class MessengerBrowser
     /// <summary>CBlockManager::FindBlockedAction(2), a chat penalty: its kind and, for other kinds than 2, the
     /// FUN_140a2fcd0 remaining time line; null = none. STILL-OPEN: the block manager is not ported.</summary>
     public Func<(int Kind, string Remaining)?> ChatPenalty = () => null;
-    /// <summary>The field data's HasLimitContent(0x100). STILL-OPEN: the field's limits are not loaded, so false.</summary>
+    /// <summary>The field data's HasLimitContent(0x100); false until the HUD wires the current field's.</summary>
     public Func<bool> FieldChatLimited = () => false;
     /// <summary>The hooks of the slash command functions (<see cref="UserCommands.Execute"/>).</summary>
     public readonly UserCommands.Hooks CommandHooks = new();

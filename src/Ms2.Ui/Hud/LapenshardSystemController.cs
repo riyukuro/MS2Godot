@@ -79,7 +79,7 @@ public sealed class LapenshardSystemController : UiController, IDragSlotOwner
     public Func<IOutPacket, bool> Send;
     /// <summary>The local player is in battle (MyPC vfunc_65).</summary>
     public Func<bool> InBattle = () => false;
-    /// <summary>CFieldDataCli::HasLimitContent(0x200). STILL-OPEN: the field's limit contents are not read, so false.</summary>
+    /// <summary>CFieldDataCli::HasLimitContent(0x200) (uilapenshardsystemdialog.cpp:2036); false until the HUD wires the current field's.</summary>
     public Func<bool> FieldLimitsLapenshard = () => false;
     /// <summary>ShowMessageBox: show a box.</summary>
     public Action<MessageBoxData> ShowBox = MessageBoxQueue.Show;

@@ -1122,6 +1122,7 @@ public partial class HudScene : Node, IUiStageHost
         };
         ChatLog.SystemSound = key => GD.Print($"chat: system sound {key} is not played");
         ChatLog.LocalCharacterId = () => live.CharacterId;
+        ChatLog.FieldChatLimited = () => live.FieldHasLimitContent(0x100);     // the field data's HasLimitContent(0x100)
         // ShowChatBalloon (:2940): the line over its speaker, through the live field's balloon layer
         ChatLog.ChatBalloon = (name, text, type) => Ms2Godot.World.NpcEmoticons.Live?.Speakers?.Show(name, text, type);
         ChatLog.ServerTime = () => live.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds();
@@ -1778,6 +1779,7 @@ public partial class HudScene : Node, IUiStageHost
         book.Common = hudModel.Tables.Common;
         book.LocalName = localName;
         book.Send = live != null ? live.SendGroupChat : packet => GD.Print($"groupchat: offline, not sent: {packet}");
+        book.ChatLimited = () => live?.FieldHasLimitContent(0x100) ?? false;    // groupchatmanager.cpp:566
         var b = new GroupMessengerBrowserController
         {
             Book = book,
@@ -2662,6 +2664,7 @@ public partial class HudScene : Node, IUiStageHost
         upgrade.SystemNoticeId += id => Ms2.Ui.Hud.MessageBoxQueue.ShowCommon(id, 0, null, "");
         c.AddTab(upgrade);
         c.InBattle = () => live?.SelfInBattle ?? false;
+        c.FieldLimitsLapenshard = () => live?.FieldHasLimitContent(0x200) ?? false;  // uilapenshardsystemdialog.cpp:2036
         if (live != null) c.Send = p => { live.SendTalk(p); return true; };
         // FUN_140c60920's source: the inventory's category 0xd (the lapenshard tab), as the bag's own item copies, and its
         // bCheckUse: PC::CanUseItem of the own player on each item's packet record (expired, VIP and bound items stay out)
@@ -4113,6 +4116,7 @@ public partial class HudScene : Node, IUiStageHost
             TabPrice = () => (uint)Ms2.Ui.FeatureElements.Constants(assets.Packs).Int("SkillBookTreeAddTabFeeMerat", 1000),
             CanPayTab = price => hudModel.Player.Merats >= price,
             CheckEntryName = name => CommunityChecker().CheckAutoDistributeEntryName(name, out var msg) != 0 ? msg : null,
+            FieldLimitsSkillSet = () => live?.FieldHasLimitContent(0x10) ?? false,   // uiskillbookautodistributedialog.cpp:625
         };
         // ASTooltip(pPlayer, 0x10, 2).FUN_1409e1c50(id, level, 1) (uiskillbookautodistributedialog.cpp:2061)
         var tipPlayer = SkillTooltipPlayer(jobs);

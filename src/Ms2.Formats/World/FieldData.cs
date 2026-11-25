@@ -114,6 +114,25 @@ public sealed class FieldData
     public bool HasAutoRevivalType1 => AutoRevivalType == 1 && AutoRevivalTime > 0;
     public bool HasAutoRevivalType2 => AutoRevivalType == 2 && AutoRevivalTime > 0;
 
+    /// <summary>The entry limits and the other C16 properties of CFieldData::vfunc_1 (@0x140374530, fielddata.cpp:651-750),
+    /// with the ctor's defaults (all 0, fielddata.cpp:543-556): &lt;property enterAdminLevel&gt; (int, :668),
+    /// enterMinLevel / enterMaxLevel (shorts read as an int and cut, XmlQueryInt @0x140876760, :673-674),
+    /// recoveryFullHP (:676), limitContent (unsigned: QueryUnsignedAttribute, tinyxml.cpp:607, :697) and exploreType
+    /// (XmlGetExploreType @0x140375a40: an int, kept on a failure, :701).</summary>
+    public int EnterAdminLevel, RecoveryFullHP, ExploreType;
+    public short EnterMinLevel, EnterMaxLevel;
+    public uint LimitContent;
+    /// <summary>&lt;drop dropRank&gt; (unsigned, fielddata.cpp:724) and globalDropBoxID (XmlTokenList into a vector of
+    /// unsigned, :725: the value split at ',', empty tokens skipped, each token atoi'd, xmlattr.h:83).</summary>
+    public uint DropRank;
+    public uint[] GlobalDropBoxIds = Array.Empty<uint>();
+    /// <summary>&lt;cashCall&gt; cashTaxiNotDeparture, cashTaxiNotDestination, cashCallMedicProhibit, cashCallMarketProhibit
+    /// (ints, fielddata.cpp:736-739; the field keeps each as a set or clear flag here, as RecallOtherUserProhibit).</summary>
+    public bool CashTaxiNotDeparture, CashTaxiNotDestination, CashCallMedicProhibit, CashCallMarketProhibit;
+
+    /// <summary>CFieldData::HasLimitContent @0x140375660 (fielddata.cpp:836): any bit of the mask in limitContent.</summary>
+    public bool HasLimitContent(uint mask) => (LimitContent & mask) != 0;
+
     static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, XDocument> docs = new();
 
     /// <summary>The parsed table, once per pack set: a pack entry never changes, the callers only read the tree, and FieldData results are built fresh from it.</summary>
@@ -235,6 +254,19 @@ public sealed class FieldData
         o.PopupMenu = BoolAttr(prop, "popupMenu", true);
         o.GemSystem = BoolAttr(prop, "gemSystem", true);
         o.MapLevel = QueryInt(env.Element("drop"), "maplevel", 0);
+        o.EnterAdminLevel = QueryInt(prop, "enterAdminLevel", 0);
+        o.EnterMinLevel = (short)QueryInt(prop, "enterMinLevel", 0); o.EnterMaxLevel = (short)QueryInt(prop, "enterMaxLevel", 0);
+        o.RecoveryFullHP = QueryInt(prop, "recoveryFullHP", 0);
+        o.LimitContent = QueryUnsigned(prop, "limitContent", 0);
+        o.ExploreType = QueryInt(prop, "exploreType", 0);
+        o.DropRank = QueryUnsigned(env.Element("drop"), "dropRank", 0);
+        if ((string)env.Element("drop")?.Attribute("globalDropBoxID") is { } gd)
+            o.GlobalDropBoxIds = gd.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(t => (uint)ReservedWords.Atoi(t)).ToArray();
+        var cash = env.Element("cashCall");
+        o.CashTaxiNotDeparture = QueryInt(cash, "cashTaxiNotDeparture", 0) != 0;
+        o.CashTaxiNotDestination = QueryInt(cash, "cashTaxiNotDestination", 0) != 0;
+        o.CashCallMedicProhibit = QueryInt(cash, "cashCallMedicProhibit", 0) != 0;
+        o.CashCallMarketProhibit = QueryInt(cash, "cashCallMarketProhibit", 0) != 0;
         if ((string)env.Element("ui")?.Attribute("bgMask") is { } bm) o.BgMask = bm;
         o.VScroll = QueryInt(ui, "vscroll", 1);
         o.HScroll = QueryInt(ui, "hscroll", 1);
@@ -278,6 +310,11 @@ public sealed class FieldData
         if (i == digits) return fallback;
         return int.TryParse(s.AsSpan(start, i - start), NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) ? v : fallback;
     }
+
+    /// <summary>XmlGetAttr of an unsigned: TiXmlElement::QueryUnsignedAttribute (tinyxml.cpp:607) stores the int reading cast
+    /// to unsigned even when it fails (0 for a value with no leading number); no attribute keeps <paramref name="fallback"/>.</summary>
+    static uint QueryUnsigned(XElement e, string name, uint fallback) =>
+        e?.Attribute(name) == null ? fallback : unchecked((uint)QueryInt(e, name, 0));
 
     /// <summary>XmlGetAttr of a bool (tinyxmlhelper.cpp:141, TiXmlElement::QueryBoolAttribute, tinyxml.cpp:618): "true",
     /// "yes" or "1" in any case is true, "false", "no" or "0" false; any other value or none keeps
