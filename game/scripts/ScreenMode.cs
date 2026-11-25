@@ -16,8 +16,9 @@ namespace Ms2Godot;
 /// </list>
 /// Windows does exactly that, through <see cref="DisplayNative"/>. Linux deviation: the desktop's display mode is never
 /// changed (a crash would leave the monitor at the game's resolution, and Wayland does not allow it). The full window is a
-/// borderless window covering the screen whose content is rendered at w x h and scaled to the screen with its aspect kept
-/// (<see cref="Emulated"/>), which looks like the client's mode switch without touching the desktop.
+/// window in the window manager's full-screen state (no panel, no gap) whose content is rendered at w x h and scaled to the
+/// screen with its aspect kept (<see cref="Emulated"/>), which looks like the client's mode switch without touching the
+/// desktop (<see cref="ScreenModes.Plan"/>).
 /// </summary>
 public static class ScreenMode
 {
@@ -113,6 +114,7 @@ public static class ScreenMode
     {
         var w = Root;
         Current = r;
+        keepRequest++;
         if (Engine.IsEmbeddedInEditor())
         {
             // Not the client's: the editor's Game tab runs the project inside the editor's window, where the engine does not
@@ -136,15 +138,15 @@ public static class ScreenMode
             }
             else
             {
-                // Linux deviation (see the class summary): the popup covers the screen at its own size, the content is rendered
-                // at w x h. A plain borderless window rather than the window manager's full-screen state, which needs a window
-                // manager to take effect.
-                Emulated = new Vector2I(r.Width, r.Height);
-                w.Mode = Window.ModeEnum.Windowed;
-                w.Borderless = true;
-                w.AlwaysOnTop = !r.Maximize;
-                w.Size = DisplayServer.ScreenGetSize(Screen);
-                w.Position = DisplayServer.ScreenGetPosition(Screen);
+                // Linux deviation (see the class summary): the window manager's full-screen state at the screen's size, the content
+                // rendered at w x h (ScreenModes.Plan). A plain borderless window is clamped to the work area by the window
+                // manager: the panel stays and the content shows bars.
+                var screen = DisplayServer.ScreenGetSize(Screen);
+                var plan = ScreenModes.Plan(r, screen.X, screen.Y);
+                Emulated = new Vector2I(plan.ContentWidth, plan.ContentHeight);
+                w.AlwaysOnTop = plan.TopMost;
+                w.Borderless = plan.Borderless;
+                w.Mode = plan.WmFullscreen ? Window.ModeEnum.Fullscreen : Window.ModeEnum.Windowed;
             }
         }
         else
@@ -152,19 +154,54 @@ public static class ScreenMode
             // RestoreDisplayMode, then a framed window of w x h clamped to the screen and centred (windowservice.cpp:337-374)
             DisplayNative.RestoreDisplayMode();
             Emulated = null;
+            bool wasFullscreen = w.Mode == Window.ModeEnum.Fullscreen;
             w.Mode = Window.ModeEnum.Windowed;
             w.Borderless = false;
             w.AlwaysOnTop = false;
-            var screen = DisplayServer.ScreenGetSize(Screen);
-            var first = ScreenModes.WindowedPlacement(r.Width, r.Height, screen.X, screen.Y, 0, 0);
-            w.Size = new Vector2I(first.Width, first.Height);
-            var frame = w.GetSizeWithDecorations() - w.Size;
-            var place = ScreenModes.WindowedPlacement(r.Width, r.Height, screen.X, screen.Y, frame.X, frame.Y);
-            var inset = DisplayServer.WindowGetPosition() - DisplayServer.WindowGetPositionWithDecorations();
-            w.Position = DisplayServer.ScreenGetPosition(Screen) + new Vector2I(place.OuterX, place.OuterY) + inset;
+            PlaceWindowed(w, r);
+            // Leaving the window manager's full-screen state, the window manager gives the window back its geometry from before
+            // (on Wayland a moment later), over the size and position just set: set them again once it has done so.
+            if (wasFullscreen) KeepWindowed(w, r);
         }
         foreach (var s in pixelScopes.Keys) SetPixels(s);
         GD.Print($"display: window {w.Mode} borderless={w.Borderless} at {w.Position} size {w.Size}{(Emulated is { } e ? $", content {e.X}x{e.Y}" : "")}");
+    }
+
+    /// <summary>The framed window of a request: its client size clamped to the screen, centred (windowservice.cpp:337-374).</summary>
+    static void PlaceWindowed(Window w, WindowRequest r)
+    {
+        var screen = DisplayServer.ScreenGetSize(Screen);
+        var first = ScreenModes.WindowedPlacement(r.Width, r.Height, screen.X, screen.Y, 0, 0);
+        w.Size = new Vector2I(first.Width, first.Height);
+        var frame = w.GetSizeWithDecorations() - w.Size;
+        var place = ScreenModes.WindowedPlacement(r.Width, r.Height, screen.X, screen.Y, frame.X, frame.Y);
+        var inset = DisplayServer.WindowGetPosition() - DisplayServer.WindowGetPositionWithDecorations();
+        w.Position = DisplayServer.ScreenGetPosition(Screen) + new Vector2I(place.OuterX, place.OuterY) + inset;
+    }
+
+    static int keepRequest;
+
+    /// <summary>Places the framed window of <paramref name="r"/> again on the next frames until the window manager has settled
+    /// on it (the size is the request's, or a second try on the same size did not change it); a newer request ends this one.</summary>
+    static void KeepWindowed(Window w, WindowRequest r)
+    {
+        var tree = w.GetTree();
+        int mine = ++keepRequest, frames = 0, same = 0;
+        var screen = DisplayServer.ScreenGetSize(Screen);
+        var want = ScreenModes.WindowedPlacement(r.Width, r.Height, screen.X, screen.Y, 0, 0);
+        var wanted = new Vector2I(want.Width, want.Height);
+        Action tick = null;
+        tick = () =>
+        {
+            bool done = mine != keepRequest || !GodotObject.IsInstanceValid(w) || ++frames > 120;
+            if (!done && w.Mode == Window.ModeEnum.Windowed && !w.Borderless)
+            {
+                if (DisplayServer.WindowGetSize() != wanted) { PlaceWindowed(w, r); same = 0; }
+                else if (++same >= 10) done = true;
+            }
+            if (done) tree.ProcessFrame -= tick;
+        };
+        tree.ProcessFrame += tick;
     }
 
     /// <summary>

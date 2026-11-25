@@ -15,6 +15,16 @@ public readonly record struct WindowRequest(bool Fullscreen, bool Maximize, int 
 }
 
 /// <summary>
+/// What the game window is made into for a <see cref="WindowRequest"/> on a desktop whose display mode is not changed
+/// (<see cref="ScreenModes.Plan"/>); every field is set, so a window gets the same state whatever it was before.
+/// <paramref name="WmFullscreen"/>: the window manager's full-screen state (covers the panel and the taskbar; the window is the
+/// screen's size), the stand-in for the client's frameless popup at 0,0 of the display (windowservice.cpp:293-334).
+/// <paramref name="Width"/> x <paramref name="Height"/> is the window's client size; the content is drawn at
+/// <paramref name="ContentWidth"/> x <paramref name="ContentHeight"/> and scaled to it (0 x 0: drawn at the window's size).
+/// </summary>
+public readonly record struct WindowPlan(bool WmFullscreen, bool Borderless, bool TopMost, int Width, int Height, int ContentWidth, int ContentHeight);
+
+/// <summary>
 /// The adapter's display mode list as the client uses it. The rows are the adapter's modes, unique by (format, width,
 /// height) in enumeration order, refresh rates merged (NiDX9AdapterDesc ctor, NiDX9SystemDesc.cpp:666-713); the stored
 /// "resolution" option is a row of this list. Only 32-bit modes of at least 1024 x 720 are used (FUN_14125e7e0,
@@ -116,6 +126,21 @@ public sealed class ScreenModes
     {
         g.ScreenMode = ModeOf(window);
         if (!PickRow(g, window.Width, window.Height)) { g.Width = window.Width; g.Height = window.Height; }
+    }
+
+    /// <summary>
+    /// ApplyWindowMode (windowservice.cpp:291-375) on a desktop whose display mode stays as it is (Linux; the client switches it
+    /// with SetDisplayMode, :293-334, and restores it for the window, :337). Full screen (0) and full window (2) become the
+    /// window manager's full-screen state at the screen's size, which hides the panel and leaves no gap (a plain borderless
+    /// window is clamped to the work area by the window manager, so the panel stays and the content, scaled to what is left,
+    /// shows bars); the content is drawn at the requested w x h (a size equal to, lower or higher than the screen) and scaled
+    /// to the screen. Window (1) is a framed window of w x h clamped to the screen (:337-374), the content at its own size.
+    /// </summary>
+    public static WindowPlan Plan(WindowRequest r, int screenWidth, int screenHeight)
+    {
+        if (r.Borderless) return new WindowPlan(true, true, false, screenWidth, screenHeight, r.Width, r.Height);
+        var w = WindowedPlacement(r.Width, r.Height, screenWidth, screenHeight, 0, 0);
+        return new WindowPlan(false, false, false, w.Width, w.Height, 0, 0);
     }
 
     /// <summary>

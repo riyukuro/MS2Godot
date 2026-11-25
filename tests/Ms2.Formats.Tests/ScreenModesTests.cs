@@ -68,4 +68,43 @@ public class ScreenModesTests
         Assert.That(ScreenModes.WindowedPlacement(1280, 720, 1920, 1080, 16, 39), Is.EqualTo((1280, 720, 312, 160)));
         Assert.That(ScreenModes.WindowedPlacement(1920, 1080, 1280, 720, 16, 39), Is.EqualTo((1280, 720, 0, 0)));
     }
+
+    /// <summary>Every screen mode the options offer (full screen, window, full window) at a size equal to, lower than and higher
+    /// than the screen: the full modes are the window manager's full-screen state at the screen's size (the panel hidden, no
+    /// gap) with the content at the requested size; the window is framed, not topmost and clamped to the screen. A plan sets
+    /// every field and depends on its request alone, so a window gets the same state from a window, from a full screen and
+    /// going back.</summary>
+    [Test]
+    public void EveryScreenModeAndSizeMakesTheWindowTheScreenOrAFramedWindow()
+    {
+        const int sw = 1920, sh = 1080;
+        var sizes = new[] { (1920, 1080), (1280, 720), (1024, 768), (2560, 1440), (3840, 2160) };
+        var all = new List<WindowRequest>();
+        foreach (var (w, h) in sizes)
+            foreach (var (full, max) in new[] { (true, false), (false, false), (false, true) })
+                all.Add(new WindowRequest(full, max, w, h));
+        foreach (var r in all)
+        {
+            var p = ScreenModes.Plan(r, sw, sh);
+            string what = $"mode {ScreenModes.ModeOf(r)} {r.Width}x{r.Height}";
+            if (ScreenModes.ModeOf(r) == 1)
+            {
+                Assert.That((p.WmFullscreen, p.Borderless, p.TopMost), Is.EqualTo((false, false, false)), what);
+                Assert.That((p.Width, p.Height), Is.EqualTo((Math.Min(r.Width, sw), Math.Min(r.Height, sh))), what + ": clamped to the screen");
+                Assert.That((p.ContentWidth, p.ContentHeight), Is.EqualTo((0, 0)), what + ": drawn at the window's size");
+            }
+            else
+            {
+                Assert.That((p.WmFullscreen, p.Borderless), Is.EqualTo((true, true)), what + ": no panel, no frame");
+                Assert.That((p.Width, p.Height), Is.EqualTo((sw, sh)), what + ": the window is the screen");
+                Assert.That((p.ContentWidth, p.ContentHeight), Is.EqualTo((r.Width, r.Height)), what + ": content at the asked size");
+            }
+            // from any earlier request and back: the plan is the request's alone
+            foreach (var before in all)
+            {
+                ScreenModes.Plan(before, sw, sh);
+                Assert.That(ScreenModes.Plan(r, sw, sh), Is.EqualTo(p), what);
+            }
+        }
+    }
 }
