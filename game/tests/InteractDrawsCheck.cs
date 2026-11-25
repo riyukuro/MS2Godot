@@ -26,10 +26,12 @@ namespace Ms2Godot.Tests;
 /// hidden in state 2, and state 0 brings the entity's own back.
 /// The review fixes, each on a field of its own:
 /// <list type="bullet">
-/// <item>02000332_bf: an object whose own model animates (drawn by world/FieldProps) gets no reactable twin, so its state 1
-/// cannot draw both models, and no swapped collision, so its own model's shapes stay in the world with its own draw.</item>
-/// <item>02020301_bf and 02000312_bf: an object with no reactable twin (its own model or asset B animates) keeps its own
-/// model's NIF collision in every state.</item>
+/// <item>02000332_bf, 02020301_bf and 02000312_bf: a model that animates itself is a world/FieldProps node, the entity's own
+/// (02000332_bf, 02020301_bf) or its reactable twin (02000312_bf, FieldBuilder.ReactableElsewhere). The nodes swap as the
+/// instances do: the twin hidden (and not processed) at the load and in state 0, drawn in place of the own model in state 1,
+/// both hidden in state 2; the NIF collision follows (02020301_bf: both models collide, 02000312_bf: only asset B). The props
+/// are built after the states are bound, so a switch made before FieldProps builds its nodes holds.</item>
+/// <item>52020001_qd: an object whose reactable model does not load has no twin and keeps its own collision.</item>
 /// <item>02000024_bf and 02000011_bf: the NIF collision follows NifAsset (FieldBuilder.InteractCollider): the own model's
 /// shapes in state 0, asset B's in state 1, kept through state 2.</item>
 /// <item>02000011_bf and 02000024_bf: a fade target (Transparency) with a reactable model: a fade of the own model ends at the swap, the
@@ -99,6 +101,7 @@ public partial class InteractDrawsCheck : Node
         public LiveInteractObjects Live;
         public FieldInteractDraws Draws;
         public FieldFade Fade;
+        public FieldProps Props;
         public void State(LiveInteractObject o, byte state) =>
             Live.Apply(new InteractObjectMessage { Mode = InteractObjectMessage.ModeState, Name = o.Name, State = state, Kind = o.Kind });
     }
@@ -109,62 +112,92 @@ public partial class InteractDrawsCheck : Node
     {
         var packs = PackSet.Shared(Settings.DataDir);
         var b = new Built { Map = FieldMap.Load(packs, new FlatLibrary(packs), xblock) };
-        b.Fb = new FieldBuilder(packs, AssetIndex.For(packs), builder) { DrawsInstance = new FieldProps(builder).TakesModel };
+        b.Props = new FieldProps(builder);
+        b.Fb = new FieldBuilder(packs, AssetIndex.For(packs), builder) { DrawsInstance = b.Props.TakesModel };
         foreach (var _ in b.Fb.BuildSteps(b.Map)) { }
         AddChild(b.Fb.World);
         b.Fade = new FieldFade(b.Fb.FadeDraws, () => null, () => null);
         AddChild(b.Fade);
         b.Draws = new FieldInteractDraws(b.Fb.InteractMeshDraws, b.Fb.Colliders, b.Fb.InteractReactableDraws, b.Fb.InteractColliders) { Fade = b.Fade };
+        b.Draws.UseProps(b.Props, b.Fb.DrawnElsewhere, b.Fb.ReactableElsewhere);
         AddChild(b.Draws.Fader);
         b.Live = new LiveInteractObjects(new Host { Draws = b.Draws }, InteractObjectTable.Shared(packs));
         b.Live.Attach(b.Map.Entities);
         b.Draws.Bind(b.Live, null);
+        // the animated props last (Field builds them with the contents): the load's switches wait for their nodes
+        b.Props.Entities.AddRange(b.Fb.DrawnElsewhere);
+        b.Props.NotReceiving.UnionWith(b.Fb.NotReceivingElsewhere);
+        foreach (var (e, off) in b.Fb.LightOffElsewhere) b.Props.LightOff[e] = off;
+        AddChild(b.Props.Build());
         return b;
     }
 
-    /// <summary>02000332_bf: no twin where the own model is drawn elsewhere (an animated prop), so nothing draws both.</summary>
+    /// <summary>
+    /// The animated models' swap: on each field, every object with a reactable model whose own model or reactable twin is a
+    /// world/FieldProps node draws one model at a time, its nodes shown (and processed) only while drawn, and its collision
+    /// follows NifAsset.
+    /// </summary>
     void CheckDrawnApart()
     {
-        var b = BuildField("02000332_bf");
-        var apart = b.Live.All.Where(o => o.AssetType == 1 && o.AssetB.StartsWith("urn:llid:") && o.AssetB != o.AssetA && b.Fb.DrawnElsewhere.Contains(o.Entity)).ToList();
-        GD.Print($"interact draws check: 02000332_bf {apart.Count} objects with a reactable model whose own model is drawn elsewhere, {b.Fb.ReactableNotDrawn} reactable models not drawn, {b.Fb.ReactableTwins} twins");
-        if (apart.Count == 0) { fails.Add("02000332_bf: no object whose own model is drawn elsewhere"); return; }
-        foreach (var o in apart)
-        {
-            if (b.Fb.InteractReactableDraws.ContainsKey(o.Entity)) fails.Add($"{o.Name}: its own model is drawn elsewhere and it has a reactable twin (both would draw)");
-            // with no twin its own model stays drawn, so its own shapes stay in the world and asset B's are never made
-            if (b.Draws.Collision(o.Entity) is { } col)
-                fails.Add($"{o.Name}: no reactable twin but a swapped collision (own body {col.A != null}, reactable body {col.B != null}): state 1 would collide with asset B under the own model");
-            b.State(o, 1);
-            if (b.Draws.ShownReactable(o.Entity) == true) fails.Add($"{o.Name}: state 1 draws a reactable model beside its own animated one");
-        }
-        if (b.Fb.ReactableNotDrawn < apart.Count) fails.Add($"02000332_bf: {b.Fb.ReactableNotDrawn} reactable models not drawn, fewer than {apart.Count}");
-    }
-
-    /// <summary>
-    /// An object with no reactable twin keeps its own model's draw, so it keeps its own model's NIF collision through every state:
-    /// 02020301_bf (its own model animates; both models have PhysX shapes) and 02000312_bf (asset B animates; only B has shapes).
-    /// </summary>
-    void CheckNoTwinCollision()
-    {
-        foreach (var xblock in new[] { "02020301_bf", "02000312_bf" })
+        foreach (var (xblock, wantCollision) in new[] { ("02000332_bf", false), ("02020301_bf", true), ("02000312_bf", true) })
         {
             var b = BuildField(xblock);
-            var noTwin = b.Live.All.Where(o => o.AssetType == 1 && o.AssetB.StartsWith("urn:llid:") && o.AssetB != o.AssetA
-                                               && !b.Fb.InteractReactableDraws.ContainsKey(o.Entity)).ToList();
-            GD.Print($"interact draws check: {xblock} {noTwin.Count} objects with a reactable model and no twin, {b.Fb.ReactableNotDrawn} reactable models not drawn, {b.Fb.ReactableColliders} reactable colliders");
-            if (noTwin.Count == 0) { fails.Add($"{xblock}: no object with a reactable model and no twin"); continue; }
-            foreach (var o in noTwin)
-                foreach (byte state in new byte[] { 1, 2, 0 })
+            var props = b.Live.All.Where(o => o.AssetType == 1 && o.AssetB.StartsWith("urn:llid:") && o.AssetB != o.AssetA
+                                              && (b.Fb.DrawnElsewhere.Contains(o.Entity) || b.Fb.ReactableElsewhere.ContainsKey(o.Entity))).ToList();
+            int own = props.Count(o => b.Fb.DrawnElsewhere.Contains(o.Entity)), twins = props.Count(o => b.Fb.ReactableElsewhere.ContainsKey(o.Entity));
+            int collide = props.Count(o => b.Draws.Collision(o.Entity) != null);
+            GD.Print($"interact draws check: {xblock} {props.Count} objects with a model drawn by FieldProps ({own} own, {twins} reactable twins), {collide} with a swapped collision, {b.Fb.ReactableNotDrawn} reactable models not drawn");
+            if (props.Count == 0) { fails.Add($"{xblock}: no object with a reactable model drawn by FieldProps"); continue; }
+            if (wantCollision && collide == 0) fails.Add($"{xblock}: no object drawn by FieldProps has a swapped collision");
+            foreach (var o in props)
+            {
+                var e = o.Entity;
+                var twin = b.Draws.ReactableProp(e);
+                if (twin == null && !b.Fb.InteractReactableDraws.ContainsKey(e)) { fails.Add($"{o.Name} ({xblock}): no reactable twin"); continue; }
+                void Want(string when, bool wantOwn, bool wantB, bool onB)
                 {
-                    b.State(o, state);
-                    if (b.Draws.Collision(o.Entity) is { } col)
+                    bool? ownShown = b.Draws.ShownOwn(e), bShown = b.Draws.ShownReactable(e);
+                    if (ownShown != null && ownShown != wantOwn) fails.Add($"{o.Name} ({xblock}) {when}: its own model drawn {ownShown}, want {wantOwn}");
+                    if (bShown != wantB) fails.Add($"{o.Name} ({xblock}) {when}: its reactable model drawn {bShown?.ToString() ?? "none"}, want {wantB}");
+                    foreach (var (who, ent, want) in new[] { ("own", b.Fb.DrawnElsewhere.Contains(e) ? e : null, wantOwn), ("reactable", twin, wantB) })
                     {
-                        fails.Add($"{o.Name} ({xblock}): no reactable twin but a swapped collision in state {state} (own body {col.A != null}, reactable in the world {col.B?.Body.CollisionLayer > 0})");
-                        break;
+                        if (ent == null) continue;
+                        var node = b.Props.NodeOf(ent);
+                        if (node == null) { fails.Add($"{o.Name} ({xblock}) {when}: FieldProps built no node for its {who} model"); continue; }
+                        bool processed = node.ProcessMode != ProcessModeEnum.Disabled;
+                        if (node.Visible != want || processed != want)
+                            fails.Add($"{o.Name} ({xblock}) {when}: its {who} model's node visible {node.Visible}, processed {processed}, want {want}");
                     }
+                    if (b.Draws.Collision(e) is { } col && (col.OnB != onB || col.A != null && col.A.Body.CollisionLayer > 0 == onB
+                                                            || col.B != null && col.B.Body.CollisionLayer > 0 != onB))
+                        fails.Add($"{o.Name} ({xblock}) {when}: the collision is not the {(onB ? "reactable" : "own")} model's (own in the world {col.A?.Body.CollisionLayer > 0}, reactable {col.B?.Body.CollisionLayer > 0})");
                 }
+                Want("at the load", true, false, false);
+                b.State(o, 1); Want("state 1", false, true, true);
+                b.State(o, 2); Want("state 2", false, false, true);
+                b.State(o, 0); Want("state 0", true, false, false);
+            }
         }
+    }
+
+    /// <summary>52020001_qd: an object whose reactable model does not load has no twin, so it keeps its own model's collision.</summary>
+    void CheckNoTwinCollision()
+    {
+        var b = BuildField("52020001_qd");
+        var noTwin = b.Live.All.Where(o => o.AssetType == 1 && o.AssetB.StartsWith("urn:llid:") && o.AssetB != o.AssetA
+                                           && !b.Fb.InteractReactableDraws.ContainsKey(o.Entity) && b.Draws.ReactableProp(o.Entity) == null).ToList();
+        GD.Print($"interact draws check: 52020001_qd {noTwin.Count} objects with a reactable model and no twin, {b.Fb.ReactableNotDrawn} reactable models not drawn");
+        if (noTwin.Count == 0) { fails.Add("52020001_qd: no object with a reactable model and no twin"); return; }
+        foreach (var o in noTwin)
+            foreach (byte state in new byte[] { 1, 2, 0 })
+            {
+                b.State(o, state);
+                if (b.Draws.Collision(o.Entity) is { } col)
+                {
+                    fails.Add($"{o.Name} (52020001_qd): no reactable twin but a swapped collision in state {state} (own body {col.A != null}, reactable in the world {col.B?.Body.CollisionLayer > 0})");
+                    break;
+                }
+            }
     }
 
     /// <summary>The NIF collision follows NifAsset: 02000024_bf (both models collide) and 02000011_bf (only asset B does).</summary>

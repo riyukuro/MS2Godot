@@ -26,6 +26,8 @@ public sealed class FieldProps
     static readonly StringName ReceiveParam = "ms2_receive";
     public int Built, Animated, Frozen;
     float freezeAt;
+    readonly Dictionary<FieldEntity, Node3D> nodes = new();
+    readonly Dictionary<FieldEntity, bool> shown = new();
 
     const float DefaultMaterialColor = 0.7058824f;
 
@@ -58,6 +60,8 @@ public sealed class FieldProps
             var node = BuildOne(m.md, m.anim, col, e.Name ?? e.ModelName, e.CastsShadow && FieldShadows.MapObjects, !NotReceiving.Contains(e), frozen,
                                 LightOff.TryGetValue(e, out var off) ? off : 0);
             node.Transform = ModelBuilder.ToGodot(e.Transform);
+            nodes[e] = node;
+            if (shown.TryGetValue(e, out bool show)) Show(node, show);
             root.AddChild(node);
             Built++;
             var player = node.GetNode<AnimationPlayer>("Model/AnimationPlayer");
@@ -73,6 +77,32 @@ public sealed class FieldProps
             }
         }
         return root;
+    }
+
+    /// <summary>
+    /// Shows or hides the entity's node (world/FieldInteractDraws: an interact mesh's own model or its reactable twin, by its
+    /// NifAsset). Kept until <see cref="Build"/> makes the node when that comes later. A hidden node is not processed either
+    /// (its controllers and glow stop where they are).
+    /// STILL-OPEN: the client builds asset B's scene graph at the swap, so its controllers start from the scene's time then;
+    /// here a node shown again goes on from where it was hidden.
+    /// </summary>
+    public void SetShown(FieldEntity e, bool show)
+    {
+        if (e == null) return;
+        shown[e] = show;
+        if (nodes.TryGetValue(e, out var node) && GodotObject.IsInstanceValid(node)) Show(node, show);
+    }
+
+    /// <summary>Whether the entity's node is shown (as set, or as built: shown).</summary>
+    public bool Shown(FieldEntity e) => e == null || !shown.TryGetValue(e, out bool s) || s;
+
+    /// <summary>The entity's node once built, else null.</summary>
+    public Node3D NodeOf(FieldEntity e) => e != null && nodes.TryGetValue(e, out var n) && GodotObject.IsInstanceValid(n) ? n : null;
+
+    static void Show(Node3D node, bool show)
+    {
+        node.Visible = show;
+        node.ProcessMode = show ? Node.ProcessModeEnum.Inherit : Node.ProcessModeEnum.Disabled;
     }
 
     /// <param name="casts">The entity casts the sun's shadow: FieldEntity.CastsShadow at the map-object shadow level. The client

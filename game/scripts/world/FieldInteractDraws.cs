@@ -30,8 +30,10 @@ namespace Ms2Godot.World;
 /// Nothing runs per frame.
 /// <item>The NIF collision follows NifAsset (FieldBuilder.InteractCollider: the scene graph swap takes the entity's PhysX prop
 /// out and makes asset B's).</item>
-/// STILL-OPEN: a reactable model drawn elsewhere or played as an effect, or one whose entity's own model is, has no reactable
-/// draw (FieldBuilder.InteractReactableDraws), so that object keeps its own model; how the client's BGTransparencyMgr element
+/// <item>A model that animates itself is a world/FieldProps node (<see cref="UseProps"/>): the entity's own, or its reactable
+/// model's twin (FieldBuilder.ReactableElsewhere); the node is shown and hidden as the instances are.</item>
+/// STILL-OPEN: a reactable model played as an effect, or one whose entity's own model is, has no reactable draw
+/// (FieldBuilder.InteractReactableDraws), so that object keeps its own model; how the client's BGTransparencyMgr element
 /// carries over a scene graph swap (here the fade is dropped and the next test fades the new model again); a
 /// spawned object (InteractObject mode 9, its "urn:gamebryo-scenegraph:" assets) has no drawn entity here; EnableHighlight / DisableDynamicUpdate (the scene graph's update list) have no draw effect.
 /// </summary>
@@ -39,6 +41,9 @@ public sealed class FieldInteractDraws
 {
     readonly Dictionary<FieldEntity, (int Id, TriggerFade.Target Target)> meshes = new();
     readonly Dictionary<FieldEntity, (int Id, TriggerFade.Target Target)> reactables = new();   // asset B's instances
+    FieldProps props;
+    readonly HashSet<FieldEntity> ownProps = new();                                             // own model drawn by FieldProps
+    IReadOnlyDictionary<FieldEntity, FieldEntity> reactableProps = new Dictionary<FieldEntity, FieldEntity>();   // asset B's FieldProps twin
     readonly Dictionary<LiveInteractObject, StaticBody3D> boxes = new();
     readonly IReadOnlyDictionary<FieldEntity, FieldBuilder.InteractCollider> swapColliders;
     readonly Dictionary<LiveInteractObject, int> effectHandles = new();   // m_nEffect, the state effect
@@ -86,6 +91,21 @@ public sealed class FieldInteractDraws
         }
     }
 
+    /// <summary>
+    /// The interact meshes world/FieldProps draws (the models that animate themselves): an entity whose own model is one of
+    /// <paramref name="drawnByProps"/>, and the twin FieldBuilder.ReactableElsewhere made for an animated reactable model,
+    /// hidden here from the load. Their nodes switch as the instances do; FieldProps keeps the switch until it builds them.
+    /// Call before <see cref="Bind(LiveInteractObjects, IReadOnlyDictionary{FieldEntity, FieldNpcs.TriggerActor})"/>.
+    /// </summary>
+    public void UseProps(FieldProps fieldProps, IEnumerable<FieldEntity> drawnByProps, IReadOnlyDictionary<FieldEntity, FieldEntity> reactableTwins)
+    {
+        props = fieldProps;
+        if (props == null) return;
+        foreach (var e in drawnByProps) if (e.HasMixin("MS2InteractMesh")) ownProps.Add(e);
+        reactableProps = reactableTwins ?? reactableProps;
+        foreach (var twin in reactableProps.Values) props.SetShown(twin, false);
+    }
+
     /// <summary>The effects go through the field's effect service (as the trigger objects' do).</summary>
     public void Bind(IRegionSkillEffects service) => effects = service;
 
@@ -112,20 +132,24 @@ public sealed class FieldInteractDraws
         model = null;
     }
 
-    /// <summary>Whether the entity's instances are drawn, its own or its reactable model's (null: it has none here).</summary>
+    /// <summary>Whether the entity's instances or prop nodes are drawn, its own or its reactable model's (null: it has none here).</summary>
     public bool? Shown(FieldEntity e)
     {
-        if (e == null) return null;
-        bool? a = meshes.TryGetValue(e, out var t) ? t.Target.Shown : null;
-        bool? b = reactables.TryGetValue(e, out var r) ? r.Target.Shown : null;
+        bool? a = ShownOwn(e), b = ShownReactable(e);
         return a == null && b == null ? null : a == true || b == true;
     }
 
-    /// <summary>Whether the entity's own model is drawn (null: it has none here).</summary>
-    public bool? ShownOwn(FieldEntity e) => e != null && meshes.TryGetValue(e, out var t) ? t.Target.Shown : null;
+    /// <summary>Whether the entity's own model is drawn, its instances or its FieldProps node (null: it has none here).</summary>
+    public bool? ShownOwn(FieldEntity e) =>
+        e == null ? null : meshes.TryGetValue(e, out var t) ? t.Target.Shown : ownProps.Contains(e) ? props.Shown(e) : null;
 
-    /// <summary>Whether the entity's reactable model is drawn (null: it has none here).</summary>
-    public bool? ShownReactable(FieldEntity e) => e != null && reactables.TryGetValue(e, out var r) ? r.Target.Shown : null;
+    /// <summary>Whether the entity's reactable model is drawn, its instances or its FieldProps twin (null: it has none here).</summary>
+    public bool? ShownReactable(FieldEntity e) =>
+        e == null ? null : reactables.TryGetValue(e, out var r) ? r.Target.Shown
+                         : props != null && reactableProps.TryGetValue(e, out var twin) ? props.Shown(twin) : null;
+
+    /// <summary>The FieldProps twin drawing the entity's reactable model, or null.</summary>
+    public FieldEntity ReactableProp(FieldEntity e) => e != null && props != null && reactableProps.TryGetValue(e, out var twin) ? twin : null;
 
     /// <summary>Whether the object's entity is drawn: its mesh instances or its actor (null: neither is drawn here).</summary>
     public bool? Drawn(LiveInteractObject o) =>
@@ -205,14 +229,19 @@ public sealed class FieldInteractDraws
         if (o.Entity == null) return;
         bool hasA = meshes.TryGetValue(o.Entity, out var t);
         bool hasB = reactables.TryGetValue(o.Entity, out var b);
-        bool onB = hasB && o.ShowsAssetB;
+        bool propA = props != null && ownProps.Contains(o.Entity);
+        var twin = ReactableProp(o.Entity);
+        bool onB = (hasB || twin != null) && o.ShowsAssetB;
         bool wantA = visible && !onB, wantB = visible && onB;
-        bool change = hasA && (t.Target.Shown != wantA || Fader.Fading(t.Id)) || hasB && (b.Target.Shown != wantB || Fader.Fading(b.Id));
+        bool change = hasA && (t.Target.Shown != wantA || Fader.Fading(t.Id)) || hasB && (b.Target.Shown != wantB || Fader.Fading(b.Id))
+                      || propA && props.Shown(o.Entity) != wantA || twin != null && props.Shown(twin) != wantB;
         if (change)
         {
             Fade?.Release(o.Entity);
             if (hasA) Fader.Stop(t.Id, t.Target, wantA);
             if (hasB) Fader.Stop(b.Id, b.Target, wantB);
+            if (propA) props.SetShown(o.Entity, wantA);
+            if (twin != null) props.SetShown(twin, wantB);
         }
         if (actors.TryGetValue(o.Entity, out var a)) a.Visible = visible;
     }

@@ -229,10 +229,18 @@ public sealed class FieldBuilder
     /// entity's <see cref="InteractMeshDraws"/> while its NifAsset is asset B. A fade target's twin draws are the entity's
     /// <see cref="FadeDraws"/> too (BGTransparencyMgr fades the entity whichever model it has); they are in no trigger,
     /// breakable, vibrate or lift list, and the twin has no particles or effect. Its collision is <see cref="InteractColliders"/>.
-    /// STILL-OPEN: a reactable model drawn elsewhere (world/FieldProps) or played as an effect, or one whose entity's own
-    /// model is (its draw could not be hidden for it), has no twin (<see cref="ReactableNotDrawn"/>).
+    /// A reactable model that animates itself has its twin drawn by world/FieldProps instead (<see cref="ReactableElsewhere"/>);
+    /// an entity whose own model does is drawn there too (<see cref="DrawnElsewhere"/>), beside a twin here.
+    /// STILL-OPEN: a reactable model played as an effect, or one whose entity's own model is (its draw could not be hidden for
+    /// it), has no twin (<see cref="ReactableNotDrawn"/>).
     /// </summary>
     public readonly Dictionary<FieldEntity, List<(MultiMesh Mm, int Index)>> InteractReactableDraws = new();
+    /// <summary>
+    /// The interact meshes whose reactable model animates itself, with the twin (the entity with asset B as its NifAsset) that
+    /// world/FieldProps draws for it: it is one of <see cref="DrawnElsewhere"/>, and world/FieldInteractDraws shows it in place
+    /// of the entity's own draw while its NifAsset is asset B.
+    /// </summary>
+    public readonly Dictionary<FieldEntity, FieldEntity> ReactableElsewhere = new();
     /// <summary>The reactable twins made by the build, with the entity each stands for.</summary>
     readonly Dictionary<FieldEntity, FieldEntity> reactableOf = new();
 
@@ -606,7 +614,7 @@ public sealed class FieldBuilder
         var interactRows = InteractObjectTable.Shared(packs);
         var reactableModels = Ms2.Ui.LiveInteractObjects.ReactableModels(map.Entities, interactRows);
         var stateShown = Ms2.Ui.LiveInteractObjects.StateShownMeshes(map.Entities, interactRows);
-        var drawnApart = new HashSet<FieldEntity>();     // drawn elsewhere (FieldProps) or played as an effect
+        var playedAsEffect = new HashSet<FieldEntity>();   // played through the effect runtime: no reactable twin (ReactableTwin)
 
         int entityIndex = -1;
         foreach (var e in map.Entities)
@@ -670,11 +678,10 @@ public sealed class FieldBuilder
                     if (IsStatic(e)) StaticParticleModels.Add(e.ModelName);
                     else ParticleEntities.Add((e, me.Particles));
                 }
-                if (asEffect) { EffectEntities.Add((e, ea, ee)); drawnApart.Add(e); }
+                if (asEffect) { EffectEntities.Add((e, ea, ee)); playedAsEffect.Add(e); }
                 else if (shown && me.Elsewhere)
                 {
                     DrawnElsewhere.Add(e);
-                    drawnApart.Add(e);
                     if (notReceiving.Contains(e)) NotReceivingElsewhere.Add(e);
                     if (LightOff(e, me) is var off and not 0) LightOffElsewhere[e] = off;
                 }
@@ -703,7 +710,7 @@ public sealed class FieldBuilder
                 // asset B takes out of the world (InteractColliders). One with no twin (ReactableTwin) keeps its own model's
                 // draws, so it keeps their shapes too
                 bool swaps = !trigger && !vibrate && !disabled && !e.Bool("GeneratePhysX")
-                             && reactableModels.TryGetValue(e, out var swapTo) && ReactableTwin(e, swapTo, drawnApart, out _) != null;
+                             && reactableModels.TryGetValue(e, out var swapTo) && ReactableTwin(e, swapTo, playedAsEffect, out _) != null;
                 int group = (int)e.Number("PropCollisionGroup");
                 // MyPC::FUN_141524a80 (mypc.cpp:2353-2366): a state sync taken while standing on a MS2CubeProp whose
                 // IsFallReturn is set and whose PropCollisionGroup is 9 or 8 carries the cube's cell. Its shapes carry the
@@ -782,20 +789,29 @@ public sealed class FieldBuilder
         }
 
         // the interact meshes' reactable models (InteractReactableDraws): a twin of the entity with asset B as its NifAsset joins
-        // the groups as the entity would with that asset (same transform, colour, lights and shadow receipt). An entity whose
-        // own model is drawn elsewhere or played as an effect gets none: its own draw could not be hidden for it
+        // the groups as the entity would with that asset (same transform, colour, lights and shadow receipt). A reactable model
+        // that animates itself is drawn by world/FieldProps instead, as the entity would be with that asset (ReactableElsewhere).
+        // An entity played as an effect gets none: its own draw could not be hidden for it
         entityIndex = -1;
         foreach (var e in map.Entities)
         {
             entityIndex++;
             if (!reactableModels.TryGetValue(e, out var llidB)) continue;
             yield return 0;
-            var twin = ReactableTwin(e, llidB, drawnApart, out var me);
+            var twin = ReactableTwin(e, llidB, playedAsEffect, out var me);
             if (twin == null) { if (me != null) ReactableNotDrawn++; continue; }
             ReactableCollision(e, me, entityIndex, colliders, twoSided);
+            ReactableTwins++;
+            if (me.Elsewhere)
+            {
+                DrawnElsewhere.Add(twin);
+                if (notReceiving.Contains(e)) NotReceivingElsewhere.Add(twin);
+                if (LightOff(twin, me) is var off and not 0) LightOffElsewhere[twin] = off;
+                ReactableElsewhere[e] = twin;
+                continue;
+            }
             reactableOf[twin] = e;
             Group(groups, llidB, twin, me, notReceiving.Contains(e));
-            ReactableTwins++;
         }
 
         foreach (var (key, ents) in groups)
@@ -916,21 +932,23 @@ public sealed class FieldBuilder
         building = null;
     }
 
-    /// <summary>The reactable twins the build drew (<see cref="InteractReactableDraws"/>).</summary>
+    /// <summary>The reactable twins the build made: in the groups (<see cref="InteractReactableDraws"/>) or for world/FieldProps
+    /// (<see cref="ReactableElsewhere"/>).</summary>
     public int ReactableTwins;
-    /// <summary>The reactable models with no twin: asset B drawn elsewhere or played as an effect, or the entity's own model is.</summary>
+    /// <summary>The reactable models with no twin: asset B or the entity's own model played as an effect.</summary>
     public int ReactableNotDrawn;
     /// <summary>The reactable models whose PhysX shapes the build made (<see cref="InteractCollider.B"/>).</summary>
     public int ReactableColliders;
 
     /// <summary>The twin an interact mesh draws its reactable model <paramref name="llidB"/> with: the entity with asset B as its
-    /// NifAsset. Null when it gets none: asset B does not load (<paramref name="me"/> null), is drawn elsewhere or plays as an
-    /// effect, or the entity's own model is drawn elsewhere or played as an effect (<paramref name="drawnApart"/>; its own draw
-    /// could not be hidden for it). Such an entity keeps its own model's draws and NIF collision: no swap.</summary>
-    FieldEntity ReactableTwin(FieldEntity e, string llidB, HashSet<FieldEntity> drawnApart, out ModelEntry me)
+    /// NifAsset, drawn in the groups or, where asset B animates itself (<see cref="ModelEntry.Elsewhere"/>), by world/FieldProps.
+    /// Null when it gets none: asset B does not load (<paramref name="me"/> null) or plays as an effect, or the entity's own
+    /// model is played as an effect (<paramref name="playedAsEffect"/>; its own draw could not be hidden for it). Such an entity
+    /// keeps its own model's draws and NIF collision: no swap.</summary>
+    FieldEntity ReactableTwin(FieldEntity e, string llidB, HashSet<FieldEntity> playedAsEffect, out ModelEntry me)
     {
         me = Model(llidB);
-        if (me == null || me.Elsewhere || drawnApart.Contains(e)) return null;
+        if (me == null || playedAsEffect.Contains(e)) return null;
         var raw = new XEntity { Id = e.Raw.Id, ModelName = e.Raw.ModelName, Name = e.Raw.Name, Sets = e.Raw.Sets,
                                 Props = new Dictionary<string, string>(e.Raw.Props, StringComparer.Ordinal) };
         raw.Props["NifAsset"] = llidB;
