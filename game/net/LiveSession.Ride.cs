@@ -169,12 +169,10 @@ public partial class LiveSession
         OwnSkillSetApplied?.Invoke();
     }
 
-    /// <summary>~CSkillSystem @0x141764900 (skillslot.cpp:1829-1836) with the old MyPC at a field change: each listed set is
-    /// removed (an open set's layout saved), so the next MyPC's skill system starts with none.</summary>
-    void DropOwnSkillSets()
-    {
-        while (OwnSkillSets.Ids.Count > 0) OwnSkillSets.Remove(OwnSkillSets.Ids[0], SkillSetTable);
-    }
+    /// <summary>~CSkillSystem with the old MyPC at a field change or a character's leave (<see cref="Ms2.Ui.Skills.SkillSetList.Drop"/>):
+    /// the sets go, the HUD still listening leaves skill set mode, and the key table's lock is lifted before the next field's
+    /// pages come.</summary>
+    void DropOwnSkillSets() => OwnSkillSets.Drop(SkillSetTable, KeyTable, OwnSkillSetApplied);
 
     /// <summary>CSkillSystem::Init @0x141764a80 (skillslot.cpp:1839-1846) of the new MyPC: ApplySkillSet, which without a set
     /// leaves a skill set mode the old field's mount left on (SendKeyTableMode7).</summary>

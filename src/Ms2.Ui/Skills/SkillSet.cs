@@ -127,4 +127,23 @@ public sealed class SkillSetList
         ids.Remove(id);
         Current = ids.Count == 0 ? null : table?.Get(ids[^1]);
     }
+
+    /// <summary>
+    /// ~CSkillSystem @0x141764900 (skillslot.cpp:1829-1836) with the old MyPC at a field change or a character's leave: each
+    /// listed set is removed (an open set's layout saved), so the next MyPC's skill system starts with none. With a set
+    /// listed, <paramref name="applied"/> (the HUD's ApplySkillSet, which without a set leaves skill set mode) runs and the
+    /// key table's lock is lifted.
+    /// <para>The client lifts the lock one step later: the new MyPC's CSkillSystem::Init (@0x141764a80, :1839-1846) applies
+    /// no set, and CKeyTable::SendKeyTableMode7 (@0x14142f700, keytable.cpp:2021-2034) empties the slots, unlocks and sends
+    /// KeyTable mode 7, which the server answers with the pages. Both servers here send the pages (mode 7) before the new
+    /// field's FieldAddUser, which a locked table skips (keytable.cpp:355-356), and do not answer the request, so a lock
+    /// kept until then would leave the quick slots empty until the next ride off.</para>
+    /// </summary>
+    public void Drop(SkillSetTable table, Ms2.Net.Packets.ServerKeyTable keys, Action applied = null)
+    {
+        if (ids.Count == 0) return;
+        while (ids.Count > 0) Remove(ids[0], table);
+        applied?.Invoke();
+        if (keys != null) keys.Locked = false;
+    }
 }

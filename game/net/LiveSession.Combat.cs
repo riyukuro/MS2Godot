@@ -1324,6 +1324,31 @@ public partial class LiveSession
                 Shows("the follow camera");
                 continue;
             }
+            if (step.StartsWith("ridewarp:"))      // ridewarp:<ride id>:<map>: rides the row as rideraw does, then /warp while riding: the next field's quick slots come back unlocked, as before the ride
+            {
+                var a = step.Split(':');
+                int rideId = int.Parse(a[1]);
+                if (hud.ClearShotScripted()) GD.Print("live: combat level-up guide closed for the shots");
+                int before = hud.ShownQuickSlotsScripted();
+                hud.SubmitChatLine("/debug packet " + live.OwnRideBytes(true, rideId, 0x7e000100 + (rideId & 0xff)));
+                await until(() => live.OwnRidee?.Id == rideId, 60 * 8);
+                await frames(90);
+                var on = hud.SkillSetScripted();
+                Check($"ridewarp {rideId}: riding {live.OwnRidee?.Id}; {on.Text}", live.OwnRidee?.Id == rideId && on.Ok);
+                int entered = 0; void Entered(int map, long ms) => entered++;
+                live.FieldEntered += Entered;
+                hud.SubmitChatLine("/warp " + a[2]);
+                await until(() => entered > 0, 60 * 90); await frames(240);
+                live.FieldEntered -= Entered;
+                if (flow.GetTree().CurrentScene is Ui.HudScene next) hud = next;
+                var after = hud.SkillSetScripted();
+                int shown = hud.ShownQuickSlotsScripted();
+                Check($"ridewarp {rideId}: map {live.CurrentEntry?.MapId} (entered {entered}), riding {live.OwnRidee?.Id.ToString() ?? "none"}; "
+                    + $"{after.Text}; key table locked {live.KeyTable.Locked}; quick slots shown {shown}, {before} before the ride",
+                    entered > 0 && live.OwnRidee == null && after.Ok && !live.KeyTable.Locked && shown == before && before > 0);
+                Shot($"ridewarp_{rideId}.png");
+                continue;
+            }
             if (step.StartsWith("rideraw:"))      // rideraw:<ride id>: the own pc rides the row by a ResponseRide mode 0 the server's debug packet command sends, then rides off (mode 1)
             {
                 int rideId = int.Parse(step[8..]);

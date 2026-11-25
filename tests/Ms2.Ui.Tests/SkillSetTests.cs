@@ -82,6 +82,31 @@ public class SkillSetTests
     }
 
     [Test]
+    public void AFieldChangeWhileRidingLetsTheNextFieldsPagesIn()
+    {
+        // ride a slotLock set's mount, then a portal: the old MyPC's ~CSkillSystem, then the next field's KeyTable mode 7
+        // (both servers send it before FieldAddUser and ignore the client's own mode 7 request)
+        var t = Table("""<skillSet id="99910001" skillIDs="99910002, 99910001" skillLevels="1, 1" />""");
+        var page = new[] { new[] { (4, new Ms2.Net.Packets.QuickSlotEntry(10000001, 0, 0)) } };
+        var keys = new Ms2.Net.Packets.ServerKeyTable();
+        keys.Apply(new Maple2.PacketLib.Tools.ByteReader(Ms2.Net.Packets.ServerKeyTable.Write(0, false, Array.Empty<Ms2.Net.Packets.KeyBinding>(), 0, page)));
+        var l = new SkillSetList();
+        l.Add(99910001, t);
+        keys.Locked = true;                                    // CKeyTable::ApplySkillSetToQuickSlots of the set
+        keys.ClearPages();
+        int applied = 0;
+
+        l.Drop(t, keys, () => { applied++; Assert.That(l.Current, Is.Null, "the HUD applies no set"); });
+        Assert.That((l.Ids.Count, applied), Is.EqualTo((0, 1)));
+        Assert.That(keys.Locked, Is.False, "the lock goes with the old MyPC's sets");
+        keys.Apply(new Maple2.PacketLib.Tools.ByteReader(Ms2.Net.Packets.ServerKeyTable.Write(7, false, null, 0, page)));
+        Assert.That(keys.Entry(0, 4).SkillId, Is.EqualTo(10000001), "the next field's pages fill the quick slots");
+
+        l.Drop(t, keys, () => applied++);
+        Assert.That(applied, Is.EqualTo(1), "without a set nothing is applied");
+    }
+
+    [Test]
     public void ASetSkillIsLearntAtTheSetsLevel()
     {
         // JobSystemCli::vfunc_2 (jobsystemcli.cpp:91-95) / vfunc_1 (:63-67): the set's skill is learnt and has the set's level

@@ -121,11 +121,19 @@ public partial class HudScene
         if (set != null)
             for (int i = 0; i < set.SkillIds.Count && i < order.Length; i++)
                 ok &= playerInfo.ShownEntry(order[i]).SkillId == set.SkillIds[i];
-        int shown = 0;
-        for (int i = 0; i < 25; i++) if (!playerInfo.ShownEntry(i).IsEmpty) shown++;
+        int shown = ShownQuickSlotsScripted();
         string first = string.Join(",", order.Take(4).Select(i => playerInfo.ShownEntry(i).SkillId));
         return (ok, $"skill set {set?.Id.ToString() ?? "none"} ({(set == null ? "-" : string.Join(",", set.SkillIds))}) locked {keys.Locked} "
             + $"mode 7 sent {keyTableUnlocks} slots 4-7 {first} shown {shown}");
+    }
+
+    /// <summary>Harness: how many of the 25 quick slots show an entry, -1 without the slot bar.</summary>
+    public int ShownQuickSlotsScripted()
+    {
+        if (playerInfo == null) return -1;
+        int shown = 0;
+        for (int i = 0; i < 25; i++) if (!playerInfo.ShownEntry(i).IsEmpty) shown++;
+        return shown;
     }
 
     int keyTableUnlocks;      // KeyTable mode 7 sends of the quick slots (the skill set's release)
