@@ -41,6 +41,32 @@ public sealed partial class InventoryController
         return null;
     }
 
+    /// <summary>Unk_Inventory::FUN_140a5f7b0(tag, 0) (inventory.cpp:835, GetItemCountByTag): the count of every bag item whose data
+    /// has the string tag; 0 for tag 0. STILL-OPEN: PC::CanUseItem's skip, as in <see cref="BagCountOf"/>.</summary>
+    public int BagCountOfTag(int tag)
+    {
+        if (tag == 0 || View == null || Model == null) return 0;
+        int n = 0;
+        for (int t = 0; t < Ms2.Net.Packets.ItemBook.Tabs; t++)
+            foreach (var c in View.Cells(t))
+                if (!c.Empty && ItemTags.ByName(Model.Tables.Items.Get(c.ItemId)?.StringTag) == tag) n += c.Amount;
+        return n;
+    }
+
+    /// <summary>Unk_Inventory::FindItemByTag (@0x140a5e040, inventory.cpp:630): the bag items whose data has the tag, sorted by
+    /// FUN_140a5c650 (an item with an expiry time before one without, then the earlier expiry), the first; null for tag 0 or
+    /// none. STILL-OPEN: PC::CanUseItem's skip.</summary>
+    public Item FindFirstByTag(int tag)
+    {
+        if (tag == 0 || View == null || Model == null) return null;
+        var found = new List<Item>();
+        for (int t = 0; t < Ms2.Net.Packets.ItemBook.Tabs; t++)
+            foreach (var c in View.Cells(t))
+                if (!c.Empty && ItemTags.ByName(Model.Tables.Items.Get(c.ItemId)?.StringTag) == tag && FindItem(c.Uid) is { } item)
+                    found.Add(item);
+        return found.OrderBy(i => i.ExpiryTime > 0 ? 0 : 1).ThenBy(i => i.ExpiryTime > 0 ? i.ExpiryTime : 0).FirstOrDefault();
+    }
+
     int BagCount(int itemId)
     {
         int n = 0;

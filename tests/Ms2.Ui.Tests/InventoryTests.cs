@@ -2255,6 +2255,33 @@ public class InventoryTests
         Assert.That(sent, Is.EqualTo(new[] { (50L, "Pal") }), "yes: the use with the name");
     }
 
+    /// <summary>The Lullu key lookups: Unk_Inventory::FUN_140a5f7b0 counts every bag item of the tag (inventory.cpp:835),
+    /// FindItemByTag finds one (:630); an item of another tag or none adds nothing.</summary>
+    [Test]
+    public void TheTagCountAndFindTakeEveryBagItemOfTheTag()
+    {
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        int tag = ItemTags.ByName("LulluKey");
+        int key = model.Tables.Items.TagItemId(tag);
+        if (tag == 0 || key == 0) Assert.Ignore("no LulluKey item in this data");
+        int other = ItemFunctionSweepTests.ItemIds(packs).First(i => i != key && model.Tables.Items.Get(i) is { } d && ItemTags.ByName(d.StringTag) != tag);
+        var book = new ItemBook { TabOf = i => i / 10000000, BaseSlots = _ => 48 };
+        var (_, c, _) = Load(model, book);
+        Assert.That((c.BagCountOfTag(tag), c.FindFirstByTag(tag)), Is.EqualTo((0, (Item)null)));
+        book.Apply(new ItemMessage.LoadTab(key / 10000000, new[]
+        {
+            new EquipItem { Id = key, Uid = 61, InventorySlot = 0, Amount = 3, Rarity = 1 },
+            new EquipItem { Id = key, Uid = 62, InventorySlot = 1, Amount = 2, Rarity = 1 },
+        }));
+        if (other / 10000000 != key / 10000000)
+            book.Apply(new ItemMessage.LoadTab(other / 10000000, new[] { new EquipItem { Id = other, Uid = 63, InventorySlot = 0, Amount = 7, Rarity = 1 } }));
+        Assert.That(c.BagCountOfTag(tag), Is.EqualTo(5));
+        Assert.That(c.FindFirstByTag(tag)?.ItemId, Is.EqualTo(key));
+        Assert.That(c.BagCountOfTag(0), Is.Zero, "tag 0 counts nothing");
+    }
+
     /// <summary>The box item kinds: RegisterItemUseFuncs' box handlers (unit_140d1ae30_itemfunctiondispatch.cpp:373) and any
     /// other function of the data named a box (those go to the plain use request).</summary>
     static readonly string[] BoxFunctions =

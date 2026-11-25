@@ -2059,6 +2059,7 @@ public partial class HudScene : Node, IUiStageHost
         if (ItemMergeRevertKeys(k)) return true;
         if (SelectItemBoxKeys(k)) return true;
         if (GachaBoxKeys(k)) return true;
+        if (LulluBoxKeys(k)) return true;
         if (ItemPreviewKeys(k)) return true;
         if (MarketBillKeys(k)) return true;
         if (BlackMarketKeys(k)) return true;
@@ -3856,8 +3857,9 @@ public partial class HudScene : Node, IUiStageHost
             };
         c.OpenSelectBox = OpenSelectItemBox;
         c.OpenGachaBox = OpenGachaBoxDialog;
+        c.OpenLulluBox = OpenLulluBoxDialog;
         // CUIService::IsDialogOpen of the ported item use dialogs
-        c.IsDialogOpen = id => id == ItemGachaBoxDialogController.UiId && GachaBoxOpen;
+        c.IsDialogOpen = id => id == ItemGachaBoxDialogController.UiId ? GachaBoxOpen : id == ItemLulluBoxDialogController.UiId && LulluBoxOpen;
         // OpenDungeonItemBox (@0x140d24e70): DungeonRoomTable::GetRoom, then the record of the room's reward room
         c.DungeonRewardCount = roomId =>
         {
