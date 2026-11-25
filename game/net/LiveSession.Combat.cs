@@ -1114,6 +1114,48 @@ public partial class LiveSession
                 Shot($"rideitem_{itemId}_off.png");
                 continue;
             }
+            if (step.StartsWith("npcnotice:"))      // npcnotice:<announce|popup>: a raw NpcNotice the server's debug packet command sends (no AI of the server's data sends one); what the HUD showed, with a shot
+            {
+                bool popup = step[10..] == "popup";
+                string before = hud.LastNpcNoticeShown;
+                // the texts and illustration of npc AI nodes in the server data (AI_BullArmorRed's announce, AI_Conder_FR_Lv1's sidePopup)
+                bool sent = hud.SubmitChatLine("/debug packet " + (popup ? live.NpcNoticeBytes(3, "$AI__AI_CONDER_FR_LV1__0$", 4000, "Conder_smile")
+                                                                         : live.NpcNoticeBytes(0, "$BullArmorRed_DashAttack$", 10000)));
+                await until(() => hud.LastNpcNoticeShown != before, 60 * 5);
+                await frames(30);
+                Check($"npcnotice {step[10..]}: {hud.LastNpcNoticeShown} (sent {sent})", hud.LastNpcNoticeShown != before);
+                Shot($"npcnotice_{step[10..]}.png");
+                continue;
+            }
+            if (step.StartsWith("insignia:"))      // insignia:<symbol>: a raw Insignia for the own pc (debug packet command); the own record and name tag
+            {
+                ushort sym = ushort.Parse(step[9..]);
+                bool sent = hud.SubmitChatLine("/debug packet " + live.OwnInsigniaBytes(sym, true));
+                await until(() => live.Me.Insignia == sym && live.Me.InsigniaShown, 60 * 5);
+                await frames(30);
+                Check($"insignia {sym}: own record {live.Me.Insignia} shown {live.Me.InsigniaShown}, own tag shows {hud.OwnTagSymbolScripted()} (sent {sent})",
+                    live.Me.Insignia == sym && hud.OwnTagSymbolScripted() == sym);
+                Shot($"insignia_{sym}.png");
+                continue;
+            }
+            if (step.StartsWith("follownpc:"))      // follownpc:<trigger>:<state index>: the GM trigger reset into the state that moves the user along a path (FollowNpc); the follow and its end
+            {
+                string[] parts = step[10..].Split(':');
+                var pc = live.OwnPlayer;
+                var at0 = pc.GlobalPosition;
+                bool sent = hud.SubmitChatLine($"/trigger reset {parts[0]} --state {parts[1]}");
+                await until(() => pc.State == Player.MoveState.TriggerFollowNpc, 60 * 15);
+                bool followed = pc.State == Player.MoveState.TriggerFollowNpc;
+                int npc = pc.FollowedNpc;
+                await frames(90);
+                Shot("follownpc_on.png");
+                var mid = pc.GlobalPosition;
+                await until(() => pc.State != Player.MoveState.TriggerFollowNpc, 60 * 60);
+                Check($"follownpc {step[10..]}: followed npc {npc} ({followed}, sent {sent}); moved {at0.DistanceTo(mid):F0} in 1.5 s, {at0.DistanceTo(pc.GlobalPosition):F0} in all; state now {pc.State}",
+                    followed && at0.DistanceTo(pc.GlobalPosition) > 50 && pc.State != Player.MoveState.TriggerFollowNpc);
+                Shot("follownpc_off.png");
+                continue;
+            }
             if (step.StartsWith("ownstate:"))      // ownstate:<hex id>[:move]: the server's raw UserState for the own pc (its debug packet command), the exit timed
             {
                 string[] parts = step[9..].Split(':');

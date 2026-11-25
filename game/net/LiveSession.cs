@@ -257,6 +257,33 @@ public partial class LiveSession : Node
         return string.Join(" ", w.ToArray().Select(b => b.ToString("X2")));
     }
 
+    static string Hex(IEnumerable<byte> b) => string.Join(" ", b.Select(x => x.ToString("X2")));
+    static void Op(List<byte> b, ushort op) { b.Add((byte)op); b.Add((byte)(op >> 8)); }
+    static void I32(List<byte> b, int v) { b.Add((byte)v); b.Add((byte)(v >> 8)); b.Add((byte)(v >> 16)); b.Add((byte)(v >> 24)); }
+    static void Narrow(List<byte> b, string s) { b.Add((byte)s.Length); b.Add((byte)(s.Length >> 8)); b.AddRange(System.Text.Encoding.ASCII.GetBytes(s)); }
+    static void Unicode(List<byte> b, string s) { b.Add((byte)s.Length); b.Add((byte)(s.Length >> 8)); b.AddRange(System.Text.Encoding.Unicode.GetBytes(s)); }
+
+    /// <summary>The live run's raw NpcNotice (the layout OnNpcNotice reads, scenestategame.cpp:9145-9215): mode 0 an announce
+    /// of <paramref name="text"/> for <paramref name="ms"/>; mode 3 a talk side popup (kind 0) with the illustration
+    /// <paramref name="icon"/>, as the Maple2 server writes an npc AI's sidePopup node (no name, voice or sound here).</summary>
+    internal string NpcNoticeBytes(byte mode, string text, int ms, string icon = "")
+    {
+        var b = new List<byte>();
+        Op(b, game.Profile.Number(Ms2.Net.Inbound.NpcNotice)); b.Add(mode);
+        if (mode == 0) { Unicode(b, text); I32(b, ms); }
+        else { b.Add(0); I32(b, ms); Narrow(b, ""); Narrow(b, icon); Narrow(b, ""); Narrow(b, ""); Unicode(b, text); }
+        return Hex(b);
+    }
+
+    /// <summary>The live run's raw Insignia for the own pc (OnNametag: i32 object, u16 symbol, u8 shown).</summary>
+    internal string OwnInsigniaBytes(ushort symbol, bool shown)
+    {
+        var b = new List<byte>();
+        Op(b, game.Profile.Number(Ms2.Net.Inbound.Insignia)); I32(b, Me.ObjectId);
+        b.Add((byte)symbol); b.Add((byte)(symbol >> 8)); b.Add(shown ? (byte)1 : (byte)0);
+        return Hex(b);
+    }
+
     internal string OwnUserStateBytes(int state)
     {
         ushort op = game.Profile.Number(Ms2.Net.Inbound.UserState);

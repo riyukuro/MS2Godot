@@ -63,13 +63,21 @@ public partial class HudScene
             string text = strings.GetString(n.Text);
             SystemText?.ShowTimedMessage(text, SystemTextController.AiWarning, n.Duration);
             ChatLog.AddSystemLine(text, TalkKind.SystemNotice);
+            LastNpcNoticeShown = $"announce '{text}' for {n.Duration} ms";
         }
         else if (n.Mode == Ms2.Net.Packets.NpcNotice.SidePopup && sidePopup != null)
         {
             string text = strings.GetString(n.Text);
             sidePopup.ShowPopup(new SidePopupTalkParam(n.Kind, n.Name, n.Icon, n.NpcId, n.Sound, n.Script, text));
+            LastNpcNoticeShown = $"side popup {n.Kind} illustration '{n.Icon}' '{text}'";
         }
     }
+
+    /// <summary>What the last npc notice showed (the live run's report).</summary>
+    internal string LastNpcNoticeShown { get; private set; }
+
+    /// <summary>The symbol the own name tag shows (the live run's report).</summary>
+    internal ushort OwnTagSymbolScripted() => playerNameTag?.ShownSymbol ?? 0;
 
     /// <summary>CReservedWordTable::ReplaceObjectAndValueWords over the quest table's object words and the local player's name.</summary>
     Func<string, string> SidePopupWords()
