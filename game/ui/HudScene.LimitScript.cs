@@ -1,7 +1,7 @@
 namespace Ms2Godot.Ui;
 
 /// <summary>The scripted live run's hooks for the field limit checks and the status options (MS2_LIVE_CHAT lines "@skillapply",
-/// "@lapenunmount:N", "@statusoptions", "@boxclose"): the dialogs opened and their buttons pressed through the dialogs' own
+/// "@lapenunmount:N", "@statplus:N", "@statusoptions", "@boxclose"): the dialogs opened and their buttons pressed through the dialogs' own
 /// callbacks, as the movie calls them on a click.</summary>
 public partial class HudScene
 {
@@ -27,6 +27,24 @@ public partial class HudScene
     /// <summary>The equip page's unmount of a slot: the movie's OnUnmountEquipSlot callback with the slot number.</summary>
     public bool UnmountLapenshardScripted(int slot) =>
         lapenshard is { IsClosed: false } && lapenshard.OnCallback("OnUnmountEquipSlot", new object[] { (double)slot });
+
+    /// <summary>Opens the character window when it is closed (ToggleDialog(0x2711)'s open). True when it is open.</summary>
+    public bool OpenMyInfoScripted()
+    {
+        if (myInfo == null || myInfo.IsClosed) OpenMyInfo();
+        return myInfo is { IsClosed: false };
+    }
+
+    /// <summary>The plus button of stat row <paramref name="row"/> (1 to 6): the movie's OnAddStatPoint callback.</summary>
+    public bool PressStatPlusScripted(int row) =>
+        myInfo is { IsClosed: false } && myInfo.OnCallback("onAddStatPoint", new object[] { (double)row });
+
+    /// <summary>The own stat points: remaining, used and those put into <paramref name="stat"/>.</summary>
+    public (int Remaining, int Used, int Stat) StatPointsScripted(int stat)
+    {
+        var b = Ms2Godot.Net.LiveSession.Instance?.Me.StatPoints;
+        return b == null ? (0, 0, 0) : (b.Remaining, b.Used, b.GetStatPoints(stat));
+    }
 
     /// <summary>Opens the options dialog on its status page (StatusOptionPage). The tab index; 0 when there is none.</summary>
     public int OpenStatusOptionsScripted()

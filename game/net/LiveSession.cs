@@ -3513,7 +3513,7 @@ public partial class LiveSession : Node
 
         // MS2_LIVE_CHAT="line|line|...": each line sent from the first chat window, waiting for a chat line to come back (at
         // most 5 s) and 2 s more; "~N" waits N s instead. With MS2_LIVE_CHAT_SHOTS=<dir> the screen is shot after each as
-        // chat_<n>.png; "@chatup:N" first scrolls the log N lines up from the bottom. "@warp:<map>", "@skillapply", "@lapenunmount:N", "@boxclose",
+        // chat_<n>.png; "@chatup:N" first scrolls the log N lines up from the bottom. "@warp:<map>", "@skillapply", "@lapenunmount:N", "@statplus:N", "@boxclose",
         // "@statusoptions" and "@optionsclose" press the field limit checks' buttons and open the status options (below).
         string chat = System.Environment.GetEnvironmentVariable("MS2_LIVE_CHAT");
         if (!string.IsNullOrEmpty(chat) && tree.CurrentScene is Ui.HudScene chatHud)
@@ -3589,6 +3589,23 @@ public partial class LiveSession : Node
                     var box = Ms2.Ui.Hud.MessageBoxQueue.Current();
                     GD.Print($"live: {(skill ? "skill apply" : "lapenshard unmount")} {n}: field {Instance?.FieldId}, limitContent 0x{Instance?.CurrentFieldData()?.LimitContent ?? 0:x}, "
                              + $"open {open}, pressed {pressed}, box {(box != null && box != shown ? "\"" + box.Msg + "\"" : "none")}");
+                }
+                else if (line.StartsWith("@statplus:") && int.TryParse(line.AsSpan(10), out int statRow) && tree.CurrentScene is Ui.HudScene sh)
+                {
+                    // "@statplus:<row>": the character window (opened first) and the plus button of that stat row (1 to 6); logs the
+                    // field's limit content, the box the press showed and the own stat points before and after the server's answer
+                    bool open = sh.OpenMyInfoScripted();
+                    await Frames(300);
+                    int stat = statRow >= 1 && statRow <= Ms2.Net.Packets.StatPointBook.CostIds.Length ? Ms2.Net.Packets.StatPointBook.CostIds[statRow - 1] : -1;
+                    var before = sh.StatPointsScripted(stat);
+                    var shown = Ms2.Ui.Hud.MessageBoxQueue.Current();
+                    bool pressed = sh.PressStatPlusScripted(statRow);
+                    await Frames(240);
+                    var box = Ms2.Ui.Hud.MessageBoxQueue.Current();
+                    var after = sh.StatPointsScripted(stat);
+                    GD.Print($"live: stat plus {n}: field {Instance?.FieldId}, limitContent 0x{Instance?.CurrentFieldData()?.LimitContent ?? 0:x}, open {open}, "
+                             + $"pressed {pressed}, box {(box != null && box != shown ? "\"" + box.Msg + "\"" : "none")}, stat 0x{stat:x} points "
+                             + $"{before.Stat} -> {after.Stat}, remaining {before.Remaining} -> {after.Remaining}, used {before.Used} -> {after.Used}");
                 }
                 else if (line.StartsWith("@warp:") && tree.CurrentScene is Ui.HudScene wh)
                 {
