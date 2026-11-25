@@ -874,7 +874,8 @@ public sealed class StatusOptionPage : OptionPage
         ("m_displayGuildChatBalloon", s => s.DisplayGuildChatBalloon, (s, v) => s.DisplayGuildChatBalloon = v),
     };
 
-    /// <summary>@0x141258b10. The pet switches only with feature 0x8c.</summary>
+    /// <summary>@0x141258b10. The pet switches only with feature 0x8c. The GMS2 m_displayHideOtherPet box sits with them
+    /// (INFERRED: the GMS2 exe is packed); a KMS movie has no such box, so it does nothing there.</summary>
     public override void FillControls()
     {
         foreach (var c in Checks) Tab.SetSelected(c.Name, c.Get(State));
@@ -884,6 +885,7 @@ public sealed class StatusOptionPage : OptionPage
         {
             Tab.SetSelected("m_displayShowOnlyMyPet", State.DisplayShowOnlyMyPet);
             Tab.SetSelected("m_displayHideMyPet", State.DisplayHideMyPet);
+            Tab.SetSelected("m_displayHideOtherPet", State.DisplayHideOtherPet);   // GMS2 movie only, see Status.DisplayHideOtherPet
         }
         Tab.SetSelected("m_displayHideSmartPush", State.DisplayHideSmartPush);
         Tab.SetSelected("m_displayLearningQuest", LearningQuest);
@@ -900,6 +902,7 @@ public sealed class StatusOptionPage : OptionPage
         {
             if (Tab.IsSelected("m_displayShowOnlyMyPet") is bool p) State.DisplayShowOnlyMyPet = p;
             if (Tab.IsSelected("m_displayHideMyPet") is bool h) State.DisplayHideMyPet = h;
+            if (Tab.IsSelected("m_displayHideOtherPet") is bool o) State.DisplayHideOtherPet = o;
         }
         if (Tab.IsSelected("m_displayHideSmartPush") is bool sp) State.DisplayHideSmartPush = sp;
         if (Tab.IsSelected("m_displayLearningQuest") is bool lq) LearningQuest = lq;

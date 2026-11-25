@@ -37,7 +37,8 @@ public class GameOptionTests
         public string Common(int id) => $"#{id:x}";
         public string CommonByKey(string k) => k;
         public string FormatStringId(int id, params object[] a) => $"#{id:x}:" + string.Join(",", a);
-        public bool IsFeatureEnabled(int f) => false;
+        public readonly HashSet<int> Features = new();
+        public bool IsFeatureEnabled(int f) => Features.Contains(f);
         public int BuildNumber => 0;
         public string Locale => "KR";
         public int SceneId => 0;
@@ -99,7 +100,7 @@ public class GameOptionTests
         public void SendRideMode(bool d) => Log.Add("ride " + d);
     }
 
-    static (UiHost, Host) Load(int tab, int stageW = 1282, int stageH = 722)
+    static (UiHost, Host) Load(int tab, int stageW = 1282, int stageH = 722, Action<Host> setup = null)
     {
         if (packs == null)
         {
@@ -112,6 +113,7 @@ public class GameOptionTests
         var host = new Host();
         host.Dialog = new GameOptionDialog(host);
         host.Movie = new GameOptionController { Dialog = host.Dialog };
+        setup?.Invoke(host);
         if (tab != 0) host.Dialog.SetTab(tab);
         var (rt, p) = src.Open(host.Movie.Movie, r => r.Budget = 20_000_000);
         p.StageW = stageW; p.StageH = stageH;
@@ -279,6 +281,28 @@ public class GameOptionTests
                 break;
         }
         Assert.That(host.Dialog.IsNoPageChanged(), Is.True, "reading the controls back leaves the page unchanged");
+    }
+
+    /// <summary>The status tab's pet switches (feature 0x8c) fill from the option. The GMS2 movie also has the
+    /// m_displayHideOtherPet box, which shows GameOption.Status.DisplayHideOtherPet and reads back into it; the KMS movie
+    /// has no such box, so the page skips it there.</summary>
+    [Test]
+    public void TheStatusTabShowsTheHideOtherPetBoxWhereTheMovieHasIt()
+    {
+        var (_, host) = Load(3, setup: x =>
+        {
+            x.Features.Add(0x8c);
+            x.Opt.StatusOption.DisplayHideMyPet = true;
+            x.Opt.StatusOption.DisplayHideOtherPet = true;
+        });
+        var c = host.Movie;
+        bool kr = UiDataRows.IsKr(packs);
+        Assert.That(c.IsSelected("m_displayHideMyPet"), Is.True);
+        Assert.That(c.IsSelected("m_displayHideOtherPet"), kr ? Is.Null : Is.True);
+        Assert.That(host.Dialog.IsNoPageChanged(), Is.True, "reading the controls back leaves the page unchanged");
+        if (kr) return;
+        c.SetSelected("m_displayHideOtherPet", false);
+        Assert.That(host.Dialog.IsNoPageChanged(), Is.False, "the box reads back into the page's status");
     }
 
     /// <summary>The KR row of gameoptionlocale.xml has one code per list: each dropdown gets one row, one menu row, and is

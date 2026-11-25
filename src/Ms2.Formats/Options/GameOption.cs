@@ -215,6 +215,14 @@ public sealed class GameOption
         public int DisplayBossMonsterNotify;
         public bool DisplayNormalChatBalloon = true, DisplayPartyChatBalloon = true, DisplayGuildChatBalloon = true;
         public bool DisplayShowOnlyMyPet, DisplayHideMyPet, DisplayHideSmartPush, DisplayHideHighlightMenu;
+        /// <summary>
+        /// The GMS2 client's status switch next to DisplayHideMyPet: its option movie (uigameoptiondialog.gfx) has the
+        /// m_displayHideOtherPet check box, which the KMS movie lacks, and the GMS2 client's own Config/GameOption.xml saves
+        /// DisplayHideOtherPet between DisplayHideMyPet and DisplayHideSmartPush. The KMS exe neither reads nor writes it
+        /// (gameoptionstruct.cpp:1371-1430), so only a non-KR status saves it. INFERRED from that data (the GMS2 exe is
+        /// packed): off after a reset, like the other pet switches. STILL-OPEN: which pets the field hides with it.
+        /// </summary>
+        public bool DisplayHideOtherPet;
 
         /// <param name="regionKr">IsRegionKR: the PC illustration starts on (:1364-1366)</param>
         public Status(bool regionKr) { RegionKr = regionKr; DisplayPcIllust = regionKr; }
@@ -245,6 +253,7 @@ public sealed class GameOption
             Xml.ReadBool(d, "status", "DisplayGuildChatBalloon", ref DisplayGuildChatBalloon);
             Xml.ReadBool(d, "status", "DisplayShowOnlyMyPet", ref DisplayShowOnlyMyPet);
             Xml.ReadBool(d, "status", "DisplayHideMyPet", ref DisplayHideMyPet);
+            Xml.ReadBool(d, "status", "DisplayHideOtherPet", ref DisplayHideOtherPet);   // absent from every KMS file
             Xml.ReadBool(d, "status", "DisplayHideSmartPush", ref DisplayHideSmartPush);
             Xml.ReadBool(d, "status", "DisplayHideHighlightMenu", ref DisplayHideHighlightMenu);
             DisplayBossMonsterNotify = Math.Clamp(DisplayBossMonsterNotify, 0, 2);
@@ -275,6 +284,7 @@ public sealed class GameOption
             Xml.WriteBool(d, "status", "DisplayGuildChatBalloon", DisplayGuildChatBalloon);
             Xml.WriteBool(d, "status", "DisplayShowOnlyMyPet", DisplayShowOnlyMyPet);
             Xml.WriteBool(d, "status", "DisplayHideMyPet", DisplayHideMyPet);
+            if (!RegionKr) Xml.WriteBool(d, "status", "DisplayHideOtherPet", DisplayHideOtherPet);
             Xml.WriteBool(d, "status", "DisplayHideSmartPush", DisplayHideSmartPush);
             Xml.WriteBool(d, "status", "DisplayHideHighlightMenu", DisplayHideHighlightMenu);
         }
