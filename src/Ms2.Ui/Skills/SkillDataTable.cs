@@ -329,7 +329,9 @@ public sealed class SkillData
     /// m_nOffsetNameTag too (stateemotionidle.cpp:230-231); the GMS2 client reads &lt;kinds offsetHPBar&gt; into the kinds block's
     /// +0x34 (the reader @0x14045d294, row +0xb4) and its emotion state sets the bar from it (the setter @0x140baef60 called
     /// @0x140c6238f and @0x140c63be9 with row +0xb4, the name tag @0x140baef50 with row +0xb0, offsetNameTag), so a GMS2 row
-    /// keeps offsetHPBar (0 when absent, INFERRED: the block's initial value is not read). Read from the GMS2 x64 dump's disassembly (not decompiled).</summary>
+    /// keeps offsetHPBar, 0 when absent: the float reader @0x14049c8f0 leaves the field as it is without the attribute, and the
+    /// block's ctor @0x14045cee0 zeroes +0x30..+0x37 (offsetNameTag and offsetHPBar). No GMS2 emotion row has offsetHPBar (only
+    /// the glide skills 80010033 and 80010051), so on GMS2 an emotion moves the name tag but not the bar. Read from the GMS2 x64 dump's disassembly (not decompiled).</summary>
     public int OffsetHpBar;
     /// <summary>
     /// The GMS2 learned test's kind short cut (JobSystemCli::vfunc_2 @0x14057cc50 on the kinds block, row +0x80): kinds type 3

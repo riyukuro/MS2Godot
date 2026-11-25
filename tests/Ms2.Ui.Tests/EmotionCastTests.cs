@@ -47,7 +47,7 @@ public class EmotionCastTests
         var g = SkillData.Load(XElement.Parse(gms2), (e, child, key) => e.Elements(child).ToList(), gms2Row: true);
         Assert.That((g.OffsetNameTag, g.OffsetHpBar), Is.EqualTo((-40, -30)));
         var none = SkillData.Load(XElement.Parse(gms2.Replace(" offsetHPBar=\"-30\"", "")), (e, child, key) => e.Elements(child).ToList(), gms2Row: true);
-        Assert.That(none.OffsetHpBar, Is.EqualTo(0), "a GMS2 row without offsetHPBar keeps 0 (INFERRED: the block's initial value)");
+        Assert.That(none.OffsetHpBar, Is.EqualTo(0), "a GMS2 row without offsetHPBar keeps 0 (the kinds block ctor @0x14045cee0 zeroes it)");
     }
 
     [Test]
