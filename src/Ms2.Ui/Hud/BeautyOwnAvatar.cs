@@ -15,8 +15,9 @@ namespace Ms2.Ui.Hud;
 /// <para>STILL-OPEN: The skin colours (FUN_1414239e0 / FUN_141423650) are the user block's two
 /// colours packed in wire order; setting one is remembered but the player model's skin tint is not redrawn. The "Customize" tag
 /// of a hidden slot (CEquipItem::AddTag) has no effect on a drawn item yet. MyPC::vfunc_127 / vfunc_128 (mypc.cpp:4883-4905) also
-/// re-sample DAT_143aea120 and call ExcludeFromAutoEquip when an item is taken off, for a preview too; that auto-equip exclusion
-/// list is not ported, so a preview take-off does not touch it.</para>
+/// re-sample DAT_143aea120 (not here).</para>
+/// <para>MyPC::vfunc_128 calls ExcludeFromAutoEquip for an item it took off (one with a model preset), for a preview too
+/// (customize.cpp's vfunc_128(item, 1)): <see cref="TakenOff"/>.</para>
 /// </summary>
 public sealed class BeautyOwnAvatar : IBeautyAvatar
 {
@@ -88,9 +89,13 @@ public sealed class BeautyOwnAvatar : IBeautyAvatar
         if (item == null) return;
         var equips = Gear; var outfit = Outfit;
         if ((outfit ?? Array.Empty<EquipItem>()).Any(e => e.Uid == item.Uid)) outfitUids.Add(item.Uid);
-        if (WornEquips.PutOff(ref equips, ref outfit, item.Uid, wornLayer) == null) return;
-        Store(equips, outfit);
+        if (WornEquips.PutOff(ref equips, ref outfit, item.Uid, wornLayer) != null) Store(equips, outfit);
+        if (wornLayer(item.Id) != null) TakenOff?.Invoke(item.Uid);      // MyPC::vfunc_128: a model preset, ExcludeFromAutoEquip (mypc.cpp:4903)
     }
+
+    /// <summary>The uid of an item the preview took off (one with a model preset): the inventory's ExcludeFromAutoEquip
+    /// (<see cref="AutoEquip.ExcludeFromAutoEquip"/>), as MyPC::vfunc_128 (mypc.cpp:4903).</summary>
+    public Action<long> TakenOff;
 
     void Store(IReadOnlyList<EquipItem> equips, IReadOnlyList<EquipItem> outfit)
     {

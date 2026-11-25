@@ -177,17 +177,38 @@ public partial class LiveSession : Node
         BattleRecords.PetOwnerOf = id => remote?.Tracker.PetOwnerOf(id) ?? 0;
         // battlerecordmanager.cpp:188: the room id set, its row found, and the row's chaosDamageMeter
         BattleRecords.ChaosRoomMeter = () => dungeonRoomId != 0 && DungeonRoomOf?.Invoke(dungeonRoomId) is { ChaosDamageMeter: true };
+        AutoEquip.FeatureEnabled = AutoEquipFeature;
         WireMe();
     }
 
     void WireMe()
     {
+        // the own put-on of the auto-equip's pending item and the own take-off's exclusion (OnItemPutOn :3125, MyPC::vfunc_128)
+        Me.OwnItemPutOn += OwnPutOnAutoEquip;
+        Me.OwnItemTakenOff += AutoEquip.ExcludeFromAutoEquip;
         // the server's state change (a death included) leaves the running interaction, react or ride summon state
         Me.StateEntered += st => InteractKey.LeaveForServerState(st, InteractObjects, InteractNpcs, reactState, rideSummon);
         Me.StateEntered += LeaveRecallForServerState;
         Me.StateEntered += EnterOwnStateExit;   // a server state the body has no move state for runs the client's own exit
         ownStateExit.TalkUp = OwnTalkUp;
         ownStateExit.OwnBalloonActive = OwnBalloonActive;
+    }
+
+    /// <summary>OnLevelUp's own part (scenestategame.cpp:9565): the auto-equip of the level's items.</summary>
+    void AutoEquipOnLevelUp(int level)
+    {
+        AutoEquip.OnLevelUp(level);
+        if (LiveCheck)
+            GD.Print($"live: auto-equip level {level}: on {AutoEquip.IsAutoEquipEnabled}, pending {AutoEquip.PendingItem}, queued {AutoEquip.QueuedCount}");
+    }
+
+    /// <summary>OnItemPutOn for the own PC (scenestategame.cpp:3125-3138): the pending item put on clears it, and the HUD shows
+    /// the notice and closes the bind box.</summary>
+    void OwnPutOnAutoEquip(EquipItem item)
+    {
+        if (!AutoEquip.OnOwnPutOn(item.Uid)) return;
+        if (LiveCheck) GD.Print($"live: auto-equip put on {item.Id} uid {item.Uid}");
+        AutoEquipPutOn?.Invoke(item.Id);
     }
 
     /// <summary>The own pc's exit from a state the server put it into (Ms2.Ui.OwnStateExit), with no move state of the body.</summary>
@@ -590,6 +611,23 @@ public partial class LiveSession : Node
     /// <summary>The adventure data the client keeps in globals (DAT_143ab2958..3318): session-lived, so a field change keeps
     /// the exp, the filled level, the claimed levels and the missions.</summary>
     public readonly Ms2.Ui.AdventureData Adventure = new();
+    /// <summary>The global inventory's auto-equip (feature 232): its pending item, queue, excluded items and switch live as long
+    /// as the session, as the client's inventory; the HUD sets what it reads of the field. Reset by the server enter
+    /// (Unk_Inventory::Clear) and the own FieldAddUser.</summary>
+    public readonly Ms2.Ui.Hud.AutoEquip AutoEquip = new();
+    /// <summary>The auto-equip's put-on of its pending item (OnItemPutOn, scenestategame.cpp:3125-3138): the item id, for the
+    /// HUD's s_msg_item_auto_install_equipment notice and the bind box close.</summary>
+    public event Action<int> AutoEquipPutOn;
+    bool? autoEquipFeature;
+    /// <summary>Feature 232 (0xe8, the auto-equip), as UiModel.IsFeatureEnabled reads it.</summary>
+    bool AutoEquipFeature()
+    {
+        if (autoEquipFeature is { } on) return on;
+        try { on = Ms2.Ui.LobbyFeatures.IsEnabledByName(Ms2.Formats.Pack.PackSet.Shared(Settings.DataDir), Ms2.Ui.FeatureTable.Names[Ms2.Ui.Hud.AutoEquip.FeatureId - 1]); }
+        catch (Exception e) { GD.Print($"live: feature table unavailable ({e.Message})"); on = false; }
+        autoEquipFeature = on;
+        return on;
+    }
     /// <summary>The worn lapenshards (MyPC's table, filled by OnLapenshard), session-lived like the PC.</summary>
     public readonly Ms2.Ui.LapenshardData Lapenshards = new();
     /// <summary>Inbound 0x11B, every mode the client reads (the worn table is already updated).</summary>
@@ -1385,6 +1423,7 @@ public partial class LiveSession : Node
         // the adventure level, quest, item, trophy, title and key table loads among them
         entry.Replay(Handle, () =>
         {
+            AutoEquip.ResetAutoEquip();   // OnServerEnter's FUN_14092f420 (scenestategame.cpp:2070): Unk_Inventory::Clear, inventory.cpp:407
             Adventure.ServerEnter();
             StubHudData.Instance.Wallet = entry.Enter?.Wallet;
             // the found-taxi list DAT_143ab3078: ServerEnter's second int list (OnServerEnter, scenestategame.cpp:2115-2122);
@@ -1941,6 +1980,7 @@ public partial class LiveSession : Node
                 bool self = u.User.CharacterId == entry.Enter.CharacterId;
                 if (self)
                 {
+                    AutoEquip.ResetAutoEquip();   // the new MyPC (scenestategame.cpp:11123)
                     selfObject = u.ObjectId; SelfInBattle = u.InBattle; selfEmotion = u.InBattle ? 1 : 0; Me.Apply(u); player?.SetBattleStance(u.InBattle);
                     // a new MyPC, then its cube mode (PC::vfunc_135, scenestategame.cpp:11189-11192) before its model is in (vfunc_12)
                     CubeCraft.ConstructionUnlockOnEnter ??= ConstructionUnlockOnEnter;
@@ -2111,6 +2151,7 @@ public partial class LiveSession : Node
                 }
                 if (selfLevel) OwnLevelChanged?.Invoke(selfOld, l.Level);   // :9541-9561, before status 6 and NotifyChangeMyLevel
                 if (selfLevel) guide?.OnChangeMyLevel();   // NotifyChangeMyLevel (CGuideManager::OnChangeMyLevel)
+                if (selfLevel) AutoEquipOnLevelUp(l.Level);   // :9565 Unk_Inventory::FUN_140a66990(nLevel), before UpdateExp(3)
                 if (selfLevel || LiveCheck) GD.Print($"live: level up object {l.ObjectId} level {l.Level}{(selfLevel ? " SELF" : "")}");
             }
             else if (game.Is(p, Inbound.SyncNumber))

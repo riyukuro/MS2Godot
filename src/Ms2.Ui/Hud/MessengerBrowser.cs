@@ -705,7 +705,7 @@ public sealed class MessengerBrowser
     /// <summary>FUN_140d2ab10 (unit_140d2a7e0_chatlinkhelpers.cpp:227), a type 0xf announcement: the text made the line
     /// its link kind stands for, null when unusable. STILL-OPEN: not ported, so every type 0xf line is dropped.</summary>
     public Func<string, string> Announcement = _ => null;
-    /// <summary>CUserCommandCli::ExecuteInternal(text), a type 10 line. STILL-OPEN: the user commands are not ported.</summary>
+    /// <summary>CUserCommandCli::ExecuteInternal(text), a type 10 line (<see cref="UserCommands.ExecuteInternal"/>).</summary>
     public Action<string> UserCommand;
     /// <summary>ShowChatBalloon(name, text, type), the speech balloon over the speaker (<see cref="ChatSpeakerBalloon.Show"/>).</summary>
     public Action<string, string, int> ChatBalloon;

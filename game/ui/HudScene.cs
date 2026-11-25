@@ -1636,8 +1636,12 @@ public partial class HudScene : Node, IUiStageHost
                     if (live.Items.Get(uid) is not { } e || Ms2.Ui.Hud.InventoryController.ToItem(e, hudModel.Tables.Items) is not { } item) return;
                     if (item.Data?.IsCashItem == true) PlayItemSound(item.Data);
                     ChatLog.AddItemLine(item, (uint)count);
+                    live.AutoEquip.OnNewItem(item);   // :2856-2860 with feature 0xe8: an equipment item to FUN_140a66ae0
+                    if (Ms2Godot.Net.LiveSession.LiveCheck)
+                        GD.Print($"live: new item {item.ItemId} uid {uid}: auto-equip pending {live.AutoEquip.PendingItem}, queued {live.AutoEquip.QueuedCount}");
                 };
                 live.Items.NotifiedNew += onNew;
+                var unwatchAutoEquip = WatchAutoEquip(live);
                 // OnItemInventory's answers (scenestategame.cpp:2951-3027): mode 0xd's error, mode 0xa's expand done, and mode 0xc's
                 // expand effect while the inventory is open
                 Action<int, int, int> onError = (code, id, value) => ShowItemAnswer(Ms2.Net.Packets.ItemInventoryAnswer.Error(code, id, value));
@@ -1648,6 +1652,7 @@ public partial class HudScene : Node, IUiStageHost
                 live.Items.ExtraSlotsSet += onExtraSlots;
                 unwatchNewItems = () =>
                 {
+                    unwatchAutoEquip();
                     live.Items.NotifiedNew -= onNew;
                     live.Items.ErrorReceived -= onError;
                     live.Items.ExpandCompleted -= onExpandDone;
@@ -3505,9 +3510,13 @@ public partial class HudScene : Node, IUiStageHost
         if (MessageBoxLayer.Instance?.Controller is not { } boxes || unbindBoxAnswers != null && boundBoxes == boxes) return;
         unbindBoxAnswers?.Invoke();
         Func<long, bool> use = uid => inventory?.ConfirmBindUse(uid) ?? false;
-        Func<long, uint, uint, int?> equip = (uid, slot, mode) => inventory?.ConfirmBindEquip(uid, slot, mode);
+        // the bind-on-equip yes goes to the global inventory's request (liveEquip), the bag dialog's offline; its result and the
+        // no go to the auto-equip's pending item (uimessagebox.cpp:1899)
+        Func<long, uint, uint, int?> equip = (uid, slot, mode) => liveEquip != null ? liveEquip.ConfirmBindEquip(uid, slot, mode)
+            : inventory?.ConfirmBindEquip(uid, slot, mode);
+        Action<long, int> equipAnswered = (uid, result) => Ms2Godot.Net.LiveSession.Instance?.AutoEquip.OnBindEquipAnswered(uid, result);
         Func<long, int, bool> gem = (uid, slot) => myInfo?.ConfirmBindGemEquip(uid, slot) ?? false;
-        boxes.UseBindFuncItem = use; boxes.UseBindEquipItem = equip; boxes.UseBindGemEquipItem = gem;
+        boxes.UseBindFuncItem = use; boxes.UseBindEquipItem = equip; boxes.UseBindGemEquipItem = gem; boxes.BindEquipAnswered = equipAnswered;
         Action<long> learnEmotion = uid => inventory?.ConfirmLearnEmotion(uid);
         boxes.LearnEmotion = learnEmotion;
         Action<long> useFunctionItem = uid => inventory?.ConfirmUseFunctionItem(uid);
@@ -3543,6 +3552,7 @@ public partial class HudScene : Node, IUiStageHost
             if (boxes.CheckGuildName == checkGuildName) boxes.CheckGuildName = null;
             if (boxes.SystemNotice == boxNotice) boxes.SystemNotice = null;
             if (boxes.UseBindEquipItem == equip) boxes.UseBindEquipItem = null;
+            if (boxes.BindEquipAnswered == equipAnswered) boxes.BindEquipAnswered = null;
             if (boxes.UseBindGemEquipItem == gem) boxes.UseBindGemEquipItem = null;
             if (boxes.LearnEmotion == learnEmotion) boxes.LearnEmotion = null;
             if (boxes.UseFunctionItem == useFunctionItem) boxes.UseFunctionItem = null;
@@ -4257,6 +4267,7 @@ public partial class HudScene : Node, IUiStageHost
         Net.LiveSession.Instance?.SyncOwnMagicEffects(ownTagMagics);   // CMagic m_nEffectId: their scene effects
         TickCooltimes();                                      // CSkillSystem::Update: the cooldowns
         TickCompact();                                        // CSkillSystem::Update's compact lists, State::vfunc_8's pick
+        TickAutoEquip();                                      // MyPC::vfunc_53: Unk_Inventory::ProcessAutoEquipQueue
         ChatLog.Process();                                    // UIMessengerBrowser::vfunc_15
         foreach (var (_, c) in messengers) c.Process();      // UIMessenger::vfunc_15
         groupBrowser?.Process();                              // UIGroupMessengerBrowser::vfunc_15

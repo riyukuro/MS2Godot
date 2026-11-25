@@ -277,6 +277,9 @@ public sealed class MyCharacter {
     /// calls as <see cref="PutOnOrOff"/>, whether or not the item has a model preset; the beauty shop sub scene's slot filter
     /// (:3114, slots 1, 2 and 3 only) belongs to the host, which knows whether that shop is open.</summary>
     public event Action<EquipItem> OwnItemPutOn;
+    /// <summary>MyPC::vfunc_128 (mypc.cpp:4895-4905) after the own PC took off an item with a model preset (PC::vfunc_128):
+    /// the item's uid, for the inventory's ExcludeFromAutoEquip (the auto-equip does not put it on again).</summary>
+    public event Action<long> OwnItemTakenOff;
 
     /// <summary>The own FieldAddUser: object id, user block, the title (PC::FUN_141661c00 = m_n10f4) and the architect score
     /// values after the ride block (scenestategame.cpp:11220-11224).</summary>
@@ -578,6 +581,7 @@ public sealed class MyCharacter {
             Equips = equips; Outfit2 = outfit;
             EquipChanged?.Invoke();
             Changed?.Invoke();
+            OwnItemTakenOff?.Invoke(p.ItemUid);
         }
         PutOnOrOff?.Invoke();
         return changed;

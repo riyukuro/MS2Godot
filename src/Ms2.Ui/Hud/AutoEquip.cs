@@ -61,6 +61,8 @@ public sealed class AutoEquip
     public void SetAutoEquipEnabled(bool on) => autoEquipEnabled = on;
     /// <summary>The queued items' uids, head first.</summary>
     public IEnumerable<long> QueuedUids => autoEquipQueue.Select(i => i.Uid);
+    /// <summary>The number of queued items.</summary>
+    public int QueuedCount => autoEquipQueue.Count;
     /// <summary>The excluded uids, in the order added.</summary>
     public IReadOnlyList<long> ExcludedUids => excludedItems;
 

@@ -9,7 +9,7 @@ namespace Ms2.Ui.Hud;
 /// <summary>
 /// CUserCommandCli (ms2/client/ms2/usercommandcli.cpp), the slash commands of the chat input: Table/chatCommand.xml's rows
 /// (<see cref="Load"/>) give each alias (string table 0x38, stringchatcommand.xml) its chat type and function, and the
-/// registered functions (RegisterChat @0x141362e60, RegisterDebug @0x141363160; RegisterInternalCommands registers none)
+/// registered functions (RegisterChat @0x141362e60, RegisterDebug @0x141363160; RegisterInternalCommands @0x141364f70 the server's, <see cref="ExecuteInternal"/>)
 /// run a command (<see cref="Execute"/>). The ctor (@0x141361c50) loads, then registers. The maps are CAtlMap with
 /// CStringElementTraitsI, so the names are case-blind; the help order is a CRBMap by stringOrder.
 /// Of the functions only Help is ported (<see cref="ShowHelp"/>); the ones whose body starts with the GM level test (return 0
@@ -52,6 +52,9 @@ public sealed class UserCommands
         /// <summary>A registered function whose body is not ported, by its registered name and argument text; returns its
         /// result. STILL-OPEN: none is ported, so 1.</summary>
         public Func<string, string, int> Unported = (_, _) => 1;
+        /// <summary>g_143ab2a90.SetAutoEquipEnabled (<see cref="AutoEquip.SetAutoEquipEnabled"/>), the internal command
+        /// AutoInstallEquipMent's; null without the inventory.</summary>
+        public Action<bool> SetAutoEquipEnabled;
     }
 
     static readonly Hooks NoHooks = new();
@@ -86,6 +89,41 @@ public sealed class UserCommands
         "LearnAllAbility", "ShowKey", "SendPacket", "SetPosition", "ChatLog", "NoWaitRoomExit", "DamageUseOld", "DamageTestLoop",
         "SetDisableClonePC", "ShowMyPCNodes", "SkipLoadingUGCCube",
     };
+
+    /// <summary>RegisterInternalCommands (@0x141364f70, usercommandcli.cpp:893) in its order: the commands the server sends as a
+    /// type 10 chat line (<see cref="ExecuteInternal"/>).</summary>
+    public static readonly string[] RegisteredInternal =
+    {
+        "IgnoreSkillCoolTime", "HandleRandomRegionSpawn", "CrashDump", "DumpPath", "SetPCBang", "Contract", "title", "SetQuestSeed",
+        "AutoInstallEquipMent", "ReloadSkill", "DisableDirectoryWatching",
+    };
+
+    /// <summary>The internal command AutoInstallEquipMent's name.</summary>
+    public const string AutoInstallEquipment = "AutoInstallEquipMent";
+
+    /// <summary>
+    /// ExecuteInternal (@0x1413621e0, usercommandcli.cpp:684), a type 10 line (UIMessenger, uimessenger.cpp:2929): the first
+    /// word (Tokenize " ") looked up in the internal commands (CStringElementTraitsI: case-blind), the rest (Mid at the
+    /// token's end) its arguments (ItemFunctionArgs split at " "); an unknown name does nothing. Of the functions only
+    /// SetAutoInstallEquipment (@0x14136d9c0, :2178) is ported: SetAutoEquipEnabled(FUN_1408d20b0(0, 0)), the first argument's
+    /// _wtoi above 0 (0 without one). STILL-OPEN: the others run <see cref="Hooks.Unported"/>.
+    /// </summary>
+    public static void ExecuteInternal(string command, Hooks hooks = null)
+    {
+        hooks ??= NoHooks;
+        int start = 0;
+        string name = Tokenize(command ?? "", " ", ref start);
+        string arguments = Mid(command ?? "", start);
+        string found = Array.Find(RegisteredInternal, n => string.Equals(n, name, StringComparison.OrdinalIgnoreCase));
+        if (found == null) return;
+        if (found == AutoInstallEquipment)
+        {
+            var words = arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            hooks.SetAutoEquipEnabled?.Invoke(words.Length > 0 && Ms2.Formats.Options.GraphicOptionPage.Wtoi(words[0]) > 0);
+            return;
+        }
+        hooks.Unported(found, arguments);
+    }
 
     /// <summary>No table (declared after the static tables its ctor reads).</summary>
     public static readonly UserCommands Empty = new();

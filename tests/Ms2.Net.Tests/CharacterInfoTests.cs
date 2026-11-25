@@ -195,8 +195,10 @@ public class CharacterInfoTests {
         u.Equips.Add(new EquipItem { Id = 50000001, Uid = 12, Slot = EquipSlot.CL });
         me.Apply(u);
         int calls = 0, lists = 0;
+        var takenOff = new List<long>();
         me.PutOnOrOff += () => calls++;
         me.EquipChanged += () => lists++;
+        me.OwnItemTakenOff += takenOff.Add;      // MyPC::vfunc_128's ExcludeFromAutoEquip, the preset branch only (mypc.cpp:4900-4903)
         Func<int, int?> layer = id => id == 15000001 || id == 15000002 ? 0 : null;
         Func<int, bool> known = id => id != 1;
         Assert.That(me.Apply(new ItemPutOn(1, 0, new EquipItem { Id = 15000002, Uid = 13, Slot = EquipSlot.RH }), layer, known), Is.True);
@@ -214,6 +216,7 @@ public class CharacterInfoTests {
         me.Apply(new ItemPutOff(1, 99), layer);
         me.Apply(new ItemPutOff(7, 12), layer);
         Assert.That(calls, Is.EqualTo(4), "an uid not worn, another pc");
+        Assert.That(takenOff, Is.EqualTo(new long[] { 13 }), "only the item with a model preset taken off is excluded from the auto-equip");
     }
 
     /// <summary>The item event hub's vfunc_20 (scenestategame.cpp:3117) follows PC::vfunc_127 for the own PC only.</summary>

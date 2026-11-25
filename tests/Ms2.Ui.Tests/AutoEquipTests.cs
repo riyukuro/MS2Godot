@@ -181,6 +181,25 @@ public class AutoEquipTests
         Assert.That(AutoEquip.SlotMapOrder(new[] { 12, 2, 8 }), Is.EqualTo(new[] { 2, 8, 12 }));
     }
 
+    [Test]
+    public void InternalCommandSetsTheSwitch()
+    {
+        var seen = new List<bool>();
+        var unported = new List<(string, string)>();
+        var hooks = new UserCommands.Hooks { SetAutoEquipEnabled = seen.Add, Unported = (n, a) => { unported.Add((n, a)); return 1; } };
+        UserCommands.ExecuteInternal("AutoInstallEquipMent 1", hooks);
+        UserCommands.ExecuteInternal("autoinstallequipment 0", hooks);
+        UserCommands.ExecuteInternal("AutoInstallEquipMent", hooks);
+        UserCommands.ExecuteInternal("AutoInstallEquipMent -1", hooks);
+        UserCommands.ExecuteInternal("AutoInstallEquipMent  7x", hooks);
+        UserCommands.ExecuteInternal("AutoInstallEquipMent abc", hooks);
+        Assert.That(seen, Is.EqualTo(new[] { true, false, false, false, true, false }), "_wtoi of the first argument above 0");
+        UserCommands.ExecuteInternal("NoSuchCommand 1", hooks);
+        UserCommands.ExecuteInternal("title 5", hooks);
+        Assert.That((seen.Count, unported.Single()), Is.EqualTo((6, ("title", "5"))), "unknown: nothing; another internal one: unported");
+        Assert.That(UserCommands.RegisteredInternal, Has.Length.EqualTo(11));
+    }
+
     // ---- the data set ----
 
     static PackSet packs;
