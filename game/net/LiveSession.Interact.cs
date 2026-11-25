@@ -82,6 +82,11 @@ public partial class LiveSession
     /// <summary>The game event list's MasteryReduce rate (CGameEventValueManager MasteryReduce), the gathering cast's time and
     /// caption; kept across fields, cleared with a new game scene.</summary>
     public readonly Ms2.Ui.MasteryReduceRule MasteryReduce = new();
+    /// <summary>The running attend gift events and the character's started-event times (UIAttendGiftDialog's data).</summary>
+    public readonly Ms2.Ui.AttendEvents Attend = new();
+    /// <summary>The GameEventUserValue packet's two tables (DAT_143ab2fc0, DAT_143ab3010) and their listeners.</summary>
+    public Ms2.Ui.GameEventUserValues UserValues => userValues ??= new Ms2.Ui.GameEventUserValues(() => ServerTime);
+    Ms2.Ui.GameEventUserValues userValues;
     public readonly SpecialAbilityHotTimes HotTimes = new(PerMilleAbility);
     static Func<int, bool> perMilleAbility;
     static bool PerMilleAbility(int type)
@@ -500,6 +505,7 @@ public partial class LiveSession
         MesoRevivals.Apply(m);
         MasteryReduce.Apply(m);
         DungeonExtraRewards.Apply(m);
+        Attend.Apply(m);
         GD.Print($"live: GameEvent kind {m.Kind}: {m.Shutdowns.Count} shutdown events, {m.HotTimes.Count} hot times, {m.RemovedIds.Count} removed{(m.Truncated ? ", stopped at an unregistered type" : "")}");
     }
 

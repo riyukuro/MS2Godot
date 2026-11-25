@@ -52,6 +52,19 @@ public sealed record IgnoreConstructionLockEvent(int Id, IReadOnlyList<long> Acc
 public sealed record ReactorEvent(int Id, int EventId, int MaxCount, long EndTime, IReadOnlyList<uint> FieldIds);
 
 /// <summary>
+/// One GameEventAttendGift (vfunc_4 @0x1403fb770, commonfiles/gameeventcontext.cpp:424-443), in packet order: the event id (GameEvent::vfunc_4),
+/// the begin and end times (m_28, m_38; CMsTime i64), the name (unicode, m_strName), the description (an ASCII string, m_strDesc),
+/// <see cref="Disabled"/> (m_b124), <see cref="UsePoints"/> (m_b125, true until a packet says otherwise: the constructor @0x1403fb4b0),
+/// <see cref="PopupLimit"/> (m_i120), <see cref="Kind"/> (m_i114: 1 needs the user value <see cref="ValueId"/>, 2 an item event the user
+/// starts, 3 needs the user value missing; FUN_1403fbde0 @0x1403fbde0), <see cref="ValueId"/> (m_i118), <see cref="PayType"/> (m_i100,
+/// a byte; when it is not 0, <see cref="MaxPayAttends"/> (m_i104), <see cref="PayCost"/> (m_i108, i64) and <see cref="CouponItemId"/>
+/// (m_i110) follow) and the gifts (ReadItemGifts @0x1403fbe50: u32 count, each ItemEntity::Read, commonstruct_wa.cpp:94).
+/// </summary>
+public sealed record AttendGiftEvent(int Id, long Begin, long End, string Name, string Description, bool Disabled, bool UsePoints,
+    int PopupLimit, byte Kind, int ValueId, byte PayType, int MaxPayAttends, long PayCost, int CouponItemId,
+    IReadOnlyList<GuildStorageItem> Gifts);
+
+/// <summary>
 /// Inbound GameEvent (RecvOp 0xB2, commonfiles/opcodes.h:185), GameEventManagerCli::Dispatch (@0x140ceab50,
 /// gameeventmanagercli.cpp:77): a u8 kind, then
 /// 0 (Packet0, the list) and 1 (Packet1, added): i32 count; each: the type name as a unicode string (Create makes
@@ -92,6 +105,8 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
 
     /// <summary>The DungeonExtraReward events of a kind 0, 1 or 3 message, in packet order.</summary>
     public IReadOnlyList<DungeonExtraRewardEvent> DungeonExtraRewardEvents { get; init; } = Array.Empty<DungeonExtraRewardEvent>();
+    /// <summary>The AttendGift events of a kind 0, 1 or 3 message, in packet order.</summary>
+    public IReadOnlyList<AttendGiftEvent> AttendGiftEvents { get; init; } = Array.Empty<AttendGiftEvent>();
 
     public static GameEventMessage Read(ByteReader r)
     {
@@ -106,6 +121,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
         var mesoRevivals = new List<MesoRevivalEvent>();
         var masteryReduces = new List<MasteryReduceEvent>();
         var extraRewards = new List<DungeonExtraRewardEvent>();
+        var attendGifts = new List<AttendGiftEvent>();
         bool truncated = false;
         switch (kind)
         {
@@ -117,7 +133,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
                 for (int i = 0; i < n; i++)
                 {
                     string name = r.ReadUnicodeString();
-                    if (!ReadBody(name, r, shutdowns, hotTimes, saleEvents, construction, beautySales, reactors, mesoRevivals, masteryReduces, extraRewards))
+                    if (!ReadBody(name, r, shutdowns, hotTimes, saleEvents, construction, beautySales, reactors, mesoRevivals, masteryReduces, extraRewards, attendGifts))
                     {
                         truncated = true;     // Create failed (:144-147): the client returns here
                         break;
@@ -135,7 +151,7 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
         if (!truncated) r.ExpectEnd("GameEvent");
         return new GameEventMessage(kind, shutdowns, removed, truncated) { HotTimes = hotTimes, SaleEvents = saleEvents, ConstructionEvents = construction, BeautySaleEvents = beautySales,
             ReactorEvents = reactors, MesoRevivalEvents = mesoRevivals, MasteryReduceEvents = masteryReduces,
-            DungeonExtraRewardEvents = extraRewards };
+            DungeonExtraRewardEvents = extraRewards, AttendGiftEvents = attendGifts };
     }
 
     /// <summary>
@@ -148,7 +164,8 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
                                   List<SpecialAbilityHotTimeEvent> hotTimes = null, List<PremiumMarketSaleEvent> saleEvents = null,
                                   List<object> construction = null, List<BeautyShopSaleEvent> beautySales = null,
                                   List<ReactorEvent> reactors = null, List<MesoRevivalEvent> mesoRevivals = null,
-                                  List<MasteryReduceEvent> masteryReduces = null, List<DungeonExtraRewardEvent> extraRewards = null)
+                                  List<MasteryReduceEvent> masteryReduces = null, List<DungeonExtraRewardEvent> extraRewards = null,
+                                  List<AttendGiftEvent> attendGifts = null)
     {
         switch (name)
         {
@@ -184,14 +201,24 @@ public sealed record GameEventMessage(byte Kind, IReadOnlyList<ShutdownInteractO
                 return true;
             }
 
-            // AttendGift (gameeventcontext.cpp:424, the context read at :352)
+            // AttendGift (vfunc_4 @0x1403fb770, gameeventcontext.cpp:424-443): all kept
             case "AttendGift":
             {
-                r.ReadInt(); r.ReadLong(); r.ReadLong(); W(r); r.ReadString(); r.ReadByte(); r.ReadByte(); r.ReadInt();
-                r.ReadByte(); r.ReadInt();
-                if (r.ReadByte() != 0) { r.ReadInt(); r.ReadLong(); r.ReadInt(); }
+                int id = r.ReadInt();
+                long begin = r.ReadLong(), end = r.ReadLong();
+                string eventName = r.ReadUnicodeString(), desc = r.ReadString();
+                bool disabled = r.ReadBool(), usePoints = r.ReadBool();
+                int popup = r.ReadInt();
+                byte kind = r.ReadByte();
+                int valueId = r.ReadInt();
+                byte payType = r.ReadByte();
+                int maxPay = 0, coupon = 0;
+                long cost = 0;
+                if (payType != 0) { maxPay = r.ReadInt(); cost = r.ReadLong(); coupon = r.ReadInt(); }
                 uint n = (uint)r.ReadInt();
-                for (uint i = 0; i < n; i++) Item(r);
+                var gifts = new List<GuildStorageItem>();
+                for (uint i = 0; i < n; i++) gifts.Add(GuildStorageItem.Read(r));
+                attendGifts?.Add(new AttendGiftEvent(id, begin, end, eventName, desc, disabled, usePoints, popup, kind, valueId, payType, maxPay, cost, coupon, gifts));
                 return true;
             }
             // CashAttend (gameeventcontext.cpp:497): id, L, L, I, I, W

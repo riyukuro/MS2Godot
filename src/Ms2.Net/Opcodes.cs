@@ -131,6 +131,8 @@ public enum Inbound : ushort {
     FieldRemovePet = 0x5B,  // RecvOp::FieldRemovePet (commonfiles/opcodes.h:99): CSceneStateGame::OnFieldRemovePet
     InteractObject = 0x63,  // RecvOp::InteractObject (commonfiles/opcodes.h:107): CSceneStateGame::OnInteractObject
     GameEvent = 0xB2,       // RecvOp::GameEvent (commonfiles/opcodes.h:185): GameEventManagerCli::Dispatch
+    Attendance = 0xA4,      // RecvOp::Attendance: UIAttendGiftDialog::OnAttendancePacket @0x14102EBB0 (uiattendgiftdialog.cpp:345); GMS2 0xA6
+    GameEventUserValue = 0xCB, // RecvOp::GameEventUserValue: FUN_140930fe0 @0x140930fe0 (GameEventUserValue::Read @0x14041f7c0); GMS2 0xCD
     SetCraftMode = 0x68,    // RecvOp::SetCraftMode (commonfiles/opcodes.h:112): CSceneStateGame::OnSetCraftMode
     ResponseCube = 0x69,    // RecvOp::ResponseCube (commonfiles/opcodes.h:113): CSceneStateGame::OnResponseCube
     LoadCubes = 0x6A,       // RecvOp::LoadCubes (commonfiles/opcodes.h:114): CSceneStateGame::OnLoadCubes
@@ -245,6 +247,7 @@ public enum Outbound : ushort {
     ServerEnter = 0xB0,
     RequestSkillBookTree = 0xA2,
     BuddyEmote = 0xA3,      // SendOp::BuddyEmote (commonfiles/opcodes.h:466): the couple emotion invite, answers and cancel
+    Attendance = 0x66,      // SendOp::Attendance: UIAttendGiftDialog's mode 2, 3, 4 and 8 sends (uiattendgiftdialog.cpp); GMS2 0x67
     Job = 0x25,                 // SendOp::Job (commonfiles/opcodes.h:342): UISkillBookTreeDialog::RequestJob, JobSystemCli::RequestReset
     SkillMacro = 0x7B,          // SendOp::SkillMacro (commonfiles/opcodes.h:428): UISkillCompactControlDialog's tab requests
     CheckCharName = 0x7D,       // SendOp::CheckCharName (commonfiles/opcodes.h:430): UIMessageBox::HandleChangeCharNameButton

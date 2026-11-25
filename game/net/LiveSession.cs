@@ -1577,6 +1577,7 @@ public partial class LiveSession : Node
         MesoRevivals.Clear();
         MasteryReduce.Clear();
         DungeonExtraRewards.Clear();
+        Attend.Clear();
         ReactorRules.Clear();
         // the adventure level, quest, item, trophy, title and key table loads among them
         entry.Replay(Handle, () =>
@@ -2961,6 +2962,8 @@ public partial class LiveSession : Node
                 OnGameEvent(ge);
                 ReactorRules.Apply(ge);   // GameEventManagerCli's reactor context (CGameRule)
             }
+            else if (game.Is(p, Inbound.GameEventUserValue)) UserValues.Apply(GameEventUserValueMessage.Read(p.Reader()));   // FUN_140930fe0 @0x140930fe0
+            else if (game.Is(p, Inbound.Attendance)) OnAttendance(AttendanceMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.Reactor)) OnReactor(ReactorMessage.Read(p.Reader()));
             else if (game.Is(p, Inbound.ResponseCube)) OnResponseCube(p);
             else if (game.Is(p, Inbound.LoadCubes)) OnLoadCubes(p);
