@@ -38,8 +38,8 @@ public class SkillBookTreeTests
     {
         if (gms2Packs == null)
         {
-            var p = new PackSet(RcGap.Data("MS2_GMS2_DATA"));
-            gms2Src = new MovieSource(k => p.FindByFileName("Resource/Gfx", k + ".gfx") is { } e ? p.Read("Resource/Gfx", e) : null);
+            var p = TestData.Packs(RcGap.Data("MS2_GMS2_DATA"));
+            gms2Src = TestData.Movies(p);
             gms2Packs = p;
         }
         return (gms2Packs, gms2Src);

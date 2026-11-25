@@ -52,7 +52,7 @@ public class EquipmentSlotsTests
     {
         var d = Environment.GetEnvironmentVariable("MS2_DATA");
         if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_DATA is not set");
-        using var packs = new PackSet(d);
+        var packs = TestData.Packs(d);
         var t = new GameTables(packs, "en");
         var all = EmotionCastTests.ItemIds(packs).Distinct().Select(t.Items.Get).Where(x => x is { Type: 1 }).ToList();
         var sets = new Dictionary<string, int>();

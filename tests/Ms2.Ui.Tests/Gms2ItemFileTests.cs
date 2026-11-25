@@ -19,7 +19,7 @@ public class Gms2ItemFileTests
         if (gms2 != null) return gms2;
         var d = Environment.GetEnvironmentVariable("MS2_GMS2_DATA");
         if (string.IsNullOrEmpty(d) || !Directory.Exists(d)) Assert.Ignore("MS2_GMS2_DATA is not set");
-        gms2Packs = new PackSet(d);
+        gms2Packs = TestData.Packs(d);
         return gms2 = new GameTables(gms2Packs, "en");
     }
 
