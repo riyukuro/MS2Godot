@@ -1283,6 +1283,7 @@ public partial class HudScene : Node, IUiStageHost
             Relation = MinimapRelation,
             SystemSound = key => FieldAudio.Instance?.PlayUi(key),
         };
+        WireMinimapDungeons(c);
         c.WorldMap += ToggleWorldMap;       // OnWorldMap (uiminimapentity.cpp:1253): ToggleDialog(0x4e42)
         try { MinimapMarks(fc, c.Marks); }
         catch (Exception e) { GD.PushWarning("minimap marks: " + e.Message); }
@@ -1405,7 +1406,7 @@ public partial class HudScene : Node, IUiStageHost
             var e = icons.Portal(fc.FieldId, p.TargetField, (int)p.Entity.Number("PortalType"), p.Visible, p.Entity.Bool("MinimapIconVisible", true));
             if (e == null || !e.Visible) continue;
             var at = p.Position;
-            marks.Add(new() { Entity = e, Position = () => at, ShowGuide = true });
+            marks.Add(new() { Entity = e, Position = () => at, ShowGuide = true, HasPortal = true, PortalType = (int)p.Entity.Number("PortalType"), PortalId = p.Id });
         }
         static bool IsModel(FieldEntity e, string model) =>
             string.Equals(e.ModelName, model, StringComparison.OrdinalIgnoreCase) || e.HasMixin(model);

@@ -57,9 +57,38 @@ public sealed class MinimapController : UiController
         public bool Moves;
         /// <summary>The field's taxi station (BuildTaxi's UIMinimapEntityTaxi, m_taxi).</summary>
         public bool IsTaxi;
+        /// <summary>The proxy has a portal (CProxyGameObject::HasPortal): <see cref="PortalType"/> and <see cref="PortalId"/> are its CPortal's
+        /// m_nType and m_nId.</summary>
+        public bool HasPortal;
+        public int PortalType, PortalId;
+        /// <summary>The entity's userFunction (UIMinimapEntity::BuildData, uiminimapentity.cpp:391-393): the movie calls it with "click"
+        /// (OnUserFunction @0x141a32120, :495-503). Made when the entity is. STILL-OPEN: its "tooltip" call
+        /// (BuildTooltip @0x141a32260) is not ported for the marks and answers nothing.</summary>
+        public Func<object[], object> UserFunction { get; internal set; }
         /// <summary>The entity the movie made for it (null before the field image loads).</summary>
         public AsObject Clip { get; internal set; }
         internal bool Visible;
+    }
+
+    /// <summary>The feature UIMinimapEntityProxy::vfunc_3 tests (IsFeatureEnabled(0x1a), uiminimapentity.cpp:682).</summary>
+    public const int DungeonRoomFeature = 0x1a;
+
+    /// <summary>UIDungeonRoomDialog::OpenDungeonOrRoom behind RequestCloseDialog(0x4ebd), true when it found a room: the host opens the
+    /// dialog then (uiminimapentity.cpp:689-694).</summary>
+    public Func<uint, bool> OpenDungeonOrRoomDialog;
+
+    /// <summary>
+    /// UIMinimapEntityProxy::vfunc_3 (@0x141a32ed0, uiminimapentity.cpp:680-715), reached by the entity's "click" (SendSetDebugMode
+    /// @0x141a32330, :520-530): nothing without feature 0x1a; a proxy with a portal of type 8 opens the dungeon room dialog on the
+    /// portal's id (OpenDungeonOrRoom; the dialog opens when it found a room). Other portal types do nothing.
+    /// STILL-OPEN: the proxy without a portal that is a boss (FUN_1416c2090) opens UIBossRewardPreviewDialog 0x4efb
+    /// (SetNpcId(template id), :703-710); that dialog is not ported. SendSetDebugMode's debug-mode packet
+    /// (SendOp::SetDebugMode, mode 2 with the position) is not sent: the debug mode is not ported.
+    /// </summary>
+    public void ClickMark(Mark m)
+    {
+        if (m == null || !Model.IsFeatureEnabled(DungeonRoomFeature)) return;
+        if (m.HasPortal && m.PortalType == 8) OpenDungeonOrRoomDialog?.Invoke((uint)m.PortalId);
     }
 
     /// <summary>The marks in BuildEntities' order: non-portal proxies, the portals, then the taxi, named and map objects.</summary>
@@ -504,8 +533,10 @@ public sealed class MinimapController : UiController
         foreach (var m in Marks)
         {
             m.Visible = m.Entity.Visible;
+            var mark = m;
+            mark.UserFunction = a => { if (a.Length > 0 && Rt.ToString(a[0]) == "click") ClickMark(mark); return null; };
             m.Clip = Create(m.Entity.Icon, m.Entity.Frame, m.Entity.Layer, m.Entity.Label ?? "", !string.IsNullOrEmpty(m.Entity.Label),
-                m.ShowGuide && m.Visible, m.Entity.InFieldNpc, m.Position(), m.Visible);
+                m.ShowGuide && m.Visible, m.Entity.InFieldNpc, m.Position(), m.Visible, userFunction: m.HasPortal ? mark.UserFunction : null);
         }
         Host.Invoke("buildPlayers");
     }
@@ -515,13 +546,15 @@ public sealed class MinimapController : UiController
     /// icon, frame, layer, label and guide, and x / y from WorldToMinimap, visible only when the point projects.
     /// </summary>
     AsObject Create(string icon, string frame, string layer, string text, bool showText, bool showGuide, bool inFieldNpc, Vec3 pos, bool visible,
-        int groupType = 1)
+        int groupType = 1, Func<object[], object> userFunction = null)
     {
         if (string.IsNullOrEmpty(icon)) return null;
         bool inView = WorldToMinimap(pos, out var x, out var y);
-        return Host.Invoke("createEntity", Host.Obj(("mcname", icon), ("frame", frame ?? ""), ("layer", layer ?? ""), ("showtext", showText),
+        var data = Host.Obj(("mcname", icon), ("frame", frame ?? ""), ("layer", layer ?? ""), ("showtext", showText),
             ("showguide", showGuide), ("name", text), ("guideName", ""), ("inFieldNpc", inFieldNpc), ("groupType", groupType),
-            ("x", (float)x), ("y", (float)y), ("visible", inView && visible))) as AsObject;
+            ("x", (float)x), ("y", (float)y), ("visible", inView && visible));
+        if (userFunction != null) Host.Set(data, "userFunction", userFunction);
+        return Host.Invoke("createEntity", data) as AsObject;
     }
 
     /// <summary>

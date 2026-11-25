@@ -64,6 +64,10 @@ public partial class HudScene
         };
     }
 
+    /// <summary>The minimap entity click's opener (uiminimapentity.cpp:689-694): RequestCloseDialog(0x4ebd), OpenDungeonOrRoom(portal id), OpenDialog.</summary>
+    void WireMinimapDungeons(Ms2.Ui.Hud.MinimapController c) =>
+        c.OpenDungeonOrRoomDialog = id => { bool ok = false; OpenDungeonRoom(d => ok = d.OpenDungeonOrRoom(id)); return ok; };
+
     /// <summary>
     /// The world map's openers (uiworldmapdialog.cpp:586-603, :659-664, :694-700): RequestCloseDialog(0x4ebd), then OpenDungeonOrRoom or
     /// OpenRoom, then OpenDialog. They set no portal id and leave the group (m_180) alone, unlike the portal openers.

@@ -1465,6 +1465,39 @@ public class HudTests
         Assert.That(h.RT.Errors, Is.Empty);
     }
 
+    [Test]
+    public void MinimapPortalMarkClickOpensTheDungeonRoomBehindFeature0x1a()
+    {
+        // UIMinimapEntityProxy::vfunc_3 (uiminimapentity.cpp:680-715) through the entity's userFunction "click" (:495-503):
+        // feature 0x1a, a portal of type 8, OpenDungeonOrRoom(the portal's id)
+        var opened = new List<uint>();
+        var m = Model();
+        var c = new MinimapController { ImageName = "map/minimap/02000001.dds", LocalPlayer = () => (default, 90f, false), OpenDungeonOrRoomDialog = id => { opened.Add(id); return true; } };
+        var icon = new Ms2.Formats.World.MinimapIcons.Entity("portal", "", "portal", "Exit", true, false);
+        c.Marks.Add(new() { Entity = icon, Position = () => default, ShowGuide = true, HasPortal = true, PortalType = 8, PortalId = 27003001 });
+        c.Marks.Add(new() { Entity = icon, Position = () => default, ShowGuide = true, HasPortal = true, PortalType = 1, PortalId = 5 });
+        c.Marks.Add(new() { Entity = icon, Position = () => default });
+        var h = Load(c, m);
+        Assert.That(c.OnCallback("onFieldLoadComplete", new object[] { c.FieldClip }), Is.True);
+        Assert.That(h.RT.Errors, Is.Empty);
+        Assert.That(c.Marks[0].UserFunction, Is.Not.Null);
+        Assert.That(c.Marks[2].UserFunction, Is.Not.Null);
+
+        m.Features.Remove(MinimapController.DungeonRoomFeature);
+        c.Marks[0].UserFunction(new object[] { "click" });
+        Assert.That(opened, Is.Empty, "feature 0x1a off");
+
+        m.Features.Add(MinimapController.DungeonRoomFeature);
+        c.Marks[0].UserFunction(new object[] { "tooltip" });
+        Assert.That(opened, Is.Empty, "only the click opens");
+        c.Marks[0].UserFunction(new object[] { "click" });
+        Assert.That(opened, Is.EqualTo(new[] { 27003001u }));
+        c.Marks[1].UserFunction(new object[] { "click" });
+        c.Marks[2].UserFunction(new object[] { "click" });
+        Assert.That(opened, Has.Count.EqualTo(1), "another portal type and a proxy without a portal open nothing");
+        Assert.That(h.RT.Errors, Is.Empty);
+    }
+
     static (MinimapController c, UiHost h) PingMinimap(bool allowed, List<string> sounds)
     {
         var m = Model();
