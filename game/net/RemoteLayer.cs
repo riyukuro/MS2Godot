@@ -37,6 +37,8 @@ public sealed partial class RemoteLayer : Node3D
         /// <summary>The actor's cast record and skill state (RemoteLayer.Casts.cs), and the seconds its motion still plays.</summary>
         public ActorCast Cast;
         public Func<Vector3> Anchor;
+        /// <summary>vf36_GetNodePosition (client space): the effect dummy of that name, else the root's position.</summary>
+        public Func<string, System.Numerics.Vector3> NodePosition;
         /// <summary>The player as a damage number's target (its Eff_Damage point, UIDamageText m_strDamageNode).</summary>
         public Ui.DamageTarget Damage;
         /// <summary>FieldAddUser's worn gem items (PCGemEquip::ReadFromStream of the packet).</summary>
@@ -745,6 +747,12 @@ public sealed partial class RemoteLayer : Node3D
         EffectAttach.SetDummies(visual, dummies, md.RootName);
         var model = visual.GetNodeOrNull<Node3D>("Model");
         r.Anchor = () => World.DummyAnchor.Point(dummies, "Eff_UI", model, md.RootName) ?? root.GlobalPosition;
+        r.NodePosition = node =>
+        {
+            var at = string.IsNullOrEmpty(node) ? root.GlobalPosition
+                : World.DummyAnchor.Point(dummies, node, model, md.RootName) ?? root.GlobalPosition;
+            return new System.Numerics.Vector3(at.X, -at.Z, at.Y);
+        };
         r.Damage = new Ui.DamageTarget(root, () => World.DummyAnchor.Point(dummies, "Eff_Damage", model, md.RootName) ?? root.GlobalPosition, true);
         pc.States.DeadEntered = () => EnterDead(r);
         // StateEmotion / StateEmotionIdle: the emotion skill's row, the face item's group (PC::vfunc_69), the tag offset

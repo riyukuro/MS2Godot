@@ -47,8 +47,10 @@ public class EffectCasterKindSiteTests
         new("net/LiveSession.Skills.cs", "remote?.PlayEffect(path, player.GlobalPosition,", "CasterMyPc", "1: the own PC's effect"),
         new("net/LiveSession.cs", "ReleaseKeptEffect(SpawnKeptEffect(path, actor,", "CasterMyPc",
             "1: EFFECT_LEVEL_UP (OnLevelUp, scenestategame.cpp:9520-9540) and EFFECT_ADVENTURE_LEVEL_UP (OnPrestige kind 2, :8838-8849) inserted on the own PC or its ridee; the kind is GetObjectKind of the PC, not the ridee"),
-        new("net/RemoteLayer.Magics.cs", "int h = fx.SpawnOn(e.File, node,", "casterKind",
+        new("net/RemoteLayer.Magics.cs", "int h = fx.SpawnOn(e.File, node, casterKind)", "casterKind",
             "the magic owner's (CMagic, magicdata.cpp:927-931): ownSceneEffects 1, remoteSceneEffects 3"),
+        new("net/RemoteLayer.Magics.cs", "int h = fx.SpawnOn(e.File, node, casterKind, points: points)", "casterKind",
+            "the magic owner's path segment effects (CMagic::FUN_141462900, magicdata.cpp:1287-1305): ownRayEffects 1, remoteRayEffects 3"),
         // other PCs: PCBase::vfunc_58 3
         // a mount's loopEffect: Ridee::vfunc_12 (@0x141704c80, ridee.cpp:527-534) passes GetObjectKind of the ridee, which
         // Ridee::vfunc_58 (ridee.cpp:539-545) takes from its rider (the own PC 1, another PC 3)

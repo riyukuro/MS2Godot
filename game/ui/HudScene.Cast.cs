@@ -1316,6 +1316,8 @@ public partial class HudScene
         }
         ownRayBlocked ??= MagicRayBlocked;
         ownRayCast ??= MagicRayCast;
+        // the path segment magics' start follows the fire node every tick (FUN_1414609e0)
+        ownTagMagics.NodePosition ??= ownNodePosition ??= OwnNodePosition;
         ownHitSends.Clear();
         ownSplashSends.Clear();
         ownEndEffects.Clear();

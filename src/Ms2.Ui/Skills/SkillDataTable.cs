@@ -158,6 +158,14 @@ public sealed class SkillArrow
     /// <summary>"effectInvoke" (:118, row +0x160): the effect a piercing arrow's interval plays at its current point
     /// (CMagic::FUN_141466da0, magicdata.cpp:2389-2399).</summary>
     public string EffectInvoke = "";
+    /// <summary>"rayType" (SkillArrow::Load, skillattackdata.cpp:113, row +0x11c, the magic's m_n11c): how a path segment effect
+    /// (CMagic::FUN_141462900, magicdata.cpp:1214-1365) lays its points. 1 chains the targets (each segment from the one before),
+    /// 2 lays each hit point on the magic's direction at its flat distance, 0 starts every segment at the start.</summary>
+    public int RayType;
+    /// <summary>"effectRay" (GMS2 arrowProperty only; its loader @0x14045bd00 keeps it at the attack's +0x158): the effect the
+    /// GMS2 client's path segment effects play (@0x140af0840, its name assigned at @0x140af0f2a). KMS skilldata has no such
+    /// attribute; there the segments play the arrow effect.</summary>
+    public string EffectRay = "";
 
     /// <summary>IsNonTargetOne @0x1407dfbb0 (:168): nonTarget == 1.</summary>
     public bool IsNonTargetOne => NonTarget == 1;
@@ -180,6 +188,8 @@ public sealed class SkillArrow
         EffectRemain = (string)a.Attribute("effectRemain") ?? "";
         EffectDestroy = (string)a.Attribute("effectDestroy") ?? "";
         EffectInvoke = (string)a.Attribute("effectInvoke") ?? "";
+        RayType = Xml.Int(a, "rayType");
+        EffectRay = (string)a.Attribute("effectRay") ?? "";
     }
 }
 
@@ -212,6 +222,18 @@ public sealed class SkillAttackData
     /// attackMethodType 2 attacks with an effect are no arrow records there.
     /// </summary>
     public bool ArrowRecord => AttackMethodType == 1 || (Gms2Row && Arrow.Effect.Length != 0);
+    /// <summary>
+    /// The attack's magics lay path segment effects (CMagic::FUN_141462900, magicdata.cpp:1214-1365): KMS plays them for
+    /// attackMethodType 2 (:1224). The GMS2 x64 client's copy (@0x140af0840) has no attackMethodType test; it returns for an
+    /// arrow record (its @0x140c35680 test) and for an empty effectRay (the attack's +0x158).
+    /// </summary>
+    public bool RaySegments => Gms2Row ? !ArrowRecord && Arrow.EffectRay.Length != 0 : AttackMethodType == 2;
+    /// <summary>The effect each path segment plays: KMS GetArrowEffect with no type test (magicdata.cpp:1300, the arrow's
+    /// effect); GMS2 the effectRay (@0x140af0f2a reads the attack's +0x158).</summary>
+    public string RayEffect => Gms2Row ? Arrow.EffectRay : Arrow.Effect;
+    /// <summary>The magic's start follows the caster's fire node every tick (CMagic::FUN_1414609e0, magicdata.cpp:1397): KMS for
+    /// attackMethodType 2, the GMS2 client (@0x140aef040) for a set effectRay.</summary>
+    public bool FollowHand => Gms2Row ? Arrow.EffectRay.Length != 0 : AttackMethodType == 2;
     /// <summary>"brokenOffence" (m_nBrokenOffence, +0x40, skillattackdata.cpp:584): non-zero lets the attack's tag area hit
     /// tombs (WorldService::FUN_141bc3470).</summary>
     public int BrokenOffence;

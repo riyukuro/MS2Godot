@@ -92,7 +92,9 @@ public sealed partial class SwooshEffect : MeshInstance3D
     static readonly Dictionary<(int, float), Material> untextured = new();
     static Shader add, mix;
 
-    static Material MaterialFor(Texture2D tex, int alphaMode, float alpha)
+    /// <summary>The strip material of a texture (null: untextured) blended by <paramref name="alphaMode"/>, shared per texture,
+    /// mode and alpha; the lightning parts take the same ones (<see cref="LightningEffect"/>).</summary>
+    internal static Material MaterialFor(Texture2D tex, int alphaMode, float alpha)
     {
         var set = tex == null ? untextured : byTexture.GetValue(tex, static _ => new());
         if (set.TryGetValue((alphaMode, alpha), out var m)) return m;

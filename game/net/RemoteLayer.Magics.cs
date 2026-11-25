@@ -84,11 +84,87 @@ public sealed partial class RemoteLayer
         }
     }
 
-    /// <summary>The own player's magics' scene effects this frame (<see cref="MagicSceneEffects"/>), after their tick.</summary>
+    /// <summary>
+    /// The magics' path segment effects in the field (CMagic m_slots, <see cref="MagicRaySegment"/>): per slot a holder node
+    /// posed at the magic's scene each frame (the request's node) and the slot's point list
+    /// (<see cref="LightningPoints"/>, the request's m_pIds) written each frame, the effect kept on it by the effect service
+    /// (FUN_1411a49c0, <see cref="World.RegionSkills.SpawnOn"/> with the points), stopped with the node once the slot stops
+    /// (FUN_1411a6060). A spawn that failed is not tried again while the slot plays. 0 B per frame past the lists' growth.
+    /// </summary>
+    sealed class MagicRayEffects(int casterKind)
+    {
+        public readonly List<MagicRaySegment> Now = new();
+        readonly List<(long Key, Node3D Node, int Handle, LightningPoints Points)> shown = new();
+        public int Count => shown.Count;
+        /// <summary>The segments spawned so far (for the checks).</summary>
+        public int Spawned;
+
+        static long KeyOf(in MagicRaySegment e) => ((long)e.Key << 5) | (uint)e.Slot;
+
+        public void Sync(World.RegionSkills fx)
+        {
+            for (int i = shown.Count - 1; i >= 0; i--)
+            {
+                if (IndexOf(Now, shown[i].Key) >= 0) continue;
+                var (_, node, h, _) = shown[i];
+                if (h != 0 && fx != null) fx.FadeOut(h, 0);
+                if (node != null && GodotObject.IsInstanceValid(node)) node.QueueFree();
+                shown.RemoveAt(i);
+            }
+            foreach (var e in Now)
+            {
+                var pose = new Transform3D(ClientBasis(e.AxisX, e.AxisY, e.AxisZ), new Vector3(e.At.X, e.At.Z, -e.At.Y));
+                long key = KeyOf(e);
+                int k = -1;
+                for (int i = 0; i < shown.Count; i++) if (shown[i].Key == key) { k = i; break; }
+                if (k >= 0)
+                {
+                    var (_, n, _, pts) = shown[k];
+                    if (n != null && GodotObject.IsInstanceValid(n)) n.GlobalTransform = pose;
+                    pts.From = e.From;
+                    pts.To = e.To;
+                    continue;
+                }
+                if (fx == null) continue;
+                var points = new LightningPoints { From = e.From, To = e.To };
+                var node = new Node3D();
+                fx.AddChild(node);
+                node.GlobalTransform = pose;
+                int h = fx.SpawnOn(e.File, node, casterKind, points: points);
+                if (h == 0) { node.QueueFree(); node = null; }
+                else
+                {
+                    Spawned++;
+                    if (LiveSession.LiveCheck) GD.Print($"live: ray {e.File} slot {e.Slot} kind {casterKind} from {e.From} to {e.To}");
+                }
+                shown.Add((key, node, h, points));
+            }
+            Now.Clear();
+        }
+
+        static int IndexOf(List<MagicRaySegment> list, long key)
+        {
+            for (int i = 0; i < list.Count; i++) if (KeyOf(list[i]) == key) return i;
+            return -1;
+        }
+    }
+
+    readonly MagicRayEffects remoteRayEffects = new(Ms2.Audio.SoundMusicEffectState.CasterOtherPc),
+        ownRayEffects = new(Ms2.Audio.SoundMusicEffectState.CasterMyPc);
+    /// <summary>The path segment effects spawned for the own and the other players' magics (for the checks).</summary>
+    public int OwnRaysSpawned => ownRayEffects.Spawned;
+    public int RemoteRaysSpawned => remoteRayEffects.Spawned;
+    /// <summary>The path segment effects shown now (own, other players').</summary>
+    public (int Own, int Remote) RaysShown => (ownRayEffects.Count, remoteRayEffects.Count);
+
+    /// <summary>The own player's magics' scene effects and path segment effects this frame (<see cref="MagicSceneEffects"/>,
+    /// <see cref="MagicRayEffects"/>), after their tick.</summary>
     public void SyncOwnSceneEffects(OwnTagMagics own)
     {
         own.SceneEffects(ownSceneEffects.Now);
         if (ownSceneEffects.Now.Count != 0 || ownSceneEffects.Count != 0) ownSceneEffects.Sync(RegionFx);
+        own.RaySegments(ownRayEffects.Now);
+        if (ownRayEffects.Now.Count != 0 || ownRayEffects.Count != 0) ownRayEffects.Sync(RegionFx);
     }
     HitEffectThrottle hitEffects = new();
     readonly List<DamageHitEffect> damageHitEffects = new();
@@ -110,6 +186,7 @@ public sealed partial class RemoteLayer
     {
         int id = r.ObjectId;
         var st = r.Pc.States;
+        if (remoteMagics.NodePosition == null) remoteMagics.NodePosition = RemoteNodePosition;
         st.SkillEntered = () => remoteMagics.SkillEntered(id);
         st.SkillExited = () => remoteMagics.SkillExited(id, (int)Time.GetTicksMsec());
         st.AttackFired = a => remoteMagics.AttackFired(id, a, (int)Time.GetTicksMsec());
@@ -167,6 +244,7 @@ public sealed partial class RemoteLayer
         if (!remoteMagics.Any)
         {
             if (remoteSceneEffects.Count != 0) remoteSceneEffects.Sync(RegionFx);   // the last ones went
+            if (remoteRayEffects.Count != 0) remoteRayEffects.Sync(RegionFx);
             return;
         }
         FillMagicObjects();
@@ -187,7 +265,14 @@ public sealed partial class RemoteLayer
         magicEndEffects.Clear();
         remoteMagics.SceneEffects(remoteSceneEffects.Now);
         if (remoteSceneEffects.Now.Count != 0 || remoteSceneEffects.Count != 0) remoteSceneEffects.Sync(RegionFx);
+        remoteMagics.RaySegments(remoteRayEffects.Now);
+        if (remoteRayEffects.Now.Count != 0 || remoteRayEffects.Count != 0) remoteRayEffects.Sync(RegionFx);
     }
+
+    /// <summary>The other player's vf36_GetNodePosition (client space) for its path segment magics; the owner's position
+    /// without a model, zero once it left (its magics go with it).</summary>
+    System.Numerics.Vector3 RemoteNodePosition(int ownerId, string node) =>
+        users.TryGetValue(ownerId, out var r) ? r.NodePosition?.Invoke(node) ?? r.Pc.Position : default;
 
     /// <summary>
     /// FUN_14171cdf0's hit effects (<see cref="DamageHitEffects.Records"/>) over the field's objects now: the effectHit at its

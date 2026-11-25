@@ -35,6 +35,25 @@ public sealed class RemoteTagMagics
 
     readonly Dictionary<int, Owner> owners = new();
     HitEffectThrottle hitEffects;
+    Func<int, string, Vector3> nodePosition;
+
+    /// <summary>The owner's vf36_GetNodePosition (owner id, node name; client space), which a path segment magic's start
+    /// follows every tick (<see cref="OwnTagMagics.NodePosition"/>); null takes the owner's position.</summary>
+    public Func<int, string, Vector3> NodePosition
+    {
+        get => nodePosition;
+        set
+        {
+            nodePosition = value;
+            foreach (var (id, o) in owners) o.Magics.NodePosition = NodeOf(id);
+        }
+    }
+
+    Func<string, Vector3> NodeOf(int ownerId)
+    {
+        var f = nodePosition;
+        return f == null ? null : node => f(ownerId, node);
+    }
 
     /// <summary>The hit effect throttle every owner's magics share (the objects' FUN_14146c990 state); null keeps each
     /// owner's own.</summary>
@@ -64,6 +83,12 @@ public sealed class RemoteTagMagics
     /// <summary>The models of the owner's skill state record still waiting for a start tick (for the checks).</summary>
     public int Pending(int ownerId) => owners.TryGetValue(ownerId, out var o) && o.State != null ? o.State.Models.Count : 0;
 
+    /// <summary>Every owner's path segment effects playing now (<see cref="OwnTagMagics.RaySegments"/>).</summary>
+    public void RaySegments(List<MagicRaySegment> into)
+    {
+        foreach (var o in owners.Values) o.Magics.RaySegments(into);
+    }
+
     /// <summary>Every owner's magic scene effects shown now (<see cref="OwnTagMagics.SceneEffects"/>).</summary>
     public void SceneEffects(List<MagicSceneEffect> into)
     {
@@ -79,6 +104,7 @@ public sealed class RemoteTagMagics
         {
             owners[ownerId] = o = new Owner();
             if (hitEffects != null) o.Magics.HitEffects = hitEffects;
+            o.Magics.NodePosition = NodeOf(ownerId);
         }
         return o;
     }

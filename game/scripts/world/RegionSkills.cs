@@ -259,13 +259,15 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     /// additionalcli_1.cpp:347, :403); its other setters are kind 0 targets, never out of view anyway (the camera actor's
     /// effect FUN_1411a8cb0 and the area effects, effectservice.cpp:2173, :2363, :2377), and the job sound emotion
     /// (stateidle.cpp:720), which is not ported.
+    /// <paramref name="points"/> is the request's point list (m_pIds): only with one are lightning parts made
+    /// (<see cref="LightningEffect"/>).
     /// STILL-OPEN: the light parts of such an effect stay where the actor was at the spawn; the following parts hang on the
     /// actor's root, not on their named node.</summary>
-    public int SpawnOn(string effect, Node3D actor, int casterKind, bool noCull = false)
+    public int SpawnOn(string effect, Node3D actor, int casterKind, bool noCull = false, LightningPoints points = null)
     {
         if (actor == null || !IsInstanceValid(actor)) return 0;
         int h = nextHandle;
-        var nodes = Play(effect, Identity, true, h, actor, casterKind, noCull: noCull);
+        var nodes = Play(effect, Identity, true, h, actor, casterKind, noCull: noCull, points: points);
         if (nodes == null) return 0;
         nextHandle++;
         kept[h] = nodes;
@@ -340,9 +342,12 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
     /// level are not ported. A random part makes one child (<see cref="Ms2.Formats.World.EffectRandom.PlayList"/>: the
     /// target's m_nRandomIndex <paramref name="randomIndex"/>, a region skill's object id, else the weighted pick on
     /// EffectRandom.Tick), and counts as made when that child is made and passes the random part's own view test.
-    /// <paramref name="noCull"/>: the target's m_b30 (<see cref="SpawnOn"/>), no nif part is out of view.</summary>
+    /// <paramref name="noCull"/>: the target's m_b30 (<see cref="SpawnOn"/>), no nif part is out of view.
+    /// A lightning part is made only with the request's point list <paramref name="points"/> (LightningEffect::vfunc_3 is
+    /// false without one, so CreateEffect makes nothing and the part does not count); it has no view test.</summary>
     List<Node3D> Play(string xml, Xform at, bool keep, int handle, Node3D actor = null,
-        int casterKind = Ms2.Audio.SoundMusicEffectState.CasterSystem, uint randomIndex = 0, bool noCull = false)
+        int casterKind = Ms2.Audio.SoundMusicEffectState.CasterSystem, uint randomIndex = 0, bool noCull = false,
+        LightningPoints points = null)
     {
         var all = table.Get(xml);
         if (all == null) return null;
@@ -367,6 +372,7 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
                     || part.RandomParent >= 0 && skipTable.RandomOutOfView(all[part.RandomParent], casterKind, N(PartPlace(world, part)), eye)))
             { PartsOutOfView++; continue; }
             if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeSwoosh && (actor == null || SwooshOutOfView(part, actor, casterKind, eye))) continue;
+            if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeLightning && (actor == null || !LightningEffect.Makes(all, part, points))) continue;
             made++;
         }
         if (made == 0 && all.Count > 0) return null;
@@ -413,6 +419,16 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
                 if (SwooshEffect.Make(all, part, actor, casterKind, builder, Scene) is not { } sw) continue;
                 actor.AddChild(sw);
                 if (keep) nodes.Add(sw);
+                if (keep && part.Loop) looping.Add(handle);
+                Spawned++;
+                continue;
+            }
+            if (part.TypeId == Ms2.Formats.World.EffectSkipTable.TypeLightning)
+            {
+                // the strip in the world on the request's points; the scene node (the actor here) must be there (:183)
+                if (actor == null || LightningEffect.Make(all, part, points, builder) is not { } le) continue;
+                actor.AddChild(le);
+                if (keep) nodes.Add(le);
                 if (keep && part.Loop) looping.Add(handle);
                 Spawned++;
                 continue;

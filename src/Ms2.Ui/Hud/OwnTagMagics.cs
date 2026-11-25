@@ -43,6 +43,17 @@ public readonly record struct MagicSceneEffect(int Key, string File, Vector3 At,
 public delegate bool MagicRayCast(Vector3 from, Vector3 dir, float length, out Vector3 hit);
 
 /// <summary>
+/// One path segment effect a magic plays (CMagic m_slots[<paramref name="Slot"/>], CMagic::FUN_141462900 @0x141462900,
+/// magicdata.cpp:1287-1305): <paramref name="File"/> (<see cref="SkillAttackData.RayEffect"/>) with the point list
+/// (<paramref name="From"/>, <paramref name="To"/>), client space, that the request's m_pIds hands its lightning parts
+/// (LightningEffect's target points). <paramref name="Key"/> names the magic while it lives; the points follow it every tick.
+/// The request's node is the magic's scene (m_spScene): <paramref name="At"/> its translation and the axes its rotation
+/// columns, as <see cref="MagicSceneEffect"/>'s.
+/// </summary>
+public readonly record struct MagicRaySegment(int Key, int Slot, string File, Vector3 From, Vector3 To, Vector3 At, Vector3 AxisX,
+    Vector3 AxisY, Vector3 AxisZ);
+
+/// <summary>
 /// The own cast's magics as far as they send their region hit (SkillDamage 1/1, <see cref="SkillHitRequest"/>) and register
 /// tag areas for <see cref="TombTagPass"/>: the CMagicModel each target record of a
 /// fired attack gets (StateSkill::FUN_1417ecce0 @0x1417ecce0, stateskill.cpp:1347: CMagicModel::Init(tag, 0, ZERO, 0, 0, 0)), its
@@ -89,8 +100,7 @@ public sealed class OwnTagMagics
         public int Start, Delay, Spawn, Life;
         // the target record: the cast id (m_nTagId), its serial (m_nTagSub), its target (m_nCasterId), the attack index
         // (m_b5c) and the send count (m_n8c); the magic's start point (m_ptStart), set once at the Add.
-        // STILL-OPEN: attackMethodType 2's tick sets m_ptStart again each tick (FUN_141462900 calls FUN_1414609e0,
-        // magicdata.cpp:1232).
+        // A path segment magic sets m_ptStart again each tick (FUN_141462900 calls FUN_1414609e0, magicdata.cpp:1232).
         public long CastId, Serial;
         public int TargetId, SendCount;
         public byte AttackIndex;
@@ -123,12 +133,28 @@ public sealed class OwnTagMagics
         // m_nStartTick 0, magicdata.cpp:758); Abandoned: the previous one is gone without starting it
         public Magic Linked;
         public bool Waiting, Abandoned;
+        // the path segment effects (FUN_141462900): the pick still to run (m_n284, 1 at Init), the effects requested (m_n280),
+        // the picked targets' ids (m_arr288) and the 16 slots (m_slots: the point list m_ids and whether its effect plays,
+        // m_nEffect); null for an attack without them
+        public bool RayPick = true, RayStarted;
+        public List<int> RayTargets;
+        public RaySlot[] RaySlots;
     }
+
+    internal struct RaySlot
+    {
+        public Vector3 From, To;
+        public bool On;
+    }
+
+    /// <summary>CMagic's slot count (m_slots[16]; the GMS2 x64 client's stop loop @0x140af13d2 runs to 16 too).</summary>
+    internal const int RaySlotCount = 16;
 
     readonly List<Magic> live = new();
     static int nextKey;
     readonly List<HitCandidate> queried = new();
     readonly List<int> detected = new(), kept = new(), others = new();
+    readonly List<Vector3> rayPoints = new();
     /// <summary>The hit effect throttle's state of the objects (FUN_14146c990), the field's one when the caller shares it
     /// (every FUN_14146c990 caller reads the object's state); its own instance by default.</summary>
     public HitEffectThrottle HitEffects { get; set; } = new();
@@ -136,12 +162,31 @@ public sealed class OwnTagMagics
     /// <summary>The magics that may still fill or register.</summary>
     public int Count => live.Count;
 
+    /// <summary>The owner's vf36_GetNodePosition (client space) for the path segment magics' start each tick
+    /// (FUN_1414609e0); null takes the owner's position.</summary>
+    public Func<string, Vector3> NodePosition { get; set; }
+
+    /// <summary>Adds every path segment effect playing now (<see cref="MagicRaySegment"/>) to <paramref name="into"/>, in the
+    /// magics' order, slots in order. Allocates nothing past the list's growth.</summary>
+    public void RaySegments(List<MagicRaySegment> into)
+    {
+        foreach (var m in live)
+        {
+            if (m.RaySlots == null) continue;
+            for (int i = 0; i < RaySlotCount; i++)
+            {
+                ref readonly var slot = ref m.RaySlots[i];
+                if (slot.On)
+                    into.Add(new MagicRaySegment(m.Key, i, m.Attack.RayEffect, slot.From, slot.To, m.Current, m.SceneX, m.SceneY, m.SceneZ));
+            }
+        }
+    }
+
     /// <summary>Adds the scene effect of each magic that shows one now (<see cref="MagicSceneEffect"/>) to
     /// <paramref name="into"/>. Allocates nothing past the list's growth.
     /// STILL-OPEN: the client keeps the effect through the destroy state (state 3 for destroyTime, FUN_141460640 at state 4);
-    /// here the magic, and so its effect, goes at state 3. Only arrow records start it (the client's state 0 runs for every
-    /// magic, but here only arrow records keep a tick state), and the path segment effects (m_slots, magicdata.cpp:1287-1305)
-    /// are not ported.</summary>
+    /// here the magic, and so its effect, goes at state 3 (a path segment magic's is held through it, <see cref="TickTag"/>).
+    /// The path segment effects are <see cref="RaySegments"/>.</summary>
     public void SceneEffects(List<MagicSceneEffect> into)
     {
         foreach (var m in live)
@@ -227,28 +272,34 @@ public sealed class OwnTagMagics
     /// else it waits (start tick 0) for SetTargetStartTicks (<see cref="SetStart"/>); a link waits for the end of the one
     /// before it, as an own link does. With the owner's record for the cast (spCast), each root's model joins its list:
     /// <paramref name="pending"/> gets (the attack index, the magic), the magic null when the root has none.
-    /// Only an arrow record (attackMethodType 1) of a skill without magic control makes a magic here: the fill and the
-    /// registration of any other do nothing for an owner other than the local player.
+    /// Only an arrow record (attackMethodType 1) of a skill without magic control, or a record whose attack lays path segment
+    /// effects (<see cref="SkillAttackData.RaySegments"/>, magic control enable not 2, as <see cref="Add"/>), makes a magic
+    /// here: the fill and the registration of any other do nothing for an owner other than the local player.
     /// Returns the number kept.
+    /// STILL-OPEN: another owner's magics that are neither kind are not made, so their end effects (FUN_14145f570's
+    /// effectRemain) do not play for that owner.
     /// </summary>
     internal int AddRemote(SkillData skill, SkillAttackData attack, long castId, byte attackIndex, Vector3 start, Vector3 dir,
         IReadOnlyList<SkillDamageTarget> tags, bool server, int nowMs, MagicPathTable paths, int ownerId, MagicRayCast rayCast,
         ReadOnlySpan<HitCandidate> objects, List<(int Attack, Magic Model)> pending)
     {
         if (tags == null) return 0;
-        bool arrow = attack != null && paths != null && attack.ArrowRecord && (skill?.MagicControlEnable ?? 0) == 0;
+        int control = skill?.MagicControlEnable ?? 0;
+        bool arrow = attack != null && paths != null && attack.ArrowRecord && control == 0;
+        bool ray = attack != null && paths != null && !attack.ArrowRecord && attack.RaySegments && control != 2;
         int n = 0;
         foreach (var t in tags)
         {
             Magic m = null;
-            var d = arrow ? paths.Get(attack.MagicPathId, t.Hit) : null;
+            var d = arrow || ray ? paths.Get(attack.MagicPathId, t.Hit) : null;
             if (d != null)
             {
                 m = Make(attack, d, castId, 0, attackIndex, start, t.Serial, t.TargetId, t.Hit, server ? nowMs : 0, dir, null, null, default);
                 m.Waiting = !server;
-                InitArrow(m, d, dir, ownerId, start, rayCast, nowMs, objects);
+                InitArrow(m, d, dir, ownerId, start, rayCast, nowMs, objects, arrow);
                 live.Add(m);
                 n++;
+                if (!arrow) { pending?.Add((attackIndex, m)); continue; }
                 var prev = m;
                 foreach (var link in t.Links)
                 {
@@ -296,6 +347,8 @@ public sealed class OwnTagMagics
         StartPoint = StartPoint(d, dir, nodePosition?.Invoke(d.FireNode) ?? fallback),
         DelayZero = MathF.Abs(d.DelayTime) < 1e-6f, IgnoreCancelAtSpawn = d.IgnoreCancelAtSpawnTime,
         Bounce2 = attack.Arrow.BounceType == 2, HitIndex = hit,
+        RayTargets = attack.RaySegments ? new List<int>() : null,
+        RaySlots = attack.RaySegments ? new RaySlot[RaySlotCount] : null,
     };
 
     /// <summary>
@@ -574,8 +627,10 @@ public sealed class OwnTagMagics
                 if (m.Waiting ? m.Abandoned : (uint)nowMs >= (uint)(m.Start + m.Delay)) return true;
                 continue;
             }
-            // a record that is not an arrow one fills once due and then ticks each frame to its end (TickTag)
+            // a record that is not an arrow one fills once due and then ticks each frame to its end (TickTag); a path
+            // segment one ticks from its start tick on (FUN_141462900 runs before the delay test)
             if ((uint)nowMs >= (uint)(m.Start + m.Delay - leadMs)) return true;
+            if (m.RaySlots != null && !m.Waiting && (uint)nowMs >= (uint)(m.Start - leadMs)) return true;
         }
         return false;
     }
@@ -632,12 +687,22 @@ public sealed class OwnTagMagics
     /// cubeMagicPathID, an explosion (explosionByDestroy, a ray stop or the fill done, :1151-1153) and the local player as
     /// owner, the splash (<see cref="SkillSplashRequest"/>, Skill 1/2, :1154-1165). An attack without a magicPathID takes id 0,
     /// which LoadMagicPath sets to a default row (no explosionByDestroy, :370-375), so its magic explodes by its fill.</item>
+    /// <item>A magic whose attack lays path segment effects (<see cref="SkillAttackData.RaySegments"/>) runs them first every
+    /// tick from its start tick on (<see cref="TickRay"/>, :760), and after its end stays in state 3 for the row's destroyTime
+    /// (:799-804), its segments still followed, then goes (state 4: FUN_141460640 stops them, :1367). A root waiting for its
+    /// start tick (m_nStartTick 0, :758) does nothing.</item>
     /// </list>
     /// </summary>
     bool TickTag(Magic m, int nowMs, int leadMs, in MagicOwner owner, ReadOnlySpan<HitCandidate> objects, CastRecord record,
         TombTagPass pass, List<SkillHitRequest> sends, Func<int> rand, MagicRayBlocked rayBlocked, bool pkMode, MagicRayCast rayCast,
         List<SkillSplashRequest> splashes, List<MagicEndEffect> endEffects, List<MagicHitSound> hitSounds, ref int registered)
     {
+        if (m.Waiting) return m.Abandoned;
+        if (m.RaySlots != null)
+        {
+            TickRay(m, nowMs, leadMs, owner, objects, rand, pkMode, endEffects);
+            if (m.State == 3) return Destroyed(m, nowMs);
+        }
         var own = record != null && record.CastId == m.CastId ? record : null;
         int begin = m.Start + m.Delay;
         if ((uint)begin > (uint)nowMs)
@@ -666,7 +731,7 @@ public sealed class OwnTagMagics
             if (m.Life != 0 && (uint)(m.StateTick + m.Life) <= (uint)nowMs)
             {
                 End(m, owner, splashes, endEffects, lifeEnd: true, nowMs, objects);
-                return true;
+                return Ended(m, nowMs);
             }
             Fly(m, nowMs, objects, rayCast);
             FillOnce(m, owner, objects, own, pass, sends, rand, rayBlocked, pkMode, hitSounds, ref registered);
@@ -677,12 +742,184 @@ public sealed class OwnTagMagics
                 else if ((uint)m.HoldUntil < (uint)nowMs)
                 {
                     End(m, owner, splashes, endEffects, lifeEnd: false, nowMs, objects);
-                    return true;
+                    return Ended(m, nowMs);
                 }
             }
         }
         m.LastTick = nowMs;
         return false;
+    }
+
+    /// <summary>State 3 after a record's end (m_nStateTick the end's time, magicdata.cpp:787, :2236): a magic without path
+    /// segment effects goes at once (here the destroy state shows nothing); a path segment one stays until
+    /// <see cref="Destroyed"/>. True when it goes.</summary>
+    static bool Ended(Magic m, int nowMs)
+    {
+        if (m.RaySlots == null) return true;
+        m.State = 3;
+        m.StateTick = nowMs;
+        return Destroyed(m, nowMs);
+    }
+
+    /// <summary>The state 3 test (magicdata.cpp:799-804): once destroyTime passed since the state tick, state 4 and
+    /// FUN_141460640 stops the segment effects; the model then goes. True when it goes.</summary>
+    static bool Destroyed(Magic m, int nowMs)
+    {
+        if ((uint)(m.StateTick + MagicPathTable.Ms(m.Row.DestroyTime)) > (uint)nowMs) return false;
+        m.State = 4;
+        StopRays(m, 0);
+        return true;
+    }
+
+    /// <summary>FUN_1411a6060 on the slots from <paramref name="from"/> on (m_nEffect 0).</summary>
+    static void StopRays(Magic m, int from)
+    {
+        for (int i = from; i < RaySlotCount; i++) m.RaySlots[i].On = false;
+    }
+
+    /// <summary>
+    /// CMagic::FUN_141462900 @0x141462900 (magicdata.cpp:1214-1365), the path segment effects, for a magic whose attack lays
+    /// them (<see cref="SkillAttackData.RaySegments"/>), each tick from its start tick on, in any state:
+    /// <list type="bullet">
+    /// <item>Nothing while the owner is dead or stunned. Else the start again (FUN_1414609e0, <see cref="RePose"/>).</item>
+    /// <item>The pick, once (m_n284): when FUN_141464410 holds (the local owner's lock-on) only from the start tick minus the
+    /// latency lead (nEnd), else at once. StateSkill::FUN_1417e95a0: the attack's area posed from the owner's position and
+    /// facing now (zOffset 0) over the objects of the kind applyTarget; no shape 1-4 finds nothing and the tick ends (the pick
+    /// is not run again). The first min(hits, targetCount) hits' ids are kept (m_arr288).</item>
+    /// <item>From nEnd on, the points: the start, then each kept target still there at its hit point
+    /// (<see cref="RayHitPoint"/>), which rayType 2 lays at the start plus the direction times their flat distance. With no
+    /// target the start again (rayType 0) or the target point is added (bSingle). Segment i runs from point i (rayType 1) or
+    /// point 0 to point i + 1.</item>
+    /// <item>The first time (m_n280), for an owner the optimizer shows (every owner here) not culled by distance
+    /// (ShouldCullByDistance, as <see cref="End"/>'s), each segment's slot gets its points and its effect
+    /// (<see cref="SkillAttackData.RayEffect"/>, the request's m_pIds the slot's points); bSingle also inserts the arrow's
+    /// effectRemain (row +0x148; the GMS2 client's @0x140af1021 reads its +0x150, its effectRemain) at the last point (the
+    /// start for rayType 0, else the target), not turned, into <paramref name="endEffects"/>.</item>
+    /// <item>Every tick after, each segment's slot gets its points again; unless rayType 2, the slots past the segments stop.</item>
+    /// </list>
+    /// The GMS2 x64 client's copy (@0x140af0840) is the same past its gate (<see cref="SkillAttackData.RaySegments"/>).
+    /// FUN_141464410 is 0 for another owner (m_n530); the local owner's lock-on is not kept here, so its pick runs at once
+    /// too, which differs only before the start tick (the own magics start at the attack's tick, the lead is 0).
+    /// STILL-OPEN: the pick context's kind flags and the hidden objects (the fill's flag 4) are not passed (the client's
+    /// CFillTargetContext here sets none); the owner's ridee rider (FUN_1417e95a0's m_n40).
+    /// </summary>
+    void TickRay(Magic m, int nowMs, int leadMs, in MagicOwner owner, ReadOnlySpan<HitCandidate> objects, Func<int> rand,
+        bool pkMode, List<MagicEndEffect> endEffects)
+    {
+        if (owner.Dead || owner.Stunned) return;
+        RePose(m, nowMs, owner, objects);
+        bool due = (uint)nowMs >= (uint)(m.Start - leadMs);
+        if (m.RayPick)
+        {
+            m.RayPick = false;
+            if (!RayPick(m, owner, objects, rand, pkMode)) return;
+        }
+        if (!due) return;
+        RayPoints(m, objects, out bool single, out var last);
+        int segments = rayPoints.Count - 1;
+        if (segments > RaySlotCount) segments = RaySlotCount;
+        if (!m.RayStarted)
+        {
+            m.RayStarted = true;
+            if (owner.LocalPlayer || !owner.Sight.IsOutside(m.Current))
+            {
+                for (int i = 0; i < segments; i++) m.RaySlots[i].On = true;
+                var remain = m.Attack.Arrow.EffectRemain;
+                if (single && endEffects != null && remain.Length != 0)
+                    endEffects.Add(new MagicEndEffect(remain, false, last, Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ));
+            }
+        }
+        bool chain = m.Attack.Arrow.RayType == 1;
+        for (int i = 0; i < segments; i++)
+        {
+            ref var slot = ref m.RaySlots[i];
+            slot.From = chain ? rayPoints[i] : rayPoints[0];
+            slot.To = rayPoints[i + 1];
+        }
+        if (m.Attack.Arrow.RayType != 2) StopRays(m, segments);
+    }
+
+    /// <summary>FUN_1417e95a0's pick for <see cref="TickRay"/>: false when the attack has no area shape (no collision).
+    /// The hits up to targetCount (CSkillSystem::FUN_141769410) go in <see cref="Magic.RayTargets"/>.</summary>
+    bool RayPick(Magic m, in MagicOwner owner, ReadOnlySpan<HitCandidate> objects, Func<int> rand, bool pkMode)
+    {
+        var a = m.Attack;
+        if (a.Range.Shape is < 1 or > 4) return false;
+        SkillHit.AreaPose(a, owner.Position, new Vector3(0, 0, owner.RotZ), out var pos, out var rot);
+        var shape = SkillHitShape.Pose(a.Range, 0, pos, rot);
+        SkillHit.Query(objects, a.Range.ApplyTarget, a.Range.IgnoreNpcRanks, queried, pkMode);
+        SkillHit.Detect(shape, pos, rot, a.Direction, a.Range.IncludeCaster != 0, false,
+            System.Runtime.InteropServices.CollectionsMarshal.AsSpan(queried), rand ?? (() => 0), detected);
+        int n = detected.Count < a.TargetCount ? detected.Count : a.TargetCount;
+        for (int i = 0; i < n; i++) m.RayTargets.Add(detected[i]);
+        return true;
+    }
+
+    /// <summary>The point list of <see cref="TickRay"/> into <see cref="rayPoints"/>: <paramref name="single"/> is bSingle and
+    /// <paramref name="last"/> its effectRemain's point (ptLast).</summary>
+    void RayPoints(Magic m, ReadOnlySpan<HitCandidate> objects, out bool single, out Vector3 last)
+    {
+        rayPoints.Clear();
+        var start = m.StartPoint;
+        rayPoints.Add(start);
+        int rayType = m.Attack.Arrow.RayType;
+        foreach (int id in m.RayTargets)
+        {
+            int k = IndexOf(objects, id);
+            if (k < 0) continue;
+            var p = RayHitPoint(m, objects[k]);
+            if (rayType == 2)
+            {
+                float dx = p.X - start.X, dy = p.Y - start.Y;
+                p = start + m.Dir * MathF.Sqrt(dx * dx + dy * dy);
+            }
+            rayPoints.Add(p);
+        }
+        single = rayPoints.Count == 1;
+        last = m.Target;
+        if (!single) return;
+        if (rayType == 0) { rayPoints.Add(start); last = start; }
+        else rayPoints.Add(m.Target);
+    }
+
+    /// <summary>
+    /// CMagic::FUN_141467100 @0x141467100 (magicdata.cpp:2420) on a target: its collision part centre nearest the current
+    /// point, its z at most the start's z plus the attack range's height and add z (and controlEndOffsetValue's z with a
+    /// control value set), as <see cref="UpdateTarget"/>'s.
+    /// STILL-OPEN: the object's body box centre stands in for its nearest collision part (as in <see cref="UpdateTarget"/>), so
+    /// the position plus extent fallback (no parts, magicdata.cpp:1273) cannot run.
+    /// </summary>
+    static Vector3 RayHitPoint(Magic m, in HitCandidate o)
+    {
+        var p = o.Body.Center;
+        var d = m.Row;
+        var range = m.Attack.Range;
+        float cap = m.StartPoint.Z + range.Height + range.Add.Z;
+        if (d.Control0 != Vector3.Zero || d.Control1 != Vector3.Zero || d.ControlEnd != Vector3.Zero) cap += d.ControlEnd.Z;
+        if (p.Z > cap) p.Z = cap;
+        return p;
+    }
+
+    /// <summary>
+    /// CMagic::FUN_1414609e0 (magicdata.cpp:1397) each tick for a path segment magic: its follow-hand rule
+    /// (<see cref="SkillAttackData.FollowHand"/>) holds for every such attack, so the start is the owner's fire node
+    /// (<see cref="NodePosition"/>, the owner's position without it) for any owner, then fireFixedPosition and the fire offset
+    /// (<see cref="StartPoint"/>); the rotation MakeZRotation(DirectionToNegYawRadians(record direction)), the target the start
+    /// plus the turned direction times distance plus controlEndOffsetValue, the last and current points the start, then
+    /// UpdateTargetPosition (<see cref="UpdateTarget"/>). The start ray (:1433) is for arrow records only, which these are not.
+    /// </summary>
+    void RePose(Magic m, int nowMs, in MagicOwner owner, ReadOnlySpan<HitCandidate> objects)
+    {
+        var d = m.Row;
+        var start = StartPoint(d, m.DefaultDir, NodePosition?.Invoke(d.FireNode) ?? owner.Position);
+        m.StartPoint = start;
+        float yaw = -(YawDegrees(m.DefaultDir) * 3.1415927f / 180f);
+        m.AxisX = Turn(yaw, Vector3.UnitX);
+        m.AxisY = Turn(yaw, Vector3.UnitY);
+        m.AxisZ = Vector3.UnitZ;
+        m.Target = start + Turn(FireTurn(d, m.DefaultDir), d.Direction) * d.Distance + d.ControlEnd;
+        m.Last = m.Current = start;
+        UpdateTarget(m, nowMs, objects);
     }
 
     /// <summary>
