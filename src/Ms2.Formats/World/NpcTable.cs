@@ -183,6 +183,20 @@ public sealed class NpcTable
     /// the client's g_strLocaleDir2) first, then en and kr as <see cref="GameStrings"/> does.</summary>
     public NpcTable(PackSet packs, string language = null) : this(packs, EffectDummyTable.Load(packs), language) { }
 
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<PackSet, System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<NpcTable>>> shared = new();
+
+    /// <summary>
+    /// The one table of a data set and name language: the client reads its npc table once (the CNpcDataTable singleton,
+    /// npcdata.h:385-392, LoadNpcCache @0x1406ce4a0, NeedsLoad @0x1406cedb0), not on each field enter, so the read of every
+    /// npc file (GMS2's per-file set above all) is paid once per PackSet and language. Nothing changes a table after its build,
+    /// so the users (the field's npcs, the replay, the quest guide, the field contents) read the same one. A null language is
+    /// en, as in the constructor; the table belongs to the PackSet object (compared by reference), so another Data folder
+    /// has its own.
+    /// </summary>
+    public static NpcTable For(PackSet packs, string language = null) =>
+        shared.GetValue(packs, _ => new(StringComparer.Ordinal))
+              .GetOrAdd(language ?? "en", lang => new Lazy<NpcTable>(() => new NpcTable(packs, lang))).Value;
+
     public NpcTable(PackSet packs, EffectDummyTable effectDummies, string language = null)
     {
         var dummies = effectDummies?.Default ?? Array.Empty<EffectDummy>();

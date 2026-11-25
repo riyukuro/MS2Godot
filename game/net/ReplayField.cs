@@ -115,7 +115,7 @@ public partial class ReplayField : Field
         // the field build searched map textures only; the character bodies need the character pack's own textures too
         builder.TextureArchives = builder.TextureArchives.Prepend(ModelBuilder.ModelArchive).ToArray();
         equip = new EquipApplier(packs, builder) { Palettes = new Look.ColorPalettes(packs) };
-        npcTable = new Ms2.Formats.World.NpcTable(packs);
+        npcTable = Ms2.Formats.World.NpcTable.For(packs);
         npcs = new NpcLayer(packs, builder, npcTable, this) { SpawnAnimation = new Ms2.Formats.World.FieldSpawnPoints(map.Entities).Find };
         skills = SkillTable.For(packs);
         combat = new CombatLayer(packs, builder, new EffectTable(packs), this);

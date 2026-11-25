@@ -184,10 +184,10 @@ public partial class FieldContents : Node3D
         if (shotDir != null && player != null) { if (offline) PlanShots(); else PlanLiveTalk(); }
     }
 
-    static NpcTable npcTable;
     static readonly object tableLock = new();
-    /// <summary>The npc table, loaded once per run (a prefetch may be building it; the lock makes the caller wait for it).</summary>
-    public static NpcTable Npcs(PackSet packs) { lock (tableLock) return npcTable ??= new NpcTable(packs, GameOptions.StringLanguage); }
+    /// <summary>The npc table of the set in the string language, one per run (<see cref="NpcTable.For"/>; a prefetch may be
+    /// building it, and its Lazy makes the caller wait for it).</summary>
+    public static NpcTable Npcs(PackSet packs) => NpcTable.For(packs, GameOptions.StringLanguage);
     static RegionSpawnTable regionTable;
     static RegionSpawnTable Regions(PackSet packs) { lock (tableLock) return regionTable ??= new RegionSpawnTable(packs); }
 
