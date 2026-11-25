@@ -186,4 +186,103 @@ public class RidingUiTests
         Ride(m, h, Row(99910090));
         Assert.That(Texts(h.Player.Root).Any(t => t.InstanceName == "m_tag" && t.Text == name), Is.True, "rideeName " + name + " in the tag");
     }
+    // ---- UIAvatarRidee: the mount portrait of the main player info ----
+
+    static UiHost LoadCapturing(UiController c, UiModel m, List<string> urls)
+    {
+        var (rt, p) = src.Open(c.Movie, r => { r.Budget = 20_000_000; r.FixedWallClock = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc); });
+        p.StageW = 1920; p.StageH = 1080;
+        p.ImageSize = url => { urls.Add(url); return null; };
+        var h = new UiHost(p, c, m);
+        Assert.That(h.Load(), Is.True, c.Movie + " load: " + string.Join("; ", rt.Errors));
+        for (int i = 0; i < 30; i++) p.Tick();
+        return h;
+    }
+
+    /// <summary>
+    /// UIMainPlayerInfo::vfunc_oa0_20 (uimainplayerinfo.cpp:795-835): a useRidingUI row builds the UIAvatarRidee, the slot mode
+    /// goes to 1 and LoadRenderTarget has the movie's RideeInfo clip load "img://&lt;id&gt;:faceView/100/100"; the ride off
+    /// deletes it and loads nothing; a mount without useRidingUI has none.
+    /// </summary>
+    [Test]
+    public void AUseRidingUiMountLoadsTheRideePortrait()
+    {
+        var m = Model();
+        var urls = new List<string>();
+        var c = new MainPlayerInfoController();
+        var h = LoadCapturing(c, m, urls);
+        string face = $"img://{h.Id}:faceView/";
+        Assert.That(urls.Where(u => u.StartsWith(face)), Is.Empty, "no portrait before the ride");
+        var changes = new List<RideeRow>();
+        c.AvatarRideeChanged += changes.Add;
+
+        Ride(m, h, Row(50600171));
+        Assert.That(c.AvatarRidee, Is.Null, "a mount without useRidingUI has no UIAvatarRidee");
+        Assert.That(urls.Where(u => u.StartsWith(face)), Is.Empty);
+        Ride(m, h, null);
+
+        var row = Row(99910090);
+        Ride(m, h, row);
+        TestContext.WriteLine("urls: " + string.Join(", ", urls));
+        Assert.That(c.AvatarRidee, Is.SameAs(row));
+        Assert.That(urls.Where(u => u.StartsWith(face)), Is.EqualTo(new[] { face + "100/100" }), "the RideeInfo clip's render target");
+        Assert.That(changes.Last(), Is.SameAs(row));
+
+        Ride(m, h, null);
+        Assert.That(c.AvatarRidee, Is.Null, "the ride off deletes m_ridee");
+        Assert.That(changes.Last(), Is.Null);
+        Assert.That(urls.Count(u => u.StartsWith(face)), Is.EqualTo(1), "slot mode 0 loads no render target");
+    }
+
+    /// <summary>UIModelView::vfunc_15 (uimodelview.cpp:320-327) and UIAvatarRidee::vfunc_4 (GetPreviewKind(0) = 1).</summary>
+    [Test]
+    public void ThePortraitsFrustumAndAngleFollowTheClient()
+    {
+        Assert.That(RideeAvatar.Frustum(100, 100), Is.EqualTo((0.5f, 0.5f)));
+        Assert.That(RideeAvatar.Frustum(200, 100), Is.EqualTo((0.5f, 0.25f)));
+        Assert.That(RideeAvatar.PreviewAngle(RideeAvatar.PreviewKind), Is.EqualTo(270f));
+        Assert.That((RideeAvatar.PreviewAngle(6), RideeAvatar.PreviewAngle(9), RideeAvatar.PreviewAngle(11)), Is.EqualTo((135f, 270f, 300f)));
+        Assert.That((RideeAvatar.PreviewAngle(1, 7), RideeAvatar.PreviewAngle(1, 10)), Is.EqualTo((90f, 334f)));
+    }
+
+    /// <summary>
+    /// Every riding row of a data set with useRidingUI (the rows whose ride builds a UIAvatarRidee): its &lt;faceCamera&gt;
+    /// gives three lookAtPosition and three cameraPosition values (RideeData::FaceCamera, FUN_140783b00,
+    /// unit_140781d80_ridingtable.cpp:506-527) at two different points, and its kfm for gender 1 is in the model packs
+    /// (AvatarRidee's "urn:gamebryo-animation:" + GetKfmName(1)).
+    /// </summary>
+    [TestCase("MS2_DATA")]
+    [TestCase("MS2_GMS2_DATA")]
+    public void EveryRidingUiRowHasAFaceCameraAndAModel(string env)
+    {
+        var ps = TestData.Packs(RcGap.Data(env));
+        string[] archives = { "Resource/Model/Npc", "Resource/Model/Map", "Resource/Model/Item", "Resource/Model/Effect" };
+        var ids = ps.List("Xml").Where(e => e.StartsWith("riding/") && e.Count(ch => ch == '/') == 1 && e.EndsWith(".xml"))
+            .Select(e => int.TryParse(e[7..^4], out var id) ? id : -1).Where(id => id > 0).OrderBy(id => id).ToList();
+        var ui = new List<int>();
+        var bad = new List<string>();
+        int faced = 0, all = 0;
+        foreach (var id in ids)
+        {
+            var doc = Ms2.Formats.Text.PackXml.Parse(ps.Read("Xml", $"riding/{id:D8}.xml"));
+            if (doc.Root?.Element("riding")?.Element("basic") == null) continue;
+            all++;
+            var d = RideData.Load(ps, id);
+            bool hasFace = doc.Root.Element("riding").Element("faceCamera") != null;
+            if (hasFace) faced++;
+            if (!d.UseRidingUI) continue;
+            ui.Add(id);
+            var r = d.UiRow;
+            if (!hasFace) bad.Add($"{id}: no faceCamera");
+            else if (r.FaceLookAt == r.FaceCamera) bad.Add($"{id}: eye {r.FaceCamera} at its target");
+            var kfm = d.KfmFor(1);
+            if (string.IsNullOrEmpty(kfm)) bad.Add($"{id}: no kfm");
+            else if (!archives.Any(a => ps.FindByFileName(a, kfm.ToLowerInvariant() + ".kfm") != null)) bad.Add($"{id}: kfm {kfm} not in the model packs");
+            TestContext.WriteLine($"  {id}: kfm {kfm} lookAt {r.FaceLookAt} camera {r.FaceCamera}");
+        }
+        TestContext.WriteLine($"{env}: {all} riding rows, {faced} with a faceCamera, {ui.Count} with useRidingUI");
+        foreach (var b in bad) TestContext.WriteLine("  BAD " + b);
+        Assert.That(ui, Is.Not.Empty);
+        Assert.That(bad, Is.Empty);
+    }
 }

@@ -60,6 +60,11 @@ public sealed class RideData
     public float NameTagOffsetY, HpBarOffsetY;
     public bool NameTagHide, UseRidingNavi;
     public float[] RideTranslation = new float[3], RideRotation = new float[3];
+    /// <summary>&lt;faceCamera lookAtPosition cameraPosition&gt; (RideeData::FaceCamera, FUN_140783b00,
+    /// unit_140781d80_ridingtable.cpp:506-527): the target and the eye of the main player info's mount portrait
+    /// (UIMainPlayerInfo::vfunc_25, uimainplayerinfo.cpp:669-677). Each is XmlSplit by "," and kept only with exactly three
+    /// values; a row without the element or with a bad list keeps (0, 0, 0).</summary>
+    public float[] FaceLookAt = new float[3], FaceCamera = new float[3];
     public string AniPC = "Ride_Idle_A", AniPCIdle, AniPCRun, AniPCJump, AniPCSPIdle, AniPCSPRun, AniPCSPJump;
     /// <summary>RideeData::Collision (@0x140783800): the box size, 100 each when absent (ctor @0x1407836e0), and whether the
     /// mount carries the kinematic box (Ridee::MakeNxBoxController).</summary>
@@ -136,6 +141,7 @@ public sealed class RideData
             d.Physic = QueryBool((string)c.Attribute("physic"), false);
         }
         if (riding.Element("shadow") is { } sh) d.ShadowScale = F(sh, "scale", 150);
+        if (riding.Element("faceCamera") is { } fc && Three(fc, "lookAtPosition", d.FaceLookAt)) Three(fc, "cameraPosition", d.FaceCamera);
         foreach (var p in riding.Element("passengers")?.Elements("passenger") ?? Enumerable.Empty<XElement>())
         {
             var seat = RideSeat.Read(p);
@@ -180,7 +186,11 @@ public sealed class RideData
     public string KfmFor(int gender) => gender == 0 && !string.IsNullOrEmpty(Kfm2) ? Kfm2 : Kfm;
 
     /// <summary>The row's UI part (<see cref="Ms2.Ui.RideeRow"/>), what the HUD reads of the own mount.</summary>
-    public Ms2.Ui.RideeRow UiRow => uiRow ??= new(Id, HidePCInfo, UseRidingUI, EnableRideOffUI, ShowRideeNameTag, NameTagHide, UseRidingNavi);
+    public Ms2.Ui.RideeRow UiRow => uiRow ??= new(Id, HidePCInfo, UseRidingUI, EnableRideOffUI, ShowRideeNameTag, NameTagHide, UseRidingNavi)
+    {
+        FaceLookAt = new System.Numerics.Vector3(FaceLookAt[0], FaceLookAt[1], FaceLookAt[2]),
+        FaceCamera = new System.Numerics.Vector3(FaceCamera[0], FaceCamera[1], FaceCamera[2]),
+    };
     Ms2.Ui.RideeRow uiRow;
 
     /// <summary>The rider sequences StateRide picks from (<see cref="Ms2.Net.Replay.StateRideAnim"/>).</summary>
@@ -205,6 +215,17 @@ public sealed class RideData
 
     internal static float F(XElement e, string name, float def) =>
         float.TryParse((string)e.Attribute(name), NumberStyles.Float, CultureInfo.InvariantCulture, out var v) ? v : def;
+
+    /// <summary>XmlSplit of a float list by ","; true and the values in <paramref name="into"/> only when there are exactly
+    /// three (FUN_140783b00 returns 0 on another count, before the second list).</summary>
+    static bool Three(XElement e, string name, float[] into)
+    {
+        var parts = ((string)e.Attribute(name) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries);      // Tokenize: no empty tokens
+        if (parts.Length != 3) return false;
+        for (int i = 0; i < 3; i++)
+            into[i] = float.TryParse(parts[i].Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out float v) ? v : 0f;
+        return true;
+    }
 
     internal static float[] V(XElement e, string name)
     {

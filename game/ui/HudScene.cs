@@ -3193,7 +3193,9 @@ public partial class HudScene : Node, IUiStageHost
         };
         playerInfo.SkillSetModeChanged += mode => upperHudSide?.OnSkillSetMode(mode);   // NotifySkillSetMode's other listener
         OwnBuffs();
-        ui.AddChild(playerInfoMovie = new MovieDialog(assets, playerInfo, hudModel, window));
+        playerInfoMovie = new MovieDialog(assets, playerInfo, hudModel, window);
+        RideeAvatarLookup(playerInfoMovie);
+        ui.AddChild(playerInfoMovie);
         WatchQuickSlotState();
         ui.AddChild(expBarMovie = new MovieDialog(assets, new Ms2.Ui.Hud.ExpBarController(), hudModel, window));
         if (Ms2Godot.Net.LiveSession.Instance == null)      // live, the Prestige packets fill it (WatchPrestige)
@@ -3206,6 +3208,37 @@ public partial class HudScene : Node, IUiStageHost
             else GD.Print("adventure level: the older adventure dialog 0x4f87 is not in this HUD");
         };
         ui.AddChild(adventureBarMovie = new MovieDialog(assets, adventureBar, hudModel, window));
+    }
+
+    RideeAvatarView rideeAvatar;
+
+    /// <summary>
+    /// The main player info's mount portrait: its RideeInfo clip loads "img://&lt;movie&gt;:faceView/100/100" (loadRenderTarget,
+    /// <see cref="Ms2.Ui.Hud.MainPlayerInfoController.LoadRenderTarget"/>), which UIMainPlayerInfo::vfunc_25 (@0x1419efa60,
+    /// uimainplayerinfo.cpp:663-678) fills with the model view of the controller's UIAvatarRidee: here a
+    /// <see cref="RideeAvatarView"/> of <see cref="Ms2.Ui.Hud.MainPlayerInfoController.AvatarRidee"/>, built on the first load
+    /// and freed when the ridee changes (vfunc_oa0_20 deletes m_ridee before it builds the next).
+    /// </summary>
+    void RideeAvatarLookup(MovieDialog movie)
+    {
+        string face = "img://" + movie.Host.Id + ":" + RideeAvatar.ImageName + "/";
+        playerInfo.AvatarRideeChanged += row =>
+        {
+            if (rideeAvatar != null && rideeAvatar.Row != row) { rideeAvatar.QueueFree(); rideeAvatar = null; }
+        };
+        foreach (var n in movie.GetChildren())
+            if (n is As3View v) v.ImageLookup = url =>
+            {
+                if (!url.StartsWith(face, StringComparison.OrdinalIgnoreCase) || playerInfo.AvatarRidee is not { } row) return null;
+                if (rideeAvatar == null && RideeAvatarView.SizeOf(url) is { } size
+                    && (rideeAvatar = RideeAvatarView.Create(assets.Packs, Settings.NifXml, row, size)) != null)
+                {
+                    AddChild(rideeAvatar);
+                    if (Ms2Godot.Net.LiveSession.LiveCheck)
+                        GD.Print($"ridee avatar: {row.Id} {size.X}x{size.Y} eye {rideeAvatar.CameraAt.Eye} at {rideeAvatar.CameraAt.Target}");
+                }
+                return rideeAvatar?.Image;
+            };
     }
 
     // ---- game menu ---------------------------------------------------------------------------------------------------

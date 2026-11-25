@@ -254,16 +254,23 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
     /// vfunc_oa0_20 @0x1419f0460 (uimainplayerinfo.cpp:795-835), the riding status event: nothing when the mount hides the
     /// main player info (FUN_1419f16b0); else the riding object (riding, HP, SP) and slot mode 0, or for a mount with
     /// useRidingUI slot mode 1 with rideOff (enableRideOffUI) and rideeName (string table 0x31); onRiding is sent only
-    /// when the slot mode changes, after SyncSlotMode. STILL-OPEN: the mount's avatar (UIAvatarRidee and the render
-    /// target, :826-827, :834-835).
+    /// when the slot mode changes, after SyncSlotMode. Before that the mount portrait's render target is unloaded and the
+    /// last avatar dropped (:804-805), and slot mode 1 makes the ridden row's avatar (<see cref="AvatarRidee"/>, :826-827);
+    /// after onRiding slot mode 1 loads the render target again (:834-835). An unchanged slot mode returns before onRiding,
+    /// so a ride from one riding-UI mount onto another keeps the render target unloaded, as in the client.
+    /// STILL-OPEN: vfunc_16 / vfunc_26 (the dialog hidden: UnloadRenderTarget) and vfunc_17 (shown in slot mode 1:
+    /// LoadRenderTarget) have no hook here; the HUD keeps this movie loaded.
     /// </summary>
     void OnRiding(bool riding)
     {
         var pi = PlayerInfo;
         if (pi == null) return;
         if (!PcInfoTag()) return;
+        UnloadRenderTarget();
+        SetAvatarRidee(null);                           // m_ridee = 0
         var ridee = riding ? Pc.Ridee : null;
         int mode = RidingUi.SlotMode(riding, ridee);
+        if (mode == 1) SetAvatarRidee(ridee);           // new UIAvatarRidee(holder->GetData()), vfunc_1(0)
         if (slotMode == mode) return;
         slotMode = mode;
         SyncSlotMode();
@@ -275,7 +282,29 @@ public sealed class MainPlayerInfoController : UiController, Skills.IBuffStrip, 
             Host.Set(obj, "rideeName", Model.Tables.StringTableText(0x31, ridee.Id));
         }
         Host.Invoke(pi, "onRiding", obj);
+        if (slotMode == 1) LoadRenderTarget();
     }
+
+    /// <summary>m_ridee: the riding row the mount portrait (UIAvatarRidee) shows, null without one.</summary>
+    public RideeRow AvatarRidee { get; private set; }
+
+    /// <summary>The mount portrait's avatar changed (<see cref="AvatarRidee"/>); the host drops the old model and makes the
+    /// new one when the movie loads the render target.</summary>
+    public event Action<RideeRow> AvatarRideeChanged;
+
+    void SetAvatarRidee(RideeRow row)
+    {
+        if (ReferenceEquals(AvatarRidee, row)) return;
+        AvatarRidee = row;
+        AvatarRideeChanged?.Invoke(row);
+    }
+
+    /// <summary>LoadRenderTarget @0x1419f3280 (uimainplayerinfo.cpp:1429-1434): m_playerInfo.loadRenderTarget, which the
+    /// RideeInfo clip turns into a load of "img://&lt;movie&gt;:faceView/100/100".</summary>
+    void LoadRenderTarget() { if (PlayerInfo is { } pi) Host.Invoke(pi, "loadRenderTarget"); }
+
+    /// <summary>UnloadRenderTarget @0x1419f32f0 (:1437-1443): m_camera dropped, m_playerInfo.unloadRenderTarget.</summary>
+    void UnloadRenderTarget() { if (PlayerInfo is { } pi) Host.Invoke(pi, "unloadRenderTarget"); }
 
     /// <summary>FUN_1419f16b0 @0x1419f16b0 (uimainplayerinfo.cpp:1025-1045): visibleTag(1) unless the mount's hidePCInfo is
     /// set, and SetHideReason(4, shown) where shown is false only for hidePCInfo 2; returns shown.</summary>
