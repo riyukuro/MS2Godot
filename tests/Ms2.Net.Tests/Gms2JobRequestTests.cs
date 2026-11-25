@@ -47,4 +47,12 @@ public class Gms2JobRequestTests {
         Assert.That(Bytes(new JobSkillsRequest(9, new[] { (1, 2, true) })), Is.EqualTo(new byte[] { 9, 1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 1 }));
         Assert.That(ProtocolProfile.Gms2.Has(Outbound.Job), Is.True);
     }
+
+    [Test]
+    public void TheSkillBookLearnWritesJobMode7() {
+        // JobSystemCli::SendRequest @0x140a6e190 (jobsystemcli.cpp:169-180): u8 7, then FUN_1401fdb50: i32 job, i64 uid, i32 skill, i16 level
+        Assert.That(Bytes(new JobSkillLearnRequest(10, 0x0102030405060708, 10500001, 2)), Is.EqualTo(new byte[] {
+            7, 10, 0, 0, 0, 8, 7, 6, 5, 4, 3, 2, 1, 0xa1, 0x37, 0xa0, 0, 2, 0 }));
+        Assert.That(new JobSkillLearnRequest(10, 1, 2, 3).Op, Is.EqualTo(Outbound.Job));
+    }
 }

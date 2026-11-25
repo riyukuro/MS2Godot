@@ -559,6 +559,131 @@ public class InventoryTests
     }
 
     [Test]
+    public void AGms2SkillBookItemIsCheckedAndItsOkSendsJobMode7()
+    {
+        // GMS2 InvenSlot::vfunc_13 @0x140ab83e5-0x140ab8820: the job system's check @0x14057d8b0, a box per result; the
+        // "learn_skill" box's OK (HandleLearnSkillButton @0x1419fb7b0) sends JobSystemCli::RequestSkill's Job mode 7
+        Packs();
+        var model = NewModel();
+        model.HasLocalPlayer = true;
+        var t = model.Tables;
+        var data = t.Items.Get(40000013);
+        if (data?.IsGms2SkillBook != true) Assert.Inconclusive("this data has no GMS2 skill book item 40000013");
+        var book = new ItemBook { TabOf = id => id / 10000000, BaseSlots = _ => 48 };
+        book.Apply(new ItemMessage.LoadTab(4, new[]
+        {
+            new EquipItem { Id = 40000013, Uid = 40, InventorySlot = 0, Amount = 1, Rarity = 1 },
+            new EquipItem { Id = 40000013, Uid = 41, InventorySlot = 1, Amount = 1, Rarity = 1, ExpiryTime = 500 },
+        }));
+        var (h, c, _) = Load(model, book);
+        c.View.ServerTime = () => 1000;
+        int tab = c.Tabs.Select((x, i) => (x, i)).First(x => x.x.Tab == 4).i;
+        h.Set(h.Child("m_tab"), "selectedIndex", tab);
+        for (int i = 0; i < 3; i++) { h.Player.Tick(); c.Process(); }
+        int job = data.JobLimit.FirstOrDefault(j => j > 1, 10), otherJob = Enumerable.Range(1, 20).Select(n => n * 10).First(j => !data.IsGms2JobAllowed(j) || data.JobLimit.Count == 0);
+        var me = new PcInfo { Level = (ushort)Math.Max(1, data.LevelLimit), JobGroup = job, Equips = Array.Empty<EquipItem>() };
+        c.Wearer = () => me;
+        c.JobGroup = () => job;
+        var learned = new HashSet<uint>(); c.SkillLearned = learned.Contains;
+        var raised = new List<string>(); c.Button += raised.Add;
+        var shown = new List<MessageBoxData>(); c.ShowBox = shown.Add;
+        var sent = new List<JobSkillLearnRequest>(); c.SendSkillLearn = sent.Add;
+        var emotes = new List<EmoteLearnRequest>(); c.SendEmoteLearn = emotes.Add;
+        string Text(string key) => t.Common(key) ?? "";
+        void Use(int slot) => c.OnCallback("notifySlotUse", new object[] { "InventoryDialog." + slot });
+
+        Use(0);
+        var box = shown.Single();
+        Assert.That((box.Type, box.Extra, box.ItemUid), Is.EqualTo((1, InventoryController.LearnSkillTag, 40L)));
+        Assert.That(box.Msg, Is.EqualTo(Text("s_msg_skillbook_learn_messagebox")).And.Not.Empty);
+        Assert.That((sent.Count, emotes.Count, raised.Count), Is.EqualTo((0, 0, 0)), "the box first: nothing sent or raised");
+
+        // the other results: a type-0 box with the result's text, nothing sent
+        Use(1);
+        Assert.That((shown.Last().Type, shown.Last().Msg), Is.EqualTo((0, Text("s_msg_skillbook_error_expired"))));
+        if (data.LevelLimit > 1)
+        {
+            me.Level = (ushort)(data.LevelLimit - 1);
+            Use(0);
+            Assert.That(shown.Last().Msg, Is.EqualTo(Text("s_msg_skillbook_error_level")).And.Not.Empty);
+            me.Level = (ushort)data.LevelLimit;
+        }
+        if (data.JobLimit.Count > 0)
+        {
+            c.JobGroup = () => otherJob;
+            Use(0);
+            Assert.That(shown.Last().Msg, Is.EqualTo(Text("s_msg_skillbook_error_job")).And.Not.Empty);
+            c.JobGroup = () => job;
+        }
+        learned.Add((uint)data.SkillId);
+        Use(0);
+        Assert.That(shown.Last().Msg, Is.EqualTo(Text("s_msg_skillbook_error_master")).And.Not.Empty);
+        learned.Clear();
+        // no job system: the check has no owner, nothing
+        int count = shown.Count;
+        c.JobGroup = null;
+        Use(0);
+        Assert.That(shown.Count, Is.EqualTo(count));
+        c.JobGroup = () => job;
+        Assert.That((sent.Count, emotes.Count, raised.Count), Is.EqualTo((0, 0, 0)));
+
+        // the box's OK through the message box layer's tag handler
+        var boxes = new MessageBoxController();
+        boxes.LearnSkill = c.ConfirmLearnSkill;
+        boxes.data = box;
+        Assert.That(boxes.HandlePlainTag(1, InventoryController.LearnSkillTag), Is.True);
+        Assert.That(sent, Is.Empty, "cancel sends nothing");
+        Assert.That(boxes.HandlePlainTag(0, InventoryController.LearnSkillTag), Is.True);
+        Assert.That(sent, Is.EqualTo(new[] { new JobSkillLearnRequest(job, 40, data.SkillId, (ushort)data.SkillLevel) }));
+        // an item the bag no longer has, or no local player: nothing
+        c.ConfirmLearnSkill(99);
+        model.HasLocalPlayer = false;
+        c.ConfirmLearnSkill(40);
+        Assert.That(sent.Count, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void EveryGms2SkillBookItemHasASkillAndItsBoxTexts()
+    {
+        // every subtype 8 item of the GMS2 data is a skill book (IsGms2SkillBook) with a skill the skill tables know, a level, and
+        // the box texts its results show
+        var p = Packs();
+        var index = Ms2.Formats.World.PerItemFiles.Index(p);
+        if (index.Count == 0) Assert.Ignore("MS2_DATA has no per-item GMS2 files");
+        var model = NewModel();
+        var t = model.Tables;
+        var books = new List<int>();
+        var off = new List<string>();
+        var alwaysLearned = new List<int>();
+        foreach (var (id, _) in index)
+        {
+            var d = t.Items.Get(id);
+            if (d?.IsGms2SkillBook != true) continue;
+            books.Add(id);
+            if (d.SkillId <= 0 || d.SkillLevel <= 0) off.Add($"{id}: skill {d.SkillId} level {d.SkillLevel}");
+            else if (t.Skills.GetSkillData((uint)d.SkillId) is not { } s) off.Add($"{id}: skill {d.SkillId} has no skill data");
+            else if (s.Gms2NotBookKind is not { } notBook) off.Add($"{id}: skill {d.SkillId} has no GMS2 kinds");
+            else if (notBook) alwaysLearned.Add(id);
+        }
+        // the GMS2 learned test (@0x14057cc50) counts a kinds type 3 skill learned, so these books always show box 4
+        // (s_msg_skillbook_error_master) in the client: skills 19900031, 19900041 and 19900051 are kinds type 3 subType 5.
+        // Book 40000010's skill 20000001 (kinds type 0 subType 6) is not: the KMS main type list would count it learned.
+        TestContext.Out.WriteLine($"always learned: {string.Join(" ", alwaysLearned.OrderBy(x => x))}");
+        Assert.That(alwaysLearned.OrderBy(x => x), Is.EqualTo(new[] { 40000028, 40000029, 40000030 }));
+        // the book check's learned test (IsLearnedGms2) of a player with no skills learned answers that, book by book; the casts'
+        // KMS rule (IsLearned) still counts swim dash (main type 11) learned
+        var jobs = new Ms2.Ui.Skills.JobSystem(t.Skills);
+        foreach (int id in books)
+            Assert.That(jobs.IsLearnedGms2((uint)t.Items.Get(id).SkillId), Is.EqualTo(alwaysLearned.Contains(id)), $"book {id}");
+        Assert.That((jobs.IsLearned(20000001), jobs.IsLearnedGms2(20000001)), Is.EqualTo((true, false)));
+        TestContext.Out.WriteLine($"skill books {books.Count}: {string.Join(" ", books.OrderBy(x => x))}");
+        Assert.That(off, Is.Empty);
+        Assert.That(books.Count, Is.EqualTo(28));
+        foreach (int r in new[] { 0, 1, 3, 4, 5, 6, 7 })
+            Assert.That(t.Common(SkillBookItem.BoxKey(r)), Is.Not.Null.And.Not.Empty, $"result {r}: {SkillBookItem.BoxKey(r)}");
+    }
+
+    [Test]
     public void AStickerPackItemAsksWithItsPeriodAndItsYesSendsTheUse()
     {
         // ChatEmoticonAdd @0x140d1fba0 (unit_140d1ae30_itemfunctiondispatch.cpp:1027-1064); the yes is UIMessageBox::FUN_1419fc810

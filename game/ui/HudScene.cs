@@ -3526,6 +3526,8 @@ public partial class HudScene : Node, IUiStageHost
         boxes.UseBindFuncItem = use; boxes.UseBindEquipItem = equip; boxes.UseBindGemEquipItem = gem; boxes.BindEquipAnswered = equipAnswered;
         Action<long> learnEmotion = uid => inventory?.ConfirmLearnEmotion(uid);
         boxes.LearnEmotion = learnEmotion;
+        Action<long> learnSkill = uid => inventory?.ConfirmLearnSkill(uid);     // HandleLearnSkillButton
+        boxes.LearnSkill = learnSkill;
         Action<long> useFunctionItem = uid => inventory?.ConfirmUseFunctionItem(uid);
         boxes.UseFunctionItem = useFunctionItem;
         // HandleChangeGuildNameButton: CheckGuildName (CommonString GetChecker), ShowSystemNotice, the item used with the name
@@ -3647,6 +3649,11 @@ public partial class HudScene : Node, IUiStageHost
         // Unk_Inventory::SendEmotion: the own skill system's emotions, Emote mode 1
         c.Emotions = live?.Emotions;
         c.SendEmoteLearn = req => { if (live == null || !live.SendEmote(req)) GD.Print($"inventory: emotion learn of item {req.ItemUid} not sent (offline)"); };
+        // the skill book item (GMS2 subtype 8): the job system's check and RequestSkill (Job mode 7)
+        c.JobGroup = () => EnsureSlotJobs().JobGroupId;
+        c.SkillLearned = id => EnsureSlotJobs().IsLearnedGms2(id);   // the GMS2 vfunc_2 @0x14057cc50
+        c.PlayerItemUse = () => itemUse;
+        c.SendSkillLearn = req => { if (live == null || !live.SendSkillBook(req)) GD.Print($"inventory: skill book learn of item {req.ItemUid} not sent (offline)"); };
         c.OpenSelectBox = OpenSelectItemBox;
         c.BlueprintOpenAnswer = (answer, uid) => liveHome?.Bill.OnBlueprintOpenBox(answer, uid) ?? true;   // FUN_140ee8000
         c.SelectBoxOpen = () => SelectItemBoxOpen;

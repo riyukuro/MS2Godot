@@ -172,6 +172,31 @@ public sealed class JobSystem
         var d = t.GetSkillData(id);
         if (d == null) return false;
         if (!IsBookSkillKind(d)) return true;
+        return LearnedPastKind(id);
+    }
+
+    /// <summary>
+    /// The GMS2 client's JobSystemCli::vfunc_2 @0x14057cc50 (CJobSystemCli vtable 0x141905fd8, slot 2), which the skill book
+    /// check reads (<see cref="Items.SkillBookItem.Check"/>): an unknown skill is not learnt (@0x140462a40); a skill of the
+    /// GMS2 kind short cut (<see cref="SkillData.Gms2NotBookKind"/>) is; then, as KMS, the skill set, the tier option, the
+    /// lapenshard level (the GMS2 client's feature 0xe8; INFERRED: KMS 0xd3, the same feature), the sub skill's parent tier and
+    /// the book's learnt flag. A KMS row (no GMS2 kinds) uses <see cref="IsBookSkillKind"/> as <see cref="IsLearned"/>.
+    /// STILL-OPEN: the first test, the owner's @0x140ba1b60() == the skill (learnt), is not decoded (it reads the PC's +0x1b20
+    /// block or +0x770 of @0x14097f440); a skill book's skill matching it would read as learnt in the client.
+    /// Kept apart from <see cref="IsLearned"/>, which the casts read: switching those on the GMS2 data to this rule without the
+    /// first test would refuse skills the client lets through it.
+    /// </summary>
+    public bool IsLearnedGms2(uint id)
+    {
+        var d = t.GetSkillData(id);
+        if (d == null) return false;
+        if (d.Gms2NotBookKind ?? !IsBookSkillKind(d)) return true;
+        return LearnedPastKind(id);
+    }
+
+    /// <summary>vfunc_2 after its kind short cut (jobsystemcli.cpp:88-113; GMS2 @0x14057ccf2 on).</summary>
+    bool LearnedPastKind(uint id)
+    {
         if (SkillSetLevel(id) != 0) return true;
         if (TierLevel(id) > 0) return true;
         if (IsFeatureEnabled(0xd3) && LapenshardLevel(id) > 0) return true;

@@ -326,6 +326,13 @@ public sealed class SkillData
     /// name tag (PCBase::FUN_141670330 / FUN_141670360, stateemotionidle.cpp:226-227).</summary>
     public int OffsetNameTag;
     /// <summary>
+    /// The GMS2 learned test's kind short cut (JobSystemCli::vfunc_2 @0x14057cc50 on the kinds block, row +0x80): kinds type 3
+    /// (@0x14045d5d0, +8) or an emotionType of 1 or 2 with an emotion name (@0x14045d510: +0x24 in 1-2 and the +0x28 string's
+    /// mfc140 test false; INFERRED: that test is IsEmpty). Null on a KMS row, whose client tests the main type instead
+    /// (<see cref="JobSystem.IsBookSkillKind"/>). Read from the GMS2 x64 dump's disassembly (not decompiled).
+    /// </summary>
+    public bool? Gms2NotBookKind;
+    /// <summary>
     /// &lt;basic&gt;&lt;combo inputSkill outputSkill comboSkill chargingSkill&gt; (Unk_SkillBlockA4::Load @0x140802ef0,
     /// skillleveldata.cpp:493), loaded from &lt;basic&gt; (skilloverlapcompare.cpp:874).
     /// </summary>
@@ -438,6 +445,9 @@ public sealed class SkillData
             s.ImmediateActive = Xml.Int(kinds, "immediateActive");
             s.GroupIds = Xml.UInt(kinds, "groupIDs");
             s.OffsetNameTag = Xml.Int(kinds, "offsetNameTag");
+            if (gms2Row)
+                s.Gms2NotBookKind = Xml.Int(kinds, "type") == 3
+                    || Xml.Int(kinds, "emotionType") is 1 or 2 && !string.IsNullOrEmpty((string)kinds.Attribute("emotion"));
         }
         if (basic.Element("combo") is { } combo)
         {

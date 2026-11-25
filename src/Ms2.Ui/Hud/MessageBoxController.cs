@@ -227,6 +227,9 @@ public sealed class MessageBoxController : UiController
     /// <summary>HandleLearnEmotionButton's OK: the box's item uid (the local player test, FindItemByUid and
     /// Unk_Inventory::SendEmotion, <see cref="InventoryController.ConfirmLearnEmotion"/>).</summary>
     public Action<long> LearnEmotion;
+    /// <summary>HandleLearnSkillButton's OK: the box's item uid (the local player test, FindItemByUid and the job system's
+    /// RequestSkill, <see cref="InventoryController.ConfirmLearnSkill"/>).</summary>
+    public Action<long> LearnSkill;
     /// <summary>use_function_item's yes: FindItemByUid of the box's item uid and FUN_140a63880(item, "")
     /// (<see cref="InventoryController.ConfirmUseFunctionItem"/>).</summary>
     public Action<long> UseFunctionItem;
@@ -513,6 +516,8 @@ public sealed class MessageBoxController : UiController
             return HandleConfirmChangeCharNameButton(button);
         if (tag == "useBindGemEquipItem")
             return HandleUseBindGemEquipItemButton(button);
+        if (tag == InventoryController.LearnSkillTag)                      // s_143af3c88 (uimessagebox.cpp:968-972)
+            return HandleLearnSkillButton(button);
         if (tag == InventoryController.LearnEmotionTag)                    // s_143af3ca0 (uimessagebox.cpp:983-987)
             return HandleLearnEmotionButton(button);
         if (tag == InventoryController.UseFunctionItemTag)                 // s_143af3c90 (uimessagebox.cpp:973-977)
@@ -754,6 +759,15 @@ public sealed class MessageBoxController : UiController
     {
         if (data == null) return true;
         if (button == 0 && data.ArgInt(0, 0) == 0) UseFunctionItem?.Invoke(data.ItemUid);
+        return true;
+    }
+
+    /// <summary>UIMessageBox::HandleLearnSkillButton @0x1419fb7b0 (uimessagebox.cpp:1294-1309): no box data, 1; the OK (button
+    /// 0) sends the skill book item's learn (<see cref="LearnSkill"/>, which tests the local player); 1 either way.</summary>
+    bool HandleLearnSkillButton(int button)
+    {
+        if (data == null) return true;
+        if (button == 0) LearnSkill?.Invoke(data.ItemUid);
         return true;
     }
 

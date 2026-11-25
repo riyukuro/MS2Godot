@@ -835,7 +835,8 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
     /// (always 1), FUN_14140dea0 (:2082) on the record: CItem::FUN_140528980 false (item.cpp:1717: expired, not a pet, no maid
     /// id): box 225 (0xe1) when expired; the level: ShowMessageBox(s_err_not_enough_level) (:2106, a box here: CanUseItem's
     /// notice comes after it); the job: s_item_err_disable_job; the gender: box 45. Then TryUseItem (:532) and
-    /// <see cref="UseItem"/>. An item without a function: a shop id and a pet are not ported (raised); an emotion item (type
+    /// <see cref="UseItem"/>. An item without a function: a shop id and a pet are not ported (raised); on the GMS2 data a skill
+    /// book item (subtype 8, GMS2 only) runs <see cref="LearnSkillBook"/>; an emotion item (type
     /// 0x18, FUN_14053ce40) that passes FUN_14140dea0 asks first (<see cref="LearnEmotionBox"/>); an equipment item (type 1, :886) is put on as by the right click (FUN_1414056b0's layer) only while the
     /// shop dialog 0x4e3b is open, else nothing; type 0x13 does nothing; others pass FUN_14140dea0 and go to <see cref="UseItemSkill"/>.
     /// STILL-OPEN: the cube craft placement (MyPC FUN_141659690), the PC bang (0xe2), VIP, wedding and owner-bind (0xfe)
@@ -853,6 +854,8 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         {
             // :853-872: a shop id and a pet have their own handlers (raised); type 0x13 none
             if (d.ShopId > 0 || d.IsPetItem) { Button?.Invoke("notifySlotUse"); return; }
+            // GMS2 only (@0x140ab83e5-0x140ab8820, between the pet and the emotion item): a skill book item (subtype 8)
+            if (d.IsGms2SkillBook) { LearnSkillBook(item); return; }
             // :873-884 (FUN_14053ce40, type 0x18; the GMS2 client's subtype 14 @0x140346cd0): FUN_14140dea0, then the learn box
             if (d.IsEmotionItem)
             {
@@ -885,6 +888,54 @@ public sealed partial class InventoryController : UiController, IInventoryBindin
         var box = MessageBoxQueue.Create(1, text, null, LearnEmotionTag);
         box.ItemUid = item.Uid;
         return box;
+    }
+
+    /// <summary>The tag of the skill book item's box (<see cref="SkillBookItem.LearnTag"/>).</summary>
+    public const string LearnSkillTag = SkillBookItem.LearnTag;
+
+    /// <summary>The local player's job system's job group (JobSystemCli::GetJobGroupID); null: no job system, the skill book
+    /// check (a job system method) does not run and nothing is sent.</summary>
+    public Func<int> JobGroup;
+    /// <summary>The local player's job system's learned test (the GMS2 JobSystemCli::vfunc_2,
+    /// <see cref="Skills.JobSystem.IsLearnedGms2"/>); null counts none learned.</summary>
+    public Func<uint, bool> SkillLearned;
+    /// <summary>The local player's PC bang, VIP and wedding states (<see cref="ItemUse"/>); null counts them all false.</summary>
+    public Func<ItemUse> PlayerItemUse;
+    /// <summary>Sends Job mode 7 (JobSystemCli::RequestSkill's packet).</summary>
+    public Action<Ms2.Net.Packets.JobSkillLearnRequest> SendSkillLearn;
+
+    /// <summary>
+    /// The GMS2 client's skill book double click (InvenSlot::vfunc_13 @0x140ab83e5-0x140ab8820): the job system (MyPC+0x2490,
+    /// @0x140b9a9c0) checks the item (<see cref="SkillBookItem.Check"/>, @0x14057d8b0); 0: CreateMessageBox(1,
+    /// s_msg_skillbook_learn_messagebox, 0, "learn_skill") with the slot's item uid (@0x140dc9350), shown; 1, 3, 4, 5, 6, 7:
+    /// a type-0 box with <see cref="SkillBookItem.BoxKey"/>; 2, 8, 9, 10: nothing. Handled (1) either way. Without the
+    /// local player's record or job system the check has no owner (10): nothing.
+    /// </summary>
+    void LearnSkillBook(Item item)
+    {
+        var record = Wearer?.Invoke();
+        var use = PlayerItemUse?.Invoke();
+        SkillBookItem.Owner? owner = record == null || JobGroup == null ? null
+            : new(record.Level, JobGroup(), use?.InPcBang ?? false, use?.IsVip ?? false, use?.WeddingInProgress ?? false);
+        int result = SkillBookItem.Check(item, owner, View?.ServerTime() ?? 0, SkillLearned);
+        if (SkillBookItem.BoxKey(result) is not { } key) return;
+        if (result != SkillBookItem.Ok) { ShowCommonBox(key); return; }
+        var box = MessageBoxQueue.Create(1, Model.Tables.Common(key) ?? "", null, LearnSkillTag);
+        box.ItemUid = item.Uid;
+        ShowBox(box);
+    }
+
+    /// <summary>UIMessageBox::HandleLearnSkillButton @0x1419fb7b0 (uimessagebox.cpp:1294-1309; GMS2 @0x140dc24ba), the OK: no
+    /// local player, nothing; FindItemByUid of the box's item uid; found: the job system's RequestSkill(uid, the item's skill
+    /// id, its skill level) (<see cref="Ms2.Net.Packets.JobSkillLearnRequest"/> with GetJobGroupID). Nothing changes locally:
+    /// the server's Job answer does.</summary>
+    public void ConfirmLearnSkill(long uid)
+    {
+        if (Model == null || !Model.HasLocalPlayer || JobGroup == null) return;
+        if (View?.FindByUid(uid) is not { } e) return;
+        var item = ToItem(e, Model.Tables.Items);
+        if (item?.Data is not { } d) return;
+        SendSkillLearn?.Invoke(new Ms2.Net.Packets.JobSkillLearnRequest(JobGroup(), uid, d.SkillId, (ushort)d.SkillLevel));
     }
 
     /// <summary>The own CSkillSystem's emotions (IsEmotionLearned); null counts none learned.</summary>

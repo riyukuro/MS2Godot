@@ -386,6 +386,29 @@ public sealed class ItemData
     /// <summary>The GMS2 client's emotion item subtype (@0x140343af0).</summary>
     public const int Gms2EmotionSubtype = 14;
 
+    /// <summary>
+    /// The GMS2 client's skill book item: the file subtype is 8 (the predicate @0x140343fa0 reads +0x35c, the file's
+    /// subtype; GMS2 InvenSlot::vfunc_13 @0x140ab83f2 and the job system's check @0x14057d8b0 test it). The KMS client has
+    /// no such test, so this is false on the KMS data. Read from the GMS2 x64 dump's disassembly (not decompiled).
+    /// </summary>
+    public bool IsGms2SkillBook => gms2File is { Subtype: Gms2SkillBookSubtype };
+    /// <summary>The GMS2 client's skill book item subtype (@0x140343fa0).</summary>
+    public const int Gms2SkillBookSubtype = 8;
+
+    /// <summary>
+    /// The GMS2 client's job rule @0x140350640 (on the item's limit block), the skill book check's job test: job 0 never; a
+    /// disabled job no; then a jobLimit entry of 0, 1 (unsigned &lt;= 1) or the job yes; else only an empty jobLimit. Unlike
+    /// <see cref="IsJobAllowed"/> (ItemLimit::IsJobAllowed) job 1 is not counted as 10.
+    /// </summary>
+    public bool IsGms2JobAllowed(int job)
+    {
+        if (job == 0) return false;
+        if (DisableJobLimit.Contains(job)) return false;
+        foreach (var l in JobLimit)
+            if ((uint)l <= 1 || l == job) return true;
+        return JobLimit.Count == 0;
+    }
+
     /// <summary>The type and subtype the GMS2 item file writes, as its client keeps them (+0x358, +0x35c); null on the KMS data.
     /// <see cref="FillEquipSubtype"/> and <see cref="FillBoxType"/> rewrite <see cref="Type"/> and <see cref="Subtype"/> to the
     /// KMS numbers afterwards, and the GMS2 client's own tests read these.</summary>

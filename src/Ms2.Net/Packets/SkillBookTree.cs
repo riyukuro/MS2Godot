@@ -169,3 +169,12 @@ public sealed record JobCloseRequest : IOutPacket {
     public Outbound Op => Outbound.Job;
     public void Write(ByteWriter w) => w.WriteByte(8);
 }
+
+/// <summary>Outbound 0x25 (SendOp::Job) mode 7: JobSystemCli::RequestSkill @0x140a6e140 / SendRequest @0x140a6e190
+/// (jobsystemcli.cpp:163-180), the skill book item's learn (UIMessageBox::HandleLearnSkillButton @0x1419fb7b0): u8 7, then
+/// FUN_1401fdb50 (packetpayloadserializers.cpp:1107): i32 the job group (GetJobGroupID), i64 the item uid, i32 the item's
+/// skill id, i16 its skill level. The GMS2 client's sender @0x14057d300 writes the same through @0x1401fdbe0.</summary>
+public sealed record JobSkillLearnRequest(int Job, long ItemUid, int SkillId, ushort Level) : IOutPacket {
+    public Outbound Op => Outbound.Job;
+    public void Write(ByteWriter w) { w.WriteByte(7); w.WriteInt(Job); w.WriteLong(ItemUid); w.WriteInt(SkillId); w.WriteShort((short)Level); }
+}
