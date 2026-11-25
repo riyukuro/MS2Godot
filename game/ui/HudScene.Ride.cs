@@ -70,6 +70,28 @@ public partial class HudScene
             + $" main info {Shown(playerInfo?.Host)} exp bar {Shown(expBarMovie?.Host)} game menu {Shown(gameMenu?.Host)} tag '{playerNameTag?.Shown}'";
     }
 
+    /// <summary>Harness: the quick slots against the own skill set. Riding a mount whose set has a row, the key table is locked
+    /// and the slots 4..7, 0..3, 8.. show the set's skills in order (CKeyTable::ApplySkillSetToQuickSlots); without a set the
+    /// table is unlocked. The text has the set, the lock, the mode 7 sends and the first shown slots.</summary>
+    public (bool Ok, string Text) SkillSetScripted()
+    {
+        var set = hudModel?.SkillSets.Current;
+        var keys = hudModel?.ServerKeys;
+        if (playerInfo == null || keys == null) return (false, "no quick slots");
+        int[] order = { 4, 5, 6, 7, 0, 1, 2, 3, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24 };
+        bool ok = set == null ? !keys.Locked : keys.Locked;
+        if (set != null)
+            for (int i = 0; i < set.SkillIds.Count && i < order.Length; i++)
+                ok &= playerInfo.ShownEntry(order[i]).SkillId == set.SkillIds[i];
+        int shown = 0;
+        for (int i = 0; i < 25; i++) if (!playerInfo.ShownEntry(i).IsEmpty) shown++;
+        string first = string.Join(",", order.Take(4).Select(i => playerInfo.ShownEntry(i).SkillId));
+        return (ok, $"skill set {set?.Id.ToString() ?? "none"} ({(set == null ? "-" : string.Join(",", set.SkillIds))}) locked {keys.Locked} "
+            + $"mode 7 sent {keyTableUnlocks} slots 4-7 {first} shown {shown}");
+    }
+
+    int keyTableUnlocks;      // KeyTable mode 7 sends of the quick slots (the skill set's release)
+
     /// <summary>Harness: closes the level-up guide window, which opens over the field after a warp and hides the shots.</summary>
     public bool ClearShotScripted()
     {

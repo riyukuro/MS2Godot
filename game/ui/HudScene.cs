@@ -3180,6 +3180,7 @@ public partial class HudScene : Node, IUiStageHost
             TooltipPlayer = () => { QuickSlotWorld(); return SkillTooltipPlayer(slotJobs); },
             Send = packet =>
             {
+                if (packet is Ms2.Net.Packets.KeyTableUnlockRequest) keyTableUnlocks++;
                 if (Ms2Godot.Net.LiveSession.Instance is { } s) s.SendKeyTable(packet);
                 else GD.Print($"quick slot: offline, not sent: {packet}");
             },
