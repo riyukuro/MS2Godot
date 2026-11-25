@@ -25,7 +25,7 @@ public class RcNpcRemoteReaderTests
     // (no KMS2 mode 3 recording exists in the corpus; KMS2 0xE8 only records mode 0)
     static readonly byte[] Gms2NpcNoticeMode3Small = RcLane.Bytes(
         "0302D0070000" + "0000" + "0E00" + "437574696E5F4D61736F6E5F3031" + "0000" + "0000" + "0000");
-    // gms2 recording: Port 57951.msb packet 10259, 134 bytes (0xEA, text masked with '*' by extract.py):
+    // gms2 recording: 0xEA mode 3, packet 10259, 134 bytes (text masked with '*' by extract.py):
     // mode 3, kind 0, npc 3000, empty name, Turned_Yuperia_normal, sound ko/Npc/00002215, empty script, 41-char text
     static readonly byte[] Gms2NpcNoticeMode3WithSoundAndText = RcLane.Hex(
         "0300B80B0000000015005475726E65645F597570657269615F6E6F726D616C0F006B6F2F4E70632F3030303032323135",
