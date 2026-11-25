@@ -3143,6 +3143,10 @@ public partial class HudScene : Node, IUiStageHost
         unwatchLivePlayer += () => live.FieldProperties.UserTagSymbolApplied -= Sync;
         if (model != hudModel) return;
         SetOwnRide(model, live.OwnRidee);               // the own pc's ride as the HUD loads (MyPC::IsRiding)
+        // BuildHud makes the HUD model twice, so this runs twice: one subscription, as MyPC::vfunc_120 / vfunc_121 send
+        // the riding status event once per ride (mypc.cpp:3317, :3365). A second event while riding would unload the mount
+        // portrait's render target and, the slot mode unchanged, not load it again (uimainplayerinfo.cpp:804-835).
+        live.OwnRideChanged -= OnOwnRide;
         live.OwnRideChanged += OnOwnRide;
         unwatchLivePlayer += () => live.OwnRideChanged -= OnOwnRide;
     }

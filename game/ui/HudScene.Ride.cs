@@ -88,11 +88,23 @@ public partial class HudScene
             for (int i = 3; i < bytes.Length; i += 4)
                 if (bytes[i] > 25) covered++;
         }
+        // the movie's side: the RideeInfo clip's m_renderTarget holds the Loader with the image, and the view draws it
+        var target = playerInfo?.Host?.FindNamed("m_renderTarget") as Ms2.Avm2.Flash.AsContainer;
+        int loaded = (target?.Children.FirstOrDefault() as Ms2.Avm2.Flash.AsLoader)?.Children.Count ?? 0;
+        int drawn = rideeAvatar?.Image is { } tex && playerInfoMovie != null ? Drawn(playerInfoMovie, tex.GetRid()) : 0;
+        static int Drawn(Godot.Node n, Godot.Rid rid)
+        {
+            int c = n is Godot.Sprite2D sp && sp.Texture != null && sp.Texture.GetRid() == rid && sp.IsVisibleInTree() ? 1 : 0;
+            foreach (var k in n.GetChildren()) c += Drawn(k, rid);
+            return c;
+        }
         string view = rideeAvatar == null ? "no view"
             : $"view {rideeAvatar.Row.Id} {w}x{h} eye {rideeAvatar.CameraAt.Eye} at {rideeAvatar.CameraAt.Target}, {covered} pixels covered";
+        view += $"; render target {(target == null ? "none" : $"{target.Children.Count} child, image {loaded}")}, drawn {drawn}";
         bool ok = expected
             ? row != null && row.Id == p.Ridee.Id && rideeAvatar != null && rideeAvatar.Row.Id == row.Id && w == 100 && h == 100 && covered > 0
-            : row == null && rideeAvatar == null;
+              && loaded == 1 && drawn == 1
+            : row == null && rideeAvatar == null && (target == null || target.Children.Count == 0);
         return (ok, $"portrait {(expected ? "expected" : "not expected")}: ridee {row?.Id.ToString() ?? "none"}, {view}");
     }
 
