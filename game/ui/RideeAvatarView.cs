@@ -12,8 +12,8 @@ namespace Ms2Godot.Ui;
 /// <item>Model (AvatarRidee, avatarpc.cpp:1282-1378): the row's model for a rider of gender 1 at the row's scale
 /// (<see cref="Mount.Load"/>, the field mount's build), at the origin, playing Idle_A, lit by its own pair dimmed by 0.9
 /// (<see cref="PortraitView.OwnLights"/>). UIAvatarRidee::vfunc_4 turns it to the preview angle of avatar kind 0
-/// (<see cref="RideeAvatar.PreviewAngle"/>: 270 degrees about z, UIAvatarBase::vfunc_19 / vfunc_20's FromEulerAnglesXYZ on
-/// the model root).</item>
+/// (<see cref="RideeAvatar.PreviewAngle"/>: 270 degrees clockwise about z, UIAvatarBase::vfunc_19 / vfunc_20's
+/// FromEulerAnglesXYZ on the model root), which faces it to +x, the side every row's faceCamera eye is on.</item>
 /// <item>Camera (UIModelView::vfunc_15 and vfunc_13): the frustum <see cref="RideeAvatar.Frustum"/> at near 10, far 100000;
 /// the eye at the row's faceCamera cameraPosition looking at its lookAtPosition, up z, both in the model's space.</item>
 /// </list>
@@ -63,8 +63,10 @@ public sealed partial class RideeAvatarView : Node
             v.AddChild(v.view);
             var mount = v.mount = Mount.Load(packs, ModelBuilder.Ui(packs, nifXml), row.Id, 1);
             var model = mount.Visual;
-            // UIAvatarBase::vfunc_20: the root's rotation FromEulerAnglesXYZ(0, 0, angle); the client's z is Godot's Y
-            model.Basis = new Basis(Vector3.Up, Mathf.DegToRad(RideeAvatar.PreviewAngle(RideeAvatar.PreviewKind))).Scaled(model.Scale);
+            // UIAvatarBase::vfunc_20: the root's rotation FromEulerAnglesXYZ(0, 0, angle); the client's z is Godot's Y, and
+            // Gamebryo's MakeZRotation turns clockwise (Foundation/efd/Win32/Matrix3_Win32.cpp:76-107), so 270 turns the
+            // model's front (client -y) to +x, where every row's faceCamera eye is
+            model.Basis = new Basis(Vector3.Up, -Mathf.DegToRad(RideeAvatar.PreviewAngle(RideeAvatar.PreviewKind))).Scaled(model.Scale);
             v.view.AddChild(model);
             PortraitView.OwnLights(model);
             var (_, halfH) = RideeAvatar.Frustum(size.X, size.Y);

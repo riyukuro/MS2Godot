@@ -248,7 +248,8 @@ public class RidingUiTests
     /// <summary>
     /// Every riding row of a data set with useRidingUI (the rows whose ride builds a UIAvatarRidee): its &lt;faceCamera&gt;
     /// gives three lookAtPosition and three cameraPosition values (RideeData::FaceCamera, FUN_140783b00,
-    /// unit_140781d80_ridingtable.cpp:506-527) at two different points, and its kfm for gender 1 is in the model packs
+    /// unit_140781d80_ridingtable.cpp:506-527) at two different points, the eye on the +x side of the target (where the
+    /// preview angle's clockwise 270 degrees turns the model's front), and its kfm for gender 1 is in the model packs
     /// (AvatarRidee's "urn:gamebryo-animation:" + GetKfmName(1)).
     /// </summary>
     [TestCase("MS2_DATA")]
@@ -275,6 +276,7 @@ public class RidingUiTests
             var r = d.UiRow;
             if (!hasFace) bad.Add($"{id}: no faceCamera");
             else if (r.FaceLookAt == r.FaceCamera) bad.Add($"{id}: eye {r.FaceCamera} at its target");
+            else if (r.FaceCamera.X <= r.FaceLookAt.X) bad.Add($"{id}: eye {r.FaceCamera} not on the +x side of {r.FaceLookAt}");
             var kfm = d.KfmFor(1);
             if (string.IsNullOrEmpty(kfm)) bad.Add($"{id}: no kfm");
             else if (!archives.Any(a => ps.FindByFileName(a, kfm.ToLowerInvariant() + ".kfm") != null)) bad.Add($"{id}: kfm {kfm} not in the model packs");
