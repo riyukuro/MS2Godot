@@ -126,6 +126,10 @@ public partial class LiveSession
         // the liftable target boxes loop (worldservice_1.cpp:6788-6801)
         LiftTargets.AttachField(same ? entities : null);
         TaxiAction.Attach(same ? entities : null);
+        UgcBanners.Clear();                     // WorldService::FUN_141bd0420(0xc7f9dd65), the mouse's ugc banner pick
+        if (same)
+            foreach (var e in entities)
+                if (e.HasMixin(Ms2.Ui.MouseInteract.UgcBannerMixin)) UgcBanners.Add(e.Position);
         AutoFindStationsAttached();
         GD.Print($"live: interact objects attached to xblock {xblock}{(same ? "" : $" (different xblock: no entities)")}: {InteractObjects.All.Count} registered, {Breakables.Count} breakables, {Liftables.Count} lifts, {LiftTargets.Count} lift targets, {Vibrates.Count} vibrate objects");
     }
@@ -503,6 +507,13 @@ public partial class LiveSession
         rideSummon?.Tick(playerMoved);   // StateSummon::vfunc_8, the body's move standing in for the move input
         recallCast?.Tick(playerMoved);   // StateRecall::vfunc_8, likewise
     }
+
+    /// <summary>The field's ugc banner and prop entities (the MS2UccProp model) by position, MS2 axes.</summary>
+    public readonly List<Vec3> UgcBanners = new();
+    /// <summary>The last interact poll gave the key to the interact npc action (0x11).</summary>
+    public bool InteractNpcPolled => npcPolled;
+    /// <summary>MyPC::GetCurStateId as <see cref="OwnCurStateId"/> knows it, with the own skill state.</summary>
+    public int OwnCurStateIdNow => OwnCurStateId(OwnSkillStateRunsOf?.Invoke() ?? false);
 
     /// <summary>Action key press on the polled interact object: only the polled action runs, and its own state gate refuses it
     /// while the other interaction's cast runs (that cast is not cancelled).</summary>

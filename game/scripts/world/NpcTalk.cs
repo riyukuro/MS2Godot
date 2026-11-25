@@ -363,6 +363,13 @@ public sealed partial class NpcTalk : Node
         return true;
     }
 
+    /// <summary>CMouseInteractTalkCancel::vfunc_2's test (mouseinteract.cpp:607-620): the talk's sub scene (0x6200031) shows
+    /// and its UITalkCinematic (0x4e40) is loaded.</summary>
+    public bool CinematicLoaded => window != null && side != null && side.IsLoaded;
+
+    /// <summary>CMouseInteractTalkCancel::vfunc_4 (mouseinteract.cpp:628-632): UITalkManager::SendNpcTalkMode0.</summary>
+    public void SendEnd() => side?.EndTalk();
+
     /// <summary>The script the server opens a plain talk with (see the class summary).</summary>
     static NpcScriptTable.Script FirstScript(NpcScriptTable.Npc n)
     {

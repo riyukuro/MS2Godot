@@ -19,6 +19,8 @@ public partial class LiveSession
     /// when closed, calls SetTaxiMode(1) and adds guide trigger 0x11. Unset: the key does nothing.</summary>
     public Action TaxiKey;
     bool taxiPolled;
+    /// <summary>The last interact poll gave the key to the taxi action (m_nCur 8).</summary>
+    public bool TaxiPolled => taxiPolled;
     Vec3 taxiAt;
     Func<bool> taxiPoll;
 
