@@ -1031,8 +1031,10 @@ public partial class HudScene
             float at = player.Anims?.TextKey(ownSequence, key) ?? -1;
             if (!Ms2.Net.Replay.SkillTagEffects.Plays(at, ownLoop.InLoop, ownCast.QueuedCharge, ownLoop.Loop, ownLoopStartKey,
                     ownLoopEndKey, ownChargingAttackKey)) continue;
-            ownTagIds.Set(key, Net.LiveSession.Instance?.SpawnKeptEffect(path, player.Visual,
-                Ms2.Audio.SoundMusicEffectState.CasterMyPc) ?? 0);
+            int th = Net.LiveSession.Instance?.SpawnKeptEffect(path, player.Visual,
+                Ms2.Audio.SoundMusicEffectState.CasterMyPc) ?? 0;
+            ownTagIds.Set(key, th);
+            if (OwnFxTrace) { GD.Print($"fx: own tag {key} {path} -> {th} at {Time.GetTicksMsec()}"); OwnEffectKept?.Invoke(path); }
         }
     }
 
