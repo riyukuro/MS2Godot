@@ -73,6 +73,11 @@ public class EffectCasterKindSiteTests
         new("net/NpcLayer.cs", "FieldAudio.Instance?.PlayHitSound(material,", "relation", "the attacker's relation (NpcLayer.PlayHitSound)"),
         new("net/NpcLayer.cs", "Combat?.PlayEffect(regen, i.Root.GlobalPosition,", "CasterSystem",
             "0: the npc data's regenEffect, inserted at the npc's place with no actor (StateSpawn, statespawn.cpp:114-127)"),
+        // buffs' motion effects: the owner's node, the caster's kind
+        new("net/RemoteLayer.Buffs.cs", "int h = layer.SpawnKeptEffect(effect, actor, KindOf(casterId))", "KindOf(casterId)",
+            "the caster's GetObjectKind (WorldService::FUN_141bd19d0, 0 for no object): a buff's keep or overlap keep effect kept on its owner (AdditionalCli::Update, additionalcli_1.cpp)"),
+        new("net/RemoteLayer.Buffs.cs", "int inserted = layer.SpawnKeptEffect(effect, actor, KindOf(casterId))", "KindOf(casterId)",
+            "the caster's GetObjectKind (FUN_141bd19d0, 0 for no object): a buff's start, stop, invoke or overlap start / end effect inserted on its owner (additionalcli_1.cpp)"),
         // tombs and field markers
         new("net/RemoteLayer.cs", "FieldAudio.Instance?.PlayHitSound(1, soundMaterial, 1, at,", "soundMaterial, 1, at",
             "1: FUN_140ade030(1, 1) for the local player's tag hit on a tomb or marker (breakableobject.cpp:233, worldservice_1.cpp:9367)"),

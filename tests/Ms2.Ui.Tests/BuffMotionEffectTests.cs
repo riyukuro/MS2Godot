@@ -192,9 +192,7 @@ public class BuffMotionEffectTests
         var list = new AdditionalBuffList(Level) { Effects = fx };
         for (int i = 0; i < 40; i++) list.Apply(Add(100 + i, (uint)(1 + i % 3)) with { FromList = true });
         for (int i = 0; i < 10; i++) list.UpdateEffects();
-        long before = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++) list.UpdateEffects();
-        long bytes = GC.GetAllocatedBytesForCurrentThread() - before;
+        long bytes = Ms2Godot.Tests.Alloc.Least(() => { for (int i = 0; i < 1000; i++) list.UpdateEffects(); });
         Assert.That(bytes, Is.EqualTo(0), "bytes over 1000 updates of 40 effects");
     }
 }

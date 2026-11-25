@@ -104,9 +104,9 @@ public partial class RemoteLayer
         {
             var actor = layer.BuffActor(ownerId);
             if (actor == null) return;
-            int h = layer.SpawnKeptEffect(effect, actor, KindOf(casterId));
-            if (h != 0) Trace(effect, ownerId, -1);
-            layer.ReleaseKeptEffect(h);
+            int inserted = layer.SpawnKeptEffect(effect, actor, KindOf(casterId));
+            if (inserted != 0) Trace(effect, ownerId, -1);
+            layer.ReleaseKeptEffect(inserted);
         }
 
         public void Stop(int id)
