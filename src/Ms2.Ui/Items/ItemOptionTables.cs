@@ -22,7 +22,11 @@ public sealed class ItemOptionTables
 
     /// <summary>ItemOptionRandom (itemoptiondata_2.cpp:1737): "pickCount", "isRarePickOne" and the values. A GMS2 option
     /// (<see cref="Gms2Randoms"/>) gives its pick count per grade in <paramref name="PickByGrade"/> instead.</summary>
-    sealed record Random(int PickCount, bool RarePickOne, List<RandomValue> Values, Dictionary<int, int> PickByGrade = null);
+    sealed record Random(int PickCount, bool RarePickOne, List<RandomValue> Values, Dictionary<int, int> PickByGrade = null)
+    {
+        /// <summary>GMS2 only: each grade's &lt;option multiply_factor&gt; (1 when the row has none) and values.</summary>
+        public Dictionary<int, (double Factor, List<RandomValue> Values)> Grades;
+    }
 
     /// <summary>ItemOptionVariationData (itemoptiondata_2.cpp:1633): "highStat" and the &lt;v stat&gt; values in file order.</summary>
     sealed record Variation(int HighStat, List<int> Stats);
@@ -205,9 +209,9 @@ public sealed class ItemOptionTables
     /// &lt;option code grade optionNumPick="min,max"&gt; per code and grade with the values as &lt;name&gt;_value_base /
     /// &lt;name&gt;_rate_base attributes (<see cref="Gms2Values"/>). The pick count of a grade is optionNumPick's max (min and max
     /// are equal in every row of the data). No row carries a statID, so these values link no variation row (RandomOptionRange
-    /// gives (0, 0) and IsHighRoll false). INFERRED from the data and the Maple2 server's reader of the same files (its
-    /// ItemOptionParser reads these files by name; the GMS2 client's reader is not in the restored source). STILL-OPEN: the
-    /// GMS2 variation tables (table/itemoptionvariation*.xml, by option name) are not read.
+    /// gives the per-slot table's range, <see cref="Gms2Range"/>, and IsHighRoll false). INFERRED from the data and the Maple2
+    /// server's reader of the same files (its ItemOptionParser reads these files by name; the GMS2 client's reader is not in
+    /// the restored source).
     /// </summary>
     Dictionary<int, Random> Gms2Randoms(Dictionary<int, Random> into)
     {
@@ -216,10 +220,14 @@ public sealed class ItemOptionTables
             if (!FeatureOn(e)) continue;
             int code = Int(e, "code");
             if (code == 0) continue;
+            var values = Gms2Values(e).Select(v => new RandomValue(v.Stat, v.Special, 0)).ToList();
             if (!into.TryGetValue(code, out var r))
-                into[code] = r = new Random(0, false, Gms2Values(e).Select(v => new RandomValue(v.Stat, v.Special, 0)).ToList(), new());
+                into[code] = r = new Random(0, false, values, new()) { Grades = new() };
             var pick = ((string)e.Attribute("optionNumPick") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             r.PickByGrade.TryAdd(Int(e, "grade"), pick.Length == 0 ? 0 : ItemData.Atoi(pick[^1]));
+            double factor = double.TryParse((string)e.Attribute("multiply_factor"), System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out double f) && f > 0 ? f : 1;
+            r.Grades.TryAdd(Int(e, "grade"), (factor, values));
         }
         return into;
     }
@@ -320,15 +328,79 @@ public sealed class ItemOptionTables
 
     /// <summary>GetRandomOptionRange / GetRandomSpecialOptionRange (itemoptiondata_3.cpp:575, :590): the variation range of
     /// the stat (or, with <paramref name="stat"/> -1, the special) in the item's random option at
-    /// <paramref name="rank"/>; (0, 0) when none.</summary>
+    /// <paramref name="rank"/>; (0, 0) when none. A GMS2 option has no statID: see <see cref="Gms2Range"/>.</summary>
     public (int First, int Last) RandomOptionRange(ItemData d, int rank, int stat, int special)
     {
         if (d == null || !Randoms().TryGetValue(RandomCode(d), out var r)) return (0, 0);
+        if (r.Grades != null) return Gms2Range(d, r, rank, stat, special);
         return VariationRange(StatId(r, stat, special));
     }
 
+    /// <summary>
+    /// The GMS2 range of a random option value: the GMS2 files have no statID and no variation row by id. An item whose
+    /// &lt;option randomMakeType&gt; is 1 reads table/itemoptionvariation_&lt;x&gt;.xml of its slots (<see cref="ItemData.VariationTable"/>):
+    /// the row named &lt;option name&gt;Value (Rate for a rate stat or special), its idx0-idx9 below optionLevelFactor 70 and
+    /// idx10-idx17 from 70, times the grade's multiply_factor (a rate in thousandths, as <see cref="Gms2Values"/>); the range is
+    /// the lowest and the highest of the band. INFERRED (the GMS2 exe is packed, so there is no client cite): the table choice,
+    /// the bands and the factor are the Maple2 server reference's (ItemOptionRangeParser reads idx2-idx17 and RandomStats rolls
+    /// its index 0-7 below level factor 70 and 8-15 from it; the highest of idx0-9 is the highest of idx2-9 in every row of the
+    /// four files), and for 15000001 the str range is the KMS row 1010153's (8 to 18).
+    /// Left out, (0, 0): an item with another randomMakeType (0 is the older table/itemoptionvariation.xml shape, by value band),
+    /// a flat value whose factor is not whole (1.8 in 110 rows: the server rounds the factor up, which no data shows), and an
+    /// option the slots' table has no row for. The server reference's reroll skips such a stat too (RandomStats.RollNewBonusValues).
+    /// The GMS2 data has two kinds of these, which Gms2ItemFileTests.EveryGms2RandomOptionValueHasARange pins:
+    /// - sgi (sgi_rate_base with sgi_target 4 in every row): no table has sgiRate, only sgi_BossRate. The server reference reads
+    ///   that row as sgi and says it ignores the target. Nothing in the client data ties target 4 to "Boss".
+    /// - The pet table has no str, dex, int, luk or hp_rgp rows.
+    /// </summary>
+    (int First, int Last) Gms2Range(ItemData d, Random r, int rank, int stat, int special)
+    {
+        if (d.RandomMakeType != 1 || !r.Grades.TryGetValue(rank, out var grade)) return (0, 0);
+        if (!grade.Values.Any(v => stat != -1 ? v.Stat == stat : v.Special == special)) return (0, 0);
+        bool rate = stat != -1 ? IsStatRate(stat) : IsSpecialRate(special);
+        if (!rate && grade.Factor % 1 != 0) return (0, 0);
+        if (Gms2VariationName(stat, special) is not { } name || !Gms2Variations(d.VariationTable).TryGetValue(name, out var idx)) return (0, 0);
+        int from = d.OptionLevelFactor >= 70 ? 10 : 0, to = d.OptionLevelFactor >= 70 ? 17 : 9;
+        int Scaled(double v) => (int)Math.Round(v * grade.Factor * (rate ? 1000 : 1), MidpointRounding.AwayFromZero);
+        var band = Enumerable.Range(from, to - from + 1).Select(i => idx[i]).ToList();
+        return (Scaled(band.Min()), Scaled(band.Max()));
+    }
+
+    /// <summary>The GMS2 variation row name of a stat (or, with <paramref name="stat"/> -1, a special): its option name and Value,
+    /// or Rate for a rate; null without a definition.</summary>
+    internal string Gms2VariationName(int stat, int special)
+    {
+        var def = stat != -1 ? ((uint)stat < 0x23 ? Stats()[stat] : null) : ((uint)special < 0xcf ? Specials()[special] : null);
+        if (def == null || string.IsNullOrEmpty(def.Name)) return null;
+        return def.Name + ((stat != -1 ? IsStatRate(stat) : IsSpecialRate(special)) ? "Rate" : "Value");
+    }
+
+    /// <summary>The GMS2 variation table <paramref name="table"/> has a row named <paramref name="name"/> (any case).</summary>
+    internal bool HasGms2Variation(string table, string name) => name != null && Gms2Variations(table).ContainsKey(name);
+
+    /// <summary>table/itemoptionvariation_&lt;table&gt;.xml (GMS2): each &lt;option name idx0..idx17&gt; by name, any case.</summary>
+    Dictionary<string, double[]> Gms2Variations(string table)
+    {
+        lock (gms2Variations)
+        {
+            if (gms2Variations.TryGetValue(table ?? "", out var rows)) return rows;
+            rows = new(StringComparer.OrdinalIgnoreCase);
+            foreach (var e in Root($"table/itemoptionvariation_{table}.xml")?.Elements("option") ?? Enumerable.Empty<XElement>())
+            {
+                var v = new double[18];
+                for (int i = 0; i < 18; i++)
+                    double.TryParse((string)e.Attribute($"idx{i}"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out v[i]);
+                rows.TryAdd((string)e.Attribute("name") ?? "", v);
+            }
+            return gms2Variations[table ?? ""] = rows;
+        }
+    }
+
+    readonly Dictionary<string, Dictionary<string, double[]>> gms2Variations = new();
+
     /// <summary>IsHighRollValue / IsHighRollSpecialValue (itemoptiondata_3.cpp:606, :631): the value is in the top band of
-    /// its variation row; the item must be level 50 or more.</summary>
+    /// its variation row; the item must be level 50 or more. Always false on GMS2 data: the threshold is the row's highStat,
+    /// and no GMS2 variation file (table/itemoptionvariation_&lt;x&gt;.xml) has one, nor a statID to find a row by.</summary>
     public bool IsHighRoll(ItemData d, int stat, int special, int value)
     {
         if (d == null || (ushort)d.LevelLimit < 50) return false;

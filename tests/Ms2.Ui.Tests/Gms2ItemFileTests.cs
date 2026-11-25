@@ -177,4 +177,86 @@ public class Gms2ItemFileTests
         Assert.That(lists, Is.GreaterThan(30000));
         Assert.That(custom, Is.GreaterThan(1000));
     }
+    /// <summary>
+    /// The GMS2 random option range (ItemOptionTables.Gms2Range): 15000001 (a level 10 weapon, randomMakeType 1, grade 2
+    /// multiply_factor 2) gives str idx0-idx9 of strValue in itemoptionvariation_weapon.xml (4 .. 9) times 2, and
+    /// finalAdditionalDamage idx0-idx9 of finalAdditionalDamageRate (0.01 .. 0.015) times 2 in thousandths.
+    /// </summary>
+    [Test]
+    public void TheGms2RangeIsTheSlotTablesBandTimesTheFactor()
+    {
+        var t = Gms2();
+        var d = t.Items.Get(15000001);
+        Assert.That((d.RandomMakeType, d.OptionLevelFactor, d.VariationTable), Is.EqualTo((1, 10, "weapon")));
+        Assert.That(t.ItemOptions.RandomOptionRange(d, 2, 0, 0), Is.EqualTo((8, 18)));
+        Assert.That(t.ItemOptions.RandomOptionRange(d, 2, -1, 7), Is.EqualTo((20, 30)));
+        Assert.That(t.ItemOptions.IsHighRoll(d, 0, 0, 16), Is.False, "no GMS2 variation file has a highStat");
+    }
+
+    /// <summary>
+    /// Every value of every grade of every GMS2 item's random option: an item with randomMakeType 1 gets a range from its
+    /// slots' table with first &lt;= last, except a flat value whose grade's multiply_factor is not whole (left out); another
+    /// make type gets none.
+    /// </summary>
+    [Test]
+    public void EveryGms2RandomOptionValueHasARange()
+    {
+        var t = Gms2();
+        // the rows the reader keeps: feature on, the first of each code and grade (files in name order)
+        var rows = new Dictionary<int, Dictionary<int, XElement>>();
+        foreach (var e in gms2Packs.List("Xml").Where(n => n.StartsWith("itemoption/option/random/", StringComparison.Ordinal)
+                     && n.EndsWith(".xml", StringComparison.Ordinal)).OrderBy(n => n, StringComparer.Ordinal))
+            foreach (var o in PackXmlRoot(e).Elements("option"))
+            {
+                string feature = (string)o.Attribute("feature") ?? "";
+                if (feature.Length != 0 && !LobbyFeatures.IsEnabledByName(gms2Packs, feature)) continue;
+                int code = ItemData.Atoi((string)o.Attribute("code") ?? "0");
+                if (!rows.TryGetValue(code, out var l)) rows[code] = l = new();
+                l.TryAdd(ItemData.Atoi((string)o.Attribute("grade") ?? "0"), o);
+            }
+        int items = 0, values = 0, ranged = 0, fractional = 0, otherMake = 0, noRow = 0;
+        var wrong = new List<string>();
+        var missing = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var (id, _) in ItemDataTable.PerItemIndex(gms2Packs.List("Xml")))
+        {
+            var d = t.Items.Get(id);
+            if (d == null || d.RandomId == 0 || !rows.TryGetValue(d.RandomId, out var opts)) continue;
+            items++;
+            foreach (var (grade, o) in opts)
+            {
+                double factor = double.TryParse((string)o.Attribute("multiply_factor"), System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out double f) && f > 0 ? f : 1;
+                foreach (var (stat, special, _) in t.ItemOptions.Gms2Values(o))
+                {
+                    values++;
+                    var range = t.ItemOptions.RandomOptionRange(d, grade, stat, special);
+                    bool rate = stat != -1 ? t.ItemOptions.IsStatRate(stat) : t.ItemOptions.IsSpecialRate(special);
+                    if (d.RandomMakeType != 1) { otherMake++; if (range != (0, 0)) wrong.Add($"{id} make {d.RandomMakeType} has {range}"); continue; }
+                    if (!rate && factor % 1 != 0) { fractional++; if (range != (0, 0)) wrong.Add($"{id} factor {factor} has {range}"); continue; }
+                    string name = t.ItemOptions.Gms2VariationName(stat, special);
+                    if (!t.ItemOptions.HasGms2Variation(d.VariationTable, name))
+                    {
+                        noRow++;
+                        missing.Add($"{d.VariationTable}:{name ?? $"stat {stat} special {special}"}");
+                        if (range != (0, 0)) wrong.Add($"{id} {name} has no row but {range}");
+                        continue;
+                    }
+                    if (range == (0, 0) || range.First > range.Last) { wrong.Add($"{id} grade {grade} stat {stat} special {special} ({d.VariationTable}): {range}"); continue; }
+                    ranged++;
+                }
+            }
+        }
+        TestContext.Out.WriteLine($"{items} items with a random option, {values} values: {ranged} ranged, {fractional} flat at a factor that is not whole, {otherMake} of another make type, {noRow} with no row in their table");
+        TestContext.Out.WriteLine("no row: " + string.Join(", ", missing));
+        foreach (var w in wrong.Take(30)) TestContext.Out.WriteLine(w);
+        Assert.That(items, Is.GreaterThan(8000));
+        Assert.That(ranged, Is.GreaterThan(values / 2));
+        Assert.That(wrong, Is.Empty);
+        // The only options with no row in their table: sgi everywhere (only sgi_BossRate exists) and the pet table's missing
+        // primary stats (ItemOptionTables.Gms2Range gives the causes). A new gap, or a filled one, fails here.
+        Assert.That(missing, Is.EquivalentTo(new[] { "acc:sgiRate", "armor:sgiRate", "weapon:sgiRate",
+            "pet:strValue", "pet:dexValue", "pet:intValue", "pet:lukValue", "pet:hp_rgpValue" }));
+    }
+
+    static XElement PackXmlRoot(string entry) => GameStrings.Parse(gms2Packs.Read("Xml", entry)).Root;
 }

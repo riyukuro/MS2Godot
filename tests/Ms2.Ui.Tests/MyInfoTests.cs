@@ -495,26 +495,35 @@ public class MyInfoTests
         weapon.Options.Stat[0][0x1b] = 10; weapon.Options.Stat[0][0x1c] = 20; weapon.Options.Stat[0][0x17] = 5;
         // CAtlMap order: bin key % 17, the newest first in a bin: cap (0x11) and str (0) share bin 0
         weapon.Options.Stat[2][1] = 12; weapon.Options.Stat[2][0] = 18; weapon.Options.Stat[2][0x11] = 8;
-        weapon.Options.Special[2][7] = 26;
+        // the top of finalAdditionalDamage's range: 26 on KMS (row 1010008), 30 on GMS2 (finalAdditionalDamageRate idx9 0.015
+        // of itemoptionvariation_weapon.xml times the grade 2 multiply_factor 2, Gms2ItemFileTests.TheGms2RangeIsTheSlotTablesBandTimesTheFactor)
+        int fadMax = UiDataRows.IsKr(Packs()) ? 26 : 30;
+        weapon.Options.Special[2][7] = fadMax;
         // enchant rates (value / 1000) of the kind 0 values: 0.1 of 5 rounds to 0, 1.0 of 10 is 10
         weapon.Enchant.Options[0x1b] = 1000; weapon.Enchant.Options[0x17] = 100;
         var full = Status(Tip(weapon));
         TestContext.WriteLine("full: " + full.Replace("\n", "\\n"));
         Assert.That(full, Is.EqualTo(
             "<font color='#ffffff'>Basic Attributes\n  • " + V(0x17, 5) + "\n</font>" + space +
-            // str 18 and finalAdditionalDamage 26 are the last value of their variation rows (1010153, 1010008)
+            // str 18 and finalAdditionalDamage fadMax are the last value of their range (KMS rows 1010153, 1010008)
             "<font color='#91a8ff'>Bonus Attributes\n  • " + V(0x11, 8) + "\n  <font color='#d659ff'>• " + V(0, 18) + " (Max)</font>\n" +
-            "  • " + V(1, 12) + "\n  <font color='#d659ff'>• " + Sp(26) + " (Max)</font>\n</font>" + space +
+            "  • " + V(1, 12) + "\n  <font color='#d659ff'>• " + Sp(fadMax) + " (Max)</font>\n</font>" + space +
             "<font color='#ffd200'>Enchantment Effects\n  • " + Ms2.Quest.ClientFormat.Format(t.Common("s_word_stat_increase_near_zero"), S(0x17)) + "\n  • " + V(0x1b, 10) + "\n</font>"));
         // level 10 is below its enchant limit: no gauge
         Assert.That(Tip(weapon).Data.ContainsKey("itemEnchantExpString"), Is.False);
         // the compact block: 15000001 has no socketDataId (the Lua max count, STILL-OPEN), so no member
         Assert.That(Status(Tip(weapon, 0x800)), Is.Null);
 
-        // a skin with socketDataId 1002 (max 2): 2 options less its own stat 0x14, no random option; flag 0x4000 hides the sockets
-        var skin = new EquipItem { Id = 11300379, Uid = 13, Rarity = 1, Amount = 1 };
+        // a skin with socketDataId 1002 (max 2): 2 options less its own stat 0x14, no random option; flag 0x4000 hides the sockets.
+        // GMS2 has no item 11300379; its CP skin 11300425 has the same socketDataId and no random option.
+        int skinId = UiDataRows.IsKr(Packs()) ? 11300379 : 11300425;
+        var skin = new EquipItem { Id = skinId, Uid = 13, Rarity = 1, Amount = 1 };
         skin.Options.Stat[0][0x14] = 5; skin.Options.Special[0][7] = 10;
-        Assert.That(Status(Tip(skin, 0x800)), Is.EqualTo("<font color='#ffffff'>Random Attributes: 1</font>\n<font color='#ffffff'>+2 Sockets</font>"));
+        // the skin's sockets need feature SkinSocket (0x5e, IsSocketFeatureEnabled :1499): on in this KMS data, off on GMS2
+        // (feature.xml NA 99, above the live level), where GetMaxSocketCount gives 0 and the line is left out
+        string sockets = m.IsFeatureEnabled(0x5e) ? "\n<font color='#ffffff'>+2 Sockets</font>" : "";
+        Assert.That(m.IsFeatureEnabled(0x5e), Is.EqualTo(UiDataRows.IsKr(Packs())));
+        Assert.That(Status(Tip(skin, 0x800)), Is.EqualTo("<font color='#ffffff'>Random Attributes: 1</font>" + sockets));
         Assert.That(Status(Tip(skin, 0x4800)), Is.EqualTo("<font color='#ffffff'>Random Attributes: 1</font>"));
         Assert.That(Status(Tip(skin, 0x10800)), Is.EqualTo("<font color='#ffffff'>Basic Attributes\n  • " + Sp(10) + "\n</font>"),
             "0x10000 takes the option block");
@@ -523,7 +532,9 @@ public class MyInfoTests
         var limit = new EquipItem { Id = 15000001, Uid = 11, Rarity = 2, Amount = 1 };
         limit.Options.Stat[0][0x1c] = 20;
         limit.LimitBreak.Level = 2; limit.LimitBreak.Stat[0x1c] = 500; limit.LimitBreak.Stat[0x17] = 30; limit.LimitBreak.Special[5] = 15;
-        Assert.That(Status(Tip(limit)), Is.EqualTo(t.Common("s_tooltip_itemoption_unlimited")));
+        // (no GMS2 string file has s_tooltip_itemoption_unlimited, so the block formats to nothing there)
+        Assert.That(t.Common("s_tooltip_itemoption_unlimited") == null, Is.EqualTo(!UiDataRows.IsKr(Packs())));
+        Assert.That(Status(Tip(limit)), Is.EqualTo(t.Common("s_tooltip_itemoption_unlimited") ?? ""));
 
         // 15000307 (rank 4) can be enchanted: +3 with 5000 charge, step 5000 (the version 1 table): 1 of 2, 50%
         var gauge = new EquipItem { Id = 15000307, Uid = 12, Rarity = 4, Amount = 1 };

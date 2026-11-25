@@ -131,6 +131,13 @@ public sealed class ItemData
     public int OriginOrItemId => OriginId != 0 ? OriginId : Id;
     /// <summary>ItemAdditionalEffect::Load (itemdatastruct.cpp:1687): the &lt;AdditionalEffect id&gt; list (XmlSplit ",").</summary>
     public readonly List<string> AdditionalEffectIds = new();
+    /// <summary>
+    /// GMS2 item files only: &lt;option randomMakeType optionLevelFactor&gt; (-1 and 0 where the file has none, as every KMS file),
+    /// and, where it has a randomMakeType, the variation table of the item's slots (<see cref="VariationTableOf"/>; else empty). Read for the random option's range
+    /// (<see cref="ItemOptionTables.RandomOptionRange"/>).
+    /// </summary>
+    public int RandomMakeType = -1, OptionLevelFactor;
+    public string VariationTable = "";
     /// <summary>The name of the first &lt;slots&gt;/&lt;slot&gt; of the item itself (GMS2 data names the model slot in the item file): HR, FD, CP, or empty.</summary>
     public string FirstSlot = "";
     /// <summary>The item's own &lt;MusicScore isCustomNote&gt; (GMS2 item files; KMS keeps the flag in musicscore.xml).</summary>
@@ -230,6 +237,12 @@ public sealed class ItemData
             // reader is not in the restored source.
             if (opt.Attribute("constantID") == null) Int(opt, "constant", ref d.ConstantId);
             if (opt.Attribute("randomID") == null) Int(opt, "random", ref d.RandomId);
+            if (opt.Attribute("randomMakeType") != null)
+            {
+                d.RandomMakeType = Atoi((string)opt.Attribute("randomMakeType"));
+                d.VariationTable = VariationTableOf(env.Element("slots"));
+            }
+            Int(opt, "optionLevelFactor", ref d.OptionLevelFactor);
         }
         if (env.Element("AdditionalEffect") is { } ae)
             d.AdditionalEffectIds.AddRange(((string)ae.Attribute("id") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries));
@@ -458,6 +471,25 @@ public sealed class ItemData
     public bool IsGemstone => Type == 0xd;                     // FUN_14053d840 (:1038)
     public bool IsLapenshard => Type == 0x15;                  // IsLapenshardType (:1050)
     public bool IsPieceItem => Type == 0x1b;                   // :1068
+    /// <summary>
+    /// The GMS2 variation table (table/itemoptionvariation_&lt;x&gt;.xml) of an item's slots: acc for a face, ear, pendant, belt,
+    /// ring or mantle slot, else armor for a cap, coat, glove, shoe or pants slot, else weapon for a hand slot, else pet. INFERRED
+    /// (the GMS2 exe is packed): the order and the sets are the Maple2 server reference's (RandomStats.GetRange, Item.IsAccessory,
+    /// IsArmor, IsWeapon), which reads the same files.
+    /// </summary>
+    internal static string VariationTableOf(XElement slots)
+    {
+        bool acc = false, armor = false, weapon = false;
+        foreach (var e in slots?.Elements("slot") ?? Enumerable.Empty<XElement>())
+            switch ((string)e.Attribute("name"))
+            {
+                case "FH" or "EA" or "PD" or "BE" or "RI" or "MT": acc = true; break;
+                case "CP" or "CL" or "GL" or "SH" or "PA": armor = true; break;
+                case "RH" or "LH" or "OH": weapon = true; break;
+            }
+        return acc ? "acc" : armor ? "armor" : weapon ? "weapon" : "pet";
+    }
+
     /// <summary>
     /// ItemProperty &lt;sell price&gt;, one price per rarity. The GMS2 item files add priceCustom: a rarity whose priceCustom is
     /// above 0 sells at it, else at price. INFERRED from the data: on the 9844 ids both data sets sell, this gives the KMS
