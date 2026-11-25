@@ -36,18 +36,19 @@ public class FieldAddPetRecordedTests
         "2A002A002A002A002A002A002A002A002A002A002A00");
 
     [Test]
-    public void KmsFieldAddPetReadsPrefixAndRegistersOwnerInFieldTracker()
+    public void KmsFieldAddPetReadsToEndAndRegistersOwnerInFieldTracker()
     {
         var r = new ByteReader(KmsFieldAddPet);
         var pet = FieldAddPet.Read(r, ProtocolProfile.Kms2525);
-        // Do not pin Level / SkinId / remaining bytes here: Npcs.cs:57-59 currently reads the KMS2 prefix
-        // without the skin/pet-id split and trailing fields (CSceneStateGame::OnFieldAddPet, scenestategame.cpp:9682-9709).
+        // KMS2 reads the same whole body as GMS2 (CSceneStateGame::OnFieldAddPet, scenestategame.cpp:9682-9709)
+        Assert.That(r.Available, Is.EqualTo(0));
         Assert.That(pet.ObjectId, Is.EqualTo(KmsPetObjectId));
         Assert.That(pet.NpcId, Is.EqualTo(61_100_010));
         Assert.That(pet.Position, Is.EqualTo(new Vector3(-1050f, -1050f, 149f)));
         Assert.That(pet.Rotation, Is.EqualTo(Vector3.Zero));
         Assert.That(pet.Scale, Is.EqualTo(1f));
         Assert.That(pet.OwnerId, Is.EqualTo(KmsOwnerObjectId));
+        Assert.That((pet.SkinId, pet.Level, pet.TamingRank, pet.Name), Is.EqualTo((61_100_010, 1, (short) 5, "")));
 
         var tracker = new FieldTracker();
         tracker.Inbound(new RawPacket(ProtocolProfile.Kms2525.Number(Inbound.FieldAddPet), KmsFieldAddPet));
