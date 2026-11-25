@@ -151,7 +151,7 @@ public sealed partial class LightningEffect : MeshInstance3D
         {
             Vector3 a = G(l[j]), b = G(r[j]);
             Put(2 * j, a); Put(2 * j + 1, b);
-            lo = lo.Min(a).Min(b); up = up.Max(a).Max(b);
+            lo = lo.Min(a).Min(b); up = up.Max(a).Max(b);     // perf-ok: Godot Vector3.Min/Max (componentwise), not LINQ
         }
         // the pairs from n on to the last lay's count (at least one) collapse onto the last left point
         int end = System.Math.Min(LightningPath.MaxRow, System.Math.Max(n + 1, laidRows));
