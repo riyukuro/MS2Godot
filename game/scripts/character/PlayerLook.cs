@@ -39,6 +39,7 @@ public static class PlayerLook
         {
             md = builder.LoadModel($"{dir}/{(gender == 0 ? "m_body.nif" : "f_body.nif")}");
             visual = builder.Build(md, gender == 0 ? "Male" : "Female");
+            EffectAttach.SetDummies(visual, Ms2.Formats.World.EffectDummyTable.Load(packs).Pc(gender), md.RootName);
             anim = visual.GetNode<AnimationPlayer>("Model/AnimationPlayer");
             var lib = anim.GetAnimationLibrary("");
             foreach (var (name, kf) in new[] { ("idle", "idle_a"), ("walk", "walk_a"), ("run", "run_a") })

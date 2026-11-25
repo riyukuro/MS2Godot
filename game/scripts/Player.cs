@@ -197,6 +197,7 @@ public partial class Player : CharacterBody3D
         // PCBase::vfunc_53 (pcbase.cpp:3733): the client steps the PC once per drawn frame with that frame's time, so the
         // body moves in _Process, before the camera (Field, priority 0) and the name tags / bars that read its position
         ProcessPriority = -1;
+        SetMeta(Ms2Godot.Net.EffectAttach.PcMeta, true);    // a PC owner for the effects on it
         MoveProof.Attach(this);
     }
 

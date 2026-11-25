@@ -595,6 +595,8 @@ public sealed class EquipApplier
         }
         string sheathedTarget = SheathedTarget(asset, item.Slot, subtype);
         var dummy = DummyOf(asset, gender, sheathedTarget);
+        // the item's Point01 node (CEquipItem::FindPoint01Node, equipitem.cpp:604-613), where attach type 3 / 4 effect parts hang
+        int pointBone = md.Bones.FindIndex(b => (b.FileName ?? b.Name) == Ms2.Formats.World.EffectAttachRule.WeaponPointNode);
         foreach (var m in md.Meshes)
         {
             string meshName = $"eq{item.Id}_{m.Name}";
@@ -645,7 +647,9 @@ public sealed class EquipApplier
                 var baseLocal = rel is { } r ? r : (selfInv ?? selfFallback) * parentWorld * ModelBuilder.ToGodot(m.Local);
                 mi.Transform = targetLocal * dummy * baseLocal;
                 att.AddChild(mi);
-                weaponHooks?.Add(new WeaponHook(att, mi, bone, targetLocal, baseLocal));
+                Transform3D? point = pointBone >= 0
+                    ? (parentWorld * ModelBuilder.ToGodot(m.Local)).AffineInverse() * ModelBuilder.ToGodot(md.Bones[pointBone].World) : null;
+                weaponHooks?.Add(new WeaponHook(att, mi, bone, targetLocal, baseLocal, point));
             }
             ModelBuilder.Attached(mi, m, skel, b => skel.FindBone(md.Bones[b].FileName ?? md.Bones[b].Name));
             made.Add(mi);
@@ -664,10 +668,12 @@ public sealed class EquipApplier
         public readonly MeshInstance3D Mesh;
         public readonly string SheathedBone;
         public readonly Transform3D SheathedTargetLocal, BaseLocal;
+        /// <summary>The item's Point01 node relative to this mesh; null when the item has none.</summary>
+        public readonly Transform3D? Point01;
 
-        public WeaponHook(BoneAttachment3D att, MeshInstance3D mesh, string sheathedBone, Transform3D sheathedTargetLocal, Transform3D baseLocal)
+        public WeaponHook(BoneAttachment3D att, MeshInstance3D mesh, string sheathedBone, Transform3D sheathedTargetLocal, Transform3D baseLocal, Transform3D? point01)
         {
-            Att = att; Mesh = mesh; SheathedBone = sheathedBone; SheathedTargetLocal = sheathedTargetLocal; BaseLocal = baseLocal;
+            Att = att; Mesh = mesh; SheathedBone = sheathedBone; SheathedTargetLocal = sheathedTargetLocal; BaseLocal = baseLocal; Point01 = point01;
         }
     }
 
@@ -680,7 +686,9 @@ public sealed class EquipApplier
         string SheathedBone,
         string HeldBone,
         Transform3D SheathedTransform,
-        Transform3D HeldTransform);
+        Transform3D HeldTransform,
+        EquipSlot ItemSlot,
+        Transform3D? Point01);
 
     /// <summary>
     /// Precomputes the sheathed and held bone attachments and transforms of a rigid weapon asset:
@@ -734,7 +742,9 @@ public sealed class EquipApplier
                 h.SheathedBone,
                 heldBone,
                 h.Mesh.Transform,
-                heldTargetLocal * heldDummy * h.BaseLocal));
+                heldTargetLocal * heldDummy * h.BaseLocal,
+                item.Slot,
+                h.Point01));
         }
     }
 
@@ -782,6 +792,16 @@ public sealed class EquipApplier
         /// then ""; no set name is read here, so "" stands in.
         /// </summary>
         public string ActivePrefix => WeaponsHeld ? Prefix : "";
+
+        /// <summary>The Point01 node of the weapon worn in <paramref name="slot"/> (FUN_1411e1860 then FindPoint01Node,
+        /// nifeffectparam.cpp:1146-1150): the first of its meshes whose item has one, and the node relative to that mesh.</summary>
+        public bool WeaponPoint(EquipSlot slot, out MeshInstance3D mesh, out Transform3D point)
+        {
+            foreach (var b in bindings)
+                if (b.ItemSlot == slot && b.Point01 is { } p && GodotObject.IsInstanceValid(b.Mesh)) { mesh = b.Mesh; point = p; return true; }
+            mesh = null; point = default;
+            return false;
+        }
 
         /// <summary>
         /// PC::FUN_141659000 (@0x141659000, pc.cpp:2491-2511): recomputes m_nD80 = vfunc_65() &amp;&amp; GetState()-&gt;vfunc_15()

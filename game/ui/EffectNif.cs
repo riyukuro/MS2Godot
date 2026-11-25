@@ -57,6 +57,10 @@ public partial class SeparateNode3D : Node3D
 {
     readonly bool translate, rotate, scale;
 
+    /// <summary>Goes once it holds no child (an effect part's holder ended): the client's SeparateNode is the part's root and
+    /// goes with it.</summary>
+    public bool FreeWhenEmpty;
+
     public SeparateNode3D(bool translate, bool rotate, bool scale)
     {
         this.translate = translate; this.rotate = rotate; this.scale = scale;
@@ -69,7 +73,11 @@ public partial class SeparateNode3D : Node3D
 
     public override void _Ready() => Follow();
 
-    public override void _Process(double delta) => Follow();
+    public override void _Process(double delta)
+    {
+        if (FreeWhenEmpty && GetChildCount() == 0) { QueueFree(); return; }
+        Follow();
+    }
 
     void Follow()
     {

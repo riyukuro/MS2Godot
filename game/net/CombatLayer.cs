@@ -120,11 +120,12 @@ void fragment() {
     /// - type 0 (AttachToOwnerNode, :1044): under the world effect root, at the actor's parent node's world transform taken
     ///   once at the start (<see cref="WorldPlace"/>); it does not follow the actor and plays to its own end after the
     ///   actor is removed;
-    /// - the others (type 1 Node :1079, 2 Mesh :1118, 3/4 weapon): under the actor, so they follow it and go with it at once.
+    /// - the others (type 1 Node :1079, 2 Mesh :1118, 3/4 weapon :1142): on the actor's named bone, worn mesh's parent or
+    ///   weapon's Point01 node, through a SeparateNode for partial update bits (<see cref="EffectAttach"/>), so they follow
+    ///   that node and go with the actor at once; one the client makes no target for is not made.
     /// Sound and light parts play at its place now.
-    /// STILL-OPEN: types 1-4 hang on the actor's root, not on the named node or mesh parent, and their &lt;update&gt; bits
-    /// are not applied (FUN_14154c580, SeparateNode :1158). vfunc_11 (:946) is skipped: on a stop, a type 1 part still
-    /// inside its duration moves to the world root and plays on (unless the param's +0x30 flag is set). onGround is not applied to type 0 parts (EffectNode::UpdateWorldData,
+    /// STILL-OPEN: vfunc_11 (:946) is skipped: on a stop, a type 1 part still inside its duration moves to the world root and
+    /// plays on (unless the param's +0x30 flag is set). onGround is not applied to type 0 parts (EffectNode::UpdateWorldData,
     /// effectservice.cpp:971).
     /// </summary>
     public void PlayEffectOn(string xmlPath, Node3D actor, int casterKind)
@@ -136,6 +137,8 @@ void fragment() {
 
     /// <summary>Effects played on an actor (<see cref="PlayEffectOn"/>).</summary>
     public int EffectsOnActors;
+    /// <summary>Attach type 1-4 nif parts the client makes no target for (<see cref="EffectAttach.Hang"/>), so not made.</summary>
+    public int PartsNotHung;
 
     void Play(string xmlPath, Godot.Vector3 at, Basis rotation, int casterKind, Node3D actor)
     {
@@ -173,29 +176,38 @@ void fragment() {
                 continue;
             }
             if (part.Type != "nif" || string.IsNullOrEmpty(part.FilePath)) { EffectsNotNif++; continue; }
-            bool onActor = actor != null && part.AttachKind != 0;
-            var place = actor == null ? new Transform3D(rotation, at) : onActor ? Transform3D.Identity : WorldPlace(part, actor);
-            var host = onActor ? actor : parent;
+            Transform3D place; Node3D host; bool own = true;
+            if (actor == null) { place = new Transform3D(rotation, at); host = parent; }
+            else if (part.AttachKind == 0) { place = WorldPlace(part, actor); host = parent; }
+            else if (EffectAttach.Hang(part, actor, out var hung))
+            {
+                place = hung.Place; host = hung.Host; own = hung.OwnTransform;
+                if (FxTrace) GD.Print($"fx: attach {part.AttachKind} {part.FilePath} on {hung.On} [{hung.Node}]{(host is Ui.SeparateNode3D ? " separate" : "")} at {Time.GetTicksMsec()}");
+            }
+            else { PartsNotHung++; continue; }
+            if (FxTrace && actor != null)
+                GD.Print($"fx: part {part.AttachKind} {part.FilePath} [{part.ParentNode}] starts at {actor.GlobalTransform.AffineInverse() * (host.GlobalTransform * place).Origin} on the actor");
+            var ownAt = own ? G(part.Translate[0], part.Translate[1], part.Translate[2]) : Godot.Vector3.Zero;
             // CNifEffect::vfunc_3 (nifeffectparam.cpp:757-766): the part's root at its world place, row 1 at the part's
             // viewDistance for the effect's kind; out of view, the part is not made. No caller here sets the target's
             // no-cull flag (m_b30: AdditionalCli's keep effects and the kind 0 area effects only).
             if (eye != null)
             {
-                var spot = EffectView.Client(host.GlobalTransform * place * G(part.Translate[0], part.Translate[1], part.Translate[2]));
+                var spot = EffectView.Client(host.GlobalTransform * place * ownAt);
                 if (Skip.PartOutOfView(part, casterKind, spot, eye)
                     || part.RandomParent >= 0 && Skip.RandomOutOfView(parts[part.RandomParent], casterKind, spot, eye))
                 { PartsOutOfView++; continue; }
             }
-            if (Particles && TryScene(part, place, host)) continue;
+            if (Particles && TryScene(part, place, host, own)) continue;
             var e = Effect(part.FilePath);
             if (e == null) { EffectsNoNif++; MissingEffects.Add(part.FilePath); continue; }
             if (e.Value.particles) { EffectsWithParticles++; ParticleEffects.Add(part.FilePath); }
             if (e.Value.md.Meshes.Count == 0) continue;
             var root = mb.Build(e.Value.md, "Effect");
-            float s = part.Scale <= 0 ? 1 : part.Scale;
+            float s = !own || part.Scale <= 0 ? 1 : part.Scale;
             root.Scale = new Godot.Vector3(s, s, s);
             var holder = new Node3D { Transform = place, Visible = part.StartDelay <= 0 };
-            root.Position = G(part.Translate[0], part.Translate[1], part.Translate[2]);
+            root.Position = ownAt;
             holder.AddChild(root);
             host.AddChild(holder);
             float dur = part.Duration > 0 ? part.Duration : 0.6f;
@@ -305,20 +317,16 @@ void fragment() {
         return w;
     }
 
-    /// <summary>The world transform of the node <paramref name="name"/> under <paramref name="actor"/> (GetObjectByName on its
-    /// scene node: a node, else a skeleton bone), else the actor's own (the fallback to the actor node, :1053).</summary>
-    static Transform3D NodeWorld(Node3D actor, string name)
-    {
-        if (string.IsNullOrEmpty(name)) return actor.GlobalTransform;
-        if (actor.FindChild(name, true, false) is Node3D n) return n.GlobalTransform;
-        foreach (var sk in actor.FindChildren("*", "Skeleton3D", true, false))
-            if (sk is Skeleton3D s && s.FindBone(name) is int b and >= 0) return s.GlobalTransform * s.GetBoneGlobalPose(b);
-        return actor.GlobalTransform;
-    }
+    /// <summary>The world transform (Y up) of the node <paramref name="name"/> under <paramref name="actor"/>'s model
+    /// (GetObjectByName on m_hNode, :1048-1051: a bone or an effect dummy such as Eff_Body_World), else the model root's
+    /// (:1052-1053); the actor's own when it has no model. Those nodes are in the nif's Z-up frame, so each takes
+    /// <see cref="EffectAttach.YUp"/>, as the holder under them does.</summary>
+    static Transform3D NodeWorld(Node3D actor, string name) =>
+        EffectAttach.NodeOf(actor, name) is { } n ? n.GlobalTransform * EffectAttach.YUp : actor.GlobalTransform;
 
     /// <summary>Plays an effect part through the scene runtime (particles and controllers) at <paramref name="place"/> under
     /// <paramref name="host"/>; false when the nif could not be read as a scene.</summary>
-    bool TryScene(EffectPart part, Transform3D place, Node3D host)
+    bool TryScene(EffectPart part, Transform3D place, Node3D host, bool own)
     {
         var sc = Scene(part.FilePath);
         if (sc == null) return false;
@@ -326,7 +334,7 @@ void fragment() {
         var inst = new EffectInstance(sc, mb, dur, (int)(GD.Randi() & 0x7fffffff)) { Transform = place, Delay = part.StartDelay };
         float s = part.Scale <= 0 ? 1 : part.Scale;
         var q = new Godot.Quaternion(Godot.Vector3.Back, Mathf.DegToRad(part.Rotation[2])) * new Godot.Quaternion(Godot.Vector3.Up, Mathf.DegToRad(part.Rotation[1])) * new Godot.Quaternion(Godot.Vector3.Right, Mathf.DegToRad(part.Rotation[0]));
-        inst.FileSpace = new Transform3D(new Basis(q).Scaled(new Godot.Vector3(s, s, s)), new Godot.Vector3(part.Translate[0], part.Translate[1], part.Translate[2]));
+        inst.FileSpace = own ? new Transform3D(new Basis(q).Scaled(new Godot.Vector3(s, s, s)), new Godot.Vector3(part.Translate[0], part.Translate[1], part.Translate[2])) : Transform3D.Identity;
         host.AddChild(inst);
         SceneEffects++; EffectsSpawned++;
         if (sc.Systems.Count > 0) { ParticleSystemsRun += sc.Systems.Count; EffectsWithParticles++; ParticleEffects.Add(part.FilePath); }

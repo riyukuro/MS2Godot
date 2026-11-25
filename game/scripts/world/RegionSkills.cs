@@ -408,15 +408,29 @@ public partial class RegionSkills : Node3D, IRegionSkillEffects
             var local = new Xform(new Vec3(part.Translate[0], part.Translate[1], part.Translate[2]),
                 DummyWorld.EulerXyz(part.Rotation[0], part.Rotation[1], part.Rotation[2]), part.Scale <= 0 ? 1 : part.Scale);
             float duration = part.Loop ? 1e7f : part.Duration;
+            // types 1-4 on an actor: its named bone, worn mesh's parent or weapon's Point01 node (EffectAttach); none: the
+            // client makes no part
+            EffectAttach.Hung hung = default;
+            if (actor != null && part.AttachKind != 0 && !EffectAttach.Hang(part, actor, out hung)) continue;
             var fx = new EffectInstance(sc, builder, duration, seed++) { Name = "RegionSkill_" + seed, Delay = part.StartDelay };
-            fx.FileSpace = ModelBuilder.ToGodot(at.Compose(local));
             if (actor != null && part.AttachKind == 0)
             {
                 // AttachToOwnerNode (nifeffectparam.cpp:1044): in the world at the actor's node, not following it
+                fx.FileSpace = ModelBuilder.ToGodot(at.Compose(local));
                 fx.Transform = GlobalTransform.AffineInverse() * CombatLayer.ActorPlace(part, actor);
                 AddChild(fx);
             }
-            else (actor ?? (Node)this).AddChild(fx);
+            else if (actor != null)
+            {
+                fx.FileSpace = hung.OwnTransform ? ModelBuilder.ToGodot(at.Compose(local)) : Transform3D.Identity;
+                fx.Transform = hung.Place;
+                hung.Host.AddChild(fx);
+            }
+            else
+            {
+                fx.FileSpace = ModelBuilder.ToGodot(at.Compose(local));
+                AddChild(fx);
+            }
             if (keep) nodes.Add(fx);
             if (keep && part.Loop) looping.Add(handle);
             Spawned++;

@@ -228,6 +228,29 @@ public partial class LiveSession
                 Check($"the server put item {id} in the bag ({Has()} of {count})", Has() >= count);
                 continue;
             }
+            if (step.StartsWith("playfx:"))      // playfx:<effect xml>:<frames>[:<frame>/<frame>...[:dx dy]]: the effect played on the own pc as a hit's effectRemain is (RemoteLayer.PlayEffectOnObject), with the own pc's kind (1: no frame-rate drop of its swooshes), shots at the listed frames; with dx dy the pc runs toward its map position plus that offset meanwhile
+            {
+                var c = step[7..].Split(':');
+                int gap = c.Length > 1 ? int.Parse(c[1]) : 120;
+                var shotFrames = c.Length > 2 ? c[2].Split('/').Select(int.Parse).ToList() : new System.Collections.Generic.List<int>();
+                string tag = System.IO.Path.GetFileNameWithoutExtension(c[0]);
+                Vector3? runTo = null;
+                if (c.Length > 3)
+                {
+                    var d = c[3].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    var from = FieldPortals.ToMs2(live.OwnPlayer.GlobalPosition);
+                    runTo = new Vector3((float)from.X + float.Parse(d[0]), (float)from.Z, -((float)from.Y + float.Parse(d[1])));
+                }
+                GD.Print($"live: combat {step}: {(live.remote?.PlayEffectOnObject(c[0], live.remote.Tracker.SelfObjectId, Ms2.Audio.SoundMusicEffectState.CasterMyPc) == true ? "played" : "not played")} at {Time.GetTicksMsec()}");
+                for (int frame = 0; frame < gap; frame++)
+                {
+                    if (runTo is { } to) hud.DriveTowardScripted(to, false);
+                    if (shotFrames.Contains(frame)) Shot($"playfx_{tag}_f{frame}.png");
+                    await frames(1);
+                }
+                if (runTo != null) hud.DriveEnd();
+                continue;
+            }
             if (step.StartsWith("wait:"))      // wait:N: N seconds of frames (a trigger's timed states)
             {
                 await frames(60 * int.Parse(step[5..]));

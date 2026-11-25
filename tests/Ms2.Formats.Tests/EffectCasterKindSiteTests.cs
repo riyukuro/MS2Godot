@@ -106,6 +106,7 @@ public class EffectCasterKindSiteTests
         new("net/LiveSession.Skills.cs", "=> remote?.PlayEffect(effect, at, rotation, casterKind)", "casterKind", PassThrough),
         new("net/LiveSession.Skills.cs", "=> remote?.SpawnKeptEffect(effect, actor, casterKind)", "casterKind", PassThrough),
         new("net/RemoteLayer.Magics.cs", "=> RegionFx?.SpawnOn(effect, actor, casterKind)", "casterKind", PassThrough),
+        new("net/RemoteLayer.Magics.cs", "combat.PlayEffectOn(xmlPath, node, casterKind)", "casterKind", PassThrough),
         new("net/RemoteLayer.cs", "=> combat.PlayEffect(effect, at, yawRadians, casterKind)", "casterKind", PassThrough),
         new("net/RemoteLayer.cs", "=> combat.PlayEffect(effect, at, rotation, casterKind)", "casterKind", PassThrough),
         new("net/CombatLayer.cs", "=> PlayEffect(xmlPath, at, new Basis(", "casterKind", PassThrough),

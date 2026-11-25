@@ -54,6 +54,7 @@ public sealed partial class RemotePc : IRemotePc
     RemotePc(CharacterBody3D body, Node3D visual, AnimationPlayer anim, ActionAnims anims, Mount mount, float gravity, NxController.FaceGrids faces)
     {
         Body = body; Visual = visual; Anim = anim; Anims = anims; Mount = mount; this.gravity = gravity;
+        if (mount == null) body.SetMeta(EffectAttach.PcMeta, true);    // a PC owner for the effects on it (a mount is a Ridee)
         var collision = body.GetNode<CollisionShape3D>("Collision");
         nx = new NxController(body, collision, faces) { ShapeHit = NoteHit };
         States = new RemotePcStates(this, (int)body.GetInstanceId());

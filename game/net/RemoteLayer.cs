@@ -662,6 +662,7 @@ public sealed partial class RemoteLayer : Node3D
         r.Pc.States.WeaponKeyChanged = () => RefreshWeapons(r);
         RefreshWeapons(r);
         var dummies = Ms2.Formats.World.EffectDummyTable.Load(packs).Pc(u.User.Gender);
+        EffectAttach.SetDummies(visual, dummies, md.RootName);
         var model = visual.GetNodeOrNull<Node3D>("Model");
         r.Anchor = () => World.DummyAnchor.Point(dummies, "Eff_UI", model, md.RootName) ?? root.GlobalPosition;
         r.Damage = new Ui.DamageTarget(root, () => World.DummyAnchor.Point(dummies, "Eff_Damage", model, md.RootName) ?? root.GlobalPosition, true);

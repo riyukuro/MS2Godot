@@ -202,6 +202,7 @@ public sealed class NpcLayer
         if (model != null)
         {
             i.Visual = mb.Build(model.Data, row.Kfm);
+            EffectAttach.SetDummies(i.Visual, row.EffectDummies);
             i.Visual.Scale = new Godot.Vector3(row.Scale, row.Scale, row.Scale);
             i.Player = i.Visual.GetNode<AnimationPlayer>("Model/AnimationPlayer");
             // the idle queued after a one-shot (Play) starts at speed 1, not the block's: the client's speed is per sequence, and

@@ -214,9 +214,18 @@ public sealed partial class RemoteLayer
         damageHitEffects.Clear();
     }
 
+    /// <summary>An effect played on an object as a hit's effectRemain is (<see cref="PlayDamageHitEffect"/>); false when the
+    /// object is not here. The live harness's playfx step.</summary>
+    internal bool PlayEffectOnObject(string xmlPath, int objectId, int casterKind)
+    {
+        var node = NodeOf(objectId);
+        if (node == null) return false;
+        combat.PlayEffectOn(xmlPath, node, casterKind);
+        return true;
+    }
+
     /// <summary>One hit effect: on its actor when it has one (Records found that object, so a node is
     /// missing only if the layers disagree; then nothing plays), else at its transform.</summary>
-
     void PlayDamageHitEffect(in DamageHitEffect fx)
     {
         if (fx.ActorId != 0)
