@@ -1631,6 +1631,64 @@ public partial class LiveSession
                 await frames(2);
                 continue;
             }
+            if (step.StartsWith("notice:"))      // notice:<StringCode>:<flags>[:raw]: the GM /notice, or the whole packet through /debug packet
+            {
+                var np = step[7..].Split(':');
+                int code = int.Parse(np[0]);
+                ushort nflags = (ushort)int.Parse(np[1]);
+                bool raw = np.Length > 2 && np[2] == "raw";
+                var nc = hud.Notices;
+                if (nc == null) { Check($"{step}: the notice routing is set up", false); continue; }
+                // the server enum is the GMS2 client's table; the fork sends the KMS id of the same key
+                string nkey = Ms2.Formats.Text.Gms2CommonStringIds.Key(code);
+                int clientId = live.GameProfile.IsGms2 ? code : Enumerable.Range(0, 5000).FirstOrDefault(i => Ms2.Formats.Text.CommonStringIds.Key(i) == nkey);
+                string want = nc.Tables.ReservedWords.ReplaceObjectWords(Ms2.Formats.Text.ArgumentFormat.Format(nc.Tables.Common(nkey ?? ""), Array.Empty<string>()));
+                var route = new List<string>();
+                var (sm, cl, mb, tl) = (nc.ShowMessage, nc.ChatLine, nc.MessageBox, nc.TopLayerNotify);
+                nc.ShowMessage = (t, type, o) => { route.Add($"text {type} {(t == want ? "ok" : "other: " + t)}"); sm?.Invoke(t, type, o); };
+                nc.ChatLine = (t, k) =>
+                {
+                    // the GM command's console reply comes as its own notice line; not part of the route
+                    if (!t.StartsWith("Sent StringCode", StringComparison.Ordinal)) route.Add($"chat 0x{k:x} {(t == want || t.EndsWith(want) ? "ok" : "other: " + t)}");
+                    cl?.Invoke(t, k);
+                };
+                nc.MessageBox = (t, tag) => { route.Add($"box '{tag}' {(t == want ? "ok" : "other: " + t)}"); mb?.Invoke(t, tag); };
+                nc.TopLayerNotify = (t, v) => { route.Add($"top {(t == want ? "ok" : "other: " + t)}"); tl?.Invoke(t, v); };
+                Ms2.Net.Packets.NoticeMessage got = null;
+                Action<Ms2.Net.Packets.NoticeMessage> onN = n => { if (n.Text.Formatted && n.Text.Id == clientId) got ??= n; };
+                live.Notice += onN;
+                bool sentOk = hud.SubmitChatLine(raw ? "/debug packet " + live.NoticeBytes(nflags, clientId, (nflags & 0x10) != 0 ? 3000 : 5000)
+                                                     : $"/notice {code} -f {nflags}");
+                await until(() => got != null, 60 * 5);
+                bool topUp = false;
+                if ((nflags & 0x200) != 0) { await until(() => hud.TopLayerUp, 60 * 3); topUp = hud.TopLayerUp; }
+                await frames(20);
+                Shot($"notice-{code}-{nflags:x}{(raw ? "-raw" : "")}.png");
+                live.Notice -= onN;
+                (nc.ShowMessage, nc.ChatLine, nc.MessageBox, nc.TopLayerNotify) = (sm, cl, mb, tl);
+                GD.Print($"live: combat {step}: sent {sentOk}, key {nkey}, client id {clientId}, packet {(got == null ? "none" : $"flags 0x{got.Flags:x} id {got.Text.Id} arg {got.Arg} top {got.TopLayerArg}")}, route [{string.Join(", ", route)}], text \"{want}\"");
+                string[] expect = nflags switch
+                {
+                    1 => new[] { "chat 0x14 ok" },
+                    4 => new[] { "text 6 ok" },
+                    5 => new[] { "text 6 ok", "chat 0x14 ok" },
+                    0x10 => new[] { "text 9 ok" },
+                    0x40 => new[] { "box '' ok" },
+                    0x200 => new[] { "top ok", "chat 0x1d ok" },
+                    0x400 => new[] { "text 2 ok", "chat 0x14 ok" },
+                    _ => null,
+                };
+                if (expect == null) { GD.Print($"live: combat {step}: no expected route for these flags"); continue; }
+                Check($"notice {code} ({nkey}) flags 0x{nflags:x}{(raw ? " (raw)" : "")} shows its text where the flags say",
+                    got != null && want.Length > 0 && route.SequenceEqual(expect));
+                if ((nflags & 0x200) != 0)
+                {
+                    await until(() => !hud.TopLayerUp, 60 * 20);
+                    Check($"the top layer announce loads for notice {code} and unloads at its onHideMessage", topUp && !hud.TopLayerUp);
+                }
+                if ((nflags & 0x40) != 0) { Ms2.Ui.Hud.MessageBoxQueue.Next(); await frames(10); }
+                continue;
+            }
             if (step.StartsWith("chat:"))      // one chat line, no comma in it
             {
                 GD.Print($"live: combat {step}: {(hud.SubmitChatLine(step[5..]) ? "sent" : "no chat window")}");

@@ -316,6 +316,21 @@ public partial class LiveSession : Node
         return string.Join(" ", b.Select(x => x.ToString("X2")));
     }
 
+    /// <summary>The live run's raw notice (inbound 0x71, <see cref="Ms2.Net.Packets.NoticeMessage"/>): kind 4 with
+    /// <paramref name="flags"/>, the common string <paramref name="stringId"/> as the client numbers it, then the u16 for
+    /// flags 0x10 or the i32 for 0x200, as the server fork writes them.</summary>
+    internal string NoticeBytes(ushort flags, int stringId, int value)
+    {
+        var b = new List<byte>();
+        void I32(int v) { b.Add((byte)v); b.Add((byte)(v >> 8)); b.Add((byte)(v >> 16)); b.Add((byte)(v >> 24)); }
+        ushort op = game.Profile.Number(Ms2.Net.Inbound.Notice);
+        b.Add((byte)op); b.Add((byte)(op >> 8)); b.Add(4); b.Add((byte)flags); b.Add((byte)(flags >> 8));
+        b.Add(1); I32(1); I32(stringId); I32(0);
+        if ((flags & 0x10) != 0) { b.Add((byte)value); b.Add((byte)(value >> 8)); }
+        else if ((flags & 0x200) != 0) I32(value);
+        return string.Join(" ", b.Select(x => x.ToString("X2")));
+    }
+
     void EnterOwnStateExit(int st)
     {
         if (ownStunEntry) return;   // the stun buff's entry of the running StateStun (TickOwnStateExit)

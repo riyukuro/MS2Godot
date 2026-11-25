@@ -1080,6 +1080,8 @@ public partial class HudScene : Node, IUiStageHost
     void SystemTextLines(Control ui)
     {
         ui.AddChild(systemTextSlot = new Control { Name = "uisystemtext", MouseFilter = Control.MouseFilterEnum.Ignore });
+        ui.AddChild(topLayerSlot = new Control { Name = "uitoplayernotify", MouseFilter = Control.MouseFilterEnum.Ignore });
+        TopLayer ??= new Ms2.Ui.Hud.TopLayerNotifyController { LoadMovie = LoadTopLayer, UnloadMovie = UnloadTopLayer };
         if (SystemText != null) return;     // unloaded by a field move: loaded again at the new field's load complete
         SystemText = new Ms2.Ui.Hud.SystemTextController { UpperHpBar = TargetBar, TickMs = () => (uint)Time.GetTicksMsec() };
         // STILL-OPEN: PlaySystemSound (the emergency line's "emergency_notice"): this HUD has no system sound player
@@ -1119,6 +1121,32 @@ public partial class HudScene : Node, IUiStageHost
     }
     Action unwatchGemErrors, unwatchNotices, unwatchChat;
     Control systemTextSlot;                 // the system lines' place among the HUD movies
+    Control topLayerSlot;                   // the top layer announce's place among the HUD movies
+    MovieDialog topLayer;                   // uitoplayernotify, loaded only while a message is up
+
+    /// <summary>The top layer announce (UITopLayerNotify 0x4ef5): a notice of kind 4 with flags 0x200.</summary>
+    public Ms2.Ui.Hud.TopLayerNotifyController TopLayer { get; private set; }
+    /// <summary>The top layer announce's movie is loaded (a message is up); for the live run.</summary>
+    public bool TopLayerUp => topLayer != null && TopLayer?.Host?.Entity != null;
+
+    /// <summary>UIHeadUpDisplay::vfunc_2 for the top layer announce: its movie loads; OnLoadComplete shows the kept message.</summary>
+    void LoadTopLayer()
+    {
+        if (topLayer != null || topLayerSlot == null || !IsInstanceValid(topLayerSlot)) return;
+        topLayer = new MovieDialog(assets, TopLayer, NewModel(), ScreenMode.PixelSize(GetWindow()));
+        topLayerSlot.AddChild(topLayer);
+    }
+
+    /// <summary>UIHeadUpDisplay::vfunc_3 for the top layer announce (its onHideMessage): the movie unloads.</summary>
+    void UnloadTopLayer()
+    {
+        if (topLayer == null) return;
+        var m = topLayer;
+        topLayer = null;
+        m.Host.Unload();
+        m.GetParent()?.RemoveChild(m);
+        m.QueueFree();
+    }
 
     /// <summary>UISystemText::vfunc_2 (via UIHeadUpDisplay): its movie loads; OnLoadComplete replays a parked line.</summary>
     void LoadSystemText()
@@ -1189,6 +1217,8 @@ public partial class HudScene : Node, IUiStageHost
             ServerTime = () => live.GameSession?.ServerTime ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
             ShowMessage = (t, type, option) => SystemText?.ShowMessage(t, type, option),
             ChatLine = ChatLog.AddSystemLine,
+            TopLayerNotify = (t, value) => TopLayer?.ShowMessage(t, value),
+            ServerStringKey = live.GameProfile.IsGms2 ? Ms2.Formats.Text.Gms2CommonStringIds.Key : Ms2.Formats.Text.CommonStringIds.Key,
             MessageBox = (t, tag) => MessageBoxQueue.ShowMessageBox(t, 0, null, tag),
             SystemSound = key => GD.Print($"notice: system sound {key} is not played"),
             ForcedQuit = () => { live.SendRequestQuitAndDisconnect(); Ms2Godot.Flow.GameFlow.ReturnToLogin(); },

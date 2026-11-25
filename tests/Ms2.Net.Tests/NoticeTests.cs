@@ -31,4 +31,26 @@ public class NoticeTests {
         var other = NoticeMessage.Read(R(w => { w.WriteByte(5); w.WriteShort(0x200); w.WriteBool(false); w.WriteInt(0); w.WriteUnicodeString("t"); w.WriteInt(5000); }));
         Assert.That(other.TopLayerArg, Is.EqualTo(0));
     }
+
+    /// <summary>
+    /// Every single flag bit (and the /notice default Message|Alert) as the server fork's NoticePacket.Notice writes it: the
+    /// text, then a u16 duration for Mint (0x10), else an i32 for LargeAlert (0x200). The reader takes the u16 for 0x10 and the
+    /// i32 when OnNotice shows the top layer line; the only bytes left are the fork's i32 when another flag picks first.
+    /// </summary>
+    [Test]
+    public void EveryFlagAsTheForkWritesIt() {
+        foreach (int flags in Enumerable.Range(0, 16).Select(b => 1 << b).Append(5).Append(0x204).Append(0x210)) {
+            var r = R(w => {
+                w.WriteByte(4); w.WriteShort((short)flags);
+                w.WriteBool(true); w.WriteInt(1); w.WriteInt(74); w.WriteInt(0);
+                if ((flags & 0x10) != 0) w.WriteShort(1234);
+                else if ((flags & 0x200) != 0) w.WriteInt(1234);
+            });
+            var n = NoticeMessage.Read(r);
+            Assert.That((n.Flags, n.Text.Id), Is.EqualTo(((ushort)flags, 74)), $"0x{flags:x}");
+            Assert.That(n.Arg, Is.EqualTo((flags & 0x10) != 0 ? 1234 : 0), $"0x{flags:x}");
+            Assert.That(n.TopLayerArg, Is.EqualTo(flags == 0x200 ? 1234 : 0), $"0x{flags:x}");
+            Assert.That(r.Available, Is.EqualTo(flags == 0x204 ? 4 : 0), $"0x{flags:x}");
+        }
+    }
 }

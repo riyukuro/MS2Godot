@@ -31,9 +31,16 @@ public sealed class NoticeController
     public Action<string, int, int> ShowMessage;
     /// <summary>FUN_1412751b0: the chat log's line of the kind (UIMessengerBrowser FUN_141a247c0); null without the log.</summary>
     public Action<string, int> ChatLine;
-    /// <summary>UITopLayerNotify::ShowMessage(text, value) of 0x4ef5. STILL-OPEN: that window is not ported, so this is
-    /// null and a top layer notice shows nothing and logs nothing, as the client without the window.</summary>
+    /// <summary>UITopLayerNotify::ShowMessage(text, value) of 0x4ef5 (<see cref="TopLayerNotifyController"/>); null without
+    /// that window, and then a top layer notice shows nothing and logs nothing, as the client without it.</summary>
     public Action<string, int> TopLayerNotify;
+    /// <summary>
+    /// The common string key of an id the server sends. The client this port follows registers its ids in
+    /// CommonString::RegisterIds (<see cref="Ms2.Formats.Text.CommonStringIds"/>); a GMS2 server sends the GMS2 client's ids
+    /// (<see cref="Ms2.Formats.Text.Gms2CommonStringIds"/>), which drift from the KMS ones from 74 on, so the scene picks the
+    /// table of the server's region.
+    /// </summary>
+    public Func<int, string> ServerStringKey = Ms2.Formats.Text.CommonStringIds.Key;
     /// <summary>ShowMessageBox(text, 0, no listener, tag).</summary>
     public Action<string, string> MessageBox;
     /// <summary>PlaySystemSound(FUN_14016a600(text, 0), ""). STILL-OPEN: no system sound player here.</summary>
@@ -57,7 +64,7 @@ public sealed class NoticeController
     {
         if (t.Formatted)
         {
-            string format = t.Kind switch { 1 => Tables.Common(t.Id), 2 => null, _ => "" };
+            string format = t.Kind switch { 1 => ServerStringKey(t.Id) is { } key ? Tables.Common(key) ?? "" : "", 2 => null, _ => "" };
             if (format == null) return "";
             string s = Ms2.Formats.Text.ArgumentFormat.Format(format, t.Args);
             return ReplaceValueWords(Tables.ReservedWords.ReplaceObjectWords(s));
