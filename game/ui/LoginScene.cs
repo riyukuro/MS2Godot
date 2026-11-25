@@ -159,7 +159,7 @@ public partial class LoginScene : Control
     Action<string> sendTitleEvent;
     void SendTitleEvent(string ev)
     {
-        GD.Print($"login: title {ev} at frame {title.Frame + 1}");
+        if (Ms2Godot.Net.LiveSession.LiveCheck) GD.Print($"login: title {ev} at frame {title.Frame + 1}");
         Scene.BackgroundEvent(ev);
     }
 
